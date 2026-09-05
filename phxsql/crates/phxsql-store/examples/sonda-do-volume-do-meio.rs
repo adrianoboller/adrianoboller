@@ -27,7 +27,7 @@
 //! vez -- `Volumes::sincronizacoes()` sobe ANTES do laco, entao mede a intencao
 //! e nao o fato.
 //!
-//! # O que a corrida de 05/09/2026 mediu
+//! # O que a corrida de 05/09/2026 mediu, ANTES do conserto
 //!
 //! ```text
 //! fase 3, fecho depois de sujar o volume 3:            .reg -> 001, 003, 005
@@ -36,7 +36,21 @@
 //!
 //! A primeira linha responde a pergunta do titulo: o volume do meio ENTRA, e
 //! entra pelo registro de pendentes -- os volumes 2 e 4, limpos, ficam de fora,
-//! que e' a lista certa. A segunda linha e' o achado, e esta na fase 5.
+//! que e' a lista certa. A segunda linha era o achado, e estava na fase 5: o
+//! volume 2, sujo pela grafia relativa, nao ia ao disco.
+//!
+//! # E o que ela mede DEPOIS, no mesmo dia
+//!
+//! ```text
+//! fase 3:  .reg -> 001, 003, 005   (nao mudou)
+//! fase 5:  .reg -> 001, 002, 005   (o volume sujo entrou)
+//! ```
+//!
+//! A chave do registro de pendentes passou a sair de `volume::familia`, que
+//! resolve o diretorio para caminho absoluto lexico antes de montar o nome --
+//! entao a grafia relativa e a absoluta caem na MESMA familia. A guarda que
+//! trava isso sem `strace` e' `tests/grafia-do-diretorio-nao-divide-a-familia.rs`;
+//! esta sonda continua sendo a prova de fora, contra o sistema operacional.
 
 use phxsql_core::paginacao::Paginacao;
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};

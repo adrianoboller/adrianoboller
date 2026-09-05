@@ -2305,6 +2305,89 @@ cargo run --release --example o-comboio-por-dentro -p phxsql-store -- 16 2000
 cargo run --release --example custo-do-fsync -p phxsql-store -- 50000
 ```
 
+## 17. A grafia do caminho e o `.pag`: dois consertos que custaram zero (05/09)
+
+Esta seção mede duas coisas que estavam escritas como seguras e não eram, e
+mede o preço dos dois consertos. Nos dois casos o preço é **zero**, e é isso
+que os torna decisões fáceis — o difícil foi medir a premissa.
+
+### 17.1 A família do registro de `fsync` se partia pela grafia do caminho
+
+O `ESCRITAS_PENDENTES` (`volume.rs`) tem como chave a família
+`diretorio/nome.ext`, e a chave era o caminho **cru**. O comentário do próprio
+registro afirmava que duas grafias dariam duas famílias e que a degradação
+seria benigna. Medido com `strace` pela `--example sonda-do-volume-do-meio`,
+**as duas metades estavam erradas**.
+
+**Quais grafias dividem, medido** (`PathBuf` compara por `components()`):
+
+| par | mesma chave? |
+|---|---|
+| `/tmp/x` e `/tmp/./x` | **sim** — o `CurDir` some |
+| `/tmp/x` e `/tmp/x/` | **sim** — a barra final some |
+| `/tmp/x` e `x`, com cwd `/tmp` | **não** — é esta que divide |
+| `/tmp/x` e `/tmp/y/../x` | **não**, e continua não sendo (ver abaixo) |
+
+**O efeito, por `strace`, numa tabela de cinco volumes:**
+
+| fase da sonda | antes | depois |
+|---|---|---|
+| volume 3 sujo pela MESMA grafia | `001, 003, 005` | `001, 003, 005` |
+| volume 2 sujo por OUTRA grafia | `001, ____, 005` | `001, 002, 005` |
+
+Antes, o volume sujo **ficava para trás**: a degradação não custava velocidade,
+custava o dado — e só numa queda de energia, porque página suja no cache do
+núcleo sobrevive a `SIGKILL`.
+
+**Quem produz a segunda grafia, contado.** Dentro do `phxsqld` há **um** produtor
+de raiz e um só — `Raiz::nova(&config.base)`, em `servidor.rs:711` —, e todo
+caminho mais fundo nasce de `join` a partir dele. Os outros dois portões da
+biblioteca produzem: a **FFI** (`phx_base_abrir`) recebe o caminho do chamador C
+a cada chamada, e a **CLI** o recebe do argumento. Some-se que `config.base` é
+relativo nos exemplos de container (`"base": "base"`) e absoluto nos de servidor
+(`/var/lib/phxsql/dados`).
+
+**O custo do conserto: dentro do ruído.** O ramo caro é só o do caminho
+relativo — um `getcwd`, **395 ns** medidos; o já absoluto paga um
+`is_absolute()`. Como `Table::abrir` monta **sete** conjuntos de volumes,
+`Table` resolve uma vez e deixa os sete no ramo barato. `custo-de-abrir`, dez
+corridas: mínimo **49,31 µs** antes e **48,68 µs** depois.
+
+### 17.2 O `.pag`: 82% das leituras de fora pegavam JSON pela metade
+
+O `.pag` é derivado — o motor nunca o lê —, e era escrito com `std::fs::write`,
+que abre com `O_TRUNC`. A janela em que o arquivo está truncado **não é uma
+queda**: ela abre a cada `Table::sincronizar()`.
+
+| medida | número |
+|---|---|
+| janela truncada, por regravação | **33,2 µs** (36% dos 93 µs da gravação) |
+| leitor de fora insistindo, com `fs::write` | **82,4%** partidas (482.246 de 585.169) |
+| o mesmo leitor, com temporário + `rename` | **0 de 606.086** |
+| gravar com `fs::write`, mediana de 6 × 20.000 | **92,6 µs** |
+| gravar com temporário + `rename` | **76,0 µs** |
+
+A janela não depende do tamanho — 467 B e 3,4 KiB deram os mesmos 33 µs, porque
+os dois cabem numa página. E o conserto **não custa**: a troca por `rename`
+mediu mais barata que o `fs::write` nesta máquina.
+
+**O `fsync` do `.pag` fica RECUSADO, e agora com o motivo certo.** Ele compraria
+durabilidade para um arquivo que se regenera sozinho no próximo `sincronizar`,
+ao preço de um nono `fsync` por fecho de janela — **52 µs** para arquivo que
+ninguém sujou, medidos na §16 — e da aposentadoria da catraca
+`TETO_FSYNC_POR_FECHO_V2`. O `PESQUISA-FSYNC-SELETIVO.md` §5 já o tinha
+recusado por «não haver alvo»; o que faltava era ver que o `.pag` não queria
+`fsync`, queria `rename`.
+
+```bash
+cargo build --release --example sonda-do-volume-do-meio -p phxsql-store
+cd /tmp && strace -f -y -e trace=fsync,openat -o /tmp/m.strace \
+  target/release/examples/sonda-do-volume-do-meio   # corte pelas cercas
+cargo run --release --example custo-de-abrir -p phxsql-store -- 2000
+cargo test -p phxsql-store --test grafia-do-diretorio-nao-divide-a-familia
+cargo test -p phxsql-store --test pag-se-troca-inteiro
+```
+
 ## Como refazer tudo
 
 ```bash

@@ -33,10 +33,42 @@ use phxsql_core::schema::Schema;
 
 pub const EXT_PAG: &str = "pag";
 
-/// Escreve o `.pag` da tabela.
+/// Escreve o `.pag` da tabela, trocando o arquivo INTEIRO de uma vez.
 ///
 /// `baldes` vem de `Table::baldes()` -- vazio nos modos que nao sao
 /// alfanumericos, e ai o arquivo descreve a particao sem a lista de letras.
+///
+/// # Por que temporario + `rename`, e nao `fs::write`
+///
+/// Este arquivo e' regravado a CADA `Table::sincronizar()`, e `fs::write`
+/// abre com `O_TRUNC`: entre o zerar e o terminar de escrever, quem le de
+/// fora ve um JSON pela metade. Medido em 05/09/2026 nesta maquina: a janela
+/// truncada dura **33,2 us por regravacao** (36% dos 93 us da gravacao), e um
+/// leitor que insista durante a regravacao pega o arquivo partido em
+/// **82,4% das leituras** (482.246 de 585.169). Com a troca por `rename`,
+/// **0 de 606.086**.
+///
+/// Um `.pag` PERDIDO nao custa nada -- ele e' derivado, o motor nunca o le, e
+/// o proximo `sincronizar` o regrava. Um `.pag` pela METADE mente para a
+/// unica plateia que ele tem, que e' de fora: uma camada SQL, um ETL, um
+/// relatorio. Por isso o conserto e' de ATOMICIDADE e nao de durabilidade --
+/// **nao ha `fsync` aqui**, e a catraca `TETO_FSYNC_POR_FECHO_V2` continua
+/// valendo 8. Sem `fsync` do diretorio, uma queda pode desfazer a troca e
+/// deixar o `.pag` ANTERIOR, que e' velho e valido; e' a degradacao certa.
+///
+/// Medido tambem o custo, e ele nao existe: mediana de seis corridas de
+/// 20.000 gravacoes, 92,6 us com `fs::write` contra 76,0 us com
+/// temporario + `rename`.
+///
+/// # O resto que uma queda pode deixar, dito em vez de escondido
+///
+/// Uma queda dentro da janela de 33 us deixa `<nome>.pag.novo` para tras. O
+/// proximo `sincronizar` da tabela o renomeia por cima, entao ele nao se
+/// acumula. O que ele NAO faz e' sair no `excluir_tabela`: as dez extensoes de
+/// `catalogo.rs` cobrem `.pag` e nao `.pag.novo`. E' decisao, e nao esquecimento
+/// -- por o temporario naquela lista o faria aparecer no `arquivos_da_tabela`,
+/// que e' a lista que a TELA mostra, e arquivo de trabalho na tela do usuario
+/// e' pior que um resto de 3 KiB que so' existe depois de uma queda.
 pub fn escrever(
     diretorio: impl AsRef<Path>,
     nome: &str,
@@ -44,8 +76,20 @@ pub fn escrever(
     baldes: &[u64],
     volumes: &[u32],
 ) -> Result<PathBuf> {
-    let caminho = diretorio.as_ref().join(format!("{nome}.{EXT_PAG}"));
-    std::fs::write(&caminho, montar(nome, esquema, baldes, volumes))?;
+    let diretorio = diretorio.as_ref();
+    let caminho = diretorio.join(format!("{nome}.{EXT_PAG}"));
+    let temporario = diretorio.join(format!("{nome}.{EXT_PAG}.novo"));
+    let texto = montar(nome, esquema, baldes, volumes);
+    // Falhar aqui nao pode deixar o temporario para tras: quem falha uma vez
+    // costuma falhar de novo, e o resto viraria permanente.
+    if let Err(e) = std::fs::write(&temporario, texto) {
+        let _ = std::fs::remove_file(&temporario);
+        return Err(e.into());
+    }
+    if let Err(e) = std::fs::rename(&temporario, &caminho) {
+        let _ = std::fs::remove_file(&temporario);
+        return Err(e.into());
+    }
     Ok(caminho)
 }
 

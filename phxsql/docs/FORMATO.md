@@ -1486,6 +1486,23 @@ motor cair no comportamento antigo — custa velocidade; lida para subtrair,
 custa o **dado**, calada, e só numa queda de energia. Ver a recusa medida em
 `DESEMPENHO.md` §16.
 
+**A chave do registro é a família em caminho ABSOLUTO léxico** — `dados/loja`
+e `/srv/dados/loja` são a mesma família, e precisam ser. Isto foi um defeito
+até 05/09/2026: a chave era o caminho cru, e o comentário do próprio registro
+afirmava que a divisão seria benigna («nunca para menos que o comportamento
+antigo»). Medido com `strace` pela `--example sonda-do-volume-do-meio`, não é:
+o comportamento antigo é o volume 1 mais a fronteira de escrita, e ele **não
+alcança o volume do meio**. Com a família partida, o fecho levava ao disco
+`001` e `005` e deixava para trás o `002`, que era o sujo; com ela inteira,
+leva `001, 002, 005`.
+
+O que a resolução **não** junta, e é decisão: `..` no meio do caminho e dois
+*symlinks* para o mesmo diretório. Só `canonicalize` os juntaria, e ela toca o
+disco e **falha em caminho que ainda não existe** — o que quebraria
+`Table::criar`, que monta o conjunto antes de o primeiro arquivo nascer. O que
+`PathBuf` já junta sozinho — `.` redundante e barra final — não precisou de
+código: ele compara por `components()`.
+
 O que continua fora, e é decisão e não esquecimento: escreveu no meio de uma
 tabela **paginada**, morreu o **processo** sem sincronizar, e outro processo
 fechou a janela. Fechá-lo pediria `fsync` em todo volume existente a cada
@@ -1526,6 +1543,28 @@ que quem lê precisa saber para não ter de adivinhar.
 coluna de referência estão no bloco de esquema dentro do `.reg`; quantas linhas
 cada balde tem está no cabeçalho de cada volume. O `.pag` é **gerado** a partir
 dos dois, na criação e a cada `sincronizar`.
+
+**Ele é trocado INTEIRO, por `rename`** — escreve-se `<nome>.pag.novo` e
+renomeia-se por cima. Até 05/09/2026 era um `std::fs::write`, que abre com
+`O_TRUNC`: entre zerar e terminar de escrever, quem lê de fora vê um JSON pela
+metade, e isso acontece a cada `sincronizar()`. Medido: a janela truncada dura
+**33,2 µs por regravação** (36% dos 93 µs da gravação, igual para 467 B e para
+3,4 KiB — os dois cabem numa página), e um leitor que insista durante a
+regravação pega o arquivo partido em **82,4% das leituras**; com a troca por
+`rename`, **0 de 606.086**. Custo: nenhum — mediana de seis corridas de 20.000
+gravações, **92,6 µs** com `fs::write` contra **76,0 µs** com temporário mais
+`rename`.
+
+O conserto é de **atomicidade**, e não de durabilidade: **não há `fsync` no
+`.pag`**, e a catraca `TETO_FSYNC_POR_FECHO_V2` continua valendo 8. Um `.pag`
+perdido se regrava sozinho no próximo `sincronizar`; um `.pag` pela metade
+mente para a única plateia que ele tem, que é de fora. Sem `fsync` de
+diretório, uma queda pode desfazer a troca e deixar o `.pag` **anterior** —
+velho e válido, que é a degradação certa. Uma queda dentro dos 33 µs deixa
+`<nome>.pag.novo` para trás; o próximo `sincronizar` o renomeia por cima, então
+ele não se acumula, e ele **não** sai no `excluir_tabela` de propósito: pôr o
+temporário nas dez extensões o faria aparecer no `arquivos_da_tabela`, que é a
+lista que a tela mostra.
 
 A razão é a mesma que impede gravar «é chave primária» na coluna, e a mesma que
 impede um arquivo `sequences` com uma segunda cópia dos contadores: uma segunda

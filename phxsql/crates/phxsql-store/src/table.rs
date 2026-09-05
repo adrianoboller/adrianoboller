@@ -439,13 +439,34 @@ pub(crate) fn indice_que_cobre(esquema: &Schema, colunas_ref: &[String]) -> Opti
         .map(|i| i.nome.clone())
 }
 
+/// O diretorio da tabela em caminho ABSOLUTO lexico, resolvido UMA vez.
+///
+/// # Por que ele existe: velocidade, e nao correcao
+///
+/// Quem garante a chave da familia de escritas pendentes e' a `volume::familia`
+/// -- um lugar so', que nao se esquece. Ela paga um `getcwd` (395 ns medidos)
+/// por caminho RELATIVO, e uma tabela monta **sete** conjuntos de volumes ao
+/// abrir: sete `getcwd` numa abertura que custa 49 us. Resolver aqui deixa os
+/// sete no ramo barato -- um `is_absolute()` -- e paga um `getcwd` so'.
+///
+/// O efeito de fora e' que toda mensagem de erro passa a nomear o caminho
+/// inteiro. E' ganho, e nao dano: caminho relativo numa mensagem obriga quem
+/// le a adivinhar o diretorio de trabalho do servidor.
+///
+/// Falha so' com caminho vazio; ali o cru serve, e a `familia` cuida do resto.
+fn resolver(diretorio: &Path) -> PathBuf {
+    // A conta mora no `volume.rs`, e nao aqui: a chave da familia nasce la',
+    // e duas copias da mesma resolucao e' o comeco de duas respostas.
+    crate::volume::absoluto_lexico(diretorio).unwrap_or_else(|| diretorio.to_path_buf())
+}
+
 impl Table {
     /// Cria as quatro pecas da tabela em `diretorio`.
     ///
     /// Falha se qualquer um dos quatro arquivos ja existir, para nunca
     /// sobrescrever dados por engano.
     pub fn criar(diretorio: impl AsRef<Path>, esquema: Schema) -> Result<Table> {
-        let diretorio = diretorio.as_ref().to_path_buf();
+        let diretorio = resolver(diretorio.as_ref());
         std::fs::create_dir_all(&diretorio)?;
         let nome = esquema.nome().to_string();
 
@@ -759,7 +780,7 @@ impl Table {
     }
 
     fn abrir_com(diretorio: impl AsRef<Path>, nome: &str, escrever: bool) -> Result<SemEscrever> {
-        let diretorio = diretorio.as_ref().to_path_buf();
+        let diretorio = resolver(diretorio.as_ref());
         let reg = if escrever {
             Some(RegFile::abrir(&diretorio, nome)?)
         } else {

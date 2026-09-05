@@ -722,8 +722,10 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `leitura-sem-recuo-para-a-exclusiva` | a tabela que pede a ficha exclusiva vira erro em vez de recuo | 1 | ✅ provada |
 | `abrir-para-ler-cria-a-lixeira` | abrir para LER cria o `.trash` que falta, sob a ficha compartilhada | 1 | ✅ provada |
 | `leitura-sem-guarda-de-reentrancia` | a ficha compartilhada pedida com a exclusiva na mão pendura o servidor | 1 | ✅ provada |
+| `familia-pela-grafia-crua` | a grafia do caminho divide a família do registro de `fsync`, e o volume sujo fica para trás | 1 | ✅ provada |
+| `pag-gravado-com-truncagem` | o `.pag` escrito com `fs::write` aparece pela metade para quem lê de fora | 1 | ✅ provada |
 
-**82 guardas: 78 provadas, 4 redundantes** — 779 s de mutação, medido em 2026-09-05 01:51.
+**84 guardas: 80 provadas, 4 redundantes** — 884 s de mutação, medido em 2026-09-05 03:18.
 
 As notas que a rodada deixou:
 

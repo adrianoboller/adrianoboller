@@ -553,6 +553,16 @@ garantia nova sem que ninguém tivesse pedido. Fica anotada, não implementada;
 quem decidir que o `.pag` PRECISA de garantia de disco decide isso por outro
 motivo, e aí a receita do LMDB volta a fazer sentido.
 
+> **Adendo de 05/09/2026, e ele muda a pergunta.** O `.pag` tinha mesmo um
+> defeito na gravação, e **não era o `fsync`**: o `std::fs::write` abre com
+> `O_TRUNC`, então o arquivo fica truncado por **33,2 µs a cada regravação** —
+> e a regravação acontece a cada `sincronizar()`, sem queda nenhuma. Um leitor
+> de fora pegava JSON pela metade em **82,4% das leituras**; com temporário +
+> `rename`, **0 de 606.086**, e o custo medido é nulo. Ou seja: o `.pag` não
+> queria durabilidade, queria **atomicidade**. A recusa acima **continua de
+> pé** — não há `fsync` no `.pag`, e a catraca `TETO_FSYNC_POR_FECHO_V2`
+> segue em 8 —, e agora ela está pelo motivo certo. `DESEMPENHO.md` §17.2.
+
 ---
 
 ## 8. O que eu recomendo perseguir, e nesta ordem

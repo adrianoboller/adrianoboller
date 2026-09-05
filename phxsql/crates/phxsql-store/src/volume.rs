@@ -124,12 +124,108 @@ type Pendentes = Arc<Mutex<BTreeSet<u32>>>;
 /// so numa queda de energia. Mesmo registro, lido nos dois sentidos, com
 /// modos de falha opostos. Ver `docs/FORMATO.md`.
 ///
+/// # A chave, e a grafia que dividia a familia
+///
 /// A chave e' a familia (`diretorio/nome.ext`), e nao o caminho de cada
 /// volume: e' o que permite a instancia B achar o que a instancia A escreveu.
-/// Duas grafias diferentes do mesmo diretorio dariam duas familias e a marca
-/// se perderia -- e ai a degradacao e a mesma de acima, para o comportamento
-/// antigo, nunca para menos que ele.
+///
+/// Este comentario dizia, ate' 05/09/2026, que «duas grafias diferentes do
+/// mesmo diretorio dariam duas familias, e ai a degradacao e a mesma de acima,
+/// para o comportamento antigo, nunca para menos que ele». **As duas metades
+/// estavam erradas, e a sonda `--example sonda-do-volume-do-meio` mediu as
+/// duas.**
+///
+/// 1. **Nem toda grafia divide.** `PathBuf` compara por `components()`, e ali
+///    o `CurDir` e a barra final somem: `/tmp/x`, `/tmp/./x` e `/tmp/x/` sao
+///    a MESMA chave, medido. A grafia que divide de verdade e' a **relativa
+///    contra a absoluta** -- `dados/loja` e `/srv/dados/loja`.
+/// 2. **A degradacao nao e' benigna: ela perde dado.** O comportamento antigo
+///    e' `abrir_para_sincronizar(1)` mais a fronteira de escrita, e a fase 3
+///    da sonda mediu que ele NAO alcanca o volume do meio. Com a familia
+///    partida, a fase 5 mediu o fecho levando ao disco `001` e `005` e
+///    deixando para tras o volume 2, que era o sujo.
+///
+/// Por isso a chave sai de [`familia`], que absolutiza o caminho por via
+/// **lexica** antes de montar o nome. O que ele custa esta medido em
+/// `docs/DESEMPENHO.md`; o que ele NAO resolve esta escrito na propria funcao.
 static ESCRITAS_PENDENTES: Mutex<BTreeMap<PathBuf, Pendentes>> = Mutex::new(BTreeMap::new());
+
+/// A chave da familia: `diretorio/nome.ext`, com o diretorio em caminho
+/// ABSOLUTO lexico.
+///
+/// # Por que aqui, e nao em quem chama
+///
+/// Este e' o UNICO lugar do motor onde a chave da familia nasce. Espalhar a
+/// resolucao pelos chamadores e' a receita da porta dos fundos: o que alguem
+/// esquecer volta a dividir a familia, e nenhum teste acusa -- o defeito so'
+/// aparece numa queda de energia. Quem chama pode resolver antes, e
+/// `Table::abrir` resolve, mas por VELOCIDADE e nao por correcao.
+///
+/// # Por que lexico, e nao `canonicalize`
+///
+/// `canonicalize` toca o disco, resolve *symlink* e **falha quando o caminho
+/// ainda nao existe** -- o que quebraria `Table::criar`, que monta o conjunto
+/// antes de o primeiro arquivo nascer. Aqui e' so' conta de componentes.
+///
+/// # O que ele NAO resolve, e e' decisao
+///
+/// * `..` no meio: nao se remove (medido -- `/tmp/y/../x` continua diferente
+///   de `/tmp/x`). Nao alcanca o servidor, porque `validar_nome` recusa `..`
+///   em database, schema e tabela; alcanca quem passa a RAIZ, e a raiz vem do
+///   `config.json` ou do chamador C da FFI;
+/// * dois *symlinks* para o mesmo diretorio: so' `canonicalize` os junta, e o
+///   preco dela esta acima.
+///
+/// Nos dois casos que sobram a degradacao e a de sempre -- volta ao
+/// comportamento antigo --, e ela **nao e' benigna**: ver o registro acima.
+fn familia(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
+    let arquivo = format!("{nome}.{ext}");
+    match absoluto_lexico(diretorio) {
+        Some(a) => a.join(arquivo),
+        None => diretorio.join(arquivo),
+    }
+}
+
+/// O caminho em forma ABSOLUTA lexica, ou `None` quando ele ja serve.
+///
+/// # Por que escrita a mao, e nao `std::path::absolute`
+///
+/// Porque ela e' estavel a partir do Rust **1.79** e este projeto declara
+/// **1.75** no `Cargo.toml` -- e MSRV e' promessa de compatibilidade, nao
+/// detalhe de compilacao. Subi-la para poupar cinco linhas trocaria uma
+/// promessa por conveniencia, e trocaria calada.
+///
+/// A divergencia contra a receita da `std`, e a restricao que a causou: a
+/// `absolute` tambem tira os componentes `.` e as barras repetidas, e aqui
+/// isso **nao faz falta** -- `PathBuf` compara por `components()`, onde o
+/// `CurDir` e a barra final ja somem (medido: `/tmp/./x`, `/tmp/x/` e
+/// `/tmp/x` sao a mesma chave). O que sobra e' o que importa: a relativa
+/// vira absoluta.
+///
+/// O caminho JA absoluto devolve `None` e nao paga nada -- so' o relativo
+/// paga o `getcwd`, 395 ns medidos.
+pub(crate) fn absoluto_lexico(diretorio: &Path) -> Option<PathBuf> {
+    if diretorio.is_absolute() {
+        return None;
+    }
+    // No Windows ha duas formas que nao sao absolutas e tambem NAO se
+    // resolvem juntando o diretorio de trabalho: a que traz prefixo de disco
+    // sem raiz (`C:pasta`, relativa ao diretorio corrente DAQUELE disco) e a
+    // que traz raiz sem prefixo (`\pasta`). Juntar o `getcwd` nelas montaria
+    // um caminho que nao existe. No Unix nenhuma das duas ocorre -- `has_root`
+    // ali e' o proprio `is_absolute` --, entao este ramo nao custa nada.
+    if diretorio.has_root()
+        || matches!(
+            diretorio.components().next(),
+            Some(std::path::Component::Prefix(_))
+        )
+    {
+        return None;
+    }
+    // Caminho vazio e `getcwd` que falha caem no mesmo lugar: o cru, que e' o
+    // comportamento antigo -- e' o que a assimetria desta marca tolera.
+    std::env::current_dir().ok().map(|c| c.join(diretorio))
+}
 
 /// O conjunto pendente desta familia, criado na primeira vez que alguem pede.
 ///
@@ -165,7 +261,7 @@ impl Volumes {
     ) -> Volumes {
         let diretorio = diretorio.as_ref().to_path_buf();
         let nome = nome.into();
-        let pendentes = pendentes_da_familia(diretorio.join(format!("{nome}.{ext}")));
+        let pendentes = pendentes_da_familia(familia(&diretorio, &nome, ext));
         Volumes {
             diretorio,
             nome,
@@ -581,6 +677,27 @@ mod tests {
     // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
     fn dir_temp(rotulo: &str) -> crate::apoio_teste::DirTemp {
         crate::apoio_teste::DirTemp::novo(&format!("vol-{rotulo}"))
+    }
+
+    /// A PREMISSA da chave da familia, em forma de teste.
+    ///
+    /// O comentario do `ESCRITAS_PENDENTES` afirmava que «duas grafias
+    /// diferentes do mesmo diretorio dariam duas familias», e a afirmacao
+    /// estava errada em metade dos casos. Premissa que so' vive num
+    /// comentario envelhece calada -- esta trava as quatro que foram medidas.
+    #[test]
+    fn a_chave_da_familia_junta_as_grafias_que_o_pathbuf_ja_junta() {
+        let chave = |d: &str| familia(Path::new(d), "clientes", "reg");
+        // O que o proprio `PathBuf` ja junta, por `components()`.
+        assert_eq!(chave("/tmp/x"), chave("/tmp/./x"));
+        assert_eq!(chave("/tmp/x"), chave("/tmp/x/"));
+        // O que a resolucao junta, e era o defeito.
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(chave(cwd.join("dados").to_str().unwrap()), chave("dados"));
+        // E o que ela NAO junta, de proposito: `..` fica, e `canonicalize`
+        // seria o unico jeito -- ao preco de tocar o disco e de falhar em
+        // caminho que ainda nao existe, que quebraria `Table::criar`.
+        assert_ne!(chave("/tmp/x"), chave("/tmp/y/../x"));
     }
 
     #[test]

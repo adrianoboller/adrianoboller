@@ -286,7 +286,7 @@ leitura de 20.000 (5× a favor do PhxSql sem o motor ter feito nada por isso).
   campo, de lote) e não catraca de varredura de texto; a lista completa está
   na tabela gerada.
 - **Guardas — prova de que a prova pega**: `bancada/guardas/catalogo.py`
-  cataloga **77** defeitos repostos (contado de `len(GUARDAS)`, não por
+  cataloga **84** defeitos repostos (contado de `len(GUARDAS)`, não por
   regex), cada um com o trecho de código de hoje, o trecho de antes do
   conserto, e os testes que têm de cair quando o defeito volta.
   `python3 bancada/guardas/provar-guardas.py` copia a árvore, repõe cada

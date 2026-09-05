@@ -3104,4 +3104,62 @@ pub fn limpar() {
             "servidor::testes_janela_e_cadeia::sem_reentrancia_nada_muda",
         ],
     },
+    {
+        "id": "familia-pela-grafia-crua",
+        "titulo": "a grafia do caminho divide a família do registro de `fsync`, e o volume sujo fica para trás",
+        "porque": "o comentario do proprio `ESCRITAS_PENDENTES` afirmava que duas "
+                  "grafias dariam duas familias e que a degradacao era benigna -- "
+                  "«nunca para menos que o comportamento antigo». A sonda mediu com "
+                  "`strace` que o comportamento antigo NAO alcanca o volume do meio, "
+                  "entao a familia partida perde dado, e so numa queda de energia. "
+                  "*A lista do que falta tambem e palpite ate alguem medir*, e uma "
+                  "afirmacao de «isto e benigno» e a mesma familia de palpite.",
+        "arquivo": "crates/phxsql-store/src/volume.rs",
+        "trecho": """fn familia(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
+    let arquivo = format!("{nome}.{ext}");
+    match absoluto_lexico(diretorio) {
+        Some(a) => a.join(arquivo),
+        None => diretorio.join(arquivo),
+    }
+}""",
+        "troca": """fn familia(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
+    // DEFEITO REPOSTO: a chave da familia pelo caminho CRU. Quem abre por
+    // `dados/loja` e quem fecha a janela por `/srv/dados/loja` entram em duas
+    // familias, e a marca de quem escreveu nao chega a quem sincroniza.
+    let arquivo = format!("{nome}.{ext}");
+    let _ = absoluto_lexico(diretorio);
+    diretorio.join(arquivo)
+}""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "grafia-do-diretorio-nao-divide-a-familia"],
+        "prazo": 420,
+        "caem": ["o_fecho_por_outra_grafia_alcanca_o_volume_sujo"],
+        "seguem": ["a_tabela_resolve_o_diretorio_uma_vez_ao_abrir"],
+    },
+    {
+        "id": "pag-gravado-com-truncagem",
+        "titulo": "o `.pag` escrito com `fs::write` aparece pela metade para quem lê de fora",
+        "porque": "arquivo derivado quer ATOMICIDADE, nao durabilidade: um `.pag` "
+                  "perdido se regrava sozinho, um `.pag` pela metade mente para a "
+                  "unica plateia que ele tem. E a janela nao precisa de queda -- o "
+                  "`O_TRUNC` a abre a cada `sincronizar()`, por 33,2 us medidos.",
+        "arquivo": "crates/phxsql-store/src/pag.rs",
+        "trecho": """    if let Err(e) = std::fs::write(&temporario, texto) {
+        let _ = std::fs::remove_file(&temporario);
+        return Err(e.into());
+    }
+    if let Err(e) = std::fs::rename(&temporario, &caminho) {
+        let _ = std::fs::remove_file(&temporario);
+        return Err(e.into());
+    }""",
+        "troca": """    // DEFEITO REPOSTO: `fs::write` direto no alvo. Ele abre com `O_TRUNC`,
+    // entao o arquivo fica vazio ou partido enquanto a escrita nao termina.
+    let _ = &temporario;
+    std::fs::write(&caminho, texto)?;""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "pag-se-troca-inteiro"],
+        "prazo": 420,
+        "caem": ["quem_le_de_fora_nunca_pega_o_pag_pela_metade"],
+        "seguem": [],
+    },
 ]
