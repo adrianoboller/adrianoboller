@@ -1,0 +1,108 @@
+<title>Gráficos de desempenho do PhxSql</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --papel:#fbf9f7; --papel-2:#f3efec; --tinta:#1a1210; --tinta-2:#4a3f3a;
+  --tinta-3:#7a6d66; --linha:#ded6d0; --acento:#c63c0a; --falta:#8a6a1f;
+  --c1:#c63c0a; --c2:#4a6fa5; --c3:#5c7a52;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
+    --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c; --falta:#d5a83c;
+    --c1:#ff8a1c; --c2:#6f9fe0; --c3:#7fb36e;
+  }
+}
+:root[data-theme="dark"]{
+  --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
+  --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c; --falta:#d5a83c;
+  --c1:#ff8a1c; --c2:#6f9fe0; --c3:#7fb36e;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--papel);color:var(--tinta);
+  font-family:"Source Serif 4",Georgia,serif;font-size:16px;line-height:1.55;
+  -webkit-font-smoothing:antialiased}
+h1,h2,.rotulo{font-family:"Exo 2","Helvetica Neue",Arial,sans-serif}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+code{font-size:.86em;background:var(--papel-2);padding:1px 4px;border-radius:3px;
+  color:var(--tinta-2)}
+.envelope{max-width:900px;margin:0 auto;padding:0 20px 80px}
+header{padding:52px 0 26px;border-bottom:1px solid var(--linha)}
+.rotulo{font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--acento);font-weight:600;margin-bottom:12px}
+h1{font-size:clamp(28px,5vw,42px);font-weight:700;line-height:1.08;margin:0 0 14px;
+  letter-spacing:-.015em;text-wrap:balance}
+.chamada{max-width:64ch;color:var(--tinta-2);font-size:17px;margin:0}
+h2{font-size:20px;font-weight:600;margin:46px 0 4px;letter-spacing:-.01em}
+h2 + .sub{color:var(--tinta-3);font-size:13px;margin:0 0 18px}
+figure.g{margin:0 0 30px;padding:16px 18px;border:1px solid var(--linha);
+  border-radius:7px;background:var(--papel-2)}
+figcaption{margin-bottom:12px}
+figcaption b{font-family:"Exo 2",sans-serif;font-size:15px}
+.un{color:var(--tinta-3);font-size:12.5px;margin-left:6px}
+figcaption .sub{color:var(--tinta-2);font-size:13.5px;margin-top:5px;
+  max-width:70ch;line-height:1.45}
+.dica{display:block;color:var(--tinta-3);font-size:12px;margin-top:6px;
+  font-style:italic}
+svg{width:100%;height:auto;display:block}
+svg text{font-family:"IBM Plex Mono",monospace;font-size:12px;fill:var(--tinta-2)}
+svg text.rot{fill:var(--tinta)}
+svg text.val{fill:var(--tinta);font-weight:500}
+svg text.vazio{fill:var(--falta);font-style:italic}
+svg rect{opacity:.82}
+svg rect.campeao{opacity:1;stroke:var(--tinta);stroke-width:1.5}
+svg line.faixa{stroke:var(--tinta);stroke-width:1.4;opacity:.55}
+.ausente-bloco{border-left:3px solid var(--falta);background:var(--papel-2);
+  padding:13px 17px;border-radius:0 5px 5px 0;margin:0 0 22px;
+  color:var(--falta);font-size:14.5px}
+.mtime{color:var(--falta);font-size:11px}
+.nota{border-left:3px solid var(--acento);background:var(--papel-2);
+  padding:14px 18px;border-radius:0 5px 5px 0;margin:26px 0;font-size:15px;
+  color:var(--tinta-2);max-width:68ch}
+.nota b{color:var(--tinta)}
+footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
+  color:var(--tinta-3);font-size:13.5px;max-width:68ch}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<div class="envelope">
+<header>
+  <div class="rotulo">PhxSql · desempenho medido</div>
+  <h1>Os gráficos das bancadas</h1>
+  <p class="chamada">Cada barra sai de um <code>resultados.json</code> gravado
+  por uma bancada que rodou, e traz a data em que rodou. Onde há três medições,
+  o traço mostra o <b>min–max</b> — e o vencedor só é contornado quando as
+  faixas <b>não se cruzam</b>.</p>
+</header>
+
+<div class="nota">
+  <b>Por que a faixa aparece, e por que ela decide o vencedor.</b> Esta casa já
+  declarou vencedor dentro do ruído uma vez, no gráfico da comparação dos três
+  motores — a mediana dizia uma coisa e as faixas se cruzavam. Desde então a
+  regra é esta, e o desenho a obedece: <b>barra sem faixa não declara nada</b>.
+</div>
+
+<h2>Os três motores, a um milhão de linhas</h2><p class="sub">Medido em <span class="mono">2026-09-01 18:30:03</span> · <code>bancada/comparacao/</code></p><figure class="g"><figcaption><b>Inserir — 1.000.000 linhas</b> <span class="un">segundos (menor é melhor)</span><div class="sub">Os três na <b>mesma rodada</b>, intercalados: medidas de dias diferentes carregam o ambiente junto. E o MySQL® é o único que recebe o trabalho como <b>texto por soquete</b> — o piso disso já foi 59,6% de uma barra desta bancada.</div><span class="dica">a barra é a mediana; o traço é min–max. Contorno = vencedor, e ele só aparece quando as faixas não se cruzam.</span></figcaption><svg viewBox="0 0 640 136" role="img" aria-label="Inserir — 1.000.000 linhas em segundos (menor é melhor)"><text x="158" y="30" text-anchor="end" class="rot">PhxSql</text><rect x="168" y="10" width="209.7" height="30" rx="3" fill="var(--c1)"/><line x1="345.1" y1="25.0" x2="413.9" y2="25.0" class="faixa"/><line x1="345.1" y1="16" x2="345.1" y2="34" class="faixa"/><line x1="413.9" y1="16" x2="413.9" y2="34" class="faixa"/><text x="422.9" y="30" class="val">9,93</text><text x="158" y="72" text-anchor="end" class="rot">MySQL®</text><rect x="168" y="52" width="260.6" height="30" rx="3" fill="var(--c2)"/><line x1="427.2" y1="67.0" x2="530.0" y2="67.0" class="faixa"/><line x1="427.2" y1="58" x2="427.2" y2="76" class="faixa"/><line x1="530.0" y1="58" x2="530.0" y2="76" class="faixa"/><text x="539.0" y="72" class="val">12,34</text><text x="158" y="114" text-anchor="end" class="rot">SQLite®</text><rect x="168" y="94" width="54.0" height="30" rx="3" fill="var(--c3)" class="campeao"/><line x1="221.3" y1="109.0" x2="230.1" y2="109.0" class="faixa"/><line x1="221.3" y1="100" x2="221.3" y2="118" class="faixa"/><line x1="230.1" y1="100" x2="230.1" y2="118" class="faixa"/><text x="239.1" y="114" class="val">2,56</text></svg></figure><figure class="g"><figcaption><b>Buscar — 20.000 linhas</b> <span class="un">segundos (menor é melhor)</span><div class="sub">Os três na <b>mesma rodada</b>, intercalados: medidas de dias diferentes carregam o ambiente junto. E o MySQL® é o único que recebe o trabalho como <b>texto por soquete</b> — o piso disso já foi 59,6% de uma barra desta bancada.</div><span class="dica">a barra é a mediana; o traço é min–max. Contorno = vencedor, e ele só aparece quando as faixas não se cruzam.</span></figcaption><svg viewBox="0 0 640 136" role="img" aria-label="Buscar — 20.000 linhas em segundos (menor é melhor)"><text x="158" y="30" text-anchor="end" class="rot">PhxSql</text><rect x="168" y="10" width="23.5" height="30" rx="3" fill="var(--c1)"/><line x1="189.6" y1="25.0" x2="198.8" y2="25.0" class="faixa"/><line x1="189.6" y1="16" x2="189.6" y2="34" class="faixa"/><line x1="198.8" y1="16" x2="198.8" y2="34" class="faixa"/><text x="207.8" y="30" class="val">0,16</text><text x="158" y="72" text-anchor="end" class="rot">MySQL®</text><rect x="168" y="52" width="355.6" height="30" rx="3" fill="var(--c2)"/><line x1="522.5" y1="67.0" x2="530.0" y2="67.0" class="faixa"/><line x1="522.5" y1="58" x2="522.5" y2="76" class="faixa"/><line x1="530.0" y1="58" x2="530.0" y2="76" class="faixa"/><text x="539.0" y="72" class="val">2,48</text><text x="158" y="114" text-anchor="end" class="rot">SQLite®</text><rect x="168" y="94" width="23.7" height="30" rx="3" fill="var(--c3)"/><line x1="190.6" y1="109.0" x2="201.3" y2="109.0" class="faixa"/><line x1="190.6" y1="100" x2="190.6" y2="118" class="faixa"/><line x1="201.3" y1="100" x2="201.3" y2="118" class="faixa"/><text x="210.3" y="114" class="val">0,17</text></svg></figure><figure class="g"><figcaption><b>Atualizar — 20.000 linhas</b> <span class="un">segundos (menor é melhor)</span><div class="sub">Os três na <b>mesma rodada</b>, intercalados: medidas de dias diferentes carregam o ambiente junto. E o MySQL® é o único que recebe o trabalho como <b>texto por soquete</b> — o piso disso já foi 59,6% de uma barra desta bancada.</div><span class="dica">a barra é a mediana; o traço é min–max. Contorno = vencedor, e ele só aparece quando as faixas não se cruzam.</span></figcaption><svg viewBox="0 0 640 136" role="img" aria-label="Atualizar — 20.000 linhas em segundos (menor é melhor)"><text x="158" y="30" text-anchor="end" class="rot">PhxSql</text><rect x="168" y="10" width="4.4" height="30" rx="3" fill="var(--c1)" class="campeao"/><line x1="172.2" y1="25.0" x2="172.6" y2="25.0" class="faixa"/><line x1="172.2" y1="16" x2="172.2" y2="34" class="faixa"/><line x1="172.6" y1="16" x2="172.6" y2="34" class="faixa"/><text x="181.6" y="30" class="val">0,28</text><text x="158" y="72" text-anchor="end" class="rot">MySQL®</text><rect x="168" y="52" width="55.7" height="30" rx="3" fill="var(--c2)"/><line x1="222.8" y1="67.0" x2="530.0" y2="67.0" class="faixa"/><line x1="222.8" y1="58" x2="222.8" y2="76" class="faixa"/><line x1="530.0" y1="58" x2="530.0" y2="76" class="faixa"/><text x="539.0" y="72" class="val">3,54</text><text x="158" y="114" text-anchor="end" class="rot">SQLite®</text><rect x="168" y="94" width="16.2" height="30" rx="3" fill="var(--c3)"/><line x1="180.9" y1="109.0" x2="186.6" y2="109.0" class="faixa"/><line x1="180.9" y1="100" x2="180.9" y2="118" class="faixa"/><line x1="186.6" y1="100" x2="186.6" y2="118" class="faixa"/><text x="195.6" y="114" class="val">1,03</text></svg></figure><figure class="g"><figcaption><b>Excluir — 20.000 linhas</b> <span class="un">segundos (menor é melhor)</span><div class="sub">Os três na <b>mesma rodada</b>, intercalados: medidas de dias diferentes carregam o ambiente junto. E o MySQL® é o único que recebe o trabalho como <b>texto por soquete</b> — o piso disso já foi 59,6% de uma barra desta bancada.</div><span class="dica">a barra é a mediana; o traço é min–max. Contorno = vencedor, e ele só aparece quando as faixas não se cruzam.</span></figcaption><svg viewBox="0 0 640 136" role="img" aria-label="Excluir — 20.000 linhas em segundos (menor é melhor)"><text x="158" y="30" text-anchor="end" class="rot">PhxSql</text><rect x="168" y="10" width="71.7" height="30" rx="3" fill="var(--c1)"/><line x1="232.6" y1="25.0" x2="241.4" y2="25.0" class="faixa"/><line x1="232.6" y1="16" x2="232.6" y2="34" class="faixa"/><line x1="241.4" y1="16" x2="241.4" y2="34" class="faixa"/><text x="250.4" y="30" class="val">1,05</text><text x="158" y="72" text-anchor="end" class="rot">MySQL®</text><rect x="168" y="52" width="276.6" height="30" rx="3" fill="var(--c2)"/><line x1="438.3" y1="67.0" x2="530.0" y2="67.0" class="faixa"/><line x1="438.3" y1="58" x2="438.3" y2="76" class="faixa"/><line x1="530.0" y1="58" x2="530.0" y2="76" class="faixa"/><text x="539.0" y="72" class="val">4,06</text><text x="158" y="114" text-anchor="end" class="rot">SQLite®</text><rect x="168" y="94" width="39.1" height="30" rx="3" fill="var(--c3)" class="campeao"/><line x1="201.2" y1="109.0" x2="220.5" y2="109.0" class="faixa"/><line x1="201.2" y1="100" x2="201.2" y2="118" class="faixa"/><line x1="220.5" y1="100" x2="220.5" y2="118" class="faixa"/><text x="229.5" y="114" class="val">0,57</text></svg></figure>
+<h2>Utilização padrão — 20.000 linhas em tabela complexa</h2><p class="sub">Medido em <span class="mono">2026-09-05 05:49</span> <span class="mtime">(mtime)</span> · <code>bancada/utilizacao-padrao/</code></p><figure class="g"><figcaption><b>Bytes no fio, por linha</b> <span class="un">bytes/linha</span><div class="sub">Os três braços <b>não são o mesmo trabalho</b>: <code>com</code> grava em arquivos que <code>sem</code> nem abre, e <code>largo</code> existe justamente para separar o peso do <b>pedido</b> do peso dos <b>arquivos externos</b> — ele declara as mesmas colunas como <code>Str(n)</code>, e o pedido no fio sai byte a byte igual ao de <code>com</code>.</div></figcaption><svg viewBox="0 0 640 136" role="img" aria-label="Bytes no fio, por linha em bytes/linha"><text x="158" y="30" text-anchor="end" class="rot">sem blob</text><rect x="168" y="10" width="54.7" height="30" rx="3" fill="var(--c1)"/><text x="231.7" y="30" class="val">209,0</text><text x="158" y="72" text-anchor="end" class="rot">com Bin/Memo</text><rect x="168" y="52" width="362.0" height="30" rx="3" fill="var(--c2)"/><text x="539.0" y="72" class="val">1 384,1</text><text x="158" y="114" text-anchor="end" class="rot">largo (Str fixo)</text><rect x="168" y="94" width="362.0" height="30" rx="3" fill="var(--c3)"/><text x="539.0" y="114" class="val">1 384,1</text></svg></figure><figure class="g"><figcaption><b>Bytes em disco, por linha</b> <span class="un">bytes/linha</span><div class="sub">Os três braços <b>não são o mesmo trabalho</b>: <code>com</code> grava em arquivos que <code>sem</code> nem abre, e <code>largo</code> existe justamente para separar o peso do <b>pedido</b> do peso dos <b>arquivos externos</b> — ele declara as mesmas colunas como <code>Str(n)</code>, e o pedido no fio sai byte a byte igual ao de <code>com</code>.</div></figcaption><svg viewBox="0 0 640 136" role="img" aria-label="Bytes em disco, por linha em bytes/linha"><text x="158" y="30" text-anchor="end" class="rot">sem blob</text><rect x="168" y="10" width="123.8" height="30" rx="3" fill="var(--c1)"/><text x="300.8" y="30" class="val">603,2</text><text x="158" y="72" text-anchor="end" class="rot">com Bin/Memo</text><rect x="168" y="52" width="314.1" height="30" rx="3" fill="var(--c2)"/><text x="491.1" y="72" class="val">1 529,8</text><text x="158" y="114" text-anchor="end" class="rot">largo (Str fixo)</text><rect x="168" y="94" width="362.0" height="30" rx="3" fill="var(--c3)"/><text x="539.0" y="114" class="val">1 763,2</text></svg></figure>
+<h2>Carga pela rede — uma a uma contra o lote</h2><p class="sub">Medido em <span class="mono">2026-08-29</span> · <code>bancada/carga/</code></p><figure class="g"><figcaption><b>Carga de 20.000 linhas pela rede</b> <span class="un">linhas por segundo (maior é melhor)</span><div class="sub">A diferença é <b>viagem de rede</b>, não gravação: os dois lados gravam as mesmas linhas nos mesmos índices, no mesmo servidor.</div></figcaption><svg viewBox="0 0 640 94" role="img" aria-label="Carga de 20.000 linhas pela rede em linhas por segundo (maior é melhor)"><text x="158" y="30" text-anchor="end" class="rot">uma a uma</text><rect x="168" y="10" width="24.5" height="30" rx="3" fill="var(--c1)"/><text x="201.5" y="30" class="val">2.659</text><text x="158" y="72" text-anchor="end" class="rot">em lote de 5.000</text><rect x="168" y="52" width="362.0" height="30" rx="3" fill="var(--c2)"/><text x="539.0" y="72" class="val">39.287</text></svg></figure>
+<h2>Replicação — quatro servidores</h2><p class="sub">Medido em <span class="mono">2026-09-05</span> · <code>bancada/replicacao/</code></p><figure class="g"><figcaption><b>Master e réplica</b> <span class="un">por segundo (maior é melhor)</span><div class="sub">Duas medidas de coisas diferentes no mesmo par: o master <b>grava linha</b>, a réplica <b>aplica evento</b>. Não é uma razão — é o que cada lado sustenta.</div></figcaption><svg viewBox="0 0 640 94" role="img" aria-label="Master e réplica em por segundo (maior é melhor)"><text x="158" y="30" text-anchor="end" class="rot">master grava</text><rect x="168" y="10" width="362.0" height="30" rx="3" fill="var(--c1)"/><text x="539.0" y="30" class="val">26.762</text><text x="158" y="72" text-anchor="end" class="rot">réplica aplica</text><rect x="168" y="52" width="332.5" height="30" rx="3" fill="var(--c2)"/><text x="509.5" y="72" class="val">24.583</text></svg></figure><figure class="g"><figcaption><b>Atraso até a réplica ter a linha</b> <span class="un">milissegundos (menor é melhor)</span><div class="sub">Medido por operação, com quatro servidores no ar.</div></figcaption><svg viewBox="0 0 640 304" role="img" aria-label="Atraso até a réplica ter a linha em milissegundos (menor é melhor)"><text x="158" y="30" text-anchor="end" class="rot">1 insercao</text><rect x="168" y="10" width="362.0" height="30" rx="3" fill="var(--c1)"/><text x="539.0" y="30" class="val">1.985</text><text x="158" y="72" text-anchor="end" class="rot">1.000 insercoes em lote</text><rect x="168" y="52" width="322.2" height="30" rx="3" fill="var(--c2)"/><text x="499.2" y="72" class="val">1.767</text><text x="158" y="114" text-anchor="end" class="rot">1 alteracao</text><rect x="168" y="94" width="299.6" height="30" rx="3" fill="var(--c3)"/><text x="476.6" y="114" class="val">1.643</text><text x="158" y="156" text-anchor="end" class="rot">1 exclusao suave</text><rect x="168" y="136" width="296.3" height="30" rx="3" fill="var(--c1)"/><text x="473.3" y="156" class="val">1.625</text><text x="158" y="198" text-anchor="end" class="rot">1 restauracao</text><rect x="168" y="178" width="271.2" height="30" rx="3" fill="var(--c2)"/><text x="448.2" y="198" class="val">1.487</text><text x="158" y="240" text-anchor="end" class="rot">1 exclusao fisica</text><rect x="168" y="220" width="270.5" height="30" rx="3" fill="var(--c3)"/><text x="447.5" y="240" class="val">1.483</text><text x="158" y="282" text-anchor="end" class="rot">1 linha com memo de 200 KB</text><rect x="168" y="262" width="271.7" height="30" rx="3" fill="var(--c1)"/><text x="448.7" y="282" class="val">1.490</text></svg></figure>
+
+<div class="nota">
+  <b>O que estes gráficos não comparam.</b> Barras lado a lado convidam a ler
+  razão onde às vezes só há duas medidas diferentes. Onde os lados não fazem o
+  mesmo trabalho — os três braços da utilização padrão, os três motores da
+  comparação — a legenda de cada figura diz o que muda, em vez de deixar a
+  razão falar sozinha. É a regra do <code>bancada/LEIA-ME.md</code>:
+  <b>bancada compara trabalho igual, não só pergunta igual</b>, e os dois erros
+  já cometidos aqui saíram do mesmo lugar e apontaram para lados opostos.
+</div>
+
+<footer>
+  Gerado por <code>docs/dossie/graficos-dos-testes.py</code> em 05/09/2026 07:23, sem
+  biblioteca de gráfico — SVG escrito à mão, como o resto do projeto. Nenhum
+  número foi digitado: todos saem dos <code>resultados.json</code> das
+  bancadas. Bancada que não rodou aparece como <b>não medida</b>, nunca como
+  zero — zero num gráfico é uma barra que alguém lê como resultado.
+</footer>
+</div>
