@@ -2954,4 +2954,109 @@ pub fn limpar() {
     # por panico e passou a afirmar o comportamento -- redeclarar para lista
     # vazia aceita a linha que ninguem confere mais.
     # ---------------------------------------------------------------------
+    # ------------------------------------------------ a ficha compartilhada
+    {
+        "id": "pista-de-leitura-engole-a-trilha",
+        "titulo": "a pista de leitura aceita tabela com dado pessoal, e a trilha fica sem o registro",
+        "porque": "abrir uma tabela para LER escreve em seis lugares, e este e o "
+                  "unico que acontece em TODA varredura de tabela marcada. A ficha "
+                  "compartilhada nao sabe escrever -- e por isso ela tem de RECUSAR a "
+                  "tabela, em vez de atende-la calada. Trilha que perde registro em "
+                  "silencio e pior que trilha nenhuma: ela PARECE completa, e quem "
+                  "audita seis meses depois conclui que ninguem leu aquela ficha.",
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": "        if (self.espelho() && !t.tem_espelho()) || t.tem_dado_pessoal() {",
+        "troca": "        // DEFEITO REPOSTO: a pista de leitura aceita a tabela com\n"
+                 "        // coluna marcada, e o registro de acesso nunca e gravado.\n"
+                 "        if self.espelho() && !t.tem_espelho() {",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_ficha_compartilhada::"
+            "a_trilha_de_dado_pessoal_sobrevive_a_pista_de_leitura"
+        ],
+        "seguem": [
+            "servidor::testes_da_ficha_compartilhada::sem_a_ficha_compartilhada_nada_muda",
+            "servidor::testes_da_ficha_compartilhada::o_espelho_continua_nascendo_no_varrer",
+            "servidor::testes_da_ficha_compartilhada::"
+            "quatro_leitores_ao_mesmo_tempo_leem_a_mesma_pagina",
+        ],
+    },
+    {
+        "id": "pista-de-leitura-nao-espelha",
+        "titulo": "a pista de leitura aceita tabela sem `.bkp` e o espelho deixa de nascer",
+        "porque": "com `recursos.espelho` ligado, ABRIR uma tabela sem espelho o CRIA -- "
+                  "e criar arquivo e escrever. E a segunda das duas escritas que moram "
+                  "fora do construtor, e a que some sem ninguem perceber: a tabela "
+                  "continua respondendo, so fica sem a copia que o `reparar` usa.",
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": "        if (self.espelho() && !t.tem_espelho()) || t.tem_dado_pessoal() {",
+        "troca": "        // DEFEITO REPOSTO: a pista de leitura aceita a tabela que\n"
+                 "        // ainda precisa ser espelhada, e o `.bkp` nunca nasce.\n"
+                 "        if t.tem_dado_pessoal() {",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_ficha_compartilhada::o_espelho_continua_nascendo_no_varrer"
+        ],
+        "seguem": [
+            "servidor::testes_da_ficha_compartilhada::sem_a_ficha_compartilhada_nada_muda",
+            "servidor::testes_da_ficha_compartilhada::"
+            "a_trilha_de_dado_pessoal_sobrevive_a_pista_de_leitura",
+        ],
+    },
+    {
+        "id": "leitura-sem-recuo-para-a-exclusiva",
+        "titulo": "a tabela que pede a ficha exclusiva vira erro em vez de recuo",
+        "porque": "guarda nova entra PEDIDA, nao imposta: quem chama nao pediu pista "
+                  "nenhuma e nao pode receber erro por causa dela. O recuo e o que faz "
+                  "o comportamento visto de fora nao mudar para tabela nenhuma -- e sem "
+                  "ele, toda tabela nascida antes do `.trash` para de responder ao "
+                  "`varrer`.",
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": "        let Aberta::Pronta(mut t) = raiz.abrir_para_ler(database, tabela)? else {\n"
+                  "            return Ok(None);\n"
+                  "        };",
+        "troca": "        // DEFEITO REPOSTO: sem recuo, a tabela que precisaria\n"
+                 "        // escrever para abrir passa a responder erro.\n"
+                 "        let Aberta::Pronta(mut t) = raiz.abrir_para_ler(database, tabela)? else {\n"
+                 "            return Err(PhxError::Corrompido(\"sem recuo\".into()));\n"
+                 "        };",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_ficha_compartilhada::sem_a_ficha_compartilhada_nada_muda"
+        ],
+        "seguem": [
+            "servidor::testes_da_ficha_compartilhada::"
+            "quatro_leitores_ao_mesmo_tempo_leem_a_mesma_pagina",
+            "servidor::testes_janela_e_cadeia::so_uma_operacao_usa_a_ficha_compartilhada",
+        ],
+    },
+    {
+        "id": "abrir-para-ler-cria-a-lixeira",
+        "titulo": "abrir para LER cria o `.trash` que falta, sob a ficha compartilhada",
+        "porque": "e o achado que quase custou a entrega: a garantia por tipo escondia "
+                  "os METODOS de escrita, e quatro das seis escritas de uma varredura "
+                  "moram dentro do CONSTRUTOR. Dois leitores simultaneos criariam o "
+                  "mesmo arquivo: o `create_new` do segundo falha, ou ele le o "
+                  "cabecalho que o primeiro ainda nao terminou de gravar.",
+        "arquivo": "crates/phxsql-store/src/lixeira.rs",
+        "trecho": "        let volumes = Volumes::novo(&diretorio, nome, EXT_TRASH, paginacao);\n"
+                  "        if volumes.existentes().is_empty() {\n"
+                  "            return Ok(None);\n"
+                  "        }\n"
+                  "        LixeiraFile::abrir(diretorio, nome, paginacao).map(Some)",
+        "troca": "        // DEFEITO REPOSTO: a abertura somente-leitura volta a CRIAR o\n"
+                 "        // `.trash` quando ele falta, que e escrever sob a ficha\n"
+                 "        // compartilhada.\n"
+                 "        LixeiraFile::abrir(diretorio, nome, paginacao).map(Some)",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "leitura::testes::"
+            "a_tabela_que_precisaria_escrever_para_abrir_manda_para_a_exclusiva"
+        ],
+        "seguem": ["leitura::testes::as_duas_fichas_leem_a_mesma_pagina"],
+    },
 ]

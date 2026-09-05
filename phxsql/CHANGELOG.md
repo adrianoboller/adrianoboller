@@ -164,6 +164,34 @@ ausência de transação: ele as documenta extensamente.
 
 ### Adicionado
 
+- **Leitor deixa de esperar leitor no `varrer`.** A trava de dados passou de
+  `Mutex` a `RwLock`, e a leitura de grade — a única operação movida, por
+  decisão — atende agora com uma ficha **compartilhada**. Medido em quatro
+  baterias limpas com o binário de antes guardado: quatro clientes lendo a
+  mesma tabela rendiam **1,59×–1,76×** sobre um e passam a render
+  **3,81×–3,93×**; em vazão, **3.412 → 7.465 op/s** (2,19×) e
+  **3.349 → 7.708 op/s** (2,30×), com o `ping` de um cliente ancorando as duas
+  baterias a 2,4% de distância. **O cliente sozinho ficou igual** (0,97× e
+  0,98×), que é o esperado: sem disputa as duas fichas custam o mesmo. A
+  escrita não pagou a conta (0,95×–1,06×).
+
+  A garantia é **do compilador, não de convenção**: `RwLock<Instancia>`
+  continua não compilando — o marcador `!Sync` está lá para isso —, e o que
+  entrou na trava é a `Raiz`, que separa as duas fichas pelo tipo do
+  empréstimo. A ficha compartilhada devolve uma `TabelaLeitura` **sem um único
+  método de escrita**, provada por um par de doctests (`compile_fail` mais o
+  controle que tem de compilar, senão o primeiro passaria por erro de
+  digitação).
+
+  E o achado que quase custou a entrega: **abrir uma tabela para LER escreve**
+  — em quatro lugares dentro do próprio construtor (criar o `.trash` e o
+  `.reason` que faltam, curar o `.log`, terminar uma troca de volume
+  interrompida), mais o espelho `.bkp` e a trilha de dado pessoal fora dele.
+  São seis escritas num caminho que todo mundo chama de leitura, e a fachada
+  teria compilado sem cobrir nenhuma das quatro primeiras. Hoje cada uma vira
+  recusa nomeando o componente, e a tabela recuada é atendida pela ficha
+  exclusiva **exatamente como antes** — `docs/CONCORRENCIA.md` §16.
+
 - **`CAPABILITIES.json`**, gerado: versão, commit, árvore suja, branch, testes,
   operações, crates, linhas e idiomas. É a recomendação da §15 da auditoria, e
   ela está certa pelo motivo que esta casa já conhecia — enquanto cada

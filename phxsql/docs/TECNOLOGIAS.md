@@ -355,6 +355,42 @@ testes novos de outras frentes que entraram na árvore compartilhada entre
 uma medição e outra, não uma divergência de método: os dois usam a mesma
 soma de `test result:`.)
 
+### 4.6 Como se prova uma garantia DE TIPO — o par de doctests
+
+Ferramenta nova de 05/09, e ela merece uma linha porque não é teste de
+comportamento: é teste de que **um erro deixou de ser possível**.
+
+Quando a garantia é «este tipo não consegue escrever», o teste não pode rodar
+o código — ele tem de provar que o código **não compila**. O Rust dá isso de
+graça, sem nenhuma dependência, num doctest marcado `compile_fail`, e
+`cargo test --workspace` já o roda:
+
+```rust
+/// ```compile_fail
+/// fn grava(t: &mut phxsql_store::leitura::TabelaLeitura) { let _ = t.inserir(&[]); }
+/// ```
+```
+
+**E ele nunca vai sozinho.** Um `compile_fail` passa por QUALQUER erro de
+compilação — um nome de método digitado errado o faz «passar» sem provar nada,
+que é a definição de teste que passa por engano. Então ele vem em par com um
+**controle** que tem de compilar, com o mesmo corpo contra o tipo que
+legitimamente escreve:
+
+```rust
+/// ```
+/// fn grava(t: &mut phxsql_store::table::Table) { let _ = t.inserir(&[]); }
+/// ```
+```
+
+Se alguém errar o nome do método, o controle cai. Se alguém der à fachada um
+`Deref` para o tipo gravável, o `compile_fail` cai. É a mesma exigência de
+sempre — *prova real é nos dois sentidos* — aplicada onde não há execução para
+observar.
+
+Custo: zero dependências, zero tempo de execução, e aparece na saída do
+`cargo test` como dois testes com o sufixo `- compile fail`.
+
 ---
 
 ## 5. O que foi avaliado e RECUSADO, com o número

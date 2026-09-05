@@ -323,6 +323,17 @@ contado contra o código-fonte, e nenhum entra na tabela de catracas.
   seu próprio inventário em `docs/TESTES.md` §12 e não se repete aqui.
 - **Os três portões** (`cargo fmt --check`, `clippy -D warnings`, `cargo
   test --workspace`, `docs/PORTOES.md`) — estruturais, sem folga numérica.
+- **As catracas de CONTAGEM NO FONTE dentro de `#[test]`** — hoje
+  `so_um_lugar_toma_a_trava` (uma `write()` e uma `read()` da trava de dados,
+  cada uma dentro da função que a batiza) e
+  `so_uma_operacao_usa_a_ficha_compartilhada` (teto **1**: só o `varrer` toma
+  a ficha de leitura; a segunda leva entra medida), ambas em
+  `phxsql-server/src/servidor.rs`. Contam ocorrências no próprio fonte pelo
+  `include_str!`, como as catracas acima, mas não moram numa constante `TETO*`
+  e por isso o `grep` da metodologia não as acha. **Ficam nomeadas aqui para
+  que este inventário não seja lido como completo** — lei que lista menos
+  casos do que existem protege igual hoje e menos no dia em que alguém usar a
+  lista como inventário.
 - **`bancada/concorrencia/escolher-o-desenho.py`, `mapa-da-trava.py`,
   `bancada/profiler/sonda-log.py`, `bancada/cifra-do-fio/prova.py`** — usam
   "teto"/"limite" em prosa de bancada de desempenho (teto teórico de
