@@ -65,6 +65,20 @@ resultado aparece como NÃO MEDIDA**, com o comando para rodar, em vez de sumir
 da tabela: uma página de testes que esconde a bancada que não rodou é a pior de
 todas, porque ela existe justamente para dizer em que se pode confiar.
 
+E uma **quarta**, os gráficos de desempenho das bancadas:
+
+- **URL:** https://claude.ai/code/artifact/b34a216b-a685-4173-8950-9584c911ba07
+- **Fonte:** `phxsql/docs/dossie/graficos.html`, que **não se edita** —
+  `python3 phxsql/docs/dossie/graficos-dos-testes.py` a desenha dos
+  `resultados.json` das bancadas, em SVG à mão e sem biblioteca de gráfico.
+
+Ela carrega a regra que o pedido 155 deixou escrita: **cada barra traz a faixa
+min–max, e o vencedor só é contornado quando as faixas não se cruzam** — esta
+casa já declarou vencedor dentro do ruído uma vez. E dois defeitos dela só
+apareceram **exercitando no navegador**: a escala saía só das medianas e a
+faixa ia parar fora do `viewBox`, e o número era escrito depois da barra em vez
+de depois do traço, saindo riscado por cima da linha.
+
 ## Todo aprendizado novo vira um arquivo de cognição
 
 Ordem do dono, 02/09/2026: *«Todo aprendizado novo seu deve virar um
