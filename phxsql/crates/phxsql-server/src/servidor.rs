@@ -22154,7 +22154,9 @@ mod testes_janela_e_cadeia {
         });
         let copia = Arc::clone(&s);
         com_prazo("a exclusiva depois da compartilhada", move || {
-            let leitura = copia.travar_dados_para_ler().expect("a primeira tem de vir");
+            let leitura = copia
+                .travar_dados_para_ler()
+                .expect("a primeira tem de vir");
             assert!(
                 copia.travar_dados().is_err(),
                 "a exclusiva pedida com a compartilhada na mao tinha de ser recusada"
