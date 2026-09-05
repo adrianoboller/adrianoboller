@@ -150,6 +150,54 @@ function conferirSintaxeDaInterface() {
   }
 }
 
+// -------------------------------------------------- o gravador de botoes
+/* O que a bateria REALMENTE clicou, gravado no navegador.
+ *
+ * A pergunta «quais botoes a bateria exercita» nao se responde lendo o fonte
+ * dos casos: o `passeio` clica ~112 botoes que nenhum seletor escrito nomeia,
+ * porque ele varre o menu pelo DOM. E mencionar um seletor tambem nao e
+ * clica-lo -- um `waitForSelector('#btSalvar')` nomeia sem exercitar.
+ *
+ * Entao a evidencia vem do unico lugar que nao mente: um ouvinte de CAPTURA
+ * no documento, que anota os ganchos do botao sob o clique. Ele grava os
+ * ganchos CRUS (id, todo `data-*`, toda classe) e nao escolhe entre eles --
+ * quem escolhe e o `conferidor_botoes.rs`, que e onde a regua mora. Duas
+ * copias da regua divergiriam calado, e a divergencia apareceria como botao
+ * provado que ninguem clicou. */
+const GRAVADOR = () => {
+  document.addEventListener('click', e => {
+    const alvo = e.target && e.target.closest && e.target.closest('button, [role="button"]');
+    if (!alvo || !window.__phxGravaBotao) return;
+    const ganchos = [];
+    if (alvo.id) ganchos.push('#' + alvo.id);
+    for (const a of alvo.attributes) {
+      if (!a.name.startsWith('data-') || a.name.startsWith('data-txt')) continue;
+      ganchos.push('[' + a.name + '="' + a.value + '"]');
+      ganchos.push('[' + a.name + ']');
+    }
+    for (const c of alvo.classList) ganchos.push('.' + c);
+    window.__phxGravaBotao(ganchos);
+  }, true);
+};
+
+/* Evidencia PARCIAL e pior que evidencia faltando: uma corrida com `--caso`
+ * reescreveria o arquivo com um punhado de chaves e daria por nao-provado
+ * tudo o que a corrida inteira prova. Por isso so a corrida inteira grava. */
+function gravarEvidencia(chaves) {
+  const arq = join(AQUI, 'botoes-exercitados.txt');
+  const linhas = [...chaves].sort();
+  writeFileSync(arq,
+    '// GERADO por `node testes-web/bateria.mjs` numa corrida INTEIRA -- nao edite.\n'
+    + '// Cada linha e um gancho de um botao que recebeu clique de verdade no\n'
+    + '// navegador, anotado por um ouvinte de captura. Quem decide qual gancho\n'
+    + '// vale como CHAVE e o `crates/phxsql-server/src/conferidor_botoes.rs`.\n'
+    + '//\n'
+    + '// Editar este arquivo a mao e a porta dos fundos da catraca\n'
+    + '// TETO_BOTAO_SEM_PROVA, e `nenhuma_chave_morta_na_evidencia` a fecha.\n'
+    + linhas.join('\n') + '\n');
+  return { arq, quantas: linhas.length };
+}
+
 // ------------------------------------------------------------------- casos
 async function carregarCasos() {
   const dir = join(AQUI, 'casos');
@@ -187,6 +235,7 @@ async function principal() {
 
   const temas = opc.tema ? [opc.tema] : ['escuro', 'claro'];
   const resultados = [];
+  const botoesClicados = new Set();
 
   try {
     for (const tema of temas) {
@@ -216,6 +265,20 @@ async function principal() {
         await ctxNav.route(
           u => /fonts\.(googleapis|gstatic)\.com/.test(typeof u === 'string' ? u : u.href),
           r => r.abort());
+        // O gancho vem por BINDING, e nao por um `Set` na pagina.
+        //
+        // Foi assim que eu errei primeiro: o `Set` morava em `window`, e o
+        // caso `multitela` da um `page.reload()` no meio. O `Set` nascia de
+        // novo vazio e os cliques ANTERIORES sumiam -- entre eles o
+        // `[data-jan="acoplar"]`, que aquele caso clica ha rodadas. A
+        // evidencia dizia «nunca clicado» de um botao provado, e a catraca
+        // teria mandado escrever um caso que ja existe.
+        //
+        // O binding e reinstalado a cada navegacao, e quem acumula e o Node.
+        await ctxNav.exposeBinding('__phxGravaBotao', (_fonte, ganchos) => {
+          for (const g of ganchos) botoesClicados.add(g);
+        });
+        await ctxNav.addInitScript(GRAVADOR);
         const page = await ctxNav.newPage();
         const errosDePagina = [];
         const errosDeConsole = [];
@@ -261,6 +324,15 @@ async function principal() {
     await navegador.close();
     await servidor.derrubar();
     diz(`${CORES.fraco}· servidor pid ${servidor.pid} derrubado${CORES.fim}`);
+  }
+
+  const inteira = !opc.caso && !opc.tema;
+  if (inteira) {
+    const { arq, quantas } = gravarEvidencia(botoesClicados);
+    diz(`${CORES.fraco}· ${quantas} ganchos de botao gravados em ${arq}${CORES.fim}`);
+  } else {
+    diz(`${CORES.fraco}· corrida parcial: a evidencia de botoes NAO foi reescrita`
+      + ` (${botoesClicados.size} ganchos nesta corrida)${CORES.fim}`);
   }
 
   const maus = resultados.filter(r => r.falha);

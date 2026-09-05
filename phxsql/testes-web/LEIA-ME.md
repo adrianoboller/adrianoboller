@@ -55,6 +55,30 @@ Um por arquivo em `casos/`, na ordem do nome. A lista abaixo é o que cada um
 | `monitores` | a emenda física entre dois monitores, o monitor pinado que sumiu, a janela destacada pegando a sessão pelo canal — e a sessão **não** aparecendo no `localStorage`. DPI de 2× num contexto próprio |
 | `telemetria` | o único **painel vivo** em forma de grade: a grade nasce preguiçosa (dentro de um `<details>` fechado ela mediria largura zero), o gesto da pessoa sobrevive à volta do relógio, e a ordenação se confere pelo **efeito** — o dado sai ordenado — e não pelo estado |
 | `tela-atropelada` | que uma tela lenta **não escreve por cima** da que a pessoa pediu depois dela. Segura a resposta da op `painel` no fio até a segunda tela estar pintada, então a corrida vira ordem fixa em vez de sorteio. Cobre as duas vítimas conhecidas (telemetria e Configurações) e a metade contrária, que impede a guarda de virar «nunca pinta nada». Ver `docs/TESTES.md` §11 |
+| `botoes-da-grade` | os botões da **PhxGrid**, que é a grade de toda tela: paginação, agregador do cabeçalho, o popup de filtro (A-Z, Z-A, limpar, OK, cancelar), os chips, a barra de agrupamento (direção, desagrupar, expandir/recolher tudo, total por grupo), o seletor de colunas e o congelar. Cada passo confere o **efeito** — o dado que apareceu —, e não o estado. Achou o `.phx-th-agg` trocando a própria letra sem recalcular o total, com o cabeçalho dizendo AVG sobre uma soma |
+| `botoes-do-conteudo` | os botões que mexem no **dado**: as quatro páginas por cursor, ativas/excluídas, editar e restaurar pela linha, o diálogo de excluir nos dois modos, a seleção em lote da aba Conteúdo e a lixeira (motivos, esvaziar, voltar). A prova é no **servidor**: quantas linhas ficaram ativas, e não o que a tela mostrou |
+| `botoes-da-tira` | o cromo do modo multitela — abrir outra tela, pinar e fechar aba, dividir em regiões (com a calha), soltar numa janela flutuante e os botões dela. São os únicos botões da interface que não são `<button>`: o pino e o `×` da aba são `<span role="button">`, e foram eles que fizeram o conferidor aprender a segunda forma |
+
+## O que a bateria GRAVOU: `botoes-exercitados.txt`
+
+A corrida **inteira** reescreve `testes-web/botoes-exercitados.txt`, que é a
+lista dos ganchos de botão que receberam clique de verdade — anotados por um
+ouvinte de captura dentro do navegador, e não lidos do fonte dos casos. É
+dessa evidência que o `conferidor_botoes.rs` tira quantos botões da tela ainda
+não têm prova, e é ela que a catraca `TETO_BOTAO_SEM_PROVA` cobra.
+
+Três coisas que valem saber:
+
+- **Corrida parcial não grava.** `--caso` ou `--tema` só imprimem quantos
+  ganchos aquela corrida viu. Evidência parcial é pior que evidência faltando:
+  ela daria por não-provado tudo o que a corrida inteira prova.
+- **O arquivo não se edita.** Editar é a porta dos fundos da catraca, e
+  `nenhuma_chave_morta_na_evidencia` a fecha: gancho que a tela não tem mais
+  reprova.
+- **O acumulador é do Node, não da página.** Ele já morou num `Set` dentro do
+  `window`, e o caso `multitela` dá um `page.reload()` no meio — o `Set`
+  nascia vazio de novo e os cliques anteriores sumiam. Hoje vai por
+  `exposeBinding`, que sobrevive à navegação.
 
 ## A prova do multi-idioma, à parte
 

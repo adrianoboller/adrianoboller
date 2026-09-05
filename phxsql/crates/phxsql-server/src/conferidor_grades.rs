@@ -244,13 +244,17 @@ pub const ISENTAS: &[(&str, &str, &str)] = &[
 /// `async function nome(`). Metodo de objeto e funcao anonima nao entram --
 /// e nenhuma tabela da tela nasce dentro de uma.
 ///
+/// E `pub(crate)` porque o conferidor dos BOTOES precisa do MESMO dono para
+/// cada achado. Duas copias desta regua divergiriam calado -- e o relatorio
+/// de um passaria a nomear uma funcao que o do outro nao nomeia.
+///
 /// **Limite declarado**: vale a declaracao mais recente, entao numa funcao
 /// aninhada o dono sai o nome de dentro e nao o de fora. Em `index.html` isso
 /// nao acontece (as telas sao todas de primeiro nivel), e num arquivo bem
 /// aninhado como o `phx-grid.js` o nome fica impreciso -- por isso a isencao
 /// dele e por arquivo. A CONTA nao depende disso: o que a catraca conta e
 /// ocorrencia de `<table>`, e a linha impressa no relatorio e exata.
-fn declara_funcao(linha: &str) -> Option<&str> {
+pub(crate) fn declara_funcao(linha: &str) -> Option<&str> {
     let t = linha.trim_start();
     let t = t.strip_prefix("async ").unwrap_or(t);
     let t = t.strip_prefix("function ")?;

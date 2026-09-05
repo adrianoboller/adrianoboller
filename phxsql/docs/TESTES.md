@@ -1311,3 +1311,125 @@ nunca incluía `docs/`, e um teste de `error.rs` que lê `docs/ROTEIRO-1.0.md`
 em tempo de execução fazia a árvore limpa reprovar antes de qualquer defeito
 ser reposto — não a cada rodada, só em quem tentasse o catálogo completo.
 Consertado (`docs/cognicao/cognicao_alcance-da-copia-do-executor-de-guardas_20260903_0246.md`).
+
+---
+
+## 13. Os BOTÕES: quantos são, e quantos a bateria clica
+
+Ordem do dono, 05/09/2026: *«bateria de testes de todos os botões»*. Para
+cumprir isso é preciso primeiro **saber quantos são**, e esse número nunca
+tinha sido medido.
+
+### 13.1 O número cruo estava errado, e errado para baixo
+
+A varredura ingênua (`grep -c '<button' ui/*.html ui/*.js`) diz **277**. O
+conferidor diz **298**, e a diferença tem três causas, cada uma medida:
+
+| causa | quantos | por quê |
+|---|---|---|
+| o subdiretório `ui/grid/` | **+19** | um `*.js` no diretório não desce até `grid/phx-grid.js`, que é onde mora a grade que **toda** tela usa. É o mesmo buraco que já deixou o `multitela.js` invisível para a catraca de idiomas por 1.474 linhas |
+| `role="button"` | **+2** | o pino e o `×` da tira de abas são `<span role="button">`, e não `<button>` — um `<button>` dentro de outro não existe em HTML. Para quem usa teclado e leitor de tela eles **são** botões |
+| a etiqueta de várias linhas | 0 hoje | o `id` desta base costuma vir **depois** do `class`, e o `class` costuma carregar `${…}` com uma seta (`x => y`) dentro. Um leitor que fecha a etiqueta no primeiro `>` perde o `id` e o botão vira «sem chave» calado |
+
+O número não fica digitado em lugar nenhum:
+`cargo run --example botoes-sem-prova -p phxsql-server`.
+
+### 13.2 A chave: por `id` ou `data-*`, nunca pela frase
+
+O botão se identifica pelo **gancho** com que a bateria o alcança, nesta ordem:
+`#id` → `[data-x="v"]` → `.classe`. O **texto nunca entra**: ele passa pelos
+seis idiomas da `FABRICA_TELA`, e quem casa por frase quebra calado no dia em
+que alguém melhorar a redação — ou quando a tela abre em alemão. É a mesma lei
+que o conferidor de textos já aplica.
+
+E a classe só vale como chave quando **o próprio código a usa para achar o
+elemento** (`querySelector`, `closest`, `matches`, `classList.contains`). Sem
+esse crivo, `class="botao"` daria por provado todo botão do sistema no dia em
+que alguém clicasse um. A lista sai do código, não de uma lista digitada: no
+dia em que uma classe nova virar gancho, ela entra sozinha.
+
+Medido: **219** botões têm `id` literal, **67** têm `data-*`, **11** têm classe
+que é gancho, e **1** não tem identificador nenhum — o gêmeo desligado do
+`#tlmEncerrar`, que nasce `disabled` e nunca recebe clique.
+
+### 13.3 O cruzamento vem do CLIQUE, não do fonte dos casos
+
+A pergunta «quais botões a bateria exercita» **não se responde lendo os
+casos**, e o número prova: a leitura estática dos seletores escritos em
+`testes-web/` dizia **48**; a gravação do que o navegador realmente recebeu
+disse **28**. Vinte deles eram seletores *mencionados* — um
+`waitForSelector('#btSalvar')` nomeia sem exercitar.
+
+Então a evidência vem de um ouvinte de captura instalado no navegador, e o
+arquivo `testes-web/botoes-exercitados.txt` é **gerado** pela corrida inteira
+da bateria. Corrida parcial (`--caso`, `--tema`) **não** reescreve o arquivo:
+evidência parcial é pior que evidência faltando.
+
+### 13.4 O placar do dia
+
+| | antes desta rodada | depois |
+|---|---|---|
+| botões da tela | 298 | 298 |
+| clicados pela bateria | **28** | **85** |
+| dispensados com motivo | 0 | 3 |
+| **sem prova** | **268** | **211** |
+
+`TETO_BOTAO_SEM_PROVA = 211`, em
+`crates/phxsql-server/src/conferidor_botoes.rs`. **Só desce.**
+
+### 13.5 O que exercitar achou — e o que ler o código não acharia
+
+**O `.phx-th-agg` trocava a própria letra e mais nada.** O botão que alterna o
+agregador da coluna (SUM → AVG → COUNT → MIN → MAX) mudava `c.agregador` e o
+texto do próprio botão, e **não repintava**: o cabeçalho passava a dizer AVG e
+o total geral continuava mostrando a SOMA, até alguém virar a página por outro
+motivo. Rótulo que contradiz o número embaixo dele é **mentira sobre o dado** —
+a mesma lei do «Blumenau» que aparecia «BLUMENAU».
+
+E o irmão já fazia certo, que é por que a falta nunca apareceu: o «total por
+grupo» (`[data-rodape]`) mexe no **mesmo rodapé** e chama `carrega()` na linha
+seguinte. *Conserto entra no caminho que o motivou, e o caminho irmão fica* —
+aqui foi o contrário, o conserto entrou no irmão e o caminho que faltava
+esperou.
+
+O passo que o pegou não conferia o estado: conferiu o **efeito**, lendo o total
+geral antes e depois. Um passo que só olhasse o texto do botão passaria verde.
+
+**Prova real, com os dois defeitos repostos:**
+
+| reposição | quem acusa | a frase |
+|---|---|---|
+| tirar o `carrega()` do `.phx-th-agg` | `botoes-da-grade` | `o agregador foi de SUM para AVG e o total geral nao mudou («total geral2.016R$ 293.770,502.016») -- rotulo sem efeito` |
+| `#pgDepois` passa a fazer o que o `#pgInicio` faz | `botoes-do-conteudo` | `a pagina nao virou: a primeira linha continua rowid 1` |
+
+Nos dois casos o **`botoes-da-tira` continuou verde**: é a delimitação que
+importa — o lote acusa a tela dele, e não a bateria inteira.
+
+### 13.6 As dispensas, uma a uma
+
+Nada entra por ser chato. «Derruba o serviço» sozinho não basta — o caso do
+pedido 40 já derruba a porta de dados e a levanta pela web.
+
+| botão | por quê |
+|---|---|
+| o gêmeo `disabled` do `#tlmEncerrar` | nasce desligado com o `title` dizendo por quê; botão que nasce `disabled` não recebe clique nenhum, e é por isso que ele nunca teve `id` |
+| `#btSair` | derruba a sessão. **Tem prova** — o caso `entrada` sai e volta —, e está dispensado pelo mesmo motivo que o `passeio` o tira do laço: clicado no meio de uma varredura, o resto dela não teria onde acontecer |
+| `[data-acao="devolver"]` e `[data-acao="pinar-janela"]` | só existem dentro de uma janela do sistema destacada (`W.destacada`), e essa janela depende da permissão `window-management`, que o Playwright 1.56 não sabe conceder — a mesma limitação que o caso `monitores` já carrega escrita |
+
+### 13.7 O que ficou de fora, nomeado
+
+Três lotes entraram inteiros: **a grade** (18 botões), **o conteúdo editável,
+a ficha e a lixeira** (20) e **a tira de abas com a janela solta** (7). Os
+maiores lotes que ficaram, medidos:
+
+| lote | quantos | por quê ficou |
+|---|---|---|
+| `assistenteReplicacao` | 19 | o assistente de réplica pede **outro servidor**; a bancada de replicação já sobe quatro, e o caminho é ela e não o navegador |
+| `assistenteDbLink` | 14 | mesmo motivo: o passo 2 em diante fala com um servidor remoto |
+| o diagrama ER (`telaDiagramaER`, `cartaoTabelaER`, `cartaoNovaTabelaER`, `cartaoDeclararFk`) | 16 | é o lote seguinte na fila, e é exercitável nesta máquina |
+| `gerirTabelas` / `gerirTabela` / `desenharNovaTabela` | 11 | idem |
+| a tela da Claude (`claude.js`) | 12 | precisa de chave de API, que não existe nesta máquina |
+
+Meia cobertura só é pior que nada quando finge ser inteira: o
+`--example botoes-sem-prova` lista os **211** que faltam, por tela, do maior
+lote para o menor.

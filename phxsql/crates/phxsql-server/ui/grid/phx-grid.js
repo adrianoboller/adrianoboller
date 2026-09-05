@@ -1145,6 +1145,17 @@
         c.agregador = CICLO_AGG[(ix2 + 1) % CICLO_AGG.length];
         aggBtn.textContent = c.agregador.toUpperCase();
         log("aggchange", { campo: c.campo, agregador: c.agregador });
+        // E RECALCULA. Sem esta linha o botao trocava so a propria letra: o
+        // cabecalho passava a dizer AVG e o total geral continuava mostrando
+        // a SOMA, ate alguem virar a pagina por outro motivo. Rotulo que
+        // contradiz o numero embaixo dele e mentira sobre o dado -- a mesma
+        // lei do «Blumenau» que aparecia «BLUMENAU».
+        //
+        // O IRMAO ja fazia certo, e e por isso que a falta nunca apareceu: o
+        // «total por grupo» (`[data-rodape]`) mexe no MESMO rodape e chama
+        // `carrega()` na linha seguinte. Achado exercitando a grade, nao
+        // lendo o codigo.
+        carrega();
       });
       th.draggable = true;
       th.addEventListener("dragstart", function (e) { e.dataTransfer.setData("text/plain", c.campo); });
