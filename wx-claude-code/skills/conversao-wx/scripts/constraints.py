@@ -16,14 +16,21 @@ terco dos patches que passavam nos testes funcionais ainda violava restricao de
 revisao. Teste verde nao e Sprint aprovada.
 
 Cada restricao e um objeto com id, origem, escopo, severidade e -- quando da --
-um VALIDADOR: um comando que sai 0 quando a regra vale. Regra sem validador
+um VALIDADOR: um comando que sai 0 quando a regra vale. Duas pegadinhas, as
+duas achadas rodando:
+
+  * o comando roda SEM shell (nada de `|`, `&&`, `>`); para usar shell,
+    escreva `sh -c "..."` de proposito;
+  * `grep` sai 1 quando NAO acha. Um validador de "nao ha segredo aqui" acusaria
+    violacao com o projeto limpo -- para esses, use `--inverter`, que diz que
+    sair 0 significa ACHOU o problema. Regra sem validador
 continua valendo, mas entra como `manual` e o C-GATE a devolve como
 INCONCLUSIVA, nunca como aprovada: portao que aprova o que nao conferiu e pior
 que portao nenhum.
 
 Uso:
   constraints.py criar --titulo "..." --origem ADR-0002 --escopo "src/api/**" \\
-      --severidade bloqueante [--validador "cargo test --test compat"]
+      --severidade bloqueante [--validador "cargo test --test compat"] [--inverter]
   constraints.py listar [--json]
   constraints.py c-gate [--json]      # roda os validadores; 0 aprova
   constraints.py revogar CONST-0003 --por CONST-0007 --motivo "..."
@@ -103,6 +110,7 @@ def criar(args, raiz: Path) -> int:
         "escopo": args.escopo or "**",
         "severidade": args.severidade,
         "validador": args.validador or "",
+        "inverter": bool(args.inverter),
         "requisito": args.requisito or "",
         "estado": "ativa",
         "criada_em": date.today().isoformat(),
@@ -207,8 +215,15 @@ def c_gate(args, raiz: Path) -> int:
             r = subprocess.run(shlex.split(comando), cwd=raiz, capture_output=True,
                                text=True, timeout=args.timeout)
             saida = (r.stdout + r.stderr).strip().splitlines()
+            # `grep` sai 1 quando NAO acha -- entao um validador de "nao existe
+            # segredo aqui" acusa violacao justamente quando o projeto esta
+            # limpo. Com --inverter, sair 0 significa que o validador ACHOU o
+            # problema. E flag explicita porque adivinhar isso pelo texto do
+            # comando seria magica, e magica em portao e o pior tipo de defeito.
+            achou = (r.returncode == 0)
+            vale = (not achou) if c.get("inverter") else achou
             linhas.append({"id": c["id"], "titulo": c["titulo"], "severidade": c["severidade"],
-                           "resultado": "aprovada" if r.returncode == 0 else "violada",
+                           "resultado": "aprovada" if vale else "violada",
                            "motivo": (saida[-1][:200] if saida else f"código {r.returncode}"),
                            "ms": round((time.monotonic() - t0) * 1000)})
         except subprocess.TimeoutExpired:
@@ -291,7 +306,8 @@ def semear(args, raiz: Path) -> int:
         return 0
     for x in novas:
         ns = argparse.Namespace(titulo=x["titulo"], origem=x["origem"], escopo=x["escopo"],
-                                severidade=x["severidade"], validador=x["validador"], requisito="")
+                                severidade=x["severidade"], validador=x["validador"],
+                                inverter=x.get("inverter", False), requisito="")
         criar(ns, raiz)
     if not novas:
         print("nada a semear: as restrições implicadas pelo questionário já estão no registro")
@@ -310,6 +326,8 @@ def main() -> int:
     c.add_argument("--escopo", help="glob dos arquivos que a restrição alcança")
     c.add_argument("--severidade", required=True, choices=SEVERIDADES)
     c.add_argument("--validador", help="comando que sai 0 quando a regra vale")
+    c.add_argument("--inverter", action="store_true",
+                   help="o validador sai 0 quando ACHA o problema (caso do grep, que sai 1 sem achar)")
     c.add_argument("--requisito")
 
     sub.add_parser("listar", help="lista as restrições")

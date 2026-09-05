@@ -553,5 +553,20 @@
   "itens_questionario": 60,
   "hooks": 8,
   "manual": 690
+ },
+ {
+  "versao": "3.31.0",
+  "data": "2026-09-05",
+  "titulo": "seis portões de governança, todos entrando pedidos",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 23,
+  "scripts": 30,
+  "linhas_py": 28063,
+  "prints": 59,
+  "testes": 80,
+  "itens_questionario": 60,
+  "hooks": 9,
+  "manual": 719
  }
 ]

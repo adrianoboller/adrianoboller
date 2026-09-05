@@ -21,5 +21,13 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/constraints.py" \
 - `c-gate` roda os validadores. Regra sem validador volta **INCONCLUSIVA** —
   nunca aprovada, porque portão que aprova o que não conferiu é pior que portão
   nenhum;
+Duas pegadinhas do validador, as duas achadas rodando:
+
+- ele roda **sem shell** — nada de `|`, `&&` ou `>`; para usar shell, escreva
+  `sh -c "..."` de propósito;
+- **`grep` sai 1 quando não acha.** Um validador de «não há segredo aqui»
+  acusaria violação justamente com o projeto limpo. Para esses, use
+  `--inverter`, que diz que sair 0 significa **achou o problema**.
+
 - `revogar CONST-0001 --motivo "…" --por CONST-0007` tira do portão **sem
   apagar do histórico**.

@@ -441,6 +441,17 @@ para ler, que tem código de saída próprio (2) para não virar sucesso dentro 
 um script. A segunda: **ficha de decisão sem status legível não entra no
 contrato** — campo em branco não é aprovação.
 
+A adoção não é tudo de uma vez, e o primeiro `c-gate` **é para ficar vermelho**:
+num projeto que ainda não converteu nada, quatro restrições voltam
+INCONCLUSIVAS e a da rastreabilidade volta VIOLADA porque o `traceability.csv`
+está vazio. Isso não é defeito do portão — é o portão dizendo o que ninguém
+provou ainda, que é exatamente para o que ele serve.
+
+E duas pegadinhas do validador, as duas achadas no primeiro uso real: ele roda
+**sem shell** (`sh -c "..."` quando precisar), e **`grep` sai 1 quando não
+acha** — sem `--inverter`, a regra «não há segredo aqui» acusaria violação com o
+projeto limpo.
+
 E as três, de novo, aprendidas rodando: o validador que aponta para arquivo
 inexistente acusava o projeto de violar uma regra que ninguém conferiu (virou
 inconclusiva); o validador semeado do golden ia rodar `--help` e aprovar sem

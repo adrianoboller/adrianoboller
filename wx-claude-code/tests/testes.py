@@ -909,6 +909,26 @@ class Questionario(unittest.TestCase):
         self.assertEqual(d2["bloqueantes"], ["CONST-0003"])
         self.assertEqual(r2.returncode, 1)
 
+    def test_validador_de_grep_nao_acusa_projeto_limpo(self):
+        """grep sai 1 quando NAO acha: sem --inverter, "nao ha segredo aqui"
+        acusaria violacao justamente com o projeto limpo. Achado no primeiro
+        uso real, e o tipo de defeito que so aparece rodando."""
+        cs = SCRIPTS / "constraints.py"
+        alvo = f"grep -rIlq --exclude-dir=.git -E ghp_[A-Za-z0-9]{{20,}} {self.tmp}"
+        run(cs, "--project-root", self.tmp, "criar", "--titulo", "sem token no repositório",
+            "--severidade", "bloqueante", "--inverter", "--validador", alvo)
+        limpo = json.loads(run(cs, "--project-root", self.tmp, "--json", "c-gate").stdout)
+        self.assertEqual(limpo["itens"][0]["resultado"], "aprovada", "projeto limpo não pode ser acusado")
+        (self.tmp / "vazou.txt").write_text("ghp_" + "A" * 36 + "\n", encoding="utf-8")
+        sujo = json.loads(run(cs, "--project-root", self.tmp, "--json", "c-gate").stdout)
+        self.assertEqual(sujo["itens"][0]["resultado"], "violada", "com o segredo plantado tem de reprovar")
+        self.assertEqual(sujo["c_gate"], "REPROVADO")
+        # e sem --inverter a leitura e a normal: sair 0 e valer
+        run(cs, "--project-root", self.tmp, "criar", "--titulo", "regra normal",
+            "--severidade", "aviso", "--validador", "true")
+        d = json.loads(run(cs, "--project-root", self.tmp, "--json", "c-gate").stdout)
+        self.assertEqual(d["itens"][1]["resultado"], "aprovada")
+
     def test_c_gate_e_separado_do_f_gate(self):
         """O ponto da separacao: tudo verde no funcional e ainda assim reprovado
         na regra do projeto. Sem os dois portoes, isso passaria."""
