@@ -553,8 +553,16 @@ A alternativa de crescer o slot continua na mesa. O precedente existe e é bom: 
 virar v5 crescendo o slot, com a versão no byte 8 decidindo quantos bytes ler
 (o «Por que uma versao NOVA» do `reg.rs`). O mecanismo está provado — mas **é mudança de formato em
 disco**, e a pétrea desta casa diz que mudança de formato entra **cedo**,
-enquanto não há dado em produção. Isso é um argumento *a favor* de decidir a
-SP000016 agora, e não depois.
+enquanto não há dado em produção. ~~Isso é um argumento *a favor* de decidir a
+SP000016 agora, e não depois.~~
+
+> **Envelheceu em 04/09, e quem a matou foi o dono.** As sete perguntas de
+> formato foram postas uma a uma (`PESQUISA-MVCC-E-FORMATO.md` §8.0) e a
+> resposta à primeira derrubou quatro: a versão velha mora **em RAM**, e a
+> decisão de formato da SP000016 **desaparece** — nenhum `.reg` v6, nenhuma
+> migração, nenhum arquivo novo. **Com isso o argumento da urgência cai
+> inteiro**: o que era «decida agora ou pague migração depois» virou «decida
+> quando precisar». O desenho e o custo estão em `docs/SOMBRA.md`.
 
 **(2) O `versao u64` que já existe não serve para visibilidade.** Ele é um
 contador **por linha**, começando em 1, e existe para a guarda de conflito de
@@ -599,6 +607,15 @@ tabela, e sem MVCC nenhum. O próprio roteiro registra a medição por soquete
 Fica faltando **uma** coisa, e não duas: leitura repetível. A frase precisa ser
 corrigida, e a correção **enfraquece** o argumento a favor do MVCC, não o
 contrário — meia razão a menos para implementá-lo.
+
+> **E desde 05/09 ela deixou de ser uma frase e virou número.** O
+> `docs/ACID.md` §4.1 e §4.3 medem os fenômenos **acontecendo**, cada um com o
+> controle da mesma corrida: leitura não repetível (50 → 77), fantasma (2 → 3),
+> perda de atualização e *write skew*. E a matriz mede o buraco sobre um
+> invariante em vez de sobre uma linha: contra um escritor **em transação**, uma
+> varredura única nunca vê o par quebrado (**0 de 400**) e duas leituras
+> separadas o veem **73 de 400**. É esse 73 que a Sombra zera —
+> `docs/SOMBRA.md` §1.
 
 *(Mudança proposta, não aplicada: `docs/TRANSACOES.md` não é desta frente.)*
 
@@ -755,9 +772,17 @@ confere o caminho em vez de acreditar no rótulo.
    A premissa está medida e é **de leitor com leitor** (§5.1), que é o par que a
    SP000016 não toca. E escrever antes o invariante do §2, porque a refação
    óbvia compila e está errada.
-3. **SP000016 (MVCC)**, com a decisão de formato tomada **cedo** — o `.reg` v6
+3. ~~**SP000016 (MVCC)**, com a decisão de formato tomada **cedo** — o `.reg` v6
    e a área de undo (§4.2). É o item mais caro dos três e o único que muda o
-   disco; adiar não o torna mais barato, torna mais caro.
+   disco; adiar não o torna mais barato, torna mais caro.~~ **Corrigido em
+   05/09:** a decisão de formato foi tomada, e foi **não haver formato** — o
+   dono respondeu em 04/09 que a versão velha mora em RAM, sem `.reg` v6 e sem
+   arquivo novo (§4.2, e `PESQUISA-MVCC-E-FORMATO.md` §8.0). **Então a SP000016
+   deixou de ser «o único que muda o disco», e com isso perdeu o argumento que a
+   punha cedo**: adiar um item que não muda formato não o torna mais caro. O
+   custo item a item, o que ela fecha dos quatro fenômenos medidos e as
+   alternativas mais baratas estão em `docs/SOMBRA.md`; a ordem é decisão do
+   dono.
 4. **Trava por tabela**, se ainda sobrar disputa depois de (2) — e aí com o
    `escolher-o-desenho.py` a dizer quanto sobrou, em vez de por dedução.
 
@@ -1331,6 +1356,18 @@ o número, e ele diz mais: **MVCC não é acelerador de coisa nenhuma nesta
 bancada.** Se a Sombra for feita, é por leitura repetível — e o documento dela
 tem de dizer isso na primeira linha, senão daqui a três meses alguém a defende
 com um ganho de desempenho que ninguém mediu.
+
+> **Escrito em 05/09: `docs/SOMBRA.md`**, e a primeira linha é esta. O
+> documento acrescenta três coisas que esta seção não tinha: **quais** dos
+> quatro fenômenos medidos no `docs/ACID.md` ela fecha (leitura não repetível e
+> fantasma) e quais não (perda de atualização, já fechada por outros dois
+> caminhos; e *write skew*, que ela torna **sistemático** em vez de ocasional);
+> o custo item a item, com o que ficou nomeado e não medido; e as alternativas
+> mais baratas. Duas ressalvas de lá valem para esta seção: o teto exclusivo de
+> **3,23× e 2,77×** foi medido com a trava ainda em `Mutex`, e a §16 baixou o
+> denominador da conta — **remedir antes de citar**; e a cadeia de versões, por
+> construção, **não fecha o fantasma**: linha que nasceu depois da visão não tem
+> versão velha, e o filtro que a esconde é outra peça.
 
 *Hipótese que morre medida é resultado tão válido quanto ganho, e é o que
 impede a mesma ideia de voltar sem medição.*
