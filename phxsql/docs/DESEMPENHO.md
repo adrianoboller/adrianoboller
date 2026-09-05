@@ -2695,7 +2695,26 @@ Nada para a grade **sem ordem**, que já não tocava o índice, e nada para a
 propósito — `varrer_indice`, o `phxsql-cli` — continua pagando 1.668 páginas a
 200.000 linhas, e é assim que se sabe que o medidor não ficou cego.
 
-### 19.8 Como refazer
+### 19.8 Um susto que fica registrado: o binário velho quase publicou o passado
+
+A primeira corrida do `quanto-cache-uma-leitura-usa` **depois** do conserto
+imprimiu as 1.668 páginas de antes. Uma reconstrução do mesmo exemplo, sem tocar
+em fonte nenhum de comportamento, mudou o binário e o número virou 3 — ou seja,
+o que se mediu foi um binário anterior ao conserto.
+
+**O mecanismo dessa corrida específica não está estabelecido, e isto está
+escrito assim de propósito.** O experimento controlado que se fez a seguir diz
+que a receita da casa funciona: tocando um fonte de `phxsql-store` e rodando
+`cargo build --release --examples -p phxsql-store`, o exemplo **é** recompilado
+(2 min 18 s, carimbo do binário atualizado). Então o remédio conhecido não
+falhou; o que falhou foi a **sequência** desta sessão, e apontar uma causa sem
+medir seria diagnóstico plausível vendido como medido.
+
+O que se leva daqui, e é operacional: **reconstruir na MESMA linha de comando da
+medição**, e não «algumas etapas antes» — porque «eu reconstruí» não é o mesmo
+que «este binário tem este fonte». É como a §19.9 abaixo está escrita.
+
+### 19.9 Como refazer
 
 ```bash
 bancada/esta-medindo.sh && echo "ha medicao em curso -- espere"
@@ -2708,6 +2727,9 @@ done
 cargo run --release --example quanto-cache-uma-leitura-usa -p phxsql-store -- 200000
 node testes-web/grade/custo-da-ordem.mjs --linhas 10000,100000,1000000
 ```
+
+Cada linha de medição vem com a sua reconstrução **na frente**, no mesmo `&&`,
+pelo motivo da §19.8.
 
 
 ## Como refazer tudo

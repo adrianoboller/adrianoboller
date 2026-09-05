@@ -180,6 +180,14 @@ anterior seria contado contra a próxima.
 - **Não mede desempenho** do motor. Isso é a `bancada/`. O que ela mede é o
   custo da TELA em pedidos por minuto, que é outra coisa e mora no caso
   `multitela`.
+
+  E há **duas bancadas** neste diretório que não são casos e não rodam com a
+  bateria — elas medem, e por isso se chamam à mão:
+  `grade/bancada-grade.mjs`, a prova de contrato da `phx-grid` isolada, e
+  `grade/custo-da-ordem.mjs`, que mede **o que a grade ordenada custa na tela**
+  em três escalas de tabela (pedido 188, `../docs/DESEMPENHO.md` §19). A segunda
+  sobe um `phxsqld` só dela, nas portas **6300/6301** — fora da faixa da
+  bateria, porque duas medições na mesma porta medem o servidor da outra.
 - **Não exercita a Window Management API.** Ela existe no Chromium sem cabeça
   mas rejeita sem a permissão `window-management`, que o Playwright 1.56 não
   sabe conceder. O caso `monitores` a **dubla** e prova o caminho nosso —

@@ -20,6 +20,7 @@ deve acreditar.
 | `sqlite/` | a comparação com o **SQLite(R)**, que é a que decide o caso do celular: motor contra motor, o custo do soquete medido à parte, e a durabilidade casada nos três regimes. Ver `sqlite/LEIA-ME.md` e `docs/MOBILE.md` |
 | `arm/` | a prova de que o binário **ARM64 roda** — sob `qemu-user-static`, sem VM. `docs/EMPACOTAMENTO.md` §7.3 |
 | `windows/` | a mesma prova para o **`.exe`**, sob `wine`. A sonda é a do `arm/`, com o rótulo vindo de fora. `docs/EMPACOTAMENTO.md` §6.1 |
+| *(fora daqui)* `testes-web/grade/custo-da-ordem.mjs` | o custo da grade **ordenada** medido **na tela**, num navegador de verdade, em três escalas de tabela. Mora com os testes de frontend porque é lá que está o `phxsqld` de bateria e o navegador; o lado do motor da mesma pergunta é o `--example o-que-a-grade-ordenada-custa`. `docs/DESEMPENHO.md` §19 |
 
 A carga do lado do PhxSql é `crates/phxsql-store/examples/carga.rs`, que roda
 cada fase num processo separado — assim os contadores são daquela fase e de
@@ -130,6 +131,26 @@ diferença** em volta de cada fase.
 Estas duas regras vieram do mesmo lugar: **os dois erros favoreciam um lado
 diferente, e nenhum dos dois era visível no número**. Bancada mal montada mente
 com número, que é a mentira mais convincente que existe.
+
+### E a regra 4 vale também quando os DOIS lados são nossos
+
+O terceiro caso apareceu em 05/09, no pedido 188, e ele não tem outro motor
+dentro: a bancada da grade ordenada
+(`testes-web/grade/custo-da-ordem.mjs` e
+`--example o-que-a-grade-ordenada-custa`) compara **a grade sem ordem contra a
+grade ordenada**. As duas devolvem 50 linhas — e **não é o mesmo trabalho**: uma
+devolve as 50 primeiras na **ordem de digitação**, a outra as 50 primeiras na
+**ordem da chave**.
+
+Deixar a razão falar sozinha diria «a ordenada é 78× mais lenta», e isso mede
+**o preço de pedir ordem**, não um defeito. Quem quer saber se há defeito precisa
+de um lado que faça o **mesmo trabalho**, e ele está na bancada com nome
+próprio: a **ordenada mínima**, que desce a árvore uma vez e lê só as 50
+primeiras entradas da folha. Mesmas linhas, mesma ordem, mesmo resultado — e foi
+essa razão (484× a um milhão de linhas) que decidiu que havia conserto.
+
+A bancada imprime as duas comparações, e imprime esta frase junto, para que
+ninguém copie só o número grande.
 
 ## O que NÃO é comparado
 

@@ -552,3 +552,140 @@ fn a_pagina_por_indice_que_para_devolve_o_mesmo_que_a_que_lia_tudo() {
         }
     }
 }
+
+/// A pagina ordenada NAO percorre o indice inteiro -- e a prova mede o EFEITO.
+///
+/// # O defeito que a motivou (pedido 188)
+///
+/// `pagina_por_indice` comecava com `let todos = self.varrer_indice(indice)?`,
+/// que devolvia TODOS os rowids do indice antes de qualquer recorte. O `break`
+/// do limite parava a leitura das LINHAS do `.reg`, nunca a varredura do
+/// `.ndx` -- por isso 50 linhas custavam o mesmo que 1.000. Medido pelo fio
+/// numa tabela de 1.000.000: **54,81 ms e 8.335 paginas do indice** para
+/// devolver 50 linhas, contra 3 paginas do minimo que a mesma pergunta exige.
+/// Na tela, num navegador de verdade, a espera ia de 48 ms para 98 ms.
+///
+/// # Por que a guarda mede paginas, e nao tempo
+///
+/// Porque o resultado NAO mudava: as mesmas 50 linhas, na mesma ordem. Uma
+/// guarda que conferisse o veredito passaria com o defeito reposto -- e esta
+/// casa ja pagou por isso. O que muda e o trabalho, entao e o trabalho que se
+/// mede.
+///
+/// # Por que a comparacao e RELATIVA
+///
+/// O numero de paginas depende do tamanho da pagina do `.ndx`, do tamanho da
+/// chave e da profundidade da arvore. Um teto digitado aqui envelheceria calado
+/// no dia em que qualquer um dos tres mudasse. Entao a regua sai da propria
+/// tabela: a pagina de 50 linhas tem de custar uma FRACAO do que custa varrer o
+/// indice inteiro na mesma tabela, e nao uma constante.
+#[test]
+fn a_pagina_ordenada_nao_percorre_o_indice_inteiro() {
+    const N: i64 = 20_000;
+    const PAGINA: u64 = 50;
+    let dir = DirTemp::novo("indice-nao-varre-tudo");
+    let mut t = com(N, &dir);
+
+    let antes = t.paginas_do_indice_tocadas();
+    let p = t
+        .pagina_por_indice("porId", Visao::Ativas, 0, PAGINA)
+        .unwrap();
+    let da_pagina = t.paginas_do_indice_tocadas() - antes;
+    assert_eq!(p.len(), PAGINA as usize);
+
+    let antes = t.paginas_do_indice_tocadas();
+    let todos = t.varrer_indice("porId").unwrap();
+    let do_indice_inteiro = t.paginas_do_indice_tocadas() - antes;
+    assert_eq!(todos.len(), N as usize);
+
+    assert!(
+        da_pagina * 10 <= do_indice_inteiro,
+        "a pagina de {PAGINA} linhas tocou {da_pagina} paginas do .ndx e a varredura \
+         do indice inteiro tocou {do_indice_inteiro} numa tabela de {N}: a pagina \
+         esta percorrendo o indice inteiro (pedido 188)"
+    );
+}
+
+/// E o custo da pagina ordenada NAO cresce com a tabela.
+///
+/// E a outra metade do mesmo defeito, dita do jeito que a tela sofre: o custo
+/// era o do INDICE INTEIRO, entao ele crescia com a TABELA e nao com a pagina.
+/// Dez vezes mais linhas custavam dez vezes mais trabalho para devolver as
+/// mesmas cinquenta. O `+2` de folga e a arvore que fica mais funda: uma tabela
+/// dez vezes maior pode ter um nivel a mais, e um nivel a mais e uma pagina a
+/// mais na descida.
+#[test]
+fn a_pagina_ordenada_custa_o_mesmo_em_tabela_dez_vezes_maior() {
+    const PAGINA: u64 = 50;
+    let medir = |n: i64, apelido: &str| -> u64 {
+        let dir = DirTemp::novo(apelido);
+        let mut t = com(n, &dir);
+        let antes = t.paginas_do_indice_tocadas();
+        let p = t
+            .pagina_por_indice("porId", Visao::Ativas, 0, PAGINA)
+            .unwrap();
+        assert_eq!(p.len(), PAGINA as usize);
+        t.paginas_do_indice_tocadas() - antes
+    };
+    let pequena = medir(2_000, "indice-escala-pequena");
+    let grande = medir(20_000, "indice-escala-grande");
+    assert!(
+        grande <= pequena + 2,
+        "a mesma pagina de {PAGINA} linhas tocou {pequena} paginas do .ndx numa tabela \
+         de 2.000 e {grande} numa de 20.000: o custo da pagina esta crescendo com a \
+         TABELA (pedido 188)"
+    );
+}
+
+/// O cursor do `varrer_apos` nao repete nem pula entrada nenhuma.
+///
+/// A varredura em pedacos so vale se a costura for exata: `apos` e a ultima
+/// chave completa devolvida, e a volta seguinte desce a arvore por ela e PULA
+/// UMA. Errar esse `+1` para um lado repete a linha da borda; errar para o
+/// outro come uma linha por pedaco, calado.
+///
+/// # A primeira versao desta prova PASSAVA com o defeito reposto
+///
+/// Ela varria uma tabela sem exclusao nenhuma, e ali o cursor nunca e tocado:
+/// o primeiro pedaco vale `pular + limite` entradas e ja basta sozinho, entao
+/// o laco nunca da a segunda volta. Teste que nao chega no codigo que diz
+/// provar passa por engano, e teste que passa por engano e pior que teste que
+/// falta.
+///
+/// O que faz a segunda volta acontecer sao as linhas INVISIVEIS: com nove de
+/// cada dez marcadas, um pedaco de cinquenta entradas do indice devolve cinco
+/// linhas e o laco tem de voltar por mais -- e e nessa volta que o cursor
+/// costura.
+#[test]
+fn a_varredura_em_pedacos_costura_a_mesma_ordem() {
+    const N: i64 = 3_000;
+    let dir = DirTemp::novo("indice-pedacos");
+    let mut t = com(N, &dir);
+    // SUAVE, e nao fisica: a fisica tira a entrada do indice junto, e ai nao
+    // sobra entrada invisivel para obrigar a segunda volta.
+    for rowid in 1..=N as u64 {
+        if rowid % 10 != 0 {
+            t.excluir_suave(rowid, "prova").unwrap();
+        }
+    }
+    let todos = t.varrer_indice("porId").unwrap();
+    let inteiro = t.filtrar(&todos, Visao::Ativas).unwrap();
+    assert_eq!(inteiro.len(), (N / 10) as usize);
+
+    for pedaco in [1u64, 7, 50, 300] {
+        let mut junto: Vec<u64> = Vec::new();
+        loop {
+            let p = t
+                .pagina_por_indice("porId", Visao::Ativas, junto.len() as u64, pedaco)
+                .unwrap();
+            if p.is_empty() {
+                break;
+            }
+            junto.extend(p);
+        }
+        assert_eq!(
+            junto, inteiro,
+            "a varredura em pedacos de {pedaco} divergiu da varredura inteira"
+        );
+    }
+}

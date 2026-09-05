@@ -1443,7 +1443,82 @@ impl NdxFile {
 
     /// Todos os rowids do indice, na ordem do indice.
     pub fn varrer(&mut self, idx: usize) -> Result<Vec<RowId>> {
-        self.intervalo(idx, None, None)
+        Ok(self.varrer_apos(idx, None, 0)?.0)
+    }
+
+    /// Quantas paginas do `.ndx` este arquivo TOCOU desde que foi aberto --
+    /// acerto de cache e falta somados.
+    ///
+    /// Existe para a prova real do pedido 188, e o «somados» e o ponto: o que
+    /// se quer medir e o TRABALHO de andar pela arvore, e uma varredura que
+    /// visita mil paginas ja em RAM andou por mil paginas do mesmo jeito.
+    /// Contar so as faltas mediria a RAM, que e outra pergunta -- e mediria
+    /// zero na segunda corrida, fazendo uma guarda passar por engano.
+    pub fn paginas_tocadas(&self) -> u64 {
+        self.cache.acertos + self.cache.faltas
+    }
+
+    /// Um PEDACO da ordem do indice: ate `teto` rowids a partir de `apos`.
+    ///
+    /// # Por que a varredura ganhou um teto
+    ///
+    /// Porque quem lia o indice pedia sempre o indice INTEIRO, mesmo quando
+    /// queria cinquenta linhas. Medido pelo fio numa tabela de 1.000.000, com
+    /// a pagina de 50: a grade ordenada custava **54,81 ms** e tocava **8.335
+    /// paginas** do `.ndx` (32,56 MiB) para devolver 50 linhas, contra **3**
+    /// paginas do minimo que a mesma pergunta exige. Ver o pedido 188 e
+    /// `--example o-que-a-grade-ordenada-custa`.
+    ///
+    /// # O cursor e a CHAVE COMPLETA, e nao a pagina
+    ///
+    /// `apos` e a ultima chave completa devolvida, e a proxima chamada desce a
+    /// arvore de novo por ela. Guardar `(pagina, posicao)` seria mais barato
+    /// -- uma descida a menos -- e seria um ponteiro para dentro de uma
+    /// estrutura que a proxima escrita reorganiza. A chave completa carrega o
+    /// rowid no fim, entao ela e unica e sobrevive a divisao de folha.
+    ///
+    /// Devolve os rowids, a ULTIMA chave completa lida (por onde continuar) e
+    /// se o indice ACABOU. `teto` zero quer dizer sem teto.
+    pub fn varrer_apos(
+        &mut self,
+        idx: usize,
+        apos: Option<&[u8]>,
+        teto: usize,
+    ) -> Result<(Vec<RowId>, Option<Vec<u8>>, bool)> {
+        let d = self.descritor(idx)?.clone();
+        let ck_len = d.ck_len();
+        let inicio = match apos {
+            Some(ck) => ck.to_vec(),
+            None => vec![0u8; ck_len],
+        };
+        let (mut pagina, mut pos, mut folha) = self.descer(d.raiz, &inicio, ck_len)?;
+        // `descer` para NA entrada de `apos`, que ja foi devolvida na chamada
+        // anterior. Sem este passo o cursor devolveria a mesma linha para
+        // sempre, e a pagina nunca encheria.
+        if apos.is_some() {
+            pos += 1;
+        }
+        let mut saida = Vec::new();
+        while pagina != 0 {
+            // A primeira folha vem da descida; as seguintes se leem aqui.
+            let p = folha;
+            let qtd = pag_qtd(&p);
+            while pos < qtd {
+                let e = folha_entrada(&p, pos, ck_len);
+                saida.push(u64::from_be_bytes(e[d.key_len..].try_into().unwrap()));
+                pos += 1;
+                if teto > 0 && saida.len() >= teto {
+                    return Ok((saida, Some(e.to_vec()), false));
+                }
+            }
+            pagina = pag_prox(&p);
+            pos = 0;
+            if pagina == 0 {
+                break;
+            }
+            folha = self.ler_pagina(pagina)?;
+        }
+        Ok((saida, None, true))
     }
 
     fn coletar<F>(

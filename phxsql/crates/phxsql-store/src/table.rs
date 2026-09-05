@@ -3783,31 +3783,52 @@ impl Table {
         Ok(saida)
     }
 
-    /// Uma pagina da ordem do INDICE, lendo so as linhas que a pagina precisa.
+    /// Uma pagina da ordem do INDICE, lendo so o que a pagina precisa --
+    /// tanto do `.reg` quanto do `.ndx`.
     ///
     /// # O que ela conserta, com numero
     ///
-    /// O caminho anterior era `varrer_indice` -> `filtrar` -> `skip().take()`.
-    /// O `filtrar` LE CADA LINHA da tabela inteira para descobrir quais estao
-    /// visiveis, e so depois a pagina era recortada -- entao devolver mil
-    /// linhas de cinquenta mil custava cinquenta mil leituras.
+    /// **Primeiro conserto (02/09/2026), do `.reg`.** O caminho anterior era
+    /// `varrer_indice` -> `filtrar` -> `skip().take()`. O `filtrar` LE CADA
+    /// LINHA da tabela inteira para descobrir quais estao visiveis, e so
+    /// depois a pagina era recortada -- entao devolver mil linhas de cinquenta
+    /// mil custava cinquenta mil leituras. Medido em
+    /// `bancada/concorrencia/custo-da-varredura.py`, numa tabela de 50.000
+    /// linhas: a varredura por indice durava **192,5 ms** e segurava a trava
+    /// global por **98,7%** desse tempo -- o vizinho que tambem toma a trava
+    /// esperava **190 ms**, contra 0,1 ms de base.
     ///
-    /// Medido em `bancada/concorrencia/custo-da-varredura.py`, numa tabela de
-    /// 50.000 linhas: a varredura por indice durava **192,5 ms** e segurava a
-    /// trava global por **98,7%** desse tempo -- o vizinho que tambem toma a
-    /// trava esperava **190 ms**, contra 0,1 ms de base. Enquanto isso, o
-    /// caminho da ordem de digitacao custava 4 ms, porque ele PARA na pagina.
+    /// **Segundo conserto (05/09/2026), do `.ndx` -- e ele existe porque o
+    /// primeiro cobria METADE.** O `varrer_indice` da primeira linha percorria
+    /// o indice INTEIRO e devolvia todos os rowids antes de qualquer recorte:
+    /// o `break` do limite parava a leitura das LINHAS, nunca a varredura do
+    /// indice. Por isso 50 linhas custavam o mesmo que 1.000. Medido pelo fio,
+    /// numa tabela de 1.000.000 e pagina de 50:
     ///
-    /// Aqui a conta passa a ser `pular + limite` leituras, e nao o tamanho da
-    /// tabela. Na primeira pagina -- que e a esmagadora maioria -- sao
-    /// `limite`.
+    /// | a tela pede | fio | paginas do `.ndx` |
+    /// |---|---:|---:|
+    /// | grade sem ordem | 0,86 ms | 0 |
+    /// | grade ORDENADA (antes) | **54,81 ms** | **8.335** (32,56 MiB) |
+    /// | o minimo que a mesma pergunta exige | 0,09 ms | 3 |
     ///
-    /// # Por que o filtro nao pode vir depois do `skip`
+    /// E na TELA, num navegador de verdade, a mesma tabela: trocar o
+    /// «Percorrer por» custava **48 ms sem ordem e 98 ms com ordem** -- o
+    /// motor sozinho dobrava a espera da pessoa. Ver o pedido 188,
+    /// `--example o-que-a-grade-ordenada-custa` e
+    /// `testes-web/grade/custo-da-ordem.mjs`.
     ///
-    /// Porque o `pular` conta linhas VISIVEIS, e nao entradas do indice. Pular
-    /// dez entradas das quais tres estao excluidas levaria a pagina errada, e
-    /// levaria calado. Entao o laco filtra enquanto anda -- e a economia vem de
-    /// PARAR, e nao de filtrar menos.
+    /// # Por que em PEDACOS, e nao um teto so
+    ///
+    /// Porque entrada do indice nao e linha visivel: o `pular` conta linhas
+    /// VISIVEIS. Pular dez entradas das quais tres estao excluidas levaria a
+    /// pagina errada, e levaria calado. Entao o laco pede um pedaco, filtra
+    /// enquanto anda, e volta por mais enquanto faltar -- e a volta CONTINUA
+    /// de onde parou (`Ndx::varrer_apos`), em vez de reler do comeco. O pedaco
+    /// dobra a cada volta, entao o pior caso -- uma visao que recusa quase
+    /// tudo -- le o indice inteiro uma vez so, como antes, e paga a mais
+    /// apenas `log2` descidas da arvore.
+    ///
+    /// O caso comum, que e o da tela, acaba na PRIMEIRA volta.
     pub fn pagina_por_indice(
         &mut self,
         indice: &str,
@@ -3815,35 +3836,44 @@ impl Table {
         pular: u64,
         limite: u64,
     ) -> Result<Vec<RowId>> {
-        let todos = self.varrer_indice(indice)?;
+        let i = self.idx_por_nome(indice)?;
+        // `limite` zero quer dizer «tudo», e ai nao ha onde parar: o pedaco e o
+        // indice inteiro e o laco roda uma volta so.
+        let mut pedaco = if limite == 0 {
+            0
+        } else {
+            (pular as usize).saturating_add(limite as usize)
+        };
         // `Todas` sem sobreposicao nao esconde nada: nao ha o que ler para
         // decidir, e o recorte e direto na lista de rowids.
-        if visao == Visao::Todas && self.sobreposta.is_none() {
-            return Ok(todos
-                .into_iter()
-                .skip(pular as usize)
-                .take(if limite == 0 {
-                    usize::MAX
-                } else {
-                    limite as usize
-                })
-                .collect());
-        }
+        let so_recorta = visao == Visao::Todas && self.sobreposta.is_none();
+        let mut apos: Option<Vec<u8>> = None;
         let mut saida = Vec::new();
         let mut vistos = 0u64;
-        for r in todos {
-            if !self.visivel(r, None, visao)? {
-                continue;
-            }
-            if vistos >= pular {
-                saida.push(r);
-                if limite > 0 && saida.len() as u64 >= limite {
-                    break;
+        loop {
+            let (entradas, ultima, acabou) = self.ndx.varrer_apos(i, apos.as_deref(), pedaco)?;
+            apos = ultima;
+            // Os nascidos na transacao entram no FIM: eles nao tem lugar na
+            // ordem da chave, e por isso so aparecem quando o indice acabou.
+            // O porque esta em `varrer_indice`.
+            let nascidos = if acabou { self.nascidos() } else { Vec::new() };
+            for r in entradas.into_iter().chain(nascidos) {
+                if !so_recorta && !self.visivel(r, None, visao)? {
+                    continue;
                 }
+                if vistos >= pular {
+                    saida.push(r);
+                    if limite > 0 && saida.len() as u64 >= limite {
+                        return Ok(saida);
+                    }
+                }
+                vistos += 1;
             }
-            vistos += 1;
+            if acabou {
+                return Ok(saida);
+            }
+            pedaco = pedaco.saturating_mul(2);
         }
-        Ok(saida)
     }
 
     /// Atalho para a visao comum. Ver [`Table::filtrar`].
@@ -3998,6 +4028,16 @@ impl Table {
             None => None,
         };
         self.ndx.intervalo(i, de.as_deref(), ate.as_deref())
+    }
+
+    /// Quantas paginas do `.ndx` esta tabela tocou desde que foi aberta.
+    ///
+    /// E o instrumento da prova real do pedido 188: a guarda mede o EFEITO --
+    /// quantas paginas do indice a pagina ordenada andou -- e nao a intencao.
+    /// Esta casa ja teve prova que passava por engano por conferir o veredito
+    /// depois do dano.
+    pub fn paginas_do_indice_tocadas(&self) -> u64 {
+        self.ndx.paginas_tocadas()
     }
 
     /// Todos os rowids na ordem do indice.
