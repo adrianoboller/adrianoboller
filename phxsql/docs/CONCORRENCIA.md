@@ -1918,3 +1918,35 @@ E o número de leitores tem teto próprio: `conexoes_max` do `config.json`. Quem
 o subir para centenas com `cache_paginas` no padrão está escolhendo, sem saber,
 um teto de RAM de centenas × 8 MiB — e é por isso que esta tabela está aqui, e
 não só no exemplo que a mediu.
+
+### 16.8 A varredura de mutação achou duas guardas MORTAS — e nenhum portão as viu
+
+Rodada depois da mudança, a varredura das guardas
+(`bancada/guardas/provar-guardas.py`) julgou **81 guardas: 75 provadas, 4
+redundantes, 0 não pegaram, 0 estragaram, 2 QUEBRADAS** — e as duas quebradas
+eram do território desta frente:
+
+| guarda | por quê |
+|---|---|
+| `trava-fora-do-ponto-unico` | o defeito reposto chamava `self.dados.lock()`, e com o `RwLock` esse método não existe: **o código com o defeito não compila** |
+| `trava-sem-guarda-de-reentrancia` | o `trecho` passou a aparecer **duas vezes** no arquivo — a porta nova começa com a mesma pergunta de reentrância da porta velha, e trocar a errada provaria outra coisa |
+
+**Os três portões passaram inteiros com as duas guardas mortas**: `fmt`,
+`clippy` sem aviso, e `cargo test --workspace` com 1.585 testes verdes. A
+varredura de mutação não roda no `cargo test`, e é por isso que ela pegou o que
+ele não pega.
+
+O conserto virou **três** entradas, e não duas: a de reentrância se dividiu
+pelas duas portas (`trava-sem-guarda-de-reentrancia` para a exclusiva, com o
+`trecho` carregando o comentário de cima para ficar único, e a nova
+`leitura-sem-guarda-de-reentrancia` para a compartilhada), e a segunda precisou
+de um teste que não existia — `as_duas_fichas_na_mesma_thread_viram_erro` —
+porque o teste antigo pede a **mesma** porta duas vezes e não cobre nenhum dos
+dois cruzamentos. O cruzamento é o pior caso: num `RwLock`, pedir a leitura com
+a leitura na mão **e um escritor na fila** trava três pontas em vez de uma.
+
+Depois: **82 guardas, 78 provadas, 4 redundantes, 0 quebradas**, 779 s de
+mutação (`docs/TESTES.md` §12, gerado do `--json` da rodada).
+
+O aprendizado inteiro, com o que eu concluí primeiro e estava errado, está em
+`docs/cognicao/cognicao_porta-nova-quebra-a-guarda-da-porta-velha_20260905_0135.md`.

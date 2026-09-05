@@ -3075,7 +3075,7 @@ pub fn limpar() {
     },
     {
         "id": "leitura-sem-guarda-de-reentrancia",
-        "titulo": "a ficha compartilhada pedida com a exclusiva na mao pendura o servidor",
+        "titulo": "a ficha compartilhada pedida com a exclusiva na mão pendura o servidor",
         "porque": "e a guarda IRMA da `trava-sem-guarda-de-reentrancia`, e ela nasceu "
                   "junto com a segunda porta. O `RwLock` piora o abraco: com um "
                   "escritor na fila, a segunda leitura da mesma thread trava as tres "

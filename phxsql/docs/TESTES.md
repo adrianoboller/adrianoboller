@@ -717,8 +717,13 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `recado-manda-reparar-arquivo-sao` | a mãe invisível manda reparar o índice — de um arquivo intacto | 2 | ✅ provada |
 | `procura-das-filhas-manda-reparar-arquivo-sao` | a procura pelas filhas manda reparar o índice — de um arquivo intacto | 1 | ✅ provada |
 | `recuperacao-nao-reconstroi-a-filha` | a recuperação não reconstrói o índice da filha, e a cascata fica pela metade | 1 | ✅ provada |
+| `pista-de-leitura-engole-a-trilha` | a pista de leitura aceita tabela com dado pessoal, e a trilha fica sem o registro | 1 | ✅ provada |
+| `pista-de-leitura-nao-espelha` | a pista de leitura aceita tabela sem `.bkp` e o espelho deixa de nascer | 1 | ✅ provada |
+| `leitura-sem-recuo-para-a-exclusiva` | a tabela que pede a ficha exclusiva vira erro em vez de recuo | 1 | ✅ provada |
+| `abrir-para-ler-cria-a-lixeira` | abrir para LER cria o `.trash` que falta, sob a ficha compartilhada | 1 | ✅ provada |
+| `leitura-sem-guarda-de-reentrancia` | a ficha compartilhada pedida com a exclusiva na mão pendura o servidor | 1 | ✅ provada |
 
-**77 guardas: 73 provadas, 4 redundantes** — 732 s de mutação, medido em 2026-09-04 03:21.
+**82 guardas: 78 provadas, 4 redundantes** — 779 s de mutação, medido em 2026-09-05 01:51.
 
 As notas que a rodada deixou:
 
