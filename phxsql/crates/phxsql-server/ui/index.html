@@ -4155,7 +4155,7 @@ const COMO_PAGINOU = {
 
 async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null) {
   est.atual = { db, tab };
-  folha(`${tab}`, `${db} · clique numa linha para editar`,
+  folha(`${tab}`, preencher(txt("tela.st_clique_linha_editar","{db} · clique numa linha para editar"), {db}),
         `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
 
   // `cursor` é o rowid da última linha da página anterior — o servidor
@@ -7544,11 +7544,11 @@ async function verConfigUsuarios() {
 async function verSysTables(db) {
   db = db || databaseCorrente();
   if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
-  folha(preencher(txt("tela.tt_systables_db","SysTables · {db}"), {db}), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha("SysTables" + " · " + db, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const r = await api("sistabelas", { database: db });
   const linhas = r.tabelas || [];
 
-  folha(preencher(txt("tela.tt_systables_db","SysTables · {db}"), {db}), preencher(txt("tela.st_n_tabelas_catalogo","{n} tabela(s) · o catálogo em forma de dado"), {n: linhas.length}),
+  folha("SysTables" + " · " + db, preencher(txt("tela.st_n_tabelas_catalogo","{n} tabela(s) · o catálogo em forma de dado"), {n: linhas.length}),
     `<div class="acoes">
        <button class="botao secundario" id="btSysCols">SysColumns →</button>
        <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
@@ -7612,11 +7612,11 @@ async function verSysTables(db) {
 async function verSysColumns(db, tabela_) {
   db = db || databaseCorrente();
   if (!db) return avisar(txt("tela.g_sem_database_escolhido","nenhum database escolhido"), true);
-  folha(preencher(txt("tela.tt_syscolumns_db","SysColumns · {db}"), {db}), txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
+  folha("SysColumns · " + db, txt("tela.carregando","carregando…"), `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const r = await api("siscolunas", tabela_ ? { database: db, tabela: tabela_ } : { database: db });
   const linhas = r.colunas || [];
 
-  folha(preencher(txt("tela.tt_syscolumns_db","SysColumns · {db}"), {db}) + (tabela_ ? ` · ${tabela_}` : ""),
+  folha("SysColumns" + " · " + db + (tabela_ ? " · " + tabela_ : ""),
     preencher(txt("tela.st_n_colunas_dicionario","{n} coluna(s) · o dicionário de dados"), {n: linhas.length}),
     `<div class="acoes">
        <button class="botao secundario" id="btSysTabs">← SysTables</button>
@@ -8021,13 +8021,13 @@ function ligarIdiomasAdmin() {
    para quem clica e para quem chama por `curl`. */
 
 const FORMATOS = [
-  { id:"xlsx", rot:"Excel",    ico:"▦", diz:"planilha formatada, com filtro e painel congelado" },
-  { id:"csv",  rot:"CSV",      ico:"☰", diz:"ponto e vírgula, decimal com vírgula, BOM para o acento" },
-  { id:"json", rot:"JSON",     ico:"{}", diz:"uma lista de objetos, tipos preservados" },
-  { id:"xml",  rot:"XML",      ico:"◇", diz:"um elemento por linha, nulo declarado" },
-  { id:"html", rot:"HTML",     ico:"◫", diz:"tabela pronta, com filtro que funciona sem rede" },
-  { id:"docx", rot:"Word",     ico:"▤", diz:"documento em paisagem, cabeçalho repetido por página" },
-  { id:"txt",  rot:"Texto",    ico:"⌷", diz:"largura fixa, alinhado para ler no terminal" },
+  { id:"xlsx", rot:"Excel",    ico:"▦", diz:"planilha formatada, com filtro e painel congelado", dizTxt:"tela.fmt_xlsx_diz" },
+  { id:"csv",  rot:"CSV",      ico:"☰", diz:"ponto e vírgula, decimal com vírgula, BOM para o acento", dizTxt:"tela.fmt_csv_diz" },
+  { id:"json", rot:"JSON",     ico:"{}", diz:"uma lista de objetos, tipos preservados", dizTxt:"tela.fmt_json_diz" },
+  { id:"xml",  rot:"XML",      ico:"◇", diz:"um elemento por linha, nulo declarado", dizTxt:"tela.fmt_xml_diz" },
+  { id:"html", rot:"HTML",     ico:"◫", diz:"tabela pronta, com filtro que funciona sem rede", dizTxt:"tela.fmt_html_diz" },
+  { id:"docx", rot:"Word",     ico:"▤", diz:"documento em paisagem, cabeçalho repetido por página", dizTxt:"tela.fmt_docx_diz" },
+  { id:"txt",  rot:"Texto",    txt:"tela.fmt_txt_rot", ico:"⌷", diz:"largura fixa, alinhado para ler no terminal", dizTxt:"tela.fmt_txt_diz" },
 ];
 
 /// Entrega o arquivo ao navegador.
@@ -8058,13 +8058,13 @@ async function telaExportar(db, tab) {
   tab = tab || (est.atual || {}).tab;
   if (!db || !tab) return avisar(txt("tela.g_escolha_tabela_primeiro","escolha uma tabela primeiro"), true);
 
-  folha(`Exportar ${tab}`, `${esc(db)} · escolha o formato`,
+  folha(preencher(txt("tela.tt_exportar","Exportar {tab}"), {tab}), preencher(txt("tela.st_escolha_formato","{db} · escolha o formato"), {db: esc(db)}),
     `<div class="formatos" id="fmts">
        ${FORMATOS.map(f => `<button class="fmt" data-f="${f.id}">
             <span class="f-ico">${f.ico}</span>
-            <span class="f-rot">${f.rot}</span>
+            <span class="f-rot">${f.txt ? esc(txt(f.txt, f.rot)) : f.rot}</span>
             <span class="f-ext">.${f.id}</span>
-            <span class="f-diz">${f.diz}</span>
+            <span class="f-diz">${esc(txt(f.dizTxt, f.diz))}</span>
           </button>`).join("")}
      </div>
      <div class="form-dbl">
@@ -8120,7 +8120,7 @@ async function telaImportar(db, tab) {
   tab = tab || (est.atual || {}).tab;
   if (!db || !tab) return avisar(txt("tela.g_escolha_tabela_primeiro","escolha uma tabela primeiro"), true);
 
-  folha(`Importar para ${tab}`, `${esc(db)} · cole a carga e confira antes de gravar`,
+  folha(preencher(txt("tela.tt_importar_para","Importar para {tab}"), {tab}), preencher(txt("tela.st_cole_carga_confira","{db} · cole a carga e confira antes de gravar"), {db: esc(db)}),
     `<div class="form-dbl">
        <label class="cmp"><span>Formato</span>
          <select id="impFmt" class="campo">${FORMATOS_ENTRADA.map(([k, r, d]) =>
@@ -8544,13 +8544,13 @@ async function telaLixeira(db, tab) {
   tab = tab || (est.atual || {}).tab;
   if (!db || !tab) return avisar(txt("tela.g_escolha_tabela_primeiro","escolha uma tabela primeiro"), true);
 
-  folha(`Lixeira de ${tab}`, `${esc(db)} · carregando…`,
+  folha(preencher(txt("tela.tt_lixeira_de","Lixeira de {tab}"), {tab}), preencher(txt("tela.st_db_carregando","{db} · carregando…"), {db: esc(db)}),
     `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try {
     d = await api("lixeira", { database: db, tabela: tab, limite: 300 });
   } catch (e) {
-    folha(`Lixeira de ${tab}`, esc(db),
+    folha(preencher(txt("tela.tt_lixeira_de","Lixeira de {tab}"), {tab}), esc(db),
       `<div class="aviso mal">${esc(String(e))}</div>
        <p class="leg">O <code>.trash</code> guarda o dado que alguém mandou
          apagar. Ver o conteúdo dele exige <b>administrar</b> — quem só tem
@@ -8702,13 +8702,13 @@ async function telaMotivos(db, tab) {
   tab = tab || (est.atual || {}).tab;
   if (!db || !tab) return avisar(txt("tela.g_escolha_tabela_primeiro","escolha uma tabela primeiro"), true);
 
-  folha(`Motivos de ${tab}`, `${esc(db)} · carregando…`,
+  folha(preencher(txt("tela.tt_motivos_de","Motivos de {tab}"), {tab}), preencher(txt("tela.st_db_carregando","{db} · carregando…"), {db: esc(db)}),
     `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let d;
   try {
     d = await api("motivos", { database: db, tabela: tab, limite: 500 });
   } catch (e) {
-    folha(`Motivos de ${tab}`, esc(db),
+    folha(preencher(txt("tela.tt_motivos_de","Motivos de {tab}"), {tab}), esc(db),
       `<div class="aviso mal">${esc(String(e))}</div>
        <p class="leg">O <code>.reason</code> costuma ser mais revelador que o
          registro que foi excluído — «fraude», «pedido de remoção do titular»,
@@ -9042,20 +9042,20 @@ async function verEstatisticas(horas) {
    é usada, em vez de exigir que ele já se saiba. */
 
 const JUNCOES = [
-  { id:"interna",      rot:"Interna",        sql:"INNER JOIN",
-    exp:"só o que casa dos dois lados" },
-  { id:"esquerda",     rot:"Esquerda",       sql:"LEFT JOIN",
-    exp:"tudo de A, e B quando houver" },
-  { id:"direita",      rot:"Direita",        sql:"RIGHT JOIN",
-    exp:"tudo de B, e A quando houver" },
-  { id:"completa",     rot:"Completa",       sql:"FULL OUTER JOIN",
-    exp:"tudo dos dois lados" },
-  { id:"so_esquerda",  rot:"Só A",           sql:"LEFT JOIN … WHERE B.chave IS NULL",
-    exp:"o que existe em A e não em B" },
-  { id:"so_direita",   rot:"Só B",           sql:"RIGHT JOIN … WHERE A.chave IS NULL",
-    exp:"o que existe em B e não em A" },
-  { id:"so_dos_lados", rot:"Só as pontas",   sql:"FULL OUTER … WHERE A.chave IS NULL OR B.chave IS NULL",
-    exp:"o que sobra dos dois lados, sem o meio" },
+  { id:"interna",      rot:"Interna",        txt:"tela.jn_interna",        sql:"INNER JOIN",
+    exp:"só o que casa dos dois lados", expTxt:"tela.jn_interna_exp" },
+  { id:"esquerda",     rot:"Esquerda",       txt:"tela.jn_esquerda",       sql:"LEFT JOIN",
+    exp:"tudo de A, e B quando houver", expTxt:"tela.jn_esquerda_exp" },
+  { id:"direita",      rot:"Direita",        txt:"tela.jn_direita",        sql:"RIGHT JOIN",
+    exp:"tudo de B, e A quando houver", expTxt:"tela.jn_direita_exp" },
+  { id:"completa",     rot:"Completa",       txt:"tela.jn_completa",       sql:"FULL OUTER JOIN",
+    exp:"tudo dos dois lados", expTxt:"tela.jn_completa_exp" },
+  { id:"so_esquerda",  rot:"Só A",           txt:"tela.jn_so_a",           sql:"LEFT JOIN … WHERE B.chave IS NULL",
+    exp:"o que existe em A e não em B", expTxt:"tela.jn_so_a_exp" },
+  { id:"so_direita",   rot:"Só B",           txt:"tela.jn_so_b",           sql:"RIGHT JOIN … WHERE A.chave IS NULL",
+    exp:"o que existe em B e não em A", expTxt:"tela.jn_so_b_exp" },
+  { id:"so_dos_lados", rot:"Só as pontas",   txt:"tela.jn_so_pontas",      sql:"FULL OUTER … WHERE A.chave IS NULL OR B.chave IS NULL",
+    exp:"o que sobra dos dois lados, sem o meio", expTxt:"tela.jn_so_pontas_exp" },
 ];
 
 /// O diagrama de Venn de uma junção, desenhado à mão.
@@ -9134,9 +9134,9 @@ async function telaJuncao(db) {
      <div class="vennes" id="vennes">
        ${JUNCOES.map(j => `<button class="venn ${j.id === JN.tipo ? "viva" : ""}" data-t="${j.id}">
             ${venn(j.id)}
-            <span class="v-rot">${j.rot}</span>
+            <span class="v-rot">${esc(txt(j.txt, j.rot))}</span>
             <span class="v-sql">${esc(j.sql)}</span>
-            <span class="v-exp">${j.exp}</span>
+            <span class="v-exp">${esc(txt(j.expTxt, j.exp))}</span>
           </button>`).join("")}
      </div>
      <div class="acoes">
@@ -9551,8 +9551,8 @@ async function estruturaDbl(tabela) {
   });
   const linhasCol = emObjetos(col), linhasIdx = emObjetos(idx);
 
-  folha(`Estrutura de ${DBL.database}.${tabela}`,
-    `colunas e índices como o ${DBL.ligacao} os reporta`,
+  folha(preencher(txt("tela.tt_estrutura_de","Estrutura de {db}.{tab}"), {db: DBL.database, tab: tabela}),
+    preencher(txt("tela.st_colunas_indices_como_reporta","colunas e índices como o {ligacao} os reporta"), {ligacao: DBL.ligacao}),
     `<div id="gradeDblCol"></div>
      <h4 style="margin:18px 0 6px">${esc(txt("tela.aba_indices", "Índices"))}</h4>
      <div id="gradeDblIdx"></div>
@@ -9870,9 +9870,9 @@ async function assistenteDbLink() {
 async function telaDbLinkSql(nome) {
   const d = await api("dblink");
   const l = (d.ligacoes || []).find(x => x.nome === nome) || {};
-  folha(`Consulta no DbLink ${nome}`,
-    l.somente_leitura ? "esta ligação só consulta — SELECT, SHOW, DESCRIBE e EXPLAIN"
-                      : "ATENÇÃO: esta ligação pode escrever no banco do outro lado",
+  folha(preencher(txt("tela.tt_consulta_no_dblink","Consulta no DbLink {nome}"), {nome}),
+    l.somente_leitura ? txt("tela.st_dblink_so_consulta","esta ligação só consulta — SELECT, SHOW, DESCRIBE e EXPLAIN")
+                      : txt("tela.st_dblink_pode_escrever","ATENÇÃO: esta ligação pode escrever no banco do outro lado"),
     `<div class="form-sql">
        <textarea id="sqlDbl" class="campo" rows="5"
          placeholder="SELECT * FROM clientes WHERE cidade = 'Joinville'">SELECT </textarea>
@@ -11711,22 +11711,22 @@ async function verReplicacao() {
 
 const MODOS_REPLICA = [
   { id: "primary_replica", rot: "Primary → Replica", sql: "A → B",
-    papel: "replica",
+    papel: "replica", expTxt: "tela.rep_primary_replica_exp",
     exp: "distribuição e cópia: central → filial, relatórios, datacenter " +
          "secundário — o outro recebe a escrita, este acompanha" },
   // «↔» e nao «⇄»: a IBM Plex Mono do v-sql nao tem o glifo duplo, e o
   // navegador pintava um substituto que parecia «≠» — visto na captura.
   { id: "multi_master", rot: "Multi-Master", sql: "A ↔ B",
-    papel: "multi",
+    papel: "multi", expTxt: "tela.rep_multi_master_exp",
     exp: "os dois recebem escrita e trocam alterações · conflito: a " +
          "modificação mais recente vence (exige relógios via NTP) · " +
          "chave única por tabela" },
   { id: "standby", rot: "Primary → Standby", sql: "A → B · failover",
-    papel: "spare",
+    papel: "spare", expTxt: "tela.rep_standby_exp",
     exp: "reserva de contingência: não atende cliente; existe para assumir " +
          "no desastre — a promoção é a spare_promover" },
   { id: "read_replica", rot: "Read Replica", sql: "A → B · leitura",
-    papel: "read_replica",
+    papel: "read_replica", expTxt: "tela.rep_read_replica_exp",
     exp: "réplica de consulta: aceita leitura, recusa escrita apontando o " +
          "primário — relatórios e balanceamento de leitura" },
 ];
@@ -11872,7 +11872,7 @@ async function assistenteReplicacao() {
              ${cartaoReplica(m.id)}
              <span class="v-rot">${esc(m.rot)}</span>
              <span class="v-sql">${esc(m.sql)}</span>
-             <span class="v-exp">${esc(m.exp)}</span>
+             <span class="v-exp">${esc(txt(m.expTxt, m.exp))}</span>
            </button>`).join("")}
       </div>`,
       `<button class="botao secundario" id="rzSair">${esc(txt("tela.cancelar", "Cancelar"))}</button>
@@ -12906,7 +12906,7 @@ const MENUS = [
           + "de ENVIO já existe (é o que manda o alerta de disco), mas ele só "
           + "entrega para um relé interno e não sabe RECEBER — sem isso o "
           + "correio é de mão única." },
-    { rot:"Blockchain", ico:"⛓",
+    { rot:"Blockchain", txt:"tela.fer_blockchain", ico:"⛓",
       falta:"O formato encaixa: a altura do bloco é o rowid, o Uuid256 guarda "
           + "um SHA-256 exato e a ordem de digitação é sagrada. Falta o "
           + "serviço — e, antes dele, as transações." },
@@ -13486,7 +13486,7 @@ async function conferirBackup() {
 async function verificarTabela() {
   const { db, tab } = est.atual;
   const r = await api("verificar", { database: db, tabela: tab });
-  folha(`Integridade de ${tab}`, txt("tela.st_crc_registro_pagina","CRC de cada registro e de cada página do índice"),
+  folha(preencher(txt("tela.tt_integridade_de","Integridade de {tab}"), {tab}), txt("tela.st_crc_registro_pagina","CRC de cada registro e de cada página do índice"),
         `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
 
@@ -13498,11 +13498,11 @@ async function checksumTabela(db, tab) {
   db = db || (est.atual || {}).db;
   tab = tab || (est.atual || {}).tab;
   if (!db || !tab) return avisar(txt("tela.g_escolha_tabela_primeiro","escolha uma tabela primeiro"), true);
-  folha(`Soma de verificação de ${tab}`, txt("tela.st_lendo","lendo…"), `<div class="centro">lendo…</div>`);
+  folha(preencher(txt("tela.tt_soma_verificacao_de","Soma de verificação de {tab}"), {tab}), txt("tela.st_lendo","lendo…"), `<div class="centro">${esc(txt("tela.st_lendo","lendo…"))}</div>`);
   let r;
   try { r = await api("checksum", { database: db, tabela: tab }); }
-  catch (e) { return folha(`Soma de verificação de ${tab}`, "", `<div class="aviso mal">${esc(String(e))}</div>`); }
-  folha(`Soma de verificação de ${esc(db)}.${esc(tab)}`,
+  catch (e) { return folha(preencher(txt("tela.tt_soma_verificacao_de","Soma de verificação de {tab}"), {tab}), "", `<div class="aviso mal">${esc(String(e))}</div>`); }
+  folha(preencher(txt("tela.tt_soma_verificacao_de","Soma de verificação de {tab}"), {tab: esc(db) + "." + esc(tab)}),
     txt("tela.st_comparar_copias","para comparar duas cópias sem transportar as duas"),
     `<div class="fichas">
        ${ficha(`<code>${esc(r.checksum)}</code>`, txt("tela.fc_soma","soma"), "64 bits, em hexadecimal")}
@@ -13550,7 +13550,7 @@ async function carregarNaMemoria() {
   const { db, tab } = est.atual;
   const r = await api("memoria_carregar", { database: db, tabela: tab });
   avisar(preencher(txt("tela.g_tabela_esta_na_ram","{tab} está na RAM"), {tab}));
-  folha(`${tab} em memória`, txt("tela.st_consulta_sem_disco","a consulta deixa de tocar o disco"),
+  folha(preencher(txt("tela.tt_tab_em_memoria","{tab} em memória"), {tab}), txt("tela.st_consulta_sem_disco","a consulta deixa de tocar o disco"),
         `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
 

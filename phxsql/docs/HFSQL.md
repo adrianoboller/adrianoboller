@@ -137,9 +137,14 @@ Três decisões que valem registro:
 
 ### 3.6 Bloqueio de linha e de tabela
 
-Eles travam por linha, automaticamente. Aqui há uma trava global única — todo
-acesso a dado se serializa. É correto e é lento sob carga; está no roteiro como
-«trava por tabela», e a de linha viria depois.
+Eles travam por linha, automaticamente. Aqui há uma trava global — e desde
+05/09 ela tem **duas fichas**: a leitura de grade (`varrer`) toma a
+compartilhada e deixa de esperar outra leitura de grade; toda escrita, e todo o
+resto, continua na exclusiva. É correto e continua sendo lento sob carga de
+escrita. A trava por tabela está **respondida e recusada com número** — ler em
+tabelas separadas não é mais rápido que ler na mesma (≈1,00× em quatro
+medições): não é a tabela que serializa. A de linha viria depois.
+`docs/CONCORRENCIA.md` §11.1 e §16.
 
 ### 3.7 Reconexão automática
 

@@ -297,11 +297,12 @@ Aprendizados que ficaram no código:
 | **Leitura sequencial** | ✓ | slot de largura fixa: 4,8× o MySQL(R) |
 | **Tabela grande** | ✓ | partição em volumes por quantidade, período ou letra |
 | **Escrita** | ✗ | um master, e o `.ndx` é 83,5% do custo |
-| **Concorrência** | ✗ | **trava global única** — todo acesso a dado se serializa |
+| **Concorrência** | ◐ | **trava global**, com uma ficha compartilhada: desde 05/09 o `varrer` (leitura de grade) deixa de esperar outro `varrer`; toda escrita, e as outras 75 seções, continuam exclusivas. `docs/CONCORRENCIA.md` §16 |
 | **Tamanho do dado** | ✓ | volumes; o teto é `registros_por_arquivo × max_arquivos` |
 
 **O gargalo de escala mais próximo não é o cluster: é a trava.** Um servidor
-com muita gente lendo ao mesmo tempo hoje serializa tudo, inclusive leitura
+com muita gente lendo ao mesmo tempo hoje serializa quase tudo — a exceção é o
+`varrer`, e ela é de 05/09 —, inclusive leitura
 contra leitura. Trava por tabela — e depois leitura concorrente com escrita —
 rende mais, e é mais barato, que qualquer coisa distribuída.
 

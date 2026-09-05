@@ -54,8 +54,21 @@ alguém faz quando o servidor está lento, e nenhuma delas tinha resposta.
 ### 2.1 Esperas — atividades por estado (área empilhada)
 
 É o equivalente do *Waits* do SQL Check. Aqui a espera tem **um dono só**: a
-trava única de dados (`Mutex<Instancia>`), por onde passam toda leitura e toda
-escrita, uma de cada vez.
+trava única de dados (`RwLock<Raiz>`), por onde passam toda leitura e toda
+escrita.
+
+Desde 05/09 ela tem **duas fichas**, e a diferença importa para ler o painel: a
+**exclusiva** (`travar_dados()`, um de cada vez) e a **compartilhada**
+(`travar_dados_para_ler()`, N leitores ao mesmo tempo), que hoje **uma única
+operação toma — o `varrer`**. As outras 75 seções continuam exclusivas, e a
+catraca `so_uma_operacao_usa_a_ficha_compartilhada` cobra que continuem.
+
+**As duas entram na MESMA série**, de propósito. Séries separadas dariam um
+número mais preciso e um buraco pior: a série existe para responder «por que
+este servidor está lento», e uma operação que sumisse dela levaria junto a
+resposta. O que se perde é distinguir posse compartilhada de exclusiva dentro
+do número — e quem precisar dessa distinção mede antes de separar, em vez de
+separar e descobrir depois que ninguém somava as duas.
 
 A faixa empilha a contagem de atividades em cada estado, a cada segundo:
 
@@ -70,8 +83,10 @@ O número em destaque é `espera_ms_s`: **quantos milissegundos de cada segundo 
 servidor passou na fila**. Meio segundo por segundo quer dizer que, na média,
 há sempre alguém parado esperando — e é um dos gatilhos de *stress*.
 
-A medida vem de um lugar só: **toda** tomada de trava do `servidor.rs` chama
-`travar_dados()`, e é lá dentro que o cronômetro está. Medir em cada uma seria
+A medida vem de um lugar por ficha: **toda** tomada exclusiva chama
+`travar_dados()` e **toda** tomada compartilhada chama
+`travar_dados_para_ler()`, e é lá dentro que o cronômetro está — o mesmo, nas
+duas. Medir em cada uma seria
 copiar a mesma conta dezenas de vezes, e a que alguém esquecesse viraria o
 buraco na série — a mesma razão pela qual o portão de permissão é um só.
 
@@ -80,7 +95,9 @@ ponto único, e as três piores (o despejo do cache, o corpo de um gatilho e o
 laço da replicação atravessando a rede) eram exatamente a atividade longa que
 o painel existe para mostrar. Elas entraram, e o que impede a décima-quarta não
 é este parágrafo: é o teste `so_um_lugar_toma_a_trava`, que conta as tomadas no
-próprio fonte. **Documento não conta; teste conta.**
+próprio fonte. **Documento não conta; teste conta.** Com as duas fichas ele
+passou a cobrar **uma** `write()` e **uma** `read()`, cada uma dentro da função
+que a batiza — o teto não subiu, nasceu outro ao lado com o mesmo valor 1.
 
 ### 2.2 Leitura e escrita físicas — **deste processo**
 

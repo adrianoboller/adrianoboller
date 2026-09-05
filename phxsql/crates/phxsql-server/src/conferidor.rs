@@ -365,6 +365,23 @@ pub const ISENTOS: &[(&str, &str)] = &[
     ("SysColumns", "nome de tabela de sistema"),
     ("phx-grid", "nome do componente de grade"),
     ("v7", "versao de UUID"),
+    (
+        "Primary → Replica",
+        "nome de topologia de replicacao, termo tecnico do setor",
+    ),
+    (
+        "Multi-Master",
+        "nome de topologia de replicacao, termo tecnico do setor",
+    ),
+    (
+        "Primary → Standby",
+        "nome de topologia de replicacao, termo tecnico do setor",
+    ),
+    (
+        "Read Replica",
+        "nome de topologia de replicacao, termo tecnico do setor",
+    ),
+    ("Blockchain", "nome de tecnologia, o mesmo em toda lingua"),
 ];
 
 /// A varredura de um arquivo. `arquivo` so entra no achado, para dizer onde.
