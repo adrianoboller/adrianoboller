@@ -12,6 +12,30 @@ python3 bancada/replicacao/medir.py 100000
 `montar.py --cascata` põe o Slave03 puxando do Slave01 em vez do master, para
 medir o segundo salto.
 
+**O diretório vai nos dois lados.** O `montar.py` o aceita como argumento e o
+`medir.py` o lê de `PHX_REPLICACAO`, porque o estágio da retomada precisa dele
+em disco para subir o `slave03` de volta:
+
+```bash
+python3 bancada/replicacao/montar.py /tmp/outro
+PHX_REPLICACAO=/tmp/outro python3 bancada/replicacao/medir.py
+```
+
+Montar num diretório e medir noutro **morria no último estágio**, depois de
+três minutos de trabalho e com o `slave03` já derrubado pelo PID — um
+`FileNotFoundError` cru. Desde 05/09/2026 a conferência acontece **antes** da
+carga, e a recusa traz os dois comandos: *prova que só descobre no fim que não
+podia começar mede o estrago, não a replicação.*
+
+E o alvo do `kill` da retomada passou a ser resolvido por **caminho absoluto**.
+Antes ele varria os `phxsqld` da máquina inteira procurando um `cwd` que
+*terminasse* em `slave03` e guardava o **último** — com outra bancada de pé, a
+seleção casava os dois e quem morria dependia da ordem do `pgrep`. Medido com
+os dois vivos no mesmo instante: a seleção antiga casou
+`/tmp/phx-rep-frente-dist/slave03` **e** `/tmp/phx-vizinho-frente-dist/slave03`;
+a nova casou só o desta corrida. *Matar o servidor do vizinho já derrubou a
+própria sessão aqui.*
+
 | Arquivo | O que é |
 |---|---|
 | `montar.py` | escreve os quatro `config.json` e sobe os quatro processos |
@@ -114,19 +138,35 @@ réplica deriva a chave do desafio-resposta. Não há senha em claro em nenhum
 
 ## O que a última corrida mediu
 
-| | |
-|---|---|
-| Master, com a imagem no diário | 34.048 linhas/s |
-| Aplicação, por réplica (as três em paralelo) | **17.450 eventos/s** |
-| Alcançar 100.000 eventos, as três | 5,7 s |
-| Atraso de uma escrita até as três | 140 ms a 2,0 s |
-| Réplica derrubada: voltar a atender | 323 ms |
-| Réplica derrubada: alcançar 4.000 eventos | 0,3 s |
-| Retrato das quatro, no fim | idênticos |
+**Os números estão no `resultados.json`, e ele é GRAVADO pelo `medir.py`** —
+desde 05/09/2026, porque até ali o script só imprimia `RESULTADO` e alguém
+copiava à mão. Esta seção não repete nenhum deles: *número digitado à mão
+envelhece calado*. O arquivo traz junto o `quando`, a `versao` do binário e um
+campo `maquina_ocupada`, que é o veredito do `bancada/esta-medindo.sh` no
+instante da gravação — tempo medido com outra frente compilando é tempo
+**nomeado**, e quem lê o arquivo depois não tem como adivinhar isso.
 
-O atraso ainda é dominado pelo `reconectar_em` (2 s aqui) quando a escrita cai
-logo depois de a réplica adormecer — é por isso que a mesma coluna traz 140 ms
-e 2,0 s. Baixar o intervalo baixa o atraso e sobe o tráfego de perguntas em vão.
+Ele **mescla** de propósito, preservando por nome as duas medidas que não saem
+desta corrida: o `custo_da_imagem` (duas corridas com o interruptor mudando) e a
+`cascata` (um `montar.py --cascata`). A primeira versão da gravação fazia um
+`update` cego e deixou vivo um bloco `atraso_ms` de outra corrida ao lado dos
+números novos — o próprio defeito que ela existe para matar, cometido dentro do
+conserto. *Chave preservada é chave nomeada.*
+
+E o `medir.py` **recusa** rodar sobre uma montagem já carregada. Rodar duas
+vezes contra os mesmos quatro servidores parece funcionar: os ids da semente
+colidem, as réplicas já estão alcançadas, `alcance_s` arredonda para 0,0 e a
+divisão publica **63.390.598 eventos/s** — ao lado dos 20.826 da corrida
+anterior, no mesmo arquivo. *Cenário que não exercita o caminho mede o caminho
+errado, e o número que ele produz é o mais perigoso de todos, porque parece
+medição.*
+
+O que **não** muda de corrida para corrida, e por isso fica escrito: os quatro
+retratos SHA-256 saem idênticos no fim, e o atraso de uma escrita até as três
+réplicas é dominado pelo `reconectar_em` (2 s aqui) e não pelo trabalho —
+quando a escrita cai logo depois de a réplica adormecer, o atraso é o que resta
+da janela de 2 s. Baixar o intervalo baixa o atraso e sobe o tráfego de
+perguntas em vão.
 
 ### O que estava escrito aqui, e estava errado
 

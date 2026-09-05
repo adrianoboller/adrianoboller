@@ -1,24 +1,20 @@
 {
-  "quando": "2026-08-29",
-  "versao": "0.17.0",
-  "maquina": "quatro processos phxsqld em 127.0.0.1, no mesmo container",
-  "topologia": "master -> slave01, slave02, slave03",
-  "linhas": 105001,
-  "master_linhas_s": 34048,
-  "replica_eventos_s": 17450,
-  "alcance_s": 5.7,
-  "atraso_ms": {
-    "1 insercao": 2028,
-    "1.000 insercoes em lote": 177,
-    "1 alteracao": 2016,
-    "1 exclusao suave": 165,
-    "1 restauracao": 293,
-    "1 exclusao fisica": 140,
-    "1 linha com memo de 200 KB": 144
-  },
-  "retomada_subiu_ms": 323,
+  "master_linhas_s": 26762,
+  "replica_eventos_s": 24583,
+  "alcance_s": 4.1,
+  "retomada_subiu_ms": 347,
   "retomada_alcance_s": 0.3,
   "iguais_no_fim": true,
+  "linhas": 105001,
+  "atraso_ms": {
+    "1 insercao": 1985,
+    "1.000 insercoes em lote": 1767,
+    "1 alteracao": 1643,
+    "1 exclusao suave": 1625,
+    "1 restauracao": 1487,
+    "1 exclusao fisica": 1483,
+    "1 linha com memo de 200 KB": 1490
+  },
   "custo_da_imagem": {
     "sem_imagem_linhas_s": 21740,
     "com_imagem_linhas_s": 19531,
@@ -29,5 +25,10 @@
     "topologia": "master -> slave01 -> slave03 ; master -> slave02",
     "um_salto_ms": 1679,
     "dois_saltos_ms": 1827
-  }
+  },
+  "quando": "2026-09-05",
+  "versao": "0.18.0",
+  "maquina": "quatro processos phxsqld em 127.0.0.1, no mesmo container",
+  "topologia": "master -> slave01, slave02, slave03",
+  "maquina_ocupada": false
 }

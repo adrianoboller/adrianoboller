@@ -1386,6 +1386,11 @@ soltava a trava. A bancada de contêiner tinha medido 29.456 ms com `ping` de
 6 ms; o loopback reproduz o mesmo em outro lugar, o que é a confirmação de que
 o mecanismo não dependia do Docker.
 
+E em **05/09/2026** a bancada de contêiner foi refeita — o daemon do Docker
+desta máquina voltou —, o que fecha a conta com a segunda testemunha em vez de
+com a semelhança dos números: **29.456 → 6 ms** lá, contra os 30.079 → 6 ms
+daqui. `REPLICACAO.md` §18, «A conta fechada no contêiner».
+
 A linha da telemetria pede um cuidado: as duas colunas **não são
 comparáveis**, porque a sonda passou de 52.650 para 231.385 idas e voltas na
 mesma janela — depois do conserto ela consegue perguntar cinco vezes mais, e

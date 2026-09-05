@@ -60,7 +60,7 @@ que soquete no loopback não alcança.
 
 | arquivo | o que é |
 |---|---|
-| `Dockerfile` | `FROM scratch` + o binário musl. Sem shell, sem gerenciador de pacotes: **6,42 MB** de camada, 2,69 comprimidos |
+| `Dockerfile` | `FROM scratch` + o binário musl. Sem shell, sem gerenciador de pacotes — o tamanho sai do `provar.py`, que o mede de três jeitos e grava no `resultados.json` |
 | `compose-a-primary-replica.yml` | modo A — source e réplica na rede `tunel` |
 | `compose-b-multi-master.yml` | modo B — alfa e beta, cada um origem do outro |
 | `compose-c-spare.yml` | modo C — primário, spare e uma read replica de testemunha |
@@ -68,6 +68,28 @@ que soquete no loopback não alcança.
 | `compose-e-firewall.yml` | a §7 — IPs **fixos** (172.28.90.10/.20/.30) e um intruso |
 | `provar.py` | a bancada inteira, com o esperado escrito antes de cada estágio |
 | `resultados.json` | a última corrida completa, crua |
+
+## O estágio (a3) e o dia em que ele reprovou o próprio conserto
+
+Vale ler antes de mexer em qualquer estágio daqui. O veredito do
+`a3-congelamento` era `pior_varrer > 5_000`: ele nasceu para **achar** a trava
+de dados presa atrás da leitura de rede, e por isso só passava com ela presa.
+O pedido 147 soltou a trava — e não pôde refazer esta bancada, porque o daemon
+do Docker desta máquina estava fora do ar. Quando o daemon voltou, em
+05/09/2026, o `varrer` respondeu em **7 ms** e o estágio saiu **reprovando o
+conserto**.
+
+*Guarda que afirma o defeito vira catraca contra quem o conserta.* Hoje ele
+afirma a garantia, e os tetos vêm de `TETO_VARRER_MS`/`TETO_PING_MS` no
+`bancada/replicacao/trava.py` — a bancada irmã de loopback, que mede o mesmo
+defeito por outro caminho. **Importados, não copiados**: dois números iguais em
+dois arquivos são um número que envelhece de um lado só.
+
+Um estágio deste diretório pode legitimamente afirmar um defeito, e há um: a
+fase 1 do estágio (e) exige que o intruso **roube** 200 eventos com tudo
+destrancado. A diferença é onde a afirmação mora — a guarda afirma o defeito no
+ponto que o conserto deveria mudar; o controle positivo o afirma num ponto que
+o conserto deliberadamente **não** muda.
 
 ### A imagem: por que não é a oficial
 

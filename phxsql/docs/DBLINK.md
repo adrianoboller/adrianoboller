@@ -495,6 +495,16 @@ reaparece (o limite é real); a rodada repetida é 0/0/0; e o job puxa sozinho.
 O assistente foi exercitado no navegador de ponta a ponta (Playwright), com
 captura de cada passo.
 
+Refeita em **05/09/2026**: **13 conferências verdes** contra o MySQL(R) 8.0.46.
+Nessa corrida ela deixou de depender do `phxsqld` do **demo** (porta 5599,
+levantado à mão) e passou a subir o próprio, na porta 7493, morto pelo PID —
+com o `mysqld` continuando de fora, pela mesma decisão da `prova-mysql.py`:
+derrubar o banco de outra frente na mesma máquina custa mais do que a prova
+vale. A prova real da mudança foi nos dois sentidos: com o dono da tabela
+reposto para `la`, o passo 4 **reprova** dizendo o valor errado
+(`ERRADA (esperava Curitiba-PR)`); com o `mysqld` fora do ar, ela diz o comando
+e para, em vez de morrer com um traceback.
+
 O que as provas acharam — e teria passado sem elas:
 
 - **A ordem da puxada não é a ordem dos ids** (HashMap não garante ordem). O

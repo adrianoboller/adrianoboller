@@ -1066,6 +1066,9 @@ e a rede perfeitamente sã.
 | `EAGAIN` novos no diário | **+1 em alfa e +1 em beta** |
 | pior `checksum` da bancada durante o episódio | 1.997 ms |
 
+*(Consertado. Refeito no contêiner em 05/09/2026: **3,6 s**, `EAGAIN` **0 e
+0**, pior `checksum` 697 ms. A tabela dos dois lados está no fim da §18.)*
+
 Um ciclo de abraço, e a escrita de quem estava digitando parou junto. O
 `EAGAIN` (`Resource temporarily unavailable`) no diário dos dois é a
 assinatura: é o prazo de leitura de 30 s do cliente da réplica estourando
@@ -1158,6 +1161,15 @@ no `acessos.log`, e o IP **na lista negra** do source ao fim da fase.
    compila dentro do contêiner com `--offline`, que é o que prova a promessa
    de zero dependência; a da bancada carrega o binário musl da máquina, porque
    sobe e derruba dez contêineres por corrida. Mesmo alvo, mesmo `scratch`.
+7. **Estágio que afirma o DEFEITO vira catraca contra quem o conserta**
+   *(05/09/2026)*. O veredito do (a3) era `pior_varrer > 5_000`: ele nasceu
+   para **achar** a trava presa e só passava com ela presa. Consertado o
+   defeito, o `varrer` respondeu em 7 ms e o estágio saiu **reprovando o
+   conserto** — e, o pior, sem que ninguém visse, porque o Docker esteve fora
+   do ar entre o conserto e esta corrida. A regra que sai: *o estágio que acha
+   um defeito, no dia em que ele for consertado, tem de passar a afirmar a
+   garantia* — e o teto vem do mesmo lugar da bancada irmã, não de uma segunda
+   cópia do número.
 
 ---
 
@@ -1343,12 +1355,44 @@ tinha olhado.
   a mensagem de reprovação já traz o diagnóstico pronto — *«`varrer` sem
   resposta em 8 s; o `ping`, que não precisa da trava, respondeu em 570 µs»*.
 
-### O que ficou por fazer
+### A conta fechada no contêiner — 05/09/2026
 
-A bancada de contêiner da §17 **não foi refeita** nesta rodada: o daemon do
-Docker desta máquina caiu antes do trabalho começar e não pôde ser levantado.
-Os dois estágios que mediram o defeito lá (`a3-congelamento` e `b-abraco`)
-estão reproduzidos aqui no loopback, com números do mesmo tamanho — 30.079 ms
-contra os 29.456 ms de lá, 33,0 s contra os 33,3 s de lá —, o que é a razão de
-confiar no resultado. Ainda assim, refazer `provar.py` numa máquina com Docker
-é o passo que fecha a conta, e está anotado no `PENDENCIAS.md`.
+Esta seção dizia que a bancada de contêiner da §17 **não foi refeita**, porque
+o daemon do Docker desta máquina estava fora do ar. Ele voltou, e a bancada
+rodou inteira: **15 estágios, todos verdes**, 8,1 min. Os dois estágios que
+tinham medido o defeito lá agora medem o conserto, e é a segunda testemunha
+que faltava:
+
+| medida, no contêiner | com o defeito (30/08) | hoje (05/09) |
+|---|---:|---:|
+| `a3` pior `varrer` na réplica | **29.456 ms** | **6 ms** |
+| `a3` pior `ping` (não precisa da trava) | 6 ms | 9 ms |
+| `b-abraco` escrita nos dois lados | **33,3 s** | **3,6 s** |
+| `b-abraco` `EAGAIN` novos no diário | 1 e 1 | **0 e 0** |
+| `b-abraco` pior `checksum` | 1.997 ms | 697 ms |
+| `b-particao` pior resposta da réplica | 29.456 ms (`varrer`) | 1.317 ms (`checksum`) |
+| `b-cortes` retomada `DROP-20s` | **293,8 s** | **0,2 s** |
+
+Os 293,8 s do `DROP-20s` são o achado que nenhum documento tinha registrado: a
+réplica que perdia a rede com regra de descarte silencioso e prazo de 20 s
+levava quase cinco minutos para voltar depois de a rede religar. Com a trava
+fora do caminho da leitura, 0,2 s. As três regras de `REJECT` não mudaram —
+recusa dá erro na hora, e a réplica sempre soube tratar erro na hora.
+
+**A vazão não entra nesta tabela de propósito:** a máquina estava ocupada com
+outra frente nas duas pontas da corrida (`bancada/esta-medindo.sh` acusou antes
+e depois), então `fonte_linhas_s` e `replica_eventos_s` ficam nomeados e não
+medidos. O que a carga da máquina não explica é uma diferença de 4.900× num
+`varrer`.
+
+**E o estágio `a3` reprovou o próprio conserto na primeira corrida.** A
+afirmação dele era `pior_varrer > 5_000` — certa enquanto o defeito existia,
+porque o estágio nasceu para **achar** a trava presa. Com a trava solta o
+`varrer` respondeu em 7 ms e o veredito saiu `falha`. Hoje ele afirma a
+garantia, com os mesmos tetos da bancada de loopback, e os tetos moram num
+lugar só (`TETO_VARRER_MS`/`TETO_PING_MS` no `bancada/replicacao/trava.py`,
+importados pelo `docker/provar.py`) — dois números iguais em dois arquivos são
+um número que envelhece de um lado só.
+
+**A imagem cresceu:** 6,42 → **8,22 MB** de camada (2,69 → 3,30 MB
+comprimidos), que é o binário `musl` de hoje contra o de 30/08.

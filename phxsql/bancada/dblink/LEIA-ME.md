@@ -168,9 +168,21 @@ sozinha — *o que não se confere, não está provado*, mesmo estando escrito.
 
 ```bash
 cargo build --release                 # a regra do binário velho
-service mysql start
-python3 bancada/dblink/prova-mysql.py
+service mysql start                   # e `service postgresql start`
+python3 bancada/dblink/prova-phxsql.py      # não pede nada instalado
+python3 bancada/dblink/prova-sincronia.py   # MySQL(R)
+python3 bancada/dblink/prova-mysql.py       # MySQL(R)
+python3 bancada/dblink/prova-postgres.py    # PostgreSQL(R)
 ```
+
+**As quatro sobem o próprio `phxsqld`** — 7490 (mysql), 7491/7492 (phxsql),
+7493 (sincronia) — e matam **pelo PID**. A `prova-sincronia.py` passou a fazer
+isso em **05/09/2026**; até ali ela falava com o `phxsqld` do **demo**, na
+porta 5599, levantado à mão por outra frente. Enquanto o demo esteve no ar isso
+pareceu barato; no dia em que ele não estava, a prova morreu com um
+`ConnectionRefusedError` cru, sem dizer o que faltava. *Bancada que só roda
+quando alguém lembrou de subir um servidor à mão não é bancada* — e as três
+irmãs já subiam o próprio.
 
 A prova sobe um `phxsqld` próprio (porta 7490), mata **pelo PID** e apaga o que
 criou. O `mysqld` ela **não** sobe nem derruba — derrubar o banco de outra
@@ -221,6 +233,47 @@ INSERT INTO sem_analise
     SELECT n FROM s) x;
 SQL
 ```
+
+### A base `crm`, da `prova-sincronia.py`
+
+Ela também é montada pelo script, e o SQL fica aqui pelo mesmo motivo. É outra
+base porque a sincronia **escreve dos dois lados** — deixar uma prova de
+escrita e uma de leitura no mesmo esquema faz a segunda medir o resto da
+primeira:
+
+```bash
+mysql --default-character-set=utf8mb4 <<'SQL'
+CREATE DATABASE IF NOT EXISTS crm CHARACTER SET utf8mb4;
+CREATE USER IF NOT EXISTS 'phx'@'127.0.0.1'
+  IDENTIFIED WITH mysql_native_password BY 'ponte123';
+GRANT ALL ON crm.* TO 'phx'@'127.0.0.1';
+FLUSH PRIVILEGES;
+SQL
+mysql --default-character-set=utf8mb4 crm <<'SQL'
+CREATE TABLE IF NOT EXISTS clientes (
+  id     BIGINT NOT NULL,
+  nome   VARCHAR(60) NOT NULL,
+  cidade VARCHAR(30),
+  limite DECIMAL(12,2),
+  desde  DATE,
+  PRIMARY KEY (id),
+  KEY porCidade (cidade)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DELETE FROM clientes;
+INSERT INTO clientes VALUES
+  (1,'Adriano Boller','Curitiba-PR',15000.00,'2019-03-12'),
+  (2,'Mercearia Blumenau','Blumenau',4200.50,'2020-11-02'),
+  (3,'Posto Itajai','Itajai',9800.00,'2021-06-30'),
+  (4,'Padaria Joinville','Joinville',1250.75,'2022-01-15'),
+  (5,'Auto Pecas Chapeco','Chapeco',7600.00,'2023-08-09');
+SQL
+```
+
+A semente é reposta em **toda** corrida, e não só quando a tabela falta: o
+passo 4 deixa a linha 1 com o valor do dono e o 5 devolve a linha 2 vinda de
+lá, então uma corrida interrompida no meio deixa o lado remoto fora do começo
+conhecido — e a prova seguinte passaria a medir o resto da anterior. O lado
+PhxSql não precisa disso: o servidor nasce vazio a cada corrida.
 
 Cada peça está lá por um motivo, e sem ela uma conferência passaria por
 vacuidade:

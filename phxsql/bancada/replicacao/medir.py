@@ -134,10 +134,50 @@ def escrita(m, rotulo, fazer, saida):
 
 def main():
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 100_000
+    # A conferencia do diretorio vem ANTES da carga, e nao no estagio que
+    # precisa dele: o `montar.py` aceita o caminho como argumento e esta aqui
+    # ele so entra por `PHX_REPLICACAO`, entao montar em outro diretorio
+    # deixava a medicao morrer no ULTIMO estagio -- depois de tres minutos de
+    # trabalho e com o slave03 ja derrubado pelo PID. Prova que so descobre no
+    # fim que nao podia comecar mede o estrago, nao a replicacao.
+    faltando = [d for d in PORTAS if not os.path.isdir(os.path.join(BASE, d))]
+    if faltando:
+        raise SystemExit(
+            f"nao achei {', '.join(faltando)} em {BASE}.\n"
+            "Esta medicao le o diretorio para subir o slave03 de volta no\n"
+            "estagio da retomada, e ele tem de ser o MESMO do montar.py:\n"
+            f"  python3 bancada/replicacao/montar.py {BASE}\n"
+            f"  python3 bancada/replicacao/medir.py {n}\n"
+            "Para outro diretorio, o caminho vai nos dois lados:\n"
+            "  python3 bancada/replicacao/montar.py /tmp/outro\n"
+            "  PHX_REPLICACAO=/tmp/outro python3 bancada/replicacao/medir.py"
+        )
     for nome, porta in PORTAS.items():
         C[nome] = liga(porta)
     m = C["master"]
     r = {}
+
+    # A montagem tem de estar VIRGEM, e a conferencia vem antes da carga.
+    # Rodar duas vezes contra os mesmos quatro servidores parece funcionar e
+    # publica numero sem sentido: os ids da semente colidem, as replicas ja
+    # estao alcancadas, `alcance_s` arredonda para 0,0 e a divisao devolve
+    # dezenas de MILHOES de eventos/s. Medido: 63.390.598 eventos/s numa
+    # segunda corrida, ao lado de 20.826 na primeira. *Cenario que nao
+    # exercita o caminho mede o caminho errado, e o numero que ele produz e o
+    # mais perigoso de todos, porque parece medicao.*
+    # `fala` devolve o envelope cru, entao tabela ausente vem como ok:false --
+    # que e exatamente o caso da montagem virgem.
+    ja = m({"op": "varrer", "database": "loja", "tabela": "clientes", "max": 1})
+    if ja.get("ok") and ja.get("resultado", {}).get("linhas"):
+        raise SystemExit(
+            f"o master em {BASE} ja tem linhas em loja.clientes.\n"
+            "Esta medicao mede a carga INICIAL: rodar de novo sobre a montagem\n"
+            "usada publica vazao sem sentido (as replicas ja alcancaram).\n"
+            "Monte de novo antes:\n"
+            f"  rm -rf {BASE}\n"
+            f"  python3 bancada/replicacao/montar.py {BASE}\n"
+            f"  python3 bancada/replicacao/medir.py {n}"
+        )
 
     print(f"carga inicial: {n} linhas no master")
     t_carga = semear(m, n)
@@ -200,15 +240,82 @@ def main():
 
     print()
     print("RESULTADO " + json.dumps(r))
+    gravar(r)
+
+
+def gravar(r):
+    """Grava o `resultados.json` desta pasta -- MESCLANDO, e nao trocando.
+
+    O arquivo e um composto de mais de uma corrida de proposito: o
+    `custo_da_imagem` sai de duas corridas com o interruptor mudando e a
+    `cascata` sai de um `montar.py --cascata`. Trocar o arquivo inteiro aqui
+    apagaria as duas calado.
+
+    E ele passa a ser GRAVADO porque ate 05/09/2026 nao era: o `medir.py` so
+    imprimia `RESULTADO`, e alguem copiava a mao para ca. Numero copiado a mao
+    envelhece calado -- foi assim que o selo da capa do dossie passou quatro
+    lancamentos dizendo uma versao que nao era.
+
+    O que se preserva e uma lista NOMEADA, nao "tudo o que ja estava la": um
+    `update` cego mantem vivo o bloco de outra corrida que esta tem, so que com
+    outro nome.
+    """
+    arq = os.path.join(AQUI, "resultados.json")
+    antes = {}
+    if os.path.exists(arq):
+        with open(arq) as f:
+            antes = json.load(f)
+    # Preserva SO o que esta medicao nao produz, por nome. A primeira versao
+    # desta funcao fazia `antes.update(r)`, e isso deixou um bloco `atraso_ms`
+    # de outra corrida vivo ao lado dos numeros novos -- o proprio defeito que
+    # ela existe para matar, cometido dentro do conserto. Chave preservada e
+    # chave NOMEADA; o resto se reescreve inteiro.
+    guardadas = {k: antes[k] for k in ("custo_da_imagem", "cascata")
+                 if k in antes}
+    versao = subprocess.run([PHXSQLD, "--version"], capture_output=True,
+                            text=True).stdout.split()
+    # Os atrasos por operacao entram AGRUPADOS, na forma que o documento le.
+    atraso_ms = {k: v["ms"] for k, v in r.items()
+                 if isinstance(v, dict) and "ms" in v}
+    antes = {k: v for k, v in r.items() if k not in atraso_ms}
+    antes["atraso_ms"] = atraso_ms
+    antes.update(guardadas)
+    antes["quando"] = time.strftime("%Y-%m-%d")
+    antes["versao"] = versao[1] if len(versao) > 1 else ""
+    antes["maquina"] = ("quatro processos phxsqld em 127.0.0.1, "
+                        "no mesmo container")
+    antes["topologia"] = "master -> slave01, slave02, slave03"
+    # O portao do `bancada/esta-medindo.sh` sai 0 quando ACHOU medicao ou
+    # compilacao em curso. Fica gravado junto porque numero de TEMPO com a
+    # maquina ocupada e numero nomeado, nao medido -- e quem le o arquivo
+    # depois nao tem como adivinhar isso.
+    portao = subprocess.run(["bash", os.path.join(RAIZ, "bancada",
+                                                  "esta-medindo.sh")],
+                            capture_output=True, text=True)
+    antes["maquina_ocupada"] = portao.returncode == 0
+    with open(arq, "w") as f:
+        json.dump(antes, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(f"gravado em {arq}"
+          + ("  -- COM A MAQUINA OCUPADA: os tempos ficam nomeados, nao medidos"
+             if antes["maquina_ocupada"] else ""))
 
 
 def retomada(m):
     """Derruba o slave03, escreve no master, sobe de volta e cronometra."""
+    # O alvo se acha por CAMINHO ABSOLUTO, e nao por sufixo do cwd: ha outras
+    # frentes com `phxsqld` de pe nesta maquina, e um `cwd` que so termina em
+    # "slave03" casa com o slave03 de qualquer outra bancada. Matar o servidor
+    # do vizinho ja derrubou a propria sessao aqui.
+    alvo = os.path.realpath(os.path.join(BASE, "slave03"))
     alvo_pid = None
     for pid in subprocess.run(["pgrep", "-x", "phxsqld"], capture_output=True,
                               text=True).stdout.split():
-        cwd = os.path.realpath(f"/proc/{pid}/cwd")
-        if cwd.endswith("slave03"):
+        try:
+            cwd = os.path.realpath(f"/proc/{pid}/cwd")
+        except OSError:
+            continue
+        if cwd == alvo:
             alvo_pid = pid
     if alvo_pid is None:
         print("  slave03 nao encontrado -- pulando")
@@ -223,8 +330,8 @@ def retomada(m):
                "limite": "10.00", "ficha": "x"} for k in range(n)]
     m({"op": "inserir_lote", "database": "loja", "tabela": "clientes",
        "linhas": linhas})
-    alvo = posicao(m)
-    print(f"  master gravou {n} linhas com o slave03 derrubado ({alvo} eventos)")
+    ate = posicao(m)
+    print(f"  master gravou {n} linhas com o slave03 derrubado ({ate} eventos)")
 
     d = os.path.join(BASE, "slave03")
     log = open(os.path.join(d, "servidor.log"), "a")
@@ -239,7 +346,7 @@ def retomada(m):
             time.sleep(0.05)
     subiu = (time.perf_counter() - t0) * 1000
     while time.perf_counter() - t0 < 300:
-        if posicao(C["slave03"]) >= alvo:
+        if posicao(C["slave03"]) >= ate:
             break
         time.sleep(0.05)
     total = time.perf_counter() - t0

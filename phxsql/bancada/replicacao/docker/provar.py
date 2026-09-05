@@ -60,6 +60,12 @@ import time
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.abspath(os.path.join(AQUI, "..", "..", ".."))
+
+# Os tetos do estagio (a3) saem da bancada irma de loopback, e nao daqui: as
+# duas medem o MESMO defeito por caminhos diferentes, e numero copiado e
+# numero que envelhece de um lado so.
+sys.path.insert(0, os.path.dirname(AQUI))
+from trava import TETO_PING_MS, TETO_VARRER_MS  # noqa: E402
 ALVO_MUSL = os.path.join(
     RAIZ, "target", "x86_64-unknown-linux-musl", "release", "phxsqld"
 )
@@ -711,13 +717,19 @@ def estagio_a(h, n):
 def estagio_a3_congelamento():
     """O achado que so um corte SILENCIOSO produz -- e por isso so o conteiner.
 
-    O laco da replica segura a trava global de dados (`self.dados.lock()` em
+    O laco da replica SEGURAVA a trava global de dados (`self.dados.lock()` em
     `alcancar_tabela`, e o mesmo em `alcancar_tabela_bidi`) e, DE DENTRO dela,
-    faz a ida e volta de rede que busca o lote (`replica::puxar`). Numa rede
+    fazia a ida e volta de rede que busca o lote (`replica::puxar`). Numa rede
     sa isso e invisivel: a resposta chega em microssegundos. Com o cabo
-    cortado -- pacote que some, e nao porta que recusa -- a leitura fica
-    pendurada ate o prazo de 30 s do cliente da replica, e a trava fica
-    presa junto. Todo pedido de cliente que precise da trava espera atras.
+    cortado -- pacote que some, e nao porta que recusa -- a leitura ficava
+    pendurada ate o prazo de 30 s do cliente da replica, e a trava ficava
+    presa junto. Todo pedido de cliente que precisasse da trava esperava atras.
+
+    O pedido 147 partiu as duas em tres fases (abrir e ler a posicao com a
+    trava; ler o lote do soquete SEM ela; reabrir, reler e aplicar com ela), e
+    a regra que saiu dali e o que este estagio afirma hoje: NENHUMA leitura de
+    rede acontece com a trava de dados na mao. O numero desta bancada, medido
+    dos dois lados da correcao: pior `varrer` 29.456 ms antes, 7 ms depois.
 
     `docker stop` nao acha isto: matar o processo devolve RST, o `puxar`
     falha na hora e a trava e solta na hora. Processo no mesmo loopback
@@ -726,9 +738,10 @@ def estagio_a3_congelamento():
     """
     estagio("a3-congelamento",
             "com o source ESCREVENDO SEM PARAR (a replica fica dentro do "
-            "laco de puxar, que e onde a trava esta presa), um corte "
-            "SILENCIOSO: na replica, `ping` continua rapido e `varrer` -- que "
-            "precisa da trava -- espera o laco desistir da leitura")
+            "laco de puxar, que e onde a trava ESTAVA presa), um corte "
+            "SILENCIOSO: na replica, `ping` continua rapido -- e `varrer`, "
+            "que precisa da trava, tambem, porque nenhuma leitura de rede "
+            f"acontece com a trava na mao (teto {TETO_VARRER_MS} ms)")
     ip_fonte = ip_de("phxrep-a-fonte")
     replica = liga(6802)
 
@@ -778,12 +791,20 @@ def estagio_a3_congelamento():
     pior_ping, pior_varrer = max(pings), max(varridas)
     # O contraste e o diagnostico: se os dois travassem, o servidor estaria
     # fora do ar; so o que precisa da trava travar aponta a trava.
-    ok = pior_varrer > 5_000 and pior_ping < 1_000
+    # ATE 05/09/2026 esta linha era `pior_varrer > 5_000`, e isso era certo
+    # ENQUANTO o defeito existia: o estagio nasceu para ACHAR a trava presa, e
+    # so passava quando ela estava presa. O pedido 147 soltou a trava e nunca
+    # pode refazer esta bancada -- o daemon do Docker estava fora do ar --,
+    # entao a afirmacao ficou apontando para tras: com o conserto no lugar, o
+    # `varrer` respondeu em 7 ms e o estagio REPROVOU o proprio conserto.
+    # Guarda que afirma o defeito vira catraca contra quem o conserta. Hoje
+    # ela afirma a GARANTIA, com os mesmos tetos da bancada de loopback.
+    ok = pior_varrer < TETO_VARRER_MS and pior_ping < TETO_PING_MS
     medir("a3-congelamento", ok,
           f"em 43 s de corte silencioso, na replica: pior `ping` "
           f"{pior_ping:.0f} ms ({len(pings)} amostras), pior `varrer` "
           f"{pior_varrer:.0f} ms ({len(varridas)} amostras) -- o servidor esta "
-          f"no ar, o que espera e a trava de dados",
+          f"no ar e a trava nao ficou na mao do laco",
           {"pior_ping_ms": round(pior_ping),
            "pior_varrer_ms": round(pior_varrer),
            "amostras": len(varridas)})
@@ -1514,8 +1535,19 @@ def main():
         limpar_tudo()
     RESULTADO["minutos"] = round((time.perf_counter() - t0) / 60, 1)
     RESULTADO["reconexoes"] = len(RECONEXOES)
-    with open(os.path.join(AQUI, "resultados.json"), "w") as f:
-        json.dump(RESULTADO, f, indent=2, ensure_ascii=False)
+    # So a corrida INTEIRA grava. `provar.py a` e a forma normal de trabalhar
+    # num estagio, e ela apagava os outros catorze do `resultados.json` --
+    # inclusive o retrato do defeito que a §17 cita. O arquivo se chama "a
+    # ultima corrida completa"; ele tem de ser completo por construcao.
+    arq = os.path.join(AQUI, "resultados.json")
+    if so is None:
+        with open(arq, "w") as f:
+            json.dump(RESULTADO, f, indent=2, ensure_ascii=False)
+        print(f"\ngravado em {arq}")
+    else:
+        print(f"\ncorrida PARCIAL (estagio {so!r}): {arq} nao foi tocado.\n"
+              "Para atualizar o registro, rode a bancada inteira:\n"
+              "  python3 bancada/replicacao/docker/provar.py")
     print()
     print("RESULTADO " + json.dumps(RESULTADO, ensure_ascii=False))
     if FALHAS:

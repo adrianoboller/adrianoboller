@@ -57,6 +57,15 @@ TABELA = "clientes"
 LINHAS = int(os.environ.get("PHX_LINHAS", "200000"))
 SEGUNDOS_DE_SONDA = int(os.environ.get("PHX_SONDA_S", "40"))
 
+# Os tetos da guarda `trava-atras-da-rede`, e eles moram AQUI porque a bancada
+# de conteiner (`docker/provar.py`) os importa daqui: o mesmo defeito e medido
+# nas duas, e duas copias do numero e uma copia que envelhece sozinha. Com o
+# defeito, o `varrer` da replica esperava 29-30 s atras da trava enquanto o
+# `ping`, que nao precisa dela, respondia em milissegundos -- e e esse
+# contraste que diz que quem espera e a trava e nao o servidor.
+TETO_VARRER_MS = 2_000
+TETO_PING_MS = 1_000
+
 PROCESSOS = []
 SOQUETES = []
 RESULTADO = {}
@@ -424,7 +433,7 @@ def estagio_congela(h):
     tubo.mudo.clear()
     posse_s = (trava_ms(replica) - trava0) / 1000.0
     pior_ping, pior_varrer = max(pings), max(varridas)
-    ok = pior_varrer < 2_000 and pior_ping < 1_000
+    ok = pior_varrer < TETO_VARRER_MS and pior_ping < TETO_PING_MS
     medir("congelamento", ok,
           f"em {SEGUNDOS_DE_SONDA} s de tubo mudo, na replica: pior `ping` "
           f"{pior_ping:.0f} ms ({len(pings)} amostras), pior `varrer` "
@@ -678,7 +687,8 @@ def montar_lotes(inicio, quantas, rotulo="carga"):
 def main():
     if not os.path.exists(PHXSQLD):
         raise SystemExit(f"falta {PHXSQLD} -- cargo build --release --bin phxsqld")
-    quais = sys.argv[1:] or ["congela", "alcance", "queda", "abraco"]
+    TODOS = ["congela", "alcance", "queda", "abraco"]
+    quais = sys.argv[1:] or TODOS
     subprocess.run(["rm", "-rf", BASE], check=False)
     os.makedirs(BASE, exist_ok=True)
     h = hash_da_senha(SENHA)
@@ -695,8 +705,20 @@ def main():
     finally:
         derrubar()
     RESULTADO["minutos"] = round((time.perf_counter() - t0) / 60, 1)
-    with open(os.path.join(AQUI, "trava.json"), "w") as f:
-        json.dump(RESULTADO, f, indent=2)
+    # So a corrida INTEIRA grava o arquivo. Rodar um estagio so e a forma
+    # normal de trabalhar num deles, e a primeira versao disto deixava essa
+    # corrida curta APAGAR os outros tres do `trava.json` -- o arquivo dizia
+    # "a ultima corrida" e passava a ter um quarto dela, calado. Um registro
+    # que se chama completo tem de ser completo por construcao.
+    arq = os.path.join(AQUI, "trava.json")
+    if set(quais) >= set(TODOS):
+        with open(arq, "w") as f:
+            json.dump(RESULTADO, f, indent=2)
+        print(f"\ngravado em {arq}")
+    else:
+        print(f"\ncorrida PARCIAL ({', '.join(quais)}): {arq} nao foi tocado.\n"
+              "Para atualizar o registro, rode a bancada inteira:\n"
+              "  python3 bancada/replicacao/trava.py")
     print()
     print(f"RESULTADO {json.dumps(RESULTADO)}")
     if FALHAS:

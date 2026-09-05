@@ -1,7 +1,7 @@
 {
   "redireciona": "[SP000028] REDIRECIONA 127.0.0.1:5310 -- este no e replica; o master do cluster e no1 (epoca 0)",
-  "promocao_s": 4.2,
-  "escrita_aceita_s": 4.2,
+  "promocao_s": 3.8,
+  "escrita_aceita_s": 3.9,
   "emails_promocao": 1,
   "emails_degradacao": 6,
   "no3_nao_promoveu": true,
