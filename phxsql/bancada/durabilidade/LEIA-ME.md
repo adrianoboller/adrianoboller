@@ -22,6 +22,18 @@ Escreve `bancada/durabilidade/resultado-do-fecho.json` com a matriz bruta de
 cada corrida. Leva de dez a trinta segundos, a maior parte no cenário (b)
 esperando o relógio de fundo.
 
+## O parser do traço foi consertado em 05/09, e o número diz por quê
+
+Desde que o fecho passou a sincronizar as K tabelas **ao mesmo tempo**
+(`docs/CONCORRENCIA.md` §12.6), o `strace -f` parte cada chamada concorrente em
+`<unfinished ...>` mais `<... fsync resumed>` — só a primeira traz o caminho, só
+a segunda traz o resultado. A expressão que este script usava exigia o `= 0` na
+mesma linha do caminho e perdia **170 de 480** `fsync` num fecho de K=4, em
+silêncio: a matriz saía zerada e o script culpava o relógio («o `strace` foi
+solto antes de terminar»), quando o `strace` tinha visto tudo. Hoje são três
+expressões e a volta se casa com a ida **pelo pid**. Ver
+`docs/cognicao/cognicao_strace-parte-syscall-concorrente-e-o-parser-perde-um-terco_20260905_1120.md`.
+
 ## Os dois cenários e os dois controles
 
 - **Controle 1**: `durabilidade: por_operacao`, uma inserção. Prova que o cano

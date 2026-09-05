@@ -1677,6 +1677,47 @@ frente mexendo no caminho de leitura do `.ndx` nesta mesma rodada. O número nã
 três corridas viram o mesmo, então a **comparação** entre os arranjos continua
 válida, mas o **valor** não descreve o servidor que vai ser lançado.
 
+#### 12.6.4-ter O conserto quebrou um INSTRUMENTO, e o número disso
+
+Contra o `phxsqld` de pé, a `bancada/durabilidade/prova-do-fecho.py` — que
+anexa `strace` no PID do servidor e conta `fsync` por arquivo — passou a sair
+com a matriz quase toda **zerada**, acusando o próprio relógio: *«o `strace` foi
+solto antes de `descarregar_sujas_com` terminar»*.
+
+**Não era a máquina nem o `strace`; era a leitura do traço.** `strace -f` parte
+uma chamada em duas linhas — `fsync(13</…/tab01.trash> <unfinished ...>` e, mais
+adiante, `<... fsync resumed>) = 0` — sempre que outra thread entra num
+`syscall` antes de a primeira voltar. **Só a primeira traz o caminho e só a
+segunda traz o resultado**, e a expressão daquele script exigia o `= 0` na mesma
+linha do caminho. Num fecho serial isso nunca acontecia; num fecho paralelo é o
+caso normal.
+
+| critério, sobre o mesmo traço de um fecho K=4 | `fsync` contados |
+|---|---:|
+| linhas contendo `fsync(` (a entrada, partida ou não) | **480** |
+| a expressão antiga do `prova-do-fecho.py` | **310** |
+| linhas `<unfinished ...>` / `<... fsync resumed>` | 170 / 170 |
+
+Com o parser consertado — três expressões, e a volta casada com a ida **pelo
+pid** —, a mesma bateria contra o servidor de verdade mostra o que se queria
+ver, e é a prova de queda desta rodada pelo lado do sistema operacional:
+
+| tabela suja | reg | ndx | bin | memo | log | trash | reason | total |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `a`, `b` (fecho por gravação) | 1 | 2 | 1 | 1 | 1 | 1 | 1 | **8** |
+| `d`, `e` (fecho pelo relógio de fundo) | 1 | 2 | 1 | 1 | 1 | 1 | 1 | **8** |
+
+Oito por tabela, o `.reg` entre eles, **em toda tabela suja e não só na que
+disparou o fecho** — que é exatamente o que o pedido 186 consertou e o que o
+arranjo novo tinha de preservar.
+
+**A lição, e ela não é sobre `strace`:** *quem torna um caminho concorrente tem
+de reler os instrumentos que o mediam em série.* Os outros quatro leitores de
+traço da casa foram conferidos um a um e estão sãos por construção — contam por
+`contains("fsync(")`, que casa a linha de entrada esteja ela partida ou não.
+Está registrado em
+`docs/cognicao/cognicao_strace-parte-syscall-concorrente-e-o-parser-perde-um-terco_20260905_1120.md`.
+
 #### 12.6.5 A decisão, e o que ficou por fazer
 
 **Papel C, 05/09:**

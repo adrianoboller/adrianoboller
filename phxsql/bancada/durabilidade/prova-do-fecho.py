@@ -240,20 +240,63 @@ def soltar(p):
     time.sleep(0.2)  # o arquivo -o terminar de ser descarregado
 
 
-LINHA = re.compile(r"^\s*\d+\s+([\d.]+)\s+fsync\(\d+<([^>]+)>\)\s*=\s*(-?\d+)")
+# A linha COMPLETA: entrou e voltou sem ninguem no meio.
+INTEIRA = re.compile(r"^\s*(\d+)\s+([\d.]+)\s+fsync\(\d+<([^>]+)>\)\s*=\s*(-?\d+)")
+# A ENTRADA de uma chamada que o `strace` teve de partir em duas, porque outra
+# thread entrou num `syscall` antes de esta voltar. So aqui esta o CAMINHO.
+ABERTA = re.compile(r"^\s*(\d+)\s+([\d.]+)\s+fsync\(\d+<([^>]+)>\s+<unfinished")
+# E a VOLTA dela, que traz o resultado e nao traz caminho nenhum.
+FECHADA = re.compile(r"^\s*(\d+)\s+([\d.]+)\s+<\.\.\.\s+fsync\s+resumed>\)?\s*=\s*(-?\d+)")
 
 
 def eventos_fsync(arquivo):
+    """Os `fsync` do traco, INCLUSIVE os que o `strace` partiu em duas linhas.
+
+    # Por que as tres expressoes, e nao uma
+
+    Porque `strace -f` parte uma chamada em `<unfinished ...>` mais
+    `<... fsync resumed>` sempre que outra thread entra num `syscall` antes de
+    a primeira voltar -- e a partir de 05/09/2026 isso e' o caso NORMAL aqui: o
+    fecho da janela sincroniza as K tabelas sujas ao mesmo tempo
+    (`docs/CONCORRENCIA.md` 12.6). A expressao antiga exigia o `= 0` na MESMA
+    linha do caminho, entao ela perdia toda chamada concorrente **em silencio**,
+    e o script acusava «o strace foi solto antes de terminar» quando o strace
+    tinha visto tudo.
+
+    Medido no dia do conserto, com `strace -f -y -ttt` sobre um fecho de K=4:
+    **480 `fsync` de verdade, 170 partidos em duas linhas, e a expressao antiga
+    casava 310.** Um terco do traco sumia.
+
+    A volta e' casada com a ida **pelo pid**, que e' o unico par confiavel: duas
+    threads podem ter chamadas abertas ao mesmo tempo, mas cada uma so tem UMA
+    aberta por vez -- um `syscall` bloqueia a thread que o chamou.
+    """
     eventos = []
     if not os.path.exists(arquivo):
         return eventos
+    abertas = {}
     with open(arquivo, "r", errors="replace") as f:
         for linha in f:
-            m = LINHA.match(linha)
-            if not m:
+            m = INTEIRA.match(linha)
+            if m:
+                _, ts, caminho, ret = m.groups()
+                eventos.append((float(ts), caminho, int(ret) == 0))
                 continue
-            ts, caminho, ret = m.groups()
-            eventos.append((float(ts), caminho, int(ret) == 0))
+            m = ABERTA.match(linha)
+            if m:
+                pid, ts, caminho = m.groups()
+                abertas[pid] = (float(ts), caminho)
+                continue
+            m = FECHADA.match(linha)
+            if m:
+                pid, _, ret = m.groups()
+                ida = abertas.pop(pid, None)
+                if ida is not None:
+                    eventos.append((ida[0], ida[1], int(ret) == 0))
+    # Chamada aberta e nunca fechada = o traco terminou no meio dela. Ela
+    # ACONTECEU (o nucleo ja estava dentro do `fsync`), mas nao se sabe se
+    # voltou bem -- e "nao se sabe" nao entra numa matriz de durabilidade como
+    # se fosse sucesso.
     return eventos
 
 
