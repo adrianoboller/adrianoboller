@@ -1,0 +1,206 @@
+<title>Dossiê dos testes do PhxSql</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --papel:#fbf9f7; --papel-2:#f3efec; --tinta:#1a1210; --tinta-2:#4a3f3a;
+  --tinta-3:#7a6d66; --linha:#ded6d0; --acento:#c63c0a;
+  --ok:#2f7a3e; --falta:#8a6a1f;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
+    --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c;
+    --ok:#5cbf74; --falta:#d5a83c;
+  }
+}
+:root[data-theme="dark"]{
+  --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
+  --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c;
+  --ok:#5cbf74; --falta:#d5a83c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--papel);color:var(--tinta);
+  font-family:"Source Serif 4",Georgia,serif;font-size:16px;line-height:1.55;
+  -webkit-font-smoothing:antialiased}
+h1,h2,.rotulo,.pino{font-family:"Exo 2","Helvetica Neue",Arial,sans-serif}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+code{font-size:.86em;background:var(--papel-2);padding:1px 4px;border-radius:3px;
+  color:var(--tinta-2)}
+.envelope{max-width:1000px;margin:0 auto;padding:0 20px 80px}
+header{padding:52px 0 26px;border-bottom:1px solid var(--linha)}
+.rotulo{font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--acento);font-weight:600;margin-bottom:12px}
+h1{font-size:clamp(28px,5vw,44px);font-weight:700;line-height:1.08;margin:0 0 14px;
+  letter-spacing:-.015em;text-wrap:balance}
+.chamada{max-width:64ch;color:var(--tinta-2);font-size:17px;margin:0}
+.placar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  gap:10px;margin:28px 0 0}
+.placar .c{border:1px solid var(--linha);border-radius:6px;padding:13px 15px;
+  background:var(--papel-2)}
+.placar .v{font-family:"Exo 2",sans-serif;font-size:30px;font-weight:700;
+  line-height:1;font-variant-numeric:tabular-nums}
+.placar .r{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--tinta-3);margin-top:7px}
+h2{font-size:21px;font-weight:600;margin:48px 0 6px;letter-spacing:-.01em}
+h2 + .sub{color:var(--tinta-3);font-size:15px;margin:0 0 18px;max-width:66ch}
+.rolo{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:600px}
+thead th{font-family:"IBM Plex Mono",monospace;font-weight:500;font-size:10px;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--tinta-3);text-align:left;
+  padding:11px 11px 7px;border-bottom:1px solid var(--linha)}
+tbody td{padding:13px 11px;border-bottom:1px solid var(--linha);vertical-align:top;
+  font-size:14.5px}
+td.nome{width:32%;color:var(--tinta)}
+td.q{width:150px;color:var(--tinta-3);font-size:12.5px;white-space:nowrap}
+td.n{text-align:right;font-variant-numeric:tabular-nums;width:90px}
+td.v{color:var(--tinta-2)}
+.prova{color:var(--tinta-3);font-size:13px;margin-top:4px}
+.peq{font-size:11.5px;color:var(--tinta-3)}
+tr.ausente td{color:var(--falta)}
+.mtime{color:var(--falta);font-size:11px}
+.nota{border-left:3px solid var(--acento);background:var(--papel-2);
+  padding:14px 18px;border-radius:0 5px 5px 0;margin:24px 0;font-size:15px;
+  color:var(--tinta-2);max-width:68ch}
+.nota b{color:var(--tinta)}
+ul.casos{columns:250px;list-style:none;padding:0;margin:0;font-size:13.5px}
+ul.casos li{padding:2px 0}
+footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
+  color:var(--tinta-3);font-size:13.5px;max-width:68ch}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<div class="envelope">
+<header>
+  <div class="rotulo">PhxSql · o dossiê dos testes</div>
+  <h1>O que este banco prova,<br>e como</h1>
+  <p class="chamada">Cinco camadas de prova, do byte no disco ao clique no
+  navegador. Cada número desta página sai de um gerador e traz a data em que
+  foi medido — porque um retrato montado com medições de dias diferentes é um
+  retrato que nunca existiu.</p>
+
+  <div class="placar">
+    <div class="c"><div class="v">1585</div><div class="r">testes</div></div>
+    <div class="c"><div class="v">85</div><div class="r">guardas</div></div>
+    <div class="c"><div class="v">23</div><div class="r">casos de tela</div></div>
+    <div class="c"><div class="v">14</div><div class="r">catracas</div></div>
+    <div class="c"><div class="v">0</div><div class="r">dependências</div></div>
+  </div>
+</header>
+
+<h2>1. O motor, por dentro</h2>
+<p class="sub"><code>cargo test --workspace</code>. É a camada mais barata e a
+mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
+<div class="nota">
+  <b>1585 testes</b> em 134751 linhas de Rust, versão
+  <code>0.18.0</code>, commit <code>31850422f421f869e80d72e8c32fcb4951f79494</code>, 121 operações no
+  protocolo. Medido em 2026-09-05 02:09:41, por
+  <code>docs/dossie/numeros-do-projeto.py</code>, que <b>aborta se o
+  <code>cargo test</code> falhar</b>.
+</div>
+
+<h2>2. As guardas, e o defeito que motivou cada uma</h2>
+<p class="sub">Um teste diz que o código passa. Uma <b>guarda</b> diz que ele
+<b>falha</b> quando o defeito volta — e é provada contra esse defeito
+periodicamente. Teste que passa por engano é pior que teste que falta, e esta
+camada existe por causa disso.</p>
+<div class="nota">
+  <b>85 guardas</b> no catálogo (<code>bancada/guardas/catalogo.py</code>),
+  cada uma com o defeito reposto, o arquivo, o trecho e quais testes têm de cair.
+  Roda por <code>python3 bancada/guardas/provar-guardas.py</code>.
+</div>
+
+<h2>3. As catracas</h2>
+<p class="sub">Número que <b>só desce</b>. E que <b>nunca sobe</b> — nem quando
+a régua muda: régua que passa a medir mais <b>aposenta</b> a catraca antiga e
+faz nascer outra, no número medido do dia. A lista abaixo sai do fonte, não de
+uma lista digitada aqui.</p>
+<div class="rolo">
+  <table>
+    <thead><tr><th>catraca</th><th class="n">hoje</th><th>onde</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">TETO_BOTAO_SEM_PROVA</td><td class="n mono">211</td><td class="mono peq">crates/phxsql-server/src/conferidor_botoes.rs</td></tr>
+      <tr><td class="mono">TETO_COLADO</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor.rs</td></tr>
+      <tr><td class="mono">TETO_DA_CASCATA</td><td class="n mono">16</td><td class="mono peq">crates/phxsql-store/src/table.rs</td></tr>
+      <tr><td class="mono">TETO_DO_CABECALHO</td><td class="n mono">400</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
+      <tr><td class="mono">TETO_DO_CAMPO</td><td class="n mono">120</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
+      <tr><td class="mono">TETO_DO_ERRO</td><td class="n mono">500</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
+      <tr><td class="mono">TETO_DO_LOTE_SERVIDO</td><td class="n mono">16</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
+      <tr><td class="mono">TETO_DO_REGISTRO</td><td class="n mono">128</td><td class="mono peq">crates/phxsql-core/src/fio.rs</td></tr>
+      <tr><td class="mono">TETO_FRASE_REPETIDA</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor.rs</td></tr>
+      <tr><td class="mono">TETO_FSYNC_POR_FECHO_V2</td><td class="n mono">8</td><td class="mono peq">crates/phxsql-store/src/conferidor_fsync.rs</td></tr>
+      <tr><td class="mono">TETO_JUNCAO</td><td class="n mono">500.000</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
+      <tr><td class="mono">TETO_PIVOT</td><td class="n mono">5.000.000</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
+      <tr><td class="mono">TETO_ROTULOS_E_CRASE</td><td class="n mono">1.051</td><td class="mono peq">crates/phxsql-server/src/conferidor.rs</td></tr>
+      <tr><td class="mono">TETO_TABELA_NA_MAO</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor_grades.rs</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>4. As bancadas — contra o servidor de verdade</h2>
+<p class="sub">Teste unitário não prova queda de conexão, nem durabilidade, nem
+eleição de master. O que depende do sistema operacional se prova contra o
+sistema operacional. Bancada sem arquivo de resultado <b>aparece como não
+medida</b> em vez de sumir da tabela.</p>
+<div class="rolo">
+  <table>
+    <thead><tr><th>bancada</th><th>medida em</th><th>o número de então</th></tr></thead>
+    <tbody>
+      <tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-05 03:58 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 3,8 s · <b>escrita aceita em</b> 3,9 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
+      <tr><td class="nome">Replicação — quatro servidores<div class="prova">master e três espelhos no ar, com retrato SHA-256 de cada linha nos quatro</div></td><td class="q mono">2026-09-05</td><td class="v"><b>master</b> 26.762 linhas/s · <b>réplica aplica</b> 24.583 eventos/s · <b>alcance</b> 4,1 s · <b>os quatro iguais no fim</b> sim</td></tr>
+      <tr><td class="nome">ACID — as quatro letras<div class="prova">cada afirmação com o controle da mesma corrida; o nível de isolamento sai medido, não citado</div></td><td class="q mono">2026-09-05 03:12 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>versao</b> phxsqld 0.18.0 (41e82efa97c8) x86_64-unknown-linux-gnu · <b>rapido</b> NÃO</td></tr>
+      <tr><td class="nome">Durabilidade — o fecho da janela<div class="prova">os `fsync` contados por `strace` contra o `phxsqld` de pé</div></td><td class="q mono">2026-09-04 14:40 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>defeito_confirmado_a</b> sim</td></tr>
+      <tr><td class="nome">Carga — uma a uma contra o lote<div class="prova">o custo da viagem de rede, separado do custo de gravar</div></td><td class="q mono">2026-08-29</td><td class="v"><b>quando</b> 2026-08-29 · <b>versao</b> 0.17.0 · <b>linhas</b> 20.000 · <b>por_lote</b> 5.000</td></tr>
+      <tr><td class="nome">Os três motores a um milhão<div class="prova">PhxSql, MySQL® e SQLite® intercalados na MESMA rodada, porque medidas de dias diferentes carregam o ambiente junto</div></td><td class="q mono">2026-09-01 18:30:03</td><td class="v"><b>linhas</b> 1.000.000 · <b>operacoes_por_fase_pontual</b> 20.000 · <b>rodadas</b> 3 · <b>medido_em</b> 2026-09-01 18:30:03</td></tr>
+      <tr><td class="nome">Bateria única — o motor por dentro<div class="prova">as guardas do catálogo, cada uma contra o defeito que a motivou</div></td><td class="q mono">2026-08-29</td><td class="v"><b>quando</b> 2026-08-29 · <b>porta</b> 6.300</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>5. A tela — exercitando, não lendo</h2>
+<p class="sub">Interface só se prova exercitando. Gravar um vídeo de
+demonstração achou três defeitos em cinco minutos que ler o código não acharia,
+e o pior deles quebrava todo salvar e todo incluir pela tela.</p>
+<div class="nota">
+  <b>23 casos</b> em <code>testes-web/casos/</code>, quase todos nos dois
+  temas, contra um <code>phxsqld</code> de verdade num navegador de verdade — sem
+  maquete e sem mockup. E <b>151 botões</b> com clique gravado
+  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-05 04:19 (mtime)):
+  a evidência é escrita pela própria corrida, e só em corrida <b>inteira e
+  verde</b>, porque uma corrida que cai no meio grava menos do que provou.
+</div>
+<ul class="casos"><li><code>01-entrada.mjs</code></li><li><code>02-passeio.mjs</code></li><li><code>03-ficha.mjs</code></li><li><code>04-arvore.mjs</code></li><li><code>05-grade.mjs</code></li><li><code>06-css-global.mjs</code></li><li><code>07-responsivo.mjs</code></li><li><code>08-lateral.mjs</code></li><li><code>09-cores.mjs</code></li><li><code>10-primeira-pintura.mjs</code></li><li><code>11-lgpd.mjs</code></li><li><code>12-multitela.mjs</code></li><li><code>13-monitores.mjs</code></li><li><code>14-acrescentar-coluna.mjs</code></li><li><code>15-transacoes.mjs</code></li><li><code>16-telemetria.mjs</code></li><li><code>17-barra-e-popup.mjs</code></li><li><code>18-tela-atropelada.mjs</code></li><li><code>19-conflito.mjs</code></li><li><code>20-pushdown.mjs</code></li><li><code>21-botoes-da-grade.mjs</code></li><li><code>22-botoes-do-conteudo.mjs</code></li><li><code>23-botoes-da-tira.mjs</code></li></ul>
+
+<h2>6. O que estas provas NÃO cobrem</h2>
+<p class="sub">A parte que uma página de testes costuma esconder, e a única que
+diz onde não confiar.</p>
+<div class="nota">
+  <b>O <code>SIGKILL</code> não distingue «está na mídia» de «está no cache».</b>
+  Duas inserções em <code>por_lote</code>, com <b>zero</b> <code>fsync</code> no
+  <code>.reg</code>, voltam inteiras depois da queda — do cache do núcleo, que a
+  morte do processo não esvazia. Quem mede durabilidade aqui é a contagem de
+  <code>fsync</code>; o <code>SIGKILL</code> prova o protocolo de commit, não a
+  mídia. Só queda de energia mostraria o resto.
+</div>
+<div class="nota">
+  <b>Número de tempo medido com a máquina ocupada mede a carga, não o item.</b>
+  Por isso existe o portão <code>bancada/esta-medindo.sh</code>, e por isso há
+  medições nesta casa que ficam <b>nomeadas e não medidas</b>, com o motivo
+  escrito. Isso é resultado, não falha.
+</div>
+<div class="nota">
+  <b>Cobertura não é prova.</b> A tabela de testes por área diz onde a
+  cobertura é rala, e não que o resto está certo — um arquivo sem
+  <code>#[test]</code> dentro pode estar inteiramente coberto por
+  <code>tests/</code>, e um com muitos pode estar provando a intenção em vez do
+  efeito.
+</div>
+
+<footer>
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 05/09/2026 05:22. Nenhum
+  número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
+  do catálogo de guardas, dos <code>resultados.json</code> das bancadas, dos
+  arquivos de <code>testes-web/</code> e das constantes do próprio fonte. O
+  dossiê técnico e a relação dos pedidos são as outras duas páginas.
+</footer>
+</div>
