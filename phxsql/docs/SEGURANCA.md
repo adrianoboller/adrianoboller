@@ -2064,10 +2064,10 @@ Os oito que decidem, e o veredito de cada um sob as três saídas:
 
 | sítio | quem é | (a) senha no `config.json` | (b) servidor guarda a chave enquanto houver tabela suja | (c) passa a recusar e avisar |
 |---|---|---|---|---|
-| `servidor.rs:1952` `abrir_para_replicar` | replicação, fase 1 | funciona | funciona | **réplica para** |
+| `servidor.rs:1952` `abrir_para_replicar` | replicação, fase 1 | funciona | funciona | para **com o erro errado**, ou nem para (ver abaixo) |
 | `servidor.rs:1978` `aplicar_lote_da_replica` | replicação, fase 3 | funciona | funciona | **réplica para** |
 | `servidor.rs:2033` `sincronizar_replicada` | replicação | funciona | funciona | **réplica para** |
-| `servidor.rs:2505` `posicao_do_diario` | replicação | funciona | funciona | **réplica para** |
+| `servidor.rs:2505` `posicao_do_diario` | replicação | funciona | funciona | **NÃO para — devolve posição MENOR, em silêncio** (ver abaixo) |
 | `servidor.rs:2776` `abrir_para_bidi` | bidirecional | funciona | funciona | **réplica para** |
 | `servidor.rs:2832` `aplicar_lote_bidi` | bidirecional | funciona | funciona | **réplica para** |
 | `servidor.rs:9327` `descarregar_sujas_com` | **fecho de janela** | funciona | funciona | **sem `fsync` até alguém logar** |
@@ -2091,6 +2091,55 @@ mesma senha dos dois lados** (os sais são sorteados por arquivo), e réplica
 `Bin`. Ou seja: a replicação de tabela cifrada **já está quebrada hoje**, com a
 senha no `config.json` — e a senha por sessão não é a causa, mas passa por cima
 dos mesmos seis sítios.
+
+#### A conferência dos oito, refeita linha a linha — e duas correções
+
+Os oito sítios acima estão **certos como sítios**: os oito abrem tabela de
+usuário, reabrindo pelo caminho, sem sessão nenhuma. Conferido um a um contra o
+fonte. Dois **vereditos**, porém, não sobreviveram à conferência.
+
+**`posicao_do_diario:2505` não para a réplica — e é o pior dos oito.**
+A função devolve `u64`, e não `Result`:
+
+```rust
+for t in db.todas_as_tabelas().unwrap_or_default() {
+    if let Ok(mut tab) = db.abrir_qualificada(&t) {
+        total += tab.eventos().unwrap_or(0);
+    }
+}
+```
+
+Duas engolidas em quatro linhas: o `if let Ok` descarta a tabela que não abre, e
+o `unwrap_or(0)` descarta a contagem que falha. A tabela cifrada sem chave
+simplesmente **não entra na soma**, e a função devolve um número menor sem dizer
+nada.
+
+E o comentário da própria função diz o que esse número é: *«a soma dos eventos
+das tabelas replicadas — a posição que o pulso carrega e que a **eleição**
+compara»*. O `cluster.rs:111` fecha a conta: *«entre os elegíveis vence a maior
+posição do diário (quem menos perdeu)»*.
+
+Ou seja: um nó que não consegue abrir uma tabela cifrada **se declara mais
+atrasado do que é** e perde uma eleição que deveria vencer — e quem assume no
+lugar dele é um nó com menos dado. Isto não é «a réplica para»; é promoção do
+nó errado por um erro engolido. E **não depende do desenho novo**: qualquer
+tabela que não abra hoje — cifrada, corrompida, sem permissão — já reduz a
+posição publicada em silêncio.
+
+**`abrir_para_replicar:1952` para, mas dizendo outra coisa — e num caminho não
+para.** Quando a tabela existe e não abre, o `Err(_)` **descarta a causa**, o
+código imprime `replicacao: criando <banco>.<tabela> aqui` para uma tabela que
+já existe, e só então falha com *«já existe; use Table::abrir»*
+(`table.rs:482`). O operador lê o erro errado e vai procurar defeito no lugar
+errado; a causa real — *«está cifrado e este servidor não tem a chave»* — some.
+
+E quando o source **não** mandou o esquema, o ramo é `return Ok(None)`: nenhum
+erro, nenhum aviso, a tabela é pulada para sempre.
+
+**`transacao.rs:1157` confere**, e o motivo também: `transacao::recuperar` é
+chamada em `servidor.rs:746`, no arranque, antes de existir conexão — não há
+sessão por definição. (Há uma segunda chamada em `servidor.rs:9104`, dentro de
+um pedido, que a tabela acima não menciona.)
 
 **A decisão fica com o dono**, e as três saídas são defensáveis. O que esta
 frente entrega é o número de cada uma.
