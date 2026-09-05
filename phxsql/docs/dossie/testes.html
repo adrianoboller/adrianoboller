@@ -80,8 +80,8 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
   retrato que nunca existiu.</p>
 
   <div class="placar">
-    <div class="c"><div class="v">1.605</div><div class="r">testes</div></div>
-    <div class="c"><div class="v">89</div><div class="r">guardas</div></div>
+    <div class="c"><div class="v">1.618</div><div class="r">testes</div></div>
+    <div class="c"><div class="v">93</div><div class="r">guardas</div></div>
     <div class="c"><div class="v">23</div><div class="r">casos de tela</div></div>
     <div class="c"><div class="v">14</div><div class="r">catracas</div></div>
     <div class="c"><div class="v">0</div><div class="r">dependências</div></div>
@@ -92,9 +92,9 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
 <p class="sub"><code>cargo test --workspace</code>. É a camada mais barata e a
 mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 <div class="nota">
-  <b>1.605 testes</b> em 138.426 linhas de Rust, versão
-  <code>0.18.0</code>, commit <code>1f0c6cd</code>, 121 operações no
-  protocolo. Medido em 2026-09-05 08:29:48, por
+  <b>1.618 testes</b> em 139.331 linhas de Rust, versão
+  <code>0.18.0</code>, commit <code>70c5382</code>, 121 operações no
+  protocolo. Medido em 2026-09-05 13:49:46, por
   <code>docs/dossie/numeros-do-projeto.py</code>, que <b>aborta se o
   <code>cargo test</code> falhar</b>.
 </div>
@@ -105,7 +105,7 @@ mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 periodicamente. Teste que passa por engano é pior que teste que falta, e esta
 camada existe por causa disso.</p>
 <div class="nota">
-  <b>89 guardas</b> no catálogo (<code>bancada/guardas/catalogo.py</code>),
+  <b>93 guardas</b> no catálogo (<code>bancada/guardas/catalogo.py</code>),
   cada uma com o defeito reposto, o arquivo, o trecho e quais testes têm de cair.
   Roda por <code>python3 bancada/guardas/provar-guardas.py</code>.
 </div>
@@ -165,7 +165,7 @@ e o pior deles quebrava todo salvar e todo incluir pela tela.</p>
   <b>23 casos</b> em <code>testes-web/casos/</code>, quase todos nos dois
   temas, contra um <code>phxsqld</code> de verdade num navegador de verdade — sem
   maquete e sem mockup. E <b>151 botões</b> com clique gravado
-  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-05 05:49 (mtime)):
+  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-05 13:25 (mtime)):
   a evidência é escrita pela própria corrida, e só em corrida <b>inteira e
   verde</b>, porque uma corrida que cai no meio grava menos do que provou.
 </div>
@@ -197,7 +197,7 @@ diz onde não confiar.</p>
 </div>
 
 <footer>
-  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 05/09/2026 08:30. Nenhum
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 05/09/2026 13:50. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
   do catálogo de guardas, dos <code>resultados.json</code> das bancadas, dos
   arquivos de <code>testes-web/</code> e das constantes do próprio fonte. O
