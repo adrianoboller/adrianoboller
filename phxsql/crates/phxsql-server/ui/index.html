@@ -4329,9 +4329,9 @@ function campoDaColuna(c, valor, fixa = false, novo = false) {
   // readonly, e não disabled: o valor continua indo no salvar — a linha
   // inteira é gravada, e sumir com a coluna apagaria o que não se pode mudar.
   if (fixa)
-    return `<label><span>${esc(c.nome)} <span class="tipo">fixo</span> ${dica}</span>
+    return `<label><span>${esc(c.nome)} <span class="tipo">${esc(txt("tela.cf_fixo","fixo"))}</span> ${dica}</span>
       <input id="${id}" value="${esc(v)}" readonly style="opacity:.6"
-        title="usado na programação e na busca; não muda depois de criado"></label>`;
+        title="${esc(txt("tela.cf_usado_programacao_busca","usado na programação e na busca; não muda depois de criado"))}"></label>`;
 
   if (c.tipo === "Memo")
     return `<label class="largo"><span>${esc(c.nome)}${obrig} ${dica}</span>
@@ -4340,17 +4340,17 @@ function campoDaColuna(c, valor, fixa = false, novo = false) {
   if (c.tipo === "Bool")
     return `<label><span>${esc(c.nome)}${obrig} ${dica}</span>
       <select id="${id}"><option value="">—</option>
-        <option value="true"${v === "true" ? " selected" : ""}>verdadeiro</option>
-        <option value="false"${v === "false" ? " selected" : ""}>falso</option>
+        <option value="true"${v === "true" ? " selected" : ""}>${esc(txt("tela.cf_verdadeiro","verdadeiro"))}</option>
+        <option value="false"${v === "false" ? " selected" : ""}>${esc(txt("tela.cf_falso","falso"))}</option>
       </select></label>`;
 
   // Sequence vem do motor quando fica em branco; Uuid NÃO — nele, em branco é
   // nulo, e é a palavra "novo" que pede o v7.
-  const ph = c.tipo === "Sequence" ? "em branco = o motor numera"
-           : c.tipo === "Uuid" ? "\"novo\" pede um v7; em branco é nulo"
-           : c.tipo === "Uuid256" ? "64 hexadecimais, ou \"novo\"; em branco é nulo"
+  const ph = c.tipo === "Sequence" ? txt("tela.cf_ph_sequence","em branco = o motor numera")
+           : c.tipo === "Uuid" ? txt("tela.cf_ph_uuid","\"novo\" pede um v7; em branco é nulo")
+           : c.tipo === "Uuid256" ? txt("tela.cf_ph_uuid256","64 hexadecimais, ou \"novo\"; em branco é nulo")
            : c.tipo === "Date" ? "2026-08-28"
-           : c.tipo.startsWith("Decimal") ? "12.34 (texto, para não perder centavo)"
+           : c.tipo.startsWith("Decimal") ? txt("tela.cf_ph_decimal","12.34 (texto, para não perder centavo)")
            : "";
   return `<label><span>${esc(c.nome)}${obrig} ${dica}</span>
     <input id="${id}" value="${esc(v)}" placeholder="${esc(ph)}"></label>`;
@@ -4393,13 +4393,14 @@ async function abrirFicha(db, tab, rowid) {
   // se editam na inclusão — depois, aparecem travadas.
   const fixas = novo ? [] : (COLUNAS_FIXAS[`${db}/${tab}`] || []);
 
-  folha(novo ? `Nova linha em ${tab}` : `${tab} · registro ${rowid}`,
-    novo ? `${db} · em branco significa nulo`
-         : `${db} · rowid ${rowid} — a posição física, que não muda`,
+  folha(novo ? preencher(txt("tela.tt_nova_linha_em","Nova linha em {tab}"), {tab})
+             : preencher(txt("tela.tt_tab_registro","{tab} · registro {rowid}"), {tab, rowid}),
+    novo ? preencher(txt("tela.st_em_branco_nulo","{db} · em branco significa nulo"), {db})
+         : preencher(txt("tela.st_rowid_posicao_fisica","{db} · rowid {rowid} — a posição física, que não muda"), {db, rowid}),
     `${marcada ? `<div class="aviso">
-        <b class="marca-excluida">Esta linha está marcada como excluída.</b>
-        Ela não aparece nas listas e continua inteira no <code>.reg</code>.
-        <button class="botao mini incluir" id="btRestaurarFicha">restaurar</button>
+        <b class="marca-excluida">${esc(txt("tela.ficha_marcada_excluida","Esta linha está marcada como excluída."))}</b>
+        ${marcado(txt("tela.ficha_nao_aparece_listas","Ela não aparece nas listas e continua inteira no `.reg`."))}
+        <button class="botao mini incluir" id="btRestaurarFicha">${esc(txt("tela.bt_restaurar","restaurar"))}</button>
       </div>` : ""}
      <form class="ficha-edit" id="fichaEdit" autocomplete="off">
        ${editaveis.map(c => campoDaColuna(c, linha[c.nome], fixas.includes(c.nome), novo)).join("")}
@@ -4407,8 +4408,8 @@ async function abrirFicha(db, tab, rowid) {
      <div class="acoes">
        <button class="botao ${novo ? "incluir" : "alterar"}" id="btSalvar">${
          esc(novo ? txt("tela.incluir", "Incluir") : txt("tela.salvar", "Salvar"))}</button>
-       ${novo || marcada ? "" : `<button class="botao excluir" id="btExcluir">Excluir</button>`}
-       <button class="botao secundario" id="btVoltar">Voltar</button>
+       ${novo || marcada ? "" : `<button class="botao excluir" id="btExcluir">${esc(txt("tela.ficha_excluir","Excluir"))}</button>`}
+       <button class="botao secundario" id="btVoltar">${esc(txt("tela.ficha_voltar","Voltar"))}</button>
        <span class="leg" id="recadoFicha"></span>
      </div>`);
 
@@ -4553,15 +4554,15 @@ async function gerirTabelas(db) {
   folha(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}),
     preencher(txt("tela.st_n_tabelas_clique_gerir","{n} tabela(s) · clique numa linha para gerir"), {n: nomes.length}),
     `<div class="acoes">
-       <button class="botao" id="btNovaTab">✚ Nova tabela…</button>
+       <button class="botao" id="btNovaTab">✚ ${esc(txt("tela.tt_nova_tabela","Nova tabela"))}…</button>
        <button class="botao secundario" id="btColar" ${est.copia ? "" : "disabled"}>
-         ⧉ Colar${est.copia ? ` ${esc(est.copia.db)}.${esc(est.copia.tab)}` : ""}</button>
-       <button class="botao secundario" id="btRecarregarTabs">↻ Atualizar</button>
-       <button class="botao secundario" id="btGerirBanco">⛁ Gerir ${esc(db)}</button>
-       <span class="leg">clique numa linha para as oito operações</span>
+         ⧉ ${esc(txt("tela.gt_colar","Colar"))}${est.copia ? ` ${esc(est.copia.db)}.${esc(est.copia.tab)}` : ""}</button>
+       <button class="botao secundario" id="btRecarregarTabs">↻ ${esc(txt("tela.gt_atualizar","Atualizar"))}</button>
+       <button class="botao secundario" id="btGerirBanco">⛁ ${esc(preencher(txt("tela.gt_gerir_db_btn","Gerir {db}"), {db}))}</button>
+       <span class="leg">${esc(txt("tela.gt_clique_oito_operacoes","clique numa linha para as oito operações"))}</span>
      </div>` +
     (nomes.length ? `<div id="gradeGerirTabs"></div>`
-      : `<div class="vazio">nenhuma tabela em ${esc(db)} — comece pelo “Nova tabela”</div>`));
+      : `<div class="vazio">${esc(preencher(txt("tela.gt_nenhuma_tabela_em","nenhuma tabela em {db} — comece pelo “{nova}”"), {db, nova: txt("tela.tt_nova_tabela","Nova tabela")}))}</div>`));
 
   $("#btNovaTab").onclick = () => telaNovaTabela(db);
   $("#btRecarregarTabs").onclick = () => gerirTabelas(db);
@@ -4614,16 +4615,16 @@ async function gerirTabela(db, tab) {
   const pag = e && e.paginacao;
   const resumo = e ? `<div class="fichas">
       <div class="ficha"><div class="v">${esc(String(e.registros))}</div>
-        <div class="r">registros</div></div>
+        <div class="r">${esc(txt("tela.fc_registros","registros"))}</div></div>
       <div class="ficha"><div class="v">${esc(String(e.slots))}</div>
-        <div class="r">slots</div><div class="u">inclui os excluídos</div></div>
+        <div class="r">${esc(txt("tela.col_slots","slots"))}</div><div class="u">${esc(txt("tela.gt_inclui_excluidos","inclui os excluídos"))}</div></div>
       <div class="ficha"><div class="v">${esc(String((e.colunas||[]).length))}</div>
-        <div class="r">colunas</div></div>
+        <div class="r">${esc(txt("tela.fc_colunas","colunas"))}</div></div>
       <div class="ficha"><div class="v">${esc(String((e.indices||[]).length))}</div>
-        <div class="r">índices</div></div>
+        <div class="r">${esc(txt("tela.col_indices","índices"))}</div></div>
       <div class="ficha"><div class="v">${pag ? esc(String(volumesDe(e).length)) : "1"}</div>
-        <div class="r">volumes .reg</div>
-        <div class="u">${pag ? esc(`${pag.registros_por_arquivo} por arquivo`) : "arquivo único"}</div></div>
+        <div class="r">${esc(txt("tela.gt_volumes_reg","volumes .reg"))}</div>
+        <div class="u">${pag ? esc(preencher(txt("tela.gt_por_arquivo","{n} por arquivo"), {n: pag.registros_por_arquivo})) : esc(txt("tela.gt_arquivo_unico","arquivo único"))}</div></div>
     </div>` : `<div class="aviso mal">${esc(erro)}</div>`;
 
   const OPS = [
@@ -4679,7 +4680,7 @@ async function gerirTabela(db, tab) {
          <span class="op-txt"><b>${esc(rot)}</b><span>${esc(diz)}</span></span>
        </button>`).join("")}</div>
      <div class="acoes">
-       <button class="botao secundario" id="btVoltarTabs">← Tabelas de ${esc(db)}</button>
+       <button class="botao secundario" id="btVoltarTabs">← ${esc(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}))}</button>
      </div>`);
 
   $("#painel .ops").onclick = ev => {
@@ -4750,16 +4751,11 @@ async function verParticoes(db, tab) {
   if (!pag) {
     folha(preencher(txt("tela.tt_particoes_de","Partições de {tab}"), {tab}), preencher(txt("tela.st_tabela_nao_paginada","{db} · esta tabela não é paginada"), {db}),
       `<div class="nota">
-         <p><strong>Arquivo único.</strong> Tudo mora em
-         <code>${esc(tab)}.reg</code>, sem sufixo numérico.</p>
-         <p>A paginação é decidida na <em>criação</em> e não se muda depois: ela
-         é o que transforma o rowid em endereço, e trocar o divisor mudaria o
-         endereço de cada registro já gravado. Para paginar esta tabela seria
-         preciso criar outra já paginada e copiar as linhas — o que refaz os
-         rowids e quebra a ordem de digitação.</p>
+         <p>${marcado(preencher(txt("tela.pt_arquivo_unico","**Arquivo único.** Tudo mora em `{arq}`, sem sufixo numérico."), {arq: esc(tab) + ".reg"}))}</p>
+         <p>${esc(txt("tela.pt_paginacao_na_criacao_a","A paginação é decidida na"))} <em>${esc(txt("tela.pt_criacao","criação"))}</em> ${esc(txt("tela.pt_paginacao_na_criacao_b","e não se muda depois: ela é o que transforma o rowid em endereço, e trocar o divisor mudaria o endereço de cada registro já gravado."))} ${esc(txt("tela.pt_paginacao_na_criacao_c","Para paginar esta tabela seria preciso criar outra já paginada e copiar as linhas — o que refaz os rowids e quebra a ordem de digitação."))}</p>
        </div>
        <div class="acoes">
-         <button class="botao secundario" id="btVoltarGer">← Gestão de ${esc(tab)}</button>
+         <button class="botao secundario" id="btVoltarGer">${esc(preencher(txt("tela.bt_voltar_gestao","← Gestão de {tab}"), {tab: esc(tab)}))}</button>
        </div>`);
     return ligarVoltarGestao(db, tab);
   }
@@ -4771,21 +4767,21 @@ async function verParticoes(db, tab) {
   const comLinhas = vols.filter(v => v.usados > 0).length;
   folha(preencher(txt("tela.tt_particoes_de","Partições de {tab}"), {tab}),
     `${db} · ${porLetra
-        ? `${comLinhas} de ${vols.length} baldes com linha · pela primeira letra de ${pag.coluna}`
-        : `${vols.length} volume(s) do .reg · ${
-            porPeriodo ? `corta ${pag.modo}, pela coluna ${pag.coluna}` : "corta por quantidade"}`}`,
+        ? esc(preencher(txt("tela.pt_baldes_com_linha","{com} de {total} baldes com linha · pela primeira letra de {coluna}"), {com: comLinhas, total: vols.length, coluna: pag.coluna}))
+        : esc(preencher(txt("tela.pt_volumes_do_reg","{n} volume(s) do .reg · {corte}"), {n: vols.length,
+            corte: porPeriodo ? preencher(txt("tela.pt_corta_periodo","corta {modo}, pela coluna {coluna}"), {modo: pag.modo, coluna: pag.coluna}) : txt("tela.pt_corta_por_quantidade","corta por quantidade")}))}`,
     `<div class="fichas">
-       <div class="ficha"><div class="v">${esc(porLetra ? "alfanumérica" : porPeriodo ? pag.modo : "por faixa")}</div>
-         <div class="r">regra de corte</div>
-         <div class="u">${porLetra || porPeriodo ? esc(`pela coluna ${pag.coluna}`) : "por quantidade"}</div></div>
+       <div class="ficha"><div class="v">${esc(porLetra ? txt("tela.pt_alfanumerica","alfanumérica") : porPeriodo ? pag.modo : txt("tela.pt_por_faixa","por faixa"))}</div>
+         <div class="r">${esc(txt("tela.pt_regra_de_corte","regra de corte"))}</div>
+         <div class="u">${porLetra || porPeriodo ? esc(preencher(txt("tela.pt_pela_coluna","pela coluna {coluna}"), {coluna: pag.coluna})) : esc(txt("tela.pt_por_quantidade","por quantidade"))}</div></div>
        <div class="ficha"><div class="v">${esc(String(pag.registros_por_arquivo))}</div>
-         <div class="r">${porLetra ? "teto POR LETRA" : porPeriodo ? "teto por volume" : "registros por arquivo"}</div></div>
+         <div class="r">${esc(porLetra ? txt("tela.pt_teto_por_letra","teto POR LETRA") : porPeriodo ? txt("tela.pt_teto_por_volume","teto por volume") : txt("tela.pt_registros_por_arquivo","registros por arquivo"))}</div></div>
        <div class="ficha"><div class="v">${pag.max_arquivos ? esc(String(pag.max_arquivos)) : "∞"}</div>
-         <div class="r">teto de volumes</div></div>
+         <div class="r">${esc(txt("tela.pt_teto_de_volumes","teto de volumes"))}</div></div>
        <div class="ficha"><div class="v">${esc(String(pag.capacidade || "—"))}</div>
-         <div class="r">capacidade</div><div class="u">registros no total</div></div>
+         <div class="r">${esc(txt("tela.pt_capacidade","capacidade"))}</div><div class="u">${esc(txt("tela.pt_registros_no_total","registros no total"))}</div></div>
        <div class="ficha"><div class="v">${esc(gb(pag.bytes_por_arquivo || 0))} GiB</div>
-         <div class="r">volume dos externos</div><div class="u">.bin, .memo, .log</div></div>
+         <div class="r">${esc(txt("tela.pt_volume_dos_externos","volume dos externos"))}</div><div class="u">.bin, .memo, .log</div></div>
      </div>` +
     `<div id="gradeParticoes"></div>` +
     `<div class="nota">
@@ -4826,7 +4822,7 @@ async function verParticoes(db, tab) {
        o endereço de cada registro já gravado. Ele se escolhe na criação.</p>
      </div>
      <div class="acoes">
-       <button class="botao secundario" id="btVoltarGer">← Gestão de ${esc(tab)}</button>
+       <button class="botao secundario" id="btVoltarGer">${esc(preencher(txt("tela.bt_voltar_gestao","← Gestão de {tab}"), {tab: esc(tab)}))}</button>
      </div>`);
   ligarVoltarGestao(db, tab);
 
@@ -4846,7 +4842,7 @@ async function verParticoes(db, tab) {
   if (porPeriodo) colunas.push({ campo:"periodo", titulo:txt("tela.col_periodo_abriu","período que o abriu"),
     formato:(v, l) => apaga(esc(v || "—"), l) });
   if (porLetra) colunas.push({ campo:"existe", titulo:txt("tela.col_existe","existe"),
-    formato:(v, l) => apaga(v ? "sim" : `<span class="leg">ainda não</span>`, l) });
+    formato:(v, l) => apaga(v ? esc(txt("tela.pt_sim","sim")) : `<span class="leg">${esc(txt("tela.pt_ainda_nao","ainda não"))}</span>`, l) });
   colunas.push(
     { campo:"de", titulo:txt("tela.col_do_rowid","do rowid"), tipo:"numero", formato:(v, l) => apaga(String(v), l) },
     { campo:"ate", titulo:txt("tela.col_ate_rowid","até o rowid"), tipo:"numero", formato:(v, l) => apaga(String(v), l) },
@@ -4988,12 +4984,12 @@ function linhaDeCampo(c, i, opcoesTipo) {
   return `<tr>
     <td class="num"><span class="pos">${i + 1}</span></td>
     <td><input class="c-nome" data-i="${i}" value="${esc(c.nome)}" placeholder="nome_no_disco"></td>
-    <td><input class="c-caption" data-i="${i}" value="${esc(c.caption || "")}" placeholder="rótulo de tela"></td>
+    <td><input class="c-caption" data-i="${i}" value="${esc(c.caption || "")}" placeholder="${esc(txt("tela.nt_ph_rotulo_tela","rótulo de tela"))}"></td>
     <td><select class="c-tipo" data-i="${i}">${opcoesTipo(c.tipo)}</select></td>
     <td><input class="c-mascara" data-i="${i}" value="${esc(c.mascara || "")}" placeholder="@N-11.2"></td>
     <td class="num"><input type="checkbox" class="c-obrig" data-i="${i}" ${c.obrigatoria ? "checked" : ""}></td>
-    <td><input class="c-desc" data-i="${i}" value="${esc(c.descricao || "")}" placeholder="para que serve"></td>
-    <td><button type="button" class="mini perigo c-rm" data-i="${i}">remover</button></td>
+    <td><input class="c-desc" data-i="${i}" value="${esc(c.descricao || "")}" placeholder="${esc(txt("tela.nt_ph_para_que_serve","para que serve"))}"></td>
+    <td><button type="button" class="mini perigo c-rm" data-i="${i}">${esc(txt("tela.nt_remover","remover"))}</button></td>
   </tr>`;
 }
 
@@ -5015,141 +5011,118 @@ function desenharNovaTabela(db) {
   const pk = r.indices.find(x => x.primario && x.nome);
   const colsDaPk = pk ? pk.colunas.split(",").map(s => s.trim().split(/\s+/)[0]).filter(Boolean) : [];
 
-  folha(txt("tela.tt_nova_tabela","Nova tabela"), `${db} · sete arquivos nascem juntos`,
+  folha(txt("tela.tt_nova_tabela","Nova tabela"), preencher(txt("tela.nt_sete_arquivos","{db} · sete arquivos nascem juntos"), {db}),
     `<form class="criar" id="formNovaTab" autocomplete="off">
        <div class="bloco">
-         <label class="largo"><span>nome da tabela</span>
+         <label class="largo"><span>${esc(txt("tela.nt_nome_da_tabela","nome da tabela"))}</span>
            <input id="nt_nome" placeholder="cadastroClientes" value="${esc(r.nome || "")}"></label>
-         <label class="largo"><span>schema
-             <em>(vazio = na raiz do database; a pasta nasce junto se faltar)</em></span>
+         <label class="largo"><span>${esc(txt("tela.nt_schema","schema"))}
+             <em>${esc(txt("tela.nt_schema_vazio","(vazio = na raiz do database; a pasta nasce junto se faltar)"))}</em></span>
            <input id="nt_schema" placeholder="vendas" value="${esc(r.schema || "")}"></label>
        </div>
 
-       <h3 class="secao">Campos
-         <button type="button" class="mini" id="nt_addCol">+ campo</button>
-         <em>o <code>id</code> de cada campo é sorteado na criação e nunca muda —
-         é por ele que telas e relatórios apontam para a coluna</em></h3>
+       <h3 class="secao">${esc(txt("tela.nt_campos_titulo","Campos"))}
+         <button type="button" class="mini" id="nt_addCol">+ ${esc(txt("tela.nt_campo","campo"))}</button>
+         <em>${marcado(txt("tela.nt_id_sorteado","o `id` de cada campo é sorteado na criação e nunca muda — é por ele que telas e relatórios apontam para a coluna"))}</em></h3>
        <div class="rolo"><table class="montar campos"><thead><tr>
-         <th class="num">#</th><th>nome</th><th>caption</th><th>tipo e tamanho</th>
-         <th>máscara <em>(picture)</em></th><th class="num">obrig.</th>
-         <th>descrição</th><th></th>
+         <th class="num">#</th><th>${esc(txt("tela.col_nome_curto","nome"))}</th><th>${esc(txt("tela.nt_caption","caption"))}</th><th>${esc(txt("tela.nt_tipo_e_tamanho","tipo e tamanho"))}</th>
+         <th>${esc(txt("tela.nt_mascara","máscara"))} <em>${esc(txt("tela.nt_picture","(picture)"))}</em></th><th class="num">${esc(txt("tela.col_obrig","obrig."))}</th>
+         <th>${esc(txt("tela.nt_descricao","descrição"))}</th><th></th>
        </tr></thead><tbody id="nt_cols">${
          r.colunas.map((c, i) => linhaDeCampo(c, i, opcoesTipo)).join("")}</tbody></table></div>
 
-       ${colsDaPk.length ? `<p class="leg chave">Chave primária:
-         <b>${colsDaPk.map(esc).join(" + ")}</b>${colsDaPk.length > 1 ? " — composta" : ""}
-         · declarada no índice <code>${esc(pk.nome)}</code></p>`
-        : `<p class="leg chave sem">Sem chave primária. Marque um índice como
-           primário abaixo — é o que as chaves estrangeiras das outras tabelas
-           vão apontar.</p>`}
+       ${colsDaPk.length ? `<p class="leg chave">${esc(txt("tela.nt_chave_primaria","Chave primária:"))}
+         <b>${colsDaPk.map(esc).join(" + ")}</b>${colsDaPk.length > 1 ? " — " + esc(txt("tela.nt_composta","composta")) : ""}
+         · ${esc(txt("tela.nt_declarada_no_indice","declarada no índice"))} <code>${esc(pk.nome)}</code></p>`
+        : `<p class="leg chave sem">${esc(txt("tela.nt_sem_chave_primaria","Sem chave primária. Marque um índice como primário abaixo — é o que as chaves estrangeiras das outras tabelas vão apontar."))}</p>`}
 
-       <h3 class="secao">Índices e chaves
-         <button type="button" class="mini" id="nt_addIdx">+ índice</button>
-         <em>a coluna vai por nome; aceita “cidade desc” e “nome nocase”</em></h3>
+       <h3 class="secao">${esc(txt("tela.nt_indices_e_chaves","Índices e chaves"))}
+         <button type="button" class="mini" id="nt_addIdx">+ ${esc(txt("tela.nt_indice","índice"))}</button>
+         <em>${esc(txt("tela.nt_coluna_por_nome","a coluna vai por nome; aceita “cidade desc” e “nome nocase”"))}</em></h3>
        <div class="rolo"><table class="montar"><thead><tr>
-         <th>nome</th><th>colunas</th><th class="num">único</th>
-         <th class="num">primária</th><th></th>
+         <th>${esc(txt("tela.col_nome_curto","nome"))}</th><th>${esc(txt("tela.fc_colunas","colunas"))}</th><th class="num">${esc(txt("tela.col_unico","único"))}</th>
+         <th class="num">${esc(txt("tela.nt_primaria","primária"))}</th><th></th>
        </tr></thead><tbody id="nt_idxs">${r.indices.map((x, i) => `
          <tr><td><input class="i-nome" data-i="${i}" value="${esc(x.nome)}"></td>
              <td><input class="i-cols" data-i="${i}" value="${esc(x.colunas)}"
                         placeholder="${esc(nomesCol.slice(0, 2).join(", ") || "cidade desc, limite")}"></td>
              <td class="num"><input type="checkbox" class="i-unico" data-i="${i}" ${x.unico ? "checked" : ""}></td>
              <td class="num"><input type="radio" name="nt_pk" class="i-pk" data-i="${i}" ${x.primario ? "checked" : ""}></td>
-             <td><button type="button" class="mini perigo i-rm" data-i="${i}">remover</button></td>
+             <td><button type="button" class="mini perigo i-rm" data-i="${i}">${esc(txt("tela.nt_remover","remover"))}</button></td>
          </tr>`).join("")}</tbody></table></div>
 
-       <h3 class="secao">Exclusão
+       <h3 class="secao">${esc(txt("tela.nt_exclusao_titulo","Exclusão"))}
          <label class="chk"><input type="checkbox" id="nt_motivo_obrig"
-           ${r.motivo_obrigatorio ? "checked" : ""}> exigir motivo escrito</label></h3>
-       <p class="leg">Toda tabela nasce com a coluna de sistema
-         <code>softdeleted</code>: excluir <b>marca</b> a linha, que some das
-         listas e continua inteira no <code>.reg</code>, e dá para restaurar.
-         Quem manda apagar de vez tem a linha guardada no <code>.trash</code>
-         antes de o slot sair, e o motivo vai para o <code>.reason</code> com a
-         data, a hora e quem foi.<br>
-         Marcada, esta caixa faz o motor <b>recusar</b> qualquer exclusão desta
-         tabela sem uma frase escrita. Vale para tabela cujo apagamento alguém
-         vai ter de justificar depois — e não para tabela de rascunho, onde
-         obrigar só ensina todo mundo a digitar um ponto.</p>
+           ${r.motivo_obrigatorio ? "checked" : ""}> ${esc(txt("tela.nt_exigir_motivo","exigir motivo escrito"))}</label></h3>
+       <p class="leg">${marcado(txt("tela.nt_softdeleted_a","Toda tabela nasce com a coluna de sistema `softdeleted`: excluir **marca** a linha, que some das listas e continua inteira no `.reg`, e dá para restaurar."))}
+         ${marcado(txt("tela.nt_softdeleted_b","Quem manda apagar de vez tem a linha guardada no `.trash` antes de o slot sair, e o motivo vai para o `.reason` com a data, a hora e quem foi."))}<br>
+         ${marcado(txt("tela.nt_softdeleted_c","Marcada, esta caixa faz o motor **recusar** qualquer exclusão desta tabela sem uma frase escrita."))}
+         ${esc(txt("tela.nt_softdeleted_d","Vale para tabela cujo apagamento alguém vai ter de justificar depois — e não para tabela de rascunho, onde obrigar só ensina todo mundo a digitar um ponto."))}</p>
 
-       <h3 class="secao">Partição
+       <h3 class="secao">${esc(txt("tela.nt_particao_titulo","Partição"))}
          <label class="chk"><input type="checkbox" id="nt_particionada"
-           ${r.particionada ? "checked" : ""}> tabela particionada</label></h3>
+           ${r.particionada ? "checked" : ""}> ${esc(txt("tela.nt_tabela_particionada","tabela particionada"))}</label></h3>
 
        ${r.particionada ? `
        <div class="bloco">
-         <label class="largo"><span>como o volume corta</span>
+         <label class="largo"><span>${esc(txt("tela.nt_como_volume_corta","como o volume corta"))}</span>
            <select id="nt_regra">${PARTICOES.map(([k, rot, diz]) =>
              `<option value="${k}"${k === r.particao ? " selected" : ""}>${esc(rot)} — ${esc(diz)}</option>`
            ).join("")}</select></label>
 
          ${porLetra ? `
-         <label class="largo"><span>coluna de referência
-             <em>(a primeira letra dela decide o arquivo; precisa ser obrigatória)</em></span>
+         <label class="largo"><span>${esc(txt("tela.nt_coluna_referencia","coluna de referência"))}
+             <em>${esc(txt("tela.nt_letra_decide_arquivo","(a primeira letra dela decide o arquivo; precisa ser obrigatória)"))}</em></span>
            <select id="nt_pcol">${
              colunasRef.length
                ? colunasRef.map(c => `<option value="${esc(c.nome)}"${
                    c.nome === r.particao_coluna ? " selected" : ""}>${esc(c.nome)}${
-                   c.obrigatoria ? "" : " — atenção: aceita nulo"}</option>`).join("")
-               : `<option value="">— nenhuma coluna serve de referência —</option>`
+                   c.obrigatoria ? "" : " — " + esc(txt("tela.nt_atencao_aceita_nulo","atenção: aceita nulo"))}</option>`).join("")
+               : `<option value="">— ${esc(txt("tela.nt_nenhuma_coluna_referencia","nenhuma coluna serve de referência"))} —</option>`
            }</select></label>` : ""}
 
          ${porPeriodo ? `
-         <label class="largo"><span>coluna de data que decide o período
-             <em>(precisa ser <code>Date</code> ou <code>DateTime</code> e obrigatória)</em></span>
+         <label class="largo"><span>${esc(txt("tela.nt_coluna_data_periodo","coluna de data que decide o período"))}
+             <em>${marcado(txt("tela.nt_precisa_ser_date","(precisa ser `Date` ou `DateTime` e obrigatória)"))}</em></span>
            <select id="nt_pcol">${
              colunasData.length
                ? colunasData.map(c => `<option value="${esc(c.nome)}"${
                    c.nome === r.particao_coluna ? " selected" : ""}>${esc(c.nome)}${
-                   c.obrigatoria ? "" : " — atenção: aceita nulo"}</option>`).join("")
-               : `<option value="">— nenhuma coluna de data no cadastro acima —</option>`
+                   c.obrigatoria ? "" : " — " + esc(txt("tela.nt_atencao_aceita_nulo","atenção: aceita nulo"))}</option>`).join("")
+               : `<option value="">— ${esc(txt("tela.nt_nenhuma_coluna_data","nenhuma coluna de data no cadastro acima"))} —</option>`
            }</select></label>` : ""}
 
-         <label><span>${porLetra ? "teto de registros POR LETRA"
-                        : porPeriodo ? "teto de registros por volume" : "registros por arquivo"}
-             <em>${porLetra ? "num cadastro brasileiro o _S enche muito antes do _K"
-                   : porPeriodo ? "corta antes se o período render demais" : "0 = arquivo único"}</em></span>
+         <label><span>${porLetra ? esc(txt("tela.nt_teto_por_letra_campo","teto de registros POR LETRA"))
+                        : porPeriodo ? esc(txt("tela.nt_teto_por_volume_campo","teto de registros por volume")) : esc(txt("tela.pt_registros_por_arquivo","registros por arquivo"))}
+             <em>${porLetra ? esc(txt("tela.nt_cadastro_br_s_k","num cadastro brasileiro o _S enche muito antes do _K"))
+                   : porPeriodo ? esc(txt("tela.nt_corta_antes_periodo","corta antes se o período render demais")) : esc(txt("tela.nt_zero_arquivo_unico","0 = arquivo único"))}</em></span>
            <input id="nt_pag" inputmode="numeric" placeholder="0" value="${esc(String(r.pag ?? 0))}"></label>
-         ${porLetra ? `<p class="leg">O sufixo é a <b>letra</b>, e os volumes são
-           <b>37</b> — A a Z, 0 a 9 e <code>Outros</code>. Nenhum dos dois se
-           escolhe: são o formato desta partição.</p>` : `
-         <label><span>dígitos do sufixo <em>(3 dá <code>_001</code>)</em></span>
+         ${porLetra ? `<p class="leg">${marcado(txt("tela.nt_sufixo_letra_37","O sufixo é a **letra**, e os volumes são **37** — A a Z, 0 a 9 e `Outros`. Nenhum dos dois se escolhe: são o formato desta partição."))}</p>` : `
+         <label><span>${esc(txt("tela.nt_digitos_sufixo","dígitos do sufixo"))} <em>${marcado(txt("tela.nt_3_da_001","(3 dá `_001`)"))}</em></span>
            <input id="nt_dig" inputmode="numeric" placeholder="3" value="${esc(String(r.dig ?? 3))}"></label>
-         <label><span>teto de volumes <em>(0 = o que couber no sufixo)</em></span>
+         <label><span>${esc(txt("tela.pt_teto_de_volumes","teto de volumes"))} <em>${esc(txt("tela.nt_zero_o_que_couber","(0 = o que couber no sufixo)"))}</em></span>
            <input id="nt_max" inputmode="numeric" placeholder="${esc(String(tetoDoSufixo(r.dig ?? 3)))}"
                   value="${esc(String(r.max ?? 0))}"></label>`}
        </div>
 
-       ${porLetra ? `<div class="nota"><p><strong>A ordem de digitação muda de
-         campo.</strong> A linha vai para o arquivo da letra dela, então duas
-         linhas digitadas em seguida caem em arquivos diferentes e o
-         <code>rowid</code> deixa de crescer com a chegada — ele passa a dizer
-         em que <em>arquivo</em> a linha está. A ordem de chegada continua
-         inteira na coluna de sistema <code>rownum</code>, e é por ela que a
-         grade pagina.</p>
-         <p>Alterar a coluna de referência depois é <strong>recusado</strong>:
-         mudaria o arquivo em que a linha mora, e com ele o rowid, que é a
-         identidade dela em todo índice. Para mudar, exclua e insira de novo.</p>
+       ${porLetra ? `<div class="nota"><p>${marcado(txt("tela.nt_ordem_muda_campo","**A ordem de digitação muda de campo.** A linha vai para o arquivo da letra dela."))} ${marcado(txt("tela.nt_ordem_muda_campo2","então duas linhas digitadas em seguida caem em arquivos diferentes e o `rowid` deixa de crescer com a chegada — ele passa a dizer em que **arquivo** a linha está."))}
+         ${marcado(txt("tela.nt_ordem_chegada_rownum","A ordem de chegada continua inteira na coluna de sistema `rownum`, e é por ela que a grade pagina."))}</p>
+         <p>${marcado(txt("tela.nt_alterar_coluna_recusado","Alterar a coluna de referência depois é **recusado**: mudaria o arquivo em que a linha mora, e com ele o rowid, que é a identidade dela em todo índice. Para mudar, exclua e insira de novo."))}</p>
          </div>` : ""}
 
        ${gradeDeParticoes(r, porPeriodo)}
-       ` : `<p class="leg">Sem partição, a tabela é um arquivo único:
-         <code>${esc(r.nome || "tabela")}.reg</code>, sem sufixo.</p>`}
+       ` : `<p class="leg">${marcado(preencher(txt("tela.nt_sem_particao_arquivo_unico","Sem partição, a tabela é um arquivo único: `{arq}`, sem sufixo."), {arq: esc(r.nome || "tabela") + ".reg"}))}</p>`}
      </form>
 
      <div class="acoes">
-       <button class="botao" id="nt_criar">Criar tabela</button>
-       <button class="botao secundario" id="nt_voltar">← Tabelas de ${esc(db)}</button>
+       <button class="botao" id="nt_criar">${esc(txt("tela.nt_criar_tabela","Criar tabela"))}</button>
+       <button class="botao secundario" id="nt_voltar">← ${esc(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}))}</button>
        <span class="leg" id="nt_recado"></span>
      </div>
 
      <div class="nota">
-       <p><strong>A partição entra agora e não muda depois.</strong> Ela decide
-       como o rowid vira endereço; trocá-la mais tarde mudaria o endereço de
-       cada registro já gravado.</p>
-       <p><code>Sequence</code> deixado em branco na inclusão é numerado pelo
-       motor; <code>Uuid</code> aceita a palavra <code>novo</code> e gera um v7,
-       que é crescente e por isso cai sempre na folha mais à direita da árvore.</p>
+       <p>${marcado(txt("tela.nt_particao_agora_a","**A partição entra agora e não muda depois.** Ela decide como o rowid vira endereço; trocá-la mais tarde mudaria o endereço de cada registro já gravado."))}</p>
+       <p>${marcado(txt("tela.nt_particao_agora_b","`Sequence` deixado em branco na inclusão é numerado pelo motor; `Uuid` aceita a palavra `novo` e gera um v7, que é crescente e por isso cai sempre na folha mais à direita da árvore."))}</p>
      </div>`);
 
   ligarNovaTabela(db);
@@ -5167,11 +5140,10 @@ function gradeDeParticoes(r, porPeriodo) {
   const sufixo = n => `_${String(n).padStart(dig, "0")}`;
 
   if (!porPeriodo) {
-    if (!por) return `<div class="nota">Informe quantos registros cabem em cada
-      arquivo — sem esse número não há como cortar o volume.</div>`;
+    if (!por) return `<div class="nota">${esc(txt("tela.nt_informe_registros_cada_arquivo","Informe quantos registros cabem em cada arquivo — sem esse número não há como cortar o volume."))}</div>`;
     return `<div class="rolo"><table class="montar"><thead><tr>
-        <th class="num">volume</th><th>arquivo</th><th class="num">do rowid</th>
-        <th class="num">até o rowid</th></tr></thead><tbody>${
+        <th class="num">${esc(txt("tela.pt_volume","volume"))}</th><th>${esc(txt("tela.pt_arquivo","arquivo"))}</th><th class="num">${esc(txt("tela.pt_do_rowid","do rowid"))}</th>
+        <th class="num">${esc(txt("tela.pt_ate_o_rowid","até o rowid"))}</th></tr></thead><tbody>${
         [1, 2, 3].map(v => `<tr><td class="num dado">${v}</td>
           <td class="dado"><code>${esc(r.nome || "tabela")}${sufixo(v)}.reg</code></td>
           <td class="num">${(v - 1) * por + 1}</td><td class="num">${v * por}</td></tr>`).join("")}
@@ -5181,9 +5153,8 @@ function gradeDeParticoes(r, porPeriodo) {
           <td class="dado"><code>${esc(r.nome || "tabela")}${sufixo(teto)}.reg</code></td>
           <td class="num">${(teto - 1) * por + 1}</td><td class="num">${teto * por}</td></tr>
       </tbody></table></div>
-      <div class="nota"><p><strong>O endereço é conta, não busca:</strong>
-      <code>volume = (rowid−1) ÷ ${por} + 1</code>. Capacidade total:
-      <b>${(teto * por).toLocaleString("pt-BR")}</b> registros.</p></div>`;
+      <div class="nota"><p>${marcado(preencher(txt("tela.nt_endereco_e_conta","**O endereço é conta, não busca:** `volume = (rowid−1) ÷ {por} + 1`."), {por}))}
+      ${marcado(preencher(txt("tela.nt_capacidade_total","Capacidade total: **{n}** registros."), {n: (teto * por).toLocaleString("pt-BR")}))}</p></div>`;
   }
 
   const regra = PARTICOES.find(p => p[0] === r.particao) || PARTICOES[1];
@@ -5195,26 +5166,18 @@ function gradeDeParticoes(r, porPeriodo) {
   }[r.particao] || [];
 
   return `<div class="rolo"><table class="montar"><thead><tr>
-      <th class="num">volume</th><th>arquivo</th><th>período que o abre</th>
+      <th class="num">${esc(txt("tela.pt_volume","volume"))}</th><th>${esc(txt("tela.pt_arquivo","arquivo"))}</th><th>${esc(txt("tela.pt_periodo_que_abre","período que o abre"))}</th>
       </tr></thead><tbody>${exemplos.map((p, i) => `<tr>
         <td class="num dado">${i + 1}</td>
         <td class="dado"><code>${esc(r.nome || "tabela")}${sufixo(i + 1)}.reg</code></td>
         <td class="dado">${esc(p)}</td></tr>`).join("")}
       <tr><td class="num dado">…</td><td class="dado">…</td>
-        <td class="dado">e assim por diante, até ${teto} volumes</td></tr>
+        <td class="dado">${esc(preencher(txt("tela.nt_e_assim_ate_n_volumes","e assim por diante, até {n} volumes"), {n: teto}))}</td></tr>
     </tbody></table></div>
     <div class="nota">
-      <p><strong>${esc(regra[1])}:</strong> ${esc(regra[2])}. O volume também
-      corta quando enche${por ? ` — o teto de ${por} registros vale igual` : ""},
-      para um período movimentado não estourar o arquivo.</p>
-      <p><strong>A linha atrasada não volta.</strong> Um lançamento de janeiro
-      digitado em março entra no volume de março. A ordem de digitação é
-      sagrada: voltar significaria escrever no meio de um arquivo já fechado, e
-      o rowid deixaria de crescer com o arquivo.</p>
-      <p>Por isso o período de um volume é <em>o período em que ele abriu</em>,
-      e um volume pode conter linhas de períodos anteriores que chegaram
-      depois. Quem quiser todos os lançamentos de janeiro usa o índice pela
-      data, que é para isso que ele existe.</p>
+      <p><strong>${esc(regra[1])}:</strong> ${esc(regra[2])}. ${esc(preencher(txt("tela.nt_volume_corta_quando_enche","O volume também corta quando enche{teto}, para um período movimentado não estourar o arquivo."), {teto: por ? preencher(txt("tela.nt_teto_vale_igual"," — o teto de {por} registros vale igual"), {por}) : ""}))}</p>
+      <p>${marcado(txt("tela.nt_linha_atrasada_nao_volta","**A linha atrasada não volta.** Um lançamento de janeiro digitado em março entra no volume de março."))} ${marcado(txt("tela.nt_ordem_sagrada_arquivo_fechado","A ordem de digitação é sagrada: voltar significaria escrever no meio de um arquivo já fechado, e o rowid deixaria de crescer com o arquivo."))}</p>
+      <p>${marcado(txt("tela.nt_periodo_em_que_abriu","Por isso o período de um volume é **o período em que ele abriu**, e um volume pode conter linhas de períodos anteriores que chegaram depois."))} ${esc(txt("tela.nt_quem_quiser_todos_lancamentos","Quem quiser todos os lançamentos de janeiro usa o índice pela data, que é para isso que ele existe."))}</p>
     </div>`;
 }
 
@@ -5498,8 +5461,8 @@ async function desenharPivot() {
       <span class="passo-n">${n}</span>${esc(p)}</button>`;
   }).join('<span class="passo-traco"></span>')}</div>`;
 
-  folha(txt("tela.tt_pivot","Tabela dinâmica"), `${w.db} · o cruzamento é somado no servidor`,
-    trilha + `<div id="pvCorpo"><div class="centro">carregando…</div></div>`);
+  folha(txt("tela.tt_pivot","Tabela dinâmica"), preencher(txt("tela.pv_cruzamento_servidor","{db} · o cruzamento é somado no servidor"), {db: w.db}),
+    trilha + `<div id="pvCorpo"><div class="centro">${esc(txt("tela.carregando","carregando…"))}</div></div>`);
 
   $$("#painel .passo").forEach(b => b.onclick = () => {
     w.passo = +b.dataset.passo;
@@ -5533,58 +5496,54 @@ async function pivotPasso1() {
   }
 
   $("#pvCorpo").innerHTML = `
-    <h3 class="secao">A tabela dos fatos</h3>
-    <p class="leg">É a que tem as linhas a somar — vendas, lançamentos, movimentos.
-    As outras entram como consulta, para trazer um campo de descrição.</p>
+    <h3 class="secao">${esc(txt("tela.pv_tabela_dos_fatos","A tabela dos fatos"))}</h3>
+    <p class="leg">${esc(txt("tela.pv_e_a_que_tem_linhas","É a que tem as linhas a somar — vendas, lançamentos, movimentos. As outras entram como consulta, para trazer um campo de descrição."))}</p>
     <div class="rolo"><table><tbody>${nomes.map(n => `<tr class="linha-tab${
         n === w.tabela ? " escolhida" : ""}" data-t="${esc(n)}">
       <td class="dado"><b>${esc(n)}</b></td>
-      <td><span class="pino">${n === w.tabela ? "escolhida" : "escolher"}</span></td>
+      <td><span class="pino">${n === w.tabela ? esc(txt("tela.pv_escolhida","escolhida")) : esc(txt("tela.pv_escolher","escolher"))}</span></td>
     </tr>`).join("")}</tbody></table></div>
 
     ${w.tabela ? `
-    <h3 class="secao">Tabelas de consulta
-      <em>(opcional — para cruzar por um campo que mora em outra tabela)</em></h3>
+    <h3 class="secao">${esc(txt("tela.pv_tabelas_de_consulta","Tabelas de consulta"))}
+      <em>${esc(txt("tela.pv_opcional_cruzar","(opcional — para cruzar por um campo que mora em outra tabela)"))}</em></h3>
 
-    ${sugeridas.length ? `<p class="leg">O esquema de <code>${esc(w.tabela)}</code>
-      declara ${sugeridas.length} chave(s) estrangeira(s). Clique para usar:</p>
+    ${sugeridas.length ? `<p class="leg">${esc(preencher(txt("tela.pv_esquema_declara_fks","O esquema de `{tab}` declara {n} chave(s) estrangeira(s). Clique para usar:"), {tab: w.tabela, n: sugeridas.length}))}</p>
       <div class="acoes">${sugeridas.map((s, i) =>
         `<button class="botao secundario" data-sug="${i}">+ ${esc(s.tabela)}
-          <span class="leg">por ${esc(s.coluna)}</span></button>`).join("")}</div>`
-      : `<p class="leg">Esta tabela não declara chave estrangeira, então não há o
-         que propor. Dá para juntar à mão abaixo.</p>`}
+          <span class="leg">${esc(txt("tela.pv_por","por"))} ${esc(s.coluna)}</span></button>`).join("")}</div>`
+      : `<p class="leg">${esc(txt("tela.pv_sem_fk_declarada","Esta tabela não declara chave estrangeira, então não há o que propor. Dá para juntar à mão abaixo."))}</p>`}
 
     ${w.juncoes.length ? `<div class="rolo"><table><thead><tr>
-        <th>prefixo</th><th>tabela</th><th>ligada por</th><th></th>
+        <th>${esc(txt("tela.pv_prefixo","prefixo"))}</th><th>${esc(txt("tela.col_tabela","tabela"))}</th><th>${esc(txt("tela.pv_ligada_por","ligada por"))}</th><th></th>
       </tr></thead><tbody>${w.juncoes.map((j, i) => `<tr>
         <td class="dado"><code>${esc(j.prefixo)}</code></td>
         <td class="dado">${esc(j.tabela)}</td>
         <td class="dado">${esc(w.tabela)}.<b>${esc(j.coluna)}</b></td>
-        <td><button class="mini perigo" data-tirar="${i}">tirar</button></td>
+        <td><button class="mini perigo" data-tirar="${i}">${esc(txt("tela.pv_tirar","tirar"))}</button></td>
       </tr>`).join("")}</tbody></table></div>` : ""}
 
     <form class="criar" id="fPvJun" autocomplete="off"><div class="bloco">
-      <label><span>juntar com a tabela</span>
-        <select id="pv_jt"><option value="">— escolha —</option>${
+      <label><span>${esc(txt("tela.pv_juntar_com_tabela","juntar com a tabela"))}</span>
+        <select id="pv_jt"><option value="">— ${esc(txt("tela.pv_escolha","escolha"))} —</option>${
           nomes.filter(n => n !== w.tabela).map(n =>
             `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select></label>
-      <label><span>pela coluna de ${esc(w.tabela)}</span>
-        <select id="pv_jc"><option value="">— escolha —</option></select></label>
-      <label><span>prefixo <em>(como os campos dela vão aparecer)</em></span>
+      <label><span>${esc(preencher(txt("tela.pv_pela_coluna_de","pela coluna de {tab}"), {tab: w.tabela}))}</span>
+        <select id="pv_jc"><option value="">— ${esc(txt("tela.pv_escolha","escolha"))} —</option></select></label>
+      <label><span>${esc(txt("tela.pv_prefixo","prefixo"))} <em>${esc(txt("tela.pv_como_campos_aparecem","(como os campos dela vão aparecer)"))}</em></span>
         <input id="pv_jp" placeholder="cliente"></label>
     </div>
-    <div class="acoes"><button class="botao secundario" id="pv_addjun">+ juntar</button></div>
+    <div class="acoes"><button class="botao secundario" id="pv_addjun">+ ${esc(txt("tela.pv_juntar","juntar"))}</button></div>
     </form>
 
     <div class="nota">
-      <p><strong>A tabela de consulta é lida inteira para a memória, uma vez.</strong>
-      É o <em>hash join</em>: para a forma de dado que um pivot cruza — muitos
-      fatos, poucas dimensões — ele custa uma varredura em vez de uma descida na
-      árvore por linha de fato. O teto é 500.000 linhas por tabela de consulta.</p>
+      <p>${marcado(txt("tela.pv_lida_inteira_memoria","**A tabela de consulta é lida inteira para a memória, uma vez.**"))}
+      ${marcado(txt("tela.pv_hash_join","É o *hash join*: para a forma de dado que um pivot cruza — muitos fatos, poucas dimensões — ele custa uma varredura em vez de uma descida na árvore por linha de fato.".replace(/\*([^*]+)\*/, "**$1**")))}
+      ${esc(txt("tela.pv_teto_500k","O teto é 500.000 linhas por tabela de consulta."))}</p>
     </div>
 
     <div class="acoes">
-      <button class="botao" id="pv_ir2">Escolher os campos →</button>
+      <button class="botao" id="pv_ir2">${esc(txt("tela.pv_escolher_campos","Escolher os campos"))} →</button>
     </div>` : ""}`;
 
   $$("#pvCorpo .linha-tab").forEach(tr => tr.onclick = () => {
@@ -5997,7 +5956,7 @@ async function verConfigTabela(db, tab) {
      </div>
 
      <div class="acoes">
-       <button class="botao secundario" id="btVoltarGer">← Gestão de ${esc(tab)}</button>
+       <button class="botao secundario" id="btVoltarGer">${esc(preencher(txt("tela.bt_voltar_gestao","← Gestão de {tab}"), {tab: esc(tab)}))}</button>
        <button class="botao secundario" id="btVerEstr">Estrutura completa</button>
      </div>`);
 

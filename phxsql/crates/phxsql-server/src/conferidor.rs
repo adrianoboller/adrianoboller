@@ -385,6 +385,10 @@ pub const ISENTOS: &[(&str, &str)] = &[
     ("iptables / ip6tables", "nome de ferramenta do Linux"),
     ("nftables", "nome de ferramenta do Linux"),
     ("fail2ban", "nome de ferramenta do Linux"),
+    (
+        "(picture)",
+        "termo tecnico do Clarion (mascara PICTURE), o mesmo em toda lingua",
+    ),
 ];
 
 /// A varredura de um arquivo. `arquivo` so entra no achado, para dizer onde.

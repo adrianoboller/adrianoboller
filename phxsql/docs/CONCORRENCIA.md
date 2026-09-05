@@ -1620,3 +1620,135 @@ O teto absoluto **não se compara entre bancadas**: aqui deu 1,79×–2,15× e n
 O que **é** comparável, e é o que esta seção entrega, são as dez medições
 **dentro da mesma bateria**: ali o controle é o mesmo para todas as linhas, e
 a ausência de tendência ao longo de 28× de razão é o achado.
+
+---
+
+## 16. O `RwLock` ENTROU — a ficha compartilhada do `varrer` (04–05/09)
+
+As §11 e §15 mediram o teto e pararam ali: *«o `RwLock` tem entre ~2× e ~3×
+para recuperar»*. Esta seção é a entrega, e ela é deliberadamente pequena —
+**uma operação**, o `varrer`, que é a leitura de grade e o que a tela faz o dia
+inteiro. As outras 75 seções continuam exatamente como estavam.
+
+### 16.1 O que NÃO se fez, e por quê
+
+**`RwLock<Instancia>` continua não compilando, e o marcador `!Sync` continua no
+lugar.** A §2 explica por quê, e nada nela envelheceu: todo método da
+`Instancia` é `&self`, e `&self` é o que um guard de LEITURA entrega. Se a
+`Instancia` fosse o conteúdo do `RwLock`, dois escritores tomariam guard de
+leitura e abririam dois `Table` sobre os mesmos arquivos — **sem um erro do
+compilador**.
+
+O que mudou é o que está DENTRO da trava:
+
+```rust
+dados: RwLock<Raiz>          // era Mutex<Instancia>
+```
+
+A `Raiz` tem um campo, o `PathBuf`, e separa as duas fichas **pelo tipo do
+empréstimo**, que é a única coisa que um `RwLock` sabe distinguir:
+
+| empréstimo | quem o entrega | o que ele alcança |
+|---|---|---|
+| `&Raiz` | o guard de LEITURA, a N threads ao mesmo tempo | `Raiz::abrir_para_ler`, e **só** ela |
+| `&mut Raiz` | o guard de ESCRITA, a uma de cada vez | `Raiz::exclusiva()`, e por ela a `Instancia` inteira |
+
+A `Instancia` **não mora dentro da `Raiz`**, e isso não é economia: um campo
+`!Sync` faria a `Raiz` também `!Sync`, e aí o `RwLock` voltaria a não compilar.
+Ela nasce do `PathBuf` a cada `exclusiva()`, presa por tempo de vida ao
+empréstimo mutável.
+
+### 16.2 A garantia é do COMPILADOR, e ela se prova nos dois sentidos
+
+Convenção documentada foi recusada de propósito: *convenção que o compilador
+não conhece é convenção que uma refação apaga em silêncio*. A ficha
+compartilhada devolve uma `TabelaLeitura`, que **não tem** método de escrita —
+ela envolve o `Table` em vez de derivar dele, porque um `Deref<Target = Table>`
+seria uma linha e devolveria `inserir`, `excluir` e `sincronizar` junto.
+
+A prova é um par de *doctests*, e o par é o ponto: um `compile_fail` sozinho
+passaria também por um erro de digitação.
+
+```
+compile_fail:  fn grava(t: &mut TabelaLeitura) { let _ = t.inserir(&[]); }
+compila:       fn grava(t: &mut Table)         { let _ = t.inserir(&[]); }
+```
+
+E o corpo da varredura é **genérico sobre `Legivel`**, um trait de doze métodos
+em que **nenhum escreve**. Os dois efeitos são de uma vez só: não há segunda
+cópia da varredura para divergir, e o corpo não consegue escrever em ficha
+nenhuma. O que ele deixaria para a trilha volta como valor, e quem tem a ficha
+exclusiva é que grava.
+
+### 16.3 O achado que quase custou a entrega: abrir para LER escreve
+
+A lista de métodos não era o buraco. **Uma varredura escreve em seis lugares**,
+e quatro deles estão dentro do construtor — está contado, com arquivo e
+condição, em `docs/cognicao/cognicao_abrir-para-ler-escreve_20260904_2330.md`.
+Resumo:
+
+| onde | o quê | quando |
+|---|---|---|
+| `LixeiraFile::abrir` | **cria** o `.trash` | tabela nascida antes do arquivo existir |
+| `MotivoFile::abrir` | **cria** o `.reason` | idem |
+| `LogFile::abrir` → `curar` | regrava o cabeçalho do `.log` | diário que ficou para trás numa queda |
+| `RegFile::abrir` → `terminar_troca_interrompida` | `rename` de volume | alteração de estrutura interrompida |
+| `Servidor::abrir_travada` | `espelhar()` cria o `.bkp` | `recursos.espelho` ligado, tabela sem espelho |
+| `op_varrer` | `registrar_acesso` grava a trilha | tabela com coluna de dado pessoal |
+
+As quatro primeiras viraram recusa: `Table::abrir_para_ler` devolve
+`SemEscrever::PrecisaEscrever(motivo)`, e o motivo **nomeia o componente** — a
+lixeira que falta e o diário que pede cura se consertam diferente. As duas
+últimas são conferidas por `Servidor::abrir_para_ler_travada`.
+
+Nenhuma das seis é erro para quem chama: a ficha compartilhada é **solta** e o
+trabalho é refeito na exclusiva. Soltar antes de pedir é obrigatório — pedir as
+duas na mesma thread é o abraço mortal que a `COM_A_TRAVA` acusa, e num
+`RwLock` ele é pior que num `Mutex`: com um escritor na fila, a segunda leitura
+trava as três pontas.
+
+### 16.4 As guardas, e o defeito reposto de cada uma
+
+**O teste que mais importa é o do comportamento velho**, e ele é
+`sem_a_ficha_compartilhada_nada_muda`: o mesmo pedido, respondido pelas duas
+fichas, tem de dar o mesmo JSON. A ficha exclusiva é forçada **sem mexer no
+pedido** — apagando o `.trash`, o que faz a abertura precisar criar arquivo —,
+e o teste exige duas coisas: a resposta igual **e** o `.trash` de volta. Sem a
+segunda, ele compararia a mesma pista com ela mesma e passaria por engano.
+
+| guarda | defeito reposto | o que caiu |
+|---|---|---|
+| `a_trilha_de_dado_pessoal_sobrevive_a_pista_de_leitura` | a pista aceita tabela com coluna marcada | a trilha fica **vazia** — e trilha que perde registro em silêncio parece completa |
+| `o_espelho_continua_nascendo_no_varrer` | a pista aceita tabela sem `.bkp` com `espelho` ligado | o espelho **não nasce** |
+| `sem_a_ficha_compartilhada_nada_muda` | o recuo vira erro em vez de recuo | a segunda varredura **falha** |
+| `a_tabela_que_precisaria_escrever_para_abrir_manda_para_a_exclusiva` | `abrir_sem_escrever` cria a lixeira | abre criando arquivo **sob a ficha compartilhada** |
+| doctest `compile_fail` | — | o par prova que o `compile_fail` não passa por engano |
+
+Mais duas que exercitam o que a mudança existe para permitir:
+`quatro_leitores_ao_mesmo_tempo_leem_a_mesma_pagina` (quatro threads dentro da
+ficha compartilhada, cem varreduras, mesma resposta) e
+`o_escritor_nao_passa_fome_entre_leitores` — que é a pergunta que o `Mutex` não
+levantava: **num `RwLock`, quatro leitores em laço fechado podem deixar o
+escritor esperando para sempre?** As vinte gravações chegam, e o prazo do teste
+é o que acusaria a fome, porque fome não dá erro: ela demora.
+
+### 16.5 As catracas
+
+`so_um_lugar_toma_a_trava` passa a cobrar **um** `self.dados.write()` e **um**
+`self.dados.read()`, cada um dentro da função que o batiza. O teto não subiu —
+nasceu outro ao lado, com o mesmo valor 1: uma catraca de «duas tomadas no
+arquivo» aceitaria as duas na mesma função, ou a de leitura solta no meio de um
+`op_`.
+
+E nasce `so_uma_operacao_usa_a_ficha_compartilhada`, teto **1**. A decisão do
+dono foi «só o `varrer`», e sem catraca a segunda leva entra por distração:
+`op_ler`, `op_buscar` e `op_sistabelas` são todas leituras e todas parecem
+óbvias — e **cada uma tem escrita escondida própria para achar antes**, como
+esta teve três.
+
+O `mapa-da-trava.py --catraca` continua em **5 / 22 / 0**, e as 76 seções
+continuam 76: o `varrer` mantém a tomada exclusiva do recuo. Mas fica nomeado o
+que o mapa **não** vê: ele conta `travar_dados()`, e a ficha compartilhada é
+uma seção crítica que não passa por lá. *Régua que passa a medir mais aposenta
+a catraca e faz nascer outra* — quem for medir a segunda leva mexe na régua
+primeiro, e recomeça os três tetos no número do dia.
