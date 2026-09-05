@@ -1,0 +1,752 @@
+{
+  "versao": "phxsqld 0.18.0 (41e82efa97c8) x86_64-unknown-linux-gnu",
+  "rapido": false,
+  "maquina": {
+    "havia_medicao_em_curso": true,
+    "quem": [
+      "24004\tcompilacao (cargo)\t/root/.rustup/toolchains/1.94.1-x86_64-unknown-linux-gnu/bin/cargo test --workspace"
+    ]
+  },
+  "A": {
+    "slots": {
+      "antes": 1,
+      "apos_rollback": 1,
+      "apos_commit": 4
+    },
+    "a2": {
+      "corridas": 7,
+      "validas": 7,
+      "metades": [],
+      "desfechos": [
+        [
+          "por_lote#0",
+          "P2 nada aplicado (reaplicadas=800)",
+          400,
+          400
+        ],
+        [
+          "por_lote#1",
+          "P2 nada aplicado (reaplicadas=800)",
+          400,
+          400
+        ],
+        [
+          "por_lote#2",
+          "P2 nada aplicado (reaplicadas=800)",
+          400,
+          400
+        ],
+        [
+          "por_lote#3",
+          "P3 parcial (reaplicadas=216 ja_aplicadas=584)",
+          400,
+          400
+        ],
+        [
+          "por_lote#4",
+          "P3 parcial (reaplicadas=71 ja_aplicadas=729)",
+          400,
+          400
+        ],
+        [
+          "por_lote#5",
+          "P3 parcial (reaplicadas=134 ja_aplicadas=666)",
+          400,
+          400
+        ],
+        [
+          "por_lote#6",
+          "P4 tudo aplicado, marca pendente (ja_aplicadas=800)",
+          400,
+          400
+        ]
+      ]
+    },
+    "a3": {
+      "erro": "INTEGRIDADE",
+      "avo_id": 1,
+      "mae_id": 1,
+      "sem_neta": {
+        "ok": true,
+        "avo_id": 77,
+        "mae_id": 77
+      }
+    },
+    "a4": {
+      "vereditos": {
+        "CONSISTENTE": 7
+      },
+      "corridas": [
+        [
+          "por_lote-cascata#0",
+          "CONSISTENTE",
+          1200,
+          0
+        ],
+        [
+          "por_lote-cascata#1",
+          "CONSISTENTE",
+          1200,
+          0
+        ],
+        [
+          "por_lote-cascata#2",
+          "CONSISTENTE",
+          1200,
+          0
+        ],
+        [
+          "por_lote-cascata#3",
+          "CONSISTENTE",
+          1200,
+          0
+        ],
+        [
+          "por_lote-cascata#4",
+          "CONSISTENTE",
+          1200,
+          0
+        ],
+        [
+          "por_lote-cascata#5",
+          "CONSISTENTE",
+          1200,
+          0
+        ],
+        [
+          "por_lote-cascata#6",
+          "CONSISTENTE",
+          1200,
+          0
+        ]
+      ]
+    }
+  },
+  "C": {
+    "unicidade": {
+      "violacao": "DUPLICADO",
+      "legitimo": true
+    },
+    "chave_estrangeira": {
+      "violacao": "INTEGRIDADE",
+      "legitimo": true
+    },
+    "obrigatoria": {
+      "violacao": "TIPO_INVALIDO",
+      "legitimo": true
+    },
+    "tipo": {
+      "violacao": "TIPO_INVALIDO",
+      "legitimo": true
+    },
+    "tamanho": {
+      "violacao": "LIMITE_EXCEDIDO",
+      "legitimo": true
+    },
+    "regra_primordial": {
+      "de_vez": "INTEGRIDADE",
+      "suave": "INTEGRIDADE",
+      "sem_filha": true
+    },
+    "marca_de_exclusao": {
+      "mae_com_filha_marcada": "INTEGRIDADE",
+      "mae_sem_filha": true,
+      "filha_de_mae_marcada": "INTEGRIDADE"
+    },
+    "nasce_conferida": {
+      "sem_pedir": "INTEGRIDADE",
+      "verificar_false": true
+    },
+    "indice_dos_dois_lados": {
+      "declaracao": "ACEITOU",
+      "excluir_a_mae": "INTEGRIDADE",
+      "erro": "[SP000008] integridade referencial: m4: nao da para conferir as filhas de f4 pela chave \"fk\", que nao tem indice comecando por (mid) -- crie o indice na filha ou desligue `verificar` na chave"
+    },
+    "ao_excluir": {
+      "cascata": "ESQUEMA_INVALIDO",
+      "restringir": true
+    }
+  },
+  "I": {
+    "leitura_suja": {
+      "dentro": 999,
+      "outra_sessao": 50,
+      "apos_rollback": 50
+    },
+    "leitura_nao_repetivel": {
+      "primeira": 50,
+      "segunda": 77
+    },
+    "fantasma": {
+      "primeira": 2,
+      "segunda": 3
+    },
+    "perda_de_atualizacao": {
+      "sem_nada": {
+        "lido_por_dois": [
+          10,
+          10
+        ],
+        "final": 11,
+        "esperado_se_nao_houvesse_perda": 12
+      },
+      "com_versao": "CONFLITO",
+      "com_trava": "EM_TRANSACAO",
+      "outra_linha": true
+    },
+    "skew_de_escrita": {
+      "viu_a": 2,
+      "viu_b": 2,
+      "de_plantao_no_fim": 0
+    },
+    "cascata_no_ryow": {
+      "mae_dentro": 42,
+      "filha_dentro": 1,
+      "filha_depois_do_commit": 42
+    },
+    "leitura_consistente": {
+      "escritor_solto": {
+        "voltas_do_leitor": 400,
+        "escritas": 302,
+        "recusas": 0,
+        "uma_instrucao": 97,
+        "duas_instrucoes": 1,
+        "erros_do_escritor": [],
+        "estados_vistos_por_uma_instrucao": {
+          "49,51": 154,
+          "50,50": 149,
+          "49,50": 49,
+          "50,51": 48
+        }
+      },
+      "escritor_em_transacao": {
+        "voltas_do_leitor": 400,
+        "escritas": 224,
+        "recusas": 0,
+        "uma_instrucao": 0,
+        "duas_instrucoes": 68,
+        "erros_do_escritor": [],
+        "estados_vistos_por_uma_instrucao": {
+          "49,51": 201,
+          "50,50": 199
+        }
+      }
+    }
+  },
+  "D": {
+    "fsync_insercao": {
+      "por_operacao": {
+        "trash": 1,
+        "bin": 1,
+        "memo": 1,
+        "log": 1,
+        "reason": 1,
+        "ndx": 2,
+        "reg": 1
+      },
+      "por_lote": {},
+      "sistema": {}
+    },
+    "fsync_commit": {
+      "por_operacao": {
+        "tx": 1,
+        "trash": 1,
+        "bin": 1,
+        "memo": 1,
+        "log": 1,
+        "reason": 1,
+        "ndx": 2,
+        "reg": 1
+      },
+      "por_lote": {
+        "tx": 1
+      },
+      "sistema": {
+        "tx": 1
+      }
+    },
+    "queda": {
+      "por_operacao": {
+        "linhas_depois": 3,
+        "relatorio": null
+      },
+      "por_lote": {
+        "linhas_depois": 3,
+        "relatorio": {
+          "impossiveis_linhas": [],
+          "achadas": 1,
+          "descartadas": 0,
+          "completadas": 1,
+          "reaplicadas": 0,
+          "ja_aplicadas": 3,
+          "indices_reconstruidos": 0,
+          "impossiveis": 0
+        }
+      },
+      "sistema": {
+        "linhas_depois": 3,
+        "relatorio": {
+          "impossiveis_linhas": [],
+          "achadas": 1,
+          "descartadas": 0,
+          "completadas": 1,
+          "reaplicadas": 0,
+          "ja_aplicadas": 3,
+          "indices_reconstruidos": 0,
+          "impossiveis": 0
+        }
+      },
+      "insert_solto_por_lote": 2
+    }
+  },
+  "nivel_ansi": {
+    "nivel": "READ COMMITTED",
+    "fenomenos_que_acontecem": [
+      "leitura nao repetivel",
+      "fantasma"
+    ],
+    "skew_de_escrita_acontece": true
+  },
+  "afirmacoes": [
+    {
+      "letra": "A",
+      "chave": "rollback_nao_queima_slot",
+      "frase": "o ROLLBACK de tres INSERT nao consome slot nenhum do `.reg`",
+      "esperado": 1,
+      "medido": 1,
+      "ok": true,
+      "controle": "o COMMIT das mesmas tres consome 3 (1 -> 4)",
+      "nota": null
+    },
+    {
+      "letra": "A",
+      "chave": "commit_consome_os_slots",
+      "frase": "o controle: o COMMIT das mesmas tres linhas consome 3 slots",
+      "esperado": 4,
+      "medido": 4,
+      "ok": true,
+      "controle": null,
+      "nota": null
+    },
+    {
+      "letra": "A",
+      "chave": "commit_multitabela_nunca_metade",
+      "frase": "em 7 quedas validas no meio de um COMMIT de duas tabelas, nenhuma deixou uma tabela com linha e a outra sem",
+      "esperado": 0,
+      "medido": 0,
+      "ok": true,
+      "controle": "a varredura pegou P2 · P3 · P4 -- pontos de morte diferentes, e e isso que prova que ela mirou dentro da janela",
+      "nota": null
+    },
+    {
+      "letra": "A",
+      "chave": "cascata_recusa_antes_de_gravar",
+      "frase": "com avo<-mae(cascata)<-neta(restringir), trocar a chave da avo e recusado e a AVO fica no valor antigo",
+      "esperado": [
+        1,
+        1
+      ],
+      "medido": [
+        1,
+        1
+      ],
+      "ok": true,
+      "controle": "a recusa e nomeada: INTEGRIDADE",
+      "nota": null
+    },
+    {
+      "letra": "A",
+      "chave": "cascata_alcanca_a_filha_quando_nao_ha_restricao",
+      "frase": "o controle: tirada a neta, a mesma alteracao passa e a MAE acompanha a avo",
+      "esperado": [
+        77,
+        77
+      ],
+      "medido": [
+        77,
+        77
+      ],
+      "ok": true,
+      "controle": null,
+      "nota": null
+    },
+    {
+      "letra": "A",
+      "chave": "cascata_parcial_nunca_em_silencio",
+      "frase": "nenhuma queda no meio da cascata deixou mae e filhas divergentes SEM o relatorio do arranque denunciar",
+      "esperado": 0,
+      "medido": 0,
+      "ok": true,
+      "controle": "a corrida achou 0 cascata(s) parcial(is) denunciada(s) em 7, e 7 consistente(s) -- o instrumento distingue os dois",
+      "nota": null
+    },
+    {
+      "letra": "C",
+      "chave": "unicidade",
+      "frase": "indice unico recusa chave repetida",
+      "esperado": [
+        "RECUSADO",
+        true
+      ],
+      "medido": [
+        "RECUSADO",
+        true
+      ],
+      "ok": true,
+      "controle": "o caso legitimo passa na mesma tabela; a recusa e DUPLICADO",
+      "nota": null
+    },
+    {
+      "letra": "C",
+      "chave": "chave_estrangeira",
+      "frase": "a filha sem mae e recusada na GRAVACAO, nao so declarada",
+      "esperado": [
+        "RECUSADO",
+        true
+      ],
+      "medido": [
+        "RECUSADO",
+        true
+      ],
+      "ok": true,
+      "controle": "o caso legitimo passa na mesma tabela; a recusa e INTEGRIDADE",
+      "nota": null
+    },
+    {
+      "letra": "C",
+      "chave": "obrigatoria",
+      "frase": "coluna obrigatoria recusa NULL",
+      "esperado": [
+        "RECUSADO",
+        true
+      ],
+      "medido": [
+        "RECUSADO",
+        true
+      ],
+      "ok": true,
+      "controle": "o caso legitimo passa na mesma tabela; a recusa e TIPO_INVALIDO",
+      "nota": null
+    },
+    {
+      "letra": "C",
+      "chave": "tipo",
+      "frase": "texto numa coluna inteira e recusado",
+      "esperado": [
+        "RECUSADO",
+        true
+      ],
+      "medido": [
+        "RECUSADO",
+        true
+      ],
+      "ok": true,
+      "controle": "o caso legitimo passa na mesma tabela; a recusa e TIPO_INVALIDO",
+      "nota": null
+    },
+    {
+      "letra": "C",
+      "chave": "tamanho",
+      "frase": "texto que nao cabe em Str(20) e recusado, nunca truncado",
+      "esperado": [
+        "RECUSADO",
+        true
+      ],
+      "medido": [
+        "RECUSADO",
+        true
+      ],
+      "ok": true,
+      "controle": "o caso legitimo passa na mesma tabela; a recusa e LIMITE_EXCEDIDO",
+      "nota": null
+    },
+    {
+      "letra": "C",
+      "chave": "regra_primordial",
+      "frase": "excluir a mae que tem filha e recusado -- de vez E suave",
+      "esperado": [
+        "RECUSADO",
+        "RECUSADO",
+        true
+      ],
+      "medido": [
+        "RECUSADO",
+        "RECUSADO",
+        true
+      ],
+      "ok": true,
+      "controle": "a mae SEM filha (rowid 2) e excluida na mesma corrida",
+      "nota": null
+    },
+    {
+      "letra": "C",
+      "chave": "a_marca_de_exclusao_conta_dos_dois_lados",
+      "frase": "filha marcada continua restringindo a mae, e mae marcada nao aceita filha nova",
+      "esperado": [
+        "RECUSADO",
+        true,
+        "RECUSADO"
+      ],
+      "medido": [
+        "RECUSADO",
+        true,
+        "RECUSADO"
+      ],
+      "ok": true,
+      "controle": "a mae SEM filha nenhuma sai de vez na mesma corrida",
+      "nota": null
+    },
+    {
+      "letra": "C",
+      "chave": "chave_declarada_nasce_conferida",
+      "frase": "chave declarada sem pedir `verificar` JA confere; com `verificar: false` a orfa entra",
+      "esperado": [
+        "RECUSADO",
+        true
+      ],
+      "medido": [
+        "RECUSADO",
+        true
+      ],
+      "ok": true,
+      "controle": "o mesmo INSERT orfao, nas duas tabelas, da os dois desfechos -- o instrumento nao esta recusando tudo",
+      "nota": null
+    },
+    {
+      "letra": "C",
+      "chave": "indice_faltando_recusa_na_gravacao",
+      "frase": "chave sem indice na filha e ACEITA na declaracao e recusada no `excluir` da mae, nomeando o indice que falta",
+      "esperado": [
+        "ACEITOU",
+        "INTEGRIDADE"
+      ],
+      "medido": [
+        "ACEITOU",
+        "INTEGRIDADE"
+      ],
+      "ok": true,
+      "controle": "a mesma mae, com indice na filha (`maes`), recusa com o texto da regra primordial e nao com este",
+      "nota": null
+    },
+    {
+      "letra": "C",
+      "chave": "ao_excluir_so_aceita_restringir",
+      "frase": "`ao_excluir: cascata` e recusado na DECLARACAO; `restringir` passa",
+      "esperado": [
+        "RECUSADO",
+        true
+      ],
+      "medido": [
+        "RECUSADO",
+        true
+      ],
+      "ok": true,
+      "controle": "a mesma tabela, so trocando a acao, nasce ou nao nasce",
+      "nota": null
+    },
+    {
+      "letra": "I",
+      "chave": "leitura_suja",
+      "frase": "outra sessao NAO ve a escrita nao confirmada",
+      "esperado": [
+        999,
+        50,
+        50
+      ],
+      "medido": [
+        999,
+        50,
+        50
+      ],
+      "ok": true,
+      "controle": "a PROPRIA transacao ve 999 na mesma corrida -- o instrumento enxerga escrita nao gravada quando ela e dela",
+      "nota": null
+    },
+    {
+      "letra": "I",
+      "chave": "leitura_nao_repetivel",
+      "frase": "duas leituras da MESMA linha dentro da mesma transacao devolvem valores diferentes",
+      "esperado": true,
+      "medido": true,
+      "ok": true,
+      "controle": "a primeira leu 50 e a segunda 77, com um COMMIT de outra sessao no meio",
+      "nota": null
+    },
+    {
+      "letra": "I",
+      "chave": "fantasma",
+      "frase": "a mesma varredura, repetida dentro da transacao, devolve uma linha que nao existia na primeira",
+      "esperado": true,
+      "medido": true,
+      "ok": true,
+      "controle": "2 -> 3 linhas, com um INSERT de outra sessao no meio",
+      "nota": null
+    },
+    {
+      "letra": "I",
+      "chave": "perda_de_atualizacao_entre_escritas_soltas",
+      "frase": "duas escritas SEM `versao` e SEM transacao: as duas leram 10 e somaram 1, e o final e 11 em vez de 12",
+      "esperado": true,
+      "medido": true,
+      "ok": true,
+      "controle": "a MESMA sequencia com `versao` e recusada (CONFLITO), e com transacao a segunda espera o LOCK TIMEOUT e desiste (EM_TRANSACAO)",
+      "nota": null
+    },
+    {
+      "letra": "I",
+      "chave": "trava_de_linha_nao_pega_a_linha_ao_lado",
+      "frase": "o controle da trava: a linha 2 continua gravavel enquanto a transacao segura a linha 1",
+      "esperado": true,
+      "medido": true,
+      "ok": true,
+      "controle": null,
+      "nota": null
+    },
+    {
+      "letra": "I",
+      "chave": "skew_de_escrita",
+      "frase": "as duas viram 2 de plantao, cada uma tirou a sua, e no fim sobraram 0",
+      "esperado": 0,
+      "medido": 0,
+      "ok": true,
+      "controle": "as duas transacoes CONFIRMARAM (nenhuma foi recusada) -- as travas sao por linha e as linhas eram diferentes",
+      "nota": null
+    },
+    {
+      "letra": "I",
+      "chave": "cascata_fora_do_read_your_own_writes",
+      "frase": "dentro da transacao a MAE ja aparece com a chave nova e a FILHA ainda aponta para a antiga; o COMMIT acerta as duas",
+      "esperado": [
+        42,
+        1,
+        42
+      ],
+      "medido": [
+        42,
+        1,
+        42
+      ],
+      "ok": true,
+      "controle": "a mae muda dentro (42) e a filha nao (1) -- se a sobreposicao estivesse desligada, a mae tambem nao mudaria",
+      "nota": null
+    },
+    {
+      "letra": "I",
+      "chave": "os_dois_lados_rodaram_juntos",
+      "frase": "a corrida nao foi vazia: o escritor deu voltas enquanto o leitor perguntava",
+      "esperado": [
+        true,
+        true
+      ],
+      "medido": [
+        true,
+        true
+      ],
+      "ok": true,
+      "controle": "escritor solto 302 voltas / leitor 400; escritor em transacao 224 / leitor 400",
+      "nota": null
+    },
+    {
+      "letra": "I",
+      "chave": "uma_instrucao_ve_o_banco_inconsistente_sem_transacao",
+      "frase": "uma varredura unica ENXERGA o estado entre as duas escritas quando o escritor nao usa transacao",
+      "esperado": true,
+      "medido": true,
+      "ok": true,
+      "controle": "97 de 400 voltas -- e nao e defeito do leitor: o banco esta mesmo inconsistente ali, porque o escritor deixou as duas linhas fora de acordo",
+      "nota": null
+    },
+    {
+      "letra": "I",
+      "chave": "a_transacao_conserta_a_leitura_de_uma_instrucao",
+      "frase": "com o escritor em transacao, a MESMA varredura nunca mais ve o estado intermediario",
+      "esperado": 0,
+      "medido": 0,
+      "ok": true,
+      "controle": "o mesmo instrumento, na mesma tabela, viu 97 vez(es) contra o escritor solto -- a diferenca e a transacao, e nada mais",
+      "nota": null
+    },
+    {
+      "letra": "I",
+      "chave": "duas_instrucoes_nao_tem_consistencia_nenhuma",
+      "frase": "duas leituras separadas veem o par inconsistente MESMO contra um escritor em transacao -- e a leitura repetivel que falta",
+      "esperado": true,
+      "medido": true,
+      "ok": true,
+      "controle": "68 de 400 voltas; o COMMIT e atomico, mas ele acontece INTEIRO entre a primeira leitura e a segunda",
+      "nota": "a celula «escritor solto x duas instrucoes» deu 1, e isso NAO e garantia nenhuma: o mesmo par quebra 68 vez(es) na outra coluna, entao o instrumento enxerga. O zero ali e o ciclo curto do escritor solto somado ao passo alternado dos pedidos, e esta escrito para ninguem o ler como protecao."
+    },
+    {
+      "letra": "D",
+      "chave": "por_operacao_sincroniza_o_reg",
+      "frase": "em `por_operacao`, um INSERT que respondeu OK ja mandou o `.reg` ao disco",
+      "esperado": true,
+      "medido": true,
+      "ok": true,
+      "controle": "na mesma medicao, `por_lote` da 0 e `sistema` da 0 -- o contador distingue os regimes",
+      "nota": null
+    },
+    {
+      "letra": "D",
+      "chave": "por_lote_nao_sincroniza_no_insert",
+      "frase": "em `por_lote` (o padrao) e em `sistema`, o mesmo INSERT responde OK sem nenhum `fsync` no `.reg`",
+      "esperado": [
+        0,
+        0
+      ],
+      "medido": [
+        0,
+        0
+      ],
+      "ok": true,
+      "controle": "`por_operacao` deu 1 na mesma corrida",
+      "nota": null
+    },
+    {
+      "letra": "D",
+      "chave": "marca_tx_sincroniza_nos_tres_regimes",
+      "frase": "o `fsync` da marca `.tx` acontece nos tres regimes -- ele nao olha `recursos.durabilidade`",
+      "esperado": [
+        true,
+        true,
+        true
+      ],
+      "medido": [
+        true,
+        true,
+        true
+      ],
+      "ok": true,
+      "controle": "contados [1, 1, 1] (por_operacao, por_lote, sistema); no MESMO commit o `.reg` sai [1, 0, 0] -- e a diferenca entre os dois que mostra que o regime so decide a tabela",
+      "nota": null
+    },
+    {
+      "letra": "D",
+      "chave": "commit_sobrevive_a_queda_nos_tres_regimes",
+      "frase": "matar o processo logo depois de um COMMIT que respondeu OK deixa as tres linhas la, nos tres regimes",
+      "esperado": [
+        3,
+        3,
+        3
+      ],
+      "medido": [
+        3,
+        3,
+        3
+      ],
+      "ok": true,
+      "controle": "em `sistema` nenhum `fsync` de tabela aconteceu, e as linhas voltaram assim mesmo -- pela marca, e nao pelo disco da tabela",
+      "nota": null
+    },
+    {
+      "letra": "D",
+      "chave": "sigkill_nao_separa_cache_do_nucleo_de_disco",
+      "frase": "duas insercoes comuns em `por_lote`, sem nenhum `fsync` no `.reg`, sobrevivem ao SIGKILL",
+      "esperado": 2,
+      "medido": 2,
+      "ok": true,
+      "controle": "a contagem de `fsync` da mesma configuracao (D1) e ZERO no `.reg` -- as linhas voltaram do cache do nucleo, nao do disco. O SIGKILL nao distingue os dois; so queda de energia distinguiria",
+      "nota": null
+    }
+  ]
+}
