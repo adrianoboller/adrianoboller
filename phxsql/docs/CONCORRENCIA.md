@@ -1752,3 +1752,122 @@ que o mapa **não** vê: ele conta `travar_dados()`, e a ficha compartilhada é
 uma seção crítica que não passa por lá. *Régua que passa a medir mais aposenta
 a catraca e faz nascer outra* — quem for medir a segunda leva mexe na régua
 primeiro, e recomeça os três tetos no número do dia.
+
+### 16.6 O ganho, MEDIDO — quatro baterias limpas (05/09, 00:16 a 01:02)
+
+O protocolo é o das §11 e §15: `escolher-o-desenho.py` com `LINHAS_LIDAS=50`
+(a carga da tela, uma página de grade), `SEGUNDOS=5`, clientes 1/2/4, nas duas
+durabilidades, e o `quieta.Vigia` aprovando cada bateria. **Duas baterias
+limpas de cada lado**, com o binário de ANTES guardado antes de a primeira
+linha ser escrita — o mesmo `phxsqld`, não uma reconstrução do passado.
+
+O custo do protocolo, contado: **quatro reprovadas** pelo vigia para as quatro
+limpas (uma no ANTES, três no DEPOIS). Nenhuma delas imprimiu número.
+
+Corridas cruas em `bancada/concorrencia/corridas/ficha-{antes,depois}-*.txt`.
+
+#### O escalonamento da leitura, que é o que a mudança compra
+
+Quanto quatro clientes rendem sobre um, lendo a **mesma** tabela:
+
+| durabilidade | ANTES · A | ANTES · B | DEPOIS · A | DEPOIS · B |
+|---|---:|---:|---:|---:|
+| `por_lote` (o padrão) | 1,59× | 1,71× | **3,93×** | **3,87×** |
+| `por_operacao` | 1,76× | 1,66× | **3,81×** | **3,89×** |
+
+Quatro clientes em quatro núcleos rendiam **1,6×–1,8×**; passam a render
+**3,8×–3,9×**. O que sobrava de paralelismo era a exclusividade comendo, e é
+exatamente o que a §11 media como teto.
+
+#### A vazão absoluta, e por que ela precisa de âncora
+
+Comparar op/s entre duas baterias só vale com o **controle** ancorando as duas,
+e a §15.4 é a razão. Na bateria B, o `ping` de um cliente deu **10.069** op/s
+antes e **9.835** depois no `por_lote` (2,4% de distância), e 9.602 contra
+9.850 no `por_operacao` (2,6%). Com isso:
+
+| medida | ANTES | DEPOIS | |
+|---|---:|---:|---:|
+| `varrer` de 50 linhas, **1** cliente, `por_lote` | 1.997 op/s | 1.928 op/s | 0,97× |
+| `varrer` de 50 linhas, **4** clientes, `por_lote` | 3.412 op/s | **7.465 op/s** | **2,19×** |
+| `varrer` de 50 linhas, **1** cliente, `por_operacao` | 2.015 op/s | 1.980 op/s | 0,98× |
+| `varrer` de 50 linhas, **4** clientes, `por_operacao` | 3.349 op/s | **7.708 op/s** | **2,30×** |
+| `inserir`, 1 cliente, `por_lote` | 4.067 op/s | 3.890 op/s | 0,96× |
+| `inserir`, 4 clientes, `por_lote` | 5.770 op/s | 5.469 op/s | 0,95× |
+| `inserir`, 1 cliente, `por_operacao` | 651 op/s | 649 op/s | 1,00× |
+| `inserir`, 4 clientes, `por_operacao` | 698 op/s | 739 op/s | 1,06× |
+
+**O cliente sozinho não ficou mais rápido, e não devia**: sem disputa, tomar a
+ficha compartilhada custa o mesmo que tomar a exclusiva. Os 0,97× e 0,98× são o
+ruído desta bancada.
+
+**A escrita não pagou a conta**, que era o risco: 0,95×–0,96× no `por_lote` e
+1,00×–1,06× no `por_operacao`. Só a bateria B trouxe número absoluto, então os
+4% do `por_lote` estão **medidos uma vez**, não duas — e a bateria A, que só
+publica razão, mostra a escrita com quatro clientes escalando **melhor** depois
+(1,32× → 1,43×). Fica registrado como está: pequeno, num só sentido, e não
+confirmado em duas baterias.
+
+#### O teto que sobrou
+
+O «teto do `RwLock`» é o ganho do controle dividido pelo ganho da leitura — o
+que ainda haveria para recuperar:
+
+| durabilidade | ANTES · A | ANTES · B | DEPOIS · A | DEPOIS · B |
+|---|---:|---:|---:|---:|
+| `por_lote` | 2,43× | 2,04× | **0,81×** | **0,91×** |
+| `por_operacao` | 2,49× | 2,93× | **1,22×** | **0,94×** |
+
+E o teto **na espera** (p99 de dois leitores contra um leitor sozinho), que era
+1,34 · 1,23 · 1,30 · 0,96, passa a **1,08 · 0,99 · 0,98 · 1,19**.
+
+**Um teto abaixo de 1,00× não é regressão**, e vale explicar antes que alguém
+leia o «0,81×» como perda: ele quer dizer que a leitura passou a escalar
+**melhor que o próprio controle**. O `ping` é uma operação minúscula, dominada
+por chamada de sistema e escalonador, e satura em 3,2×–3,7× com quatro
+clientes; o `varrer` de 50 linhas é trabalho de verdade e escala 3,9×. A conta
+do teto continua certa; o que ela diz é que **não sobrou nada para recuperar
+neste par**.
+
+#### Contra a previsão
+
+A previsão que abriu esta frente era **1,54×–2,15×** no `por_lote` e
+**2,56×–2,73×** no `por_operacao` — os tetos medidos em 04/09. As minhas
+próprias baterias de ANTES mediram **2,04×–2,43×** e **2,49×–2,93×**, e o ganho
+realizado foi **2,19×** e **2,30×**.
+
+Ou seja: **dentro do teto medido no mesmo dia, e perto do topo dele.** O
+`por_lote` superou a faixa prevista em 04/09 e o `por_operacao` ficou abaixo
+dela — e a §15.4 já dizia por quê: *o teto absoluto não se compara entre
+bancadas*, porque o controle escala diferente em cada uma. É por isso que o
+ANTES foi remedido aqui em vez de citado de lá. **Número citado é número que
+não se mede** — e o citado teria errado a faixa nos dois sentidos.
+
+#### O que esta medição NÃO diz
+
+* **Nada sobre o comboio do fecho de janela** (§12): ele continua real,
+  continua sendo um escritor segurando a trava por trabalho que não é dele, e
+  nem o `RwLock` nem o MVCC o consertam. A bancada roda com uma tabela.
+* **Nada sobre leitura repetível** (§4.3, §11.3): a ficha compartilhada torna
+  os leitores simultâneos, **não consistentes**. Uma varredura longa continua
+  enxergando linha gravada no meio dela. É defeito de *resultado*, e nenhuma
+  medição de p99 o mostraria.
+* **Nada sobre as outras 75 seções.** Elas continuam exclusivas por decisão, e
+  a segunda leva entra medida.
+
+#### Uma ressalva sobre o INSTRUMENTO, nomeada e não medida
+
+O `quieta.Vigia` desconta `len(perfis) + 1` tarefas rodáveis como suas: os
+clientes mais **o servidor**. O servidor é um processo e `procs_running` conta
+**tarefas**, e este servidor atende com uma thread por conexão — então quatro
+clientes podem deixar quatro threads do servidor rodáveis ao mesmo tempo, e o
+desconto tira uma.
+
+A conta fecha com o que se viu (as reprovações vieram todas com «até 3» ou
+«até 6», e 3 é exatamente `4 − 1`), **e conta que fecha não é medição**. Fica
+como hipótese nomeada, com o motivo para não mexer: mudar o desconto **afrouxa**
+o vigia, e afrouxar catraca é decisão do papel de QA, não de quem está sendo
+medido por ela — e nunca no mesmo commit da mudança que ela mede.
+
+O que se pode dizer com número: foram **quatro reprovações para quatro
+baterias limpas**, e três das quatro reprovações caíram do lado DEPOIS.

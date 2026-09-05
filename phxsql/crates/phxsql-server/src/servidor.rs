@@ -21905,7 +21905,10 @@ mod testes_janela_e_cadeia {
         // comentarios, e cita-las e o oposto de faze-las.
         let codigo = |l: &&str| !l.trim_start().starts_with("//");
         for (agulha, dono) in [
-            (format!("self.{}.write()", "dados"), "fn travar_dados(&self)"),
+            (
+                format!("self.{}.write()", "dados"),
+                "fn travar_dados(&self)",
+            ),
             (
                 format!("self.{}.read()", "dados"),
                 "fn travar_dados_para_ler(&self)",

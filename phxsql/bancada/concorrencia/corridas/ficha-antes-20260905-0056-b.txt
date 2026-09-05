@@ -1,0 +1,375 @@
+espera de 40s; carga 0.29
+=== trava por tabela, RwLock ou MVCC: o teto de cada um ===
+    4 nucleos ao alcance deste processo | 5s por rodada | 2000 linhas semeadas
+    clientes: [1, 2, 4] | faixa de portas (7600, 7699)
+
+-- a maquina estava quieta?
+   antes:  1% ocupada, ate 0 vizinho(s)
+   durante (38 amostras): 25% a 100% ocupada, mediana 51%, ate 1 vizinho(s)
+   depois: 1% ocupada, ate 0 vizinho(s)
+   controle: 10069 -> 9907 op/s
+   VEREDITO: quieta o bastante. Os numeros valem.
+
+== durabilidade: por_lote ==
+
+-- vazao, ganho de 4 clientes sobre 1
+   controle                     1:1.00x   2:1.88x   4:3.48x
+   leitura-mesma-tabela         1:1.00x   2:1.75x   4:1.71x
+   leitura-tabelas-separadas    1:1.00x   2:1.78x   4:1.61x
+   escrita-mesma-tabela         1:1.00x   2:1.64x   4:1.42x
+   escrita-tabelas-separadas    1:1.00x   2:1.51x   4:1.28x
+
+-- espera de UM leitor (us), pelo p99
+   leitor-sozinho           p50     470.1  p95     604.9  p99     705.7  pior      931.1
+   dois-leitores            p50     524.6  p95     701.4  p99     865.8  pior     4394.3
+   leitor-com-escritor      p50     512.4  p95     721.5  p99     901.6  pior     3727.0
+
+-- os tetos: quanto cada desenho teria para recuperar
+   trava por tabela   0.94x   (leitura em tabelas separadas contra a mesma tabela)
+   RwLock             2.04x   (o controle, que nao toma a trava, contra a leitura)
+   RwLock, na espera  1.23x   (p99 de dois leitores contra um)
+   MVCC, na espera    1.28x   (p99 do leitor COM escritor contra SOZINHO)
+   MVCC, EXCLUSIVO    1.04x   (contra DOIS LEITORES: o que o RwLock nao recupera)
+
+== durabilidade: por_operacao ==
+
+-- vazao, ganho de 4 clientes sobre 1
+   controle                     1:1.00x   2:1.95x   4:4.88x
+   leitura-mesma-tabela         1:1.00x   2:1.78x   4:1.66x
+   leitura-tabelas-separadas    1:1.00x   2:1.84x   4:1.71x
+   escrita-mesma-tabela         1:1.00x   2:1.13x   4:1.07x
+   escrita-tabelas-separadas    1:1.00x   2:1.17x   4:1.16x
+
+-- espera de UM leitor (us), pelo p99
+   leitor-sozinho           p50     475.2  p95     632.8  p99     775.4  pior     1880.8
+   dois-leitores            p50     498.3  p95     640.6  p99     746.2  pior     9676.9
+   leitor-com-escritor      p50    1520.0  p95    1982.7  p99    2244.9  pior     8391.0
+
+-- os tetos: quanto cada desenho teria para recuperar
+   trava por tabela   1.03x   (leitura em tabelas separadas contra a mesma tabela)
+   RwLock             2.93x   (o controle, que nao toma a trava, contra a leitura)
+   RwLock, na espera  0.96x   (p99 de dois leitores contra um)
+   MVCC, na espera    2.90x   (p99 do leitor COM escritor contra SOZINHO)
+   MVCC, EXCLUSIVO    3.01x   (contra DOIS LEITORES: o que o RwLock nao recupera)
+
+{
+  "sujo": false,
+  "baterias": [
+    {
+      "medido": {
+        "durabilidade": "por_lote",
+        "porta": 7600,
+        "curvas": {
+          "controle": {
+            "1": {
+              "p50": 85.739,
+              "p95": 123.006,
+              "p99": 156.763,
+              "pior": 1763.304,
+              "ops_s": 10069.289439353428
+            },
+            "2": {
+              "p50": 93.266,
+              "p95": 130.552,
+              "p99": 165.566,
+              "pior": 2998.89,
+              "ops_s": 18901.78219819632
+            },
+            "4": {
+              "p50": 90.95,
+              "p95": 229.452,
+              "p99": 309.051,
+              "pior": 18831.952,
+              "ops_s": 35083.740705807846
+            }
+          },
+          "leitura-mesma-tabela": {
+            "1": {
+              "p50": 459.561,
+              "p95": 563.889,
+              "p99": 685.113,
+              "pior": 1023.641,
+              "ops_s": 1997.1368331095607
+            },
+            "2": {
+              "p50": 517.345,
+              "p95": 679.166,
+              "p99": 802.455,
+              "pior": 3292.566,
+              "ops_s": 3503.9308523996942
+            },
+            "4": {
+              "p50": 1084.117,
+              "p95": 2130.214,
+              "p99": 2747.368,
+              "pior": 13167.823,
+              "ops_s": 3411.70615900613
+            }
+          },
+          "leitura-tabelas-separadas": {
+            "1": {
+              "p50": 450.475,
+              "p95": 541.032,
+              "p99": 614.844,
+              "pior": 1816.986,
+              "ops_s": 2040.6310812608376
+            },
+            "2": {
+              "p50": 506.739,
+              "p95": 607.584,
+              "p99": 716.781,
+              "pior": 4852.559,
+              "ops_s": 3627.0851837129444
+            },
+            "4": {
+              "p50": 1130.917,
+              "p95": 2201.148,
+              "p99": 2953.459,
+              "pior": 5814.627,
+              "ops_s": 3285.552551964796
+            }
+          },
+          "escrita-mesma-tabela": {
+            "1": {
+              "p50": 209.397,
+              "p95": 278.666,
+              "p99": 369.765,
+              "pior": 4181.931,
+              "ops_s": 4067.43925978235
+            },
+            "2": {
+              "p50": 248.642,
+              "p95": 356.968,
+              "p99": 1872.273,
+              "pior": 5256.696,
+              "ops_s": 6673.539968799616
+            },
+            "4": {
+              "p50": 570.774,
+              "p95": 1551.276,
+              "p99": 2932.54,
+              "pior": 35123.655,
+              "ops_s": 5770.235048267717
+            }
+          },
+          "escrita-tabelas-separadas": {
+            "1": {
+              "p50": 213.218,
+              "p95": 306.188,
+              "p99": 409.566,
+              "pior": 3291.446,
+              "ops_s": 3949.213052285225
+            },
+            "2": {
+              "p50": 262.364,
+              "p95": 386.373,
+              "p99": 3429.283,
+              "pior": 5442.557,
+              "ops_s": 5969.64572937058
+            },
+            "4": {
+              "p50": 534.286,
+              "p95": 1570.801,
+              "p99": 7693.873,
+              "pior": 13098.309,
+              "ops_s": 5047.760033456917
+            }
+          }
+        },
+        "espera": {
+          "leitor-sozinho": {
+            "p50": 470.063,
+            "p95": 604.93,
+            "p99": 705.672,
+            "pior": 931.077,
+            "ops_s": 1935.3411883199524
+          },
+          "dois-leitores": {
+            "p50": 524.569,
+            "p95": 701.388,
+            "p99": 865.774,
+            "pior": 4394.257,
+            "ops_s": 3447.95250063752
+          },
+          "leitor-com-escritor": {
+            "p50": 512.393,
+            "p95": 721.472,
+            "p99": 901.633,
+            "pior": 3727.019,
+            "ops_s": 1707.5766390480903
+          }
+        }
+      },
+      "tetos": {
+        "controle": 3.484232022240951,
+        "leitura": 1.7082986515721466,
+        "leitura-separadas": 1.6100668965282852,
+        "escrita": 1.418640741687802,
+        "escrita-separadas": 1.2781685785566859,
+        "teto-do-rwlock": 2.039591858855835,
+        "teto-da-trava-por-tabela": 0.9424973174605864,
+        "teto-do-mvcc-p99": 1.2776941695291864,
+        "teto-do-rwlock-p99": 1.226878776542076,
+        "teto-do-mvcc-exclusivo": 1.0414184302138896
+      }
+    },
+    {
+      "medido": {
+        "durabilidade": "por_operacao",
+        "porta": 7600,
+        "curvas": {
+          "controle": {
+            "1": {
+              "p50": 92.047,
+              "p95": 125.981,
+              "p99": 157.681,
+              "pior": 612.793,
+              "ops_s": 9602.160683720102
+            },
+            "2": {
+              "p50": 94.318,
+              "p95": 132.286,
+              "p99": 170.746,
+              "pior": 3546.901,
+              "ops_s": 18689.164801489143
+            },
+            "4": {
+              "p50": 63.511,
+              "p95": 152.835,
+              "p99": 230.331,
+              "pior": 6336.199,
+              "ops_s": 46835.37224554256
+            }
+          },
+          "leitura-mesma-tabela": {
+            "1": {
+              "p50": 450.837,
+              "p95": 560.932,
+              "p99": 665.389,
+              "pior": 5169.833,
+              "ops_s": 2014.8724114590975
+            },
+            "2": {
+              "p50": 501.901,
+              "p95": 649.024,
+              "p99": 802.453,
+              "pior": 8680.974,
+              "ops_s": 3588.3865858642985
+            },
+            "4": {
+              "p50": 1098.421,
+              "p95": 2215.027,
+              "p99": 3041.156,
+              "pior": 34654.716,
+              "ops_s": 3348.9443814111796
+            }
+          },
+          "leitura-tabelas-separadas": {
+            "1": {
+              "p50": 463.288,
+              "p95": 632.968,
+              "p99": 783.875,
+              "pior": 1200.331,
+              "ops_s": 1932.0735320052765
+            },
+            "2": {
+              "p50": 508.457,
+              "p95": 672.307,
+              "p99": 795.283,
+              "pior": 4181.581,
+              "ops_s": 3551.932535398208
+            },
+            "4": {
+              "p50": 1120.832,
+              "p95": 2253.383,
+              "p99": 3274.968,
+              "pior": 8901.717,
+              "ops_s": 3313.2562766816554
+            }
+          },
+          "escrita-mesma-tabela": {
+            "1": {
+              "p50": 1394.212,
+              "p95": 1732.141,
+              "p99": 1971.105,
+              "pior": 40598.606,
+              "ops_s": 651.1076888782173
+            },
+            "2": {
+              "p50": 2508.512,
+              "p95": 3066.647,
+              "p99": 3573.751,
+              "pior": 6462.316,
+              "ops_s": 737.1537545204283
+            },
+            "4": {
+              "p50": 5252.696,
+              "p95": 6450.641,
+              "p99": 7772.257,
+              "pior": 28613.252,
+              "ops_s": 698.1736640650265
+            }
+          },
+          "escrita-tabelas-separadas": {
+            "1": {
+              "p50": 1487.54,
+              "p95": 1833.807,
+              "p99": 2098.6,
+              "pior": 3538.97,
+              "ops_s": 623.6434388460083
+            },
+            "2": {
+              "p50": 2524.652,
+              "p95": 3082.513,
+              "p99": 3499.715,
+              "pior": 43640.39,
+              "ops_s": 727.134459363289
+            },
+            "4": {
+              "p50": 5172.13,
+              "p95": 5938.962,
+              "p99": 6475.501,
+              "pior": 7608.519,
+              "ops_s": 725.4663053209667
+            }
+          }
+        },
+        "espera": {
+          "leitor-sozinho": {
+            "p50": 475.176,
+            "p95": 632.772,
+            "p99": 775.35,
+            "pior": 1880.764,
+            "ops_s": 1904.3848246980497
+          },
+          "dois-leitores": {
+            "p50": 498.312,
+            "p95": 640.634,
+            "p99": 746.162,
+            "pior": 9676.928,
+            "ops_s": 3641.8194801801833
+          },
+          "leitor-com-escritor": {
+            "p50": 1519.95,
+            "p95": 1982.691,
+            "p99": 2244.903,
+            "pior": 8390.975,
+            "ops_s": 602.2974943003711
+          }
+        }
+      },
+      "tetos": {
+        "controle": 4.8775868044938235,
+        "leitura": 1.6621123810941436,
+        "leitura-separadas": 1.7148706929610829,
+        "escrita": 1.0722860073544798,
+        "escrita-separadas": 1.163270965639231,
+        "teto-do-rwlock": 2.9345710073364484,
+        "teto-da-trava-por-tabela": 1.0317417236445885,
+        "teto-do-mvcc-p99": 2.8953414586960724,
+        "teto-do-rwlock-p99": 0.9623550654543109,
+        "teto-do-mvcc-exclusivo": 3.008600009113302
+      }
+    }
+  ]
+}
