@@ -22,6 +22,7 @@ pub mod catalogo;
 pub mod cofre;
 pub mod conferidor_fsync;
 pub mod diario;
+pub mod fts;
 pub mod integridade;
 pub mod leitura;
 pub mod lixeira;
