@@ -1,6 +1,6 @@
 {
   "medido_em": "2026-09-06",
-  "versao": "3.33.0",
+  "versao": "3.34.0",
   "agentes": 94,
   "papeis": 10,
   "subagentes_pdca": 40,
@@ -10,7 +10,7 @@
   "scripts": 36,
   "linhas_de_python": 16400,
   "referencias": 19,
-  "testes": 93,
+  "testes": 94,
   "blocos_do_questionario": 14,
   "itens_do_bloco_0": 16,
   "subperguntas_f": 14,

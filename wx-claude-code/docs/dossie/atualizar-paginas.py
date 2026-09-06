@@ -23,11 +23,14 @@ RAIZ = Path(__file__).resolve().parents[2]
 DOSSIE = RAIZ / "docs/dossie"
 
 # HTML sem gerador proprio: so o selo de versao e carimbado
+# So carimbar a versao e o remendo de quem nao tem gerador. O fluxo saiu daqui
+# na 3.34.0 justamente por isso: carimbar a versao numa pagina cujo CONTEUDO
+# envelheceu deixa a mentira com cara de atual.
 CARIMBAR = [
-    (DOSSIE / "fluxo-atual.html", r"(Versão )\d+\.\d+\.\d+"),
     (RAIZ / "docs/ativacao-do-serial.html", r"(WX Claude Code )\d+\.\d+\.\d+(?= · instrução)"),
 ]
 GERADORES = ["numeros-do-plugin.py", "gerar-organograma.py", "gerar-evolucao.py", "gerar-comandos.py",
+             "gerar-fluxo.py",
              "gerar-relatorio-cenarios.py", "gerar-dossie.py"]
 
 

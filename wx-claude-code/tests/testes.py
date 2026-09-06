@@ -1365,6 +1365,28 @@ class Questionario(unittest.TestCase):
             licenca.assinar(b"x", fraca)
         self.assertIn("2040", str(e.exception))
 
+    def test_fluxograma_sai_do_repositorio_e_nao_da_memoria(self):
+        """Era a ultima pagina mantida a mao, e ficou seis lancamentos atras:
+        dizia 19 comandos quando havia 29, e nao mostrava nenhum portao novo."""
+        alvo = Path(tempfile.mkdtemp()) / "fluxo.html"
+        r = run(RAIZ / "docs/dossie/gerar-fluxo.py", alvo)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        html = alvo.read_text(encoding="utf-8")
+        comandos = len(list((RAIZ / "commands").glob("*.md")))
+        hooks = sum(len(v) for v in json.loads((RAIZ / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"].values())
+        testes = len(re.findall(r"^\s+def test_", (RAIZ / "tests/testes.py").read_text(encoding="utf-8"), re.M))
+        for numero, oque in ((comandos, "comandos"), (hooks, "hooks"), (testes, "testes")):
+            self.assertIn(f"<b>{numero}</b>", html, f"o fluxograma discorda do repositório em {oque}")
+        # o desenho tem de mostrar o MECANISMO: o que acontece quando um portão nega
+        self.assertIn("volta para as evidências", html)
+        self.assertIn("volta ao gate da conversão", html)
+        # e as peças novas não podem faltar do desenho
+        for peca in ("F-GATE", "C-GATE", "grafo", "procedência", "identidade", "papel da sessão"):
+            self.assertIn(peca, html, peca)
+        # acessibilidade: o desenho descreve a si mesmo para quem não o vê
+        self.assertIn('role="img"', html)
+        self.assertIn("aria-label", html)
+
     def test_wx_modelos_compila_e_nao_inventa_numero(self):
         """A ferramenta de modelo local e Rust a parte; o que ela promete e nao
         inventar numero. Aqui roda a bateria dela e o binario de verdade."""
