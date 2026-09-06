@@ -275,6 +275,20 @@ def escolher(args, raiz: Path) -> int:
     }
     (destino / "interface.json").write_text(
         json.dumps(ficha, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    linhas = [f"# Interface do executavel: {o['nome']}", "",
+              "Gerado por `interface_do_destino.py escolher`; nao edite a mao.", "",
+              f"- Gera: {o['gera']}",
+              f"- Roda em: {o['roda']}",
+              f"- Ferramenta: {o['ferramenta']}",
+              f"- Nucleo: {o['nucleo']}",
+              f"- Veredito medido em {ficha['rustc'] or 'INDISPONIVEL'}: **{a['veredito']}**", ""]
+    if o.get("ressalva"):
+        linhas += [f"> {o['ressalva']}", ""]
+    linhas += ["| alvo | suporte |", "| --- | --- |"]
+    linhas += [f"| `{x['alvo']}` | {ROTULOS.get(x['suporte'], x['suporte'])} |" for x in a["alvos"]]
+    linhas += ["", "Tier 3 quer dizer: o alvo existe e compila, mas ninguem distribui a `std`"
+               " dele -- exige nightly e `-Z build-std`, e nao ha CI da equipe do Rust por tras.", ""]
+    (destino / "interface-do-destino.md").write_text("\n".join(linhas), encoding="utf-8")
     # O questionario ganha o campo, nao uma pergunta nova: a contagem de perguntas
     # e verificada por teste, e acrescentar uma aqui a quebraria sem necessidade.
     q = raiz / "questionario.json"

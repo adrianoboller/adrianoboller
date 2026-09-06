@@ -1344,6 +1344,26 @@ class Questionario(unittest.TestCase):
         ruim = run(ifc, "--project-root", self.tmp, "escolher", "--opcao", "nao-existe")
         self.assertEqual(ruim.returncode, 2)
 
+    def test_interface_escolhida_aparece_no_processo_e_ausente_nao_muda_nada(self):
+        """Campo que ninguem le mente: a escolha tem de sair no processo de conversao.
+
+        E o teste que mais importa e o do comportamento VELHO: sem escolha, o
+        documento sai identico ao que sempre saiu.
+        """
+        sys.path.insert(0, str(SCRIPTS))
+        import aplicar_questionario as ap
+        q = json.loads((RAIZ / "exemplos/estoque-wx/questionario.json").read_text(encoding="utf-8"))
+        sem = ap.esboco_processo(q)
+        self.assertNotIn("Interface do executavel", sem)
+        q["H_backend"]["interface"] = "iot-arduino"
+        com = ap.esboco_processo(q)
+        self.assertIn("## Interface do executavel: IoT, Arduino (AVR)", com)
+        self.assertIn("firmware .hex", com)
+        self.assertIn("avr-gcc", com)
+        # id que ninguem reconhece nao vira secao inventada
+        q["H_backend"]["interface"] = "geladeira"
+        self.assertIn("id desconhecido", ap.esboco_processo(q))
+
     def test_gemeo_fotografa_a_sprint_e_o_e_se_declara_o_limite(self):
         self._aplicado()
         run(SCRIPTS / "constraints.py", "--project-root", self.tmp, "criar",

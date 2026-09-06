@@ -803,6 +803,38 @@ def mapa_do_perfil(perfil: str, linguagem: str) -> tuple[str, list[str]]:
                    "biblioteca padrao da linguagem, mapeada no inventario"])
 
 
+def secao_da_interface(h: dict) -> list[str]:
+    """A forma do executavel, quando ela ja foi escolhida.
+
+    Existe porque campo de configuracao que ninguem le mente: o
+    `H_backend.interface` e gravado pelo `interface_do_destino.py` e precisava
+    aparecer em algum lugar que o conversor de fato abre. Sem escolha feita, a
+    secao nao existe -- nada de linha em branco dizendo "(pendente)" para uma
+    pergunta que o questionario nem faz.
+    """
+    escolha = str(h.get("interface") or "").strip()
+    if not escolha:
+        return []
+    try:
+        import interface_do_destino as ifc
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import interface_do_destino as ifc
+    forma = next((o for o in ifc.CATALOGO if o["id"] == escolha), None)
+    if forma is None:
+        # id desconhecido nao vira secao inventada: vira o aviso de que nao se leu
+        return [f"## Interface do executavel: `{escolha}` (id desconhecido)", "",
+                "Rode `/wx-claude-code:interface listar` e escolha de novo.", ""]
+    return [f"## Interface do executavel: {forma['nome']}", "",
+            f"- Gera: {forma['gera']}",
+            f"- Roda em: {forma['roda']}",
+            f"- Ferramenta: {forma['ferramenta']}",
+            f"- Nucleo: {forma['nucleo']}"]           + ([f"- Ressalva: {forma['ressalva']}"] if forma.get("ressalva") else []) + [
+            "",
+            "O suporte de cada alvo e medido no `rustc` da maquina, nao afirmado aqui:"
+            " `/wx-claude-code:interface manual " + escolha + "`.", ""]
+
+
 def esboco_processo(q: dict) -> str:
     h = q.get("H_backend", {}) or {}
     i = q.get("I_frontend", {}) or {}
@@ -838,6 +870,7 @@ def esboco_processo(q: dict) -> str:
         "| Eventos de controle | validacao no cliente espelhando a regra do backend; atalhos de F2 | G4 |",
         "| Relatorio na tela | visualizador de PDF gerado pelo backend | G5 |",
         "| Estados (vazio, erro, offline) | os de F7, em todo componente | G6 |", "",
+        *secao_da_interface(h),
         "## O que nao muda com o processo", "",
         "- Regra de negocio nao muda de comportamento; o golden master compara com o legado.",
         "- O banco de destino e decisao separada, no G3.",

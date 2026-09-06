@@ -18,9 +18,9 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | skills | 21 |
 | skills de ERP (pacote skills.sh) | 8 |
 | scripts Python | 37 |
-| linhas de Python (scripts e hooks) | 16748 |
+| linhas de Python (scripts e hooks) | 16795 |
 | documentos de referência | 19 |
-| testes de regressão | 97 |
+| testes de regressão | 98 |
 | hooks do plugin | 9 |
 | blocos do questionário (0, A–M) | 14 |
 | itens do bloco 0 | 16 |
