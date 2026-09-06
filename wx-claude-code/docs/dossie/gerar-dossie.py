@@ -42,6 +42,7 @@ regras = [
     ("Guarda nova entra pedida, não imposta", "a licença trava só os scripts e a escrita em .wx-migration; o resto do Claude Code segue; o hook custa 54 ms medidos."),
 ]
 regras += [
+    ("Regra de negócio se esconde em arquivo de declaração", "o piloto vertical achou uma função de arredondamento de dinheiro dentro de um mod.rs — e por isso o grafo só perdoa arquivo cuja última linha útil ainda seja declaração ou importação. Critério medido; lista de nomes teria deixado passar."),
     ("Portão que aprova o que não conferiu é pior que portão nenhum", "restrição sem validador volta INCONCLUSIVA e nunca aprovada; efeito que não deu para ler tem código de saída próprio, para não virar sucesso dentro de um script."),
     ("Toda evidência declara o que NÃO prova", "o campo é obrigatório e o script recusa gravar sem ele: a frase que falta é a que o leitor completa sozinho, sempre para o lado otimista. E a prova vence quando o arquivo muda."),
     ("Quando o portão passa a olhar um campo novo, procure quem não tem esse campo", "o exemplo PHP achou o G0 cobrando wx_version de quem não usa WINDEV, em oito lugares. O teste que trava o conserto é o do comportamento velho."),
@@ -53,7 +54,7 @@ regras.append(("Skill que não aparece na listagem não existe.", "As oito skill
 regras_html = "".join(f'<div class="regra"><b>{E(a)}</b><p>{E(b)}</p></div>' for a, b in regras)
 faltas = [
     "Nenhum projeto real, de cliente, passou pelos gates G1 a G7 de ponta a ponta; os exemplos são sintéticos. É a coisa mais valiosa que continua sem medição.",
-    "As quatro combinações de origem e destino estão medidas em função isolada (WLanguage e C++ para Rust; WLanguage para PHP; PHP para Rust), não em sistema inteiro: o que se provou é que a regra atravessa citando a origem, não que um ERP inteiro atravessa.",
+    "O piloto vertical G4 provou um MÓDULO (cinco regras do ESTOQUE, 10/10 no golden master capturado do legado), não um sistema: telas, relatórios, integrações e o banco real ficaram de fora, e a query saiu com confiança média por não ter banco por trás.",
     "Os quatro comandos de adoção da governança nunca rodaram num cliente; a ordem proposta é raciocínio, não medição.",
     "O instalador em PowerShell nunca foi executado — só tem prova estrutural, porque não há Windows neste ambiente.",
     "A licença é dissuasão por hook; servir corpus e agentes de um servidor ficou para depois, por decisão do dono.",

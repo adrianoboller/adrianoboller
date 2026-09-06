@@ -1158,6 +1158,32 @@ class Questionario(unittest.TestCase):
         gerados = [x for x in a["codigo_sem_requisito"] if x.startswith("database/")]
         self.assertEqual(gerados, [], "o esqueleto gerado pelo questionário não é lacuna de requisito")
 
+    def test_grafo_separa_declaracao_de_modulo_de_arquivo_com_logica(self):
+        """Achado no piloto vertical: `lib.rs` com uma linha aparecia como lacuna
+        ao lado de arquivos que carregam regra. O critério é MEDIDO, não lista de
+        nomes -- e por isso pegou um mod.rs que escondia arredondamento de dinheiro."""
+        run(SCRIPTS / "aplicar_questionario.py", "--questionario",
+            self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        (self.tmp / "src/regras").mkdir(parents=True, exist_ok=True)
+        # só declara: não é regra, e não deve virar lacuna
+        (self.tmp / "src/lib.rs").write_text("pub mod regras;\n", encoding="utf-8")
+        (self.tmp / "src/regras/vazio.rs").write_text(
+            "// só reexporta\npub use crate::regras::real::calcula;\n", encoding="utf-8")
+        # declara E esconde lógica: o mod.rs do piloto tinha um round2 aqui dentro
+        (self.tmp / "src/regras/mod.rs").write_text(
+            "pub mod real;\n\npub fn round2(v: f64) -> f64 {\n    (v * 100.0).round() / 100.0\n}\n",
+            encoding="utf-8")
+        (self.tmp / "src/regras/real.rs").write_text("pub fn calcula() {}\n", encoding="utf-8")
+        self._matriz([{"trace_id": "BR-001", "kind": "business_rule",
+                       "target_file": "src/regras/real.rs", "test_id": "TST-1",
+                       "test_file": "tests/t.rs", "status": "implemented"}])
+        a = json.loads(run(SCRIPTS / "grafo.py", "--project-root", self.tmp, "--json", "conferir").stdout)["achados"]
+        sem_requisito = a["codigo_sem_requisito"]
+        self.assertNotIn("src/lib.rs", sem_requisito, "declaração de módulo não é regra")
+        self.assertNotIn("src/regras/vazio.rs", sem_requisito, "só reexportar não é regra")
+        self.assertIn("src/regras/mod.rs", sem_requisito,
+                      "mod.rs com função de arredondamento É regra, e ninguém a reivindicou")
+
     def test_grafo_ve_a_prova_vencer_e_a_origem_mudar(self):
         """As duas perguntas que so o tempo responde."""
         run(SCRIPTS / "aplicar_questionario.py", "--questionario",

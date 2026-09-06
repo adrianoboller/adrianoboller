@@ -628,5 +628,20 @@
   "itens_questionario": 60,
   "hooks": 9,
   "manual": 777
+ },
+ {
+  "versao": "3.35.0",
+  "data": "2026-09-06",
+  "titulo": "as quatro combinações de origem e destino, medidas",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 29,
+  "scripts": 36,
+  "linhas_py": 29771,
+  "prints": 61,
+  "testes": 94,
+  "itens_questionario": 60,
+  "hooks": 9,
+  "manual": 795
  }
 ]

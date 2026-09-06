@@ -506,6 +506,35 @@ E uma aresta antiga apareceu ao escrever isto: assinar com chave abaixo de 2040
 bits **passava calado** e só quebrava na conferência, do outro lado, na máquina
 de outra pessoa. Agora recusa na hora de assinar, dizendo o número.
 
+**O piloto vertical: um módulo, não uma função.** Até a 3.35.0 tudo estava
+medido em função isolada, e eu tinha escrito isso no dossiê como a lacuna
+principal. O piloto G4 do ESTOQUE fecha metade dela: **cinco regras** (BR-001,
+BR-003, BR-004, BR-005 e a query QRY-003) convertidas por uma sessão real, com
+matriz preenchida e validada, 13 testes unitários, e **10/10 no golden master** —
+não os testes que a sessão escreveu, mas os dez casos capturados do legado,
+comparados pelo `golden.py` contra um binário que a própria sessão construiu
+para o arnês.
+
+O que faz esse 10/10 valer é o que veio junto dele, sem eu pedir:
+
+- **QRY-003 saiu com `confidence: medium`**, e não `high`, porque não há banco
+  por trás: a query virou função pura sobre uma amostra. O que está provado é o
+  filtro, o agrupamento e a comissão — a integração com o banco, não.
+- **BR-004 não reproduz o vencimento das parcelas**, porque o golden só captura
+  os valores. Ficou escrito na coluna `notes`, não escondido.
+- **O status parou em `implemented`**, não `verified`: o validador exige
+  `target_commit` para status mais forte, e não havia git ali.
+
+E o grafo, rodado sobre o resultado, apontou três arquivos que ninguém
+reivindicou. Dois são andaime — mas o terceiro era um `mod.rs` com uma função
+de **arredondamento de dinheiro** dentro. Regra de negócio escondida num arquivo
+de declaração de módulo é exatamente o que ninguém acha lendo, e o grafo achou.
+
+Disso saiu uma melhoria com critério **medido, não lista de nomes**: um arquivo
+só escapa da cobrança se *toda* linha útil dele for declaração, importação ou
+comentário. `lib.rs` com uma linha escapa; o `mod.rs` com o arredondamento não.
+Uma lista de nomes teria deixado os dois passarem.
+
 **As quatro combinações, medidas.** O legado é E/OU e o destino é livre, mas
 isso só valia como afirmação até a 3.35.0. Agora cada uma tem prova em sessão
 real, e o que interessa é o que cada sessão **se recusou** a fazer:

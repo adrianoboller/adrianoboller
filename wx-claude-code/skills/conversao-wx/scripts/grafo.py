@@ -103,6 +103,28 @@ def foi_gerado(arq: str, gerados: set[str]) -> bool:
     return arq in gerados or any(g.endswith("/") and arq.startswith(g) for g in gerados)
 
 
+# Declaracao de modulo nao carrega regra: `pub mod x;` nao e requisito nenhum.
+# O piloto vertical mostrou isso na pratica -- lib.rs com UMA linha aparecia como
+# "codigo sem requisito", ao lado de arquivos que carregam logica de verdade e
+# merecem mesmo a cobranca. Misturar os dois gasta a atencao de quem le no item
+# errado. O criterio e MEDIDO, nao e lista de nomes: o arquivo so escapa se
+# TODA linha util dele for declaracao, importacao ou comentario.
+DECLARACAO = ("mod ", "pub mod ", "use ", "pub use ", "pub(crate) mod ",
+              "extern crate ", "pub(crate) use ")
+
+
+def so_declara_modulo(p: Path) -> bool:
+    try:
+        linhas = p.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return False
+    uteis = [l.strip() for l in linhas
+             if l.strip() and not l.strip().startswith(("//", "#", "/*", "*", "*/"))]
+    if not uteis:
+        return True
+    return all(l.startswith(DECLARACAO) for l in uteis)
+
+
 def arquivos_de_codigo(raiz: Path) -> list[str]:
     achados = []
     for p in raiz.rglob("*"):
@@ -153,7 +175,8 @@ def montar(raiz: Path) -> dict:
 
     for arq in codigo:
         ehteste = any(parte in ("tests", "test", "testes", "spec") for parte in Path(arq).parts)
-        if arq not in alvos and not foi_gerado(arq, do_plugin) and not ehteste:
+        if arq not in alvos and not foi_gerado(arq, do_plugin) and not ehteste \
+                and not so_declara_modulo(raiz / arq):
             achados["codigo_sem_requisito"].append(arq)
 
     for l in matriz:

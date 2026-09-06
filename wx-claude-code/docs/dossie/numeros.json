@@ -1,6 +1,6 @@
 {
   "medido_em": "2026-09-06",
-  "versao": "3.35.0",
+  "versao": "3.36.0",
   "agentes": 94,
   "papeis": 10,
   "subagentes_pdca": 40,
@@ -8,9 +8,9 @@
   "comandos": 29,
   "skills": 21,
   "scripts": 36,
-  "linhas_de_python": 16400,
+  "linhas_de_python": 16423,
   "referencias": 19,
-  "testes": 94,
+  "testes": 95,
   "blocos_do_questionario": 14,
   "itens_do_bloco_0": 16,
   "subperguntas_f": 14,
@@ -24,7 +24,7 @@
   "corpus_bytes": 26750976,
   "corpus_paginas_validas": 12035,
   "hooks": 9,
-  "manual_linhas": 795,
+  "manual_linhas": 824,
   "exemplo_tabelas": 7,
   "arquivos_gerados_pelo_questionario": 102,
   "skills_erp": 8
