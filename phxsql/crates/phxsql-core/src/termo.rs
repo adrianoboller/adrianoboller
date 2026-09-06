@@ -55,12 +55,31 @@ pub fn dobrar(palavra: &str) -> String {
 /// delas ordenadas ordena -- e quem grava no `.ndx` ja ordena o lote, que e a
 /// licao do pedido 113.
 pub fn termos(texto: &str) -> Vec<String> {
+    quebrar(texto, dobrar)
+}
+
+/// A mesma quebra, mas SEM dobrar -- para o indice que pediu `"dobrar": false`.
+///
+/// Ela existe porque a dobra e uma escolha por indice, e o par de funcoes tem
+/// de partir o texto exatamente igual: se uma quebrasse no hifen e a outra
+/// nao, dois indices da mesma tabela achariam conjuntos diferentes de linhas
+/// para o mesmo texto, e o motivo nao apareceria em lugar nenhum. Por isso as
+/// duas chamam a MESMA quebra, e so trocam o que fazem com cada pedaco.
+pub fn termos_sem_dobrar(texto: &str) -> Vec<String> {
+    quebrar(texto, |p| p.to_string())
+}
+
+/// A quebra, com o que fazer com cada palavra passado de fora.
+///
+/// Um so lugar decide o que e separador. Duas copias divergiriam no dia em que
+/// alguem acrescentasse um caractere a uma delas.
+fn quebrar(texto: &str, como: impl Fn(&str) -> String) -> Vec<String> {
     let mut fora: Vec<String> = Vec::new();
     for bruta in texto.split(|c: char| !c.is_alphanumeric()) {
         if bruta.is_empty() {
             continue;
         }
-        let t = dobrar(bruta);
+        let t = como(bruta);
         if t.is_empty() || fora.contains(&t) {
             continue;
         }
@@ -124,6 +143,23 @@ mod testes {
             termos("zebra alfa zebra beta"),
             vec!["zebra", "alfa", "beta"]
         );
+    }
+
+    /// As duas funcoes quebram IGUAL, e so o que fazem com o pedaco muda.
+    ///
+    /// Se uma quebrasse no hifen e a outra nao, dois indices da mesma tabela
+    /// achariam conjuntos diferentes para o mesmo texto -- e sem motivo
+    /// visivel em lugar nenhum.
+    #[test]
+    fn dobrando_ou_nao_a_quebra_e_a_mesma() {
+        let t = "nota-fiscal 123, Fênix/ou outra.";
+        assert_eq!(termos(t).len(), termos_sem_dobrar(t).len());
+        assert_eq!(
+            termos_sem_dobrar(t)[3],
+            "Fênix",
+            "sem dobrar mantem a grafia"
+        );
+        assert_eq!(termos(t)[3], "fenix", "dobrando, vira o termo do indice");
     }
 
     /// O que a tabela de dobra NAO cobre continua passando inteiro, e isso e

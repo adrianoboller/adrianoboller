@@ -40,7 +40,7 @@ use std::path::Path;
 
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
-use phxsql_core::termo::{dobrar, termos};
+use phxsql_core::termo::{dobrar, termos, termos_sem_dobrar};
 use phxsql_core::types::ColumnType;
 use phxsql_core::RowId;
 
@@ -62,9 +62,6 @@ pub const EXT_FTS: &str = "fts";
 /// largura tem um dono so, e o dono e o `.ndx`.
 pub const TERMO_PEDIDO: u16 = 24;
 
-/// So ha um indice dentro do arquivo, e ele e o zero.
-const UNICO_INDICE: usize = 0;
-
 /// O que uma busca devolve.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Achado {
@@ -79,22 +76,35 @@ pub struct Achado {
     pub conferir: bool,
 }
 
-/// O esquema sintetico do arquivo: uma "coluna" de termo e uma de comprimento.
+/// O esquema sintetico do arquivo: uma "coluna" de termo e uma de comprimento,
+/// e **um indice interno por indice de texto declarado na tabela**.
 ///
 /// Ele existe so para o `NdxFile::criar` calcular a largura da chave; nenhuma
-/// linha e gravada por ele. O indice e **livre**, e nao unico: um termo
+/// linha e gravada por ele. Os indices sao **livres**, e nao unicos: um termo
 /// aparece em muitas linhas, e e disso que a lista de ocorrencias e feita.
-fn esquema_do_indice() -> Schema {
+///
+/// # Por que um indice interno por indice declarado, e nao um arquivo por um
+///
+/// Porque duas colunas de texto da mesma tabela podem ter `dobrar` diferente,
+/// e ai as chaves nao podem dividir o mesmo espaco: `fenix` dobrada e `Fênix`
+/// crua sao termos distintos que apontariam para a mesma faixa. O `NdxFile` ja
+/// sabe carregar varios indices num arquivo so -- e um arquivo por indice
+/// multiplicaria descritores, caches e `fsync` por nada.
+fn esquema_do_indice(quantos: usize) -> Schema {
+    let mut idx = Vec::with_capacity(quantos.max(1));
+    for i in 0..quantos.max(1) {
+        idx.push(IndexDef::new(
+            format!("porTermo{i}"),
+            vec![IndexColumn::asc(0), IndexColumn::asc(1)],
+        ));
+    }
     Schema::new(
         "fts",
         vec![
             Column::new("termo", ColumnType::Str(TERMO_PEDIDO)),
             Column::new("bytes", ColumnType::UInt1),
         ],
-        vec![IndexDef::new(
-            "porTermo",
-            vec![IndexColumn::asc(0), IndexColumn::asc(1)],
-        )],
+        idx,
     )
     .expect("esquema do .fts")
 }
@@ -104,11 +114,21 @@ pub struct FtsFile {
     ndx: NdxFile,
     /// Largura total da chave, tirada do descritor do arquivo.
     largura: usize,
+    /// `dobrar` de cada indice interno, na ordem em que a tabela os declara.
+    ///
+    /// Fica aqui, e nao no arquivo: quem manda e o esquema da TABELA, que e
+    /// onde a declaracao mora. Guardar uma segunda copia no `.fts` faria duas
+    /// fontes para a mesma verdade, e a segunda envelheceria calada -- e o
+    /// `.fts` e derivado, entao ele nunca e a fonte.
+    dobra: Vec<bool>,
 }
 
 impl FtsFile {
-    /// Cria o arquivo. Falha se ja existir, como o resto da familia.
-    pub fn criar(caminho: impl AsRef<Path>) -> Result<FtsFile> {
+    /// Cria o arquivo com um indice interno por `dobrar` da lista.
+    ///
+    /// A lista vem do esquema da tabela, na ordem dos indices de texto
+    /// declarados. Falha se o arquivo ja existir, como o resto da familia.
+    pub fn criar(caminho: impl AsRef<Path>, dobra: Vec<bool>) -> Result<FtsFile> {
         let caminho = caminho.as_ref();
         if caminho.exists() {
             return Err(PhxError::Esquema(format!(
@@ -116,16 +136,46 @@ impl FtsFile {
                 caminho.display()
             )));
         }
-        Ok(FtsFile::com(NdxFile::criar(caminho, &esquema_do_indice())?))
+        let ndx = NdxFile::criar(caminho, &esquema_do_indice(dobra.len()))?;
+        Ok(FtsFile::com(ndx, dobra))
     }
 
-    pub fn abrir(caminho: impl AsRef<Path>) -> Result<FtsFile> {
-        Ok(FtsFile::com(NdxFile::abrir(caminho)?))
+    /// Abre um `.fts` que ja existe. A lista de `dobrar` vem do esquema da
+    /// TABELA -- o `.fts` e derivado, e derivado nunca e a fonte.
+    pub fn abrir(caminho: impl AsRef<Path>, dobra: Vec<bool>) -> Result<FtsFile> {
+        let ndx = NdxFile::abrir(caminho)?;
+        if ndx.indices().len() != dobra.len() {
+            return Err(PhxError::Corrompido(format!(
+                "o .fts tem {} indices e o esquema declara {}; \
+                 reconstrua o indice de texto com `reindexar`",
+                ndx.indices().len(),
+                dobra.len()
+            )));
+        }
+        Ok(FtsFile::com(ndx, dobra))
     }
 
-    fn com(ndx: NdxFile) -> FtsFile {
-        let largura = ndx.indices()[UNICO_INDICE].key_len;
-        FtsFile { ndx, largura }
+    fn com(ndx: NdxFile, dobra: Vec<bool>) -> FtsFile {
+        let largura = ndx.indices()[0].key_len;
+        FtsFile {
+            ndx,
+            largura,
+            dobra,
+        }
+    }
+
+    /// Quantos indices de texto este arquivo carrega.
+    pub fn quantos(&self) -> usize {
+        self.dobra.len()
+    }
+
+    /// Os termos de um texto, dobrados ou nao conforme o indice pediu.
+    fn termos_de(&self, idx: usize, texto: &str) -> Vec<String> {
+        if self.dobra.get(idx).copied().unwrap_or(true) {
+            termos(texto)
+        } else {
+            termos_sem_dobrar(texto)
+        }
     }
 
     /// Quantos bytes do termo cabem na chave, medidos no arquivo.
@@ -159,11 +209,11 @@ impl FtsFile {
     ///
     /// Devolve quantos termos entraram -- o numero que o `FTS.md` §4.1 mediu
     /// como ~14 num texto de 200 bytes, e que decidiu o despejo em lote.
-    pub fn indexar(&mut self, rowid: RowId, texto: &str) -> Result<usize> {
-        let ts = termos(texto);
+    pub fn indexar(&mut self, idx: usize, rowid: RowId, texto: &str) -> Result<usize> {
+        let ts = self.termos_de(idx, texto);
         for t in &ts {
             let c = self.chave(t);
-            self.ndx.inserir(UNICO_INDICE, &c, rowid)?;
+            self.ndx.inserir(idx, &c, rowid)?;
         }
         Ok(ts.len())
     }
@@ -174,11 +224,11 @@ impl FtsFile {
     /// quem exclui **ja tem a linha na mao** (o `.trash` a guarda inteira antes
     /// de sumir), e faze-lo reler seria pagar duas vezes o que a §20 do
     /// `DESEMPENHO.md` mediu como 43% do custo de uma busca.
-    pub fn desindexar(&mut self, rowid: RowId, texto: &str) -> Result<usize> {
+    pub fn desindexar(&mut self, idx: usize, rowid: RowId, texto: &str) -> Result<usize> {
         let mut fora = 0;
-        for t in termos(texto) {
+        for t in self.termos_de(idx, texto) {
             let c = self.chave(&t);
-            if self.ndx.remover(UNICO_INDICE, &c, rowid)? {
+            if self.ndx.remover(idx, &c, rowid)? {
                 fora += 1;
             }
         }
@@ -190,8 +240,13 @@ impl FtsFile {
     /// Dobrar nos dois lados e o que faz `Fenix`, `fenix` e `FÊNIX` acharem a
     /// mesma coisa -- e dobrar so num lado seria o defeito classico de indice,
     /// que aparece como "acha as vezes".
-    pub fn procurar(&mut self, palavra: &str) -> Result<Achado> {
-        let t = dobrar(palavra.trim());
+    pub fn procurar(&mut self, idx: usize, palavra: &str) -> Result<Achado> {
+        let cru = palavra.trim();
+        let t = if self.dobra.get(idx).copied().unwrap_or(true) {
+            dobrar(cru)
+        } else {
+            cru.to_string()
+        };
         if t.is_empty() {
             return Ok(Achado {
                 rowids: Vec::new(),
@@ -201,7 +256,7 @@ impl FtsFile {
         let conferir = t.len() > self.termo_len();
         let c = self.chave(&t);
         Ok(Achado {
-            rowids: self.ndx.buscar(UNICO_INDICE, &c)?,
+            rowids: self.ndx.buscar(idx, &c)?,
             conferir,
         })
     }
@@ -214,9 +269,9 @@ impl FtsFile {
         self.ndx.fechar()
     }
 
-    /// Quantas chaves o indice guarda. Serve a bancada e ao `verificar`.
-    pub fn qtd_chaves(&self) -> u64 {
-        self.ndx.indices()[UNICO_INDICE].qtd_chaves
+    /// Quantas chaves um indice guarda. Serve a bancada e ao `verificar`.
+    pub fn qtd_chaves(&self, idx: usize) -> u64 {
+        self.ndx.indices()[idx].qtd_chaves
     }
 }
 
@@ -224,22 +279,36 @@ impl FtsFile {
 mod testes {
     use super::*;
 
+    /// Um `.fts` com um indice que dobra.
     fn novo(nome: &str) -> (FtsFile, std::path::PathBuf) {
+        com_dobra(nome, vec![true])
+    }
+
+    fn com_dobra(nome: &str, dobra: Vec<bool>) -> (FtsFile, std::path::PathBuf) {
         let dir = std::env::temp_dir().join(format!("phx-fts-{nome}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let c = dir.join(format!("t.{EXT_FTS}"));
-        (FtsFile::criar(&c).unwrap(), c)
+        let n = dobra.len();
+        (FtsFile::criar(&c, dobra).unwrap(), c).tap(|f| assert_eq!(f.0.quantos(), n))
     }
+
+    trait Tap: Sized {
+        fn tap(self, f: impl FnOnce(&Self)) -> Self {
+            f(&self);
+            self
+        }
+    }
+    impl<T> Tap for T {}
 
     #[test]
     fn acha_a_palavra_que_indexou() {
         let (mut f, _) = novo("basico");
-        f.indexar(1, "pedido do cliente fenix").unwrap();
-        f.indexar(2, "nota fiscal comum").unwrap();
-        assert_eq!(f.procurar("fenix").unwrap().rowids, vec![1]);
-        assert_eq!(f.procurar("nota").unwrap().rowids, vec![2]);
-        assert!(f.procurar("inexistente").unwrap().rowids.is_empty());
+        f.indexar(0, 1, "pedido do cliente fenix").unwrap();
+        f.indexar(0, 2, "nota fiscal comum").unwrap();
+        assert_eq!(f.procurar(0, "fenix").unwrap().rowids, vec![1]);
+        assert_eq!(f.procurar(0, "nota").unwrap().rowids, vec![2]);
+        assert!(f.procurar(0, "inexistente").unwrap().rowids.is_empty());
     }
 
     /// A razao de o `.fts` existir, e o que o `custo-da-busca-de-palavra`
@@ -247,14 +316,37 @@ mod testes {
     #[test]
     fn a_dobra_vale_nos_dois_lados() {
         let (mut f, _) = novo("dobra");
-        f.indexar(7, "a Fênix renasce").unwrap();
+        f.indexar(0, 7, "a Fênix renasce").unwrap();
         for grafia in ["fenix", "Fênix", "FENIX", "fÊnIx"] {
             assert_eq!(
-                f.procurar(grafia).unwrap().rowids,
+                f.procurar(0, grafia).unwrap().rowids,
                 vec![7],
                 "procurar {grafia:?} tinha de achar"
             );
         }
+    }
+
+    /// Dois indices na MESMA tabela, um dobrando e o outro nao.
+    ///
+    /// E por isso que os indices internos existem: se dividissem o espaco de
+    /// chaves, `fenix` dobrada e `Fênix` crua cairiam na mesma faixa e um
+    /// acharia o que era do outro.
+    #[test]
+    fn dois_indices_com_dobra_diferente_nao_se_misturam() {
+        let (mut f, _) = com_dobra("mistura", vec![true, false]);
+        f.indexar(0, 1, "a Fênix").unwrap();
+        f.indexar(1, 1, "a Fênix").unwrap();
+
+        // O que dobra acha pelas duas grafias.
+        assert_eq!(f.procurar(0, "fenix").unwrap().rowids, vec![1]);
+        assert_eq!(f.procurar(0, "Fênix").unwrap().rowids, vec![1]);
+        // O que nao dobra acha so pela grafia exata.
+        assert_eq!(f.procurar(1, "Fênix").unwrap().rowids, vec![1]);
+        assert!(
+            f.procurar(1, "fenix").unwrap().rowids.is_empty(),
+            "sem dobra, `fenix` nao pode achar `Fênix` -- senao a escolha do \
+             dono nao teve efeito nenhum"
+        );
     }
 
     /// O falso positivo que a chave de largura fixa criaria sozinha.
@@ -263,14 +355,8 @@ mod testes {
     ///
     /// Ela usava `transportadora` e `transportadoras`. As duas cabem inteiras
     /// na chave, entao **nunca truncam** -- o zero do preenchimento ja as
-    /// separava, e o byte de comprimento nunca era exercitado. Tirar o
-    /// comprimento da chave nao quebrava nada, e o teste dizia que a guarda
-    /// funcionava. *Teste que passa por engano e pior que teste que falta*, e
-    /// este quase entrou no commit.
-    ///
-    /// A versao certa usa duas palavras que **passam** da largura e
-    /// compartilham TODOS os bytes que cabem: sem o comprimento, elas viram a
-    /// mesma chave e procurar uma acha as duas.
+    /// separava, e o byte de comprimento nunca era exercitado. *Teste que
+    /// passa por engano e pior que teste que falta.*
     #[test]
     fn prefixo_igual_com_tamanho_diferente_nao_colide() {
         let (mut f, _) = novo("prefixo");
@@ -279,16 +365,15 @@ mod testes {
         let uma = format!("{base}x");
         let outra = format!("{base}xy");
         assert!(uma.len() > cabe && outra.len() > cabe, "tem de truncar");
-        assert_eq!(uma[..cabe], outra[..cabe], "o que cabe tem de ser igual");
 
-        f.indexar(1, &uma).unwrap();
-        f.indexar(2, &outra).unwrap();
+        f.indexar(0, 1, &uma).unwrap();
+        f.indexar(0, 2, &outra).unwrap();
         assert_eq!(
-            f.procurar(&uma).unwrap().rowids,
+            f.procurar(0, &uma).unwrap().rowids,
             vec![1],
             "sem o byte de comprimento na chave, esta busca acha as DUAS"
         );
-        assert_eq!(f.procurar(&outra).unwrap().rowids, vec![2]);
+        assert_eq!(f.procurar(0, &outra).unwrap().rowids, vec![2]);
     }
 
     /// A honestidade da §7.1: a duvida vira BANDEIRA, e nao resposta errada.
@@ -296,12 +381,12 @@ mod testes {
     fn palavra_longa_pede_conferencia_e_a_curta_nao() {
         let (mut f, _) = novo("conferir");
         let longa = "a".repeat(f.termo_len() + 5);
-        f.indexar(1, &longa).unwrap();
-        let achado = f.procurar(&longa).unwrap();
+        f.indexar(0, 1, &longa).unwrap();
+        let achado = f.procurar(0, &longa).unwrap();
         assert_eq!(achado.rowids, vec![1]);
         assert!(achado.conferir, "palavra longa tem de pedir conferencia");
         assert!(
-            !f.procurar("curta").unwrap().conferir,
+            !f.procurar(0, "curta").unwrap().conferir,
             "palavra curta e exata, e conferir custaria ler a linha a toa"
         );
     }
@@ -309,36 +394,53 @@ mod testes {
     #[test]
     fn desindexar_tira_a_linha_e_deixa_as_outras() {
         let (mut f, _) = novo("desindexar");
-        f.indexar(1, "pedido fenix").unwrap();
-        f.indexar(2, "pedido comum").unwrap();
-        assert_eq!(f.procurar("pedido").unwrap().rowids, vec![1, 2]);
-        assert_eq!(f.desindexar(1, "pedido fenix").unwrap(), 2);
-        assert_eq!(f.procurar("pedido").unwrap().rowids, vec![2]);
-        assert!(f.procurar("fenix").unwrap().rowids.is_empty());
+        f.indexar(0, 1, "pedido fenix").unwrap();
+        f.indexar(0, 2, "pedido comum").unwrap();
+        assert_eq!(f.procurar(0, "pedido").unwrap().rowids, vec![1, 2]);
+        assert_eq!(f.desindexar(0, 1, "pedido fenix").unwrap(), 2);
+        assert_eq!(f.procurar(0, "pedido").unwrap().rowids, vec![2]);
+        assert!(f.procurar(0, "fenix").unwrap().rowids.is_empty());
     }
 
     #[test]
     fn palavra_repetida_na_linha_vira_uma_chave_so() {
         let (mut f, _) = novo("repetida");
-        assert_eq!(f.indexar(1, "pedido pedido pedido").unwrap(), 1);
-        assert_eq!(f.qtd_chaves(), 1);
-        assert_eq!(f.procurar("pedido").unwrap().rowids, vec![1]);
+        assert_eq!(f.indexar(0, 1, "pedido pedido pedido").unwrap(), 1);
+        assert_eq!(f.qtd_chaves(0), 1);
+        assert_eq!(f.procurar(0, "pedido").unwrap().rowids, vec![1]);
     }
 
     #[test]
     fn sobrevive_a_fechar_e_abrir() {
         let (mut f, caminho) = novo("reabrir");
-        f.indexar(42, "a fenix guardada").unwrap();
+        f.indexar(0, 42, "a fenix guardada").unwrap();
         f.fechar().unwrap();
         drop(f);
-        let mut g = FtsFile::abrir(&caminho).unwrap();
-        assert_eq!(g.procurar("fenix").unwrap().rowids, vec![42]);
+        let mut g = FtsFile::abrir(&caminho, vec![true]).unwrap();
+        assert_eq!(g.procurar(0, "fenix").unwrap().rowids, vec![42]);
+    }
+
+    /// Abrir com uma lista de tamanho diferente e DIVERGENCIA, e ela grita.
+    ///
+    /// O `.fts` e derivado: quem manda e o esquema da tabela. Se ele declarar
+    /// dois indices de texto e o arquivo tiver um, seguir em frente indexaria
+    /// no lugar errado -- e um indice que aponta o que nao devia e pior que
+    /// indice nenhum.
+    #[test]
+    fn abrir_com_quantidade_diferente_recusa() {
+        let (f, caminho) = novo("divergente");
+        drop(f);
+        let e = match FtsFile::abrir(&caminho, vec![true, true]) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("abrir com quantidade diferente tinha de recusar"),
+        };
+        assert!(e.contains("reindexar"), "{e}");
     }
 
     #[test]
     fn criar_por_cima_recusa_em_vez_de_apagar() {
         let (f, caminho) = novo("porcima");
         drop(f);
-        assert!(FtsFile::criar(&caminho).is_err());
+        assert!(FtsFile::criar(&caminho, vec![true]).is_err());
     }
 }
