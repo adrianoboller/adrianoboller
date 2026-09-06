@@ -20,6 +20,7 @@ Se `$1` vier preenchido, filtre por essa palavra e mostre só o que casa; sem ar
 | `/wx-claude-code:interface` | a forma do Rust final (terminal, serviço, web, mobile, IoT…) e o suporte medido |
 | `/wx-claude-code:preflight` | só o G0: inventário das evidências, classificação, relatório |
 | `/wx-claude-code:artefato` | submeter e catalogar artefato do cliente (bloco M) |
+| `/wx-claude-code:dependencias` | o que o legado usa de fora: INI, banco, DLL, COM, webservice, e-mail, FTP |
 | `/wx-claude-code:pdf` | converter um PDF em Markdown citável, com página e hash |
 | `/wx-claude-code:log` | ver o registro das operações do plugin neste projeto |
 | `/wx-claude-code:estilo-telas` | qualidade de tela com o Impeccable, a partir do `DESIGN.md` |

@@ -45,11 +45,12 @@ igualdade contra o legado rodando.
 
 ### 4. Inventário de dependências externas
 
-- estado: `falta`
+- estado: `parcial`
 - tamanho: 3 · grande
 - por que importa: Cada uma é uma decisão de conversão que hoje só aparece quando o agente tropeça nela.
-- hoje: Não há.
+- hoje: `/wx-claude-code:dependencias` acha dez categorias por sinal no texto, com `arquivo#linha`.
 - construir: Listar DLLs, componentes externos (.wdk), WDAPI, COM/ActiveX, webservices SOAP/REST consumidos, impressoras e drivers, e-mail, FTP, arquivos de configuração (.ini/registro).
+- medido: na 3.39.0. No exemplo ESTOQUE ele acha `INIRead` (duas vezes, com o `estoque.ini`) e a conexão HFSQL C/S; no exemplo PHP, `getenv` e `mysqli_connect`. **Parcial e não feito** porque o que depende do projeto nativo — `.wdk` citado só no projeto, DLL declarada no IDE, driver de impressora — só o item 1 alcança; a lista é um piso e diz isso
 
 ## 2. Semântica WLanguage
 

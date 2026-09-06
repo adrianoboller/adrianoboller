@@ -1424,6 +1424,35 @@ class Questionario(unittest.TestCase):
         self.assertEqual(d4["contagem"]["reaberta"], 0)
         self.assertEqual(run(prg, "--project-root", self.tmp, "revisar", "ZZ").returncode, 2)
 
+    def test_dependencias_acham_por_sinal_e_nunca_por_palavra_solta(self):
+        """O achado vale pelo SINAL: `INIRead(` e dependencia, «e-mail» num
+        comentario nao e. O teste poe as duas coisas no mesmo arquivo."""
+        dep = SCRIPTS / "inventario_de_dependencias.py"
+        alvo = self.tmp / "legado.wl"
+        alvo.write_text(
+            "// este modulo manda e-mail e usa uma DLL, um dia\n"
+            'gsConexao.Server = INIRead("HFSQL", "Servidor", "localhost", "x.ini")\n'
+            "IF NOT HOpenConnection(gsConexao) THEN\n"
+            "sResposta is string = SOAPExecute(MeuServico, \"consultar\")\n"
+            "EmailSendMessage(sSessao, mMensagem)\n", encoding="utf-8")
+        d = json.loads(run(dep, "--project-root", self.tmp, "--json").stdout)
+        cats = set(d["categorias"])
+        self.assertIn("configuracao", cats)
+        self.assertIn("banco externo", cats)
+        self.assertIn("webservice", cats)
+        self.assertIn("e-mail", cats)
+        # a linha 1 fala de e-mail e de DLL sem chamar nenhuma das duas
+        primeira = [a for a in d["achados"] if a["onde"].endswith("#1")]
+        self.assertEqual(primeira, [], f"achado inventado no comentario: {primeira}")
+        self.assertNotIn("dll e api", cats)
+        # e o relatorio nunca deixa a lista parecer completa
+        texto = run(dep, "--project-root", self.tmp).stdout
+        self.assertIn("piso, não um inventário fechado", texto)
+        self.assertIn("NÃO alcança", texto)
+        r = run(dep, "--project-root", self.tmp, "--gravar")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue((self.tmp / ".wx-migration/dependencias.md").is_file())
+
     def test_gemeo_fotografa_a_sprint_e_o_e_se_declara_o_limite(self):
         self._aplicado()
         run(SCRIPTS / "constraints.py", "--project-root", self.tmp, "criar",

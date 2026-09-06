@@ -20,13 +20,13 @@ RAIZ = Path(__file__).resolve().parents[2]
 E = H.escape
 
 # Ordem de uso, nao alfabetica: quem le a folha quer saber por onde comecar.
-ORDEM = ["questionario", "pergunta", "progresso", "comandos", "artefato", "pdf", "preflight", "converter", "interface",
+ORDEM = ["questionario", "pergunta", "progresso", "comandos", "artefato", "pdf", "dependencias", "preflight", "converter", "interface",
          "estilo-telas", "golden", "constraints", "evidencia", "efeito", "grafo", "procedencia", "replay", "gemeo",
          "pmo", "equipe", "contrato", "telemetria", "identidade", "log", "ambiente", "help-wl", "rag",
          "exportar", "zelador", "licenca", "laudo-tokens"]
 GRUPO = {
     "questionario": "Começar", "pergunta": "Começar", "progresso": "Começar", "comandos": "Começar",
-    "artefato": "Entrada", "pdf": "Entrada", "preflight": "Entrada",
+    "artefato": "Entrada", "pdf": "Entrada", "dependencias": "Entrada", "preflight": "Entrada",
     "converter": "Converter", "interface": "Converter", "estilo-telas": "Converter", "golden": "Converter",
     "constraints": "Provar", "evidencia": "Provar", "efeito": "Provar", "grafo": "Provar", "procedencia": "Provar", "replay": "Provar", "gemeo": "Provar",
     "pmo": "Governar", "equipe": "Governar", "contrato": "Governar", "log": "Governar",
