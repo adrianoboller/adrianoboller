@@ -673,5 +673,20 @@
   "itens_questionario": 60,
   "hooks": 9,
   "manual": 825
+ },
+ {
+  "versao": "3.38.0",
+  "data": "2026-09-06",
+  "titulo": "o questionario passa a dizer onde parou -- e o item 19 sai da lista",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 31,
+  "scripts": 38,
+  "linhas_py": 30352,
+  "prints": 63,
+  "testes": 100,
+  "itens_questionario": 60,
+  "hooks": 9,
+  "manual": 825
  }
 ]
