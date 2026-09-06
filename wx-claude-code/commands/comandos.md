@@ -14,6 +14,7 @@ Se `$1` vier preenchido, filtre por essa palavra e mostre só o que casa; sem ar
 | --- | --- |
 | `/wx-claude-code:questionario` | o questionário inteiro: bloco 0, letras A a M. É por onde se começa |
 | `/wx-claude-code:pergunta <id>` | **uma** pergunta, pelo id, sem refazer o resto |
+| `/wx-claude-code:progresso` | onde o questionário parou: retomar, o que falta, reabrir um item |
 | `/wx-claude-code:comandos` | este índice |
 | `/wx-claude-code:converter` | a conversão em si, gate a gate (G0 a G7) |
 | `/wx-claude-code:interface` | a forma do Rust final (terminal, serviço, web, mobile, IoT…) e o suporte medido |

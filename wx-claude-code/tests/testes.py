@@ -1392,6 +1392,38 @@ class Questionario(unittest.TestCase):
             fonte.write_text(original, encoding="utf-8")
             run(ger)
 
+    def test_progresso_deriva_do_questionario_e_separa_como_o_modelo(self):
+        """Retomar tem de apontar o proximo item -- e nao chamar de respondida a
+        pergunta que so tem o valor que o modelo ja trazia."""
+        prg = SCRIPTS / "progresso_do_questionario.py"
+        # o script prefere .wx-migration/questionario.json, que o setUp ja cria:
+        # escrever no outro caminho deixaria o teste medindo o arquivo errado
+        q = self.tmp / ".wx-migration/questionario.json"
+        q.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(EXEMPLO / "questionario.json", q)
+        d = json.loads(run(prg, "--project-root", self.tmp, "progresso", "--json").stdout)
+        c = d["contagem"]
+        self.assertEqual(sum(c.values()), 60)
+        self.assertGreater(c["como_o_modelo"], 0, "F5/F12 do exemplo estão iguais ao modelo")
+        self.assertEqual(c["reaberta"], 0)
+        # esvaziar um item respondido tem de move-lo para pendente
+        dados = json.loads(q.read_text(encoding="utf-8"))
+        dados["A_sql"] = {}
+        q.write_text(json.dumps(dados, ensure_ascii=False), encoding="utf-8")
+        d2 = json.loads(run(prg, "--project-root", self.tmp, "progresso", "--json").stdout)
+        self.assertEqual(d2["contagem"]["pendente"], c["pendente"] + 1)
+        self.assertIn("A — Script SQL", run(prg, "--project-root", self.tmp, "retomar").stdout)
+        # reabrir e o UNICO estado proprio, e nao mexe no questionario do cliente
+        antes = q.read_text(encoding="utf-8")
+        self.assertEqual(run(prg, "--project-root", self.tmp, "revisar", "H").returncode, 0)
+        self.assertEqual(q.read_text(encoding="utf-8"), antes)
+        d3 = json.loads(run(prg, "--project-root", self.tmp, "progresso", "--json").stdout)
+        self.assertEqual(d3["contagem"]["reaberta"], 1)
+        self.assertEqual(run(prg, "--project-root", self.tmp, "fechar", "H").returncode, 0)
+        d4 = json.loads(run(prg, "--project-root", self.tmp, "progresso", "--json").stdout)
+        self.assertEqual(d4["contagem"]["reaberta"], 0)
+        self.assertEqual(run(prg, "--project-root", self.tmp, "revisar", "ZZ").returncode, 2)
+
     def test_gemeo_fotografa_a_sprint_e_o_e_se_declara_o_limite(self):
         self._aplicado()
         run(SCRIPTS / "constraints.py", "--project-root", self.tmp, "criar",

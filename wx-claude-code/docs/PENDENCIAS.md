@@ -177,11 +177,12 @@ igualdade contra o legado rodando.
 
 ### 19. Questionário: pausar, retomar, revisar
 
-- estado: `falta`
-- tamanho: 2 · médio
+- estado: `feito`
+- tamanho: —
 - por que importa: Ninguém responde setenta itens numa sessão.
-- hoje: Não pausa nem retoma; mais de setenta itens.
+- hoje: Não pausava nem retomava; e são 60 itens, não «mais de setenta».
 - construir: Estado por item no `questionario.json`, `retomar` volta ao último pendente, `revisar <item>` reabre um.
+- medido: `/wx-claude-code:progresso` na 3.38.0. São **60** itens, não «mais de setenta» — o levantamento antigo errava. O estado se deriva do `questionario.json` em vez de virar segunda cópia, e ganhou um quarto valor, «como o modelo», porque no exemplo F5 e F12 estão preenchidas com o padrão e ninguém confirmou
 
 ### 20. Licença: segunda camada
 
