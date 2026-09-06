@@ -688,5 +688,20 @@
   "itens_questionario": 60,
   "hooks": 9,
   "manual": 825
+ },
+ {
+  "versao": "3.39.0",
+  "data": "2026-09-06",
+  "titulo": "o que o legado usa de fora deixa de aparecer por tropeco",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 32,
+  "scripts": 39,
+  "linhas_py": 30529,
+  "prints": 63,
+  "testes": 101,
+  "itens_questionario": 60,
+  "hooks": 9,
+  "manual": 825
  }
 ]

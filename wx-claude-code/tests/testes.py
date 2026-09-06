@@ -1453,6 +1453,38 @@ class Questionario(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue((self.tmp / ".wx-migration/dependencias.md").is_file())
 
+    def test_teste_gerado_da_matriz_falha_e_nao_sobrescreve_prova(self):
+        """O esqueleto gerado tem de FALHAR: um que passa some do relatorio de
+        lacunas sem provar nada, que e o defeito que esta bateria ja pagou."""
+        ger = SCRIPTS / "gerar_testes_da_matriz.py"
+        self._aplicado()
+        self._matriz([
+            {"trace_id": "BR-001", "kind": "business_rule", "rule_summary": "teto de desconto",
+             "source_locator": "estoque-codigo.md#pagina-1", "status": "implemented"},
+            {"trace_id": "BR-002", "kind": "business_rule", "rule_summary": "ja provada",
+             "test_file": "tests/br_002.rs", "status": "verified"},
+        ])
+        d = json.loads(run(ger, "--project-root", self.tmp, "--perfil", "rust",
+                           "--gravar", "--json").stdout)
+        ids = [g["trace_id"] for g in d["gerados"]]
+        self.assertEqual(ids, ["BR-001"], "linha com test_file preenchido não se regera")
+        arq = self.tmp / d["gerados"][0]["arquivo"]
+        corpo = arq.read_text(encoding="utf-8")
+        self.assertIn("panic!", corpo)
+        self.assertIn("BR-001", corpo)
+        self.assertIn("estoque-codigo.md#pagina-1", corpo)  # o localizador da origem
+        self.assertNotIn("assert!(true)", corpo)
+        # rodar de novo nao sobrescreve prova escrita por gente
+        arq.write_text("#[test] fn t() { assert_eq!(2 + 2, 4); }\n", encoding="utf-8")
+        d2 = json.loads(run(ger, "--project-root", self.tmp, "--perfil", "rust",
+                            "--gravar", "--json").stdout)
+        self.assertEqual(d2["gerados"], [])
+        self.assertEqual([x["trace_id"] for x in d2["pulados"]], ["BR-001"])
+        self.assertIn("assert_eq!", arq.read_text(encoding="utf-8"))
+        # linguagem sem modelo e recusa, nao arquivo que nao compila
+        ruim = run(ger, "--project-root", self.tmp, "--perfil", "cobol")
+        self.assertNotEqual(ruim.returncode, 0)
+
     def test_gemeo_fotografa_a_sprint_e_o_e_se_declara_o_limite(self):
         self._aplicado()
         run(SCRIPTS / "constraints.py", "--project-root", self.tmp, "criar",

@@ -149,12 +149,12 @@ igualdade contra o legado rodando.
 
 ### 16. Testes do destino gerados da matriz
 
-- estado: `parcial`
-- tamanho: 3 · grande
+- estado: `feito`
+- tamanho: —
 - por que importa: A matriz já tem o que provar; falta o teste sair dela.
 - hoje: Sete pastas de teste vazias no esqueleto.
 - construir: Gerador de teste por BR-* (domínio), por QRY-* (resultado da query), por UI-* (e2e com Playwright), a partir da matriz e dos dados de amostra.
-- medido: o piloto vertical da 3.36.0 escreveu 13 testes a mao e passou 10/10 no golden; o GERADOR a partir da matriz continua a faltar
+- medido: `/wx-claude-code:testes-da-matriz` na 3.40.0, com o cuidado que inverte o defeito clássico: **o teste gerado falha**, nomeando a regra sem prova. Provado rodando `cargo test` de verdade sobre a saída — compila e falha. Perfis rust, php e python; linguagem sem modelo é **recusa**, não arquivo que não compila. e2e com Playwright para `UI-*` continua fora
 
 ## 5. Operação e escala
 
