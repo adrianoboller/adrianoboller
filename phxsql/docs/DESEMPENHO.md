@@ -2732,6 +2732,76 @@ Cada linha de medição vem com a sua reconstrução **na frente**, no mesmo `&&
 pelo motivo da §19.8.
 
 
+## 20. A busca de palavra: o alvo estava certo e a CAUSA errada (06/09)
+
+Medido antes de escrever uma linha do `.fts`, porque a lei da casa manda medir
+a premissa do item antes de implementar o item — e desta vez a premissa era
+**nossa**, escrita no `docs/HFSQL.md` §3.2:
+
+> *«eles acham uma palavra em um milhão de linhas em menos de 2 ms; aqui,
+> procurar uma palavra dentro de um `.memo` é varredura.»*
+
+A primeira metade é a folha deles. A segunda **nunca tinha sido medida**, e
+ela aponta o `.memo` como se ele fosse o problema.
+
+**Medidor:** `cargo run --release --example custo-da-busca-de-palavra -- <linhas> <um_em>`
+
+### 20.1 O número, e a linearidade que o sustenta
+
+Mesmo texto de ~200 bytes nas quatro medidas — a bancada compara trabalho
+igual, e não só pergunta igual. Só muda **onde o texto mora**.
+
+| medida | 50.000 linhas | 200.000 linhas | µs/linha |
+|---|---:|---:|---:|
+| A `só ler` — lê o `.reg` e joga fora | 36,4 ms | 144,5 ms | 0,72 |
+| B `inline` — lê + procura num `Str(200)` | 53,8 ms | 205,5 ms | 1,03–1,08 |
+| C `memo` — lê + procura num `Memo` (`.memo`) | 92,2 ms | 360,7 ms | 1,80–1,85 |
+| D `só RAM` — só a comparação, sem disco | 1,4 ms | 6,2 ms | 0,03 |
+
+O custo por linha é **estável num intervalo de 4×** (1,845 → 1,803 µs), que é
+o que autoriza a extrapolação: **1.803 ms para 1.000.000 de linhas**. Contra os
+**< 2 ms** que a folha do HFSQL(R) afirma, são **~900×** — e o número deles não
+é reproduzível, enquanto este se refaz com o comando acima.
+
+**O caveat que o número carrega:** 50 mil e 200 mil linhas cabem no cache de
+página, então este é o melhor caso. A 1 M com cache frio é pior, não melhor.
+
+### 20.2 A causa errada, e é ela que muda o desenho
+
+A frase do `HFSQL.md` mira o `.memo`. Medido, o `.memo` é a **menor** fatia:
+
+| fatia | quanto | de onde |
+|---|---:|---|
+| ler o `.reg` | **40,1%** | 144,5 ms de 360,7 |
+| o `.memo` | **43,0%** | 155,2 ms (C − B) |
+| a comparação de texto | **16,9%** | 61,0 ms (B − A) |
+
+Então um índice que **só evitasse o `.memo`** compraria **1,75×**, e não 900×.
+O que compra 900× é um índice que **responde sem tocar na linha** — termo →
+lista de rowids, e a linha só sai do disco para os poucos que casam.
+
+É o mesmo formato do pedido 113: *o alvo estava certo e a causa era outra.* Se
+o `.fts` tivesse sido desenhado como «o índice diz quais linhas conferir, e
+depois se confere», ele teria compilado, passado nos testes, e comprado 1,75×.
+
+### 20.3 A dobra de acento não é um item ao lado — é pré-requisito
+
+Medido no mesmo passo: **a busca de hoje não dobra acento.** Procurar `fenix`
+acha **0** das 200 linhas que têm só `fênix`.
+
+Em português isso é decisivo: um índice de texto sem dobra **acharia menos que
+a varredura de hoje** em qualquer palavra acentuada — e índice que acha menos
+que a varredura é pior que não ter índice. A decisão do dono de 06/09 foi
+dobra de acento **por índice declarado**, e ela entra junto, não depois.
+
+### 20.4 O defeito que este medidor teve, e que a prova real pegou
+
+A primeira versão punha as duas grafias — `fenix` e `fênix` — na **mesma
+linha**. Ele respondia «achou 50 de 50» à pergunta da dobra, e a resposta era
+carona: achava pela grafia sem acento ao lado, não por dobrar coisa nenhuma.
+**Teste que passa por engano é pior que teste que falta.** Separadas em linhas
+diferentes, a conta só fecha se a busca dobrar de verdade — e ela deu **0**.
+
 ## Como refazer tudo
 
 ```bash
@@ -2761,4 +2831,5 @@ python3 bancada/utilizacao-padrao/paginacao-alfabetica.py # a partição por let
 python3 bancada/utilizacao-padrao/gera-leia-me.py         # reescreve a §18 e o LEIA-ME da bancada
 cargo run --release -p phxsql-server --example o-que-a-grade-ordenada-custa -- 1000000 50 9  # a §19, pelo fio
 node testes-web/grade/custo-da-ordem.mjs                  # a §19, NA TELA
+cargo run --release --example custo-da-busca-de-palavra -- 200000 1000  # a §20
 ```
