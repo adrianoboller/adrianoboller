@@ -246,6 +246,62 @@ def pagina(m: dict) -> str:
             ("validate_plugin_bundle.py --strict", "1 comando", "arquivos obrigatórios, manifesto, e roda a bateria por dentro"),
             ("claude plugin validate", "1 comando", "o manifesto pelos olhos do próprio Claude Code"),
         ])
+    gerados = json.loads((RAIZ / "docs/dossie/numeros.json").read_text(encoding="utf-8")).get(
+        "arquivos_gerados_pelo_questionario", "INDISPONÍVEL")
+    ETAPAS = [
+        ("Instalar e ativar", "claude plugin install", [
+            ("licença", "serial confere a máquina; sem ele, os scripts do plugin recusam"),
+            ("comandos", f"o índice: {m['comandos']} comandos e os {m['perguntas']} ids das perguntas")]),
+        ("Perguntar", "/wx-claude-code:questionario", [
+            ("bloco 0", "empresa, diretores, logotipos, prazo, orçamento, riscos, GitHub, aprovador (0.1–0.16)"),
+            ("A–E", "evidências: SQL da análise e os PDFs — ou o código-fonte, quando o legado não é WX"),
+            ("F", "tela modelo e estilo (F0–F13)"),
+            ("G", "corpus do Help WLanguage (12k)"),
+            ("H · I", "destino: qualquer linguagem; perfil «outra» é aceito"),
+            ("J", "economia de tokens e modelo local"),
+            ("K", "ambiente (K0–K7) e backup e replicação (K8)"),
+            ("L", "kickoff, hooks, MCP, implantação, esqueleto de ERP (L1–L6)"),
+            ("M", "artefatos do cliente, um por vez, com onde usar")]),
+        ("Gerar o contexto", "aplicar_questionario.py", [
+            ("CLAUDE.md · INDEX_FILES.md", "o que a primeira sessão lê antes de qualquer comando"),
+            ("respostas_questionario.md", f"as {m['perguntas']} respostas com índice por id, para os agentes"),
+            ("esqueleto", "AGENTS, CONTEXT, ADRs, domínios, database, src, tests, workflows"),
+            (f"{gerados} arquivos", "nada é sobrescrito ao reaplicar")]),
+        ("Provar a entrada", "/wx-claude-code:preflight — G0", [
+            ("inventário", "cada evidência com hash e classificação"),
+            ("legado sem WX", "o código-fonte é a evidência central; PDF não é exigido de quem nunca o teve"),
+            ("relatório", "o hook portão G0 falha fechado se não conseguir lê-lo")]),
+        ("Converter", "/wx-claude-code:converter — G1 a G7", [
+            ("G1 inventário", "BR-, QRY-, UI-, RPT-, INT-, DB- com origem localizável"),
+            ("G2 arquitetura", "o que cada peça vira; a estratégia escolhida em H"),
+            ("G3 dados", "esquema migrado, chaves e integridade"),
+            ("G4 piloto", "uma vertical inteira, com golden master"),
+            ("G5 ondas", "módulo a módulo, telas pelo Impeccable"),
+            ("G6 homologação", "paralelo com o legado"),
+            ("G7 virada", "só com backup do legado restaurado, não copiado")]),
+        ("Provar o resultado", "constraints · evidencia · grafo · efeito", [
+            ("F-GATE e C-GATE", "funciona? e está conforme? — a Sprint precisa dos dois"),
+            ("evidência", "quatro estados, e o que ela NÃO prova é campo obrigatório"),
+            ("grafo", "código sem requisito, requisito sem teste, teste sem evidência, prova vencida"),
+            ("efeito", "lê o estado real; inconclusivo tem código de saída próprio")]),
+        ("Governar", "/wx-claude-code:pmo · contrato", [
+            ("sprints", "BlocoNNNN-SPNNNNN, cada uma em .md zipado"),
+            ("contrato ativo", "o que vale hoje; o superado fica no histórico com o motivo"),
+            ("papel da sessão", "quem valida não escreve o produto que valida"),
+            ("equipe A–J", "zelador, pesquisador, documentador, qualidade, tarefas, GP, testes, status, base, tradutor")]),
+        ("Entregar e auditar", "/wx-claude-code:exportar · procedencia", [
+            ("sete pastas", "manifesto com SHA-256 de cada arquivo, sem segredo"),
+            ("procedência", "SLSA e CycloneDX, com o nível de SLSA marcado INDISPONÍVEL e o porquê"),
+            ("gêmeo e decisão", "a sprint fotografada e a base de cada decisão, para reconferir depois"),
+            ("identidade", "SPIFFE assinado e o atestado — que declara não ser attestation")]),
+    ]
+    etapas = "".join(
+        f'<section class="etapa"><div class="cab"><span class="num">{i}</span>'
+        f'<h2>{E(titulo)}</h2><code>{E(cmd)}</code></div><ul>'
+        + "".join(f"<li><b>{E(a)}</b><span>{E(b)}</span></li>" for a, b in itens)
+        + "</ul></section>"
+        for i, (titulo, cmd, itens) in enumerate(ETAPAS, 1))
+
     kpis = "".join(f"<div><b>{v}</b><small>{E(r)}</small></div>" for v, r in [
         (m["comandos"], "comandos"), (m["agentes"], "agentes"), (m["skills"], "skills"),
         (m["scripts"], "scripts"), (m["hooks_total"], "hooks"), (m["testes"], "testes")])
@@ -276,6 +332,15 @@ tr{{page-break-inside:avoid}}
 .kpis div{{background:var(--p);border:1px solid var(--l);padding:10px 12px;font-family:"Exo 2",sans-serif}}
 .kpis b{{display:block;font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}}
 .kpis small{{color:var(--m);font-size:11px;letter-spacing:.05em;text-transform:uppercase}}
+.etapa{{margin-top:20px;border-left:3px solid var(--a);padding-left:18px}}
+.cab{{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}}
+.cab .num{{font-family:"Exo 2",sans-serif;font-weight:800;font-size:22px;color:var(--a)}}
+.cab h2{{font-family:"Exo 2",sans-serif;font-size:19px;font-weight:700;margin:0}}
+.cab code{{font-size:12.5px;color:var(--m)}}
+.etapa ul{{list-style:none;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:6px}}
+.etapa li{{display:grid;grid-template-columns:minmax(130px,34%) 1fr;gap:10px;align-items:baseline;background:var(--p);border:1px solid var(--l);padding:7px 11px}}
+.etapa li b{{font-family:"Exo 2",sans-serif;font-size:13px}}
+.etapa li span{{color:var(--m);font-size:13.5px}}
 code{{font-family:"JetBrains Mono",monospace;font-size:12.5px;background:var(--grid);padding:1px 5px;border-radius:3px}}
 @media print{{.w{{padding:0 0 8px}} svg{{min-width:0}}}}
 </style>
@@ -297,6 +362,13 @@ code{{font-family:"JetBrains Mono",monospace;font-size:12.5px;background:var(--g
 <h2 class="sec">O que roda antes de cada commit</h2>
 <p class="nota" style="margin-top:0">Três provas, em níveis que não se substituem: a bateria pega a peça quebrada, o fluxo pega a peça certa ligada errada, e os cenários pegam o caminho que ninguém imaginou.</p>
 <div class="scroll"><table><thead><tr><th style="width:26%">prova</th><th style="width:12%">tamanho</th><th>o que pega</th></tr></thead><tbody>{provas}</tbody></table></div>
+
+<h2 class="sec">As oito etapas, do install à entrega</h2>
+<p class="nota" style="margin-top:0">O desenho mostra o mecanismo; a lista mostra a ordem em que um projeto passa por ele. Os números saem do repositório, não desta prosa.</p>
+{etapas}
+
+<h2 class="sec">Onde as coisas caem</h2>
+<p class="nota" style="margin-top:0"><code>.wx-migration/</code> é a governança — respostas, matriz, contrato ativo, restrições, evidências, decisões capturadas, gêmeos de sprint, procedência, telemetria, PMO, prompts e logs. <code>inputs/</code> é a evidência do legado, <b>somente leitura</b>; <code>artefatos/</code> é o que o cliente mandou por fora, também somente leitura e com hash. A raiz recebe o que a primeira sessão lê (<code>CLAUDE.md</code>, <code>INDEX_FILES.md</code>) e o esqueleto do projeto. O organograma de arquivos detalha os {gerados} arquivos que o questionário pode gerar.</p>
 
 <p class="nota">Esta página é gerada por <code>docs/dossie/gerar-fluxo.py</code> e atualizada junto das outras por <code>docs/dossie/atualizar-paginas.py</code>. Ela era a última mantida à mão — e ficou seis lançamentos atrás, dizendo «19 comandos» quando já havia {m["comandos"]}. Número visível sai de gerador, ou envelhece calado.</p>
 </div>

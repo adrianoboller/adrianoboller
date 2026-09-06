@@ -1386,6 +1386,13 @@ class Questionario(unittest.TestCase):
         # acessibilidade: o desenho descreve a si mesmo para quem não o vê
         self.assertIn('role="img"', html)
         self.assertIn("aria-label", html)
+        # os arquivos gerados saem do medidor oficial, não de uma conta nova:
+        # refazer a conta aqui dava 55 contra os 102 medidos
+        medidos = json.loads((RAIZ / "docs/dossie/numeros.json").read_text(encoding="utf-8"))
+        self.assertIn(f"<b>{medidos['arquivos_gerados_pelo_questionario']} arquivos</b>", html)
+        # e as oito etapas continuam na página, com a de provar o resultado
+        self.assertEqual(html.count('class="etapa"'), 8)
+        self.assertIn("Provar o resultado", html)
 
     def test_wx_modelos_compila_e_nao_inventa_numero(self):
         """A ferramenta de modelo local e Rust a parte; o que ela promete e nao
