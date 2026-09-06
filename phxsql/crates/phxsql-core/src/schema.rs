@@ -39,7 +39,15 @@ const MAGIC_ESQUEMA: &[u8; 4] = b"PSCH";
 /// deslocaria o offset de todas as seguintes. Uma tabela v3 continua legivel
 /// exatamente como esta -- so nao tem exclusao suave, e a mensagem de erro
 /// diz isso em vez de ler lixo.
-const VERSAO_ESQUEMA: u16 = 7;
+/// v8: os dois bytes do indice de texto.
+///
+/// Subiu a versao em vez de roubar bits livres do byte de sinalizadores, e o
+/// motivo e de SEGURANCA e nao de estilo: um binario antigo lendo bits que nao
+/// conhece abriria a tabela e ignoraria o indice de texto -- gravando linha
+/// sem atualizar o `.fts`, que e corrupcao silenciosa do indice. Com a versao
+/// nova ele RECUSA o arquivo (a leitura confere a faixa), e recusa alta e
+/// melhor que aceite errado.
+const VERSAO_ESQUEMA: u16 = 8;
 const VERSAO_ESQUEMA_MINIMA: u16 = 2;
 
 /// Nome da coluna de sistema que marca a linha como excluida sem excluir.
@@ -371,6 +379,21 @@ pub struct IndexDef {
     /// campos formam a chave. So um indice pode ser primario, e ele e sempre
     /// unico -- `Schema::new` recusa o contrario.
     pub primario: bool,
+    /// Este e um indice de TEXTO (`.fts`), e nao da arvore comum.
+    ///
+    /// Ele nao guarda o valor da coluna: guarda cada PALAVRA dela, dobrada.
+    /// Por isso vale sobre uma coluna so, nao pode ser unico nem primario, e a
+    /// coluna tem de ser texto -- e `Schema::new` recusa os tres casos na
+    /// DECLARACAO, que e onde custa um erro lido enquanto se cria a tabela.
+    /// Recusar na gravacao custaria um banco inteiro modelado errado.
+    pub texto: bool,
+    /// O indice de texto dobra acento? Nasce LIGADO.
+    ///
+    /// E o inverso da regra «guarda nova entra pedida», e o motivo esta
+    /// medido: a busca de hoje nao dobra acento, entao um indice sem dobra
+    /// acharia MENOS que a varredura -- e indice que acha menos que a
+    /// varredura e pior que nao ter indice (`docs/FTS.md` §5.1).
+    pub dobrar: bool,
 }
 
 impl IndexDef {
@@ -380,7 +403,21 @@ impl IndexDef {
             colunas,
             unico: false,
             primario: false,
+            texto: false,
+            dobrar: true,
         }
+    }
+
+    /// Marca este indice como de TEXTO. Nasce dobrando acento.
+    pub fn de_texto(mut self) -> Self {
+        self.texto = true;
+        self
+    }
+
+    /// Desliga a dobra de acento -- escolha escrita, em vez de omissao.
+    pub fn sem_dobrar(mut self) -> Self {
+        self.dobrar = false;
+        self
     }
 
     pub fn unico(mut self) -> Self {
@@ -522,9 +559,49 @@ impl Schema {
                         idx.nome, ic.coluna
                     ))
                 })?;
-                if !col.ty.indexavel() {
+                // O crivo de tipo do indice COMUM nao vale para o de texto,
+                // e a diferenca e de significado, nao de rigor: a arvore comum
+                // indexa o VALOR da coluna, e por isso um `Memo` -- que tem
+                // tamanho livre e mora fora do slot -- nao e indexavel. O
+                // indice de texto indexa as PALAVRAS, e o `.memo` e justamente
+                // o caso que ele existe para resolver. Cada um tem a sua regra
+                // de tipo, e a do texto esta logo abaixo.
+                if !idx.texto && !col.ty.indexavel() {
                     return Err(PhxError::Esquema(format!(
                         "indice {} usa coluna {} do tipo {:?}, que nao e indexavel",
+                        idx.nome, col.nome, col.ty
+                    )));
+                }
+            }
+
+            // As tres recusas do indice de TEXTO, todas na declaracao.
+            //
+            // Uma tabela nasce uma vez e grava um milhao de vezes: recusar
+            // cedo custa um erro lido enquanto se cria a tabela; recusar tarde
+            // custa um banco modelado errado, descoberto no dia da primeira
+            // busca. E a mesma decisao do `ao_excluir`.
+            if idx.texto {
+                if idx.colunas.len() != 1 {
+                    return Err(PhxError::Esquema(format!(
+                        "o indice de texto {} declara {} colunas; ele vale sobre \
+                         UMA so, porque indexa as palavras dela e nao o valor",
+                        idx.nome,
+                        idx.colunas.len()
+                    )));
+                }
+                if idx.unico || idx.primario {
+                    return Err(PhxError::Esquema(format!(
+                        "o indice de texto {} esta marcado como unico ou primario; \
+                         a mesma palavra aparece em muitas linhas, e e disso que \
+                         a lista de ocorrencias e feita",
+                        idx.nome
+                    )));
+                }
+                let col = &colunas[idx.colunas[0].coluna];
+                if !matches!(col.ty, ColumnType::Str(_) | ColumnType::Memo) {
+                    return Err(PhxError::Esquema(format!(
+                        "o indice de texto {} usa a coluna {} do tipo {:?}; \
+                         indice de texto vale sobre Str ou Memo",
                         idx.nome, col.nome, col.ty
                     )));
                 }
@@ -1112,6 +1189,21 @@ impl Schema {
         for c in &self.colunas {
             out.push(c.dado_pessoal.tag());
         }
+        // v8: os dois bytes do indice de texto, um par por indice, na ordem
+        // dos indices.
+        //
+        // **No fim, e nao dentro do registro de cada indice** -- e isto nao e
+        // estilo, e a convencao que a v4 e a v6 escreveram ao lado delas
+        // mesmas: *quem le uma versao antiga simplesmente para antes daqui*.
+        // A primeira versao desta mudanca pos os dois bytes no meio do
+        // registro do indice, e duas guardas de compatibilidade cairam na
+        // hora -- elas simulam arquivo velho truncando a CAUDA, e campo no
+        // meio quebra a simulacao. As guardas estavam certas: a convencao era
+        // carga, e nao enfeite.
+        for idx in &self.indices {
+            out.push(idx.texto as u8);
+            out.push(idx.dobrar as u8);
+        }
         out
     }
 
@@ -1191,6 +1283,10 @@ impl Schema {
                 colunas: cols,
                 unico,
                 primario,
+                // v8, e ela vem no FIM do bloco: aqui os dois nascem no padrao
+                // de quem foi gravado antes dela.
+                texto: false,
+                dobrar: true,
             });
         }
 
@@ -1245,6 +1341,21 @@ impl Schema {
                 match leitor.u8() {
                     Ok(tag) => c.dado_pessoal = DadoPessoal::de_tag(tag),
                     Err(_) => break,
+                }
+            }
+        }
+
+        // v8: os dois bytes do indice de texto, na ordem dos indices. Quem le
+        // uma v7 para antes daqui, e os indices ficam com o padrao de quem foi
+        // gravado antes: `texto` desligado, `dobrar` ligado.
+        if versao >= 8 {
+            for idx in indices.iter_mut() {
+                match (leitor.u8(), leitor.u8()) {
+                    (Ok(t), Ok(d)) => {
+                        idx.texto = t != 0;
+                        idx.dobrar = d != 0;
+                    }
+                    _ => break,
                 }
             }
         }
@@ -1601,5 +1712,122 @@ mod tests {
         assert_eq!(s.largura_chave(0).unwrap(), 9);
         // porNome: 1 + 60
         assert_eq!(s.largura_chave(1).unwrap(), 61);
+    }
+}
+
+#[cfg(test)]
+mod testes_indice_de_texto {
+    use super::*;
+
+    fn colunas() -> Vec<Column> {
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("titulo", ColumnType::Str(80)),
+            Column::new("corpo", ColumnType::Memo),
+            Column::new("valor", ColumnType::Int8),
+        ]
+    }
+
+    fn com(idx: IndexDef) -> Result<Schema> {
+        Schema::new("docs", colunas(), vec![idx])
+    }
+
+    #[test]
+    fn indice_de_texto_sobre_str_e_sobre_memo_e_aceito() {
+        assert!(com(IndexDef::new("porTitulo", vec![IndexColumn::asc(1)]).de_texto()).is_ok());
+        assert!(com(IndexDef::new("porCorpo", vec![IndexColumn::asc(2)]).de_texto()).is_ok());
+    }
+
+    /// A primeira das tres recusas na DECLARACAO. Indice de texto guarda as
+    /// palavras de UMA coluna; duas colunas nao tem significado aqui.
+    #[test]
+    fn indice_de_texto_com_duas_colunas_recusa_na_declaracao() {
+        let e =
+            com(IndexDef::new("dois", vec![IndexColumn::asc(1), IndexColumn::asc(2)]).de_texto())
+                .unwrap_err()
+                .to_string();
+        assert!(e.contains("UMA so"), "{e}");
+    }
+
+    /// A segunda: a mesma palavra aparece em muitas linhas, e e disso que a
+    /// lista de ocorrencias e feita -- unico mataria o indice.
+    #[test]
+    fn indice_de_texto_unico_ou_primario_recusa_na_declaracao() {
+        for idx in [
+            IndexDef::new("u", vec![IndexColumn::asc(1)])
+                .de_texto()
+                .unico(),
+            IndexDef::new("p", vec![IndexColumn::asc(1)])
+                .de_texto()
+                .primaria(),
+        ] {
+            let e = com(idx).unwrap_err().to_string();
+            assert!(e.contains("unico ou primario"), "{e}");
+        }
+    }
+
+    /// A terceira: indice de texto sobre numero nao indexa palavra nenhuma.
+    #[test]
+    fn indice_de_texto_sobre_numero_recusa_na_declaracao() {
+        let e = com(IndexDef::new("n", vec![IndexColumn::asc(3)]).de_texto())
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("Str ou Memo"), "{e}");
+    }
+
+    /// A dobra NASCE ligada, e desliga-la e escolha escrita.
+    #[test]
+    fn a_dobra_nasce_ligada_e_desligar_e_escrito() {
+        let i = IndexDef::new("t", vec![IndexColumn::asc(1)]).de_texto();
+        assert!(i.dobrar, "indice de texto tem de nascer dobrando");
+        assert!(!i.clone().sem_dobrar().dobrar);
+    }
+
+    /// O PSCH v8 leva os dois bytes de ida e volta.
+    #[test]
+    fn o_esquema_volta_do_disco_com_o_indice_de_texto() {
+        let e = Schema::new(
+            "docs",
+            colunas(),
+            vec![
+                IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
+                IndexDef::new("porTitulo", vec![IndexColumn::asc(1)]).de_texto(),
+                IndexDef::new("porCorpo", vec![IndexColumn::asc(2)])
+                    .de_texto()
+                    .sem_dobrar(),
+            ],
+        )
+        .unwrap();
+        let volta = Schema::desserializar(&e.serializar()).unwrap();
+        assert_eq!(volta, e, "o esquema tem de voltar igual do disco");
+        assert!(!volta.indices()[0].texto, "o comum nao pode virar de texto");
+        assert!(volta.indices()[1].texto && volta.indices()[1].dobrar);
+        assert!(volta.indices()[2].texto && !volta.indices()[2].dobrar);
+    }
+}
+
+#[cfg(test)]
+mod testes_o_crivo_do_indice_comum_ficou {
+    use super::*;
+
+    /// A separacao das regras de tipo NAO pode ter aberto buraco no indice
+    /// comum: `Memo` continua recusado nele.
+    ///
+    /// Esta e a guarda do comportamento VELHO, e ela vale mais que a do novo.
+    /// Trocar `if !idx.texto && !col.ty.indexavel()` por `if false` faria os
+    /// seis testes do indice de texto passarem e este falhar sozinho.
+    #[test]
+    fn indice_comum_sobre_memo_continua_recusado() {
+        let e = Schema::new(
+            "docs",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("corpo", ColumnType::Memo),
+            ],
+            vec![IndexDef::new("comum", vec![IndexColumn::asc(1)])],
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("nao e indexavel"), "{e}");
     }
 }

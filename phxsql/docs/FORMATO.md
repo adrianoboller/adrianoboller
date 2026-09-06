@@ -259,16 +259,33 @@ tira coluna, não cria índice sobre a coluna nova, e não replica a si mesma �
 eventos depois de receber a mesma alteração. Enquanto os dois lados diferem, a
 réplica **para** em vez de aceitar um payload de outra largura.
 
-### O bloco de esquema (`PSCH`, versão 7)
+### O bloco de esquema (`PSCH`, versão 8)
 
 O bloco começa com `PSCH` e a versão. A **3** acrescentou os metadados de
 coluna, o marcador de chave primária e o modo de partição. A **4** acrescentou
 a coluna de sistema `softdeleted` e um byte no fim, com o sinal de *motivo
 obrigatório*. A **5** acrescentou a coluna de sistema `rownum`. A **6**
 acrescentou a **marca de dado pessoal** de cada coluna, num bloco no fim. A
-**7** acrescentou o byte `verificar` de cada chave estrangeira. A leitura ainda
-aceita a 2: tabela gravada antes abre normalmente, ganha um `id` v7 sorteado na
-hora e os textos vazios. **Escrever, só na 7.**
+**7** acrescentou o byte `verificar` de cada chave estrangeira. A **8**
+acrescentou os **dois bytes do índice de texto** — `texto` e `dobrar` —, um par
+por índice, num bloco no fim. A leitura ainda aceita a 2: tabela gravada antes
+abre normalmente, ganha um `id` v7 sorteado na hora e os textos vazios.
+**Escrever, só na 8.**
+
+**Por que a versão subiu em vez de usar bits livres do byte de sinalizadores do
+índice.** É segurança, não estilo: o byte já tem seis bits livres, e um binário
+antigo lendo bits que não conhece abriria a tabela e **ignoraria** o índice de
+texto — gravando linha sem atualizar o `.fts`, que é corrupção silenciosa do
+índice. Com a versão nova ele **recusa** o arquivo, porque a leitura confere a
+faixa `2..=8`. Recusa alta é melhor que aceite errado.
+
+**E por que o bloco vem no FIM**, e não dentro do registro de cada índice: é a
+convenção que a 4 e a 6 escreveram ao lado delas mesmas — *quem lê uma versão
+antiga simplesmente para antes daqui*. A primeira versão desta mudança pôs os
+dois bytes no meio do registro do índice, e duas guardas de compatibilidade
+caíram na hora: elas simulam arquivo velho truncando a **cauda**, e campo no
+meio quebra a simulação. As guardas estavam certas — a convenção era carga, e
+não enfeite.
 
 Por coluna, nesta ordem:
 
