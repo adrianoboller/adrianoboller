@@ -28,7 +28,7 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | itens de K | 9 |
 | itens de L | 6 |
 | arquivos que o questionário pode gerar | 102 |
-| prints de sessões reais | 61 |
+| prints de sessões reais | 62 |
 | cenas do vídeo | 29 |
 | duração do vídeo | 3 min 38 s |
 | cenas do vídeo de PHP para Rust | 11 |

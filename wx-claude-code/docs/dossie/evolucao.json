@@ -643,5 +643,20 @@
   "itens_questionario": 60,
   "hooks": 9,
   "manual": 795
+ },
+ {
+  "versao": "3.36.0",
+  "data": "2026-09-06",
+  "titulo": "o piloto vertical, e a regra de dinheiro que estava escondida",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 29,
+  "scripts": 36,
+  "linhas_py": 29794,
+  "prints": 61,
+  "testes": 95,
+  "itens_questionario": 60,
+  "hooks": 9,
+  "manual": 824
  }
 ]
