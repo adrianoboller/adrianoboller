@@ -658,5 +658,20 @@
   "itens_questionario": 60,
   "hooks": 9,
   "manual": 824
+ },
+ {
+  "versao": "3.37.0",
+  "data": "2026-09-06",
+  "titulo": "a interface do destino se pergunta, e o suporte se mede no rustc",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 30,
+  "scripts": 37,
+  "linhas_py": 30119,
+  "prints": 62,
+  "testes": 97,
+  "itens_questionario": 60,
+  "hooks": 9,
+  "manual": 825
  }
 ]
