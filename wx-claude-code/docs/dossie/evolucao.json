@@ -598,5 +598,20 @@
   "itens_questionario": 60,
   "hooks": 9,
   "manual": 755
+ },
+ {
+  "versao": "3.33.0",
+  "data": "2026-09-06",
+  "titulo": "os seis de auditoria, cada um declarando o próprio limite",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 29,
+  "scripts": 36,
+  "linhas_py": 29771,
+  "prints": 59,
+  "testes": 93,
+  "itens_questionario": 60,
+  "hooks": 9,
+  "manual": 777
  }
 ]
