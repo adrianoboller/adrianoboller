@@ -2853,6 +2853,55 @@ dizer até onde o índice enxerga (`FTS.md` §4.3). A decisão de desenho mudou
 por causa de um número, antes de existir uma linha de código do índice — que é
 exatamente para isso que a lei manda medir a premissa antes do item.
 
+## 22. O `.fts` na forma certa — e a cura que eu prescrevi não curava (06/09)
+
+A §21 mediu **15 índices separados**, achou 9,05× e dela saiu a prescrição do
+`FTS.md`: *«o `.fts` entra por despejo em lote»*. Este medidor usa o `FtsFile`
+de verdade e desmente as duas coisas.
+
+**Medidor:** `cargo run --release --example custo-do-fts-de-verdade -- 50000 200`
+
+### 22.1 A forma errada dava outro número
+
+| medida | µs/linha | × sobre A |
+|---|---:|---:|
+| A — só a tabela (1 índice) | 8,989 | 1,00 |
+| B — + `.fts` linha a linha | 60,192 | **6,70** |
+| C — + `.fts` em lote de 200 | 56,603 | 6,30 |
+
+**6,70×, e não 9,05×.** Quinze índices são quinze árvores B+, cada uma com seu
+conjunto de páginas quentes; o `.fts` é **uma** árvore recebendo ~14 chaves por
+linha. *Bancada compara trabalho igual, e não só pergunta igual* — a §21
+comparou pergunta igual (14 chaves a mais) com trabalho diferente (14 **árvores**
+a mais).
+
+O agravante: a própria §21.2 nomeou a causa do penhasco como «as páginas de 15
+árvores deixam de caber no cache». Ela **disse** que a forma era o que decidia,
+e mesmo assim o número saiu para o documento de desenho como se valesse para
+outra forma.
+
+### 22.2 E o lote não compra nada
+
+| tamanho do lote | C/B |
+|---:|---:|
+| 200 | 0,94× |
+| 1.000 | 0,90× |
+| 10.000 | 0,92× |
+
+**6–10%, e sem melhorar com lotes maiores** — que é a assinatura de «o lote não
+é o mecanismo». O custo é **~2,0 µs por chave**, e é o trabalho de pôr a chave
+na árvore, não o de quando pô-la.
+
+### 22.3 O que fica
+
+Não há conserto barato no caminho de escrita do índice de texto. As três saídas
+reais, com o número de cada uma, estão no `FTS.md` §4.4, e a escolha é do dono:
+manter na gravação (6,70×), construir por `reindexar` (1,00×, índice velho), ou
+indexar menos termos (2,0 µs por chave cortada).
+
+**O despejo em lote está RECUSADO com número** — e recusa medida impede a mesma
+proposta de voltar. Inclusive a minha.
+
 ## Como refazer tudo
 
 ```bash
@@ -2884,4 +2933,5 @@ cargo run --release -p phxsql-server --example o-que-a-grade-ordenada-custa -- 1
 node testes-web/grade/custo-da-ordem.mjs                  # a §19, NA TELA
 cargo run --release --example custo-da-busca-de-palavra -- 200000 1000  # a §20
 cargo run --release --example custo-da-chave-a-mais -- 50000            # a §21
+cargo run --release --example custo-do-fts-de-verdade -- 50000 200     # a §22
 ```

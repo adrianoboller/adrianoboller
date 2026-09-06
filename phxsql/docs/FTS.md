@@ -6,9 +6,11 @@
 > vêm de um índice que **responde sem tocar na linha**. Quem defender este
 > arquivo por «evitar o `.memo`» está defendendo o número errado.
 >
-> **E o que ele custa também está medido, e mudou o desenho:** escrever o
-> índice a cada inserção custaria **9,05×** o `inserir` de hoje (§4.1). Por
-> isso ele entra por **despejo em lote**, e não síncrono.
+> **E o que ele custa está medido duas vezes, porque a primeira mediu a forma
+> errada:** o `.fts` custa **6,70×** o `inserir` de hoje, ~2,0 µs por chave — e
+> o **despejo em lote não conserta isso**, compra 6–10% e não melhora com lotes
+> maiores (§4.1). Não há conserto barato no caminho de escrita: a decisão é do
+> dono, e está na §4.4.
 
 Este documento foi escrito **antes** do código, e é ele que o código obedece.
 Onde os dois discordarem, um dos dois está errado — e a regra da casa é que o
@@ -146,35 +148,44 @@ barato; depois vira migração.
 
 ## 4. O que ele custa
 
-### 4.1 O que está MEDIDO — e **matou o desenho síncrono**
+### 4.1 O que está MEDIDO — e a primeira medição mediu a FORMA ERRADA
 
-O medidor da §4.2(a) rodou antes do índice, como este documento exigia, e o
-resultado mudou o desenho:
+Duas medições, e a segunda desmente a primeira.
 
-`cargo run --release --example custo-da-chave-a-mais -- 50000`
+**A primeira** (`custo-da-chave-a-mais`) usou **15 índices separados** e achou
+9,05×. Dela saiu a prescrição «entra por despejo em lote».
 
-| índices na tabela | µs por inserção | µs por chave a mais |
-|---:|---:|---:|
-| 1 (só `porId`) | 5,458 | — |
-| 2 | 6,298 | 0,840 |
-| 4 | 8,508 | 1,105 |
-| 8 | 11,401 | 0,723 |
-| **15** (= 14 do texto + `porId`) | **49,366** | **5,424** |
-| 17 | 61,556 | 6,095 |
+**Ela mediu outra coisa.** Quinze índices são quinze árvores B+, cada uma com
+seu conjunto de páginas quentes. O `.fts` é **UMA árvore** recebendo ~14 chaves
+por linha. *Bancada compara trabalho igual, e não só pergunta igual* — eu
+comparei pergunta igual (14 chaves a mais) com trabalho diferente (14 árvores a
+mais). E a causa que eu mesmo nomeei para o penhasco — «as páginas de 15
+árvores deixam de caber no cache» — dizia justamente que a forma é o que
+decide.
 
-**Escrever o `.fts` a cada `inserir` custaria 9,05× a inserção de hoje**, e não
-os 2,95× que uma reta previa. O custo por chave é plano até 8 índices e depois
-**despenca num penhasco**: 0,72 µs vira 5,42.
+**A segunda** (`custo-do-fts-de-verdade`) usa o `FtsFile` real:
 
-*A causa está NÃO MEDIDA, e é hipótese:* a suspeita é que as páginas quentes de
-15 árvores deixam de caber no cache, e cada chave passa a pagar leitura de
-página de verdade. O que decidiria: os toques de página por linha, que o
-medidor do `.ndx` já sabe contar. **Efeito medido, causa nomeada** — é a
-diferença que esta casa cobra.
+| medida | µs/linha | × sobre A |
+|---|---:|---:|
+| A — só a tabela (1 índice) | 8,989 | 1,00 |
+| B — + `.fts` linha a linha | 60,192 | **6,70** |
+| C — + `.fts` em lote de 200 | 56,603 | 6,30 |
 
-**Consequência para o desenho:** a escrita síncrona por inserção **não passa**.
-O `.fts` entra por **despejo em lote** — o índice fica atrás por N inserções, e
-a busca diz até onde enxerga. Isso é o §4.3, e não um ajuste.
+E a segunda pergunta, que **também estava por medir**:
+
+| tamanho do lote | C/B |
+|---:|---:|
+| 200 | 0,94× |
+| 1.000 | 0,90× |
+| 10.000 | 0,92× |
+
+**O lote compra 6–10%, e não melhora com lotes maiores** — que é a assinatura
+de «o lote não é o mecanismo». O custo é ~**2,0 µs por chave**, e ele é do
+trabalho de pôr a chave na árvore, não de quando se põe.
+
+**Consequência: a §4.3 desta página prescrevia uma cura para uma causa que ela
+mesma marcava como NÃO MEDIDA, e a cura não cura.** Não há conserto barato no
+caminho de escrita. A escolha vai para a §4.4, e é do dono.
 
 ### 4.2 O que fica NOMEADO e NÃO MEDIDO
 
@@ -186,21 +197,31 @@ medir com o `conferir-integridade`, que já sabe pesar arquivo.
 `excluir` já é o caminho que esta casa escolheu deixar caro. Provavelmente
 cabe; **não medido**.
 
-### 4.3 O despejo em lote, e a honestidade que ele obriga
+### 4.3 O índice atrasado, e a honestidade que ele obriga
 
-Como a §4.1 mediu, o índice não pode andar junto de cada inserção. Ele anda
-atrás, e **isso muda o que ele promete**:
+Vale para qualquer saída da §4.4 em que o índice não ande junto da gravação:
 
 - **A busca diz até onde enxerga.** A resposta traz o rowid mais alto que o
-  índice já indexou. Quem precisa de «tudo, inclusive o que entrou agora» faz
-  a busca e completa com o `contem` de hoje a partir dali — e é o cliente que
+  índice já indexou. Quem precisa de «tudo, inclusive o que entrou agora» faz a
+  busca e completa com o `contem` de hoje a partir dali — e é o cliente que
   decide, com o número na mão, em vez de o motor mentir por omissão.
-- **Índice atrás não pode achar a MAIS.** Achar a menos é atraso, e ele é
-  declarado; achar a mais é defeito. A prova da §7.1 confere o conjunto.
-- **O que dispara o despejo** — número de linhas, tempo, ou o fecho de janela
-  que já existe — está **em aberto**, e é a primeira decisão da implementação.
+- **Índice atrasado não pode achar a MAIS.** Achar a menos é atraso, e ele é
+  declarado; achar a mais é defeito.
 
----
+### 4.4 As três saídas, com o número de cada uma — **decisão do dono**
+
+| saída | custo no `inserir` | o que o índice promete |
+|---|---|---|
+| **(a) manter na gravação** | **6,70×** nas tabelas que declaram | sempre atual; nada a explicar a ninguém |
+| **(b) construir por `reindexar`** | **1,00×** — zero a mais | tão velho quanto a última reconstrução, e a busca diz quanto |
+| **(c) indexar menos termos** | proporcional: são **2,0 µs por chave** | atual, mas acha menos — o que não entrar no índice não se acha |
+
+A (c) tem uma conta direta: cortar os termos pela metade leva 6,70× para
+~3,8×. O que se cortaria — números, palavras de uma ou duas letras, uma lista
+de palavras vazias — **muda o que a busca acha**, e por isso é decisão e não
+ajuste.
+
+**O que NÃO é saída, e está recusado com número:** o despejo em lote (§4.1).
 
 ## 5. O que ele NÃO resolve
 
