@@ -52,7 +52,8 @@ regras += [
 regras.append(("Skill que não aparece na listagem não existe.", "As oito skills de ERP vieram com descrições de até 900 caracteres, e a impeccable já tinha provado que 895 some da listagem de uma sessão nova. Entraram com 150, os originais guardados ao lado; a prova é a sessão listar as onze pelo nome."))
 regras_html = "".join(f'<div class="regra"><b>{E(a)}</b><p>{E(b)}</p></div>' for a, b in regras)
 faltas = [
-    "Nenhum projeto real, de cliente, passou pelos gates G1 a G7 de ponta a ponta; os dois exemplos (ESTOQUE em WINDEV e FATURAMENTO em PHP) são sintéticos. É a coisa mais valiosa que continua sem medição.",
+    "Nenhum projeto real, de cliente, passou pelos gates G1 a G7 de ponta a ponta; os exemplos são sintéticos. É a coisa mais valiosa que continua sem medição.",
+    "As quatro combinações de origem e destino estão medidas em função isolada (WLanguage e C++ para Rust; WLanguage para PHP; PHP para Rust), não em sistema inteiro: o que se provou é que a regra atravessa citando a origem, não que um ERP inteiro atravessa.",
     "Os quatro comandos de adoção da governança nunca rodaram num cliente; a ordem proposta é raciocínio, não medição.",
     "O instalador em PowerShell nunca foi executado — só tem prova estrutural, porque não há Windows neste ambiente.",
     "A licença é dissuasão por hook; servir corpus e agentes de um servidor ficou para depois, por decisão do dono.",

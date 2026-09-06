@@ -1,6 +1,6 @@
 {
   "medido_em": "2026-09-06",
-  "versao": "3.34.0",
+  "versao": "3.35.0",
   "agentes": 94,
   "papeis": 10,
   "subagentes_pdca": 40,
@@ -16,7 +16,7 @@
   "subperguntas_f": 14,
   "itens_k": 9,
   "itens_l": 6,
-  "prints": 59,
+  "prints": 61,
   "video_duracao": "3 min 38 s",
   "video_cenas": 29,
   "video_php_duracao": "1 min 26 s",
@@ -24,7 +24,7 @@
   "corpus_bytes": 26750976,
   "corpus_paginas_validas": 12035,
   "hooks": 9,
-  "manual_linhas": 777,
+  "manual_linhas": 795,
   "exemplo_tabelas": 7,
   "arquivos_gerados_pelo_questionario": 102,
   "skills_erp": 8

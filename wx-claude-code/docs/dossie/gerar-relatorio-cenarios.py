@@ -40,6 +40,8 @@ POR_QUE = {
     "10": "Sem licença o plugin não roda: o hook recusa os scripts, e o verificador não diz que está válida.",
     "11": "Entrega ao cliente: o .env fica fora do pacote e o .env.exemplo entra, sem nenhum valor real.",
     "12": "O instalador em conferência não instala nada e não deixa lixo — inclusive em /tmp.",
+    "18": "O destino livre indo para PHP, não só para Rust ou Elixir: o mesmo legado WINDEV, trocando só a letra H.",
+    "17": "Origem que não é WINDEV nem PHP — C++17, sem um único PDF. É o caso que prova o legado_outra: o G0 julga o código-fonte.",
     "16": "Os seis documentos de auditoria que um cliente regulado pede — e o teste não é sair o documento, é cada um declarar o próprio limite.",
     "15": "O grafo de rastreabilidade sobre um projeto real: acha o arquivo que requisito nenhum pediu e a regra que ninguém provou — nenhum dos dois aparece lendo o código.",
     "14": "Os seis portões de governança ligados no mesmo projeto — o caso que eles existem para pegar é F-GATE verde com C-GATE reprovado.",

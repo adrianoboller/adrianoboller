@@ -506,6 +506,24 @@ E uma aresta antiga apareceu ao escrever isto: assinar com chave abaixo de 2040
 bits **passava calado** e só quebrava na conferência, do outro lado, na máquina
 de outra pessoa. Agora recusa na hora de assinar, dizendo o número.
 
+**As quatro combinações, medidas.** O legado é E/OU e o destino é livre, mas
+isso só valia como afirmação até a 3.35.0. Agora cada uma tem prova em sessão
+real, e o que interessa é o que cada sessão **se recusou** a fazer:
+
+| origem → destino | prova | o que a sessão recusou |
+| --- | --- | --- |
+| WLanguage → Rust | 6 testes, vídeo | trocar `f64` por decimal sem aprovação |
+| PHP → Rust | 3 casos do golden capturado do legado | modernizar além de `allowed_modernizations` |
+| C++17 → Rust | G0 sem erro, **8 testes**, `desconto.cpp:6-20` citado | decidir arquitetura de dinheiro convertendo uma função |
+| WLanguage → PHP | **7 verificações**, página 1 citada | trocar a sentinela `-1` por exceção, porque o chamador da página 3 depende dela |
+
+A última é a mais interessante: preservar o `-1` é **feio** e é **certo** — o
+legado tem um contrato implícito, e quem converte uma função não decide mudá-lo.
+
+Uma diferença de profundidade que a tabela esconde: para WLanguage há o corpus
+do Help com 12 mil páginas e sete especialistas por tema. Para C++ e as demais,
+entra a skill genérica — funciona, sem esse apoio.
+
 **Dois exemplos, dois legados.** O `exemplos/estoque-wx/` é WINDEV 2025 com PDF de documentação; o `exemplos/faturamento-php/` é PHP 7.4 procedural de 2009, **sem nada de WX** — código-fonte no lugar de PDF, MySQL no lugar de HFSQL, e o golden master capturado rodando o próprio legado (`php capturar-golden.php`) em vez de digitado. Os dois respondem o mesmo questionário de 60 perguntas e os dois saem do G0 em `CONDITIONAL` com zero erros, por caminhos diferentes.
 
 O segundo achou um defeito na primeira execução: **o portão G0 ainda julgava todo mundo como WINDEV** — cobrava `wx_version` de quem não usa WINDEV, chamava `php` de produto inválido e exigia os PDFs de código, telas e queries que um sistema PHP nunca teve. O legado é E/OU desde a 3.26.0 no questionário; o portão não tinha sido avisado. Sem produto WX, a evidência central passou a ser o código-fonte (`native_project_sources`, listado com linguagem e número de linhas medidas) mais o esquema do banco — e **projeto WINDEV continua exigindo exatamente o que exigia**, travado pelo teste do comportamento velho.

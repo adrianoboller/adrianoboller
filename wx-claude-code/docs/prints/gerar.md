@@ -45,6 +45,8 @@ e renderizada num terminal pelo Chromium (Playwright), a 2× de escala.
 | 57 | sessão nova sem contexto no projeto PHP: achou o aprovador e o prazo nas respostas por id, a baixa de título sem transação em `titulo_baixar.php:15-21`, e a view `v_inadimplencia` que nenhum PHP consulta |
 | 58 | `exportar_projeto.py` com as sete pastas numeradas e o SHA-256 de cada um dos 38 arquivos, e o `registro.py resumo` com as 30 operações que o plugin fez naquele projeto |
 | 59 | a bateria pesada com treze cenários, o de número 13 sendo este legado PHP inteiro atravessando o G0 |
+| 60 | sessão real na 3.35.0 convertendo um legado **C++17** para Rust: o G0 passa `CONDITIONAL` sem erro com o código-fonte como evidência central, o Rust cita `desconto.cpp:6-20` no cabeçalho do módulo, e `cargo test` fecha com 8 testes — a sessão manteve `f64` de propósito, dizendo que trocar por decimal é decisão de arquitetura |
+| 61 | sessão real na 3.35.0 convertendo **WLanguage para PHP**: o processo gerado pela letra H fala PHP 8.3 com `strict_types` e mapeia `HReadSeek*` para repositório; o `Desconto.php` cita a página 1 do PDF do legado e os 7 testes passam. A sessão **preservou a sentinela `-1`** do WLanguage porque o chamador da página 3 depende dela |
 | 31 | sessão real num projeto recém-aplicado: perguntada o que faz `HReadSeekFirst`, consultou o Help pelo tema que o hook do RAG apontou, citou a página com id e hash, e separou semântica técnica de regra de negócio, como o `CLAUDE.md` gerado manda |
 | 07 | `claude -p "/wx-claude-code:laudo-tokens fase-1"` com fonte de sessões marcada INDISPONÍVEL |
 | 08 | `pmo.py iniciar/gastar/status` e `rotear_modelo.py` com subida, rebaixamento a 85 %, bloqueio a 105 % e fallback |

@@ -359,6 +359,93 @@ def c16_entrega_auditavel():
     return ok, "SLSA, BOM, decisão, gêmeo, OTLP e atestado — cada um declarando o próprio limite"
 
 
+# O C++ do cenario 17 mora aqui, e nao num exemplo novo: sao vinte linhas, e um
+# terceiro projeto de exemplo custaria megabytes no pacote para provar a mesma
+# coisa que estas vinte provam -- que legado sem WX e sem PHP atravessa o G0.
+CPP_DESCONTO = """// Sistema COMERCIAL — regras de precificacao. Delphi virou C++ em 2011.
+#include "desconto.h"
+#include <stdexcept>
+#include <cmath>
+
+// BR-201: desconto maximo por faixa de cliente.
+// A (atacado) 30%, B (revenda) 20%, demais 10%.
+// Acima do teto o pedido NAO fecha — decisao do comite de precos, 2014.
+double CalculaDesconto(double subtotal, double percentual, char faixa) {
+    double teto;
+    switch (faixa) {
+        case 'A': teto = 30.0; break;
+        case 'B': teto = 20.0; break;
+        default:  teto = 10.0; break;
+    }
+    if (percentual > teto) {
+        throw std::domain_error("desconto acima do teto da faixa");
+    }
+    return std::round(subtotal * percentual) / 100.0;
+}
+"""
+
+
+def c17_legado_cpp():
+    """Origem que nao e WX nem PHP: C++17, com o fonte como evidencia central.
+
+    O legado e E/OU e o destino e livre, mas ate a 3.34.0 isso so tinha sido
+    medido com PHP. C++ e o caso que prova o `legado_outra`: nenhum produto WX,
+    nenhum PDF, e o G0 tem de passar julgando o codigo-fonte.
+    """
+    p = Path(tempfile.mkdtemp(prefix="wx-cen-cpp-"))
+    fonte = p / "inputs/legado-cpp/src"
+    fonte.mkdir(parents=True)
+    (fonte / "desconto.cpp").write_text(CPP_DESCONTO, encoding="utf-8")
+    (fonte / "desconto.h").write_text("#pragma once\ndouble CalculaDesconto(double, double, char);\n", encoding="utf-8")
+    (p / "inputs/banco.sql").write_text(
+        "CREATE TABLE cliente (ID INT PRIMARY KEY, FAIXA CHAR(1));\n", encoding="utf-8")
+    shutil.copytree(EXEMPLO_PHP / "inputs/marca", p / "inputs/marca")
+    (p / ".wx-migration").mkdir()
+
+    q = json.loads((EXEMPLO_PHP / "questionario.json").read_text(encoding="utf-8"))
+    pr = q["projeto"]
+    pr.update({"nome": "COMERCIAL", "produtos": ["outra"], "principal": "outra"})
+    pr["legado_php"] = {"tem": False, "raiz": "", "versao": "", "framework": "", "estilo": ""}
+    pr["legado_outra"] = {"linguagem": "C++", "versao": "C++17", "framework": "nenhum",
+                          "raiz": "./inputs/legado-cpp",
+                          "observacao": "migrado de Delphi em 2011; sem teste automatizado"}
+    q["A_sql"]["arquivos"] = ["banco.sql"]
+    q["H_backend"].update({"perfil": "rust", "linguagem": "Rust", "framework": "Axum"})
+    (p / "questionario.json").write_text(json.dumps(q, ensure_ascii=False), encoding="utf-8")
+
+    r = py(SCRIPTS / "aplicar_questionario.py", "--questionario", p / "questionario.json",
+           "--project-root", p, "--plugin-root", RAIZ)
+    py(SCRIPTS / "wx_preflight.py", "--manifest", p / ".wx-migration/wx-inputs.manifest.json",
+       "--allowed-evidence-root", p / "inputs", "--workspace-root", p,
+       "--output", p / ".wx-migration/preflight")
+    rels = sorted((p / ".wx-migration/preflight/runs").glob("*/report.json"))
+    rel = json.loads(rels[-1].read_text(encoding="utf-8")) if rels else {}
+    man = json.loads((p / ".wx-migration/wx-inputs.manifest.json").read_text(encoding="utf-8")) if r.returncode == 0 else {}
+    fontes = (man.get("artifacts", {}).get("native_project_sources") or {}).get("items", [])
+    ok = (r.returncode == 0 and rel.get("status") == "CONDITIONAL" and not rel.get("errors")
+          and any(i["path"].endswith("desconto.cpp") for i in fontes))
+    shutil.rmtree(p, ignore_errors=True)
+    return ok, f"{rel.get('status')} sem erros; {len(fontes)} fontes C++ como evidência central"
+
+
+def c18_destino_php():
+    """Destino PHP a partir de WLanguage: o processo sai em PHP, nao em Rust.
+
+    O destino livre so tinha sido medido indo PARA Rust e Elixir. PHP e o caso
+    que fecha o outro lado: o mesmo legado WX, trocando so a letra H.
+    """
+    def mexer(q):
+        q["H_backend"].update({"perfil": "php", "linguagem": "PHP",
+                               "framework": "Slim", "banco": "MySQL 8"})
+    p = projeto_novo(mexer)
+    r = aplicar(p)
+    proc = (p / ".wx-migration/processo-de-conversao.md").read_text(encoding="utf-8") if r.returncode == 0 else ""
+    ok = (r.returncode == 0 and "## Backend: PHP" in proc
+          and "strict_types" in proc and "HReadSeek" in proc)
+    shutil.rmtree(p, ignore_errors=True)
+    return ok, "letra H em PHP: processo com strict_types e o mapa HReadSeek → repositório"
+
+
 CENARIOS = [
     ("01 WX clássico → Rust", c01_wx_classico, "o caminho que o plugin existe para atender"),
     ("02 só PHP → Elixir", c02_so_php_para_elixir, "legado E/OU e destino livre, os dois fora do caso padrão"),
@@ -376,6 +463,8 @@ CENARIOS = [
     ("14 governança ligada", c14_governanca_de_ponta_a_ponta, "os seis portões novos funcionando juntos"),
     ("15 grafo acha a lacuna", c15_grafo_acha_a_lacuna, "código sem requisito e requisito sem teste"),
     ("16 entrega auditável", c16_entrega_auditavel, "os seis documentos de auditoria, com limites"),
+    ("17 legado C++", c17_legado_cpp, "origem que não é WX nem PHP atravessa o G0"),
+    ("18 destino PHP", c18_destino_php, "o destino livre também aponta para PHP"),
 ]
 
 
