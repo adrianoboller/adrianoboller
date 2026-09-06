@@ -2802,6 +2802,57 @@ carona: achava pela grafia sem acento ao lado, não por dobrar coisa nenhuma.
 **Teste que passa por engano é pior que teste que falta.** Separadas em linhas
 diferentes, a conta só fecha se a busca dobrar de verdade — e ela deu **0**.
 
+## 21. A chave a mais na inserção: um PENHASCO onde eu previa uma reta (06/09)
+
+Medido para decidir o desenho do `.fts` **antes** de ele existir, como o
+`docs/FTS.md` §4.2(a) exigia. O risco nomeado era: 83,5% da inserção já é
+`.ndx`, e um texto de 200 bytes tem ~14 palavras.
+
+**Medidor:** `cargo run --release --example custo-da-chave-a-mais -- 50000`
+
+| índices | µs por inserção | µs por chave a mais |
+|---:|---:|---:|
+| 1 (só `porId`) | 5,458 | — |
+| 2 | 6,298 | 0,840 |
+| 4 | 8,508 | 1,105 |
+| 8 | 11,401 | 0,723 |
+| **15** | **49,366** | **5,424** |
+| 17 | 61,556 | 6,095 |
+
+### 21.1 O erro que a primeira versão do medidor cometeu, e ele é o aprendizado
+
+A primeira versão parava em **8 índices** e **extrapolava** os 14 por uma reta,
+usando o custo marginal do último ponto. Deu **2,95×** — e o veredito impresso
+foi *«cabe, a escrita síncrona segue»*.
+
+Medido o ponto de 15 direto, são **9,05×**. **A extrapolação errou por 3×, e
+errou para o lado que aprovava o desenho.**
+
+E o pior é que os próprios dados dela já negavam a reta: o custo por chave ia
+0,59 → 0,79 → 0,93 nos três primeiros trechos. Reta que sobe não é reta.
+
+**A regra que fica:** *extrapolação é número citado, e número citado é número
+que não se mede* — inclusive quando quem cita é o medidor, e inclusive quando
+a reta parece boa. O ponto que decide se mede; não se estima.
+
+### 21.2 O que o número diz, e o que ele não diz
+
+O que ele **diz**: o custo por chave é plano até 8 índices (0,72–1,10 µs) e
+depois **despenca num penhasco** — 0,72 vira 5,42. Escrever o `.fts` a cada
+inserção custaria 9,05× o `inserir` de hoje, e «inserir é o laço quente».
+
+O que ele **não diz**: *por quê*. A suspeita é que as páginas quentes de 15
+árvores deixam de caber no cache, e cada chave passa a pagar leitura de página.
+**Efeito medido, causa nomeada e não medida** — o que decidiria são os toques
+de página por linha, que o medidor do `.ndx` já conta por dentro.
+
+### 21.3 A consequência
+
+O `.fts` **não** entra síncrono. Entra por despejo em lote, e a busca passa a
+dizer até onde o índice enxerga (`FTS.md` §4.3). A decisão de desenho mudou
+por causa de um número, antes de existir uma linha de código do índice — que é
+exatamente para isso que a lei manda medir a premissa antes do item.
+
 ## Como refazer tudo
 
 ```bash
@@ -2832,4 +2883,5 @@ python3 bancada/utilizacao-padrao/gera-leia-me.py         # reescreve a §18 e o
 cargo run --release -p phxsql-server --example o-que-a-grade-ordenada-custa -- 1000000 50 9  # a §19, pelo fio
 node testes-web/grade/custo-da-ordem.mjs                  # a §19, NA TELA
 cargo run --release --example custo-da-busca-de-palavra -- 200000 1000  # a §20
+cargo run --release --example custo-da-chave-a-mais -- 50000            # a §21
 ```
