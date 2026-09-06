@@ -101,6 +101,13 @@ def _emsa(mensagem: bytes, tamanho: int) -> int:
 
 def assinar(mensagem: bytes, priv: dict) -> bytes:
     n, d = int(priv["n"], 16), int(priv["d"], 16)
+    # O `conferir` recusa chave abaixo de 2040 bits, e com razao. Sem esta
+    # recusa aqui, assinar com chave fraca PASSAVA em silencio e so falhava na
+    # conferencia -- do outro lado, na maquina de outra pessoa, sem explicacao.
+    if n.bit_length() < 2040:
+        raise ValueError(
+            f"chave de {n.bit_length()} bits e fraca demais para assinar; "
+            "o verificador recusa abaixo de 2040. Gere com gerar_chaves(2048).")
     k = (n.bit_length() + 7) // 8
     return pow(_emsa(mensagem, k), d, n).to_bytes(k, "big")
 

@@ -1193,6 +1193,178 @@ class Questionario(unittest.TestCase):
         for elo in ("origem", "decidido em", "implementado em", "verificado por"):
             self.assertIn(elo, m, elo)
 
+    def _aplicado(self):
+        run(SCRIPTS / "aplicar_questionario.py", "--questionario",
+            self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+
+    def _par_de_chaves(self):
+        sys.path.insert(0, str(SCRIPTS))
+        import licenca
+        # 2048 e o minimo que o verificador aceita -- e o teste abaixo prova
+        # que ele recusa menos que isso, em vez de deixar passar calado
+        priv, pub = licenca.gerar_chaves(2048)
+        a, b = self.tmp / "priv.json", self.tmp / "pub.json"
+        a.write_text(json.dumps(priv), encoding="utf-8")
+        b.write_text(json.dumps(pub), encoding="utf-8")
+        return a, b
+
+    def test_procedencia_nao_afirma_nivel_slsa_que_nao_pode_medir(self):
+        """O campo que todo gerador preenche por vaidade e o que trava auditoria:
+        nivel de SLSA depende da infraestrutura, que este plugin nao controla."""
+        self._aplicado()
+        r = run(SCRIPTS / "procedencia.py", "--project-root", self.tmp, "--plugin-root", RAIZ,
+                "--json", "slsa")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        doc = json.loads((self.tmp / ".wx-migration/procedencia/slsa-provenance.json").read_text(encoding="utf-8"))
+        self.assertEqual(doc["predicateType"], "https://slsa.dev/provenance/v1")
+        lim = doc["predicate"]["_limites"]
+        self.assertEqual(lim["nivel_slsa"], "INDISPONÍVEL")
+        self.assertIn("infraestrutura", lim["por_que"].lower())
+        self.assertTrue(any("reprodut" in x for x in lim["nao_afirma"]))
+
+    def test_bom_lista_o_que_mediu_e_declara_o_que_nao_cobre(self):
+        self._aplicado()
+        (self.tmp / "src").mkdir(exist_ok=True)
+        (self.tmp / "src/a.rs").write_text("pub fn a() {}\n", encoding="utf-8")
+        run(SCRIPTS / "procedencia.py", "--project-root", self.tmp, "--plugin-root", RAIZ, "bom")
+        bom = json.loads((self.tmp / ".wx-migration/procedencia/bom-cyclonedx.json").read_text(encoding="utf-8"))
+        self.assertEqual((bom["bomFormat"], bom["specVersion"]), ("CycloneDX", "1.5"))
+        nomes = [c["name"] for c in bom["components"]]
+        self.assertIn("src/a.rs", nomes)
+        for c in bom["components"]:
+            if c["name"] == "src/a.rs":
+                h = next(x["content"] for x in c["hashes"] if x["alg"] == "SHA-256")
+                self.assertEqual(h, hashlib.sha256((self.tmp / "src/a.rs").read_bytes()).hexdigest())
+        limite = next(p["value"] for p in bom["metadata"]["properties"] if p["name"] == "wx:limite")
+        self.assertIn("NÃO cobre", limite, "BOM tem de dizer que não cobre dependência de terceiro")
+
+    def test_procedencia_assinada_quebra_se_adulterarem(self):
+        self._aplicado()
+        priv, pub = self._par_de_chaves()
+        alvo = self.tmp / "assinado.json"
+        r = run(SCRIPTS / "procedencia.py", "--project-root", self.tmp, "--plugin-root", RAIZ,
+                "slsa", "--assinar", str(priv), "--saida", str(alvo))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        import licenca
+        d = json.loads(alvo.read_text(encoding="utf-8"))
+        pubk = json.loads(pub.read_text(encoding="utf-8"))
+        corpo = json.dumps(d["payload"], ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        self.assertTrue(licenca.conferir(corpo, licenca._unb64(d["assinatura"]["valor"]), pubk))
+        d["payload"]["subject"] = []
+        corpo2 = json.dumps(d["payload"], ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        self.assertFalse(licenca.conferir(corpo2, licenca._unb64(d["assinatura"]["valor"]), pubk))
+
+    def test_replay_exige_alternativa_e_ve_a_base_mudar(self):
+        """Decisao sem alternativa nao se defende, e base que mudou tem de aparecer."""
+        self._aplicado()
+        rp = SCRIPTS / "replay.py"
+        semalt = run(rp, "--project-root", self.tmp, "capturar", "--id", "DEC-1",
+                     "--titulo", "x", "--escolhida", "y")
+        self.assertEqual(semalt.returncode, 2)
+        self.assertIn("alternativa", semalt.stderr)
+        fonte = self.tmp / ".wx-migration/conversion.config.json"
+        r = run(rp, "--project-root", self.tmp, "capturar", "--id", "DEC-0002",
+                "--titulo", "Arredondamento", "--escolhida", "centavos em i64",
+                "--alternativa", "f64", "--fonte", ".wx-migration/conversion.config.json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        estavel = json.loads(run(rp, "--project-root", self.tmp, "--json", "reconferir").stdout)
+        self.assertEqual(estavel["pior"], "estavel")
+        d = json.loads(fonte.read_text(encoding="utf-8"))
+        d["scale"]["applications"] = 99
+        fonte.write_text(json.dumps(d), encoding="utf-8")
+        mudou = run(rp, "--project-root", self.tmp, "--json", "reconferir")
+        self.assertEqual(json.loads(mudou.stdout)["pior"], "base_mudou")
+        self.assertEqual(mudou.returncode, 1)
+        # e fonte que sumiu e INCONCLUSIVO, nao "mudou"
+        fonte.unlink()
+        sumiu = run(rp, "--project-root", self.tmp, "--json", "reconferir")
+        self.assertEqual(json.loads(sumiu.stdout)["pior"], "inconclusivo")
+        self.assertEqual(sumiu.returncode, 2)
+
+    def test_gemeo_fotografa_a_sprint_e_o_e_se_declara_o_limite(self):
+        self._aplicado()
+        run(SCRIPTS / "constraints.py", "--project-root", self.tmp, "criar",
+            "--titulo", "regra que falha", "--severidade", "grave", "--validador", "false")
+        f = run(SCRIPTS / "gemeo.py", "--project-root", self.tmp, "--json",
+                "fotografar", "--sprint", "SP00012")
+        self.assertEqual(f.returncode, 0, f.stderr)
+        foto = json.loads((self.tmp / ".wx-migration/gemeos/SP00012.json").read_text(encoding="utf-8"))
+        self.assertEqual(foto["sprint"], "SP00012")
+        self.assertGreater(len(foto["arquivos"]), 10)
+        self.assertEqual(foto["medido"]["restricoes_ativas"], 1)
+        self.assertEqual(len(foto["hash"]), 64)
+        e = run(SCRIPTS / "gemeo.py", "--project-root", self.tmp, "--json",
+                "e-se", "SP00012", "--constraint", "CONST-0001")
+        d = json.loads(e.stdout)
+        self.assertEqual(d["resultado"], "violada")
+        self.assertIn("nao_prova", d)
+        self.assertIn("HOJE", d["nao_prova"], "o e-se tem de dizer que roda contra o código de hoje")
+
+    def test_telemetria_fica_no_disco_e_nao_leva_argumento_junto(self):
+        """Telemetria é o segundo lugar onde segredo vaza; o primeiro é o log."""
+        self._aplicado()
+        run(SCRIPTS / "evidencia.py", "--project-root", self.tmp, "registrar",
+            "--afirmacao", "x", "--metodo", "teste", "--estado", "verificado", "--nao-prova", "y")
+        r = run(SCRIPTS / "telemetria.py", "--project-root", self.tmp, "--json", "exportar")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        alvo = self.tmp / ".wx-migration/telemetria/otlp-spans.json"
+        self.assertTrue(alvo.is_file(), "por padrão a telemetria fica no disco do cliente")
+        d = json.loads(alvo.read_text(encoding="utf-8"))
+        spans = d["resourceSpans"][0]["scopeSpans"][0]["spans"]
+        self.assertGreater(len(spans), 0)
+        chaves = {a["key"] for s in spans for a in s["attributes"]}
+        self.assertTrue(chaves <= {"wx.operacao", "wx.codigo", "wx.ms"}, f"atributo inesperado: {chaves}")
+        bruto = alvo.read_text(encoding="utf-8")
+        self.assertNotIn("--nao-prova", bruto, "argumento não pode vazar para a telemetria")
+        self.assertNotIn(str(self.tmp), bruto, "caminho do cliente não vai na telemetria")
+        # e a duracao sai medida, nao zerada: o campo do registro chama-se `ms`
+        duracoes = [int(s["endTimeUnixNano"]) - int(s["startTimeUnixNano"]) for s in spans]
+        self.assertTrue(any(x > 0 for x in duracoes), "span com duração zero em tudo é gráfico mentiroso")
+
+    def test_identidade_assinada_e_atestado_que_nao_se_diz_attestation(self):
+        self._aplicado()
+        priv, pub = self._par_de_chaves()
+        r = run(SCRIPTS / "identidade.py", "--project-root", self.tmp, "--json",
+                "emitir", "--papel", "qa", "--chave-privada", str(priv))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        ident = json.loads(r.stdout)["spiffe_id"]
+        self.assertTrue(ident.startswith("spiffe://"), ident)
+        self.assertIn("/agente/qa", ident)
+        arq = self.tmp / ".wx-migration/identidade/qa.json"
+        ok = run(SCRIPTS / "identidade.py", "--project-root", self.tmp, "--json",
+                 "conferir", str(arq), "--chave-publica", str(pub))
+        self.assertEqual(json.loads(ok.stdout)["assinatura_confere"], True)
+        self.assertEqual(ok.returncode, 0)
+        d = json.loads(arq.read_text(encoding="utf-8"))
+        d["documento"]["papel"] = "desenvolvedor"
+        arq.write_text(json.dumps(d), encoding="utf-8")
+        ruim = run(SCRIPTS / "identidade.py", "--project-root", self.tmp, "--json",
+                   "conferir", str(arq), "--chave-publica", str(pub))
+        self.assertEqual(json.loads(ruim.stdout)["assinatura_confere"], False)
+        self.assertEqual(ruim.returncode, 1)
+        # o atestado nunca pode se chamar attestation
+        a = json.loads(run(SCRIPTS / "identidade.py", "--project-root", self.tmp, "--json", "atestado").stdout)
+        self.assertEqual(a["_limites"]["isto_nao_e"], "attestation")
+        # a palavra aparece no texto que EXPLICA por que não se afirma isso;
+        # o que não pode existir é um CAMPO afirmando
+        self.assertNotIn("attested", a)
+        self.assertNotIn("attestation", a)
+        self.assertFalse(any(str(v).lower() in ("true", "sim") for k, v in a.items()
+                             if "attest" in k.lower()))
+        self.assertIn("quote", a["_limites"]["por_que"])
+        for campo in ("tpm_presente", "secure_boot", "cpu_confidencial"):
+            self.assertIn(campo, a)
+
+    def test_chave_fraca_falha_ao_assinar_e_nao_so_ao_conferir(self):
+        """Assinar com chave fraca passava calado e so quebrava do outro lado,
+        na maquina de outra pessoa, sem explicacao."""
+        sys.path.insert(0, str(SCRIPTS))
+        import licenca
+        fraca, _ = licenca.gerar_chaves(1024)
+        with self.assertRaises(ValueError) as e:
+            licenca.assinar(b"x", fraca)
+        self.assertIn("2040", str(e.exception))
+
     def test_wx_modelos_compila_e_nao_inventa_numero(self):
         """A ferramenta de modelo local e Rust a parte; o que ela promete e nao
         inventar numero. Aqui roda a bateria dela e o binario de verdade."""

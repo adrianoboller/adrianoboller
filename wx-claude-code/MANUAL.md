@@ -484,6 +484,28 @@ questionário gerou não é código convertido. Sem elas, o grafo acusava
 `database/migrations/0001_base.sql` de não ter requisito, o que é verdade
 literal e ruído puro.
 
+**Os seis de auditoria, para o cliente regulado.** Banco, governo e saúde não
+compram com «confie em mim». Estes seis existem para responder à mesa de compras
+— e o valor de cada um está tanto no que ele afirma quanto no que ele **recusa**
+afirmar:
+
+| peça | comando | o limite que ela declara |
+| --- | --- | --- |
+| **SLSA provenance** | `/wx-claude-code:procedencia slsa` | nível de SLSA fica **INDISPONÍVEL**: depende da infraestrutura de build, que o plugin não controla |
+| **BOM CycloneDX** | `procedencia bom` | não cobre dependência de terceiro resolvida por cargo/npm/pip |
+| **Decisão reproduzível** | `/wx-claude-code:replay` | não reexecuta o julgamento; diz se a **base** mudou |
+| **Gêmeo da sprint** | `/wx-claude-code:gemeo` | o «e se» roda contra o código de hoje, e não diz o que a equipe teria feito |
+| **Telemetria OTLP** | `/wx-claude-code:telemetria` | fica no disco; sair é explícito, e argumento não vai junto |
+| **Identidade e atestado** | `/wx-claude-code:identidade` | **isto não é attestation**: falta a *quote* assinada pelo chip e o verificador remoto |
+
+Tudo isso **sem uma dependência externa**: os quatro formatos são JSON, e as
+assinaturas usam a mesma RSA do serial. É o que mantém o Sovereign Mode de pé —
+e o Sovereign Mode é justamente o que abre esses clientes.
+
+E uma aresta antiga apareceu ao escrever isto: assinar com chave abaixo de 2040
+bits **passava calado** e só quebrava na conferência, do outro lado, na máquina
+de outra pessoa. Agora recusa na hora de assinar, dizendo o número.
+
 **Dois exemplos, dois legados.** O `exemplos/estoque-wx/` é WINDEV 2025 com PDF de documentação; o `exemplos/faturamento-php/` é PHP 7.4 procedural de 2009, **sem nada de WX** — código-fonte no lugar de PDF, MySQL no lugar de HFSQL, e o golden master capturado rodando o próprio legado (`php capturar-golden.php`) em vez de digitado. Os dois respondem o mesmo questionário de 60 perguntas e os dois saem do G0 em `CONDITIONAL` com zero erros, por caminhos diferentes.
 
 O segundo achou um defeito na primeira execução: **o portão G0 ainda julgava todo mundo como WINDEV** — cobrava `wx_version` de quem não usa WINDEV, chamava `php` de produto inválido e exigia os PDFs de código, telas e queries que um sistema PHP nunca teve. O legado é E/OU desde a 3.26.0 no questionário; o portão não tinha sido avisado. Sem produto WX, a evidência central passou a ser o código-fonte (`native_project_sources`, listado com linguagem e número de linhas medidas) mais o esquema do banco — e **projeto WINDEV continua exigindo exatamente o que exigia**, travado pelo teste do comportamento velho.

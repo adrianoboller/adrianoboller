@@ -202,6 +202,14 @@ histórico), `efeito` (o estado real, não o código de saída) e o hook
 quem não os usa: sem papel declarado, sem restrição registrada e sem contrato
 gerado, o plugin funciona como antes.
 
+## Entrega auditável
+
+`procedencia` (SLSA + CycloneDX), `replay` (a decisão e a base dela), `gemeo`
+(a sprint fotografada e o «e se»), `telemetria` (OTLP no disco) e `identidade`
+(SPIFFE assinado + atestado do que a máquina expõe). Sem dependência externa, e
+cada documento declara o que **não** afirma — inclusive que o atestado não é
+attestation.
+
 ## O grafo de rastreabilidade
 
 `/wx-claude-code:grafo conferir` responde as sete perguntas que a matriz de 22

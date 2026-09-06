@@ -317,6 +317,48 @@ def c15_grafo_acha_a_lacuna():
     return ok, "achou o arquivo que ninguém pediu e a regra sem teste, sem inventar aresta"
 
 
+def c16_entrega_auditavel():
+    """Os seis itens de auditoria ligados, na ordem em que um cliente regulado pede.
+
+    O caso e a mesa de compras de banco: "de onde veio isto, quem decidiu o que,
+    o que a sprint provava e o que a maquina prova". O que importa aqui nao e so
+    cada documento sair -- e cada um DECLARAR o proprio limite, que e o que
+    separa documento auditavel de documento decorativo.
+    """
+    p = projeto_novo()
+    aplicar(p)
+    ambiente = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(RAIZ)}
+
+    def rodar(script, *args):
+        return subprocess.run([sys.executable, str(SCRIPTS / script), "--project-root", str(p), *args],
+                              capture_output=True, text=True, timeout=600, env=ambiente)
+
+    (p / "src").mkdir(exist_ok=True)
+    (p / "src/regra.rs").write_text("pub fn r() {}\n", encoding="utf-8")
+    rodar("procedencia.py", "--plugin-root", str(RAIZ), "tudo")
+    slsa = json.loads((p / ".wx-migration/procedencia/slsa-provenance.json").read_text(encoding="utf-8"))
+    bom = json.loads((p / ".wx-migration/procedencia/bom-cyclonedx.json").read_text(encoding="utf-8"))
+    rodar("replay.py", "capturar", "--id", "DEC-0002", "--titulo", "Arredondamento",
+          "--escolhida", "centavos em i64", "--alternativa", "f64",
+          "--fonte", ".wx-migration/conversion.config.json")
+    rp = json.loads(rodar("replay.py", "--json", "reconferir").stdout)
+    rodar("gemeo.py", "fotografar", "--sprint", "SP00001")
+    foto = json.loads((p / ".wx-migration/gemeos/SP00001.json").read_text(encoding="utf-8"))
+    tel = rodar("telemetria.py", "--json", "exportar")
+    spans = json.loads((p / ".wx-migration/telemetria/otlp-spans.json").read_text(encoding="utf-8"))
+    at = json.loads(rodar("identidade.py", "--json", "atestado").stdout)
+
+    ok = (slsa["predicate"]["_limites"]["nivel_slsa"] == "INDISPONÍVEL"
+          and bom["bomFormat"] == "CycloneDX"
+          and rp["pior"] == "estavel"
+          and len(foto["hash"]) == 64
+          and tel.returncode == 0 and spans["resourceSpans"]
+          and at["_limites"]["isto_nao_e"] == "attestation"
+          and str(p) not in json.dumps(spans))
+    shutil.rmtree(p, ignore_errors=True)
+    return ok, "SLSA, BOM, decisão, gêmeo, OTLP e atestado — cada um declarando o próprio limite"
+
+
 CENARIOS = [
     ("01 WX clássico → Rust", c01_wx_classico, "o caminho que o plugin existe para atender"),
     ("02 só PHP → Elixir", c02_so_php_para_elixir, "legado E/OU e destino livre, os dois fora do caso padrão"),
@@ -333,6 +375,7 @@ CENARIOS = [
     ("13 legado PHP de verdade", c13_legado_php_de_verdade, "projeto sem nada de WX atravessa o G0"),
     ("14 governança ligada", c14_governanca_de_ponta_a_ponta, "os seis portões novos funcionando juntos"),
     ("15 grafo acha a lacuna", c15_grafo_acha_a_lacuna, "código sem requisito e requisito sem teste"),
+    ("16 entrega auditável", c16_entrega_auditavel, "os seis documentos de auditoria, com limites"),
 ]
 
 
