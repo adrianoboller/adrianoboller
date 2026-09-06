@@ -292,6 +292,7 @@ def escolher(args, raiz: Path) -> int:
     # O questionario ganha o campo, nao uma pergunta nova: a contagem de perguntas
     # e verificada por teste, e acrescentar uma aqui a quebraria sem necessidade.
     q = raiz / "questionario.json"
+    dados = None
     if q.is_file():
         try:
             dados = json.loads(q.read_text(encoding="utf-8"))
@@ -302,6 +303,13 @@ def escolher(args, raiz: Path) -> int:
             q.write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             print(f"questionario.json: H_backend.interface = {o['id']}")
     print(f"escolhida: {o['nome']} — {a['veredito']}")
+    # Uma sessao real tentou registrar duas formas (servico + web) por nao estar
+    # dito que a tela e outra pergunta. A escolha aqui e a do EXECUTAVEL de
+    # destino, letra H; a interface do usuario e a letra I.
+    frente = (dados or {}).get("I_frontend") or {} if isinstance(dados, dict) else {}
+    tela = frente.get("linguagem") or frente.get("perfil")
+    print("esta é a forma do executável de destino (letra H). A interface do usuário é a letra I"
+          + (f", hoje {tela}" if tela else "") + ".")
     print(f"gravado em {destino / 'interface.json'}")
     if a["veredito"] == "TIER 3":
         print("atenção: nenhum alvo desta forma tem std pronta; exige nightly e -Z build-std.")

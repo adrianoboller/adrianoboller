@@ -68,7 +68,20 @@ e renderizada num terminal pelo Chromium (Playwright), a 2× de escala.
 | 23 | sessão limpa em que o usuário adianta a letra K2 com a senha do root do PostgreSQL: o agente não a reproduz de forma nenhuma, registra banco, superusuário e papéis, e diz que vai pedir só o nome da variável (a senha digitada foi mascarada no print; o `grep` pelo valor na saída do agente devolve 0) |
 | 24 | dois turnos reais (`-p` e `-c`): K7 «sim» ao n8n, o item K7.1 sozinho, resposta, e o K7.2 avisando que sem K2 o banco do n8n pode ser SQLite ou PostgreSQL |
 | 25 | sessão nova com leitura liberada, num projeto recém-aplicado: perguntada o que ler e qual o escopo da v1, listou a ordem de leitura, os cinco requisitos do kickoff, a estratégia, e recusou escrever código por falta de G0; de quebra achou um conflito real entre os anexos e o manifesto |
+| 63 | **a interface do destino** na 3.37.0: as nove formas com o veredito medido no `rustc` local (308 alvos conhecidos, 100 com `std` pronta), a escolha gravada em `H_backend.interface`, e uma sessão real (`claude -p`) escolhendo `servico-tcp` para um ERP que sai do desktop — e dizendo o que o comando **se recusa** a afirmar: que a forma é a certa para o negócio, e que CarPlay seja alvo de compilação |
 
-Para refazer: grave a saída em `.txt` e rode o renderizador (um `.mjs` de 40
-linhas com Playwright; o de referência fica fora do repositório porque depende
-do caminho do Playwright da máquina).
+
+Para refazer: grave a saída em `.txt` e rode
+
+```bash
+node docs/prints/render-print.mjs <captura.txt> <saida.png> "<título>" "<legenda>"
+```
+
+O renderizador passou a ser **versionado** na 3.37.0. Até o print 62 ele era um
+`.mjs` ad hoc fora do repositório — e o próximo que precisasse de um print teria
+de reinventar a folha de estilo, com o print saindo com outra cara. Cores e
+fonte são as mesmas do gravador de vídeo, para os dois combinarem.
+
+Ele já nasceu com um defeito achado *olhando o print*, não lendo o código: a
+regra do verde vinha antes da do âmbar, e «PRONTO EM PARTE» saía verde inteiro
+— pintando de aprovado justamente o veredito que é ressalva.

@@ -7,7 +7,7 @@ Inventário medido em 2026-09-06 por `docs/dossie/gerar-fontes.py`. Não se edit
 | Comandos | 30 | 1.059 | um por recurso; `/wx-claude-code:<nome>` invoca cada um |
 | Agentes | 94 | 3.459 | conversão, papéis PDCA, Impeccable e a equipe prioritária |
 | Skills | 21 | 4.310 | conversão, PHP, PDF, laudo de tokens, Impeccable e as oito de ERP |
-| Scripts | 37 | 16.374 | o que faz o trabalho: questionário, gates, PMO, licença, RAG, registro |
+| Scripts | 37 | 16.382 | o que faz o trabalho: questionário, gates, PMO, licença, RAG, registro |
 | Hooks | 4 | 421 | as guardas que rodam nos eventos do Claude Code |
 | Referências | 19 | 1.312 | o que os agentes leem antes de decidir |
 | Modelos | 6 | 863 | questionário, CLAUDE.md e matriz que viram o projeto do cliente |
@@ -16,9 +16,9 @@ Inventário medido em 2026-09-06 por `docs/dossie/gerar-fontes.py`. Não se edit
 | Exemplo PHP | 15 | 1.584 | legado PHP procedural sintético: o segundo exemplo, sem nada de WX |
 | Ferramenta Rust | 6 | 1.647 | wx-modelos: escolha e controle do modelo local, std pura, sem crate |
 | Documentos | 4 | 1.314 | manual, README, fontes e a instrução de ativação, na raiz |
-| Documentos de apoio | 5 | 237 | relatório, análises, origens dos prints e o vídeo |
+| Documentos de apoio | 5 | 250 | relatório, análises, origens dos prints e o vídeo |
 | Instaladores | 2 | 431 | bash para Linux e macOS, PowerShell para Windows |
-| **total** | **267** | **36.833** | |
+| **total** | **267** | **36.854** | |
 
 ## O que não é fonte, mas vem no pacote
 
@@ -47,4 +47,4 @@ python3 skills/conversao-wx/scripts/validate_plugin_bundle.py . --strict
 
 Esperado: `valid: true`, `tests: OK`, zero erros e zero avisos. O `--strict` roda a bateria inteira.
 
-Último commit no momento da medição: `5be29ef 2026-09-06`.
+Último commit no momento da medição: `35567c2 2026-09-06`.
