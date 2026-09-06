@@ -583,5 +583,20 @@
   "itens_questionario": 60,
   "hooks": 9,
   "manual": 730
+ },
+ {
+  "versao": "3.32.0",
+  "data": "2026-09-06",
+  "titulo": "o grafo de rastreabilidade, que amarra os seis portões",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 24,
+  "scripts": 31,
+  "linhas_py": 28436,
+  "prints": 59,
+  "testes": 85,
+  "itens_questionario": 60,
+  "hooks": 9,
+  "manual": 755
  }
 ]
