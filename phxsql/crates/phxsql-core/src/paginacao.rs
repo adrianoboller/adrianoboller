@@ -237,7 +237,17 @@ pub fn balde_de(texto: &str) -> u32 {
 /// tabela do Unicode inteira, que e uma dependencia. Isto cobre o portugues,
 /// o espanhol e o alemao -- e o que nao cobrir cai em `Outros`, que e um lugar
 /// visivel e nao um erro escondido.
-fn sem_acento(c: char) -> char {
+///
+/// # Por que ela e PUBLICA, e por que nao se copia
+///
+/// O indice de texto (`termo.rs`) precisa da mesma dobra: procurar `fenix` tem
+/// de achar `fenix` com circunflexo. Uma segunda copia desta tabela divergiria
+/// da primeira no dia em que alguem acrescentasse uma letra a uma so -- e a
+/// divergencia apareceria do pior jeito possivel: o balde do `.pag` e o termo
+/// do `.fts` discordando sobre a mesma palavra, na mesma tabela, sem conflito
+/// nenhum aparecer. Quando duas coisas dependem de uma lista, a lista tem de
+/// ter um dono so.
+pub fn sem_acento(c: char) -> char {
     match c {
         'á' | 'à' | 'â' | 'ã' | 'ä' | 'å' | 'Á' | 'À' | 'Â' | 'Ã' | 'Ä' | 'Å' => 'A',
         'é' | 'è' | 'ê' | 'ë' | 'É' | 'È' | 'Ê' | 'Ë' => 'E',

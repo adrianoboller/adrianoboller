@@ -35,6 +35,7 @@ pub mod schema;
 pub mod senha;
 pub mod sha1;
 pub mod sha512;
+pub mod termo;
 pub mod types;
 pub mod uuid;
 pub mod value;
