@@ -446,6 +446,51 @@ def c18_destino_php():
     return ok, "letra H em PHP: processo com strict_types e o mapa HReadSeek → repositório"
 
 
+def c19_interface_do_destino():
+    """A forma do Rust final sai medida do rustc, e o que nao e alvo diz que nao e.
+
+    O questionario escolhe a LINGUAGEM; esta e a escolha que faltava, a FORMA.
+    O cenario existe para pegar o erro que a leitura nao pega: veredito afirmado
+    de memoria. Se o rustc nao estiver na maquina, o esperado muda -- e o
+    cenario continua valendo, porque a resposta certa ali e INDISPONIVEL.
+    """
+    ifc = SCRIPTS / "interface_do_destino.py"
+    p = Path(tempfile.mkdtemp(prefix="wx-cen-"))
+    try:
+        r = py(ifc, "--project-root", p, "listar", "--json")
+        if r.returncode != 0:
+            return False, f"listar falhou: {r.stderr.strip()[:120]}"
+        d = json.loads(r.stdout)
+        opcoes = {o["id"]: o for o in d["opcoes"]}
+        if len(opcoes) != 9:
+            return False, f"esperava 9 formas, veio {len(opcoes)}"
+        if "NAO e um alvo" not in opcoes["carplay"]["ressalva"]:
+            return False, "CarPlay sem a ressalva de que nao e alvo de compilacao"
+        tem_rustc = bool(shutil.which("rustc"))
+        if not tem_rustc:
+            if opcoes["terminal"]["veredito"] != "INDISPONIVEL":
+                return False, "sem rustc, o veredito tinha de ser INDISPONIVEL"
+            return True, "sem rustc na máquina: INDISPONÍVEL com o motivo, nenhum palpite"
+        # o Arduino e o caso que separa medir de lembrar: o alvo mudou de nome
+        arduino = opcoes["iot-arduino"]
+        if arduino["veredito"] not in ("TIER 3", "SEM ALVO"):
+            return False, f"Arduino veio {arduino['veredito']}, e AVR nao tem std pronta"
+        e = py(ifc, "--project-root", p, "escolher", "--opcao", "iot-arduino")
+        ficha = json.loads((p / ".wx-migration/interface.json").read_text(encoding="utf-8"))
+        if e.returncode != 0 or ficha["escolhida"] != "iot-arduino":
+            return False, "a escolha nao foi gravada"
+        if "build-std" not in e.stdout:
+            return False, "escolher tier 3 sem avisar do nightly e do build-std"
+        ruim = py(ifc, "--project-root", p, "escolher", "--opcao", "nao-existe")
+        if ruim.returncode != 2:
+            return False, "opcao inexistente devia sair 2"
+        pron = sum(1 for o in opcoes.values() if o["veredito"].startswith("PRONTO"))
+        return True, (f"{pron}/9 formas com ao menos um alvo pronto aqui; Arduino {arduino['veredito']}, "
+                      "CarPlay declarado como apresentação de app iOS")
+    finally:
+        shutil.rmtree(p, ignore_errors=True)
+
+
 CENARIOS = [
     ("01 WX clássico → Rust", c01_wx_classico, "o caminho que o plugin existe para atender"),
     ("02 só PHP → Elixir", c02_so_php_para_elixir, "legado E/OU e destino livre, os dois fora do caso padrão"),
@@ -465,6 +510,7 @@ CENARIOS = [
     ("16 entrega auditável", c16_entrega_auditavel, "os seis documentos de auditoria, com limites"),
     ("17 legado C++", c17_legado_cpp, "origem que não é WX nem PHP atravessa o G0"),
     ("18 destino PHP", c18_destino_php, "o destino livre também aponta para PHP"),
+    ("19 interface do destino", c19_interface_do_destino, "a forma do Rust final, medida no rustc, não lembrada"),
 ]
 
 
