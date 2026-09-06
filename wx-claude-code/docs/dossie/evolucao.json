@@ -568,5 +568,20 @@
   "itens_questionario": 60,
   "hooks": 9,
   "manual": 719
+ },
+ {
+  "versao": "3.31.1",
+  "data": "2026-09-05",
+  "titulo": "--inverter, porque grep sai 1 quando não acha",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 23,
+  "scripts": 30,
+  "linhas_py": 28081,
+  "prints": 59,
+  "testes": 81,
+  "itens_questionario": 60,
+  "hooks": 9,
+  "manual": 730
  }
 ]

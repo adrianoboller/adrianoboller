@@ -1,6 +1,6 @@
 # Fontes do WX Claude Code 3.31.1
 
-Inventário medido em 2026-09-05 por `docs/dossie/gerar-fontes.py`. Não se edita à mão: rode o script depois de acrescentar arquivo, e o teste `test_fontes_md_esta_em_dia` avisa quando ele envelhece.
+Inventário medido em 2026-09-06 por `docs/dossie/gerar-fontes.py`. Não se edita à mão: rode o script depois de acrescentar arquivo, e o teste `test_fontes_md_esta_em_dia` avisa quando ele envelhece.
 
 | grupo | arquivos | linhas | o que é |
 | --- | ---: | ---: | --- |
@@ -47,4 +47,4 @@ python3 skills/conversao-wx/scripts/validate_plugin_bundle.py . --strict
 
 Esperado: `valid: true`, `tests: OK`, zero erros e zero avisos. O `--strict` roda a bateria inteira.
 
-Último commit no momento da medição: `69a59dc 2026-09-05`.
+Último commit no momento da medição: `4e6d06a 2026-09-05`.
