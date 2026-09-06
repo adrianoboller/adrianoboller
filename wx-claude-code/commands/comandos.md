@@ -25,6 +25,7 @@ Se `$1` vier preenchido, filtre por essa palavra e mostre só o que casa; sem ar
 | `/wx-claude-code:constraints` | as restrições do projeto e o portão C-GATE (está conforme?) |
 | `/wx-claude-code:evidencia` | livro de evidências: o que foi provado, com estado e limite |
 | `/wx-claude-code:efeito` | conferir o efeito real de uma ação, não o código de saída dela |
+| `/wx-claude-code:grafo` | o grafo de rastreabilidade e as lacunas que ele acha |
 | `/wx-claude-code:contrato` | o contrato ativo: o que vale hoje, separado do histórico |
 | `/wx-claude-code:pmo` | sprints, Kanban, PDCA, relatório de onze seções, entrega |
 | `/wx-claude-code:equipe` | acionar um papel da equipe prioritária (zelador, pesquisador, documentador…) |

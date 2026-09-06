@@ -40,6 +40,7 @@ POR_QUE = {
     "10": "Sem licença o plugin não roda: o hook recusa os scripts, e o verificador não diz que está válida.",
     "11": "Entrega ao cliente: o .env fica fora do pacote e o .env.exemplo entra, sem nenhum valor real.",
     "12": "O instalador em conferência não instala nada e não deixa lixo — inclusive em /tmp.",
+    "15": "O grafo de rastreabilidade sobre um projeto real: acha o arquivo que requisito nenhum pediu e a regra que ninguém provou — nenhum dos dois aparece lendo o código.",
     "14": "Os seis portões de governança ligados no mesmo projeto — o caso que eles existem para pegar é F-GATE verde com C-GATE reprovado.",
     "13": "O exemplo FATURAMENTO inteiro: PHP procedural de 2009, sem nada de WINDEV, atravessando o G0 com o código-fonte como evidência central.",
 }

@@ -459,6 +459,31 @@ conferir nada (virou manual); e o contrato lia o nome do projeto só do
 questionário, que nem todo projeto guarda ao lado (passou a ler também o
 manifesto).
 
+**O grafo, que é o que amarra os seis.** A matriz `traceability.csv` já tinha as
+22 colunas certas — requisito, origem no legado, decisão, arquivo, símbolo,
+teste, quem aprovou — mas só respondia lendo tudo. O `/wx-claude-code:grafo`
+transforma isso em sete perguntas que ninguém responde à mão num projeto com
+duzentas regras:
+
+| pergunta | o que ela pega |
+| --- | --- |
+| código sem requisito | arquivo que nenhuma linha da matriz reivindica |
+| requisito sem teste | regra convertida que ninguém provou |
+| teste sem evidência | o teste existe, a prova registrada não |
+| prova vencida | o arquivo mudou depois da evidência |
+| decisão citada que não existe | `DEC-0099` na matriz, sem ficha nenhuma |
+| restrição sem alcance | escopo que não casa com arquivo algum |
+| origem que mudou | o `source_sha256` da linha não bate com o legado de hoje |
+
+Ele **não inventa aresta**: coluna vazia é ligação inexistente, e vira lacuna,
+não palpite. Grafo que completa lacuna sozinho é pior que planilha, porque
+parece completo. E duas exclusões deliberadas, para o sinal não morrer no
+ruído — as duas achadas na primeira execução, não lendo o código: arquivo de
+teste já está ligado pela coluna `test_file`, e o esqueleto que o próprio
+questionário gerou não é código convertido. Sem elas, o grafo acusava
+`database/migrations/0001_base.sql` de não ter requisito, o que é verdade
+literal e ruído puro.
+
 **Dois exemplos, dois legados.** O `exemplos/estoque-wx/` é WINDEV 2025 com PDF de documentação; o `exemplos/faturamento-php/` é PHP 7.4 procedural de 2009, **sem nada de WX** — código-fonte no lugar de PDF, MySQL no lugar de HFSQL, e o golden master capturado rodando o próprio legado (`php capturar-golden.php`) em vez de digitado. Os dois respondem o mesmo questionário de 60 perguntas e os dois saem do G0 em `CONDITIONAL` com zero erros, por caminhos diferentes.
 
 O segundo achou um defeito na primeira execução: **o portão G0 ainda julgava todo mundo como WINDEV** — cobrava `wx_version` de quem não usa WINDEV, chamava `php` de produto inválido e exigia os PDFs de código, telas e queries que um sistema PHP nunca teve. O legado é E/OU desde a 3.26.0 no questionário; o portão não tinha sido avisado. Sem produto WX, a evidência central passou a ser o código-fonte (`native_project_sources`, listado com linguagem e número de linhas medidas) mais o esquema do banco — e **projeto WINDEV continua exigindo exatamente o que exigia**, travado pelo teste do comportamento velho.

@@ -202,6 +202,14 @@ histórico), `efeito` (o estado real, não o código de saída) e o hook
 quem não os usa: sem papel declarado, sem restrição registrada e sem contrato
 gerado, o plugin funciona como antes.
 
+## O grafo de rastreabilidade
+
+`/wx-claude-code:grafo conferir` responde as sete perguntas que a matriz de 22
+colunas sempre pôde responder e ninguém respondia à mão: código sem requisito,
+requisito sem teste, teste sem evidência, prova vencida, decisão citada que não
+existe, restrição sem alcance, origem que mudou depois da conversão. `de BR-001`
+percorre um nó inteiro; `mermaid` desenha.
+
 ## Modelo local, no terminal
 
 `ferramentas/wx-modelos/` é um binário Rust à parte (só `std`, nenhuma crate)

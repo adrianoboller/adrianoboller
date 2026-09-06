@@ -8,6 +8,7 @@ roteador de modelos, PDCA, kanban, golden, hook do G0) viram regressao aqui.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -1099,6 +1100,98 @@ class Questionario(unittest.TestCase):
             d = json.loads(r.stdout)
             self.assertEqual(d["resultado"], "inconclusivo", comando)
             self.assertIn("não pode mudar o estado", d["detalhe"])
+
+    def _matriz(self, linhas):
+        """Escreve o traceability.csv com as linhas dadas, respeitando o cabecalho."""
+        arq = self.tmp / ".wx-migration/traceability.csv"
+        cab = arq.read_text(encoding="utf-8").splitlines()[0].split(",")
+        import csv as _csv
+        with arq.open("w", newline="", encoding="utf-8") as f:
+            w = _csv.DictWriter(f, fieldnames=cab)
+            w.writeheader()
+            for l in linhas:
+                w.writerow({c: l.get(c, "") for c in cab})
+
+    def test_grafo_acha_as_quatro_lacunas_classicas(self):
+        """As perguntas que ninguem responde a mao num projeto com duzentas regras."""
+        run(SCRIPTS / "aplicar_questionario.py", "--questionario",
+            self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        (self.tmp / "src/regras").mkdir(parents=True, exist_ok=True)
+        (self.tmp / "tests").mkdir(exist_ok=True)
+        for arq in ("src/regras/desconto.rs", "src/regras/estoque.rs", "src/orfao.rs"):
+            (self.tmp / arq).write_text("pub fn x() {}\n", encoding="utf-8")
+        (self.tmp / "tests/desconto_test.rs").write_text("#[test] fn t() {}\n", encoding="utf-8")
+        self._matriz([
+            {"trace_id": "BR-001", "kind": "business_rule", "target_file": "src/regras/desconto.rs",
+             "test_id": "TST-BR-001", "test_file": "tests/desconto_test.rs", "decision_id": "DEC-0002",
+             "rule_summary": "teto de desconto", "status": "verified"},
+            {"trace_id": "BR-002", "kind": "business_rule", "target_file": "src/regras/estoque.rs",
+             "rule_summary": "não vende sem saldo", "status": "implemented"},
+            {"trace_id": "BR-003", "kind": "business_rule", "target_file": "src/regras/juros.rs",
+             "test_id": "TST-BR-003", "decision_id": "DEC-0099", "status": "implemented"},
+        ])
+        (self.tmp / ".wx-migration/decisoes").mkdir(parents=True, exist_ok=True)
+        (self.tmp / ".wx-migration/decisoes/DEC-0002.md").write_text("# DEC-0002\n- Status: approved\n", encoding="utf-8")
+        run(SCRIPTS / "evidencia.py", "--project-root", self.tmp, "registrar",
+            "--afirmacao", "BR-001 bate com o legado", "--metodo", "golden-master", "--estado", "verificado",
+            "--assunto", "src/regras/desconto.rs", "--nao-prova", "nada sobre BR-002")
+        r = run(SCRIPTS / "grafo.py", "--project-root", self.tmp, "--json", "conferir")
+        self.assertEqual(r.returncode, 1, "com lacunas o grafo sai 1")
+        a = json.loads(r.stdout)["achados"]
+        self.assertEqual(a["codigo_sem_requisito"], ["src/orfao.rs"])
+        self.assertEqual([x["trace_id"] for x in a["requisito_sem_teste"]], ["BR-002"])
+        self.assertEqual([x["trace_id"] for x in a["teste_sem_evidencia"]], ["BR-003"])
+        self.assertEqual([x["decision_id"] for x in a["decisao_citada_que_nao_existe"]], ["DEC-0099"])
+        self.assertEqual(a["prova_vencida"], [])
+
+    def test_grafo_nao_cobra_requisito_de_teste_nem_do_esqueleto(self):
+        """Ruido demais mata o sinal: o arquivo de teste ja esta ligado pela
+        coluna test_file, e o esqueleto foi o proprio plugin que gerou."""
+        run(SCRIPTS / "aplicar_questionario.py", "--questionario",
+            self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        (self.tmp / "tests").mkdir(exist_ok=True)
+        (self.tmp / "tests/x_test.rs").write_text("#[test] fn t() {}\n", encoding="utf-8")
+        self._matriz([{"trace_id": "BR-001", "kind": "business_rule", "target_file": "src/a.rs",
+                       "test_id": "TST-1", "test_file": "tests/x_test.rs", "status": "verified"}])
+        a = json.loads(run(SCRIPTS / "grafo.py", "--project-root", self.tmp, "--json", "conferir").stdout)["achados"]
+        self.assertNotIn("tests/x_test.rs", a["codigo_sem_requisito"])
+        gerados = [x for x in a["codigo_sem_requisito"] if x.startswith("database/")]
+        self.assertEqual(gerados, [], "o esqueleto gerado pelo questionário não é lacuna de requisito")
+
+    def test_grafo_ve_a_prova_vencer_e_a_origem_mudar(self):
+        """As duas perguntas que so o tempo responde."""
+        run(SCRIPTS / "aplicar_questionario.py", "--questionario",
+            self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        (self.tmp / "src").mkdir(exist_ok=True)
+        alvo = self.tmp / "src/regra.rs"
+        alvo.write_text("pub fn a() {}\n", encoding="utf-8")
+        origem = self.tmp / "inputs/banco.sql"
+        sha = hashlib.sha256(origem.read_bytes()).hexdigest()
+        self._matriz([{"trace_id": "BR-001", "kind": "business_rule", "target_file": "src/regra.rs",
+                       "test_id": "TST-1", "test_file": "tests/t.rs", "status": "verified",
+                       "source_artifact": "inputs/banco.sql", "source_sha256": sha}])
+        run(SCRIPTS / "evidencia.py", "--project-root", self.tmp, "registrar",
+            "--afirmacao", "regra convertida", "--metodo", "teste", "--estado", "verificado",
+            "--assunto", "src/regra.rs", "--nao-prova", "nada além do caso testado")
+        a = json.loads(run(SCRIPTS / "grafo.py", "--project-root", self.tmp, "--json", "conferir").stdout)["achados"]
+        self.assertEqual(a["prova_vencida"], [])
+        self.assertEqual(a["origem_mudou_depois_de_convertida"], [])
+        alvo.write_text("pub fn a() { /* mexeram */ }\n", encoding="utf-8")
+        origem.write_text(origem.read_text(encoding="utf-8") + "\n-- coluna nova\n", encoding="utf-8")
+        b = json.loads(run(SCRIPTS / "grafo.py", "--project-root", self.tmp, "--json", "conferir").stdout)["achados"]
+        self.assertEqual([x["evidencia"] for x in b["prova_vencida"]], ["EVID-0001"])
+        self.assertEqual([x["trace_id"] for x in b["origem_mudou_depois_de_convertida"]], ["BR-001"])
+
+    def test_grafo_desenha_o_caminho_inteiro(self):
+        run(SCRIPTS / "aplicar_questionario.py", "--questionario",
+            self.tmp / ".wx-migration/questionario.json", "--project-root", self.tmp, "--plugin-root", RAIZ)
+        self._matriz([{"trace_id": "BR-001", "kind": "business_rule", "legacy_symbol": "CalculaDesconto",
+                       "decision_id": "DEC-0002", "target_file": "src/regras/desconto.rs",
+                       "test_id": "TST-BR-001", "test_file": "tests/d.rs", "status": "verified"}])
+        m = run(SCRIPTS / "grafo.py", "--project-root", self.tmp, "mermaid").stdout
+        self.assertIn("graph LR", m)
+        for elo in ("origem", "decidido em", "implementado em", "verificado por"):
+            self.assertIn(elo, m, elo)
 
     def test_wx_modelos_compila_e_nao_inventa_numero(self):
         """A ferramenta de modelo local e Rust a parte; o que ela promete e nao

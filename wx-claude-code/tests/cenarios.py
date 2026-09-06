@@ -14,6 +14,7 @@ Uso: python3 tests/cenarios.py [--so <nome>] [--manter]
 """
 from __future__ import annotations
 
+import csv
 import json
 import os
 import shutil
@@ -288,6 +289,34 @@ def c14_governanca_de_ponta_a_ponta():
     return ok, "F-GATE verde e C-GATE reprovado no mesmo projeto; contrato só com a decisão vigente; QA barrado no produto"
 
 
+def c15_grafo_acha_a_lacuna():
+    """O grafo sobre um projeto de verdade: a matriz preenchida e o que falta nela.
+
+    O caso e o do dia a dia: alguem escreveu um arquivo que requisito nenhum
+    pediu, e uma regra ficou sem teste. Nenhum dos dois aparece lendo o codigo.
+    """
+    p = projeto_novo()
+    aplicar(p)
+    (p / "src/regras").mkdir(parents=True, exist_ok=True)
+    for arq in ("src/regras/desconto.rs", "src/relatorio_que_ninguem_pediu.rs"):
+        (p / arq).write_text("pub fn x() {}\n", encoding="utf-8")
+    matriz = p / ".wx-migration/traceability.csv"
+    cab = matriz.read_text(encoding="utf-8").splitlines()[0].split(",")
+    with matriz.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=cab)
+        w.writeheader()
+        w.writerow({**{c: "" for c in cab}, "trace_id": "BR-001", "kind": "business_rule",
+                    "target_file": "src/regras/desconto.rs", "rule_summary": "teto de desconto",
+                    "status": "implemented"})
+    r = py(SCRIPTS / "grafo.py", "--project-root", p, "--json", "conferir")
+    a = json.loads(r.stdout)["achados"] if r.stdout else {}
+    ok = (r.returncode == 1
+          and a.get("codigo_sem_requisito") == ["src/relatorio_que_ninguem_pediu.rs"]
+          and [x["trace_id"] for x in a.get("requisito_sem_teste", [])] == ["BR-001"])
+    shutil.rmtree(p, ignore_errors=True)
+    return ok, "achou o arquivo que ninguém pediu e a regra sem teste, sem inventar aresta"
+
+
 CENARIOS = [
     ("01 WX clássico → Rust", c01_wx_classico, "o caminho que o plugin existe para atender"),
     ("02 só PHP → Elixir", c02_so_php_para_elixir, "legado E/OU e destino livre, os dois fora do caso padrão"),
@@ -303,6 +332,7 @@ CENARIOS = [
     ("12 instalador em conferência", c12_instalador_confere, "não instala e não suja"),
     ("13 legado PHP de verdade", c13_legado_php_de_verdade, "projeto sem nada de WX atravessa o G0"),
     ("14 governança ligada", c14_governanca_de_ponta_a_ponta, "os seis portões novos funcionando juntos"),
+    ("15 grafo acha a lacuna", c15_grafo_acha_a_lacuna, "código sem requisito e requisito sem teste"),
 ]
 
 

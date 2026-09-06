@@ -21,14 +21,14 @@ E = H.escape
 
 # Ordem de uso, nao alfabetica: quem le a folha quer saber por onde comecar.
 ORDEM = ["questionario", "pergunta", "comandos", "artefato", "pdf", "preflight", "converter",
-         "estilo-telas", "golden", "constraints", "evidencia", "efeito",
+         "estilo-telas", "golden", "constraints", "evidencia", "efeito", "grafo",
          "pmo", "equipe", "contrato", "log", "ambiente", "help-wl", "rag",
          "exportar", "zelador", "licenca", "laudo-tokens"]
 GRUPO = {
     "questionario": "Começar", "pergunta": "Começar", "comandos": "Começar",
     "artefato": "Entrada", "pdf": "Entrada", "preflight": "Entrada",
     "converter": "Converter", "estilo-telas": "Converter", "golden": "Converter",
-    "constraints": "Provar", "evidencia": "Provar", "efeito": "Provar",
+    "constraints": "Provar", "evidencia": "Provar", "efeito": "Provar", "grafo": "Provar",
     "pmo": "Governar", "equipe": "Governar", "contrato": "Governar", "log": "Governar",
     "ambiente": "Apoio", "help-wl": "Apoio", "rag": "Apoio",
     "exportar": "Entregar", "zelador": "Entregar", "licenca": "Entregar", "laudo-tokens": "Entregar",
