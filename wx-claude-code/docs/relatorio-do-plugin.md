@@ -20,7 +20,7 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | scripts Python | 37 |
 | linhas de Python (scripts e hooks) | 16803 |
 | documentos de referência | 19 |
-| testes de regressão | 98 |
+| testes de regressão | 99 |
 | hooks do plugin | 9 |
 | blocos do questionário (0, A–M) | 14 |
 | itens do bloco 0 | 16 |

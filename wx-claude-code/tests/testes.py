@@ -1364,6 +1364,34 @@ class Questionario(unittest.TestCase):
         q["H_backend"]["interface"] = "geladeira"
         self.assertIn("id desconhecido", ap.esboco_processo(q))
 
+    def test_o_que_falta_sai_do_markdown_e_recusa_estado_desconhecido(self):
+        """A pagina do que falta ficou 19 versoes carimbada na 3.18.0, sem gerador.
+
+        Agora ela sai de `PENDENCIAS.md`. O que este teste guarda e o modo de
+        falhar: estado que o gerador nao reconhece PARA a geracao, em vez de
+        virar `falta` no silencio -- um erro de digitacao devolveria um item
+        feito para a lista do que falta, e ninguem veria.
+        """
+        ger = RAIZ / "docs/dossie/gerar-o-que-falta.py"
+        fonte = RAIZ / "docs/PENDENCIAS.md"
+        r = run(ger)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertRegex(r.stdout, r"\d+ faltam, \d+ parciais, \d+ feitos")
+        pagina = (RAIZ / "docs/o-que-falta.html").read_text(encoding="utf-8")
+        n = json.loads((RAIZ / "docs/dossie/numeros.json").read_text(encoding="utf-8"))
+        self.assertIn(f'WX Claude Code {n["versao"]}', pagina)
+        self.assertIn(f'{n["agentes"]} · {n["skills"]} · {n["testes"]}', pagina)
+        self.assertNotIn("nao se edita", pagina)  # a instrucao da fonte nao vaza
+        original = fonte.read_text(encoding="utf-8")
+        try:
+            fonte.write_text(original.replace("- estado: `falta`", "- estado: `quase`", 1), encoding="utf-8")
+            ruim = run(ger)
+            self.assertNotEqual(ruim.returncode, 0)
+            self.assertIn("desconhecido", ruim.stdout + ruim.stderr)
+        finally:
+            fonte.write_text(original, encoding="utf-8")
+            run(ger)
+
     def test_gemeo_fotografa_a_sprint_e_o_e_se_declara_o_limite(self):
         self._aplicado()
         run(SCRIPTS / "constraints.py", "--project-root", self.tmp, "criar",

@@ -254,6 +254,12 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
 claude plugin validate wx-claude-code
 ```
 
+O que falta no plugin está em `wx-claude-code/docs/PENDENCIAS.md` — a página
+`docs/o-que-falta.html` **não se edita**:
+`python3 wx-claude-code/docs/dossie/gerar-o-que-falta.py` a gera de lá e conta
+os três estados sozinha. Ela passou dezenove versões carimbada na 3.18.0, com
+«94 agentes, 11 skills, 39 testes» digitados à mão, porque não tinha gerador.
+
 O projeto de exemplo `wx-claude-code/exemplos/estoque-wx/` é o teste de
 regressão do fluxo inteiro: G0 nele tem de continuar `CONDITIONAL` com zero
 erros. Mudou o questionário ou o manifesto? Rode o exemplo antes de commitar.
