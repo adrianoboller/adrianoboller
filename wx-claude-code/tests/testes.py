@@ -1307,6 +1307,43 @@ class Questionario(unittest.TestCase):
         self.assertEqual(json.loads(sumiu.stdout)["pior"], "inconclusivo")
         self.assertEqual(sumiu.returncode, 2)
 
+    def test_interface_mede_o_rustc_e_nao_afirma_de_memoria(self):
+        """As nove formas saem medidas do rustc local; CarPlay diz que nao e alvo."""
+        ifc = SCRIPTS / "interface_do_destino.py"
+        r = run(ifc, "--project-root", self.tmp, "listar", "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(r.stdout)
+        ids = [o["id"] for o in d["opcoes"]]
+        self.assertEqual(len(ids), 9)
+        for esperado in ("terminal", "servico-tcp", "desktop", "web", "mobile",
+                         "iot-esp32", "iot-arduino", "smart-tv", "carplay"):
+            self.assertIn(esperado, ids)
+        carplay = next(o for o in d["opcoes"] if o["id"] == "carplay")
+        self.assertIn("NAO e um alvo", carplay["ressalva"])
+        if shutil.which("rustc"):
+            # nada de tier afirmado sem rustup: sem ele o suporte e "indefinido"
+            alvos = [a for o in d["opcoes"] for a in o["alvos"]]
+            permitido = {"tier-1-2", "tier-3", "sem-alvo", "indefinido"}
+            self.assertTrue({a["suporte"] for a in alvos} <= permitido)
+            self.assertTrue(d["rustc"]["disponivel"])
+        else:
+            self.assertEqual(d["opcoes"][0]["veredito"], "INDISPONIVEL")
+
+    def test_interface_grava_a_escolha_sem_criar_pergunta_nova(self):
+        """A escolha vai para H_backend.interface; a contagem de perguntas nao muda."""
+        ifc = SCRIPTS / "interface_do_destino.py"
+        antes = len(json.loads(run(SCRIPTS / "listar_perguntas.py", "--json").stdout))
+        q = self.tmp / "questionario.json"
+        shutil.copy(RAIZ / "skills/conversao-wx/templates/questionario.json", q)
+        r = run(ifc, "--project-root", self.tmp, "escolher", "--opcao", "servico-tcp")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(q.read_text(encoding="utf-8"))["H_backend"]["interface"], "servico-tcp")
+        ficha = json.loads((self.tmp / ".wx-migration/interface.json").read_text(encoding="utf-8"))
+        self.assertEqual(ficha["escolhida"], "servico-tcp")
+        self.assertEqual(len(json.loads(run(SCRIPTS / "listar_perguntas.py", "--json").stdout)), antes)
+        ruim = run(ifc, "--project-root", self.tmp, "escolher", "--opcao", "nao-existe")
+        self.assertEqual(ruim.returncode, 2)
+
     def test_gemeo_fotografa_a_sprint_e_o_e_se_declara_o_limite(self):
         self._aplicado()
         run(SCRIPTS / "constraints.py", "--project-root", self.tmp, "criar",

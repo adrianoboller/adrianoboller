@@ -210,6 +210,17 @@ gerado, o plugin funciona como antes.
 cada documento declara o que **não** afirma — inclusive que o atestado não é
 attestation.
 
+## A interface do programa que sai
+
+`/wx-claude-code:interface` pergunta a **forma** do destino, que o questionário
+não pergunta: terminal, serviço em porta TCP, desktop com janela, web, celular,
+IoT ESP32, IoT Arduino, Smart TV ou CarPlay. O suporte de cada uma sai **medido**
+de `rustc --print target-list` cruzado com `rustup target list` — alvo nos dois é
+tier 1/2, alvo só no primeiro é tier 3 (nightly e `-Z build-std`). Sem `rustc` na
+máquina o veredito é INDISPONÍVEL, não um palpite. Duas honestidades que o manual
+não esconde: **CarPlay não é alvo de compilação** (é a apresentação de um app
+iOS), e **desktop com janela é a única forma que fura o zero-dependência**.
+
 ## O grafo de rastreabilidade
 
 `/wx-claude-code:grafo conferir` responde as sete perguntas que a matriz de 22

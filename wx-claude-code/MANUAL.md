@@ -497,6 +497,7 @@ afirmar:
 | **Gêmeo da sprint** | `/wx-claude-code:gemeo` | o «e se» roda contra o código de hoje, e não diz o que a equipe teria feito |
 | **Telemetria OTLP** | `/wx-claude-code:telemetria` | fica no disco; sair é explícito, e argumento não vai junto |
 | **Identidade e atestado** | `/wx-claude-code:identidade` | **isto não é attestation**: falta a *quote* assinada pelo chip e o verificador remoto |
+| **Interface do destino** | `/wx-claude-code:interface` | o suporte vem do `rustc` **desta** máquina; CarPlay não é alvo de compilação, e tier 3 não tem CI da equipe do Rust |
 
 Tudo isso **sem uma dependência externa**: os quatro formatos são JSON, e as
 assinaturas usam a mesma RSA do serial. É o que mantém o Sovereign Mode de pé —
