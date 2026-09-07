@@ -3666,7 +3666,6 @@ impl Config {
         )?;
         Ok((novo, entraram, existiam))
     }
-
 }
 
 /// Valida a arvore e a grava atomicamente, trocando `caminhos` NO TEXTO.
