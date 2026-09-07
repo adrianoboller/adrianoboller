@@ -7356,6 +7356,15 @@ async function verConfigServidor() {
        e o servidor continua com o valor de quando subiu. Um reinício do
        serviço passa a valer o que está no arquivo.</p></div>` : ""}
 
+     ${c.replicacao_aberta && c.replicacao_aberta.aberta ? `<div class="nota mal">
+       <p><strong>${esc(txt("tela.cfg_rep_aberta",
+          "A replicação está aberta a quem tiver o token."))}</strong>
+       ${esc(txt("tela.cfg_rep_aberta_como",
+          "replicacao.replicas_autorizadas está vazia, e vazia libera todos. Liste os IPs das réplicas para fechar."))}
+       ${c.replicacao_aberta.com_imagem_da_linha ? esc(txt("tela.cfg_rep_aberta_imagem",
+          "E com replicacao.imagem_da_linha ligada, o `replicar` entrega a LINHA INTEIRA.")) : ""}
+       ${(c.replicacao_aberta.ops || []).map(o => `<code>${esc(o)}</code>`).join(", ")}</p></div>` : ""}
+
      ${c.estranhas && c.estranhas.length ? `<div class="nota mal">
        <p><strong>O config.json traz campos que este servidor não conhece:</strong>
        ${c.estranhas.map(x => `<code>${esc(x)}</code>`).join(", ")}. Eles foram

@@ -406,6 +406,21 @@ pub const FABRICA: &[MensagemFabrica] = &[
         ],
     },
     MensagemFabrica {
+        nome: "erro.aplicar_somente_leitura",
+        textos: [
+            "servidor em modo somente leitura: `aplicar` grava, e o papel deste \
+             servidor e {papel} -- so replica, read_replica, spare ou multi aceita \
+             o diario de um source estando trancada",
+            "",
+            "server in read-only mode: `aplicar` writes, and this server's role is \
+             {papel} -- only replica, read_replica, spare or multi accepts a \
+             source's journal while locked",
+            "",
+            "",
+            "",
+        ],
+    },
+    MensagemFabrica {
         nome: "erro.somente_leitura",
         textos: [
             "servidor em modo somente leitura",

@@ -128,6 +128,50 @@ const CLAUSULAS: [&str; 12] = [
     "UNION",
 ];
 
+/// O texto traz MAIS DE UM comando empilhado -- o `; DROP TABLE ...` classico?
+///
+/// # Por que ela ANALISA em vez de recortar
+///
+/// Procurar `";"` no texto acusaria `WHERE nome = '; DROP TABLE clientes'`,
+/// que e um DADO legitimo e ja foi gravado assim nesta casa (a bateria
+/// `bancada/seguranca/injecao.py` grava exatamente esse valor e o le de
+/// volta). Quem decide aqui e o LEXICO do motor -- o mesmo que a consulta
+/// usa --, entao o que esta dentro de aspas e um simbolo `Texto` e nunca um
+/// separador de comando. E a mesma lei do Profiler: *o que mostra texto cru
+/// analisa, nunca recorta*.
+///
+/// # O que ela responde `false`, e nao e engano
+///
+/// * texto que o lexico nao consegue ler (aspa aberta, byte estranho): sem
+///   simbolos nao ha o que classificar, e chutar aqui seria acusar quem
+///   digitou errado. Erro de sintaxe **nao** e injecao;
+/// * `SELECT ... ;` com o ponto-e-virgula no fim, que e como todo cliente
+///   ODBC manda;
+/// * `-- comentario` depois do comando, que o lexico ja descarta.
+///
+/// Ou seja: so responde `true` quando ha simbolo DEPOIS de um
+/// ponto-e-virgula -- que e um segundo comando, e nada mais e.
+pub fn comando_empilhado(entrada: &str) -> bool {
+    let Ok(simbolos) = lexico::analisar(entrada) else {
+        return false;
+    };
+    if simbolos.is_empty() {
+        return false;
+    }
+    let mut p = Analisador { s: simbolos, i: 0 };
+    // Nem chegou a ser um comando desta gramatica -- `CREATE PROCEDURE`,
+    // `CALL`, `BEGIN`, ou sintaxe torta. Sai `false`, e a saida e a que mais
+    // importa: o CORPO de um procedimento e de um gatilho e cheio de
+    // ponto-e-virgula legitimo, e classificar por simbolo solto acusaria todo
+    // `CREATE PROCEDURE ... BEGIN a; b; END` que falhasse por qualquer outro
+    // motivo.
+    if p.comando().is_err() {
+        return false;
+    }
+    while p.aceitar(&Token::PontoEVirgula) {}
+    p.espiar().is_some()
+}
+
 /// Le um comando inteiro. Um por vez -- lote de comandos e outra rodada.
 pub fn analisar(entrada: &str) -> Result<Selecao> {
     let simbolos = lexico::analisar(entrada)?;
@@ -763,6 +807,49 @@ mod testes {
             .unwrap_err()
             .to_string();
         assert!(e.contains("um comando por vez"), "{e}");
+    }
+
+    #[test]
+    fn comando_empilhado_acha_o_segundo_comando() {
+        for sql in [
+            "SELECT * FROM clientes; DROP TABLE clientes; --",
+            "SELECT * FROM clientes; DELETE FROM clientes",
+            "SELECT * FROM clientes ;;; DROP TABLE clientes",
+            "SELECT * FROM clientes WHERE nome = 'x'; EXEC xp_cmdshell('dir')",
+        ] {
+            assert!(comando_empilhado(sql), "devia acusar: {sql}");
+        }
+    }
+
+    /// A metade que importa: nada disto e injecao, e acusar aqui bloquearia
+    /// quem escreve SQL legitimo.
+    #[test]
+    fn comando_empilhado_nao_acusa_o_legitimo() {
+        for sql in [
+            "SELECT * FROM clientes",
+            "SELECT * FROM clientes;",
+            "SELECT * FROM clientes ; ",
+            "SELECT * FROM clientes WHERE nome = 'Alves' -- e o resto",
+            "SELECT /* comentario */ * FROM clientes",
+            // O veneno como DADO: a aspa fecha, entao e um simbolo Texto so.
+            "SELECT * FROM clientes WHERE nome = '; DROP TABLE clientes; --'",
+            // Erro de sintaxe nao e injecao -- e o lexico nem le este.
+            "SELECT * FROM clientes WHERE nome = '' OR '1'='1",
+            // O corpo de um procedimento e cheio de `;` legitimo. Ele nao e
+            // desta gramatica, e nao pode ser acusado nem quando falha.
+            "CREATE PROCEDURE p(OUT n INT) BEGIN DECLARE i INT DEFAULT 0; \
+             SET i = i + 1; SET n = i; END",
+            "CREATE TRIGGER t BEFORE INSERT ON clientes FOR EACH ROW \
+             BEGIN SET NEW.nome = 'x'; END",
+            "CALL somar_ate(100)",
+            "BEGIN",
+            "COMMIT",
+            "SHOW PROCEDURES",
+            // Ponto-e-virgula sozinho no fim nao e um segundo comando.
+            "SELECT * FROM clientes;;",
+        ] {
+            assert!(!comando_empilhado(sql), "nao devia acusar: {sql}");
+        }
     }
 
     #[test]

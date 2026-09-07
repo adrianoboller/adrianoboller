@@ -252,6 +252,28 @@ fora das conferências normais.
 deliberada: uma réplica roda em `somente_leitura` justamente para a aplicação
 não escrever nela, e a única escrita que ela deve aceitar é a que vem do source.
 
+**E isso custou um furo, que hoje está fechado.** A bateria
+`bancada/seguranca/porta.py` (caso 4d-ii, 07/09/2026) mediu um **Source** posto
+em `somente_leitura` pela tela: o `inserir` recusou com «servidor em modo
+somente leitura» e o `aplicar` **gravou** a mesma linha na mesma sessão, com a
+imagem que o `replicar` acabara de entregar. Quem tem o token escreve numa base
+que o dono declarou fechada.
+
+O portão **2b-bis** fecha isso pelo **papel**, e não pela lista de réplicas nem
+pela existência de origens: papel é a declaração de para que este servidor
+serve. `replica`, `read_replica`, `spare` e `multi` continuam aceitando
+`aplicar` trancados — byte a byte como antes; `source` e `isolado` passam a
+recusar, nomeando o próprio papel na frase.
+
+*Medir a premissa do item vem antes de implementar o item.* Antes de decidir,
+esta casa mediu se a réplica legítima usa a op: um source e uma réplica de pé
+(papel `replica`, `somente_leitura` ligado, 200 linhas alcançadas 200/200), e a
+op `aplicar` foi chamada **zero** vezes nos dois `acessos.log` — o laço da
+réplica puxa e aplica **por dentro**, com `Table::aplicar_evento`, e nunca pelo
+protocolo. Quem chama `aplicar` pela rede é um empurrão de fora, e o único
+servidor que tem motivo para aceitá-lo trancado é o que existe para receber
+replicação.
+
 Mais quatro campos e três operações que os modos novos trouxeram:
 
 ```json
@@ -345,6 +367,39 @@ a lista preenchida*. Consertado no portão único (`portoes_do_pedido`, portão
 
 *Configuração que não é lida mente* — e mente pior quando o assunto é quem
 alcança o dado. Depois do conserto o mesmo intruso leva **0 de 200**.
+
+### Lista vazia continua liberando — e agora se anuncia
+
+O padrão é a lista vazia, e ele **não** mudou: fechar de fábrica quebraria toda
+replicação montada sem a lista, que é a maioria. O que mudou é o **silêncio**,
+e o motivo tem número: a bateria `bancada/seguranca/porta.py` (caso 4d-i,
+07/09/2026) mediu um servidor de **fábrica** — papel `isolado`, imagem
+desligada, ninguém configurou replicação nenhuma — entregando o diário a quem
+só tinha o token. Quem opera não tinha como saber.
+
+Com a lista vazia, o servidor passa a dizer isso em dois lugares:
+
+```
+ATENCAO: replicacao.replicas_autorizadas esta VAZIA -- `posicao`, `replicar` e
+`aplicar` atendem QUALQUER endereco que tenha o token, e com
+replicacao.imagem_da_linha ligada o `replicar` entrega a LINHA INTEIRA. Para
+fechar: liste os IPs das replicas em replicacao.replicas_autorizadas.
+```
+
+e no `config` do protocolo, **estruturado** e não em prosa — a tela monta a
+frase pela fábrica de idiomas, porque *rótulo se traduz, dado nunca*:
+
+```json
+"replicacao_aberta": {"aberta": true, "com_imagem_da_linha": true,
+                      "ops": ["posicao","replicar","aplicar"]}
+```
+
+O campo **some** quando a lista está preenchida, em vez de voltar `false`: quem
+lê não pode confundir «este servidor está fechado» com «este servidor é velho e
+não sabe responder». E o aviso **não olha o papel** de propósito — as três
+operações respondem em qualquer papel, e condicionar o aviso a `source` calaria
+justamente o servidor que ninguém configurou para replicar e replica assim
+mesmo.
 
 Vale dizer o que a lista de IPs **não** resolve, e o contêiner tornou isso
 visível: num orquestrador o IP do vizinho muda a cada recriação. Lista por IP

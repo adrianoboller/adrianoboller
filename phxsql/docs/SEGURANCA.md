@@ -115,6 +115,64 @@ até alguém soltar.
 
 Errar a senha uma vez é humano. Errar oito vezes em dois minutos, não.
 
+### As duas leves que entram PEDIDAS — e por que nascem desligadas
+
+Duas recusas passaram a **poder** contar como tentativa leve, e as duas nascem
+desligadas no `config.json`. O interruptor existe porque nenhuma das duas é
+prova de má-fé: as duas têm a mesma cara num ataque e num engano de cliente, e
+ligar de fábrica trancaria o operador para fora — que é exatamente o estrago
+do pedido 203, em que uma réplica mal configurada bloqueou o `127.0.0.1` e
+derrubou a sessão de quem estava operando.
+
+| campo em `seguranca` | o que passa a contar | medido |
+|---|---|---|
+| `contar_injecao_sql` | a recusa «sobrou X depois do fim do comando» — o `; DROP TABLE` empilhado | 07/09/2026: sem ele, **211.290 tentativas por minuto** com uma conexão nova a cada uma e `blacklist.json` vazio antes e depois |
+| `contar_linha_acima_do_teto` | a linha maior que os 128 MiB do fio | 07/09/2026: 134.218.794 bytes derrubavam a conexão em 0,41 s sem resposta, sem log e sem violação |
+
+Ligadas, as duas contam pela **mesma** política leve que já existe
+(`tentativas_ate_bloquear` na `janela_minutos`), pelo mesmo `violacao_leve` do
+token inválido e da credencial errada. **Não há um N próprio para elas**, e a
+ausência é deliberada: um segundo contador com um segundo limite seria a
+segunda política que alguém esquece de atualizar.
+
+#### O que conta como injeção, e por que não é um casador de texto
+
+Injeção aqui é **o que o analisador SQL já recusa por forma**, e a decisão sai
+do próprio léxico do motor — `phxsql_sql::comando_empilhado`, que analisa um
+comando desta gramática e pergunta se sobrou símbolo depois do `;`. Procurar
+`";"` no texto acusaria `WHERE nome = '; DROP TABLE clientes'`, que é um **dado
+legítimo** e a bateria grava exatamente esse valor; e acusaria todo
+`CREATE PROCEDURE ... BEGIN a; b; END`, cujo corpo é cheio de ponto-e-vírgula.
+*O que mostra texto cru analisa, nunca recorta* — e aqui a mesma lei decide
+quem é acusado.
+
+O falso positivo é o que mataria a guarda, então ele é **medido**: o caso 5b de
+`bancada/seguranca/injecao.py` manda os **65 comandos SQL legítimos** lidos do
+fonte de `bancada/sql-exemplos/exercitar.py` (a lista sai do código, nunca
+digitada) contra um servidor com o interruptor ligado e tolerância **1** — um
+único falso positivo bloquearia na hora. Medido em 07/09/2026: **32 recusados
+pelo motor, zero bloqueios.**
+
+### A linha acima do teto: o que ela deixa de rastro
+
+O teto de 128 MiB por registro (`TETO_DO_REGISTRO`, em `phxsql-core/src/fio.rs`)
+protege a memória, e protegia **calado**: a conexão morria sem resposta, sem
+linha no `acessos.log` e sem contar como violação — RSS 6.040 → 8.164 kB,
+processo de pé, e nenhum rastro de que alguém tentou. Hoje:
+
+1. o cliente **recebe** `3003 LIMITE_EXCEDIDO`, com o teto em bytes na frase;
+2. o `acessos.log` ganha a recusa com `op:"fio"`, o IP, a porta de origem, o
+   código e **quantos bytes esta ponta leu** ao lado do teto;
+3. e, só com `contar_linha_acima_do_teto` ligado, o IP conta como leve.
+
+A resposta chega porque a linha é **drenada até a quebra antes** de a conexão
+fechar: fechar um soquete com dado por ler no buffer de recepção manda RST, e o
+RST descarta a resposta que o cliente ainda não leu. Responder e fechar em cima
+"responderia" no código e continuaria invisível no fio. O **texto tentado**
+continua fora do log de propósito — log que guarda o pedido inteiro guarda
+também a senha que veio nele; quem quer o texto liga o Profiler, que redige o
+token analisando e não recortando.
+
 ### Whitelist: quem nunca bloqueia
 
 `whitelist` aceita IP exato e faixa CIDR (`192.168.50.0/24`, `2001:db8::/32`),

@@ -540,10 +540,13 @@ impl Canal {
             limitado.read_line(&mut linha)?
         };
         if lidos as u64 > teto {
+            // O TETO EM BYTES entra na mensagem ao lado dos MiB, e nao e
+            // preciosismo: quem le o `acessos.log` precisa comparar com o que
+            // mediu, e "mais de 128 MiB" nao se compara com 134.217.729.
             return Err(PhxError::LimiteExcedido(format!(
-                "o outro lado mandou mais de {} MiB num registro so, e este \
-                 lado nao guarda isso na memoria; baixe o tamanho do lote de \
-                 quem serve ou parta a tabela",
+                "o outro lado mandou mais de {} MiB num registro so ({teto} bytes \
+                 de teto), e este lado nao guarda isso na memoria; baixe o \
+                 tamanho do lote de quem serve ou parta a tabela",
                 teto / (1024 * 1024)
             )));
         }
