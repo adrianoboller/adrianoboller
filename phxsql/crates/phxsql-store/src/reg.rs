@@ -677,9 +677,48 @@ impl RegFile {
         Ok(())
     }
 
-    /// As fronteiras de volume, para quem quiser mostra-las.
-    pub fn fronteiras(&self) -> &[Fronteira] {
-        &self.fronteiras
+    /// As fronteiras de volume, para quem quiser mostra-las -- o `esquema` do
+    /// protocolo e as telas de particao.
+    ///
+    /// # Pedido 222: por que a particao por quantidade tambem entra aqui
+    ///
+    /// Ate aqui so a particao por PERIODO enchia isto: e' `self.fronteiras`,
+    /// o mesmo cache que `localizar` e `abrir_faixa_do_periodo` usam para
+    /// achar o volume de um rowid por busca binaria. Na por QUANTIDADE esse
+    /// cache sempre ficou vazio de proposito -- o endereco e' uma DIVISAO, e
+    /// nao ha fronteira nenhuma para o enderecamento ler.
+    ///
+    /// So que "nao ha fronteira para ENDERECAR" nao e' a mesma coisa que "nao
+    /// ha fronteira para MOSTRAR": a tela e um ETL de fora continuavam sem
+    /// saber quantos volumes a tabela tinha e onde cada um comecava, porque
+    /// `esquema.volumes` vinha vazio nesse modo. A conta que fecha essa
+    /// pergunta e' a MESMA que `primeiro_rowid_do_volume` ja fazia para o
+    /// enderecamento -- so' precisa ser feita para cada volume que EXISTE em
+    /// disco, e nao para um rowid so.
+    ///
+    /// Por isso este metodo, quando o cache esta vazio, CALCULA a lista a
+    /// partir de `self.volumes.existentes()` em vez de ler nada do disco de
+    /// novo -- e nunca escreve em `self.fronteiras`. O caminho quente
+    /// (`localizar`, `inserir`, `abrir_faixa_do_periodo`) so' enxerga o campo,
+    /// nunca este metodo, entao a aritmetica do endereco nao muda em nada.
+    /// Na particao por letra continua vazio: ela ja tem `baldes()`, que e' o
+    /// relato certo para 37 volumes fixos.
+    pub fn fronteiras(&self) -> Vec<Fronteira> {
+        if !self.fronteiras.is_empty() {
+            return self.fronteiras.clone();
+        }
+        let paginacao = self.esquema.paginacao();
+        if paginacao.modo.por_letra() || !paginacao.ligada() {
+            return Vec::new();
+        }
+        self.volumes
+            .existentes()
+            .into_iter()
+            .map(|volume| Fronteira {
+                primeiro_rowid: self.primeiro_rowid_do_volume(volume),
+                chave_periodo: SEM_PERIODO,
+            })
+            .collect()
     }
 
     /// Toma o proximo valor da sequencia e avanca o contador.

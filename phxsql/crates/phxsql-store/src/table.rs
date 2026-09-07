@@ -2577,14 +2577,20 @@ impl Table {
         Ok(Some(periodo.chave(ano, mes)))
     }
 
-    /// As fronteiras de volume do `.reg`. Vazio na particao por quantidade,
-    /// onde o volume sai de divisao e nao ha tabela nenhuma.
     /// Ajusta o contador da sequencia. Ver `RegFile::ajustar_sequencia`.
     pub fn ajustar_sequencia(&mut self, proxima: u64) -> Result<()> {
         self.reg.ajustar_sequencia(proxima)
     }
 
-    pub fn fronteiras(&self) -> &[crate::reg::Fronteira] {
+    /// As fronteiras de volume do `.reg`, para quem quiser mostra-las.
+    ///
+    /// Pedido 222: ate aqui so a particao por PERIODO devolvia algo -- na por
+    /// QUANTIDADE o vetor vinha vazio porque o endereco sai de divisao e nao
+    /// havia tabela nenhuma para ler. `RegFile::fronteiras` agora CALCULA a
+    /// lista tambem nesse modo, a partir dos volumes que existem em disco;
+    /// ver o comentario la para o porque de isso ser seguro para o
+    /// enderecamento.
+    pub fn fronteiras(&self) -> Vec<crate::reg::Fronteira> {
         self.reg.fronteiras()
     }
 
