@@ -43,6 +43,7 @@ PORTA = int(os.environ.get("PHX_SEG_PORTA", "6600"))
 PORTA_WL = PORTA + 1
 PORTA_REP = PORTA + 2
 PORTA_FONTE = PORTA + 3
+PORTA_TETO = PORTA + 4
 PORTA_FECHADA = PORTA + 9
 
 SENHA = "segredo-da-bancada-f6"
@@ -358,6 +359,11 @@ def parte_4_pedidos_torcidos(sv):
     rss0 = sv.rss_kb()
     cabe = b'{"op":"ping","token":"t","enchimento":"' + b"A" * (1024 * 1024) + b'"}\n'
     r_cabe = sv.fala(None, cru=cabe, prazo=60)[0]
+    # O `antes` e lido AQUI, e nao depois. A primeira versao contava as linhas
+    # do log DEPOIS de mandar a linha gigante e comparava com 0,3 s mais tarde:
+    # o log ja tinha a linha nova dentro do `antes`, e a conta dava zero tanto
+    # com rastro quanto sem. *Medir depois do estrago mede o que sobrou.*
+    antes = len(sv.acessos())
     t0 = time.time()
     estoura = b'{"op":"ping","token":"t","enchimento":"' + b"A" * (TETO_DO_REGISTRO + 1024) + b'"}\n'
     try:
@@ -366,19 +372,29 @@ def parte_4_pedidos_torcidos(sv):
         r_estoura = f"<{type(e).__name__}: {e}>"
     gasto = time.time() - t0
     rss1 = sv.rss_kb()
-    antes = len(sv.acessos())
     time.sleep(0.3)
-    depois = len(sv.acessos())
+    novas = [a for a in sv.acessos()[antes:]]
+    rastro = [a for a in novas if a.get("op") == "fio" and not a.get("ok")]
     caso(
         "4b",
         f"linha GIGANTE (teto do fio = {TETO_DO_REGISTRO // (1024 * 1024)} MiB)",
-        "1 MiB passa; acima do teto a conexao morre em vez de o servidor engolir a memoria",
+        "1 MiB passa; acima do teto o cliente RECEBE um erro com codigo, o "
+        "`acessos.log` ganha a recusa com IP, tamanho e teto, e o processo fica de pe",
         f"1 MiB:        {corte(r_cabe, 120)}\n"
-        f"{len(estoura)} bytes: {r_estoura}   ({gasto:.2f}s)\n"
+        f"{len(estoura)} bytes: {corte(r_estoura, 320)}   ({gasto:.2f}s)\n"
         f"RSS do servidor: {rss0} kB antes, {rss1} kB depois -- o processo continua de pe\n"
-        f"linhas novas no acessos.log por causa dela: {depois - antes}\n"
-        f"bloqueios apos a tentativa: {json.dumps(sv.bloqueios())}",
-        "ACHADO",
+        f"linhas novas no acessos.log por causa dela: {len(novas)}\n"
+        f"    {corte(json.dumps(rastro, ensure_ascii=False), 320)}\n"
+        f"bloqueios apos a tentativa (o interruptor esta DESLIGADO aqui): "
+        f"{json.dumps(sv.bloqueios())}",
+        "PASSOU"
+        if '"nome":"LIMITE_EXCEDIDO"' in r_estoura
+        and len(rastro) == 1
+        and rastro[0].get("ip") == "127.0.0.1"
+        and str(TETO_DO_REGISTRO) in (rastro[0].get("erro") or "")
+        and "lidos" in (rastro[0].get("erro") or "")
+        and not sv.bloqueios()
+        else "FALHOU",
     )
 
     r = sv.fala({"op": "xyzzy"})[0]
@@ -389,6 +405,39 @@ def parte_4_pedidos_torcidos(sv):
         f"{corte(r, 170)}\nbloqueios: {json.dumps(sv.bloqueios())}",
         "PASSOU" if '"codigo":3001' in r and not sv.bloqueios() else "FALHOU",
     )
+
+
+def parte_4b2_teto_conta_violacao(sv_teto):
+    """O interruptor `seguranca.contar_linha_acima_do_teto`, que nasce desligado.
+
+    Ele mora num servidor PROPRIO porque `config_gravar` nao escreve a secao
+    `seguranca` -- e nao escreve de proposito: uma sessao roubada nao abre o
+    firewall pela tela.
+    """
+    print("\n=== 4b-ii. A linha acima do teto contando como violacao (opt-in)\n")
+    estoura = b'{"op":"ping","token":"t","enchimento":"' + b"A" * (TETO_DO_REGISTRO + 1024) + b'"}\n'
+    try:
+        r = sv_teto.fala(None, cru=estoura, prazo=120)[0]
+    except OSError as e:
+        r = f"<{type(e).__name__}: {e}>"
+    time.sleep(0.3)
+    bloqueios = sv_teto.bloqueios()
+    depois = sv_teto.fala({"op": "ping"})[0]
+    caso(
+        "4b-ii",
+        "com `seguranca.contar_linha_acima_do_teto` LIGADO, a linha gigante bloqueia o IP",
+        "a recusa e a mesma; o que muda e o IP entrar na blacklist pela politica "
+        "leve que ja existe -- e o `ping` seguinte ser recusado",
+        f"resposta a linha gigante: {corte(r, 220)}\n"
+        f"bloqueios: {json.dumps(bloqueios)}\n"
+        f"o `ping` seguinte: {corte(depois, 160)}",
+        "PASSOU"
+        if bloqueios
+        and bloqueios[0].get("ip") == "127.0.0.1"
+        and "teto" in bloqueios[0].get("motivo", "")
+        else "FALHOU",
+    )
+    sv_teto.desbloquear()
 
 
 def semear(sv, token="t", login=None, unico=True):
@@ -426,14 +475,23 @@ def parte_4d_replicacao(sv, sv_fonte, sv_rep):
     r = sv.json_de({"op": "replicar", "database": "loja", "tabela": "clientes",
                     "desde": 0, "max": 5})[0]
     ev = (r.get("resultado") or {}).get("eventos") or []
+    # O aviso do pedido 214(b): a lista vazia continua liberando (comportamento
+    # velho, e ha teste que trava isso), e o que mudou e o SILENCIO.
+    cfg = sv.json_de({"op": "config"})[0]
+    aberta = ((cfg.get("resultado") or {}).get("config") or {}).get("replicacao_aberta") \
+        or (cfg.get("resultado") or {}).get("replicacao_aberta")
+    arranque = [l for l in open(sv.dir + "/saida.log", errors="replace").read().splitlines()
+                if "replicas_autorizadas" in l]
     caso(
         "4d-i",
         "`replicar` num servidor de FABRICA (replicas_autorizadas vazia, imagem desligada)",
-        "a lista vazia libera todos: quem tem o token leva o DIARIO -- sem a imagem, "
-        "so o metadado de cada evento",
+        "a lista vazia CONTINUA liberando -- e agora o servidor diz isso no arranque "
+        "e na resposta de `config`",
         f"eventos devolvidos: {len(ev)}\n"
-        f"{corte(json.dumps(ev[:1], ensure_ascii=False), 260)}",
-        "ACHADO" if ev else "FALHOU",
+        f"{corte(json.dumps(ev[:1], ensure_ascii=False), 200)}\n"
+        f"aviso no arranque: {corte(arranque[0] if arranque else '<NENHUM>', 220)}\n"
+        f"campo `replicacao_aberta` do `config`: {json.dumps(aberta, ensure_ascii=False)}",
+        "PASSOU" if ev and arranque and aberta and aberta.get("aberta") else "FALHOU",
     )
 
     # Sem indice UNICO de proposito: com ele, aplicar a mesma imagem de volta
@@ -459,15 +517,15 @@ def parte_4d_replicacao(sv, sv_fonte, sv_rep):
     linhas = (contagem.get("resultado") or {}).get("linhas") or []
     caso(
         "4d-ii",
-        "num Source com `imagem_da_linha` ligada, o token sozinho le E escreve a linha inteira",
-        "esperado: `replicar` devolve a linha em hexadecimal e `aplicar` a grava de volta -- "
-        "inclusive com o servidor em somente_leitura, porque `aplicar` nao esta em OPS_ESCRITA",
+        "num Source trancado, o `aplicar` grava a linha que o `replicar` entregou?",
+        "`replicar` continua devolvendo a linha em hexadecimal (a lista vazia libera), "
+        "mas o `aplicar` RECUSA: o portao 2b-bis so deixa passar quem tem papel de replica",
         f"imagem do evento 1: {imagem[:64]}… ({len(imagem)} caracteres hex)\n"
         f"config_gravar somente_leitura=true: {corte(trancar, 130)}\n"
         f"CONTROLE POSITIVO, `inserir` com o servidor trancado: {corte(barrado, 150)}\n"
-        f"`aplicar` com a mesma imagem:  {corte(aplicou, 180)}\n"
+        f"`aplicar` com a mesma imagem:  {corte(aplicou, 260)}\n"
         f"linhas na tabela depois: {len(linhas)} -> {corte(json.dumps(linhas, ensure_ascii=False), 200)}",
-        "ACHADO",
+        "PASSOU" if '"ok":false' in aplicou and len(linhas) == 1 else "FALHOU",
     )
 
     # E o portao que existe para isso, quando alguem o preenche.
@@ -654,7 +712,7 @@ def main():
     print("BATERIA DE ACESSO E SEGURANCA DA PORTA TCP/IP -- PhxSql")
     print(f"UTC {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())}   "
           f"commit {subprocess.run(['git', '-C', RAIZ, 'rev-parse', '--short', 'HEAD'], capture_output=True).stdout.decode().strip()}")
-    print(f"portas {PORTA}, {PORTA_WL}, {PORTA_REP}, {PORTA_FONTE}   base {BASE}")
+    print(f"portas {PORTA}, {PORTA_WL}, {PORTA_REP}, {PORTA_FONTE}, {PORTA_TETO}   base {BASE}")
     print("=" * 78)
     shutil.rmtree(BASE, ignore_errors=True)
     try:
@@ -672,10 +730,17 @@ def main():
                  replicacao={"papel": "source", "id_servidor": "f6",
                              "replicas_autorizadas": ["203.0.113.9"]},
                  usuarios=True,
-             ) as sv_rep:
+             ) as sv_rep, \
+             Servidor(
+                 "teto",
+                 PORTA_TETO,
+                 seguranca={"contar_linha_acima_do_teto": True,
+                            "tentativas_ate_bloquear": 1},
+             ) as sv_teto:
             parte_1_o_token(sv)
             parte_3_whitelist(sv_wl)
             parte_4_pedidos_torcidos(sv)
+            parte_4b2_teto_conta_violacao(sv_teto)
             parte_4d_replicacao(sv, sv_fonte, sv_rep)
             respostas = parte_4e_usuario(sv_rep)
             parte_5_conexao_abandonada(sv)

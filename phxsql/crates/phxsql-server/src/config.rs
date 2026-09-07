@@ -3063,6 +3063,14 @@ impl Config {
                                 .unwrap_or(false),
                         ),
                     ),
+                    (
+                        "contar_injecao_sql",
+                        Json::Bool(self.politica.contar_injecao_sql),
+                    ),
+                    (
+                        "contar_linha_acima_do_teto",
+                        Json::Bool(self.politica.contar_linha_acima_do_teto),
+                    ),
                 ]),
             ),
             (

@@ -5,12 +5,13 @@ mede o acesso pela porta TCP/IP e `injecao.py` mede a injeção de SQL, o log da
 tentativas e o bloqueio automático do IP.
 
 ```bash
-python3 bancada/seguranca/porta.py     # 16 casos: acesso, política, bloqueio
-python3 bancada/seguranca/injecao.py   #  8 casos: injeção, log, firewall
+python3 bancada/seguranca/porta.py     # 17 casos: acesso, política, bloqueio
+python3 bancada/seguranca/injecao.py   # 10 casos: injeção, log, firewall
 ```
 
-Variáveis: `PHX_SEG_PORTA` (padrão 6600, e a bateria usa `+1`, `+2` e `+3`) e
-`PHX_INJ_PORTA` (padrão 6605, com o REST em `+1`). Os binários saem de
+Variáveis: `PHX_SEG_PORTA` (padrão 6600, e a bateria usa `+1`, `+2`, `+3` e
+`+4`) e `PHX_INJ_PORTA` (padrão 6605, com o REST em `+1` e o servidor de
+interruptor ligado em `+2`). Os binários saem de
 `target/release/`; nenhuma das duas compila nada. Os temporários vivem em
 `/tmp/phx-f6-<pid>` e são apagados no fim, e todo servidor é derrubado **pelo
 PID guardado** — nunca por `pkill -f`, porque o processo ao lado pode ser de
@@ -61,9 +62,15 @@ bloqueie; e a regra de firewall, com a exportação nos quatro formatos.
 2. **Fechar o soquete não fecha o descritor.** `socket.makefile()` segura o fd;
    fechar só o soquete deixa o servidor sem ver o fim da conexão. É a lição do
    `BULKINSERT`, e é o que faz o caso 5 medir a queda de verdade.
-3. **Ausência de resposta é um resultado.** A linha acima do teto derruba a
+3. **Ausência de resposta é um resultado.** A linha acima do teto derrubava a
    conexão sem responder e sem deixar rastro. A bateria olha o `acessos.log`
    *depois* e conta a falta, em vez de registrar «erro de leitura» e seguir.
+
+   E a própria conta estava errada, o que é a lição gêmea: o `antes` do
+   `acessos.log` era lido **depois** de mandar a linha gigante, então a linha
+   nova já estava dentro dele e a diferença dava zero **com rastro e sem**. Uma
+   medição que dá o mesmo número nos dois mundos não mede nada. Hoje o `antes` é
+   lido antes, e o caso 4b confere o conteúdo da linha nova, não só a contagem.
 4. **Firewall de verdade não se testa em contêiner compartilhado.** Um
    `iptables -I INPUT -s 127.0.0.1 -j DROP` aqui derruba a rede de quem está ao
    lado. O comando configurado é um `touch` inofensivo — e ele prova mais do que
@@ -85,3 +92,33 @@ vazia — o padrão — entrega o diário a quem tem o token; `aplicar` escreve 
 servidor em `somente_leitura`; o `acessos.log` guarda a recusa mas não o texto
 tentado; e **nada** bloqueia por injeção de SQL — 311.250 tentativas por minuto,
 uma conexão nova por tentativa, sem um bloqueio.
+
+## O que a corrida de 07/09/2026 mediu DEPOIS dos pedidos 214, 215 e 216
+
+| bateria | casos | passou | achado |
+|---|---|---|---|
+| `porta.py` | 17 | 17 | 0 |
+| `injecao.py` | 10 | 9 | 1 |
+
+Quatro dos cinco achados fecharam, e cada um virou caso com veredito de
+verdade em vez de `"ACHADO"` cravado no script:
+
+- **4b** — a linha acima do teto devolve `3003 LIMITE_EXCEDIDO` e deixa uma
+  linha no `acessos.log` com IP, bytes lidos e teto;
+- **4b-ii** *(novo)* — com `seguranca.contar_linha_acima_do_teto` ligada, ela
+  bloqueia o IP pela política leve que já existe;
+- **4d-i** — a lista vazia **continua** liberando (é o comportamento velho), e
+  agora o servidor avisa no arranque e no `config`;
+- **4d-ii** — o `aplicar` num Source trancado recusa, e a tabela fica com a
+  linha que tinha;
+- **5** — passa a ser PASSOU: com o interruptor desligado ninguém bloqueia, e é
+  assim que tem de ser;
+- **5b** *(novo)* — 65 comandos SQL legítimos, lidos do fonte de
+  `bancada/sql-exemplos/`, contra um servidor com o interruptor ligado e
+  tolerância 1: 32 recusados pelo motor, **zero bloqueios**;
+- **5c** *(novo)* — o jato de injeção com o interruptor ligado bloqueia o IP na
+  enésima, e o `ping` seguinte é recusado.
+
+O achado que **fica** é o caso 4, e ele é decisão escrita: o `acessos.log`
+guarda a recusa e não o texto tentado. Log que guarda o pedido inteiro guarda
+também a senha que veio nele; quem quer o texto liga o Profiler.

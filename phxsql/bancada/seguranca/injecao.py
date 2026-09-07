@@ -26,6 +26,7 @@ soquete, contra um `phxsqld` de pe.
    em vez de supor.
 """
 
+import ast
 import glob
 import http.client
 import json
@@ -42,6 +43,8 @@ BASE = f"/tmp/phx-f6-{os.getpid()}"
 
 PORTA = int(os.environ.get("PHX_INJ_PORTA", "6605"))
 PORTA_REST = PORTA + 1
+# O servidor do caso 5b: mesma bateria, `contar_injecao_sql` ligado.
+PORTA_LIGADO = PORTA + 2
 
 PLACAR = []
 
@@ -69,8 +72,11 @@ class Servidor:
     rede de quem esta ao lado.
     """
 
-    def __init__(self, nome, porta, porta_rest=None):
+    def __init__(self, nome, porta, porta_rest=None, seguranca=None):
         self.nome, self.porta, self.porta_rest = nome, porta, porta_rest
+        # O que se acrescenta a politica de FABRICA -- so o caso 5b usa, para
+        # medir o interruptor `contar_injecao_sql` ligado.
+        self.seguranca = seguranca or {}
         self.dir = f"{BASE}/{nome}"
         self.cfg = f"{self.dir}/config.json"
         self.log = f"{self.dir}/acessos.log"
@@ -114,6 +120,7 @@ class Servidor:
                 },
             },
         }
+        cfg["seguranca"].update(self.seguranca)
         if self.porta_rest:
             cfg["rest"] = {
                 "ligado": True,
@@ -433,17 +440,109 @@ def parte_5_bloqueio(sv):
     caso(
         5,
         f"injecao a jato por {janela:.0f}s em cada caminho: alguem bloqueia?",
-        "HOJE nao: as duas gravidades da politica sao comando/base proibidos (grave) "
-        "e credencial errada (leve). Erro de sintaxe nao e nenhuma das duas",
+        "com o interruptor DESLIGADO -- que e o padrao de fabrica -- ninguem bloqueia, "
+        "e e o comportamento de sempre: erro de sintaxe nao e comando proibido nem "
+        "credencial errada. O caso 5b mede o outro lado",
         f"pela MESMA conexao:      {mesma} tentativas em {janela:.0f}s "
         f"({int(mesma / janela * 60)} por minuto), {r1} recusadas\n"
         f"uma CONEXAO por tentativa: {nova} tentativas em {janela:.0f}s "
         f"({int(nova / janela * 60)} por minuto), {r2} recusadas\n"
         f"bloqueios antes: {antes}   depois: {depois}\n"
         f"o IP continua entrando: {corte(ainda, 120)}",
-        "ACHADO" if not depois and '"ok":true' in ainda else "FALHOU",
+        "PASSOU" if not depois and '"ok":true' in ainda else "FALHOU",
     )
     return int(nova / janela * 60)
+
+
+def sql_legitimo_do_exercitar():
+    """Os comandos SQL LEGITIMOS, lidos do fonte de `bancada/sql-exemplos/`.
+
+    A lista sai do CODIGO, e nao digitada aqui: *quando um gerador depende de
+    uma lista, a lista tem de sair do codigo*. Uma copia envelheceria calada no
+    dia em que alguem acrescentasse um comando la.
+    """
+    fonte = os.path.join(RAIZ, "bancada", "sql-exemplos", "exercitar.py")
+    arv = ast.parse(open(fonte, encoding="utf-8").read())
+    comandos = []
+    for no in ast.walk(arv):
+        # As tuplas (rotulo, sql, "ok"/"erro") da secao A.
+        if isinstance(no, ast.Tuple) and len(no.elts) == 3:
+            e = no.elts
+            if all(isinstance(x, ast.Constant) and isinstance(x.value, str) for x in e):
+                if e[2].value in ("ok", "erro"):
+                    comandos.append(e[1].value)
+        # E o que vai por `sv.sql("...")` -- procedimentos e gatilhos, cujo
+        # CORPO e cheio de ponto-e-virgula legitimo.
+        if isinstance(no, ast.Call) and isinstance(no.func, ast.Attribute) \
+                and no.func.attr == "sql":
+            for a in no.args:
+                if isinstance(a, ast.Constant) and isinstance(a.value, str):
+                    comandos.append(a.value)
+    return comandos
+
+
+def parte_5b_falso_positivo(sv_lig):
+    """O falso positivo e o que mataria a guarda do pedido 215.
+
+    O servidor deste caso tolera UMA tentativa leve: qualquer comando legitimo
+    classificado como injecao bloqueia na hora e aparece aqui.
+    """
+    print("\n=== 5b. Com o interruptor LIGADO, o SQL legitimo continua passando?\n")
+    semear(sv_lig)
+    comandos = sql_legitimo_do_exercitar()
+    recusados = 0
+    for texto in comandos:
+        r = sv_lig.solto(op="sql", database="loja", texto=texto)
+        if '"ok":false' in r:
+            recusados += 1
+    bloqueios = sv_lig.bloqueios()
+    caso(
+        "5b",
+        f"{len(comandos)} comandos SQL legitimos com `contar_injecao_sql` LIGADO",
+        "nenhum bloqueio: o que a guarda conta e a recusa «sobrou X depois do fim do "
+        "comando», e nao o ponto-e-virgula do corpo de um procedimento",
+        f"comandos exercitados: {len(comandos)} (lidos do fonte de bancada/sql-exemplos/)\n"
+        f"recusados pelo motor (tabela que nao existe, clausula que falta...): {recusados}\n"
+        f"a politica deste servidor tolera 1 tentativa leve -- um falso positivo so "
+        f"ja bloquearia\n"
+        f"bloqueios: {json.dumps(bloqueios)}",
+        "PASSOU" if not bloqueios else "FALHOU",
+    )
+
+
+def parte_5c_interruptor(sv_lig):
+    """O `seguranca.contar_injecao_sql` LIGADO -- o outro lado do caso 5.
+
+    Servidor proprio, e nao `config_gravar`: a secao `seguranca` nao e editavel
+    pela tela de proposito (uma sessao roubada nao abre o firewall).
+    """
+    print("\n=== 5c. O mesmo jato com `seguranca.contar_injecao_sql` LIGADO\n")
+    antes = sv_lig.bloqueios()
+    texto = "SELECT * FROM clientes; DROP TABLE clientes; -- "
+    tentativas = 0
+    fim = time.time() + 2.0
+    while time.time() < fim and not sv_lig.bloqueios():
+        sv_lig.solto(op="sql", database="loja", texto=texto + str(tentativas))
+        tentativas += 1
+    depois = sv_lig.bloqueios()
+    ainda = sv_lig.solto(op="ping")
+    caso(
+        "5c",
+        "com o interruptor LIGADO, quantas injecoes ate o IP cair na blacklist?",
+        "o comando empilhado conta pela politica LEVE que ja existe "
+        "(`tentativas_ate_bloquear`), e o IP para de entrar",
+        f"tentativas ate o bloqueio: {tentativas} "
+        f"(a politica deste servidor tolera 1 na janela)\n"
+        f"bloqueios antes: {json.dumps(antes)}\n"
+        f"bloqueios depois: {json.dumps(depois)}\n"
+        f"o `ping` seguinte: {corte(ainda, 170)}",
+        "PASSOU"
+        if depois
+        and "empilhado" in depois[0].get("motivo", "")
+        and '"ok":true' not in ainda
+        else "FALHOU",
+    )
+    sv_lig.desbloquear()
 
 
 def parte_6_firewall(sv):
@@ -497,10 +596,16 @@ def main():
     print("BATERIA DE INJECAO DE SQL, LOG E BLOQUEIO -- PhxSql")
     print(f"UTC {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())}   "
           f"commit {subprocess.run(['git', '-C', RAIZ, 'rev-parse', '--short', 'HEAD'], capture_output=True).stdout.decode().strip()}")
-    print(f"portas {PORTA} (dados) e {PORTA_REST} (REST)   base {BASE}")
+    print(f"portas {PORTA} (dados), {PORTA_REST} (REST) e {PORTA_LIGADO} "
+          f"(interruptor ligado)   base {BASE}")
     print("=" * 78)
     shutil.rmtree(BASE, ignore_errors=True)
-    with Servidor("injecao", PORTA, PORTA_REST) as sv:
+    with Servidor("injecao", PORTA, PORTA_REST) as sv, \
+         Servidor("ligado", PORTA_LIGADO,
+                  seguranca={"contar_injecao_sql": True,
+                             # UMA tentativa leve: qualquer falso positivo do
+                             # caso 5b bloqueia na hora e nao passa despercebido.
+                             "tentativas_ate_bloquear": 1}) as sv_lig:
         semear(sv)
         parte_1_sql(sv)
         parte_1b_aspa_como_dado(sv)
@@ -508,6 +613,8 @@ def main():
         parte_3_rest(sv)
         parte_4_log(sv)
         parte_5_bloqueio(sv)
+        parte_5b_falso_positivo(sv_lig)
+        parte_5c_interruptor(sv_lig)
         parte_6_firewall(sv)
 
     print("\n" + "=" * 78)

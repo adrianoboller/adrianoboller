@@ -29,7 +29,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use phxsql_core::error::{PhxError, Result};
-use phxsql_core::fio::{Canal, Recebido};
+use phxsql_core::fio::{Canal, Recebido, TETO_DO_REGISTRO};
 use phxsql_core::json::Json;
 use phxsql_store::catalogo::{Aberta, Instancia, Raiz};
 use phxsql_store::leitura::{Legivel, TabelaLeitura};
@@ -848,6 +848,36 @@ impl Servidor {
     }
 
     /// O papel VIVO deste processo -- o do `config.json`, ate uma promocao.
+    /// A replicacao deste servidor esta ABERTA a quem tiver o token?
+    ///
+    /// `replicacao.replicas_autorizadas` vazia -- que e o padrao de fabrica e
+    /// o que todo `config.json` de hoje tem -- libera as tres operacoes de
+    /// replicacao para qualquer IP. Isso continua assim de proposito (*guarda
+    /// nova entra pedida, nao imposta*: passar a recusar quebraria toda
+    /// replicacao montada sem a lista, que e a maioria). O que muda e o
+    /// SILENCIO: o servidor passa a dizer no arranque e na resposta de
+    /// `config` que a porta esta aberta.
+    ///
+    /// # Por que o aviso NAO depende do papel
+    ///
+    /// Porque as tres ops respondem em qualquer papel -- medido pela bateria
+    /// `bancada/seguranca/porta.py`, caso 4d-i: um servidor de FABRICA (papel
+    /// isolado, imagem desligada) devolveu o diario a quem so tinha o token.
+    /// Condicionar o aviso ao papel `source` calaria justamente o servidor que
+    /// ninguem configurou para replicar e que replica assim mesmo.
+    ///
+    /// O `bool` de dentro diz ate onde vai a exposicao: com
+    /// `imagem_da_linha` ligada o `replicar` entrega a LINHA INTEIRA em
+    /// hexadecimal (248 caracteres na medicao); sem ela, entrega o metadado do
+    /// diario -- e o `aplicar` grava do mesmo jeito nos dois casos.
+    pub fn replicacao_aberta(&self) -> Option<bool> {
+        if self.config.replicacao.replicas_autorizadas.is_empty() {
+            Some(self.config.replicacao.imagem_da_linha)
+        } else {
+            None
+        }
+    }
+
     pub fn papel_atual(&self) -> Papel {
         u8_para_papel(self.papel_vivo.load(Ordering::Relaxed))
     }
@@ -1140,6 +1170,24 @@ impl Servidor {
                      replicas nao terao o que aplicar."
                 );
             }
+        }
+
+        // A replicacao aberta a quem tiver o token -- ver `replicacao_aberta`.
+        // FORA do `if papel != Isolado` de proposito: e justamente o servidor
+        // que ninguem declarou como source que serve o diario sem saber.
+        if let Some(com_imagem) = self.replicacao_aberta() {
+            eprintln!(
+                "ATENCAO: replicacao.replicas_autorizadas esta VAZIA -- \
+                 `posicao`, `replicar` e `aplicar` atendem QUALQUER endereco \
+                 que tenha o token{}. Para fechar: liste os IPs das replicas \
+                 em replicacao.replicas_autorizadas.",
+                if com_imagem {
+                    ", e com replicacao.imagem_da_linha ligada o `replicar` \
+                     entrega a LINHA INTEIRA"
+                } else {
+                    ""
+                }
+            );
         }
 
         self.subir_web();
@@ -3336,6 +3384,28 @@ impl Servidor {
         // vale no proximo arranque» -- mentindo sobre o que ela acabou de
         // fazer. Apareceu exercitando, e nao lendo.
         j.definir("telemetria", self.telemetria.pintura().para_json());
+        // O aviso do pedido 214(b), estruturado e nao em prosa: a tela monta a
+        // frase pela fabrica de idiomas. Campo AUSENTE quando a lista esta
+        // preenchida -- assim quem le nao precisa distinguir `false` de
+        // "este servidor e velho e nao sabe responder".
+        if let Some(com_imagem) = self.replicacao_aberta() {
+            j.definir(
+                "replicacao_aberta",
+                Json::objeto(vec![
+                    ("aberta", Json::Bool(true)),
+                    ("com_imagem_da_linha", Json::Bool(com_imagem)),
+                    (
+                        "ops",
+                        Json::Lista(
+                            OPS_DE_REPLICACAO
+                                .iter()
+                                .map(|o| Json::texto_de(*o))
+                                .collect(),
+                        ),
+                    ),
+                ]),
+            );
+        }
         // O que ja esta GRAVADO e ainda nao vale: campo que so aplica no
         // proximo arranque volta aqui com o valor do arquivo, para a tela
         // mostra-lo em vez de redesenhar o valor velho calada.
@@ -5510,6 +5580,57 @@ impl Servidor {
                 // Fim limpo: EOF em claro, ou a despedida dentro do tunel.
                 Ok(Recebido::Fim) => return,
                 Err(e) => {
+                    // A linha ACIMA DO TETO deixava de existir: a conexao caia
+                    // sem resposta, sem linha no `acessos.log` e sem violacao
+                    // -- medido pela bateria `bancada/seguranca/porta.py`
+                    // (caso 4b): 134.218.794 bytes derrubaram a conexao em
+                    // 0,43 s e o log ganhou ZERO linhas. Memoria protegida,
+                    // visibilidade nenhuma: quem opera nao tinha como saber
+                    // que alguem tentou.
+                    let acima_do_teto = matches!(e, PhxError::LimiteExcedido(_));
+                    if acima_do_teto {
+                        // Drenar ANTES de responder, e nao depois: fechar um
+                        // soquete com dado por ler no buffer de recepcao manda
+                        // RST, e o RST joga fora a resposta que o cliente ainda
+                        // nao leu. Responder primeiro e fechar em cima seria
+                        // "responder" no codigo e continuar invisivel no fio --
+                        // que e o defeito que este conserto existe para matar.
+                        let sobrou = descartar_ate_a_quebra(&mut leitor, TETO_DO_REGISTRO);
+                        let resposta = self.resposta_erro("fio", &e, 0);
+                        let _ = canal.escrever(&mut saida, &resposta.escrever());
+                        self.anotar(&Acesso {
+                            quando_ms: crate::agora_ms(),
+                            ip: ip.clone(),
+                            porta_origem: porta,
+                            op: "fio".into(),
+                            usuario: sessao.login().to_string(),
+                            autenticado: sessao.usuario.is_some(),
+                            ok: false,
+                            duracao_ms: 0,
+                            // O TAMANHO entra no log, e nao so o teto: quem
+                            // investiga precisa distinguir "passou um byte" de
+                            // "mandaram meio giga". O numero e o que este lado
+                            // LEU (o teto mais um) somado ao que se drenou
+                            // depois -- e o texto diz isso, porque o que o
+                            // outro lado ainda tinha na mao ninguem mediu.
+                            erro: Some(format!(
+                                "{e}; lidos {} bytes desta linha (teto {TETO_DO_REGISTRO})",
+                                TETO_DO_REGISTRO + 1 + sobrou
+                            )),
+                            database: String::new(),
+                            tabela: String::new(),
+                            codigo: e.codigo(),
+                        });
+                        // PEDIDA, NAO IMPOSTA. Mandar uma linha grande demais
+                        // e engano de cliente com a mesma cara de ataque, e
+                        // bloquear de fabrica trancaria para fora quem so
+                        // configurou um lote alto -- o estrago do pedido 203.
+                        // Ligado, conta pela politica leve que ja existe.
+                        if self.config.politica.contar_linha_acima_do_teto {
+                            self.violacao_leve(&ip, "fio", "linha acima do teto");
+                        }
+                        return;
+                    }
                     // Aqui "nao deu erro" NAO pode virar "deu certo": dentro do
                     // tunel, um EOF sem despedida e um fio cortado, e ele vai
                     // para o log como erro em vez de sumir como fim de sessao.
@@ -5937,6 +6058,26 @@ impl Servidor {
         }
 
         let r = self.executar(&op, &pedido, sessao);
+
+        // Pedido 215 -- a injecao de SQL que ninguem bloqueava.
+        //
+        // O interruptor vem ANTES do trabalho, e a ordem e a licao do
+        // Profiler: desligado (o padrao) isto custa a leitura de um `bool`, e
+        // nao um `Json::texto_ou` mais uma varredura lexica por pedido
+        // recusado. Medido antes: 172.620 tentativas por minuto com uma
+        // conexao nova a cada uma, `blacklist.json` vazio antes e depois.
+        //
+        // Nao ha portao novo: quem conta e o `violacao_leve` de sempre, com o
+        // `tentativas_ate_bloquear` e a `janela_minutos` da mesma politica --
+        // o mesmo caminho do token invalido e da credencial errada.
+        if self.config.politica.contar_injecao_sql
+            && r.is_err()
+            && op == "sql"
+            && !ip.is_empty()
+            && phxsql_sql::comando_empilhado(pedido.texto_ou("texto", pedido.texto_ou("sql", "")))
+        {
+            self.violacao_leve(ip, &op, "comando SQL empilhado");
+        }
         (op, true, r)
     }
 
@@ -6030,6 +6171,49 @@ impl Servidor {
                 // Le o valor VIVO, que dois caminhos escrevem: a promocao de um
                 // spare e a gravacao pela tela de configuracao.
                 return Err(PhxError::Autorizacao(self.msg("erro.somente_leitura", &[])));
+            }
+        }
+
+        // Portao 2b-bis -- `aplicar` num servidor trancado por ADMINISTRACAO.
+        //
+        // `aplicar` esta fora de `OPS_ESCRITA` de proposito (o comentario da
+        // lista diz por que), e a consequencia media pela bateria
+        // `bancada/seguranca/porta.py` (caso 4d-ii) e que num SOURCE trancado
+        // o `inserir` recusava e o `aplicar` gravava a mesma linha na mesma
+        // sessao. Quem tem o token grava numa base que o dono declarou
+        // fechada.
+        //
+        // # O que distingue o legitimo do furo, e como foi medido
+        //
+        // Uma replica de verdade roda em `somente_leitura` POR DESENHO (o
+        // `Config_exemplo_03.json` e o `montar.py` da bancada), entao barrar
+        // `aplicar` por `somente_leitura` e so quebraria a replicacao. Medido
+        // antes de decidir, com um source e uma replica de pe (papel
+        // `replica`, `somente_leitura` ligado, 200 linhas alcancadas): a op
+        // `aplicar` foi chamada ZERO vezes nos dois `acessos.log` -- o laco da
+        // replica puxa e aplica por dentro, com `Table::aplicar_evento`, e
+        // nunca pelo protocolo. Quem chama `aplicar` pela rede e um EMPURRAO
+        // de fora, e o unico servidor que tem motivo para aceita-lo trancado e
+        // o que existe para receber replicacao.
+        //
+        // Por isso o crivo e o PAPEL, e nao a lista de replicas nem a
+        // existencia de origens: papel e a declaracao de para que este
+        // servidor serve. Source e isolado trancados passam a recusar; replica,
+        // read_replica, spare e multi continuam byte a byte como antes.
+        //
+        // O `cluster.is_none()` preserva o cluster inteiro: la quem decide
+        // escrita e o papel VIVO da eleicao, e uma segunda regra por cima seria
+        // a copia que alguem esquece de atualizar.
+        if op == "aplicar" && self.cluster.is_none() && self.somente_leitura() {
+            let papel = self.papel_atual();
+            let recebe_replicacao = matches!(
+                papel,
+                Papel::Replica | Papel::ReadReplica | Papel::Spare | Papel::Multi
+            );
+            if !recebe_replicacao {
+                return Err(PhxError::Autorizacao(
+                    self.msg("erro.aplicar_somente_leitura", &[("papel", papel.nome())]),
+                ));
             }
         }
 
@@ -16253,6 +16437,40 @@ impl Servidor {
     }
 }
 
+/// Joga fora o que sobrou de uma linha grande demais, ate a quebra ou ate o
+/// teto -- e devolve quantos bytes descartou.
+///
+/// # Por que descartar em vez de fechar direto
+///
+/// Fechar um soquete com dado por ler no buffer de recepcao faz o nucleo
+/// mandar RST, e o RST descarta o que o cliente ainda nao leu -- inclusive a
+/// resposta de erro que se acabou de escrever. Sem esta drenagem o conserto do
+/// pedido 216 "responderia" no codigo e continuaria invisivel no fio.
+///
+/// # Por que nao um `read_until`
+///
+/// Porque ele acumula num `Vec`, e acumular ate 128 MiB e exatamente a memoria
+/// que o teto existe para nao reservar. Aqui o buffer e o do proprio
+/// `BufReader`, e o laco so anda o cursor.
+fn descartar_ate_a_quebra<L: BufRead>(leitor: &mut L, teto: u64) -> u64 {
+    let mut descartados = 0u64;
+    while descartados < teto {
+        let (achou, quantos) = match leitor.fill_buf() {
+            Ok([]) | Err(_) => return descartados,
+            Ok(bloco) => match bloco.iter().position(|c| *c == b'\n') {
+                Some(i) => (true, i + 1),
+                None => (false, bloco.len()),
+            },
+        };
+        leitor.consume(quantos);
+        descartados += quantos as u64;
+        if achou {
+            break;
+        }
+    }
+    descartados
+}
+
 /// Uma coluna, pelo nome ou pelo numero. Aceitar os dois e o que deixa a
 /// consulta legivel a mao e barata pela interface.
 fn coluna_de(j: &Json, esquema: &phxsql_core::schema::Schema) -> Result<usize> {
@@ -16658,6 +16876,131 @@ mod testes_firewall_e_mensagens {
             "phxsys nao pode nascer sem alguem pedir"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **O teste que mais importa do pedido 215: o comportamento VELHO.**
+    ///
+    /// Sem `seguranca.contar_injecao_sql` -- que e o padrao e o que todo
+    /// `config.json` de hoje tem --, comando empilhado continua sendo erro de
+    /// sintaxe e nada mais: ninguem bloqueia, e o IP continua entrando. E o
+    /// que a bancada mediu antes desta rodada (172.620 tentativas por minuto,
+    /// `blacklist.json` vazio antes e depois), e e o que este teste trava.
+    #[test]
+    fn sem_o_interruptor_a_injecao_nao_bloqueia_ninguem() {
+        let dir = dir_temp("inj-desligado");
+        let mut c = config_base(&dir);
+        c.politica.tentativas_ate_bloquear = 3;
+        let s = Servidor::novo(c).unwrap();
+        let mut sessao = Sessao::default();
+        for _ in 0..20 {
+            let (_, _, r) = s.despachar(
+                r#"{"token":"t","op":"sql","database":"loja",
+                    "texto":"SELECT * FROM clientes; DROP TABLE clientes"}"#,
+                &mut sessao,
+                "203.0.113.40",
+            );
+            assert!(r.is_err(), "o comando empilhado tem de ser recusado");
+        }
+        assert!(
+            s.barrado("203.0.113.40", crate::agora_ms()).is_none(),
+            "com o interruptor desligado ninguem pode ser bloqueado"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **Prova real, com o defeito reposto.** Ligado o interruptor, o comando
+    /// empilhado conta pela politica leve que ja existe e o IP cai na
+    /// blacklist na enesima -- pelo mesmo `violacao_leve` do token invalido,
+    /// sem portao novo. Tirando a chamada do `despachar`, este teste volta a
+    /// falhar na hora.
+    #[test]
+    fn com_o_interruptor_o_comando_empilhado_bloqueia_na_enesima() {
+        let dir = dir_temp("inj-ligado");
+        let mut c = config_base(&dir);
+        c.politica.contar_injecao_sql = true;
+        c.politica.tentativas_ate_bloquear = 3;
+        let s = Servidor::novo(c).unwrap();
+        let mut sessao = Sessao::default();
+        for tentativa in 1..=3 {
+            let (_, _, r) = s.despachar(
+                r#"{"token":"t","op":"sql","database":"loja",
+                    "texto":"SELECT * FROM clientes; DROP TABLE clientes; --"}"#,
+                &mut sessao,
+                "203.0.113.41",
+            );
+            assert!(r.is_err(), "tentativa {tentativa}");
+        }
+        let b = s
+            .barrado("203.0.113.41", crate::agora_ms())
+            .expect("tres comandos empilhados tinham de bloquear");
+        assert!(
+            b.motivo.contains("empilhado"),
+            "o bloqueio tem de dizer o motivo: {}",
+            b.motivo
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// O falso positivo e o que mataria a guarda: SQL LEGITIMO que da erro --
+    /// tabela que nao existe, `FROM` escrito errado, comentario no fim -- nao
+    /// e injecao, e vinte recusas dessas nao podem bloquear quem escreve
+    /// consulta a mao. Quem decide e o lexico do motor, e nao um casador de
+    /// texto.
+    #[test]
+    fn sql_legitimo_recusado_nao_conta_como_injecao() {
+        let dir = dir_temp("inj-falso");
+        let mut c = config_base(&dir);
+        c.politica.contar_injecao_sql = true;
+        c.politica.tentativas_ate_bloquear = 3;
+        let s = Servidor::novo(c).unwrap();
+        let mut sessao = Sessao::default();
+        for texto in [
+            "SELECT * FROM clientes",
+            "SELECT * FROM clientes;",
+            "SELECT * FRON clientes",
+            "SELECT * FROM clientes WHERE nome = 'Alves' -- e o resto",
+            "SELECT /* comentario */ * FROM clientes",
+            // O veneno como DADO -- a bateria grava exatamente este valor.
+            "SELECT * FROM clientes WHERE nome = '; DROP TABLE clientes; --'",
+            "SELECT * FROM clientes WHERE nome = '' OR '1'='1",
+        ] {
+            for _ in 0..5 {
+                let pedido = Json::objeto(vec![
+                    ("token", Json::texto_de("t")),
+                    ("op", Json::texto_de("sql")),
+                    ("database", Json::texto_de("loja")),
+                    ("texto", Json::texto_de(texto)),
+                ]);
+                let (_, _, r) = s.despachar(&pedido.escrever(), &mut sessao, "203.0.113.42");
+                assert!(r.is_err(), "sem base, todos estes erram: {texto}");
+            }
+            assert!(
+                s.barrado("203.0.113.42", crate::agora_ms()).is_none(),
+                "SQL legitimo recusado nao pode bloquear: {texto}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// O ajudante do pedido 216: a drenagem para na quebra de linha, devolve
+    /// quantos bytes jogou fora, e o que vem DEPOIS da quebra continua no
+    /// leitor -- senao ela comeria o proximo pedido.
+    #[test]
+    fn a_drenagem_para_na_quebra_e_nao_come_o_proximo_pedido() {
+        use std::io::BufReader;
+        let bruto: Vec<u8> = b"o resto da linha gigante\n{\"op\":\"ping\"}\n".to_vec();
+        let mut leitor = BufReader::new(&bruto[..]);
+        assert_eq!(descartar_ate_a_quebra(&mut leitor, 1024), 25);
+        let mut sobrou = String::new();
+        leitor.read_line(&mut sobrou).unwrap();
+        assert_eq!(sobrou, "{\"op\":\"ping\"}\n");
+
+        // Sem quebra nenhuma, o teto e quem manda -- e ele nao pode ser
+        // ultrapassado, senao a drenagem viraria a memoria que o teto existe
+        // para nao gastar.
+        let sem_quebra = vec![b'A'; 5000];
+        let mut leitor = BufReader::new(&sem_quebra[..]);
+        assert!(descartar_ate_a_quebra(&mut leitor, 100) >= 100);
     }
 
     /// O comportamento VELHO do comando proibido: bloqueio na primeira, com o
@@ -17349,6 +17692,101 @@ mod testes_papel {
             ip: ip.to_string(),
             ..Default::default()
         }
+    }
+
+    /// **Prova real do pedido 214(c).** A bateria
+    /// `bancada/seguranca/porta.py` (caso 4d-ii) mediu um SOURCE em
+    /// `somente_leitura` recusando `inserir` e aceitando `aplicar` na mesma
+    /// sessao, gravando a linha inteira que o `replicar` acabara de entregar.
+    /// Tirando o portao 2b-bis, este teste volta a falhar na hora.
+    #[test]
+    fn aplicar_num_source_trancado_por_administracao_e_recusado() {
+        for papel in ["source", "isolado"] {
+            let d = dir(&format!("aplicar-{papel}"));
+            let s = servidor_com_papel(&d, papel, true);
+            let sessao = Sessao::default();
+            let alvo = pedido(r#"{"database":"loja","tabela":"clientes"}"#);
+
+            // CONTROLE POSITIVO: `inserir` ja recusava, e continua recusando
+            // com o texto de sempre.
+            let e = s.portoes_do_pedido("inserir", &alvo, &sessao).unwrap_err();
+            assert_eq!(e.nome(), "ACESSO_NEGADO", "{papel}");
+
+            let e = s.portoes_do_pedido("aplicar", &alvo, &sessao).unwrap_err();
+            assert_eq!(
+                e.nome(),
+                "ACESSO_NEGADO",
+                "{papel}: aplicar tinha de recusar"
+            );
+            assert!(
+                e.to_string().contains("aplicar") && e.to_string().contains(papel),
+                "{papel}: a recusa tem de dizer O QUE e QUAL papel: {e}"
+            );
+
+            // E o que NAO escreve continua passando: trancar o `aplicar` nao
+            // pode trancar quem so pergunta ate onde o diario foi.
+            for op in ["posicao", "replicar"] {
+                s.portoes_do_pedido(op, &alvo, &sessao)
+                    .unwrap_or_else(|x| panic!("{papel}/{op} devia passar: {x}"));
+            }
+            std::fs::remove_dir_all(&d).unwrap();
+        }
+    }
+
+    /// **O teste que mais importa do 214(c): o comportamento VELHO.**
+    ///
+    /// Uma replica roda em `somente_leitura` POR DESENHO -- e o
+    /// `Config_exemplo_03.json` e o `montar.py` da bancada. Se o `aplicar`
+    /// passasse a recusar nela, toda replicacao por EMPURRAO pararia de um dia
+    /// para o outro. Os quatro papeis que existem para receber replicacao
+    /// continuam byte a byte como antes.
+    #[test]
+    fn replica_trancada_continua_aceitando_o_diario_do_source() {
+        for papel in ["replica", "read_replica", "spare", "multi"] {
+            let d = dir(&format!("aplicar-ok-{papel}"));
+            let s = servidor_com_papel(&d, papel, true);
+            s.portoes_do_pedido(
+                "aplicar",
+                &pedido(r#"{"database":"loja","tabela":"clientes"}"#),
+                &Sessao::default(),
+            )
+            .unwrap_or_else(|e| panic!("{papel}: aplicar devia passar: {e}"));
+            std::fs::remove_dir_all(&d).unwrap();
+        }
+    }
+
+    /// **214(b)** -- a lista vazia continua liberando, e passa a AVISAR. O
+    /// aviso nao olha o papel de proposito: a bancada mediu um servidor de
+    /// fabrica (papel isolado) entregando o diario a quem so tinha o token.
+    #[test]
+    fn a_replicacao_aberta_se_anuncia_e_some_quando_a_lista_enche() {
+        let d = dir("aviso-vazia");
+        let s = source_com_replicas(&d, "");
+        assert_eq!(
+            s.replicacao_aberta(),
+            Some(true),
+            "source: a imagem liga sozinha, e o aviso tem de dizer isso"
+        );
+        let c = s.configuracao_json();
+        let aberta = c
+            .campo("replicacao_aberta")
+            .expect("o campo tem de existir");
+        assert!(aberta.booleano_ou("aberta", false));
+        assert!(aberta.booleano_ou("com_imagem_da_linha", false));
+        std::fs::remove_dir_all(&d).unwrap();
+
+        let d = dir("aviso-cheia");
+        let s = source_com_replicas(&d, r#""192.168.50.20""#);
+        assert_eq!(
+            s.replicacao_aberta(),
+            None,
+            "lista cheia: nao ha o que avisar"
+        );
+        assert!(
+            s.configuracao_json().campo("replicacao_aberta").is_none(),
+            "campo AUSENTE, e nao `false`: quem le nao pode confundir com servidor velho"
+        );
+        std::fs::remove_dir_all(&d).unwrap();
     }
 
     /// **O teste que mais importa aqui: o comportamento VELHO.**

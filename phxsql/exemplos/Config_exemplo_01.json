@@ -265,7 +265,26 @@
     "bloqueios_exportar) para gerar a lista em formato iptables, nftables ou",
     "fail2ban e aplicar por fora.",
     "",
-    "Confira e desfaca com: phxsqld --bloqueios / --desbloquear <ip>"
+    "Confira e desfaca com: phxsqld --bloqueios / --desbloquear <ip>",
+    "",
+    "As duas ULTIMAS nascem DESLIGADAS, e cada uma tem o defeito dela escrito",
+    "no SEGURANCA.md secao 3. Ligadas, contam pela mesma politica leve acima --",
+    "nao ha um limite proprio para elas:",
+    "",
+    "contar_injecao_sql: a recusa \"sobrou X depois do fim do comando\" -- o",
+    "comando empilhado do ; DROP TABLE -- passa a contar como tentativa leve.",
+    "So ela: erro de sintaxe comum, aspa solta e comentario NAO contam, e o",
+    "corpo de um CREATE PROCEDURE, cheio de ponto-e-virgula legitimo, tambem",
+    "nao. Quem decide e o analisador do proprio motor, nunca um casador de",
+    "texto.",
+    "",
+    "contar_linha_acima_do_teto: a linha maior que os 128 MiB do fio passa a",
+    "contar como tentativa leve. Ela ja e recusada e ja entra no acessos.log",
+    "com o tamanho e o teto; o interruptor decide se tambem bloqueia o IP.",
+    "",
+    "As duas nascem desligadas porque nenhuma e prova de ma-fe: um cliente com",
+    "o lote mal dimensionado, ou um relatorio colado com dois comandos, seriam",
+    "trancados para fora por engano -- e o operador junto."
   ],
 
   "seguranca": {
@@ -276,6 +295,9 @@
     "tentativas_ate_bloquear": 5,
     "janela_minutos": 10,
     "bloqueio_minutos": 60,
+
+    "contar_injecao_sql": false,
+    "contar_linha_acima_do_teto": false,
 
     "whitelist": [],
 

@@ -120,6 +120,27 @@ pub struct Politica {
     /// continua valendo -- whitelist protege o acesso, nao da poder.
     pub whitelist: Vec<String>,
     pub firewall: Option<Firewall>,
+    /// Contar a recusa de SQL com COMANDO EMPILHADO como tentativa leve?
+    ///
+    /// Nasce DESLIGADO, e o padrao e o comportamento de sempre: um erro de
+    /// sintaxe nunca bloqueou ninguem aqui, e ligar isso de fabrica faria o
+    /// operador que erra a digitacao cinco vezes se trancar para fora --
+    /// exatamente o estrago do pedido 203, em que uma replica mal configurada
+    /// bloqueou o `127.0.0.1` e derrubou a sessao junto.
+    ///
+    /// Ligado, a recusa conta pela MESMA politica leve que ja existe
+    /// (`tentativas_ate_bloquear` na `janela_minutos`), pelo mesmo caminho do
+    /// token invalido e da credencial errada. Nao ha um N proprio, e a
+    /// ausencia e deliberada: um segundo contador com um segundo limite seria
+    /// a segunda politica que alguem esquece de atualizar.
+    pub contar_injecao_sql: bool,
+    /// Contar a LINHA ACIMA DO TETO do fio como tentativa leve?
+    ///
+    /// Nasce DESLIGADO pelo mesmo motivo do de cima: mandar um lote grande
+    /// demais e engano de cliente com a mesma cara de ataque, e um cliente que
+    /// erra o tamanho do lote cinco vezes trancaria o proprio operador para
+    /// fora. Ligado, conta pela politica leve que ja existe.
+    pub contar_linha_acima_do_teto: bool,
 }
 
 impl Default for Politica {
@@ -133,6 +154,8 @@ impl Default for Politica {
             bloqueio_minutos: 60,
             whitelist: Vec::new(),
             firewall: None,
+            contar_injecao_sql: false,
+            contar_linha_acima_do_teto: false,
         }
     }
 }
@@ -178,6 +201,11 @@ impl Politica {
                 .filter(|w| !w.is_empty())
                 .collect(),
             firewall: j.campo("firewall").and_then(Firewall::de_json),
+            contar_injecao_sql: j.booleano_ou("contar_injecao_sql", padrao.contar_injecao_sql),
+            contar_linha_acima_do_teto: j.booleano_ou(
+                "contar_linha_acima_do_teto",
+                padrao.contar_linha_acima_do_teto,
+            ),
         }
     }
 

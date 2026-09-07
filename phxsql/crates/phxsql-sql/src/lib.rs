@@ -57,8 +57,8 @@ pub mod transacao;
 
 pub use lexico::{Comparador, Simbolo, Token};
 pub use sintaxe::{
-    analisar, Alvo, ColunaPedida, Condicao, Literal, Ordenacao, Projecao, Selecao,
-    RESERVADAS_DO_MOTOR,
+    analisar, comando_empilhado, Alvo, ColunaPedida, Condicao, Literal, Ordenacao, Projecao,
+    Selecao, RESERVADAS_DO_MOTOR,
 };
 pub use traduzir::{traduzir, ColunaDoIndice, IndiceInfo, Plano, Saida};
 
