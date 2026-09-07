@@ -209,7 +209,21 @@ def operacoes() -> int:
     """
     fonte = (RAIZ / "crates/phxsql-server/src/catalogo.rs").read_text(encoding="utf-8")
     trecho = fonte[fonte.index("OPERACOES"):]
-    nomes = re.findall(r'^\s{8}nome:\s*"([a-z_0-9]+)"', trecho, re.M)
+    # **Maiuscula entra**, e isto e conserto de 07/09/2026: o crivo era
+    # `[a-z_0-9]+`, e `SelectMemory` -- que e o nome canonico de uma operacao
+    # de verdade -- nao casava. O gerador vinha publicando UMA operacao a menos
+    # havia rodadas, e o `len(nomes) != len(set(nomes))` nao acusa nada disso:
+    # ele confere repetido, e o que faltava era o AUSENTE.
+    #
+    # A conferencia contra a contagem de structs entrou junto, porque foi ela
+    # que denunciou: 123 `Operacao {` para 122 nomes achados.
+    nomes = re.findall(r'^\s{8}nome:\s*"([A-Za-z_0-9]+)"', trecho, re.M)
+    structs = len(re.findall(r"^    Operacao \{", trecho, re.M))
+    if structs != len(nomes):
+        sys.exit(
+            f"o catalogo tem {structs} entradas e o crivo achou {len(nomes)} "
+            "nomes -- alguma operacao tem o `nome` fora da forma que o crivo le"
+        )
     if len(nomes) != len(set(nomes)):
         sys.exit("ha operacao repetida em OPERACOES")
     if len(nomes) < 50:

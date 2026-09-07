@@ -32,7 +32,7 @@ curl -X POST http://127.0.0.1:6000/v1/ler \
 ## 1. A decisão que sustenta tudo: a especificação **sai da tabela de despacho**
 
 <!-- rest:operacoes:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-São **121 operações**. Uma especificação OpenAPI digitada à mão envelhece na primeira operação nova e **passa a mentir com aparência de documento oficial** — que é pior do que não ter documento nenhum. (Este número também: ele já disse 113 aqui, 108 no `PENDENCIAS.md` e 121 no catálogo lido por uma auditoria externa. Hoje sai da constante `OPERACOES`.)
+São **123 operações**. Uma especificação OpenAPI digitada à mão envelhece na primeira operação nova e **passa a mentir com aparência de documento oficial** — que é pior do que não ter documento nenhum. (Este número também: ele já disse 113 aqui, 108 no `PENDENCIAS.md` e 121 no catálogo lido por uma auditoria externa. Hoje sai da constante `OPERACOES`.)
 <!-- rest:operacoes:fim -->
 
 Esta casa já pagou duas vezes pela mesma causa, e as duas estão escritas no
