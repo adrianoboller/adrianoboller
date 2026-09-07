@@ -733,5 +733,20 @@
   "itens_questionario": 60,
   "hooks": 9,
   "manual": 884
+ },
+ {
+  "versao": "3.42.0",
+  "data": "2026-09-07",
+  "titulo": "termos de licenca com o aceite registrado, e o aviso de instalacao por e-mail",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 33,
+  "scripts": 40,
+  "linhas_py": 30837,
+  "prints": 63,
+  "testes": 105,
+  "itens_questionario": 60,
+  "hooks": 9,
+  "manual": 884
  }
 ]
