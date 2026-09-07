@@ -842,6 +842,18 @@ fn criar(p: &mut Analisador, texto: &str) -> Result<Comando> {
              nao avalia expressao",
         ));
     }
+    // Pedido 219 (item 1): antes disto, `CREATE DATABASE` caia direto no
+    // `Err` generico de baixo -- o MESMO texto de `CREATE TABLE`, que fala em
+    // "operacao criar_tabela" e nunca nomeia o caso do DATABASE que disparou.
+    // Quem le "Tabela se cria pela operacao criar_tabela" depois de escrever
+    // `CREATE DATABASE outra` procura a tabela errada.
+    if p.aceitar_palavra("DATABASE") {
+        return Err(lexico::erro(
+            pos,
+            "CREATE DATABASE nao existe nesta camada — nao ha DDL de database \
+             no SQL em texto. Use a operacao criar_database do protocolo",
+        ));
+    }
     Err(lexico::erro(
         pos,
         "CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela \
@@ -3199,5 +3211,27 @@ mod testes {
         };
         assert_eq!(alvo.database, "auditoria");
         assert_eq!(alvo.tabela, "matriz.eventos");
+    }
+
+    /// Pedido 219 (item 1): `CREATE DATABASE outra` tinha de nomear o caso do
+    /// DATABASE -- antes caia no MESMO texto de `CREATE TABLE`
+    /// ("Tabela se cria pela operacao criar_tabela"), que nunca fala em
+    /// database e manda quem leu procurar a coisa errada.
+    #[test]
+    fn create_database_nomeia_o_proprio_caso() {
+        let e = comando("CREATE DATABASE outra").unwrap_err().to_string();
+        assert!(e.contains("DATABASE"), "{e}");
+        assert!(e.contains("criar_database"), "{e}");
+        // E NAO reaproveita o texto do CREATE TABLE -- o defeito era
+        // exatamente esta frase aparecendo para o caso errado.
+        assert!(!e.contains("criar_tabela"), "{e}");
+    }
+
+    /// O `CREATE TABLE` continua com a mensagem dele -- o conserto do
+    /// DATABASE nao pode ter desviado esse caminho.
+    #[test]
+    fn create_table_continua_nomeando_criar_tabela() {
+        let e = comando("CREATE TABLE x (id INT)").unwrap_err().to_string();
+        assert!(e.contains("criar_tabela"), "{e}");
     }
 }
