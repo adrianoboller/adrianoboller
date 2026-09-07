@@ -1593,11 +1593,61 @@ decidido e escrito**, não herdado: *recebeu*, *aplicou*, ou *aplicou e
 sincronizou*? São três garantias diferentes com o mesmo nome, e a diferença
 entre elas é exatamente a que separa «perdi um commit» de «não perdi».
 
-### 19.7 Como refazer
+### 19.7 A premissa do CANAL ABERTO, medida — e o que ela derrubou (07/09/2026)
+
+O dono decidiu construir pela **rota do canal aberto**, e a linha do pedido
+apontava o `bidirecional.rs` como onde essa rota mora. A frente F2 mediu antes
+de implementar, e a medição partiu a frase em duas.
+
+**`bidirecional.rs` não tem canal nenhum.** A primeira linha do cabeçalho dele
+diz *«a parte funda da replicação bidirecional (multi-master), **sem rede**»*:
+ele resolve conflito por carimbo e evita o laço pela origem no evento. Não abre
+soquete, não conecta, não empurra.
+
+**O canal aberto existe, e é o do PULSO.** O `laco_do_pulso`/`pulsar` abre uma
+conexão de cada nó para cada outro e a mantém viva. Contados na telemetria
+(`bancada/quorum/canal.py`), num cluster de três: **6 conexões longas**, e
+**2 delas são do master para as réplicas** — abertas pelo master, já
+autenticadas, já quentes.
+
+E daí sai o achado que muda o desenho:
+
+> **«O master não tem como fazer ninguém buscar» é verdade na REPLICAÇÃO e
+> falsa no CLUSTER.**
+
+Na replicação pura o desenho é *pull* por firewall. Num cluster, o próprio
+pulso já obriga todo mundo a alcançar todo mundo — a propriedade de firewall
+**já tinha sido gasta pelo cluster**, e não seria este pedido a gastá-la.
+
+Medido, com conexões quentes, 60 voltas, tudo em `127.0.0.1` (é o **piso**):
+
+| o que | mediana | faixa |
+|---|---|---|
+| piso do canal — `cluster_pulso` sem dado nenhum | **0,089 ms** | 0,069 – 0,232 |
+| empurrar um evento pela conexão quente | **0,466 ms** | 0,337 – 34,988 |
+| quórum 2-de-3 pelo canal | **0,447 ms** | — |
+| quórum 3-de-3 pelo canal | **0,498 ms** | — |
+
+**O que o piso diz:** o canal em si é barato — 5× menor que levar um evento. O
+preço do quórum é o trabalho de **aplicar**, não o de **falar**, que é o
+contrário do que se suporia. E ele explica a medição anterior: a `medir.py`
+publicou `2-de-3 = 0,661 ms` abrindo o caminho a cada volta; pelo canal quente
+são **0,447 ms**, e a diferença é o aperto de mão que o master **não pagaria**.
+
+**Não foi implementado, e o motivo tem número.** Faltam quatro peças — a
+primeira é decidir o que o «ok» da réplica significa (§19.6). O parecer inteiro,
+com o caminho na ordem em que ele é testável, está em
+`docs/propostas/quorum-de-escrita.md`. O que entrou foi só o **campo**
+`cluster.quorum_minimo`, porque mudança de formato entra cedo, com o servidor
+declarando `"quorum_imposto": false` ao lado dele — campo que finge efeito é
+pior que campo ausente.
+
+### 19.8 Como refazer
 
 ```bash
 cargo build --release
-python3 bancada/quorum/medir.py 60
+python3 bancada/quorum/medir.py 60    # gravar / levar / quorum, conexao fria
+python3 bancada/quorum/canal.py 60    # o canal aberto: quantos, e a que custo
 ```
 
 Ele **para** — em vez de publicar um número bonito — se uma réplica puxar

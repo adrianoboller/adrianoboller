@@ -347,6 +347,24 @@ pub struct Cluster {
     pub email: Email,
     /// Databases replicados no cluster. Vazio = todos os do master.
     pub databases: Vec<String>,
+    /// Quantos servidores tem de confirmar uma gravacao antes de o cliente
+    /// ouvir "gravei" -- pedido 207, a transacao com quorum.
+    ///
+    /// # Ele e GUARDADO e ainda NAO e imposto, e isto esta escrito de proposito
+    ///
+    /// A escrita com quorum nao existe: hoje o master confirma sem esperar
+    /// replica nenhuma (o cabecalho do `cluster.rs` diz isso sem eufemismo).
+    /// O campo mora aqui desde antes por uma razao de formato -- **mudanca de
+    /// formato entra cedo**, e o lugar dele e o bloco `cluster`, ao lado de
+    /// `nos`, que e o que o 207 decidiu. Guardar agora custa um inteiro;
+    /// descobrir depois que ele devia morar noutro bloco custa migracao.
+    ///
+    /// Zero = como hoje, o master confirma sozinho. A tela mostra o valor e
+    /// diz, com todas as letras, que ele ainda nao e imposto -- campo que
+    /// finge efeito e pior que campo ausente, e esta casa ja pagou por isso
+    /// com o `recursos.cache_paginas`, que passou tres versoes no arquivo,
+    /// no MANUAL e na tela sem uma linha de codigo o lendo.
+    pub quorum_minimo: u64,
     /// Credenciais com que ESTE no fala com os outros -- as mesmas tres
     /// pecas da origem de replicacao, e pela mesma razao: a senha nunca
     /// aparece em claro, so o hash de onde sai a chave do desafio-resposta.
@@ -392,6 +410,7 @@ impl Cluster {
             avisar_cada_min: if avisar > 0.0 { avisar.max(0.05) } else { 5.0 },
             email: Email::de_json(c)?,
             databases: c.textos("databases"),
+            quorum_minimo: c.inteiro_ou("quorum_minimo", 0).max(0) as u64,
             token: c.texto_ou("token", "").to_string(),
             usuario: c.texto_ou("usuario", "").trim().to_string(),
             senha_hash: c.texto_ou("senha_hash", "").trim().to_string(),
@@ -482,6 +501,11 @@ impl Cluster {
                 Json::texto_de(format!("{:.2}", self.avisar_cada_min)),
             ),
             ("email", Json::Bool(self.email.ligado)),
+            ("quorum_minimo", Json::de_u64(self.quorum_minimo)),
+            // O que o campo acima NAO faz, dito pelo servidor e nao pela tela:
+            // duas telas divergem no dia em que uma for atualizada e a outra
+            // nao, e a que envelhece e sempre a que ninguem compila.
+            ("quorum_imposto", Json::Bool(false)),
             (
                 "nos",
                 Json::Lista(
@@ -3086,6 +3110,28 @@ impl Config {
                 ]),
             ),
             ("rest", self.rest.para_json()),
+            // O bloco do CLUSTER, que faltava inteiro -- pedido 218.
+            //
+            // O `Cluster::para_json` existia desde que o cluster nasceu, e
+            // NINGUEM o chamava: a tela pedia `config`, a chave nao vinha, e
+            // uma tela de cluster nao tinha de onde ler. Ausencia e pior que
+            // ocultacao -- `seguranca` e `cifra` aparecem com o segredo
+            // trocado por um rotulo, e quem le sabe que existem; `cluster`
+            // nao aparecia de jeito nenhum, e quem lia concluia que nao havia
+            // cluster nenhum configurado.
+            //
+            // `Nulo` quando nao ha bloco, e isso e o oposto de omitir: a tela
+            // distingue "este servidor nao esta em cluster" de "o servidor
+            // nao me contou". O token e o `senha_hash` continuam de fora, por
+            // dentro do proprio `Cluster::para_json` -- resposta de protocolo
+            // nao carrega credencial.
+            (
+                "cluster",
+                match &self.cluster {
+                    Some(c) => c.para_json(),
+                    None => Json::Nulo,
+                },
+            ),
             (
                 "backup",
                 Json::objeto(vec![
@@ -3322,6 +3368,18 @@ pub const CAMPOS_EDITAVEIS: &[(&str, TipoDoCampo, bool)] = &[
     ("profiler.arquivos", TipoDoCampo::Inteiro, true),
     ("telemetria.alto_uso_ms", TipoDoCampo::Inteiro, true),
     ("telemetria.stress_ms", TipoDoCampo::Inteiro, true),
+    // O quorum minimo da escrita -- pedido 208, a tela; pedido 207, o efeito.
+    //
+    // `false` (nao vale a quente) e a marca HONESTA hoje: nada o le, entao
+    // gravar nao muda comportamento nenhum. A tela mostra o gravado pelo
+    // caminho que ja existe (`no_arquivo`) e diz ao lado que o campo ainda
+    // nao e imposto. Quando o 207 entrar, esta linha vira `true` no mesmo
+    // commit que fizer o commit espera-lo.
+    //
+    // Os OUTROS campos do bloco `cluster` continuam fora: `nos` tem operacao
+    // propria (`cluster_no_acrescentar`), e `token`/`usuario`/`senha_hash`
+    // carregam credencial -- e credencial se edita no arquivo.
+    ("cluster.quorum_minimo", TipoDoCampo::Inteiro, false),
 ];
 
 /// O valor de `"secao.campo"` dentro de um JSON, ou `None` se nao existe.
@@ -3416,7 +3474,22 @@ impl Config {
                 )));
             }
         }
+        Self::gravar_arvore(caminho, mudancas)
+    }
 
+    /// O ESCRITOR: troca os campos no arquivo, valida e grava.
+    ///
+    /// # Por que ele e separado do porteiro
+    ///
+    /// A lista de nos do cluster tambem se grava no `config.json` (pedido
+    /// 217, escalonar a quente), e ela NAO passa por `CAMPOS_EDITAVEIS`: o
+    /// formulario generico da tela nao a monta, e o portao dela e outro --
+    /// mexer no denominador da maioria e decisao de cluster, nao de campo de
+    /// configuracao. Duas gravacoes com duas escritas divergiriam no primeiro
+    /// cuidado que uma ganhasse (a permissao herdada, o `rename` atomico, o
+    /// cinto que confere o texto contra a arvore). Entao ha UM escritor, e
+    /// dois porteiros na frente dele.
+    fn gravar_arvore(caminho: &Path, mudancas: &[(String, Json)]) -> Result<Config> {
         let texto = std::fs::read_to_string(caminho).map_err(|e| {
             PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
         })?;
@@ -3495,6 +3568,34 @@ impl Config {
         std::fs::rename(&temporario, caminho)
             .map_err(|e| PhxError::Esquema(format!("nao troquei {}: {e}", caminho.display())))?;
         Ok(novo)
+    }
+
+    /// Grava a lista de nos do cluster no `config.json` -- pedido 217.
+    ///
+    /// # Por que ela precisa ir ao arquivo, e nao so a memoria
+    ///
+    /// A lista viva do `EstadoCluster` faz o no NOVO ser aceito agora; sem
+    /// gravar, o proximo arranque leria o arquivo velho e o no acrescentado
+    /// sumiria calado -- que e a pior forma de perder um no, porque o cluster
+    /// continua funcionando com um denominador de maioria menor do que o
+    /// operador acredita.
+    ///
+    /// A validacao e a mesma de sempre (`Config::validar`), entao lista com
+    /// id repetido, sem este servidor dentro ou com menos de dois nos volta
+    /// recusada ANTES de tocar o disco.
+    pub fn gravar_nos_do_cluster(caminho: &Path, nos: &[NoCluster]) -> Result<Config> {
+        let lista = Json::Lista(
+            nos.iter()
+                .map(|n| {
+                    Json::objeto(vec![
+                        ("id", Json::texto_de(&n.id)),
+                        ("endereco", Json::texto_de(&n.endereco)),
+                        ("porta", Json::de_u64(n.porta as u64)),
+                    ])
+                })
+                .collect(),
+        );
+        Self::gravar_arvore(caminho, &[("cluster.nos".to_string(), lista)])
     }
 }
 
@@ -3837,6 +3938,50 @@ mod tests {
         assert!(
             !texto.contains("pbkdf2-sha256$"),
             "o formato do hash vazou: {texto}"
+        );
+    }
+
+    /// Pedido 218: o bloco `cluster` tem de APARECER na resposta de `config`.
+    ///
+    /// # Por que este teste nasceu depois do outro que "ja cobria"
+    ///
+    /// O `nenhuma_credencial_do_config_sai_pela_op_config` acima ja conferia
+    /// o token e o hash do cluster -- e passava com o bloco INTEIRO ausente,
+    /// porque marca que nao foi serializada nao aparece. Guarda de vazamento
+    /// so vale enquanto o campo existe; a que prova que ele existe e esta.
+    #[test]
+    fn o_bloco_cluster_aparece_na_op_config() {
+        let bruto = r#"{"token":"t","replicacao":{"papel":"source","id_servidor":"n1",
+            "imagem_da_linha":true},
+          "cluster":{"id":"n1","prioridade":7,"janela_inatividade_s":9,
+            "nos":[{"id":"n1","endereco":"10.0.0.1","porta":5001},
+                   {"id":"n2","endereco":"10.0.0.2","porta":5002}]}}"#;
+        let c = Config::de_json(&Json::analisar(bruto).unwrap()).unwrap();
+        let j = c.para_json();
+        let cl = j
+            .campo("cluster")
+            .expect("a chave \"cluster\" tem de existir");
+        assert_eq!(cl.texto_ou("id", ""), "n1");
+        assert_eq!(cl.inteiro_ou("prioridade", 0), 7);
+        assert_eq!(cl.inteiro_ou("janela_inatividade_s", 0), 9);
+        let nos = cl.campo("nos").and_then(Json::lista).expect("nos");
+        assert_eq!(nos.len(), 2);
+        assert_eq!(nos[1].texto_ou("id", ""), "n2");
+        assert_eq!(nos[1].texto_ou("endereco", ""), "10.0.0.2");
+        assert_eq!(nos[1].inteiro_ou("porta", 0), 5002);
+    }
+
+    /// Sem cluster a chave vem NULA, e nao ausente: a tela precisa distinguir
+    /// "este servidor nao esta em cluster" de "o servidor nao me contou" --
+    /// que era exatamente o buraco do 218.
+    #[test]
+    fn sem_cluster_a_chave_vem_nula_e_nao_some() {
+        let c = Config::de_json(&Json::analisar(r#"{"token":"t"}"#).unwrap()).unwrap();
+        let j = c.para_json();
+        assert!(
+            matches!(j.campo("cluster"), Some(Json::Nulo)),
+            "a chave tem de existir e ser nula: {}",
+            j.escrever()
         );
     }
 

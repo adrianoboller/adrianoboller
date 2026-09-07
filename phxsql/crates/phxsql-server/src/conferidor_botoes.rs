@@ -166,6 +166,47 @@ pub const DISPENSADOS: &[(&str, &str, &str)] = &[
          clicado no meio de uma varredura, o resto dela nao teria onde \
          acontecer",
     ),
+    // -------------------------------------------------- a tela de Cluster
+    //
+    // Os quatro botoes dela NAO existem no servidor da bateria, e isso nao e
+    // uma desculpa: e o proprio desenho da tela. `verCluster` desenha, sem o
+    // bloco `cluster` no `config.json`, so a nota «este servidor nao esta em
+    // cluster» -- e a bateria sobe um phxsqld isolado. Nao ha o que clicar.
+    //
+    // A prova real deles esta em `testes-web/capturas-cluster.mjs`, que sobe
+    // TRES servidores em cluster, entra pela tela do primeiro e clica os
+    // quatro: acrescenta um quarto no a quente, grava o quorum, remove o no e
+    // repinta -- dez passos, todos conferidos contra o motor vivo. Dispensa
+    // registrada e decisao; a dispensa aqui aponta para onde a decisao foi
+    // paga.
+    (
+        "ui/index.html",
+        "#btClVer",
+        "so nasce com o bloco `cluster` no config.json, e a bateria sobe um \
+         servidor isolado. Exercitado em `testes-web/capturas-cluster.mjs`, \
+         contra tres nos de verdade",
+    ),
+    (
+        "ui/index.html",
+        "#btClAdd",
+        "irmao do `#btClVer`: so existe com cluster configurado. Exercitado em \
+         `testes-web/capturas-cluster.mjs`, que acrescenta um quarto no A \
+         QUENTE e confere que ele aparece vivo",
+    ),
+    (
+        "ui/index.html",
+        "#btClDel",
+        "irmao do `#btClVer`: so existe com cluster configurado, e so quando ha \
+         no que nao seja este nem o master. Exercitado em \
+         `testes-web/capturas-cluster.mjs`",
+    ),
+    (
+        "ui/index.html",
+        "#btClQuorum",
+        "irmao do `#btClVer`: so existe com cluster configurado. Exercitado em \
+         `testes-web/capturas-cluster.mjs`, que grava o quorum e confere que a \
+         tela continua dizendo que ele NAO e imposto",
+    ),
 ];
 
 /// As classes que a interface usa para ACHAR elemento -- e que por isso valem

@@ -1246,6 +1246,37 @@ pub const OPERACOES: &[Operacao] = &[
         exemplo: r#"{"op":"cluster_estado"}"#,
         ferramenta_mcp: false,
     },
+    Operacao {
+        nome: "cluster_no_acrescentar",
+        apelidos: &[],
+        resumo: "Acrescenta um nó ao cluster VIVO, sem reiniciar ninguém -- \
+                 grava a lista nova no `config.json` e a propaga aos outros nós.",
+        parametros: &[
+            obr("id", "string", "o id do nó novo, como os outros vão chamá-lo"),
+            obr("endereco", "string", "o host ou IP por onde os outros o alcançam"),
+            opc("porta", "integer", "a porta de dados dele; 5000 quando não vem"),
+            opc(
+                "propagar",
+                "boolean",
+                "manda a mesma ordem aos demais nós (padrão `true`); `false` é \
+                 como a ordem chega propagada de outro nó",
+            ),
+        ],
+        exemplo: r#"{"op":"cluster_no_acrescentar","id":"no4","endereco":"10.0.0.4","porta":5000}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "cluster_no_remover",
+        apelidos: &[],
+        resumo: "Tira um nó do cluster VIVO -- muda o denominador da maioria, \
+                 grava e propaga. Nunca remove ESTE nó nem o master.",
+        parametros: &[
+            obr("id", "string", "o id do nó a tirar da lista"),
+            opc("propagar", "boolean", "manda a mesma ordem aos demais nós (padrão `true`)"),
+        ],
+        exemplo: r#"{"op":"cluster_no_remover","id":"no4"}"#,
+        ferramenta_mcp: false,
+    },
     // ------------------------------------------------------- o servidor
     Operacao {
         nome: "config",

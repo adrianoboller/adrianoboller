@@ -95,7 +95,7 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 300,
-        "ultimo_pulso_ms": 766,
+        "ultimo_pulso_ms": 378,
         "vivo": true
       },
       {
@@ -105,16 +105,16 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 300,
-        "ultimo_pulso_ms": 764,
+        "ultimo_pulso_ms": 377,
         "vivo": true
       }
     ]
   },
-  "reinicio_no2_s": 0.37,
-  "reinicio_no3_s": 0.369,
-  "reinicio_no1_indisponivel_s": 0.004,
-  "reinicio_no1_total_s": 0.367,
-  "escalonamento_total_s": 1.741,
+  "reinicio_no2_s": 0.367,
+  "reinicio_no3_s": 0.368,
+  "reinicio_no1_indisponivel_s": 0.001,
+  "reinicio_no1_total_s": 0.369,
+  "escalonamento_total_s": 1.11,
   "retratos_finais": {
     "no1": [
       370,
@@ -162,7 +162,7 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 300,
-        "ultimo_pulso_ms": 464,
+        "ultimo_pulso_ms": 39,
         "vivo": true
       },
       {
@@ -172,7 +172,138 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 300,
-        "ultimo_pulso_ms": 463,
+        "ultimo_pulso_ms": 298,
+        "vivo": true
+      },
+      {
+        "id": "no4",
+        "endereco": "127.0.0.1:6303",
+        "este": false,
+        "papel": "replica",
+        "epoca": 0,
+        "posicao": 0,
+        "ultimo_pulso_ms": 298,
+        "vivo": true
+      }
+    ]
+  },
+  "ordem_a_quente": {
+    "ok": true,
+    "op": "cluster_no_acrescentar",
+    "resultado": {
+      "acrescentado": true,
+      "id": "no5",
+      "nos": 5,
+      "propagado": {
+        "no2": "ok",
+        "no3": "ok",
+        "no4": "ok",
+        "no5": "ok"
+      }
+    },
+    "ms": 4
+  },
+  "ordem_a_quente_s": 0.005,
+  "no5_vivo_em_todos_s": 0.207,
+  "batida_no_master": {
+    "tentou": 42,
+    "recusou": 0,
+    "maior_buraco_ms": 11.5,
+    "erros": []
+  },
+  "master_indisponivel_a_quente_s": 0.0,
+  "config_gravado": {
+    "no1": [
+      "no1",
+      "no2",
+      "no3",
+      "no4",
+      "no5"
+    ],
+    "no2": [
+      "no1",
+      "no2",
+      "no3",
+      "no4",
+      "no5"
+    ],
+    "no3": [
+      "no1",
+      "no2",
+      "no3",
+      "no4",
+      "no5"
+    ],
+    "no4": [
+      "no1",
+      "no2",
+      "no3",
+      "no4",
+      "no5"
+    ]
+  },
+  "retratos_a_quente": {
+    "no1": [
+      462,
+      "701fdaacdcab787c"
+    ],
+    "no2": [
+      462,
+      "701fdaacdcab787c"
+    ],
+    "no3": [
+      462,
+      "701fdaacdcab787c"
+    ],
+    "no4": [
+      462,
+      "701fdaacdcab787c"
+    ],
+    "no5": [
+      462,
+      "701fdaacdcab787c"
+    ]
+  },
+  "estado_a_quente": {
+    "id": "no1",
+    "papel": "master",
+    "epoca": 0,
+    "master": {
+      "id": "no1",
+      "endereco": "127.0.0.1:6300"
+    },
+    "escrita_liberada": true,
+    "degradado": [],
+    "janela_inatividade_s": 8,
+    "nos": [
+      {
+        "id": "no1",
+        "endereco": "127.0.0.1:6300",
+        "este": true,
+        "papel": "master",
+        "epoca": 0,
+        "posicao": 462,
+        "ultimo_pulso_ms": 0,
+        "vivo": true
+      },
+      {
+        "id": "no2",
+        "endereco": "127.0.0.1:6301",
+        "este": false,
+        "papel": "replica",
+        "epoca": 0,
+        "posicao": 370,
+        "ultimo_pulso_ms": 173,
+        "vivo": true
+      },
+      {
+        "id": "no3",
+        "endereco": "127.0.0.1:6302",
+        "este": false,
+        "papel": "replica",
+        "epoca": 0,
+        "posicao": 370,
+        "ultimo_pulso_ms": 433,
         "vivo": true
       },
       {
@@ -182,10 +313,26 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 370,
-        "ultimo_pulso_ms": 204,
+        "ultimo_pulso_ms": 433,
+        "vivo": true
+      },
+      {
+        "id": "no5",
+        "endereco": "127.0.0.1:6304",
+        "este": false,
+        "papel": "replica",
+        "epoca": 0,
+        "posicao": 0,
+        "ultimo_pulso_ms": 130,
         "vivo": true
       }
     ]
+  },
+  "comparacao": {
+    "reiniciando_master_indisponivel_s": 0.369,
+    "a_quente_master_indisponivel_s": 0.0,
+    "reiniciando_total_s": 1.11,
+    "a_quente_total_s": 0.207
   },
   "falhas": []
 }

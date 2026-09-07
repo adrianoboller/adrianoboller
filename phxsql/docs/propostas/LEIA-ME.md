@@ -10,6 +10,27 @@ vai aqui embaixo, com data, e nomeia arquivo e linha.
 
 ---
 
+## `quorum-de-escrita.md` — o parecer do pedido 207
+
+**Escrito em 07/09/2026 pela frente F2.** Não é receita de fora: é uma decisão
+do dono medida antes de virar código, e ela mora aqui pelo mesmo motivo que o
+resto da pasta — **a medição custa caro e não pode morrer com a sessão.**
+
+O que ele derruba e o que ele confirma, em duas linhas: `bidirecional.rs`
+**não tem canal nenhum** (o cabeçalho dele diz «sem rede»), e o canal aberto
+que o quórum precisa **já existe** — é o do pulso, com **6 conexões longas**
+num cluster de três, **2 delas do master para as réplicas**, contadas na
+telemetria. O piso do canal é **0,089 ms**; empurrar um evento por ele custa
+**0,466 ms**.
+
+**Estado: NÃO implementado, e o motivo tem número** — faltam quatro peças, e a
+primeira é decidir o que o «ok» da réplica significa (recebeu, aplicou, ou
+aplicou e sincronizou). Entrou só o campo `cluster.quorum_minimo`, porque
+mudança de formato entra cedo, com o servidor declarando
+`"quorum_imposto": false`.
+
+---
+
 ## `conexao-phxsql-1.0.md` — Manual da Conexão Segura PHXSQL
 
 **Recebido em 05/09/2026**, 1.200 linhas. Especifica TLS 1.3, autenticação do

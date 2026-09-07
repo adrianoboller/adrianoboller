@@ -1121,6 +1121,7 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
           "janela_inatividade_s": 10,     // master calado alem disto = caido
           "pulso_s": 3,                   // omitido = um terco da janela
           "avisar_cada_min": 5,           // aceita fracao: 0.1 = 6 s
+          "quorum_minimo": 0,             // GUARDADO e ainda NAO imposto
           "token": "...", "usuario": "replicador",
           "senha_hash": "pbkdf2-sha256$...",
           "databases": [],                // vazio = todos os do master
@@ -1151,13 +1152,43 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
     degradacao (no caido, sem maioria) repete a cada avisar_cada_min
     enquanto durar. Sem email configurado, sem e-mail.
 
+    ESCALONAR A QUENTE (pedido 217). Acrescentar ou tirar um no do cluster
+    VIVO, sem reiniciar ninguem:
+
+        {"op":"cluster_no_acrescentar","id":"no4",
+         "endereco":"10.1.1.105","porta":5000}
+        {"op":"cluster_no_remover","id":"no4"}
+
+    As duas exigem "administrar", mudam a lista VIVA, gravam cluster.nos no
+    config.json deste no e PROPAGAM a ordem aos demais com a credencial do
+    proprio cluster -- entao o usuario do cluster tambem precisa poder
+    administrar. A resposta traz um veredito POR NO em "propagado": no que
+    nao aceitou aparece com o erro, e nao sumindo da lista.
+
+    Duas recusas, e as duas sao decisao: ESTE no nao se remove (ficaria fora
+    da propria lista e nao subiria de novo) e o MASTER corrente tambem nao
+    (o cluster ficaria sem para onde redirecionar a escrita).
+
+    Medido em bancada/cluster/escalonar.py: pelo caminho antigo -- editar a
+    lista e reiniciar os antigos -- o master ficava 0,369 s fora do ar; a
+    quente foram ZERO recusas em 42 escritas batendo de 10 em 10 ms, e o no
+    novo apareceu vivo nos quatro antigos em 0,207 s.
+
+    A TELA. Ferramentas -> Cluster: os nos com papel e estado, quem e o
+    master, a epoca, e os botoes de acrescentar, remover e gravar o quorum
+    minimo. Servidor sem o bloco "cluster" mostra so a nota, sem botao.
+
     O QUE NAO E: nao e Raft. A replicacao continua assincrona -- o master
-    confirma sem esperar replica. Master que morre pode levar junto a cauda
-    que ninguem puxou; o no que volta com diario a frente do master fica
-    degradado avisando e se ressemeia a partir do master. Cluster de DOIS
-    nos nunca se promove sozinho (metade nao e maioria): failover automatico
-    pede tres ou mais. Medido em bancada/cluster/: promocao em 3,9-4,3 s com
-    janela de 4 s. Garantias e nao-garantias por extenso: docs/CLUSTER.md.
+    confirma sem esperar replica. NAO HA QUORUM DE ESCRITA: o campo
+    cluster.quorum_minimo e guardado e a op config o devolve ao lado de
+    "quorum_imposto": false, mas nada o le -- o parecer medido do que falta
+    esta em docs/propostas/quorum-de-escrita.md. Master que morre pode levar
+    junto a cauda que ninguem puxou; o no que volta com diario a frente do
+    master fica degradado avisando e se ressemeia a partir do master.
+    Cluster de DOIS nos nunca se promove sozinho (metade nao e maioria):
+    failover automatico pede tres ou mais. Medido em bancada/cluster/:
+    promocao em 3,9-4,3 s com janela de 4 s. Garantias e nao-garantias por
+    extenso: docs/CLUSTER.md.
 
 REPLICACAO: MASTER E ESPELHOS
 
@@ -1228,10 +1259,12 @@ REPLICACAO: MASTER E ESPELHOS
         replicar   database, tabela, desde, [max]   os eventos com a imagem
         aplicar    database, tabela, eventos        grava aqui o que veio
 
-    E as duas do cluster (secao anterior):
+    E as quatro do cluster (secao anterior):
 
         cluster_pulso   id, papel, [epoca, posicao, prioridade]   o pulso
         cluster_estado  --   quem e o master, a epoca e o mapa dos nos
+        cluster_no_acrescentar  id, endereco, [porta, propagar]
+        cluster_no_remover      id, [propagar]
 
     posicao e replicar exigem a permissao "replicar", que e propria: da para
     concede-la a uma replica sem conceder mais nada. aplicar exige

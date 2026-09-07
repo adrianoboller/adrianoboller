@@ -1,0 +1,39 @@
+{
+ "voltas": 60,
+ "canais_por_no": {
+  "no1": [
+   "pulso-no2",
+   "pulso-no3"
+  ],
+  "no2": [
+   "pulso-no1",
+   "pulso-no3"
+  ],
+  "no3": [
+   "pulso-no1",
+   "pulso-no2"
+  ]
+ },
+ "canais_abertos": 6,
+ "canais_do_master": [
+  "pulso-no2",
+  "pulso-no3"
+ ],
+ "pulso_quente_ms": 0.089,
+ "pulso_quente_faixa": [
+  0.069,
+  0.232
+ ],
+ "empurrar_um_evento_ms": 0.466,
+ "empurrar_faixa": [
+  0.337,
+  34.988
+ ],
+ "quorum_2de3_pelo_canal_ms": 0.447,
+ "quorum_3de3_pelo_canal_ms": 0.498,
+ "bidirecional_tem_canal": false,
+ "onde_o_canal_mora": "servidor.rs :: laco_do_pulso/pulsar (cluster_pulso)",
+ "maquina": "tres phxsqld em 127.0.0.1, no mesmo container",
+ "aviso_da_maquina": "TUDO em localhost: a rede real custa mais, e estes numeros sao o PISO",
+ "medido_em": "2026-09-07 17:54"
+}
