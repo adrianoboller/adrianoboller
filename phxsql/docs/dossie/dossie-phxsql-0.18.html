@@ -476,12 +476,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">143.823</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">1.674</div><div class="r">testes</div></div>
+    <div><div class="v">151.010</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">1.775</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">8</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">53.202</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">54.912</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -1921,7 +1921,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 <!-- fluxo-motor:inicio (gerado por docs/dossie/fluxo-do-motor.py) -->
   <figure>
     <div class="fig-caixa">
-    <svg viewBox="0 0 960 762" role="img" aria-label="Fluxograma do caminho de um pedido no PhxSql: uma linha de JSON no soquete atravessa os 9 portoes numerados do despachar, qualquer um deles podendo recusar com codigo e SQLSTATE; passando, a operacao toma a trava de dados e desce para o caminho de gravacao, que confere aridade, chave e unicidade antes de escrever no .reg, depois no .ndx, no .fts e por fim no .log">
+    <svg viewBox="0 0 960 804" role="img" aria-label="Fluxograma do caminho de um pedido no PhxSql: uma linha de JSON no soquete atravessa os 10 portoes numerados do despachar, qualquer um deles podendo recusar com codigo e SQLSTATE; passando, a operacao toma a trava de dados e desce para o caminho de gravacao, que confere aridade, chave e unicidade antes de escrever no .reg, depois no .ndx, no .fts e por fim no .log">
   <defs>
     <marker id="setaMot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
@@ -1980,83 +1980,90 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <circle cx="560" cy="312" r="2.4" fill="var(--log)" opacity=".8"/>
     <path d="M250 330 L250 336" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
     <rect x="60" y="336" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
-    <text x="116" y="351" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">3</text>
-    <text x="126" y="351" font-size="10.5">o poder sobre a base E a tabela</text>
-    <text x="126" y="365" font-size="9" opacity=".7">o campo `tabela` do pedido</text>
+    <text x="116" y="351" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2b-bis</text>
+    <text x="126" y="351" font-size="10.5">o `aplicar` respeita somente-leitura</text>
+    <text x="126" y="365" font-size="9" opacity=".7">source/isolado trancados recusam; réplica aplica por dentro</text>
     <path d="M440 354 L560 354" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
     <circle cx="560" cy="354" r="2.4" fill="var(--log)" opacity=".8"/>
     <path d="M250 372 L250 378" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
     <rect x="60" y="378" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
-    <text x="116" y="393" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">4</text>
-    <text x="126" y="393" font-size="10.5">carga de outra ligação?</text>
-    <text x="126" y="407" font-size="9" opacity=".7">a tabela está reservada</text>
+    <text x="116" y="393" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">3</text>
+    <text x="126" y="393" font-size="10.5">o poder sobre a base E a tabela</text>
+    <text x="126" y="407" font-size="9" opacity=".7">o campo `tabela` do pedido</text>
     <path d="M440 396 L560 396" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
     <circle cx="560" cy="396" r="2.4" fill="var(--log)" opacity=".8"/>
     <path d="M250 414 L250 420" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
     <rect x="60" y="420" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
-    <text x="116" y="435" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">5</text>
-    <text x="126" y="435" font-size="10.5">transação de outra conexão?</text>
-    <text x="126" y="449" font-size="9" opacity=".7">a tabela está segurada</text>
+    <text x="116" y="435" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">4</text>
+    <text x="126" y="435" font-size="10.5">carga de outra ligação?</text>
+    <text x="126" y="449" font-size="9" opacity=".7">a tabela está reservada</text>
     <path d="M440 438 L560 438" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
     <circle cx="560" cy="438" r="2.4" fill="var(--log)" opacity=".8"/>
-    <path d="M560 102 L560 438" stroke="var(--log)" stroke-width="1.6"/>
-    <path d="M560 252 L742 252" stroke="var(--log)" stroke-width="1.6" marker-end="url(#setaMotN)"/>
-    <text x="572" y="244" font-size="9" fill="var(--log)">qualquer um recusa</text>
-    <rect x="742" y="226" width="200" height="52" rx="4" fill="var(--log)" fill-opacity=".14" stroke="var(--log)" stroke-width="1.5"/>
-    <text x="850" y="246" text-anchor="middle" font-size="10.5" fill="var(--log)" font-weight="600">RECUSA</text>
-    <text x="850" y="261" text-anchor="middle" font-size="9">com código, SQLSTATE e classe</text>
-    <text x="850" y="273" text-anchor="middle" font-size="8.5" opacity=".7">grave demais: bloqueio de IP</text>
-    <path d="M250 456 L250 478" stroke="var(--ok)" stroke-width="1.6" marker-end="url(#setaMotO)"/>
-    <rect x="60" y="480" width="380" height="34" rx="4" fill="var(--ok)" fill-opacity=".10" stroke="var(--ok)" stroke-width="1.5"/>
-    <text x="250" y="501" text-anchor="middle" font-size="10.5">a operação, entre as 123 do catálogo</text>
-    <text x="264" y="472" font-size="9.5" opacity=".7">passou os 9</text>
-    <rect x="60" y="530" width="380" height="46" rx="4" fill="none" stroke="var(--pend)" stroke-width="1.4"/>
-    <text x="250" y="548" text-anchor="middle" font-size="10.5" fill="var(--pend)">a trava de dados</text>
-    <text x="250" y="563" text-anchor="middle" font-size="9" opacity=".75">exclusiva para escrever &#183; o `varrer` tenta a compartilhada</text>
-    <path d="M250 576 L250 596" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaMot)"/>
-    <line x1="20" y1="606" x2="940" y2="606" stroke="currentColor" stroke-width="1" opacity=".22"/>
-    <text x="20" y="622" font-size="10" fill="var(--acento)" letter-spacing="1.4">2 &#183; NO DISCO &#8212; A ORDEM QUE O `inserir` SEGUE</text>
-    <rect x="12" y="636" width="98" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.75"/>
-    <text x="61" y="656" text-anchor="middle" font-size="8.5">confere aridade</text>
-    <path d="M110 662 L115 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
-    <rect x="117" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
-    <text x="166" y="656" text-anchor="middle" font-size="8.5">confere a chave</text>
-    <text x="166" y="672" text-anchor="middle" font-size="8.5" fill="var(--ndx)">.ndx da mãe</text>
-    <path d="M215 662 L220 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
-    <rect x="222" y="636" width="98" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.75"/>
-    <text x="271" y="656" text-anchor="middle" font-size="8.5">numera a linha</text>
-    <text x="271" y="672" text-anchor="middle" font-size="8.5" fill="currentColor">rownum, seq.</text>
-    <path d="M320 662 L325 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
-    <rect x="327" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
-    <text x="376" y="656" text-anchor="middle" font-size="8.5">confere único</text>
-    <text x="376" y="672" text-anchor="middle" font-size="8.5" fill="var(--ndx)">antes de gravar</text>
-    <path d="M425 662 L430 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
-    <rect x="432" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--bin)" stroke-width="1.5" opacity="1"/>
-    <text x="481" y="656" text-anchor="middle" font-size="8.5">grava anexos</text>
-    <text x="481" y="672" text-anchor="middle" font-size="8.5" fill="var(--bin)">.bin .memo</text>
-    <path d="M530 662 L535 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
-    <rect x="537" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--reg)" stroke-width="1.5" opacity="1"/>
-    <text x="586" y="656" text-anchor="middle" font-size="8.5">grava a linha</text>
-    <text x="586" y="672" text-anchor="middle" font-size="8.5" fill="var(--reg)">.reg</text>
-    <path d="M635 662 L640 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
-    <rect x="642" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
-    <text x="691" y="656" text-anchor="middle" font-size="8.5">grava as chaves</text>
-    <text x="691" y="672" text-anchor="middle" font-size="8.5" fill="var(--ndx)">.ndx</text>
-    <path d="M740 662 L745 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
-    <rect x="747" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--memo)" stroke-width="1.5" opacity="1"/>
-    <text x="796" y="656" text-anchor="middle" font-size="8.5">indexa o texto</text>
-    <text x="796" y="672" text-anchor="middle" font-size="8.5" fill="var(--memo)">.fts</text>
-    <path d="M845 662 L850 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
-    <rect x="852" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--log)" stroke-width="1.5" opacity="1"/>
-    <text x="901" y="656" text-anchor="middle" font-size="8.5">anota o evento</text>
-    <text x="901" y="672" text-anchor="middle" font-size="8.5" fill="var(--log)">.log</text>
-    <text x="12" y="712" font-size="10.5" opacity=".85"><tspan font-weight="600">A ordem não é arbitrária:</tspan> a unicidade se confere ANTES de qualquer gravação, porque o `.reg` nunca reaproveita slot &#8212; descobrir</text>
-    <text x="12" y="728" font-size="10.5" opacity=".85">a duplicidade depois exigiria desfazer, e o slot desfeito ficaria morto para sempre. O `.fts` fica FORA do desfazer de propósito: índice</text>
-    <text x="12" y="744" font-size="10.5" opacity=".85">atrasado o `reindexar` conserta; linha perdida, não.</text>
+    <path d="M250 456 L250 462" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="462" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="477" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">5</text>
+    <text x="126" y="477" font-size="10.5">transação de outra conexão?</text>
+    <text x="126" y="491" font-size="9" opacity=".7">a tabela está segurada</text>
+    <path d="M440 480 L560 480" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="480" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M560 102 L560 480" stroke="var(--log)" stroke-width="1.6"/>
+    <path d="M560 273 L742 273" stroke="var(--log)" stroke-width="1.6" marker-end="url(#setaMotN)"/>
+    <text x="572" y="265" font-size="9" fill="var(--log)">qualquer um recusa</text>
+    <rect x="742" y="247" width="200" height="52" rx="4" fill="var(--log)" fill-opacity=".14" stroke="var(--log)" stroke-width="1.5"/>
+    <text x="850" y="267" text-anchor="middle" font-size="10.5" fill="var(--log)" font-weight="600">RECUSA</text>
+    <text x="850" y="282" text-anchor="middle" font-size="9">com código, SQLSTATE e classe</text>
+    <text x="850" y="294" text-anchor="middle" font-size="8.5" opacity=".7">grave demais: bloqueio de IP</text>
+    <path d="M250 498 L250 520" stroke="var(--ok)" stroke-width="1.6" marker-end="url(#setaMotO)"/>
+    <rect x="60" y="522" width="380" height="34" rx="4" fill="var(--ok)" fill-opacity=".10" stroke="var(--ok)" stroke-width="1.5"/>
+    <text x="250" y="543" text-anchor="middle" font-size="10.5">a operação, entre as 130 do catálogo</text>
+    <text x="264" y="514" font-size="9.5" opacity=".7">passou os 10</text>
+    <rect x="60" y="572" width="380" height="46" rx="4" fill="none" stroke="var(--pend)" stroke-width="1.4"/>
+    <text x="250" y="590" text-anchor="middle" font-size="10.5" fill="var(--pend)">a trava de dados</text>
+    <text x="250" y="605" text-anchor="middle" font-size="9" opacity=".75">exclusiva para escrever &#183; o `varrer` tenta a compartilhada</text>
+    <path d="M250 618 L250 638" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaMot)"/>
+    <line x1="20" y1="648" x2="940" y2="648" stroke="currentColor" stroke-width="1" opacity=".22"/>
+    <text x="20" y="664" font-size="10" fill="var(--acento)" letter-spacing="1.4">2 &#183; NO DISCO &#8212; A ORDEM QUE O `inserir` SEGUE</text>
+    <rect x="12" y="678" width="98" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.75"/>
+    <text x="61" y="698" text-anchor="middle" font-size="8.5">confere aridade</text>
+    <path d="M110 704 L115 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="117" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
+    <text x="166" y="698" text-anchor="middle" font-size="8.5">confere a chave</text>
+    <text x="166" y="714" text-anchor="middle" font-size="8.5" fill="var(--ndx)">.ndx da mãe</text>
+    <path d="M215 704 L220 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="222" y="678" width="98" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.75"/>
+    <text x="271" y="698" text-anchor="middle" font-size="8.5">numera a linha</text>
+    <text x="271" y="714" text-anchor="middle" font-size="8.5" fill="currentColor">rownum, seq.</text>
+    <path d="M320 704 L325 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="327" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
+    <text x="376" y="698" text-anchor="middle" font-size="8.5">confere único</text>
+    <text x="376" y="714" text-anchor="middle" font-size="8.5" fill="var(--ndx)">antes de gravar</text>
+    <path d="M425 704 L430 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="432" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--bin)" stroke-width="1.5" opacity="1"/>
+    <text x="481" y="698" text-anchor="middle" font-size="8.5">grava anexos</text>
+    <text x="481" y="714" text-anchor="middle" font-size="8.5" fill="var(--bin)">.bin .memo</text>
+    <path d="M530 704 L535 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="537" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--reg)" stroke-width="1.5" opacity="1"/>
+    <text x="586" y="698" text-anchor="middle" font-size="8.5">grava a linha</text>
+    <text x="586" y="714" text-anchor="middle" font-size="8.5" fill="var(--reg)">.reg</text>
+    <path d="M635 704 L640 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="642" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
+    <text x="691" y="698" text-anchor="middle" font-size="8.5">grava as chaves</text>
+    <text x="691" y="714" text-anchor="middle" font-size="8.5" fill="var(--ndx)">.ndx</text>
+    <path d="M740 704 L745 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="747" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--memo)" stroke-width="1.5" opacity="1"/>
+    <text x="796" y="698" text-anchor="middle" font-size="8.5">indexa o texto</text>
+    <text x="796" y="714" text-anchor="middle" font-size="8.5" fill="var(--memo)">.fts</text>
+    <path d="M845 704 L850 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="852" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--log)" stroke-width="1.5" opacity="1"/>
+    <text x="901" y="698" text-anchor="middle" font-size="8.5">anota o evento</text>
+    <text x="901" y="714" text-anchor="middle" font-size="8.5" fill="var(--log)">.log</text>
+    <text x="12" y="754" font-size="10.5" opacity=".85"><tspan font-weight="600">A ordem não é arbitrária:</tspan> a unicidade se confere ANTES de qualquer gravação, porque o `.reg` nunca reaproveita slot &#8212; descobrir</text>
+    <text x="12" y="770" font-size="10.5" opacity=".85">a duplicidade depois exigiria desfazer, e o slot desfeito ficaria morto para sempre. O `.fts` fica FORA do desfazer de propósito: índice</text>
+    <text x="12" y="786" font-size="10.5" opacity=".85">atrasado o `reindexar` conserta; linha perdida, não.</text>
   </g>
 </svg>
     </div>
-    <figcaption><b>Figura 10.</b> O caminho inteiro de um pedido. Os <strong>9 portões</strong> em cima são os que o `servidor.rs` numera no próprio código — qualquer um recusa, e a recusa sai com código e <code>SQLSTATE</code>. Embaixo, a ordem que o <code>inserir</code> segue no disco, que é onde as garantias do formato aparecem.</figcaption>
+    <figcaption><b>Figura 10.</b> O caminho inteiro de um pedido. Os <strong>10 portões</strong> em cima são os que o `servidor.rs` numera no próprio código — qualquer um recusa, e a recusa sai com código e <code>SQLSTATE</code>. Embaixo, a ordem que o <code>inserir</code> segue no disco, que é onde as garantias do formato aparecem.</figcaption>
   </figure>
 <!-- fluxo-motor:fim -->
 
@@ -5559,10 +5566,10 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   <div class="painel">
 <!-- idiomas:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
     <div><div class="v">6</div><div class="r">idiomas na tabela</div></div>
-    <div><div class="v">1.906</div><div class="r">textos na fábrica</div></div>
-    <div><div class="v">1.051</div><div class="r">ainda cravados</div></div>
-    <div><div class="v">64%</div><div class="r">da interface</div></div>
-    <div><div class="v">1.051</div><div class="r">catraca (o teto)</div></div>
+    <div><div class="v">1.961</div><div class="r">textos na fábrica</div></div>
+    <div><div class="v">1.050</div><div class="r">ainda cravados</div></div>
+    <div><div class="v">65%</div><div class="r">da interface</div></div>
+    <div><div class="v">1.050</div><div class="r">catraca (o teto)</div></div>
   <!-- idiomas:fim -->
   </div>
 
@@ -7070,10 +7077,10 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
   <div class="painel">
 <!-- pedidos:inicio (gerado por docs/dossie/pagina-dos-pedidos.py) -->
-    <div><div class="v">225</div><div class="r">pedidos, ao todo</div></div>
-    <div><div class="v">198</div><div class="r">feitos</div></div>
-    <div><div class="v">8</div><div class="r">parciais</div></div>
-    <div><div class="v">19</div><div class="r">planejados</div></div>
+    <div><div class="v">230</div><div class="r">pedidos, ao todo</div></div>
+    <div><div class="v">212</div><div class="r">feitos</div></div>
+    <div><div class="v">7</div><div class="r">parciais</div></div>
+    <div><div class="v">11</div><div class="r">planejados</div></div>
   <!-- pedidos:fim -->
   </div>
 
@@ -7131,34 +7138,34 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     <table>
       <thead><tr><th>Área</th><th class="num">testes</th><th class="num">%</th></tr></thead>
       <tbody>
-        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">451</td><td class="num">26,9%</td></tr>
-        <tr><td>Protocolo e portões (despachar)</td><td class="num">249</td><td class="num">14,9%</td></tr>
-        <tr><td>Núcleo (JSON, tipos, UUID, zip, paralelo)</td><td class="num">155</td><td class="num">9,3%</td></tr>
-        <tr><td>Criptografia e codificação</td><td class="num">122</td><td class="num">7,3%</td></tr>
-        <tr><td>Configuração</td><td class="num">96</td><td class="num">5,7%</td></tr>
-        <tr><td>Servidor (outros)</td><td class="num">86</td><td class="num">5,1%</td></tr>
-        <tr><td>DbLink</td><td class="num">81</td><td class="num">4,8%</td></tr>
-        <tr><td>Telemetria e profiler</td><td class="num">61</td><td class="num">3,6%</td></tr>
-        <tr><td>Camada SQL (léxico, sintaxe, tradução)</td><td class="num">55</td><td class="num">3,3%</td></tr>
-        <tr><td>Gatilhos e procedimentos</td><td class="num">42</td><td class="num">2,5%</td></tr>
-        <tr><td>Mensagens (i18n do servidor)</td><td class="num">32</td><td class="num">1,9%</td></tr>
-        <tr><td>Jobs</td><td class="num">31</td><td class="num">1,9%</td></tr>
-        <tr><td>Interface web (servidor HTTP)</td><td class="num">28</td><td class="num">1,7%</td></tr>
-        <tr><td><strong>Usuários e permissões</strong></td><td class="num"><strong>20</strong></td><td class="num"><strong>1,2%</strong></td></tr>
+        <tr><td>Motor de dados (arquivos, índice, diários)</td><td class="num">453</td><td class="num">25,5%</td></tr>
+        <tr><td>Protocolo e portões (despachar)</td><td class="num">296</td><td class="num">16,7%</td></tr>
+        <tr><td>Núcleo (JSON, tipos, UUID, zip, paralelo)</td><td class="num">155</td><td class="num">8,7%</td></tr>
+        <tr><td>Criptografia e codificação</td><td class="num">122</td><td class="num">6,9%</td></tr>
+        <tr><td>Configuração</td><td class="num">101</td><td class="num">5,7%</td></tr>
+        <tr><td>Servidor (outros)</td><td class="num">98</td><td class="num">5,5%</td></tr>
+        <tr><td>DbLink</td><td class="num">81</td><td class="num">4,6%</td></tr>
+        <tr><td>Camada SQL (léxico, sintaxe, tradução)</td><td class="num">78</td><td class="num">4,4%</td></tr>
+        <tr><td>Telemetria e profiler</td><td class="num">63</td><td class="num">3,5%</td></tr>
+        <tr><td>Gatilhos e procedimentos</td><td class="num">44</td><td class="num">2,5%</td></tr>
+        <tr><td>Mensagens (i18n do servidor)</td><td class="num">32</td><td class="num">1,8%</td></tr>
+        <tr><td>Jobs</td><td class="num">31</td><td class="num">1,7%</td></tr>
+        <tr><td>Interface web (servidor HTTP)</td><td class="num">28</td><td class="num">1,6%</td></tr>
+        <tr><td><strong>Usuários e permissões</strong></td><td class="num"><strong>25</strong></td><td class="num"><strong>1,4%</strong></td></tr>
+        <tr><td><strong>Segurança de rede (blacklist, firewall)</strong></td><td class="num"><strong>21</strong></td><td class="num"><strong>1,2%</strong></td></tr>
         <tr><td><strong>MCP</strong></td><td class="num"><strong>19</strong></td><td class="num"><strong>1,1%</strong></td></tr>
-        <tr><td><strong>Console de terminal (phxsqlcmd)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,1%</strong></td></tr>
-        <tr><td><strong>Segurança de rede (blacklist, firewall)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,1%</strong></td></tr>
+        <tr><td><strong>Console de terminal (phxsqlcmd)</strong></td><td class="num"><strong>18</strong></td><td class="num"><strong>1,0%</strong></td></tr>
         <tr><td><strong>ODBC</strong></td><td class="num"><strong>17</strong></td><td class="num"><strong>1,0%</strong></td></tr>
-        <tr><td><strong>Transações</strong></td><td class="num"><strong>16</strong></td><td class="num"><strong>1,0%</strong></td></tr>
-        <tr><td><strong>Exportação</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>0,8%</strong></td></tr>
-        <tr><td><strong>Junções e união</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>0,8%</strong></td></tr>
+        <tr><td><strong>Transações</strong></td><td class="num"><strong>16</strong></td><td class="num"><strong>0,9%</strong></td></tr>
+        <tr><td><strong>Exportação</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>0,7%</strong></td></tr>
+        <tr><td><strong>Junções e união</strong></td><td class="num"><strong>13</strong></td><td class="num"><strong>0,7%</strong></td></tr>
         <tr><td><strong>Pivot</strong></td><td class="num"><strong>12</strong></td><td class="num"><strong>0,7%</strong></td></tr>
-        <tr><td><strong>Replicação</strong></td><td class="num"><strong>11</strong></td><td class="num"><strong>0,7%</strong></td></tr>
+        <tr><td><strong>Replicação</strong></td><td class="num"><strong>11</strong></td><td class="num"><strong>0,6%</strong></td></tr>
         <tr><td><strong>Alertas e e-mail</strong></td><td class="num"><strong>8</strong></td><td class="num"><strong>0,5%</strong></td></tr>
         <tr><td><strong>CLI</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,4%</strong></td></tr>
         <tr><td><strong>Cluster</strong></td><td class="num"><strong>7</strong></td><td class="num"><strong>0,4%</strong></td></tr>
-        <tr><td><strong>Monitor de máquina</strong></td><td class="num"><strong>6</strong></td><td class="num"><strong>0,4%</strong></td></tr>
-        <tr><td><strong>total</strong></td><td class="num"><strong>1674</strong></td><td class="num"></td></tr>
+        <tr><td><strong>Monitor de máquina</strong></td><td class="num"><strong>6</strong></td><td class="num"><strong>0,3%</strong></td></tr>
+        <tr><td><strong>total</strong></td><td class="num"><strong>1775</strong></td><td class="num"></td></tr>
       </tbody>
     </table>
   </div>
@@ -7206,17 +7213,21 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     details.pergunta p{margin:.5rem 0}
   </style>
 <!-- perguntas:inicio (gerado por docs/dossie/perguntas-no-dossie.py) -->
-  <p class="leve">29 respostas, lidas de <code>docs/pdf/respostas/</code> em 07/09/2026 16:55 UTC (commit <code>a56a165</code>). O PDF completo — comando, saída real e data de cada corrida — é <code>docs/pdf/phxsql-26-perguntas.pdf</code>, gerado por <code>docs/pdf/gerar.py</code>.</p>
+  <p class="leve">31 respostas, lidas de <code>docs/pdf/respostas/</code> em 07/09/2026 19:59 UTC (commit <code>e5ceb1c</code>). O PDF completo — comando, saída real e data de cada corrida — é <code>docs/pdf/phxsql-26-perguntas.pdf</code>, gerado por <code>docs/pdf/gerar.py</code>.</p>
   
   <details class="pergunta"><summary>0.1) Índice de texto — o .fts contra a varredura. Onde fica os .fts por que o dossiê não tem no gráfico: Organograma dos arquivos?</summary><p>Você apontou certo: o <code>.fts</code> <b>não estava na Figura 1</b> do dossiê («Organograma dos arquivos» — <i>cada tabela é: SEMPRE os sete, SÓ ÀS VEZES três</i>), e medido antes de mexer ele <b>também não estava</b> na Figura 8 (o caminho de uma inserção, que desenhava 8 extensões) <b>nem na tabela-mestra de arquivos do <code>docs/FORMATO.md</code></b> (9 linhas, sem <code>.fts</code>). Três lugares, o mesmo buraco.</p>
 <p>A causa é uma só: o inventário «que arquivos uma tabela tem» mora em <b>três lugares escritos à mão</b> e nenhum sai do código — a lista certa é a de <code>arquivos_da_tabela</code> no <code>catalogo.rs</code>. O <code>.fts</code> entrou no motor em 07/09/2026 (pedido 200) e ninguém voltou às figuras: <i>figura desenhada à mão envelhece como número digitado à mão.</i></p>
 <p>Onde ele <b>fica</b>: ao lado dos outros arquivos da tabela, <code>&lt;tabela&gt;.fts</code>, um por tabela, criado no <code>criar_tabela</code> que declara <code>indices_texto</code> — e a ordem de gravação é <code>.reg → .ndx → .fts → .log</code> (a Figura 10, o caminho do pedido, já dizia isso no <code>aria-label</code>). Por dentro ele é um <code>.ndx</code> — mesma assinatura <code>PHXNDX\0\0</code>, mesma versão, mesmo CRC de página —, com uma chave por termo dobrado. É <b>derivado</b> (se reconstrói do <code>.reg</code>) e por isso fica <b>fora do desfazer</b> de uma inserção que falha no meio (<code>docs/FTS.md</code> §2.1).</p><p class="leve">Exemplo exercitado, saída real e como se refaz: <code>docs/pdf/respostas/00-fts.md</code>, no PDF.</p></details>
+  <details class="pergunta"><summary>0.2) Muitos bancos tem o sequence tipo o PostgreSQL e como é isso no phxsql?</summary><p>Existe, e é <b>da tabela, não do banco</b>: uma coluna do tipo <code>Sequence</code> — no máximo <b>uma por tabela</b> — e um contador único que vive no cabeçalho do volume 1 do <code>.reg</code> (byte 36, 8 bytes). Inserir sem informar o valor numera sozinho; inserir informando faz o contador <b>acompanhar</b> (o próximo sai depois do maior gravado, o que o PostgreSQL não faz por padrão); a op <code>sequencias</code> lista os contadores do banco e a <code>ajustar_sequencia</code> zera ou pula — só para quem tem <code>administrar</code>, porque ajustar para trás faz a próxima inserção repetir uma chave, e quem recusa a repetição é o <b>índice único</b>, não o contador.</p>
+<p>O que <b>não</b> há: <code>CREATE SEQUENCE</code> solto, compartilhado entre tabelas, com <code>nextval()</code>/<code>currval()</code> — a sequência do PhxSql é sempre a coluna de uma tabela. É decisão de formato, e a §«rownum» do <code>docs/FORMATO.md</code> diz por quê: o contador do <code>.reg</code> é único, e reservar essa vaga para o motor tiraria do usuário um tipo que é dele.</p><p class="leve">Exemplo exercitado, saída real e como se refaz: <code>docs/pdf/respostas/00-sequencia.md</code>, no PDF.</p></details>
   <details class="pergunta"><summary>0.3) Como funciona o timeout de um lock record para transaction</summary><p>São <b>três prazos</b>, e um número só não responderia aos três (<code>docs/TRANSACOES.md</code> §4.7):</p>
 <table><thead><tr><th>prazo</th><th>o que limita</th><th>campo do <code>config.json</code></th><th>padrão</th></tr></thead><tbody><tr><td><code>TIMEOUT</code></td><td>a transação <b>inteira</b></td><td><code>recursos.transacao_prazo_min</code></td><td>5 min</td></tr><tr><td><code>LOCK TIMEOUT</code></td><td>quanto se aceita <b>esperar por outro</b> numa linha travada</td><td><code>recursos.transacao_lock_timeout_ms</code></td><td>500 ms</td></tr><tr><td><code>STATEMENT TIMEOUT</code></td><td>quanto <b>uma operação</b> pode levar</td><td><code>recursos.transacao_statement_ms</code></td><td>0 = sem prazo</td></tr></tbody></table>
 <p>O <b>lock de linha</b> funciona assim: a transação A que altera a linha toma a trava <b>X</b> dela; a transação B que tenta a mesma linha <b>espera</b> até o <code>LOCK TIMEOUT</code> e, vencido, recebe <code>4005 EM_TRANSACAO</code> com a mensagem dizendo quem trava, desde quando, e que esperou N ms — B decide se tenta de novo (<code>"repetir": true</code>). A trava solta no <code>COMMIT</code> ou no <code>ROLLBACK</code> de A.</p>
 <p><b>Quem encerra é o gestor de transações, nunca uma thread morta</b>: vencido o <code>TIMEOUT</code> da transação, ela vai para <code>ABORT_ONLY</code>, <b>solta as travas na hora</b>, joga a lista fora, e a próxima operação de A recebe <code>6002 TRANSACAO_ABORTADA</code> com o prazo dentro. A conexão continua viva. Os prazos se declaram <b>por pedido</b> no <code>begin</code> (<code>"timeout":"1500ms"</code>, <code>"lock_timeout":"400ms"</code>) ou no <code>config.json</code> para o servidor inteiro.</p><p class="leve">Exemplo exercitado, saída real e como se refaz: <code>docs/pdf/respostas/00-prazo.md</code>, no PDF.</p></details>
-  <details class="pergunta"><summary>0.2) Muitos bancos tem o sequence tipo o PostgreSQL e como é isso no phxsql?</summary><p>Existe, e é <b>da tabela, não do banco</b>: uma coluna do tipo <code>Sequence</code> — no máximo <b>uma por tabela</b> — e um contador único que vive no cabeçalho do volume 1 do <code>.reg</code> (byte 36, 8 bytes). Inserir sem informar o valor numera sozinho; inserir informando faz o contador <b>acompanhar</b> (o próximo sai depois do maior gravado, o que o PostgreSQL não faz por padrão); a op <code>sequencias</code> lista os contadores do banco e a <code>ajustar_sequencia</code> zera ou pula — só para quem tem <code>administrar</code>, porque ajustar para trás faz a próxima inserção repetir uma chave, e quem recusa a repetição é o <b>índice único</b>, não o contador.</p>
-<p>O que <b>não</b> há: <code>CREATE SEQUENCE</code> solto, compartilhado entre tabelas, com <code>nextval()</code>/<code>currval()</code> — a sequência do PhxSql é sempre a coluna de uma tabela. É decisão de formato, e a §«rownum» do <code>docs/FORMATO.md</code> diz por quê: o contador do <code>.reg</code> é único, e reservar essa vaga para o motor tiraria do usuário um tipo que é dele.</p><p class="leve">Exemplo exercitado, saída real e como se refaz: <code>docs/pdf/respostas/00-sequencia.md</code>, no PDF.</p></details>
+  <details class="pergunta"><summary>0.4) Diretivas do banco e do servidor — o HFSQL e o <code>ALTER … SET</code> do PhxSql</summary><p>O HFSQL espalha a configuração por <b>oito portas</b> — <code>HSetServer</code>, <code>HSetTransaction</code>, <code>HSetLog</code>, <code>HSetIntegrity</code>, <code>HSetDuplicates</code>, <code>HSetTrigger</code>, as propriedades da <code>Connection</code> e <code>HManageTask</code>. Você pediu para centralizar em <code>SHOW</code>, <code>ALTER … SET</code> e <code>TRUE</code>/<code>FALSE</code>, e é o que existe agora: <b>quatro escopos</b> (servidor, banco, tabela, conexão), um verbo para ver, um verbo para mudar, e toda alteração no <b>diário administrativo</b> com os nove campos que você listou.</p>
+<p>O mapa saiu medido, diretiva por diretiva, contra o motor vivo: <b>39 diretivas mapeadas</b>, das quais <b>22 têm equivalente</b> (11 com ressalva registrada — existem no <code>config.json</code> e não se mudam pela rede — e 4 parciais), <b>17 não existem e são dispensa com o motivo técnico</b>, e <b>1 entrou nesta rodada</b>: <code>comandos_proibidos</code> por banco, que é o pedido 220. O <code>ALTER SERVER SET</code> não tem caminho próprio: ele desemboca no mesmo <code>config_gravar</code> que a tela usa, com o mesmo portão, a mesma validação de tipo e a mesma gravação atômica — <i>portão de permissão é UM só</i>. São <b>49 diretivas de servidor</b> graváveis, 17 delas a quente.</p><p class="leve">Exemplo exercitado, saída real e como se refaz: <code>docs/pdf/respostas/00-diretivas.md</code>, no PDF.</p></details>
+  <details class="pergunta"><summary>0.5) O fluxo do auto number id e do sequence — como está e como seria o ideal</summary><p>São <b>três</b> números crescentes por tabela, e não um: o <b><code>rowid</code></b> (posição física do slot, byte 20), a coluna de sistema <b><code>rownum</code></b> (ordem de chegada, byte 92) e a coluna do usuário <b><code>Sequence</code></b> (byte 36) — os três contadores no <b>mesmo</b> cabeçalho de 128 bytes do volume 1, regravado a cada inserção por um <code>write</code> de <b>0,50 µs</b>, sem <code>fsync</code> (o <code>fsync</code> espera a janela: <b>82,1 µs</b>, 164× mais). O <code>rownum</code> o motor impõe e ninguém ajusta; a <code>Sequence</code> o motor só preenche quando o valor chega nulo, e quando o cliente escolhe um número o contador <b>acompanha</b> — <code>id=100</code> faz o próximo sair <b>101</b>, que é o oposto do PostgreSQL.</p>
+<p>O fluxo tem <b>dois buracos medidos</b>. Dentro de uma transação a linha inserida se lê com <code>id: null</code> e <code>rownum: null</code> até o <code>COMMIT</code> — então a ficha mestre-detalhe não fecha, porque não há o id da mãe para pôr na filha. E no modo bidirecional, com os dois servidores numerando a mesma faixa, <b>4 inserções deixaram 2 linhas</b>: os ids colidem, «mais recente vence» resolve, e o trabalho do outro lado some em silêncio.</p><p class="leve">Exemplo exercitado, saída real e como se refaz: <code>docs/pdf/respostas/00-autonumber.md</code>, no PDF.</p></details>
   <details class="pergunta"><summary>A) lista de comandos SQL funcionais no phxsql</summary><p>O phxsql tem <b>um tradutor SQL</b> (<code>crates/phxsql-sql/</code>), ligado ao motor pela operação <code>{"op":"sql","database":"...","texto":"..."}</code>. Ele cobre <code>SELECT</code> simples (projeção com apelido, <code>COUNT(*)</code>, <code>WHERE</code> de <b>igualdade</b> numa coluna <b>indexada</b>, <code>ORDER BY</code> <b>ascendente</b> numa coluna indexada, <code>LIMIT</code>/ <code>OFFSET</code>), o vocabulário de transação (<code>BEGIN</code>/<code>START TRANSACTION</code>/<code>COMMIT</code>/ <code>ROLLBACK</code>/<code>SAVEPOINT</code> e a forma longa com <code>SCOPE</code>/<code>TIMEOUT</code>/<code>LOCK MODE</code>) e o vocabulário de rotina (<code>CREATE</code>/<code>DROP</code>/<code>SHOW TRIGGER(S)</code>, <code>CREATE</code>/<code>DROP</code>/ <code>SHOW PROCEDURE(S)</code>, <code>CALL</code>). <b><code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, <code>CREATE TABLE</code>, <code>CREATE DATABASE</code> e <code>ALTER TABLE</code> não existem nesta camada</b> — são operações nativas do protocolo (<code>inserir</code>, <code>atualizar</code>, <code>excluir</code>, <code>criar_tabela</code>, <code>criar_database</code>, <code>acrescentar_coluna</code>), e o SQL text as recusa <b>nomeando o motivo</b>, não com "sintaxe inválida". Nesta rodada, <b>56 comandos mandados, 28 <code>ok</code>, 28 <code>erro</code></b> — cada <code>erro</code> é um comando que <code>docs/SQL.md</code> ou <code>docs/TRIGGERS.md</code> já documentam como recusado, exceto os dois achados da seção final.</p><p class="leve">Exemplo exercitado, saída real e como se refaz: <code>docs/pdf/respostas/A.md</code>, no PDF.</p></details>
   <details class="pergunta"><summary>B) lista de comandos SQL que são do postgresql excenciais que não tem no Phxsql</summary><p>Mandei <b>49 comandos do PostgreSQL(R) ao motor vivo: 48 recusados, 1 aceito</b>. Classifiquei os recusados por critério escrito: <b>17 faltam e importam</b> para um cadastro comum — e treze deles são a mesma raiz, <i>o <code>WHERE</code> que filtra e o avaliador de expressão</i> — e <b>8 faltam e não importam aqui</b>, com o motivo. Contra isso, <b>26 equivalências provadas pelo protocolo nesta mesma corrida</b> (<code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, <code>CREATE TABLE</code>, <code>JOIN</code>, <code>UNION</code>, <code>information_schema</code>…): as listas se cruzam, porque um comando pode faltar na linguagem e existir no motor. Um gap não tem caminho nenhum: <b>não existe <code>CREATE INDEX</code> depois de a tabela nascer</b>, e isso é decisão registrada.</p><p class="leve">Exemplo exercitado, saída real e como se refaz: <code>docs/pdf/respostas/B.md</code>, no PDF.</p></details>
   <details class="pergunta"><summary>C) lista de comandos SQL que são do mariadb excenciais que não tem no Phxsql</summary><p>Mandei <b>27 comandos do MariaDB(R) ao motor vivo: 22 recusados, 5 aceitos</b> — e os cinco aceitos são os que mais gente diria que faltavam: <code>CREATE TRIGGER</code>, <code>DROP TRIGGER</code>, <code>CREATE PROCEDURE</code>, <code>CALL</code>, <code>DROP PROCEDURE</code>. Dos recusados, <b>8 faltam e importam</b> para um cadastro e <b>6 faltam e não importam aqui</b>, com o motivo; e há <b>9 equivalências provadas pelo protocolo</b> nesta mesma corrida. O gap mais caro não é recurso: é que <b><code>SHOW TABLES</code>, <code>SHOW DATABASES</code>, <code>DESCRIBE</code> e <code>USE</code> — o que todo cliente manda ao conectar — recusam</b>, embora três dos quatro já tenham resposta pronta no protocolo.</p><p class="leve">Exemplo exercitado, saída real e como se refaz: <code>docs/pdf/respostas/C.md</code>, no PDF.</p></details>
@@ -7258,8 +7269,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.18.0 · 143.823 linhas de Rust em 8 crates,
-  mais 1195 KiB de interface · 1.674 testes ·
+  <p>PhxSql 0.18.0 · 151.010 linhas de Rust em 8 crates,
+  mais 1212 KiB de interface · 1.775 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em

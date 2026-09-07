@@ -331,6 +331,23 @@ A regra de escalão foi a de sempre — **«o erro se vê?»**:
 | orquestrador | worktrees, ajudante, ordem do PDF, integração, pacote | **forte** | a integração é onde o defeito do encontro aparece |
 
 
+**Os papéis, e o que a integração achou (07/09/2026).** Nenhum ficou sem dono:
+
+| papel | nesta rodada |
+|---|---|
+| **A — orquestrador** | dividiu em oito frentes; integrou, e a integração achou o que nenhuma frente via — **três frentes (F2, F5, F3) refizeram o mesmo escritor do `config.json`** com nomes e assinaturas diferentes, reconciliado para um só; e a união da seção de usuários com a de diretivas **comeu o `}` do `op_usuario`**, pego por compilar ENTRE os merges. Cognição `tres-frentes-refizeram-o-mesmo-escritor…`. |
+| **B — engenheiro** | as seis frentes de código; e o orquestrador **assumiu a worktree da F4** quando o agente dela travou às 17:52 sem commitar — leu o diff, rodou os portões, commitou 223/219/224 (`9447ba2`) e deixou o 222 aberto, honesto. |
+| **C — DBA** | o escritor único do `config.json` é decisão de formato/gravação atômica; e o `.reg`/`Sequence` do auto number (F8). |
+| **E — designer** | as telas de cluster (F2), abas (F9) e as figuras do auto number (F8), provadas no navegador; a faixa do 214 (F1) fica com a **ressalva** de não ter sido exercitada. |
+| **F — prova real** | cada frente com defeito reposto nos dois sentidos; a suíte inteira do workspace **exit 0** na integração. |
+| **G — QA** | catraca dos textos reconciliada — **1050 medido = 1050 teto**, as telas novas entraram todas pela fábrica; nasce `TETO_INVENTARIO_DESCASADO` (F6). |
+| **H — documentação** | onze geradores re-rodados (ops 123→**130**, figuras renumeradas, o portão `2b-bis` do 214c ganhou rótulo no desenho do fluxo); `PENDENCIAS` (230 pedidos: 212/7/11), `TESTES`, `MODELOS`; a página de revisão da versão completa entregue ao dono. |
+| **I — versionador** | os merges e os commits por decisão; push e backup provados no fim. |
+| **J — pesquisador** | o mapa das diretivas do HFSQL medido contra o motor (F3), o fluxo do auto number contra PostgreSQL/MariaDB/HFSQL/Cassandra (F8). |
+| **multilíngua (tradutor pétreo)** | **convocado**, por ordem do dono: a varredura única confirmou que os `data-txt` das três telas novas entraram pela `FABRICA_TELA` e a catraca não subiu (1050=1050). |
+| **D — zelador** | rodou no pico de compilações — o disco chegou a 1,6 GiB com seis `target`, liberado para 16 GiB por prova de processo, sem matar ninguém. |
+
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

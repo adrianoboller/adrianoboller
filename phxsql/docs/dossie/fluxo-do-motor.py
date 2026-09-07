@@ -68,6 +68,7 @@ ROTULO_PORTAO = {
     "2a":     ("o papel do servidor", "réplica não atende escrita"),
     "2a-bis": ("de ONDE vem a replicação", "o IP da sessão, não o do pedido"),
     "2b":     ("a escrita", "quem decide é o papel VIVO do cluster"),
+    "2b-bis": ("o `aplicar` respeita somente-leitura", "source/isolado trancados recusam; réplica aplica por dentro"),
     "3":      ("o poder sobre a base E a tabela", "o campo `tabela` do pedido"),
     "4":      ("carga de outra ligação?", "a tabela está reservada"),
     "5":      ("transação de outra conexão?", "a tabela está segurada"),
