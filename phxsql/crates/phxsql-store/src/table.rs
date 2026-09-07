@@ -22,6 +22,7 @@ use phxsql_core::value::{escrever_inline, ler_inline, Ponteiro, Value};
 use phxsql_core::{RowId, EXT_BIN, EXT_MEMO, EXT_NDX, EXT_REG};
 
 use crate::blob::{BlobFile, MAGIC_BIN, MAGIC_MEMO};
+use crate::fts::{Achado, FtsFile, EXT_FTS};
 use crate::lixeira::{Descartada, LixeiraFile, EXT_TRASH};
 use crate::log::{Evento, LogFile, Operacao, EXT_LOG};
 use crate::motivo::{Motivo, MotivoFile, Tipo, EXT_REASON};
@@ -296,6 +297,19 @@ pub struct Table {
     /// custa essa comparacao e mais nada: nao abre arquivo, nao decodifica
     /// valor, nao monta texto.
     colunas_marcadas: Vec<usize>,
+    /// O indice de texto, ou `None` quando a tabela nao declara nenhum.
+    ///
+    /// `None` e o PORTAO de custo zero: tabela sem indice de texto nao abre
+    /// arquivo, nao quebra texto e nao paga chamada nenhuma no laco quente --
+    /// e a mesma licao do Profiler, que cobrava 7% da carga fazendo trabalho
+    /// antes de perguntar se estava ligado.
+    fts: Option<FtsFile>,
+    /// `(coluna, dobrar)` de cada indice de texto, na ordem do esquema.
+    ///
+    /// Montada UMA vez na abertura, como a `colunas_marcadas`: perguntar ao
+    /// esquema "ha indice de texto?" a cada linha gravada percorreria os
+    /// indices todos por gravacao.
+    indices_de_texto: Vec<(usize, bool)>,
     /// Posicoes, em `esquema.chaves_estrangeiras`, das chaves que PEDIRAM
     /// conferencia (`verificar: true`).
     ///
@@ -352,6 +366,18 @@ pub struct Table {
 
 fn caminho(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
     diretorio.join(format!("{nome}.{ext}"))
+}
+
+/// `(coluna, dobrar)` de cada indice de TEXTO do esquema, na ordem dele.
+///
+/// A ordem importa e e contrato: ela e a mesma dos indices internos do `.fts`,
+/// e e por ela que `indexar(i, ...)` sabe em qual arvore escrever.
+fn textos_do_esquema(esquema: &Schema) -> Vec<(usize, bool)> {
+    esquema
+        .indices_de_texto()
+        .iter()
+        .map(|it| (it.coluna, it.dobrar))
+        .collect()
 }
 
 /// As posicoes das colunas marcadas como dado pessoal, de qualquer grau.
@@ -503,6 +529,17 @@ impl Table {
         let reg = RegFile::criar(&diretorio, &nome, esquema.clone())?;
 
         let colunas_marcadas = marcadas_do_esquema(&esquema);
+        // O `.fts` so nasce se alguem o declarou: nao se paga por recurso que
+        // nao se pediu, e tabela sem indice de texto nao ganha o arquivo.
+        let indices_de_texto = textos_do_esquema(&esquema);
+        let fts = if indices_de_texto.is_empty() {
+            None
+        } else {
+            Some(FtsFile::criar(
+                caminho(&diretorio, &nome, EXT_FTS),
+                indices_de_texto.iter().map(|(_, d)| *d).collect(),
+            )?)
+        };
         let mut t = Table {
             nome,
             diretorio,
@@ -516,6 +553,8 @@ impl Table {
             motivos,
             trilha,
             colunas_marcadas,
+            fts,
+            indices_de_texto,
             imagem_no_diario: false,
             imagem_na_exclusao: false,
             reconstruir_indice_da_filha: false,
@@ -842,7 +881,23 @@ impl Table {
 
         let esquema = reg.esquema().clone();
         let colunas_marcadas = marcadas_do_esquema(&esquema);
-        Ok(SemEscrever::Aberta(Table {
+        let indices_de_texto = textos_do_esquema(&esquema);
+        // O `.fts` e DERIVADO: perde-lo custa tempo, nunca dado. Se o esquema
+        // declara indice de texto e o arquivo nao esta la, ele nasce agora e a
+        // tabela e varrida para enche-lo -- porque a alternativa e uma busca
+        // que devolve VAZIO em silencio, e resposta vazia errada e pior que
+        // espera. A reconstrucao acontece logo abaixo, com a tabela ja montada.
+        let dobra: Vec<bool> = indices_de_texto.iter().map(|(_, d)| *d).collect();
+        let caminho_fts = caminho(&diretorio, nome, EXT_FTS);
+        let faltava = !dobra.is_empty() && !caminho_fts.exists();
+        let fts = if dobra.is_empty() {
+            None
+        } else if faltava {
+            Some(FtsFile::criar(&caminho_fts, dobra)?)
+        } else {
+            Some(FtsFile::abrir(&caminho_fts, dobra)?)
+        };
+        let mut aberta = Table {
             nome: nome.to_string(),
             diretorio,
             esquema,
@@ -855,6 +910,8 @@ impl Table {
             motivos,
             trilha,
             colunas_marcadas,
+            fts,
+            indices_de_texto,
             imagem_no_diario: false,
             imagem_na_exclusao: false,
             reconstruir_indice_da_filha: false,
@@ -862,7 +919,128 @@ impl Table {
             evento_forcado: None,
             sobreposta: None,
             como_replica: false,
-        }))
+        };
+        if faltava {
+            aberta.reconstruir_fts()?;
+        }
+        Ok(SemEscrever::Aberta(aberta))
+    }
+
+    // ------------------------------------------------- o indice de texto
+    //
+    // Todos os metodos daqui comecam pelo mesmo portao -- `self.fts` em `None`
+    // --, e por isso tabela sem indice de texto nao paga nada. E a licao do
+    // Profiler: o portao vem ANTES do trabalho.
+
+    /// O texto de cada coluna com indice de texto, na ordem dos indices.
+    ///
+    /// # Por que ele carrega o externo, e por que so as vezes
+    ///
+    /// Coluna `Memo` mora no `.memo`, e `decodificar(payload, false)` a
+    /// devolve como `Null`. Desindexar com `Null` nao removeria termo nenhum
+    /// -- e o indice ficaria apontando as palavras VELHAS de uma linha que
+    /// mudou, que e achar a MAIS. E o `FTS.md` §7.1 e explicito: achar a menos
+    /// e atraso, achar a mais e mentira.
+    ///
+    /// Entao o externo se le, e so quando ha indice de texto sobre coluna
+    /// externa: o `Str` mora dentro do slot e nao custa leitura nenhuma.
+    fn textos_da_linha(&mut self, payload: &[u8]) -> Result<Vec<String>> {
+        let colunas: Vec<usize> = self.indices_de_texto.iter().map(|(c, _)| *c).collect();
+        if colunas.is_empty() {
+            return Ok(Vec::new());
+        }
+        let externo = colunas
+            .iter()
+            .any(|c| matches!(self.esquema.colunas()[*c].ty, ColumnType::Memo));
+        let linha = self.decodificar(payload, externo)?;
+        Ok(colunas
+            .iter()
+            .map(|c| match linha.get(*c) {
+                Some(Value::Str(t)) | Some(Value::Memo(t)) => t.clone(),
+                _ => String::new(),
+            })
+            .collect())
+    }
+
+    /// Poe a linha no indice de texto. Silenciosa quando nao ha indice.
+    fn indexar_texto(&mut self, rowid: RowId, payload: &[u8]) -> Result<()> {
+        if self.fts.is_none() {
+            return Ok(());
+        }
+        let textos = self.textos_da_linha(payload)?;
+        if let Some(f) = self.fts.as_mut() {
+            for (i, t) in textos.iter().enumerate() {
+                f.indexar(i, rowid, t)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Tira a linha do indice de texto.
+    fn desindexar_texto(&mut self, rowid: RowId, payload: &[u8]) -> Result<()> {
+        if self.fts.is_none() {
+            return Ok(());
+        }
+        let textos = self.textos_da_linha(payload)?;
+        if let Some(f) = self.fts.as_mut() {
+            for (i, t) in textos.iter().enumerate() {
+                f.desindexar(i, rowid, t)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Refaz o `.fts` inteiro a partir do `.reg`.
+    ///
+    /// Varre TODAS as linhas, inclusive as marcadas como excluidas: o indice
+    /// aponta o que existe no `.reg`, e quem filtra por `visao` e quem
+    /// consulta -- exatamente como o `.ndx` faz. Se o indice ja escondesse a
+    /// linha marcada, restaura-la a deixaria fora dele para sempre.
+    pub fn reconstruir_fts(&mut self) -> Result<u64> {
+        if self.fts.is_none() {
+            return Ok(0);
+        }
+        let mut feitas = 0u64;
+        let mut depois = 0u64;
+        loop {
+            let pagina = self.pagina_depois_de(depois, 1_000, Visao::Todas)?;
+            if pagina.is_empty() {
+                break;
+            }
+            for rowid in pagina {
+                if let Some(payload) = self.reg.ler(rowid)? {
+                    self.indexar_texto(rowid, &payload)?;
+                    feitas += 1;
+                }
+                depois = rowid;
+            }
+        }
+        Ok(feitas)
+    }
+
+    /// Procura uma palavra num indice de texto, pelo NOME do indice.
+    ///
+    /// Pelo nome, e nao pela posicao, porque a posicao muda quando alguem
+    /// acrescenta um indice antes -- e quem chama nao tem como saber disso.
+    pub fn procurar_texto(&mut self, indice: &str, palavra: &str) -> Result<Achado> {
+        let posicao = self
+            .esquema
+            .indices_de_texto()
+            .iter()
+            .position(|it| it.nome == indice)
+            .ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "a tabela {} nao tem indice de texto chamado {indice}",
+                    self.nome
+                ))
+            })?;
+        match self.fts.as_mut() {
+            Some(f) => f.procurar(posicao, palavra),
+            None => Ok(Achado {
+                rowids: Vec::new(),
+                conferir: false,
+            }),
+        }
     }
 
     /// Confere as chaves estrangeiras que pediram conferencia.
@@ -2393,6 +2571,12 @@ impl Table {
         if nasce_marcada {
             self.reg.mudar_marcadas(1)?;
         }
+        // O indice de texto entra DEPOIS das chaves, e por isso ele nao
+        // participa do desfazer acima: a unicidade e as chaves ja passaram, e
+        // um `.fts` que falhasse aqui deixaria a linha gravada e o indice
+        // atrasado -- que e o estado que o `reconstruir_fts` conserta, e nao
+        // uma linha perdida.
+        self.indexar_texto(rowid, &payload)?;
         self.anotar(Operacao::Inclusao, rowid, 1, &payload)?;
         Ok(rowid)
     }
@@ -2654,6 +2838,15 @@ impl Table {
                 self.ndx.inserir(i, nova, rowid)?;
             }
         }
+        // O texto sai e entra, nesta ordem. A saida usa o payload ANTIGO --
+        // que ainda esta na mao -- porque so ele sabe quais palavras a linha
+        // tinha; desindexar pelo novo deixaria as velhas no indice, e o indice
+        // passaria a achar a MAIS.
+        //
+        // E a saida vem antes de `liberar_externos`: o `.memo` da linha velha
+        // precisa estar la para o texto antigo poder ser lido.
+        self.desindexar_texto(rowid, &antigo)?;
+        self.indexar_texto(rowid, &payload)?;
         self.liberar_externos(&ponteiros_antigos)?;
         self.anotar(Operacao::Alteracao, rowid, versao, &payload)?;
         // A trilha vem DEPOIS de a linha estar gravada: uma trilha que
@@ -2753,6 +2946,13 @@ impl Table {
             Vec::new()
         };
         self.lixeira.guardar(rowid, &payload, externos)?;
+
+        // O texto sai do indice ANTES de os blocos externos serem liberados:
+        // depois, ler o `.memo` para saber quais palavras a linha tinha nao
+        // acharia nada, e os termos ficariam no indice apontando uma linha que
+        // nao existe mais -- achar a MAIS, que e o defeito que este indice nao
+        // pode ter.
+        self.desindexar_texto(rowid, &payload)?;
 
         let valores = self.decodificar(&payload, false)?;
         let chaves = self.todas_as_chaves(&valores)?;

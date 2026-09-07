@@ -366,6 +366,50 @@ impl IndexColumn {
     }
 }
 
+/// Um indice de TEXTO: as PALAVRAS de uma coluna, no `.fts`.
+///
+/// # Por que ele nao e um sinalizador dentro do [`IndexDef`]
+///
+/// Porque `Schema::indices()` quer dizer «as arvores B+ do `.ndx`», e uma
+/// duzia de lugares assume que `esquema.indices()[i]` casa com
+/// `ndx.indices()[i]`. Um indice de texto no meio daquela lista deslocaria as
+/// posicoes e mandaria chave para a **arvore errada** -- e fazer cada um
+/// desses lugares filtrar seria espalhar o portao por uma duzia de pontos,
+/// onde o que alguem esquecesse viraria a porta dos fundos.
+///
+/// Lista propria, e `indices()` continua querendo dizer o que sempre quis. O
+/// molde ja estava aqui: [`ForeignKey`] e uma lista propria pelo mesmo motivo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndiceDeTexto {
+    pub nome: String,
+    /// A coluna cujas palavras entram no indice. Uma so: o indice guarda as
+    /// palavras DELA, e duas colunas nao teriam significado.
+    pub coluna: usize,
+    /// Dobra acento? Nasce LIGADO.
+    ///
+    /// E o inverso de «guarda nova entra pedida», e o motivo esta medido: a
+    /// busca de hoje nao dobra acento, entao um indice sem dobra acharia
+    /// MENOS que a varredura -- e indice que acha menos que a varredura e
+    /// pior que nao ter indice (`docs/FTS.md` §5.1).
+    pub dobrar: bool,
+}
+
+impl IndiceDeTexto {
+    pub fn new(nome: impl Into<String>, coluna: usize) -> Self {
+        IndiceDeTexto {
+            nome: nome.into(),
+            coluna,
+            dobrar: true,
+        }
+    }
+
+    /// Desliga a dobra -- escolha escrita, em vez de omissao.
+    pub fn sem_dobrar(mut self) -> Self {
+        self.dobrar = false;
+        self
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexDef {
     pub nome: String,
@@ -379,21 +423,6 @@ pub struct IndexDef {
     /// campos formam a chave. So um indice pode ser primario, e ele e sempre
     /// unico -- `Schema::new` recusa o contrario.
     pub primario: bool,
-    /// Este e um indice de TEXTO (`.fts`), e nao da arvore comum.
-    ///
-    /// Ele nao guarda o valor da coluna: guarda cada PALAVRA dela, dobrada.
-    /// Por isso vale sobre uma coluna so, nao pode ser unico nem primario, e a
-    /// coluna tem de ser texto -- e `Schema::new` recusa os tres casos na
-    /// DECLARACAO, que e onde custa um erro lido enquanto se cria a tabela.
-    /// Recusar na gravacao custaria um banco inteiro modelado errado.
-    pub texto: bool,
-    /// O indice de texto dobra acento? Nasce LIGADO.
-    ///
-    /// E o inverso da regra «guarda nova entra pedida», e o motivo esta
-    /// medido: a busca de hoje nao dobra acento, entao um indice sem dobra
-    /// acharia MENOS que a varredura -- e indice que acha menos que a
-    /// varredura e pior que nao ter indice (`docs/FTS.md` §5.1).
-    pub dobrar: bool,
 }
 
 impl IndexDef {
@@ -403,21 +432,7 @@ impl IndexDef {
             colunas,
             unico: false,
             primario: false,
-            texto: false,
-            dobrar: true,
         }
-    }
-
-    /// Marca este indice como de TEXTO. Nasce dobrando acento.
-    pub fn de_texto(mut self) -> Self {
-        self.texto = true;
-        self
-    }
-
-    /// Desliga a dobra de acento -- escolha escrita, em vez de omissao.
-    pub fn sem_dobrar(mut self) -> Self {
-        self.dobrar = false;
-        self
     }
 
     pub fn unico(mut self) -> Self {
@@ -445,6 +460,7 @@ pub struct Schema {
     colunas: Vec<Column>,
     indices: Vec<IndexDef>,
     chaves_estrangeiras: Vec<ForeignKey>,
+    indices_de_texto: Vec<IndiceDeTexto>,
     paginacao: Paginacao,
     offsets: Vec<usize>,
     bitmap_len: usize,
@@ -559,49 +575,9 @@ impl Schema {
                         idx.nome, ic.coluna
                     ))
                 })?;
-                // O crivo de tipo do indice COMUM nao vale para o de texto,
-                // e a diferenca e de significado, nao de rigor: a arvore comum
-                // indexa o VALOR da coluna, e por isso um `Memo` -- que tem
-                // tamanho livre e mora fora do slot -- nao e indexavel. O
-                // indice de texto indexa as PALAVRAS, e o `.memo` e justamente
-                // o caso que ele existe para resolver. Cada um tem a sua regra
-                // de tipo, e a do texto esta logo abaixo.
-                if !idx.texto && !col.ty.indexavel() {
+                if !col.ty.indexavel() {
                     return Err(PhxError::Esquema(format!(
                         "indice {} usa coluna {} do tipo {:?}, que nao e indexavel",
-                        idx.nome, col.nome, col.ty
-                    )));
-                }
-            }
-
-            // As tres recusas do indice de TEXTO, todas na declaracao.
-            //
-            // Uma tabela nasce uma vez e grava um milhao de vezes: recusar
-            // cedo custa um erro lido enquanto se cria a tabela; recusar tarde
-            // custa um banco modelado errado, descoberto no dia da primeira
-            // busca. E a mesma decisao do `ao_excluir`.
-            if idx.texto {
-                if idx.colunas.len() != 1 {
-                    return Err(PhxError::Esquema(format!(
-                        "o indice de texto {} declara {} colunas; ele vale sobre \
-                         UMA so, porque indexa as palavras dela e nao o valor",
-                        idx.nome,
-                        idx.colunas.len()
-                    )));
-                }
-                if idx.unico || idx.primario {
-                    return Err(PhxError::Esquema(format!(
-                        "o indice de texto {} esta marcado como unico ou primario; \
-                         a mesma palavra aparece em muitas linhas, e e disso que \
-                         a lista de ocorrencias e feita",
-                        idx.nome
-                    )));
-                }
-                let col = &colunas[idx.colunas[0].coluna];
-                if !matches!(col.ty, ColumnType::Str(_) | ColumnType::Memo) {
-                    return Err(PhxError::Esquema(format!(
-                        "o indice de texto {} usa a coluna {} do tipo {:?}; \
-                         indice de texto vale sobre Str ou Memo",
                         idx.nome, col.nome, col.ty
                     )));
                 }
@@ -713,6 +689,7 @@ impl Schema {
             colunas,
             indices,
             chaves_estrangeiras: Vec::new(),
+            indices_de_texto: Vec::new(),
             paginacao: Paginacao::DESLIGADA,
             offsets,
             bitmap_len,
@@ -898,6 +875,49 @@ impl Schema {
     }
 
     /// Acrescenta as chaves estrangeiras da tabela.
+    /// Declara os indices de TEXTO. As recusas acontecem AQUI.
+    ///
+    /// Uma tabela nasce uma vez e grava um milhao de vezes: recusar cedo custa
+    /// um erro lido enquanto se cria a tabela; recusar tarde custa um banco
+    /// modelado errado, descoberto no dia da primeira busca. E a mesma decisao
+    /// do `ao_excluir`.
+    pub fn com_indices_de_texto(mut self, textos: Vec<IndiceDeTexto>) -> Result<Schema> {
+        for (i, it) in textos.iter().enumerate() {
+            if it.nome.is_empty() {
+                return Err(PhxError::Esquema(format!("indice de texto {i} sem nome")));
+            }
+            if textos.iter().take(i).any(|o| o.nome == it.nome) {
+                return Err(PhxError::Esquema(format!(
+                    "indice de texto duplicado: {}",
+                    it.nome
+                )));
+            }
+            // O nome tambem nao pode colidir com o de uma arvore: quem procura
+            // por nome ficaria com duas respostas para a mesma pergunta.
+            if self.indices.iter().any(|o| o.nome == it.nome) {
+                return Err(PhxError::Esquema(format!(
+                    "o indice de texto {} tem o mesmo nome de um indice comum",
+                    it.nome
+                )));
+            }
+            let col = self.colunas.get(it.coluna).ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "o indice de texto {} referencia a coluna inexistente {}",
+                    it.nome, it.coluna
+                ))
+            })?;
+            if !matches!(col.ty, ColumnType::Str(_) | ColumnType::Memo) {
+                return Err(PhxError::Esquema(format!(
+                    "o indice de texto {} usa a coluna {} do tipo {:?}; \
+                     indice de texto vale sobre Str ou Memo",
+                    it.nome, col.nome, col.ty
+                )));
+            }
+        }
+        self.indices_de_texto = textos;
+        Ok(self)
+    }
+
     pub fn com_chaves_estrangeiras(mut self, fks: Vec<ForeignKey>) -> Result<Schema> {
         for (i, fk) in fks.iter().enumerate() {
             if fk.nome.is_empty() {
@@ -1021,6 +1041,11 @@ impl Schema {
 
     pub fn chaves_estrangeiras(&self) -> &[ForeignKey] {
         &self.chaves_estrangeiras
+    }
+
+    /// Os indices de TEXTO, que moram no `.fts` e nao no `.ndx`.
+    pub fn indices_de_texto(&self) -> &[IndiceDeTexto] {
+        &self.indices_de_texto
     }
 
     pub fn paginacao(&self) -> Paginacao {
@@ -1189,20 +1214,24 @@ impl Schema {
         for c in &self.colunas {
             out.push(c.dado_pessoal.tag());
         }
-        // v8: os dois bytes do indice de texto, um par por indice, na ordem
-        // dos indices.
+        // v8: os indices de TEXTO, numa lista PROPRIA.
         //
-        // **No fim, e nao dentro do registro de cada indice** -- e isto nao e
-        // estilo, e a convencao que a v4 e a v6 escreveram ao lado delas
-        // mesmas: *quem le uma versao antiga simplesmente para antes daqui*.
-        // A primeira versao desta mudanca pos os dois bytes no meio do
-        // registro do indice, e duas guardas de compatibilidade cairam na
-        // hora -- elas simulam arquivo velho truncando a CAUDA, e campo no
-        // meio quebra a simulacao. As guardas estavam certas: a convencao era
-        // carga, e nao enfeite.
-        for idx in &self.indices {
-            out.push(idx.texto as u8);
-            out.push(idx.dobrar as u8);
+        // **Lista propria, e nao um sinalizador dentro de `indices`** -- e a
+        // primeira versao desta mudanca fez o contrario, e o teste derrubou:
+        // uma duzia de lugares assume que `esquema.indices()[i]` casa com
+        // `ndx.indices()[i]`, e um indice de texto no meio da lista deslocaria
+        // as posicoes e mandaria chave para a ARVORE ERRADA. Fazer cada um
+        // desses lugares filtrar seria espalhar o portao por uma duzia de
+        // pontos, e o que alguem esquecesse viraria a porta dos fundos.
+        //
+        // Assim, `indices()` continua querendo dizer exatamente o que sempre
+        // quis, e ZERO chamadores mudam. E o molde ja estava aqui: as chaves
+        // estrangeiras sao uma lista propria pelo mesmo motivo.
+        out.extend_from_slice(&(self.indices_de_texto.len() as u16).to_le_bytes());
+        for it in &self.indices_de_texto {
+            escrever_texto(&mut out, &it.nome);
+            out.extend_from_slice(&(it.coluna as u16).to_le_bytes());
+            out.push(it.dobrar as u8);
         }
         out
     }
@@ -1283,10 +1312,6 @@ impl Schema {
                 colunas: cols,
                 unico,
                 primario,
-                // v8, e ela vem no FIM do bloco: aqui os dois nascem no padrao
-                // de quem foi gravado antes dela.
-                texto: false,
-                dobrar: true,
             });
         }
 
@@ -1345,17 +1370,21 @@ impl Schema {
             }
         }
 
-        // v8: os dois bytes do indice de texto, na ordem dos indices. Quem le
-        // uma v7 para antes daqui, e os indices ficam com o padrao de quem foi
-        // gravado antes: `texto` desligado, `dobrar` ligado.
+        // v8: a lista dos indices de texto. Quem le uma v7 para antes daqui,
+        // e a lista fica vazia -- que e o que uma tabela gravada antes tem.
+        let mut textos = Vec::new();
         if versao >= 8 {
-            for idx in indices.iter_mut() {
-                match (leitor.u8(), leitor.u8()) {
-                    (Ok(t), Ok(d)) => {
-                        idx.texto = t != 0;
-                        idx.dobrar = d != 0;
-                    }
-                    _ => break,
+            if let Ok(n) = leitor.u16() {
+                for _ in 0..n {
+                    let (nome, coluna, dobrar) = match (leitor.texto(), leitor.u16(), leitor.u8()) {
+                        (Ok(n), Ok(c), Ok(d)) => (n, c as usize, d != 0),
+                        _ => break,
+                    };
+                    textos.push(IndiceDeTexto {
+                        nome,
+                        coluna,
+                        dobrar,
+                    });
                 }
             }
         }
@@ -1363,6 +1392,7 @@ impl Schema {
         // `do_disco`, e nao `new`: a lista de colunas gravada e a verdade
         // inteira. Ver a nota em `VERSAO_ESQUEMA`.
         Schema::do_disco(nome, colunas, indices)?
+            .com_indices_de_texto(textos)?
             .com_chaves_estrangeiras(fks)
             .map(|e| e.com_paginacao_do_disco(paginacao))
             .map(|e| e.com_motivo_obrigatorio(motivo_obrigatorio))
@@ -1728,81 +1758,106 @@ mod testes_indice_de_texto {
         ]
     }
 
-    fn com(idx: IndexDef) -> Result<Schema> {
-        Schema::new("docs", colunas(), vec![idx])
+    fn com(textos: Vec<IndiceDeTexto>) -> Result<Schema> {
+        Schema::new(
+            "docs",
+            colunas(),
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )?
+        .com_indices_de_texto(textos)
     }
 
     #[test]
     fn indice_de_texto_sobre_str_e_sobre_memo_e_aceito() {
-        assert!(com(IndexDef::new("porTitulo", vec![IndexColumn::asc(1)]).de_texto()).is_ok());
-        assert!(com(IndexDef::new("porCorpo", vec![IndexColumn::asc(2)]).de_texto()).is_ok());
+        assert!(com(vec![IndiceDeTexto::new("porTitulo", 1)]).is_ok());
+        assert!(com(vec![IndiceDeTexto::new("porCorpo", 2)]).is_ok());
     }
 
-    /// A primeira das tres recusas na DECLARACAO. Indice de texto guarda as
-    /// palavras de UMA coluna; duas colunas nao tem significado aqui.
-    #[test]
-    fn indice_de_texto_com_duas_colunas_recusa_na_declaracao() {
-        let e =
-            com(IndexDef::new("dois", vec![IndexColumn::asc(1), IndexColumn::asc(2)]).de_texto())
-                .unwrap_err()
-                .to_string();
-        assert!(e.contains("UMA so"), "{e}");
-    }
-
-    /// A segunda: a mesma palavra aparece em muitas linhas, e e disso que a
-    /// lista de ocorrencias e feita -- unico mataria o indice.
-    #[test]
-    fn indice_de_texto_unico_ou_primario_recusa_na_declaracao() {
-        for idx in [
-            IndexDef::new("u", vec![IndexColumn::asc(1)])
-                .de_texto()
-                .unico(),
-            IndexDef::new("p", vec![IndexColumn::asc(1)])
-                .de_texto()
-                .primaria(),
-        ] {
-            let e = com(idx).unwrap_err().to_string();
-            assert!(e.contains("unico ou primario"), "{e}");
-        }
-    }
-
-    /// A terceira: indice de texto sobre numero nao indexa palavra nenhuma.
+    /// Indice de texto sobre numero nao indexa palavra nenhuma, e a recusa
+    /// acontece na DECLARACAO -- uma tabela nasce uma vez e grava um milhao de
+    /// vezes.
     #[test]
     fn indice_de_texto_sobre_numero_recusa_na_declaracao() {
-        let e = com(IndexDef::new("n", vec![IndexColumn::asc(3)]).de_texto())
+        let e = com(vec![IndiceDeTexto::new("n", 3)])
             .unwrap_err()
             .to_string();
         assert!(e.contains("Str ou Memo"), "{e}");
     }
 
+    #[test]
+    fn indice_de_texto_sobre_coluna_inexistente_recusa_na_declaracao() {
+        let e = com(vec![IndiceDeTexto::new("fora", 9)])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("inexistente"), "{e}");
+    }
+
+    /// Nome repetido daria duas respostas para a mesma pergunta em
+    /// `procurar_texto`, que resolve pelo NOME.
+    #[test]
+    fn nome_repetido_recusa_na_declaracao() {
+        let e = com(vec![IndiceDeTexto::new("t", 1), IndiceDeTexto::new("t", 2)])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("duplicado"), "{e}");
+    }
+
+    /// E colidir com o nome de uma ARVORE e o mesmo estrago por outro caminho:
+    /// as duas listas sao separadas, mas quem procura por nome e um so.
+    #[test]
+    fn nome_que_colide_com_indice_comum_recusa_na_declaracao() {
+        let e = com(vec![IndiceDeTexto::new("porId", 1)])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("mesmo nome de um indice comum"), "{e}");
+    }
+
+    /// Duas recusas que a versao anterior desta lista precisava escrever --
+    /// "indice de texto nao pode ter duas colunas" e "nao pode ser unico ou
+    /// primario" -- sumiram por CONSEQUENCIA da lista propria, nao por uma
+    /// segunda regra: [`IndiceDeTexto`] nao tem onde guardar uma segunda
+    /// coluna nem a marca de unico. E o mesmo desenho do par Cascata/Cascata,
+    /// que some porque nao ha cascata no excluir.
+    ///
     /// A dobra NASCE ligada, e desliga-la e escolha escrita.
     #[test]
     fn a_dobra_nasce_ligada_e_desligar_e_escrito() {
-        let i = IndexDef::new("t", vec![IndexColumn::asc(1)]).de_texto();
+        let i = IndiceDeTexto::new("t", 1);
         assert!(i.dobrar, "indice de texto tem de nascer dobrando");
         assert!(!i.clone().sem_dobrar().dobrar);
     }
 
-    /// O PSCH v8 leva os dois bytes de ida e volta.
+    /// O PSCH v8 leva a lista inteira de ida e volta.
     #[test]
     fn o_esquema_volta_do_disco_com_o_indice_de_texto() {
-        let e = Schema::new(
-            "docs",
-            colunas(),
-            vec![
-                IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
-                IndexDef::new("porTitulo", vec![IndexColumn::asc(1)]).de_texto(),
-                IndexDef::new("porCorpo", vec![IndexColumn::asc(2)])
-                    .de_texto()
-                    .sem_dobrar(),
-            ],
-        )
+        let e = com(vec![
+            IndiceDeTexto::new("porTitulo", 1),
+            IndiceDeTexto::new("porCorpo", 2).sem_dobrar(),
+        ])
         .unwrap();
         let volta = Schema::desserializar(&e.serializar()).unwrap();
         assert_eq!(volta, e, "o esquema tem de voltar igual do disco");
-        assert!(!volta.indices()[0].texto, "o comum nao pode virar de texto");
-        assert!(volta.indices()[1].texto && volta.indices()[1].dobrar);
-        assert!(volta.indices()[2].texto && !volta.indices()[2].dobrar);
+        assert_eq!(volta.indices_de_texto().len(), 2);
+        assert!(volta.indices_de_texto()[0].dobrar);
+        assert!(!volta.indices_de_texto()[1].dobrar);
+        assert_eq!(volta.indices_de_texto()[1].coluna, 2);
+        // A lista propria nao contaminou a das arvores.
+        assert_eq!(volta.indices().len(), 1);
+    }
+
+    /// Tabela sem indice de texto continua gravando um PSCH que volta igual --
+    /// o bloco novo existe, vazio, e nao muda nada para quem nao pediu.
+    #[test]
+    fn esquema_sem_indice_de_texto_volta_igual() {
+        let e = Schema::new(
+            "docs",
+            colunas(),
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap();
+        let volta = Schema::desserializar(&e.serializar()).unwrap();
+        assert_eq!(volta, e);
+        assert!(volta.indices_de_texto().is_empty());
     }
 }
 
