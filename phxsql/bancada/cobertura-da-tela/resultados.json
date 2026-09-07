@@ -1,0 +1,38 @@
+{
+  "quando": "2026-09-07T03:17:08",
+  "operacoes": 123,
+  "alcancadas_pela_tela": 105,
+  "fora": [
+    "catalogo",
+    "procurar_texto",
+    "bulkinsert",
+    "begin",
+    "commit",
+    "rollback",
+    "savepoint",
+    "rollback_para",
+    "release_savepoint",
+    "criar_schema",
+    "renomear_tabela",
+    "SelectMemory",
+    "replicar",
+    "aplicar",
+    "cluster_pulso",
+    "cluster_estado",
+    "telemetria_ligar",
+    "telemetria_desligar"
+  ],
+  "arquivos_da_tela": [
+    "crates/phxsql-server/ui/claude.js",
+    "crates/phxsql-server/ui/diagrama-er.js",
+    "crates/phxsql-server/ui/grid/CHANGELOG-phx-grid.md",
+    "crates/phxsql-server/ui/grid/phx-grid.css",
+    "crates/phxsql-server/ui/grid/phx-grid.js",
+    "crates/phxsql-server/ui/index.html",
+    "crates/phxsql-server/ui/multitela.css",
+    "crates/phxsql-server/ui/multitela.js",
+    "crates/phxsql-server/ui/telemetria.css",
+    "crates/phxsql-server/ui/telemetria.js"
+  ],
+  "apelidos_no_catalogo": 24
+}

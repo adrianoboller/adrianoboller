@@ -20,6 +20,60 @@ ausência de transação: ele as documenta extensamente.
 
 ### Corrigido
 
+- **O sexto veredito de ausência do `docs/HFSQL.md`, e o pior dos seis.** A §3.3
+  dizia que a trava por linha «viria depois». Ela veio: há gestor próprio em
+  `crates/phxsql-server/src/travas.rs` — intenção na tabela, exclusivo na linha,
+  ordem canônica e `LOCK TIMEOUT` —, ligado ao servidor e **pedido** no caminho
+  de escrita. O agravante que os cinco anteriores não tinham: eles diziam «não
+  há» sobre coisa que passou a haver, e este dizia **«viria depois»** — promessa
+  de futuro envelhece pior que negação, porque ninguém a lê como afirmação sobre
+  o presente. A frase certa é mais estreita: vale **dentro de transação**, e fora
+  dela a trava global continua serializando.
+
+- **Um pedido invisível na página dos pedidos.** O 150 estava marcado `⏳`, que
+  não está na legenda; o gerador não casava a linha e **seguia em silêncio** —
+  200 pedidos publicados de 201 existentes. Hoje o `pagina-dos-pedidos.py`
+  **para** diante de estado desconhecido, nomeando o arquivo e a linha.
+
+- **Cinco defeitos no próprio medidor comparativo, e o pior produzia frase
+  verdadeira.** As sondas de efeito liam `r["linha"]` do envelope quando a
+  resposta vem dentro de `resultado`, e criavam tabelas com o índice num formato
+  que o servidor recusa — a recusa não era lida. Resultado: «o campo `padrao` foi
+  aceito e IGNORADO» publicado sobre tabela que nunca nasceu. *O errado sobrevive
+  melhor quando o conserto funcionou por outro motivo.*
+
+- **O número de operações que a tela alcança deixou de se digitar.** Ele já
+  envelheceu três vezes — «36 das 39», «108 das 96», «104 das 122», esta última
+  em **um dia**. Hoje sai de `bancada/cobertura-da-tela/medir.py`, com as duas
+  listas tiradas do código: **123 operações**, **105 alcançadas**, **18 fora**.
+
+### Adicionado no mesmo passo
+
+- **`docs/COMPARATIVO.md`** — o que ainda falta aqui, contra quem tem.
+  **18 de 19 capacidades** faltam ou estão pela metade no PhxSql; **13** foram
+  perguntadas **por SQL a quatro motores vivos** nesta máquina (PhxSql 0.18.0,
+  MySQL(R) 8.0.46, PostgreSQL(R) 16.13, SQLite(R) 3.45.1) e o resto por sonda de
+  código com arquivo, linha e trecho citado. HFSQL(R) e Cassandra(R) entram
+  **citados**, marcados célula a célula. O documento **não se edita**: a prosa
+  mora em `bancada/comparativo/documento.py`.
+  Achado que a pergunta não pedia: **quatro campos de esquema desconhecidos**
+  (`onde`, `check`, `padrao`, `calculada`) são aceitos pelo `criar_tabela` e não
+  fazem nada — *configuração que não é lida mente*.
+  Achado medido nos outros: **MySQL(R) 8.0.46 não tem índice parcial**;
+  PostgreSQL(R) e SQLite(R) têm.
+
+- **Portão de medidor, provado nos dois sentidos.** `PHX_CMP_DEFEITO` repõe cada
+  defeito do medidor e `bancada/comparativo/prova-dos-portoes.py` exige a parada
+  certa — **e que sem defeito ele vá até o fim**, senão um medidor que parasse
+  sempre passaria em tudo. Um quarto portão **morreu na prova**: o defeito que eu
+  culpei (pedir o catálogo sem `database`) não reproduzia o sintoma.
+
+- **O sétimo gerador do dossiê**, `docs/dossie/comparativo-no-dossie.py`, escreve
+  a tabela comparativa na §33 — a seção do «o que este motor não faz» deixa de
+  ser prosa inteira, que é onde ausência envelhece.
+
+### Corrigido
+
 - **O `varrer` ganha `WHERE`.** A grade filtrava o que já estava nela: pedia
   `varrer max=2500`, recebia 2.500 linhas e jogava fora 2.475 no navegador. A
   premissa foi medida **antes** de o predicado existir, porque um `WHERE` sem

@@ -1,0 +1,574 @@
+{
+  "quando": "2026-09-07T03:22:28",
+  "motores_vivos": {
+    "sqlite": "3.45.1",
+    "mysql": "8.0.46-0ubuntu0.24.04.3",
+    "postgres": "16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)",
+    "phxsql": "phxsqld 0.18.0 (b63856744b1f-sujo) x86_64-unknown-linux-gnu"
+  },
+  "sem_motor_nesta_maquina": {
+    "cassandra": "docs/CASSANDRA.md, fonte da 5.0.10 commit 7b5ab44, lido em sessão anterior",
+    "hfsql": "docs/HFSQL.md, folha de 2013-10 que NÃO está nesta sessão"
+  },
+  "capacidades": 19,
+  "faltam_no_phxsql": 18,
+  "linhas": [
+    {
+      "chave": "view",
+      "titulo": "Visão (`CREATE VIEW`)",
+      "como": "SQL no motor vivo",
+      "phxsql": [
+        "nao",
+        "nenhuma operacao de visao entre as 119 que o catalogo lista"
+      ],
+      "mysql": [
+        "tem",
+        "aceitou"
+      ],
+      "postgres": [
+        "tem",
+        "aceitou"
+      ],
+      "sqlite": [
+        "tem",
+        "aceitou"
+      ],
+      "cassandra": [
+        "nao",
+        "não há VIEW; há materialized view, com ressalva do próprio projeto"
+      ],
+      "hfsql": [
+        "tem",
+        "a folha lista visões"
+      ]
+    },
+    {
+      "chave": "cte",
+      "titulo": "Subconsulta e CTE (`WITH … AS`)",
+      "como": "SQL no motor vivo",
+      "phxsql": [
+        "nao",
+        "[SP000018] esquema invalido: SQL, coluna 1: WITH nao e um comando desta camada"
+      ],
+      "mysql": [
+        "tem",
+        "aceitou"
+      ],
+      "postgres": [
+        "tem",
+        "aceitou"
+      ],
+      "sqlite": [
+        "tem",
+        "aceitou"
+      ],
+      "cassandra": [
+        "nao",
+        "CQL não tem subconsulta nem CTE"
+      ],
+      "hfsql": [
+        "citado",
+        "não apurado na folha"
+      ]
+    },
+    {
+      "chave": "subconsulta",
+      "titulo": "Subconsulta no `WHERE`",
+      "como": "SQL no motor vivo",
+      "phxsql": [
+        "nao",
+        "[SP000018] esquema invalido: SQL, coluna 26: IN e uma lista de buscas; o motor faz cada um"
+      ],
+      "mysql": [
+        "tem",
+        "aceitou"
+      ],
+      "postgres": [
+        "tem",
+        "aceitou"
+      ],
+      "sqlite": [
+        "tem",
+        "aceitou"
+      ],
+      "cassandra": [
+        "nao",
+        "CQL não tem subconsulta"
+      ],
+      "hfsql": [
+        "citado",
+        "não apurado na folha"
+      ]
+    },
+    {
+      "chave": "funcao_de_janela",
+      "titulo": "Função de janela (`OVER`)",
+      "como": "SQL no motor vivo",
+      "phxsql": [
+        "nao",
+        "[SP000018] esquema invalido: SQL, coluna 18: esperava FROM, e veio \"(\""
+      ],
+      "mysql": [
+        "tem",
+        "aceitou"
+      ],
+      "postgres": [
+        "tem",
+        "aceitou"
+      ],
+      "sqlite": [
+        "tem",
+        "aceitou"
+      ],
+      "cassandra": [
+        "nao",
+        "CQL não tem função de janela"
+      ],
+      "hfsql": [
+        "citado",
+        "não apurado na folha"
+      ]
+    },
+    {
+      "chave": "group_by",
+      "titulo": "`GROUP BY` com agregação",
+      "como": "SQL no motor vivo",
+      "phxsql": [
+        "nao",
+        "[SP000018] esquema invalido: SQL, coluna 21: esperava FROM, e veio \"(\""
+      ],
+      "mysql": [
+        "tem",
+        "aceitou"
+      ],
+      "postgres": [
+        "tem",
+        "aceitou"
+      ],
+      "sqlite": [
+        "tem",
+        "aceitou"
+      ],
+      "cassandra": [
+        "meio",
+        "GROUP BY só pelo prefixo da chave de partição"
+      ],
+      "hfsql": [
+        "tem",
+        "SQL completo na folha"
+      ]
+    },
+    {
+      "chave": "expressao_no_where",
+      "titulo": "Expressão no `WHERE` (`preco * 1.1 > 100`)",
+      "como": "SQL no motor vivo",
+      "phxsql": [
+        "nao",
+        "[SP000018] esquema invalido: SQL, coluna 29: esperava um comparador (=, <>, <, <=, >, >=)"
+      ],
+      "mysql": [
+        "tem",
+        "aceitou"
+      ],
+      "postgres": [
+        "tem",
+        "aceitou"
+      ],
+      "sqlite": [
+        "tem",
+        "aceitou"
+      ],
+      "cassandra": [
+        "nao",
+        "o WHERE do CQL é sobre a chave, sem expressão"
+      ],
+      "hfsql": [
+        "tem",
+        "SQL completo na folha"
+      ]
+    },
+    {
+      "chave": "indice_parcial",
+      "titulo": "Índice parcial (`CREATE INDEX … WHERE`)",
+      "como": "SQL no motor vivo",
+      "phxsql": [
+        "nao",
+        "o campo `onde` foi aceito e IGNORADO: devolveu 1"
+      ],
+      "mysql": [
+        "nao",
+        "ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; check the manual that "
+      ],
+      "postgres": [
+        "tem",
+        "aceitou"
+      ],
+      "sqlite": [
+        "tem",
+        "aceitou"
+      ],
+      "cassandra": [
+        "nao",
+        "índice secundário existe; parcial não"
+      ],
+      "hfsql": [
+        "tem",
+        "a folha lista índice parcial"
+      ]
+    },
+    {
+      "chave": "indice_por_expressao",
+      "titulo": "Índice por expressão (`lower(nome)`)",
+      "como": "SQL no motor vivo",
+      "phxsql": [
+        "nao",
+        "o indice aceita NOME de coluna e recusa expressao: [SP000018] esquema invalido: indice usa coluna inexistente: \"lower(nom"
+      ],
+      "mysql": [
+        "tem",
+        "aceitou"
+      ],
+      "postgres": [
+        "tem",
+        "aceitou"
+      ],
+      "sqlite": [
+        "tem",
+        "aceitou"
+      ],
+      "cassandra": [
+        "nao",
+        "não há"
+      ],
+      "hfsql": [
+        "citado",
+        "não apurado"
+      ]
+    },
+    {
+      "chave": "check_constraint",
+      "titulo": "Restrição `CHECK`",
+      "como": "SQL no motor vivo",
+      "phxsql": [
+        "nao",
+        "o campo `check` foi aceito e IGNORADO: gravou v = -5"
+      ],
+      "mysql": [
+        "tem",
+        "aceitou"
+      ],
+      "postgres": [
+        "tem",
+        "aceitou"
+      ],
+      "sqlite": [
+        "tem",
+        "aceitou"
+      ],
+      "cassandra": [
+        "nao",
+        "não há"
+      ],
+      "hfsql": [
+        "citado",
+        "não apurado"
+      ]
+    },
+    {
+      "chave": "default_de_coluna",
+      "titulo": "`DEFAULT` de coluna",
+      "como": "SQL no motor vivo",
+      "phxsql": [
+        "nao",
+        "o campo `padrao` foi aceito e IGNORADO: v = None"
+      ],
+      "mysql": [
+        "tem",
+        "aceitou"
+      ],
+      "postgres": [
+        "tem",
+        "aceitou"
+      ],
+      "sqlite": [
+        "tem",
+        "aceitou"
+      ],
+      "cassandra": [
+        "nao",
+        "não há DEFAULT em CQL"
+      ],
+      "hfsql": [
+        "tem",
+        "valor padrão no dicionário de dados"
+      ]
+    },
+    {
+      "chave": "coluna_calculada",
+      "titulo": "Coluna calculada (`GENERATED ALWAYS AS`)",
+      "como": "SQL no motor vivo",
+      "phxsql": [
+        "nao",
+        "o campo `calculada` foi aceito e IGNORADO: b = None"
+      ],
+      "mysql": [
+        "tem",
+        "aceitou"
+      ],
+      "postgres": [
+        "tem",
+        "aceitou"
+      ],
+      "sqlite": [
+        "tem",
+        "aceitou"
+      ],
+      "cassandra": [
+        "nao",
+        "não há"
+      ],
+      "hfsql": [
+        "tem",
+        "item calculado no dicionário"
+      ]
+    },
+    {
+      "chave": "upsert",
+      "titulo": "Upsert (`ON CONFLICT` / `ON DUPLICATE KEY`)",
+      "como": "SQL no motor vivo",
+      "phxsql": [
+        "nao",
+        "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SEL"
+      ],
+      "mysql": [
+        "tem",
+        "aceitou"
+      ],
+      "postgres": [
+        "tem",
+        "aceitou"
+      ],
+      "sqlite": [
+        "tem",
+        "aceitou"
+      ],
+      "cassandra": [
+        "tem",
+        "TODO INSERT é upsert: ele não lê antes de gravar"
+      ],
+      "hfsql": [
+        "citado",
+        "não apurado"
+      ]
+    },
+    {
+      "chave": "isolamento_acima_de_rc",
+      "titulo": "Nível de isolamento acima de `READ COMMITTED`",
+      "como": "SQL no motor vivo",
+      "phxsql": [
+        "nao",
+        "[SP000018] esquema invalido: SQL, coluna 1: SET nao e um comando desta camada"
+      ],
+      "mysql": [
+        "tem",
+        "aceitou"
+      ],
+      "postgres": [
+        "tem",
+        "WARNING:  SET TRANSACTION can only be used in transaction blocks"
+      ],
+      "sqlite": [
+        "sem-motor",
+        "o verbo não existe neste motor"
+      ],
+      "cassandra": [
+        "nao",
+        "não há transação multi-linha; há LWT por partição"
+      ],
+      "hfsql": [
+        "tem",
+        "a folha anuncia quatro níveis"
+      ]
+    },
+    {
+      "chave": "trava_por_linha",
+      "titulo": "Trava por linha nas transações",
+      "como": "sonda de código",
+      "nota": "vale DENTRO de transação: `esperar_trava` recusa com «sem transação» quem a pede fora dela, e aí a trava GLOBAL de dados serializa como antes",
+      "phxsql": [
+        "tem",
+        "gestor em crates/phxsql-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:573; pedida em crates/phxsql-server/src/servidor.rs:8649"
+      ],
+      "mysql": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "postgres": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "sqlite": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "cassandra": [
+        "nao",
+        "não há trava: o conflito se resolve por carimbo de hora"
+      ],
+      "hfsql": [
+        "tem",
+        "trava por linha automática, na folha"
+      ]
+    },
+    {
+      "chave": "tls_no_transporte",
+      "titulo": "TLS no transporte",
+      "como": "sonda de código",
+      "nota": "a cifra da porta de DADOS é própria (aperto estilo Noise) e existe; o que não existe é TLS, que exigiria crate — e zero dependências é pétrea",
+      "phxsql": [
+        "nao",
+        "crates/phxsql-server/src/rest.rs:578 — «TLS aqui: a saida honesta e um proxy que termine TLS na»"
+      ],
+      "mysql": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "postgres": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "sqlite": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "cassandra": [
+        "tem",
+        "client_encryption_options no cassandra.yaml"
+      ],
+      "hfsql": [
+        "tem",
+        "a folha anuncia canal cifrado"
+      ]
+    },
+    {
+      "chave": "direito_por_coluna",
+      "titulo": "Direito por COLUNA",
+      "como": "sonda de código",
+      "nota": "o direito por tabela existe desde o pedido 124",
+      "phxsql": [
+        "nao",
+        "o portão lê `tabela`, e para aí: crates/phxsql-server/src/usuarios.rs:101"
+      ],
+      "mysql": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "postgres": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "sqlite": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "cassandra": [
+        "nao",
+        "GRANT vai até a tabela"
+      ],
+      "hfsql": [
+        "tem",
+        "direito por coluna na folha"
+      ]
+    },
+    {
+      "chave": "pitr",
+      "titulo": "Recuperação a um ponto no tempo (PITR)",
+      "como": "sonda de código",
+      "nota": "o `.log` por tabela É o diário que um PITR usaria",
+      "phxsql": [
+        "nao",
+        "o backup é cópia inteira; o `.log` guarda o evento mas não há quem o reaplique até um instante"
+      ],
+      "mysql": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "postgres": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "sqlite": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "cassandra": [
+        "tem",
+        "commitlog + snapshot; é o desenho dele"
+      ],
+      "hfsql": [
+        "citado",
+        "não apurado"
+      ]
+    },
+    {
+      "chave": "parametro_no_prepared",
+      "titulo": "Parâmetro em instrução preparada (`?`)",
+      "como": "sonda de código",
+      "nota": "o driver guarda o texto e o reenvia",
+      "phxsql": [
+        "nao",
+        "crates/phxsql-odbc/src/lib.rs:617 — «Preparar aqui e guardar o texto: nao ha parametros nem plano no driver, e»"
+      ],
+      "mysql": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "postgres": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "sqlite": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "cassandra": [
+        "tem",
+        "prepared statement com bind é o caminho normal"
+      ],
+      "hfsql": [
+        "tem",
+        "consulta parametrizada é o normal do WLangage"
+      ]
+    },
+    {
+      "chave": "diff_de_dados",
+      "titulo": "Dizer ONDE duas tabelas diferem",
+      "como": "sonda de código",
+      "nota": "falta a operação que devolve as linhas divergentes",
+      "phxsql": [
+        "meio",
+        "o `checksum` diz SE diferem: crates/phxsql-server/src/catalogo.rs:516"
+      ],
+      "mysql": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "postgres": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "sqlite": [
+        "citado",
+        "não perguntado por SQL"
+      ],
+      "cassandra": [
+        "meio",
+        "reparo por árvore de Merkle diz o intervalo, não a linha"
+      ],
+      "hfsql": [
+        "tem",
+        "WDHFDiff compara estrutura e dados"
+      ]
+    }
+  ]
+}

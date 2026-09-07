@@ -33,6 +33,13 @@ ESTADOS = {
 
 LINHA = re.compile(r"^\|\s*(☑️|◐|☐)\s*\|\s*(\d+)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*$")
 
+# Uma linha que TEM numero de pedido mas cujo estado nao e' um dos tres. Ela
+# existe porque o pedido 150 passou meses com um `⏳` que nao esta na legenda:
+# o regex de cima nao casava, o gerador SEGUIA em silencio, e o pedido sumia
+# da pagina. Papel que nao esta cumprindo tem de aparecer como nao cumprindo --
+# e um pedido invisivel e' o contrario disso.
+QUALQUER = re.compile(r"^\|\s*([^|\s]+)\s*\|\s*(\d+)\s*\|")
+
 
 def marcar(t):
     """O pouco de Markdown que as celulas usam, virando HTML.
@@ -48,8 +55,18 @@ def marcar(t):
 
 def ler():
     itens = []
-    for l in FONTE.read_text(encoding="utf-8").split("\n"):
+    for numero_da_linha, l in enumerate(
+            FONTE.read_text(encoding="utf-8").split("\n"), 1):
         m = LINHA.match(l)
+        if not m:
+            q = QUALQUER.match(l)
+            if q and q.group(1) not in ESTADOS:
+                raise SystemExit(
+                    f"PENDENCIAS.md:{numero_da_linha}: o pedido {q.group(2)} "
+                    f"esta marcado {q.group(1)!r}, que nao e' um dos estados "
+                    f"({' '.join(ESTADOS)}). Pedido com estado desconhecido "
+                    "SUMIA da pagina em silencio -- foi o que aconteceu com o "
+                    "150. Declare o estado, ou acrescente o simbolo a legenda.")
         if m:
             classe, rotulo = ESTADOS[m.group(1)]
             itens.append(

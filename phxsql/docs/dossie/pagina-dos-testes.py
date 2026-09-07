@@ -171,6 +171,27 @@ def botoes_exercitados():
 # o que esta pagina existe para nao fazer.
 BANCADAS = [
     {
+        "nome": "Comparativo — o que falta aqui, contra quem tem",
+        "json": "bancada/comparativo/resultados.json",
+        "roda": "python3 bancada/comparativo/medir.py",
+        "prova": "a mesma pergunta em quatro motores vivos, com um controle "
+                 "positivo que TODOS têm de recusar — e sonda de efeito, "
+                 "nunca «aceitou»",
+        "campos": [("capacidades", "capacidades perguntadas", ""),
+                   ("faltam_no_phxsql", "faltam ou pela metade aqui", "")],
+    },
+    {
+        "nome": "Cobertura da tela sobre o protocolo",
+        "json": "bancada/cobertura-da-tela/resultados.json",
+        "roda": "python3 bancada/cobertura-da-tela/medir.py",
+        # Sem crase: a celula da tabela sai por `esc()` e nao converte
+        # Markdown -- crase ali vira crase na tela.
+        "prova": "as duas listas saem do código — as operações do array "
+                 "OPERACOES e os arquivos da tela dos include_str! do http.rs",
+        "campos": [("operacoes", "operações no catálogo", ""),
+                   ("alcancadas_pela_tela", "alcançadas pela tela", "")],
+    },
+    {
         "nome": "Cluster — eleição e promoção",
         "json": "bancada/cluster/resultados.json",
         "roda": "python3 bancada/cluster/provar.py",

@@ -1497,3 +1497,49 @@ Três coisas para quem for pegar isto, e a terceira é a que importa:
   mesma prova de uma corrida que só se reproduz segurando a resposta no fio.
   O que resolve é a marca de geração — e essa é decisão de arquitetura da
   tela, não de quem escreve teste.
+
+## 14. Os portões de MEDIDOR, e por que eles ficam fora do catálogo de guardas
+
+Nesta rodada nasceu uma camada de prova que este documento ainda não descrevia:
+**portão dentro de um medidor**, provado com o defeito reposto.
+
+O catálogo de `bancada/guardas/` repõe defeito em **Rust** — apaga uma linha do
+fonte, roda o teste, exige que ele caia. O medidor comparativo
+(`bancada/comparativo/medir.py`) é Python, e os defeitos dele não são de
+código-fonte do motor: são do **instrumento**. Repô-los pelo catálogo exigiria
+uma segunda máquina de reposição, e máquina de prova que ninguém consegue
+manter deixa de rodar.
+
+A saída foi um interruptor de defeito no próprio medidor:
+
+```bash
+PHX_CMP_DEFEITO=envelope python3 bancada/comparativo/medir.py   # tem de PARAR
+python3 bancada/comparativo/prova-dos-portoes.py                # roda os quatro
+```
+
+| defeito reposto | o portão que dispara |
+|---|---|
+| `indice-velho` | `MESA NAO POSTA` — o índice volta ao formato recusado, e a tabela não nasce |
+| `envelope` | `LEITOR QUEBRADO` — as sondas voltam a ler o envelope em vez do `resultado` |
+| `catalogo-vazio` | `SONDA QUEBRADA` — lista vazia não é ausência |
+| *(nenhum)* | o medidor vai até o fim e grava o `resultados.json` |
+
+**A última linha é a que faz a prova valer.** Sem ela, um medidor que parasse
+sempre passaria nos três primeiros — é a mesma armadilha do teste que passa por
+engano, pelo outro lado.
+
+### 14.1 O que esta camada achou, e o que ela não alcança
+
+Achou cinco defeitos no próprio instrumento, e o pior deles produzia uma frase
+**verdadeira**: «o campo `padrao` foi aceito e IGNORADO» — o motor de fato o
+engole, e a medição que dizia isso estava lendo uma tabela que nunca nasceu.
+*O errado sobrevive melhor quando o conserto funcionou por outro motivo.*
+
+E derrubou um diagnóstico meu na hora de provar: o quarto interruptor ia ser
+«pedir o `catalogo` sem `database`», porque foi assim que expliquei o zero.
+Reposto, o medidor **passou**. A causa era outra, e sem a prova real o portão
+teria ficado guardando a causa imaginada — com o comentário afirmando-a.
+
+**O buraco que fica, declarado:** o `prova-dos-portoes.py` **não** roda dentro
+da bateria única. Quem mexer no medidor tem de chamá-lo à mão, e nada avisa se
+esquecer. `docs/cognicao/cognicao_o-controle-precisa-provar-o-LEITOR_20260907_0310.md`.

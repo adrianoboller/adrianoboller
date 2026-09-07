@@ -126,6 +126,37 @@ frente contou dezessete, e o dossiê que perdeu uma seção porque o merge
 escolheu o lado de quem não a tinha. Por isso nenhuma frente comita
 `CHANGELOG.md`, nenhuma dá `git add -A` e nenhuma dá `push`.
 
+### Rodada do comparativo — 7 de setembro de 2026
+
+Pedido do dono: *«Status comparativo com Hfsql, PostgreSQL, Cassandra, mysql e
+SQLite de recursos que não estão ok ainda no phxsql»*.
+
+| frente | escalão | por quê |
+|---|---|---|
+| o medidor comparativo e os portões dele | **projeto e risco** | é instrumento de medição, e instrumento errado publica veredito errado com a mesma confiança do certo — foi o que aconteceu cinco vezes nesta própria rodada |
+| a prosa do gerador do documento | projeto e risco | a redação carrega o julgamento sobre o que é `citado` e o que é medido; delegar isso é delegar a conclusão |
+| o medidor da cobertura da tela | **mecânico e verificável** | duas listas saem do código e se conferem sozinhas contra o `catalogo.rs` e o `http.rs` |
+| os geradores do dossiê e das páginas | mecânico e verificável | rodar e comparar a saída |
+
+**Nenhuma frente foi delegada a agente**, e isto é dispensa registrada, não
+esquecimento: a rodada inteira coube num fio só, e o custo de integração de
+duas frentes na mesma árvore (`bancada/` e `docs/`) seria maior que o trabalho.
+
+**Os papéis, e o que cada um fez ou por que foi dispensado:**
+
+| papel | nesta rodada |
+|---|---|
+| **A — orquestrador** | integrou; a §33 do dossiê e o `PENDENCIAS.md` só fecham vendo as duas frentes juntas |
+| **B — engenheiro** | **dispensado**: nenhuma linha de Rust mudou. `cargo fmt --check` limpo e a suíte verde (62 binários, 1.659 testes) foram conferidos, não produzidos |
+| **C — DBA** | **dispensado**: nada tocou formato em disco. Mas ele **ganhou uma pergunta** — quatro campos de esquema desconhecidos são engolidos pelo `criar_tabela`, e recusá-los é decisão dele |
+| **D — zelador** | **dispensado**: a rodada não encheu disco; o medidor limpa o próprio descartável |
+| **E — designer** | convocado de leve: a tabela nova da §33 usa a classe `pino` que já existe, e as crases viram `<code>` no gerador — texto de tabela não se estiliza à mão |
+| **F — prova real** | **o papel central desta rodada**: os três portões do medidor foram provados nos dois sentidos, e um quarto **morreu medido** (o do `database`) |
+| **G — QA** | catraca nenhuma mudou. Entrou uma camada de guarda nova (portão de medidor), e o buraco dela está declarado: não roda na bateria única |
+| **H — documentação** | `COMPARATIVO.md` gerado, `HFSQL.md` corrigido no sexto veredito, sétimo gerador do dossiê |
+| **I — versionador** | commit por decisão, na branch combinada |
+| **J — pesquisador** | **dispensado**: não havia receita de fora para medir. O que houve foi o contrário — medir o que os outros têm e nós não |
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

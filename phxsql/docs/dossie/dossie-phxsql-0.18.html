@@ -475,12 +475,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">142.549</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">142.550</div><div class="r">linhas de Rust</div></div>
     <div><div class="v">1.659</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">8</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">51.398</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">51.897</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -6451,6 +6451,47 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     30</a>.</p>
   </div>
 
+  <h3>E o comparativo, medido contra quem tem</h3>
+
+  <p>As entradas acima são o julgamento desta casa sobre o próprio motor. Esta
+  tabela é o outro lado: a <strong>mesma pergunta feita a quatro motores vivos
+  nesta máquina</strong>, uma de cada vez, com a recusa de cada um guardada. Ela
+  existe porque lista de ausência escrita à mão envelhece — a do
+  <code>docs/HFSQL.md</code> publicou <strong>seis</strong> vereditos de ausência
+  errados, e o sexto foi a <strong>trava por linha</strong>, que existe e a
+  página dizia que não.</p>
+
+<!-- comparativo:inicio (gerado por docs/dossie/comparativo-no-dossie.py) -->
+  <p><strong>18 de 19 capacidades</strong> faltam ou estão pela metade aqui, medido em <strong>07/09/2026</strong>. <strong>13</strong> destas linhas foram perguntadas <strong>por SQL a motores vivos nesta máquina</strong> — a mesma instrução na língua de cada um — e o resto por sonda de código com arquivo, linha e o trecho citado. HFSQL(R) e Cassandra(R) entram <strong>citados</strong>, porque não há motor nem folha nesta sessão: célula citada não é medida, e a tabela diz isso em cada uma. O documento inteiro, com a recusa que cada motor devolveu, é o <code>docs/COMPARATIVO.md</code>.</p>
+  <div class="rolo">
+    <table>
+      <thead><tr><th>capacidade</th><th>como</th><th>PhxSql</th><th>HFSQL(R)</th><th>PostgreSQL(R)</th><th>Cassandra(R)</th><th>MySQL(R)</th><th>SQLite(R)</th></tr></thead>
+      <tbody>
+        <tr><td>Visão (<code>CREATE VIEW</code>)</td><td class="dado">SQL</td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td></tr>
+        <tr><td>Subconsulta e CTE (<code>WITH … AS</code>)</td><td class="dado">SQL</td><td><span class="pino mal">não</span></td><td><span class="pino nao">citado</span></td><td><span class="pino ok">tem</span></td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td></tr>
+        <tr><td>Subconsulta no <code>WHERE</code></td><td class="dado">SQL</td><td><span class="pino mal">não</span></td><td><span class="pino nao">citado</span></td><td><span class="pino ok">tem</span></td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td></tr>
+        <tr><td>Função de janela (<code>OVER</code>)</td><td class="dado">SQL</td><td><span class="pino mal">não</span></td><td><span class="pino nao">citado</span></td><td><span class="pino ok">tem</span></td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td></tr>
+        <tr><td><code>GROUP BY</code> com agregação</td><td class="dado">SQL</td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td><td><span class="pino pend">meio</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td></tr>
+        <tr><td>Expressão no <code>WHERE</code> (<code>preco * 1.1 &gt; 100</code>)</td><td class="dado">SQL</td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td></tr>
+        <tr><td>Índice parcial (<code>CREATE INDEX … WHERE</code>)</td><td class="dado">SQL</td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td><td><span class="pino mal">não</span></td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td></tr>
+        <tr><td>Índice por expressão (<code>lower(nome)</code>)</td><td class="dado">SQL</td><td><span class="pino mal">não</span></td><td><span class="pino nao">citado</span></td><td><span class="pino ok">tem</span></td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td></tr>
+        <tr><td>Restrição <code>CHECK</code></td><td class="dado">SQL</td><td><span class="pino mal">não</span></td><td><span class="pino nao">citado</span></td><td><span class="pino ok">tem</span></td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td></tr>
+        <tr><td><code>DEFAULT</code> de coluna</td><td class="dado">SQL</td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td></tr>
+        <tr><td>Coluna calculada (<code>GENERATED ALWAYS AS</code>)</td><td class="dado">SQL</td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td></tr>
+        <tr><td>Upsert (<code>ON CONFLICT</code> / <code>ON DUPLICATE KEY</code>)</td><td class="dado">SQL</td><td><span class="pino mal">não</span></td><td><span class="pino nao">citado</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td></tr>
+        <tr><td>Nível de isolamento acima de <code>READ COMMITTED</code></td><td class="dado">SQL</td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino nao">—</span></td></tr>
+        <tr><td>Trava por linha nas transações</td><td class="dado">sonda</td><td><span class="pino ok">tem</span></td><td><span class="pino ok">tem</span></td><td><span class="pino nao">citado</span></td><td><span class="pino mal">não</span></td><td><span class="pino nao">citado</span></td><td><span class="pino nao">citado</span></td></tr>
+        <tr><td>TLS no transporte</td><td class="dado">sonda</td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino nao">citado</span></td><td><span class="pino ok">tem</span></td><td><span class="pino nao">citado</span></td><td><span class="pino nao">citado</span></td></tr>
+        <tr><td>Direito por COLUNA</td><td class="dado">sonda</td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino nao">citado</span></td><td><span class="pino mal">não</span></td><td><span class="pino nao">citado</span></td><td><span class="pino nao">citado</span></td></tr>
+        <tr><td>Recuperação a um ponto no tempo (PITR)</td><td class="dado">sonda</td><td><span class="pino mal">não</span></td><td><span class="pino nao">citado</span></td><td><span class="pino nao">citado</span></td><td><span class="pino ok">tem</span></td><td><span class="pino nao">citado</span></td><td><span class="pino nao">citado</span></td></tr>
+        <tr><td>Parâmetro em instrução preparada (<code>?</code>)</td><td class="dado">sonda</td><td><span class="pino mal">não</span></td><td><span class="pino ok">tem</span></td><td><span class="pino nao">citado</span></td><td><span class="pino ok">tem</span></td><td><span class="pino nao">citado</span></td><td><span class="pino nao">citado</span></td></tr>
+        <tr><td>Dizer ONDE duas tabelas diferem</td><td class="dado">sonda</td><td><span class="pino pend">meio</span></td><td><span class="pino ok">tem</span></td><td><span class="pino nao">citado</span></td><td><span class="pino pend">meio</span></td><td><span class="pino nao">citado</span></td><td><span class="pino nao">citado</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="dado" style="font-size:13px">Responderam: PhxSql phxsqld, PostgreSQL(R) 16.13, MySQL(R) 8.0.46-0ubuntu0.24.04.3, SQLite(R) 3.45.1.</p>
+<!-- comparativo:fim -->
+
   <h3>E o resto, sem rodeio</h3>
 
   <p><strong>Duas linhas saíram desta tabela nesta revisão</strong>, porque o
@@ -6764,7 +6805,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.18.0 · 142.549 linhas de Rust em 8 crates,
+  <p>PhxSql 0.18.0 · 142.550 linhas de Rust em 8 crates,
   mais 1186 KiB de interface · 1.659 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e

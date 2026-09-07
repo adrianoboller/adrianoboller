@@ -244,22 +244,26 @@ de modelo por frente — nunca o nome do modelo, só "projeto e risco" contra
 "mecânico e verificável" — fica registrada em `docs/MODELOS.md`:
 
 <!-- GERADO: bloco_modelos() -->
-`docs/MODELOS.md` registra **2** rodadas até esta escrita: a "Rodada de 1–2
+`docs/MODELOS.md` registra **4** rodadas até esta escrita: a "Rodada de 1–2
 de setembro de 2026", registrada como **NÃO CUMPRIDA** (27 commits, todos no
 escalão de projeto e risco, sem nenhum agente convocado depois da retomada da
 sessão — o próprio documento diz isso, porque "papel que não está cumprindo
-tem de aparecer como não cumprindo"), e a frente "toda tabela é PhxGrid", que
-registrou a escolha na hora.
+tem de aparecer como não cumprindo"); a frente "toda tabela é PhxGrid", que
+registrou a escolha na hora; a "Rodada das sprints abertas"; e a "Rodada do
+comparativo", que registra **dez papéis um a um** — cinco convocados e cinco
+**dispensados com o motivo escrito**, que é o que a cláusula realmente cobra.
 
 ### 4.2 Como se mediu
 
 <!-- GERADO: bloco_bancadas() -->
-`bancada/` reúne **24** frentes de medição — `alter`, `arm`, `bateria`,
-`carga`, `cifra-do-fio`, `cluster`, `comparacao`, `concorrencia`, `dblink`,
-`embutido`, `exclusao`, `guardas`, `jobs`, `mvcc`, `odbc`, `phxsql`,
-`profiler`, `replicacao`, `rest`, `rotinas`, `sqlite`, `telemetria`,
-`transacoes`, `windows` — das quais **14** documentam a própria metodologia
-num `LEIA-ME.md` local. A carga do lado do motor é
+`bancada/` reúne **34** frentes de medição — `acid`, `alter`, `arm`,
+`bateria`, `carga`, `cifra`, `cifra-do-fio`, `cluster`, `cobertura-da-tela`,
+`comparacao`, `comparativo`, `concorrencia`, `dblink`, `docker`,
+`durabilidade`, `embutido`, `exclusao`, `fts`, `guardas`, `jobs`, `manual`,
+`mvcc`, `odbc`, `pacote`, `phxsql`, `profiler`, `replicacao`, `rest`,
+`rotinas`, `sqlite`, `telemetria`, `transacoes`, `utilizacao-padrao`,
+`windows` — das quais **21** documentam a própria metodologia num `LEIA-ME.md`
+local. A carga do lado do motor é
 `crates/phxsql-store/examples/carga.rs`, rodando cada fase num processo
 separado para que os contadores de `/proc` sejam só daquela fase. As quatro
 regras que fazem a bancada contra outros motores valer — mesmos dados, mesmo
@@ -286,7 +290,7 @@ leitura de 20.000 (5× a favor do PhxSql sem o motor ter feito nada por isso).
   campo, de lote) e não catraca de varredura de texto; a lista completa está
   na tabela gerada.
 - **Guardas — prova de que a prova pega**: `bancada/guardas/catalogo.py`
-  cataloga **84** defeitos repostos (contado de `len(GUARDAS)`, não por
+  cataloga **99** defeitos repostos (contado de `len(GUARDAS)`, não por
   regex), cada um com o trecho de código de hoje, o trecho de antes do
   conserto, e os testes que têm de cair quando o defeito volta.
   `python3 bancada/guardas/provar-guardas.py` copia a árvore, repõe cada
@@ -345,15 +349,22 @@ número final** (ver o texto de aviso que ele mesmo produz nesse caso).
 Na medição limpa desta rodada — árvore parada, sem `cargo` concorrente —:
 
 ```
-cargo test --workspace: 51 binarios de teste, 1.496 testes passaram,
-0 falharam, 1 ignorado.
+cargo test --workspace: 62 binarios de teste, 1.659 testes passaram,
+0 falharam, 4 ignorados.
+```
+
+Na rodada anterior o mesmo comando media **51 binários e 1.496 testes** — a
+diferença são testes que entraram desde então, e não mudança de método: a soma
+dos `test result:` é a mesma.
+
+```
 ```
 
 (`docs/TESTES.md` §1, mantido por `docs/dossie/numeros-do-projeto.py`,
-registrava 1.462 numa medição anterior a esta rodada — a diferença são
-testes novos de outras frentes que entraram na árvore compartilhada entre
-uma medição e outra, não uma divergência de método: os dois usam a mesma
-soma de `test result:`.)
+registra o mesmo **1.659** desta rodada. Quando os dois divergem, a causa é
+sempre a mesma e não é método: são testes de outra frente que entraram na
+árvore compartilhada entre uma medição e a outra — os dois somam os mesmos
+`test result:`.)
 
 ### 4.6 Como se prova uma garantia DE TIPO — o par de doctests
 
@@ -401,7 +412,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **161** pedidos numerados; **9** trazem a palavra
+`docs/PENDENCIAS.md` tem **201** pedidos numerados; **18** trazem a palavra
 RECUSADO no próprio texto. Os dois mais relevantes para este documento —
 porque avaliam receita de fora contra o nosso gargalo, o mesmo teste que a
 cláusula pétrea do pesquisador exige:

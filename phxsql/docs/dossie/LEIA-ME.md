@@ -16,11 +16,11 @@ impossível de cumprir depois que o diretório temporário sumisse.
 ## Como atualizar
 
 1. Edite `dossie-phxsql-0.18.html`.
-2. **Rode os seis geradores** (abaixo). Nenhum número visível se digita.
+2. **Rode os sete geradores** (abaixo). Nenhum número visível se digita.
 3. Publique **passando a URL acima**, para cair na mesma página em vez de criar
    uma nova.
 
-## Os seis geradores, e o que cada um regrava
+## Os sete geradores, e o que cada um regrava
 1. **LEIA o artefato publicado antes de qualquer coisa** (`action: "read"` com
    a URL acima).
 2. Compare com `dossie-phxsql-0.15.html` — pelo menos o número de `<h2>`.
@@ -73,6 +73,7 @@ python3 docs/dossie/pagina-dos-pedidos.py    docs/dossie/pedidos.html docs/dossi
 python3 docs/dossie/cobertura-por-area.py    docs/dossie/dossie-phxsql-0.18.html
 python3 docs/dossie/capturas-no-dossie.py    docs/dossie/dossie-phxsql-0.18.html
 python3 docs/dossie/tetos-da-trava.py        docs/dossie/dossie-phxsql-0.18.html
+python3 docs/dossie/comparativo-no-dossie.py docs/dossie/dossie-phxsql-0.18.html
 ```
 
 | script | blocos que ele escreve |
@@ -83,6 +84,7 @@ python3 docs/dossie/tetos-da-trava.py        docs/dossie/dossie-phxsql-0.18.html
 | `cobertura-por-area.py` | `cobertura:` no dossiê, e as tabelas do `docs/TESTES.md` |
 | `capturas-no-dossie.py` | `capturas:` — as vinte telas, como *data URI* |
 | `tetos-da-trava.py` | `tetos:` — os quatro tetos de concorrência (§35), lidos das corridas cruas em `bancada/concorrencia/corridas/` |
+| `comparativo-no-dossie.py` | `comparativo:` — a tabela do que ainda falta aqui (§33), lida de `bancada/comparativo/resultados.json` |
 
 `--so-medir` mostra sem gravar; `--sem-testes` no primeiro pula o `cargo test`,
 que demora. Use só quando o que mudou não foi código.
@@ -92,6 +94,20 @@ um está no cabeçalho do script que o produz, e mexer numa exige mexer na outra
 Duas contagens da mesma coisa é o jeito clássico de a vitrine e o produto
 discordarem — foi assim que o painel da replicação chegou a dizer 28.914/4.357
 enquanto a seção da bancada, no mesmo documento, mostrava 34.048/17.450.
+
+### O sétimo entrou em 07/09, e o motivo é o mesmo do sexto por outro lado
+
+O `comparativo-no-dossie.py` escreve a tabela do **que ainda falta aqui**, na
+§33. Ela era prosa inteira, e prosa é onde ausência envelhece: o
+`docs/HFSQL.md` publicou **seis** vereditos de ausência errados, e o sexto foi
+a *trava por linha* — existe desde que o `travas.rs` entrou, e a página dizia
+que não.
+
+**Ausência não se reconfere sozinha.** Um número errado alguém desconfia ao
+bater o olho; um «não há» ninguém revisita, porque não há o que olhar. Por isso
+esta tabela sai de um **medidor** que pergunta a quatro motores vivos, e não de
+uma leitura — e cada célula carrega a procedência, porque `citado` e `medido`
+não valem a mesma coisa.
 
 ### A receita da interface saiu daqui, e foi para o `http.rs`
 

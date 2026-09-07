@@ -13,10 +13,10 @@ resto:**
    registrou. Onde o produto deles andou desde 2013 — e andou —, esta
    comparação não enxerga. **Vantagem nossa medida contra folha de treze anos
    atrás não é vantagem provada contra o produto de hoje.**
-2. **O lado daqui se remede, e foi remedido em 06/09/2026** contra a 0.18.0.
-   Quatro verdictos deste documento tinham vencido; estão corrigidos, e a §6
-   diz quais eram — porque veredito velho é pior que veredito ausente: o
-   ausente ninguém cita.
+2. **O lado daqui se remede, e foi remedido em 06/09/2026 e de novo em
+   07/09/2026** contra a 0.18.0. **Seis** verdictos deste documento tinham
+   vencido; estão corrigidos, e a §6 diz quais eram — porque veredito velho é
+   pior que veredito ausente: o ausente ninguém cita.
 
 Os números do PhxSql são medidos e refazíveis pelos comandos de `bancada/`; o
 do HFSQL(R) é o que a folha declara.
@@ -124,15 +124,29 @@ procuradas não existe de propósito — palavra inexistente é o caso em que o
 `procurar_texto` já está no protocolo e a bancada já está medida
 (`bancada/fts/`). `docs/FTS.md`.
 
-### 3.3 Trava por linha
+### 3.3 Trava por linha — **existe, e esta seção dizia que não**
 
-Eles travam por linha, automaticamente. Aqui há trava global, e desde 05/09 com
-**duas fichas**: a leitura de grade (`varrer`) toma a compartilhada e deixa de
-esperar outra leitura; toda escrita continua na exclusiva. É correto e continua
-lento sob carga de escrita. A trava **por tabela** está respondida e **recusada
-com número** — ler em tabelas separadas não é mais rápido que ler na mesma
-(≈1,00× em quatro medições): não é a tabela que serializa. A de linha viria
-depois. `docs/CONCORRENCIA.md` §11.1 e §16.
+Corrigido em 07/09/2026, e é o **sexto** verdicto de ausência que este
+documento publicou errado (§6). Há gestor próprio de travas —
+`crates/phxsql-server/src/travas.rs`, intenção na tabela e exclusivo na linha,
+com ordem canônica de aquisição e `LOCK TIMEOUT` —, ligado ao servidor como
+campo em `crates/phxsql-server/src/servidor.rs`. A sonda que achou está em
+`bancada/comparativo/medir.py`, e a linha está no `docs/COMPARATIVO.md`.
+
+O que a seção dizia antes continua **verdadeiro pela metade**, e é a metade que
+importa medir: a **trava global de dados** continua serializando o motor fora
+da transação, agora com duas fichas — a leitura de grade (`varrer`) toma a
+compartilhada e deixa de esperar outra leitura; toda escrita continua na
+exclusiva. A trava **por tabela** está respondida e **recusada com número** —
+ler em tabelas separadas não é mais rápido que ler na mesma (≈1,00× em quatro
+medições): não é a tabela que serializa. `docs/CONCORRENCIA.md` §11.1 e §16.
+
+Ou seja: o mecanismo por linha **existe e vale dentro de transação** —
+`esperar_trava` recusa com «sem transação» quem o pede fora dela, então toda
+operação solta continua serializada pela trava global. É uma frase bem mais
+estreita que «a de linha viria depois», e é a frase certa. Escrever «não há»
+era mais errado que escrever nada, porque fecha a pergunta em vez de abri-la —
+e é exatamente o que o padrão dos seis descreve.
 
 ### 3.4 Ordenação linguística
 
@@ -227,7 +241,7 @@ entre eles **buscar o lote fora da trava de dados** (medido: `varrer` esperou
 
 ---
 
-## 6. Os cinco verdictos que este documento publicou errados
+## 6. Os seis verdictos que este documento publicou errados
 
 Escrito porque a lição é maior que a correção: **um documento de comparação
 envelhece pelo lado que anda**, e o lado que anda é o nosso. Cada linha abaixo
@@ -240,9 +254,22 @@ esteve neste arquivo dizendo que faltava algo que já existia.
 | 3. «GDPR: marcar a coluna como dado pessoal… barato, e falta» (§3.9) | Existe: `dado_pessoal` no esquema, ops `marcar_lgpd`/`dados_pessoais`/`trilha`, arquivo `.lgpd` |
 | 4. «ODBC e OLE DB… projeto grande» (§3.10) | O ODBC existe e está provado com 73 conferências pela ABI literal; o OLE DB é recusa fundamentada com caminho (`MSDASQL`) |
 | 5. «Cluster — **não**» (§1) | Há cluster com eleição e promoção automática desde o pedido 126, medido em `bancada/cluster/` |
+| 6. «A [trava] de linha viria depois» (§3.3) | Veio: gestor próprio em `travas.rs`, ligado ao servidor. O que falta é o caminho quente passar por ele — outra frase, e mais estreita (§3.3) |
 
-**O padrão dos cinco é um só, e é o que interessa guardar:** todos eram
+**O padrão dos seis é um só, e é o que interessa guardar:** todos eram
 verdicto de *ausência*. Um número errado alguém reconfere quando bate o olho;
 uma ausência declarada ninguém reconfere, porque não há o que olhar. **Ausência
 escrita se remede por data, não por suspeita** — e é por isso que este documento
 passa a trazer a data da remedição no alto, como as páginas de teste já trazem.
+
+**E o sexto acrescenta um agravante que os cinco não tinham.** Os cinco diziam
+«não há» sobre coisa que passou a haver. O sexto dizia «viria depois» sobre
+coisa que já tinha vindo — e uma promessa de futuro **envelhece pior que uma
+negação**, porque ninguém a lê como afirmação sobre o presente. Quem batesse o
+olho em «a de linha viria depois» não sentiria nada para conferir; é uma frase
+que se lê como plano, e ela estava mentindo sobre o código.
+
+A remedição dos seis não saiu de leitura: saiu de **medidor**
+(`bancada/comparativo/medir.py`), que pergunta a quatro motores vivos e sonda o
+código com arquivo e linha. O comparativo inteiro está em
+`docs/COMPARATIVO.md`, e ele **não se edita** — regera-se.
