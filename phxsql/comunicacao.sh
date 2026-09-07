@@ -267,11 +267,18 @@ fi
 # marca mora em /tmp e morre com o conteiner, entao marca faltando quer dizer
 # «esta maquina reiniciou», que e exatamente o caso em que a corrente precisa
 # ser refeita. Guarda que cala no caso que a motivou nao e guarda.
+# O QUE ESTE NUMERO MEDE, dito antes de ele existir: o intervalo desde a
+# ultima CORRIDA DESTE SCRIPT -- e nao desde o ultimo disparo do agendador.
+# Sao coisas diferentes, e a diferenca e util: um elo que dispara e ninguem
+# atende e tao inutil quanto elo nenhum. Mas o rotulo tem de dizer o que conta,
+# senao repete o defeito do `atraso_ms` da bancada de replicacao, que somava
+# sono e transporte sob um nome que anunciava um so.
 AGORA_S="$(date +%s)"
 if [ -f "$PULSO" ] && GASTO=$(( AGORA_S - $(cat "$PULSO") )) && [ "$GASTO" -ge 0 ]; then
   MIN=$(( GASTO / 60 ))
   if [ "$MIN" -ge "$TETO_PULSO_MIN" ]; then
-    echo "⚠️  a corrente do batimento fino ARREBENTOU: $MIN min desde o ultimo elo"
+    echo "⚠️  batimento fino SEM RESPOSTA ha $MIN min -- a corrente arrebentou,"
+    echo "    ou o elo disparou e ninguem o atendeu"
     echo "    (o teto e $TETO_PULSO_MIN min). Refaca com \`send_later\` de 15 min,"
     echo "    e forje o proximo elo ANTES de responder."
     PROBLEMAS=$((PROBLEMAS+1))

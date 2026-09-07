@@ -34,13 +34,13 @@ echo "$S" | grep -q "sem marca de pulso" && ok "avisa que a corrente precisa ser
 echo "== 2. marca velha: 3 h, como aconteceu de verdade"
 echo $(( $(date +%s) - 10800 )) > "$PULSO"
 S="$("$AQUI/comunicacao.sh" 2>&1)"
-echo "$S" | grep -q "ARREBENTOU: 180 min" && ok "acusa, com o numero de minutos" 1 \
+echo "$S" | grep -q "SEM RESPOSTA ha 180 min" && ok "acusa, com o numero de minutos" 1 \
                                           || ok "acusa, com o numero de minutos" 0
 
 echo "== 3. marca fresca: a corrente viva -- a guarda tem de CALAR"
 echo $(( $(date +%s) - 300 )) > "$PULSO"
 S="$("$AQUI/comunicacao.sh" 2>&1)"
-if echo "$S" | grep -qE "ARREBENTOU|sem marca de pulso"; then
+if echo "$S" | grep -qE "SEM RESPOSTA|sem marca de pulso"; then
   ok "cala quando a corrente esta viva" 0
 else
   ok "cala quando a corrente esta viva" 1
