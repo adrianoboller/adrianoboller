@@ -77,6 +77,7 @@ python3 docs/dossie/tetos-da-trava.py
 python3 docs/dossie/comparativo-no-dossie.py
 python3 docs/dossie/fluxo-do-motor.py
 python3 docs/dossie/trio-de-motores.py
+python3 docs/dossie/perguntas-no-dossie.py   # a seção 36, das respostas em docs/pdf/respostas/
 python3 docs/dossie/numerar-figuras.py       # POR ÚLTIMO
 ```
 
@@ -130,6 +131,7 @@ número digitado à mão: envelhece calado.*
 | `comparativo-no-dossie.py` | `comparativo:` — a tabela do que ainda falta aqui (§33) e as as duas figuras do medidor, lidas de `bancada/comparativo/` e `bancada/cobertura-da-tela/`; grava também os dois `.svg` avulsos |
 | `trio-de-motores.py` | `trio:` — os três motores a um milhão de linhas (§ da bancada), do `bancada/comparacao/um-milhao.json`. **Não redesenha**: o SVG é do `bancada/comparacao/grafico.py`, e ele PARA se o desenho for mais velho que a medição. Ficou **fora desta receita** até 07/09/2026, e quem a seguia nunca o rodava |
 | `fluxo-do-motor.py` | `fluxo-motor:` (§9) e `workflow-motor:` (§31) — o caminho de um pedido e o ciclo de operação; as **listas saem do código** e ele PARA quando divergem |
+| `perguntas-no-dossie.py` | `perguntas:` — a seção 36, a resposta curta de cada uma das 26 perguntas do dono, lida de `docs/pdf/respostas/*.md` (o MESMO material do PDF, para as duas cópias não divergirem). Reaproveita o conversor de Markdown do `docs/pdf/gerar.py` — um conversor, não dois |
 | `numerar-figuras.py` | renumera **todas** as legendas `Figura N` na ordem do documento. Roda **por último** |
 
 `--so-medir` mostra sem gravar; `--sem-testes` no primeiro pula o `cargo test`,

@@ -35,15 +35,15 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **1.672 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **1.674 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 451 | 27,0 |
-| Protocolo e portões (despachar) | 247 | 14,8 |
+| Motor de dados (arquivos, índice, diários) | 451 | 26,9 |
+| Protocolo e portões (despachar) | 249 | 14,9 |
 | Núcleo (JSON, tipos, UUID, zip, paralelo) | 155 | 9,3 |
 | Criptografia e codificação | 122 | 7,3 |
 | Configuração | 96 | 5,7 |
@@ -69,7 +69,7 @@ contando `#[test]` por arquivo e agrupando:
 | **CLI** | **7** | **0,4** |
 | **Cluster** | **7** | **0,4** |
 | **Monitor de máquina** | **6** | **0,4** |
-| **total** | **1672** | |
+| **total** | **1674** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
@@ -1691,3 +1691,75 @@ os dois de volta, verde. E ela tem controle próprio
 (`o_conferidor_enxerga_as_vermelhas_que_existem`), porque um casador que
 parasse de reconhecer a marca continuaria imprimindo «0 sem pedido» — o zero
 que não prova nada, que é a mesma armadilha do pedido 150.
+
+## 17. As 26 perguntas do dono, exercitadas — 07/09/2026
+
+O dono mandou três perguntas abertas e vinte e seis itens (A–Z) e pediu um PDF
+com o exemplo exercitado de cada um. O trabalho saiu em **oito frentes
+paralelas**, cada uma com faixa de portas própria e o contrato de resposta do
+`docs/pdf/LEIA-ME.md`; o PDF é gerado de `docs/pdf/respostas/*.md` pelo
+`docs/pdf/gerar.py` (Chromium, zero dependência), e a seção 36 do dossiê lê
+**os mesmos arquivos**. Tudo abaixo foi medido nesta rodada, com o comando que
+refaz cada número no fim da resposta correspondente.
+
+### 17.1 As baterias novas, e o placar de cada uma
+
+| bancada | item | o que prova | placar |
+|---|---|---|---|
+| `bancada/sql-exemplos/exercitar.py` | A E F G H | cada comando do `docs/SQL.md` mandado ao motor | **56 comandos: 28 aceitos, 28 recusados**, todos os recusados com motivo documentado |
+| `bancada/gaps-sql/sondar.py` | B C D O P Q | cada gap listado, com a recusa colada; manuais oficiais lidos e citados | **136 comandos** (PostgreSQL 49, MariaDB 27, MySQL 23, SQLite 19, Cassandra 18); sprints antigos: MariaDB 2 fecharam/11 sobreviveram, Cassandra 1/4 |
+| `bancada/cluster/escalonar.py` | J | acrescentar um nó ao cluster vivo | a quente **não funciona**; reiniciar só os antigos: master **0,367 s** fora, sem eleição |
+| `bancada/conexoes/nativo.py`, `multilink.py` | K L | nativo com desafio-resposta em Python puro; hub com dois DbLinks | ODBC 73/0 · FFI 40/0 · dblink 44/0 · multilink 10/10 |
+| `bancada/diretivas/provar.py` | M | três diretivas e as três portas dos fundos (`juntar`/`unir`/`pivotar`) | **46 afirmações, 0 falhas** |
+| `bancada/proibidos/provar.py` | X | comando e base proibidos → recusa, blacklist e **e-mail** (SMTP falso em soquete) | **21 afirmações, 0 falhas** |
+| `bancada/seguranca/porta.py` | W | 16 casos pela porta TCP | **13 passou, 0 falhou, 3 achado** |
+| `bancada/seguranca/injecao.py` | Y | 12 injeções clássicas + jato de 2 s | **6 passou, 0 falhou, 2 achado** |
+| `bancada/particao-por-faixa/sonda.py` | S | 1.000.000 de linhas em dez volumes | vol 1 × vol 10: **0,4882 × 0,3417 ms** — não cresce |
+| `bancada/transacoes/travada.py` | U | os três jeitos de cancelar | B esperou **401,6 ms** → `4005`; A abortada → `6002`; saldo 100 nos três |
+| `bancada/jobs/backup-agendado.py` | V | backup pelo relógio, histórico, falha, restauração | 2 corridas `ok:true`, 1 falha registrada, 20 = 20 linhas restauradas |
+| `bancada/sequencias/sonda.py` | 0.2 | declarar, numerar, listar, ajustar | contador no byte **36**; o 92 é o do `rownum` |
+
+### 17.2 O que as baterias acharam — e virou pedido, não frase
+
+- **214** — `replicas_autorizadas` nasce vazia, e vazia libera todos: só com o
+  token, `replicar` devolveu a linha inteira e `aplicar` gravou em
+  `somente_leitura`.
+- **215** — injeção de SQL não bloqueia ninguém: **311.250 tentativas por
+  minuto**, `blacklist.json` vazio. O tradutor analisa, então nada executa —
+  mas nada é contado.
+- **216** — linha acima de 128 MiB não deixa rastro no `acessos.log`.
+- **217** — escalonar o cluster a quente não funciona; o caminho que funciona
+  custa 0,367 s no master.
+- **218** — o bloco `cluster` não aparece na resposta de `config`.
+- **219** — três recusas do SQL dizendo a coisa errada, uma delas vazando erro
+  cru do sistema operacional.
+- **220 / 221** — `comandos_proibidos` é global, não por banco; não há
+  operação que crie usuário.
+- **222** — `esquema.volumes` vem vazio na partição por quantidade.
+- **223** — `SELECT … WHERE id = 2` recusa quando a chave é `Sequence` e passa
+  quando é `Int8`: o alargamento de tipo não alcançou o irmão.
+- **224** — o catálogo documenta valores que o motor recusa (`unir distinto`,
+  o exemplo do `pivotar`).
+- **213** — o inventário de arquivos de uma tabela mora em três lugares à mão,
+  e o `.fts` faltou nos três (corrigidos; a guarda é o pedido).
+
+### 17.3 O que só a prova real revelou
+
+Três vezes o motor fez **diferente** do que o documento dizia ou do que a
+frente esperava, e as três estão na resposta correspondente com o número:
+
+- `telemetria_encerrar` devolve **`ociosa`** para uma transação parada entre
+  pedidos — não há laço cancelável ali; quem resolve é `encerrar_sessao` (U).
+- um job ligado **depois do arranque** não acorda o relógio (V, e já estava
+  no `JOBS.md` — a bancada sobe o servidor duas vezes por isso).
+- o `INSERT` dentro de transação é **aceito** na partição por quantidade e
+  **recusado** na por letra — e os dois estão certos, pelo mesmo motivo: o
+  rowid alvo é previsível num caso e não no outro (S, R).
+
+### 17.4 O encontro das frentes, provado
+
+F5 mudou o servidor (o e-mail dentro de `violacao_grave`) e F6 mediu a
+segurança **antes** dessa mudança. As duas baterias de F6 foram rodadas de novo
+contra o binário com o código de F5: **13/0/3 e 6/0/2, idênticas**. A suíte
+inteira, com os dois testes novos: **1.674 testes, 0 falhas, 0 avisos, 0
+diretório deixado em `/tmp`**.

@@ -1,0 +1,1425 @@
+{
+ "porta": 6110,
+ "controle": [
+  {
+   "sql": "SELECT * FROM clientes",
+   "ok": true,
+   "erro": ""
+  },
+  {
+   "sql": "SELECT COUNT(*) FROM clientes",
+   "ok": true,
+   "erro": ""
+  },
+  {
+   "sql": "SELECT nome AS quem FROM clientes ORDER BY nome LIMIT 2",
+   "ok": true,
+   "erro": ""
+  },
+  {
+   "sql": "SELECT * FROM clientes WHERE nome = 'Adriano'",
+   "ok": true,
+   "erro": ""
+  },
+  {
+   "sql": "SELECT * FROM itens WHERE id = 1",
+   "ok": true,
+   "erro": ""
+  },
+  {
+   "sql": "BEGIN",
+   "ok": true,
+   "erro": ""
+  },
+  {
+   "sql": "COMMIT",
+   "ok": true,
+   "erro": ""
+  },
+  {
+   "sql": "SHOW TRIGGERS",
+   "ok": true,
+   "erro": ""
+  },
+  {
+   "sql": "SHOW PROCEDURES",
+   "ok": true,
+   "erro": ""
+  }
+ ],
+ "resultados": [
+  {
+   "motor": "postgresql",
+   "rotulo": "INSERT",
+   "sql": "INSERT INTO clientes (nome) VALUES ('Zeca')",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "UPDATE",
+   "sql": "UPDATE clientes SET cidade = 'Itajai' WHERE id = 1",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: UPDATE ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "DELETE",
+   "sql": "DELETE FROM clientes WHERE id = 1",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: DELETE ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "CREATE TABLE",
+   "sql": "CREATE TABLE fornecedores (id integer, nome text)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "DROP TABLE",
+   "sql": "DROP TABLE clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 6: DROP TABLE e a operacao excluir_tabela do protocolo, que exige repetir o nome no campo \"confirmar\""
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "ALTER TABLE ADD COLUMN",
+   "sql": "ALTER TABLE clientes ADD COLUMN uf char(2)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: ALTER nao e um comando desta camada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "CREATE INDEX",
+   "sql": "CREATE INDEX porCidade ON clientes (cidade)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "DROP INDEX",
+   "sql": "DROP INDEX porNome",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 6: DROP nesta camada e de TRIGGER ou PROCEDURE"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "CREATE VIEW",
+   "sql": "CREATE VIEW vw AS SELECT * FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "TRUNCATE",
+   "sql": "TRUNCATE TABLE clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: TRUNCATE nao e um comando desta camada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "GRANT",
+   "sql": "GRANT SELECT ON clientes TO leitor",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: GRANT nao e um comando desta camada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "REVOKE",
+   "sql": "REVOKE SELECT ON clientes FROM leitor",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: REVOKE nao e um comando desta camada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "CREATE ROLE",
+   "sql": "CREATE ROLE leitor",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "EXPLAIN",
+   "sql": "EXPLAIN SELECT * FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: EXPLAIN nao e um comando desta camada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "WHERE AND",
+   "sql": "SELECT * FROM clientes WHERE id = 1 AND cidade = 'Blumenau'",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 41: o WHERE aceita UMA comparacao. Duas exigiriam interseccao de rowids, e nao ha planejador que decida por qual indice comecar"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "WHERE OR",
+   "sql": "SELECT * FROM clientes WHERE id = 1 OR id = 2",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 40: o WHERE aceita UMA comparacao. Duas exigiriam interseccao de rowids, e nao ha planejador que decida por qual indice comecar"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "WHERE IN",
+   "sql": "SELECT * FROM clientes WHERE id IN (1, 2)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 33: IN e uma lista de buscas; o motor faz cada uma, mas quem junta os resultados ainda nao existe"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "WHERE BETWEEN",
+   "sql": "SELECT * FROM clientes WHERE id BETWEEN 1 AND 2",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 33: BETWEEN e faixa de indice, e a faixa ainda nao esta exposta no protocolo"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "WHERE LIKE",
+   "sql": "SELECT * FROM clientes WHERE nome LIKE 'A%'",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 35: LIKE precisaria varrer comparando texto linha a linha; o varrer sabe fazer isso (`onde` com `contem`), mas so dentro da pagina que examina, e um SELECT nao tem onde dizer isso a quem le a resposta"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "WHERE IS NULL",
+   "sql": "SELECT * FROM clientes WHERE cidade IS NULL",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 37: IS NULL nao tem filtro embaixo: nulo se ve lendo a linha"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "WHERE sem indice",
+   "sql": "SELECT * FROM clientes WHERE cidade = 'Blumenau'",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: WHERE cidade = ... exige um indice de uma coluna sobre cidade. Nao existe. O `varrer` filtra, mas dentro da pagina que ele EXAMINA -- e um SELECT que respondesse sobre a primeira pagina teria a cara de ter respondido sobre a tabela. Ha indice de coluna unica sobre: id, nome"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "GROUP BY",
+   "sql": "SELECT cidade, COUNT(*) FROM clientes GROUP BY cidade",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 21: esperava FROM, e veio \"(\""
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "HAVING",
+   "sql": "SELECT cidade FROM clientes GROUP BY cidade HAVING COUNT(*) > 1",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 35: GROUP BY geral nao existe embaixo. A tabulacao cruzada e a operacao pivotar, que e um caso e nao o geral"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "DISTINCT",
+   "sql": "SELECT DISTINCT cidade FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 17: DISTINCT nao tem substrato: nenhuma operacao do protocolo elimina repetido numa varredura"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "SUM/AVG/MIN/MAX",
+   "sql": "SELECT SUM(saldo) FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: SUM() nao tem quem calcule embaixo. So COUNT(*) passa, porque a contagem sai do cabecalho da tabela em O(1)"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "JOIN",
+   "sql": "SELECT c.nome FROM clientes c JOIN clientes d ON c.id = d.id",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 36: junção ainda nao passa por aqui. O motor ja junta -- e a operacao juntar, com sete formas -- mas a traducao do JOIN e outra rodada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "UNION",
+   "sql": "SELECT nome FROM clientes UNION SELECT nome FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 27: sobrou \"UNION\" depois do fim do comando; um comando por vez"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "subconsulta",
+   "sql": "SELECT * FROM clientes WHERE id IN (SELECT id FROM clientes)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 33: IN e uma lista de buscas; o motor faz cada uma, mas quem junta os resultados ainda nao existe"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "CTE (WITH)",
+   "sql": "WITH x AS (SELECT * FROM clientes) SELECT * FROM x",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: WITH nao e um comando desta camada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "window function",
+   "sql": "SELECT nome, ROW_NUMBER() OVER (ORDER BY nome) FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 24: esperava FROM, e veio \"(\""
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "CASE",
+   "sql": "SELECT CASE WHEN id = 1 THEN 'um' ELSE 'outro' END FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 13: esperava FROM, e veio \"WHEN\""
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "expressao",
+   "sql": "SELECT saldo * 1.1 FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 14: esperava FROM, e veio \"*\""
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "funcao escalar",
+   "sql": "SELECT upper(nome) FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 13: esperava FROM, e veio \"(\""
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "alias de tabela",
+   "sql": "SELECT c.nome FROM clientes AS c",
+   "aceito": true,
+   "mensagem": "{'sql': 'SELECT c.nome FROM clientes AS c', 'op': 'varrer', 'notas': ['o apelido \"c\" da tabela foi lido e descartado: so ha uma tabela', 'sem ORDER BY a ordem e a de DIGITACAO, que no PhxSql e estavel: o .reg nunca reaproveita slot excluido', 'sem LIMIT o servidor aplica o teto dele (`max_linhas` do config.json), e a resposta diz se ha mais'], 'colunas': ['nome'], 'registros': 3, 'visiveis': 3, '…"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "WHERE sobre chave Sequence",
+   "sql": "SELECT * FROM clientes WHERE id = 2",
+   "aceito": false,
+   "mensagem": "[SP000018] tipo invalido: esperado numero da sequencia, recebido Texto(\"2\")"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "INSERT ... RETURNING",
+   "sql": "INSERT INTO clientes (nome) VALUES ('Zeca') RETURNING id",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "ON CONFLICT (upsert)",
+   "sql": "INSERT INTO clientes (id, nome) VALUES (1,'X') ON CONFLICT (id) DO UPDATE SET nome='X'",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "SET TRANSACTION ISOLATION",
+   "sql": "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: SET nao e um comando desta camada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "SELECT sem FROM",
+   "sql": "SELECT 1",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: esperava nome de coluna, e veio \"1\""
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "COPY",
+   "sql": "COPY clientes FROM '/tmp/x.csv' CSV",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: COPY nao e um comando desta camada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "COMMENT ON",
+   "sql": "COMMENT ON TABLE clientes IS 'cadastro'",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: COMMENT nao e um comando desta camada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "CREATE SEQUENCE",
+   "sql": "CREATE SEQUENCE s1",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "ANALYZE",
+   "sql": "ANALYZE clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: ANALYZE nao e um comando desta camada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "VACUUM",
+   "sql": "VACUUM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: VACUUM nao e um comando desta camada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "PREPARE",
+   "sql": "PREPARE p1 AS SELECT * FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: PREPARE nao e um comando desta camada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "parametro $1",
+   "sql": "SELECT * FROM clientes WHERE id = $1",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 35: caractere '$' nao faz parte da linguagem"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "SELECT FOR UPDATE",
+   "sql": "SELECT * FROM clientes WHERE id = 1 FOR UPDATE",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 37: sobrou \"FOR\" depois do fim do comando; um comando por vez"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "SET",
+   "sql": "SET search_path TO public",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: SET nao e um comando desta camada"
+  },
+  {
+   "motor": "postgresql",
+   "rotulo": "SHOW (variavel)",
+   "sql": "SHOW server_version",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 6: SHOW nesta camada lista TRIGGERS ou PROCEDURES; tabelas e colunas saem por sistabelas/siscolunas"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "REPLACE INTO",
+   "sql": "REPLACE INTO clientes (id, nome) VALUES (1, 'X')",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: REPLACE nao e um comando desta camada"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "INSERT ... ON DUPLICATE KEY",
+   "sql": "INSERT INTO clientes (id,nome) VALUES (1,'X') ON DUPLICATE KEY UPDATE nome='X'",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "SHOW TABLES",
+   "sql": "SHOW TABLES",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 6: SHOW nesta camada lista TRIGGERS ou PROCEDURES; tabelas e colunas saem por sistabelas/siscolunas"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "SHOW DATABASES",
+   "sql": "SHOW DATABASES",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 6: SHOW nesta camada lista TRIGGERS ou PROCEDURES; tabelas e colunas saem por sistabelas/siscolunas"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "SHOW CREATE TABLE",
+   "sql": "SHOW CREATE TABLE clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 6: SHOW nesta camada lista TRIGGERS ou PROCEDURES; tabelas e colunas saem por sistabelas/siscolunas"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "DESCRIBE",
+   "sql": "DESCRIBE clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: DESCRIBE nao e um comando desta camada"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "USE",
+   "sql": "USE loja",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: USE nao e um comando desta camada"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "LIMIT com virgula",
+   "sql": "SELECT * FROM clientes LIMIT 0, 2",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 31: sobrou \",\" depois do fim do comando; um comando por vez"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "CHECK constraint",
+   "sql": "ALTER TABLE clientes ADD CONSTRAINT c1 CHECK (saldo >= 0)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: ALTER nao e um comando desta camada"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "coluna gerada",
+   "sql": "ALTER TABLE clientes ADD COLUMN dobro DECIMAL(12,2) AS (saldo*2) PERSISTENT",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: ALTER nao e um comando desta camada"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "EXCEPT",
+   "sql": "SELECT nome FROM clientes EXCEPT SELECT nome FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 34: sobrou \"SELECT\" depois do fim do comando; um comando por vez"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "INTERSECT",
+   "sql": "SELECT nome FROM clientes INTERSECT SELECT nome FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 37: sobrou \"SELECT\" depois do fim do comando; um comando por vez"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "CREATE EVENT",
+   "sql": "CREATE EVENT e1 ON SCHEDULE EVERY 1 DAY DO SELECT 1",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "CREATE ROLE",
+   "sql": "CREATE ROLE gerente",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "CREATE SEQUENCE",
+   "sql": "CREATE SEQUENCE s1 START WITH 100",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "AS OF (system versioned)",
+   "sql": "SELECT * FROM clientes FOR SYSTEM_TIME AS OF NOW()",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 28: sobrou \"SYSTEM_TIME\" depois do fim do comando; um comando por vez"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "MATCH ... AGAINST",
+   "sql": "SELECT * FROM clientes WHERE MATCH(nome) AGAINST('Adriano')",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 35: esperava um comparador (=, <>, <, <=, >, >=)"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "CREATE FUNCTION",
+   "sql": "CREATE FUNCTION f1() RETURNS INT RETURN 1",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE FUNCTION nao existe nesta camada — so TRIGGER e PROCEDURE. Funcao devolveria valor dentro de expressao SQL, e a camada SELECT nao avalia expressao"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "ANALYZE statement",
+   "sql": "ANALYZE SELECT * FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: ANALYZE nao e um comando desta camada"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "SET autocommit",
+   "sql": "SET autocommit = 0",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: SET nao e um comando desta camada"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "LOAD DATA INFILE",
+   "sql": "LOAD DATA INFILE '/tmp/x.csv' INTO TABLE clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: LOAD nao e um comando desta camada"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "backtick",
+   "sql": "SELECT `nome` FROM `clientes`",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: caractere '`' nao faz parte da linguagem"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "CREATE TRIGGER (controle)",
+   "sql": "CREATE TRIGGER tg BEFORE INSERT ON clientes FOR EACH ROW BEGIN SET NEW.cidade = 'Blumenau'; END",
+   "aceito": true,
+   "mensagem": "{'gatilho': 'tg', 'tabela': 'clientes', 'quando': 'BEFORE', 'evento': 'INSERT', 'criado': True}"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "DROP TRIGGER",
+   "sql": "DROP TRIGGER tg",
+   "aceito": true,
+   "mensagem": "{'gatilho': 'tg', 'excluido': True}"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "CREATE PROCEDURE (controle)",
+   "sql": "CREATE PROCEDURE p1() BEGIN DECLARE x INT DEFAULT 1; SET x = x + 1; END",
+   "aceito": true,
+   "mensagem": "{'procedimento': 'p1', 'parametros': 0, 'criado': True}"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "CALL (controle)",
+   "sql": "CALL p1()",
+   "aceito": true,
+   "mensagem": "{'procedimento': 'p1', 'saida': {}}"
+  },
+  {
+   "motor": "mariadb",
+   "rotulo": "DROP PROCEDURE",
+   "sql": "DROP PROCEDURE p1",
+   "aceito": true,
+   "mensagem": "{'procedimento': 'p1', 'excluido': True}"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "JSON_EXTRACT",
+   "sql": "SELECT JSON_EXTRACT(nome, '$.a') FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 20: esperava FROM, e veio \"(\""
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "coluna tipo JSON",
+   "sql": "CREATE TABLE j (dados JSON)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "window function",
+   "sql": "SELECT nome, RANK() OVER (ORDER BY nome) FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 18: esperava FROM, e veio \"(\""
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "CTE recursiva",
+   "sql": "WITH RECURSIVE r AS (SELECT 1 AS n) SELECT * FROM r",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: WITH nao e um comando desta camada"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "CREATE ROLE",
+   "sql": "CREATE ROLE app_ro",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "SET ROLE",
+   "sql": "SET ROLE app_ro",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: SET nao e um comando desta camada"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "GRANT com role",
+   "sql": "GRANT app_ro TO leitor",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: GRANT nao e um comando desta camada"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "SELECT ... FOR SHARE",
+   "sql": "SELECT * FROM clientes WHERE id = 1 FOR SHARE",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 37: sobrou \"FOR\" depois do fim do comando; um comando por vez"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "LATERAL",
+   "sql": "SELECT * FROM clientes, LATERAL (SELECT 1) x",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 23: sobrou \",\" depois do fim do comando; um comando por vez"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "VALUES statement",
+   "sql": "VALUES ROW(1,2)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: VALUES nao e um comando desta camada"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "TABLE statement",
+   "sql": "TABLE clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: TABLE nao e um comando desta camada"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "GROUP_CONCAT",
+   "sql": "SELECT GROUP_CONCAT(nome) FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 20: esperava FROM, e veio \"(\""
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "INSERT multi-linha",
+   "sql": "INSERT INTO clientes (nome) VALUES ('A'),('B')",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "OPTIMIZE TABLE",
+   "sql": "OPTIMIZE TABLE clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: OPTIMIZE nao e um comando desta camada"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "CHECK TABLE",
+   "sql": "CHECK TABLE clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: CHECK nao e um comando desta camada"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "SHOW VARIABLES",
+   "sql": "SHOW VARIABLES LIKE 'version'",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 6: SHOW nesta camada lista TRIGGERS ou PROCEDURES; tabelas e colunas saem por sistabelas/siscolunas"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "SHOW STATUS",
+   "sql": "SHOW STATUS",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 6: SHOW nesta camada lista TRIGGERS ou PROCEDURES; tabelas e colunas saem por sistabelas/siscolunas"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "SHOW PROCESSLIST",
+   "sql": "SHOW PROCESSLIST",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 6: SHOW nesta camada lista TRIGGERS ou PROCEDURES; tabelas e colunas saem por sistabelas/siscolunas"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "KILL",
+   "sql": "KILL 1",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: KILL nao e um comando desta camada"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "information_schema",
+   "sql": "SELECT * FROM information_schema.tables",
+   "aceito": false,
+   "mensagem": "[SP000010] erro de E/S: No such file or directory (os error 2)"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "FLUSH",
+   "sql": "FLUSH TABLES",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: FLUSH nao e um comando desta camada"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "LOCK TABLES",
+   "sql": "LOCK TABLES clientes WRITE",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: LOCK nao e um comando desta camada"
+  },
+  {
+   "motor": "mysql",
+   "rotulo": "START TRANSACTION READ ONLY",
+   "sql": "START TRANSACTION READ ONLY",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: sobrou \"READ\" depois do comando de begin"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "CREATE TABLE IF NOT EXISTS",
+   "sql": "CREATE TABLE IF NOT EXISTS t2 (id INTEGER PRIMARY KEY)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "INSERT OR REPLACE",
+   "sql": "INSERT OR REPLACE INTO clientes (id,nome) VALUES (1,'X')",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "INSERT OR IGNORE",
+   "sql": "INSERT OR IGNORE INTO clientes (id,nome) VALUES (1,'X')",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "UPSERT",
+   "sql": "INSERT INTO clientes (id,nome) VALUES (1,'X') ON CONFLICT(id) DO NOTHING",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "PRAGMA",
+   "sql": "PRAGMA table_info(clientes)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: PRAGMA nao e um comando desta camada"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "ATTACH DATABASE",
+   "sql": "ATTACH DATABASE '/tmp/o.db' AS o",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: ATTACH nao e um comando desta camada"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "sqlite_master",
+   "sql": "SELECT name FROM sqlite_master",
+   "aceito": false,
+   "mensagem": "[SP000018] nao encontrado: nenhum volume de sqlite_master.reg em /tmp/phx-f2-10089/dados/loja"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "AUTOINCREMENT / last id",
+   "sql": "SELECT last_insert_rowid()",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 25: esperava FROM, e veio \"(\""
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "rowid",
+   "sql": "SELECT rowid FROM clientes",
+   "aceito": true,
+   "mensagem": "{'sql': 'SELECT rowid FROM clientes', 'op': 'varrer', 'notas': ['sem ORDER BY a ordem e a de DIGITACAO, que no PhxSql e estavel: o .reg nunca reaproveita slot excluido', 'sem LIMIT o servidor aplica o teto dele (`max_linhas` do config.json), e a resposta diz se ha mais'], 'colunas': ['rowid'], 'registros': 3, 'visiveis': 3, 'marcadas': 0, 'devolvidas': 3, 'examinadas': 3, 'modo': 'posicao', 'salt…"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "ORDER BY 2 clausulas",
+   "sql": "SELECT * FROM clientes ORDER BY cidade, nome",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 41: ORDER BY de mais de uma coluna precisa de um indice composto com essas colunas nessa ordem -- e quem escolhe o indice ainda e quem chama, porque nao ha planejador"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "LIMIT sem ORDER",
+   "sql": "SELECT * FROM clientes LIMIT 1 OFFSET 1",
+   "aceito": true,
+   "mensagem": "{'sql': 'SELECT * FROM clientes LIMIT 1 OFFSET 1', 'op': 'varrer', 'notas': ['sem ORDER BY a ordem e a de DIGITACAO, que no PhxSql e estavel: o .reg nunca reaproveita slot excluido'], 'registros': 3, 'visiveis': 3, 'marcadas': 0, 'devolvidas': 1, 'examinadas': 1, 'modo': 'posicao', 'salto': 'bisseccao', 'cursor_inicio': 2, 'cursor_fim': 2, 'rownum_inicio': 2, 'rownum_fim': 2, 'ha_mais': True, 'ha…"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "VACUUM",
+   "sql": "VACUUM",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: VACUUM nao e um comando desta camada"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "ALTER TABLE RENAME",
+   "sql": "ALTER TABLE clientes RENAME TO clientes2",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: ALTER nao e um comando desta camada"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "ALTER TABLE DROP COLUMN",
+   "sql": "ALTER TABLE clientes DROP COLUMN cidade",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: ALTER nao e um comando desta camada"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "CREATE VIRTUAL TABLE (FTS5)",
+   "sql": "CREATE VIRTUAL TABLE f USING fts5(corpo)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "REPLACE (funcao)",
+   "sql": "SELECT replace(nome,'a','b') FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 15: esperava FROM, e veio \"(\""
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "coalesce/ifnull",
+   "sql": "SELECT ifnull(cidade,'?') FROM clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 14: esperava FROM, e veio \"(\""
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "datetime()",
+   "sql": "SELECT datetime('now')",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 16: esperava FROM, e veio \"(\""
+  },
+  {
+   "motor": "sqlite",
+   "rotulo": "SAVEPOINT (controle)",
+   "sql": "SAVEPOINT sp1",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: esta conexao nao tem transacao aberta; comece com {\"op\":\"begin\"} (ou BEGIN / START TRANSACTION pelo SQL). Lembre que a transacao pertence a CONEXAO: reconectar desfaz a que estava aberta"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "CREATE KEYSPACE",
+   "sql": "CREATE KEYSPACE ks WITH replication = {'class':'SimpleStrategy'}",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 39: caractere '{' nao faz parte da linguagem"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "USE keyspace",
+   "sql": "USE ks",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: USE nao e um comando desta camada"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "CREATE TABLE (PRIMARY KEY composta)",
+   "sql": "CREATE TABLE t (pk text, ck text, v text, PRIMARY KEY ((pk), ck))",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "INSERT ... USING TTL",
+   "sql": "INSERT INTO clientes (id,nome) VALUES (9,'X') USING TTL 86400",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "UPDATE ... USING TIMESTAMP",
+   "sql": "UPDATE clientes USING TIMESTAMP 1 SET nome='X' WHERE id=1",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: UPDATE ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "IF NOT EXISTS (LWT)",
+   "sql": "INSERT INTO clientes (id,nome) VALUES (9,'X') IF NOT EXISTS",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "CONSISTENCY",
+   "sql": "CONSISTENCY QUORUM",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: CONSISTENCY nao e um comando desta camada"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "ALLOW FILTERING",
+   "sql": "SELECT * FROM clientes WHERE cidade = 'Blumenau' ALLOW FILTERING",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 50: sobrou \"ALLOW\" depois do fim do comando; um comando por vez"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "token()",
+   "sql": "SELECT * FROM clientes WHERE token(id) > 0",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 35: esperava um comparador (=, <>, <, <=, >, >=)"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "BATCH",
+   "sql": "BEGIN BATCH INSERT INTO clientes (id,nome) VALUES (9,'X') APPLY BATCH",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: sobrou \"BATCH\" depois do comando de begin"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "CREATE MATERIALIZED VIEW",
+   "sql": "CREATE MATERIALIZED VIEW mv AS SELECT * FROM clientes WHERE id IS NOT NULL PRIMARY KEY (id)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "CREATE TYPE (UDT)",
+   "sql": "CREATE TYPE endereco (rua text, cidade text)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "colecao (set/list/map)",
+   "sql": "CREATE TABLE c2 (id int PRIMARY KEY, tags set<text>)",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "counter",
+   "sql": "UPDATE clientes SET saldo = saldo + 1 WHERE id = 1",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: UPDATE ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "CREATE CUSTOM INDEX (SAI)",
+   "sql": "CREATE CUSTOM INDEX ix ON clientes (cidade) USING 'StorageAttachedIndex'",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "TRUNCATE",
+   "sql": "TRUNCATE clientes",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: TRUNCATE nao e um comando desta camada"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "DESCRIBE KEYSPACES",
+   "sql": "DESCRIBE KEYSPACES",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 1: DESCRIBE nao e um comando desta camada"
+  },
+  {
+   "motor": "cassandra",
+   "rotulo": "ANN / busca vetorial",
+   "sql": "SELECT * FROM clientes ORDER BY vetor ANN OF [1.0] LIMIT 5",
+   "aceito": false,
+   "mensagem": "[SP000018] esquema invalido: SQL, coluna 46: caractere '[' nao faz parte da linguagem"
+  }
+ ],
+ "achados": [
+  {
+   "o_que": "o WHERE sobre chave Sequence recusa (o irmao Int8 passa)",
+   "pedido": {
+    "op": "sql",
+    "database": "loja",
+    "texto": "SELECT * FROM clientes WHERE id = 2"
+   },
+   "ok": false,
+   "resposta": "[SP000018] tipo invalido: esperado numero da sequencia, recebido Texto(\"2\")"
+  },
+  {
+   "o_que": "o mesmo WHERE sobre chave Int8 passa — o controle do de cima",
+   "pedido": {
+    "op": "sql",
+    "database": "loja",
+    "texto": "SELECT * FROM itens WHERE id = 1"
+   },
+   "ok": true,
+   "resposta": "{'sql': 'SELECT * FROM itens WHERE id = 1', 'op': 'buscar', 'notas': ['indice porId escolhido pelo WHERE -- e nao ha planejador: se houvesse dois candidatos, o primeiro declarado venceria'], 'encontrados': 1, 'linhas': [{'rowid': 1, 'id': 1, 'descricao': 'cafe', 'softdeleted': False, 'rownum': 1}]}"
+  },
+  {
+   "o_que": "FROM schema.tabela inexistente vaza erro cru do SO, com repetir:true",
+   "pedido": {
+    "op": "sql",
+    "database": "loja",
+    "texto": "SELECT * FROM filial.clientes"
+   },
+   "ok": false,
+   "resposta": "[SP000010] erro de E/S: No such file or directory (os error 2)"
+  },
+  {
+   "o_que": "FROM tabela inexistente (sem schema) recusa direito, com repetir:false",
+   "pedido": {
+    "op": "sql",
+    "database": "loja",
+    "texto": "SELECT * FROM naoexiste"
+   },
+   "ok": false,
+   "resposta": "[SP000018] nao encontrado: nenhum volume de naoexiste.reg em /tmp/phx-f2-10089/dados/loja"
+  },
+  {
+   "o_que": "o varrer faz AND de duas condicoes — o substrato existe",
+   "pedido": {
+    "op": "varrer",
+    "database": "loja",
+    "tabela": "clientes",
+    "max": 100,
+    "onde": [
+     {
+      "coluna": "cidade",
+      "op": "=",
+      "valor": "Blumenau"
+     },
+     {
+      "coluna": "nome",
+      "op": "=",
+      "valor": "Adriano"
+     }
+    ]
+   },
+   "ok": true,
+   "resposta": "{'registros': 3, 'visiveis': 3, 'marcadas': 0, 'devolvidas': 1, 'examinadas': 3, 'modo': 'posicao', 'salto': 'passo', 'cursor_inicio': 1, 'cursor_fim': 3, 'rownum_inicio': 1, 'rownum_fim': 3, 'ha_mais': False, 'ha_antes': False, 'ordem': 'digitacao', 'linhas': [{'rowid': 1, 'id': 1, 'nome': 'Adriano', 'cidade': 'Blumenau', 'saldo': '10.00', 'softdeleted': False, 'rownum': 1}]}"
+  },
+  {
+   "o_que": "e o SELECT recusa a MESMA pergunta",
+   "pedido": {
+    "op": "sql",
+    "database": "loja",
+    "texto": "SELECT * FROM clientes WHERE cidade = 'Blumenau' AND nome = 'Adriano'"
+   },
+   "ok": false,
+   "resposta": "[SP000018] esquema invalido: SQL, coluna 54: o WHERE aceita UMA comparacao. Duas exigiriam interseccao de rowids, e nao ha planejador que decida por qual indice comecar"
+  },
+  {
+   "o_que": "o .fts dobra acento: fênix acha fenix",
+   "pedido": {
+    "op": "procurar_texto",
+    "database": "loja",
+    "tabela": "chamados",
+    "indice": "porCorpo",
+    "palavra": "fênix"
+   },
+   "ok": true,
+   "resposta": "{'encontrados': 1, 'linhas': [{'rowid': 1, 'id': 1, 'corpo': 'a fenix renasce das cinzas', 'softdeleted': False, 'rownum': 1}]}"
+  },
+  {
+   "o_que": "e nao faz prefixo: fen nao acha fenix",
+   "pedido": {
+    "op": "procurar_texto",
+    "database": "loja",
+    "tabela": "chamados",
+    "indice": "porCorpo",
+    "palavra": "fen"
+   },
+   "ok": true,
+   "resposta": "{'encontrados': 0, 'linhas': []}"
+  }
+ ],
+ "equivalencias": [
+  {
+   "sql": "SELECT * FROM t",
+   "op": "varrer",
+   "ok": true,
+   "resposta": "{'registros': 3, 'visiveis': 3, 'marcadas': 0, 'devolvidas': 2, 'examinadas': 2, 'modo': 'posicao', 'salto': 'passo', 'cursor_inicio': 1, 'cursor_fim': 2, 'rownum_inicio': 1, 'rownum_fim': 2, 'ha_mais': True, 'ha_antes': False, 'ordem': 'digitacao', 'linhas': [{'rowid': 1, 'id': 1, 'nome': 'Adriano', 'cidade': 'Blumenau', 'saldo': '10.00', 'softdeleted': False, 'rownum': 1}, {'rowid': 2, 'id': 2,…"
+  },
+  {
+   "sql": "SELECT ... WHERE chave = ?",
+   "op": "buscar",
+   "ok": true,
+   "resposta": "{'encontrados': 1, 'linhas': [{'rowid': 1, 'id': 1, 'descricao': 'cafe', 'softdeleted': False, 'rownum': 1}]}"
+  },
+  {
+   "sql": "SELECT ... WHERE col_sem_indice = ?",
+   "op": "varrer",
+   "ok": true,
+   "resposta": "{'registros': 3, 'visiveis': 3, 'marcadas': 0, 'devolvidas': 2, 'examinadas': 3, 'modo': 'posicao', 'salto': 'passo', 'cursor_inicio': 1, 'cursor_fim': 3, 'rownum_inicio': 1, 'rownum_fim': 3, 'ha_mais': False, 'ha_antes': False, 'ordem': 'digitacao', 'linhas': [{'rowid': 1, 'id': 1, 'nome': 'Adriano', 'cidade': 'Blumenau', 'saldo': '10.00', 'softdeleted': False, 'rownum': 1}, {'rowid': 3, 'id': 3…"
+  },
+  {
+   "sql": "SELECT ... WHERE col LIKE '%x%'",
+   "op": "varrer",
+   "ok": true,
+   "resposta": "{'registros': 3, 'visiveis': 3, 'marcadas': 0, 'devolvidas': 1, 'examinadas': 3, 'modo': 'posicao', 'salto': 'passo', 'cursor_inicio': 1, 'cursor_fim': 3, 'rownum_inicio': 1, 'rownum_fim': 3, 'ha_mais': False, 'ha_antes': False, 'ordem': 'digitacao', 'linhas': [{'rowid': 1, 'id': 1, 'nome': 'Adriano', 'cidade': 'Blumenau', 'saldo': '10.00', 'softdeleted': False, 'rownum': 1}]}"
+  },
+  {
+   "sql": "INSERT",
+   "op": "inserir",
+   "ok": true,
+   "resposta": "{'rowid': 4, 'registros': 4}"
+  },
+  {
+   "sql": "INSERT multi-linha",
+   "op": "inserir_lote",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'tabela': 'clientes', 'formato': 'lista', 'recebidas': 2, 'gravadas': 2, 'recusadas': 0, 'primeiro_rowid': 5, 'ultimo_rowid': 6, 'ms': 1, 'por_segundo': 2000, 'erros': [], 'aviso': ''}"
+  },
+  {
+   "sql": "UPDATE ... WHERE pk",
+   "op": "atualizar",
+   "ok": true,
+   "resposta": "{'rowid': 1, 'versao': 2}"
+  },
+  {
+   "sql": "DELETE (soft)",
+   "op": "excluir",
+   "ok": true,
+   "resposta": "{'rowid': 2, 'excluido': True, 'modo': 'suave', 'na_lixeira': False, 'reversivel': True}"
+  },
+  {
+   "sql": "ROLLBACK do DELETE (nao ha em SQL padrao)",
+   "op": "restaurar",
+   "ok": true,
+   "resposta": "{'rowid': 2, 'restaurado': True}"
+  },
+  {
+   "sql": "CREATE TABLE",
+   "op": "criar_tabela",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'schema': None, 'tabela': 'fornecedores', 'colunas': 4, 'indices': 1, 'paginada': False}"
+  },
+  {
+   "sql": "ALTER TABLE ADD COLUMN",
+   "op": "acrescentar_coluna",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'tabela': 'fornecedores', 'coluna': 'uf', 'posicao': 2, 'colunas': 5, 'slots_reescritos': 0, 'registros': 0, 'ms': 0.8615470000000001, 'indices_refeitos': False}"
+  },
+  {
+   "sql": "ALTER TABLE RENAME",
+   "op": "renomear_tabela",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'origem': 'fornecedores', 'destino': 'fornecedores2', 'arquivos': 8}"
+  },
+  {
+   "sql": "DROP TABLE",
+   "op": "excluir_tabela",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'tabela': 'fornecedores2', 'arquivos_apagados': ['fornecedores2.bin', 'fornecedores2.log', 'fornecedores2.memo', 'fornecedores2.ndx', 'fornecedores2.pag', 'fornecedores2.reason', 'fornecedores2.reg', 'fornecedores2.trash'], 'gatilhos_apagados': 0}"
+  },
+  {
+   "sql": "SHOW DATABASES",
+   "op": "bancos",
+   "ok": true,
+   "resposta": "['loja']"
+  },
+  {
+   "sql": "SHOW TABLES",
+   "op": "tabelas",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'schemas': [], 'tabelas': ['chamados', 'clientes', 'itens']}"
+  },
+  {
+   "sql": "DESCRIBE / PRAGMA table_info",
+   "op": "esquema",
+   "ok": true,
+   "resposta": "{'tabela': 'clientes', 'arquivos': ['.reg', '.ndx', '.bin', '.memo', '.log', '.trash', '.reason', '.pag'], 'registros': 6, 'slots': 6, 'motivo_obrigatorio': False, 'colunas': [{'id': '01a07cc5-dc7a-7759-b692-a0b1e6753c61', 'nome': 'id', 'caption': '', 'rotulo': 'id', 'descricao': '', 'mascara': '', 'dado_pessoal': 'nao', 'tipo': 'Sequence', 'tamanho': 8, 'nullable': False, 'sistema': False, 'prim…"
+  },
+  {
+   "sql": "information_schema.tables",
+   "op": "sistabelas",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'total': 3, 'tabelas': [{'tabela': 'chamados', 'schema': '', 'registros': 1, 'slots': 1, 'colunas': 4, 'indices': 1, 'chave_primaria': 'porId', 'chaves_estrangeiras': 0, 'bytes_por_linha': 218, 'paginada': False, 'particao': '', 'volumes': 0}, {'tabela': 'clientes', 'schema': '', 'registros': 6, 'slots': 6, 'colunas': 6, 'indices': 2, 'chave_primaria': 'porId', 'chaves_estran…"
+  },
+  {
+   "sql": "information_schema.columns",
+   "op": "siscolunas",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'total': 6, 'colunas': [{'tabela': 'clientes', 'posicao': 1, 'id': '01a07cc5-dc7a-7759-b692-a0b1e6753c61', 'nome': 'id', 'caption': '', 'descricao': '', 'mascara': '', 'dado_pessoal': 'nao', 'tipo': 'Sequence', 'tamanho': 8, 'obrigatoria': True, 'primaria': True, 'estrangeira': False, 'composta': False, 'nos_indices': ['porId']}, {'tabela': 'clientes', 'posicao': 2, 'id': '01…"
+  },
+  {
+   "sql": "JOIN",
+   "op": "juntar",
+   "ok": true,
+   "resposta": "{'tipo': 'interna', 'sql': 'INNER JOIN', 'a': 'clientes', 'b': 'itens', 'colunas': [{'nome': 'clientes.id', 'tipo': 'Sequence', 'lado': 'esquerda', 'chave': True}, {'nome': 'clientes.nome', 'tipo': 'Str(60)', 'lado': 'esquerda', 'chave': False}, {'nome': 'clientes.cidade', 'tipo': 'Str(40)', 'lado': 'esquerda', 'chave': False}, {'nome': 'clientes.saldo', 'tipo': 'Decimal { precisao: 12, escala: 2…"
+  },
+  {
+   "sql": "UNION ALL",
+   "op": "unir",
+   "ok": true,
+   "resposta": "{'modo': 'tudo', 'sql': 'UNION ALL', 'tabelas': ['clientes', 'clientes'], 'colunas': [{'nome': 'id', 'tipo': 'Sequence', 'lado': 'uniao', 'chave': False}, {'nome': 'nome', 'tipo': 'Str(60)', 'lado': 'uniao', 'chave': False}, {'nome': 'cidade', 'tipo': 'Str(40)', 'lado': 'uniao', 'chave': False}, {'nome': 'saldo', 'tipo': 'Decimal { precisao: 12, escala: 2 }', 'lado': 'uniao', 'chave': False}], 'l…"
+  },
+  {
+   "sql": "UNION (valor do catalogo: distinto)",
+   "op": "unir",
+   "ok": false,
+   "resposta": "[SP000018] esquema invalido: união desconhecida: \"distinto\" (use distinta ou tudo)"
+  },
+  {
+   "sql": "UNION (valor que o motor aceita: distinta)",
+   "op": "unir",
+   "ok": true,
+   "resposta": "{'modo': 'distinta', 'sql': 'UNION', 'tabelas': ['clientes', 'clientes'], 'colunas': [{'nome': 'id', 'tipo': 'Sequence', 'lado': 'uniao', 'chave': False}, {'nome': 'nome', 'tipo': 'Str(60)', 'lado': 'uniao', 'chave': False}, {'nome': 'cidade', 'tipo': 'Str(40)', 'lado': 'uniao', 'chave': False}, {'nome': 'saldo', 'tipo': 'Decimal { precisao: 12, escala: 2 }', 'lado': 'uniao', 'chave': False}], 'l…"
+  },
+  {
+   "sql": "GROUP BY cruzado (exemplo do catalogo: somar)",
+   "op": "pivotar",
+   "ok": false,
+   "resposta": "[SP000018] esquema invalido: agregador desconhecido: \"somar\" (use soma, media, contagem, minimo, maximo ou distintos)"
+  },
+  {
+   "sql": "GROUP BY cruzado (a forma que o motor aceita)",
+   "op": "pivotar",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'tabela': 'clientes', 'agregador': 'soma', 'campos_linha': ['cidade'], 'campos_coluna': [], 'valor': 'saldo', 'rotulos_linha': ['Blumenau', 'Gaspar', 'Itajai', 'Joinville'], 'rotulos_coluna': ['total'], 'celulas': [['30.25'], ['10.00'], ['1.00'], ['20.50']], 'total_linha': ['30.25', '10.00', '1.00', '20.50'], 'total_coluna': ['61.75'], 'total': '61.75', 'lidas': 6, 'considera…"
+  },
+  {
+   "sql": "catalogo de pivotar (o que ele documenta)",
+   "op": "catalogo",
+   "ok": true,
+   "resposta": "{'pedida': 'pivotar', 'operacao': {'nome': 'pivotar', 'apelidos': ['pivot'], 'resumo': 'Tabulação cruzada: soma, conta ou tira a média de uma coluna cruzando duas outras.', 'permissao': 'ler', 'escreve': False, 'parametros': [{'nome': 'database', 'tipo': 'string', 'obrigatorio': True, 'para_que': 'o banco de dados'}, {'nome': 'tabela', 'tipo': 'string', 'obrigatorio': True, 'para_que': 'a tabela;…"
+  },
+  {
+   "sql": "MATCH ... AGAINST (FTS)",
+   "op": "procurar_texto",
+   "ok": true,
+   "resposta": "{'encontrados': 1, 'linhas': [{'rowid': 1, 'id': 1, 'corpo': 'a fenix renasce das cinzas', 'softdeleted': False, 'rownum': 1}]}"
+  },
+  {
+   "sql": "CREATE SEQUENCE / nextval",
+   "op": "sequencias",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'total': 3, 'sequencias': [{'tabela': 'chamados', 'coluna': None, 'proxima': 0, 'registros': 1, 'tem_sequencia': False}, {'tabela': 'clientes', 'coluna': 'id', 'proxima': 7, 'registros': 6, 'tem_sequencia': True}, {'tabela': 'itens', 'coluna': None, 'proxima': 0, 'registros': 1, 'tem_sequencia': False}]}"
+  },
+  {
+   "sql": "ALTER SEQUENCE RESTART",
+   "op": "ajustar_sequencia",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'tabela': 'clientes', 'antes': 7, 'proxima': 5000, 'aviso': ''}"
+  },
+  {
+   "sql": "COPY TO / SELECT INTO OUTFILE",
+   "op": "exportar",
+   "ok": true,
+   "resposta": "{'formato': 'csv', 'arquivo': 'itens_2026-09-07-16-48-56-995.csv', 'mime': 'text/csv; charset=utf-8', 'bytes': 50, 'linhas': 1, 'truncado': False, 'binario': False, 'ms': 0, 'conteudo': '\\ufeffid;descricao;softdeleted;rownum\\r\\n1;cafe;nao;1\\r\\n'}"
+  },
+  {
+   "sql": "LOAD DATA INFILE (conferencia)",
+   "op": "importar_conferir",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'tabela': 'itens', 'formato': 'csv', 'linhas_lidas': 1, 'colunas': ['id', 'descricao'], 'desconhecidas': [], 'faltando': [], 'amostra': [['7', 'cha']]}"
+  },
+  {
+   "sql": "CHECK TABLE",
+   "op": "verificar",
+   "ok": true,
+   "resposta": "{'tabela': 'clientes', 'registros': 6, 'slots': 6, 'eventos': 9, 'indices': {'porId': 6, 'porNome': 6}, 'volumes': {'reg': 1, 'bin': 1, 'memo': 1, 'log': 1}}"
+  },
+  {
+   "sql": "OPTIMIZE / REINDEX",
+   "op": "reindexar",
+   "ok": true,
+   "resposta": "{'porId': 6, 'porNome': 6}"
+  },
+  {
+   "sql": "CHECKSUM TABLE",
+   "op": "checksum",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'tabela': 'itens', 'checksum': '1e1a28f552b21afb', 'linhas': 1, 'slots': 1, 'ms': 0}"
+  },
+  {
+   "sql": "SHOW PROCESSLIST",
+   "op": "sessoes",
+   "ok": true,
+   "resposta": "{'quantas': 1, 'executando': 1, 'mais_longa_ms': 0, 'sessoes': [{'id': 2, 'ip': '127.0.0.1', 'porta': 32938, 'usuario': None, 'desde': '2026-09-07 16:48:56,954', 'aberta_s': 0, 'estado': 'executando', 'op': 'sessoes', 'ha_ms': 0, 'objeto': None, 'pedidos': 194, 'encerrando': False, 'origem': 'dados'}], 'web': [], 'sessoes_web': 0}"
+  },
+  {
+   "sql": "SHOW GRANTS / pg_roles",
+   "op": "usuarios",
+   "ok": true,
+   "resposta": "{'ok': True, 'op': 'usuarios', 'resultado': [], 'ms': 0}"
+  },
+  {
+   "sql": "BULKINSERT (LOCK TABLES ... WRITE)",
+   "op": "bulkinsert",
+   "ok": true,
+   "resposta": "{'bulkinsert': True, 'database': 'loja', 'tabela': 'itens', 'reservada': True, 'expira_em_s': 1800, 'prazo_min': 30}"
+  },
+  {
+   "sql": "BULKINSERT off",
+   "op": "bulkinsert",
+   "ok": true,
+   "resposta": "{'bulkinsert': False, 'database': 'loja', 'tabela': 'itens', 'liberada': True, 'durou_ms': 1, 'sincronizada': True}"
+  },
+  {
+   "sql": "BEGIN com escopo declarado",
+   "op": "begin",
+   "ok": true,
+   "resposta": "{'transaction_id': 1788799736955, 'transaction_state': 'ACTIVE', 'transaction_start_time': '2026-09-07 16:48:56,998', 'transaction_isolation': 'escrita serializavel por tabela, leitura confirmada e nao bloqueante, sem leitura repetivel', 'idade_ms': 0, 'expira_em_s': 5, 'linhas': 0, 'database': 'loja', 'tabelas': [], 'tabelas_declaradas': ['loja/clientes'], 'tabelas_efetivas': ['loja/clientes'], …"
+  },
+  {
+   "sql": "SAVEPOINT",
+   "op": "savepoint",
+   "ok": true,
+   "resposta": "{'savepoint': 'sp1', 'linhas': 0, 'transaction_id': 1788799736955}"
+  },
+  {
+   "sql": "ROLLBACK TO SAVEPOINT",
+   "op": "rollback_para",
+   "ok": true,
+   "resposta": "{'savepoint': 'sp1', 'descartadas': 0, 'linhas': 0, 'transaction_id': 1788799736955, 'transaction_state': 'ACTIVE'}"
+  },
+  {
+   "sql": "COMMIT",
+   "op": "commit",
+   "ok": true,
+   "resposta": "{'transaction_id': 1788799736955, 'transaction_state': 'COMMITTED', 'gravadas': 0, 'ms': 0}"
+  },
+  {
+   "sql": "AS OF / historico da linha",
+   "op": "diario",
+   "ok": true,
+   "resposta": "{'total': 9, 'eventos': [{'quando': '2026-09-07 16:48:56,984', 'carimbo_ms': 1788799736984, 'operacao': 'inclusao', 'rowid': 5, 'versao': 1, 'usuario': 0}, {'quando': '2026-09-07 16:48:56,984', 'carimbo_ms': 1788799736984, 'operacao': 'inclusao', 'rowid': 6, 'versao': 1, 'usuario': 0}, {'quando': '2026-09-07 16:48:56,986', 'carimbo_ms': 1788799736986, 'operacao': 'alteracao', 'rowid': 1, 'versao'…"
+  },
+  {
+   "sql": "lixeira (nao ha equivalente em SQL)",
+   "op": "lixeira",
+   "ok": true,
+   "resposta": "{'database': 'loja', 'tabela': 'clientes', 'total': 0, 'bytes': 64, 'anexos_carregados': False, 'colunas': [{'nome': 'id', 'rotulo': 'id', 'tipo': 'Sequence', 'nullable': False, 'sistema': False}, {'nome': 'nome', 'rotulo': 'nome', 'tipo': 'Str(60)', 'nullable': True, 'sistema': False}, {'nome': 'cidade', 'rotulo': 'cidade', 'tipo': 'Str(40)', 'nullable': True, 'sistema': False}, {'nome': 'saldo'…"
+  }
+ ],
+ "conferencia": [
+  {
+   "o_que": "config: os interruptores de durabilidade e o bloco de papeis",
+   "op": "config",
+   "ok": true,
+   "resposta": "{'bind': '127.0.0.1:6110', 'base': '/tmp/phx-f2-10089/dados', 'base_absoluta': '/tmp/phx-f2-10089/dados', 'token': '(oculto)', 'max_linhas': 1000, 'timeout_s': 30, 'log_acessos': '/tmp/phx-f2-10089/acessos.log', 'ips_permitidos': [], 'conexoes_max': 64, 'recursos': {'durabilidade': 'por_lote', 'exclusao_na_janela': False, 'lote_operacoes': 200, 'lote_milissegundos': 200, 'cache_paginas': 2048, 'diario_volume_mib': 0, 'carga_prazo_min': 30, 'transacao_prazo_min': 5, 'transacao_max_linhas': 100000, 'transacao_lock_timeout_ms': 500, 'transacao_statement_ms': 0, 'memoria_max_mb': 0, 'threads': 0, 'cpu_percentual': 100, 'nucleos_efetivos': 4, 'conexoes_max': 64, 'usuarios_max': 0}, 'somente_leitura': False, 'espelho': False, 'replicacao': {'papel': 'isolado', 'envio': '', 'retorno': '', 'id_servidor': '', 'imagem_da_linha': False, 'replicas_autorizadas': [], 'origens': []}, 'seguranca': {'co…"
+  },
+  {
+   "o_que": "jobs: ha campo que desligue o job na replica?",
+   "op": "jobs",
+   "ok": true,
+   "resposta": "{'arquivo': 'jobs.json', 'log': 'jobs.log', 'relogio_no_ar': False, 'aviso_email': {'ligado': False, 'email_ligado': False, 'avisar_jobs': False, 'para': [], 'repetir_horas': 6}, 'jobs': [{'nome': 'quebra', 'descricao': 'job que falha de proposito, para provar o rele', 'ligado': False, 'usuario': '', 'cada_minutos': 60, 'pedido': {'op': 'varrer', 'database': 'naoexiste', 'tabela': 'naoexiste'}, 'agenda': 'a cada 1 h', 'op': 'varrer', 'ultimo_ms': None, 'vencido': False, 'rodando': False, 'estado': 'desligado', 'parado': False, 'ultima': {'quando_ms': 1788799417014, 'quando': '2026-09-07 16:43:37,014', 'job': 'quebra', 'op': 'varrer', 'usuario': '', 'ok': False, 'duracao_ms': 0, 'detalhe': '[SP000018] nao encontrado: database naoexiste nao existe em /tmp/phx-f5-20884/a/dados'}, 'proximo_ms': None}], 'historico': [{'quando_ms': 1788799417014, 'quando': '2026-09-07 16:43:37,014', 'job': 'q…"
+  },
+  {
+   "o_que": "replicacao_estado: o source guarda a posicao de cada replica?",
+   "op": "replicacao_estado",
+   "ok": true,
+   "resposta": "{'papel': 'isolado', 'papel_configurado': 'isolado', 'id_servidor': '', 'somente_leitura': False, 'origens': {}}"
+  },
+  {
+   "o_que": "corpo de rotina: WHILE (passa)",
+   "op": "sql",
+   "ok": true,
+   "resposta": "{'procedimento': 'p3', 'parametros': 0, 'criado': True}"
+  },
+  {
+   "o_que": "corpo de rotina: INSERT (passa)",
+   "op": "sql",
+   "ok": true,
+   "resposta": "{'procedimento': 'p6', 'parametros': 1, 'criado': True}"
+  },
+  {
+   "o_que": "corpo de rotina: CALL do que passou",
+   "op": "sql",
+   "ok": true,
+   "resposta": "{'procedimento': 'p6', 'saida': {}}"
+  },
+  {
+   "o_que": "corpo de rotina: UPDATE (recusa)",
+   "op": "sql",
+   "ok": false,
+   "resposta": "[SP000018] esquema invalido: SQL, coluna 7: UPDATE dentro de rotina ainda nao existe: o motor atualiza e exclui por rowid, e traduzir o WHERE pede o planejador. O que ja da: INSERT e SELECT … INTO"
+  },
+  {
+   "o_que": "corpo de rotina: CASE (recusa)",
+   "op": "sql",
+   "ok": false,
+   "resposta": "[SP000018] esquema invalido: SQL, coluna 22: CASE nao existe no corpo; escreva com IF/ELSEIF/ELSE"
+  },
+  {
+   "o_que": "corpo de rotina: CURSOR (recusa)",
+   "op": "sql",
+   "ok": false,
+   "resposta": "[SP000018] esquema invalido: SQL, coluna 17: o tipo CURSOR nao existe em rotina; use INT, DECIMAL(p,s), VARCHAR(n), BOOL ou DATE (que viaja como texto)"
+  },
+  {
+   "o_que": "corpo de rotina: transacao (recusa)",
+   "op": "sql",
+   "ok": false,
+   "resposta": "[SP000018] esquema invalido: SQL, coluna 7: transacao e comando de SESSAO e nao cabe num corpo de rotina: ela pertence a CONEXAO, e o corpo roda dentro de UM pedido. Abra a transacao pela conexao e chame a rotina de dentro dela"
+  }
+ ]
+}

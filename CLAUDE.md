@@ -36,9 +36,10 @@ anunciando sucesso.** O `pagina-dos-pedidos.py` gravava a página, gravava a
 contagem, imprimia três linhas de êxito e pulava o painel do dossiê — porque o
 alvo do painel só existia se viesse por argumento. Gerador que faz menos do que
 o nome dele promete tem de dizer que fez menos. **Nenhum número visível se digita
-mais**: são **dez** geradores, listados no `LEIA-ME.md` da pasta — eram nove
+mais**: são **onze** geradores, listados no `LEIA-ME.md` da pasta — eram nove
 nesta conta até 07/09/2026, porque o `trio-de-motores.py` escrevia no dossiê e
-estava **fora da receita**, então quem a seguia nunca o rodava. Eles
+estava **fora da receita**, então quem a seguia nunca o rodava; o décimo
+primeiro é o `perguntas-no-dossie.py`, a seção 36, que lê as respostas do PDF. Eles
 escrevem o título, o selo, o painel da capa, o rodapé, os idiomas, a bancada, o
 painel da replicação, os pedidos, a cobertura por área, as capturas, os tetos
 da trava, a tabela do que ainda falta aqui, as figuras do motor — e a

@@ -1,0 +1,28 @@
+{
+  "quando_utc": "2026-09-07 16:43:36",
+  "commit": "a56a165",
+  "versao": "phxsqld 0.18.0 (a56a16563355-sujo) x86_64-unknown-linux-gnu",
+  "controle_instrumento_assunto": "PhxSql: job quebra falhou",
+  "controle_instrumento": true,
+  "permitido_emails": 0,
+  "permitido_bloqueios": 0,
+  "recusa_comando": "[SP000025] acesso negado: operacao excluir_tabela esta proibida neste servidor; o IP foi bloqueado",
+  "bloqueio": {
+    "ip": "127.0.0.1",
+    "desde": "2026-09-07 16:43:38,117",
+    "desde_ms": 1788799418117,
+    "ate": "2026-09-07 17:43:38,117",
+    "ate_ms": 1788803018117,
+    "motivo": "comando proibido pela politica",
+    "comando": "excluir_tabela",
+    "tentativas": 1,
+    "firewall": false
+  },
+  "emails_da_violacao": 1,
+  "recusa_pos_bloqueio": "[SP000025] acesso negado: bloqueado desde 2026-09-07 16:43:38,117 ate 2026-09-07 17:43:38,117 por comando proibido pela politica (excluir_tabela)",
+  "emails_da_base_proibida": 1,
+  "recusa_base": "[SP000025] acesso negado: a base financeiro esta proibida neste servidor; o IP foi bloqueado",
+  "emails_sem_avisar_seguranca": 0,
+  "emails_no_total": 3,
+  "falhas": []
+}

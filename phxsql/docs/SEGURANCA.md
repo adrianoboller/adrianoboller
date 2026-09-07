@@ -140,6 +140,81 @@ roda na máquina, mexe no arquivo sem passar pela porta, e o servidor relê
 sozinho. Quem quiser a exceção pede por ela: `"whitelist": ["127.0.0.1"]`, que
 é o que o exemplo de config sugere.
 
+### O aviso ao administrador, por e-mail
+
+Até 07/09/2026 a violação grave era **muda**: `violacao_grave` recusava,
+bloqueava o IP e escrevia `BLOQUEADO …` no erro padrão — e mais nada. Os cinco
+`email::enviar` do servidor eram promoção de master, cluster degradado, job que
+falhou, job parado e disco apertado; **nenhum** era a segurança. Quem não
+estivesse lendo o log naquele minuto não ficava sabendo.
+
+Hoje o bloqueio avisa, **se alguém pedir**:
+
+```json
+"alertas": {
+  "email": {
+    "ligado": true,
+    "avisar_seguranca": true,
+    "servidor": "127.0.0.1", "porta": 25,
+    "de": "phxsql@empresa.com.br", "para": ["admin@empresa.com.br"]
+  }
+}
+```
+
+`avisar_seguranca` **nasce falso**, e é separado do `ligado` pelo mesmo motivo
+do `avisar_jobs`: quem configurou o relé só para o disco apertado não pode
+começar a receber aviso de segurança por causa de uma versão nova. Guarda nova
+entra pedida, não imposta.
+
+A mensagem, colada da bancada:
+
+```
+assunto: PhxSql: IP 127.0.0.1 bloqueado (comando proibido pela politica)
+
+  O PhxSql bloqueou um endereço por violação grave.
+
+    endereço    127.0.0.1
+    motivo      comando proibido pela politica
+    operação    excluir_tabela
+    tentativas  1
+    desde       2026-09-07 16:38:48,598
+    até         2026-09-07 17:38:48,598
+    firewall    sem regra (não configurado, ou a regra falhou)
+
+  A operação foi recusada e o endereço está na blacklist.
+  Para soltar: phxsqld --desbloquear 127.0.0.1
+  Servidor PhxSql 0.18.0
+```
+
+Três coisas decididas, e o preço de cada uma:
+
+1. **O e-mail sai do bloqueio, não da tentativa.** Violação leve — token
+   errado, senha errada — não manda nada até virar bloqueio: um varredor de
+   portas mandaria uma mensagem por segundo.
+2. **O corpo NUNCA carrega o pedido.** Leva o IP, o motivo, a operação e a
+   hora. Um `login` recusado por política traz a senha dentro do próprio
+   pedido, e colar o pedido no e-mail seria mandar a senha de alguém para a
+   caixa do administrador.
+3. **Há silêncio por IP**, com o `alertas.repetir_horas` do disco e dos jobs.
+   `Blacklist::bloquear` *substitui* o bloqueio a cada violação, então uma
+   conexão já aberta que insista geraria um e-mail por tentativa — quem ataca
+   escolheria quantas mensagens o administrador recebe. O preço: uma segunda
+   investida do mesmo IP dentro da janela não manda segundo e-mail; ela
+   continua na blacklist e no `acessos.log`.
+
+O envio acontece em **linha de execução própria**: quem dispara é o portão de
+política, no caminho de um pedido da rede, e um relé fora do ar seguraria a
+resposta de quem pediu pelo `timeout_s` inteiro.
+
+Medido em 2026-09-07 16:38 UTC por `python3 bancada/proibidos/provar.py`, com
+um SMTP falso na porta 6510 — **21 afirmações, 0 falhas**: 1 e-mail no comando
+proibido, 1 na base proibida, **0** no comando permitido (controle positivo) e
+**0** com `avisar_seguranca` falso. O controle do *instrumento* vem antes de
+tudo: a bancada dispara primeiro um aviso que o motor já sabia mandar (job que
+falhou), porque um SMTP falso que não recebe nada não prova ausência de
+e-mail — prova que o SMTP falso não presta.
+
+
 ---
 
 ## 4. `blacklist.json`

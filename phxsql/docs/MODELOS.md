@@ -262,6 +262,42 @@ e eu escrevi isso como comodidade de bancada — não era: era o *pull* dizendo
 que o master não tem como fazer ninguém buscar, que é exatamente o obstáculo
 ao quórum. O andaime foi o achado.
 
+### Rodada das 26 perguntas — 7 de setembro de 2026
+
+Três perguntas abertas, vinte e seis itens de A a Z, um PDF e a atualização
+do dossiê. O trabalho se dividiu em **oito frentes paralelas**, cada uma com
+faixa de portas própria e o mesmo contrato de resposta (`docs/pdf/LEIA-ME.md`),
+mais o lote do orquestrador. A regra de escalão foi a de sempre — **«o erro se
+vê?»** — e é ela que separa as duas colunas:
+
+| frente | itens | escalão | por quê |
+|---|---|---|---|
+| F1 — SQL e exemplos | A E F G H | **mecânico** | cada comando vai ao motor e volta `ok`/erro; o resultado se confere sozinho — e foi ela que achou três divergências doc×motor, porque o erro salta |
+| F2 — gaps dos outros motores | B C D O P Q | **forte** | «essencial» é julgamento com critério escrito, e cada gap listado tem de vir com a recusa colada; listar demais ou de menos não aparece em teste nenhum |
+| F3 — replicação, cluster, quórum | I J T | **mecânico** | as bancadas existiam; o trabalho era rodá-las e colar — e ainda assim ela achou que escalonar a quente não funciona, porque exercitou em vez de ler |
+| F4 — conexões e DBLINK | K L | **mecânico** | nativo, ODBC, REST, FFI e dblink têm bancada; o erro aparece como falha de conferência (73/0, 40/0, 44/0, 10/10) |
+| F5 — diretivas e comandos proibidos | M X | **forte** | permissão é portão, e portão errado não falha em teste: falha no dia em que alguém entra por onde não devia; e o e-mail da violação podia exigir código no servidor |
+| F6 — segurança da porta e injeção | W Y | **forte** | a bateria tem de provar o que o motor recusa E o que engole, e o segundo é o que ninguém vê; proposta de bloqueio por injeção é decisão de política |
+| F7 — partições, transação travada, backups | R S U V | **mecânico** | bancadas e documentação existiam; um milhão de linhas em dez volumes é roteiro, e os prazos da transação têm código de erro documentado para conferir |
+| F8 — telas de configuração | N | **mecânico** | captura e exercício de salvar/recarregar; o erro (segredo em claro, campo esticado) salta na tela |
+| orquestrador | 0.1 0.2 0.3 Z, gerador do PDF, Figuras 1 e 8, integração | **forte** | a integração é onde o defeito do encontro aparece — e apareceu: o `.fts` faltava em três inventários, e eu consertei o errado primeiro |
+
+**Os papéis, e o que cada um fez ou por que foi dispensado:**
+
+| papel | nesta rodada |
+|---|---|
+| **A — orquestrador** | dividiu em oito frentes com faixa de portas e contrato comum; integrou, e a integração achou o que nenhuma frente via: o `.fts` faltava em **três** inventários (Figura 1, Figura 8, tabela do `FORMATO.md`) e eu consertei a figura errada primeiro; e o encontro F5×F6 foi provado rodando as duas baterias de F6 contra o binário com o código de F5 — 13/0/3 e 6/0/2, idênticas |
+| **B — engenheiro** | convocado em uma frente só, e ali entregou inteiro: o e-mail da violação grave **não existia** — F5 mediu antes (0 e-mails com o SMTP falso provadamente funcionando), implementou dentro do único portão (`violacao_grave`), opt-in, envio em thread própria, silêncio por IP, corpo sem o pedido; `fmt`, `clippy` zero, 1.674 testes |
+| **C — DBA** | convocado no `.fts`: por dentro é um `.ndx` (mesma assinatura, CRC), derivado, **fora do desfazer** — e é ele quem diz que o `.tx` fica fora da Figura 1 de propósito, por ser do database e não da tabela; e na sequência: contador único do `.reg`, o índice único recusa a repetição, não o contador |
+| **D — zelador** | **dispensado de rodar**: cada frente derrubou por PID guardado e apagou o `/tmp/phx-f*` dela — conferido no fim, zero sobrou; e a suíte inteira deixou **0** lixo em `/tmp` |
+| **E — designer** | convocado no PDF (tipografia da marca, tema de impressão, uma olhada na capa e numa resposta — que achou o negrito com código dentro saindo cru), nas Figuras 1 e 8 (provadas no navegador) e na seção 36 (provada aberta e fechada) |
+| **F — prova real** | em toda frente: F1 exercitou os 56 comandos; F4 as 73/40/44/10 conferências; F5 comentou a chamada do e-mail e viu o teste **falhar**; F6 provou o que o motor engole com controle positivo; F7 mediu os prazos com o código de erro colado; F8 salvou, recarregou e conferiu o arquivo em disco |
+| **G — QA** | catraca nova nenhuma, e é decisão: os achados viraram **pedidos** (213–222), não tetos — teto sem medidor não segura, e o medidor de cada um ainda não existe |
+| **H — documentação** | 29 respostas no contrato, `FORMATO.md` (linha e §17), `SEGURANCA.md` §3 (F5), `TESTES.md` §17, `LEIA-ME` do dossiê e do PDF, `CLAUDE.md` (onze geradores), duas cognições — e o gerador da seção 36, que lê **as mesmas** respostas do PDF |
+| **I — versionador** | commit por decisão, backup provado, quatro páginas republicadas, o PDF entregue |
+| **J — pesquisador** | F2: os gaps dos cinco motores **conferidos contra o motor de hoje**, com a recusa colada em cada um — sprint antigo que fechou aparece fechado com a prova, e não some da lista |
+
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

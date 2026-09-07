@@ -658,6 +658,9 @@ pub struct Servidor {
     /// Quando cada aviso de job saiu por e-mail, por chave `falha:nome` /
     /// `parado:nome` -- o silencio entre avisos repetidos, como o do disco.
     avisos_de_jobs: Mutex<HashMap<String, i64>>,
+    /// Quando o aviso de VIOLACAO GRAVE de cada IP saiu por e-mail, por chave
+    /// `grave:<ip>` -- o mesmo silencio dos jobs e do disco.
+    avisos_de_seguranca: Mutex<HashMap<String, i64>>,
     /// A porta de dados esta aceitando conexao agora?
     ///
     /// Parada, o processo continua vivo e a interface web continua no ar --
@@ -791,6 +794,7 @@ impl Servidor {
             relogio_de_jobs: AtomicBool::new(false),
             jobs_rodando: Mutex::new(Vec::new()),
             avisos_de_jobs: Mutex::new(HashMap::new()),
+            avisos_de_seguranca: Mutex::new(HashMap::new()),
             porta_no_ar: AtomicBool::new(false),
             parar_de_aceitar: AtomicBool::new(false),
             proximo_ouvinte: Mutex::new(None),
@@ -1288,16 +1292,21 @@ impl Servidor {
     /// disso: dizer "o IP foi bloqueado" quando a whitelist protegeu ou a
     /// tentativa so contou seria mentir para o cliente.
     fn violacao_grave(&self, ip: &str, comando: &str, motivo: &str) -> crate::blacklist::Grave {
-        let Ok(mut lista) = self.lista_negra.lock() else {
-            return crate::blacklist::Grave::Protegido;
+        // A trava sai de cena antes do e-mail: falar com um rele com a lista
+        // negra na mao pararia toda conexao que precisasse consultar um
+        // bloqueio, e o rele e quem manda no tempo dessa conversa.
+        let resultado = {
+            let Ok(mut lista) = self.lista_negra.lock() else {
+                return crate::blacklist::Grave::Protegido;
+            };
+            lista.violacao_grave(
+                ip,
+                comando,
+                motivo,
+                &self.config.politica,
+                crate::agora_ms(),
+            )
         };
-        let resultado = lista.violacao_grave(
-            ip,
-            comando,
-            motivo,
-            &self.config.politica,
-            crate::agora_ms(),
-        );
         if let crate::blacklist::Grave::Bloqueado(b, aviso) = &resultado {
             eprintln!(
                 "BLOQUEADO {ip} ate {} -- {} ({})",
@@ -1308,8 +1317,106 @@ impl Servidor {
             if let Some(a) = aviso {
                 eprintln!("AVISO: {a}");
             }
+            self.avisar_violacao_por_email(b);
         }
         resultado
+    }
+
+    /// Avisa o administrador, por e-mail, que um IP acabou de ser bloqueado.
+    ///
+    /// # Por que aqui, e nao em cada portao
+    ///
+    /// E o mesmo motivo do portao de permissao ser um so: espalhar o aviso
+    /// pelos seis pontos que chamam `violacao_grave` faria o que alguem
+    /// esquecesse virar a violacao silenciosa -- e ninguem descobre por
+    /// leitura. Este e o unico lugar por onde um bloqueio nasce.
+    ///
+    /// # Pedido, nao imposto
+    ///
+    /// Exige `alertas.email.ligado` E `alertas.email.avisar_seguranca`, que
+    /// nasce falso. Quem configurou o rele so para o disco apertado nao pode
+    /// comecar a receber aviso de seguranca por causa de uma versao nova --
+    /// e o mesmo desenho do `avisar_jobs`.
+    ///
+    /// # O silencio, e o que ele custa
+    ///
+    /// `Blacklist::bloquear` SUBSTITUI o bloqueio do IP a cada violacao, entao
+    /// uma conexao ja aberta que insista no comando proibido geraria um e-mail
+    /// por tentativa: quem ataca escolheria quantas mensagens o administrador
+    /// recebe. A chave e o IP e o silencio e o `alertas.repetir_horas` do
+    /// disco e dos jobs -- uma lei so para a casa inteira. O preco esta
+    /// escrito: uma segunda investida do MESMO IP dentro da janela nao manda
+    /// segundo e-mail; ela continua na blacklist e no `acessos.log`.
+    fn avisar_violacao_por_email(&self, b: &crate::blacklist::Bloqueio) {
+        let email = self.config.alertas.email.clone();
+        if !email.ligado || !email.avisar_seguranca {
+            return;
+        }
+        let agora = crate::agora_ms();
+        let silencio = self.config.alertas.repetir_horas as i64 * 3_600_000;
+        {
+            let Ok(mut avisados) = self.avisos_de_seguranca.lock() else {
+                return;
+            };
+            let chave = format!("grave:{}", b.ip);
+            if !crate::jobs::pode_avisar(&mut avisados, &chave, agora, silencio) {
+                return;
+            }
+        }
+        let assunto = format!("PhxSql: IP {} bloqueado ({})", b.ip, b.motivo);
+        let corpo = Self::texto_da_violacao(b);
+        // Linha de execucao propria pelo mesmo motivo do aviso de job, com um
+        // peso a mais: quem dispara aqui e o portao de politica, no caminho de
+        // um pedido da rede -- um rele fora do ar seguraria a RESPOSTA de quem
+        // pediu pelo `timeout_s` inteiro.
+        self.telemetria.subir(
+            "aviso-seguranca",
+            "entrega UM e-mail de violacao grave e sai; existe em thread \
+             propria porque quem dispara e o portao de politica, no caminho \
+             de um pedido da rede -- e um rele fora do ar seguraria a resposta",
+            "servico",
+            agora,
+            move |fio| {
+                fio.fazendo("falando com o rele de e-mail");
+                match crate::email::enviar(&email, &assunto, &corpo) {
+                    Ok(r) => eprintln!("aviso de seguranca enviado: {r}"),
+                    // Falhar em avisar tambem e noticia, como no disco.
+                    Err(e) => eprintln!("aviso de seguranca NAO ENVIADO: {e}"),
+                }
+            },
+        );
+    }
+
+    /// O corpo do e-mail da violacao grave.
+    ///
+    /// Leva o IP, o motivo, a OPERACAO pedida e a hora -- e nada do corpo do
+    /// pedido. Senha nunca em texto puro vale aqui como em todo lugar: um
+    /// `login` recusado por politica carrega a senha no proprio pedido, e
+    /// colar o pedido no e-mail seria mandar a senha de alguem para a caixa
+    /// do administrador.
+    fn texto_da_violacao(b: &crate::blacklist::Bloqueio) -> String {
+        let mut t = String::new();
+        t.push_str("O PhxSql bloqueou um endereço por violação grave.\n\n");
+        t.push_str(&format!("  endereço    {}\n", b.ip));
+        t.push_str(&format!("  motivo      {}\n", b.motivo));
+        t.push_str(&format!("  operação    {}\n", b.comando));
+        t.push_str(&format!("  tentativas  {}\n", b.tentativas));
+        t.push_str(&format!("  desde       {}\n", b.desde()));
+        t.push_str(&format!("  até         {}\n", b.ate()));
+        t.push_str(&format!(
+            "  firewall    {}\n\n",
+            if b.firewall {
+                "regra aplicada"
+            } else {
+                "sem regra (não configurado, ou a regra falhou)"
+            }
+        ));
+        t.push_str("A operação foi recusada e o endereço está na blacklist.\n");
+        t.push_str("Para soltar: phxsqld --desbloquear ");
+        t.push_str(&b.ip);
+        t.push('\n');
+        t.push_str(&format!("Servidor PhxSql {VERSAO}\n"));
+        t
     }
 
     /// Tentativa leve: conta, e bloqueia se passar do limite na janela.
@@ -16572,6 +16679,154 @@ mod testes_firewall_e_mensagens {
             "[SP000025] acesso negado: operacao excluir_tabela esta proibida neste servidor; o IP foi bloqueado"
         );
         assert!(s.barrado("203.0.113.9", crate::agora_ms()).is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Um SMTP falso do tamanho do que o `email.rs` fala: 220/250/354/250/221.
+    ///
+    /// Existe porque teste unitario NAO prova entrega de e-mail -- soquete
+    /// prova, e e a mesma licao do `BULKINSERT`. Devolve a porta efemera e o
+    /// canal por onde cada mensagem recebida chega inteira.
+    fn rele_falso() -> (u16, std::sync::mpsc::Receiver<String>) {
+        use std::io::{BufRead, BufReader, Write};
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let (envia, recebe) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for fluxo in ouvinte.incoming() {
+                let Ok(fluxo) = fluxo else { return };
+                let envia = envia.clone();
+                std::thread::spawn(move || {
+                    let Ok(mut escrita) = fluxo.try_clone() else {
+                        return;
+                    };
+                    let mut leitor = BufReader::new(fluxo);
+                    let _ = escrita.write_all(b"220 rele-falso\r\n");
+                    let mut linha = String::new();
+                    while leitor.read_line(&mut linha).unwrap_or(0) > 0 {
+                        let comando = linha.trim_end().to_uppercase();
+                        linha.clear();
+                        if comando == "DATA" {
+                            let _ = escrita.write_all(b"354 manda\r\n");
+                            let mut corpo = String::new();
+                            let mut l = String::new();
+                            while leitor.read_line(&mut l).unwrap_or(0) > 0 {
+                                if l.trim_end() == "." {
+                                    break;
+                                }
+                                corpo.push_str(&l);
+                                l.clear();
+                            }
+                            let _ = envia.send(corpo);
+                            let _ = escrita.write_all(b"250 OK fila-1\r\n");
+                        } else if comando == "QUIT" {
+                            let _ = escrita.write_all(b"221 tchau\r\n");
+                            return;
+                        } else {
+                            let _ = escrita.write_all(b"250 OK\r\n");
+                        }
+                    }
+                });
+            }
+        });
+        (porta, recebe)
+    }
+
+    /// Liga o rele falso nesta configuracao, com o aviso de seguranca pedido.
+    fn com_rele(c: &mut Config, porta: u16, avisar: bool) {
+        c.alertas.email.ligado = true;
+        c.alertas.email.avisar_seguranca = avisar;
+        c.alertas.email.servidor = "127.0.0.1".into();
+        c.alertas.email.porta = porta;
+        c.alertas.email.de = "phxsql@exemplo.com".into();
+        c.alertas.email.para = vec!["admin@exemplo.com".into()];
+        c.alertas.email.timeout_s = 5;
+    }
+
+    /// O aviso ao administrador, nos DOIS sentidos: o comando proibido bloqueia
+    /// E manda e-mail; o permitido nao manda nada.
+    ///
+    /// Ate 07/09/2026 a violacao grave so escrevia no erro padrao: o IP era
+    /// bloqueado e ninguem era avisado. Reponha o defeito tirando a chamada a
+    /// `avisar_violacao_por_email` e este teste falha na espera do rele.
+    #[test]
+    fn comando_proibido_avisa_o_administrador_por_email() {
+        let dir = dir_temp("grave-email");
+        let (porta, caixa) = rele_falso();
+        let mut c = config_base(&dir);
+        c.politica.comandos_proibidos = vec!["excluir_tabela".into()];
+        com_rele(&mut c, porta, true);
+        let s = Servidor::novo(c).unwrap();
+        let mut sessao = Sessao::default();
+
+        // Sentido 1 -- o PERMITIDO nao manda nada. Vem primeiro de proposito:
+        // o silencio por IP e por chave, e medir o controle depois do proibido
+        // deixaria o teste passar por engano.
+        let (_, _, r) = s.despachar(
+            r#"{"token":"t","op":"bancos"}"#,
+            &mut sessao,
+            "203.0.113.20",
+        );
+        r.unwrap();
+        assert!(
+            caixa.recv_timeout(Duration::from_millis(700)).is_err(),
+            "comando permitido gerou e-mail"
+        );
+
+        // Sentido 2 -- o PROIBIDO recusa, bloqueia e manda.
+        let (_, _, r) = s.despachar(
+            r#"{"token":"t","op":"excluir_tabela","database":"x","tabela":"y"}"#,
+            &mut sessao,
+            "203.0.113.21",
+        );
+        assert!(r.unwrap_err().to_string().contains("o IP foi bloqueado"));
+        assert!(s.barrado("203.0.113.21", crate::agora_ms()).is_some());
+
+        let bruto = caixa
+            .recv_timeout(Duration::from_secs(15))
+            .expect("nenhum e-mail chegou ao rele depois do comando proibido");
+        let (cabecalho, corpo) = bruto.split_once("\r\n\r\n").unwrap();
+        assert!(cabecalho.contains("To: admin@exemplo.com"), "{cabecalho}");
+        assert!(
+            cabecalho.contains("203.0.113.21"),
+            "o assunto tem de nomear o IP: {cabecalho}"
+        );
+        let texto = phxsql_core::base64::decodificar_texto(&corpo.replace("\r\n", "")).unwrap();
+        assert!(texto.contains("203.0.113.21"), "{texto}");
+        assert!(texto.contains("excluir_tabela"), "{texto}");
+        assert!(texto.contains("comando proibido pela politica"), "{texto}");
+        // Senha nunca em texto puro: o corpo leva o IP, o motivo e a operacao,
+        // e NUNCA o pedido -- um `login` recusado carrega a senha nele.
+        assert!(!texto.contains("token"), "o corpo vazou o pedido: {texto}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Guarda nova entra PEDIDA, nao imposta: sem `avisar_seguranca`, o
+    /// bloqueio continua acontecendo exatamente como antes e e-mail nenhum
+    /// sai. E o comportamento de quem configurou o rele so para o disco.
+    #[test]
+    fn sem_avisar_seguranca_o_bloqueio_acontece_calado() {
+        let dir = dir_temp("grave-calado");
+        let (porta, caixa) = rele_falso();
+        let mut c = config_base(&dir);
+        c.politica.comandos_proibidos = vec!["excluir_tabela".into()];
+        com_rele(&mut c, porta, false);
+        let s = Servidor::novo(c).unwrap();
+        let mut sessao = Sessao::default();
+        let (_, _, r) = s.despachar(
+            r#"{"token":"t","op":"excluir_tabela","database":"x","tabela":"y"}"#,
+            &mut sessao,
+            "203.0.113.22",
+        );
+        assert!(r.unwrap_err().to_string().contains("o IP foi bloqueado"));
+        assert!(
+            s.barrado("203.0.113.22", crate::agora_ms()).is_some(),
+            "o bloqueio nao pode depender do e-mail"
+        );
+        assert!(
+            caixa.recv_timeout(Duration::from_millis(700)).is_err(),
+            "avisar_seguranca falso mandou e-mail assim mesmo"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

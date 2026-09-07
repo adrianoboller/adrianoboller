@@ -1,0 +1,191 @@
+{
+  "pulso_recusado": {
+    "ok": false,
+    "op": "cluster_pulso",
+    "erro": "[SP000025] acesso negado: o no \"no4\" nao esta na lista de nos deste cluster",
+    "codigo": 4001,
+    "nome": "ACESSO_NEGADO",
+    "classe": "acesso",
+    "sprint": "SP000025",
+    "repetir": false,
+    "ms": 0
+  },
+  "no4_isolado": {
+    "id": "no4",
+    "papel": "replica",
+    "epoca": 0,
+    "master": null,
+    "escrita_liberada": false,
+    "degradado": [
+      "no no1 nunca deu pulso",
+      "no no2 nunca deu pulso",
+      "no no3 nunca deu pulso",
+      "master calado ha 8s e sem maioria visivel (1 de 4): NAO promovo"
+    ],
+    "janela_inatividade_s": 8,
+    "nos": [
+      {
+        "id": "no1",
+        "endereco": "127.0.0.1:6300",
+        "este": false,
+        "papel": null,
+        "epoca": 0,
+        "posicao": 0,
+        "ultimo_pulso_ms": -1,
+        "vivo": false
+      },
+      {
+        "id": "no2",
+        "endereco": "127.0.0.1:6301",
+        "este": false,
+        "papel": null,
+        "epoca": 0,
+        "posicao": 0,
+        "ultimo_pulso_ms": -1,
+        "vivo": false
+      },
+      {
+        "id": "no3",
+        "endereco": "127.0.0.1:6302",
+        "este": false,
+        "papel": null,
+        "epoca": 0,
+        "posicao": 0,
+        "ultimo_pulso_ms": -1,
+        "vivo": false
+      },
+      {
+        "id": "no4",
+        "endereco": "127.0.0.1:6303",
+        "este": true,
+        "papel": "replica",
+        "epoca": 0,
+        "posicao": 0,
+        "ultimo_pulso_ms": 0,
+        "vivo": true
+      }
+    ]
+  },
+  "no1_antes_de_escalonar": {
+    "id": "no1",
+    "papel": "master",
+    "epoca": 0,
+    "master": {
+      "id": "no1",
+      "endereco": "127.0.0.1:6300"
+    },
+    "escrita_liberada": true,
+    "degradado": [],
+    "janela_inatividade_s": 8,
+    "nos": [
+      {
+        "id": "no1",
+        "endereco": "127.0.0.1:6300",
+        "este": true,
+        "papel": "master",
+        "epoca": 0,
+        "posicao": 300,
+        "ultimo_pulso_ms": 0,
+        "vivo": true
+      },
+      {
+        "id": "no2",
+        "endereco": "127.0.0.1:6301",
+        "este": false,
+        "papel": "replica",
+        "epoca": 0,
+        "posicao": 300,
+        "ultimo_pulso_ms": 766,
+        "vivo": true
+      },
+      {
+        "id": "no3",
+        "endereco": "127.0.0.1:6302",
+        "este": false,
+        "papel": "replica",
+        "epoca": 0,
+        "posicao": 300,
+        "ultimo_pulso_ms": 764,
+        "vivo": true
+      }
+    ]
+  },
+  "reinicio_no2_s": 0.37,
+  "reinicio_no3_s": 0.369,
+  "reinicio_no1_indisponivel_s": 0.004,
+  "reinicio_no1_total_s": 0.367,
+  "escalonamento_total_s": 1.741,
+  "retratos_finais": {
+    "no1": [
+      370,
+      "15a0c89c86780c04"
+    ],
+    "no2": [
+      370,
+      "15a0c89c86780c04"
+    ],
+    "no3": [
+      370,
+      "15a0c89c86780c04"
+    ],
+    "no4": [
+      370,
+      "15a0c89c86780c04"
+    ]
+  },
+  "estado_final": {
+    "id": "no1",
+    "papel": "master",
+    "epoca": 0,
+    "master": {
+      "id": "no1",
+      "endereco": "127.0.0.1:6300"
+    },
+    "escrita_liberada": true,
+    "degradado": [],
+    "janela_inatividade_s": 8,
+    "nos": [
+      {
+        "id": "no1",
+        "endereco": "127.0.0.1:6300",
+        "este": true,
+        "papel": "master",
+        "epoca": 0,
+        "posicao": 370,
+        "ultimo_pulso_ms": 0,
+        "vivo": true
+      },
+      {
+        "id": "no2",
+        "endereco": "127.0.0.1:6301",
+        "este": false,
+        "papel": "replica",
+        "epoca": 0,
+        "posicao": 300,
+        "ultimo_pulso_ms": 464,
+        "vivo": true
+      },
+      {
+        "id": "no3",
+        "endereco": "127.0.0.1:6302",
+        "este": false,
+        "papel": "replica",
+        "epoca": 0,
+        "posicao": 300,
+        "ultimo_pulso_ms": 463,
+        "vivo": true
+      },
+      {
+        "id": "no4",
+        "endereco": "127.0.0.1:6303",
+        "este": false,
+        "papel": "replica",
+        "epoca": 0,
+        "posicao": 370,
+        "ultimo_pulso_ms": 204,
+        "vivo": true
+      }
+    ]
+  },
+  "falhas": []
+}

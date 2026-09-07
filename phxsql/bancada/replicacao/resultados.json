@@ -1,20 +1,21 @@
 {
-  "master_linhas_s": 37810,
-  "replica_eventos_s": 36356,
-  "alcance_s": 2.8,
-  "retomada_subiu_ms": 418,
-  "retomada_alcance_s": 0.4,
+  "master_linhas_s": 33883,
+  "replica_eventos_s": 37311,
+  "alcance_s": 2.7,
+  "retomada_subiu_ms": 335,
+  "retomada_alcance_s": 0.3,
   "iguais_no_fim": true,
   "linhas": 105001,
   "atraso_ms": {
-    "1 insercao": 2014,
-    "1.000 insercoes em lote": 1168,
-    "1 alteracao": 826,
-    "1 exclusao suave": 970,
-    "1 restauracao": 835,
-    "1 exclusao fisica": 840,
-    "1 linha com memo de 200 KB": 826
+    "1 insercao": 2012,
+    "1.000 insercoes em lote": 1134,
+    "1 alteracao": 1527,
+    "1 exclusao suave": 1523,
+    "1 restauracao": 1368,
+    "1 exclusao fisica": 1463,
+    "1 linha com memo de 200 KB": 1557
   },
+  "atraso_ms_inclui": "o sono do laco da replica (2 s nesta bancada) MAIS o transporte. Nao e o custo de levar o dado: esse esta medido separado em bancada/quorum/resultados.json (levar_ms)",
   "custo_da_imagem": {
     "sem_imagem_linhas_s": 21740,
     "com_imagem_linhas_s": 19531,
@@ -30,5 +31,5 @@
   "versao": "0.18.0",
   "maquina": "quatro processos phxsqld em 127.0.0.1, no mesmo container",
   "topologia": "master -> slave01, slave02, slave03",
-  "maquina_ocupada": true
+  "maquina_ocupada": false
 }

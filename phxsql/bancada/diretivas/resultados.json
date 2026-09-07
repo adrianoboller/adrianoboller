@@ -1,0 +1,76 @@
+{
+  "quando_utc": "2026-09-07 16:43:43",
+  "commit": "a56a165",
+  "versao": "phxsqld 0.18.0 (a56a16563355-sujo) x86_64-unknown-linux-gnu",
+  "algoritmo": "pbkdf2-sha256$210000",
+  "diretivas": [
+    {
+      "id": 10,
+      "nome": "Ana Administradora",
+      "login": "ana",
+      "senha_hash": "pbkdf2-sha256$210000$96bfb6fd9e2dc5e2dcf24bd885410df5$7b8cc6570c14416274066a63745450b85a908f32062d7d2374bfdf108654e116",
+      "email": "ana@empresa.com.br",
+      "supervisor": true,
+      "ativo": true
+    },
+    {
+      "id": 11,
+      "nome": "Bruno DBA da loja",
+      "login": "bruno",
+      "senha_hash": "pbkdf2-sha256$210000$3ba4331e5c173cc16a6ffaea513e00f3$9b7835515eea87235ca19b80bd1960449387c4ee56933c0b10daac6b42d982dc",
+      "email": "bruno@empresa.com.br",
+      "supervisor": false,
+      "ativo": true,
+      "bases": {
+        "loja": {
+          "ler": true,
+          "inserir": true,
+          "alterar": true,
+          "excluir": true,
+          "criar": true,
+          "reindexar": true,
+          "diario": true,
+          "verificar": true,
+          "administrar": true
+        }
+      }
+    },
+    {
+      "id": 12,
+      "nome": "Carlos Consulta",
+      "login": "carlos",
+      "senha_hash": "pbkdf2-sha256$210000$5d044d53ba0e4b62d9b3a59dde85236e$5e078cad4e0eb7709a429fbd3b721123122d180acb78c1882eb3f30b535f4528",
+      "email": "carlos@empresa.com.br",
+      "supervisor": false,
+      "ativo": true,
+      "bases": {
+        "loja": {
+          "ler": true,
+          "inserir": true,
+          "alterar": true,
+          "tabelas": {
+            "folha": {}
+          }
+        }
+      }
+    }
+  ],
+  "usuarios_cli": "login          nome                     nivel      ativo    poder por base\nroot           Administrador do sistema supervisor sim      (supervisor: tudo em toda base)\nana            Ana Administradora       supervisor sim      (supervisor: tudo em toda base)\nbruno          Bruno DBA da loja        nenhum     sim      loja=ler+inserir+alterar+excluir+criar+reindexar+diario+verificar+administrar\ncarlos         Carlos Consulta          nenhum     sim      loja=ler+inserir+alterar\n",
+  "login_carlos": "{\"ok\":true,\"op\":\"login\",\"resultado\":{\"id\":12,\"nome\":\"Carlos Consulta\",\"login\":\"carlos\",\"email\":\"carlos@empresa.com.br\",\"telefone\":\"\",\"nivel\":\"nenhum\",\"supervisor\":false,\"ativo\":true,\"exige_chave\":false,\"bases\":{\"loja\":{\"ler\":true,\"inserir\":true,\"alterar\":true,\"excluir\":false,\"criar\":false,\"reindexar\":false,\"diario\":false,\"verificar\":false,\"administrar\":false,\"replicar\":false}},\"tabelas\":{\"loja\":{\"folha\":{\"ler\":false,\"inserir\":false,\"alterar\":false,\"excluir\":false,\"criar\":false,\"reindexar\":false,\"diario\":false,\"verificar\":false,\"administrar\":false,\"replicar\":false}}}},\"ms\":264}",
+  "quem_sou_ana": "{\"id\": 10, \"nome\": \"Ana Administradora\", \"login\": \"ana\", \"email\": \"ana@empresa.com.br\", \"telefone\": \"\", \"nivel\": \"admin\", \"supervisor\": true, \"ativo\": true, \"exige_chave\": false, \"bases\": {}, \"tabelas\": {}, \"ok\": true, \"op\": \"quem_sou\", \"ms\": 0}",
+  "bruno_negado_rh": "[SP000025] acesso negado: bruno nao tem permissao de ler em rh.cargos",
+  "carlos_negado_folha": "[SP000025] acesso negado: carlos nao tem permissao de ler em loja.folha",
+  "tabelas_de_carlos": [
+    "clientes"
+  ],
+  "portas_dos_fundos": {
+    "juntar": "[SP000025] acesso negado: carlos nao tem permissao de ler em loja.folha",
+    "unir": "[SP000025] acesso negado: carlos nao tem permissao de ler em loja.folha",
+    "pivotar": "[SP000025] acesso negado: carlos nao tem permissao de ler em loja.folha",
+    "sql": "[SP000025] acesso negado: carlos nao tem permissao de ler em loja.folha"
+  },
+  "usuarios_protocolo": "{\"ok\":true,\"op\":\"usuarios\",\"resultado\":[{\"id\":1,\"nome\":\"Administrador do sistema\",\"login\":\"root\",\"email\":\"root@empresa.com.br\",\"telefone\":\"\",\"nivel\":\"admin\",\"supervisor\":true,\"ativo\":true,\"exige_chave\":false,\"bases\":{},\"tabelas\":{}},{\"id\":10,\"nome\":\"Ana Administradora\",\"login\":\"ana\",\"email\":\"ana@empresa.com.br\",\"telefone\":\"\",\"nivel\":\"admin\",\"supervisor\":true,\"ativo\":true,\"exige_chave\":false,\"bases\":{},\"tabelas\":{}},{\"id\":11,\"nome\":\"Bruno DBA da loja\",\"login\":\"bruno\",\"email\":\"bruno@empresa.com.br\",\"telefone\":\"\",\"nivel\":\"nenhum\",\"supervisor\":false,\"ativo\":true,\"exige_chave\":false,\"bases\":{\"loja\":{\"ler\":true,\"inserir\":true,\"alterar\":true,\"excluir\":true,\"criar\":true,\"reindexar\":true,\"diario\":true,\"verificar\":true,\"administrar\":true,\"replicar\":false}},\"tabelas\":{}},{\"id\":12,\"nome\":\"Carlos Consulta\",\"login\":\"carlos\",\"email\":\"carlos@empresa.com.br\",\"telefone\":\"\",\"nivel\":\"nenhum\",\"supervisor\":false,\"ativo\":true,\"exige_chave\":false,\"bases\":{\"loja\":{\"ler\":true,\"inserir\":true,\"alterar\":true,\"excluir\":false,\"criar\":false,\"reindexar\":false,\"diario\":false,\"verificar\":false,\"administrar\":false,\"replicar\":false}},\"tabelas\":{\"loja\":{\"folha\":{\"ler\":false,\"inserir\":false,\"alterar\":false,\"excluir\":fal",
+  "negadas_no_log": 6,
+  "sem_login": "[SP000025] acesso negado: faca login antes: {\"op\":\"login\",\"usuario\":...,\"senha\":...}",
+  "falhas": []
+}

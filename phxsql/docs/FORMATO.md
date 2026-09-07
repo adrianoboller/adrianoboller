@@ -25,6 +25,7 @@ informação. Ver §7.
 | `.reason` | Por que cada linha foi excluída, e por quem | `PHXRSN\0\0` | sim | **só `administrar`** |
 | `.lgpd` | Quem alterou e quem leu as colunas de dado pessoal | `PHXLGP\0\0` | sim | **só `administrar`** |
 | `.pag` | Descritor de partição, em JSON | — (texto) | não | quem lê a tabela |
+| `.fts` | Índice de texto (termo → linhas), só se a tabela declara um | `PHXNDX\0\0` — é um `.ndx` por dentro | **não** | quem tem `ler` |
 
 Os três últimos são **os arquivos do administrador**, e a razão está no que
 cada um guarda. O `.trash` guarda o dado que alguém mandou apagar — quem só
@@ -2008,7 +2009,24 @@ escrita. Ela é apagada, e o disco continua como estava.
 
 ---
 
-## 17. O que este formato ainda não faz
+## 17. `.fts` — o índice de texto
+
+Entrou em 07/09/2026 (pedido 200) e **ficou fora desta tabela e das figuras do
+dossiê até o dono perguntar onde ele estava** — o inventário de arquivos de uma
+tabela mora em três lugares escritos à mão (esta tabela, a Figura 1 e a
+Figura 8 do dossiê), e nenhum sai do código. Fica registrado como o buraco que
+é: a lista certa é a de `arquivos_da_tabela` no `catalogo.rs`.
+
+O formato está inteiro em `docs/FTS.md` §3, e o essencial cabe em quatro
+linhas: é um **`.ndx` por dentro** (mesma assinatura `PHXNDX\0\0`, mesma
+versão, mesmo CRC de página), com uma chave por termo dobrado; tabela sem índice
+de texto declarado **não ganha o arquivo**; a declaração vive no `PSCH` como
+mais um tipo de índice (coluna + interruptor `dobrar`, padrão ligado); e ele é
+**derivado** — se reconstrói do `.reg` inteiro, como o `reindexar` faz com o
+`.ndx`, e por isso fica **fora do desfazer** de uma inserção que falha no
+meio (§2.1 do `FTS.md`).
+
+## 18. O que este formato ainda não faz
 
 Documentado aqui para não haver surpresa:
 

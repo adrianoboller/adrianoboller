@@ -58,6 +58,40 @@ fica, sem reprovar. É de propósito: guarda que afirmasse o defeito viraria
 catraca contra o próprio conserto. A leitura completa está em
 `docs/CLUSTER.md` §2.4, item 5.
 
+## Escalonar um nó vivo — `escalonar.py`
+
+O `provar.py` mede eleição e promoção com **três** nós fixos, declarados
+desde o arranque — ele nunca acrescenta um quarto. O pedido do dono («exemplo
+de script de Clusterizacao escalonamento», 07/09/2026) pergunta outra coisa:
+dá para **crescer** um cluster que já está no ar? A resposta só existia numa
+linha de tabela do `docs/CLUSTER.md` — *"Adicionar/remover servidor a
+quente: ✗ — a lista de nós é do `config.json`; mudar é editar e reiniciar"* —
+e linha de tabela não é prova. `escalonar.py` exercita a linha.
+
+Ele mede as **duas metades** da resposta. A quente (sem tocar nos três nós
+antigos) prova, pelo protocolo, que **não funciona**: `op_cluster_pulso`
+(`servidor.rs`) recusa o pulso de um id fora da própria lista `cluster.nos`
+de quem RECEBE, com erro de autorização — e um nó novo, de pé, com a lista de
+quatro na PRÓPRIA configuração, fica isolado pela janela inteira porque os
+três antigos nunca tentam falar com ele (não está na lista deles: não há por
+que tentar). A segunda metade mede o caminho que funciona: reescrever
+`cluster.nos` dos TRÊS nós antigos (o novo já nasce sabendo dos quatro, e por
+isso não precisa reiniciar) e reiniciar cada um — o tempo de cada reinício,
+se a escrita continuou saindo durante o reinício das réplicas, se a época do
+master sobrevive ao reinício dele (sem eleição), e quanto tempo depois disso
+o nó novo aparece "vivo" nos outros três.
+
+```bash
+cargo build --release
+python3 bancada/cluster/escalonar.py [diretorio]   # padrao /tmp/phx-cluster-escala
+```
+
+Sobe quatro `phxsqld` próprios em 127.0.0.1:6300–6303. Sem SMTP: e-mail não
+entra no bloco `cluster` desta bancada, porque não é o que se mede aqui.
+Nenhum `pkill`: cada servidor morre pelo PID que o script guardou, e o
+reinício usa `SIGTERM` — é operação de escalonamento, não queda a medir. A
+última linha é `RESULTADO <json>`, gravado em `resultados-escalonar.json`.
+
 ## Por chave, nunca pela frase
 
 O passo (e) conferia a frase literal `NAO promovo` dentro da lista
@@ -88,4 +122,6 @@ e é o resultado certo: elas medem a garantia, não a fresta.
 ## A última corrida
 
 Os números da última corrida ficam em `resultados.json`, gravado pelo
-próprio `provar.py` — número digitado à mão envelhece calado.
+próprio `provar.py` — número digitado à mão envelhece calado. Os do
+escalonamento ficam em `resultados-escalonar.json`, gravado pelo
+`escalonar.py`.

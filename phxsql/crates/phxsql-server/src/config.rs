@@ -664,7 +664,9 @@ impl Alertas {
         // `alertas.ligado` falso ainda manda e-mail -- entao o endereco tem de
         // estar certo nos dois caminhos, e a recusa vem no arranque, nao as
         // tres da manha quando o primeiro job falhar.
-        if alertas.email.ligado && (alertas.ligado || alertas.email.avisar_jobs) {
+        if alertas.email.ligado
+            && (alertas.ligado || alertas.email.avisar_jobs || alertas.email.avisar_seguranca)
+        {
             alertas.email.validar()?;
         }
         Ok(alertas)
@@ -726,6 +728,15 @@ pub struct Email {
     /// para o disco apertado nao pode comecar a receber aviso de job por
     /// causa de uma versao nova. Guarda nova entra pedida, nao imposta.
     pub avisar_jobs: bool,
+    /// Avisar tambem sobre VIOLACAO GRAVE: comando proibido pela politica,
+    /// base proibida, travessia de diretorio -- o que faz o IP entrar na
+    /// blacklist.
+    ///
+    /// Opt-in pelo mesmo motivo do `avisar_jobs`, e nao por simetria: quem
+    /// configurou e-mail para o disco apertado nao pode comecar a receber
+    /// aviso de seguranca por causa de uma versao nova. Guarda nova entra
+    /// pedida, nao imposta.
+    pub avisar_seguranca: bool,
     pub servidor: String,
     pub porta: u16,
     pub de: String,
@@ -755,6 +766,7 @@ impl Email {
         Ok(Email {
             ligado: e.booleano_ou("ligado", false),
             avisar_jobs: e.booleano_ou("avisar_jobs", false),
+            avisar_seguranca: e.booleano_ou("avisar_seguranca", false),
             servidor: e.texto_ou("servidor", "127.0.0.1").trim().to_string(),
             porta: e.inteiro_ou("porta", 25).clamp(1, 65_535) as u16,
             de: e.texto_ou("de", "").trim().to_string(),
@@ -811,6 +823,7 @@ impl Email {
         Json::objeto(vec![
             ("ligado", Json::Bool(self.ligado)),
             ("avisar_jobs", Json::Bool(self.avisar_jobs)),
+            ("avisar_seguranca", Json::Bool(self.avisar_seguranca)),
             ("servidor", Json::texto_de(&self.servidor)),
             ("porta", Json::de_u64(self.porta as u64)),
             ("de", Json::texto_de(&self.de)),
@@ -2440,6 +2453,9 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 11] = [
             // o INTERIOR das secoes -- acusava campo estranho num exemplo que
             // esta certo.
             "avisar_jobs",
+            // Da frente da seguranca: liga o aviso por e-mail da violacao
+            // grave que bloqueia um IP. Mesmo motivo do de cima.
+            "avisar_seguranca",
             "servidor",
             "porta",
             "de",
