@@ -209,6 +209,12 @@ else
   aviso "sem licenca valida: os hooks vao recusar os scripts do plugin"
   aviso "mande ao fornecedor a saida de: python3 $LIC maquina"
 fi
+# quem instala precisa saber que a chave e de exemplo: com ela, qualquer um que
+# leia o repositorio emite serial valido para este plugin
+if python3 -c "import json,sys; sys.exit(0 if json.load(open('$RAIZ/licenca/chave-publica.json')).get('demonstracao') else 1)" 2>/dev/null; then
+  aviso "chave publica de DEMONSTRACAO: antes de distribuir, gere o seu par"
+  aviso "  python3 $RAIZ/ferramentas/wx-serial/emitir.py chaves --saida ~/.wx-serial/chaves"
+fi
 
 passo "Pronto"
 cat <<FIM

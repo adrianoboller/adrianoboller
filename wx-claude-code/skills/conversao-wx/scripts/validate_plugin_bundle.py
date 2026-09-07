@@ -280,7 +280,24 @@ def validate(root: Path, strict: bool = False) -> dict:
         "agents": len(agent_files),
         "errors": errors,
         "warnings": warnings,
+        # fora de `warnings` de proposito: em --strict um warning derruba
+        # `valid`, e este aviso nao pode travar a bateria de quem so desenvolve
+        "avisos_de_distribuicao": avisos_de_distribuicao(root),
     }
+
+
+def avisos_de_distribuicao(root: Path) -> list[str]:
+    """O que impede DISTRIBUIR, que nao e o mesmo que impedir desenvolver."""
+    saida = []
+    chave = root / "licenca/chave-publica.json"
+    try:
+        if json.loads(chave.read_text(encoding="utf-8")).get("demonstracao"):
+            saida.append("licenca/chave-publica.json e a chave de DEMONSTRACAO: qualquer um que "
+                         "leia o repositorio emite serial valido. Gere o seu par com "
+                         "`ferramentas/wx-serial/emitir.py chaves` antes de distribuir.")
+    except (OSError, ValueError):
+        pass
+    return saida
 
 
 def main() -> int:

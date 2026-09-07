@@ -197,6 +197,17 @@ else {
 
 Remove-Item $saidaValidacao -ErrorAction SilentlyContinue
 
+# mesma verificacao do instalar.sh: chave de exemplo tem de aparecer
+$chavePub = Join-Path $Raiz "licenca\chave-publica.json"
+if (Test-Path $chavePub) {
+  try {
+    if ((Get-Content $chavePub -Raw | ConvertFrom-Json).demonstracao) {
+      Aviso "chave publica de DEMONSTRACAO: antes de distribuir, gere o seu par"
+      Aviso "  python3 $Raiz\ferramentas\wx-serial\emitir.py chaves --saida ~\.wx-serial\chaves"
+    }
+  } catch { }
+}
+
 Passo "Pronto"
 Write-Host @"
   Comece por aqui, dentro da pasta do projeto de destino:

@@ -162,6 +162,22 @@ def caminho_da_licenca() -> Path:
     return Path(os.environ.get("WX_LICENCA") or (Path.home() / ".wx-claude-code" / "licenca"))
 
 
+def chave_e_de_demonstracao(pub: dict | None = None) -> bool:
+    """A chave publica do repositorio e de exemplo, e isso precisa aparecer.
+
+    Distribuir com ela e o unico furo que nao e "dissuasao": qualquer um que
+    leia o repositorio tem o par e emite serial valido. O aviso e AVISO, nao
+    recusa -- quebrar quem ja usa para corrigir quem ainda nao distribuiu seria
+    o estrago que a regra do projeto proibe.
+    """
+    if pub is None:
+        try:
+            pub = json.loads(CHAVE_PUBLICA.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+    return bool(pub.get("demonstracao"))
+
+
 def verificar_serial(serial: str, pub: dict | None = None, hoje: date | None = None) -> dict:
     if pub is None:
         try:
@@ -296,6 +312,11 @@ def main() -> int:
         return 0 if r["status"] == "valida" else 3
     if a.cmd == "verificar":
         r = verificar_instalada()
+        if chave_e_de_demonstracao():
+            print("ATENCAO: licenca/chave-publica.json e a chave de DEMONSTRACAO. "
+                  "Antes de distribuir, gere o seu par com "
+                  "`ferramentas/wx-serial/emitir.py chaves` e substitua o arquivo.",
+                  file=sys.stderr)
         print(json.dumps(r, ensure_ascii=False) if a.json else f"{r['status']}" + (f": {r['cliente']} ate {r['validade']} (serial {r['id']})" if r["status"] == "valida" else f": {MENSAGEM.get(r['status'], '')}"))
         return 0 if r["status"] == "valida" else 3
     if a.cmd == "maquina":

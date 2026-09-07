@@ -1529,6 +1529,38 @@ class Questionario(unittest.TestCase):
             cwd=vazio)
         self.assertEqual(solto.returncode, 0, solto.stderr)
 
+    def test_chave_de_demonstracao_avisa_sem_travar_quem_ja_usa(self):
+        """Distribuir com a chave de exemplo e o unico furo que nao e dissuasao:
+        quem le o repositorio tem o par e emite serial valido.
+
+        E o teste que mais importa aqui e o do comportamento VELHO -- o aviso
+        NAO pode derrubar o `--strict`, senao a bateria de quem so desenvolve
+        para de passar por causa de uma pendencia de distribuicao.
+        """
+        sys.path.insert(0, str(SCRIPTS))
+        import licenca
+        import validate_plugin_bundle as vpb
+        chave = json.loads((RAIZ / "licenca/chave-publica.json").read_text(encoding="utf-8"))
+        self.assertTrue(chave.get("demonstracao"), "a chave do repositório é de exemplo")
+        self.assertTrue(licenca.chave_e_de_demonstracao(chave))
+        avisos = vpb.avisos_de_distribuicao(RAIZ)
+        self.assertTrue(any("DEMONSTRACAO" in a for a in avisos))
+        # O comportamento VELHO, provado sem recursao: o validador sem --strict
+        # (que nao roda a bateria por dentro) continua `valid` com a chave de
+        # demonstracao no lugar. Se o aviso tivesse entrado em `warnings`, o
+        # --strict passaria a reprovar o repositorio inteiro.
+        antes = vpb.validate(RAIZ)
+        self.assertTrue(antes["valid"], antes["errors"])
+        self.assertNotIn("DEMONSTRACAO", " ".join(antes["warnings"]))
+        self.assertTrue(any("DEMONSTRACAO" in a for a in antes["avisos_de_distribuicao"]))
+        # chave sem o campo: nenhum aviso, e a verificacao segue igual
+        limpa = {k: v for k, v in chave.items() if k not in {"demonstracao", "_leia_me"}}
+        self.assertFalse(licenca.chave_e_de_demonstracao(limpa))
+        alvo = self.tmp / "licenca"
+        alvo.mkdir(parents=True, exist_ok=True)
+        (alvo / "chave-publica.json").write_text(json.dumps(limpa), encoding="utf-8")
+        self.assertEqual(vpb.avisos_de_distribuicao(self.tmp), [])
+
     def test_gemeo_fotografa_a_sprint_e_o_e_se_declara_o_limite(self):
         self._aplicado()
         run(SCRIPTS / "constraints.py", "--project-root", self.tmp, "criar",
