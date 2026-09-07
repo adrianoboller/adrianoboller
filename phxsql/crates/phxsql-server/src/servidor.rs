@@ -7577,6 +7577,23 @@ impl Servidor {
             .campo("amarrar_canal")
             .and_then(Json::booleano)
             .unwrap_or(false);
+
+        // EXIGIR a amarracao ao canal, o degrau seguinte da §10: fecha o gap de
+        // a amarracao ser so PEDIDA. Um atacante ativo que terminou o tunel do
+        // cliente pode cortar `amarrar_canal` antes de reencaminhar -- a mesma
+        // aritmetica do rebaixamento do `exigir`. Contra ele so vale o servidor
+        // exigir, e essa e decisao de quem implanta (`cifra_fio.exigir_amarra`).
+        //
+        // So morde quando HA tunel: em claro nao ha transcricao a que amarrar,
+        // e a conexao em claro segue exatamente como antes. Nasce desligada --
+        // com `exigir_amarra` off, o comportamento e byte a byte o de hoje
+        // (guarda nova entra pedida, nao imposta). A recusa e NOMEADA e vem
+        // ANTES de olhar a credencial: e politica, nao "senha errada", entao
+        // nada vaza sobre o usuario.
+        if self.config.cifra_fio.exigir_amarra && sessao.transcricao_do_fio.is_some() && !amarrar {
+            return Err(PhxError::Autorizacao(self.msg("erro.amarra_exigida", &[])));
+        }
+
         let canal_amarrado: Option<[u8; 32]> = if amarrar {
             match sessao.transcricao_do_fio {
                 Some(t) => Some(t),
@@ -23150,6 +23167,18 @@ mod testes_cadastro_de_usuarios {
     /// dentro dele -- e nao de um `Config` montado a mao. Sem o arquivo nao
     /// ha o que gravar, e sem o cadastro NO arquivo nao ha o que alterar.
     fn servidor_com_cadastro(nome: &str) -> (Arc<Servidor>, PathBuf, DirTemp) {
+        servidor_com_cadastro_amarra(nome, false)
+    }
+
+    /// Como `servidor_com_cadastro`, mas deixa escolher `exigir_amarra`.
+    ///
+    /// A exigencia da amarracao e decisao de quem implanta e mora no
+    /// `config.json`; um servidor ja construido nao a muda. Por isso o teste
+    /// que a exercita precisa de um servidor nascido com ela ligada.
+    fn servidor_com_cadastro_amarra(
+        nome: &str,
+        exigir_amarra: bool,
+    ) -> (Arc<Servidor>, PathBuf, DirTemp) {
         let dir = DirTemp::novo(&format!("cad-op-{nome}"));
         let caminho = dir.join("config.json");
         std::fs::write(
@@ -23171,6 +23200,7 @@ mod testes_cadastro_de_usuarios {
         c.blacklist = dir.join("blacklist.json");
         c.dblink = dir.join("dblink.json");
         c.jobs = dir.join("jobs.json");
+        c.cifra_fio.exigir_amarra = exigir_amarra;
         (Servidor::novo(c).unwrap(), caminho, dir)
     }
 
@@ -23342,6 +23372,90 @@ mod testes_cadastro_de_usuarios {
         assert!(
             tentar(Some(tunel), None, false).is_ok(),
             "o login sem amarracao tinha de continuar como sempre foi"
+        );
+    }
+
+    /// EXIGIR a amarracao ao canal -- o gap que sobrava na §10 da
+    /// `docs/CIFRA-DO-FIO.md`, fechado. A amarracao era so PEDIDA; um atacante
+    /// ativo que terminou o tunel do cliente cortava `amarrar_canal` antes de
+    /// reencaminhar, a mesma aritmetica do rebaixamento do `exigir`. Com
+    /// `cifra_fio.exigir_amarra` ligado o servidor RECUSA o login que nao
+    /// amarra, mas so quando ha tunel: em claro nao ha o que amarrar.
+    ///
+    /// Prova real nos dois sentidos: com o defeito reposto (o `op_login`
+    /// ignorando `exigir_amarra`) o caso (a) cai -- o cliente que nao amarra
+    /// volta a entrar, e a `unwrap_err` da recusa nomeada estoura. Guarda no
+    /// `catalogo.py` como `amarra-exigida-ignorada`.
+    #[test]
+    fn login_exige_amarra_quando_ha_tunel() {
+        // Uma tentativa parametrizada. `exigir` = como o servidor foi
+        // implantado; `na_sessao` = a transcricao do tunel desta conexao
+        // (`None` = conexao em claro); `amarrar` = o cliente pediu a amarracao.
+        // O cliente honesto amarra com a transcricao do PROPRIO tunel, que e a
+        // da sessao -- por isso a prova, quando amarra, usa `na_sessao`.
+        let tentar = |exigir: bool, na_sessao: Option<[u8; 32]>, amarrar: bool| {
+            let (s, _caminho, _g) = servidor_com_cadastro_amarra("exige-amarra", exigir);
+            let dk = phxsql_core::senha::derivado_do_hash(
+                &s.cadastro().por_login("ana").unwrap().senha_hash,
+            )
+            .unwrap();
+            let mut sessao = Sessao {
+                transcricao_do_fio: na_sessao,
+                ..Sessao::default()
+            };
+            let d = s
+                .op_desafio(&pedido(r#"{"usuario":"ana"}"#), &mut sessao)
+                .unwrap();
+            let nonce = d.texto_ou("nonce", "").to_string();
+            let nc = phxsql_core::desafio::nonce();
+            let canal_ref = if amarrar {
+                na_sessao.as_ref().map(|t| &t[..])
+            } else {
+                None
+            };
+            let prova = phxsql_core::desafio::calcular_prova(&dk, &nonce, &nc, "ana", canal_ref);
+            let corpo = if amarrar {
+                format!(
+                    r#"{{"usuario":"ana","prova":"{prova}","nonce_cliente":"{nc}","amarrar_canal":true}}"#
+                )
+            } else {
+                format!(r#"{{"usuario":"ana","prova":"{prova}","nonce_cliente":"{nc}"}}"#)
+            };
+            s.op_login(&pedido(&corpo), &mut sessao)
+        };
+
+        let tunel = [0x5A_u8; 32];
+
+        // (a) exigir + tunel + o cliente NAO amarra: recusa NOMEADA, e antes de
+        //     olhar a credencial. E o caso que so existe por causa desta frente.
+        let e = tentar(true, Some(tunel), false).unwrap_err();
+        let msg = format!("{e}").to_lowercase();
+        assert!(
+            msg.contains("amarr"),
+            "com exigir_amarra ligado, quem nao amarra tinha de ser recusado \
+             mandando amarrar o canal, veio: {e}"
+        );
+
+        // (b) exigir + tunel + o cliente amarra: entra. A exigencia nao fecha a
+        //     porta de quem faz a coisa certa.
+        assert!(
+            tentar(true, Some(tunel), true).is_ok(),
+            "quem amarra tinha de entrar mesmo com exigir_amarra ligado"
+        );
+
+        // (c) exigir + SEM tunel (claro) + nao amarra: NAO muda. `exigir_amarra`
+        //     so morde quando ha transcricao; em claro nao ha o que amarrar, e
+        //     recusar aqui quebraria toda conexao em claro sem ganho nenhum.
+        assert!(
+            tentar(true, None, false).is_ok(),
+            "sem tunel a exigencia nao se aplica: a conexao em claro entra como sempre"
+        );
+
+        // (d) A REGRA PETREA: exigir DESLIGADO + tunel + nao amarra: entra como
+        //     sempre foi. E o teste que impede a guarda nova de virar imposicao.
+        assert!(
+            tentar(false, Some(tunel), false).is_ok(),
+            "com exigir_amarra desligado, o login sem amarracao continua como sempre"
         );
     }
 

@@ -382,6 +382,28 @@ pub const FABRICA: &[MensagemFabrica] = &[
              {\"op\":\"cifrar\"} antes del inicio de sesión",
         ],
     },
+    // Amarracao EXIGIDA (channel binding obrigatorio). Ha tunel e o servidor
+    // foi implantado com `cifra_fio.exigir_amarra`, mas o cliente nao pediu
+    // `amarrar_canal` -- ou um atacante ativo cortou o campo antes de
+    // reencaminhar, a mesma aritmetica do rebaixamento do `exigir`. A saida e
+    // recusar nomeando o que falta, para o cliente honesto saber o que mandar.
+    MensagemFabrica {
+        nome: "erro.amarra_exigida",
+        textos: [
+            "este servidor exige a amarracao da credencial ao canal: mande \
+             \"amarrar_canal\": true no login",
+            "ce serveur exige la liaison de l'identifiant au canal : envoyez \
+             \"amarrar_canal\": true à la connexion",
+            "this server requires binding the credential to the channel: send \
+             \"amarrar_canal\": true when logging in",
+            "questo server richiede il binding della credenziale al canale: \
+             invii \"amarrar_canal\": true al login",
+            "dieser Server verlangt die Bindung der Anmeldedaten an den Kanal: \
+             senden Sie \"amarrar_canal\": true bei der Anmeldung",
+            "este servidor exige la vinculación de la credencial al canal: \
+             envíe \"amarrar_canal\": true al iniciar sesión",
+        ],
+    },
     MensagemFabrica {
         nome: "erro.ip_bloqueado",
         textos: [

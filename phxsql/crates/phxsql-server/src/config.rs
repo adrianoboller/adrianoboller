@@ -1254,6 +1254,15 @@ pub struct CifraFio {
     pub ligada: bool,
     /// Recusa qualquer pedido fora do tunel.
     pub exigir: bool,
+    /// Recusa o login que NAO amarra a credencial ao canal, quando ha tunel.
+    ///
+    /// A amarracao (`amarrar_canal` no login) e PEDIDA pelo cliente -- e um
+    /// atacante ativo que terminou o tunel do cliente corta o campo antes de
+    /// reencaminhar, a mesma aritmetica do rebaixamento do `exigir`. Contra
+    /// ele so vale o servidor EXIGIR a amarracao, decisao de quem implanta.
+    /// So morde quando ha tunel: em claro nao ha transcricao a que amarrar.
+    /// Nasce DESLIGADA -- guarda nova entra pedida, nao imposta.
+    pub exigir_amarra: bool,
     /// PRIVADA de proposito: quem quiser ler passa por [`CifraFio::estatica`],
     /// e o `para_json` nunca a inclui.
     chave_privada: String,
@@ -1271,6 +1280,7 @@ impl std::fmt::Debug for CifraFio {
         f.debug_struct("CifraFio")
             .field("ligada", &self.ligada)
             .field("exigir", &self.exigir)
+            .field("exigir_amarra", &self.exigir_amarra)
             .field("chave_privada", &"(oculta)")
             .field("chave_privada_env", &self.chave_privada_env)
             .field("arquivo", &self.arquivo)
@@ -1283,6 +1293,7 @@ impl Default for CifraFio {
         CifraFio {
             ligada: true,
             exigir: false,
+            exigir_amarra: false,
             chave_privada: String::new(),
             chave_privada_env: String::new(),
             arquivo: PathBuf::from("chave-do-fio.hex"),
@@ -1305,6 +1316,7 @@ impl CifraFio {
         CifraFio {
             ligada: c.booleano_ou("ligada", padrao.ligada),
             exigir: c.booleano_ou("exigir", padrao.exigir),
+            exigir_amarra: c.booleano_ou("exigir_amarra", padrao.exigir_amarra),
             chave_privada,
             chave_privada_env,
             arquivo: {
@@ -1381,6 +1393,7 @@ impl CifraFio {
         Json::objeto(vec![
             ("ligada", Json::Bool(self.ligada)),
             ("exigir", Json::Bool(self.exigir)),
+            ("exigir_amarra", Json::Bool(self.exigir_amarra)),
             (
                 "arquivo",
                 Json::texto_de(self.arquivo.display().to_string()),
@@ -2535,6 +2548,7 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 11] = [
         &[
             "ligada",
             "exigir",
+            "exigir_amarra",
             "chave_privada",
             "chave_privada_env",
             "arquivo",
@@ -3794,6 +3808,11 @@ mod tests {
             "sem a secao, o servidor passou a EXIGIR o tunel: todo cliente \
              velho para de funcionar na atualizacao"
         );
+        assert!(
+            !c.cifra_fio.exigir_amarra,
+            "sem a secao, o servidor passou a EXIGIR a amarracao do canal: \
+             quem so pede o tunel para de entrar"
+        );
         // `ligada` NASCE ligada, e isso nao muda nada para ninguem: o aperto
         // so acontece se o cliente pedir, e cliente velho nunca pede.
         assert!(c.cifra_fio.ligada);
@@ -3804,12 +3823,13 @@ mod tests {
     fn a_secao_cifra_fio_e_lida_e_nao_vira_campo_estranho() {
         let j = Json::analisar(
             r#"{"token":"t","cifra_fio":{"ligada":false,"exigir":true,
-                 "arquivo":"/tmp/uma-chave.hex"}}"#,
+                 "exigir_amarra":true,"arquivo":"/tmp/uma-chave.hex"}}"#,
         )
         .unwrap();
         let c = Config::de_json(&j).unwrap();
         assert!(!c.cifra_fio.ligada);
         assert!(c.cifra_fio.exigir);
+        assert!(c.cifra_fio.exigir_amarra);
         assert_eq!(c.cifra_fio.arquivo, PathBuf::from("/tmp/uma-chave.hex"));
         assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
 
