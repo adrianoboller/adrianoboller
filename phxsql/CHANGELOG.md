@@ -20,6 +20,26 @@ ausência de transação: ele as documenta extensamente.
 
 ### Corrigido
 
+- **O §19 dizia «política de commit por origem», e estava errado — escrito por
+  mim uma hora antes.** `replicacao.origens` é a lista da **réplica**: de onde
+  *ela* puxa. Quem espera o quórum é o **master**, e do lado dele `origens` não
+  existe. Das duas listas que o source tem, `replicas_autorizadas` é **ACL de
+  IPs** (sem identidade nem saúde) e só `cluster.nos` serve de **M** — é sobre
+  ela que a maioria já é contada. O campo do quórum mora no bloco `cluster`, e
+  o corolário desagradável está escrito junto: **quórum de escrita passaria a
+  exigir o bloco `cluster`**, e instalação com replicação simples não teria
+  onde declarar o M.
+
+- **E uma armadilha que quase virou defeito publicado.** O assistente de
+  replicação chama `replicacao_configurar`, e provei contra o motor vivo que
+  essa operação **não existe**. Li isso como «o botão quebra» — **e não
+  quebra**: a chamada é guardada, e o `catch` desvia para `aplicarPeloConfig()`
+  exatamente no `NAO_ENCONTRADO`. O assistente é compatível com o motor futuro
+  e hoje entrega o bloco do arquivo, manda reiniciar e confere. *Provei uma
+  coisa e concluí outra* — e foi a **segunda vez no mesmo dia**, depois do
+  `grep` que contou dois `<a download>` que eram os comentários dizendo que não
+  há nenhum. O padrão é medir um proxy e ler o proxy como a coisa.
+
 - **O `atraso_ms` da bancada de replicação soma duas coisas e só anuncia uma
   — e isso quase virou a resposta errada a uma pergunta do dono.** Ele pergunta
   sobre transação com quórum; o número à mão eram os **826–2014 ms** de atraso

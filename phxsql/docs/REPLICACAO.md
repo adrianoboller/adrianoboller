@@ -1501,10 +1501,30 @@ isolado aceitou antes de se ver sem maioria.
 alcançáveis, o commit **falha**. Hoje ele aceita. Trocar «sempre aceita» por
 «às vezes recusa» é decisão de produto, não de engenharia.
 
-**Onde fica:** na **replicação**, como *política de commit por origem* — nunca
-como subsistema novo ao lado dela. E entra **pedida, não imposta**, pela mesma
+**Onde fica:** na **replicação**, como *política de commit* — nunca como
+subsistema novo ao lado dela. E entra **pedida, não imposta**, pela mesma
 pétrea da janela de conflito: quem não pedir quórum grava como hoje, e nenhum
 cliente escrito antes para de funcionar.
+
+**Correção da primeira redação desta seção, e ela vale mais que a frase que
+substitui.** Eu havia escrito «política de commit **por origem**», e está
+errado: `replicacao.origens` é a lista da **réplica** — de onde *ela* puxa.
+Quem espera o quórum é o **master**, e do lado dele `origens` não existe. Do
+lado do source há duas listas, e só uma serve:
+
+| lista | o que é | serve de M? |
+|---|---|---|
+| `replicacao.replicas_autorizadas` | **IPs** autorizados a pedir o fluxo | **não** — é ACL, sem identidade nem saúde |
+| `cluster.nos` | `id`, `endereco` e `porta` de **todos os nós, este incluído** | **sim** — e a maioria já é contada sobre ela |
+
+Então o campo do quórum mora no bloco **`cluster`**, ao lado de `nos`, porque é
+lá que o **M** já está declarado e a maioria já é apurada. Contar votos de
+escrita sobre uma lista de IPs seria inventar uma segunda noção de membro, e
+*lista que significa duas coisas* é defeito que esta casa já nomeou.
+
+O corolário desagradável, e ele é decisão sua: **quórum de escrita passa a
+exigir o bloco `cluster`.** Uma instalação com replicação simples e sem cluster
+não teria onde declarar o M.
 
 ### 19.6 A armadilha que o Cassandra® já nos ensinou, medida no fonte deles
 
