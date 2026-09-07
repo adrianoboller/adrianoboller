@@ -729,8 +729,18 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `fecho-em-paralelo-fio-que-nao-sobe` | uma tabela do fecho fica sem fio, e ninguém percebe | 1 | ✅ provada |
 | `pagina-ordenada-varre-o-indice-inteiro` | a grade ordenada percorre o índice inteiro para devolver 50 linhas | 2 | ✅ provada |
 | `cursor-do-pedaco-sem-o-mais-um` | o cursor da varredura em pedaços devolve de novo a linha da borda | 2 | ✅ provada |
+| `perfil-grava-o-texto-da-tabela-declarada` | o perfil.txt grava em claro o pedido de uma tabela declarada em cifra.tabelas | 4 | ✅ provada |
+| `perfil-so-olha-a-tabela-do-primeiro-nivel` | o Profiler so olha a tabela do primeiro nível e a junção vira a porta dos fundos | 1 | ✅ provada |
+| `fase-da-telemetria-com-dado-do-usuario` | a fase do SQL Check passa a carregar dado do usuário, e o furo nasce calado | 1 | ✅ provada |
+| `cache-de-derivadas-sobrevive-a-troca-de-senha` | o cache de chaves derivadas responde a quem não deu a senha | 1 | ✅ provada |
+| `fts-reindexar-sem-o-irmao` | o reindexar reconstrói só o .ndx, e a queda trava a tabela para sempre | 1 | ✅ provada |
+| `fts-reconstruir-sem-recriar` | reconstruir o índice de texto sem recriar o arquivo não é idempotente | 1 | ✅ provada |
+| `fts-abrir-recusa-a-tabela` | o .fts ilegível derruba a tabela inteira, em vez de se refazer | 1 | ✅ provada |
+| `fts-nasce-na-pista-de-leitura` | a pista de leitura cria o .fts, e escrever sob a ficha compartilhada é o que ela existe para impedir | 1 | ✅ provada |
+| `fts-chave-truncada-nao-se-declara` | a chave truncada não se declara truncada, e a busca acha a mais | 1 | ✅ provada |
+| `operacao-sem-poder-declarado` | operação catalogada sem linha de poder vira administrador em silêncio | 2 | ✅ provada |
 
-**89 guardas: 85 provadas, 4 redundantes** — 827 s de mutação, medido em 2026-09-05 08:25.
+**99 guardas: 95 provadas, 4 redundantes** — 848 s de mutação, medido em 2026-09-07 02:15.
 
 As notas que a rodada deixou:
 
@@ -1299,11 +1309,11 @@ o inventário do que passou a existir.
 | "Instrumentação desligada custa zero" | `bancada/profiler/custo.py` (`falhou_desligado_custa_zero`, nova 25ª parte `profiler-custo-zero` em `provar.py`) | `python3 bancada/profiler/custo.py --autoteste` (a lógica, em segundos) e a bateria completa (a medição real, ~minutos) |
 
 As três primeiras entraram no catálogo de mutação (`bancada/guardas/`), e o
-catálogo completo — agora **60 entradas**, medido com
-`python3 -c "import catalogo; print(len(catalogo.GUARDAS))"` — rodou inteiro
-depois das três novas: **56 provadas, 4 redundantes, 0 não pegaram, 0
-estragaram, 0 quebradas** (`bancada/guardas/provar-guardas.py`, tabela acima
-regravada por `tabela-no-testes.py` a partir dessa rodada). As duas últimas
+catálogo completo — **60 entradas naquele dia** — rodou inteiro depois das três
+novas: **56 provadas, 4 redundantes, 0 não pegaram, 0 estragaram, 0 quebradas**
+(`bancada/guardas/provar-guardas.py`). Este parágrafo é **história**: o número
+de hoje está na tabela da §8, que sai do `--json` da última corrida completa e
+não desta prosa. As duas últimas
 pétreas não cabem no catálogo por natureza — o executor só sabe repor um
 trecho de código Rust e rodar `cargo test`, e uma é JavaScript de tela sem
 `cargo test` que a alcance, a outra é um script Python cuja prova real

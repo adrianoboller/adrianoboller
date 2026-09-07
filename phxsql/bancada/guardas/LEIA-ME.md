@@ -36,6 +36,7 @@ Três arquivos, e a divisão entre os dois primeiros é o ponto:
 |---|---|
 | `catalogo.py` | **só dados**: cada defeito, o trecho de hoje, o trecho de antes, e quais testes têm de cair |
 | `provar-guardas.py` | o executor: copia a árvore, repõe um defeito por vez, roda os testes nomeados, desfaz, e julga |
+| `ultima-corrida.json` | o `--json` da última corrida **completa**, versionado — é dele que a tabela do `docs/TESTES.md` sai. Sem corrida não há tabela, e uma tabela que não venha de um arquivo destes é digitada |
 | `tabela-no-testes.py` | regrava a tabela das guardas no `docs/TESTES.md` a partir do `--json` de uma rodada — número visível que não sai de gerador está errado e ninguém percebeu ainda |
 
 ## O que sai
