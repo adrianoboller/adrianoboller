@@ -673,7 +673,7 @@ pub fn sem_prova() -> Vec<Botao> {
 /// nome e no comentario que substitui esta. A serie com o passado se perde de
 /// proposito -- perder a comparacao e mais barato que deixar «mudei a regua»
 /// virar a porta pela qual se afrouxa uma catraca.
-pub const TETO_BOTAO_SEM_PROVA: usize = 211;
+pub const TETO_BOTAO_SEM_PROVA: usize = 194;
 
 #[cfg(test)]
 mod testes {
