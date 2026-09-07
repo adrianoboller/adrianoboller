@@ -279,16 +279,33 @@ leitura de 20.000 (5× a favor do PhxSql sem o motor ter feito nada por isso).
 - **Ponta a ponta, pelo navegador**: `testes-web/` — 26 arquivos `.mjs`,
   4.545 linhas — fala com o servidor de verdade pelo soquete e pela tela, não
   com um duplo em memória. `bateria.mjs` é o comando que roda tudo.
-- **Conferidores de estilo/texto, com catraca que só desce**:
-  `crates/phxsql-server/src/conferidor.rs` (textos fixos fora da fábrica de
-  idiomas, teto atual `TETO_ROTULOS_E_CRASE = 1.720`, que **aposentou** o
-  antigo `TETO = 1.549` na letra da regra de QA — régua nova, catraca nova,
-  nunca a mesma catraca subindo) e `conferidor_grades.rs` (tabela HTML fora
-  do padrão `PhxGrid`, teto atual `TETO_TABELA_NA_MAO = 0` — fechada em 03/09). Ao todo, **10**
-  constantes `TETO*` no código do servidor — as duas de cima mais oito em
-  `profiler.rs` e `servidor.rs`, algumas delas limite de recurso (tamanho de
-  campo, de lote) e não catraca de varredura de texto; a lista completa está
-  na tabela gerada.
+- **Conferidores de estilo/texto, com catraca que só desce** — a linha
+  abaixo sai do `bloco_conferidores()`, que **acha os arquivos no disco**:
+
+  > Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`,
+  > `conferidor_botoes.rs`, `conferidor_dependencias.rs`,
+  > `conferidor_grades.rs`, `conferidor_temporarios.rs`. Executaveis de prova
+  > em `crates/phxsql-server/examples/`: `botoes-sem-prova.rs`,
+  > `grades-fora-do-padrao.rs`, `prova-dblink.rs`, `prova-exportar.rs`,
+  > `textos-fora-da-fabrica.rs`.
+
+  São **12** constantes `TETO*` no código do servidor (`bloco_catracas()`,
+  07/09/2026), das quais **6** são catraca de varredura —
+  `TETO_ROTULOS_E_CRASE` (1.051), `TETO_COLADO` (0), `TETO_FRASE_REPETIDA`
+  (0), `TETO_BOTAO_SEM_PROVA` (194), `TETO_TABELA_NA_MAO` (0, fechada em
+  03/09) e `TETO_TEMP_DIR_SOLTO` (0, nascida em 07/09 com o pedido 150) — e
+  as outras 6 são **limite de funcionamento**, não catraca: tamanho de campo
+  e de lote no `profiler.rs` e no `servidor.rs`. A diferença está em
+  `docs/CATRACAS.md`, e confundir as duas é o erro que aquele documento
+  existe para não cometer.
+
+  **Achado ao atualizar este trecho em 07/09/2026**: ele estava marcado
+  `GERADO` e trazia números **digitados** — `TETO_ROTULOS_E_CRASE = 1.720`
+  quando o medido era 1.051, e «ao todo 10 constantes» quando eram 12. A
+  marca `GERADO` diz de onde o número **deveria** vir; ela não impede que
+  alguém escreva o número à mão embaixo dela. *Marca de gerador não é
+  gerador*, e a única defesa é a que o `medir.py` já dá: a tabela viva mora
+  no `docs/QA-PDCA.md`, escrita por comando, e é ela que manda.
 - **Guardas — prova de que a prova pega**: `bancada/guardas/catalogo.py`
   cataloga **99** defeitos repostos (contado de `len(GUARDAS)`, não por
   regex), cada um com o trecho de código de hoje, o trecho de antes do
@@ -306,9 +323,9 @@ leitura de 20.000 (5× a favor do PhxSql sem o motor ter feito nada por isso).
   padrão nunca teve relação estável com a contagem certa. Corrigido para
   importar o módulo e contar `len(GUARDAS)`, do mesmo jeito que
   `bancada/guardas/tabela-no-testes.py` já fazia ao lado.
-- **Executáveis de prova dedicados**, em `crates/phxsql-server/examples/`:
-  `grades-fora-do-padrao.rs`, `prova-dblink.rs`, `prova-exportar.rs`,
-  `textos-fora-da-fabrica.rs`.
+- **Executáveis de prova dedicados**, em `crates/phxsql-server/examples/` —
+  os cinco nomeados no bloco acima, achados por glob e não listados aqui,
+  pelo mesmo motivo de sempre: lista digitada envelhece calado.
 - **A cobertura por área**, já contada e mantida por outro gerador desta
   mesma casa (não duplicado aqui): `docs/dossie/cobertura-por-area.py`
   regrava a tabela de `docs/TESTES.md` §1 a partir de `#[test]` por arquivo,

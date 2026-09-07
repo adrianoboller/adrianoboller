@@ -8,6 +8,9 @@
 //! E a mesma licao do `BULKINSERT`: o que depende do outro lado se prova
 //! contra o outro lado.
 
+mod comum;
+use comum::DirTemp;
+
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::process::{Command, Stdio};
@@ -29,15 +32,8 @@ fn porta_livre() -> u16 {
         .port()
 }
 
-fn pasta(nome: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!(
-        "phx-cmd-{nome}-{}-{}",
-        std::process::id(),
-        porta_livre()
-    ));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
+fn pasta(nome: &str) -> DirTemp {
+    DirTemp::novo(&format!("cmd-{nome}"))
 }
 
 /// Um servidor de verdade, com uma base `loja` de tres clientes.

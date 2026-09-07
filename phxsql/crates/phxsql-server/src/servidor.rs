@@ -17,6 +17,8 @@
 //! correto -- o contrario seria rapido e corrompido. Travas finas entram junto
 //! com as transacoes.
 
+#[cfg(test)]
+use crate::apoio_teste::DirTemp;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -16497,11 +16499,8 @@ mod testes_politica {
 mod testes_firewall_e_mensagens {
     use super::*;
 
-    fn dir_temp(rotulo: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-fw-{}-{rotulo}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("fw-{rotulo}"))
     }
 
     fn config_base(dir: &std::path::Path) -> Config {
@@ -16959,11 +16958,8 @@ mod testes_papel {
         Servidor::novo(c).unwrap()
     }
 
-    fn dir(rotulo: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-papel-{rotulo}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("papel-{rotulo}"))
     }
 
     fn pedido(txt: &str) -> Json {
@@ -17243,8 +17239,7 @@ mod testes_supressao_de_origem {
     /// crescem sozinhos em vez de parar em 2.
     #[test]
     fn evento_nao_volta_para_quem_o_escreveu() {
-        let dir = std::env::temp_dir().join(format!("phx-supressao-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = DirTemp::novo("supressao");
         std::fs::create_dir_all(dir.join("loja")).unwrap();
 
         let hash_beta = bidirecional::hash_id("beta");
@@ -17277,7 +17272,7 @@ mod testes_supressao_de_origem {
         let txt = r#"{"token":"t","replicacao":{"papel":"multi","id_servidor":"alfa",
             "origens":[{"nome":"beta","host":"127.0.0.1","porta":5000,"token":"t"}]}}"#;
         let mut c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
-        c.base = dir.clone();
+        c.base = dir.to_path_buf();
         c.log_acessos = dir.join("acessos.log");
         c.blacklist = dir.join("blacklist.json");
         c.dblink = dir.join("dblink.json");
@@ -17376,9 +17371,7 @@ mod testes_criar_qualificada {
     /// nasce inalcancavel e pior do que um erro.
     #[test]
     fn criar_com_nome_qualificado_cai_no_schema() {
-        let dir = std::env::temp_dir().join(format!("phx-qualif-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = DirTemp::novo("qualif");
         let s = servidor(&dir);
         let sessao = Sessao::default();
 
@@ -17429,9 +17422,7 @@ mod testes_criar_qualificada {
     /// O campo `schema` continua valendo, e vale igual.
     #[test]
     fn o_campo_schema_continua_valendo() {
-        let dir = std::env::temp_dir().join(format!("phx-qualif2-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = DirTemp::novo("qualif2");
         let s = servidor(&dir);
         let sessao = Sessao::default();
         s.executar("criar_database", &pedido(r#"{"database":"loja"}"#), &sessao)
@@ -17452,9 +17443,7 @@ mod testes_criar_qualificada {
     /// Dizer duas coisas diferentes e erro, e nao "uma delas ganha".
     #[test]
     fn nome_e_campo_em_desacordo_param_a_criacao() {
-        let dir = std::env::temp_dir().join(format!("phx-qualif3-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = DirTemp::novo("qualif3");
         let s = servidor(&dir);
         let sessao = Sessao::default();
         s.executar("criar_database", &pedido(r#"{"database":"loja"}"#), &sessao)
@@ -17480,11 +17469,8 @@ mod testes_exclusao {
     use super::*;
     use crate::usuarios::{Cadastro, Nivel, Permissoes, Usuario};
 
-    fn dir_temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-excl-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("excl-{nome}"))
     }
 
     fn servidor(dir: &std::path::Path, cadastro: Cadastro) -> Arc<Servidor> {
@@ -18021,11 +18007,8 @@ mod testes_conflito {
     use super::*;
     use crate::usuarios::Cadastro;
 
-    fn dir_temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-conf-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("conf-{nome}"))
     }
 
     fn pedido(txt: &str) -> Json {
@@ -18267,11 +18250,8 @@ mod testes_direito_por_tabela {
     use super::*;
     use crate::usuarios::Cadastro;
 
-    fn dir_temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-dt-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("dt-{nome}"))
     }
 
     fn pedido(txt: &str) -> Json {
@@ -18913,11 +18893,8 @@ mod testes_profiler_desligado {
     use super::*;
     use crate::usuarios::Cadastro;
 
-    fn dir_temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-prof-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("prof-{nome}"))
     }
 
     fn pedido(txt: &str) -> Json {
@@ -19086,11 +19063,8 @@ mod testes_portao_do_profiler {
     use super::*;
     use crate::usuarios::Cadastro;
 
-    fn dir_temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-pp-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("pp-{nome}"))
     }
 
     fn pedido(txt: &str) -> Json {
@@ -19215,11 +19189,8 @@ mod testes_bulkinsert {
     use super::*;
     use crate::usuarios::Cadastro;
 
-    fn dir_temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-bulk-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("bulk-{nome}"))
     }
 
     fn pedido(txt: &str) -> Json {
@@ -19449,11 +19420,8 @@ mod testes_bulkinsert {
 mod testes_sql {
     use super::*;
 
-    fn dir_temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-sql-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("sql-{nome}"))
     }
 
     fn pedido(txt: &str) -> Json {
@@ -19525,7 +19493,8 @@ mod testes_sql {
 
     #[test]
     fn select_estrela_vira_varrer_e_traz_as_linhas() {
-        let s = servidor(&dir_temp("estrela"));
+        let guarda = dir_temp("estrela");
+        let s = servidor(&guarda);
         let r = sql(&s, "SELECT * FROM clientes").unwrap();
         assert_eq!(r.texto_ou("op", ""), "varrer");
         assert_eq!(linhas(&r).len(), 3);
@@ -19545,7 +19514,8 @@ mod testes_sql {
     /// leitura. Quem escreveu SQL espera as colunas que pediu.
     #[test]
     fn a_projecao_fica_so_com_as_colunas_pedidas_e_usa_o_apelido() {
-        let s = servidor(&dir_temp("projecao"));
+        let guarda = dir_temp("projecao");
+        let s = servidor(&guarda);
         let r = sql(&s, "SELECT nome AS quem, cidade FROM clientes").unwrap();
         assert_eq!(
             r.campo("colunas")
@@ -19567,7 +19537,8 @@ mod testes_sql {
     /// erro que a bancada ja cometeu uma vez.
     #[test]
     fn count_estrela_sai_do_cabecalho_sem_varrer() {
-        let s = servidor(&dir_temp("count"));
+        let guarda = dir_temp("count");
+        let s = servidor(&guarda);
         let r = sql(&s, "SELECT COUNT(*) FROM clientes").unwrap();
         assert_eq!(r.inteiro_ou("contagem", -1), 3);
         assert_eq!(r.inteiro_ou("registros", -1), 3);
@@ -19584,7 +19555,8 @@ mod testes_sql {
     /// extra passa despercebido; na tela ele vira uma tabela inteira.
     #[test]
     fn a_contagem_nao_arrasta_a_linha_que_a_traducao_leu() {
-        let s = servidor(&dir_temp("count-limpo"));
+        let guarda = dir_temp("count-limpo");
+        let s = servidor(&guarda);
         let r = sql(&s, "SELECT COUNT(*) FROM clientes").unwrap();
         assert!(
             r.campo("linhas").is_none(),
@@ -19607,7 +19579,8 @@ mod testes_sql {
 
     #[test]
     fn where_com_indice_vira_buscar() {
-        let s = servidor(&dir_temp("where"));
+        let guarda = dir_temp("where");
+        let s = servidor(&guarda);
         let r = sql(&s, "SELECT nome FROM clientes WHERE id = 2").unwrap();
         assert_eq!(r.texto_ou("op", ""), "buscar");
         assert_eq!(linhas(&r).len(), 1);
@@ -19622,7 +19595,8 @@ mod testes_sql {
     /// recusar.
     #[test]
     fn where_sem_indice_recusa_em_vez_de_trazer_tudo() {
-        let s = servidor(&dir_temp("sem-indice"));
+        let guarda = dir_temp("sem-indice");
+        let s = servidor(&guarda);
         let e = sql(&s, "SELECT * FROM clientes WHERE cidade = 'Blumenau'").unwrap_err();
         let msg = e.to_string();
         assert!(msg.contains("cidade"), "{msg}");
@@ -19635,7 +19609,8 @@ mod testes_sql {
     /// um comando de duzentos caracteres procura o erro no lugar errado.
     #[test]
     fn erro_de_sintaxe_diz_a_coluna() {
-        let s = servidor(&dir_temp("sintaxe"));
+        let guarda = dir_temp("sintaxe");
+        let s = servidor(&guarda);
         let msg = sql(&s, "SELECT * FRON clientes").unwrap_err().to_string();
         assert!(msg.contains("coluna"), "{msg}");
         assert!(msg.contains("FROM"), "{msg}");
@@ -19648,7 +19623,8 @@ mod testes_sql {
     /// aplicado no cliente depois de trazer tudo.
     #[test]
     fn limit_e_offset_viram_max_e_pular() {
-        let s = servidor(&dir_temp("limite"));
+        let guarda = dir_temp("limite");
+        let s = servidor(&guarda);
         let r = sql(&s, "SELECT * FROM clientes LIMIT 1 OFFSET 1").unwrap();
         assert_eq!(linhas(&r).len(), 1);
         assert_eq!(linhas(&r)[0].texto_ou("nome", ""), "Maria");
@@ -19658,7 +19634,8 @@ mod testes_sql {
     /// como sinonimo de `texto`, porque e o nome que um driver escreveria.
     #[test]
     fn sem_texto_recusa_com_o_nome_do_campo() {
-        let s = servidor(&dir_temp("vazio"));
+        let guarda = dir_temp("vazio");
+        let s = servidor(&guarda);
         let mut ses = Sessao::default();
         let (_, _, r) = s.despachar(
             r#"{"token":"t","op":"sql","database":"b"}"#,
@@ -19681,7 +19658,7 @@ mod testes_sql {
     fn a_politica_vale_para_a_operacao_traduzida() {
         let dir = dir_temp("politica");
         let mut c = Config {
-            base: dir.clone(),
+            base: dir.to_path_buf(),
             log_acessos: dir.join("acessos.log"),
             blacklist: dir.join("blacklist.json"),
             dblink: dir.join("dblink.json"),
@@ -19720,11 +19697,8 @@ mod testes_gatilhos {
     use super::*;
     use crate::usuarios::Cadastro;
 
-    fn dir_temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-gat-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("gat-{nome}"))
     }
 
     fn pedido(txt: &str) -> Json {
@@ -19818,7 +19792,8 @@ mod testes_gatilhos {
     /// O caso 1 do pedido 49: BEFORE INSERT normaliza um campo.
     #[test]
     fn before_insert_normaliza_o_campo() {
-        let s = servidor(&dir_temp("normaliza"));
+        let guarda = dir_temp("normaliza");
+        let s = servidor(&guarda);
         sql(
             &s,
             "CREATE TRIGGER normaliza BEFORE INSERT ON clientes FOR EACH ROW \
@@ -19850,7 +19825,8 @@ mod testes_gatilhos {
     /// entra. E o mesmo gatilho deixa passar a linha que obedece a regra.
     #[test]
     fn sinal_cancela_a_escrita_e_a_linha_nao_entra() {
-        let s = servidor(&dir_temp("sinal"));
+        let guarda = dir_temp("sinal");
+        let s = servidor(&guarda);
         sql(
             &s,
             "CREATE TRIGGER exige_nome BEFORE INSERT ON clientes FOR EACH ROW \
@@ -19876,7 +19852,8 @@ mod testes_gatilhos {
     /// como a linha FICOU gravada.
     #[test]
     fn after_insert_audita_noutra_tabela() {
-        let s = servidor(&dir_temp("audita"));
+        let guarda = dir_temp("audita");
+        let s = servidor(&guarda);
         sql(
             &s,
             "CREATE TRIGGER audita AFTER INSERT ON clientes FOR EACH ROW \
@@ -19902,7 +19879,8 @@ mod testes_gatilhos {
     /// dois modos de excluir, porque nos dois a linha some da lista.
     #[test]
     fn update_e_delete_veem_old() {
-        let s = servidor(&dir_temp("old"));
+        let guarda = dir_temp("old");
+        let s = servidor(&guarda);
         inserir(
             &s,
             "clientes",
@@ -19976,7 +19954,8 @@ mod testes_gatilhos {
     /// O caso 4 (pedido 50): procedimento com IN, OUT e WHILE somando.
     #[test]
     fn procedimento_com_in_out_e_while() {
-        let s = servidor(&dir_temp("proc"));
+        let guarda = dir_temp("proc");
+        let s = servidor(&guarda);
         sql(
             &s,
             "CREATE PROCEDURE somar(IN ate INT, OUT total INT) BEGIN \
@@ -19997,7 +19976,8 @@ mod testes_gatilhos {
     /// Procedimento le o motor: SELECT … INTO com COUNT(*) e com coluna.
     #[test]
     fn procedimento_le_com_select_into() {
-        let s = servidor(&dir_temp("into"));
+        let guarda = dir_temp("into");
+        let s = servidor(&guarda);
         inserir(&s, "clientes", r#"{"id":1,"nome":"Ana","cidade":"BNU"}"#).unwrap();
         inserir(&s, "clientes", r#"{"id":2,"nome":"Bia","cidade":"JLE"}"#).unwrap();
         sql(
@@ -20136,7 +20116,8 @@ mod testes_gatilhos {
     /// portao atomico esta ligado e a consulta ao registro acontece.
     #[test]
     fn sem_gatilho_nada_muda() {
-        let s = servidor(&dir_temp("velho"));
+        let guarda = dir_temp("velho");
+        let s = servidor(&guarda);
         // Gatilho na auditoria, nunca na clientes.
         sql(
             &s,
@@ -20209,7 +20190,8 @@ mod testes_gatilhos {
 
     #[test]
     fn drop_tira_e_show_lista() {
-        let s = servidor(&dir_temp("drop"));
+        let guarda = dir_temp("drop");
+        let s = servidor(&guarda);
         sql(
             &s,
             "CREATE TRIGGER normaliza BEFORE INSERT ON clientes FOR EACH ROW \
@@ -20258,7 +20240,8 @@ mod testes_gatilhos {
     /// com a posicao, e as outras entram — o contrato de sempre do lote.
     #[test]
     fn lote_passa_pelo_before_por_linha() {
-        let s = servidor(&dir_temp("lote"));
+        let guarda = dir_temp("lote");
+        let s = servidor(&guarda);
         sql(
             &s,
             "CREATE TRIGGER exige_nome BEFORE INSERT ON clientes FOR EACH ROW \
@@ -20303,7 +20286,8 @@ mod testes_gatilhos {
     /// aviso `gatilhos_avisos`, com o nome do gatilho, numa resposta `ok`.
     #[test]
     fn falha_de_after_vira_aviso_e_a_escrita_fica() {
-        let s = servidor(&dir_temp("aviso"));
+        let guarda = dir_temp("aviso");
+        let s = servidor(&guarda);
         sql(
             &s,
             "CREATE TRIGGER audita AFTER INSERT ON clientes FOR EACH ROW \
@@ -20324,7 +20308,8 @@ mod testes_gatilhos {
     /// homonima futura.
     #[test]
     fn excluir_tabela_leva_os_gatilhos() {
-        let s = servidor(&dir_temp("orfao"));
+        let guarda = dir_temp("orfao");
+        let s = servidor(&guarda);
         sql(
             &s,
             "CREATE TRIGGER normaliza BEFORE INSERT ON clientes FOR EACH ROW \
@@ -20349,7 +20334,8 @@ mod testes_gatilhos {
     /// sagrada, e um `SET NEW.rownum` seria o jeito novo de quebra-la.
     #[test]
     fn coluna_de_sistema_recusa_o_set() {
-        let s = servidor(&dir_temp("sistema"));
+        let guarda = dir_temp("sistema");
+        let s = servidor(&guarda);
         sql(
             &s,
             "CREATE TRIGGER esperto BEFORE INSERT ON clientes FOR EACH ROW \
@@ -20389,11 +20375,8 @@ mod testes_gatilhos {
 mod testes_chave_estrangeira {
     use super::*;
 
-    fn dir_temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-fk-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("fk-{nome}"))
     }
 
     fn pedido(txt: &str) -> Json {
@@ -20450,7 +20433,8 @@ mod testes_chave_estrangeira {
 
     #[test]
     fn criar_tabela_declara_a_chave_e_o_esquema_a_devolve() {
-        let s = servidor(&dir_temp("declara"));
+        let guarda = dir_temp("declara");
+        let s = servidor(&guarda);
         com_fk(&s, r#","ao_excluir":"restringir","ao_alterar":"cascata""#).unwrap();
 
         let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
@@ -20486,7 +20470,8 @@ mod testes_chave_estrangeira {
     /// cliente escrito antes desta versao manda pedido assim.
     #[test]
     fn sem_o_campo_a_tabela_nasce_igual_ao_que_sempre_foi() {
-        let s = servidor(&dir_temp("velho"));
+        let guarda = dir_temp("velho");
+        let s = servidor(&guarda);
         pede(
             &s,
             r#""op":"criar_tabela","database":"b","tabela":"clientes",
@@ -20512,7 +20497,8 @@ mod testes_chave_estrangeira {
     /// duas vezes e onde alguem troca a ordem sem perceber.
     #[test]
     fn sem_colunas_ref_vale_o_mesmo_nome() {
-        let s = servidor(&dir_temp("mesmo-nome"));
+        let guarda = dir_temp("mesmo-nome");
+        let s = servidor(&guarda);
         pede(
             &s,
             r#""op":"criar_tabela","database":"b","tabela":"itens",
@@ -20547,7 +20533,8 @@ mod testes_chave_estrangeira {
             ("RESTRICT", "Restringir"),
             ("Restringir", "Restringir"),
         ] {
-            let s = servidor(&dir_temp(&format!("acao-{}", escrito.replace(' ', "-"))));
+            let guarda = dir_temp(&format!("acao-{}", escrito.replace(' ', "-")));
+            let s = servidor(&guarda);
             com_fk(&s, &format!(r#","ao_alterar":"{escrito}""#)).unwrap();
             let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
             let fk = &e
@@ -20562,7 +20549,8 @@ mod testes_chave_estrangeira {
     /// nasce: meia tabela criada seria pior que nenhuma.
     #[test]
     fn chave_mal_escrita_recusa_e_a_tabela_nao_nasce() {
-        let s = servidor(&dir_temp("ruim"));
+        let guarda = dir_temp("ruim");
+        let s = servidor(&guarda);
         // Cada caso com um nome de tabela proprio: com o mesmo nome, o segundo
         // erro seria "ja existe" e o teste passaria pelo motivo errado.
         for (n, chave, esperado) in [
@@ -20630,7 +20618,8 @@ mod testes_chave_estrangeira {
     /// esquema em disco volta com o que foi gravado nele.
     #[test]
     fn a_chave_declarada_nasce_conferida() {
-        let s = servidor(&dir_temp("nasce-conferida"));
+        let guarda = dir_temp("nasce-conferida");
+        let s = servidor(&guarda);
         com_fk(&s, "").unwrap();
         // `clientes` nem existe, e o pai 999 muito menos.
         let e = pede(
@@ -20651,7 +20640,8 @@ mod testes_chave_estrangeira {
     /// a opcao junto com o padrao.
     #[test]
     fn quem_pede_para_nao_conferir_continua_podendo() {
-        let s = servidor(&dir_temp("opt-out"));
+        let guarda = dir_temp("opt-out");
+        let s = servidor(&guarda);
         com_fk(&s, r#","verificar":false"#).unwrap();
         pede(
             &s,
@@ -20668,7 +20658,8 @@ mod testes_chave_estrangeira {
     /// afirma que continua acontecendo.
     #[test]
     fn com_verificar_o_orfao_e_recusado() {
-        let s = servidor(&dir_temp("fk-orfao"));
+        let guarda = dir_temp("fk-orfao");
+        let s = servidor(&guarda);
         criar_clientes(&s);
         com_fk(&s, r#","verificar":true"#).unwrap();
         let e = pede(
@@ -20689,7 +20680,8 @@ mod testes_chave_estrangeira {
     /// mae no lugar, a MESMA insercao entra.
     #[test]
     fn com_verificar_a_linha_que_tem_mae_entra() {
-        let s = servidor(&dir_temp("fk-mae"));
+        let guarda = dir_temp("fk-mae");
+        let s = servidor(&guarda);
         criar_clientes(&s);
         pede(
             &s,
@@ -20713,7 +20705,8 @@ mod testes_chave_estrangeira {
     /// obrigatoriedade -- outra regra, outro erro.
     #[test]
     fn o_nulo_satisfaz_a_chave_estrangeira() {
-        let s = servidor(&dir_temp("fk-nulo"));
+        let guarda = dir_temp("fk-nulo");
+        let s = servidor(&guarda);
         criar_clientes(&s);
         com_fk(&s, r#","verificar":true"#).unwrap();
         pede(
@@ -20730,7 +20723,8 @@ mod testes_chave_estrangeira {
     /// se conserta vale mais que lentidao que ninguem explica.*
     #[test]
     fn sem_indice_na_mae_a_recusa_diz_qual_indice_falta() {
-        let s = servidor(&dir_temp("fk-sem-ndx"));
+        let guarda = dir_temp("fk-sem-ndx");
+        let s = servidor(&guarda);
         // `clientes` nasce SEM indice em `id`.
         pede(
             &s,
@@ -20771,7 +20765,8 @@ mod testes_chave_estrangeira {
             "nada",
             "no action",
         ] {
-            let s = servidor(&dir_temp(&format!("proib-{}", proibido.replace(' ', "-"))));
+            let guarda = dir_temp(&format!("proib-{}", proibido.replace(' ', "-")));
+            let s = servidor(&guarda);
             let e = com_fk(&s, &format!(r#","ao_excluir":"{proibido}""#))
                 .expect_err(&format!("{proibido:?} passou no ao_excluir"));
             let txt = e.to_string();
@@ -20791,7 +20786,8 @@ mod testes_chave_estrangeira {
     #[test]
     fn ao_excluir_aceita_restringir_escrito_de_tres_jeitos() {
         for escrito in ["restringir", "RESTRICT", "Restringir"] {
-            let s = servidor(&dir_temp(&format!("ok-{escrito}")));
+            let guarda = dir_temp(&format!("ok-{escrito}"));
+            let s = servidor(&guarda);
             com_fk(&s, &format!(r#","ao_excluir":"{escrito}""#))
                 .unwrap_or_else(|e| panic!("{escrito:?} foi recusado: {e}"));
         }
@@ -20815,7 +20811,8 @@ mod testes_chave_estrangeira {
     /// chave sumiria em silencio.
     #[test]
     fn duplicar_tabela_preserva_a_chave_estrangeira() {
-        let s = servidor(&dir_temp("duplicar"));
+        let guarda = dir_temp("duplicar");
+        let s = servidor(&guarda);
         com_fk(&s, r#","ao_alterar":"cascata""#).unwrap();
         pede(
             &s,
@@ -20845,7 +20842,8 @@ mod testes_chave_estrangeira {
     /// continuar legivel DEPOIS.
     #[test]
     fn declarar_fk_entra_numa_tabela_existente_sem_perder_linha() {
-        let s = servidor(&dir_temp("declara-depois"));
+        let guarda = dir_temp("declara-depois");
+        let s = servidor(&guarda);
         pede(
             &s,
             r#""op":"criar_tabela","database":"b","tabela":"pedidos",
@@ -20912,7 +20910,8 @@ mod testes_chave_estrangeira {
     /// silencio.
     #[test]
     fn declarar_fk_sem_tabela_ref_recusa_em_vez_de_apontar_para_si() {
-        let s = servidor(&dir_temp("sem-ref"));
+        let guarda = dir_temp("sem-ref");
+        let s = servidor(&guarda);
         pede(
             &s,
             r#""op":"criar_tabela","database":"b","tabela":"pedidos",
@@ -20940,7 +20939,8 @@ mod testes_chave_estrangeira {
     /// que nao existe responde com a lista do que existe.
     #[test]
     fn excluir_fk_tira_a_declaracao_e_nada_mais() {
-        let s = servidor(&dir_temp("tira"));
+        let guarda = dir_temp("tira");
+        let s = servidor(&guarda);
         com_fk(&s, "").unwrap();
         // Com a chave declarada -- e conferida, que e o padrao -- a gravacao
         // para, porque `clientes` nao existe. Este passo era um `unwrap()` que
@@ -20991,7 +20991,8 @@ mod testes_chave_estrangeira {
     /// nao entra quebraria justamente ele.
     #[test]
     fn o_que_o_esquema_devolve_volta_como_criar_tabela() {
-        let s = servidor(&dir_temp("ida-e-volta"));
+        let guarda = dir_temp("ida-e-volta");
+        let s = servidor(&guarda);
         com_fk(&s, r#","ao_alterar":"restringir","verificar":true"#).unwrap();
         let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
 
@@ -21051,10 +21052,8 @@ mod testes_config_gravar {
 
     /// Um servidor que subiu de um `config.json` de verdade -- e nao de um
     /// `Config` montado a mao: sem o caminho no arquivo nao ha o que gravar.
-    fn servidor_de_arquivo(nome: &str, cadastro: Cadastro) -> (Arc<Servidor>, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("phx-cfg-op-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    fn servidor_de_arquivo(nome: &str, cadastro: Cadastro) -> (Arc<Servidor>, PathBuf, DirTemp) {
+        let dir = DirTemp::novo(&format!("cfg-op-{nome}"));
         let caminho = dir.join("config.json");
         std::fs::write(
             &caminho,
@@ -21072,7 +21071,7 @@ mod testes_config_gravar {
         c.dblink = dir.join("dblink.json");
         c.jobs = dir.join("jobs.json");
         c.cadastro = cadastro;
-        (Servidor::novo(c).unwrap(), caminho)
+        (Servidor::novo(c).unwrap(), caminho, dir)
     }
 
     fn pedido(txt: &str) -> Json {
@@ -21109,7 +21108,7 @@ mod testes_config_gravar {
 
     #[test]
     fn grava_no_arquivo_e_aplica_a_quente() {
-        let (s, caminho) = servidor_de_arquivo("quente", Cadastro::default());
+        let (s, caminho, _guarda) = servidor_de_arquivo("quente", Cadastro::default());
         let sessao = Sessao::default();
         assert_eq!(s.max_linhas(), 1000);
 
@@ -21147,7 +21146,7 @@ mod testes_config_gravar {
     /// dizer isso ao lado dele em vez de prometer efeito que nao veio.
     #[test]
     fn campo_de_reinicio_volta_nomeado() {
-        let (s, _) = servidor_de_arquivo("reinicio", Cadastro::default());
+        let (s, _, _guarda) = servidor_de_arquivo("reinicio", Cadastro::default());
         let r = s
             .executar(
                 "config_gravar",
@@ -21172,7 +21171,7 @@ mod testes_config_gravar {
         let mut cadastro = Cadastro::default();
         cadastro.usuarios.push(operador());
         let usuario = cadastro.usuarios[0].clone();
-        let (s, caminho) = servidor_de_arquivo("portao", cadastro);
+        let (s, caminho, _guarda) = servidor_de_arquivo("portao", cadastro);
         let antes = std::fs::read_to_string(&caminho).unwrap();
 
         let mut sessao = Sessao {
@@ -21209,7 +21208,7 @@ mod testes_config_gravar {
         let mut cadastro = Cadastro::default();
         cadastro.usuarios.push(operador());
         let usuario = cadastro.usuarios[0].clone();
-        let (s, caminho) = servidor_de_arquivo("cinto", cadastro);
+        let (s, caminho, _guarda) = servidor_de_arquivo("cinto", cadastro);
         let antes = std::fs::read_to_string(&caminho).unwrap();
 
         let sessao = Sessao {
@@ -21235,7 +21234,7 @@ mod testes_config_gravar {
     /// da operacao tambem nao os carrega de volta.
     #[test]
     fn o_segredo_nao_entra_nem_sai() {
-        let (s, caminho) = servidor_de_arquivo("segredo", Cadastro::default());
+        let (s, caminho, _guarda) = servidor_de_arquivo("segredo", Cadastro::default());
         let sessao = Sessao::default();
 
         let e = s
@@ -21268,9 +21267,7 @@ mod testes_config_gravar {
     /// nenhuma linha o lia -- a mesma armadilha do `cache_paginas` sem cache.
     #[test]
     fn o_teto_de_memoria_residente_e_lido() {
-        let dir = std::env::temp_dir().join(format!("phx-mem-teto-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = DirTemp::novo("mem-teto");
         let base = dir.join("dados");
         std::fs::create_dir_all(&base).unwrap();
 
@@ -21372,7 +21369,7 @@ mod testes_config_gravar {
         let mut cadastro = Cadastro::default();
         cadastro.usuarios.push(operador());
         let dono = cadastro.usuarios[0].clone();
-        let (s, _) = servidor_de_arquivo("usuarios-teto", cadastro);
+        let (s, _, _guarda) = servidor_de_arquivo("usuarios-teto", cadastro);
 
         // Sem teto (o padrao), nada muda: e o comportamento velho.
         assert_eq!(s.config().recursos.usuarios_max, 0);
@@ -21402,7 +21399,7 @@ mod testes_config_gravar {
     /// comporta exatamente como antes de a operacao existir.
     #[test]
     fn sem_gravar_nada_o_servidor_e_o_de_antes() {
-        let (s, caminho) = servidor_de_arquivo("velho", Cadastro::default());
+        let (s, caminho, _guarda) = servidor_de_arquivo("velho", Cadastro::default());
         let antes = std::fs::read_to_string(&caminho).unwrap();
         let c = s
             .executar("config", &pedido("{}"), &Sessao::default())
@@ -21419,15 +21416,8 @@ mod testes_restaurar_backup {
     use super::*;
     use crate::usuarios::Cadastro;
 
-    fn dir_temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "phx-rst-{nome}-{}-{}",
-            std::process::id(),
-            crate::agora_ms()
-        ));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("rst-{nome}"))
     }
 
     fn pedido(txt: &str) -> Json {
@@ -21957,11 +21947,8 @@ mod testes_restaurar_backup {
 mod testes_janela_e_cadeia {
     use super::*;
 
-    fn dir_temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-jan-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("jan-{nome}"))
     }
 
     fn pedido(txt: &str) -> Json {
@@ -21975,10 +21962,10 @@ mod testes_janela_e_cadeia {
     /// defeito so aparecia depois de 200 gravacoes, e com o relogio acordando
     /// a cada 200 ms ele as vezes limpava o conjunto antes e escondia tudo.
     /// Aqui a condicao e deterministica.
-    fn servidor_janela_curta(nome: &str) -> Arc<Servidor> {
+    fn servidor_janela_curta(nome: &str) -> (Arc<Servidor>, DirTemp) {
         let dir = dir_temp(nome);
         let mut config = Config {
-            base: dir.clone(),
+            base: dir.to_path_buf(),
             log_acessos: dir.join("acessos.log"),
             blacklist: dir.join("blacklist.json"),
             dblink: dir.join("dblink.json"),
@@ -22003,7 +21990,7 @@ mod testes_janela_e_cadeia {
             )
             .unwrap();
         }
-        s
+        (s, dir)
     }
 
     fn quantas(s: &Arc<Servidor>, tabela: &str) -> usize {
@@ -22066,7 +22053,7 @@ mod testes_janela_e_cadeia {
     /// nada.
     #[test]
     fn duas_tabelas_na_mesma_janela_nao_travam_o_servidor() {
-        let s = servidor_janela_curta("duas-tabelas");
+        let (s, _guarda) = servidor_janela_curta("duas-tabelas");
         let copia = Arc::clone(&s);
         com_prazo("40 insercoes alternadas entre duas tabelas", move || {
             for i in 0..40 {
@@ -22159,7 +22146,7 @@ mod testes_janela_e_cadeia {
     /// volta.
     #[test]
     fn tabela_que_nao_sincroniza_segura_as_marcas() {
-        let s = servidor_janela_curta("fecho-falha");
+        let (s, _guarda) = servidor_janela_curta("fecho-falha");
         sujar_as_duas(&s);
         // A terceira chave nao abre: e a mesma perda que um erro de E/S no
         // meio do fecho, e o caminho que ela toma e o mesmo.
@@ -22196,7 +22183,7 @@ mod testes_janela_e_cadeia {
     /// do sistema operacional se prova contra o sistema operacional.*
     #[test]
     fn fsync_que_falha_no_fio_tambem_segura_as_marcas() {
-        let s = servidor_janela_curta("fecho-falha-no-fio");
+        let (s, _guarda) = servidor_janela_curta("fecho-falha-no-fio");
         sujar_as_duas(&s);
         let atravessado = s.config.base.join("b").join("a.pag");
         let _ = std::fs::remove_file(&atravessado);
@@ -22236,7 +22223,7 @@ mod testes_janela_e_cadeia {
     /// sai vira uma varredura a mais em todo arranque, para sempre.
     #[test]
     fn com_todas_sincronizadas_as_marcas_saem() {
-        let s = servidor_janela_curta("fecho-ok");
+        let (s, _guarda) = servidor_janela_curta("fecho-ok");
         sujar_as_duas(&s);
         let marca = marca_de_mentira(&s, "transacao_2.tx");
 
@@ -22274,7 +22261,7 @@ mod testes_janela_e_cadeia {
     /// para o disco e ninguem repara em nada.
     #[test]
     fn uma_tabela_so_grava_como_sempre() {
-        let s = servidor_janela_curta("uma-tabela");
+        let (s, _guarda) = servidor_janela_curta("uma-tabela");
         for i in 0..20 {
             s.executar(
                 "inserir",
@@ -22295,7 +22282,7 @@ mod testes_janela_e_cadeia {
     /// tamanho do estrago que a guarda impede.
     #[test]
     fn a_cadeia_de_gatilhos_para_no_teto_e_avisa() {
-        let s = servidor_janela_curta("cadeia");
+        let (s, _guarda) = servidor_janela_curta("cadeia");
         criar_gatilho(
             &s,
             "CREATE TRIGGER se_multiplica AFTER INSERT ON a FOR EACH ROW \
@@ -22322,7 +22309,7 @@ mod testes_janela_e_cadeia {
     /// a guarda podia estar cortando a cadeia legitima e ninguem veria.
     #[test]
     fn a_cadeia_curta_de_auditoria_roda_inteira() {
-        let s = servidor_janela_curta("auditoria");
+        let (s, _guarda) = servidor_janela_curta("auditoria");
         criar_gatilho(
             &s,
             "CREATE TRIGGER audita AFTER INSERT ON a FOR EACH ROW \
@@ -22507,7 +22494,7 @@ mod testes_janela_e_cadeia {
     /// passaria com as duas.
     #[test]
     fn gatilho_before_sem_fundo_nao_derruba_o_servidor() {
-        let s = servidor_janela_curta("gatilho-sem-fundo");
+        let (s, _guarda) = servidor_janela_curta("gatilho-sem-fundo");
         criar_gatilho(
             &s,
             "CREATE TRIGGER incha BEFORE INSERT ON a FOR EACH ROW \
@@ -22547,7 +22534,7 @@ mod testes_janela_e_cadeia {
     /// `cargo test` inteiro.
     #[test]
     fn a_trava_pedida_duas_vezes_pela_mesma_thread_vira_erro() {
-        let s = servidor_janela_curta("reentrante");
+        let (s, _guarda) = servidor_janela_curta("reentrante");
         let copia = Arc::clone(&s);
         com_prazo("duas tomadas da trava na mesma thread", move || {
             let primeira = copia.travar_dados().expect("a primeira tem de vir");
@@ -22591,7 +22578,7 @@ mod testes_janela_e_cadeia {
     /// alguem vai citar como se cobrisse todos.**
     #[test]
     fn as_duas_fichas_na_mesma_thread_viram_erro() {
-        let s = servidor_janela_curta("duas-fichas");
+        let (s, _guarda) = servidor_janela_curta("duas-fichas");
         let copia = Arc::clone(&s);
         com_prazo("a compartilhada depois da exclusiva", move || {
             let exclusiva = copia.travar_dados().expect("a primeira tem de vir");
@@ -22631,7 +22618,7 @@ mod testes_janela_e_cadeia {
     /// caminho. A guarda so existe para quem ja estava pendurado.
     #[test]
     fn sem_reentrancia_nada_muda() {
-        let s = servidor_janela_curta("sem-reentrancia");
+        let (s, _guarda) = servidor_janela_curta("sem-reentrancia");
         for i in 0..12 {
             let t = if i % 2 == 0 { "a" } else { "b" };
             s.executar(
@@ -22664,11 +22651,8 @@ mod testes_janela_e_cadeia {
 mod testes_da_ficha_compartilhada {
     use super::*;
 
-    fn dir_temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-fc-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("fc-{nome}"))
     }
 
     fn pedido(txt: &str) -> Json {
@@ -22676,10 +22660,10 @@ mod testes_da_ficha_compartilhada {
     }
 
     /// Um servidor com uma tabela `c` de dez linhas, no database `b`.
-    fn servidor(nome: &str, espelho: bool) -> (Arc<Servidor>, std::path::PathBuf) {
+    fn servidor(nome: &str, espelho: bool) -> (Arc<Servidor>, DirTemp) {
         let dir = dir_temp(nome);
         let mut config = Config {
-            base: dir.clone(),
+            base: dir.to_path_buf(),
             log_acessos: dir.join("acessos.log"),
             blacklist: dir.join("blacklist.json"),
             dblink: dir.join("dblink.json"),
@@ -22901,15 +22885,8 @@ mod testes_da_ficha_compartilhada {
 mod testes_transacoes {
     use super::*;
 
-    fn dir_temp(rotulo: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "phx-tx-{}-{rotulo}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("tx-{rotulo}"))
     }
 
     fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
@@ -24327,18 +24304,8 @@ mod testes_transacoes {
 mod testes_varrer_onde {
     use super::*;
 
-    fn dir(rotulo: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "phx-varrer-onde-{}-{rotulo}-{:?}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("varrer-onde-{rotulo}"))
     }
 
     fn pedido(txt: &str) -> Json {
@@ -24631,11 +24598,8 @@ mod testes_posicao_do_diario {
     use super::*;
     use crate::usuarios::Cadastro;
 
-    fn dir_temp(nome: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-pos-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("pos-{nome}"))
     }
 
     fn json(txt: &str) -> Json {

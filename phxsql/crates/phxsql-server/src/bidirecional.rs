@@ -39,6 +39,8 @@
 //! coluna**; sem ela a tabela e recusada com o motivo escrito (o HFSQL(R)
 //! tambem impoe identificador adequado para replicar).
 
+#[cfg(test)]
+use crate::apoio_teste::DirTemp;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
@@ -412,9 +414,7 @@ mod testes {
 
     #[test]
     fn posicoes_atravessam_o_arquivo_e_arquivo_sumido_recomeca_do_zero() {
-        let dir = std::env::temp_dir().join(format!("phx-posicoes-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = DirTemp::novo("posicoes");
         let caminho = dir.join("replicacao-posicoes.json");
 
         assert!(ler_posicoes(&caminho).is_empty(), "sem arquivo, do zero");

@@ -7,6 +7,9 @@
 //! licao do `BULKINSERT` foi que um teste que passa por engano e pior que um
 //! teste que falta.
 
+mod comum;
+use comum::DirTemp;
+
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
@@ -124,15 +127,8 @@ fn pedir(porta: u16, linha: &str) -> String {
     resposta
 }
 
-fn pasta(nome: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!(
-        "phxsql-servico-{}-{}-{nome}",
-        std::process::id(),
-        porta_livre()
-    ));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
+fn pasta(nome: &str) -> DirTemp {
+    DirTemp::novo(&format!("servico-{nome}"))
 }
 
 #[test]
@@ -268,7 +264,7 @@ fn a_web_levanta_a_porta_de_dados_depois_de_parada() {
 
     let mut c = Config {
         bind: format!("127.0.0.1:{porta}"),
-        base: base.clone(),
+        base: base.to_path_buf(),
         log_acessos: base.join("acessos.log"),
         blacklist: base.join("blacklist.json"),
         dblink: base.join("dblink.json"),

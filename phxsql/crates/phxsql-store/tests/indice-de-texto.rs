@@ -4,6 +4,8 @@
 //! neles nao e "achar": e **nunca achar a mais**. Achar a menos e atraso e o
 //! indice o declara; achar a mais e mentira, e nao ha como o cliente perceber.
 
+mod comum;
+
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, IndiceDeTexto, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
@@ -27,9 +29,8 @@ fn esquema() -> Schema {
     .expect("indices de texto")
 }
 
-fn nova(nome: &str) -> (Table, std::path::PathBuf) {
-    let dir = std::env::temp_dir().join(format!("phx-fts-tab-{nome}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+fn nova(nome: &str) -> (Table, comum::DirTemp) {
+    let dir = comum::DirTemp::novo(&format!("fts-tab-{nome}"));
     (Table::criar(&dir, esquema()).expect("criar"), dir)
 }
 
@@ -195,8 +196,7 @@ fn o_indice_acha_o_mesmo_que_a_varredura() {
 /// Tabela SEM indice de texto nao ganha o arquivo, e a busca recusa dizendo.
 #[test]
 fn tabela_sem_indice_de_texto_nao_paga_nada() {
-    let dir = std::env::temp_dir().join(format!("phx-fts-sem-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = comum::DirTemp::novo("fts-sem");
     let e = Schema::new(
         "simples",
         vec![Column::new("id", ColumnType::Int8).obrigatoria()],

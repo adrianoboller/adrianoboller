@@ -8,7 +8,9 @@
 //! da corrida. Um teste de integracao roda em outro processo, e ali o global e
 //! so dele.
 
-use std::path::PathBuf;
+mod comum;
+use comum::DirTemp;
+
 use std::sync::Mutex;
 
 use phxsql_core::json::Json;
@@ -20,12 +22,8 @@ use phxsql_store::log::{LogFile, Operacao};
 /// A trava que serializa os testes: o cofre e global ao processo.
 static UM_DE_CADA_VEZ: Mutex<()> = Mutex::new(());
 
-fn dir(rotulo: &str) -> PathBuf {
-    let mut p = std::env::temp_dir();
-    p.push(format!("phxsql-cfg-cifra-{}-{rotulo}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&p);
-    std::fs::create_dir_all(&p).unwrap();
-    p
+fn dir(rotulo: &str) -> DirTemp {
+    DirTemp::novo(&format!("cfg-cifra-{rotulo}"))
 }
 
 /// O caminho inteiro: `config.json` liga a cifra, e o `.log` nasce cifrado.

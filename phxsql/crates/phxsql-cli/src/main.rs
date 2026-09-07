@@ -988,16 +988,53 @@ mod testes {
     use super::*;
     use std::path::PathBuf;
 
-    fn temp(nome: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("phxpac-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    /// Diretorio temporario que se apaga no `Drop` -- pedido 150.
+    ///
+    /// Copia curta do guarda dos outros crates: este e um BINARIO, nao tem
+    /// biblioteca de onde importar, e uma dependencia de dev so para tres
+    /// testes custaria mais do que estas vinte linhas. O `Drop` e o ponto:
+    /// um `rm` no fim do corpo nao roda quando o teste falha no meio, que e
+    /// o caso comum.
+    struct DirTemp(PathBuf);
+
+    impl DirTemp {
+        fn novo(rotulo: &str) -> DirTemp {
+            static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let d =
+                std::env::temp_dir().join(format!("phxcli-ut-{}-{rotulo}-{n}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            DirTemp(d)
+        }
+    }
+
+    impl Drop for DirTemp {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for DirTemp {
+        type Target = std::path::Path;
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl AsRef<std::path::Path> for DirTemp {
+        fn as_ref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    fn temp(nome: &str) -> DirTemp {
+        DirTemp::novo(nome)
     }
 
     /// Monta um pacote de mentira com o mesmo formato que o `empacotar.sh`
     /// grava: `<sha256>  <caminho>`, uma linha por arquivo, caminho relativo.
-    fn pacote(nome: &str) -> PathBuf {
+    fn pacote(nome: &str) -> DirTemp {
         let d = temp(nome);
         std::fs::create_dir_all(d.join("demonstracao")).unwrap();
         std::fs::write(d.join("phxsqld"), b"o servidor").unwrap();

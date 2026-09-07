@@ -25,6 +25,8 @@
 //! fora e uma porta dos fundos; aqui nao ha interpolacao de shell em lugar
 //! nenhum.
 
+#[cfg(test)]
+use crate::apoio_teste::DirTemp;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -725,12 +727,8 @@ fn mtime(caminho: &Path) -> Option<SystemTime> {
 mod tests {
     use super::*;
 
-    fn dir_temp(rotulo: &str) -> PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!("phxsql-bl-{}-{rotulo}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn dir_temp(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("bl-{rotulo}"))
     }
 
     fn politica() -> Politica {

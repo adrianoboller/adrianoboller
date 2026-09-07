@@ -15,6 +15,9 @@
 //! 3. o campo esta na lista unica que a tela monta (`CAMPOS_EDITAVEIS`), e nao
 //!    numa segunda lista escrita no JavaScript.
 
+mod comum;
+use comum::DirTemp;
+
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -23,12 +26,8 @@ use phxsql_store::lixeira;
 
 static UM_DE_CADA_VEZ: Mutex<()> = Mutex::new(());
 
-fn dir(rotulo: &str) -> PathBuf {
-    let mut p = std::env::temp_dir();
-    p.push(format!("phxsql-cfg-exc-{}-{rotulo}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&p);
-    std::fs::create_dir_all(&p).unwrap();
-    p
+fn dir(rotulo: &str) -> DirTemp {
+    DirTemp::novo(&format!("cfg-exc-{rotulo}"))
 }
 
 fn escrever_config(d: &std::path::Path, conteudo: &str) -> PathBuf {

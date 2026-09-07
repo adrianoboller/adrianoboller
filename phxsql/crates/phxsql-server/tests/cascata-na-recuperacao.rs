@@ -33,6 +33,9 @@
 //! 4. a marca **v1** continuando a ser lida, porque descartar marca velha e
 //!    jogar fora transacao confirmada por causa de uma mudanca nossa.
 
+mod comum;
+use comum::DirTemp;
+
 use phxsql_core::schema::{AcaoRi, Column, ForeignKey, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
@@ -40,12 +43,8 @@ use phxsql_server::transacao::{recuperar, Acao, Escrita};
 use phxsql_store::catalogo::{Database, Instancia};
 use phxsql_store::table::Table;
 
-fn base(rotulo: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!(
-        "phx-casc-rec-{rotulo}-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
+fn base(rotulo: &str) -> DirTemp {
+    let d = DirTemp::novo(&format!("casc-rec-{rotulo}"));
     std::fs::remove_dir_all(&d).ok();
     std::fs::create_dir_all(&d).unwrap();
     d

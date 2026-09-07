@@ -3,6 +3,8 @@
 //! O arquivo e JSON puro, lido pelo leitor do proprio projeto -- nenhuma
 //! dependencia externa entra so por causa da configuracao.
 
+#[cfg(test)]
+use crate::apoio_teste::DirTemp;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
@@ -3537,9 +3539,7 @@ mod tests {
     /// cada arranque.
     #[test]
     fn a_estatica_do_fio_nasce_no_arquivo_e_nao_muda() {
-        let d = std::env::temp_dir().join(format!("phxsql-chave-do-fio-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
+        let d = DirTemp::novo("chave-do-fio");
         let config = d.join("config.json");
 
         let cf = CifraFio::default();
@@ -4925,10 +4925,8 @@ mod testes_gravacao {
     /// Um config.json de verdade no disco, com comentario, ordem propria e um
     /// bloco que este processo nao conhece -- exatamente o que a gravacao nao
     /// pode estragar.
-    fn arquivo(nome: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("phx-gravar-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    fn arquivo(nome: &str) -> (DirTemp, PathBuf) {
+        let dir = DirTemp::novo(&format!("gravar-{nome}"));
         let caminho = dir.join("config.json");
         std::fs::write(
             &caminho,
@@ -4944,7 +4942,7 @@ mod testes_gravacao {
 "#,
         )
         .unwrap();
-        caminho
+        (dir, caminho)
     }
 
     fn muda(campo: &str, valor: Json) -> Vec<(String, Json)> {
@@ -4953,7 +4951,7 @@ mod testes_gravacao {
 
     #[test]
     fn grava_o_pedido_e_preserva_o_resto() {
-        let caminho = arquivo("preserva");
+        let (_guarda, caminho) = arquivo("preserva");
         let novo = Config::gravar_campos(&caminho, &muda("max_linhas", Json::de_i64(50))).unwrap();
         assert_eq!(novo.max_linhas, 50);
 
@@ -4981,9 +4979,7 @@ mod testes_gravacao {
     /// ilegivel. Este teste e o que trava a troca cirurgica.
     #[test]
     fn o_arquivo_sai_igual_menos_o_valor_trocado() {
-        let dir = std::env::temp_dir().join(format!("phx-bytes-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = DirTemp::novo("bytes");
         let caminho = dir.join("config.json");
         let original = "{\n  \"_nota\": \"escrito a mao\",\n\n  \"token\": \"t\",\n  \
              \"max_linhas\": 1000,\n\n  \"ips_permitidos\": [\"10.0.0.1\", \"10.0.0.2\"],\n\n  \
@@ -5013,7 +5009,7 @@ mod testes_gravacao {
     /// e o arquivo continua valido e com os comentarios.
     #[test]
     fn campo_ausente_entra_pelo_reserializado() {
-        let caminho = arquivo("ausente");
+        let (_guarda, caminho) = arquivo("ausente");
         // `backup.manter` nao existe no arquivo de origem.
         let novo =
             Config::gravar_campos(&caminho, &muda("backup.manter", Json::de_i64(3))).unwrap();
@@ -5029,7 +5025,7 @@ mod testes_gravacao {
 
     #[test]
     fn campo_dentro_de_secao_muda_so_ele() {
-        let caminho = arquivo("secao");
+        let (_guarda, caminho) = arquivo("secao");
         let novo =
             Config::gravar_campos(&caminho, &muda("backup.agendado", Json::Bool(true))).unwrap();
         assert!(novo.backup.agendado);
@@ -5045,7 +5041,7 @@ mod testes_gravacao {
     /// e o arquivo fica intocado -- token e o exemplo que mais importa.
     #[test]
     fn campo_fora_da_lista_e_recusado_sem_tocar_o_arquivo() {
-        let caminho = arquivo("whitelist");
+        let (_guarda, caminho) = arquivo("whitelist");
         let antes = std::fs::read_to_string(&caminho).unwrap();
         for campo in ["token", "seguranca.firewall", "usuarios", "cifra.senha"] {
             let e = Config::gravar_campos(&caminho, &muda(campo, Json::texto_de("x")))
@@ -5061,7 +5057,7 @@ mod testes_gravacao {
     /// vale, e ninguem descobriria pela tela.
     #[test]
     fn tipo_errado_e_recusado_antes_de_gravar() {
-        let caminho = arquivo("tipo");
+        let (_guarda, caminho) = arquivo("tipo");
         let antes = std::fs::read_to_string(&caminho).unwrap();
         let e = Config::gravar_campos(&caminho, &muda("max_linhas", Json::texto_de("abc")))
             .unwrap_err()
@@ -5074,7 +5070,7 @@ mod testes_gravacao {
     /// roda ANTES do rename.
     #[test]
     fn valor_que_nao_valida_nao_entra_no_arquivo() {
-        let caminho = arquivo("valida");
+        let (_guarda, caminho) = arquivo("valida");
         let antes = std::fs::read_to_string(&caminho).unwrap();
         // "25:00" passa no tipo (e texto) e cai na validacao do Backup.
         let e = Config::gravar_campos(&caminho, &muda("backup.hora", Json::texto_de("25:00")))
@@ -5099,7 +5095,7 @@ mod testes_gravacao {
     /// como o TEXTO "10.00" contra o numero 10 do arquivo.
     #[test]
     fn o_que_esta_gravado_e_ainda_nao_vale_aparece() {
-        let caminho = arquivo("divergencia");
+        let (_guarda, caminho) = arquivo("divergencia");
         let c = Config::ler(&caminho).unwrap();
         // Nada gravado ainda: o arquivo e a memoria concordam.
         assert!(divergencias_do_arquivo(&caminho, &c.para_json()).is_empty());
@@ -5127,7 +5123,7 @@ mod testes_gravacao {
     /// reescreve nada sozinho.
     #[test]
     fn arquivo_antigo_abre_byte_a_byte_como_antes() {
-        let caminho = arquivo("velho");
+        let (_guarda, caminho) = arquivo("velho");
         let antes = std::fs::read_to_string(&caminho).unwrap();
         let c = Config::ler(&caminho).unwrap();
         assert_eq!(c.max_linhas, 1000);
@@ -5141,7 +5137,7 @@ mod testes_gravacao {
     /// grava a string vazia -- que e como o leitor escreve «de fabrica».
     #[test]
     fn a_tela_grava_a_cor_e_o_vazio_volta_a_de_fabrica() {
-        let caminho = arquivo("cores");
+        let (_guarda, caminho) = arquivo("cores");
         let novo = Config::gravar_campos(
             &caminho,
             &muda("telemetria.cor_alto", Json::texto_de("#00c2a8")),
@@ -5166,7 +5162,7 @@ mod testes_gravacao {
     /// isso nao ha como uma cor nova entrar por fora dele.
     #[test]
     fn a_tela_recusa_cor_que_nao_e_rrggbb() {
-        let caminho = arquivo("cor-torta");
+        let (_guarda, caminho) = arquivo("cor-torta");
         let antes = std::fs::read_to_string(&caminho).unwrap();
         for torta in ["amarelo", "#12345", "rgb(1,2,3)", "#gggggg", "#00c2a8 "] {
             let e = Config::gravar_campos(

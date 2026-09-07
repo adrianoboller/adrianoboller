@@ -304,32 +304,28 @@ impl FtsFile {
 #[cfg(test)]
 mod testes {
     use super::*;
+    use crate::apoio_teste::DirTemp;
 
     /// Um `.fts` com um indice que dobra.
-    fn novo(nome: &str) -> (FtsFile, std::path::PathBuf) {
+    ///
+    /// O `DirTemp` volta junto de proposito: o `.fts` mora DENTRO dele, e um
+    /// guarda largado aqui apagaria o diretorio antes do primeiro `escrever`.
+    fn novo(nome: &str) -> (FtsFile, std::path::PathBuf, DirTemp) {
         com_dobra(nome, vec![true])
     }
 
-    fn com_dobra(nome: &str, dobra: Vec<bool>) -> (FtsFile, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("phx-fts-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    fn com_dobra(nome: &str, dobra: Vec<bool>) -> (FtsFile, std::path::PathBuf, DirTemp) {
+        let dir = DirTemp::novo(&format!("fts-{nome}"));
         let c = dir.join(format!("t.{EXT_FTS}"));
         let n = dobra.len();
-        (FtsFile::criar(&c, dobra).unwrap(), c).tap(|f| assert_eq!(f.0.quantos(), n))
+        let f = FtsFile::criar(&c, dobra).unwrap();
+        assert_eq!(f.quantos(), n);
+        (f, c, dir)
     }
-
-    trait Tap: Sized {
-        fn tap(self, f: impl FnOnce(&Self)) -> Self {
-            f(&self);
-            self
-        }
-    }
-    impl<T> Tap for T {}
 
     #[test]
     fn acha_a_palavra_que_indexou() {
-        let (mut f, _) = novo("basico");
+        let (mut f, _, _guarda) = novo("basico");
         f.indexar(0, 1, "pedido do cliente fenix").unwrap();
         f.indexar(0, 2, "nota fiscal comum").unwrap();
         assert_eq!(f.procurar(0, "fenix").unwrap().rowids, vec![1]);
@@ -341,7 +337,7 @@ mod testes {
     /// mediu que a varredura de hoje NAO faz: procurar sem acento acha com.
     #[test]
     fn a_dobra_vale_nos_dois_lados() {
-        let (mut f, _) = novo("dobra");
+        let (mut f, _, _guarda) = novo("dobra");
         f.indexar(0, 7, "a Fênix renasce").unwrap();
         for grafia in ["fenix", "Fênix", "FENIX", "fÊnIx"] {
             assert_eq!(
@@ -359,7 +355,7 @@ mod testes {
     /// acharia o que era do outro.
     #[test]
     fn dois_indices_com_dobra_diferente_nao_se_misturam() {
-        let (mut f, _) = com_dobra("mistura", vec![true, false]);
+        let (mut f, _, _guarda) = com_dobra("mistura", vec![true, false]);
         f.indexar(0, 1, "a Fênix").unwrap();
         f.indexar(1, 1, "a Fênix").unwrap();
 
@@ -385,7 +381,7 @@ mod testes {
     /// passa por engano e pior que teste que falta.*
     #[test]
     fn prefixo_igual_com_tamanho_diferente_nao_colide() {
-        let (mut f, _) = novo("prefixo");
+        let (mut f, _, _guarda) = novo("prefixo");
         let cabe = f.termo_len();
         let base = "a".repeat(cabe);
         let uma = format!("{base}x");
@@ -405,7 +401,7 @@ mod testes {
     /// A honestidade da §7.1: a duvida vira BANDEIRA, e nao resposta errada.
     #[test]
     fn palavra_longa_pede_conferencia_e_a_curta_nao() {
-        let (mut f, _) = novo("conferir");
+        let (mut f, _, _guarda) = novo("conferir");
         let longa = "a".repeat(f.termo_len() + 5);
         f.indexar(0, 1, &longa).unwrap();
         let achado = f.procurar(0, &longa).unwrap();
@@ -419,7 +415,7 @@ mod testes {
 
     #[test]
     fn desindexar_tira_a_linha_e_deixa_as_outras() {
-        let (mut f, _) = novo("desindexar");
+        let (mut f, _, _guarda) = novo("desindexar");
         f.indexar(0, 1, "pedido fenix").unwrap();
         f.indexar(0, 2, "pedido comum").unwrap();
         assert_eq!(f.procurar(0, "pedido").unwrap().rowids, vec![1, 2]);
@@ -430,7 +426,7 @@ mod testes {
 
     #[test]
     fn palavra_repetida_na_linha_vira_uma_chave_so() {
-        let (mut f, _) = novo("repetida");
+        let (mut f, _, _guarda) = novo("repetida");
         assert_eq!(f.indexar(0, 1, "pedido pedido pedido").unwrap(), 1);
         assert_eq!(f.qtd_chaves(0), 1);
         assert_eq!(f.procurar(0, "pedido").unwrap().rowids, vec![1]);
@@ -438,7 +434,7 @@ mod testes {
 
     #[test]
     fn sobrevive_a_fechar_e_abrir() {
-        let (mut f, caminho) = novo("reabrir");
+        let (mut f, caminho, _guarda) = novo("reabrir");
         f.indexar(0, 42, "a fenix guardada").unwrap();
         f.fechar().unwrap();
         drop(f);
@@ -454,7 +450,7 @@ mod testes {
     /// indice nenhum.
     #[test]
     fn abrir_com_quantidade_diferente_recusa() {
-        let (f, caminho) = novo("divergente");
+        let (f, caminho, _guarda) = novo("divergente");
         drop(f);
         let e = match FtsFile::abrir(&caminho, vec![true, true]) {
             Err(e) => e.to_string(),
@@ -465,7 +461,7 @@ mod testes {
 
     #[test]
     fn criar_por_cima_recusa_em_vez_de_apagar() {
-        let (f, caminho) = novo("porcima");
+        let (f, caminho, _guarda) = novo("porcima");
         drop(f);
         assert!(FtsFile::criar(&caminho, vec![true]).is_err());
     }

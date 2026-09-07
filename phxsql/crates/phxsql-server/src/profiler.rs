@@ -112,6 +112,8 @@
 //! gravar e nao grava e pior que log nenhum, entao a falha e CONTADA e sai na
 //! resposta.
 
+#[cfg(test)]
+use crate::apoio_teste::DirTemp;
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -1294,9 +1296,7 @@ mod testes {
     /// o tamanho do arquivo sem ir ao disco perguntar.
     #[test]
     fn o_que_grava_conta_os_bytes() {
-        let d = std::env::temp_dir().join(format!("phx-prof-bytes-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
+        let d = DirTemp::novo("prof-bytes");
         let alvo = d.join("p.txt");
         let mut p = Profiler::default();
         p.ligar(Filtro::default(), alvo.to_str().unwrap(), 10, 0)
@@ -1312,15 +1312,8 @@ mod testes {
     }
     // ------------------------------------------------- o rodizio do arquivo
 
-    fn temp(rotulo: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "phx-rodizio-{rotulo}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn temp(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("rodizio-{rotulo}"))
     }
 
     /// Enche o arquivo com pedidos ate ele ter de virar `quantos` vezes.
@@ -1560,20 +1553,12 @@ mod testes_tabela_sigilosa {
 
     /// Um diretorio so deste teste, para as corridas em paralelo nao brigarem
     /// pelo mesmo `perfil.txt`.
-    fn pasta(nome: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "phx-prof-sigilo-{}-{}-{:?}",
-            std::process::id(),
-            nome,
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn pasta(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("prof-sigilo-{nome}"))
     }
 
     /// Liga um Profiler gravando em arquivo, com a lista de sigilosas dada.
-    fn ligado(nome: &str, sigilosas: &[&str]) -> (Profiler, PathBuf) {
+    fn ligado(nome: &str, sigilosas: &[&str]) -> (Profiler, PathBuf, DirTemp) {
         let d = pasta(nome);
         let arquivo = d.join("perfil.txt");
         let mut p = Profiler::default();
@@ -1585,7 +1570,7 @@ mod testes_tabela_sigilosa {
             1_700_000_000_000,
         )
         .unwrap();
-        (p, arquivo)
+        (p, arquivo, d)
     }
 
     /// So as linhas de EVENTO -- o cabecalho de `ligar` nao e evento.
@@ -1601,7 +1586,7 @@ mod testes_tabela_sigilosa {
     /// passaria neste teste do mesmo jeito.
     #[test]
     fn o_anel_ve_o_texto_e_o_arquivo_nao() {
-        let (mut p, arquivo) = ligado("dois-sentidos", &["loja.clientes"]);
+        let (mut p, arquivo, _guarda) = ligado("dois-sentidos", &["loja.clientes"]);
         let pedido = r#"{"op":"inserir","database":"loja","tabela":"clientes","linha":{"nome":"Adriano Boller","cpf":"111.222.333-44"}}"#;
         let s = p
             .chegou(pedido, "inserir", "adm", "loja", "clientes", "1.1.1.1", 0)
@@ -1645,7 +1630,7 @@ mod testes_tabela_sigilosa {
     /// esconder o texto de todo mundo seria estrago, nao protecao.
     #[test]
     fn sem_lista_o_arquivo_continua_com_o_texto() {
-        let (mut p, arquivo) = ligado("sem-lista", &[]);
+        let (mut p, arquivo, _guarda) = ligado("sem-lista", &[]);
         let pedido = r#"{"op":"inserir","database":"loja","tabela":"clientes","linha":{"nome":"Adriano Boller"}}"#;
         let s = p
             .chegou(pedido, "inserir", "adm", "loja", "clientes", "1.1.1.1", 0)
@@ -1664,7 +1649,7 @@ mod testes_tabela_sigilosa {
     /// `lojaB.clientes` sao duas tabelas.
     #[test]
     fn a_declaracao_e_por_banco_e_nao_pelo_nome_curto() {
-        let (mut p, arquivo) = ligado("por-banco", &["lojaa.clientes"]);
+        let (mut p, arquivo, _guarda) = ligado("por-banco", &["lojaa.clientes"]);
         for (db, quem) in [("lojaA", "PROTEGIDO"), ("lojaB", "ABERTO")] {
             let pedido =
                 format!(r#"{{"op":"ler","database":"{db}","tabela":"clientes","nome":"{quem}"}}"#);
@@ -1700,7 +1685,7 @@ mod testes_tabela_sigilosa {
             r#"{"op":"exportar","database":"loja","tabelas":["pedidos","clientes"],"marca":"VAZOU"}"#,
         ];
         for (i, pedido) in casos.iter().enumerate() {
-            let (mut p, arquivo) = ligado(&format!("escondida-{i}"), &["loja.clientes"]);
+            let (mut p, arquivo, _guarda) = ligado(&format!("escondida-{i}"), &["loja.clientes"]);
             // O campo `"tabela"` do primeiro nivel e `pedidos` -- que NAO esta
             // declarada. E exatamente o disfarce.
             let s = p
@@ -1720,7 +1705,7 @@ mod testes_tabela_sigilosa {
     /// o efeito no proximo pedido, e nao no proximo `ligar`.
     #[test]
     fn declarar_com_o_profiler_ligado_vale_do_pedido_seguinte_em_diante() {
-        let (mut p, arquivo) = ligado("a-quente", &[]);
+        let (mut p, arquivo, _guarda) = ligado("a-quente", &[]);
         let pedido = r#"{"op":"ler","database":"loja","tabela":"clientes","nome":"ANTES"}"#;
         let s = p
             .chegou(pedido, "ler", "adm", "loja", "clientes", "1.1.1.1", 0)
@@ -1750,7 +1735,7 @@ mod testes_tabela_sigilosa {
     /// limpou o passado, e o `perfil.txt.1` continua no disco com tudo.
     #[test]
     fn declarar_depois_nao_limpa_o_arquivo_ja_gravado() {
-        let (mut p, arquivo) = ligado("passado", &[]);
+        let (mut p, arquivo, _guarda) = ligado("passado", &[]);
         let pedido = r#"{"op":"ler","database":"loja","tabela":"clientes","nome":"JA GRAVADO"}"#;
         let s = p
             .chegou(pedido, "ler", "adm", "loja", "clientes", "1.1.1.1", 0)
@@ -1769,7 +1754,7 @@ mod testes_tabela_sigilosa {
     /// nao pode transformar isso em erro nem em texto.
     #[test]
     fn pedido_invalido_continua_virando_tamanho_com_a_lista_ligada() {
-        let (mut p, arquivo) = ligado("invalido", &["loja.clientes"]);
+        let (mut p, arquivo, _guarda) = ligado("invalido", &["loja.clientes"]);
         let s = p
             .chegou(
                 "{\"op\":\"ler\",\"senha\":\"x",

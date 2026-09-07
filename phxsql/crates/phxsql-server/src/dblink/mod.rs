@@ -19,6 +19,8 @@
 //! tabelas de um banco de producao apagaria uma se a escrita viesse ligada por
 //! omissao.
 
+#[cfg(test)]
+use crate::apoio_teste::DirTemp;
 pub mod conexao;
 pub mod dialeto;
 pub mod mysql;
@@ -803,8 +805,7 @@ mod testes {
 
     #[test]
     fn grava_le_e_nao_perde_a_senha() {
-        let dir = std::env::temp_dir().join(format!("phx-dblink-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = DirTemp::novo("dblink");
         let caminho = dir.join("dblink.json");
         let mut r = Registro::abrir(&caminho).unwrap();
         r.salvar(

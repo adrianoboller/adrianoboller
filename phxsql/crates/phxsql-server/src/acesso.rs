@@ -12,6 +12,8 @@
 //! errado -- e justamente quem tentou e nao conseguiu que interessa num log de
 //! acesso.
 
+#[cfg(test)]
+use crate::apoio_teste::DirTemp;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -199,12 +201,8 @@ impl LogAcessos {
 mod tests {
     use super::*;
 
-    fn dir_temp(rotulo: &str) -> PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!("phxsql-acesso-{}-{rotulo}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn dir_temp(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("acesso-{rotulo}"))
     }
 
     fn acesso(ip: &str, ms: i64, ok: bool) -> Acesso {

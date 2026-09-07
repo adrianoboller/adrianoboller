@@ -35,20 +35,20 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **1.659 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **1.669 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 451 | 27,2 |
-| Protocolo e portões (despachar) | 242 | 14,6 |
+| Motor de dados (arquivos, índice, diários) | 451 | 27,0 |
+| Protocolo e portões (despachar) | 247 | 14,8 |
 | Núcleo (JSON, tipos, UUID, zip, paralelo) | 155 | 9,3 |
-| Criptografia e codificação | 122 | 7,4 |
+| Criptografia e codificação | 122 | 7,3 |
 | Configuração | 96 | 5,8 |
+| Servidor (outros) | 83 | 5,0 |
 | DbLink | 81 | 4,9 |
-| Servidor (outros) | 78 | 4,7 |
 | Telemetria e profiler | 61 | 3,7 |
 | Camada SQL (léxico, sintaxe, tradução) | 55 | 3,3 |
 | Gatilhos e procedimentos | 42 | 2,5 |
@@ -69,7 +69,7 @@ contando `#[test]` por arquivo e agrupando:
 | **CLI** | **7** | **0,4** |
 | **Cluster** | **7** | **0,4** |
 | **Monitor de máquina** | **6** | **0,4** |
-| **total** | **1659** | |
+| **total** | **1669** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
@@ -1543,3 +1543,93 @@ teria ficado guardando a causa imaginada — com o comentário afirmando-a.
 **O buraco que fica, declarado:** o `prova-dos-portoes.py` **não** roda dentro
 da bateria única. Quem mexer no medidor tem de chamá-lo à mão, e nada avisa se
 esquecer. `docs/cognicao/cognicao_o-controle-precisa-provar-o-LEITOR_20260907_0310.md`.
+
+## 15. O que a bateria deixava em disco — pedido 150
+
+### 15.1 O número, medido antes de mexer
+
+Retrato do `/tmp` antes e depois de uma corrida, para que o número seja a
+**diferença** e não o acumulado (o `/tmp` desta máquina já tinha 27.519
+entradas de rodadas anteriores):
+
+| Bateria | Antes do conserto | Depois |
+|---|---:|---:|
+| `phxsql-server` + `phxsql-cmd` + `phxsql-cli` | **265** diretórios/corrida | **0** |
+| `phxsql-store` (já «convertido» numa rodada anterior) | **21** diretórios/corrida | **0** |
+| `cargo test --workspace` inteiro | — | **0**, com 1.669 testes e zero falhas |
+
+### 15.2 Por que o padrão velho não limpava
+
+O ajudante era sempre este:
+
+```rust
+fn dir_temp(nome: &str) -> PathBuf {
+    let d = std::env::temp_dir().join(format!("phx-x-{nome}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);   // limpa na ENTRADA
+    std::fs::create_dir_all(&d).unwrap();
+    d                                       // e nada na saída
+}
+```
+
+O `remove_dir_all` da entrada existe para o próximo achar limpo — não para
+limpar o anterior. E um `rm` no fim do corpo do teste também não resolveria:
+**teste de asserção falha no meio, não no fim**. O guarda com `Drop` resolve
+justamente esse caso, porque o Rust roda o `Drop` também durante o
+desenrolamento de um *panic*.
+
+### 15.3 A armadilha da conversão, que custou 53 testes vermelhos
+
+`DirTemp` apaga no `Drop`, então um **temporário** morre no fim da instrução:
+
+```rust
+let s = servidor(&dir_temp("vazio"));   // o diretório some ANTES do 1º pedido
+```
+
+São 38 sítios assim no `servidor.rs`, mais 2 embrulhos que criavam o guarda
+dentro deles e devolviam só o resultado. O compilador não acusa nenhum: o
+empréstimo é válido e o `Drop` roda depois do uso. Quem acusa é o teste, com
+`database b nao existe em /tmp/…`.
+
+O conserto é ligar o guarda a uma variável:
+
+```rust
+let guarda = dir_temp("vazio");
+let s = servidor(&guarda);
+```
+
+### 15.4 A catraca, e por que ela não é zelo excessivo
+
+Porque o defeito **já tinha voltado sozinho**: o `phxsql-store` fora
+convertido inteiro numa rodada anterior, com prova real e «zero diretório
+sobrando» escrito no pedido, e a frente do `.fts` repôs três sítios no mesmo
+dia — 21 diretórios por corrida, sem nada avisar.
+
+`TETO_TEMP_DIR_SOLTO = 0`, em
+`crates/phxsql-server/src/conferidor_temporarios.rs`:
+
+```bash
+cargo run --example temporarios-sem-guarda -p phxsql-server
+cargo run --example temporarios-sem-guarda -p phxsql-server -- --isentos
+```
+
+Ela varre `crates/*/src` e `crates/*/tests` **do disco** (lista digitada
+envelhece calado), pula linha de comentário, e isenta por arquivo **com a
+quantidade esperada** — 17 isenções hoje, cada uma com o motivo escrito: os
+cinco guardas, os seis usos do `mensagens.rs` que só montam caminho para ler,
+o `versao.rs` que usa o `/tmp` como diretório de trabalho de um processo
+filho, e os três do `restaurar.rs`, que são código de produção.
+
+**Prova real nos dois sentidos:** com um `std::env::temp_dir()` reposto no
+`transacao.rs`, a catraca fica vermelha nomeando arquivo e linha; sem ele,
+verde. E o casador tem controle próprio
+(`o_conferidor_acusa_quando_o_defeito_volta`), porque um casador que parasse
+de reconhecer o padrão continuaria imprimindo «nenhuma solta».
+
+### 15.5 O que ficou de fora, e é decisão
+
+Os `examples/`. Um exemplo é medidor chamado à mão ou pela bancada, não
+bateria, e vários guardam o que criaram justamente para se olhar depois. São
+**48 chamadas em 42 arquivos** — contadas, e **não** medidas em disco: medir
+exigiria rodar cada exemplo, e alguns levam minutos. Está no pedido 209, com
+o que falta medir escrito. *Dispensa registrada é decisão; dispensa
+silenciosa é esquecimento.*

@@ -24,6 +24,8 @@
 //! Cada corrida vira uma linha JSON no `.log` ao lado do cadastro. A tela le a
 //! cauda do arquivo. Job que falhou calado nao existe: a linha entra igual.
 
+#[cfg(test)]
+use crate::apoio_teste::DirTemp;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -618,11 +620,10 @@ impl Registro {
 mod testes {
     use super::*;
 
-    fn tmp(nome: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("phxsql-jobs-{}-{}", std::process::id(), nome));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d.join("jobs.json")
+    fn tmp(nome: &str) -> (DirTemp, PathBuf) {
+        let d = DirTemp::novo(&format!("jobs-{nome}"));
+        let arq = d.join("jobs.json");
+        (d, arq)
     }
 
     fn job_json(nome: &str, extra: &str) -> Json {
@@ -698,7 +699,7 @@ mod testes {
 
     #[test]
     fn cadastro_vai_e_volta_do_disco() {
-        let caminho = tmp("ida-e-volta");
+        let (_guarda, caminho) = tmp("ida-e-volta");
         let mut r = Registro::abrir(&caminho).unwrap();
         assert!(r.jobs.is_empty(), "arquivo que nao existe e cadastro vazio");
         let mut j = Job::de_json(&job_json("noturno", ",\"hora\":\"03:00\"")).unwrap();
@@ -715,7 +716,7 @@ mod testes {
 
     #[test]
     fn nome_repetido_no_arquivo_e_erro() {
-        let caminho = tmp("repetido");
+        let (_guarda, caminho) = tmp("repetido");
         std::fs::write(
             &caminho,
             "{\"jobs\":[{\"nome\":\"a\",\"pedido\":{\"op\":\"ping\"}},\
@@ -728,7 +729,7 @@ mod testes {
 
     #[test]
     fn salvar_pelo_nome_substitui() {
-        let caminho = tmp("substitui");
+        let (_guarda, caminho) = tmp("substitui");
         let mut r = Registro::abrir(&caminho).unwrap();
         r.salvar(Job::de_json(&job_json("x", "")).unwrap()).unwrap();
         let mut segundo = Job::de_json(&job_json("x", "")).unwrap();
@@ -740,14 +741,14 @@ mod testes {
 
     #[test]
     fn excluir_o_que_nao_existe_avisa() {
-        let caminho = tmp("excluir");
+        let (_guarda, caminho) = tmp("excluir");
         let mut r = Registro::abrir(&caminho).unwrap();
         assert!(r.excluir("fantasma").is_err());
     }
 
     #[test]
     fn so_o_ligado_e_vencido() {
-        let caminho = tmp("vencidos");
+        let (_guarda, caminho) = tmp("vencidos");
         let mut r = Registro::abrir(&caminho).unwrap();
         r.salvar(Job::de_json(&job_json("desligado", ",\"cada_minutos\":1")).unwrap())
             .unwrap();
@@ -763,7 +764,7 @@ mod testes {
 
     #[test]
     fn historico_le_a_cauda_do_log() {
-        let caminho = tmp("historico");
+        let (_guarda, caminho) = tmp("historico");
         let mut r = Registro::abrir(&caminho).unwrap();
         assert!(r.historico(10).is_empty(), "sem log ainda");
         for i in 0..5 {
@@ -863,7 +864,7 @@ mod testes {
 
     #[test]
     fn a_ultima_corrida_sobrevive_ao_reinicio_sem_mexer_no_relogio() {
-        let caminho = tmp("semeada");
+        let (_guarda, caminho) = tmp("semeada");
         {
             let mut r = Registro::abrir(&caminho).unwrap();
             r.salvar(Job::de_json(&job_json("noturno", ",\"cada_minutos\":60")).unwrap())
@@ -898,7 +899,7 @@ mod testes {
 
     #[test]
     fn excluir_apaga_a_ultima_corrida_junto() {
-        let caminho = tmp("excluir-corrida");
+        let (_guarda, caminho) = tmp("excluir-corrida");
         let mut r = Registro::abrir(&caminho).unwrap();
         r.salvar(Job::de_json(&job_json("x", "")).unwrap()).unwrap();
         r.registrar(&Corrida {
@@ -919,7 +920,7 @@ mod testes {
 
     #[test]
     fn linha_quebrada_no_recorte_e_descartada() {
-        let caminho = tmp("quebrada");
+        let (_guarda, caminho) = tmp("quebrada");
         let r = Registro::abrir(&caminho).unwrap();
         std::fs::write(
             r.caminho_do_log(),

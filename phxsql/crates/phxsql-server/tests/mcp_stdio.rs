@@ -9,14 +9,15 @@
 //! E a mesma licao do `BULKINSERT`: o que depende do sistema operacional se
 //! prova contra o sistema operacional. Ali foi o soquete; aqui e o cano.
 
+mod comum;
+use comum::DirTemp;
+
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
 
 /// Uma pasta so deste teste, com um `config.json` dentro.
-fn preparar(nome: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!("phx-mcp-{nome}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
+fn preparar(nome: &str) -> DirTemp {
+    let d = DirTemp::novo(&format!("mcp-{nome}"));
     let config = format!(
         r#"{{"bind":"127.0.0.1:0","base":{:?},"token":"t","web":{{"ligado":false}}}}"#,
         d.join("dados").display().to_string()

@@ -17,6 +17,9 @@
 //! E a licao do `BULKINSERT`: o que depende do sistema operacional -- aqui,
 //! duas threads e um soquete -- se prova contra o sistema operacional.
 
+mod comum;
+use comum::DirTemp;
+
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
@@ -41,15 +44,8 @@ fn porta_livre() -> u16 {
         .port()
 }
 
-fn pasta(nome: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!(
-        "phxsql-telemetria-{}-{}-{nome}",
-        std::process::id(),
-        porta_livre()
-    ));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
+fn pasta(nome: &str) -> DirTemp {
+    DirTemp::novo(&format!("telemetria-{nome}"))
 }
 
 fn subir_servidor(base: &std::path::Path, porta: u16) -> Arc<Servidor> {

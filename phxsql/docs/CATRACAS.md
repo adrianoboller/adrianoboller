@@ -8,6 +8,15 @@ flock /tmp/phx-cargo.lock cargo build --release --examples -p phxsql-server
 flock /tmp/phx-cargo.lock python3 docs/qa/medir.py
 ```
 
+> **A tabela viva não é esta.** Este documento é um *retrato datado* com o
+> raciocínio de cada catraca — por que ela existe, que defeito a motivou, o
+> que ela não cobre. Os números do dia saem do gerador
+> (`python3 docs/qa/medir.py --gravar`, que escreve dentro do
+> `docs/QA-PDCA.md`) e são sete em 07/09/2026, não cinco: entraram a
+> `TETO_BOTAO_SEM_PROVA` (pedido 190) e a `TETO_TEMP_DIR_SOLTO` (pedido 150,
+> §6 abaixo). Número datado numa prosa não é número errado; número datado
+> **sem dizer que é datado** é.
+
 Medido em `5ca5326` (2026-09-03), com `cargo test -p phxsql-server --lib
 conferidor` verde (24 testes) logo depois. A árvore é compartilhada — outra
 frente tinha o `phxsql-server` quebrado (`dblink::Motor::Phx` sem todos os
@@ -247,6 +256,47 @@ e fazer nascer `TETO_FSYNC_POR_FECHO_V2` (8) no mesmo commit que liga o
 número medido virou 8, a V1 saiu e a V2 nasceu. A previsão escrita aqui em
 04/09 pela frente que criou a V1 se cumpriu sem uma linha de discussão — que é
 o que uma catraca bem documentada compra.
+
+### 6. `TETO_TEMP_DIR_SOLTO` — diretório de teste criado sem guarda
+
+**O defeito que motivou** (pedido 150, medido em 07/09/2026): uma corrida da
+bateria dos três crates de servidor deixava **265 diretórios** para trás em
+`/tmp`, e o `/tmp` desta máquina já tinha **27.519** entradas acumuladas. O
+padrão era sempre o mesmo — um ajudante de teste que devolvia só o `PathBuf`,
+com o `remove_dir_all` na **entrada** (para o próximo achar limpo) e nenhum na
+saída. Quem falhava no meio, que é o caso comum de um teste de asserção,
+deixava tudo.
+
+**O conserto**: um guarda com `Drop` — `apoio_teste::DirTemp` nos crates que
+têm biblioteca, `tests/comum/mod.rs` nos testes de integração, e uma cópia
+curta dentro do `phxsql-cli`, que é binário e não tem de onde importar. O
+`Drop` roda também durante o desenrolamento de um *panic*, que é justamente o
+que um `rm` no fim do corpo do teste nunca alcança.
+
+**Por que a catraca, e não só o conserto**: porque o defeito já tinha voltado
+sozinho. O `phxsql-store` fora convertido numa rodada anterior, e a frente do
+`.fts` repôs três sítios sem que nada avisasse — **21 diretórios por corrida**,
+medidos nesta mesma rodada. Conserto sem catraca dura até a próxima frente.
+
+**O que ela conta**: toda ocorrência de `std::env::temp_dir()` em
+`crates/*/src` e `crates/*/tests`, fora de comentário, menos as catalogadas em
+`ISENTOS` — e a isenção é por arquivo **com a quantidade esperada**, para que
+uma chamada nova num arquivo já isento também reprove. São 17 isenções hoje:
+os cinco guardas, os seis usos do `mensagens.rs` que só montam caminho para
+**ler**, o `versao.rs` que usa o `/tmp` como diretório de trabalho de um
+processo filho, e os três do `restaurar.rs`, que são código de produção.
+
+**O que ela não cobre, e é decisão**: `examples/` fica de fora. Um exemplo é
+um medidor chamado à mão ou pela bancada, não a bateria, e vários guardam o
+que criaram justamente para se olhar depois. São **48 sítios em 42 arquivos**
+— contados, não medidos em disco: medir exigiria rodar cada exemplo, e alguns
+levam minutos. O item ficou no `PENDENCIAS.md` com esse número e com o que
+falta medir.
+
+**A prova real, nos dois sentidos**: com um `std::env::temp_dir()` reposto no
+`transacao.rs`, a catraca ficou **vermelha** nomeando arquivo e linha; sem
+ele, verde. E a medição fechou o laço: **265 → 0** nos três crates de
+servidor, **21 → 0** no store, com os mesmos 813 e 1.669 testes passando.
 
 ## Os limites de funcionamento encontrados (não são catracas)
 

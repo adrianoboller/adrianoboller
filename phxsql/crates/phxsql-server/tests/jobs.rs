@@ -5,6 +5,9 @@
 //! uma porta dos fundos com hora marcada -- bastaria escrever no cadastro de
 //! jobs a operacao que a rede recusaria.
 
+mod comum;
+use comum::DirTemp;
+
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
@@ -24,15 +27,8 @@ fn porta_livre() -> u16 {
         .port()
 }
 
-fn pasta(nome: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!(
-        "phxsql-jobs-{}-{}-{nome}",
-        std::process::id(),
-        porta_livre()
-    ));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
+fn pasta(nome: &str) -> DirTemp {
+    DirTemp::novo(&format!("jobs-{nome}"))
 }
 
 /// Sobe um servidor com o cadastro pedido.

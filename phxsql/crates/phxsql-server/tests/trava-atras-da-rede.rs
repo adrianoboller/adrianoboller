@@ -26,6 +26,9 @@
 //! roda numa thread propria e e colhida por `recv_timeout`. Estourou o prazo,
 //! o teste reprova dizendo isso, e a thread pendurada morre com o processo.
 
+mod comum;
+use comum::DirTemp;
+
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -50,15 +53,8 @@ fn porta_livre() -> u16 {
         .port()
 }
 
-fn pasta(nome: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!(
-        "phxsql-trava-rede-{}-{}-{nome}",
-        std::process::id(),
-        porta_livre()
-    ));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
+fn pasta(nome: &str) -> DirTemp {
+    DirTemp::novo(&format!("trava-rede-{nome}"))
 }
 
 /// Um "source" de mentira: responde `posicao` e escolhe o que fazer no

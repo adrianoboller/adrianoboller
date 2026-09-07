@@ -19,6 +19,8 @@
 //! escrita da tabela dele** com o motivo — pular seria fingir que a regra que
 //! o dono escreveu nao existe, no exato momento em que ela deixou de valer.
 
+#[cfg(test)]
+use crate::apoio_teste::DirTemp;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -509,9 +511,8 @@ impl Rotinas {
 mod testes {
     use super::*;
 
-    fn dir_temp(nome: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-rotinas-{nome}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+    fn dir_temp(nome: &str) -> DirTemp {
+        let d = DirTemp::novo(&format!("rotinas-{nome}"));
         std::fs::create_dir_all(d.join("loja")).unwrap();
         d
     }

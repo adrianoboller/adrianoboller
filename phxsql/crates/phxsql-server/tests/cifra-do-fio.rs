@@ -13,6 +13,9 @@
 //! por fora do soquete. Quando um teste precisa que o servidor VEJA o fim da
 //! conexao, ele solta o `TcpStream` inteiro.
 
+mod comum;
+use comum::DirTemp;
+
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -50,14 +53,10 @@ fn porta_livre() -> u16 {
 /// O nome carrega um numero de serie, e nao um relogio: dois testes que rodam
 /// no mesmo instante pegariam o mesmo carimbo, e um apagaria a base do outro
 /// -- que foi exatamente o que aconteceu na primeira versao deste arquivo.
-fn pasta(nome: &str) -> std::path::PathBuf {
-    static SERIE: AtomicU16 = AtomicU16::new(0);
-    let d = std::env::temp_dir().join(format!(
-        "phxsql-fio-{}-{}-{nome}",
-        std::process::id(),
-        SERIE.fetch_add(1, Ordering::SeqCst)
-    ));
-    let _ = std::fs::remove_dir_all(&d);
+/// A serie hoje vem do contador do proprio `DirTemp`, que tambem apaga a
+/// pasta no `Drop`.
+fn pasta(nome: &str) -> DirTemp {
+    let d = DirTemp::novo(&format!("fio-{nome}"));
     std::fs::create_dir_all(d.join("base")).unwrap();
     d
 }

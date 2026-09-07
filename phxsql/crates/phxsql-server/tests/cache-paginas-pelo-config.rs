@@ -28,6 +28,9 @@
 //! aqui provaria a leitura do JSON e nao provaria nada do motor -- por isso
 //! este teste sobe um `Servidor` de verdade.
 
+mod comum;
+use comum::DirTemp;
+
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -37,12 +40,8 @@ use phxsql_store::ndx;
 
 static UM_DE_CADA_VEZ: Mutex<()> = Mutex::new(());
 
-fn dir(rotulo: &str) -> PathBuf {
-    let mut p = std::env::temp_dir();
-    p.push(format!("phxsql-cfg-cache-{}-{rotulo}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&p);
-    std::fs::create_dir_all(&p).unwrap();
-    p
+fn dir(rotulo: &str) -> DirTemp {
+    DirTemp::novo(&format!("cfg-cache-{rotulo}"))
 }
 
 fn escrever_config(d: &std::path::Path, conteudo: &str) -> PathBuf {
@@ -110,17 +109,13 @@ fn um_segundo_arranque_com_outro_valor_muda_o_teto_de_novo() {
     let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
     ndx::definir_cache_paginas(Recursos::default().cache_paginas);
 
-    let c1 = escrever_config(
-        &dir("segundo-um"),
-        r#"{"token":"t","recursos":{"cache_paginas":64}}"#,
-    );
+    let g1 = dir("segundo-um");
+    let c1 = escrever_config(&g1, r#"{"token":"t","recursos":{"cache_paginas":64}}"#);
     let _s1 = servidor_de(&c1);
     assert_eq!(ndx::cache_paginas(), 64);
 
-    let c2 = escrever_config(
-        &dir("segundo-dois"),
-        r#"{"token":"t","recursos":{"cache_paginas":4096}}"#,
-    );
+    let g2 = dir("segundo-dois");
+    let c2 = escrever_config(&g2, r#"{"token":"t","recursos":{"cache_paginas":4096}}"#);
     let _s2 = servidor_de(&c2);
     assert_eq!(
         ndx::cache_paginas(),

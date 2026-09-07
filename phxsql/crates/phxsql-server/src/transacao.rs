@@ -28,6 +28,8 @@
 //! * a marca `transacao_<id>.tx` e a recuperacao, que e a resposta a pergunta
 //!   «se a energia cair exatamente aqui, o banco sabe dizer o que aconteceu?».
 
+#[cfg(test)]
+use crate::apoio_teste::DirTemp;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -1298,11 +1300,8 @@ fn aplicar_uma(t: &mut phxsql_store::table::Table, op: &OperacaoDaMarca) -> Resu
 mod testes {
     use super::*;
 
-    fn dir(rotulo: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("phx-tx-{}-{rotulo}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("tx-{rotulo}"))
     }
 
     /// A ida e volta das CATORZE variantes.

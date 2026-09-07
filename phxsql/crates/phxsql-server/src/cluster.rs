@@ -26,6 +26,8 @@
 //! nao chegou a ninguem, e morre com o rebaixamento. `docs/CLUSTER.md` diz
 //! isso com todas as letras, com o que o operador deve saber.
 
+#[cfg(test)]
+use crate::apoio_teste::DirTemp;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicU8, Ordering};
@@ -516,12 +518,7 @@ mod testes {
 
     #[test]
     fn o_estado_persiste_e_o_arquivo_ganha_do_config() {
-        let dir = std::env::temp_dir().join(format!(
-            "phx-cluster-estado-{}-{}",
-            std::process::id(),
-            crate::agora_ms()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = DirTemp::novo("cluster-estado");
 
         // Nasce replica (papel do config) e se promove na epoca 7.
         let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
@@ -553,12 +550,7 @@ mod testes {
     /// APRESENTACAO, que leva a moldura na frente.
     #[test]
     fn replica_redireciona_para_o_master() {
-        let dir = std::env::temp_dir().join(format!(
-            "phx-cluster-redir-{}-{}",
-            std::process::id(),
-            crate::agora_ms()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = DirTemp::novo("cluster-redir");
         let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
 
         // Sem master conhecido: recusa explicando, sem endereco inventado.
@@ -602,12 +594,7 @@ mod testes {
     /// renova o sinal de master nem vira alvo de redirecionamento.
     #[test]
     fn master_de_epoca_velha_nao_conta() {
-        let dir = std::env::temp_dir().join(format!(
-            "phx-cluster-velho-{}-{}",
-            std::process::id(),
-            crate::agora_ms()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = DirTemp::novo("cluster-velho");
         let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
         e.registrar(
             "no1",

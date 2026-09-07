@@ -13,6 +13,9 @@
 //! no mesmo nome, e o JSON ficaria com um deles em silencio. Dai o
 //! `token_remoto`, e o teste que confere os dois papeis no mesmo pedido.
 
+mod comum;
+use comum::DirTemp;
+
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
@@ -76,15 +79,8 @@ fn pedir(porta: u16, linha: &str) -> String {
     resposta
 }
 
-fn pasta(nome: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!(
-        "phxsql-sonda-{}-{}-{nome}",
-        std::process::id(),
-        porta_livre()
-    ));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
+fn pasta(nome: &str) -> DirTemp {
+    DirTemp::novo(&format!("sonda-{nome}"))
 }
 
 /// O caminho feliz e as recusas que importam, no mesmo cenario -- subir um
