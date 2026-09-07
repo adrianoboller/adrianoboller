@@ -228,6 +228,20 @@ BANCADAS = [
                    ("ficou_pela_metade", "ficou pela metade", "")],
     },
     {
+        "nome": "Quórum — o que custaria esperar as réplicas",
+        "json": "bancada/quorum/resultados.json",
+        "roda": "python3 bancada/quorum/medir.py 60",
+        "prova": "esta não prova recurso: mede o PREÇO de uma decisão que "
+                 "ainda não foi tomada. Separa o que a bancada de replicação "
+                 "somava num número só — os 826 ms publicados lá são 99,9% "
+                 "sono do laço, e o transporte custa 0,475 ms. Tudo em "
+                 "localhost: é o PISO, e a rede real custa mais",
+        "campos": [("gravar_ms", "gravar no master", "ms"),
+                   ("levar_ms", "levar a uma réplica", "ms"),
+                   ("vezes_2de3", "commit esperando 2 de 3", "×"),
+                   ("vezes_3de3", "commit esperando 3 de 3", "×")],
+    },
+    {
         "nome": "ACID — as quatro letras",
         "json": "bancada/acid/resultado.json",
         "roda": "python3 bancada/acid/prova.py",

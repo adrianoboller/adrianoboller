@@ -27,6 +27,13 @@ import time
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.abspath(os.path.join(AQUI, "..", ".."))
+
+# O sono do laco da replica sai de quem ESCREVE o config, e nao daqui: o
+# `montar.py` e o dono do numero. Digita-lo neste arquivo seria a receita de um
+# numero envelhecendo noutro lugar -- defeito ja pago nesta casa com o KiB da
+# interface, que publicou 780 quando eram 1.032.
+sys.path.insert(0, AQUI)
+from montar import RECONECTAR_EM  # noqa: E402
 PHXSQLD = os.path.join(RAIZ, "target", "release", "phxsqld")
 BASE = os.environ.get("PHX_REPLICACAO", "/tmp/phx-replicacao")
 
@@ -279,6 +286,19 @@ def gravar(r):
                  if isinstance(v, dict) and "ms" in v}
     antes = {k: v for k, v in r.items() if k not in atraso_ms}
     antes["atraso_ms"] = atraso_ms
+    # O QUE ESTE NUMERO SOMA, dito no proprio arquivo -- e ele custou uma
+    # conclusao errada em 07/09/2026. «Atraso» se le como transporte, e nao e:
+    # o laco da replica DORME `reconectar_em` quando nao acha nada, e esta
+    # bancada roda com 2 s. Medido na `bancada/quorum/`, o transporte custa
+    # 0,475 ms -- o resto e sono, 99,9% do numero. Quase virou a resposta
+    # «quorum sincrono custaria 826 ms», que teria matado a ideia por engano.
+    # Medicao honesta com rotulo incompleto engana MELHOR que palpite, porque
+    # vem com autoridade.
+    antes["atraso_ms_inclui"] = (
+        f"o sono do laco da replica ({RECONECTAR_EM} s nesta bancada) MAIS o "
+        "transporte. Nao e o custo de levar o dado: esse esta medido separado "
+        "em bancada/quorum/resultados.json (levar_ms)"
+    )
     antes.update(guardadas)
     antes["quando"] = time.strftime("%Y-%m-%d")
     antes["versao"] = versao[1] if len(versao) > 1 else ""

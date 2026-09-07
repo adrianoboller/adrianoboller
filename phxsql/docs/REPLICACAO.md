@@ -1396,3 +1396,136 @@ um número que envelhece de um lado só.
 
 **A imagem cresceu:** 6,42 → **8,22 MB** de camada (2,69 → 3,30 MB
 comprimidos), que é o binário `musl` de hoje contra o de 30/08.
+
+---
+
+## 19. Transação com quórum — a pergunta, e o que a medição respondeu
+
+Pergunta do dono, 07/09/2026: *«Transação com quórum, que permite replicar a
+gravação para outros servidores sem usar replicação, apenas o quórum. E onde
+existem os outros servidores, isso é possível? Simplifica? Ou fica esse
+recurso na replicação?»*
+
+### 19.1 Quórum não é alternativa à replicação — é uma regra sobre QUANDO responder
+
+Esta é a parte que não depende de medição nenhuma, e por isso vem primeiro.
+**Quórum conta confirmações.** Para haver o que contar, alguém tem de levar os
+bytes até os outros servidores — e essa coisa que os leva **é** a replicação.
+Quórum sem transporte não tem o que somar.
+
+Então a resposta à primeira metade é: *não é possível* replicar por quórum sem
+replicação, e não por limitação nossa. É o que quórum **é**. O que muda com
+ele não é o caminho do dado; é o instante em que o cliente ouve «gravei».
+
+### 19.2 Onde estão os outros servidores: eles já existem, e já votam
+
+Esta é a boa notícia, e ela também não precisou de medição — precisou de
+leitura do nosso próprio código. O `cluster.rs` já mantém o mapa dos nós, a
+época e a **decisão de maioria**; a bancada do cluster mede eleição e promoção
+com três nós.
+
+O que falta é o alvo do voto. Hoje a maioria decide **quem é o master**, e não
+**se uma escrita chegou** — e o módulo diz isso com todas as letras, no
+cabeçalho, sem ninguém ter perguntado:
+
+> *«Honestidade: isto NÃO é Raft. Não há log replicado por quórum de escrita: o
+> master confirma a escrita sem esperar réplica nenhuma. A eleição por maioria
+> impede DOIS masters duradouros, mas não impede a perda das últimas escritas
+> de um master isolado: o que ele aceitou entre o início da partição e o
+> momento em que se vê sem maioria não chegou a ninguém, e morre com o
+> rebaixamento.»*
+
+**Esse parágrafo é o buraco que um quórum de escrita fecharia.** Não é uma
+funcionalidade a inventar: é uma perda já nomeada, esperando o mecanismo.
+
+### 19.3 A premissa que precisava morrer antes de qualquer plano
+
+A `bancada/replicacao/` publica um atraso de **826 a 2014 ms** por operação.
+Lido como «o dado leva 826 ms para chegar na réplica», isso mataria a ideia
+antes de começar: um commit síncrono a 826 ms é inviável.
+
+**Não é o que aquele número mede.** Aquela bancada roda com
+`reconectar_em: 2`, e o laço da réplica **dorme** esse tempo quando não acha
+nada (`servidor.rs`, `Ok(0) => sleep(espera)`). O atraso publicado é, quase
+todo, **sono** — e sono é escolha de configuração, não custo de transporte.
+
+A `bancada/quorum/` separa as duas coisas. Ela sobe um master e duas réplicas
+com `reconectar_em` de **uma hora** — para o laço delas não competir com a
+medição — e cronometra o `replicar` + `aplicar` chamados **na hora**:
+
+| | mediana | faixa |
+|---|---:|---|
+| gravar no master (o que se paga hoje) | **0,209 ms** | 0,171 – 3,357 |
+| levar até UMA réplica, na hora | **0,475 ms** | 0,386 – 4,000 |
+| commit esperando **2 de 3** | **0,661 ms** | **3,16×** |
+| commit esperando **3 de 3** | **0,704 ms** | **3,37×** |
+
+60 voltas, três processos em `127.0.0.1`. **O transporte custa 0,475 ms, e não
+826.** O sono era 99,9% do número publicado.
+
+E o aviso que viaja com a medida, porque sem ele ela mente: **está tudo em
+localhost**. A rede real custa mais, e estes números são o **piso** do que um
+quórum custaria. Numa LAN de ~0,3 ms de ida e volta, o termo dominante deixa
+de ser o nosso motor e passa a ser a rede.
+
+### 19.4 O obstáculo real não é o custo: é a DIREÇÃO
+
+O medidor acima teve de puxar os eventos **à mão, do Python** — e isso não foi
+comodidade de quem escreve a bancada. Foi a arquitetura falando.
+
+A nossa replicação é **pull**, e está escrito no topo do `replica.rs`:
+
+> *«Quem procura é a réplica; o source não empurra nada. É o mesmo desenho do
+> MySQL®, e ele existe por causa do firewall: o source abre UMA porta de
+> entrada para o IP da réplica, e não precisa alcançar a réplica de volta.»*
+
+Um quórum síncrono exige o contrário: o master precisa saber, **no instante do
+commit**, que N réplicas têm o dado. Com pull, o master não tem como fazer
+ninguém buscar — ele só pode esperar que venham perguntar.
+
+Daí as três rotas, e o preço de cada uma:
+
+| rota | o que custa |
+|---|---|
+| **(a) manter pull, o master espera a réplica vir** | o commit passa a esperar o próximo ciclo do laço — os tais 826 ms. A pior das três: paga a latência e **não compra a garantia**, porque nada obriga a réplica a vir |
+| **(b) canal aberto: a réplica conecta e FICA** | o master empurra por uma conexão que **a réplica** abriu. **Preserva o firewall** — quem abre continua sendo ela. É a rota certa |
+| **(c) o master abre conexão com as réplicas** | simples de escrever, e **quebra** a propriedade de firewall que o desenho comprou. Recusável |
+
+### 19.5 O que compra, o que custa, e onde o recurso fica
+
+**Compra:** durabilidade que sobrevive à perda do disco do master, e o
+fechamento do buraco que o `cluster.rs` confessa — as escritas que um master
+isolado aceitou antes de se ver sem maioria.
+
+**Custa disponibilidade, e isso é o oposto de simplificar.** Sem N réplicas
+alcançáveis, o commit **falha**. Hoje ele aceita. Trocar «sempre aceita» por
+«às vezes recusa» é decisão de produto, não de engenharia.
+
+**Onde fica:** na **replicação**, como *política de commit por origem* — nunca
+como subsistema novo ao lado dela. E entra **pedida, não imposta**, pela mesma
+pétrea da janela de conflito: quem não pedir quórum grava como hoje, e nenhum
+cliente escrito antes para de funcionar.
+
+### 19.6 A armadilha que o Cassandra® já nos ensinou, medida no fonte deles
+
+O `docs/CASSANDRA.md` registra, lido no fonte da 5.0.10: o `QUORUM` deles
+**não** quer dizer «o dado está em N discos». No padrão
+(`commitlog_sync: periodic`) quer dizer «N processos copiaram os bytes para um
+`mmap`», com `fsync` a cada **10 segundos** numa thread de fundo.
+
+Se este recurso nascer aqui, **o que o «ok» da réplica significa tem de ser
+decidido e escrito**, não herdado: *recebeu*, *aplicou*, ou *aplicou e
+sincronizou*? São três garantias diferentes com o mesmo nome, e a diferença
+entre elas é exatamente a que separa «perdi um commit» de «não perdi».
+
+### 19.7 Como refazer
+
+```bash
+cargo build --release
+python3 bancada/quorum/medir.py 60
+```
+
+Ele **para** — em vez de publicar um número bonito — se uma réplica puxar
+sozinha (zero eventos no `replicar` significa que ela chegou antes, e o medidor
+estaria medindo o próprio concorrente), e se as réplicas não alcançarem o
+esquema antes da primeira volta.

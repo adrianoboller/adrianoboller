@@ -32,6 +32,12 @@ PHXSQLD = os.path.join(RAIZ, "target", "release", "phxsqld")
 
 PORTA_MASTER = 5800
 SLAVES = ["slave01", "slave02", "slave03"]
+# De quantos em quantos segundos a replica volta a perguntar quando nao achou
+# nada. E DAQUI que o `medir.py` le o numero para explicar o que o `atraso_ms`
+# soma -- digitar 2 la seria a receita de um numero envelhecendo em outro
+# arquivo, que e defeito ja pago nesta casa.
+RECONECTAR_EM = 2
+
 TOKEN = "espelho"
 USUARIO = "adm"
 SENHA = "segredo1"
@@ -93,7 +99,7 @@ def config_slave(h, n, porta_origem, nome_origem):
             "origens": [
                 {"nome": nome_origem, "host": "127.0.0.1", "porta": porta_origem,
                  "token": TOKEN, "usuario": USUARIO, "senha_hash": h,
-                 "databases": ["loja"], "reconectar_em": 2}
+                 "databases": ["loja"], "reconectar_em": RECONECTAR_EM}
             ],
         },
         "usuarios": [

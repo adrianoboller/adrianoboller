@@ -227,6 +227,41 @@ botões obedeciam a uma propriedade e oito a outra. Escalão se decide **depois*
 de olhar o problema, e tarefa que parece roteiro merece uma medida antes de
 receber o modelo leve.
 
+### Rodada do quórum — 7 de setembro de 2026
+
+Uma pergunta de arquitetura, e a resposta certa começou por **não** responder:
+medir a premissa primeiro.
+
+| frente | escalão | por quê |
+|---|---|---|
+| medir o custo real de esperar réplicas | **forte** | desenhar o medidor **é** o trabalho: separar sono de transporte, e impedir que a réplica compita com o cronômetro |
+| ler a arquitetura para saber se quórum cabe | **forte** | a resposta depende da direção da conexão, que é decisão de projeto já paga |
+
+**Nenhuma linha de motor foi escrita, e isso é entrega, não recuo.** O dono
+perguntou se é possível e se simplifica; construir antes de responder seria
+pular a pergunta.
+
+**Os papéis, e o que cada um fez ou por que foi dispensado:**
+
+| papel | nesta rodada |
+|---|---|
+| **A — orquestrador** | integrou, e a integração aqui **é** a resposta: o custo (bancada), a direção (`replica.rs`), o buraco confessado (`cluster.rs`) e a lição do Cassandra® (`CASSANDRA.md`) moram em quatro lugares, e nenhum deles sozinho responde a pergunta |
+| **B — engenheiro** | **dispensado de escrever motor**, de propósito. O que escreveu foi bancada |
+| **C — DBA** | convocado, e é dele a parte mais dura da resposta: **quórum custa disponibilidade**. Sem N réplicas alcançáveis o commit falha, onde hoje aceita — trocar «sempre aceita» por «às vezes recusa» é decisão de produto, e ele diz isso antes de qualquer código |
+| **D — zelador** | **dispensado**: a bancada limpa o que sobe, e mata só os PIDs que ela mesma subiu |
+| **E — designer** | **dispensado**: não há tela nesta frente |
+| **F — prova real** | convocado nos portões do medidor: ele **para** se a réplica puxar sozinha ou se o esquema não a alcançar — e os dois dispararam de verdade na estreia, junto com um tipo de coluna inventado e um direito de permissão que não existe |
+| **G — QA** | catraca nenhuma; e o buraco fica declarado — os 826 ms **continuam publicados** na bancada de replicação, agora com um campo dizendo o que somam, mas ainda sob o nome `atraso_ms` |
+| **H — documentação** | `REPLICACAO.md` §19, pedido 207, cognição, `CHANGELOG`, e a bancada declarada na página de testes |
+| **I — versionador** | commit por decisão, na branch combinada |
+| **J — pesquisador** | **o papel decisivo**, e a lei dele foi cumprida ao pé da letra: *medir a premissa do item vem antes de implementar o item*. A premissa era «o transporte custa 826 ms», e ela **morreu medida** — custa 0,475. Sem essa medição, a resposta ao dono teria sido «inviável», com autoridade e errada |
+
+E a lição de escalão desta rodada: **a forma que um medidor precisa ter é
+informação sobre o sistema.** Este teve de puxar os eventos à mão, do Python,
+e eu escrevi isso como comodidade de bancada — não era: era o *pull* dizendo
+que o master não tem como fazer ninguém buscar, que é exatamente o obstáculo
+ao quórum. O andaime foi o achado.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

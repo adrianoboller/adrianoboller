@@ -1,0 +1,31 @@
+{
+ "voltas": 60,
+ "gravar_ms": 0.209,
+ "gravar_faixa": [
+  0.171,
+  3.357
+ ],
+ "levar_ms": 0.475,
+ "levar_faixa": [
+  0.386,
+  4.0
+ ],
+ "quorum_2de3_ms": 0.452,
+ "quorum_2de3_faixa": [
+  0.386,
+  3.997
+ ],
+ "quorum_3de3_ms": 0.495,
+ "quorum_3de3_faixa": [
+  0.407,
+  4.0
+ ],
+ "commit_hoje_ms": 0.209,
+ "commit_com_2de3_ms": 0.661,
+ "commit_com_3de3_ms": 0.704,
+ "vezes_2de3": 3.16,
+ "vezes_3de3": 3.37,
+ "maquina": "tres processos phxsqld em 127.0.0.1, no mesmo container",
+ "aviso_da_maquina": "TUDO em localhost: a rede real custa mais, e este numero e o PISO do que um quorum custaria",
+ "medido_em": "2026-09-07 09:30"
+}

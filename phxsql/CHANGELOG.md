@@ -20,6 +20,44 @@ ausência de transação: ele as documenta extensamente.
 
 ### Corrigido
 
+- **O `atraso_ms` da bancada de replicação soma duas coisas e só anuncia uma
+  — e isso quase virou a resposta errada a uma pergunta do dono.** Ele pergunta
+  sobre transação com quórum; o número à mão eram os **826–2014 ms** de atraso
+  daquela bancada, e lido como transporte ele inviabilizaria qualquer commit
+  síncrono. **Não é o que ele mede:** o laço da réplica **dorme**
+  `reconectar_em` quando não acha nada, e aquela bancada roda com 2 s. Medido
+  separado na `bancada/quorum/` nova: gravar no master **0,209 ms**, levar até
+  uma réplica **0,475 ms**, commit esperando 2-de-3 **0,661 ms (3,16×)** e
+  3-de-3 **0,704 ms (3,37×)**, 60 voltas em localhost — que é o **piso**, com o
+  aviso viajando junto do número. **O sono era 99,9% do valor publicado.** O
+  `resultados.json` da replicação passou a carregar um campo
+  `atraso_ms_inclui` dizendo o que ele soma, e o `reconectar_em` virou
+  constante **no `montar.py`**, que é quem escreve o config — digitá-lo no
+  medidor seria a receita de um número envelhecendo noutro arquivo. *Medição
+  honesta com rótulo incompleto engana melhor que palpite, porque vem com
+  autoridade.*
+
+### Adicionado
+
+- **`bancada/quorum/` — quanto custaria esperar as réplicas confirmarem.** Ela
+  **não prova recurso**: mede o preço de uma decisão que ainda não foi tomada,
+  e essa distinção está escrita na página de testes. Sobe master e duas
+  réplicas com `reconectar_em` de uma hora, para o laço delas não competir com
+  o cronômetro, e **para** quando uma réplica puxa sozinha (zero eventos
+  significa que ela chegou antes, e o medidor estaria cronometrando o próprio
+  concorrente) ou quando o esquema não a alcança antes da primeira volta.
+
+- **`docs/REPLICACAO.md` §19 — a análise do quórum, com o número.** Três
+  conclusões que não são opinião: quórum **não** substitui replicação (ele
+  conta confirmações, e alguém tem de levar os bytes); os outros servidores
+  **já existem e já votam** — o `cluster.rs` tem mapa, época e maioria, só que
+  a maioria decide *quem é o master*, não *se a escrita chegou*, e o cabeçalho
+  do módulo já confessava o buraco; e o obstáculo real **não é o custo, é a
+  direção** — a replicação aqui é *pull* por firewall, e um quórum síncrono
+  precisa do master sabendo, no instante do commit, que N réplicas têm o dado.
+  A rota recomendada preserva o firewall: canal que **a réplica** abre e
+  mantém. Pedido 207.
+
 - **A bancada das transações existia, passava, e era INVISÍVEL.** O dono
   perguntou se a transação atômica funciona; a resposta certa era rodar o
   medidor, não citar o documento. Ele deu **36 conferências, 0 falhas** pelo
