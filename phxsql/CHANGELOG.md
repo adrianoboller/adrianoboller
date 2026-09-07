@@ -68,6 +68,18 @@ ausência de transação: ele as documenta extensamente.
   sempre passaria em tudo. Um quarto portão **morreu na prova**: o defeito que eu
   culpei (pedir o catálogo sem `database`) não reproduzia o sintoma.
 
+- **Duas figuras do medidor, desenhadas à mão em SVG e sem biblioteca** — o
+  **fluxograma** do caminho de uma célula até o veredito, com os quatro portões
+  que param a medição, e o **diagrama de workflow** da rodada inteira, da
+  medição à página. Saem do mesmo gerador da tabela, então os rótulos com número
+  (19 capacidades, 123 operações, 105 alcançadas) são medidos, e o número da
+  figura sai da contagem das legendas anteriores. Entregues embutidas no dossiê
+  **e** como `.svg` avulso — e as duas coisas não são o mesmo arquivo: o solto
+  exige `xmlns`, só aceita as cinco entidades do XML e quer o `<svg>` como raiz.
+  Três defeitos achados **abrindo no navegador**, nenhum visível no código: um
+  rótulo invadindo a caixa vizinha, um texto riscado pela própria seta, e o
+  arquivo avulso com `naturalWidth` = 0 sem erro nenhum.
+
 - **O sétimo gerador do dossiê**, `docs/dossie/comparativo-no-dossie.py`, escreve
   a tabela comparativa na §33 — a seção do «o que este motor não faz» deixa de
   ser prosa inteira, que é onde ausência envelhece.

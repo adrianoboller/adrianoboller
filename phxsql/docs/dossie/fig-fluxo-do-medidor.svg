@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 930 700" role="img" aria-label="Fluxograma do medidor comparativo: cada uma das 19 capacidades entra por um portao de corrida que exige a recusa de uma instrucao invalida por todos os motores; depois o caminho se divide entre perguntar ao motor vivo e sondar o codigo, e quatro portoes podem parar a medicao antes de qualquer veredito">
+  <style>svg{--ok:#2f7a3e;--log:#b71414;--pend:#8a6a1f;--acento:#c63c0a;color:#4a3f3a;background:#fbf9f7}</style>
+  <defs>
+    <marker id="setaFlx" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="setaFlxN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--log)"/>
+    </marker>
+    <marker id="setaFlxO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--ok)"/>
+    </marker>
+  </defs>
+  <g font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">
+
+    <!-- portao da corrida: acontece UMA vez, antes de qualquer celula -->
+    <rect x="200" y="16" width="460" height="44" rx="4" fill="none" stroke="var(--acento)" stroke-width="1.6"/>
+    <text x="430" y="34" text-anchor="middle" font-size="10" fill="var(--acento)" letter-spacing="1.4">PORTÃO DA CORRIDA &#8212; UMA VEZ, ANTES DE TUDO</text>
+    <text x="430" y="50" text-anchor="middle">CREATE ZZZZ tem de ser RECUSADO pelos quatro</text>
+    <path d="M660 38 L690 38" stroke="var(--log)" stroke-width="1.4" marker-end="url(#setaFlxN)"/>
+    <rect x="690" y="14" width="220" height="48" rx="4" fill="var(--log)" fill-opacity=".16" stroke="var(--log)" stroke-width="1.5"/>
+    <text x="800" y="30" text-anchor="middle" font-size="9.5" fill="var(--log)">se algum aceitar,</text>
+    <text x="800" y="44" text-anchor="middle" font-size="10.5" fill="var(--log)" font-weight="600">O MEDIDOR MENTE</text>
+    <text x="800" y="57" text-anchor="middle" font-size="9.5" opacity=".8">quem falha é ele, não o motor</text>
+
+    <path d="M430 60 L430 86" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaFlx)"/>
+
+    <!-- entrada -->
+    <rect x="280" y="88" width="300" height="40" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <text x="430" y="113" text-anchor="middle">uma das 19 capacidades</text>
+    <path d="M430 128 L430 144" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaFlx)"/>
+
+    <!-- divisao: motor vivo ou sonda de codigo -->
+    <polygon points="430,146 585,176 430,206 275,176" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <text x="430" y="180" text-anchor="middle">SQL alcança este motor?</text>
+    <text x="442" y="230" text-anchor="start" font-size="10" opacity=".75">sim &#8212; 13 linhas</text>
+    <path d="M430 206 L430 246" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaFlx)"/>
+    <path d="M275 176 L105 176 L105 246" fill="none" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaFlx)"/>
+    <text x="150" y="168" font-size="10" opacity=".75">não &#8212; 6</text>
+
+    <!-- lane da sonda de codigo -->
+    <rect x="15" y="246" width="180" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".85"/>
+    <text x="105" y="264" text-anchor="middle" font-size="10.5">citar(): arquivo, linha</text>
+    <text x="105" y="280" text-anchor="middle" font-size="10.5">E o trecho citado</text>
+    <path d="M105 290 L105 306" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaFlx)"/>
+    <polygon points="105,308 195,336 105,364 15,336" fill="none" stroke="currentColor" stroke-width="1.3"/>
+    <text x="105" y="340" text-anchor="middle" font-size="10.5">lista veio vazia?</text>
+    <path d="M105 364 L105 404" stroke="var(--log)" stroke-width="1.4" marker-end="url(#setaFlxN)"/>
+    <text x="119" y="382" text-anchor="middle" font-size="10" fill="var(--log)">sim</text>
+    <rect x="15" y="406" width="180" height="40" rx="4" fill="var(--log)" fill-opacity=".16" stroke="var(--log)" stroke-width="1.5"/>
+    <text x="105" y="422" text-anchor="middle" font-size="10.5" fill="var(--log)" font-weight="600">SONDA QUEBRADA</text>
+    <text x="105" y="437" text-anchor="middle" font-size="10" opacity=".8">vazio não é ausência</text>
+    <path d="M195 336 L230 336 L230 644 L274 644" fill="none" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaFlx)"/>
+    <text x="238" y="330" font-size="10" opacity=".75">não</text>
+
+    <!-- lane do motor vivo -->
+    <rect x="280" y="246" width="300" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <text x="430" y="264" text-anchor="middle">recompila o phxsqld</text>
+    <text x="430" y="281" text-anchor="middle" font-size="10" opacity=".75">binário velho mede o passado</text>
+    <path d="M430 290 L430 306" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaFlx)"/>
+
+    <polygon points="430,306 585,336 430,366 275,336" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <text x="430" y="340" text-anchor="middle">a mesa nasceu?</text>
+    <path d="M585 336 L690 336" stroke="var(--log)" stroke-width="1.4" marker-end="url(#setaFlxN)"/>
+    <text x="620" y="330" font-size="10" fill="var(--log)">não</text>
+    <rect x="690" y="316" width="220" height="40" rx="4" fill="var(--log)" fill-opacity=".16" stroke="var(--log)" stroke-width="1.5"/>
+    <text x="800" y="332" text-anchor="middle" font-size="10.5" fill="var(--log)" font-weight="600">MESA NÃO POSTA</text>
+    <text x="800" y="347" text-anchor="middle" font-size="10" opacity=".8">recusa não lida vira ausência</text>
+    <path d="M430 366 L430 396" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaFlx)"/>
+
+    <polygon points="430,396 585,426 430,456 275,426" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <text x="430" y="430" text-anchor="middle">lê de volta v = 42?</text>
+    <path d="M585 426 L690 426" stroke="var(--log)" stroke-width="1.4" marker-end="url(#setaFlxN)"/>
+    <text x="620" y="420" font-size="10" fill="var(--log)">não</text>
+    <rect x="690" y="406" width="220" height="40" rx="4" fill="var(--log)" fill-opacity=".16" stroke="var(--log)" stroke-width="1.5"/>
+    <text x="800" y="422" text-anchor="middle" font-size="10.5" fill="var(--log)" font-weight="600">LEITOR QUEBRADO</text>
+    <text x="800" y="437" text-anchor="middle" font-size="10" opacity=".8">o instrumento, não o motor</text>
+    <path d="M430 456 L430 478" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaFlx)"/>
+
+    <rect x="280" y="478" width="300" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <text x="430" y="496" text-anchor="middle">exercita o EFEITO</text>
+    <text x="430" y="513" text-anchor="middle" font-size="10" opacity=".75">nunca o «aceitou» da resposta</text>
+    <path d="M430 522 L430 538" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaFlx)"/>
+
+    <polygon points="430,538 585,568 430,598 275,568" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <text x="430" y="572" text-anchor="middle">o caso legítimo passa?</text>
+    <path d="M585 568 L690 568" stroke="var(--log)" stroke-width="1.4" marker-end="url(#setaFlxN)"/>
+    <text x="620" y="562" font-size="10" fill="var(--log)">não</text>
+    <rect x="690" y="548" width="220" height="40" rx="4" fill="var(--log)" fill-opacity=".16" stroke="var(--log)" stroke-width="1.5"/>
+    <text x="800" y="564" text-anchor="middle" font-size="10.5" fill="var(--log)" font-weight="600">VEREDITO ANULADO</text>
+    <text x="800" y="579" text-anchor="middle" font-size="10" opacity=".8">recusa sozinha não prova</text>
+    <path d="M430 598 L430 622" stroke="var(--ok)" stroke-width="1.6" marker-end="url(#setaFlxO)"/>
+
+    <rect x="274" y="624" width="312" height="42" rx="4" fill="var(--ok)" fill-opacity=".12" stroke="var(--ok)" stroke-width="1.6"/>
+    <text x="430" y="643" text-anchor="middle" font-size="11.5">
+      <tspan fill="var(--ok)" font-weight="600">tem</tspan><tspan opacity=".55"> · </tspan><tspan fill="var(--pend)" font-weight="600">meio</tspan><tspan opacity=".55"> · </tspan><tspan fill="var(--log)" font-weight="600">não</tspan>
+    </text>
+    <text x="430" y="659" text-anchor="middle" font-size="10" opacity=".8">com a recusa e a procedência guardadas</text>
+
+    <text x="15" y="688" font-size="10.5" opacity=".65">Todo portão PARA a medição. Nenhum devolve «não sei» — porque «não achei» e «não sei olhar» produzem a mesma frase, e ela convence nas duas.</text>
+  </g>
+</svg>

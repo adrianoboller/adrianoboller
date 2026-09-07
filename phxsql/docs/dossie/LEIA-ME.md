@@ -84,7 +84,7 @@ python3 docs/dossie/comparativo-no-dossie.py docs/dossie/dossie-phxsql-0.18.html
 | `cobertura-por-area.py` | `cobertura:` no dossiê, e as tabelas do `docs/TESTES.md` |
 | `capturas-no-dossie.py` | `capturas:` — as vinte telas, como *data URI* |
 | `tetos-da-trava.py` | `tetos:` — os quatro tetos de concorrência (§35), lidos das corridas cruas em `bancada/concorrencia/corridas/` |
-| `comparativo-no-dossie.py` | `comparativo:` — a tabela do que ainda falta aqui (§33), lida de `bancada/comparativo/resultados.json` |
+| `comparativo-no-dossie.py` | `comparativo:` — a tabela do que ainda falta aqui (§33) e as **figuras 27 e 28**, lidas de `bancada/comparativo/` e `bancada/cobertura-da-tela/`; grava também os dois `.svg` avulsos |
 
 `--so-medir` mostra sem gravar; `--sem-testes` no primeiro pula o `cargo test`,
 que demora. Use só quando o que mudou não foi código.
@@ -108,6 +108,31 @@ bater o olho; um «não há» ninguém revisita, porque não há o que olhar. Po
 esta tabela sai de um **medidor** que pergunta a quatro motores vivos, e não de
 uma leitura — e cada célula carrega a procedência, porque `citado` e `medido`
 não valem a mesma coisa.
+
+### As figuras do sétimo saem em DOIS destinos, e se provam nos dois
+
+O `comparativo-no-dossie.py` desenha duas figuras — o fluxograma do medidor e
+o workflow da rodada — e as entrega embutidas no dossiê **e** como
+`fig-fluxo-do-medidor.svg` e `fig-workflow-da-rodada.svg`. O mesmo texto, e
+**não é o mesmo arquivo**: o solto é mais estrito, e as três diferenças não dão
+erro nenhum na tela.
+
+| dentro do HTML | como arquivo `.svg` |
+|---|---|
+| o `xmlns` é assumido | **obrigatório** — sem ele, `naturalWidth` = 0 e nenhum aviso |
+| `&middot;` e `&mdash;` valem | só as **cinco** entidades do XML; uma nomeada derruba o arquivo inteiro |
+| `<style>` pode vir antes | a raiz tem de ser o `<svg>` |
+
+A função `solto()` cuida das três. E o número da figura **não se digita**: sai
+da contagem das legendas anteriores no próprio arquivo, senão apontaria para a
+figura errada no dia em que alguém acrescentasse uma acima — e legenda errada
+não quebra nada, então ninguém veria.
+
+**E o portão que confere isso mede o EFEITO, não a estrutura**: «carrega como
+`<img>` e tem tamanho». Duas réguas anteriores reprovaram as figuras boas
+porque olhavam `documentElement` e `getBBox`, e o Chromium embrulha todo `.svg`
+de `file://` num documento sintético — elas mediam o embrulho.
+`docs/cognicao/cognicao_o-svg-embutido-nao-e-o-svg-solto_20260907_0345.md`.
 
 ### A receita da interface saiu daqui, e foi para o `http.rs`
 
