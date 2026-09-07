@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 624" role="img" aria-label="O fluxo dos tres numeros crescentes do PhxSql numa insercao: a linha da aplicacao passa por completar as colunas de sistema, numerar a ordem de chegada no rownum, numerar a identidade na coluna Sequence, conferir a chave unica antes de tocar em disco e anexar o slot ao reg, que devolve o rowid; os tres contadores moram no mesmo cabecalho de 128 bytes do volume 1, nos bytes 20, 36 e 92, regravado a cada insercao por um write de meio microssegundo; e os tres divergem em tres lugares medidos: a particao por letra, onde o rownum nao cresce com o rowid, a transacao, onde a Sequence e o rownum sao nulos ate o COMMIT, e a replicacao, onde a Sequence vem da origem e o rownum e reatribuido localmente.">
+  <defs>
+    <marker id="setaAN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="setaANacento" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--acento, #c63c0a)"/>
+    </marker>
+  </defs>
+  <g font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">
+
+    <text x="25" y="28" font-size="11" fill="var(--acento, #c63c0a)" letter-spacing="1.3">O CAMINHO — ONDE CADA UM DOS TRÊS NASCE</text>
+
+    <!-- ===================== a fila da insercao ===================== -->
+    <rect x="25" y="44" width="140" height="60" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <text x="95" y="68" text-anchor="middle" font-size="11">valores</text>
+    <text x="95" y="83" text-anchor="middle" font-size="9.5" opacity=".62">da aplicação</text>
+    <text x="95" y="96" text-anchor="middle" font-size="9" opacity=".5">ou de um lote</text>
+    <path d="M165 74 L177 74" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaAN)"/>
+
+    <rect x="179" y="44" width="140" height="60" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <text x="249" y="66" text-anchor="middle" font-size="11">completa</text>
+    <text x="249" y="81" text-anchor="middle" font-size="9.5" opacity=".62">softdeleted = não</text>
+    <text x="249" y="94" text-anchor="middle" font-size="9.5" opacity=".62">rownum = 0</text>
+    <path d="M319 74 L331 74" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaAN)"/>
+
+    <rect x="333" y="44" width="140" height="60" rx="4" fill="none" stroke="var(--ndx, #6a44a8)" stroke-width="1.6"/>
+    <text x="403" y="64" text-anchor="middle" fill="var(--ndx, #6a44a8)" font-size="11">numera a ORDEM</text>
+    <text x="403" y="79" text-anchor="middle" fill="var(--ndx, #6a44a8)" font-size="10.5">rownum</text>
+    <text x="403" y="94" text-anchor="middle" font-size="9" opacity=".55">valor de fora é ignorado</text>
+    <path d="M473 74 L485 74" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaAN)"/>
+
+    <rect x="487" y="44" width="140" height="60" rx="4" fill="none" stroke="var(--acento, #c63c0a)" stroke-width="1.6"/>
+    <text x="557" y="64" text-anchor="middle" fill="var(--acento, #c63c0a)" font-size="11">numera a IDENTIDADE</text>
+    <text x="557" y="79" text-anchor="middle" fill="var(--acento, #c63c0a)" font-size="10.5">Sequence</text>
+    <text x="557" y="94" text-anchor="middle" font-size="9" opacity=".55">nulo → o próximo</text>
+    <path d="M627 74 L639 74" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaAN)"/>
+
+    <rect x="641" y="44" width="140" height="60" rx="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <text x="711" y="66" text-anchor="middle" font-size="11">confere chave</text>
+    <text x="711" y="81" text-anchor="middle" font-size="11">única</text>
+    <text x="711" y="95" text-anchor="middle" font-size="9" opacity=".55">antes de tocar em disco</text>
+    <path d="M781 74 L793 74" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaAN)"/>
+
+    <rect x="795" y="44" width="140" height="60" rx="4" fill="none" stroke="var(--reg, #1f5c93)" stroke-width="1.6"/>
+    <text x="865" y="64" text-anchor="middle" fill="var(--reg, #1f5c93)" font-size="11">anexa o slot</text>
+    <text x="865" y="79" text-anchor="middle" fill="var(--reg, #1f5c93)" font-size="10.5">rowid</text>
+    <text x="865" y="94" text-anchor="middle" font-size="9" opacity=".55">= slots + 1</text>
+
+    <!-- valor escolhido a mao: a seta que volta e empurra o contador -->
+    <path d="M557 122 L557 106" fill="none" stroke="var(--acento, #c63c0a)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#setaANacento)"/>
+    <text x="571" y="126" fill="var(--acento, #c63c0a)" font-size="9.5">valor à mão EMPURRA o contador: id=100 → 101</text>
+
+    <!-- ===================== o cabecalho ===================== -->
+    <path d="M865 104 L865 168 L300 168 L300 182" fill="none" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaAN)"/>
+    <text x="25" y="152" font-size="11" fill="var(--acento, #c63c0a)" letter-spacing="1.3">ONDE OS TRÊS CONTADORES MORAM — UM CABEÇALHO SÓ</text>
+
+    <rect x="180" y="186" width="640" height="46" rx="3" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".55"/>
+    <rect x="280" y="186" width="40" height="46" fill="none" stroke="var(--reg, #1f5c93)" stroke-width="1.8"/>
+    <rect x="360" y="186" width="40" height="46" fill="none" stroke="var(--acento, #c63c0a)" stroke-width="1.8"/>
+    <rect x="640" y="186" width="40" height="46" fill="none" stroke="var(--ndx, #6a44a8)" stroke-width="1.8"/>
+    <text x="176" y="213" text-anchor="end" font-size="10">byte 0</text>
+    <text x="824" y="213" font-size="10">128</text>
+
+    <path d="M300 232 L252 246" fill="none" stroke="var(--reg, #1f5c93)" stroke-width="1"/>
+    <path d="M380 232 L432 246" fill="none" stroke="var(--acento, #c63c0a)" stroke-width="1"/>
+    <path d="M660 232 L690 246" fill="none" stroke="var(--ndx, #6a44a8)" stroke-width="1"/>
+    <text x="222" y="258" text-anchor="middle" fill="var(--reg, #1f5c93)" font-size="10.5">byte 20</text>
+    <text x="222" y="271" text-anchor="middle" fill="var(--reg, #1f5c93)" font-size="10">slot_count</text>
+    <text x="452" y="258" text-anchor="middle" fill="var(--acento, #c63c0a)" font-size="10.5">byte 36</text>
+    <text x="452" y="271" text-anchor="middle" fill="var(--acento, #c63c0a)" font-size="10">proxima_sequencia</text>
+    <text x="700" y="258" text-anchor="middle" fill="var(--ndx, #6a44a8)" font-size="10.5">byte 92</text>
+    <text x="700" y="271" text-anchor="middle" fill="var(--ndx, #6a44a8)" font-size="10">proximo_rownum</text>
+
+    <text x="180" y="294" font-size="10.5" opacity=".7">Regravado a CADA inserção, e só ele — o bloco de esquema não. Custa um <tspan font-weight="600">write de 0,50 µs</tspan>;</text>
+    <text x="180" y="309" font-size="10.5" opacity=".7">o <tspan font-weight="600">fsync</tspan> espera o fecho da janela de durabilidade e custa <tspan font-weight="600">82,1 µs</tspan> — 164× mais.</text>
+
+    <line x1="25" y1="320" x2="935" y2="320" stroke="currentColor" stroke-width="1" opacity=".3"/>
+
+    <!-- ===================== onde os tres divergem ===================== -->
+    <text x="25" y="346" font-size="11" fill="var(--acento, #c63c0a)" letter-spacing="1.3">E OS TRÊS DIVERGEM EM TRÊS LUGARES — MEDIDOS, 07/09/2026</text>
+
+    <rect x="25" y="360" width="290" height="132" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+    <text x="40" y="382" font-size="11" font-weight="600">1 · partição por letra</text>
+    <text x="40" y="402" font-size="10.5">Silva  rowid <tspan fill="var(--reg, #1f5c93)">18001</tspan>   rownum <tspan fill="var(--ndx, #6a44a8)">1</tspan>   id <tspan fill="var(--acento, #c63c0a)">1</tspan></text>
+    <text x="40" y="419" font-size="10.5">Alves  rowid <tspan fill="var(--reg, #1f5c93)">1</tspan>       rownum <tspan fill="var(--ndx, #6a44a8)">2</tspan>   id <tspan fill="var(--acento, #c63c0a)">2</tspan></text>
+    <text x="40" y="442" font-size="10" opacity=".68">Posição e chegada deixam de ser a mesma</text>
+    <text x="40" y="456" font-size="10" opacity=".68">coisa, e a bisseção é recusada nesse modo.</text>
+    <text x="40" y="476" font-size="10" opacity=".55">Contadores no balde _A — o volume 1.</text>
+
+    <rect x="335" y="360" width="290" height="132" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+    <text x="350" y="382" font-size="11" font-weight="600">2 · dentro da transação</text>
+    <text x="350" y="402" font-size="10.5">a linha empilhada se lê</text>
+    <text x="350" y="419" font-size="10.5">id <tspan fill="var(--acento, #c63c0a)">null</tspan>   rownum <tspan fill="var(--ndx, #6a44a8)">null</tspan>   até o COMMIT</text>
+    <text x="350" y="442" font-size="10" opacity=".68">Nada vai a disco antes de confirmar, então</text>
+    <text x="350" y="456" font-size="10" opacity=".68">o ROLLBACK <tspan font-weight="600">devolve</tspan> o número; o Postgres não.</text>
+    <text x="350" y="476" font-size="10" opacity=".55">Mestre-detalhe não fecha: falta o id da mãe.</text>
+
+    <rect x="645" y="360" width="290" height="132" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+    <text x="660" y="382" font-size="11" font-weight="600">3 · replicação</text>
+    <text x="660" y="402" font-size="10.5">id <tspan fill="var(--acento, #c63c0a)">vem da origem</tspan>, e o contador segue</text>
+    <text x="660" y="419" font-size="10.5">rownum <tspan fill="var(--ndx, #6a44a8)">é reatribuído aqui</tspan></text>
+    <text x="660" y="442" font-size="10" opacity=".68">Coincide porque a ordem é a mesma,</text>
+    <text x="660" y="456" font-size="10" opacity=".68">e não porque foi copiado.</text>
+    <text x="660" y="476" font-size="10" opacity=".55">Bidirecional: 4 inserções, 2 linhas sobraram.</text>
+
+    <line x1="25" y1="514" x2="935" y2="514" stroke="currentColor" stroke-width="1" opacity=".3"/>
+
+    <circle cx="33" cy="538" r="3" fill="var(--acento, #c63c0a)"/>
+    <text x="47" y="542" font-size="11.5">Nenhum dos três volta atrás: exclusão suave, física ou restauração — o contador não recua em nenhuma.</text>
+    <circle cx="33" cy="562" r="3" fill="var(--ndx, #6a44a8)"/>
+    <text x="47" y="566" font-size="11.5">O <tspan font-weight="600">rownum</tspan> não se escolhe e não se ajusta; a <tspan font-weight="600">Sequence</tspan> se escolhe, e o <tspan font-weight="600">ajustar_sequencia</tspan> a move nos dois sentidos.</text>
+    <circle cx="33" cy="586" r="3" fill="var(--reg, #1f5c93)"/>
+    <text x="47" y="590" font-size="11.5">Ajustar para trás <tspan font-weight="600">sem</tspan> índice único repete calado: medido, os ids saíram 1, 2, 3, 1.</text>
+  </g>
+</svg>

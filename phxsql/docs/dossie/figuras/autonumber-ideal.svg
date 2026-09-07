@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 646" role="img" aria-label="Os dois buracos medidos do auto number do PhxSql e o que os fecha: primeiro, dentro de uma transacao a linha inserida se le com id nulo, entao a ficha mestre-detalhe nao fecha, e o conserto e reservar o numero na instrucao, porque a trava do fim da tabela ja serializa a insercao; segundo, dois servidores bidirecionais numerando a mesma faixa perderam duas de quatro linhas, o remendo das faixas disjuntas morre na segunda rodada, e o conserto e declarar inicio e passo no esquema, que viaja com o arquivo. Em baixo, a ordem de entrada dos oito itens, com a linha de corte da migracao entre o quinto e o sexto: os cinco primeiros nao mudam o formato em disco e os tres ultimos mudam, e por isso entram cedo.">
+  <defs>
+    <marker id="setaID" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="setaIDok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--ok, #2f7a3e)"/>
+    </marker>
+  </defs>
+  <g font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">
+
+    <text x="25" y="28" font-size="11" fill="var(--acento, #c63c0a)" letter-spacing="1.3">OS DOIS BURACOS MEDIDOS — E A MUDANÇA QUE FECHA CADA UM</text>
+
+    <!-- ============ buraco 1: a ficha mestre-detalhe ============ -->
+    <rect x="25" y="44" width="445" height="246" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+    <text x="42" y="68" font-size="11.5" font-weight="600">1 · a ficha mestre-detalhe não fecha</text>
+
+    <rect x="42" y="82" width="411" height="76" rx="3" fill="none" stroke="var(--log, #b71414)" stroke-width="1.4"/>
+    <text x="54" y="100" fill="var(--log, #b71414)" font-size="10.5" font-weight="600">HOJE</text>
+    <text x="112" y="100" font-size="10.5">BEGIN → inserir a mãe → <tspan fill="var(--log, #b71414)">id = null</tspan></text>
+    <text x="112" y="117" font-size="10.5">não há o que pôr na coluna da filha</text>
+    <text x="112" y="134" font-size="10.5">quem numera é o COMMIT, lá na frente</text>
+    <text x="54" y="151" font-size="9.5" opacity=".6">medido: a linha empilhada se lê id null e rownum null</text>
+
+    <path d="M247 158 L247 176" stroke="var(--ok, #2f7a3e)" stroke-width="1.4" marker-end="url(#setaIDok)"/>
+
+    <rect x="42" y="180" width="411" height="94" rx="3" fill="none" stroke="var(--ok, #2f7a3e)" stroke-width="1.5"/>
+    <text x="54" y="198" fill="var(--ok, #2f7a3e)" font-size="10.5" font-weight="600">IDEAL</text>
+    <text x="112" y="198" font-size="10.5">BEGIN → inserir a mãe → <tspan fill="var(--ok, #2f7a3e)">id = 7, reservado</tspan></text>
+    <text x="112" y="215" font-size="10.5">a filha já grava 7 · COMMIT só confirma</text>
+    <text x="54" y="236" font-size="9.5" opacity=".72">A trava do FIM DA TABELA já serializa a inserção — ela existe</text>
+    <text x="54" y="250" font-size="9.5" opacity=".72">para prever o rowid. Com ela na mão, reservar o número é de graça,</text>
+    <text x="54" y="262" font-size="9.5" opacity=".72">e o ROLLBACK continua devolvendo — o PostgreSQL não devolve.</text>
+
+    <!-- ============ buraco 2: dois masters ============ -->
+    <rect x="490" y="44" width="445" height="246" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+    <text x="507" y="68" font-size="11.5" font-weight="600">2 · dois masters numerando a mesma faixa</text>
+
+    <rect x="507" y="82" width="411" height="64" rx="3" fill="none" stroke="var(--log, #b71414)" stroke-width="1.4"/>
+    <text x="519" y="100" fill="var(--log, #b71414)" font-size="10.5" font-weight="600">HOJE</text>
+    <text x="577" y="100" font-size="10.5">alfa dá 1, 2 · beta dá 1, 2 · colidem por chave</text>
+    <text x="577" y="117" font-size="10.5">«mais recente vence» resolve, e o outro <tspan fill="var(--log, #b71414)">some</tspan></text>
+    <text x="519" y="134" font-size="9.5" opacity=".6">medido: 4 inserções → 2 linhas, dos dois lados</text>
+
+    <rect x="507" y="154" width="411" height="48" rx="3" fill="none" stroke="var(--pend, #8a6a1f)" stroke-width="1.4" stroke-dasharray="5 3"/>
+    <text x="519" y="172" fill="var(--pend, #8a6a1f)" font-size="10.5" font-weight="600">REMENDO</text>
+    <text x="597" y="172" font-size="10.5">faixas disjuntas por ajustar_sequencia</text>
+    <text x="519" y="192" font-size="9.5" opacity=".62">morre na 2ª rodada: o contador segue o valor que veio de fora (6 → 5)</text>
+
+    <rect x="507" y="210" width="411" height="64" rx="3" fill="none" stroke="var(--ok, #2f7a3e)" stroke-width="1.5"/>
+    <text x="519" y="228" fill="var(--ok, #2f7a3e)" font-size="10.5" font-weight="600">IDEAL</text>
+    <text x="577" y="228" font-size="10.5">inicio e passo <tspan font-weight="600">no esquema</tspan>: alfa 1,3,5 · beta 2,4,6</text>
+    <text x="519" y="246" font-size="9.5" opacity=".72">A faixa viaja com o arquivo — variável de servidor a perde no backup.</text>
+    <text x="519" y="262" font-size="9.5" opacity=".72">Já hoje, a mesma prova com chave Uuid v7: <tspan fill="var(--ok, #2f7a3e)" font-weight="600">4 inserções → 4 linhas</tspan>.</text>
+
+    <line x1="25" y1="308" x2="935" y2="308" stroke="currentColor" stroke-width="1" opacity=".3"/>
+
+    <!-- ============ a ordem de entrada ============ -->
+    <text x="25" y="334" font-size="11" fill="var(--acento, #c63c0a)" letter-spacing="1.3">O QUE ENTRA PRIMEIRO — E A LINHA DE CORTE DA MIGRAÇÃO</text>
+
+    <rect x="25" y="350" width="910" height="122" rx="4" fill="none" stroke="var(--ok, #2f7a3e)" stroke-width="1.3"/>
+    <text x="40" y="372" fill="var(--ok, #2f7a3e)" font-size="10.5" font-weight="600">NÃO MUDA O FORMATO EM DISCO — entra em qualquer ordem</text>
+    <text x="40" y="394" font-size="11">1 · <tspan font-weight="600">pedido 223</tspan> — WHERE id = 2 recusa quando a chave é Sequence e passa quando é Int8 (1 linha)</text>
+    <text x="40" y="412" font-size="11">2 · o <tspan font-weight="600">Uuid nasce sozinho</tspan> quando o valor chega nulo, como a Sequence já nasce</text>
+    <text x="40" y="430" font-size="11">3 · <tspan font-weight="600">recusar acima de 2⁵³</tspan> — hoje o número se corrompe calado no protocolo (2 de 3 divergiram)</text>
+    <text x="40" y="448" font-size="11">4 · o <tspan font-weight="600">verificar reconta a Sequence</tspan> e o reparar empurra o contador — a varredura já acontece</text>
+    <text x="40" y="466" font-size="11">5 · <tspan font-weight="600">numerar no INSERT</tspan>, dentro da transação — fecha o buraco 1</text>
+
+    <rect x="25" y="484" width="910" height="86" rx="4" fill="none" stroke="var(--pend, #8a6a1f)" stroke-width="1.5"/>
+    <text x="40" y="506" fill="var(--pend, #8a6a1f)" font-size="10.5" font-weight="600">MUDA O FORMATO — e por isso entra CEDO, enquanto não há dado em produção</text>
+    <text x="40" y="528" font-size="11">6 · <tspan font-weight="600">inicio e passo no PSCH</tspan> (2 × u64 por coluna Sequence) — fecha o buraco 2</text>
+    <text x="40" y="546" font-size="11">7 · <tspan font-weight="600">IDENTITY ALWAYS</tspan> (1 byte) — nasce desligado: guarda nova entra pedida, não imposta</text>
+    <text x="40" y="564" font-size="11">8 · <tspan font-weight="600">sequência nomeada</tspan> — arquivo NOVO, não altera nenhum existente; CACHE desligado</text>
+
+    <line x1="25" y1="590" x2="935" y2="590" stroke="currentColor" stroke-width="1" opacity=".3"/>
+    <text x="25" y="614" font-size="10.5" opacity=".62">O preço que decide o item 8: o contador de hoje custa um <tspan font-weight="600">write de 0,50 µs</tspan>; um número durável em arquivo próprio custa <tspan font-weight="600">83,5 µs</tspan> de fdatasync — <tspan font-weight="600">167×</tspan>.</text>
+    <text x="25" y="632" font-size="10.5" opacity=".62">É por isso que o CACHE do MariaDB existe — e por isso ele entra desligado aqui: para nota fiscal, buraco na numeração não é aceitável.</text>
+  </g>
+</svg>

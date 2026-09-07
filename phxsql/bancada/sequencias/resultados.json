@@ -1,0 +1,659 @@
+{
+ "quando": "2026-09-07 17:39:47 UTC",
+ "medido_em": "2026-09-07 17:39",
+ "commit": "395848f",
+ "binario": "/tmp/phx-f8/phxsqld",
+ "preco": {
+  "fsync": {
+   "mediana_us": 82.1,
+   "min_us": 80.0,
+   "max_us": 142.9,
+   "amostras": 9,
+   "por_amostra": 200
+  },
+  "fdatasync": {
+   "mediana_us": 83.5,
+   "min_us": 72.6,
+   "max_us": 125.0,
+   "amostras": 9,
+   "por_amostra": 200
+  },
+  "write": {
+   "mediana_us": 0.5,
+   "min_us": 0.48,
+   "max_us": 0.6,
+   "amostras": 9,
+   "por_amostra": 2000
+  },
+  "carga_da_maquina": [
+   "3.60",
+   "2.87",
+   "2.36"
+  ],
+  "fsync_sobre_write_mediana": 164.2,
+  "fsync_sobre_write_no_piso": 151.2,
+  "insercao_sequence_us": {
+   "mediana_us": 163.3,
+   "min_us": 151.4,
+   "max_us": 174.2,
+   "n": 400,
+   "amostras": 6,
+   "alternadas": true
+  },
+  "insercao_int8_us": {
+   "mediana_us": 163.8,
+   "min_us": 160.0,
+   "max_us": 195.2,
+   "n": 400,
+   "amostras": 6,
+   "alternadas": true
+  },
+  "faixas_se_cruzam": true
+ },
+ "acompanha_valor_a_mao": {
+  "gravado_a_mao": 100,
+  "proximo_automatico": 101
+ },
+ "ajuste_para_tras_com_indice_unico": {
+  "recusou": true,
+  "erro": "[SP000020] chave duplicada: indice unico porId ja tem essa chave"
+ },
+ "insercao_comum": {
+  "linhas": [
+   [
+    1,
+    1,
+    1
+   ],
+   [
+    2,
+    2,
+    2
+   ],
+   [
+    3,
+    3,
+    3
+   ]
+  ],
+  "cabecalho": {
+   "slot_count": 3,
+   "live_count": 3,
+   "proxima_sequencia": 4,
+   "proximo_rownum": 4,
+   "marcadas": 0
+  }
+ },
+ "lote": {
+  "linhas": [
+   [
+    1,
+    1,
+    1
+   ],
+   [
+    2,
+    2,
+    2
+   ],
+   [
+    3,
+    3,
+    3
+   ],
+   [
+    4,
+    4,
+    4
+   ],
+   [
+    5,
+    5,
+    5
+   ],
+   [
+    6,
+    6,
+    6
+   ],
+   [
+    7,
+    900,
+    7
+   ],
+   [
+    8,
+    901,
+    8
+   ]
+  ],
+  "cabecalho": {
+   "slot_count": 8,
+   "live_count": 8,
+   "proxima_sequencia": 902,
+   "proximo_rownum": 9,
+   "marcadas": 0
+  }
+ },
+ "bulkinsert": {
+  "durante": {
+   "slot_count": 3,
+   "live_count": 3,
+   "proxima_sequencia": 4,
+   "proximo_rownum": 4,
+   "marcadas": 0
+  },
+  "depois": {
+   "slot_count": 3,
+   "live_count": 3,
+   "proxima_sequencia": 4,
+   "proximo_rownum": 4,
+   "marcadas": 0
+  },
+  "contador_mudou_no_fecho": false
+ },
+ "transacao": {
+  "sequencia_e_rownum_dentro_da_transacao": [
+   2,
+   null,
+   null
+  ],
+  "contador_antes": {
+   "slot_count": 1,
+   "live_count": 1,
+   "proxima_sequencia": 2,
+   "proximo_rownum": 2,
+   "marcadas": 0
+  },
+  "contador_durante": {
+   "slot_count": 1,
+   "live_count": 1,
+   "proxima_sequencia": 2,
+   "proximo_rownum": 2,
+   "marcadas": 0
+  },
+  "contador_pos_rollback": {
+   "slot_count": 1,
+   "live_count": 1,
+   "proxima_sequencia": 2,
+   "proximo_rownum": 2,
+   "marcadas": 0
+  },
+  "rollback_devolve_o_numero": true,
+  "linhas_pos_commit": [
+   [
+    1,
+    1,
+    1
+   ],
+   [
+    2,
+    2,
+    2
+   ]
+  ]
+ },
+ "exclusao": {
+  "passos": {
+   "antes": {
+    "slot_count": 5,
+    "live_count": 5,
+    "proxima_sequencia": 6,
+    "proximo_rownum": 6,
+    "marcadas": 0
+   },
+   "suave no rowid 2": {
+    "slot_count": 5,
+    "live_count": 5,
+    "proxima_sequencia": 6,
+    "proximo_rownum": 6,
+    "marcadas": 1
+   },
+   "restaurar o 2": {
+    "slot_count": 5,
+    "live_count": 5,
+    "proxima_sequencia": 6,
+    "proximo_rownum": 6,
+    "marcadas": 0
+   },
+   "de vez no rowid 3": {
+    "slot_count": 5,
+    "live_count": 4,
+    "proxima_sequencia": 6,
+    "proximo_rownum": 6,
+    "marcadas": 0
+   },
+   "a insercao seguinte": {
+    "slot_count": 6,
+    "live_count": 5,
+    "proxima_sequencia": 7,
+    "proximo_rownum": 7,
+    "marcadas": 0
+   }
+  },
+  "linhas": [
+   [
+    1,
+    1,
+    1
+   ],
+   [
+    2,
+    2,
+    2
+   ],
+   [
+    4,
+    4,
+    4
+   ],
+   [
+    5,
+    5,
+    5
+   ],
+   [
+    6,
+    6,
+    6
+   ]
+  ]
+ },
+ "particao_por_letra": {
+  "linhas": [
+   [
+    1,
+    2,
+    2
+   ],
+   [
+    2,
+    3,
+    3
+   ],
+   [
+    18001,
+    1,
+    1
+   ],
+   [
+    25001,
+    4,
+    4
+   ]
+  ],
+  "volumes": [
+   "alfa_A.reg",
+   "alfa_S.reg",
+   "alfa_Z.reg"
+  ],
+  "cab_A": {
+   "slot_count": 25001,
+   "live_count": 4,
+   "proxima_sequencia": 5,
+   "proximo_rownum": 5,
+   "marcadas": 0
+  },
+  "cab_S": {
+   "slot_count": 0,
+   "live_count": 0,
+   "proxima_sequencia": 0,
+   "proximo_rownum": 0,
+   "marcadas": 0
+  },
+  "transacao_recusa": "[SP000018] esquema invalido: loja.alfa e particionada por letra, e ali o slot da linha depende do balde: o rowid alvo nao e previsivel fora do motor, e sem ele a marca de recuperacao nao e idempotente. Insira nesta tabela fora de transacao"
+ },
+ "particao_por_volume": {
+  "quantidade": [
+   [
+    1,
+    1,
+    1
+   ],
+   [
+    2,
+    2,
+    2
+   ],
+   [
+    3,
+    3,
+    3
+   ],
+   [
+    4,
+    4,
+    4
+   ],
+   [
+    5,
+    5,
+    5
+   ]
+  ],
+  "cab_qtd_v1": {
+   "slot_count": 5,
+   "live_count": 5,
+   "proxima_sequencia": 6,
+   "proximo_rownum": 6,
+   "marcadas": 0
+  },
+  "cab_qtd_v2": {
+   "slot_count": 0,
+   "live_count": 0,
+   "proxima_sequencia": 0,
+   "proximo_rownum": 0,
+   "marcadas": 0
+  },
+  "cab_mov_v1": {
+   "slot_count": 4,
+   "live_count": 4,
+   "proxima_sequencia": 5,
+   "proximo_rownum": 5,
+   "marcadas": 0
+  },
+  "cab_mov_v2": {
+   "slot_count": 0,
+   "live_count": 0,
+   "proxima_sequencia": 0,
+   "proximo_rownum": 0,
+   "marcadas": 0
+  }
+ },
+ "ajuste_para_tras_sem_indice_unico": {
+  "linhas": [
+   [
+    1,
+    1,
+    1
+   ],
+   [
+    2,
+    2,
+    2
+   ],
+   [
+    3,
+    3,
+    3
+   ],
+   [
+    4,
+    1,
+    4
+   ]
+  ],
+  "repetidos": 1
+ },
+ "cabecalho_adulterado": {
+  "antes": {
+   "slot_count": 4,
+   "live_count": 4,
+   "proxima_sequencia": 5,
+   "proximo_rownum": 5,
+   "marcadas": 0
+  },
+  "depois": {
+   "slot_count": 4,
+   "live_count": 4,
+   "proxima_sequencia": 2,
+   "proximo_rownum": 5,
+   "marcadas": 0
+  },
+  "verificar": "[SP000010] arquivo corrompido: cabecalho de /tmp/phx-seq-4911/dados/loja/crc.reg com CRC invalido",
+  "reparar": "[SP000010] arquivo corrompido: cabecalho de /tmp/phx-seq-4911/dados/loja/crc.reg com CRC invalido",
+  "inserir": "[SP000010] arquivo corrompido: cabecalho de /tmp/phx-seq-4911/dados/loja/crc.reg com CRC invalido"
+ },
+ "queda_do_processo": {
+  "antes": {
+   "slot_count": 7,
+   "live_count": 7,
+   "proxima_sequencia": 8,
+   "proximo_rownum": 8,
+   "marcadas": 0
+  },
+  "no_disco": {
+   "slot_count": 7,
+   "live_count": 7,
+   "proxima_sequencia": 8,
+   "proximo_rownum": 8,
+   "marcadas": 0
+  },
+  "reaberto": {
+   "slot_count": 7,
+   "live_count": 7,
+   "proxima_sequencia": 8,
+   "proximo_rownum": 8,
+   "marcadas": 0
+  },
+  "repetidos_depois": 0,
+  "linhas": [
+   [
+    1,
+    1,
+    1
+   ],
+   [
+    2,
+    2,
+    2
+   ],
+   [
+    3,
+    3,
+    3
+   ],
+   [
+    4,
+    4,
+    4
+   ],
+   [
+    5,
+    5,
+    5
+   ],
+   [
+    6,
+    6,
+    6
+   ],
+   [
+    7,
+    7,
+    7
+   ],
+   [
+    8,
+    8,
+    8
+   ]
+  ]
+ },
+ "teto_do_protocolo": {
+  "limite_exato": 9007199254740992,
+  "divergentes": [
+   {
+    "mandado": "9007199254740993",
+    "gravado": 9007199254740992
+   },
+   {
+    "mandado": "9007199254740995",
+    "gravado": 9007199254740996
+   }
+  ],
+  "resposta_crua": "\"linhas\":[{\"rowid\":1,\"id\":9007199254740992,\"c\":\"9007199254740992\",\"softdeleted\":false,\"rownum\":1},{\"rowid\":2,\"id\":9007199254740992,\"c\":\"9007199254740993\",\"softdeleted\":false,\"rownum\":2},{\"rowid\":3,\"id\":9007199254740996,\"c\":\"9007199254740995\",\"softdeleted\":false,\"rownum\":3}]},\"ms\":0}"
+ },
+ "backup": {
+  "no_backup": {
+   "slot_count": 4,
+   "live_count": 4,
+   "proxima_sequencia": 5,
+   "proximo_rownum": 5,
+   "marcadas": 0
+  },
+  "vivo": {
+   "slot_count": 7,
+   "live_count": 7,
+   "proxima_sequencia": 8,
+   "proximo_rownum": 8,
+   "marcadas": 0
+  },
+  "restaurado": {
+   "slot_count": 4,
+   "live_count": 4,
+   "proxima_sequencia": 5,
+   "proximo_rownum": 5,
+   "marcadas": 0
+  },
+  "volta_ao_instante": true
+ },
+ "reindexar": {
+  "antes": {
+   "slot_count": 3,
+   "live_count": 3,
+   "proxima_sequencia": 4,
+   "proximo_rownum": 4,
+   "marcadas": 0
+  },
+  "depois": {
+   "slot_count": 3,
+   "live_count": 3,
+   "proxima_sequencia": 4,
+   "proximo_rownum": 4,
+   "marcadas": 0
+  },
+  "igual": true
+ },
+ "replicacao": {
+  "cab_fonte": {
+   "slot_count": 7,
+   "live_count": 6,
+   "proxima_sequencia": 702,
+   "proximo_rownum": 8,
+   "marcadas": 0
+  },
+  "cab_replica": {
+   "slot_count": 7,
+   "live_count": 6,
+   "proxima_sequencia": 702,
+   "proximo_rownum": 8,
+   "marcadas": 0
+  },
+  "iguais": true,
+  "linhas_da_replica": [
+   [
+    1,
+    1,
+    1
+   ],
+   [
+    2,
+    2,
+    2
+   ],
+   [
+    4,
+    4,
+    4
+   ],
+   [
+    5,
+    5,
+    5
+   ],
+   [
+    6,
+    700,
+    6
+   ],
+   [
+    7,
+    701,
+    7
+   ]
+  ]
+ },
+ "promocao_com_atraso": {
+  "fonte_no_fim": {
+   "slot_count": 12,
+   "live_count": 11,
+   "proxima_sequencia": 707,
+   "proximo_rownum": 13,
+   "marcadas": 0
+  },
+  "promovida": {
+   "slot_count": 7,
+   "live_count": 6,
+   "proxima_sequencia": 702,
+   "proximo_rownum": 8,
+   "marcadas": 0
+  },
+  "primeira_da_promovida": [
+   8,
+   702,
+   8
+  ],
+  "numeros_reemitidos": 5
+ },
+ "chave_uuid_no_bidirecional": {
+  "insercoes": 4,
+  "sobreviveram_alfa": 4,
+  "sobreviveram_beta": 4,
+  "linhas_alfa": [
+   "alfa-0",
+   "alfa-1",
+   "beta-0",
+   "beta-1"
+  ],
+  "uuid_nao_nasce_sozinho": "[SP000018] tipo invalido: coluna id e obrigatoria e recebeu NULL"
+ },
+ "bidirecional": {
+  "mesma_faixa": {
+   "insercoes": 4,
+   "sobreviveram_alfa": 2,
+   "sobreviveram_beta": 2,
+   "linhas_alfa": [
+    "de-beta-0",
+    "de-beta-1"
+   ]
+  },
+  "faixa_disjunta": {
+   "linhas": [
+    [
+     1,
+     1,
+     1
+    ],
+    [
+     2,
+     2,
+     2
+    ],
+    [
+     3,
+     1000000,
+     3
+    ],
+    [
+     4,
+     1000001,
+     4
+    ]
+   ],
+   "contador_de_alfa_apos_a_volta": 1000002
+  },
+  "faixa_disjunta_segunda_rodada": {
+   "insercoes": 6,
+   "sobreviveram_alfa": 5,
+   "sobreviveram_beta": 5,
+   "linhas_alfa": [
+    "alfa-0",
+    "alfa-1",
+    "beta-0",
+    "beta-1",
+    "beta-2"
+   ]
+  }
+ }
+}
