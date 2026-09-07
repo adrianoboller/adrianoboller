@@ -181,7 +181,8 @@ fn main() {
 
         // **O portao do medidor.** Sem isto o numero de baixo nao vale nada.
         assert_eq!(
-            pela_varredura, pelo_indice,
+            pela_varredura,
+            pelo_indice,
             "as duas faixas responderam DIFERENTE para «{palavra}»: \
              a varredura achou {} e o indice {} -- o numero seria de \
              trabalhos diferentes",
@@ -198,11 +199,11 @@ fn main() {
     println!();
     println!("  {:<14} {:>14} {:>14}", "faixa", "us/busca", "vezes");
     println!("  {:-<14} {:->14} {:->14}", "", "", "");
-    println!("  {:<14} {:>14.1} {:>14}", "varredura", media_varredura, "1,00x");
     println!(
-        "  {:<14} {:>14.1} {:>13.2}x",
-        "indice", media_indice, ganho
+        "  {:<14} {:>14.1} {:>14}",
+        "varredura", media_varredura, "1,00x"
     );
+    println!("  {:<14} {:>14.1} {:>13.2}x", "indice", media_indice, ganho);
     println!();
     println!(
         "  linhas achadas nas {buscas} buscas: {achados_total} \
