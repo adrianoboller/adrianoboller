@@ -76,14 +76,29 @@ def conferir_zip(zip_: Path, proibidos=PROIBIDO_NO_CLIENTE) -> list[str]:
     return sorted({n for n in nomes for pr in proibidos if pr in ("/" + n) or pr in n})
 
 
-def pacote_cliente(v: str, saida: Path) -> Path:
-    alvo = saida / "cliente" / f"wx-claude-code-{v}.zip"
+CORPUS = Path("skills/conversao-wx/resources/Help_WL_12k_Json.zip")
+
+
+def pacote_cliente(v: str, saida: Path, separar_corpus: bool = False) -> Path:
+    """Com `separar_corpus`, o corpus (25 MiB) sai em arquivo proprio: o
+    instalador ja sabe recebe-lo com `--corpus`, e cada parte fica abaixo do
+    limite de 30 MiB dos canais por onde isto costuma viajar."""
+    sufixo = "-sem-corpus" if separar_corpus else ""
+    alvo = saida / "cliente" / f"wx-claude-code-{v}{sufixo}.zip"
     alvo.parent.mkdir(parents=True, exist_ok=True)
     n = 0
     with zipfile.ZipFile(alvo, "w", zipfile.ZIP_DEFLATED) as z:
         for p, rel in arquivos_do_plugin():
+            if separar_corpus and rel == CORPUS:
+                continue
             z.write(p, f"wx-claude-code/{rel.as_posix()}")
             n += 1
+    if separar_corpus:
+        import shutil
+        corpus_alvo = saida / "cliente" / CORPUS.name
+        shutil.copy2(RAIZ / CORPUS, corpus_alvo)
+        print(f"corpus     {corpus_alvo.name}  {corpus_alvo.stat().st_size / 1048576:.1f} MiB "
+              f"(instale com: ./instalar.sh --corpus {CORPUS.name})")
     achados = conferir_zip(alvo)
     if achados:
         alvo.unlink()
@@ -171,6 +186,8 @@ def main() -> int:
     ap.add_argument("--saida", type=Path, default=RAIZ / "entregas")
     ap.add_argument("--sem-teste", action="store_true")
     ap.add_argument("--sem-binarios", action="store_true")
+    ap.add_argument("--separar-corpus", action="store_true",
+                    help="plugin e corpus em zips separados (cada um abaixo de 30 MiB)")
     a = ap.parse_args()
     v = versao()
     if not a.sem_teste:
@@ -183,21 +200,25 @@ def main() -> int:
         print("ok")
     saida = a.saida.resolve()
     saida.mkdir(parents=True, exist_ok=True)
-    pacotes = [pacote_cliente(v, saida), pacote_vendedor(v, saida),
+    pacotes = [pacote_cliente(v, saida, a.separar_corpus), pacote_vendedor(v, saida),
                pacote_binarios(v, saida, a.sem_binarios), pacote_documentos(v, saida)]
     ficha = {"versao": v, "empacotado_em": date.today().isoformat(), "pacotes": []}
     linhas = [f"# Entregáveis WX Claude Code {v}", "", f"Empacotado em {ficha['empacotado_em']}.", "",
-              "| pacote | para quem | bytes | SHA-256 |", "| --- | --- | --- | --- |"]
+              "| arquivo | para quem | bytes | SHA-256 |", "| --- | --- | --- | --- |"]
     publico = {"cliente": "quem compra: o plugin para instalar",
                "vendedor": "SÓ VOCÊ: emissor de serial e receptor do aviso",
                "binarios": "quem usa modelo local: wx-modelos Linux e Windows",
                "documentos": "reunião e contrato: PDFs, termos, segurança, vídeos"}
+    if a.separar_corpus:
+        pacotes.append(saida / "cliente" / CORPUS.name)
+        publico[CORPUS.name] = "quem compra: o corpus do Help, para ./instalar.sh --corpus"
     for p in pacotes:
         if p is None:
             continue
         item = {"pacote": p.parent.name, "arquivo": p.name, "bytes": p.stat().st_size, "sha256": sha256(p)}
         ficha["pacotes"].append(item)
-        linhas.append(f"| {item['pacote']} | {publico[item['pacote']]} | {item['bytes']:,} | `{item['sha256']}` |")
+        quem = publico.get(p.name) or publico[item["pacote"]]
+        linhas.append(f"| {item['arquivo']} | {quem} | {item['bytes']:,} | `{item['sha256']}` |")
     linhas += ["", "O pacote **vendedor** nunca vai ao cliente: ele carrega o emissor de serial.",
                "O pacote do cliente foi ABERTO depois de escrito e não contém `wx-serial/`, chave",
                "privada, livro de emissões, `target/`, `dist/` nem `.git/`.", ""]
