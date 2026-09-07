@@ -338,11 +338,22 @@ Dois alvos novos entraram no `empacotar.sh` — `./empacotar.sh arm64` e
 | `aarch64-unknown-linux-musl` | Raspberry Pi 3/4/5, gateway industrial, ARM de nuvem | **6,8 MB** | 25,9 s |
 | `armv7-unknown-linux-musleabihf` | Raspberry Pi 2, Zero W, roteador com flash | **6,7 MB** | 23,0 s |
 
-Os dois saíram **de primeira**, sem um `gcc` cruzado instalado: o ligador é o
-`rust-lld` que já vem com a ferramenta. Isso é consequência direta da regra da
-casa — **zero dependências externas**. Com uma crate de C no meio, cada uma
-delas teria de compilar cruzado também, e é aí que a compilação cruzada
-costuma morrer.
+Os dois saíram **de primeira** em 30/08/2026, sem um `gcc` cruzado instalado: o
+ligador é o `rust-lld` que já vem com a ferramenta. Isso é consequência direta
+da regra da casa — **zero dependências externas**. Com uma crate de C no meio,
+cada uma delas teria de compilar cruzado também, e é aí que a compilação
+cruzada costuma morrer.
+
+**Ressalva medida em 07/09/2026:** «de primeira» envelheceu. O ambiente passou
+a ter um `cc` que virou o ligador padrão do `musl`, e o `cc` chama um
+`/usr/bin/ld` x86 que recusa o objeto ARM (`Relocations in generic ELF
+(EM: 183)`). O `rust-lld` continua ligando os dois — o que faltou foi
+**escolhê-lo**: o `.cargo/config.toml` agora fixa `linker = "rust-lld"` e
+`rustflags = ["-Clinker-flavor=ld.lld", "-Clink-self-contained=yes"]` para os
+dois alvos ARM, e aí o `cargo` cru volta a ligar sem `gcc` cruzado. Continua
+zero dependência externa: o `rust-lld` é o mesmo que já liga o alvo do
+hospedeiro. Detalhe em
+`docs/cognicao/cognicao_capacidade-que-funcionou-tambem-envelhece-o-ligador-arm_20260907_1720.md`.
 
 Os dois são **estáticos**: um arquivo só, sem carregador dinâmico, sem depender
 da libc que a distribuição da placa trouxe. É o mesmo motivo que fez a imagem

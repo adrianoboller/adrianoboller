@@ -49,10 +49,6 @@ def resposta_curta(md: str) -> str:
     return m.group(1).strip() if m else ""
 
 
-def ordem(p: pathlib.Path):
-    return (0 if p.stem.startswith("00-") else 1, p.stem)
-
-
 def main() -> int:
     dossie = achar_o_dossie()
     txt = dossie.read_text(encoding="utf-8")
@@ -60,7 +56,7 @@ def main() -> int:
     if i < 0 or j < 0:
         raise SystemExit(f"{dossie.name} nao tem as marcas perguntas:inicio/fim -- a secao precisa existir uma vez, com as marcas, antes de este gerador escrever nela")
     g = conversor()
-    arquivos = sorted(RESPOSTAS.glob("*.md"), key=ordem)
+    arquivos = sorted(RESPOSTAS.glob("*.md"), key=g.ordem)
     letras = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
     presentes = {p.stem for p in arquivos}
     faltam = [L for L in letras if L not in presentes]

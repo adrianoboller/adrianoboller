@@ -298,6 +298,39 @@ vê?»** — e é ela que separa as duas colunas:
 | **J — pesquisador** | F2: os gaps dos cinco motores **conferidos contra o motor de hoje**, com a recusa colada em cada um — sprint antigo que fechou aparece fechado com a prova, e não some da lista |
 
 
+### Rodada das diretivas HFSQL e do fluxo do auto number — 7 de setembro de 2026
+
+Ordem do dono: *«Abra diversos agentes especializados para atender cada uma
+das demandas acima. Ative o time.»* — as demandas eram os pedidos 213–225 que
+a rodada anterior abriu, mais o 139, o 164, o 207 e o 208, mais dois pedidos
+novos: o estudo das diretivas do HFSQL (`ALTER SERVER SET …`, `SHOW … SETTINGS`)
+e o fluxo do auto number e do sequence «como está e como seria o ideal».
+
+**O arranjo, e o número que o decidiu.** Seis frentes de Rust em **worktrees
+próprias** (`/home/user/frentes/f1…f6`, cada uma com o seu `target`) e duas na
+árvore principal (documentação e tela, que não brigam). O primeiro plano era
+todas na mesma árvore, porque medi 7,6 GB livres contra 9,8 GB de `target` —
+e estava medindo o acumulado de dias, não o custo de uma worktree (30 MB de
+fonte; 4,2 GB eram só cache incremental). Está na cognição
+`cognicao_medi-o-target-acumulado-como-custo-por-worktree_20260907_1710.md`.
+O `cargo` das frentes é o `cargo-da-frente.sh`: **duas vagas** de compilação
+para 4 núcleos, `-j2` cada, `CARGO_INCREMENTAL=0`.
+
+A regra de escalão foi a de sempre — **«o erro se vê?»**:
+
+| frente | itens | escalão | por quê |
+|---|---|---|---|
+| F1 — segurança | 214 216 215 | **forte** | portão errado não falha em teste: falha no dia em que alguém entra; e o 214 exige distinguir «réplica que aplica» de «servidor em somente leitura», que é leitura de desenho |
+| F2 — cluster | 218 217 208 207 | **forte** | concorrência e eleição; e o 207 tem a decisão de não entregar meia transação, que precisa de julgamento com número |
+| F3 — diretivas | HFSQL → `ALTER … SET`, `SHOW … SETTINGS`, diário, 220 | **forte** | gramática nova + o mesmo portão de permissão + formato em disco do diário e da diretiva por banco — três domínios de risco numa frente |
+| F4 — SQL e catálogo | 223 219 224 222 | **mecânico** | cada pedido traz o comando que reproduz; o resultado se confere sozinho (`ok`/erro, a bancada dos 56 comandos) |
+| F5 — usuários | 221 | **forte** | credencial: a senha tem de sair tapada em três lugares (arquivo, log, Profiler), e o esquecimento não aparece em teste que não se escreveu |
+| F6 — guardas e caminhos | 213 225 | **mecânico** | conferidor no molde de dois que já existem; resolução de caminho se prova levantando o processo de outro diretório |
+| F8 — fluxo do auto number | documento, figuras, resposta 0.5 | **forte** | o «ideal» é decisão de formato em disco e de cluster — papel do DBA, com a pergunta «onde diverge, e qual restrição nossa causou» |
+| F9 — tela | 139 (regiões com aba), 164 (conferir) | **mecânico** | a prova é a captura nas quatro larguras; o erro salta na tela |
+| orquestrador | worktrees, ajudante, ordem do PDF, integração, pacote | **forte** | a integração é onde o defeito do encontro aparece |
+
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

@@ -187,9 +187,17 @@ a{ color:var(--azul); text-decoration:none; }
 """
 
 
-def ordem(p: Path) -> tuple[int, str]:
+def ordem(p: Path) -> tuple[int, float, str]:
+    # As perguntas abertas (0.1, 0.2, 0.3...) vinham em ordem ALFABETICA do
+    # nome do arquivo -- fts, prazo, sequencia --, e o PDF publicou 0.1, 0.3,
+    # 0.2 sem ninguem ver. A ordem sai do numero que o proprio titulo carrega,
+    # que e a receita que nao envelhece quando entra uma resposta nova.
     n = p.stem
-    return (0 if n.startswith("00-") else 1, n)
+    if not n.startswith("00-"):
+        return (1, 0.0, n)
+    primeira = p.read_text(encoding="utf-8").splitlines()[0] if p.stat().st_size else ""
+    m = re.match(r"#\s*0\.(\d+)\)", primeira)
+    return (0, float(m.group(1)) if m else 999.0, n)
 
 
 def main() -> int:

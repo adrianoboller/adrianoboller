@@ -1,3 +1,22 @@
 [target.aarch64-linux-android]
 linker = "/opt/android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang"
 ar = "/opt/android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+
+# Os dois alvos ARM `musl`, ligados pelo `rust-lld` que ja vem com a ferramenta
+# -- e nao pelo `cc` do sistema, que aponta para um `/usr/bin/ld` x86 que
+# recusa objeto ARM com «Relocations in generic ELF (EM: 183)».
+#
+# Ate 30/08/2026 os dois saiam de primeira sem isto: o padrao do `musl` era o
+# ligador autocontido. O ambiente mudou -- passou a existir um `cc` que vira o
+# ligador padrao --, e o build cruzado quebrou sem uma linha de codigo mudar.
+# Fixar o ligador aqui devolve o comportamento e ainda o torna reproduzivel:
+# `rust-lld` e o mesmo em qualquer maquina que clonar, com ou sem gcc cruzado
+# instalado. E continua ZERO dependencia externa -- o `rust-lld` e o mesmo que
+# ja liga o alvo do hospedeiro.
+[target.aarch64-unknown-linux-musl]
+linker = "rust-lld"
+rustflags = ["-Clinker-flavor=ld.lld", "-Clink-self-contained=yes"]
+
+[target.armv7-unknown-linux-musleabihf]
+linker = "rust-lld"
+rustflags = ["-Clinker-flavor=ld.lld", "-Clink-self-contained=yes"]
