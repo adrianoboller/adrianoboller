@@ -39,6 +39,7 @@ própria sessão aqui.*
 | Arquivo | O que é |
 |---|---|
 | `montar.py` | escreve os quatro `config.json` e sobe os quatro processos |
+| `montar.py --derrubar` | derruba **só** os servidores desta bancada, por caminho real |
 | `medir.py` | a bancada: atraso por tipo de escrita, vazão, queda e retomada |
 | `modos.py` | os quatro modos, nas portas 5330-5339 |
 | `trava.py` | **a trava de dados contra a leitura de rede**, nas portas 7050-7055 — ver abaixo |
@@ -207,3 +208,27 @@ Mesma tabela, mesmas 100.000 linhas, só o interruptor mudando:
 
 **10% mais devagar, e um diário 5,1× maior.** É o preço de a réplica receber a
 linha e não só o aviso de que ela mudou. Quem só quer auditoria deixa desligado.
+
+
+## Quando terminar, derrube — e por caminho, nunca por nome
+
+A bancada **não se derruba sozinha**, e isso é de propósito: o `montar.py` sobe
+os quatro e o `medir.py` roda depois, precisando dos quatro no ar. O preço é
+que quem esquece deixa quatro servidores segurando porta e memória.
+
+Medido em 07/09/2026: quatro `phxsqld` ficaram **59 minutos** de pé depois da
+corrida, com o diretório de trabalho **já apagado** pelo zelador — segurando
+inode morto e sem servir a ninguém. E o zelador não podia removê-los, porque
+**ele não mata processo**, por lei: matar o `phxsqld` de um agente vizinho já
+derrubou a sessão dele nesta casa.
+
+```bash
+python3 bancada/replicacao/montar.py --derrubar
+```
+
+**E o `derrubar` mudou de régua.** Ele fazia `pkill -x phxsqld`, que mata por
+**nome** — e nome não distingue o processo desta bancada do processo de outro
+agente. É exatamente o que a lei proíbe o zelador de fazer, escrito dentro da
+própria bancada. Hoje a prova é o `cwd`: só morre quem está trabalhando
+**dentro** do diretório desta bancada, lido de `/proc/<pid>/cwd` — com o
+` (deleted)` que o núcleo cola quando o diretório já saiu.

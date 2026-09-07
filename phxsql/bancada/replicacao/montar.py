@@ -21,6 +21,7 @@ A SENHA NAO FICA EM CLARO em lugar nenhum: o `senha_hash` sai do proprio
 """
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -122,9 +123,36 @@ def subir(base, nome):
                      stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
 
 
-def derrubar():
-    subprocess.run(["pkill", "-x", "phxsqld"], check=False)
-    time.sleep(1)
+def derrubar(base):
+    """Derruba SO os servidores desta bancada, por caminho real.
+
+    A versao anterior fazia `pkill -x phxsqld`, que mata por NOME -- e nome
+    nao distingue o meu processo do processo de outro agente. E exatamente o
+    que o zelador e proibido de fazer, e pela mesma razao: matar o `phxsqld`
+    de um vizinho ja derrubou a sessao dele nesta casa.
+
+    Aqui a prova e o `cwd`: so morre quem esta trabalhando DENTRO do
+    diretorio desta bancada.
+    """
+    raiz = os.path.realpath(base)
+    mortos = []
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            exe = os.path.realpath(f"/proc/{pid}/exe")
+            if os.path.basename(exe) != "phxsqld":
+                continue
+            # O `cwd` de diretorio ja apagado vem com « (deleted)» colado.
+            cwd = os.readlink(f"/proc/{pid}/cwd").replace(" (deleted)", "")
+            if os.path.realpath(cwd).startswith(raiz):
+                os.kill(int(pid), signal.SIGTERM)
+                mortos.append(pid)
+        except (OSError, PermissionError, ProcessLookupError):
+            continue
+    if mortos:
+        time.sleep(1)
+    return mortos
 
 
 if __name__ == "__main__":
@@ -135,7 +163,13 @@ if __name__ == "__main__":
     if not os.path.exists(PHXSQLD):
         sys.exit(f"nao achei {PHXSQLD} -- rode `cargo build --release` antes")
 
-    derrubar()
+    if "--derrubar" in sys.argv:
+        mortos = derrubar(base)
+        print(f"derrubados {len(mortos)} servidores desta bancada em {base}"
+              if mortos else f"nenhum servidor desta bancada de pe em {base}")
+        sys.exit(0)
+
+    derrubar(base)
     for d in ["master"] + SLAVES:
         caminho = os.path.join(base, d, "base")
         if os.path.exists(caminho):
@@ -154,3 +188,9 @@ if __name__ == "__main__":
     for i, nome in enumerate(SLAVES, start=1):
         de = "slave01" if (cascata and i == 3) else "master"
         print(f"  {nome} 127.0.0.1:{PORTA_MASTER + i}  puxando de {de}")
+    # A bancada NAO se derruba sozinha de proposito -- o `medir.py` roda
+    # depois e precisa dos quatro no ar. Mas quem esquece de derrubar deixa
+    # quatro servidores segurando porta e memoria: quatro deles ficaram 59
+    # minutos de pe em 07/09/2026, com o diretorio ja apagado pelo zelador,
+    # e o zelador nao pode mata-los (ele nao mata processo, por lei).
+    print("\nquando terminar:  python3 bancada/replicacao/montar.py --derrubar")
