@@ -117,7 +117,7 @@ def desenho(m: dict) -> str:
                    "SQL, PDF, código-fonte,\nscreenshots, artefatos", COR["entrada"]))
     p.append(seta(214, 67, 268, 67, "lê"))
     p.append(caixa(268, 36, 210, 62, "questionário",
-                   f"{m['perguntas']} perguntas com id\nbloco 0 e letras A–M", COR["entrada"]))
+                   f"{m['perguntas']} perguntas com id · retomar\nbloco 0 e letras A–M", COR["entrada"]))
     p.append(seta(478, 67, 532, 67, "aplica"))
     p.append(caixa(532, 36, 220, 62, "contexto do projeto",
                    "CLAUDE.md, INDEX_FILES,\nrespostas por id, esqueleto", COR["entrada"]))
@@ -127,6 +127,11 @@ def desenho(m: dict) -> str:
     p.append(seta(1006, 67, 1030, 67))
     p.append(caixa(1030, 36, 316, 62, "restrições do projeto",
                    "id, origem, severidade e validador\n(sem validador = INCONCLUSIVA)", COR["governo"]))
+    # o inventario de dependencias le a MESMA evidencia dos anexos, e o que ele
+    # nao alcanca esta escrito nele: e um piso, nao um inventario fechado
+    p.append(caixa(700, 104, 500, 28,
+                   "dependências externas: INI, banco, DLL, COM, webservice, e-mail, FTP",
+                   "", COR["entrada"], True))
 
     # 2 · PORTÃO DE ENTRADA --------------------------------------------
     rotulos.append(faixa(148, "2 · O PRIMEIRO PORTÃO — E O QUE ELE FAZ QUANDO NEGA"))
@@ -154,12 +159,16 @@ def desenho(m: dict) -> str:
         x += 190
     p.append(f'<path d="M373 228 V284 H100 V314" fill="none" stroke="{COR["entrada"]}" '
              'stroke-width="1.4" marker-end="url(#pf)"/>')
+    # a forma do executavel e escolha da letra H que o G2 le; medida no rustc
+    p.append(caixa(586, 372, 172, 26, "interface do destino", "", COR["governo"], True))
+    p.append(f'<path d="M672 366 V372" fill="none" stroke="{COR["governo"]}" '
+             'stroke-width="1.2" stroke-dasharray="4 3"/>')
     p.append('<text x="205" y="280" text-anchor="middle" fill="var(--m)" font-size="10">G0 aprovado</text>')
 
     # 4 · PROVAR --------------------------------------------------------
     rotulos.append(faixa(404, "4 · PROVAR O RESULTADO — DOIS PORTÕES, NÃO UM"))
     p.append(caixa(14, 418, 200, 66, "F-GATE",
-                   "funciona?\ntestes e golden master", COR["prova"]))
+                   "funciona? golden master e o teste\nda matriz, que falha até haver prova", COR["prova"]))
     p.append(caixa(234, 418, 200, 66, "C-GATE",
                    "está conforme?\nvalidador por restrição", COR["prova"]))
     p.append(caixa(454, 418, 220, 66, "evidência",
@@ -173,6 +182,7 @@ def desenho(m: dict) -> str:
     for a, b in ((214, 234), (434, 454), (674, 694), (914, 934), (1134, 1154)):
         p.append(seta(a, 451, b, 451))
     p.append(seta(100, 366, 100, 418, "resultado"))
+
     # reprovado: sobe pela DIREITA, fora das caixas, e volta ao gate
     p.append(f'<path d="M1250 418 V392 H1300 V290 H480 V314" fill="none" stroke="{COR["portao"]}" '
              'stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#pf)"/>')
