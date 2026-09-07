@@ -22,15 +22,20 @@ padrao).
 
 # As duas coisas que esta sonda aprendeu, e que ficam aqui
 
-1. **O campo "volumes" do `esquema` fica VAZIO neste modo.** Ele so e
-   preenchido pela particao por PERIODO (`Table::reler_fronteiras`, que le o
-   cabecalho de cada volume porque o corte depende do calendario). Na
-   particao por quantidade o endereco e uma DIVISAO — nao ha fronteira para
-   ler do disco — e por isso o motor nao a calcula de graca para o protocolo.
-   Quem quer saber onde cada volume comeca faz a MESMA conta que o motor faz:
-   `primeiro_rowid(N) = (N-1) * registros_por_arquivo + 1`. Isto NAO e defeito:
-   e a mesma razao pela qual "nenhum caminho de leitura mudou" no FORMATO.md.
-   Sem esta sonda, o campo vazio pareceria um esquema quebrado.
+1. **O campo "volumes" do `esquema` vinha VAZIO neste modo -- pedido 222
+   fechou o gap.** Ate a 0.18 so a particao por PERIODO o preenchia
+   (`RegFile::reler_fronteiras`, que le o cabecalho de cada volume porque o
+   corte depende do calendario); na por quantidade o endereco e uma DIVISAO —
+   nao ha fronteira nenhuma para o ENDERECAMENTO ler — e por isso ninguem
+   calculava uma para o protocolo MOSTRAR. `RegFile::fronteiras` agora
+   calcula a lista tambem aqui, a partir dos volumes que existem em disco e
+   da MESMA conta que o motor ja fazia para enderecar:
+   `primeiro_rowid(N) = (N-1) * registros_por_arquivo + 1` — sem tocar no
+   cache que `localizar` usa, entao o endereco de cada linha continua sendo a
+   mesma divisao de sempre. Esta sonda ficou de proposito sem essa correcao:
+   ela roda contra o BINARIO, e so prova o formato deste texto; quem quer o
+   teste que falha com o defeito reposto e passa com o conserto e
+   `crates/phxsql-server/src/servidor.rs::testes_volumes_por_quantidade`.
 2. **O `INSERT` dentro de transacao e ACEITO aqui — ao contrario da particao
    por LETRA.** A recusa da alfanumerica (`bancada/alfanumerica/`) existe
    porque ali o BALDE (e por isso o rowid alvo) so se descobre executando a
@@ -326,15 +331,24 @@ def parte_6_insert_em_transacao(sv):
 
 
 def parte_7_esquema_e_o_campo_volumes(sv):
-    print("\n=== 7. o `esquema`: paginacao aparece, `volumes` vem vazio\n")
+    print("\n=== 7. o `esquema`: paginacao e `volumes`, pedido 222\n")
     esq = sv.pedir(op="esquema", database="carga", tabela="grande")
     print("  paginacao:", json.dumps(esq.get("paginacao"), ensure_ascii=False))
-    print("  volumes (campo do protocolo):", esq.get("volumes"))
+    volumes = esq.get("volumes") or []
+    print(f"  volumes (campo do protocolo): {len(volumes)} entradas")
+    volumes_previstos = -(-LINHAS // POR_VOLUME)
+    esperados = [primeiro_rowid(v, POR_VOLUME) for v in range(1, volumes_previstos + 1)]
+    achados = [v.get("primeiro_rowid") for v in volumes]
+    print(f"  primeiro_rowid esperado : {esperados}")
+    print(f"  primeiro_rowid devolvido: {achados}")
     print(
-        "  -> vazio de proposito: so a particao por PERIODO le fronteira do "
-        "cabecalho de cada volume (Table::reler_fronteiras). Aqui o volume "
-        "sai de uma divisao, e a lista de volumes em disco vem do SISTEMA "
-        "DE ARQUIVOS (parte 2), nao do protocolo."
+        "  -> preenchido desde o pedido 222 (RegFile::fronteiras calcula a "
+        "lista tambem na por quantidade, a partir dos volumes que existem em "
+        "disco e da MESMA conta do enderecamento). Antes vinha vazio: so a "
+        "particao por PERIODO lia fronteira do cabecalho de cada volume."
+        if achados == esperados
+        else "  -> DIVERGIU do esperado -- ver `crates/phxsql-store/src/reg.rs`, "
+        "`RegFile::fronteiras`."
     )
 
 
