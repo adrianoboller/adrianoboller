@@ -166,9 +166,11 @@ Quatro peças, e nenhuma é «faltou notar» — são decisões de sequência
 - **`GROUP BY` geral.** O `pivotar` faz a tabulação cruzada, que é um caso.
 - **Subconsulta e CTE.** Não há.
 
-O que **não** falta mais nessa lista é a transação, e a §3 do `SQL.md` ainda a
-lista — é a mesma vencida da §6 aparecendo num segundo lugar. Corrigir ali é
-trabalho de outra rodada, e fica registrado aqui para não se perder.
+O que **não** falta mais nessa lista é a transação, e a §3 do `SQL.md`
+**deixou de listá-la em 07/09/2026**: era a mesma vencida da §6 aparecendo num
+segundo lugar, e o documento contradizia a própria §2, que descreve o detector
+de transação. No lugar dela entrou o que de fato falta — **nível de isolamento
+acima do `READ COMMITTED`** —, com o número que o `docs/ACID.md` mediu.
 
 ### 3.8 Comparar duas tabelas (o WDHFDiff deles)
 

@@ -200,9 +200,14 @@ Honestidade sobre o tamanho do trabalho — estas não existem no motor:
   quem chama escolhe, dizendo o nome do índice.
 - **`GROUP BY` geral.** O `pivotar` faz a tabulação cruzada, que é um caso.
 - **Subconsulta e CTE.** Não há.
-- **Transação.** Não há — e é a maior. `BEGIN`/`COMMIT`/`ROLLBACK` não têm o
-  que chamar embaixo, e prometer o verbo sem o mecanismo seria pior do que
-  não ter o verbo.
+- **Nível de isolamento.** A transação **existe** desde o pedido 162 — esta
+  linha dizia «não há» e contradizia a §2 deste mesmo documento, que descreve o
+  detector dela. O que não existe é o que fica **acima** do `READ COMMITTED`:
+  medido em `docs/ACID.md`, leitura não repetível, fantasma e *write skew*
+  acontecem, e a leitura suja **não**. Quem escrever `SET TRANSACTION ISOLATION
+  LEVEL SERIALIZABLE` precisa receber uma recusa que diz o nível real, e não um
+  `Ok` que promete o que o motor não faz. `docs/TRANSACOES.md`, `docs/ACID.md`
+  §5, `docs/SOMBRA.md`.
 
 **O `BULKINSERT` não é transação, e o documento tem de dizer isso alto.** Ele dá
 *exclusividade* e *uma sincronização no fim*. Ele **não** desfaz: se a carga

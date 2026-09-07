@@ -11,6 +11,25 @@ python3 bancada/guardas/provar-guardas.py --listar   # o catálogo
 python3 bancada/guardas/provar-guardas.py --so profiler
 ```
 
+## A corrida COMPLETA é a última coisa da rodada
+
+Provar a guarda quando ela entra (`--so <id>`) diz que ela **nasceu** certa.
+Não diz que ela continua certa depois do que veio depois — e essa diferença já
+custou três guardas nesta casa.
+
+`fts-abrir-recusa-a-tabela` foi provada 1/1 e, **horas depois no mesmo dia**, a
+correção da pista de leitura acrescentou um braço dentro do mesmo `match` que
+ela cita: virou `QUEBRADA`, e continuou sendo contada no total. As duas do
+Profiler tinham envelhecido numa rodada anterior, pelo mesmo mecanismo.
+
+Nenhuma das três aparece em portão nenhum — `fmt`, `clippy` e a suíte inteira
+ficam verdes. **Quem acusa é esta corrida**, e por isso ela roda no fim, depois
+do último commit de código. Rodá-la no meio dá um retrato que o trabalho
+seguinte invalida.
+
+`docs/cognicao/cognicao_prova-individual-nao-sobrevive-ao-commit-seguinte_20260907_0710.md`
+
+
 Três arquivos, e a divisão entre os dois primeiros é o ponto:
 
 | arquivo | o que é |

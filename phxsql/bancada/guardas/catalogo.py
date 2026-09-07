@@ -3688,9 +3688,20 @@ pub fn limpar() {
             "para o arquivo corrompido e para a contagem divergente, que e o "
             "caso de quem declarou um indice de texto numa tabela com dados."
         ),
+        # Esta entrada JA QUEBROU uma vez, no mesmo dia em que nasceu: foi
+        # provada 1/1, e horas depois a correcao da pista de leitura
+        # acrescentou um brace `Err(_) if !escrever` DENTRO deste mesmo
+        # `match`. Prova individual nao sobrevive a uma mudanca no trecho --
+        # quem acusa e a corrida COMPLETA, e por isso ela roda no fim da
+        # rodada e nao so quando a guarda entra.
         "arquivo": "crates/phxsql-store/src/table.rs",
         "trecho": """            match FtsFile::abrir(&caminho_fts, dobra.clone()) {
                 Ok(f) => Some(f),
+                Err(_) if !escrever => {
+                    return Ok(SemEscrever::PrecisaEscrever(
+                        "o indice de texto .fts nao abre e seria refeito",
+                    ));
+                }
                 Err(_) => {
                     refazer = true;
                     Some(FtsFile::recriar(&caminho_fts, dobra)?)
