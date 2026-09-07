@@ -16,11 +16,11 @@ impossível de cumprir depois que o diretório temporário sumisse.
 ## Como atualizar
 
 1. Edite `dossie-phxsql-0.18.html`.
-2. **Rode os sete geradores** (abaixo). Nenhum número visível se digita.
+2. **Rode os nove geradores** (abaixo). Nenhum número visível se digita.
 3. Publique **passando a URL acima**, para cair na mesma página em vez de criar
    uma nova.
 
-## Os sete geradores, e o que cada um regrava
+## Os nove geradores, e o que cada um regrava
 1. **LEIA o artefato publicado antes de qualquer coisa** (`action: "read"` com
    a URL acima).
 2. Compare com `dossie-phxsql-0.15.html` — pelo menos o número de `<h2>`.
@@ -74,6 +74,8 @@ python3 docs/dossie/cobertura-por-area.py    docs/dossie/dossie-phxsql-0.18.html
 python3 docs/dossie/capturas-no-dossie.py    docs/dossie/dossie-phxsql-0.18.html
 python3 docs/dossie/tetos-da-trava.py        docs/dossie/dossie-phxsql-0.18.html
 python3 docs/dossie/comparativo-no-dossie.py docs/dossie/dossie-phxsql-0.18.html
+python3 docs/dossie/fluxo-do-motor.py        docs/dossie/dossie-phxsql-0.18.html
+python3 docs/dossie/numerar-figuras.py       docs/dossie/dossie-phxsql-0.18.html   # POR ÚLTIMO
 ```
 
 | script | blocos que ele escreve |
@@ -84,7 +86,9 @@ python3 docs/dossie/comparativo-no-dossie.py docs/dossie/dossie-phxsql-0.18.html
 | `cobertura-por-area.py` | `cobertura:` no dossiê, e as tabelas do `docs/TESTES.md` |
 | `capturas-no-dossie.py` | `capturas:` — as vinte telas, como *data URI* |
 | `tetos-da-trava.py` | `tetos:` — os quatro tetos de concorrência (§35), lidos das corridas cruas em `bancada/concorrencia/corridas/` |
-| `comparativo-no-dossie.py` | `comparativo:` — a tabela do que ainda falta aqui (§33) e as **figuras 27 e 28**, lidas de `bancada/comparativo/` e `bancada/cobertura-da-tela/`; grava também os dois `.svg` avulsos |
+| `comparativo-no-dossie.py` | `comparativo:` — a tabela do que ainda falta aqui (§33) e as as duas figuras do medidor, lidas de `bancada/comparativo/` e `bancada/cobertura-da-tela/`; grava também os dois `.svg` avulsos |
+| `fluxo-do-motor.py` | `fluxo-motor:` (§9) e `workflow-motor:` (§31) — o caminho de um pedido e o ciclo de operação; as **listas saem do código** e ele PARA quando divergem |
+| `numerar-figuras.py` | renumera **todas** as legendas `Figura N` na ordem do documento. Roda **por último** |
 
 `--so-medir` mostra sem gravar; `--sem-testes` no primeiro pula o `cargo test`,
 que demora. Use só quando o que mudou não foi código.
@@ -133,6 +137,29 @@ não quebra nada, então ninguém veria.
 porque olhavam `documentElement` e `getBBox`, e o Chromium embrulha todo `.svg`
 de `file://` num documento sintético — elas mediam o embrulho.
 `docs/cognicao/cognicao_o-svg-embutido-nao-e-o-svg-solto_20260907_0345.md`.
+
+### O oitavo lê o CÓDIGO, e o nono conserta o que inserir no meio quebrou
+
+O `fluxo-do-motor.py` desenha o caminho de um pedido (§9) e o ciclo de operação
+(§31). As duas listas que ele usa **saem do fonte**: os portões, dos
+comentários que o `servidor.rs` numera (`// Portao 0`, `1`, `2`, `2a`…), e os
+passos de gravação, das chamadas que o `inserir` do `table.rs` faz. Ele **para**
+quando os dois divergem, nos dois sentidos — portão no código sem rótulo aqui
+(o desenho mentiria por omissão) e rótulo aqui sem portão no código (a «chave
+morta» da fábrica de idiomas, que é pior: quem lê acha que há proteção que não
+há).
+
+**E o portão já pagou por si na primeira corrida:** ele reprovou dois passos que
+eu tinha escrito de memória. `proximo_rowid` não existe — são `numerar_linha` e
+`numerar` — e eu havia **esquecido o `montar_payload`**, que é onde o `.bin` e o
+`.memo` são gravados. O desenho teria publicado o caminho de gravação sem dois
+dos sete arquivos.
+
+O `numerar-figuras.py` existe por consequência. Enquanto figura só entrava no
+fim, o número digitado batia por sorte; duas no **meio** viraram 16 legendas
+erradas de uma vez. E ele achou uma desordem que já existia: no documento as
+figuras vinham na ordem 14, 17, 18, 15, 19, 20, 21, 16. Legenda errada **não
+quebra nada** — a página abre, o desenho aparece —, e por isso ninguém confere.
 
 ### A receita da interface saiu daqui, e foi para o `http.rs`
 

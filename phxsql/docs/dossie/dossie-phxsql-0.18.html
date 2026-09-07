@@ -1901,6 +1901,148 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   <div class="rotulo"><span class="num">09</span><span class="traco"></span></div>
   <h2>Fluxo: um pedido na porta 5000</h2>
 
+<!-- fluxo-motor:inicio (gerado por docs/dossie/fluxo-do-motor.py) -->
+  <figure>
+    <div class="fig-caixa">
+    <svg viewBox="0 0 960 762" role="img" aria-label="Fluxograma do caminho de um pedido no PhxSql: uma linha de JSON no soquete atravessa os 9 portoes numerados do despachar, qualquer um deles podendo recusar com codigo e SQLSTATE; passando, a operacao toma a trava de dados e desce para o caminho de gravacao, que confere aridade, chave e unicidade antes de escrever no .reg, depois no .ndx, no .fts e por fim no .log">
+  <defs>
+    <marker id="setaMot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="setaMotN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--log)"/>
+    </marker>
+    <marker id="setaMotO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--ok)"/>
+    </marker>
+  </defs>
+  <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor">
+    <text x="250" y="26" text-anchor="middle" font-size="10" fill="var(--acento)" letter-spacing="1.4">1 &#183; NA PORTA &#8212; O DESPACHAR, QUE É UM SÓ</text>
+    <rect x="60" y="36" width="380" height="34" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="250" y="57" text-anchor="middle" font-size="11">uma linha de JSON no soquete</text>
+    <rect x="60" y="84" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="99" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">0</text>
+    <text x="126" y="99" font-size="10.5">a política</text>
+    <text x="126" y="113" font-size="9" opacity=".7">comando proibido pelo config.json</text>
+    <path d="M440 102 L560 102" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="102" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 120 L250 126" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="126" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="141" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">1</text>
+    <text x="126" y="141" font-size="10.5">o token</text>
+    <text x="126" y="155" font-size="9" opacity=".7">a chave da porta, não a identidade</text>
+    <path d="M440 144 L560 144" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="144" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 162 L250 168" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="168" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="183" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2</text>
+    <text x="126" y="183" font-size="10.5">o login</text>
+    <text x="126" y="197" font-size="9" opacity=".7">quem é você nesta sessão</text>
+    <path d="M440 186 L560 186" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="186" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 204 L250 210" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="210" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="225" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2a</text>
+    <text x="126" y="225" font-size="10.5">o papel do servidor</text>
+    <text x="126" y="239" font-size="9" opacity=".7">réplica não atende escrita</text>
+    <path d="M440 228 L560 228" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="228" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 246 L250 252" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="252" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="267" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2a-bis</text>
+    <text x="126" y="267" font-size="10.5">de ONDE vem a replicação</text>
+    <text x="126" y="281" font-size="9" opacity=".7">o IP da sessão, não o do pedido</text>
+    <path d="M440 270 L560 270" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="270" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 288 L250 294" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="294" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="309" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2b</text>
+    <text x="126" y="309" font-size="10.5">a escrita</text>
+    <text x="126" y="323" font-size="9" opacity=".7">quem decide é o papel VIVO do cluster</text>
+    <path d="M440 312 L560 312" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="312" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 330 L250 336" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="336" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="351" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">3</text>
+    <text x="126" y="351" font-size="10.5">o poder sobre a base E a tabela</text>
+    <text x="126" y="365" font-size="9" opacity=".7">o campo `tabela` do pedido</text>
+    <path d="M440 354 L560 354" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="354" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 372 L250 378" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="378" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="393" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">4</text>
+    <text x="126" y="393" font-size="10.5">carga de outra ligação?</text>
+    <text x="126" y="407" font-size="9" opacity=".7">a tabela está reservada</text>
+    <path d="M440 396 L560 396" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="396" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 414 L250 420" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="420" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="435" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">5</text>
+    <text x="126" y="435" font-size="10.5">transação de outra conexão?</text>
+    <text x="126" y="449" font-size="9" opacity=".7">a tabela está segurada</text>
+    <path d="M440 438 L560 438" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="438" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M560 102 L560 438" stroke="var(--log)" stroke-width="1.6"/>
+    <path d="M560 252 L742 252" stroke="var(--log)" stroke-width="1.6" marker-end="url(#setaMotN)"/>
+    <text x="572" y="244" font-size="9" fill="var(--log)">qualquer um recusa</text>
+    <rect x="742" y="226" width="200" height="52" rx="4" fill="var(--log)" fill-opacity=".14" stroke="var(--log)" stroke-width="1.5"/>
+    <text x="850" y="246" text-anchor="middle" font-size="10.5" fill="var(--log)" font-weight="600">RECUSA</text>
+    <text x="850" y="261" text-anchor="middle" font-size="9">com código, SQLSTATE e classe</text>
+    <text x="850" y="273" text-anchor="middle" font-size="8.5" opacity=".7">grave demais: bloqueio de IP</text>
+    <path d="M250 456 L250 478" stroke="var(--ok)" stroke-width="1.6" marker-end="url(#setaMotO)"/>
+    <rect x="60" y="480" width="380" height="34" rx="4" fill="var(--ok)" fill-opacity=".10" stroke="var(--ok)" stroke-width="1.5"/>
+    <text x="250" y="501" text-anchor="middle" font-size="10.5">a operação, entre as 123 do catálogo</text>
+    <text x="264" y="472" font-size="9.5" opacity=".7">passou os 9</text>
+    <rect x="60" y="530" width="380" height="46" rx="4" fill="none" stroke="var(--pend)" stroke-width="1.4"/>
+    <text x="250" y="548" text-anchor="middle" font-size="10.5" fill="var(--pend)">a trava de dados</text>
+    <text x="250" y="563" text-anchor="middle" font-size="9" opacity=".75">exclusiva para escrever &#183; o `varrer` tenta a compartilhada</text>
+    <path d="M250 576 L250 596" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaMot)"/>
+    <line x1="20" y1="606" x2="940" y2="606" stroke="currentColor" stroke-width="1" opacity=".22"/>
+    <text x="20" y="622" font-size="10" fill="var(--acento)" letter-spacing="1.4">2 &#183; NO DISCO &#8212; A ORDEM QUE O `inserir` SEGUE</text>
+    <rect x="12" y="636" width="98" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.75"/>
+    <text x="61" y="656" text-anchor="middle" font-size="8.5">confere aridade</text>
+    <path d="M110 662 L115 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="117" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
+    <text x="166" y="656" text-anchor="middle" font-size="8.5">confere a chave</text>
+    <text x="166" y="672" text-anchor="middle" font-size="8.5" fill="var(--ndx)">.ndx da mãe</text>
+    <path d="M215 662 L220 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="222" y="636" width="98" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.75"/>
+    <text x="271" y="656" text-anchor="middle" font-size="8.5">numera a linha</text>
+    <text x="271" y="672" text-anchor="middle" font-size="8.5" fill="currentColor">rownum, seq.</text>
+    <path d="M320 662 L325 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="327" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
+    <text x="376" y="656" text-anchor="middle" font-size="8.5">confere único</text>
+    <text x="376" y="672" text-anchor="middle" font-size="8.5" fill="var(--ndx)">antes de gravar</text>
+    <path d="M425 662 L430 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="432" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--bin)" stroke-width="1.5" opacity="1"/>
+    <text x="481" y="656" text-anchor="middle" font-size="8.5">grava anexos</text>
+    <text x="481" y="672" text-anchor="middle" font-size="8.5" fill="var(--bin)">.bin .memo</text>
+    <path d="M530 662 L535 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="537" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--reg)" stroke-width="1.5" opacity="1"/>
+    <text x="586" y="656" text-anchor="middle" font-size="8.5">grava a linha</text>
+    <text x="586" y="672" text-anchor="middle" font-size="8.5" fill="var(--reg)">.reg</text>
+    <path d="M635 662 L640 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="642" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
+    <text x="691" y="656" text-anchor="middle" font-size="8.5">grava as chaves</text>
+    <text x="691" y="672" text-anchor="middle" font-size="8.5" fill="var(--ndx)">.ndx</text>
+    <path d="M740 662 L745 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="747" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--memo)" stroke-width="1.5" opacity="1"/>
+    <text x="796" y="656" text-anchor="middle" font-size="8.5">indexa o texto</text>
+    <text x="796" y="672" text-anchor="middle" font-size="8.5" fill="var(--memo)">.fts</text>
+    <path d="M845 662 L850 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="852" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--log)" stroke-width="1.5" opacity="1"/>
+    <text x="901" y="656" text-anchor="middle" font-size="8.5">anota o evento</text>
+    <text x="901" y="672" text-anchor="middle" font-size="8.5" fill="var(--log)">.log</text>
+    <text x="12" y="712" font-size="10.5" opacity=".85"><tspan font-weight="600">A ordem não é arbitrária:</tspan> a unicidade se confere ANTES de qualquer gravação, porque o `.reg` nunca reaproveita slot &#8212; descobrir</text>
+    <text x="12" y="728" font-size="10.5" opacity=".85">a duplicidade depois exigiria desfazer, e o slot desfeito ficaria morto para sempre. O `.fts` fica FORA do desfazer de propósito: índice</text>
+    <text x="12" y="744" font-size="10.5" opacity=".85">atrasado o `reindexar` conserta; linha perdida, não.</text>
+  </g>
+</svg>
+    </div>
+    <figcaption><b>Figura 10.</b> O caminho inteiro de um pedido. Os <strong>9 portões</strong> em cima são os que o `servidor.rs` numera no próprio código — qualquer um recusa, e a recusa sai com código e <code>SQLSTATE</code>. Embaixo, a ordem que o <code>inserir</code> segue no disco, que é onde as garantias do formato aparecem.</figcaption>
+  </figure>
+<!-- fluxo-motor:fim -->
+
 
   <figure>
     <div class="fig-caixa">
@@ -1974,7 +2116,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 10.</b> As três setas tracejadas convergindo no
+    <figcaption><b>Figura 11.</b> As três setas tracejadas convergindo no
     <code>acessos.log</code> são o desenho do requisito: o log de IP registra o acesso,
     não o sucesso.</figcaption>
   </figure>
@@ -2073,7 +2215,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 11.</b> A direção da seta grossa é o ponto: quem procura é a
+    <figcaption><b>Figura 12.</b> A direção da seta grossa é o ponto: quem procura é a
     réplica, exatamente como no MySQL(R). Isso é o que permite manter a porta fechada para
     a Internet e aberta só de um lado, dentro do túnel.</figcaption>
   </figure>
@@ -2307,7 +2449,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 12.</b> Os três portões são independentes e cumulativos. O
+    <figcaption><b>Figura 13.</b> Os três portões são independentes e cumulativos. O
     token diz que você chegou ao servidor certo; o login diz quem você é; a permissão diz
     o que você pode naquela base específica.</figcaption>
   </figure>
@@ -2501,7 +2643,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 13.</b> A lista de bloqueio vem antes do token — quem
+    <figcaption><b>Figura 14.</b> A lista de bloqueio vem antes do token — quem
     está de fora não gasta nem um PBKDF2 do servidor. A regra de firewall é o
     extra à direita, não o mecanismo.</figcaption>
   </figure>
@@ -2547,7 +2689,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 14.</b> A diferença que importa está na terceira
+    <figcaption><b>Figura 15.</b> A diferença que importa está na terceira
     linha: a prova não revela a senha e não serve de novo, porque o nonce do
     servidor é sorteado a cada desafio e vale uma vez.</figcaption>
   </figure>
@@ -2772,7 +2914,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 17.</b> Os dois retângulos de baixo são o ponto: o
+    <figcaption><b>Figura 16.</b> Os dois retângulos de baixo são o ponto: o
     <code>senha_hash</code> é um segredo que autentica, a <code>chave_publica</code> não
     é. Copiar o <code>config.json</code> deixa de ser suficiente.</figcaption>
   </figure>
@@ -2882,7 +3024,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 18.</b> Os três retângulos de baixo são a seção inteira.
+    <figcaption><b>Figura 17.</b> Os três retângulos de baixo são a seção inteira.
     <strong>Com <code>exigir</code> desligado — que é o padrão — isto vale contra
     escuta passiva e nada mais.</strong> Cifra pedida é cifra que o atacante ativo
     apaga do pedido.</figcaption>
@@ -3274,7 +3416,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 15.</b> As duas setas convergindo no
+    <figcaption><b>Figura 18.</b> As duas setas convergindo no
     <code>despachar()</code> são o desenho inteiro: a interface não tem um caminho
     privilegiado. Quem não pode inserir recebe a mesma recusa, tenha clicado num
     botão ou aberto um soquete.</figcaption>
@@ -4520,7 +4662,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 16.</b> Os 87× não vêm de mágica: vêm de não ler 50.000
+    <figcaption><b>Figura 22.</b> Os 87× não vêm de mágica: vêm de não ler 50.000
     linhas do disco e de um mapa de igualdade que corta a varredura de 50.000 para
     8.333. O exemplo confere as duas respostas antes de imprimir o número —
     <em>benchmark</em> que compara respostas diferentes não mede nada.</figcaption>
@@ -4619,7 +4761,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 22.</b> O sal muda a cada conexão, então o embaralhado
+    <figcaption><b>Figura 23.</b> O sal muda a cada conexão, então o embaralhado
     também muda: quem captura a rede não consegue reapresentá-lo depois. O que
     ele <em>consegue</em> ler é o resultado da consulta — por isso a ligação é
     para rede interna ou túnel.</figcaption>
@@ -4810,7 +4952,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 23.</b> As mesmas sete figuras que a tela desenha — e
+    <figcaption><b>Figura 24.</b> As mesmas sete figuras que a tela desenha — e
     que a tela usa como botão. As três da direita são as anti-junções, o
     <code>LEFT JOIN … WHERE B.chave IS NULL</code> e seus irmãos.</figcaption>
   </figure>
@@ -5450,6 +5592,73 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   <div class="rotulo"><span class="num">31</span><span class="traco"></span></div>
   <h2>Operação: o que se pergunta quando algo está estranho</h2>
 
+<!-- workflow-motor:inicio (gerado por docs/dossie/fluxo-do-motor.py) -->
+  <figure>
+    <div class="fig-caixa">
+    <svg viewBox="0 0 960 344" role="img" aria-label="Diagrama de workflow do PhxSql: cinco etapas em sequencia -- modelar, gravar, consultar, replicar e salvaguardar --, cada uma com suas operacoes e a garantia que ela impoe; um laco tracejado volta da salvaguarda para a gravacao, porque restaurar devolve a linha ao estado gravado; e uma faixa embaixo lista as quatro leis que valem nas cinco etapas">
+  <defs>
+    <marker id="setaWk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="setaWkB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--bkp)"/>
+    </marker>
+  </defs>
+  <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor">
+    <text x="108" y="26" text-anchor="middle" font-size="10" fill="var(--acento)" letter-spacing="1.2" font-weight="600">MODELAR</text>
+    <rect x="20" y="38" width="176" height="128" rx="5" fill="var(--acento)" fill-opacity=".07" stroke="var(--acento)" stroke-width="1.5"/>
+    <text x="108" y="60" text-anchor="middle" font-size="9.5">criar_database</text>
+    <text x="108" y="80" text-anchor="middle" font-size="9.5">criar_tabela</text>
+    <text x="108" y="100" text-anchor="middle" font-size="9.5">declarar chave</text>
+    <text x="108" y="124" text-anchor="middle" font-size="8.5" opacity=".75">recusa CEDO: `ao_excluir`</text>
+    <text x="108" y="138" text-anchor="middle" font-size="8.5" opacity=".75">só aceita `restringir`</text>
+    <path d="M196 100 L206 100" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaWk)"/>
+    <text x="296" y="26" text-anchor="middle" font-size="10" fill="var(--reg)" letter-spacing="1.2" font-weight="600">GRAVAR</text>
+    <rect x="208" y="38" width="176" height="128" rx="5" fill="var(--reg)" fill-opacity=".07" stroke="var(--reg)" stroke-width="1.5"/>
+    <text x="296" y="60" text-anchor="middle" font-size="9.5">inserir · bulkinsert</text>
+    <text x="296" y="80" text-anchor="middle" font-size="9.5">atualizar</text>
+    <text x="296" y="100" text-anchor="middle" font-size="9.5">excluir suave / de vez</text>
+    <text x="296" y="124" text-anchor="middle" font-size="8.5" opacity=".75">nunca mata o pai que tem</text>
+    <text x="296" y="138" text-anchor="middle" font-size="8.5" opacity=".75">filha — nem no suave</text>
+    <path d="M384 100 L394 100" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaWk)"/>
+    <text x="484" y="26" text-anchor="middle" font-size="10" fill="var(--bin)" letter-spacing="1.2" font-weight="600">CONSULTAR</text>
+    <rect x="396" y="38" width="176" height="128" rx="5" fill="var(--bin)" fill-opacity=".07" stroke="var(--bin)" stroke-width="1.5"/>
+    <text x="484" y="60" text-anchor="middle" font-size="9.5">buscar · varrer WHERE</text>
+    <text x="484" y="80" text-anchor="middle" font-size="9.5">procurar_texto (.fts)</text>
+    <text x="484" y="100" text-anchor="middle" font-size="9.5">juntar · unir · pivotar</text>
+    <text x="484" y="124" text-anchor="middle" font-size="8.5" opacity=".75">as três que escondem tabela</text>
+    <text x="484" y="138" text-anchor="middle" font-size="8.5" opacity=".75">pagam conferência própria</text>
+    <path d="M572 100 L582 100" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaWk)"/>
+    <text x="672" y="26" text-anchor="middle" font-size="10" fill="var(--ndx)" letter-spacing="1.2" font-weight="600">REPLICAR</text>
+    <rect x="584" y="38" width="176" height="128" rx="5" fill="var(--ndx)" fill-opacity=".07" stroke="var(--ndx)" stroke-width="1.5"/>
+    <text x="672" y="60" text-anchor="middle" font-size="9.5">o `.log` é a fonte</text>
+    <text x="672" y="80" text-anchor="middle" font-size="9.5">replicar → aplicar</text>
+    <text x="672" y="100" text-anchor="middle" font-size="9.5">cluster: eleição, promoção</text>
+    <text x="672" y="124" text-anchor="middle" font-size="8.5" opacity=".75">o que vem da réplica não</text>
+    <text x="672" y="138" text-anchor="middle" font-size="8.5" opacity=".75">reconfere: já foi julgado</text>
+    <path d="M760 100 L770 100" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaWk)"/>
+    <text x="860" y="26" text-anchor="middle" font-size="10" fill="var(--bkp)" letter-spacing="1.2" font-weight="600">SALVAGUARDAR</text>
+    <rect x="772" y="38" width="176" height="128" rx="5" fill="var(--bkp)" fill-opacity=".07" stroke="var(--bkp)" stroke-width="1.5"/>
+    <text x="860" y="60" text-anchor="middle" font-size="9.5">backup → `.bkp`</text>
+    <text x="860" y="80" text-anchor="middle" font-size="9.5">`.trash` e `.reason`</text>
+    <text x="860" y="100" text-anchor="middle" font-size="9.5">restaurar linha ou base</text>
+    <text x="860" y="124" text-anchor="middle" font-size="8.5" opacity=".75">a linha excluída fica inteira</text>
+    <text x="860" y="138" text-anchor="middle" font-size="8.5" opacity=".75">no `.trash`, com o `.reason`</text>
+    <path d="M866 166 L866 196 L296 196 L296 170" fill="none" stroke="var(--bkp)" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#setaWkB)"/>
+    <text x="581" y="190" text-anchor="middle" font-size="9.5" fill="var(--bkp)">restaurar devolve a linha ao estado gravado</text>
+    <line x1="20" y1="220" x2="940" y2="220" stroke="currentColor" stroke-width="1" opacity=".22"/>
+    <text x="20" y="242" font-size="10" fill="var(--acento)" letter-spacing="1.4">O QUE VALE NAS CINCO, E NÃO SE NEGOCIA</text>
+    <text x="20" y="264" font-size="10.5" opacity=".85"><tspan fill="var(--acento)">·</tspan> A ordem de digitação é sagrada — o `.reg` nunca reaproveita slot excluído.</text>
+    <text x="20" y="281" font-size="10.5" opacity=".85"><tspan fill="var(--acento)">·</tspan> Nunca se mata o pai que tem filhos: `ao_excluir` aceita SÓ `restringir`.</text>
+    <text x="20" y="298" font-size="10.5" opacity=".85"><tspan fill="var(--acento)">·</tspan> Senha nunca em texto puro — nem em arquivo, nem em log, nem na resposta.</text>
+    <text x="20" y="315" font-size="10.5" opacity=".85"><tspan fill="var(--acento)">·</tspan> Zero dependências externas: só a `std`, e por isso `cargo build --offline` funciona.</text>
+  </g>
+</svg>
+    </div>
+    <figcaption><b>Figura 25.</b> O ciclo de operação. Cada etapa traz a garantia que ela impõe, e a faixa de baixo, as quatro que valem nas cinco.</figcaption>
+  </figure>
+<!-- workflow-motor:fim -->
+
 
   <p>Esta seção saiu de uma revisão contra o <em>help embutido</em> de dois
   motores maduros, rodando na própria máquina — 705 tópicos de um, 833 do
@@ -5505,7 +5714,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 24.</b> O código vem <em>junto</em> com o texto, e não
+    <figcaption><b>Figura 26.</b> O código vem <em>junto</em> com o texto, e não
     no lugar dele: o texto é para quem lê, o código é para quem programa. Trocar
     um pelo outro obrigaria alguém a perder.</figcaption>
   </figure>
@@ -5650,7 +5859,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
       </svg>
 <!-- bancada:fim -->
     </div>
-    <figcaption><b>Figura 25.</b> O perfil do motor num desenho: perde onde
+    <figcaption><b>Figura 27.</b> O perfil do motor num desenho: perde onde
     grava, ganha onde lê em ordem. A varredura por faixa é o formato mostrando
     o que ele é — linhas vizinhas no índice são bytes vizinhos no
     <code>.reg</code>.</figcaption>
@@ -5819,7 +6028,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figura 26.</b> O defeito não era a trava faltar — era ela
+    <figcaption><b>Figura 28.</b> O defeito não era a trava faltar — era ela
     cobrir metade do trabalho. Com índice único sobre a coluna, o índice pegava
     e virava «chave duplicada»; foi assim que apareceu. <strong>Sem índice
     único, a linha sumia em silêncio.</strong></figcaption>
@@ -6594,7 +6803,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   </g>
 </svg>
     </div>
-    <figcaption><b>Figura 27.</b> O caminho de <em>uma</em> célula até o veredito. Os quatro portões vermelhos não devolvem «não sei» — eles <strong>param</strong>, e é essa a diferença que a tabela acima depende: «não achei» e «não sei olhar» produzem a mesma frase, e ela convence nas duas.</figcaption>
+    <figcaption><b>Figura 29.</b> O caminho de <em>uma</em> célula até o veredito. Os quatro portões vermelhos não devolvem «não sei» — eles <strong>param</strong>, e é essa a diferença que a tabela acima depende: «não achei» e «não sei olhar» produzem a mesma frase, e ela convence nas duas.</figcaption>
   </figure>
   <figure>
     <div class="fig-caixa">
@@ -6649,7 +6858,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   </g>
 </svg>
     </div>
-    <figcaption><b>Figura 28.</b> A rodada inteira, da medição à página. Nada da coluna 4 se edita: quem quiser mudar uma palavra mexe na coluna 3, e quem quiser mudar um número mexe na coluna 1.</figcaption>
+    <figcaption><b>Figura 30.</b> A rodada inteira, da medição à página. Nada da coluna 4 se edita: quem quiser mudar uma palavra mexe na coluna 3, e quem quiser mudar um número mexe na coluna 1.</figcaption>
   </figure>
 <!-- comparativo:fim -->
 

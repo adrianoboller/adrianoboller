@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 762" role="img" aria-label="Fluxograma do caminho de um pedido no PhxSql: uma linha de JSON no soquete atravessa os 9 portoes numerados do despachar, qualquer um deles podendo recusar com codigo e SQLSTATE; passando, a operacao toma a trava de dados e desce para o caminho de gravacao, que confere aridade, chave e unicidade antes de escrever no .reg, depois no .ndx, no .fts e por fim no .log">
+  <style>svg{--ok:#2f7a3e;--log:#b71414;--pend:#8a6a1f;--acento:#c63c0a;--reg:#1f5c93;--ndx:#6a44a8;--bin:#0e7a85;--memo:#37702e;--lgpd:#0f6b4f;--bkp:#4a5d78;color:#4a3f3a;background:#fbf9f7}</style>
+  <defs>
+    <marker id="setaMot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="setaMotN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--log)"/>
+    </marker>
+    <marker id="setaMotO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--ok)"/>
+    </marker>
+  </defs>
+  <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor">
+    <text x="250" y="26" text-anchor="middle" font-size="10" fill="var(--acento)" letter-spacing="1.4">1 &#183; NA PORTA &#8212; O DESPACHAR, QUE É UM SÓ</text>
+    <rect x="60" y="36" width="380" height="34" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="250" y="57" text-anchor="middle" font-size="11">uma linha de JSON no soquete</text>
+    <rect x="60" y="84" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="99" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">0</text>
+    <text x="126" y="99" font-size="10.5">a política</text>
+    <text x="126" y="113" font-size="9" opacity=".7">comando proibido pelo config.json</text>
+    <path d="M440 102 L560 102" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="102" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 120 L250 126" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="126" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="141" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">1</text>
+    <text x="126" y="141" font-size="10.5">o token</text>
+    <text x="126" y="155" font-size="9" opacity=".7">a chave da porta, não a identidade</text>
+    <path d="M440 144 L560 144" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="144" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 162 L250 168" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="168" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="183" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2</text>
+    <text x="126" y="183" font-size="10.5">o login</text>
+    <text x="126" y="197" font-size="9" opacity=".7">quem é você nesta sessão</text>
+    <path d="M440 186 L560 186" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="186" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 204 L250 210" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="210" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="225" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2a</text>
+    <text x="126" y="225" font-size="10.5">o papel do servidor</text>
+    <text x="126" y="239" font-size="9" opacity=".7">réplica não atende escrita</text>
+    <path d="M440 228 L560 228" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="228" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 246 L250 252" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="252" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="267" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2a-bis</text>
+    <text x="126" y="267" font-size="10.5">de ONDE vem a replicação</text>
+    <text x="126" y="281" font-size="9" opacity=".7">o IP da sessão, não o do pedido</text>
+    <path d="M440 270 L560 270" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="270" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 288 L250 294" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="294" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="309" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2b</text>
+    <text x="126" y="309" font-size="10.5">a escrita</text>
+    <text x="126" y="323" font-size="9" opacity=".7">quem decide é o papel VIVO do cluster</text>
+    <path d="M440 312 L560 312" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="312" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 330 L250 336" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="336" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="351" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">3</text>
+    <text x="126" y="351" font-size="10.5">o poder sobre a base E a tabela</text>
+    <text x="126" y="365" font-size="9" opacity=".7">o campo `tabela` do pedido</text>
+    <path d="M440 354 L560 354" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="354" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 372 L250 378" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="378" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="393" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">4</text>
+    <text x="126" y="393" font-size="10.5">carga de outra ligação?</text>
+    <text x="126" y="407" font-size="9" opacity=".7">a tabela está reservada</text>
+    <path d="M440 396 L560 396" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="396" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 414 L250 420" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="420" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="435" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">5</text>
+    <text x="126" y="435" font-size="10.5">transação de outra conexão?</text>
+    <text x="126" y="449" font-size="9" opacity=".7">a tabela está segurada</text>
+    <path d="M440 438 L560 438" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="438" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M560 102 L560 438" stroke="var(--log)" stroke-width="1.6"/>
+    <path d="M560 252 L742 252" stroke="var(--log)" stroke-width="1.6" marker-end="url(#setaMotN)"/>
+    <text x="572" y="244" font-size="9" fill="var(--log)">qualquer um recusa</text>
+    <rect x="742" y="226" width="200" height="52" rx="4" fill="var(--log)" fill-opacity=".14" stroke="var(--log)" stroke-width="1.5"/>
+    <text x="850" y="246" text-anchor="middle" font-size="10.5" fill="var(--log)" font-weight="600">RECUSA</text>
+    <text x="850" y="261" text-anchor="middle" font-size="9">com código, SQLSTATE e classe</text>
+    <text x="850" y="273" text-anchor="middle" font-size="8.5" opacity=".7">grave demais: bloqueio de IP</text>
+    <path d="M250 456 L250 478" stroke="var(--ok)" stroke-width="1.6" marker-end="url(#setaMotO)"/>
+    <rect x="60" y="480" width="380" height="34" rx="4" fill="var(--ok)" fill-opacity=".10" stroke="var(--ok)" stroke-width="1.5"/>
+    <text x="250" y="501" text-anchor="middle" font-size="10.5">a operação, entre as 123 do catálogo</text>
+    <text x="264" y="472" font-size="9.5" opacity=".7">passou os 9</text>
+    <rect x="60" y="530" width="380" height="46" rx="4" fill="none" stroke="var(--pend)" stroke-width="1.4"/>
+    <text x="250" y="548" text-anchor="middle" font-size="10.5" fill="var(--pend)">a trava de dados</text>
+    <text x="250" y="563" text-anchor="middle" font-size="9" opacity=".75">exclusiva para escrever &#183; o `varrer` tenta a compartilhada</text>
+    <path d="M250 576 L250 596" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaMot)"/>
+    <line x1="20" y1="606" x2="940" y2="606" stroke="currentColor" stroke-width="1" opacity=".22"/>
+    <text x="20" y="622" font-size="10" fill="var(--acento)" letter-spacing="1.4">2 &#183; NO DISCO &#8212; A ORDEM QUE O `inserir` SEGUE</text>
+    <rect x="12" y="636" width="98" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.75"/>
+    <text x="61" y="656" text-anchor="middle" font-size="8.5">confere aridade</text>
+    <path d="M110 662 L115 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="117" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
+    <text x="166" y="656" text-anchor="middle" font-size="8.5">confere a chave</text>
+    <text x="166" y="672" text-anchor="middle" font-size="8.5" fill="var(--ndx)">.ndx da mãe</text>
+    <path d="M215 662 L220 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="222" y="636" width="98" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.75"/>
+    <text x="271" y="656" text-anchor="middle" font-size="8.5">numera a linha</text>
+    <text x="271" y="672" text-anchor="middle" font-size="8.5" fill="currentColor">rownum, seq.</text>
+    <path d="M320 662 L325 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="327" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
+    <text x="376" y="656" text-anchor="middle" font-size="8.5">confere único</text>
+    <text x="376" y="672" text-anchor="middle" font-size="8.5" fill="var(--ndx)">antes de gravar</text>
+    <path d="M425 662 L430 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="432" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--bin)" stroke-width="1.5" opacity="1"/>
+    <text x="481" y="656" text-anchor="middle" font-size="8.5">grava anexos</text>
+    <text x="481" y="672" text-anchor="middle" font-size="8.5" fill="var(--bin)">.bin .memo</text>
+    <path d="M530 662 L535 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="537" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--reg)" stroke-width="1.5" opacity="1"/>
+    <text x="586" y="656" text-anchor="middle" font-size="8.5">grava a linha</text>
+    <text x="586" y="672" text-anchor="middle" font-size="8.5" fill="var(--reg)">.reg</text>
+    <path d="M635 662 L640 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="642" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
+    <text x="691" y="656" text-anchor="middle" font-size="8.5">grava as chaves</text>
+    <text x="691" y="672" text-anchor="middle" font-size="8.5" fill="var(--ndx)">.ndx</text>
+    <path d="M740 662 L745 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="747" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--memo)" stroke-width="1.5" opacity="1"/>
+    <text x="796" y="656" text-anchor="middle" font-size="8.5">indexa o texto</text>
+    <text x="796" y="672" text-anchor="middle" font-size="8.5" fill="var(--memo)">.fts</text>
+    <path d="M845 662 L850 662" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="852" y="636" width="98" height="52" rx="4" fill="none" stroke="var(--log)" stroke-width="1.5" opacity="1"/>
+    <text x="901" y="656" text-anchor="middle" font-size="8.5">anota o evento</text>
+    <text x="901" y="672" text-anchor="middle" font-size="8.5" fill="var(--log)">.log</text>
+    <text x="12" y="712" font-size="10.5" opacity=".85"><tspan font-weight="600">A ordem não é arbitrária:</tspan> a unicidade se confere ANTES de qualquer gravação, porque o `.reg` nunca reaproveita slot &#8212; descobrir</text>
+    <text x="12" y="728" font-size="10.5" opacity=".85">a duplicidade depois exigiria desfazer, e o slot desfeito ficaria morto para sempre. O `.fts` fica FORA do desfazer de propósito: índice</text>
+    <text x="12" y="744" font-size="10.5" opacity=".85">atrasado o `reindexar` conserta; linha perdida, não.</text>
+  </g>
+</svg>

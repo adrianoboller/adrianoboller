@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 344" role="img" aria-label="Diagrama de workflow do PhxSql: cinco etapas em sequencia -- modelar, gravar, consultar, replicar e salvaguardar --, cada uma com suas operacoes e a garantia que ela impoe; um laco tracejado volta da salvaguarda para a gravacao, porque restaurar devolve a linha ao estado gravado; e uma faixa embaixo lista as quatro leis que valem nas cinco etapas">
+  <style>svg{--ok:#2f7a3e;--log:#b71414;--pend:#8a6a1f;--acento:#c63c0a;--reg:#1f5c93;--ndx:#6a44a8;--bin:#0e7a85;--memo:#37702e;--lgpd:#0f6b4f;--bkp:#4a5d78;color:#4a3f3a;background:#fbf9f7}</style>
+  <defs>
+    <marker id="setaWk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="setaWkB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--bkp)"/>
+    </marker>
+  </defs>
+  <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor">
+    <text x="108" y="26" text-anchor="middle" font-size="10" fill="var(--acento)" letter-spacing="1.2" font-weight="600">MODELAR</text>
+    <rect x="20" y="38" width="176" height="128" rx="5" fill="var(--acento)" fill-opacity=".07" stroke="var(--acento)" stroke-width="1.5"/>
+    <text x="108" y="60" text-anchor="middle" font-size="9.5">criar_database</text>
+    <text x="108" y="80" text-anchor="middle" font-size="9.5">criar_tabela</text>
+    <text x="108" y="100" text-anchor="middle" font-size="9.5">declarar chave</text>
+    <text x="108" y="124" text-anchor="middle" font-size="8.5" opacity=".75">recusa CEDO: `ao_excluir`</text>
+    <text x="108" y="138" text-anchor="middle" font-size="8.5" opacity=".75">só aceita `restringir`</text>
+    <path d="M196 100 L206 100" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaWk)"/>
+    <text x="296" y="26" text-anchor="middle" font-size="10" fill="var(--reg)" letter-spacing="1.2" font-weight="600">GRAVAR</text>
+    <rect x="208" y="38" width="176" height="128" rx="5" fill="var(--reg)" fill-opacity=".07" stroke="var(--reg)" stroke-width="1.5"/>
+    <text x="296" y="60" text-anchor="middle" font-size="9.5">inserir · bulkinsert</text>
+    <text x="296" y="80" text-anchor="middle" font-size="9.5">atualizar</text>
+    <text x="296" y="100" text-anchor="middle" font-size="9.5">excluir suave / de vez</text>
+    <text x="296" y="124" text-anchor="middle" font-size="8.5" opacity=".75">nunca mata o pai que tem</text>
+    <text x="296" y="138" text-anchor="middle" font-size="8.5" opacity=".75">filha — nem no suave</text>
+    <path d="M384 100 L394 100" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaWk)"/>
+    <text x="484" y="26" text-anchor="middle" font-size="10" fill="var(--bin)" letter-spacing="1.2" font-weight="600">CONSULTAR</text>
+    <rect x="396" y="38" width="176" height="128" rx="5" fill="var(--bin)" fill-opacity=".07" stroke="var(--bin)" stroke-width="1.5"/>
+    <text x="484" y="60" text-anchor="middle" font-size="9.5">buscar · varrer WHERE</text>
+    <text x="484" y="80" text-anchor="middle" font-size="9.5">procurar_texto (.fts)</text>
+    <text x="484" y="100" text-anchor="middle" font-size="9.5">juntar · unir · pivotar</text>
+    <text x="484" y="124" text-anchor="middle" font-size="8.5" opacity=".75">as três que escondem tabela</text>
+    <text x="484" y="138" text-anchor="middle" font-size="8.5" opacity=".75">pagam conferência própria</text>
+    <path d="M572 100 L582 100" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaWk)"/>
+    <text x="672" y="26" text-anchor="middle" font-size="10" fill="var(--ndx)" letter-spacing="1.2" font-weight="600">REPLICAR</text>
+    <rect x="584" y="38" width="176" height="128" rx="5" fill="var(--ndx)" fill-opacity=".07" stroke="var(--ndx)" stroke-width="1.5"/>
+    <text x="672" y="60" text-anchor="middle" font-size="9.5">o `.log` é a fonte</text>
+    <text x="672" y="80" text-anchor="middle" font-size="9.5">replicar → aplicar</text>
+    <text x="672" y="100" text-anchor="middle" font-size="9.5">cluster: eleição, promoção</text>
+    <text x="672" y="124" text-anchor="middle" font-size="8.5" opacity=".75">o que vem da réplica não</text>
+    <text x="672" y="138" text-anchor="middle" font-size="8.5" opacity=".75">reconfere: já foi julgado</text>
+    <path d="M760 100 L770 100" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaWk)"/>
+    <text x="860" y="26" text-anchor="middle" font-size="10" fill="var(--bkp)" letter-spacing="1.2" font-weight="600">SALVAGUARDAR</text>
+    <rect x="772" y="38" width="176" height="128" rx="5" fill="var(--bkp)" fill-opacity=".07" stroke="var(--bkp)" stroke-width="1.5"/>
+    <text x="860" y="60" text-anchor="middle" font-size="9.5">backup → `.bkp`</text>
+    <text x="860" y="80" text-anchor="middle" font-size="9.5">`.trash` e `.reason`</text>
+    <text x="860" y="100" text-anchor="middle" font-size="9.5">restaurar linha ou base</text>
+    <text x="860" y="124" text-anchor="middle" font-size="8.5" opacity=".75">a linha excluída fica inteira</text>
+    <text x="860" y="138" text-anchor="middle" font-size="8.5" opacity=".75">no `.trash`, com o `.reason`</text>
+    <path d="M866 166 L866 196 L296 196 L296 170" fill="none" stroke="var(--bkp)" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#setaWkB)"/>
+    <text x="581" y="190" text-anchor="middle" font-size="9.5" fill="var(--bkp)">restaurar devolve a linha ao estado gravado</text>
+    <line x1="20" y1="220" x2="940" y2="220" stroke="currentColor" stroke-width="1" opacity=".22"/>
+    <text x="20" y="242" font-size="10" fill="var(--acento)" letter-spacing="1.4">O QUE VALE NAS CINCO, E NÃO SE NEGOCIA</text>
+    <text x="20" y="264" font-size="10.5" opacity=".85"><tspan fill="var(--acento)">·</tspan> A ordem de digitação é sagrada — o `.reg` nunca reaproveita slot excluído.</text>
+    <text x="20" y="281" font-size="10.5" opacity=".85"><tspan fill="var(--acento)">·</tspan> Nunca se mata o pai que tem filhos: `ao_excluir` aceita SÓ `restringir`.</text>
+    <text x="20" y="298" font-size="10.5" opacity=".85"><tspan fill="var(--acento)">·</tspan> Senha nunca em texto puro — nem em arquivo, nem em log, nem na resposta.</text>
+    <text x="20" y="315" font-size="10.5" opacity=".85"><tspan fill="var(--acento)">·</tspan> Zero dependências externas: só a `std`, e por isso `cargo build --offline` funciona.</text>
+  </g>
+</svg>

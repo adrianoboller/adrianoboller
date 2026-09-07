@@ -24,10 +24,12 @@ do HTML como argumento, então trocar o nome de novo não exige editá-los.
 Os números do painel são **medidos, nunca estimados** — já saíram errados três
 vezes: arredondamento para cima, depois 276 testes quando eram 280, depois um
 rodapé inteiro parado numa versão anterior. **Nenhum número visível se digita
-mais**: são **sete** geradores, listados no `LEIA-ME.md` da pasta, e eles
+mais**: são **nove** geradores, listados no `LEIA-ME.md` da pasta, e eles
 escrevem o título, o selo, o painel da capa, o rodapé, os idiomas, a bancada, o
 painel da replicação, os pedidos, a cobertura por área, as capturas, os tetos
-da trava e a tabela do que ainda falta aqui.
+da trava, a tabela do que ainda falta aqui, as figuras do motor — e a
+**numeração de todas as figuras**, que passou a se gerar no dia em que duas
+entraram no meio do documento e envelheceram dezesseis legendas de uma vez.
 
 E o corolário que a revisão da 0.18 pagou: **a receita de um número também
 envelhece.** A do KiB de interface era uma lista de três arquivos copiada no

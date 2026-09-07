@@ -68,6 +68,23 @@ ausência de transação: ele as documenta extensamente.
   sempre passaria em tudo. Um quarto portão **morreu na prova**: o defeito que eu
   culpei (pedir o catálogo sem `database`) não reproduzia o sintoma.
 
+- **Duas figuras do MOTOR, com as listas lidas do código.** O **fluxograma** do
+  caminho de um pedido (§9): os **9 portões** que o `servidor.rs` numera no
+  próprio comentário, o trilho de recusa, a trava, e os **9 passos** que o
+  `inserir` segue no disco. O **workflow** do ciclo de operação (§31): modelar,
+  gravar, consultar, replicar, salvaguardar, com a garantia que cada etapa impõe.
+  O gerador **para** quando a lista do desenho diverge da do código nos dois
+  sentidos — e pagou por si na primeira corrida, derrubando dois passos escritos
+  de memória: `proximo_rowid` não existe (são `numerar_linha` e `numerar`), e
+  faltava o `montar_payload`, **que é onde o `.bin` e o `.memo` são gravados**.
+
+- **A numeração das figuras deixou de se digitar.** Enquanto figura só entrava
+  no fim, o número escrito à mão batia por sorte; duas no **meio** do documento
+  viraram **16** legendas erradas de uma vez. `numerar-figuras.py` renumera todas
+  na ordem do documento, e achou uma desordem que já existia: as figuras vinham
+  na ordem 14, 17, 18, 15, 19, 20, 21, 16. Legenda errada não quebra nada — é por
+  isso que ninguém confere.
+
 - **Duas figuras do medidor, desenhadas à mão em SVG e sem biblioteca** — o
   **fluxograma** do caminho de uma célula até o veredito, com os quatro portões
   que param a medição, e o **diagrama de workflow** da rodada inteira, da
