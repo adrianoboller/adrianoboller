@@ -303,6 +303,26 @@ sozinho. A fonte da verdade é o `.md`; mexeu lá, rode isto.
   lista comprida mas nunca um estado quebrado — e um `matchMedia` o fecha só
   quando a janela é estreita demais para a coluna lateral.
 
+## O aviso de «download morto» na publicação é FALSO POSITIVO
+
+Publicar o dossiê devolve um aviso dizendo que a página oferece um arquivo por
+link de download, e que o visualizador nunca dá essa permissão. **Não é
+verdade, e não se conserta.** Medido em 07/09/2026: `<a … download>` de
+verdade, **zero**; `createObjectURL`, `new Blob`, `msSaveBlob`, **zero**. O
+botão «baixar» abre a **caixa de impressão do navegador**, que é do navegador
+e por isso abre, com «Salvar como PDF» no destino.
+
+O que o varredor casou foram as **próprias frases** que explicam a decisão —
+os dois comentários que dizem, em letras, *«nada de `<a download>`, que o
+visualizador bloqueia»*. Prosa sobre a armadilha casa com a busca pela
+armadilha.
+
+E a segunda metade da lição é minha: eu contei `grep -c '<a [^>]*download'`,
+recebi **2** e escrevi que havia dois links. Eram os comentários de novo. *Um
+casador de texto não sabe a diferença entre fazer e falar sobre fazer* — é a
+mesma razão pela qual o conferidor genérico das mensagens de erro foi recusado
+com número nesta casa.
+
 ## Três armadilhas de estilo da página
 
 - **Nenhuma cor literal nos SVG.** Tudo sai dos tokens (`var(--reg)`,
