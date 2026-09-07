@@ -343,6 +343,13 @@ impl Atividade {
             // cluster, e qualquer cliente precisa dele para achar o master.
             "cluster_pulso" => Atividade::Replicar,
             "cluster_estado" => Atividade::Ler,
+            // Mexer na LISTA de nos muda o denominador da maioria -- quem
+            // acrescenta um no muda quantos votos fazem um master. Isso e
+            // decisao de quem manda no servidor, e nao da credencial de
+            // replicacao que ja basta para pulsar: com `Replicar` aqui,
+            // qualquer replica poderia inflar o cluster com nos fantasmas e
+            // travar toda promocao. As duas ops conferem por dentro tambem.
+            "cluster_no_acrescentar" | "cluster_no_remover" => Atividade::Administrar,
             // Promover um spare vira o papel do servidor inteiro; o estado do
             // laco expoe origem, endereco e erro de conexao. Os dois sao
             // decisao e mapa de administrador, nao de replica.

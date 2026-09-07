@@ -37,7 +37,7 @@ O que existe, item por item contra a lista do HFSQL(R):
 | Falha de um não impede o acesso | ✓ leitura segue nas réplicas; escrita volta sozinha após a eleição (medido: **3,6–4,3 s** com janela de 4 s) |
 | Replicação automática entre todos | ◐ um master, N réplicas seguindo o master **corrente** — não é multi-master, de propósito |
 | Carga de leitura distribuída | ◐ aponta-se leitores para réplicas; não há balanceador embutido |
-| Adicionar/remover servidor a quente | ✗ a lista de nós é do `config.json`; mudar é editar e reiniciar |
+| Adicionar/remover servidor a quente | ✓ **desde o pedido 217**: `cluster_no_acrescentar` e `cluster_no_remover` mudam a lista VIVA, gravam o `config.json` e propagam aos outros nós — ninguém reinicia. Medido: **zero recusas em 42 escritas** contra os **0,369 s** de master fora do ar do caminho antigo. Ver §2.7 |
 | Servidor que caiu ressincroniza ao voltar | ✓ e, se era o master, **se rebaixa sozinho** ao ver época maior no pulso |
 | Cliente reconectado automaticamente | ◐ o protocolo diz **para onde** ir (`REDIRECIONA`); ir é do cliente |
 
@@ -56,6 +56,7 @@ soquete.
   "janela_inatividade_s": 10,        // master calado além disto = caído
   "pulso_s": 3,                      // omitido = um terço da janela
   "avisar_cada_min": 5,              // aceita fração: 0.1 = 6 s
+  "quorum_minimo": 0,                // GUARDADO e ainda NÃO imposto (§2.4)
   "token": "...", "usuario": "replicador",
   "senha_hash": "pbkdf2-sha256$...", // a MESMA tríade da origem de replicação
   "databases": [],                   // vazio = todos os do master
@@ -143,6 +144,17 @@ e é problema de rede. O que o banco entrega é a **semântica** de endereço
 
 ### 2.4 O que isto NÃO garante — leia antes de confiar
 
+**Não há quórum de escrita.** O master confirma a gravação sem esperar réplica
+nenhuma, e o que ele aceitou entre o início de uma partição e o momento em que
+se vê sem maioria não chegou a ninguém. O campo `cluster.quorum_minimo` já
+existe no formato e a op `config` o devolve ao lado de `"quorum_imposto":
+false` — porque **mudança de formato entra cedo** —, mas nada o lê. O parecer
+medido do que falta está em `docs/propostas/quorum-de-escrita.md`, e o achado
+que ele derruba vale ser lido antes de qualquer plano: o canal aberto que o
+quórum precisaria **já existe**, é o do pulso, e custa **0,089 ms** de ida e
+volta.
+
+
 **Não é Raft.** Não há log replicado por quórum de escrita: o master
 confirma a escrita **sem esperar réplica nenhuma** (replicação assíncrona,
 como sempre foi). As consequências práticas, sem eufemismo:
@@ -224,7 +236,107 @@ como sempre foi). As consequências práticas, sem eufemismo:
    afirmar. Se um dia houver um cluster em produção com reinício em rolagem, a
    saída (C) volta como pedido próprio — com quem precisa dela e por quê.
 
-### 2.5 Roteiro de operação
+### 2.5 Escalonar a quente — acrescentar e remover nó sem reiniciar ninguém
+
+**Pedido 217.** Até 07/09/2026 a lista de nós era o retrato do `config.json` no
+arranque, e isso tinha uma consequência que só apareceu exercitando: um nó novo
+com a lista completa na própria configuração ficava **isolado a janela
+inteira** — o pulso dele era recusado na hora pelos antigos
+(`ACESSO_NEGADO: o no "no4" nao esta na lista de nos deste cluster`), e os
+antigos nunca tentavam falar com ele, porque ele não estava na lista deles.
+
+A recusa **continua**, e continuar é a decisão certa: aceitar um id
+desconhecido deixaria qualquer credencial de replicação inflar o denominador da
+maioria com nós fantasmas e travar toda promoção. O que mudou foi a **lista**.
+
+```json
+{"op":"cluster_no_acrescentar","id":"no4","endereco":"10.0.0.4","porta":5000}
+{"op":"cluster_no_remover","id":"no4"}
+```
+
+**Três coisas, nesta ordem, e a ordem importa:**
+
+1. **a lista viva**, para o pulso do nó novo ser aceito agora;
+2. **o `config.json` deste nó**, para o nó acrescentado não sumir calado no
+   próximo arranque — perder um nó assim é pior que não acrescentar, porque o
+   cluster segue com um denominador menor do que o operador acredita;
+3. **a propagação**, uma vez por nó, com a credencial do próprio cluster.
+
+Gravar antes de aplicar deixaria o arquivo prometendo o que a memória ainda não
+faz; propagar antes de aplicar mandaria os outros aceitarem um nó que este aqui
+ainda recusa.
+
+**A propagação fala quando falha.** A resposta traz um veredito por nó:
+
+```json
+{"acrescentado":true,"id":"no4","nos":5,
+ "propagado":{"no2":"ok","no3":"ok","no4":"ok"}}
+```
+
+Nó que não aceitou aparece com **o erro inteiro**, e não sumindo da lista:
+metade do cluster escalonada em silêncio é exatamente o estado em que uma
+eleição conta votos diferentes em cada lado. A tela de Cluster mostra esse
+veredito.
+
+**Consequência aceita e escrita:** a propagação autentica com
+`cluster.usuario`, então **esse usuário precisa poder `administrar`**. Sem
+isso a ordem local vale e a propagação volta recusada, nomeando o nó — que é
+melhor que dar o poder de mexer na maioria a quem só tem credencial de réplica.
+
+**Duas recusas do `cluster_no_remover`, e as duas são decisão:** este nó não se
+remove (um servidor fora da própria lista não passa mais no `Cluster::validar` e
+não subiria de novo) e o **master corrente** não se remove (tirá-lo da lista
+deixaria o cluster sem para onde redirecionar a escrita).
+
+**As threads acompanham sozinhas.** Um supervisor (`pulso-supervisor`) mantém
+uma thread de pulso por nó da lista viva: nó acrescentado ganha pulso em até
+meio segundo, nó removido — ou que mudou de endereço — vê a thread dele morrer
+e, no segundo caso, outra nascer no endereço novo.
+
+**Medido** (`bancada/cluster/escalonar.py`, 07/09/2026, cinco nós em
+`127.0.0.1`):
+
+| | caminho antigo (editar e reiniciar) | a quente (pedido 217) |
+|---|---|---|
+| master fora do ar | **0,369 s** | **0 s** — zero recusas em 42 escritas batendo de 10 em 10 ms |
+| escalonamento inteiro | 1,11 s (três reinícios) | **0,207 s** até o nó novo aparecer vivo nos quatro antigos |
+| a ordem em si | — | **5 ms** |
+| `config.json` dos antigos | editado à mão | gravado pelo próprio motor, conferido nos quatro |
+| retratos SHA-256 no fim | batem | batem, nos cinco |
+
+O `master fora do ar = 0 s` é medido, e não deduzido: uma batida de escrita de
+10 em 10 ms roda durante a ordem inteira e conta as **recusas** e o **maior
+buraco entre dois `ok`** (11,5 ms — o próprio intervalo da batida). Sem o
+buraco, «não recusou» poderia ser «parou sem dar erro», que é pior.
+
+### 2.6 A tela de Cluster
+
+**Pedido 208.** Ferramentas → **Cluster** (e no menu Ferramentas pelo teclado).
+Ela mostra o papel deste nó, quem é o master, a época, quantos nós há, se a
+escrita está liberada e a janela de inatividade; a grade lista cada nó com
+papel, estado (`este servidor` / `vivo` / `calado` / `nunca pulsou`), época,
+posição do diário e idade do último pulso. Os motivos de degradação aparecem em
+vermelho, como o servidor os escreveu.
+
+Três ações, com as cores da convenção: **acrescentar nó** (verde), **remover
+nó** (vermelho) e **gravar o quórum mínimo** (âmbar) — todas por contorno,
+nunca fundo cheio.
+
+Duas honestidades que a tela carrega de propósito:
+
+- **Servidor sem bloco `cluster` mostra a nota e nenhum botão.** Não há nada a
+  operar, e desenhar controles que recusariam tudo seria pior que não desenhar.
+- **O campo do quórum diz que não é imposto**, e quem diz isso é o **servidor**
+  (`"quorum_imposto": false` na resposta de `config`), não uma frase da tela —
+  duas telas divergem no dia em que uma for atualizada e a outra não.
+
+Ela é exercitada contra três servidores de verdade em
+`testes-web/capturas-cluster.mjs` (dez passos, capturas em claro e escuro em
+`docs/dossie/capturas/cluster-*.png`). Não entra na `bateria.mjs` porque a
+bateria sobe um `phxsqld` isolado, e aí a tela não desenha botão nenhum — a
+dispensa está registrada no `conferidor_botoes.rs`, apontando para cá.
+
+### 2.7 Roteiro de operação
 
 - **Subir:** um nó com `papel: source` (o master inicial), os demais
   `replica` + `somente_leitura: true`, todos com o mesmo bloco `cluster`
@@ -243,7 +355,7 @@ como sempre foi). As consequências práticas, sem eufemismo:
 - **`somente_leitura` num nó promovido** deixa de valer — senão a promoção
   não promoveria nada. Sem o bloco `cluster`, vale como sempre valeu.
 
-### 2.6 Números e aprendizados da bancada (`bancada/cluster/`)
+### 2.8 Números e aprendizados da bancada (`bancada/cluster/`)
 
 | medido | resultado |
 |---|---|

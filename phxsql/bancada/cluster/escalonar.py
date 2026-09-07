@@ -24,7 +24,16 @@ lista, tentando pulsar os tres antigos por `janela_s` inteira -- ele nunca
 aparece "vivo" em nenhum dos tres, e nenhum dos tres tenta falar com ele (nao
 esta na lista deles: nunca ha por que tentar).
 
-Metade 2 -- O CAMINHO QUE FUNCIONA, medido: reescreve `cluster.nos` dos TRES
+Metade 3 (07/09/2026, o conserto) -- A QUENTE, DE VERDADE: com a lista de nos
+viva e a operacao `cluster_no_acrescentar`, o passo (5) acrescenta um QUINTO
+no ao cluster de quatro sem reiniciar ninguem, com uma batida de escrita de
+10 em 10 ms no master durante a ordem inteira. O numero que este script existe
+para publicar e a diferenca entre as duas metades: **0,367 s de master fora do
+ar contra zero recusa**. Zero so vale medido -- por isso a batida conta as
+recusas E o maior buraco entre dois `ok`, senao "nao recusou" poderia ser
+"parou sem dar erro".
+
+Metade 2 -- O CAMINHO QUE FUNCIONAVA ANTES, medido: reescreve `cluster.nos` dos TRES
 nos antigos (o novo ja nasceu com a lista de quatro, entao SO os antigos
 precisam mudar) e reinicia cada um -- SIGTERM e sobe de novo no MESMO
 diretorio de dados, porque a epoca e o papel vivem em `base/cluster.estado.json`
@@ -50,6 +59,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -58,8 +68,8 @@ PHXSQLD = os.path.join(RAIZ, "target", "release", "phxsqld")
 
 # Faixa propria desta bancada -- nao colide com o provar.py (5310-5312) nem
 # com o fresta.py (5320-5322).
-PORTAS = {"no1": 6300, "no2": 6301, "no3": 6302, "no4": 6303}
-PRIORIDADES = {"no1": 3, "no2": 2, "no3": 1, "no4": 0}
+PORTAS = {"no1": 6300, "no2": 6301, "no3": 6302, "no4": 6303, "no5": 6304}
+PRIORIDADES = {"no1": 3, "no2": 2, "no3": 1, "no4": 0, "no5": -1}
 JANELA_S = 8            # folgada de proposito: um reinicio de ~1s nao pode
                          # parecer master caido e abrir eleicao por engano.
 PULSO_S = 1
@@ -332,13 +342,129 @@ def main():
        str(estado(C["no1"])["nos"]))
     m({"op": "inserir_lote", "database": DB, "tabela": TAB, "linhas": lote(400, 50)})
     alvo = posicao(m)
-    ok("no4 alcanca a posicao do master (nao so os antigos)",
-       esperar(lambda: posicao(C["no4"]) >= alvo, 20), f"alvo {alvo}")
+    # TODOS, e nao so o no4: esperar o no novo e tirar o retrato dos quatro
+    # publica o retrato de um cluster que ainda estava sincronizando. Foi o
+    # que aconteceu numa corrida -- no2 em 320 contra 370 dos outros --, e o
+    # retrato mentiria dizendo "os quatro nao batem" onde a verdade era "um
+    # ainda nao chegou".
+    ok("os quatro alcancam a posicao do master (nao so o no novo)",
+       esperar(lambda: all(posicao(C[n]) >= alvo for n in quatro), 25),
+       f"alvo {alvo} | {[(n, posicao(C[n])) for n in quatro]}")
     retratos = {n: retrato(C[n]) for n in quatro}
     ok("os quatro retratos SHA-256 batem",
        len(set(retratos.values())) == 1, str(retratos))
     r["retratos_finais"] = {n: list(v) for n, v in retratos.items()}
     r["estado_final"] = estado(C["no1"])
+
+    print("\n(5) A QUENTE, com `cluster_no_acrescentar` -- pedido 217 consertado")
+    # A MESMA pergunta da metade 2, medida de novo com o conserto: acrescentar
+    # um no ao cluster VIVO. A diferenca que se quer ver e uma so -- quantos
+    # segundos o master fica fora do ar. Antes: 0,367 s (SIGTERM e sobe). Aqui:
+    # ninguem reinicia, entao a resposta tem de ser zero, e "zero" so vale
+    # medido -- por isso a escrita continua batendo enquanto a ordem corre.
+    cinco = quatro + ["no5"]
+    escrever_config(base, "no5", h, cinco)   # o no NOVO ja nasce sabendo dos 5
+    subir(base, "no5")
+    C["no5"] = liga("no5")
+
+    # A batida de escrita: uma linha a cada 10 ms no master, contando as
+    # RECUSAS. E o unico jeito de "o master nao ficou fora do ar" ser numero.
+    batida = {"tentou": 0, "recusou": 0, "erros": [], "maior_buraco_ms": 0.0}
+    parar = threading.Event()
+    proximo_id = [1000]
+
+    def bater():
+        fala = liga("no1")
+        ultimo_ok = time.monotonic()
+        while not parar.is_set():
+            k = proximo_id[0]
+            proximo_id[0] += 1
+            batida["tentou"] += 1
+            try:
+                resp = fala({"op": "inserir", "database": DB, "tabela": TAB,
+                             "linha": lote(k, 1)[0]})
+                if resp.get("ok"):
+                    agora = time.monotonic()
+                    buraco = (agora - ultimo_ok) * 1000
+                    batida["maior_buraco_ms"] = max(batida["maior_buraco_ms"], buraco)
+                    ultimo_ok = agora
+                else:
+                    batida["recusou"] += 1
+                    batida["erros"].append(str(resp.get("erro"))[:120])
+            except (OSError, ConnectionError, ValueError) as e:
+                batida["recusou"] += 1
+                batida["erros"].append(f"{type(e).__name__}: {e}"[:120])
+            time.sleep(0.01)
+
+    fio = threading.Thread(target=bater, daemon=True)
+    fio.start()
+    time.sleep(0.5)   # a batida ja tem de estar em regime antes da ordem
+
+    t0 = time.monotonic()
+    ordem = m({"op": "cluster_no_acrescentar", "id": "no5",
+               "endereco": "127.0.0.1", "porta": PORTAS["no5"]})
+    r["ordem_a_quente"] = ordem
+    r["ordem_a_quente_s"] = round(time.monotonic() - t0, 3)
+    ok("a ordem foi aceita pelo master", bool(ordem.get("ok")), str(ordem)[:200])
+    res = ordem.get("resultado", {})
+    ok("os TRES nos antigos aceitaram a propagacao",
+       all(v == "ok" for v in (res.get("propagado") or {}).values()),
+       str(res.get("propagado")))
+    ok("a maioria passa a ser contada sobre CINCO nos",
+       res.get("nos") == 5, str(res.get("nos")))
+
+    vistos = esperar(lambda: all(
+        any(n["id"] == "no5" and n.get("vivo") for n in estado(C[x])["nos"])
+        for x in quatro), JANELA_S * 3)
+    r["no5_vivo_em_todos_s"] = round(time.monotonic() - t0, 3)
+    ok("no5 aparece VIVO nos quatro antigos, sem ninguem reiniciar", vistos,
+       f"{r['no5_vivo_em_todos_s']}s")
+
+    parar.set()
+    fio.join(timeout=5)
+    r["batida_no_master"] = {
+        "tentou": batida["tentou"],
+        "recusou": batida["recusou"],
+        "maior_buraco_ms": round(batida["maior_buraco_ms"], 1),
+        "erros": batida["erros"][:3],
+    }
+    # ESTE e o numero do pedido: 0,367 s de master fora do ar viram zero
+    # recusas. O "maior buraco" e o cinto -- uma recusa de 0 com um buraco de
+    # 400 ms diria que a escrita parou sem dar erro, que e pior.
+    r["master_indisponivel_a_quente_s"] = 0.0 if batida["recusou"] == 0 else None
+    ok("o master NUNCA recusou uma escrita durante o escalonamento",
+       batida["recusou"] == 0,
+       f"{batida['recusou']} de {batida['tentou']} | maior buraco "
+       f"{batida['maior_buraco_ms']:.1f} ms | {batida['erros'][:2]}")
+
+    # O config.json dos antigos guardou o no novo? Sem isto o no5 sumiria no
+    # proximo arranque, calado -- e um cluster com denominador menor do que o
+    # operador acredita e pior que um cluster que nao escalonou.
+    gravados = {}
+    for n in quatro:
+        with open(os.path.join(base, n, "config.json")) as f:
+            gravados[n] = [x["id"] for x in json.load(f)["cluster"]["nos"]]
+    r["config_gravado"] = gravados
+    ok("os quatro config.json guardaram os cinco nos",
+       all(sorted(v) == sorted(cinco) for v in gravados.values()), str(gravados))
+
+    print("\n(6) os cinco convergem?")
+    m({"op": "inserir_lote", "database": DB, "tabela": TAB, "linhas": lote(5000, 50)})
+    alvo = posicao(m)
+    ok("os cinco alcancam a posicao do master",
+       esperar(lambda: all(posicao(C[n]) >= alvo for n in cinco), 30),
+       f"alvo {alvo} | {[(n, posicao(C[n])) for n in cinco]}")
+    retratos5 = {n: retrato(C[n]) for n in cinco}
+    ok("os cinco retratos SHA-256 batem",
+       len(set(retratos5.values())) == 1, str(retratos5))
+    r["retratos_a_quente"] = {n: list(v) for n, v in retratos5.items()}
+    r["estado_a_quente"] = estado(C["no1"])
+    r["comparacao"] = {
+        "reiniciando_master_indisponivel_s": r["reinicio_no1_total_s"],
+        "a_quente_master_indisponivel_s": r["master_indisponivel_a_quente_s"],
+        "reiniciando_total_s": r["escalonamento_total_s"],
+        "a_quente_total_s": r["no5_vivo_em_todos_s"],
+    }
 
     print()
     r["falhas"] = FALHAS

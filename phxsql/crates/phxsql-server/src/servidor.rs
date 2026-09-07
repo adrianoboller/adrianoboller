@@ -2200,7 +2200,7 @@ impl Servidor {
         let c = &estado.config;
         eprintln!(
             "cluster: {} nos | este e {} ({}, epoca {}) | janela {}s | pulso {}s | {}",
-            c.nos.len(),
+            estado.total(),
             c.id,
             estado.papel().nome(),
             estado.epoca(),
@@ -2216,7 +2216,7 @@ impl Servidor {
                 "sem e-mail (aviso so no log)".to_string()
             }
         );
-        if c.nos.len() == 2 {
+        if estado.total() == 2 {
             // Nao e recusa: dois nos replicam e redirecionam normalmente. So a
             // PROMOCAO automatica nunca acontece, e melhor dizer no arranque
             // do que deixar descobrir na primeira queda.
@@ -2226,21 +2226,19 @@ impl Servidor {
                  Promocao automatica pede tres ou mais nos."
             );
         }
-        for no in c.outros() {
-            let servidor = Arc::clone(self);
-            let no = no.clone();
-            self.telemetria.subir(
-                format!("pulso-{}", no.id),
-                "manda o pulso para UM no do cluster e escuta o dele: e por \
-                 este batimento que a queda do master e descoberta",
-                "servico",
-                crate::agora_ms(),
-                move |fio| {
-                    fio.fazendo("pulsando");
-                    servidor.laco_do_pulso(no);
-                },
-            );
-        }
+        let servidor = Arc::clone(self);
+        self.telemetria.subir(
+            "pulso-supervisor",
+            "mantem UMA thread de pulso por no do cluster, acompanhando a \
+             lista VIVA: e o que faz um no acrescentado a quente comecar a ser \
+             pulsado sem ninguem reiniciar nada",
+            "servico",
+            crate::agora_ms(),
+            move |fio| {
+                fio.fazendo("cuidando das threads de pulso");
+                servidor.laco_do_supervisor_do_pulso();
+            },
+        );
         let servidor = Arc::clone(self);
         self.telemetria.subir(
             "arbitro-cluster",
@@ -2267,6 +2265,46 @@ impl Servidor {
         );
     }
 
+    /// Mantem uma thread de pulso por no da lista VIVA -- pedido 217.
+    ///
+    /// # Por que um supervisor, e nao um `for` no arranque
+    ///
+    /// O `for` de antes subia uma thread por no do `config.json` e nunca mais
+    /// olhava: acrescentar um no ao cluster vivo nao subia pulso nenhum para
+    /// ele, e o unico jeito de o antigo falar com o novo era reiniciar. Este
+    /// laco fecha o outro lado do 217 -- a lista viva aceita o pulso do no
+    /// novo, e o supervisor faz o pulso EXISTIR.
+    ///
+    /// Meio segundo de intervalo: o mesmo do arbitro, e um no acrescentado
+    /// comeca a ser pulsado dentro dele.
+    fn laco_do_supervisor_do_pulso(self: Arc<Self>) {
+        let Some(estado) = self.cluster.clone() else {
+            return;
+        };
+        loop {
+            for no in estado.outros() {
+                // Quem MARCA sobe. A propria thread desmarca ao morrer, e por
+                // isso nao ha um segundo registro aqui para envelhecer.
+                if !estado.marcar_pulso(&no.id) {
+                    continue;
+                }
+                let servidor = Arc::clone(&self);
+                self.telemetria.subir(
+                    format!("pulso-{}", no.id),
+                    "manda o pulso para UM no do cluster e escuta o dele: e por \
+                     este batimento que a queda do master e descoberta",
+                    "servico",
+                    crate::agora_ms(),
+                    move |fio| {
+                        fio.fazendo("pulsando");
+                        servidor.laco_do_pulso(no);
+                    },
+                );
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    }
+
     /// Pulsa UM outro no, para sempre: conecta, autentica como a replicacao,
     /// e troca `cluster_pulso` a cada intervalo. Cada lado da troca aprende o
     /// estado do outro -- o pedido leva o meu, a resposta traz o dele.
@@ -2280,6 +2318,14 @@ impl Servidor {
         };
         let intervalo = Duration::from_secs(estado.config.pulso_s);
         loop {
+            // O no saiu da lista viva, ou mudou de endereco? A thread morre e
+            // o supervisor sobe outra com o endereco novo. Continuar seria
+            // pulsar um no que o cluster ja nao tem -- ou, pior, o endereco
+            // velho de um no que se mudou.
+            if estado.no(&no.id).as_ref() != Some(&no) {
+                estado.desmarcar_pulso(&no.id);
+                return;
+            }
             let _ = self.pulsar(&estado, &no);
             std::thread::sleep(intervalo);
         }
@@ -2307,6 +2353,13 @@ impl Servidor {
             cliente.autenticar(&c.usuario, &c.senha_hash, "")?;
         }
         loop {
+            // O IRMAO da conferencia do `laco_do_pulso`: este laco de dentro
+            // dura enquanto a conexao durar, e sem a mesma pergunta aqui um no
+            // removido continuaria sendo pulsado ate a conexao cair sozinha --
+            // que pode nao cair nunca.
+            if estado.no(&no.id).as_ref() != Some(no) {
+                return Ok(());
+            }
             let r = cliente.pedir(vec![
                 ("op", Json::texto_de("cluster_pulso")),
                 ("id", Json::texto_de(&c.id)),
@@ -2370,7 +2423,7 @@ impl Servidor {
         // primeiro pulso, e sem isto todo cluster nasceria doente.
         let em_graca = agora - estado.nascido_ms() <= c.janela_ms();
         let mut vivos_qtd = 1usize; // eu
-        for no in c.outros() {
+        for no in estado.outros() {
             match mapa.get(&no.id) {
                 Some(p) if agora - p.quando_ms <= c.janela_ms() => vivos_qtd += 1,
                 Some(p) => motivos.push(format!(
@@ -2437,14 +2490,14 @@ impl Servidor {
                 // do arranque a escrita fica como nasceu (liberada): ainda nao
                 // houve tempo de um pulso chegar, e recusar aqui seria recusar
                 // todo arranque de master por uma janela.
-                let tem_maioria = c.e_maioria(vivos_qtd);
+                let tem_maioria = estado.e_maioria(vivos_qtd);
                 if tem_maioria || !em_graca {
                     estado.liberar_escrita(tem_maioria);
                 }
                 if !tem_maioria && !em_graca {
                     motivos.push(format!(
                         "sem maioria visivel ({vivos_qtd} de {}): escrita recusada",
-                        c.nos.len()
+                        estado.total()
                     ));
                 }
             }
@@ -2468,7 +2521,7 @@ impl Servidor {
                 let silencio = agora - estado.master_visto_ms();
                 if silencio > c.janela_ms() {
                     let vivos = estado.vivos(agora);
-                    match crate::cluster::vencedor(&vivos, c.nos.len()) {
+                    match crate::cluster::vencedor(&vivos, estado.total()) {
                         // O teste de protecao mais importante da bateria: sem
                         // maioria visivel, ficar degradado E a decisao certa.
                         None => motivos.push(format!(
@@ -2476,7 +2529,7 @@ impl Servidor {
                              NAO promovo",
                             silencio / 1_000,
                             vivos.len(),
-                            c.nos.len()
+                            estado.total()
                         )),
                         Some(v) if v.id == c.id => {
                             let motivo = format!(
@@ -2484,7 +2537,7 @@ impl Servidor {
                                  configurados",
                                 silencio / 1_000,
                                 vivos.len(),
-                                c.nos.len()
+                                estado.total()
                             );
                             if let Err(e) = self.promover_a_master(&motivo) {
                                 motivos.push(format!("promocao falhou: {e}"));
@@ -2522,7 +2575,6 @@ impl Servidor {
              num outro no recebem REDIRECIONA {}.",
             estado.config.id,
             estado
-                .config
                 .no(&estado.config.id)
                 .map(|n| n.alvo())
                 .unwrap_or_default()
@@ -2637,7 +2689,7 @@ impl Servidor {
             let alvo = estado
                 .master_atual()
                 .filter(|(id, _)| id != &c.id)
-                .and_then(|(id, _)| c.no(&id).cloned());
+                .and_then(|(id, _)| estado.no(&id));
             let Some(no) = alvo else {
                 std::thread::sleep(espera);
                 continue;
@@ -2699,7 +2751,7 @@ impl Servidor {
         // No fora da lista e configuracao torta em algum lugar -- recusar em
         // voz alta e o que faz o erro aparecer no primeiro pulso, e nao numa
         // eleicao com um eleitor fantasma.
-        if estado.config.no(&id).is_none() {
+        if estado.no(&id).is_none() {
             return Err(PhxError::Autorizacao(format!(
                 "o no {id:?} nao esta na lista de nos deste cluster"
             )));
@@ -2719,6 +2771,265 @@ impl Servidor {
         ]))
     }
 
+    /// `cluster_no_acrescentar`: escalonar o cluster A QUENTE -- pedido 217.
+    ///
+    /// # O que estava quebrado, e o que o conserto mudou
+    ///
+    /// A `bancada/cluster/escalonar.py` mediu: um no novo com a lista de
+    /// quatro na propria configuracao ficava isolado a janela inteira, porque
+    /// o pulso de um id fora da lista dos ANTIGOS era recusado na hora
+    /// (`ACESSO_NEGADO`) e nenhum antigo tinha por que falar com ele. O unico
+    /// caminho que funcionava era editar `cluster.nos` dos tres antigos e
+    /// reinicia-los -- **0,367 s de master fora do ar**, sem eleicao.
+    ///
+    /// A recusa do pulso continua, e continuar e a decisao certa: aceitar um
+    /// id desconhecido deixaria qualquer credencial de replicacao inflar o
+    /// denominador da maioria com nos fantasmas e travar toda promocao. O que
+    /// muda e a LISTA -- ela deixou de ser o retrato do arranque.
+    ///
+    /// # Tres coisas, nesta ordem, e por que a ordem importa
+    ///
+    /// 1. **a lista viva**, para o pulso do no novo ser aceito AGORA;
+    /// 2. **o `config.json`**, para o no acrescentado nao sumir calado no
+    ///    proximo arranque -- perder um no assim e pior que nao acrescentar,
+    ///    porque o cluster segue com um denominador menor do que o operador
+    ///    acredita;
+    /// 3. **a propagacao**, uma vez por no, com a mesma credencial do pulso.
+    ///
+    /// Gravar antes de aplicar deixaria o arquivo prometendo o que a memoria
+    /// ainda nao faz; propagar antes de aplicar mandaria os outros aceitarem
+    /// um no que este aqui ainda recusa.
+    ///
+    /// # A propagacao FALA quando falha
+    ///
+    /// A resposta traz um veredito por no. No que nao aceitou aparece com o
+    /// erro, e nao sumindo da lista: metade do cluster escalonada em silencio
+    /// e exatamente o estado em que uma eleicao conta votos diferentes em cada
+    /// lado. A tela mostra esse veredito.
+    ///
+    /// Consequencia aceita e escrita: **a propagacao autentica com
+    /// `cluster.usuario`**, entao esse usuario precisa poder `administrar`.
+    /// Sem isso a ordem local vale e a propagacao volta recusada, nomeando o
+    /// no -- que e melhor que dar o poder de mexer na maioria a quem so tem
+    /// credencial de replica.
+    fn op_cluster_no_acrescentar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let estado = self.cluster_para_escalonar(sessao)?;
+        let id = p.texto_ou("id", "").trim().to_string();
+        if id.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"id\": o nome pelo qual os outros nos vao chamar este".into(),
+            ));
+        }
+        let endereco = p.texto_ou("endereco", "").trim().to_string();
+        if endereco.is_empty() {
+            return Err(PhxError::Esquema(format!(
+                "informe \"endereco\": por onde os outros nos alcancam {id:?}"
+            )));
+        }
+        let no = crate::config::NoCluster {
+            id: id.clone(),
+            endereco,
+            porta: p
+                .inteiro_ou("porta", crate::config::PORTA_PADRAO as i64)
+                .clamp(1, 65_535) as u16,
+        };
+        let mudou = estado.acrescentar(no.clone());
+        match self.gravar_a_lista_do_cluster(&estado) {
+            Ok(()) => {}
+            Err(e) => {
+                // Desfaz o que acabou de entrar: memoria que diverge do
+                // arquivo e a mentira que o proximo arranque conta.
+                if mudou {
+                    estado.remover(&no.id);
+                }
+                return Err(e);
+            }
+        }
+        if mudou {
+            eprintln!(
+                "cluster: no {} ({}) ACRESCENTADO a quente -- a maioria passa a ser \
+                 contada sobre {} nos",
+                no.id,
+                no.alvo(),
+                estado.total()
+            );
+        }
+        Ok(Json::objeto(vec![
+            ("acrescentado", Json::Bool(mudou)),
+            ("id", Json::texto_de(&no.id)),
+            ("nos", Json::de_u64(estado.total() as u64)),
+            (
+                "propagado",
+                self.propagar_no_cluster(
+                    &estado,
+                    p,
+                    vec![
+                        ("op", Json::texto_de("cluster_no_acrescentar")),
+                        ("id", Json::texto_de(&no.id)),
+                        ("endereco", Json::texto_de(&no.endereco)),
+                        ("porta", Json::de_u64(no.porta as u64)),
+                        ("propagar", Json::Bool(false)),
+                    ],
+                ),
+            ),
+        ]))
+    }
+
+    /// `cluster_no_remover`: tira um no do cluster vivo -- o outro lado do 217.
+    ///
+    /// Duas recusas, e as duas sao decisao:
+    ///
+    /// - **este no nao se remove**: um servidor fora da propria lista nao
+    ///   passa mais no `Cluster::validar` e nao subiria de novo;
+    /// - **o MASTER nao se remove**: tirar da lista quem esta escrevendo
+    ///   deixaria o cluster sem para onde redirecionar, e o master continuaria
+    ///   aceitando escrita que ninguem mais conta. Rebaixe primeiro.
+    fn op_cluster_no_remover(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let estado = self.cluster_para_escalonar(sessao)?;
+        let id = p.texto_ou("id", "").trim().to_string();
+        if id.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"id\": o no a tirar da lista".into(),
+            ));
+        }
+        if id == estado.config.id {
+            return Err(PhxError::Esquema(format!(
+                "{id:?} e ESTE servidor: um no fora da propria lista nao volta a \
+                 subir. Remova-o a partir de outro no do cluster."
+            )));
+        }
+        if estado.master_atual().is_some_and(|(m, _)| m == id) {
+            return Err(PhxError::Esquema(format!(
+                "{id:?} e o MASTER corrente: remove-lo deixaria o cluster sem para \
+                 onde redirecionar a escrita. Espere a promocao de outro no."
+            )));
+        }
+        let saiu = estado.remover(&id);
+        if let Err(e) = self.gravar_a_lista_do_cluster(&estado) {
+            if saiu {
+                // Volta como estava: a lista viva nao pode ficar menor que o
+                // arquivo, senao a maioria de agora e a do proximo arranque
+                // divergem.
+                if let Some(no) = self
+                    .config
+                    .cluster
+                    .as_ref()
+                    .and_then(|c| c.no(&id).cloned())
+                {
+                    estado.acrescentar(no);
+                }
+            }
+            return Err(e);
+        }
+        if saiu {
+            eprintln!(
+                "cluster: no {id} REMOVIDO a quente -- a maioria passa a ser contada \
+                 sobre {} nos",
+                estado.total()
+            );
+        }
+        Ok(Json::objeto(vec![
+            ("removido", Json::Bool(saiu)),
+            ("id", Json::texto_de(&id)),
+            ("nos", Json::de_u64(estado.total() as u64)),
+            (
+                "propagado",
+                self.propagar_no_cluster(
+                    &estado,
+                    p,
+                    vec![
+                        ("op", Json::texto_de("cluster_no_remover")),
+                        ("id", Json::texto_de(&id)),
+                        ("propagar", Json::Bool(false)),
+                    ],
+                ),
+            ),
+        ]))
+    }
+
+    /// O portao das duas operacoes de escalonamento.
+    ///
+    /// A conferencia e PROPRIA, e pelo mesmo motivo do `config_gravar`: estas
+    /// operacoes nao tem `"tabela"`, entao caem na regra da base vazia do
+    /// portao geral. Aquela regra ja exige `administrar` -- mas amarrar a
+    /// guarda que decide quem vota numa eleicao a um detalhe de resolucao de
+    /// nome de base e deixar a guarda mais importante do cluster depender de
+    /// coisa nenhuma.
+    fn cluster_para_escalonar(
+        &self,
+        sessao: &Sessao,
+    ) -> Result<Arc<crate::cluster::EstadoCluster>> {
+        if let Some(u) = &sessao.usuario {
+            if !u.pode_em("", "", Atividade::Administrar) {
+                return Err(PhxError::Autorizacao(format!(
+                    "{} nao tem permissao de administrar: mexer na lista de nos do \
+                     cluster muda quantos votos fazem uma maioria",
+                    u.login
+                )));
+            }
+        }
+        self.cluster.clone().ok_or_else(Self::sem_cluster)
+    }
+
+    /// Grava a lista VIVA no `config.json` deste no.
+    ///
+    /// Servidor sem arquivo (`--config`) nao e erro: a lista viva ja mudou e o
+    /// cluster ja funciona. O que ele perde e a sobrevivencia ao reinicio, e a
+    /// resposta diz isso em vez de fingir que gravou.
+    fn gravar_a_lista_do_cluster(&self, estado: &crate::cluster::EstadoCluster) -> Result<()> {
+        let Some(caminho) = &self.config.caminho else {
+            return Ok(());
+        };
+        crate::config::Config::gravar_nos_do_cluster(caminho, &estado.lista())?;
+        Ok(())
+    }
+
+    /// Manda a MESMA ordem aos outros nos, uma vez cada, e conta o que cada um
+    /// respondeu.
+    ///
+    /// `"propagar": false` no pedido que chega e o que impede a tempestade: a
+    /// ordem propagada nunca se propaga de novo.
+    fn propagar_no_cluster(
+        &self,
+        estado: &crate::cluster::EstadoCluster,
+        pedido: &Json,
+        corpo: Vec<(&'static str, Json)>,
+    ) -> Json {
+        if !pedido.booleano_ou("propagar", true) {
+            return Json::Nulo;
+        }
+        let c = &estado.config;
+        let espera = Duration::from_secs((c.pulso_s * 2).max(5));
+        let prazo = Duration::from_secs(c.pulso_s.clamp(1, 3));
+        let mut vereditos = Vec::new();
+        for no in estado.outros() {
+            let veredito = (|| -> Result<Json> {
+                let mut cliente = crate::replica::Cliente::conectar_com_prazo(
+                    &no.endereco,
+                    no.porta,
+                    &c.token,
+                    espera,
+                    prazo,
+                )?;
+                if !c.usuario.is_empty() {
+                    cliente.autenticar(&c.usuario, &c.senha_hash, "")?;
+                }
+                cliente.pedir(corpo.clone())
+            })();
+            vereditos.push((
+                no.id.clone(),
+                match veredito {
+                    Ok(_) => Json::texto_de("ok"),
+                    // O erro INTEIRO, e nao "falhou": quem escalona precisa
+                    // saber se o no esta fora do ar ou se recusou por
+                    // permissao -- os dois se consertam de jeitos diferentes.
+                    Err(e) => Json::texto_de(format!("{e}")),
+                },
+            ));
+        }
+        Json::Objeto(vereditos)
+    }
+
     /// `cluster_estado`: quem e o master, a epoca e o mapa dos nos --
     /// respondida igual em QUALQUER no. E o endereco unico do cluster pelo
     /// protocolo: o cliente valida com um endereco qualquer e e apontado ao
@@ -2730,8 +3041,8 @@ impl Servidor {
         let agora = crate::agora_ms();
         let c = &estado.config;
         let mapa = estado.mapa();
-        let nos: Vec<Json> = c
-            .nos
+        let nos: Vec<Json> = estado
+            .lista()
             .iter()
             .map(|n| {
                 let (papel, epoca, posicao, idade_ms) = if n.id == c.id {
@@ -2780,7 +3091,7 @@ impl Servidor {
             ("epoca", Json::de_u64(estado.epoca())),
             (
                 "master",
-                match estado.master_atual().and_then(|(id, _)| c.no(&id).cloned()) {
+                match estado.master_atual().and_then(|(id, _)| estado.no(&id)) {
                     Some(n) => Json::objeto(vec![
                         ("id", Json::texto_de(&n.id)),
                         ("endereco", Json::texto_de(n.alvo())),
@@ -3336,6 +3647,31 @@ impl Servidor {
         // vale no proximo arranque» -- mentindo sobre o que ela acabou de
         // fazer. Apareceu exercitando, e nao lendo.
         j.definir("telemetria", self.telemetria.pintura().para_json());
+        // A lista de nos do cluster tambem vale A QUENTE desde o 217, e pelo
+        // mesmo motivo das cores: o `Config` e o retrato do arranque, e a tela
+        // que acabou de acrescentar um no leria a lista de antes -- calada.
+        // Este e o encontro dos dois pedidos: o 218 fez o bloco aparecer, e
+        // sem esta linha ele apareceria dizendo o cluster de ontem.
+        if let (Some(estado), Some(Json::Objeto(pares))) = (&self.cluster, j.campo("cluster")) {
+            let mut cl = Json::Objeto(pares.clone());
+            cl.definir(
+                "nos",
+                Json::Lista(
+                    estado
+                        .lista()
+                        .iter()
+                        .map(|n| {
+                            Json::objeto(vec![
+                                ("id", Json::texto_de(&n.id)),
+                                ("endereco", Json::texto_de(&n.endereco)),
+                                ("porta", Json::de_u64(n.porta as u64)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            );
+            j.definir("cluster", cl);
+        }
         // O que ja esta GRAVADO e ainda nao vale: campo que so aplica no
         // proximo arranque volta aqui com o valor do arquivo, para a tela
         // mostra-lo em vez de redesenhar o valor velho calada.
@@ -6445,6 +6781,8 @@ impl Servidor {
             "aplicar" => self.op_aplicar(p, sessao),
             "cluster_pulso" => self.op_cluster_pulso(p),
             "cluster_estado" => self.op_cluster_estado(),
+            "cluster_no_acrescentar" => self.op_cluster_no_acrescentar(p, sessao),
+            "cluster_no_remover" => self.op_cluster_no_remover(p, sessao),
             "replicacao_estado" => self.op_replicacao_estado(),
             "replicacao_testar" => self.op_replicacao_testar(p),
             // Casca fina: a operacao so escolhe o texto do motivo. Toda a
@@ -21359,6 +21697,224 @@ mod testes_config_gravar {
             )],
             tabelas: Vec::new(),
         }
+    }
+
+    /// Um servidor de arquivo COM bloco `cluster` -- o terreno dos testes do
+    /// escalonamento a quente (pedido 217).
+    fn servidor_em_cluster(nome: &str, cadastro: Cadastro) -> (Arc<Servidor>, PathBuf, DirTemp) {
+        let dir = DirTemp::novo(&format!("cluster-op-{nome}"));
+        let caminho = dir.join("config.json");
+        std::fs::write(
+            &caminho,
+            format!(
+                r#"{{
+  "token": "t",
+  "bind": "127.0.0.1:5399",
+  "base": "{}",
+  "replicacao": {{"papel": "source", "id_servidor": "no1", "imagem_da_linha": true}},
+  "cluster": {{
+    "id": "no1",
+    "janela_inatividade_s": 30,
+    "nos": [
+      {{"id": "no1", "endereco": "127.0.0.1", "porta": 5399}},
+      {{"id": "no2", "endereco": "127.0.0.1", "porta": 5398}}
+    ]
+  }}
+}}
+"#,
+                dir.join("dados").display()
+            ),
+        )
+        .unwrap();
+        let mut c = Config::ler(&caminho).unwrap();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        c.cadastro = cadastro;
+        (Servidor::novo(c).unwrap(), caminho, dir)
+    }
+
+    fn pulso_de(id: &str) -> Json {
+        pedido(&format!(
+            r#"{{"op":"cluster_pulso","id":"{id}","papel":"replica","epoca":0,"posicao":0}}"#
+        ))
+    }
+
+    /// Pedido 217, os dois sentidos numa prova so: o pulso de um no que nao
+    /// esta na lista e RECUSADO -- e passa a ser aceito assim que a operacao
+    /// de escalonamento o acrescenta, sem reiniciar nada.
+    ///
+    /// A recusa de antes tem de continuar: sem ela, qualquer credencial de
+    /// replicacao inflaria o denominador da maioria com nos fantasmas.
+    #[test]
+    fn no_acrescentado_a_quente_passa_a_ser_aceito_no_pulso() {
+        let (s, caminho, _guarda) = servidor_em_cluster("pulso", Cadastro::default());
+        let sessao = Sessao::default();
+        let estado = s.cluster.clone().expect("cluster");
+        assert_eq!(estado.total(), 2);
+
+        // (1) ANTES: o no3 nao existe para este servidor.
+        let e = s
+            .executar("cluster_pulso", &pulso_de("no3"), &sessao)
+            .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "veio {e}");
+        assert!(format!("{e}").contains("no3"), "{e}");
+
+        // (2) o escalonamento a quente. `propagar:false` porque aqui nao ha
+        // outro no de pe -- a propagacao pelo soquete quem prova e a bancada.
+        let r = s
+            .executar(
+                "cluster_no_acrescentar",
+                &pedido(r#"{"id":"no3","endereco":"10.0.0.3","porta":5400,"propagar":false}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert!(r.booleano_ou("acrescentado", false), "{}", r.escrever());
+        assert_eq!(r.inteiro_ou("nos", 0), 3);
+
+        // (3) DEPOIS: o mesmo pulso passa, e sem reiniciar nada.
+        s.executar("cluster_pulso", &pulso_de("no3"), &sessao)
+            .expect("o pulso do no acrescentado tinha de passar");
+
+        // (4) o denominador da maioria mudou junto: 2 de 3 e maioria, 1 nao.
+        assert_eq!(estado.total(), 3);
+        assert!(estado.e_maioria(2));
+        assert!(!estado.e_maioria(1));
+
+        // (5) e o arquivo tambem, senao o no sumiria no proximo arranque.
+        let texto = std::fs::read_to_string(&caminho).unwrap();
+        assert!(
+            texto.contains("no3"),
+            "o config.json nao guardou o no novo:\n{texto}"
+        );
+        let relido = Config::ler(&caminho).unwrap();
+        assert_eq!(relido.cluster.unwrap().nos.len(), 3);
+
+        // (6) a op `config` conta a lista VIVA -- o encontro do 217 com o 218.
+        let c = s.executar("config", &pedido("{}"), &sessao).unwrap();
+        let nos = c
+            .campo("cluster")
+            .and_then(|cl| cl.campo("nos"))
+            .and_then(Json::lista)
+            .expect("cluster.nos na resposta de config");
+        assert_eq!(nos.len(), 3, "{}", c.escrever());
+    }
+
+    /// Repetir a ordem nao duplica o no: a propagacao repete de proposito, e
+    /// repeticao que vira erro faria a segunda tentativa de escalonar falhar
+    /// nos nos que ja tinham aceitado a primeira.
+    #[test]
+    fn acrescentar_o_mesmo_no_duas_vezes_e_idempotente() {
+        let (s, _, _guarda) = servidor_em_cluster("idem", Cadastro::default());
+        let ordem = pedido(r#"{"id":"no3","endereco":"10.0.0.3","porta":5400,"propagar":false}"#);
+        let a = s
+            .executar("cluster_no_acrescentar", &ordem, &Sessao::default())
+            .unwrap();
+        let b = s
+            .executar("cluster_no_acrescentar", &ordem, &Sessao::default())
+            .unwrap();
+        assert!(a.booleano_ou("acrescentado", false));
+        assert!(
+            !b.booleano_ou("acrescentado", true),
+            "duplicou: {}",
+            b.escrever()
+        );
+        assert_eq!(b.inteiro_ou("nos", 0), 3);
+    }
+
+    /// As duas recusas do `cluster_no_remover`, que sao decisao e nao descuido.
+    #[test]
+    fn remover_nao_alcanca_este_no_nem_o_master() {
+        let (s, _, _guarda) = servidor_em_cluster("remover", Cadastro::default());
+        let sessao = Sessao::default();
+        // Este servidor e o no1 E o master do config -- as duas recusas caem
+        // sobre o mesmo id, e a primeira e a que responde.
+        let e = s
+            .executar(
+                "cluster_no_remover",
+                &pedido(r#"{"id":"no1","propagar":false}"#),
+                &sessao,
+            )
+            .unwrap_err();
+        assert!(format!("{e}").contains("ESTE servidor"), "{e}");
+
+        // Com tres nos, o no3 sai e sobram dois.
+        s.executar(
+            "cluster_no_acrescentar",
+            &pedido(r#"{"id":"no3","endereco":"10.0.0.3","propagar":false}"#),
+            &sessao,
+        )
+        .unwrap();
+        let r = s
+            .executar(
+                "cluster_no_remover",
+                &pedido(r#"{"id":"no3","propagar":false}"#),
+                &sessao,
+            )
+            .unwrap();
+        assert!(r.booleano_ou("removido", false), "{}", r.escrever());
+        assert_eq!(r.inteiro_ou("nos", 0), 2);
+
+        // E a terceira recusa, que vem do `Cluster::validar` e nao das duas de
+        // cima: sobrar UM no nao e cluster nenhum. O que importa aqui e o
+        // DESFAZER -- a memoria volta a dois, porque uma lista viva menor que
+        // a do arquivo seriam duas maiorias diferentes no mesmo servidor.
+        let e = s
+            .executar(
+                "cluster_no_remover",
+                &pedido(r#"{"id":"no2","propagar":false}"#),
+                &sessao,
+            )
+            .unwrap_err();
+        assert!(format!("{e}").contains("menos de dois nos"), "{e}");
+        assert_eq!(
+            s.cluster.clone().unwrap().total(),
+            2,
+            "a memoria ficou menor que o arquivo depois da recusa"
+        );
+    }
+
+    /// O portao das duas operacoes de escalonamento, pelo `despachar` -- que e
+    /// por onde o pedido entra de verdade.
+    #[test]
+    fn operador_sem_administrar_nao_mexe_na_lista_de_nos() {
+        let mut cadastro = Cadastro::default();
+        cadastro.usuarios.push(operador());
+        let usuario = cadastro.usuarios[0].clone();
+        let (s, _, _guarda) = servidor_em_cluster("portao", cadastro);
+        for op in ["cluster_no_acrescentar", "cluster_no_remover"] {
+            let mut sessao = Sessao {
+                usuario: Some(usuario.clone()),
+                ..Sessao::default()
+            };
+            let (_, _, r) = s.despachar(
+                &format!(r#"{{"op":"{op}","token":"t","id":"no9","endereco":"10.0.0.9"}}"#),
+                &mut sessao,
+                "1.2.3.4",
+            );
+            let e = r.unwrap_err();
+            assert!(
+                format!("{e}").contains("administrar"),
+                "o operador mexeu na lista de nos por {op}: {e}"
+            );
+        }
+        assert_eq!(s.cluster.clone().unwrap().total(), 2);
+    }
+
+    /// Guarda nova entra PEDIDA, nao imposta: um servidor SEM bloco `cluster`
+    /// continua sem nada disto, e as duas ops recusam dizendo por que.
+    #[test]
+    fn sem_bloco_cluster_as_ops_de_escalonar_recusam_explicando() {
+        let (s, _, _guarda) = servidor_de_arquivo("sem-cluster", Cadastro::default());
+        let e = s
+            .executar(
+                "cluster_no_acrescentar",
+                &pedido(r#"{"id":"no2","endereco":"10.0.0.2"}"#),
+                &Sessao::default(),
+            )
+            .unwrap_err();
+        assert!(format!("{e}").contains("nao esta em cluster"), "{e}");
     }
 
     #[test]

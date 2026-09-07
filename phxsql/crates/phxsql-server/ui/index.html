@@ -10207,6 +10207,9 @@ const ICO = {
   // do `cofre`, que é a que sai.
   voltar: `<path d="M9.5 4.5L5 9l4.5 4.5" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 9h8.5a5.5 5.5 0 010 11H8" fill="none" stroke-width="1.7" stroke-linecap="round"/>`,
   cofre: `<path d="M12 3l8 3.5v5c0 4.6-3.3 8.3-8 9.5-4.7-1.2-8-4.9-8-9.5v-5z" fill="none" stroke-width="1.6"/><path d="M12 8.5v7M8.5 12h7" stroke-width="1.6" stroke-linecap="round"/>`,
+  // O cluster: quatro nos ligados ao do meio -- o desenho do pulso de todos
+  // com todos, que e o que o `laco_do_pulso` faz de verdade.
+  rede: `<circle cx="12" cy="12" r="2.6" fill="none" stroke-width="1.6"/><circle cx="4" cy="5" r="2" fill="none" stroke-width="1.5"/><circle cx="20" cy="5" r="2" fill="none" stroke-width="1.5"/><circle cx="4" cy="19" r="2" fill="none" stroke-width="1.5"/><circle cx="20" cy="19" r="2" fill="none" stroke-width="1.5"/><path d="M5.6 6.4l4.8 4.2M18.4 6.4l-4.8 4.2M5.6 17.6l4.8-4.2M18.4 17.6l-4.8-4.2" stroke-width="1.3"/>`,
   replica: `<circle cx="6" cy="12" r="2.6" fill="none" stroke-width="1.6"/><circle cx="18" cy="6" r="2.6" fill="none" stroke-width="1.6"/><circle cx="18" cy="18" r="2.6" fill="none" stroke-width="1.6"/><path d="M8.3 10.8l7.3-3.6M8.3 13.2l7.3 3.6" stroke-width="1.5"/>`,
   correio: `<rect x="3" y="5.5" width="18" height="13" rx="2" fill="none" stroke-width="1.6"/><path d="M3.6 7l8.4 6 8.4-6" fill="none" stroke-width="1.6" stroke-linecap="round"/>`,
   corrente: `<rect x="2.5" y="8.5" width="6" height="7" rx="1.5" fill="none" stroke-width="1.6"/><rect x="9.5" y="8.5" width="5" height="7" rx="1.5" fill="none" stroke-width="1.6"/><rect x="15.5" y="8.5" width="6" height="7" rx="1.5" fill="none" stroke-width="1.6"/><path d="M8.5 12h1M14.5 12h1" stroke-width="1.7"/>`,
@@ -10306,6 +10309,10 @@ const FERRAMENTAS = [
   { ico:"diagrama", rot:"Diagrama ER", txt:"tela.fer_diagrama",cor:"var(--ndx)",    faz:() => telaDiagramaER() },
   { ico:"privado",  rot:"LGPD", txt:"tela.fer_lgpd",       cor:"var(--laranja)",faz:() => telaDadosPessoais() },
   { ico:"replica",  rot:"Replicação", txt:"tela.mi_replicacao", cor:"var(--ndx)",    faz:verReplicacao },
+  // Ao lado da Replicação, e não dentro dela: o cluster USA a replicação, mas
+  // quem opera um cluster procura «Cluster», não «Replicação → cluster».
+  { ico:"rede",     rot:"Cluster", txt:"tela.mi_cluster", cor:"var(--ndx)",    faz:verCluster,
+    dica:"os nós, quem é o master, e acrescentar ou tirar nó sem reiniciar ninguém", dicaTxt:"tela.fer_dica_cluster" },
   { ico:"escudo",   rot:"Diretivas", txt:"tela.fer_diretivas",  cor:"var(--laranja)",faz:verDiretivas },
   "risco",
   { ico:"reparo",   rot:"Repair", txt:"tela.fer_repair",     cor:"var(--ambar)",  faz:repararPeloMenu },
@@ -11686,6 +11693,201 @@ async function verBancos() {
 /* A tela da replicação. Ela mostra a POSIÇÃO de cada tabela, que é o número
    que diz se a réplica está em dia — e não só a configuração, que era tudo o
    que ela sabia mostrar enquanto a replicação não existia. */
+/* ------------------------------------------------------------ o CLUSTER (208)
+
+   A tela dos nós: quem é o master, quem está vivo, e o escalonamento a
+   quente que o pedido 217 destravou.
+
+   Três cuidados que vieram de erro já pago nesta casa:
+
+   - **Rótulo se estiliza; dado, nunca.** O id, o endereço e a época saem como
+     o servidor os escreveu -- nenhum `toUpperCase`, nenhuma abreviação. Foi
+     `label{text-transform:uppercase}` que fez «Blumenau» virar «BLUMENAU», e
+     quem olha não sabe se está gravado assim.
+   - **O campo do quórum não finge.** Ele é guardado e NÃO é imposto, e quem
+     diz isso é o próprio servidor (`quorum_imposto`), não uma frase da tela --
+     duas telas divergem no dia em que uma for atualizada e a outra não.
+   - **Bancada sem número não vira promessa.** Os números do aviso a quente
+     saem da `bancada/cluster/escalonar.py`, medidos, e estão na fábrica de
+     idiomas como texto -- não são calculados aqui. */
+async function verCluster() {
+  let cfg, est = null, erroEstado = "";
+  try { cfg = await api("config"); }
+  catch (e) { return avisar(String(e), true); }
+  const bloco = cfg.cluster || null;
+
+  if (!bloco) {
+    folha(txt("tela.mi_cluster", "Cluster"), "",
+      `<div class="nota"><p>${marcado(txt("tela.cl_sem_cluster",
+        "**Este servidor não está em cluster.**"))}</p>
+        <p>${marcado(txt("tela.cl_sem_cluster2",
+        "A replicação continua exatamente como era."))}</p></div>`);
+    return;
+  }
+
+  // O estado VIVO é outra operação: o `config` conta o que está configurado, e
+  // só o `cluster_estado` sabe quem respondeu ao último pulso.
+  try { est = await api("cluster_estado"); }
+  catch (e) { erroEstado = String(e); }
+
+  const porId = {};
+  for (const n of (est && est.nos) || []) porId[n.id] = n;
+
+  const linhas = (bloco.nos || []).map(n => {
+    const v = porId[n.id] || {};
+    const idade = v.ultimo_pulso_ms;
+    return {
+      id: n.id,
+      endereco: `${n.endereco}:${n.porta}`,
+      papel: v.papel || "—",
+      estado: v.este ? txt("tela.cl_este_servidor", "este servidor")
+        : idade === -1 || idade === undefined ? txt("tela.cl_nunca_pulsou", "nunca pulsou")
+        : v.vivo ? txt("tela.cl_vivo", "vivo") : txt("tela.cl_calado", "calado"),
+      epoca: v.epoca ?? 0,
+      posicao: v.posicao ?? 0,
+      pulso: idade === undefined || idade < 0 ? null : idade,
+    };
+  });
+
+  const master = est && est.master ? est.master.id : null;
+  const fichas = `<div class="fichas">
+      <div class="ficha"><div class="v">${esc((est && est.papel) || "—")}</div>
+        <div class="r">${esc(txt("tela.cl_papel", "papel deste nó"))}</div></div>
+      <div class="ficha"><div class="v">${esc(master || txt("tela.cl_sem_master", "sem master"))}</div>
+        <div class="r">${esc(txt("tela.cl_master", "master"))}</div></div>
+      <div class="ficha"><div class="v">${fmt((est && est.epoca) || 0)}</div>
+        <div class="r">${esc(txt("tela.cl_epoca", "época"))}</div></div>
+      <div class="ficha"><div class="v">${fmt((bloco.nos || []).length)}</div>
+        <div class="r">${esc(txt("tela.cl_qtd_nos", "nós"))}</div></div>
+      <div class="ficha"><div class="v">${esc(est && est.escrita_liberada
+        ? txt("tela.cl_liberada", "liberada") : txt("tela.cl_recusada", "recusada"))}</div>
+        <div class="r">${esc(txt("tela.cl_escrita", "escrita"))}</div></div>
+      <div class="ficha"><div class="v">${fmt(bloco.janela_inatividade_s || 0)} s</div>
+        <div class="r">${esc(txt("tela.cl_janela", "janela de inatividade"))}</div></div>
+    </div>`;
+
+  const degradado = est && (est.degradado || []).length
+    ? `<div class="aviso mal"><b>${esc(txt("tela.cl_degradado",
+        "O cluster está degradado agora:"))}</b><ul>${
+        est.degradado.map(m => `<li>${esc(m)}</li>`).join("")}</ul></div>`
+    : "";
+
+  // O que o arquivo já guarda e este processo ainda não aplica -- o mesmo
+  // caminho que a tela de Configurações usa. Para o quórum ele é a regra e
+  // não a exceção: nada o lê, então o gravado NUNCA vale neste processo.
+  const naoVale = (cfg.no_arquivo || {})["cluster.quorum_minimo"];
+  const quorum = naoVale !== undefined && naoVale !== null
+    ? naoVale : (bloco.quorum_minimo || 0);
+
+  const corpo = fichas + degradado +
+    (erroEstado ? `<div class="aviso mal">${esc(erroEstado)}</div>` : "") +
+    `<div class="acoes">
+       <button class="botao consultar" id="btClVer">${esc(txt("tela.cl_atualizar", "Atualizar"))}</button>
+     </div>
+     <div id="gradeCluster"></div>
+
+     <h3 class="sub">${esc(txt("tela.cl_acrescentar", "Acrescentar nó"))}</h3>
+     <div class="barra-acao">
+       <label>${esc(txt("tela.cl_col_no", "nó"))}<input id="clNovoId"
+         placeholder="${esc(txt("tela.cl_ph_id", "id do nó"))}"></label>
+       <label>${esc(txt("tela.cl_col_endereco", "endereço"))}<input id="clNovoEnd"
+         placeholder="${esc(txt("tela.cl_ph_endereco", "host ou IP"))}"></label>
+       <label>${esc(txt("tela.cl_ph_porta", "porta"))}<input id="clNovaPorta" type="number"
+         min="1" max="65535" value="5000"></label>
+       <button class="botao incluir" id="btClAdd">${esc(txt("tela.cl_bt_acrescentar", "Acrescentar"))}</button>
+     </div>
+
+     <h3 class="sub">${esc(txt("tela.cl_remover", "Remover nó"))}</h3>
+     <div class="barra-acao">
+       <label>${esc(txt("tela.cl_col_no", "nó"))}<select id="clSaiId">${
+         (bloco.nos || []).filter(n => n.id !== bloco.id && n.id !== master)
+           .map(n => `<option value="${esc(n.id)}">${esc(n.id)} — ${esc(n.endereco)}:${n.porta}</option>`)
+           .join("")}</select></label>
+       <button class="botao excluir" id="btClDel">${esc(txt("tela.cl_bt_remover", "Remover"))}</button>
+     </div>
+
+     <div class="nota"><p>${marcado(txt("tela.cl_a_quente",
+       "**Acrescentar e remover nó valem A QUENTE.**"))}</p>
+       <p>${marcado(txt("tela.cl_a_quente2",
+       "Medido na `bancada/cluster/escalonar.py`."))}</p></div>
+
+     <h3 class="sub">${esc(txt("tela.cl_quorum", "Quórum mínimo de escrita"))}</h3>
+     <div class="barra-acao">
+       <label>${esc(txt("tela.cl_quorum_campo", "confirmações exigidas"))}<input id="clQuorum"
+         type="number" min="0" max="99" value="${quorum}"></label>
+       <button class="botao alterar" id="btClQuorum">${esc(txt("tela.cl_bt_gravar", "Gravar"))}</button>
+     </div>
+     ${naoVale !== undefined && naoVale !== null
+       ? `<p class="leg">${esc(txt("tela.cl_gravado_nao_vale",
+           "gravado no arquivo, ainda não vale neste processo"))}</p>` : ""}
+     <div class="nota"><p>${marcado(txt("tela.cl_quorum_nao_imposto",
+       "**Este campo é guardado e ainda NÃO é imposto.**"))}</p>
+       <p>${marcado(txt("tela.cl_quorum_nao_imposto2",
+       "Ele mora no bloco `cluster`, ao lado de `nos`."))}</p></div>`;
+
+  folha(txt("tela.mi_cluster", "Cluster"),
+    `${bloco.id} · ${(est && est.papel) || "—"}`, corpo);
+
+  PhxGrid.criar("#gradeCluster", {
+    buscaGlobal: true, filterRow: true, lembrar: "cluster",
+    nomeVista: "cluster-nos",
+    colunas: [
+      { campo: "id", titulo: txt("tela.cl_col_no", "nó"), fixa: "esq" },
+      { campo: "endereco", titulo: txt("tela.cl_col_endereco", "endereço") },
+      { campo: "papel", titulo: txt("tela.col_papel", "papel") },
+      { campo: "estado", titulo: txt("tela.col_estado", "estado") },
+      { campo: "epoca", titulo: txt("tela.cl_epoca", "época"), tipo: "numero" },
+      { campo: "posicao", titulo: txt("tela.col_posicao", "posição"), tipo: "numero" },
+      { campo: "pulso", titulo: txt("tela.cl_col_pulso", "último pulso"), tipo: "numero",
+        formato: v => v === null ? "—" : `${fmt(v)} ms` },
+    ],
+    dados: linhas,
+  });
+
+  // O veredito POR NÓ, e não «propagado: sim». Meio cluster escalonado em
+  // silêncio é exatamente o estado em que uma eleição conta votos diferentes
+  // em cada lado -- e quem escalona precisa saber qual nó ficou para trás.
+  const contarPropagacao = (r) => {
+    const p = r && r.propagado;
+    if (!p) return "";
+    const falhos = Object.entries(p).filter(([, v]) => v !== "ok");
+    if (!falhos.length) return "";
+    return " · " + txt("tela.cl_propagacao", "Propagação para os outros nós:")
+      + " " + falhos.map(([k, v]) => `${k}: ${v}`).join(" | ");
+  };
+
+  $("#btClVer").onclick = () => verCluster();
+  $("#btClAdd").onclick = async () => {
+    const id = $("#clNovoId").value.trim(), endereco = $("#clNovoEnd").value.trim();
+    if (!id || !endereco) return avisar(txt("tela.cl_falta_id",
+      "Diga o id e o endereço do nó novo."), true);
+    try {
+      const r = await api("cluster_no_acrescentar",
+        { id, endereco, porta: +$("#clNovaPorta").value || 5000 });
+      avisar(`${id} · ${r.nos}` + contarPropagacao(r), !!contarPropagacao(r));
+      verCluster();
+    } catch (e) { avisar(String(e), true); }
+  };
+  const bd = $("#btClDel");
+  if (bd) bd.onclick = async () => {
+    const id = $("#clSaiId") ? $("#clSaiId").value : "";
+    if (!id) return;
+    if (!confirm(preencher(txt("tela.cl_confirmar_remover",
+      "Remover o nó {id} do cluster?"), { id }))) return;
+    try {
+      const r = await api("cluster_no_remover", { id });
+      avisar(`${id} · ${r.nos}` + contarPropagacao(r), !!contarPropagacao(r));
+      verCluster();
+    } catch (e) { avisar(String(e), true); }
+  };
+  $("#btClQuorum").onclick = async () => {
+    try {
+      await api("config_gravar", { campos: { "cluster.quorum_minimo": +$("#clQuorum").value || 0 } });
+      verCluster();
+    } catch (e) { avisar(String(e), true); }
+  };
+}
+
 async function verReplicacao() {
   const c = await api("config");
   const rep = c.replicacao || {};
@@ -13003,6 +13205,7 @@ const MENUS = [
     { rot:"Sessões e conexões", txt:"tela.mi_sessoes_conexoes",   ico:"⇋", faz:verSessoes },
     { rot:"Estatísticas de uso…", txt:"tela.mi_estatisticas_p", ico:"◷", faz:() => verEstatisticas() },
     { rot:"Replicação", txt:"tela.mi_replicacao",           ico:"⇉", faz:verReplicacao },
+    { rot:"Cluster", txt:"tela.mi_cluster",                ico:"◈", faz:verCluster },
     "sep",
     { rot:"Telemetria ao vivo…", txt:"tela.mi_telemetria",  ico:"◔", faz:telaTelemetria },
     { rot:"Profiler…", txt:"tela.mi_profiler",            ico:"∿", faz:verProfiler },

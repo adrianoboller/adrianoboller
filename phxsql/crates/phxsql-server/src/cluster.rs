@@ -154,6 +154,19 @@ pub struct EstadoCluster {
     /// Id do master corrente, na visao deste no.
     master_id: Mutex<Option<String>>,
     nos: Mutex<HashMap<String, PulsoDeNo>>,
+    /// A lista VIVA dos nos -- pedido 217.
+    ///
+    /// Nasce copia de `config.nos` e muda A QUENTE. Ela e o denominador da
+    /// maioria e o crivo do pulso, e por isso mora aqui e nao no `Cluster`:
+    /// o `Cluster` e o retrato do arquivo no arranque, e um retrato nao
+    /// muda. Enquanto os dois eram a mesma coisa, acrescentar um no exigia
+    /// reiniciar os antigos -- o master ficava 0,367 s fora do ar.
+    lista: Mutex<Vec<crate::config::NoCluster>>,
+    /// Os ids que JA tem thread de pulso. Quem sobe a thread marca aqui; a
+    /// propria thread desmarca ao morrer. Sem este registro, o supervisor
+    /// subiria uma segunda thread para um no removido e reposto antes de a
+    /// primeira perceber -- e as duas ficariam pulsando para sempre.
+    pulsando: Mutex<std::collections::HashSet<String>>,
     /// Motivos pelos quais o cluster esta degradado AGORA, para a op
     /// `cluster_estado` e para o e-mail repetido.
     degradado: Mutex<Vec<String>>,
@@ -197,6 +210,7 @@ impl EstadoCluster {
             }
         }
         let agora = crate::agora_ms();
+        let config_nos = config.nos.clone();
         EstadoCluster {
             config,
             papel: AtomicU8::new(if papel == PapelVivo::Master {
@@ -214,6 +228,8 @@ impl EstadoCluster {
             master_visto_ms: AtomicI64::new(agora),
             master_id: Mutex::new(None),
             nos: Mutex::new(HashMap::new()),
+            lista: Mutex::new(config_nos),
+            pulsando: Mutex::new(std::collections::HashSet::new()),
             degradado: Mutex::new(Vec::new()),
             ultimo_email_ms: AtomicI64::new(0),
             promocao_a_avisar: Mutex::new(None),
@@ -291,6 +307,104 @@ impl EstadoCluster {
         }
         if let Ok(mut nos) = self.nos.lock() {
             nos.insert(id.to_string(), pulso);
+        }
+    }
+
+    /* ------------------------------------------------------ a lista VIVA
+
+    Pedido 217: acrescentar um no ao cluster que ja esta no ar. Todo leitor
+    do quadro de nos passa por aqui -- quem continuasse lendo `config.nos`
+    leria o arquivo do arranque e decidiria pelo cluster de ontem. */
+
+    /// Os nos do cluster AGORA, este incluido.
+    pub fn lista(&self) -> Vec<crate::config::NoCluster> {
+        self.lista
+            .lock()
+            .map(|l| l.clone())
+            .unwrap_or_else(|_| self.config.nos.clone())
+    }
+
+    /// Quantos nos o cluster tem AGORA -- o denominador da maioria.
+    pub fn total(&self) -> usize {
+        self.lista
+            .lock()
+            .map(|l| l.len())
+            .unwrap_or(self.config.nos.len())
+    }
+
+    /// O no com este id, na lista viva.
+    pub fn no(&self, id: &str) -> Option<crate::config::NoCluster> {
+        self.lista().into_iter().find(|n| n.id == id)
+    }
+
+    /// Os OUTROS nos -- os que este servidor pulsa.
+    pub fn outros(&self) -> Vec<crate::config::NoCluster> {
+        self.lista()
+            .into_iter()
+            .filter(|n| n.id != self.config.id)
+            .collect()
+    }
+
+    /// `vivos` sao maioria dos nos de AGORA? Metade nao basta.
+    pub fn e_maioria(&self, vivos: usize) -> bool {
+        vivos * 2 > self.total()
+    }
+
+    /// Acrescenta um no. `false` = ja estava la (a chamada e idempotente de
+    /// proposito: a propagacao repete, e repetir nao pode virar erro).
+    ///
+    /// Endereco ou porta diferentes para um id que ja existe NAO e "ja estava
+    /// la": o no mudou de lugar, e a lista tem de acompanhar -- senao o pulso
+    /// continuaria indo para o endereco velho.
+    pub fn acrescentar(&self, no: crate::config::NoCluster) -> bool {
+        let Ok(mut l) = self.lista.lock() else {
+            return false;
+        };
+        match l.iter_mut().find(|n| n.id == no.id) {
+            Some(velho) if *velho == no => false,
+            Some(velho) => {
+                *velho = no;
+                true
+            }
+            None => {
+                l.push(no);
+                true
+            }
+        }
+    }
+
+    /// Tira um no da lista. `false` = nao estava la.
+    pub fn remover(&self, id: &str) -> bool {
+        let Ok(mut l) = self.lista.lock() else {
+            return false;
+        };
+        let antes = l.len();
+        l.retain(|n| n.id != id);
+        if l.len() != antes {
+            // O pulso dele tambem sai do mapa: um no removido que continuasse
+            // "vivo" ali entraria na conta da maioria por mais uma janela.
+            if let Ok(mut m) = self.nos.lock() {
+                m.remove(id);
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Marca que este no ja tem thread de pulso. `true` = fui EU quem marcou,
+    /// entao e minha a obrigacao de subir a thread.
+    pub fn marcar_pulso(&self, id: &str) -> bool {
+        self.pulsando
+            .lock()
+            .map(|mut p| p.insert(id.to_string()))
+            .unwrap_or(false)
+    }
+
+    /// A thread do pulso deste no morreu.
+    pub fn desmarcar_pulso(&self, id: &str) {
+        if let Ok(mut p) = self.pulsando.lock() {
+            p.remove(id);
         }
     }
 
@@ -415,12 +529,12 @@ impl EstadoCluster {
                         "cluster degradado: este master nao enxerga a maioria dos \
                          {} nos configurados; escrita recusada para conter o \
                          split-brain ate a maioria voltar",
-                        self.config.nos.len()
+                        self.total()
                     )))
                 }
             }
             PapelVivo::Replica => Some(match self.master_atual() {
-                Some((id, epoca)) => match self.config.no(&id) {
+                Some((id, epoca)) => match self.no(&id) {
                     // Redirecionar para um master CALADO seria apontar um
                     // cadaver: se o ultimo pulso dele ja passou da janela, a
                     // verdade e "eleicao em curso", nao "escreva ali".
