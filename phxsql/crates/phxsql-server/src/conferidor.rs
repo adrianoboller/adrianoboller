@@ -1291,7 +1291,13 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// inteiro. 655 textos saíram da conta (1.706 -> 1.051), medidos pelo
 /// conferidor a cada leva, nunca contados a mao. `docs/PENDENCIAS.md` guarda
 /// o que ainda falta, tela por tela.
-pub const TETO_ROTULOS_E_CRASE: usize = 1_051;
+///
+/// 07/09/2026, pedido 221: 1.051 -> 1.050. A nota da aba de Usuarios foi
+/// reescrita (a tela dizia que criar usuario so existia por `phxsqld --senha`,
+/// e desde a 0.18 existe no protocolo), e a reescrita juntou dois trechos que
+/// antes eram dois. Nao foi traducao -- foi um rotulo a menos --, e a catraca
+/// desce igual: catraca frouxa nao segura nada.
+pub const TETO_ROTULOS_E_CRASE: usize = 1_050;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

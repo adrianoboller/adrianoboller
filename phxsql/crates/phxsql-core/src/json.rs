@@ -140,6 +140,30 @@ impl Json {
         texto::trocar(texto_json, caminho, valor)
     }
 
+    /// O mesmo, escrevendo o valor IDENTADO no nivel em que ele cai.
+    ///
+    /// # Por que existe ao lado da de cima, e nao no lugar dela
+    ///
+    /// Porque as duas estao certas para coisas diferentes. Trocar
+    /// `"max_linhas": 1000` por `7` quer o valor compacto; trocar a lista
+    /// `usuarios` inteira por outra nao -- compacta, ela vira uma linha de
+    /// dois mil caracteres com todo o cadastro dentro, e o cadastro e
+    /// justamente a secao que gente le e edita a mao.
+    ///
+    /// O nivel sai do proprio caminho: um campo de primeiro nivel -- `caminho`
+    /// de um segmento -- cai dentro de um objeto, entao o valor comeca no
+    /// nivel 1. Deduzir dai, em vez de receber por parametro, evita a chamada
+    /// que passa o nivel errado e desalinha o arquivo em silencio.
+    pub fn texto_trocar_identado(
+        texto_json: &str,
+        caminho: &[&str],
+        valor: &Json,
+    ) -> Option<String> {
+        let mut rendido = String::new();
+        valor.render(&mut rendido, Some(2), caminho.len());
+        texto::trocar_por(texto_json, caminho, &rendido)
+    }
+
     /// Troca (ou acrescenta) um campo de um objeto, preservando a ordem.
     ///
     /// Existe para o ler-alterar-gravar do `config.json`: o campo que ja
@@ -445,6 +469,15 @@ pub mod texto {
     /// campo, porque inserir texto exige adivinhar a indentacao de quem
     /// escreveu, e adivinhar errado e o mesmo estrago que reformatar.
     pub fn trocar(texto: &str, caminho: &[&str], valor: &Json) -> Option<String> {
+        trocar_por(texto, caminho, &valor.escrever())
+    }
+
+    /// O mesmo, com o valor JA renderizado por quem chama.
+    ///
+    /// Existe para [`Json::texto_trocar_identado`] poder escolher a forma do
+    /// valor sem duplicar a varredura -- que e a parte que precisa estar
+    /// certa.
+    pub fn trocar_por(texto: &str, caminho: &[&str], rendido: &str) -> Option<String> {
         let (ultimo, secoes) = caminho.split_last()?;
         let mut v = Varredor::novo(texto);
         for secao in secoes {
@@ -453,9 +486,9 @@ pub mod texto {
             v.p = local.inicio;
         }
         let local = v.no_objeto(ultimo).ok()?;
-        let mut saida = String::with_capacity(texto.len() + 16);
+        let mut saida = String::with_capacity(texto.len() + rendido.len());
         saida.push_str(&texto[..local.inicio]);
-        saida.push_str(&valor.escrever());
+        saida.push_str(rendido);
         saida.push_str(&texto[local.fim..]);
         Some(saida)
     }

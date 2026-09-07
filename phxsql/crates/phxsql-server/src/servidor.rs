@@ -124,6 +124,13 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // que e a unica replica que se sustenta. Quem pode chamar `aplicar` ja
     // passou pelo portao do `administrar`.
     "encerrar_sessao",
+    // As tres do cadastro de usuarios, pela mesma razao do `config_gravar`
+    // logo abaixo: um servidor declarado somente-leitura nao reescreve o
+    // proprio config.json pela porta da rede -- nem para dizer quem entra
+    // nele.
+    "usuario_criar",
+    "usuario_alterar",
+    "usuario_excluir",
     // Grava o config.json, que e arquivo deste servidor -- mesma familia do
     // cadastro de DbLink e de jobs. Um servidor declarado somente-leitura nao
     // reescreve a propria configuracao pela porta web; tirar o
@@ -276,6 +283,13 @@ struct Sessao {
     /// Vazio nos caminhos que nao tem conexao: replicacao, job agendado,
     /// rotina interna. Vazio ali e a verdade, e nao uma falta.
     ip: String,
+    /// Em que geracao do cadastro esta ficha foi tirada.
+    ///
+    /// A autenticacao acontece uma vez por CONEXAO, e por isso a ficha aqui e
+    /// uma copia: sem esta marca, quem foi excluido as 10h continuaria
+    /// entrando ate as 18h, quando a conexao dele caisse. Ver
+    /// `Servidor::refrescar_a_sessao`.
+    geracao_do_cadastro: u64,
 }
 
 impl Sessao {
@@ -722,6 +736,30 @@ pub struct Servidor {
     /// `Arc` porque as threads de fundo carregam o registro consigo para
     /// anotar o que estao fazendo, e elas vivem mais que qualquer emprestimo.
     telemetria: Arc<crate::telemetria::Telemetria>,
+    /// O cadastro de usuarios VIVO -- nasce igual ao do `config.json` e muda
+    /// pelas tres operacoes do pedido 221 (`usuario_criar`, `usuario_alterar`,
+    /// `usuario_excluir`).
+    ///
+    /// # Por que ele nao mora no `Config`
+    ///
+    /// Porque o `Config` e a fotografia do arquivo no arranque, e o resto do
+    /// servidor conta com isso -- ele e emprestado por `&self` sem trava
+    /// nenhuma, em quarenta lugares. O cadastro e a unica parte dele que muda
+    /// em vida, e por isso e a unica que paga uma trava. Quem le o cadastro
+    /// passa a chamar `cadastro()`; quem le o resto do `Config` nao mudou uma
+    /// linha.
+    cadastro_vivo: RwLock<crate::usuarios::Cadastro>,
+    /// Quantas vezes o cadastro mudou. Zero = nunca mexeram nele.
+    ///
+    /// # O portao que vem ANTES do trabalho
+    ///
+    /// A mesma decisao do `profiler_ligado` e do `transacoes_abertas`: um
+    /// `load(Relaxed)` decide se ha o que fazer, e num servidor onde ninguem
+    /// chamou `usuario_criar` a conta acaba ali -- nenhuma trava tomada,
+    /// nenhuma `String` montada, nenhuma busca no cadastro. So depois de a
+    /// primeira mudanca acontecer e que cada conexao paga UMA releitura da
+    /// propria ficha, e nunca mais ate a mudanca seguinte.
+    cadastro_geracao: AtomicU64,
 }
 
 impl Servidor {
@@ -769,6 +807,9 @@ impl Servidor {
         let papel = config.replicacao.papel;
         let posicoes_bidi =
             bidirecional::ler_posicoes(&config.base.join("replicacao-posicoes.json"));
+        // Copiado ANTES de o `config` entrar no struct, que o consome -- pela
+        // mesma razao que `max_linhas` e os outros dois acima.
+        let cadastro_de_arranque = config.cadastro.clone();
         let servidor = Arc::new(Servidor {
             cluster,
             mensagens,
@@ -815,6 +856,8 @@ impl Servidor {
             espelho_vivo: AtomicBool::new(espelho),
             estatica_do_fio: Mutex::new(None),
             telemetria: Arc::new(crate::telemetria::Telemetria::default()),
+            cadastro_vivo: RwLock::new(cadastro_de_arranque),
+            cadastro_geracao: AtomicU64::new(0),
         });
         // **O leitor do bloco `telemetria`.** Sem esta linha o `config.json`
         // teria quatro cores e dois limiares que ninguem le -- exatamente o
@@ -845,6 +888,19 @@ impl Servidor {
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// O cadastro VIVO. Sempre por aqui -- nunca `self.config.cadastro`.
+    ///
+    /// A trava envenenada nao derruba a leitura, e a escolha e deliberada: a
+    /// escrita e uma atribuicao unica (`*guarda = novo`), entao nao existe
+    /// «cadastro pela metade» para se herdar de uma thread que morreu. Negar
+    /// a leitura aqui deixaria o servidor sem autenticar ninguem por causa de
+    /// um panico em outro lugar.
+    fn cadastro(&self) -> std::sync::RwLockReadGuard<'_, crate::usuarios::Cadastro> {
+        self.cadastro_vivo
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// O papel VIVO deste processo -- o do `config.json`, ate uma promocao.
@@ -3742,6 +3798,18 @@ impl Servidor {
             );
             j.definir("cluster", cl);
         }
+        // A conta de usuarios sai do cadastro VIVO. O `Config::para_json` a
+        // tira da fotografia do arranque, e desde o pedido 221 o cadastro
+        // muda em vida: sem esta linha, criar um usuario pela tela deixaria o
+        // painel de Configuracoes dizendo o numero de antes -- e numero
+        // visivel que envelhece calado e o defeito que esta casa mais paga.
+        {
+            let c = self.cadastro();
+            j.definir(
+                "usuarios",
+                Json::de_u64((c.usuarios.len() + usize::from(c.root.is_some())) as u64),
+            );
+        }
         // O que ja esta GRAVADO e ainda nao vale: campo que so aplica no
         // proximo arranque volta aqui com o valor do arquivo, para a tela
         // mostra-lo em vez de redesenhar o valor velho calada.
@@ -3773,15 +3841,7 @@ impl Servidor {
     /// de comandos proibidos, nao cria supervisor e nao vira este servidor
     /// para outro source. Esses continuam sendo edicao do arquivo.
     fn op_config_gravar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        if let Some(u) = &sessao.usuario {
-            if !u.pode_em("", "", Atividade::Administrar) {
-                return Err(PhxError::Autorizacao(format!(
-                    "{} nao tem permissao de administrar: gravar a configuracao \
-                     do servidor exige esse poder",
-                    u.login
-                )));
-            }
-        }
+        self.exigir_administrar(sessao, "gravar a configuracao do servidor")?;
         let Some(caminho) = self.config.caminho.clone() else {
             return Err(PhxError::Esquema(
                 "este servidor nao subiu de um arquivo (--config): nao ha config.json para gravar"
@@ -3861,6 +3921,104 @@ impl Servidor {
             // achava que tinha mandado.
             ("config", self.configuracao_json()),
         ]))
+    }
+
+    // ------------------------------------------------- o cadastro de usuarios
+
+    /// `usuario_criar`, `usuario_alterar` e `usuario_excluir` -- as tres pela
+    /// mesma porta, porque as tres fazem a MESMA coisa: ler o `config.json`,
+    /// mexer na lista `usuarios`, gravar atomicamente e trocar o cadastro
+    /// vivo.
+    ///
+    /// # A senha
+    ///
+    /// Chega em claro no pedido (o fio ja e cifrado -- `docs/CIFRA-DO-FIO.md`)
+    /// e vira hash PBKDF2 dentro de `usuarios::aplicar_na_arvore`, ANTES de
+    /// tocar em qualquer estrutura que se serialize. A resposta e a FICHA, que
+    /// nunca traz senha nem hash; o `acessos.log` guarda a operacao e o login
+    /// de quem pediu, nunca o corpo; e o Profiler tapa `senha` por analise da
+    /// arvore, em qualquer profundidade.
+    ///
+    /// # Aplicacao a quente
+    ///
+    /// O cadastro vivo e trocado e a geracao anda. O proximo `login` ja aceita
+    /// quem acabou de nascer, e quem foi excluido perde a ficha no proximo
+    /// pedido da propria conexao -- ver `refrescar_a_sessao`.
+    fn op_usuario(&self, acao: crate::usuarios::Acao, p: &Json, sessao: &Sessao) -> Result<Json> {
+        self.exigir_administrar(sessao, "mexer no cadastro de usuarios")?;
+        let Some(caminho) = self.config.caminho.clone() else {
+            return Err(PhxError::Esquema(
+                "este servidor nao subiu de um arquivo (--config): nao ha config.json \
+                 onde gravar o cadastro"
+                    .into(),
+            ));
+        };
+
+        // A ficha de quem pede sai da SESSAO, e nao do cadastro: e ela que as
+        // duas guardas de si-mesmo consultam, e a sessao ja foi conferida
+        // contra o cadastro vivo no `refrescar_a_sessao`.
+        let quem = sessao.usuario.clone();
+        let mut login = String::new();
+        let novo = crate::config::Config::gravar_a_secao(&caminho, "usuarios", |arvore| {
+            login = crate::usuarios::aplicar_na_arvore(arvore, acao, p, quem.as_ref())?;
+            Ok(())
+        })?;
+
+        // O cadastro vivo, e a geracao logo depois: a ordem importa. Quem ler
+        // a geracao nova tem de achar o cadastro novo -- na ordem inversa,
+        // uma conexao releria a ficha do cadastro VELHO e marcaria a geracao
+        // nova, e ficaria com a ficha velha ate a mudanca seguinte.
+        {
+            let mut vivo = self
+                .cadastro_vivo
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *vivo = novo.cadastro.clone();
+        }
+        self.cadastro_geracao.fetch_add(1, Ordering::Release);
+
+        // Quem mexeu, e em quem. O cadastro nao muda sem deixar rastro, pelo
+        // mesmo motivo do `config.json`.
+        let autor = match &sessao.usuario {
+            Some(u) => u.login.clone(),
+            None => "(token de servico)".to_string(),
+        };
+        eprintln!(
+            "cadastro gravado por {autor}: {} {login} | arquivo {}",
+            match acao {
+                crate::usuarios::Acao::Criar => "criou",
+                crate::usuarios::Acao::Alterar => "alterou",
+                crate::usuarios::Acao::Excluir => "excluiu",
+            },
+            caminho.display()
+        );
+
+        let mut pares = vec![
+            ("gravado", Json::Bool(true)),
+            ("login", Json::texto_de(&login)),
+            (
+                "acao",
+                Json::texto_de(match acao {
+                    crate::usuarios::Acao::Criar => "criado",
+                    crate::usuarios::Acao::Alterar => "alterado",
+                    crate::usuarios::Acao::Excluir => "excluido",
+                }),
+            ),
+            ("arquivo", Json::texto_de(caminho.display().to_string())),
+            (
+                "aviso",
+                Json::texto_de(
+                    "vale agora, sem reiniciar: o proximo login ja enxerga o cadastro novo",
+                ),
+            ),
+        ];
+        // A ficha de volta, para a tela redesenhar do que o SERVIDOR entendeu
+        // e nao do que ela achava que tinha mandado. Nunca traz o hash -- ha
+        // teste que falha se trouxer.
+        if let Some(u) = novo.cadastro.por_login(&login) {
+            pares.push(("usuario", u.ficha()));
+        }
+        Ok(Json::objeto(pares))
     }
 
     fn op_servico(&self) -> Result<Json> {
@@ -4455,7 +4613,7 @@ impl Servidor {
     /// acompanha -- e o mesmo comportamento da rede, e nao uma excecao. COM
     /// cadastro, o login e obrigatorio e tem de existir e estar ativo.
     fn sessao_do_job(&self, job: &crate::jobs::Job) -> Result<Sessao> {
-        if self.config.cadastro.vazio() {
+        if self.cadastro().vazio() {
             return Ok(Sessao::default());
         }
         if job.usuario.is_empty() {
@@ -4465,16 +4623,13 @@ impl Servidor {
                 job.nome
             )));
         }
-        let u = self
-            .config
-            .cadastro
-            .por_login(&job.usuario)
-            .ok_or_else(|| {
-                PhxError::Autorizacao(format!(
-                    "job {:?}: o usuario {:?} nao esta no cadastro",
-                    job.nome, job.usuario
-                ))
-            })?;
+        let cadastro = self.cadastro();
+        let u = cadastro.por_login(&job.usuario).ok_or_else(|| {
+            PhxError::Autorizacao(format!(
+                "job {:?}: o usuario {:?} nao esta no cadastro",
+                job.nome, job.usuario
+            ))
+        })?;
         if !u.ativo {
             return Err(PhxError::Autorizacao(format!(
                 "job {:?}: o usuario {:?} esta desativado",
@@ -4920,7 +5075,7 @@ impl Servidor {
                         ),
                         (
                             "exige_chave",
-                            Json::Bool(self.config.cadastro.alguem_exige_chave()),
+                            Json::Bool(self.cadastro().alguem_exige_chave()),
                         ),
                     ]),
                 );
@@ -5536,9 +5691,11 @@ impl Servidor {
                     id_sessao = id_pedido.to_string();
                     sessao.desafio = vivas.tomar_desafio(id_pedido);
                     if !login.is_empty() {
+                        // O cadastro VIVO, e nao o do arranque: excluir ou
+                        // desativar alguem tem de valer no proximo clique
+                        // dele, sem esperar reinicio nenhum.
                         sessao.usuario = self
-                            .config
-                            .cadastro
+                            .cadastro()
                             .por_login(&login)
                             .filter(|u| u.ativo)
                             .cloned();
@@ -6377,7 +6534,15 @@ impl Servidor {
             sessao.desafio = None;
             return (op, true, Ok(Json::objeto(vec![("saiu", Json::Bool(true))])));
         }
-        if !self.config.cadastro.vazio()
+        // A ficha da conexao acompanha o cadastro VIVO.
+        //
+        // Vem DEPOIS do `sair` e ANTES do portao do login, que e a unica
+        // ordem que fecha o caso: quem foi excluido no meio da conexao perde
+        // a ficha aqui e cai no «faca login» logo abaixo, com o erro que todo
+        // cliente ja sabe tratar -- e nao com um reset de soquete, que a
+        // aplicacao do outro lado leria como falha de rede.
+        self.refrescar_a_sessao(sessao);
+        if !self.cadastro().vazio()
             && sessao.usuario.is_none()
             && Atividade::da_operacao(&op).is_some()
         {
@@ -6415,6 +6580,62 @@ impl Servidor {
             self.violacao_leve(ip, &op, "comando SQL empilhado");
         }
         (op, true, r)
+    }
+
+    /// Releva a ficha desta conexao contra o cadastro vivo, quando ele mudou.
+    ///
+    /// # Por que a marca de geracao, e nao reler sempre
+    ///
+    /// Porque reler sempre custaria uma trava e uma busca por pedido para o
+    /// servidor inteiro, e num servidor em que ninguem nunca chamou
+    /// `usuario_criar` a resposta seria sempre a mesma. E o portao que vem
+    /// ANTES do trabalho: um `load(Relaxed)` compara duas geracoes, e quando
+    /// elas batem -- que e o caso de todo pedido de todo servidor que nunca
+    /// mexeu no cadastro -- nao ha trava, busca nem `String`.
+    ///
+    /// # E por que a sessao nao morre junto com o usuario
+    ///
+    /// Porque derrubar a conexao seria a aplicacao do outro lado recebendo um
+    /// erro de REDE por uma decisao de CADASTRO. Aqui ela recebe o mesmo
+    /// «faca login» que receberia se nunca tivesse entrado, que e um erro que
+    /// todo cliente ja trata -- e a diferenca aparece exatamente no cliente
+    /// mais antigo, que e quem menos sabe se recuperar.
+    fn refrescar_a_sessao(&self, sessao: &mut Sessao) {
+        let agora = self.cadastro_geracao.load(Ordering::Relaxed);
+        if agora == sessao.geracao_do_cadastro || sessao.usuario.is_none() {
+            return;
+        }
+        sessao.geracao_do_cadastro = agora;
+        let login = sessao.login().to_string();
+        sessao.usuario = self
+            .cadastro()
+            .por_login(&login)
+            .filter(|u| u.ativo)
+            .cloned();
+    }
+
+    /// O portao de administracao, para as operacoes que nao nomeiam base.
+    ///
+    /// # Por que ele existe alem do portao geral
+    ///
+    /// O portao do `despachar` confere o campo `"tabela"` e cai na regra da
+    /// base VAZIA quando ele nao existe. Isso ja exige `administrar` -- mas
+    /// deixaria as guardas mais importantes do servidor amarradas a um
+    /// detalhe de resolucao de nome de base. Aqui a conferencia e explicita.
+    ///
+    /// E ele e UM: o `config_gravar` e as tres operacoes de cadastro chamam
+    /// esta funcao. Uma copia em cada operacao seria a porta dos fundos de
+    /// sempre -- a copia que alguem esquecesse de atualizar.
+    fn exigir_administrar(&self, sessao: &Sessao, oque: &str) -> Result<()> {
+        if let Some(u) = &sessao.usuario {
+            if !u.pode_em("", "", Atividade::Administrar) {
+                return Err(PhxError::Autorizacao(format!(
+                    "{} nao tem permissao de administrar: {oque} exige esse poder",
+                    u.login
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Os portoes que valem para QUALQUER origem, e nao so para a rede.
@@ -6645,7 +6866,7 @@ impl Servidor {
         if login.is_empty() {
             return Err(PhxError::Esquema("informe \"usuario\"".into()));
         }
-        let (sal_hex, iteracoes) = match self.config.cadastro.por_login(&login) {
+        let (sal_hex, iteracoes) = match self.cadastro().por_login(&login) {
             Some(u) => {
                 let (sal, it) = phxsql_core::senha::sal_e_iteracoes(&u.senha_hash)?;
                 (phxsql_core::hash::para_hex(&sal), it)
@@ -6717,11 +6938,12 @@ impl Servidor {
             }
             let nonce_cliente = p.texto_ou("nonce_cliente", "");
             nonces = Some((nonce.clone(), nonce_cliente.to_string()));
-            match self.config.cadastro.por_login(&login) {
+            let cadastro = self.cadastro();
+            match cadastro.por_login(&login) {
                 Some(u) if u.ativo => {
                     let dk = phxsql_core::senha::derivado_do_hash(&u.senha_hash)?;
                     phxsql_core::desafio::conferir_prova(&dk, &nonce, nonce_cliente, &login, prova)
-                        .then_some(u)
+                        .then(|| u.clone())
                 }
                 _ => None,
             }
@@ -6731,7 +6953,8 @@ impl Servidor {
                 Some(b) => phxsql_core::base64::decodificar_texto(b)?,
                 None => p.texto_ou("senha", "").to_string(),
             };
-            self.config.cadastro.autenticar(&login, &clara)
+            let cadastro = self.cadastro();
+            cadastro.autenticar(&login, &clara).cloned()
         };
 
         // Segundo fator: quem tem chave publica no config.json tambem assina.
@@ -6778,7 +7001,10 @@ impl Servidor {
                 // contar. E quem JA esta dentro entra de novo sem gastar vaga.
                 self.recusar_se_lotou(&u.login)?;
                 let ficha = u.ficha();
-                sessao.usuario = Some(u.clone());
+                // A geracao do cadastro em que esta ficha foi tirada. Ver
+                // `refrescar_a_sessao`.
+                sessao.geracao_do_cadastro = self.cadastro_geracao.load(Ordering::Relaxed);
+                sessao.usuario = Some(u);
                 Ok(ficha)
             }
             None => {
@@ -6885,7 +7111,10 @@ impl Servidor {
                     ("via", Json::texto_de("token de servico")),
                 ]),
             }),
-            "usuarios" => Ok(self.config.cadastro.fichas()),
+            "usuarios" => Ok(self.cadastro().fichas()),
+            "usuario_criar" => self.op_usuario(crate::usuarios::Acao::Criar, p, sessao),
+            "usuario_alterar" => self.op_usuario(crate::usuarios::Acao::Alterar, p, sessao),
+            "usuario_excluir" => self.op_usuario(crate::usuarios::Acao::Excluir, p, sessao),
             "acessos" => self.op_acessos(p),
             "ips" => self.op_ips(),
             "bloqueios" => self.op_bloqueios(),
@@ -10499,11 +10728,11 @@ impl Servidor {
         if id == 0 {
             return String::new();
         }
-        self.config
-            .cadastro
+        let cadastro = self.cadastro();
+        cadastro
             .root
             .iter()
-            .chain(self.config.cadastro.usuarios.iter())
+            .chain(cadastro.usuarios.iter())
             .find(|u| u.id == id)
             .map(|u| u.nome.clone())
             .unwrap_or_default()
@@ -10540,6 +10769,14 @@ impl Servidor {
             return Err(PhxError::Esquema(
                 "informe \"texto\" com o comando SQL".into(),
             ));
+        }
+        // CREATE/ALTER/DROP USER, antes de tudo: `rotina::comando` reclama
+        // todo CREATE e todo DROP para si, e `CREATE USER` chegando la vira
+        // erro de sintaxe pedindo TRIGGER. Uma LINHA de despacho, de
+        // proposito -- o corpo mora em `sql_de_cadastro`, e assim outra
+        // frente mexendo nesta funcao nao esbarra nele.
+        if let Some(r) = self.sql_de_cadastro(&texto, sessao) {
+            return r;
         }
         // Os comandos de TRANSACAO vem PRIMEIRO, e a ordem foi corrigida por um
         // teste: o detector de rotina analisa o texto inteiro pelo lexico
@@ -10601,6 +10838,38 @@ impl Servidor {
         let bruto = self.executar_derivado(&plano.op, &plano.pedido, sessao)?;
 
         Ok(resposta_do_sql(&texto, &plano, bruto))
+    }
+
+    /// `CREATE USER`, `ALTER USER` e `DROP USER` vindos pela op `sql`.
+    ///
+    /// `None` quando o texto nao e nenhum dos tres -- e ai a op `sql` segue o
+    /// caminho de sempre, sem nada mudado.
+    ///
+    /// # O texto que volta e o texto REDIGIDO
+    ///
+    /// A op `sql` devolve o comando junto com o resultado, e a senha esta
+    /// dentro do comando. Ela sai por ANALISE (`usuario::sem_a_senha`), nunca
+    /// por recorte: o Profiler tapa o campo `senha` do JSON pelo NOME, e num
+    /// texto SQL nao ha nome -- ha uma frase. Sem esta redacao, `CREATE USER`
+    /// pela op `sql` poria a senha no `perfil.txt` e na resposta.
+    fn sql_de_cadastro(&self, texto: &str, sessao: &Sessao) -> Option<Result<Json>> {
+        let c = match phxsql_sql::usuario::comando(texto) {
+            Ok(Some(c)) => c,
+            Ok(None) => return None,
+            Err(e) => return Some(Err(e)),
+        };
+        let bruto = match self.executar(&c.op, &c.pedido(), sessao) {
+            Ok(j) => j,
+            Err(e) => return Some(Err(e)),
+        };
+        Some(Ok(Json::objeto(vec![
+            (
+                "sql",
+                Json::texto_de(phxsql_sql::usuario::sem_a_senha(texto)),
+            ),
+            ("op", Json::texto_de(&c.op)),
+            ("resultado", bruto),
+        ])))
     }
 
     // ------------------------------------------------- gatilhos e rotinas
@@ -14851,7 +15120,7 @@ impl Servidor {
         top_ips.truncate(8);
 
         // -------------------------------------------------------- usuarios
-        let cadastro = &self.config.cadastro;
+        let cadastro = self.cadastro();
         let mut por_nivel: HashMap<&'static str, u64> = HashMap::new();
         for u in cadastro.root.iter().chain(cadastro.usuarios.iter()) {
             *por_nivel.entry(u.nivel.nome()).or_insert(0) += 1;
@@ -22143,6 +22412,620 @@ mod testes_chave_estrangeira {
             "a ida-e-volta desligou a conferencia: {}",
             fk.escrever()
         );
+    }
+}
+
+/* =========================================================== pedido 221
+O CADASTRO DE USUARIOS PELO PROTOCOLO.
+
+Ate a 0.18 nao havia operacao que criasse usuario: o cadastro se escrevia
+no `config.json` e reiniciava. Estes testes provam as tres coisas que a
+porta nova precisa ter, e que a leitura do codigo nao da:
+
+1. a senha vira HASH antes de tocar no arquivo, e nao aparece em resposta
+   nenhuma -- e a varredura que prova isso ACHA a senha quando ela esta la
+   (o controle positivo esta em `a_varredura_acha_a_senha_quando_ela_esta_la`);
+2. o efeito e a QUENTE: o login novo entra sem reiniciar, e o excluido
+   perde a ficha no pedido seguinte da propria conexao;
+3. as guardas de nao-se-pode: ultimo administrador, a propria conta, o
+   root, o `senha_hash` pronto e o portao de administrar. */
+#[cfg(test)]
+mod testes_cadastro_de_usuarios {
+    use super::*;
+    use crate::usuarios::{Cadastro, Nivel, Permissoes, Usuario};
+
+    const SENHA_DA_ANA: &str = "a-senha-da-ana-2026";
+    const SENHA_NOVA: &str = "a-senha-nova-2026";
+
+    /// Um servidor que subiu de um `config.json` DE VERDADE, com o cadastro
+    /// dentro dele -- e nao de um `Config` montado a mao. Sem o arquivo nao
+    /// ha o que gravar, e sem o cadastro NO arquivo nao ha o que alterar.
+    fn servidor_com_cadastro(nome: &str) -> (Arc<Servidor>, PathBuf, DirTemp) {
+        let dir = DirTemp::novo(&format!("cad-op-{nome}"));
+        let caminho = dir.join("config.json");
+        std::fs::write(
+            &caminho,
+            format!(
+                "{{\n  \"_nota\": \"comentario que a gravacao nao pode comer\",\n  \
+                 \"token\": \"t\",\n  \"bind\": \"127.0.0.1:5399\",\n  \
+                 \"base\": \"{}\",\n  \
+                 \"usuarios\": [\n    {{\n      \"id\": 9,\n      \"nome\": \"Ana\",\n      \
+                 \"login\": \"ana\",\n      \"senha_hash\": \"{}\",\n      \
+                 \"supervisor\": true,\n      \"conservado\": \"campo que este processo nao conhece\"\n    }}\n  ]\n}}\n",
+                dir.join("dados").display(),
+                phxsql_core::senha::cifrar_com(SENHA_DA_ANA, 64),
+            ),
+        )
+        .unwrap();
+        let mut c = Config::ler(&caminho).unwrap();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        (Servidor::novo(c).unwrap(), caminho, dir)
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// A sessao da ana, que e supervisora e mora no arquivo.
+    fn como_ana(s: &Servidor) -> Sessao {
+        Sessao {
+            usuario: s.cadastro().por_login("ana").cloned(),
+            ..Sessao::default()
+        }
+    }
+
+    /// Um usuario com tudo MENOS administrar -- o portao de verdade.
+    fn operador() -> Usuario {
+        Usuario {
+            id: 7,
+            nome: "Operador".into(),
+            login: "op".into(),
+            senha_hash: String::new(),
+            email: String::new(),
+            telefone: String::new(),
+            supervisor: false,
+            ativo: true,
+            nivel: Nivel::Nenhum,
+            chave_publica: None,
+            bases: vec![(
+                "*".into(),
+                Permissoes {
+                    ler: true,
+                    inserir: true,
+                    administrar: false,
+                    ..Permissoes::default()
+                },
+            )],
+            tabelas: Vec::new(),
+        }
+    }
+
+    /// O caminho inteiro: criar, gravar, e o login novo entrando A QUENTE.
+    #[test]
+    fn cria_grava_no_arquivo_e_o_login_novo_ja_entra() {
+        let (s, caminho, _g) = servidor_com_cadastro("criar");
+        let sessao = como_ana(&s);
+
+        let r = s
+            .executar(
+                "usuario_criar",
+                &pedido(&format!(
+                    r#"{{"login":"carlos","senha":"{SENHA_NOVA}","nome":"Carlos Consulta",
+                        "nivel":"leitor","bases":{{"loja":{{"ler":true}}}}}}"#
+                )),
+                &sessao,
+            )
+            .unwrap();
+        assert!(r.booleano_ou("gravado", false), "{}", r.escrever());
+
+        // (1) o arquivo mudou, o comentario continua la, e o campo que este
+        //     processo NAO conhece tambem.
+        let texto = std::fs::read_to_string(&caminho).unwrap();
+        assert!(texto.contains("\"carlos\""), "{texto}");
+        assert!(texto.contains("comentario que a gravacao nao pode comer"));
+        assert!(
+            texto.contains("campo que este processo nao conhece"),
+            "a gravacao podou um campo que ela nao entende: {texto}"
+        );
+
+        // (2) o cadastro VIVO ja o conhece -- sem reiniciar nada.
+        assert!(
+            s.cadastro().por_login("carlos").is_some(),
+            "o cadastro vivo nao viu o usuario novo"
+        );
+
+        // (3) e ele ENTRA: o login e a prova de que o hash gravado confere
+        //     com a senha que chegou em claro.
+        let mut nova = Sessao::default();
+        s.op_login(
+            &pedido(&format!(r#"{{"usuario":"carlos","senha":"{SENHA_NOVA}"}}"#)),
+            &mut nova,
+        )
+        .expect("o usuario criado tinha de entrar sem reiniciar o servidor");
+        assert_eq!(nova.login(), "carlos");
+
+        // (4) e o `usuarios` do protocolo o lista.
+        let lista = s.executar("usuarios", &pedido("{}"), &sessao).unwrap();
+        let logins: Vec<String> = lista
+            .lista()
+            .unwrap()
+            .iter()
+            .map(|u| u.texto_ou("login", "").to_string())
+            .collect();
+        assert_eq!(logins, vec!["ana", "carlos"]);
+    }
+
+    /// **A prova de vazamento.** A senha em claro nao pode existir em lugar
+    /// nenhum: nem no arquivo, nem na resposta, nem no `acessos.log`.
+    ///
+    /// Repor o defeito e trocar `senha::cifrar(clara)` por `clara` em
+    /// `objeto_do_usuario` -- e ai a primeira afirmacao cai.
+    #[test]
+    fn a_senha_nunca_aparece_no_arquivo_nem_na_resposta() {
+        let (s, caminho, dir) = servidor_com_cadastro("vazamento");
+        let mut sessao = como_ana(&s);
+        let (_, _, r) = s.despachar(
+            &format!(
+                r#"{{"op":"usuario_criar","token":"t","login":"carlos","senha":"{SENHA_NOVA}"}}"#
+            ),
+            &mut sessao,
+            "1.2.3.4",
+        );
+        let resposta = r.unwrap().escrever();
+
+        let arquivo = std::fs::read_to_string(&caminho).unwrap();
+        assert!(
+            !arquivo.contains(SENHA_NOVA),
+            "a senha em claro foi para o config.json"
+        );
+        assert!(
+            arquivo.contains("pbkdf2-sha256$"),
+            "o arquivo nao ficou com o hash: {arquivo}"
+        );
+        assert!(
+            !resposta.contains(SENHA_NOVA) && !resposta.contains("pbkdf2"),
+            "a resposta vazou senha ou hash: {resposta}"
+        );
+
+        // O `acessos.log` guarda a OPERACAO e o login de quem pediu, nunca o
+        // corpo do pedido -- entao a senha nao tem por onde chegar la. Quem
+        // prova isso contra um servidor de verdade, com o log escrito pelo
+        // laco de conexao (que este teste nao percorre), e a
+        // `bancada/usuarios/provar.py`.
+        let _ = &dir;
+
+        // E a ficha do usuario novo, pedida de volta, tambem nao a traz.
+        let fichas = s.executar("usuarios", &pedido("{}"), &sessao).unwrap();
+        assert!(!fichas.escrever().contains("pbkdf2"));
+    }
+
+    /// **O controle positivo do varredor.** Uma varredura que nunca acha nada
+    /// protege igual e nao prova nada -- este teste mostra que ela ACHA a
+    /// senha quando ela esta la, e e o que da valor ao teste de cima.
+    #[test]
+    fn a_varredura_acha_a_senha_quando_ela_esta_la() {
+        let arquivo_ruim = format!("{{\"login\":\"carlos\",\"senha\":\"{SENHA_NOVA}\"}}");
+        assert!(arquivo_ruim.contains(SENHA_NOVA));
+    }
+
+    /// O Profiler mostra o pedido CRU, e o pedido de criar usuario traz a
+    /// senha. Ela sai tapada por ANALISE da arvore, e nao por recorte.
+    #[test]
+    fn o_profiler_tapa_a_senha_do_pedido_de_criar_usuario() {
+        let linha = format!(
+            r#"{{"op":"usuario_criar","token":"t","login":"carlos","senha":"{SENHA_NOVA}"}}"#
+        );
+        let redigido = crate::profiler::redigir(&linha);
+        assert!(!redigido.contains(SENHA_NOVA), "{redigido}");
+        assert!(redigido.contains("\"senha\":\"***\""), "{redigido}");
+        assert!(redigido.contains("usuario_criar"), "{redigido}");
+    }
+
+    /// O portao. Pelo `despachar`, que e por onde o pedido entra de verdade.
+    #[test]
+    fn operador_sem_administrar_nao_mexe_no_cadastro() {
+        let (s, caminho, _g) = servidor_com_cadastro("portao");
+        let antes = std::fs::read_to_string(&caminho).unwrap();
+        let mut sessao = Sessao {
+            usuario: Some(operador()),
+            ..Sessao::default()
+        };
+        for corpo in [
+            r#"{"op":"usuario_criar","token":"t","login":"x","senha":"12345678"}"#,
+            r#"{"op":"usuario_alterar","token":"t","login":"ana","senha":"12345678"}"#,
+            r#"{"op":"usuario_excluir","token":"t","login":"ana"}"#,
+        ] {
+            let (_, _, r) = s.despachar(corpo, &mut sessao, "1.2.3.4");
+            let e = r.unwrap_err().to_string();
+            assert!(e.contains("administrar"), "{corpo} -> {e}");
+        }
+        assert_eq!(
+            antes,
+            std::fs::read_to_string(&caminho).unwrap(),
+            "o arquivo mudou apesar da recusa"
+        );
+    }
+
+    /// Sem administrador ativo ninguem mais mexe no cadastro -- nem para
+    /// desfazer. Os DOIS caminhos que levam la sao recusados.
+    #[test]
+    fn nao_se_deixa_o_servidor_sem_administrador() {
+        let (s, _c, _g) = servidor_com_cadastro("ultimo");
+        let sessao = como_ana(&s);
+        // Excluir a si mesma cai na guarda da propria conta, que vem depois;
+        // o caminho que testa ESTA guarda e um segundo admin excluindo o
+        // primeiro e depois... a si. Aqui o caso direto: desligar a unica.
+        let e = s
+            .executar(
+                "usuario_alterar",
+                &pedido(r#"{"login":"ana","ativo":false}"#),
+                &sessao,
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("supervisor ativo") || e.contains("administrar"),
+            "{e}"
+        );
+    }
+
+    /// Ninguem se rebaixa nem se apaga: quem faz isso fica sem poder desfazer.
+    #[test]
+    fn nao_se_tira_de_si_mesmo_o_poder_de_administrar() {
+        let (s, _c, _g) = servidor_com_cadastro("eu-mesmo");
+        let sessao = como_ana(&s);
+        // Um segundo supervisor, para a guarda do "ultimo" nao ser a que pega.
+        s.executar(
+            "usuario_criar",
+            &pedido(r#"{"login":"bia","senha":"12345678","supervisor":true}"#),
+            &sessao,
+        )
+        .unwrap();
+
+        for corpo in [
+            r#"{"login":"ana","supervisor":false,"nivel":"leitor"}"#,
+            r#"{"login":"ana","ativo":false}"#,
+        ] {
+            let e = s
+                .executar("usuario_alterar", &pedido(corpo), &sessao)
+                .unwrap_err()
+                .to_string();
+            assert!(e.contains("propria conta"), "{corpo} -> {e}");
+        }
+        let e = s
+            .executar("usuario_excluir", &pedido(r#"{"login":"ana"}"#), &sessao)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("propria conta"), "{e}");
+
+        // E a ana continua supervisora e ativa no arquivo.
+        assert!(s.cadastro().por_login("ana").unwrap().supervisor);
+    }
+
+    /// Trocar a PROPRIA senha continua podendo: e alterar a conta sem perder
+    /// o poder, e recusar isso seria a guarda barrando o que nao faz mal.
+    #[test]
+    fn a_propria_senha_se_troca() {
+        let (s, _c, _g) = servidor_com_cadastro("minha-senha");
+        let sessao = como_ana(&s);
+        s.executar(
+            "usuario_alterar",
+            &pedido(&format!(r#"{{"login":"ana","senha":"{SENHA_NOVA}"}}"#)),
+            &sessao,
+        )
+        .unwrap();
+        let mut nova = Sessao::default();
+        s.op_login(
+            &pedido(&format!(r#"{{"usuario":"ana","senha":"{SENHA_NOVA}"}}"#)),
+            &mut nova,
+        )
+        .expect("a senha nova tinha de valer");
+        assert!(
+            s.op_login(
+                &pedido(&format!(r#"{{"usuario":"ana","senha":"{SENHA_DA_ANA}"}}"#)),
+                &mut Sessao::default(),
+            )
+            .is_err(),
+            "a senha VELHA continuou entrando"
+        );
+    }
+
+    /// A ficha da conexao acompanha o cadastro vivo: quem foi excluido perde
+    /// a sessao no pedido seguinte, com o «faca login» que todo cliente trata
+    /// -- e nao com um soquete derrubado.
+    #[test]
+    fn o_excluido_perde_a_sessao_no_pedido_seguinte() {
+        let (s, _c, _g) = servidor_com_cadastro("excluido");
+        let ana = como_ana(&s);
+        s.executar(
+            "usuario_criar",
+            &pedido(r#"{"login":"carlos","senha":"12345678","nivel":"admin"}"#),
+            &ana,
+        )
+        .unwrap();
+
+        // A conexao do carlos, ja autenticada.
+        let mut dele = Sessao::default();
+        s.op_login(
+            &pedido(r#"{"usuario":"carlos","senha":"12345678"}"#),
+            &mut dele,
+        )
+        .unwrap();
+        let (_, _, r) = s.despachar(r#"{"op":"bancos","token":"t"}"#, &mut dele, "1.2.3.4");
+        assert!(r.is_ok(), "o carlos devia estar dentro");
+
+        s.executar("usuario_excluir", &pedido(r#"{"login":"carlos"}"#), &ana)
+            .unwrap();
+
+        let (_, _, r) = s.despachar(r#"{"op":"bancos","token":"t"}"#, &mut dele, "1.2.3.4");
+        let e = r.unwrap_err().to_string();
+        assert!(e.to_lowercase().contains("login"), "{e}");
+        assert!(dele.usuario.is_none(), "a ficha velha sobreviveu");
+    }
+
+    /// **O teste do comportamento VELHO.** Num servidor onde ninguem chamou
+    /// as operacoes novas, nada muda: a geracao fica em zero e a sessao nunca
+    /// e relida. E a guarda contra a releitura virar custo de todo pedido.
+    #[test]
+    fn sem_mexer_no_cadastro_a_sessao_nunca_e_relida() {
+        let (s, _c, _g) = servidor_com_cadastro("velho");
+        let mut sessao = como_ana(&s);
+        for _ in 0..5 {
+            let _ = s.despachar(r#"{"op":"ping","token":"t"}"#, &mut sessao, "1.2.3.4");
+        }
+        assert_eq!(
+            s.cadastro_geracao.load(Ordering::Relaxed),
+            0,
+            "a geracao andou sem ninguem mexer no cadastro"
+        );
+        assert_eq!(sessao.geracao_do_cadastro, 0);
+        assert_eq!(sessao.login(), "ana", "a ficha da conexao mudou sozinha");
+    }
+
+    /// Login que nunca autenticaria e recusado na CRIACAO, e nao descoberto
+    /// no dia em que a pessoa tentar entrar.
+    #[test]
+    fn login_que_nao_entraria_e_recusado_cedo() {
+        let (s, _c, _g) = servidor_com_cadastro("login-torto");
+        let sessao = como_ana(&s);
+        for (corpo, pedaco) in [
+            (r#"{"login":"  ","senha":"12345678"}"#, "informe"),
+            (r#"{"login":" carlos","senha":"12345678"}"#, "espaco"),
+            (r#"{"login":"car\nlos","senha":"12345678"}"#, "controle"),
+            (r#"{"login":"ana","senha":"12345678"}"#, "ja ha um usuario"),
+        ] {
+            let e = s
+                .executar("usuario_criar", &pedido(corpo), &sessao)
+                .unwrap_err()
+                .to_string();
+            assert!(e.contains(pedaco), "{corpo} -> {e}");
+        }
+    }
+
+    /// Hash pronto pelo protocolo escolheria o proprio custo -- e «PBKDF2 com
+    /// uma volta» tem a mesma cara de «PBKDF2 com 210.000».
+    #[test]
+    fn senha_hash_pronto_e_recusado() {
+        let (s, _c, _g) = servidor_com_cadastro("hash-pronto");
+        let sessao = como_ana(&s);
+        let e = s
+            .executar(
+                "usuario_criar",
+                &pedido(r#"{"login":"carlos","senha_hash":"pbkdf2-sha256$1$00$00"}"#),
+                &sessao,
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("senha_hash"), "{e}");
+    }
+
+    /// So supervisor faz supervisor: administrar UMA base nao da o poder de
+    /// criar quem manda em TODAS.
+    #[test]
+    fn so_supervisor_cria_supervisor() {
+        let (s, _c, _g) = servidor_com_cadastro("escalada");
+        let ana = como_ana(&s);
+        s.executar(
+            "usuario_criar",
+            &pedido(r#"{"login":"dba","senha":"12345678","nivel":"admin"}"#),
+            &ana,
+        )
+        .unwrap();
+        let dele = Sessao {
+            usuario: s.cadastro().por_login("dba").cloned(),
+            ..Sessao::default()
+        };
+        let e = s
+            .executar(
+                "usuario_criar",
+                &pedido(r#"{"login":"x","senha":"12345678","supervisor":true}"#),
+                &dele,
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("supervisor"), "{e}");
+        // E ele continua podendo criar gente COMUM: a guarda barra a escalada,
+        // e nao o trabalho.
+        s.executar(
+            "usuario_criar",
+            &pedido(r#"{"login":"x","senha":"12345678","nivel":"leitor"}"#),
+            &dele,
+        )
+        .unwrap();
+    }
+
+    /// Alterar mexe SO no que o pedido traz. O resto da ficha -- e o campo que
+    /// este processo nem conhece -- fica onde estava.
+    #[test]
+    fn alterar_so_mexe_no_que_o_pedido_traz() {
+        let (s, caminho, _g) = servidor_com_cadastro("parcial");
+        let sessao = como_ana(&s);
+        s.executar(
+            "usuario_criar",
+            &pedido(
+                r#"{"login":"carlos","senha":"12345678","nome":"Carlos Consulta",
+                    "email":"carlos@empresa.com.br","nivel":"leitor"}"#,
+            ),
+            &sessao,
+        )
+        .unwrap();
+        s.executar(
+            "usuario_alterar",
+            &pedido(r#"{"login":"carlos","telefone":"+55 47 99999-0000"}"#),
+            &sessao,
+        )
+        .unwrap();
+        let u = s.cadastro().por_login("carlos").cloned().unwrap();
+        assert_eq!(u.telefone, "+55 47 99999-0000");
+        assert_eq!(u.nome, "Carlos Consulta", "o nome se perdeu");
+        assert_eq!(u.email, "carlos@empresa.com.br", "o e-mail se perdeu");
+        assert_eq!(u.nivel, Nivel::Leitor, "o nivel se perdeu");
+        assert!(!u.senha_hash.is_empty(), "o hash se perdeu");
+        assert!(std::fs::read_to_string(&caminho)
+            .unwrap()
+            .contains("campo que este processo nao conhece"));
+    }
+
+    /// O root nao se mexe pelo protocolo: ele e a porta de entrada de quando
+    /// o cadastro sai errado.
+    #[test]
+    fn o_root_nao_se_mexe_por_aqui() {
+        let dir = DirTemp::novo("cad-op-root");
+        let caminho = dir.join("config.json");
+        std::fs::write(
+            &caminho,
+            format!(
+                "{{\"token\":\"t\",\"bind\":\"127.0.0.1:5397\",\"base\":\"{}\",\
+                 \"root\":{{\"login\":\"root\",\"senha_hash\":\"{}\"}}}}\n",
+                dir.join("dados").display(),
+                phxsql_core::senha::cifrar_com("raiz", 64)
+            ),
+        )
+        .unwrap();
+        let mut c = Config::ler(&caminho).unwrap();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        let s = Servidor::novo(c).unwrap();
+        let sessao = Sessao {
+            usuario: s.cadastro().root.clone(),
+            ..Sessao::default()
+        };
+        for op in ["usuario_alterar", "usuario_excluir"] {
+            let e = s
+                .executar(op, &pedido(r#"{"login":"root","senha":"outra"}"#), &sessao)
+                .unwrap_err()
+                .to_string();
+            assert!(e.contains("root nao se muda"), "{op} -> {e}");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Os tres comandos SQL, pela op `sql` -- e o texto que volta ja vem sem
+    /// a senha dentro.
+    #[test]
+    fn os_tres_comandos_sql_valem_e_o_texto_de_volta_nao_traz_a_senha() {
+        let (s, _c, _g) = servidor_com_cadastro("sql");
+        let sessao = como_ana(&s);
+
+        let r = s
+            .executar(
+                "sql",
+                &pedido(&format!(
+                    r#"{{"texto":"CREATE USER carlos PASSWORD '{SENHA_NOVA}'"}}"#
+                )),
+                &sessao,
+            )
+            .unwrap();
+        assert_eq!(r.texto_ou("op", ""), "usuario_criar");
+        assert!(
+            !r.escrever().contains(SENHA_NOVA),
+            "a resposta do SQL trouxe a senha: {}",
+            r.escrever()
+        );
+        assert!(r.texto_ou("sql", "").contains("'***'"), "{}", r.escrever());
+
+        // E ele entra, que e a prova de que o hash saiu certo do caminho SQL.
+        let mut nova = Sessao::default();
+        s.op_login(
+            &pedido(&format!(r#"{{"usuario":"carlos","senha":"{SENHA_NOVA}"}}"#)),
+            &mut nova,
+        )
+        .unwrap();
+
+        s.executar(
+            "sql",
+            &pedido(r#"{"texto":"ALTER USER carlos PASSWORD 'trocada-2026'"}"#),
+            &sessao,
+        )
+        .unwrap();
+        s.op_login(
+            &pedido(r#"{"usuario":"carlos","senha":"trocada-2026"}"#),
+            &mut Sessao::default(),
+        )
+        .expect("a senha do ALTER USER nao valeu");
+
+        s.executar("sql", &pedido(r#"{"texto":"DROP USER carlos"}"#), &sessao)
+            .unwrap();
+        assert!(s.cadastro().por_login("carlos").is_none());
+    }
+
+    /// A conta de usuarios que a op `config` devolve sai do cadastro VIVO.
+    ///
+    /// Numero visivel que envelhece calado e o defeito que esta casa mais
+    /// paga: sem isto, criar um usuario deixaria o painel de Configuracoes
+    /// dizendo o numero do arranque.
+    #[test]
+    fn a_conta_de_usuarios_do_config_acompanha_o_cadastro_vivo() {
+        let (s, _c, _g) = servidor_com_cadastro("conta");
+        let sessao = como_ana(&s);
+        let antes = s
+            .executar("config", &pedido("{}"), &sessao)
+            .unwrap()
+            .inteiro_ou("usuarios", 0);
+        assert_eq!(antes, 1);
+        s.executar(
+            "usuario_criar",
+            &pedido(r#"{"login":"carlos","senha":"12345678","nivel":"leitor"}"#),
+            &sessao,
+        )
+        .unwrap();
+        let depois = s
+            .executar("config", &pedido("{}"), &sessao)
+            .unwrap()
+            .inteiro_ou("usuarios", 0);
+        assert_eq!(depois, 2, "o painel ficou com o numero do arranque");
+    }
+
+    /// Servidor sem `--config` nao tem onde gravar, e a recusa DIZ isso em vez
+    /// de dar erro de arquivo.
+    #[test]
+    fn sem_arquivo_a_recusa_nomeia_o_motivo() {
+        let dir = DirTemp::novo("cad-op-sem-arquivo");
+        let c = Config {
+            base: dir.join("dados"),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            cadastro: Cadastro::default(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let e = s
+            .executar(
+                "usuario_criar",
+                &pedido(r#"{"login":"x","senha":"12345678"}"#),
+                &Sessao::default(),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("--config"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
 

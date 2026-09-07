@@ -3919,8 +3919,10 @@ async function abrirAdmin(qual) {
       const us = await api("usuarios");
       if (!aindaEMinha()) return;
       p.innerHTML = `<div id="gradeAdmUsuarios"></div>`;
-      // PADRONIZACAO: PhxGrid. Sem clique proprio -- criar e alterar usuario e
-      // por `phxsqld --senha`, e nao por aqui.
+      // PADRONIZACAO: PhxGrid. Sem clique proprio -- criar e alterar usuario
+      // existe no PROTOCOLO desde a 0.18 (`usuario_criar` e as duas irmas),
+      // e ainda nao nesta tela: falta o formulario de poder por base e por
+      // tabela. Ver a nota em `verConfigUsuarios`.
       PhxGrid.criar("#gradeAdmUsuarios", {
         agrupavel: true, buscaGlobal: true, filterRow: true,
         lembrar: "admusuarios",
@@ -7662,17 +7664,19 @@ async function verConfigUsuarios() {
        permite as duas coisas que a prática pede: tirar <code>folha</code> de
        quem lê o banco inteiro, e dar <code>clientes</code> a quem não lê o
        banco nenhum. A árvore e o catálogo só mostram o que dá para abrir.</p>
-       <p><strong>Esta tela lê.</strong> Criar e alterar usuário pela web
-       significa mexer em credencial por HTTP, e isso precisa de um desenho
-       próprio — quem pode, o que fica no log, e a senha nunca em claro em
-       lugar nenhum do caminho. Por enquanto: <code>phxsqld --senha</code> gera
-       o hash, e ele entra no <code>config.json</code>.</p>
+       <p><strong>Esta tela lê.</strong> Criar, alterar e excluir usuário passou
+       a existir no protocolo desde a 0.18 — <code>usuario_criar</code> e as
+       duas irmãs, que exigem administrar, viram hash antes de tocar no arquivo
+       e valem a quente, sem reiniciar. A tela ainda não as chama: falta o
+       formulário de poder por base e por tabela, que é o miolo do cadastro.
+       Enquanto isso, pelo protocolo, pelo SQL (CREATE USER) ou editando o
+       <code>config.json</code>.</p>
        <p class="leg">Nenhum campo desta tela traz o hash — o servidor não o
        devolve, e há teste que falha se a ficha vazar.</p>
      </div>`);
 
-  // PADRONIZACAO: PhxGrid. Sem clique proprio -- criar e alterar usuario e
-  // por `phxsqld --senha`, nao por aqui (a nota logo acima explica o porque).
+  // PADRONIZACAO: PhxGrid. Sem clique proprio -- as operacoes existem no
+  // protocolo, e a nota logo acima diz o que falta para elas chegarem aqui.
   PhxGrid.criar("#gradeUsu", {
     agrupavel: true, buscaGlobal: true, filterRow: true,
     lembrar: "configusuarios",

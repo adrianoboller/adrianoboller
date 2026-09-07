@@ -15,6 +15,7 @@ deve acreditar.
 | `carga-3-milhoes.log` | o log dela |
 | `bateria/` | a bateria de **ponta a ponta**: os seis itens do pedido feitos como um usuário faria, pelo soquete e pela tela, e a medição do que o gatilho e a chave custam. Ver `bateria/LEIA-ME.md` |
 | `exclusao/` | a **prova pelo processo** da janela de durabilidade da exclusão: 150 exclusões pelo soquete e um `SIGKILL` no meio da janela. Ver `exclusao/LEIA-ME.md` |
+| `usuarios/` | o **cadastro pelo protocolo** (pedido 221) contra o motor vivo: cria, loga na conexão nova, troca a senha, confere que a velha caiu, exclui e vê a sessão aberta parar de valer — e varre `config.json`, `acessos.log` e o `perfil.txt` do Profiler ligado atrás da senha. Não mede tempo: julga. Ver `usuarios/LEIA-ME.md` |
 | `guardas/` | o catálogo dos **defeitos repostos** e o executor que os repõe: prova que cada teste ainda pega o defeito que o motivou. Não mede nada — julga as outras baterias. Ver `guardas/LEIA-ME.md` |
 | `embutido/` | a prova do **PhxSql embutido**: um programa em **C** ligado à biblioteca (`crates/phxsql-ffi`), rodado três vezes — contra o `.a` e contra o `.so` em x86-64, e contra o `.a` em **ARM64 sob `qemu-aarch64-static`**. Não mede tempo: prova que a ABI funciona onde ela vai morar. `bancada/embutido/provar.sh` |
 | `sqlite/` | a comparação com o **SQLite(R)**, que é a que decide o caso do celular: motor contra motor, o custo do soquete medido à parte, e a durabilidade casada nos três regimes. Ver `sqlite/LEIA-ME.md` e `docs/MOBILE.md` |
