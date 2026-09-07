@@ -223,6 +223,20 @@ BANCADAS = [
         "campos": [],
     },
     {
+        "nome": "Índice de texto — o `.fts` contra a varredura",
+        "json": "bancada/fts/resultados.json",
+        "roda": "python3 bancada/fts/medir.py 1000000 20",
+        "prova": "as duas faixas respondem a MESMA pergunta e devolvem o MESMO "
+                 "conjunto de rowids -- o medidor aborta se não baterem, e "
+                 "aborta se nenhuma busca achar linha",
+        # A busca E a escrita: publicar so o ganho contaria a metade que nos
+        # favorece. Cada um sai com a FAIXA das tres corridas.
+        "campos": [("ganho", "índice sobre varredura", "×"),
+                   ("us_indice", "busca pelo índice", "µs"),
+                   ("escrita_vezes", "preço na escrita", "×"),
+                   ("linhas_achadas", "linhas achadas (conjuntos idênticos)", "")],
+    },
+    {
         "nome": "Bateria única — o motor por dentro",
         "json": "bancada/bateria/resultados.json",
         "roda": "python3 bancada/bateria/prova-bateria.py",
@@ -233,6 +247,13 @@ BANCADAS = [
 
 
 def valor_legivel(v):
+    # Uma FAIXA -- `{min, mediana, max}` -- se imprime inteira, e nao pela
+    # mediana sozinha. Publicar a mediana calada e o mesmo erro que a faixa
+    # existe para impedir: o pedido 155 ja custou a esta casa um vencedor
+    # declarado dentro do ruido.
+    if isinstance(v, dict) and {"min", "mediana", "max"} <= set(v):
+        m, lo, hi = v["mediana"], v["min"], v["max"]
+        return f"{valor_legivel(m)} ({valor_legivel(lo)}–{valor_legivel(hi)})"
     if isinstance(v, bool):
         return "sim" if v else "NÃO"
     if isinstance(v, float):
@@ -272,7 +293,11 @@ def linha_bancada(b):
         # Sem campos declarados, mostra as chaves de topo que sao escalares --
         # e' melhor mostrar o que ha do que uma celula vazia que parece falha.
         for k, v in list(dados.items())[:4]:
-            if isinstance(v, (int, float, bool, str)) and not k.startswith("_"):
+            if k.startswith("_"):
+                continue
+            if isinstance(v, (int, float, bool, str)) or (
+                isinstance(v, dict) and {"min", "mediana", "max"} <= set(v)
+            ):
                 partes.append(f'<b>{esc(k)}</b> {esc(valor_legivel(v))}')
     return (f'<tr><td class="nome">{esc(b["nome"])}<div class="prova">'
             f'{esc(b["prova"])}</div></td>'

@@ -1,0 +1,48 @@
+{
+  "quando": "2026-09-07T01:09:13",
+  "repeticoes": 3,
+  "linhas": 1000000,
+  "buscas": 20,
+  "linhas_achadas": 9339,
+  "us_varredura": {
+    "min": 4316295.22,
+    "mediana": 4324517.73,
+    "max": 4500991.93
+  },
+  "us_indice": {
+    "min": 129.06,
+    "mediana": 137.73,
+    "max": 212.67
+  },
+  "ganho": {
+    "min": 21164.58,
+    "mediana": 31399.14,
+    "max": 33443.75
+  },
+  "carga_com_indice_s": {
+    "min": 43.2397,
+    "mediana": 43.8102,
+    "max": 44.9862
+  },
+  "escrita_chaves_por_linha": 14.0,
+  "escrita_sem_indice_us": {
+    "min": 6.348,
+    "mediana": 6.39,
+    "max": 6.74
+  },
+  "escrita_com_indice_us": {
+    "min": 36.002,
+    "mediana": 36.288,
+    "max": 38.732
+  },
+  "escrita_vezes": {
+    "min": 5.38,
+    "mediana": 5.67,
+    "max": 6.06
+  },
+  "lote_sobre_linha_a_linha": {
+    "min": 0.94,
+    "mediana": 0.97,
+    "max": 0.97
+  }
+}

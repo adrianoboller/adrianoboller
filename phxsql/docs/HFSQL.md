@@ -105,16 +105,24 @@ O que ficou medido, e não estimado:
 |---|---|
 | procurar uma palavra hoje, sem índice | **1,80 µs por linha** (`.reg` 40,1%, `.memo` 43,0%, comparação 16,9%) |
 | dobra de acento na busca de hoje | **0 de 200** — «fenix» não achava «fênix» |
-| manter o índice na gravação | **6,70×** o custo de inserir, e **só** para a tabela que o declara |
-| despejo em lote das chaves | **0,90–0,94×** — recusado com número: não escala com o tamanho do lote |
+| manter o índice na gravação | **5,67×** o custo de inserir (faixa 5,38–6,06 em três corridas), e **só** para a tabela que o declara |
+| despejo em lote das chaves | **0,94–0,97×** — recusado com número: não escala com o tamanho do lote |
+| **procurar no milhão: varredura** | **4,32 s** por busca |
+| **procurar no milhão: índice** | **0,138 ms** por busca — **31.399×**, faixa 21.165–33.444 |
 
 A decisão do dono foi a saída (a): **manter na gravação**, porque índice
 atrasado responde errado sem avisar. Custa zero para quem não declara — o
 portão é `self.fts.is_none()`, antes de qualquer trabalho.
 
-**O que ainda falta**, e é o que impede o ☑️: a operação no protocolo, o
-caminho pela tela, e a bancada de ponta a ponta contra a varredura no milhão de
-linhas. `docs/FTS.md`.
+Eles anunciam *«menos de 2 ms»*; aqui a mediana é **0,138 ms**. E a comparação
+é honesta nos dois sentidos: a bancada **aborta** se os conjuntos de rowids da
+varredura e do índice diferirem em qualquer busca, e metade das palavras
+procuradas não existe de propósito — palavra inexistente é o caso em que o
+índice ganha mais.
+
+**O que ainda falta**, e é o que impede o ☑️: o caminho pela tela. A operação
+`procurar_texto` já está no protocolo e a bancada já está medida
+(`bancada/fts/`). `docs/FTS.md`.
 
 ### 3.3 Trava por linha
 

@@ -75,13 +75,20 @@ fn esquema() -> Schema {
 }
 
 /// ~14 palavras distintas, como o texto que a §20 mediu.
+///
+/// **Sem `_` entre a palavra e o sufixo, e isto e conserto.** A primeira
+/// versao escrevia `pedido_0`, e o `_` NAO e alfanumerico: a quebra em termos
+/// parte ali, e cada palavra virava DUAS (`pedido` e `0`). O medidor media
+/// ~26 chaves por linha enquanto o comentario dizia 14 -- e o `us por chave`
+/// saia certo, porque ele divide pela contagem MEDIDA, mas o `x sobre A` era o
+/// de um texto com o dobro dos termos.
+///
+/// O sufixo continua: um vocabulario pequeno caberia todo numa pagina do
+/// `.fts`, e a arvore nunca desceria.
 fn texto(i: u64) -> String {
     let mut s = String::with_capacity(220);
     for k in 0..14 {
         s.push_str(RECHEIO[((i + k) as usize) % RECHEIO.len()]);
-        s.push('_');
-        // um sufixo por linha faz os termos serem MUITOS, que e o caso real de
-        // um indice de texto: um vocabulario pequeno caberia todo numa pagina.
         s.push_str(&((i + k) % 5_000).to_string());
         s.push(' ');
     }
@@ -180,6 +187,12 @@ fn main() {
         "  1. a escrita SINCRONA cabe?      B/A = {:.2}x   ({:.1} us por chave)",
         s_b / s_a,
         (s_b - s_a) * 1_000_000.0 / chaves_b as f64
+    );
+    // A contagem sai MEDIDA, e nao do comentario acima do gerador de texto:
+    // foi exatamente ai que a versao anterior se enganou.
+    println!(
+        "     chaves postas no .fts: {chaves_b} = {:.1} por linha",
+        chaves_b as f64 / linhas as f64
     );
     println!("  2. o LOTE compra alguma coisa?   C/B = {:.2}x", s_c / s_b);
     println!();

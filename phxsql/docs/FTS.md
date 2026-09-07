@@ -163,25 +163,80 @@ mais). E a causa que eu mesmo nomeei para o penhasco — «as páginas de 15
 árvores deixam de caber no cache» — dizia justamente que a forma é o que
 decide.
 
-**A segunda** (`custo-do-fts-de-verdade`) usa o `FtsFile` real:
+**A segunda** (`custo-do-fts-de-verdade`) usa o `FtsFile` real. E ela **também
+mediu a forma errada, por um caractere** — a §4.1.1 conta.
 
-| medida | µs/linha | × sobre A |
-|---|---:|---:|
-| A — só a tabela (1 índice) | 8,989 | 1,00 |
-| B — + `.fts` linha a linha | 60,192 | **6,70** |
-| C — + `.fts` em lote de 200 | 56,603 | 6,30 |
+**A terceira**, que é a que vale — e ela são **três corridas**, com a faixa,
+porque uma corrida não é medição:
 
-E a segunda pergunta, que **também estava por medir**:
+| medida | µs/linha (mediana) | × sobre A | faixa |
+|---|---:|---:|---|
+| A — só a tabela (1 índice) | 6,390 | 1,00 | 6,35–6,74 |
+| B — + `.fts` linha a linha | 36,288 | **5,67** | **5,38–6,06** |
+| C — + `.fts` em lote de 200 | — | 5,50 | `C/B` 0,94–0,97 |
 
-| tamanho do lote | C/B |
-|---:|---:|
-| 200 | 0,94× |
-| 1.000 | 0,90× |
-| 10.000 | 0,92× |
+Com **14,0 chaves por linha, contadas pelo medidor** — e não pelo comentário
+acima do gerador de texto. Custo de ~**2,1 µs por chave**.
 
-**O lote compra 6–10%, e não melhora com lotes maiores** — que é a assinatura
-de «o lote não é o mecanismo». O custo é ~**2,0 µs por chave**, e ele é do
-trabalho de pôr a chave na árvore, não de quando se põe.
+**A primeira corrida desta terceira medição deu 4,49×, e eu quase publiquei
+isso.** É a ponta sortuda de uma faixa que vai a 6,06 — e a regra contra esse
+erro já estava escrita nesta casa desde o pedido 155, para os gráficos. Ela
+valia para a bancada inteira, e não só para as barras. Hoje o
+`bancada/fts/medir.py` roda **três vezes** e grava min, mediana e máximo.
+
+E a segunda pergunta, que **também estava por medir**: o lote dá `C/B` entre
+**0,94 e 0,97** — e deu 0,94 / 0,90 / 0,92 para lotes de 200 / 1.000 / 10.000
+na medição anterior. **O lote compra 3–10%, e não melhora com lotes maiores** —
+que é a assinatura de «o lote não é o mecanismo». O custo é de pôr a chave na
+árvore, não de quando se põe.
+
+### 4.1.2 O que o índice compra, medido no MILHÃO
+
+`bancada/fts/medir.py 1000000 20`, três corridas, 1.000.000 de linhas:
+
+| faixa | µs por busca (mediana) | min–max |
+|---|---:|---|
+| varredura | 4.324.518 | 4.316.295 – 4.500.992 |
+| **índice** | **137,7** | 129,1 – 212,7 |
+
+**31.399× na mediana**, faixa 21.165–33.444×. As 20 buscas acharam **9.339**
+linhas, e **os conjuntos de rowids das duas faixas bateram em todas** — o
+medidor aborta se não baterem, porque *bancada compara trabalho igual, e não só
+pergunta igual*.
+
+Para comparar com o que motivou a frente: o HFSQL(R) anuncia *«uma palavra em um
+milhão de linhas em menos de 2 ms»*. Aqui a mediana é **0,138 ms**.
+
+Metade das palavras procuradas **não existe**, de propósito: palavra inexistente
+é o caso em que o índice ganha mais, e medir só ela inflaria o número a nosso
+favor.
+
+### 4.1.1 A terceira medição, e o caractere que fez a segunda mentir
+
+O gerador de texto escrevia `pedido_0 cliente_1 …`, e o comentário acima dele
+dizia *«~14 palavras distintas»*. **O `_` não é alfanumérico**, e a quebra em
+termos parte ali (`termo.rs::quebrar`): cada palavra virava **duas**, e o texto
+tinha **~26 termos**, não 14.
+
+O número que saiu — **6,70×** — é honesto sobre o que mediu, e é o custo de
+**26** chaves por linha. A prosa ao lado dele dizia 14. *A forma do medidor é
+parte da pergunta*, e desta vez a forma estava num caractere.
+
+Duas coisas mudaram no medidor, e a segunda é a que impede a repetição:
+
+1. O gerador escreve `pedido0`, que é **um** termo.
+2. **A contagem de chaves por linha passou a ser impressa, medida.** Ela sempre
+   esteve disponível — o `µs por chave` já dividia pela contagem real, e por
+   isso ele estava certo enquanto a prosa estava errada. O que faltava era
+   mostrá-la.
+
+**A decisão do dono não muda, e fica mais folgada:** ele escolheu a saída (a)
+sabendo de 6,70×; o preço real é **4,49×**.
+
+E foi o **medidor irmão** que denunciou: o `o-indice-de-texto-contra-a-varredura`
+usava o mesmo gerador, procurou `pedido_0`, e as duas faixas concordaram em
+**zero** nas vinte buscas — anunciando 39.730×. Concordar em zero não é prova
+de nada, e hoje o medidor **aborta** se nenhuma busca achar linha.
 
 **Consequência: a §4.3 desta página prescrevia uma cura para uma causa que ela
 mesma marcava como NÃO MEDIDA, e a cura não cura.** Não há conserto barato no

@@ -76,12 +76,21 @@ fn esquema() -> Schema {
     .expect("indice de texto")
 }
 
+/// **Sem `_`, e isto e o que faz a busca achar alguma coisa.**
+///
+/// A primeira versao escrevia `pedido_0`, e o `_` nao e alfanumerico: a quebra
+/// em termos parte ali. Procurar `pedido_0` procurava um termo que nao existe
+/// -- e as duas faixas concordavam em ZERO nas vinte buscas, com o medidor
+/// anunciando 39.730x. **Concordar em zero nao e prova de nada**, e o proprio
+/// medidor imprimia o `linhas achadas: 0` que denunciava isso.
+fn termo_de(i: u64) -> String {
+    format!("{}{}", RECHEIO[(i as usize) % RECHEIO.len()], i % SUFIXOS)
+}
+
 fn texto(i: u64) -> String {
     let mut s = String::with_capacity(220);
     for k in 0..14 {
-        s.push_str(RECHEIO[((i + k) as usize) % RECHEIO.len()]);
-        s.push('_');
-        s.push_str(&((i + k) % SUFIXOS).to_string());
+        s.push_str(&termo_de(i + k));
         s.push(' ');
     }
     s.truncate(200);
@@ -145,12 +154,9 @@ fn main() {
     let mut palavras: Vec<String> = Vec::new();
     for k in 0..buscas {
         if k % 2 == 0 {
-            let i = (k * 977) % linhas.max(1);
-            palavras.push(format!(
-                "{}_{}",
-                RECHEIO[(i as usize) % RECHEIO.len()],
-                i % SUFIXOS
-            ));
+            // A palavra sai do MESMO gerador que escreveu o texto -- e a
+            // receita do numero nao pode ser uma copia da receita do dado.
+            palavras.push(termo_de((k * 977) % linhas.max(1)));
         } else {
             palavras.push(format!("inexistente_{k}"));
         }
@@ -201,6 +207,14 @@ fn main() {
     println!(
         "  linhas achadas nas {buscas} buscas: {achados_total} \
          (os conjuntos das duas faixas bateram em TODAS)"
+    );
+    // **O segundo portao do medidor.** Duas faixas que concordam em ZERO
+    // concordam sobre nada: a busca sem acerto nenhum mede a descida da arvore
+    // contra a varredura inteira, e o numero sai enorme e vazio. Ja aconteceu.
+    assert!(
+        achados_total > 0,
+        "nenhuma das {buscas} buscas achou linha: as palavras procuradas nao \
+         sao termos do texto, e o numero acima nao vale nada"
     );
 
     println!(
