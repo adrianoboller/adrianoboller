@@ -49,6 +49,32 @@ pub fn endereco_de(bind: &str) -> Result<SocketAddr> {
         .ok_or_else(|| PhxError::Esquema(format!("bind sem endereco: {bind:?}")))
 }
 
+/// Resolve UM caminho do `config.json`: se for relativo, mora ao lado do
+/// PROPRIO `config_em` -- nunca do diretorio de trabalho de quem subiu o
+/// processo. Absoluto fica exatamente como esta.
+///
+/// A funcao UNICA para todo campo de caminho do `Config` (pedido 225):
+/// `base`, `log_acessos`, `blacklist`, `dblink`, `jobs`, `backup.destino` (em
+/// `Config::ler`) e `cifra_fio.arquivo` (sob demanda, em
+/// [`CifraFio::caminho_da_chave`]). Antes, cada campo repetia o mesmo
+/// `if is_relative() { dir.join(..) }` a mao -- ou, pior, nem repetia: foi
+/// assim que `dblink` e `jobs` ficaram de fora, porque entraram no `Config`
+/// depois deste bloco ja existir e ninguem voltou para incluir os dois.
+fn resolver_caminho_do_config(caminho: &Path, config_em: Option<&Path>) -> PathBuf {
+    if caminho.is_absolute() {
+        return caminho.to_path_buf();
+    }
+    match config_em.and_then(Path::parent) {
+        Some(dir) if !dir.as_os_str().is_empty() => dir.join(caminho),
+        // Sem config_em (Config montado sem `ler`), ou config.json escrito
+        // sem diretorio (`--config config.json`, que ja mora no cwd): o
+        // caminho fica relativo, e resolve contra o cwd do processo -- o que
+        // e CERTO no segundo caso (cwd == diretorio do config) e o unico
+        // comportamento possivel no primeiro.
+        _ => caminho.to_path_buf(),
+    }
+}
+
 /// Papel do servidor na replicacao.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Papel {
@@ -1274,14 +1300,14 @@ impl CifraFio {
     /// nao "ao lado de onde o processo por acaso subiu": um servico iniciado do
     /// `/` criaria a chave na raiz, e o pino de todo cliente quebraria na
     /// primeira vez que alguem o subisse de outro diretorio.
+    ///
+    /// Fica SOB DEMANDA (e nao resolvido de uma vez dentro de `Config::ler`,
+    /// como os outros seis campos de caminho) porque `estatica` decide se
+    /// CRIA o arquivo -- e criar cedo demais, so por causa da leitura do
+    /// config, faria um servidor com quem ninguem faz aperto escrever um
+    /// arquivo que antes nao escrevia.
     pub fn caminho_da_chave(&self, config_em: Option<&Path>) -> PathBuf {
-        if self.arquivo.is_absolute() {
-            return self.arquivo.clone();
-        }
-        match config_em.and_then(|c| c.parent()) {
-            Some(pasta) if !pasta.as_os_str().is_empty() => pasta.join(&self.arquivo),
-            _ => self.arquivo.clone(),
-        }
+        resolver_caminho_do_config(&self.arquivo, config_em)
     }
 
     /// A privada estatica do servidor, e os avisos que a busca gerou.
@@ -2574,21 +2600,23 @@ impl Config {
         let json = Json::analisar(&texto)?;
         let mut c = Config::de_json(&json)?;
         c.caminho = Some(caminho.to_path_buf());
-        // Caminhos relativos valem a partir do diretorio do config.json.
-        if let Some(dir) = caminho.parent().filter(|d| !d.as_os_str().is_empty()) {
-            if c.base.is_relative() {
-                c.base = dir.join(&c.base);
-            }
-            if c.log_acessos.is_relative() {
-                c.log_acessos = dir.join(&c.log_acessos);
-            }
-            if c.blacklist.is_relative() {
-                c.blacklist = dir.join(&c.blacklist);
-            }
-            if c.backup.destino.is_relative() {
-                c.backup.destino = dir.join(&c.backup.destino);
-            }
-        }
+        // Caminhos relativos valem a partir do diretorio do config.json, NUNCA
+        // do diretorio de trabalho de quem subiu o processo -- UMA funcao so
+        // para os seis campos (pedido 225). Antes deste conserto, `dblink` e
+        // `jobs` nao estavam nesta lista: entraram no `Config` DEPOIS deste
+        // bloco ja existir (27/08/2026, o servidor original) e ninguem voltou
+        // aqui -- a mesma armadilha da peca nova no fim de uma lista que ja
+        // pegou o `EXTENSOES_TODAS` do `phxsql-store` (pedido 213) e a lista
+        // de KiB do rodape do dossie. Um `phxsqld` iniciado de fora do
+        // diretorio do config espalhava `jobs.json` (e `jobs.log`, ao lado) no
+        // cwd do processo -- foi assim que a bancada `bancada/proibidos/
+        // provar.py` deixou os dois na raiz do repositorio.
+        c.base = resolver_caminho_do_config(&c.base, c.caminho.as_deref());
+        c.log_acessos = resolver_caminho_do_config(&c.log_acessos, c.caminho.as_deref());
+        c.blacklist = resolver_caminho_do_config(&c.blacklist, c.caminho.as_deref());
+        c.dblink = resolver_caminho_do_config(&c.dblink, c.caminho.as_deref());
+        c.jobs = resolver_caminho_do_config(&c.jobs, c.caminho.as_deref());
+        c.backup.destino = resolver_caminho_do_config(&c.backup.destino, c.caminho.as_deref());
         c.validar()?;
         // A chave do cofre entra AQUI, e nao la no servidor, por uma razao
         // pratica: `ler` e o unico caminho por onde um `config.json` vira
@@ -3828,6 +3856,80 @@ mod tests {
         assert_eq!(c.replicacao.papel, Papel::Isolado);
         assert!(c.ips_permitidos.is_empty());
         c.validar().unwrap();
+    }
+
+    /// Pedido 225. Os SEIS caminhos padrao (`dados`, `acessos.log`,
+    /// `blacklist.json`, `dblink.json`, `jobs.json`, `backups`) moram ao lado
+    /// do `config.json` -- nunca do diretorio de trabalho do processo.
+    ///
+    /// `dblink` e `jobs` sao os dois que este teste existe para travar: ate
+    /// este pedido, so `base`, `log_acessos`, `blacklist` e `backup.destino`
+    /// passavam por `Config::ler`'s bloco de resolucao -- os outros dois
+    /// entraram no `Config` DEPOIS daquele bloco existir, e um `phxsqld`
+    /// iniciado de outro diretorio espalhava `jobs.json`/`jobs.log` (e
+    /// `dblink.json`) onde estivesse, nao ao lado do config. Foi assim que a
+    /// bancada `bancada/proibidos/provar.py` deixou `jobs.json` na raiz do
+    /// repositorio.
+    #[test]
+    fn caminhos_padrao_resolvem_contra_o_diretorio_do_config() {
+        let dir = DirTemp::novo("caminhos-padrao");
+        let caminho = dir.join("config.json");
+        std::fs::write(&caminho, r#"{"token":"t"}"#).unwrap();
+
+        let c = Config::ler(&caminho).unwrap();
+        assert_eq!(c.base, dir.join("dados"));
+        assert_eq!(c.log_acessos, dir.join("acessos.log"));
+        assert_eq!(c.blacklist, dir.join("blacklist.json"));
+        assert_eq!(c.dblink, dir.join("dblink.json"), "dblink ficou de fora");
+        assert_eq!(c.jobs, dir.join("jobs.json"), "jobs ficou de fora");
+        assert_eq!(c.backup.destino, dir.join("backups"));
+    }
+
+    /// O comportamento VELHO nao pode mudar: caminho ABSOLUTO no
+    /// `config.json` continua absoluto, e nao ganha o diretorio do config na
+    /// frente. Sem este teste, `caminhos_padrao_resolvem_contra_o_diretorio_
+    /// do_config` sozinho passaria com uma guarda burra que sempre concatena.
+    #[test]
+    fn caminho_absoluto_no_config_continua_absoluto() {
+        let dir = DirTemp::novo("caminho-absoluto");
+        let caminho = dir.join("config.json");
+        let alhures = DirTemp::novo("caminho-absoluto-alhures");
+        let texto = format!(
+            r#"{{"token":"t","jobs":{jobs:?},"dblink":{dblink:?}}}"#,
+            jobs = alhures.join("j.json").display().to_string(),
+            dblink = alhures.join("d.json").display().to_string(),
+        );
+        std::fs::write(&caminho, texto).unwrap();
+
+        let c = Config::ler(&caminho).unwrap();
+        assert_eq!(c.jobs, alhures.join("j.json"));
+        assert_eq!(c.dblink, alhures.join("d.json"));
+    }
+
+    /// Prova real do defeito, no sentido que importa: com `jobs` e `dblink`
+    /// fora do bloco de resolucao (o estado antes deste pedido), a funcao
+    /// devolve o caminho INTOCADO -- relativo, do jeito que so faz sentido
+    /// contra o cwd do processo. Reproduz o defeito sem precisar reverter o
+    /// codigo: chama `resolver_caminho_do_config` a mesma funcao que
+    /// `Config::ler` usa hoje, e o outro teste (`caminhos_padrao_resolvem_
+    /// contra_o_diretorio_do_config`) e quem prova que ela ESTA sendo chamada
+    /// para os seis campos.
+    #[test]
+    fn resolver_caminho_do_config_ancora_no_diretorio_do_config_em() {
+        let dir = DirTemp::novo("resolver");
+        let config_em = dir.join("config.json");
+        assert_eq!(
+            resolver_caminho_do_config(&PathBuf::from("jobs.json"), Some(&config_em)),
+            dir.join("jobs.json"),
+        );
+        // Absoluto nao muda.
+        let abs = PathBuf::from("/etc/em/algum/lugar.json");
+        assert_eq!(resolver_caminho_do_config(&abs, Some(&config_em)), abs);
+        // Sem config_em, fica como esta -- e o cwd do processo quem decide.
+        assert_eq!(
+            resolver_caminho_do_config(&PathBuf::from("jobs.json"), None),
+            PathBuf::from("jobs.json"),
+        );
     }
 
     #[test]
