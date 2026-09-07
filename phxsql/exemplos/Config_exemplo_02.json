@@ -45,6 +45,7 @@
   "cifra_fio": {
     "ligada": true,
     "exigir": false,
+    "exigir_amarra": false,
     "arquivo": "chave-do-fio.hex",
     "chave_privada_env": ""
   },

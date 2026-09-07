@@ -1563,6 +1563,41 @@ GUARDAS = [
             "servidor::testes_cadastro_de_usuarios::cria_grava_no_arquivo_e_o_login_novo_ja_entra",
         ],
     },
+    # 23c. A cifra do fio: a amarracao EXIGIDA, ignorada
+    # -----------------------------------------------------------------------
+    {
+        "id": "amarra-exigida-ignorada",
+        "titulo": "o servidor exige a amarracao ao canal, mas o login nao a cobra",
+        "porque": (
+            "secao 10 do docs/CIFRA-DO-FIO.md: a amarracao ao canal e PEDIDA, "
+            "e um atacante ativo que terminou o tunel do cliente corta o campo "
+            "`amarrar_canal` antes de reencaminhar -- a mesma aritmetica do "
+            "rebaixamento do `exigir`. Contra ele so vale o servidor EXIGIR a "
+            "amarracao quando ha tunel. Com o defeito reposto o op_login ignora "
+            "`cifra_fio.exigir_amarra` e quem nao amarra volta a entrar: o caso "
+            "(a) do teste cai na `unwrap_err` da recusa nomeada."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if self.config.cifra_fio.exigir_amarra && sessao.transcricao_do_fio.is_some() && !amarrar {
+            return Err(PhxError::Autorizacao(self.msg("erro.amarra_exigida", &[])));
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO: o op_login NAO exige a amarracao. Um cliente que
+        // nao pede `amarrar_canal` entra mesmo com `exigir_amarra` ligado --
+        // exatamente o que o atacante que cortou o campo antes de reencaminhar
+        // consegue quando a exigencia nao morde.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_cadastro_de_usuarios::login_exige_amarra_quando_ha_tunel",
+        ],
+        "seguem": [
+            # A amarracao PEDIDA (exigir desligado) fica verde: prova que o
+            # defeito e local a EXIGENCIA, e nao um estrago na amarracao em si.
+            "servidor::testes_cadastro_de_usuarios::login_amarrado_ao_canal_confere_contra_a_transcricao_da_sessao",
+        ],
+    },
     # 24. O teto do registro do fio, que a integracao quase perdeu
     # -----------------------------------------------------------------------
     {

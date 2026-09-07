@@ -456,6 +456,7 @@ gravou ontem.
 "cifra_fio": {
   "ligada": true,
   "exigir": false,
+  "exigir_amarra": false,
   "chave_privada_env": "PHXSQL_CHAVE_DO_FIO",
   "chave_privada": "",
   "arquivo": "chave-do-fio.hex"
@@ -466,6 +467,7 @@ gravou ontem.
 |---|---|---|
 | `ligada` | `true` | o servidor **atende** o `cifrar`. `false` recusa o aperto — e é a única maneira de um servidor dizer «aqui não tem». Não muda nada para quem não pede |
 | `exigir` | `false` | recusa qualquer pedido fora do túnel. Ver §2 |
+| `exigir_amarra` | `false` | havendo túnel, recusa o `login` que não amarra a credencial ao canal (`erro.amarra_exigida`). Sem túnel não se aplica — não há transcrição a que amarrar. Ver §10 |
 | `chave_privada_env` | vazio | nome da variável de ambiente com a privada em hexadecimal |
 | `chave_privada` | vazio | a privada em hexadecimal, no arquivo |
 | `arquivo` | `chave-do-fio.hex` | onde a estática é lida/criada, se as duas de cima estiverem vazias |
@@ -531,13 +533,20 @@ isso, com estas palavras.
   substitui o pino**: para o cliente que pinou a chave do servidor (o que não
   tem o túnel terminado por ninguém) a amarração é a garantia inteira; para o
   cliente sem pino é defesa em profundidade, e o que fecha o buraco continua
-  sendo `exigir: true` **mais** o pino. O passo seguinte, se um dia valer o
-  custo, é o servidor **exigir** a amarração quando há túnel — a mesma decisão
-  de implantação do `exigir`, do lado que sabe onde está. A transcrição já mora
-  na sessão; o que falta é só a opção de configuração. A prova real está em
-  `desafio::tests::prova_amarrada_a_um_canal_nao_serve_em_outro` (a cripto) e
-  `login_amarrado_ao_canal_confere_contra_a_transcricao_da_sessao` (a fiação do
-  servidor), e a guarda `amarra-ao-canal-ignorada` repõe o defeito.
+  sendo `exigir: true` **mais** o pino. O passo seguinte — o servidor **exigir**
+  a amarração quando há túnel — está **FEITO (07/09/2026)**: `cifra_fio.exigir_amarra`
+  (padrão `false`) faz o `login` recusar, com `erro.amarra_exigida`, quem não
+  amarra quando há transcrição na sessão. É a mesma decisão de implantação do
+  `exigir`, do lado que sabe onde está — e nasce desligada, porque ligá-la para
+  todo mundo quebraria o cliente que só pede o túnel (guarda nova entra pedida,
+  não imposta). **Só morde quando há túnel:** em claro não há transcrição a que
+  amarrar, e a conexão em claro não muda. A prova real está em
+  `desafio::tests::prova_amarrada_a_um_canal_nao_serve_em_outro` (a cripto),
+  `login_amarrado_ao_canal_confere_contra_a_transcricao_da_sessao` (a amarração
+  pedida) e `login_exige_amarra_quando_ha_tunel` (a exigência, nos quatro
+  sentidos: exige+túnel+não-amarra recusa nomeada, amarra entra, sem túnel não
+  muda, e desligado entra como sempre). As guardas `amarra-ao-canal-ignorada` e
+  `amarra-exigida-ignorada` repõem os dois defeitos.
 * **O driver ODBC não fala o aperto.** Com `exigir: true` ele para. Ou ele
   aprende, ou o servidor que exige não é o mesmo que atende ODBC.
 * **O `Remoto` (multi-servidor da interface) não liga o túnel.** Não é
@@ -584,6 +593,7 @@ isso, com estas palavras.
 | `desafio::tests::sem_canal_a_prova_e_identica_a_de_sempre` | amarração `None` = a prova de sempre, byte a byte (a regra pétrea, no cálculo) |
 | `desafio::tests::prova_amarrada_a_um_canal_nao_serve_em_outro` | a amarração ao canal: mesma transcrição passa, outra cai (§10) |
 | `login_amarrado_ao_canal_confere_contra_a_transcricao_da_sessao` | a fiação no servidor: transcrição na sessão, recusa sem túnel, e o velho intacto |
+| `login_exige_amarra_quando_ha_tunel` | a EXIGÊNCIA (`exigir_amarra`): com túnel, quem não amarra é recusado; sem túnel não muda; desligado entra como sempre (§10) |
 | `cliente_sem_cifra_continua_como_antes` (soquete) | **a regra pétrea, pelo fio** |
 | `exigir_recusa_texto_claro_e_deixa_o_tunel_passar` (soquete) | §2 |
 | `registro_repetido_derruba_a_conexao` (soquete) | o laço age sobre a recusa, em vez de engolir |
@@ -592,6 +602,9 @@ isso, com estas palavras.
 
 A prova real de cada um está no `bancada/guardas/catalogo.py`, em cinco
 entradas novas: o defeito é reposto e o executor confere que o teste **cai**.
+A exigência da amarração (07/09/2026) somou a sexta, `amarra-exigida-ignorada`:
+repõe o `op_login` que ignora `exigir_amarra` e confere que o
+`login_exige_amarra_quando_ha_tunel` cai no caso da recusa nomeada.
 
 ### O que a prova real achou — e a leitura não acharia
 
