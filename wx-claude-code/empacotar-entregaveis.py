@@ -62,6 +62,10 @@ def arquivos_do_plugin():
             continue
         if rel.name == "empacotar-entregaveis.py":
             continue
+        # videos e prints sao prova para a VENDA, nao para o uso: vao no pacote
+        # de documentos. No do cliente eram 55 MB de 91 -- medido no zip
+        if rel.parts[:2] in {("docs", "video"), ("docs", "prints")}:
+            continue
         yield p, rel
 
 
