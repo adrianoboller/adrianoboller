@@ -19,6 +19,33 @@ wx-modelos                       # a tela cheia, quando há terminal
 Toda saída tem `--json`, que é como o `rotear_modelo.py` consulta o degrau
 local sem depender de texto para humano.
 
+## Entrega: Linux e Windows
+
+```bash
+python3 publicar.py                # os dois alvos
+python3 publicar.py --alvo linux   # só um
+```
+
+Sai em `dist/` (fora do git) com `ENTREGA.md` e `entrega.json`: versão, alvo,
+tamanho, **SHA-256** e o `rustc` que compilou. Binário não entra na árvore —
+commitado, ele envelhece calado e mostra números de um código que já mudou.
+
+Três recusas do publicador, todas provadas:
+
+- **teste vermelho não vira binário** — `cargo test` roda antes;
+- **ferramenta ausente é PULADO, não falha**: sem `rustup target` ou sem o
+  mingw, o alvo sai da lista com o comando que resolve, e o outro é publicado;
+- **o `.exe` não pode depender de DLL do compilador** — `libgcc_s`,
+  `libwinpthread` e `libstdc++` são procuradas dentro do binário; achando
+  qualquer uma, a publicação falha, porque o cliente não tem esse arquivo.
+
+O hash identifica o arquivo entregue e **não** afirma build reprodutível:
+medido, recompilar o mesmo código muda o hash do `.exe` (o formato PE carrega
+carimbo de tempo). Confira uma entrega contra a ficha que veio com ela.
+
+Medido: o `.exe` importa só `KERNEL32`, `WS2_32`, `ntdll`, `msvcrt` e
+`api-ms-win-core-synch` — tudo do próprio Windows. Um arquivo, sem instalador.
+
 ## A regra que manda no desenho
 
 **Eixo sem medição não vira polígono.** A tela que originou esta ferramenta

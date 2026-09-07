@@ -1,3 +1,7 @@
 
 # binario e indice do wx-modelos: se refazem com cargo build --release
 ferramentas/wx-modelos/target/
+
+# entrega do wx-modelos: sai do publicar.py, nunca da arvore --
+# binario commitado envelhece calado
+ferramentas/wx-modelos/dist/
