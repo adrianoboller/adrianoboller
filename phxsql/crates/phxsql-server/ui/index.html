@@ -4187,6 +4187,68 @@ const COMO_PAGINOU = {
   rownum:"a página começou no nº de ordem pedido",
 };
 
+/** A busca por PALAVRA, pelo `.fts` -- e nao pela varredura.
+ *
+ * O motor ganhou o indice de texto na 0.18 e media 31.399x contra a varredura
+ * no milhao de linhas; a tela nao sabia pedir. Ate 07/09/2026 a operacao
+ * `procurar_texto` aparecia ZERO vezes nesta interface.
+ *
+ * A tela mostra o que a busca NAO faz, e isso e de proposito: ela acha
+ * PALAVRA INTEIRA, e nao pedaco. Quem espera "fen" achar "fenix" e nao acha
+ * conclui que a busca esta quebrada -- dizer o alcance antes vale mais que
+ * explicar depois.
+ */
+async function telaProcurarTexto(db, tab, indices) {
+  const ind = indices && indices.length ? indices : [];
+  const dobra = ind.some(i => i.dobrar);
+  folha(txt("tela.pt_titulo","Procurar texto"), `${esc(db)}.${esc(tab)}`, `
+    <div class="acoes">
+      <select id="ptIndice" class="campo" style="width:auto;min-width:14rem;flex:none">
+        ${ind.map(i => `<option value="${esc(i.nome)}">${esc(i.nome)} · ${esc(i.coluna)}</option>`).join("")}
+      </select>
+      <input id="ptPalavra" class="campo" style="width:auto;min-width:18rem;flex:none"
+             placeholder="${esc(txt("tela.pt_palavra","palavra inteira"))}">
+      <button class="botao consultar" id="ptIr">${esc(txt("tela.pt_procurar","Procurar"))}</button>
+      <button class="botao secundario" id="ptVoltar">← ${esc(tab)}</button>
+    </div>
+    <p class="leg">${marcado(txt("tela.pt_alcance","Acha **palavra inteira**, não pedaço: “fen” não acha “fenix”."))}
+      ${dobra ? marcado(txt("tela.pt_dobra","Este índice **dobra acento**: “fenix” acha “fênix”.")) : marcado(txt("tela.pt_sem_dobra","Este índice **não dobra acento**: “fenix” não acha “fênix”."))}</p>
+    <div id="ptRecado"></div>
+    <div id="ptGrade"></div>`);
+  $("#ptVoltar").onclick = () => verConteudoEditavel(db, tab);
+  const ir = async () => {
+    const palavra = $("#ptPalavra").value.trim();
+    if (!palavra) return;
+    $("#ptRecado").innerHTML = `<p class="leg">${esc(txt("tela.pt_procurando","procurando…"))}</p>`;
+    try {
+      const r = await api("procurar_texto", { database: db, tabela: tab,
+                                              indice: $("#ptIndice").value, palavra });
+      // O NUMERO e o de ENCONTRADOS, e nao o de linhas devolvidas: o `limite`
+      // corta a lista, e mostrar o tamanho da lista como se fosse o total
+      // seria mentir sobre o dado. Quando corta, a tela diz que cortou.
+      const linhas = r.linhas || [];
+      const cortou = r.encontrados > linhas.length;
+      $("#ptRecado").innerHTML = `<div class="aviso ${r.encontrados ? "bom" : ""}"><p>` +
+        esc(preencher(txt("tela.pt_achou","{n} linha(s) encontrada(s)."), {n: fmt(r.encontrados)})) +
+        (cortou ? " " + esc(preencher(txt("tela.pt_cortou","Mostrando as {m} primeiras."), {m: fmt(linhas.length)})) : "") +
+        `</p></div>`;
+      $("#ptGrade").innerHTML = "";
+      if (linhas.length) PhxGrid.criar("#ptGrade", {
+        buscaGlobal: true, filterRow: true, lembrar: "proctexto",
+        nomeVista: "procurar-texto",
+        colunas: Object.keys(linhas[0]).map(k => ({ campo: k, titulo: k })),
+        dados: linhas,
+        pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+      });
+    } catch (err) {
+      $("#ptRecado").innerHTML = `<div class="aviso mau"><p>${esc(String(err))}</p></div>`;
+    }
+  };
+  $("#ptIr").onclick = ir;
+  $("#ptPalavra").onkeydown = ev => { if (ev.key === "Enter") ir(); };
+  $("#ptPalavra").focus();
+}
+
 async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null) {
   est.atual = { db, tab };
   folha(`${tab}`, preencher(txt("tela.st_clique_linha_editar","{db} · clique numa linha para editar"), {db}),
@@ -4224,6 +4286,7 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
   const barra = `<div class="acoes">
       <button class="botao incluir" id="btNova">${esc(txt("tela.ce_nova_linha","Nova linha"))}</button>
       <button class="botao secundario" id="btVoltarDb">← ${esc(db)}</button>
+      ${(e.indices_texto || []).length ? `<button class="botao consultar" id="btProcTexto">${esc(txt("tela.ce_procurar_texto","Procurar texto…"))}</button>` : ""}
       <span class="chip-visao">
         <button id="vwAtivas" class="${verExcluidos ? "" : "ativo"}">${esc(txt("tela.ce_ativas","ativas"))}</button>
         <button id="vwExcl" class="marcadas ${verExcluidos ? "ativo" : ""}">${esc(txt("tela.ce_excluidas","excluídas"))}</button>
@@ -4313,6 +4376,10 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
 
   $("#btNova").onclick = () => abrirFicha(db, tab, null);
   $("#btVoltarDb").onclick = () => verDatabase(db);
+  // So existe quando o esquema DIZ que ha indice de texto. Botao que aparece
+  // sempre e recusa depois e o defeito que esta casa nomeia como pior que
+  // botao faltando: o primeiro so se descobre no meio do trabalho.
+  if ($("#btProcTexto")) $("#btProcTexto").onclick = () => telaProcurarTexto(db, tab, e.indices_texto);
   $("#vwAtivas").onclick = () => verConteudoEditavel(db, tab, false);
   $("#vwExcl").onclick = () => verConteudoEditavel(db, tab, true);
   $("#pgInicio").onclick = () => verConteudoEditavel(db, tab, verExcluidos, null);
@@ -5008,6 +5075,10 @@ function telaNovaTabela(db) {
         descricao:"", mascara:"" },
     ],
     indices: [{ nome:"porId", colunas:"id", unico:true, primario:true }],
+    // Nasce VAZIO: indice de texto e escolha, nao padrao. Uma tabela sem
+    // coluna de texto nao tem o que indexar, e o motor cobra `.fts` por
+    // gravacao -- medido em 5,67x na bancada.
+    indices_texto: [],
   };
   desenharNovaTabela(db);
 }
@@ -5088,6 +5159,22 @@ function desenharNovaTabela(db) {
              <td class="num"><input type="radio" name="nt_pk" class="i-pk" data-i="${i}" ${x.primario ? "checked" : ""}></td>
              <td><button type="button" class="mini perigo i-rm" data-i="${i}">${esc(txt("tela.nt_remover","remover"))}</button></td>
          </tr>`).join("")}</tbody></table></div>
+
+       <h3 class="secao">${esc(txt("tela.nt_fts_titulo","Índice de texto"))}
+         <button type="button" class="mini" id="nt_addFts">+ ${esc(txt("tela.nt_fts_novo","índice de texto"))}</button>
+         <em>${esc(txt("tela.nt_fts_dica","uma coluna Str ou Memo por índice; a busca vai por palavra inteira"))}</em></h3>
+       <div class="rolo"><table class="montar"><thead><tr>
+         <th>${esc(txt("tela.col_nome_curto","nome"))}</th><th>${esc(txt("tela.nt_fts_coluna","coluna"))}</th>
+         <th class="num">${esc(txt("tela.nt_fts_dobrar","dobra acento"))}</th><th></th>
+       </tr></thead><tbody id="nt_fts">${r.indices_texto.map((x, i) => `
+         <tr><td><input class="f-nome" data-i="${i}" value="${esc(x.nome)}"></td>
+             <td><input class="f-col" data-i="${i}" value="${esc(x.coluna)}"
+                        placeholder="${esc(nomesCol[1] || "descricao")}"></td>
+             <td class="num"><input type="checkbox" class="f-dobra" data-i="${i}" ${x.dobrar !== false ? "checked" : ""}></td>
+             <td><button type="button" class="mini perigo f-rm" data-i="${i}">${esc(txt("tela.nt_remover","remover"))}</button></td>
+         </tr>`).join("")}</tbody></table></div>
+       <p class="leg">${marcado(txt("tela.nt_fts_a","Sem ele, procurar uma palavra **varre a tabela inteira**. Com ele, a bancada mediu **31.399×** mais rápido no milhão de linhas — e o preço é na gravação, **5,67×**."))}<br>
+         ${marcado(txt("tela.nt_fts_b","A **dobra de acento** nasce ligada de propósito, ao contrário do resto: sem ela o índice acharia **menos** que a varredura (“fenix” não acharia “fênix”), e índice que acha menos que a varredura é pior que não ter índice."))}</p>
 
        <h3 class="secao">${esc(txt("tela.nt_exclusao_titulo","Exclusão"))}
          <label class="chk"><input type="checkbox" id="nt_motivo_obrig"
@@ -5247,6 +5334,11 @@ function ligarNovaTabela(db) {
       unico: tr.querySelector(".i-unico").checked,
       primario: tr.querySelector(".i-pk").checked,
     }));
+    r.indices_texto = $$("#nt_fts tr").map(tr => ({
+      nome: tr.querySelector(".f-nome").value.trim(),
+      coluna: tr.querySelector(".f-col").value.trim(),
+      dobrar: tr.querySelector(".f-dobra").checked,
+    }));
   };
   const refazer = () => { lerForm(); desenharNovaTabela(db); };
 
@@ -5266,6 +5358,17 @@ function ligarNovaTabela(db) {
   });
   $$("#painel .i-rm").forEach(b => b.onclick = () => {
     lerForm(); r.indices.splice(+b.dataset.i, 1); desenharNovaTabela(db);
+  });
+  $("#nt_addFts").onclick = () => {
+    lerForm();
+    // `dobrar` entra TRUE: e o padrao do motor, e a tela nao pode discordar
+    // dele em silencio -- caixa desmarcada por engano cria um indice que acha
+    // menos que a varredura.
+    r.indices_texto.push({ nome:"", coluna:"", dobrar:true });
+    desenharNovaTabela(db);
+  };
+  $$("#painel .f-rm").forEach(b => b.onclick = () => {
+    lerForm(); r.indices_texto.splice(+b.dataset.i, 1); desenharNovaTabela(db);
   });
 
   // O que muda a FORMA da tela redesenha; o resto não, senão o campo perde o
@@ -5301,6 +5404,10 @@ function ligarNovaTabela(db) {
       })),
       motivo_obrigatorio: !!r.motivo_obrigatorio,
     };
+    // Lista vazia NAO vai: o campo ausente e o que toda tabela ja criada tem,
+    // e mandar `[]` mudaria o pedido de quem nao pediu nada.
+    const fts = r.indices_texto.filter(x => x.nome && x.coluna);
+    if (fts.length) pedido.indices_texto = fts;
 
     if (r.particionada) {
       const porLetra = r.particao === "letra";

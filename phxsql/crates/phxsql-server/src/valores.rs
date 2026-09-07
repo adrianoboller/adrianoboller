@@ -21,7 +21,7 @@ use phxsql_core::carga::data_de_texto;
 pub use phxsql_core::carga::{hex_para_bytes, texto_para_decimal};
 use phxsql_core::paginacao::{ModoParticao, Paginacao, Periodo, DIGITOS_PADRAO};
 use phxsql_core::schema::Schema;
-use phxsql_core::schema::{AcaoRi, Column, ForeignKey, IndexColumn, IndexDef};
+use phxsql_core::schema::{AcaoRi, Column, ForeignKey, IndexColumn, IndexDef, IndiceDeTexto};
 use phxsql_core::types::{ColumnType, DadoPessoal};
 use phxsql_core::uuid::{Uuid, Uuid256};
 use phxsql_core::value::Value;
@@ -455,6 +455,63 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
                 fks.push(chave_estrangeira_de_json(f, i, &esquema)?);
             }
             esquema.com_chaves_estrangeiras(fks)?
+        }
+    };
+
+    // O INDICE DE TEXTO, e ele repete letra por letra a historia da chave
+    // estrangeira logo acima: o formato o suporta desde o `PSCH v8`, o
+    // `store` o usa, a bancada mede 31.399x com ele -- e NENHUMA operacao do
+    // protocolo o criava. So dava para declarar pela API Rust, por um
+    // `examples/` que a bancada chama.
+    //
+    // Pior que faltar: em 07/09/2026 medi que `criar_tabela` aceitava
+    // `indices_texto`, `indices_de_texto`, `fts` e `texto` com `ok: true` e
+    // ENGOLIA os quatro. A tabela nascia sem indice nenhum, e quem descobria
+    // era o `procurar_texto` depois, dizendo que o indice nao existe. Campo
+    // aceito e ignorado e pior que campo recusado: o recusado ninguem acha
+    // que funcionou.
+    //
+    // Ausente e lista vazia, como nas FKs: cliente escrito antes desta versao
+    // continua criando tabela exatamente igual.
+    let esquema = match j
+        .campo("indices_texto")
+        .or_else(|| j.campo("indices_de_texto"))
+        .and_then(Json::lista)
+    {
+        None => esquema,
+        Some(lista) => {
+            let mut textos = Vec::with_capacity(lista.len());
+            for (i, it) in lista.iter().enumerate() {
+                let nome = it.texto_ou("nome", "").trim().to_string();
+                if nome.is_empty() {
+                    return Err(PhxError::Esquema(format!("indice de texto {i} sem nome")));
+                }
+                let coluna = it.texto_ou("coluna", "").trim().to_string();
+                if coluna.is_empty() {
+                    return Err(PhxError::Esquema(format!(
+                        "indice de texto {nome} sem \"coluna\""
+                    )));
+                }
+                let pos = esquema
+                    .colunas()
+                    .iter()
+                    .position(|c| c.nome == coluna)
+                    .ok_or_else(|| {
+                        PhxError::Esquema(format!(
+                            "indice de texto {nome} usa coluna inexistente: {coluna:?}"
+                        ))
+                    })?;
+                textos.push(IndiceDeTexto {
+                    nome,
+                    coluna: pos,
+                    // Nasce LIGADO, e o motivo esta medido no `docs/FTS.md`
+                    // 5.1: a busca de hoje nao dobra acento, entao um indice
+                    // sem dobra acharia MENOS que a varredura -- e indice que
+                    // acha menos que a varredura e pior que nao ter indice.
+                    dobrar: it.booleano_ou("dobrar", true),
+                });
+            }
+            esquema.com_indices_de_texto(textos)?
         }
     };
 
@@ -1010,6 +1067,93 @@ mod testes_esquema {
 
     fn json(t: &str) -> Json {
         Json::analisar(t).expect("json de teste invalido")
+    }
+
+    const COLS: &str = r#""colunas":[{"nome":"id","tipo":"Int8"},
+                                     {"nome":"txt","tipo":"Str(80)"}]"#;
+
+    /// O indice de texto DECLARADO pelo protocolo nasce no esquema.
+    ///
+    /// Antes de 07/09/2026 o `criar_tabela` aceitava `indices_texto` com
+    /// `ok: true` e ENGOLIA o campo: a tabela nascia sem indice nenhum, e
+    /// quem descobria era o `procurar_texto` depois. Campo aceito e ignorado
+    /// e pior que campo recusado -- o recusado ninguem acha que funcionou.
+    #[test]
+    fn indice_de_texto_declarado_pelo_protocolo_nasce_no_esquema() {
+        let e = esquema_de_json(&json(&format!(
+            r#"{{"tabela":"t",{COLS},
+                 "indices_texto":[{{"nome":"ft","coluna":"txt"}}]}}"#
+        )))
+        .expect("devia criar");
+        assert_eq!(e.indices_de_texto().len(), 1);
+        assert_eq!(e.indices_de_texto()[0].nome, "ft");
+        // A coluna vira POSICAO: `txt` e a segunda.
+        assert_eq!(e.indices_de_texto()[0].coluna, 1);
+    }
+
+    /// A dobra de acento NASCE LIGADA, e e o inverso de «guarda nova entra
+    /// pedida» de proposito: `docs/FTS.md` 5.1 mediu que a busca sem dobra
+    /// acha MENOS que a varredura (0 de 200 para «fenix» contra «fenix»), e
+    /// indice que acha menos que a varredura e pior que nao ter indice.
+    #[test]
+    fn a_dobra_de_acento_nasce_ligada_e_quem_nao_quer_desliga() {
+        let liga = esquema_de_json(&json(&format!(
+            r#"{{"tabela":"t",{COLS},"indices_texto":[{{"nome":"ft","coluna":"txt"}}]}}"#
+        )))
+        .expect("devia criar");
+        assert!(liga.indices_de_texto()[0].dobrar, "devia nascer ligada");
+
+        let desliga = esquema_de_json(&json(&format!(
+            r#"{{"tabela":"t",{COLS},
+                 "indices_texto":[{{"nome":"ft","coluna":"txt","dobrar":false}}]}}"#
+        )))
+        .expect("devia criar");
+        assert!(
+            !desliga.indices_de_texto()[0].dobrar,
+            "quem desliga, desliga"
+        );
+    }
+
+    /// O TESTE DO COMPORTAMENTO VELHO, e e o que mais importa aqui: quem nao
+    /// manda `indices_texto` cria tabela exatamente como criava antes. Guarda
+    /// nova que muda o que ja existe nao e protecao, e estrago.
+    #[test]
+    fn tabela_sem_indice_de_texto_continua_nascendo_igual() {
+        let e =
+            esquema_de_json(&json(&format!(r#"{{"tabela":"t",{COLS}}}"#))).expect("devia criar");
+        assert!(e.indices_de_texto().is_empty());
+    }
+
+    /// Coluna inexistente RECUSA na declaracao, e nao na gravacao -- a mesma
+    /// decisao da chave estrangeira: a tabela nasce uma vez e grava um milhao
+    /// de vezes, entao recusar cedo custa um erro lido enquanto se cria.
+    #[test]
+    fn indice_de_texto_sobre_coluna_que_nao_existe_recusa_na_declaracao() {
+        let e = esquema_de_json(&json(&format!(
+            r#"{{"tabela":"t",{COLS},
+                 "indices_texto":[{{"nome":"ft","coluna":"nao_existe"}}]}}"#
+        )));
+        let erro = e.expect_err("devia recusar").to_string();
+        assert!(
+            erro.contains("nao_existe"),
+            "a recusa nomeia a coluna: {erro}"
+        );
+    }
+
+    /// Sem nome, e sem coluna: as duas recusas nomeiam o que falta em vez de
+    /// deixarem o indice nascer torto.
+    #[test]
+    fn indice_de_texto_sem_nome_ou_sem_coluna_recusa() {
+        for (corpo, pedaco) in [
+            (r#"{"coluna":"txt"}"#, "sem nome"),
+            (r#"{"nome":"ft"}"#, "coluna"),
+        ] {
+            let e = esquema_de_json(&json(&format!(
+                r#"{{"tabela":"t",{COLS},"indices_texto":[{corpo}]}}"#
+            )));
+            let erro = e.expect_err("devia recusar").to_string();
+            assert!(erro.contains(pedaco), "esperava {pedaco:?} em {erro:?}");
+        }
     }
 
     /// A propriedade que importa: o que a operacao `esquema` DEVOLVE tem de

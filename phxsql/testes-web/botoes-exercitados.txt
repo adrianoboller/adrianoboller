@@ -21,6 +21,7 @@
 #btNova
 #btNovoDb
 #btPinar
+#btProcTexto
 #btSalvar
 #btTema
 #btVerMotivos
@@ -29,10 +30,13 @@
 #btVoltar
 #btVoltarDb
 #estAddCol
+#nt_addFts
 #pgAntes
 #pgDepois
 #pgFim
 #pgInicio
+#ptIr
+#ptVoltar
 #vwAtivas
 #vwExcl
 .aba

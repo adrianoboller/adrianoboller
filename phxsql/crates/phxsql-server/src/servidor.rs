@@ -10627,6 +10627,34 @@ impl Servidor {
             ("colunas", Json::Lista(colunas)),
             ("indices", Json::Lista(indices)),
             ("chaves_estrangeiras", Json::Lista(fks)),
+            // Os indices de TEXTO, e sem eles a tela nao tinha como saber que
+            // a tabela sabe ser procurada por palavra -- ela mostraria a
+            // varredura como unica saida numa tabela com `.fts` de pe. A
+            // coluna sai por NOME, como no `criar_tabela`: posicao e detalhe
+            // de implementacao, e a tela nao deve traduzir indice.
+            (
+                "indices_texto",
+                Json::Lista(
+                    e.indices_de_texto()
+                        .iter()
+                        .map(|it| {
+                            Json::objeto(vec![
+                                ("nome", Json::texto_de(&it.nome)),
+                                (
+                                    "coluna",
+                                    Json::texto_de(
+                                        e.colunas()
+                                            .get(it.coluna)
+                                            .map(|c| c.nome.as_str())
+                                            .unwrap_or(""),
+                                    ),
+                                ),
+                                ("dobrar", Json::Bool(it.dobrar)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
             // Na particao por periodo o volume nao sai de conta: quem sabe
             // onde cada faixa comeca e a tabela de fronteiras, lida dos
             // cabecalhos. Sem isto a tela teria de adivinhar.
