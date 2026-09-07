@@ -13,10 +13,12 @@ escopos** (servidor, banco, tabela, conexão), um verbo para ver, um verbo para
 mudar, e toda alteração no **diário administrativo** com os nove campos que
 você listou.
 
-O mapa saiu medido, diretiva por diretiva, contra o motor vivo: **12 já
-existiam** (5 delas parciais), **1 entrou nesta rodada** — `comandos_proibidos`
-por banco, que é o pedido 220 — e **22 são dispensa registrada com o motivo
-técnico**. O `ALTER SERVER SET` não tem caminho próprio: ele desemboca no mesmo
+O mapa saiu medido, diretiva por diretiva, contra o motor vivo: **39 diretivas
+mapeadas**, das quais **22 têm equivalente** (11 com ressalva registrada — existem
+no `config.json` e não se mudam pela rede — e 4 parciais), **17 não existem e são
+dispensa com o motivo técnico**, e **1 entrou nesta rodada**:
+`comandos_proibidos` por banco, que é o pedido 220. O `ALTER SERVER SET` não
+tem caminho próprio: ele desemboca no mesmo
 `config_gravar` que a tela usa, com o mesmo portão, a mesma validação de tipo e
 a mesma gravação atômica — *portão de permissão é UM só*. São **49 diretivas de
 servidor** graváveis, 17 delas a quente.
@@ -126,8 +128,9 @@ op "bancos"                                  -> ok
 
 ## O que NÃO existe, e é dispensa registrada
 
-**22 diretivas do HFSQL não têm equivalente**, e cada uma com o motivo técnico
-(o mapa completo está em `docs/DIRETIVAS.md` §2). As seis que mais importam:
+**17 das 39 diretivas do HFSQL não têm equivalente**, e cada uma com o motivo
+técnico (o mapa completo, com a conta refeita por script, está em
+`docs/DIRETIVAS.md` §2). As seis que mais importam:
 
 - **`hActiveDirectory`** — não é um campo, é um protocolo (LDAP/Kerberos)
   contra um servidor de fora, e este motor tem **zero dependências externas**.

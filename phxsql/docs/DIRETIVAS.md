@@ -130,8 +130,37 @@ nesta frente; **✖ dispensa** — não existe, com o motivo técnico.
 | `HActivateServerTrigger` / `HDeactivateServerTrigger` | — | ✖ **dispensa**, mesma razão do `HSetTrigger`. |
 | `HNoDatabaseAccess(cnx, "ERP")` | `seguranca.bases_proibidas` | ✔ **parcial**: a base proibida é barrada para todo mundo, root inclusive — mas é **do arquivo**, e não se liga e desliga por comando. ➕ E agora existe o irmão mais fino: `comandos_proibidos` **por banco** (§3). |
 
-**A conta:** 12 diretivas ✔ existem (5 delas parciais), 1 ➕ entrou nesta
-frente, 22 ✖ são dispensa registrada com motivo.
+**A conta, contada e não lembrada** — e ela já saiu errada uma vez neste
+próprio documento, digitada de cabeça («12 existem, 22 dispensadas») quando o
+mapa tinha 39 linhas:
+
+```bash
+python3 - <<'EOF'
+s = open("docs/DIRETIVAS.md").read()
+b = s.split("### 2.1")[1].split("**A conta")[0]
+l = [x for x in b.split("\n")
+     if x.startswith("| ") and "---" not in x and not x.startswith("| HFSQL")]
+print("mapeadas      ", len(l))
+print("existe (✔)    ", sum("✔" in x for x in l),
+      "   dessas com ressalva:", sum("✔" in x and "✖" in x for x in l))
+print("dispensa (✖)  ", sum("✖" in x and "✔" not in x for x in l))
+print("entrou (➕)    ", sum("➕" in x for x in l))
+print("parciais      ", sum("parcial" in x for x in l))
+EOF
+```
+
+```text
+mapeadas       39
+existe (✔)     22    dessas com ressalva: 11
+dispensa (✖)   17
+entrou (➕)     1
+parciais       4
+```
+
+Ou seja: **22 têm equivalente** — mas **11 delas com ressalva registrada**
+(existem no `config.json` e **não** se mudam por diretiva pela rede, cada uma
+com o motivo), e **4 são parciais**. **17 não existem** e são dispensa com o
+motivo técnico. **1 entrou nesta frente**: `comandos_proibidos` por banco.
 
 ---
 
