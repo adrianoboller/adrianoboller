@@ -274,9 +274,49 @@ def g_replicacao():
     return out, q
 
 
+def g_fts():
+    """O indice de texto contra a varredura.
+
+    Este e o unico bloco em que a faixa vem PRONTA do `resultados.json`: a
+    bancada do `.fts` grava `{min, mediana, max}` de cada numero, porque uma
+    corrida nao e medicao. Os outros blocos derivam a faixa das rodadas.
+    """
+    d, p = ler("bancada/fts/resultados.json")
+    if not d:
+        return ['<div class="ausente-bloco">Índice de texto — <b>não medido</b>. '
+                'Rode <code>python3 bancada/fts/medir.py 1000000 20</code>.</div>'], ("—", False)
+    q = quando(p, d)
+    fx = lambda c: (d[c]["min"], d[c]["max"]) if isinstance(d.get(c), dict) else None
+    med = lambda c: d[c]["mediana"] if isinstance(d.get(c), dict) else d.get(c)
+    linhas = num(d.get("linhas"))
+    out = [barras(
+        f"Procurar uma palavra em {linhas} linhas",
+        "As duas faixas respondem a <b>mesma pergunta</b> e devolvem o "
+        "<b>mesmo conjunto</b> de rowids — o medidor aborta se não baterem. "
+        "Metade das palavras procuradas não existe, de propósito: palavra "
+        "inexistente é o caso em que o índice ganha mais.",
+        [("varredura", med("us_varredura")), ("índice .fts", med("us_indice"))],
+        "microssegundos por busca (menor é melhor)", 0, menor_e_melhor=True,
+        faixas={"varredura": fx("us_varredura"), "índice .fts": fx("us_indice")})]
+    out.append(barras(
+        "O que a busca custa na GRAVAÇÃO",
+        "O ganho de cima é pago aqui, e publicar só um dos dois contaria a "
+        "metade que nos favorece. São "
+        f"<b>{num(d.get('escrita_chaves_por_linha'), 1)} chaves por linha</b>, "
+        "contadas pelo medidor.",
+        [("sem índice de texto", med("escrita_sem_indice_us")),
+         ("com índice de texto", med("escrita_com_indice_us"))],
+        "microssegundos por linha inserida (menor é melhor)", 1,
+        menor_e_melhor=True,
+        faixas={"sem índice de texto": fx("escrita_sem_indice_us"),
+                "com índice de texto": fx("escrita_com_indice_us")}))
+    return out, q
+
+
 BLOCOS = [
     ("Os três motores, a um milhão de linhas", g_tres_motores,
      "bancada/comparacao/"),
+    ("Índice de texto — o .fts contra a varredura", g_fts, "bancada/fts/"),
     ("Utilização padrão — 20.000 linhas em tabela complexa", g_utilizacao,
      "bancada/utilizacao-padrao/"),
     ("Carga pela rede — uma a uma contra o lote", g_carga, "bancada/carga/"),
