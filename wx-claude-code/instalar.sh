@@ -200,7 +200,13 @@ fi
 passo "5. Licenca"
 LIC="$RAIZ/skills/conversao-wx/scripts/licenca.py"
 if [ -n "$SERIAL" ] && [ "$SO_CONFERIR" = 0 ]; then
-  python3 "$LIC" instalar "$SERIAL" >/dev/null \
+  # os termos aparecem ANTES de gravar o serial, e o aceite fica registrado com
+  # o hash do texto aceito; sem aceite, nada e gravado
+  echo; sed -n '1,200p' "$RAIZ/LICENCA.md"; echo
+  echo "  O item 3 e o que mais importa: o serial e desta empresa e nao pode ser recompartilhado."
+  echo "  Na instalacao, o fornecedor recebe UM aviso (id, empresa, maquina, versao, data); nada do seu projeto."
+  perguntar "aceita os termos de licenca?" || morrer "termos nao aceitos" "nada foi gravado; sem aceite o plugin nao se ativa"
+  python3 "$LIC" instalar "$SERIAL" --aceito \
     || morrer "serial recusado" "confira se copiou inteiro e se e desta maquina (licenca.py maquina)"
 fi
 if python3 "$LIC" verificar 2>/dev/null | grep -q '^valida'; then

@@ -11,6 +11,26 @@ python3 emitir.py reenviar <id>                    # o cliente perdeu o e-mail
 python3 emitir.py empacotar --saida wx-serial.zip  # levar num pendrive
 ```
 
+## Aviso de instalação por e-mail
+
+```bash
+# no seu servidor (atrás de um HTTPS seu):
+export WX_SMTP_HOST=smtp.seuprovedor.com WX_SMTP_PORTA=587 \
+       WX_SMTP_USUARIO=voce@dominio WX_SMTP_SENHA=… WX_AVISO_PARA=voce@dominio
+python3 receber.py --porta 8765
+
+# ao emitir, aponte o serial para ele:
+python3 emitir.py novo --cliente "Softhouse X" --validade 2027-12-31 \
+        --aviso https://licenca.seudominio.com/ --chave-privada ./segredo/chave-privada.json
+```
+
+Quando o cliente instalar, chega um e-mail «Instalação — Softhouse X · serial
+ID». Se o mesmo serial for instalado numa **segunda máquina**, o assunto vira
+«POSSÍVEL RECOMPARTILHAMENTO». Sem `WX_SMTP_HOST`, o receptor grava e imprime,
+e diz que não mandou e-mail em vez de fingir.
+
+A senha do SMTP vem do ambiente e não é gravada em lugar nenhum.
+
 ## Por que separado
 
 O `licenca.py` viaja **dentro do plugin**, na máquina do cliente. Quem emite

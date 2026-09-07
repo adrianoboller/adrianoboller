@@ -32,7 +32,7 @@ import re
 import random
 import secrets
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 VERSAO_DO_SERIAL = "WX2"
@@ -151,9 +151,15 @@ def impressao_da_maquina() -> str:
     return hashlib.sha256("|".join(partes).encode()).hexdigest()[:16]
 
 
-def gerar_serial(cliente: str, validade: str, priv: dict, maquina: str = "", email: str = "") -> str:
+def gerar_serial(cliente: str, validade: str, priv: dict, maquina: str = "", email: str = "",
+                 aviso: str = "") -> str:
+    """`aviso` e a URL que a instalacao chama uma vez. Vai DENTRO do payload
+    assinado: trocar ou apagar o endereco invalida o serial. Vazio = serial
+    que nao avisa ninguem, e a instalacao segue como sempre foi."""
     date.fromisoformat(validade)
     corpo = {"id": secrets.token_hex(4).upper(), "cliente": cliente, "email": email, "validade": validade, "maquina": maquina, "emitido_em": date.today().isoformat()}
+    if aviso:
+        corpo["aviso"] = aviso
     payload = json.dumps(corpo, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
     return ".".join([VERSAO_DO_SERIAL, _b64(payload), _b64(assinar(payload, priv))])
 
@@ -197,7 +203,7 @@ def verificar_serial(serial: str, pub: dict | None = None, hoje: date | None = N
         return {"status": "formato-invalido"}
     if not conferir(payload, ass, pub):
         return {"status": "assinatura-invalida"}
-    resultado = {"status": "valida", "id": corpo.get("id"), "cliente": corpo.get("cliente"), "validade": corpo.get("validade"), "maquina": corpo.get("maquina", "")}
+    resultado = {"status": "valida", "id": corpo.get("id"), "cliente": corpo.get("cliente"), "validade": corpo.get("validade"), "maquina": corpo.get("maquina", ""), "aviso": corpo.get("aviso", ""), "email": corpo.get("email", "")}
     try:
         if date.fromisoformat(corpo["validade"]) < hoje:
             resultado["status"] = "vencida"
@@ -207,6 +213,87 @@ def verificar_serial(serial: str, pub: dict | None = None, hoje: date | None = N
     if corpo.get("maquina") and corpo["maquina"] != impressao_da_maquina():
         resultado["status"] = "maquina-diferente"
     return resultado
+
+
+TERMOS = Path(__file__).resolve().parents[3] / "LICENCA.md"
+
+
+def hash_dos_termos() -> str:
+    try:
+        return hashlib.sha256(TERMOS.read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+def caminho_do_aceite() -> Path:
+    return caminho_da_licenca().parent / "aceite.json"
+
+
+def registrar_aceite(serial_id: str) -> Path:
+    """O aceite fica na maquina de quem aceitou, com o hash do texto aceito.
+
+    Sem o hash, "aceitei os termos" nao diz QUAIS termos -- e a versao seguinte
+    do texto herdaria um aceite que ninguem deu."""
+    p = caminho_do_aceite()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    d = {"termos_sha256": hash_dos_termos(), "aceito_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+         "serial": serial_id, "termos": str(TERMOS)}
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=2)
+    return p
+
+
+def pedir_aceite(aceito_por_flag: bool) -> bool:
+    if aceito_por_flag:
+        return True
+    if not sys.stdin.isatty():
+        print("Os termos de licenca (LICENCA.md) precisam ser aceitos: rode com --aceito "
+              "depois de le-los, ou use o instalador, que os mostra.", file=sys.stderr)
+        return False
+    try:
+        texto = TERMOS.read_text(encoding="utf-8")
+    except OSError:
+        texto = "(LICENCA.md nao encontrado no plugin)"
+    print(texto)
+    print("\nO item 3 e o que mais importa: o serial e desta empresa e nao pode ser recompartilhado.")
+    resp = input("Aceita os termos? [s/N] ").strip().lower()
+    return resp in {"s", "sim", "y", "yes"}
+
+
+def versao_do_plugin() -> str:
+    try:
+        return json.loads((Path(__file__).resolve().parents[3] / ".claude-plugin/plugin.json")
+                          .read_text(encoding="utf-8")).get("version", "")
+    except (OSError, ValueError):
+        return ""
+
+
+def avisar_instalacao(r: dict) -> dict:
+    """Um POST, uma vez, so com o que o LICENCA.md diz que vai: id, empresa,
+    impressao da maquina, versao, data e o hash dos termos aceitos. Nada do
+    projeto. Rede fora do ar NAO derruba a instalacao: fica pendente."""
+    url = r.get("aviso") or ""
+    if not url:
+        return {"enviado": False, "motivo": "serial sem endereco de aviso"}
+    corpo = {"evento": "instalacao", "id": r.get("id"), "cliente": r.get("cliente"),
+             "maquina": impressao_da_maquina(), "versao_do_plugin": versao_do_plugin(),
+             "em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+             "termos_sha256": hash_dos_termos(), "validade": r.get("validade")}
+    dados = json.dumps(corpo, ensure_ascii=False).encode()
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, data=dados, method="POST",
+                                     headers={"Content-Type": "application/json",
+                                              "User-Agent": "wx-claude-code/" + (corpo["versao_do_plugin"] or "?")})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            return {"enviado": True, "http": resp.status}
+    except Exception as e:  # noqa: BLE001 -- qualquer falha de rede vira pendencia, nunca erro
+        pend = caminho_da_licenca().parent / "aviso-pendente.jsonl"
+        pend.parent.mkdir(parents=True, exist_ok=True)
+        with pend.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"url": url, "corpo": corpo, "erro": str(e)[:200]}, ensure_ascii=False) + "\n")
+        return {"enviado": False, "motivo": str(e)[:200], "pendente_em": str(pend)}
 
 
 def verificar_instalada() -> dict:
@@ -281,6 +368,8 @@ def main() -> int:
     c = sub.add_parser("chaves"); c.add_argument("acao", choices=["gerar"]); c.add_argument("--saida", type=Path, required=True)
     g = sub.add_parser("gerar"); g.add_argument("--cliente", required=True); g.add_argument("--validade", required=True); g.add_argument("--maquina", default=""); g.add_argument("--email", default=""); g.add_argument("--chave-privada", type=Path, required=True)
     i = sub.add_parser("instalar"); i.add_argument("serial")
+    i.add_argument("--aceito", action="store_true", help="declara que leu e aceitou LICENCA.md")
+    i.add_argument("--sem-aviso", action="store_true", help="nao avisar o fornecedor (fica pendente)")
     v = sub.add_parser("verificar"); v.add_argument("--json", action="store_true")
     sub.add_parser("maquina"); sub.add_parser("hook"); sub.add_parser("hook-sessao")
     a = ap.parse_args()
@@ -304,11 +393,21 @@ def main() -> int:
         if r["status"] not in {"valida", "maquina-diferente"}:
             print(f"recusado: {r['status']} ({MENSAGEM.get(r['status'], '')})", file=sys.stderr)
             return 3
+        if not pedir_aceite(a.aceito):
+            print("instalacao cancelada: termos nao aceitos; nada foi gravado.", file=sys.stderr)
+            return 2
         p = caminho_da_licenca(); p.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(a.serial.strip() + "\n")
+        registrar_aceite(r.get("id", ""))
         print(f"instalada em {p}: {r['status']}, cliente {r['cliente']}, ate {r['validade']}")
+        if r.get("aviso") and not a.sem_aviso:
+            av = avisar_instalacao(r)
+            if av.get("enviado"):
+                print(f"fornecedor avisado da instalacao (serial {r.get('id')}).")
+            else:
+                print(f"aviso ao fornecedor ficou pendente: {av.get('motivo')}", file=sys.stderr)
         return 0 if r["status"] == "valida" else 3
     if a.cmd == "verificar":
         r = verificar_instalada()

@@ -185,7 +185,12 @@ elseif (Existe "claude") {
 Passo "5. Licenca"
 $lic = Join-Path $Raiz "skills\conversao-wx\scripts\licenca.py"
 if ($Serial -and -not $Conferir) {
-  & $py $lic instalar $Serial *> $null
+  # mesma ordem do instalar.sh: termos antes do serial, aceite registrado com hash
+  Write-Host ""; Get-Content (Join-Path $Raiz "LICENCA.md") | Write-Host; Write-Host ""
+  Write-Host "  O item 3 e o que mais importa: o serial e desta empresa e nao pode ser recompartilhado."
+  Write-Host "  Na instalacao, o fornecedor recebe UM aviso (id, empresa, maquina, versao, data); nada do seu projeto."
+  if (-not (Perguntar "aceita os termos de licenca?")) { Morrer "termos nao aceitos" "nada foi gravado; sem aceite o plugin nao se ativa" }
+  & $py $lic instalar $Serial --aceito
   if ($LASTEXITCODE -ne 0) { Morrer "serial recusado" "confira se copiou inteiro e se e desta maquina (licenca.py maquina)" }
 }
 $estado = & $py $lic verificar 2>$null

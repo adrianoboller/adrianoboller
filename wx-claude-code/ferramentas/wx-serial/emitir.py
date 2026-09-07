@@ -120,7 +120,7 @@ def novo(args) -> int:
         print(f"validade {args.validade} já passou; não emito serial nascido vencido.", file=sys.stderr)
         return 2
     priv = json.loads(args.chave_privada.read_text(encoding="utf-8"))
-    serial = lic.gerar_serial(args.cliente, args.validade, priv, args.maquina, args.email)
+    serial = lic.gerar_serial(args.cliente, args.validade, priv, args.maquina, args.email, args.aviso)
     # A conferencia tem de usar a publica PAR da privada usada, nao a do plugin:
     # medido aqui, sem isto todo serial recem-emitido saia "assinatura-invalida"
     # -- e o emissor recusaria o proprio trabalho correto.
@@ -139,6 +139,7 @@ def novo(args) -> int:
         return 1
     escrever_livro({"id": conferido.get("id", ""), "cliente": args.cliente, "email": args.email,
                     "validade": args.validade, "maquina": args.maquina or "",
+                    "aviso": args.aviso or "",
                     "emitido_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                     "serial": serial, "revogado": False})
     print(serial)
@@ -233,6 +234,7 @@ def main() -> int:
     n.add_argument("--cliente", required=True); n.add_argument("--validade", required=True)
     n.add_argument("--email", default=""); n.add_argument("--maquina", default="")
     n.add_argument("--chave-privada", type=Path, required=True)
+    n.add_argument("--aviso", default="", help="URL do receber.py que recebe o aviso de instalacao")
     l = sub.add_parser("livro"); l.add_argument("--cliente"); l.add_argument("--json", action="store_true")
     r = sub.add_parser("reenviar"); r.add_argument("id")
     v = sub.add_parser("marcar-revogado"); v.add_argument("id"); v.add_argument("--porque", default="")

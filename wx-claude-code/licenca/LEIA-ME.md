@@ -17,6 +17,14 @@ o serial conferido a cada chamada; aí o plugin sem servidor não tem o que
 consultar, e um serial vazado se revoga na hora. Este arquivo cobre a primeira
 camada; a segunda é um MCP server, e o `licenca.py` já é o cliente dela.
 
+## Termos e aviso de instalação
+
+Os termos estão em `LICENCA.md` na raiz do plugin. `licenca.py instalar` exige
+o aceite (`--aceito`, ou a pergunta no terminal) e grava
+`~/.wx-claude-code/aceite.json` com o hash do texto aceito. Serial emitido com
+`--aviso URL` avisa o fornecedor **uma vez**, na instalação, com o que o item 4
+dos termos declara; sem rede, fica pendente e a instalação segue.
+
 ## Como funciona
 
 - `chave-publica.json`: `n` e `e` da chave RSA. Troque pelo seu par antes de

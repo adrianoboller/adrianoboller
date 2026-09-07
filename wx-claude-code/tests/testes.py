@@ -1561,6 +1561,93 @@ class Questionario(unittest.TestCase):
         (alvo / "chave-publica.json").write_text(json.dumps(limpa), encoding="utf-8")
         self.assertEqual(vpb.avisos_de_distribuicao(self.tmp), [])
 
+    def test_licenca_exige_aceite_avisa_o_fornecedor_e_percebe_recompartilhamento(self):
+        """Tres coisas de uma vez, porque sao a mesma cadeia: instalar sem aceite
+        nao grava; instalar com aviso chega ao receptor e vira e-mail; a segunda
+        maquina no mesmo serial vira POSSIVEL RECOMPARTILHAMENTO. E o
+        comportamento VELHO: serial sem aviso nao toca a rede, e rede fora do
+        ar nao derruba a instalacao."""
+        import threading
+        from http.server import HTTPServer
+        sys.path.insert(0, str(SCRIPTS))
+        sys.path.insert(0, str(RAIZ / "ferramentas/wx-serial"))
+        import licenca
+        import receber
+        priv, pub = licenca.gerar_chaves(2048)
+        casa = self.tmp / "vendedor"
+        os.environ["WX_SERIAL_DIR"] = str(casa)
+        receber.CASA, receber.EMISSOES, receber.INSTALACOES = casa, casa / "emissoes.jsonl", casa / "instalacoes.jsonl"
+        assuntos = []
+        receber.ENVIAR = lambda m: (assuntos.append(m["Subject"]), {"enviado": True})[1]
+        srv = HTTPServer(("127.0.0.1", 0), receber.Receptor)
+        porta = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            url = f"http://127.0.0.1:{porta}/"
+            serial = licenca.gerar_serial("Softhouse Alfa", "2099-12-31", priv, "", "a@alfa.com", url)
+            # o receptor so aceita id que esta no livro de emissoes
+            r = licenca.verificar_serial(serial, pub)
+            receber.gravar(receber.EMISSOES, {"id": r["id"], "cliente": "Softhouse Alfa",
+                                              "emitido_em": "hoje", "email": "a@alfa.com"})
+            lic_path = self.tmp / "cliente/licenca"
+            os.environ["WX_LICENCA"] = str(lic_path)
+            licenca.CHAVE_PUBLICA = self.tmp / "pub.json"
+            licenca.CHAVE_PUBLICA.write_text(json.dumps(pub), encoding="utf-8")
+            velho_stdin = sys.stdin
+            sys.stdin = open(os.devnull)
+            try:
+                # 1) sem aceite (e sem terminal) nao grava nada
+                sys.argv = ["licenca.py", "instalar", serial]
+                self.assertEqual(licenca.main(), 2)
+                self.assertFalse(lic_path.exists())
+                # 2) com aceite: grava, registra o hash dos termos, e avisa
+                sys.argv = ["licenca.py", "instalar", serial, "--aceito"]
+                self.assertEqual(licenca.main(), 0)
+                aceite = json.loads((self.tmp / "cliente/aceite.json").read_text(encoding="utf-8"))
+                self.assertEqual(aceite["termos_sha256"], licenca.hash_dos_termos())
+                self.assertEqual(len(assuntos), 1)
+                self.assertTrue(assuntos[0].startswith("Instalação — Softhouse Alfa"))
+                # 3) mesma maquina de novo: reinstalacao, nao alerta
+                self.assertEqual(licenca.main(), 0)
+                self.assertNotIn("RECOMPARTILHAMENTO", assuntos[-1])
+                # 4) OUTRA maquina, mesmo serial: alerta
+                original = licenca.impressao_da_maquina
+                licenca.impressao_da_maquina = lambda: "MAQUINA-DO-VIZINHO"
+                try:
+                    self.assertEqual(licenca.main(), 0)
+                finally:
+                    licenca.impressao_da_maquina = original
+                self.assertTrue(assuntos[-1].startswith("POSSÍVEL RECOMPARTILHAMENTO"))
+                # 5) id que o vendedor nunca emitiu nao vira e-mail
+                antes = len(assuntos)
+                estranho = licenca.gerar_serial("Intruso", "2099-12-31", priv, "", "", url)
+                sys.argv = ["licenca.py", "instalar", estranho, "--aceito"]
+                licenca.main()
+                self.assertEqual(len(assuntos), antes)
+                # 6) comportamento velho: serial SEM aviso nao toca a rede
+                chamou = []
+                import urllib.request
+                velho = urllib.request.urlopen
+                urllib.request.urlopen = lambda *a, **k: chamou.append(1)
+                try:
+                    quieto = licenca.gerar_serial("Quieto", "2099-12-31", priv)
+                    sys.argv = ["licenca.py", "instalar", quieto, "--aceito"]
+                    self.assertEqual(licenca.main(), 0)
+                finally:
+                    urllib.request.urlopen = velho
+                self.assertEqual(chamou, [])
+                # 7) rede fora do ar: instala do mesmo jeito, aviso fica pendente
+                offline = licenca.gerar_serial("Offline", "2099-12-31", priv, "", "", "http://127.0.0.1:1/")
+                sys.argv = ["licenca.py", "instalar", offline, "--aceito"]
+                self.assertEqual(licenca.main(), 0)
+                self.assertTrue((self.tmp / "cliente/aviso-pendente.jsonl").is_file())
+            finally:
+                sys.stdin = velho_stdin
+        finally:
+            srv.shutdown()
+            os.environ.pop("WX_LICENCA", None)
+            os.environ.pop("WX_SERIAL_DIR", None)
+
     def test_gemeo_fotografa_a_sprint_e_o_e_se_declara_o_limite(self):
         self._aplicado()
         run(SCRIPTS / "constraints.py", "--project-root", self.tmp, "criar",

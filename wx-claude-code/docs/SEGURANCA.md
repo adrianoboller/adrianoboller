@@ -57,6 +57,31 @@ python3 ferramentas/wx-serial/emitir.py chaves --saida ~/.wx-serial/chaves
 cp ~/.wx-serial/chaves/chave-publica.json licenca/chave-publica.json
 ```
 
+## Termos, aceite e o aviso de instalação (3.42.0)
+
+`LICENCA.md` diz com todas as letras o que não pode: **recompartilhar** o
+pacote, o serial, o corpus ou os agentes. O instalador mostra o texto e pede o
+aceite antes de gravar o serial; o aceite fica em `~/.wx-claude-code/aceite.json`
+com o **hash do texto aceito** — sem o hash, «aceitei os termos» não diz quais.
+
+O serial emitido com `--aviso URL` carrega o endereço **dentro do payload
+assinado**: trocar ou apagar invalida o serial. Na instalação o plugin faz **um**
+POST com id, empresa, impressão da máquina, versão, data e hash dos termos —
+nada do projeto, nunca — e é isso que o `LICENCA.md` item 4 declara ao cliente.
+Rede fora do ar não derruba a instalação: fica em `aviso-pendente.jsonl`.
+Serial sem `aviso` não toca a rede, e o teste guarda esse comportamento velho.
+
+Do outro lado, `ferramentas/wx-serial/receber.py` só aceita id que está no
+livro de emissões (aviso de serial nunca emitido é lixo ou golpe, e responde
+204 do mesmo jeito para não ensinar quais ids existem), grava o livro de
+instalações e manda o e-mail por SMTP com credenciais do ambiente. **Segunda
+máquina no mesmo serial vira «POSSÍVEL RECOMPARTILHAMENTO» no assunto** — é a
+única forma de perceber isso sem servidor de licença.
+
+O que continua sendo dissuasão: quem apaga o hook não avisa ninguém. O aviso
+pega o cliente honesto que instalou em dois lugares sem pensar, não o que
+decidiu não pagar.
+
 ## A proteção real, quando valer a pena
 
 Servir o que tem valor de um servidor: o corpus do Help (12.035 páginas), os
