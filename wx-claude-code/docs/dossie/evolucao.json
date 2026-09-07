@@ -703,5 +703,20 @@
   "itens_questionario": 60,
   "hooks": 9,
   "manual": 825
+ },
+ {
+  "versao": "3.40.0",
+  "data": "2026-09-06",
+  "titulo": "a matriz passa a gerar o teste que ela ja pedia -- e ele FALHA",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 33,
+  "scripts": 40,
+  "linhas_py": 30700,
+  "prints": 63,
+  "testes": 102,
+  "itens_questionario": 60,
+  "hooks": 9,
+  "manual": 825
  }
 ]
