@@ -335,6 +335,60 @@ com os dois de volta, verde. E o conferidor tem controle próprio
 parasse de reconhecer a marca continuaria imprimindo «0 sem pedido» — que é o
 zero que não prova nada.
 
+### 8. `TETO_INVENTARIO_DESCASADO` — o `.fts` que faltava em três lugares
+
+**O defeito que motivou** (pergunta do dono, 07/09/2026, pedido 213): *«onde
+fica os .fts? por que o dossiê não tem no gráfico: Organograma dos
+arquivos?»*. Medido antes de mexer: o `.fts` faltava na **Figura 1** do dossiê
+(o organograma dos arquivos de uma tabela), na **Figura 8** (o caminho de uma
+inserção) e na **tabela-mestra do `docs/FORMATO.md`** — as três escritas à
+mão, e nenhuma saindo do código. E o código **também** estava errado:
+`EXTENSOES_TODAS`, em `phxsql-store/src/catalogo.rs`, não tinha `.fts` —
+a mesma armadilha da peça nova no fim de uma lista que já tinha acontecido
+duas vezes ali (seis para nove, depois nove para dez), só que desta vez em
+silêncio: `excluir_tabela` e `renomear_tabela` deixavam o `.fts` órfão (sob um
+nome que não existe mais, no renomear; vazando um índice de texto de uma
+tabela apagada, no excluir), e `arquivos_da_tabela` mentia dizendo que a
+tabela não tinha índice de texto nenhum.
+
+**O conserto tem duas pernas.** A primeira é `EXTENSOES_TODAS` ganhar o `.fts`
+(via `EXT_FTS`, de `crate::fts` — uma fonte só, não uma segunda string "fts"),
+com um acessor público (`Database::extensoes_de_uma_tabela()`) para quem
+precisa da lista como referência. A segunda é esta catraca: um conferidor
+(`crates/phxsql-server/src/conferidor_inventario.rs`) que lê essa lista e
+confere que toda extensão aparece na Figura 1, na Figura 8 (menos as que
+`FORA_DA_INSERCAO` documenta como legitimamente ausentes — `.trash` e
+`.reason`, que só nascem numa exclusão, nunca numa inserção) e na
+tabela-mestra do `FORMATO.md`, reprovando com o nome da extensão e o lugar
+que faltou — ou que sobrou, se uma cópia citar uma extensão que o código não
+tem.
+
+**Por que a Figura 8 tem uma exceção, e as outras duas não**: a Figura 1 e a
+tabela do `FORMATO.md` prometem o inventário COMPLETO ("SEMPRE os sete, SÓ ÀS
+VEZES quatro"); a Figura 8 desenha o caminho de UMA INSERÇÃO, e uma inserção
+não toca `.trash` nem `.reason`. Exigir os dois ali forçaria a figura a
+desenhar uma mentira só para agradar o conferidor. A lista de exceções é
+curta, com o motivo escrito ao lado — o mesmo molde do `ISENTOS` do
+`conferidor_temporarios`: isenção por nome e com motivo, para que a próxima
+extensão que só nasça numa exclusão entre por decisão, não por a figura ter
+esquecido dela calada.
+
+**Medido hoje** (`cargo run --release --example inventarios-descasados -p
+phxsql-server`): **11** extensões no código (`reg, ndx, bin, memo, log, bkp,
+trash, reason, pag, lgpd, fts`); **11** na Figura 1; **9** na Figura 8 (as 11
+menos as 2 isentas); **11** na tabela-mestra do `FORMATO.md`; **0**
+descasamentos.
+
+**A prova real, nos dois sentidos**, contra o dossiê de verdade (não só texto
+sintético): trocando as cinco ocorrências de `.fts` por `.zzz` dentro do
+bloco da Figura 1 do `dossie-phxsql-0.18.html`, a catraca ficou **vermelha**
+nomeando os dois lados — `fts -- falta em Figura 1` e `zzz -- sobra,
+desconhecida em Figura 1`; devolvido o arquivo original, verde de novo. E o
+mesmo vale para o código: com `EXT_FTS` fora de `EXTENSOES_TODAS` (o estado
+antes do pedido 213), os três testes que provam `excluir_tabela`,
+`renomear_tabela` e `arquivos_da_tabela` ficam vermelhos, nomeando o `.fts`
+órfão.
+
 ## Os limites de funcionamento encontrados (não são catracas)
 
 Achados varrendo `TETO`, `MAX` e `LIMITE` em `crates/*/src/**/*.rs` e em

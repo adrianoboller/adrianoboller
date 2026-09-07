@@ -28,6 +28,7 @@ use phxsql_core::paginacao::BALDES;
 use phxsql_core::schema::Schema;
 use phxsql_core::EXT_REG;
 
+use crate::fts::EXT_FTS;
 use crate::table::{SemEscrever, Table};
 
 /// O nome nao e um engano de digitacao: e uma tentativa de sair do diretorio.
@@ -519,11 +520,35 @@ impl Database {
     /// ninguem volta aqui. E este era o pior deles, porque o que ficava para
     /// tras era a trilha de dados PESSOAIS, sob um nome que nao existe mais.
     ///
+    /// O `.fts` faltou aqui de novo, pedido 213: entrou no motor em 07/09/2026
+    /// (pedido 200) e ninguem voltou a esta lista, exatamente a mesma
+    /// armadilha -- so que desta vez o estrago era pior por ser silencioso:
+    /// `excluir_tabela` e `renomear_tabela` deixavam o `.fts` para tras (orfao
+    /// sob um nome que nao existe mais, no renomear; ou vazando um indice de
+    /// texto de uma tabela apagada, no excluir), e `arquivos_da_tabela`
+    /// mentia dizendo que a tabela nao tinha indice de texto nenhum. A prova
+    /// esta em `fts_fica_orfao_se_a_lista_nao_o_conhece` (o teste que falha
+    /// com "fts" fora da lista e passa com ele dentro). O literal vira
+    /// `EXT_FTS` (de `crate::fts`) em vez de uma segunda string "fts": duas
+    /// fontes da mesma verdade e o que fez o defeito ser possivel.
+    ///
     /// A guarda agora nao confere a lista contra ela mesma (isso passaria com
     /// qualquer numero): confere o DIRETORIO depois de um `excluir_tabela`.
-    const EXTENSOES_TODAS: [&'static str; 10] = [
-        "reg", "ndx", "bin", "memo", "log", "bkp", "trash", "reason", "pag", "lgpd",
+    const EXTENSOES_TODAS: [&'static str; 11] = [
+        "reg", "ndx", "bin", "memo", "log", "bkp", "trash", "reason", "pag", "lgpd", EXT_FTS,
     ];
+
+    /// A mesma lista de cima, exposta para quem precisa dela como REFERENCIA
+    /// e nao para apagar nada -- o conferidor do pedido 213 (`phxsql-server`)
+    /// compara os tres inventarios escritos a mao (Figura 1, Figura 8, a
+    /// tabela-mestra do `FORMATO.md`) contra ESTA lista, para que nenhum dos
+    /// tres volte a divergir do codigo calado. Publica so a leitura: quem
+    /// quiser apagar ou renomear continua chamando `excluir_tabela` ou
+    /// `renomear_tabela`, que sao os unicos que decidem o que fazer com cada
+    /// extensao.
+    pub fn extensoes_de_uma_tabela() -> &'static [&'static str] {
+        &Self::EXTENSOES_TODAS
+    }
 
     /// Apaga os arquivos de uma tabela e devolve o que apagou.
     ///
@@ -1269,7 +1294,7 @@ mod testes_copia_entre_bancos {
     }
 
     /// **A lista das extensoes esta completa?** -- a pergunta que ja falhou
-    /// uma vez aqui, e que o dono fez de novo olhando a TELA.
+    /// DUAS vezes aqui, e as duas com o dono olhando a TELA.
     ///
     /// A lista nasceu com seis, a tabela tinha nove, e o comentario do
     /// `EXTENSOES_TODAS` conta o estrago. O `.lgpd` entrou depois disso e
@@ -1277,6 +1302,12 @@ mod testes_copia_entre_bancos {
     /// PESSOAIS para tras, sob um nome que nao existe mais -- e uma tabela
     /// nova com o mesmo nome herdaria a trilha de uma tabela alheia, que e
     /// conteudo de linha e so `administrar` pode ler.
+    ///
+    /// A segunda vez foi o `.fts` (pedido 213, 07/09/2026): entrou no motor
+    /// meses depois do `.lgpd` e ninguem voltou aqui de novo, a MESMA
+    /// armadilha. `pedidos.fts` e criado a mao abaixo pela mesma razao do
+    /// `.lgpd` -- a tabela de duas colunas deste teste nao declara indice de
+    /// texto nenhum, entao o motor nunca criaria um sozinho.
     ///
     /// Este teste nao confere a LISTA: confere o DIRETORIO. Conferir a lista
     /// contra ela mesma passaria com qualquer numero.
@@ -1293,6 +1324,9 @@ mod testes_copia_entre_bancos {
         // A trilha LGPD so nasce quando o primeiro evento aparece -- por isso
         // o arquivo e criado a mao aqui, que e o que o motor faria.
         std::fs::write(base.join("loja/pedidos.lgpd"), b"PLGP").unwrap();
+        // Idem para o `.fts`: so nasce se o esquema declara indice de texto,
+        // e este nao declara.
+        std::fs::write(base.join("loja/pedidos.fts"), b"PHXNDX\0\0").unwrap();
         drop(t);
 
         db.excluir_tabela("pedidos").unwrap();
@@ -1306,6 +1340,32 @@ mod testes_copia_entre_bancos {
             sobrou.is_empty(),
             "excluir_tabela deixou para tras: {sobrou:?} -- a lista de extensoes \
              ficou para tras de novo"
+        );
+    }
+
+    /// `arquivos_da_tabela` e o inventario que a TELA le -- se ele nao ve o
+    /// `.fts`, a tela diz "sem indice de texto" para uma tabela que tem um.
+    /// Com "fts" fora de `EXTENSOES_TODAS` este teste falha (o vetor nao
+    /// contem ".fts"); com "fts" dentro, passa. E a prova direta de que
+    /// `extensoes_de_uma_tabela()` -- o que o conferidor do pedido 213 le --
+    /// bate com o que este metodo relata.
+    #[test]
+    fn arquivos_da_tabela_enxerga_o_fts() {
+        let base = crate::apoio_teste::DirTemp::novo("phx-fts-inv");
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+        db.criar_tabela(None, esquema("pedidos")).unwrap();
+        std::fs::write(base.join("loja/pedidos.fts"), b"PHXNDX\0\0").unwrap();
+
+        let achados = db.arquivos_da_tabela("pedidos").unwrap();
+        assert!(
+            achados.iter().any(|e| e == ".fts"),
+            "arquivos_da_tabela nao achou o .fts: {achados:?}"
+        );
+        assert!(
+            Database::extensoes_de_uma_tabela().contains(&"fts"),
+            "extensoes_de_uma_tabela() (a lista que o conferidor do pedido \
+             213 le) nao tem \"fts\""
         );
     }
 
@@ -1323,6 +1383,9 @@ mod testes_copia_entre_bancos {
         }
         // Um furo, para provar que o renomear nao renumera nada: ele MOVE.
         t.excluir(2).unwrap();
+        // O mesmo `.fts` de mentira do teste de excluir: prova que o
+        // renomear tambem nao esquecia mais dele (pedido 213).
+        std::fs::write(base.join("loja/pedidos.fts"), b"PHXNDX\0\0").unwrap();
         drop(t);
 
         let movidos = db.renomear_tabela("pedidos", "pedidos_arquivados").unwrap();
@@ -1336,7 +1399,8 @@ mod testes_copia_entre_bancos {
         // este teste passar com o renomear movendo as SEIS extensoes da copia
         // em vez das NOVE -- e o `.trash`, o `.reason` e o `.pag` ficariam
         // para tras, orfaos, sob um nome que nao existe mais. Foi a prova real
-        // que pegou: reposto o defeito, o teste continuava verde.
+        // que pegou: reposto o defeito, o teste continuava verde. O `.fts`
+        // (pedido 213) repetiu o mesmo defeito meses depois.
         let sobrou: Vec<String> = std::fs::read_dir(base.join("loja"))
             .unwrap()
             .flatten()

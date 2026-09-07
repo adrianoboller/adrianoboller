@@ -279,6 +279,13 @@ Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
                       a tentativa fica no acessos.log. Vale ALEM do token
                       e de ips_permitidos, nao no lugar deles
 
+    CAMINHOS. base, log_acessos, blacklist, dblink, jobs e backup.destino
+    aceitam caminho RELATIVO ou ABSOLUTO. Relativo mora AO LADO do proprio
+    config.json -- nao do diretorio de onde voce chamou o phxsqld. Suba de
+    onde subir (cron, systemd, um terminal em outra pasta), os arquivos
+    nascem sempre no mesmo lugar. Caminho absoluto (comecando com / ou,
+    no Windows, com a letra da unidade) fica exatamente como voce escreveu.
+
 7.3 Suba
 
     LINUX     ./phxsqld --config config.json
@@ -309,9 +316,11 @@ Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
         systemctl daemon-reload
         systemctl enable --now phxsql
 
-    WINDOWS: crie um Servico do Windows apontando para phxsqld.exe, com o
-    diretorio de trabalho na pasta do config.json. Ou uma Tarefa Agendada
-    disparada no logon.
+    WINDOWS: crie um Servico do Windows apontando para phxsqld.exe. Ou uma
+    Tarefa Agendada disparada no logon. O diretorio de trabalho do servico
+    NAO PRECISA MAIS ser a pasta do config.json (ver CAMINHOS, 7.2) -- so
+    importa se voce escreveu algum dos seis campos de caminho como relativo
+    E quer que ele valha contra outra pasta.
 
 
 8. PROTOCOLO
