@@ -16,6 +16,7 @@ pub mod conferidor_botoes;
 pub mod conferidor_dependencias;
 pub mod conferidor_grades;
 pub mod conferidor_temporarios;
+pub mod conferidor_vermelhas;
 pub mod config;
 pub mod dblink;
 pub mod email;

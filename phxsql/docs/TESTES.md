@@ -35,7 +35,7 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **1.669 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **1.672 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
@@ -46,10 +46,10 @@ contando `#[test]` por arquivo e agrupando:
 | Protocolo e portões (despachar) | 247 | 14,8 |
 | Núcleo (JSON, tipos, UUID, zip, paralelo) | 155 | 9,3 |
 | Criptografia e codificação | 122 | 7,3 |
-| Configuração | 96 | 5,8 |
-| Servidor (outros) | 83 | 5,0 |
-| DbLink | 81 | 4,9 |
-| Telemetria e profiler | 61 | 3,7 |
+| Configuração | 96 | 5,7 |
+| Servidor (outros) | 86 | 5,1 |
+| DbLink | 81 | 4,8 |
+| Telemetria e profiler | 61 | 3,6 |
 | Camada SQL (léxico, sintaxe, tradução) | 55 | 3,3 |
 | Gatilhos e procedimentos | 42 | 2,5 |
 | Mensagens (i18n do servidor) | 32 | 1,9 |
@@ -69,7 +69,7 @@ contando `#[test]` por arquivo e agrupando:
 | **CLI** | **7** | **0,4** |
 | **Cluster** | **7** | **0,4** |
 | **Monitor de máquina** | **6** | **0,4** |
-| **total** | **1669** | |
+| **total** | **1672** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
@@ -1633,3 +1633,61 @@ bateria, e vários guardam o que criaram justamente para se olhar depois. São
 exigiria rodar cada exemplo, e alguns levam minutos. Está no pedido 209, com
 o que falta medir escrito. *Dispensa registrada é decisão; dispensa
 silenciosa é esquecimento.*
+
+## 16. As provas VERMELHAS — e o buraco que a revisão de 07/09/2026 achou
+
+### 16.1 O que é uma prova vermelha
+
+Quando o defeito é real e o conserto é decisão do dono, esta casa entrega a
+**guarda vermelha**: escreve-se o teste que falha com o defeito de pé, mede-se
+o estrago, e marca-se
+
+```rust
+#[ignore = "VERMELHA de proposito: prova um vazamento que ainda nao foi consertado"]
+```
+
+O defeito fica **provado** enquanto espera a decisão, em vez de virar uma frase
+num documento. É a mesma lei da prova real nos dois sentidos, com o segundo
+sentido adiado.
+
+### 16.2 O buraco
+
+Havia duas na árvore, e **nenhuma no `docs/PENDENCIAS.md`**:
+
+| Guarda | Onde | O que prova |
+|---|---|---|
+| `coluna_externa_marcada_sozinha_nao_pode_ir_em_claro` | `phxsql-store/tests/cifra-dos-dados.rs` | tabela cujas únicas colunas marcadas são `Memo`/`Bin` nasce **em claro** com o cofre ligado |
+| `tabela_que_nao_abre_nao_pode_encolher_a_posicao_em_silencio` | `phxsql-server/src/servidor.rs` | `posicao_do_diario` engole o erro de abrir e encolhe o número que a **eleição** compara |
+
+**Uma prova vermelha desligada é a forma mais educada de esquecer um defeito.**
+A bateria fica verde, o `cargo test` diz «0 falharam», e o defeito não aparece
+em lugar nenhum que alguém leia. O `#[ignore]` que deveria ser um lembrete
+funciona como um silenciador.
+
+Viraram os pedidos **210** (o vazamento) e **211** (a posição encolhida).
+
+### 16.3 A catraca
+
+`TETO_VERMELHA_SEM_PEDIDO = 0`, em
+`crates/phxsql-server/src/conferidor_vermelhas.rs`:
+
+```bash
+cargo run --example vermelhas-sem-pedido -p phxsql-server
+```
+
+Varre `crates/*/src` e `crates/*/tests` **do disco**, acha cada
+`#[ignore = "VERMELHA de proposito…`, pega o nome da função logo abaixo e exige
+que ele apareça no `PENDENCIAS.md`.
+
+**Não conta os `#[ignore]` comuns, e isso é decisão.** O vetor de 1.000.000 de
+iterações do X25519 (RFC 7748 §5.2) leva minutos, e o corpo traçado da sonda do
+fecho só roda reexecutado por `fecho_da_janela_sincroniza_o_reg_de_verdade` —
+os dois são ignorados por **custo**, não por defeito. Misturá-los encheria a
+catraca de ruído e a faria parar de significar «há defeito conhecido aqui».
+
+**Prova real nos dois sentidos**: apagando um dos dois nomes do
+`PENDENCIAS.md`, a catraca fica vermelha nomeando arquivo, linha e função; com
+os dois de volta, verde. E ela tem controle próprio
+(`o_conferidor_enxerga_as_vermelhas_que_existem`), porque um casador que
+parasse de reconhecer a marca continuaria imprimindo «0 sem pedido» — o zero
+que não prova nada, que é a mesma armadilha do pedido 150.

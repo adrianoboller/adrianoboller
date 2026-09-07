@@ -80,6 +80,16 @@ python3 docs/dossie/trio-de-motores.py
 python3 docs/dossie/numerar-figuras.py       # POR ÚLTIMO
 ```
 
+**Confira o código de saída de cada um.** O `numeros-do-projeto.py` chama o
+`cargo`, e numa árvore compartilhada ele pode sair diferente de zero porque
+outra frente segura o `flock /tmp/phx-cargo.lock` — aconteceu na revisão de
+07/09/2026. Ele **não** grava número errado nesse caso; ele simplesmente não
+grava, e o painel fica com o de ontem anunciando sucesso pelo silêncio. Rodar o
+laço com `|| echo FALHOU: $g` custa nada e é a diferença entre saber e supor.
+
+```bash
+```
+
 **Sem argumento nenhum**, e isso é conserto de 07/09/2026, não estilo. O nome
 do dossiê some da receita porque ele muda a cada refação, e quem o acha é o
 `dossie_da_pasta.py` — **um dono só**, varrendo `dossie-phxsql-*.html` na

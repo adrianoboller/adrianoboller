@@ -13,9 +13,10 @@ flock /tmp/phx-cargo.lock python3 docs/qa/medir.py
 > que ela não cobre. Os números do dia saem do gerador
 > (`python3 docs/qa/medir.py --gravar`, que escreve dentro do
 > `docs/QA-PDCA.md`) e são sete em 07/09/2026, não cinco: entraram a
-> `TETO_BOTAO_SEM_PROVA` (pedido 190) e a `TETO_TEMP_DIR_SOLTO` (pedido 150,
-> §6 abaixo). Número datado numa prosa não é número errado; número datado
-> **sem dizer que é datado** é.
+> `TETO_BOTAO_SEM_PROVA` (pedido 190), a `TETO_TEMP_DIR_SOLTO` (pedido 150,
+> §6) e a `TETO_VERMELHA_SEM_PEDIDO` (pedido 212, §7) — oito ao todo. Número
+> datado numa prosa não é número errado; número datado **sem dizer que é
+> datado** é.
 
 Medido em `5ca5326` (2026-09-03), com `cargo test -p phxsql-server --lib
 conferidor` verde (24 testes) logo depois. A árvore é compartilhada — outra
@@ -297,6 +298,42 @@ falta medir.
 `transacao.rs`, a catraca ficou **vermelha** nomeando arquivo e linha; sem
 ele, verde. E a medição fechou o laço: **265 → 0** nos três crates de
 servidor, **21 → 0** no store, com os mesmos 813 e 1.669 testes passando.
+
+### 7. `TETO_VERMELHA_SEM_PEDIDO` — guarda desligada que ninguém acha
+
+**O defeito que motivou** (achado na revisão completa de 07/09/2026): esta casa
+tem a boa prática de entregar a guarda **vermelha** quando o defeito é real e o
+conserto é decisão do dono — escreve-se o teste que falha com o defeito de pé,
+marca-se `#[ignore = "VERMELHA de proposito: …"]`, e o defeito fica provado
+enquanto espera. Havia **duas** delas na árvore, e **nenhuma** estava no
+`docs/PENDENCIAS.md`:
+
+| Guarda | Desde | O que prova |
+|---|---|---|
+| `coluna_externa_marcada_sozinha_nao_pode_ir_em_claro` | 05/09 | tabela cujas únicas colunas marcadas são `Memo`/`Bin` nasce **em claro** com o cofre ligado — `.memo` 6.264 B legível |
+| `tabela_que_nao_abre_nao_pode_encolher_a_posicao_em_silencio` | — | `posicao_do_diario` descarta o erro de abrir e encolhe a posição que a **eleição do cluster** compara |
+
+**Uma prova vermelha desligada é a forma mais educada de esquecer um defeito**:
+a bateria fica verde, o `cargo test` diz «0 falharam», e o defeito não aparece
+em nenhum lugar que alguém leia. *Papel que não está cumprindo tem de aparecer
+como não cumprindo* — e ali ele não aparecia. Abriram os pedidos 210 e 211.
+
+**O que ela conta**: cada `#[ignore = "VERMELHA de proposito…` em
+`crates/*/src` e `crates/*/tests`, com o nome da função logo abaixo, exigindo
+que esse nome apareça no `PENDENCIAS.md`. A lista de arquivos sai do disco.
+
+**O que ela NÃO conta, e é decisão**: os `#[ignore]` comuns. O vetor de
+1.000.000 de iterações do X25519 leva minutos, e o corpo traçado da sonda do
+fecho só roda reexecutado por outro teste — os dois são ignorados por **custo**,
+e não por defeito. Misturá-los encheria a catraca de ruído e a faria parar de
+significar «há defeito conhecido aqui», que é a única coisa que ela diz.
+
+**A prova real, nos dois sentidos**: apagando um dos dois nomes do
+`PENDENCIAS.md`, a catraca fica **vermelha** nomeando arquivo, linha e função;
+com os dois de volta, verde. E o conferidor tem controle próprio
+(`o_conferidor_enxerga_as_vermelhas_que_existem`), porque um casador que
+parasse de reconhecer a marca continuaria imprimindo «0 sem pedido» — que é o
+zero que não prova nada.
 
 ## Os limites de funcionamento encontrados (não são catracas)
 
