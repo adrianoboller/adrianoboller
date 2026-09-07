@@ -20,6 +20,7 @@ pub mod conferidor_temporarios;
 pub mod conferidor_vermelhas;
 pub mod config;
 pub mod dblink;
+pub mod diretivas;
 pub mod email;
 pub mod exportar;
 pub mod http;

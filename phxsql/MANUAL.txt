@@ -1430,7 +1430,11 @@ OPERACOES
 
     ping                                     versao, papel, conexoes
     config                                   configuracao (sem o token)
-    config_gravar   campos                   grava campos do config.json
+    config_gravar   campos, [motivo]         grava campos do config.json
+    diretivas       [escopo], [database],    as diretivas que valem, por escopo
+                    [tabela], [diario]       (o SHOW ... SETTINGS do SQL)
+    diretiva_gravar [escopo], campo, valor,  muda uma diretiva
+                    [database], [motivo]     (o ALTER ... SET do SQL)
     bancos                                   lista os databases
     tabelas         database                 schemas e tabelas
     esquema         database, tabela         colunas, indices, FKs, paginacao
@@ -1813,6 +1817,59 @@ CONFIGURAR PELA TELA
     Pela rede e a mesma coisa:
 
         {"op":"config_gravar","campos":{"max_linhas":500,"backup.hora":"03:00"}}
+
+AS DIRETIVAS: SHOW ... SETTINGS E ALTER ... SET
+
+    A mesma configuracao, pelo SQL, com o escopo dito por extenso:
+
+        SHOW SERVER SETTINGS;
+        SHOW DATABASE erp SETTINGS;
+        SHOW TABLE clientes SETTINGS;
+        SHOW CONNECTION SETTINGS;
+
+        ALTER SERVER   SET max_linhas = 500 MOTIVO 'pico de exportacao';
+        ALTER SERVER   SET recursos.cache_paginas = 4096;
+        ALTER SERVER   SET somente_leitura = TRUE;
+        ALTER DATABASE erp SET comandos_proibidos = (reindexar);
+
+    O valor aceita TRUE/FALSE (com ON/OFF, YES/NO, SIM/NAO como sinonimos),
+    numero, texto entre aspas, palavra solta e lista entre parenteses. O
+    MOTIVO '...' no fim e opcional, e vai para o diario.
+
+    O ALTER SERVER SET E O MESMO CAMINHO do config_gravar: mesmo poder
+    exigido, mesma conferencia de tipo, mesma gravacao atomica, mesmo efeito
+    a quente. So se grava o que a tela grava.
+
+    O SHOW SERVER SETTINGS lista cada campo com valor, tipo, escopo e se
+    aplica a quente ou exige reinicio -- e, quando algo ja esta GRAVADO e
+    ainda nao vale, ele mostra o valor do arquivo ao lado do que esta
+    valendo, em vez de repetir o velho calado.
+
+    O SHOW TABLE ... SETTINGS le a DECLARACAO da tabela: duplicate_check por
+    indice (que e o "unico"), integridade referencial por chave (que nasce
+    CONFERIDA), o journal e os gatilhos. ALTER TABLE ... SET nao grava nada,
+    e a recusa diz o caminho: indice se declara no criar_tabela, chave no
+    declarar_fk.
+
+    ALTER DATABASE ... SET comandos_proibidos = (a, b) proibe operacoes SO
+    NAQUELE BANCO. O global continua valendo em todos; o do banco APERTA e
+    nunca afrouxa, e para RETIRAR um comando da lista se edita o config.json
+    -- politica que a rede afrouxa nao e politica.
+
+O DIARIO DAS DIRETIVAS
+
+    Toda alteracao -- pela tela, pelo protocolo ou pelo ALTER ... SET --
+    grava uma linha em diretivas.log, ao lado do acessos.log, com nove
+    campos: data e hora, servidor, banco, recurso, valor anterior, valor
+    novo, usuario, IP de origem e motivo.
+
+        {"data_hora":"2026-09-07 18:40:12,345","servidor":"127.0.0.1:5000",
+         "banco":"","recurso":"max_linhas","valor_anterior":1000,
+         "valor_novo":500,"usuario":"ana","ip_origem":"192.168.50.20",
+         "motivo":"pico de exportacao"}
+
+    Valor de campo que carrega segredo (token, senha, chave privada) sai como
+    "(oculto)". O SHOW ... SETTINGS traz as ultimas vinte linhas junto.
 
 O QUE TEM NA TELA
 

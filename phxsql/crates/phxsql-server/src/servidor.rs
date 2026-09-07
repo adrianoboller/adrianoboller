@@ -137,6 +137,10 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // `somente_leitura` continua sendo edicao do arquivo, que e por onde ele
     // entrou.
     "config_gravar",
+    // `ALTER … SET` desemboca no `config_gravar` (escopo de servidor) ou grava
+    // a politica por banco: as duas reescrevem o `config.json`, e valem a
+    // mesma regra.
+    "diretiva_gravar",
     // Gravam o cadastro de jobs, que e arquivo deste servidor. `job_rodar` NAO
     // entra: ele confere o portao com a operacao DE DENTRO do job, entao um
     // job que grava ja e recusado por ela num servidor somente-leitura -- e um
@@ -707,6 +711,21 @@ pub struct Servidor {
     /// escrita sem reiniciar o processo -- e o config continua dizendo o que
     /// esta no arquivo, que e outra pergunta.
     somente_leitura_vivo: AtomicBool,
+    /// As proibicoes POR BANCO, vivas: `(banco, comando)`.
+    ///
+    /// Vivas porque `ALTER DATABASE … SET comandos_proibidos` e um APERTO, e
+    /// aperto que so valesse no proximo arranque deixaria aberta justamente a
+    /// janela em que alguem esta fechando a porta.
+    proibidos_por_base: Mutex<Vec<(String, String)>>,
+    /// Ha alguma? **O portao que decide vem ANTES do trabalho.**
+    ///
+    /// Sem esta bandeira, todo pedido de todo cliente pagaria um `lock` no
+    /// caminho quente do `despachar` por uma lista que, em quase todo
+    /// servidor, esta vazia. E a mesma licao que o Profiler desligado cobrou a
+    /// 7% da carga, e o mesmo remedio do `ha_gatilhos`.
+    ha_proibidos_por_base: AtomicBool,
+    /// O diario administrativo: quem mudou qual diretiva, quando e por que.
+    diario: crate::diretivas::Diario,
     /// O que cada laco de replica conta, por nome de origem, para a operacao
     /// `replicacao_estado` -- posicao, ultimo erro, recusas.
     estado_replicacao: Mutex<HashMap<String, EstadoOrigem>>,
@@ -810,11 +829,16 @@ impl Servidor {
         // Copiado ANTES de o `config` entrar no struct, que o consome -- pela
         // mesma razao que `max_linhas` e os outros dois acima.
         let cadastro_de_arranque = config.cadastro.clone();
+        let proibidos_por_base = config.politica.proibidos_por_base.clone();
+        let log_diretivas = config.log_acessos.clone();
         let servidor = Arc::new(Servidor {
             cluster,
             mensagens,
             papel_vivo: AtomicU8::new(papel_para_u8(papel)),
             somente_leitura_vivo: AtomicBool::new(somente_leitura),
+            ha_proibidos_por_base: AtomicBool::new(!proibidos_por_base.is_empty()),
+            proibidos_por_base: Mutex::new(proibidos_por_base),
+            diario: crate::diretivas::Diario::ao_lado_de(&log_diretivas),
             estado_replicacao: Mutex::new(HashMap::new()),
             toques_bidi: Mutex::new(HashMap::new()),
             posicoes_bidi: Mutex::new(posicoes_bidi),
@@ -3822,6 +3846,31 @@ impl Servidor {
         j
     }
 
+    /// **O portao das diretivas, e ele e UM so.**
+    ///
+    /// O portao geral do `despachar` confere o campo `"tabela"` do pedido, e
+    /// nenhuma destas operacoes tem tabela -- elas caem na regra da base
+    /// vazia. Isso ja exige `administrar`, mas depender disso deixaria a
+    /// guarda mais importante do servidor amarrada a um detalhe de resolucao
+    /// de nome de base.
+    ///
+    /// Ele existe como funcao, e nao copiado em cada operacao, porque a
+    /// segunda copia e sempre a que envelhece: `config_gravar`,
+    /// `diretiva_gravar` e o `SHOW … SETTINGS` conferem AQUI, e o dia em que
+    /// a regra mudar ela muda uma vez.
+    fn exigir_administrar_config(&self, sessao: &Sessao) -> Result<()> {
+        if let Some(u) = &sessao.usuario {
+            if !u.pode_em("", "", Atividade::Administrar) {
+                return Err(PhxError::Autorizacao(format!(
+                    "{} nao tem permissao de administrar: as diretivas do \
+                     servidor exigem esse poder",
+                    u.login
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Grava campos do `config.json` pedidos pela tela.
     ///
     /// # O portao e proprio, e nao pode nao ser
@@ -3856,6 +3905,25 @@ impl Servidor {
         };
         let mudancas: Vec<(String, Json)> =
             pares.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+
+        // O valor ANTERIOR sai do ARQUIVO, e antes da gravacao -- ler depois
+        // devolveria o valor novo, e ler da memoria viva devolveria o do
+        // arranque para os campos que so valem no proximo. O diario tem de
+        // dizer de que valor se saiu, e o arquivo e quem sabe.
+        let antes: Vec<Json> = {
+            let arvore = std::fs::read_to_string(&caminho)
+                .ok()
+                .and_then(|t| Json::analisar(&t).ok());
+            mudancas
+                .iter()
+                .map(|(campo, _)| {
+                    arvore
+                        .as_ref()
+                        .and_then(|a| crate::config::valor_em(a, campo))
+                        .unwrap_or(Json::Nulo)
+                })
+                .collect()
+        };
 
         let novo = crate::config::Config::gravar_campos(&caminho, &mudancas)?;
 
@@ -3899,6 +3967,20 @@ impl Servidor {
             lista.join(", "),
             caminho.display()
         );
+        // E o DIARIO, com os nove campos. Ele entra AQUI, e nao no
+        // `diretiva_gravar`: `ALTER SERVER SET` desemboca nesta funcao, entao
+        // registrar la deixaria de fora tudo o que a tela de Configuracoes
+        // grava -- que e por onde a maioria das mudancas passa hoje.
+        for ((campo, depois), antes) in mudancas.iter().zip(antes.iter()) {
+            self.anotar_no_diario(
+                sessao,
+                "",
+                campo,
+                antes.clone(),
+                depois.clone(),
+                p.texto_ou("motivo", ""),
+            );
+        }
 
         // O que ficou gravado e ainda NAO vale: a tela mostra isto ao lado do
         // campo, em vez de prometer efeito que so vem no proximo arranque.
@@ -4019,6 +4101,521 @@ impl Servidor {
             pares.push(("usuario", u.ficha()));
         }
         Ok(Json::objeto(pares))
+    }
+
+    // ------------------------------------------------------ as DIRETIVAS
+
+    /// Uma linha no diario administrativo. Falha em silencio de proposito.
+    ///
+    /// # Por que o diario nao pode derrubar a gravacao
+    ///
+    /// A alternativa seria recusar a mudanca quando o diario nao grava -- e ai
+    /// um disco cheio, ou um diretorio sem permissao, tirariam do
+    /// administrador justamente o poder de consertar o servidor. A mudanca ja
+    /// aconteceu e ja esta no `config.json`; o que se perde e a linha, e a
+    /// perda vai para o erro padrao, que e onde o resto das queixas do
+    /// arranque ja mora.
+    fn anotar_no_diario(
+        &self,
+        sessao: &Sessao,
+        banco: &str,
+        recurso: &str,
+        valor_anterior: Json,
+        valor_novo: Json,
+        motivo: &str,
+    ) {
+        let a = crate::diretivas::Alteracao {
+            quando_ms: crate::agora_ms(),
+            servidor: self.config.bind.clone(),
+            banco: banco.to_string(),
+            recurso: recurso.to_string(),
+            valor_anterior,
+            valor_novo,
+            usuario: match &sessao.usuario {
+                Some(u) => u.login.clone(),
+                None => "(token de servico)".to_string(),
+            },
+            ip_origem: sessao.ip.clone(),
+            motivo: motivo.to_string(),
+        };
+        if let Err(e) = self.diario.registrar(&a) {
+            eprintln!(
+                "nao consegui anotar em {}: {e}",
+                self.diario.caminho().display()
+            );
+        }
+    }
+
+    /// `SHOW … SETTINGS`: o que esta valendo, por escopo.
+    fn op_diretivas(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        self.exigir_administrar_config(sessao)?;
+        let escopo = p.texto_ou("escopo", "servidor").trim().to_lowercase();
+        let mut r = match escopo.as_str() {
+            "servidor" | "server" => self.diretivas_do_servidor(),
+            "database" | "banco" | "schema" => self.diretivas_da_base(p, sessao)?,
+            "tabela" | "table" => self.diretivas_da_tabela(p, sessao)?,
+            "conexao" | "connection" => self.diretivas_da_conexao(sessao),
+            outro => {
+                return Err(PhxError::Esquema(format!(
+                    "escopo {outro:?} nao existe: use servidor, database, tabela ou conexao"
+                )))
+            }
+        };
+        // O diario junto, e isso e decisao: a pergunta que uma pessoa faz ao
+        // ver uma diretiva estranha e «quem mexeu nisso?», e diario que so se
+        // le por outro comando e diario que ninguem le.
+        let quantas = p.inteiro_ou("diario", 0).clamp(0, 500) as usize;
+        if quantas > 0 {
+            let linhas: Vec<Json> = self
+                .diario
+                .ultimas(quantas)
+                .iter()
+                .map(crate::diretivas::Alteracao::para_json)
+                .collect();
+            r.definir("diario", Json::Lista(linhas));
+        }
+        Ok(r)
+    }
+
+    /// Os campos do `config.json` que se gravam, com valor, tipo e alcance.
+    ///
+    /// A lista sai de `CAMPOS_EDITAVEIS`, que e a MESMA que a tela usa e a
+    /// mesma que o `config_gravar` confere. Uma segunda lista aqui divergiria
+    /// no primeiro campo que alguem acrescentasse de um lado so -- e a que
+    /// envelhece e sempre a que ninguem compila contra a outra.
+    fn diretivas_do_servidor(&self) -> Json {
+        let vivo = self.configuracao_json();
+        // O que ja esta GRAVADO e ainda nao vale.
+        //
+        // Achado exercitando, e nao lendo: `ALTER SERVER SET timeout_s = 45`
+        // gravava 45 e o `SHOW` seguinte respondia 30, calado -- porque
+        // `configuracao_json` devolve o valor VIVO. E o mesmo defeito que a
+        // tela de Configuracoes ja pagou uma vez ("quem acabou de digitar 90
+        // via 45 de novo"), reaparecido pela porta nova. Aqui os dois valores
+        // aparecem lado a lado, e a resposta deixa de mentir sobre o que
+        // acabou de acontecer.
+        let no_arquivo: Vec<(String, Json)> = vivo
+            .campo("no_arquivo")
+            .and_then(|j| match j {
+                Json::Objeto(pares) => Some(pares.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        let campos: Vec<Json> = crate::config::CAMPOS_EDITAVEIS
+            .iter()
+            .map(|(campo, tipo, quente)| {
+                let sigiloso = crate::diretivas::campo_sigiloso(campo);
+                let valor = match crate::config::valor_em(&vivo, campo) {
+                    // Segredo nunca sai daqui, e a regra e por NOME de campo:
+                    // lista de segredos envelhece calada.
+                    _ if sigiloso => Json::texto_de(crate::diretivas::OCULTO),
+                    Some(v) => v,
+                    None => Json::Nulo,
+                };
+                let gravado = no_arquivo.iter().find(|(c, _)| c == campo).map(|(_, v)| {
+                    if sigiloso {
+                        Json::texto_de(crate::diretivas::OCULTO)
+                    } else {
+                        v.clone()
+                    }
+                });
+                let mut pares = vec![
+                    ("recurso", Json::texto_de(*campo)),
+                    ("valor", valor),
+                    ("tipo", Json::texto_de(tipo.nome())),
+                    (
+                        "aplica",
+                        Json::texto_de(if *quente {
+                            "a quente"
+                        } else {
+                            "exige reinicio"
+                        }),
+                    ),
+                    ("a_quente", Json::Bool(*quente)),
+                    ("escopo", Json::texto_de("servidor")),
+                ];
+                if let Some(g) = gravado {
+                    pares.push(("no_arquivo", g));
+                    pares.push(("esperando_reinicio", Json::Bool(true)));
+                }
+                Json::objeto(pares)
+            })
+            .collect();
+        Json::objeto(vec![
+            ("escopo", Json::texto_de("servidor")),
+            ("servidor", Json::texto_de(&self.config.bind)),
+            (
+                "arquivo",
+                match &self.config.caminho {
+                    Some(c) => Json::texto_de(c.display().to_string()),
+                    None => Json::Nulo,
+                },
+            ),
+            ("versao", Json::texto_de(env!("CARGO_PKG_VERSION"))),
+            ("configuraveis", Json::de_u64(campos.len() as u64)),
+            ("recursos", Json::Lista(campos)),
+        ])
+    }
+
+    /// O que vale NESTE banco.
+    fn diretivas_da_base(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let base = p.texto_ou("database", "").trim().to_string();
+        if base.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe o banco: SHOW DATABASE <banco> SETTINGS".into(),
+            ));
+        }
+        // A base tem de existir: dizer as diretivas de um banco que nao ha
+        // seria responder sobre nada com cara de resposta.
+        let tabelas = {
+            let trava = self.travar_dados()?;
+            trava.abrir_database(&base)?.tabelas(None)?.len()
+        };
+        let (gatilhos, procedimentos) = {
+            let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+            (
+                r.gatilhos_do_db(&base).len(),
+                r.procedimentos_do_db(&base).len(),
+            )
+        };
+        let daqui: Vec<Json> = self
+            .proibidos_por_base
+            .lock()
+            .map(|l| {
+                l.iter()
+                    .filter(|(b, _)| *b == base)
+                    .map(|(_, c)| Json::texto_de(c))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(Json::objeto(vec![
+            ("escopo", Json::texto_de("database")),
+            ("servidor", Json::texto_de(&self.config.bind)),
+            ("banco", Json::texto_de(&base)),
+            ("tabelas", Json::de_u64(tabelas as u64)),
+            ("gatilhos", Json::de_u64(gatilhos as u64)),
+            ("procedimentos", Json::de_u64(procedimentos as u64)),
+            // As transacoes NAO se ligam e desligam por banco: elas existem
+            // por conexao, sempre, e quem nao abre uma nao paga nada. Ver
+            // docs/DIRETIVAS.md.
+            (
+                "transacoes",
+                Json::texto_de("sempre disponiveis, por conexao"),
+            ),
+            (
+                "journal",
+                Json::texto_de("sempre ligado, por tabela (.log)"),
+            ),
+            (
+                "base_proibida",
+                Json::Bool(self.config.politica.base_proibida(&base)),
+            ),
+            (
+                "comandos_proibidos_globais",
+                Json::Lista(
+                    self.config
+                        .politica
+                        .comandos_proibidos
+                        .iter()
+                        .map(Json::texto_de)
+                        .collect(),
+                ),
+            ),
+            ("comandos_proibidos_da_base", Json::Lista(daqui)),
+            (
+                "somente_leitura",
+                Json::Bool(self.somente_leitura_vivo.load(Ordering::Relaxed)),
+            ),
+            ("_sessao", Json::texto_de(sessao.login())),
+        ]))
+    }
+
+    /// O que a TABELA ja declara -- e as tres diretivas do HFSQL lidas nela.
+    ///
+    /// Tudo aqui e leitura da declaracao, e nao um bloco de configuracao
+    /// paralelo: `duplicate_check` e o `unico` do indice, a integridade
+    /// referencial e o `verificar` da chave, e o journal e o `.log` que toda
+    /// tabela tem. Guardar uma copia disso num `diretivas.json` criaria uma
+    /// segunda verdade ao lado do esquema -- e a segunda e sempre a que
+    /// diverge.
+    fn diretivas_da_tabela(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let base = p.texto_ou("database", "").trim().to_string();
+        let tabela = p.texto_ou("tabela", "").trim().to_string();
+        if tabela.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe a tabela: SHOW TABLE <tabela> SETTINGS".into(),
+            ));
+        }
+        let ped = Json::objeto(vec![
+            ("database", Json::texto_de(&base)),
+            ("tabela", Json::texto_de(&tabela)),
+        ]);
+        let esquema = self.executar_derivado("esquema", &ped, sessao)?;
+        let indices = esquema.campo("indices").cloned().unwrap_or(Json::Nulo);
+        let fks = esquema
+            .campo("chaves_estrangeiras")
+            .cloned()
+            .unwrap_or(Json::Nulo);
+        let duplicidade: Vec<Json> = indices
+            .lista()
+            .unwrap_or_default()
+            .iter()
+            .map(|i| {
+                Json::objeto(vec![
+                    ("indice", Json::texto_de(i.texto_ou("nome", ""))),
+                    // `duplicate_check` do HFSQL e o inverso do `unico`: la se
+                    // liga a CONFERENCIA de duplicidade, aqui se declara que a
+                    // chave e unica. Mesma garantia, nome pelo avesso.
+                    ("duplicate_check", Json::Bool(i.booleano_ou("unico", false))),
+                    ("unico", Json::Bool(i.booleano_ou("unico", false))),
+                ])
+            })
+            .collect();
+        let integridade: Vec<Json> = fks
+            .lista()
+            .unwrap_or_default()
+            .iter()
+            .map(|f| {
+                Json::objeto(vec![
+                    ("chave", Json::texto_de(f.texto_ou("nome", ""))),
+                    ("tabela_ref", Json::texto_de(f.texto_ou("tabela_ref", ""))),
+                    (
+                        "referential_integrity",
+                        Json::Bool(f.booleano_ou("verificar", false)),
+                    ),
+                    ("ao_excluir", Json::texto_de(f.texto_ou("ao_excluir", ""))),
+                    ("ao_alterar", Json::texto_de(f.texto_ou("ao_alterar", ""))),
+                ])
+            })
+            .collect();
+        let gatilhos = {
+            let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+            r.gatilhos_do_db(&base)
+                .iter()
+                .filter(|g| g.tabela == tabela)
+                .count()
+        };
+        Ok(Json::objeto(vec![
+            ("escopo", Json::texto_de("tabela")),
+            ("servidor", Json::texto_de(&self.config.bind)),
+            ("banco", Json::texto_de(&base)),
+            ("tabela", Json::texto_de(&tabela)),
+            ("duplicidade", Json::Lista(duplicidade)),
+            ("integridade_referencial", Json::Lista(integridade)),
+            ("triggers", Json::de_u64(gatilhos as u64)),
+            ("journal", Json::Bool(true)),
+            (
+                "motivo_obrigatorio",
+                Json::Bool(esquema.booleano_ou("motivo_obrigatorio", false)),
+            ),
+            (
+                "gravavel_por_diretiva",
+                // Dispensa registrada, dita na propria resposta: ver
+                // `docs/DIRETIVAS.md` §4.
+                Json::Lista(Vec::new()),
+            ),
+        ]))
+    }
+
+    /// O que e verdade DESTA conexao.
+    fn diretivas_da_conexao(&self, sessao: &Sessao) -> Json {
+        Json::objeto(vec![
+            ("escopo", Json::texto_de("conexao")),
+            ("servidor", Json::texto_de(&self.config.bind)),
+            ("usuario", Json::texto_de(sessao.login())),
+            ("ip_origem", Json::texto_de(&sessao.ip)),
+            ("ligacao", Json::de_u64(sessao.ligacao)),
+            // A cifra do fio existe e se negocia no APERTO DE MAO, nao por
+            // diretiva -- `docs/CIFRA-DO-FIO.md`. Aqui se diz o estado.
+            ("encryption", Json::Bool(self.config.cifra_fio.ligada)),
+            (
+                "encryption_exigida",
+                Json::Bool(self.config.cifra_fio.exigir),
+            ),
+            // E a compressao NAO existe. Dizer `false` e a resposta honesta;
+            // omitir o campo faria quem pergunta achar que a versao e velha.
+            ("compression", Json::Bool(false)),
+            (
+                "max_linhas",
+                Json::de_u64(self.max_linhas_vivo.load(Ordering::Relaxed)),
+            ),
+            ("timeout_s", Json::de_u64(self.config.timeout_s)),
+            (
+                "somente_leitura",
+                Json::Bool(self.somente_leitura_vivo.load(Ordering::Relaxed)),
+            ),
+            ("gravavel_por_diretiva", Json::Lista(Vec::new())),
+        ])
+    }
+
+    /// `ALTER … SET`: muda uma diretiva, por escopo.
+    ///
+    /// # O escopo de SERVIDOR nao tem caminho proprio
+    ///
+    /// Ele monta o pedido do `config_gravar` e chama a MESMA funcao. Mesmo
+    /// portao, mesma conferencia de tipo, mesma gravacao atomica, mesma
+    /// aplicacao a quente, mesmo diario. Um segundo caminho de gravacao ao
+    /// lado daquele seria a porta dos fundos que a lei desta casa manda
+    /// procurar: *portao de permissao e UM so*.
+    fn op_diretiva_gravar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let escopo = p.texto_ou("escopo", "servidor").trim().to_lowercase();
+        let campo = p.texto_ou("campo", "").trim().to_string();
+        if campo.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"campo\": ALTER <escopo> SET <campo> = <valor>".into(),
+            ));
+        }
+        let valor = p.campo("valor").cloned().unwrap_or(Json::Nulo);
+        match escopo.as_str() {
+            "servidor" | "server" => {
+                let pedido = Json::objeto(vec![
+                    ("campos", Json::Objeto(vec![(campo, valor)])),
+                    ("motivo", Json::texto_de(p.texto_ou("motivo", ""))),
+                ]);
+                self.op_config_gravar(&pedido, sessao)
+            }
+            "database" | "banco" | "schema" => self.diretiva_da_base_gravar(p, sessao),
+            "tabela" | "table" => Err(PhxError::Esquema(format!(
+                "ALTER TABLE nao grava {campo:?}, e nenhuma outra: o que a tabela \
+                 tem se declara. `duplicate_check` e o `unico` do indice \
+                 (criar_tabela); `referential_integrity` e o `verificar` da chave \
+                 (declarar_fk, e ela NASCE conferida). SHOW TABLE <t> SETTINGS \
+                 mostra as duas. O motivo esta em docs/DIRETIVAS.md"
+            ))),
+            "conexao" | "connection" => Err(PhxError::Esquema(format!(
+                "ALTER CONNECTION nao grava {campo:?}, e nenhuma outra: nao ha \
+                 ajuste por conexao neste servidor. A cifra do fio se negocia no \
+                 aperto de mao (op `cifrar`), nao por diretiva, e compressao no \
+                 fio nao existe. SHOW CONNECTION SETTINGS diz o estado desta"
+            ))),
+            outro => Err(PhxError::Esquema(format!(
+                "escopo {outro:?} nao existe: use servidor, database, tabela ou conexao"
+            ))),
+        }
+    }
+
+    /// A primeira diretiva POR BANCO de verdade: `comandos_proibidos`.
+    ///
+    /// # Ela so acrescenta, e isso e a guarda e nao a falta dela
+    ///
+    /// O global continua valendo em todos os bancos; o do banco APERTA e nunca
+    /// afrouxa. Retirar continua sendo edicao do `config.json` -- e a mesma
+    /// razao pela qual `seguranca.*` ficou fora do `CAMPOS_EDITAVEIS`: uma
+    /// sessao roubada nao esvazia a lista de comandos proibidos.
+    fn diretiva_da_base_gravar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        self.exigir_administrar_config(sessao)?;
+        let campo = p.texto_ou("campo", "").trim().to_string();
+        if campo != "comandos_proibidos" {
+            return Err(PhxError::Esquema(format!(
+                "ALTER DATABASE nao grava {campo:?}: a unica diretiva por banco \
+                 hoje e \"comandos_proibidos\". Transacoes, journal e integridade \
+                 referencial nao se ligam por banco aqui -- SHOW DATABASE <b> \
+                 SETTINGS diz o que cada uma e, e docs/DIRETIVAS.md diz por que"
+            )));
+        }
+        let base = p.texto_ou("database", "").trim().to_string();
+        let Some(caminho) = self.config.caminho.clone() else {
+            return Err(PhxError::Esquema(
+                "este servidor nao subiu de um arquivo (--config): nao ha config.json para gravar"
+                    .into(),
+            ));
+        };
+        // Um nome so, ou uma lista deles.
+        let comandos: Vec<String> = match p.campo("valor") {
+            Some(Json::Lista(l)) => l
+                .iter()
+                .filter_map(Json::texto)
+                .map(str::to_string)
+                .collect(),
+            Some(Json::Texto(t)) => vec![t.clone()],
+            _ => {
+                return Err(PhxError::Esquema(
+                    "informe os comandos: ALTER DATABASE <b> SET comandos_proibidos = (a, b)"
+                        .into(),
+                ))
+            }
+        };
+        // Proibir uma operacao que nao existe e engano de digitacao, e ele
+        // custa caro: a lista fica com uma linha que nunca casa e quem a
+        // escreveu acha que fechou a porta. O catalogo e quem sabe os nomes.
+        for c in &comandos {
+            let alvo = c.trim().to_lowercase();
+            if !crate::catalogo::OPERACOES
+                .iter()
+                .any(|o| o.nome == alvo || o.apelidos.contains(&alvo.as_str()))
+            {
+                return Err(PhxError::Esquema(format!(
+                    "{c:?} nao e uma operacao deste servidor: proibir um nome que \
+                     nao existe deixa a lista com uma guarda que nunca fecha. \
+                     A op `catalogo` lista as que ha"
+                )));
+            }
+        }
+
+        let antes: Vec<Json> = self
+            .proibidos_por_base
+            .lock()
+            .map(|l| {
+                l.iter()
+                    .filter(|(b, _)| *b == base)
+                    .map(|(_, c)| Json::texto_de(c))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let (novo, entraram, existiam) =
+            crate::config::Config::acrescentar_proibidos_da_base(&caminho, &base, &comandos)?;
+
+        // A quente: aperto que so valesse no proximo arranque deixaria aberta
+        // justamente a janela em que alguem esta fechando a porta.
+        let vivos = novo.politica.proibidos_por_base.clone();
+        if let Ok(mut l) = self.proibidos_por_base.lock() {
+            *l = vivos.clone();
+        }
+        self.ha_proibidos_por_base
+            .store(!vivos.is_empty(), Ordering::Relaxed);
+
+        let depois: Vec<Json> = vivos
+            .iter()
+            .filter(|(b, _)| *b == base)
+            .map(|(_, c)| Json::texto_de(c))
+            .collect();
+        self.anotar_no_diario(
+            sessao,
+            &base,
+            "comandos_proibidos",
+            Json::Lista(antes),
+            Json::Lista(depois.clone()),
+            p.texto_ou("motivo", ""),
+        );
+
+        Ok(Json::objeto(vec![
+            ("gravado", Json::Bool(true)),
+            ("escopo", Json::texto_de("database")),
+            ("banco", Json::texto_de(&base)),
+            ("recurso", Json::texto_de("comandos_proibidos")),
+            (
+                "acrescentados",
+                Json::Lista(entraram.iter().map(Json::texto_de).collect()),
+            ),
+            (
+                "ja_existiam",
+                Json::Lista(existiam.iter().map(Json::texto_de).collect()),
+            ),
+            ("comandos_proibidos_da_base", Json::Lista(depois)),
+            ("aplica", Json::texto_de("a quente")),
+            // Dito na resposta, e nao so no manual: quem esperava que o `SET`
+            // substituisse a lista precisa descobrir agora, e nao no dia em
+            // que uma proibicao que ele achou ter tirado continuar valendo.
+            (
+                "aviso",
+                Json::texto_de(
+                    "esta diretiva so ACRESCENTA; para retirar, edite \
+                     seguranca.comandos_proibidos no config.json",
+                ),
+            ),
+            ("arquivo", Json::texto_de(caminho.display().to_string())),
+        ]))
     }
 
     fn op_servico(&self) -> Result<Json> {
@@ -6493,6 +7090,36 @@ impl Servidor {
             }
         }
 
+        // A proibicao POR BANCO, no MESMO portao: o pedido 220 pedia «para um
+        // banco x», e a resposta certa nao e um segundo portao ao lado deste
+        // -- e a mesma conferencia, um campo depois. Vem depois da global de
+        // proposito: o global vale para o pedido que nem nomeia banco.
+        //
+        // A bandeira atomica antes do `lock` e o que faz esta guarda custar
+        // zero para quem nunca a pediu.
+        if self.ha_proibidos_por_base.load(Ordering::Relaxed)
+            && !base.is_empty()
+            && self
+                .proibidos_por_base
+                .lock()
+                .map(|l| {
+                    let alvo = op.trim().to_lowercase();
+                    l.iter().any(|(b, c)| *b == base && *c == alvo)
+                })
+                .unwrap_or(false)
+        {
+            let destino = self.violacao_grave(ip, &op, "comando proibido neste banco");
+            return (
+                op.clone(),
+                false,
+                Err(PhxError::Autorizacao(self.recado_de_grave(
+                    &destino,
+                    "erro.comando_proibido_na_base",
+                    &[("op", op.as_str()), ("base", base.as_str())],
+                ))),
+            );
+        }
+
         if self.config.politica.base_proibida(&base) {
             let destino = self.violacao_grave(ip, &op, "base proibida pela politica");
             return (
@@ -7102,6 +7729,8 @@ impl Servidor {
             ])),
             "config" => Ok(self.configuracao_json()),
             "config_gravar" => self.op_config_gravar(p, sessao),
+            "diretivas" => self.op_diretivas(p, sessao),
+            "diretiva_gravar" => self.op_diretiva_gravar(p, sessao),
             "catalogo" => Ok(self.op_catalogo(p, sessao)),
             "sql" => self.op_sql(p, sessao),
             "quem_sou" => Ok(match &sessao.usuario {
@@ -10793,6 +11422,33 @@ impl Servidor {
         // Eles nao passam pelo tradutor de SELECT porque nao sao consulta:
         // nao tem tabela, nao produzem linha e nao dependem de esquema
         // nenhum. Sao comandos de SESSAO, como o BULKINSERT.
+        // As DIRETIVAS vem antes do detector de rotina, e a ordem importa: o
+        // `rotina::comando` atende `SHOW` e recusa o que nao for TRIGGERS ou
+        // PROCEDURES -- entao um `SHOW SERVER SETTINGS` chegando la voltaria
+        // com «SHOW nesta camada lista TRIGGERS ou PROCEDURES», que manda quem
+        // digitou procurar no lugar errado. O detector de diretiva so reclama
+        // a frase quando a palavra depois do SHOW e SERVER, DATABASE, TABLE ou
+        // CONNECTION, e nenhuma delas o outro atendia.
+        if let Some(c) = phxsql_sql::diretiva::comando(&texto)? {
+            let mut pedido = c.pedido();
+            // O `database` do pedido de fora viaja junto: `SHOW TABLE clientes
+            // SETTINGS` nao repete a base que a sessao ja disse.
+            if let Json::Objeto(pares) = &mut pedido {
+                if !pares.iter().any(|(k, _)| k == "database") {
+                    pares.push((
+                        "database".to_string(),
+                        Json::texto_de(p.texto_ou("database", "")),
+                    ));
+                }
+            }
+            let bruto = self.executar(&c.op, &pedido, sessao)?;
+            return Ok(Json::objeto(vec![
+                ("sql", Json::texto_de(&texto)),
+                ("op", Json::texto_de(&c.op)),
+                ("resultado", bruto),
+            ]));
+        }
+
         if let Some(c) = phxsql_sql::transacao::comando(&texto)? {
             let mut pedido = c.pedido();
             // O `database` do pedido de fora viaja junto: quem manda
@@ -26923,5 +27579,706 @@ mod testes_posicao_do_diario {
              nao abriu -- e e essa posicao que a eleicao compara. Encolher em \
              silencio faz o no se declarar mais atrasado do que e."
         );
+    }
+}
+
+/* ======================================================== as DIRETIVAS
+
+O `SHOW … SETTINGS`, o `ALTER … SET`, o diario administrativo e a primeira
+diretiva POR BANCO -- `comandos_proibidos`, o pedido 220.
+
+O que estes testes protegem, em ordem de importancia:
+
+1. **O comportamento VELHO.** Um `config.json` que so tem strings na
+   `comandos_proibidos` continua significando exatamente o que significava.
+   Guarda nova entra pedida.
+2. **O portao e UM so.** `ALTER SERVER SET` desemboca no `config_gravar`, e
+   quem nao tem `administrar` e recusado pelas duas portas.
+3. **A politica por banco so APERTA.** O global continua valendo em todo
+   banco, e o do banco nao afrouxa nada. */
+#[cfg(test)]
+mod testes_diretivas {
+    use super::*;
+    use crate::usuarios::{Cadastro, Nivel, Permissoes, Usuario};
+
+    /// Um servidor de arquivo, com um bloco `seguranca` a escolha.
+    fn servidor_de_arquivo(nome: &str, seguranca: &str) -> (Arc<Servidor>, PathBuf, DirTemp) {
+        let dir = DirTemp::novo(&format!("diretivas-{nome}"));
+        let caminho = dir.join("config.json");
+        std::fs::write(
+            &caminho,
+            format!(
+                "{{\n  \"_nota\": \"comentario que a gravacao nao pode comer\",\n  \
+                 \"token\": \"t\",\n  \"bind\": \"127.0.0.1:5399\",\n  \
+                 \"base\": \"{}\",\n  \"max_linhas\": 1000{seguranca}\n}}\n",
+                dir.join("dados").display()
+            ),
+        )
+        .unwrap();
+        let mut c = Config::ler(&caminho).unwrap();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        c.cadastro = Cadastro::default();
+        (Servidor::novo(c).unwrap(), caminho, dir)
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Sessao de um IP qualquer -- o portao de politica bloqueia o IP, e sem
+    /// um endereco os testes de recusa nao exercitam o caminho de verdade.
+    fn sessao(ip: &str) -> Sessao {
+        Sessao {
+            ip: ip.to_string(),
+            ..Sessao::default()
+        }
+    }
+
+    /// Um usuario com tudo MENOS `administrar`.
+    fn operador() -> Usuario {
+        Usuario {
+            id: 7,
+            nome: "Operador".into(),
+            login: "op".into(),
+            senha_hash: String::new(),
+            email: String::new(),
+            telefone: String::new(),
+            supervisor: false,
+            ativo: true,
+            nivel: Nivel::Nenhum,
+            chave_publica: None,
+            bases: vec![(
+                "*".into(),
+                Permissoes {
+                    ler: true,
+                    inserir: true,
+                    alterar: true,
+                    excluir: true,
+                    reindexar: true,
+                    administrar: false,
+                    ..Permissoes::default()
+                },
+            )],
+            tabelas: Vec::new(),
+        }
+    }
+
+    fn criar_bases(s: &Arc<Servidor>) {
+        for b in ["erp", "loja"] {
+            s.executar(
+                "criar_database",
+                &pedido(&format!(r#"{{"database":"{b}"}}"#)),
+                &Sessao::default(),
+            )
+            .unwrap();
+        }
+    }
+
+    // ------------------------------------------------- o comportamento velho
+
+    /// **O teste que mais importa.** Sem entrada por banco no `config.json`,
+    /// nada muda para ninguem: a bandeira nasce apagada e o portao novo nao
+    /// custa nem uma trava.
+    #[test]
+    fn sem_regra_por_banco_nada_muda() {
+        let (s, _c, _g) = servidor_de_arquivo(
+            "velho",
+            ",\n  \"seguranca\":{\"comandos_proibidos\":[\"excluir_tabela\"]}",
+        );
+        assert!(
+            !s.ha_proibidos_por_base.load(Ordering::Relaxed),
+            "a bandeira nasceu ligada sem entrada por banco: todo pedido passa a pagar um lock"
+        );
+        criar_bases(&s);
+        // O global continua proibindo em TODA base -- byte a byte o de antes.
+        let (_op, _ok, r) = s.despachar(
+            r#"{"op":"excluir_tabela","token":"t","database":"erp","tabela":"x"}"#,
+            &mut sessao("10.0.0.1"),
+            "10.0.0.1",
+        );
+        let e = r.expect_err("o global parou de proibir");
+        assert!(e.to_string().contains("proibida neste servidor"), "{e}");
+        // E o que nao esta na lista passa pelo portao (o erro que volta e de
+        // DADO, e nao de politica).
+        let (_op, _ok, r) = s.despachar(
+            r#"{"op":"reindexar","token":"t","database":"erp","tabela":"x"}"#,
+            &mut sessao("10.0.0.2"),
+            "10.0.0.2",
+        );
+        let e = r.expect_err("reindexar de tabela inexistente devia falhar por dado");
+        assert!(
+            !e.to_string().contains("proibida"),
+            "reindexar foi barrado por politica sem estar em lista nenhuma: {e}"
+        );
+    }
+
+    // -------------------------------------------- o pedido 220, por banco
+
+    /// A proibicao por banco vale NAQUELE banco, e nao nos outros. Se valesse
+    /// nos dois, a forma por banco seria um global com nome enfeitado -- e o
+    /// pedido 220 continuaria aberto com cara de fechado.
+    #[test]
+    fn o_proibido_do_banco_so_vale_naquele_banco() {
+        let (s, _c, _g) = servidor_de_arquivo(
+            "por-banco",
+            ",\n  \"seguranca\":{\"comandos_proibidos\":[{\"comando\":\"reindexar\",\"database\":\"erp\"}],\
+             \"whitelist\":[\"10.0.0.0/8\"]}",
+        );
+        assert!(s.ha_proibidos_por_base.load(Ordering::Relaxed));
+        criar_bases(&s);
+
+        let (_op, _ok, r) = s.despachar(
+            r#"{"op":"reindexar","token":"t","database":"erp","tabela":"x"}"#,
+            &mut sessao("10.0.0.1"),
+            "10.0.0.1",
+        );
+        let e = r.expect_err("reindexar em erp devia ser proibido");
+        assert!(
+            e.to_string().contains("proibida no banco erp"),
+            "a recusa nao diz QUAL banco: {e}"
+        );
+
+        // O controle positivo, sem o qual o de cima passaria com um portao
+        // que recusa tudo.
+        let (_op, _ok, r) = s.despachar(
+            r#"{"op":"reindexar","token":"t","database":"loja","tabela":"x"}"#,
+            &mut sessao("10.0.0.1"),
+            "10.0.0.1",
+        );
+        let e = r.expect_err("tabela inexistente");
+        assert!(
+            !e.to_string().contains("proibida"),
+            "a regra de erp vazou para loja: {e}"
+        );
+    }
+
+    /// E o global continua valendo em TODO banco -- o por banco acrescenta,
+    /// nunca substitui.
+    #[test]
+    fn o_global_continua_valendo_em_todo_banco() {
+        let (s, _c, _g) = servidor_de_arquivo(
+            "global-e-banco",
+            ",\n  \"seguranca\":{\"comandos_proibidos\":[\"excluir_tabela\",\
+             {\"comando\":\"reindexar\",\"database\":\"erp\"}],\"whitelist\":[\"10.0.0.0/8\"]}",
+        );
+        criar_bases(&s);
+        for base in ["erp", "loja"] {
+            let (_op, _ok, r) = s.despachar(
+                &format!(
+                    r#"{{"op":"excluir_tabela","token":"t","database":"{base}","tabela":"x"}}"#
+                ),
+                &mut sessao("10.0.0.1"),
+                "10.0.0.1",
+            );
+            let e = r.expect_err("o global parou de valer em {base}");
+            assert!(
+                e.to_string().contains("proibida neste servidor"),
+                "{base}: {e}"
+            );
+        }
+    }
+
+    /// `ALTER DATABASE … SET comandos_proibidos` grava, aplica A QUENTE e
+    /// nao mexe no global.
+    #[test]
+    fn alter_database_grava_aplica_a_quente_e_nao_toca_no_global() {
+        let (s, caminho, _g) = servidor_de_arquivo(
+            "alter-base",
+            ",\n  \"seguranca\":{\"comandos_proibidos\":[\"excluir_tabela\"],\"whitelist\":[\"10.0.0.0/8\"]}",
+        );
+        criar_bases(&s);
+        // Antes: reindexar passa em erp.
+        let (_op, _ok, r) = s.despachar(
+            r#"{"op":"reindexar","token":"t","database":"erp","tabela":"x"}"#,
+            &mut sessao("10.0.0.1"),
+            "10.0.0.1",
+        );
+        assert!(!r.unwrap_err().to_string().contains("proibida"));
+
+        let r = s
+            .executar(
+                "sql",
+                &pedido(
+                    r#"{"texto":"ALTER DATABASE erp SET comandos_proibidos = (reindexar) MOTIVO 'auditoria'"}"#,
+                ),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let dentro = r.campo("resultado").unwrap();
+        assert!(dentro.booleano_ou("gravado", false), "{}", r.escrever());
+        assert_eq!(dentro.textos("acrescentados"), vec!["reindexar"]);
+
+        // (1) a quente, sem reiniciar nada.
+        let (_op, _ok, r) = s.despachar(
+            r#"{"op":"reindexar","token":"t","database":"erp","tabela":"x"}"#,
+            &mut sessao("10.0.0.1"),
+            "10.0.0.1",
+        );
+        assert!(
+            r.unwrap_err().to_string().contains("proibida no banco erp"),
+            "o aperto so valeria no proximo arranque"
+        );
+        // (2) e so em erp.
+        let (_op, _ok, r) = s.despachar(
+            r#"{"op":"reindexar","token":"t","database":"loja","tabela":"x"}"#,
+            &mut sessao("10.0.0.1"),
+            "10.0.0.1",
+        );
+        assert!(!r.unwrap_err().to_string().contains("proibida"));
+        // (3) no arquivo, com o comentario preservado e o global intacto.
+        let texto = std::fs::read_to_string(&caminho).unwrap();
+        assert!(
+            texto.contains("comentario que a gravacao nao pode comer"),
+            "{texto}"
+        );
+        let arvore = Json::analisar(&texto).unwrap();
+        let seg = arvore.campo("seguranca").unwrap();
+        assert_eq!(
+            crate::blacklist::proibidos_globais(seg),
+            vec!["excluir_tabela"],
+            "a diretiva por banco mexeu no global: {texto}"
+        );
+        assert_eq!(
+            crate::blacklist::proibidos_por_base(seg),
+            vec![("erp".to_string(), "reindexar".to_string())]
+        );
+    }
+
+    /// **Ela so ACRESCENTA.** Lista vazia recusa dizendo por onde se retira --
+    /// e nao apaga nada em silencio, que seria a pior das duas.
+    #[test]
+    fn a_diretiva_por_banco_nao_retira_nada() {
+        let (s, caminho, _g) = servidor_de_arquivo(
+            "so-acrescenta",
+            ",\n  \"seguranca\":{\"comandos_proibidos\":[{\"comando\":\"reindexar\",\"database\":\"erp\"}]}",
+        );
+        criar_bases(&s);
+        let e = s
+            .executar(
+                "sql",
+                &pedido(r#"{"texto":"ALTER DATABASE erp SET comandos_proibidos = ()"}"#),
+                &Sessao::default(),
+            )
+            .expect_err("a lista vazia devia recusar");
+        assert!(e.to_string().contains("so ACRESCENTA"), "{e}");
+        // E o que estava la continua la.
+        let texto = std::fs::read_to_string(&caminho).unwrap();
+        let seg = Json::analisar(&texto)
+            .unwrap()
+            .campo("seguranca")
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            crate::blacklist::proibidos_por_base(&seg).len(),
+            1,
+            "{texto}"
+        );
+    }
+
+    /// Repetir o que ja esta la nao duplica a entrada -- e diz que ja estava.
+    #[test]
+    fn repetir_a_mesma_proibicao_nao_duplica() {
+        let (s, _c, _g) = servidor_de_arquivo("repetido", "");
+        criar_bases(&s);
+        for _ in 0..2 {
+            s.executar(
+                "sql",
+                &pedido(r#"{"texto":"ALTER DATABASE erp SET comandos_proibidos = (reindexar)"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        }
+        let r = s
+            .executar(
+                "sql",
+                &pedido(r#"{"texto":"ALTER DATABASE erp SET comandos_proibidos = (reindexar)"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let dentro = r.campo("resultado").unwrap();
+        assert!(dentro.textos("acrescentados").is_empty());
+        assert_eq!(dentro.textos("ja_existiam"), vec!["reindexar"]);
+        assert_eq!(
+            dentro.textos("comandos_proibidos_da_base"),
+            vec!["reindexar"]
+        );
+    }
+
+    /// Proibir um nome que nao existe deixa a lista com uma guarda que nunca
+    /// fecha -- e quem escreveu acha que fechou a porta.
+    #[test]
+    fn proibir_operacao_inexistente_recusa() {
+        let (s, _c, _g) = servidor_de_arquivo("inexistente", "");
+        criar_bases(&s);
+        let e = s
+            .executar(
+                "sql",
+                &pedido(r#"{"texto":"ALTER DATABASE erp SET comandos_proibidos = (voar)"}"#),
+                &Sessao::default(),
+            )
+            .expect_err("proibir uma op inexistente devia recusar");
+        assert!(e.to_string().contains("nao e uma operacao"), "{e}");
+    }
+
+    // ------------------------------------------------------ o portao unico
+
+    /// **Quem nao administra nao ve e nao muda.** As tres portas novas
+    /// conferem pelo MESMO portao do `config_gravar` -- e a afirmacao e sobre
+    /// o ERRO, e nao sobre «terminou»: um teste que aceitasse sucesso *e*
+    /// recusa passaria com a porta dos fundos aberta.
+    #[test]
+    fn sem_administrar_a_recusa_e_de_permissao() {
+        let (s, _c, _g) = servidor_de_arquivo("portao-2", "");
+        let ses = Sessao {
+            usuario: Some(operador()),
+            ..Sessao::default()
+        };
+        for (op, ped) in [
+            ("diretivas", r#"{"escopo":"servidor"}"#),
+            (
+                "diretiva_gravar",
+                r#"{"escopo":"servidor","campo":"max_linhas","valor":7}"#,
+            ),
+            (
+                "diretiva_gravar",
+                r#"{"escopo":"database","database":"erp","campo":"comandos_proibidos","valor":["reindexar"]}"#,
+            ),
+        ] {
+            let e = s.executar(op, &pedido(ped), &ses).expect_err(&format!(
+                "{op} passou para quem NAO tem administrar: porta dos fundos"
+            ));
+            assert!(
+                matches!(e, PhxError::Autorizacao(_)),
+                "{op} recusou por outro motivo: {e}"
+            );
+            assert!(e.to_string().contains("administrar"), "{op}: {e}");
+        }
+        // E o controle positivo: sem usuario (token de servico) as tres passam.
+        s.executar(
+            "diretivas",
+            &pedido(r#"{"escopo":"servidor"}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+    }
+
+    /// `ALTER SERVER SET` desemboca no MESMO `config_gravar`: mesma validacao
+    /// de tipo, mesma gravacao, mesmo efeito a quente.
+    #[test]
+    fn alter_server_e_o_mesmo_caminho_do_config_gravar() {
+        let (s, caminho, _g) = servidor_de_arquivo("alter-server", "");
+        assert_eq!(s.max_linhas(), 1000);
+        let r = s
+            .executar(
+                "sql",
+                &pedido(r#"{"texto":"ALTER SERVER SET max_linhas = 7 MOTIVO 'teste'"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(r.texto_ou("op", ""), "diretiva_gravar");
+        assert_eq!(s.max_linhas(), 7, "o teto novo nao valeu a quente");
+        let texto = std::fs::read_to_string(&caminho).unwrap();
+        assert!(texto.contains("\"max_linhas\": 7"), "{texto}");
+        assert!(texto.contains("comentario que a gravacao nao pode comer"));
+
+        // A conferencia de TIPO e a mesma -- e ela e a que impede gravar um
+        // valor que o leitor jogaria fora em silencio.
+        let e = s
+            .executar(
+                "sql",
+                &pedido(r#"{"texto":"ALTER SERVER SET max_linhas = abc"}"#),
+                &Sessao::default(),
+            )
+            .expect_err("texto num campo inteiro devia recusar");
+        assert!(e.to_string().contains("espera inteiro"), "{e}");
+    }
+
+    // ---------------------------------------------------------- o diario
+
+    /// **Os nove campos do dono, gravados pelas DUAS portas.** O diario entra
+    /// no `config_gravar`, que e onde as duas desembocam -- registrar so no
+    /// `ALTER` deixaria de fora tudo o que a tela de Configuracoes grava.
+    #[test]
+    fn o_diario_registra_as_duas_portas_com_os_nove_campos() {
+        let (s, _c, _g) = servidor_de_arquivo("diario", "");
+        let mut ses = sessao("192.168.50.20");
+        ses.usuario = Some({
+            let mut u = operador();
+            u.login = "ana".into();
+            u.nivel = Nivel::Admin;
+            u.supervisor = true;
+            u
+        });
+        // Pela porta do protocolo (a tela).
+        s.executar(
+            "config_gravar",
+            &pedido(r#"{"campos":{"max_linhas":42},"motivo":"pela tela"}"#),
+            &ses,
+        )
+        .unwrap();
+        // Pela porta do SQL.
+        s.executar(
+            "sql",
+            &pedido(r#"{"texto":"ALTER SERVER SET espelho = TRUE MOTIVO 'pelo SQL'"}"#),
+            &ses,
+        )
+        .unwrap();
+
+        let linhas = s.diario.ultimas(10);
+        assert_eq!(linhas.len(), 2, "o diario nao pegou as duas portas");
+        // A mais recente primeiro.
+        assert_eq!(linhas[0].recurso, "espelho");
+        assert_eq!(linhas[0].motivo, "pelo SQL");
+        assert_eq!(linhas[0].valor_anterior, Json::Nulo);
+        assert_eq!(linhas[0].valor_novo, Json::Bool(true));
+        assert_eq!(linhas[1].recurso, "max_linhas");
+        assert_eq!(linhas[1].motivo, "pela tela");
+        assert_eq!(
+            linhas[1].valor_anterior,
+            Json::Numero(1000.0),
+            "o diario nao diz de que valor se saiu"
+        );
+        assert_eq!(linhas[1].valor_novo, Json::Numero(42.0));
+        for l in &linhas {
+            assert_eq!(l.usuario, "ana", "o diario nao diz QUEM");
+            assert_eq!(l.ip_origem, "192.168.50.20", "o diario nao diz DE ONDE");
+            assert_eq!(l.servidor, "127.0.0.1:5399");
+        }
+    }
+
+    /// O `SHOW … SETTINGS` traz o diario junto, e e o que faz alguem le-lo.
+    #[test]
+    fn o_show_traz_o_diario_junto() {
+        let (s, _c, _g) = servidor_de_arquivo("diario-no-show", "");
+        s.executar(
+            "sql",
+            &pedido(r#"{"texto":"ALTER SERVER SET max_linhas = 42 MOTIVO 'porque sim'"}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        let r = s
+            .executar(
+                "sql",
+                &pedido(r#"{"texto":"SHOW SERVER SETTINGS"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let dentro = r.campo("resultado").unwrap();
+        let diario = dentro.campo("diario").and_then(Json::lista).unwrap();
+        assert_eq!(diario.len(), 1, "{}", dentro.escrever());
+        assert_eq!(diario[0].texto_ou("motivo", ""), "porque sim");
+        // E sem pedir, nao vem: `diario: 0` e a resposta so das diretivas.
+        let so = s
+            .executar(
+                "diretivas",
+                &pedido(r#"{"escopo":"servidor"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert!(so.campo("diario").is_none());
+    }
+
+    // ------------------------------------------------------ o que se recusa
+
+    /// As duas recusas com MOTIVO: elas nomeiam o caminho que funciona, em vez
+    /// de dizer so «nao».
+    #[test]
+    fn alter_table_e_alter_connection_recusam_dizendo_o_caminho() {
+        let (s, _c, _g) = servidor_de_arquivo("recusas", "");
+        criar_bases(&s);
+        for (sql, pedaco) in [
+            (
+                "ALTER TABLE clientes SET duplicate_check = TRUE",
+                "criar_tabela",
+            ),
+            (
+                "ALTER TABLE clientes SET referential_integrity = FALSE",
+                "NASCE conferida",
+            ),
+            ("ALTER CONNECTION SET compression = TRUE", "nao existe"),
+            (
+                "ALTER DATABASE erp SET transactions = TRUE",
+                "comandos_proibidos",
+            ),
+        ] {
+            let e = s
+                .executar(
+                    "sql",
+                    &pedido(&format!(r#"{{"texto":"{sql}","database":"erp"}}"#)),
+                    &Sessao::default(),
+                )
+                .expect_err(&format!("{sql:?} devia recusar"));
+            assert!(
+                e.to_string().contains(pedaco),
+                "{sql:?} recusou sem dizer o caminho ({pedaco:?}): {e}"
+            );
+        }
+    }
+
+    /// **O `SHOW` nao vaza segredo.** A regra e por NOME de campo, e o teste e
+    /// nos dois sentidos: nenhum valor sigiloso sai, e os comuns saem.
+    #[test]
+    fn o_show_server_settings_nao_vaza_segredo() {
+        let (s, _c, _g) = servidor_de_arquivo("segredo", "");
+        let r = s
+            .executar(
+                "diretivas",
+                &pedido(r#"{"escopo":"servidor"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let texto = r.escrever();
+        assert!(!texto.contains("\"t\""), "o token vazou: {texto}");
+        let recursos = r.campo("recursos").and_then(Json::lista).unwrap();
+        assert!(
+            recursos.len() > 40,
+            "a lista de diretivas encolheu: {}",
+            recursos.len()
+        );
+        // O controle positivo: um valor comum SAI, senao a varredura acima so
+        // provaria que a resposta esta vazia.
+        let m = recursos
+            .iter()
+            .find(|x| x.texto_ou("recurso", "") == "max_linhas")
+            .expect("max_linhas sumiu da lista");
+        assert_eq!(m.campo("valor").unwrap().numero(), Some(1000.0));
+        assert_eq!(m.texto_ou("aplica", ""), "a quente");
+        // E o que exige reinicio diz isso, em vez de prometer efeito.
+        let t = recursos
+            .iter()
+            .find(|x| x.texto_ou("recurso", "") == "timeout_s")
+            .unwrap();
+        assert_eq!(t.texto_ou("aplica", ""), "exige reinicio");
+    }
+
+    /// **O que esta GRAVADO e ainda nao vale aparece.**
+    ///
+    /// Achado exercitando: o `SHOW` devolvia o valor VIVO, entao quem acabava
+    /// de gravar `timeout_s = 45` recebia 30 de volta, calado -- e nao tinha
+    /// como saber que o 45 estava no arquivo. E o mesmo defeito que a tela de
+    /// Configuracoes ja tinha pago, reaparecido pela porta nova.
+    #[test]
+    fn o_show_diz_o_que_esta_gravado_e_ainda_nao_vale() {
+        let (s, _c, _g) = servidor_de_arquivo("no-arquivo", "");
+        s.executar(
+            "sql",
+            &pedido(r#"{"texto":"ALTER SERVER SET timeout_s = 45"}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        let r = s
+            .executar(
+                "diretivas",
+                &pedido(r#"{"escopo":"servidor"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let recursos = r.campo("recursos").and_then(Json::lista).unwrap();
+        let t = recursos
+            .iter()
+            .find(|x| x.texto_ou("recurso", "") == "timeout_s")
+            .unwrap();
+        assert_eq!(t.campo("valor").unwrap().numero(), Some(30.0), "o vivo");
+        assert_eq!(
+            t.campo("no_arquivo").map(|v| v.numero()),
+            Some(Some(45.0)),
+            "o SHOW escondeu o valor ja gravado: {}",
+            t.escrever()
+        );
+        assert!(t.booleano_ou("esperando_reinicio", false));
+        // O controle positivo: o campo que aplica A QUENTE nao ganha o par --
+        // se ganhasse, «esperando reinicio» perderia o sentido.
+        s.executar(
+            "sql",
+            &pedido(r#"{"texto":"ALTER SERVER SET max_linhas = 42"}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        let r = s
+            .executar(
+                "diretivas",
+                &pedido(r#"{"escopo":"servidor"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let recursos = r.campo("recursos").and_then(Json::lista).unwrap();
+        let m = recursos
+            .iter()
+            .find(|x| x.texto_ou("recurso", "") == "max_linhas")
+            .unwrap();
+        assert_eq!(m.campo("valor").unwrap().numero(), Some(42.0));
+        assert!(m.campo("no_arquivo").is_none(), "{}", m.escrever());
+    }
+
+    /// `SHOW TABLE … SETTINGS` le a DECLARACAO da tabela -- e nao um bloco de
+    /// configuracao paralelo, que seria uma segunda verdade ao lado do esquema.
+    #[test]
+    fn show_table_settings_le_o_indice_e_a_chave() {
+        let (s, _c, _g) = servidor_de_arquivo("show-tabela", "");
+        criar_bases(&s);
+        let ses = Sessao::default();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"erp","tabela":"clientes",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"erp","tabela":"pedidos",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"cliente_id","tipo":"Int4"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true},
+                               {"nome":"porCliente","colunas":["cliente_id"],"unico":false}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        s.executar(
+            "declarar_fk",
+            &pedido(
+                r#"{"database":"erp","tabela":"pedidos","nome":"fk_cliente",
+                    "colunas":["cliente_id"],"tabela_ref":"clientes","colunas_ref":["id"]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+
+        let r = s
+            .executar(
+                "sql",
+                &pedido(r#"{"texto":"SHOW TABLE pedidos SETTINGS","database":"erp"}"#),
+                &ses,
+            )
+            .unwrap();
+        let d = r.campo("resultado").unwrap();
+        let dup = d.campo("duplicidade").and_then(Json::lista).unwrap();
+        assert_eq!(dup.len(), 2);
+        // `duplicate_check` do HFSQL e o `unico` daqui: um indice unico
+        // confere duplicidade, o outro nao.
+        assert!(dup.iter().any(
+            |x| x.texto_ou("indice", "") == "porId" && x.booleano_ou("duplicate_check", false)
+        ));
+        assert!(dup
+            .iter()
+            .any(|x| x.texto_ou("indice", "") == "porCliente"
+                && !x.booleano_ou("duplicate_check", true)));
+        let fks = d
+            .campo("integridade_referencial")
+            .and_then(Json::lista)
+            .unwrap();
+        assert_eq!(fks.len(), 1);
+        // A petrea, lida pela diretiva: a chave NASCE conferida, e o excluir
+        // so aceita restringir.
+        assert!(fks[0].booleano_ou("referential_integrity", false));
+        assert_eq!(fks[0].texto_ou("ao_excluir", ""), "Restringir");
     }
 }

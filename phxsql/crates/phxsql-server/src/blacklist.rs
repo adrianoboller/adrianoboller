@@ -103,7 +103,26 @@ fn como_bits(ip: &IpAddr) -> (u128, u32) {
 #[derive(Debug, Clone)]
 pub struct Politica {
     /// Operacoes que ninguem pode pedir, nem quem tem permissao.
+    ///
+    /// **Vale para o servidor inteiro**, e continua sendo o que uma string
+    /// solta na lista do `config.json` significa.
     pub comandos_proibidos: Vec<String>,
+    /// Operacoes proibidas SO NUM BANCO: `(banco, comando)`.
+    ///
+    /// # Por que a mesma lista, e nao um campo novo
+    ///
+    /// Porque a pergunta e uma so — «o que ninguem pede aqui?» — e duas listas
+    /// para a mesma pergunta e a receita de alguem responder metade. No
+    /// `config.json` a entrada por banco e um OBJETO dentro da lista que ja
+    /// existe: `{"comando":"reindexar","database":"financeiro"}`.
+    ///
+    /// # O que ela NAO pode fazer
+    ///
+    /// **Afrouxar o global.** O global continua valendo para todos os bancos,
+    /// e o do banco so ACRESCENTA. Uma politica por banco que pudesse liberar
+    /// o que o servidor proibiu seria uma porta dos fundos com nome de
+    /// diretiva.
+    pub proibidos_por_base: Vec<(String, String)>,
     /// Bases que ninguem pode tocar por esta porta.
     pub bases_proibidas: Vec<String>,
     /// Tentativas leves toleradas dentro da janela.
@@ -147,6 +166,7 @@ impl Default for Politica {
     fn default() -> Self {
         Politica {
             comandos_proibidos: Vec::new(),
+            proibidos_por_base: Vec::new(),
             bases_proibidas: Vec::new(),
             tentativas_ate_bloquear: 5,
             tentativas_para_bloqueio: 1,
@@ -164,12 +184,8 @@ impl Politica {
     pub fn de_json(j: &Json) -> Politica {
         let padrao = Politica::default();
         Politica {
-            comandos_proibidos: j
-                .textos("comandos_proibidos")
-                .into_iter()
-                .map(|c| c.trim().to_lowercase())
-                .filter(|c| !c.is_empty())
-                .collect(),
+            comandos_proibidos: proibidos_globais(j),
+            proibidos_por_base: proibidos_por_base(j),
             bases_proibidas: j
                 .textos("bases_proibidas")
                 .into_iter()
@@ -220,16 +236,79 @@ impl Politica {
         self.whitelist.iter().any(|r| regra_cobre_ip(r, &endereco))
     }
 
-    /// A operacao esta proibida por politica?
+    /// A operacao esta proibida por politica, no servidor inteiro?
     pub fn comando_proibido(&self, op: &str) -> bool {
         let alvo = op.trim().to_lowercase();
         self.comandos_proibidos.contains(&alvo)
+    }
+
+    /// A operacao esta proibida NESTE banco?
+    ///
+    /// So a lista por banco: quem responde pelo global e
+    /// [`Politica::comando_proibido`], e o portao chama os dois — o global
+    /// primeiro, porque ele nao depende do campo `database` e vale para o
+    /// pedido que nem nomeia banco.
+    pub fn comando_proibido_na_base(&self, op: &str, base: &str) -> bool {
+        if base.is_empty() {
+            return false;
+        }
+        let alvo = op.trim().to_lowercase();
+        self.proibidos_por_base
+            .iter()
+            .any(|(b, c)| b == base && *c == alvo)
     }
 
     /// A base esta proibida por politica?
     pub fn base_proibida(&self, base: &str) -> bool {
         !base.is_empty() && self.bases_proibidas.iter().any(|b| b == base)
     }
+}
+
+/// As entradas em forma de STRING: proibidas no servidor inteiro.
+///
+/// E o comportamento velho, byte a byte — um `config.json` escrito antes da
+/// forma por banco continua significando exatamente o que significava.
+pub fn proibidos_globais(j: &Json) -> Vec<String> {
+    j.campo("comandos_proibidos")
+        .and_then(Json::lista)
+        .map(|l| {
+            l.iter()
+                .filter_map(Json::texto)
+                .map(|c| c.trim().to_lowercase())
+                .filter(|c| !c.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// As entradas em forma de OBJETO: `(banco, comando)`.
+///
+/// Entrada sem `comando` ou sem `database` e ignorada, e a escolha e
+/// deliberada: uma entrada pela metade que virasse «proibido em todo lugar»
+/// derrubaria o servidor de quem digitou errado, e uma que virasse «proibido
+/// em lugar nenhum» seria uma guarda que nao guarda. Ignorar deixa o campo
+/// `estranhas` do arranque reclamar, que e onde reclamacao de configuracao ja
+/// mora.
+pub fn proibidos_por_base(j: &Json) -> Vec<(String, String)> {
+    j.campo("comandos_proibidos")
+        .and_then(Json::lista)
+        .map(|l| {
+            l.iter()
+                .filter(|x| matches!(x, Json::Objeto(_)))
+                .filter_map(|x| {
+                    let comando = x.texto_ou("comando", "").trim().to_lowercase();
+                    let base = x
+                        .texto_ou("database", x.texto_ou("banco", ""))
+                        .trim()
+                        .to_string();
+                    if comando.is_empty() || base.is_empty() {
+                        return None;
+                    }
+                    Some((base, comando))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Comando de firewall, como lista de argumentos. `{ip}` vira o endereco.
@@ -757,6 +836,75 @@ mod tests {
 
     fn dir_temp(rotulo: &str) -> DirTemp {
         DirTemp::novo(&format!("bl-{rotulo}"))
+    }
+
+    /* -------------------------------------------- proibido SO num banco
+
+    O pedido 220: «`comandos_proibidos` e global, nao por banco — e o pedido
+    era para um banco x». A forma nova entra na MESMA lista, como objeto, e o
+    teste que mais importa e o do comportamento VELHO. */
+
+    /// **O comportamento velho.** String solta continua proibindo em TODO
+    /// banco — quem escreveu o `config.json` antes desta rodada nao muda de
+    /// significado por causa dela.
+    #[test]
+    fn a_string_solta_continua_valendo_para_todos_os_bancos() {
+        let j = Json::analisar(r#"{"comandos_proibidos":["reindexar","EXCLUIR"]}"#).unwrap();
+        let p = Politica::de_json(&j);
+        assert_eq!(p.comandos_proibidos, vec!["reindexar", "excluir"]);
+        assert!(
+            p.proibidos_por_base.is_empty(),
+            "{:?}",
+            p.proibidos_por_base
+        );
+        assert!(p.comando_proibido("reindexar"));
+        assert!(p.comando_proibido("Reindexar"), "a caixa nao decide nada");
+        // E, sem entrada por banco, a conferencia por banco nao proibe nada.
+        assert!(!p.comando_proibido_na_base("reindexar", "financeiro"));
+    }
+
+    /// A forma nova: objeto na mesma lista, e ele so vale NAQUELE banco.
+    #[test]
+    fn o_objeto_proibe_so_no_banco_que_ele_nomeia() {
+        let j = Json::analisar(
+            r#"{"comandos_proibidos":[
+                 "excluir_tabela",
+                 {"comando":"Reindexar","database":"financeiro"}]}"#,
+        )
+        .unwrap();
+        let p = Politica::de_json(&j);
+        // O global continua sendo so a string.
+        assert_eq!(p.comandos_proibidos, vec!["excluir_tabela"]);
+        assert_eq!(
+            p.proibidos_por_base,
+            vec![("financeiro".to_string(), "reindexar".to_string())]
+        );
+        assert!(p.comando_proibido_na_base("reindexar", "financeiro"));
+        // E o mesmo comando em OUTRO banco passa: se proibisse aqui tambem, a
+        // forma por banco seria um global com nome enfeitado.
+        assert!(!p.comando_proibido_na_base("reindexar", "loja"));
+        assert!(!p.comando_proibido("reindexar"), "nao virou global");
+        // Pedido sem banco nenhum nao casa com regra de banco.
+        assert!(!p.comando_proibido_na_base("reindexar", ""));
+    }
+
+    /// Entrada pela metade e IGNORADA — nem vira global, nem vira do banco.
+    #[test]
+    fn entrada_pela_metade_nao_vira_proibicao_nenhuma() {
+        let j = Json::analisar(
+            r#"{"comandos_proibidos":[
+                 {"comando":"reindexar"},
+                 {"database":"financeiro"},
+                 {"comando":"","database":"loja"}]}"#,
+        )
+        .unwrap();
+        let p = Politica::de_json(&j);
+        assert!(p.comandos_proibidos.is_empty());
+        assert!(
+            p.proibidos_por_base.is_empty(),
+            "{:?}",
+            p.proibidos_por_base
+        );
     }
 
     fn politica() -> Politica {

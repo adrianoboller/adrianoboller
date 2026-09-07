@@ -922,6 +922,16 @@ pub const OPERACOES: &[Operacao] = &[
                 "cascata (padrão), restringir, anular ou nada — as quatro acontecem \
                  na gravação desde a SP000057",
             ),
+            // O interruptor existia no código e NÃO estava aqui, achado ao
+            // mapear as diretivas: quem lê o catálogo (o MCP, o `/help`) não
+            // tinha como saber que ele existe -- e é ele o único caminho para
+            // declarar sem conferir, agora que a chave nasce conferida.
+            opc(
+                "verificar",
+                "boolean",
+                "a chave nasce CONFERIDA; mande `false` para declarar sem \
+                 conferir — é escolha escrita, e só existe na declaração",
+            ),
         ],
         exemplo: r#"{"op":"declarar_fk","database":"loja","tabela":"pedidos","nome":"fk_cliente","colunas":["cliente_id"],"tabela_ref":"clientes","colunas_ref":["id"]}"#,
         ferramenta_mcp: false,
@@ -1298,6 +1308,48 @@ pub const OPERACOES: &[Operacao] = &[
              {\"max_linhas\":500,\"backup.hora\":\"03:00\"}",
         )],
         exemplo: r#"{"op":"config_gravar","campos":{"max_linhas":500}}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "diretivas",
+        apelidos: &[],
+        resumo: "As diretivas que valem, por escopo: servidor, banco, tabela ou conexão. \
+                 É o que o `SHOW … SETTINGS` do SQL pede. Segredo sai mascarado.",
+        parametros: &[
+            opc(
+                "escopo",
+                "string",
+                "servidor (padrão), database, tabela ou conexao",
+            ),
+            opc("database", "string", "o banco, nos escopos database e tabela"),
+            opc("tabela", "string", "a tabela, no escopo tabela"),
+            opc(
+                "diario",
+                "integer",
+                "quantas linhas do diário administrativo vêm junto; 0 = nenhuma",
+            ),
+        ],
+        exemplo: r#"{"op":"diretivas","escopo":"servidor","diario":20}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "diretiva_gravar",
+        apelidos: &[],
+        resumo: "Muda uma diretiva. É o que o `ALTER … SET` do SQL pede. No escopo de \
+                 servidor desemboca no MESMO caminho do `config_gravar`; no de banco \
+                 grava `comandos_proibidos`, que só acrescenta.",
+        parametros: &[
+            opc(
+                "escopo",
+                "string",
+                "servidor (padrão) ou database; tabela e conexao recusam dizendo por quê",
+            ),
+            obr("campo", "string", "o campo, pelo nome do config.json"),
+            obr("valor", "string", "o valor: booleano, número, texto ou lista"),
+            opc("database", "string", "o banco, no escopo database"),
+            opc("motivo", "string", "vai para o diário administrativo"),
+        ],
+        exemplo: r#"{"op":"diretiva_gravar","escopo":"servidor","campo":"max_linhas","valor":500,"motivo":"pico de exportacao"}"#,
         ferramenta_mcp: false,
     },
     Operacao {

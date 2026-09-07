@@ -3576,6 +3576,97 @@ impl Config {
         );
         Self::gravar_arvore(caminho, &[("cluster.nos".to_string(), lista)])
     }
+
+    pub fn acrescentar_proibidos_da_base(
+        caminho: &Path,
+        base: &str,
+        comandos: &[String],
+    ) -> Result<(Config, Vec<String>, Vec<String>)> {
+        let base = base.trim();
+        if base.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe o banco: ALTER DATABASE <banco> SET comandos_proibidos = (…)".into(),
+            ));
+        }
+        let pedidos: Vec<String> = comandos
+            .iter()
+            .map(|c| c.trim().to_lowercase())
+            .filter(|c| !c.is_empty())
+            .collect();
+        if pedidos.is_empty() {
+            return Err(PhxError::Esquema(
+                "esta diretiva so ACRESCENTA: mande ao menos um comando. Para \
+                 RETIRAR um da lista, edite \"seguranca.comandos_proibidos\" no \
+                 config.json -- politica que a rede afrouxa nao e politica"
+                    .into(),
+            ));
+        }
+
+        let texto = std::fs::read_to_string(caminho).map_err(|e| {
+            PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
+        })?;
+        let mut arvore = Json::analisar(&texto)?;
+        let seguranca = match arvore.campo("seguranca") {
+            None => Json::Objeto(Vec::new()),
+            Some(Json::Objeto(pares)) => Json::Objeto(pares.clone()),
+            Some(outro) => {
+                return Err(PhxError::Esquema(format!(
+                    "\"seguranca\" no arquivo nao e um objeto: {}",
+                    outro.escrever()
+                )))
+            }
+        };
+        let mut lista = seguranca
+            .campo("comandos_proibidos")
+            .and_then(Json::lista)
+            .map(<[Json]>::to_vec)
+            .unwrap_or_default();
+
+        // O que ja esta la, na forma por banco. A comparacao e sobre o par
+        // (banco, comando), e nao sobre o texto da entrada: a mesma proibicao
+        // escrita com as chaves em outra ordem e a mesma proibicao.
+        let ja: Vec<String> = crate::blacklist::proibidos_por_base(&seguranca)
+            .into_iter()
+            .filter(|(b, _)| b == base)
+            .map(|(_, c)| c)
+            .collect();
+        // E o que o GLOBAL ja proibe: repetir por banco o que ja vale para
+        // todos nao acrescenta guarda nenhuma, e enche a lista de entradas que
+        // um dia divergem da global.
+        let globais = crate::blacklist::proibidos_globais(&seguranca);
+
+        let mut entraram = Vec::new();
+        let mut existiam = Vec::new();
+        for c in pedidos {
+            if ja.contains(&c) || globais.contains(&c) {
+                existiam.push(c);
+                continue;
+            }
+            lista.push(Json::objeto(vec![
+                ("comando", Json::texto_de(&c)),
+                ("database", Json::texto_de(base)),
+            ]));
+            entraram.push(c);
+        }
+
+        let mut seguranca = seguranca;
+        seguranca.definir("comandos_proibidos", Json::Lista(lista));
+        arvore.definir("seguranca", seguranca);
+        // Religado ao escritor livre `gravar_a_arvore` (o mesmo que a
+        // gravacao por campo usa) na integracao: o F3 trazia um escritor
+        // proprio de mesma assinatura, que duplicaria o da F5. Um escritor so.
+        let novo = gravar_a_arvore(
+            caminho,
+            &texto,
+            arvore,
+            &[vec![
+                "seguranca".to_string(),
+                "comandos_proibidos".to_string(),
+            ]],
+        )?;
+        Ok((novo, entraram, existiam))
+    }
+
 }
 
 /// Valida a arvore e a grava atomicamente, trocando `caminhos` NO TEXTO.

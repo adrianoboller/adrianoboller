@@ -46,12 +46,14 @@ do HFSQL(R) é o que a folha declara.
 | Importação de CSV/XML com separador configurável | JSON, CSV, TXT, XML **e HTML**, adivinhando o formato | um formato a mais, e a conferência antes de gravar |
 | Exportação para vários formatos | XLSX, JSON, XML, HTML, CSV, DOCX, TXT | igual |
 | Tabela dinâmica (ROLAP) | Pivot com *hash join*, teto de 500.000 | igual |
-| Ferramenta de administração gráfica | Centro de Controle na web, sem instalar nada; **122 operações** no protocolo | a deles é executável Windows |
+| Ferramenta de administração gráfica | Centro de Controle na web, sem instalar nada; **125 operações** no protocolo | a deles é executável Windows |
 | Monitor de máquina (CPU, memória, rede, disco) | painel com sete gráficos numa chamada | igual |
 | Aviso por e-mail quando detecta incidente | alerta de disco por SMTP escrito aqui | o deles cobre mais casos |
 | Unicode | UTF-8 em todo campo de texto | o deles ordena por idioma; aqui, não — §3.4 |
+| Diretivas de servidor, banco e tabela (`HSetServer`, `HSetLog`, `HSetIntegrity`…) | `SHOW … SETTINGS` e `ALTER … SET`, quatro escopos, 49 diretivas de servidor | **centralizado**: eles têm oito funções `HSet…`; aqui é um verbo para ver e um para mudar. O mapa diretiva a diretiva, com as 22 dispensas medidas, está em `DIRETIVAS.md` |
+| Auditoria das alterações administrativas | `diretivas.log`, JSON Lines, com os nove campos (data/hora, servidor, banco, recurso, valor anterior e novo, usuário, IP, motivo) | o deles não publica formato equivalente na folha lida |
 
-As **122** operações são contadas do próprio `catalogo.rs` (entradas do array
+As **125** operações são contadas do próprio `catalogo.rs` (entradas do array
 `OPERACOES`), não lembradas. O `PENDENCIAS.md` #30 ainda publica 108, que era o
 número de uma rodada anterior.
 

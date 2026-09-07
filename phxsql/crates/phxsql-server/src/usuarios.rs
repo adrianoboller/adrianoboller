@@ -324,8 +324,13 @@ impl Atividade {
             // `config_gravar` esta aqui declarado, e nao so caindo no `_`:
             // a operacao que reescreve o config.json e a ultima que deveria
             // depender do padrao para negar. A op ainda confere por dentro.
-            "acessos" | "ips" | "config" | "config_gravar" | "usuarios" | "bloqueios"
-            | "desbloquear" => Atividade::Administrar,
+            // `diretivas` e `diretiva_gravar` entram aqui pelo mesmo motivo do
+            // `config_gravar`: as duas falam da configuracao do SERVIDOR, nao
+            // de dado, e nenhuma delas tem campo "tabela" para o portao geral
+            // olhar. As duas conferem por dentro tambem, pelo mesmo portao
+            // unico (`exigir_administrar_config`).
+            "acessos" | "ips" | "config" | "config_gravar" | "diretivas" | "diretiva_gravar"
+            | "usuarios" | "bloqueios" | "desbloquear" => Atividade::Administrar,
             // As tres que ESCREVEM o cadastro. Declaradas, e nao caindo no
             // `_`, pelo mesmo motivo do `config_gravar` ao lado: a operacao
             // que cria quem pode entrar e a ultima que deveria depender do

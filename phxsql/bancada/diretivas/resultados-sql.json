@@ -1,0 +1,70 @@
+{
+  "quando_utc": "2026-09-07 18:07:48",
+  "commit": "b463b1d",
+  "versao": "phxsqld 0.18.0 (b463b1d9a8dc-sujo) x86_64-unknown-linux-gnu",
+  "afirmacoes": 61,
+  "falhas": [],
+  "saidas": {
+    "show_server": "{\"ok\":true,\"op\":\"sql\",\"resultado\":{\"sql\":\"SHOW SERVER SETTINGS\",\"op\":\"diretivas\",\"resultado\":{\"escopo\":\"servidor\",\"servidor\":\"127.0.0.1:7300\",\"arquivo\":\"/tmp/phx-f3-sql-7850/a/config.json\",\"versao\":\"0.18.0\",\"configuraveis\":49,\"recursos\":[{\"recurso\":\"bind\",\"valor\":\"127.0.0.1:7300\",\"tipo\":\"texto\",\"aplica\":\"exige reinicio\",\"a_quente\":false,\"escopo\":\"servidor\"},{\"recurso\":\"max_linhas\",\"valor\":1000,\"ti",
+    "show_database": "{\"escopo\": \"database\", \"servidor\": \"127.0.0.1:7300\", \"banco\": \"erp\", \"tabelas\": 2, \"gatilhos\": 0, \"procedimentos\": 0, \"transacoes\": \"sempre disponiveis, por conexao\", \"journal\": \"sempre ligado, por tabela (.log)\", \"base_proibida\": false, \"comandos_proibidos_globais\": [\"excluir_tabela\"], \"comandos_proibidos_da_base\": [], \"somente_leitura\": false, \"_sessao\": \"\", \"diario\": []}",
+    "show_table": "{\"escopo\": \"tabela\", \"servidor\": \"127.0.0.1:7300\", \"banco\": \"erp\", \"tabela\": \"pedidos\", \"duplicidade\": [{\"indice\": \"ix_id\", \"duplicate_check\": true, \"unico\": true}, {\"indice\": \"ix_cli\", \"duplicate_check\": false, \"unico\": false}], \"integridade_referencial\": [{\"chave\": \"fk_ped_cli\", \"tabela_ref\": \"clientes\", \"referential_integrity\": true, \"ao_excluir\": \"Restringir\", \"ao_alterar\": \"Cascata\"}], \"triggers\": 0, \"journal\": true, \"motivo_obrigatorio\": false, \"gravavel_por_diretiva\": [], \"diario\": []}",
+    "show_connection": "{\"escopo\": \"conexao\", \"servidor\": \"127.0.0.1:7300\", \"usuario\": \"\", \"ip_origem\": \"127.0.0.1\", \"ligacao\": 1, \"encryption\": true, \"encryption_exigida\": false, \"compression\": false, \"max_linhas\": 1000, \"timeout_s\": 30, \"somente_leitura\": false, \"gravavel_por_diretiva\": [], \"diario\": []}",
+    "alter_server": "{\"gravado\": true, \"arquivo\": \"/tmp/phx-f3-sql-7850/a/config.json\", \"campos\": [\"max_linhas\"], \"exigem_reinicio\": []}",
+    "alter_database": "{\"gravado\": true, \"escopo\": \"database\", \"banco\": \"erp\", \"recurso\": \"comandos_proibidos\", \"acrescentados\": [\"reindexar\"], \"ja_existiam\": [], \"comandos_proibidos_da_base\": [\"reindexar\"], \"aplica\": \"a quente\", \"aviso\": \"esta diretiva so ACRESCENTA; para retirar, edite seguranca.comandos_proibidos no config.json\", \"arquivo\": \"/tmp/phx-f3-sql-7850/a/config.json\"}",
+    "recusa_por_banco": "{\"ok\": false, \"op\": \"reindexar\", \"erro\": \"[SP000025] acesso negado: operacao reindexar esta proibida no banco erp\", \"codigo\": 4001, \"nome\": \"ACESSO_NEGADO\", \"classe\": \"acesso\", \"sprint\": \"SP000025\", \"repetir\": false, \"ms\": 0}",
+    "recusas": {
+      "ALTER TABLE clientes SET duplicate_check = TRUE": "[SP000018] esquema invalido: ALTER TABLE nao grava \"duplicate_check\", e nenhuma outra: o que a tabela tem se declara. `duplicate_check` e o `unico` do indice (criar_tabela); `referential_integrity` e o `verificar` da chave (declarar_fk, e ela NASCE conferida). SHOW TABLE <t> SETTINGS mostra as duas. O motivo esta em docs/DIRETIVAS.md",
+      "ALTER TABLE pedidos SET referential_integrity = FALSE": "[SP000018] esquema invalido: ALTER TABLE nao grava \"referential_integrity\", e nenhuma outra: o que a tabela tem se declara. `duplicate_check` e o `unico` do indice (criar_tabela); `referential_integrity` e o `verificar` da chave (declarar_fk, e ela NASCE conferida). SHOW TABLE <t> SETTINGS mostra as duas. O motivo esta em docs/DIRETIVAS.md",
+      "ALTER CONNECTION SET compression = TRUE": "[SP000018] esquema invalido: ALTER CONNECTION nao grava \"compression\", e nenhuma outra: nao ha ajuste por conexao neste servidor. A cifra do fio se negocia no aperto de mao (op `cifrar`), nao por diretiva, e compressao no fio nao existe. SHOW CONNECTION SETTINGS diz o estado desta",
+      "ALTER DATABASE erp SET transactions = TRUE": "[SP000018] esquema invalido: ALTER DATABASE nao grava \"transactions\": a unica diretiva por banco hoje e \"comandos_proibidos\". Transacoes, journal e integridade referencial nao se ligam por banco aqui -- SHOW DATABASE <b> SETTINGS diz o que cada uma e, e docs/DIRETIVAS.md diz por que"
+    },
+    "diario": [
+      {
+        "data_hora": "2026-09-07 18:07:47,419",
+        "quando_ms": 1788804467419,
+        "servidor": "127.0.0.1:7300",
+        "banco": "",
+        "recurso": "max_linhas",
+        "valor_anterior": 1000,
+        "valor_novo": 500,
+        "usuario": "(token de servico)",
+        "ip_origem": "127.0.0.1",
+        "motivo": "pico de exportacao"
+      },
+      {
+        "data_hora": "2026-09-07 18:07:47,420",
+        "quando_ms": 1788804467420,
+        "servidor": "127.0.0.1:7300",
+        "banco": "",
+        "recurso": "timeout_s",
+        "valor_anterior": 30,
+        "valor_novo": 45,
+        "usuario": "(token de servico)",
+        "ip_origem": "127.0.0.1",
+        "motivo": "suporte"
+      },
+      {
+        "data_hora": "2026-09-07 18:07:47,422",
+        "quando_ms": 1788804467422,
+        "servidor": "127.0.0.1:7300",
+        "banco": "erp",
+        "recurso": "comandos_proibidos",
+        "valor_anterior": [],
+        "valor_novo": [
+          "reindexar"
+        ],
+        "usuario": "(token de servico)",
+        "ip_origem": "127.0.0.1",
+        "motivo": "auditoria interna"
+      }
+    ],
+    "compressao": {
+      "bytes_crus": 535870,
+      "bytes_deflate": 55284,
+      "razao": 9.69,
+      "comprimir_ms": 3.85,
+      "linhas": 5000
+    },
+    "recusa_de_permissao": "{\"ok\":false,\"op\":\"sql\",\"erro\":\"[SP000025] acesso negado: olivia nao tem permissao de administrar: as diretivas do servidor exigem esse poder\",\"codigo\":4001,\"nome\":\"ACESSO_NEGADO\",\"classe\":\"acesso\",\"sprint\":\"SP000025\",\"repetir\":false,\"ms\":0}"
+  }
+}

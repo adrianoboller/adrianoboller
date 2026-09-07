@@ -190,6 +190,60 @@ estão em [TRANSACOES.md](TRANSACOES.md).
 
 ---
 
+## 2c. `SHOW … SETTINGS` e `ALTER … SET` — as diretivas
+
+```
+SHOW ( SERVER | DATABASE <banco> | TABLE <tabela> | CONNECTION ) SETTINGS
+
+ALTER ( SERVER | DATABASE <banco> | TABLE <tabela> | CONNECTION )
+  SET <campo> = <valor>
+  [ MOTIVO '<texto>' ]
+```
+
+```sql
+SHOW SERVER SETTINGS;
+SHOW DATABASE erp SETTINGS;
+SHOW TABLE clientes SETTINGS;
+SHOW CONNECTION SETTINGS;
+
+ALTER SERVER   SET max_linhas = 500 MOTIVO 'pico de exportacao';
+ALTER SERVER   SET recursos.cache_paginas = 4096;
+ALTER SERVER   SET somente_leitura = TRUE;
+ALTER DATABASE erp SET comandos_proibidos = (reindexar, excluir_tabela);
+```
+
+`<valor>` aceita `TRUE`/`FALSE` (com `ON`/`OFF`, `YES`/`NO`, `SIM`/`NAO` como
+sinônimos), número (inclusive negativo), texto entre aspas, palavra solta (é o
+`recursos.durabilidade = por_lote`) e lista entre parênteses. O campo pode ter
+seção — `recursos.cache_paginas` —, que é exatamente a forma que o
+`config_gravar` já aceita. O escopo também se escreve em português: `SERVIDOR`,
+`BANCO`, `TABELA`, `CONEXAO`. O `MOTIVO '…'` (ou `COMMENT '…'`) é opcional e
+alimenta o **diário administrativo** (`diretivas.log`, `FORMATO.md` §18).
+
+Como o `BULKINSERT` e as transações, **não passam pelo `sintaxe.rs`**: não são
+consulta, não têm `FROM`, não produzem linha. São comandos de administração, e
+viram os pedidos `diretivas` e `diretiva_gravar` do protocolo — os dois exigem
+`administrar`.
+
+**`ALTER SERVER SET` não tem caminho próprio de gravação:** ele monta
+`{"op":"config_gravar","campos":{…}}` e chama a mesma função — mesmo portão,
+mesma conferência de tipo, mesma gravação atômica do `config.json`, mesma
+aplicação a quente. Só se grava o que está em `CAMPOS_EDITAVEIS`; `token`,
+`usuarios`, `cifra` e `replicacao` continuam sendo edição do arquivo.
+
+**`ALTER TABLE … SET` e `ALTER CONNECTION SET` recusam, e a recusa nomeia o
+caminho que funciona** — `duplicate_check` é o `unico` do índice, declarado no
+`criar_tabela`; `referential_integrity` é o `verificar` da chave, e ela **nasce
+conferida**. O motivo de cada dispensa está em [DIRETIVAS.md](DIRETIVAS.md),
+que traz o mapa de cada diretiva do HFSQL contra o motor de hoje.
+
+**O que este bloco NÃO rouba:** `SHOW TRIGGERS`, `SHOW PROCEDURES` e `SHOW
+PROCEDURE STATUS` continuam do detector de rotinas. O de diretivas só reclama a
+frase quando a palavra depois do `SHOW` é `SERVER`, `DATABASE`, `TABLE` ou
+`CONNECTION`.
+
+---
+
 ## 3. O que a camada SQL vai ter de resolver, e não tem embaixo
 
 Honestidade sobre o tamanho do trabalho — estas não existem no motor:
