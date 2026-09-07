@@ -294,6 +294,14 @@ struct Sessao {
     /// entrando ate as 18h, quando a conexao dele caisse. Ver
     /// `Servidor::refrescar_a_sessao`.
     geracao_do_cadastro: u64,
+    /// A transcricao do aperto, quando esta conexao passou pelo tunel.
+    ///
+    /// Mora na SESSAO pelo mesmo motivo do `ip`: e propriedade da CONEXAO, e
+    /// nao de cada pedido, entao o `op_login` a le sem que a assinatura de
+    /// `despachar` mude. `None` = conexao em claro (o padrao, e a porta web,
+    /// que fala HTTP e nao tem tunel). E o que o `login` amarra a credencial
+    /// quando o cliente pede `amarrar_canal`. Ver `docs/CIFRA-DO-FIO.md` §10.
+    transcricao_do_fio: Option<[u8; 32]>,
 }
 
 impl Sessao {
@@ -6764,6 +6772,10 @@ impl Servidor {
                     if !self.responder_aperto(&pedido, &mut canal, &mut saida, &ip, porta) {
                         return;
                     }
+                    // A transcricao vira propriedade da conexao: e o que o
+                    // `login` amarra a credencial quando o cliente pede
+                    // `amarrar_canal`. Ver `docs/CIFRA-DO-FIO.md` §10.
+                    sessao.transcricao_do_fio = canal.transcricao();
                     continue;
                 }
                 if self.config.cifra_fio.exigir {
@@ -7549,6 +7561,36 @@ impl Servidor {
         // que falhou foi o login, a senha ou o desafio.
         let recusa = || PhxError::Autorizacao(self.msg("erro.credencial_invalida", &[]));
 
+        // Amarracao da credencial ao canal (channel binding), o gap da §10 da
+        // `docs/CIFRA-DO-FIO.md`. Quem pede `amarrar_canal` prende a prova a
+        // transcricao DESTE tunel; o servidor a confere contra a SUA, e as
+        // duas so coincidem se nao ha ninguem no meio que tenha terminado o
+        // tunel. A transcricao usada e a da conexao (`sessao`), NUNCA uma que
+        // venha no pedido -- deixar o cliente escolher a transcricao seria
+        // devolver ao atacante exatamente o que a amarracao tira dele.
+        //
+        // Sem o campo, `canal_ref` e `None` e a prova e a de sempre: a porta
+        // web (HTTP, sem tunel) e o cliente velho nao mudam -- pedida, nao
+        // imposta. Com o campo mas sem tunel, a recusa manda abrir o aperto,
+        // em vez de amarrar a credencial a coisa nenhuma.
+        let amarrar = p
+            .campo("amarrar_canal")
+            .and_then(Json::booleano)
+            .unwrap_or(false);
+        let canal_amarrado: Option<[u8; 32]> = if amarrar {
+            match sessao.transcricao_do_fio {
+                Some(t) => Some(t),
+                None => {
+                    return Err(PhxError::Autorizacao(
+                        self.msg("erro.amarra_sem_tunel", &[]),
+                    ))
+                }
+            }
+        } else {
+            None
+        };
+        let canal_ref = canal_amarrado.as_ref().map(|t| &t[..]);
+
         let mut nonces: Option<(String, String)> = None;
         let autenticado = if let Some(prova) = p.campo("prova").and_then(Json::texto) {
             // (1) desafio-resposta
@@ -7569,8 +7611,15 @@ impl Servidor {
             match cadastro.por_login(&login) {
                 Some(u) if u.ativo => {
                     let dk = phxsql_core::senha::derivado_do_hash(&u.senha_hash)?;
-                    phxsql_core::desafio::conferir_prova(&dk, &nonce, nonce_cliente, &login, prova)
-                        .then(|| u.clone())
+                    phxsql_core::desafio::conferir_prova(
+                        &dk,
+                        &nonce,
+                        nonce_cliente,
+                        &login,
+                        canal_ref,
+                        prova,
+                    )
+                    .then(|| u.clone())
                 }
                 _ => None,
             }
@@ -7605,8 +7654,12 @@ impl Servidor {
                         "este usuario exige \"assinatura\" com 128 hexadecimais".into(),
                     )
                 })?;
-                let mensagem =
-                    phxsql_core::desafio::mensagem_assinada(&nonce, &nonce_cliente, &login);
+                let mensagem = phxsql_core::desafio::mensagem_assinada(
+                    &nonce,
+                    &nonce_cliente,
+                    &login,
+                    canal_ref,
+                );
                 if !phxsql_core::ed25519::conferir(publica, &mensagem, &assinatura) {
                     return Err(recusa());
                 }
@@ -23212,6 +23265,84 @@ mod testes_cadastro_de_usuarios {
             .map(|u| u.texto_ou("login", "").to_string())
             .collect();
         assert_eq!(logins, vec!["ana", "carlos"]);
+    }
+
+    /// Channel binding no servidor -- o gap da §10 da `docs/CIFRA-DO-FIO.md`,
+    /// fechado. A transcricao mora na SESSAO (propriedade da conexao), e o
+    /// `op_login` amarra a prova a ela quando o cliente pede `amarrar_canal`.
+    ///
+    /// Prova real nos quatro sentidos que so o servidor conhece, e cada
+    /// defeito cai num sentido diferente -- medido: fazer o `op_login` usar
+    /// `None` no lugar de `canal_ref` derruba o caso (1) (o cliente honesto
+    /// para de entrar); ler a transcricao do PEDIDO em vez da sessao derrubaria
+    /// o (2), o do homem-no-meio, que e o unico que a leitura nao pegaria.
+    #[test]
+    fn login_amarrado_ao_canal_confere_contra_a_transcricao_da_sessao() {
+        let (s, _caminho, _g) = servidor_com_cadastro("amarra");
+        let dk = phxsql_core::senha::derivado_do_hash(
+            &s.cadastro().por_login("ana").unwrap().senha_hash,
+        )
+        .unwrap();
+
+        // `na_sessao` = a transcricao do tunel DESTA conexao (o que o servidor
+        // conhece); `no_calculo` = a transcricao com que o cliente fez a prova.
+        // Iguais = cliente honesto; diferentes = homem-no-meio que reencaminhou.
+        let tentar = |na_sessao: Option<[u8; 32]>, no_calculo: Option<[u8; 32]>, amarrar: bool| {
+            let mut sessao = Sessao {
+                transcricao_do_fio: na_sessao,
+                ..Sessao::default()
+            };
+            let d = s
+                .op_desafio(&pedido(r#"{"usuario":"ana"}"#), &mut sessao)
+                .unwrap();
+            let nonce = d.texto_ou("nonce", "").to_string();
+            let nc = phxsql_core::desafio::nonce();
+            let canal_ref = no_calculo.as_ref().map(|t| &t[..]);
+            let prova = phxsql_core::desafio::calcular_prova(&dk, &nonce, &nc, "ana", canal_ref);
+            let corpo = if amarrar {
+                format!(
+                    r#"{{"usuario":"ana","prova":"{prova}","nonce_cliente":"{nc}","amarrar_canal":true}}"#
+                )
+            } else {
+                format!(r#"{{"usuario":"ana","prova":"{prova}","nonce_cliente":"{nc}"}}"#)
+            };
+            s.op_login(&pedido(&corpo), &mut sessao)
+        };
+
+        let tunel = [0x5A_u8; 32];
+
+        // (1) tunel + amarrar + a MESMA transcricao dos dois lados: entra.
+        assert!(
+            tentar(Some(tunel), Some(tunel), true).is_ok(),
+            "o cliente honesto no tunel tinha de entrar amarrado"
+        );
+
+        // (2) o homem-no-meio: a conexao com o servidor tem a transcricao
+        //     atacante<->servidor, mas a prova foi feita com a do tunel
+        //     cliente<->atacante. Nao entra -- e este e o ganho que a leitura
+        //     do codigo nao mostra.
+        let outro_tunel = [0xA7_u8; 32];
+        assert!(
+            tentar(Some(outro_tunel), Some(tunel), true).is_err(),
+            "prova amarrada a outro tunel NAO podia entrar"
+        );
+
+        // (3) amarrar pedido sem tunel: recusa nomeada, em vez de amarrar a
+        //     coisa nenhuma.
+        let e = tentar(None, Some(tunel), true).unwrap_err();
+        let msg = format!("{e}").to_lowercase();
+        assert!(
+            msg.contains("tunel") || msg.contains("aperto"),
+            "sem tunel a recusa tinha de mandar abrir o aperto: {e}"
+        );
+
+        // (4) a regra petrea: sem `amarrar_canal`, o login e o de sempre --
+        //     mesmo havendo uma transcricao na sessao, quem nao pede nada entra
+        //     como antes. E o teste que impede a guarda nova de virar imposicao.
+        assert!(
+            tentar(Some(tunel), None, false).is_ok(),
+            "o login sem amarracao tinha de continuar como sempre foi"
+        );
     }
 
     /// **A prova de vazamento.** A senha em claro nao pode existir em lugar

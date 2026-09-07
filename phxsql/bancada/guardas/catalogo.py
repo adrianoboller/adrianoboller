@@ -1530,6 +1530,39 @@ GUARDAS = [
             "fio::testes::mensagem_do_tamanho_errado_e_recusada",
         ],
     },
+    # 23b. A cifra do fio: a amarracao da credencial ao canal, ignorada
+    # -----------------------------------------------------------------------
+    {
+        "id": "amarra-ao-canal-ignorada",
+        "titulo": "o login amarrado ao canal conferido SEM a transcricao",
+        "porque": (
+            "secao 10 do docs/CIFRA-DO-FIO.md: sem amarrar a prova a "
+            "transcricao do tunel, um homem-no-meio que terminou o tunel do "
+            "cliente reencaminha a prova e ela confere. A prova real e o caso "
+            "do atacante, que a LEITURA do codigo nao pega: com o defeito "
+            "reposto o cliente honesto para de entrar, e e por ele que o teste "
+            "cai."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let canal_ref = canal_amarrado.as_ref().map(|t| &t[..]);
+""",
+        "troca": """        // DEFEITO REPOSTO: o login ignora a transcricao do tunel. A prova
+        // deixa de dizer QUAL canal a carregou, e um proxy que terminou o
+        // tunel do cliente reencaminha a prova sem que nada acuse.
+        let canal_ref: Option<&[u8]> = None;
+        let _ = canal_amarrado;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_cadastro_de_usuarios::login_amarrado_ao_canal_confere_contra_a_transcricao_da_sessao",
+        ],
+        "seguem": [
+            # Login sem amarracao (senha pura) fica verde: prova que o defeito
+            # e local a amarracao, e nao um estrago em todo login.
+            "servidor::testes_cadastro_de_usuarios::cria_grava_no_arquivo_e_o_login_novo_ja_entra",
+        ],
+    },
     # 24. O teto do registro do fio, que a integracao quase perdeu
     # -----------------------------------------------------------------------
     {

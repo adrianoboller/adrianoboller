@@ -596,7 +596,13 @@ silêncio), e a conexão fecha em seguida.
   norma e conferidos contra vetor oficial (RFC 7748, RFC 5869, RFC 8439, FIPS
   180-4), mas a composição não foi rodada contra os vetores do *cacophony*.
 - **Não autentica o cliente por chave.** Quem responde «quem é você» continua
-  sendo o desafio-resposta da §2 — agora por dentro do túnel.
+  sendo o desafio-resposta da §2 — agora por dentro do túnel, e podendo
+  **amarrar-se a ele**: quem manda `"amarrar_canal": true` no `login` prende a
+  prova à transcrição do túnel, e um homem-no-meio que terminou o túnel do
+  cliente já não reencaminha a prova (ela vale para o túnel dele, não para o do
+  servidor). É pedida como toda guarda nova, então para o cliente sem pino um
+  atacante ativo ainda pode cortar o pedido — por isso ela reforça o pino, não
+  o substitui. Detalhe e limite em [CIFRA-DO-FIO.md](CIFRA-DO-FIO.md) §10.
 - **Não protege de quem lê o `config.json`.** Nunca protegeu.
 
 ### O que ainda não tem

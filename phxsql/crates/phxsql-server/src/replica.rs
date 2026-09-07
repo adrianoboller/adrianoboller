@@ -214,11 +214,19 @@ impl Cliente {
         let iteracoes = d.inteiro_ou("iteracoes", 0).max(0) as u32;
         let nonce_cliente = phxsql_core::desafio::nonce();
 
+        // Amarracao ao canal: quando a replica fala por dentro do tunel, a
+        // prova nasce presa a transcricao do aperto, e o source a confere
+        // contra a dele -- e o que derruba um homem-no-meio que tenha
+        // terminado o tunel. Sem tunel (`None`), e a prova de sempre. Ver
+        // `docs/CIFRA-DO-FIO.md` §10.
+        let transcricao = self.canal.transcricao();
+        let canal_ref = transcricao.as_ref().map(|t| &t[..]);
+
         let prova = if !senha_hash.is_empty() {
             // Do hash guardado sai a MESMA chave derivada que o source usa --
             // sem senha em claro em lado nenhum.
             let dk = phxsql_core::senha::derivado_do_hash(senha_hash)?;
-            phxsql_core::desafio::calcular_prova(&dk, &nonce, &nonce_cliente, usuario)
+            phxsql_core::desafio::calcular_prova(&dk, &nonce, &nonce_cliente, usuario, canal_ref)
         } else {
             phxsql_core::desafio::prova_de_senha(
                 senha,
@@ -227,15 +235,20 @@ impl Cliente {
                 &nonce,
                 &nonce_cliente,
                 usuario,
+                canal_ref,
             )?
         };
 
-        self.pedir(vec![
+        let mut campos = vec![
             ("op", Json::texto_de("login")),
             ("usuario", Json::texto_de(usuario)),
             ("prova", Json::texto_de(prova)),
             ("nonce_cliente", Json::texto_de(nonce_cliente)),
-        ])?;
+        ];
+        if canal_ref.is_some() {
+            campos.push(("amarrar_canal", Json::Bool(true)));
+        }
+        self.pedir(campos)?;
         Ok(())
     }
 

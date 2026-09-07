@@ -361,6 +361,27 @@ pub const FABRICA: &[MensagemFabrica] = &[
              {\"op\":\"cifrar\"} antes de cualquier otra petición",
         ],
     },
+    // Amarracao da credencial ao canal (channel binding). O cliente pediu
+    // `amarrar_canal` mas a conexao esta em claro -- nao ha tunel a que amarrar.
+    // A saida honesta e mandar abrir o aperto antes do login, e nao aceitar uma
+    // amarracao a coisa nenhuma.
+    MensagemFabrica {
+        nome: "erro.amarra_sem_tunel",
+        textos: [
+            "amarracao ao canal pedida sem tunel: peca o aperto de mao com \
+             {\"op\":\"cifrar\"} antes do login",
+            "liaison au canal demandée sans tunnel : demandez la poignée de main \
+             avec {\"op\":\"cifrar\"} avant la connexion",
+            "channel binding requested without a tunnel: ask for the handshake \
+             with {\"op\":\"cifrar\"} before logging in",
+            "binding al canale richiesto senza tunnel: chieda la stretta di mano \
+             con {\"op\":\"cifrar\"} prima del login",
+            "Kanalbindung ohne Tunnel angefordert: fordern Sie den Handschlag mit \
+             {\"op\":\"cifrar\"} vor der Anmeldung an",
+            "vinculación al canal pedida sin túnel: pida el saludo con \
+             {\"op\":\"cifrar\"} antes del inicio de sesión",
+        ],
+    },
     MensagemFabrica {
         nome: "erro.ip_bloqueado",
         textos: [

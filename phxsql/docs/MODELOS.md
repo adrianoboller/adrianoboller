@@ -348,6 +348,26 @@ A regra de escalão foi a de sempre — **«o erro se vê?»**:
 | **D — zelador** | rodou no pico de compilações — o disco chegou a 1,6 GiB com seis `target`, liberado para 16 GiB por prova de processo, sem matar ninguém. |
 
 
+### Rodada de 7 de setembro de 2026 (noite) — channel binding do login
+
+Uma frente só, e o dono pediu «fazer os gaps» da cifra do fio. O orquestrador
+escolheu **fechar um** — a amarração da credencial ao canal — e deixar os
+outros três (ODBC, `Remoto`, pulso do cluster) como pedido, porque cifrar
+metade do cluster parece protegido e não está: *meia funcionalidade pior que
+nada* é decisão, não preguiça.
+
+| frente | escalão | por quê | papéis dispensados |
+|---|---|---|---|
+| channel binding do `login` | **projeto e risco** | é criptografia e protocolo: o erro não aparece no teste feliz, aparece no dia do homem-no-meio. Foi por isso que a prova real precisou de dois defeitos, e o fácil escondia que o difícil não fora medido | **C-DBA** (não muda formato em disco — a transcrição é de sessão, em memória; o `PSCH` não se toca), **E-designer** (o login web é HTTP, fora do túnel; nenhuma tela muda) |
+
+Papéis cumpridos: **F** (prova real nos dois sentidos — `desafio` e servidor, e
+a guarda `amarra-ao-canal-ignorada` **PROVADA**, 1/1 caíram); **G** (a guarda
+nova no catálogo, catraca dos textos intacta — a mensagem `erro.amarra_sem_tunel`
+entrou pela `FABRICA_TELA` nos seis idiomas); **H** (`CIFRA-DO-FIO.md` §1/§10/§11,
+`SEGURANCA.md` §7, `PENDENCIAS.md` item 8, esta linha, e a cognição do dia); **J**
+dispensado com registro — o desenho já estava escrito no §10 do documento, medido
+contra o rebaixamento do `exigir`; não havia receita de fora a trazer.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

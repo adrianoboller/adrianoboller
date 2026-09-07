@@ -95,9 +95,11 @@ mão:
    completado o aperto.
 2. **Amarrar a credencial ao canal (*channel binding*).** Com estática de
    cliente, dá para exigir que a prova do login seja feita sobre a mesma chave
-   que fechou o túnel. Sem ela, o hash da transcrição existe (`fio::Transporte`
-   o expõe) mas **ninguém o consome ainda** — está anotado na §10 como o
-   próximo passo, não como coisa feita.
+   que fechou o túnel. O hash da transcrição (`fio::Transporte` o expõe) **já é
+   consumido** pelo desafio-resposta quando o cliente pede `amarrar_canal` — ver
+   §10. O que a estática de cliente acrescentaria por cima é *exigir* a
+   amarração antes do login, em vez de aceitá-la como pedido; hoje esse degrau é
+   uma decisão de implantação que ainda não virou opção de configuração.
 
 E o que a estática de cliente **custaria**, que é o motivo de não entrar agora:
 um ciclo de vida de credencial inteiro e novo — gerar, distribuir, cadastrar,
@@ -510,9 +512,32 @@ isso, com estas palavras.
 
 ## 10. O que fica para depois, escrito para não se perder
 
-* **Amarrar o login ao canal.** O `Transporte` já expõe o hash da transcrição;
-  falta o desafio-resposta consumi-lo. Entra pedido, como sempre: quem mandar o
-  campo novo ganha a garantia.
+* **Amarrar o login ao canal — FEITO (07/09/2026), com o limite escrito.** O
+  desafio-resposta passou a consumir o hash da transcrição: quem manda
+  `"amarrar_canal": true` no `login` prende a prova à transcrição *deste* túnel,
+  e o servidor a confere contra a *sua*. As duas só coincidem se não há ninguém
+  no meio que tenha terminado o túnel — então um homem-no-meio que fechou o
+  túnel do cliente (TOFU na primeira conexão, ou `exigir` desligado sem pino) já
+  não reencaminha a prova: ela vale para o túnel dele, não para o do servidor.
+  Entra **pedido**, como sempre: sem o campo, a prova é byte a byte a de antes,
+  e a porta web (HTTP, sem túnel) e o cliente velho não mudam. A `replica::Cliente`
+  amarra sozinha quando fala por dentro do túnel; pedir `amarrar_canal` numa
+  conexão em claro é recusa nomeada (`erro.amarra_sem_tunel`), não uma amarração
+  a coisa nenhuma.
+
+  **O limite, dito sem enfeite:** a amarração é *pedida*, e um atacante ativo que
+  já terminou o túnel do cliente pode cortar o campo `amarrar_canal` antes de
+  reencaminhar — a mesma aritmética do rebaixamento da §2. Por isso ela **não
+  substitui o pino**: para o cliente que pinou a chave do servidor (o que não
+  tem o túnel terminado por ninguém) a amarração é a garantia inteira; para o
+  cliente sem pino é defesa em profundidade, e o que fecha o buraco continua
+  sendo `exigir: true` **mais** o pino. O passo seguinte, se um dia valer o
+  custo, é o servidor **exigir** a amarração quando há túnel — a mesma decisão
+  de implantação do `exigir`, do lado que sabe onde está. A transcrição já mora
+  na sessão; o que falta é só a opção de configuração. A prova real está em
+  `desafio::tests::prova_amarrada_a_um_canal_nao_serve_em_outro` (a cripto) e
+  `login_amarrado_ao_canal_confere_contra_a_transcricao_da_sessao` (a fiação do
+  servidor), e a guarda `amarra-ao-canal-ignorada` repõe o defeito.
 * **O driver ODBC não fala o aperto.** Com `exigir: true` ele para. Ou ele
   aprende, ou o servidor que exige não é o mesmo que atende ODBC.
 * **O `Remoto` (multi-servidor da interface) não liga o túnel.** Não é
@@ -556,6 +581,9 @@ isso, com estas palavras.
 | `fio::testes::registro_fora_de_ordem_nao_abre` | contador |
 | `fio::testes::contador_no_teto_recusa_em_vez_de_repetir` | §3 |
 | `fio::testes::fim_e_corte_sao_vereditos_diferentes` | §4 |
+| `desafio::tests::sem_canal_a_prova_e_identica_a_de_sempre` | amarração `None` = a prova de sempre, byte a byte (a regra pétrea, no cálculo) |
+| `desafio::tests::prova_amarrada_a_um_canal_nao_serve_em_outro` | a amarração ao canal: mesma transcrição passa, outra cai (§10) |
+| `login_amarrado_ao_canal_confere_contra_a_transcricao_da_sessao` | a fiação no servidor: transcrição na sessão, recusa sem túnel, e o velho intacto |
 | `cliente_sem_cifra_continua_como_antes` (soquete) | **a regra pétrea, pelo fio** |
 | `exigir_recusa_texto_claro_e_deixa_o_tunel_passar` (soquete) | §2 |
 | `registro_repetido_derruba_a_conexao` (soquete) | o laço age sobre a recusa, em vez de engolir |

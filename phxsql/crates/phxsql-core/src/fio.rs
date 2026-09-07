@@ -388,9 +388,10 @@ impl Transporte {
     /// O hash da transcricao do aperto.
     ///
     /// Os dois lados chegam ao mesmo valor, e ninguem no meio consegue faze-lo
-    /// coincidir sem ter fechado o aperto. E o que uma amarracao da credencial
-    /// ao canal usaria -- ainda ninguem usa, e a secao 10 do documento diz
-    /// isso em vez de deixar parecer feito.
+    /// coincidir sem ter fechado o aperto. E o que a amarracao da credencial ao
+    /// canal usa: o `login` a prende a prova quando o cliente pede
+    /// `amarrar_canal`, e o servidor a confere contra a transcricao DESTA
+    /// conexao. Ver a secao 10 do `docs/CIFRA-DO-FIO.md`.
     pub fn transcricao(&self) -> [u8; 32] {
         self.transcricao
     }
