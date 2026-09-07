@@ -99,6 +99,11 @@ impl Atividade {
             // que aquela sessao consegue chamar.
             "ping" | "login" | "desafio" | "quem_sou" | "sair" | "catalogo" => return None,
             "bancos" | "tabelas" | "esquema" | "ler" | "varrer" | "buscar" => Atividade::Ler,
+            // Procurar uma palavra le a tabela por outro caminho, e devolve as
+            // MESMAS linhas que o `varrer` devolveria -- entao pede o mesmo
+            // poder. Pedir mais aqui seria esconder pela indexacao um dado que
+            // a varredura ja entrega a quem pode ler.
+            "procurar_texto" => Atividade::Ler,
             // O catalogo e leitura: quem pode ler a tabela pode saber que ela
             // existe e que colunas tem.
             "sistabelas" | "systables" | "siscolunas" | "syscolumns" => Atividade::Ler,
@@ -342,6 +347,32 @@ impl Atividade {
             // laco expoe origem, endereco e erro de conexao. Os dois sao
             // decisao e mapa de administrador, nao de replica.
             "spare_promover" | "replicacao_estado" | "replicacao_testar" => Atividade::Administrar,
+            // ------------------------------------------------------------
+            // As 13 que o conferidor `toda_operacao_do_catalogo_declara_o_
+            // poder_que_pede` achou caindo no `_`.
+            //
+            // **Nenhum poder muda aqui**: todas ja exigiam administrar, por
+            // omissao, e e esse mesmo valor que passa a estar escrito. Mudar
+            // qualquer uma agora tiraria ou daria direito sem ninguem ter
+            // pedido -- e a lei da casa e clara sobre isso. O que muda e so o
+            // silencio: quem quiser rebaixar uma delas passa a ter de dizer.
+            // ------------------------------------------------------------
+            //
+            // DDL e reparo: mexem na tabela como objeto, e nao no dado dela.
+            "renomear_tabela" | "reparar" => Atividade::Administrar,
+            // Soltar a tabela em memoria de OUTRA sessao e decisao de quem
+            // manda no servidor, e nao de quem consulta -- por isso ela nao
+            // acompanha o `memoria`, que e leitura.
+            "memoria_liberar" => Atividade::Administrar,
+            // O DBLINK inteiro: a ligacao carrega CREDENCIAL de outro
+            // servidor, e o poder aqui e sobre a credencial, nao sobre a
+            // tabela. Quem pode ler uma tabela daqui nao ganha por isso o
+            // direito de sair pela rede com a senha que o administrador
+            // guardou -- inclusive as de LER, que e o ponto: o dado do outro
+            // lado nao tem portao nosso.
+            "dblink_salvar" | "dblink_excluir" | "dblink_testar" | "dblink_bancos"
+            | "dblink_tabelas" | "dblink_estrutura" | "dblink_ler" | "dblink_consultar"
+            | "dblink_ligar" | "dblink_sincronizar" => Atividade::Administrar,
             // Operacao desconhecida exige o maior poder: nega por omissao.
             _ => Atividade::Administrar,
         })
@@ -1182,6 +1213,52 @@ mod tests {
         }
         assert_eq!(Atividade::da_operacao("sair"), None);
     }
+    /// **Operação catalogada que esqueceu a linha do poder vira administrador
+    /// em silêncio.**
+    ///
+    /// O `_ => Administrar` fecha a porta para o desconhecido, e isso está
+    /// certo. O que ele não distingue é a operação que ESTÁ no catálogo e
+    /// esqueceu a sua linha: ela nasce exigindo o maior poder, ninguém é
+    /// avisado, e o sintoma chega como «não consigo usar isto» de quem podia.
+    /// Aconteceu com o `procurar_texto` nesta mesma rodada.
+    ///
+    /// A conferência lê o FONTE e exige que cada nome do catálogo apareça
+    /// escrito ali — como o conferidor da `fase` da telemetria faz, e pelo
+    /// mesmo motivo: a função sozinha não sabe dizer se respondeu por regra ou
+    /// por omissão.
+    #[test]
+    fn toda_operacao_do_catalogo_declara_o_poder_que_pede() {
+        const FONTE: &str = include_str!("usuarios.rs");
+        let corpo = {
+            let de = FONTE
+                .find("pub fn da_operacao")
+                .expect("o conferidor nao achou a funcao: leitor quebrado passa por engano");
+            let ate = FONTE[de..]
+                .find("\n    }\n")
+                .expect("o conferidor nao achou o fim da funcao");
+            &FONTE[de..de + ate]
+        };
+        // Recusa passar vendo zero: leitor quebrado tem de reprovar, e nao
+        // aprovar tudo.
+        assert!(
+            corpo.contains("\"buscar\""),
+            "o conferidor nao esta lendo o corpo certo"
+        );
+        // Os APELIDOS entram: o cliente manda `join` e o portao classifica o
+        // que o cliente mandou. Um apelido que existisse so no catalogo
+        // passaria pelo conferidor e cairia no `_` no ar.
+        let faltando: Vec<&str> = crate::catalogo::OPERACOES
+            .iter()
+            .flat_map(|o| o.nomes())
+            .filter(|n| !corpo.contains(&format!("\"{n}\"")))
+            .collect();
+        assert!(
+            faltando.is_empty(),
+            "estas operacoes estao no catalogo e nao declaram poder em \
+             `Atividade::da_operacao` -- vao virar ADMINISTRAR em silencio: {faltando:?}"
+        );
+    }
+
     #[test]
     fn cada_nivel_contem_o_anterior() {
         let nenhum = Nivel::Nenhum.permissoes();

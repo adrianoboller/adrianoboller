@@ -6314,6 +6314,7 @@ impl Servidor {
             "ler" => self.op_ler(p, sessao),
             "varrer" => self.op_varrer(p, sessao),
             "buscar" => self.op_buscar(p, sessao),
+            "procurar_texto" => self.op_procurar_texto(p, sessao),
             "inserir" => self.op_inserir(p, sessao),
             "inserir_lote" | "importar" | "carga" => self.op_inserir_lote(p, sessao),
             "importar_conferir" => self.op_importar_conferir(p, sessao),
@@ -11083,6 +11084,48 @@ impl Servidor {
         })?;
         Ok(Json::objeto(vec![
             ("encontrados", Json::de_u64(rowids.len() as u64)),
+            ("linhas", Json::Lista(linhas)),
+        ]))
+    }
+
+    /// Acha as linhas que contem uma palavra, por um indice de texto.
+    ///
+    /// **A ficha e a EXCLUSIVA, e nao a de leitura**, mesmo sendo uma busca:
+    /// abrir uma tabela cujo `.fts` ainda nao nasceu ESCREVE, e a pista de
+    /// leitura recusa por isso (`Table::abrir_para_ler`). Atender pela pista
+    /// exigiria o vaivem do `varrer` -- tentar, receber o `None`, soltar a
+    /// ficha e refazer --, e isso e otimizacao a se fazer com numero, depois
+    /// de a bancada dizer se ela paga.
+    fn op_procurar_texto(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let indice = p.texto_ou("indice", "").to_string();
+        if indice.is_empty() {
+            return Err(PhxError::Esquema("informe \"indice\"".into()));
+        }
+        let palavra = p.texto_ou("palavra", "").to_string();
+        if palavra.trim().is_empty() {
+            return Err(PhxError::Esquema("informe \"palavra\"".into()));
+        }
+        let _trava = self.travar_dados()?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+        let achado = t.procurar_texto(&indice, &palavra)?;
+
+        let mut linhas = Vec::new();
+        for rowid in achado.rowids.iter().take(self.limite(p) as usize) {
+            if let Some(l) = t.ler(*rowid)? {
+                let mut obj = vec![("rowid".to_string(), Json::de_u64(*rowid))];
+                if let Json::Objeto(pares) = linha_para_json(&l, t.esquema()) {
+                    obj.extend(pares);
+                }
+                linhas.push(Json::Objeto(obj));
+            }
+        }
+        // Mesma trilha do `buscar`, e pelo mesmo motivo: e ela que responde
+        // "quem procurou o nome do fulano?".
+        Self::trilhar_acesso(&mut t, 0, linhas.len() as u64, || {
+            format!("{indice}~{palavra}")
+        })?;
+        Ok(Json::objeto(vec![
+            ("encontrados", Json::de_u64(achado.rowids.len() as u64)),
             ("linhas", Json::Lista(linhas)),
         ]))
     }
@@ -18356,6 +18399,50 @@ mod testes_direito_por_tabela {
             r#""op":"ler","database":"b","tabela":"folha","rowid":1"#
         )
         .is_err());
+    }
+
+    /// **O `procurar_texto` passa pelo portao UNICO**, e passa porque nasceu
+    /// com o campo `"tabela"` no primeiro nivel -- que e o campo que o portao
+    /// le.
+    ///
+    /// A petrea manda procurar, a cada operacao nova, quem NAO tem esse campo:
+    /// as tres que escondem a tabela dele (`juntar`, `unir`, `pivotar`) pagam
+    /// conferencia propria. Esta nao esconde, entao nao paga -- e este teste e
+    /// o que prova que ela nao esconde.
+    #[test]
+    fn procurar_texto_nao_e_a_porta_dos_fundos_para_a_tabela_negada() {
+        let dir = dir_temp("fts-portao");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(r#"{"*":{"ler":true,"tabelas":{"clientes":{"ler":true}}}}"#),
+        );
+        let erro = pede(
+            &s,
+            &ses,
+            r#""op":"procurar_texto","database":"b","tabela":"folha","indice":"porNome","palavra":"ana""#,
+        )
+        .expect_err("o procurar_texto leu a tabela negada");
+        assert!(
+            erro.to_string().to_lowercase().contains("folha")
+                || erro.to_string().to_lowercase().contains("permiss")
+                || erro.to_string().to_lowercase().contains("direito"),
+            "a recusa tem de dizer por que: {erro}"
+        );
+        // E na tabela PERMITIDA a recusa nao pode ser a do portao: ela tem de
+        // chegar ao motor, que responde que nao ha indice de texto declarado.
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"procurar_texto","database":"b","tabela":"clientes","indice":"porNome","palavra":"ana""#,
+        );
+        let recado = match &r {
+            Ok(_) => String::new(),
+            Err(e) => e.to_string().to_lowercase(),
+        };
+        assert!(
+            !recado.contains("permiss") && !recado.contains("direito"),
+            "a tabela permitida foi barrada pelo portao: {recado}"
+        );
     }
 
     /// A arvore mostra o que da para abrir, e nao o que existe.

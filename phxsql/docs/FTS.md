@@ -325,3 +325,45 @@ As três guardas estão no catálogo (`fts-reindexar-sem-o-irmao`,
 `fts-reconstruir-sem-recriar`, `fts-abrir-recusa-a-tabela`), e o processo — com
 os dois diagnósticos plausíveis que a medição matou — está em
 `docs/cognicao/cognicao_o-irmao-pode-ser-um-arquivo_20260907_0130.md`.
+
+## 9. A operação no protocolo
+
+```json
+{"op":"procurar_texto","database":"loja","tabela":"chamados",
+ "indice":"porCorpo","palavra":"fenix"}
+```
+
+Devolve `encontrados` e `linhas`, como o `buscar`. Três decisões que valem
+estar escritas:
+
+**O portão é o de sempre.** A operação nasceu com `"tabela"` no primeiro nível,
+que é o campo que o portão único lê — então ela não paga conferência própria,
+ao contrário de `juntar`, `unir` e `pivotar`, que escondem a tabela dele. O
+teste `procurar_texto_nao_e_a_porta_dos_fundos_para_a_tabela_negada` prova as
+duas metades: a tabela negada é negada, **e** a permitida não é barrada.
+
+**Pede `ler`, e não mais.** Procurar uma palavra devolve as mesmas linhas que a
+varredura devolveria; exigir mais aqui seria esconder pela indexação um dado
+que a varredura já entrega a quem pode ler. E foi ao escrever isso que
+apareceu o furo do §10.
+
+**A ficha é a exclusiva**, mesmo sendo busca: abrir uma tabela cujo `.fts`
+ainda não nasceu escreve, e a pista de leitura recusa por isso. Atender pela
+pista exigiria o vaivém do `varrer` — tentar, receber `None`, soltar a ficha e
+refazer —, e isso é otimização a se fazer com número, depois de a bancada
+dizer se ela paga.
+
+## 10. O furo que a operação nova revelou — e que não era dela
+
+`Atividade::da_operacao` termina em `_ => Administrar`. Para operação
+**desconhecida** está certo. Para a operação que está **no catálogo** e
+esqueceu a linha, não: ela nasce exigindo o maior poder, ninguém é avisado, e o
+sintoma chega como *«não consigo usar isto»* de quem podia.
+
+O conferidor escrito para isso — `toda_operacao_do_catalogo_declara_o_poder_que_pede`
+— lê o fonte da própria função e achou **13 outras** caindo assim:
+`renomear_tabela`, `reparar`, `memoria_liberar` e as **10** do DBLINK.
+
+**Nenhum poder mudou no conserto:** as 13 passaram a estar escritas com o valor
+que já valia. Rebaixar qualquer uma agora tiraria ou daria direito sem ninguém
+ter pedido. `docs/cognicao/cognicao_o-classificador-do-portao-tem-um-padrao-que-nao-avisa_20260907_0410.md`.

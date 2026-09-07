@@ -415,6 +415,23 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: true,
     },
     Operacao {
+        nome: "procurar_texto",
+        apelidos: &[],
+        resumo: "Acha as linhas que contêm uma palavra, por um índice de \
+                 texto (.fts). A palavra casa por termo inteiro, não por \
+                 pedaço, e por padrão o índice dobra o acento — «fenix» acha \
+                 «fênix». Tabela sem índice de texto declarado devolve vazio.",
+        parametros: &[
+            DB,
+            TAB,
+            obr("indice", "string", "o nome do índice de texto"),
+            obr("palavra", "string", "a palavra a procurar; uma só"),
+            MAX,
+        ],
+        exemplo: r#"{"op":"procurar_texto","database":"loja","tabela":"chamados","indice":"porCorpo","palavra":"fenix"}"#,
+        ferramenta_mcp: true,
+    },
+    Operacao {
         nome: "sql",
         apelidos: &[],
         resumo: "Traduz um SELECT simples para as operações do protocolo e o \

@@ -248,9 +248,20 @@ GUARDAS = [
         "arquivo": "crates/phxsql-server/src/profiler.rs",
         "trecho": """    let tamanho = linha.trim().len();
     match Json::analisar(linha) {
-        Ok(j @ Json::Objeto(_)) => limpar(&j).escrever(),
-        Ok(_) => format!("<pedido nao e objeto, {tamanho} bytes>"),
-        Err(_) => format!("<pedido invalido, {tamanho} bytes>"),
+        Ok(j @ Json::Objeto(_)) => {
+            let mut alvos = Vec::new();
+            colher_tabelas(&j, database, &mut alvos);
+            (limpar(&j).escrever(), alvos)
+        }
+        // Pedido que nao e objeto nao vira texto -- vira o tamanho. E sem
+        // arvore nao ha tabela a colher: a lista sai vazia, e o evento cai no
+        // caminho de sempre. Nao ha o que esconder num pedido que nao virou
+        // texto nenhum.
+        Ok(_) => (
+            format!("<pedido nao e objeto, {tamanho} bytes>"),
+            Vec::new(),
+        ),
+        Err(_) => (format!("<pedido invalido, {tamanho} bytes>"), Vec::new()),
     }
 """,
         "troca": r'''    // DEFEITO REPOSTO: recorta o texto cru em vez de analisar e reserializar.
@@ -268,7 +279,13 @@ GUARDAS = [
             None => break,
         }
     }
-    s
+    // A colheita de tabelas FICA: o defeito reposto aqui e o recorte do
+    // TEXTO. Repor os dois de uma vez esconderia qual derrubou o teste.
+    let mut alvos = Vec::new();
+    if let Ok(j) = Json::analisar(linha) {
+        colher_tabelas(&j, database, &mut alvos);
+    }
+    (s, alvos)
 ''',
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -321,9 +338,20 @@ GUARDAS = [
         "arquivo": "crates/phxsql-server/src/profiler.rs",
         "trecho": """    let tamanho = linha.trim().len();
     match Json::analisar(linha) {
-        Ok(j @ Json::Objeto(_)) => limpar(&j).escrever(),
-        Ok(_) => format!("<pedido nao e objeto, {tamanho} bytes>"),
-        Err(_) => format!("<pedido invalido, {tamanho} bytes>"),
+        Ok(j @ Json::Objeto(_)) => {
+            let mut alvos = Vec::new();
+            colher_tabelas(&j, database, &mut alvos);
+            (limpar(&j).escrever(), alvos)
+        }
+        // Pedido que nao e objeto nao vira texto -- vira o tamanho. E sem
+        // arvore nao ha tabela a colher: a lista sai vazia, e o evento cai no
+        // caminho de sempre. Nao ha o que esconder num pedido que nao virou
+        // texto nenhum.
+        Ok(_) => (
+            format!("<pedido nao e objeto, {tamanho} bytes>"),
+            Vec::new(),
+        ),
+        Err(_) => (format!("<pedido invalido, {tamanho} bytes>"), Vec::new()),
     }
 """,
         "troca": """    // DEFEITO REPOSTO: recorta procurando a PALAVRA `senha` e tapando o
@@ -344,7 +372,13 @@ GUARDAS = [
             None => break,
         }
     }
-    s
+    // A colheita de tabelas FICA: o defeito reposto aqui e o recorte do
+    // TEXTO. Repor os dois de uma vez esconderia qual derrubou o teste.
+    let mut alvos = Vec::new();
+    if let Ok(j) = Json::analisar(linha) {
+        colher_tabelas(&j, database, &mut alvos);
+    }
+    (s, alvos)
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -3672,6 +3706,88 @@ pub fn limpar() {
         "seguem": [
             "apagar_o_fts_e_reabrir_reconstroi_em_vez_de_achar_nada",
             "acha_no_titulo_e_no_corpo",
+        ],
+    },
+    {
+        "id": "fts-nasce-na-pista-de-leitura",
+        "titulo": "a pista de leitura cria o .fts, e escrever sob a ficha compartilhada é o que ela existe para impedir",
+        "porque": (
+            "`abrir_com` recebe `escrever`, e os quatro componentes que "
+            "escrevem na abertura (a troca de volume do `.reg`, a cura do "
+            "`.log`, o `.trash` e o `.reason`) recusam com o motivo quando ela "
+            "e falsa. O `.fts` nasceu fora dessa conferencia -- e refaze-lo "
+            "escreve, com N leitores nos mesmos arquivos."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        } else if refazer {
+            if !escrever {
+                return Ok(SemEscrever::PrecisaEscrever(
+                    "o indice de texto .fts desta tabela ainda nao existe e seria criado",
+                ));
+            }
+            Some(FtsFile::recriar(&caminho_fts, dobra)?)
+""",
+        "troca": """        } else if refazer {
+            // DEFEITO REPOSTO: o `.fts` volta a nascer sem olhar a ficha.
+            Some(FtsFile::recriar(&caminho_fts, dobra)?)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "indice-de-texto"],
+        "caem": ["a_pista_de_leitura_recusa_criar_o_fts"],
+        "seguem": [
+            "acha_no_titulo_e_no_corpo",
+            "apagar_o_fts_e_reabrir_reconstroi_em_vez_de_achar_nada",
+        ],
+    },
+    {
+        "id": "fts-chave-truncada-nao-se-declara",
+        "titulo": "a chave truncada não se declara truncada, e a busca acha a mais",
+        "porque": (
+            "a chave guarda 26 bytes do termo mais o comprimento. Duas "
+            "palavras de 32 letras com os mesmos 26 primeiros bytes caem na "
+            "MESMA chave. Sem o aviso, a `Table` nao confere a linha e devolve "
+            "as duas -- achar a mais e mentira que o cliente nao percebe."
+        ),
+        "arquivo": "crates/phxsql-store/src/fts.rs",
+        "trecho": """        let conferir = t.len() > self.termo_len();
+""",
+        "troca": """        // DEFEITO REPOSTO: a chave truncada deixa de se declarar truncada, e
+        // entao a `Table` nao confere a linha antes de devolver.
+        let conferir = false;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "indice-de-texto"],
+        "caem": ["palavra_longa_confere_a_linha_em_vez_de_achar_a_mais"],
+        "seguem": [
+            "acha_no_titulo_e_no_corpo",
+            "o_indice_acha_o_mesmo_que_a_varredura",
+        ],
+    },
+    {
+        "id": "operacao-sem-poder-declarado",
+        "titulo": "operação catalogada sem linha de poder vira administrador em silêncio",
+        "porque": (
+            "o `_ => Administrar` fecha a porta para o DESCONHECIDO, e isso "
+            "esta certo. O que ele nao distingue e a operacao que esta no "
+            "catalogo e esqueceu a linha: ela nasce exigindo o maior poder, "
+            "ninguem e avisado, e o sintoma chega como «nao consigo usar isto» "
+            "de quem podia. Aconteceu com o `procurar_texto`, e o conferidor "
+            "achou mais 13 caindo assim."
+        ),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": """            "procurar_texto" => Atividade::Ler,
+""",
+        "troca": """            // DEFEITO REPOSTO: a operacao perde a linha e cai no `_`.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuarios::tests::toda_operacao_do_catalogo_declara_o_poder_que_pede",
+            "servidor::testes_direito_por_tabela::procurar_texto_nao_e_a_porta_dos_fundos_para_a_tabela_negada",
+        ],
+        "seguem": [
+            "usuarios::tests::a_memoria_pede_leitura_e_o_backup_pede_administrar",
+            "servidor::testes_direito_por_tabela::a_estrela_de_tabela_vale_para_as_nao_listadas",
         ],
     },
 ]

@@ -356,3 +356,87 @@ fn fts_corrompido_reconstroi_na_abertura_em_vez_de_derrubar_a_tabela() {
         vec![a]
     );
 }
+
+/// **A pista de LEITURA não pode escrever, nem para fazer nascer o `.fts`.**
+///
+/// Sob a ficha compartilhada há N leitores nos mesmos arquivos, e a única
+/// coisa que torna isso seguro é nenhum deles escrever. Os outros quatro
+/// componentes que escrevem na abertura já recusavam com o motivo; o `.fts`
+/// nasceu sem essa conferência — e refazê-lo escreve.
+///
+/// Com o defeito reposto este teste acha `Aberta` no lugar de
+/// `PrecisaEscrever`, e a mensagem diz o que isso significa.
+#[test]
+fn a_pista_de_leitura_recusa_criar_o_fts() {
+    use phxsql_store::table::SemEscrever;
+
+    let (mut t, d) = nova("pista-de-leitura");
+    t.inserir(&linha(1, "pedido urgente", "corpo com fenix"))
+        .unwrap();
+    drop(t);
+    // Abre e fecha pela ficha EXCLUSIVA para curar o que a gravacao deixou
+    // pendente (o `.log`); sem isto a recusa que o teste mede seria a dele.
+    drop(Table::abrir(&d, "docs").unwrap());
+
+    // **O controle**, e ele e o que da sentido ao resto: nesta tabela, com o
+    // `.fts` no lugar, a pista de leitura ABRE. Sem ele, uma recusa por
+    // qualquer outro motivo passaria por prova.
+    assert!(
+        matches!(
+            Table::abrir_para_ler(&d, "docs").unwrap(),
+            SemEscrever::Aberta(_)
+        ),
+        "o controle falhou: a pista de leitura ja recusava esta tabela por \
+         outro motivo, e entao a prova de baixo nao prova nada"
+    );
+
+    std::fs::remove_file(d.join("docs.fts")).unwrap();
+
+    match Table::abrir_para_ler(&d, "docs").unwrap() {
+        SemEscrever::PrecisaEscrever(motivo) => {
+            assert!(motivo.contains(".fts"), "{motivo}");
+        }
+        SemEscrever::Aberta(_) => panic!(
+            "a pista de leitura ABRIU e criou o .fts -- e escrever sob a ficha \
+             compartilhada e o unico erro que ela existe para impedir"
+        ),
+    }
+
+    // E a ficha exclusiva continua fazendo o trabalho, que é o outro lado.
+    let mut t = Table::abrir(&d, "docs").unwrap();
+    assert_eq!(
+        t.procurar_texto("porCorpo", "fenix").unwrap().rowids.len(),
+        1
+    );
+}
+
+/// **Palavra que não cabe na chave: o índice dá candidatas, a tabela confere.**
+///
+/// A chave guarda 26 bytes do termo mais o comprimento saturado. Duas palavras
+/// de 32 letras que compartilham os 26 primeiros bytes caem na MESMA chave, e o
+/// índice sozinho devolve as duas — que é achar a mais, e achar a mais é
+/// mentira que o cliente não tem como perceber.
+///
+/// A conferência mora na `Table`, e não em quem chama: quem esquecesse viraria
+/// a porta dos fundos, e nenhum teste do caminho normal acusaria.
+#[test]
+fn palavra_longa_confere_a_linha_em_vez_de_achar_a_mais() {
+    let (mut t, _d) = nova("longa");
+    // Os 26 primeiros bytes são iguais, e o comprimento também: 32.
+    let alfa = "desenvolvimentossustentaveisalfa";
+    let beta = "desenvolvimentossustentaveisbeta";
+    assert_eq!(alfa.len(), beta.len());
+    assert_eq!(alfa[..26], beta[..26]);
+
+    let a = t.inserir(&linha(1, "titulo a", alfa)).unwrap();
+    let b = t.inserir(&linha(2, "titulo b", beta)).unwrap();
+
+    let achado = t.procurar_texto("porCorpo", alfa).unwrap();
+    assert!(achado.conferir, "esta palavra passa da largura da chave");
+    assert_eq!(
+        achado.rowids,
+        vec![a],
+        "sem a conferencia da linha, o indice devolve as DUAS"
+    );
+    assert_eq!(t.procurar_texto("porCorpo", beta).unwrap().rowids, vec![b]);
+}

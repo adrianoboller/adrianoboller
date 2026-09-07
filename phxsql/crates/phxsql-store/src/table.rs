@@ -897,14 +897,30 @@ impl Table {
         // se pode cumprir. E a marca de "ficou para tras numa queda" NAO cai
         // nesta vala: ela nao e erro de abertura, e quem a resolve e o
         // `reindexar`, que agora sabe.
+        //
+        // **E TUDO ISTO PRECISA DA FICHA EXCLUSIVA.** Refazer o `.fts` escreve,
+        // e sob a compartilhada ha N leitores nos mesmos arquivos: e a unica
+        // coisa que a pista de leitura existe para impedir. Entao, sem a ficha,
+        // recusa com o motivo -- que e o que os outros quatro componentes que
+        // escrevem na abertura ja faziam, e o que este esqueceu de fazer.
         let mut refazer = !dobra.is_empty() && !caminho_fts.exists();
         let fts = if dobra.is_empty() {
             None
         } else if refazer {
+            if !escrever {
+                return Ok(SemEscrever::PrecisaEscrever(
+                    "o indice de texto .fts desta tabela ainda nao existe e seria criado",
+                ));
+            }
             Some(FtsFile::recriar(&caminho_fts, dobra)?)
         } else {
             match FtsFile::abrir(&caminho_fts, dobra.clone()) {
                 Ok(f) => Some(f),
+                Err(_) if !escrever => {
+                    return Ok(SemEscrever::PrecisaEscrever(
+                        "o indice de texto .fts nao abre e seria refeito",
+                    ));
+                }
                 Err(_) => {
                     refazer = true;
                     Some(FtsFile::recriar(&caminho_fts, dobra)?)
@@ -1058,13 +1074,60 @@ impl Table {
                     self.nome
                 ))
             })?;
-        match self.fts.as_mut() {
-            Some(f) => f.procurar(posicao, palavra),
-            None => Ok(Achado {
-                rowids: Vec::new(),
-                conferir: false,
-            }),
+        let achado = match self.fts.as_mut() {
+            Some(f) => f.procurar(posicao, palavra)?,
+            None => {
+                return Ok(Achado {
+                    rowids: Vec::new(),
+                    conferir: false,
+                })
+            }
+        };
+        if !achado.conferir {
+            return Ok(achado);
         }
+        // **A conferencia acontece AQUI, e nao em quem chama.**
+        //
+        // A palavra passou da largura da chave, entao o indice pode estar
+        // apontando outra palavra com o mesmo prefixo e o mesmo comprimento.
+        // Devolver isso seria achar a MAIS, que e mentira -- e mentira que o
+        // cliente nao tem como perceber.
+        //
+        // Poderia ser trabalho de quem chama, e a `Achado.conferir` continua
+        // dizendo que houve. Nao e, pelo mesmo motivo do portao unico: quem
+        // esquecer vira a porta dos fundos, e nenhum teste do caminho normal
+        // acusa. O preco e ler so as linhas CANDIDATAS, e so quando a palavra
+        // passa dos 24 bytes -- nao a tabela inteira.
+        // A coluna nao entra: `textos_da_linha` ja devolve um texto por indice
+        // de texto, na mesma ordem -- e essa ordem e o contrato.
+        let dobra = self.indices_de_texto[posicao].1;
+        let procurada = if dobra {
+            phxsql_core::termo::dobrar(palavra.trim())
+        } else {
+            palavra.trim().to_string()
+        };
+        let mut certos = Vec::with_capacity(achado.rowids.len());
+        for rowid in achado.rowids {
+            let Some(payload) = self.reg.ler(rowid)? else {
+                continue;
+            };
+            let textos = self.textos_da_linha(&payload)?;
+            let tem = textos.get(posicao).is_some_and(|t| {
+                let quebrados = if dobra {
+                    phxsql_core::termo::termos(t)
+                } else {
+                    phxsql_core::termo::termos_sem_dobrar(t)
+                };
+                quebrados.contains(&procurada)
+            });
+            if tem {
+                certos.push(rowid);
+            }
+        }
+        Ok(Achado {
+            rowids: certos,
+            conferir: true,
+        })
     }
 
     /// Confere as chaves estrangeiras que pediram conferencia.
