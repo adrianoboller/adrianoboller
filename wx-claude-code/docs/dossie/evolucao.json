@@ -718,5 +718,20 @@
   "itens_questionario": 60,
   "hooks": 9,
   "manual": 825
+ },
+ {
+  "versao": "3.41.0",
+  "data": "2026-09-07",
+  "titulo": "o unico furo que nao e dissuasao passa a avisar em tres lugares",
+  "agentes": 94,
+  "skills": 21,
+  "comandos": 33,
+  "scripts": 40,
+  "linhas_py": 30738,
+  "prints": 63,
+  "testes": 104,
+  "itens_questionario": 60,
+  "hooks": 9,
+  "manual": 884
  }
 ]

@@ -47,4 +47,4 @@ python3 skills/conversao-wx/scripts/validate_plugin_bundle.py . --strict
 
 Esperado: `valid: true`, `tests: OK`, zero erros e zero avisos. O `--strict` roda a bateria inteira.
 
-Último commit no momento da medição: `5e67a47 2026-09-07`.
+Último commit no momento da medição: `9cd95ad 2026-09-07`.
