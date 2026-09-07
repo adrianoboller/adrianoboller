@@ -32,6 +32,12 @@ RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
 # Absoluto e tomado ANTES do `cd`, porque depois dele o `$0` relativo mente.
 PORTAO="$(cd "$(dirname "$0")" && pwd)/bancada/esta-medindo.sh"
 MARCA="${TMPDIR:-/tmp}/phx-comunicacao-marca"
+# A marca do PULSO: quando este script rodou pela ultima vez. E dela que
+# sai a guarda da corrente de tiros unicos -- ver a secao abaixo.
+PULSO="${TMPDIR:-/tmp}/phx-batimento-pulso"
+# O batimento fino e de 15 min; 20 da folga para atraso do agendador sem
+# deixar uma corrente morta passar por viva.
+TETO_PULSO_MIN=20
 AGORA="$(date '+%d/%m/%Y %H:%M')"
 
 [ "${1:-}" = "--zerar" ] && rm -f "$MARCA"
@@ -248,6 +254,35 @@ if command -v node >/dev/null 2>&1 && [ -d "$UI" ]; then
   done
   [ "$QUEBRADOS" = 1 ] && PROBLEMAS=$((PROBLEMAS+1))
 fi
+
+# ---------------------------------------------------------------------------
+# A GUARDA DA CORRENTE, e ela existe porque o buraco cobrou.
+#
+# O batimento fino de 15 min e uma corrente de tiros unicos: cada elo forja o
+# seguinte. Se um elo nao forja -- e em 07/09/2026 um nao forjou, porque o
+# conteiner reiniciou no meio do turno --, a corrente arrebenta em SILENCIO, e
+# quem percebia era so quem notasse a ausencia. Ficou ~3 h parada.
+#
+# Agora a ausencia tem numero. E o «sem marca» NAO passa por «tudo bem»: a
+# marca mora em /tmp e morre com o conteiner, entao marca faltando quer dizer
+# «esta maquina reiniciou», que e exatamente o caso em que a corrente precisa
+# ser refeita. Guarda que cala no caso que a motivou nao e guarda.
+AGORA_S="$(date +%s)"
+if [ -f "$PULSO" ] && GASTO=$(( AGORA_S - $(cat "$PULSO") )) && [ "$GASTO" -ge 0 ]; then
+  MIN=$(( GASTO / 60 ))
+  if [ "$MIN" -ge "$TETO_PULSO_MIN" ]; then
+    echo "⚠️  a corrente do batimento fino ARREBENTOU: $MIN min desde o ultimo elo"
+    echo "    (o teto e $TETO_PULSO_MIN min). Refaca com \`send_later\` de 15 min,"
+    echo "    e forje o proximo elo ANTES de responder."
+    PROBLEMAS=$((PROBLEMAS+1))
+  fi
+else
+  echo "⚠️  sem marca de pulso: esta maquina reiniciou, e a corrente do batimento"
+  echo "    fino quase certamente precisa ser REFEITA -- o elo em voo morre com o"
+  echo "    conteiner. Marca ausente nao e silencio: e este aviso."
+  PROBLEMAS=$((PROBLEMAS+1))
+fi
+echo "$AGORA_S" > "$PULSO"
 
 [ "$PROBLEMAS" = 0 ] && echo "✅ nenhum problema novo medido"
 
