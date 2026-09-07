@@ -18,13 +18,27 @@ criar outra. Instruções e as armadilhas de estilo em
 
 O nome muda a cada refação — era `dossie-phxsql.html`, virou `-0.15` e agora é
 `-0.18` — e **só existe um por vez**: o anterior sai do repositório no mesmo
-commit, para que ninguém atualize o errado. Todos os scripts aceitam o caminho
-do HTML como argumento, então trocar o nome de novo não exige editá-los.
+commit, para que ninguém atualize o errado. E **«só existe um por vez» é o que
+faz os scripts acharem o dossiê sozinhos**: o `dossie_da_pasta.py` varre
+`dossie-phxsql-*.html` — um dono só —, e zero ou dois é parada com o motivo,
+nunca um palpite sobre qual atualizar. Chamada **sem argumento** alcança o
+dossiê nos nove; passar o caminho continua valendo. Trocar o nome de novo não
+exige editar script nenhum, e agora isso é medido: zero nomes digitados no
+código da pasta.
 
-Os números do painel são **medidos, nunca estimados** — já saíram errados três
-vezes: arredondamento para cima, depois 276 testes quando eram 280, depois um
-rodapé inteiro parado numa versão anterior. **Nenhum número visível se digita
-mais**: são **nove** geradores, listados no `LEIA-ME.md` da pasta, e eles
+Os números do painel são **medidos, nunca estimados** — já saíram errados
+quatro vezes: arredondamento para cima, depois 276 testes quando eram 280,
+depois um rodapé inteiro parado numa versão anterior, e em 07/09/2026 **três
+painéis atrasados sem um único dígito digitado** (198 pedidos onde eram 203,
+428 testes onde eram 451, 26.762 linhas/s onde eram 37.810). A quarta ensina o
+alcance da lei: **gerador certo chamado pela metade entrega número velho
+anunciando sucesso.** O `pagina-dos-pedidos.py` gravava a página, gravava a
+contagem, imprimia três linhas de êxito e pulava o painel do dossiê — porque o
+alvo do painel só existia se viesse por argumento. Gerador que faz menos do que
+o nome dele promete tem de dizer que fez menos. **Nenhum número visível se digita
+mais**: são **dez** geradores, listados no `LEIA-ME.md` da pasta — eram nove
+nesta conta até 07/09/2026, porque o `trio-de-motores.py` escrevia no dossiê e
+estava **fora da receita**, então quem a seguia nunca o rodava. Eles
 escrevem o título, o selo, o painel da capa, o rodapé, os idiomas, a bancada, o
 painel da replicação, os pedidos, a cobertura por área, as capturas, os tetos
 da trava, a tabela do que ainda falta aqui, as figuras do motor — e a

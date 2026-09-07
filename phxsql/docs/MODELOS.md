@@ -157,6 +157,41 @@ duas frentes na mesma árvore (`bancada/` e `docs/`) seria maior que o trabalho.
 | **I — versionador** | commit por decisão, na branch combinada |
 | **J — pesquisador** | **dispensado**: não havia receita de fora para medir. O que houve foi o contrário — medir o que os outros têm e nós não |
 
+### Rodada do batimento e dos geradores — 7 de setembro de 2026
+
+Rodada curta e sem pedido novo do dono: manutenção que nasceu de uma
+remedição. As duas frentes se encontraram por acaso e o encontro é o achado.
+
+| frente | escalão | por quê |
+|---|---|---|
+| remedir a limitação do batimento de 15 min | **forte** | a decisão era «que mecanismo serve», não «rodar o de sempre» |
+| o dono único do caminho do dossiê, nos nove geradores | **forte** | mexer em nove geradores de uma vez arrisca o painel inteiro |
+| rodar os nove e comparar cada painel | mecânico e verificável | a saída se confere sozinha, com `md5sum` antes e depois |
+
+**Nenhuma frente foi delegada a agente**, e é dispensa registrada: a segunda
+frente edita nove arquivos que o dossiê inteiro depende, e integrar dois fios
+na mesma pasta custaria mais que fazer.
+
+**Os papéis, e o que cada um fez ou por que foi dispensado:**
+
+| papel | nesta rodada |
+|---|---|
+| **A — orquestrador** | integrou, e o encontro das duas frentes é o que ensina: as duas são a mesma doença — mecanismo que se declara cumprindo sem cumprir. O `Monitor` morria anunciando que estava armado; o gerador pulava metade anunciando êxito |
+| **B — engenheiro** | **dispensado**: nenhuma linha de Rust mudou. O que mudou é Python de ferramenta, e os treze arquivos da pasta compilam |
+| **C — DBA** | **dispensado**: nada tocou formato em disco nem garantia de dado |
+| **D — zelador** | **dispensado**: a rodada não encheu disco. As duas cópias temporárias saíram na mesma corrida que as criou, e nenhum processo foi morto |
+| **E — designer** | **dispensado**: nenhum bloco novo na tela; os painéis mudaram de **número**, não de forma |
+| **F — prova real** | convocado nos dois sentidos: painel forçado de volta para 198 e chamada nua — antes do conserto três linhas de êxito e o 198 fica; depois, `painel dos pedidos regravado` e o 204 volta. E os portões medidos pelo **código de saída**, não pelo texto: 1 com dois dossiês, 0 com um |
+| **G — QA** | catraca nenhuma mudou, e o buraco está declarado: **não há guarda que reprove um gerador novo nascido sem padrão**. O conferidor genérico seria um casador de `sys.argv`, e casador de texto é o que esta casa já recusou com número noutra frente |
+| **H — documentação** | duas cognições, `LEIA-ME.md` da pasta, `CLAUDE.md` (a quarta vez do número velho), `CHANGELOG`, pedido 204 |
+| **I — versionador** | commit por decisão, na branch combinada |
+| **J — pesquisador** | **dispensado**: não havia receita de fora. O que houve foi remedir a **nossa** limitação, que é o oposto — e é justamente o que a lei dele manda |
+
+E a lição de escalão que esta rodada deixa: **remedir uma limitação é trabalho
+de projeto, não de rotina.** Eu a tratei como rotina por rodadas — rearmar o
+que caiu — e rotina não faz a pergunta que destrava, porque rotina repete a
+pergunta que já tem resposta.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

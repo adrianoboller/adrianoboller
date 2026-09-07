@@ -3,8 +3,14 @@
 
     python3 docs/dossie/trio-de-motores.py [caminho/do/dossie.html]
 
-E o SEXTO gerador do dossie. Escreve o bloco `trio:`, dentro da secao da
-bancada: o grafico, a tabela das medianas e o que os numeros nao dizem.
+Escreve o bloco `trio:`, dentro da secao da bancada: o grafico, a tabela das
+medianas e o que os numeros nao dizem.
+
+Ele dizia aqui ser «o SEXTO gerador», e nao e mais -- numero de posicao numa
+lista que cresce envelhece igual a qualquer outro numero digitado. Pior: ele
+tinha ficado FORA da receita do LEIA-ME.md, achado em 07/09/2026, entao quem
+seguia a receita nunca o rodava. A ordem dele nao se escreve aqui; quem a diz e
+a receita, num lugar so.
 
 Duas decisoes que valem explicar
 --------------------------------
@@ -22,6 +28,11 @@ desenho denuncia isso.
 import json
 import pathlib
 import sys
+
+# O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
+# num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from dossie_da_pasta import achar_o_dossie  # noqa: E402
 
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
 # A regra de quem venceu a fase vem do dono do desenho, nao de uma copia:
@@ -48,7 +59,7 @@ def _alvo():
     for a in sys.argv[1:]:
         if a.endswith(".html"):
             return pathlib.Path(a).resolve()
-    return RAIZ / "docs" / "dossie" / "dossie-phxsql-0.18.html"
+    return achar_o_dossie()
 
 
 def mil(x):

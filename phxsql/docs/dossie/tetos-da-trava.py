@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """O SEXTO gerador: os tetos dos desenhos de concorrencia, das corridas cruas.
 
-    python3 docs/dossie/tetos-da-trava.py docs/dossie/dossie-phxsql-0.18.html
+    python3 docs/dossie/tetos-da-trava.py <dossie.html>
 
 Por que ele existe
 ------------------
@@ -26,6 +26,12 @@ import glob
 import os
 import re
 import sys
+import pathlib
+
+# O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
+# num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from dossie_da_pasta import achar_o_dossie  # noqa: E402
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.dirname(os.path.dirname(AQUI))
@@ -144,9 +150,9 @@ def bloco():
 
 
 def main():
-    if len(sys.argv) < 2:
-        sys.exit("uso: tetos-da-trava.py <dossie.html>")
-    alvo = sys.argv[1]
+    # Era o unico da pasta que exigia argumento. Fazer diferente dos oito irmaos
+    # e a armadilha: quem repete a receita nua deixa este bloco para tras.
+    alvo = sys.argv[1] if len(sys.argv) > 1 else achar_o_dossie()
     s = open(alvo, encoding="utf-8").read()
     i, j = s.find(ABRE), s.find(FECHA)
     if i < 0 or j < 0:

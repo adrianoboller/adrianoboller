@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """As duas figuras do MOTOR: o caminho de um pedido, e o ciclo de operacao.
 
-    python3 docs/dossie/fluxo-do-motor.py [dossie-phxsql-0.18.html]
+    python3 docs/dossie/fluxo-do-motor.py [dossie.html]   # sem argumento, acha o da pasta
 
 Oitavo gerador da pasta. Desenha duas coisas que o dossie contava em prosa:
 
@@ -33,12 +33,16 @@ import pathlib
 import re
 import sys
 
+# O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
+# num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from dossie_da_pasta import achar_o_dossie  # noqa: E402
+
 AQUI = pathlib.Path(__file__).resolve().parent
 RAIZ = AQUI.parent.parent
 SERVIDOR = RAIZ / "crates/phxsql-server/src/servidor.rs"
 TABLE = RAIZ / "crates/phxsql-store/src/table.rs"
 CATALOGO = RAIZ / "crates/phxsql-server/src/catalogo.rs"
-PADRAO = AQUI / "dossie-phxsql-0.18.html"
 
 ABRE_F = "<!-- fluxo-motor:inicio (gerado por docs/dossie/fluxo-do-motor.py) -->"
 FECHA_F = "<!-- fluxo-motor:fim -->"
@@ -343,7 +347,7 @@ def trocar(texto, abre, fecha, bloco, onde):
 
 
 def main():
-    alvo = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else PADRAO
+    alvo = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else achar_o_dossie()
     portoes = conferir()
     n_ops = operacoes()
     svg_f, svg_w = fluxograma(portoes, n_ops), workflow()

@@ -20,6 +20,50 @@ ausência de transação: ele as documenta extensamente.
 
 ### Corrigido
 
+- **Três painéis do dossiê estavam parados sem um único dígito digitado.** 198
+  pedidos onde eram 203, 428 testes na maior área onde eram 451, e 26.762
+  linhas/s de replicação onde o `resultados.json` medido diz **37.810** — um
+  retrato inteiro atrás. A causa não estava na conta e sim na **chamada**: o
+  `pagina-dos-pedidos.py` recebe dois alvos, a página e o dossiê, e só o
+  primeiro tinha padrão. Chamado sem argumento ele gravava a página, gravava a
+  contagem de volta no `PENDENCIAS.md`, imprimia **três linhas de êxito** e
+  pulava o painel do dossiê — e foi por anunciar sucesso que ninguém olhou de
+  novo. O irmão era o `cobertura-por-area.py`, com o mesmo laço sobre
+  `sys.argv` e a mesma falta. Outros quatro tinham padrão, mas era o **nome do
+  arquivo digitado**, em sete lugares, que morreria na próxima refação do
+  dossiê; e o `tetos-da-trava.py` era o único que **exigia** argumento, o que é
+  a mesma armadilha por outro lado — quem repete a receita nua deixa aquele
+  bloco para trás. Hoje há **um dono só**, o `docs/dossie/dossie_da_pasta.py`,
+  que acha o dossiê varrendo `dossie-phxsql-*.html`, com a pétrea «só existe um
+  por vez» virando portão: zero é parada com o motivo, dois é parada com os
+  dois nomes, nunca um palpite sobre qual atualizar (medido pelo **código de
+  saída**, 1 e 0, e não pelo texto — a primeira medição leu o `$?` depois de um
+  cano e recebeu o status do `tail`). Os nove geradores importam esse dono, a
+  receita do `LEIA-ME.md` perdeu o nome do arquivo, e restam **zero** nomes
+  digitados no código da pasta. Prova real nos dois sentidos: com o painel
+  forçado de volta para 198 e a chamada nua, antes do conserto o script imprime
+  três linhas e o painel fica em 198; depois, imprime `painel dos pedidos
+  regravado` e o painel volta a 204. *A lei «todo número visível sai de um
+  gerador» prova a origem do número; a chegada dele é outra prova.*
+  `docs/cognicao/cognicao_o-gerador-certo-chamado-pela-metade_20260907_0846.md`
+
+- **O batimento de comunicação de 15 em 15 minutos, que passou rodadas sem
+  cumprir.** Estava montado como `Monitor` dentro da sessão, e o `Monitor`
+  morre: o runtime trunca o `timeout_ms` em 1.800.000 ms e ignora o
+  `persistent`, então ele caía a cada ~30 minutos e era rearmado, e caía de
+  novo. **A limitação estava medida e estava certa — e foi por isso que ela
+  prendeu**: eu remedia «o `Monitor` sobrevive?», que já tinha resposta, em vez
+  de «existe outro mecanismo?», que nunca foi perguntada. Medido: o **cron** é
+  recusado abaixo de uma hora («the minimum interval is 1 hour»), mas o **tiro
+  único** (`send_later`) de 15 minutos é aceito e guardado pelo servidor, então
+  sobrevive à sessão. O piso é da expressão de intervalo, não da frequência de
+  disparo. Hoje o batimento é uma **corrente de tiros únicos**, cada elo
+  forjando o seguinte, com o gatilho de hora em hora como piso que a refaz —
+  e a instrução dele carrega as duas recusas medidas, para ninguém repetir a
+  tentativa. Pedido 204, com o buraco que fica nomeado: nenhuma guarda acusa a
+  corrente arrebentada.
+  `docs/cognicao/cognicao_remedir-o-caminho-fechado-nao-acha-o-aberto_20260907_0838.md`
+
 - **O sexto veredito de ausência do `docs/HFSQL.md`, e o pior dos seis.** A §3.3
   dizia que a trava por linha «viria depois». Ela veio: há gestor próprio em
   `crates/phxsql-server/src/travas.rs` — intenção na tabela, exclusivo na linha,

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Renumera TODAS as legendas de figura do dossie, na ordem do documento.
 
-    python3 docs/dossie/numerar-figuras.py [dossie-phxsql-0.18.html]
+    python3 docs/dossie/numerar-figuras.py [dossie.html]   # sem argumento, acha o da pasta
 
 # Por que ele existe, e por que ele nasceu tarde
 
@@ -27,13 +27,17 @@ import pathlib
 import re
 import sys
 
+# O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
+# num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from dossie_da_pasta import achar_o_dossie  # noqa: E402
+
 AQUI = pathlib.Path(__file__).resolve().parent
-PADRAO = AQUI / "dossie-phxsql-0.18.html"
 LEGENDA = re.compile(r"<b>Figura (\d+)\.</b>")
 
 
 def main():
-    alvo = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else PADRAO
+    alvo = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else achar_o_dossie()
     texto = alvo.read_text(encoding="utf-8")
     antes = [int(m.group(1)) for m in LEGENDA.finditer(texto)]
     if not antes:

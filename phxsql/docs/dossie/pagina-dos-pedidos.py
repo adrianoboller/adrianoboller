@@ -24,6 +24,11 @@ RAIZ = pathlib.Path(__file__).resolve().parents[2]
 FONTE = RAIZ / "docs" / "PENDENCIAS.md"
 PADRAO = RAIZ / "docs" / "dossie" / "pedidos.html"
 
+# O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
+# num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from dossie_da_pasta import achar_o_dossie  # noqa: E402
+
 # O estado vem do emoji da primeira coluna da tabela.
 ESTADOS = {
     "☑️": ("feito", "Feito"),
@@ -477,6 +482,8 @@ def main():
     dossies = [a for a in argumentos if "dossie" in pathlib.Path(a).name]
     saidas = [a for a in argumentos if a not in dossies]
     saida = pathlib.Path(saidas[0]).resolve() if saidas else PADRAO
+    if not dossies:
+        dossies = [achar_o_dossie()]
     itens = ler()
     for d in dossies:
         gravar_no_dossie(d, itens)

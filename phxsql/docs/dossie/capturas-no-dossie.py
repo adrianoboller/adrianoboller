@@ -28,6 +28,11 @@ import base64
 import pathlib
 import sys
 
+# O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
+# num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from dossie_da_pasta import achar_o_dossie  # noqa: E402
+
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
 CAPTURAS = RAIZ / "docs" / "dossie" / "capturas"
 ABRE = "<!-- capturas:inicio (gerado por docs/dossie/capturas-no-dossie.py) -->"
@@ -38,7 +43,7 @@ def _alvo():
     for a in sys.argv[1:]:
         if a.endswith(".html"):
             return pathlib.Path(a).resolve()
-    return RAIZ / "docs" / "dossie" / "dossie-phxsql-0.18.html"
+    return achar_o_dossie()
 
 
 # A ordem e a do caminho que o dono pediu: do login ate a replicacao. O

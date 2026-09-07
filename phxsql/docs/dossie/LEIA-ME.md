@@ -15,12 +15,13 @@ impossível de cumprir depois que o diretório temporário sumisse.
 
 ## Como atualizar
 
-1. Edite `dossie-phxsql-0.18.html`.
-2. **Rode os nove geradores** (abaixo). Nenhum número visível se digita.
+1. Edite o `dossie-phxsql-*.html` da pasta — **só existe um**, e é essa regra
+   que faz os geradores o acharem sozinhos.
+2. **Rode os dez geradores** (abaixo). Nenhum número visível se digita.
 3. Publique **passando a URL acima**, para cair na mesma página em vez de criar
    uma nova.
 
-## Os nove geradores, e o que cada um regrava
+## Os dez geradores, e o que cada um regrava
 1. **LEIA o artefato publicado antes de qualquer coisa** (`action: "read"` com
    a URL acima).
 2. Compare com `dossie-phxsql-0.15.html` — pelo menos o número de `<h2>`.
@@ -67,16 +68,46 @@ sumiu é a mesma doença do conferidor que diz «limpo» sem ter conferido.
 **Os números do painel e do rodapé não se digitam mais.** Saem de
 
 ```bash
-python3 docs/dossie/numeros-do-projeto.py    docs/dossie/dossie-phxsql-0.18.html
-python3 docs/dossie/numeros-da-bancada.py    docs/dossie/dossie-phxsql-0.18.html
-python3 docs/dossie/pagina-dos-pedidos.py    docs/dossie/pedidos.html docs/dossie/dossie-phxsql-0.18.html
-python3 docs/dossie/cobertura-por-area.py    docs/dossie/dossie-phxsql-0.18.html
-python3 docs/dossie/capturas-no-dossie.py    docs/dossie/dossie-phxsql-0.18.html
-python3 docs/dossie/tetos-da-trava.py        docs/dossie/dossie-phxsql-0.18.html
-python3 docs/dossie/comparativo-no-dossie.py docs/dossie/dossie-phxsql-0.18.html
-python3 docs/dossie/fluxo-do-motor.py        docs/dossie/dossie-phxsql-0.18.html
-python3 docs/dossie/numerar-figuras.py       docs/dossie/dossie-phxsql-0.18.html   # POR ÚLTIMO
+python3 docs/dossie/numeros-do-projeto.py
+python3 docs/dossie/numeros-da-bancada.py
+python3 docs/dossie/pagina-dos-pedidos.py
+python3 docs/dossie/cobertura-por-area.py
+python3 docs/dossie/capturas-no-dossie.py
+python3 docs/dossie/tetos-da-trava.py
+python3 docs/dossie/comparativo-no-dossie.py
+python3 docs/dossie/fluxo-do-motor.py
+python3 docs/dossie/trio-de-motores.py
+python3 docs/dossie/numerar-figuras.py       # POR ÚLTIMO
 ```
+
+**Sem argumento nenhum**, e isso é conserto de 07/09/2026, não estilo. O nome
+do dossiê some da receita porque ele muda a cada refação, e quem o acha é o
+`dossie_da_pasta.py` — **um dono só**, varrendo `dossie-phxsql-*.html` na
+pasta, com a regra «só existe um por vez» virando portão: zero é parada, dois
+é parada, nunca um palpite sobre qual atualizar. Ainda dá para passar o caminho
+por argumento; o que mudou é que **não passar deixou de significar «faça
+menos»**.
+
+O defeito que isso fechou não era teórico. Três painéis do dossiê estavam
+parados, e nenhum número tinha sido digitado por ninguém:
+
+| painel | dizia | era |
+|---|---:|---:|
+| pedidos, ao todo | 198 | **203** |
+| testes na maior área | 428 | **451** |
+| replicação, linhas/s no master | 26.762 | **37.810** |
+
+A causa é uma só, e vale mais que os três números: o `pagina-dos-pedidos.py`
+chamado **nu** gravava a página e a contagem e **pulava o dossiê calado** — o
+alvo do painel só existia se viesse por argumento. O `cobertura-por-area.py`
+tinha o mesmo laço e a mesma falta; o `numeros-da-bancada.py` e mais três
+tinham padrão, mas era o **nome digitado**, que morre na próxima refação. E o
+`tetos-da-trava.py` era o único que exigia argumento — fazer diferente dos oito
+irmãos é a armadilha, porque quem repete a receita nua deixa aquele bloco para
+trás.
+
+*Gerador que faz menos do que o nome dele promete e não diz é a mesma doença do
+número digitado à mão: envelhece calado.*
 
 | script | blocos que ele escreve |
 |---|---|
@@ -87,6 +118,7 @@ python3 docs/dossie/numerar-figuras.py       docs/dossie/dossie-phxsql-0.18.html
 | `capturas-no-dossie.py` | `capturas:` — as vinte telas, como *data URI* |
 | `tetos-da-trava.py` | `tetos:` — os quatro tetos de concorrência (§35), lidos das corridas cruas em `bancada/concorrencia/corridas/` |
 | `comparativo-no-dossie.py` | `comparativo:` — a tabela do que ainda falta aqui (§33) e as as duas figuras do medidor, lidas de `bancada/comparativo/` e `bancada/cobertura-da-tela/`; grava também os dois `.svg` avulsos |
+| `trio-de-motores.py` | `trio:` — os três motores a um milhão de linhas (§ da bancada), do `bancada/comparacao/um-milhao.json`. **Não redesenha**: o SVG é do `bancada/comparacao/grafico.py`, e ele PARA se o desenho for mais velho que a medição. Ficou **fora desta receita** até 07/09/2026, e quem a seguia nunca o rodava |
 | `fluxo-do-motor.py` | `fluxo-motor:` (§9) e `workflow-motor:` (§31) — o caminho de um pedido e o ciclo de operação; as **listas saem do código** e ele PARA quando divergem |
 | `numerar-figuras.py` | renumera **todas** as legendas `Figura N` na ordem do documento. Roda **por último** |
 
@@ -172,8 +204,8 @@ número como qualquer outro.**
 ## O dossiê em PDF
 
 ```bash
-python3 docs/dossie/embutir-fontes.py docs/dossie/dossie-phxsql-0.18.html /tmp/com-fontes.html
-node    docs/dossie/pdf-do-dossie.mjs /tmp/com-fontes.html dossie-phxsql-0.18.pdf
+python3 docs/dossie/embutir-fontes.py docs/dossie/dossie-phxsql-*.html /tmp/com-fontes.html
+node    docs/dossie/pdf-do-dossie.mjs /tmp/com-fontes.html dossie-phxsql.pdf
 ```
 
 O primeiro baixa as **26 faces** do Google Fonts e as põe como `data:` numa
@@ -211,7 +243,7 @@ Para refazê-las:
 cargo build --release -p phxsql-server --bin phxsqld     # a página é include_str!
 node    docs/dossie/capturar-dossie.mjs . /tmp/brutas
 python3 docs/dossie/capturas-no-dossie.py --preparar /tmp/brutas
-python3 docs/dossie/capturas-no-dossie.py docs/dossie/dossie-phxsql-0.18.html
+python3 docs/dossie/capturas-no-dossie.py
 find . -name '*.rs' -not -path './target/*' | xargs cat | wc -l    # linhas de Rust
 cargo test --workspace 2>&1 | grep '^test result' \
   | awk '{s+=$4} END {print s}'                                    # testes
@@ -275,7 +307,7 @@ sozinho. A fonte da verdade é o `.md`; mexeu lá, rode isto.
 
 - **Nenhuma cor literal nos SVG.** Tudo sai dos tokens (`var(--reg)`,
   `var(--acento)`…), senão o diagrama some no tema escuro. Confira com
-  `grep -c 'fill="#\|stroke="#' dossie-phxsql-0.18.html` — tem de dar zero.
+  `grep -c 'fill="#\|stroke="#' dossie-phxsql-*.html` — tem de dar zero.
 - **Todo token de cor nasce no `:root` base.** Cor definida só dentro de
   `@media` ou `[data-theme]` não existe para quem está no tema "sistema".
 - **Nada centraliza, e o texto tem teto.** É a §4.1 do `docs/DESIGN.md`, medida:

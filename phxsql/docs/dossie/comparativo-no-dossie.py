@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Escreve a tabela comparativa da §33 do dossie, do `resultados.json` medido.
 
-    python3 docs/dossie/comparativo-no-dossie.py [dossie-phxsql-0.18.html]
+    python3 docs/dossie/comparativo-no-dossie.py [dossie.html]   # sem argumento, acha o da pasta
 
 O setimo gerador da pasta, e ele existe pela lei que fez nascer os seis
 anteriores: **todo numero visivel sai de um gerador, ou esta errado e ninguem
@@ -21,6 +21,11 @@ import html
 import json
 import pathlib
 import sys
+
+# O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
+# num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from dossie_da_pasta import achar_o_dossie  # noqa: E402
 
 AQUI = pathlib.Path(__file__).resolve().parent
 RAIZ = AQUI.parent.parent
@@ -58,7 +63,6 @@ def solto(svg: str) -> str:
     corte = svg.index(">") + 1
     cabeca = svg[:corte].replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ', 1)
     return cabeca + "\n  " + TOKENS_SOLTOS + svg[corte:]
-PADRAO = AQUI / "dossie-phxsql-0.18.html"
 
 ABRE = "<!-- comparativo:inicio (gerado por docs/dossie/comparativo-no-dossie.py) -->"
 FECHA = "<!-- comparativo:fim -->"
@@ -341,7 +345,7 @@ def bloco(d, c, n_fig):
 
 
 def main():
-    alvo = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else PADRAO
+    alvo = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else achar_o_dossie()
     if not FONTE.exists():
         sys.exit(f"falta {FONTE} -- rode antes: python3 bancada/comparativo/medir.py")
     if not COBERTURA.exists():

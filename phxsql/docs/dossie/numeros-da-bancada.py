@@ -20,6 +20,11 @@ import math
 import pathlib
 import sys
 
+# O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
+# num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from dossie_da_pasta import achar_o_dossie  # noqa: E402
+
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
 MEDICAO = RAIZ / "bancada" / "resultados.json"
 # A bancada dos quatro servidores. O painel da secao da replicacao saia
@@ -35,7 +40,7 @@ def _alvo():
             # Resolvido: caminho relativo quebrava o `relative_to(RAIZ)`
             # da mensagem final, DEPOIS de ja ter gravado o arquivo.
             return pathlib.Path(a).resolve()
-    return RAIZ / "docs" / "dossie" / "dossie-phxsql-0.18.html"
+    return achar_o_dossie()
 
 
 DOSSIE = _alvo()

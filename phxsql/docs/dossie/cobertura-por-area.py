@@ -27,7 +27,7 @@ O que ele conta, e a definicao de cada numero:
 Passando um `.html` junto, ele grava TAMBEM a tabela da secao «Estado e
 roteiro» do dossie, entre as marcas `<!-- cobertura:... -->`:
 
-    python3 docs/dossie/cobertura-por-area.py docs/dossie/dossie-phxsql-0.18.html
+    python3 docs/dossie/cobertura-por-area.py [dossie.html]   # sem argumento, acha o da pasta
 """
 
 import collections
@@ -35,6 +35,11 @@ import os
 import pathlib
 import re
 import sys
+
+# O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
+# num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from dossie_da_pasta import achar_o_dossie  # noqa: E402
 
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
 CRATES = RAIZ / "crates"
@@ -209,9 +214,12 @@ def main():
     if "--so-medir" in sys.argv:
         print(bloco)
         return
-    for a in sys.argv[1:]:
-        if a.endswith(".html"):
-            gravar_no_dossie(a, por_area)
+    # Sem argumento este laco nao rodava, e o dossie ficava para tras CALADO --
+    # o mesmo defeito que o `pagina-dos-pedidos.py` pagou com cinco pedidos de
+    # atraso no painel. Chamada nua tem de alcancar o dossie da pasta.
+    alvos = [a for a in sys.argv[1:] if a.endswith(".html")] or [achar_o_dossie()]
+    for a in alvos:
+        gravar_no_dossie(a, por_area)
     txt = ALVO.read_text(encoding="utf-8")
     if INICIO not in txt or FIM not in txt:
         raise SystemExit(f"{ALVO} nao tem as marcas {INICIO} / {FIM}")
