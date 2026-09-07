@@ -19842,6 +19842,81 @@ mod testes_sql {
         assert_eq!(linhas(&r)[0].texto_ou("nome", ""), "Maria");
     }
 
+    /// Pedido 223, pelo caminho INTEIRO: SQL em texto, traduzido para
+    /// `buscar`, contra uma chave `Sequence` -- e nao a `Int4` do resto do
+    /// modulo. `Sequence` e o tipo da chave primaria de quase toda tabela
+    /// nascida pela tela, e o alargamento de tipo do tradutor (todo literal
+    /// numerico vira TEXTO) tinha alcancado `Int`/`UInt` e nao o irmao: um
+    /// `WHERE id = 2` contra `Sequence` recusava com "esperado numero da
+    /// sequencia, recebido Texto(\"2\")" enquanto a MESMA consulta contra
+    /// `Int8` passava ao lado. As duas tabelas nascem lado a lado aqui, e a
+    /// mesma consulta tem de trazer a mesma linha nas duas.
+    #[test]
+    fn where_sobre_chave_sequence_vira_buscar_como_o_irmao_int8() {
+        let guarda = dir_temp("where-sequence");
+        let c = Config {
+            base: guarda.to_path_buf(),
+            log_acessos: guarda.join("acessos.log"),
+            blacklist: guarda.join("blacklist.json"),
+            dblink: guarda.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"sequenciais",
+                    "colunas":[{"nome":"id","tipo":"Sequence","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,
+                                "primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        // O irmao de chave Int8, para a mesma consulta ter os dois lados no
+        // mesmo teste -- e nao so a memoria de que ele ja passava.
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"inteiros",
+                    "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,
+                                "primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        for tabela in ["sequenciais", "inteiros"] {
+            for (id, nome) in [(1, "Adriano"), (2, "Maria")] {
+                s.executar(
+                    "inserir",
+                    &pedido(&format!(
+                        r#"{{"database":"b","tabela":"{tabela}",
+                             "linha":{{"id":{id},"nome":"{nome}"}}}}"#
+                    )),
+                    &dono,
+                )
+                .unwrap();
+            }
+        }
+
+        let r = sql(&s, "SELECT nome FROM sequenciais WHERE id = 2").unwrap();
+        assert_eq!(r.texto_ou("op", ""), "buscar", "{}", r.escrever());
+        assert_eq!(linhas(&r).len(), 1);
+        assert_eq!(linhas(&r)[0].texto_ou("nome", ""), "Maria");
+
+        // O irmao continua passando -- o conserto nao pode ter mudado nada
+        // de quem ja funcionava.
+        let r = sql(&s, "SELECT nome FROM inteiros WHERE id = 2").unwrap();
+        assert_eq!(linhas(&r)[0].texto_ou("nome", ""), "Maria");
+    }
+
     /// **O que nao tem substrato recusa dizendo o que falta.** `cidade` nao
     /// tem indice. O `varrer` PASSOU a filtrar (`"onde"`), e mesmo assim a
     /// recusa fica: ele filtra dentro da pagina que EXAMINA, e um SELECT nao

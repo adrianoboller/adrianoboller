@@ -2365,6 +2365,22 @@ fn achar_primeiro_volume(diretorio: &Path, nome: &str, ext: &str) -> Result<Path
     if simples.exists() {
         return Ok(simples);
     }
+    // O diretorio em si pode nao existir -- e o caso de `FROM banco.tabela`
+    // lido como `schema.tabela` (a regra de tres partes) contra um schema que
+    // nunca foi criado. Sem este `is_dir()`, o `read_dir` de baixo falhava com
+    // `io::Error` cru, que vira `PhxError::Io` -- e ESSE tipo o protocolo
+    // marca com `repetir: true`, o mesmo sinal de "espere e tente de novo" que
+    // `EM_CARGA` usa. Um driver que varre `information_schema.tables` antes de
+    // toda consulta ficava retentando um erro que nunca ia passar. A falta e
+    // permanente ate alguem criar o schema -- entao ela e `NaoEncontrado`,
+    // como a falta do TABELA na linha de baixo, e nao `Io` -- pedido 219.
+    if !diretorio.is_dir() {
+        return Err(PhxError::NaoEncontrado(format!(
+            "nenhum volume de {nome}.{ext} em {}: o diretorio nao existe \
+             (schema ou database errado)",
+            diretorio.display()
+        )));
+    }
     let prefixo = format!("{nome}_");
     let mut candidatos: Vec<PathBuf> = std::fs::read_dir(diretorio)?
         .filter_map(|e| e.ok())
@@ -2431,6 +2447,45 @@ mod tests {
         let mut p = vec![0u8; esq.payload_len()];
         p[esq.bitmap_len()] = n;
         p
+    }
+
+    /// Pedido 219 (item 2): abrir uma tabela num DIRETORIO que nao existe --
+    /// o caso de `SELECT * FROM loja.clientes` lido como `schema.tabela`
+    /// contra um schema que nunca foi criado -- tem de recusar com uma
+    /// mensagem PROPRIA (`NaoEncontrado`), nao com o `io::Error` cru que o
+    /// `read_dir` de baixo devolveria. A diferenca importa duas vezes: o
+    /// texto («No such file or directory (os error 2)») nao diz nada para
+    /// quem le, e o TIPO do erro decide o `repetir` do protocolo --
+    /// `PhxError::Io` marca `repetir: true`, o mesmo sinal de "espere e tente
+    /// de novo" do `EM_CARGA`, e um driver que checa `information_schema`
+    /// antes de toda consulta ficaria retentando um erro permanente.
+    #[test]
+    fn abrir_em_diretorio_inexistente_recusa_sem_erro_cru() {
+        let raiz = dir_temp("dir-inexistente");
+        let schema_fantasma = raiz.join("schema_que_nao_existe");
+        // A raiz existe (o `DirTemp` a criou); o SUBDIRETORIO do schema, nao.
+
+        // `unwrap_err` pede `T: Debug`, que `RegFile` nao tem -- `match`
+        // direto no `Result` evita exigir isso so para o teste.
+        let e = match RegFile::abrir(&schema_fantasma, "clientes") {
+            Ok(_) => panic!("esperava recusa: o diretorio nao existe"),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(e, PhxError::NaoEncontrado(_)),
+            "esperava NaoEncontrado, veio {e:?}"
+        );
+        assert!(
+            !e.adianta_repetir(),
+            "diretorio ausente e falta PERMANENTE ate alguem criar o schema \
+             -- nao e o disco ocupado ou uma carga em andamento que o \
+             repetir:true do EM_CARGA descreve: {e}"
+        );
+        let msg = e.to_string();
+        assert!(
+            !msg.contains("os error") && !msg.contains("No such file"),
+            "a mensagem vazou o erro cru do sistema operacional: {msg}"
+        );
     }
 
     #[test]

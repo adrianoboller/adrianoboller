@@ -456,25 +456,42 @@ pub const OPERACOES: &[Operacao] = &[
         apelidos: &["pivot"],
         resumo: "Tabulação cruzada: soma, conta ou tira a média de uma coluna \
                  cruzando duas outras.",
+        // Pedido 224: esta entrada documentava "chave"/"coluna" (string) e o
+        // motor (`op_pivotar`, `crate::pivot`) sempre leu "linhas"/"colunas"
+        // (LISTA de campos -- cada item uma coluna, ou um objeto
+        // `{"campo":..,"granularidade":..}` para agrupar data por dia/mes/ano).
+        // O exemplo colado quebrava com "informe ao menos um campo em linhas".
         parametros: &[
             DB,
             TAB,
-            obr("chave", "string", "a coluna que vira LINHA"),
-            opc("coluna", "string", "a coluna que vira COLUNA do cruzamento"),
+            obr(
+                "linhas",
+                "array",
+                "os campos que viram LINHA do cruzamento -- cada item é o nome \
+                 de uma coluna, ou `{\"campo\":.., \"granularidade\":\"dia\"|\
+                 \"mes\"|\"ano\"}` para agrupar uma coluna de data",
+            ),
+            opc(
+                "colunas",
+                "array",
+                "os campos que viram COLUNA do cruzamento, na mesma forma de \
+                 \"linhas\"",
+            ),
             opc("valor", "string", "a coluna somada; sem ela, conta linhas"),
             opc(
                 "agregador",
                 "string",
-                "`contar`, `somar`, `media`, `minimo` ou `maximo`",
+                "`soma`, `media`, `contagem`, `minimo`, `maximo` ou `distintos`",
             ),
             opc(
-                "granularidade",
-                "string",
-                "para chave de data: `dia`, `mes`, `ano`",
+                "juntar",
+                "array",
+                "tabelas de consulta para trazer campo de fora: cada item \
+                 `{tabela, coluna, [chave], [prefixo]}`",
             ),
             MAX,
         ],
-        exemplo: r#"{"op":"pivotar","database":"loja","tabela":"vendas","chave":"cidade","valor":"total","agregador":"somar"}"#,
+        exemplo: r#"{"op":"pivotar","database":"loja","tabela":"vendas","linhas":["cidade"],"valor":"total","agregador":"soma"}"#,
         ferramenta_mcp: false,
     },
     Operacao {
@@ -505,7 +522,11 @@ pub const OPERACOES: &[Operacao] = &[
             opc(
                 "modo",
                 "string",
-                "`tudo` mantém repetidas; `distinto` tira as iguais",
+                // Pedido 224: dizia "distinto" (masculino) -- o motor
+                // (`Uniao::de_texto`) so aceita "distinta" (e "union"),
+                // concordando com "uma união distinta". "distinto" sozinho
+                // era recusado: "uniao desconhecida".
+                "`tudo` mantém repetidas; `distinta` tira as iguais",
             ),
             MAX,
         ],

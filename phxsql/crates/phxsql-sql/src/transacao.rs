@@ -180,6 +180,54 @@ pub fn comando(texto: &str) -> Result<Option<Comando>> {
             c.op = "release_savepoint".into();
             c.nome = Some(p.exigir_nome(pos, "RELEASE SAVEPOINT")?);
         }
+        // Pedido 219 (item 3): `SET TRANSACTION ISOLATION LEVEL X` caia no
+        // fallback generico do `sintaxe.rs` -- "SET nao e um comando desta
+        // camada" -- que e verdade e nao ajuda: quem le isso nao sabe se o
+        // motor faz ALGUM nivel. `docs/SQL.md` §3 ja registrava a resposta
+        // certa (o motor faz READ COMMITTED e nada acima, sem leitura
+        // repetivel -- `docs/TRANSACOES.md`); faltava o parser dizer isso.
+        //
+        // So esta forma exata e reconhecida aqui -- `SET autocommit = 0`,
+        // `SET search_path ...` e as outras formas de SET continuam caindo
+        // no fallback generico de baixo, que e a mensagem certa para elas:
+        // esta camada nao tem SET nenhum, e so a de ISOLATION LEVEL tem algo
+        // proprio para dizer.
+        "SET"
+            if p.s
+                .get(p.i + 1)
+                .and_then(|s| s.token.palavra_chave())
+                .as_deref()
+                == Some("TRANSACTION")
+                && p.s
+                    .get(p.i + 2)
+                    .and_then(|s| s.token.palavra_chave())
+                    .as_deref()
+                    == Some("ISOLATION")
+                && p.s
+                    .get(p.i + 3)
+                    .and_then(|s| s.token.palavra_chave())
+                    .as_deref()
+                    == Some("LEVEL") =>
+        {
+            let pedido: Vec<String> = p.s[(p.i + 4).min(p.s.len())..]
+                .iter()
+                .map(|s| s.token.descrever())
+                .collect();
+            let pedido = if pedido.is_empty() {
+                "?".to_string()
+            } else {
+                pedido.join(" ")
+            };
+            return Err(lexico::erro(
+                pos,
+                &format!(
+                    "SET TRANSACTION ISOLATION LEVEL {pedido} nao existe: o motor faz \
+                     READ COMMITTED e nada acima disso -- sem leitura repetivel, \
+                     REPEATABLE READ e SERIALIZABLE prometeriam o que o motor nao \
+                     faz. docs/TRANSACOES.md"
+                ),
+            ));
+        }
         _ => return Ok(None),
     }
     p.fim(pos, &c.op)?;
@@ -536,5 +584,40 @@ mod testes {
     fn o_pedido_leva_o_nome_quando_ha_um() {
         assert_eq!(ok("SAVEPOINT p1").pedido().texto_ou("nome", ""), "p1");
         assert_eq!(ok("COMMIT").pedido().texto_ou("nome", ""), "");
+    }
+
+    /// Pedido 219 (item 3): `SET TRANSACTION ISOLATION LEVEL X` tinha de
+    /// nomear o nivel REAL (READ COMMITTED), e nao cair no generico "SET nao
+    /// e um comando desta camada" do `sintaxe.rs` -- que e verdade e nao diz
+    /// nada sobre o que o motor faz.
+    #[test]
+    fn set_isolation_level_nomeia_o_nivel_real() {
+        let e = comando("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("READ COMMITTED"), "{e}");
+        // E nomeia o nivel PEDIDO, para quem le saber qual foi recusado.
+        assert!(e.contains("SERIALIZABLE"), "{e}");
+
+        let e = comando("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("READ COMMITTED"), "{e}");
+        assert!(e.contains("REPEATABLE READ"), "{e}");
+    }
+
+    /// As OUTRAS formas de `SET` -- que nao sao de isolamento -- continuam
+    /// caindo fora deste modulo, exatamente como antes: esta camada nao tem
+    /// SET nenhum, e o fallback generico do `sintaxe.rs` e a mensagem certa
+    /// para elas. So `SET TRANSACTION ISOLATION LEVEL` ganhou texto proprio.
+    #[test]
+    fn outras_formas_de_set_continuam_passando_direto() {
+        for sql in [
+            "SET autocommit = 0",
+            "SET search_path TO public",
+            "SET TRANSACTION READ ONLY",
+        ] {
+            assert!(comando(sql).unwrap().is_none(), "{sql}");
+        }
     }
 }

@@ -703,8 +703,17 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
         // Nulo ja saiu no comeco da funcao: chegar aqui e o cliente tendo
         // escolhido o numero a mao, e a tabela empurra o contador para depois
         // dele.
+        //
+        // `inteiro()` (o fechamento acima, nao o metodo de `Json`) e o mesmo
+        // alargamento do `UInt` -- e tem de ser: o tradutor de SQL guarda TODO
+        // literal numerico como texto (`literal_para_json` em traduzir.rs), e
+        // `Sequence` e o tipo da chave primaria de quase toda tabela nascida
+        // pela tela. Usar `j.inteiro()` direto (que so aceita `Json::Numero`)
+        // recusava `WHERE id = 2` com "esperado numero da sequencia, recebido
+        // Texto(\"2\")" enquanto o irmao `Int8`/`UInt8` passava por aqui ao
+        // lado sem problema -- pedido 223.
         ColumnType::Sequence => {
-            let n = j.inteiro().ok_or_else(|| erro("numero da sequencia"))?;
+            let n = inteiro().ok_or_else(|| erro("numero da sequencia"))?;
             if n < 0 {
                 return Err(PhxError::Tipo(format!("{n} e negativo numa sequencia")));
             }
@@ -1583,5 +1592,43 @@ mod testes_inteiro_em_texto {
         );
         let e = json_para_valor(&Json::texto_de("abc"), &ColumnType::Real4).unwrap_err();
         assert_eq!(e.nome(), "TIPO_INVALIDO", "{e}");
+    }
+
+    /// Pedido 223: `Sequence` tem o MESMO alargamento do `Int`/`UInt` acima, e
+    /// nao um proprio -- e por isso que os quatro casos abaixo espelham os de
+    /// `Int4`/`UInt4` linha por linha. `Sequence` e o tipo da chave primaria
+    /// de quase toda tabela nascida pela tela, e o tradutor de SQL manda TODO
+    /// literal numerico como texto (`literal_para_json`): sem este alargamento,
+    /// `WHERE id = 2` recusava com "esperado numero da sequencia, recebido
+    /// Texto(\"2\")" enquanto a MESMA consulta contra uma coluna `Int8`/`UInt8`
+    /// passava ao lado, sem erro.
+    #[test]
+    fn sequence_aceita_texto_como_o_uint_ja_aceita() {
+        // O caso que reproduz o pedido 223 ao pe da letra: "2" como o
+        // tradutor de SQL manda, contra uma coluna Sequence.
+        assert_eq!(
+            json_para_valor(&Json::texto_de("2"), &ColumnType::Sequence).unwrap(),
+            Value::UInt(2)
+        );
+        // Numero direto continua valendo -- e o caminho que ja funcionava.
+        assert_eq!(
+            json_para_valor(&Json::de_u64(7), &ColumnType::Sequence).unwrap(),
+            Value::UInt(7)
+        );
+        // Nulo continua nulo -- a tabela empurra o contador para depois dele.
+        assert_eq!(
+            json_para_valor(&Json::Nulo, &ColumnType::Sequence).unwrap(),
+            Value::Null
+        );
+        // Negativo em texto continua recusado, dizendo por que -- alargar nao
+        // pode virar engolir.
+        let e = json_para_valor(&Json::texto_de("-1"), &ColumnType::Sequence).unwrap_err();
+        assert!(e.to_string().contains("negativo"), "{e}");
+        // Controle negativo: texto que NAO e numero continua recusado com o
+        // mesmo erro de tipo -- e o `Str` da tabela irma nunca deveria aceitar
+        // numero sem aspas, sequencia ou nao.
+        let e = json_para_valor(&Json::texto_de("abc"), &ColumnType::Sequence).unwrap_err();
+        assert_eq!(e.nome(), "TIPO_INVALIDO", "{e}");
+        assert!(e.to_string().contains("numero da sequencia"), "{e}");
     }
 }
