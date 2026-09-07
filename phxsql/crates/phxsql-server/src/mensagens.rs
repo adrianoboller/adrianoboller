@@ -450,6 +450,17 @@ pub const FABRICA: &[MensagemFabrica] = &[
         ],
     },
     MensagemFabrica {
+        nome: "erro.comando_proibido_na_base",
+        textos: [
+            "operacao {op} esta proibida no banco {base}",
+            "l'opération {op} est interdite dans la base {base}",
+            "operation {op} is forbidden in database {base}",
+            "l'operazione {op} è vietata nel database {base}",
+            "Operation {op} ist in der Datenbank {base} verboten",
+            "la operación {op} está prohibida en la base {base}",
+        ],
+    },
+    MensagemFabrica {
         nome: "erro.nome_hostil",
         textos: [
             "{rotulo} {valor} nao e um nome",

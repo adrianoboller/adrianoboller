@@ -24,3 +24,37 @@ está lá.
 servidor na porta 6505 em 127.0.0.1, com tudo em `/tmp/phx-f5d-<pid>`, e
 derruba por PID no fim — nunca `pkill`. A porta sai de
 `PHX_F5_PORTA_DIRETIVAS`. Os números vão para `resultados.json`.
+
+---
+
+# `sql.py` — o `SHOW … SETTINGS` e o `ALTER … SET`, exercitados
+
+**Por que existe.** O dono mandou um estudo das diretivas do HFSQL
+(`HSetServer`, `HSetTransaction`, `HSetLog`, `HSetIntegrity`, `HSetDuplicates`,
+`HManageTask`, as propriedades da `Connection`) e pediu para centralizar tudo em
+`SHOW`, `ALTER … SET` e valores `TRUE`/`FALSE`. Ler o código diz que
+`ALTER SERVER SET` desemboca no `config_gravar`; este script **prova** — pelo
+soquete, com o `config.json` aberto em disco depois de cada gravação e o
+`diretivas.log` lido linha a linha. O mapa que ele sustenta está em
+`docs/DIRETIVAS.md`.
+
+**O que mede.** Oito partes, 61 afirmações. As que não saem de ler o código:
+(1) a **diretiva por banco valendo A QUENTE** — `reindexar` passa em `erp`,
+o `ALTER DATABASE` entra, e a operação seguinte é recusada **sem reiniciar o
+processo**, com o controle positivo de que a mesma operação continua passando em
+`loja`; (2) o **`config.json` em disco** depois do `ALTER`, com o comentário
+`_nota` sobrevivendo e a entrada global intacta ao lado da nova; (3) o
+**diário** com os nove campos, gravado pelas **duas** portas (o `ALTER` e o
+`config_gravar` do protocolo), com o varredor de segredo provando primeiro que
+acha o que existe; (4) a **compressão que não existe**, medida: uma resposta de
+5.000 linhas com **535.870 bytes** vai a **55.284 pelo `deflate` desta casa —
+9,69×**, em 4,02 ms; e (5) o **portão único**, com uma operadora de verdade
+(hash gerado pelo próprio `phxsqld --senha`) recusada nas três portas e o
+controle positivo de que ela continua podendo ler.
+
+**Como roda.** `python3 bancada/diretivas/sql.py`, com `target/release/phxsqld`
+já compilado (`cargo build --release -p phxsql-server --bin phxsqld`). Sobe
+**dois** servidores — 7300 (o principal) e 7301 (o do portão, com cadastro) —,
+ambos em 127.0.0.1, com tudo em `/tmp/phx-f3-sql-<pid>`, e derruba por PID no
+fim; nunca `pkill`. As portas saem de `PHX_F3_PORTA_A` e `PHX_F3_PORTA_B`. Os
+números vão para `resultados-sql.json`.

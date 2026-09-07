@@ -324,8 +324,13 @@ impl Atividade {
             // `config_gravar` esta aqui declarado, e nao so caindo no `_`:
             // a operacao que reescreve o config.json e a ultima que deveria
             // depender do padrao para negar. A op ainda confere por dentro.
-            "acessos" | "ips" | "config" | "config_gravar" | "usuarios" | "bloqueios"
-            | "desbloquear" => Atividade::Administrar,
+            // `diretivas` e `diretiva_gravar` entram aqui pelo mesmo motivo do
+            // `config_gravar`: as duas falam da configuracao do SERVIDOR, nao
+            // de dado, e nenhuma delas tem campo "tabela" para o portao geral
+            // olhar. As duas conferem por dentro tambem, pelo mesmo portao
+            // unico (`exigir_administrar_config`).
+            "acessos" | "ips" | "config" | "config_gravar" | "diretivas" | "diretiva_gravar"
+            | "usuarios" | "bloqueios" | "desbloquear" => Atividade::Administrar,
             // O profiler mostra o TEXTO dos pedidos de todo mundo, com os
             // dados que estao sendo gravados dentro. Quem pode ler uma tabela
             // nao ganha por isso o direito de ver o que os outros escrevem

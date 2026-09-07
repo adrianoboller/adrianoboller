@@ -49,6 +49,7 @@
 //! `IndiceInfo` sai do `esquema` do proprio servidor, campo por campo. O crate
 //! nao abre arquivo e nao fala com o disco: ele traduz texto em pedido.
 
+pub mod diretiva;
 pub mod lexico;
 pub mod rotina;
 pub mod sintaxe;

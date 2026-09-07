@@ -3381,6 +3381,7 @@ impl Config {
             }
         }
 
+        let campos: Vec<String> = mudancas.iter().map(|(c, _)| c.clone()).collect();
         let texto = std::fs::read_to_string(caminho).map_err(|e| {
             PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
         })?;
@@ -3405,7 +3406,130 @@ impl Config {
             }
         }
 
-        let mut novo = Config::de_json(&arvore)?;
+        Config::gravar_arvore(caminho, &texto, &arvore, &campos)
+    }
+
+    /// Acrescenta comandos proibidos NUM BANCO a `seguranca.comandos_proibidos`.
+    ///
+    /// Devolve `(Config novo, os que entraram agora, os que ja estavam la)`.
+    ///
+    /// # Por que ela nao passa pelo `CAMPOS_EDITAVEIS`, e por que isso e seguro
+    ///
+    /// `seguranca.*` esta FORA da lista editavel de proposito, e a nota que o
+    /// diz esta escrita ali: *«uma sessao roubada nao abre o firewall, nao
+    /// esvazia a lista de comandos proibidos»*. Esta porta nao afrouxa aquela
+    /// decisao porque ela so sabe **acrescentar**: nao remove entrada nenhuma,
+    /// nao toca nas entradas globais, e nao mexe em nenhum outro campo de
+    /// `seguranca`. O pior que uma sessao roubada consegue por aqui e deixar o
+    /// servidor MAIS restrito num banco — que e ruim, e some editando o
+    /// arquivo, e nao e a mesma familia de estrago que abrir a porta.
+    ///
+    /// **Retirar continua sendo edicao do arquivo.** Nao e limitacao: e a
+    /// mesma logica da catraca, que so desce. Uma politica de seguranca que a
+    /// rede pudesse afrouxar nao e politica.
+    pub fn acrescentar_proibidos_da_base(
+        caminho: &Path,
+        base: &str,
+        comandos: &[String],
+    ) -> Result<(Config, Vec<String>, Vec<String>)> {
+        let base = base.trim();
+        if base.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe o banco: ALTER DATABASE <banco> SET comandos_proibidos = (…)".into(),
+            ));
+        }
+        let pedidos: Vec<String> = comandos
+            .iter()
+            .map(|c| c.trim().to_lowercase())
+            .filter(|c| !c.is_empty())
+            .collect();
+        if pedidos.is_empty() {
+            return Err(PhxError::Esquema(
+                "esta diretiva so ACRESCENTA: mande ao menos um comando. Para \
+                 RETIRAR um da lista, edite \"seguranca.comandos_proibidos\" no \
+                 config.json -- politica que a rede afrouxa nao e politica"
+                    .into(),
+            ));
+        }
+
+        let texto = std::fs::read_to_string(caminho).map_err(|e| {
+            PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
+        })?;
+        let mut arvore = Json::analisar(&texto)?;
+        let seguranca = match arvore.campo("seguranca") {
+            None => Json::Objeto(Vec::new()),
+            Some(Json::Objeto(pares)) => Json::Objeto(pares.clone()),
+            Some(outro) => {
+                return Err(PhxError::Esquema(format!(
+                    "\"seguranca\" no arquivo nao e um objeto: {}",
+                    outro.escrever()
+                )))
+            }
+        };
+        let mut lista = seguranca
+            .campo("comandos_proibidos")
+            .and_then(Json::lista)
+            .map(<[Json]>::to_vec)
+            .unwrap_or_default();
+
+        // O que ja esta la, na forma por banco. A comparacao e sobre o par
+        // (banco, comando), e nao sobre o texto da entrada: a mesma proibicao
+        // escrita com as chaves em outra ordem e a mesma proibicao.
+        let ja: Vec<String> = crate::blacklist::proibidos_por_base(&seguranca)
+            .into_iter()
+            .filter(|(b, _)| b == base)
+            .map(|(_, c)| c)
+            .collect();
+        // E o que o GLOBAL ja proibe: repetir por banco o que ja vale para
+        // todos nao acrescenta guarda nenhuma, e enche a lista de entradas que
+        // um dia divergem da global.
+        let globais = crate::blacklist::proibidos_globais(&seguranca);
+
+        let mut entraram = Vec::new();
+        let mut existiam = Vec::new();
+        for c in pedidos {
+            if ja.contains(&c) || globais.contains(&c) {
+                existiam.push(c);
+                continue;
+            }
+            lista.push(Json::objeto(vec![
+                ("comando", Json::texto_de(&c)),
+                ("database", Json::texto_de(base)),
+            ]));
+            entraram.push(c);
+        }
+
+        let mut seguranca = seguranca;
+        seguranca.definir("comandos_proibidos", Json::Lista(lista));
+        arvore.definir("seguranca", seguranca);
+        let novo = Config::gravar_arvore(
+            caminho,
+            &texto,
+            &arvore,
+            &["seguranca.comandos_proibidos".to_string()],
+        )?;
+        Ok((novo, entraram, existiam))
+    }
+
+    /// Leva a arvore ja alterada para o disco, preservando a FORMA do arquivo.
+    ///
+    /// Existe separada de [`Config::gravar_campos`] porque ha uma segunda
+    /// porta que grava no `config.json` — a diretiva por banco, que acrescenta
+    /// a `seguranca.comandos_proibidos` e nao passa pelo `CAMPOS_EDITAVEIS`
+    /// (ver [`Config::acrescentar_proibidos_da_base`]). Copiar estas quarenta
+    /// linhas para la duplicaria a validacao, a troca cirurgica no texto, o
+    /// cinto que confere o resultado e a troca atomica — e a copia que
+    /// envelhecesse seria justamente a que reescreve o arquivo inteiro.
+    ///
+    /// `campos` sao os caminhos pontuados que mudaram, para a troca cirurgica
+    /// saber onde mexer no texto.
+    fn gravar_arvore(
+        caminho: &Path,
+        texto: &str,
+        arvore: &Json,
+        campos: &[String],
+    ) -> Result<Config> {
+        let mut novo = Config::de_json(arvore)?;
         novo.caminho = Some(caminho.to_path_buf());
         novo.validar()?;
 
@@ -3421,10 +3545,15 @@ impl Config {
         // cirurgica se recusa a fazer: campo (ou secao) que ainda nao esta no
         // arquivo. Inserir texto exigiria adivinhar a indentacao de quem
         // escreveu, e adivinhar errado e o mesmo estrago que reformatar.
-        let mut corpo = texto.clone();
-        for (campo, valor) in mudancas {
+        let mut corpo = texto.to_string();
+        for campo in campos {
             let partes: Vec<&str> = campo.split('.').collect();
-            match Json::texto_trocar(&corpo, &partes, valor) {
+            let Some(valor) = crate::config::valor_em(arvore, campo) else {
+                corpo = arvore.escrever_identado();
+                corpo.push('\n');
+                break;
+            };
+            match Json::texto_trocar(&corpo, &partes, &valor) {
                 Some(t) => corpo = t,
                 None => {
                     corpo = arvore.escrever_identado();
@@ -3437,7 +3566,7 @@ impl Config {
         // arvore que passou pela validacao. Se a edicao no texto divergir por
         // qualquer motivo, vale o reserializado -- que esta provado.
         match Json::analisar(&corpo) {
-            Ok(conferido) if conferido == arvore => {}
+            Ok(conferido) if conferido == *arvore => {}
             _ => {
                 corpo = arvore.escrever_identado();
                 corpo.push('\n');

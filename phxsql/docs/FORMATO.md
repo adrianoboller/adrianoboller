@@ -2026,7 +2026,49 @@ mais um tipo de índice (coluna + interruptor `dobrar`, padrão ligado); e ele �
 `.ndx`, e por isso fica **fora do desfazer** de uma inserção que falha no
 meio (§2.1 do `FTS.md`).
 
-## 18. O que este formato ainda não faz
+## 18. `diretivas.log` — o diário administrativo
+
+**JSON Lines, uma linha por alteração de diretiva**, ao lado do `acessos.log` —
+o caminho sai do diretório dele, com o nome fixo `diretivas.log`. Não é arquivo
+do motor de dados: é log, como o `acessos.log`, e por isso não tem cabeçalho,
+CRC nem versão de formato. Linha ilegível é pulada na leitura; um diário
+truncado por falta de disco ainda deve ser lido.
+
+```json
+{"data_hora":"2026-09-07 18:40:12,345","quando_ms":1788802812345,
+ "servidor":"127.0.0.1:5000","banco":"","recurso":"max_linhas",
+ "valor_anterior":1000,"valor_novo":500,"usuario":"ana",
+ "ip_origem":"192.168.50.20","motivo":"pico de exportacao"}
+```
+
+| campo | o que é |
+|---|---|
+| `data_hora` | legível, `AAAA-MM-DD HH:MM:SS,mmm` — o mesmo formato do `acessos.log` |
+| `quando_ms` | milissegundos desde a época Unix; é ele que a leitura usa para ordenar |
+| `servidor` | o `bind` configurado — identifica o nó num cluster com quatro deles |
+| `banco` | vazio no escopo de servidor; o nome no escopo de banco |
+| `recurso` | o campo mudado, pelo nome do `config.json` (`recursos.cache_paginas`) |
+| `valor_anterior` / `valor_novo` | JSON, do tipo que o campo tem. **`(oculto)` quando o nome do campo contém `token`, `senha`, `password`, `secret` ou `chave_privada`** |
+| `usuario` | o login; `(token de servico)` quando não houve login |
+| `ip_origem` | de onde veio a conexão; vazio nos caminhos que não têm uma (job, replicação) |
+| `motivo` | o `MOTIVO '…'` do comando, ou o campo `motivo` do pedido; pode ser vazio |
+
+**Quem escreve:** o `config_gravar`, uma vez, para as duas portas — a tela de
+Configurações e o `ALTER SERVER SET` (que desemboca nele) —, e o
+`diretiva_gravar` no escopo de banco. **Escreve e descarrega na hora**, pelo
+mesmo motivo do `acessos.log`: diário que se perde no buffer quando o processo
+cai não serve para nada, e mudança de configuração é justamente o que costuma
+preceder uma queda.
+
+**Falha em silêncio, de propósito.** Se o diário não grava (disco cheio,
+diretório sem permissão), a alteração acontece assim mesmo e a queixa vai para
+o erro padrão. Recusar a mudança tiraria do administrador exatamente o poder de
+consertar o servidor.
+
+O porquê de ser arquivo e não tabela do `phxsys` está em
+[`DIRETIVAS.md`](DIRETIVAS.md) §5.
+
+## 19. O que este formato ainda não faz
 
 Documentado aqui para não haver surpresa:
 
