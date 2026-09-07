@@ -1920,6 +1920,16 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
   .menubar .item{padding-top:10px;padding-bottom:10px}
   .grupo .mais{width:28px;height:28px}
   .tema{width:40px;height:34px}
+  /* A tira de abas do multitela (`multitela.css`) e componente NOVO: a lista
+     acima ja existia quando ela chegou, e ninguem a acrescentou aqui -- o
+     mesmo "CSS global morde componente novo" do CLAUDE.md, na direcao
+     inversa (falta de acomodacao, e nao acomodacao roubada). Pino e fechar
+     eram 18x18 num dedo grosso; o mesmo tamanho do "+" da arvore
+     (`.grupo .mais`) alcanca sem brigar com tres controles na mesma aba
+     estreita. */
+  .tira-aba{min-height:40px}
+  .tira-pino,.tira-x{min-width:28px;min-height:28px}
+  .tira-bt{min-height:40px}
 }
 </style>
 
@@ -2633,6 +2643,32 @@ async function abrirApp() {
   $("#app").dataset.pronto = "1";
 }
 
+/** Abre uma tela de admin (Painel, Usuários, Acessos, Bloqueios, Idiomas).
+ *
+ *  "painel" e "usuarios" tem par no catalogo do multitela
+ *  (`crates/phxsql-server/ui/multitela.js`, `CATALOGO`) -- por isso abrem POR
+ *  ELE, para a aba nascer com o CHAVE certo (enderecavel, pinavel, sobrevive
+ *  ao recarregar). As outras tres (acessos/bloqueios/idiomas) nao tem par no
+ *  catalogo -- "folha avulsa" e o comportamento CERTO delas, e continuam no
+ *  `abrirAdmin` cru.
+ *
+ *  Sem isto a aba do Painel nascia com `chave:null` DESDE O LOGIN: o clique
+ *  automatico que `montarArvore` da no Painel ao entrar chamava `abrirAdmin`
+ *  cru, e `folha()` (dentro dele) desendereça a aba com `marcar(null)` --
+ *  medido com uma sonda, ANTES de qualquer clique: `{chave:null,
+ *  rot:'Painel'}`. Pinar o Painel dizia "volta na próxima abertura" e nunca
+ *  voltava, porque `guardar()` so grava aba com `chave` (nao so `pino`). O
+ *  MESMO defeito, pelo mesmo motivo, batia no Ctrl+clique da Telemetria na
+ *  barra de ferramentas -- ver `montarFerramentas`. */
+function admGo(qual, novaAba) {
+  if ((qual === "painel" || qual === "usuarios") && window.PhxTelas) {
+    return PhxTelas.abrir(qual, {}, { nova: !!novaAba });
+  }
+  if (novaAba && window.PhxTelas) PhxTelas.novaAba();
+  return Promise.resolve(abrirAdmin(qual))
+    .then(() => { if (window.PhxTelas) PhxTelas.renomear(); });
+}
+
 // =====================================================================
 // Arvore de bancos, schemas e tabelas
 // =====================================================================
@@ -2704,9 +2740,7 @@ async function montarArvore(abrirPainel = true) {
   });
   a.querySelectorAll("[data-admin]").forEach(n => n.onclick = ev => {
     marcar(n);
-    if ((ev.ctrlKey || ev.metaKey) && window.PhxTelas) PhxTelas.novaAba();
-    Promise.resolve(abrirAdmin(n.dataset.admin))
-      .then(() => { if (window.PhxTelas) PhxTelas.renomear(); });
+    admGo(n.dataset.admin, ev.ctrlKey || ev.metaKey).catch(e => avisar(`${e}`, true));
   });
   // O [+] ao lado do titulo do grupo. `stopPropagation` porque ele mora
   // dentro do cabecalho, e clicar nele nao e clicar no grupo.
@@ -2731,8 +2765,7 @@ async function montarArvore(abrirPainel = true) {
   if (abrirPainel) {
     const no = a.querySelector('[data-admin="painel"]');
     marcar(no);
-    await abrirAdmin("painel");
-    if (window.PhxTelas) PhxTelas.renomear();
+    await admGo("painel", false);
   }
 }
 
@@ -10272,7 +10305,12 @@ const FERRAMENTAS = [
                                    como promessa, e nao no meio, como tropeço */
   { ico:"banco",    rot:"Bancos", txt:"tela.fer_bancos",     cor:"var(--bin)",    faz:verBancos },
   { ico:"tabelas",  rot:"Tabelas", txt:"tela.menu_tabelas",    cor:"var(--bin)",    faz:gerirTabelasAtual },
-  { ico:"consulta", rot:"Query", txt:"tela.fer_query",      cor:"var(--ndx)",    faz:abrirConsulta },
+  // `tela:` liga esta ferramenta a CHAVE do catalogo do multitela
+  // (`PhxTelas._CATALOGO`). So as quatro que o dono NOMEOU como enderecaveis
+  // ganham isto -- as outras continuam "folha avulsa" de proposito, porque
+  // dependem de formulario meio preenchido e reabrir por endereco mentiria
+  // sobre o trabalho (docs/MULTITELA.md, "o que ficou de fora do catalogo").
+  { ico:"consulta", rot:"Query", txt:"tela.fer_query",      cor:"var(--ndx)",    faz:abrirConsulta, tela:"query" },
   { ico:"pivot",    rot:"Pivot", txt:"tela.fer_pivot",      cor:"var(--ndx)",    faz:() => telaPivot() },
   // Onde ficava a Juncao, que se mudou para DENTRO da tela de Query -- juncao
   // e consulta, e o lugar dela e junto do SQL, nao numa barra geral.
@@ -10287,9 +10325,9 @@ const FERRAMENTAS = [
   // que se fazem uma vez por mes, e ninguem as achava: o pedido chegou como
   // "falta o botao do SQL Check" com o botao ja no ar ha semanas. Lugar errado
   // na barra e o mesmo que nao existir.
-  { ico:"medidor",  rot:"Telemetria", txt:"tela.fer_telemetria", cor:"var(--memo)",   faz:telaTelemetria,
+  { ico:"medidor",  rot:"Telemetria", txt:"tela.fer_telemetria", cor:"var(--memo)",   faz:telaTelemetria, tela:"telemetria",
     dica:"gráficos bolha ordenados por peso, no molde do SQL Check da Idera®", dicaTxt:"tela.fer_dica_telemetria" },
-  { ico:"pulso",    rot:"Profiler", txt:"tela.fer_profiler",   cor:"var(--acao-consultar)", faz:verProfiler,
+  { ico:"pulso",    rot:"Profiler", txt:"tela.fer_profiler",   cor:"var(--acao-consultar)", faz:verProfiler, tela:"profiler",
     dica:"o que chega pela porta de dados, antes de virar dado", dicaTxt:"tela.fer_dica_profiler" },
   { ico:"relogio",  rot:"Jobs", txt:"tela.fer_jobs",       cor:"var(--log)",    faz:telaJobs },
   "risco",
@@ -10303,7 +10341,7 @@ const FERRAMENTAS = [
   { ico:"troca",    rot:"Transações", txt:"tela.mi_transacoes", cor:"var(--log)",    faz:verTransacoes },
   { ico:"elo",      rot:"DbLink",     cor:"var(--memo)",   faz:() => telaDbLink() },
   { ico:"catalogo", rot:"SysTables",  cor:"var(--memo)",   faz:() => verSysTables() },
-  { ico:"diagrama", rot:"Diagrama ER", txt:"tela.fer_diagrama",cor:"var(--ndx)",    faz:() => telaDiagramaER() },
+  { ico:"diagrama", rot:"Diagrama ER", txt:"tela.fer_diagrama",cor:"var(--ndx)",    faz:() => telaDiagramaER(), tela:"diagrama" },
   { ico:"privado",  rot:"LGPD", txt:"tela.fer_lgpd",       cor:"var(--laranja)",faz:() => telaDadosPessoais() },
   { ico:"replica",  rot:"Replicação", txt:"tela.mi_replicacao", cor:"var(--ndx)",    faz:verReplicacao },
   { ico:"escudo",   rot:"Diretivas", txt:"tela.fer_diretivas",  cor:"var(--laranja)",faz:verDiretivas },
@@ -10333,6 +10371,26 @@ function montarFerramentas() {
     if (!b) return;
     const f = FERRAMENTAS[+b.dataset.f];
     if (!f.faz) return aindaNao(f);
+    // As QUATRO ferramentas com `tela:` sao as mesmas que o catalogo do
+    // multitela (`PhxTelas._CATALOGO`) marca como enderecaveis, e abrem POR
+    // ELE -- e nao por `novaAba()+f.faz()` -- para a aba nascer com o CHAVE
+    // certo desde o primeiro quadro.
+    //
+    // O DEFEITO que isto conserta, medido exercitando (nao lendo o codigo):
+    // Ctrl-clicar "Telemetria" com o caminho antigo criava a aba, PINTAVA
+    // "Telemetria" no titulo -- mas o `chave` continuava "painel", herdado do
+    // `criarAba(r,"painel",{})` que `novaAba()` faz por baixo. A corrida e
+    // entre dois `Promise.resolve().then(...)`: o `abrirAdmin("painel")` de
+    // `novaAba()` ainda segura `W.abrindo>0` quando `f.faz()` chama `folha()`
+    // e tenta `marcar(null)` -- e a guarda pensada para o `PhxTelas.abrir()`
+    // NAO se desfazer sozinho supria tambem este `marcar(null)` alheio,
+    // deixando o endereco velho. Pinar essa aba pinava "Painel", nao
+    // "Telemetria" -- silencioso, porque o ROTULO da aba estava certo.
+    if (f.tela && window.PhxTelas) {
+      ev.preventDefault();
+      PhxTelas.abrir(f.tela, {}, { nova: novaAba }).catch(e => avisar(`${e}`, true));
+      return;
+    }
     // Ctrl/Cmd/meio abre em ABA NOVA; o clique simples continua trocando o
     // conteudo da aba de agora, que e o que a barra sempre fez.
     if (novaAba && window.PhxTelas) { ev.preventDefault(); PhxTelas.novaAba(); }
@@ -13469,7 +13527,13 @@ function ligarAtalhos() {
     if (ev.altKey && window.PhxTelas) {
       const k = String(ev.key || "").toLowerCase();
       if (k === "n") { ev.preventDefault(); PhxTelas.novaAba(); return; }
-      if (k === "w") { ev.preventDefault(); PhxTelas.fecharAtiva(); }
+      if (k === "w") { ev.preventDefault(); PhxTelas.fecharAtiva(); return; }
+      // Ctrl+Tab era o pedido, e e exatamente o que nao da: todo navegador de
+      // mesa reserva Ctrl+Tab/Ctrl+Shift+Tab para trocar a PROPRIA aba do
+      // navegador, e a pagina nunca ve o evento (docs/MULTITELA.md). Alt+seta
+      // sobra, no mesmo espirito do Ctrl+\ da lateral logo acima.
+      if (ev.key === "ArrowRight") { ev.preventDefault(); PhxTelas.cicloAba(1); return; }
+      if (ev.key === "ArrowLeft") { ev.preventDefault(); PhxTelas.cicloAba(-1); return; }
     }
   });
 }
@@ -13479,7 +13543,7 @@ function ligarAtalhos() {
 function irPara(qual) {
   const no = $(`.arvore [data-admin="${qual}"]`);
   if (no) { marcar(no); }
-  abrirAdmin(qual);
+  admGo(qual, false).catch(e => avisar(`${e}`, true));
 }
 
 /** Vai para uma das cinco abas da tabela escolhida.

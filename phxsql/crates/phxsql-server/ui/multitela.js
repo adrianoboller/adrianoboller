@@ -573,6 +573,30 @@ window.PhxTelas = (function () {
     desenhar();
   }
 
+  /** Troca para a aba seguinte/anterior da REGIAO COM FOCO, por teclado.
+   *
+   *  O pedido original era Ctrl+Tab -- o atalho obvio, e o mesmo de todo
+   *  navegador para trocar de ABA. E exatamente por isso que ele NAO SERVE
+   *  aqui: Ctrl+Tab e Ctrl+Shift+Tab trocam a aba do PROPRIO NAVEGADOR, em
+   *  Chrome, Firefox e Safari, e o evento nunca chega a pagina -- e um
+   *  atalho reservado no CHROME do navegador (a moldura, nao o motor Chrome),
+   *  no mesmo grupo de Ctrl+W e Ctrl+N. Uma pagina que pudesse interceptar
+   *  isso poderia prender quem navega dentro dela, e por isso nenhum
+   *  navegador deixa. A prova esta em `docs/MULTITELA.md`.
+   *
+   *  O atalho que sobra segue a MESMA regra ja escrita para o Ctrl+\ da
+   *  lateral (`ligarAtalhos`, index.html): "esta sobra, e nenhum navegador a
+   *  usa". Alt+seta nao e Ctrl+Tab, Ctrl+PageUp/Down (tambem reservados pelo
+   *  navegador) nem Alt+Tab (troca de JANELA do sistema operacional, que
+   *  nunca chega ao navegador). E fica na mesma familia de Alt+N/Alt+W, que
+   *  ja abrem e fecham aba. */
+  function cicloAba(passo) {
+    const r = regiaoDe(W.foco);
+    if (!r || r.abas.length < 2) return;
+    const i = r.abas.indexOf(W.foco);
+    focar(r.abas[(i + passo + r.abas.length) % r.abas.length]);
+  }
+
   function ligarCalha(c) {
     let arr = null;
     const desce = ev => {
@@ -1214,6 +1238,19 @@ window.PhxTelas = (function () {
       for (const a of (regs[i].abas || [])) {
         const c = CATALOGO[a.chave];
         if (!c || (c.valido && !c.valido(a.params || {}))) continue;
+        // A regiao JA NASCE com uma aba "painel" -- a que `iniciar()` cria
+        // (regiao 0) ou a que `abaVazia()` poe em toda regiao nova que
+        // `dividir()` acabou de abrir, algumas linhas acima. Pedir "nova"
+        // MESMO ASSIM clonava o Painel toda vez que ele estava entre os
+        // pinados: so passou a acontecer depois de o Painel ganhar endereco
+        // de verdade (`admGo`, index.html) -- antes disso ele nunca
+        // sobrevivia para SER pinado, e o clone ficava escondido atras de
+        // outro defeito. Medido restaurando com Painel pinado sozinho:
+        // ["Painel","Painel"] em vez de ["Painel"]. Se a chave pedida ja e a
+        // de uma aba QUE JA MORA nesta regiao, so pina -- nao clona.
+        const k = chaveDe(a.chave, a.params || {});
+        const jaAqui = r.abas.find(t => chaveDe(t.chave, t.params) === k);
+        if (jaAqui) { jaAqui.pino = true; continue; }
         const t = await abrir(a.chave, a.params || {}, { regiao: r, nova: true });
         if (t) t.pino = true;
       }
@@ -1510,6 +1547,8 @@ window.PhxTelas = (function () {
          ${marcado(txt("tela.mt_nao_faz_reabrir2", "`window.open` sem clique é bloqueio de popup em todo navegador. O arranjo fica guardado; volta com um clique."))}</p>
          <p>${marcado(txt("tela.mt_nao_faz_sessao", "**Guardar a sessão no disco do navegador.**"))}
          ${marcado(txt("tela.mt_nao_faz_sessao2", "A ficha de sessão viaja pelo `BroadcastChannel`, em memória. Se a janela principal fechar, a destacada pede login — e isso é de propósito."))}</p>
+         <p>${marcado(txt("tela.mt_nao_faz_ctrltab", "**Usar Ctrl+Tab para trocar de aba.**"))}
+         ${marcado(txt("tela.mt_nao_faz_ctrltab2", "Ctrl+Tab e Ctrl+Shift+Tab trocam a aba do PRÓPRIO NAVEGADOR em todo navegador de mesa — a página nunca vê o evento. Use **Alt+→** e **Alt+←** para trocar de aba dentro da região com foco."))}</p>
        </div>
        <p class="leg">${marcado(txt("tela.mt_rodape", "Regiões, larguras e abas pinadas ficam **neste navegador** — não no servidor. Desenho completo em `docs/MULTITELA.md`."))}</p>`);
 
@@ -1530,7 +1569,7 @@ window.PhxTelas = (function () {
 
   return {
     iniciar, restaurar, abrir, abrirRota, novaAba, fechar, fecharAtiva,
-    podeFechar, focar, soltar, acoplar,
+    podeFechar, focar, soltar, acoplar, cicloAba,
     dividir, renomear, laco, pararLaco, alternarPino, destacar, devolver,
     pinarJanela, alinharComOsMonitores, avisarArvore, pedirSessao, rotaDaUrl,
     nota, telaAjuda, temApiDeTelas, monitores, emendas, maxRegioes, marcar,
