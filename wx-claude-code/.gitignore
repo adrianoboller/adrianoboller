@@ -5,3 +5,6 @@ ferramentas/wx-modelos/target/
 # entrega do wx-modelos: sai do publicar.py, nunca da arvore --
 # binario commitado envelhece calado
 ferramentas/wx-modelos/dist/
+
+# entregaveis em zip: saem do empacotar-entregaveis.py, nunca da arvore
+entregas/
