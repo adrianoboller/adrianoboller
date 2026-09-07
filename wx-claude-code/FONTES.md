@@ -16,9 +16,9 @@ Inventário medido em 2026-09-07 por `docs/dossie/gerar-fontes.py`. Não se edit
 | Exemplo PHP | 15 | 1.584 | legado PHP procedural sintético: o segundo exemplo, sem nada de WX |
 | Ferramenta Rust | 6 | 1.647 | wx-modelos: escolha e controle do modelo local, std pura, sem crate |
 | Documentos | 4 | 1.373 | manual, README, fontes e a instrução de ativação, na raiz |
-| Documentos de apoio | 7 | 523 | relatório, análises, origens dos prints e o vídeo |
+| Documentos de apoio | 7 | 525 | relatório, análises, origens dos prints e o vídeo |
 | Instaladores | 2 | 448 | bash para Linux e macOS, PowerShell para Windows |
-| **total** | **275** | **38.059** | |
+| **total** | **275** | **38.061** | |
 
 ## O que não é fonte, mas vem no pacote
 
@@ -47,4 +47,4 @@ python3 skills/conversao-wx/scripts/validate_plugin_bundle.py . --strict
 
 Esperado: `valid: true`, `tests: OK`, zero erros e zero avisos. O `--strict` roda a bateria inteira.
 
-Último commit no momento da medição: `9cd95ad 2026-09-07`.
+Último commit no momento da medição: `0875e7c 2026-09-07`.

@@ -55,4 +55,6 @@ Cada print em `docs/prints/` é a saída de uma sessão do Claude Code ou de um 
 - Página para investidores: `docs/investidor/`.
 - Análise da aula de vibe coding: `docs/analise-aula-vibe-coding.md`.
 - Telas do fluxo de licença: `docs/telas-licenca/`.
+- Segurança (o que protege e o que não): `docs/SEGURANCA.md`.
+- Emissor de serial, fora do plugin: `ferramentas/wx-serial/`.
 - Dossiê: `docs/dossie/dossie-wx-claude-code.html`, gerado deste mesmo medidor.

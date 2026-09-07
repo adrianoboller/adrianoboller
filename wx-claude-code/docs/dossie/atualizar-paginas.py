@@ -31,7 +31,7 @@ CARIMBAR = [
 ]
 GERADORES = ["atualizar-manual.py", "numeros-do-plugin.py", "gerar-organograma.py", "gerar-evolucao.py", "gerar-comandos.py",
              "gerar-fluxo.py", "gerar-workflow.py", "gerar-apresentacao.py", "gerar-o-que-falta.py",
-             "gerar-relatorio-cenarios.py", "gerar-dossie.py"]
+             "gerar-relatorio-cenarios.py", "gerar-dossie.py", "gerar-fontes.py"]
 
 
 def main() -> int:
