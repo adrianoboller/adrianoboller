@@ -54,6 +54,7 @@ pub mod rotina;
 pub mod sintaxe;
 pub mod traduzir;
 pub mod transacao;
+pub mod usuario;
 
 pub use lexico::{Comparador, Simbolo, Token};
 pub use sintaxe::{

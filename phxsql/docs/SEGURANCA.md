@@ -2292,3 +2292,114 @@ explicação não prova nada sobre o nome.** O login do teste virou `zoroastro`.
 as duas — continua **em aberto e é do dono**. Esta regra diz que ela é
 *diferente* da de administração; não diz *onde ela mora*. Os dois defeitos
 medidos na §13.11 seguem valendo integralmente.
+
+---
+
+## 14. O cadastro de usuários pelo protocolo (pedido 221)
+
+Até a 0.18 não havia operação que criasse usuário: as diretivas se escreviam
+no `config.json` e o servidor reiniciava. A §9 tomou a decisão certa sobre o
+cadastro — `root` e `usuarios` ficam **fora** de `CAMPOS_EDITAVEIS`, porque
+*cadastro é credencial* e o formulário genérico da tela não pode escrevê-lo.
+Só que a decisão foi lida como «nunca por porta nenhuma», e o preço era
+reiniciar um banco de dados para dar acesso a alguém.
+
+`usuario_criar`, `usuario_alterar` e `usuario_excluir` abrem a porta com
+portão e guardas **próprias** — e sem tocar em `CAMPOS_EDITAVEIS`, que
+continua exatamente como estava.
+
+### O portão é o mesmo da §9
+
+As três chamam `exigir_administrar`, **a mesma função** que o `config_gravar`
+passou a chamar. O argumento é o de sempre: portão espalhado por N operações
+é portão com N-1 chances de divergir, e a que divergir vira a porta dos
+fundos que ninguém acha por leitura.
+
+O portão geral do `despachar` também barra — as três declaram
+`Atividade::Administrar` em `da_operacao`, e não caem no `_` —, mas nenhuma
+delas tem campo `"database"`, então ele as vê na base vazia. É a lição do
+`juntar`: quando o portão geral não enxerga o campo, a operação pergunta por
+conta.
+
+### Onde a senha vazaria, e o que fecha cada lugar
+
+A senha viaja em claro no pedido, e não há como não viajar: o servidor
+precisa dela para derivar o PBKDF2. O desafio-resposta resolve o `login`
+porque lá basta **provar** que se sabe a senha; aqui é preciso **ter** a
+senha. O que a protege no fio é a cifra do fio (§7), não o protocolo.
+
+Dentro do servidor, ela existe num ponto só — `objeto_do_usuario` —, e sai de
+lá como hash. Os quatro lugares onde ela apareceria calada:
+
+| Onde | O que fecha | Provado em |
+|---|---|---|
+| `config.json` | grava `senha_hash`; e o `"senha"` em texto puro que o formato ainda aceita **sai junto** na troca — senão o arquivo fica com a nova cifrada e a velha em claro ao lado | `trocar_a_senha_leva_junto_a_que_estava_em_texto_puro` |
+| resposta do protocolo | volta a **ficha**, que nunca traz senha nem hash | `a_senha_nunca_aparece_no_arquivo_nem_na_resposta` |
+| `acessos.log` | guarda a operação e o login de quem pediu, nunca o corpo do pedido | `bancada/usuarios/provar.py`, parte 9 |
+| Profiler | `senha` já estava em `SEGREDOS`, e a redação é por **análise** da árvore, em qualquer profundidade | `o_profiler_tapa_a_senha_do_pedido_de_criar_usuario` |
+
+E o quinto, que só existe por causa do SQL: `CREATE USER c PASSWORD 'x'` põe a
+senha **dentro de uma frase**, e frase não tem campo para o Profiler tapar por
+nome. Por isso o texto que volta na resposta da op `sql` é redigido por
+`phxsql_sql::usuario::sem_a_senha`, que **analisa e reserializa** — nunca
+recorta. Recortar dependeria de a senha estar escrita de um jeito: aspas
+simples, sem `''` dentro, coladas na palavra `PASSWORD`. O que não se analisa
+não vira texto: vira o tamanho em bytes, exatamente como o Profiler já fazia.
+
+**`senha_hash` pronto é recusado.** Aceitá-lo deixaria quem chama escolher as
+próprias iterações, e «PBKDF2 com uma volta» tem a mesma cara de «PBKDF2 com
+210.000» no arquivo.
+
+### As guardas, e por que elas olham o RESULTADO
+
+Três recusas se conferem **depois** de a árvore mudar, lendo o cadastro que
+sobrou — e não antes, lendo a intenção do pedido:
+
+- **sem administrador ativo.** «Tirar o supervisor de fulano» só é o último
+  supervisor depois de saber quem sobrou, e quem sobrou depende do arquivo
+  inteiro. Conferir a intenção responderia «isto parece perigoso?»; conferir o
+  resultado responde «isto deixou o servidor sem dono?».
+- **a própria conta.** Quem se rebaixa ou se apaga fica sem poder desfazer.
+  Trocar a **própria senha** continua podendo: a guarda barra a escalada, não
+  o trabalho.
+- **só supervisor faz supervisor.** Um `admin` com poder em *uma* base pediria
+  `supervisor: true` e sairia podendo tudo em *todas* — escalada por cadastro.
+  Esta é conferida no pedido, porque a intenção aqui *é* o perigo.
+
+E duas que não dependem do resultado:
+
+- **o root não se mexe pelo protocolo.** Ele é a porta de entrada de quando o
+  cadastro sai errado — inclusive quando quem saiu errado foi uma destas três
+  operações. Uma op que trocasse a senha dele seria a porta e a chave no mesmo
+  molho.
+- **login que nunca autenticaria** é recusado na criação. O `login` **apara**
+  antes de comparar, então um login gravado com espaço na ponta é um login que
+  não entra nunca. Recusar cedo custa um erro lido enquanto se cria a conta;
+  aceitar custa uma conta que ninguém usa e ninguém entende por quê.
+
+### A sessão do excluído
+
+A autenticação acontece **uma vez por conexão**, e a ficha fica na sessão.
+Sem mais nada, quem fosse excluído às 10h continuaria entrando até a conexão
+dele cair.
+
+O cadastro vivo carrega uma **geração**. Quando ela anda, a conexão relê a
+própria ficha no pedido seguinte — e quem sumiu ou foi desativado cai no
+`faça login` de sempre. A conexão **não** é derrubada, e isso é decisão: um
+soquete cortado chegaria na aplicação do outro lado como falha de **rede**,
+por uma decisão de **cadastro**, e a diferença aparece justamente no cliente
+mais antigo, que é quem menos sabe se recuperar.
+
+**E o custo de quem nunca mexe no cadastro é zero.** É o portão que vem antes
+do trabalho, a mesma lição que o Profiler cobrou: um `load(Relaxed)` compara
+duas gerações e, quando elas batem — que é todo pedido de todo servidor que
+nunca chamou estas operações —, não há trava tomada, nem busca, nem `String`.
+O teste que trava isso é o do comportamento **velho**:
+`sem_mexer_no_cadastro_a_sessao_nunca_e_relida`.
+
+### O que continua fora
+
+- A **tela** não cria usuário. A porta é do protocolo; a aba de Usuários
+  continua lendo, e a nota nela diz por quê.
+- **Papéis e grupos** continuam não existindo: o poder é por usuário.
+- **Direito por coluna** continua não existindo: o direito desce até a tabela.

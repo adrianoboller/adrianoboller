@@ -1257,6 +1257,53 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "usuario_criar",
+        apelidos: &[],
+        resumo: "Cria um usuario no `config.json` e o aplica a quente. A senha vira hash antes de \
+                 tocar no arquivo; a resposta nunca a devolve.",
+        parametros: &[
+            obr("login", "string", "o nome pelo qual a pessoa entra"),
+            obr("senha", "string", "em claro no pedido; o servidor deriva o PBKDF2 e so grava o hash"),
+            opc("nome", "string", "o nome completo, para a tela e o relatorio"),
+            opc("email", "string", "o e-mail"),
+            opc("telefone", "string", "o telefone"),
+            opc("nivel", "string", "leitor, operador, dono ou admin; sem nivel, nega tudo"),
+            opc("supervisor", "boolean", "pode tudo em toda base; so um supervisor cria outro"),
+            opc("ativo", "boolean", "conta desligada nao entra e nao faz nada (padrao: true)"),
+            opc("bases", "object", "o poder por base, e o `tabelas` de cada base dentro dela"),
+        ],
+        exemplo: r#"{"op":"usuario_criar","login":"carlos","senha":"a-senha-do-carlos","nome":"Carlos Consulta","nivel":"leitor","bases":{"loja":{"ler":true,"verificar":true}}}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "usuario_alterar",
+        apelidos: &[],
+        resumo: "Muda senha, direitos por base e por tabela, nivel ou o liga/desliga. So o que o \
+                 pedido traz muda; o resto do cadastro fica como estava.",
+        parametros: &[
+            obr("login", "string", "quem alterar"),
+            opc("senha", "string", "a senha NOVA, em claro; omita para nao mexer nela"),
+            opc("nome", "string", "o nome completo"),
+            opc("email", "string", "o e-mail"),
+            opc("telefone", "string", "o telefone"),
+            opc("nivel", "string", "leitor, operador, dono ou admin"),
+            opc("supervisor", "boolean", "so um supervisor promove outro"),
+            opc("ativo", "boolean", "false desliga a conta e derruba a sessao dela no pedido seguinte"),
+            opc("bases", "object", "o poder por base; substitui o bloco inteiro"),
+        ],
+        exemplo: r#"{"op":"usuario_alterar","login":"carlos","senha":"a-senha-nova"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "usuario_excluir",
+        apelidos: &[],
+        resumo: "Tira o usuario do cadastro. Recusa se sobrar o servidor sem administrador ativo, \
+                 e recusa a propria conta de quem pediu.",
+        parametros: &[obr("login", "string", "quem excluir")],
+        exemplo: r#"{"op":"usuario_excluir","login":"carlos"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "acessos",
         apelidos: &[],
         resumo: "As últimas linhas do log de acessos, com IP, usuário e duração.",

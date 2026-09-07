@@ -2795,7 +2795,67 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     A autenticacao acontece UMA VEZ POR CONEXAO. PBKDF2 custa ~100 ms de
     proposito: irrelevante uma vez, inviavel a cada pedido.
 
-14.5 Conferir
+14.5 CRIAR, ALTERAR E EXCLUIR PELO PROTOCOLO  (a partir da 0.18)
+
+    Ate a 0.18 o cadastro so se escrevia no config.json, e o servidor
+    reiniciava. Agora ha tres operacoes, e elas valem A QUENTE: o usuario
+    criado entra no login seguinte, sem reiniciar nada.
+
+        {"op":"usuario_criar","login":"carlos","senha":"a-senha-do-carlos",
+         "nome":"Carlos Consulta","email":"carlos@empresa.com.br",
+         "nivel":"leitor","bases":{"loja":{"ler":true,"verificar":true}}}
+
+        {"op":"usuario_alterar","login":"carlos","senha":"a-senha-nova"}
+        {"op":"usuario_alterar","login":"carlos","ativo":false}
+        {"op":"usuario_alterar","login":"carlos",
+         "bases":{"loja":{"ler":true,"inserir":true,
+                          "tabelas":{"folha":{}}}}}
+
+        {"op":"usuario_excluir","login":"carlos"}
+
+    As tres exigem ADMINISTRAR -- o mesmo portao do config_gravar -- e as
+    tres gravam o config.json pelo mesmo caminho dele: valida antes, escreve
+    num temporario e troca com rename. O comentario e o resto do arquivo
+    ficam onde estavam.
+
+    A SENHA vai no campo "senha", em claro no pedido, e o servidor deriva o
+    PBKDF2 antes de encostar no arquivo. Ela nao aparece na resposta, nao
+    aparece no acessos.log e sai tapada no Profiler. Mandar "senha_hash"
+    pronto e RECUSADO: hash pronto escolheria o proprio custo.
+
+    ALTERAR mexe SO no que o pedido traz. Campo que nao veio fica como
+    estava -- inclusive a chave publica e o que este processo nem conhece.
+
+    O QUE ELAS RECUSAM
+
+        - deixar o servidor sem NENHUM administrador ativo;
+        - tirar de si mesmo o poder de administrar, ou apagar a propria
+          conta (trocar a PROPRIA senha continua podendo);
+        - criar ou promover SUPERVISOR sem ser supervisor;
+        - mexer no "root": ele e a porta de entrada de quando o cadastro
+          sai errado, e continua sendo edicao do arquivo;
+        - login que nunca autenticaria -- vazio, com espaco na ponta (o
+          login apara antes de comparar) ou com caractere de controle.
+
+    QUEM E EXCLUIDO OU DESATIVADO perde a sessao no PEDIDO SEGUINTE da
+    propria conexao, com o "faca login" de sempre. A conexao nao e
+    derrubada: um soquete cortado chegaria na aplicacao como falha de rede.
+
+    PELO SQL
+
+        CREATE USER carlos PASSWORD 'a-senha-do-carlos';
+        ALTER  USER carlos PASSWORD 'a-senha-nova';
+        DROP   USER carlos;
+
+    Sao comandos de sessao: viram os pedidos acima e passam pelo mesmo
+    portao. O texto do comando volta na resposta REDIGIDO -- 'PASSWORD
+    ***' --, porque num texto SQL nao ha campo para o Profiler tapar.
+
+    Num servidor SOMENTE-LEITURA as tres sao recusadas, como o
+    config_gravar: um servidor assim nao reescreve a propria configuracao
+    pela rede -- nem para dizer quem entra nele.
+
+14.6 Conferir
 
     phxsqld --usuarios
 

@@ -967,6 +967,31 @@ fn colher_tabelas(j: &Json, database: &str, saida: &mut Vec<(String, String)>) {
     }
 }
 
+/// O campo de texto SQL, quando ele carrega uma senha DENTRO da frase.
+///
+/// # A senha que a lista de nomes nao alcanca
+///
+/// A redacao deste arquivo e por NOME de campo, e ela esta certa -- ate
+/// aparecer `{"op":"sql","texto":"CREATE USER c PASSWORD 'x'"}`. Ali a senha
+/// nao esta num campo chamado `senha`: esta no meio de uma frase, num campo
+/// chamado `texto`, que e exatamente o que o Profiler existe para mostrar.
+/// Achado exercitando -- `bancada/usuarios/provar.py`, parte 8 --, e nao
+/// lendo o codigo.
+///
+/// # Por que nao se tapa o `texto` inteiro
+///
+/// Porque ai o Profiler ficaria cego para todo SQL, que e o uso principal
+/// dele. Entao a redacao e por ANALISE, e so quando ha o que redigir: o
+/// portao le duas palavras, e so um `CREATE`/`ALTER`/`DROP USER` paga o
+/// lexico. Todo o resto sai daqui como `None` e segue intacto.
+fn sql_sem_senha(chave: &str, valor: &Json) -> Option<String> {
+    if !matches!(chave.trim().to_ascii_lowercase().as_str(), "texto" | "sql") {
+        return None;
+    }
+    let t = valor.texto()?;
+    phxsql_sql::usuario::e_de_cadastro(t).then(|| phxsql_sql::usuario::sem_a_senha(t))
+}
+
 fn limpar(j: &Json) -> Json {
     match j {
         Json::Objeto(pares) => Json::Objeto(
@@ -981,6 +1006,8 @@ fn limpar(j: &Json) -> Json {
                     // fecha a porta.
                     if SEGREDOS.iter().any(|s| k.trim().eq_ignore_ascii_case(s)) {
                         (k.clone(), Json::Texto("***".into()))
+                    } else if let Some(sem) = sql_sem_senha(k, v) {
+                        (k.clone(), Json::Texto(sem))
                     } else {
                         (k.clone(), limpar(v))
                     }
@@ -995,6 +1022,49 @@ fn limpar(j: &Json) -> Json {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// **A senha dentro da FRASE, e nao num campo.**
+    ///
+    /// `{"op":"sql","texto":"CREATE USER c PASSWORD 'x'"}` passava inteiro:
+    /// a lista de [`SEGREDOS`] e por nome de campo, e ali o nome do campo e
+    /// `texto`. Achado exercitando o motor vivo -- `bancada/usuarios/provar.py`,
+    /// parte 8 --, e nao lendo o codigo.
+    ///
+    /// O conserto e por ANALISE: o lexico acha o literal onde ele estiver, e
+    /// o resto da frase continua visivel. Tapar o `texto` inteiro deixaria o
+    /// Profiler cego para todo SQL, que e o uso principal dele.
+    #[test]
+    fn a_senha_dentro_do_texto_sql_tambem_sai() {
+        for (linha, senha) in [
+            (
+                r#"{"op":"sql","texto":"CREATE USER c PASSWORD 'segredo1'"}"#,
+                "segredo1",
+            ),
+            (
+                r#"{"op":"sql","sql":"alter user c password 'segredo1' ;"}"#,
+                "segredo1",
+            ),
+            (
+                r#"{"op":"job_salvar","pedido":{"op":"sql","texto":"CREATE USER c PASSWORD 'segredo1'"}}"#,
+                "segredo1",
+            ),
+        ] {
+            let r = redigir(linha);
+            assert!(!r.contains(senha), "a senha ficou no anel: {r}");
+            assert!(r.contains("'***'"), "{r}");
+            assert!(r.to_uppercase().contains("USER"), "{r}");
+        }
+    }
+
+    /// E o SQL que NAO e de cadastro continua inteiro -- senao o conserto
+    /// acima teria cegado o Profiler para o uso principal dele.
+    #[test]
+    fn o_sql_de_sempre_continua_visivel_no_anel() {
+        let linha = r#"{"op":"sql","texto":"SELECT nome FROM clientes WHERE cidade = 'Blumenau'"}"#;
+        let r = redigir(linha);
+        assert!(r.contains("Blumenau"), "{r}");
+        assert!(r.contains("SELECT nome FROM clientes"), "{r}");
+    }
 
     /// A regra do projeto, aplicada ao lugar onde ela seria mais facil de
     /// quebrar: senha nao aparece, em nenhum campo, em nenhuma profundidade.

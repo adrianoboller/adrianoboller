@@ -326,6 +326,17 @@ impl Atividade {
             // depender do padrao para negar. A op ainda confere por dentro.
             "acessos" | "ips" | "config" | "config_gravar" | "usuarios" | "bloqueios"
             | "desbloquear" => Atividade::Administrar,
+            // As tres que ESCREVEM o cadastro. Declaradas, e nao caindo no
+            // `_`, pelo mesmo motivo do `config_gravar` ao lado: a operacao
+            // que cria quem pode entrar e a ultima que deveria depender do
+            // padrao para negar.
+            //
+            // As tres conferem de novo por dentro, e a repeticao nao e
+            // duplicacao: nenhuma delas tem campo "database", entao este
+            // portao as ve na base VAZIA e o poder sai da regra `"*"` ou do
+            // nivel. E a licao do `juntar` -- quando o portao geral nao
+            // enxerga o campo, a operacao pergunta por conta.
+            "usuario_criar" | "usuario_alterar" | "usuario_excluir" => Atividade::Administrar,
             // O profiler mostra o TEXTO dos pedidos de todo mundo, com os
             // dados que estao sendo gravados dentro. Quem pode ler uma tabela
             // nao ganha por isso o direito de ver o que os outros escrevem
@@ -937,6 +948,22 @@ impl Cadastro {
         }
     }
 
+    /// Ha alguem ATIVO que possa mexer no cadastro?
+    ///
+    /// # Por que `e_admin` e nao `supervisor`
+    ///
+    /// Porque quem manda no cadastro e quem tem `administrar`, e o nivel
+    /// `admin` o da tanto quanto a marca de supervisor. Contar so a marca
+    /// recusaria a exclusao do ultimo supervisor num servidor que ainda tem
+    /// tres administradores -- uma guarda que barra o que nao faz mal ensina
+    /// a contorna-la.
+    pub fn ha_supervisor_ativo(&self) -> bool {
+        self.root
+            .iter()
+            .chain(self.usuarios.iter())
+            .any(|u| u.ativo && u.e_admin())
+    }
+
     /// Fichas de todos, sem senha.
     pub fn fichas(&self) -> Json {
         let mut lista: Vec<Json> = Vec::new();
@@ -946,6 +973,279 @@ impl Cadastro {
         lista.extend(self.usuarios.iter().map(Usuario::ficha));
         Json::Lista(lista)
     }
+}
+
+// ===================================================================== edicao
+//
+// O cadastro deixou de ser SO leitura em 07/09/2026 (pedido 221). Ate aqui ele
+// nascia do `config.json` e morria com o processo: criar usuario era editar o
+// arquivo a mao e reiniciar o servidor -- e reiniciar um banco para dar acesso
+// a alguem e o tipo de custo que faz o administrador dar a conta do vizinho em
+// vez de criar uma nova.
+//
+// # Por que a edicao mexe na ARVORE do arquivo, e nao no `Cadastro`
+//
+// Porque o `Cadastro` e uma LEITURA do arquivo, e nem tudo o que esta no
+// arquivo cabe nele: um campo que este processo nao conhece -- posto ali por
+// outra frente, por uma versao mais nova, ou a mao por quem opera -- some no
+// caminho de volta. Reserializar o `Cadastro` seria devolver o arquivo de
+// alguem podado, calado. Mexer na arvore preserva byte a byte o que nao foi
+// pedido, que e a mesma decisao ja tomada em `Config::gravar_campos`.
+//
+// # A senha vira hash ANTES de a estrutura existir
+//
+// [`objeto_do_usuario`] e a UNICA porta por onde a senha entra, e ela sai de
+// la ja como `senha_hash`. Nao ha um instante em que a arvore que vai ao disco
+// -- ou a que volta na resposta -- carregue a senha em claro.
+
+/// A acao pedida sobre o cadastro.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Acao {
+    Criar,
+    Alterar,
+    Excluir,
+}
+
+impl Acao {
+    fn nome(self) -> &'static str {
+        match self {
+            Acao::Criar => "usuario_criar",
+            Acao::Alterar => "usuario_alterar",
+            Acao::Excluir => "usuario_excluir",
+        }
+    }
+}
+
+/// O login e utilizavel? Recusa cedo o que nunca autenticaria.
+///
+/// # A regra sai do `login`, e nao do gosto de quem escreveu isto
+///
+/// O pedido de `login` APARA o que chega antes de comparar. Entao um login
+/// gravado com espaco na ponta e um login que nao entra nunca: quem o digitar
+/// inteiro manda a versao aparada, que nao e igual a gravada. Recusar na
+/// criacao custa um erro lido enquanto se cria a conta; aceitar custa uma
+/// conta que ninguem consegue usar e ninguem entende por que.
+///
+/// Espaco NO MEIO continua valendo, e a permissao e deliberada: o `login`
+/// aceita, entao recusar aqui seria esta funcao inventando uma regra que o
+/// autenticador nao tem.
+pub fn login_valido(login: &str) -> Result<()> {
+    // O vazio vem antes do espaco: `"   "` e um login que ninguem quis
+    // mandar, e a mensagem tem de dizer isso, e nao reclamar da ponta.
+    if login.trim().is_empty() {
+        return Err(PhxError::Esquema(
+            "informe \"login\": o nome pelo qual a pessoa entra".into(),
+        ));
+    }
+    if login != login.trim() {
+        return Err(PhxError::Esquema(format!(
+            "o login {login:?} comeca ou termina com espaco, e o `login` apara \
+             antes de comparar: esta conta nunca entraria"
+        )));
+    }
+    if let Some(c) = login.chars().find(|c| c.is_control()) {
+        return Err(PhxError::Esquema(format!(
+            "o login {login:?} tem um caractere de controle ({:?}), que nao \
+             sobrevive ao log nem ao terminal",
+            c
+        )));
+    }
+    if login.chars().count() > LOGIN_MAX {
+        return Err(PhxError::Esquema(format!(
+            "o login tem {} caracteres e o teto e {LOGIN_MAX}",
+            login.chars().count()
+        )));
+    }
+    Ok(())
+}
+
+/// Teto do login. Nao ha limite tecnico -- ha limite de tela e de log.
+pub const LOGIN_MAX: usize = 64;
+
+/// Os campos que o pedido pode trazer, alem de `login` e `senha`.
+///
+/// Lista de PERMISSAO, e nao de recusa: campo novo que alguem mandar nasce
+/// RECUSADO ate ser declarado aqui. E o mesmo principio do portao que nega
+/// operacao desconhecida -- e, aqui, o que impede um pedido de escrever
+/// `senha_hash` cru, contornando o PBKDF2 desta casa.
+const CAMPOS_DO_USUARIO: &[&str] = &[
+    "id",
+    "nome",
+    "email",
+    "telefone",
+    "nivel",
+    "supervisor",
+    "ativo",
+    "bases",
+    "chave_publica",
+];
+
+/// Muda a lista `usuarios` da arvore do `config.json`.
+///
+/// Devolve o login alcancado. Nao grava nada: quem grava e
+/// [`crate::config::Config::gravar_usuarios`], e a separacao e de proposito --
+/// as regras de cadastro se provam sem disco nenhum.
+///
+/// `quem` e a sessao que pediu; `None` e o token de servico, que nao tem conta
+/// para proteger de si mesma.
+pub fn aplicar_na_arvore(
+    arvore: &mut Json,
+    acao: Acao,
+    p: &Json,
+    quem: Option<&Usuario>,
+) -> Result<String> {
+    let login = p.texto_ou("login", p.texto_ou("usuario", "")).to_string();
+    login_valido(&login)?;
+
+    // O root nao entra por aqui, e a recusa e uma decisao.
+    //
+    // Ele e a ultima porta de entrada quando o resto do cadastro sai errado --
+    // inclusive quando quem saiu errado foi uma destas tres operacoes. Uma op
+    // de protocolo que pudesse trocar a senha do root, ou desliga-lo, seria a
+    // porta e a chave no mesmo molho.
+    if arvore
+        .campo("root")
+        .map(|r| r.texto_ou("login", "root") == login)
+        .unwrap_or(false)
+        || login == "root" && arvore.campo("root").is_some()
+    {
+        return Err(PhxError::Autorizacao(format!(
+            "o root nao se muda pelo protocolo: ele e a porta de entrada de \
+             quando o cadastro sai errado. Edite o config.json para mexer em {login:?}"
+        )));
+    }
+
+    // So supervisor faz supervisor. Um `admin` com poder em UMA base pediria
+    // `supervisor: true` e sairia podendo tudo em TODAS -- escalada por
+    // cadastro. Quem ja e supervisor nao escala nada criando outro.
+    let pede_supervisor = p.booleano_ou("supervisor", false);
+    if pede_supervisor && !quem.map(|u| u.supervisor).unwrap_or(true) {
+        return Err(PhxError::Autorizacao(
+            "so um supervisor cria ou promove supervisor: administrar uma base \
+             nao da o poder de criar quem manda em todas"
+                .into(),
+        ));
+    }
+
+    let mut lista: Vec<Json> = match arvore.campo("usuarios") {
+        Some(Json::Lista(itens)) => itens.clone(),
+        _ => Vec::new(),
+    };
+    let posicao = lista
+        .iter()
+        .position(|u| u.texto_ou("login", "").trim() == login);
+
+    match acao {
+        Acao::Criar => {
+            if posicao.is_some() {
+                return Err(PhxError::Esquema(format!(
+                    "ja ha um usuario com o login {login:?}"
+                )));
+            }
+            lista.push(objeto_do_usuario(&login, p, None)?);
+        }
+        Acao::Alterar => {
+            let i = posicao.ok_or_else(|| nao_existe(&login))?;
+            lista[i] = objeto_do_usuario(&login, p, Some(&lista[i]))?;
+        }
+        Acao::Excluir => {
+            let i = posicao.ok_or_else(|| nao_existe(&login))?;
+            lista.remove(i);
+        }
+    }
+    arvore.definir("usuarios", Json::Lista(lista));
+
+    // As duas guardas que so se conferem no RESULTADO, e nao no pedido.
+    //
+    // Conferir a intencao nao basta: «tirar o supervisor de fulano» so e o
+    // ultimo supervisor DEPOIS de saber quem sobrou, e quem sobrou depende do
+    // arquivo inteiro. Ler o cadastro de volta e o que transforma a pergunta
+    // «isto parece perigoso?» em «isto DEIXOU o servidor sem dono?».
+    let novo = Cadastro::de_json(arvore)?;
+    if !novo.ha_supervisor_ativo() {
+        return Err(PhxError::Autorizacao(format!(
+            "{}: isto deixaria o servidor sem nenhum supervisor ativo, e ai \
+             ninguem mais poderia mexer no cadastro -- nem para desfazer",
+            acao.nome()
+        )));
+    }
+    if let Some(eu) = quem {
+        let continuo = novo
+            .por_login(&eu.login)
+            .is_some_and(|u| u.ativo && u.pode_em("", "", Atividade::Administrar));
+        if !continuo {
+            return Err(PhxError::Autorizacao(format!(
+                "{}: isto tiraria de {:?} -- a sua propria conta -- o poder de \
+                 administrar. Peca a outro administrador",
+                acao.nome(),
+                eu.login
+            )));
+        }
+    }
+    Ok(login)
+}
+
+fn nao_existe(login: &str) -> PhxError {
+    PhxError::NaoEncontrado(format!(
+        "nao ha usuario com o login {login:?}; a lista esta em `usuarios`"
+    ))
+}
+
+/// O objeto do usuario como ele vai para o `config.json`.
+///
+/// `anterior` e o objeto que ja estava no arquivo, quando havia um: os campos
+/// que o pedido NAO traz ficam como estavam, e os que este processo nao
+/// conhece ficam tambem. Alterar o telefone de alguem nao pode apagar a chave
+/// publica dele nem um campo que outra versao gravou.
+fn objeto_do_usuario(login: &str, p: &Json, anterior: Option<&Json>) -> Result<Json> {
+    let mut pares: Vec<(String, Json)> = match anterior {
+        Some(Json::Objeto(velhos)) => velhos.clone(),
+        _ => Vec::new(),
+    };
+    let mut por = |nome: &str, valor: Json| match pares.iter_mut().find(|(k, _)| k == nome) {
+        Some((_, v)) => *v = valor,
+        None => pares.push((nome.to_string(), valor)),
+    };
+    por("login", Json::texto_de(login));
+
+    for campo in CAMPOS_DO_USUARIO {
+        if let Some(v) = p.campo(campo) {
+            por(campo, v.clone());
+        }
+    }
+
+    // A SENHA. Entra em claro e sai hash, e este e o unico ponto do caminho
+    // em que ela existe -- por isso o `senha_hash` cru e recusado ao lado: um
+    // pedido que trouxesse o hash pronto escolheria as proprias iteracoes, e
+    // «PBKDF2 com 1 volta» tem a mesma cara de «PBKDF2 com 210.000».
+    if p.campo("senha_hash").is_some() {
+        return Err(PhxError::Autorizacao(
+            "\"senha_hash\" nao se manda pelo protocolo: mande \"senha\" e o \
+             servidor deriva o hash. Hash pronto escolheria o proprio custo"
+                .into(),
+        ));
+    }
+    match p.campo("senha").and_then(Json::texto) {
+        Some(clara) if !clara.is_empty() => {
+            por("senha_hash", Json::texto_de(senha::cifrar(clara)));
+            // A senha em texto puro que o formato ainda aceita sai JUNTO: um
+            // usuario que a tinha e trocou de senha nao pode continuar com a
+            // velha em claro no arquivo, sem ninguem notar.
+            pares.retain(|(k, _)| k != "senha");
+        }
+        Some(_) => {
+            return Err(PhxError::Esquema(
+                "\"senha\" vazia: mande a senha, ou omita o campo para nao mexer nela".into(),
+            ))
+        }
+        None if anterior.is_some() => {}
+        None => {
+            return Err(PhxError::Esquema(
+                "informe \"senha\": um usuario sem senha nao entra".into(),
+            ))
+        }
+    }
+    Ok(Json::Objeto(pares))
 }
 
 #[cfg(test)]
@@ -1359,6 +1659,144 @@ mod tests {
             hash_rapido("x")
         );
         assert!(Cadastro::de_json(&Json::analisar(&txt).unwrap()).is_err());
+    }
+
+    /* ------------------------------------------------- a edicao do cadastro
+    Estas provas nao tocam disco: `aplicar_na_arvore` mexe na ARVORE, e
+    quem grava e o `config.rs`. A separacao existe justamente para as
+    regras de cadastro se provarem sem arquivo nenhum. */
+
+    fn arvore(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn supervisora() -> Usuario {
+        Usuario {
+            id: 9,
+            nome: "Ana".into(),
+            login: "ana".into(),
+            senha_hash: hash_rapido("x"),
+            email: String::new(),
+            telefone: String::new(),
+            supervisor: true,
+            ativo: true,
+            nivel: Nivel::Admin,
+            chave_publica: None,
+            bases: Vec::new(),
+            tabelas: Vec::new(),
+        }
+    }
+
+    /// **A armadilha do formato.** O `config.json` ainda aceita `"senha"` em
+    /// texto puro, com aviso -- e um cadastro antigo pode ter uma. Trocar a
+    /// senha dessa pessoa tem de LEVAR A VELHA JUNTO: um arquivo que fica com
+    /// `senha_hash` novo e `senha` velha ao lado guarda a senha antiga em
+    /// claro para sempre, e ninguem olha de novo.
+    #[test]
+    fn trocar_a_senha_leva_junto_a_que_estava_em_texto_puro() {
+        let mut a = arvore(&format!(
+            r#"{{"usuarios":[{{"login":"ana","senha_hash":"{}","supervisor":true}},
+                             {{"login":"velho","senha":"12345678"}}]}}"#,
+            hash_rapido("x")
+        ));
+        aplicar_na_arvore(
+            &mut a,
+            Acao::Alterar,
+            &arvore(r#"{"login":"velho","senha":"a-senha-nova"}"#),
+            Some(&supervisora()),
+        )
+        .unwrap();
+        let texto = a.escrever();
+        assert!(
+            !texto.contains("12345678"),
+            "a senha velha em texto puro ficou no arquivo: {texto}"
+        );
+        assert!(
+            !texto.contains("a-senha-nova"),
+            "a senha nova entrou em claro: {texto}"
+        );
+        assert!(texto.contains("pbkdf2-sha256$"), "{texto}");
+    }
+
+    /// A regra sai do `login`, que APARA antes de comparar: o que nunca
+    /// autenticaria e recusado na criacao.
+    #[test]
+    fn o_login_se_valida_pelo_que_o_login_aceita() {
+        assert!(login_valido("carlos").is_ok());
+        assert!(
+            login_valido("carlos da silva").is_ok(),
+            "espaco NO MEIO o `login` aceita, entao aqui tambem"
+        );
+        assert!(login_valido("").is_err());
+        assert!(login_valido("   ").is_err());
+        assert!(login_valido(" carlos").is_err());
+        assert!(login_valido("carlos ").is_err());
+        assert!(login_valido("car\nlos").is_err());
+        assert!(login_valido(&"c".repeat(LOGIN_MAX)).is_ok());
+        assert!(login_valido(&"c".repeat(LOGIN_MAX + 1)).is_err());
+    }
+
+    /// O `chave_publica` de quem usa segundo fator nao pode sumir porque
+    /// alguem mudou o telefone dele.
+    #[test]
+    fn alterar_preserva_a_chave_publica_e_o_que_o_processo_nao_conhece() {
+        let chave = "a".repeat(64);
+        let mut a = arvore(&format!(
+            r#"{{"usuarios":[{{"login":"ana","senha_hash":"{}","supervisor":true}},
+                {{"login":"bia","senha_hash":"{}","chave_publica":"{chave}",
+                  "campo_de_outra_versao":42}}]}}"#,
+            hash_rapido("x"),
+            hash_rapido("y")
+        ));
+        aplicar_na_arvore(
+            &mut a,
+            Acao::Alterar,
+            &arvore(r#"{"login":"bia","telefone":"+55 47 90000-0000"}"#),
+            Some(&supervisora()),
+        )
+        .unwrap();
+        let c = Cadastro::de_json(&a).unwrap();
+        let bia = c.por_login("bia").unwrap();
+        assert!(bia.chave_publica.is_some(), "a chave publica sumiu");
+        assert_eq!(bia.telefone, "+55 47 90000-0000");
+        assert!(a.escrever().contains("campo_de_outra_versao"));
+    }
+
+    /// Guarda pela consequencia, e nao pela intencao: o que se confere e o
+    /// cadastro que SOBROU, e nao o que o pedido parecia querer.
+    #[test]
+    fn o_ultimo_administrador_nao_se_apaga() {
+        let mut a = arvore(&format!(
+            r#"{{"usuarios":[{{"login":"ana","senha_hash":"{}","supervisor":true}}]}}"#,
+            hash_rapido("x")
+        ));
+        // Sem `quem` -- token de servico --, para a guarda que pega ser a do
+        // ultimo administrador, e nao a da propria conta.
+        let e = aplicar_na_arvore(&mut a, Acao::Excluir, &arvore(r#"{"login":"ana"}"#), None)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("supervisor ativo"), "{e}");
+    }
+
+    /// E ela nao barra o que nao faz mal: com dois, um sai.
+    #[test]
+    fn com_dois_administradores_um_sai() {
+        let mut a = arvore(&format!(
+            r#"{{"usuarios":[{{"login":"ana","senha_hash":"{}","supervisor":true}},
+                             {{"login":"bia","senha_hash":"{}","nivel":"admin"}}]}}"#,
+            hash_rapido("x"),
+            hash_rapido("y")
+        ));
+        aplicar_na_arvore(
+            &mut a,
+            Acao::Excluir,
+            &arvore(r#"{"login":"bia"}"#),
+            Some(&supervisora()),
+        )
+        .unwrap();
+        let c = Cadastro::de_json(&a).unwrap();
+        assert!(c.por_login("bia").is_none());
+        assert!(c.ha_supervisor_ativo());
     }
 
     #[test]

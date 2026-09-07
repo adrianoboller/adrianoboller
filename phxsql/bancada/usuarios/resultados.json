@@ -1,0 +1,84 @@
+{
+  "quando_utc": "2026-09-07 18:15:19",
+  "commit": "b463b1d",
+  "versao": "phxsqld 0.18.0 (b463b1d9a8dc-sujo) x86_64-unknown-linux-gnu",
+  "algoritmo": "pbkdf2-sha256$210000",
+  "resposta_criar": {
+    "gravado": true,
+    "login": "carlos",
+    "acao": "criado",
+    "arquivo": "/tmp/phx-f5u-21019/config.json",
+    "aviso": "vale agora, sem reiniciar: o proximo login ja enxerga o cadastro novo",
+    "usuario": {
+      "id": 811765527,
+      "nome": "Carlos Consulta",
+      "login": "carlos",
+      "email": "carlos@empresa.com.br",
+      "telefone": "",
+      "nivel": "leitor",
+      "supervisor": false,
+      "ativo": true,
+      "exige_chave": false,
+      "bases": {
+        "loja": {
+          "ler": true,
+          "inserir": false,
+          "alterar": false,
+          "excluir": false,
+          "criar": false,
+          "reindexar": false,
+          "diario": false,
+          "verificar": true,
+          "administrar": false,
+          "replicar": false
+        }
+      },
+      "tabelas": {}
+    },
+    "ok": true,
+    "op": "usuario_criar",
+    "ms": 261
+  },
+  "quem_sou_carlos": {
+    "id": 811765527,
+    "nome": "Carlos Consulta",
+    "login": "carlos",
+    "email": "carlos@empresa.com.br",
+    "telefone": "",
+    "nivel": "leitor",
+    "supervisor": false,
+    "ativo": true,
+    "exige_chave": false,
+    "bases": {
+      "loja": {
+        "ler": true,
+        "inserir": false,
+        "alterar": false,
+        "excluir": false,
+        "criar": false,
+        "reindexar": false,
+        "diario": false,
+        "verificar": true,
+        "administrar": false,
+        "replicar": false
+      }
+    },
+    "tabelas": {},
+    "ok": true,
+    "op": "quem_sou",
+    "ms": 0
+  },
+  "hashes_no_arquivo": 2,
+  "recusa_da_senha_velha": "{\"ok\":false,\"op\":\"login\",\"erro\":\"[SP000025] acesso negado: usuario ou senha invalidos\",\"codigo\":4001,\"nome\":\"ACESSO_NEGADO\",\"classe\":\"acesso\",\"sprint\":\"SP000025\",\"repetir\":false,\"ms\":268}",
+  "recusa_do_leitor": "[SP000025] acesso negado: carlos nao tem permissao de administrar em (sem base)",
+  "recusa_do_ultimo_admin": "[SP000025] acesso negado: usuario_alterar: isto deixaria o servidor sem nenhum supervisor ativo, e ai ninguem mais poderia mexer no cadastro -- nem para desfazer",
+  "sql_redigido": "CREATE USER bia PASSWORD '***'",
+  "recusa_do_excluido": "[SP000025] acesso negado: faca login antes: {\"op\":\"login\",\"usuario\":...,\"senha\":...}",
+  "profiler_tapou": true,
+  "no_acessos_log": {
+    "usuario_criar": 8,
+    "usuario_alterar": 7,
+    "usuario_excluir": 2
+  },
+  "falhas": []
+}

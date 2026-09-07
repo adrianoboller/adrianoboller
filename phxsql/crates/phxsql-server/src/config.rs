@@ -3405,61 +3405,128 @@ impl Config {
             }
         }
 
-        let mut novo = Config::de_json(&arvore)?;
-        novo.caminho = Some(caminho.to_path_buf());
-        novo.validar()?;
+        let caminhos: Vec<Vec<String>> = mudancas
+            .iter()
+            .map(|(campo, _)| campo.split('.').map(str::to_string).collect())
+            .collect();
+        gravar_a_arvore(caminho, &texto, arvore, &caminhos)
+    }
 
-        // O TEXTO a gravar: a troca cirurgica primeiro.
+    /// Le o `config.json`, deixa `mexer` alterar a arvore e grava.
+    ///
+    /// # Por que ela existe ao lado do `gravar_campos`, e nao dentro dele
+    ///
+    /// Porque `usuarios` esta FORA de [`CAMPOS_EDITAVEIS`] de proposito, e
+    /// continua: a tela de configuracao nao grava o cadastro, e uma sessao
+    /// roubada nao cria supervisor mandando um campo a mais no formulario.
+    /// O que muda com o pedido 221 e que ha uma porta PROPRIA para o cadastro
+    /// -- com portao proprio, guardas proprias e a senha virando hash antes de
+    /// tocar na arvore --, e ela usa o MESMO caminho de gravacao: mesma
+    /// validacao antes, mesma troca cirurgica no texto, mesmo temporario com
+    /// as permissoes do original, mesmo `rename`.
+    ///
+    /// Duas gravacoes de `config.json` com caminhos diferentes seriam dois
+    /// jeitos de o arquivo ficar pela metade, e so um deles estaria provado.
+    pub fn gravar_a_secao(
+        caminho: &Path,
+        secao: &str,
+        mexer: impl FnOnce(&mut Json) -> Result<()>,
+    ) -> Result<Config> {
+        let texto = std::fs::read_to_string(caminho).map_err(|e| {
+            PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
+        })?;
+        let mut arvore = Json::analisar(&texto)?;
+        mexer(&mut arvore)?;
+        gravar_a_arvore(caminho, &texto, arvore, &[vec![secao.to_string()]])
+    }
+}
+
+/// Valida a arvore e a grava atomicamente, trocando `caminhos` NO TEXTO.
+///
+/// # A validacao vem ANTES da gravacao
+///
+/// A arvore alterada passa por `de_json` + `validar` primeiro: valor que nao
+/// subiria o servidor nao entra no arquivo.
+fn gravar_a_arvore(
+    caminho: &Path,
+    texto: &str,
+    arvore: Json,
+    caminhos: &[Vec<String>],
+) -> Result<Config> {
+    let mut novo = Config::de_json(&arvore)?;
+    novo.caminho = Some(caminho.to_path_buf());
+    novo.validar()?;
+
+    // O TEXTO a gravar: a troca cirurgica primeiro.
+    //
+    // Reserializar a arvore preserva valor, ordem e comentario, e perde a
+    // FORMA -- linhas em branco entre secoes somem e `["a","b"]` vira tres
+    // linhas. Num arquivo escrito a mao isso e devolver o trabalho de
+    // alguem reformatado, e num controle de versao e um diff ilegivel.
+    // Entao cada campo e trocado NO TEXTO, e o resto sai byte a byte.
+    //
+    // A reserializacao continua como reserva para o caso que a troca
+    // cirurgica se recusa a fazer: campo (ou secao) que ainda nao esta no
+    // arquivo. Inserir texto exigiria adivinhar a indentacao de quem
+    // escreveu, e adivinhar errado e o mesmo estrago que reformatar.
+    let mut corpo = texto.to_string();
+    for partes in caminhos {
+        let partes: Vec<&str> = partes.iter().map(String::as_str).collect();
+        let Some(valor) = valor_em(&arvore, &partes.join(".")) else {
+            corpo = arvore.escrever_identado();
+            corpo.push('\n');
+            break;
+        };
+        // Objeto e lista GRANDES vao identados; o resto vai compacto.
         //
-        // Reserializar a arvore preserva valor, ordem e comentario, e perde a
-        // FORMA -- linhas em branco entre secoes somem e `["a","b"]` vira tres
-        // linhas. Num arquivo escrito a mao isso e devolver o trabalho de
-        // alguem reformatado, e num controle de versao e um diff ilegivel.
-        // Entao cada campo e trocado NO TEXTO, e o resto sai byte a byte.
-        //
-        // A reserializacao continua como reserva para o caso que a troca
-        // cirurgica se recusa a fazer: campo (ou secao) que ainda nao esta no
-        // arquivo. Inserir texto exigiria adivinhar a indentacao de quem
-        // escreveu, e adivinhar errado e o mesmo estrago que reformatar.
-        let mut corpo = texto.clone();
-        for (campo, valor) in mudancas {
-            let partes: Vec<&str> = campo.split('.').collect();
-            match Json::texto_trocar(&corpo, &partes, valor) {
-                Some(t) => corpo = t,
-                None => {
-                    corpo = arvore.escrever_identado();
-                    corpo.push('\n');
-                    break;
-                }
-            }
-        }
-        // Cinto: o texto que vai para o disco tem de dizer o mesmo que a
-        // arvore que passou pela validacao. Se a edicao no texto divergir por
-        // qualquer motivo, vale o reserializado -- que esta provado.
-        match Json::analisar(&corpo) {
-            Ok(conferido) if conferido == arvore => {}
-            _ => {
+        // A escolha e por FORMA e TAMANHO do valor, e nao por nome de campo:
+        // uma lista de duas tabelas cabe numa linha e fica melhor assim, mas
+        // a `usuarios` inteira compacta vira uma linha de dois mil caracteres
+        // com o cadastro dentro -- e o cadastro e justamente a secao que
+        // gente le e edita a mao. O corte fica no tamanho, porque e o tamanho
+        // que decide se a linha se le.
+        let cabe_numa_linha =
+            !matches!(valor, Json::Objeto(_) | Json::Lista(_)) || valor.escrever().len() <= 120;
+        let trocado = if cabe_numa_linha {
+            Json::texto_trocar(&corpo, &partes, &valor)
+        } else {
+            Json::texto_trocar_identado(&corpo, &partes, &valor)
+        };
+        match trocado {
+            Some(t) => corpo = t,
+            None => {
                 corpo = arvore.escrever_identado();
                 corpo.push('\n');
+                break;
             }
         }
-
-        // O mesmo padrao do cadastro do DbLink: escreve inteiro num arquivo
-        // temporario e troca com rename. Um corte de energia no meio deixa o
-        // config.json antigo inteiro, e nao um pela metade -- que derrubaria o
-        // proximo arranque.
-        let temporario = caminho.with_extension("tmp");
-        std::fs::write(&temporario, corpo)
-            .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", temporario.display())))?;
-        // O arquivo carrega o token e os hashes: o temporario herda as
-        // permissoes do original em vez de nascer com as largas do umask.
-        if let Ok(meta) = std::fs::metadata(caminho) {
-            let _ = std::fs::set_permissions(&temporario, meta.permissions());
-        }
-        std::fs::rename(&temporario, caminho)
-            .map_err(|e| PhxError::Esquema(format!("nao troquei {}: {e}", caminho.display())))?;
-        Ok(novo)
     }
+    // Cinto: o texto que vai para o disco tem de dizer o mesmo que a
+    // arvore que passou pela validacao. Se a edicao no texto divergir por
+    // qualquer motivo, vale o reserializado -- que esta provado.
+    match Json::analisar(&corpo) {
+        Ok(conferido) if conferido == arvore => {}
+        _ => {
+            corpo = arvore.escrever_identado();
+            corpo.push('\n');
+        }
+    }
+
+    // O mesmo padrao do cadastro do DbLink: escreve inteiro num arquivo
+    // temporario e troca com rename. Um corte de energia no meio deixa o
+    // config.json antigo inteiro, e nao um pela metade -- que derrubaria o
+    // proximo arranque.
+    let temporario = caminho.with_extension("tmp");
+    std::fs::write(&temporario, corpo)
+        .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", temporario.display())))?;
+    // O arquivo carrega o token e os hashes: o temporario herda as
+    // permissoes do original em vez de nascer com as largas do umask.
+    if let Ok(meta) = std::fs::metadata(caminho) {
+        let _ = std::fs::set_permissions(&temporario, meta.permissions());
+    }
+    std::fs::rename(&temporario, caminho)
+        .map_err(|e| PhxError::Esquema(format!("nao troquei {}: {e}", caminho.display())))?;
+    Ok(novo)
 }
 
 #[cfg(test)]

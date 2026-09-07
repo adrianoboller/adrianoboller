@@ -291,7 +291,7 @@ leitura de 20.000 (5× a favor do PhxSql sem o motor ter feito nada por isso).
 
   São **12** constantes `TETO*` no código do servidor (`bloco_catracas()`,
   07/09/2026), das quais **6** são catraca de varredura —
-  `TETO_ROTULOS_E_CRASE` (1.051), `TETO_COLADO` (0), `TETO_FRASE_REPETIDA`
+  `TETO_ROTULOS_E_CRASE` (1.050), `TETO_COLADO` (0), `TETO_FRASE_REPETIDA`
   (0), `TETO_BOTAO_SEM_PROVA` (194), `TETO_TABELA_NA_MAO` (0, fechada em
   03/09) e `TETO_TEMP_DIR_SOLTO` (0, nascida em 07/09 com o pedido 150) — e
   as outras 6 são **limite de funcionamento**, não catraca: tamanho de campo

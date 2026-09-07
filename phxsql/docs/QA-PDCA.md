@@ -402,7 +402,7 @@ dívida que só deve encolher, travam um comportamento em produção).
 | `TETO_BOTAO_SEM_PROVA` (botoes da tela que a bateria nao clica) | `crates/phxsql-server/src/conferidor_botoes.rs` | 194 | **194** | em cima, sem folga |
 | `TETO_TABELA_NA_MAO` (tabelas montadas a mao em vez de PhxGrid) | `crates/phxsql-server/src/conferidor_grades.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_TEMP_DIR_SOLTO` (chamadas a std::env::temp_dir() fora do catalogo) | `crates/phxsql-server/src/conferidor_temporarios.rs` | 0 | **0** | em cima, sem folga |
-| `TETO_ROTULOS_E_CRASE` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 1.051 | **1.051** | em cima, sem folga |
+| `TETO_ROTULOS_E_CRASE` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 1.050 | **1.050** | em cima, sem folga |
 | `TETO_COLADO` (chaves com os seis idiomas identicos) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_FRASE_REPETIDA` (frase longa repetida em tres ou mais idiomas) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_VERMELHA_SEM_PEDIDO` (provas vermelhas sem pedido no PENDENCIAS.md) | `crates/phxsql-server/src/conferidor_vermelhas.rs` | 0 | **0** | em cima, sem folga |

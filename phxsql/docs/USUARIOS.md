@@ -245,6 +245,108 @@ O `acessos.log` guarda o login e registra **toda** tentativa, inclusive as
 negadas. O `.log` da tabela guarda o `id` numérico de quem alterou o dado — o
 campo já existia no formato desde o início e agora carrega sentido.
 
+## Criar, alterar e excluir pelo protocolo
+
+Até a 0.18 o cadastro só se escrevia no `config.json`, e o servidor
+reiniciava — que é o custo que faz o administrador dar a conta do vizinho em
+vez de criar uma nova. O pedido 221 abriu a porta.
+
+```json
+{"op":"usuario_criar","login":"carlos","senha":"a-senha-do-carlos",
+ "nome":"Carlos Consulta","email":"carlos@empresa.com.br",
+ "nivel":"leitor","bases":{"loja":{"ler":true,"verificar":true}}}
+
+{"op":"usuario_alterar","login":"carlos","senha":"a-senha-nova"}
+{"op":"usuario_alterar","login":"carlos","ativo":false}
+{"op":"usuario_excluir","login":"carlos"}
+```
+
+E em SQL, para quem chega por um driver:
+
+```sql
+CREATE USER carlos PASSWORD 'a-senha-do-carlos';
+ALTER  USER carlos PASSWORD 'a-senha-nova';
+DROP   USER carlos;
+```
+
+### A senha vira hash antes de a estrutura existir
+
+Ela chega em claro no pedido — o fio já é cifrado, ver `CIFRA-DO-FIO.md` — e
+o PBKDF2 acontece dentro de `objeto_do_usuario`, que é a **única** porta por
+onde ela entra. Não há instante em que a árvore que vai ao disco, ou a que
+volta na resposta, carregue a senha.
+
+Os três lugares onde ela vazaria calada, e o que fecha cada um:
+
+| Onde | O que fecha |
+|---|---|
+| `config.json` | o campo gravado é `senha_hash`; e o `"senha"` em texto puro que o formato ainda aceita **sai junto** quando alguém troca a senha — senão o arquivo ficaria com a nova cifrada e a velha em claro ao lado |
+| resposta do protocolo | volta a **ficha**, que nunca traz senha nem hash |
+| `acessos.log` | guarda a operação e o login de quem pediu, nunca o corpo |
+| Profiler | tapa `senha` por **análise** da árvore, em qualquer profundidade — e o texto SQL, que não tem campo para tapar, volta redigido pelo mesmo método |
+
+Mandar `senha_hash` pronto é **recusado**: hash pronto escolheria o próprio
+custo, e «PBKDF2 com uma volta» tem a mesma cara de «PBKDF2 com 210.000».
+
+### Aplicação a quente
+
+O cadastro vivo é trocado e uma **geração** anda. O próximo `login` já aceita
+quem acabou de nascer; e quem foi excluído ou desativado perde a ficha no
+**pedido seguinte** da própria conexão, com o `faça login` de sempre.
+
+A conexão não é derrubada, e isso é decisão: um soquete cortado chegaria na
+aplicação do outro lado como falha de **rede**, por uma decisão de
+**cadastro** — e a diferença aparece exatamente no cliente mais antigo, que é
+quem menos sabe se recuperar.
+
+O custo de quem nunca mexe no cadastro é **zero**: um `load(Relaxed)` compara
+duas gerações, e quando elas batem não há trava, busca nem `String`. É o
+portão que vem antes do trabalho.
+
+### O que elas recusam
+
+- deixar o servidor sem **nenhum administrador ativo** — e a conferência é
+  sobre o cadastro que **sobrou**, não sobre o que o pedido parecia querer;
+- tirar de si mesmo o poder de administrar, ou apagar a própria conta
+  (trocar a **própria senha** continua podendo — a guarda barra a escalada,
+  não o trabalho);
+- criar ou promover **supervisor** sem ser supervisor: administrar *uma* base
+  não dá o poder de criar quem manda em *todas*;
+- mexer no **root** — ele é a porta de entrada de quando o cadastro sai
+  errado, e uma operação de protocolo que trocasse a senha dele seria a porta
+  e a chave no mesmo molho;
+- **login que nunca autenticaria**: vazio, com espaço na ponta (o `login`
+  apara antes de comparar, então essa conta não entra nunca) ou com caractere
+  de controle. Espaço **no meio** continua valendo, porque o `login` aceita —
+  recusar aqui seria esta camada inventando uma regra que o autenticador não
+  tem.
+
+### O portão é o mesmo, e a gravação também
+
+As três exigem `administrar`, pelo **mesmo** `exigir_administrar` que o
+`config_gravar` usa — uma cópia em cada operação seria a porta dos fundos de
+sempre, a que alguém esquece de atualizar.
+
+E gravam pelo mesmo caminho do `config_gravar`: valida a árvore inteira
+antes, troca o campo **no texto** (comentário, ordem e espaçamento ficam),
+escreve num temporário que herda as permissões do original e troca com
+`rename`. Duas gravações do `config.json` com caminhos diferentes seriam dois
+jeitos de o arquivo ficar pela metade, e só um deles estaria provado.
+
+O que **não** mudou: `usuarios` continua fora de `CAMPOS_EDITAVEIS`, então a
+tela de configuração continua sem gravar o cadastro pelo formulário genérico.
+A porta nova é própria, com portão e guardas próprias.
+
+### Provado onde
+
+- `crates/phxsql-server/src/usuarios.rs` — as regras de cadastro, sem disco.
+- `crates/phxsql-server/src/servidor.rs`, `testes_cadastro_de_usuarios` — o
+  caminho inteiro, incluindo o teste do comportamento **velho**
+  (`sem_mexer_no_cadastro_a_sessao_nunca_e_relida`).
+- `bancada/usuarios/provar.py` — contra o motor **vivo**, pelo soquete: o
+  login numa conexão nova contra o mesmo processo, o `acessos.log` escrito
+  pelo laço de conexão e o `perfil.txt` do Profiler ligado.
+
 ## Conferir o cadastro
 
 ```bash
@@ -261,7 +363,6 @@ nem hash; há um teste que falha se algum dia devolver.
 
 ## O que ainda não tem
 
-- **Sem troca de senha pelo protocolo.** Muda-se no `config.json` e reinicia.
 - **Sem bloqueio por tentativas.** O `acessos.log` registra as falhas, mas
   ninguém é barrado automaticamente. Use `fail2ban` sobre o log, ou
   `ips_permitidos`.
@@ -271,4 +372,10 @@ nem hash; há um teste que falha se algum dia devolver.
   uma coluna de salário dentro de uma tabela que a pessoa pode ler ainda não
   existe.
 - **Senha trafega em claro** no `login`, como todo o resto do protocolo. A
-  porta 5000 pertence dentro de VPN ou IPSec.
+  porta 5000 pertence dentro de VPN ou IPSec — e o mesmo vale para o
+  `usuario_criar`: a senha vai no pedido, e o que a protege no fio é a cifra
+  do fio (`CIFRA-DO-FIO.md`), não o protocolo. O desafio-resposta resolve o
+  `login`; para criar não há como, porque o servidor precisa da senha para
+  derivar o hash.
+- **A tela ainda não cria usuário.** A porta existe no protocolo; a aba de
+  Usuários da interface continua só lendo — ver a nota nela.
