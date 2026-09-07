@@ -238,3 +238,121 @@ fn apagar_o_fts_e_reabrir_reconstroi_em_vez_de_achar_nada() {
         vec![a]
     );
 }
+
+// ------------------------------------------------------- a queda e o irmao
+//
+// O `.fts` e um `.ndx` por dentro, e por isso ele herda a marca de «ficou
+// para tras numa queda». Herda a marca e nao herdava o conserto: quem
+// reconstroi o `.ndx` e o `reindexar`, e ele nao olhava o `.fts`. E o
+// caminho IRMAO da petrea, com o agravante de a mensagem do proprio `.fts`
+// mandar «reconstrua o indice de texto com `reindexar`» -- uma ordem que o
+// codigo nao sabia cumprir.
+
+/// Simula a queda: esquece a tabela sem fechar, como um `SIGKILL` faz.
+///
+/// `mem::forget` e a simulacao honesta -- o `Drop` nao roda, e o cabecalho no
+/// disco fica com a marca de sujo levantada, que e exatamente o que a queda
+/// do processo deixa.
+fn derruba(t: Table) {
+    std::mem::forget(t);
+}
+
+/// **A prova.** Depois da queda, a tabela reabre com o `.fts` marcado, e
+/// **nenhuma gravacao passa** ate alguem reconstruir.
+///
+/// Com o defeito reposto (o `reindexar` sem o `.fts`) o `inserir` de baixo
+/// falha: a marca continua la depois da reconstrucao.
+#[test]
+fn a_queda_marca_o_fts_e_o_reindexar_tem_de_baixar_a_marca() {
+    let (mut t, d) = nova("queda");
+    t.inserir(&linha(1, "pedido urgente", "corpo com fenix"))
+        .unwrap();
+    derruba(t);
+
+    let mut t = Table::abrir(&d, "docs").expect("a tabela tem de reabrir");
+    assert!(
+        t.indice_precisa_reconstruir(),
+        "a marca do .fts tem de ser VISTA por quem pergunta -- \
+         perguntar so ao .ndx e nao ver a queda"
+    );
+
+    let indices = t.reindexar().expect("reindexar");
+    assert!(!indices.is_empty());
+    assert!(
+        !t.indice_precisa_reconstruir(),
+        "o reindexar tem de baixar a marca dos DOIS arquivos"
+    );
+
+    // E o que mais importa: a tabela volta a gravar e a busca volta a achar.
+    let b = t
+        .inserir(&linha(2, "nota fiscal", "corpo comum"))
+        .expect("a tabela tem de voltar a gravar depois do reindexar");
+    assert_eq!(
+        t.procurar_texto("porTitulo", "nota").unwrap().rowids,
+        vec![b]
+    );
+    assert_eq!(
+        t.procurar_texto("porCorpo", "fenix").unwrap().rowids.len(),
+        1,
+        "a linha de antes da queda tem de continuar no indice"
+    );
+}
+
+/// Reconstruir NAO pode somar: chamar duas vezes tem de dar o mesmo resultado.
+///
+/// **Eu previ o defeito errado, e o teste mediu.** Achei que a segunda passada
+/// acrescentaria a mesma chave e a busca devolveria o rowid duas vezes -- achar
+/// a mais, que e mentira. O que acontece e melhor e pior ao mesmo tempo: a
+/// arvore RECUSA (`chave completa ja existe no indice`), entao nao ha mentira,
+/// mas o `reconstruir_fts` deixa de ser idempotente -- e era o `reindexar` que
+/// ia bater nessa recusa em toda tabela que ja tivesse uma linha.
+#[test]
+fn reconstruir_duas_vezes_nao_duplica() {
+    let (mut t, _d) = nova("duas-vezes");
+    let a = t
+        .inserir(&linha(1, "pedido urgente", "corpo com fenix"))
+        .unwrap();
+
+    t.reconstruir_fts().unwrap();
+    t.reconstruir_fts().unwrap();
+
+    assert_eq!(
+        t.procurar_texto("porTitulo", "pedido").unwrap().rowids,
+        vec![a],
+        "reconstruir duas vezes duplicou a ocorrencia"
+    );
+    assert_eq!(
+        t.procurar_texto("porCorpo", "fenix").unwrap().rowids,
+        vec![a]
+    );
+}
+
+/// `.fts` que nao abre nao pode derrubar a tabela -- ele e DERIVADO.
+///
+/// Dois casos caem aqui: arquivo corrompido, e contagem de indices divergente
+/// (alguem declarou um indice de texto numa tabela que ja tem dados, que e uma
+/// das tres coisas para as quais o `reindexar` existe). Com o defeito reposto
+/// a tabela nem abria, e a mensagem mandava rodar o `reindexar` -- numa tabela
+/// que nao abre. Refazer custa uma varredura e nunca custa dado.
+#[test]
+fn fts_corrompido_reconstroi_na_abertura_em_vez_de_derrubar_a_tabela() {
+    let (mut t, d) = nova("corrompido");
+    let a = t
+        .inserir(&linha(1, "pedido urgente", "corpo com fenix"))
+        .unwrap();
+    drop(t);
+
+    // Corrompe o `.fts` de proposito: nem magica, nem cabecalho.
+    std::fs::write(d.join("docs.fts"), b"isto nao e um indice").unwrap();
+
+    let mut t = Table::abrir(&d, "docs").expect("a tabela tem de abrir mesmo assim");
+    assert_eq!(
+        t.procurar_texto("porTitulo", "pedido").unwrap().rowids,
+        vec![a],
+        "o indice tem de nascer cheio, varrendo a tabela"
+    );
+    assert_eq!(
+        t.procurar_texto("porCorpo", "fenix").unwrap().rowids,
+        vec![a]
+    );
+}

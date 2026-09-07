@@ -889,13 +889,27 @@ impl Table {
         // espera. A reconstrucao acontece logo abaixo, com a tabela ja montada.
         let dobra: Vec<bool> = indices_de_texto.iter().map(|(_, d)| *d).collect();
         let caminho_fts = caminho(&diretorio, nome, EXT_FTS);
-        let faltava = !dobra.is_empty() && !caminho_fts.exists();
+        //
+        // **E `.fts` que NAO abre entra na mesma vala**, em vez de derrubar a
+        // tabela: contagem divergente (alguem declarou um indice de texto numa
+        // tabela que ja tem dados) ou arquivo corrompido. Recusar aqui seria
+        // mandar rodar o `reindexar` numa tabela que nao abre -- ordem que nao
+        // se pode cumprir. E a marca de "ficou para tras numa queda" NAO cai
+        // nesta vala: ela nao e erro de abertura, e quem a resolve e o
+        // `reindexar`, que agora sabe.
+        let mut refazer = !dobra.is_empty() && !caminho_fts.exists();
         let fts = if dobra.is_empty() {
             None
-        } else if faltava {
-            Some(FtsFile::criar(&caminho_fts, dobra)?)
+        } else if refazer {
+            Some(FtsFile::recriar(&caminho_fts, dobra)?)
         } else {
-            Some(FtsFile::abrir(&caminho_fts, dobra)?)
+            match FtsFile::abrir(&caminho_fts, dobra.clone()) {
+                Ok(f) => Some(f),
+                Err(_) => {
+                    refazer = true;
+                    Some(FtsFile::recriar(&caminho_fts, dobra)?)
+                }
+            }
         };
         let mut aberta = Table {
             nome: nome.to_string(),
@@ -920,7 +934,7 @@ impl Table {
             sobreposta: None,
             como_replica: false,
         };
-        if faltava {
+        if refazer {
             aberta.reconstruir_fts()?;
         }
         Ok(SemEscrever::Aberta(aberta))
@@ -1000,6 +1014,16 @@ impl Table {
         if self.fts.is_none() {
             return Ok(0);
         }
+        // RECRIA antes de varrer, como o `reindexar` faz com o `.ndx`. Sem
+        // isto a reconstrucao nao e idempotente -- a segunda passada bate em
+        // «chave completa ja existe no indice» --, e a marca de «ficou para
+        // tras numa queda» nunca desce, porque so a recriacao a tira.
+        let dobra: Vec<bool> = self.indices_de_texto.iter().map(|(_, d)| *d).collect();
+        self.fts = Some(FtsFile::recriar(
+            caminho(&self.diretorio, &self.nome, EXT_FTS),
+            dobra,
+        )?);
+
         let mut feitas = 0u64;
         let mut depois = 0u64;
         loop {
@@ -4336,7 +4360,21 @@ impl Table {
         })
     }
 
-    /// Recria o `.ndx` inteiro a partir do `.reg`.
+    /// O indice desta tabela ficou para tras numa queda?
+    ///
+    /// Enquanto a resposta for `true`, TODA operacao de indice recusa -- o
+    /// portao mora no `descritor`, de proposito. Quem pergunta isto e quem
+    /// pode consertar: a recuperacao de transacao reconstroi antes de
+    /// completar o commit, porque sem indice confiavel nao ha insercao.
+    pub fn indice_precisa_reconstruir(&self) -> bool {
+        // Os DOIS arquivos, e nao so o `.ndx`. O `.fts` e um `.ndx` por
+        // dentro e herda a marca da queda; perguntar so ao primeiro deixava a
+        // queda que sujasse so o indice de texto passar calada -- e o caminho
+        // IRMAO, que a petrea manda procurar.
+        self.ndx.precisa_reconstruir() || self.fts.as_ref().is_some_and(|f| f.precisa_reconstruir())
+    }
+
+    /// Recria o `.ndx` inteiro a partir do `.reg` -- e o `.fts` junto.
     ///
     /// Resolve tres coisas de uma vez: indice corrompido ou apagado, arvore
     /// subocupada depois de muitas exclusoes (a remocao nao rebalanceia), e
@@ -4344,16 +4382,6 @@ impl Table {
     ///
     /// A varredura e feita na ordem de digitacao, entao a arvore sai com os
     /// rowids inseridos em ordem crescente dentro de cada chave.
-    /// O `.ndx` desta tabela ficou para tras numa queda?
-    ///
-    /// Enquanto a resposta for `true`, TODA operacao de indice recusa -- o
-    /// portao mora no `descritor`, de proposito. Quem pergunta isto e quem
-    /// pode consertar: a recuperacao de transacao reconstroi antes de
-    /// completar o commit, porque sem indice confiavel nao ha insercao.
-    pub fn indice_precisa_reconstruir(&self) -> bool {
-        self.ndx.precisa_reconstruir()
-    }
-
     pub fn reindexar(&mut self) -> Result<Vec<(String, u64)>> {
         // `NdxFile::criar` trunca o arquivo: a arvore antiga vai embora
         // inteira, em vez de ser remendada.
@@ -4376,6 +4404,15 @@ impl Table {
         for (i, lote) in lotes.into_iter().enumerate() {
             self.ndx.construir_em_lote(i, lote)?;
         }
+        // O `.fts` e o caminho IRMAO, e ele nao vinha junto: a propria
+        // mensagem do `.fts` manda «reconstrua o indice de texto com
+        // `reindexar`», e o `reindexar` nao sabia cumprir a ordem. Uma queda
+        // deixava o indice de texto marcado para sempre, e enquanto a marca
+        // estivesse la TODA gravacao na tabela recusava.
+        //
+        // Custa zero para quem nao declarou indice de texto: `reconstruir_fts`
+        // comeca pelo portao `self.fts.is_none()`.
+        self.reconstruir_fts()?;
         self.ndx.verificar()
     }
 

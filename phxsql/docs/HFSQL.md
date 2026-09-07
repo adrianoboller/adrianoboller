@@ -92,13 +92,29 @@ Eles anunciam quatro níveis de isolamento. **Este é o item em que ter o verbo
 sem o nível é mais perigoso que não ter o verbo**, porque quem lê `BEGIN`
 supõe o resto.
 
-### 3.2 Índice de texto completo (*full text*)
+### 3.2 Índice de texto completo (*full text*) — **o motor tem, e a tela ainda não**
 
-Eles acham uma palavra em um milhão de linhas em menos de 2 ms. Aqui, procurar
-uma palavra dentro de um `.memo` é **varredura** — medido: nenhum módulo do
-motor implementa índice invertido (a única ocorrência de «fts» no código é a
-fábrica de idiomas, que é outra coisa). É um arquivo novo, `.fts`, com o mesmo
-desenho de página do `.ndx`.
+Era a maior lacuna medida deste documento, e o motor a fechou em 07/09/2026: o
+`.fts` existe, com o mesmo desenho de página do `.ndx` porque ele **é** um
+`.ndx` por dentro. `IndiceDeTexto` declara o índice sobre uma coluna `Str` ou
+`Memo`, e a busca resolve **pelo nome do índice**, não pela posição.
+
+O que ficou medido, e não estimado:
+
+| pergunta | número |
+|---|---|
+| procurar uma palavra hoje, sem índice | **1,80 µs por linha** (`.reg` 40,1%, `.memo` 43,0%, comparação 16,9%) |
+| dobra de acento na busca de hoje | **0 de 200** — «fenix» não achava «fênix» |
+| manter o índice na gravação | **6,70×** o custo de inserir, e **só** para a tabela que o declara |
+| despejo em lote das chaves | **0,90–0,94×** — recusado com número: não escala com o tamanho do lote |
+
+A decisão do dono foi a saída (a): **manter na gravação**, porque índice
+atrasado responde errado sem avisar. Custa zero para quem não declara — o
+portão é `self.fts.is_none()`, antes de qualquer trabalho.
+
+**O que ainda falta**, e é o que impede o ☑️: a operação no protocolo, o
+caminho pela tela, e a bancada de ponta a ponta contra a varredura no milhão de
+linhas. `docs/FTS.md`.
 
 ### 3.3 Trava por linha
 

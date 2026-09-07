@@ -3579,4 +3579,99 @@ pub fn limpar() {
         ],
         "prazo": 300,
     },
+    # -----------------------------------------------------------------------
+    # O indice de texto: o irmao que era um ARQUIVO
+    #
+    # As tres saem do mesmo achado, e o achado esta em
+    # `docs/cognicao/cognicao_o-irmao-pode-ser-um-arquivo_20260907_0130.md`:
+    # o `.fts` embrulha um `.ndx`, entao herdou a marca de "ficou para tras
+    # numa queda" -- e nao herdou o conserto. Procurei irmao entre as FUNCOES
+    # e nao achei nenhum; o irmao era o arquivo.
+    # -----------------------------------------------------------------------
+    {
+        "id": "fts-reindexar-sem-o-irmao",
+        "titulo": "o reindexar reconstrói só o .ndx, e a queda trava a tabela para sempre",
+        "porque": (
+            "petrea do CLAUDE.md: conserto entra no caminho que o motivou, e o "
+            "caminho IRMAO fica. Aqui o irmao nao era uma funcao ao lado -- era "
+            "o `.fts`, que e um `.ndx` por dentro. Enquanto a marca da queda "
+            "estiver de pe, TODA operacao de indice recusa: a tabela para de "
+            "gravar e o `reindexar` responde Ok. E a mensagem do proprio `.fts` "
+            "manda «reconstrua o indice de texto com `reindexar`» -- ordem que o "
+            "codigo nao sabia cumprir."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        self.reconstruir_fts()?;
+        self.ndx.verificar()
+""",
+        "troca": """        // DEFEITO REPOSTO: o `reindexar` volta a olhar so o `.ndx`. O `.fts`
+        // fica com a marca da queda, e nenhuma gravacao passa depois disso.
+        self.ndx.verificar()
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "indice-de-texto"],
+        "caem": ["a_queda_marca_o_fts_e_o_reindexar_tem_de_baixar_a_marca"],
+        "seguem": [
+            "acha_no_titulo_e_no_corpo",
+            "excluir_de_vez_tira_do_indice",
+            "o_indice_acha_o_mesmo_que_a_varredura",
+        ],
+    },
+    {
+        "id": "fts-reconstruir-sem-recriar",
+        "titulo": "reconstruir o índice de texto sem recriar o arquivo não é idempotente",
+        "porque": (
+            "eu previ o defeito errado, e a prova real mediu: achei que a "
+            "segunda passada duplicaria a ocorrencia (achar a mais, que e "
+            "mentira). A arvore RECUSA -- `Duplicado(chave completa ja existe "
+            "no indice)` --, e quem ia bater nessa recusa era o `reindexar`, em "
+            "toda tabela com pelo menos uma linha. So a recriacao tira a marca "
+            "de queda, de proposito: senao bastaria abrir e fechar para o "
+            "defeito virar invisivel."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let dobra: Vec<bool> = self.indices_de_texto.iter().map(|(_, d)| *d).collect();
+        self.fts = Some(FtsFile::recriar(
+            caminho(&self.diretorio, &self.nome, EXT_FTS),
+            dobra,
+        )?);
+""",
+        "troca": """        // DEFEITO REPOSTO: varre por cima do indice que ja existe, em vez de
+        // recriar o arquivo. A segunda passada bate em chave repetida.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "indice-de-texto"],
+        "caem": ["reconstruir_duas_vezes_nao_duplica"],
+        "seguem": ["acha_no_titulo_e_no_corpo", "excluir_de_vez_tira_do_indice"],
+    },
+    {
+        "id": "fts-abrir-recusa-a-tabela",
+        "titulo": "o .fts ilegível derruba a tabela inteira, em vez de se refazer",
+        "porque": (
+            "o `.fts` e DERIVADO: perde-lo custa uma varredura e nunca custa "
+            "dado. Recusar a tabela aqui manda rodar o `reindexar` numa tabela "
+            "que nao abre -- a mesma ordem impossivel por outro caminho. Vale "
+            "para o arquivo corrompido e para a contagem divergente, que e o "
+            "caso de quem declarou um indice de texto numa tabela com dados."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            match FtsFile::abrir(&caminho_fts, dobra.clone()) {
+                Ok(f) => Some(f),
+                Err(_) => {
+                    refazer = true;
+                    Some(FtsFile::recriar(&caminho_fts, dobra)?)
+                }
+            }
+""",
+        "troca": """            // DEFEITO REPOSTO: `.fts` que nao abre volta a derrubar a tabela.
+            Some(FtsFile::abrir(&caminho_fts, dobra.clone())?)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "indice-de-texto"],
+        "caem": ["fts_corrompido_reconstroi_na_abertura_em_vez_de_derrubar_a_tabela"],
+        "seguem": [
+            "apagar_o_fts_e_reabrir_reconstroi_em_vez_de_achar_nada",
+            "acha_no_titulo_e_no_corpo",
+        ],
+    },
 ]

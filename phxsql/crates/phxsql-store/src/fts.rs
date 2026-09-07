@@ -140,6 +140,23 @@ impl FtsFile {
         Ok(FtsFile::com(ndx, dobra))
     }
 
+    /// Recria o arquivo do zero, apagando o que estivesse la.
+    ///
+    /// E o que `criar` faz sem a recusa de "ja existe", e existe porque o
+    /// `.fts` e DERIVADO: refaze-lo custa uma varredura e nunca custa dado.
+    /// `NdxFile::criar` trunca, entao a arvore antiga vai embora inteira -- e
+    /// com ela a marca de "ficou para tras numa queda", que so sai assim, de
+    /// proposito: senao bastaria abrir e fechar para o defeito virar
+    /// invisivel.
+    ///
+    /// Sem isto, reconstruir duas vezes nao era idempotente -- a segunda
+    /// passada batia em `chave completa ja existe no indice`, e era o
+    /// `reindexar` que ia bater nela.
+    pub fn recriar(caminho: impl AsRef<Path>, dobra: Vec<bool>) -> Result<FtsFile> {
+        let ndx = NdxFile::criar(caminho, &esquema_do_indice(dobra.len()))?;
+        Ok(FtsFile::com(ndx, dobra))
+    }
+
     /// Abre um `.fts` que ja existe. A lista de `dobrar` vem do esquema da
     /// TABELA -- o `.fts` e derivado, e derivado nunca e a fonte.
     pub fn abrir(caminho: impl AsRef<Path>, dobra: Vec<bool>) -> Result<FtsFile> {
@@ -167,6 +184,15 @@ impl FtsFile {
     /// Quantos indices de texto este arquivo carrega.
     pub fn quantos(&self) -> usize {
         self.dobra.len()
+    }
+
+    /// Este `.fts` ficou para tras numa queda?
+    ///
+    /// O `.fts` e um `.ndx` por dentro, entao ele herda a marca -- e herdar a
+    /// marca sem herdar a pergunta era o buraco: quem perguntava so olhava o
+    /// `.ndx`, e a queda que sujasse so o indice de texto passava calada.
+    pub fn precisa_reconstruir(&self) -> bool {
+        self.ndx.precisa_reconstruir()
     }
 
     /// Os termos de um texto, dobrados ou nao conforme o indice pediu.

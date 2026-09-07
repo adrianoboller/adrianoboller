@@ -286,3 +286,42 @@ A prova real é nos dois sentidos, e para um índice ela tem uma forma própria:
    incremental. Divergência aqui é o defeito clássico de índice.
 5. **O medidor da §4.2(a) roda antes** e o número entra no `DESEMPENHO.md`,
    frutífero ou não.
+
+## 8. A queda, e o irmão que era um ARQUIVO
+
+O `.fts` **é um `.ndx` por dentro**: `FtsFile` embrulha `NdxFile` para não
+reescrever a árvore B+ nem a paginação. Ganhou tudo — e ganhou junto a **marca
+de «ficou para trás numa queda»**, que o `.ndx` levanta no cabeçalho *antes* de
+a primeira página suja ir ao disco.
+
+Ganhou a marca. Não ganhava o conserto:
+
+| pergunta | quem respondia antes | quem responde agora |
+|---|---|---|
+| «o índice ficou para trás?» | só o `.ndx` | os **dois** arquivos |
+| «reconstrua» (`reindexar`) | só o `.ndx` | os **dois** arquivos |
+| `.fts` ilegível na abertura | derrubava a tabela | **refaz**, varrendo |
+
+E enquanto a marca estiver de pé, **toda** operação de índice recusa
+(`ndx.rs:887`). Ou seja: uma queda deixava a tabela **sem gravar nunca mais**,
+com o `reindexar` respondendo `Ok` — e a mensagem do próprio `.fts` mandando
+*«reconstrua o índice de texto com `reindexar`»*, uma ordem que o código não
+sabia cumprir.
+
+**Refazer nunca custa dado**, e é isso que autoriza as três respostas acima: o
+`.fts` é **derivado** do `.reg`. Recusar a tabela por causa de um arquivo
+derivado ilegível seria pagar com o dado íntegro o preço de um índice quebrado.
+O mesmo raciocínio já estava escrito para o caso de o arquivo **faltar** — o
+que faltava era estendê-lo ao arquivo **ilegível**, que inclui o caso de quem
+declara um índice de texto numa tabela que já tem dados.
+
+**A recriação é o que tira a marca, e isso é de propósito**: `NdxFile::fechar`
+recusa limpar a marca de um arquivo aberto já sujo, senão bastaria alguém abrir
+e fechar para o defeito virar invisível. Por isso `reconstruir_fts` **recria**
+o arquivo antes de varrer, em vez de escrever por cima — e de quebra vira
+idempotente, que ele não era.
+
+As três guardas estão no catálogo (`fts-reindexar-sem-o-irmao`,
+`fts-reconstruir-sem-recriar`, `fts-abrir-recusa-a-tabela`), e o processo — com
+os dois diagnósticos plausíveis que a medição matou — está em
+`docs/cognicao/cognicao_o-irmao-pode-ser-um-arquivo_20260907_0130.md`.
