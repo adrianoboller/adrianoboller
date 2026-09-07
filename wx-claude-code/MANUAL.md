@@ -65,33 +65,92 @@ claude plugin validate wx-claude-code
 
 ## 2. Comandos `/` do plugin
 
-| Comando | O que faz | Quando |
-| --- | --- | --- |
-| `/wx-claude-code:questionario <projeto>` | o wizard: bloco 0 e letras A–L, um item por mensagem; gera `.wx-migration/` e o contexto do projeto | sempre primeiro |
-| `/wx-claude-code:converter <modo> <projeto>` | conversão por gates G0–G7; `modo` é `inventario`, `plano`, `piloto` ou `completo` | depois do wizard |
-| `/wx-claude-code:pmo <ação> <projeto>` | gerência: `iniciar`, `bloco`, `sprint`, `identificacao`, `status`, `relatorio`, `kanban`, `pdca`, `orcamento`, `entregar`, `painel`, `exportar`, `limpar` | durante toda a conversão |
-| `/wx-claude-code:estilo-telas <projeto>` | paleta, tema e tipografia viram `PRODUCT.md` e `DESIGN.md` pelo Impeccable | quando a letra F foi «sim» |
-| `/wx-claude-code:laudo-tokens [fase]` | auditoria de consumo em três fases, somente leitura | quando quiser medir o custo |
-| `/impeccable <comando> <alvo>` | os comandos de qualidade gráfica (23 segundo o SKILL.md de origem): `shape`, `polish`, `audit`, `critique`, `harden`… | em cada tela convertida |
+<!-- comandos: gerado -->
+| Comando | O que faz |
+| --- | --- |
+| `/wx-claude-code:questionario` | Questionario do projeto: bloco 0, letras A a M. Legado WX e/ou PHP e/ou outra; destino em qualquer linguagem. Gera .wx-migration/ e o contexto. |
+| `/wx-claude-code:pergunta` | Faz UMA pergunta do questionario pelo id (0.16, F9, K7, L6, M, H...) e grava so ela no questionario.json, sem repetir o resto. |
+| `/wx-claude-code:progresso` | Onde o questionario parou: quantas respondidas, o proximo item, e reabrir um ja respondido. |
+| `/wx-claude-code:comandos` | Indice de tudo que o plugin faz: comandos, ids das perguntas do questionario, scripts e skills, com o que cada um resolve. |
+| `/wx-claude-code:artefato` | Submete um artefato do cliente (anotacao, classe OOP, SQL, relatorio, manual, codigo PHP) e o arquiva com hash no catalogo. |
+| `/wx-claude-code:pdf` | Converte um PDF em Markdown citavel: uma secao por pagina, hash no cabecalho, e pagina sem texto marcada OCR em vez de inventada. |
+| `/wx-claude-code:dependencias` | Inventario das dependencias externas do legado achadas no texto: INI, banco, DLL, COM, webservice, e-mail, FTP, impressao. |
+| `/wx-claude-code:preflight` | Gate G0: inventaria as evidencias do legado, classifica a prova e escreve o relatorio que os outros gates leem. |
+| `/wx-claude-code:converter` | Conversao do projeto WX por gates G0-G7: pre-flight, inventario, especificacao, arquitetura, piloto, ondas e cutover. |
+| `/wx-claude-code:interface` | Qual a interface do Rust de destino (terminal, servico, desktop, web, mobile, IoT, TV, CarPlay) e o suporte medido no rustc local. |
+| `/wx-claude-code:estilo-telas` | Estilo das telas convertidas com o Impeccable: paleta, tema e tipografia viram PRODUCT.md e DESIGN.md. |
+| `/wx-claude-code:golden` | Golden master: captura o resultado do legado e compara com o do sistema novo, com tolerancia declarada. Igualdade vira numero. |
+| `/wx-claude-code:testes-da-matriz` | Gera da matriz o teste que ela ja pede, um por BR-*, QRY-* e UI-* sem prova. O gerado FALHA ate alguem escrever a prova. |
+| `/wx-claude-code:constraints` | Restricoes do projeto e o portao C-GATE: registra regra com validador e confere se o resultado esta conforme. |
+| `/wx-claude-code:evidencia` | Livro de evidencias: registra o que foi provado, com estado e limite, e avisa quando a prova vence. |
+| `/wx-claude-code:efeito` | Confere o efeito real de uma acao (arquivo, comando de leitura, commit), com veredito verificado, divergente ou inconclusivo. |
+| `/wx-claude-code:grafo` | Grafo de rastreabilidade: acha codigo sem requisito, requisito sem teste, teste sem evidencia e prova vencida. |
+| `/wx-claude-code:procedencia` | Procedencia da entrega: SLSA provenance e BOM CycloneDX medidos do projeto, com o que eles nao afirmam. |
+| `/wx-claude-code:replay` | Captura a decisao com a base dela (fontes, contrato, restricoes, commit) e reconfere se essa base ainda vale. |
+| `/wx-claude-code:gemeo` | Gemeo da sprint: fotografa contrato, restricoes, evidencias e lacunas do dia, e roda o 'e se' sobre esse estado. |
+| `/wx-claude-code:pmo` | PMO da conversao WX com Scrum, Kanban e PDCA: sprints, quadro com WIP, base de conhecimento, orcamento de tokens e painel medido. |
+| `/wx-claude-code:equipe` | Aciona um papel da equipe prioritaria: zelador, pesquisador, documentador, qualidade, tarefas, GP, testes, status, base, tradutor. |
+| `/wx-claude-code:contrato` | Contrato ativo: o que vale hoje no projeto, separado do historico, com hash para a sessao perceber mudanca. |
+| `/wx-claude-code:telemetria` | Telemetria OTLP/JSON gerada do registro de operacoes, no disco do cliente; enviar para fora e explicito. |
+| `/wx-claude-code:identidade` | Identidade SPIFFE assinada por papel e o atestado do que a maquina realmente expoe (que nao e attestation). |
+| `/wx-claude-code:log` | Mostra o registro das operacoes do plugin no projeto: o que rodou, quando, com que codigo de saida e quanto demorou. |
+| `/wx-claude-code:ambiente` | Instala e confere o ambiente pedido na letra K: privilegios, Rust, PostgreSQL, MySQL, MariaDB, Supabase, GitHub e n8n. |
+| `/wx-claude-code:help-wl` | Consulta o corpus do Help WLanguage (12k paginas) por tema ou funcao, devolvendo a pagina com id e hash. |
+| `/wx-claude-code:rag` | Indexa e busca nos documentos do projeto (BM25 local, sem dependencia), devolvendo trechos com arquivo e linha. |
+| `/wx-claude-code:exportar` | Exporta o projeto resultante, organizado em sete pastas, com manifesto e SHA-256, para a pasta que o usuario escolheu. |
+| `/wx-claude-code:zelador` | Limpa temporarios antigos do projeto (preflight, logs, caches) uma vez por dia e mede o espaco, sem tocar no que importa. |
+| `/wx-claude-code:licenca` | Ativa o plugin por serial, confere a licenca instalada e explica o que ela protege e o que nao. |
+| `/wx-claude-code:laudo-tokens` | Laudo de uso de tokens em 3 fases (auditar, corrigir, habitos). Somente leitura; nada muda sem aprovacao. |
+<!-- fim dos comandos -->
 
-Os comandos têm scripts por trás, que você também pode rodar direto. Todos
-ficam em `$CLAUDE_PLUGIN_ROOT/skills/conversao-wx/scripts/`:
+A lista acima é **gerada** de `commands/*.md` por `docs/dossie/atualizar-manual.py`:
+comando novo aparece aqui sem ninguém lembrar de editar o manual. Todos têm
+scripts por trás, que você também pode rodar direto, em
+`$CLAUDE_PLUGIN_ROOT/skills/conversao-wx/scripts/`:
 
+<!-- scripts: gerado -->
 | Script | Faz |
 | --- | --- |
-| `aplicar_questionario.py` | respostas do wizard viram o `.wx-migration/`, o contexto do projeto (`CLAUDE.md`, `INDEX_FILES.md`, `.claude/`, prompts) e o ambiente (letra K) |
-| `wx_preflight.py` | Gate G0: confere cada anexo fisicamente |
-| `extrair_pdf.py` | texto por página com `arquivo#page=N` e hash |
-| `query_wlanguage_help.py` | busca no corpus do Help por símbolo e tema |
-| `golden.py` | captura resultados do legado e compara com o novo |
-| `rotear_modelo.py` | escolhe o modelo Claude por classe de tarefa e orçamento |
-| `pmo.py` | plano, sprint, kanban, PDCA, painel, entrega |
-| `uso_de_tokens.py` | lê o consumo real das sessões e lança no orçamento |
-| `verificar_ambiente.py` | mede o que está instalado contra o mínimo pedido em K |
-| `licenca.py` | serial de ativação: chaves, gerar, instalar, verificar, hooks |
-| `safe_unpack_bundle.py` | descompacta anexo zipado com defesa contra travessia e zip bomb |
-| `exportar_projeto.py` | salva o projeto resultante organizado, com manifesto de hashes, na pasta do usuário |
-| `zelador.py` | limpa temporários uma vez por dia; nunca toca anexo, matriz, PMO ou código |
+| `aplicar_questionario.py` | Aplica as respostas do questionario (bloco 0 e letras A-J) ao espaco de trabalho .wx-migration/ |
+| `arquivar_artefato.py` | Arquiva um artefato submetido pelo usuario em artefatos/<tipo>/ (bloco M) |
+| `bootstrap_workspace.py` | Create a non-destructive WX migration workspace from plugin templates.""" |
+| `build_help_index.py` | Build a bounded, provenance-preserving index from 12 Help JSON files |
+| `constraints.py` | Registro de restricoes do projeto, e o portao que as confere (C-GATE) |
+| `contrato.py` | Contrato ativo do projeto: o que vale HOJE, separado do historico |
+| `documentar_codigo.py` | Documentador: extrai de cada funcao do codigo a finalidade, os parametros, o |
+| `efeito.py` | Confere o EFEITO de uma acao, nao o codigo de saida dela |
+| `esqueleto_erp.py` | Esqueleto de projeto ERP (letra L6 do questionario) |
+| `evidencia.py` | Livro de evidencias da conversao: o que foi provado, contra o que, e ate onde |
+| `exportar_projeto.py` | Exporta o projeto resultante, organizado, para a pasta que o usuario definir |
+| `extrair_pdf.py` | Extrai o texto dos PDFs do manifesto, pagina a pagina, com localizador e hash |
+| `gemeo.py` | Gemeo da sprint: a sprint inteira num pacote, e o "e se" sobre ela |
+| `gerar_testes_da_matriz.py` | Tira da matriz o teste que ela ja esta pedindo |
+| `golden.py` | Golden master: captura resultados do legado e compara com os do sistema novo |
+| `grafo.py` | Grafo de rastreabilidade: liga requisito, decisao, codigo, teste e evidencia |
+| `i18n.py` | Tradutor multilíngue: centraliza todos os textos da interface num unico JSON |
+| `identidade.py` | Identidade do agente (SPIFFE) e atestado do que a maquina REALMENTE prova |
+| `interface_do_destino.py` | Qual a interface do programa Rust que sai da conversao -- e onde ela roda |
+| `inventario_de_dependencias.py` | O que o legado usa DE FORA dele -- e que a conversao vai ter de resolver |
+| `licenca.py` | Serial de ativacao do WX Claude Code: assinatura RSA-2048 sem dependencias |
+| `listar_perguntas.py` | Lista toda pergunta do questionario com o id que a invoca |
+| `pdf_para_markdown.py` | Converte PDF em Markdown legivel, sem perder o localizador |
+| `pesar_tarefa.py` | Gestor de tarefas: pesa uma tarefa e decide o modelo |
+| `pmo.py` | Painel do PMO da conversao WX: le os artefatos e gera .wx-migration/pmo/status.md |
+| `procedencia.py` | Procedencia da entrega: SLSA provenance e CycloneDX BOM, medidos do projeto |
+| `progresso_do_questionario.py` | Onde o questionario parou, e como voltar para la |
+| `query_wlanguage_help.py` | Verify and query the bundled WLanguage Help corpus without extracting it |
+| `rag.py` | RAG local do projeto, sem dependencias: indexa os documentos que o plugin gera |
+| `replay.py` | Decisao reproduzivel: guarda COM QUE informacao ela foi tomada, e reconfere |
+| `rotear_modelo.py` | Escolhe modelo e effort para uma tarefa da conversao WX |
+| `safe_unpack_bundle.py` | Safely unpack an untrusted ZIP into one new, atomically published folder |
+| `telemetria.py` | Telemetria em OTLP/JSON, gerada do registro de operacoes -- sem crate, sem agente |
+| `uso_de_tokens.py` | Le o uso de tokens medido pelo proprio Claude Code e alimenta o orcamento do PMO |
+| `validate_plugin_bundle.py` | Offline structural validator used when the Claude CLI is unavailable.""" |
+| `validate_traceability.py` | Validate the evidence-to-test traceability contract |
+| `verificar_ambiente.py` | Mede o ambiente pedido na letra K do questionario: o que esta instalado, em que |
+| `wx_preflight.py` | Bounded, non-clobbering audit of WX migration evidence |
+| `zelador.py` | Zelador: limpa os temporarios do projeto de conversao de tempos em tempos |
+<!-- fim dos scripts -->
 
 **Atalhos.** Crie os seus em `.claude/commands/<nome>.md` no projeto. Exemplo
 para polir telas com as regras da conversão já embutidas:

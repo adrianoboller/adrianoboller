@@ -20,7 +20,7 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | scripts Python | 40 |
 | linhas de Python (scripts e hooks) | 17329 |
 | documentos de referência | 19 |
-| testes de regressão | 102 |
+| testes de regressão | 103 |
 | hooks do plugin | 9 |
 | blocos do questionário (0, A–M) | 14 |
 | itens do bloco 0 | 16 |
@@ -35,7 +35,7 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | duração do vídeo de PHP para Rust | 1 min 26 s |
 | corpus do Help (bytes) | 26750976 |
 | páginas válidas do corpus | 12035 |
-| linhas do manual | 825 |
+| linhas do manual | 884 |
 | tabelas do exemplo ESTOQUE | 7 |
 
 ## O que foi provado em sessão real

@@ -1485,6 +1485,50 @@ class Questionario(unittest.TestCase):
         ruim = run(ger, "--project-root", self.tmp, "--perfil", "cobol")
         self.assertNotEqual(ruim.returncode, 0)
 
+    def test_emissor_de_serial_confere_o_que_emite_e_o_pacote_e_autonomo(self):
+        """O emissor nao entrega serial que ele proprio nao valida, e o zip roda
+        num diretorio vazio -- ler a lista de arquivos nao prova isso."""
+        emitir = RAIZ / "ferramentas/wx-serial/emitir.py"
+        casa = self.tmp / "casa-do-vendedor"
+        env = dict(os.environ, WX_SERIAL_DIR=str(casa))
+        def rodar(*args):
+            return subprocess.run([sys.executable, str(emitir), *[str(a) for a in args]],
+                                  capture_output=True, text=True, env=env, cwd=self.tmp)
+        self.assertEqual(rodar("chaves", "--saida", self.tmp / "k").returncode, 0)
+        priv = self.tmp / "k/chave-privada.json"
+        self.assertEqual(oct(priv.stat().st_mode)[-3:], "600")
+        # validade no passado nao vira serial
+        vencido = rodar("novo", "--cliente", "X", "--validade", "2020-01-01", "--chave-privada", priv)
+        self.assertEqual(vencido.returncode, 2)
+        self.assertIn("já passou", vencido.stderr)
+        r = rodar("novo", "--cliente", "Softhouse Teste", "--validade", "2099-12-31",
+                  "--chave-privada", priv)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        serial = r.stdout.strip()
+        self.assertTrue(serial.startswith("WX2."))
+        # o livro nasce fora do repositorio, 0600, e sabe reenviar
+        livro = casa / "emissoes.jsonl"
+        self.assertTrue(livro.is_file())
+        self.assertEqual(oct(livro.stat().st_mode)[-3:], "600")
+        ident = json.loads(rodar("livro", "--json").stdout)[0]["id"]
+        self.assertEqual(rodar("reenviar", ident).stdout.strip(), serial)
+        # o pacote roda sozinho num diretorio vazio
+        zip_ = self.tmp / "wx-serial.zip"
+        self.assertEqual(rodar("empacotar", "--saida", zip_).returncode, 0)
+        import zipfile
+        vazio = self.tmp / "vazio"
+        vazio.mkdir()
+        with zipfile.ZipFile(zip_) as z:
+            nomes = z.namelist()
+            z.extractall(vazio)
+        self.assertNotIn("chave-privada.json", nomes)
+        self.assertNotIn("emissoes.jsonl", nomes)
+        solto = subprocess.run(
+            [sys.executable, str(vazio / "emitir.py"), "chaves", "--saida", str(vazio / "k2")],
+            capture_output=True, text=True, env=dict(env, WX_SERIAL_DIR=str(vazio / "livro")),
+            cwd=vazio)
+        self.assertEqual(solto.returncode, 0, solto.stderr)
+
     def test_gemeo_fotografa_a_sprint_e_o_e_se_declara_o_limite(self):
         self._aplicado()
         run(SCRIPTS / "constraints.py", "--project-root", self.tmp, "criar",

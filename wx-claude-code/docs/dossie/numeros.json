@@ -10,7 +10,7 @@
   "scripts": 40,
   "linhas_de_python": 17329,
   "referencias": 19,
-  "testes": 102,
+  "testes": 103,
   "blocos_do_questionario": 14,
   "itens_do_bloco_0": 16,
   "subperguntas_f": 14,
@@ -24,7 +24,7 @@
   "corpus_bytes": 26750976,
   "corpus_paginas_validas": 12035,
   "hooks": 9,
-  "manual_linhas": 825,
+  "manual_linhas": 884,
   "exemplo_tabelas": 7,
   "arquivos_gerados_pelo_questionario": 102,
   "skills_erp": 8

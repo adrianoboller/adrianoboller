@@ -1,0 +1,6 @@
+# nada de segredo nem de cliente aqui dentro, nunca
+chave-privada.json
+chave-publica.json
+emissoes.jsonl
+segredo/
+*.zip

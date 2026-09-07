@@ -29,7 +29,7 @@ DOSSIE = RAIZ / "docs/dossie"
 CARIMBAR = [
     (RAIZ / "docs/ativacao-do-serial.html", r"(WX Claude Code )\d+\.\d+\.\d+(?= · instrução)"),
 ]
-GERADORES = ["numeros-do-plugin.py", "gerar-organograma.py", "gerar-evolucao.py", "gerar-comandos.py",
+GERADORES = ["atualizar-manual.py", "numeros-do-plugin.py", "gerar-organograma.py", "gerar-evolucao.py", "gerar-comandos.py",
              "gerar-fluxo.py", "gerar-workflow.py", "gerar-apresentacao.py", "gerar-o-que-falta.py",
              "gerar-relatorio-cenarios.py", "gerar-dossie.py"]
 
