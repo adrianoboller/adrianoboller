@@ -1,0 +1,155 @@
+{
+  "quando": "2026-09-07T05:10:42",
+  "versao": "phxsqld 0.18.0 (0a6992cc91df-sujo) x86_64-unknown-linux-gnu",
+  "operacoes_conferidas_no_catalogo": 15,
+  "linhas": [
+    {
+      "chave": "insert_protocolo",
+      "titulo": "INSERT — `inserir`",
+      "estado": "ok",
+      "prova": "inseriu e a linha voltou com o valor gravado"
+    },
+    {
+      "chave": "insert_lote",
+      "titulo": "INSERT em lote — `bulkinsert`",
+      "estado": "ok",
+      "prova": "200 gravadas, 0 recusadas; a tabela ficou com 201"
+    },
+    {
+      "chave": "select_protocolo",
+      "titulo": "SELECT — `varrer` e `buscar` pelo índice",
+      "estado": "ok",
+      "prova": "varrer devolveu 5 linhas; buscar pelo indice achou 1"
+    },
+    {
+      "chave": "select_where",
+      "titulo": "SELECT com filtro — `varrer` com `onde`",
+      "estado": "ok",
+      "prova": "o WHERE cortou para 101 de 201"
+    },
+    {
+      "chave": "update_protocolo",
+      "titulo": "UPDATE — `atualizar`",
+      "estado": "ok",
+      "prova": "alterou e a leitura seguinte trouxe o valor novo"
+    },
+    {
+      "chave": "delete_suave",
+      "titulo": "DELETE suave — some da grade, fica no arquivo",
+      "estado": "ok",
+      "prova": "marca e some da grade: 200 visiveis de 201 registros, e a lixeira NAO e usada (0) -- a linha continua inteira no `.reg`"
+    },
+    {
+      "chave": "delete_restaurar",
+      "titulo": "DELETE suave → `restaurar`",
+      "estado": "ok",
+      "prova": "voltou com o MESMO rowid: 201 visiveis, lixeira em 0"
+    },
+    {
+      "chave": "delete_de_vez",
+      "titulo": "DELETE de vez — `excluir` com `fisico`",
+      "estado": "ok",
+      "prova": "destroi a linha (200 visiveis) e guarda o conteudo inteiro na lixeira antes (1) -- inclusive o `.bin` e o `.memo`, que esta mesma exclusao vai liberar"
+    },
+    {
+      "chave": "integridade",
+      "titulo": "Integridade: nunca matar o pai que tem filhos",
+      "estado": "ok",
+      "prova": "recusou a mae COM filha e deixou passar a SEM filha"
+    },
+    {
+      "chave": "sql_select",
+      "titulo": "SELECT pela camada SQL",
+      "estado": "ok",
+      "prova": "a camada SQL executa"
+    },
+    {
+      "chave": "sql_insert",
+      "titulo": "INSERT pela camada SQL",
+      "estado": "planejado",
+      "prova": "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equi"
+    },
+    {
+      "chave": "sql_update",
+      "titulo": "UPDATE pela camada SQL",
+      "estado": "planejado",
+      "prova": "[SP000018] esquema invalido: SQL, coluna 1: UPDATE ainda nao existe nesta camada -- so SELECT. A operacao equi"
+    },
+    {
+      "chave": "sql_delete",
+      "titulo": "DELETE pela camada SQL",
+      "estado": "planejado",
+      "prova": "[SP000018] esquema invalido: SQL, coluna 1: DELETE ainda nao existe nesta camada -- so SELECT. A operacao equi"
+    },
+    {
+      "chave": "backup",
+      "titulo": "Backup do banco pelo protocolo",
+      "estado": "ok",
+      "prova": "gerou /tmp/phx-gestao-tkcgx6sq/bkp/g_adm_2026-09-07_0510.zip"
+    },
+    {
+      "chave": "restaurar_backup",
+      "titulo": "Restauração do backup, provada por leitura",
+      "estado": "ok",
+      "prova": "restaurou com outro nome e a linha 1 voltou: 'ANA'"
+    }
+  ],
+  "de_outras_bancadas": {
+    "replicacao": {
+      "estado": "ok",
+      "quando": "2026-09-07",
+      "data_do_mtime": false,
+      "bruto": {
+        "master_linhas_s": 37810,
+        "replica_eventos_s": 36356,
+        "alcance_s": 2.8,
+        "retomada_subiu_ms": 418,
+        "retomada_alcance_s": 0.4,
+        "iguais_no_fim": true,
+        "linhas": 105001,
+        "atraso_ms": {
+          "1 insercao": 2014,
+          "1.000 insercoes em lote": 1168,
+          "1 alteracao": 826,
+          "1 exclusao suave": 970,
+          "1 restauracao": 835,
+          "1 exclusao fisica": 840,
+          "1 linha com memo de 200 KB": 826
+        },
+        "custo_da_imagem": {
+          "sem_imagem_linhas_s": 21740,
+          "com_imagem_linhas_s": 19531,
+          "sem_imagem_bytes_por_evento": 44,
+          "com_imagem_bytes_por_evento": 223
+        },
+        "cascata": {
+          "topologia": "master -> slave01 -> slave03 ; master -> slave02",
+          "um_salto_ms": 1679,
+          "dois_saltos_ms": 1827
+        },
+        "quando": "2026-09-07",
+        "versao": "0.18.0",
+        "maquina": "quatro processos phxsqld em 127.0.0.1, no mesmo container",
+        "topologia": "master -> slave01, slave02, slave03",
+        "maquina_ocupada": true
+      }
+    },
+    "cluster": {
+      "estado": "ok",
+      "quando": "2026-09-07 05:04",
+      "data_do_mtime": true,
+      "bruto": {
+        "redireciona": "[SP000028] REDIRECIONA 127.0.0.1:5310 -- este no e replica; o master do cluster e no1 (epoca 0)",
+        "promocao_s": 3.8,
+        "escrita_aceita_s": 3.8,
+        "emails_promocao": 1,
+        "emails_degradacao": 6,
+        "no3_nao_promoveu": true,
+        "epoca_do_isolado": 1,
+        "linhas_no_fim": 3801,
+        "sem_cluster_nada_muda": true,
+        "falhas": []
+      }
+    }
+  }
+}
