@@ -20,6 +20,44 @@ ausência de transação: ele as documenta extensamente.
 
 ### Corrigido
 
+- **A bancada das transações existia, passava, e era INVISÍVEL.** O dono
+  perguntou se a transação atômica funciona; a resposta certa era rodar o
+  medidor, não citar o documento. Ele deu **36 conferências, 0 falhas** pelo
+  soquete — inclusive `SIGKILL` no meio de um `COMMIT` de 3.000 linhas, com o
+  banco reaberto e recuperando em 22 ms. Mas o medidor **não gravava
+  `resultados.json`** e a bancada **não estava declarada** na
+  `pagina-dos-testes.py`: a página que existe justamente para dizer o que este
+  banco prova não listava a prova das transações. Ela não estava «NÃO MEDIDA» —
+  ela não estava. *Medidor que não grava resultado não aparece nem como não
+  medido: some, e a pergunta que ele responde volta pela boca do dono.* Hoje
+  grava, está declarada, e ganhou `prova-dos-portoes.py` com controle positivo.
+
+- **E o defeito reposto ensinou mais que a corrida limpa.** Apagando a marca
+  `transacao_<id>.tx` antes de reabrir, o banco volta com **43 de 3.000** —
+  pela metade. Isso **não é defeito do motor, é a demonstração do contrário**:
+  o `SIGKILL` cai no meio da passada de commit, então há mesmo meia gravação no
+  `.reg` naquele instante, e a marca é a única coisa que a resolve. *O «nunca
+  metade» não é acidente do caminho de escrita — é comprado pela marca, e o
+  preço dela fica invisível enquanto ela está lá.* `docs/ACID.md` §2.3.1.
+
+### Mudado
+
+- **Os botões da barra de ferramentas, ≥10% mais estreitos** — pedido do dono.
+  Medido **antes** de tocar no CSS: 23 botões, 1.476,52 px somados, média 64,2.
+  O número que decidiu o conserto foi outro: **15 dos 23 estavam exatamente em
+  62 px**, o `min-width`; nos outros 8 manda o **rótulo**. Mexer numa
+  propriedade só consertaria metade da barra. Três peças: `min-width` 62→55,
+  `padding` horizontal 9→5 e `letter-spacing:-.02em` no rótulo — tracking, e
+  não fonte menor, que custaria legibilidade nos 23 para consertar 8. **O irmão
+  custou uma medição:** depois da primeira mudança a soma abaixo de 1025 px
+  mudou **0,0%**, porque a `@media (max-width:1024px)` reescreve as duas
+  propriedades — e aqui o irmão **não é uma função**: em folha de estilo, irmão
+  é quem **redeclara a mesma propriedade**. Resultado em 10 larguras, de 1920 a
+  360 px: **todos os 23 encolheram ≥10%**, pior caso 11,3% no desktop e 10,7%
+  no celular, com **zero rótulos cortados**. Soma 1.476,52 → **1.293,56 px**.
+  E um ganho não pedido: em 1440 px a barra caiu de **duas fileiras para uma**
+  (102 → 56 px) — «Diretivas» e «Repair» transbordavam.
+
 - **Três painéis do dossiê estavam parados sem um único dígito digitado.** 198
   pedidos onde eram 203, 428 testes na maior área onde eram 451, e 26.762
   linhas/s de replicação onde o `resultados.json` medido diz **37.810** — um

@@ -192,6 +192,41 @@ de projeto, não de rotina.** Eu a tratei como rotina por rodadas — rearmar o
 que caiu — e rotina não faz a pergunta que destrava, porque rotina repete a
 pergunta que já tem resposta.
 
+### Rodada da pergunta e do botão — 7 de setembro de 2026
+
+Duas perguntas do dono no mesmo turno, e elas não pedem o mesmo escalão.
+
+| frente | escalão | por quê |
+|---|---|---|
+| «o transaction atomic está funcionando?» | **forte** | a resposta é sobre garantia de durabilidade e recuperação; e desenhar o defeito reposto é projeto, não roteiro |
+| os botões da barra ≥10% mais estreitos | **forte** | parecia mecânico e não era: qual propriedade manda muda de botão para botão, e escolher entre tracking e fonte menor é decisão de desenho |
+| rodar os medidores e comparar os retratos | mecânico e verificável | a saída se confere sozinha, com dois JSON lado a lado |
+
+**Nenhuma frente foi delegada**, e é dispensa registrada: as duas terminam na
+mesma árvore, e a segunda exige olhar a captura — relatório de agente não
+substitui ver a barra.
+
+**Os papéis, e o que cada um fez ou por que foi dispensado:**
+
+| papel | nesta rodada |
+|---|---|
+| **A — orquestrador** | integrou. E o que as duas frentes têm em comum é o método, não o assunto: **as duas se resolveram medindo antes de decidir**, e nas duas a primeira conclusão morreu medida |
+| **B — engenheiro** | convocado de leve: nenhuma linha de Rust mudou de lógica, só o CSS embutido. Portões conferidos — `fmt` limpo, `clippy` zero avisos, **1.659 testes verdes** |
+| **C — DBA** | **dispensado**: nada tocou formato em disco. Mas a frente das transações **confirma** a decisão dele — o `ROLLBACK` não queima slot, e a ordem de digitação sai intacta da queda |
+| **D — zelador** | **dispensado**: a rodada não encheu disco; os medidores limpam o que sobem, e nenhum processo alheio foi tocado |
+| **E — designer** | **o papel central da segunda frente**: escolher tracking em vez de fonte menor, e recusar a saída barata de encolher a caixa comendo o rótulo. A prova foi **abrindo o navegador**, como manda a lei — e a captura mostrou o ganho que o número não mostrava, a barra caindo de duas fileiras para uma |
+| **F — prova real** | **o papel central da primeira**: o defeito reposto derrubou a conferência certa, e ensinou mais que a corrida limpa — 43 de 3.000 quando a marca some |
+| **G — QA** | catraca nenhuma mudou, e **dois buracos ficam declarados**: um defeito reposto só nas transações (faltam marca corrompida e queda durante a recuperação), e **nenhuma catraca travando a largura dos botões** |
+| **H — documentação** | duas cognições, `ACID.md` §2.3.1, pedidos 205 e 206, `CHANGELOG` |
+| **I — versionador** | commit por decisão, na branch combinada |
+| **J — pesquisador** | **dispensado**: não havia receita de fora |
+
+E a lição de escalão: **«encolher um botão 10%» parecia trabalho mecânico e
+não era.** O que o tornou de projeto foi a medição — descobrir que quinze
+botões obedeciam a uma propriedade e oito a outra. Escalão se decide **depois**
+de olhar o problema, e tarefa que parece roteiro merece uma medida antes de
+receber o modelo leve.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

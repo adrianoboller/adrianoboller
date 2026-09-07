@@ -49,11 +49,19 @@ SENHA = "segredo1"
 
 PIDS = []
 FALHAS = []
+CONFERENCIAS = []
+
+# O defeito REPOSTO, para provar que este medidor reprova quando o motor erra.
+# Passar so quando esta tudo certo nao prova nada: teste que passa por engano e
+# pior que teste que falta. Os defeitos e o que cada um TEM de derrubar estao
+# em `prova-dos-portoes.py`, que roda este script uma vez por defeito.
+DEFEITO = os.environ.get("PHX_TX_DEFEITO", "")
 
 
 def ok(nome, condicao, detalhe=""):
     if not condicao:
         FALHAS.append(f"{nome}: {detalhe}")
+    CONFERENCIAS.append({"nome": nome, "passou": bool(condicao)})
     print(("  OK   " if condicao else "  FALHA") + f"  {nome}" +
           (f"  -- {detalhe}" if detalhe else ""))
 
@@ -197,6 +205,38 @@ def visiveis(c, tabela, teto=1000):
     a LEITURA ve, e nao o que a tabela tem."""
     r = c.fala({"op": "varrer", "database": "loja", "tabela": tabela, "max": teto})
     return len(r["resultado"]["linhas"]) if r.get("ok") else -1
+
+
+def gravar_resultado(linhas_no_fim, antes_do_commit):
+    """Deixa o `resultados.json` -- sem ele esta bancada e INVISIVEL.
+
+    Achado em 07/09/2026, quando o dono perguntou «o transaction atomic esta
+    funcionando?»: este medidor rodava, passava 36 de 36, e a pagina que existe
+    justamente para dizer o que este banco prova NAO O LISTAVA. Bancada que nao
+    grava resultado nao aparece nem como NAO MEDIDA -- some, e a pergunta volta.
+
+    Com defeito reposto o arquivo NAO se grava: publicar o retrato de uma
+    corrida sabotada e pior que nao publicar nada.
+    """
+    if DEFEITO:
+        print(f"  [defeito {DEFEITO} reposto: resultado NAO gravado]")
+        return
+    saida = os.path.join(AQUI, "resultados.json")
+    with open(saida, "w", encoding="utf-8") as f:
+        json.dump({
+            "conferencias": len(CONFERENCIAS),
+            "falhas": len(FALHAS),
+            "linhas_apos_a_queda": linhas_no_fim,
+            "linhas_antes_do_commit": antes_do_commit,
+            "desfechos_validos": [antes_do_commit, antes_do_commit + 3000],
+            "ficou_pela_metade": linhas_no_fim not in
+                                 (antes_do_commit, antes_do_commit + 3000),
+            "medido_em": time.strftime("%Y-%m-%d %H:%M"),
+            "prova": "pelo SOQUETE, com SIGKILL no meio de um COMMIT de 3.000 "
+                     "linhas e o banco reaberto depois",
+            "detalhe": [c["nome"] for c in CONFERENCIAS],
+        }, f, ensure_ascii=False, indent=1)
+    print(f"resultado gravado: {saida}")
 
 
 def main():
@@ -406,6 +446,15 @@ def main():
     ok("a marca .tx ficou no disco", len(sobrou) >= 1, f"{sobrou}")
 
     print("\n== 8. o banco reabre e SABE DIZER o que aconteceu ==")
+    if DEFEITO == "apaga-a-marca":
+        # Sem a marca, o motor nao tem como saber que houve um commit em curso.
+        # As linhas nao aparecem -- o que por si so e um desfecho LEGITIMO --, e
+        # e por isso que este defeito nao ataca o «nunca metade»: ataca a outra
+        # metade do contrato, a de o relatorio DIZER qual dos dois aconteceu.
+        d = os.path.join(BASE, "base", "loja")
+        for n in marcas():
+            os.remove(os.path.join(d, n))
+        print(f"  [defeito reposto: {len(sobrou)} marca(s) apagada(s) antes de reabrir]")
     subir()
     ok("o servidor voltou", esperar_porta(PORTA))
     g = Ligacao()
@@ -484,6 +533,7 @@ def main():
        h.fala({"op": "transacao"})["resultado"]["transaction_state"] == "IDLE")
 
     derrubar()
+    gravar_resultado(total, antes_do_commit)
     print()
     if FALHAS:
         print(f"{len(FALHAS)} FALHA(S):")

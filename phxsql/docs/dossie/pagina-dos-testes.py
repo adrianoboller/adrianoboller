@@ -214,6 +214,20 @@ BANCADAS = [
                    ("iguais_no_fim", "os quatro iguais no fim", "")],
     },
     {
+        "nome": "Transações — atomicidade pelo soquete",
+        "json": "bancada/transacoes/resultados.json",
+        "roda": "python3 bancada/transacoes/provar.py",
+        "prova": "SIGKILL no meio de um COMMIT de 3.000 linhas, e o banco "
+                 "reaberto depois — a exigência não é «as 3.000 estão lá», é "
+                 "NUNCA METADE, com o relatório dizendo qual dos dois. E o "
+                 "portão se prova apagando a marca .tx: sem ela o banco volta "
+                 "pela metade, que é o preço da garantia aparecendo",
+        "campos": [("conferencias", "conferências pelo soquete", ""),
+                   ("falhas", "falhas", ""),
+                   ("linhas_apos_a_queda", "linhas depois da queda", ""),
+                   ("ficou_pela_metade", "ficou pela metade", "")],
+    },
+    {
         "nome": "ACID — as quatro letras",
         "json": "bancada/acid/resultado.json",
         "roda": "python3 bancada/acid/prova.py",

@@ -174,6 +174,37 @@ aplicado», passando por cinco pontos intermediários — e em **nenhum** deles
 uma tabela ficou gravada com a outra vazia. É a recuperação completando o que
 faltava a partir da marca, e o relatório do arranque diz quanto ela reaplicou.
 
+### 2.3.1 A prova do outro sentido: apagar a marca produz a metade
+
+Medido em **07/09/2026**, com `PHX_TX_DEFEITO=apaga-a-marca` no
+`bancada/transacoes/provar.py`, e é a medição que mais ensina desta seção.
+
+A corrida limpa é a de sempre: `SIGKILL` no meio de um `COMMIT` de 3.000
+linhas, banco reaberto, **3001 linhas** — 36 conferências, zero falhas.
+Apagando a marca `transacao_<id>.tx` entre o `SIGKILL` e a reabertura, o banco
+volta com **43 de 3.000**. Pela metade.
+
+**Isto não é defeito: é a demonstração do contrário.** O `SIGKILL` cai no meio
+da passada de commit, então naquele instante há mesmo meia gravação no `.reg`
+— é o estado normal e inevitável de um processo morto no meio do trabalho. A
+marca é a **única** coisa que o resolve, reaplicando o que faltava ao reabrir.
+
+Daí a frase que esta seção passa a carregar: **o «nunca metade» não é acidente
+do caminho de escrita — é comprado pela marca**, e o preço dela fica invisível
+enquanto ela está lá. Uma prova que só observasse a corrida limpa concluiria
+que o disco «nunca tem meia transação», e essa aparência é exatamente o que a
+marca produz.
+
+O 43 muda a cada corrida: matar o processo no instante certo é uma corrida, e o
+quanto a passada já tinha escrito depende de onde o sinal caiu. O que **não**
+muda é o par de desfechos válidos — `1` ou `3001` — e o relatório de
+recuperação dizendo qual dos dois.
+
+O portão fecha nos dois sentidos em `bancada/transacoes/prova-dos-portoes.py`:
+o defeito tem de **derrubar** a conferência nomeada, e a corrida sem defeito
+tem de passar limpa. Recusa sem controle positivo que passa já custou dois
+vereditos errados nesta casa.
+
 ### 2.4 A cascata: o que era verdade, o que mudou, e o que sobra
 
 O pedido 163 escreveu, e a frase virou lei citada: **«não há transação: a

@@ -67,10 +67,28 @@ async function medir(page, largura) {
     // «Escondido» so e defeito quando a barra NAO rola: se ela rola, o botao
     // esta fora da vista mas alcancavel, que e o desenho.
     const passam = botoes.filter(b => b.getBoundingClientRect().right > dir + 1).length;
+    // A LARGURA DE CADA BOTAO, que e o que o pedido de encolher 10% cobra.
+    // Nao se le do CSS: `min-width` e `padding` disputam com o ROTULO, e quem
+    // ganha muda de botao para botao. So o `getBoundingClientRect` sabe.
+    const larguras = botoes.map(b => ({
+      rot: (b.querySelector('.rot')?.textContent || b.title || '').trim(),
+      w: +b.getBoundingClientRect().width.toFixed(2),
+    }));
+    const soma = +larguras.reduce((a, x) => a + x.w, 0).toFixed(2);
     return {
       fileiras: topos.length,
       topos,
       botoes: botoes.length,
+      larguras,
+      larguraSomada: soma,
+      larguraMedia: +(soma / (larguras.length || 1)).toFixed(2),
+      larguraMaxima: larguras.length ? Math.max(...larguras.map(x => x.w)) : 0,
+      // Rotulo cortado e o preco que NAO se pode pagar por encolher: se a
+      // caixa ficou menor que o texto, o botao mente sobre o que faz.
+      rotuloCortado: botoes.filter(b => {
+        const r = b.querySelector('.rot');
+        return r && r.scrollWidth > r.clientWidth + 1;
+      }).length,
       flexWrap: bs.flexWrap,
       alturaBarra: Math.round(barra.getBoundingClientRect().height),
       rola,

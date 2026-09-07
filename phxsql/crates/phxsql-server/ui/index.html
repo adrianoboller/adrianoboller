@@ -377,10 +377,25 @@ th input[type=checkbox],th input[type=radio]{
      significaria sete fileiras. */
   flex-wrap:wrap;
 }
+/* PEDIDO DO DONO, 07/09/2026: «os botoes da barra podem ficar menores na
+   horizontal pelo menos 10%».
+
+   Medido ANTES de mexer, com o navegador: 23 botoes, 1.476,52 px somados,
+   media 64,2 px -- e o numero que decidiu o conserto foi outro: QUINZE dos 23
+   estavam exatamente em 62 px, o `min-width`. Nesses o rotulo nem chega perto
+   de mandar; nos outros oito manda ele. Mexer so no `min-width` deixaria
+   «Diagrama ER» (80,03 px) e «Transacoes» (71,88 px) do mesmo tamanho, e
+   mexer so no `padding` nao moveria os quinze. Por isso os dois descem juntos.
+
+   O `padding` horizontal e o que ainda cabe sem o icone de 19 px encostar na
+   borda, e a altura nao muda: o pedido era horizontal. O que NAO se paga por
+   isto e rotulo cortado -- botao com o texto comido mente sobre o que faz, e
+   o medidor conta `scrollWidth > clientWidth` do rotulo justamente para
+   reprovar essa saida. */
 #ferramentas .fer{
   display:flex;flex-direction:column;align-items:center;gap:3px;
   background:none;border:1px solid transparent;border-radius:5px;
-  padding:5px 9px 4px;min-width:62px;cursor:pointer;
+  padding:5px 5px 4px;min-width:55px;cursor:pointer;
   font-family:inherit;font-size:10px;line-height:1.15;color:var(--texto-2);
   white-space:nowrap;position:relative;flex:none;
 }
@@ -389,7 +404,12 @@ th input[type=checkbox],th input[type=radio]{
 #ferramentas .fer svg{width:19px;height:19px;display:block;flex:none}
 /* A cor vem do proprio botao: cada ferramenta tem a sua, e o SVG a herda. */
 #ferramentas .fer svg *{stroke:currentColor}
-#ferramentas .fer .rot{color:var(--texto-2)}
+/* Tracking negativo no rotulo, e NAO fonte menor: quinze dos 23 botoes sao
+   presos ao `min-width`, mas os outros oito sao presos ao TEXTO -- «Diagrama
+   ER» media 80,03 px e nao se movia por padding nenhum. Baixar a fonte custa
+   legibilidade em todos os 23 para consertar oito; -0,02em aperta so o texto,
+   e a prova de que nao cortou e o medidor contando `scrollWidth` do rotulo. */
+#ferramentas .fer .rot{color:var(--texto-2);letter-spacing:-.02em}
 #ferramentas .fer:hover .rot{color:var(--texto)}
 
 /* O que ainda nao existe: apagado, mas presente e clicavel. */
@@ -1822,7 +1842,13 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
   /* Uma fileira que rola. Envolver aqui daria quatro a sete fileiras, e a
      barra comeria a tela antes de o conteudo comecar. */
   #ferramentas{flex-wrap:nowrap;overscroll-behavior-x:contain}
-  #ferramentas .fer{min-width:56px;padding:5px 7px 4px;font-size:9.5px}
+  /* O IRMAO da regra de cima, e ele custou uma medicao para aparecer: baixar
+     o `min-width` e o `padding` do desktop nao moveu NADA abaixo de 1025px --
+     0,0%, medido --, porque esta regra os reescreve. Conserto entra no caminho
+     que o motivou, e o caminho irmao fica. Aqui o `padding` desce a 4px porque
+     ja partia de 7, e a fonte de 9,5px nao desce mais: e uma barra que ROLA no
+     celular, e texto menor que isso deixa de se ler antes de economizar. */
+  #ferramentas .fer{min-width:50px;padding:5px 4px 4px;font-size:9.5px}
   #ferramentas .fer svg{width:18px;height:18px}
 
   /* Duas colunas onde couber: o piso de 330px de `.cartas` deixava uma coluna
