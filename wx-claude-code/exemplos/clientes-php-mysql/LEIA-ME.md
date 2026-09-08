@@ -31,11 +31,18 @@ destino/
 - **O golden master tem de sair do legado rodando**, não da leitura do código:
   foi assim que o salto do auto-increment no e-mail repetido entrou como caso,
   e o Rust teve de reproduzi-lo.
-- **Interface só se prova exercitando.** Os botões vazavam da tabela
-  (`display:flex` direto no `<td>`); ler o código não mostrava. O conserto
-  venceu a prova UI-001, a prova foi refeita (EVID-0005), e o grafo aprendeu a
-  não acusar como vencida uma prova que outra, do mesmo assunto e com o hash
-  de hoje, superou.
+- **Interface só se prova exercitando.** A célula de ações tinha
+  `display:flex` direto no `<td>`, deixava de ser célula de tabela e a borda
+  da linha parava antes dela; ler o código não mostrava. O conserto venceu a
+  prova UI-001, a prova foi refeita (EVID-0005), e o grafo aprendeu a não
+  acusar como vencida uma prova que outra, **verificada**, do mesmo assunto e
+  com o hash de hoje, superou — a superada vai para o histórico, e uma prova
+  nova que falhou não supera nada.
+- **Medida que passa com o defeito reposto não mede.** A primeira medição do
+  layout no `tela.mjs` conferia se cada botão cabia no retângulo do seu
+  `<td>` — e passou 4/4 com o defeito de volta, porque o `<td>` flex envolve os
+  botões do mesmo jeito. A medida certa é a causa: todo `<td>` do corpo
+  continua `table-cell`. Com o defeito reposto: 12/15, e o script falha.
 - **`interface escolher` gravava só na raiz**, e o conversor lê a cópia em
   `.wx-migration/`. Hoje grava nas duas que existirem.
 - **O zip do cliente vinha sem `marketplace.json`**, e `claude plugin list`

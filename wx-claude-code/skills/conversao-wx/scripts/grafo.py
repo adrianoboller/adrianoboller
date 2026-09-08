@@ -214,21 +214,25 @@ def montar(raiz: Path) -> dict:
 
     # Achado no primeiro projeto: consertei a tela, registrei a prova NOVA sobre
     # o arquivo novo, e o grafo continuou acusando a prova velha como vencida.
-    # Prova superada por outra, do mesmo assunto, com o hash de HOJE, nao e
-    # lacuna: e historico. So conta vencida a que ninguem refez.
-    atuais = {(e.get("assunto") or {}).get("arquivo")
-              for e in evids
-              if (e.get("assunto") or {}).get("arquivo") and (raiz / e["assunto"]["arquivo"]).is_file()
-              and sha256(raiz / e["assunto"]["arquivo"]) == (e.get("assunto") or {}).get("sha256")}
+    # Prova superada por outra VERIFICADA, do mesmo assunto, com o hash de
+    # HOJE, nao e lacuna: e historico -- e vai para `superadas`, para nao sumir
+    # calada. So conta vencida a que ninguem refez. Uma prova nova que FALHOU
+    # nao supera nada: o arquivo de hoje continua sem prova que valha.
+    hash_hoje: dict[str, str] = {}
+    for e in evids:
+        assunto = (e.get("assunto") or {}).get("arquivo")
+        if assunto and assunto not in hash_hoje and (raiz / assunto).is_file():
+            hash_hoje[assunto] = sha256(raiz / assunto)
+    atuais = {(e.get("assunto") or {}).get("arquivo") for e in evids
+              if e.get("estado") == "verificado"
+              and hash_hoje.get((e.get("assunto") or {}).get("arquivo")) == (e.get("assunto") or {}).get("sha256")}
+    superadas = []
     for e in evids:
         assunto = (e.get("assunto") or {}).get("arquivo")
         sha = (e.get("assunto") or {}).get("sha256")
-        if assunto and sha:
-            p = raiz / assunto
-            if (not p.is_file() or sha256(p) != sha) and assunto not in atuais:
-                achados["prova_vencida"].append(
-                    {"evidencia": e.get("id"), "arquivo": assunto,
-                     "afirmacao": e.get("afirmacao", "")[:80]})
+        if assunto and sha and hash_hoje.get(assunto) != sha:
+            item = {"evidencia": e.get("id"), "arquivo": assunto, "afirmacao": e.get("afirmacao", "")[:80]}
+            (superadas if assunto in atuais else achados["prova_vencida"]).append(item)
 
     for c in consts:
         if c.get("estado") != "ativa":
@@ -246,6 +250,7 @@ def montar(raiz: Path) -> dict:
                    "evidencias": len(evids), "restricoes": len(consts), "decisoes": len(decs)},
         "achados": achados,
         "provados": sorted(x for x in provados if x),
+        "superadas": superadas,
     }
 
 
@@ -281,6 +286,8 @@ def conferir(args, raiz: Path) -> int:
             print(f"          {i if isinstance(i, str) else json.dumps(i, ensure_ascii=False)}")
         if len(itens) > args.n:
             print(f"          … mais {len(itens) - args.n}")
+    if g.get("superadas"):
+        print(f"    {len(g['superadas']):>4}  prova superada por prova nova do mesmo arquivo (histórico, não lacuna)")
     print(f"\n{total} lacuna(s). Lacuna não é defeito: é o que ainda não foi ligado — e agora está escrito.")
     return 1 if total else 0
 

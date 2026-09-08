@@ -17,4 +17,13 @@ log.push('incluiu: ' + (await p.locator('tbody tr').allInnerTexts()).map(t => t.
 await p.click('.filtro input'); await p.waitForFunction(() => document.querySelectorAll('tbody tr').length >= 3);
 log.push('com desativados: ' + await p.locator('tbody tr').count() + ' linhas, ' + await p.locator('.tag').count() + ' marcada(s) como desativada');
 await p.screenshot({ path: '/tmp/tela-3.png' });
+// O defeito que so apareceu OLHANDO: a celula de acoes tinha display:flex direto
+// no <td>, deixava de ser celula de tabela, e a borda da linha parava antes
+// dela. Medido pela causa: todo <td> do corpo continua table-cell. A primeira
+// medida (botao dentro do retangulo do td) passava COM o defeito: nao media.
+const fora = await p.evaluate(() => [...document.querySelectorAll('tbody td')]
+  .filter(td => getComputedStyle(td).display !== 'table-cell').length);
+const total = await p.locator('tbody td').count();
+log.push(`células que continuam célula de tabela: ${total - fora}/${total}`);
 console.log(log.join('\n')); await b.close();
+if (fora) { console.error(`${fora} célula(s) deixaram de ser table-cell: a borda da linha para antes delas`); process.exit(1); }

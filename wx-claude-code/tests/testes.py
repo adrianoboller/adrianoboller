@@ -1652,6 +1652,27 @@ class Questionario(unittest.TestCase):
             os.environ.pop("WX_LICENCA", None)
             os.environ.pop("WX_SERIAL_DIR", None)
 
+    def test_pacote_do_cliente_leva_o_marketplace_na_versao_do_plugin(self):
+        """Achado instalando o zip: sem `.claude-plugin/marketplace.json` ao lado,
+        `claude plugin install` nao existe e a instalacao cai no --plugin-dir,
+        que so vale por sessao. O marketplace vai no zip, com a versao
+        sincronizada e a fonte apontando para a pasta que o zip cria."""
+        import importlib.util
+        import zipfile
+        spec = importlib.util.spec_from_file_location("emp", RAIZ / "empacotar-entregaveis.py")
+        emp = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(emp)
+        v = json.loads((RAIZ / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))["version"]
+        (self.tmp / "cliente").mkdir()
+        alvo = emp.pacote_cliente(v, self.tmp, separar_corpus=True)
+        with zipfile.ZipFile(alvo) as z:
+            nomes = z.namelist()
+            mk = json.loads(z.read(".claude-plugin/marketplace.json"))
+        self.assertIn("wx-claude-code/.claude-plugin/plugin.json", nomes)
+        pl = next(p for p in mk["plugins"] if p["name"] == "wx-claude-code")
+        self.assertEqual(pl["version"], v)
+        self.assertEqual(pl["source"], "./wx-claude-code")
+
     def test_grafo_prova_refeita_supera_a_vencida(self):
         """Consertar o arquivo vence a prova antiga; refazer a prova sobre o
         arquivo novo tem de FECHAR a lacuna, nao deixar a velha acusando."""
@@ -1671,6 +1692,16 @@ class Questionario(unittest.TestCase):
         self.assertEqual(run(ev, *base).returncode, 0)  # prova refeita sobre o arquivo novo
         g2 = json.loads(run(SCRIPTS / "grafo.py", "--project-root", self.tmp, "--json", "conferir").stdout)
         self.assertEqual(g2["achados"]["prova_vencida"], [], "a prova nova supera a velha")
+        # a superada nao some calada: vira historico, com o id
+        self.assertEqual([x["evidencia"] for x in g2["superadas"]], ["EVID-0001"])
+        # revisao: uma prova nova que FALHOU nao supera nada -- o arquivo de
+        # hoje continua sem prova que valha, e a velha volta a contar vencida
+        alvo.write_text("v3 mexida de novo\n", encoding="utf-8")
+        falhou = [a if a != "verificado" else "falhou" for a in base]
+        self.assertEqual(run(ev, *falhou).returncode, 0)
+        g3 = json.loads(run(SCRIPTS / "grafo.py", "--project-root", self.tmp, "--json", "conferir").stdout)
+        self.assertEqual(len(g3["achados"]["prova_vencida"]), 2, "prova que falhou nao supera a vencida")
+        self.assertEqual(g3["superadas"], [])
 
     def test_gemeo_fotografa_a_sprint_e_o_e_se_declara_o_limite(self):
         self._aplicado()
