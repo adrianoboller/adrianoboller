@@ -231,18 +231,55 @@ def escrever(d):
         t.l()
 
     # ---------------------------------------------------------------- §5
-    t.cabeca("O único ✅ do PhxSql, e por que ele é uma lição")
-    for l in temos:
-        t.p(f"**{l['titulo']}** — {l['phxsql'][1]}."
-            + (f" {maiuscula(l['nota'])}." if l.get("nota") else ""))
-    t.p("""Esta linha entrou nesta tabela como `não`, escrita de memória, e a
-        sonda de código a derrubou. Ela é o **sexto** veredito de ausência que
-        esta casa publicou errado — os cinco anteriores estão na §6 do
-        `HFSQL.md`, e o padrão dos seis é o mesmo: **ninguém reconfere uma
-        ausência, porque não há o que olhar.** Um número errado alguém
-        desconfia ao bater o olho; um «não há» fica.""")
-    t.p("""É por isso que este documento sai de um medidor e não de uma leitura:
-        **veredito de ausência se remede por data, não por suspeita.**""")
+    #
+    # Nasceu quando SO a trava por linha respondia `tem`, e o titulo dizia
+    # «unico» porque era. A remedicao de 08/09/2026 (F-BANCADA, sondas vivas
+    # para coluna/PITR/parametro/diferencas) levou o numero de TEM de 1 para
+    # muitos -- e um titulo que afirma «unico» sobre uma lista de dezesseis
+    # seria a MESMA mentira que este documento existe para nao repetir:
+    # contagem que nao se remede contra o dado publica um retrato que ja
+    # mudou. A secao fica condicional, como a §6 e a §7 ja sao.
+    trava = next((l for l in temos if l["chave"] == "trava_por_linha"), None)
+    if len(temos) <= 1:
+        t.cabeca("O único ✅ do PhxSql, e por que ele é uma lição")
+        for l in temos:
+            t.p(f"**{l['titulo']}** — {l['phxsql'][1]}."
+                + (f" {maiuscula(l['nota'])}." if l.get("nota") else ""))
+        t.p("""Esta linha entrou nesta tabela como `não`, escrita de memória, e a
+            sonda de código a derrubou. Ela é o **sexto** veredito de ausência que
+            esta casa publicou errado — os cinco anteriores estão na §6 do
+            `HFSQL.md`, e o padrão dos seis é o mesmo: **ninguém reconfere uma
+            ausência, porque não há o que olhar.** Um número errado alguém
+            desconfia ao bater o olho; um «não há» fica.""")
+        t.p("""É por isso que este documento sai de um medidor e não de uma leitura:
+            **veredito de ausência se remede por data, não por suspeita.**""")
+    else:
+        t.cabeca(f"O que passou a responder `tem`, e por que a lição continua")
+        t.p(f"""Até 07/09/2026 esta seção listava **um** `tem` só — a trava por
+            linha — e o título dizia «único» porque era. **{len(temos)}** das
+            **{len(linhas)}** linhas responderam `tem` nesta remedição
+            (as dezoito do comparativo entraram por contrato, medidas contra
+            o motor vivo em vez de digitadas): a maioria porque o motor
+            GANHOU a capacidade nesta rodada, e quatro — coluna, PITR,
+            parâmetro e diferenças — porque a SONDA deixou de ser código e
+            passou a exercitar o EFEITO pelo soquete, com o controle na mesma
+            corrida.""")
+        for l in temos:
+            t.p(f"**{l['titulo']}** — {l['phxsql'][1]}."
+                + (f" {maiuscula(l['nota'])}." if l.get("nota") else ""))
+        if trava:
+            t.p("""A **trava por linha** é quem abriu esta seção, e a lição dela
+                continua valendo sozinha: entrou nesta tabela como `não`,
+                escrita de memória, e uma sonda de código a derrubou. Foi o
+                **sexto** veredito de ausência que esta casa publicou errado —
+                os cinco anteriores estão na §6 do `HFSQL.md` — e o padrão dos
+                seis é o mesmo: **ninguém reconfere uma ausência, porque não há
+                o que olhar.** Um número errado alguém desconfia ao bater o
+                olho; um «não há» fica.""")
+        t.p("""É por isso que este documento sai de um medidor e não de uma
+            leitura: **veredito de ausência se remede por data, não por
+            suspeita** — e, como o título desta seção acabou de provar,
+            **veredito de unicidade também.**""")
 
     # ---------------------------------------------------------------- §6
     #
@@ -290,9 +327,9 @@ def escrever(d):
     t.p("Três honestidades, e as três mudam como se lê o resto:")
     t.l("1. **Faltar não é o mesmo que estar errado.** Boa parte destas")
     t.l("   ausências é sequência, não esquecimento: sem nível de isolamento")
-    t.l("   acima de `READ COMMITTED` não adianta afinar trava, e sem `INSERT`")
-    t.l("   na camada SQL não há upsert para pedir. A ordem está no")
-    t.l("   `docs/PENDENCIAS.md`.")
+    t.l("   acima de `READ COMMITTED` não adianta afinar trava, e sem")
+    t.l("   subconsulta correlacionada não há `EXISTS` para pedir. A ordem")
+    t.l("   está no `docs/PENDENCIAS.md`.")
     t.l(f"2. **Duas colunas são de segunda mão.** {len(citados)} motores não")
     t.l("   estão nesta máquina; o que a tabela diz deles saiu de leitura")
     t.l("   anterior, e está marcado 📄 célula a célula. Vantagem nossa contra")

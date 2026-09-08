@@ -1,13 +1,13 @@
 {
-  "commit": "59c27956b474769ebe7e704b801f7b96890ff3b3",
+  "commit": "c50267e97bee8ad7c0fc5e5e452d7d0c75bb1d52",
   "sujo": true,
-  "branch": "claude/capacidades-disponiveis-y6auxh",
+  "branch": "frente/c19-bancada",
   "versao": "0.18.0",
-  "testes": 1852,
-  "operacoes": 130,
+  "testes": 2119,
+  "operacoes": 136,
   "crates": 8,
-  "linhas_rust": 156831,
-  "linhas_doc": 56228,
+  "linhas_rust": 174646,
+  "linhas_doc": 57761,
   "dependencias_externas": 0,
   "idiomas": {
     "fabrica": 1963,
@@ -16,5 +16,5 @@
     "total": 3013,
     "pct": 65
   },
-  "medido_em": "2026-09-08 15:14:43"
+  "medido_em": "2026-09-08 19:15:47"
 }

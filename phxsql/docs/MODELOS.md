@@ -519,6 +519,60 @@ consome; e a coluna negada (F-DIREITO) atravessa o `consultar` (F-CONSULTA)
 por `executar_derivado` — é o encontro em que o direito por coluna ou vale
 ou vaza.
 
+#### O que cada frente entregou de fato
+
+A F-BANCADA integrou as seis a partir do HEAD já mesclado e reconferiu com o
+próprio `cargo test`/`cargo run` desta sessão — marcado **medido aqui** — onde
+foi o caso; o resto vem do relatório de cada frente, marcado **relatório da
+frente**, porque remedir a suíte inteira de cada uma sairia do escopo desta
+rodada.
+
+- **F-NÚCLEO** — `phxsql_core::expressao`, o PSCH v9 com `padrao`/`check`/
+  `calculada`/índice por `onde`/índice por expressão, e o caminho de escrita
+  da `Table` lendo os quatro. Contagem de testes da própria crate: **relatório
+  da frente**.
+- **F-SQL** — `GROUP BY`, expressão no `WHERE`, `WITH`, `IN (SELECT …)`,
+  `ROW_NUMBER() OVER`, `CREATE`/`DROP VIEW`, `INSERT … ON CONFLICT`/
+  `ON DUPLICATE KEY`, `?`. **127 → 229 testes: relatório da frente.**
+- **F-DIREITO** — direito por coluna, com o teste do comportamento velho
+  (`sem_colunas_no_cadastro_nada_muda`). **919 → 937 testes: relatório da
+  frente.** Confirmado nesta sessão por uma sonda VIVA própria
+  (`bancada/comparativo/medir.py::sonda_direito_coluna`): servidor com
+  cadastro de coluna, `ana` (salário negado) volta sem a coluna, `bea`
+  (controle) volta com ela — TEM, medido pelo soquete.
+- **F-PITR** — `restaurar_backup` com `ate`/`ate_ms`. **Lib 846 → 858 testes,
+  mais `bancada/pitr/provar.py` com 22 conferências: relatório da frente**
+  (não re-executado nesta sessão). Confirmado nesta sessão por uma sonda VIVA
+  própria e mais enxuta (`sonda_pitr`, um veredito com o controle na mesma
+  corrida, não as 22 do `provar.py`): TEM, medido pelo soquete.
+- **F-ODBC** — `SQLBindParameter` liga o `?` do lado do driver.
+  **24 → 42 testes**: a chegada em **42** é **medida aqui** —
+  `cargo test -p phxsql-odbc` desta sessão fechou em **42 passed, 0 failed, 1
+  ignored**; a saída (24) vem do **relatório da frente**. A prova de ABI
+  (`bancada/odbc/provar.py`, que inclui `prova-abi.py`) também rodou **aqui**,
+  código de saída 0, com **89 linhas de `ok`** contadas nesta corrida — número
+  medido por esta frente, e não o mesmo contador interno do **73 → 86** que o
+  relatório da F-ODBC cita, então os dois não se somam nem se substituem. O
+  passo 7c (parâmetros) saiu do desvio "não medida" e mediu o EFEITO: a linha
+  do id ligado voltou certa. E o teste `#[ignore]`
+  `ponta_a_ponta_where_id_igual_pergunta` passou **aqui**, contra um `phxsqld`
+  próprio em `PHXSQL_ODBC_PROVA` — 1 passed.
+- **F-CONSULTA** — `agrupar`, `consultar` (com `juntar`/`escalar`/`janela`),
+  visões, `diferencas`, `inserir.se_existir`, `sql.parametros`, e o acréscimo
+  de junções/subconsulta escalar do dono (08/09 16:50). **925 → 1.042 testes:
+  relatório da frente.** Confirmado nesta sessão pelas sondas vivas de
+  `parametro_no_prepared`, `diff_de_dados` e o efeito de `criar_visao`/
+  `SELECT * FROM v_c`, todas TEM, dentro de `bancada/comparativo/medir.py`.
+- **F-BANCADA** (esta frente) — as quatro sondas vivas do comparativo; a
+  remedição (18 de 19 faltando/pela metade → **3 de 19**, todas as três por
+  decisão do dono ou limite documentado); o `#[ignore]` do ODBC fechado; os
+  pedidos 233-239; o `CHANGELOG.md`; a corrente dos catorze geradores do
+  dossiê. Tudo **medido aqui**.
+- **Workspace** — `cargo test --workspace --offline`: **2.119 testes, 0
+  falhas** — **medido aqui**, pelo `numeros-do-projeto.py` desta sessão
+  (o mesmo valor que `CAPABILITIES.json` grava, com o commit conferido contra
+  o `HEAD` desta árvore).
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:
