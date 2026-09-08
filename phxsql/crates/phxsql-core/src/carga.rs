@@ -535,6 +535,27 @@ use crate::types::ColumnType;
 use crate::uuid::{Uuid, Uuid256};
 use crate::value::Value;
 
+/// O decimal escalado de volta em texto, com a escala da coluna.
+///
+/// Morava em `phxsql-server/src/valores.rs` e desceu para ca quando a
+/// expressao de esquema (`expressao.rs`) precisou imprimir numero -- um
+/// conversor, nao dois; o servidor continua chamando o mesmo nome.
+pub fn decimal_para_texto(valor: i128, escala: u8) -> String {
+    if escala == 0 {
+        return valor.to_string();
+    }
+    let divisor = 10i128.pow(escala as u32);
+    let sinal = if valor < 0 { "-" } else { "" };
+    let a = valor.unsigned_abs();
+    let d = divisor.unsigned_abs();
+    format!(
+        "{sinal}{}.{:0>largura$}",
+        a / d,
+        a % d,
+        largura = escala as usize
+    )
+}
+
 /// Decimal exato a partir do texto, ja escalado.
 ///
 /// Texto e nao `f64` de proposito: `f64` nao representa 1,10 exatamente, e

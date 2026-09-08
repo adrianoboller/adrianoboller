@@ -382,6 +382,46 @@ O CATALOGO: O PROTOCOLO SE DESCREVE SOZINHO
     de operacoes do proprio codigo do despachar e falha se ela e o catalogo
     discordarem, nos dois sentidos. Ajuda escrita a mao envelhece calada.
 
+DEFAULT, CHECK, COLUNA CALCULADA E INDICES CONDICIONAIS NO criar_tabela
+
+    {"op":"criar_tabela","database":"loja","tabela":"itens",
+     "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                {"nome":"nome","tipo":"Str(40)"},
+                {"nome":"qtd","tipo":"Int8","padrao":"1","check":"qtd > 0"},
+                {"nome":"preco","tipo":"Decimal(12,2)"},
+                {"nome":"total","tipo":"Decimal(12,2)",
+                 "calculada":"ROUND(qtd * preco, 2)"}],
+     "indices":[{"nome":"pk","colunas":["id"],"primario":true},
+                {"nome":"caros","colunas":["preco"],"onde":"preco > 100"},
+                {"nome":"por_baixo","colunas":["lower(nome)"]}]}
+
+    padrao     O DEFAULT: uma expressao avaliada no INSERIR quando a coluna
+               vem nula. So no inserir -- o atualizar recebe a linha inteira,
+               e nulo ali e nulo.
+    check      A restricao: avaliada no inserir e no atualizar, com a linha
+               inteira. FALSO recusa nomeando a coluna e a expressao; NULO
+               passa (e o SQL).
+    calculada  A coluna derivada: SEMPRE recalculada na gravacao, e o valor
+               que vier no pedido e ignorado -- a coluna nao tem dado
+               proprio, e o protocolo nao distingue ausente de presente.
+    onde       O indice PARCIAL: a linha so entra no indice quando a
+               expressao da verdadeiro. No atualizar, sai se saiu do filtro
+               e entra se entrou. O reindexar respeita o filtro.
+    lower(x)   Indice por EXPRESSAO: a chave e o resultado, com o tipo da
+               coluna; a expressao e de UMA coluna. Quem busca manda o
+               valor ja transformado ("ana", e nao "Ana").
+
+    A gramatica e uma so: literais, colunas, + - * /, comparadores, AND OR
+    NOT, IS [NOT] NULL, IN (...), BETWEEN, LIKE, e UPPER LOWER TRIM LENGTH
+    ROUND ABS COALESCE CONCAT. Numero e exato: 1.1 e decimal, nao f64.
+    Decimal com casas demais para a coluna e RECUSADO mandando usar ROUND,
+    em vez de arredondado calado.
+
+    A recusa e na DECLARACAO: coluna inexistente na expressao, sintaxe
+    invalida, expressao de indice com duas colunas, calculada apoiada em
+    calculada -- tudo isso o criar_tabela recusa nomeando, antes de existir
+    linha. Na replica nada disso roda: a imagem ja vem aplicada da origem.
+
 CHAVE ESTRANGEIRA NO criar_tabela
 
     {"op":"criar_tabela","database":"loja","tabela":"pedidos",

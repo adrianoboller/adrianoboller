@@ -260,7 +260,7 @@ tira coluna, não cria índice sobre a coluna nova, e não replica a si mesma �
 eventos depois de receber a mesma alteração. Enquanto os dois lados diferem, a
 réplica **para** em vez de aceitar um payload de outra largura.
 
-### O bloco de esquema (`PSCH`, versão 8)
+### O bloco de esquema (`PSCH`, versão 9)
 
 O bloco começa com `PSCH` e a versão. A **3** acrescentou os metadados de
 coluna, o marcador de chave primária e o modo de partição. A **4** acrescentou
@@ -268,9 +268,12 @@ a coluna de sistema `softdeleted` e um byte no fim, com o sinal de *motivo
 obrigatório*. A **5** acrescentou a coluna de sistema `rownum`. A **6**
 acrescentou a **marca de dado pessoal** de cada coluna, num bloco no fim. A
 **7** acrescentou o byte `verificar` de cada chave estrangeira. A **8**
-acrescentou a **lista dos índices de texto**, num bloco no fim. A leitura ainda
-aceita a 2: tabela gravada antes abre normalmente, ganha um `id` v7 sorteado na
-hora e a lista de textos vazia. **Escrever, só na 8.**
+acrescentou a **lista dos índices de texto**, num bloco no fim. A **9**
+acrescentou as **expressões de esquema** — `padrao`, `check` e `calculada` por
+coluna, e o filtro `onde` e a expressão por coluna de cada índice —, num bloco
+no fim. A leitura ainda aceita a 2: tabela gravada antes abre normalmente,
+ganha um `id` v7 sorteado na hora, a lista de textos vazia e nenhuma regra.
+**Escrever, só na 9.**
 
 O bloco é uma contagem `u16` e, por índice de texto:
 
@@ -328,6 +331,47 @@ desatualiza, e obriga quem copia os arquivos da tabela a copiar mais um.
 
 Por índice, os sinalizadores viraram um byte com dois bits: **único** no bit 0
 e **primário** no bit 1.
+
+### As expressões de esquema, v9
+
+No **fim** do bloco, depois da lista dos índices de texto, vêm as expressões,
+em **texto** e na ordem em que o motor as aplica. Por coluna, na ordem das
+colunas, três textos (`u16` de tamanho mais os bytes, vazio = «não tem»):
+
+| Campo | O que é | Quando vale |
+|---|---|---|
+| `padrao` | o DEFAULT: `7`, `ROUND(v * 1.5, 2)` | só no **inserir**, na coluna que veio nula |
+| `check` | a restrição: `v > 0` | no inserir e no atualizar, com a linha inteira; falso recusa, **nulo passa** |
+| `calculada` | a coluna derivada: `a * 2` | **sempre** recalculada na gravação; o valor que vier no pedido é ignorado |
+
+Depois, por índice, na ordem dos índices: o texto de `onde` (o índice
+**parcial**: a linha só entra quando dá verdadeiro) e um texto por coluna do
+índice (a **expressão** de uma coluna, `lower(nome)`, cujo resultado, coagido
+para o tipo da coluna, vira a chave; vazio = coluna crua).
+
+A gramática das expressões é uma só e mora em `phxsql_core::expressao` — a
+mesma do `expressao` do `varrer`. Ela é analisada **na leitura do bloco**, e
+por isso uma expressão inválida gravada torna a tabela inabrível em vez de
+fazer o motor gravar sem a regra.
+
+**Ao contrário da v6 e da v8, o bloco truncado é erro** — não «fica sem». Um
+`CHECK` que sumisse calado seria uma garantia perdida sem ninguém saber, e um
+arquivo que se diz v9 tem o bloco inteiro ou está corrompido.
+
+**A calculada é sempre recalculada, e o valor que vier é ignorado.** Não é
+«calado»: a coluna não tem dado próprio por definição, e o motivo técnico é o
+protocolo — ele não distingue coluna ausente de presente, e o merge do
+`UPDATE` devolve o valor velho da calculada junto com a linha. Recusar esse
+valor quebraria todo `UPDATE`.
+
+**Na réplica nada disso roda**: a imagem que chega já veio com tudo aplicado
+na origem, e reaplicar seria julgar — o mesmo buraco que a chave estrangeira
+já abriu uma vez (pedido 171).
+
+Os índices parcial e por expressão **não mudam o `.ndx`**: a árvore continua
+uma por índice, com a mesma largura de chave (a expressão devolve o tipo da
+coluna), e a diferença está só em **quem entra** e em **qual valor vira a
+chave**. Um `reindexar` reconstrói respeitando o filtro.
 
 ### A marca de dado pessoal (LGPD / GDPR), v6
 

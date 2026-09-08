@@ -28,19 +28,7 @@ use phxsql_core::value::Value;
 
 /// Formata um decimal escalado como texto: 1234 com escala 2 vira "12.34".
 pub fn decimal_para_texto(valor: i128, escala: u8) -> String {
-    if escala == 0 {
-        return valor.to_string();
-    }
-    let divisor = 10i128.pow(escala as u32);
-    let sinal = if valor < 0 { "-" } else { "" };
-    let a = valor.unsigned_abs();
-    let d = divisor.unsigned_abs();
-    format!(
-        "{sinal}{}.{:0>largura$}",
-        a / d,
-        a % d,
-        largura = escala as usize
-    )
+    phxsql_core::carga::decimal_para_texto(valor, escala)
 }
 
 /// Bytes crus em hexadecimal minusculo, para a tela e para o JSON.
@@ -355,7 +343,30 @@ pub fn coluna_de_json(c: &Json, i: usize) -> Result<Column> {
     if c.booleano_ou("obrigatoria", false) {
         col = col.obrigatoria();
     }
+    // As regras de escrita (v9 do PSCH). Cada uma e uma expressao em texto;
+    // a recusa por sintaxe e por coluna inexistente acontece na DECLARACAO,
+    // dentro de `Schema::new`, e nao na primeira gravacao.
+    col = col
+        .com_padrao(&expressao_de_json(c, "padrao"))?
+        .com_check(&expressao_de_json(c, "check"))?
+        .com_calculada(&expressao_de_json(c, "calculada"))?;
     Ok(col)
+}
+
+/// O texto de uma expressao de esquema vinda do pedido. Texto e a expressao
+/// como esta; numero e booleano viram o literal correspondente -- quem manda
+/// `"padrao": 7` quer o sete, e obriga-lo a escrever `"7"` seria formalismo
+/// que so serve para recusar pedido certo. Ausente e nulo sao «nao tem».
+fn expressao_de_json(c: &Json, campo: &str) -> String {
+    match c.campo(campo) {
+        None => String::new(),
+        Some(Json::Texto(t)) => t.clone(),
+        Some(Json::Bool(b)) => (if *b { "TRUE" } else { "FALSE" }).to_string(),
+        Some(j) if j.e_nulo() => String::new(),
+        // O numero sai pelo escritor de JSON, que imprime inteiro sem casas
+        // e fracionario com as casas que tem -- o mesmo texto que chegou.
+        Some(j) => j.escrever(),
+    }
 }
 
 pub fn esquema_de_json(j: &Json) -> Result<Schema> {
@@ -394,7 +405,34 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
                 return Err(PhxError::Esquema(format!("indice {i} sem nome")));
             }
             let mut partes = Vec::new();
+            let mut expressoes = Vec::new();
             for c in idx.textos("colunas") {
+                // Uma coluna com parenteses e uma EXPRESSAO de uma coluna
+                // (`lower(nome)`): a chave do indice e o resultado, com o tipo
+                // da coluna. Sem parenteses e o nome cru, com as marcas.
+                if c.contains('(') {
+                    let e = phxsql_core::expressao::Expressao::analisar(&c)
+                        .map_err(|erro| PhxError::Esquema(format!("indice {inome}: {erro}")))?;
+                    let [unica] = e.colunas() else {
+                        return Err(PhxError::Esquema(format!(
+                            "indice {inome}: a expressao {c:?} tem de usar exatamente uma \
+                             coluna, e usa {}",
+                            e.colunas().len()
+                        )));
+                    };
+                    partes.push(IndexColumn::asc(posicao(unica).or_else(|_| {
+                        colunas
+                            .iter()
+                            .position(|col| col.nome.eq_ignore_ascii_case(unica))
+                            .ok_or_else(|| {
+                                PhxError::Esquema(format!(
+                                    "indice usa coluna inexistente: {unica:?}"
+                                ))
+                            })
+                    })?));
+                    expressoes.push(Some(c.to_string()));
+                    continue;
+                }
                 // "cidade desc" e "cidade nocase" no proprio nome da coluna:
                 // e como se escreve um indice em uma linha.
                 let mut it = c.split_whitespace();
@@ -413,11 +451,19 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
                     }
                 }
                 partes.push(ic);
+                expressoes.push(None);
             }
             if partes.is_empty() {
                 return Err(PhxError::Esquema(format!("indice {inome} sem colunas")));
             }
             let mut d = IndexDef::new(inome, partes);
+            for (k, e) in expressoes.iter().enumerate() {
+                if let Some(e) = e {
+                    d = d.com_expressao(k, e)?;
+                }
+            }
+            // O indice PARCIAL: a linha so entra quando o `onde` da verdadeiro.
+            d = d.com_onde(idx.texto_ou("onde", ""))?;
             if idx.booleano_ou("unico", false) {
                 d = d.unico();
             }

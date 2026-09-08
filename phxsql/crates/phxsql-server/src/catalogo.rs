@@ -865,12 +865,15 @@ pub const OPERACOES: &[Operacao] = &[
             obr(
                 "colunas",
                 "array",
-                "`{nome, tipo, obrigatoria, caption, mascara, dado_pessoal}`",
+                "`{nome, tipo, obrigatoria, caption, mascara, dado_pessoal, padrao, check, calculada}`; \
+                 `padrao` e o DEFAULT (expressão, só no inserir), `check` a restrição \
+                 (recusa quando falsa, nulo passa) e `calculada` a coluna sempre recalculada",
             ),
             opc(
                 "indices",
                 "array",
-                "`{nome, colunas, unico, primario}`; a coluna aceita `nome desc` e `nome nocase`",
+                "`{nome, colunas, unico, primario, onde}`; a coluna aceita `nome desc`, `nome nocase` \
+                 e uma expressão de uma coluna (`lower(nome)`); `onde` faz o índice parcial",
             ),
             opc(
                 "chaves_estrangeiras",

@@ -172,6 +172,54 @@ Resposta: `{"grupos": 3, "linhas": [{"cidade": "Blumenau", "n": 2, "total":
   o mesmo do `varrer`.
 - Resposta: `{"devolvidas": n, "linhas": [...]}`.
 
+### Junções e subconsultas no `consultar` — acréscimo do dono, 08/09 16:50
+
+Ordem: *«Select com sub selects e where's com inner joins, joins…»*. Entra no
+mesmo `consultar`, como passos a mais, e o avaliador do core passou a aceitar
+o nome **qualificado** (`p.id`) como um token só, porque duas tabelas na
+mesma linha têm duas colunas `id`.
+
+```json
+{"op": "consultar", "database": "b",
+ "de": {"op": "varrer", "tabela": "pedidos"}, "apelido": "p",
+ "juntar": [
+   {"de": {"op": "varrer", "tabela": "clientes"}, "apelido": "c",
+    "tipo": "interno",
+    "em": [{"esquerda": "p.cliente_id", "direita": "c.id"}]}],
+ "escalar": [{"nome": "media", "de": {"op": "agrupar", "tabela": "pedidos",
+              "agregados": [{"funcao": "media", "coluna": "total"}]},
+              "campo": "media_total"}],
+ "expressao": "c.cidade = 'Blumenau' AND p.total > media",
+ "colunas": ["p.id", {"coluna": "c.nome", "apelido": "cliente"}],
+ "ordem": [{"coluna": "p.id"}], "max": 1000}
+```
+
+- **`apelido`** do `de` e de cada junção: depois de uma junção, toda coluna da
+  linha se chama `apelido.coluna`. Nome sem prefixo resolve quando é único
+  entre os lados; ambíguo recusa nomeando os dois.
+- **`juntar`**: lista, aplicada na ordem (junção à esquerda, uma por vez).
+  `tipo` ∈ `interno` (só quem casa) | `esquerdo` (a linha da esquerda fica,
+  com as colunas da direita nulas). `em` é igualdade entre pares de colunas
+  (junção por espalhamento em memória); qualquer outra condição vai para
+  `expressao`. `direito`, `completo` e `cruzado` **recusam nomeando** nesta
+  rodada — a direita se escreve trocando os lados.
+- **`escalar`**: subconsulta **não correlacionada** que tem de devolver
+  exatamente uma linha; o `campo` dela vira uma coluna com o `nome` dado,
+  visível em `expressao`. Zero ou duas linhas recusa nomeando.
+- **`em`** (já no contrato) continua sendo o `IN (SELECT …)`.
+- **Correlação** (subconsulta que cita coluna de fora) e `EXISTS` **recusam
+  nomeando** nesta rodada: exigiriam executar a subconsulta por linha.
+- Cada `de` — o principal, o de cada junção, o de cada `escalar`/`em` — roda
+  por `executar_derivado`: o portão é o mesmo em todos, e o teste da tabela
+  negada vale para cada um deles.
+
+Na camada SQL: `SELECT p.id, c.nome AS cliente FROM pedidos p [INNER] JOIN
+clientes c ON p.cliente_id = c.id [LEFT JOIN …] WHERE … [ORDER BY …] [LIMIT]`
+→ o `consultar` acima. `ON` com `AND` de igualdades vira mais pares em `em`;
+condição que não é igualdade de colunas vai para `expressao`. Subconsulta
+escalar no WHERE (`preco > (SELECT AVG(preco) FROM c)`) → `escalar`. `JOIN
+(SELECT …) AS y` → o `de` da junção é o sub-pedido.
+
 ### Visões
 
 ```json

@@ -29,6 +29,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use phxsql_core::error::{PhxError, Result};
+use phxsql_core::expressao::Expressao;
 use phxsql_core::fio::{Canal, Recebido, TETO_DO_REGISTRO};
 use phxsql_core::json::Json;
 use phxsql_store::catalogo::{Aberta, Instancia, Raiz};
@@ -850,6 +851,14 @@ pub struct Servidor {
     /// primeira mudanca acontecer e que cada conexao paga UMA releitura da
     /// propria ficha, e nunca mais ate a mudanca seguinte.
     cadastro_geracao: AtomicU64,
+}
+
+/// Texto de expressao no JSON do esquema: o texto, ou nulo quando nao ha.
+fn texto_ou_nulo(t: Option<&str>) -> Json {
+    match t {
+        Some(t) => Json::texto_de(t),
+        None => Json::Nulo,
+    }
 }
 
 impl Servidor {
@@ -12614,6 +12623,20 @@ impl Servidor {
                     ("tipo", Json::texto_de(format!("{:?}", c.ty))),
                     ("tamanho", Json::de_u64(largura_do_tipo(&c.ty))),
                     ("nullable", Json::Bool(c.nullable)),
+                    // As regras de escrita, em texto de expressao; nulo e
+                    // «nao tem». Sao o que o `criar_tabela` recebeu.
+                    (
+                        "padrao",
+                        texto_ou_nulo(c.padrao.as_ref().map(Expressao::texto)),
+                    ),
+                    (
+                        "check",
+                        texto_ou_nulo(c.check.as_ref().map(Expressao::texto)),
+                    ),
+                    (
+                        "calculada",
+                        texto_ou_nulo(c.calculada.as_ref().map(Expressao::texto)),
+                    ),
                     // Coluna do MOTOR: a tela nao a oferece como campo de
                     // formulario. Quem manda nela e o botao de excluir.
                     (
@@ -12654,16 +12677,27 @@ impl Servidor {
                     ("unico", Json::Bool(i.unico)),
                     ("primario", Json::Bool(i.primario)),
                     ("composto", Json::Bool(i.composta())),
+                    ("onde", texto_ou_nulo(i.onde.as_ref().map(Expressao::texto))),
                     (
                         "colunas",
                         Json::Lista(
                             i.colunas
                                 .iter()
-                                .map(|ic| {
+                                .enumerate()
+                                .map(|(k, ic)| {
                                     Json::objeto(vec![
                                         ("coluna", Json::texto_de(&e.colunas()[ic.coluna].nome)),
                                         ("desc", Json::Bool(ic.desc)),
                                         ("nocase", Json::Bool(ic.nocase)),
+                                        (
+                                            "expressao",
+                                            texto_ou_nulo(
+                                                i.expressoes
+                                                    .get(k)
+                                                    .and_then(Option::as_ref)
+                                                    .map(Expressao::texto),
+                                            ),
+                                        ),
                                     ])
                                 })
                                 .collect(),
@@ -29805,6 +29839,253 @@ mod testes_remoto_cifrado {
                 "a recusa tinha de nomear a cifra do fio: {e}"
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_regras_de_esquema {
+    //! As quatro sondas de efeito do `bancada/comparativo/medir.py` --
+    //! DEFAULT, CHECK, coluna calculada e indice parcial -- mais a do indice
+    //! por expressao, feitas AQUI com os mesmos pedidos que o medidor manda,
+    //! para a celula virar TEM pelo medidor e nao por edicao.
+    use super::*;
+
+    fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        s.executar(
+            "criar_database",
+            &Json::analisar(r#"{"database":"cmp"}"#).unwrap(),
+            &Sessao::default(),
+        )
+        .unwrap();
+        s
+    }
+
+    fn roda(s: &Arc<Servidor>, op: &str, txt: &str) -> Result<Json> {
+        s.executar(op, &Json::analisar(txt).unwrap(), &Sessao::default())
+    }
+
+    fn linha(s: &Arc<Servidor>, tabela: &str, rowid: u64) -> Json {
+        roda(
+            s,
+            "ler",
+            &format!(r#"{{"database":"cmp","tabela":"{tabela}","rowid":{rowid}}}"#),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn default_a_linha_nasce_com_7() {
+        let d = DirTemp::novo("regras-default");
+        let s = servidor(&d.0);
+        roda(
+            &s,
+            "criar_tabela",
+            r#"{"database":"cmp","tabela":"t_def",
+            "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                       {"nome":"v","tipo":"Int8","padrao":7}],
+            "indices":[{"nome":"pk","colunas":["id"],"unico":true}]}"#,
+        )
+        .unwrap();
+        roda(
+            &s,
+            "inserir",
+            r#"{"database":"cmp","tabela":"t_def","linha":{"id":1}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            linha(&s, "t_def", 1).campo("v").and_then(Json::inteiro),
+            Some(7)
+        );
+        // E o esquema DIZ que a coluna tem padrao -- campo que nao se le mente.
+        let e = roda(&s, "esquema", r#"{"database":"cmp","tabela":"t_def"}"#).unwrap();
+        let cols = e.campo("colunas").and_then(Json::lista).unwrap();
+        let v = cols.iter().find(|c| c.texto_ou("nome", "") == "v").unwrap();
+        assert_eq!(v.texto_ou("padrao", ""), "7");
+    }
+
+    #[test]
+    fn check_recusa_menos_5_e_aceita_5() {
+        let d = DirTemp::novo("regras-check");
+        let s = servidor(&d.0);
+        roda(
+            &s,
+            "criar_tabela",
+            r#"{"database":"cmp","tabela":"t_ck",
+            "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                       {"nome":"v","tipo":"Int8","check":"v > 0"}],
+            "indices":[{"nome":"pk","colunas":["id"],"unico":true}]}"#,
+        )
+        .unwrap();
+        let proibido = roda(
+            &s,
+            "inserir",
+            r#"{"database":"cmp","tabela":"t_ck","linha":{"id":1,"v":-5}}"#,
+        );
+        let e = proibido.unwrap_err().to_string();
+        assert!(e.contains("CHECK da coluna v"), "{e}");
+        // O CONTROLE: o permitido passa na mesma tabela.
+        roda(
+            &s,
+            "inserir",
+            r#"{"database":"cmp","tabela":"t_ck","linha":{"id":2,"v":5}}"#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn calculada_b_sai_6() {
+        let d = DirTemp::novo("regras-calculada");
+        let s = servidor(&d.0);
+        roda(
+            &s,
+            "criar_tabela",
+            r#"{"database":"cmp","tabela":"t_gc",
+            "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                       {"nome":"a","tipo":"Int8"},
+                       {"nome":"b","tipo":"Int8","calculada":"a*2"}],
+            "indices":[{"nome":"pk","colunas":["id"],"unico":true}]}"#,
+        )
+        .unwrap();
+        roda(
+            &s,
+            "inserir",
+            r#"{"database":"cmp","tabela":"t_gc","linha":{"id":1,"a":3}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            linha(&s, "t_gc", 1).campo("b").and_then(Json::inteiro),
+            Some(6)
+        );
+    }
+
+    #[test]
+    fn indice_parcial_guarda_a_incluida_e_nao_a_filtrada() {
+        let d = DirTemp::novo("regras-parcial");
+        let s = servidor(&d.0);
+        roda(
+            &s,
+            "criar_tabela",
+            r#"{"database":"cmp","tabela":"t_ip",
+            "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                       {"nome":"v","tipo":"Int8"}],
+            "indices":[{"nome":"pk","colunas":["id"],"unico":true},
+                       {"nome":"so_positivo","colunas":["v"],"onde":"v > 0"}]}"#,
+        )
+        .unwrap();
+        roda(
+            &s,
+            "inserir",
+            r#"{"database":"cmp","tabela":"t_ip","linha":{"id":1,"v":-5}}"#,
+        )
+        .unwrap();
+        roda(
+            &s,
+            "inserir",
+            r#"{"database":"cmp","tabela":"t_ip","linha":{"id":2,"v":7}}"#,
+        )
+        .unwrap();
+        let fora = roda(
+            &s,
+            "buscar",
+            r#"{"database":"cmp","tabela":"t_ip","indice":"so_positivo","chave":[-5]}"#,
+        )
+        .unwrap();
+        let dentro = roda(
+            &s,
+            "buscar",
+            r#"{"database":"cmp","tabela":"t_ip","indice":"so_positivo","chave":[7]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            dentro.campo("encontrados").and_then(Json::inteiro),
+            Some(1),
+            "{dentro:?}"
+        );
+        assert_eq!(
+            fora.campo("encontrados").and_then(Json::inteiro),
+            Some(0),
+            "{fora:?}"
+        );
+    }
+
+    #[test]
+    fn indice_por_expressao_nasce_e_acha_pelo_valor_baixo() {
+        let d = DirTemp::novo("regras-expressao");
+        let s = servidor(&d.0);
+        roda(
+            &s,
+            "criar_tabela",
+            r#"{"database":"cmp","tabela":"t_ie",
+            "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                       {"nome":"nome","tipo":"Str(40)"}],
+            "indices":[{"nome":"pk","colunas":["id"],"unico":true},
+                       {"nome":"por_baixo","colunas":["lower(nome)"]}]}"#,
+        )
+        .unwrap();
+        roda(
+            &s,
+            "inserir",
+            r#"{"database":"cmp","tabela":"t_ie","linha":{"id":1,"nome":"Ana"}}"#,
+        )
+        .unwrap();
+        let acha = roda(
+            &s,
+            "buscar",
+            r#"{"database":"cmp","tabela":"t_ie","indice":"por_baixo","chave":["ana"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            acha.campo("encontrados").and_then(Json::inteiro),
+            Some(1),
+            "{acha:?}"
+        );
+        let e = roda(&s, "esquema", r#"{"database":"cmp","tabela":"t_ie"}"#).unwrap();
+        let idx = e.campo("indices").and_then(Json::lista).unwrap();
+        let pb = idx
+            .iter()
+            .find(|i| i.texto_ou("nome", "") == "por_baixo")
+            .unwrap();
+        let col = &pb.campo("colunas").and_then(Json::lista).unwrap()[0];
+        assert_eq!(col.texto_ou("expressao", ""), "lower(nome)");
+        // Expressao de duas colunas recusa na declaracao, nomeando.
+        let e = roda(
+            &s,
+            "criar_tabela",
+            r#"{"database":"cmp","tabela":"t_ie2",
+            "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                       {"nome":"nome","tipo":"Str(40)"}],
+            "indices":[{"nome":"x","colunas":["concat(nome, id)"]}]}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("exatamente uma coluna"), "{e}");
+    }
+
+    /// Campo desconhecido continua desconhecido: quem manda `default` em vez
+    /// de `padrao` nao ganha padrao -- e o esquema mostra que nao ganhou.
+    #[test]
+    fn a_declaracao_recusa_coluna_inexistente_na_expressao() {
+        let d = DirTemp::novo("regras-recusa");
+        let s = servidor(&d.0);
+        let e = roda(
+            &s,
+            "criar_tabela",
+            r#"{"database":"cmp","tabela":"t_x",
+            "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                       {"nome":"v","tipo":"Int8","check":"w > 0"}]}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("check de v") && e.contains("\"w\""), "{e}");
     }
 }
 

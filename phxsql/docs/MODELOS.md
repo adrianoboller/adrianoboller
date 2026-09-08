@@ -491,6 +491,34 @@ MariaDB rodou `sync_binlog=0` (uma sincronizacao por fase de diferenca, nao
 explica 1,18s no milhao), e o piso do TCP (1,75s) e maior que o do soquete
 (0,92s), medido a parte.
 
+### Rodada das dezoito do comparativo — 8 de setembro de 2026
+
+Ordem do dono: *«Falta esses itens»*, sobre a tabela «E o comparativo, medido
+contra quem tem». Os contratos estão em `docs/propostas/comparativo-19.md`, e
+a divisão saiu **depois** de medir o que já existia por baixo — o avaliador
+dos gatilhos, o agregador do `pivotar`, o upsert do DbLink, o diário com
+carimbo e imagem.
+
+| frente | escalão | por quê | papéis dispensados, e por quê |
+|---|---|---|---|
+| **F-NÚCLEO** — `phxsql_core::expressao`, PSCH v9, DEFAULT/CHECK/calculada, índice parcial e por expressão | **projeto e risco**, feita pelo orquestrador | é **formato em disco** e **caminho de escrita**: a regra tem de morar onde a linha se grava, senão FFI, réplica e example gravam por fora dela | **E** (não há tela), **J** (a receita é o SQL dos outros motores, já medida no comparativo), **D** (o zelador rodou de hora em hora, sem decisão desta frente) |
+| **F-SQL** — GROUP BY, expressão, WITH, IN (SELECT), OVER, VIEW, upsert, `?` | **mecânico e verificável** | tradução para contratos já escritos, e o JSON produzido se confere campo a campo em teste de unidade | **C** (não toca disco), **E**, **D**; **F** fica com a frente, que prova por sabotagem |
+| **F-CONSULTA** — `agrupar`, `consultar`, visões, `diferencas`, `varrer.expressao`, upsert, parâmetros | **projeto e risco** | toda sub-consulta passa pelo **portão de permissão, que é um só** — e a porta dos fundos não aparece em teste de tradução | **E**, **J**; **C** consultado só pelo contrato (nada de formato) |
+| **F-DIREITO** — direito por coluna | **projeto e risco** | segurança: a op que alguém esquecer vira a porta dos fundos, e o `UPDATE` de quem não lê a coluna zeraria a coluna do outro calado | **E**, **J**, **D** |
+| **F-PITR** — restaurar a um instante | **projeto e risco** | durabilidade e **ordem** de reaplicação; o backup pode mudar de formato | **E**, **J** |
+| **F-BANCADA** — sondas vivas, remedição, documentação | **mecânico e verificável** | roteirizado: a célula vira TEM pelo medidor ou não vira | **C**, **E** |
+
+Dois itens ficaram **fora de frente, por decisão do dono**: o nível de
+isolamento (é a Sombra, parada em 05/09) e TLS (a pétrea das zero
+dependências). Os dois têm o custo escrito no documento dos contratos.
+
+**O que a integração vai ter de olhar**, porque nenhuma frente sozinha vê:
+`servidor.rs` é tocado por quatro delas (portão, `op_sql`, ops novas, backup);
+a F-SQL entrega `planejar_sobre` e `analisar_comando_com` que a F-CONSULTA
+consome; e a coluna negada (F-DIREITO) atravessa o `consultar` (F-CONSULTA)
+por `executar_derivado` — é o encontro em que o direito por coluna ou vale
+ou vaza.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

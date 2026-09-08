@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 
 use phxsql_core::datahora::civil_de_dias;
 use phxsql_core::error::{PhxError, Result};
+use phxsql_core::expressao;
 use phxsql_core::keyenc::{escrever_componente, largura_componente};
 use phxsql_core::schema::{AcaoRi, ForeignKey, Schema};
 use phxsql_core::types::ColumnType;
@@ -2485,17 +2486,40 @@ impl Table {
     }
 
     /// Codifica a chave do indice `idx` a partir dos valores da linha.
+    /// A chave de uma LINHA no indice `idx`: a coluna crua, ou o resultado
+    /// da expressao do indice (`lower(nome)`) coagido para o tipo da coluna.
     fn codificar_chave(&self, idx: usize, valores: &[Value]) -> Result<Vec<u8>> {
+        self.codificar_chave_com(idx, valores, true)
+    }
+
+    /// A chave que um CHAMADOR pede para procurar. Nao avalia a expressao do
+    /// indice: quem procura por `lower(nome)` ja manda o valor baixo, e
+    /// aplicar a expressao de novo estaria certo para `lower` por acaso e
+    /// errado para qualquer expressao que nao seja idempotente.
+    fn chave_de_busca(&self, idx: usize, valores: &[Value]) -> Result<Vec<u8>> {
+        self.codificar_chave_com(idx, valores, false)
+    }
+
+    fn codificar_chave_com(&self, idx: usize, valores: &[Value], avaliar: bool) -> Result<Vec<u8>> {
         let esquema = &self.esquema;
         let def = &esquema.indices()[idx];
         let mut chave = Vec::new();
-        for ic in &def.colunas {
+        for (k, ic) in def.colunas.iter().enumerate() {
             let col = &esquema.colunas()[ic.coluna];
             let n = largura_componente(&col.ty)?;
             let base = chave.len();
             chave.resize(base + n, 0);
+            let calculado;
+            let valor = match (avaliar, def.expressoes.get(k).and_then(Option::as_ref)) {
+                (true, Some(e)) => {
+                    calculado = expressao::coagir(&e.avaliar(&self.resolvedor(valores))?, &col.ty)
+                        .map_err(|erro| PhxError::Tipo(format!("indice {}: {erro}", def.nome)))?;
+                    &calculado
+                }
+                _ => &valores[ic.coluna],
+            };
             escrever_componente(
-                &valores[ic.coluna],
+                valor,
                 &col.ty,
                 ic.desc,
                 ic.nocase,
@@ -2505,10 +2529,111 @@ impl Table {
         Ok(chave)
     }
 
-    fn todas_as_chaves(&self, valores: &[Value]) -> Result<Vec<Vec<u8>>> {
+    /// O resolvedor de uma expressao sobre esta linha: nome de coluna (sem
+    /// caixa) para valor e tipo.
+    fn resolvedor<'a>(
+        &'a self,
+        valores: &'a [Value],
+    ) -> impl Fn(&str) -> Option<(&'a Value, &'a ColumnType)> + 'a {
+        move |nome| {
+            let i = self.esquema.posicao_sem_caixa(nome)?;
+            Some((valores.get(i)?, &self.esquema.colunas()[i].ty))
+        }
+    }
+
+    /// A chave da linha no indice `idx`, ou `None` quando a linha NAO pertence
+    /// a ele -- e o indice parcial: o `onde` deu falso ou nulo.
+    fn chave_se_pertence(&self, idx: usize, valores: &[Value]) -> Result<Option<Vec<u8>>> {
+        if let Some(onde) = &self.esquema.indices()[idx].onde {
+            if onde.avaliar_bool(&self.resolvedor(valores))? != Some(true) {
+                return Ok(None);
+            }
+        }
+        self.codificar_chave(idx, valores).map(Some)
+    }
+
+    /// Uma entrada por indice: a chave, ou `None` quando a linha fica fora
+    /// daquele indice. E `Option` DE PROPOSITO, e nao uma lista mais curta: o
+    /// tipo obriga cada caminho de escrita a decidir o que faz com a linha
+    /// que nao pertence, em vez de deixar um `for` esquecido inserir chave
+    /// num indice que a filtrou.
+    fn todas_as_chaves(&self, valores: &[Value]) -> Result<Vec<Option<Vec<u8>>>> {
         (0..self.esquema.indices().len())
-            .map(|i| self.codificar_chave(i, valores))
+            .map(|i| self.chave_se_pertence(i, valores))
             .collect()
+    }
+
+    /// Troca as chaves de uma linha que mudou: sai de onde saiu, entra onde
+    /// entrou, e muda onde a chave mudou. Um lugar so para o `atualizar` e
+    /// para a marca de exclusao, que sao irmaos aqui.
+    fn trocar_chaves(
+        &mut self,
+        rowid: RowId,
+        antigas: &[Option<Vec<u8>>],
+        novas: &[Option<Vec<u8>>],
+    ) -> Result<()> {
+        for (i, (antiga, nova)) in antigas.iter().zip(novas.iter()).enumerate() {
+            match (antiga, nova) {
+                (Some(a), Some(n)) if a == n => {}
+                (Some(a), Some(n)) => {
+                    self.ndx.remover(i, a, rowid)?;
+                    self.ndx.inserir(i, n, rowid)?;
+                }
+                (Some(a), None) => {
+                    self.ndx.remover(i, a, rowid)?;
+                }
+                (None, Some(n)) => {
+                    self.ndx.inserir(i, n, rowid)?;
+                }
+                (None, None) => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// As regras de escrita do esquema, na ordem em que fazem sentido:
+    /// DEFAULT (so no inserir, na coluna que veio nula), depois a coluna
+    /// calculada (sempre, do que a linha tem), depois o CHECK (com a linha
+    /// pronta). Devolve `None` quando a tabela nao tem regra nenhuma -- o
+    /// caminho quente de quem nao declarou nada nao aloca nem uma linha.
+    ///
+    /// Na replica nada disso roda (`julga_integridade`): a imagem que chega
+    /// ja veio com tudo aplicado na origem, e reaplicar seria julgar.
+    fn aplicar_regras(&self, valores: &[Value], insercao: bool) -> Result<Option<Vec<Value>>> {
+        if !self.esquema.tem_regras() || !self.julga_integridade() {
+            return Ok(None);
+        }
+        let mut linha = valores.to_vec();
+        let colunas = self.esquema.colunas();
+        if insercao {
+            for (i, col) in colunas.iter().enumerate() {
+                if let (true, Some(padrao)) = (linha[i].e_null(), &col.padrao) {
+                    let v = padrao.avaliar(&self.resolvedor(&linha))?;
+                    linha[i] = expressao::coagir(&v, &col.ty)
+                        .map_err(|e| PhxError::Tipo(format!("padrao de {}: {e}", col.nome)))?;
+                }
+            }
+        }
+        for (i, col) in colunas.iter().enumerate() {
+            if let Some(calc) = &col.calculada {
+                let v = calc.avaliar(&self.resolvedor(&linha))?;
+                linha[i] = expressao::coagir(&v, &col.ty)
+                    .map_err(|e| PhxError::Tipo(format!("coluna calculada {}: {e}", col.nome)))?;
+            }
+        }
+        for col in colunas {
+            if let Some(check) = &col.check {
+                // `NULL` passa: e o SQL, e e o que separa «nao sei» de «nao».
+                if check.avaliar_bool(&self.resolvedor(&linha))? == Some(false) {
+                    return Err(PhxError::Tipo(format!(
+                        "restricao CHECK da coluna {} recusou a linha: {}",
+                        col.nome,
+                        check.texto()
+                    )));
+                }
+            }
+        }
+        Ok(Some(linha))
     }
 
     // ------------------------------------------------------------ escrita
@@ -2671,6 +2796,18 @@ impl Table {
             None => valores,
         };
 
+        // DEFAULT, coluna calculada e CHECK, depois da sequencia (a expressao
+        // pode falar do numero gravado) e antes das chaves (a chave e a do
+        // valor que vai para o disco).
+        let com_regras;
+        let valores = match self.aplicar_regras(valores, true)? {
+            Some(v) => {
+                com_regras = v;
+                &com_regras[..]
+            }
+            None => valores,
+        };
+
         let chaves = self.todas_as_chaves(valores)?;
 
         // A conferencia acontece AQUI, antes de qualquer gravacao, e nao la
@@ -2679,6 +2816,7 @@ impl Table {
         // desfazer, e o slot desfeito ficaria morto para sempre. Uma tabela que
         // recebe muita insercao repetida iria inchando sem nunca crescer.
         for (i, chave) in chaves.iter().enumerate() {
+            let Some(chave) = chave else { continue };
             if self.ndx.indices()[i].unico && self.ndx.existe(i, chave)? {
                 return Err(PhxError::Duplicado(format!(
                     "indice unico {} ja tem essa chave",
@@ -2700,13 +2838,16 @@ impl Table {
         };
 
         for (i, chave) in chaves.iter().enumerate() {
+            let Some(chave) = chave else { continue };
             // `ja_conferido`: a unicidade foi conferida logo acima, antes de
             // qualquer gravacao. Deixar o `inserir` conferir de novo custaria
             // uma segunda descida na arvore para a mesma resposta.
             if let Err(e) = self.ndx.inserir_ja_conferido(i, chave, rowid) {
                 // Desfaz o que ja entrou.
                 for (j, anterior) in chaves.iter().enumerate().take(i) {
-                    let _ = self.ndx.remover(j, anterior, rowid);
+                    if let Some(anterior) = anterior {
+                        let _ = self.ndx.remover(j, anterior, rowid);
+                    }
                 }
                 let _ = self.reg.excluir(rowid);
                 let _ = self.liberar_externos(&ponteiros);
@@ -2904,12 +3045,23 @@ impl Table {
             None => valores,
         };
 
+        // Coluna calculada e CHECK (o DEFAULT e so do inserir).
+        let com_regras;
+        let valores = match self.aplicar_regras(valores, false)? {
+            Some(v) => {
+                com_regras = v;
+                &com_regras[..]
+            }
+            None => valores,
+        };
+
         let chaves_antigas = self.todas_as_chaves(&valores_antigos)?;
         let chaves_novas = self.todas_as_chaves(valores)?;
 
         // Unicidade: so reclama se a chave mudou e ja pertence a outro rowid.
         for (i, nova) in chaves_novas.iter().enumerate() {
-            if !self.ndx.indices()[i].unico || *nova == chaves_antigas[i] {
+            let Some(nova) = nova else { continue };
+            if !self.ndx.indices()[i].unico || Some(nova) == chaves_antigas[i].as_ref() {
                 continue;
             }
             let donos = self.ndx.buscar(i, nova)?;
@@ -2977,12 +3129,7 @@ impl Table {
             self.reg.mudar_marcadas(delta)?;
         }
 
-        for (i, (antiga, nova)) in chaves_antigas.iter().zip(chaves_novas.iter()).enumerate() {
-            if antiga != nova {
-                self.ndx.remover(i, antiga, rowid)?;
-                self.ndx.inserir(i, nova, rowid)?;
-            }
-        }
+        self.trocar_chaves(rowid, &chaves_antigas, &chaves_novas)?;
         // O texto sai e entra, nesta ordem. A saida usa o payload ANTIGO --
         // que ainda esta na mao -- porque so ele sabe quais palavras a linha
         // tinha; desindexar pelo novo deixaria as velhas no indice, e o indice
@@ -3102,7 +3249,9 @@ impl Table {
         let valores = self.decodificar(&payload, false)?;
         let chaves = self.todas_as_chaves(&valores)?;
         for (i, chave) in chaves.iter().enumerate() {
-            self.ndx.remover(i, chave, rowid)?;
+            if let Some(chave) = chave {
+                self.ndx.remover(i, chave, rowid)?;
+            }
         }
         let ponteiros = self.ponteiros(&payload)?;
         self.liberar_externos(&ponteiros)?;
@@ -3231,12 +3380,7 @@ impl Table {
 
         let versao = self.reg.atualizar(rowid, &payload)?;
         self.reg.mudar_marcadas(if valor { 1 } else { -1 })?;
-        for (j, (a, b)) in chaves_antigas.iter().zip(chaves_novas.iter()).enumerate() {
-            if a != b {
-                self.ndx.remover(j, a, rowid)?;
-                self.ndx.inserir(j, b, rowid)?;
-            }
-        }
+        self.trocar_chaves(rowid, &chaves_antigas, &chaves_novas)?;
         // A marca vai para a replica como ALTERACAO, que e o que ela e no
         // `.reg`: o byte da coluna de sistema mudou e nada mais.
         self.anotar(Operacao::Alteracao, rowid, versao, &payload)?;
@@ -4328,7 +4472,7 @@ impl Table {
     pub fn buscar(&mut self, indice: &str, chave: &[Value]) -> Result<Vec<RowId>> {
         let i = self.idx_por_nome(indice)?;
         let valores = self.espalhar(i, chave)?;
-        let codificada = self.codificar_chave(i, &valores)?;
+        let codificada = self.chave_de_busca(i, &valores)?;
         let achados = self.ndx.buscar(i, &codificada)?;
         if self.sobreposta.is_none() {
             return Ok(achados);
@@ -4349,7 +4493,7 @@ impl Table {
             let Some(linha) = self.resolver(r)? else {
                 continue;
             };
-            if self.codificar_chave(i, &linha)? == codificada {
+            if self.chave_se_pertence(i, &linha)?.as_deref() == Some(&codificada[..]) {
                 saida.push(r);
             }
         }
@@ -4365,11 +4509,11 @@ impl Table {
     ) -> Result<Vec<RowId>> {
         let i = self.idx_por_nome(indice)?;
         let de = match de {
-            Some(v) => Some(self.codificar_chave(i, &self.espalhar(i, v)?)?),
+            Some(v) => Some(self.chave_de_busca(i, &self.espalhar(i, v)?)?),
             None => None,
         };
         let ate = match ate {
-            Some(v) => Some(self.codificar_chave(i, &self.espalhar(i, v)?)?),
+            Some(v) => Some(self.chave_de_busca(i, &self.espalhar(i, v)?)?),
             None => None,
         };
         self.ndx.intervalo(i, de.as_deref(), ate.as_deref())
@@ -4517,8 +4661,11 @@ impl Table {
         while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
             let valores = self.decodificar(&payload, false)?;
             for (i, lote) in lotes.iter_mut().enumerate() {
-                let chave = self.codificar_chave(i, &valores)?;
-                lote.extend_from_slice(&NdxFile::chave_completa(&chave, id));
+                // O indice parcial tambem vale na reconstrucao: a linha que o
+                // filtro exclui nao volta por outra porta.
+                if let Some(chave) = self.chave_se_pertence(i, &valores)? {
+                    lote.extend_from_slice(&NdxFile::chave_completa(&chave, id));
+                }
             }
             rowid = id + 1;
         }

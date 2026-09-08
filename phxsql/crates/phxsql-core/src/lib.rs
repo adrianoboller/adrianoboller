@@ -23,6 +23,7 @@ pub mod datahora;
 pub mod desafio;
 pub mod ed25519;
 pub mod error;
+pub mod expressao;
 pub mod fio;
 pub mod frogcript;
 pub mod hash;
