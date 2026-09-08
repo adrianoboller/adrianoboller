@@ -226,12 +226,24 @@ pub fn analisar(entrada: &str) -> Result<Selecao> {
 }
 
 /// Le qualquer instrucao de dado: `SELECT`, ou `INSERT`/`UPDATE`/`DELETE`
-/// por chave.
+/// por chave. Sem parametro nenhum -- `analisar_comando_com(entrada, &[])`.
 pub fn analisar_comando(entrada: &str) -> Result<Comando> {
+    analisar_comando_com(entrada, &[])
+}
+
+/// A mesma leitura, com `?` resolvido contra `parametros` ANTES da sintaxe
+/// rodar -- ver `lexico::resolver_parametros` para o porque disso ser troca
+/// de TOKEN e nunca de texto. E a porta que a op `sql` usa quando o pedido
+/// traz `"parametros"`.
+pub fn analisar_comando_com(
+    entrada: &str,
+    parametros: &[phxsql_core::json::Json],
+) -> Result<Comando> {
     let simbolos = lexico::analisar(entrada)?;
     if simbolos.is_empty() {
         return Err(PhxError::Esquema("comando SQL vazio".into()));
     }
+    let simbolos = lexico::resolver_parametros(simbolos, parametros)?;
     let mut p = Analisador { s: simbolos, i: 0 };
     let cmd = p.comando()?;
     p.aceitar(&Token::PontoEVirgula);
@@ -913,5 +925,83 @@ mod testes {
     fn comando_vazio() {
         assert!(analisar("   ").is_err());
         assert!(analisar("-- so um comentario").is_err());
+    }
+
+    // -------------------------------------------------------- parametros
+
+    #[test]
+    fn parametro_resolve_no_where_antes_da_sintaxe() {
+        use phxsql_core::json::Json;
+        let c = analisar_comando_com("SELECT * FROM t WHERE id = ?", &[Json::Numero(7.0)]).unwrap();
+        let Comando::Selecao(s) = c else {
+            panic!("esperava SELECT")
+        };
+        assert_eq!(s.onde.unwrap().valor, Literal::Numero("7".into()));
+    }
+
+    #[test]
+    fn parametro_de_texto_nao_reabre_o_comando() {
+        // A prova real do item 1: o parametro carrega um `;DROP TABLE...`
+        // como DADO. Se a substituicao fosse por texto (e nao por token), o
+        // comando reanalisado quebraria em dois -- aqui ele continua um so,
+        // e o valor chega inteiro ao literal.
+        use phxsql_core::json::Json;
+        let veneno = "; DROP TABLE clientes; --";
+        let c = analisar_comando_com("SELECT * FROM t WHERE nome = ?", &[Json::texto_de(veneno)])
+            .unwrap();
+        let Comando::Selecao(s) = c else {
+            panic!("esperava SELECT")
+        };
+        assert_eq!(s.onde.unwrap().valor, Literal::Texto(veneno.into()));
+    }
+
+    #[test]
+    fn parametro_nulo_e_booleano() {
+        use phxsql_core::json::Json;
+        let c = analisar_comando_com(
+            "UPDATE t SET a = ? WHERE id = ?",
+            &[Json::Bool(false), Json::Numero(3.0)],
+        )
+        .unwrap();
+        let Comando::Atualizacao(a) = c else {
+            panic!("esperava UPDATE")
+        };
+        assert_eq!(a.atribuicoes[0].1, Literal::Bool(false));
+        assert_eq!(a.onde.valor, Literal::Numero("3".into()));
+
+        let c = analisar_comando_com("INSERT INTO t (a) VALUES (?)", &[Json::Nulo]).unwrap();
+        let Comando::Insercao(i) = c else {
+            panic!("esperava INSERT")
+        };
+        assert_eq!(i.valores[0], Literal::Nulo);
+    }
+
+    #[test]
+    fn contagem_diferente_recusa_nomeando_os_dois_numeros() {
+        use phxsql_core::json::Json;
+        let e = analisar_comando_com("SELECT * FROM t WHERE id = ?", &[])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("vieram 0 parametros"), "{e}");
+        assert!(e.contains("tem 1 `?`"), "{e}");
+
+        let e = analisar_comando_com(
+            "SELECT * FROM t WHERE id = ?",
+            &[Json::Numero(1.0), Json::Numero(2.0)],
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("vieram 2 parametros"), "{e}");
+        assert!(e.contains("tem 1 `?`"), "{e}");
+    }
+
+    #[test]
+    fn analisar_comando_sem_parametro_continua_igual() {
+        // `analisar_comando` e `analisar_comando_com(_, &[])` -- o mesmo
+        // resultado, para quem nunca usou parametro nao precisar mudar nada.
+        assert_eq!(
+            analisar_comando("SELECT * FROM t WHERE id = 1").unwrap(),
+            analisar_comando_com("SELECT * FROM t WHERE id = 1", &[]).unwrap()
+        );
     }
 }
