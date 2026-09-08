@@ -702,6 +702,28 @@ O ARQUIVO .TXT DO PROFILER
     arquivo cresce sem parar. "arquivos": 0 e legitimo e quer dizer "nao guarde
     historico" -- cheio o teto, o arquivo recomeca.
 
+O RODIZIO DO ACESSOS.LOG E DO DIRETIVAS.LOG
+
+    O mesmo rodizio do Profiler acima, pelo mesmo motivo: sem teto, os dois
+    crescem para sempre. As secoes "acessos" e "diretivas" do config.json tem
+    o MESMO formato de "profiler":
+
+    "acessos": {
+      "arquivo_mib": 64,
+      "arquivos": 4
+    },
+    "diretivas": {
+      "arquivo_mib": 64,
+      "arquivos": 4
+    }
+
+    Ao contrario do Profiler (que NASCE ligado), estas duas NASCEM DESLIGADAS
+    ("arquivo_mib": 0) -- guarda nova entra pedida, e um "acessos.log" ou
+    "diretivas.log" que ja existe em producao nao pode passar a girar sozinho
+    so porque o servidor foi atualizado. Quem quiser o rodizio liga
+    explicitamente, do jeito de sempre: pelo config.json no arranque, ou por
+    ALTER SERVER SET a quente (o efeito vale para o arquivo CORRENTE).
+
     CACHE DE PAGINAS. O "cache_paginas" diz quantas paginas do .ndx cada
     tabela aberta guarda em RAM. Cada pagina tem 4 KiB, entao 2.048 dao 8 MiB
     por tabela aberta -- e o servidor abre e fecha a tabela a cada operacao,

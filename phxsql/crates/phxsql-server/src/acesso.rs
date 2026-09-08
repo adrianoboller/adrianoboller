@@ -19,7 +19,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
 use phxsql_core::datahora::instante_iso;
-use phxsql_core::error::Result;
+use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 
 /// Um acesso a porta.
@@ -123,11 +123,32 @@ impl ResumoIp {
 
 pub struct LogAcessos {
     caminho: PathBuf,
-    arquivo: File,
+    /// `None` so depois de um rodizio cujo reabrir falhou -- ver
+    /// `registrar`. Fora isso, sempre `Some`: `acessos.log` nao tem o modo
+    /// "so memoria" que o Profiler tem.
+    arquivo: Option<File>,
+    /// Teto de bytes por arquivo. Zero = nao rodizia -- o comportamento de
+    /// sempre, e o padrao de quem nao configurou o campo novo do pedido 228
+    /// (`acessos.arquivo_mib`). A logica de girar e a MESMA do Profiler --
+    /// ver `crate::rodizio`, para onde ela foi extraida.
+    teto_do_arquivo: u64,
+    /// Quantos arquivos ANTIGOS guardar, alem do corrente.
+    manter: usize,
+    /// Bytes no arquivo CORRENTE -- decide a hora de girar. Semeado do
+    /// TAMANHO REAL do arquivo ao abrir, e nao de zero: religar o servidor
+    /// no mesmo `acessos.log` tem de continuar contando de onde o arquivo
+    /// estava (mesma razao do `Profiler::ligar`).
+    bytes_no_arquivo: u64,
+    /// Quantas vezes o arquivo virou desde que abriu.
+    rodizios: u64,
+    /// Rodizios que nao deram certo -- renomear ou reabrir falhou.
+    falhas_de_rodizio: u64,
 }
 
 impl LogAcessos {
     /// Abre para acrescentar, criando o arquivo e o diretorio se preciso.
+    /// Nasce SEM rodizio (`teto_do_arquivo: 0`) -- quem quiser liga com
+    /// [`LogAcessos::definir_rodizio`].
     pub fn abrir(caminho: impl AsRef<Path>) -> Result<LogAcessos> {
         let caminho = caminho.as_ref().to_path_buf();
         if let Some(dir) = caminho.parent().filter(|d| !d.as_os_str().is_empty()) {
@@ -137,18 +158,77 @@ impl LogAcessos {
             .create(true)
             .append(true)
             .open(&caminho)?;
-        Ok(LogAcessos { caminho, arquivo })
+        let bytes_no_arquivo = arquivo.metadata().map(|m| m.len()).unwrap_or(0);
+        Ok(LogAcessos {
+            caminho,
+            arquivo: Some(arquivo),
+            teto_do_arquivo: 0,
+            manter: 0,
+            bytes_no_arquivo,
+            rodizios: 0,
+            falhas_de_rodizio: 0,
+        })
     }
 
     pub fn caminho(&self) -> &Path {
         &self.caminho
     }
 
+    /// Ajusta o rodizio. Vale para o arquivo CORRENTE, como no Profiler
+    /// (`Profiler::definir_rodizio`): quem baixou o teto na tela quer o
+    /// efeito agora, e nao no proximo arranque do servidor.
+    pub fn definir_rodizio(&mut self, teto_do_arquivo: u64, manter: usize) {
+        self.teto_do_arquivo = teto_do_arquivo;
+        self.manter = manter.min(crate::profiler::MAX_ARQUIVOS_ANTIGOS);
+    }
+
+    pub fn teto_do_arquivo(&self) -> u64 {
+        self.teto_do_arquivo
+    }
+
+    pub fn manter(&self) -> usize {
+        self.manter
+    }
+
+    pub fn rodizios(&self) -> u64 {
+        self.rodizios
+    }
+
+    pub fn falhas_de_rodizio(&self) -> u64 {
+        self.falhas_de_rodizio
+    }
+
     /// Grava e descarrega na hora: um log de acesso que se perde no buffer
     /// quando o processo cai nao serve para nada.
+    ///
+    /// Confere ANTES de escrever se a linha estoura o teto -- mesma ordem do
+    /// `profiler::girar_se_encheu`, pelo mesmo motivo: conferir depois
+    /// deixaria a ultima linha de cada arquivo passar do teto.
     pub fn registrar(&mut self, a: &Acesso) -> Result<()> {
-        writeln!(self.arquivo, "{}", a.para_json().escrever())?;
-        self.arquivo.flush()?;
+        let linha = a.para_json().escrever();
+        let cabem = linha.len() as u64 + 1;
+        if crate::rodizio::deve_girar(self.bytes_no_arquivo, cabem, self.teto_do_arquivo) {
+            // Solta o descritor ANTES de girar -- ver a nota em
+            // `rodizio::girar` sobre o Windows recusar renomear um arquivo
+            // aberto.
+            self.arquivo = None;
+            let (novo, deu_errado) = crate::rodizio::girar(&self.caminho, self.manter);
+            self.arquivo = novo;
+            self.bytes_no_arquivo = 0;
+            self.rodizios += 1;
+            if deu_errado {
+                self.falhas_de_rodizio += 1;
+            }
+        }
+        let arquivo = self.arquivo.as_mut().ok_or_else(|| {
+            PhxError::Io(std::io::Error::other(format!(
+                "{} sem descritor -- o rodizio falhou ao reabrir",
+                self.caminho.display()
+            )))
+        })?;
+        writeln!(arquivo, "{linha}")?;
+        arquivo.flush()?;
+        self.bytes_no_arquivo += cabem;
         Ok(())
     }
 
@@ -330,5 +410,65 @@ mod tests {
         assert!(LogAcessos::ler("/nao/existe/acessos.log")
             .unwrap()
             .is_empty());
+    }
+
+    /// Pedido 228, sentido 1: **sem configurar nada, o comportamento e o de
+    /// sempre** -- o arquivo so cresce, e nao ha `.1`. E o teste que a regra
+    /// petrea "guarda nova entra pedida" exige: uma protecao nova que muda
+    /// quem nao pediu nada e estrago, nao protecao.
+    #[test]
+    fn sem_rodizio_configurado_o_arquivo_so_cresce() {
+        let d = dir_temp("sem-rodizio");
+        let caminho = d.join("acessos.log");
+        let mut l = LogAcessos::abrir(&caminho).unwrap();
+        assert_eq!(l.teto_do_arquivo(), 0, "nasce sem rodizio");
+        for i in 0..50 {
+            l.registrar(&acesso("10.0.0.1", 1_000 * i, true)).unwrap();
+        }
+        assert_eq!(l.rodizios(), 0, "teto 0 nunca gira");
+        assert!(!crate::rodizio::com_sufixo(&caminho, 1).exists());
+        assert_eq!(LogAcessos::ler(&caminho).unwrap().len(), 50);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Pedido 228, sentido 2: **passar do teto configurado gira o arquivo**.
+    /// Prova real do defeito reposto: com `crate::rodizio::deve_girar`
+    /// forcado a sempre devolver `false` (o defeito antigo -- crescer para
+    /// sempre), este teste tem de FALHAR na asserção de `rodizios() > 0` e
+    /// na existencia do `.1`; com o rodizio ligado, os dois passam.
+    #[test]
+    fn estourar_o_teto_gira_o_arquivo() {
+        let d = dir_temp("com-rodizio");
+        let caminho = d.join("acessos.log");
+        let mut l = LogAcessos::abrir(&caminho).unwrap();
+        // Teto minusculo (a primeira linha ja passa dele) e `manter` folgado
+        // o bastante para as ~10 gravacoes nao evictarem nada -- senao o
+        // proprio rodizio, funcionando certo, apagaria o mais velho de
+        // proposito (mesma regra do Profiler), e o total abaixo cairia por
+        // um motivo que NAO e o defeito que este teste prova.
+        l.definir_rodizio(80, 20);
+        for i in 0..10 {
+            l.registrar(&acesso("10.0.0.1", 1_000 * i, true)).unwrap();
+        }
+        assert!(l.rodizios() > 0, "tinha de ter girado pelo menos uma vez");
+        assert_eq!(l.falhas_de_rodizio(), 0, "nenhum passo do rodizio falhou");
+        let sufixo_1 = crate::rodizio::com_sufixo(&caminho, 1);
+        assert!(
+            sufixo_1.exists(),
+            "o rodizio tinha de deixar um .1 para tras"
+        );
+        // Nada se perde: somando o corrente com TODOS os antigos que o
+        // rodizio produziu, as 10 linhas continuam legiveis -- girar nao e
+        // sinonimo de perder log quando `manter` cobre o que foi gerado.
+        let mut total = LogAcessos::ler(&caminho).unwrap().len();
+        for n in 1..=l.manter() {
+            let sufixo = crate::rodizio::com_sufixo(&caminho, n);
+            if !sufixo.exists() {
+                break;
+            }
+            total += LogAcessos::ler(&sufixo).unwrap().len();
+        }
+        assert_eq!(total, 10, "girar nao pode perder nem duplicar linha");
+        std::fs::remove_dir_all(&d).unwrap();
     }
 }

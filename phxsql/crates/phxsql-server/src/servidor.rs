@@ -817,7 +817,11 @@ impl Servidor {
         if recuperacao.houve() {
             eprintln!("{}", recuperacao.texto(&config.base));
         }
-        let log = LogAcessos::abrir(&config.log_acessos)?;
+        let mut log = LogAcessos::abrir(&config.log_acessos)?;
+        // O rodizio do `acessos.log` -- pedido 228, mesma logica do
+        // Profiler (`crate::rodizio`). Zero/ausente e o padrao, e continua
+        // sem girar, como sempre.
+        log.definir_rodizio(config.acessos.teto_do_arquivo(), config.acessos.arquivos);
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
         let dblink = crate::dblink::Registro::abrir(&config.dblink)?;
         let jobs = crate::jobs::Registro::abrir(&config.jobs)?;
@@ -899,6 +903,15 @@ impl Servidor {
         servidor
             .telemetria
             .definir_pintura(servidor.config.telemetria.clone());
+        // O rodizio do `diretivas.log` -- pedido 228, mesmo motivo do
+        // `acessos.log` acima. `Diario::definir_rodizio` toma `&self` (o
+        // diario nao guarda descritor entre chamadas), entao isto pode
+        // esperar o `Arc<Servidor>` existir em vez de brigar com o `config`
+        // sendo movido para dentro do struct.
+        servidor.diario.definir_rodizio(
+            servidor.config.diretivas.teto_do_arquivo(),
+            servidor.config.diretivas.arquivos,
+        );
         // Quem configurou "idioma" pediu o recurso: a tabela de mensagens e
         // semeada no arranque se ainda nao existe. Sem o campo, nada e criado
         // -- guarda nova entra pedida, nao imposta.
@@ -3953,6 +3966,14 @@ impl Servidor {
             // deixa uma janela aberta justamente enquanto alguem observa.
             prof.definir_sigilosas(&novo.cifra.tabelas);
         }
+        // O rodizio de `acessos.log` e `diretivas.log` -- pedido 228, mesmo
+        // motivo do Profiler acima: quem baixou o teto na tela quer o efeito
+        // no arquivo CORRENTE, e nao no proximo arranque do servidor.
+        if let Ok(mut log) = self.log.lock() {
+            log.definir_rodizio(novo.acessos.teto_do_arquivo(), novo.acessos.arquivos);
+        }
+        self.diario
+            .definir_rodizio(novo.diretivas.teto_do_arquivo(), novo.diretivas.arquivos);
         // A cor vale na resposta seguinte da telemetria -- dois segundos. Cor
         // se escolhe VENDO, e uma que so aparecesse no proximo arranque seria
         // escolhida no escuro.
@@ -11180,6 +11201,12 @@ impl Servidor {
             )));
         }
         let nome = nova.nome.clone();
+        // Guarda o mesmo valor que o `esquema` vai devolver depois -- e o
+        // ponto do conserto do pedido 227: havia um literal `false` aqui,
+        // sobrevivente de antes de "chave declarada nasce conferida", e a
+        // tela recebia duas respostas diferentes sobre a MESMA chave (esta
+        // resposta dizia nao-imposta, o `esquema` dizia `verificar:true`).
+        let imposta = nova.verificar;
         fks.push(nova);
         let reescreveu = t.redeclarar_chaves_estrangeiras(fks)?;
         Ok(Json::objeto(vec![
@@ -11190,9 +11217,9 @@ impl Servidor {
                 "chaves_estrangeiras",
                 Json::de_u64(t.esquema().chaves_estrangeiras().len() as u64),
             ),
-            // A chave e DECLARADA. Quem chama precisa poder dizer a verdade
-            // na tela sem conhecer o motor de cor.
-            ("imposta", Json::Bool(false)),
+            // A chave e DECLARADA, e "imposta" aqui e o MESMO `verificar` que
+            // o esquema grava e devolve -- nunca um literal a parte.
+            ("imposta", Json::Bool(imposta)),
             ("arquivos_reescritos", Json::Bool(reescreveu)),
         ]))
     }
@@ -22951,8 +22978,10 @@ mod testes_chave_estrangeira {
                "ao_alterar":"restringir""#,
         )
         .unwrap();
-        // A resposta diz a verdade que a tela precisa repetir.
-        assert_eq!(r.campo("imposta").unwrap().booleano(), Some(false));
+        // A resposta diz a verdade que a tela precisa repetir -- e esta chave
+        // nao mandou "verificar", entao nasce conferida (pedido 227: o
+        // "imposta" da resposta tem de bater com o "verificar" do esquema).
+        assert_eq!(r.campo("imposta").unwrap().booleano(), Some(true));
 
         let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
         let fks = e
@@ -22962,6 +22991,11 @@ mod testes_chave_estrangeira {
         assert_eq!(fks.len(), 1, "a chave nao entrou: {}", e.escrever());
         assert_eq!(fks[0].texto_ou("tabela_ref", ""), "clientes");
         assert_eq!(fks[0].texto_ou("ao_alterar", ""), "Restringir");
+        assert_eq!(
+            fks[0].campo("verificar").and_then(Json::booleano),
+            Some(true),
+            "o esquema tem de concordar com a resposta do declarar_fk"
+        );
         // E o excluir e o da regra, mesmo sem ninguem ter pedido.
         assert_eq!(fks[0].texto_ou("ao_excluir", ""), "Restringir");
 
@@ -22986,6 +23020,80 @@ mod testes_chave_estrangeira {
         )
         .unwrap_err();
         assert!(e2.to_string().contains("ja esta declarada"), "{e2}");
+    }
+
+    /// Pedido 227: o `imposta` da resposta do `declarar_fk` tem de ser o
+    /// MESMO valor que o `esquema` devolve depois (`verificar`) -- nunca um
+    /// literal a parte. Antes do conserto havia um `Json::Bool(false)` fixo
+    /// no lugar deste campo, entao a tela ficava com duas respostas
+    /// diferentes sobre a mesma chave. Prova nos dois sentidos: a chave que
+    /// nasce conferida (padrao) responde `imposta:true`, e a que pede
+    /// `"verificar":false` de proposito responde `imposta:false` -- as duas
+    /// batendo com o que o `esquema` mostra.
+    #[test]
+    fn declarar_fk_responde_imposta_com_o_mesmo_verificar_do_esquema() {
+        let guarda = dir_temp("declara-imposta-bate-com-verificar");
+        let s = servidor(&guarda);
+        pede(
+            &s,
+            r#""op":"criar_tabela","database":"b","tabela":"clientes",
+               "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+               "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            r#""op":"criar_tabela","database":"b","tabela":"pedidos",
+               "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                          {"nome":"cliente_a","tipo":"Int4"},
+                          {"nome":"cliente_b","tipo":"Int4"}],
+               "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]"#,
+        )
+        .unwrap();
+
+        // Sem "verificar": nasce conferida -- imposta:true, igual ao esquema.
+        let r_padrao = pede(
+            &s,
+            r#""op":"declarar_fk","database":"b","tabela":"pedidos",
+               "nome":"fk_a","colunas":["cliente_a"],"tabela_ref":"clientes""#,
+        )
+        .unwrap();
+        assert_eq!(
+            r_padrao.campo("imposta").and_then(Json::booleano),
+            Some(true)
+        );
+
+        // Com "verificar":false explicito -- imposta:false, igual ao esquema.
+        let r_solta = pede(
+            &s,
+            r#""op":"declarar_fk","database":"b","tabela":"pedidos",
+               "nome":"fk_b","colunas":["cliente_b"],"tabela_ref":"clientes",
+               "verificar":false"#,
+        )
+        .unwrap();
+        assert_eq!(
+            r_solta.campo("imposta").and_then(Json::booleano),
+            Some(false)
+        );
+
+        let e = pede(&s, r#""op":"esquema","database":"b","tabela":"pedidos""#).unwrap();
+        let fks = e
+            .campo("chaves_estrangeiras")
+            .and_then(Json::lista)
+            .unwrap();
+        let fk_a = fks
+            .iter()
+            .find(|f| f.texto_ou("nome", "") == "fk_a")
+            .unwrap();
+        let fk_b = fks
+            .iter()
+            .find(|f| f.texto_ou("nome", "") == "fk_b")
+            .unwrap();
+        assert_eq!(fk_a.campo("verificar").and_then(Json::booleano), Some(true));
+        assert_eq!(
+            fk_b.campo("verificar").and_then(Json::booleano),
+            Some(false)
+        );
     }
 
     /// O leitor da chave aceita `tabela` como apelido de `tabela_ref` -- mas

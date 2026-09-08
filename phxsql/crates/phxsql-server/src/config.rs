@@ -1933,8 +1933,18 @@ impl Default for PerfilEmDisco {
 
 impl PerfilEmDisco {
     fn de_json(j: &Json) -> PerfilEmDisco {
-        let padrao = PerfilEmDisco::default();
-        let Some(c) = j.campo("profiler") else {
+        PerfilEmDisco::de_secao(j, "profiler", PerfilEmDisco::default())
+    }
+
+    /// A mesma leitura (`arquivo_mib`/`arquivos`), generalizada por SECAO e
+    /// por PADRAO -- pedido 228: `acessos.log` e `diretivas.log` reaproveitam
+    /// este tipo para o rodizio deles, e nao inventam outro. O padrao muda
+    /// por chamador porque a regra da casa exige: o Profiler NASCE ligado
+    /// (decisao propria, documentada acima), mas `acessos`/`diretivas` tem
+    /// de nascer com `arquivo_mib: 0` -- guarda nova entra pedida, e um
+    /// arquivo que ja existe em producao nao pode passar a girar sozinho.
+    fn de_secao(j: &Json, secao: &str, padrao: PerfilEmDisco) -> PerfilEmDisco {
+        let Some(c) = j.campo(secao) else {
             return padrao;
         };
         PerfilEmDisco {
@@ -1943,6 +1953,16 @@ impl PerfilEmDisco {
                 .max(0) as u64,
             arquivos: (c.inteiro_ou("arquivos", padrao.arquivos as i64).max(0) as usize)
                 .min(crate::profiler::MAX_ARQUIVOS_ANTIGOS),
+        }
+    }
+
+    /// O padrao de `acessos` e `diretivas`: sem rodizio, o comportamento de
+    /// sempre -- ver a nota de `de_secao` sobre por que ele NAO e o mesmo
+    /// `Default` do Profiler.
+    fn sem_rodizio() -> PerfilEmDisco {
+        PerfilEmDisco {
+            arquivo_mib: 0,
+            arquivos: 0,
         }
     }
 
@@ -2362,6 +2382,11 @@ pub struct Config {
     pub telemetria: Painel,
     /// O rodizio do `.txt` do Profiler. Ver [`PerfilEmDisco`].
     pub profiler: PerfilEmDisco,
+    /// O rodizio do `acessos.log`. Pedido 228 -- mesmo tipo do Profiler,
+    /// padrao DESLIGADO (ver [`PerfilEmDisco::sem_rodizio`]).
+    pub acessos: PerfilEmDisco,
+    /// O rodizio do `diretivas.log`. Pedido 228, mesma nota de `acessos`.
+    pub diretivas: PerfilEmDisco,
     /// O idioma das mensagens do servidor: o nome de uma das seis colunas da
     /// tabela `phxsys.mensagens`. Vazio ou ausente = `Portugues`, que e o
     /// texto de fabrica -- e por isso config antigo nao muda nada.
@@ -2393,7 +2418,7 @@ pub struct Config {
 // no primeiro nivel -- quem a escrevesse no arquivo levava um "campo que este
 // servidor nao conhece" sobre um campo que ele le e obedece. Aviso falso gasta
 // a confianca do aviso verdadeiro.
-const CAMPOS_CONHECIDOS: [&str; 28] = [
+const CAMPOS_CONHECIDOS: [&str; 30] = [
     "bind",
     "base",
     "token",
@@ -2422,6 +2447,8 @@ const CAMPOS_CONHECIDOS: [&str; 28] = [
     "lgpd",
     "telemetria",
     "profiler",
+    "acessos",
+    "diretivas",
 ];
 
 /// O que cada secao conhecida aceita por dentro.
@@ -2433,7 +2460,7 @@ const CAMPOS_CONHECIDOS: [&str; 28] = [
 /// as duas primeiras estao ganhando campos novos por outras frentes nesta
 /// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
 /// as duas ultimas tem chaves livres (bases, tabelas).
-const SECOES_CONHECIDAS: [(&str, &[&str]); 11] = [
+const SECOES_CONHECIDAS: [(&str, &[&str]); 13] = [
     (
         "recursos",
         &[
@@ -2553,6 +2580,10 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 11] = [
         ],
     ),
     ("profiler", &["arquivo_mib", "arquivos"]),
+    // Pedido 228: o rodizio de `acessos.log` e `diretivas.log`, mesmo par de
+    // campos do `profiler` acima.
+    ("acessos", &["arquivo_mib", "arquivos"]),
+    ("diretivas", &["arquivo_mib", "arquivos"]),
 ];
 
 /// O que o arquivo trouxe e o servidor nao sabe ler.
@@ -2606,6 +2637,8 @@ impl Default for Config {
             lgpd: Lgpd::default(),
             telemetria: Painel::default(),
             profiler: PerfilEmDisco::default(),
+            acessos: PerfilEmDisco::sem_rodizio(),
+            diretivas: PerfilEmDisco::sem_rodizio(),
             idioma: String::new(),
             estranhas: Vec::new(),
             avisos: Vec::new(),
@@ -2768,6 +2801,8 @@ impl Config {
             lgpd: Lgpd::de_json(j),
             telemetria: Painel::de_json(j, &mut avisos),
             profiler: PerfilEmDisco::de_json(j),
+            acessos: PerfilEmDisco::de_secao(j, "acessos", PerfilEmDisco::sem_rodizio()),
+            diretivas: PerfilEmDisco::de_secao(j, "diretivas", PerfilEmDisco::sem_rodizio()),
             idioma: {
                 // O valor aceito e o NOME de uma coluna da tabela de
                 // mensagens. Desconhecido nao derruba o servidor -- vira
@@ -3167,6 +3202,8 @@ impl Config {
             // ao lado dos limiares que decidiram o nivel.
             ("telemetria", self.telemetria.para_json()),
             ("profiler", self.profiler.para_json()),
+            ("acessos", self.acessos.para_json()),
+            ("diretivas", self.diretivas.para_json()),
             // O idioma EM USO, ja resolvido: vazio no arquivo vira Portugues
             // aqui, para a tela nao ter de repetir a regra do fallback.
             (
@@ -3366,6 +3403,14 @@ pub const CAMPOS_EDITAVEIS: &[(&str, TipoDoCampo, bool)] = &[
     // teto agora, e nao no proximo `profiler_ligar`.
     ("profiler.arquivo_mib", TipoDoCampo::Inteiro, true),
     ("profiler.arquivos", TipoDoCampo::Inteiro, true),
+    // Pedido 228: o mesmo rodizio do Profiler, para `acessos.log` e
+    // `diretivas.log`. `true` (vale a quente) pelo mesmo motivo: quem baixou
+    // o teto na tela quer o efeito no arquivo CORRENTE, e `gravar_campos`
+    // leva os dois ao `LogAcessos`/`Diario` vivos em `op_config_gravar`.
+    ("acessos.arquivo_mib", TipoDoCampo::Inteiro, true),
+    ("acessos.arquivos", TipoDoCampo::Inteiro, true),
+    ("diretivas.arquivo_mib", TipoDoCampo::Inteiro, true),
+    ("diretivas.arquivos", TipoDoCampo::Inteiro, true),
     ("telemetria.alto_uso_ms", TipoDoCampo::Inteiro, true),
     ("telemetria.stress_ms", TipoDoCampo::Inteiro, true),
     // O quorum minimo da escrita -- pedido 208, a tela; pedido 207, o efeito.
@@ -4684,6 +4729,46 @@ mod tests {
         let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
         assert_eq!(c.telemetria.alto_uso_ms, 1);
         assert_eq!(c.telemetria.stress_ms, 1);
+    }
+
+    /// Pedido 228: sem as secoes `acessos`/`diretivas`, o rodizio nasce
+    /// DESLIGADO -- ao contrario do Profiler, que nasce ligado por decisao
+    /// propria. E o que "guarda nova entra pedida" exige aqui: um
+    /// `config.json` de antes do pedido 228 nao pode passar a girar sozinho.
+    #[test]
+    fn sem_as_secoes_acessos_e_diretivas_nascem_sem_rodizio() {
+        let c = Config::de_json(&Json::analisar(r#"{"token":"x"}"#).unwrap()).unwrap();
+        assert_eq!(c.acessos.arquivo_mib, 0);
+        assert_eq!(c.acessos.arquivos, 0);
+        assert_eq!(c.acessos.teto_do_arquivo(), 0);
+        assert_eq!(c.diretivas.arquivo_mib, 0);
+        assert_eq!(c.diretivas.arquivos, 0);
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+    }
+
+    /// Configurados, os dois lem exatamente como o Profiler -- mesmo tipo,
+    /// mesma unidade (MiB vira bytes), e o `teto_em_disco_mib` sai calculado
+    /// e nao precisa ser conferido no JavaScript da tela.
+    #[test]
+    fn acessos_e_diretivas_configurados_leem_como_o_profiler() {
+        let txt = r#"{"token":"x",
+            "acessos":{"arquivo_mib":32,"arquivos":3},
+            "diretivas":{"arquivo_mib":8,"arquivos":2}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert_eq!(c.acessos.arquivo_mib, 32);
+        assert_eq!(c.acessos.arquivos, 3);
+        assert_eq!(c.acessos.teto_do_arquivo(), 32 * 1024 * 1024);
+        assert_eq!(c.diretivas.arquivo_mib, 8);
+        assert_eq!(c.diretivas.arquivos, 2);
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+
+        let j = c.para_json();
+        let a = j.campo("acessos").unwrap();
+        assert_eq!(a.inteiro_ou("arquivo_mib", -1), 32);
+        assert_eq!(a.inteiro_ou("teto_em_disco_mib", -1), 32 * (3 + 1));
+        let d = j.campo("diretivas").unwrap();
+        assert_eq!(d.inteiro_ou("arquivo_mib", -1), 8);
+        assert_eq!(d.inteiro_ou("teto_em_disco_mib", -1), 8 * (2 + 1));
     }
 
     #[test]
