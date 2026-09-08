@@ -37,6 +37,7 @@
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use phxsql_core::datahora::instante_iso;
 use phxsql_core::error::Result;
@@ -127,6 +128,24 @@ pub fn campo_sigiloso(campo: &str) -> bool {
 /// O diario, aberto para acrescentar.
 pub struct Diario {
     caminho: PathBuf,
+    /// Teto de bytes por arquivo. Zero = nao rodizia -- o comportamento de
+    /// sempre, e o padrao de quem nao configurou o campo novo do pedido 228
+    /// (`diretivas.arquivo_mib`). A logica de girar e a MESMA do Profiler --
+    /// ver `crate::rodizio`, para onde ela foi extraida.
+    ///
+    /// Atomico, e nao um campo comum: o `registrar` abaixo NAO guarda
+    /// descritor entre chamadas -- abre, escreve e fecha a cada diretiva,
+    /// porque uma alteracao de configuracao e rara. Sem "arquivo corrente"
+    /// nenhum para proteger, so estes numeros precisam mudar depois de
+    /// construido (em `ALTER SERVER SET`), e um atomico evita pedir `&mut
+    /// self` -- e por tabela, um `Mutex<Diario>` novo -- so para isso.
+    teto_do_arquivo: AtomicU64,
+    /// Quantos arquivos ANTIGOS guardar, alem do corrente.
+    manter: AtomicUsize,
+    /// Quantas vezes o arquivo virou desde que o servidor subiu.
+    rodizios: AtomicU64,
+    /// Rodizios que nao deram certo -- renomear ou reabrir falhou.
+    falhas_de_rodizio: AtomicU64,
 }
 
 impl Diario {
@@ -137,30 +156,98 @@ impl Diario {
     /// `config.json`, porque um caminho a mais e um caminho a mais para
     /// alguem esquecer de apontar — e um diario gravado no diretorio de
     /// trabalho do processo e um diario perdido.
+    ///
+    /// Nasce SEM rodizio (`teto_do_arquivo: 0`) -- quem quiser liga com
+    /// [`Diario::definir_rodizio`].
     pub fn ao_lado_de(log_acessos: &Path) -> Diario {
         let caminho = match log_acessos.parent().filter(|d| !d.as_os_str().is_empty()) {
             Some(dir) => dir.join("diretivas.log"),
             None => PathBuf::from("diretivas.log"),
         };
-        Diario { caminho }
+        Diario {
+            caminho,
+            teto_do_arquivo: AtomicU64::new(0),
+            manter: AtomicUsize::new(0),
+            rodizios: AtomicU64::new(0),
+            falhas_de_rodizio: AtomicU64::new(0),
+        }
     }
 
     pub fn caminho(&self) -> &Path {
         &self.caminho
     }
 
+    /// Ajusta o rodizio. Vale para o arquivo CORRENTE, como no Profiler
+    /// (`Profiler::definir_rodizio`) e no `LogAcessos`: quem baixou o teto
+    /// na tela quer o efeito agora, e nao no proximo arranque.
+    pub fn definir_rodizio(&self, teto_do_arquivo: u64, manter: usize) {
+        self.teto_do_arquivo
+            .store(teto_do_arquivo, Ordering::Relaxed);
+        self.manter.store(
+            manter.min(crate::profiler::MAX_ARQUIVOS_ANTIGOS),
+            Ordering::Relaxed,
+        );
+    }
+
+    pub fn teto_do_arquivo(&self) -> u64 {
+        self.teto_do_arquivo.load(Ordering::Relaxed)
+    }
+
+    pub fn manter(&self) -> usize {
+        self.manter.load(Ordering::Relaxed)
+    }
+
+    pub fn rodizios(&self) -> u64 {
+        self.rodizios.load(Ordering::Relaxed)
+    }
+
+    pub fn falhas_de_rodizio(&self) -> u64 {
+        self.falhas_de_rodizio.load(Ordering::Relaxed)
+    }
+
     /// Grava e descarrega na hora, pelo mesmo motivo do `acessos.log`: diario
     /// que se perde no buffer quando o processo cai nao serve para nada — e
     /// mudanca de configuracao e justamente o que costuma preceder uma queda.
+    ///
+    /// Confere ANTES de escrever se a linha estoura o teto -- mesma ordem do
+    /// `profiler::girar_se_encheu`. Sem descritor persistente, o tamanho
+    /// ATUAL vem do disco (`metadata`) em vez de um contador em memoria: nao
+    /// ha sessao para acumular, e uma diretiva e rara o bastante para o
+    /// `stat()` extra nao custar nada que importe.
     pub fn registrar(&self, a: &Alteracao) -> Result<()> {
         if let Some(dir) = self.caminho.parent().filter(|d| !d.as_os_str().is_empty()) {
             std::fs::create_dir_all(dir)?;
         }
-        let mut arquivo = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.caminho)?;
-        writeln!(arquivo, "{}", a.para_json().escrever())?;
+        let linha = a.para_json().escrever();
+        let cabem = linha.len() as u64 + 1;
+        let teto = self.teto_do_arquivo.load(Ordering::Relaxed);
+        let bytes_no_arquivo = std::fs::metadata(&self.caminho)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let mut arquivo = if crate::rodizio::deve_girar(bytes_no_arquivo, cabem, teto) {
+            let manter = self.manter.load(Ordering::Relaxed);
+            let (novo, deu_errado) = crate::rodizio::girar(&self.caminho, manter);
+            self.rodizios.fetch_add(1, Ordering::Relaxed);
+            if deu_errado {
+                self.falhas_de_rodizio.fetch_add(1, Ordering::Relaxed);
+            }
+            match novo {
+                Some(f) => f,
+                // O `girar` ja tentou reabrir e falhou -- tentar de novo
+                // aqui deixa o `?` abaixo contar o erro REAL do sistema de
+                // arquivos, em vez de engolir a falha em silencio.
+                None => OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&self.caminho)?,
+            }
+        } else {
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.caminho)?
+        };
+        writeln!(arquivo, "{linha}")?;
         arquivo.flush()?;
         Ok(())
     }
@@ -301,6 +388,88 @@ mod testes {
         let d = DirTemp::novo("diario-ausente");
         let diario = Diario::ao_lado_de(&d.join("acessos.log"));
         assert!(diario.ultimas(10).is_empty());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Pedido 228, sentido 1: **sem configurar nada, o comportamento e o de
+    /// sempre** -- o `diretivas.log` so cresce, sem `.1`. Regra petrea
+    /// "guarda nova entra pedida": rodizio que ninguem pediu nao pode mudar
+    /// quem nao mexeu no campo novo.
+    #[test]
+    fn sem_rodizio_configurado_o_diario_so_cresce() {
+        let d = DirTemp::novo("diario-sem-rodizio");
+        let diario = Diario::ao_lado_de(&d.join("acessos.log"));
+        assert_eq!(diario.teto_do_arquivo(), 0, "nasce sem rodizio");
+        for n in 1..=30 {
+            diario
+                .registrar(&alteracao(
+                    "max_linhas",
+                    Json::Numero(0.0),
+                    Json::Numero(n as f64),
+                ))
+                .unwrap();
+        }
+        assert_eq!(diario.rodizios(), 0, "teto 0 nunca gira");
+        assert!(!crate::rodizio::com_sufixo(diario.caminho(), 1).exists());
+        assert_eq!(diario.ultimas(100).len(), 30);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Pedido 228, sentido 2: **passar do teto configurado gira o
+    /// `diretivas.log`**. Prova real do defeito reposto: com
+    /// `crate::rodizio::deve_girar` forcado a `false` (o defeito antigo --
+    /// crescer para sempre), este teste falha em `rodizios() > 0` e na
+    /// existencia do `.1`; com o rodizio ligado, os dois passam.
+    #[test]
+    fn estourar_o_teto_gira_o_diario() {
+        let d = DirTemp::novo("diario-com-rodizio");
+        let diario = Diario::ao_lado_de(&d.join("acessos.log"));
+        // Teto minusculo e `manter` folgado -- a mesma cautela do teste
+        // irmao em `acesso.rs`: `manter` tem de cobrir tudo o que este
+        // teste gera, senao o proprio rodizio, funcionando certo, descarta
+        // o mais velho de proposito e o "nada se perde" abaixo falharia por
+        // um motivo que nao e o defeito provado aqui.
+        diario.definir_rodizio(80, 20);
+        for n in 1..=10 {
+            diario
+                .registrar(&alteracao(
+                    "max_linhas",
+                    Json::Numero(0.0),
+                    Json::Numero(n as f64),
+                ))
+                .unwrap();
+        }
+        assert!(
+            diario.rodizios() > 0,
+            "tinha de ter girado pelo menos uma vez"
+        );
+        assert_eq!(
+            diario.falhas_de_rodizio(),
+            0,
+            "nenhum passo do rodizio falhou"
+        );
+        assert!(
+            crate::rodizio::com_sufixo(diario.caminho(), 1).exists(),
+            "o rodizio tinha de deixar um .1 para tras"
+        );
+        // Nada se perde: somando o corrente com TODOS os antigos, as 10
+        // diretivas continuam legiveis.
+        let mut total = diario.ultimas(1000).len();
+        for n in 1..=diario.manter() {
+            let sufixo = crate::rodizio::com_sufixo(diario.caminho(), n);
+            if !sufixo.exists() {
+                break;
+            }
+            let d_antigo = Diario {
+                caminho: sufixo,
+                teto_do_arquivo: AtomicU64::new(0),
+                manter: AtomicUsize::new(0),
+                rodizios: AtomicU64::new(0),
+                falhas_de_rodizio: AtomicU64::new(0),
+            };
+            total += d_antigo.ultimas(1000).len();
+        }
+        assert_eq!(total, 10, "girar nao pode perder nem duplicar diretiva");
         std::fs::remove_dir_all(&d).unwrap();
     }
 }

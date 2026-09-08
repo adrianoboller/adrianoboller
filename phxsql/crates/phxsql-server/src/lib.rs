@@ -35,6 +35,7 @@ pub mod pivot;
 pub mod profiler;
 pub mod replica;
 pub mod rest;
+pub mod rodizio;
 pub mod rotinas;
 pub mod servidor;
 pub mod sistema;

@@ -524,10 +524,13 @@ impl Profiler {
     /// pequeno -- faria o rodizio girar a cada linha, apagando o historico
     /// inteiro para gravar uma linha que continuaria nao cabendo.
     fn girar_se_encheu(&mut self, proxima: u64) {
-        if self.teto_do_arquivo == 0 || self.arquivo.is_none() {
+        if self.arquivo.is_none() {
             return;
         }
-        if self.bytes_no_arquivo == 0 || self.bytes_no_arquivo + proxima <= self.teto_do_arquivo {
+        // A formula mora em `rodizio::deve_girar` -- o pedido 228 a
+        // reaproveita para `diretivas.log` e `acessos.log`, e o motivo de
+        // ela ter saido daqui e nao ser reescrita para eles esta la.
+        if !crate::rodizio::deve_girar(self.bytes_no_arquivo, proxima, self.teto_do_arquivo) {
             return;
         }
         self.girar();
@@ -535,47 +538,18 @@ impl Profiler {
 
     /// `perfil.txt` vira `.1`, `.1` vira `.2`, e o mais velho sai.
     ///
-    /// # A ordem, e o que acontece quando falha
-    ///
-    /// O descritor e SOLTO antes de renomear. No Unix renomear um arquivo
-    /// aberto funciona e as linhas seguintes iriam para o arquivo antigo pelo
-    /// nome novo; no Windows a renomeacao falha. Soltar primeiro faz os dois
-    /// se comportarem igual, e e o unico jeito de o teste valer nos dois.
-    ///
-    /// Falhou alguma etapa, o rodizio e CONTADO e o arquivo e reaberto em
-    /// append -- que no pior caso significa continuar no mesmo arquivo,
-    /// passando do teto. Perder linha para cumprir um teto seria trocar um
-    /// problema de disco por um problema de investigacao.
+    /// A danca de renomear e reabrir mora em `rodizio::girar` -- pedido 228,
+    /// mesmo motivo do `girar_se_encheu` acima. Falhou alguma etapa, o
+    /// rodizio e CONTADO e o arquivo e reaberto em append -- que no pior caso
+    /// significa continuar no mesmo arquivo, passando do teto. Perder linha
+    /// para cumprir um teto seria trocar um problema de disco por um
+    /// problema de investigacao.
     fn girar(&mut self) {
-        // Solta o descritor: ver a nota acima.
+        // Solta o descritor ANTES: ver a nota em `rodizio::girar`.
         self.arquivo = None;
         let base = self.caminho.clone();
-        let mut deu_errado = false;
-
-        // O mais velho sai primeiro. Sem isto, o `.1 -> .2` de baixo
-        // sobrescreveria o `.2` que ainda deveria existir.
-        if self.manter == 0 {
-            let _ = std::fs::remove_file(&base);
-        } else {
-            let ultimo = com_sufixo(&base, self.manter);
-            let _ = std::fs::remove_file(&ultimo);
-            for n in (1..self.manter).rev() {
-                let de = com_sufixo(&base, n);
-                if de.exists() && std::fs::rename(&de, com_sufixo(&base, n + 1)).is_err() {
-                    deu_errado = true;
-                }
-            }
-            if std::fs::rename(&base, com_sufixo(&base, 1)).is_err() {
-                deu_errado = true;
-            }
-        }
-
-        match OpenOptions::new().create(true).append(true).open(&base) {
-            Ok(f) => self.arquivo = Some(f),
-            // Sem descritor, `escrever_linha` passa a contar cada linha como
-            // falha -- e a tela para de dizer «gravando em ...» sem aviso.
-            Err(_) => deu_errado = true,
-        }
+        let (novo, deu_errado) = crate::rodizio::girar(&base, self.manter);
+        self.arquivo = novo;
         self.bytes_no_arquivo = 0;
         self.rodizios += 1;
         if deu_errado {
@@ -832,7 +806,11 @@ fn descrever(f: &Filtro) -> String {
 /// O sufixo vai DEPOIS da extensao, e nao antes: `perfil.1.txt` casaria com
 /// um `*.txt` de rotina de limpeza e levaria o historico junto, e `perfil.txt*`
 /// lista os arquivos em ordem sem nenhum truque.
-fn com_sufixo(base: &std::path::Path, n: usize) -> PathBuf {
+///
+/// `pub(crate)` porque o `rodizio` (pedido 228) a reaproveita para
+/// `diretivas.log` e `acessos.log` -- este continua sendo o UNICO lugar que
+/// sabe formar o nome do arquivo antigo.
+pub(crate) fn com_sufixo(base: &std::path::Path, n: usize) -> PathBuf {
     let mut s = base.as_os_str().to_os_string();
     s.push(format!(".{n}"));
     PathBuf::from(s)
