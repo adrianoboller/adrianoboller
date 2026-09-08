@@ -515,6 +515,18 @@ const PRAZO_DO_GATILHO_ANTES: Duration = Duration::from_millis(500);
 /// mede de novo com o exemplo.
 const FIOS_DO_FECHO: usize = 16;
 
+/// Abaixo disto, comprimir SOBRA em vez de ajudar.
+///
+/// O envelope custa dois precos: o cabecalho/tabela do DEFLATE e o Base64 (que
+/// so para caber numa linha de texto ja incha o binario em ~33%). Numa
+/// resposta pequena — um `ping`, um erro, um `inserir` de uma linha — esse
+/// custo fixo passa do que a compressao economiza, e o cliente receberia uma
+/// linha MAIOR fingindo ser uma otimizacao. `talvez_comprimir` tambem confere
+/// o tamanho final contra o original por seguranca, mas o limiar evita gastar
+/// o DEFLATE (que nao e de graca) em respostas onde o resultado ja se sabe de
+/// antemao.
+const LIMIAR_COMPRESSAO_BYTES: usize = 256;
+
 pub struct Servidor {
     config: Config,
     /// Trava unica de dados. Ver a nota de concorrencia no topo do modulo.
@@ -4502,9 +4514,16 @@ impl Servidor {
                 "encryption_exigida",
                 Json::Bool(self.config.cifra_fio.exigir),
             ),
-            // E a compressao NAO existe. Dizer `false` e a resposta honesta;
-            // omitir o campo faria quem pergunta achar que a versao e velha.
-            ("compression", Json::Bool(false)),
+            // A compressao existe, mas nao e um estado DESTA conexao: e
+            // pedida por PEDIDO (`"aceita_compressao":true`), nunca por
+            // aperto nem por diretiva -- entao o que se relata aqui e a
+            // CAPACIDADE do servidor, e nao "esta conexao esta comprimindo
+            // agora" (ela pode estar, no proximo pedido, ou nao).
+            ("compression", Json::Bool(true)),
+            // E nunca dentro do tunel: comprimir antes de cifrar vaza
+            // tamanho (estilo CRIME/BREACH). Decisao de seguranca registrada
+            // em docs/CIFRA-DO-FIO.md, nao revisitada por esta diretiva.
+            ("compression_no_tunel", Json::Bool(false)),
             (
                 "max_linhas",
                 Json::de_u64(self.max_linhas_vivo.load(Ordering::Relaxed)),
@@ -4555,8 +4574,10 @@ impl Servidor {
             "conexao" | "connection" => Err(PhxError::Esquema(format!(
                 "ALTER CONNECTION nao grava {campo:?}, e nenhuma outra: nao ha \
                  ajuste por conexao neste servidor. A cifra do fio se negocia no \
-                 aperto de mao (op `cifrar`), nao por diretiva, e compressao no \
-                 fio nao existe. SHOW CONNECTION SETTINGS diz o estado desta"
+                 aperto de mao (op `cifrar`); a compressao do fio se pede por \
+                 PEDIDO (\"aceita_compressao\", so no caminho claro) -- nenhuma \
+                 das duas e diretiva, entao ALTER CONNECTION para qualquer uma \
+                 delas nao existe. SHOW CONNECTION SETTINGS diz o estado desta"
             ))),
             outro => Err(PhxError::Esquema(format!(
                 "escopo {outro:?} nao existe: use servidor, database, tabela ou conexao"
@@ -6961,7 +6982,8 @@ impl Servidor {
                 ..objeto_do_pedido(&linha, &resultado)
             });
 
-            if canal.escrever(&mut saida, &resposta.escrever()).is_err() {
+            let texto_da_resposta = self.talvez_comprimir(&resposta.escrever(), &linha, &canal);
+            if canal.escrever(&mut saida, &texto_da_resposta).is_err() {
                 return;
             }
         }
@@ -6978,6 +7000,77 @@ impl Servidor {
             Some(p)
         } else {
             None
+        }
+    }
+
+    /// Comprime a resposta quando o pedido pediu, valeu a pena e o canal
+    /// deixa -- e devolve a linha de sempre em qualquer outro caso.
+    ///
+    /// # Pedida, nao imposta
+    ///
+    /// A mesma regra da versao otimista (`conferir_versao_pedida`, logo
+    /// abaixo): quem manda `"aceita_compressao":true` no PEDIDO ganha a
+    /// resposta comprimida a partir dali; quem nunca ouviu falar disto
+    /// continua recebendo a linha de sempre, byte a byte. E por pedido, e nao
+    /// por conexao ou por um `op` de aperto -- do jeito que o `Accept-Encoding`
+    /// do HTTP funciona: cada lado escolhe a cada troca, sem guardar estado
+    /// novo na `Sessao` nem exigir uma segunda mensagem so para negociar.
+    ///
+    /// # Por que nunca dentro do tunel cifrado
+    ///
+    /// Comprimir e depois cifrar a MESMA resposta (compress-then-encrypt)
+    /// vaza tamanho: se um atacante consegue influenciar parte do conteudo
+    /// (um campo de busca ecoado na resposta, por exemplo) e observa o
+    /// tamanho da linha cifrada, o tamanho encolhe quando o trecho dele
+    /// repete um segredo que tambem esta na resposta -- e o estilo do ataque
+    /// CRIME/BREACH contra TLS. Decidir SE vale mitigar isso aqui dentro (por
+    /// exemplo com padding) e escolha de seguranca, e fica fora desta frente
+    /// -- ver `docs/CIFRA-DO-FIO.md`. A regra desta funcao e simples e nao
+    /// negocia: canal cifrado nunca comprime, ponto -- ainda que o pedido
+    /// tenha marcado `aceita_compressao`.
+    ///
+    /// # O enquadramento
+    ///
+    /// O DEFLATE nao produz texto (pode conter qualquer byte, inclusive um
+    /// `\n` no meio), e o canal em claro le por LINHA -- por isso o Base64,
+    /// exatamente como a cifra do fio ja faz em `Transporte::selar`. A marca
+    /// de "isto esta comprimido" e o proprio envelope: em vez do `{"ok":...}`
+    /// de sempre, a linha vira `{"cz":"<base64 do deflate>"}` -- um cliente
+    /// que decodifica sabe que "cz" e o unico campo que uma resposta normal
+    /// nunca tem, decodifica o Base64, descomprime e analisa o JSON de dentro
+    /// como se tivesse chegado direto.
+    fn talvez_comprimir(&self, texto: &str, pedido_bruto: &str, canal: &Canal) -> String {
+        // Regra 1, sem excecao: dentro do tunel nao se comprime.
+        if canal.cifrado() {
+            return texto.to_string();
+        }
+        // Regra 2: abaixo do limiar, o envelope so pesaria mais.
+        if texto.len() < LIMIAR_COMPRESSAO_BYTES {
+            return texto.to_string();
+        }
+        // Regra 3: pedida, nao imposta -- analisa o PEDIDO original, nunca a
+        // resposta, pela mesma razao do `pedido_de_aperto` acima: um `find`
+        // por `"aceita_compressao"` dependeria de o cliente ter escrito o
+        // campo naquela posicao exata, e erraria nos dois sentidos.
+        let pediu = Json::analisar(pedido_bruto)
+            .map(|p| p.booleano_ou("aceita_compressao", false))
+            .unwrap_or(false);
+        if !pediu {
+            return texto.to_string();
+        }
+        let comprimido = phxsql_core::zip::deflate(texto.as_bytes());
+        let em_base64 = phxsql_core::base64::codificar(&comprimido);
+        let envelope = Json::objeto(vec![("cz", Json::texto_de(em_base64))]).escrever();
+        // Confere o resultado FINAL contra o original, e nao so contra o
+        // limiar de entrada: o limiar e uma estimativa, o tamanho do
+        // envelope e um fato. Um JSON de alta entropia (textos ja
+        // aleatorios, por exemplo) pode nao comprimir o bastante para pagar
+        // o Base64 -- e mandar a linha de sempre nesse caso e estritamente
+        // melhor que mandar uma "otimizacao" que pesa mais.
+        if envelope.len() < texto.len() {
+            envelope
+        } else {
+            texto.to_string()
         }
     }
 
