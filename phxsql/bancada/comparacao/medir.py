@@ -85,6 +85,15 @@ BANCO = "trio"
 LOTE = 50_000
 PASSO = 7_919  # o mesmo primo do `carga.rs`: espalha os alvos pela tabela
 
+# A familia MySQL fala o mesmo protocolo por dois clientes: o MySQL local por
+# soquete, o MariaDB num container Docker por TCP na 3307. O `cli` (base do
+# comando) e o unico que muda -- a logica da fase e IGUAL, senao a bancada
+# estaria comparando trabalho desigual, que e o que o `confere_trio` recusa.
+CLI_MYSQL = ["mysql", "--protocol=socket"]
+CLI_MARIADB = ["mysql", "--protocol=tcp", "-h", "127.0.0.1", "-P", "3307",
+               "-u", "root", "-pbenchpw"]
+CONTAINER_MARIADB = "bench-mariadb"
+
 CIDADES = [
     "Blumenau", "Joinville", "Itajai", "Curitiba",
     "Chapeco", "Lages", "Florianopolis", "Criciuma",
@@ -275,7 +284,7 @@ def corre_sqlite(n, ops, tempos, variante):
 # ------------------------------------------------------------------- MySQL
 
 
-def sql(comando, banco=BANCO):
+def sql(comando, banco=BANCO, cli=None):
     """Manda o comando por ARQUIVO, sempre.
 
     Uma carga de um milhao de linhas nao cabe na linha de comando -- o sistema
@@ -284,25 +293,25 @@ def sql(comando, banco=BANCO):
     """
     COMANDO.write_text(comando)
     return subprocess.run(
-        ["mysql", "--protocol=socket", "-N", "-B"] + ([banco] if banco else [])
+        (cli or CLI_MYSQL) + ["-N", "-B"] + ([banco] if banco else [])
         + ["-e", f"SOURCE {COMANDO};"],
         capture_output=True, text=True,
     )
 
 
-def cronometra_mysql(comando):
+def cronometra_mysql(comando, cli=None):
     """O arquivo e escrito ANTES do relogio: gravar 70 MB de texto e trabalho
-    do medidor, nao do motor, e entrar na conta seria cobrar do MySQL(R) uma
+    do medidor, nao do motor, e entrar na conta seria cobrar do motor uma
     coisa que ele nao fez."""
     COMANDO.write_text(comando)
     t0 = time.monotonic()
     r = subprocess.run(
-        ["mysql", "--protocol=socket", "-N", "-B", BANCO, "-e", f"SOURCE {COMANDO};"],
+        (cli or CLI_MYSQL) + ["-N", "-B", BANCO, "-e", f"SOURCE {COMANDO};"],
         capture_output=True, text=True,
     )
     seg = time.monotonic() - t0
     if r.returncode != 0:
-        raise SystemExit(f"mysql falhou:\n{r.stderr[:600]}")
+        raise SystemExit(f"cliente da familia mysql falhou:\n{r.stderr[:600]}")
     return seg, r.stdout
 
 
@@ -310,19 +319,23 @@ def data_sql(dia):
     return (EPOCA + timedelta(days=dia)).isoformat()
 
 
-def confere_mysql():
+def confere_mysql(cli=None):
     # `TO_DAYS(x) - TO_DAYS('1970-01-01')` desfaz a conversao da data e devolve
     # o numero do dia -- a mesma grandeza que os outros dois somam.
     r = sql(
         "SELECT count(*), coalesce(sum(valor),0),"
-        " coalesce(sum(TO_DAYS(cadastro) - TO_DAYS('1970-01-01')),0) FROM precos;"
+        " coalesce(sum(TO_DAYS(cadastro) - TO_DAYS('1970-01-01')),0) FROM precos;",
+        cli=cli,
     )
     campos = r.stdout.split()
     return (int(campos[0]), int(float(campos[1])), int(float(campos[2])))
 
 
-def corre_mysql(n, ops, tempos):
-    sql(f"DROP DATABASE IF EXISTS {BANCO}; CREATE DATABASE {BANCO};", banco="")
+def corre_familia(n, ops, tempos, cli=None, disco_fn=None):
+    """Uma corrida da familia MySQL (MySQL local por soquete OU MariaDB por
+    TCP). A logica e IDENTICA -- so o cliente e o medidor de disco mudam --,
+    para os dois fazerem o MESMO trabalho e o `confere_trio` valer."""
+    sql(f"DROP DATABASE IF EXISTS {BANCO}; CREATE DATABASE {BANCO};", banco="", cli=cli)
     sql(
         """CREATE TABLE precos (
              id BIGINT NOT NULL,
@@ -332,7 +345,8 @@ def corre_mysql(n, ops, tempos):
              cadastro DATE,
              PRIMARY KEY (id),
              KEY porCidade (cidade)
-           ) ENGINE=InnoDB"""
+           ) ENGINE=InnoDB""",
+        cli=cli,
     )
 
     # UMA transacao para a carga inteira, como os outros dois: uma
@@ -348,12 +362,13 @@ def corre_mysql(n, ops, tempos):
         )
         partes.append(f"INSERT INTO precos VALUES {valores};\n")
     partes.append("COMMIT;\n")
-    seg, _ = cronometra_mysql("".join(partes))
+    seg, _ = cronometra_mysql("".join(partes), cli=cli)
     tempos["inserir"].append(seg)
-    marcos = [confere_mysql()]
+    marcos = [confere_mysql(cli=cli)]
 
     seg, saida = cronometra_mysql(
-        "".join(f"SELECT id FROM precos WHERE id={alvo(k, n)};\n" for k in range(ops))
+        "".join(f"SELECT id FROM precos WHERE id={alvo(k, n)};\n" for k in range(ops)),
+        cli=cli,
     )
     tempos["buscar"].append(seg)
     achados = len(saida.split())
@@ -365,30 +380,41 @@ def corre_mysql(n, ops, tempos):
             " WHERE id=%d;\n" % (p, c, data_sql(d), i)
             for i, p, c, _, d in (linha(alvo(k, n)) for k in range(ops))
         )
-        + "COMMIT;\n"
+        + "COMMIT;\n",
+        cli=cli,
     )
     tempos["atualizar"].append(seg)
-    marcos.append(confere_mysql())
+    marcos.append(confere_mysql(cli=cli))
 
     seg, _ = cronometra_mysql(
         "START TRANSACTION;\n"
         + "".join(f"DELETE FROM precos WHERE id={alvo(k, n)};\n" for k in range(ops))
-        + "COMMIT;\n"
+        + "COMMIT;\n",
+        cli=cli,
     )
     tempos["excluir"].append(seg)
-    marcos.append(confere_mysql())
+    marcos.append(confere_mysql(cli=cli))
 
-    return {"marcos": marcos, "achados": achados, "disco": disco_mysql()}
+    return {"marcos": marcos, "achados": achados, "disco": (disco_fn or disco_mysql)()}
 
 
-def piso_mysql(ops):
+def corre_mysql(n, ops, tempos):
+    return corre_familia(n, ops, tempos, CLI_MYSQL, disco_mysql)
+
+
+def corre_mariadb(n, ops, tempos):
+    return corre_familia(n, ops, tempos, CLI_MARIADB, disco_mariadb)
+
+
+def piso_mysql(ops, cli=None):
     """Quanto custa mandar 20.000 instrucoes que nao fazem nada.
 
-    E o transporte mais a analise do texto -- o que a barra do MySQL(R)
+    E o transporte mais a analise do texto -- o que a barra da familia MySQL
     carrega e as outras duas nao. Sem este numero o leitor nao tem como
-    separar o motor do formato.
+    separar o motor do formato. O piso do MariaDB por TCP e OUTRO (soquete e
+    mais barato que TCP), entao cada um mede o seu.
     """
-    seg, _ = cronometra_mysql("".join("DO 1;\n" for _ in range(ops)))
+    seg, _ = cronometra_mysql("".join("DO 1;\n" for _ in range(ops)), cli=cli)
     return seg
 
 
@@ -402,11 +428,24 @@ def disco_mysql():
         return 0
 
 
-def ajuste_do_mysql():
+def disco_mariadb():
+    # O dado do MariaDB mora DENTRO do container -- `du` de fora nao o ve.
+    r = subprocess.run(
+        ["docker", "exec", CONTAINER_MARIADB, "du", "-sb", f"/var/lib/mysql/{BANCO}"],
+        capture_output=True, text=True,
+    )
+    try:
+        return int(r.stdout.split()[0])
+    except (IndexError, ValueError):
+        return 0
+
+
+def ajuste_do_mysql(cli=None):
     """O regime de durabilidade sai do servidor, e nao de uma frase escrita a
     mao aqui: campo de configuracao citado de memoria e campo que envelhece."""
     r = sql(
-        "SELECT @@innodb_flush_log_at_trx_commit, @@sync_binlog, @@version;", banco=""
+        "SELECT @@innodb_flush_log_at_trx_commit, @@sync_binlog, @@version;", banco="",
+        cli=cli,
     )
     campos = r.stdout.split()
     if len(campos) < 3:
@@ -454,15 +493,19 @@ def fmt_rodada(t):
     return "  ".join(f"{f} {t[f][-1]:7.3f}s" for f in FASES if t[f])
 
 
-def durabilidade(ajuste):
+def durabilidade(ajuste, ajuste_maria=None):
     """O regime de cada motor, em texto de tela -- montado do que o servidor
     respondeu, e nao de uma frase digitada aqui."""
-    return {
+    d = {
         "PhxSql": "sincroniza uma vez por fase (exclusão na janela)",
         "MySQL(R)": "uma transação por fase; "
                     + ", ".join(f"{k}={v}" for k, v in ajuste.items()),
         "SQLite(R)": "synchronous=FULL, journal DELETE, uma transação por fase",
     }
+    if ajuste_maria:
+        d["MariaDB(R)"] = ("uma transação por fase; "
+                           + ", ".join(f"{k}={v}" for k, v in ajuste_maria.items()))
+    return d
 
 
 def ressalvas(n, ops, rodadas, piso):
@@ -502,12 +545,14 @@ def ressalvas(n, ops, rodadas, piso):
     ]
 
 
-def monta(n, ops, rodadas, tempos, marcos, achados, disco, piso, quais):
+def monta(n, ops, rodadas, tempos, marcos, achados, disco, piso, quais,
+          piso_maria=None):
     fases = {}
     for f in FASES:
         fases[f] = {}
-        for m in ("phxsql", "mysql", "sqlite"):
-            fases[f][m] = resumo(tempos[m][f]) if tempos[m][f] else {
+        for m in ("phxsql", "mysql", "sqlite", "mariadb"):
+            amostras = tempos.get(m, {}).get(f)
+            fases[f][m] = resumo(amostras) if amostras else {
                 "mediana_s": None, "min_s": None, "max_s": None
             }
 
@@ -524,14 +569,19 @@ def monta(n, ops, rodadas, tempos, marcos, achados, disco, piso, quais):
         "sqlite_2ind": {f: (resumo(tempos["sqlite-2ind"][f])
                             if tempos["sqlite-2ind"][f] else None) for f in FASES},
         "piso_do_mysql_s": resumo(piso) if piso else None,
+        "piso_do_mariadb_s": resumo(piso_maria) if piso_maria else None,
         "trabalho_conferido": {
             "etapas": ["inserir", "atualizar", "excluir"],
             "marcos_por_motor": {m: [list(x) for x in v] for m, v in marcos.items()},
             "buscar_achou": achados,
         },
         "disco_bytes": disco,
-        "ajuste_do_mysql": ajuste_do_mysql(),
-        "durabilidade": durabilidade(ajuste_do_mysql()),
+        "ajuste_do_mysql": ajuste_do_mysql() if "mysql" in quais else {},
+        "ajuste_do_mariadb": ajuste_do_mysql(CLI_MARIADB) if "mariadb" in quais else {},
+        "durabilidade": durabilidade(
+            ajuste_do_mysql() if "mysql" in quais else {},
+            ajuste_do_mysql(CLI_MARIADB) if "mariadb" in quais else None,
+        ),
         "ressalvas": ress,
     }
 
@@ -582,9 +632,10 @@ def principal():
           flush=True)
     print(f"    motores: {', '.join(quais)}", flush=True)
 
-    tempos = {m: {f: [] for f in FASES} for m in ("phxsql", "sqlite", "mysql")}
+    tempos = {m: {f: [] for f in FASES}
+              for m in ("phxsql", "sqlite", "mysql", "mariadb")}
     tempos["sqlite-2ind"] = {f: [] for f in FASES}
-    marcos, achados, disco, piso = {}, {}, {}, []
+    marcos, achados, disco, piso, piso_maria = {}, {}, {}, [], []
 
     for r in range(rodadas):
         print(f"-- rodada {r + 1}/{rodadas}", flush=True)
@@ -605,12 +656,19 @@ def principal():
             disco["mysql"] = saiu["disco"]
             piso.append(piso_mysql(ops))
             print("   mysql   " + fmt_rodada(tempos["mysql"]), flush=True)
+        if "mariadb" in quais:
+            saiu = corre_mariadb(n, ops, tempos["mariadb"])
+            marcos["mariadb"], achados["mariadb"] = saiu["marcos"], saiu["achados"]
+            disco["mariadb"] = saiu["disco"]
+            piso_maria.append(piso_mysql(ops, CLI_MARIADB))
+            print("   mariadb " + fmt_rodada(tempos["mariadb"]), flush=True)
         guardar({"parcial": True, "rodadas_feitas": r + 1, "tempos": tempos})
 
     confere_trio(marcos, achados, ["inserir", "atualizar", "excluir"])
     print(f"== trabalho igual conferido: {marcos[quais[0]]}", flush=True)
 
-    d = monta(n, ops, rodadas, tempos, marcos, achados, disco, piso, quais)
+    d = monta(n, ops, rodadas, tempos, marcos, achados, disco, piso, quais,
+              piso_maria)
     guardar(d)
     os.replace(PARCIAL, RESULTADOS)
     COMANDO.unlink(missing_ok=True)
