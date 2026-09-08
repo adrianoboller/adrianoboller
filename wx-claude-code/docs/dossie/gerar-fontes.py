@@ -28,6 +28,7 @@ GRUPOS = [
     ("Exemplo", "exemplos/estoque-wx/**/*", "projeto sintético que é o teste de regressão do fluxo inteiro"),
     ("Exemplo PHP", "exemplos/faturamento-php/**/*", "legado PHP procedural sintético: o segundo exemplo, sem nada de WX"),
     ("Ferramenta Rust", "ferramentas/wx-modelos/src/*.rs", "wx-modelos: escolha e controle do modelo local, std pura, sem crate"),
+    ("Runtime WLanguage em Rust", "ferramentas/wl-rt/src/*.rs", "wl-rt: moeda de ponto fixo, data AAAAMMDD, comparação de string e máscaras, com a semântica lida do Help"),
     ("Documentos", "*.md", "manual, README, fontes e a instrução de ativação, na raiz"),
     ("Documentos de apoio", "docs/**/*.md", "relatório, análises, origens dos prints e o vídeo"),
     ("Instaladores", "instalar.*", "bash para Linux e macOS, PowerShell para Windows"),

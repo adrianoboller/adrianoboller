@@ -1850,6 +1850,26 @@ class Questionario(unittest.TestCase):
         self.assertEqual([c["id"] for c in falhou], ["TST-QRY-003-a"])
         self.assertIn("ESTOQUE_DB_PASS", json.dumps(falhou[0]["obtido"]), "a query sem banco tem de dizer por que")
 
+    def test_wl_rt_reproduz_a_semantica_do_help_sem_crate(self):
+        """O runtime minimo do WLanguage para Rust: cada teste dele usa o exemplo da
+        pagina do Help como vetor. Aqui a bateria roda de verdade, e se confere que a
+        crate continua sem dependencia e que cada modulo cita a pagina que leu."""
+        raiz = RAIZ / "ferramentas/wl-rt"
+        cargo = (raiz / "Cargo.toml").read_text(encoding="utf-8")
+        deps = cargo.split("[dependencies]", 1)[1].split("[", 1)[0]
+        self.assertFalse(any(l.strip() and not l.strip().startswith("#") for l in deps.splitlines()),
+                         "wl-rt tem de ser std pura")
+        for mod in ("moeda", "data", "texto", "numero"):
+            fonte = (raiz / f"src/{mod}.rs").read_text(encoding="utf-8")
+            self.assertRegex(fonte, r"\b(Help )?\d{7,10}\b", f"{mod}.rs sem pagina do Help citada")
+        if not shutil.which("cargo"):
+            self.skipTest("cargo nao instalado neste ambiente")
+        r = subprocess.run(["cargo", "test", "--quiet"], cwd=raiz, capture_output=True, text=True, timeout=1800)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        m = re.search(r"test result: ok\. (\d+) passed", r.stdout)
+        self.assertIsNotNone(m, r.stdout)
+        self.assertGreaterEqual(int(m.group(1)), 16)
+
     def test_wx_modelos_compila_e_nao_inventa_numero(self):
         """A ferramenta de modelo local e Rust a parte; o que ela promete e nao
         inventar numero. Aqui roda a bateria dela e o binario de verdade."""

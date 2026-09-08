@@ -1,0 +1,13 @@
+[package]
+name = "wl-rt"
+version = "0.1.0"
+edition = "2021"
+description = "Runtime minimo do WLanguage para o perfil Rust: moeda de ponto fixo, data AAAAMMDD, comparacao de string e mascaras, com a semantica do Help"
+license = "Proprietary"
+
+[dependencies]
+# Nenhuma. So a std: a mesma regra do wx-modelos -- o codigo convertido nao ganha
+# uma crate externa por causa do runtime, e compila cruzado sem drama.
+
+[lib]
+path = "src/lib.rs"

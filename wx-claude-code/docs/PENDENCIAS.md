@@ -72,11 +72,12 @@ igualdade contra o legado rodando.
 
 ### 7. Semântica dos tipos: datas, numéricos, strings
 
-- estado: `falta`
+- estado: `parcial`
 - tamanho: 4 · muito grande
 - por que importa: Diferença de arredondamento ou de collation muda o golden master e ninguém vê antes da produção.
 - hoje: Referência textual em `wlanguage-semantics.md`.
 - construir: Biblioteca de runtime mínima por perfil: data/hora/duração WX (AAAAMMDD, HHMMSSCC), Numérico com casas fixas, Moeda, comparação de string sem acento e sem caixa como o WX, `Truncate`/`Round` iguais, cadeia com tamanho fixo. Com teste contra o comportamento real do WX.
+- medido: na 3.46.0 entrou `ferramentas/wl-rt` para o perfil Rust: `currency` de ponto fixo (6 casas, faixa de 2⁷⁹−1 milionésimos), `Round` metade para longe do zero, AAAAMMDD com `DateDifference` e soma de dias, `=`/`~=`/`~~`, `NoSpace`, `Middle`, `Left`, `Val`, `Upper`, `Truncate`, `NumToString` com máscara — 16 testes, cada um com o exemplo da página do Help como vetor. **Parcial** porque só cobre Rust, e porque falta hora/duração, `Numeric` de 38 dígitos, collation de ordenação e a prova contra o WX **rodando** (item 14). Duas coisas que o Help corrigiu no modelo: `=` entre strings é estrito, e `Upper("élan")` é `ELAN`
 
 ### 8. Comportamento de tela do WX
 

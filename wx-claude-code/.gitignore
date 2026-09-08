@@ -8,3 +8,6 @@ ferramentas/wx-modelos/dist/
 
 # entregaveis em zip: saem do empacotar-entregaveis.py, nunca da arvore
 entregas/
+
+# alvo do wl-rt: se refaz com cargo test
+ferramentas/wl-rt/target/

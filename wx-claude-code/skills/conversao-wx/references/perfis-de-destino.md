@@ -19,6 +19,17 @@ a escolha é do usuário e vira `DEC-*`.
 | **PHP 8.3** (Laravel 11 ou Symfony 7 + PostgreSQL ou MySQL) | hospedagem barata e universal, equipe abundante e barata no Brasil, ecossistema pronto para ERP web (fiscal, PDF, filas), migração natural para quem já tem PHP ao lado do WX | tipagem fraca por herança da linguagem (exige `strict_types` e PHPStan), armadilhas de comparação e de ponto flutuante, desempenho por processo | ERP web de porte médio, quem já mantém PHP na casa, quem precisa de hospedagem comum; veja a skill `php-legado-e-destino` |
 | **Node** (NestJS + PostgreSQL) | mesma linguagem do frontend, equipe única, rápido para APIs | tipagem só com TypeScript, CPU limitado, muitas dependências | produtos web onde o time de frontend vai fazer o backend |
 
+### Rust: o runtime mínimo do WLanguage
+
+O perfil Rust tem em `ferramentas/wl-rt/` a biblioteca `wl-rt` (`std` pura):
+`currency` de ponto fixo com `Round` metade para longe do zero, datas AAAAMMDD
+com `DateDifference` e soma de dias, a comparação de strings do WLanguage (`=`
+estrito, `~=`, `~~`), `NoSpace`, `Middle`, `Left`, `Val`, `Upper` sem acento e
+`NumToString` com máscara. Cada função cita a página do Help de onde a
+semântica foi lida e o teste usa os exemplos dela. Use-a em vez de reescrever
+`Round` ou comparar strings com `==` no código convertido; o que ela não cobre
+está escrito no LEIA-ME dela como limite.
+
 ## Frontend
 
 | Perfil | Ganha | Custa | Serve melhor para |
