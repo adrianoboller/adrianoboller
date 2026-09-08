@@ -108,6 +108,11 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     // `sql` como leitura peneiraria duas vezes a mesma resposta -- e a
     // segunda peneira nao teria como saber de que tabela ela veio.
     ("sql", PorColuna::Nenhum),
+    // O `consultar` e o mesmo argumento do `sql`, e por isso ele nao peneira:
+    // cada sub-pedido dele sai pelo `executar_derivado` e paga la a peneira da
+    // SUA tabela. Peneirar de novo aqui seria peneirar sem saber de que tabela
+    // veio cada campo -- e depois de uma junção a linha tem campos de duas.
+    ("consultar", PorColuna::Nenhum),
     // ------------------------------ leitura por caminho que a peneira nao ve
     // Colunas prefixadas de duas tabelas, num objeto que a peneira nao sabe
     // desmontar sem saber de qual lado veio cada campo.

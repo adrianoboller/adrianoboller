@@ -134,6 +134,12 @@ impl Atividade {
             // portao ler o texto do SQL, e portao que interpreta linguagem e
             // portao que erra.
             "sql" => Atividade::Ler,
+            // O `consultar` compoe, e nao le: cada sub-pedido dele volta pelo
+            // `executar_derivado` com a tabela DELE no campo que o portao ja
+            // olha. Este portao e o de FORA e nao dispensa o de dentro -- ele
+            // so pode apertar, e `ler` e o piso certo: quem nao pode ler nada
+            // nao tem o que compor.
+            "consultar" => Atividade::Ler,
             // A soma de verificacao le a tabela inteira e devolve um numero:
             // quem pode ler a tabela pode saber se ela mudou.
             "checksum" | "soma_de_verificacao" => Atividade::Ler,

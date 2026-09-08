@@ -465,6 +465,52 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: true,
     },
     Operacao {
+        nome: "consultar",
+        apelidos: &[],
+        resumo: "Compõe operações: pega as linhas de um sub-pedido e aplica \
+                 `IN`, expressão, `ROW_NUMBER`, ordem, recorte e projeção.",
+        parametros: &[
+            DB,
+            obr(
+                "de",
+                "object",
+                "o sub-pedido que dá as linhas: `varrer`, `buscar`, `agrupar` ou \
+                 outro `consultar`. Ele passa pelo MESMO portão de permissão de \
+                 um pedido que chega pela rede",
+            ),
+            opc(
+                "em",
+                "array",
+                "o `IN (SELECT …)`: `{coluna, de, campo}` -- o sub-pedido `de` \
+                 roda primeiro e vira o conjunto de valores de `campo`",
+            ),
+            opc(
+                "expressao",
+                "string",
+                "filtro sobre a linha JÁ COMPOSTA; uma coluna `Decimal` chega \
+                 como texto aqui, e comparar com número recusa dizendo onde pôr \
+                 o filtro",
+            ),
+            opc(
+                "janela",
+                "array",
+                "`{funcao:\"row_number\", particao, ordem, apelido}`; nesta \
+                 rodada só `row_number`",
+            ),
+            opc("ordem", "array", "`{coluna, desc}` sobre a linha composta"),
+            opc("pular", "integer", "quantas linhas saltar depois de ordenar"),
+            MAX,
+            opc(
+                "colunas",
+                "array",
+                "a projeção, aplicada POR ÚLTIMO: `\"id\"` ou \
+                 `{coluna, apelido}`",
+            ),
+        ],
+        exemplo: r#"{"op":"consultar","database":"loja","de":{"op":"varrer","tabela":"clientes"},"expressao":"id > 2","ordem":[{"coluna":"id","desc":true}],"max":10}"#,
+        ferramenta_mcp: true,
+    },
+    Operacao {
         nome: "agrupar",
         apelidos: &["group_by"],
         resumo: "O `GROUP BY`: agrupa por colunas e resume cada grupo com \
