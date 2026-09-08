@@ -164,6 +164,8 @@ def pacote_documentos(v: str, saida: Path) -> Path:
     alvo.parent.mkdir(parents=True, exist_ok=True)
     itens = [
         ("docs/manual-de-uso.pdf", "manual-de-uso.pdf"),
+        ("docs/apresentacao-wx-claude-code.pptx", "apresentacao-wx-claude-code.pptx"),
+        ("docs/fluxo-explicado.pdf", "fluxo-explicado.pdf"),
         ("docs/apresentacao.pdf", "roteiro-de-apresentacao.pdf"),
         ("docs/workflow.pdf", "workflow.pdf"),
         ("docs/dossie/fluxo-atual.pdf", "fluxograma.pdf"),
