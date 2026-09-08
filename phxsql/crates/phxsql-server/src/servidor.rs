@@ -5574,6 +5574,41 @@ impl Servidor {
                 }
             }
         }
+        // A EXPRESSAO pergunta sem nomear campo `coluna` nenhum, e por isso
+        // ela escapava dos dois lacos de cima: `"expressao": "salario > 5000"`
+        // devolve a CONTAGEM de quem ganha mais que isso, e vinte perguntas
+        // dessas dizem o salario sem ele nunca ter aparecido -- exatamente o
+        // furo que o `onde` ja fechava, por outra porta. O mesmo vale para o
+        // `"tendo"`, que fala da linha agregada.
+        //
+        // A lista de nomes sai do PROPRIO avaliador, e nao de um casador de
+        // texto: casador nao sabe que `salarios` nao e `salario`, nem que
+        // `'salario'` entre aspas e um literal e nao uma coluna.
+        for (campo, como_se_diz) in [("expressao", "a expressao"), ("tendo", "o \"tendo\"")] {
+            let Some(txt) = pedido.campo(campo).and_then(Json::texto) else {
+                continue;
+            };
+            if txt.trim().is_empty() {
+                continue;
+            }
+            // Expressao que nao analisa NAO vira recusa de permissao aqui: ela
+            // segue e cai adiante, no lugar que sabe dizer em que coluna esta
+            // o erro de sintaxe. Um erro de digitacao respondido com «acesso
+            // negado» manda procurar no lugar errado.
+            let Ok(e) = phxsql_core::expressao::Expressao::analisar(txt) else {
+                continue;
+            };
+            for nome in e.colunas() {
+                // Nome QUALIFICADO (`p.salario`), que a junção do `consultar`
+                // usa: quem a regra nomeia e a COLUNA, e o prefixo e o apelido
+                // do lado. Comparar o nome inteiro deixaria `p.salario`
+                // passar por uma regra escrita sobre `salario`.
+                let nu = nome.rsplit('.').next().unwrap_or(nome);
+                if let Some(n) = negadas.iter().find(|n| mesmo_nome(n, nu)) {
+                    return Err(recusa(n, como_se_diz));
+                }
+            }
+        }
         let indice = pedido.texto_ou("indice", "").trim();
         if indice.is_empty() {
             return Ok(());
@@ -23499,6 +23534,101 @@ mod testes_direito_por_coluna {
         for pedaco in ["excluir", "salario", "folha", "ana"] {
             assert!(t.contains(pedaco), "a recusa nao diz {pedaco}: {t}");
         }
+    }
+
+    /// **A EXPRESSAO pergunta sem nomear campo `coluna` nenhum.**
+    ///
+    /// `{"onde":[{"coluna":"salario",...}]}` ja recusava; `"expressao":
+    /// "salario >= 5000"` fazia a MESMA pergunta por outra porta, e a resposta
+    /// vinha na contagem: vinte perguntas dessas dizem o salario sem ele nunca
+    /// ter aparecido numa linha.
+    ///
+    /// PROVA REAL: tirando o laco de `["expressao", "tendo"]` de
+    /// `recusar_pergunta_sobre_coluna_negada`, a primeira assercao volta a
+    /// receber `Ok` -- com `devolvidas: 1`, que E a resposta: «sim, alguem
+    /// aqui ganha 5.000 ou mais». A pergunta e escrita de proposito para
+    /// responder SIM sobre o dado gravado; uma que respondesse zero vazaria
+    /// igual, mas provaria menos.
+    #[test]
+    fn a_expressao_nao_pergunta_pela_coluna_negada() {
+        let dir = dir_temp("expr");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"varrer","database":"b","tabela":"folha","expressao":"salario >= 5000""#,
+        )
+        .expect_err("a expressao respondeu sobre a coluna negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(e.to_string().contains("salario"), "{e}");
+
+        // E o nome QUALIFICADO nao contorna: `p.salario` e a mesma coluna.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"varrer","database":"b","tabela":"folha","expressao":"p.salario >= 5000""#,
+        )
+        .expect_err("o nome qualificado contornou a regra");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+
+        // Expressao sobre coluna PERMITIDA continua passando -- a guarda que
+        // recusasse tudo seria pior que a guarda que falta.
+        let ok = pede(
+            &s,
+            &ses,
+            r#""op":"varrer","database":"b","tabela":"folha","expressao":"id > 0""#,
+        )
+        .expect("a coluna permitida foi barrada");
+        assert_eq!(ok.inteiro_ou("devolvidas", -1), 1);
+        // E a peneira continua tirando a coluna da resposta.
+        let l = ok.campo("linhas").and_then(Json::lista).unwrap();
+        assert!(l[0].campo("salario").is_none(), "a coluna vazou: {l:?}");
+
+        // Erro de SINTAXE na expressao nao vira «acesso negado»: quem digitou
+        // errado tem de ler onde esta o erro, e nao procurar permissao.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"varrer","database":"b","tabela":"folha","expressao":"id >""#,
+        )
+        .expect_err("expressao truncada tinha de recusar");
+        assert_ne!(e.nome(), "ACESSO_NEGADO", "{e}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **O `agrupar` RECUSA a tabela com regra de coluna, e nao peneira.**
+    ///
+    /// Peneirar nao fecharia: `{"funcao":"maximo","coluna":"salario"}` devolve
+    /// o maior salario num campo chamado `maximo_salario`, e a peneira procura
+    /// pelo NOME da coluna. Recusar e mais seguro que vazar, e a recusa diz o
+    /// nome da operacao.
+    ///
+    /// O controle na mesma corrida: sem a regra de coluna, o mesmo pedido
+    /// passa. Sem ele, um `agrupar` quebrado por outro motivo faria este teste
+    /// passar por engano.
+    #[test]
+    fn o_agrupar_recusa_a_tabela_com_regra_de_coluna() {
+        let dir = dir_temp("agrupar-coluna");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        let corpo = r#""op":"agrupar","database":"b","tabela":"folha",
+                       "agregados":[{"funcao":"maximo","coluna":"salario"}]"#;
+        let e = pede(&s, &ses, corpo).expect_err("o agrupar devolveu o salario resumido");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(
+            e.to_string().contains("agrupar"),
+            "a recusa nao se nomeia: {e}"
+        );
+        // A tabela SEM regra de coluna continua agrupando.
+        let ok = pede(
+            &s,
+            &ses,
+            r#""op":"agrupar","database":"b","tabela":"clientes","por":["nome"]"#,
+        )
+        .expect("a tabela sem regra de coluna foi barrada");
+        assert_eq!(ok.inteiro_ou("grupos", -1), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A ficha mostra as regras de coluna: administrador que nao consegue ver

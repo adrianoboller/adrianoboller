@@ -118,6 +118,14 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     // Os ROTULOS das linhas do cruzamento SAO os valores da coluna.
     ("pivotar", PorColuna::Recusa),
     ("pivot", PorColuna::Recusa),
+    // O `agrupar` e o mesmo argumento do pivot, com uma agravante: alem de os
+    // rotulos dos grupos serem os valores da coluna, o AGREGADO fala dela sem
+    // ela aparecer -- `{"funcao":"maximo","coluna":"salario"}` devolve o maior
+    // salario num campo chamado `maximo_salario`, e a peneira, que procura
+    // pelo NOME da coluna, nao acha nada para tirar. Peneirar por apelido
+    // exigiria a peneira entender o pedido, e nao so a resposta.
+    ("agrupar", PorColuna::Recusa),
+    ("group_by", PorColuna::Recusa),
     // Um numero que resume os bytes da linha inteira. Nao mostra a coluna --
     // responde «e este valor?» a quem tentar, que e a mesma coisa devagar.
     ("checksum", PorColuna::Recusa),
