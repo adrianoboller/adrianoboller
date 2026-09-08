@@ -17,6 +17,7 @@
 //! erro escreve senha ou token em diagnostico -- ha teste para isso.
 
 mod conexao;
+mod parametro;
 mod registro;
 mod resultado;
 mod texto;
@@ -673,6 +674,45 @@ pub unsafe extern "system" fn SQLExecute(stmt: SqlHandle) -> SqlReturn {
                 SQL_ERROR
             }
             Some(Some(Some(sql))) => executar_sql(id, sql),
+        }
+    })
+}
+
+/// Quantos `?` a instrucao preparada tem.
+///
+/// A conta sai do TEXTO guardado pelo `SQLPrepare`, refeita a cada chamada em
+/// vez de guardada: numero guardado envelhece calado no dia em que alguem
+/// preparar outra coisa no mesmo comando, e refazer custa uma varredura de
+/// uma string curta.
+///
+/// Sem `SQLPrepare` antes e `HY010` (erro de sequencia), como manda a
+/// especificacao -- e nao zero, que o aplicativo leria como "esta instrucao
+/// nao tem parametros".
+///
+/// # Safety
+///
+/// Contrato da ABI do ODBC.
+#[no_mangle]
+pub unsafe extern "system" fn SQLNumParams(stmt: SqlHandle, saida: *mut SqlSmallint) -> SqlReturn {
+    blindado(|| {
+        let id = registro::id_de(stmt);
+        if !limpar_diag(id) {
+            return SQL_INVALID_HANDLE;
+        }
+        let texto = registro::com(id, |p| match p {
+            Punho::Comando(c) => Some(c.preparado.clone()),
+            _ => None,
+        });
+        match texto {
+            None | Some(None) => SQL_INVALID_HANDLE,
+            Some(Some(None)) => {
+                anotar(id, "HY010", "SQLNumParams sem um SQLPrepare antes");
+                SQL_ERROR
+            }
+            Some(Some(Some(sql))) => {
+                escrever_num(saida, parametro::contar_interrogacoes(&sql) as SqlSmallint);
+                SQL_SUCCESS
+            }
         }
     })
 }
