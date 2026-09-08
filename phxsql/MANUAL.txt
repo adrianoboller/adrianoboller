@@ -1561,11 +1561,21 @@ OPERACOES
     siscolunas      database, [tabela]       o dicionario de dados
     pivotar         database, tabela, linhas, [colunas], [valor],
                     [agregador], [juntar], [max]   a tabulacao cruzada
+    agrupar         database, tabela, [por], [agregados], [onde],
+                    [expressao], [tendo], [ordem], [max]   o GROUP BY
+    consultar       database, de, [apelido], [juntar], [escalar], [em],
+                    [expressao], [janela], [ordem], [pular], [max],
+                    [colunas]               compoe o resultado de outras ops
+    criar_visao     database, nome, sql, [substituir]
+    visoes          database                 as visoes, com o SQL de cada uma
+    excluir_visao   database, nome
+    diferencas      database, a, b, [indice], [max]   o que mudou entre duas
     ler             database, tabela, rowid, [com_versao]
     varrer          database, tabela, [indice], [max], [visao],
-                    [depois], [antes], [pular], [desde_rownum], [onde]
+                    [depois], [antes], [pular], [desde_rownum], [onde],
+                    [expressao]
     buscar          database, tabela, indice, chave, [max]
-    inserir         database, tabela, valores
+    inserir         database, tabela, valores, [se_existir], [indice]
     inserir_lote    database, tabela, linhas | texto+formato, [parar_no_erro]
     bulkinsert      database, tabela, ligado    reserva a tabela para a carga
     cargas                                      quais tabelas estao reservadas
@@ -1774,6 +1784,201 @@ A JANELA DE CONFLITO DE ESCRITA
     "valor anterior", "o outro escreveu", "voce escreve" --, ja com a escolha
     marcada em quem MEXEU em cada coluna. Dois que editaram campos diferentes
     da mesma linha saem dali com os dois trabalhos.
+
+FILTRO POR EXPRESSAO: VARRER E SELECTMEMORY
+
+    O "onde" compara UMA coluna com UM literal. A "expressao" escreve o que
+    ele nao escreve -- conta, funcao, coluna contra coluna:
+
+        {"op":"varrer","database":"loja","tabela":"precos",
+         "expressao":"preco * 1.1 > 100"}
+
+    E a MESMA gramatica do CHECK, do DEFAULT, da coluna calculada e do
+    indice parcial: literais, + - * /, = <> < <= > >=, AND OR NOT,
+    IS [NOT] NULL, [NOT] IN, [NOT] BETWEEN, [NOT] LIKE, parenteses, e as
+    funcoes UPPER LOWER TRIM LENGTH ROUND ABS COALESCE CONCAT.
+
+    Os dois valem JUNTOS quando vem juntos: "onde" E "expressao".
+
+    NULO EXCLUI. `cidade <> 'Itajai'` da NULL para a linha sem cidade, e ela
+    sai -- como em qualquer SQL. So `IS NULL` responde sobre ela. (No CHECK
+    o mesmo NULL PASSA, e a diferenca esta no codigo do avaliador.)
+
+    A conta e EXATA num Decimal: 91,00 * 1,1 e 100,10, e nao um f64 com
+    sobra. Coluna que nao existe recusa NA ANALISE, dizendo o nome -- e nao
+    devolvendo zero linha, que e a resposta que parece certa.
+
+    Custo zero para quem nao manda "expressao": o pedido sem o campo faz
+    exatamente o que fazia, byte por byte.
+
+AGRUPAR: O GROUP BY
+
+        {"op":"agrupar","database":"loja","tabela":"vendas",
+         "por":["cidade"],
+         "agregados":[{"funcao":"contagem","apelido":"n"},
+                      {"funcao":"soma","coluna":"total","apelido":"total"}],
+         "tendo":"n > 1","ordem":[{"coluna":"n","desc":true}]}
+
+    Resposta: {"grupos":3,"devolvidas":3,"examinadas":1200,
+               "consideradas":1200,"truncado":false,
+               "linhas":[{"cidade":"Blumenau","n":2,"total":"20.00"}]}
+
+    funcao: contagem, soma, media, minimo, maximo ou distintos -- as mesmas
+    do pivotar, com o mesmo acumulador exato para Decimal. So a contagem
+    dispensa "coluna". Sem "apelido", ele sai como contagem ou soma_preco.
+
+    "por" vazio (ou ausente) e UM grupo so: o SELECT COUNT(*) FROM t.
+
+    A ORDEM DOS PASSOS: "onde"/"expressao" peneiram a linha CRUA, antes de
+    agrupar; "tendo" peneira o GRUPO, e enxerga as colunas de "por" e os
+    apelidos -- e so eles. "grupos" conta o que sobrou depois do "tendo".
+
+    Grupo sem valor nenhum sai NULO, e nao zero: somar "nada" nao da zero
+    reais. E o teto conta GRUPOS (recursos.max_linhas), porque e o numero
+    deles que fica todo em memoria ao mesmo tempo.
+
+CONSULTAR: A COMPOSICAO
+
+    O consultar recebe o RESULTADO de outras operacoes e faz sobre ele o que
+    sobra do SQL. Ele nao le tabela: cada sub-pedido roda pelo MESMO portao
+    de permissao de um pedido que chega pela rede.
+
+        {"op":"consultar","database":"loja",
+         "de":{"op":"varrer","tabela":"pedidos"},"apelido":"p",
+         "juntar":[{"de":{"op":"varrer","tabela":"clientes"},"apelido":"c",
+                    "tipo":"interno",
+                    "em":[{"esquerda":"p.cliente_id","direita":"c.id"}]}],
+         "escalar":[{"nome":"media","campo":"media_total",
+                     "de":{"op":"agrupar","tabela":"pedidos",
+                           "agregados":[{"funcao":"media","coluna":"total"}]}}],
+         "expressao":"c.cidade = 'Blumenau' AND p.total > media",
+         "colunas":["p.id",{"coluna":"c.nome","apelido":"cliente"}],
+         "ordem":[{"coluna":"p.id"}],"max":1000}
+
+    Resposta: {"devolvidas":n,"achadas":n,"linhas":[...]}.
+
+    OS PASSOS, NESTA ORDEM: de -> juntar (na ordem) -> escalar -> em ->
+    expressao -> janela -> ordem -> pular/max -> colunas. A projecao vem por
+    ULTIMO, e e por isso que a ordem pode falar de coluna que a resposta nao
+    mostra -- ORDER BY preco num SELECT nome e SQL legitimo.
+
+    "de": varrer, buscar, agrupar ou outro consultar. Ate oito niveis de
+    aninhamento; alem disso recusa, porque pilha estourada nao e recusa.
+
+    APELIDO E NOME QUALIFICADO. Depois de QUALQUER junção, toda coluna passa
+    a se chamar apelido.coluna nos DOIS lados. Sem "apelido" escrito, o
+    apelido e o nome da tabela do sub-pedido. Nome sem prefixo resolve quando
+    e unico entre os lados; ambiguo RECUSA dizendo os dois candidatos.
+
+    "juntar": lista aplicada na ordem, sempre a esquerda. tipo e "interno"
+    (so quem casa) ou "esquerdo" (a linha da esquerda fica, com as colunas da
+    direita nulas). "direito", "completo" e "cruzado" recusam nomeando -- a
+    direita se escreve trocando os lados. "em" e igualdade entre colunas; o
+    resto da condicao vai para "expressao". Sem par nenhum recusa: junção sem
+    par e produto cartesiano.
+
+    "escalar": subconsulta NAO correlacionada que devolve exatamente UMA
+    linha; o "campo" dela vira a coluna "nome", visivel na expressao. Zero ou
+    duas linhas recusam nomeando. Sem "colunas" ela nao sai na resposta.
+
+    "em": o IN (SELECT campo FROM ...). O sub-pedido roda primeiro e vira o
+    conjunto dos valores de "campo".
+
+    "janela": so row_number nesta rodada, com "particao" e "ordem". Ela e uma
+    COLUNA e nao reordena a resposta.
+
+    O TIPO DEPOIS DO JSON. A linha chega como o sub-pedido a devolveu, e o
+    esquema ficou do outro lado: numero sem parte fracionaria e inteiro, com
+    parte fracionaria e real, texto e texto. Um Decimal viaja como TEXTO no
+    protocolo inteiro, entao aqui ele compara com TEXTO -- preco = '10.01'
+    funciona, preco > 10 recusa DIZENDO isso e dizendo onde por o filtro (na
+    "expressao" do proprio sub-pedido, que le o tipo do esquema).
+
+    A chave de junção e o texto canonico do valor: id = 7 casa venha de onde
+    vier, e "10.00" NAO casa com 10, porque sao colunas de tipos diferentes.
+    NULO nunca casa, dos dois lados, como no SQL.
+
+VISOES: CREATE VIEW GUARDADO COMO TEXTO
+
+        {"op":"criar_visao","database":"loja","nome":"v_blumenau",
+         "sql":"SELECT * FROM clientes"}
+        {"op":"visoes","database":"loja"}
+        {"op":"excluir_visao","database":"loja","nome":"v_blumenau"}
+
+    Pelo SQL: CREATE VIEW nome AS SELECT ... e DROP VIEW nome.
+
+    Cada banco guarda as suas num visoes.json no proprio diretorio -- o mesmo
+    molde do gatilhos.json e do procedimentos.json, e por isso elas viajam
+    junto no backup do banco. Arquivo ausente = nenhuma visao; a ultima que
+    sai leva o arquivo junto.
+
+    A visao guarda TEXTO e e reanalisada A CADA USO. E de proposito: um
+    gatilho fala de uma tabela que existe agora, uma visao fala de uma que
+    pode deixar de existir depois. Congelar o plano esconderia a coluna nova
+    e adiaria o erro da tabela apagada para o dia da carga do servidor.
+    Assim, VISAO QUE APONTA PARA TABELA QUE SUMIU RECUSA NA HORA DE USAR,
+    nomeando a visao E a tabela.
+
+    Duas recusas na DECLARACAO: SQL que a camada nao analisa, e nome que
+    colide com tabela -- duas coisas com o mesmo nome no FROM deixariam uma
+    invisivel para sempre. "substituir": true e o CREATE OR REPLACE.
+
+    A visao NAO da acesso a nada: quem consulta por ela passa pelo portao da
+    tabela de dentro com o proprio poder, e nao com o de quem a criou.
+
+INSERIR COM SE_EXISTIR: O UPSERT
+
+        {"op":"inserir","database":"loja","tabela":"clientes",
+         "linha":{"id":1,"nome":"Maria"},
+         "se_existir":"atualizar","indice":"porId"}
+
+    se_existir e "ignorar" (nao grava, devolve o rowid de quem ja estava la e
+    "ignorada":true) ou "atualizar" (grava por cima e devolve
+    "atualizada":true). SEM o campo, chave repetida RECUSA como sempre: a
+    guarda entra pedida, e nenhum cliente antigo passa a sobrescrever linha.
+
+    "indice" diz qual indice UNICO decide se a linha ja existe. Sem ele: a
+    chave primaria, ou o unico indice unico da tabela. Dois unicos e nenhuma
+    primaria RECUSA nomeando os candidatos -- num cadastro com cpf unico e
+    email unico, "a mesma linha" tem duas respostas e as duas parecem certas.
+
+    DENTRO DE TRANSACAO ele empilha COMO A OP QUE VIROU: "atualizar" quando a
+    chave existe em disco, "inserir" quando nao. O "ignorar" nao empilha nada
+    (nao ha o que gravar). A chave que a PROPRIA transacao ja empilhou recusa
+    nomeando: a linha pendente ainda nao tem rowid para atualizar.
+
+DIFERENCAS: O QUE MUDOU ENTRE DUAS TABELAS
+
+        {"op":"diferencas","database":"loja","a":"clientes",
+         "b":"clientes_ontem","indice":"porId","max":1000}
+
+    Resposta: {"iguais":n,"so_em_a":[[1]],"so_em_b":[[4]],
+               "diferentes":[{"chave":[2],"colunas":["nome"],
+                              "a":{...},"b":{...}}],"truncado":false}
+
+    O checksum diz SE duas tabelas sao a mesma; isto diz ONDE elas diferem.
+
+    O eixo e a chave de um indice UNICO com o mesmo nome nos DOIS lados --
+    sem "indice", a chave primaria de "a". Comparar pela ordem nao serve (os
+    rowids podem ser outros) e um indice repetivel nao decide nada (duas
+    linhas com a mesma chave de um lado nao tem par unico do outro).
+
+    As COLUNAS tem de ser as mesmas, e a recusa nomeia a diferenca: comparar
+    so as comuns responderia "iguais" sobre linhas que diferem.
+
+    "max" corta CADA lista, e nao o total -- senao mil linhas de um lado so
+    esconderiam todas as diferentes. Cortou, a resposta diz "truncado".
+
+SQL COM PARAMETROS
+
+        {"op":"sql","database":"loja",
+         "texto":"SELECT * FROM clientes WHERE id = ?","parametros":[7]}
+
+    Cada ? vira o literal da posicao NO LEXICO -- depois de o texto virar
+    simbolos, e nunca por substituicao no texto. E a diferenca entre um valor
+    e um comando: um parametro que contenha '; DROP TABLE x -- entra como
+    TEXTO e sai como TEXTO. Contagem diferente recusa dizendo quantos vieram
+    e quantos o comando tem.
 
 TIPOS NO JSON
 
