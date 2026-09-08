@@ -37,6 +37,11 @@ ORDEM = ["questionario", "pergunta", "progresso", "comandos", "artefato", "pdf",
          "rag", "exportar", "zelador", "licenca", "laudo-tokens"]
 
 
+# o que cada destino e, dito uma vez aqui e nao a mao no manual; o golden vem do medidor
+DESTINO = {"clientes-php-mysql": "PHP + MySQL → Rust (`tiny_http` + `mysql`) + React 19",
+           "estoque-wx": "WINDEV 2025 (só PDFs) → Rust + Axum + PostgreSQL 16 + React 19"}
+
+
 def descricao(arq: Path) -> str:
     texto = arq.read_text(encoding="utf-8")
     m = re.search(r'^description:\s*"?(.*?)"?\s*$', texto, re.M)
@@ -92,6 +97,19 @@ def main() -> int:
     novo = trocar(novo, "<!-- numeros: gerado -->", "<!-- fim dos numeros -->",
                   f"{n['comandos']} comandos, {n['skills']} skills, {n['agentes']} agentes").replace(
         "<!-- numeros: gerado -->\n", "<!-- numeros: gerado -->").replace("\n<!-- fim dos numeros -->", "<!-- fim dos numeros -->")
+    # os videos e os destinos provados tambem saem do medidor: duracao, cenas e
+    # golden sao numeros que envelhecem calados quando digitados
+    videos = [("wx-claude-code-video-de-uso.mp4", "o uso, da instalação ao Rust", n["video_duracao"], n["video_cenas"]),
+              ("wx-claude-code-video-php.mp4", "de PHP para Rust, sem nada de WINDEV", n["video_php_duracao"], n["video_php_cenas"]),
+              ("wx-claude-code-video-bateria.mp4", "a bateria de testes rodando", n["video_bateria_duracao"], n["video_bateria_cenas"]),
+              ("wx-claude-code-video-primeiro.mp4", "o primeiro projeto: instalação, licença e um CRUD PHP + MySQL → Rust + MySQL + React", n["video_primeiro_duracao"], n["video_primeiro_cenas"]),
+              ("wx-claude-code-video-windev.mp4", "os PDFs do WINDEV → Rust + Axum + PostgreSQL + React", n["video_windev_duracao"], n["video_windev_cenas"])]
+    tabela_videos = "\n".join(["| Vídeo (`docs/video/`) | O que mostra | Duração | Cenas |", "| --- | --- | --- | --- |"]
+                               + [f"| `{a}` | {b} | {c} | {d} |" for a, b, c, d in videos])
+    novo = trocar(novo, "<!-- videos: gerado -->", "<!-- fim dos videos -->", tabela_videos)
+    destinos = "\n".join(["| Exemplo | Destino | Golden master |", "| --- | --- | --- |"]
+                         + [f"| `exemplos/{d['exemplo']}/destino/` | {DESTINO.get(d['exemplo'], 'ver o LEIA-ME do exemplo')} | {d['golden']} |" for d in n.get("destinos", [])])
+    novo = trocar(novo, "<!-- destinos: gerado -->", "<!-- fim dos destinos -->", destinos)
     if conferir:
         if novo != atual:
             print("MANUAL.md desatualizado: rode docs/dossie/atualizar-manual.py", file=sys.stderr)

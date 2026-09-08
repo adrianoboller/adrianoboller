@@ -33,7 +33,7 @@ CARIMBAR = [
 ]
 GERADORES = ["atualizar-manual.py", "numeros-do-plugin.py", "gerar-organograma.py", "gerar-evolucao.py", "gerar-comandos.py",
              "gerar-fluxo.py", "gerar-workflow.py", "gerar-apresentacao.py", "gerar-o-que-falta.py",
-             "gerar-relatorio-cenarios.py", "gerar-dossie.py", "gerar-fontes.py"]
+             "gerar-relatorio-cenarios.py", "gerar-dossie.py", "gerar-fontes.py", "gerar-pdfs.py"]
 
 
 def main() -> int:
@@ -47,6 +47,11 @@ def main() -> int:
             problemas.append(f"gerador ausente: {g}")
             continue
         if conferir:
+            if g == "gerar-pdfs.py":
+                r = subprocess.run([sys.executable, str(script), "--conferir"], capture_output=True, text=True, cwd=RAIZ)
+                if r.returncode:
+                    problemas.append(f"PDF atras da fonte: {r.stderr.strip()[:200]}")
+                continue
             print(f"  rodaria {g}")
             continue
         args = [sys.executable, str(script)]

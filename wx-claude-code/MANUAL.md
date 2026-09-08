@@ -60,6 +60,19 @@ todos os projetos; a licença também (`~/.wx-claude-code/`). O que é por proje
 é o trabalho: `/wx-claude-code:questionario` cria o `.wx-migration/` daquela
 pasta, e só onde ele existe os hooks agem.
 
+**Os vídeos.** Cinco gravações, todas montadas de saída real de sessão e de
+script — nenhuma linha digitada. A tabela sai do medidor:
+
+<!-- videos: gerado -->
+| Vídeo (`docs/video/`) | O que mostra | Duração | Cenas |
+| --- | --- | --- | --- |
+| `wx-claude-code-video-de-uso.mp4` | o uso, da instalação ao Rust | 3 min 38 s | 29 |
+| `wx-claude-code-video-php.mp4` | de PHP para Rust, sem nada de WINDEV | 1 min 26 s | 11 |
+| `wx-claude-code-video-bateria.mp4` | a bateria de testes rodando | 0 min 52 s | 7 |
+| `wx-claude-code-video-primeiro.mp4` | o primeiro projeto: instalação, licença e um CRUD PHP + MySQL → Rust + MySQL + React | 3 min 35 s | 25 |
+| `wx-claude-code-video-windev.mp4` | os PDFs do WINDEV → Rust + Axum + PostgreSQL + React | 1 min 42 s | 15 |
+<!-- fim dos videos -->
+
 **Validar o pacote** (roda a bateria de testes por dentro):
 
 ```bash
@@ -619,7 +632,18 @@ Uma diferença de profundidade que a tabela esconde: para WLanguage há o corpus
 do Help com 12 mil páginas e sete especialistas por tema. Para C++ e as demais,
 entra a skill genérica — funciona, sem esse apoio.
 
-**Dois exemplos, dois legados.** O `exemplos/estoque-wx/` é WINDEV 2025 com PDF de documentação; o `exemplos/faturamento-php/` é PHP 7.4 procedural de 2009, **sem nada de WX** — código-fonte no lugar de PDF, MySQL no lugar de HFSQL, e o golden master capturado rodando o próprio legado (`php capturar-golden.php`) em vez de digitado. Os dois respondem o mesmo questionário de 60 perguntas e os dois saem do G0 em `CONDITIONAL` com zero erros, por caminhos diferentes.
+**Três exemplos, dois legados.** O `exemplos/estoque-wx/` é WINDEV 2025 com PDF de documentação; o `exemplos/faturamento-php/` é PHP 7.4 procedural de 2009, **sem nada de WX** — código-fonte no lugar de PDF, MySQL no lugar de HFSQL, e o golden master capturado rodando o próprio legado (`php capturar-golden.php`) em vez de digitado. Os dois respondem o mesmo questionário de 60 perguntas e os dois saem do G0 em `CONDITIONAL` com zero erros, por caminhos diferentes. O terceiro, `exemplos/clientes-php-mysql/`, é o menor caso que atravessa tudo — uma tabela, um CRUD — e foi o primeiro projeto feito com o plugin de ponta a ponta, gravado em vídeo.
+
+**Dois deles têm o destino dentro do repositório**, convertidos com o plugin e provados: o Rust, a tela React, o golden comparado, a matriz, as evidências e o grafo. A bateria confere que o grafo de cada um fecha e que o golden gravado bate com os casos; com `cargo` na máquina, recompila o binário e reprova as regras de verdade.
+
+<!-- destinos: gerado -->
+| Exemplo | Destino | Golden master |
+| --- | --- | --- |
+| `exemplos/clientes-php-mysql/destino/` | PHP + MySQL → Rust (`tiny_http` + `mysql`) + React 19 | 5/5 |
+| `exemplos/estoque-wx/destino/` | WINDEV 2025 (só PDFs) → Rust + Axum + PostgreSQL 16 + React 19 | 10/10 |
+<!-- fim dos destinos -->
+
+O grafo do ESTOQUE fecha com **uma** lacuna, e ela é o GAP plantado no exemplo: `EstornaEstoque`, que o PDF de interfaces cita e o PDF de código não traz. O que o PDF não diz fica escrito como lacuna, não inventado.
 
 O segundo achou um defeito na primeira execução: **o portão G0 ainda julgava todo mundo como WINDEV** — cobrava `wx_version` de quem não usa WINDEV, chamava `php` de produto inválido e exigia os PDFs de código, telas e queries que um sistema PHP nunca teve. O legado é E/OU desde a 3.26.0 no questionário; o portão não tinha sido avisado. Sem produto WX, a evidência central passou a ser o código-fonte (`native_project_sources`, listado com linguagem e número de linhas medidas) mais o esquema do banco — e **projeto WINDEV continua exigindo exatamente o que exigia**, travado pelo teste do comportamento velho.
 
@@ -810,6 +834,18 @@ release oficial, e o especialista de funções padrão marca cada função como
 `equivalente`, `adaptar` ou `substituir`. HFSQL, telas, comunicação e
 relatórios seguem pelos outros especialistas, em qualquer perfil.
 
+**Rust vem com o runtime do WLanguage.** `ferramentas/wl-rt/` é uma
+biblioteca `std` pura com o que o código convertido precisa para se comportar
+como o legado e não como o `f64`: `currency` de ponto fixo com seis casas e
+`Round` metade para longe do zero, datas AAAAMMDD com `DateDifference` e soma
+de dias, a comparação de strings do WLanguage (`=` estrito, `~=` que ignora
+caixa, acento e espaços das pontas, `~~` que ignora também pontuação),
+`NoSpace`, `Middle`, `Left`, `Val`, `Upper` e `NumToString` com máscara. Cada
+função cita a página do Help de onde a semântica foi lida, e cada teste usa os
+exemplos dessa página como vetor. Duas coisas que o Help corrigiu antes de
+virar código: `"Dupond" = "DUPOND"` é **falso**, e `Upper("élan")` é `ELAN`.
+O que a biblioteca não cobre está no LEIA-ME dela como limite.
+
 **Duas regras que não mudam com o perfil.** O banco é escolhido em H e
 instalado em K; o G3 confirma ou muda a decisão (`DEC-*`). E regra de negócio não muda de comportamento por causa da
 linguagem: o golden master compara o novo com o legado seja qual for o
@@ -868,6 +904,15 @@ os hooks são dissuasão para o cliente honesto, não muralha: quem apagar o hoo
 remove a trava. A proteção de verdade é servir o corpus e os agentes de um
 servidor seu, com o serial conferido a cada chamada. Está explicado, com os
 comandos de quem distribui, em `licenca/LEIA-ME.md`.
+
+**Aceite e aviso.** Os termos estão em `LICENCA.md`, oito itens; o instalador
+os mostra e só segue com o aceite, que fica gravado com o hash dos termos em
+`~/.wx-claude-code/aceite.json`. Na instalação o plugin envia **um** aviso ao
+fornecedor — serial, empresa, impressão da máquina, versão, data — e nada do
+projeto; sem rede, o aviso fica pendente e a instalação segue. O item 3 é o
+que mais importa: o serial é desta empresa e não pode ser recompartilhado, e a
+segunda máquina com o mesmo serial chega ao fornecedor como «possível
+recompartilhamento».
 
 **Marca d'água.** Com licença válida, o `CLAUDE.md` e o `empresa.md` gerados
 dizem para quem o plugin foi licenciado.

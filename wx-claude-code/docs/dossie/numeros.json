@@ -27,10 +27,23 @@
   "video_primeiro_cenas": 25,
   "video_windev_duracao": "1 min 42 s",
   "video_windev_cenas": 15,
+  "destinos_provados": 2,
+  "golden_dos_destinos": "5/5 (clientes-php-mysql) · 10/10 (estoque-wx)",
+  "destinos": [
+    {
+      "exemplo": "clientes-php-mysql",
+      "golden": "5/5"
+    },
+    {
+      "exemplo": "estoque-wx",
+      "golden": "10/10"
+    }
+  ],
+  "testes_wl_rt": 16,
   "corpus_bytes": 26750976,
   "corpus_paginas_validas": 12035,
   "hooks": 9,
-  "manual_linhas": 890,
+  "manual_linhas": 935,
   "exemplo_tabelas": 7,
   "arquivos_gerados_pelo_questionario": 102,
   "skills_erp": 8

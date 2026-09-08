@@ -107,6 +107,8 @@ def desenho(m: dict) -> str:
     mesma lição do CSS global -- componente novo se abre e se olha.
     """
     p, rotulos = [], []
+    # no desenho cabe so o numero; o nome do exemplo fica na lista de provas, embaixo
+    golden = " · ".join(d["golden"] for d in json.loads((RAIZ / "docs/dossie/numeros.json").read_text(encoding="utf-8")).get("destinos", [])) or "INDISPONÍVEL"
     p.append('<defs><marker id="pf" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" '
              'markerHeight="7" orient="auto-start-reverse">'
              '<path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>')
@@ -163,6 +165,8 @@ def desenho(m: dict) -> str:
     p.append(caixa(586, 372, 172, 26, "interface do destino", "", COR["governo"], True))
     p.append(f'<path d="M672 366 V372" fill="none" stroke="{COR["governo"]}" '
              'stroke-width="1.2" stroke-dasharray="4 3"/>')
+    # o destino Rust ganhou runtime com a semantica do Help; entra ao lado da interface, no mesmo tom
+    p.append(caixa(776, 372, 570, 26, "wl-rt: moeda, data e strings com a semântica do Help", "", COR["governo"], True))
     p.append('<text x="205" y="280" text-anchor="middle" fill="var(--m)" font-size="10">G0 aprovado</text>')
 
     # 4 · PROVAR --------------------------------------------------------
@@ -182,6 +186,8 @@ def desenho(m: dict) -> str:
     for a, b in ((214, 234), (434, 454), (674, 694), (914, 934), (1134, 1154)):
         p.append(seta(a, 451, b, 451))
     p.append(seta(100, 366, 100, 418, "resultado"))
+    # a tela tambem se prova: exercitada, nao lida -- e a medida e a causa do defeito
+    p.append(caixa(14, 490, 420, 24, "tela exercitada pelo Playwright · golden " + golden, "", COR["prova"], True))
 
     # reprovado: sobe pela DIREITA, fora das caixas, e volta ao gate
     p.append(f'<path d="M1250 418 V392 H1300 V290 H480 V314" fill="none" stroke="{COR["portao"]}" '
@@ -234,6 +240,11 @@ def desenho(m: dict) -> str:
 # ---------------------------------------------------------------- a página
 
 def pagina(m: dict) -> str:
+    numeros = json.loads((RAIZ / "docs/dossie/numeros.json").read_text(encoding="utf-8"))
+    gerados = numeros.get("arquivos_gerados_pelo_questionario", "INDISPONÍVEL")
+    golden = numeros.get("golden_dos_destinos", "INDISPONÍVEL")
+    destinos = numeros.get("destinos_provados", "INDISPONÍVEL")
+    testes_wl_rt = numeros.get("testes_wl_rt", "INDISPONÍVEL")
     hooks_linhas = "".join(
         f"<tr><td><b>{E(nome)}</b></td><td class=\"mono\">{E(evento)}</td><td>{E(oq)}</td></tr>"
         for nome, evento, oq in [
@@ -255,12 +266,13 @@ def pagina(m: dict) -> str:
             ("tests/cenarios.py", f"{m['cenarios']} cenários", "os outros caminhos: sem licença, PDF que é foto, legado PHP, F-GATE verde com C-GATE reprovado, entrega auditável"),
             ("validate_plugin_bundle.py --strict", "1 comando", "arquivos obrigatórios, manifesto, e roda a bateria por dentro"),
             ("claude plugin validate", "1 comando", "o manifesto pelos olhos do próprio Claude Code"),
+            ("exemplos/*/destino", f"{destinos} projetos de ponta a ponta", f"PHP → Rust + React e WINDEV (só PDFs) → Rust + Axum + PostgreSQL + React; golden {golden}; o grafo de cada um conferido pela bateria"),
+            ("ferramentas/wl-rt · cargo test", f"{testes_wl_rt} testes", "o runtime do WLanguage em Rust, cada teste com o exemplo da página do Help como vetor"),
         ])
-    gerados = json.loads((RAIZ / "docs/dossie/numeros.json").read_text(encoding="utf-8")).get(
-        "arquivos_gerados_pelo_questionario", "INDISPONÍVEL")
     ETAPAS = [
         ("Instalar e ativar", "claude plugin install", [
             ("licença", "serial confere a máquina; sem ele, os scripts do plugin recusam"),
+            ("aceite e aviso", "LICENCA.md aceita com hash dos termos; o fornecedor recebe um aviso por instalação, e segunda máquina acusa recompartilhamento"),
             ("comandos", f"o índice: {m['comandos']} comandos e os {m['perguntas']} ids das perguntas")]),
         ("Perguntar", "/wx-claude-code:questionario", [
             ("bloco 0", "empresa, diretores, logotipos, prazo, orçamento, riscos, GitHub, aprovador (0.1–0.16)"),
@@ -280,18 +292,21 @@ def pagina(m: dict) -> str:
         ("Provar a entrada", "/wx-claude-code:preflight — G0", [
             ("inventário", "cada evidência com hash e classificação"),
             ("legado sem WX", "o código-fonte é a evidência central; PDF não é exigido de quem nunca o teve"),
+            ("pdf · dependências", "cada PDF vira Markdown com página e SHA-256, citável; as dependências externas saem do texto"),
             ("relatório", "o hook portão G0 falha fechado se não conseguir lê-lo")]),
         ("Converter", "/wx-claude-code:converter — G1 a G7", [
             ("G1 inventário", "BR-, QRY-, UI-, RPT-, INT-, DB- com origem localizável"),
             ("G2 arquitetura", "o que cada peça vira; a estratégia escolhida em H"),
             ("G3 dados", "esquema migrado, chaves e integridade"),
-            ("G4 piloto", "uma vertical inteira, com golden master"),
+            ("G4 piloto", f"uma vertical inteira, com golden master — hoje {golden}"),
+            ("wl-rt", "destino Rust: moeda de ponto fixo, datas AAAAMMDD e a comparação de strings do WLanguage, lidas do Help"),
             ("G5 ondas", "módulo a módulo, telas pelo Impeccable"),
             ("G6 homologação", "paralelo com o legado"),
             ("G7 virada", "só com backup do legado restaurado, não copiado")]),
         ("Provar o resultado", "constraints · evidencia · grafo · efeito", [
             ("F-GATE e C-GATE", "funciona? e está conforme? — a Sprint precisa dos dois"),
             ("evidência", "quatro estados, e o que ela NÃO prova é campo obrigatório"),
+            ("tela", "exercitada pelo Playwright nos estados do PDF de interfaces; a medida é a causa do defeito, não o sintoma"),
             ("grafo", "código sem requisito, requisito sem teste, teste sem evidência, prova vencida"),
             ("efeito", "lê o estado real; inconclusivo tem código de saída próprio")]),
         ("Governar", "/wx-claude-code:pmo · contrato", [
