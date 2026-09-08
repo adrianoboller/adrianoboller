@@ -1,0 +1,17 @@
+{
+  "id": "EVID-0001",
+  "afirmacao": "o sistema novo reproduz o legado nos casos do golden master",
+  "metodo": "golden-master",
+  "estado": "verificado",
+  "medida": "5/5",
+  "prova": "5 de 5 casos capturados do legado batem dentro da tolerância",
+  "nao_prova": "nada sobre entradas fora dos 5 casos capturados, nem sobre desempenho, segurança ou tela",
+  "assunto": {
+    "arquivo": "golden-master/comparacao.json",
+    "sha256": "2d7bc84fd05392cd22607a21d6152a18ffac428120c9e80809b847b1cb6b9da1",
+    "bytes": 6659
+  },
+  "requisito": "",
+  "constraint": "",
+  "registrado_em": "2026-09-08T14:57:51+00:00"
+}

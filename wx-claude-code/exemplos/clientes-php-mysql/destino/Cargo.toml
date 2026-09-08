@@ -1,0 +1,11 @@
+[package]
+name = "clientes-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Cadastro de clientes da Loja do Bairro, convertido do PHP de 2011. Regras BR-001..BR-004; MySQL, o mesmo do legado."
+
+[dependencies]
+mysql = "25"
+tiny_http = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

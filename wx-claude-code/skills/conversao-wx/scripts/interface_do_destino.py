@@ -291,17 +291,24 @@ def escolher(args, raiz: Path) -> int:
     (destino / "interface-do-destino.md").write_text("\n".join(linhas), encoding="utf-8")
     # O questionario ganha o campo, nao uma pergunta nova: a contagem de perguntas
     # e verificada por teste, e acrescentar uma aqui a quebraria sem necessidade.
-    q = raiz / "questionario.json"
+    # Achado exercitando o primeiro projeto: o questionario aplicado mora em
+    # .wx-migration/questionario.json, e este comando so olhava a raiz -- a
+    # escolha nao chegava ao arquivo que o conversor le. Grava nos DOIS que
+    # existirem: quem so tem o da raiz continua como antes (o teste do
+    # comportamento velho e o que trava isso), e quem aplicou ganha a copia.
     dados = None
-    if q.is_file():
+    for q in (raiz / ".wx-migration/questionario.json", raiz / "questionario.json"):
+        if not q.is_file():
+            continue
         try:
             dados = json.loads(q.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             dados = None
+            continue
         if isinstance(dados, dict) and isinstance(dados.get("H_backend"), dict):
             dados["H_backend"]["interface"] = o["id"]
             q.write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            print(f"questionario.json: H_backend.interface = {o['id']}")
+            print(f"{q.relative_to(raiz)}: H_backend.interface = {o['id']}")
     print(f"escolhida: {o['nome']} — {a['veredito']}")
     # Uma sessao real tentou registrar duas formas (servico + web) por nao estar
     # dito que a tela e outra pergunta. A escolha aqui e a do EXECUTAVEL de

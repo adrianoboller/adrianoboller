@@ -212,12 +212,20 @@ def montar(raiz: Path) -> dict:
                     {"trace_id": tid, "origem": origem,
                      "detalhe": "o SHA-256 da linha não bate com o arquivo de origem de hoje"})
 
+    # Achado no primeiro projeto: consertei a tela, registrei a prova NOVA sobre
+    # o arquivo novo, e o grafo continuou acusando a prova velha como vencida.
+    # Prova superada por outra, do mesmo assunto, com o hash de HOJE, nao e
+    # lacuna: e historico. So conta vencida a que ninguem refez.
+    atuais = {(e.get("assunto") or {}).get("arquivo")
+              for e in evids
+              if (e.get("assunto") or {}).get("arquivo") and (raiz / e["assunto"]["arquivo"]).is_file()
+              and sha256(raiz / e["assunto"]["arquivo"]) == (e.get("assunto") or {}).get("sha256")}
     for e in evids:
         assunto = (e.get("assunto") or {}).get("arquivo")
         sha = (e.get("assunto") or {}).get("sha256")
         if assunto and sha:
             p = raiz / assunto
-            if not p.is_file() or sha256(p) != sha:
+            if (not p.is_file() or sha256(p) != sha) and assunto not in atuais:
                 achados["prova_vencida"].append(
                     {"evidencia": e.get("id"), "arquivo": assunto,
                      "afirmacao": e.get("afirmacao", "")[:80]})

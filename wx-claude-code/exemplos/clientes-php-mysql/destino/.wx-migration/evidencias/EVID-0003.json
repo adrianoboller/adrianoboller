@@ -1,0 +1,17 @@
+{
+  "id": "EVID-0003",
+  "afirmacao": "a API JSON responde como as funcoes do legado",
+  "metodo": "teste",
+  "estado": "verificado",
+  "medida": "7/7",
+  "prova": "sete chamadas curl: incluir, duplicado, negativo, arredondamento, desativar, listar, listar todos -- mesmas mensagens do PHP",
+  "nao_prova": "nada sobre carga, autenticacao ou a tela",
+  "assunto": {
+    "arquivo": "src/main.rs",
+    "sha256": "5a0427feb1eb77e7bbaaed6b3c4f11fd221e190a52e5ae4a8047ffca2b388d01",
+    "bytes": 4188
+  },
+  "requisito": "INT-001",
+  "constraint": "",
+  "registrado_em": "2026-09-08T14:59:49+00:00"
+}

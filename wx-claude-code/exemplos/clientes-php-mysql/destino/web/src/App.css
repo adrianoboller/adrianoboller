@@ -1,0 +1,26 @@
+/* DESIGN.md: contorno, nunca fundo cheio; verde inclui, amarelo altera, rosa marca (o excluir que volta) */
+:root{--i:#14161F;--m:#6B6F82;--l:#E4E2DB;--p:#fff;--g:#FBFAF7;--vd:#1F7A4D;--am:#9A6B00;--rs:#B0306A;--a:#C63C0A}
+body{margin:0;background:var(--g);color:var(--i);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:24px 18px}
+header{display:flex;align-items:baseline;gap:14px;border-bottom:2px solid var(--i);padding-bottom:10px;margin-bottom:18px}
+h1{margin:0;font-size:26px}.sub{color:var(--m);font-size:13px}
+.form{display:grid;grid-template-columns:1fr 1fr 160px;gap:12px;background:var(--p);border:1px solid var(--l);padding:14px;margin-bottom:18px}
+label{display:flex;flex-direction:column;font-size:12px;color:var(--m);gap:4px}
+input{font:inherit;padding:7px 9px;border:1px solid var(--l);border-radius:4px}
+.form .acoes{grid-column:1/-1;display:flex;gap:8px}
+button{font:inherit;background:none;border:1.5px solid;border-radius:5px;padding:6px 14px;cursor:pointer}
+button:hover{color:#fff}
+.incluir{color:var(--vd);border-color:var(--vd)}.incluir:hover{background:var(--vd)}
+.alterar{color:var(--am);border-color:var(--am)}.alterar:hover{background:var(--am)}
+.marcar{color:var(--rs);border-color:var(--rs)}.marcar:hover{background:var(--rs)}
+.voltar{color:var(--m);border-color:var(--m)}.voltar:hover{background:var(--m)}
+.erro{grid-column:1/-1;color:var(--a);margin:0;font-weight:600}
+.filtro{flex-direction:row;align-items:center;margin-bottom:8px}
+table{width:100%;border-collapse:collapse;background:var(--p);border:1px solid var(--l)}
+th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--m);padding:8px 10px;border-bottom:2px solid var(--l)}
+td{padding:8px 10px;border-bottom:1px solid var(--l)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+td .acoes{display:flex;gap:6px;justify-content:flex-end}
+tr.inativo td{color:var(--m)}.tag{font-size:11px;color:var(--rs);border:1px solid var(--rs);padding:1px 6px;border-radius:9px}
+.vazio{text-align:center;color:var(--m)}
+@media (max-width:640px){.form{grid-template-columns:1fr}}

@@ -1,0 +1,316 @@
+{
+  "comparado_em": "2026-09-08",
+  "golden": "golden-master/casos.json",
+  "tolerancia": 0.005,
+  "total": 5,
+  "passaram": 5,
+  "falharam": 0,
+  "equivalencia": "5/5",
+  "casos": [
+    {
+      "id": "BR-001",
+      "regra": "e-mail unico, minusculo, sem espacos nas pontas",
+      "esperado": [
+        {
+          "id": 1.0
+        },
+        {
+          "erro": "e-mail ja cadastrado"
+        },
+        [
+          {
+            "ativo": 1.0,
+            "email": "maria@loja.com",
+            "id": 1.0,
+            "limite_credito": "100.00",
+            "nome": "Maria da Silva"
+          }
+        ]
+      ],
+      "obtido": [
+        {
+          "id": 1.0
+        },
+        {
+          "erro": "e-mail ja cadastrado"
+        },
+        [
+          {
+            "ativo": 1.0,
+            "email": "maria@loja.com",
+            "id": 1.0,
+            "limite_credito": "100.00",
+            "nome": "Maria da Silva"
+          }
+        ]
+      ],
+      "passou": true
+    },
+    {
+      "id": "BR-002",
+      "regra": "limite de credito nao negativo, 2 casas, meio para cima",
+      "esperado": [
+        {
+          "erro": "limite de credito nao pode ser negativo"
+        },
+        {
+          "id": 1.0
+        },
+        {
+          "id": 2.0
+        },
+        [
+          {
+            "ativo": 1.0,
+            "email": "joao@loja.com",
+            "id": 2.0,
+            "limite_credito": "999.99",
+            "nome": "Joao Souza"
+          },
+          {
+            "ativo": 1.0,
+            "email": "maria@loja.com",
+            "id": 1.0,
+            "limite_credito": "1500.01",
+            "nome": "Maria da Silva"
+          }
+        ]
+      ],
+      "obtido": [
+        {
+          "erro": "limite de credito nao pode ser negativo"
+        },
+        {
+          "id": 1.0
+        },
+        {
+          "id": 2.0
+        },
+        [
+          {
+            "ativo": 1.0,
+            "email": "joao@loja.com",
+            "id": 2.0,
+            "limite_credito": "999.99",
+            "nome": "Joao Souza"
+          },
+          {
+            "ativo": 1.0,
+            "email": "maria@loja.com",
+            "id": 1.0,
+            "limite_credito": "1500.01",
+            "nome": "Maria da Silva"
+          }
+        ]
+      ],
+      "passou": true
+    },
+    {
+      "id": "BR-003",
+      "regra": "nome entre 3 e 80, sem espaco duplo",
+      "esperado": [
+        {
+          "erro": "nome deve ter entre 3 e 80 caracteres"
+        },
+        {
+          "id": 1.0
+        },
+        [
+          {
+            "ativo": 1.0,
+            "email": "maria@loja.com",
+            "id": 1.0,
+            "limite_credito": "10.00",
+            "nome": "Maria da Silva"
+          }
+        ]
+      ],
+      "obtido": [
+        {
+          "erro": "nome deve ter entre 3 e 80 caracteres"
+        },
+        {
+          "id": 1.0
+        },
+        [
+          {
+            "ativo": 1.0,
+            "email": "maria@loja.com",
+            "id": 1.0,
+            "limite_credito": "10.00",
+            "nome": "Maria da Silva"
+          }
+        ]
+      ],
+      "passou": true
+    },
+    {
+      "id": "BR-004",
+      "regra": "excluir desativa; nao apaga; segunda vez nao faz nada",
+      "esperado": [
+        {
+          "id": 1.0
+        },
+        {
+          "id": 2.0
+        },
+        {
+          "desativados": 1.0
+        },
+        {
+          "desativados": 0.0
+        },
+        {
+          "alterados": 0.0
+        },
+        [
+          {
+            "ativo": 1.0,
+            "email": "joao@loja.com",
+            "id": 2.0,
+            "limite_credito": "20.00",
+            "nome": "Joao Souza"
+          }
+        ],
+        [
+          {
+            "ativo": 1.0,
+            "email": "joao@loja.com",
+            "id": 2.0,
+            "limite_credito": "20.00",
+            "nome": "Joao Souza"
+          },
+          {
+            "ativo": 0.0,
+            "email": "maria@loja.com",
+            "id": 1.0,
+            "limite_credito": "10.00",
+            "nome": "Maria da Silva"
+          }
+        ]
+      ],
+      "obtido": [
+        {
+          "id": 1.0
+        },
+        {
+          "id": 2.0
+        },
+        {
+          "desativados": 1.0
+        },
+        {
+          "desativados": 0.0
+        },
+        {
+          "alterados": 0.0
+        },
+        [
+          {
+            "ativo": 1.0,
+            "email": "joao@loja.com",
+            "id": 2.0,
+            "limite_credito": "20.00",
+            "nome": "Joao Souza"
+          }
+        ],
+        [
+          {
+            "ativo": 1.0,
+            "email": "joao@loja.com",
+            "id": 2.0,
+            "limite_credito": "20.00",
+            "nome": "Joao Souza"
+          },
+          {
+            "ativo": 0.0,
+            "email": "maria@loja.com",
+            "id": 1.0,
+            "limite_credito": "10.00",
+            "nome": "Maria da Silva"
+          }
+        ]
+      ],
+      "passou": true
+    },
+    {
+      "id": "QRY-001",
+      "regra": "ordem por nome e id; auto-increment do MySQL pula o id do INSERT recusado",
+      "esperado": [
+        {
+          "id": 1.0
+        },
+        {
+          "erro": "e-mail ja cadastrado"
+        },
+        {
+          "id": 3.0
+        },
+        {
+          "id": 4.0
+        },
+        [
+          {
+            "ativo": 1.0,
+            "email": "ana@loja.com",
+            "id": 3.0,
+            "limite_credito": "2.00",
+            "nome": "Ana Lima"
+          },
+          {
+            "ativo": 1.0,
+            "email": "ana2@loja.com",
+            "id": 4.0,
+            "limite_credito": "3.00",
+            "nome": "Ana Lima"
+          },
+          {
+            "ativo": 1.0,
+            "email": "zeca@loja.com",
+            "id": 1.0,
+            "limite_credito": "1.00",
+            "nome": "Zeca Pagodinho"
+          }
+        ]
+      ],
+      "obtido": [
+        {
+          "id": 1.0
+        },
+        {
+          "erro": "e-mail ja cadastrado"
+        },
+        {
+          "id": 3.0
+        },
+        {
+          "id": 4.0
+        },
+        [
+          {
+            "ativo": 1.0,
+            "email": "ana@loja.com",
+            "id": 3.0,
+            "limite_credito": "2.00",
+            "nome": "Ana Lima"
+          },
+          {
+            "ativo": 1.0,
+            "email": "ana2@loja.com",
+            "id": 4.0,
+            "limite_credito": "3.00",
+            "nome": "Ana Lima"
+          },
+          {
+            "ativo": 1.0,
+            "email": "zeca@loja.com",
+            "id": 1.0,
+            "limite_credito": "1.00",
+            "nome": "Zeca Pagodinho"
+          }
+        ]
+      ],
+      "passou": true
+    }
+  ]
+}

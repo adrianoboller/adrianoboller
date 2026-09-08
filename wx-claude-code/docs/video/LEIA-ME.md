@@ -62,3 +62,24 @@ carregar, então gravar a bateria com uma pasta que só tinha as capturas dela
 quebrava no `cap('45-instalacao')` do roteiro de uso. Captura ausente agora vira
 sentinela no carregamento e **erro com o nome** só para o roteiro escolhido.
 
+
+## O quarto vídeo: o primeiro projeto
+
+`wx-claude-code-video-primeiro.mp4` (roteiro `primeiro`) é o plugin usado de
+ponta a ponta pela primeira vez, do zelador à entrega: o pacote do cliente
+descompactado, o par de chaves no vendedor, o serial emitido, a instalação
+com a licença aceita e o aviso chegando ao vendedor por e-mail, e então um
+mini CRUD PHP + MySQL de **uma tabela** virando Rust (`tiny_http` + `mysql`)
+com tela React 19 + Vite sobre o mesmo MySQL. O golden master é capturado
+rodando o próprio legado, o Rust reproduz os 5 casos, a tela é exercitada
+pelo Playwright, o grafo fecha em zero — e o defeito achado olhando a tela (os
+botões vazando da tabela) aparece com o conserto e a prova refeita, porque foi
+o que aconteceu. As capturas são as saídas reais da sessão em que o projeto
+foi feito, com os caminhos da máquina de trabalho trocados por `.` e `~`.
+
+O projeto inteiro (entrada, questionário e destino) está em
+`../../exemplos/clientes-php-mysql/`.
+
+```bash
+node gravar-video.mjs <pasta-saida> <pasta-capturas> primeiro
+```

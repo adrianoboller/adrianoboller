@@ -93,6 +93,17 @@ def pacote_cliente(v: str, saida: Path, separar_corpus: bool = False) -> Path:
                 continue
             z.write(p, f"wx-claude-code/{rel.as_posix()}")
             n += 1
+    # Achado instalando o zip do cliente: o instalar.sh procura
+    # `.claude-plugin/marketplace.json` na pasta PAI para fazer o `claude plugin
+    # install`, e o zip nao levava -- caia no `--plugin-dir`, que so vale por
+    # sessao. Vai ao lado, com a versao sincronizada com a do plugin.
+    mk = RAIZ.parent / ".claude-plugin/marketplace.json"
+    with zipfile.ZipFile(alvo, "a", zipfile.ZIP_DEFLATED) as z:
+        d = json.loads(mk.read_text(encoding="utf-8"))
+        for pl in d.get("plugins", []):
+            if pl.get("name") == "wx-claude-code":
+                pl["version"] = v
+        z.writestr(".claude-plugin/marketplace.json", json.dumps(d, ensure_ascii=False, indent=2) + "\n")
     if separar_corpus:
         import shutil
         corpus_alvo = saida / "cliente" / CORPUS.name

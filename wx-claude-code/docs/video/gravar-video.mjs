@@ -11,7 +11,7 @@ const [, , outDir, capsDir, roteiroNome = 'uso'] = process.argv;
 // roteiro ESCOLHIDO e conferido depois -- ai sim falta e erro, com o nome.
 const FALTA = '\u0000FALTA:';
 const cap = (n) => {
-  try { return readFileSync(`${capsDir}/${n}.txt`, 'utf8').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/(proj|pmo2|demo|ex2?)/g, '.'); }
+  try { return readFileSync(`${capsDir}/${n}.txt`, 'utf8').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/primeiro\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/primeiro\/cliente-casa/g, '~/.wx-claude-code').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/(proj|pmo2|demo|ex2?)/g, '.').replace(/\/root\//g, '~/'); }
   catch { return FALTA + n; }
 };
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -97,6 +97,42 @@ ROTEIROS.bateria = [
   ['cargo test · wx-modelos', '6 · O binário Rust, std pura: os 18 testes do medidor de modelo local', cap('cargo')],
   ['atualizar-paginas.py --conferir', '7 · Nenhuma página envelheceu calada: todos os geradores conferidos contra a versão', cap('paginas')],
   ['card', 'Built to convert. Engineered to prove.', '105 testes · 19 cenários · 13 passos · validador estrito · claude plugin validate · 18 testes Rust · páginas em dia\n\nReproduza: python3 tests/testes.py'],
+];
+
+// Quarto roteiro: o PRIMEIRO PROJETO, do zelador a entrega. Um mini CRUD PHP +
+// MySQL (uma tabela) virando Rust + MySQL com tela React, passo a passo, com o
+// golden master capturado do proprio legado e o grafo fechando em zero. As
+// capturas sao as saidas reais da sessao em que o projeto foi feito; o que
+// deu errado no caminho (a tela com os botoes vazando) aparece, porque foi o
+// que aconteceu -- e a prova refeita depois do conserto tambem.
+ROTEIROS.primeiro = [
+  ['card', 'O primeiro projeto', 'WX Claude Code 3.43.0\nInstalação · liberação da licença · um mini CRUD PHP + MySQL (uma tabela) → Rust + MySQL + React\n\nTudo a seguir é saída real da sessão em que o projeto foi feito.'],
+  ['zelador.py --forcar', '0 · Antes de tudo, o zelador libera espaço: caches, alvos de compilação e execuções velhas', cap('00-zelador')],
+  ['unzip … -d ~/plugins', '1 · O pacote do cliente descompactado: um plugin, instalado uma vez, vale para todos os projetos', cap('01-descompactar')],
+  ['emitir.py chaves', '2 · No vendedor: o par de chaves. A privada nunca entra no repositório nem no pacote', cap('02-chaves')],
+  ['receber.py · emitir.py serial', '3 · O receptor de avisos no ar, e o serial assinado para «Loja do Bairro Ltda», com a URL do aviso dentro da assinatura', cap('03-serial')],
+  ['instalar.sh --serial …', '4 · No cliente: a licença na tela, o aceite gravado com o hash dos termos, o serial conferido contra a chave pública, o corpus, o aviso enviado', cap('04-instalar')],
+  ['instalar.sh · claude plugin', '5 · O plugin instalado no Claude Code a partir do marketplace local — e listado', cap('04b-instalar-no-claude')],
+  ['o que chegou ao vendedor', '6 · O e-mail que o vendedor recebeu na instalação: serial, empresa, máquina, versão. Segunda máquina viraria «POSSÍVEL RECOMPARTILHAMENTO»', cap('05-aviso')],
+  ['/wx-claude-code:questionario · aplicar', '7 · As 60 respostas do questionário aplicadas ao projeto: contexto, mapa, manifesto, o legado PHP inventariado', cap('06-aplicar')],
+  ['/wx-claude-code:progresso', '8 · O progresso sabe o que ninguém confirmou ainda, e por onde retomar', cap('07-progresso')],
+  ['/wx-claude-code:preflight (G0)', '9 · O portão G0: CONDITIONAL, com os motivos — sem PDF nenhum, porque o código PHP é a evidência', cap('08-g0')],
+  ['/wx-claude-code:dependencias', '10 · As dependências externas do legado, medidas do código: mysqli e nada mais', cap('09-dependencias')],
+  ['/wx-claude-code:interface', '11 · A interface do executável de destino: o que esta máquina compila, medido com o rustc de verdade', cap('10-interface')],
+  ['php capturar-golden.php', '12 · O golden master capturado rodando o PRÓPRIO legado no MySQL — inclusive o auto-increment que salta no e-mail repetido', cap('11-golden-capturar')],
+  ['src/regras.rs · repo.rs · main.rs', '13 · O Rust: regras puras citando clientes.php#linha, o repositório com mysql, o binário que responde ao golden e serve a API', cap('12-rust')],
+  ['/wx-claude-code:golden comparar', '14 · A prova: 5/5 casos do golden master reproduzidos pelo binário Rust contra o mesmo MySQL', cap('13-golden-comparar')],
+  ['/wx-claude-code:converter inventario', '15 · A matriz de rastreabilidade: cada regra, consulta, tabela e tela com origem, destino e teste', cap('14-matriz-e-testes')],
+  ['/wx-claude-code:evidencia do-golden', '16 · A evidência nasce do golden master: o que ela prova, e o que não prova, escrito', cap('15-evidencia-grafo')],
+  ['/wx-claude-code:evidencia registrar', '17 · Uma evidência a mais, do cargo test — e o grafo conferido de novo', cap('16-grafo-de-novo')],
+  ['npm create vite · react-ts', '18 · A tela: React 19 + Vite, TypeScript, sobre a API Rust', cap('17-react')],
+  ['clientes-rs servir 8080', '19 · A API Rust no ar, com o MySQL do legado por baixo', cap('18-api')],
+  ['node tela.mjs', '20 · A tela exercitada de verdade pelo Playwright: incluir, alterar, excluir, cada passo conferido na API', cap('19-tela')],
+  ['/wx-claude-code:grafo conferir', '21 · O grafo fecha: 0 código sem requisito, 0 requisito sem prova', cap('20-grafo-fechado')],
+  ['o conserto e a prova refeita', '22 · Olhando a tela: os botões vazavam da tabela. Consertado, a prova venceu; refeita, o grafo volta a zero — o histórico fica', cap('21-conserto-e-prova')],
+  ['/wx-claude-code:procedencia slsa', '23 · A procedência de cada artefato, com o nível SLSA dito com honestidade', cap('22-procedencia')],
+  ['/wx-claude-code:exportar', '24 · A entrega: pastas numeradas, SHA-256 de cada arquivo, nada sensível junto', cap('23-exportar')],
+  ['card', 'Built to convert. Engineered to prove.', 'Uma tabela, um CRUD, três linguagens — e nenhuma regra sem prova.\n\nO exemplo inteiro está em exemplos/clientes-php-mysql/'],
 ];
 
 const scenes = ROTEIROS[roteiroNome];

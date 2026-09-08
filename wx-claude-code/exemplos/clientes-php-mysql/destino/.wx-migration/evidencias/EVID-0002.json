@@ -1,0 +1,17 @@
+{
+  "id": "EVID-0002",
+  "afirmacao": "BR-001..003 reproduzem o PHP",
+  "metodo": "teste",
+  "estado": "verificado",
+  "medida": "4/4",
+  "prova": "cargo test --release: 4 passed, com os valores do golden (1500.005, 999.994, Jo, MARIA@Loja.com )",
+  "nao_prova": "nada sobre o banco, a API nem a tela",
+  "assunto": {
+    "arquivo": "src/regras.rs",
+    "sha256": "ae2901a1cedfe3cb3a24bd48a2e5e7451d8128fde7dcc888ceed5e07fc8926fb",
+    "bytes": 2823
+  },
+  "requisito": "BR-001,BR-002,BR-003",
+  "constraint": "",
+  "registrado_em": "2026-09-08T14:58:34+00:00"
+}

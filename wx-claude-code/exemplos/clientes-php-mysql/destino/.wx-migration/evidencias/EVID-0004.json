@@ -1,0 +1,17 @@
+{
+  "id": "EVID-0004",
+  "afirmacao": "a tela React lista, inclui e mostra o erro da regra com a mensagem do legado",
+  "metodo": "teste de tela (Playwright)",
+  "estado": "verificado",
+  "medida": "4/4",
+  "prova": "abrir com dados da API; nome curto mostra 'nome deve ter entre 3 e 80 caracteres'; incluir Ana Lima com 250.005 lista 250.01; filtro mostra a desativada",
+  "nao_prova": "nada sobre acessibilidade medida, nem sobre celular real",
+  "assunto": {
+    "arquivo": "web/src/App.tsx",
+    "sha256": "315d1d68d471ff1f0f7e55de8a8d1f56d67007c6f650a16de91d6273edb31923",
+    "bytes": 3760
+  },
+  "requisito": "UI-001",
+  "constraint": "",
+  "registrado_em": "2026-09-08T15:00:24+00:00"
+}

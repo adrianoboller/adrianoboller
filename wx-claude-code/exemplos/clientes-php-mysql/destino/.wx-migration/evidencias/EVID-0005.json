@@ -1,0 +1,17 @@
+{
+  "id": "EVID-0005",
+  "afirmacao": "a tela React lista, inclui e mostra o erro da regra com a mensagem do legado (apos o conserto do layout)",
+  "metodo": "teste de tela (Playwright)",
+  "estado": "verificado",
+  "medida": "4/4",
+  "prova": "mesmas quatro conferencias do EVID-0004, sobre o App.tsx consertado",
+  "nao_prova": "nada sobre acessibilidade medida, nem sobre celular real",
+  "assunto": {
+    "arquivo": "web/src/App.tsx",
+    "sha256": "2242d0141bf0a9b1bfe2fcb25541550c9c40baf5369fb49c9b1e65b373009bef",
+    "bytes": 3771
+  },
+  "requisito": "UI-001",
+  "constraint": "",
+  "registrado_em": "2026-09-08T15:01:30+00:00"
+}

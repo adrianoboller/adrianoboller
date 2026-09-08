@@ -27,6 +27,8 @@ DOSSIE = RAIZ / "docs/dossie"
 # na 3.34.0 justamente por isso: carimbar a versao numa pagina cujo CONTEUDO
 # envelheceu deixa a mentira com cara de atual.
 CARIMBAR = [
+    # o marketplace da raiz passou seis versoes dizendo 3.36.0
+    (RAIZ.parent / ".claude-plugin/marketplace.json", r'("version": ")\d+\.\d+\.\d+(?=")'),
     (RAIZ / "docs/ativacao-do-serial.html", r"(WX Claude Code )\d+\.\d+\.\d+(?= · instrução)"),
 ]
 GERADORES = ["atualizar-manual.py", "numeros-do-plugin.py", "gerar-organograma.py", "gerar-evolucao.py", "gerar-comandos.py",

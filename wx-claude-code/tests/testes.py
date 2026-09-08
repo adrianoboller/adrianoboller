@@ -1340,6 +1340,10 @@ class Questionario(unittest.TestCase):
         self.assertEqual(json.loads(q.read_text(encoding="utf-8"))["H_backend"]["interface"], "servico-tcp")
         ficha = json.loads((self.tmp / ".wx-migration/interface.json").read_text(encoding="utf-8"))
         self.assertEqual(ficha["escolhida"], "servico-tcp")
+        # primeiro projeto: o conversor le a copia aplicada em .wx-migration, e a
+        # escolha nao chegava la. As duas copias saem iguais.
+        aplicado = json.loads((self.tmp / ".wx-migration/questionario.json").read_text(encoding="utf-8"))
+        self.assertEqual(aplicado["H_backend"]["interface"], "servico-tcp")
         self.assertEqual(len(json.loads(run(SCRIPTS / "listar_perguntas.py", "--json").stdout)), antes)
         ruim = run(ifc, "--project-root", self.tmp, "escolher", "--opcao", "nao-existe")
         self.assertEqual(ruim.returncode, 2)
@@ -1647,6 +1651,26 @@ class Questionario(unittest.TestCase):
             srv.shutdown()
             os.environ.pop("WX_LICENCA", None)
             os.environ.pop("WX_SERIAL_DIR", None)
+
+    def test_grafo_prova_refeita_supera_a_vencida(self):
+        """Consertar o arquivo vence a prova antiga; refazer a prova sobre o
+        arquivo novo tem de FECHAR a lacuna, nao deixar a velha acusando."""
+        self._aplicado()
+        ev = SCRIPTS / "evidencia.py"
+        alvo = self.tmp / "src/tela.tsx"
+        alvo.parent.mkdir(parents=True, exist_ok=True)
+        alvo.write_text("v1\n", encoding="utf-8")
+        self._matriz([{"trace_id": "UI-001", "kind": "screen", "target_file": "src/tela.tsx",
+                       "rule_summary": "tela", "status": "verified", "test_id": "T", "test_file": "src/tela.tsx"}])
+        base = ["--project-root", self.tmp, "registrar", "--afirmacao", "tela ok", "--metodo", "teste",
+                "--estado", "verificado", "--assunto", "src/tela.tsx", "--requisito", "UI-001", "--nao-prova", "nada"]
+        self.assertEqual(run(ev, *base).returncode, 0)
+        alvo.write_text("v2 consertada\n", encoding="utf-8")
+        g = json.loads(run(SCRIPTS / "grafo.py", "--project-root", self.tmp, "--json", "conferir").stdout)
+        self.assertEqual(len(g["achados"]["prova_vencida"]), 1, "mudou o arquivo: a prova venceu")
+        self.assertEqual(run(ev, *base).returncode, 0)  # prova refeita sobre o arquivo novo
+        g2 = json.loads(run(SCRIPTS / "grafo.py", "--project-root", self.tmp, "--json", "conferir").stdout)
+        self.assertEqual(g2["achados"]["prova_vencida"], [], "a prova nova supera a velha")
 
     def test_gemeo_fotografa_a_sprint_e_o_e_se_declara_o_limite(self):
         self._aplicado()
