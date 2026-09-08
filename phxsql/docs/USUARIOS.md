@@ -190,14 +190,43 @@ da história.
 
 ### As portas dos fundos que precisaram de conferência própria
 
-O portão de permissão é **um só**, e ele lê o campo `"tabela"` do pedido. Duas
+O portão de permissão é **um só**, e ele lê o campo `"tabela"` do pedido. Três
 operações não têm esse campo:
 
 - **`juntar`** — as tabelas estão em `a.tabela` e `b.tabela`;
-- **`unir`** — as tabelas estão numa **lista** em `"tabelas"`.
+- **`unir`** — as tabelas estão numa **lista** em `"tabelas"`;
+- **`pivotar`** — a tabela de fatos está no campo de sempre, mas as de
+  **consulta** moram cada uma num `tabela` dentro de um item de `juntar`
+  aninhado, e o portão não desce até ali.
 
 Sem conferência própria, bastaria pedir a tabela negada como o lado B de uma
-junção. As duas conferem cada tabela do pedido, e há teste para cada uma.
+junção. As três conferem cada tabela do pedido, e há teste para cada uma.
+
+E a mesma varredura teve de ser refeita quando o direito desceu à coluna: quem
+nomeia tabela onde o portão não olha é quem escapa da guarda nova também. A
+função `direito_coluna::tabelas_do_pedido` é onde essa lista mora hoje — as
+três acima, mais o `destino` de `duplicar_tabela`, `copiar_tabela` e
+`renomear_tabela`, que é para onde a coluna negada iria sem regra nenhuma.
+
+### E abaixo dela, a coluna
+
+O direito não para mais na tabela: dentro do objeto dela, `colunas` escreve
+`ler` e `alterar` por coluna, com a **mesma** ordem de precedência de cima.
+
+```json
+"folha": {
+  "ler": true, "inserir": true, "alterar": true,
+  "colunas": { "salario": { "ler": false, "alterar": false } }
+}
+```
+
+A coluna negada sai da resposta de quem devolve linha, a escrita nela é
+recusada nomeando-a, e o `atualizar` que a omite **preserva o valor gravado**
+— porque quem não lê a coluna manda a linha sem ela, e o motor a zeraria em
+silêncio. As operações que devolvem linha por um caminho que a peneira não
+percorre (`exportar`, `juntar`, `diario`, `backup`, …) **recusam a tabela**:
+recusar é mais seguro que vazar. Tudo isso, com a lista medida operação a
+operação, está na §15 do [`SEGURANCA.md`](SEGURANCA.md).
 
 ## Os três portões de um pedido
 
@@ -368,9 +397,11 @@ nem hash; há um teste que falha se algum dia devolver.
   `ips_permitidos`.
 - **Sem grupos ou papéis.** O poder é por usuário. Com muitos usuários iguais,
   isso incomoda — e aí entram papéis.
-- **Sem direito por COLUNA.** O direito desce até a tabela, e para aí. Esconder
-  uma coluna de salário dentro de uma tabela que a pessoa pode ler ainda não
-  existe.
+- ~~**Sem direito por COLUNA.**~~ Passou a existir: dentro do objeto da
+  tabela, um objeto `colunas` com `ler` e `alterar` por coluna. A regra
+  inteira, a lista medida das operações e o que ela recusa estão na §15 do
+  [`SEGURANCA.md`](SEGURANCA.md); o resumo de uso está no `MANUAL.txt` 14.3.2.
+  **Sem `colunas` no cadastro, nada muda.**
 - **Senha trafega em claro** no `login`, como todo o resto do protocolo. A
   porta 5000 pertence dentro de VPN ou IPSec — e o mesmo vale para o
   `usuario_criar`: a senha vai no pedido, e o que a protege no fio é a cifra

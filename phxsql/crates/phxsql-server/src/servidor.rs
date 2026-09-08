@@ -5376,7 +5376,476 @@ impl Servidor {
     fn executar_derivado(&self, op: &str, pedido: &Json, sessao: &Sessao) -> Result<Json> {
         self.politica_do_pedido(op, pedido)?;
         self.portoes_do_pedido(op, pedido, sessao)?;
-        self.executar(op, pedido, sessao)
+        // O direito por COLUNA entra aqui e nao no `executar`, pelo mesmo
+        // motivo de o portao entrar aqui: e este o irmao do `despachar`. Um
+        // `UPDATE` pelo SQL nunca passa pelo despachar -- ele e um `buscar`,
+        // um `ler` e um `atualizar` derivados --, e sem esta linha o `ler`
+        // devolveria a linha SEM a coluna negada e o `atualizar` a gravaria
+        // nula. Ver `aplicar_direito_por_coluna`.
+        self.aplicar_direito_por_coluna(op, pedido, sessao)
+    }
+
+    /// O direito por COLUNA, no unico lugar em que ele existe.
+    ///
+    /// # Por que ele EMBRULHA o `executar`, em vez de ser um portao
+    ///
+    /// Porque metade do trabalho e antes e metade e depois. Antes: recusar a
+    /// escrita que mudaria a coluna negada, e repor no pedido o valor que
+    /// quem nao le a coluna nao tem como mandar. Depois: tirar a coluna da
+    /// resposta. Um portao so ve o pedido; uma peneira so ve a resposta.
+    /// Separa-los daria dois lugares para esquecer -- e a petrea ja diz o que
+    /// acontece com o segundo lugar.
+    ///
+    /// # Os IRMAOS que chamam isto, e por que sao TRES
+    ///
+    /// Irmao aqui nao e quem tem nome parecido: e **quem chama
+    /// `portoes_do_pedido` e depois `executar`, na mesma ordem**. Sao tres, e
+    /// os tres passam por aqui:
+    ///
+    /// 1. `despachar` -- a rede, e com ela o MCP, o REST e a tela, que entram
+    ///    todos pelo `ExecutorLocal`;
+    /// 2. `executar_derivado` -- a op `sql` e cada passo que ela produz. E o
+    ///    irmao que mais importa: o `UPDATE` pelo SQL e um `buscar` -> `ler`
+    ///    -> `atualizar`, e nenhum dos tres chega pelo `despachar`;
+    /// 3. `executar_job` -- o agendador, que roda sob o usuario do job.
+    ///
+    /// Deixar um de fora nao aparece em teste de portao nenhum: o pedido
+    /// continua sendo recusado quando a TABELA e negada, e so a coluna vaza.
+    ///
+    /// # Custo zero para quem nao pediu
+    ///
+    /// A primeira linha le um `bool` da ficha da sessao. Sem cadastro, sem
+    /// usuario, supervisor, ou cadastro sem `"colunas"`: o pedido segue para o
+    /// `executar` sem uma alocacao sequer -- nem a busca na tabela de classes.
+    /// E a licao do Profiler: o portao que decide se ha trabalho vem ANTES do
+    /// trabalho.
+    fn aplicar_direito_por_coluna(&self, op: &str, pedido: &Json, sessao: &Sessao) -> Result<Json> {
+        let Some(u) = sessao.usuario.as_ref().filter(|u| u.restringe_colunas()) else {
+            return self.executar(op, pedido, sessao);
+        };
+        use crate::direito_coluna::{self as dc, PorColuna};
+        let base = pedido.texto_ou("database", "").to_string();
+        let tabela = pedido.texto_ou("tabela", "").trim().to_string();
+
+        match dc::classe(op) {
+            PorColuna::Nenhum => self.executar(op, pedido, sessao),
+
+            // Devolve (ou grava) dado de linha por um caminho que a peneira
+            // nao sabe percorrer. Recusar e mais seguro que vazar.
+            PorColuna::Recusa => {
+                let alvos = dc::tabelas_do_pedido(op, pedido);
+                // Lista vazia nao e "nao toca em tabela": e "nao da para saber
+                // qual". `backup` leva os arquivos, `profiler` devolve o texto
+                // dos pedidos capturados -- nenhum dos dois nomeia a tabela que
+                // alcanca, e adivinhar seria a peneira mentindo.
+                let motivo = match alvos.iter().find(|t| u.tem_regra_de_coluna(&base, t)) {
+                    Some(t) => Some(format!("ha coluna negada em {base}.{t}")),
+                    None if alvos.is_empty() => Some(
+                        "esta operacao nao diz que tabela alcanca, e este usuario tem \
+                         regra de coluna"
+                            .to_string(),
+                    ),
+                    None => None,
+                };
+                if let Some(motivo) = motivo {
+                    return Err(PhxError::Autorizacao(format!(
+                        "{}: o direito por coluna nao e aplicado em {op}, e {motivo} -- \
+                         recusado para nao vazar. Peca as colunas por ler, varrer, \
+                         buscar ou SELECT",
+                        u.login
+                    )));
+                }
+                self.executar(op, pedido, sessao)
+            }
+
+            // Estrutura NAO e dado: a coluna continua no esquema, e a resposta
+            // ganha a lista do que este usuario nao alcanca -- senao a tela
+            // pinta um campo que nunca vai chegar preenchido, e quem olha
+            // conclui que a coluna esta vazia no banco.
+            PorColuna::Estrutura => {
+                let r = self.executar(op, pedido, sessao)?;
+                let sem_ler = u.colunas_negadas(&base, &tabela, Atividade::Ler);
+                let sem_alterar = u.colunas_negadas(&base, &tabela, Atividade::Alterar);
+                if sem_ler.is_empty() && sem_alterar.is_empty() {
+                    return Ok(r);
+                }
+                let Json::Objeto(mut pares) = r else {
+                    return Ok(r);
+                };
+                for (nome, lista) in [
+                    ("colunas_sem_leitura", sem_ler),
+                    ("colunas_sem_alteracao", sem_alterar),
+                ] {
+                    pares.push((
+                        nome.to_string(),
+                        Json::Lista(lista.iter().map(Json::texto_de).collect()),
+                    ));
+                }
+                Ok(Json::Objeto(pares))
+            }
+
+            PorColuna::Le(onde) => {
+                let negadas = u.colunas_negadas(&base, &tabela, Atividade::Ler);
+                if negadas.is_empty() {
+                    return self.executar(op, pedido, sessao);
+                }
+                self.recusar_pergunta_sobre_coluna_negada(
+                    pedido, sessao, &base, &tabela, &negadas,
+                )?;
+                Ok(dc::peneirar(
+                    self.executar(op, pedido, sessao)?,
+                    onde,
+                    &negadas,
+                ))
+            }
+
+            PorColuna::Escreve => {
+                if u.regras_de_coluna(&base, &tabela).is_empty() {
+                    return self.executar(op, pedido, sessao);
+                }
+                let ajustado =
+                    self.escrita_sob_direito_por_coluna(op, pedido, sessao, &base, &tabela)?;
+                self.executar(op, &ajustado, sessao)
+            }
+        }
+    }
+
+    /// A leitura tambem PERGUNTA, e a pergunta responde sem mostrar a coluna.
+    ///
+    /// A peneira tira o valor da resposta -- e chega tarde para tres coisas
+    /// que acontecem antes dela:
+    ///
+    /// * `onde` filtrando pela coluna negada: a CONTAGEM das linhas que casam
+    ///   e a resposta, e vinte perguntas dessas dizem o salario sem ele nunca
+    ///   ter aparecido;
+    /// * `indice` cuja chave inclui a coluna negada: `buscar` por chave exata
+    ///   diz quem tem aquele valor, e varrer por ele devolve a ordem;
+    /// * `coluna` por NUMERO em vez de nome: aqui nao ha esquema para
+    ///   resolver a posicao, e adivinhar e pior que recusar.
+    ///
+    /// O esquema so e pedido quando o pedido nomeia um indice -- entao a
+    /// varredura de sempre, que e o laco quente da tela, nao paga nada.
+    fn recusar_pergunta_sobre_coluna_negada(
+        &self,
+        pedido: &Json,
+        sessao: &Sessao,
+        base: &str,
+        tabela: &str,
+        negadas: &[String],
+    ) -> Result<()> {
+        use crate::direito_coluna::mesmo_nome;
+        let recusa = |coluna: &str, por_que: &str| -> PhxError {
+            PhxError::Autorizacao(format!(
+                "a coluna {coluna:?} de {base}.{tabela} nao pode ser lida por este usuario, \
+                 e {por_que} responderia sobre ela sem mostra-la"
+            ))
+        };
+        for campo in ["onde", "ordenar"] {
+            for f in pedido.campo(campo).and_then(Json::lista).unwrap_or(&[]) {
+                let Some(c) = f.campo("coluna") else { continue };
+                match c.texto() {
+                    Some(nome) => {
+                        if let Some(n) = negadas.iter().find(|n| mesmo_nome(n, nome)) {
+                            return Err(recusa(n, campo));
+                        }
+                    }
+                    // Coluna por numero: sem o esquema aqui, a posicao 3 pode
+                    // ser qualquer uma. Recusar custa um erro que diz o que
+                    // fazer; adivinhar custaria a coluna.
+                    None => {
+                        return Err(PhxError::Autorizacao(format!(
+                            "ha coluna negada em {base}.{tabela}: neste caso o campo \
+                             {campo:?} tem de nomear a coluna, e nao a posicao dela"
+                        )))
+                    }
+                }
+            }
+        }
+        // A projecao (`colunas`) do SelectMemory: pedir a coluna negada por
+        // nome tem de recusar, e nao voltar uma lista com um buraco.
+        for c in pedido.campo("colunas").and_then(Json::lista).unwrap_or(&[]) {
+            match c.texto() {
+                Some(nome) => {
+                    if let Some(n) = negadas.iter().find(|n| mesmo_nome(n, nome)) {
+                        return Err(recusa(n, "a projecao"));
+                    }
+                }
+                None => {
+                    return Err(PhxError::Autorizacao(format!(
+                        "ha coluna negada em {base}.{tabela}: a projecao tem de nomear \
+                         as colunas, e nao as posicoes delas"
+                    )))
+                }
+            }
+        }
+        let indice = pedido.texto_ou("indice", "").trim();
+        if indice.is_empty() {
+            return Ok(());
+        }
+        for c in self.colunas_do_indice(base, tabela, indice, sessao)? {
+            if let Some(n) = negadas.iter().find(|n| mesmo_nome(n, &c)) {
+                return Err(recusa(n, format!("o indice {indice:?}").as_str()));
+            }
+        }
+        Ok(())
+    }
+
+    /// As colunas de um indice, lidas do proprio `esquema` do servidor.
+    ///
+    /// Pelo `executar` e nao abrindo a tabela na mao: um segundo caminho para
+    /// ler esquema seria mais um lugar que a sobreposicao da transacao e a
+    /// qualificacao `schema.tabela` teriam de aprender de novo.
+    fn colunas_do_indice(
+        &self,
+        base: &str,
+        tabela: &str,
+        indice: &str,
+        sessao: &Sessao,
+    ) -> Result<Vec<String>> {
+        let ped = Json::objeto(vec![
+            ("database", Json::texto_de(base)),
+            ("tabela", Json::texto_de(tabela)),
+        ]);
+        let e = self.executar("esquema", &ped, sessao)?;
+        Ok(e.campo("indices")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .filter(|i| i.texto_ou("nome", "") == indice)
+            .flat_map(|i| i.campo("colunas").and_then(Json::lista).unwrap_or(&[]))
+            .map(|c| c.texto_ou("coluna", "").to_string())
+            .collect())
+    }
+
+    /// A escrita numa tabela com regra de coluna: recusa o que mudaria a
+    /// coluna negada, e REPOE o que o pedido nao tinha como trazer.
+    ///
+    /// # Os tres estados de uma coluna dentro do pedido, e por que sao tres
+    ///
+    /// * **valor** -- o cliente disse o que quer gravar ali;
+    /// * **nulo explicito** -- o cliente disse "esvazie";
+    /// * **ausente** -- o cliente nao disse nada.
+    ///
+    /// Tratar os dois ultimos como um so foi o defeito que motivou tudo isto:
+    /// o `atualizar` grava a linha INTEIRA e `json_para_linha` preenche com
+    /// NULL o que nao veio. Quem nao le a coluna manda a linha sem ela, e o
+    /// motor zerava o salario do outro em silencio -- que e o pior desfecho
+    /// possivel, porque nao ha erro, nao ha registro e o dado nao volta.
+    /// Ausente vira **o valor gravado**; nulo explicito continua sendo um
+    /// pedido de mudanca, e por isso e recusado como qualquer outro.
+    ///
+    /// # A excecao que evita quebrar quem LE a coluna e nao a altera
+    ///
+    /// Com `{"ler": true, "alterar": false}` o cliente le a linha inteira e a
+    /// devolve inteira -- e recusar todo valor faria toda gravacao pela tela
+    /// parar. Entao um valor IGUAL ao gravado passa: ele nao altera nada.
+    ///
+    /// A comparacao so acontece quando o usuario PODE ler a coluna, e a
+    /// restricao e a razao de ser da linha: para quem nao le, "aceito quando
+    /// bate" e um oraculo -- vinte tentativas e o salario aparece sem nunca
+    /// ter sido devolvido.
+    fn escrita_sob_direito_por_coluna(
+        &self,
+        op: &str,
+        pedido: &Json,
+        sessao: &Sessao,
+        base: &str,
+        tabela: &str,
+    ) -> Result<Json> {
+        use crate::direito_coluna::mesmo_nome;
+        let regras: crate::usuarios::RegrasDeColuna = match &sessao.usuario {
+            Some(u) => u.regras_de_coluna(base, tabela).to_vec(),
+            None => return Ok(pedido.clone()),
+        };
+
+        // A carga COLADA nao passa por aqui, e a recusa e a mesma decisao do
+        // Profiler: o que nao se ANALISA nao se redige. Achar o nome de uma
+        // coluna recortando um CSV depende de o texto estar escrito de um
+        // jeito, e o dia em que nao estiver a coluna negada entra gravada.
+        if pedido
+            .campo("texto")
+            .and_then(Json::texto)
+            .is_some_and(|t| !t.trim().is_empty())
+        {
+            return Err(PhxError::Autorizacao(format!(
+                "ha coluna negada em {base}.{tabela}: a carga colada nao e analisada pelo \
+                 direito por coluna, e por isso e recusada. Mande as linhas em \"linhas\""
+            )));
+        }
+
+        // Onde as linhas do pedido moram. `inserir` e `atualizar` mandam uma;
+        // `inserir_lote` manda muitas. O nome do campo importa porque e ele
+        // que precisa voltar reescrito.
+        let campo = ["valores", "linha", "linhas"]
+            .into_iter()
+            .find(|c| pedido.campo(c).is_some());
+        let Some(campo) = campo else {
+            // Sem linha nenhuma nao ha o que conferir -- e a operacao recusa
+            // por conta, com a mensagem dela.
+            return Ok(pedido.clone());
+        };
+        let bruto = pedido.campo(campo).cloned().unwrap_or(Json::Nulo);
+        let uma_so = campo != "linhas";
+        let linhas: Vec<Json> = if uma_so {
+            vec![bruto.clone()]
+        } else {
+            // `"linhas"` que nao e lista e um pedido malformado, e quem diz
+            // isso e a operacao. Reescrever para `[]` trocaria a mensagem
+            // dela por «zero linhas gravadas», que e uma resposta de sucesso.
+            match bruto.lista() {
+                Some(l) => l.to_vec(),
+                None => return Ok(pedido.clone()),
+            }
+        };
+
+        // A ordem das colunas so e pedida quando alguma linha vem como LISTA
+        // -- e ai a posicao e a unica forma de saber qual coluna e qual.
+        let ordem: Vec<String> = if linhas.iter().any(|l| matches!(l, Json::Lista(_))) {
+            self.colunas_da_tabela(base, tabela, sessao)?
+        } else {
+            Vec::new()
+        };
+
+        // O valor GRAVADO, lido uma vez para a linha inteira. So o `atualizar`
+        // precisa dele -- e so quando ha coluna a repor ou a comparar.
+        let precisa_do_gravado =
+            op == "atualizar" && regras.iter().any(|(_, d)| !d.ler || !d.alterar);
+        // Rowid zero ou ausente: nao ha linha para ler, e a operacao ja recusa
+        // por conta com a mensagem dela. Ler aqui primeiro trocaria «informe
+        // "rowid"» por um erro sobre uma linha que ninguem pediu.
+        let rowid = pedido.inteiro_ou("rowid", 0).max(0) as u64;
+        let gravada = if precisa_do_gravado && rowid > 0 {
+            let ped = Json::objeto(vec![
+                ("database", Json::texto_de(base)),
+                ("tabela", Json::texto_de(tabela)),
+                ("rowid", Json::de_u64(rowid)),
+                ("com_versao", Json::Bool(true)),
+            ]);
+            // Pelo `executar`, e nao pelo derivado: o portao de permissao ja
+            // foi conferido para ESTE pedido, e um segundo portao aqui
+            // recusaria por `ler` quem tem `alterar` e nao tem `ler`.
+            self.executar("ler", &ped, sessao)?
+        } else {
+            Json::Nulo
+        };
+        let valor_gravado = |coluna: &str| -> Option<Json> {
+            let linha = gravada.campo("linha")?;
+            match linha {
+                Json::Objeto(pares) => pares
+                    .iter()
+                    .find(|(k, _)| mesmo_nome(k, coluna))
+                    .map(|(_, v)| v.clone()),
+                _ => None,
+            }
+        };
+
+        let mut saida: Vec<Json> = Vec::with_capacity(linhas.len());
+        for linha in linhas {
+            let mut nova = linha.clone();
+            for (coluna, direito) in &regras {
+                let posicao = || ordem.iter().position(|c| mesmo_nome(c, coluna));
+                let atual = match &nova {
+                    Json::Objeto(pares) => pares
+                        .iter()
+                        .find(|(k, _)| mesmo_nome(k, coluna))
+                        .map(|(_, v)| v.clone()),
+                    Json::Lista(itens) => posicao().and_then(|i| itens.get(i).cloned()),
+                    _ => None,
+                };
+                match atual {
+                    // Ausente: o cliente nao disse nada sobre esta coluna.
+                    None => {
+                        if op != "atualizar" || (direito.ler && direito.alterar) {
+                            continue;
+                        }
+                        let Some(v) = valor_gravado(coluna) else {
+                            continue;
+                        };
+                        nova = Self::repor_coluna(nova, coluna, v, posicao());
+                    }
+                    // Nulo explicito e valor sao os dois um pedido de mudanca.
+                    Some(v) => {
+                        if direito.alterar {
+                            continue;
+                        }
+                        let igual = !v.e_nulo()
+                            && direito.ler
+                            && valor_gravado(coluna).is_some_and(|g| g.escrever() == v.escrever());
+                        if igual {
+                            continue;
+                        }
+                        return Err(PhxError::Autorizacao(format!(
+                            "a coluna {coluna:?} de {base}.{tabela} nao pode ser alterada por \
+                             este usuario; tire-a do pedido e o valor gravado fica como esta"
+                        )));
+                    }
+                }
+            }
+            saida.push(nova);
+        }
+
+        let Json::Objeto(pares) = pedido else {
+            return Ok(pedido.clone());
+        };
+        let mut novo: Vec<(String, Json)> =
+            pares.iter().filter(|(k, _)| k != campo).cloned().collect();
+        novo.push((
+            campo.to_string(),
+            if uma_so {
+                saida.into_iter().next().unwrap_or(Json::Nulo)
+            } else {
+                Json::Lista(saida)
+            },
+        ));
+        // A VERSAO lida junto com a linha fecha a janela entre o `ler` daqui e
+        // o `atualizar` la embaixo: sem ela, quem gravasse no meio teria o
+        // valor dele reposto pelo antigo -- perda calada de uma coluna, que e
+        // o mesmo estrago que esta funcao existe para impedir. Versao zero
+        // (tabela sem controle de versao) nao confere nada, byte a byte como
+        // antes; e quem ja mandou a sua nao e sobrescrito.
+        if precisa_do_gravado && pedido.campo("versao").is_none() {
+            let versao = gravada.inteiro_ou("versao", 0).max(0) as u64;
+            if versao > 0 {
+                novo.push(("versao".to_string(), Json::de_u64(versao)));
+            }
+        }
+        Ok(Json::Objeto(novo))
+    }
+
+    /// Poe o valor de volta na linha, seja ela objeto ou lista.
+    fn repor_coluna(linha: Json, coluna: &str, valor: Json, posicao: Option<usize>) -> Json {
+        match linha {
+            Json::Objeto(mut pares) => {
+                pares.push((coluna.to_string(), valor));
+                Json::Objeto(pares)
+            }
+            Json::Lista(mut itens) => {
+                if let Some(i) = posicao {
+                    while itens.len() <= i {
+                        itens.push(Json::Nulo);
+                    }
+                    itens[i] = valor;
+                }
+                Json::Lista(itens)
+            }
+            outra => outra,
+        }
+    }
+
+    /// Os nomes das colunas da tabela, na ordem do esquema.
+    fn colunas_da_tabela(&self, base: &str, tabela: &str, sessao: &Sessao) -> Result<Vec<String>> {
+        let ped = Json::objeto(vec![
+            ("database", Json::texto_de(base)),
+            ("tabela", Json::texto_de(tabela)),
+        ]);
+        Ok(self
+            .executar("esquema", &ped, sessao)?
+            .campo("colunas")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .map(|c| c.texto_ou("nome", "").to_string())
+            .collect())
     }
 
     fn executar_job(&self, job: &crate::jobs::Job, op: &str) -> Result<Json> {
@@ -5386,7 +5855,10 @@ impl Servidor {
         self.politica_do_pedido(op, &job.pedido)?;
         let sessao = self.sessao_do_job(job)?;
         self.portoes_do_pedido(op, &job.pedido, &sessao)?;
-        self.executar(op, &job.pedido, &sessao)
+        // O TERCEIRO irmao. Um job roda sob o usuario dele, e um job de
+        // `exportar` da tabela restrita e exatamente o caminho que ninguem
+        // olharia -- ele nao chega nem pelo soquete nem pelo SQL.
+        self.aplicar_direito_por_coluna(op, &job.pedido, &sessao)
     }
 
     /// A sessao sob a qual o job roda.
@@ -7508,7 +7980,10 @@ impl Servidor {
             return (op, true, Err(e));
         }
 
-        let r = self.executar(&op, &pedido, sessao);
+        // O direito por COLUNA embrulha o `executar` -- ver
+        // `aplicar_direito_por_coluna`, que explica por que ele nao cabe num
+        // portao. Sem regra de coluna no cadastro, e uma leitura de `bool`.
+        let r = self.aplicar_direito_por_coluna(&op, &pedido, sessao);
 
         // Pedido 215 -- a injecao de SQL que ninguem bloqueava.
         //
@@ -20644,6 +21119,7 @@ mod testes_exclusao {
             chave_publica: None,
             bases: vec![("*".into(), permissoes)],
             tabelas: Vec::new(),
+            colunas: Vec::new(),
         });
         let usuario = cadastro.usuarios[0].clone();
         let s = com_dados(&dir, cadastro);
@@ -21604,6 +22080,671 @@ mod testes_direito_por_tabela {
             r#""op":"ler","database":"b","tabela":"folha","rowid":1"#
         )
         .is_ok());
+    }
+}
+
+/// # Direito por COLUNA -- o nivel abaixo do direito por tabela
+///
+/// A folha de pagamento e a tabela de clientes moram no mesmo banco, e o
+/// direito por tabela ja resolveu isso. Falta o caso de dentro: o RH le a
+/// folha inteira, o gestor le a folha SEM o salario -- e nao ha como dar
+/// «tudo menos uma coluna» com uma regra que para na tabela.
+///
+/// O que estes testes travam, em ordem de importancia:
+///
+/// 1. **um `config.json` sem `"colunas"` continua se comportando igual** --
+///    e o teste que mais importa, e e o do comportamento VELHO;
+/// 2. a coluna negada sai da resposta de `ler`, `varrer` e `buscar`;
+/// 3. escrever nela recusa nomeando-a;
+/// 4. **nao escrever nela PRESERVA o valor gravado** -- porque quem nao le a
+///    coluna manda a linha sem ela, e o motor trataria ausencia como NULL;
+/// 5. o SQL herda os dois lados, e herda pelo `executar_derivado`;
+/// 6. as operacoes que devolvem linha por outro caminho RECUSAM a tabela;
+/// 7. a pergunta tambem responde: filtro e indice sobre a coluna negada param
+///    antes de a peneira ter chance de agir.
+#[cfg(test)]
+mod testes_direito_por_coluna {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("dc-{nome}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// O cadastro sai do JSON, e nao de uma struct montada a mao: e a LEITURA
+    /// do `config.json` que precisa ser exercitada, porque e la que o direito
+    /// por coluna e escrito de verdade.
+    fn cadastro(bases: &str) -> Cadastro {
+        Cadastro::de_json(&pedido(&format!(
+            r#"{{"usuarios":[{{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00","bases":{bases}}}]}}"#
+        )))
+        .unwrap()
+    }
+
+    /// Ana pode tudo na base, e a folha tem uma regra de coluna: `salario`
+    /// nao se le nem se altera.
+    fn so_a_folha_tem_regra() -> Cadastro {
+        cadastro(
+            r#"{"*":{"ler":true,"inserir":true,"alterar":true,"excluir":true,
+                 "criar":true,"reindexar":true,"diario":true,"verificar":true,
+                 "replicar":true,"administrar":true,
+                 "tabelas":{"folha":{"ler":true,"inserir":true,"alterar":true,
+                   "excluir":true,"criar":true,"diario":true,"administrar":true,
+                   "replicar":true,"verificar":true,"reindexar":true,
+                   "colunas":{"salario":{"ler":false,"alterar":false}}}}}}"#,
+        )
+    }
+
+    /// O MESMO cadastro sem o campo `"colunas"`. E o controle de toda esta
+    /// bateria: o que muda entre os dois e uma linha de JSON.
+    fn sem_regra_de_coluna() -> Cadastro {
+        cadastro(
+            r#"{"*":{"ler":true,"inserir":true,"alterar":true,"excluir":true,
+                 "criar":true,"reindexar":true,"diario":true,"verificar":true,
+                 "replicar":true,"administrar":true,
+                 "tabelas":{"folha":{"ler":true,"inserir":true,"alterar":true,
+                   "excluir":true,"criar":true,"diario":true,"administrar":true,
+                   "replicar":true,"verificar":true,"reindexar":true}}}}"#,
+        )
+    }
+
+    /// Uma base `b` com `clientes` (id, nome) e `folha` (id, nome, salario).
+    fn servidor(dir: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            cadastro: cadastro.clone(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"clientes",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,
+                                "primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"folha",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"},
+                               {"nome":"salario","tipo":"Int4"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,
+                                "primario":true},
+                               {"nome":"porSalario","colunas":["salario"]}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"clientes","linha":{"id":1,"nome":"x"}}"#),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "inserir",
+            &pedido(
+                r#"{"database":"b","tabela":"folha",
+                    "linha":{"id":1,"nome":"ana","salario":5000}}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        let sessao = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        (s, sessao)
+    }
+
+    /// Pelo `despachar`, que e por onde o pedido entra de verdade.
+    fn pede(s: &Arc<Servidor>, sessao: &Sessao, corpo: &str) -> Result<Json> {
+        let mut ses = Sessao {
+            usuario: sessao.usuario.clone(),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    /// O que esta GRAVADO, visto por quem nao tem restricao nenhuma. E o
+    /// arbitro de toda prova de preservacao: perguntar pela mesma sessao
+    /// restrita nunca mostraria a coluna, e o teste passaria por engano.
+    fn salario_gravado(s: &Arc<Servidor>) -> i64 {
+        s.executar(
+            "ler",
+            &pedido(r#"{"database":"b","tabela":"folha","rowid":1}"#),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .inteiro_ou("salario", -1)
+    }
+
+    // ------------------------------------------------------- comportamento velho
+
+    /// **O teste que mais importa.** Regra nova que muda o significado da
+    /// configuracao que ja existe tira o direito de alguem sem ninguem ter
+    /// pedido -- e aqui tiraria dado, que e pior: o `atualizar` de sempre
+    /// passaria a repor colunas por conta.
+    #[test]
+    fn sem_colunas_no_cadastro_nada_muda() {
+        let dir = dir_temp("igual");
+        let (s, ses) = servidor(&dir, sem_regra_de_coluna());
+
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(l.inteiro_ou("salario", -1), 5000, "a coluna sumiu: {l:?}");
+
+        let v = pede(&s, &ses, r#""op":"varrer","database":"b","tabela":"folha""#).unwrap();
+        let linha = &v.campo("linhas").and_then(Json::lista).unwrap()[0];
+        assert_eq!(linha.inteiro_ou("salario", -1), 5000);
+
+        // As que passam a RECUSAR com regra de coluna continuam passando.
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"exportar","database":"b","tabela":"folha","formato":"json""#
+        )
+        .is_ok());
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"juntar","database":"b","a":{"tabela":"folha","chave":"id"},
+               "b":{"tabela":"clientes","chave":"id"}"#
+        )
+        .is_ok());
+
+        // E o `atualizar` sem a coluna continua ZERANDO, que e o
+        // comportamento de sempre do motor: a linha inteira e gravada e o
+        // ausente vira nulo. Preservar aqui seria a guarda nova entrando
+        // imposta -- e mudaria o que todo cliente de hoje ja faz.
+        pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"b","tabela":"folha","rowid":1,
+               "valores":{"id":1,"nome":"z"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            salario_gravado(&s),
+            -1,
+            "o comportamento velho do atualizar mudou para quem nao pediu nada"
+        );
+    }
+
+    // ------------------------------------------------------------------ leitura
+
+    /// A coluna negada sai da resposta -- nas duas formas do `ler`, no
+    /// `varrer` e no `buscar`.
+    #[test]
+    fn a_leitura_esconde_a_coluna_negada() {
+        let dir = dir_temp("esconde");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert!(l.campo("salario").is_none(), "vazou: {}", l.escrever());
+        assert_eq!(l.texto_ou("nome", ""), "ana", "levou o resto junto");
+
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1,"com_versao":true"#,
+        )
+        .unwrap();
+        assert!(l.campo("linha").unwrap().campo("salario").is_none());
+        assert!(l.campo("versao").is_some(), "o envelope se perdeu");
+
+        for corpo in [
+            r#""op":"varrer","database":"b","tabela":"folha""#,
+            r#""op":"buscar","database":"b","tabela":"folha","indice":"porId","chave":[1]"#,
+            r#""op":"varrer","database":"b","tabela":"folha","indice":"porId""#,
+        ] {
+            let r = pede(&s, &ses, corpo).unwrap_or_else(|e| panic!("{corpo}: {e}"));
+            let linha = &r.campo("linhas").and_then(Json::lista).unwrap()[0];
+            assert!(
+                linha.campo("salario").is_none(),
+                "{corpo} vazou: {}",
+                r.escrever()
+            );
+            assert_eq!(linha.texto_ou("nome", ""), "ana", "{corpo}");
+        }
+
+        // E a tabela SEM regra da mesma base continua inteira.
+        let c = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"clientes","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(c.texto_ou("nome", ""), "x");
+    }
+
+    /// **A pergunta tambem responde.** A peneira tira o valor DEPOIS de o
+    /// filtro ja ter contado as linhas que casam -- vinte perguntas dessas
+    /// dizem o salario sem ele nunca ter aparecido.
+    #[test]
+    fn perguntar_pela_coluna_negada_recusa() {
+        let dir = dir_temp("pergunta");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        for corpo in [
+            r#""op":"varrer","database":"b","tabela":"folha",
+               "onde":[{"coluna":"salario","op":"=","valor":5000}]"#,
+            r#""op":"varrer","database":"b","tabela":"folha","indice":"porSalario""#,
+            r#""op":"buscar","database":"b","tabela":"folha","indice":"porSalario","chave":[5000]"#,
+        ] {
+            let e = pede(&s, &ses, corpo).expect_err("a pergunta passou");
+            assert_eq!(e.nome(), "ACESSO_NEGADO", "{corpo}: {e}");
+            assert!(
+                format!("{e}").contains("salario"),
+                "a recusa tem de dizer QUAL coluna: {e}"
+            );
+        }
+        // Filtrar por uma coluna que se pode ler continua funcionando.
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"varrer","database":"b","tabela":"folha",
+               "onde":[{"coluna":"nome","op":"=","valor":"ana"}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 1);
+    }
+
+    /// Estrutura nao e dado: a coluna continua no esquema, e a resposta diz o
+    /// que este usuario nao alcanca -- senao a tela pinta um campo que nunca
+    /// chega preenchido, e quem olha conclui que a coluna esta vazia.
+    #[test]
+    fn o_esquema_continua_inteiro_e_diz_o_que_falta() {
+        let dir = dir_temp("esquema");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"esquema","database":"b","tabela":"folha""#,
+        )
+        .unwrap();
+        let nomes: Vec<String> = e
+            .campo("colunas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|c| c.texto_ou("nome", "").to_string())
+            .collect();
+        assert!(
+            nomes.contains(&"salario".to_string()),
+            "a estrutura foi podada: {nomes:?}"
+        );
+        for campo in ["colunas_sem_leitura", "colunas_sem_alteracao"] {
+            let l = e.campo(campo).and_then(Json::lista).unwrap_or(&[]);
+            assert_eq!(
+                l.iter()
+                    .map(|x| x.texto().unwrap_or(""))
+                    .collect::<Vec<_>>(),
+                vec!["salario"],
+                "{campo}: {}",
+                e.escrever()
+            );
+        }
+        // A tabela sem regra nao ganha campo nenhum: quem nao pediu nada
+        // continua recebendo a resposta de sempre.
+        let c = pede(
+            &s,
+            &ses,
+            r#""op":"esquema","database":"b","tabela":"clientes""#,
+        )
+        .unwrap();
+        assert!(c.campo("colunas_sem_leitura").is_none(), "{}", c.escrever());
+    }
+
+    // ------------------------------------------------------------------ escrita
+
+    /// Mandar valor na coluna negada recusa, e a recusa NOMEIA a coluna --
+    /// senao quem recebeu o erro nao sabe qual campo tirar do formulario.
+    #[test]
+    fn a_escrita_com_valor_na_coluna_negada_recusa_nomeando() {
+        let dir = dir_temp("recusa");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        for corpo in [
+            r#""op":"inserir","database":"b","tabela":"folha",
+               "linha":{"id":2,"nome":"beto","salario":9000}"#,
+            r#""op":"atualizar","database":"b","tabela":"folha","rowid":1,
+               "valores":{"id":1,"nome":"ana","salario":9000}"#,
+            // Nulo EXPLICITO tambem e um pedido de mudanca: esvaziar a coluna
+            // do outro e alterar o valor dela.
+            r#""op":"atualizar","database":"b","tabela":"folha","rowid":1,
+               "valores":{"id":1,"nome":"ana","salario":null}"#,
+            r#""op":"inserir_lote","database":"b","tabela":"folha",
+               "linhas":[{"id":3,"nome":"caio","salario":1}]"#,
+        ] {
+            let e = pede(&s, &ses, corpo).expect_err("gravou na coluna negada");
+            assert_eq!(e.nome(), "ACESSO_NEGADO", "{corpo}: {e}");
+            assert!(
+                format!("{e}").contains("salario"),
+                "a recusa tem de nomear a coluna: {e}"
+            );
+        }
+        assert_eq!(salario_gravado(&s), 5000, "alguma passou");
+
+        // E inserir SEM a coluna passa: ela nasce nula, que e o que o motor
+        // ja faria com uma coluna que ninguem mandou.
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"b","tabela":"folha","linha":{"id":2,"nome":"beto"}"#,
+        )
+        .expect("inserir sem a coluna negada tinha de passar");
+    }
+
+    /// **O caso que motivou tudo.** Quem nao le a coluna manda a linha sem
+    /// ela, e o `atualizar` grava a linha INTEIRA: sem esta reposicao, alterar
+    /// o nome zerava o salario do outro em silencio.
+    #[test]
+    fn o_atualizar_sem_a_coluna_preserva_o_valor_gravado() {
+        let dir = dir_temp("preserva");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"b","tabela":"folha","rowid":1,
+               "valores":{"id":1,"nome":"ana maria"}"#,
+        )
+        .expect("o atualizar sem a coluna negada tinha de passar");
+        assert_eq!(
+            salario_gravado(&s),
+            5000,
+            "o salario foi zerado por quem nem podia ve-lo"
+        );
+        // E o que ele PODIA alterar mudou mesmo -- senao a prova passaria com
+        // um servidor que simplesmente nao gravou nada.
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(l.texto_ou("nome", ""), "ana maria");
+    }
+
+    /// Com `{"ler": true, "alterar": false}` o cliente le a linha inteira e a
+    /// devolve inteira. Recusar todo valor faria toda gravacao pela tela
+    /// parar -- entao o valor IGUAL passa, porque ele nao altera nada. A
+    /// comparacao so existe para quem PODE ler: para quem nao le ela seria um
+    /// oraculo.
+    #[test]
+    fn quem_le_a_coluna_e_nao_a_altera_continua_gravando() {
+        let dir = dir_temp("so-leitura");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(
+                r#"{"*":{"ler":true,"inserir":true,"alterar":true,
+                     "tabelas":{"folha":{"ler":true,"inserir":true,"alterar":true,
+                       "colunas":{"salario":{"ler":true,"alterar":false}}}}}}"#,
+            ),
+        );
+        // A coluna continua chegando: `ler` nao foi negado.
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(l.inteiro_ou("salario", -1), 5000);
+
+        // Devolver a linha inteira, com o MESMO salario, passa.
+        pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"b","tabela":"folha","rowid":1,
+               "valores":{"id":1,"nome":"outra","salario":5000}"#,
+        )
+        .expect("devolver o valor igual e nao alterar nada");
+        assert_eq!(salario_gravado(&s), 5000);
+
+        // Mudar recusa.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"b","tabela":"folha","rowid":1,
+               "valores":{"id":1,"nome":"outra","salario":6000}"#,
+        )
+        .expect_err("alterou a coluna negada para alterar");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert_eq!(salario_gravado(&s), 5000);
+    }
+
+    // -------------------------------------------------- os outros caminhos
+
+    /// As operacoes que devolvem linha por um caminho que a peneira nao
+    /// percorre recusam a TABELA -- e so ela: as outras da mesma base
+    /// continuam abrindo.
+    #[test]
+    fn quem_nao_peneira_recusa_a_tabela_restrita() {
+        let dir = dir_temp("recusa-op");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        for (rotulo, corpo) in [
+            (
+                "exportar",
+                r#""op":"exportar","database":"b","tabela":"folha","formato":"json""#,
+            ),
+            (
+                "juntar",
+                r#""op":"juntar","database":"b","a":{"tabela":"clientes","chave":"id"},
+                   "b":{"tabela":"folha","chave":"id"}"#,
+            ),
+            (
+                "unir",
+                r#""op":"unir","database":"b","tabelas":["clientes","folha"]"#,
+            ),
+            ("diario", r#""op":"diario","database":"b","tabela":"folha""#),
+            (
+                "lixeira",
+                r#""op":"lixeira","database":"b","tabela":"folha""#,
+            ),
+            (
+                "checksum",
+                r#""op":"checksum","database":"b","tabela":"folha""#,
+            ),
+            (
+                "duplicar_tabela",
+                r#""op":"duplicar_tabela","database":"b","tabela":"folha","destino":"copia""#,
+            ),
+        ] {
+            let e = pede(&s, &ses, corpo)
+                .err()
+                .unwrap_or_else(|| panic!("{rotulo} devolveu a tabela restrita inteira"));
+            assert_eq!(e.nome(), "ACESSO_NEGADO", "{rotulo}: {e}");
+            assert!(
+                format!("{e}").contains(rotulo),
+                "{rotulo}: a recusa tem de dizer qual operacao nao aplica o direito: {e}"
+            );
+        }
+        // E a tabela SEM regra de coluna continua saindo por todas elas.
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"exportar","database":"b","tabela":"clientes","formato":"json""#
+        )
+        .is_ok());
+    }
+
+    /// O `juntar` esconde a tabela do portao GERAL -- e tem de esconde-la
+    /// tambem deste. Sem isto, pedir a folha como o lado B era o caminho de
+    /// fora da peneira.
+    #[test]
+    fn a_tabela_escondida_do_portao_tambem_recusa_aqui() {
+        let dir = dir_temp("escondida");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"juntar","database":"b","a":{"tabela":"clientes","chave":"id"},
+               "b":{"tabela":"folha","chave":"id"}"#,
+        )
+        .expect_err("a folha saiu inteira pelo lado B da juncao");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("juntar"), "{e}");
+
+        // E a juncao de duas tabelas SEM regra continua acontecendo.
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"unir","database":"b","tabelas":["clientes","clientes"]"#
+        )
+        .is_ok());
+    }
+
+    // ---------------------------------------------------------------------- SQL
+
+    /// **O irmao que so o `executar_derivado` alcanca.** Um `SELECT` esconde a
+    /// coluna, e um `UPDATE` de OUTRA coluna deixa o salario como estava --
+    /// e nenhum dos passos do UPDATE chega pelo `despachar`.
+    #[test]
+    fn o_sql_herda_o_direito_por_coluna() {
+        let dir = dir_temp("sql");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"b","texto":"SELECT * FROM folha""#,
+        )
+        .unwrap();
+        let linhas = r
+            .campo("linhas")
+            .and_then(Json::lista)
+            .or_else(|| {
+                r.campo("resultado")
+                    .and_then(|x| x.campo("linhas"))
+                    .and_then(Json::lista)
+            })
+            .expect("o SELECT nao devolveu linhas");
+        assert!(
+            linhas[0].campo("salario").is_none(),
+            "o SELECT vazou a coluna: {}",
+            r.escrever()
+        );
+
+        // E o UPDATE de outra coluna PRESERVA o salario. E o buscar -> ler ->
+        // atualizar do `executar_dml`: o `ler` volta sem a coluna, e a
+        // mesclagem gravaria NULL nela.
+        pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"b","texto":"UPDATE folha SET nome = 'zeta' WHERE id = 1""#,
+        )
+        .expect("o UPDATE de outra coluna tinha de passar");
+        assert_eq!(
+            salario_gravado(&s),
+            5000,
+            "o UPDATE pelo SQL zerou a coluna que quem mandou nem le"
+        );
+
+        // E o UPDATE da propria coluna negada recusa.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"b","texto":"UPDATE folha SET salario = 1 WHERE id = 1""#,
+        )
+        .expect_err("o UPDATE alterou a coluna negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert_eq!(salario_gravado(&s), 5000);
+    }
+
+    // ------------------------------------------------------------- as excecoes
+
+    /// Supervisor passa por cima, como ja passa por cima da regra de tabela.
+    /// **E supervisor, e nao `nivel: admin`** -- o portao por tabela so abre
+    /// para o supervisor, e inventar um segundo caminho de excecao aqui faria
+    /// os dois portoes poderem discordar sobre a mesma pessoa.
+    #[test]
+    fn o_supervisor_ignora_o_direito_por_coluna() {
+        let dir = dir_temp("super");
+        let c = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,"supervisor":true,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"tabelas":{"folha":{
+                   "colunas":{"salario":{"ler":false,"alterar":false}}}}}}}]}"#,
+        ))
+        .unwrap();
+        let (s, ses) = servidor(&dir, c);
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(l.inteiro_ou("salario", -1), 5000);
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"exportar","database":"b","tabela":"folha","formato":"json""#
+        )
+        .is_ok());
+    }
+
+    /// Direito que nao existe por coluna RECUSA a carga do cadastro, e a
+    /// recusa nomeia onde ele esta. Campo que ninguem le mente -- e mente
+    /// pior quando o assunto e quem alcanca o dado.
+    #[test]
+    fn o_cadastro_recusa_direito_que_nao_existe_por_coluna() {
+        let e = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"b":{"tabelas":{"folha":{
+                   "colunas":{"salario":{"excluir":false}}}}}}}]}"#,
+        ))
+        .expect_err("aceitou um direito que nao existe por coluna");
+        let t = e.to_string();
+        for pedaco in ["excluir", "salario", "folha", "ana"] {
+            assert!(t.contains(pedaco), "a recusa nao diz {pedaco}: {t}");
+        }
+    }
+
+    /// A ficha mostra as regras de coluna: administrador que nao consegue ver
+    /// o que concedeu acaba concedendo duas vezes.
+    #[test]
+    fn a_ficha_do_usuario_mostra_as_regras_de_coluna() {
+        let c = so_a_folha_tem_regra();
+        let f = c.por_login("ana").unwrap().ficha();
+        let d = f
+            .campo("colunas")
+            .and_then(|x| x.campo("*"))
+            .and_then(|x| x.campo("folha"))
+            .and_then(|x| x.campo("salario"))
+            .expect("a ficha nao mostra a regra de coluna");
+        assert!(!d.booleano_ou("ler", true));
+        assert!(!d.booleano_ou("alterar", true));
     }
 }
 
@@ -24032,6 +25173,7 @@ mod testes_cadastro_de_usuarios {
                 },
             )],
             tabelas: Vec::new(),
+            colunas: Vec::new(),
         }
     }
 
@@ -24786,6 +25928,7 @@ mod testes_config_gravar {
                 },
             )],
             tabelas: Vec::new(),
+            colunas: Vec::new(),
         }
     }
 
@@ -28811,6 +29954,7 @@ mod testes_diretivas {
                 },
             )],
             tabelas: Vec::new(),
+            colunas: Vec::new(),
         }
     }
 
