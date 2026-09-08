@@ -30,6 +30,25 @@ Depois do cache a divisão mudou de lugar: o `.ndx` caiu de **83,5% para 63,6%**
 do tempo de uma inserção, e o `.reg` + `.log` subiu de 16,5% para 36,4% — não
 porque ficaram mais lentos, mas porque o outro lado encolheu.
 
+E ela **inverteu de vez**, re-medida em 08/09/2026 com o `onde-doi` no binário
+da 0.18.0 (`-- 200000`), na frente que abriu do «superar o I/O do MySQL e do
+MariaDB». As etapas seguintes do pedido 113 — o cache **write-back** e o CRC
+**slice-by-16** — encolheram o `.ndx` até o CRC virar **1%** do inserto (0,02
+página gravada por linha; era 57% antes de qualquer cache). Hoje, por linha
+(7,4 µs): **`.reg` + `.log` 60,5%**, os dois índices do `.ndx` **34,6%** (1,2 +
+1,4 µs), a conferência de unicidade 4,8%. **O `.ndx` deixou de ser o gargalo do
+inserto** — quem manda agora é o `.reg` + `.log`. A premissa «atacar o `.ndx`»
+morreu medida, como a localidade do pedido 113: o alvo mudou de arquivo, e quem
+o «atacasse» hoje gastaria esforço onde só sobra **um terço** do custo.
+
+E parte do `.reg` + `.log` é o **`.log` da replicação** — um evento por linha
+que o SQLite não tem e que o MariaDB desta bancada rodou desligado, e é aí que
+mora parte da distância do inserto em massa (o PhxSql grava 266 MB contra 60 do
+SQLite). **O que falta medir, ANTES de qualquer conserto, é quanto dos 4,5 µs é
+`.log` (recurso) e quanto é `.reg` (o dado, inevitável):** se for o `.log`, o
+ganho é um par com a replicação — lotear o diário, ou torná-lo opcional —, e
+não um speedup puro. *Medir a premissa do item vem antes de implementar o item.*
+
 ---
 
 ## 2. Onde o tempo vai, fator por fator
