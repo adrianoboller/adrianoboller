@@ -11,7 +11,7 @@ const [, , outDir, capsDir, roteiroNome = 'uso'] = process.argv;
 // roteiro ESCOLHIDO e conferido depois -- ai sim falta e erro, com o nome.
 const FALTA = '\u0000FALTA:';
 const cap = (n) => {
-  try { return readFileSync(`${capsDir}/${n}.txt`, 'utf8').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/primeiro\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/estoque\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/passos\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/passos\/entrega/g, '~/entregas/estoque').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/passos\/plugins/g, '~/plugins').replace(/\/home\/user\/adrianoboller\/wx-claude-code\/entregas\/cliente/g, '~/Downloads').replace(/\/home\/user\/adrianoboller\/wx-claude-code/g, '~/plugins/wx-claude-code').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/estoque\/entrega/g, '~/entregas/estoque').replace(/\/tmp\/claude-0\/[^ ]*?\/primeiro\/cliente-casa/g, '~/.wx-claude-code').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/(proj|pmo2|demo|ex2?)/g, '.').replace(/\/root\//g, '~/'); }
+  try { return readFileSync(`${capsDir}/${n}.txt`, 'utf8').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/primeiro\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/estoque\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/passos\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/ativacao\/cliente\/wx-claude-code/g, '~/plugins/wx-claude-code').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/ativacao\/cliente\/casa/g, '~/.wx-claude-code').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/ativacao\/vendedor\/(wx-serial|livro|chaves)/g, (m, g) => g === 'wx-serial' ? '~/wx-serial' : g === 'livro' ? '~/.wx-serial' : '~/.wx-serial/chaves').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/passos\/entrega/g, '~/entregas/estoque').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/passos\/plugins/g, '~/plugins').replace(/\/home\/user\/adrianoboller\/wx-claude-code\/entregas\/cliente/g, '~/Downloads').replace(/\/home\/user\/adrianoboller\/wx-claude-code/g, '~/plugins/wx-claude-code').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/estoque\/entrega/g, '~/entregas/estoque').replace(/\/tmp\/claude-0\/[^ ]*?\/primeiro\/cliente-casa/g, '~/.wx-claude-code').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/(proj|pmo2|demo|ex2?)/g, '.').replace(/\/root\//g, '~/'); }
   catch { return FALTA + n; }
 };
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -185,6 +185,25 @@ ROTEIROS.passos = [
   ['/wx-claude-code:procedencia · exportar', '17 · Procedência com o nível SLSA dito com honestidade, e a entrega com SHA-256', cap('17-procedencia-e-exportar')],
   ['/wx-claude-code:log · zelador', '18 · O registro de tudo que o plugin fez, e o zelador limpando o que sobrou', cap('18-log-e-zelador')],
   ['card', 'Built to convert. Engineered to prove.', 'Dezoito passos, um comando cada — e o que o portão achou no caminho foi consertado, não escondido.\n\nManual: MANUAL.md · Fluxograma: docs/dossie/fluxo-atual.pdf'],
+];
+
+// Setimo roteiro: a ATIVACAO passo a passo, os dois lados. Vendedor: chaves, receptor,
+// serial, livro. Cliente: verificar antes, aceite, instalar, verificar depois. E o que
+// chega ao vendedor: o primeiro aviso, a segunda maquina, e o serial numa distribuicao
+// com outra chave. Tudo rodado no zip 3.48.0 recem-empacotado, com o receptor de pe.
+ROTEIROS.ativacao = [
+  ['card', 'Ativação passo a passo', 'WX Claude Code 3.48.0\nOs dois lados: quem vende emite; quem compra instala e aceita.\nRodado no pacote recém-empacotado, com o receptor de avisos no ar.\n\nTudo a seguir é saída real.'],
+  ['emitir.py chaves', '1 · Do seu lado, uma vez: o pacote do vendedor e o par de chaves. A privada nunca sai daqui; a pública vai no plugin antes de empacotar', cap('01-chaves')],
+  ['receber.py --porta 8766', '2 · O receptor de avisos no ar. Sem SMTP no ambiente ele grava e imprime, mas não manda e-mail — e diz isso', cap('02-receptor')],
+  ['emitir.py novo · livro', '3 · A cada venda: o serial assinado, com a URL do aviso dentro da assinatura — e o livro, fora do repositório', cap('03-serial')],
+  ['licenca.py verificar · maquina', '4 · No cliente, antes do serial: «ausente», e a impressão da máquina para quem quiser serial preso', cap('04-antes')],
+  ['licenca.py instalar --aceito', '5 · Os termos, e a instalação com o aceite: válida, e o fornecedor avisado', cap('05-instalar')],
+  ['licenca.py verificar · aceite.json', '6 · Depois: válida, e o aceite gravado com o hash dos termos e o serial', cap('06-valida')],
+  ['o que chegou ao vendedor', '7 · O receptor recebeu a primeira instalação e a escreveu no livro: serial, empresa, máquina, versão, data. Nada do projeto', cap('07-aviso')],
+  ['segunda máquina', '8 · O mesmo serial noutra máquina: «maquina-nova» — com SMTP, o assunto é POSSÍVEL RECOMPARTILHAMENTO', cap('08-recompartilhamento')],
+  ['emitir.py reenviar · marcar-revogado', '9 · O livro devolve o serial perdido e anota a revogação — que não bloqueia a máquina, e o LEIA-ME diz isso', cap('09-livro')],
+  ['outra chave pública', '10 · O serial numa distribuição com outra chave: «assinatura-invalida». Um byte trocado invalida a assinatura', cap('10-assinatura-invalida')],
+  ['card', 'Built to convert. Engineered to prove.', 'Dez cenas, dois lados — e o limite dito: serial e hook dissuadem o cliente honesto; a proteção real é servir o corpus de um servidor seu.\n\ndocs/ativacao-passo-a-passo.pdf · docs/SEGURANCA.md'],
 ];
 
 const scenes = ROTEIROS[roteiroNome];

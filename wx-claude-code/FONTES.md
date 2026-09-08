@@ -1,4 +1,4 @@
-# Fontes do WX Claude Code 3.47.0
+# Fontes do WX Claude Code 3.48.0
 
 Inventário medido em 2026-09-08 por `docs/dossie/gerar-fontes.py`. Não se edita à mão: rode o script depois de acrescentar arquivo, e o teste `test_fontes_md_esta_em_dia` avisa quando ele envelhece.
 
@@ -16,10 +16,10 @@ Inventário medido em 2026-09-08 por `docs/dossie/gerar-fontes.py`. Não se edit
 | Exemplo PHP | 15 | 1.584 | legado PHP procedural sintético: o segundo exemplo, sem nada de WX |
 | Ferramenta Rust | 6 | 1.647 | wx-modelos: escolha e controle do modelo local, std pura, sem crate |
 | Runtime WLanguage em Rust | 5 | 759 | wl-rt: moeda de ponto fixo, data AAAAMMDD, comparação de string e máscaras, com a semântica lida do Help |
-| Documentos | 5 | 1.492 | manual, README, fontes e a instrução de ativação, na raiz |
-| Documentos de apoio | 8 | 773 | relatório, análises, origens dos prints e o vídeo |
+| Documentos | 5 | 1.493 | manual, README, fontes e a instrução de ativação, na raiz |
+| Documentos de apoio | 8 | 790 | relatório, análises, origens dos prints e o vídeo |
 | Instaladores | 2 | 459 | bash para Linux e macOS, PowerShell para Windows |
-| **total** | **316** | **40.574** | |
+| **total** | **316** | **40.592** | |
 
 ## O que não é fonte, mas vem no pacote
 
@@ -48,4 +48,4 @@ python3 skills/conversao-wx/scripts/validate_plugin_bundle.py . --strict
 
 Esperado: `valid: true`, `tests: OK`, zero erros e zero avisos. O `--strict` roda a bateria inteira.
 
-Último commit no momento da medição: `0131caa 2026-09-08`.
+Último commit no momento da medição: `9d156da 2026-09-08`.

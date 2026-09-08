@@ -60,7 +60,7 @@ todos os projetos; a licença também (`~/.wx-claude-code/`). O que é por proje
 é o trabalho: `/wx-claude-code:questionario` cria o `.wx-migration/` daquela
 pasta, e só onde ele existe os hooks agem.
 
-**Os vídeos.** Seis gravações, todas montadas de saída real de sessão e de
+**Os vídeos.** Sete gravações, todas montadas de saída real de sessão e de
 script — nenhuma linha digitada. A tabela sai do medidor:
 
 <!-- videos: gerado -->
@@ -72,6 +72,7 @@ script — nenhuma linha digitada. A tabela sai do medidor:
 | `wx-claude-code-video-primeiro.mp4` | o primeiro projeto: instalação, licença e um CRUD PHP + MySQL → Rust + MySQL + React | 3 min 35 s | 25 |
 | `wx-claude-code-video-windev.mp4` | os PDFs do WINDEV → Rust + Axum + PostgreSQL + React | 1 min 42 s | 15 |
 | `wx-claude-code-video-passos.mp4` | o passo a passo na versão atual: dezoito comandos, do instalador à entrega | 1 min 58 s | 18 |
+| `wx-claude-code-video-ativacao.mp4` | a ativação passo a passo, nos dois lados: emitir, instalar, aceitar, e o que chega ao vendedor | 1 min 07 s | 10 |
 <!-- fim dos videos -->
 
 **Validar o pacote** (roda a bateria de testes por dentro):

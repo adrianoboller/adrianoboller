@@ -1,6 +1,6 @@
 {
   "medido_em": "2026-09-08",
-  "versao": "3.47.0",
+  "versao": "3.48.0",
   "agentes": 94,
   "papeis": 10,
   "subagentes_pdca": 40,
@@ -29,6 +29,8 @@
   "video_windev_cenas": 15,
   "video_passos_duracao": "1 min 58 s",
   "video_passos_cenas": 18,
+  "video_ativacao_duracao": "1 min 07 s",
+  "video_ativacao_cenas": 10,
   "destinos_provados": 2,
   "golden_dos_destinos": "5/5 (clientes-php-mysql) · 10/10 (estoque-wx)",
   "destinos": [
@@ -45,7 +47,7 @@
   "corpus_bytes": 26750976,
   "corpus_paginas_validas": 12035,
   "hooks": 9,
-  "manual_linhas": 936,
+  "manual_linhas": 937,
   "exemplo_tabelas": 7,
   "arquivos_gerados_pelo_questionario": 102,
   "skills_erp": 8

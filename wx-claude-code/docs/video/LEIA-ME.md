@@ -113,3 +113,18 @@ ar, porque 9/10 por banco parado não é o número do plugin.
 ```bash
 node gravar-video.mjs <pasta-saida> <pasta-capturas> passos
 ```
+
+## O sétimo vídeo: a ativação passo a passo
+
+`wx-claude-code-video-ativacao.mp4` (roteiro `ativacao`) mostra os dois lados
+da licença rodando de verdade no pacote recém-empacotado: o vendedor gera o
+par de chaves, sobe o receptor e emite o serial com a URL do aviso dentro da
+assinatura; o cliente vê «ausente», instala com o aceite e vê «valida»; o
+receptor recebe a primeira instalação e depois a segunda máquina; o livro
+reenvia e anota a revogação; e o mesmo serial numa distribuição com outra chave
+dá «assinatura-invalida». A cena da segunda máquina é um aviso com outra
+impressão enviado à mão ao receptor, e a legenda diz isso.
+
+```bash
+node gravar-video.mjs <pasta-saida> <pasta-capturas> ativacao
+```
