@@ -5,20 +5,29 @@
 //! ```text
 //! SELECT  ( * | COUNT(*) | coluna [AS apelido] {, coluna [AS apelido]} )
 //! FROM    [database.] [schema.] tabela [[AS] apelido]
-//! [WHERE  coluna comparador literal]
+//! [WHERE  coluna comparador literal | expressao]
 //! [ORDER BY coluna [ASC|DESC]]
 //! [LIMIT  n [OFFSET m]]
 //! ```
 //!
-//! Nao ha `JOIN`, nao ha subconsulta, nao ha expressao e nao ha `AND`. Isso
-//! nao e economia de esforco: e o que `docs/SQL.md` mediu. Uma expressao como
-//! `WHERE preco * 1.1 > 100` nao tem quem avalie embaixo, e prometer o verbo
-//! sem o mecanismo e pior do que nao ter o verbo. Cada coisa que falta sai
-//! daqui como recusa escrita, com o nome da clausula -- e nao como sintaxe
-//! aceita que quebra depois.
+//! Nao ha `JOIN`, nao ha subconsulta, nao ha `GROUP BY` geral. Isso nao e
+//! economia de esforco: e o que `docs/SQL.md` mediu, e cada coisa que falta
+//! sai daqui como recusa escrita, com o nome da clausula -- nunca como
+//! sintaxe aceita que quebra depois.
+//!
+//! # O WHERE tem DUAS formas, e uma so escolhe indice
+//!
+//! `coluna op literal` sozinho (`Onde::Simples`) e a forma que desce um
+//! indice: `traduzir` vira `buscar`, e recusa se o indice nao existir --
+//! nunca varre calado. Qualquer outra coisa no WHERE -- `AND`/`OR`,
+//! aritmetica, funcao, `IN`, `BETWEEN`, `LIKE`, `IS [NOT] NULL`, parenteses,
+//! coluna contra coluna -- vira `Onde::Expressao`: o TEXTO normalizado dos
+//! tokens, que `traduzir` poe no campo `"expressao"` de um `varrer` para o
+//! motor avaliar linha por linha. Nenhuma das duas formas e "melhor" -- a
+//! primeira e mais rapida quando ha indice, e so isso.
 
 use crate::dml::{Atualizacao, Exclusao, Insercao};
-use crate::lexico::{self, Comparador, Simbolo, Token};
+use crate::lexico::{self, normalizar_tokens, Comparador, Simbolo, Token};
 use phxsql_core::{PhxError, Result};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -99,6 +108,21 @@ pub struct Condicao {
     pub valor: Literal,
 }
 
+/// O que o `WHERE` de um `SELECT` virou.
+///
+/// A forma antiga (`coluna op literal`) continua preferida porque ela desce
+/// um indice -- `buscar` custa uma leitura de arvore, e uma varredura com
+/// expressao examina pagina por pagina. Qualquer coisa que NAO seja essa
+/// forma unica (E/OU, aritmetica, funcao, `IN`, `BETWEEN`, `LIKE`, `IS [NOT]
+/// NULL`, parenteses, coluna contra coluna) vira texto: quem avalia essa
+/// expressao e o motor, nao esta camada.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Onde {
+    Simples(Condicao),
+    /// O texto normalizado dos tokens do `WHERE`, um espaco entre cada um.
+    Expressao(String),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ordenacao {
     pub coluna: String,
@@ -109,7 +133,7 @@ pub struct Ordenacao {
 pub struct Selecao {
     pub projecao: Projecao,
     pub de: Alvo,
-    pub onde: Option<Condicao>,
+    pub onde: Option<Onde>,
     pub ordem: Option<Ordenacao>,
     pub limite: Option<u64>,
     pub salto: u64,
@@ -441,7 +465,7 @@ impl Analisador {
         }
 
         let onde = if self.aceitar_palavra("WHERE") {
-            Some(self.condicao()?)
+            Some(self.onde_da_selecao()?)
         } else {
             None
         };
@@ -662,6 +686,79 @@ impl Analisador {
         Ok(Condicao { coluna, op, valor })
     }
 
+    /// O `WHERE` de um `SELECT`. Tenta a forma antiga primeiro -- se os
+    /// tokens ate a proxima clausula de nivel superior forem EXATAMENTE uma
+    /// comparacao `coluna op literal`, sem sobra nenhuma, e `Onde::Simples`
+    /// (a mesma `Condicao` de sempre, que ainda desce indice). Qualquer outra
+    /// coisa vira o TEXTO normalizado dos tokens, para o avaliador do motor.
+    ///
+    /// # Por que capturar tudo ANTES de decidir
+    ///
+    /// `condicao()` ja recusa (com erro) no primeiro AND/OR, LIKE, IN etc. --
+    /// e e exatamente esse erro que diz "nao e a forma simples". Mas ele
+    /// olha o cursor PRINCIPAL, e um erro ali deixaria o cursor em posicao
+    /// incerta para tentar de novo. Por isso a captura roda sobre uma COPIA
+    /// dos tokens (um sub-cursor), e o cursor principal so anda depois de
+    /// decidido -- ele nunca ve a tentativa que falhou.
+    pub(crate) fn onde_da_selecao(&mut self) -> Result<Onde> {
+        let pos = self.posicao_atual();
+        let tokens =
+            self.capturar_ate_clausula(&["GROUP", "HAVING", "ORDER", "LIMIT", "OFFSET"])?;
+        if tokens.is_empty() {
+            return Err(lexico::erro(pos, "esperava uma condicao depois de WHERE"));
+        }
+        let mut sub = Analisador {
+            s: tokens.clone(),
+            i: 0,
+        };
+        if let Ok(c) = sub.condicao() {
+            if sub.espiar().is_none() {
+                return Ok(Onde::Simples(c));
+            }
+        }
+        Ok(Onde::Expressao(normalizar_tokens(&tokens)))
+    }
+
+    /// Consome tokens ate achar, no NIVEL MAIS EXTERNO (fora de parenteses),
+    /// uma das palavras de parada, um `;`, ou o fim do comando -- e devolve o
+    /// que consumiu, sem a palavra de parada. Serve para `WHERE` e (mais
+    /// adiante) `HAVING`: as duas clausulas nao tem gramatica fechada aqui, e
+    /// e assim que a captura sabe onde parar sem entender o que ha por
+    /// dentro.
+    pub(crate) fn capturar_ate_clausula(&mut self, paradas: &[&str]) -> Result<Vec<Simbolo>> {
+        let mut profundidade = 0i32;
+        let mut tokens = Vec::new();
+        while let Some(s) = self.espiar() {
+            match &s.token {
+                Token::AbreParen => profundidade += 1,
+                Token::FechaParen => {
+                    profundidade -= 1;
+                    if profundidade < 0 {
+                        return Err(lexico::erro(s.posicao, "fecha parenteses sem abrir"));
+                    }
+                }
+                Token::PontoEVirgula if profundidade == 0 => break,
+                _ if profundidade == 0 => {
+                    if let Some(p) = s.token.palavra_chave() {
+                        if paradas.contains(&p.as_str()) {
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            tokens.push(s.clone());
+            self.i += 1;
+        }
+        if profundidade != 0 {
+            return Err(lexico::erro(
+                self.posicao_atual(),
+                "parenteses aberto e nao fechado",
+            ));
+        }
+        Ok(tokens)
+    }
+
     pub(crate) fn literal(&mut self) -> Result<Literal> {
         let pos = self.posicao_atual();
         let Some(s) = self.espiar() else {
@@ -718,6 +815,16 @@ impl Analisador {
 mod testes {
     use super::*;
 
+    /// A maioria dos testes desta secao ainda testa a forma SIMPLES do
+    /// WHERE -- o dia em que ela recusa (e vira Expressao) e o item 2 quem
+    /// prova, la embaixo.
+    fn simples(o: Onde) -> Condicao {
+        match o {
+            Onde::Simples(c) => c,
+            Onde::Expressao(e) => panic!("esperava Onde::Simples, veio expressao: {e}"),
+        }
+    }
+
     #[test]
     fn select_estrela() {
         let s = analisar("SELECT * FROM Clientes").unwrap();
@@ -758,7 +865,7 @@ mod testes {
     fn where_ordem_e_limite() {
         let s = analisar("SELECT * FROM t WHERE uf = 'SC' ORDER BY nome DESC LIMIT 10 OFFSET 20")
             .unwrap();
-        let o = s.onde.unwrap();
+        let o = simples(s.onde.unwrap());
         assert_eq!(o.coluna, "uf");
         assert_eq!(o.op, Comparador::Igual);
         assert_eq!(o.valor, Literal::Texto("SC".into()));
@@ -779,7 +886,7 @@ mod testes {
     fn decimal_nao_vira_f64() {
         let s = analisar("SELECT * FROM t WHERE limite = 1500.00").unwrap();
         assert_eq!(
-            s.onde.unwrap().valor,
+            simples(s.onde.unwrap()).valor,
             Literal::Numero("1500.00".into()),
             "o decimal tem de chegar ao motor com os dois zeros"
         );
@@ -789,7 +896,7 @@ mod testes {
     fn apelido_de_tabela_sem_as() {
         let s = analisar("SELECT c.nome FROM Clientes c WHERE c.uf = 'SC'").unwrap();
         assert_eq!(s.de.apelido.as_deref(), Some("c"));
-        assert_eq!(s.onde.unwrap().coluna, "uf");
+        assert_eq!(simples(s.onde.unwrap()).coluna, "uf");
     }
 
     /// A armadilha do apelido sem AS: `FROM t WHERE ...` nao pode ler o WHERE
@@ -846,11 +953,9 @@ mod testes {
     #[test]
     fn o_que_falta_recusa_pelo_nome() {
         for (sql, pedaco) in [
-            ("SELECT * FROM t WHERE a = 1 AND b = 2", "UMA comparacao"),
-            ("SELECT * FROM t WHERE nome LIKE 'a%'", "LIKE"),
-            ("SELECT * FROM t WHERE id IN (1,2)", "IN"),
-            ("SELECT * FROM t WHERE id BETWEEN 1 AND 2", "BETWEEN"),
-            ("SELECT * FROM t WHERE id IS NULL", "IS NULL"),
+            // AND/OR, LIKE, IN (lista), BETWEEN e IS NULL sairam daqui no dia
+            // em que o item 2 (WHERE em forma de expressao) entrou -- a prova
+            // deles esta em `onde_em_forma_de_expressao`, la embaixo.
             ("SELECT SUM(x) FROM t", "SUM()"),
             ("SELECT DISTINCT a FROM t", "DISTINCT"),
             ("SELECT * FROM t GROUP BY a", "GROUP BY"),
@@ -860,6 +965,87 @@ mod testes {
         ] {
             let e = analisar(sql).unwrap_err().to_string();
             assert!(e.contains(pedaco), "{sql} -> {e}");
+        }
+    }
+
+    // ------------------------------------------- item 2: WHERE-expressao
+
+    #[test]
+    fn onde_simples_continua_simples() {
+        // O caminho antigo nao muda: uma comparacao so continua Simples, e
+        // ORDER BY/LIMIT/OFFSET continuam parando a captura do WHERE.
+        let s = analisar("SELECT * FROM t WHERE id = 1 ORDER BY id LIMIT 5").unwrap();
+        assert!(matches!(s.onde, Some(Onde::Simples(_))));
+        assert_eq!(s.limite, Some(5));
+    }
+
+    #[test]
+    fn onde_em_forma_de_expressao() {
+        for (sql, esperado) in [
+            ("SELECT * FROM t WHERE a = 1 AND b = 2", "a = 1 AND b = 2"),
+            ("SELECT * FROM t WHERE a = 1 OR b = 2", "a = 1 OR b = 2"),
+            ("SELECT * FROM t WHERE nome LIKE 'a%'", "nome LIKE 'a%'"),
+            ("SELECT * FROM t WHERE id IN (1,2)", "id IN ( 1 , 2 )"),
+            (
+                "SELECT * FROM t WHERE id BETWEEN 1 AND 2",
+                "id BETWEEN 1 AND 2",
+            ),
+            ("SELECT * FROM t WHERE id IS NULL", "id IS NULL"),
+            ("SELECT * FROM t WHERE id IS NOT NULL", "id IS NOT NULL"),
+            (
+                "SELECT * FROM t WHERE preco * 1.1 > 100",
+                "preco * 1.1 > 100",
+            ),
+            (
+                "SELECT * FROM t WHERE UPPER(nome) = 'ANA'",
+                "UPPER ( nome ) = 'ANA'",
+            ),
+            ("SELECT * FROM t WHERE (a = 1)", "( a = 1 )"),
+            ("SELECT * FROM t WHERE a = b", "a = b"),
+        ] {
+            let s = analisar(sql).unwrap();
+            match s.onde {
+                Some(Onde::Expressao(texto)) => assert_eq!(texto, esperado, "{sql}"),
+                outro => panic!("{sql} -> esperava Expressao, veio {outro:?}"),
+            }
+        }
+    }
+
+    /// A captura para na proxima clausula de nivel superior, respeitando
+    /// parenteses -- um `ORDER BY` DENTRO de um `IN (...)` nao existe nesta
+    /// gramatica, mas o teste garante que a captura nao para cedo demais num
+    /// parentese aberto.
+    #[test]
+    fn expressao_do_where_para_na_proxima_clausula() {
+        let s = analisar("SELECT * FROM t WHERE a > 1 AND b < 2 ORDER BY a LIMIT 10").unwrap();
+        match s.onde {
+            Some(Onde::Expressao(texto)) => assert_eq!(texto, "a > 1 AND b < 2"),
+            outro => panic!("esperava Expressao, veio {outro:?}"),
+        }
+        assert_eq!(s.ordem.unwrap().coluna, "a");
+        assert_eq!(s.limite, Some(10));
+    }
+
+    #[test]
+    fn parenteses_desbalanceados_no_where_recusa() {
+        let e = analisar("SELECT * FROM t WHERE (a = 1")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("parenteses"), "{e}");
+        let e = analisar("SELECT * FROM t WHERE a = 1)")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("parenteses"), "{e}");
+    }
+
+    #[test]
+    fn texto_com_aspa_normaliza_dobrando_a_aspa() {
+        let s = analisar("SELECT * FROM t WHERE a = 1 AND nome LIKE 'O''Brien%'").unwrap();
+        match s.onde {
+            Some(Onde::Expressao(texto)) => {
+                assert!(texto.contains("'O''Brien%'"), "{texto}")
+            }
+            outro => panic!("esperava Expressao, veio {outro:?}"),
         }
     }
 
@@ -936,7 +1122,7 @@ mod testes {
         let Comando::Selecao(s) = c else {
             panic!("esperava SELECT")
         };
-        assert_eq!(s.onde.unwrap().valor, Literal::Numero("7".into()));
+        assert_eq!(simples(s.onde.unwrap()).valor, Literal::Numero("7".into()));
     }
 
     #[test]
@@ -952,7 +1138,10 @@ mod testes {
         let Comando::Selecao(s) = c else {
             panic!("esperava SELECT")
         };
-        assert_eq!(s.onde.unwrap().valor, Literal::Texto(veneno.into()));
+        assert_eq!(
+            simples(s.onde.unwrap()).valor,
+            Literal::Texto(veneno.into())
+        );
     }
 
     #[test]

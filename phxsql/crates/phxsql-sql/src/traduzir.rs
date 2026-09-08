@@ -26,7 +26,7 @@
 //! Entao a recusa fica, sobre o motivo honesto: falta o indice que torna a
 //! pergunta respondivel inteira.
 
-use crate::sintaxe::{Alvo, Condicao, Ordenacao, Projecao, Selecao};
+use crate::sintaxe::{Alvo, Condicao, Onde, Ordenacao, Projecao, Selecao};
 use phxsql_core::json::Json;
 use phxsql_core::{PhxError, Result};
 
@@ -131,10 +131,14 @@ pub fn traduzir(s: &Selecao, indices: &[IndiceInfo], database_corrente: &str) ->
     let saida = saida_de(&s.projecao);
 
     match &s.onde {
-        // ------------------------------------------------- com filtro: buscar
-        Some(c) => plano_buscar(s, c, indices, &database, saida, notas),
+        // ------------------------------------------- filtro simples: buscar
+        Some(Onde::Simples(c)) => plano_buscar(s, c, indices, &database, saida, notas),
+        // ------------------- filtro em forma de expressao: varrer.expressao
+        Some(Onde::Expressao(e)) => {
+            plano_varrer(s, indices, &database, saida, notas, Some(e.as_str()))
+        }
         // ------------------------------------------------- sem filtro: varrer
-        None => plano_varrer(s, indices, &database, saida, notas),
+        None => plano_varrer(s, indices, &database, saida, notas, None),
     }
 }
 
@@ -252,8 +256,27 @@ fn plano_varrer(
     database: &str,
     saida: Saida,
     mut notas: Vec<String>,
+    expressao: Option<&str>,
 ) -> Result<Plano> {
     let mut pares = base_do_pedido(&s.de, database);
+
+    if let Some(e) = expressao {
+        // O COUNT(*) rapido le `registros` do cabecalho -- e essa conta NAO
+        // sabe nada do filtro. Contar com expressao precisa varrer e testar
+        // linha por linha, que e o caminho `agrupar` (com `por: []`) faz.
+        // Ate ele existir nesta camada, a recusa e honesta em vez de devolver
+        // o total da tabela com cara de resposta filtrada.
+        if matches!(s.projecao, Projecao::Contagem) {
+            return Err(PhxError::Esquema(
+                "COUNT(*) com WHERE em forma de expressao nao tem substrato AINDA nesta \
+                 camada: contar com filtro exige varrer e testar cada linha, e esse caminho \
+                 e o `agrupar` com `por` vazio -- que e outro item deste roteiro"
+                    .into(),
+            ));
+        }
+        pares.push(("expressao".to_string(), Json::texto_de(e)));
+        notas.push("varredura com expressao: nao ha indice para esta forma".into());
+    }
 
     if let Some(o) = &s.ordem {
         let Some(ix) = indices.iter().find(|i| i.atende_ordem(o)) else {
@@ -554,5 +577,61 @@ mod testes {
         // tradutor nao pode ser mais exigente que ele.
         let p = plano("SELECT * FROM Clientes WHERE ID = 3");
         assert_eq!(p.pedido.texto_ou("indice", ""), "porId");
+    }
+
+    // --------------------------------------------- item 2: WHERE-expressao
+
+    #[test]
+    fn where_em_forma_de_expressao_vira_varrer_com_expressao() {
+        let p = plano("SELECT * FROM Clientes WHERE limite > 100 AND cidade = 'Blumenau'");
+        assert_eq!(p.op, "varrer");
+        assert_eq!(
+            p.pedido.texto_ou("expressao", ""),
+            "limite > 100 AND cidade = 'Blumenau'"
+        );
+        assert!(
+            p.notas.iter().any(|n| n.contains("nao ha indice")),
+            "{:?}",
+            p.notas
+        );
+        // Sem indice nenhum sobre `limite` ou `cidade` sozinha -- e mesmo
+        // assim NAO recusa, porque a varredura com expressao nao depende de
+        // indice. E o ponto inteiro do item 2.
+    }
+
+    #[test]
+    fn where_em_forma_de_expressao_continua_paginando() {
+        let p =
+            plano("SELECT * FROM Clientes WHERE limite > 100 AND ativo = TRUE LIMIT 10 OFFSET 5");
+        assert_eq!(p.pedido.inteiro_ou("max", 0), 10);
+        assert_eq!(p.pedido.inteiro_ou("pular", 0), 5);
+        assert_eq!(
+            p.pedido.texto_ou("expressao", ""),
+            "limite > 100 AND ativo = TRUE"
+        );
+    }
+
+    /// Uma comparacao SO, com qualquer comparador -- inclusive `>` -- e a
+    /// forma antiga (`coluna op literal`) e continua no caminho de sempre:
+    /// so `=` tem indice, e `>` recusa exatamente como recusava antes do
+    /// item 2. O item 2 nao muda ISSO -- ele so abre uma porta nova para o
+    /// que tem AND/OR/funcao/IN/etc, que nunca tiveram caminho nenhum.
+    #[test]
+    fn uma_comparacao_so_continua_pelo_caminho_antigo_mesmo_sem_ser_igualdade() {
+        let e = recusa("SELECT * FROM Clientes WHERE limite > 100");
+        assert!(e.contains("faixa"), "{e}");
+    }
+
+    /// A excecao que o proprio item 2 documenta: `COUNT(*)` com WHERE em
+    /// forma de expressao NAO tem substrato AINDA -- ela so ganha um em
+    /// `agrupar` (o proximo item). Ate la a recusa e honesta.
+    #[test]
+    fn count_com_expressao_recusa_ate_o_agrupar_existir() {
+        let e = recusa("SELECT COUNT(*) FROM Clientes WHERE limite > 100 AND ativo = TRUE");
+        assert!(e.contains("COUNT(*)"), "{e}");
+        assert!(e.contains("agrupar"), "{e}");
+        // Mas COUNT(*) com filtro SIMPLES continua no caminho de sempre.
+        let p = plano("SELECT COUNT(*) FROM Clientes WHERE id = 1");
+        assert_eq!(p.op, "buscar");
     }
 }

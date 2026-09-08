@@ -108,6 +108,38 @@ impl Token {
             Token::Parametro(_) => "?".into(),
         }
     }
+
+    /// Como este simbolo entra na expressao normalizada de `varrer.expressao`,
+    /// `agrupar.tendo` e `consultar.expressao`: literal de texto sempre entre
+    /// aspas simples com `'` dobrado por dentro (a mesma regra de
+    /// `Literal::escrever`), identificador citado entre aspas duplas com `"`
+    /// dobrado, e o resto como `descrever()` ja escreve. `descrever()` sozinho
+    /// NAO serve para isto -- ele existe para mensagem de erro e nao reescapa
+    /// aspas internas, porque nenhuma mensagem de erro precisa voltar a ser
+    /// SQL valido; a expressao que vai para o motor precisa.
+    fn normalizar(&self) -> String {
+        match self {
+            Token::Texto(t) => format!("'{}'", t.replace('\'', "''")),
+            Token::Palavra {
+                texto,
+                citado: true,
+            } => format!("\"{}\"", texto.replace('"', "\"\"")),
+            outro => outro.descrever(),
+        }
+    }
+}
+
+/// O texto de uma expressao a partir dos tokens dela: um espaco entre cada
+/// simbolo, sempre -- inclusive ao redor de parenteses e virgula. E a regra
+/// que `docs/propostas/comparativo-19.md` pede, e ela e deliberadamente
+/// literal: quem le do outro lado e um analisador de tokens, nao alguem
+/// lendo a tela, entao o espaco extra ao redor de `(` nao custa nada.
+pub(crate) fn normalizar_tokens(tokens: &[Simbolo]) -> String {
+    tokens
+        .iter()
+        .map(|s| s.token.normalizar())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Um simbolo e onde ele comeca no texto original.
