@@ -6,9 +6,10 @@ os motores maduros têm e nós **trouxemos**) nem o `CONCORRENTES.md` (o caminho
 de inserção deles, lido no fonte). É o outro lado: **o que continua faltando
 aqui**, e quem já resolveu.
 
-**3 de 19 capacidades** faltam ou estão pela metade no PhxSql. A única inteira
-é um veredito de ausência que esta casa publicou **errado** — o sexto — e a
-seção que o conta está abaixo.
+**2 de 19 capacidades** faltam ou estão pela metade no PhxSql, e **17**
+respondem `tem` — medidas contra o motor vivo desta árvore, nunca digitadas. O
+que falta está na tabela com a recusa que o motor devolveu, e a §8 diz o que é
+decisão e o que é buraco.
 
 > Refaça com `python3 bancada/comparativo/medir.py` e depois
 > `python3 bancada/comparativo/documento.py`. **Este arquivo não se
@@ -27,7 +28,7 @@ e a mensagem de recusa fica guardada no JSON. Estas versões responderam:
 
 | motor | versão que respondeu |
 |---|---|
-| PhxSql | `phxsqld 0.18.0 (51620a0e998f-sujo) x86_64-unknown-linux-gnu` |
+| PhxSql | `phxsqld 0.18.0 (6684eeb62561-sujo) x86_64-unknown-linux-gnu` |
 | PostgreSQL(R) | `16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)` |
 | MySQL(R) | `8.0.46-0ubuntu0.24.04.3` |
 | SQLite(R) | `3.45.1` |
@@ -104,7 +105,7 @@ recusa é a própria resposta pedem isso pelo nome (`exigir=False`).
 | `GROUP BY` com agregação | SQL | ✅ | ✅ | ✅ | ◐ | ✅ | ✅ |
 | Expressão no `WHERE` (`preco * 1.1 > 100`) | SQL | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
 | Índice parcial (`CREATE INDEX … WHERE`) | SQL | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
-| Índice por expressão (`lower(nome)`) | SQL | ◐ | 📄 | ✅ | ❌ | ✅ | ✅ |
+| Índice por expressão (`lower(nome)`) | SQL | ✅ | 📄 | ✅ | ❌ | ✅ | ✅ |
 | Restrição `CHECK` | SQL | ✅ | 📄 | ✅ | ❌ | ✅ | ✅ |
 | `DEFAULT` de coluna | SQL | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
 | Coluna calculada (`GENERATED ALWAYS AS`) | SQL | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
@@ -123,7 +124,7 @@ coluna só é exatamente o que esta tabela recusa fazer:
 
 | motor | ✅ | ◐ | ❌ | 📄 | — | soma | procedência |
 |---|---|---|---|---|---|---|---|
-| PhxSql | 16 | 1 | 2 | 0 | 0 | 19 | medido aqui |
+| PhxSql | 17 | 0 | 2 | 0 | 0 | 19 | medido aqui |
 | HFSQL(R) | 12 | 0 | 0 | 7 | 0 | 19 | citado |
 | PostgreSQL(R) | 13 | 0 | 0 | 6 | 0 | 19 | medido aqui |
 | Cassandra(R) | 4 | 2 | 13 | 0 | 0 | 19 | citado |
@@ -197,9 +198,9 @@ Nos vivos: PostgreSQL(R) ✅ &middot; MySQL(R) ❌ &middot; SQLite(R) ✅.
 HFSQL(R) ✅, citado: a folha lista índice parcial.
 Cassandra(R) ❌, citado: índice secundário existe; parcial não.
 
-### Índice por expressão (`lower(nome)`) &mdash; ◐
+### Índice por expressão (`lower(nome)`) &mdash; ✅
 
-> criou -- conferir o que guardou
+> achou «ana» e nao «Ana»: a chave e lower(nome)
 
 Nos vivos: PostgreSQL(R) ✅ &middot; MySQL(R) ✅ &middot; SQLite(R) ✅.
 HFSQL(R) 📄, citado: não apurado.
@@ -319,7 +320,7 @@ Cassandra(R) ◐, citado: reparo por árvore de Merkle diz o intervalo, não a l
 ## 5. O que passou a responder `tem`, e por que a lição continua
 
 Até 07/09/2026 esta seção listava **um** `tem` só — a trava por linha — e o
-título dizia «único» porque era. **16** das **19** linhas responderam `tem`
+título dizia «único» porque era. **17** das **19** linhas responderam `tem`
 nesta remedição (as dezoito do comparativo entraram por contrato, medidas
 contra o motor vivo em vez de digitadas): a maioria porque o motor GANHOU a
 capacidade nesta rodada, e quatro — coluna, PITR, parâmetro e diferenças —
@@ -341,6 +342,9 @@ v_c devolveram as 1 linha(s) de `c`.
 
 **Índice parcial (`CREATE INDEX … WHERE`)** — guardou a incluida e nao a
 filtrada.
+
+**Índice por expressão (`lower(nome)`)** — achou «ana» e nao «Ana»: a chave e
+lower(nome).
 
 **Restrição `CHECK`** — recusou -5 e aceitou 5.
 
@@ -392,16 +396,7 @@ título desta seção acabou de provar, **veredito de unicidade também.**
 
 ---
 
-## 6. As linhas pela metade
-
-Meia capacidade não é meio caminho andado — é o caminho que PARECE andado, e
-por isso ela ganha marca própria em vez de cair para o lado que der jeito:
-
-- **Índice por expressão (`lower(nome)`)** — criou -- conferir o que guardou.
-
----
-
-## 7. O que esta tabela NÃO diz
+## 6. O que esta tabela NÃO diz
 
 Três honestidades, e as três mudam como se lê o resto:
 
@@ -420,7 +415,7 @@ Três honestidades, e as três mudam como se lê o resto:
 
 ---
 
-## 8. Como remedir
+## 7. Como remedir
 
 ```bash
 python3 bancada/comparativo/medir.py       # pergunta aos motores vivos

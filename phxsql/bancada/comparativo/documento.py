@@ -108,10 +108,20 @@ def escrever(d):
         `COMPARACAO.md` (o que os motores maduros têm e nós **trouxemos**) nem
         o `CONCORRENTES.md` (o caminho de inserção deles, lido no fonte). É o
         outro lado: **o que continua faltando aqui**, e quem já resolveu.""")
-    t.p(f"""**{len(faltam)} de {len(linhas)} capacidades** faltam ou estão pela
-        metade no PhxSql. A única inteira é um veredito de ausência que esta
-        casa publicou **errado** — o sexto — e a seção que o conta está
-        abaixo.""")
+    # A frase de abertura tambem se remede: escrita quando so havia UM `tem`,
+    # ela afirmava «a unica inteira» -- e passaria a mentir no dia em que a
+    # tabela virasse, que foi 08/09/2026. O mesmo motivo da §5 condicional.
+    if len(temos) <= 1:
+        t.p(f"""**{len(faltam)} de {len(linhas)} capacidades** faltam ou estão pela
+            metade no PhxSql. A única inteira é um veredito de ausência que esta
+            casa publicou **errado** — o sexto — e a seção que o conta está
+            abaixo.""")
+    else:
+        t.p(f"""**{len(faltam)} de {len(linhas)} capacidades** faltam ou estão pela
+            metade no PhxSql, e **{len(temos)}** respondem `tem` — medidas
+            contra o motor vivo desta árvore, nunca digitadas. O que falta está
+            na tabela com a recusa que o motor devolveu, e a §8 diz o que é
+            decisão e o que é buraco.""")
     t.l("> Refaça com `python3 bancada/comparativo/medir.py` e depois")
     t.l("> `python3 bancada/comparativo/documento.py`. **Este arquivo não se")
     t.l("> edita** — a prosa mora no gerador, e a medição, no `resultados.json`.")

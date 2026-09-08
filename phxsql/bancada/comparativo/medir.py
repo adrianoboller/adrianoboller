@@ -777,7 +777,28 @@ def por_phxsql(perguntas, base):
                 NAO, "o indice aceita NOME de coluna e recusa expressao: "
                      f"{(r.get('erro') or '')[:70]}")
         else:
-            saida["indice_por_expressao"] = (MEIO, "criou -- conferir o que guardou")
+            # **O EFEITO.** Criar nao prova indice: o campo pode ter sido
+            # engolido -- e foi, ate 08/09/2026. Grava «Ana» e procura pelo
+            # valor BAIXO: quem busca num indice por expressao manda o
+            # resultado dela, nao a coluna crua. Achar «ana» e nao achar
+            # «Ana» e o par que separa «indexou lower(nome)» de «indexou nome».
+            c.fala({"op": "inserir", "database": "cmp", "tabela": "t_ie",
+                    "linha": {"id": 1, "nome": "Ana"}})
+            baixo = c.fala({"op": "buscar", "database": "cmp", "tabela": "t_ie",
+                            "indice": "por_baixo", "chave": ["ana"]})
+            cru = c.fala({"op": "buscar", "database": "cmp", "tabela": "t_ie",
+                          "indice": "por_baixo", "chave": ["Ana"]})
+            n_baixo = corpo(baixo).get("encontrados", 0) if baixo.get("ok") else None
+            n_cru = corpo(cru).get("encontrados", 0) if cru.get("ok") else None
+            if n_baixo == 1 and n_cru == 0:
+                saida["indice_por_expressao"] = (TEM, "achou «ana» e nao «Ana»: a chave e lower(nome)")
+            elif n_baixo == 1:
+                saida["indice_por_expressao"] = (
+                    MEIO, f"achou pelos dois valores (baixo={n_baixo}, cru={n_cru}): "
+                          "indexou a coluna crua sem caixa, nao a expressao")
+            else:
+                saida["indice_por_expressao"] = (
+                    NAO, f"criou mas nao acha pelo valor da expressao (baixo={n_baixo!r})")
 
         # VIEW: pergunta ao catalogo, que e a lista viva das operacoes.
         #

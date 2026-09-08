@@ -1,17 +1,17 @@
 {
-  "quando": "2026-09-08T19:06:18",
+  "quando": "2026-09-08T19:20:04",
   "motores_vivos": {
     "sqlite": "3.45.1",
     "mysql": "8.0.46-0ubuntu0.24.04.3",
     "postgres": "16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)",
-    "phxsql": "phxsqld 0.18.0 (51620a0e998f-sujo) x86_64-unknown-linux-gnu"
+    "phxsql": "phxsqld 0.18.0 (6684eeb62561-sujo) x86_64-unknown-linux-gnu"
   },
   "sem_motor_nesta_maquina": {
     "cassandra": "docs/CASSANDRA.md, fonte da 5.0.10 commit 7b5ab44, lido em sessão anterior",
     "hfsql": "docs/HFSQL.md, folha de 2013-10 que NÃO está nesta sessão"
   },
   "capacidades": 19,
-  "faltam_no_phxsql": 3,
+  "faltam_no_phxsql": 2,
   "linhas": [
     {
       "chave": "view",
@@ -221,8 +221,8 @@
       "titulo": "Índice por expressão (`lower(nome)`)",
       "como": "SQL no motor vivo",
       "phxsql": [
-        "meio",
-        "criou -- conferir o que guardou"
+        "tem",
+        "achou «ana» e nao «Ana»: a chave e lower(nome)"
       ],
       "mysql": [
         "tem",
