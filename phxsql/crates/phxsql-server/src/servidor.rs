@@ -11676,6 +11676,13 @@ impl Servidor {
         // As chaves unicas desta linha, guardadas so DEPOIS de a escrita
         // entrar na lista. Ver a nota no ramo do `Inserir`.
         let mut chaves_novas: Vec<(String, String)> = Vec::new();
+        // O upsert, lido aqui pelo mesmo motivo do `op_inserir`: `se_existir`
+        // invalido e erro do pedido, e recusar depois da trava seguraria todo
+        // mundo por causa de uma palavra digitada errada.
+        let se_existir = match op {
+            "inserir" => crate::upsert::SeExistir::de_texto(p.texto_ou("se_existir", ""))?,
+            _ => None,
+        };
         let acao = match op {
             "inserir" => Acao::Inserir,
             "atualizar" => Acao::Atualizar,
@@ -11781,6 +11788,105 @@ impl Servidor {
                 if !antes.is_empty() {
                     self.rodar_gatilhos_antes(&antes, Some(&mut linha), None, t.esquema())?;
                 }
+
+                // O UPSERT DENTRO DE UMA TRANSACAO: **ele empilha como a op
+                // que ele VIROU** -- `inserir` quando a chave nao existe,
+                // `atualizar` quando existe --, e a resposta diz qual.
+                //
+                // A alternativa seria empilhar sempre como `inserir` e deixar
+                // o commit descobrir a duplicata: a transacao inteira cairia
+                // no fim por causa de uma linha que o pedido mandava
+                // justamente sobrescrever. Empilhar a op certa e o que faz o
+                // `se_existir` querer dizer aqui o mesmo que fora.
+                //
+                // A decisao e contra o DISCO, porque este caminho chama
+                // `ver_so_o_disco`. A chave que esta transacao JA empilhou
+                // RECUSA nomeando: a linha pendente nao tem rowid em disco
+                // para atualizar, e escolher qualquer um dos dois caminhos
+                // seria adivinhar.
+                if let Some(modo) = se_existir {
+                    let indice =
+                        crate::upsert::indice_do_upsert(t.esquema(), p.texto_ou("indice", ""))?;
+                    let valores = valores_do_indice(t.esquema(), &indice, &linha);
+                    let tem_chave = !valores.is_empty() && !valores.iter().any(Value::e_null);
+                    if tem_chave {
+                        let em_texto = chaves_unicas(t.esquema(), &linha)
+                            .into_iter()
+                            .find(|(i, _)| *i == indice)
+                            .map(|(_, c)| c);
+                        if let Some(c) = &em_texto {
+                            let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                            let tx = reg.de(sessao.ligacao).ok_or_else(sem_transacao)?;
+                            if tx.chave_ja_empilhada(&tabela, &indice, c) {
+                                return Err(PhxError::Duplicado(format!(
+                                    "o indice unico {indice} ja recebeu essa chave \
+                                     nesta mesma transacao, e o \"se_existir\" decide \
+                                     contra o DISCO: a linha pendente ainda nao tem \
+                                     rowid para atualizar. Confirme a transacao \
+                                     antes, ou mande a linha uma vez so"
+                                )));
+                            }
+                        }
+                        if let Some(rowid) = t.buscar(&indice, &valores)?.first().copied() {
+                            if modo == crate::upsert::SeExistir::Ignorar {
+                                // Nada a empilhar: a linha ja esta la e o
+                                // pedido disse para nao mexer nela.
+                                return Ok(Json::objeto(vec![
+                                    ("empilhada", Json::Bool(false)),
+                                    ("rowid", Json::de_u64(rowid)),
+                                    ("ignorada", Json::Bool(true)),
+                                ]));
+                            }
+                            // A trava da LINHA, que a de cima nao pegou: ali o
+                            // alvo era o fim da tabela, porque ainda nao se
+                            // sabia que isto viraria uma alteracao. A do fim
+                            // fica com a transacao ate o fim dela, e o preco e
+                            // conservador de propósito -- soltar uma trava ja
+                            // tomada abriria a fresta que o comentario de cima
+                            // descreve.
+                            self.travar_para_empilhar(sessao, &chave, rowid)?;
+                            let velha = t.ler(rowid)?.unwrap_or_default();
+                            // A coluna de sistema do softdeleted vem da linha
+                            // gravada quando o pedido nao a mandou -- a MESMA
+                            // guarda do `atualizar`, porque isto virou um.
+                            if let Some(i) = t.esquema().coluna_softdeleted() {
+                                let veio = matches!(&valores_json, Json::Objeto(_))
+                                    && valores_json
+                                        .campo(phxsql_core::schema::COLUNA_SOFTDELETED)
+                                        .is_some();
+                                if !veio {
+                                    if let Some(v) = velha.get(i) {
+                                        linha[i] = v.clone();
+                                    }
+                                }
+                            }
+                            let nova = crate::transacao::Escrita {
+                                database: database.clone(),
+                                tabela: tabela.clone(),
+                                acao: Acao::Atualizar,
+                                rowid,
+                                linha,
+                                linha_antiga: velha,
+                                motivo: String::new(),
+                            };
+                            // A trava de dados sai ANTES da do registro de
+                            // transacoes, como no caminho de sempre: a ordem
+                            // entre as duas e o que a `COM_A_TRAVA` cobra.
+                            drop(t);
+                            drop(trava);
+                            return self.empilhar_escrita(
+                                sessao,
+                                nova,
+                                &database,
+                                &tabela,
+                                chave,
+                                &[],
+                                Some("atualizada"),
+                            );
+                        }
+                    }
+                }
+
                 // A unicidade contra o INDICE, que e a mesma conferencia que o
                 // `inserir` de hoje faz antes de gravar byte nenhum.
                 let chaves = chaves_unicas(t.esquema(), &linha);
@@ -11926,7 +12032,39 @@ impl Servidor {
         };
         drop(t);
         drop(trava);
+        self.empilhar_escrita(
+            sessao,
+            escrita,
+            &database,
+            &tabela,
+            chave,
+            &chaves_novas,
+            None,
+        )
+    }
 
+    /// Poe uma escrita ja decidida na lista da transacao, e responde.
+    ///
+    /// Saiu do fim do `empilhar` quando o upsert passou a ter uma SEGUNDA
+    /// decisao possivel -- «isto virou um atualizar» --, e nao duas listas:
+    /// duplicar o teto do conjunto de escrita, o registro do database e o da
+    /// tabela daria duas versoes da mesma contabilidade, e a que alguem
+    /// esquecesse de atualizar seria a que deixa passar do teto.
+    ///
+    /// A trava de dados JA SAIU quando esta funcao e chamada -- os dois
+    /// chamadores a soltam antes, porque a ordem entre ela e a do registro de
+    /// transacoes e o que a `COM_A_TRAVA` cobra.
+    #[allow(clippy::too_many_arguments)]
+    fn empilhar_escrita(
+        &self,
+        sessao: &Sessao,
+        escrita: crate::transacao::Escrita,
+        database: &str,
+        tabela: &str,
+        chave: String,
+        chaves_novas: &[(String, String)],
+        marca: Option<&'static str>,
+    ) -> Result<Json> {
         let teto = self.config.recursos.transacao_max_linhas as usize;
         let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
         let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
@@ -11942,7 +12080,7 @@ impl Servidor {
             return Err(PhxError::TransacaoAbortada(tx.motivo_do_aborto.clone()));
         }
         if tx.database.is_empty() {
-            tx.database = database.clone();
+            tx.database = database.to_string();
         }
         if !tx.tabelas.contains(&chave) {
             tx.tabelas.push(chave);
@@ -11950,17 +12088,24 @@ impl Servidor {
         let rowid = escrita.rowid;
         let acao_nome = escrita.acao.nome();
         tx.escritas.push(escrita);
-        for (indice, chave) in &chaves_novas {
-            tx.guardar_chave(&tabela, indice, chave);
+        for (indice, chave) in chaves_novas {
+            tx.guardar_chave(tabela, indice, chave);
         }
-        Ok(Json::objeto(vec![
+        let mut resposta = vec![
             ("empilhada", Json::Bool(true)),
             ("acao", Json::texto_de(acao_nome)),
             ("rowid", Json::de_u64(rowid)),
             ("linhas", Json::de_u64(tx.escritas.len() as u64)),
             ("transaction_id", Json::de_u64(tx.id)),
             ("transaction_state", Json::texto_de(tx.estado.nome())),
-        ]))
+        ];
+        // A marca so aparece quando ha o que dizer -- a mesma decisao do
+        // `op_inserir`: um campo novo em toda resposta mudaria a forma dela
+        // para todo cliente que ja existe.
+        if let Some(m) = marca {
+            resposta.push((m, Json::Bool(true)));
+        }
+        Ok(Json::objeto(resposta))
     }
 
     /// As travas que UMA escrita empilhada precisa, na ordem certa.
@@ -14819,6 +14964,10 @@ impl Servidor {
             .or_else(|| p.campo("linha"))
             .cloned()
             .ok_or_else(|| PhxError::Esquema("informe \"valores\"".into()))?;
+        // Lido ANTES da trava: `se_existir` invalido e erro do pedido, e
+        // recusar com a trava global na mao seria segurar todo mundo por causa
+        // de uma palavra digitada errada.
+        let se_existir = crate::upsert::SeExistir::de_texto(p.texto_ou("se_existir", ""))?;
         // O portao dos gatilhos, ANTES de qualquer trabalho: sem gatilho no
         // servidor inteiro e um load atomico, e nada mais.
         let (antes, depois) = self.gatilhos_para(p, phxsql_sql::rotina::Evento::Inserir)?;
@@ -14831,11 +14980,31 @@ impl Servidor {
         if !antes.is_empty() {
             self.rodar_gatilhos_antes(&antes, Some(&mut linha), None, t.esquema())?;
         }
-        let rowid = t.inserir(&linha)?;
+        // O UPSERT, e ele e opt-in: sem `se_existir` o `inserir` e o de sempre
+        // e RECUSA a chave repetida. Guarda nova entra pedida -- um cliente
+        // escrito antes disto nao pode passar a sobrescrever linha nenhuma
+        // por conta de um campo que ele nao mandou.
+        let feito = match se_existir {
+            None => crate::upsert::Feito::inserida(t.inserir(&linha)?),
+            Some(modo) => {
+                let indice =
+                    crate::upsert::indice_do_upsert(t.esquema(), p.texto_ou("indice", ""))?;
+                crate::upsert::aplicar(&mut t, &indice, &linha, modo)?
+            }
+        };
+        let rowid = feito.rowid;
         self.gravar_de_verdade(&_trava, &mut t, p)?;
         // A copia em RAM acompanha DENTRO da mesma trava: nao existe instante
-        // em que o disco e a memoria discordem.
-        self.residente_mut(p, |m| m.anotar_insercao(rowid, &linha));
+        // em que o disco e a memoria discordem. O upsert que ATUALIZOU anota
+        // alteracao, e nao insercao -- anotar insercao criaria uma segunda
+        // linha em memoria para um rowid que ja estava la.
+        if feito.ignorada {
+            // Nada mudou no disco, entao nada muda na memoria.
+        } else if feito.atualizada {
+            self.residente_mut(p, |m| m.anotar_alteracao(rowid, &linha));
+        } else {
+            self.residente_mut(p, |m| m.anotar_insercao(rowid, &linha));
+        }
         let registros = t.registros();
         // O NEW do AFTER e a linha como FICOU gravada — sequencia preenchida,
         // rownum de verdade — lida de volta ainda dentro da trava.
@@ -14851,6 +15020,15 @@ impl Servidor {
             ("rowid", Json::de_u64(rowid)),
             ("registros", Json::de_u64(registros)),
         ];
+        // Os dois campos so aparecem quando ha o que dizer: uma resposta que
+        // trouxesse `"ignorada": false` em todo `inserir` mudaria a forma da
+        // resposta de todo cliente que existe hoje.
+        if feito.ignorada {
+            resposta.push(("ignorada", Json::Bool(true)));
+        }
+        if feito.atualizada {
+            resposta.push(("atualizada", Json::Bool(true)));
+        }
         if !avisos.is_empty() {
             resposta.push(("gatilhos_avisos", Json::Lista(avisos)));
         }
@@ -20006,13 +20184,9 @@ fn pedido_da_tabela(database: &str, tabela: &str) -> Json {
 
 /// Os valores de um indice, na ordem das colunas dele.
 fn valores_do_indice(esquema: &Schema, indice: &str, linha: &[Value]) -> Vec<Value> {
-    let Some(def) = esquema.indices().iter().find(|i| i.nome == indice) else {
-        return Vec::new();
-    };
-    def.colunas
-        .iter()
-        .filter_map(|c| linha.get(c.coluna).cloned())
-        .collect()
+    // UM lugar so, e ele mora no `crate::upsert` porque o DbLink tambem
+    // precisa dele e nao enxerga este modulo.
+    crate::upsert::valores_do_indice(esquema, indice, linha)
 }
 
 /// As chaves UNICAS desta linha, como `(indice, chave em texto)`.
@@ -33971,6 +34145,344 @@ mod testes_visoes {
                 .inteiro_ou("devolvidas", -1),
             3
         );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// O `inserir` com `se_existir` -- o upsert pelo protocolo.
+#[cfg(test)]
+mod testes_upsert {
+    use super::*;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("upsert-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn servidor(d: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let ses = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"clientes","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"nome","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        // Uma tabela com DOIS indices unicos e nenhum primario: a ambigua.
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"pessoas","colunas":[
+                    {"nome":"cpf","tipo":"Str(14)"},
+                    {"nome":"email","tipo":"Str(40)"},
+                    {"nome":"nome","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porCpf","colunas":["cpf"],"unico":true},
+                            {"nome":"porEmail","colunas":["email"],"unico":true}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        s
+    }
+
+    fn inserir(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        s.executar(
+            "inserir",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"clientes",{corpo}}}"#
+            )),
+            &Sessao::default(),
+        )
+    }
+
+    fn nome_gravado(s: &Arc<Servidor>, rowid: u64) -> String {
+        s.executar(
+            "ler",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"clientes","rowid":{rowid}}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .texto_ou("nome", "")
+        .to_string()
+    }
+
+    fn registros(s: &Arc<Servidor>) -> i64 {
+        s.executar(
+            "varrer",
+            &pedido(r#"{"database":"b","tabela":"clientes"}"#),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .inteiro_ou("visiveis", -1)
+    }
+
+    /// **O teste que mais importa, e e o do comportamento VELHO.**
+    ///
+    /// Sem `se_existir`, a chave repetida continua RECUSANDO. Guarda nova
+    /// entra pedida: um cliente escrito antes disto nao pode passar a
+    /// sobrescrever linha nenhuma por causa de um campo que ele nao mandou.
+    #[test]
+    fn sem_se_existir_a_chave_repetida_continua_recusando() {
+        let d = dir("velho");
+        let s = servidor(&d);
+        inserir(&s, r#""linha":{"id":1,"nome":"ana"}"#).unwrap();
+        let e =
+            inserir(&s, r#""linha":{"id":1,"nome":"outra"}"#).expect_err("a chave repetida passou");
+        assert_eq!(e.nome(), "DUPLICADO", "{e}");
+        assert_eq!(nome_gravado(&s, 1), "ana", "a linha foi sobrescrita");
+        assert_eq!(registros(&s), 1);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A PROVA REAL do `ignorar`: nada muda no disco, e o rowid que volta e
+    /// o de QUEM JA ESTAVA LA.**
+    ///
+    /// A prova mede o dado gravado e a contagem, e nao o veredito: um
+    /// `ignorar` que inserisse uma segunda linha tambem responderia `ok`.
+    #[test]
+    fn ignorar_devolve_o_rowid_de_quem_ja_estava_la() {
+        let d = dir("ignorar");
+        let s = servidor(&d);
+        let r = inserir(&s, r#""linha":{"id":1,"nome":"ana"}"#).unwrap();
+        assert_eq!(r.inteiro_ou("rowid", -1), 1);
+        assert!(r.campo("ignorada").is_none(), "a primeira nao foi ignorada");
+
+        let r = inserir(
+            &s,
+            r#""linha":{"id":1,"nome":"outra"},"se_existir":"ignorar""#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("rowid", -1), 1, "devolveu outro rowid");
+        assert!(
+            r.booleano_ou("ignorada", false),
+            "a resposta nao diz que ignorou"
+        );
+        assert_eq!(nome_gravado(&s, 1), "ana", "ignorar gravou por cima");
+        assert_eq!(registros(&s), 1, "ignorar inseriu uma segunda linha");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A PROVA REAL do `atualizar`: a linha muda e NAO nasce outra.**
+    #[test]
+    fn atualizar_grava_por_cima_sem_criar_linha() {
+        let d = dir("atualizar");
+        let s = servidor(&d);
+        inserir(&s, r#""linha":{"id":1,"nome":"ana"}"#).unwrap();
+        let r = inserir(
+            &s,
+            r#""linha":{"id":1,"nome":"nova"},"se_existir":"atualizar""#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("rowid", -1), 1);
+        assert!(
+            r.booleano_ou("atualizada", false),
+            "a resposta nao diz que atualizou"
+        );
+        assert_eq!(nome_gravado(&s, 1), "nova", "nao gravou por cima");
+        assert_eq!(registros(&s), 1, "criou uma segunda linha");
+
+        // E a chave que NAO existe entra como insercao normal, sem marca.
+        let r = inserir(
+            &s,
+            r#""linha":{"id":2,"nome":"bia"},"se_existir":"atualizar""#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("rowid", -1), 2);
+        assert!(
+            r.campo("atualizada").is_none(),
+            "insercao marcada como alteracao"
+        );
+        assert_eq!(registros(&s), 2);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Dois indices unicos e nenhum primario: RECUSA nomeando os candidatos,
+    /// e dizer qual resolve.
+    #[test]
+    fn indice_ambiguo_recusa_nomeando_os_candidatos() {
+        let d = dir("ambiguo");
+        let s = servidor(&d);
+        let pede = |corpo: &str| {
+            s.executar(
+                "inserir",
+                &pedido(&format!(r#"{{"database":"b","tabela":"pessoas",{corpo}}}"#)),
+                &Sessao::default(),
+            )
+        };
+        pede(r#""linha":{"cpf":"1","email":"a@x","nome":"ana"}"#).unwrap();
+        let e = pede(r#""linha":{"cpf":"1","email":"b@x","nome":"nova"},"se_existir":"atualizar""#)
+            .expect_err("escolheu o indice sozinho");
+        let t = e.to_string();
+        assert!(t.contains("porCpf") && t.contains("porEmail"), "{t}");
+
+        // Dito qual, funciona -- e casa pelo CPF, e nao pelo email.
+        let r = pede(
+            r#""linha":{"cpf":"1","email":"b@x","nome":"nova"},
+               "se_existir":"atualizar","indice":"porCpf""#,
+        )
+        .unwrap();
+        assert!(r.booleano_ou("atualizada", false), "{r:?}");
+        assert_eq!(r.inteiro_ou("rowid", -1), 1);
+
+        // Indice que existe mas nao e unico nao sabe dizer se a linha existe.
+        let e = inserir(
+            &s,
+            r#""linha":{"id":9},"se_existir":"ignorar","indice":"nao_existe""#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("nao_existe"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `se_existir` com palavra que nao existe RECUSA, listando as que valem
+    /// -- em vez de cair no padrao e gravar de um jeito que ninguem pediu.
+    #[test]
+    fn se_existir_invalido_recusa_listando() {
+        let d = dir("palavra");
+        let s = servidor(&d);
+        let e = inserir(&s, r#""linha":{"id":1},"se_existir":"talvez""#).unwrap_err();
+        let t = e.to_string();
+        assert!(t.contains("talvez"), "{t}");
+        assert!(t.contains("ignorar") && t.contains("atualizar"), "{t}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **DENTRO DE TRANSACAO, o upsert empilha COMO A OP QUE ELE VIROU.**
+    ///
+    /// A alternativa seria empilhar sempre como `inserir` e deixar o commit
+    /// descobrir a duplicata: a transacao inteira cairia no fim por causa de
+    /// uma linha que o pedido mandava justamente sobrescrever.
+    ///
+    /// A prova mede a `acao` empilhada E o dado depois do commit -- um teste
+    /// que so olhasse a resposta do empilhar nao veria a gravacao errada.
+    #[test]
+    fn dentro_da_transacao_o_upsert_empilha_a_op_que_ele_virou() {
+        let d = dir("transacao");
+        let s = servidor(&d);
+        inserir(&s, r#""linha":{"id":1,"nome":"ana"}"#).unwrap();
+
+        let ses = Sessao {
+            ligacao: 7,
+            ..Sessao::default()
+        };
+        s.executar("begin", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+
+        // A chave que JA existe vira um `atualizar` empilhado.
+        let r = s
+            .executar(
+                "inserir",
+                &pedido(
+                    r#"{"database":"b","tabela":"clientes",
+                        "linha":{"id":1,"nome":"nova"},"se_existir":"atualizar"}"#,
+                ),
+                &ses,
+            )
+            .unwrap();
+        assert!(r.booleano_ou("empilhada", false), "{r:?}");
+        assert_eq!(
+            r.texto_ou("acao", ""),
+            "atualizar",
+            "empilhou como insercao"
+        );
+        assert!(r.booleano_ou("atualizada", false), "{r:?}");
+        assert_eq!(r.inteiro_ou("rowid", -1), 1);
+
+        // A que NAO existe continua sendo insercao.
+        let r = s
+            .executar(
+                "inserir",
+                &pedido(
+                    r#"{"database":"b","tabela":"clientes",
+                        "linha":{"id":2,"nome":"bia"},"se_existir":"atualizar"}"#,
+                ),
+                &ses,
+            )
+            .unwrap();
+        assert_eq!(r.texto_ou("acao", ""), "inserir");
+
+        s.executar("commit", &Json::objeto(vec![]), &ses).unwrap();
+        assert_eq!(
+            nome_gravado(&s, 1),
+            "nova",
+            "o commit nao gravou a alteracao"
+        );
+        assert_eq!(registros(&s), 2);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **`ignorar` dentro de transacao nao empilha nada**, e a resposta diz
+    /// isso: nao ha o que gravar, entao nao ha o que confirmar.
+    #[test]
+    fn ignorar_dentro_da_transacao_nao_empilha() {
+        let d = dir("tx-ignorar");
+        let s = servidor(&d);
+        inserir(&s, r#""linha":{"id":1,"nome":"ana"}"#).unwrap();
+        let ses = Sessao {
+            ligacao: 8,
+            ..Sessao::default()
+        };
+        s.executar("begin", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        let r = s
+            .executar(
+                "inserir",
+                &pedido(
+                    r#"{"database":"b","tabela":"clientes",
+                        "linha":{"id":1,"nome":"nao"},"se_existir":"ignorar"}"#,
+                ),
+                &ses,
+            )
+            .unwrap();
+        assert!(!r.booleano_ou("empilhada", true), "{r:?}");
+        assert!(r.booleano_ou("ignorada", false), "{r:?}");
+        s.executar("commit", &Json::objeto(vec![]), &ses).unwrap();
+        assert_eq!(nome_gravado(&s, 1), "ana");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A chave que ESTA TRANSACAO ja empilhou recusa nomeando: a linha
+    /// pendente ainda nao tem rowid em disco para atualizar, e escolher um dos
+    /// dois caminhos seria adivinhar.
+    #[test]
+    fn a_chave_pendente_na_mesma_transacao_recusa_nomeando() {
+        let d = dir("tx-pendente");
+        let s = servidor(&d);
+        let ses = Sessao {
+            ligacao: 9,
+            ..Sessao::default()
+        };
+        s.executar("begin", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        let corpo = r#"{"database":"b","tabela":"clientes",
+                        "linha":{"id":5,"nome":"x"},"se_existir":"atualizar"}"#;
+        s.executar("inserir", &pedido(corpo), &ses).unwrap();
+        let e = s
+            .executar("inserir", &pedido(corpo), &ses)
+            .expect_err("a chave pendente passou");
+        assert_eq!(e.nome(), "DUPLICADO", "{e}");
+        assert!(e.to_string().contains("DISCO"), "a recusa nao explica: {e}");
+        s.executar("rollback", &Json::objeto(vec![]), &ses).unwrap();
         let _ = std::fs::remove_dir_all(&d);
     }
 }

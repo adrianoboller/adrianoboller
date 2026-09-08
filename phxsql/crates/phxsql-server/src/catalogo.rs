@@ -729,8 +729,22 @@ pub const OPERACOES: &[Operacao] = &[
                 "object",
                 "coluna: valor; `linha` é o nome antigo e continua valendo",
             ),
+            opc(
+                "se_existir",
+                "string",
+                "o que fazer quando a chave única já existe: `ignorar` (devolve \
+                 `rowid` e `ignorada`) ou `atualizar` (grava por cima e devolve \
+                 `atualizada`). Sem o campo, chave repetida RECUSA como sempre",
+            ),
+            opc(
+                "indice",
+                "string",
+                "qual índice único decide se a linha já existe; sem ele, a chave \
+                 primária ou o único índice único da tabela -- ambíguo recusa \
+                 nomeando os candidatos",
+            ),
         ],
-        exemplo: r#"{"op":"inserir","database":"loja","tabela":"clientes","valores":{"nome":"Maria"}}"#,
+        exemplo: r#"{"op":"inserir","database":"loja","tabela":"clientes","valores":{"id":1,"nome":"Maria"},"se_existir":"atualizar"}"#,
         ferramenta_mcp: true,
     },
     Operacao {

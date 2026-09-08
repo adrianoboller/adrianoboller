@@ -45,6 +45,7 @@ pub mod sistema;
 pub mod telemetria;
 pub mod transacao;
 pub mod travas;
+pub mod upsert;
 pub mod usuarios;
 pub mod valores;
 pub mod visoes;
