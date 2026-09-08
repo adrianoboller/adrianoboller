@@ -35,6 +35,7 @@ BASE = Path(__file__).resolve().parent
 MOTORES = [
     ("phxsql", "PhxSql", "var(--m-phx)"),
     ("mysql", "MySQL(R)", "var(--m-sql)"),
+    ("mariadb", "MariaDB(R)", "var(--m-maria)"),
     ("sqlite", "SQLite(R)", "var(--m-lite)"),
 ]
 # A nota de cada fase e um MOLDE: o numero de operacoes sai da medicao, e
@@ -48,8 +49,12 @@ FASES = [
     ("excluir", "DELETE", "apagar {ops} de vez"),
 ]
 
-LARG, ALT = 460, 224
+LARG = 460
 ESQ, DIR, TOPO, BASE_Y = 96, 24, 46, 54
+# 62 = o passo entre barras (ver `painel`); 54 = altura da barra mais a margem
+# de baixo. A ALT cresce com o numero de motores, senao o 4o cai fora do
+# viewBox -- e barra fora do viewBox nao da erro, some calada.
+ALT = TOPO + (len(MOTORES) - 1) * 62 + 54
 
 
 def mil(x):
@@ -218,10 +223,10 @@ def main():
 <title>PhxSql x MySQL(R) x SQLite(R) -- {n:,} linhas</title>
 <style>
 :root{{--papel:#fbf9f7;--tinta:#1a1210;--tinta-2:#4a3f3a;--tinta-3:#7a6d66;
---linha:#ded6d0;--m-phx:#c63c0a;--m-sql:#1f5c93;--m-lite:#37702e}}
+--linha:#ded6d0;--m-phx:#c63c0a;--m-sql:#1f5c93;--m-lite:#37702e;--m-maria:#0e7a85}}
 @media (prefers-color-scheme:dark){{:root:not([data-theme="light"]){{
 --papel:#040814;--tinta:#dde2eb;--tinta-2:#a8b0c0;--tinta-3:#7c8598;
---linha:#1e2940;--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c}}}}
+--linha:#1e2940;--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c;--m-maria:#3fc8d4}}}}
 body{{margin:0;padding:32px;background:var(--papel);color:var(--tinta);
 font:15px/1.6 system-ui,sans-serif;max-width:1100px}}
 h1{{font-size:22px;margin:0 0 4px}}

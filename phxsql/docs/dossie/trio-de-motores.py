@@ -46,7 +46,8 @@ FIGURA = RAIZ / "bancada" / "comparacao" / "comparacao-tres-motores.svg"
 ABRE = "<!-- trio:inicio (gerado por docs/dossie/trio-de-motores.py) -->"
 FECHA = "<!-- trio:fim -->"
 
-MOTORES = [("phxsql", "PhxSql"), ("sqlite", "SQLite(R)"), ("mysql", "MySQL(R)")]
+MOTORES = [("phxsql", "PhxSql"), ("mysql", "MySQL(R)"),
+           ("mariadb", "MariaDB(R)"), ("sqlite", "SQLite(R)")]
 FASES = [
     ("inserir", "Inserir {n}"),
     ("buscar", "Buscar {ops} pontuais"),
@@ -201,11 +202,11 @@ CSS = """
 /* As tres cores sao as da marca, com passo proprio no tema escuro: tema
    escuro nao e tema claro invertido, e os tokens claros reprovam na faixa de
    luminosidade sobre fundo escuro. */
-.trio{--m-phx:#c63c0a;--m-sql:#1f5c93;--m-lite:#37702e}
+.trio{--m-phx:#c63c0a;--m-sql:#1f5c93;--m-lite:#37702e;--m-maria:#0e7a85}
 @media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]) .trio{--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c}
+  :root:not([data-theme="light"]) .trio{--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c;--m-maria:#3fc8d4}
 }
-:root[data-theme="dark"] .trio{--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c}
+:root[data-theme="dark"] .trio{--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c;--m-maria:#3fc8d4}
 </style>
 """
 

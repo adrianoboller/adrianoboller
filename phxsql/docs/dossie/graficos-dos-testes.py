@@ -48,7 +48,7 @@ SAIDA_PADRAO = AQUI / "graficos.html"
 
 # A paleta sai da marca; ver `phxsql/marca/LEIA-ME.md`. O vermelhao escurece
 # no tema claro por contraste, e e' por isso que ele nao e' um literal solto.
-CORES = ["var(--c1)", "var(--c2)", "var(--c3)"]
+CORES = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)"]
 
 
 def ler(rel):
@@ -181,11 +181,12 @@ def barras(titulo, sub, series, unidade, casas=0, menor_e_melhor=False,
 def g_tres_motores():
     d, p = ler("bancada/comparacao/um-milhao.json")
     if not d:
-        return ['<div class="ausente-bloco">Os três motores a um milhão — '
+        return ['<div class="ausente-bloco">Os quatro motores a um milhão — '
                 '<b>não medido</b>. Rode <code>python3 bancada/comparacao/medir.py'
                 '</code>.</div>'], ("—", False)
     q = quando(p, d)
-    nomes = {"phxsql": "PhxSql", "mysql": "MySQL®", "sqlite": "SQLite®"}
+    nomes = {"phxsql": "PhxSql", "mysql": "MySQL®", "mariadb": "MariaDB®",
+             "sqlite": "SQLite®"}
     out = []
     for fase, dados in d.get("fases", {}).items():
         series, faixas = [], {}
@@ -198,10 +199,10 @@ def g_tres_motores():
             "operacoes_por_fase_pontual")
         out.append(barras(
             f"{fase.capitalize()} — {num(n)} linhas",
-            "Os três na <b>mesma rodada</b>, intercalados: medidas de dias "
-            "diferentes carregam o ambiente junto. E o MySQL® é o único que "
-            "recebe o trabalho como <b>texto por soquete</b> — o piso disso já "
-            "foi 59,6% de uma barra desta bancada.",
+            "Os quatro na <b>mesma rodada</b>, intercalados: medidas de dias "
+            "diferentes carregam o ambiente junto. E a família MySQL recebe o "
+            "trabalho como <b>texto</b> — o MySQL® por soquete, o MariaDB® por "
+            "TCP, cujo piso é maior; os dois pisos são medidos à parte.",
             series, "segundos (menor é melhor)", 2, menor_e_melhor=True,
             faixas=faixas))
     return out, q
@@ -314,7 +315,7 @@ def g_fts():
 
 
 BLOCOS = [
-    ("Os três motores, a um milhão de linhas", g_tres_motores,
+    ("Os quatro motores, a um milhão de linhas", g_tres_motores,
      "bancada/comparacao/"),
     ("Índice de texto — o .fts contra a varredura", g_fts, "bancada/fts/"),
     ("Utilização padrão — 20.000 linhas em tabela complexa", g_utilizacao,
@@ -347,19 +348,19 @@ TEMPLATE = """<title>Gráficos de desempenho do PhxSql</title>
 :root{{
   --papel:#fbf9f7; --papel-2:#f3efec; --tinta:#1a1210; --tinta-2:#4a3f3a;
   --tinta-3:#7a6d66; --linha:#ded6d0; --acento:#c63c0a; --falta:#8a6a1f;
-  --c1:#c63c0a; --c2:#4a6fa5; --c3:#5c7a52;
+  --c1:#c63c0a; --c2:#4a6fa5; --c3:#5c7a52; --c4:#0e7a85;
 }}
 @media (prefers-color-scheme:dark){{
   :root:not([data-theme="light"]){{
     --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
     --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c; --falta:#d5a83c;
-    --c1:#ff8a1c; --c2:#6f9fe0; --c3:#7fb36e;
+    --c1:#ff8a1c; --c2:#6f9fe0; --c3:#7fb36e; --c4:#3fc8d4;
   }}
 }}
 :root[data-theme="dark"]{{
   --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
   --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c; --falta:#d5a83c;
-  --c1:#ff8a1c; --c2:#6f9fe0; --c3:#7fb36e;
+  --c1:#ff8a1c; --c2:#6f9fe0; --c3:#7fb36e; --c4:#3fc8d4;
 }}
 *{{box-sizing:border-box}}
 body{{margin:0;background:var(--papel);color:var(--tinta);

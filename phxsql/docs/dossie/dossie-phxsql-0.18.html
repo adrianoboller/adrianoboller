@@ -476,12 +476,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">154.834</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">155.110</div><div class="r">linhas de Rust</div></div>
     <div><div class="v">1.830</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">8</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">55.608</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">55.836</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -6468,113 +6468,133 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 /* As tres cores sao as da marca, com passo proprio no tema escuro: tema
    escuro nao e tema claro invertido, e os tokens claros reprovam na faixa de
    luminosidade sobre fundo escuro. */
-.trio{--m-phx:#c63c0a;--m-sql:#1f5c93;--m-lite:#37702e}
+.trio{--m-phx:#c63c0a;--m-sql:#1f5c93;--m-lite:#37702e;--m-maria:#0e7a85}
 @media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]) .trio{--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c}
+  :root:not([data-theme="light"]) .trio{--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c;--m-maria:#3fc8d4}
 }
-:root[data-theme="dark"] .trio{--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c}
+:root[data-theme="dark"] .trio{--m-phx:#d9741c;--m-sql:#4287cf;--m-lite:#54a84c;--m-maria:#3fc8d4}
 </style>
 
   <h3>Os três motores, a um milhão de linhas</h3>
   <p>Tabela de 1.000.000 linhas, 20.000 operações nas fases pontuais,
   3 rodadas, os três <strong>intercalados na mesma rodada</strong> —
   somar medições de dias diferentes daria três colunas e nenhuma comparação.
-  Medido em 2026-09-01 18:30:03.</p>
+  Medido em 2026-09-08 02:49:47.</p>
 
   <div class="trio">
 <figure class="fig">
-  <svg viewBox="0 0 460 224" role="img" aria-label="INSERT, gravar 1.000.000 linhas, uma a uma: PhxSql 9,93 s; MySQL(R) 12,3 s; SQLite(R) 2,56 s">
+  <svg viewBox="0 0 460 286" role="img" aria-label="INSERT, gravar 1.000.000 linhas, uma a uma: PhxSql 7,87 s; MySQL(R) 10,6 s; MariaDB(R) 6,69 s; SQLite(R) 2,10 s">
     <text x="0" y="16" class="tit">INSERT</text>
     <text x="0" y="34" class="nota">gravar 1.000.000 linhas, uma a uma</text>
     <text x="0" y="61" class="eixo">PhxSql</text>
-    <rect x="96" y="46" width="202.6" height="34" rx="4" fill="var(--m-phx)" class="barra"/>
-    <line x1="267.1" y1="63.0" x2="333.7" y2="63.0" class="bigode"/><line x1="267.1" y1="57.0" x2="267.1" y2="69.0" class="bigode"/>
-    <line x1="333.7" y1="57.0" x2="333.7" y2="69.0" class="bigode"/>
-    <text x="341.7" y="68" class="valor">9,93 s</text>
+    <rect x="96" y="46" width="187.1" height="34" rx="4" fill="var(--m-phx)" class="barra"/>
+    <line x1="282.6" y1="63.0" x2="284.2" y2="63.0" class="bigode"/><line x1="282.6" y1="57.0" x2="282.6" y2="69.0" class="bigode"/>
+    <line x1="284.2" y1="57.0" x2="284.2" y2="69.0" class="bigode"/>
+    <text x="292.2" y="68" class="valor">7,87 s</text>
     <text x="0" y="123" class="eixo">MySQL(R)</text>
     <rect x="96" y="108" width="251.9" height="34" rx="4" fill="var(--m-sql)" class="barra"/>
-    <line x1="346.5" y1="125.0" x2="436.0" y2="125.0" class="bigode"/><line x1="346.5" y1="119.0" x2="346.5" y2="131.0" class="bigode"/>
-    <path d="M429.0,119.0 L436.0,125.0 L429.0,131.0" class="bigode" fill="none"/>
-    <text x="339.9" y="130" class="valor dentro" text-anchor="end">12,3 s (pico 17,1 s)</text>
-    <text x="0" y="185" class="eixo">SQLite(R)</text>
-    <rect x="96" y="170" width="52.2" height="34" rx="4" fill="var(--m-lite)" class="barra vencedor"/>
-    <line x1="147.5" y1="187.0" x2="156.0" y2="187.0" class="bigode"/><line x1="147.5" y1="181.0" x2="147.5" y2="193.0" class="bigode"/>
-    <line x1="156.0" y1="181.0" x2="156.0" y2="193.0" class="bigode"/>
-    <text x="164.0" y="192" class="valor">2,56 s</text>
+    <line x1="337.9" y1="125.0" x2="349.4" y2="125.0" class="bigode"/><line x1="337.9" y1="119.0" x2="337.9" y2="131.0" class="bigode"/>
+    <line x1="349.4" y1="119.0" x2="349.4" y2="131.0" class="bigode"/>
+    <text x="357.4" y="130" class="valor">10,6 s</text>
+    <text x="0" y="185" class="eixo">MariaDB(R)</text>
+    <rect x="96" y="170" width="159.0" height="34" rx="4" fill="var(--m-maria)" class="barra"/>
+    <line x1="254.3" y1="187.0" x2="259.5" y2="187.0" class="bigode"/><line x1="254.3" y1="181.0" x2="254.3" y2="193.0" class="bigode"/>
+    <line x1="259.5" y1="181.0" x2="259.5" y2="193.0" class="bigode"/>
+    <text x="267.5" y="192" class="valor">6,69 s</text>
+    <text x="0" y="247" class="eixo">SQLite(R)</text>
+    <rect x="96" y="232" width="49.9" height="34" rx="4" fill="var(--m-lite)" class="barra vencedor"/>
+    <line x1="145.3" y1="249.0" x2="147.3" y2="249.0" class="bigode"/><line x1="145.3" y1="243.0" x2="145.3" y2="255.0" class="bigode"/>
+    <line x1="147.3" y1="243.0" x2="147.3" y2="255.0" class="bigode"/>
+    <text x="155.3" y="254" class="valor">2,10 s</text>
   </svg>
 </figure>
 <figure class="fig">
-  <svg viewBox="0 0 460 224" role="img" aria-label="SELECT, achar 20.000 linhas pela chave, uma instrução cada: PhxSql 164 ms; MySQL(R) 2,48 s; SQLite(R) 166 ms">
+  <svg viewBox="0 0 460 286" role="img" aria-label="SELECT, achar 20.000 linhas pela chave, uma instrução cada: PhxSql 159 ms; MySQL(R) 1,51 s; MariaDB(R) 2,56 s; SQLite(R) 150 ms">
     <text x="0" y="16" class="tit">SELECT</text>
     <text x="0" y="34" class="nota">achar 20.000 linhas pela chave, uma instrução cada</text>
     <text x="0" y="61" class="eixo">PhxSql</text>
-    <rect x="96" y="46" width="16.6" height="34" rx="4" fill="var(--m-phx)" class="barra"/>
-    <line x1="111.3" y1="63.0" x2="117.8" y2="63.0" class="bigode"/><line x1="111.3" y1="57.0" x2="111.3" y2="69.0" class="bigode"/>
-    <line x1="117.8" y1="57.0" x2="117.8" y2="69.0" class="bigode"/>
-    <text x="125.8" y="68" class="valor">164 ms</text>
+    <rect x="96" y="46" width="15.6" height="34" rx="4" fill="var(--m-phx)" class="barra"/>
+    <line x1="111.0" y1="63.0" x2="111.7" y2="63.0" class="bigode"/><line x1="111.0" y1="57.0" x2="111.0" y2="69.0" class="bigode"/>
+    <line x1="111.7" y1="57.0" x2="111.7" y2="69.0" class="bigode"/>
+    <text x="119.7" y="68" class="valor">159 ms</text>
     <text x="0" y="123" class="eixo">MySQL(R)</text>
-    <rect x="96" y="108" width="251.9" height="34" rx="4" fill="var(--m-sql)" class="barra"/>
-    <line x1="347.1" y1="125.0" x2="352.4" y2="125.0" class="bigode"/><line x1="347.1" y1="119.0" x2="347.1" y2="131.0" class="bigode"/>
-    <line x1="352.4" y1="119.0" x2="352.4" y2="131.0" class="bigode"/>
-    <text x="360.4" y="130" class="valor">2,48 s</text>
-    <text x="0" y="185" class="eixo">SQLite(R)</text>
-    <rect x="96" y="170" width="16.8" height="34" rx="4" fill="var(--m-lite)" class="barra"/>
-    <line x1="112.0" y1="187.0" x2="119.6" y2="187.0" class="bigode"/><line x1="112.0" y1="181.0" x2="112.0" y2="193.0" class="bigode"/>
-    <line x1="119.6" y1="181.0" x2="119.6" y2="193.0" class="bigode"/>
-    <text x="127.6" y="192" class="valor">166 ms</text>
+    <rect x="96" y="108" width="148.6" height="34" rx="4" fill="var(--m-sql)" class="barra"/>
+    <line x1="242.4" y1="125.0" x2="248.0" y2="125.0" class="bigode"/><line x1="242.4" y1="119.0" x2="242.4" y2="131.0" class="bigode"/>
+    <line x1="248.0" y1="119.0" x2="248.0" y2="131.0" class="bigode"/>
+    <text x="256.0" y="130" class="valor">1,51 s</text>
+    <text x="0" y="185" class="eixo">MariaDB(R)</text>
+    <rect x="96" y="170" width="251.9" height="34" rx="4" fill="var(--m-maria)" class="barra"/>
+    <line x1="339.3" y1="187.0" x2="359.0" y2="187.0" class="bigode"/><line x1="339.3" y1="181.0" x2="339.3" y2="193.0" class="bigode"/>
+    <line x1="359.0" y1="181.0" x2="359.0" y2="193.0" class="bigode"/>
+    <text x="367.0" y="192" class="valor">2,56 s</text>
+    <text x="0" y="247" class="eixo">SQLite(R)</text>
+    <rect x="96" y="232" width="14.8" height="34" rx="4" fill="var(--m-lite)" class="barra"/>
+    <line x1="110.4" y1="249.0" x2="111.1" y2="249.0" class="bigode"/><line x1="110.4" y1="243.0" x2="110.4" y2="255.0" class="bigode"/>
+    <line x1="111.1" y1="243.0" x2="111.1" y2="255.0" class="bigode"/>
+    <text x="119.1" y="254" class="valor">150 ms</text>
   </svg>
 </figure>
 <figure class="fig">
-  <svg viewBox="0 0 460 224" role="img" aria-label="UPDATE, regravar a linha inteira de 20.000 delas: PhxSql 277 ms; MySQL(R) 3,54 s; SQLite(R) 1,03 s">
+  <svg viewBox="0 0 460 286" role="img" aria-label="UPDATE, regravar a linha inteira de 20.000 delas: PhxSql 256 ms; MySQL(R) 2,16 s; MariaDB(R) 2,79 s; SQLite(R) 511 ms">
     <text x="0" y="16" class="tit">UPDATE</text>
     <text x="0" y="34" class="nota">regravar a linha inteira de 20.000 delas</text>
     <text x="0" y="61" class="eixo">PhxSql</text>
-    <rect x="96" y="46" width="19.7" height="34" rx="4" fill="var(--m-phx)" class="barra vencedor"/>
-    <line x1="114.9" y1="63.0" x2="116.7" y2="63.0" class="bigode"/><line x1="114.9" y1="57.0" x2="114.9" y2="69.0" class="bigode"/>
-    <line x1="116.7" y1="57.0" x2="116.7" y2="69.0" class="bigode"/>
-    <text x="124.7" y="68" class="valor">277 ms</text>
+    <rect x="96" y="46" width="23.1" height="34" rx="4" fill="var(--m-phx)" class="barra vencedor"/>
+    <line x1="117.8" y1="63.0" x2="123.1" y2="63.0" class="bigode"/><line x1="117.8" y1="57.0" x2="117.8" y2="69.0" class="bigode"/>
+    <line x1="123.1" y1="57.0" x2="123.1" y2="69.0" class="bigode"/>
+    <text x="131.1" y="68" class="valor">256 ms</text>
     <text x="0" y="123" class="eixo">MySQL(R)</text>
-    <rect x="96" y="108" width="251.9" height="34" rx="4" fill="var(--m-sql)" class="barra"/>
-    <line x1="343.7" y1="125.0" x2="436.0" y2="125.0" class="bigode"/><line x1="343.7" y1="119.0" x2="343.7" y2="131.0" class="bigode"/>
-    <path d="M429.0,119.0 L436.0,125.0 L429.0,131.0" class="bigode" fill="none"/>
-    <text x="339.9" y="130" class="valor dentro" text-anchor="end">3,54 s (pico 23,0 s)</text>
-    <text x="0" y="185" class="eixo">SQLite(R)</text>
-    <rect x="96" y="170" width="73.2" height="34" rx="4" fill="var(--m-lite)" class="barra"/>
-    <line x1="154.2" y1="187.0" x2="180.3" y2="187.0" class="bigode"/><line x1="154.2" y1="181.0" x2="154.2" y2="193.0" class="bigode"/>
-    <line x1="180.3" y1="181.0" x2="180.3" y2="193.0" class="bigode"/>
-    <text x="188.3" y="192" class="valor">1,03 s</text>
+    <rect x="96" y="108" width="195.0" height="34" rx="4" fill="var(--m-sql)" class="barra"/>
+    <line x1="288.0" y1="125.0" x2="297.4" y2="125.0" class="bigode"/><line x1="288.0" y1="119.0" x2="288.0" y2="131.0" class="bigode"/>
+    <line x1="297.4" y1="119.0" x2="297.4" y2="131.0" class="bigode"/>
+    <text x="305.4" y="130" class="valor">2,16 s</text>
+    <text x="0" y="185" class="eixo">MariaDB(R)</text>
+    <rect x="96" y="170" width="251.9" height="34" rx="4" fill="var(--m-maria)" class="barra"/>
+    <line x1="330.4" y1="187.0" x2="359.7" y2="187.0" class="bigode"/><line x1="330.4" y1="181.0" x2="330.4" y2="193.0" class="bigode"/>
+    <line x1="359.7" y1="181.0" x2="359.7" y2="193.0" class="bigode"/>
+    <text x="367.7" y="192" class="valor">2,79 s</text>
+    <text x="0" y="247" class="eixo">SQLite(R)</text>
+    <rect x="96" y="232" width="46.1" height="34" rx="4" fill="var(--m-lite)" class="barra"/>
+    <line x1="141.5" y1="249.0" x2="145.6" y2="249.0" class="bigode"/><line x1="141.5" y1="243.0" x2="141.5" y2="255.0" class="bigode"/>
+    <line x1="145.6" y1="243.0" x2="145.6" y2="255.0" class="bigode"/>
+    <text x="153.6" y="254" class="valor">511 ms</text>
   </svg>
 </figure>
 <figure class="fig">
-  <svg viewBox="0 0 460 224" role="img" aria-label="DELETE, apagar 20.000 de vez: PhxSql 1,05 s; MySQL(R) 4,06 s; SQLite(R) 574 ms">
+  <svg viewBox="0 0 460 286" role="img" aria-label="DELETE, apagar 20.000 de vez: PhxSql 1,25 s; MySQL(R) 2,24 s; MariaDB(R) 2,47 s; SQLite(R) 414 ms">
     <text x="0" y="16" class="tit">DELETE</text>
     <text x="0" y="34" class="nota">apagar 20.000 de vez</text>
     <text x="0" y="61" class="eixo">PhxSql</text>
-    <rect x="96" y="46" width="65.3" height="34" rx="4" fill="var(--m-phx)" class="barra"/>
-    <line x1="154.8" y1="63.0" x2="162.8" y2="63.0" class="bigode"/><line x1="154.8" y1="57.0" x2="154.8" y2="69.0" class="bigode"/>
-    <line x1="162.8" y1="57.0" x2="162.8" y2="69.0" class="bigode"/>
-    <text x="170.8" y="68" class="valor">1,05 s</text>
+    <rect x="96" y="46" width="127.3" height="34" rx="4" fill="var(--m-phx)" class="barra"/>
+    <line x1="221.3" y1="63.0" x2="223.7" y2="63.0" class="bigode"/><line x1="221.3" y1="57.0" x2="221.3" y2="69.0" class="bigode"/>
+    <line x1="223.7" y1="57.0" x2="223.7" y2="69.0" class="bigode"/>
+    <text x="231.7" y="68" class="valor">1,25 s</text>
     <text x="0" y="123" class="eixo">MySQL(R)</text>
-    <rect x="96" y="108" width="251.9" height="34" rx="4" fill="var(--m-sql)" class="barra"/>
-    <line x1="342.1" y1="125.0" x2="425.6" y2="125.0" class="bigode"/><line x1="342.1" y1="119.0" x2="342.1" y2="131.0" class="bigode"/>
-    <line x1="425.6" y1="119.0" x2="425.6" y2="131.0" class="bigode"/>
-    <text x="339.9" y="130" class="valor dentro" text-anchor="end">4,06 s</text>
-    <text x="0" y="185" class="eixo">SQLite(R)</text>
-    <rect x="96" y="170" width="35.6" height="34" rx="4" fill="var(--m-lite)" class="barra vencedor"/>
-    <line x1="126.2" y1="187.0" x2="143.8" y2="187.0" class="bigode"/><line x1="126.2" y1="181.0" x2="126.2" y2="193.0" class="bigode"/>
-    <line x1="143.8" y1="181.0" x2="143.8" y2="193.0" class="bigode"/>
-    <text x="151.8" y="192" class="valor">574 ms</text>
+    <rect x="96" y="108" width="228.6" height="34" rx="4" fill="var(--m-sql)" class="barra"/>
+    <line x1="324.3" y1="125.0" x2="341.8" y2="125.0" class="bigode"/><line x1="324.3" y1="119.0" x2="324.3" y2="131.0" class="bigode"/>
+    <line x1="341.8" y1="119.0" x2="341.8" y2="131.0" class="bigode"/>
+    <text x="349.8" y="130" class="valor">2,24 s</text>
+    <text x="0" y="185" class="eixo">MariaDB(R)</text>
+    <rect x="96" y="170" width="251.9" height="34" rx="4" fill="var(--m-maria)" class="barra"/>
+    <line x1="347.3" y1="187.0" x2="361.3" y2="187.0" class="bigode"/><line x1="347.3" y1="181.0" x2="347.3" y2="193.0" class="bigode"/>
+    <line x1="361.3" y1="181.0" x2="361.3" y2="193.0" class="bigode"/>
+    <text x="369.3" y="192" class="valor">2,47 s</text>
+    <text x="0" y="247" class="eixo">SQLite(R)</text>
+    <rect x="96" y="232" width="42.2" height="34" rx="4" fill="var(--m-lite)" class="barra vencedor"/>
+    <line x1="137.5" y1="249.0" x2="139.2" y2="249.0" class="bigode"/><line x1="137.5" y1="243.0" x2="137.5" y2="255.0" class="bigode"/>
+    <line x1="139.2" y1="243.0" x2="139.2" y2="255.0" class="bigode"/>
+    <text x="147.2" y="254" class="valor">414 ms</text>
   </svg>
 </figure>
   </div>
 
   <table class="tab">
-<thead><tr><th>fase</th><th class="num">PhxSql</th><th class="num">SQLite(R)</th><th class="num">MySQL(R)</th><th class="num">MySQL(R) menos o piso</th></tr></thead>
+<thead><tr><th>fase</th><th class="num">PhxSql</th><th class="num">MySQL(R)</th><th class="num">MariaDB(R)</th><th class="num">SQLite(R)</th><th class="num">MySQL(R) menos o piso</th></tr></thead>
 <tbody>
-<tr><td>Inserir 1.000.000</td><td class="num">9,93 s</td><td class="num destaque">2,56 s</td><td class="num">12,34 s</td><td class="num">—</td></tr>
-<tr><td>Buscar 20.000 pontuais</td><td class="num">164 ms</td><td class="num">166 ms</td><td class="num">2,48 s</td><td class="num">1,00 s</td></tr>
-<tr><td>Atualizar 20.000</td><td class="num destaque">277 ms</td><td class="num">1,03 s</td><td class="num">3,54 s</td><td class="num">2,06 s</td></tr>
-<tr><td>Excluir 20.000</td><td class="num">1,05 s</td><td class="num destaque">574 ms</td><td class="num">4,06 s</td><td class="num">2,58 s</td></tr>
+<tr><td>Inserir 1.000.000</td><td class="num">7,87 s</td><td class="num">10,60 s</td><td class="num">6,69 s</td><td class="num destaque">2,10 s</td><td class="num">—</td></tr>
+<tr><td>Buscar 20.000 pontuais</td><td class="num">159 ms</td><td class="num">1,51 s</td><td class="num">2,56 s</td><td class="num">150 ms</td><td class="num">593 ms</td></tr>
+<tr><td>Atualizar 20.000</td><td class="num destaque">256 ms</td><td class="num">2,16 s</td><td class="num">2,79 s</td><td class="num">511 ms</td><td class="num">1,25 s</td></tr>
+<tr><td>Excluir 20.000</td><td class="num">1,25 s</td><td class="num">2,24 s</td><td class="num">2,47 s</td><td class="num destaque">414 ms</td><td class="num">1,33 s</td></tr>
 </tbody></table>
   <p class="legenda">Mediana de 3 rodadas; o bigode do gráfico vai
   do mínimo ao máximo. O contorno só marca vencedor quando as faixas
@@ -6585,8 +6605,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   também, e o MySQL(R) é daemon que recebe <em>texto</em> por soquete. Não
   existe MySQL(R) embutido nesta máquina, então a barra dele carrega transporte
   e análise que as outras duas não pagam. Isso não se conserta — mede-se:
-  1,479 s para 20.000 instruções que não fazem nada
-  (<code>DO 1;</code>). Para a busca isso é <strong>59,6% da barra dele</strong>: sem medir o piso teríamos publicado «15,16× mais rápido» quando entre motores são <strong>6,12×</strong>.</p>
+  916 ms para 20.000 instruções que não fazem nada
+  (<code>DO 1;</code>). Para a busca isso é <strong>60,7% da barra dele</strong>: sem medir o piso teríamos publicado «9,50× mais rápido» quando entre motores são <strong>3,74×</strong>.</p>
 
   <p><strong>E o disco:</strong> 253,6 MiB contra 57,3 do SQLite(R) e 104,0 do MySQL(R) — <strong>4,42×</strong> e <strong>2,44×</strong>. É o preço do modelo de arquivos separados, e no celular essa é a pergunta inteira.</p>
 
@@ -6595,9 +6615,9 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   na tabela acima, com o vencedor de cada fase em destaque — inclusive quando
   não somos nós.</p>
 
-  <p class="legenda">Durabilidade durante a medida — <strong>PhxSql</strong>: sincroniza uma vez por fase (exclusão na janela) · <strong>MySQL(R)</strong>: uma transação por fase; flush_log_at_trx_commit=1, sync_binlog=1, versao=8.0.46-0ubuntu0.24.04.3 · <strong>SQLite(R)</strong>: synchronous=FULL, journal DELETE, uma transação por fase</p>
+  <p class="legenda">Durabilidade durante a medida — <strong>PhxSql</strong>: sincroniza uma vez por fase (exclusão na janela) · <strong>MySQL(R)</strong>: uma transação por fase; flush_log_at_trx_commit=1, sync_binlog=1, versao=8.0.46-0ubuntu0.24.04.3 · <strong>SQLite(R)</strong>: synchronous=FULL, journal DELETE, uma transação por fase · <strong>MariaDB(R)</strong>: uma transação por fase; flush_log_at_trx_commit=1, sync_binlog=0, versao=11.8.9-MariaDB-ubu2404</p>
   <p><strong>O que estes números não dizem</strong></p>
-  <ul><li>A carga inicial não tem a mesma FORMA nos três: o PhxSql faz 1.000.000 chamadas de função, o SQLite(R) executa a mesma instrução preparada 1.000.000 vezes, e o MySQL(R) recebe 20 instruções de 50.000 linhas. A forma do MySQL(R) é a mais barata das três por linha, então a barra dele nesta fase é OTIMISTA. As fases pontuais são uma instrução por operação nos três.</li><li>O MySQL(R) é o único que recebe o trabalho como TEXTO por soquete — não existe MySQL(R) embutido nesta máquina, e os outros dois são biblioteca no próprio processo. O piso desse formato foi medido: 1.479 s para 20.000 instruções que não fazem nada (`DO 1;`), que é o que há para subtrair da barra dele nas fases pontuais.</li><li>O SQLite(R) publicado é a variante `rowid` (`id INTEGER PRIMARY KEY`), que é a que casa com o InnoDB por ter a chave agrupada e a que FAVORECE o SQLite(R) — são duas estruturas contra as três da variante `2ind`. A outra corre na mesma rodada e está no JSON, em `sqlite_2ind`.</li><li>Durabilidade casada: uma sincronização no fim de cada fase nos três. Não é o regime de quem grava pedido a pedido — uma bancada com `commit` por linha daria outros números, e é a que importa para esse caso.</li><li>Uma máquina só, com o que mais estivesse rodando nela. O bigode de mínimo a máximo das 3 rodadas é a medida dessa inquietude: barra lisa afirmaria uma precisão que o número não tem.</li></ul>
+  <ul><li>A carga inicial não tem a mesma FORMA nos três: o PhxSql faz 1.000.000 chamadas de função, o SQLite(R) executa a mesma instrução preparada 1.000.000 vezes, e o MySQL(R) recebe 20 instruções de 50.000 linhas. A forma do MySQL(R) é a mais barata das três por linha, então a barra dele nesta fase é OTIMISTA. As fases pontuais são uma instrução por operação nos três.</li><li>O MySQL(R) é o único que recebe o trabalho como TEXTO por soquete — não existe MySQL(R) embutido nesta máquina, e os outros dois são biblioteca no próprio processo. O piso desse formato foi medido: 0.916 s para 20.000 instruções que não fazem nada (`DO 1;`), que é o que há para subtrair da barra dele nas fases pontuais.</li><li>O SQLite(R) publicado é a variante `rowid` (`id INTEGER PRIMARY KEY`), que é a que casa com o InnoDB por ter a chave agrupada e a que FAVORECE o SQLite(R) — são duas estruturas contra as três da variante `2ind`. A outra corre na mesma rodada e está no JSON, em `sqlite_2ind`.</li><li>Durabilidade casada: uma sincronização no fim de cada fase nos três. Não é o regime de quem grava pedido a pedido — uma bancada com `commit` por linha daria outros números, e é a que importa para esse caso.</li><li>Uma máquina só, com o que mais estivesse rodando nela. O bigode de mínimo a máximo das 3 rodadas é a medida dessa inquietude: barra lisa afirmaria uma precisão que o número não tem.</li></ul>
 <!-- trio:fim -->
 
   <p>A bancada inteira está em <code>bancada/</code> — o medidor, os gráficos, o
@@ -7213,7 +7233,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     details.pergunta p{margin:.5rem 0}
   </style>
 <!-- perguntas:inicio (gerado por docs/dossie/perguntas-no-dossie.py) -->
-  <p class="leve">31 respostas, lidas de <code>docs/pdf/respostas/</code> em 08/09/2026 01:52 UTC (commit <code>2c005f8</code>). O PDF completo — comando, saída real e data de cada corrida — é <code>docs/pdf/phxsql-26-perguntas.pdf</code>, gerado por <code>docs/pdf/gerar.py</code>.</p>
+  <p class="leve">31 respostas, lidas de <code>docs/pdf/respostas/</code> em 08/09/2026 03:00 UTC (commit <code>d9069af</code>). O PDF completo — comando, saída real e data de cada corrida — é <code>docs/pdf/phxsql-26-perguntas.pdf</code>, gerado por <code>docs/pdf/gerar.py</code>.</p>
   
   <details class="pergunta"><summary>0.1) Índice de texto — o .fts contra a varredura. Onde fica os .fts por que o dossiê não tem no gráfico: Organograma dos arquivos?</summary><p>Você apontou certo: o <code>.fts</code> <b>não estava na Figura 1</b> do dossiê («Organograma dos arquivos» — <i>cada tabela é: SEMPRE os sete, SÓ ÀS VEZES três</i>), e medido antes de mexer ele <b>também não estava</b> na Figura 8 (o caminho de uma inserção, que desenhava 8 extensões) <b>nem na tabela-mestra de arquivos do <code>docs/FORMATO.md</code></b> (9 linhas, sem <code>.fts</code>). Três lugares, o mesmo buraco.</p>
 <p>A causa é uma só: o inventário «que arquivos uma tabela tem» mora em <b>três lugares escritos à mão</b> e nenhum sai do código — a lista certa é a de <code>arquivos_da_tabela</code> no <code>catalogo.rs</code>. O <code>.fts</code> entrou no motor em 07/09/2026 (pedido 200) e ninguém voltou às figuras: <i>figura desenhada à mão envelhece como número digitado à mão.</i></p>
@@ -7269,7 +7289,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.18.0 · 154.834 linhas de Rust em 8 crates,
+  <p>PhxSql 0.18.0 · 155.110 linhas de Rust em 8 crates,
   mais 1214 KiB de interface · 1.830 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
