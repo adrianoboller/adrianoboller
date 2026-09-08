@@ -368,6 +368,31 @@ entrou pela `FABRICA_TELA` nos seis idiomas); **H** (`CIFRA-DO-FIO.md` §1/§10/
 dispensado com registro — o desenho já estava escrito no §10 do documento, medido
 contra o rebaixamento do `exigir`; não havia receita de fora a trazer.
 
+### Rodada de 8 de setembro de 2026 — onda dos gaps (4 frentes paralelas)
+
+O dono mandou «ativar agentes para acelerar a resolução dos gaps». O
+orquestrador abriu **quatro frentes em worktrees isoladas**, escolhendo o
+escalão de cada uma, e **segurou** cluster/`Remoto`/ODBC/226 para uma 2ª onda,
+com o motivo escrito (cifrar metade do cluster é pior que nada; `Remoto` é
+mudança de formato que colidiria com o `config.rs` da G1; ODBC é driver).
+
+| frente | escalão | por quê | papéis dispensados |
+|---|---|---|---|
+| G1 — servidor exige a amarração ao canal | **projeto e risco** | cripto/protocolo; o erro só aparece no dia do homem-no-meio | C-DBA (config runtime, sem formato), E-designer (login web é HTTP) |
+| G2 — os três defeitos do auto number 229 | **projeto e risco** | formato/concorrência/precisão; o teto 2⁵³ é o `f64` do `Json`, medido no analisador | E-designer, D-zelador (sem UI nem limpeza) |
+| G3 — `esquema.volumes` na partição por quantidade (222) | **mecânico e verificável** | preencher a lista dos volumes em disco, sem tocar a aritmética — o erro salta no número | C-DBA (não muda formato), E, D |
+| G4 — `declarar_fk` imposta (227) + rodízio dos logs (228) | **mecânico e verificável** | dois consertos locais com prova nos dois sentidos | C, E, D |
+
+E a integração foi papel do orquestrador **porque o defeito do encontro não
+aparece para nenhuma frente sozinha** — e apareceu: G2 e G3 refizeram vizinho
+no `table.rs` (G3 mudou a assinatura de `fronteiras()` para `Vec`, G2 pôs
+`reconciliar_sequencia` ao lado), e o merge conflitou. Resolvido **por função**
+(as duas ficam, `fronteiras()` com a assinatura da G3, que é a que o `reg.rs`
+mesclado exige), compilando **entre** os merges — é a lição da cognição do
+encontro das seis frentes, paga de novo. As outras três frentes uniram sem
+conflito, por tocarem funções diferentes do `servidor.rs`. Portões inteiros do
+workspace verdes no fim (fmt, clippy zero, suíte inteira), 824 no server lib.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:
