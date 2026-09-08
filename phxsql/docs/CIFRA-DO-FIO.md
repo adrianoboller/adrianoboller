@@ -331,8 +331,9 @@ não se entrega.
 
 * **A conexão do driver ODBC** enquanto ele não aprender o aperto — ele fala a
   porta 5000 em claro, e com `exigir: true` ele para. Está dito na §10.
-* **O `Remoto`** — a conexão que a interface usa para falar com outro PhxSql —
-  e **o cluster**. Os dois estão na §10 com o motivo.
+* **O `Remoto`** — a conexão que a interface usa para falar com outro PhxSql.
+  Está na §10 com o motivo. **O cluster deixou de estar aqui** — ele agora
+  cifra o tráfego inteiro (pulso e replicação) quando se pede; ver a §12.
 * **Nada disto é TLS.** Não há certificado, não há cadeia, não há autoridade,
   não há revogação. A confiança é o pino, e o pino é responsabilidade de quem
   configura.
@@ -555,10 +556,12 @@ isso, com estas palavras.
   contra escuta passiva vendida como se fosse mais; trocar a lista por objetos
   é mudança de formato de configuração, e ela entra com o pino junto ou não
   entra.
-* **O cluster fala em claro.** A replicação do cluster passa pelo mesmo
-  `rodada_da_replica`, mas o **pulso** da eleição vai por outro caminho
-  (`cluster.rs`). Cifrar só metade do tráfego do cluster é pior que não cifrar
-  nenhuma, porque parece protegido.
+* **O cluster fala em claro — FEITO (08/09/2026), e o INTEIRO, não a metade.**
+  A ressalva que este item trazia — «cifrar só metade do tráfego do cluster é
+  pior que não cifrar nenhuma, porque parece protegido» — foi o que guiou o
+  conserto: o pulso da eleição **e** a replicação entre os nós passam os dois a
+  cifrar juntos, sob um único interruptor. Ver a **§12**, escrita para não se
+  perder.
 * **Moldura binária no lugar do Base64**, se os 33% doerem em alguma medição.
   Hoje não doeram porque ninguém mediu com o túnel ligado — e a regra da casa
   diz que isso é palpite até alguém medir.
@@ -633,3 +636,93 @@ uma vez continua fechando — ela não repete registro nenhum, que é o único j
 de sentir a falta do contador. O teste não está errado; errada estava a conta
 de quatro. Está escrito no catálogo, ao lado da entrada, para ninguém a
 «consertar» de volta.
+
+---
+
+## 12. O cluster cifrado — o INTEIRO, não a metade
+
+Este é o item que a §10 prometeu e a §5 deixou de recusar. A lei que o guiou é
+a que já estava escrita no item aberto: **cifrar só metade do tráfego do
+cluster é pior que não cifrar nenhuma, porque parece protegido.** Por isso o
+cluster ganha um interruptor só, que liga os dois caminhos de uma vez.
+
+### O que já ajudava, medido antes de escrever código
+
+O pulso da eleição **e** a replicação entre os nós passam os dois pela mesma
+`replica::Cliente` — a mesma que já sabia apertar a mão (`cifrar`) para a porta
+de dados. O pulso conecta por `conectar_com_prazo` e manda `cluster_pulso`; a
+replicação monta uma `Origem` e cai em `replica::ligar`, que já cifrava quando
+`origem.cifra`. Ou seja: **os dois transportes eram compatíveis e o servidor do
+outro lado já atendia o aperto** — não havia decisão de formato em disco a
+tomar, só fiação a fazer. Isso é o que permitiu fechar o item INTEIRO em vez de
+parar numa proposta.
+
+### O interruptor, e o pino por nó
+
+```json
+"cluster": {
+  "cifra": true,
+  "nos": [
+    { "id": "no1", "endereco": "10.0.0.1", "porta": 5000,
+      "chave_do_fio": "<64 dígitos hexadecimais>" },
+    { "id": "no2", "endereco": "10.0.0.2", "porta": 5000,
+      "chave_do_fio": "<64 dígitos hexadecimais>" },
+    { "id": "no3", "endereco": "10.0.0.3", "porta": 5000,
+      "chave_do_fio": "<64 dígitos hexadecimais>" }
+  ]
+}
+```
+
+| campo | padrão | o que faz |
+|---|---|---|
+| `cluster.cifra` | `false` | cifra **todo** o tráfego do cluster — pulso e replicação. `false` é o cluster de sempre, em claro |
+| `nos[].chave_do_fio` | vazio | o **pino** daquele nó: a chave pública que se espera do servidor daquele nó, no estilo `known_hosts`. Vazio com a cifra ligada = túnel **sem pino** (só escuta passiva) |
+
+O pino é **por nó** e mora dentro de cada `no`, ao lado de `endereco` e `porta`,
+pelo mesmo motivo do `chave_do_fio` da origem: é a chave **daquele** servidor, e
+cada nó confere a de quem alcança — quando `no1` pulsa `no2`, `no1` pina a chave
+de `no2`. Como a lista de nós é a mesma em todos, cada `config.json` acaba
+carregando o pino de todos, que é exatamente o `known_hosts` do cluster. A chave
+pública de um nó sai de `phxsqld --chave-do-fio` **naquele** nó.
+
+### Padrão DESLIGADO — a regra pétrea, no cluster
+
+`cifra: false` por padrão porque **guarda nova entra pedida, não imposta**: um
+cluster que já rodava continua em claro na atualização, sem um pulso mudar de
+forma de um dia para o outro. Ligar exige que **todo** nó atenda o aperto (a
+`cifra_fio.ligada` já nasce ligada), então é uma decisão do cluster inteiro —
+como o `origem.cifra`, é uma decisão dos dois lados, não de um.
+
+### As duas metades, e a guarda de cada uma
+
+O medo escrito na lei — proteger só metade — virou **duas** guardas, uma por
+metade, para que esconder uma delas não passe:
+
+- `pulso-do-cluster-em-claro` repõe o pulso saindo em claro (tira o `cifrar` do
+  `pulsar`). A prova é pelo **soquete**: dois nós com `cifra_fio.exigir: true` só
+  se enxergam vivos no `cluster_estado` se o pulso atravessa o túnel — com o
+  defeito reposto, cada pulso bate no `exigir` do outro e cai, e nenhum aparece.
+  **Os dois nós exigem de propósito:** se só um exigisse, o pulso em claro do
+  outro sentido ainda registraria o par, e o defeito passaria despercebido.
+- `replicacao-do-cluster-em-claro` repõe a replicação saindo em claro (a linha
+  `cifra: c.cifra` da `origem_do_master`, que é pura justamente para o teste
+  pegar o que a leitura do laço vivo não pega).
+
+### O que o arranque diz, sem enfeite
+
+Com a cifra ligada, o arranque diz se **todos** os nós têm pino («tráfego
+CIFRADO, com pino em todos os nós») ou **nomeia** os que não têm — porque
+cifrado sem pino protege só da escuta passiva, e esconder isso seria vender
+proteção que não existe contra quem está no meio. É a mesma franqueza do aviso
+da origem sem pino. E um pino **torto** é recusado na **declaração**, com o nó
+nomeado — nunca vira um túnel sem pino descoberto três semanas depois no
+primeiro pulso.
+
+### O nó acrescentado a quente também leva pino
+
+O escalonamento a quente (`cluster_no_acrescentar`, pedido 217) aceita
+`chave_do_fio` e o propaga aos outros nós — senão um nó entrado a quente num
+cluster cifrado seria pulsado e replicado **sem** âncora enquanto os do arquivo
+têm pino: de novo a metade que engana. E o pino sobrevive à reescrita da lista:
+gravar `cluster.nos` a quente sem ele apagaria o pino de **todos** os nós de uma
+vez, deixando a cifra ligada e rebaixada a escuta passiva em silêncio.

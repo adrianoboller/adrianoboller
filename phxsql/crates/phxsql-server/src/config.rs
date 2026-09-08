@@ -300,12 +300,41 @@ pub struct NoCluster {
     pub id: String,
     pub endereco: String,
     pub porta: u16,
+    /// A chave publica que se ESPERA deste no quando `cluster.cifra` esta
+    /// ligada -- o pino, no estilo `known_hosts` do SSH. Em hexadecimal.
+    ///
+    /// Cada no da lista descreve UM servidor "como os outros o alcancam", e o
+    /// pino mora aqui pelo mesmo motivo que o `chave_do_fio` da origem: e a
+    /// chave DESTE no, e quem pulsa ou replica dele a confere. Vazia com a
+    /// cifra ligada = tunel SEM pino, que protege da escuta passiva e nao de
+    /// quem esta no meio -- o arranque avisa exatamente isso.
+    ///
+    /// Faz parte da igualdade de proposito: girar o pino de um no muda a
+    /// entrada, e o supervisor do pulso reconecta com o pino novo, como ja faz
+    /// quando um no muda de endereco.
+    pub chave_do_fio: String,
 }
 
 impl NoCluster {
     /// `host:porta`, do jeito que um cliente redirecionado usa.
     pub fn alvo(&self) -> String {
         format!("{}:{}", self.endereco, self.porta)
+    }
+
+    /// O pino deste no, ja em bytes -- ou o erro que diz o que corrigir.
+    ///
+    /// `None` = "sem pino", nunca "qualquer chave serve por engano": um pino
+    /// escrito errado vira ERRO em vez de virar `None`, senao ele viraria em
+    /// silencio um tunel sem pino -- o estrago que o pino existe para impedir.
+    /// E a MESMA regra do [`Origem::pino_do_fio`].
+    pub fn pino_do_fio(&self) -> Result<Option<[u8; 32]>> {
+        if self.chave_do_fio.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(chave_de_hex(
+            &self.chave_do_fio,
+            &format!("cluster.nos[{}].chave_do_fio", self.id),
+        )?))
     }
 }
 
@@ -371,6 +400,18 @@ pub struct Cluster {
     pub token: String,
     pub usuario: String,
     pub senha_hash: String,
+    /// Cifrar TODO o trafego do cluster -- o pulso da eleicao E a replicacao
+    /// entre os nos -- reaproveitando o aperto de mao do fio, com pino por no
+    /// (`nos[].chave_do_fio`).
+    ///
+    /// `false` (o padrao) e como sempre foi: o cluster fala em claro. Ligar
+    /// vale para os DOIS caminhos de uma vez, de proposito -- cifrar so o
+    /// pulso ou so a replicacao deixaria metade do trafego protegida e a
+    /// outra nao, que e pior que nenhuma, porque parece protegido. Ligar exige
+    /// que TODO no atenda o aperto (`cifra_fio.ligada`, que ja nasce ligada),
+    /// entao e uma decisao do cluster inteiro, nao de um no. Guarda nova entra
+    /// PEDIDA: um cluster que ja rodava continua em claro ate alguem ligar.
+    pub cifra: bool,
 }
 
 impl Cluster {
@@ -387,6 +428,7 @@ impl Cluster {
                         id: n.texto_ou("id", "").trim().to_string(),
                         endereco: n.texto_ou("endereco", "127.0.0.1").trim().to_string(),
                         porta: n.inteiro_ou("porta", PORTA_PADRAO as i64).clamp(1, 65_535) as u16,
+                        chave_do_fio: n.texto_ou("chave_do_fio", "").trim().to_string(),
                     })
                     .collect()
             })
@@ -414,6 +456,7 @@ impl Cluster {
             token: c.texto_ou("token", "").to_string(),
             usuario: c.texto_ou("usuario", "").trim().to_string(),
             senha_hash: c.texto_ou("senha_hash", "").trim().to_string(),
+            cifra: c.booleano_ou("cifra", false),
         }))
     }
 
@@ -485,6 +528,15 @@ impl Cluster {
         if self.email.ligado {
             self.email.validar()?;
         }
+        // Pino torto e recusado na DECLARACAO, e nao no primeiro pulso: uma
+        // chave escrita errada tem de derrubar o arranque com o no nomeado, em
+        // vez de virar um tunel sem pino que ninguem pediu -- a mesma decisao
+        // do `pino_torto_na_origem_e_erro_e_nao_ausencia`. A conferencia vale
+        // ate sem `cifra` ligada: um pino guardado para ligar depois nao pode
+        // estar torto esperando o dia em que alguem ligue.
+        for n in &self.nos {
+            n.pino_do_fio()?;
+        }
         Ok(())
     }
 
@@ -506,6 +558,11 @@ impl Cluster {
             // duas telas divergem no dia em que uma for atualizada e a outra
             // nao, e a que envelhece e sempre a que ninguem compila.
             ("quorum_imposto", Json::Bool(false)),
+            // O estado da cifra do cluster e um BOOLEANO informativo, como o
+            // `email` acima -- o pino de cada no NAO sai daqui: a resposta de
+            // protocolo nunca carrega o pino, e "cifra_do_no" por no diria
+            // quem tem pino e quem nao, que e mapa para o atacante.
+            ("cifra", Json::Bool(self.cifra)),
             (
                 "nos",
                 Json::Lista(
@@ -516,6 +573,10 @@ impl Cluster {
                                 ("id", Json::texto_de(&n.id)),
                                 ("endereco", Json::texto_de(&n.endereco)),
                                 ("porta", Json::de_u64(n.porta as u64)),
+                                // So o FATO de haver pino, nunca o pino: a tela
+                                // precisa saber se o no vai cifrado com ou sem
+                                // ancora, e o pino em si e config, nao resposta.
+                                ("tem_pino", Json::Bool(!n.chave_do_fio.is_empty())),
                             ])
                         })
                         .collect(),
@@ -3625,11 +3686,22 @@ impl Config {
         let lista = Json::Lista(
             nos.iter()
                 .map(|n| {
-                    Json::objeto(vec![
+                    let mut campos = vec![
                         ("id", Json::texto_de(&n.id)),
                         ("endereco", Json::texto_de(&n.endereco)),
                         ("porta", Json::de_u64(n.porta as u64)),
-                    ])
+                    ];
+                    // O pino sobrevive ao reescrever a lista inteira: sem esta
+                    // linha, um `cluster_no_acrescentar`/`_remover` a quente
+                    // reescreveria `cluster.nos` sem os pinos e deixaria TODO
+                    // no sem ancora no proximo arranque -- a cifra do cluster
+                    // continuaria ligada, so que rebaixada a escuta passiva em
+                    // silencio. So sai quando existe: cluster em claro nao
+                    // ganha campo vazio nenhum no arquivo.
+                    if !n.chave_do_fio.is_empty() {
+                        campos.push(("chave_do_fio", Json::texto_de(&n.chave_do_fio)));
+                    }
+                    Json::objeto(campos)
                 })
                 .collect(),
         );
@@ -4924,6 +4996,77 @@ mod tests {
         let texto = c.para_json().escrever();
         assert!(!texto.contains("segredo-entre-nos"), "{texto}");
         assert!(!texto.contains("pbkdf2-sha256$210000"), "{texto}");
+    }
+
+    /// A REGRA PETREA no arquivo: um cluster sem `cifra` nasce em claro, como
+    /// sempre foi. Guarda nova entra pedida -- um cluster que ja rodava nao
+    /// passa a exigir aperto de mao de um dia para o outro.
+    #[test]
+    fn cifra_do_cluster_nasce_desligada() {
+        let txt = cluster_minimo("");
+        let c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        let cl = c.cluster.unwrap();
+        assert!(!cl.cifra, "o cluster nasceu cifrando sem ninguem pedir");
+        assert!(
+            cl.nos.iter().all(|n| n.chave_do_fio.is_empty()),
+            "no do cluster nasceu com pino sem ninguem pedir"
+        );
+    }
+
+    /// Um cluster de tres nos com a cifra e os pinos escritos a mao -- nao
+    /// reusa o `cluster_minimo` porque a lista de nos muda, e a `chave_do_fio`
+    /// mora dentro de cada no.
+    fn cluster_cifrado(cifra: bool, pino2: &str) -> String {
+        format!(
+            r#"{{"token":"t","replicacao":{{"papel":"source"}},
+                "cluster":{{"id":"no1","janela_inatividade_s":6,"cifra":{cifra},
+                  "nos":[
+                    {{"id":"no1","endereco":"127.0.0.1","porta":5310}},
+                    {{"id":"no2","endereco":"127.0.0.1","porta":5311,"chave_do_fio":"{pino2}"}},
+                    {{"id":"no3","endereco":"127.0.0.1","porta":5312,"chave_do_fio":"{}"}}]}}}}"#,
+            "bb".repeat(32),
+        )
+    }
+
+    /// Ligada e com pino por no: os dois campos chegam ao `Cluster`, e o pino
+    /// vira os 32 bytes da X25519 sem passar pela leitura de nenhum laco.
+    #[test]
+    fn cifra_do_cluster_ligada_le_o_pino_por_no() {
+        let pino2 = "aa".repeat(32);
+        let txt = cluster_cifrado(true, &pino2);
+        let c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        let cl = c.cluster.as_ref().unwrap();
+        assert!(cl.cifra);
+        assert_eq!(cl.no("no1").unwrap().pino_do_fio().unwrap(), None);
+        assert_eq!(
+            cl.no("no2").unwrap().pino_do_fio().unwrap(),
+            Some([0xaau8; 32])
+        );
+        assert_eq!(
+            cl.no("no3").unwrap().pino_do_fio().unwrap(),
+            Some([0xbbu8; 32])
+        );
+        c.validar().unwrap();
+        // O pino NUNCA sai pela op `config` -- so o fato de haver um.
+        let resp = c.para_json().escrever();
+        assert!(!resp.contains(&pino2), "o pino vazou na resposta: {resp}");
+        assert!(resp.contains("\"tem_pino\":true"), "{resp}");
+        assert!(resp.contains("\"cifra\":true"), "{resp}");
+    }
+
+    /// Pino torto e recusado na DECLARACAO, com o no nomeado -- e nao num
+    /// pulso qualquer daqui a tres semanas. E a irma do
+    /// `pino_torto_na_origem_e_erro_e_nao_ausencia`, do lado do cluster: vale
+    /// ate com a cifra desligada, porque um pino guardado para ligar depois
+    /// nao pode estar errado esperando o dia.
+    #[test]
+    fn pino_torto_no_no_do_cluster_e_erro_e_nao_ausencia() {
+        // Cifra DESLIGADA de proposito: o pino torto ainda derruba a validacao.
+        let txt = cluster_cifrado(false, "abacaxi");
+        let c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        let erro = c.validar().unwrap_err();
+        let msg = erro.to_string();
+        assert!(msg.contains("no2"), "o erro nao nomeou o no torto: {msg}");
     }
 
     #[test]

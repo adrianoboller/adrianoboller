@@ -1628,6 +1628,70 @@ GUARDAS = [
             "fio::testes::o_teto_do_registro_para_a_leitura_e_nao_so_recusa_depois",
         ],
     },
+    # 24b. A cifra do CLUSTER: o pulso da eleicao saindo em claro
+    # -----------------------------------------------------------------------
+    {
+        "id": "pulso-do-cluster-em-claro",
+        "titulo": "o pulso da eleição saindo em claro com a cifra do cluster ligada",
+        "porque": (
+            "secao 10 do docs/CIFRA-DO-FIO.md e regra da casa: cifrar so METADE "
+            "do trafego do cluster e pior que nao cifrar nenhuma, porque parece "
+            "protegido. O pulso e a replicacao do cluster passam os dois pela "
+            "`replica::Cliente`; a replicacao ja cifrava por `origem.cifra`, e o "
+            "pulso e o caminho que ficava em claro. A prova e o caso do soquete "
+            "que a leitura nao pega: com o defeito reposto o pulso bate no "
+            "`cifra_fio.exigir` do outro no e cai, e o no some do `cluster_estado` "
+            "-- so o tunel real faz os dois nos se enxergarem."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if c.cifra {
+            cliente.cifrar(no.pino_do_fio()?)?;
+        }
+        if !c.usuario.is_empty() {
+""",
+        "troca": """        // DEFEITO REPOSTO: o pulso sai em claro mesmo com cluster.cifra
+        // ligada. Cifrar so a replicacao e deixar o pulso em claro e a metade
+        // que engana -- o `exigir` do outro no o recusa e o cluster nao forma.
+        if !c.usuario.is_empty() {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "cluster-cifrado"],
+        "caem": [
+            "pulso_do_cluster_cifrado_atravessa_no_que_exige_tunel",
+        ],
+    },
+    # 24c. A cifra do CLUSTER: a replicacao entre os nos saindo em claro
+    # -----------------------------------------------------------------------
+    {
+        "id": "replicacao-do-cluster-em-claro",
+        "titulo": "a replicação entre os nós do cluster saindo em claro",
+        "porque": (
+            "a outra metade do `pulso-do-cluster-em-claro`: cifrar o pulso e "
+            "esquecer a replicacao deixaria a mesma metade protegida e metade "
+            "nao. A `origem_do_master` e pura de proposito, para o teste pegar "
+            "que a linha `cifra: c.cifra` sumiu -- coisa que a leitura do laco "
+            "vivo nao pega."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        // A replicacao do cluster viaja pela MESMA cifra do pulso -- ligar
+        // `cluster.cifra` protege o trafego INTEIRO do cluster, nunca so metade.
+        cifra: c.cifra,
+""",
+        "troca": """        // DEFEITO REPOSTO: a replicacao do cluster sai em claro, enquanto o
+        // pulso vai cifrado -- metade protegida, que e pior que nenhuma.
+        cifra: false,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_config_gravar::origem_do_cluster_carrega_a_cifra_e_o_pino",
+        ],
+        "seguem": [
+            # A cifra do PULSO (outra linha) fica verde: prova que o defeito e
+            # local a replicacao, e nao um estrago em toda a cifra do cluster.
+            "config::tests::cifra_do_cluster_ligada_le_o_pino_por_no",
+        ],
+    },
     # -----------------------------------------------------------------------
     # 25. O `acrescentar_coluna` -- as quatro guardas do sprint 25
     # -----------------------------------------------------------------------

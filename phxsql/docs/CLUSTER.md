@@ -60,6 +60,7 @@ soquete.
   "token": "...", "usuario": "replicador",
   "senha_hash": "pbkdf2-sha256$...", // a MESMA tríade da origem de replicação
   "databases": [],                   // vazio = todos os do master
+  "cifra": false,                    // true = cifra TODO o tráfego do cluster (§2.9)
   "nos": [
     {"id": "no1", "endereco": "10.1.1.102", "porta": 5000},
     {"id": "no2", "endereco": "10.1.1.103", "porta": 5000},
@@ -72,9 +73,10 @@ soquete.
 
 Regras que o arranque impõe: o `id` tem de constar de `nos`; menos de dois
 nós não sobe; papel `isolado` não sobe; `imagem_da_linha` liga em **todo**
-papel (qualquer nó pode ser promovido) e desligá-la de propósito é erro. Com
-o bloco presente, `replicacao.origens` é ignorada (com aviso): a origem passa
-a ser o master **corrente**, descoberto pelo pulso.
+papel (qualquer nó pode ser promovido) e desligá-la de propósito é erro; um
+`chave_do_fio` torto em qualquer nó é recusado na declaração, com o nó
+nomeado (§2.9). Com o bloco presente, `replicacao.origens` é ignorada (com
+aviso): a origem passa a ser o master **corrente**, descoberto pelo pulso.
 
 ### 2.2 Como funciona por dentro
 
@@ -398,6 +400,50 @@ Aprendizados que ficaram no código:
   Fica registrado aqui como pendência de outra frente (é exatamente o campo
   que mente, da regra da casa); o cluster autentica como a réplica, por
   usuário e permissão `replicar`.
+
+### 2.9 Cifrar o tráfego do cluster — o INTEIRO, não a metade
+
+Até 08/09/2026 o cluster falava **em claro**: o pulso, o `cluster_pulso` e a
+replicação entre nós andavam sem túnel, ao contrário da porta de dados
+(`docs/CIFRA-DO-FIO.md`). O item aberto trazia a lei que guiou o conserto:
+**cifrar só metade do tráfego do cluster é pior que não cifrar nenhuma, porque
+parece protegido.** Por isso o cluster ganha **um** interruptor, que liga os
+dois caminhos de uma vez.
+
+```json
+"cluster": {
+  "cifra": true,                     // pulso E replicação, juntos
+  "nos": [
+    {"id":"no1","endereco":"10.1.1.102","porta":5000,"chave_do_fio":"<64 hex>"},
+    {"id":"no2","endereco":"10.1.1.103","porta":5000,"chave_do_fio":"<64 hex>"},
+    {"id":"no3","endereco":"10.1.1.104","porta":5000,"chave_do_fio":"<64 hex>"}
+  ]
+}
+```
+
+- **`cluster.cifra`** (padrão `false`) reaproveita o aperto de mão estilo Noise
+  que já protege a porta de dados. O pulso e a replicação passam os dois pela
+  mesma `replica::Cliente`, que já sabia cifrar — não houve mudança de formato
+  em disco, só fiação.
+- **`nos[].chave_do_fio`** é o **pino** daquele nó (a chave pública do servidor
+  dele, no estilo `known_hosts`), obtida com `phxsqld --chave-do-fio` **naquele
+  nó**. Cada nó confere a chave de quem alcança. Vazio com a cifra ligada =
+  túnel **sem pino** (só escuta passiva), e o arranque nomeia os nós sem pino em
+  voz alta.
+- **Padrão desligado** porque guarda nova entra **pedida**: um cluster que já
+  rodava continua em claro na atualização. Ligar exige que **todo** nó atenda o
+  aperto (`cifra_fio.ligada`, que já nasce ligada) — é decisão do cluster
+  inteiro, como o `origem.cifra`.
+- **Não é TLS**, e não protege o `config.json` (é lá que estão o pino, o token e
+  o `senha_hash`). O que ele dá: escuta passiva fechada sempre; homem-no-meio
+  fechado quando há pino em todos os nós.
+
+Provado pelo **soquete** (`tests/cluster-cifrado.rs`): dois nós com
+`cifra_fio.exigir: true` só se enxergam vivos no `cluster_estado` se o pulso
+atravessa o túnel. As duas metades têm guarda própria no
+`bancada/guardas/catalogo.py` — `pulso-do-cluster-em-claro` e
+`replicacao-do-cluster-em-claro` —, uma por caminho, para que esconder uma
+delas não passe.
 
 ---
 
