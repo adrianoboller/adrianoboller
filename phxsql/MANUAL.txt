@@ -1147,10 +1147,11 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
           "token": "...", "usuario": "replicador",
           "senha_hash": "pbkdf2-sha256$...",
           "databases": [],                // vazio = todos os do master
+          "cifra": false,                 // true = cifra TODO o trafego do cluster
           "nos": [
-            {"id":"no1","endereco":"10.1.1.102","porta":5000},
-            {"id":"no2","endereco":"10.1.1.103","porta":5000},
-            {"id":"no3","endereco":"10.1.1.104","porta":5000}
+            {"id":"no1","endereco":"10.1.1.102","porta":5000,"chave_do_fio":"..."},
+            {"id":"no2","endereco":"10.1.1.103","porta":5000,"chave_do_fio":"..."},
+            {"id":"no3","endereco":"10.1.1.104","porta":5000,"chave_do_fio":"..."}
           ],
           "email": {"ligado":true,"servidor":"127.0.0.1","porta":25,
                     "de":"phxsql@x.com","para":["dba@x.com"]}
@@ -1173,6 +1174,14 @@ VARIAS INSTANCIAS, DOCKER E CLUSTER
     E-MAIL. Com email configurado no bloco, a promocao avisa UMA vez e a
     degradacao (no caido, sem maioria) repete a cada avisar_cada_min
     enquanto durar. Sem email configurado, sem e-mail.
+
+    CIFRA DO CLUSTER. "cifra": true cifra TODO o trafego do cluster -- o pulso
+    da eleicao E a replicacao entre nos, juntos -- reaproveitando o aperto de
+    mao estilo Noise da porta de dados. O pino de cada no vai em
+    nos[].chave_do_fio (a chave publica daquele no, de "phxsqld --chave-do-fio"
+    naquele no; vazio = tunel sem pino, so escuta passiva). Padrao false: um
+    cluster que ja rodava continua em claro na atualizacao -- guarda nova entra
+    pedida. Ligar exige que todo no atenda o aperto. Ver docs/CIFRA-DO-FIO.md.
 
     ESCALONAR A QUENTE (pedido 217). Acrescentar ou tirar um no do cluster
     VIVO, sem reiniciar ninguem:

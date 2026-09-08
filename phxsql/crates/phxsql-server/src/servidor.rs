@@ -2404,6 +2404,33 @@ impl Servidor {
                  Promocao automatica pede tres ou mais nos."
             );
         }
+        // O estado da cifra do cluster e dito no arranque, com a mesma
+        // franqueza do resto: cifrado sem pino protege so da escuta passiva, e
+        // esconder isso seria vender protecao que nao existe contra quem esta
+        // no meio. So os OUTROS nos entram na conta -- pulsar a si mesmo nao
+        // acontece, entao o proprio pino nao muda nada.
+        if c.cifra {
+            let outros = estado.outros();
+            let sem_pino: Vec<&str> = outros
+                .iter()
+                .filter(|n| n.chave_do_fio.is_empty())
+                .map(|n| n.id.as_str())
+                .collect();
+            if sem_pino.is_empty() {
+                eprintln!(
+                    "cluster: trafego CIFRADO (pulso e replicacao), com pino em \
+                     todos os nos"
+                );
+            } else {
+                eprintln!(
+                    "cluster: trafego cifrado, mas SEM pino em {} -- esses nos \
+                     ficam protegidos so da escuta passiva, nao de quem esta no \
+                     meio. Ponha `chave_do_fio` de cada um (phxsqld \
+                     --chave-do-fio no no) para fechar o buraco.",
+                    sem_pino.join(", ")
+                );
+            }
+        }
         let servidor = Arc::clone(self);
         self.telemetria.subir(
             "pulso-supervisor",
@@ -2527,6 +2554,17 @@ impl Servidor {
             espera,
             prazo,
         )?;
+        // O tunel ANTES do login e do primeiro pulso, de proposito: e o token
+        // e a prova do desafio-resposta que ele existe para esconder, e o pulso
+        // carrega o mapa do cluster (papel, epoca, posicao) que um observador
+        // no meio nao precisa ler. O pino e o do no DESTINO -- known_hosts: cada
+        // no confere a chave publica de quem ele alcanca. Sem esta linha o pulso
+        // sairia em claro mesmo com a cifra do cluster ligada, que e o defeito
+        // que a guarda `pulso-do-cluster-em-claro` repoe: cifrar so a
+        // replicacao e deixar o pulso em claro e a metade que engana.
+        if c.cifra {
+            cliente.cifrar(no.pino_do_fio()?)?;
+        }
         if !c.usuario.is_empty() {
             cliente.autenticar(&c.usuario, &c.senha_hash, "")?;
         }
@@ -2872,29 +2910,7 @@ impl Servidor {
                 std::thread::sleep(espera);
                 continue;
             };
-            let origem = crate::config::Origem {
-                nome: format!("cluster:{}", no.id),
-                host: no.endereco.clone(),
-                porta: no.porta,
-                token: c.token.clone(),
-                databases: c.databases.clone(),
-                reconectar_em: c.pulso_s,
-                usuario: c.usuario.clone(),
-                senha_hash: c.senha_hash.clone(),
-                senha: String::new(),
-                // A origem do cluster e sempre STREAMING: quem marca o ritmo e
-                // o pulso. Agendar aqui atrasaria a deteccao de master novo.
-                cada_minutos: 0,
-                hora: String::new(),
-                // O CLUSTER ainda fala em claro, e isso e limite declarado,
-                // nao esquecimento: o pulso da eleicao vai por outro caminho
-                // (`cluster.rs`), e cifrar so a replicacao dele deixaria
-                // metade do trafego do cluster protegida e a outra metade nao
-                // -- que e pior que nenhuma, porque parece protegido. Esta na
-                // secao 10 do `docs/CIFRA-DO-FIO.md`.
-                cifra: false,
-                chave_do_fio: String::new(),
-            };
+            let origem = origem_do_master(c, &no);
             match self.rodada_da_replica(&origem) {
                 // Nada novo: espera o pulso seguinte.
                 Ok(0) => std::thread::sleep(espera),
@@ -3004,12 +3020,18 @@ impl Servidor {
                 "informe \"endereco\": por onde os outros nos alcancam {id:?}"
             )));
         }
+        // O pino do no novo entra junto -- senao um no acrescentado a quente
+        // num cluster cifrado seria pulsado e replicado SEM ancora (so escuta
+        // passiva), enquanto os do arquivo tem pino: metade do cluster com
+        // ancora e metade sem. Vazio = sem pino, como o no do arquivo sem
+        // `chave_do_fio`. O `Config::validar` da gravacao recusa pino torto.
         let no = crate::config::NoCluster {
             id: id.clone(),
             endereco,
             porta: p
                 .inteiro_ou("porta", crate::config::PORTA_PADRAO as i64)
                 .clamp(1, 65_535) as u16,
+            chave_do_fio: p.texto_ou("chave_do_fio", "").trim().to_string(),
         };
         let mudou = estado.acrescentar(no.clone());
         match self.gravar_a_lista_do_cluster(&estado) {
@@ -3046,6 +3068,11 @@ impl Servidor {
                         ("id", Json::texto_de(&no.id)),
                         ("endereco", Json::texto_de(&no.endereco)),
                         ("porta", Json::de_u64(no.porta as u64)),
+                        // O pino viaja para os outros nos aprenderem a ancora
+                        // do no novo -- so o pino (chave publica), nunca a
+                        // privada de ninguem. Quando o cluster esta cifrado, a
+                        // propria propagacao ja vai por dentro do tunel.
+                        ("chave_do_fio", Json::texto_de(&no.chave_do_fio)),
                         ("propagar", Json::Bool(false)),
                     ],
                 ),
@@ -3189,6 +3216,13 @@ impl Servidor {
                     espera,
                     prazo,
                 )?;
+                // A propagacao e trafego do cluster como o pulso: com a cifra
+                // ligada ela tambem vai por dentro do tunel, senao um no com
+                // `cifra_fio.exigir` recusaria a ordem de escalonamento em
+                // claro. O pino e o do no de destino.
+                if c.cifra {
+                    cliente.cifrar(no.pino_do_fio()?)?;
+                }
                 if !c.usuario.is_empty() {
                     cliente.autenticar(&c.usuario, &c.senha_hash, "")?;
                 }
@@ -17930,6 +17964,41 @@ fn objeto_do_pedido(corpo: &str, resultado: &Result<Json>) -> Acesso {
     }
 }
 
+/// A `Origem` com que a replicacao do cluster puxa do master CORRENTE.
+///
+/// Fora do laco, e pura, para o teste conferir o que a leitura nao pega: que a
+/// cifra do cluster e o pino do master ATRAVESSAM ate a origem. Cifrar o pulso
+/// e esquecer aqui deixaria a replicacao do cluster em claro -- a outra metade
+/// do defeito `pulso-do-cluster-em-claro`, e a guarda
+/// `replicacao-do-cluster-em-claro` repoe justamente esta linha.
+///
+/// O pino e o do no de DESTINO (o master de quem se puxa), como o pino do pulso
+/// -- known_hosts, cada no confere a chave de quem alcanca.
+fn origem_do_master(
+    c: &crate::config::Cluster,
+    no: &crate::config::NoCluster,
+) -> crate::config::Origem {
+    crate::config::Origem {
+        nome: format!("cluster:{}", no.id),
+        host: no.endereco.clone(),
+        porta: no.porta,
+        token: c.token.clone(),
+        databases: c.databases.clone(),
+        reconectar_em: c.pulso_s,
+        usuario: c.usuario.clone(),
+        senha_hash: c.senha_hash.clone(),
+        senha: String::new(),
+        // A origem do cluster e sempre STREAMING: quem marca o ritmo e o pulso.
+        // Agendar aqui atrasaria a deteccao de master novo.
+        cada_minutos: 0,
+        hora: String::new(),
+        // A replicacao do cluster viaja pela MESMA cifra do pulso -- ligar
+        // `cluster.cifra` protege o trafego INTEIRO do cluster, nunca so metade.
+        cifra: c.cifra,
+        chave_do_fio: no.chave_do_fio.clone(),
+    }
+}
+
 impl Servidor {
     /// A resposta de erro da porta de dados. O texto humano passa pela tabela
     /// de mensagens; `codigo`, `nome`, `classe` e `repetir` NUNCA mudam com o
@@ -24486,6 +24555,86 @@ mod testes_config_gravar {
             )
             .unwrap_err();
         assert!(format!("{e}").contains("nao esta em cluster"), "{e}");
+    }
+
+    /// A OUTRA metade da cifra do cluster: a origem com que a replicacao puxa
+    /// do master leva a cifra e o pino do no de destino. A leitura nao pega que
+    /// a linha `cifra: c.cifra` some -- por isso esta pura, para o teste pegar.
+    #[test]
+    fn origem_do_cluster_carrega_a_cifra_e_o_pino() {
+        let pino = "cd".repeat(32);
+        let txt = format!(
+            r#"{{"token":"t","replicacao":{{"papel":"replica"}},
+                "cluster":{{"id":"no1","cifra":true,
+                  "nos":[
+                    {{"id":"no1","endereco":"127.0.0.1","porta":5310}},
+                    {{"id":"no2","endereco":"10.0.0.2","porta":5311,"chave_do_fio":"{pino}"}}]}}}}"#
+        );
+        let c = Config::de_json(&Json::analisar(&txt).unwrap())
+            .unwrap()
+            .cluster
+            .unwrap();
+        let no2 = c.no("no2").unwrap().clone();
+        let o = origem_do_master(&c, &no2);
+        assert!(
+            o.cifra,
+            "a replicacao do cluster saiu em claro com a cifra ligada"
+        );
+        assert_eq!(
+            o.chave_do_fio, pino,
+            "o pino do master nao chegou na origem"
+        );
+        assert_eq!(o.pino_do_fio().unwrap(), Some([0xcdu8; 32]));
+        assert_eq!(o.host, "10.0.0.2");
+        assert_eq!(o.porta, 5311);
+
+        // Cifra desligada: a replicacao do cluster continua em claro, como
+        // sempre foi -- e o par pedreo do teste de cima.
+        let claro = txt.replace(r#""cifra":true,"#, "");
+        let cc = Config::de_json(&Json::analisar(&claro).unwrap())
+            .unwrap()
+            .cluster
+            .unwrap();
+        let o2 = origem_do_master(&cc, &cc.no("no2").unwrap().clone());
+        // O pino continua copiado (ele mora no no), mas `cifra` desligada e o
+        // que decide: sem ela a origem nao aperta a mao, e o pino fica inerte.
+        assert!(
+            !o2.cifra,
+            "a replicacao do cluster cifrou sem ninguem pedir"
+        );
+    }
+
+    /// O no acrescentado a quente com pino guarda o pino no `config.json` -- e o
+    /// que faz o cluster cifrado nao perder a ancora de um no escalonado no
+    /// proximo arranque. Reescrever `cluster.nos` sem esta linha derrubaria o
+    /// pino de TODO no de uma vez.
+    #[test]
+    fn no_acrescentado_a_quente_carrega_o_pino() {
+        let (s, caminho, _guarda) = servidor_em_cluster("pino-a-quente", Cadastro::default());
+        let pino = "ef".repeat(32);
+        let r = s
+            .executar(
+                "cluster_no_acrescentar",
+                &pedido(&format!(
+                    r#"{{"id":"no3","endereco":"10.0.0.3","porta":5400,"chave_do_fio":"{pino}","propagar":false}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert!(r.booleano_ou("acrescentado", false), "{}", r.escrever());
+
+        // Releitura do arquivo: o pino sobreviveu a reescrita da lista inteira.
+        let relido = Config::ler(&caminho).unwrap().cluster.unwrap();
+        let no3 = relido.no("no3").expect("no3 no config relido");
+        assert_eq!(no3.chave_do_fio, pino, "o pino do no novo nao foi gravado");
+        assert_eq!(no3.pino_do_fio().unwrap(), Some([0xefu8; 32]));
+
+        // E o pino NUNCA aparece na resposta da op -- so o fato de acrescentar.
+        assert!(
+            !r.escrever().contains(&pino),
+            "o pino vazou na resposta: {}",
+            r.escrever()
+        );
     }
 
     #[test]
