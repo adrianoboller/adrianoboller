@@ -500,23 +500,83 @@ pub unsafe extern "system" fn SQLDisconnect(dbc: SqlHandle) -> SqlReturn {
     })
 }
 
+/// A lista `parametros` do pedido, ou a recusa com o SQLSTATE ja escolhido.
+///
+/// A ordem e a das POSICOES do texto (o primeiro `?` e o 1), e nao a das
+/// chamadas de `SQLBindParameter`: o aplicativo tem o direito de ligar de tras
+/// para a frente, e nenhum driver depende dessa ordem.
+///
+/// Ligacao que sobra alem do numero de `?` e ignorada, como manda a
+/// especificacao -- quem preparou uma instrucao de dois parametros e depois
+/// uma de um nao precisa desligar nada.
+///
+/// # Safety
+///
+/// So se chama de dentro da execucao: e la que os ponteiros ligados valem.
+unsafe fn montar_parametros(
+    sql: &str,
+    ligacoes: &[registro::Parametro],
+) -> Result<Vec<Json>, (&'static str, String)> {
+    let quantos = parametro::contar_interrogacoes(sql);
+    if quantos == 0 {
+        return Ok(Vec::new());
+    }
+    let mut saida = Vec::with_capacity(quantos);
+    for posicao in 1..=quantos {
+        let Some(ligacao) = ligacoes.iter().find(|q| usize::from(q.numero) == posicao) else {
+            // 07002 e literalmente "COUNT field incorrect": ligaram menos
+            // parametros do que a instrucao tem. A mensagem diz a POSICAO e os
+            // dois numeros, porque "faltou parametro" nao conserta codigo.
+            return Err((
+                "07002",
+                format!(
+                    "o `?` da posicao {posicao} nao tem valor ligado: o texto tem {quantos} \
+                     parametro(s) e o SQLBindParameter cobriu {}",
+                    ligacoes.len()
+                ),
+            ));
+        };
+        saida.push(parametro::ler(ligacao)?);
+    }
+    Ok(saida)
+}
+
 /// O miolo comum de SQLExecDirect e SQLExecute: manda o texto INTEIRO para o
 /// servidor -- o parser mora la, e o erro dele volta com a coluna do
 /// problema. O driver so olha o FROM para pedir o esquema, que e de onde
 /// saem os tipos honestos.
 fn executar_sql(id: usize, sql: String) -> SqlReturn {
     {
+        // As ligacoes saem do registro por COPIA para os ponteiros serem lidos
+        // FORA da trava: ler memoria do aplicativo com a trava do registro na
+        // mao penduraria todos os outros handles do processo num ponteiro
+        // torto alheio.
         let dono = registro::com(id, |p| match p {
             Punho::Comando(c) => {
                 c.resultado = None;
                 c.cursor = 0;
                 c.entregues.clear();
-                Some(c.dono)
+                Some((c.dono, c.parametros.clone()))
             }
             _ => None,
         });
-        let Some(Some(dono)) = dono else {
+        let Some(Some((dono, ligacoes))) = dono else {
             return SQL_INVALID_HANDLE;
+        };
+
+        // Os `?` e as ligacoes se conferem ANTES de tocar a rede. Mandar um
+        // pedido que o servidor vai recusar gasta uma ida e volta e devolve o
+        // erro DELE, que nao sabe qual posicao ficou sem valor -- e essa e a
+        // unica informacao que conserta o programa de quem chamou.
+        //
+        // SAFETY: e a janela da execucao, o unico ponto em que o contrato da
+        // ABI promete que os ponteiros ligados ainda valem.
+        let parametros = match unsafe { montar_parametros(&sql, &ligacoes) } {
+            Ok(v) => v,
+            Err((estado, mensagem)) => {
+                anotar(id, estado, &mensagem);
+                return SQL_ERROR;
+            }
         };
         let ligacao = registro::com(dono, |p| match p {
             Punho::Ligacao(l) => Some((l.canal.clone(), l.database.clone())),
@@ -533,11 +593,18 @@ fn executar_sql(id: usize, sql: String) -> SqlReturn {
             let mut canal = canal
                 .lock()
                 .map_err(|_| Falha::nova("HY000", "o canal desta conexao esta envenenado"))?;
-            let resposta = canal.pedir(vec![
+            let mut campos = vec![
                 ("op", Json::texto_de("sql")),
                 ("database", Json::texto_de(&database)),
                 ("texto", Json::texto_de(&sql)),
-            ])?;
+            ];
+            // Sem `?` o campo NAO vai: o pedido de quem nunca ligou parametro
+            // sai byte a byte como sempre saiu. Guarda nova entra pedida, nao
+            // imposta -- e o teste que trava isso e o do comportamento velho.
+            if !parametros.is_empty() {
+                campos.push(("parametros", Json::Lista(parametros)));
+            }
+            let resposta = canal.pedir(campos)?;
             // COUNT(*) nao precisa de esquema; o resto ganha tipos se o
             // esquema responder. Falha aqui NAO derruba a consulta: a
             // resposta ja veio, e texto sem tipo e melhor que nada.
@@ -674,6 +741,113 @@ pub unsafe extern "system" fn SQLExecute(stmt: SqlHandle) -> SqlReturn {
                 SQL_ERROR
             }
             Some(Some(Some(sql))) => executar_sql(id, sql),
+        }
+    })
+}
+
+/// Liga um valor de entrada ao `?` da posicao `numero`.
+///
+/// O que se guarda e o ENDERECO, e isso e o contrato do ODBC e nao uma
+/// economia: a especificacao diz que o valor se le na EXECUCAO. E o que
+/// permite ligar uma vez e executar mil, trocando so o conteudo do buffer
+/// entre uma execucao e a proxima -- o laco de qualquer ferramenta de carga.
+/// Ler aqui mandaria o primeiro valor em todas as execucoes, sem erro nenhum.
+///
+/// A contrapartida de seguranca, dita para ficar preso: **o driver so
+/// desreferencia estes ponteiros dentro de `SQLExecute`/`SQLExecDirect`**, que
+/// e a unica janela em que o contrato da ABI promete que eles ainda valem.
+/// Nada mais no driver os toca -- nem o diagnostico, nem o desmonte.
+///
+/// Quatro argumentos entram e nao sao usados, e cada um por um motivo:
+/// `tipo_sql` e `casas` seriam uma promessa de tipo que o driver nao tem como
+/// cumprir (ele nao planeja nada na preparacao, e quem coage o literal ao tipo
+/// da coluna e o servidor); `tamanho_coluna` idem; e `tamanho_buffer` a
+/// especificacao manda ignorar em parametro de ENTRADA de tipo caractere --
+/// quem diz quantos bytes valem e o indicador.
+///
+/// # Safety
+///
+/// Contrato da ABI do ODBC: os ponteiros ligados precisam continuar validos
+/// ate a execucao, como em todo driver ODBC.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "system" fn SQLBindParameter(
+    stmt: SqlHandle,
+    numero: SqlUSmallint,
+    tipo_io: SqlSmallint,
+    tipo_c: SqlSmallint,
+    _tipo_sql: SqlSmallint,
+    _tamanho_coluna: SqlULen,
+    _casas: SqlSmallint,
+    valor: SqlPointer,
+    _tamanho_buffer: SqlLen,
+    indicador: *mut SqlLen,
+) -> SqlReturn {
+    blindado(|| {
+        let id = registro::id_de(stmt);
+        if !limpar_diag(id) {
+            return SQL_INVALID_HANDLE;
+        }
+        if numero == 0 {
+            anotar(id, "07009", "a posicao de parametro comeca em 1, nao em 0");
+            return SQL_ERROR;
+        }
+        if tipo_io != SQL_PARAM_INPUT {
+            let como = match tipo_io {
+                SQL_PARAM_OUTPUT => "de saida",
+                SQL_PARAM_INPUT_OUTPUT => "de entrada e saida",
+                SQL_PARAM_TYPE_UNKNOWN => "de sentido desconhecido",
+                _ => "de sentido invalido",
+            };
+            anotar(
+                id,
+                "HYC00",
+                &format!(
+                    "parametro {numero} {como}: este driver so tem SQL_PARAM_INPUT. \
+                     Saida exigiria o servidor devolver valor por posicao, e a op sql \
+                     devolve linhas"
+                ),
+            );
+            return SQL_ERROR;
+        }
+        if let Some(motivo) = parametro::recusa_do_tipo_c(tipo_c) {
+            anotar(id, "HYC00", &format!("parametro {numero}: {motivo}"));
+            return SQL_ERROR;
+        }
+        // Ponteiro de valor nulo SEM indicador nao pode significar nada: e no
+        // indicador que o SQL_NULL_DATA se escreve. Recusar aqui e melhor que
+        // guardar uma ligacao que so falharia na execucao.
+        if valor.is_null() && indicador.is_null() {
+            anotar(
+                id,
+                "HY009",
+                &format!(
+                    "parametro {numero} ligado a ponteiro nulo sem indicador: \
+                     NULL se manda pelo indicador (SQL_NULL_DATA)"
+                ),
+            );
+            return SQL_ERROR;
+        }
+        let ok = registro::com(id, |p| match p {
+            Punho::Comando(c) => {
+                // Religar a mesma posicao SUBSTITUI, como no SQLBindCol: duas
+                // ligacoes vivas para o mesmo `?` deixariam a ordem do vetor
+                // decidir qual vale.
+                c.parametros.retain(|q| q.numero != numero);
+                c.parametros.push(registro::Parametro {
+                    numero,
+                    tipo_c,
+                    buf: valor as usize,
+                    indicador: indicador as usize,
+                });
+                true
+            }
+            _ => false,
+        });
+        if ok == Some(true) {
+            SQL_SUCCESS
+        } else {
+            SQL_INVALID_HANDLE
         }
     })
 }
@@ -1122,7 +1296,12 @@ pub unsafe extern "system" fn SQLFreeStmt(stmt: SqlHandle, opcao: SqlUSmallint) 
                         c.entregues.clear();
                     }
                     SQL_UNBIND => c.amarras.clear(),
-                    SQL_RESET_PARAMS => {} // este driver nao tem parametros
+                    // O comentario que estava aqui dizia "este driver nao tem
+                    // parametros", e deixou de ser verdade: SQL_RESET_PARAMS
+                    // desliga TODAS as ligacoes, que e o que a especificacao
+                    // manda -- e o que um pool de conexao chama entre um
+                    // usuario e o proximo.
+                    SQL_RESET_PARAMS => c.parametros.clear(),
                     _ => {}
                 }
                 true
@@ -1324,6 +1503,11 @@ pub unsafe extern "system" fn SQLSetStmtAttr(
 mod testes {
     use super::*;
 
+    /// Prazo das esperas do canal do teste: o servidor de mentira responde na
+    /// mesma maquina, e prazo generoso e o que impede uma bancada carregada de
+    /// reprovar codigo bom.
+    const ESPERA: std::time::Duration = std::time::Duration::from_secs(5);
+
     // O caminho completo de handles sem rede: aloca ambiente, conexao a
     // partir dele, e recusa o que a especificacao manda recusar.
     #[test]
@@ -1428,6 +1612,310 @@ mod testes {
             );
             assert_eq!(codigo, SQL_SUCCESS);
             assert_eq!(ind, SQL_NULL_DATA);
+        }
+    }
+
+    // --- Os parametros pela ABI, contra um SOQUETE de verdade ---
+    //
+    // Teste unitario nao prova o que viaja no fio: a licao do `BULKINSERT`
+    // desta casa. Aqui um servidor de mentira em processo fala o protocolo em
+    // claro (uma linha JSON por pedido) e DEVOLVE ao teste cada pedido que
+    // recebeu -- e e sobre esse texto, o que realmente saiu, que as
+    // conferencias sao feitas.
+    fn servidor_de_eco() -> (u16, std::sync::mpsc::Receiver<String>) {
+        use std::io::{BufRead, BufReader, Write};
+        let escuta = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let porta = escuta.local_addr().unwrap().port();
+        let (manda, recebe) = std::sync::mpsc::channel();
+        let (pronto, espere) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            pronto.send(()).ok();
+            let (soquete, _) = escuta.accept().expect("accept");
+            let _ = soquete.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+            let mut escrita = soquete.try_clone().unwrap();
+            let mut leitor = BufReader::new(soquete);
+            loop {
+                let mut linha = String::new();
+                if leitor.read_line(&mut linha).unwrap_or(0) == 0 {
+                    return;
+                }
+                if manda.send(linha).is_err() {
+                    return;
+                }
+                // `contagem` na resposta poupa o pedido de `esquema` que o
+                // driver faria em seguida: o assunto aqui e o pedido de ida.
+                let r = r#"{"ok":true,"resultado":{"contagem":1}}"#;
+                if writeln!(escrita, "{r}").is_err() || escrita.flush().is_err() {
+                    return;
+                }
+            }
+        });
+        espere.recv().ok();
+        (porta, recebe)
+    }
+
+    /// O SQLSTATE do primeiro diagnostico do handle.
+    unsafe fn estado_do_diag(h: SqlHandle) -> String {
+        let mut estado = [0u8; 6];
+        let mut nativo: SqlInteger = 0;
+        let mut msg = [0u8; 512];
+        let mut tam: SqlSmallint = 0;
+        let codigo = SQLGetDiagRec(
+            SQL_HANDLE_STMT,
+            h,
+            1,
+            estado.as_mut_ptr(),
+            &mut nativo,
+            msg.as_mut_ptr(),
+            512,
+            &mut tam,
+        );
+        assert_eq!(codigo, SQL_SUCCESS, "o diagnostico devia existir");
+        String::from_utf8_lossy(&estado[..5]).into_owned()
+    }
+
+    /// O campo `parametros` do pedido, como texto JSON; `None` quando o campo
+    /// nao foi mandado.
+    fn parametros_do_pedido(linha: &str) -> Option<String> {
+        let p = Json::analisar(linha).expect("o pedido tem de ser JSON");
+        p.campo("parametros").map(|v| v.escrever())
+    }
+
+    #[test]
+    fn parametros_viajam_no_pedido_e_a_falta_deles_nao_sai_do_driver() {
+        let (porta, recebe) = servidor_de_eco();
+        unsafe {
+            let mut env: SqlHandle = std::ptr::null_mut();
+            assert_eq!(
+                SQLAllocHandle(SQL_HANDLE_ENV, std::ptr::null_mut(), &mut env),
+                SQL_SUCCESS
+            );
+            let mut dbc: SqlHandle = std::ptr::null_mut();
+            assert_eq!(SQLAllocHandle(SQL_HANDLE_DBC, env, &mut dbc), SQL_SUCCESS);
+            let receita = format!("Server=127.0.0.1;Port={porta};Database=b\0");
+            assert_eq!(
+                SQLDriverConnect(
+                    dbc,
+                    std::ptr::null_mut(),
+                    receita.as_ptr(),
+                    SQL_NTS as SqlSmallint,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    0
+                ),
+                SQL_SUCCESS
+            );
+            let mut stmt: SqlHandle = std::ptr::null_mut();
+            assert_eq!(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &mut stmt), SQL_SUCCESS);
+
+            let executar = |texto: &str| {
+                let c = format!("{texto}\0");
+                SQLExecDirect(stmt, c.as_ptr(), SQL_NTS)
+            };
+
+            // (e) O COMPORTAMENTO VELHO: sem `?` e sem ligacao, o pedido sai
+            // exatamente como sempre saiu -- o campo nem aparece. Guarda nova
+            // entra pedida, nao imposta.
+            assert_eq!(executar("SELECT * FROM c"), SQL_SUCCESS);
+            let pedido = recebe.recv_timeout(ESPERA).expect("o pedido devia chegar");
+            assert_eq!(parametros_do_pedido(&pedido), None, "pedido: {pedido}");
+
+            // (a) `?` dentro de aspas e DADO: continua sem campo, e sem exigir
+            // ligacao nenhuma.
+            assert_eq!(executar("SELECT * FROM c WHERE n = '?'"), SQL_SUCCESS);
+            let pedido = recebe.recv_timeout(ESPERA).unwrap();
+            assert_eq!(parametros_do_pedido(&pedido), None, "pedido: {pedido}");
+
+            // (d) FALTA LIGACAO: recusa com 07002 e -- o que mais importa --
+            // NADA sai para o servidor. A prova de que nada saiu e o pedido
+            // seguinte: se o recusado tivesse ido, ele estaria na frente da
+            // fila.
+            assert_eq!(executar("SELECT * FROM c WHERE id = ?"), SQL_ERROR);
+            assert_eq!(estado_do_diag(stmt), "07002");
+            assert_eq!(executar("SELECT 'marca-de-fila'"), SQL_SUCCESS);
+            let pedido = recebe.recv_timeout(ESPERA).unwrap();
+            assert!(
+                pedido.contains("marca-de-fila"),
+                "o pedido recusado nao podia ter saido: {pedido}"
+            );
+
+            // (b) A ORDEM e a das POSICOES do texto, e nao a das chamadas: as
+            // ligacoes entram do fim para o comeco de proposito.
+            let mut segundo: [u8; 9] = *b"Blumenau\0";
+            let mut primeiro: i32 = 42;
+            let buf_primeiro = &mut primeiro as *mut i32;
+            assert_eq!(
+                SQLBindParameter(
+                    stmt,
+                    2,
+                    SQL_PARAM_INPUT,
+                    SQL_C_CHAR,
+                    SQL_VARCHAR,
+                    0,
+                    0,
+                    segundo.as_mut_ptr() as SqlPointer,
+                    9,
+                    std::ptr::null_mut()
+                ),
+                SQL_SUCCESS
+            );
+            assert_eq!(
+                SQLBindParameter(
+                    stmt,
+                    1,
+                    SQL_PARAM_INPUT,
+                    SQL_C_SLONG,
+                    SQL_INTEGER,
+                    0,
+                    0,
+                    buf_primeiro as SqlPointer,
+                    0,
+                    std::ptr::null_mut()
+                ),
+                SQL_SUCCESS
+            );
+            assert_eq!(
+                executar("SELECT * FROM c WHERE id = ? AND cidade = ?"),
+                SQL_SUCCESS
+            );
+            let pedido = recebe.recv_timeout(ESPERA).unwrap();
+            assert_eq!(
+                parametros_do_pedido(&pedido).as_deref(),
+                Some(r#"[42,"Blumenau"]"#),
+                "pedido: {pedido}"
+            );
+
+            // O valor se le na EXECUCAO: trocar o conteudo do buffer sem
+            // religar nada tem de mudar o que viaja. Ler na ligacao mandaria
+            // 42 de novo, e sem erro nenhum.
+            std::ptr::write(buf_primeiro, 4242);
+            assert_eq!(
+                executar("SELECT * FROM c WHERE id = ? AND cidade = ?"),
+                SQL_SUCCESS
+            );
+            let pedido = recebe.recv_timeout(ESPERA).unwrap();
+            assert_eq!(
+                parametros_do_pedido(&pedido).as_deref(),
+                Some(r#"[4242,"Blumenau"]"#),
+                "pedido: {pedido}"
+            );
+
+            // (c) SQL_NULL_DATA vira nulo no JSON -- e nao "" nem 0.
+            let mut nulo: SqlLen = SQL_NULL_DATA;
+            assert_eq!(
+                SQLBindParameter(
+                    stmt,
+                    2,
+                    SQL_PARAM_INPUT,
+                    SQL_C_CHAR,
+                    SQL_VARCHAR,
+                    0,
+                    0,
+                    segundo.as_mut_ptr() as SqlPointer,
+                    9,
+                    &mut nulo
+                ),
+                SQL_SUCCESS
+            );
+            assert_eq!(
+                executar("SELECT * FROM c WHERE id = ? AND cidade = ?"),
+                SQL_SUCCESS
+            );
+            let pedido = recebe.recv_timeout(ESPERA).unwrap();
+            assert_eq!(
+                parametros_do_pedido(&pedido).as_deref(),
+                Some("[4242,null]"),
+                "pedido: {pedido}"
+            );
+
+            // SQL_RESET_PARAMS desliga tudo: a mesma instrucao volta a recusar
+            // por falta de ligacao. E o par do teste de cima -- guarda que
+            // liga tem de desligar.
+            assert_eq!(SQLFreeStmt(stmt, SQL_RESET_PARAMS), SQL_SUCCESS);
+            assert_eq!(
+                executar("SELECT * FROM c WHERE id = ? AND cidade = ?"),
+                SQL_ERROR
+            );
+            assert_eq!(estado_do_diag(stmt), "07002");
+
+            assert_eq!(SQLFreeHandle(SQL_HANDLE_STMT, stmt), SQL_SUCCESS);
+            assert_eq!(SQLDisconnect(dbc), SQL_SUCCESS);
+            assert_eq!(SQLFreeHandle(SQL_HANDLE_DBC, dbc), SQL_SUCCESS);
+            assert_eq!(SQLFreeHandle(SQL_HANDLE_ENV, env), SQL_SUCCESS);
+        }
+    }
+
+    // As recusas do SQLBindParameter acontecem na LIGACAO, sem servidor
+    // nenhum: e a decisao de recusar cedo, e o teste prova que ela e cedo
+    // mesmo -- nao ha conexao aberta em lugar nenhum deste teste.
+    #[test]
+    fn ligacao_recusa_na_hora_o_que_o_driver_nao_sabe_mandar() {
+        let (porta, _recebe) = servidor_de_eco();
+        unsafe {
+            let mut env: SqlHandle = std::ptr::null_mut();
+            SQLAllocHandle(SQL_HANDLE_ENV, std::ptr::null_mut(), &mut env);
+            let mut dbc: SqlHandle = std::ptr::null_mut();
+            SQLAllocHandle(SQL_HANDLE_DBC, env, &mut dbc);
+            let receita = format!("Server=127.0.0.1;Port={porta};Database=b\0");
+            assert_eq!(
+                SQLDriverConnect(
+                    dbc,
+                    std::ptr::null_mut(),
+                    receita.as_ptr(),
+                    SQL_NTS as SqlSmallint,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    0
+                ),
+                SQL_SUCCESS
+            );
+            let mut stmt: SqlHandle = std::ptr::null_mut();
+            SQLAllocHandle(SQL_HANDLE_STMT, dbc, &mut stmt);
+            let mut valor: i32 = 1;
+            let ptr = &mut valor as *mut i32 as SqlPointer;
+            let ligar = |numero, tipo_io, tipo_c, p| {
+                SQLBindParameter(
+                    stmt,
+                    numero,
+                    tipo_io,
+                    tipo_c,
+                    SQL_VARCHAR,
+                    0,
+                    0,
+                    p,
+                    0,
+                    std::ptr::null_mut(),
+                )
+            };
+            // Posicao zero nao existe no ODBC: o primeiro `?` e o 1.
+            assert_eq!(ligar(0, SQL_PARAM_INPUT, SQL_C_SLONG, ptr), SQL_ERROR);
+            assert_eq!(estado_do_diag(stmt), "07009");
+            // Saida e entrada-saida: HYC00, nomeando o que falta.
+            assert_eq!(ligar(1, SQL_PARAM_OUTPUT, SQL_C_SLONG, ptr), SQL_ERROR);
+            assert_eq!(estado_do_diag(stmt), "HYC00");
+            assert_eq!(
+                ligar(1, SQL_PARAM_INPUT_OUTPUT, SQL_C_SLONG, ptr),
+                SQL_ERROR
+            );
+            assert_eq!(estado_do_diag(stmt), "HYC00");
+            // UTF-16 num driver ANSI.
+            assert_eq!(ligar(1, SQL_PARAM_INPUT, SQL_C_WCHAR, ptr), SQL_ERROR);
+            assert_eq!(estado_do_diag(stmt), "HYC00");
+            // Ponteiro nulo sem indicador: nao ha como dizer NULL.
+            assert_eq!(
+                ligar(1, SQL_PARAM_INPUT, SQL_C_SLONG, std::ptr::null_mut()),
+                SQL_ERROR
+            );
+            assert_eq!(estado_do_diag(stmt), "HY009");
+            // E o que o driver SABE mandar passa.
+            assert_eq!(ligar(1, SQL_PARAM_INPUT, SQL_C_SLONG, ptr), SQL_SUCCESS);
+
+            SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+            SQLDisconnect(dbc);
+            SQLFreeHandle(SQL_HANDLE_DBC, dbc);
+            SQLFreeHandle(SQL_HANDLE_ENV, env);
         }
     }
 

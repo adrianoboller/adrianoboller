@@ -37,8 +37,21 @@ pub const SQL_HANDLE_STMT: SqlSmallint = 3;
 // Comprimento "string termina em NUL".
 pub const SQL_NTS: SqlInteger = -3;
 
-// Indicador de valor nulo em SQLBindCol/SQLGetData.
+// Indicador de valor nulo em SQLBindCol/SQLGetData/SQLBindParameter.
 pub const SQL_NULL_DATA: SqlLen = -1;
+
+// Sentido do parametro no SQLBindParameter. Este driver so le ENTRADA; os
+// outros dois pedem um caminho de volta (SQLGetData sobre o parametro, ou o
+// buffer reescrito na execucao) que o protocolo da porta de dados nao tem.
+pub const SQL_PARAM_TYPE_UNKNOWN: SqlSmallint = 0;
+pub const SQL_PARAM_INPUT: SqlSmallint = 1;
+pub const SQL_PARAM_INPUT_OUTPUT: SqlSmallint = 2;
+pub const SQL_PARAM_OUTPUT: SqlSmallint = 4;
+
+// Valor entregue em pedacos por SQLPutData, em vez de estar no buffer. Este
+// driver nao o implementa, e o reconhece so para RECUSAR com o nome certo em
+// vez de ler lixo do buffer.
+pub const SQL_DATA_AT_EXEC: SqlLen = -2;
 
 // Atributos de ambiente.
 pub const SQL_ATTR_ODBC_VERSION: SqlInteger = 200;
@@ -66,6 +79,9 @@ pub const SQL_TYPE_TIMESTAMP: SqlSmallint = 93;
 
 // Tipos C (o que o SQLGetData/SQLBindCol entrega ao aplicativo).
 pub const SQL_C_CHAR: SqlSmallint = 1;
+/// UTF-16. O driver e ANSI (so as funcoes sem `W`), entao ele o reconhece so
+/// para recusar com o motivo, e nao para ler UTF-16 de um lado so.
+pub const SQL_C_WCHAR: SqlSmallint = -8;
 pub const SQL_C_LONG: SqlSmallint = 4;
 pub const SQL_C_SHORT: SqlSmallint = 5;
 pub const SQL_C_FLOAT: SqlSmallint = 7;
@@ -74,6 +90,7 @@ pub const SQL_C_DEFAULT: SqlSmallint = 99;
 pub const SQL_C_SSHORT: SqlSmallint = -15;
 pub const SQL_C_SLONG: SqlSmallint = -16;
 pub const SQL_C_SBIGINT: SqlSmallint = -25;
+pub const SQL_C_BIT: SqlSmallint = -7;
 
 // Nulabilidade no SQLDescribeCol.
 pub const SQL_NO_NULLS: SqlSmallint = 0;
