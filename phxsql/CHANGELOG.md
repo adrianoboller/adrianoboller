@@ -59,6 +59,22 @@ ausência de transação: ele as documenta extensamente.
 
 ### Adicionado
 
+- **`INSERT`, `UPDATE` e `DELETE` por chave pela camada SQL — o passo 2 do
+  roteiro do `docs/SQL.md`, e o CRUD fechado.** A tabela da §1 mapeava
+  `UPDATE` para `atualizar`, e uma tradução direta teria **zerado as colunas
+  que o `SET` não citou**: o `atualizar` recebe a linha inteira, e coluna
+  ausente entra como NULL (`json_para_linha`). Por isso `UPDATE` e `DELETE`
+  são três passos — `buscar` pela chave única, `ler` com a `versao`, e
+  `atualizar`/`excluir` com a linha mesclada e a `versao` lida —, cada um
+  pelo mesmo `executar_derivado` do `SELECT`: o portão continua um, e há
+  teste de que a tabela negada não se grava escrevendo SQL. Só chave
+  **única**; índice comum recusa pelo nome, porque alcançaria N linhas sem
+  dizer quantas. Uma linha por `INSERT`, porque `inserir_lote` não empilha
+  numa transação aberta — e há teste de que o `INSERT` pelo SQL empilha.
+  Prova real nos dois sentidos: tire a mescla e o teste falha na coluna que o
+  `SET` não citou; tire a `versao` do pedido e o teste das funções puras
+  falha. O console da tela mostra `afetadas`. `docs/SQL.md` §6.
+
 - **`bancada/quorum/` — quanto custaria esperar as réplicas confirmarem.** Ela
   **não prova recurso**: mede o preço de uma decisão que ainda não foi tomada,
   e essa distinção está escrita na página de testes. Sobe master e duas

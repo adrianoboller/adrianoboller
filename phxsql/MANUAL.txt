@@ -561,7 +561,7 @@ SERVIDOR MCP (Model Context Protocol)
     AS FERRAMENTAS saem do catalogo (op "catalogo"), e o nome de cada uma e
     "phx_" mais a op. Detalhes em docs/MCP.md.
 
-SQL: UM SELECT SIMPLES, TRADUZIDO
+SQL: SELECT, E INSERT/UPDATE/DELETE POR CHAVE, TRADUZIDOS
 
     {"token":"segredo","op":"sql","database":"loja",
      "texto":"SELECT nome AS quem FROM clientes WHERE id = 42"}
@@ -574,10 +574,33 @@ SQL: UM SELECT SIMPLES, TRADUZIDO
         [ORDER BY coluna [ASC|DESC]]
         [LIMIT n [OFFSET m]]
 
-    A resposta e a da operacao traduzida -- "varrer" ou "buscar" --, com tres
-    campos a mais na frente: o "sql" que voce mandou, o "op" que ele virou e as
-    "notas" do tradutor. COUNT(*) devolve "contagem". O campo "sql" e aceito no
-    lugar de "texto", que e o nome que um driver escreveria.
+    E os tres verbos de escrita, por chave:
+
+        INSERT INTO [banco.] [schema.] tabela (coluna, ...)
+                    VALUES (literal, ...)
+        UPDATE      [banco.] [schema.] tabela SET coluna = literal, ...
+                    WHERE coluna = literal
+        DELETE FROM [banco.] [schema.] tabela WHERE coluna = literal
+
+    A resposta de um SELECT e a da operacao traduzida ("varrer" ou "buscar"),
+    com tres campos a mais na frente: o "sql" que voce mandou, o "op" que ele
+    virou e as "notas" do tradutor. COUNT(*) devolve "contagem". O campo "sql" e
+    aceito no lugar de "texto", que e o nome que um driver escreveria.
+
+    PARA ESCREVER, a resposta traz "afetadas" (0 quando a chave nao existe, e
+    isso nao e erro), mais o que a operacao devolveu: "rowid" e "registros" no
+    inserir; "rowid" e a "versao" nova no atualizar; "rowid", "modo",
+    "reversivel" e "na_lixeira" no excluir. Uma linha por INSERT -- VALUES com
+    varias recusa, porque viraria inserir_lote, que nao entra numa transacao
+    aberta. UPDATE e DELETE so por chave UNICA, e sao TRES operacoes por
+    dentro: buscar acha o rowid, ler traz a linha inteira e a versao, e
+    atualizar grava a linha MESCLADA (o atualizar do protocolo grava a linha
+    inteira -- mandar so o SET zeraria as outras colunas). A versao lida vai
+    junto: quem gravar a linha entre os passos faz o motor recusar. O DELETE e
+    o suave, reversivel por "restaurar"; para apagar de vez ha a operacao
+    excluir com "fisico". Sem WHERE, por faixa, ou sobre coluna sem indice
+    unico, recusa dizendo o que faltou. Escrever pelo SQL pede o mesmo direito
+    da operacao que vira: inserir, alterar ou excluir.
 
     O QUE NAO TEM SUBSTRATO RECUSA DIZENDO O QUE FALTA. Nao ha expressao, nao
     ha JOIN e nao ha subconsulta -- e um WHERE sobre coluna SEM indice recusa
@@ -1537,8 +1560,8 @@ BULKINSERT: A TABELA RESERVADA PARA A CARGA
         ... as insercoes, em lote ou uma a uma ...
         {"op":"bulkinsert","database":"Z","tabela":"Clientes","ligado":false}
 
-    Quando a camada SQL existir, isso se le BULKINSERT(true) e BULKINSERT(false).
-    Hoje nao ha camada SQL, entao e operacao de protocolo.
+    A camada SQL existe (op "sql"), mas BULKINSERT(true) como TEXTO SQL ainda
+    recusa dizendo que e comando de sessao: hoje e operacao de protocolo.
 
     O QUE OS OUTROS RECEBEM. Erro na hora, e nao espera:
 

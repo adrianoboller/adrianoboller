@@ -51,7 +51,7 @@ impl IndiceInfo {
     /// Um indice serve ao `WHERE col = ?` quando col e a PRIMEIRA coluna dele
     /// e ele nao tem mais nenhuma -- uma chave composta espera todas as
     /// partes, e mandar so a primeira nao e a mesma busca.
-    fn atende_igualdade(&self, coluna: &str) -> bool {
+    pub(crate) fn atende_igualdade(&self, coluna: &str) -> bool {
         self.colunas.len() == 1 && igual_sem_caso(&self.colunas[0].nome, coluna)
     }
 
@@ -65,7 +65,7 @@ impl IndiceInfo {
     }
 }
 
-fn igual_sem_caso(a: &str, b: &str) -> bool {
+pub(crate) fn igual_sem_caso(a: &str, b: &str) -> bool {
     a.len() == b.len() && a.to_lowercase() == b.to_lowercase()
 }
 
@@ -150,7 +150,7 @@ fn saida_de(p: &Projecao) -> Saida {
     }
 }
 
-fn base_do_pedido(de: &Alvo, database: &str) -> Vec<(String, Json)> {
+pub(crate) fn base_do_pedido(de: &Alvo, database: &str) -> Vec<(String, Json)> {
     vec![
         ("database".to_string(), Json::texto_de(database)),
         ("tabela".to_string(), Json::texto_de(de.nome_no_protocolo())),
@@ -321,7 +321,7 @@ fn plano_varrer(
     })
 }
 
-fn pedido_com_op(op: &str, pares: Vec<(String, Json)>) -> Json {
+pub(crate) fn pedido_com_op(op: &str, pares: Vec<(String, Json)>) -> Json {
     let mut todos = vec![("op".to_string(), Json::texto_de(op))];
     todos.extend(pares);
     Json::Objeto(todos)
@@ -332,7 +332,7 @@ fn pedido_com_op(op: &str, pares: Vec<(String, Json)>) -> Json {
 /// Numero vira TEXTO, e nao `Json::Numero`. E deliberado: o motor le decimal
 /// de texto justamente para nao passar por `f64`, e transformar aqui desfaria
 /// a garantia dentro do tradutor que existe para preserva-la.
-fn literal_para_json(l: &crate::sintaxe::Literal) -> Json {
+pub(crate) fn literal_para_json(l: &crate::sintaxe::Literal) -> Json {
     use crate::sintaxe::Literal;
     match l {
         Literal::Numero(n) => Json::texto_de(n),

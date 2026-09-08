@@ -1321,7 +1321,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
         ? r.colunas : (linhas.length ? Object.keys(linhas[0]) : []);
       alvo.innerHTML =
         `<p class="leg">${marcado(txt("tela.ia_res_op", "operação `{op}` · {n} linha(s)"),
-          { op: r.op || "?", n: r.devolvidas ?? linhas.length })}${
+          { op: r.op || "?", n: r.devolvidas ?? r.afetadas ?? linhas.length })}${
           r.contagem !== undefined ? " · " + E(preencher(txt("tela.ia_res_contagem",
             "contagem {n}"), { n: r.contagem })) : ""}</p>`
         + ((r.notas || []).length

@@ -14,7 +14,15 @@
 //! [WHERE coluna ( = | <> | < | <= | > | >= ) literal]
 //! [ORDER BY coluna [ASC|DESC]]
 //! [LIMIT n [OFFSET m]]
+//!
+//! INSERT INTO tabela (coluna {, coluna}) VALUES (literal {, literal})
+//! UPDATE tabela SET coluna = literal {, coluna = literal} WHERE chave = literal
+//! DELETE FROM tabela WHERE chave = literal
 //! ```
+//!
+//! Os tres verbos de escrita sao o passo 2 do roteiro, e moram em [`dml`]:
+//! uma linha por `INSERT`, e `UPDATE`/`DELETE` so por chave UNICA -- em tres
+//! passos, porque o `atualizar` do protocolo grava a linha inteira.
 //!
 //! # O que ele NAO faz, e por que isso esta escrito
 //!
@@ -50,6 +58,7 @@
 //! nao abre arquivo e nao fala com o disco: ele traduz texto em pedido.
 
 pub mod diretiva;
+pub mod dml;
 pub mod lexico;
 pub mod rotina;
 pub mod sintaxe;
@@ -57,10 +66,14 @@ pub mod traduzir;
 pub mod transacao;
 pub mod usuario;
 
+pub use dml::{
+    traduzir_atualizacao, traduzir_exclusao, traduzir_insercao, Atualizacao, Exclusao, Insercao,
+    PlanoDml,
+};
 pub use lexico::{Comparador, Simbolo, Token};
 pub use sintaxe::{
-    analisar, comando_empilhado, Alvo, ColunaPedida, Condicao, Literal, Ordenacao, Projecao,
-    Selecao, RESERVADAS_DO_MOTOR,
+    analisar, analisar_comando, comando_empilhado, Alvo, ColunaPedida, Comando, Condicao, Literal,
+    Ordenacao, Projecao, Selecao, RESERVADAS_DO_MOTOR,
 };
 pub use traduzir::{traduzir, ColunaDoIndice, IndiceInfo, Plano, Saida};
 

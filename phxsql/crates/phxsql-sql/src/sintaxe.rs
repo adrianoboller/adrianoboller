@@ -17,6 +17,7 @@
 //! daqui como recusa escrita, com o nome da clausula -- e nao como sintaxe
 //! aceita que quebra depois.
 
+use crate::dml::{Atualizacao, Exclusao, Insercao};
 use crate::lexico::{self, Comparador, Simbolo, Token};
 use phxsql_core::{PhxError, Result};
 
@@ -114,6 +115,40 @@ pub struct Selecao {
     pub salto: u64,
 }
 
+/// O que a op `sql` recebe como instrucao de DADO: uma consulta, ou um dos
+/// tres verbos de escrita por chave (`dml.rs`). Transacao, diretiva, rotina
+/// e usuario nao passam por aqui -- sao comandos de sessao ou de catalogo, e
+/// cada um tem o proprio detector, consultado antes.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Comando {
+    Selecao(Selecao),
+    Insercao(Insercao),
+    Atualizacao(Atualizacao),
+    Exclusao(Exclusao),
+}
+
+impl Comando {
+    /// O verbo, para as mensagens.
+    pub fn verbo(&self) -> &'static str {
+        match self {
+            Comando::Selecao(_) => "SELECT",
+            Comando::Insercao(_) => "INSERT",
+            Comando::Atualizacao(_) => "UPDATE",
+            Comando::Exclusao(_) => "DELETE",
+        }
+    }
+
+    /// A tabela alvo, para quem precisa do esquema antes de traduzir.
+    pub fn alvo(&self) -> &Alvo {
+        match self {
+            Comando::Selecao(s) => &s.de,
+            Comando::Insercao(i) => &i.em,
+            Comando::Atualizacao(a) => &a.em,
+            Comando::Exclusao(e) => &e.de,
+        }
+    }
+}
+
 /// As palavras que ja tem significado no motor e nao podem virar identificador.
 ///
 /// `docs/SQL.md` explica por que a lista mora AQUI e nao no `validar_nome` do
@@ -123,9 +158,13 @@ pub const RESERVADAS_DO_MOTOR: [&str; 1] = ["BULKINSERT"];
 
 /// Palavras da gramatica que nao podem ser lidas como nome de tabela ou de
 /// coluna sem aspas.
-const CLAUSULAS: [&str; 12] = [
+const CLAUSULAS: [&str; 18] = [
     "SELECT", "FROM", "WHERE", "ORDER", "GROUP", "BY", "LIMIT", "OFFSET", "AS", "HAVING", "JOIN",
     "UNION",
+    // Os verbos de escrita e as clausulas deles. SET e VALUES precisam estar
+    // aqui por um motivo concreto: o `alvo` aceita apelido SEM `AS`, e um
+    // `UPDATE t SET ...` leria SET como apelido da tabela.
+    "INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE",
 ];
 
 /// O texto traz MAIS DE UM comando empilhado -- o `; DROP TABLE ...` classico?
@@ -173,13 +212,28 @@ pub fn comando_empilhado(entrada: &str) -> bool {
 }
 
 /// Le um comando inteiro. Um por vez -- lote de comandos e outra rodada.
+/// Le uma CONSULTA. Escrita por aqui recusa dizendo que e escrita: a porta
+/// dos tres verbos e [`analisar_comando`], que a op `sql` usa.
 pub fn analisar(entrada: &str) -> Result<Selecao> {
+    match analisar_comando(entrada)? {
+        Comando::Selecao(s) => Ok(s),
+        outro => Err(PhxError::Esquema(format!(
+            "{} e comando de ESCRITA, e esta porta le consultas -- a op `sql` aceita os \
+             dois, por `analisar_comando`",
+            outro.verbo()
+        ))),
+    }
+}
+
+/// Le qualquer instrucao de dado: `SELECT`, ou `INSERT`/`UPDATE`/`DELETE`
+/// por chave.
+pub fn analisar_comando(entrada: &str) -> Result<Comando> {
     let simbolos = lexico::analisar(entrada)?;
     if simbolos.is_empty() {
         return Err(PhxError::Esquema("comando SQL vazio".into()));
     }
     let mut p = Analisador { s: simbolos, i: 0 };
-    let sel = p.comando()?;
+    let cmd = p.comando()?;
     p.aceitar(&Token::PontoEVirgula);
     if let Some(sobra) = p.espiar() {
         return Err(lexico::erro(
@@ -190,7 +244,7 @@ pub fn analisar(entrada: &str) -> Result<Selecao> {
             ),
         ));
     }
-    Ok(sel)
+    Ok(cmd)
 }
 
 /// O cursor de simbolos e compartilhado com `rotina`, que analisa os corpos
@@ -296,7 +350,7 @@ impl Analisador {
         }
     }
 
-    fn comando(&mut self) -> Result<Selecao> {
+    fn comando(&mut self) -> Result<Comando> {
         let Some(primeiro) = self.espiar() else {
             return Err(PhxError::Esquema("comando SQL vazio".into()));
         };
@@ -305,18 +359,22 @@ impl Analisador {
         match verbo.as_str() {
             "SELECT" => {
                 self.i += 1;
-                self.selecao()
+                Ok(Comando::Selecao(self.selecao()?))
             }
-            // Os tres proximos passos do roteiro de `docs/SQL.md`. Recusar
-            // dizendo o nome do verbo e melhor do que "sintaxe invalida": quem
-            // escreveu descobre que a camada existe e ate onde ela chegou.
-            "INSERT" | "UPDATE" | "DELETE" => Err(lexico::erro(
-                pos,
-                &format!(
-                    "{verbo} ainda nao existe nesta camada -- so SELECT. \
-                     A operacao equivalente ja funciona pelo protocolo"
-                ),
-            )),
+            // O passo 2 do roteiro de `docs/SQL.md`: escrita por chave. O
+            // parser mora em `dml.rs`, sobre este mesmo cursor.
+            "INSERT" => {
+                self.i += 1;
+                Ok(Comando::Insercao(self.insercao(pos)?))
+            }
+            "UPDATE" => {
+                self.i += 1;
+                Ok(Comando::Atualizacao(self.atualizacao(pos)?))
+            }
+            "DELETE" => {
+                self.i += 1;
+                Ok(Comando::Exclusao(self.exclusao(pos)?))
+            }
             "BULKINSERT" => Err(lexico::erro(
                 pos,
                 "BULKINSERT e comando de SESSAO, e nao de instrucao: ele reserva a \
@@ -491,7 +549,7 @@ impl Analisador {
     }
 
     /// `tabela`, `schema.tabela` ou `database.schema.tabela`.
-    fn alvo(&mut self) -> Result<Alvo> {
+    pub(crate) fn alvo(&mut self) -> Result<Alvo> {
         let mut partes = vec![self.identificador("nome de tabela")?];
         while self.aceitar(&Token::Ponto) {
             partes.push(self.identificador("nome depois do ponto")?);
@@ -540,7 +598,7 @@ impl Analisador {
         })
     }
 
-    fn condicao(&mut self) -> Result<Condicao> {
+    pub(crate) fn condicao(&mut self) -> Result<Condicao> {
         let coluna = self.identificador("nome de coluna no WHERE")?;
         let coluna = if self.aceitar(&Token::Ponto) {
             self.identificador("nome de coluna depois do ponto")?
@@ -785,9 +843,8 @@ mod testes {
             ("SELECT DISTINCT a FROM t", "DISTINCT"),
             ("SELECT * FROM t GROUP BY a", "GROUP BY"),
             ("SELECT * FROM a JOIN b", "junção"),
-            ("INSERT INTO t VALUES (1)", "INSERT"),
-            ("UPDATE t SET a = 1", "UPDATE"),
-            ("DELETE FROM t", "DELETE"),
+            // INSERT, UPDATE e DELETE sairam daqui no dia em que passaram a
+            // existir: as recusas DELES moram em `dml.rs`, uma por falta.
         ] {
             let e = analisar(sql).unwrap_err().to_string();
             assert!(e.contains(pedaco), "{sql} -> {e}");

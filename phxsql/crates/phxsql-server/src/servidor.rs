@@ -11871,7 +11871,11 @@ impl Servidor {
         // O erro de sintaxe ja vem com a coluna: «SQL, coluna 14: esperava
         // FROM». Reembalar aqui perderia a posicao, que e a unica parte da
         // mensagem que diz ONDE consertar.
-        let selecao = phxsql_sql::analisar(&texto)?;
+        let selecao = match phxsql_sql::analisar_comando(&texto)? {
+            phxsql_sql::Comando::Selecao(s) => s,
+            // INSERT, UPDATE e DELETE por chave: outro caminho, MESMO portao.
+            escrita => return self.executar_dml(&escrita, &texto, p, sessao),
+        };
 
         let base = match selecao.de.database.trim() {
             "" => p.texto_ou("database", "").trim().to_string(),
@@ -11920,6 +11924,152 @@ impl Servidor {
             ("op", Json::texto_de(&c.op)),
             ("resultado", bruto),
         ])))
+    }
+
+    /// `INSERT`, `UPDATE` e `DELETE` por chave, vindos pela op `sql`.
+    ///
+    /// # Tres passos, pelo MESMO portao
+    ///
+    /// `INSERT` e um `inserir`. `UPDATE` e `DELETE` sao `buscar` -> `ler` ->
+    /// `atualizar`/`excluir`, e o motivo esta escrito em `phxsql_sql::dml`: o
+    /// `atualizar` grava a linha INTEIRA e preenche com NULL o que nao vem,
+    /// entao a linha e lida e mesclada antes -- e a `versao` lida vai junto,
+    /// para o motor recusar quem gravou entre os passos em vez de ser
+    /// sobrescrito. Cada passo sai pelo `executar_derivado`, o portao que le
+    /// o campo `tabela` do pedido traduzido: o mesmo do `SELECT`. Nao ha
+    /// caminho de escrita proprio aqui, e e assim que a porta dos fundos nao
+    /// nasce.
+    ///
+    /// # Zero linhas nao e erro
+    ///
+    /// Chave que nao existe devolve `afetadas: 0`, como todo SQL faz. Erro e
+    /// para o que nao deveria acontecer: um indice unico que devolve duas
+    /// linhas para a mesma chave.
+    fn executar_dml(
+        &self,
+        comando: &phxsql_sql::Comando,
+        texto: &str,
+        p: &Json,
+        sessao: &Sessao,
+    ) -> Result<Json> {
+        use phxsql_sql::{Comando, PlanoDml};
+        let corrente = p.texto_ou("database", "").trim().to_string();
+        let plano = match comando {
+            Comando::Insercao(i) => phxsql_sql::traduzir_insercao(i, &corrente)?,
+            Comando::Atualizacao(a) => {
+                let indices = self.indices_para_o_sql(&a.em, &corrente, sessao)?;
+                phxsql_sql::traduzir_atualizacao(a, &indices, &corrente)?
+            }
+            Comando::Exclusao(e) => {
+                let indices = self.indices_para_o_sql(&e.de, &corrente, sessao)?;
+                phxsql_sql::traduzir_exclusao(e, &indices, &corrente)?
+            }
+            Comando::Selecao(_) => {
+                return Err(PhxError::Esquema(
+                    "consulta nao entra pelo caminho de escrita".into(),
+                ))
+            }
+        };
+        let op = plano.op();
+        let mut notas: Vec<String> = plano.notas().to_vec();
+
+        let (busca, atribuicoes) = match plano {
+            PlanoDml::Inserir { pedido, .. } => {
+                let r = self.executar_derivado("inserir", &pedido, sessao)?;
+                return Ok(resposta_do_dml(
+                    texto,
+                    op,
+                    &notas,
+                    1,
+                    &r,
+                    &["rowid", "registros"],
+                ));
+            }
+            PlanoDml::Atualizar {
+                busca, atribuicoes, ..
+            } => (busca, Some(atribuicoes)),
+            PlanoDml::Excluir { busca, .. } => (busca, None),
+        };
+
+        // Passo 1: o rowid da chave.
+        let achada = self.executar_derivado("buscar", &busca, sessao)?;
+        let linhas = achada.campo("linhas").and_then(Json::lista).unwrap_or(&[]);
+        let rowid = match linhas {
+            [] => {
+                notas.push("nenhuma linha tem essa chave: zero afetadas, e nao e erro".into());
+                return Ok(resposta_do_dml(texto, op, &notas, 0, &Json::Nulo, &[]));
+            }
+            [uma] => uma.inteiro_ou("rowid", 0).max(0) as u64,
+            varias => {
+                return Err(PhxError::Esquema(format!(
+                    "o indice unico do WHERE devolveu {} linhas para a mesma chave -- estado \
+                     que nao deveria existir; nada foi gravado",
+                    varias.len()
+                )))
+            }
+        };
+        let database = busca.texto_ou("database", "").to_string();
+        let tabela = busca.texto_ou("tabela", "").to_string();
+
+        // Passo 2: a linha inteira e a versao dela.
+        let lida =
+            self.executar_derivado("ler", &pedido_de_ler(&database, &tabela, rowid), sessao)?;
+        if matches!(&lida, Json::Nulo) {
+            notas.push("a linha sumiu entre o buscar e o ler: zero afetadas".into());
+            return Ok(resposta_do_dml(texto, op, &notas, 0, &Json::Nulo, &[]));
+        }
+        let versao = lida.inteiro_ou("versao", 0).max(0) as u64;
+
+        // Passo 3: gravar, com a versao lida.
+        match atribuicoes {
+            Some(set) => {
+                let linha = lida.campo("linha").cloned().unwrap_or(Json::Nulo);
+                let pedido = pedido_de_atualizar(&database, &tabela, rowid, &linha, &set, versao);
+                let r = self.executar_derivado("atualizar", &pedido, sessao)?;
+                Ok(resposta_do_dml(
+                    texto,
+                    op,
+                    &notas,
+                    1,
+                    &r,
+                    &["rowid", "versao"],
+                ))
+            }
+            None => {
+                let pedido = pedido_de_excluir(&database, &tabela, rowid, versao);
+                let r = self.executar_derivado("excluir", &pedido, sessao)?;
+                let afetadas = u64::from(r.booleano_ou("excluido", false));
+                Ok(resposta_do_dml(
+                    texto,
+                    op,
+                    &notas,
+                    afetadas,
+                    &r,
+                    &["rowid", "modo", "reversivel", "na_lixeira"],
+                ))
+            }
+        }
+    }
+
+    /// Os indices da tabela, como o tradutor os espera -- a receita do caminho
+    /// do SELECT: pede o `esquema` pelo portao e le campo por campo.
+    fn indices_para_o_sql(
+        &self,
+        alvo: &phxsql_sql::Alvo,
+        corrente: &str,
+        sessao: &Sessao,
+    ) -> Result<Vec<phxsql_sql::IndiceInfo>> {
+        let base = if alvo.database.trim().is_empty() {
+            corrente.to_string()
+        } else {
+            alvo.database.trim().to_string()
+        };
+        let ped = Json::objeto(vec![
+            ("database", Json::texto_de(&base)),
+            ("tabela", Json::texto_de(alvo.nome_no_protocolo())),
+        ]);
+        let esquema = self.executar_derivado("esquema", &ped, sessao)?;
+        Ok(indices_do_esquema(&esquema))
     }
 
     // ------------------------------------------------- gatilhos e rotinas
@@ -17464,6 +17614,107 @@ impl crate::mcp::Executor for ExecutorLocal {
     }
 }
 
+/// O `ler` do passo 2 do UPDATE/DELETE por chave -- com a versao, que e o
+/// que o `buscar` nao traz.
+fn pedido_de_ler(database: &str, tabela: &str, rowid: u64) -> Json {
+    Json::objeto(vec![
+        ("op", Json::texto_de("ler")),
+        ("database", Json::texto_de(database)),
+        ("tabela", Json::texto_de(tabela)),
+        ("rowid", Json::de_u64(rowid)),
+        ("com_versao", Json::Bool(true)),
+    ])
+}
+
+/// O `atualizar` do passo 3: a linha LIDA com o `SET` por cima, e a versao.
+///
+/// # A mescla e a parte que importa
+///
+/// O `atualizar` grava a linha inteira e preenche com NULL o que nao veio
+/// (`json_para_linha`). Mandar so o `SET` zeraria as outras colunas -- e o
+/// teste `update_por_chave_muda_so_a_coluna_do_set` e a prova real disso:
+/// tire a mescla e ele falha na coluna que o SET nao citou.
+///
+/// A marca de excluido fica de FORA da mescla de proposito: o `atualizar` a
+/// preserva quando ela nao vem, e manda-la de volta so repetiria o que o
+/// motor ja faz -- com o risco de mandar `false` numa linha que outro excluiu
+/// entre os passos. O numero de ordem VAI, como foi lido: e do motor, e
+/// volta igual.
+fn pedido_de_atualizar(
+    database: &str,
+    tabela: &str,
+    rowid: u64,
+    linha_lida: &Json,
+    atribuicoes: &[(String, Json)],
+    versao: u64,
+) -> Json {
+    let mut valores: Vec<(String, Json)> = match linha_lida {
+        Json::Objeto(pares) => pares
+            .iter()
+            .filter(|(k, _)| k != phxsql_core::schema::COLUNA_SOFTDELETED)
+            .cloned()
+            .collect(),
+        _ => Vec::new(),
+    };
+    for (coluna, valor) in atribuicoes {
+        match valores
+            .iter_mut()
+            .find(|(k, _)| k.eq_ignore_ascii_case(coluna))
+        {
+            Some(par) => par.1 = valor.clone(),
+            None => valores.push((coluna.clone(), valor.clone())),
+        }
+    }
+    Json::objeto(vec![
+        ("op", Json::texto_de("atualizar")),
+        ("database", Json::texto_de(database)),
+        ("tabela", Json::texto_de(tabela)),
+        ("rowid", Json::de_u64(rowid)),
+        ("valores", Json::Objeto(valores)),
+        ("versao", Json::de_u64(versao)),
+    ])
+}
+
+/// O `excluir` do passo 3 -- suave, o padrao do motor, e com a versao.
+fn pedido_de_excluir(database: &str, tabela: &str, rowid: u64, versao: u64) -> Json {
+    Json::objeto(vec![
+        ("op", Json::texto_de("excluir")),
+        ("database", Json::texto_de(database)),
+        ("tabela", Json::texto_de(tabela)),
+        ("rowid", Json::de_u64(rowid)),
+        ("versao", Json::de_u64(versao)),
+    ])
+}
+
+/// A resposta de um comando de escrita pela op `sql`: o texto, a operacao que
+/// gravou, as notas do tradutor e quantas linhas foram afetadas -- mais o
+/// que a operacao devolveu e vale repetir (rowid, versao nova, modo), e os
+/// avisos de gatilho quando houver.
+fn resposta_do_dml(
+    texto: &str,
+    op: &str,
+    notas: &[String],
+    afetadas: u64,
+    bruto: &Json,
+    repetir: &[&str],
+) -> Json {
+    let mut pares = vec![
+        ("sql".to_string(), Json::texto_de(texto)),
+        ("op".to_string(), Json::texto_de(op)),
+        (
+            "notas".to_string(),
+            Json::Lista(notas.iter().map(Json::texto_de).collect()),
+        ),
+        ("afetadas".to_string(), Json::de_u64(afetadas)),
+    ];
+    for campo in repetir.iter().chain(["gatilhos_avisos"].iter()) {
+        if let Some(v) = bruto.campo(campo) {
+            pares.push((campo.to_string(), v.clone()));
+        }
+    }
+    Json::Objeto(pares)
+}
+
 /// Os indices da tabela, como o tradutor de SQL os espera.
 ///
 /// Saem da resposta do `esquema` -- campo por campo, e nao de uma leitura
@@ -20904,6 +21155,55 @@ mod testes_direito_por_tabela {
         assert!(format!("{e}").contains("folha"), "{e}");
     }
 
+    /// A escrita pelo SQL passa pelo MESMO portao da leitura: quem nao pode
+    /// gravar na folha tambem nao grava nela escrevendo INSERT, UPDATE ou
+    /// DELETE -- e a recusa vem antes de qualquer passo tocar o disco.
+    #[test]
+    fn o_dml_pelo_sql_nao_e_a_porta_dos_fundos_para_a_tabela_negada() {
+        let dir = dir_temp("sql-dml-porta");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(
+                r#"{"*":{"ler":true,"inserir":true,"alterar":true,"excluir":true,
+                     "tabelas":{"folha":{}}}}"#,
+            ),
+        );
+        let corpo = |sql: &str| {
+            format!(
+                r#""op":"sql","database":"b","texto":{}"#,
+                Json::texto_de(sql).escrever()
+            )
+        };
+        for (sql, op) in [
+            ("INSERT INTO clientes (id, nome) VALUES (2, 'y')", "inserir"),
+            ("UPDATE clientes SET nome = 'z' WHERE id = 1", "atualizar"),
+            ("DELETE FROM clientes WHERE id = 2", "excluir"),
+        ] {
+            let r = pede(&s, &ses, &corpo(sql))
+                .unwrap_or_else(|e| panic!("{sql}: a tabela permitida tinha de passar: {e}"));
+            assert_eq!(r.texto_ou("op", ""), op, "{sql}");
+            assert_eq!(r.inteiro_ou("afetadas", -1), 1, "{sql}");
+        }
+        for sql in [
+            "INSERT INTO folha (id, nome) VALUES (2, 'y')",
+            "UPDATE folha SET nome = 'z' WHERE id = 1",
+            "DELETE FROM folha WHERE id = 1",
+        ] {
+            let e = pede(&s, &ses, &corpo(sql)).expect_err("gravou na tabela negada");
+            assert_eq!(e.nome(), "ACESSO_NEGADO", "{sql}: {e}");
+            assert!(format!("{e}").contains("folha"), "{sql}: {e}");
+        }
+        // E a folha continua como estava.
+        let l = s
+            .executar(
+                "ler",
+                &pedido(r#"{"database":"b","tabela":"folha","rowid":1}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(l.texto_ou("nome", ""), "x");
+    }
+
     /// O endereco de tres partes -- `banco.schema.tabela` -- tambem nao
     /// contorna nada: a permissao e conferida contra o banco que o SELECT
     /// escolheu, e nao contra o do envelope. Sem isto, o campo `database` do
@@ -22091,8 +22391,11 @@ mod testes_sql {
         assert!(msg.contains("coluna"), "{msg}");
         assert!(msg.contains("FROM"), "{msg}");
 
+        // DELETE existe desde o passo 2 do roteiro; sem WHERE ele recusa pelo
+        // nome do que faltou -- e continua dizendo a coluna do texto.
         let msg = sql(&s, "DELETE FROM clientes").unwrap_err().to_string();
-        assert!(msg.contains("SELECT"), "{msg}");
+        assert!(msg.contains("DELETE sem WHERE"), "{msg}");
+        assert!(msg.contains("coluna"), "{msg}");
     }
 
     /// O `LIMIT`/`OFFSET` chega ao `varrer` como `max` e `pular` -- e nao e
@@ -26901,6 +27204,36 @@ mod testes_transacoes {
         assert_eq!(s.travas.lock().unwrap().quantas(), 0);
     }
 
+    /// O INSERT pela camada SQL EMPILHA como qualquer `inserir`: a mesma
+    /// conexao ja o enxerga, o disco nao, e o ROLLBACK o desfaz sem queimar
+    /// slot. E o motivo de `VALUES (...), (...)` ser recusado pelo nome:
+    /// viraria `inserir_lote`, que nao empilha.
+    #[test]
+    fn o_insert_pelo_sql_empilha_na_transacao() {
+        let dir = dir_temp("sql-empilha");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        let antes = slots(&s, &ses, "clientes");
+
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"loja",
+               "texto":"INSERT INTO clientes (id, nome) VALUES (1, 'c1')""#,
+        )
+        .unwrap();
+        assert_eq!(r.texto_ou("op", ""), "inserir");
+        assert_eq!(quantas(&s, &ses, "clientes"), 1);
+        assert_eq!(quantas(&s, &sessao(8), "clientes"), 0);
+        assert_eq!(slots(&s, &ses, "clientes"), antes);
+
+        pede(&s, &ses, r#""op":"rollback""#).unwrap();
+        assert_eq!(quantas(&s, &ses, "clientes"), 0);
+        assert_eq!(slots(&s, &ses, "clientes"), antes);
+    }
+
     /// O `COMMIT` aplica a lista inteira, na ordem, com os rowids que a
     /// transacao prometeu ao empilhar.
     #[test]
@@ -29472,5 +29805,261 @@ mod testes_remoto_cifrado {
                 "a recusa tinha de nomear a cifra do fio: {e}"
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_sql_dml {
+    //! INSERT, UPDATE e DELETE por chave, pela op `sql` -- o passo 2 do
+    //! roteiro de `docs/SQL.md`. A prova que mais importa e a da mescla:
+    //! o UPDATE nao pode zerar a coluna que o SET nao citou.
+    use super::*;
+
+    fn dir_temp(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("sqldml-{rotulo}"))
+    }
+
+    fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        Servidor::novo(c).unwrap()
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// `b.c`: id (chave unica), nome e cidade -- a terceira coluna existe
+    /// para provar que o UPDATE nao a zera, e o indice comum em cidade para
+    /// provar que ele nao serve de chave.
+    fn com_dados(dir: &std::path::Path) -> Arc<Servidor> {
+        let s = servidor(dir);
+        let ses = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"c",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"},
+                               {"nome":"cidade","tipo":"Str(20)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true},
+                               {"nome":"porCidade","colunas":["cidade"]}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        for (id, nome, cidade) in [
+            (1, "Adriano", "Blumenau"),
+            (2, "Maria", "Joinville"),
+            (3, "Joao", "Blumenau"),
+        ] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"c",
+                        "valores":{{"id":{id},"nome":"{nome}","cidade":"{cidade}"}}}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        s
+    }
+
+    fn sql(s: &Arc<Servidor>, texto: &str) -> Result<Json> {
+        s.executar(
+            "sql",
+            &pedido(&format!(
+                r#"{{"database":"b","texto":{}}}"#,
+                Json::texto_de(texto).escrever()
+            )),
+            &Sessao::default(),
+        )
+    }
+
+    fn ler(s: &Arc<Servidor>, rowid: u64) -> Json {
+        s.executar(
+            "ler",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"c","rowid":{rowid}}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap()
+    }
+
+    fn busca(s: &Arc<Servidor>, id: i64) -> Json {
+        s.executar(
+            "buscar",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"c","indice":"porId","chave":[{id}]}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap()
+    }
+
+    fn linhas_da(busca: &Json) -> usize {
+        busca
+            .campo("linhas")
+            .and_then(Json::lista)
+            .map(|l| l.len())
+            .unwrap_or(0)
+    }
+
+    #[test]
+    fn insert_pela_camada_sql_grava_e_le_de_volta() {
+        let dir = dir_temp("insert");
+        let s = com_dados(&dir);
+        let r = sql(
+            &s,
+            "INSERT INTO c (id, nome, cidade) VALUES (4, 'Bia', 'Pomerode')",
+        )
+        .unwrap();
+        assert_eq!(r.texto_ou("op", ""), "inserir");
+        assert_eq!(r.inteiro_ou("afetadas", -1), 1);
+        assert_eq!(r.inteiro_ou("rowid", -1), 4);
+        let l = ler(&s, 4);
+        assert_eq!(l.inteiro_ou("id", -1), 4);
+        assert_eq!(l.texto_ou("nome", ""), "Bia");
+        assert_eq!(l.texto_ou("cidade", ""), "Pomerode");
+        assert_eq!(linhas_da(&busca(&s, 4)), 1);
+    }
+
+    /// A PROVA REAL da mescla: tire-a do `pedido_de_atualizar` e `cidade`
+    /// volta NULL, porque o `atualizar` preenche com NULL toda coluna que
+    /// nao vem.
+    #[test]
+    fn update_por_chave_muda_so_a_coluna_do_set() {
+        let dir = dir_temp("update");
+        let s = com_dados(&dir);
+        let antes = ler(&s, 2);
+        let r = sql(&s, "UPDATE c SET nome = 'Mariana' WHERE id = 2").unwrap();
+        assert_eq!(r.texto_ou("op", ""), "atualizar");
+        assert_eq!(r.inteiro_ou("afetadas", -1), 1);
+        assert_eq!(r.inteiro_ou("rowid", -1), 2);
+        assert!(r.inteiro_ou("versao", -1) >= 1, "{}", r.escrever());
+        let depois = ler(&s, 2);
+        assert_eq!(depois.texto_ou("nome", ""), "Mariana");
+        assert_eq!(
+            depois.texto_ou("cidade", ""),
+            "Joinville",
+            "o SET nao citou cidade, e ela tinha de ficar"
+        );
+        assert_eq!(depois.inteiro_ou("id", -1), 2);
+        // O numero de ordem e do motor e nao muda por um UPDATE.
+        assert_eq!(
+            depois.campo("rownum").map(Json::escrever),
+            antes.campo("rownum").map(Json::escrever)
+        );
+        // E as outras linhas nao foram tocadas.
+        assert_eq!(ler(&s, 1).texto_ou("nome", ""), "Adriano");
+        assert_eq!(ler(&s, 3).texto_ou("cidade", ""), "Blumenau");
+    }
+
+    #[test]
+    fn delete_por_chave_e_suave_e_some_da_lista() {
+        let dir = dir_temp("delete");
+        let s = com_dados(&dir);
+        let r = sql(&s, "DELETE FROM c WHERE id = 3").unwrap();
+        assert_eq!(r.texto_ou("op", ""), "excluir");
+        assert_eq!(r.inteiro_ou("afetadas", -1), 1);
+        assert_eq!(r.texto_ou("modo", ""), "suave");
+        assert!(r.booleano_ou("reversivel", false));
+        // Some de quem LISTA -- o `varrer` e a grade...
+        let v = s
+            .executar(
+                "varrer",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let ids: Vec<i64> = v
+            .campo("linhas")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .map(|l| l.inteiro_ou("id", -1))
+            .collect();
+        assert!(!ids.contains(&3), "{ids:?}");
+        assert!(ids.contains(&1) && ids.contains(&2), "{ids:?}");
+        // ...mas fica no arquivo, MARCADA: e o que `reversivel` promete, e o
+        // indice continua a acha-la por isso mesmo -- o `restaurar` precisa.
+        assert!(ler(&s, 3).booleano_ou("softdeleted", false));
+        assert_eq!(linhas_da(&busca(&s, 1)), 1);
+        assert_eq!(ler(&s, 1).texto_ou("nome", ""), "Adriano");
+    }
+
+    #[test]
+    fn chave_ausente_afeta_zero_linhas_sem_erro() {
+        let dir = dir_temp("zero");
+        let s = com_dados(&dir);
+        let r = sql(&s, "UPDATE c SET nome = 'x' WHERE id = 999").unwrap();
+        assert_eq!(r.inteiro_ou("afetadas", -1), 0);
+        assert!(r.campo("rowid").is_none());
+        let r = sql(&s, "DELETE FROM c WHERE id = 999").unwrap();
+        assert_eq!(r.inteiro_ou("afetadas", -1), 0);
+        assert_eq!(ler(&s, 1).texto_ou("nome", ""), "Adriano");
+    }
+
+    /// Indice comum acha a linha, e por isso e recusado: alcancaria varias.
+    #[test]
+    fn indice_nao_unico_recusa_de_ponta_a_ponta() {
+        let dir = dir_temp("comum");
+        let s = com_dados(&dir);
+        let e = sql(&s, "UPDATE c SET nome = 'x' WHERE cidade = 'Blumenau'").unwrap_err();
+        assert!(e.to_string().contains("NAO e unico"), "{e}");
+        assert_eq!(ler(&s, 1).texto_ou("nome", ""), "Adriano");
+        assert_eq!(ler(&s, 3).texto_ou("nome", ""), "Joao");
+    }
+
+    /// Os pedidos dos passos 2 e 3 sao funcoes puras, e e aqui que a versao
+    /// se prova: tire a linha que a poe no pedido e este teste falha.
+    #[test]
+    fn os_pedidos_dos_passos_levam_a_linha_mesclada_e_a_versao() {
+        let lida = pedido(
+            r#"{"id":2,"nome":"Maria","cidade":"Joinville","softdeleted":false,"rownum":2}"#,
+        );
+        let set = vec![("nome".to_string(), Json::texto_de("Mariana"))];
+        let p = pedido_de_atualizar("b", "c", 2, &lida, &set, 7);
+        assert_eq!(p.texto_ou("op", ""), "atualizar");
+        assert_eq!(p.inteiro_ou("rowid", -1), 2);
+        assert_eq!(
+            p.inteiro_ou("versao", -1),
+            7,
+            "a versao lida tem de ir no pedido"
+        );
+        let v = p.campo("valores").unwrap();
+        assert_eq!(v.texto_ou("nome", ""), "Mariana");
+        assert_eq!(
+            v.texto_ou("cidade", ""),
+            "Joinville",
+            "a coluna fora do SET vem da linha lida"
+        );
+        assert_eq!(v.inteiro_ou("id", -1), 2);
+        assert_eq!(
+            v.inteiro_ou("rownum", -1),
+            2,
+            "o numero de ordem volta como lido"
+        );
+        assert!(
+            v.campo("softdeleted").is_none(),
+            "a marca fica de fora: quem a preserva e o atualizar"
+        );
+
+        let p = pedido_de_excluir("b", "c", 2, 7);
+        assert_eq!(p.inteiro_ou("versao", -1), 7);
+        assert!(p.campo("fisico").is_none(), "suave por padrao");
+
+        let p = pedido_de_ler("b", "c", 2);
+        assert!(p.booleano_ou("com_versao", false));
     }
 }

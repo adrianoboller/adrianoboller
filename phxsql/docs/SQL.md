@@ -63,10 +63,10 @@ está medida:
 | `SELECT … LIMIT n OFFSET m` | `varrer` com `pular` | bissecta pelo rownum quando dá |
 | `SELECT … ORDER BY col` | `varrer` com `indice` | a ordem sai do `.ndx`, sem ordenar nada |
 | `SELECT count(*)` | `varrer` conta em O(1) | dois campos do cabeçalho |
-| `INSERT` | `inserir` | 15,9 µs por linha, dois índices |
+| `INSERT` | `inserir` | 15,9 µs por linha, dois índices — **uma linha por `INSERT`, ver §6** |
 | `INSERT` de muitas | `inserir_lote` | 16,3× a linha a linha |
-| `UPDATE … WHERE rowid = ?` | `atualizar` | com `versao`, recusa o conflito |
-| `DELETE` | `excluir` | suave por padrão, física a pedido |
+| `UPDATE … WHERE chave = ?` | `buscar` → `ler` → `atualizar` | **três passos, ver §6**; com `versao`, recusa o conflito |
+| `DELETE … WHERE chave = ?` | `buscar` → `ler` → `excluir` | suave por padrão, física a pedido — **ver §6** |
 | `JOIN` | `juntar` | sete formas, com as três armadilhas documentadas |
 | `UNION` | `unir` | distinta e todas |
 | `GROUP BY` cruzado | `pivotar` | a tabulação cruzada |
@@ -278,7 +278,9 @@ Na ordem em que cada passo destrava alguém:
    ~~**Feito** em `crates/phxsql-sql/`, menos a ligação com o servidor.~~
    **Ligado**: existe `{"op":"sql"}` no protocolo, e a seção 5 conta o que a
    ligação encontrou.
-2. **`INSERT`/`UPDATE`/`DELETE`** por chave primária. Fecha o CRUD.
+2. ~~**`INSERT`/`UPDATE`/`DELETE`** por chave primária. Fecha o CRUD.~~
+   **Feito** em 08/09/2026 — `crates/phxsql-sql/src/dml.rs`, ligado à op `sql`;
+   a seção 6 conta o que a ligação ensinou, e não era pouco.
 3. **`BULKINSERT`** e o catálogo (`information_schema`). Fecha a carga e a
    introspecção.
 4. **`JOIN`**, mapeando para o `juntar` que já existe.
@@ -350,7 +352,7 @@ tabela de verdade, então o de fora só aperta, nunca afrouxa.
 
 ### O que a ligação encontrou, e que ler o código não mostraria
 
-**`WHERE id = 2` não funcionava contra uma coluna `Int4`.** Os 44 testes da
+**`WHERE id = 2` não funcionava contra uma coluna `Int4`.** Os testes da
 crate passavam, e o teste de tradução também: o plano saía certinho, com
 `"chave":["2"]`. O motor é que recusava, com `esperado inteiro, recebido
 Texto("2")`.
@@ -385,7 +387,8 @@ banco que a permissão é conferida, e não contra o do envelope. Sem isso o cam
 
 ### O que a op `sql` ainda não faz
 
-Tudo o que a seção 3 lista, e pela mesma razão: não há substrato. O que muda é
+Os três verbos de escrita por chave já entram (§6). O que continua fora é
+tudo o que a seção 3 lista, e pela mesma razão: não há substrato. O que muda é
 que agora a recusa chega ao cliente pela rede, com o nome da cláusula e a
 coluna do texto — `SQL, coluna 10: …`. Um `WHERE cidade = 'Blumenau'` sem
 índice em `cidade` recusa dizendo **quais colunas têm índice**, em vez de virar
@@ -405,3 +408,113 @@ que descrevem uma página que ninguém pediu.
 
 **A lição:** *o formato só erra na tela.* O campo estava certo no JSON, e era
 por isso que ninguém via.
+
+---
+
+## 6. `INSERT`, `UPDATE` e `DELETE` por chave — e por que `UPDATE` não é tradução direta
+
+Entraram em 08/09/2026, em `crates/phxsql-sql/src/dml.rs`, ligados à op `sql`.
+A gramática:
+
+```text
+INSERT INTO [database.] [schema.] tabela (coluna {, coluna}) VALUES (literal {, literal})
+UPDATE      [database.] [schema.] tabela SET coluna = literal {, coluna = literal}
+            WHERE coluna = literal
+DELETE FROM [database.] [schema.] tabela WHERE coluna = literal
+```
+
+### A tabela da §1 estava certa e enganava
+
+Ela mapeia `UPDATE` para `atualizar`, e a primeira leitura sugere trocar o
+verbo pelo nome da operação. **Não basta**, e o motivo está em
+`crates/phxsql-server/src/valores.rs`, no `json_para_linha`: o `atualizar`
+recebe a linha **inteira**, e *coluna ausente entra como NULL*. Um
+`UPDATE t SET nome = 'x' WHERE id = 5` traduzido direto mandaria só `nome` —
+e zeraria `cidade`, `telefone` e o resto, sem erro nenhum. Isso só apareceu
+lendo o caminho inteiro antes de escrever; o teste de tradução sozinho
+passaria, porque o plano estaria «certo».
+
+Por isso `UPDATE` e `DELETE` por chave são **três passos**, e o plano
+(`PlanoDml`) diz isso em vez de esconder:
+
+1. `buscar` no índice único acha o `rowid` da chave;
+2. `ler` com `com_versao` traz a linha inteira e a `versao` dela;
+3. `atualizar` grava a linha **mesclada** — a lida, com o `SET` por cima — ou
+   `excluir` marca a linha; os dois levam a `versao` lida.
+
+Quem executa os passos é o servidor (`executar_dml`), e cada um sai pelo
+**mesmo** `executar_derivado` do `SELECT`: o portão continua um, lendo o
+campo `tabela` do pedido traduzido. Não há caminho de escrita próprio, e é
+assim que a porta dos fundos não nasce.
+
+### A `versao` vai junto por decisão
+
+Os três passos abrem uma janela entre ler e gravar, e a janela de conflito de
+escrita (pedido 123) existe para isso. *Guarda nova entra pedida, não imposta*
+— e a camada SQL é cliente **novo**, então ela pede: quem gravar a linha entre
+o passo 2 e o 3 faz o motor recusar em vez de ser sobrescrito em silêncio. O
+`buscar` não expõe `versao`; é por isso que o `ler` entra no meio.
+
+### Só chave única
+
+O `WHERE` tem de cair num índice **único** (ou primário) de uma coluna. Um
+índice comum acha a linha — e é recusado por isso mesmo: um `UPDATE` que
+alcança N linhas sem dizer quantas é a resposta errada com cara de certa, a
+mesma recusa que o `SELECT` faz com a varredura pela metade. Sem `WHERE`,
+recusa dizendo que mudaria a tabela inteira; com faixa (`>`, `<>`…), recusa
+dizendo que o passo por chave desce até uma chave igual.
+
+### Uma linha por `INSERT`
+
+`VALUES (…), (…)` viraria `inserir_lote`, e `inserir_lote` **não empilha** numa
+transação aberta (`OPS_EMPILHAVEIS`). Um `BEGIN; INSERT … VALUES (a), (b);
+ROLLBACK` gravaria as duas por fora da transação, com cara de ter desfeito. A
+recusa nomeia o caminho de carga: `BULKINSERT` e a operação `inserir_lote`,
+fora de transação. O `INSERT` de uma linha vira `inserir`, que empilha — e há
+teste de que ele empilha.
+
+### O que recusa pelo nome
+
+`INSERT` sem lista de colunas; `INSERT … SELECT`; `DEFAULT`; expressão no
+`SET` ou no `VALUES`; coluna repetida; `SET` em coluna de sistema
+(`softdeleted`, `rownum`); `UPDATE`/`DELETE` sem `WHERE`, por faixa, com
+`AND`, ou sobre coluna sem índice único. Cada um com a frase que diz o que
+faltou — os casos estão em `dml.rs`, teste `o_que_falta_recusa_pelo_nome`.
+E `SET`, `VALUES` e `INTO` entraram nas cláusulas da gramática por um motivo
+concreto: o endereço aceita apelido sem `AS`, e `UPDATE t SET` leria `SET`
+como apelido da tabela.
+
+### A resposta
+
+`{"sql", "op", "notas", "afetadas"}`, mais o que a operação devolveu e vale
+repetir: `rowid` e `registros` no `inserir`; `rowid` e a `versao` nova no
+`atualizar`; `rowid`, `modo`, `reversivel` e `na_lixeira` no `excluir`.
+Chave que não existe devolve `afetadas: 0` — não é erro. O console da tela
+mostra `afetadas` quando não há `devolvidas`.
+
+### As provas, nos dois sentidos
+
+- `update_por_chave_muda_so_a_coluna_do_set` — a prova real da mescla: tire-a
+  do `pedido_de_atualizar` e `cidade` volta NULL.
+- `os_pedidos_dos_passos_levam_a_linha_mesclada_e_a_versao` — os pedidos dos
+  passos são funções puras; tire a linha que põe a `versao` e ele falha.
+- `o_dml_pelo_sql_nao_e_a_porta_dos_fundos_para_a_tabela_negada` — quem não
+  pode gravar na folha não grava nela escrevendo SQL.
+- `o_insert_pelo_sql_empilha_na_transacao` — o `INSERT` fica na conexão até o
+  `COMMIT`, e o `ROLLBACK` não queima slot.
+- `delete_por_chave_e_suave_e_some_da_lista` — some do `varrer`, fica no
+  arquivo marcada, e o índice continua a achá-la: é o que `restaurar` precisa.
+  A primeira versão deste teste conferia o `buscar`, e falhou: eu tinha
+  medido o observável errado, não o comportamento.
+
+O status «ok / planejado» das três atividades pela camada SQL sai da bancada
+de gestão (`docs/GESTAO.md`, gerado), e não deste texto.
+
+### O que continua fora, e o que não foi medido
+
+Fora por desenho: `UPDATE`/`DELETE` por índice não único ou por faixa, várias
+linhas por `INSERT`, expressão, `DEFAULT`, `INSERT … SELECT`. **Não medido
+nesta rodada**: `UPDATE`/`DELETE` de uma linha nascida na *mesma* transação
+aberta — o `buscar` do passo 1 desce o índice, e a linha empilhada ainda não
+está nele; o desfecho esperado é `afetadas: 0`, e isso precisa de teste antes
+de virar promessa.

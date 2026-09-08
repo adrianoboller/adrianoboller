@@ -434,12 +434,16 @@ pub const OPERACOES: &[Operacao] = &[
     Operacao {
         nome: "sql",
         apelidos: &[],
-        resumo: "Traduz um SELECT simples para as operações do protocolo e o \
-                 executa pelo MESMO portão de permissão. Também atende os \
-                 comandos de rotina no dialeto do MySQL(R): CREATE/DROP \
-                 TRIGGER e PROCEDURE, CALL e SHOW TRIGGERS/PROCEDURES — \
-                 criar, excluir e listar exigem administrar; CALL roda com o \
-                 poder de quem chama. Ver docs/TRIGGERS.md.",
+        resumo: "Traduz um SELECT simples — e INSERT, UPDATE e DELETE por \
+                 chave única — para as operações do protocolo e os executa \
+                 pelo MESMO portão de permissão. UPDATE e DELETE são três \
+                 passos por dentro (buscar, ler, atualizar/excluir com a \
+                 linha mesclada e a versão); uma linha por INSERT. Também \
+                 atende os comandos de rotina no dialeto do MySQL(R): \
+                 CREATE/DROP TRIGGER e PROCEDURE, CALL e SHOW \
+                 TRIGGERS/PROCEDURES — criar, excluir e listar exigem \
+                 administrar; CALL roda com o poder de quem chama. Ver \
+                 docs/SQL.md §6 e docs/TRIGGERS.md.",
         parametros: &[
             opc(
                 "database",

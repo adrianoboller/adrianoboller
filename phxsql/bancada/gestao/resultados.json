@@ -1,6 +1,6 @@
 {
-  "quando": "2026-09-07T05:10:42",
-  "versao": "phxsqld 0.18.0 (0a6992cc91df-sujo) x86_64-unknown-linux-gnu",
+  "quando": "2026-09-08T14:58:08",
+  "versao": "phxsqld 0.18.0 (8222dad37471-sujo) x86_64-unknown-linux-gnu",
   "operacoes_conferidas_no_catalogo": 15,
   "linhas": [
     {
@@ -11,7 +11,7 @@
     },
     {
       "chave": "insert_lote",
-      "titulo": "INSERT em lote — `bulkinsert`",
+      "titulo": "INSERT em lote — `inserir_lote`",
       "estado": "ok",
       "prova": "200 gravadas, 0 recusadas; a tabela ficou com 201"
     },
@@ -66,26 +66,26 @@
     {
       "chave": "sql_insert",
       "titulo": "INSERT pela camada SQL",
-      "estado": "planejado",
-      "prova": "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equi"
+      "estado": "ok",
+      "prova": "a camada SQL executa"
     },
     {
       "chave": "sql_update",
       "titulo": "UPDATE pela camada SQL",
-      "estado": "planejado",
-      "prova": "[SP000018] esquema invalido: SQL, coluna 1: UPDATE ainda nao existe nesta camada -- so SELECT. A operacao equi"
+      "estado": "ok",
+      "prova": "a camada SQL executa"
     },
     {
       "chave": "sql_delete",
       "titulo": "DELETE pela camada SQL",
-      "estado": "planejado",
-      "prova": "[SP000018] esquema invalido: SQL, coluna 1: DELETE ainda nao existe nesta camada -- so SELECT. A operacao equi"
+      "estado": "ok",
+      "prova": "a camada SQL executa"
     },
     {
       "chave": "backup",
       "titulo": "Backup do banco pelo protocolo",
       "estado": "ok",
-      "prova": "gerou /tmp/phx-gestao-tkcgx6sq/bkp/g_adm_2026-09-07_0510.zip"
+      "prova": "gerou /tmp/phx-gestao-2dpby35h/bkp/g_adm_2026-09-08_1458.zip"
     },
     {
       "chave": "restaurar_backup",
@@ -100,22 +100,23 @@
       "quando": "2026-09-07",
       "data_do_mtime": false,
       "bruto": {
-        "master_linhas_s": 37810,
-        "replica_eventos_s": 36356,
-        "alcance_s": 2.8,
-        "retomada_subiu_ms": 418,
-        "retomada_alcance_s": 0.4,
+        "master_linhas_s": 33883,
+        "replica_eventos_s": 37311,
+        "alcance_s": 2.7,
+        "retomada_subiu_ms": 335,
+        "retomada_alcance_s": 0.3,
         "iguais_no_fim": true,
         "linhas": 105001,
         "atraso_ms": {
-          "1 insercao": 2014,
-          "1.000 insercoes em lote": 1168,
-          "1 alteracao": 826,
-          "1 exclusao suave": 970,
-          "1 restauracao": 835,
-          "1 exclusao fisica": 840,
-          "1 linha com memo de 200 KB": 826
+          "1 insercao": 2012,
+          "1.000 insercoes em lote": 1134,
+          "1 alteracao": 1527,
+          "1 exclusao suave": 1523,
+          "1 restauracao": 1368,
+          "1 exclusao fisica": 1463,
+          "1 linha com memo de 200 KB": 1557
         },
+        "atraso_ms_inclui": "o sono do laco da replica (2 s nesta bancada) MAIS o transporte. Nao e o custo de levar o dado: esse esta medido separado em bancada/quorum/resultados.json (levar_ms)",
         "custo_da_imagem": {
           "sem_imagem_linhas_s": 21740,
           "com_imagem_linhas_s": 19531,
@@ -131,17 +132,17 @@
         "versao": "0.18.0",
         "maquina": "quatro processos phxsqld em 127.0.0.1, no mesmo container",
         "topologia": "master -> slave01, slave02, slave03",
-        "maquina_ocupada": true
+        "maquina_ocupada": false
       }
     },
     "cluster": {
       "estado": "ok",
-      "quando": "2026-09-07 05:04",
+      "quando": "2026-09-07 16:34",
       "data_do_mtime": true,
       "bruto": {
         "redireciona": "[SP000028] REDIRECIONA 127.0.0.1:5310 -- este no e replica; o master do cluster e no1 (epoca 0)",
-        "promocao_s": 3.8,
-        "escrita_aceita_s": 3.8,
+        "promocao_s": 4.3,
+        "escrita_aceita_s": 4.3,
         "emails_promocao": 1,
         "emails_degradacao": 6,
         "no3_nao_promoveu": true,

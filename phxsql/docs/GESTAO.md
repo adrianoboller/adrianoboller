@@ -1,12 +1,12 @@
 # As atividades de gestão do banco, medidas
 
-Medido em **07/09/2026 05:10** contra o motor vivo — `phxsqld 0.18.0
-(0a6992cc91df-sujo) x86_64-unknown-linux-gnu`. Cada linha desta página subiu o
+Medido em **08/09/2026 14:58** contra o motor vivo — `phxsqld 0.18.0
+(8222dad37471-sujo) x86_64-unknown-linux-gnu`. Cada linha desta página subiu o
 servidor, exercitou a atividade e olhou o **efeito**: inseriu e leu de volta,
 excluiu e conferiu que sumiu, gerou o backup e o **restaurou com outro nome**
 para ler a linha de dentro da cópia.
 
-**12 ok · 0 parcial · 3 planejado**, mais replicação e cluster, que têm
+**15 ok · 0 parcial · 0 planejado**, mais replicação e cluster, que têm
 bancada própria e entram aqui com a data da medição delas.
 
 > Refaça com `python3 bancada/gestao/medir.py` e depois
@@ -35,7 +35,7 @@ parada com o nome do erro em vez de uma linha na tabela.
 | | atividade | o que foi medido |
 |---|---|---|
 | ✅ | INSERT — `inserir` | inseriu e a linha voltou com o valor gravado |
-| ✅ | INSERT em lote — `bulkinsert` | 200 gravadas, 0 recusadas; a tabela ficou com 201 |
+| ✅ | INSERT em lote — `inserir_lote` | 200 gravadas, 0 recusadas; a tabela ficou com 201 |
 | ✅ | SELECT — `varrer` e `buscar` pelo índice | varrer devolveu 5 linhas; buscar pelo indice achou 1 |
 | ✅ | SELECT com filtro — `varrer` com `onde` | o WHERE cortou para 101 de 201 |
 | ✅ | UPDATE — `atualizar` | alterou e a leitura seguinte trouxe o valor novo |
@@ -51,9 +51,9 @@ parada com o nome do erro em vez de uma linha na tabela.
 | | atividade | o que foi medido |
 |---|---|---|
 | ✅ | SELECT pela camada SQL | a camada SQL executa |
-| ☐ | INSERT pela camada SQL | [SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equi |
-| ☐ | UPDATE pela camada SQL | [SP000018] esquema invalido: SQL, coluna 1: UPDATE ainda nao existe nesta camada -- so SELECT. A operacao equi |
-| ☐ | DELETE pela camada SQL | [SP000018] esquema invalido: SQL, coluna 1: DELETE ainda nao existe nesta camada -- so SELECT. A operacao equi |
+| ✅ | INSERT pela camada SQL | a camada SQL executa |
+| ✅ | UPDATE pela camada SQL | a camada SQL executa |
+| ✅ | DELETE pela camada SQL | a camada SQL executa |
 
 ---
 
@@ -61,7 +61,7 @@ parada com o nome do erro em vez de uma linha na tabela.
 
 | | atividade | o que foi medido |
 |---|---|---|
-| ✅ | Backup do banco pelo protocolo | gerou /tmp/phx-gestao-tkcgx6sq/bkp/g_adm_2026-09-07_0510.zip |
+| ✅ | Backup do banco pelo protocolo | gerou /tmp/phx-gestao-2dpby35h/bkp/g_adm_2026-09-08_1458.zip |
 | ✅ | Restauração do backup, provada por leitura | restaurou com outro nome e a linha 1 voltou: 'ANA' |
 
 ---
@@ -75,23 +75,24 @@ existiu.
 
 ### ✅ Replicação — medida em 2026-09-07
 
-- `master_linhas_s` — **37810**
-- `replica_eventos_s` — **36356**
-- `alcance_s` — **2.8**
-- `retomada_subiu_ms` — **418**
-- `retomada_alcance_s` — **0.4**
+- `master_linhas_s` — **33883**
+- `replica_eventos_s` — **37311**
+- `alcance_s` — **2.7**
+- `retomada_subiu_ms` — **335**
+- `retomada_alcance_s` — **0.3**
 - `iguais_no_fim` — **True**
 - `linhas` — **105001**
+- `atraso_ms_inclui` — **o sono do laco da replica (2 s nesta bancada) MAIS o transporte. Nao e o custo de levar o dado: esse esta medido separado em bancada/quorum/resultados.json (levar_ms)**
 - `versao` — **0.18.0**
 - `maquina` — **quatro processos phxsqld em 127.0.0.1, no mesmo container**
 - `topologia` — **master -> slave01, slave02, slave03**
-- `maquina_ocupada` — **True**
+- `maquina_ocupada` — **False**
 
-### ✅ Cluster — medida em 2026-09-07 05:04 *(data do mtime do arquivo)*
+### ✅ Cluster — medida em 2026-09-07 16:34 *(data do mtime do arquivo)*
 
 - `redireciona` — **[SP000028] REDIRECIONA 127.0.0.1:5310 -- este no e replica; o master do cluster e no1 (epoca 0)**
-- `promocao_s` — **3.8**
-- `escrita_aceita_s` — **3.8**
+- `promocao_s` — **4.3**
+- `escrita_aceita_s` — **4.3**
 - `emails_promocao` — **1**
 - `emails_degradacao` — **6**
 - `no3_nao_promoveu` — **True**
