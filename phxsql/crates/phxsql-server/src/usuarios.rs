@@ -122,6 +122,11 @@ impl Atividade {
             // poder de ler vale por base -- entao ler e o suficiente, e a
             // operacao confere de novo antes de abrir a segunda tabela.
             "juntar" | "join" | "unir" | "union" => Atividade::Ler,
+            // Comparar duas tabelas e LER as duas: a resposta traz linhas
+            // delas. Como o `juntar` e o `unir`, a operacao confere de novo por
+            // dentro, porque as tabelas dela moram em campos que este portao
+            // nao olha.
+            "diferencas" | "diff" => Atividade::Ler,
             "sequencias" | "sequences" => Atividade::Ler,
             // A op `sql` so produz `varrer` e `buscar` hoje, e as duas pedem
             // `ler`. Este portao e o de FORA e nao dispensa o de dentro: o

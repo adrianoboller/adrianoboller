@@ -22,6 +22,7 @@ pub mod conferidor_vermelhas;
 pub mod config;
 pub mod consultar;
 pub mod dblink;
+pub mod diferencas;
 pub mod direito_coluna;
 pub mod diretivas;
 pub mod email;

@@ -500,6 +500,31 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "diferencas",
+        apelidos: &["diff"],
+        resumo: "O que mudou entre duas tabelas: quem só existe de um lado, e \
+                 quais colunas diferem nas que existem nos dois.",
+        parametros: &[
+            DB,
+            obr("a", "string", "a primeira tabela"),
+            obr("b", "string", "a segunda tabela"),
+            opc(
+                "indice",
+                "string",
+                "o índice ÚNICO, de mesmo nome nos dois lados, que dá o par; \
+                 sem ele, a chave primária de `a`",
+            ),
+            opc(
+                "max",
+                "integer",
+                "teto de CADA lista (`so_em_a`, `so_em_b`, `diferentes`); a \
+                 resposta traz `truncado` quando cortou",
+            ),
+        ],
+        exemplo: r#"{"op":"diferencas","database":"loja","a":"clientes","b":"clientes_ontem","max":100}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "consultar",
         apelidos: &[],
         resumo: "Compõe operações: pega as linhas de um sub-pedido e aplica \

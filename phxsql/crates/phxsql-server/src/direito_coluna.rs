@@ -127,6 +127,11 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("join", PorColuna::Recusa),
     ("unir", PorColuna::Recusa),
     ("union", PorColuna::Recusa),
+    // O TERCEIRO IRMAO: a resposta traz a linha inteira dos dois lados dentro
+    // de `diferentes`, e a lista `colunas` diz QUAIS mudaram -- entao ela
+    // responde sobre a coluna negada mesmo que a peneira tirasse o valor.
+    ("diferencas", PorColuna::Recusa),
+    ("diff", PorColuna::Recusa),
     // Os ROTULOS das linhas do cruzamento SAO os valores da coluna.
     ("pivotar", PorColuna::Recusa),
     ("pivot", PorColuna::Recusa),
@@ -334,6 +339,14 @@ pub fn tabelas_do_pedido(op: &str, p: &Json) -> Vec<String> {
                 if let Some(j) = p.campo(lado) {
                     junte(j.texto_ou("tabela", ""));
                 }
+            }
+        }
+        // O terceiro irmao: as duas tabelas moram em `"a"` e `"b"`, e nao
+        // dentro de um objeto como no `juntar` -- por isso ele tem ramo
+        // proprio, e nao cabe no de cima.
+        "diferencas" | "diff" => {
+            for lado in ["a", "b"] {
+                junte(p.texto_ou(lado, ""));
             }
         }
         "unir" | "union" => {

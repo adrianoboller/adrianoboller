@@ -8706,6 +8706,7 @@ impl Servidor {
             "pivotar" | "pivot" => self.op_pivotar(p, sessao),
             "juntar" | "join" => self.op_juntar(p, sessao),
             "unir" | "union" => self.op_unir(p, sessao),
+            "diferencas" | "diff" => self.op_diferencas(p, sessao),
             "ler" => self.op_ler(p, sessao),
             "varrer" => self.op_varrer(p, sessao),
             "buscar" => self.op_buscar(p, sessao),
@@ -17652,6 +17653,195 @@ impl Servidor {
             // vira meia hora de investigacao.
             ("chave_nula_a", Json::de_u64(r.chave_nula_esquerda)),
             ("chave_nula_b", Json::de_u64(r.chave_nula_direita)),
+            ("truncado", Json::Bool(r.truncado)),
+            ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
+        ]))
+    }
+
+    /// `diferencas`: o que mudou entre duas tabelas, pela chave.
+    ///
+    /// # O TERCEIRO IRMAO da conferencia propria
+    ///
+    /// O portao geral confere o campo `"tabela"` do pedido, e esta operacao
+    /// **nao tem esse campo**: as duas tabelas moram em `"a"` e `"b"`. E
+    /// exatamente a forma do `juntar` (que guarda em `a.tabela` e `b.tabela`)
+    /// e do `unir` (que guarda numa lista) -- e por isso ela paga conferencia
+    /// propria, como os dois pagam.
+    ///
+    /// **Isto NAO e duplicacao do portao geral**, e a distincao importa numa
+    /// futura divisao deste arquivo: limpar esta conferencia por parecer
+    /// repetida reabre a porta dos fundos, e nenhum teste do portao geral
+    /// acusa -- o que acusa e o teste que viaja com esta operacao.
+    ///
+    /// A pergunta que decide, e que vale para a proxima op que nascer: **esta
+    /// operacao nomeia tabela onde o portao nao olha?**
+    fn op_diferencas(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let comeco = Instant::now();
+        let base = p.texto_ou("database", "").to_string();
+        let (na, nb) = (
+            p.texto_ou("a", "").trim().to_string(),
+            p.texto_ou("b", "").trim().to_string(),
+        );
+        if na.is_empty() || nb.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe as duas tabelas em \"a\" e \"b\"".into(),
+            ));
+        }
+        // A CONFERENCIA PROPRIA -- ver a nota do cabecalho.
+        if let Some(u) = &sessao.usuario {
+            for alvo in [&na, &nb] {
+                if !u.pode_em(&base, alvo, Atividade::Ler) {
+                    return Err(PhxError::Autorizacao(format!(
+                        "{} nao tem permissao de ler em {base}.{alvo}",
+                        u.login
+                    )));
+                }
+            }
+        }
+        // A sonda de travessia tambem: os dois nomes chegam por campos que o
+        // `despachar` nao olha, entao a sonda dele nao os viu.
+        for (rotulo, valor) in [("a", &na), ("b", &nb)] {
+            if phxsql_store::catalogo::nome_hostil(valor) {
+                return Err(PhxError::Autorizacao(format!(
+                    "{rotulo} {valor:?} nao e um nome"
+                )));
+            }
+        }
+
+        let max = self.limite(p) as usize;
+        let teto = self.max_linhas();
+        let dados = self.travar_dados()?;
+        let db = dados.abrir_database(&base)?;
+        let mut ta = db.abrir_qualificada(&na)?;
+        let mut tb = db.abrir_qualificada(&nb)?;
+        let (ea, eb) = (ta.esquema().clone(), tb.esquema().clone());
+
+        // As COLUNAS tem de ser as mesmas, e a recusa nomeia a diferenca.
+        //
+        // Comparar so o que ha nos dois lados responderia «iguais» sobre
+        // linhas que diferem numa coluna que um dos lados nao tem -- e
+        // «iguais» errado e a pior resposta que esta operacao pode dar,
+        // porque ela existe justamente para ser acreditada.
+        let nomes =
+            |e: &Schema| -> Vec<String> { e.colunas().iter().map(|c| c.nome.clone()).collect() };
+        let (ca, cb) = (nomes(&ea), nomes(&eb));
+        if ca != cb {
+            let so_de_um = |x: &[String], y: &[String]| -> Vec<String> {
+                x.iter().filter(|n| !y.contains(n)).cloned().collect()
+            };
+            return Err(PhxError::Esquema(format!(
+                "{na} e {nb} nao tem as mesmas colunas, e comparar so as comuns \
+                 responderia \"iguais\" sobre linhas que diferem. So em {na}: {:?}; \
+                 so em {nb}: {:?}; ordem em {na}: {ca:?}",
+                so_de_um(&ca, &cb),
+                so_de_um(&cb, &ca)
+            )));
+        }
+
+        // O INDICE, nos dois lados, com o mesmo nome e UNICO -- ver o
+        // cabecalho de `crate::diferencas` para o porque dos tres requisitos.
+        let indice = match p.texto_ou("indice", "").trim() {
+            "" => ea.chave_primaria().map(|k| k.nome.clone()).ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "{na} nao tem chave primaria; diga em \"indice\" por qual \
+                         indice unico as duas tabelas se comparam"
+                ))
+            })?,
+            outro => outro.to_string(),
+        };
+        for (nome, e) in [(&na, &ea), (&nb, &eb)] {
+            let def = e
+                .indices()
+                .iter()
+                .find(|i| i.nome.eq_ignore_ascii_case(&indice))
+                .ok_or_else(|| {
+                    PhxError::NaoEncontrado(format!("o indice {indice:?} nao existe em {nome}"))
+                })?;
+            if !def.unico {
+                return Err(PhxError::Esquema(format!(
+                    "o indice {indice:?} de {nome} nao e unico, e sem chave unica \
+                     nao ha par: duas linhas com a mesma chave de um lado nao tem \
+                     par unico do outro"
+                )));
+            }
+        }
+
+        let ler = |t: &mut Table, nome: &str| -> Result<Vec<(Vec<Value>, Vec<Value>)>> {
+            let rowids = t.varrer()?;
+            if rowids.len() as u64 > teto {
+                return Err(PhxError::LimiteExcedido(format!(
+                    "{nome} tem {} linhas, acima do teto de {teto} de \
+                     `recursos.max_linhas`: as duas tabelas entram inteiras na \
+                     memoria para se comparar",
+                    rowids.len()
+                )));
+            }
+            let mut saida = Vec::with_capacity(rowids.len());
+            for (rowid, _) in rowids {
+                if let Some(l) = t.ler(rowid)? {
+                    let chave = crate::upsert::valores_do_indice(t.esquema(), &indice, &l);
+                    saida.push((chave, l));
+                }
+            }
+            Ok(saida)
+        };
+        let la = ler(&mut ta, &na)?;
+        let lb = ler(&mut tb, &nb)?;
+        let r = crate::diferencas::comparar(la, lb, &ea, max);
+
+        let chave_json = |c: &[Value]| -> Json {
+            Json::Lista(
+                c.iter()
+                    .enumerate()
+                    .map(|(i, v)| {
+                        let ty = ea
+                            .indices()
+                            .iter()
+                            .find(|x| x.nome.eq_ignore_ascii_case(&indice))
+                            .and_then(|x| x.colunas.get(i))
+                            .and_then(|ic| ea.colunas().get(ic.coluna))
+                            .map(|c| c.ty)
+                            .unwrap_or(phxsql_core::types::ColumnType::Int8);
+                        crate::valores::valor_para_json(v, &ty)
+                    })
+                    .collect(),
+            )
+        };
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(&base)),
+            ("a", Json::texto_de(&na)),
+            ("b", Json::texto_de(&nb)),
+            ("indice", Json::texto_de(&indice)),
+            ("iguais", Json::de_u64(r.iguais)),
+            (
+                "so_em_a",
+                Json::Lista(r.so_em_a.iter().map(|c| chave_json(c)).collect()),
+            ),
+            (
+                "so_em_b",
+                Json::Lista(r.so_em_b.iter().map(|c| chave_json(c)).collect()),
+            ),
+            (
+                "diferentes",
+                Json::Lista(
+                    r.diferentes
+                        .iter()
+                        .map(|d| {
+                            Json::objeto(vec![
+                                ("chave", chave_json(&d.chave)),
+                                (
+                                    "colunas",
+                                    Json::Lista(d.colunas.iter().map(Json::texto_de).collect()),
+                                ),
+                                ("a", linha_para_json(&d.a, &ea)),
+                                ("b", linha_para_json(&d.b, &eb)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            // Cortou? A resposta DIZ. Uma lista truncada em silencio faria
+            // quem confere acreditar que viu tudo.
             ("truncado", Json::Bool(r.truncado)),
             ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
         ]))
@@ -34893,6 +35083,284 @@ mod testes_sql_composto {
         let e = pede("SELECT id FROM clientes WHERE id IN (SELECT id FROM folha)")
             .expect_err("o IN leu a tabela negada");
         assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// A op `diferencas` -- o TERCEIRO IRMAO da conferencia propria.
+#[cfg(test)]
+mod testes_diferencas {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("dif-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// `hoje` e `ontem` com a MESMA forma, e `folha` com outra (para provar a
+    /// recusa por coluna diferente).
+    fn servidor(d: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            cadastro: cadastro.clone(),
+            max_linhas: 10_000,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let ses = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        for tab in ["hoje", "ontem", "folha"] {
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{tab}","colunas":[
+                        {{"nome":"id","tipo":"Int4","obrigatoria":true}},
+                        {{"nome":"nome","tipo":"Str(20)"}}],
+                     "indices":[{{"nome":"porId","colunas":["id"],"unico":true,
+                                  "primario":true}}]}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        // Uma tabela com outra forma, para a recusa por coluna diferente.
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"outra_forma","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"nome","tipo":"Str(20)"},
+                    {"nome":"extra","tipo":"Int4"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        // Uma com indice REPETIVEL, para a recusa do indice nao unico.
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"sem_chave","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"nome","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porNome","colunas":["nome"]}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        let grava = |tab: &str, linhas: &[(i64, &str)]| {
+            for (id, nome) in linhas {
+                s.executar(
+                    "inserir",
+                    &pedido(&format!(
+                        r#"{{"database":"b","tabela":"{tab}","linha":{{"id":{id},"nome":"{nome}"}}}}"#
+                    )),
+                    &ses,
+                )
+                .unwrap();
+            }
+        };
+        grava("hoje", &[(1, "ana"), (2, "bia"), (3, "caio")]);
+        grava("ontem", &[(1, "ana"), (2, "BIA"), (4, "duda")]);
+        grava("folha", &[(1, "segredo")]);
+        let sessao = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        (s, sessao)
+    }
+
+    fn dif(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        s.executar(
+            "diferencas",
+            &pedido(&format!(r#"{{"database":"b",{corpo}}}"#)),
+            &Sessao::default(),
+        )
+    }
+
+    fn ids(r: &Json, campo: &str) -> Vec<i64> {
+        r.campo(campo)
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|c| {
+                c.lista()
+                    .and_then(|l| l.first().and_then(Json::inteiro))
+                    .unwrap_or(-1)
+            })
+            .collect()
+    }
+
+    /// **A PROVA REAL: as tres listas, e a coluna que mudou.**
+    ///
+    /// O 3 so esta em `hoje`, o 4 so em `ontem`, o 2 esta nos dois e difere no
+    /// `nome`, e o 1 e igual. Um teste que so contasse as listas passaria com
+    /// os dois lados TROCADOS -- por isso ele confere QUEM esta em cada uma.
+    #[test]
+    fn as_tres_listas_dizem_de_que_lado_esta_cada_um() {
+        let d = dir("tres");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = dif(&s, r#""a":"hoje","b":"ontem""#).expect("nao rodou");
+        assert_eq!(r.inteiro_ou("iguais", -1), 1);
+        assert_eq!(ids(&r, "so_em_a"), vec![3], "o 3 so existe em hoje");
+        assert_eq!(ids(&r, "so_em_b"), vec![4], "o 4 so existe em ontem");
+        assert!(!r.booleano_ou("truncado", true));
+
+        let difs = r.campo("diferentes").and_then(Json::lista).unwrap();
+        assert_eq!(difs.len(), 1);
+        let colunas: Vec<String> = difs[0]
+            .campo("colunas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .filter_map(|x| x.texto().map(str::to_string))
+            .collect();
+        assert_eq!(colunas, vec!["nome".to_string()], "nao disse qual coluna");
+        assert_eq!(difs[0].campo("a").unwrap().texto_ou("nome", ""), "bia");
+        assert_eq!(difs[0].campo("b").unwrap().texto_ou("nome", ""), "BIA");
+
+        // E trocando os lados, as duas listas trocam -- o controle que impede
+        // o teste de passar com os lados invertidos.
+        let r = dif(&s, r#""a":"ontem","b":"hoje""#).unwrap();
+        assert_eq!(ids(&r, "so_em_a"), vec![4]);
+        assert_eq!(ids(&r, "so_em_b"), vec![3]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `max` corta CADA lista, e a resposta diz `truncado`.
+    #[test]
+    fn o_max_corta_e_a_resposta_diz() {
+        let d = dir("max");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = dif(&s, r#""a":"hoje","b":"folha","max":1"#);
+        // `folha` tem a mesma forma de `hoje`, entao a comparacao roda.
+        let r = r.expect("nao rodou");
+        assert!(r.booleano_ou("truncado", false) || r.inteiro_ou("iguais", -1) >= 0);
+        // Com max 1 e duas linhas so em `hoje` (2 e 3), a lista corta.
+        assert_eq!(r.campo("so_em_a").and_then(Json::lista).unwrap().len(), 1);
+        assert!(r.booleano_ou("truncado", false), "cortou e nao disse");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Duas iguais nao tem diferenca -- o controle da bateria.
+    #[test]
+    fn duas_iguais_nao_tem_diferenca() {
+        let d = dir("iguais");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = dif(&s, r#""a":"hoje","b":"hoje""#).unwrap();
+        assert_eq!(r.inteiro_ou("iguais", -1), 3);
+        assert!(r
+            .campo("diferentes")
+            .and_then(Json::lista)
+            .unwrap()
+            .is_empty());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// As recusas nomeiam: coluna diferente, indice que nao existe, indice
+    /// repetivel.
+    #[test]
+    fn as_recusas_nomeiam() {
+        let d = dir("recusa");
+        let (s, _) = servidor(&d, Cadastro::default());
+
+        let e = dif(&s, r#""a":"hoje","b":"outra_forma""#).unwrap_err();
+        let t = e.to_string();
+        assert!(t.contains("extra"), "a recusa nao diz a coluna: {t}");
+        assert!(t.contains("iguais"), "a recusa nao diz por que: {t}");
+
+        let e = dif(&s, r#""a":"hoje","b":"ontem","indice":"nao_existe""#).unwrap_err();
+        assert!(e.to_string().contains("nao_existe"), "{e}");
+
+        let e = dif(&s, r#""a":"sem_chave","b":"sem_chave","indice":"porNome""#).unwrap_err();
+        assert!(e.to_string().contains("unico"), "{e}");
+
+        let e = dif(&s, r#""a":"hoje""#).unwrap_err();
+        assert!(e.to_string().contains("\"b\""), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A CONFERENCIA PROPRIA: `diferencas` nao tem campo `"tabela"`, entao o
+    /// portao geral nao ve as tabelas dela.**
+    ///
+    /// Este e o teste que viaja com a operacao -- e o unico que acusa se
+    /// alguem limpar a conferencia por ela parecer duplicacao do portao geral.
+    ///
+    /// PROVA REAL: tirando o `for alvo in [&na, &nb]` do `op_diferencas`, a
+    /// folha entra pelos dois lados e este teste REPROVA nas duas -- enquanto
+    /// o controle, as tabelas permitidas, continua respondendo.
+    #[test]
+    fn diferencas_nao_e_a_porta_dos_fundos() {
+        let d = dir("porta");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"folha":{}}}}}]}"#,
+        ))
+        .unwrap();
+        let (s, ses) = servidor(&d, cadastro);
+        let pede = |a: &str, b: &str| -> Result<Json> {
+            let mut sessao = Sessao {
+                usuario: ses.usuario.clone(),
+                ..Sessao::default()
+            };
+            let (_, _, r) = s.despachar(
+                &format!(r#"{{"token":"t","op":"diferencas","database":"b","a":"{a}","b":"{b}"}}"#),
+                &mut sessao,
+                "127.0.0.1",
+            );
+            r
+        };
+        pede("hoje", "ontem").expect("as tabelas permitidas foram barradas");
+        for (a, b) in [("folha", "hoje"), ("hoje", "folha")] {
+            let e = pede(a, b).expect_err("leu a tabela negada");
+            assert_eq!(e.nome(), "ACESSO_NEGADO", "{a}/{b}: {e}");
+            assert!(format!("{e}").contains("folha"), "{a}/{b}: {e}");
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// E o DIREITO POR COLUNA recusa a tabela restrita, pelo mesmo argumento
+    /// do `juntar`: a resposta traz a linha inteira dos dois lados, e a lista
+    /// `colunas` responde sobre a coluna negada mesmo sem mostra-la.
+    #[test]
+    fn diferencas_recusa_a_tabela_com_regra_de_coluna() {
+        let d = dir("coluna");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"ontem":{"ler":true,
+                   "colunas":{"nome":{"ler":false}}}}}}}]}"#,
+        ))
+        .unwrap();
+        let (s, ses) = servidor(&d, cadastro);
+        let mut sessao = Sessao {
+            usuario: ses.usuario.clone(),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            r#"{"token":"t","op":"diferencas","database":"b","a":"hoje","b":"ontem"}"#,
+            &mut sessao,
+            "127.0.0.1",
+        );
+        let e = r.expect_err("comparou contra a tabela restrita");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        // O controle: duas tabelas SEM regra de coluna continuam comparando.
+        let (_, _, ok) = s.despachar(
+            r#"{"token":"t","op":"diferencas","database":"b","a":"hoje","b":"folha"}"#,
+            &mut sessao,
+            "127.0.0.1",
+        );
+        ok.expect("as tabelas sem regra de coluna foram barradas");
         let _ = std::fs::remove_dir_all(&d);
     }
 }
