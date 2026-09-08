@@ -2051,6 +2051,104 @@ mod testes {
         }
     }
 
+    // --- A ponta a ponta, contra um phxsqld DE VERDADE ---
+    //
+    // Ignorada com o motivo, e o motivo e verificavel: a `op_sql` desta arvore
+    // le so `texto`/`sql` (crates/phxsql-server/src/servidor.rs:11795) e o
+    // lexico recusa o caractere `?` -- entao HOJE este SELECT volta com erro
+    // de sintaxe, e nao com a linha. Quando a F-CONSULTA ligar o
+    // `sql.parametros`, tire o `#[ignore]` e rode com o servidor da prova de
+    // pe (docs/ODBC.md, secao 7):
+    //
+    //     python3 bancada/odbc/montar-dados.py
+    //     cargo test -p phxsql-odbc -- --ignored
+    //
+    // A receita sai do ambiente para a prova nao ficar presa a uma porta:
+    // PHXSQL_ODBC_PROVA="Driver=PhxSql;Server=...;Port=...;..."
+    #[test]
+    #[ignore = "espera a op sql aceitar parametros (F-CONSULTA), e um phxsqld em PHXSQL_ODBC_PROVA"]
+    fn ponta_a_ponta_where_id_igual_pergunta() {
+        let receita = std::env::var("PHXSQL_ODBC_PROVA").unwrap_or_else(|_| {
+            "Driver=PhxSql;Server=127.0.0.1;Port=5305;Token=prova-odbc;\
+             UID=root;PWD=prova123;Database=loja"
+                .replace(char::is_whitespace, "")
+        });
+        unsafe {
+            let mut env: SqlHandle = std::ptr::null_mut();
+            SQLAllocHandle(SQL_HANDLE_ENV, std::ptr::null_mut(), &mut env);
+            SQLSetEnvAttr(env, SQL_ATTR_ODBC_VERSION, 3usize as SqlPointer, 0);
+            let mut dbc: SqlHandle = std::ptr::null_mut();
+            SQLAllocHandle(SQL_HANDLE_DBC, env, &mut dbc);
+            let c = format!("{receita}\0");
+            assert_eq!(
+                SQLDriverConnect(
+                    dbc,
+                    std::ptr::null_mut(),
+                    c.as_ptr(),
+                    SQL_NTS as SqlSmallint,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    0
+                ),
+                SQL_SUCCESS,
+                "sem phxsqld na receita nao ha o que provar"
+            );
+            let mut stmt: SqlHandle = std::ptr::null_mut();
+            assert_eq!(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &mut stmt), SQL_SUCCESS);
+
+            let sql = "SELECT nome FROM clientes WHERE id = ?\0";
+            assert_eq!(SQLPrepare(stmt, sql.as_ptr(), SQL_NTS), SQL_SUCCESS);
+            let mut quantos: SqlSmallint = 0;
+            assert_eq!(SQLNumParams(stmt, &mut quantos), SQL_SUCCESS);
+            assert_eq!(quantos, 1);
+
+            let mut id: i32 = 3;
+            assert_eq!(
+                SQLBindParameter(
+                    stmt,
+                    1,
+                    SQL_PARAM_INPUT,
+                    SQL_C_SLONG,
+                    SQL_INTEGER,
+                    0,
+                    0,
+                    &mut id as *mut i32 as SqlPointer,
+                    0,
+                    std::ptr::null_mut()
+                ),
+                SQL_SUCCESS
+            );
+            // A conferencia e sobre o EFEITO -- a linha que voltou --, e nao
+            // sobre o veredito: prova que confere so o codigo de retorno passa
+            // com o defeito reposto, e esta casa ja pagou por isso.
+            assert_eq!(SQLExecute(stmt), SQL_SUCCESS, "{}", estado_do_diag(stmt));
+            assert_eq!(SQLFetch(stmt), SQL_SUCCESS);
+            let mut buf = [0u8; 64];
+            let mut ind: SqlLen = 0;
+            assert_eq!(
+                SQLGetData(
+                    stmt,
+                    1,
+                    SQL_C_CHAR,
+                    buf.as_mut_ptr() as SqlPointer,
+                    64,
+                    &mut ind
+                ),
+                SQL_SUCCESS
+            );
+            let nome = String::from_utf8_lossy(&buf[..ind.max(0) as usize]).into_owned();
+            assert_eq!(nome, "Carlos Consulta");
+            // Uma linha so: o `?` filtrou de verdade, e nao devolveu a tabela.
+            assert_eq!(SQLFetch(stmt), SQL_NO_DATA);
+
+            SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+            SQLDisconnect(dbc);
+            SQLFreeHandle(SQL_HANDLE_DBC, dbc);
+            SQLFreeHandle(SQL_HANDLE_ENV, env);
+        }
+    }
+
     #[test]
     fn entregar_inteiro_confere_a_faixa() {
         unsafe {

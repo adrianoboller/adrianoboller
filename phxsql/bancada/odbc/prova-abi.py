@@ -24,6 +24,11 @@ ANTES de rodar, que e o que separa prova de demonstracao:
    a proxima chamada continua de onde parou e o fim e SQL_NO_DATA. Este e
    o passo do defeito reposto documentado em docs/ODBC.md.
 
+O passo 7c (parametros) e uma SONDA VIVA: o que nao depende do servidor e
+conferido sempre, e a volta de `WHERE id = ?` e TENTADA. Enquanto a op `sql`
+nao aceitar `parametros`, ela sai como NAO MEDIDA com o motivo -- nunca como
+"ok" e nunca sumindo da lista, que e a pior das duas.
+
 Requisitos: um phxsqld com o banco montado pelo montar-dados.py ao lado
 (ver docs/ODBC.md, secao da prova). Uso:
 
@@ -57,7 +62,8 @@ for nome_fn in ["SQLAllocHandle", "SQLFreeHandle", "SQLFreeStmt",
                 "SQLDescribeCol", "SQLColAttribute", "SQLBindCol",
                 "SQLFetch", "SQLGetData", "SQLRowCount", "SQLGetDiagRec",
                 "SQLGetInfo", "SQLSetConnectAttr", "SQLSetStmtAttr",
-                "SQLPrepare", "SQLExecute"]:
+                "SQLPrepare", "SQLExecute", "SQLBindParameter",
+                "SQLNumParams", "SQLDescribeParam"]:
     getattr(d, nome_fn).restype = ctypes.c_short
 
 # Os parametros SQLLEN sao do tamanho do ponteiro; declarar evita depender
@@ -66,8 +72,28 @@ d.SQLBindCol.argtypes = [ctypes.c_void_p, ctypes.c_ushort, ctypes.c_short,
                          ctypes.c_void_p, ctypes.c_ssize_t, ctypes.c_void_p]
 d.SQLGetData.argtypes = [ctypes.c_void_p, ctypes.c_ushort, ctypes.c_short,
                          ctypes.c_void_p, ctypes.c_ssize_t, ctypes.c_void_p]
+# SQLBindParameter tem SQLULEN e SQLLEN no meio: declarar e o que impede o
+# libffi de empurrar 32 bits onde o driver le 64.
+d.SQLBindParameter.argtypes = [ctypes.c_void_p, ctypes.c_ushort, ctypes.c_short,
+                               ctypes.c_short, ctypes.c_short, ctypes.c_size_t,
+                               ctypes.c_short, ctypes.c_void_p, ctypes.c_ssize_t,
+                               ctypes.c_void_p]
+d.SQLDescribeParam.argtypes = [ctypes.c_void_p, ctypes.c_ushort, ctypes.c_void_p,
+                               ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
 
 falhas = []
+nao_medidas = []
+
+def nao_medida(rotulo, motivo, comando):
+    """Registra o que a bancada NAO conseguiu medir, com o motivo e o caminho.
+
+    Some da lista e pior que aparecer como pendente: uma prova que esconde o
+    passo que nao rodou existe para dizer em que se pode confiar, e mente
+    justamente ali.
+    """
+    print(f"  --  {rotulo}: NAO MEDIDA -- {motivo}")
+    print(f"      quando resolver: {comando}")
+    nao_medidas.append(rotulo)
 
 def confere(rotulo, visto, esperado):
     ok = visto == esperado
@@ -202,8 +228,64 @@ confere("SQLExecute", d.SQLExecute(stmt), SUCESSO)
 confere("fetch do preparado", d.SQLFetch(stmt), SUCESSO)
 confere("o nome da linha 3", pega_texto(1), (SUCESSO, "Carlos Consulta"))
 
+print("== 7c. parametros: `?` contado, ligado e mandado no pedido ==")
+# Comando NOVO, e nao o de cima: SQL_CLOSE fecha o cursor e NAO desfaz a
+# preparacao (e o que a especificacao diz, e o que o driver faz). A primeira
+# versao desta secao reusou o `stmt` do passo 7b e leu SUCCESS onde esperava
+# HY010 -- o texto preparado la ainda estava vivo, sem `?` nenhum. O defeito
+# era DA PROVA, como o do `c_int` do passo 8: teste errado acusa driver certo.
+stmt_p = ctypes.c_void_p()
+confere("SQLAllocHandle(STMT) para os parametros",
+        d.SQLAllocHandle(STMT, dbc, ctypes.byref(stmt_p)), SUCESSO)
+stmt = stmt_p
+
+# O que NAO depende do servidor se prova sempre.
+quantos = ctypes.c_short(-9)
+confere("SQLNumParams sem prepare e HY010",
+        d.SQLNumParams(stmt, ctypes.byref(quantos)), ERRO)
+confere("e nao escreve numero nenhum", quantos.value, -9)
+# O `?` dentro das aspas e DADO, e nao pergunta -- a regra do lexico.
+confere("SQLPrepare com aspas e um `?`", d.SQLPrepare(
+    stmt, b"SELECT nome FROM clientes WHERE nome <> 'e ai?' AND id = ?", NTS), SUCESSO)
+confere("SQLNumParams conta 1, nao 2",
+        (d.SQLNumParams(stmt, ctypes.byref(quantos)), quantos.value), (SUCESSO, 1))
+tipo_p = ctypes.c_short(0); tam_p = ctypes.c_size_t(9)
+casas_p = ctypes.c_short(9); nul_p = ctypes.c_short(9)
+confere("SQLDescribeParam", d.SQLDescribeParam(
+    stmt, 1, ctypes.byref(tipo_p), ctypes.byref(tam_p),
+    ctypes.byref(casas_p), ctypes.byref(nul_p)), SUCESSO)
+confere("declara SQL_VARCHAR nulavel", (tipo_p.value, nul_p.value), (12, 1))
+confere("posicao fora da faixa e 07009", d.SQLDescribeParam(
+    stmt, 2, ctypes.byref(tipo_p), ctypes.byref(tam_p),
+    ctypes.byref(casas_p), ctypes.byref(nul_p)), ERRO)
+confere("o SQLSTATE da posicao invalida", diag(STMT, stmt)[1], "07009")
+
+# Falta de ligacao: recusa NO DRIVER, sem gastar ida e volta.
+confere("executar sem ligar o `?` e recusado", d.SQLExecute(stmt), ERRO)
+confere("e o SQLSTATE e 07002", diag(STMT, stmt)[1], "07002")
+
+# A volta de verdade: ligar e executar contra o servidor.
+d.SQLFreeStmt(stmt, 0)
+d.SQLFreeStmt(stmt, 3)  # SQL_RESET_PARAMS: desliga o que 7c ligou
+confere("SQLPrepare com `?`", d.SQLPrepare(
+    stmt, b"SELECT nome FROM clientes WHERE id = ?", NTS), SUCESSO)
+id_ligado = ctypes.c_int(3)
+confere("SQLBindParameter(1, SQL_C_SLONG)", d.SQLBindParameter(
+    stmt, 1, 1, C_SLONG, 4, 0, 0, ctypes.byref(id_ligado), 0, None), SUCESSO)
+codigo = d.SQLExecute(stmt)
+if codigo == SUCESSO:
+    confere("fetch do parametrizado", d.SQLFetch(stmt), SUCESSO)
+    confere("a linha do id ligado", pega_texto(1), (SUCESSO, "Carlos Consulta"))
+    confere("e so ela", d.SQLFetch(stmt), SEM_DADO)
+else:
+    _, estado_p, msg_p, _ = diag(STMT, stmt)
+    nao_medida("a volta de WHERE id = ?",
+               f"o servidor recusou ({estado_p}: {msg_p[:60]}...)",
+               "ligar sql.parametros na op sql (F-CONSULTA) e rodar de novo")
+
 print("== 8. erro proposital: SQL_ERROR com diagnostico que nao vaza senha ==")
 d.SQLFreeStmt(stmt, 0)
+d.SQLFreeStmt(stmt, 3)
 confere("tabela inexistente da erro", d.SQLExecDirect(
     stmt, b"SELECT * FROM nao_existe", NTS), ERRO)
 r, estado, msg, nativo = diag(STMT, stmt)
@@ -247,6 +329,8 @@ confere("SQLFreeHandle(DBC)", d.SQLFreeHandle(DBC, dbc), SUCESSO)
 confere("SQLFreeHandle(ENV)", d.SQLFreeHandle(ENV, env), SUCESSO)
 confere("handle liberado vira invalido", d.SQLFreeHandle(ENV, env), INVALIDO)
 
+if nao_medidas:
+    print(f"\nNAO MEDIDAS: {len(nao_medidas)} -- {nao_medidas}")
 if falhas:
     print(f"\nPROVA FALHOU: {len(falhas)} conferencia(s): {falhas}")
     sys.exit(1)
