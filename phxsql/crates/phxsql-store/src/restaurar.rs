@@ -80,6 +80,18 @@ pub struct Conteudo {
     /// A versao do PhxSql que gravou o backup.
     pub versao: String,
     pub quando: String,
+    /// O instante da copia em milissegundos, quando o manifesto o traz.
+    ///
+    /// # Por que ele e opcional, e por que a volta pelo texto existe
+    ///
+    /// `quando_ms` entrou com o PITR. Um backup gravado antes so tem o
+    /// `quando` de tela -- e como quem o escreveu foi o `instante_iso` desta
+    /// casa, ler de volta aquele texto e exato, e recusar PITR em toda copia
+    /// tirada ate ontem seria jogar fora um instante que ESTA la. O que a
+    /// volta pelo texto NAO faz e adivinhar: `quando` que nao case com o
+    /// formato (um manifesto escrito a mao, com `"agora"`) devolve `None`, e a
+    /// recusa nomeia o campo.
+    pub quando_ms: Option<i64>,
     pub arquivos: usize,
     pub bytes: u64,
     pub escopo: Escopo,
@@ -177,6 +189,7 @@ struct Manifesto {
     esperados: BTreeMap<String, (u64, String)>,
     versao: String,
     quando: String,
+    quando_ms: Option<i64>,
     escopo: Escopo,
     declarado: bool,
 }
@@ -225,10 +238,19 @@ fn ler_manifesto(fonte: &mut Fonte, origem: &Path) -> Result<Manifesto> {
         _ => (deduzir_escopo(origem, &esperados), false),
     };
 
+    // O NUMERO manda; o texto e a volta para as copias mais velhas que o
+    // campo. Ver `Conteudo::quando_ms`.
+    let quando = json.texto_ou("quando", "").to_string();
+    let quando_ms = json
+        .campo("quando_ms")
+        .and_then(Json::inteiro)
+        .or_else(|| phxsql_core::datahora::ms_de_instante_iso(&quando));
+
     Ok(Manifesto {
         esperados,
         versao: json.texto_ou("phxsql", "?").to_string(),
-        quando: json.texto_ou("quando", "").to_string(),
+        quando,
+        quando_ms,
         escopo,
         declarado,
     })
@@ -343,6 +365,7 @@ pub fn conteudo(origem: &Path) -> Result<Conteudo> {
         zip: matches!(fonte, Fonte::Zip(_)),
         versao: m.versao,
         quando: m.quando,
+        quando_ms: m.quando_ms,
         arquivos: m.esperados.len(),
         bytes: m.esperados.values().map(|(b, _)| *b).sum(),
         databases: databases_de(&m.escopo, &m.esperados),
@@ -732,7 +755,7 @@ mod tests {
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
         let copia = base.join("copia");
-        crate::backup::executar(&raiz, &copia, "2026-08-29 10:00:00").unwrap();
+        crate::backup::executar(&raiz, &copia, 1_787_000_000_000).unwrap();
 
         let c = conteudo(&copia).unwrap();
         assert!(!c.zip);
@@ -767,7 +790,7 @@ mod tests {
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
         let copia = base.join("copia");
-        crate::backup::executar(&raiz, &copia, "agora").unwrap();
+        crate::backup::executar(&raiz, &copia, 1_787_000_000_000).unwrap();
 
         // MESMO TAMANHO, conteudo diferente: so o SHA-256 pega. Trocar o
         // tamanho junto deixaria a conferencia de bytes -- que e mais fraca --
@@ -795,7 +818,7 @@ mod tests {
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
         let copia = base.join("copia");
-        crate::backup::executar(&raiz, &copia, "agora").unwrap();
+        crate::backup::executar(&raiz, &copia, 1_787_000_000_000).unwrap();
         std::fs::write(copia.join("Z/intruso.reg"), b"entrei depois").unwrap();
 
         let Err(e) = Preparada::preparar(&copia, &raiz, "Z") else {
@@ -813,7 +836,7 @@ mod tests {
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
         let copia = base.join("copia");
-        crate::backup::executar(&raiz, &copia, "agora").unwrap();
+        crate::backup::executar(&raiz, &copia, 1_787_000_000_000).unwrap();
         std::fs::remove_file(copia.join("Z/clientes.ndx")).unwrap();
 
         assert!(Preparada::preparar(&copia, &raiz, "Z").is_err());
@@ -909,7 +932,7 @@ mod tests {
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
         let copia = base.join("copia");
-        crate::backup::executar(&raiz, &copia, "2026-01-01 03:00:00").unwrap();
+        crate::backup::executar(&raiz, &copia, 1_767_236_400_000).unwrap();
 
         // Reescreve o manifesto SEM os campos novos, como a 0.18.0 gravava.
         let texto = std::fs::read_to_string(copia.join(MANIFESTO)).unwrap();
