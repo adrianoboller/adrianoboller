@@ -9796,7 +9796,7 @@ impl Servidor {
         selecao: &phxsql_sql::Selecao,
         base: &str,
         sessao: &Sessao,
-    ) -> Result<Option<Json>> {
+    ) -> Result<Option<phxsql_sql::Plano>> {
         if !self.ha_visoes.load(Ordering::Relaxed) {
             return Ok(None);
         }
@@ -9835,68 +9835,80 @@ impl Servidor {
             .map_err(|e| erro_da_visao(&alvo, &tabela_de_dentro, e))?;
         let plano = phxsql_sql::traduzir(&dentro, &indices_do_esquema(&esquema), &base_de_dentro)?;
 
-        // O `consultar` de FORA. `planejar_sobre` da F-SQL substitui este
-        // bloco -- ver a nota do cabecalho.
+        // O `consultar` de FORA sai de `phxsql_sql::planejar_sobre`, que a
+        // F-SQL entrega: a `Selecao` externa (o WHERE, a projecao, a ordem, o
+        // LIMIT) montada em cima do plano de dentro. Este bloco ja foi feito a
+        // mao aqui, com o comentario dizendo que a integração o trocaria pela
+        // chamada -- e trocou. O contrato entre os dois lados e o PEDIDO JSON,
+        // e por isso a troca nao mexeu em mais nada.
         let mut de = plano.pedido.clone();
         if let Json::Objeto(pares) = &mut de {
-            pares.push(("op".to_string(), Json::texto_de(&plano.op)));
+            if !pares.iter().any(|(k, _)| k == "op") {
+                pares.push(("op".to_string(), Json::texto_de(&plano.op)));
+            }
         }
-        let mut fora = vec![
-            ("database".to_string(), Json::texto_de(base)),
-            ("de".to_string(), de),
-        ];
-        // O `WHERE` de fora vira EXPRESSAO, e nao um `onde`: o `onde` compara
-        // coluna com literal, e a gramatica da expressao ja diz tudo o que a
-        // `Condicao` do analisador sabe dizer. Uma tradução so, e nao duas.
-        if let Some(c) = &selecao.onde {
-            fora.push((
-                "expressao".to_string(),
-                Json::texto_de(format!(
-                    "{} {} {}",
-                    c.coluna,
-                    c.op.simbolo(),
-                    c.valor.escrever()
-                )),
-            ));
+        Ok(Some(phxsql_sql::planejar_sobre(selecao, de)?))
+    }
+
+    /// Planeja um `SELECT` COMPOSTO -- o que a F-SQL devolve como
+    /// `Comando::Consulta`.
+    ///
+    /// # O resolvedor, e por que ele e um fecho e nao uma tabela de esquemas
+    ///
+    /// `traduzir_consulta` sabe montar o `consultar`, mas nao sabe abrir
+    /// tabela: para traduzir cada `SELECT` de dentro (o `de`, o de cada
+    /// junção, o de cada `escalar`, o de cada `IN`) ela precisa dos INDICES
+    /// daquela tabela, e quem os enxerga e o servidor. Entao ela recebe um
+    /// fecho, e o fecho pede o esquema pelo `executar_derivado` -- que ja
+    /// exige `ler` naquela tabela.
+    ///
+    /// **E aqui que a permissao entra duas vezes, e as duas contam.** Uma no
+    /// planejamento (o `esquema` de cada tabela citada) e outra na execucao
+    /// (cada sub-pedido, dentro do `op_consultar`). A primeira recusa antes de
+    /// montar o plano; a segunda recusaria de qualquer jeito. Nenhuma das duas
+    /// e enfeite: um plano que nao se pode montar nao chega a rodar, e um
+    /// plano montado por outro caminho ainda para na segunda.
+    ///
+    /// E o `FROM` de dentro pode ser uma VISAO: o resolvedor pergunta antes de
+    /// traduzir, pelo mesmo `selecao_sobre_visao` da consulta simples. Sem
+    /// isso, `SELECT ... FROM v JOIN t` acharia que `v` e uma tabela.
+    fn planejar_consulta(
+        &self,
+        c: &phxsql_sql::Consulta,
+        base: &str,
+        sessao: &Sessao,
+    ) -> Result<phxsql_sql::Plano> {
+        let mut erro_de_dentro: Option<PhxError> = None;
+        let mut resolver = |sel: &phxsql_sql::Selecao, db: &str| -> Result<phxsql_sql::Plano> {
+            let base_do_lado = match sel.de.database.trim() {
+                "" => db.to_string(),
+                outro => outro.to_string(),
+            };
+            if let Some(plano) = self.selecao_sobre_visao(sel, &base_do_lado, sessao)? {
+                return Ok(plano);
+            }
+            let ped_esquema = Json::objeto(vec![
+                ("database", Json::texto_de(&base_do_lado)),
+                ("tabela", Json::texto_de(sel.de.nome_no_protocolo())),
+            ]);
+            let esquema = match self.executar_derivado("esquema", &ped_esquema, sessao) {
+                Ok(e) => e,
+                Err(e) => {
+                    // O erro viaja por fora porque o `Resolvedor` devolve o
+                    // `Result` do crate de SQL, e reembalar aqui perderia a
+                    // classe -- e a classe e o que diz se foi permissao ou
+                    // tabela que nao existe.
+                    erro_de_dentro = Some(e);
+                    return Err(PhxError::Esquema("sub-pedido recusado".into()));
+                }
+            };
+            phxsql_sql::traduzir(sel, &indices_do_esquema(&esquema), &base_do_lado)
+        };
+        let plano = phxsql_sql::traduzir_consulta(c, base, &mut resolver);
+        match erro_de_dentro {
+            Some(e) => Err(e),
+            None => plano,
         }
-        if let phxsql_sql::Projecao::Colunas(cs) = &selecao.projecao {
-            fora.push((
-                "colunas".to_string(),
-                Json::Lista(
-                    cs.iter()
-                        .map(|c| {
-                            Json::objeto(vec![
-                                ("coluna", Json::texto_de(&c.nome)),
-                                ("apelido", Json::texto_de(c.rotulo())),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ));
-        }
-        if let phxsql_sql::Projecao::Contagem = &selecao.projecao {
-            return Err(PhxError::Esquema(format!(
-                "COUNT(*) sobre a visao {alvo:?} nao existe nesta rodada: conte \
-                 com {{\"op\":\"agrupar\"}} sobre a tabela de dentro, ou peca as \
-                 linhas e conte-as"
-            )));
-        }
-        if let Some(o) = &selecao.ordem {
-            fora.push((
-                "ordem".to_string(),
-                Json::Lista(vec![Json::objeto(vec![
-                    ("coluna", Json::texto_de(&o.coluna)),
-                    ("desc", Json::Bool(o.desc)),
-                ])]),
-            ));
-        }
-        if selecao.salto > 0 {
-            fora.push(("pular".to_string(), Json::de_u64(selecao.salto)));
-        }
-        if let Some(l) = selecao.limite {
-            fora.push(("max".to_string(), Json::de_u64(l)));
-        }
-        Ok(Some(Json::Objeto(fora)))
     }
 
     /// As linhas de um sub-pedido, pelo MESMO portao de qualquer cliente.
@@ -13519,11 +13531,53 @@ impl Servidor {
             return self.executar_rotina(comando, p, sessao);
         }
 
+        // OS PARAMETROS, no LEXICO e nunca por substituicao de texto.
+        //
+        // `analisar_comando_com` troca cada `?` pelo literal da posicao DEPOIS
+        // de o texto virar simbolos: um `'; DROP TABLE x --` chega como um
+        // literal de texto e sai como um literal de texto. Substituir no texto
+        // antes de analisar seria a definicao de injecao de SQL, e por isso
+        // nao existe caminho nenhum por aqui que faca isso.
+        let parametros: Vec<Json> = p
+            .campo("parametros")
+            .and_then(Json::lista)
+            .map(<[Json]>::to_vec)
+            .unwrap_or_default();
         // O erro de sintaxe ja vem com a coluna: «SQL, coluna 14: esperava
         // FROM». Reembalar aqui perderia a posicao, que e a unica parte da
         // mensagem que diz ONDE consertar.
-        let selecao = match phxsql_sql::analisar_comando(&texto)? {
+        let comando = if parametros.is_empty() {
+            phxsql_sql::analisar_comando(&texto)?
+        } else {
+            phxsql_sql::analisar_comando_com(&texto, &parametros)?
+        };
+        let selecao = match comando {
             phxsql_sql::Comando::Selecao(s) => s,
+            // O SELECT COMPOSTO -- `WITH`, subconsulta, `IN (SELECT ...)`,
+            // junção, janela -- vira a op `consultar`, e cada pedaco dele sai
+            // pelo `executar_derivado`. E o que faz da composicao uma
+            // composicao, e nao uma porta dos fundos.
+            phxsql_sql::Comando::Consulta(c) => {
+                let base = p.texto_ou("database", "").trim().to_string();
+                let plano = self.planejar_consulta(&c, &base, sessao)?;
+                let bruto = self.executar_derivado(&plano.op, &plano.pedido, sessao)?;
+                return Ok(resposta_do_sql(&texto, &plano, bruto));
+            }
+            // `CREATE VIEW` e `DROP VIEW`: o tradutor produz o pedido, e o
+            // pedido volta pelo portao de sempre -- com `criar`/`excluir` na
+            // base, que e o poder que as duas exigem.
+            phxsql_sql::Comando::CriarVisao { nome, sql } => {
+                let base = p.texto_ou("database", "").trim().to_string();
+                let plano = phxsql_sql::traduzir_criar_visao(&nome, &sql, &base)?;
+                let bruto = self.executar_derivado(&plano.op, &plano.pedido, sessao)?;
+                return Ok(resposta_do_sql(&texto, &plano, bruto));
+            }
+            phxsql_sql::Comando::ExcluirVisao { nome } => {
+                let base = p.texto_ou("database", "").trim().to_string();
+                let plano = phxsql_sql::traduzir_excluir_visao(&nome, &base)?;
+                let bruto = self.executar_derivado(&plano.op, &plano.pedido, sessao)?;
+                return Ok(resposta_do_sql(&texto, &plano, bruto));
+            }
             // INSERT, UPDATE e DELETE por chave: outro caminho, MESMO portao.
             escrita => return self.executar_dml(&escrita, &texto, p, sessao),
         };
@@ -13535,17 +13589,13 @@ impl Servidor {
         // O `FROM` aponta para uma VISAO? Entao o pedido vira um `consultar`
         // sobre o plano dela. A pergunta comeca por um load atomico: num
         // servidor sem visao nenhuma, ela custa isso e mais nada.
-        if let Some(ped) = self.selecao_sobre_visao(&selecao, &base, sessao)? {
-            let bruto = self.executar_derivado("consultar", &ped, sessao)?;
-            return Ok(Json::objeto(vec![
-                ("sql", Json::texto_de(&texto)),
-                ("op", Json::texto_de("consultar")),
-                (
-                    "devolvidas",
-                    Json::de_u64(bruto.inteiro_ou("devolvidas", 0).max(0) as u64),
-                ),
-                ("resultado", bruto),
-            ]));
+        if let Some(plano) = self.selecao_sobre_visao(&selecao, &base, sessao)? {
+            let bruto = self.executar_derivado(&plano.op, &plano.pedido, sessao)?;
+            // A resposta sai pela MESMA porta do SELECT de sempre: quem
+            // consulta uma visao nao pode receber um envelope diferente do de
+            // quem consulta uma tabela -- o cliente teria de saber, antes de
+            // perguntar, se aquele nome e visao ou tabela.
+            return Ok(resposta_do_sql(&texto, &plano, bruto));
         }
         let tabela = selecao.de.nome_no_protocolo();
         let ped_esquema = Json::objeto(vec![
@@ -13621,7 +13671,13 @@ impl Servidor {
         use phxsql_sql::{Comando, PlanoDml};
         let corrente = p.texto_ou("database", "").trim().to_string();
         let plano = match comando {
-            Comando::Insercao(i) => phxsql_sql::traduzir_insercao(i, &corrente)?,
+            Comando::Insercao(i) => {
+                // Os indices entram porque o `INSERT ... ON CONFLICT` precisa
+                // saber qual chave unica decide "ja existe" -- a mesma
+                // pergunta que o `crate::upsert` responde do outro lado.
+                let indices = self.indices_para_o_sql(&i.em, &corrente, sessao)?;
+                phxsql_sql::traduzir_insercao(i, &indices, &corrente)?
+            }
             Comando::Atualizacao(a) => {
                 let indices = self.indices_para_o_sql(&a.em, &corrente, sessao)?;
                 phxsql_sql::traduzir_atualizacao(a, &indices, &corrente)?
@@ -13630,9 +13686,16 @@ impl Servidor {
                 let indices = self.indices_para_o_sql(&e.de, &corrente, sessao)?;
                 phxsql_sql::traduzir_exclusao(e, &indices, &corrente)?
             }
-            Comando::Selecao(_) => {
+            Comando::Selecao(_) | Comando::Consulta(_) => {
                 return Err(PhxError::Esquema(
                     "consulta nao entra pelo caminho de escrita".into(),
+                ))
+            }
+            Comando::CriarVisao { .. } | Comando::ExcluirVisao { .. } => {
+                return Err(PhxError::Esquema(
+                    "CREATE/DROP VIEW nao entra pelo caminho de escrita de linha: \
+                     eles mexem no catalogo, e nao no dado"
+                        .into(),
                 ))
             }
         };
@@ -19944,9 +20007,21 @@ fn resposta_do_sql(texto: &str, plano: &phxsql_sql::Plano, bruto: Json) -> Json 
         }
     }
 
+    // **A PROJECAO NAO ACONTECE DUAS VEZES**, e este `if` saiu do encontro das
+    // duas frentes: o `consultar` recebe `colunas` no PROPRIO pedido e projeta
+    // na fonte, com o APELIDO como chave da linha. Projetar de novo aqui
+    // procuraria `nome` numa linha que ja se chama `quem`, e devolveria uma
+    // coluna de NULOS -- com a cara de dado que nao existe. Nenhum teste de
+    // tradução acusaria isso (la o pedido esta certo) e nenhum teste do
+    // `consultar` acusaria (la a resposta esta certa): so aparece na costura,
+    // e so exercitando o caminho inteiro.
+    //
+    // O cabecalho (`colunas`) continua saindo daqui, porque ele e o contrato
+    // da RESPOSTA e nao depende de quem projetou.
+    let ja_projetou = plano.op == "consultar";
     if let Json::Objeto(campos) = bruto {
         for (k, v) in campos {
-            if k == "linhas" {
+            if k == "linhas" && !ja_projetou {
                 if let (phxsql_sql::Saida::Colunas(cols), Json::Lista(linhas)) = (&plano.saida, &v)
                 {
                     pares.push((
@@ -33869,11 +33944,7 @@ mod testes_visoes {
     }
 
     fn linhas_do_sql(r: &Json) -> Vec<Json> {
-        r.campo("resultado")
-            .and_then(|x| x.campo("linhas"))
-            .and_then(Json::lista)
-            .unwrap()
-            .to_vec()
+        r.campo("linhas").and_then(Json::lista).unwrap().to_vec()
     }
 
     /// **A PROVA REAL do item: o `FROM v` le a visao, e o teste mede QUANTAS
@@ -34483,6 +34554,345 @@ mod testes_upsert {
         assert_eq!(e.nome(), "DUPLICADO", "{e}");
         assert!(e.to_string().contains("DISCO"), "a recusa nao explica: {e}");
         s.executar("rollback", &Json::objeto(vec![]), &ses).unwrap();
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// O SQL COMPOSTO ponta a ponta: o texto entra pela op `sql`, a F-SQL o
+/// traduz para `consultar`/`agrupar`, e o servidor o executa.
+///
+/// # Por que estes testes moram aqui, e nao no crate de SQL
+///
+/// La se prova que o TEXTO vira o PEDIDO certo -- e isso ja esta provado la.
+/// O que so se prova aqui e que o pedido, executado, devolve o DADO certo:
+/// nenhum teste de tradução acusa uma junção que casa pela coluna errada, e
+/// nenhum teste de execucao acusa um `ON` traduzido ao contrario. A costura
+/// e o que so aparece no encontro das duas frentes.
+#[cfg(test)]
+mod testes_sql_composto {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("sqlc-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn servidor(d: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            cadastro: cadastro.clone(),
+            max_linhas: 10_000,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let ses = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                // `porCidade` existe porque o tradutor de SQL EXIGE indice
+                // para um `WHERE coluna = literal`: sem ele, um SELECT
+                // responderia sobre a primeira pagina com a cara de ter
+                // respondido sobre a tabela. Ver `docs/SQL.md`.
+                r#"{"database":"b","tabela":"clientes","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"nome","tipo":"Str(20)"},
+                    {"nome":"cidade","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true},
+                            {"nome":"porCidade","colunas":["cidade"]}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"pedidos","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"cliente_id","tipo":"Int4"},
+                    {"nome":"total","tipo":"Int4"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"folha","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"nome","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        for (id, nome, cidade) in [
+            (1, "ana", "Blumenau"),
+            (2, "bia", "Itajai"),
+            (3, "caio", "Blumenau"),
+        ] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"clientes",
+                         "linha":{{"id":{id},"nome":"{nome}","cidade":"{cidade}"}}}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        for (id, cli, total) in [(1, 1, 100), (2, 1, 50), (3, 2, 300), (4, 9, 7)] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"pedidos",
+                         "linha":{{"id":{id},"cliente_id":{cli},"total":{total}}}}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"folha","linha":{"id":1,"nome":"segredo"}}"#),
+            &ses,
+        )
+        .unwrap();
+        let sessao = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        (s, sessao)
+    }
+
+    fn sql(s: &Arc<Servidor>, texto: &str) -> Result<Json> {
+        s.executar(
+            "sql",
+            &pedido(&format!(
+                r#"{{"database":"b","texto":{}}}"#,
+                Json::texto_de(texto).escrever()
+            )),
+            &Sessao::default(),
+        )
+    }
+
+    fn linhas(r: &Json) -> Vec<Json> {
+        r.campo("linhas")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .to_vec()
+    }
+
+    /// **INNER JOIN ponta a ponta, e a prova mede o DADO.**
+    ///
+    /// Sao quatro pedidos e tres clientes, e o pedido 4 aponta para um
+    /// cliente que nao existe: o INNER traz tres linhas, e cada uma com o nome
+    /// do cliente CERTO. Um `ON` traduzido ao contrario tambem traria tres
+    /// linhas -- e por isso o teste confere o par, e nao a contagem.
+    #[test]
+    fn o_inner_join_junta_pelo_par_certo() {
+        let d = dir("join");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = sql(
+            &s,
+            "SELECT p.id, c.nome AS cliente FROM pedidos p \
+             JOIN clientes c ON p.cliente_id = c.id",
+        )
+        .expect("o JOIN nao rodou");
+        let l = linhas(&r);
+        assert_eq!(l.len(), 3, "o pedido orfao entrou");
+        // O PAR, e nao so a contagem: um `ON` traduzido ao contrario traria
+        // tres linhas tambem, com o cliente errado em cada uma.
+        let pares: Vec<(i64, String)> = l
+            .iter()
+            .map(|x| {
+                (
+                    x.inteiro_ou("p.id", -1),
+                    x.texto_ou("cliente", "").to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            pares,
+            vec![
+                (1, "ana".to_string()),
+                (2, "ana".to_string()),
+                (3, "bia".to_string())
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// LEFT JOIN mantem o orfao, com o lado de fora nulo.
+    #[test]
+    fn o_left_join_mantem_o_orfao() {
+        let d = dir("left");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = sql(
+            &s,
+            "SELECT p.id, c.nome AS cliente FROM pedidos p \
+             LEFT JOIN clientes c ON p.cliente_id = c.id",
+        )
+        .unwrap();
+        let l = linhas(&r);
+        assert_eq!(l.len(), 4, "o LEFT perdeu o orfao");
+        // O pedido 4 aponta para um cliente que nao existe: ele FICA, com o
+        // lado de fora nulo -- que e o que faz o LEFT ser um LEFT.
+        let orfao = l
+            .iter()
+            .find(|x| x.inteiro_ou("p.id", -1) == 4)
+            .expect("o orfao sumiu");
+        assert_eq!(orfao.campo("cliente"), Some(&Json::Nulo));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `GROUP BY` com `HAVING` ponta a ponta.
+    #[test]
+    fn o_group_by_com_having() {
+        let d = dir("group");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = sql(
+            &s,
+            "SELECT cidade, COUNT(*) AS n FROM clientes GROUP BY cidade HAVING n > 1",
+        )
+        .expect("o GROUP BY nao rodou");
+        let l = linhas(&r);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].texto_ou("cidade", ""), "Blumenau");
+        assert_eq!(l[0].inteiro_ou("n", -1), 2);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `IN (SELECT …)` ponta a ponta.
+    #[test]
+    fn o_in_de_subconsulta_ponta_a_ponta() {
+        let d = dir("in");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = sql(
+            &s,
+            "SELECT id FROM clientes WHERE id IN (SELECT cliente_id FROM pedidos) ORDER BY id",
+        )
+        .expect("o IN nao rodou");
+        let l = linhas(&r);
+        let ids: Vec<i64> = l.iter().map(|x| x.inteiro_ou("id", -1)).collect();
+        assert_eq!(ids, vec![1, 2], "o cliente 3 nao tem pedido");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **`?` NO LEXICO, e nunca por substituicao de texto.**
+    ///
+    /// A prova e a que importa numa defesa contra injecao: o parametro que
+    /// CONTEM SQL entra como VALOR e nao como comando. Se ele fosse colado no
+    /// texto antes da analise, `'; DROP TABLE clientes --` apagaria a tabela;
+    /// aqui ele so nao casa com cidade nenhuma, e as tres linhas continuam la.
+    #[test]
+    fn o_parametro_entra_no_lexico_e_nao_no_texto() {
+        let d = dir("param");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let com_parametros = |texto: &str, params: &str| -> Result<Json> {
+            s.executar(
+                "sql",
+                &pedido(&format!(
+                    r#"{{"database":"b","texto":{},"parametros":{params}}}"#,
+                    Json::texto_de(texto).escrever()
+                )),
+                &Sessao::default(),
+            )
+        };
+
+        let r = com_parametros("SELECT * FROM clientes WHERE id = ?", "[2]").unwrap();
+        let l = linhas(&r);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].texto_ou("nome", ""), "bia");
+
+        // O parametro HOSTIL: ele e um texto, e continua sendo um texto.
+        // Cabe em `Str(20)` de proposito -- um payload maior seria recusado
+        // pelo TAMANHO da chave, e a recusa esconderia o que o teste prova.
+        let r = com_parametros(
+            "SELECT * FROM clientes WHERE cidade = ?",
+            r#"["';DROP TABLE x--"]"#,
+        )
+        .expect("o parametro hostil derrubou a consulta");
+        assert_eq!(linhas(&r).len(), 0, "casou com alguma cidade?");
+        // E a tabela continua inteira -- que e a prova de que nada foi colado.
+        let r = sql(&s, "SELECT * FROM clientes").unwrap();
+        assert_eq!(linhas(&r).len(), 3, "a tabela sumiu: houve injecao");
+
+        // Contagem errada de `?` recusa dizendo quantos vieram.
+        let e = com_parametros("SELECT * FROM clientes WHERE id = ? AND nome = ?", "[1]")
+            .expect_err("aceitou parametro faltando");
+        assert!(!e.to_string().is_empty(), "recusa muda nao ensina nada");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `CREATE VIEW` e `DROP VIEW` pelo SQL, e o `FROM` dela.
+    #[test]
+    fn o_create_view_pelo_sql_e_o_from_dela() {
+        let d = dir("view");
+        let (s, _) = servidor(&d, Cadastro::default());
+        sql(&s, "CREATE VIEW v_todos AS SELECT * FROM clientes").expect("o CREATE VIEW nao rodou");
+        let r = sql(&s, "SELECT nome FROM v_todos ORDER BY id DESC").unwrap();
+        let l = linhas(&r);
+        assert_eq!(l.len(), 3);
+        assert_eq!(l[0].texto_ou("nome", ""), "caio");
+        sql(&s, "DROP VIEW v_todos").expect("o DROP VIEW nao rodou");
+        // Sumiu a visao, o FROM volta a procurar TABELA -- e nao acha.
+        assert!(sql(&s, "SELECT * FROM v_todos").is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **O SELECT COMPOSTO tambem NAO e a porta dos fundos.**
+    ///
+    /// A tabela negada no lado de dentro de uma junção escrita em SQL recusa,
+    /// e o controle -- a junção entre as permitidas -- responde na mesma
+    /// corrida. O portao entra duas vezes: no planejamento (o `esquema` de
+    /// cada lado) e na execucao (cada sub-pedido do `consultar`).
+    #[test]
+    fn o_join_pelo_sql_nao_e_a_porta_dos_fundos() {
+        let d = dir("porta");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"folha":{}}}}}]}"#,
+        ))
+        .unwrap();
+        let (s, ses) = servidor(&d, cadastro);
+        let pede = |texto: &str| -> Result<Json> {
+            let mut sessao = Sessao {
+                usuario: ses.usuario.clone(),
+                ..Sessao::default()
+            };
+            let (_, _, r) = s.despachar(
+                &format!(
+                    r#"{{"token":"t","op":"sql","database":"b","texto":{}}}"#,
+                    Json::texto_de(texto).escrever()
+                ),
+                &mut sessao,
+                "127.0.0.1",
+            );
+            r
+        };
+        pede("SELECT p.id FROM pedidos p JOIN clientes c ON p.cliente_id = c.id")
+            .expect("as tabelas permitidas foram barradas");
+        let e = pede("SELECT p.id FROM pedidos p JOIN folha f ON p.id = f.id")
+            .expect_err("o JOIN leu a tabela negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("folha"), "{e}");
+
+        // E pelo IN, que esconde a tabela um nivel mais fundo.
+        let e = pede("SELECT id FROM clientes WHERE id IN (SELECT id FROM folha)")
+            .expect_err("o IN leu a tabela negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
         let _ = std::fs::remove_dir_all(&d);
     }
 }

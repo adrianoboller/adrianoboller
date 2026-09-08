@@ -550,6 +550,13 @@ pub unsafe extern "C" fn phx_esquema_indice_coluna(
         match e.indices.last_mut() {
             Some(idx) => {
                 idx.colunas.push(c);
+                // A lista PARALELA do PSCH v9 anda junto: `Schema::new` recusa
+                // um indice cujas `expressoes` nao tenham uma entrada por
+                // coluna, e `None` e o que quer dizer «coluna crua». Este e o
+                // caminho IRMAO do `esquema_de_json` do servidor -- ele monta
+                // o `IndexDef` campo por campo, e nao pelo `IndexDef::new`
+                // que ja preenche as duas listas.
+                idx.expressoes.push(None);
                 PHX_OK
             }
             None => anotar(
