@@ -324,6 +324,10 @@ pub struct Remoto {
     pub destino: String,
     leitor: BufReader<TcpStream>,
     escrita: TcpStream,
+    /// Em claro (como sempre foi) ou dentro do tunel. O canal e UM so para que
+    /// `conversar` nao repita `if cifrado` em toda escrita e leitura -- a
+    /// mesma decisao que a `replica::Cliente` tomou. Ver `docs/CIFRA-DO-FIO.md`.
+    canal: Canal,
 }
 
 impl Remoto {
@@ -345,26 +349,73 @@ impl Remoto {
             destino: destino.to_string(),
             leitor: BufReader::new(fluxo),
             escrita,
+            canal: Canal::Claro,
         })
+    }
+
+    /// Pede o aperto de mao e passa a falar por dentro do tunel.
+    ///
+    /// Igual em espirito ao `replica::Cliente::cifrar`, e pela MESMA razao de
+    /// vir ANTES do login: e a prova do desafio-resposta e o token que o tunel
+    /// existe para esconder, e depois do login ja seria tarde. `pino` e a
+    /// chave publica que se ESPERA do destino; com pino, um destino que
+    /// apresente outra chave derruba a conexao -- e assim a interface se
+    /// protege de quem esta no meio. Sem pino, o tunel protege so da escuta
+    /// PASSIVA, e o arranque ja avisou disso.
+    ///
+    /// Devolve a chave que o destino apresentou, para quem quiser anota-la.
+    pub fn cifrar(&mut self, pino: Option<[u8; 32]>) -> Result<[u8; 32]> {
+        let (iniciador, m1) = phxsql_core::fio::Iniciador::comecar(pino);
+        let pedido = Json::objeto(vec![
+            ("op", Json::texto_de("cifrar")),
+            ("e", Json::texto_de(phxsql_core::base64::codificar(&m1))),
+        ])
+        .escrever();
+        writeln!(self.escrita, "{pedido}")?;
+        self.escrita.flush()?;
+
+        let mut resposta = String::new();
+        if self.leitor.read_line(&mut resposta)? == 0 {
+            return Err(PhxError::Esquema(format!(
+                "{} fechou a conexao no aperto de mao",
+                self.destino
+            )));
+        }
+        let j = Json::analisar(&resposta)?;
+        if !j.booleano_ou("ok", false) {
+            return Err(PhxError::Autorizacao(format!(
+                "{} recusou o aperto de mao: {}",
+                self.destino,
+                j.texto_ou("erro", "sem motivo")
+            )));
+        }
+        let m2 = phxsql_core::base64::decodificar(
+            j.campo("resultado")
+                .map(|r| r.texto_ou("m2", ""))
+                .unwrap_or(""),
+        )?;
+        let (transporte, apresentada) = iniciador.terminar(&m2)?;
+        self.canal = Canal::Cifrado(Box::new(transporte));
+        Ok(apresentada)
     }
 
     /// Manda uma linha e devolve a resposta, crua.
     ///
     /// Crua de proposito: o que o servidor remoto respondeu e o que o
     /// navegador recebe. Reescrever no meio do caminho seria mentir sobre
-    /// quem respondeu o que.
+    /// quem respondeu o que. Em claro ou cifrado, o `Canal` cuida do sela e
+    /// abre; o unico corte comum e trocar `\n`/`\r` do pedido por espaco,
+    /// porque o registro do protocolo e uma linha so.
     pub fn conversar(&mut self, linha: &str) -> Result<Json> {
         let limpa = linha.replace(['\n', '\r'], " ");
-        writeln!(self.escrita, "{limpa}")?;
-        self.escrita.flush()?;
-        let mut resposta = String::new();
-        if self.leitor.read_line(&mut resposta)? == 0 {
-            return Err(PhxError::Esquema(format!(
+        self.canal.escrever(&mut self.escrita, &limpa)?;
+        match self.canal.ler(&mut self.leitor)? {
+            Recebido::Linha(l) => Json::analisar(&l),
+            Recebido::Fim => Err(PhxError::Esquema(format!(
                 "{} fechou a conexao",
                 self.destino
-            )));
+            ))),
         }
-        Json::analisar(&resposta)
     }
 }
 
@@ -5644,6 +5695,29 @@ impl Servidor {
             "interface web em http://{endereco} | sessao de {} min",
             self.config.web.sessao_minutos
         );
+        // O estado do tunel de cada destino, dito ALTO no arranque -- e nao so
+        // no dia em que alguem abre a conexao. `cifra` sem pino protege da
+        // escuta passiva e nada mais, e essa e a linha que a §8 manda dizer com
+        // estas palavras: vender protecao passiva como se fosse mais e o unico
+        // jeito de o tunel enganar. O endereco entra, o pino NUNCA -- ele nem
+        // e segredo (e chave publica), mas log nao e lugar de material de
+        // chave, e a regra da casa se aplica sem excecao para nao ter de
+        // decidir caso a caso.
+        for sv in &self.config.web.servidores {
+            if !sv.cifra {
+                continue;
+            }
+            if sv.chave_do_fio.is_empty() {
+                eprintln!(
+                    "AVISO: web.servidores {} com cifra e SEM pino (chave_do_fio \
+                     vazia): o tunel protege so da escuta PASSIVA, nao de quem \
+                     esta no meio. Ponha o pino do destino para fechar isso.",
+                    sv.endereco
+                );
+            } else {
+                eprintln!("interface web -> {} | tunel cifrado com pino", sv.endereco);
+            }
+        }
         let servidor = Arc::clone(self);
         self.telemetria.subir(
             "ouvinte-web",
@@ -5785,13 +5859,39 @@ impl Servidor {
                             Json::Bool(self.porta_no_ar.load(Ordering::SeqCst)),
                         ),
                         (
+                            // So o endereco, como sempre foi: a lista antiga da
+                            // pagina faz `d.split(":")` e monta o datalist.
                             "servidores",
                             Json::Lista(
                                 self.config
                                     .web
                                     .servidores
                                     .iter()
-                                    .map(Json::texto_de)
+                                    .map(|s| Json::texto_de(&s.endereco))
+                                    .collect(),
+                            ),
+                        ),
+                        (
+                            // O estado do tunel por servidor, em SEPARADO da
+                            // lista de cima para nao quebrar quem so quer o
+                            // endereco. A tela usa isto para dizer, ao escolher
+                            // o destino, se a conexao vai cifrada e com pino. O
+                            // pino em si NAO sai -- so o fato de haver um, pela
+                            // mesma regra da senha: resposta de protocolo nao
+                            // carrega material de chave em texto puro.
+                            "servidores_seguranca",
+                            Json::Lista(
+                                self.config
+                                    .web
+                                    .servidores
+                                    .iter()
+                                    .map(|s| {
+                                        Json::objeto(vec![
+                                            ("endereco", Json::texto_de(&s.endereco)),
+                                            ("cifra", Json::Bool(s.cifra)),
+                                            ("tem_pino", Json::Bool(!s.chave_do_fio.is_empty())),
+                                        ])
+                                    })
                                     .collect(),
                             ),
                         ),
@@ -6322,6 +6422,19 @@ impl Servidor {
 
         let mut remoto =
             Remoto::abrir(destino, self.config.timeout_s).map_err(|e| (op.clone(), e))?;
+        // O tunel ANTES do login, de proposito: e a prova do desafio-resposta e
+        // o token que ele existe para esconder, e o `linha` abaixo e justamente
+        // o login. So liga quando a configuracao DESTE destino pede `cifra` --
+        // texto solto continua em claro, como sempre foi. Sem pino, protege so
+        // da escuta passiva, e o arranque ja avisou disso. O `servidor(destino)`
+        // devolve Some porque `servidor_permitido` acima ja deixou passar; o
+        // `if let` e cinto de seguranca, nao um caminho novo.
+        if let Some(sv) = self.config.web.servidor(destino) {
+            if sv.cifra {
+                let pino = sv.pino_do_fio().map_err(|e| (op.clone(), e))?;
+                remoto.cifrar(pino).map_err(|e| (op.clone(), e))?;
+            }
+        }
         let resposta = remoto.conversar(linha).map_err(|e| (op.clone(), e))?;
         if !resposta.booleano_ou("ok", false) {
             return Err((
@@ -29148,5 +29261,216 @@ mod testes_volumes_por_quantidade {
             volumes[2].campo("primeiro_rowid").and_then(Json::inteiro),
             Some(3)
         );
+    }
+}
+
+/// O `Remoto` (multi-servidor da interface) ligando o tunel -- o buraco que a
+/// §10 do `docs/CIFRA-DO-FIO.md` deixou escrito e esta rodada fechou.
+///
+/// A prova e por SOQUETE, e nao por teste unitario, e de proposito: o aperto,
+/// o sela/abre do registro e a queda da conexao so se provam contra o sistema
+/// operacional. Cada teste sobe um servidor de verdade numa porta efemera e
+/// fala com ele pela mesma `atender` da porta de dados.
+#[cfg(test)]
+mod testes_remoto_cifrado {
+    use super::*;
+    use crate::config::ServidorWeb;
+
+    /// Um servidor de dados vivo, com a cifra do fio atendida. `exigir` liga a
+    /// recusa do que vem em claro -- e o que transforma "esqueci de cifrar" num
+    /// erro visivel em vez de um vazamento calado.
+    fn servidor_cifrado(dir: &std::path::Path, exigir: bool) -> Arc<Servidor> {
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        // A estatica mora DENTRO do dir do teste, e nao no cwd: sem isso dois
+        // servidores de teste dividiriam a mesma `chave-do-fio.hex` e o pino de
+        // um valeria para o outro.
+        c.cifra_fio.arquivo = dir.join("chave-do-fio.hex");
+        c.cifra_fio.exigir = exigir;
+        Servidor::novo(c).unwrap()
+    }
+
+    /// Sobe a porta de dados numa porta efemera e devolve o numero. Uma thread
+    /// por conexao, exatamente como o `escutar` de producao.
+    fn porta_de_dados(s: &Arc<Servidor>) -> u16 {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let s = Arc::clone(s);
+        std::thread::spawn(move || {
+            for fluxo in ouvinte.incoming() {
+                let Ok(fluxo) = fluxo else { return };
+                let Ok(par) = fluxo.peer_addr() else { continue };
+                let s = Arc::clone(&s);
+                std::thread::spawn(move || s.atender(fluxo, par));
+            }
+        });
+        porta
+    }
+
+    fn linha_desafio() -> String {
+        // O token da rede vai junto: o destino confere a rede antes da
+        // identidade, e todos os servidores destes testes usam "t".
+        Json::objeto(vec![
+            ("op", Json::texto_de("desafio")),
+            ("usuario", Json::texto_de("qualquer")),
+            ("token", Json::texto_de("t")),
+        ])
+        .escrever()
+    }
+
+    /// O tunel liga e um pedido REAL viaja por dentro dele -- o `desafio`, que
+    /// e pre-login, volta com um nonce. Se o `Canal` nao selasse e abrisse o
+    /// registro, nada disto voltaria legivel.
+    #[test]
+    fn o_remoto_liga_o_tunel_e_carrega_um_pedido_real() {
+        let dir = DirTemp::novo("remoto-tunel");
+        let s = servidor_cifrado(&dir, false);
+        let porta = porta_de_dados(&s);
+        let destino = format!("127.0.0.1:{porta}");
+
+        let mut r = Remoto::abrir(&destino, 5).unwrap();
+        assert!(!r.canal.cifrado(), "nasce em claro");
+        let apresentada = r.cifrar(None).unwrap();
+        assert!(r.canal.cifrado(), "depois do aperto, cifrado");
+        assert_ne!(apresentada, [0u8; 32], "o destino apresentou uma chave");
+
+        let resp = r.conversar(&linha_desafio()).unwrap();
+        assert!(resp.booleano_ou("ok", false), "o desafio voltou: {resp:?}");
+        let nonce = resp
+            .campo("resultado")
+            .map(|x| x.texto_ou("nonce", ""))
+            .unwrap_or("");
+        assert!(!nonce.is_empty(), "o nonce viajou pelo tunel");
+    }
+
+    /// O pino CERTO entra e o ERRADO derruba a conexao. E a prova de que a
+    /// conferencia do pino existe: sem ela, um destino que apresentasse outra
+    /// chave -- o homem-no-meio -- fecharia o aperto do mesmo jeito.
+    #[test]
+    fn o_pino_certo_entra_o_errado_derruba() {
+        let dir = DirTemp::novo("remoto-pino");
+        let s = servidor_cifrado(&dir, false);
+        let porta = porta_de_dados(&s);
+        let destino = format!("127.0.0.1:{porta}");
+
+        // Captura a chave que ESTE servidor apresenta, sem pino.
+        let mut scratch = Remoto::abrir(&destino, 5).unwrap();
+        let pino = scratch.cifrar(None).unwrap();
+        drop(scratch);
+
+        // Pino certo: entra.
+        let mut certo = Remoto::abrir(&destino, 5).unwrap();
+        assert!(
+            certo.cifrar(Some(pino)).is_ok(),
+            "o pino certo tinha de entrar"
+        );
+        assert!(certo.canal.cifrado());
+
+        // Pino errado (um bit trocado): cai, e a conexao NAO fica cifrada.
+        let mut torto = pino;
+        torto[0] ^= 0xff;
+        let mut errado = Remoto::abrir(&destino, 5).unwrap();
+        assert!(
+            errado.cifrar(Some(torto)).is_err(),
+            "o pino errado tinha de derrubar o aperto"
+        );
+        assert!(!errado.canal.cifrado());
+    }
+
+    /// A DECISAO, pelo caminho de producao: `abrir_remoto` liga o tunel quando
+    /// a config do destino pede `cifra`, e nao liga quando nao pede.
+    ///
+    /// O servidor destino EXIGE a cifra -- entao "esqueci de cifrar" nao passa
+    /// calado, vira o erro nomeado. E o defeito reposto: sem a nova ligacao, o
+    /// login iria em claro e o destino que exige o recusaria.
+    #[test]
+    fn abrir_remoto_liga_o_tunel_quando_a_config_pede_cifra() {
+        let dir_n = DirTemp::novo("remoto-wire-normal");
+        let dir_e = DirTemp::novo("remoto-wire-exige");
+        let dir_1 = DirTemp::novo("remoto-wire-interface");
+
+        let normal = servidor_cifrado(&dir_n, false);
+        let exigente = servidor_cifrado(&dir_e, true);
+        let porta_n = porta_de_dados(&normal);
+        let porta_e = porta_de_dados(&exigente);
+        let destino_n = format!("127.0.0.1:{porta_n}");
+        let destino_e = format!("127.0.0.1:{porta_e}");
+
+        // O pino do servidor que exige, capturado por um aperto sem pino.
+        let mut scratch = Remoto::abrir(&destino_e, 5).unwrap();
+        let pino_e = phxsql_core::hash::para_hex(&scratch.cifrar(None).unwrap());
+        drop(scratch);
+
+        let interface = |servidores: Vec<ServidorWeb>| -> Arc<Servidor> {
+            let dir = dir_1.join(format!("{}", servidores.len()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let mut c = Config {
+                base: dir.clone(),
+                log_acessos: dir.join("acessos.log"),
+                blacklist: dir.join("blacklist.json"),
+                dblink: dir.join("dblink.json"),
+                token: "t".into(),
+                ..Config::default()
+            };
+            c.web.servidores = servidores;
+            Servidor::novo(c).unwrap()
+        };
+        let ip = "127.0.0.1";
+
+        // (a) COMPORTAMENTO VELHO: texto solto = claro. Contra um destino que
+        //     NAO exige, entra, e o Remoto NAO liga o tunel.
+        let s_claro = interface(vec![ServidorWeb {
+            endereco: destino_n.clone(),
+            cifra: false,
+            chave_do_fio: String::new(),
+        }]);
+        let (op, _v, remoto) = s_claro
+            .abrir_remoto(&destino_n, &linha_desafio(), ip)
+            .unwrap();
+        assert_eq!(op, "desafio");
+        assert!(
+            !remoto.lock().unwrap().canal.cifrado(),
+            "texto solto nao devia ligar tunel"
+        );
+
+        // (b) FORMATO NOVO: objeto com cifra e pino. Contra o destino que
+        //     EXIGE, entra JUSTAMENTE porque o tunel subiu antes do login.
+        let s_cifra = interface(vec![ServidorWeb {
+            endereco: destino_e.clone(),
+            cifra: true,
+            chave_do_fio: pino_e.clone(),
+        }]);
+        let (_op, _v, remoto) = s_cifra
+            .abrir_remoto(&destino_e, &linha_desafio(), ip)
+            .unwrap();
+        assert!(
+            remoto.lock().unwrap().canal.cifrado(),
+            "cifra:true tinha de ligar o tunel"
+        );
+
+        // (c) DEFEITO REPOSTO: o mesmo destino que EXIGE, mas pedido com
+        //     cifra:false. O login vai em claro e o destino recusa nomeando a
+        //     cifra do fio. Se a ligacao do tunel nao existisse, (b) cairia
+        //     aqui tambem.
+        let s_claro_para_exigente = interface(vec![ServidorWeb {
+            endereco: destino_e.clone(),
+            cifra: false,
+            chave_do_fio: String::new(),
+        }]);
+        // `unwrap_err` pediria `Debug` do `Remoto` do lado Ok; um `match`
+        // evita isso e ainda diz o que falhou se por acaso ENTRAR.
+        match s_claro_para_exigente.abrir_remoto(&destino_e, &linha_desafio(), ip) {
+            Ok(_) => panic!("o destino exige cifra e deixou passar em claro"),
+            Err((_op, e)) => assert!(
+                e.to_string().contains("cifra do fio"),
+                "a recusa tinha de nomear a cifra do fio: {e}"
+            ),
+        }
     }
 }

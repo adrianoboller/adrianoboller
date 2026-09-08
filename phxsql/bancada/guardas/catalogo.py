@@ -1598,6 +1598,46 @@ GUARDAS = [
             "servidor::testes_cadastro_de_usuarios::login_amarrado_ao_canal_confere_contra_a_transcricao_da_sessao",
         ],
     },
+    # 23d. A cifra do fio: o Remoto da interface nao liga o tunel
+    # -----------------------------------------------------------------------
+    {
+        "id": "remoto-em-claro-para-quem-exige",
+        "titulo": "o abrir_remoto manda o login em claro mesmo com cifra: true",
+        "porque": (
+            "secao 10 do docs/CIFRA-DO-FIO.md: `web.servidores` passou a "
+            "aceitar objetos com `cifra`/`chave_do_fio`, e o `Remoto` liga o "
+            "tunel ANTES do login -- e a prova e o token do login que o tunel "
+            "esconde. Com o defeito reposto o aperto nao acontece, o login vai "
+            "em CLARO, e contra um destino que EXIGE a cifra a conexao e "
+            "recusada nomeando a cifra do fio. E por essa recusa (o caso (b)/(c) "
+            "do teste, com o destino em `exigir: true`) que o teste cai -- a "
+            "LEITURA do codigo nao pega, porque em claro contra um destino que "
+            "NAO exige tudo continua funcionando."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if let Some(sv) = self.config.web.servidor(destino) {
+            if sv.cifra {
+                let pino = sv.pino_do_fio().map_err(|e| (op.clone(), e))?;
+                remoto.cifrar(pino).map_err(|e| (op.clone(), e))?;
+            }
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO: o abrir_remoto NAO liga o tunel. O login (o
+        // `linha` abaixo) vai em CLARO mesmo quando web.servidores diz
+        // `cifra: true`. Contra um destino que EXIGE a cifra isso vira recusa
+        // nomeada em vez de vazamento -- e e por ela que o teste cai.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_remoto_cifrado::abrir_remoto_liga_o_tunel_quando_a_config_pede_cifra",
+        ],
+        "seguem": [
+            # O aperto em si (Remoto::cifrar) fica verde: prova que o defeito e
+            # local a DECISAO do abrir_remoto, e nao um estrago no tunel.
+            "servidor::testes_remoto_cifrado::o_remoto_liga_o_tunel_e_carrega_um_pedido_real",
+        ],
+    },
     # 24. O teto do registro do fio, que a integracao quase perdeu
     # -----------------------------------------------------------------------
     {

@@ -1961,6 +1961,8 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
         <input id="pt" value="5000" inputmode="numeric" autocomplete="off">
       </div>
     </div>
+    <!-- Estado do tunel do destino; texto pela fabrica (txt), some sem cifra. Tela MINIMA da H2: papel E deve exercitar no navegador (posicao, contraste, cadeado). -->
+    <p class="idioma-dica" id="cifraNota" hidden></p>
     <div class="campo">
       <label for="u" data-txt="tela.usuario">Usuário</label>
       <input id="u" autocomplete="username" value="adriano">
@@ -2113,7 +2115,7 @@ const est = { sessao:null, usuario:null, token:"", demo:false,
               bancos:[], atual:null, aba:"estrutura", ordem:"", linhas:[],
               // Para onde este console esta falando. Vazio = o proprio
               // servidor que serviu a pagina.
-              servidor:"", portaLocal:5000, servidores:[], database:"",
+              servidor:"", portaLocal:5000, servidores:[], servidoresSeguranca:[], database:"",
               // Os textos da tela no idioma escolhido, como `/idiomas` os
               // resolveu. Vazio = o portugues que ja esta no HTML.
               textos:null,
@@ -2496,6 +2498,11 @@ async function detectarModo() {
     // lida dele. O 5000 e so o padrao de fabrica.
     est.portaLocal = saude.porta_dados || 5000;
     est.servidores = saude.servidores || [];
+    // O estado do tunel por destino, em SEPARADO da lista de enderecos: o
+    // servidor manda `cifra`/`tem_pino` de cada um, e nunca o pino cru. A
+    // tela so LE isto para avisar, nao decide nada -- quem liga o tunel e o
+    // servidor da interface, pela config dele.
+    est.servidoresSeguranca = saude.servidores_seguranca || [];
     $("#pt").value = est.portaLocal;
     $("#campoChave").hidden = !saude.exige_chave;
     if (est.servidores.length) {
@@ -2515,6 +2522,12 @@ async function detectarModo() {
           ? marcado(txt("tela.lg_desafio_resposta", "Login por **desafio‑resposta**: a senha não sai desta máquina."))
           : marcado(txt("tela.lg_contexto_inseguro", "Contexto não seguro: o login cai em **Base64**, que esconde a senha de quem olha, não de quem captura. Use HTTPS ou um túnel.")));
     $("#t").parentElement.hidden = false;
+    // Avisa, ao escolher o destino, se a interface vai cifrar o fio ate ele.
+    // Isolado do login de proposito: se algo aqui falhar, o formulario segue
+    // funcionando. É so um aviso.
+    $("#h").addEventListener("input", mostrarCifraDoDestino);
+    $("#pt").addEventListener("input", mostrarCifraDoDestino);
+    mostrarCifraDoDestino();
   } catch {
     est.demo = true;
     $("#modo").innerHTML = marcado(txt("tela.lg_sem_servidor",
@@ -2530,6 +2543,26 @@ function ehLocal(host, porta) {
   const aqui = h === "" || h === "localhost" || h === "127.0.0.1" || h === "::1"
             || h === location.hostname.toLowerCase();
   return aqui && Number(porta) === Number(est.portaLocal);
+}
+
+/// Mostra, ao lado do destino escolhido, se a interface vai cifrar o fio ate
+/// ele -- e com pino ou nao. So LE `est.servidoresSeguranca`, que veio do
+/// `/saude`; a decisao de cifrar e do servidor, pela config dele. O `try`
+/// existe porque isto e um aviso: um destino digitado a meio nao pode derrubar
+/// o formulario de entrada.
+function mostrarCifraDoDestino() {
+  const nota = $("#cifraNota");
+  if (!nota) return;
+  try {
+    const alvo = `${($("#h").value || "").trim()}:${($("#pt").value || "").trim()}`;
+    const sv = (est.servidoresSeguranca || []).find(s => s && s.endereco === alvo);
+    if (!sv || !sv.cifra) { nota.hidden = true; nota.textContent = ""; return; }
+    nota.textContent = sv.tem_pino
+      ? txt("tela.destino_cifrado", "Túnel cifrado, com pino.")
+      : txt("tela.destino_cifrado_sem_pino",
+            "Túnel cifrado SEM pino: protege só da escuta passiva, não de quem está no meio.");
+    nota.hidden = false;
+  } catch { nota.hidden = true; }
 }
 
 async function entrar() {

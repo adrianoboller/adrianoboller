@@ -493,6 +493,29 @@ E na origem da replicação:
 túnel sem pino, ou seja, **passivo apenas** — e o arranque avisa exatamente
 isso, com estas palavras.
 
+E na interface web, para o `Remoto` (o multi-servidor). Aqui a mudança foi de
+**formato**: `web.servidores` era uma lista de textos `"host:porta"`, e não
+havia onde escrever o pino de cada destino. Agora ela aceita as **duas** formas
+na mesma lista — texto solto (em claro, como sempre foi) e objeto (que carrega
+o pino):
+
+```json
+"web": {
+  "servidores": [
+    "curitiba:5000",
+    { "host": "10.0.0.9", "porta": 5000,
+      "cifra": true,
+      "chave_do_fio": "<64 dígitos hexadecimais>" }
+  ]
+}
+```
+
+A regra é a mesma da origem, palavra por palavra: `cifra: false` (padrão, e o
+único valor do texto solto) = claro; `cifra: true` sem `chave_do_fio` = túnel
+sem pino, **passivo apenas**, e o arranque avisa. O pino **nunca** sai numa
+resposta de protocolo — o `/saude` diz por servidor apenas `cifra` e
+`tem_pino`, para a tela avisar sem carregar material de chave.
+
 ---
 
 ## 9. O que isto NÃO é
@@ -571,12 +594,23 @@ isso, com estas palavras.
   desafio-resposta, então ele não amarra a credencial ao canal — um servidor
   com `exigir_amarra: true` o recusaria. `exigir` ele atende; `exigir_amarra`
   fica para quando o driver aprender o desafio-resposta.
-* **O `Remoto` (multi-servidor da interface) não liga o túnel.** Não é
-  esquecimento: `web.servidores` é uma **lista de textos** `"host:porta"`, e
-  não há onde escrever o pino de cada um. Ligar sem pino seria proteção só
-  contra escuta passiva vendida como se fosse mais; trocar a lista por objetos
-  é mudança de formato de configuração, e ela entra com o pino junto ou não
-  entra.
+* **O `Remoto` (multi-servidor da interface) liga o túnel — FEITO, com a
+  mudança de formato que faltava.** O diagnóstico estava certo: `web.servidores`
+  era uma **lista de textos** `"host:porta"`, e sem lugar para o pino ligar a
+  cifra seria proteção só contra escuta passiva vendida como se fosse mais. A
+  saída foi trocar a lista por **objetos** (§8), retrocompatível — texto solto
+  continua valendo, como sempre foi. Agora o `abrir_remoto` pede o aperto
+  (`Remoto::cifrar`, reusando o `fio::Iniciador` da `replica::Cliente`) **antes**
+  do login, quando o destino tem `cifra: true`, com o pino de `chave_do_fio`.
+  Sem pino, protege só da passiva, e o arranque avisa com estas palavras. A
+  prova é por soquete, contra um servidor de verdade: `o_remoto_liga_o_tunel_e_
+  carrega_um_pedido_real`, `o_pino_certo_entra_o_errado_derruba` e
+  `abrir_remoto_liga_o_tunel_quando_a_config_pede_cifra` (este último com o
+  destino em `exigir: true`, para que "esqueci de cifrar" caia nomeado em vez de
+  vazar em claro). A guarda `remoto-em-claro-para-quem-exige` repõe o defeito.
+  Falta ainda **exercitar a tela** — o `/saude` já diz `cifra`/`tem_pino` por
+  servidor e o login mostra o aviso, mas isso é papel do designer (E), porque
+  interface só se prova exercitando.
 * **O cluster fala em claro — FEITO (08/09/2026), e o INTEIRO, não a metade.**
   A ressalva que este item trazia — «cifrar só metade do tráfego do cluster é
   pior que não cifrar nenhuma, porque parece protegido» — foi o que guiou o
