@@ -765,7 +765,7 @@ impl Analisador {
         Ok(ordens)
     }
 
-    fn lista_de_colunas_do_group_by(&mut self) -> Result<Vec<String>> {
+    pub(crate) fn lista_de_colunas_do_group_by(&mut self) -> Result<Vec<String>> {
         let mut colunas = Vec::new();
         loop {
             colunas.push(self.identificador("nome de coluna no GROUP BY")?);

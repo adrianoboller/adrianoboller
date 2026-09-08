@@ -68,6 +68,18 @@ pub struct EmSubconsulta {
     pub campo: String,
 }
 
+/// `ROW_NUMBER() OVER ([PARTITION BY …] [ORDER BY …]) [AS apelido]` -- so
+/// `row_number` nesta rodada (item 5). O `apelido` fica AQUI e TAMBEM entra
+/// como uma coluna comum em `colunas`, na posicao em que a chamada apareceu
+/// na projecao -- e assim que o pedido de `consultar` mostra os dois.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Janela {
+    pub funcao: String,
+    pub particao: Vec<String>,
+    pub ordem: Vec<Ordenacao>,
+    pub apelido: String,
+}
+
 /// A consulta composta pronta para traduzir.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Consulta {
@@ -80,6 +92,7 @@ pub struct Consulta {
     pub onde: Option<Onde>,
     /// `None` = `SELECT *` = todas as colunas (o pedido nao leva "colunas").
     pub colunas: Option<Vec<ColunaComposta>>,
+    pub janela: Vec<Janela>,
     pub ordem: Vec<Ordenacao>,
     pub pular: u64,
     pub max: Option<u64>,
@@ -136,6 +149,45 @@ pub fn traduzir_consulta(
         "expressao".to_string(),
         Json::texto_de(c.onde.as_ref().map(Onde::texto).unwrap_or_default()),
     ));
+
+    if !c.janela.is_empty() {
+        pares.push((
+            "janela".to_string(),
+            Json::Lista(
+                c.janela
+                    .iter()
+                    .map(|j| {
+                        Json::Objeto(vec![
+                            ("funcao".to_string(), Json::texto_de(&j.funcao)),
+                            (
+                                "particao".to_string(),
+                                Json::Lista(j.particao.iter().map(Json::texto_de).collect()),
+                            ),
+                            (
+                                "ordem".to_string(),
+                                Json::Lista(
+                                    j.ordem
+                                        .iter()
+                                        .map(|o| {
+                                            Json::Objeto(vec![
+                                                ("coluna".to_string(), Json::texto_de(&o.coluna)),
+                                                ("desc".to_string(), Json::Bool(o.desc)),
+                                            ])
+                                        })
+                                        .collect(),
+                                ),
+                            ),
+                            ("apelido".to_string(), Json::texto_de(&j.apelido)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ));
+        notas.push(format!(
+            "{} janela(s) ROW_NUMBER() OVER (...) -- so essa funcao nesta rodada",
+            c.janela.len()
+        ));
+    }
 
     match &c.colunas {
         None => notas.push("SELECT * -- todas as colunas da linha composta".into()),
@@ -327,6 +379,21 @@ impl Analisador {
             {
                 return true;
             }
+            // `) OVER` -- uma janela (item 5), `ROW_NUMBER()` ou outra.
+            // Detectar TODA funcao com OVER (nao so ROW_NUMBER) e
+            // deliberado, pelo mesmo motivo do `(SELECT` acima: RANK/
+            // SUM() OVER ainda nao existem aqui, e a recusa nomeada vive na
+            // gramatica composta, nao no caminho velho.
+            if matches!(s.token, Token::FechaParen)
+                && self
+                    .s
+                    .get(i + 1)
+                    .and_then(|s| s.token.palavra_chave())
+                    .as_deref()
+                    == Some("OVER")
+            {
+                return true;
+            }
             i += 1;
         }
         false
@@ -338,7 +405,7 @@ impl Analisador {
         &mut self,
         cte: Option<(String, Selecao)>,
     ) -> Result<Consulta> {
-        let colunas = self.projecao_composta()?;
+        let (colunas, janela) = self.projecao_composta()?;
         self.exigir_palavra("FROM")?;
         let de = self.fonte_do_from(&cte)?;
 
@@ -367,43 +434,165 @@ impl Analisador {
             em,
             onde,
             colunas,
+            janela,
             ordem,
             pular,
             max,
         })
     }
 
-    /// A projecao da consulta composta: `*`, ou colunas (pode vir
-    /// qualificada, `p.id`) com apelido opcional.
-    fn projecao_composta(&mut self) -> Result<Option<Vec<ColunaComposta>>> {
+    /// A projecao da consulta composta: `*`, ou uma lista de colunas (pode
+    /// vir qualificada, `p.id`) e/ou chamadas de janela
+    /// (`ROW_NUMBER() OVER (...)`). `*` nao se mistura com janela -- exige
+    /// a lista explicita, porque `SELECT *, ROW_NUMBER() ...` teria de
+    /// nomear a posicao da coluna nova, e `*` nao nomeia nada.
+    fn projecao_composta(&mut self) -> Result<(Option<Vec<ColunaComposta>>, Vec<Janela>)> {
         if self.aceitar(&Token::Asterisco) {
-            return Ok(None);
+            return Ok((None, Vec::new()));
         }
         let mut colunas = Vec::new();
+        let mut janelas = Vec::new();
         loop {
-            let nome = self.identificador("nome de coluna")?;
-            let nome = if self.aceitar(&Token::Ponto) {
-                format!(
-                    "{nome}.{}",
-                    self.identificador("nome de coluna depois do ponto")?
-                )
-            } else {
-                nome
-            };
-            let apelido = if self.aceitar_palavra("AS") {
-                Some(self.identificador("apelido depois de AS")?)
-            } else {
-                None
-            };
-            colunas.push(ColunaComposta {
-                coluna: nome,
-                apelido,
-            });
+            let (col, jan) = self.item_de_projecao_composta()?;
+            colunas.push(col);
+            if let Some(j) = jan {
+                janelas.push(j);
+            }
             if !self.aceitar(&Token::Virgula) {
                 break;
             }
         }
-        Ok(Some(colunas))
+        Ok((Some(colunas), janelas))
+    }
+
+    /// Um item da projecao composta: coluna simples, ou
+    /// `ROW_NUMBER() OVER (...) [AS apelido]` -- que sempre devolve UMA
+    /// coluna (o apelido da janela, para `colunas` mostrar na posicao em
+    /// que a chamada apareceu) e, quando for janela, TAMBEM a `Janela`.
+    fn item_de_projecao_composta(&mut self) -> Result<(ColunaComposta, Option<Janela>)> {
+        if let Some(nome) = self.espiar().and_then(|s| s.token.palavra_chave()) {
+            if self.s.get(self.i + 1).map(|s| &s.token) == Some(&Token::AbreParen) {
+                if nome == "ROW_NUMBER" {
+                    let (janela, coluna) = self.chamada_de_row_number()?;
+                    return Ok((coluna, Some(janela)));
+                }
+                let pos_func = self.posicao_atual();
+                let fechamento = self.posicao_do_fecha_parenteses_apos(self.i + 1)?;
+                if self
+                    .s
+                    .get(fechamento + 1)
+                    .and_then(|s| s.token.palavra_chave())
+                    .as_deref()
+                    == Some("OVER")
+                {
+                    return Err(lexico::erro(
+                        pos_func,
+                        &format!(
+                            "{nome}() OVER (...) nao tem substrato nesta rodada -- so \
+                             ROW_NUMBER() OVER (...)"
+                        ),
+                    ));
+                }
+            }
+        }
+        let nome = self.identificador("nome de coluna")?;
+        let nome = if self.aceitar(&Token::Ponto) {
+            format!(
+                "{nome}.{}",
+                self.identificador("nome de coluna depois do ponto")?
+            )
+        } else {
+            nome
+        };
+        let apelido = if self.aceitar_palavra("AS") {
+            Some(self.identificador("apelido depois de AS")?)
+        } else {
+            None
+        };
+        Ok((
+            ColunaComposta {
+                coluna: nome,
+                apelido,
+            },
+            None,
+        ))
+    }
+
+    /// Depois de espiar `ROW_NUMBER (` sem consumir.
+    fn chamada_de_row_number(&mut self) -> Result<(Janela, ColunaComposta)> {
+        self.i += 2; // ROW_NUMBER e o (
+        if !self.aceitar(&Token::FechaParen) {
+            return Err(lexico::erro(
+                self.posicao_atual(),
+                "ROW_NUMBER nao aceita argumento: ROW_NUMBER() OVER (...)",
+            ));
+        }
+        self.exigir_palavra("OVER")?;
+        if !self.aceitar(&Token::AbreParen) {
+            return Err(lexico::erro(
+                self.posicao_atual(),
+                "esperava ( depois de OVER",
+            ));
+        }
+        let particao = if self.aceitar_palavra("PARTITION") {
+            self.exigir_palavra("BY")?;
+            self.lista_de_colunas_do_group_by()?
+        } else {
+            Vec::new()
+        };
+        let ordem = if self.aceitar_palavra("ORDER") {
+            self.exigir_palavra("BY")?;
+            self.lista_de_ordenacoes()?
+        } else {
+            Vec::new()
+        };
+        if !self.aceitar(&Token::FechaParen) {
+            return Err(lexico::erro(
+                self.posicao_atual(),
+                "esperava ) fechando o OVER (...)",
+            ));
+        }
+        let apelido = if self.aceitar_palavra("AS") {
+            self.identificador("apelido de ROW_NUMBER")?
+        } else {
+            "row_number".to_string()
+        };
+        let janela = Janela {
+            funcao: "row_number".to_string(),
+            particao,
+            ordem,
+            apelido: apelido.clone(),
+        };
+        let coluna = ColunaComposta {
+            coluna: apelido,
+            apelido: None,
+        };
+        Ok((janela, coluna))
+    }
+
+    /// O indice do `)` que fecha o `(` na posicao `abre_idx` -- sem
+    /// consumir nada (pura sondagem, para decidir se uma funcao tem `OVER`
+    /// depois dela).
+    fn posicao_do_fecha_parenteses_apos(&self, abre_idx: usize) -> Result<usize> {
+        let mut profundidade = 0i32;
+        let mut i = abre_idx;
+        while let Some(s) = self.s.get(i) {
+            match &s.token {
+                Token::AbreParen => profundidade += 1,
+                Token::FechaParen => {
+                    profundidade -= 1;
+                    if profundidade == 0 {
+                        return Ok(i);
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        Err(lexico::erro(
+            self.posicao_atual(),
+            "parenteses aberto e nao fechado",
+        ))
     }
 
     /// O `FROM`: uma tabela de sempre, o nome de uma CTE (se uma foi
@@ -846,5 +1035,119 @@ mod testes {
             chamadas, 2,
             "de + em -- as duas tabelas passam pelo resolvedor"
         );
+    }
+
+    // ------------------------------------------------------- item 5: janela
+
+    #[test]
+    fn row_number_com_particao_e_ordem() {
+        let c = consulta(
+            "SELECT id, nome, ROW_NUMBER() OVER (PARTITION BY cidade ORDER BY id DESC) AS n \
+             FROM (SELECT id, nome, cidade FROM clientes) AS x",
+        );
+        assert_eq!(c.janela.len(), 1);
+        let j = &c.janela[0];
+        assert_eq!(j.funcao, "row_number");
+        assert_eq!(j.particao, vec!["cidade".to_string()]);
+        assert_eq!(
+            j.ordem,
+            vec![Ordenacao {
+                coluna: "id".into(),
+                desc: true
+            }]
+        );
+        assert_eq!(j.apelido, "n");
+        // A coluna da janela entra em `colunas`, na posicao em que apareceu.
+        assert_eq!(
+            c.colunas,
+            Some(vec![
+                ColunaComposta {
+                    coluna: "id".into(),
+                    apelido: None
+                },
+                ColunaComposta {
+                    coluna: "nome".into(),
+                    apelido: None
+                },
+                ColunaComposta {
+                    coluna: "n".into(),
+                    apelido: None
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn row_number_sem_apelido_usa_o_padrao() {
+        let c = consulta("SELECT id, ROW_NUMBER() OVER (ORDER BY id) FROM (SELECT id FROM t) AS x");
+        assert_eq!(c.janela[0].apelido, "row_number");
+        assert_eq!(c.janela[0].particao, Vec::<String>::new());
+        assert_eq!(
+            c.colunas.unwrap()[1],
+            ColunaComposta {
+                coluna: "row_number".into(),
+                apelido: None
+            }
+        );
+    }
+
+    #[test]
+    fn row_number_sem_particao_nem_ordem() {
+        let c = consulta("SELECT id, ROW_NUMBER() OVER () AS n FROM (SELECT id FROM t) AS x");
+        assert_eq!(c.janela[0].particao, Vec::<String>::new());
+        assert_eq!(c.janela[0].ordem, Vec::<Ordenacao>::new());
+    }
+
+    #[test]
+    fn rank_e_sum_over_recusam_pelo_nome() {
+        for sql in [
+            "SELECT RANK() OVER (ORDER BY id) FROM (SELECT id FROM t) AS x",
+            "SELECT DENSE_RANK() OVER (ORDER BY id) FROM (SELECT id FROM t) AS x",
+            "SELECT SUM(preco) OVER (ORDER BY id) FROM (SELECT id, preco FROM t) AS x",
+        ] {
+            let e = recusa(sql);
+            assert!(e.contains("so ROW_NUMBER"), "{sql} -> {e}");
+        }
+    }
+
+    #[test]
+    fn row_number_com_argumento_recusa() {
+        let e = recusa("SELECT ROW_NUMBER(id) OVER (ORDER BY id) FROM (SELECT id FROM t) AS x");
+        assert!(e.contains("nao aceita argumento"), "{e}");
+    }
+
+    #[test]
+    fn row_number_traduz_com_o_json_do_contrato() {
+        let c = consulta(
+            "SELECT id, nome, ROW_NUMBER() OVER (PARTITION BY cidade ORDER BY id) AS n FROM \
+             (SELECT id, nome, cidade FROM clientes) AS x",
+        );
+        let p = traduzir_consulta(&c, "loja", &mut resolver_simples).unwrap();
+        let janela = p.pedido.campo("janela").unwrap().lista().unwrap();
+        assert_eq!(janela.len(), 1);
+        assert_eq!(janela[0].texto_ou("funcao", ""), "row_number");
+        assert_eq!(
+            janela[0].campo("particao").unwrap(),
+            &Json::Lista(vec![Json::texto_de("cidade")])
+        );
+        assert_eq!(janela[0].texto_ou("apelido", ""), "n");
+        assert_eq!(
+            p.pedido.campo("colunas").unwrap(),
+            &Json::Lista(vec![
+                Json::texto_de("id"),
+                Json::texto_de("nome"),
+                Json::texto_de("n"),
+            ])
+        );
+    }
+
+    #[test]
+    fn selecao_simples_com_row_number_nao_muda() {
+        // ROW_NUMBER fora desta gramatica (sem FROM composto) tambem
+        // precisa desviar -- e a prova de que a sondagem de `) OVER` funciona
+        // sozinha, sem FROM(SELECT nem IN(SELECT por perto.
+        let c = consulta("SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS n FROM clientes");
+        assert_eq!(c.de.de.tabela, "clientes");
+        assert_eq!(c.janela[0].apelido, "n");
     }
 }
