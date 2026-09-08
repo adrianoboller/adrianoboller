@@ -246,14 +246,29 @@ frase quando a palavra depois do `SHOW` é `SERVER`, `DATABASE`, `TABLE` ou
 
 ## 3. O que a camada SQL vai ter de resolver, e não tem embaixo
 
-Honestidade sobre o tamanho do trabalho — estas não existem no motor:
+Honestidade sobre o tamanho do trabalho. A rodada de 08–09/2026 (itens 1–9,
+`docs/propostas/comparativo-19.md`) fechou expressão no `WHERE`, `GROUP BY`,
+subconsulta, CTE e junção — a §7 conta a gramática e o JSON de cada um. O que
+**continua** sem substrato:
 
-- **Expressão.** `WHERE preco * 1.1 > 100` não tem quem avalie. O `varrer` filtra
-  por comparação simples, e só.
-- **Planejador.** Escolher *qual* índice usar quando há dois candidatos. Hoje
-  quem chama escolhe, dizendo o nome do índice.
-- **`GROUP BY` geral.** O `pivotar` faz a tabulação cruzada, que é um caso.
-- **Subconsulta e CTE.** Não há.
+- **Planejador de índice.** Escolher *qual* índice usar quando há dois
+  candidatos de igualdade continua sendo de quem chama — o primeiro declarado
+  vence, e o plano diz isso na nota.
+- **Janela além de `ROW_NUMBER`.** `RANK`, `DENSE_RANK`, `SUM() OVER (...)` e
+  companhia recusam nomeando — só `ROW_NUMBER() OVER (...)` tem substrato.
+- **`RIGHT`/`FULL`/`CROSS JOIN`.** Recusam nomeando; a direita se escreve
+  trocando os lados.
+- **Correlação e `EXISTS`.** Uma subconsulta (`IN` ou escalar) que cita coluna
+  de fora, ou um `EXISTS (...)`, exigiriam rodar a subconsulta por LINHA da
+  consulta de fora — não existe.
+- **`WITH RECURSIVE` e mais de uma CTE.** Só uma CTE, não recursiva.
+- **`UNION`.** Não há.
+- **`COUNT(coluna)`** sem `DISTINCT` e sem `*`. Contar só os não-nulos de uma
+  coluna é outro acumulador, que esta camada não construiu — `COUNT(*)` e
+  `COUNT(DISTINCT coluna)` têm substrato, `COUNT(coluna)` sozinho recusa.
+- **`COUNT(*)`/`GROUP BY` sobre visão.** `FROM v_c` vira `consultar` (filtra e
+  projeta); agregar sobre o resultado de uma visão ainda não compõe — quem
+  precisa disso escreve `SELECT COUNT(*) FROM (SELECT * FROM v_c) AS x`.
 - **Nível de isolamento.** A transação **existe** desde o pedido 162 — esta
   linha dizia «não há» e contradizia a §2 deste mesmo documento, que descreve o
   detector dela. O que não existe é o que fica **acima** do `READ COMMITTED`:
@@ -283,11 +298,18 @@ Na ordem em que cada passo destrava alguém:
    a seção 6 conta o que a ligação ensinou, e não era pouco.
 3. **`BULKINSERT`** e o catálogo (`information_schema`). Fecha a carga e a
    introspecção.
-4. **`JOIN`**, mapeando para o `juntar` que já existe.
-5. **Expressão e planejador** — o trabalho de verdade, e o único que não é
-   tradução.
+4. ~~**`JOIN`**, mapeando para o `juntar` que já existe.~~ **Feito** em
+   08–09/2026 (item 8, §7) — `INNER`/`LEFT [OUTER] JOIN`; `RIGHT`/`FULL`/
+   `CROSS` recusam nomeando.
+5. ~~**Expressão e planejador** — o trabalho de verdade, e o único que não é
+   tradução.~~ **A expressão saiu** (item 2, §7): o `WHERE`/`HAVING`/`ON` que
+   não é a forma simples vira texto normalizado, e quem avalia é
+   `phxsql_core::expressao`, do lado do motor. **O planejador de índice
+   continua não existindo** — ver §3.
 
-Os três primeiros são tradução de coisa medida e testada. É por ali.
+Os quatro primeiros já traduziam coisa medida e testada quando entraram. A
+tradução da composição (itens 4–9, §7) seguiu o mesmo molde: recusa nomeada
+para o que não tem substrato, prova real nos dois sentidos por item.
 
 ---
 
@@ -518,3 +540,221 @@ nesta rodada**: `UPDATE`/`DELETE` de uma linha nascida na *mesma* transação
 aberta — o `buscar` do passo 1 desce o índice, e a linha empilhada ainda não
 está nele; o desfecho esperado é `afetadas: 0`, e isso precisa de teste antes
 de virar promessa.
+
+**`ON CONFLICT`/`ON DUPLICATE KEY UPDATE` entraram em 08–09/2026** (item 7,
+§7) — `INSERT` continua sendo uma linha só, mas ganhou o que fazer quando ela
+já existe. O SET do upsert é a MESMA gramática do `UPDATE` (só literal;
+`excluded.coluna` e expressão recusam nomeando).
+
+---
+
+## 7. Os itens 1–9: parâmetro, expressão, agregado, composição, junção e visão
+
+Rodada de 08–09/2026, contrato em `docs/propostas/comparativo-19.md` (os
+itens 8 e 9 — junção e subconsulta escalar — foram um acréscimo do dono a
+meio da rodada, e entram no mesmo `consultar`). Cada item abaixo diz a
+gramática que `crates/phxsql-sql/` aceita e o JSON que ela produz — não a
+contagem de teste, que envelhece; rode `cargo test -p phxsql-sql` para o
+número do dia.
+
+### 1. Parâmetro `?`
+
+```text
+analisar_comando_com(texto, parametros: &[Json]) -> Result<Comando>
+```
+
+Cada `?` é contado da esquerda (zero-based) e resolvido para o literal de
+`parametros[n]` **no léxico**, antes da sintaxe rodar — nunca por
+substituição de texto, que reabriria a porta de injeção que o `?` existe
+para fechar. Número em `Json` vira `Numero` com o texto que `Json::escrever`
+já produz para ele; texto vira `Texto`; nulo e booleano viram a PALAVRA
+(`NULL`/`TRUE`/`FALSE`). Contagem diferente recusa nomeando os dois números:
+*"vieram N parametros e o comando tem M `?`"*. `analisar_comando(texto)` é
+`analisar_comando_com(texto, &[])`.
+
+### 2. Expressão no `WHERE`
+
+`coluna op literal` sozinho continua a forma **Simples** — a única que desce
+índice (`buscar`). Qualquer outra coisa (`AND`/`OR`, aritmética, função,
+`IN` de lista, `BETWEEN`, `LIKE`, `IS [NOT] NULL`, parênteses, coluna contra
+coluna) vira **Expressão**: o texto normalizado dos tokens do `WHERE`, que o
+`varrer` recebe no campo `"expressao"` — quem avalia é
+`phxsql_core::expressao`, nunca esta camada.
+
+```json
+{"op": "varrer", "database": "b", "tabela": "c",
+ "expressao": "preco * 1.1 > 100 AND cidade = 'Blumenau'"}
+```
+
+Nome qualificado (`c.uf`) normaliza **sem espaço** ao redor do ponto — é a
+única exceção à regra "um espaço entre tokens", porque o avaliador do core só
+lê `p.id` como um token quando ele vem grudado.
+
+### 3. `GROUP BY` e agregados
+
+```text
+SELECT coluna {, coluna} , FUNCAO(coluna) [AS apelido] {, ...}
+FROM tabela [WHERE ...] [GROUP BY coluna {, coluna}] [HAVING expr]
+[ORDER BY coluna [DESC] {, coluna [DESC]}] [LIMIT n]
+```
+
+`FUNCAO` ∈ `COUNT(*)`, `COUNT(DISTINCT coluna)`, `SUM`, `AVG`, `MIN`, `MAX`.
+Vira `agrupar`:
+
+```json
+{"op": "agrupar", "database": "b", "tabela": "c",
+ "por": ["cidade"],
+ "agregados": [{"funcao": "contagem", "apelido": "contagem"},
+               {"funcao": "soma", "coluna": "preco", "apelido": "total"}],
+ "onde": [], "expressao": "", "tendo": "total > 1",
+ "ordem": [{"coluna": "total", "desc": true}], "max": 1000}
+```
+
+`onde` (filtro simples) e `expressao` (item 2) são alternativos — o campo que
+não vale fica vazio, os dois sempre presentes. `por` vazio = um grupo só
+(`SELECT SUM(x) FROM t` sem `GROUP BY`). Apelido padrão: `contagem` sozinho,
+os outros `funcao_coluna` (`soma_preco`). Coluna projetada fora do
+`GROUP BY` e que não é agregado recusa nomeando, **na declaração**. `COUNT(*)`
+sozinho sem `GROUP BY`/`HAVING` continua no caminho rápido de sempre
+(`registros` do cabeçalho) — a única exceção é `COUNT(*)` com `WHERE` em
+forma de expressão, que precisa varrer para contar e por isso também vira
+`agrupar`. `ORDER BY` de várias colunas só vale aqui — o caminho simples
+continua limitado a uma (exige índice). `OFFSET` com `GROUP BY` recusa: o
+contrato de `agrupar` não tem `"pular"`.
+
+### 4. `WITH`, subconsulta no `FROM`, `IN (SELECT …)`
+
+```text
+[WITH nome AS (SELECT ...)]
+SELECT ( * | coluna [AS apelido] {, ...} )
+FROM ( tabela [[AS] apelido] | nome_da_cte | (SELECT ...) AS apelido )
+[WHERE ...] [ORDER BY ...] [LIMIT n [OFFSET m]]
+```
+
+Uma CTE só, não recursiva — duas ou `WITH RECURSIVE` recusam nomeando.
+`WHERE coluna IN (SELECT campo FROM ...)`, ocupando o conjunto INTEIRO de um
+`AND` de nível superior, vira `em`. Tudo vira `consultar`:
+
+```json
+{"op": "consultar", "database": "b",
+ "de": {"op": "varrer", "tabela": "c"},
+ "em": [{"coluna": "id", "de": {"op": "varrer", "tabela": "c"}, "campo": "id"}],
+ "expressao": "preco > 10",
+ "colunas": ["id", "nome"],
+ "ordem": [{"coluna": "id", "desc": false}], "pular": 0, "max": 1000}
+```
+
+`de` (e cada `em`) é traduzido por quem chama, via um **resolvedor**
+(`Resolvedor<'a> = dyn FnMut(&Selecao, &str) -> Result<Plano>`) — cada pedaço
+roda pelo MESMO portão de permissão de qualquer pedido; é isto que faz da
+composição uma composição, e não uma porta dos fundos (há prova com tabela
+negada dentro do `IN`). Subconsulta correlacionada (cita coluna que não é a
+dela mesma) e `EXISTS` recusam nomeando. `(SELECT` em qualquer lugar do
+comando desvia para esta gramática — mesmo quando a forma ainda não existe
+(escalar de um lado errado, `EXISTS`), porque cair aqui dá recusa nomeada em
+vez de virar texto de expressão que o motor não lê.
+
+### 5. `ROW_NUMBER() OVER (...)`
+
+```text
+ROW_NUMBER() OVER ([PARTITION BY coluna {, coluna}] [ORDER BY coluna [DESC] {, ...}]) [AS apelido]
+```
+
+Só essa função — `RANK`, `DENSE_RANK`, `SUM() OVER` etc. recusam nomeando. O
+apelido (dado, ou o padrão `row_number`) entra em `consultar.janela` **e**
+como uma coluna comum em `colunas`, na posição em que a chamada apareceu:
+
+```json
+{"janela": [{"funcao": "row_number", "particao": ["cidade"],
+             "ordem": [{"coluna": "id", "desc": false}], "apelido": "n"}],
+ "colunas": ["id", "nome", "n"]}
+```
+
+### 6. `CREATE VIEW` / `DROP VIEW`
+
+```text
+CREATE VIEW nome AS SELECT ...
+DROP VIEW nome
+```
+
+`sql` é o texto ORIGINAL do `SELECT` (por posição de caractere, nunca
+reconstruído dos tokens) e é analisado uma vez na hora do `CREATE` — para
+recusar cedo o que esta camada não vai entender no primeiro uso. Vira
+`criar_visao`/`excluir_visao`:
+
+```json
+{"op": "criar_visao", "database": "b", "nome": "v_c", "sql": "SELECT * FROM c"}
+{"op": "excluir_visao", "database": "b", "nome": "v_c"}
+```
+
+`planejar_sobre(selecao, plano_de_dentro)` é o gancho para o servidor
+resolver `FROM v_c`: ele reanalisa e traduz o SQL da visão (com os índices da
+tabela QUE ELA USA) e passa o pedido pronto; esta função só aplica por cima o
+resto do `SELECT` de fora (`WHERE`/colunas/`ORDER BY`/`LIMIT`/`OFFSET`).
+`COUNT(*)`/`GROUP BY` sobre visão recusam nomeando — ver §3.
+
+### 7. `INSERT ... ON CONFLICT` / `ON DUPLICATE KEY UPDATE`
+
+```text
+INSERT INTO t (...) VALUES (...)
+  ON CONFLICT [(coluna)] DO NOTHING | DO UPDATE SET coluna = literal {, ...}
+INSERT INTO t (...) VALUES (...) ON DUPLICATE KEY UPDATE coluna = literal {, ...}
+```
+
+```json
+{"op": "inserir", "database": "b", "tabela": "c", "valores": {"id": "1"},
+ "se_existir": "atualizar", "indice": "porCpf",
+ "atualizar": {"nome": "B"}}
+```
+
+A coluna do `ON CONFLICT` vira NOME DE ÍNDICE (o protocolo pede índice, o SQL
+nomeia coluna) pelo mesmo critério do `UPDATE`/`DELETE` por chave — só índice
+ÚNICO de uma coluna serve, ambíguo recusa nomeando os candidatos.
+`ON DUPLICATE KEY UPDATE` nunca nomeia índice: o servidor escolhe a primária.
+`excluded.coluna` e expressão no `SET` recusam nomeando.
+
+### 8. `[INNER|LEFT] JOIN ... ON`
+
+```text
+FROM t1 [[AS] a1]
+  ([INNER] | LEFT [OUTER]) JOIN ( t2 [[AS] a2] | (SELECT ...) AS a2 )
+  ON coluna[.coluna] = coluna[.coluna] {AND ...}
+  {JOIN ...}*
+```
+
+```json
+{"de": {"op": "varrer", "tabela": "pedidos"}, "apelido": "p",
+ "juntar": [{"de": {"op": "varrer", "tabela": "clientes"}, "apelido": "c",
+             "tipo": "interno",
+             "em": [{"esquerda": "p.cliente_id", "direita": "c.id"}]}]}
+```
+
+`apelido` (do `de` e de cada junção) só entra no pedido quando há `juntar` —
+sem junção nenhuma coluna precisa de prefixo, e o padrão é o nome da tabela
+quando não há `AS`. O `ON` se divide pelos `AND` de nível superior; cada
+pedaço `coluna = coluna` vira um par em `em` (junção por espalhamento em
+memória), e qualquer outra condição vira fragmento de texto, ANDado na
+`expressao` de fora junto com o `WHERE` — o contrato não tem campo de
+expressão por junção. `RIGHT`, `FULL` e `CROSS` recusam nomeando; `ON` sem
+nenhuma igualdade também.
+
+### 9. Subconsulta ESCALAR no `WHERE`
+
+```text
+coluna[.coluna] ( = | <> | < | <= | > | >= ) (SELECT ...)
+```
+
+Não correlacionada, devolvendo exatamente uma linha e uma coluna — o `campo`
+é o nome dela (o apelido, dado ou padrão, quando é um agregado). Numerada
+`sub_1`, `sub_2`... na ordem em que apareceu; a comparação é reescrita na
+`expressao` de fora:
+
+```json
+{"escalar": [{"nome": "sub_1",
+              "de": {"op": "agrupar", "tabela": "c",
+                     "agregados": [{"funcao": "media", "coluna": "preco"}]},
+              "campo": "media_preco"}],
+ "expressao": "preco > sub_1"}
+```
+
+Correlação e `EXISTS` recusam nomeando, como no item 4.

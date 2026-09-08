@@ -5,6 +5,8 @@
 //!
 //! ```text
 //! INSERT INTO [database.] [schema.] tabela (coluna {, coluna}) VALUES (literal {, literal})
+//!   [ON CONFLICT [(coluna)] DO NOTHING | DO UPDATE SET coluna = literal {, coluna = literal}]
+//!   [ON DUPLICATE KEY UPDATE coluna = literal {, coluna = literal}]
 //! UPDATE      [database.] [schema.] tabela SET coluna = literal {, coluna = literal}
 //!             WHERE coluna = literal
 //! DELETE FROM [database.] [schema.] tabela WHERE coluna = literal
@@ -13,6 +15,11 @@
 //! Uma linha por `INSERT`, a lista de colunas obrigatoria, o `WHERE` de
 //! igualdade sobre uma coluna com indice UNICO -- e o que falta recusa dizendo
 //! o que falta, com o nome da clausula, como o `SELECT` ja faz.
+//!
+//! `ON CONFLICT`/`ON DUPLICATE KEY UPDATE` (item 7) viram `inserir` com
+//! `se_existir: "ignorar"|"atualizar"`. So o SET aceita LITERAL -- nem
+//! `excluded.coluna` (a linha que tentou entrar) nem expressao tem
+//! substrato, e os dois recusam nomeando o motivo.
 //!
 //! # O que este modulo NAO e: uma traducao direta
 //!
@@ -67,6 +74,25 @@ pub struct Insercao {
     pub em: Alvo,
     pub colunas: Vec<String>,
     pub valores: Vec<Literal>,
+    /// `ON CONFLICT (...) DO NOTHING|UPDATE` ou `ON DUPLICATE KEY UPDATE` --
+    /// `None` e o `INSERT` de sempre.
+    pub se_existir: Option<SeExistir>,
+}
+
+/// O que fazer quando a linha ja existe -- o item 7 do roteiro.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SeExistir {
+    /// `ON CONFLICT (coluna) DO NOTHING`. `coluna_conflito` e `None` so no
+    /// `ON CONFLICT DO NOTHING` sem alvo (Postgres aceita; o servidor
+    /// escolhe o indice, como no `inserir` de sempre).
+    Ignorar { coluna_conflito: Option<String> },
+    /// `ON CONFLICT (coluna) DO UPDATE SET ...` ou `ON DUPLICATE KEY UPDATE
+    /// ...` -- a segunda forma NUNCA tem `coluna_conflito` (o MySQL nao
+    /// nomeia indice, e o servidor escolhe o primario).
+    Atualizar {
+        coluna_conflito: Option<String>,
+        atribuicoes: Vec<(String, Literal)>,
+    },
 }
 
 /// `UPDATE t SET a = 1, b = 'x' WHERE id = 5`.
@@ -138,24 +164,100 @@ impl Analisador {
                  inserir_lote, fora de transacao",
             ));
         }
+        let se_existir = self.upsert_opcional()?;
         Ok(Insercao {
             em,
             colunas,
             valores,
+            se_existir,
         })
+    }
+
+    /// `ON CONFLICT (coluna) DO NOTHING|UPDATE SET ...` (PostgreSQL/SQLite)
+    /// ou `ON DUPLICATE KEY UPDATE ...` (MySQL) -- `None` quando nao ha `ON`
+    /// nenhum, que e o `INSERT` de sempre.
+    fn upsert_opcional(&mut self) -> Result<Option<SeExistir>> {
+        if !self.aceitar_palavra("ON") {
+            return Ok(None);
+        }
+        if self.aceitar_palavra("DUPLICATE") {
+            self.exigir_palavra("KEY")?;
+            self.exigir_palavra("UPDATE")?;
+            let atribuicoes = self.lista_de_atribuicoes("no SET do ON DUPLICATE KEY UPDATE")?;
+            return Ok(Some(SeExistir::Atualizar {
+                // O MySQL nao nomeia indice -- ele resolve pela PRIMARIA ou
+                // por qualquer chave unica que bateu, e o servidor ja faz
+                // essa escolha quando `indice` vem ausente.
+                coluna_conflito: None,
+                atribuicoes,
+            }));
+        }
+        self.exigir_palavra("CONFLICT")?;
+        let coluna_conflito = if self.aceitar(&Token::AbreParen) {
+            let c = self.identificador("coluna do ON CONFLICT")?;
+            if self.aceitar(&Token::Virgula) {
+                return Err(lexico::erro(
+                    self.posicao_atual(),
+                    "ON CONFLICT de mais de uma coluna nao tem substrato nesta rodada: so \
+                     indice UNICO de uma coluna -- a mesma restricao do UPDATE/DELETE por \
+                     chave",
+                ));
+            }
+            if !self.aceitar(&Token::FechaParen) {
+                return Err(lexico::erro(
+                    self.posicao_atual(),
+                    &format!("esperava ) do ON CONFLICT ({c}{}", self.mas_veio()),
+                ));
+            }
+            Some(c)
+        } else {
+            // `ON CONFLICT DO NOTHING` sem alvo -- legitimo no Postgres, e o
+            // servidor decide o indice do mesmo jeito que decide quando o
+            // pedido chega sem "indice" nenhum.
+            None
+        };
+        self.exigir_palavra("DO")?;
+        if self.aceitar_palavra("NOTHING") {
+            return Ok(Some(SeExistir::Ignorar { coluna_conflito }));
+        }
+        self.exigir_palavra("UPDATE")?;
+        self.exigir_palavra("SET")?;
+        let atribuicoes = self.lista_de_atribuicoes("no SET do ON CONFLICT")?;
+        Ok(Some(SeExistir::Atualizar {
+            coluna_conflito,
+            atribuicoes,
+        }))
     }
 
     /// Depois do `UPDATE` ja consumido.
     pub(crate) fn atualizacao(&mut self, _pos: usize) -> Result<Atualizacao> {
         let em = self.alvo()?;
         self.exigir_palavra("SET")?;
+        let atribuicoes = self.lista_de_atribuicoes("no SET")?;
+        let onde = self.condicao_de_chave("UPDATE", "mudaria a tabela INTEIRA")?;
+        Ok(Atualizacao {
+            em,
+            atribuicoes,
+            onde,
+        })
+    }
+
+    /// A lista `coluna = literal {, coluna = literal}` de um `SET` -- do
+    /// `UPDATE` de sempre e do `DO UPDATE SET`/`ON DUPLICATE KEY UPDATE` do
+    /// upsert, que sao a MESMA gramatica.
+    ///
+    /// `excluded.coluna` (a linha que tentou entrar, do Postgres) recusa
+    /// NOMEANDO antes de cair na mensagem generica de "esperava um valor":
+    /// a mensagem generica falaria em "comparar coluna com coluna", que nao
+    /// e o que quem escreveu `excluded.preco` tentou fazer.
+    fn lista_de_atribuicoes(&mut self, contexto: &str) -> Result<Vec<(String, Literal)>> {
         let mut atribuicoes: Vec<(String, Literal)> = Vec::new();
         loop {
-            let coluna = self.identificador("nome de coluna no SET")?;
+            let coluna = self.identificador(&format!("nome de coluna {contexto}"))?;
             if atribuicoes.iter().any(|(c, _)| igual_sem_caso(c, &coluna)) {
                 return Err(lexico::erro(
                     self.posicao_atual(),
-                    &format!("a coluna {coluna:?} aparece duas vezes no SET"),
+                    &format!("a coluna {coluna:?} aparece duas vezes {contexto}"),
                 ));
             }
             if phxsql_core::schema::e_coluna_de_sistema(&coluna.to_lowercase()) {
@@ -177,20 +279,29 @@ impl Analisador {
                     ))
                 }
             }
+            if self
+                .espiar()
+                .and_then(|s| s.token.palavra_chave())
+                .as_deref()
+                == Some("EXCLUDED")
+                && self.s.get(self.i + 1).map(|s| &s.token) == Some(&Token::Ponto)
+            {
+                return Err(lexico::erro(
+                    self.posicao_atual(),
+                    "excluded.coluna nao tem substrato nesta camada: o SET so aceita \
+                     literal, e \"a linha que tentou entrar\" nao vira literal nenhum -- \
+                     escreva o valor direto",
+                ));
+            }
             let valor = self.literal_de_escrita()?;
-            self.recusar_expressao("no SET")?;
+            self.recusar_expressao(contexto)?;
             atribuicoes.push((coluna, valor));
             if self.aceitar(&Token::Virgula) {
                 continue;
             }
             break;
         }
-        let onde = self.condicao_de_chave("UPDATE", "mudaria a tabela INTEIRA")?;
-        Ok(Atualizacao {
-            em,
-            atribuicoes,
-            onde,
-        })
+        Ok(atribuicoes)
     }
 
     /// Depois do `DELETE` ja consumido.
@@ -354,7 +465,17 @@ impl PlanoDml {
 
 /// `INSERT` vira um `inserir`. Nao precisa do esquema: quem confere coluna e
 /// tipo e o motor, com a mensagem que ele ja tem.
-pub fn traduzir_insercao(i: &Insercao, database_corrente: &str) -> Result<PlanoDml> {
+///
+/// `indices` so importa para `ON CONFLICT (coluna) ...`: e dali que sai o
+/// NOME do indice unico que o campo `"indice"` do pedido espera -- o SQL
+/// nomeia uma COLUNA, o protocolo espera um INDICE, e a traducao e quem faz
+/// essa ponte (a mesma que `traduzir_atualizacao`/`traduzir_exclusao` ja
+/// fazem para o `WHERE` por chave).
+pub fn traduzir_insercao(
+    i: &Insercao,
+    indices: &[IndiceInfo],
+    database_corrente: &str,
+) -> Result<PlanoDml> {
     let database = database_de(&i.em, database_corrente, "INSERT INTO")?;
     let mut notas = nota_do_apelido(&i.em);
     let valores: Vec<(String, Json)> = i
@@ -365,15 +486,83 @@ pub fn traduzir_insercao(i: &Insercao, database_corrente: &str) -> Result<PlanoD
         .collect();
     let mut pares = base_do_pedido(&i.em, &database);
     pares.push(("valores".to_string(), Json::Objeto(valores)));
-    notas.push(
-        "INSERT vira `inserir` -- uma linha, e ela empilha numa transacao aberta como \
-         qualquer inserir"
-            .into(),
-    );
+
+    match &i.se_existir {
+        None => {
+            notas.push(
+                "INSERT vira `inserir` -- uma linha, e ela empilha numa transacao aberta \
+                 como qualquer inserir"
+                    .into(),
+            );
+        }
+        Some(SeExistir::Ignorar { coluna_conflito }) => {
+            pares.push(("se_existir".to_string(), Json::texto_de("ignorar")));
+            if let Some(c) = coluna_conflito {
+                pares.push((
+                    "indice".to_string(),
+                    Json::texto_de(indice_unico_da_coluna(indices, c)?),
+                ));
+            }
+            notas.push(
+                "ON CONFLICT ... DO NOTHING vira `inserir` com se_existir: \"ignorar\" -- a \
+                 linha existente fica exatamente como estava"
+                    .into(),
+            );
+        }
+        Some(SeExistir::Atualizar {
+            coluna_conflito,
+            atribuicoes,
+        }) => {
+            pares.push(("se_existir".to_string(), Json::texto_de("atualizar")));
+            if let Some(c) = coluna_conflito {
+                pares.push((
+                    "indice".to_string(),
+                    Json::texto_de(indice_unico_da_coluna(indices, c)?),
+                ));
+            }
+            let atualizar: Vec<(String, Json)> = atribuicoes
+                .iter()
+                .map(|(c, v)| (c.clone(), literal_para_json(v)))
+                .collect();
+            pares.push(("atualizar".to_string(), Json::Objeto(atualizar)));
+            notas.push(
+                "ON CONFLICT/ON DUPLICATE KEY ... UPDATE vira `inserir` com se_existir: \
+                 \"atualizar\" -- o SET vai no campo \"atualizar\""
+                    .into(),
+            );
+        }
+    }
+
     Ok(PlanoDml::Inserir {
         pedido: pedido_com_op("inserir", pares),
         notas,
     })
+}
+
+/// O NOME do indice UNICO de uma coluna so -- o mesmo criterio de
+/// `busca_pela_chave`, so que sem exigir chave nenhuma no pedido (o
+/// `ON CONFLICT` so precisa saber QUAL indice, quem compara e o motor).
+fn indice_unico_da_coluna<'a>(indices: &'a [IndiceInfo], coluna: &str) -> Result<&'a str> {
+    let candidatos: Vec<&IndiceInfo> = indices
+        .iter()
+        .filter(|ix| ix.atende_igualdade(coluna) && (ix.unico || ix.primario))
+        .collect();
+    match candidatos.as_slice() {
+        [ix] => Ok(&ix.nome),
+        [] => Err(PhxError::Esquema(format!(
+            "ON CONFLICT ({coluna}) exige um indice UNICO de uma coluna sobre {coluna}. Nao \
+             existe"
+        ))),
+        varios => Err(PhxError::Esquema(format!(
+            "ON CONFLICT ({coluna}) e ambiguo: {} indices unicos casam com essa coluna -- {}",
+            varios.len(),
+            varios
+                .iter()
+                .map(|ix| ix.nome.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))),
+    }
 }
 
 /// `UPDATE` por chave: o `buscar` pronto, e o `SET` para o servidor mesclar
@@ -657,7 +846,7 @@ mod testes {
     #[test]
     fn insert_vira_inserir_com_numero_em_texto() {
         let i = insercao("INSERT INTO clientes (id, preco) VALUES (7, 10.50)");
-        let p = traduzir_insercao(&i, "loja").unwrap();
+        let p = traduzir_insercao(&i, &[], "loja").unwrap();
         let PlanoDml::Inserir { pedido, .. } = &p else {
             panic!("{p:?}");
         };
@@ -675,7 +864,7 @@ mod testes {
     #[test]
     fn o_banco_do_comando_vence_o_corrente_e_sem_nenhum_recusa() {
         let i = insercao("INSERT INTO outro.matriz.clientes (id) VALUES (1)");
-        let p = traduzir_insercao(&i, "loja").unwrap();
+        let p = traduzir_insercao(&i, &[], "loja").unwrap();
         let PlanoDml::Inserir { pedido, .. } = p else {
             unreachable!()
         };
@@ -683,7 +872,7 @@ mod testes {
         assert_eq!(pedido.texto_ou("tabela", ""), "matriz.clientes");
 
         let i = insercao("INSERT INTO clientes (id) VALUES (1)");
-        let e = traduzir_insercao(&i, "").unwrap_err().to_string();
+        let e = traduzir_insercao(&i, &[], "").unwrap_err().to_string();
         assert!(e.contains("nao sei em qual database"), "{e}");
     }
 
@@ -781,5 +970,155 @@ mod testes {
             .unwrap_err()
             .to_string();
         assert!(e.contains("Nao existe"), "{e}");
+    }
+
+    // ------------------------------------------------- item 7: upsert
+
+    fn ix_unico(nome: &str, coluna: &str) -> IndiceInfo {
+        IndiceInfo {
+            nome: nome.into(),
+            colunas: vec![ColunaDoIndice {
+                nome: coluna.into(),
+                desc: false,
+            }],
+            unico: true,
+            primario: false,
+        }
+    }
+
+    #[test]
+    fn on_conflict_do_nothing_vira_ignorar() {
+        let i = insercao(
+            "INSERT INTO clientes (cpf, nome) VALUES ('1', 'A') ON CONFLICT (cpf) DO NOTHING",
+        );
+        assert_eq!(
+            i.se_existir,
+            Some(SeExistir::Ignorar {
+                coluna_conflito: Some("cpf".into())
+            })
+        );
+        let p = traduzir_insercao(&i, &[ix_unico("porCpf", "cpf")], "loja").unwrap();
+        let PlanoDml::Inserir { pedido, notas } = &p else {
+            panic!("{p:?}")
+        };
+        assert_eq!(pedido.texto_ou("se_existir", ""), "ignorar");
+        assert_eq!(pedido.texto_ou("indice", ""), "porCpf");
+        assert!(notas.iter().any(|n| n.contains("ignorar")), "{notas:?}");
+    }
+
+    #[test]
+    fn on_conflict_do_update_vira_atualizar_com_o_set_no_campo_atualizar() {
+        let i = insercao(
+            "INSERT INTO clientes (cpf, nome, saldo) VALUES ('1', 'A', 10) \
+             ON CONFLICT (cpf) DO UPDATE SET nome = 'B', saldo = 20",
+        );
+        let PlanoDml::Inserir { pedido, .. } =
+            traduzir_insercao(&i, &[ix_unico("porCpf", "cpf")], "loja").unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(pedido.texto_ou("se_existir", ""), "atualizar");
+        assert_eq!(pedido.texto_ou("indice", ""), "porCpf");
+        let at = pedido.campo("atualizar").unwrap();
+        assert_eq!(at.texto_ou("nome", ""), "B");
+        assert_eq!(at.texto_ou("saldo", ""), "20");
+    }
+
+    #[test]
+    fn on_duplicate_key_update_vira_atualizar_sem_indice() {
+        let i = insercao(
+            "INSERT INTO clientes (cpf, nome) VALUES ('1', 'A') ON DUPLICATE KEY UPDATE \
+             nome = 'B'",
+        );
+        assert_eq!(
+            i.se_existir,
+            Some(SeExistir::Atualizar {
+                coluna_conflito: None,
+                atribuicoes: vec![("nome".to_string(), Literal::Texto("B".into()))],
+            })
+        );
+        // Sem indices NENHUM -- e nao recusa, porque o MySQL nunca nomeia
+        // indice: o servidor escolhe o primario.
+        let PlanoDml::Inserir { pedido, .. } = traduzir_insercao(&i, &[], "loja").unwrap() else {
+            panic!()
+        };
+        assert_eq!(pedido.texto_ou("se_existir", ""), "atualizar");
+        assert!(pedido.campo("indice").is_none(), "MySQL nao nomeia indice");
+        assert_eq!(pedido.campo("atualizar").unwrap().texto_ou("nome", ""), "B");
+    }
+
+    #[test]
+    fn on_conflict_do_nothing_sem_alvo_nao_pede_indice() {
+        let i = insercao("INSERT INTO clientes (cpf) VALUES ('1') ON CONFLICT DO NOTHING");
+        assert_eq!(
+            i.se_existir,
+            Some(SeExistir::Ignorar {
+                coluna_conflito: None
+            })
+        );
+        let PlanoDml::Inserir { pedido, .. } = traduzir_insercao(&i, &[], "loja").unwrap() else {
+            panic!()
+        };
+        assert!(pedido.campo("indice").is_none());
+    }
+
+    #[test]
+    fn on_conflict_sem_indice_unico_recusa_nomeando() {
+        let i = insercao("INSERT INTO clientes (cpf) VALUES ('1') ON CONFLICT (cpf) DO NOTHING");
+        let e = traduzir_insercao(&i, &[], "loja").unwrap_err().to_string();
+        assert!(e.contains("ON CONFLICT (cpf)"), "{e}");
+        assert!(e.contains("Nao existe"), "{e}");
+    }
+
+    #[test]
+    fn on_conflict_com_indice_ambiguo_recusa_nomeando_os_candidatos() {
+        let i = insercao("INSERT INTO clientes (cpf) VALUES ('1') ON CONFLICT (cpf) DO NOTHING");
+        let e = traduzir_insercao(
+            &i,
+            &[ix_unico("porCpfA", "cpf"), ix_unico("porCpfB", "cpf")],
+            "loja",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("ambiguo"), "{e}");
+        assert!(e.contains("porCpfA"), "{e}");
+        assert!(e.contains("porCpfB"), "{e}");
+    }
+
+    /// `excluded.coluna` e expressao no SET recusam pelo NOME, nao pela
+    /// mensagem generica de "esperava um valor".
+    #[test]
+    fn upsert_o_que_falta_recusa_pelo_nome() {
+        for (sql, pedaco) in [
+            (
+                "INSERT INTO t (a) VALUES (1) ON CONFLICT (a) DO UPDATE SET a = excluded.a",
+                "excluded.coluna",
+            ),
+            (
+                "INSERT INTO t (a, b) VALUES (1, 2) ON CONFLICT (a) DO UPDATE SET b = 1 + 1",
+                "no SET do ON CONFLICT",
+            ),
+            (
+                "INSERT INTO t (a) VALUES (1) ON CONFLICT (a, b) DO NOTHING",
+                "mais de uma coluna",
+            ),
+            (
+                "INSERT INTO t (a) VALUES (1) ON DUPLICATE KEY UPDATE softdeleted = FALSE",
+                "coluna de SISTEMA",
+            ),
+            (
+                "INSERT INTO t (a) VALUES (1) ON CONFLICT (a) DO UPDATE SET a = 1, a = 2",
+                "duas vezes",
+            ),
+        ] {
+            let e = analisar_comando(sql).unwrap_err().to_string();
+            assert!(e.contains(pedaco), "{sql} -> {e}");
+        }
+    }
+
+    #[test]
+    fn insert_sem_on_continua_sem_se_existir() {
+        let i = insercao("INSERT INTO t (a) VALUES (1)");
+        assert_eq!(i.se_existir, None);
     }
 }

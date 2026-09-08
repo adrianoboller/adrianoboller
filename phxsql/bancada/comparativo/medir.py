@@ -236,12 +236,35 @@ def sonda_codigo():
         "nota": "o `.log` por tabela É o diário que um PITR usaria",
     }
 
-    ond = citar("crates/phxsql-odbc/src/lib.rs", r"nao ha parametros nem plano",
-                "sem menção no driver")
+    # A sonda tem DOIS lados desde 08/09/2026, e a citação de antes ficou
+    # obsoleta: ela apontava para o comentário «nao ha parametros nem plano no
+    # driver», que deixou de ser verdade quando o SQLBindParameter entrou.
+    # Sonda que cita comentário morre quando o comentário é consertado — e
+    # morre calada, imprimindo "sem menção" como se fosse a medida.
+    #
+    # O lado que FALTA é o do servidor, e ele se mede onde dói: o léxico
+    # (`crates/phxsql-sql/src/lexico.rs`) ainda recusa o caractere `?`, então
+    # nenhum `WHERE id = ?` chega a virar plano. Enquanto isso, é NÃO.
+    #
+    # E quando o `?` entrar no léxico esta sonda para em MEIO, nunca em TEM:
+    # código dos dois lados não é efeito. Quem promove a célula é a sonda VIVA
+    # (`bancada/odbc/prova-abi.py`, passo 7c), que confere a LINHA que voltou.
+    lig = citar("crates/phxsql-odbc/src/lib.rs",
+                r'extern "system" fn SQLBindParameter',
+                "sem ligação de parâmetro no driver")
+    lex = tem("crates/phxsql-sql/src/lexico.rs", r"'\?'")
     fora["parametro_no_prepared"] = {
         "titulo": "Parâmetro em instrução preparada (`?`)",
-        "phxsql": (NAO, ond),
-        "nota": "o driver guarda o texto e o reenvia",
+        "phxsql": (MEIO, f"o driver liga e manda `parametros`: {lig}; e o léxico "
+                         f"já conhece o `?`: {lex} — falta a prova viva "
+                         "(bancada/odbc/prova-abi.py, passo 7c)")
+                  if lex else
+                  (NAO, f"o driver já liga e manda `parametros` ({lig}), mas o "
+                        "léxico do servidor recusa o caractere `?`: "
+                        "crates/phxsql-sql/src/lexico.rs — «caractere nao faz "
+                        "parte da linguagem»"),
+        "nota": "o lado do driver está pronto e provado; falta a op sql ler "
+                "`parametros` (frente F-CONSULTA)",
     }
 
     ck = tem("crates/phxsql-server/src/catalogo.rs", r'nome: "checksum"')
