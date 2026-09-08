@@ -8,6 +8,7 @@
 //! num lugar onde ninguem procuraria depois. O lexico so confere o FORMATO;
 //! quem sabe o tipo da coluna e o motor.
 
+use phxsql_core::json::Json;
 use phxsql_core::{PhxError, Result};
 
 /// Os comparadores que o `WHERE` aceita.
@@ -64,6 +65,16 @@ pub enum Token {
     Mais,
     Menos,
     Barra,
+    /// Um `?` -- parametro posicional. `n` e a ordem dele entre os `?` do
+    /// MESMO comando, contada da esquerda e comecando em zero: o primeiro
+    /// `?` e `Parametro(0)`, o segundo e `Parametro(1)`. E o indice direto
+    /// em `parametros[n]` -- nao ha conversao de um para o outro depois.
+    ///
+    /// Ele nunca chega ao analisador SINTATICO: `resolver_parametros` troca
+    /// cada um pelo literal da posicao ANTES da sintaxe rodar. Substituir por
+    /// TEXTO em vez de por um token seria reabrir a porta que os parametros
+    /// existem para fechar -- um valor viraria pedaco de comando.
+    Parametro(usize),
 }
 
 impl Token {
@@ -94,8 +105,69 @@ impl Token {
             Token::Mais => "+".into(),
             Token::Menos => "-".into(),
             Token::Barra => "/".into(),
+            Token::Parametro(_) => "?".into(),
         }
     }
+
+    /// Como este simbolo entra na expressao normalizada de `varrer.expressao`,
+    /// `agrupar.tendo` e `consultar.expressao`: literal de texto sempre entre
+    /// aspas simples com `'` dobrado por dentro (a mesma regra de
+    /// `Literal::escrever`), identificador citado entre aspas duplas com `"`
+    /// dobrado, e o resto como `descrever()` ja escreve. `descrever()` sozinho
+    /// NAO serve para isto -- ele existe para mensagem de erro e nao reescapa
+    /// aspas internas, porque nenhuma mensagem de erro precisa voltar a ser
+    /// SQL valido; a expressao que vai para o motor precisa.
+    fn normalizar(&self) -> String {
+        match self {
+            Token::Texto(t) => format!("'{}'", t.replace('\'', "''")),
+            Token::Palavra {
+                texto,
+                citado: true,
+            } => format!("\"{}\"", texto.replace('"', "\"\"")),
+            outro => outro.descrever(),
+        }
+    }
+}
+
+/// O texto de uma expressao a partir dos tokens dela: um espaco entre cada
+/// simbolo, sempre -- inclusive ao redor de parenteses e virgula. E a regra
+/// que `docs/propostas/comparativo-19.md` pede, e ela e deliberadamente
+/// literal: quem le do outro lado e um analisador de tokens, nao alguem
+/// lendo a tela, entao o espaco extra ao redor de `(` nao custa nada.
+///
+/// # A UNICA excecao: nome qualificado
+///
+/// `phxsql_core::expressao` (o avaliador do core, do lado do motor) le
+/// `p.id` como um token SO -- e precisa, porque uma junção poe duas tabelas
+/// na mesma linha, e as duas podem ter uma coluna `id`. Um espaco em volta
+/// do ponto ("p . id") quebraria essa leitura: o lexico do core so estende o
+/// identificador pelo ponto quando ele vem GRUDADO, sem espaco. Entao
+/// `Palavra Ponto Palavra` funde num pedaco so sem espaco -- e so essa
+/// sequencia; `a.b.c` nao acontece nesta gramatica (o alvo de tres partes
+/// mora no `FROM`, nunca dentro de uma expressao).
+pub(crate) fn normalizar_tokens(tokens: &[Simbolo]) -> String {
+    let mut partes: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < tokens.len() {
+        if matches!(tokens[i].token, Token::Palavra { .. })
+            && matches!(tokens.get(i + 1).map(|s| &s.token), Some(Token::Ponto))
+            && matches!(
+                tokens.get(i + 2).map(|s| &s.token),
+                Some(Token::Palavra { .. })
+            )
+        {
+            partes.push(format!(
+                "{}.{}",
+                tokens[i].token.normalizar(),
+                tokens[i + 2].token.normalizar()
+            ));
+            i += 3;
+            continue;
+        }
+        partes.push(tokens[i].token.normalizar());
+        i += 1;
+    }
+    partes.join(" ")
 }
 
 /// Um simbolo e onde ele comeca no texto original.
@@ -116,6 +188,7 @@ pub fn analisar(entrada: &str) -> Result<Vec<Simbolo>> {
     let b: Vec<char> = entrada.chars().collect();
     let mut i = 0usize;
     let mut saida = Vec::new();
+    let mut parametros = 0usize;
     while i < b.len() {
         let c = b[i];
         if c.is_whitespace() {
@@ -183,6 +256,12 @@ pub fn analisar(entrada: &str) -> Result<Vec<Simbolo>> {
             '/' => {
                 i += 1;
                 Token::Barra
+            }
+            '?' => {
+                let n = parametros;
+                parametros += 1;
+                i += 1;
+                Token::Parametro(n)
             }
             '=' => {
                 i += 1;
@@ -261,6 +340,84 @@ pub fn analisar(entrada: &str) -> Result<Vec<Simbolo>> {
         });
     }
     Ok(saida)
+}
+
+/// Troca cada `Token::Parametro(n)` pelo literal de `parametros[n]`, ANTES de
+/// a sintaxe rodar -- e por isso mora aqui e nao em `sintaxe.rs`: o cursor que
+/// a sintaxe le nunca chega a ver um parametro nao resolvido.
+///
+/// # Por que troca de TOKEN, nunca de TEXTO
+///
+/// Substituir `?` pelo texto do parametro e reanalisar recriaria a injecao
+/// que os `?` existem para fechar: um texto de usuario viraria pedaco de
+/// comando, e `'; DROP TABLE clientes; --'` mandado como parametro voltaria a
+/// ser SQL. Aqui o parametro vira exatamente UM token -- nunca uma sequencia
+/// que o lexico teria que reanalisar --, entao o valor nunca e interpretado
+/// como sintaxe.
+///
+/// # Contagem errada recusa nomeando os dois lados
+///
+/// `M` `?` no comando e `N` parametros: se `M != N` a chamada esta errada
+/// (faltou ou sobrou parametro), e a mensagem diz os dois numeros -- nunca so
+/// "contagem errada", que manda quem chamou contar de novo pelo texto.
+pub fn resolver_parametros(simbolos: Vec<Simbolo>, parametros: &[Json]) -> Result<Vec<Simbolo>> {
+    let total = simbolos
+        .iter()
+        .filter(|s| matches!(s.token, Token::Parametro(_)))
+        .count();
+    if total != parametros.len() {
+        return Err(erro(
+            0,
+            &format!(
+                "vieram {} parametros e o comando tem {total} `?`",
+                parametros.len()
+            ),
+        ));
+    }
+    let mut saida = Vec::with_capacity(simbolos.len());
+    for s in simbolos {
+        let token = match s.token {
+            Token::Parametro(n) => token_do_parametro(&parametros[n], s.posicao)?,
+            outro => outro,
+        };
+        saida.push(Simbolo {
+            token,
+            posicao: s.posicao,
+        });
+    }
+    Ok(saida)
+}
+
+/// O literal que representa este valor de parametro -- a mesma conversao que
+/// `traduzir::literal_para_json` faz ao contrario: numero vira `Numero` com o
+/// texto que `Json::escrever` produziria (o `Json` desta casa so tem um tipo
+/// numerico, e essa e a mesma forma que ele grava em qualquer outro lugar do
+/// protocolo); texto vira `Texto`; nulo e booleano viram a PALAVRA (`NULL`,
+/// `TRUE`, `FALSE`), que e como a sintaxe ja le esses tres literais.
+fn token_do_parametro(j: &Json, pos: usize) -> Result<Token> {
+    Ok(match j {
+        Json::Numero(_) => Token::Numero(j.escrever()),
+        Json::Texto(t) => Token::Texto(t.clone()),
+        Json::Nulo => Token::Palavra {
+            texto: "NULL".into(),
+            citado: false,
+        },
+        Json::Bool(true) => Token::Palavra {
+            texto: "TRUE".into(),
+            citado: false,
+        },
+        Json::Bool(false) => Token::Palavra {
+            texto: "FALSE".into(),
+            citado: false,
+        },
+        Json::Lista(_) | Json::Objeto(_) => {
+            return Err(erro(
+                pos,
+                "parametro so aceita literal (numero, texto, booleano ou nulo); lista e \
+                 objeto nao tem literal correspondente",
+            ))
+        }
+    })
 }
 
 /// Acentuado vale como letra: `descrição` e nome de coluna legitimo aqui, e
@@ -491,5 +648,90 @@ mod testes {
     fn expoente_nao_existe() {
         // `1e3` cai na regra do numero colado em letra, e e de proposito.
         assert!(analisar("1e3").is_err());
+    }
+
+    #[test]
+    fn interrogacao_conta_da_esquerda_a_partir_de_zero() {
+        assert_eq!(
+            tokens("id = ? AND nome = ?"),
+            vec![
+                Token::Palavra {
+                    texto: "id".into(),
+                    citado: false
+                },
+                Token::Comparador(Comparador::Igual),
+                Token::Parametro(0),
+                Token::Palavra {
+                    texto: "AND".into(),
+                    citado: false
+                },
+                Token::Palavra {
+                    texto: "nome".into(),
+                    citado: false
+                },
+                Token::Comparador(Comparador::Igual),
+                Token::Parametro(1),
+            ]
+        );
+    }
+
+    #[test]
+    fn resolver_troca_cada_parametro_pelo_literal_da_posicao() {
+        // a=0 ==1 ?=2 OR=3 b=4 ==5 ?=6 OR=7 c=8 ==9 ?=10 OR=11 d=12 ==13 ?=14
+        let s = analisar("a = ? OR b = ? OR c = ? OR d = ?").unwrap();
+        let r = resolver_parametros(
+            s,
+            &[
+                Json::Numero(7.0),
+                Json::texto_de("Ana"),
+                Json::Nulo,
+                Json::Bool(true),
+            ],
+        )
+        .unwrap();
+        let t: Vec<&Token> = r.iter().map(|s| &s.token).collect();
+        assert_eq!(*t[2], Token::Numero("7".into()));
+        assert_eq!(*t[6], Token::Texto("Ana".into()));
+        assert_eq!(
+            *t[10],
+            Token::Palavra {
+                texto: "NULL".into(),
+                citado: false
+            }
+        );
+        assert_eq!(
+            *t[14],
+            Token::Palavra {
+                texto: "TRUE".into(),
+                citado: false
+            }
+        );
+    }
+
+    #[test]
+    fn resolver_com_contagem_diferente_recusa_nomeando_os_dois_numeros() {
+        let s = analisar("a = ? AND b = ?").unwrap();
+        let e = resolver_parametros(s, &[Json::Numero(1.0)])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("vieram 1 parametros"), "{e}");
+        assert!(e.contains("tem 2 `?`"), "{e}");
+    }
+
+    #[test]
+    fn resolver_sem_nenhum_parametro_no_texto_aceita_lista_vazia() {
+        let s = analisar("a = 1").unwrap();
+        assert!(resolver_parametros(s, &[]).is_ok());
+    }
+
+    /// Lista e objeto nao tem literal SQL correspondente -- a recusa nomeia o
+    /// motivo em vez de tentar inventar uma sintaxe para eles.
+    #[test]
+    fn resolver_recusa_lista_e_objeto_pelo_nome() {
+        let s = analisar("a = ?").unwrap();
+        let e = resolver_parametros(s, &[Json::Lista(vec![])])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("literal"), "{e}");
     }
 }
