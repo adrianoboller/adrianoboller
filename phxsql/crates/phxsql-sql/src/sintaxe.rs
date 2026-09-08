@@ -317,7 +317,7 @@ pub enum Comando {
     /// `WITH`, subconsulta no `FROM`, `IN (SELECT …)`, junção ou janela --
     /// qualquer `SELECT` que precisa de COMPOSICAO. Vira a op `consultar`
     /// (`crate::consulta`), nunca `buscar`/`varrer`/`agrupar` sozinhos.
-    Consulta(crate::consulta::Consulta),
+    Consulta(Box<crate::consulta::Consulta>),
     Insercao(Insercao),
     Atualizacao(Atualizacao),
     Exclusao(Exclusao),
@@ -389,13 +389,18 @@ pub const RESERVADAS_DO_MOTOR: [&str; 1] = ["BULKINSERT"];
 
 /// Palavras da gramatica que nao podem ser lidas como nome de tabela ou de
 /// coluna sem aspas.
-const CLAUSULAS: [&str; 18] = [
+const CLAUSULAS: [&str; 26] = [
     "SELECT", "FROM", "WHERE", "ORDER", "GROUP", "BY", "LIMIT", "OFFSET", "AS", "HAVING", "JOIN",
     "UNION",
     // Os verbos de escrita e as clausulas deles. SET e VALUES precisam estar
     // aqui por um motivo concreto: o `alvo` aceita apelido SEM `AS`, e um
     // `UPDATE t SET ...` leria SET como apelido da tabela.
     "INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE",
+    // A cadeia de junção (item 8): `alvo()` aceita apelido SEM `AS`, e sem
+    // estas aqui `FROM p LEFT JOIN c` leria "LEFT" como apelido de `p`, e
+    // `FROM p JOIN c ON ...` leria "ON" como apelido de `c` -- os dois
+    // calados, sem erro nenhum, so a junção quebrando silenciosamente.
+    "ON", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "OUTER", "WITH",
 ];
 
 /// O texto traz MAIS DE UM comando empilhado -- o `; DROP TABLE ...` classico?
@@ -609,7 +614,9 @@ impl Analisador {
             "SELECT" => {
                 self.i += 1;
                 if self.precisa_de_consulta_composta() {
-                    Ok(Comando::Consulta(self.consulta_apos_select(None)?))
+                    Ok(Comando::Consulta(Box::new(
+                        self.consulta_apos_select(None)?,
+                    )))
                 } else {
                     Ok(Comando::Selecao(self.selecao()?))
                 }
@@ -618,7 +625,7 @@ impl Analisador {
             // recursiva (item 4). Sempre vira `consultar`.
             "WITH" => {
                 self.i += 1;
-                Ok(Comando::Consulta(self.com_cte()?))
+                Ok(Comando::Consulta(Box::new(self.com_cte()?)))
             }
             // CREATE VIEW/DROP VIEW (item 6). So VIEW chega aqui -- as
             // outras formas de CREATE/DROP (TRIGGER, PROCEDURE, TABLE, ...)
@@ -1343,8 +1350,9 @@ mod testes {
             // deles esta em `onde_em_forma_de_expressao`, la embaixo. SUM(x)
             // e GROUP BY sairam no dia do item 3 -- a prova deles esta em
             // `sintaxe::testes::group_by_e_agregados` e em `traduzir::testes`.
+            // JOIN saiu no dia do item 8 -- a prova esta em
+            // `consulta::testes` (`junção...`).
             ("SELECT DISTINCT a FROM t", "DISTINCT"),
-            ("SELECT * FROM a JOIN b", "junção"),
             ("SELECT COUNT(a) FROM t", "COUNT(coluna)"),
             // INSERT, UPDATE e DELETE sairam daqui no dia em que passaram a
             // existir: as recusas DELES moram em `dml.rs`, uma por falta.

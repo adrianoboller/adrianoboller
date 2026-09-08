@@ -80,11 +80,47 @@ pub struct Janela {
     pub apelido: String,
 }
 
+/// `interno` (so quem casa) ou `esquerdo` (a linha da esquerda fica, com as
+/// colunas da direita nulas). `direito`, `completo` e `cruzado` recusam
+/// nomeando nesta rodada -- a direita se escreve trocando os lados.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TipoJuncao {
+    Interno,
+    Esquerdo,
+}
+
+impl TipoJuncao {
+    pub fn nome_no_protocolo(&self) -> &'static str {
+        match self {
+            TipoJuncao::Interno => "interno",
+            TipoJuncao::Esquerdo => "esquerdo",
+        }
+    }
+}
+
+/// Uma junção -- `[INNER|LEFT [OUTER]] JOIN fonte ON em {AND em}`. Item 8.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Juncao {
+    pub de: Selecao,
+    /// O apelido dela -- default e o nome da tabela, como o `de` principal.
+    pub apelido: Option<String>,
+    pub tipo: TipoJuncao,
+    /// Pares de coluna=coluna do `ON` -- igualdade, por espalhamento em
+    /// memoria. Qualquer condicao do `ON` que NAO seja essa forma vira
+    /// fragmento de texto, ANDado na `expressao` de fora junto com o
+    /// WHERE (nao ha campo `expressao` proprio por junção no contrato).
+    pub em: Vec<(String, String)>,
+}
+
 /// A consulta composta pronta para traduzir.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Consulta {
     /// A fonte principal -- tabela, subconsulta ou o corpo de uma CTE.
     pub de: Selecao,
+    /// O apelido do `de` -- so entra no pedido quando ha junção (sem
+    /// junção nenhuma coluna precisa de prefixo).
+    pub apelido_de: Option<String>,
+    pub juntar: Vec<Juncao>,
     /// `IN (SELECT …)` do WHERE.
     pub em: Vec<EmSubconsulta>,
     /// O resto do WHERE, sempre como TEXTO -- aqui nao existe "onde" (lista
@@ -103,6 +139,11 @@ pub struct Consulta {
 /// o `Plano` dele -- com os indices DAQUELA tabela, que so o servidor
 /// enxerga.
 pub type Resolvedor<'a> = dyn FnMut(&Selecao, &str) -> Result<Plano> + 'a;
+
+/// Os pares `em` de um `ON` (esquerda, direita) e os fragmentos de texto
+/// que sobraram (nao eram igualdade de colunas) -- o que
+/// `condicao_de_juncao` devolve.
+type ParesEFragmentosDoOn = (Vec<(String, String)>, Vec<String>);
 
 /// Traduz uma consulta composta para o pedido `consultar`.
 pub fn traduzir_consulta(
@@ -127,6 +168,45 @@ pub fn traduzir_consulta(
         ("database".to_string(), Json::texto_de(&database)),
         ("de".to_string(), de_plano.pedido),
     ];
+
+    if !c.juntar.is_empty() {
+        // O apelido do `de` so importa quando ha junção -- e so entao que
+        // uma coluna precisa de prefixo para dizer de qual lado ela vem.
+        if let Some(a) = &c.apelido_de {
+            pares.push(("apelido".to_string(), Json::texto_de(a)));
+        }
+        let mut juntar_json = Vec::with_capacity(c.juntar.len());
+        for j in &c.juntar {
+            let jp = resolver(&j.de, &database)?;
+            let mut par = vec![("de".to_string(), jp.pedido)];
+            if let Some(a) = &j.apelido {
+                par.push(("apelido".to_string(), Json::texto_de(a)));
+            }
+            par.push((
+                "tipo".to_string(),
+                Json::texto_de(j.tipo.nome_no_protocolo()),
+            ));
+            par.push((
+                "em".to_string(),
+                Json::Lista(
+                    j.em.iter()
+                        .map(|(esq, dir)| {
+                            Json::Objeto(vec![
+                                ("esquerda".to_string(), Json::texto_de(esq)),
+                                ("direita".to_string(), Json::texto_de(dir)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ));
+            juntar_json.push(Json::Objeto(par));
+        }
+        pares.push(("juntar".to_string(), Json::Lista(juntar_json)));
+        notas.push(format!(
+            "{} junção(s), aplicadas na ordem, cada uma pelo MESMO portao de permissao",
+            c.juntar.len()
+        ));
+    }
 
     if !c.em.is_empty() {
         let mut em_json = Vec::with_capacity(c.em.len());
@@ -476,9 +556,26 @@ impl Analisador {
     /// e janela (item 5) entram nesta mesma sondagem quando chegarem.
     pub(crate) fn precisa_de_consulta_composta(&self) -> bool {
         let mut i = self.i;
+        let mut viu_from = false;
         while let Some(s) = self.s.get(i) {
             if matches!(s.token, Token::PontoEVirgula) {
                 break;
+            }
+            if let Some(p) = s.token.palavra_chave() {
+                if p == "FROM" {
+                    viu_from = true;
+                } else if viu_from
+                    && matches!(
+                        p.as_str(),
+                        "JOIN" | "INNER" | "LEFT" | "RIGHT" | "FULL" | "CROSS"
+                    )
+                {
+                    // Junção (item 8) -- qualquer uma das seis palavras,
+                    // inclusive RIGHT/FULL/CROSS, que a gramatica composta
+                    // recusa NOMEANDO em vez de deixar cair no "junção
+                    // ainda nao passa por aqui" generico do caminho velho.
+                    return true;
+                }
             }
             // `(SELECT` em QUALQUER profundidade, precedido de QUALQUER
             // coisa -- `FROM (`, `IN (SELECT`, `EXISTS (SELECT`, ou uma
@@ -526,9 +623,11 @@ impl Analisador {
     ) -> Result<Consulta> {
         let (colunas, janela) = self.projecao_composta()?;
         self.exigir_palavra("FROM")?;
-        let de = self.fonte_do_from(&cte)?;
+        let (de, apelido_de) = self.fonte_do_from(&cte)?;
 
-        let (onde, em) = self.onde_composta()?;
+        let (juntar, extras_do_on) = self.juncoes()?;
+
+        let (onde, em) = self.onde_composta(extras_do_on)?;
 
         let ordem = if self.aceitar_palavra("ORDER") {
             self.exigir_palavra("BY")?;
@@ -550,6 +649,8 @@ impl Analisador {
 
         Ok(Consulta {
             de,
+            apelido_de,
+            juntar,
             em,
             onde,
             colunas,
@@ -558,6 +659,94 @@ impl Analisador {
             pular,
             max,
         })
+    }
+
+    /// A cadeia de `[INNER|LEFT [OUTER]] JOIN fonte ON em {AND em}` -- zero
+    /// ou mais, aplicadas na ordem escrita. Devolve as junções e os
+    /// fragmentos de `ON` que NAO eram igualdade de colunas (viram texto,
+    /// ANDados na `expressao` de fora junto com o `WHERE`).
+    fn juncoes(&mut self) -> Result<(Vec<Juncao>, Vec<String>)> {
+        let mut juntar = Vec::new();
+        let mut extras = Vec::new();
+        loop {
+            let pos = self.posicao_atual();
+            let tipo = if self.aceitar_palavra("INNER") {
+                self.exigir_palavra("JOIN")?;
+                TipoJuncao::Interno
+            } else if self.aceitar_palavra("LEFT") {
+                self.aceitar_palavra("OUTER");
+                self.exigir_palavra("JOIN")?;
+                TipoJuncao::Esquerdo
+            } else if self.aceitar_palavra("RIGHT") {
+                return Err(lexico::erro(
+                    pos,
+                    "RIGHT JOIN recusa nomeando nesta rodada: escreva trocando os lados -- o \
+                     que estava a direita vira o FROM (ou o lado esquerdo da junção \
+                     anterior), com LEFT JOIN",
+                ));
+            } else if self.aceitar_palavra("FULL") {
+                self.aceitar_palavra("OUTER");
+                return Err(lexico::erro(
+                    pos,
+                    "FULL JOIN recusa nomeando nesta rodada -- so INNER e LEFT",
+                ));
+            } else if self.aceitar_palavra("CROSS") {
+                return Err(lexico::erro(
+                    pos,
+                    "CROSS JOIN recusa nomeando nesta rodada: junção por espalhamento em \
+                     memoria precisa de pelo menos uma igualdade em ON",
+                ));
+            } else if self.aceitar_palavra("JOIN") {
+                TipoJuncao::Interno
+            } else {
+                break;
+            };
+            let (de_j, apelido_j) = self.fonte_do_from(&None)?;
+            self.exigir_palavra("ON")?;
+            let (em, extras_da_on) = self.condicao_de_juncao()?;
+            extras.extend(extras_da_on);
+            juntar.push(Juncao {
+                de: de_j,
+                apelido: apelido_j,
+                tipo,
+                em,
+            });
+        }
+        Ok((juntar, extras))
+    }
+
+    /// O `ON` de uma junção: divide pelos `AND` de nivel superior (a mesma
+    /// regra do WHERE composto) e classifica cada conjunto -- `col = col`
+    /// (com qualificador opcional dos dois lados) vira um par em `em`;
+    /// qualquer outra coisa vira fragmento de texto.
+    fn condicao_de_juncao(&mut self) -> Result<ParesEFragmentosDoOn> {
+        let tokens = self.capturar_ate_clausula(&[
+            "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "WHERE", "ORDER", "LIMIT", "OFFSET",
+        ])?;
+        if tokens.is_empty() {
+            return Err(lexico::erro(
+                self.posicao_atual(),
+                "esperava uma condicao depois de ON",
+            ));
+        }
+        let mut em = Vec::new();
+        let mut extras = Vec::new();
+        for conj in dividir_por_and(tokens) {
+            if let Some(par) = tentar_igualdade_de_colunas(&conj) {
+                em.push(par);
+                continue;
+            }
+            recusar_forma_nao_suportada(&conj)?;
+            extras.push(normalizar_tokens(&conj));
+        }
+        if em.is_empty() {
+            return Err(lexico::erro(
+                self.posicao_atual(),
+                "ON sem nenhuma igualdade de colunas nao tem substrato: junção por \
+                 espalhamento em memoria precisa de pelo menos um par coluna = coluna",
+            ));
+        }
+        Ok((em, extras))
     }
 
     /// A projecao da consulta composta: `*`, ou uma lista de colunas (pode
@@ -716,7 +905,15 @@ impl Analisador {
 
     /// O `FROM`: uma tabela de sempre, o nome de uma CTE (se uma foi
     /// declarada), ou `(SELECT …) AS apelido`.
-    fn fonte_do_from(&mut self, cte: &Option<(String, Selecao)>) -> Result<Selecao> {
+    /// A fonte de um `FROM` (ou de um `JOIN`): uma tabela de sempre, o nome
+    /// de uma CTE (se uma foi declarada -- so o `FROM` principal recebe
+    /// `cte`, nunca uma junção), ou `(SELECT …) AS apelido`. Devolve
+    /// TAMBEM o apelido -- o nome da tabela por padrao, ou o `AS` -- que a
+    /// junção (item 8) precisa para qualificar coluna.
+    fn fonte_do_from(
+        &mut self,
+        cte: &Option<(String, Selecao)>,
+    ) -> Result<(Selecao, Option<String>)> {
         if self.aceitar(&Token::AbreParen) {
             self.exigir_palavra("SELECT")?;
             let dentro = self.selecao()?;
@@ -728,12 +925,10 @@ impl Analisador {
             }
             self.aceitar_palavra("AS");
             // O apelido e obrigatorio -- uma subconsulta sem nome nao tem
-            // como ser referenciada por ninguem (nem esta rodada precisa
-            // dela para nada ainda, mas a exigencia evita `FROM (SELECT
-            // ...) WHERE ...` calado, que e erro de digitacao mais vezes
-            // do que intencao).
-            self.identificador("apelido da subconsulta do FROM (obrigatorio)")?;
-            return Ok(dentro);
+            // como ser referenciada por ninguem, e a partir do item 8 uma
+            // junção PRECISA dele para qualificar coluna.
+            let apelido = self.identificador("apelido da subconsulta do FROM (obrigatorio)")?;
+            return Ok((dentro, Some(apelido)));
         }
         let alvo = self.alvo()?;
         if let Some((nome_cte, corpo)) = cte {
@@ -741,10 +936,12 @@ impl Analisador {
                 && alvo.schema.is_empty()
                 && igual_sem_caso(nome_cte, &alvo.tabela)
             {
-                return Ok(corpo.clone());
+                let apelido = alvo.apelido.clone().or_else(|| Some(nome_cte.clone()));
+                return Ok((corpo.clone(), apelido));
             }
         }
-        Ok(Selecao {
+        let apelido = alvo.apelido.clone().or_else(|| Some(alvo.tabela.clone()));
+        let sel = Selecao {
             projecao: Projecao::Tudo,
             de: alvo,
             onde: None,
@@ -754,33 +951,37 @@ impl Analisador {
             ordem_lista: Vec::new(),
             limite: None,
             salto: 0,
-        })
+        };
+        Ok((sel, apelido))
     }
 
     /// O `WHERE` composto: cada conjunto de nivel superior (dividido por
     /// `AND`) e classificado -- `coluna IN (SELECT …)` vira `em`; qualquer
     /// outra coisa vira texto (ANDado de volta na `expressao`).
-    fn onde_composta(&mut self) -> Result<(Option<Onde>, Vec<EmSubconsulta>)> {
-        if !self.aceitar_palavra("WHERE") {
-            return Ok((None, Vec::new()));
-        }
-        let tokens = self.capturar_ate_clausula(&["ORDER", "LIMIT", "OFFSET"])?;
-        if tokens.is_empty() {
-            return Err(lexico::erro(
-                self.posicao_atual(),
-                "esperava uma condicao depois de WHERE",
-            ));
-        }
-        let conjuntos = dividir_por_and(tokens);
-        let mut fragmentos = Vec::new();
+    /// `fragmentos` chega com o que sobrou de nao-igualdade do `ON` de cada
+    /// junção (item 8) -- eles entram na MESMA `expressao`, porque o
+    /// contrato nao tem um campo de expressao por junção.
+    fn onde_composta(
+        &mut self,
+        mut fragmentos: Vec<String>,
+    ) -> Result<(Option<Onde>, Vec<EmSubconsulta>)> {
         let mut em = Vec::new();
-        for conj in conjuntos {
-            if let Some(e) = tentar_in_subconsulta(&conj)? {
-                em.push(e);
-                continue;
+        if self.aceitar_palavra("WHERE") {
+            let tokens = self.capturar_ate_clausula(&["ORDER", "LIMIT", "OFFSET"])?;
+            if tokens.is_empty() {
+                return Err(lexico::erro(
+                    self.posicao_atual(),
+                    "esperava uma condicao depois de WHERE",
+                ));
             }
-            recusar_forma_nao_suportada(&conj)?;
-            fragmentos.push(normalizar_tokens(&conj));
+            for conj in dividir_por_and(tokens) {
+                if let Some(e) = tentar_in_subconsulta(&conj)? {
+                    em.push(e);
+                    continue;
+                }
+                recusar_forma_nao_suportada(&conj)?;
+                fragmentos.push(normalizar_tokens(&conj));
+            }
         }
         let onde = if fragmentos.is_empty() {
             None
@@ -818,6 +1019,55 @@ pub(crate) fn dividir_por_and(tokens: Vec<Simbolo>) -> Vec<Vec<Simbolo>> {
 /// `coluna[.coluna] IN ( SELECT ... )`, ocupando o conjunto INTEIRO -- ou
 /// `None` quando o conjunto nao e essa forma (e ai quem chama tenta o
 /// resto: escalar, ou texto).
+/// Le `nome` ou `nome.nome` a partir de `*i`, avancando `*i` -- `None` sem
+/// mexer em nada quando nao bate esse molde (nao e erro: quem chama decide
+/// o que fazer com "nao bateu").
+fn ler_nome_qualificado(conj: &[Simbolo], i: &mut usize) -> Option<String> {
+    let Token::Palavra {
+        texto,
+        citado: false,
+    } = &conj.get(*i)?.token
+    else {
+        return None;
+    };
+    let mut nome = texto.clone();
+    let mut j = *i + 1;
+    if matches!(conj.get(j).map(|s| &s.token), Some(Token::Ponto)) {
+        let Token::Palavra {
+            texto: segunda,
+            citado: false,
+        } = &conj.get(j + 1)?.token
+        else {
+            return None;
+        };
+        nome = format!("{nome}.{segunda}");
+        j += 2;
+    }
+    *i = j;
+    Some(nome)
+}
+
+/// `coluna[.coluna] = coluna[.coluna]`, ocupando o conjunto INTEIRO -- a
+/// forma que `ON` de junção (item 8) reconhece como par de `em`. Qualquer
+/// outra coisa (comparador diferente de `=`, funcao, literal de um dos
+/// lados...) devolve `None`, e quem chama trata como fragmento de texto.
+fn tentar_igualdade_de_colunas(conj: &[Simbolo]) -> Option<(String, String)> {
+    let mut i = 0usize;
+    let esquerda = ler_nome_qualificado(conj, &mut i)?;
+    if !matches!(
+        conj.get(i).map(|s| &s.token),
+        Some(Token::Comparador(crate::lexico::Comparador::Igual))
+    ) {
+        return None;
+    }
+    i += 1;
+    let direita = ler_nome_qualificado(conj, &mut i)?;
+    if i != conj.len() {
+        return None;
+    }
+    Some((esquerda, direita))
+}
+
 fn tentar_in_subconsulta(conj: &[Simbolo]) -> Result<Option<EmSubconsulta>> {
     let mut i = 0usize;
     let Some(Token::Palavra {
@@ -910,7 +1160,7 @@ mod testes {
 
     fn consulta(sql: &str) -> Consulta {
         match analisar_comando(sql).unwrap() {
-            Comando::Consulta(c) => c,
+            Comando::Consulta(c) => *c,
             outro => panic!("{sql} nao deu Consulta: {outro:?}"),
         }
     }
@@ -1336,5 +1586,181 @@ mod testes {
         let p = planejar_sobre(&sel, plano_de_dentro()).unwrap();
         // "loja" veio do plano_de_dentro, nao de `sel.de.database` (vazio).
         assert_eq!(p.pedido.texto_ou("database", ""), "loja");
+    }
+
+    // -------------------------------------------------------- item 8: junção
+
+    #[test]
+    fn inner_join_com_apelido_e_igualdade() {
+        let c = consulta(
+            "SELECT p.id, c.nome AS cliente FROM pedidos p JOIN clientes c ON \
+             p.cliente_id = c.id",
+        );
+        assert_eq!(c.de.de.tabela, "pedidos");
+        assert_eq!(c.apelido_de, Some("p".to_string()));
+        assert_eq!(c.juntar.len(), 1);
+        let j = &c.juntar[0];
+        assert_eq!(j.de.de.tabela, "clientes");
+        assert_eq!(j.apelido, Some("c".to_string()));
+        assert_eq!(j.tipo, TipoJuncao::Interno);
+        assert_eq!(j.em, vec![("p.cliente_id".to_string(), "c.id".to_string())]);
+        assert_eq!(
+            c.colunas,
+            Some(vec![
+                ColunaComposta {
+                    coluna: "p.id".into(),
+                    apelido: None
+                },
+                ColunaComposta {
+                    coluna: "c.nome".into(),
+                    apelido: Some("cliente".into())
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn apelido_padrao_e_o_nome_da_tabela_sem_as() {
+        let c = consulta("SELECT * FROM pedidos JOIN clientes ON pedidos.cliente_id = clientes.id");
+        assert_eq!(c.apelido_de, Some("pedidos".to_string()));
+        assert_eq!(c.juntar[0].apelido, Some("clientes".to_string()));
+    }
+
+    #[test]
+    fn inner_explicito_e_igual_a_join_sozinho() {
+        let a = consulta("SELECT * FROM p INNER JOIN c ON p.id = c.id");
+        let b = consulta("SELECT * FROM p JOIN c ON p.id = c.id");
+        assert_eq!(a.juntar[0].tipo, TipoJuncao::Interno);
+        assert_eq!(a.juntar[0].tipo, b.juntar[0].tipo);
+    }
+
+    #[test]
+    fn left_join_com_e_sem_outer() {
+        let a = consulta("SELECT * FROM p LEFT JOIN c ON p.id = c.id");
+        let b = consulta("SELECT * FROM p LEFT OUTER JOIN c ON p.id = c.id");
+        assert_eq!(a.juntar[0].tipo, TipoJuncao::Esquerdo);
+        assert_eq!(a.juntar[0].tipo, b.juntar[0].tipo);
+    }
+
+    #[test]
+    fn right_full_cross_recusam_nomeando() {
+        for (sql, pedaco) in [
+            ("SELECT * FROM p RIGHT JOIN c ON p.id = c.id", "RIGHT JOIN"),
+            ("SELECT * FROM p FULL JOIN c ON p.id = c.id", "FULL JOIN"),
+            (
+                "SELECT * FROM p FULL OUTER JOIN c ON p.id = c.id",
+                "FULL JOIN",
+            ),
+            ("SELECT * FROM p CROSS JOIN c", "CROSS JOIN"),
+        ] {
+            let e = recusa(sql);
+            assert!(e.contains(pedaco), "{sql} -> {e}");
+        }
+    }
+
+    #[test]
+    fn on_com_and_de_igualdades_vira_varios_pares() {
+        let c = consulta("SELECT * FROM p JOIN c ON p.cliente_id = c.id AND p.filial = c.filial");
+        assert_eq!(
+            c.juntar[0].em,
+            vec![
+                ("p.cliente_id".to_string(), "c.id".to_string()),
+                ("p.filial".to_string(), "c.filial".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn on_com_condicao_nao_igualdade_vira_expressao_de_fora() {
+        let c = consulta(
+            "SELECT * FROM p JOIN c ON p.cliente_id = c.id AND p.total > 100 WHERE p.ativo = \
+             TRUE",
+        );
+        assert_eq!(
+            c.juntar[0].em,
+            vec![("p.cliente_id".to_string(), "c.id".to_string())]
+        );
+        let Some(Onde::Expressao(texto)) = &c.onde else {
+            panic!("esperava Expressao")
+        };
+        // O pedaco do ON entra ANTES do WHERE, na ordem em que apareceram.
+        assert_eq!(texto, "p.total > 100 AND p.ativo = TRUE");
+    }
+
+    #[test]
+    fn on_sem_nenhuma_igualdade_recusa() {
+        let e = recusa("SELECT * FROM p JOIN c ON p.total > 100");
+        assert!(e.contains("nenhuma igualdade"), "{e}");
+    }
+
+    #[test]
+    fn join_com_subconsulta_e_apelido() {
+        let c = consulta(
+            "SELECT * FROM p JOIN (SELECT id, nome FROM clientes) AS c ON p.cliente_id = c.id",
+        );
+        assert_eq!(c.juntar[0].de.de.tabela, "clientes");
+        assert_eq!(c.juntar[0].apelido, Some("c".to_string()));
+    }
+
+    #[test]
+    fn duas_juncoes_encadeadas() {
+        let c = consulta(
+            "SELECT * FROM p JOIN c ON p.cliente_id = c.id LEFT JOIN e ON p.filial = e.id",
+        );
+        assert_eq!(c.juntar.len(), 2);
+        assert_eq!(c.juntar[0].tipo, TipoJuncao::Interno);
+        assert_eq!(c.juntar[1].tipo, TipoJuncao::Esquerdo);
+        assert_eq!(c.juntar[1].de.de.tabela, "e");
+    }
+
+    #[test]
+    fn join_traduz_com_o_json_do_contrato() {
+        let c = consulta(
+            "SELECT p.id, c.nome AS cliente FROM pedidos p JOIN clientes c ON \
+             p.cliente_id = c.id WHERE c.cidade = 'Blumenau'",
+        );
+        let p = traduzir_consulta(&c, "loja", &mut resolver_simples).unwrap();
+        assert_eq!(p.pedido.texto_ou("apelido", ""), "p");
+        let juntar = p.pedido.campo("juntar").unwrap().lista().unwrap();
+        assert_eq!(juntar.len(), 1);
+        assert_eq!(juntar[0].texto_ou("apelido", ""), "c");
+        assert_eq!(juntar[0].texto_ou("tipo", ""), "interno");
+        assert_eq!(
+            juntar[0].campo("de").unwrap().texto_ou("tabela", ""),
+            "clientes"
+        );
+        let em = juntar[0].campo("em").unwrap().lista().unwrap();
+        assert_eq!(em[0].texto_ou("esquerda", ""), "p.cliente_id");
+        assert_eq!(em[0].texto_ou("direita", ""), "c.id");
+        assert_eq!(p.pedido.texto_ou("expressao", ""), "c.cidade = 'Blumenau'");
+    }
+
+    #[test]
+    fn select_sem_join_nao_leva_apelido_nem_juntar_no_pedido() {
+        // Sem junção nenhuma, "apelido" nao aparece no pedido -- o
+        // contrato base (item 4) nao tem esse campo.
+        let c = consulta("SELECT * FROM (SELECT id FROM t) AS x");
+        let p = traduzir_consulta(&c, "loja", &mut resolver_simples).unwrap();
+        assert!(p.pedido.campo("apelido").is_none());
+        assert!(p.pedido.campo("juntar").is_none());
+    }
+
+    /// A mesma prova do item 4, agora para `juntar`: uma tabela negada
+    /// dentro da junção recusa a consulta INTEIRA.
+    #[test]
+    fn tabela_negada_na_juncao_recusa_a_consulta_inteira() {
+        let c = consulta("SELECT * FROM p JOIN clientes ON p.cliente_id = clientes.id");
+        let mut resolver_com_negacao = |sel: &Selecao, db: &str| -> Result<Plano> {
+            if sel.de.tabela == "clientes" {
+                return Err(PhxError::Esquema(
+                    "tabela clientes negada para este usuario".into(),
+                ));
+            }
+            resolver_simples(sel, db)
+        };
+        let e = traduzir_consulta(&c, "loja", &mut resolver_com_negacao)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("negada"), "{e}");
     }
 }
