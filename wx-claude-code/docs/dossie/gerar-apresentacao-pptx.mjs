@@ -135,7 +135,7 @@ for (const [k, C, cor] of [['shield', FiShield, 'FFFFFF'], ['check', FiCheckCirc
   const s = pres.addSlide(); escuro(s);
   titulo(s, 'Prova, não promessa', 'FFFFFF');
   const d = n.destinos;
-  const cards = [[d[1].golden, 'golden master', 'WINDEV 2025 (só PDFs) → Rust + Axum + PostgreSQL + React'], [d[0].golden, 'golden master', 'PHP + MySQL → Rust + MySQL + React, o primeiro projeto de ponta a ponta'], ['5', 'vídeos', 'Todos de saída real de sessão; nenhuma linha digitada'], [`${n.testes}`, 'testes', `Mais ${n.testes_wl_rt} do runtime Rust, cada um com vetor do Help`]];
+  const cards = [[d[1].golden, 'golden master', 'WINDEV 2025 (só PDFs) → Rust + Axum + PostgreSQL + React'], [d[0].golden, 'golden master', 'PHP + MySQL → Rust + MySQL + React, o primeiro projeto de ponta a ponta'], [String(Object.keys(n).filter(k => k.endsWith('_cenas')).length), 'vídeos', 'Todos de saída real de sessão; nenhuma linha digitada'], [`${n.testes}`, 'testes', `Mais ${n.testes_wl_rt} do runtime Rust, cada um com vetor do Help`]];
   cards.forEach(([v, r, t], i) => {
     const x = 0.6 + (i % 2) * 6.2, y = 1.6 + Math.floor(i / 2) * 2.4;
     s.addShape(pres.ShapeType.roundRect, { x, y, w: 5.9, h: 2.1, fill: { color: P.painel }, line: { color: P.linha, width: 1 }, rectRadius: 0.15 });
@@ -224,6 +224,42 @@ for (const [k, C, cor] of [['shield', FiShield, 'FFFFFF'], ['check', FiCheckCirc
   });
   s.addText('A lista completa do que falta está em docs/o-que-falta.html, com estado medido por item.', { x: 0.6, y: 6.45, w: 12, h: 0.4, fontFace: F.b, fontSize: 12, italic: true, color: P.cinza, isTextBox: true, margin: 0 });
   rodape(s, false);
+}
+
+
+// 12a · por que comprar: os argumentos, um por cartao ------------------------------
+function porque(titulo, itens, escuroP) {
+  const s = pres.addSlide(); if (escuroP) escuro(s); else claro(s);
+  titulo_(s, titulo, escuroP);
+  itens.forEach(([t, d], i) => {
+    const x = 0.6 + (i % 2) * 6.2, y = 1.55 + Math.floor(i / 2) * 2.55;
+    s.addShape(pres.ShapeType.roundRect, { x, y, w: 5.9, h: 2.3, fill: { color: escuroP ? P.painel : 'FFFFFF' }, line: { color: escuroP ? P.linha : P.luz, width: 1 }, rectRadius: 0.15, shadow: escuroP ? undefined : { type: 'outer', blur: 6, offset: 2, angle: 90, color: '000000', opacity: 0.08 } });
+    s.addText(t, { x: x + 0.3, y: y + 0.22, w: 5.3, h: 0.6, fontFace: F.t, fontSize: 18, bold: true, color: escuroP ? P.ouro : P.ver, isTextBox: true, margin: 0, valign: 'top' });
+    s.addText(d, { x: x + 0.3, y: y + 0.85, w: 5.3, h: 1.35, fontFace: F.b, fontSize: 13, color: escuroP ? P.texto : P.cinza, isTextBox: true, margin: 0, valign: 'top' });
+  });
+  rodape(s, escuroP);
+}
+function titulo_(s, t, escuroP) { titulo(s, t, escuroP ? 'FFFFFF' : P.tinta); }
+porque('Por que comprar: a prova', [
+  ['O que você compra é a prova', 'Qualquer sessão converte uma procedure em minutos. O que ela não faz sozinha é dizer se a regra ficou igual. O plugin captura o golden master do legado rodando, compara e devolve um número.'],
+  ['Impede o erro mais caro: inventar', 'Se o PDF não diz como a procedure funciona, vira lacuna escrita e linha bloqueada. Não completa por conta própria. O exemplo WINDEV tem uma lacuna plantada, e o grafo a acusa até hoje.'],
+  ['Sessões não esquecem mais', 'O questionário vira o contexto que toda sessão lê antes do primeiro comando. O contrato ativo diz o que vale hoje, com hash. Decisões guardam a base delas.'],
+  ['Quem escreve não valida', 'O G0 nega escrita enquanto as evidências não estão em ordem. Dois portões na saída perguntam se funciona e se está conforme. Quem valida entra com outro papel e não conserta o que detecta.'],
+], true);
+porque('Por que comprar: o resto do argumento', [
+  ['Sabe WLanguage de verdade', `${n.especialistas_wl} especialistas por tema sobre ${n.corpus_paginas_validas.toLocaleString('pt-BR')} páginas do Help, e um runtime em Rust que faz o Round e a comparação de strings como o WINDEV. Saiu de ler o Help, não da memória do modelo.`],
+  ['Serve para projeto novo', 'O mesmo questionário gera o esqueleto, os hooks, o PMO e a entrega auditável para quem não tem legado nenhum.'],
+  ['Custa menos do que parece', 'Laudo de uso de tokens, roteador que escolhe o modelo pelo peso da tarefa, orçamento que bloqueia, modelo local para o que não precisa sair da máquina.'],
+  ['O mais forte: o que ele admite não fazer', 'Não lê o binário do WX, não faz OCR sozinho, não certifica LGPD, não aprova gate no lugar de gente. Quem esconde limites vende promessa. Quem publica limites vende ferramenta.'],
+], false);
+{
+  const s = pres.addSlide(); escuro(s);
+  titulo(s, 'A objeção honesta', 'FFFFFF');
+  s.addShape(pres.ShapeType.roundRect, { x: 0.6, y: 1.7, w: 12.1, h: 3.2, fill: { color: P.painel }, line: { color: P.linha, width: 1 }, rectRadius: 0.15 });
+  s.addText('Nenhum projeto WINDEV real com contrato passou pelos gates ainda.', { x: 1.0, y: 2.0, w: 11.3, h: 1.0, fontFace: F.t, fontSize: 28, bold: true, color: P.ouro, isTextBox: true, margin: 0 });
+  s.addText('Os exemplos são sintéticos. Isso está escrito como item 15 da lista do que falta, com estado medido por item — e é o que um primeiro cliente piloto compra com desconto e paga com o número que falta: horas, tokens, lacunas abertas, defeitos achados em homologação.', { x: 1.0, y: 3.1, w: 11.3, h: 1.6, fontFace: F.b, fontSize: 16, color: P.texto, isTextBox: true, margin: 0 });
+  s.addText('A lista inteira: docs/o-que-falta.html', { x: 0.6, y: 5.3, w: 12, h: 0.5, fontFace: F.b, fontSize: 13, italic: true, color: P.mudo, isTextBox: true, margin: 0 });
+  rodape(s, true);
 }
 
 // 12 · como comecar -----------------------------------------------------------------------
