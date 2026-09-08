@@ -53,13 +53,38 @@ pub struct Ligacao {
     pub diag: Vec<Diag>,
 }
 
+/// Um parametro ligado por SQLBindParameter.
+///
+/// Guarda o ENDERECO e nao o valor, e isso e o contrato do ODBC, nao uma
+/// economia: a especificacao diz que o valor se le na EXECUCAO. E o que
+/// permite ao aplicativo ligar uma vez e executar mil, mudando so o conteudo
+/// do buffer entre uma execucao e a proxima -- o laco de INSERT em lote de
+/// qualquer ferramenta. Ler na ligacao quebraria esse laco em silencio: todas
+/// as execucoes mandariam o primeiro valor.
+///
+/// O preco esta no outro lado: o driver so pode desreferenciar isto DENTRO de
+/// um SQLExecute/SQLExecDirect, que e a unica janela em que o contrato promete
+/// que o ponteiro ainda vale.
+///
+/// Como na `Amarra`, os ponteiros ficam como numeros porque o mapa mora atras
+/// de um Mutex (que exige Send).
+#[derive(Debug, Clone)]
+pub struct Parametro {
+    /// 1 para o primeiro `?`, como no ODBC.
+    pub numero: u16,
+    pub tipo_c: SqlSmallint,
+    pub buf: usize,
+    pub indicador: usize,
+}
+
 #[derive(Default)]
 pub struct Comando {
     /// Handle da ligacao dona, para achar o canal na hora de executar.
     pub dono: usize,
-    /// O texto guardado pelo SQLPrepare, que o SQLExecute roda. Nao ha
-    /// parametros nem plano: preparar aqui e so guardar -- e o que permite ao
-    /// isql e companhia, que so falam prepare/execute, funcionarem.
+    /// O texto guardado pelo SQLPrepare, que o SQLExecute roda -- e a fonte da
+    /// contagem de `?` do SQLNumParams e do SQLDescribeParam. O PLANO continua
+    /// sendo do servidor; preparar aqui e guardar, e e o que permite ao isql e
+    /// companhia, que so falam prepare/execute, funcionarem.
     pub preparado: Option<String>,
     pub resultado: Option<Resultado>,
     /// Proxima linha do fetch (0-based). `linha_atual` e cursor-1.
@@ -68,6 +93,11 @@ pub struct Comando {
     /// SQLGetData -- e o que permite ler um memo em pedacos.
     pub entregues: Vec<usize>,
     pub amarras: Vec<Amarra>,
+    /// As ligacoes de parametro, por posicao. Sobra alem do numero de `?` do
+    /// texto e ignorada, como manda a especificacao -- quem preparou uma
+    /// instrucao de dois parametros e depois uma de um nao precisa desligar
+    /// nada.
+    pub parametros: Vec<Parametro>,
     pub diag: Vec<Diag>,
 }
 

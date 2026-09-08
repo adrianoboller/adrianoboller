@@ -84,13 +84,14 @@ Dois limites, ditos sem enfeite:
 
 ## 2. O que o driver cobre — e o que ficou de fora, com o motivo
 
-Exporta 21 funcoes, o nucleo que um consumidor de LEITURA usa:
+Exporta 24 funcoes, o nucleo que um consumidor de LEITURA usa:
 
 ```
-SQLAllocHandle   SQLFreeHandle    SQLFreeStmt     SQLSetEnvAttr
+SQLAllocHandle   SQLFreeHandle    SQLFreeStmt      SQLSetEnvAttr
 SQLDriverConnect SQLConnect       SQLDisconnect
 SQLExecDirect    SQLPrepare       SQLExecute
-SQLNumResultCols SQLDescribeCol   SQLColAttribute SQLRowCount
+SQLBindParameter SQLNumParams     SQLDescribeParam
+SQLNumResultCols SQLDescribeCol   SQLColAttribute  SQLRowCount
 SQLBindCol       SQLFetch         SQLGetData
 SQLGetDiagRec    SQLGetInfo       SQLSetConnectAttr SQLSetStmtAttr
 ```
@@ -101,9 +102,9 @@ SQLGetDiagRec    SQLGetInfo       SQLSetConnectAttr SQLSetStmtAttr
   sai como SQLSTATE `42000`, tabela inexistente como `42S02`, e o campo
   `codigo` do servidor vira o "native error".
 * `SQLPrepare` + `SQLExecute` existem porque o `isql` e outros clientes so
-  falam por eles — mas preparar aqui e guardar o texto: **nao ha
-  parametros** (`SQLBindParameter` ficou de fora; sem eles, preparar de
-  verdade nao compraria nada).
+  falam por eles. Preparar aqui e guardar o TEXTO — o plano continua sendo do
+  servidor —, e o texto guardado e a fonte da contagem de `?`. **Os parametros
+  existem desde a rodada das dezoito** e tem secao propria (2.1).
 * O conjunto de resultados chega INTEIRO na resposta (o servidor corta em
   `max_linhas`, 1000 por padrao). Consulta grande pede `LIMIT`/`OFFSET`.
 * O fetch entrega texto (`SQL_C_CHAR`), inteiros (`SQL_C_SLONG` e parentes,
@@ -138,6 +139,116 @@ SQLGetDiagRec    SQLGetInfo       SQLSetConnectAttr SQLSetStmtAttr
 * **Escrita (INSERT/UPDATE/DELETE) nao passa**, porque a op `sql` do
   servidor so traduz SELECT hoje. Quando o servidor aprender, o driver ja
   repassa — ele nao olha o verbo.
+
+## 2.1. Parametros de instrucao preparada (`?`)
+
+O driver liga valor por POSICAO e manda `"parametros": [...]` junto do texto,
+no contrato de `docs/propostas/comparativo-19.md`:
+
+```json
+{"op":"sql","database":"loja","texto":"SELECT * FROM clientes WHERE id = ?",
+ "parametros":[3]}
+```
+
+**Sem `?` no texto, o campo nem aparece no pedido.** Quem nunca ligou
+parametro manda byte a byte o que sempre mandou — guarda nova entra pedida,
+nao imposta.
+
+### O que o driver LIGA
+
+| tipo C | vai no JSON como |
+|---|---|
+| `SQL_C_CHAR`, `SQL_C_DEFAULT` | texto |
+| `SQL_C_SSHORT`, `SQL_C_SHORT`, `SQL_C_SLONG`, `SQL_C_LONG` | numero |
+| `SQL_C_SBIGINT` | numero ate 2^53, **texto acima** |
+| `SQL_C_DOUBLE`, `SQL_C_FLOAT` | **texto**, sempre |
+| `SQL_C_BIT` | `true` / `false` |
+| indicador `SQL_NULL_DATA` | `null`, em qualquer tipo C |
+
+Quatro coisas dessa tabela sao decisao, e nao gosto:
+
+* **O tamanho do texto sai do INDICADOR** (ou do NUL, com `SQL_NTS`), nunca do
+  `BufferLength` — a especificacao manda ignora-lo em parametro de entrada de
+  tipo caractere.
+* **Inteiro acima de 2^53 vai como texto** porque o `Json` desta casa guarda
+  numero num `f64`: um id de dezenove digitos voltaria ARREDONDADO, e a linha
+  viria errada sem erro nenhum. O `json_para_valor` do servidor aceita inteiro
+  em texto exatamente por causa deste caminho — o comentario esta la, e nomeia
+  o ODBC.
+* **Fracionario vai como texto SEMPRE**, que e a regra da casa inteira: o
+  `literal_para_json` do tradutor manda todo literal numerico como texto, e o
+  `json_para_valor` do servidor RECUSA decimal que chegue como numero («para
+  nao perder centavo em f64»). Um fracionario em `Json::Numero` seria aceito
+  numa coluna `Real` e recusado numa `Decimal` — duas respostas para a mesma
+  ligacao. O `{}` do Rust escreve a forma mais curta que releia o MESMO `f64`:
+  o driver nao inventa digito nem perde o que o aplicativo ja tinha.
+* **`SQL_NULL_DATA` vem antes de tudo**: com ele o ponteiro de valor pode ser
+  nulo de direito, e o driver nem olha o buffer.
+
+### O que ele RECUSA, e onde
+
+A recusa acontece na **ligacao** e nao na execucao, pela mesma decisao que o
+`ao_excluir` desta casa ja tomou: uma ligacao se declara uma vez e se executa
+muitas. Recusar cedo custa um erro lido enquanto se escreve o codigo; recusar
+tarde custa um laco de mil execucoes que morre na primeira, longe de quem o
+escreveu.
+
+| o que | SQLSTATE | onde | motivo |
+|---|---|---|---|
+| posicao zero | `07009` | ligacao | o primeiro `?` e o 1 |
+| `SQL_PARAM_OUTPUT` / `_INPUT_OUTPUT` | `HYC00` | ligacao | saida pediria valor por posicao de volta; a op `sql` devolve linhas |
+| `SQL_C_WCHAR` | `HYC00` | ligacao | o driver e ANSI (secao 2); ligue `SQL_C_CHAR` em UTF-8 |
+| outro tipo C | `HYC00` | ligacao | a mensagem NOMEIA o tipo e lista os que servem |
+| valor nulo sem indicador | `HY009` | ligacao | `NULL` se manda pelo indicador |
+| `SQL_DATA_AT_EXEC` | `HYC00` | execucao | `SQLPutData` nao existe aqui; ler o buffer pegaria lixo |
+| NaN / infinito | `22003` | execucao | nao ha literal para eles nesta linguagem |
+| faltou ligacao para um `?` | `07002` | execucao | **antes da rede**: nada sai, e a mensagem diz a posicao e os dois numeros |
+
+### A contagem dos `?`
+
+`SQLNumParams` conta pelo mesmo criterio do lexico do servidor
+(`crates/phxsql-sql/src/lexico.rs`), que engole **quatro** trechos e nao so as
+aspas simples: `'texto'` (com `''` valendo uma aspa dentro), `"identificador"`
+(com `""`), o comentario `-- ate o fim da linha` e o `/* de bloco */`. Um `?`
+dentro de qualquer um deles e dado ou comentario. Sem `SQLPrepare` antes a
+resposta e `HY010` e nao zero — zero seria lido como «esta instrucao nao tem
+parametros», e a ferramenta nem tentaria ligar.
+
+**O preco da conta ser refeita aqui** (o driver nao depende do `phxsql-sql`, e
+o lexico de hoje nem aceita `?`) esta escrito no proprio codigo: contexto novo
+que o lexico aprender a engolir tem de chegar ao contador junto, ou o driver
+passa a contar um `?` que o servidor nao ve.
+
+### O que se le na EXECUCAO, e nao na ligacao
+
+`SQLBindParameter` guarda o **endereco**, e isso e o contrato do ODBC: o valor
+se le no `SQLExecute`. E o que permite ligar uma vez e executar mil trocando
+so o conteudo do buffer — o laco de carga de qualquer ferramenta. A
+contrapartida de seguranca: o driver **so desreferencia esses ponteiros dentro
+de `SQLExecute`/`SQLExecDirect`**, a unica janela em que o contrato promete que
+eles valem; nada mais no driver os toca.
+
+`SQLDescribeParam` declara `SQL_VARCHAR` para todo `?`, com tamanho zero
+(«nao sei») e nulavel. Nao e preguica: o driver nao planeja nada na
+preparacao, entao nao sabe a que coluna cada `?` se compara — e um
+`SQL_INTEGER` chutado seria a mesma mentira que a secao 8 ja recusou contar
+sobre apelido de coluna. Nao ha risco de buffer no tamanho zero, porque o
+driver nunca ESCREVE num buffer de parametro: saida e recusada na ligacao.
+
+### O limite honesto de hoje
+
+**A op `sql` do servidor ainda nao le `parametros`**, e o lexico dele recusa o
+caractere `?` — medido em 08/09/2026 em
+`crates/phxsql-server/src/servidor.rs:11795` (`op_sql` le so `texto`/`sql`).
+Entao um `WHERE id = ?` volta com erro de sintaxe *do servidor*, e nao com a
+linha. O lado do driver esta pronto e provado; o outro lado e a frente
+F-CONSULTA do `docs/propostas/comparativo-19.md`.
+
+O passo 7c da prova de ABI e uma **sonda viva**: ele confere sempre o que nao
+depende do servidor e TENTA a volta, e enquanto ela nao vier a linha sai como
+**NAO MEDIDA** com o motivo — nunca como «ok», nunca sumindo da lista. E o
+teste `ponta_a_ponta_where_id_igual_pergunta` esta escrito e `#[ignore]`, com
+o motivo no comentario.
 
 ## 3. Instalar e registrar
 
@@ -272,13 +383,17 @@ python3 bancada/odbc/prova-abi.py target/release/libphxsql_odbc.so
 
 Resultado registrado (2026-08-29, Linux x86_64, unixODBC 2.3.12):
 
-* **73 conferencias, zero falhas** — handles, conexao, `SELECT *` com os
+* **86 conferencias, zero falhas e 1 NAO MEDIDA** (eram 73 antes do passo
+  7c) — handles, conexao, `SELECT *` com os
   quatro tipos descritos certos (`SQL_INTEGER`, `SQL_VARCHAR(40)`,
   `SQL_DECIMAL(12,2)`, `SQL_TYPE_DATE`), valores identicos aos inseridos,
   decimal com as duas casas (`4200.50`), NULL pelo indicador, coluna
   amarrada, projecao com WHERE pela chave, `COUNT(*)`, prepare/execute,
   erros com SQLSTATE e native error, truncamento com continuacao, e o
-  desmonte na ordem.
+  desmonte na ordem; e o passo 7c dos parametros (a contagem que nao conta o
+  `?` das aspas, o `SQLDescribeParam`, o `07009` da posicao fora da faixa e o
+  `07002` da ligacao que falta). A NAO MEDIDA e a volta de `WHERE id = ?`,
+  pelo motivo da secao 2.1.
 * **`isql` de verdade:** `Connected!`, grade com cabecalho e os tres
   valores de `limite` certos, projecao e contagem — via
   `isql -v -k "Driver=PhxSql;..."` com o driver registrado num
@@ -344,6 +459,12 @@ passam pelo `ctypes` e pelo `isql -k` de verdade — `SELECT COUNT(*)` devolve
   do servidor ja traz `nome` e `codigo` estruturados; o SQLSTATE agora sai
   do `nome` (`NAO_ENCONTRADO` -> `42S02`) e o `codigo` vira o native error
   do diagnostico. Analisar, nao recortar — a regra do Profiler, aqui.
+* **`SQL_CLOSE` NAO desfaz a preparacao — e a prova nova quebrou nisso.** O
+  passo 7c reusou o comando do passo 7b e leu `SQL_SUCCESS` onde esperava
+  `HY010` de «SQLNumParams sem SQLPrepare»: o texto preparado em 7b continuava
+  vivo, sem `?` nenhum. E o que a especificacao manda (fechar o cursor nao
+  desprepara), o driver estava certo, e o defeito era DA PROVA — a mesma
+  familia do `c_int` acima. O passo 7c aloca comando proprio desde entao.
 * **Infrutifera, registrada para nao voltar:** tentar dar tipo honesto a
   apelido de coluna. A resposta da op `sql` so traz o ROTULO da projecao;
   ligar apelido a coluna de origem exigiria repetir o parser do servidor no
@@ -359,10 +480,11 @@ crates/phxsql-odbc/          o driver (cdylib de ABI C)
   src/tipos.rs               constantes e larguras da especificacao
   src/conexao.rs             connection string, TCP, login, erros com SQLSTATE
   src/resultado.rs           esquema -> tipos ODBC, montagem do resultado
+  src/parametro.rs           contagem dos `?` e leitura das ligacoes
   src/registro.rs            handles como chaves de mapa (nunca ponteiro cru)
   src/texto.rs               truncamento e strings pela fronteira C
 bancada/odbc/montar-dados.py o banco conhecido da prova
-bancada/odbc/prova-abi.py    a prova pela ABI (dlopen + ctypes), 73 conferencias
+bancada/odbc/prova-abi.py    a prova pela ABI (dlopen + ctypes), 86 conferencias
 bancada/odbc/prova-cifra.py  a cifra de ponta a ponta contra um servidor exigir:true
 docs/ODBC.md                 este documento
 ```
