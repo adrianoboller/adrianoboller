@@ -10,6 +10,49 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — as dezoito do comparativo, mais junções e subconsultas
+
+### Adicionado
+
+- **Expressões no esquema**: `padrao` (DEFAULT no inserir), `check`
+  (restrição avaliada no inserir e no atualizar), coluna `calculada`
+  (sempre recalculada na gravação), índice parcial por `onde` e índice por
+  expressão de uma coluna (`lower(nome)`) — todos pela mesma gramática de
+  `phxsql_core::expressao`, a que os gatilhos já usavam.
+- **`agrupar`**: `GROUP BY` genérico, com os mesmos agregadores do
+  `pivotar` (soma, média, contagem, mínimo, máximo, contagem distinta).
+- **`consultar`**: composição de sub-pedidos — `de` para a fonte, `em`
+  para `IN (SELECT …)`, `escalar` para subconsulta escalar, `janela` para
+  `ROW_NUMBER() OVER`, e `juntar` para `JOIN`/`LEFT JOIN` por igualdade de
+  colunas, com nome QUALIFICADO (`p.id`). Cada sub-pedido roda pelo mesmo
+  portão de permissão de qualquer cliente.
+- **Visões**: `criar_visao`, `visoes`, `excluir_visao` — a visão guarda
+  texto, analisado a cada uso dentro de um `consultar`.
+- **`diferencas`**: diz ONDE duas tabelas com a mesma chave única
+  divergem — a chave, as colunas e os dois lados —, não só SE divergem.
+- **`inserir.se_existir`** (`ignorar`/`atualizar`): upsert por chave
+  única, extraído do `aplicar_para_ca` do DbLink para um lugar só, usado
+  pelos dois.
+- **`sql.parametros`**: o `?` na instrução preparada, resolvido no léxico
+  por TOKEN — nunca por substituição de texto.
+- **SQL novo**: `GROUP BY` com agregação, expressão no `WHERE`, `WITH`,
+  `IN (SELECT …)`, `ROW_NUMBER() OVER`, `CREATE`/`DROP VIEW`,
+  `INSERT … ON CONFLICT`/`ON DUPLICATE KEY UPDATE`, `?`,
+  `[INNER]`/`LEFT JOIN` e subconsulta escalar no `WHERE`.
+- **Direito por COLUNA**: `tabelas.<t>.colunas` no cadastro, com
+  `ler`/`alterar` por coluna. Sem `"colunas"`, nada muda — é o teste que
+  mais importa.
+- **PITR**: `restaurar_backup` ganhou `ate`/`ate_ms`, reaplicando o diário
+  vivo de cada tabela pelo mesmo `Table::aplicar_evento` da replicação —
+  aplica, não julga.
+- **ODBC com parâmetros**: `SQLBindParameter` liga o `?` do lado do
+  driver; a op `sql` do servidor passou a ler `parametros`, fechando a
+  ponta a ponta.
+- **`bancada/comparativo/`**: quatro sondas que eram código com veredito
+  cravado (direito por coluna, PITR, parâmetro, diferenças) viraram sonda
+  VIVA — exercitam o servidor pelo soquete e medem o EFEITO, com o
+  controle na mesma corrida.
+
 ## Não lançado — a auditoria externa, medida; e os números que ninguém digita mais
 
 Uma auditoria técnica externa da 0.18.0 chegou com 844 linhas. **Medida antes
