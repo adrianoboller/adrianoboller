@@ -34,6 +34,7 @@ ALVOS = [
     (RAIZ / "docs/workflow.html", RAIZ / "docs/workflow.pdf"),
     (RAIZ / "docs/apresentacao.html", RAIZ / "docs/apresentacao.pdf"),
     (RAIZ / "docs/fluxo-explicado.html", RAIZ / "docs/fluxo-explicado.pdf"),
+    (RAIZ / "docs/ativacao-passo-a-passo.md", RAIZ / "docs/ativacao-passo-a-passo.pdf"),
 ]
 # o fluxo explicado e retrato, texto corrido; os outros HTML sao diagramas em paisagem
 RETRATO = {"fluxo-explicado.pdf"}

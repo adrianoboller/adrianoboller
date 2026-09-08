@@ -178,6 +178,7 @@ def pacote_documentos(v: str, saida: Path) -> Path:
         ("docs/comandos.pdf", "comandos.pdf"),
         ("docs/relatorio-de-cenarios.pdf", "relatorio-de-cenarios.pdf"),
         ("docs/ativacao-do-serial.pdf", "ativacao-do-serial.pdf"),
+        ("docs/ativacao-passo-a-passo.pdf", "ativacao-passo-a-passo.pdf"),
         ("docs/dossie/dossie-wx-claude-code.pdf", "dossie.pdf"),
         ("LICENCA.md", "LICENCA.md"),
         ("docs/SEGURANCA.md", "SEGURANCA.md"),
