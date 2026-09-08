@@ -81,6 +81,10 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // estrutura que existe aqui.
     "acrescentar_coluna",
     "excluir_tabela",
+    // As duas que gravam o `visoes.json` do database. Catalogo, mas catalogo
+    // gravado em disco -- e num servidor somente-leitura ninguem cria visao.
+    "criar_visao",
+    "excluir_visao",
     "duplicar_tabela",
     "copiar_tabela",
     "renomear_tabela",
@@ -733,6 +737,14 @@ pub struct Servidor {
     /// E a mesma decisao do `profiler_ligado`, tomada ANTES de doer: o portao
     /// que decide se ha trabalho vem antes de qualquer trabalho.
     ha_gatilhos: AtomicBool,
+    /// As visoes (`CREATE VIEW`), por database, guardadas como TEXTO.
+    visoes: Mutex<crate::visoes::Visoes>,
+    /// Espelho de "existe alguma visao?", pelo mesmo motivo do `ha_gatilhos`:
+    /// a op `sql` pergunta isto ANTES de olhar o nome do `FROM`, e num
+    /// servidor sem visao nenhuma -- que e o de hoje -- ela paga um load
+    /// atomico e nada mais. O portao que decide se ha trabalho vem antes do
+    /// trabalho.
+    ha_visoes: AtomicBool,
     /// Ligacoes para bancos de fora.
     dblink: Mutex<crate::dblink::Registro>,
     /// Jobs de execucao: cadastro e a hora da ultima corrida de cada um.
@@ -906,6 +918,8 @@ impl Servidor {
         });
         let rotinas = crate::rotinas::Rotinas::carregar(&config.base)?;
         let ha_gatilhos = AtomicBool::new(rotinas.ha_gatilhos());
+        let visoes = crate::visoes::Visoes::carregar(&config.base)?;
+        let ha_visoes = AtomicBool::new(visoes.ha_visoes());
         let mensagens = Mensagens::nova(&config.idioma, &config.base);
         let papel = config.replicacao.papel;
         let posicoes_bidi =
@@ -960,6 +974,8 @@ impl Servidor {
             profiler_ligado: AtomicBool::new(false),
             rotinas: Mutex::new(rotinas),
             ha_gatilhos,
+            visoes: Mutex::new(visoes),
+            ha_visoes,
             max_linhas_vivo: AtomicU64::new(max_linhas),
             espelho_vivo: AtomicBool::new(espelho),
             estatica_do_fio: Mutex::new(None),
@@ -5574,6 +5590,41 @@ impl Servidor {
                 }
             }
         }
+        // A EXPRESSAO pergunta sem nomear campo `coluna` nenhum, e por isso
+        // ela escapava dos dois lacos de cima: `"expressao": "salario > 5000"`
+        // devolve a CONTAGEM de quem ganha mais que isso, e vinte perguntas
+        // dessas dizem o salario sem ele nunca ter aparecido -- exatamente o
+        // furo que o `onde` ja fechava, por outra porta. O mesmo vale para o
+        // `"tendo"`, que fala da linha agregada.
+        //
+        // A lista de nomes sai do PROPRIO avaliador, e nao de um casador de
+        // texto: casador nao sabe que `salarios` nao e `salario`, nem que
+        // `'salario'` entre aspas e um literal e nao uma coluna.
+        for (campo, como_se_diz) in [("expressao", "a expressao"), ("tendo", "o \"tendo\"")] {
+            let Some(txt) = pedido.campo(campo).and_then(Json::texto) else {
+                continue;
+            };
+            if txt.trim().is_empty() {
+                continue;
+            }
+            // Expressao que nao analisa NAO vira recusa de permissao aqui: ela
+            // segue e cai adiante, no lugar que sabe dizer em que coluna esta
+            // o erro de sintaxe. Um erro de digitacao respondido com «acesso
+            // negado» manda procurar no lugar errado.
+            let Ok(e) = phxsql_core::expressao::Expressao::analisar(txt) else {
+                continue;
+            };
+            for nome in e.colunas() {
+                // Nome QUALIFICADO (`p.salario`), que a junção do `consultar`
+                // usa: quem a regra nomeia e a COLUNA, e o prefixo e o apelido
+                // do lado. Comparar o nome inteiro deixaria `p.salario`
+                // passar por uma regra escrita sobre `salario`.
+                let nu = nome.rsplit('.').next().unwrap_or(nome);
+                if let Some(n) = negadas.iter().find(|n| mesmo_nome(n, nu)) {
+                    return Err(recusa(n, como_se_diz));
+                }
+            }
+        }
         let indice = pedido.texto_ou("indice", "").trim();
         if indice.is_empty() {
             return Ok(());
@@ -8647,9 +8698,15 @@ impl Servidor {
             "dados_pessoais" | "lgpd" => self.op_dados_pessoais(p, sessao),
             "sequencias" | "sequences" => self.op_sequencias(p, sessao),
             "ajustar_sequencia" => self.op_ajustar_sequencia(p, sessao),
+            "agrupar" | "group_by" => self.op_agrupar(p, sessao),
+            "consultar" => self.op_consultar(p, sessao),
+            "criar_visao" => self.op_criar_visao(p, sessao),
+            "visoes" => self.op_visoes(p),
+            "excluir_visao" => self.op_excluir_visao(p),
             "pivotar" | "pivot" => self.op_pivotar(p, sessao),
             "juntar" | "join" => self.op_juntar(p, sessao),
             "unir" | "union" => self.op_unir(p, sessao),
+            "diferencas" | "diff" => self.op_diferencas(p, sessao),
             "ler" => self.op_ler(p, sessao),
             "varrer" => self.op_varrer(p, sessao),
             "buscar" => self.op_buscar(p, sessao),
@@ -9598,6 +9655,988 @@ impl Servidor {
             ("colunas_conferidas", Json::de_u64(colunas_vistas)),
             ("tabelas_que_nao_abriram", Json::Lista(sem_esquema)),
             ("achados", Json::Lista(achados)),
+        ]))
+    }
+
+    // ------------------------------------------------------------- visoes
+
+    /// `criar_visao`: guarda o TEXTO de um `SELECT` por database.
+    ///
+    /// # Duas recusas na DECLARACAO, e nao na hora de usar
+    ///
+    /// 1. **SQL que a camada nao analisa.** Guardar o texto sem analisa-lo
+    ///    faria o erro de sintaxe aparecer meses depois, na consulta de outra
+    ///    pessoa, com o nome da visao no lugar do nome de quem a escreveu.
+    /// 2. **Nome que colide com tabela.** Duas coisas com o mesmo nome no
+    ///    `FROM` e uma delas invisivel para sempre -- e qual das duas ganha
+    ///    viraria detalhe de implementacao.
+    ///
+    /// E a mesma decisao do `ao_excluir`: uma visao nasce uma vez e e usada um
+    /// milhao de vezes. Recusar cedo custa um erro lido enquanto se cria;
+    /// recusar tarde custa uma consulta quebrada no dia do primeiro uso.
+    ///
+    /// O que NAO se confere na declaracao e a existencia da TABELA de dentro:
+    /// ela pode ser criada depois, e sobretudo pode ser APAGADA depois -- uma
+    /// conferencia na criacao daria uma garantia que o tempo desfaz. Quem
+    /// confere e o uso, que recusa nomeando a tabela que sumiu.
+    fn op_criar_visao(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let base = p.texto_ou("database", "").trim().to_string();
+        let nome = p.texto_ou("nome", "").trim().to_string();
+        let sql = p
+            .texto_ou("sql", p.texto_ou("texto", ""))
+            .trim()
+            .to_string();
+        if sql.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"sql\" com o SELECT da visao".into(),
+            ));
+        }
+        // Analisada AQUI, e o resultado jogado fora de proposito: o que
+        // interessa e o veredito. Guardar o plano congelaria a visao contra um
+        // esquema que envelhece (ver `crate::visoes`).
+        match phxsql_sql::analisar_comando(&sql)? {
+            phxsql_sql::Comando::Selecao(_) => {}
+            outro => {
+                return Err(PhxError::Esquema(format!(
+                    "uma visao guarda um SELECT, e este texto e um {}",
+                    outro.verbo()
+                )))
+            }
+        }
+        {
+            let dados = self.travar_dados()?;
+            if let Ok(db) = dados.abrir_database(&base) {
+                if db
+                    .todas_as_tabelas()?
+                    .iter()
+                    .any(|t| t.eq_ignore_ascii_case(&nome))
+                {
+                    return Err(PhxError::Duplicado(format!(
+                        "{base}.{nome} ja e uma TABELA: uma visao com esse nome \
+                         deixaria uma das duas invisivel no FROM"
+                    )));
+                }
+            }
+        }
+        let mut v = self.visoes.lock().map_err(|_| trava_envenenada())?;
+        let criada = v.criar(
+            &base,
+            &nome,
+            &sql,
+            sessao.login(),
+            p.booleano_ou("substituir", false),
+        )?;
+        self.ha_visoes.store(v.ha_visoes(), Ordering::Relaxed);
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(&base)),
+            ("visao", criada.para_json()),
+        ]))
+    }
+
+    /// `visoes`: o que ha, com o texto verbatim.
+    fn op_visoes(&self, p: &Json) -> Result<Json> {
+        let base = p.texto_ou("database", "").trim().to_string();
+        let v = self.visoes.lock().map_err(|_| trava_envenenada())?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(&base)),
+            (
+                "visoes",
+                Json::Lista(
+                    v.do_db(&base)
+                        .iter()
+                        .map(crate::visoes::Visao::para_json)
+                        .collect(),
+                ),
+            ),
+        ]))
+    }
+
+    /// `excluir_visao`. Visao que nao existia devolve `excluida: false` em vez
+    /// de erro -- e o mesmo `DROP VIEW IF EXISTS` que todo mundo escreve, e
+    /// erro aqui obrigaria a listar antes para poder apagar.
+    fn op_excluir_visao(&self, p: &Json) -> Result<Json> {
+        let base = p.texto_ou("database", "").trim().to_string();
+        let nome = p.texto_ou("nome", "").trim().to_string();
+        let mut v = self.visoes.lock().map_err(|_| trava_envenenada())?;
+        let saiu = v.excluir(&base, &nome)?;
+        self.ha_visoes.store(v.ha_visoes(), Ordering::Relaxed);
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(&base)),
+            ("nome", Json::texto_de(&nome)),
+            ("excluida", Json::Bool(saiu)),
+        ]))
+    }
+
+    /// O `FROM` desta selecao aponta para uma VISAO? Entao o pedido vira um
+    /// `consultar` sobre o plano dela.
+    ///
+    /// # O portao atomico vem primeiro
+    ///
+    /// A primeira linha e um `load` num `AtomicBool`. Num servidor sem visao
+    /// nenhuma -- que e o de hoje -- toda consulta paga isso e mais nada: nem
+    /// trava, nem String, nem busca. E a mesma decisao do `ha_gatilhos`,
+    /// tomada antes de doer.
+    ///
+    /// # Por que o plano de dentro sai do MESMO caminho de sempre
+    ///
+    /// A visao guarda TEXTO. Analisar aqui e traduzir com
+    /// `phxsql_sql::traduzir` -- os mesmos dois passos de um `SELECT` comum --
+    /// e o que faz a visao envelhecer junto com a tabela: coluna nova aparece,
+    /// tabela apagada RECUSA nomeando, no dia em que alguem consulta.
+    ///
+    /// # A integração que falta, e o que ela troca
+    ///
+    /// A frente F-SQL entrega `phxsql_sql::planejar_sobre(&selecao,
+    /// plano_de_dentro)`, que monta o `consultar` de fora a partir da `Selecao`
+    /// externa. Ela NAO existe nesta arvore ainda, entao o `consultar` e
+    /// montado aqui, campo por campo -- e a integração troca este bloco pela
+    /// chamada, sem mexer no resto: o que sai daqui e um pedido JSON, e o
+    /// pedido e o contrato.
+    fn selecao_sobre_visao(
+        &self,
+        selecao: &phxsql_sql::Selecao,
+        base: &str,
+        sessao: &Sessao,
+    ) -> Result<Option<phxsql_sql::Plano>> {
+        if !self.ha_visoes.load(Ordering::Relaxed) {
+            return Ok(None);
+        }
+        let alvo = selecao.de.nome_no_protocolo();
+        let sql_da_visao = {
+            let v = self.visoes.lock().map_err(|_| trava_envenenada())?;
+            match v.por_nome(base, &alvo) {
+                Some(x) => x.sql.clone(),
+                None => return Ok(None),
+            }
+        };
+
+        // O SELECT de DENTRO, traduzido como qualquer outro -- inclusive
+        // pedindo o esquema pelo protocolo, que ja exige `ler` naquela tabela.
+        // E daqui que sai a recusa nomeando quando a tabela sumiu.
+        let dentro = match phxsql_sql::analisar_comando(&sql_da_visao)? {
+            phxsql_sql::Comando::Selecao(s) => s,
+            outro => {
+                return Err(PhxError::Esquema(format!(
+                    "a visao {alvo:?} guarda um {}, e nao um SELECT",
+                    outro.verbo()
+                )))
+            }
+        };
+        let base_de_dentro = match dentro.de.database.trim() {
+            "" => base.to_string(),
+            outro => outro.to_string(),
+        };
+        let tabela_de_dentro = dentro.de.nome_no_protocolo();
+        let ped_esquema = Json::objeto(vec![
+            ("database", Json::texto_de(&base_de_dentro)),
+            ("tabela", Json::texto_de(&tabela_de_dentro)),
+        ]);
+        let esquema = self
+            .executar_derivado("esquema", &ped_esquema, sessao)
+            .map_err(|e| erro_da_visao(&alvo, &tabela_de_dentro, e))?;
+        let plano = phxsql_sql::traduzir(&dentro, &indices_do_esquema(&esquema), &base_de_dentro)?;
+
+        // O `consultar` de FORA sai de `phxsql_sql::planejar_sobre`, que a
+        // F-SQL entrega: a `Selecao` externa (o WHERE, a projecao, a ordem, o
+        // LIMIT) montada em cima do plano de dentro. Este bloco ja foi feito a
+        // mao aqui, com o comentario dizendo que a integração o trocaria pela
+        // chamada -- e trocou. O contrato entre os dois lados e o PEDIDO JSON,
+        // e por isso a troca nao mexeu em mais nada.
+        let mut de = plano.pedido.clone();
+        if let Json::Objeto(pares) = &mut de {
+            if !pares.iter().any(|(k, _)| k == "op") {
+                pares.push(("op".to_string(), Json::texto_de(&plano.op)));
+            }
+        }
+        Ok(Some(phxsql_sql::planejar_sobre(selecao, de)?))
+    }
+
+    /// Planeja um `SELECT` COMPOSTO -- o que a F-SQL devolve como
+    /// `Comando::Consulta`.
+    ///
+    /// # O resolvedor, e por que ele e um fecho e nao uma tabela de esquemas
+    ///
+    /// `traduzir_consulta` sabe montar o `consultar`, mas nao sabe abrir
+    /// tabela: para traduzir cada `SELECT` de dentro (o `de`, o de cada
+    /// junção, o de cada `escalar`, o de cada `IN`) ela precisa dos INDICES
+    /// daquela tabela, e quem os enxerga e o servidor. Entao ela recebe um
+    /// fecho, e o fecho pede o esquema pelo `executar_derivado` -- que ja
+    /// exige `ler` naquela tabela.
+    ///
+    /// **E aqui que a permissao entra duas vezes, e as duas contam.** Uma no
+    /// planejamento (o `esquema` de cada tabela citada) e outra na execucao
+    /// (cada sub-pedido, dentro do `op_consultar`). A primeira recusa antes de
+    /// montar o plano; a segunda recusaria de qualquer jeito. Nenhuma das duas
+    /// e enfeite: um plano que nao se pode montar nao chega a rodar, e um
+    /// plano montado por outro caminho ainda para na segunda.
+    ///
+    /// E o `FROM` de dentro pode ser uma VISAO: o resolvedor pergunta antes de
+    /// traduzir, pelo mesmo `selecao_sobre_visao` da consulta simples. Sem
+    /// isso, `SELECT ... FROM v JOIN t` acharia que `v` e uma tabela.
+    fn planejar_consulta(
+        &self,
+        c: &phxsql_sql::Consulta,
+        base: &str,
+        sessao: &Sessao,
+    ) -> Result<phxsql_sql::Plano> {
+        let mut erro_de_dentro: Option<PhxError> = None;
+        let mut resolver = |sel: &phxsql_sql::Selecao, db: &str| -> Result<phxsql_sql::Plano> {
+            let base_do_lado = match sel.de.database.trim() {
+                "" => db.to_string(),
+                outro => outro.to_string(),
+            };
+            if let Some(plano) = self.selecao_sobre_visao(sel, &base_do_lado, sessao)? {
+                return Ok(plano);
+            }
+            let ped_esquema = Json::objeto(vec![
+                ("database", Json::texto_de(&base_do_lado)),
+                ("tabela", Json::texto_de(sel.de.nome_no_protocolo())),
+            ]);
+            let esquema = match self.executar_derivado("esquema", &ped_esquema, sessao) {
+                Ok(e) => e,
+                Err(e) => {
+                    // O erro viaja por fora porque o `Resolvedor` devolve o
+                    // `Result` do crate de SQL, e reembalar aqui perderia a
+                    // classe -- e a classe e o que diz se foi permissao ou
+                    // tabela que nao existe.
+                    erro_de_dentro = Some(e);
+                    return Err(PhxError::Esquema("sub-pedido recusado".into()));
+                }
+            };
+            phxsql_sql::traduzir(sel, &indices_do_esquema(&esquema), &base_do_lado)
+        };
+        let plano = phxsql_sql::traduzir_consulta(c, base, &mut resolver);
+        match erro_de_dentro {
+            Some(e) => Err(e),
+            None => plano,
+        }
+    }
+
+    /// As linhas de um sub-pedido, pelo MESMO portao de qualquer cliente.
+    ///
+    /// # Esta e a funcao inteira do `consultar`
+    ///
+    /// O `consultar` nao le tabela nenhuma. Ele pede a outra operacao, e a
+    /// outra operacao passa por `executar_derivado` -- politica, portao de
+    /// permissao (inclusive o direito por coluna) e execucao, exatamente como
+    /// um `{"op":"varrer","tabela":"folha"}` que chegasse pela rede. Por isso
+    /// `SELECT ... FROM folha` de quem nao le a folha para AQUI, com o mesmo
+    /// erro, e nao ha conferencia propria que alguem possa esquecer de
+    /// atualizar.
+    ///
+    /// # A lista de ops e curta de proposito
+    ///
+    /// So o que DEVOLVE `linhas`. Uma op de escrita aqui dentro faria um
+    /// `SELECT` gravar; uma op que devolve outra forma faria a composicao
+    /// receber `linhas: []` e responder «nenhuma linha» sobre um resultado que
+    /// existe. Operacao nova nasce RECUSADA ate alguem decidir o contrario --
+    /// o mesmo principio de `OPS_EMPILHAVEIS`.
+    fn linhas_do_sub_pedido(
+        &self,
+        sub: &Json,
+        base_de_fora: &str,
+        rotulo: &str,
+        sessao: &Sessao,
+    ) -> Result<Vec<crate::consultar::Linha>> {
+        const OPS_QUE_DEVOLVEM_LINHAS: &[&str] =
+            &["varrer", "buscar", "agrupar", "group_by", "consultar"];
+        let op = sub.texto_ou("op", "varrer").trim().to_string();
+        if !OPS_QUE_DEVOLVEM_LINHAS.contains(&op.as_str()) {
+            return Err(PhxError::Esquema(format!(
+                "o {rotulo} pede a operacao {op:?}, e o consultar so compoe o que \
+                 devolve linhas: {}",
+                OPS_QUE_DEVOLVEM_LINHAS.join(", ")
+            )));
+        }
+        // O `database` de fora viaja para dentro quando o sub-pedido nao diz o
+        // dele -- e quando diz, e o DELE que o portao confere. Herdar sem
+        // deixar sobrescrever faria o campo do sub-pedido virar enfeite; nao
+        // herdar obrigaria a repetir a base em cada nivel.
+        let mut pedido = sub.clone();
+        let sem_base = sub.texto_ou("database", "").trim().is_empty();
+        if let (true, Json::Objeto(pares)) = (sem_base, &mut pedido) {
+            pares.retain(|(k, _)| k != "database");
+            pares.push(("database".to_string(), Json::texto_de(base_de_fora)));
+        }
+        let bruto = self.executar_derivado(&op, &pedido, sessao)?;
+        let lista = bruto.campo("linhas").and_then(Json::lista).ok_or_else(|| {
+            PhxError::Esquema(format!(
+                "o {rotulo} chamou {op:?} e a resposta nao trouxe \"linhas\""
+            ))
+        })?;
+        let teto = self.max_linhas();
+        if lista.len() as u64 > teto {
+            return Err(PhxError::LimiteExcedido(format!(
+                "o {rotulo} trouxe {} linhas, acima do teto de {teto} de \
+                 `recursos.max_linhas`: o consultar guarda cada sub-pedido \
+                 INTEIRO em memoria. Filtre dentro do sub-pedido",
+                lista.len()
+            )));
+        }
+        Ok(lista
+            .iter()
+            .map(|l| match l {
+                Json::Objeto(pares) => pares.clone(),
+                // Uma linha que nao e objeto nao tem coluna com nome, e o
+                // resto do `consultar` fala por nome. Vira linha vazia em vez
+                // de estourar: quem projetar uma coluna dela recebe a recusa
+                // que nomeia a coluna, que ensina mais.
+                _ => Vec::new(),
+            })
+            .collect())
+    }
+
+    /// `consultar`: a composicao -- o passo do SQL que nao e leitura de tabela.
+    ///
+    /// # A ordem dos passos, e por que ela e fixa
+    ///
+    /// `de` -> `em` -> `expressao` -> `janela` -> `ordem` -> `pular`/`max` ->
+    /// `colunas`. Cada um depende do anterior: a janela numera o que sobrou do
+    /// filtro (numerar antes daria buracos na numeracao), o recorte corta o
+    /// que ja esta ordenado, e a projecao vem POR ULTIMO porque a expressao e
+    /// a ordem podem falar de uma coluna que a resposta nao mostra --
+    /// `ORDER BY preco` num `SELECT nome` e SQL legitimo.
+    ///
+    /// # A profundidade tem teto
+    ///
+    /// Um `consultar` cujo `de` e outro `consultar` desce a pilha de verdade.
+    /// Sem teto, um pedido de duzentos niveis derruba a thread por estouro de
+    /// pilha -- e derrubar a thread nao e recusar, e cair. O contador e por
+    /// thread e o guarda o devolve na saida, inclusive quando o passo do meio
+    /// falha.
+    /// `consultar`: a composicao -- o passo do SQL que nao e leitura de tabela.
+    ///
+    /// # A ordem dos passos, e por que ela e fixa
+    ///
+    /// `de` -> `juntar` (na ordem) -> `escalar` -> `em` -> `expressao` ->
+    /// `janela` -> `ordem` -> `pular`/`max` -> `colunas`. Cada um depende do
+    /// anterior: a junção tem de acontecer antes de qualquer filtro que fale
+    /// das duas tabelas, o escalar entra antes da expressao porque e ela quem
+    /// o ve, a janela numera o que sobrou do filtro (numerar antes daria
+    /// buracos na numeracao), o recorte corta o que ja esta ordenado, e a
+    /// PROJECAO VEM POR ULTIMO porque a expressao e a ordem podem falar de uma
+    /// coluna que a resposta nao mostra -- `ORDER BY preco` num `SELECT nome`
+    /// e SQL legitimo.
+    ///
+    /// # A profundidade tem teto
+    ///
+    /// Um `consultar` cujo `de` e outro `consultar` desce a pilha de verdade.
+    /// Sem teto, um pedido de duzentos niveis derruba a thread por estouro de
+    /// pilha -- e derrubar a thread nao e recusar, e cair. O contador e por
+    /// thread e o guarda o devolve na saida, inclusive quando o passo do meio
+    /// falha.
+    fn op_consultar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let _fundo = Profundidade::descer()?;
+        let comeco = Instant::now();
+        let base = p.texto_ou("database", "").trim().to_string();
+
+        let de = p
+            .campo("de")
+            .ok_or_else(|| PhxError::Esquema("o consultar precisa de \"de\"".into()))?;
+        let mut linhas = self.linhas_do_sub_pedido(de, &base, "\"de\"", sessao)?;
+
+        // ------------------------------------------------------------ juntar
+        //
+        // Aplicadas NA ORDEM, uma por vez, sempre com o acumulado a esquerda.
+        // E o mesmo que o SQL faz com `A JOIN B JOIN C`, e a ordem importa
+        // porque um `esquerdo` no meio muda quantas linhas chegam ao proximo.
+        let juncoes = p.campo("juntar").and_then(Json::lista).unwrap_or(&[]);
+        if !juncoes.is_empty() {
+            // Prefixar acontece ANTES da primeira junção e vale para os DOIS
+            // lados: sem isso, `id` seria a coluna da esquerda antes do JOIN e
+            // um nome ambiguo depois dele, e a mesma consulta mudaria de
+            // sentido conforme alguem acrescentasse uma junção.
+            let apelido = apelido_do_lado(p, de, "de")?;
+            let mut usados = vec![apelido.to_lowercase()];
+            crate::consultar::prefixar(&mut linhas, &apelido);
+
+            for (i, j) in juncoes.iter().enumerate() {
+                let rotulo = format!("\"juntar\"[{i}]");
+                let tipo = crate::consultar::TipoJuncao::de_texto(j.texto_ou("tipo", ""))?;
+                let sub = j
+                    .campo("de")
+                    .ok_or_else(|| PhxError::Esquema(format!("a junção {i} precisa de \"de\"")))?;
+                let ap = apelido_do_lado(j, sub, &rotulo)?;
+                if usados.iter().any(|u| *u == ap.to_lowercase()) {
+                    return Err(PhxError::Esquema(format!(
+                        "o apelido {ap:?} ja esta em uso nesta consulta; de outro \
+                         a junção {i} para as colunas dos dois lados nao se \
+                         sobreporem"
+                    )));
+                }
+                usados.push(ap.to_lowercase());
+                let mut direita = self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
+                crate::consultar::prefixar(&mut direita, &ap);
+
+                // Os pares. Sem eles a junção seria um produto cartesiano
+                // disfarcado -- e um produto de duas tabelas de dez mil linhas
+                // e cem milhoes, que ninguem pediu.
+                let itens = j.campo("em").and_then(Json::lista).unwrap_or(&[]);
+                if itens.is_empty() {
+                    return Err(PhxError::Esquema(format!(
+                        "a junção {i} precisa de \"em\" com ao menos um par \
+                         {{esquerda, direita}}: junção sem par e produto \
+                         cartesiano, e ele nao existe nesta rodada"
+                    )));
+                }
+                let mut pares: Vec<(String, String)> = Vec::with_capacity(itens.len());
+                for (k, par) in itens.iter().enumerate() {
+                    let e = par.texto_ou("esquerda", "").trim().to_string();
+                    let d = par.texto_ou("direita", "").trim().to_string();
+                    if e.is_empty() || d.is_empty() {
+                        return Err(PhxError::Esquema(format!(
+                            "o par {k} da junção {i} precisa de \"esquerda\" e \
+                             \"direita\""
+                        )));
+                    }
+                    // Cada lado se resolve contra o SEU modelo: `p.id` do lado
+                    // de ca, `c.id` do lado de la. O nome sem prefixo vale
+                    // quando e unico naquele lado.
+                    let re = resolver_ou_recusar(linhas.first(), &e, "o lado esquerdo")?;
+                    let rd = resolver_ou_recusar(direita.first(), &d, "o lado direito")?;
+                    pares.push((re, rd));
+                }
+                linhas = crate::consultar::juntar(linhas, &direita, &pares, tipo);
+                let teto = self.max_linhas();
+                if linhas.len() as u64 > teto {
+                    return Err(PhxError::LimiteExcedido(format!(
+                        "a junção {i} produziu {} linhas, acima do teto de {teto} \
+                         de `recursos.max_linhas`. Filtre um dos lados dentro do \
+                         sub-pedido dele",
+                        linhas.len()
+                    )));
+                }
+            }
+        }
+
+        // ----------------------------------------------------------- escalar
+        //
+        // Uma subconsulta NAO CORRELACIONADA que devolve uma linha so: ela roda
+        // UMA vez, e o valor vira coluna de todas. Correlacionada exigiria
+        // roda-la por linha, e isso recusa nomeando (ver `docs/SQL.md`).
+        let mut escalares: Vec<String> = Vec::new();
+        for (i, e) in p
+            .campo("escalar")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            let nome = e.texto_ou("nome", "").trim().to_string();
+            if nome.is_empty() {
+                return Err(PhxError::Esquema(format!(
+                    "o escalar {i} precisa de \"nome\": e por ele que a expressao o ve"
+                )));
+            }
+            let sub = e
+                .campo("de")
+                .ok_or_else(|| PhxError::Esquema(format!("o escalar {i} precisa de \"de\"")))?;
+            let rotulo = format!("\"escalar\"[{i}]");
+            let dentro = self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
+            // Zero ou duas linhas RECUSA nomeando. Escolher a primeira faria a
+            // resposta depender da ordem em que o motor devolveu as linhas, e
+            // «depende da ordem» num numero e o defeito que nao se acha.
+            if dentro.len() != 1 {
+                return Err(PhxError::Esquema(format!(
+                    "o escalar {nome:?} devolveu {} linhas, e um valor escalar \
+                     precisa de exatamente uma. Ponha um agregado ou um \"max\":1 \
+                     com \"ordem\" no sub-pedido",
+                    dentro.len()
+                )));
+            }
+            let campo_alvo = e.texto_ou("campo", "").trim().to_string();
+            let unica = &dentro[0];
+            let valor = if campo_alvo.is_empty() {
+                // Sem `campo`, a linha tem de ter UMA coluna so -- senao nao ha
+                // como saber qual delas e o valor.
+                if unica.len() != 1 {
+                    return Err(PhxError::Esquema(format!(
+                        "o escalar {nome:?} nao diz \"campo\", e a linha devolvida \
+                         tem {} colunas: diga qual delas e o valor",
+                        unica.len()
+                    )));
+                }
+                unica[0].1.clone()
+            } else {
+                crate::consultar::campo(unica, &campo_alvo)
+                    .cloned()
+                    .ok_or_else(|| {
+                        PhxError::Esquema(format!(
+                            "o escalar {nome:?} pede o campo {campo_alvo:?}, que a \
+                             linha devolvida nao tem. As que ha: {}",
+                            unica
+                                .iter()
+                                .map(|(n, _)| n.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ))
+                    })?
+            };
+            if linhas
+                .first()
+                .is_some_and(|l| crate::consultar::campo(l, &nome).is_some())
+            {
+                return Err(PhxError::Esquema(format!(
+                    "o escalar {nome:?} usa o nome de uma coluna que a linha ja \
+                     tem; de outro nome"
+                )));
+            }
+            for l in linhas.iter_mut() {
+                l.push((nome.clone(), valor.clone()));
+            }
+            escalares.push(nome);
+        }
+
+        // ---------------------------------------------------------------- em
+        //
+        // O `IN (SELECT campo FROM ...)`. Vem antes da expressao porque e um
+        // filtro de conjunto, e filtrar cedo evita avaliar a expressao sobre
+        // linha que ja saiu.
+        for (i, item) in p
+            .campo("em")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            let coluna = item.texto_ou("coluna", "").trim().to_string();
+            if coluna.is_empty() {
+                return Err(PhxError::Esquema(format!(
+                    "o item {i} de \"em\" precisa de \"coluna\""
+                )));
+            }
+            let sub = item.campo("de").ok_or_else(|| {
+                PhxError::Esquema(format!("o item {i} de \"em\" precisa de \"de\""))
+            })?;
+            let rotulo = format!("\"em\"[{i}]");
+            let dentro = self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
+            let campo_alvo = item.texto_ou("campo", &coluna).trim().to_string();
+            let conjunto: std::collections::HashSet<String> = dentro
+                .iter()
+                .filter_map(|l| {
+                    crate::consultar::campo(l, &campo_alvo)
+                        .and_then(crate::consultar::chave_de_juncao)
+                })
+                .collect();
+            let real = resolver_ou_recusar(linhas.first(), &coluna, "o \"em\"")?;
+            linhas.retain(|l| {
+                crate::consultar::campo(l, &real)
+                    .and_then(crate::consultar::chave_de_juncao)
+                    .is_some_and(|k| conjunto.contains(&k))
+            });
+        }
+
+        // A expressao, sobre a linha JSON. Ver `crate::consultar` para o que a
+        // ausencia do esquema custa e por que a recusa ensina.
+        if let Some(txt) = p.campo("expressao").and_then(Json::texto) {
+            if !txt.trim().is_empty() {
+                let e = phxsql_core::expressao::Expressao::analisar(txt)?;
+                // A ligacao dos nomes acontece UMA vez, contra a primeira
+                // linha, e e ela que recusa o nome ambiguo -- por pedido, e
+                // nao por linha.
+                let ligacoes = match linhas.first() {
+                    Some(modelo) => crate::consultar::ligar(modelo, e.colunas())?,
+                    None => Vec::new(),
+                };
+                let mut mantidas = Vec::with_capacity(linhas.len());
+                for l in linhas {
+                    // `NULL` exclui, como em todo filtro deste motor.
+                    if crate::consultar::avaliar_sobre(&l, &e, &ligacoes)? == Some(true) {
+                        mantidas.push(l);
+                    }
+                }
+                linhas = mantidas;
+            }
+        }
+
+        for (i, j) in p
+            .campo("janela")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            let funcao = j
+                .texto_ou("funcao", "row_number")
+                .trim()
+                .to_ascii_lowercase();
+            if funcao != "row_number" {
+                return Err(PhxError::Esquema(format!(
+                    "a janela {i} pede {funcao:?}; nesta rodada so ha row_number"
+                )));
+            }
+            let mut particao: Vec<String> = Vec::new();
+            for x in j.campo("particao").and_then(Json::lista).unwrap_or(&[]) {
+                if let Some(t) = x.texto() {
+                    particao.push(resolver_ou_recusar(linhas.first(), t, "a particao")?);
+                }
+            }
+            let mut ordem =
+                crate::consultar::Criterio::da_lista(j.campo("ordem").and_then(Json::lista));
+            for c in ordem.iter_mut() {
+                c.coluna = resolver_ou_recusar(linhas.first(), &c.coluna, "a ordem da janela")?;
+            }
+            let apelido = match j.texto_ou("apelido", "").trim() {
+                "" => "row_number".to_string(),
+                outro => outro.to_string(),
+            };
+            crate::consultar::numerar(&mut linhas, &particao, &ordem, &apelido)?;
+        }
+
+        let mut ordem =
+            crate::consultar::Criterio::da_lista(p.campo("ordem").and_then(Json::lista));
+        if !ordem.is_empty() {
+            for c in ordem.iter_mut() {
+                c.coluna = resolver_ou_recusar(linhas.first(), &c.coluna, "a ordem")?;
+            }
+            conferir_colunas(&linhas, ordem.iter().map(|c| c.coluna.as_str()), "a ordem")?;
+            linhas.sort_by(|a, b| crate::consultar::comparar_por(a, b, &ordem));
+        }
+
+        let achadas = linhas.len() as u64;
+        let pular = p.inteiro_ou("pular", 0).max(0) as usize;
+        let max = self.limite(p) as usize;
+        let recorte: Vec<crate::consultar::Linha> =
+            linhas.into_iter().skip(pular).take(max).collect();
+
+        // A PROJECAO VEM POR ULTIMO, e e por isso que `ordem` pode falar de uma
+        // coluna que a resposta nao mostra.
+        let pedidas = p.campo("colunas").and_then(Json::lista);
+        let saida: Vec<Json> = match pedidas {
+            // Sem projecao, sai a linha inteira MENOS as colunas de `escalar`:
+            // elas existem para a expressao ver, e nao para engordar a
+            // resposta com um numero repetido em toda linha. Quem as quer
+            // pede-as pelo nome.
+            None => recorte
+                .into_iter()
+                .map(|l| {
+                    Json::Objeto(
+                        l.into_iter()
+                            .filter(|(n, _)| !escalares.iter().any(|e| e.eq_ignore_ascii_case(n)))
+                            .collect(),
+                    )
+                })
+                .collect(),
+            Some(l) => {
+                let mut escolhas: Vec<(String, String)> = Vec::new();
+                for c in l {
+                    let (nome, apelido) = match c {
+                        Json::Texto(t) => (t.clone(), t.clone()),
+                        outro => {
+                            let nome = outro.texto_ou("coluna", "").to_string();
+                            let apelido = match outro.texto_ou("apelido", "").trim() {
+                                "" => nome.clone(),
+                                a => a.to_string(),
+                            };
+                            (nome, apelido)
+                        }
+                    };
+                    if nome.trim().is_empty() {
+                        continue;
+                    }
+                    // O nome REAL para procurar, e o APELIDO para a chave da
+                    // resposta: `{"coluna":"c.nome","apelido":"cliente"}` sai
+                    // como `cliente`, e sem apelido sai como foi pedido.
+                    let real = resolver_ou_recusar(recorte.first(), &nome, "a projecao")?;
+                    escolhas.push((real, apelido));
+                }
+                conferir_colunas(
+                    &recorte,
+                    escolhas.iter().map(|(n, _)| n.as_str()),
+                    "a projecao",
+                )?;
+                recorte
+                    .iter()
+                    .map(|linha| {
+                        Json::Objeto(
+                            escolhas
+                                .iter()
+                                .map(|(nome, apelido)| {
+                                    (
+                                        apelido.clone(),
+                                        crate::consultar::campo(linha, nome)
+                                            .cloned()
+                                            .unwrap_or(Json::Nulo),
+                                    )
+                                })
+                                .collect(),
+                        )
+                    })
+                    .collect()
+            }
+        };
+
+        Ok(Json::objeto(vec![
+            ("devolvidas", Json::de_u64(saida.len() as u64)),
+            // `achadas` antes do recorte, como no `varrer`: sem ele quem
+            // pagina nao sabe se a pagina e a ultima.
+            ("achadas", Json::de_u64(achadas)),
+            ("linhas", Json::Lista(saida)),
+            ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
+        ]))
+    }
+
+    /// `agrupar`: o `GROUP BY` generico -- agrupa por colunas e resume cada
+    /// grupo.
+    ///
+    /// # Por que ela nao e um `pivotar` com outra roupa
+    ///
+    /// O `pivotar` cruza DUAS listas de campos numa grade e resume UMA coluna.
+    /// Isto aqui resume VARIAS colunas de uma vez, com apelido para cada uma, e
+    /// peneira o resultado ja agregado (`tendo`). Sao perguntas diferentes com
+    /// o mesmo acumulador embaixo -- e e o acumulador que e compartilhado, e
+    /// nao copiado: ver `crate::agrupar`.
+    ///
+    /// # O portao continua sendo UM
+    ///
+    /// Esta operacao nomeia UMA tabela, no campo `"tabela"` -- o mesmo que o
+    /// `despachar` ja confere. Nao ha conferencia propria aqui porque nao ha
+    /// segunda tabela escondida em lugar nenhum, ao contrario do `juntar`, do
+    /// `unir` e do `pivotar`. **No dia em que o `agrupar` ganhar um `de`
+    /// aninhado, ele passa a precisar de uma** -- e a pergunta que decide e
+    /// «esta operacao nomeia tabela onde o portao nao olha?».
+    fn op_agrupar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let max = self.limite(p);
+        let teto_grupos = self.max_linhas();
+        let comeco = Instant::now();
+        let _trava = self.travar_dados()?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+        let esquema = t.esquema().clone();
+
+        let mut por = Vec::new();
+        for c in p.campo("por").and_then(Json::lista).unwrap_or(&[]) {
+            por.push(coluna_de(c, &esquema)?);
+        }
+        let nomes_por: Vec<String> = por
+            .iter()
+            .map(|i| esquema.colunas()[*i].nome.clone())
+            .collect();
+
+        // Sem `agregados` a resposta seria a lista de valores distintos --
+        // que e um `SELECT DISTINCT`, e nao um `GROUP BY`. Contar e o padrao
+        // porque e o que quem esquece o campo quase sempre queria.
+        let pedidos = p.campo("agregados").and_then(Json::lista);
+        let mut agregados: Vec<crate::agrupar::Agregado> = Vec::new();
+        for a in pedidos.unwrap_or(&[]) {
+            let funcao = Agregador::de_texto(a.texto_ou("funcao", "contagem"))?;
+            let nome_coluna = a.texto_ou("coluna", "").trim().to_string();
+            let coluna = match nome_coluna.as_str() {
+                "" => {
+                    if funcao.precisa_de_valor() {
+                        return Err(PhxError::Esquema(format!(
+                            "o agregado {:?} precisa de \"coluna\": so a contagem \
+                             conta linhas em vez de valores",
+                            funcao.nome()
+                        )));
+                    }
+                    None
+                }
+                c => Some(posicao_da_coluna(&esquema, c).ok_or_else(|| {
+                    PhxError::Esquema(format!(
+                        "o agregado {:?} usa a coluna {c:?}, que nao existe em {}",
+                        funcao.nome(),
+                        esquema.nome()
+                    ))
+                })?),
+            };
+            let apelido = match a.texto_ou("apelido", "").trim() {
+                "" => crate::agrupar::Agregado::apelido_padrao(
+                    funcao,
+                    (!nome_coluna.is_empty()).then_some(nome_coluna.as_str()),
+                ),
+                outro => outro.to_string(),
+            };
+            agregados.push(crate::agrupar::Agregado {
+                funcao,
+                coluna,
+                apelido,
+            });
+        }
+        if agregados.is_empty() {
+            agregados.push(crate::agrupar::Agregado {
+                funcao: Agregador::Contagem,
+                coluna: None,
+                apelido: "contagem".to_string(),
+            });
+        }
+        // Apelido repetido recusa AQUI, e nao vira a segunda chave de um
+        // objeto JSON: quem le a resposta veria uma das duas e nao saberia
+        // qual -- numero errado calado, que e o que este projeto nao faz.
+        for (i, a) in agregados.iter().enumerate() {
+            if nomes_por.iter().any(|n| n.eq_ignore_ascii_case(&a.apelido)) {
+                return Err(PhxError::Esquema(format!(
+                    "o apelido {:?} colide com a coluna de agrupamento de mesmo \
+                     nome; de outro apelido ao agregado",
+                    a.apelido
+                )));
+            }
+            if agregados[..i]
+                .iter()
+                .any(|b| b.apelido.eq_ignore_ascii_case(&a.apelido))
+            {
+                return Err(PhxError::Esquema(format!(
+                    "dois agregados usam o apelido {:?}; um deles ficaria \
+                     invisivel na resposta",
+                    a.apelido
+                )));
+            }
+        }
+
+        // A peneira da linha CRUA, no mesmo lugar unico do `varrer`.
+        let onde = filtros_do_pedido(p, &esquema)?;
+        let expressao = expressao_do_pedido(p, &esquema)?;
+
+        // O `tendo` fala da linha AGREGADA, entao ele e conferido contra os
+        // nomes que existem DEPOIS de agrupar -- as colunas de `por` e os
+        // apelidos. Conferir contra o esquema aqui aceitaria `preco > 10`, que
+        // nao quer dizer nada num grupo de mil linhas.
+        let tendo = match p.campo("tendo").and_then(Json::texto) {
+            Some(txt) if !txt.trim().is_empty() => {
+                let e = phxsql_core::expressao::Expressao::analisar(txt)?;
+                for nome in e.colunas() {
+                    let conhecido = nomes_por.iter().any(|n| n.eq_ignore_ascii_case(nome))
+                        || agregados
+                            .iter()
+                            .any(|a| a.apelido.eq_ignore_ascii_case(nome));
+                    if !conhecido {
+                        return Err(PhxError::Esquema(format!(
+                            "o \"tendo\" usa {nome:?}, que nao e coluna de \"por\" \
+                             nem apelido de agregado. O que ele pode ver e: {}",
+                            nomes_por
+                                .iter()
+                                .cloned()
+                                .chain(agregados.iter().map(|a| a.apelido.clone()))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )));
+                    }
+                }
+                Some(e)
+            }
+            _ => None,
+        };
+
+        let rowids: Vec<u64> = t.varrer()?.into_iter().map(|(r, _)| r).collect();
+        let mut fonte = LinhasPeneiradas {
+            rowids: rowids.into_iter(),
+            tabela: &mut t,
+            onde,
+            expressao,
+            esquema: &esquema,
+            examinadas: 0,
+        };
+        let r = crate::agrupar::agrupar(&mut fonte, &esquema, &por, &agregados, teto_grupos)?;
+        let examinadas = fonte.examinadas;
+
+        // A linha da resposta, montada uma vez e usada pelo `tendo`, pela
+        // `ordem` e pela saida -- porque as tres falam dos MESMOS nomes.
+        let mut linhas: Vec<Vec<(String, Value, phxsql_core::types::ColumnType)>> = Vec::new();
+        for g in &r.grupos {
+            let mut campos = Vec::with_capacity(por.len() + agregados.len());
+            for (i, c) in por.iter().enumerate() {
+                campos.push((
+                    nomes_por[i].clone(),
+                    g.chave[i].clone(),
+                    esquema.colunas()[*c].ty,
+                ));
+            }
+            for (a, (v, ty)) in agregados.iter().zip(g.valores.iter()) {
+                campos.push((a.apelido.clone(), v.clone(), *ty));
+            }
+            if let Some(e) = &tendo {
+                let passa = e.avaliar_bool(&|nome| {
+                    campos
+                        .iter()
+                        .find(|(n, _, _)| n.eq_ignore_ascii_case(nome))
+                        .map(|(_, v, ty)| (v, ty))
+                })?;
+                // `NULL` exclui, como em todo filtro deste motor -- e como no
+                // HAVING do SQL. No CHECK ele passa, e a diferenca esta escrita
+                // no `phxsql_core::expressao`.
+                if passa != Some(true) {
+                    continue;
+                }
+            }
+            linhas.push(campos);
+        }
+
+        if let Some(l) = p.campo("ordem").and_then(Json::lista) {
+            let mut chaves: Vec<(usize, bool)> = Vec::new();
+            for o in l {
+                let nome = match o {
+                    Json::Texto(t) => t.as_str(),
+                    outro => outro.texto_ou("coluna", ""),
+                };
+                let i = linhas
+                    .first()
+                    .and_then(|c| c.iter().position(|(n, _, _)| n.eq_ignore_ascii_case(nome)));
+                // Sem grupo nenhum nao ha o que ordenar, e recusar ali seria
+                // recusar por causa de uma tabela vazia.
+                let Some(i) = i else {
+                    if linhas.is_empty() {
+                        break;
+                    }
+                    return Err(PhxError::Esquema(format!(
+                        "a ordem pede {nome:?}, que nao e coluna de \"por\" nem \
+                         apelido de agregado"
+                    )));
+                };
+                chaves.push((i, o.booleano_ou("desc", false)));
+            }
+            linhas.sort_by(|a, b| {
+                for (i, desc) in &chaves {
+                    let ord = phxsql_store::memoria::comparar(&a[*i].1, &b[*i].1);
+                    let ord = if *desc { ord.reverse() } else { ord };
+                    if ord != std::cmp::Ordering::Equal {
+                        return ord;
+                    }
+                }
+                std::cmp::Ordering::Equal
+            });
+        }
+
+        let grupos = linhas.len() as u64;
+        let truncado = grupos > max;
+        let saida: Vec<Json> = linhas
+            .iter()
+            .take(max as usize)
+            .map(|campos| {
+                Json::Objeto(
+                    campos
+                        .iter()
+                        .map(|(n, v, ty)| (n.clone(), crate::valores::valor_para_json(v, ty)))
+                        .collect(),
+                )
+            })
+            .collect();
+
+        // A TRILHA, pelo mesmo motivo do `varrer`: os rotulos dos grupos SAO
+        // os valores da coluna agrupada. Agrupar por `cpf` e ler os CPFs, e
+        // uma trilha que nao registrasse isso deixaria de responder «quem leu
+        // o dado pessoal?» justamente por onde ele sai resumido.
+        let devolvidas = saida.len() as u64;
+        Self::trilhar_acesso(&mut t, 0, devolvidas, || {
+            format!(
+                "agrupar por={} agregados={}",
+                nomes_por.join(","),
+                agregados.len()
+            )
+        })?;
+
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            // `grupos` conta o que sobrou DEPOIS do `tendo`, e nao antes: e o
+            // tamanho do resultado, que e o que quem pagina precisa saber.
+            ("grupos", Json::de_u64(grupos)),
+            ("devolvidas", Json::de_u64(devolvidas)),
+            // As duas do `varrer`, e pela mesma razao: sem elas a tela nao
+            // sabe se o numero que mostra e da tabela ou da pagina.
+            ("examinadas", Json::de_u64(examinadas)),
+            ("consideradas", Json::de_u64(r.lidas)),
+            ("truncado", Json::Bool(truncado)),
+            ("linhas", Json::Lista(saida)),
+            ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
         ]))
     }
 
@@ -10650,6 +11689,13 @@ impl Servidor {
         // As chaves unicas desta linha, guardadas so DEPOIS de a escrita
         // entrar na lista. Ver a nota no ramo do `Inserir`.
         let mut chaves_novas: Vec<(String, String)> = Vec::new();
+        // O upsert, lido aqui pelo mesmo motivo do `op_inserir`: `se_existir`
+        // invalido e erro do pedido, e recusar depois da trava seguraria todo
+        // mundo por causa de uma palavra digitada errada.
+        let se_existir = match op {
+            "inserir" => crate::upsert::SeExistir::de_texto(p.texto_ou("se_existir", ""))?,
+            _ => None,
+        };
         let acao = match op {
             "inserir" => Acao::Inserir,
             "atualizar" => Acao::Atualizar,
@@ -10755,6 +11801,105 @@ impl Servidor {
                 if !antes.is_empty() {
                     self.rodar_gatilhos_antes(&antes, Some(&mut linha), None, t.esquema())?;
                 }
+
+                // O UPSERT DENTRO DE UMA TRANSACAO: **ele empilha como a op
+                // que ele VIROU** -- `inserir` quando a chave nao existe,
+                // `atualizar` quando existe --, e a resposta diz qual.
+                //
+                // A alternativa seria empilhar sempre como `inserir` e deixar
+                // o commit descobrir a duplicata: a transacao inteira cairia
+                // no fim por causa de uma linha que o pedido mandava
+                // justamente sobrescrever. Empilhar a op certa e o que faz o
+                // `se_existir` querer dizer aqui o mesmo que fora.
+                //
+                // A decisao e contra o DISCO, porque este caminho chama
+                // `ver_so_o_disco`. A chave que esta transacao JA empilhou
+                // RECUSA nomeando: a linha pendente nao tem rowid em disco
+                // para atualizar, e escolher qualquer um dos dois caminhos
+                // seria adivinhar.
+                if let Some(modo) = se_existir {
+                    let indice =
+                        crate::upsert::indice_do_upsert(t.esquema(), p.texto_ou("indice", ""))?;
+                    let valores = valores_do_indice(t.esquema(), &indice, &linha);
+                    let tem_chave = !valores.is_empty() && !valores.iter().any(Value::e_null);
+                    if tem_chave {
+                        let em_texto = chaves_unicas(t.esquema(), &linha)
+                            .into_iter()
+                            .find(|(i, _)| *i == indice)
+                            .map(|(_, c)| c);
+                        if let Some(c) = &em_texto {
+                            let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                            let tx = reg.de(sessao.ligacao).ok_or_else(sem_transacao)?;
+                            if tx.chave_ja_empilhada(&tabela, &indice, c) {
+                                return Err(PhxError::Duplicado(format!(
+                                    "o indice unico {indice} ja recebeu essa chave \
+                                     nesta mesma transacao, e o \"se_existir\" decide \
+                                     contra o DISCO: a linha pendente ainda nao tem \
+                                     rowid para atualizar. Confirme a transacao \
+                                     antes, ou mande a linha uma vez so"
+                                )));
+                            }
+                        }
+                        if let Some(rowid) = t.buscar(&indice, &valores)?.first().copied() {
+                            if modo == crate::upsert::SeExistir::Ignorar {
+                                // Nada a empilhar: a linha ja esta la e o
+                                // pedido disse para nao mexer nela.
+                                return Ok(Json::objeto(vec![
+                                    ("empilhada", Json::Bool(false)),
+                                    ("rowid", Json::de_u64(rowid)),
+                                    ("ignorada", Json::Bool(true)),
+                                ]));
+                            }
+                            // A trava da LINHA, que a de cima nao pegou: ali o
+                            // alvo era o fim da tabela, porque ainda nao se
+                            // sabia que isto viraria uma alteracao. A do fim
+                            // fica com a transacao ate o fim dela, e o preco e
+                            // conservador de propósito -- soltar uma trava ja
+                            // tomada abriria a fresta que o comentario de cima
+                            // descreve.
+                            self.travar_para_empilhar(sessao, &chave, rowid)?;
+                            let velha = t.ler(rowid)?.unwrap_or_default();
+                            // A coluna de sistema do softdeleted vem da linha
+                            // gravada quando o pedido nao a mandou -- a MESMA
+                            // guarda do `atualizar`, porque isto virou um.
+                            if let Some(i) = t.esquema().coluna_softdeleted() {
+                                let veio = matches!(&valores_json, Json::Objeto(_))
+                                    && valores_json
+                                        .campo(phxsql_core::schema::COLUNA_SOFTDELETED)
+                                        .is_some();
+                                if !veio {
+                                    if let Some(v) = velha.get(i) {
+                                        linha[i] = v.clone();
+                                    }
+                                }
+                            }
+                            let nova = crate::transacao::Escrita {
+                                database: database.clone(),
+                                tabela: tabela.clone(),
+                                acao: Acao::Atualizar,
+                                rowid,
+                                linha,
+                                linha_antiga: velha,
+                                motivo: String::new(),
+                            };
+                            // A trava de dados sai ANTES da do registro de
+                            // transacoes, como no caminho de sempre: a ordem
+                            // entre as duas e o que a `COM_A_TRAVA` cobra.
+                            drop(t);
+                            drop(trava);
+                            return self.empilhar_escrita(
+                                sessao,
+                                nova,
+                                &database,
+                                &tabela,
+                                chave,
+                                &[],
+                                Some("atualizada"),
+                            );
+                        }
+                    }
+                }
+
                 // A unicidade contra o INDICE, que e a mesma conferencia que o
                 // `inserir` de hoje faz antes de gravar byte nenhum.
                 let chaves = chaves_unicas(t.esquema(), &linha);
@@ -10900,7 +12045,39 @@ impl Servidor {
         };
         drop(t);
         drop(trava);
+        self.empilhar_escrita(
+            sessao,
+            escrita,
+            &database,
+            &tabela,
+            chave,
+            &chaves_novas,
+            None,
+        )
+    }
 
+    /// Poe uma escrita ja decidida na lista da transacao, e responde.
+    ///
+    /// Saiu do fim do `empilhar` quando o upsert passou a ter uma SEGUNDA
+    /// decisao possivel -- «isto virou um atualizar» --, e nao duas listas:
+    /// duplicar o teto do conjunto de escrita, o registro do database e o da
+    /// tabela daria duas versoes da mesma contabilidade, e a que alguem
+    /// esquecesse de atualizar seria a que deixa passar do teto.
+    ///
+    /// A trava de dados JA SAIU quando esta funcao e chamada -- os dois
+    /// chamadores a soltam antes, porque a ordem entre ela e a do registro de
+    /// transacoes e o que a `COM_A_TRAVA` cobra.
+    #[allow(clippy::too_many_arguments)]
+    fn empilhar_escrita(
+        &self,
+        sessao: &Sessao,
+        escrita: crate::transacao::Escrita,
+        database: &str,
+        tabela: &str,
+        chave: String,
+        chaves_novas: &[(String, String)],
+        marca: Option<&'static str>,
+    ) -> Result<Json> {
         let teto = self.config.recursos.transacao_max_linhas as usize;
         let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
         let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
@@ -10916,7 +12093,7 @@ impl Servidor {
             return Err(PhxError::TransacaoAbortada(tx.motivo_do_aborto.clone()));
         }
         if tx.database.is_empty() {
-            tx.database = database.clone();
+            tx.database = database.to_string();
         }
         if !tx.tabelas.contains(&chave) {
             tx.tabelas.push(chave);
@@ -10924,17 +12101,24 @@ impl Servidor {
         let rowid = escrita.rowid;
         let acao_nome = escrita.acao.nome();
         tx.escritas.push(escrita);
-        for (indice, chave) in &chaves_novas {
-            tx.guardar_chave(&tabela, indice, chave);
+        for (indice, chave) in chaves_novas {
+            tx.guardar_chave(tabela, indice, chave);
         }
-        Ok(Json::objeto(vec![
+        let mut resposta = vec![
             ("empilhada", Json::Bool(true)),
             ("acao", Json::texto_de(acao_nome)),
             ("rowid", Json::de_u64(rowid)),
             ("linhas", Json::de_u64(tx.escritas.len() as u64)),
             ("transaction_id", Json::de_u64(tx.id)),
             ("transaction_state", Json::texto_de(tx.estado.nome())),
-        ]))
+        ];
+        // A marca so aparece quando ha o que dizer -- a mesma decisao do
+        // `op_inserir`: um campo novo em toda resposta mudaria a forma dela
+        // para todo cliente que ja existe.
+        if let Some(m) = marca {
+            resposta.push((m, Json::Bool(true)));
+        }
+        Ok(Json::objeto(resposta))
     }
 
     /// As travas que UMA escrita empilhada precisa, na ordem certa.
@@ -12348,21 +13532,52 @@ impl Servidor {
             return self.executar_rotina(comando, p, sessao);
         }
 
+        // OS PARAMETROS, no LEXICO e nunca por substituicao de texto.
+        //
+        // `analisar_comando_com` troca cada `?` pelo literal da posicao DEPOIS
+        // de o texto virar simbolos: um `'; DROP TABLE x --` chega como um
+        // literal de texto e sai como um literal de texto. Substituir no texto
+        // antes de analisar seria a definicao de injecao de SQL, e por isso
+        // nao existe caminho nenhum por aqui que faca isso.
+        let parametros: Vec<Json> = p
+            .campo("parametros")
+            .and_then(Json::lista)
+            .map(<[Json]>::to_vec)
+            .unwrap_or_default();
         // O erro de sintaxe ja vem com a coluna: «SQL, coluna 14: esperava
         // FROM». Reembalar aqui perderia a posicao, que e a unica parte da
         // mensagem que diz ONDE consertar.
-        let selecao = match phxsql_sql::analisar_comando(&texto)? {
+        let comando = if parametros.is_empty() {
+            phxsql_sql::analisar_comando(&texto)?
+        } else {
+            phxsql_sql::analisar_comando_com(&texto, &parametros)?
+        };
+        let selecao = match comando {
             phxsql_sql::Comando::Selecao(s) => s,
-            // A composicao (WITH, juncao, IN (SELECT), janela, escalar) e
-            // executada pela op `consultar`, da frente F-CONSULTA; ate ela
-            // entrar a recusa e nomeada, e nao a mensagem do caminho de
-            // escrita.
-            phxsql_sql::Comando::Consulta(_) => {
-                return Err(PhxError::Esquema(
-                    "esta forma de SELECT vira a op consultar, que esta em integracao \
-                     -- por enquanto so SELECT simples, GROUP BY e DML por chave"
-                        .into(),
-                ))
+            // O SELECT COMPOSTO -- `WITH`, subconsulta, `IN (SELECT ...)`,
+            // junção, janela -- vira a op `consultar`, e cada pedaco dele sai
+            // pelo `executar_derivado`. E o que faz da composicao uma
+            // composicao, e nao uma porta dos fundos.
+            phxsql_sql::Comando::Consulta(c) => {
+                let base = p.texto_ou("database", "").trim().to_string();
+                let plano = self.planejar_consulta(&c, &base, sessao)?;
+                let bruto = self.executar_derivado(&plano.op, &plano.pedido, sessao)?;
+                return Ok(resposta_do_sql(&texto, &plano, bruto));
+            }
+            // `CREATE VIEW` e `DROP VIEW`: o tradutor produz o pedido, e o
+            // pedido volta pelo portao de sempre -- com `criar`/`excluir` na
+            // base, que e o poder que as duas exigem.
+            phxsql_sql::Comando::CriarVisao { nome, sql } => {
+                let base = p.texto_ou("database", "").trim().to_string();
+                let plano = phxsql_sql::traduzir_criar_visao(&nome, &sql, &base)?;
+                let bruto = self.executar_derivado(&plano.op, &plano.pedido, sessao)?;
+                return Ok(resposta_do_sql(&texto, &plano, bruto));
+            }
+            phxsql_sql::Comando::ExcluirVisao { nome } => {
+                let base = p.texto_ou("database", "").trim().to_string();
+                let plano = phxsql_sql::traduzir_excluir_visao(&nome, &base)?;
+                let bruto = self.executar_derivado(&plano.op, &plano.pedido, sessao)?;
+                return Ok(resposta_do_sql(&texto, &plano, bruto));
             }
             // INSERT, UPDATE e DELETE por chave: outro caminho, MESMO portao.
             escrita => return self.executar_dml(&escrita, &texto, p, sessao),
@@ -12372,6 +13587,17 @@ impl Servidor {
             "" => p.texto_ou("database", "").trim().to_string(),
             outro => outro.to_string(),
         };
+        // O `FROM` aponta para uma VISAO? Entao o pedido vira um `consultar`
+        // sobre o plano dela. A pergunta comeca por um load atomico: num
+        // servidor sem visao nenhuma, ela custa isso e mais nada.
+        if let Some(plano) = self.selecao_sobre_visao(&selecao, &base, sessao)? {
+            let bruto = self.executar_derivado(&plano.op, &plano.pedido, sessao)?;
+            // A resposta sai pela MESMA porta do SELECT de sempre: quem
+            // consulta uma visao nao pode receber um envelope diferente do de
+            // quem consulta uma tabela -- o cliente teria de saber, antes de
+            // perguntar, se aquele nome e visao ou tabela.
+            return Ok(resposta_do_sql(&texto, &plano, bruto));
+        }
         let tabela = selecao.de.nome_no_protocolo();
         let ped_esquema = Json::objeto(vec![
             ("database", Json::texto_de(&base)),
@@ -12470,13 +13696,10 @@ impl Servidor {
                     "consulta nao entra pelo caminho de escrita".into(),
                 ))
             }
-            // As visoes sao executadas pelas ops `criar_visao`/`excluir_visao`
-            // (frente F-CONSULTA); ate a integracao delas a recusa e nomeada,
-            // e nao um `todo`.
             Comando::CriarVisao { .. } | Comando::ExcluirVisao { .. } => {
                 return Err(PhxError::Esquema(
-                    "CREATE VIEW / DROP VIEW: o servidor ainda nao executa visoes -- \
-                     a op criar_visao esta em integracao"
+                    "CREATE/DROP VIEW nao entra pelo caminho de escrita de linha: \
+                     eles mexem no catalogo, e nao no dado"
                         .into(),
                 ))
             }
@@ -13507,6 +14730,9 @@ impl Servidor {
         // teto para «linhas devolvidas» faria o filtro que casa pouco varrer a
         // tabela inteira com a trava global na mao, e esse custo ninguem mediu.
         let onde = filtros_do_pedido(p, t.esquema())?;
+        // A EXPRESSAO, irma do `onde` e no mesmo lugar dele: quem manda as
+        // duas paga as duas, e quem nao manda nenhuma nao paga nada.
+        let expressao = expressao_do_pedido(p, t.esquema())?;
 
         // `visao` decide o que a varredura enxerga. O padrao e "ativas": a
         // linha marcada como excluida some das listas, senao marcar nao teria
@@ -13587,16 +14813,15 @@ impl Servidor {
                 // funcionalidade inteira: montar para depois jogar fora seria
                 // pagar o transporte que o filtro existe para nao pagar.
                 //
-                // `casa` e a MESMA funcao do `SelectMemory` (mora no
+                // `passa` e a MESMA funcao do `SelectMemory` (mora no
                 // `phxsql-store`): duas copias divergiriam, e a divergencia
                 // apareceria como o mesmo filtro dando respostas diferentes
                 // conforme a tabela estivesse carregada em memoria ou nao.
-                if !onde.iter().all(|f| {
-                    // `get` e nao indice: uma linha gravada antes de uma
-                    // coluna nova nasce curta, e coluna que a linha nao tem e
-                    // NULA -- que e o que ela e, e nao um panico.
-                    phxsql_store::memoria::casa(l.get(f.coluna).unwrap_or(&Value::Null), f)
-                }) {
+                // Foi `casa` ate a expressao entrar; virou `passa` quando o
+                // predicado passou a ter duas metades, para o LUGAR que decide
+                // «esta linha passa?» continuar sendo um so.
+                if !phxsql_store::memoria::passa(&l, &onde, None, expressao.as_ref(), t.esquema())?
+                {
                     continue;
                 }
                 let mut obj = vec![("rowid".to_string(), Json::de_u64(rowid))];
@@ -13619,11 +14844,18 @@ impl Servidor {
         // volta como valor e a ficha exclusiva o leva ao disco, porque a
         // compartilhada nao sabe escrever (e por isso ela recusou a tabela).
         let trilha = if t.tem_dado_pessoal() && !linhas.is_empty() {
-            let peneira = if onde.is_empty() {
+            let mut peneira = if onde.is_empty() {
                 String::new()
             } else {
                 format!(" onde={}", descrever_filtros(&onde, t.esquema()))
             };
+            // A expressao entra na trilha pelo mesmo motivo do `onde`: «quem
+            // procurou os clientes com preco acima de cem?» e exatamente a
+            // pergunta que se faz a uma trilha de acesso, e uma trilha que
+            // guarda metade do criterio nao responde a pergunta inteira.
+            if let Some(e) = &expressao {
+                peneira.push_str(&format!(" expressao={:?}", e.texto()));
+            }
             let ordem_pedida = if por_indice {
                 format!("indice={indice}")
             } else {
@@ -13800,6 +15032,10 @@ impl Servidor {
             .or_else(|| p.campo("linha"))
             .cloned()
             .ok_or_else(|| PhxError::Esquema("informe \"valores\"".into()))?;
+        // Lido ANTES da trava: `se_existir` invalido e erro do pedido, e
+        // recusar com a trava global na mao seria segurar todo mundo por causa
+        // de uma palavra digitada errada.
+        let se_existir = crate::upsert::SeExistir::de_texto(p.texto_ou("se_existir", ""))?;
         // O portao dos gatilhos, ANTES de qualquer trabalho: sem gatilho no
         // servidor inteiro e um load atomico, e nada mais.
         let (antes, depois) = self.gatilhos_para(p, phxsql_sql::rotina::Evento::Inserir)?;
@@ -13812,11 +15048,31 @@ impl Servidor {
         if !antes.is_empty() {
             self.rodar_gatilhos_antes(&antes, Some(&mut linha), None, t.esquema())?;
         }
-        let rowid = t.inserir(&linha)?;
+        // O UPSERT, e ele e opt-in: sem `se_existir` o `inserir` e o de sempre
+        // e RECUSA a chave repetida. Guarda nova entra pedida -- um cliente
+        // escrito antes disto nao pode passar a sobrescrever linha nenhuma
+        // por conta de um campo que ele nao mandou.
+        let feito = match se_existir {
+            None => crate::upsert::Feito::inserida(t.inserir(&linha)?),
+            Some(modo) => {
+                let indice =
+                    crate::upsert::indice_do_upsert(t.esquema(), p.texto_ou("indice", ""))?;
+                crate::upsert::aplicar(&mut t, &indice, &linha, modo)?
+            }
+        };
+        let rowid = feito.rowid;
         self.gravar_de_verdade(&_trava, &mut t, p)?;
         // A copia em RAM acompanha DENTRO da mesma trava: nao existe instante
-        // em que o disco e a memoria discordem.
-        self.residente_mut(p, |m| m.anotar_insercao(rowid, &linha));
+        // em que o disco e a memoria discordem. O upsert que ATUALIZOU anota
+        // alteracao, e nao insercao -- anotar insercao criaria uma segunda
+        // linha em memoria para um rowid que ja estava la.
+        if feito.ignorada {
+            // Nada mudou no disco, entao nada muda na memoria.
+        } else if feito.atualizada {
+            self.residente_mut(p, |m| m.anotar_alteracao(rowid, &linha));
+        } else {
+            self.residente_mut(p, |m| m.anotar_insercao(rowid, &linha));
+        }
         let registros = t.registros();
         // O NEW do AFTER e a linha como FICOU gravada — sequencia preenchida,
         // rownum de verdade — lida de volta ainda dentro da trava.
@@ -13832,6 +15088,15 @@ impl Servidor {
             ("rowid", Json::de_u64(rowid)),
             ("registros", Json::de_u64(registros)),
         ];
+        // Os dois campos so aparecem quando ha o que dizer: uma resposta que
+        // trouxesse `"ignorada": false` em todo `inserir` mudaria a forma da
+        // resposta de todo cliente que existe hoje.
+        if feito.ignorada {
+            resposta.push(("ignorada", Json::Bool(true)));
+        }
+        if feito.atualizada {
+            resposta.push(("atualizada", Json::Bool(true)));
+        }
         if !avisos.is_empty() {
             resposta.push(("gatilhos_avisos", Json::Lista(avisos)));
         }
@@ -16397,6 +17662,195 @@ impl Servidor {
         ]))
     }
 
+    /// `diferencas`: o que mudou entre duas tabelas, pela chave.
+    ///
+    /// # O TERCEIRO IRMAO da conferencia propria
+    ///
+    /// O portao geral confere o campo `"tabela"` do pedido, e esta operacao
+    /// **nao tem esse campo**: as duas tabelas moram em `"a"` e `"b"`. E
+    /// exatamente a forma do `juntar` (que guarda em `a.tabela` e `b.tabela`)
+    /// e do `unir` (que guarda numa lista) -- e por isso ela paga conferencia
+    /// propria, como os dois pagam.
+    ///
+    /// **Isto NAO e duplicacao do portao geral**, e a distincao importa numa
+    /// futura divisao deste arquivo: limpar esta conferencia por parecer
+    /// repetida reabre a porta dos fundos, e nenhum teste do portao geral
+    /// acusa -- o que acusa e o teste que viaja com esta operacao.
+    ///
+    /// A pergunta que decide, e que vale para a proxima op que nascer: **esta
+    /// operacao nomeia tabela onde o portao nao olha?**
+    fn op_diferencas(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let comeco = Instant::now();
+        let base = p.texto_ou("database", "").to_string();
+        let (na, nb) = (
+            p.texto_ou("a", "").trim().to_string(),
+            p.texto_ou("b", "").trim().to_string(),
+        );
+        if na.is_empty() || nb.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe as duas tabelas em \"a\" e \"b\"".into(),
+            ));
+        }
+        // A CONFERENCIA PROPRIA -- ver a nota do cabecalho.
+        if let Some(u) = &sessao.usuario {
+            for alvo in [&na, &nb] {
+                if !u.pode_em(&base, alvo, Atividade::Ler) {
+                    return Err(PhxError::Autorizacao(format!(
+                        "{} nao tem permissao de ler em {base}.{alvo}",
+                        u.login
+                    )));
+                }
+            }
+        }
+        // A sonda de travessia tambem: os dois nomes chegam por campos que o
+        // `despachar` nao olha, entao a sonda dele nao os viu.
+        for (rotulo, valor) in [("a", &na), ("b", &nb)] {
+            if phxsql_store::catalogo::nome_hostil(valor) {
+                return Err(PhxError::Autorizacao(format!(
+                    "{rotulo} {valor:?} nao e um nome"
+                )));
+            }
+        }
+
+        let max = self.limite(p) as usize;
+        let teto = self.max_linhas();
+        let dados = self.travar_dados()?;
+        let db = dados.abrir_database(&base)?;
+        let mut ta = db.abrir_qualificada(&na)?;
+        let mut tb = db.abrir_qualificada(&nb)?;
+        let (ea, eb) = (ta.esquema().clone(), tb.esquema().clone());
+
+        // As COLUNAS tem de ser as mesmas, e a recusa nomeia a diferenca.
+        //
+        // Comparar so o que ha nos dois lados responderia «iguais» sobre
+        // linhas que diferem numa coluna que um dos lados nao tem -- e
+        // «iguais» errado e a pior resposta que esta operacao pode dar,
+        // porque ela existe justamente para ser acreditada.
+        let nomes =
+            |e: &Schema| -> Vec<String> { e.colunas().iter().map(|c| c.nome.clone()).collect() };
+        let (ca, cb) = (nomes(&ea), nomes(&eb));
+        if ca != cb {
+            let so_de_um = |x: &[String], y: &[String]| -> Vec<String> {
+                x.iter().filter(|n| !y.contains(n)).cloned().collect()
+            };
+            return Err(PhxError::Esquema(format!(
+                "{na} e {nb} nao tem as mesmas colunas, e comparar so as comuns \
+                 responderia \"iguais\" sobre linhas que diferem. So em {na}: {:?}; \
+                 so em {nb}: {:?}; ordem em {na}: {ca:?}",
+                so_de_um(&ca, &cb),
+                so_de_um(&cb, &ca)
+            )));
+        }
+
+        // O INDICE, nos dois lados, com o mesmo nome e UNICO -- ver o
+        // cabecalho de `crate::diferencas` para o porque dos tres requisitos.
+        let indice = match p.texto_ou("indice", "").trim() {
+            "" => ea.chave_primaria().map(|k| k.nome.clone()).ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "{na} nao tem chave primaria; diga em \"indice\" por qual \
+                         indice unico as duas tabelas se comparam"
+                ))
+            })?,
+            outro => outro.to_string(),
+        };
+        for (nome, e) in [(&na, &ea), (&nb, &eb)] {
+            let def = e
+                .indices()
+                .iter()
+                .find(|i| i.nome.eq_ignore_ascii_case(&indice))
+                .ok_or_else(|| {
+                    PhxError::NaoEncontrado(format!("o indice {indice:?} nao existe em {nome}"))
+                })?;
+            if !def.unico {
+                return Err(PhxError::Esquema(format!(
+                    "o indice {indice:?} de {nome} nao e unico, e sem chave unica \
+                     nao ha par: duas linhas com a mesma chave de um lado nao tem \
+                     par unico do outro"
+                )));
+            }
+        }
+
+        let ler = |t: &mut Table, nome: &str| -> Result<Vec<(Vec<Value>, Vec<Value>)>> {
+            let rowids = t.varrer()?;
+            if rowids.len() as u64 > teto {
+                return Err(PhxError::LimiteExcedido(format!(
+                    "{nome} tem {} linhas, acima do teto de {teto} de \
+                     `recursos.max_linhas`: as duas tabelas entram inteiras na \
+                     memoria para se comparar",
+                    rowids.len()
+                )));
+            }
+            let mut saida = Vec::with_capacity(rowids.len());
+            for (rowid, _) in rowids {
+                if let Some(l) = t.ler(rowid)? {
+                    let chave = crate::upsert::valores_do_indice(t.esquema(), &indice, &l);
+                    saida.push((chave, l));
+                }
+            }
+            Ok(saida)
+        };
+        let la = ler(&mut ta, &na)?;
+        let lb = ler(&mut tb, &nb)?;
+        let r = crate::diferencas::comparar(la, lb, &ea, max);
+
+        let chave_json = |c: &[Value]| -> Json {
+            Json::Lista(
+                c.iter()
+                    .enumerate()
+                    .map(|(i, v)| {
+                        let ty = ea
+                            .indices()
+                            .iter()
+                            .find(|x| x.nome.eq_ignore_ascii_case(&indice))
+                            .and_then(|x| x.colunas.get(i))
+                            .and_then(|ic| ea.colunas().get(ic.coluna))
+                            .map(|c| c.ty)
+                            .unwrap_or(phxsql_core::types::ColumnType::Int8);
+                        crate::valores::valor_para_json(v, &ty)
+                    })
+                    .collect(),
+            )
+        };
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(&base)),
+            ("a", Json::texto_de(&na)),
+            ("b", Json::texto_de(&nb)),
+            ("indice", Json::texto_de(&indice)),
+            ("iguais", Json::de_u64(r.iguais)),
+            (
+                "so_em_a",
+                Json::Lista(r.so_em_a.iter().map(|c| chave_json(c)).collect()),
+            ),
+            (
+                "so_em_b",
+                Json::Lista(r.so_em_b.iter().map(|c| chave_json(c)).collect()),
+            ),
+            (
+                "diferentes",
+                Json::Lista(
+                    r.diferentes
+                        .iter()
+                        .map(|d| {
+                            Json::objeto(vec![
+                                ("chave", chave_json(&d.chave)),
+                                (
+                                    "colunas",
+                                    Json::Lista(d.colunas.iter().map(Json::texto_de).collect()),
+                                ),
+                                ("a", linha_para_json(&d.a, &ea)),
+                                ("b", linha_para_json(&d.b, &eb)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            // Cortou? A resposta DIZ. Uma lista truncada em silencio faria
+            // quem confere acreditar que viu tudo.
+            ("truncado", Json::Bool(r.truncado)),
+            ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
+        ]))
+    }
+
     /// `UNION` e `UNION ALL` entre duas ou mais tabelas.
     fn op_unir(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let modo = Uniao::de_texto(p.texto_ou("modo", "distinta"))?;
@@ -17598,6 +19052,7 @@ impl Servidor {
         }
 
         let onde = filtros_do_pedido(p, esquema)?;
+        let expressao = expressao_do_pedido(p, esquema)?;
 
         let mut ordenar = Vec::new();
         if let Some(l) = p.campo("ordenar").and_then(Json::lista) {
@@ -17623,6 +19078,7 @@ impl Servidor {
 
         let consulta = Consulta {
             onde,
+            expressao,
             ordenar,
             colunas,
             pular: p.inteiro_ou("pular", 0).max(0) as u64,
@@ -18745,9 +20201,21 @@ fn resposta_do_sql(texto: &str, plano: &phxsql_sql::Plano, bruto: Json) -> Json 
         }
     }
 
+    // **A PROJECAO NAO ACONTECE DUAS VEZES**, e este `if` saiu do encontro das
+    // duas frentes: o `consultar` recebe `colunas` no PROPRIO pedido e projeta
+    // na fonte, com o APELIDO como chave da linha. Projetar de novo aqui
+    // procuraria `nome` numa linha que ja se chama `quem`, e devolveria uma
+    // coluna de NULOS -- com a cara de dado que nao existe. Nenhum teste de
+    // tradução acusaria isso (la o pedido esta certo) e nenhum teste do
+    // `consultar` acusaria (la a resposta esta certa): so aparece na costura,
+    // e so exercitando o caminho inteiro.
+    //
+    // O cabecalho (`colunas`) continua saindo daqui, porque ele e o contrato
+    // da RESPOSTA e nao depende de quem projetou.
+    let ja_projetou = plano.op == "consultar";
     if let Json::Objeto(campos) = bruto {
         for (k, v) in campos {
-            if k == "linhas" {
+            if k == "linhas" && !ja_projetou {
                 if let (phxsql_sql::Saida::Colunas(cols), Json::Lista(linhas)) = (&plano.saida, &v)
                 {
                     pares.push((
@@ -18985,13 +20453,9 @@ fn pedido_da_tabela(database: &str, tabela: &str) -> Json {
 
 /// Os valores de um indice, na ordem das colunas dele.
 fn valores_do_indice(esquema: &Schema, indice: &str, linha: &[Value]) -> Vec<Value> {
-    let Some(def) = esquema.indices().iter().find(|i| i.nome == indice) else {
-        return Vec::new();
-    };
-    def.colunas
-        .iter()
-        .filter_map(|c| linha.get(c.coluna).cloned())
-        .collect()
+    // UM lugar so, e ele mora no `crate::upsert` porque o DbLink tambem
+    // precisa dele e nao enxerga este modulo.
+    crate::upsert::valores_do_indice(esquema, indice, linha)
 }
 
 /// As chaves UNICAS desta linha, como `(indice, chave em texto)`.
@@ -19431,6 +20895,56 @@ fn filtros_do_pedido(p: &Json, esquema: &phxsql_core::schema::Schema) -> Result<
     Ok(onde)
 }
 
+/// A expressao `"expressao"` de um pedido, analisada UMA VEZ e conferida
+/// contra o esquema.
+///
+/// # O portao vem antes do trabalho, e ele e um `is_none`
+///
+/// Pedido sem `"expressao"` -- todo cliente escrito antes desta versao --
+/// devolve `None` depois de UM olhar no objeto, e dali em diante nada nesta
+/// consulta muda: nem uma analise, nem uma `String`, nem uma avaliacao por
+/// linha. E a licao que o Profiler cobrou, aplicada antes de doer.
+///
+/// # Analisada uma vez, avaliada muitas
+///
+/// A analise acontece AQUI, fora do laco das linhas. Analisar por linha numa
+/// pagina de 2.500 seria pagar 2.500 vezes um trabalho que nao depende da
+/// linha -- exatamente o que o ponto de captura do Profiler fazia com o JSON
+/// do lote.
+///
+/// # Coluna inexistente recusa na ANALISE, e nao por linha
+///
+/// `Expressao::colunas()` da os nomes referidos, e eles sao conferidos contra
+/// o esquema antes de a primeira linha ser lida. Deixar para o avaliador faria
+/// `cidde = 'X'` (com o erro de digitacao) devolver zero linha em vez de
+/// dizer que a coluna nao existe -- e zero linha e uma resposta que parece
+/// certa.
+fn expressao_do_pedido(
+    p: &Json,
+    esquema: &phxsql_core::schema::Schema,
+) -> Result<Option<phxsql_core::expressao::Expressao>> {
+    let Some(texto) = p.campo("expressao").and_then(Json::texto) else {
+        return Ok(None);
+    };
+    if texto.trim().is_empty() {
+        return Ok(None);
+    }
+    let e = phxsql_core::expressao::Expressao::analisar(texto)?;
+    for nome in e.colunas() {
+        if !esquema
+            .colunas()
+            .iter()
+            .any(|c| c.nome.eq_ignore_ascii_case(nome))
+        {
+            return Err(PhxError::Esquema(format!(
+                "a expressao usa a coluna {nome:?}, que nao existe em {}",
+                esquema.nome()
+            )));
+        }
+    }
+    Ok(Some(e))
+}
+
 /// Como o criterio da trilha de acesso descreve um filtro.
 ///
 /// Vai para a trilha porque «quem procurou os clientes de Blumenau?» e
@@ -19609,6 +21123,181 @@ impl Contagem {
 struct LinhasDaTabela<'a> {
     rowids: std::vec::IntoIter<u64>,
     tabela: &'a mut Table,
+}
+
+/// O teto de aninhamento do `consultar`, contado POR THREAD.
+///
+/// Um `consultar` cujo `de` e outro `consultar` desce a pilha de verdade, e
+/// pilha estourada nao e recusa: e a thread caindo, que numa conexao vira
+/// resposta nenhuma e nenhum recado. O contador vive num `Cell` de thread
+/// porque e exatamente isso que ele mede -- a profundidade DESTA chamada --,
+/// e o guarda o devolve no `Drop`, inclusive quando o passo do meio falha.
+///
+/// Oito e fundo de sobra para consulta escrita por gente ou por tradutor de
+/// SQL, e raso o bastante para nao chegar perto do limite da pilha.
+const TETO_ANINHAMENTO: u32 = 8;
+
+thread_local! {
+    static FUNDO: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+struct Profundidade;
+
+impl Profundidade {
+    fn descer() -> Result<Profundidade> {
+        let n = FUNDO.with(|f| {
+            let n = f.get() + 1;
+            f.set(n);
+            n
+        });
+        if n > TETO_ANINHAMENTO {
+            // O guarda ja subiu o contador, e o `Drop` nao roda para um valor
+            // que nunca existiu -- entao a descida se desfaz aqui.
+            FUNDO.with(|f| f.set(f.get() - 1));
+            return Err(PhxError::LimiteExcedido(format!(
+                "o consultar passou de {TETO_ANINHAMENTO} niveis de aninhamento; \
+                 alem disso a pilha da thread nao aguenta, e cair nao e recusar"
+            )));
+        }
+        Ok(Profundidade)
+    }
+}
+
+impl Drop for Profundidade {
+    fn drop(&mut self) {
+        FUNDO.with(|f| f.set(f.get().saturating_sub(1)));
+    }
+}
+
+/// A recusa de uma visao cuja tabela sumiu -- com o nome das DUAS.
+///
+/// Sem isto, quem consulta `v_clientes` recebe «clientes nao existe» e vai
+/// procurar quem apagou uma tabela que ele nem citou. **Envolver nao e
+/// substituir**: o erro de dentro continua inteiro no fim da frase, porque e
+/// ele que diz se a tabela sumiu ou se foi a permissao que faltou.
+fn erro_da_visao(visao: &str, tabela: &str, e: PhxError) -> PhxError {
+    let recado = format!("a visao {visao:?} le a tabela {tabela:?}, e ela nao respondeu: {e}");
+    match e {
+        PhxError::Autorizacao(_) => PhxError::Autorizacao(recado),
+        _ => PhxError::NaoEncontrado(recado),
+    }
+}
+
+/// O apelido de um lado do `consultar`: o que veio escrito, ou o nome da
+/// tabela do sub-pedido.
+///
+/// O padrao existe para o caso comum nao ter de escrever nada: `FROM pedidos p
+/// JOIN clientes c` sem apelido nenhum vira `pedidos.id` e `clientes.id`, que
+/// ja resolve a ambiguidade. Quando o sub-pedido nao nomeia tabela -- um
+/// `consultar` aninhado, por exemplo --, nao ha padrao possivel e o apelido
+/// passa a ser obrigatorio, com a recusa dizendo isso.
+fn apelido_do_lado(dono: &Json, sub: &Json, rotulo: &str) -> Result<String> {
+    let ap = dono.texto_ou("apelido", "").trim();
+    if !ap.is_empty() {
+        return Ok(ap.to_string());
+    }
+    // `schema.tabela` vira `tabela`, como o prefixo do `juntar` ja fazia:
+    // um ponto no meio do apelido faria `matriz.estoque.id` ter dois.
+    let tabela = sub.texto_ou("tabela", "").trim();
+    let curto = tabela.rsplit('.').next().unwrap_or("").trim();
+    if curto.is_empty() {
+        return Err(PhxError::Esquema(format!(
+            "{rotulo} nao nomeia tabela, entao ele precisa de \"apelido\": e o \
+             prefixo com que as colunas dele aparecem depois da junção"
+        )));
+    }
+    Ok(curto.to_string())
+}
+
+/// Resolve um nome contra o modelo da linha, ou RECUSA nomeando.
+///
+/// Sem linha nenhuma nao ha modelo, e o nome segue como veio: recusar sobre
+/// resultado vazio seria recusar por causa de uma tabela vazia.
+fn resolver_ou_recusar(
+    modelo: Option<&crate::consultar::Linha>,
+    nome: &str,
+    onde: &str,
+) -> Result<String> {
+    let Some(modelo) = modelo else {
+        return Ok(nome.to_string());
+    };
+    match crate::consultar::resolver(modelo, nome)? {
+        Some(real) => Ok(real),
+        None => Err(PhxError::Esquema(format!(
+            "{onde} pede {nome:?}, que nao e coluna do resultado. As que ha: {}",
+            modelo
+                .iter()
+                .map(|(n, _)| n.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))),
+    }
+}
+
+/// Coluna pedida que nao existe na linha RECUSA, nomeando.
+///
+/// Sobre resultado vazio nao ha o que conferir, e recusar ali seria recusar
+/// por causa de uma tabela vazia -- a mesma decisao do `agrupar`.
+fn conferir_colunas<'a>(
+    linhas: &[crate::consultar::Linha],
+    pedidas: impl Iterator<Item = &'a str>,
+    onde: &str,
+) -> Result<()> {
+    let Some(primeira) = linhas.first() else {
+        return Ok(());
+    };
+    for nome in pedidas {
+        if crate::consultar::campo(primeira, nome).is_none() {
+            return Err(PhxError::Esquema(format!(
+                "{onde} pede {nome:?}, que nao e coluna do resultado. As que ha: {}",
+                primeira
+                    .iter()
+                    .map(|(n, _)| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// As linhas de uma tabela ja PENEIRADAS -- o `onde` e a `expressao` decididos
+/// pelo mesmo `memoria::passa` do `varrer`.
+///
+/// Existe para o `agrupar` receber so o que passa, e para o filtro do
+/// `agrupar` ser, letra por letra, o filtro do `varrer`. Escrever a peneira
+/// aqui de novo faria `WHERE cidade = 'X'` significar uma coisa numa operacao
+/// e outra na irma -- e a divergencia so apareceria quando alguem comparasse
+/// a soma com a lista.
+struct LinhasPeneiradas<'a> {
+    rowids: std::vec::IntoIter<u64>,
+    tabela: &'a mut Table,
+    onde: Vec<Filtro>,
+    expressao: Option<phxsql_core::expressao::Expressao>,
+    esquema: &'a Schema,
+    /// Quantas linhas foram OLHADAS -- o irmao do `examinadas` do `varrer`.
+    examinadas: u64,
+}
+
+impl crate::pivot::Iterador for LinhasPeneiradas<'_> {
+    fn proxima(&mut self) -> Result<Option<Vec<Value>>> {
+        for rowid in self.rowids.by_ref() {
+            let Some(l) = self.tabela.ler(rowid)? else {
+                continue;
+            };
+            self.examinadas += 1;
+            if phxsql_store::memoria::passa(
+                &l,
+                &self.onde,
+                None,
+                self.expressao.as_ref(),
+                self.esquema,
+            )? {
+                return Ok(Some(l));
+            }
+        }
+        Ok(None)
+    }
 }
 
 impl crate::pivot::Iterador for LinhasDaTabela<'_> {
@@ -23165,6 +24854,101 @@ mod testes_direito_por_coluna {
         for pedaco in ["excluir", "salario", "folha", "ana"] {
             assert!(t.contains(pedaco), "a recusa nao diz {pedaco}: {t}");
         }
+    }
+
+    /// **A EXPRESSAO pergunta sem nomear campo `coluna` nenhum.**
+    ///
+    /// `{"onde":[{"coluna":"salario",...}]}` ja recusava; `"expressao":
+    /// "salario >= 5000"` fazia a MESMA pergunta por outra porta, e a resposta
+    /// vinha na contagem: vinte perguntas dessas dizem o salario sem ele nunca
+    /// ter aparecido numa linha.
+    ///
+    /// PROVA REAL: tirando o laco de `["expressao", "tendo"]` de
+    /// `recusar_pergunta_sobre_coluna_negada`, a primeira assercao volta a
+    /// receber `Ok` -- com `devolvidas: 1`, que E a resposta: «sim, alguem
+    /// aqui ganha 5.000 ou mais». A pergunta e escrita de proposito para
+    /// responder SIM sobre o dado gravado; uma que respondesse zero vazaria
+    /// igual, mas provaria menos.
+    #[test]
+    fn a_expressao_nao_pergunta_pela_coluna_negada() {
+        let dir = dir_temp("expr");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"varrer","database":"b","tabela":"folha","expressao":"salario >= 5000""#,
+        )
+        .expect_err("a expressao respondeu sobre a coluna negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(e.to_string().contains("salario"), "{e}");
+
+        // E o nome QUALIFICADO nao contorna: `p.salario` e a mesma coluna.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"varrer","database":"b","tabela":"folha","expressao":"p.salario >= 5000""#,
+        )
+        .expect_err("o nome qualificado contornou a regra");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+
+        // Expressao sobre coluna PERMITIDA continua passando -- a guarda que
+        // recusasse tudo seria pior que a guarda que falta.
+        let ok = pede(
+            &s,
+            &ses,
+            r#""op":"varrer","database":"b","tabela":"folha","expressao":"id > 0""#,
+        )
+        .expect("a coluna permitida foi barrada");
+        assert_eq!(ok.inteiro_ou("devolvidas", -1), 1);
+        // E a peneira continua tirando a coluna da resposta.
+        let l = ok.campo("linhas").and_then(Json::lista).unwrap();
+        assert!(l[0].campo("salario").is_none(), "a coluna vazou: {l:?}");
+
+        // Erro de SINTAXE na expressao nao vira «acesso negado»: quem digitou
+        // errado tem de ler onde esta o erro, e nao procurar permissao.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"varrer","database":"b","tabela":"folha","expressao":"id >""#,
+        )
+        .expect_err("expressao truncada tinha de recusar");
+        assert_ne!(e.nome(), "ACESSO_NEGADO", "{e}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **O `agrupar` RECUSA a tabela com regra de coluna, e nao peneira.**
+    ///
+    /// Peneirar nao fecharia: `{"funcao":"maximo","coluna":"salario"}` devolve
+    /// o maior salario num campo chamado `maximo_salario`, e a peneira procura
+    /// pelo NOME da coluna. Recusar e mais seguro que vazar, e a recusa diz o
+    /// nome da operacao.
+    ///
+    /// O controle na mesma corrida: sem a regra de coluna, o mesmo pedido
+    /// passa. Sem ele, um `agrupar` quebrado por outro motivo faria este teste
+    /// passar por engano.
+    #[test]
+    fn o_agrupar_recusa_a_tabela_com_regra_de_coluna() {
+        let dir = dir_temp("agrupar-coluna");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        let corpo = r#""op":"agrupar","database":"b","tabela":"folha",
+                       "agregados":[{"funcao":"maximo","coluna":"salario"}]"#;
+        let e = pede(&s, &ses, corpo).expect_err("o agrupar devolveu o salario resumido");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(
+            e.to_string().contains("agrupar"),
+            "a recusa nao se nomeia: {e}"
+        );
+        // A tabela SEM regra de coluna continua agrupando.
+        let ok = pede(
+            &s,
+            &ses,
+            r#""op":"agrupar","database":"b","tabela":"clientes","por":["nome"]"#,
+        )
+        .expect("a tabela sem regra de coluna foi barrada");
+        assert_eq!(ok.inteiro_ou("grupos", -1), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A ficha mostra as regras de coluna: administrador que nao consegue ver
@@ -30818,6 +32602,2770 @@ mod testes_varrer_onde {
             "a trilha nao diz o que foi procurado"
         );
         assert_eq!(descrever_filtros(&[], &esquema), "");
+    }
+}
+
+/// O filtro por EXPRESSAO, no `varrer` e no `SelectMemory`.
+///
+/// # O que ele acrescenta ao `"onde"`, e por que nao substitui
+///
+/// `Filtro{coluna, op, valor}` compara UMA coluna com UM literal. Nao ha como
+/// escrever `preco * 1.1 > 100`, nem `upper(cidade) = 'BLUMENAU'`, nem
+/// `a > b`. A expressao escreve, e ela e a MESMA gramatica do `CHECK`, do
+/// `DEFAULT`, da coluna calculada e do indice parcial -- uma so, no
+/// `phxsql_core::expressao`, porque duas divergiriam no dia em que alguem
+/// ensinasse `LIKE` a uma delas.
+///
+/// O `"onde"` fica, e nao e legado: ele e o unico dos dois que o motor sabe
+/// atalhar por mapa de igualdade (ver `SelectMemory`), e um cliente que monta
+/// filtro por tela monta objeto, nao frase.
+#[cfg(test)]
+mod testes_varrer_expressao {
+    use super::*;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("varrer-expr-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Cinco linhas, uma delas com `cidade` NULA -- porque o `NULL` e o unico
+    /// ponto em que um filtro por expressao pode divergir do SQL calado.
+    fn servidor_com_precos(d: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            max_linhas: 10_000,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let ses = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"loja"}"#), &ses)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"loja","tabela":"precos","colunas":[
+                    {"nome":"id","tipo":"Int8","obrigatoria":true},
+                    {"nome":"cidade","tipo":"Str(30)"},
+                    {"nome":"preco","tipo":"Decimal(12,2)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        for (id, cidade, preco) in [
+            (1, r#""Blumenau""#, "10.00"),
+            (2, r#""Itajai""#, "100.00"),
+            (3, r#""Blumenau""#, "91.00"),
+            (4, r#""Joinville""#, "1000.00"),
+            (5, "null", "50.00"),
+        ] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"loja","tabela":"precos",
+                         "linha":{{"id":{id},"cidade":{cidade},"preco":"{preco}"}}}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        s
+    }
+
+    fn varrer(s: &Arc<Servidor>, extra: &str) -> Result<Json> {
+        s.executar(
+            "varrer",
+            &pedido(&format!(
+                r#"{{"database":"loja","tabela":"precos","max":100{extra}}}"#
+            )),
+            &Sessao::default(),
+        )
+    }
+
+    fn ids(r: &Json) -> Vec<i64> {
+        r.campo("linhas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|l| l.inteiro_ou("id", -1))
+            .collect()
+    }
+
+    /// **O teste que mais importa, e e o do comportamento VELHO.**
+    ///
+    /// Guarda nova entra pedida, nao imposta: quem nunca ouviu falar de
+    /// `"expressao"` recebe a mesma pagina, com os mesmos cursores e os mesmos
+    /// contadores. Se este cair, a funcionalidade nova tirou algo de quem nao
+    /// pediu nada.
+    #[test]
+    fn sem_expressao_nada_muda() {
+        let d = dir("velho");
+        let s = servidor_com_precos(&d);
+        let r = varrer(&s, "").unwrap();
+        assert_eq!(ids(&r), vec![1, 2, 3, 4, 5]);
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 5);
+        assert_eq!(r.inteiro_ou("examinadas", -1), 5);
+        assert_eq!(r.inteiro_ou("visiveis", -1), 5);
+        // E a expressao VAZIA e o mesmo que expressao nenhuma: um cliente que
+        // monta o campo sempre e manda "" nao pode receber zero linha.
+        let r = varrer(&s, r#","expressao":"""#).expect("expressao vazia tinha de passar");
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 5);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A PROVA REAL, e ela mede QUANTO veio -- nao se filtrou.**
+    ///
+    /// Com a peneira desligada (o `continue` do `varrer_a_pagina` fora, ou o
+    /// `expressao.as_ref()` trocado por `None`), esta primeira assercao volta
+    /// a ver 5 e o teste REPROVA. Um teste que so perguntasse «todas passam na
+    /// conta?» passaria com o defeito reposto se o cliente peneirasse depois
+    /// -- e teste que passa por engano e pior que teste que falta.
+    ///
+    /// A conta e DECIMAL EXATO: `91.00 * 1.1` e `100.10`, e nao `100.1000...`
+    /// de um `f64`. Por isso a linha 3 entra e a 2 (`100.00 * 1.1 = 110.00`)
+    /// tambem, enquanto uma implementacao que arredondasse antes de comparar
+    /// erraria justamente na linha 3.
+    #[test]
+    fn a_expressao_filtra_e_a_conta_e_exata() {
+        let d = dir("conta");
+        let s = servidor_com_precos(&d);
+        let r = varrer(&s, r#","expressao":"preco * 1.1 > 100""#).unwrap();
+        assert_eq!(
+            r.inteiro_ou("devolvidas", -1),
+            3,
+            "o servidor mandou o que a tela ia jogar fora"
+        );
+        assert_eq!(ids(&r), vec![2, 3, 4]);
+        // O que a peneira NAO remove: a varredura continua olhando as cinco.
+        assert_eq!(r.inteiro_ou("examinadas", -1), 5);
+        assert_eq!(r.inteiro_ou("visiveis", -1), 5);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `NULL` EXCLUI num filtro, e essa e a decisao que o contrato fixa.
+    ///
+    /// A linha 5 tem `cidade` nula. `cidade <> 'Itajai'` da `NULL` para ela --
+    /// e nao `TRUE`, como quem le depressa esperaria. Ela sai, como sai em
+    /// qualquer SQL. E `IS NULL` e o unico que responde sobre ela.
+    #[test]
+    fn nulo_exclui_e_so_o_is_null_o_ve() {
+        let d = dir("nulo");
+        let s = servidor_com_precos(&d);
+        let r = varrer(&s, r#","expressao":"cidade <> 'Itajai'""#).unwrap();
+        assert_eq!(ids(&r), vec![1, 3, 4], "o nulo entrou no <>");
+        let r = varrer(&s, r#","expressao":"cidade IS NULL""#).unwrap();
+        assert_eq!(ids(&r), vec![5]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// As duas metades do predicado valem JUNTAS, e nao uma ou outra.
+    ///
+    /// O `"onde"` e a `"expressao"` no mesmo pedido tem de se somar (E). Se
+    /// alguem trocar o lugar unico por dois lugares, o mais provavel e um
+    /// deles vencer -- e o numero abaixo acusa qual.
+    #[test]
+    fn onde_e_expressao_valem_juntos() {
+        let d = dir("juntos");
+        let s = servidor_com_precos(&d);
+        let r = varrer(
+            &s,
+            r#","onde":[{"coluna":"cidade","op":"=","valor":"Blumenau"}],
+               "expressao":"preco > 50""#,
+        )
+        .unwrap();
+        assert_eq!(ids(&r), vec![3], "as duas metades tem de valer juntas");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Coluna inventada recusa na ANALISE, nomeando -- e nao devolve zero
+    /// linha, que e a resposta que parece certa.
+    #[test]
+    fn coluna_inventada_na_expressao_recusa_nomeando() {
+        let d = dir("coluna");
+        let s = servidor_com_precos(&d);
+        let e = varrer(&s, r#","expressao":"cidde = 'Blumenau'""#).unwrap_err();
+        assert!(e.to_string().contains("cidde"), "{e}");
+        assert!(e.to_string().contains("precos"), "{e}");
+        // E sintaxe quebrada tambem recusa, em vez de virar «nenhuma linha».
+        let e = varrer(&s, r#","expressao":"preco >""#).expect_err("truncada tinha de recusar");
+        assert!(!e.to_string().is_empty(), "recusa muda nao ensina nada");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A MESMA expressao tem de dar a MESMA resposta na memoria e no disco.
+    ///
+    /// E a guarda contra a divergencia que duas copias do predicado teriam
+    /// criado: o `varrer` e o `SelectMemory` chamam `memoria::passa`, e este
+    /// teste e o que acusa se um dia alguem escrever a segunda.
+    #[test]
+    fn a_expressao_do_varrer_e_a_do_selectmemory() {
+        let d = dir("gemeos");
+        let s = servidor_com_precos(&d);
+        let ses = Sessao::default();
+        s.executar(
+            "memoria_carregar",
+            &pedido(r#"{"database":"loja","tabela":"precos"}"#),
+            &ses,
+        )
+        .unwrap();
+        for expr in [
+            "preco * 1.1 > 100",
+            "cidade IS NULL",
+            "upper(cidade) = 'BLUMENAU'",
+            "id BETWEEN 2 AND 4",
+            "cidade LIKE 'B%'",
+            "preco > 10 AND preco < 1000",
+        ] {
+            let disco = varrer(
+                &s,
+                &format!(r#","expressao":{}"#, Json::texto_de(expr).escrever()),
+            )
+            .unwrap_or_else(|e| panic!("{expr}: {e}"));
+            let memoria = s
+                .executar(
+                    "SelectMemory",
+                    &pedido(&format!(
+                        r#"{{"database":"loja","tabela":"precos","max":100,"expressao":{}}}"#,
+                        Json::texto_de(expr).escrever()
+                    )),
+                    &ses,
+                )
+                .unwrap_or_else(|e| panic!("{expr}: {e}"));
+            assert_eq!(
+                ids(&disco),
+                ids(&memoria),
+                "{expr}: o disco e a memoria discordaram"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A expressao entra na TRILHA de acesso, junto do `onde`.
+    ///
+    /// Trilha que guarda metade do criterio nao responde a pergunta inteira --
+    /// e a pergunta e «quem procurou o que?».
+    #[test]
+    fn o_criterio_da_trilha_guarda_a_expressao() {
+        let d = dir("trilha");
+        let s = servidor_com_precos(&d);
+        let ses = Sessao::default();
+        s.executar(
+            "marcar_lgpd",
+            &pedido(r#"{"database":"loja","tabela":"precos","colunas":{"cidade":"pessoal"}}"#),
+            &ses,
+        )
+        .unwrap();
+        varrer(&s, r#","expressao":"preco > 50""#).unwrap();
+        let t = s
+            .executar(
+                "trilha",
+                &pedido(r#"{"database":"loja","tabela":"precos"}"#),
+                &ses,
+            )
+            .unwrap();
+        let texto = t.escrever();
+        assert!(
+            texto.contains("expressao=") && texto.contains("preco > 50"),
+            "a trilha nao guardou a expressao: {texto}"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// E pelo `despachar`, que e por onde o pedido entra de verdade: o portao
+    /// da tabela continua valendo, e a expressao NAO nomeia tabela nenhuma --
+    /// ela fala de coluna da tabela que o portao ja leu.
+    #[test]
+    fn a_expressao_nao_contorna_o_portao_da_tabela() {
+        let d = dir("portao");
+        let s = servidor_com_precos(&d);
+        let mut ses = Sessao::default();
+        let (_, _, r) = s.despachar(
+            r#"{"token":"t","op":"varrer","database":"loja","tabela":"precos",
+                "expressao":"preco > 50"}"#,
+            &mut ses,
+            "127.0.0.1",
+        );
+        assert_eq!(ids(&r.unwrap()), vec![2, 3, 4]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// A op `agrupar` -- o `GROUP BY` pelo protocolo.
+#[cfg(test)]
+mod testes_agrupar {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("agrupar-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Uma base `loja` com `vendas` (o que se agrupa) e `folha` (a negada).
+    fn servidor(d: &std::path::Path, cadastro: Cadastro) -> Arc<Servidor> {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            cadastro,
+            max_linhas: 10_000,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let ses = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"loja"}"#), &ses)
+            .unwrap();
+        for tab in ["vendas", "folha"] {
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"loja","tabela":"{tab}","colunas":[
+                        {{"nome":"id","tipo":"Int8","obrigatoria":true}},
+                        {{"nome":"cidade","tipo":"Str(30)"}},
+                        {{"nome":"total","tipo":"Decimal(12,2)"}}],
+                     "indices":[{{"nome":"porId","colunas":["id"],"unico":true,
+                                  "primario":true}}]}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        // 10,00 + 0,01 em Blumenau; 20,50 em Itajai; uma linha sem cidade.
+        for (id, cidade, total) in [
+            (1, r#""Blumenau""#, r#""10.00""#),
+            (2, r#""Itajai""#, r#""20.50""#),
+            (3, r#""Blumenau""#, r#""0.01""#),
+            (4, "null", r#""5.00""#),
+            (5, r#""Blumenau""#, "null"),
+        ] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"loja","tabela":"vendas",
+                         "linha":{{"id":{id},"cidade":{cidade},"total":{total}}}}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"loja","tabela":"folha","linha":{"id":1,"cidade":"x","total":"9.99"}}"#),
+            &ses,
+        )
+        .unwrap();
+        s
+    }
+
+    fn agrupar(s: &Arc<Servidor>, extra: &str) -> Result<Json> {
+        s.executar(
+            "agrupar",
+            &pedido(&format!(
+                r#"{{"database":"loja","tabela":"vendas"{extra}}}"#
+            )),
+            &Sessao::default(),
+        )
+    }
+
+    fn linhas(r: &Json) -> Vec<Json> {
+        r.campo("linhas").and_then(Json::lista).unwrap().to_vec()
+    }
+
+    /// **A PROVA REAL: a soma sai EXATA, e o teste mede o valor -- nao se
+    /// agrupou.**
+    ///
+    /// 10,00 + 0,01 e 10,01. Uma soma em `f64` daria `10.009999999999999`, e
+    /// um teste que so contasse os grupos passaria com esse defeito reposto.
+    /// A linha de `total` nulo conta como LINHA (o `COUNT(*)`) e nao entra na
+    /// SOMA -- somar «sem valor» como zero afundaria a media.
+    #[test]
+    fn a_soma_por_cidade_e_exata_e_o_nulo_conta_linha_sem_somar() {
+        let d = dir("soma");
+        let s = servidor(&d, Cadastro::default());
+        let r = agrupar(
+            &s,
+            r#","por":["cidade"],
+               "agregados":[{"funcao":"contagem","apelido":"n"},
+                            {"funcao":"soma","coluna":"total","apelido":"total"},
+                            {"funcao":"media","coluna":"total","apelido":"media"}],
+               "ordem":[{"coluna":"cidade"}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("grupos", -1), 3, "Blumenau, Itajai e o nulo");
+        assert_eq!(r.inteiro_ou("examinadas", -1), 5);
+        let l = linhas(&r);
+        // A ordem por `cidade` poe o NULO primeiro (ele compara menor).
+        assert_eq!(l[1].texto_ou("cidade", ""), "Blumenau");
+        assert_eq!(l[1].inteiro_ou("n", -1), 3, "a linha de total nulo e linha");
+        assert_eq!(
+            l[1].texto_ou("total", ""),
+            "10.01",
+            "a soma de Decimal perdeu centavo"
+        );
+        // A media divide pelas linhas que TEM valor (duas), e nao pelas tres.
+        assert_eq!(l[1].texto_ou("media", ""), "5.00");
+        assert_eq!(l[2].texto_ou("cidade", ""), "Itajai");
+        assert_eq!(l[2].texto_ou("total", ""), "20.50");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `por` vazio e UM grupo: e o `SELECT COUNT(*), SUM(total) FROM vendas`.
+    #[test]
+    fn sem_por_e_um_grupo_so() {
+        let d = dir("um");
+        let s = servidor(&d, Cadastro::default());
+        let r = agrupar(
+            &s,
+            r#","agregados":[{"funcao":"contagem","apelido":"n"},
+                             {"funcao":"soma","coluna":"total","apelido":"total"}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("grupos", -1), 1);
+        let l = linhas(&r);
+        assert_eq!(l[0].inteiro_ou("n", -1), 5);
+        assert_eq!(l[0].texto_ou("total", ""), "35.51");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O `tendo` peneira o RESULTADO, e nao a linha crua.
+    ///
+    /// Com `n > 1` so Blumenau sobra. E `grupos` passa a contar o que sobrou:
+    /// e o tamanho do resultado, que e o que quem pagina precisa saber.
+    #[test]
+    fn o_tendo_peneira_o_grupo_e_nao_a_linha() {
+        let d = dir("tendo");
+        let s = servidor(&d, Cadastro::default());
+        let r = agrupar(
+            &s,
+            r#","por":["cidade"],
+               "agregados":[{"funcao":"contagem","apelido":"n"}],
+               "tendo":"n > 1""#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("grupos", -1), 1);
+        let l = linhas(&r);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].texto_ou("cidade", ""), "Blumenau");
+        assert_eq!(l[0].inteiro_ou("n", -1), 3);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O `onde`/`expressao` peneira a linha CRUA, ANTES de agrupar.
+    ///
+    /// A ordem dos dois nao e detalhe: com `total > 5` avaliado depois do
+    /// grupo, Blumenau sairia com `n = 3`; avaliado antes, sai com `n = 1`.
+    #[test]
+    fn a_expressao_peneira_antes_de_agrupar() {
+        let d = dir("antes");
+        let s = servidor(&d, Cadastro::default());
+        let r = agrupar(
+            &s,
+            r#","por":["cidade"],
+               "agregados":[{"funcao":"contagem","apelido":"n"}],
+               "expressao":"total > 5","ordem":[{"coluna":"cidade"}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("examinadas", -1), 5, "a varredura olha todas");
+        assert_eq!(r.inteiro_ou("consideradas", -1), 2, "so duas passam");
+        let l = linhas(&r);
+        assert_eq!(l.len(), 2);
+        assert_eq!(l[0].texto_ou("cidade", ""), "Blumenau");
+        assert_eq!(l[0].inteiro_ou("n", -1), 1);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A `ordem` fala dos nomes da linha AGREGADA -- inclusive dos apelidos.
+    #[test]
+    fn a_ordem_enxerga_o_apelido() {
+        let d = dir("ordem");
+        let s = servidor(&d, Cadastro::default());
+        let r = agrupar(
+            &s,
+            r#","por":["cidade"],
+               "agregados":[{"funcao":"contagem","apelido":"n"}],
+               "ordem":[{"coluna":"n","desc":true}]"#,
+        )
+        .unwrap();
+        let l = linhas(&r);
+        assert_eq!(l[0].texto_ou("cidade", ""), "Blumenau");
+        assert_eq!(l[0].inteiro_ou("n", -1), 3);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Cada recusa diz O QUE esta errado, com o nome dentro.
+    #[test]
+    fn as_recusas_nomeiam() {
+        let d = dir("recusa");
+        let s = servidor(&d, Cadastro::default());
+
+        // Coluna que nao existe no agregado.
+        let e = agrupar(&s, r#","agregados":[{"funcao":"soma","coluna":"lucro"}]"#).unwrap_err();
+        assert!(e.to_string().contains("lucro"), "{e}");
+
+        // Soma sem coluna: so a contagem dispensa valor.
+        let e = agrupar(&s, r#","agregados":[{"funcao":"soma"}]"#).unwrap_err();
+        assert!(e.to_string().contains("coluna"), "{e}");
+
+        // `tendo` falando de coluna crua: ela nao existe depois de agrupar.
+        let e = agrupar(
+            &s,
+            r#","por":["cidade"],"agregados":[{"funcao":"contagem","apelido":"n"}],
+               "tendo":"total > 5""#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("total"), "{e}");
+        assert!(
+            e.to_string().contains('n'),
+            "a recusa tem de listar o que da: {e}"
+        );
+
+        // Apelido repetido: um dos dois ficaria invisivel na resposta.
+        let e = agrupar(
+            &s,
+            r#","agregados":[{"funcao":"contagem","apelido":"n"},
+                             {"funcao":"soma","coluna":"total","apelido":"n"}]"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("\"n\""), "{e}");
+
+        // Apelido colidindo com a coluna de agrupamento.
+        let e = agrupar(
+            &s,
+            r#","por":["cidade"],"agregados":[{"funcao":"contagem","apelido":"cidade"}]"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("cidade"), "{e}");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O teto de GRUPOS recusa nomeando, em vez de engasgar a maquina.
+    #[test]
+    fn o_teto_de_grupos_recusa_nomeando() {
+        let d = dir("teto");
+        let s = servidor(&d, Cadastro::default());
+        // Um servidor com `max_linhas` de 2 e tres cidades distintas.
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            max_linhas: 2,
+            ..Config::default()
+        };
+        let s2 = Servidor::novo(c).unwrap();
+        let e = s2
+            .executar(
+                "agrupar",
+                &pedido(r#"{"database":"loja","tabela":"vendas","por":["id"]}"#),
+                &Sessao::default(),
+            )
+            .unwrap_err();
+        assert!(e.to_string().contains("max_linhas"), "{e}");
+        assert_eq!(e.nome(), "LIMITE_EXCEDIDO", "{e}");
+        drop(s);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **O portao continua sendo UM: `agrupar` nomeia tabela no campo que ele
+    /// ja le, e a tabela negada para no portao geral.**
+    ///
+    /// Pelo `despachar`, que e por onde o pedido entra de verdade.
+    #[test]
+    fn o_agrupar_da_tabela_negada_para_no_portao() {
+        let d = dir("portao");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"folha":{}}}}}]}"#,
+        ))
+        .unwrap();
+        let s = servidor(&d, cadastro.clone());
+        let mut ses = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        let corpo = |tab: &str| {
+            format!(
+                r#"{{"token":"t","op":"agrupar","database":"loja","tabela":"{tab}",
+                     "por":["cidade"]}}"#
+            )
+        };
+        let (_, _, ok) = s.despachar(&corpo("vendas"), &mut ses, "127.0.0.1");
+        ok.expect("a tabela permitida tinha de passar");
+        let (_, _, negado) = s.despachar(&corpo("folha"), &mut ses, "127.0.0.1");
+        let e = negado.expect_err("agrupou a tabela negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("folha"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// A op `consultar` -- a composicao, e o portao que ela NAO abre.
+#[cfg(test)]
+mod testes_consultar {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("consultar-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Uma base `b` com `clientes`, `folha` e `pagos`.
+    fn servidor(d: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            cadastro: cadastro.clone(),
+            max_linhas: 10_000,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        for tab in ["clientes", "folha", "pagos"] {
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{tab}","colunas":[
+                        {{"nome":"id","tipo":"Int4","obrigatoria":true}},
+                        {{"nome":"nome","tipo":"Str(20)"}},
+                        {{"nome":"cidade","tipo":"Str(20)"}}],
+                     "indices":[{{"nome":"porId","colunas":["id"],"unico":true,
+                                  "primario":true}}]}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        for (id, nome, cidade) in [
+            (1, "ana", "Blumenau"),
+            (2, "bia", "Itajai"),
+            (3, "caio", "Blumenau"),
+            (4, "duda", "Joinville"),
+        ] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"clientes",
+                         "linha":{{"id":{id},"nome":"{nome}","cidade":"{cidade}"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        // `pagos` tem so os ids 2 e 3 -- e o conjunto do `IN`.
+        for id in [2, 3] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"pagos","linha":{{"id":{id},"nome":"x"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"folha","linha":{"id":1,"nome":"segredo"}}"#),
+            &dono,
+        )
+        .unwrap();
+        let sessao = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        (s, sessao)
+    }
+
+    fn so_le_clientes_e_pagos() -> Cadastro {
+        Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"folha":{}}}}}]}"#,
+        ))
+        .unwrap()
+    }
+
+    /// Pelo `despachar`, que e por onde o pedido entra de verdade.
+    fn pede(s: &Arc<Servidor>, sessao: &Sessao, corpo: &str) -> Result<Json> {
+        let mut ses = Sessao {
+            usuario: sessao.usuario.clone(),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    fn consultar(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        s.executar(
+            "consultar",
+            &pedido(&format!(r#"{{"database":"b",{corpo}}}"#)),
+            &Sessao::default(),
+        )
+    }
+
+    fn ids(r: &Json) -> Vec<i64> {
+        r.campo("linhas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|l| l.inteiro_ou("id", -1))
+            .collect()
+    }
+
+    /// **O TESTE QUE MAIS IMPORTA DO ITEM INTEIRO.**
+    ///
+    /// Ana le `clientes` e nao le `folha`. Pedir a folha COMO SUB-PEDIDO nao
+    /// muda isso -- nem no `de`, nem dentro de um `em`. Se este teste passar a
+    /// falhar, alguem trocou o `executar_derivado` por uma leitura direta da
+    /// tabela, e o `consultar` virou a porta dos fundos que o `juntar` e o
+    /// `unir` ja foram uma vez.
+    ///
+    /// PROVA REAL: trocando `self.executar_derivado(&op, &pedido, sessao)` por
+    /// `self.executar(&op, &pedido, sessao)` em `linhas_do_sub_pedido`, as
+    /// duas recusas viram `Ok` com a linha da folha dentro, e este teste
+    /// REPROVA nas duas -- e ele confere o CONTEUDO da resposta permitida na
+    /// mesma corrida, para uma quebra por outro motivo nao passar por engano.
+    #[test]
+    fn o_consultar_nao_e_a_porta_dos_fundos_para_a_tabela_negada() {
+        let d = dir("porta");
+        let (s, ses) = servidor(&d, so_le_clientes_e_pagos());
+
+        // O controle: a tabela permitida passa, e traz o que tem de trazer.
+        let ok = pede(
+            &s,
+            &ses,
+            r#""op":"consultar","database":"b",
+               "de":{"op":"varrer","tabela":"clientes"}"#,
+        )
+        .expect("a tabela permitida tinha de passar");
+        assert_eq!(ok.inteiro_ou("devolvidas", -1), 4);
+
+        // O `de` pedindo a tabela negada.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"consultar","database":"b","de":{"op":"varrer","tabela":"folha"}"#,
+        )
+        .expect_err("o consultar leu a tabela negada pelo \"de\"");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("folha"), "{e}");
+
+        // E o `em` pedindo a tabela negada por dentro -- o disfarce mais
+        // facil de nao ver, porque a tabela mora dois niveis abaixo.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"consultar","database":"b",
+               "de":{"op":"varrer","tabela":"clientes"},
+               "em":[{"coluna":"id","de":{"op":"varrer","tabela":"folha"},"campo":"id"}]"#,
+        )
+        .expect_err("o consultar leu a tabela negada pelo \"em\"");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("folha"), "{e}");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O `em` e o `IN (SELECT …)`: so quem esta no conjunto sobra.
+    #[test]
+    fn o_em_e_o_in_de_subconsulta() {
+        let d = dir("em");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},
+               "em":[{"coluna":"id","de":{"op":"varrer","tabela":"pagos"},"campo":"id"}]"#,
+        )
+        .unwrap();
+        assert_eq!(ids(&r), vec![2, 3]);
+        assert_eq!(r.inteiro_ou("achadas", -1), 2);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A expressao filtra a linha composta, e `NULL` exclui.
+    #[test]
+    fn a_expressao_filtra_a_linha_composta() {
+        let d = dir("expr");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},
+               "expressao":"cidade = 'Blumenau' AND id > 1""#,
+        )
+        .unwrap();
+        assert_eq!(ids(&r), vec![3]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `row_number` numera por particao -- e nao reordena a resposta.
+    ///
+    /// A ordem da saida e a do `ordem`, e nao a da janela: numerar
+    /// reordenando faria a janela deixar de ser uma coluna para virar um
+    /// efeito colateral.
+    #[test]
+    fn a_janela_numera_por_particao() {
+        let d = dir("janela");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},
+               "janela":[{"funcao":"row_number","particao":["cidade"],
+                          "ordem":[{"coluna":"id","desc":true}],"apelido":"n"}],
+               "ordem":[{"coluna":"id"}]"#,
+        )
+        .unwrap();
+        let l = r.campo("linhas").and_then(Json::lista).unwrap();
+        assert_eq!(ids(&r), vec![1, 2, 3, 4], "a janela reordenou a resposta");
+        // Em Blumenau, por id decrescente: o 3 e o primeiro, o 1 e o segundo.
+        assert_eq!(l[0].inteiro_ou("n", -1), 2, "id 1 em Blumenau");
+        assert_eq!(l[1].inteiro_ou("n", -1), 1, "id 2, sozinho em Itajai");
+        assert_eq!(l[2].inteiro_ou("n", -1), 1, "id 3 em Blumenau");
+
+        // Funcao de janela que nao existe recusa NOMEANDO, em vez de numerar
+        // qualquer coisa.
+        let e = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},
+               "janela":[{"funcao":"rank","apelido":"n"}]"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("rank"), "{e}");
+        assert!(e.to_string().contains("row_number"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A PROJECAO VEM POR ULTIMO: `ordem` pode falar de coluna que a resposta
+    /// nao mostra -- `ORDER BY cidade` num `SELECT nome` e SQL legitimo.
+    #[test]
+    fn a_projecao_vem_depois_da_ordem() {
+        let d = dir("projecao");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},
+               "ordem":[{"coluna":"cidade"},{"coluna":"id","desc":true}],
+               "colunas":["nome"]"#,
+        )
+        .unwrap();
+        let l = r.campo("linhas").and_then(Json::lista).unwrap();
+        let nomes: Vec<String> = l
+            .iter()
+            .map(|x| x.texto_ou("nome", "").to_string())
+            .collect();
+        assert_eq!(nomes, vec!["caio", "ana", "bia", "duda"]);
+        assert!(l[0].campo("cidade").is_none(), "a projecao nao cortou");
+        assert!(l[0].campo("id").is_none(), "a projecao nao cortou");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `pular` e `max` recortam DEPOIS de ordenar, e `achadas` conta antes.
+    #[test]
+    fn o_recorte_vem_depois_da_ordem() {
+        let d = dir("recorte");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},
+               "ordem":[{"coluna":"id","desc":true}],"pular":1,"max":2"#,
+        )
+        .unwrap();
+        assert_eq!(ids(&r), vec![3, 2]);
+        assert_eq!(
+            r.inteiro_ou("achadas", -1),
+            4,
+            "achadas conta antes do corte"
+        );
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 2);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Um `consultar` sobre outro `consultar`: a composicao e composta.
+    #[test]
+    fn o_de_pode_ser_outro_consultar() {
+        let d = dir("aninhado");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            r#""de":{"op":"consultar","de":{"op":"varrer","tabela":"clientes"},
+                     "expressao":"cidade = 'Blumenau'"},
+               "ordem":[{"coluna":"id","desc":true}]"#,
+        )
+        .unwrap();
+        assert_eq!(ids(&r), vec![3, 1]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// As recusas nomeiam: op que nao devolve linhas, coluna que nao existe,
+    /// aninhamento fundo demais.
+    #[test]
+    fn as_recusas_do_consultar_nomeiam() {
+        let d = dir("recusa");
+        let (s, _) = servidor(&d, Cadastro::default());
+
+        let e = consultar(&s, r#""de":{"op":"inserir","tabela":"clientes"}"#).unwrap_err();
+        assert!(e.to_string().contains("inserir"), "{e}");
+        assert!(
+            e.to_string().contains("varrer"),
+            "a recusa nao lista o que da: {e}"
+        );
+
+        let e = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},"colunas":["lucro"]"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("lucro"), "{e}");
+
+        let e = consultar(&s, r#""ordem":[{"coluna":"id"}]"#).unwrap_err();
+        assert!(e.to_string().contains("\"de\""), "{e}");
+
+        // Aninhamento: nove niveis, um a mais que o teto.
+        let mut fundo = r#"{"op":"varrer","tabela":"clientes"}"#.to_string();
+        for _ in 0..9 {
+            fundo = format!(r#"{{"op":"consultar","de":{fundo}}}"#);
+        }
+        let e = consultar(&s, &format!(r#""de":{fundo}"#)).unwrap_err();
+        assert_eq!(e.nome(), "LIMITE_EXCEDIDO", "{e}");
+        assert!(e.to_string().contains("aninhamento"), "{e}");
+
+        // E o teto NAO fica preso: um pedido raso logo depois passa. Sem o
+        // `Drop` do guarda, a thread ficaria contaminada e a proxima consulta
+        // recusaria sem motivo.
+        let ok = consultar(&s, r#""de":{"op":"varrer","tabela":"clientes"}"#).unwrap();
+        assert_eq!(ok.inteiro_ou("devolvidas", -1), 4);
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **O direito por COLUNA tambem atravessa: a peneira e paga no
+    /// sub-pedido, e nao aqui.**
+    ///
+    /// Quem nao le `salario` recebe as linhas sem ele -- porque o `varrer` de
+    /// dentro passou pelo `executar_derivado`, que peneira. E um `de` que e um
+    /// `agrupar` sobre a tabela restrita RECUSA, porque o `agrupar` e da
+    /// classe que recusa: o agregado fala da coluna sem ela aparecer.
+    #[test]
+    fn o_consultar_herda_o_direito_por_coluna() {
+        let d = dir("coluna");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"folha":{"ler":true,
+                   "colunas":{"cidade":{"ler":false}}}}}}}]}"#,
+        ))
+        .unwrap();
+        let (s, ses) = servidor(&d, cadastro);
+
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"consultar","database":"b","de":{"op":"varrer","tabela":"folha"}"#,
+        )
+        .expect("a tabela permitida tinha de passar");
+        let l = r.campo("linhas").and_then(Json::lista).unwrap();
+        assert_eq!(l.len(), 1);
+        assert!(
+            l[0].campo("cidade").is_none(),
+            "a coluna negada vazou: {l:?}"
+        );
+        assert_eq!(
+            l[0].texto_ou("nome", ""),
+            "segredo",
+            "a peneira levou demais"
+        );
+
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"consultar","database":"b",
+               "de":{"op":"agrupar","tabela":"folha","por":["cidade"]}"#,
+        )
+        .expect_err("o agrupar sobre a tabela restrita passou");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// A junção e a subconsulta escalar dentro do `consultar` -- o acrescimo de
+/// 08/09.
+#[cfg(test)]
+mod testes_consultar_juncao {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("consultar-jn-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// `pedidos` (id, cliente_id, total) x `clientes` (id, nome, cidade), mais
+    /// a `folha` que ninguem le.
+    ///
+    /// O pedido 4 aponta para o cliente 9, que nao existe: e a linha que a
+    /// junção interna descarta e a esquerda mantem com nulos.
+    fn servidor(d: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            cadastro: cadastro.clone(),
+            max_linhas: 10_000,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"clientes","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"nome","tipo":"Str(20)"},
+                    {"nome":"cidade","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"pedidos","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"cliente_id","tipo":"Int4"},
+                    {"nome":"total","tipo":"Int4"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"folha","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"nome","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        for (id, nome, cidade) in [(1, "ana", "Blumenau"), (2, "bia", "Itajai")] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"clientes",
+                         "linha":{{"id":{id},"nome":"{nome}","cidade":"{cidade}"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        for (id, cliente, total) in [(1, 1, 100), (2, 1, 50), (3, 2, 300), (4, 9, 7)] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"pedidos",
+                         "linha":{{"id":{id},"cliente_id":{cliente},"total":{total}}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"folha","linha":{"id":1,"nome":"segredo"}}"#),
+            &dono,
+        )
+        .unwrap();
+        let sessao = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        (s, sessao)
+    }
+
+    fn so_le_o_que_nao_e_folha() -> Cadastro {
+        Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"folha":{}}}}}]}"#,
+        ))
+        .unwrap()
+    }
+
+    fn pede(s: &Arc<Servidor>, sessao: &Sessao, corpo: &str) -> Result<Json> {
+        let mut ses = Sessao {
+            usuario: sessao.usuario.clone(),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    fn consultar(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        s.executar(
+            "consultar",
+            &pedido(&format!(r#"{{"database":"b",{corpo}}}"#)),
+            &Sessao::default(),
+        )
+    }
+
+    fn linhas(r: &Json) -> Vec<Json> {
+        r.campo("linhas").and_then(Json::lista).unwrap().to_vec()
+    }
+
+    const JUNCAO: &str = r#""de":{"op":"varrer","tabela":"pedidos"},"apelido":"p",
+        "juntar":[{"de":{"op":"varrer","tabela":"clientes"},"apelido":"c",
+                   "tipo":"TIPO",
+                   "em":[{"esquerda":"p.cliente_id","direita":"c.id"}]}]"#;
+
+    /// **A junção INTERNA descarta quem nao casa, e a prova mede QUANTAS
+    /// linhas sobraram -- nao se juntou.**
+    ///
+    /// O pedido 4 aponta para o cliente 9, que nao existe. Interna: tres
+    /// linhas. Uma junção que ignorasse o `tipo` e sempre fizesse esquerda
+    /// devolveria quatro, e um teste que so perguntasse «veio o nome do
+    /// cliente?» passaria com esse defeito.
+    #[test]
+    fn a_juncao_interna_descarta_quem_nao_casa() {
+        let d = dir("interna");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            &format!(
+                r#"{},"ordem":[{{"coluna":"p.id"}}]"#,
+                JUNCAO.replace("TIPO", "interno")
+            ),
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 3, "o pedido orfao entrou");
+        let l = linhas(&r);
+        // As colunas dos DOIS lados vem prefixadas.
+        assert_eq!(l[0].inteiro_ou("p.id", -1), 1);
+        assert_eq!(l[0].texto_ou("c.nome", ""), "ana");
+        assert!(l[0].campo("id").is_none(), "sobrou nome sem prefixo: {l:?}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A junção ESQUERDA mantem a linha sem par, com as colunas da direita
+    /// NULAS.**
+    ///
+    /// Quatro linhas, e a do pedido 4 com `c.nome` nulo -- e nao ausente: uma
+    /// coluna que some faria a projecao mudar de forma linha a linha.
+    #[test]
+    fn a_juncao_esquerda_mantem_a_linha_com_nulos() {
+        let d = dir("esquerda");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            &format!(
+                r#"{},"ordem":[{{"coluna":"p.id"}}]"#,
+                JUNCAO.replace("TIPO", "esquerdo")
+            ),
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 4);
+        let l = linhas(&r);
+        assert_eq!(l[3].inteiro_ou("p.id", -1), 4);
+        assert_eq!(
+            l[3].campo("c.nome"),
+            Some(&Json::Nulo),
+            "a coluna da direita sumiu em vez de vir nula: {l:?}"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Nome sem prefixo resolve quando e UNICO, e recusa NOMEANDO os dois
+    /// candidatos quando nao e.
+    ///
+    /// `id` existe nos dois lados; `cidade` so num deles. Escolher um dos dois
+    /// `id` calado responderia sobre a coluna errada.
+    #[test]
+    fn nome_ambiguo_recusa_e_nome_unico_resolve() {
+        let d = dir("ambiguo");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let base = JUNCAO.replace("TIPO", "interno");
+
+        let e = consultar(&s, &format!(r#"{base},"expressao":"id > 1""#)).unwrap_err();
+        let t = e.to_string();
+        assert!(t.contains("ambiguo"), "{t}");
+        assert!(
+            t.contains("p.id") && t.contains("c.id"),
+            "a recusa nao diz os dois: {t}"
+        );
+
+        // `cidade` so existe de um lado: resolve sem prefixo.
+        let r = consultar(
+            &s,
+            &format!(r#"{base},"expressao":"cidade = 'Itajai'","colunas":["p.id","nome"]"#),
+        )
+        .unwrap();
+        let l = linhas(&r);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].inteiro_ou("p.id", -1), 3);
+        assert_eq!(l[0].texto_ou("nome", ""), "bia");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A projecao aceita `{"coluna","apelido"}`, e a chave da saida e o
+    /// apelido.
+    #[test]
+    fn a_projecao_aceita_apelido() {
+        let d = dir("apelido");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            &format!(
+                r#"{},"ordem":[{{"coluna":"p.id"}}],
+                   "colunas":["p.id",{{"coluna":"c.nome","apelido":"cliente"}}]"#,
+                JUNCAO.replace("TIPO", "interno")
+            ),
+        )
+        .unwrap();
+        let l = linhas(&r);
+        assert_eq!(l[0].texto_ou("cliente", ""), "ana");
+        assert!(l[0].campo("c.nome").is_none(), "saiu com o nome interno");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `direito`, `completo` e `cruzado` RECUSAM nomeando, e a recusa do
+    /// `direito` ensina o que fazer no lugar.
+    #[test]
+    fn os_tipos_que_nao_existem_recusam_nomeando() {
+        let d = dir("tipos");
+        let (s, _) = servidor(&d, Cadastro::default());
+        for (tipo, pedaco) in [
+            ("direito", "trocando os lados"),
+            ("completo", "esquerdo"),
+            ("cruzado", "esquerdo"),
+        ] {
+            let e = consultar(&s, &JUNCAO.replace("TIPO", tipo)).unwrap_err();
+            let t = e.to_string();
+            assert!(t.contains(tipo), "{tipo}: {t}");
+            assert!(t.contains(pedaco), "{tipo}: a recusa nao ensina: {t}");
+        }
+        // Junção sem par nenhum e produto cartesiano disfarcado.
+        let e = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"pedidos"},"apelido":"p",
+               "juntar":[{"de":{"op":"varrer","tabela":"clientes"},"apelido":"c"}]"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("cartesiano"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A subconsulta ESCALAR roda uma vez e vira coluna da expressao -- e
+    /// duas linhas RECUSAM nomeando.
+    ///
+    /// Escolher a primeira faria a resposta depender da ordem em que o motor
+    /// devolveu as linhas, e «depende da ordem» num numero e o defeito que
+    /// nao se acha.
+    #[test]
+    fn o_escalar_vira_coluna_e_duas_linhas_recusam() {
+        let d = dir("escalar");
+        let (s, _) = servidor(&d, Cadastro::default());
+        // A media dos totais e (100+50+300+7)/4 = 114,25.
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"pedidos"},
+               "escalar":[{"nome":"media","campo":"media_total",
+                           "de":{"op":"agrupar","tabela":"pedidos",
+                                 "agregados":[{"funcao":"media","coluna":"total"}]}}],
+               "expressao":"total > media","ordem":[{"coluna":"id"}]"#,
+        )
+        .unwrap();
+        let l = linhas(&r);
+        assert_eq!(l.len(), 1, "so o pedido 3 passa da media");
+        assert_eq!(l[0].inteiro_ou("id", -1), 3);
+        // E a coluna do escalar NAO sai na resposta sem ser pedida.
+        assert!(l[0].campo("media").is_none(), "o escalar vazou: {l:?}");
+
+        // Pedida pelo nome, ela sai.
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"pedidos","max":1},
+               "escalar":[{"nome":"media","campo":"media_total",
+                           "de":{"op":"agrupar","tabela":"pedidos",
+                                 "agregados":[{"funcao":"media","coluna":"total"}]}}],
+               "colunas":["id","media"]"#,
+        )
+        .unwrap();
+        assert!(linhas(&r)[0].campo("media").is_some());
+
+        // Duas linhas recusam, dizendo quantas vieram e o que fazer.
+        let e = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"pedidos"},
+               "escalar":[{"nome":"x","campo":"id",
+                           "de":{"op":"varrer","tabela":"clientes"}}]"#,
+        )
+        .unwrap_err();
+        let t = e.to_string();
+        assert!(t.contains('2') && t.contains("exatamente uma"), "{t}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A PORTA DOS FUNDOS, agora com tres entradas: `de`, `juntar[].de` e
+    /// `escalar[].de`.**
+    ///
+    /// Ana nao le a folha. Cada um dos tres caminhos sai pelo
+    /// `executar_derivado`, entao os tres recusam com o mesmo erro. Este e o
+    /// teste que importa do acrescimo inteiro: se ele passar a falhar, alguem
+    /// deu ao `consultar` um caminho proprio ate o dado.
+    ///
+    /// PROVA REAL: trocando `executar_derivado` por `executar` em
+    /// `linhas_do_sub_pedido`, as tres recusas viram `Ok` e este teste reprova
+    /// nas tres -- e o controle (a tabela permitida, na mesma corrida)
+    /// continua passando, para uma quebra por outro motivo nao passar por
+    /// engano.
+    #[test]
+    fn o_consultar_nao_e_a_porta_dos_fundos_pela_juncao_nem_pelo_escalar() {
+        let d = dir("porta");
+        let (s, ses) = servidor(&d, so_le_o_que_nao_e_folha());
+
+        // Controle: a junção entre duas tabelas permitidas passa.
+        let ok = pede(
+            &s,
+            &ses,
+            &format!(
+                r#""op":"consultar","database":"b",{}"#,
+                JUNCAO.replace("TIPO", "interno")
+            ),
+        )
+        .expect("as tabelas permitidas tinham de passar");
+        assert_eq!(ok.inteiro_ou("devolvidas", -1), 3);
+
+        // (1) a folha como `de` da junção.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"consultar","database":"b",
+               "de":{"op":"varrer","tabela":"pedidos"},"apelido":"p",
+               "juntar":[{"de":{"op":"varrer","tabela":"folha"},"apelido":"f",
+                          "em":[{"esquerda":"p.id","direita":"f.id"}]}]"#,
+        )
+        .expect_err("a junção leu a tabela negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("folha"), "{e}");
+
+        // (2) a folha como `de` de um escalar.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"consultar","database":"b",
+               "de":{"op":"varrer","tabela":"pedidos"},
+               "escalar":[{"nome":"x","campo":"nome",
+                           "de":{"op":"varrer","tabela":"folha"}}]"#,
+        )
+        .expect_err("o escalar leu a tabela negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("folha"), "{e}");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Apelido repetido recusa: as colunas dos dois lados se sobreporiam, e o
+    /// nome qualificado deixaria de qualificar.
+    #[test]
+    fn apelido_repetido_na_juncao_recusa() {
+        let d = dir("apelido-rep");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let e = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"pedidos"},"apelido":"p",
+               "juntar":[{"de":{"op":"varrer","tabela":"clientes"},"apelido":"p",
+                          "em":[{"esquerda":"p.cliente_id","direita":"p.id"}]}]"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("\"p\""), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Sem apelido escrito, o apelido e o NOME DA TABELA -- e um sub-pedido
+    /// que nao nomeia tabela recusa pedindo um.
+    #[test]
+    fn o_apelido_padrao_e_o_nome_da_tabela() {
+        let d = dir("padrao");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"pedidos"},
+               "juntar":[{"de":{"op":"varrer","tabela":"clientes"},
+                          "em":[{"esquerda":"pedidos.cliente_id",
+                                 "direita":"clientes.id"}]}],
+               "ordem":[{"coluna":"pedidos.id"}]"#,
+        )
+        .unwrap();
+        assert_eq!(linhas(&r)[0].texto_ou("clientes.nome", ""), "ana");
+
+        let e = consultar(
+            &s,
+            r#""de":{"op":"consultar","de":{"op":"varrer","tabela":"pedidos"}},
+               "juntar":[{"de":{"op":"varrer","tabela":"clientes"},
+                          "em":[{"esquerda":"id","direita":"id"}]}]"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("apelido"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// As visoes pelo protocolo, e o `FROM v` da op `sql`.
+#[cfg(test)]
+mod testes_visoes {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("visao-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn servidor(d: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            cadastro: cadastro.clone(),
+            max_linhas: 10_000,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        for tab in ["clientes", "folha"] {
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{tab}","colunas":[
+                        {{"nome":"id","tipo":"Int4","obrigatoria":true}},
+                        {{"nome":"nome","tipo":"Str(20)"}},
+                        {{"nome":"cidade","tipo":"Str(20)"}}],
+                     "indices":[{{"nome":"porId","colunas":["id"],"unico":true,
+                                  "primario":true}}]}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        for (id, nome, cidade) in [
+            (1, "ana", "Blumenau"),
+            (2, "bia", "Itajai"),
+            (3, "caio", "Blumenau"),
+        ] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"clientes",
+                         "linha":{{"id":{id},"nome":"{nome}","cidade":"{cidade}"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"folha","linha":{"id":1,"nome":"segredo"}}"#),
+            &dono,
+        )
+        .unwrap();
+        let sessao = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        (s, sessao)
+    }
+
+    fn dono(s: &Arc<Servidor>, op: &str, corpo: &str) -> Result<Json> {
+        s.executar(op, &pedido(corpo), &Sessao::default())
+    }
+
+    fn sql(s: &Arc<Servidor>, texto: &str) -> Result<Json> {
+        s.executar(
+            "sql",
+            &pedido(&format!(
+                r#"{{"database":"b","texto":{}}}"#,
+                Json::texto_de(texto).escrever()
+            )),
+            &Sessao::default(),
+        )
+    }
+
+    fn linhas_do_sql(r: &Json) -> Vec<Json> {
+        r.campo("linhas").and_then(Json::lista).unwrap().to_vec()
+    }
+
+    /// **A PROVA REAL do item: o `FROM v` le a visao, e o teste mede QUANTAS
+    /// linhas e QUAIS -- nao se a op respondeu.**
+    ///
+    /// Sabotagem: com o `if let Some(ped) = self.selecao_sobre_visao(...)`
+    /// fora do `op_sql`, o `SELECT * FROM v_blumenau` volta a procurar uma
+    /// TABELA chamada `v_blumenau` e recusa -- e este teste reprova na
+    /// primeira assercao.
+    #[test]
+    fn o_from_de_uma_visao_le_a_visao() {
+        let d = dir("from");
+        let (s, _) = servidor(&d, Cadastro::default());
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_blumenau",
+                "sql":"SELECT * FROM clientes"}"#,
+        )
+        .unwrap();
+
+        let r = sql(&s, "SELECT * FROM v_blumenau").expect("a visao nao respondeu");
+        assert_eq!(r.texto_ou("op", ""), "consultar");
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 3);
+
+        // E o WHERE de FORA vale sobre a visao.
+        let r = sql(&s, "SELECT * FROM v_blumenau WHERE cidade = 'Blumenau'").unwrap();
+        let l = linhas_do_sql(&r);
+        assert_eq!(l.len(), 2, "o WHERE de fora nao filtrou");
+        assert_eq!(l[0].texto_ou("nome", ""), "ana");
+
+        // A projecao e a ordem de fora tambem.
+        let r = sql(
+            &s,
+            "SELECT nome AS quem FROM v_blumenau ORDER BY id DESC LIMIT 2",
+        )
+        .unwrap();
+        let l = linhas_do_sql(&r);
+        assert_eq!(l.len(), 2);
+        assert_eq!(l[0].texto_ou("quem", ""), "caio");
+        assert!(l[0].campo("cidade").is_none(), "a projecao nao cortou");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **Visao que aponta para tabela que sumiu RECUSA na hora de usar,
+    /// nomeando as duas.**
+    ///
+    /// Nomear so a tabela mandaria quem consulta `v_x` procurar quem apagou
+    /// uma tabela que ele nem citou.
+    #[test]
+    fn visao_com_tabela_que_sumiu_recusa_nomeando() {
+        let d = dir("sumiu");
+        let (s, _) = servidor(&d, Cadastro::default());
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_folha","sql":"SELECT * FROM folha"}"#,
+        )
+        .unwrap();
+        // A visao funciona enquanto a tabela existe -- o controle.
+        assert_eq!(
+            sql(&s, "SELECT * FROM v_folha")
+                .unwrap()
+                .inteiro_ou("devolvidas", -1),
+            1
+        );
+        dono(
+            &s,
+            "excluir_tabela",
+            r#"{"database":"b","tabela":"folha","confirmar":"folha"}"#,
+        )
+        .unwrap();
+        let e = sql(&s, "SELECT * FROM v_folha").expect_err("a visao orfa respondeu");
+        let t = e.to_string();
+        assert!(t.contains("v_folha"), "a recusa nao diz a visao: {t}");
+        assert!(t.contains("folha"), "a recusa nao diz a tabela: {t}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// As duas recusas da DECLARACAO: SQL que nao analisa, e nome de tabela.
+    #[test]
+    fn a_declaracao_recusa_o_que_nao_analisa_e_o_nome_de_tabela() {
+        let d = dir("declara");
+        let (s, _) = servidor(&d, Cadastro::default());
+
+        let e = dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v","sql":"SELECT FROM"}"#,
+        )
+        .unwrap_err();
+        assert!(!e.to_string().is_empty(), "recusa muda nao ensina nada");
+
+        // Um INSERT nao e visao.
+        let e = dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v","sql":"INSERT INTO clientes (id) VALUES (9)"}"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("INSERT"), "{e}");
+
+        // Nome que ja e tabela: uma das duas ficaria invisivel no FROM.
+        let e = dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"clientes","sql":"SELECT * FROM folha"}"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("TABELA"), "{e}");
+        assert!(e.to_string().contains("clientes"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Listar, substituir e excluir -- e o `excluir` de quem nao existia nao
+    /// e erro, como todo `DROP VIEW IF EXISTS`.
+    #[test]
+    fn listar_substituir_e_excluir() {
+        let d = dir("ciclo");
+        let (s, _) = servidor(&d, Cadastro::default());
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v","sql":"SELECT * FROM clientes"}"#,
+        )
+        .unwrap();
+        let r = dono(&s, "visoes", r#"{"database":"b"}"#).unwrap();
+        let l = r.campo("visoes").and_then(Json::lista).unwrap();
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].texto_ou("sql", ""), "SELECT * FROM clientes");
+
+        // Sem `substituir`, o nome repetido recusa.
+        let e = dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v","sql":"SELECT * FROM folha"}"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("substituir"), "{e}");
+
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v","sql":"SELECT * FROM folha","substituir":true}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            sql(&s, "SELECT * FROM v")
+                .unwrap()
+                .inteiro_ou("devolvidas", -1),
+            1
+        );
+
+        let r = dono(&s, "excluir_visao", r#"{"database":"b","nome":"v"}"#).unwrap();
+        assert!(r.booleano_ou("excluida", false));
+        let r = dono(&s, "excluir_visao", r#"{"database":"b","nome":"v"}"#).unwrap();
+        assert!(
+            !r.booleano_ou("excluida", true),
+            "excluiu o que nao existia"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A visao NAO e a porta dos fundos: ela le pela tabela de dentro, e a
+    /// tabela de dentro passa pelo portao de quem consulta -- e nao pelo de
+    /// quem criou.**
+    ///
+    /// Este e o furo que uma visao abriria se o plano de dentro fosse
+    /// executado sem `executar_derivado`: o administrador cria
+    /// `v_folha AS SELECT * FROM folha`, e quem nao le a folha passa a ler.
+    #[test]
+    fn a_visao_nao_e_a_porta_dos_fundos_para_a_tabela_negada() {
+        let d = dir("porta");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"folha":{}}}}}]}"#,
+        ))
+        .unwrap();
+        let (s, ses) = servidor(&d, cadastro);
+        // O DONO cria as duas visoes.
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_folha","sql":"SELECT * FROM folha"}"#,
+        )
+        .unwrap();
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_clientes","sql":"SELECT * FROM clientes"}"#,
+        )
+        .unwrap();
+
+        let pede = |corpo: &str| -> Result<Json> {
+            let mut sessao = Sessao {
+                usuario: ses.usuario.clone(),
+                ..Sessao::default()
+            };
+            let (_, _, r) = s.despachar(
+                &format!(
+                    r#"{{"token":"t","op":"sql","database":"b","texto":{}}}"#,
+                    Json::texto_de(corpo).escrever()
+                ),
+                &mut sessao,
+                "127.0.0.1",
+            );
+            r
+        };
+
+        // O controle: a visao sobre a tabela permitida responde.
+        let ok = pede("SELECT * FROM v_clientes").expect("a visao permitida foi barrada");
+        assert_eq!(ok.inteiro_ou("devolvidas", -1), 3);
+
+        // E a visao sobre a tabela negada recusa, dizendo as duas.
+        let e = pede("SELECT * FROM v_folha").expect_err("a visao leu a tabela negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("folha"), "{e}");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **Sem visao nenhuma, NADA muda no caminho do `sql`.**
+    ///
+    /// O portao e um `load` atomico antes de qualquer trabalho, e a prova de
+    /// que ele nao mexeu em nada e esta: o `SELECT` de sempre continua virando
+    /// `varrer`, e nao `consultar`.
+    #[test]
+    fn sem_visao_nenhuma_o_sql_continua_como_era() {
+        let d = dir("nada-muda");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = sql(&s, "SELECT * FROM clientes").unwrap();
+        assert_eq!(r.texto_ou("op", ""), "varrer", "o caminho de sempre mudou");
+        // E uma tabela que nao existe continua recusando como tabela, e nao
+        // como visao.
+        let e = sql(&s, "SELECT * FROM inventada").unwrap_err();
+        assert!(e.to_string().contains("inventada"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A visao sobrevive ao restart: ela mora no diretorio do banco, e viaja
+    /// com o backup dele.
+    #[test]
+    fn a_visao_sobrevive_ao_restart() {
+        let d = dir("restart");
+        {
+            let (s, _) = servidor(&d, Cadastro::default());
+            dono(
+                &s,
+                "criar_visao",
+                r#"{"database":"b","nome":"v","sql":"SELECT * FROM clientes"}"#,
+            )
+            .unwrap();
+        }
+        assert!(d.join("b").join(crate::visoes::ARQUIVO).is_file());
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s2 = Servidor::novo(c).unwrap();
+        assert_eq!(
+            sql(&s2, "SELECT * FROM v")
+                .unwrap()
+                .inteiro_ou("devolvidas", -1),
+            3
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// O `inserir` com `se_existir` -- o upsert pelo protocolo.
+#[cfg(test)]
+mod testes_upsert {
+    use super::*;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("upsert-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn servidor(d: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let ses = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"clientes","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"nome","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        // Uma tabela com DOIS indices unicos e nenhum primario: a ambigua.
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"pessoas","colunas":[
+                    {"nome":"cpf","tipo":"Str(14)"},
+                    {"nome":"email","tipo":"Str(40)"},
+                    {"nome":"nome","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porCpf","colunas":["cpf"],"unico":true},
+                            {"nome":"porEmail","colunas":["email"],"unico":true}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        s
+    }
+
+    fn inserir(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        s.executar(
+            "inserir",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"clientes",{corpo}}}"#
+            )),
+            &Sessao::default(),
+        )
+    }
+
+    fn nome_gravado(s: &Arc<Servidor>, rowid: u64) -> String {
+        s.executar(
+            "ler",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"clientes","rowid":{rowid}}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .texto_ou("nome", "")
+        .to_string()
+    }
+
+    fn registros(s: &Arc<Servidor>) -> i64 {
+        s.executar(
+            "varrer",
+            &pedido(r#"{"database":"b","tabela":"clientes"}"#),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .inteiro_ou("visiveis", -1)
+    }
+
+    /// **O teste que mais importa, e e o do comportamento VELHO.**
+    ///
+    /// Sem `se_existir`, a chave repetida continua RECUSANDO. Guarda nova
+    /// entra pedida: um cliente escrito antes disto nao pode passar a
+    /// sobrescrever linha nenhuma por causa de um campo que ele nao mandou.
+    #[test]
+    fn sem_se_existir_a_chave_repetida_continua_recusando() {
+        let d = dir("velho");
+        let s = servidor(&d);
+        inserir(&s, r#""linha":{"id":1,"nome":"ana"}"#).unwrap();
+        let e =
+            inserir(&s, r#""linha":{"id":1,"nome":"outra"}"#).expect_err("a chave repetida passou");
+        assert_eq!(e.nome(), "DUPLICADO", "{e}");
+        assert_eq!(nome_gravado(&s, 1), "ana", "a linha foi sobrescrita");
+        assert_eq!(registros(&s), 1);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A PROVA REAL do `ignorar`: nada muda no disco, e o rowid que volta e
+    /// o de QUEM JA ESTAVA LA.**
+    ///
+    /// A prova mede o dado gravado e a contagem, e nao o veredito: um
+    /// `ignorar` que inserisse uma segunda linha tambem responderia `ok`.
+    #[test]
+    fn ignorar_devolve_o_rowid_de_quem_ja_estava_la() {
+        let d = dir("ignorar");
+        let s = servidor(&d);
+        let r = inserir(&s, r#""linha":{"id":1,"nome":"ana"}"#).unwrap();
+        assert_eq!(r.inteiro_ou("rowid", -1), 1);
+        assert!(r.campo("ignorada").is_none(), "a primeira nao foi ignorada");
+
+        let r = inserir(
+            &s,
+            r#""linha":{"id":1,"nome":"outra"},"se_existir":"ignorar""#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("rowid", -1), 1, "devolveu outro rowid");
+        assert!(
+            r.booleano_ou("ignorada", false),
+            "a resposta nao diz que ignorou"
+        );
+        assert_eq!(nome_gravado(&s, 1), "ana", "ignorar gravou por cima");
+        assert_eq!(registros(&s), 1, "ignorar inseriu uma segunda linha");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A PROVA REAL do `atualizar`: a linha muda e NAO nasce outra.**
+    #[test]
+    fn atualizar_grava_por_cima_sem_criar_linha() {
+        let d = dir("atualizar");
+        let s = servidor(&d);
+        inserir(&s, r#""linha":{"id":1,"nome":"ana"}"#).unwrap();
+        let r = inserir(
+            &s,
+            r#""linha":{"id":1,"nome":"nova"},"se_existir":"atualizar""#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("rowid", -1), 1);
+        assert!(
+            r.booleano_ou("atualizada", false),
+            "a resposta nao diz que atualizou"
+        );
+        assert_eq!(nome_gravado(&s, 1), "nova", "nao gravou por cima");
+        assert_eq!(registros(&s), 1, "criou uma segunda linha");
+
+        // E a chave que NAO existe entra como insercao normal, sem marca.
+        let r = inserir(
+            &s,
+            r#""linha":{"id":2,"nome":"bia"},"se_existir":"atualizar""#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("rowid", -1), 2);
+        assert!(
+            r.campo("atualizada").is_none(),
+            "insercao marcada como alteracao"
+        );
+        assert_eq!(registros(&s), 2);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Dois indices unicos e nenhum primario: RECUSA nomeando os candidatos,
+    /// e dizer qual resolve.
+    #[test]
+    fn indice_ambiguo_recusa_nomeando_os_candidatos() {
+        let d = dir("ambiguo");
+        let s = servidor(&d);
+        let pede = |corpo: &str| {
+            s.executar(
+                "inserir",
+                &pedido(&format!(r#"{{"database":"b","tabela":"pessoas",{corpo}}}"#)),
+                &Sessao::default(),
+            )
+        };
+        pede(r#""linha":{"cpf":"1","email":"a@x","nome":"ana"}"#).unwrap();
+        let e = pede(r#""linha":{"cpf":"1","email":"b@x","nome":"nova"},"se_existir":"atualizar""#)
+            .expect_err("escolheu o indice sozinho");
+        let t = e.to_string();
+        assert!(t.contains("porCpf") && t.contains("porEmail"), "{t}");
+
+        // Dito qual, funciona -- e casa pelo CPF, e nao pelo email.
+        let r = pede(
+            r#""linha":{"cpf":"1","email":"b@x","nome":"nova"},
+               "se_existir":"atualizar","indice":"porCpf""#,
+        )
+        .unwrap();
+        assert!(r.booleano_ou("atualizada", false), "{r:?}");
+        assert_eq!(r.inteiro_ou("rowid", -1), 1);
+
+        // Indice que existe mas nao e unico nao sabe dizer se a linha existe.
+        let e = inserir(
+            &s,
+            r#""linha":{"id":9},"se_existir":"ignorar","indice":"nao_existe""#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("nao_existe"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `se_existir` com palavra que nao existe RECUSA, listando as que valem
+    /// -- em vez de cair no padrao e gravar de um jeito que ninguem pediu.
+    #[test]
+    fn se_existir_invalido_recusa_listando() {
+        let d = dir("palavra");
+        let s = servidor(&d);
+        let e = inserir(&s, r#""linha":{"id":1},"se_existir":"talvez""#).unwrap_err();
+        let t = e.to_string();
+        assert!(t.contains("talvez"), "{t}");
+        assert!(t.contains("ignorar") && t.contains("atualizar"), "{t}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **DENTRO DE TRANSACAO, o upsert empilha COMO A OP QUE ELE VIROU.**
+    ///
+    /// A alternativa seria empilhar sempre como `inserir` e deixar o commit
+    /// descobrir a duplicata: a transacao inteira cairia no fim por causa de
+    /// uma linha que o pedido mandava justamente sobrescrever.
+    ///
+    /// A prova mede a `acao` empilhada E o dado depois do commit -- um teste
+    /// que so olhasse a resposta do empilhar nao veria a gravacao errada.
+    #[test]
+    fn dentro_da_transacao_o_upsert_empilha_a_op_que_ele_virou() {
+        let d = dir("transacao");
+        let s = servidor(&d);
+        inserir(&s, r#""linha":{"id":1,"nome":"ana"}"#).unwrap();
+
+        let ses = Sessao {
+            ligacao: 7,
+            ..Sessao::default()
+        };
+        s.executar("begin", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+
+        // A chave que JA existe vira um `atualizar` empilhado.
+        let r = s
+            .executar(
+                "inserir",
+                &pedido(
+                    r#"{"database":"b","tabela":"clientes",
+                        "linha":{"id":1,"nome":"nova"},"se_existir":"atualizar"}"#,
+                ),
+                &ses,
+            )
+            .unwrap();
+        assert!(r.booleano_ou("empilhada", false), "{r:?}");
+        assert_eq!(
+            r.texto_ou("acao", ""),
+            "atualizar",
+            "empilhou como insercao"
+        );
+        assert!(r.booleano_ou("atualizada", false), "{r:?}");
+        assert_eq!(r.inteiro_ou("rowid", -1), 1);
+
+        // A que NAO existe continua sendo insercao.
+        let r = s
+            .executar(
+                "inserir",
+                &pedido(
+                    r#"{"database":"b","tabela":"clientes",
+                        "linha":{"id":2,"nome":"bia"},"se_existir":"atualizar"}"#,
+                ),
+                &ses,
+            )
+            .unwrap();
+        assert_eq!(r.texto_ou("acao", ""), "inserir");
+
+        s.executar("commit", &Json::objeto(vec![]), &ses).unwrap();
+        assert_eq!(
+            nome_gravado(&s, 1),
+            "nova",
+            "o commit nao gravou a alteracao"
+        );
+        assert_eq!(registros(&s), 2);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **`ignorar` dentro de transacao nao empilha nada**, e a resposta diz
+    /// isso: nao ha o que gravar, entao nao ha o que confirmar.
+    #[test]
+    fn ignorar_dentro_da_transacao_nao_empilha() {
+        let d = dir("tx-ignorar");
+        let s = servidor(&d);
+        inserir(&s, r#""linha":{"id":1,"nome":"ana"}"#).unwrap();
+        let ses = Sessao {
+            ligacao: 8,
+            ..Sessao::default()
+        };
+        s.executar("begin", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        let r = s
+            .executar(
+                "inserir",
+                &pedido(
+                    r#"{"database":"b","tabela":"clientes",
+                        "linha":{"id":1,"nome":"nao"},"se_existir":"ignorar"}"#,
+                ),
+                &ses,
+            )
+            .unwrap();
+        assert!(!r.booleano_ou("empilhada", true), "{r:?}");
+        assert!(r.booleano_ou("ignorada", false), "{r:?}");
+        s.executar("commit", &Json::objeto(vec![]), &ses).unwrap();
+        assert_eq!(nome_gravado(&s, 1), "ana");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A chave que ESTA TRANSACAO ja empilhou recusa nomeando: a linha
+    /// pendente ainda nao tem rowid em disco para atualizar, e escolher um dos
+    /// dois caminhos seria adivinhar.
+    #[test]
+    fn a_chave_pendente_na_mesma_transacao_recusa_nomeando() {
+        let d = dir("tx-pendente");
+        let s = servidor(&d);
+        let ses = Sessao {
+            ligacao: 9,
+            ..Sessao::default()
+        };
+        s.executar("begin", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        let corpo = r#"{"database":"b","tabela":"clientes",
+                        "linha":{"id":5,"nome":"x"},"se_existir":"atualizar"}"#;
+        s.executar("inserir", &pedido(corpo), &ses).unwrap();
+        let e = s
+            .executar("inserir", &pedido(corpo), &ses)
+            .expect_err("a chave pendente passou");
+        assert_eq!(e.nome(), "DUPLICADO", "{e}");
+        assert!(e.to_string().contains("DISCO"), "a recusa nao explica: {e}");
+        s.executar("rollback", &Json::objeto(vec![]), &ses).unwrap();
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// O SQL COMPOSTO ponta a ponta: o texto entra pela op `sql`, a F-SQL o
+/// traduz para `consultar`/`agrupar`, e o servidor o executa.
+///
+/// # Por que estes testes moram aqui, e nao no crate de SQL
+///
+/// La se prova que o TEXTO vira o PEDIDO certo -- e isso ja esta provado la.
+/// O que so se prova aqui e que o pedido, executado, devolve o DADO certo:
+/// nenhum teste de tradução acusa uma junção que casa pela coluna errada, e
+/// nenhum teste de execucao acusa um `ON` traduzido ao contrario. A costura
+/// e o que so aparece no encontro das duas frentes.
+#[cfg(test)]
+mod testes_sql_composto {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("sqlc-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn servidor(d: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            cadastro: cadastro.clone(),
+            max_linhas: 10_000,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let ses = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                // `porCidade` existe porque o tradutor de SQL EXIGE indice
+                // para um `WHERE coluna = literal`: sem ele, um SELECT
+                // responderia sobre a primeira pagina com a cara de ter
+                // respondido sobre a tabela. Ver `docs/SQL.md`.
+                r#"{"database":"b","tabela":"clientes","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"nome","tipo":"Str(20)"},
+                    {"nome":"cidade","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true},
+                            {"nome":"porCidade","colunas":["cidade"]}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"pedidos","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"cliente_id","tipo":"Int4"},
+                    {"nome":"total","tipo":"Int4"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"folha","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"nome","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        for (id, nome, cidade) in [
+            (1, "ana", "Blumenau"),
+            (2, "bia", "Itajai"),
+            (3, "caio", "Blumenau"),
+        ] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"clientes",
+                         "linha":{{"id":{id},"nome":"{nome}","cidade":"{cidade}"}}}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        for (id, cli, total) in [(1, 1, 100), (2, 1, 50), (3, 2, 300), (4, 9, 7)] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"pedidos",
+                         "linha":{{"id":{id},"cliente_id":{cli},"total":{total}}}}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"folha","linha":{"id":1,"nome":"segredo"}}"#),
+            &ses,
+        )
+        .unwrap();
+        let sessao = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        (s, sessao)
+    }
+
+    fn sql(s: &Arc<Servidor>, texto: &str) -> Result<Json> {
+        s.executar(
+            "sql",
+            &pedido(&format!(
+                r#"{{"database":"b","texto":{}}}"#,
+                Json::texto_de(texto).escrever()
+            )),
+            &Sessao::default(),
+        )
+    }
+
+    fn linhas(r: &Json) -> Vec<Json> {
+        r.campo("linhas")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .to_vec()
+    }
+
+    /// **INNER JOIN ponta a ponta, e a prova mede o DADO.**
+    ///
+    /// Sao quatro pedidos e tres clientes, e o pedido 4 aponta para um
+    /// cliente que nao existe: o INNER traz tres linhas, e cada uma com o nome
+    /// do cliente CERTO. Um `ON` traduzido ao contrario tambem traria tres
+    /// linhas -- e por isso o teste confere o par, e nao a contagem.
+    #[test]
+    fn o_inner_join_junta_pelo_par_certo() {
+        let d = dir("join");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = sql(
+            &s,
+            "SELECT p.id, c.nome AS cliente FROM pedidos p \
+             JOIN clientes c ON p.cliente_id = c.id",
+        )
+        .expect("o JOIN nao rodou");
+        let l = linhas(&r);
+        assert_eq!(l.len(), 3, "o pedido orfao entrou");
+        // O PAR, e nao so a contagem: um `ON` traduzido ao contrario traria
+        // tres linhas tambem, com o cliente errado em cada uma.
+        let pares: Vec<(i64, String)> = l
+            .iter()
+            .map(|x| {
+                (
+                    x.inteiro_ou("p.id", -1),
+                    x.texto_ou("cliente", "").to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            pares,
+            vec![
+                (1, "ana".to_string()),
+                (2, "ana".to_string()),
+                (3, "bia".to_string())
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// LEFT JOIN mantem o orfao, com o lado de fora nulo.
+    #[test]
+    fn o_left_join_mantem_o_orfao() {
+        let d = dir("left");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = sql(
+            &s,
+            "SELECT p.id, c.nome AS cliente FROM pedidos p \
+             LEFT JOIN clientes c ON p.cliente_id = c.id",
+        )
+        .unwrap();
+        let l = linhas(&r);
+        assert_eq!(l.len(), 4, "o LEFT perdeu o orfao");
+        // O pedido 4 aponta para um cliente que nao existe: ele FICA, com o
+        // lado de fora nulo -- que e o que faz o LEFT ser um LEFT.
+        let orfao = l
+            .iter()
+            .find(|x| x.inteiro_ou("p.id", -1) == 4)
+            .expect("o orfao sumiu");
+        assert_eq!(orfao.campo("cliente"), Some(&Json::Nulo));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `GROUP BY` com `HAVING` ponta a ponta.
+    #[test]
+    fn o_group_by_com_having() {
+        let d = dir("group");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = sql(
+            &s,
+            "SELECT cidade, COUNT(*) AS n FROM clientes GROUP BY cidade HAVING n > 1",
+        )
+        .expect("o GROUP BY nao rodou");
+        let l = linhas(&r);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].texto_ou("cidade", ""), "Blumenau");
+        assert_eq!(l[0].inteiro_ou("n", -1), 2);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `IN (SELECT …)` ponta a ponta.
+    #[test]
+    fn o_in_de_subconsulta_ponta_a_ponta() {
+        let d = dir("in");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = sql(
+            &s,
+            "SELECT id FROM clientes WHERE id IN (SELECT cliente_id FROM pedidos) ORDER BY id",
+        )
+        .expect("o IN nao rodou");
+        let l = linhas(&r);
+        let ids: Vec<i64> = l.iter().map(|x| x.inteiro_ou("id", -1)).collect();
+        assert_eq!(ids, vec![1, 2], "o cliente 3 nao tem pedido");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **`?` NO LEXICO, e nunca por substituicao de texto.**
+    ///
+    /// A prova e a que importa numa defesa contra injecao: o parametro que
+    /// CONTEM SQL entra como VALOR e nao como comando. Se ele fosse colado no
+    /// texto antes da analise, `'; DROP TABLE clientes --` apagaria a tabela;
+    /// aqui ele so nao casa com cidade nenhuma, e as tres linhas continuam la.
+    #[test]
+    fn o_parametro_entra_no_lexico_e_nao_no_texto() {
+        let d = dir("param");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let com_parametros = |texto: &str, params: &str| -> Result<Json> {
+            s.executar(
+                "sql",
+                &pedido(&format!(
+                    r#"{{"database":"b","texto":{},"parametros":{params}}}"#,
+                    Json::texto_de(texto).escrever()
+                )),
+                &Sessao::default(),
+            )
+        };
+
+        let r = com_parametros("SELECT * FROM clientes WHERE id = ?", "[2]").unwrap();
+        let l = linhas(&r);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].texto_ou("nome", ""), "bia");
+
+        // O parametro HOSTIL: ele e um texto, e continua sendo um texto.
+        // Cabe em `Str(20)` de proposito -- um payload maior seria recusado
+        // pelo TAMANHO da chave, e a recusa esconderia o que o teste prova.
+        let r = com_parametros(
+            "SELECT * FROM clientes WHERE cidade = ?",
+            r#"["';DROP TABLE x--"]"#,
+        )
+        .expect("o parametro hostil derrubou a consulta");
+        assert_eq!(linhas(&r).len(), 0, "casou com alguma cidade?");
+        // E a tabela continua inteira -- que e a prova de que nada foi colado.
+        let r = sql(&s, "SELECT * FROM clientes").unwrap();
+        assert_eq!(linhas(&r).len(), 3, "a tabela sumiu: houve injecao");
+
+        // Contagem errada de `?` recusa dizendo quantos vieram.
+        let e = com_parametros("SELECT * FROM clientes WHERE id = ? AND nome = ?", "[1]")
+            .expect_err("aceitou parametro faltando");
+        assert!(!e.to_string().is_empty(), "recusa muda nao ensina nada");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `CREATE VIEW` e `DROP VIEW` pelo SQL, e o `FROM` dela.
+    #[test]
+    fn o_create_view_pelo_sql_e_o_from_dela() {
+        let d = dir("view");
+        let (s, _) = servidor(&d, Cadastro::default());
+        sql(&s, "CREATE VIEW v_todos AS SELECT * FROM clientes").expect("o CREATE VIEW nao rodou");
+        let r = sql(&s, "SELECT nome FROM v_todos ORDER BY id DESC").unwrap();
+        let l = linhas(&r);
+        assert_eq!(l.len(), 3);
+        assert_eq!(l[0].texto_ou("nome", ""), "caio");
+        sql(&s, "DROP VIEW v_todos").expect("o DROP VIEW nao rodou");
+        // Sumiu a visao, o FROM volta a procurar TABELA -- e nao acha.
+        assert!(sql(&s, "SELECT * FROM v_todos").is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **O SELECT COMPOSTO tambem NAO e a porta dos fundos.**
+    ///
+    /// A tabela negada no lado de dentro de uma junção escrita em SQL recusa,
+    /// e o controle -- a junção entre as permitidas -- responde na mesma
+    /// corrida. O portao entra duas vezes: no planejamento (o `esquema` de
+    /// cada lado) e na execucao (cada sub-pedido do `consultar`).
+    #[test]
+    fn o_join_pelo_sql_nao_e_a_porta_dos_fundos() {
+        let d = dir("porta");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"folha":{}}}}}]}"#,
+        ))
+        .unwrap();
+        let (s, ses) = servidor(&d, cadastro);
+        let pede = |texto: &str| -> Result<Json> {
+            let mut sessao = Sessao {
+                usuario: ses.usuario.clone(),
+                ..Sessao::default()
+            };
+            let (_, _, r) = s.despachar(
+                &format!(
+                    r#"{{"token":"t","op":"sql","database":"b","texto":{}}}"#,
+                    Json::texto_de(texto).escrever()
+                ),
+                &mut sessao,
+                "127.0.0.1",
+            );
+            r
+        };
+        pede("SELECT p.id FROM pedidos p JOIN clientes c ON p.cliente_id = c.id")
+            .expect("as tabelas permitidas foram barradas");
+        let e = pede("SELECT p.id FROM pedidos p JOIN folha f ON p.id = f.id")
+            .expect_err("o JOIN leu a tabela negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("folha"), "{e}");
+
+        // E pelo IN, que esconde a tabela um nivel mais fundo.
+        let e = pede("SELECT id FROM clientes WHERE id IN (SELECT id FROM folha)")
+            .expect_err("o IN leu a tabela negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// A op `diferencas` -- o TERCEIRO IRMAO da conferencia propria.
+#[cfg(test)]
+mod testes_diferencas {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("dif-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// `hoje` e `ontem` com a MESMA forma, e `folha` com outra (para provar a
+    /// recusa por coluna diferente).
+    fn servidor(d: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            cadastro: cadastro.clone(),
+            max_linhas: 10_000,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let ses = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        for tab in ["hoje", "ontem", "folha"] {
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{tab}","colunas":[
+                        {{"nome":"id","tipo":"Int4","obrigatoria":true}},
+                        {{"nome":"nome","tipo":"Str(20)"}}],
+                     "indices":[{{"nome":"porId","colunas":["id"],"unico":true,
+                                  "primario":true}}]}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        // Uma tabela com outra forma, para a recusa por coluna diferente.
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"outra_forma","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"nome","tipo":"Str(20)"},
+                    {"nome":"extra","tipo":"Int4"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        // Uma com indice REPETIVEL, para a recusa do indice nao unico.
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"sem_chave","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"nome","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porNome","colunas":["nome"]}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+        let grava = |tab: &str, linhas: &[(i64, &str)]| {
+            for (id, nome) in linhas {
+                s.executar(
+                    "inserir",
+                    &pedido(&format!(
+                        r#"{{"database":"b","tabela":"{tab}","linha":{{"id":{id},"nome":"{nome}"}}}}"#
+                    )),
+                    &ses,
+                )
+                .unwrap();
+            }
+        };
+        grava("hoje", &[(1, "ana"), (2, "bia"), (3, "caio")]);
+        grava("ontem", &[(1, "ana"), (2, "BIA"), (4, "duda")]);
+        grava("folha", &[(1, "segredo")]);
+        let sessao = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        (s, sessao)
+    }
+
+    fn dif(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        s.executar(
+            "diferencas",
+            &pedido(&format!(r#"{{"database":"b",{corpo}}}"#)),
+            &Sessao::default(),
+        )
+    }
+
+    fn ids(r: &Json, campo: &str) -> Vec<i64> {
+        r.campo(campo)
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|c| {
+                c.lista()
+                    .and_then(|l| l.first().and_then(Json::inteiro))
+                    .unwrap_or(-1)
+            })
+            .collect()
+    }
+
+    /// **A PROVA REAL: as tres listas, e a coluna que mudou.**
+    ///
+    /// O 3 so esta em `hoje`, o 4 so em `ontem`, o 2 esta nos dois e difere no
+    /// `nome`, e o 1 e igual. Um teste que so contasse as listas passaria com
+    /// os dois lados TROCADOS -- por isso ele confere QUEM esta em cada uma.
+    #[test]
+    fn as_tres_listas_dizem_de_que_lado_esta_cada_um() {
+        let d = dir("tres");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = dif(&s, r#""a":"hoje","b":"ontem""#).expect("nao rodou");
+        assert_eq!(r.inteiro_ou("iguais", -1), 1);
+        assert_eq!(ids(&r, "so_em_a"), vec![3], "o 3 so existe em hoje");
+        assert_eq!(ids(&r, "so_em_b"), vec![4], "o 4 so existe em ontem");
+        assert!(!r.booleano_ou("truncado", true));
+
+        let difs = r.campo("diferentes").and_then(Json::lista).unwrap();
+        assert_eq!(difs.len(), 1);
+        let colunas: Vec<String> = difs[0]
+            .campo("colunas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .filter_map(|x| x.texto().map(str::to_string))
+            .collect();
+        assert_eq!(colunas, vec!["nome".to_string()], "nao disse qual coluna");
+        assert_eq!(difs[0].campo("a").unwrap().texto_ou("nome", ""), "bia");
+        assert_eq!(difs[0].campo("b").unwrap().texto_ou("nome", ""), "BIA");
+
+        // E trocando os lados, as duas listas trocam -- o controle que impede
+        // o teste de passar com os lados invertidos.
+        let r = dif(&s, r#""a":"ontem","b":"hoje""#).unwrap();
+        assert_eq!(ids(&r, "so_em_a"), vec![4]);
+        assert_eq!(ids(&r, "so_em_b"), vec![3]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `max` corta CADA lista, e a resposta diz `truncado`.
+    #[test]
+    fn o_max_corta_e_a_resposta_diz() {
+        let d = dir("max");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = dif(&s, r#""a":"hoje","b":"folha","max":1"#);
+        // `folha` tem a mesma forma de `hoje`, entao a comparacao roda.
+        let r = r.expect("nao rodou");
+        assert!(r.booleano_ou("truncado", false) || r.inteiro_ou("iguais", -1) >= 0);
+        // Com max 1 e duas linhas so em `hoje` (2 e 3), a lista corta.
+        assert_eq!(r.campo("so_em_a").and_then(Json::lista).unwrap().len(), 1);
+        assert!(r.booleano_ou("truncado", false), "cortou e nao disse");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Duas iguais nao tem diferenca -- o controle da bateria.
+    #[test]
+    fn duas_iguais_nao_tem_diferenca() {
+        let d = dir("iguais");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = dif(&s, r#""a":"hoje","b":"hoje""#).unwrap();
+        assert_eq!(r.inteiro_ou("iguais", -1), 3);
+        assert!(r
+            .campo("diferentes")
+            .and_then(Json::lista)
+            .unwrap()
+            .is_empty());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// As recusas nomeiam: coluna diferente, indice que nao existe, indice
+    /// repetivel.
+    #[test]
+    fn as_recusas_nomeiam() {
+        let d = dir("recusa");
+        let (s, _) = servidor(&d, Cadastro::default());
+
+        let e = dif(&s, r#""a":"hoje","b":"outra_forma""#).unwrap_err();
+        let t = e.to_string();
+        assert!(t.contains("extra"), "a recusa nao diz a coluna: {t}");
+        assert!(t.contains("iguais"), "a recusa nao diz por que: {t}");
+
+        let e = dif(&s, r#""a":"hoje","b":"ontem","indice":"nao_existe""#).unwrap_err();
+        assert!(e.to_string().contains("nao_existe"), "{e}");
+
+        let e = dif(&s, r#""a":"sem_chave","b":"sem_chave","indice":"porNome""#).unwrap_err();
+        assert!(e.to_string().contains("unico"), "{e}");
+
+        let e = dif(&s, r#""a":"hoje""#).unwrap_err();
+        assert!(e.to_string().contains("\"b\""), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A CONFERENCIA PROPRIA: `diferencas` nao tem campo `"tabela"`, entao o
+    /// portao geral nao ve as tabelas dela.**
+    ///
+    /// Este e o teste que viaja com a operacao -- e o unico que acusa se
+    /// alguem limpar a conferencia por ela parecer duplicacao do portao geral.
+    ///
+    /// PROVA REAL: tirando o `for alvo in [&na, &nb]` do `op_diferencas`, a
+    /// folha entra pelos dois lados e este teste REPROVA nas duas -- enquanto
+    /// o controle, as tabelas permitidas, continua respondendo.
+    #[test]
+    fn diferencas_nao_e_a_porta_dos_fundos() {
+        let d = dir("porta");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"folha":{}}}}}]}"#,
+        ))
+        .unwrap();
+        let (s, ses) = servidor(&d, cadastro);
+        let pede = |a: &str, b: &str| -> Result<Json> {
+            let mut sessao = Sessao {
+                usuario: ses.usuario.clone(),
+                ..Sessao::default()
+            };
+            let (_, _, r) = s.despachar(
+                &format!(r#"{{"token":"t","op":"diferencas","database":"b","a":"{a}","b":"{b}"}}"#),
+                &mut sessao,
+                "127.0.0.1",
+            );
+            r
+        };
+        pede("hoje", "ontem").expect("as tabelas permitidas foram barradas");
+        for (a, b) in [("folha", "hoje"), ("hoje", "folha")] {
+            let e = pede(a, b).expect_err("leu a tabela negada");
+            assert_eq!(e.nome(), "ACESSO_NEGADO", "{a}/{b}: {e}");
+            assert!(format!("{e}").contains("folha"), "{a}/{b}: {e}");
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// E o DIREITO POR COLUNA recusa a tabela restrita, pelo mesmo argumento
+    /// do `juntar`: a resposta traz a linha inteira dos dois lados, e a lista
+    /// `colunas` responde sobre a coluna negada mesmo sem mostra-la.
+    #[test]
+    fn diferencas_recusa_a_tabela_com_regra_de_coluna() {
+        let d = dir("coluna");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"ontem":{"ler":true,
+                   "colunas":{"nome":{"ler":false}}}}}}}]}"#,
+        ))
+        .unwrap();
+        let (s, ses) = servidor(&d, cadastro);
+        let mut sessao = Sessao {
+            usuario: ses.usuario.clone(),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            r#"{"token":"t","op":"diferencas","database":"b","a":"hoje","b":"ontem"}"#,
+            &mut sessao,
+            "127.0.0.1",
+        );
+        let e = r.expect_err("comparou contra a tabela restrita");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        // O controle: duas tabelas SEM regra de coluna continuam comparando.
+        let (_, _, ok) = s.despachar(
+            r#"{"token":"t","op":"diferencas","database":"b","a":"hoje","b":"folha"}"#,
+            &mut sessao,
+            "127.0.0.1",
+        );
+        ok.expect("as tabelas sem regra de coluna foram barradas");
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
 

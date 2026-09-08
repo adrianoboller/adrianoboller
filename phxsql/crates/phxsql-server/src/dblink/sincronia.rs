@@ -435,24 +435,35 @@ pub fn chave_canonica(v: &Value) -> String {
 }
 
 /// Grava no lado de ca as linhas que o plano mandou: upsert pelo indice unico.
+///
+/// # O laco e daqui; a DECISAO e do `crate::upsert`
+///
+/// Buscar no indice unico e escolher entre `atualizar` e `inserir` deixou de
+/// morar aqui quando o `inserir` do protocolo ganhou `se_existir`: sao os
+/// mesmos cinco passos, e duas copias divergiriam no dia em que alguem
+/// ensinasse a busca a olhar o indice parcial ou a tratar a chave nula de
+/// outro jeito. A divergencia apareceria como «a sincronia duplicou a linha
+/// que o upsert atualizou», e isso nao se acha por leitura.
+///
+/// O `pos_chave` continua no contrato porque o DbLink casa os dois lados por
+/// UMA coluna (ver `chave_canonica`); o `upsert` monta a chave a partir da
+/// definicao do indice, que e mais geral e da o mesmo resultado para um
+/// indice de uma coluna so.
 pub fn aplicar_para_ca(
     t: &mut Table,
     indice_da_chave: &str,
     pos_chave: usize,
     linhas: &[Vec<Value>],
 ) -> Result<(u64, u64)> {
+    let _ = pos_chave;
     let (mut inseridas, mut alteradas) = (0u64, 0u64);
     for l in linhas {
-        let achadas = t.buscar(indice_da_chave, &[l[pos_chave].clone()])?;
-        match achadas.first() {
-            Some(rowid) => {
-                t.atualizar(*rowid, l)?;
-                alteradas += 1;
-            }
-            None => {
-                t.inserir(l)?;
-                inseridas += 1;
-            }
+        let feito =
+            crate::upsert::aplicar(t, indice_da_chave, l, crate::upsert::SeExistir::Atualizar)?;
+        if feito.atualizada {
+            alteradas += 1;
+        } else {
+            inseridas += 1;
         }
     }
     Ok((inseridas, alteradas))

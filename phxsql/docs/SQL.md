@@ -758,3 +758,83 @@ Não correlacionada, devolvendo exatamente uma linha e uma coluna — o `campo`
 ```
 
 Correlação e `EXISTS` recusam nomeando, como no item 4.
+
+## 8. Quem EXECUTA: as ops que o servidor ganhou, e a costura entre as duas
+
+Os itens 1–9 acima são a metade que **traduz**. Esta seção é a outra: o que o
+servidor passou a **executar**, e o que só apareceu quando as duas metades se
+encontraram.
+
+### O que o servidor executa agora
+
+| a tradução produz | a op que executa | onde ela mora |
+|---|---|---|
+| `GROUP BY` / agregados | `agrupar` | `crate::agrupar` (o acumulador é o do `pivot.rs`, e não uma cópia) |
+| `WITH`, subconsulta, `IN (SELECT …)`, `JOIN`, `ROW_NUMBER`, escalar | `consultar` | `crate::consultar` |
+| `CREATE VIEW` / `DROP VIEW` | `criar_visao` / `excluir_visao` | `crate::visoes` (`visoes.json` por banco) |
+| `INSERT … ON CONFLICT` | `inserir` com `se_existir` | `crate::upsert` (o mesmo do DbLink) |
+| `WHERE` por expressão | `varrer`/`SelectMemory` com `expressao` | `phxsql_store::memoria::passa` |
+| `?` | `sql` com `parametros` | `analisar_comando_com`, no léxico |
+
+O contrato entre as duas frentes é **o pedido JSON**, e não a assinatura de
+uma função: foi isso que permitiu o servidor montar o `consultar` de uma visão
+à mão enquanto `planejar_sobre` não existia, e trocar por ela depois sem mexer
+em mais nada.
+
+### O `consultar` não é a porta dos fundos, e é a FORMA que garante
+
+`crate::consultar` não abre arquivo, não conhece `Table` e não sabe o que é
+uma tabela: ele recebe linhas já lidas, em JSON. Quem lê é
+`linhas_do_sub_pedido`, e ele só sabe chamar `executar_derivado` — política,
+portão de permissão e direito por coluna, o mesmo caminho de um pedido que
+chega pela rede. Ler uma tabela por ali exigiria acrescentar um caminho de
+leitura a um módulo que não tem nenhum, e isso aparece na revisão; espalhar o
+portão por dentro da composição é que seria invisível.
+
+São **quatro** os caminhos até uma tabela dentro de um `consultar` — o `de`, o
+`de` de cada junção, o de cada `escalar` e o de cada `em` — e os quatro passam
+pela mesma função. Há teste com tabela negada em cada um.
+
+E a permissão entra **duas vezes** num `SELECT` composto, porque o
+planejamento também lê: `planejar_consulta` pede o `esquema` de cada tabela
+citada pelo `executar_derivado`, para pegar os índices que o tradutor precisa.
+A primeira recusa antes de montar o plano; a segunda recusaria de qualquer
+jeito.
+
+### O `Decimal` do `consultar` compara como TEXTO — e a recusa diz isso
+
+A linha chega ao `consultar` como o sub-pedido a devolveu, sem esquema. O
+resolvedor decide pelo formato do JSON: número sem parte fracionária é
+inteiro, com parte fracionária é real, texto é texto. Um `Decimal` viaja como
+**texto** no protocolo inteiro (para não passar por um `f64`), então
+`preco = '10.01'` funciona e `preco > 10` **recusa dizendo** que o filtro deve
+ir para a `expressao` do próprio sub-pedido, que lê o tipo do esquema e compara
+no domínio inteiro escalado.
+
+Converter todo texto que *parece* número seria pior: mudaria o significado de
+uma coluna de texto — `codigo = '10'` deixaria de casar com o código `10`
+gravado como texto.
+
+### O defeito que só apareceu na costura: a projeção acontecia duas vezes
+
+O `consultar` recebe `colunas` no próprio pedido e projeta **na fonte**, com o
+apelido como chave da linha. O `resposta_do_sql` projetava de novo, procurando
+`nome` numa linha que já se chamava `quem` — e devolvia uma coluna de **nulos**
+com a cara de dado que não existe.
+
+Nenhum teste de tradução acusava (lá o pedido está certo) e nenhum teste do
+`consultar` acusava (lá a resposta está certa). Só apareceu exercitando o
+caminho inteiro, num `SELECT nome AS quem FROM v_todos`. Hoje `resposta_do_sql`
+não reprojeta o que a op já projetou, e o cabeçalho `colunas` continua saindo
+de lá porque ele é o contrato da resposta.
+
+### O que ainda recusa nomeando, e onde consertar
+
+- **`ORDER BY p.id`** — nome qualificado na ordem: o analisador recusa com
+  «sobrou "." depois do fim do comando». É da gramática, não da execução.
+- **`COUNT(*)` sobre visão** — recusa dizendo que não há substrato nesta
+  rodada; a contagem se faz com `agrupar` sobre a tabela de dentro.
+- **Junção `RIGHT`, `FULL`, `CROSS`** — recusam nomeando nos dois lados (o
+  tradutor e o `consultar`), e a do `RIGHT` ensina a trocar os lados.
+- **Correlação e `EXISTS`** — recusam nomeando: exigiriam rodar a subconsulta
+  por linha.

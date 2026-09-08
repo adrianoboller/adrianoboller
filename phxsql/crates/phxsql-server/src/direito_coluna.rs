@@ -108,6 +108,18 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     // `sql` como leitura peneiraria duas vezes a mesma resposta -- e a
     // segunda peneira nao teria como saber de que tabela ela veio.
     ("sql", PorColuna::Nenhum),
+    // O `consultar` e o mesmo argumento do `sql`, e por isso ele nao peneira:
+    // cada sub-pedido dele sai pelo `executar_derivado` e paga la a peneira da
+    // SUA tabela. Peneirar de novo aqui seria peneirar sem saber de que tabela
+    // veio cada campo -- e depois de uma junção a linha tem campos de duas.
+    ("consultar", PorColuna::Nenhum),
+    // A visao guarda TEXTO, e nao linha: criar, listar e excluir nao devolvem
+    // dado de tabela nenhuma. Quem le POR uma visao entra pela op `sql`, que
+    // vira um `consultar`, e paga a peneira no sub-pedido -- que e onde a
+    // tabela tem nome.
+    ("criar_visao", PorColuna::Nenhum),
+    ("visoes", PorColuna::Nenhum),
+    ("excluir_visao", PorColuna::Nenhum),
     // ------------------------------ leitura por caminho que a peneira nao ve
     // Colunas prefixadas de duas tabelas, num objeto que a peneira nao sabe
     // desmontar sem saber de qual lado veio cada campo.
@@ -115,9 +127,22 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("join", PorColuna::Recusa),
     ("unir", PorColuna::Recusa),
     ("union", PorColuna::Recusa),
+    // O TERCEIRO IRMAO: a resposta traz a linha inteira dos dois lados dentro
+    // de `diferentes`, e a lista `colunas` diz QUAIS mudaram -- entao ela
+    // responde sobre a coluna negada mesmo que a peneira tirasse o valor.
+    ("diferencas", PorColuna::Recusa),
+    ("diff", PorColuna::Recusa),
     // Os ROTULOS das linhas do cruzamento SAO os valores da coluna.
     ("pivotar", PorColuna::Recusa),
     ("pivot", PorColuna::Recusa),
+    // O `agrupar` e o mesmo argumento do pivot, com uma agravante: alem de os
+    // rotulos dos grupos serem os valores da coluna, o AGREGADO fala dela sem
+    // ela aparecer -- `{"funcao":"maximo","coluna":"salario"}` devolve o maior
+    // salario num campo chamado `maximo_salario`, e a peneira, que procura
+    // pelo NOME da coluna, nao acha nada para tirar. Peneirar por apelido
+    // exigiria a peneira entender o pedido, e nao so a resposta.
+    ("agrupar", PorColuna::Recusa),
+    ("group_by", PorColuna::Recusa),
     // Um numero que resume os bytes da linha inteira. Nao mostra a coluna --
     // responde «e este valor?» a quem tentar, que e a mesma coisa devagar.
     ("checksum", PorColuna::Recusa),
@@ -314,6 +339,14 @@ pub fn tabelas_do_pedido(op: &str, p: &Json) -> Vec<String> {
                 if let Some(j) = p.campo(lado) {
                     junte(j.texto_ou("tabela", ""));
                 }
+            }
+        }
+        // O terceiro irmao: as duas tabelas moram em `"a"` e `"b"`, e nao
+        // dentro de um objeto como no `juntar` -- por isso ele tem ramo
+        // proprio, e nao cabe no de cima.
+        "diferencas" | "diff" => {
+            for lado in ["a", "b"] {
+                junte(p.texto_ou(lado, ""));
             }
         }
         "unir" | "union" => {

@@ -4,6 +4,7 @@
 //! `config.json`), fala JSON Lines e registra todo acesso com IP, data e hora.
 
 pub mod acesso;
+pub mod agrupar;
 #[cfg(test)]
 mod apoio_teste;
 pub mod bidirecional;
@@ -19,7 +20,9 @@ pub mod conferidor_inventario;
 pub mod conferidor_temporarios;
 pub mod conferidor_vermelhas;
 pub mod config;
+pub mod consultar;
 pub mod dblink;
+pub mod diferencas;
 pub mod direito_coluna;
 pub mod diretivas;
 pub mod email;
@@ -43,8 +46,10 @@ pub mod sistema;
 pub mod telemetria;
 pub mod transacao;
 pub mod travas;
+pub mod upsert;
 pub mod usuarios;
 pub mod valores;
+pub mod visoes;
 
 pub use acesso::{Acesso, LogAcessos, ResumoIp};
 pub use blacklist::{Blacklist, Bloqueio, Firewall, Politica};

@@ -113,12 +113,20 @@ impl Atividade {
             // "tabela", a propria operacao filtra tabela a tabela por dentro.
             "dados_pessoais" | "lgpd" => Atividade::Ler,
             // O pivot resume o que a varredura leria: quem pode ler a tabela
-            // pode ver o total dela.
-            "pivotar" | "pivot" => Atividade::Ler,
+            // pode ver o total dela. O `agrupar` e o mesmo argumento: um total
+            // por cidade nao diz nada que a varredura ja nao entregasse linha
+            // a linha -- e pedir mais aqui esconderia por agregacao um dado
+            // que quem pode ler ja ve inteiro.
+            "pivotar" | "pivot" | "agrupar" | "group_by" => Atividade::Ler,
             // Junção e união leem duas ou mais tabelas da MESMA base, e o
             // poder de ler vale por base -- entao ler e o suficiente, e a
             // operacao confere de novo antes de abrir a segunda tabela.
             "juntar" | "join" | "unir" | "union" => Atividade::Ler,
+            // Comparar duas tabelas e LER as duas: a resposta traz linhas
+            // delas. Como o `juntar` e o `unir`, a operacao confere de novo por
+            // dentro, porque as tabelas dela moram em campos que este portao
+            // nao olha.
+            "diferencas" | "diff" => Atividade::Ler,
             "sequencias" | "sequences" => Atividade::Ler,
             // A op `sql` so produz `varrer` e `buscar` hoje, e as duas pedem
             // `ler`. Este portao e o de FORA e nao dispensa o de dentro: o
@@ -131,6 +139,20 @@ impl Atividade {
             // portao ler o texto do SQL, e portao que interpreta linguagem e
             // portao que erra.
             "sql" => Atividade::Ler,
+            // O `consultar` compoe, e nao le: cada sub-pedido dele volta pelo
+            // `executar_derivado` com a tabela DELE no campo que o portao ja
+            // olha. Este portao e o de FORA e nao dispensa o de dentro -- ele
+            // so pode apertar, e `ler` e o piso certo: quem nao pode ler nada
+            // nao tem o que compor.
+            "consultar" => Atividade::Ler,
+            // Listar as visoes e LER o catalogo do banco: o texto de um
+            // `SELECT` diz que tabelas existem, e nao o que ha nelas. Ja
+            // CRIAR uma exige `criar`, o mesmo poder de criar tabela, e
+            // EXCLUIR exige `excluir`: quem apaga uma visao apaga a consulta
+            // de todo mundo que a usa.
+            "visoes" => Atividade::Ler,
+            "criar_visao" => Atividade::Criar,
+            "excluir_visao" => Atividade::Excluir,
             // A soma de verificacao le a tabela inteira e devolve um numero:
             // quem pode ler a tabela pode saber se ela mudou.
             "checksum" | "soma_de_verificacao" => Atividade::Ler,

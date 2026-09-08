@@ -85,6 +85,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             op: Operador::Maior,
             valor: Value::Int(99_000),
         }],
+        // Sem expressao de proposito: o medidor mede o caminho PARALELO, e a
+        // expressao o desliga (ver a dispensa registrada em `selecionar`).
+        expressao: None,
         ordenar: vec![],
         colunas: vec![],
         pular: 0,

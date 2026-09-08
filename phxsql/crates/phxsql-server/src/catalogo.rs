@@ -393,8 +393,16 @@ pub const OPERACOES: &[Operacao] = &[
                  `max` continua sendo quantas linhas o motor EXAMINA, e a \
                  resposta traz `examinadas` ao lado de `devolvidas`",
             ),
+            opc(
+                "expressao",
+                "string",
+                "predicado por EXPRESSÃO, avaliado por linha junto com `onde` \
+                 (E): `preco * 1.1 > 100`, `upper(cidade) = 'BLUMENAU'`, \
+                 `a > b`. É a mesma gramática do `CHECK` e do índice parcial; \
+                 `NULL` exclui a linha",
+            ),
         ],
-        exemplo: r#"{"op":"varrer","database":"loja","tabela":"clientes","max":2500,"onde":[{"coluna":"cidade","op":"=","valor":"Blumenau"}]}"#,
+        exemplo: r#"{"op":"varrer","database":"loja","tabela":"clientes","max":2500,"expressao":"preco * 1.1 > 100"}"#,
         ferramenta_mcp: true,
     },
     Operacao {
@@ -454,6 +462,179 @@ pub const OPERACOES: &[Operacao] = &[
             obr("texto", "string", "o comando SQL; `sql` também é aceito"),
         ],
         exemplo: r#"{"op":"sql","database":"loja","texto":"SELECT * FROM clientes LIMIT 10"}"#,
+        ferramenta_mcp: true,
+    },
+    Operacao {
+        nome: "criar_visao",
+        apelidos: &[],
+        resumo: "Guarda um `SELECT` com nome, por banco -- o `CREATE VIEW`. O \
+                 texto é analisado a cada uso, não congelado.",
+        parametros: &[
+            DB,
+            obr("nome", "string", "o nome da visão; colidir com tabela recusa"),
+            obr("sql", "string", "o `SELECT` que ela guarda, verbatim"),
+            opc(
+                "substituir",
+                "boolean",
+                "troca o texto de uma visão que já existe (o `CREATE OR REPLACE`)",
+            ),
+        ],
+        exemplo: r#"{"op":"criar_visao","database":"loja","nome":"v_blumenau","sql":"SELECT * FROM clientes"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "visoes",
+        apelidos: &[],
+        resumo: "As visões do banco, com o SQL de cada uma como foi escrito.",
+        parametros: &[DB],
+        exemplo: r#"{"op":"visoes","database":"loja"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "excluir_visao",
+        apelidos: &[],
+        resumo: "Apaga uma visão. Visão que não existia devolve \
+                 `excluida: false`, e não erro.",
+        parametros: &[DB, obr("nome", "string", "o nome da visão")],
+        exemplo: r#"{"op":"excluir_visao","database":"loja","nome":"v_blumenau"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "diferencas",
+        apelidos: &["diff"],
+        resumo: "O que mudou entre duas tabelas: quem só existe de um lado, e \
+                 quais colunas diferem nas que existem nos dois.",
+        parametros: &[
+            DB,
+            obr("a", "string", "a primeira tabela"),
+            obr("b", "string", "a segunda tabela"),
+            opc(
+                "indice",
+                "string",
+                "o índice ÚNICO, de mesmo nome nos dois lados, que dá o par; \
+                 sem ele, a chave primária de `a`",
+            ),
+            opc(
+                "max",
+                "integer",
+                "teto de CADA lista (`so_em_a`, `so_em_b`, `diferentes`); a \
+                 resposta traz `truncado` quando cortou",
+            ),
+        ],
+        exemplo: r#"{"op":"diferencas","database":"loja","a":"clientes","b":"clientes_ontem","max":100}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "consultar",
+        apelidos: &[],
+        resumo: "Compõe operações: pega as linhas de um sub-pedido e aplica \
+                 `IN`, expressão, `ROW_NUMBER`, ordem, recorte e projeção.",
+        parametros: &[
+            DB,
+            obr(
+                "de",
+                "object",
+                "o sub-pedido que dá as linhas: `varrer`, `buscar`, `agrupar` ou \
+                 outro `consultar`. Ele passa pelo MESMO portão de permissão de \
+                 um pedido que chega pela rede",
+            ),
+            opc(
+                "apelido",
+                "string",
+                "o prefixo das colunas do `de` depois de uma junção (padrão: o \
+                 nome da tabela dele); depois de QUALQUER junção toda coluna \
+                 passa a se chamar `apelido.coluna` nos dois lados",
+            ),
+            opc(
+                "juntar",
+                "array",
+                "junções aplicadas na ordem, sempre à esquerda: \
+                 `{de, apelido, tipo, em:[{esquerda, direita}]}`. `tipo` é \
+                 `interno` ou `esquerdo`; `direito`, `completo` e `cruzado` \
+                 recusam. `em` é igualdade entre colunas -- o resto vai para \
+                 `expressao`",
+            ),
+            opc(
+                "escalar",
+                "array",
+                "subconsulta não correlacionada que devolve UMA linha: \
+                 `{nome, de, campo}` -- o valor vira a coluna `nome`, visível \
+                 na `expressao` e fora da resposta a menos que pedida",
+            ),
+            opc(
+                "em",
+                "array",
+                "o `IN (SELECT …)`: `{coluna, de, campo}` -- o sub-pedido `de` \
+                 roda primeiro e vira o conjunto de valores de `campo`",
+            ),
+            opc(
+                "expressao",
+                "string",
+                "filtro sobre a linha JÁ COMPOSTA; uma coluna `Decimal` chega \
+                 como texto aqui, e comparar com número recusa dizendo onde pôr \
+                 o filtro",
+            ),
+            opc(
+                "janela",
+                "array",
+                "`{funcao:\"row_number\", particao, ordem, apelido}`; nesta \
+                 rodada só `row_number`",
+            ),
+            opc("ordem", "array", "`{coluna, desc}` sobre a linha composta"),
+            opc("pular", "integer", "quantas linhas saltar depois de ordenar"),
+            MAX,
+            opc(
+                "colunas",
+                "array",
+                "a projeção, aplicada POR ÚLTIMO: `\"id\"` ou \
+                 `{coluna, apelido}`",
+            ),
+        ],
+        exemplo: r#"{"op":"consultar","database":"loja","de":{"op":"varrer","tabela":"clientes"},"expressao":"id > 2","ordem":[{"coluna":"id","desc":true}],"max":10}"#,
+        ferramenta_mcp: true,
+    },
+    Operacao {
+        nome: "agrupar",
+        apelidos: &["group_by"],
+        resumo: "O `GROUP BY`: agrupa por colunas e resume cada grupo com \
+                 soma, média, contagem, mínimo, máximo ou distintos.",
+        parametros: &[
+            DB,
+            TAB,
+            opc(
+                "por",
+                "array",
+                "as colunas do agrupamento; lista vazia (ou ausente) é UM grupo \
+                 só -- o `SELECT COUNT(*) FROM t`",
+            ),
+            opc(
+                "agregados",
+                "array",
+                "`{funcao, coluna, apelido}` -- `funcao` é `contagem`, `soma`, \
+                 `media`, `minimo`, `maximo` ou `distintos`; só `contagem` \
+                 dispensa `coluna`; sem `apelido` sai `contagem`/`soma_preco`",
+            ),
+            opc("onde", "array", "filtros `{coluna, op, valor}` sobre a linha CRUA"),
+            opc(
+                "expressao",
+                "string",
+                "predicado por expressão sobre a linha CRUA, junto com `onde` (E)",
+            ),
+            opc(
+                "tendo",
+                "string",
+                "o `HAVING`: expressão sobre a linha AGREGADA, onde os apelidos \
+                 e as colunas de `por` são as colunas (`n > 1`)",
+            ),
+            opc(
+                "ordem",
+                "array",
+                "`{coluna, desc}` sobre a linha agregada; a coluna é um nome de \
+                 `por` ou um apelido",
+            ),
+            MAX,
+        ],
+        exemplo: r#"{"op":"agrupar","database":"loja","tabela":"vendas","por":["cidade"],"agregados":[{"funcao":"contagem","apelido":"n"},{"funcao":"soma","coluna":"total","apelido":"total"}],"tendo":"n > 1"}"#,
         ferramenta_mcp: true,
     },
     Operacao {
@@ -573,8 +754,22 @@ pub const OPERACOES: &[Operacao] = &[
                 "object",
                 "coluna: valor; `linha` é o nome antigo e continua valendo",
             ),
+            opc(
+                "se_existir",
+                "string",
+                "o que fazer quando a chave única já existe: `ignorar` (devolve \
+                 `rowid` e `ignorada`) ou `atualizar` (grava por cima e devolve \
+                 `atualizada`). Sem o campo, chave repetida RECUSA como sempre",
+            ),
+            opc(
+                "indice",
+                "string",
+                "qual índice único decide se a linha já existe; sem ele, a chave \
+                 primária ou o único índice único da tabela -- ambíguo recusa \
+                 nomeando os candidatos",
+            ),
         ],
-        exemplo: r#"{"op":"inserir","database":"loja","tabela":"clientes","valores":{"nome":"Maria"}}"#,
+        exemplo: r#"{"op":"inserir","database":"loja","tabela":"clientes","valores":{"id":1,"nome":"Maria"},"se_existir":"atualizar"}"#,
         ferramenta_mcp: true,
     },
     Operacao {
@@ -1121,6 +1316,14 @@ pub const OPERACOES: &[Operacao] = &[
                 "onde",
                 "array",
                 "filtros `{coluna, op, valor}` com `=`, `<>`, `<`, `<=`, `>`, `>=`",
+            ),
+            opc(
+                "expressao",
+                "string",
+                "predicado por EXPRESSÃO, avaliado por linha junto com `onde` \
+                 (E): `preco * 1.1 > 100`, `upper(cidade) = 'BLUMENAU'`, \
+                 `a > b`. É a mesma gramática do `CHECK` e do índice parcial; \
+                 `NULL` exclui a linha",
             ),
             opc("ordenar", "string", "a coluna de ordenação"),
             opc("desc", "boolean", "ordem decrescente"),
