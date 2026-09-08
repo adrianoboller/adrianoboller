@@ -160,3 +160,7 @@ implementacao o le como **lista de colunas** para montar mapas de igualdade
 (`servidor.rs:16360`), e **nao existe `mmap`** no repositorio. Configuracao/ajuda
 que promete um mecanismo que nao existe e erra o tipo — corrigir a redacao para
 casar com o que o codigo faz.
+
+**Corrigido em 08/09/2026:** o catalogo passou a dizer lista de nomes de coluna
+(as que ganham mapa de igualdade), com o padrao — as primeiras colunas de cada
+indice — escrito na propria descricao.

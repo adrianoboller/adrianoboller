@@ -333,6 +333,16 @@ inventar o resultado. Então o caminho inteiro foi exercitado contra um
 **servidor falso** que fala o formato da API, **inclusive o SSE pedaço a
 pedaço**, e que encena os erros.
 
+> **Aviso de 08/09/2026, medido:** os roteiros dessas três baterias **não
+> estão neste repositório** — `testes-web/` tem só `bateria.mjs` e
+> `medir-regiao.mjs`, `bancada/` não tem servidor falso da API, e o histórico
+> do git só conhece o `ui/claude.js`. Elas rodaram numa sessão e morreram com
+> ela, contra a regra da casa: *script que resolveu algo não pode morrer com a
+> sessão*. O que é reproduzível daqui hoje são os **4 testes Rust** de
+> `http.rs` (`mod testes_da_claude`). Os números abaixo (43 + 31 + 5) são o
+> **relato daquela sessão**, não uma medição que se refaça — refazer as
+> baterias como script versionado é o pedido 231 do `PENDENCIAS.md`.
+
 **Bateria 1 — o caminho inteiro (43 provas).** Comportamento velho;
 configuração; «Testar a chave»; os quatro recursos; o painel do que sobe; o
 streaming aparecendo aos pedaços (4 tamanhos parciais vistos); o SQL caindo no
@@ -420,5 +430,13 @@ discutir antes.
 - **A integração é por navegador.** Não há como um administrador ligá-la para
   todo mundo de uma vez — e isso é consequência direta de a chave ser de quem
   usa, não um esquecimento.
-- **Nada disto é ACID nem replicação.** A folha de marca afirma as duas coisas;
-  nenhuma é verdade hoje, e esta integração não muda isso.
+- **Não há ação autônoma do motor.** A IA **propõe** — SQL, plano de
+  modelagem, índice — e a pessoa clica; nenhum caminho do servidor decide nem
+  grava sozinho (`executar()` do `claude.js`: *«pelo clique da pessoa, e nunca
+  sozinho»*). Isso é escolha, não falta: ação automática precisaria de um
+  desenho de segurança que não existe — quais ações, quais portões, quem
+  responde por elas — e ele vem antes de qualquer código.
+- **Nada disto é ACID nem replicação.** Das duas afirmações da folha de marca,
+  a replicação **virou verdade** (medida com quatro servidores,
+  `docs/REPLICACAO.md`) e o *ACID compliant* **continua falso** enquanto não
+  houver o A e o I (`docs/ACID.md`); esta integração não muda nenhuma das duas.

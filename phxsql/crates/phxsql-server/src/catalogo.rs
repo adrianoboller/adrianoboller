@@ -1080,8 +1080,10 @@ pub const OPERACOES: &[Operacao] = &[
             TAB,
             opc(
                 "mapear",
-                "boolean",
-                "mapeia o arquivo em vez de copiar; economiza cópia",
+                "array",
+                "nomes das colunas que ganham mapa de igualdade — o SelectMemory acha por \
+                 elas sem varrer. Sem a lista, as primeiras colunas de cada índice. Não há \
+                 mmap: a tabela é COPIADA para a memória, decodificada",
             ),
         ],
         exemplo: r#"{"op":"memoria_carregar","database":"loja","tabela":"clientes"}"#,
