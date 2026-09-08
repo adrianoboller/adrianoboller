@@ -268,6 +268,18 @@ pub enum Onde {
     Expressao(String),
 }
 
+impl Onde {
+    /// O texto -- para quem so quer UM jeito de ver o `WHERE`, como o
+    /// `consultar` composto (item 4): la nao existe "onde" separado de
+    /// "expressao", tudo vira texto, simples ou nao.
+    pub fn texto(&self) -> String {
+        match self {
+            Onde::Simples(c) => format!("{} {} {}", c.coluna, c.op.simbolo(), c.valor.escrever()),
+            Onde::Expressao(t) => t.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ordenacao {
     pub coluna: String,
@@ -302,6 +314,10 @@ pub struct Selecao {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Comando {
     Selecao(Selecao),
+    /// `WITH`, subconsulta no `FROM`, `IN (SELECT …)`, junção ou janela --
+    /// qualquer `SELECT` que precisa de COMPOSICAO. Vira a op `consultar`
+    /// (`crate::consulta`), nunca `buscar`/`varrer`/`agrupar` sozinhos.
+    Consulta(crate::consulta::Consulta),
     Insercao(Insercao),
     Atualizacao(Atualizacao),
     Exclusao(Exclusao),
@@ -311,7 +327,7 @@ impl Comando {
     /// O verbo, para as mensagens.
     pub fn verbo(&self) -> &'static str {
         match self {
-            Comando::Selecao(_) => "SELECT",
+            Comando::Selecao(_) | Comando::Consulta(_) => "SELECT",
             Comando::Insercao(_) => "INSERT",
             Comando::Atualizacao(_) => "UPDATE",
             Comando::Exclusao(_) => "DELETE",
@@ -319,9 +335,15 @@ impl Comando {
     }
 
     /// A tabela alvo, para quem precisa do esquema antes de traduzir.
+    ///
+    /// Numa consulta COMPOSTA isto e so a tabela PRINCIPAL (`de`) -- ela
+    /// toca outras (`juntar`, `escalar`, `em`), e quem precisa dos indices
+    /// de cada uma chama `crate::consulta::traduzir_consulta` com o
+    /// resolvedor, nao este metodo.
     pub fn alvo(&self) -> &Alvo {
         match self {
             Comando::Selecao(s) => &s.de,
+            Comando::Consulta(c) => &c.de.de,
             Comando::Insercao(i) => &i.em,
             Comando::Atualizacao(a) => &a.em,
             Comando::Exclusao(e) => &e.de,
@@ -397,6 +419,12 @@ pub fn comando_empilhado(entrada: &str) -> bool {
 pub fn analisar(entrada: &str) -> Result<Selecao> {
     match analisar_comando(entrada)? {
         Comando::Selecao(s) => Ok(s),
+        Comando::Consulta(_) => Err(PhxError::Esquema(
+            "esta consulta usa composicao (WITH, subconsulta, IN (SELECT ...), junção ou \
+             janela) e traduz para `consultar`, nao para o Selecao simples desta porta -- \
+             use `analisar_comando` e trate `Comando::Consulta`"
+                .into(),
+        )),
         outro => Err(PhxError::Esquema(format!(
             "{} e comando de ESCRITA, e esta porta le consultas -- a op `sql` aceita os \
              dois, por `analisar_comando`",
@@ -551,7 +579,17 @@ impl Analisador {
         match verbo.as_str() {
             "SELECT" => {
                 self.i += 1;
-                Ok(Comando::Selecao(self.selecao()?))
+                if self.precisa_de_consulta_composta() {
+                    Ok(Comando::Consulta(self.consulta_apos_select(None)?))
+                } else {
+                    Ok(Comando::Selecao(self.selecao()?))
+                }
+            }
+            // WITH x AS (SELECT ...) SELECT ... -- so uma CTE, nao
+            // recursiva (item 4). Sempre vira `consultar`.
+            "WITH" => {
+                self.i += 1;
+                Ok(Comando::Consulta(self.com_cte()?))
             }
             // O passo 2 do roteiro de `docs/SQL.md`: escrita por chave. O
             // parser mora em `dml.rs`, sobre este mesmo cursor.
@@ -596,7 +634,7 @@ impl Analisador {
         }
     }
 
-    fn selecao(&mut self) -> Result<Selecao> {
+    pub(crate) fn selecao(&mut self) -> Result<Selecao> {
         if self.aceitar_palavra("DISTINCT") {
             return Err(lexico::erro(
                 self.posicao_atual(),
@@ -709,7 +747,7 @@ impl Analisador {
     /// A lista de `ORDER BY` de `agrupar`/`consultar`: sobre um resultado JA
     /// computado em memoria, entao varias colunas nao pedem indice nenhum --
     /// e por isso NAO tem a restricao de uma coluna so da forma antiga.
-    fn lista_de_ordenacoes(&mut self) -> Result<Vec<Ordenacao>> {
+    pub(crate) fn lista_de_ordenacoes(&mut self) -> Result<Vec<Ordenacao>> {
         let mut ordens = Vec::new();
         loop {
             let coluna = self.identificador("nome de coluna no ORDER BY")?;

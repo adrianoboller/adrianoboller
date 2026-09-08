@@ -57,6 +57,7 @@
 //! `IndiceInfo` sai do `esquema` do proprio servidor, campo por campo. O crate
 //! nao abre arquivo e nao fala com o disco: ele traduz texto em pedido.
 
+pub mod consulta;
 pub mod diretiva;
 pub mod dml;
 pub mod lexico;
@@ -66,6 +67,7 @@ pub mod traduzir;
 pub mod transacao;
 pub mod usuario;
 
+pub use consulta::{traduzir_consulta, ColunaComposta, Consulta, EmSubconsulta, Resolvedor};
 pub use dml::{
     traduzir_atualizacao, traduzir_exclusao, traduzir_insercao, Atualizacao, Exclusao, Insercao,
     PlanoDml, SeExistir,

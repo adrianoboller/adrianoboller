@@ -173,7 +173,7 @@ fn saida_de(p: &Projecao) -> Saida {
 /// O apelido PADRAO de um agregado sem `AS`: `contagem` sozinho, os outros
 /// com `_coluna` na cauda (`soma_preco`) -- os dois exemplos que o proprio
 /// contrato mostra.
-fn apelido_padrao(funcao: FuncaoAgregada, coluna: Option<&str>) -> String {
+pub(crate) fn apelido_padrao(funcao: FuncaoAgregada, coluna: Option<&str>) -> String {
     match coluna {
         Some(c) => format!("{}_{}", funcao.nome_no_protocolo(), c.to_lowercase()),
         None => funcao.nome_no_protocolo().to_string(),
