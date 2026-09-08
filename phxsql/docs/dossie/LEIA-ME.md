@@ -402,3 +402,20 @@ e sumir calado é o pior jeito de errar.
 anterior em disco faz o conferidor seguinte ler o cadáver e dizer «ok» — foi
 assim que um PDF velho quase saiu daqui afirmando que os consertos estavam
 nele. Falha tem de aparecer como **ausência**.
+
+**Ele declara o charset que a página não traz.** A página publicada não tem
+`<meta charset>` — o embrulho do visualizador o põe ao publicar —, e aberta por
+`file://` o Chromium **adivinha** a codificação: em 08/09/2026 adivinhou Latin-1
+em três das quatro páginas, e o PDF saiu com «pÃ¡gina» sem erro nenhum. A
+quarta saiu certa por sorte do detector, que é o pior jeito de sair certa. O
+gerador imprime uma cópia com o charset na frente; o `olhar.mjs` e o
+`pdf-do-dossie.mjs` fazem o mesmo, porque são os irmãos.
+
+**E o fundo cor de tinta é da folha, não de toda página.** A regra que pinta
+`html` e `body` com `--tinta` serve ao relatório de contêineres, uma folha
+clara sobre fundo escuro; nas páginas que pintam o `body` com `--papel` ela
+punha texto escuro sobre fundo escuro, e as quatro saíram escuras no tema
+claro, com o parágrafo de abertura apagado. Hoje ela só vale onde existe
+`.folha`. E quem evita quebra de página é a **linha** da tabela, não a tabela:
+uma tabela maior que a página não tem como evitar, e a dos 231 pedidos pulava
+inteira para a página 2, deixando a capa dois terços vazia.

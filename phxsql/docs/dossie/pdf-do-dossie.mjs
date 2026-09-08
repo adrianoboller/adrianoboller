@@ -44,18 +44,38 @@
  */
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import { pathToFileURL } from 'node:url';
-import { statSync } from 'node:fs';
+import { statSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 const entrada = process.argv[2];
 const saida = process.argv[3] || entrada.replace(/\.html$/, '.pdf');
 if (!entrada) { console.error('uso: pdf-do-dossie.mjs <dossie.html> [saida.pdf]'); process.exit(2); }
 
+
+// A pagina com o charset declarado -- a publicada nao traz o dela (o embrulho
+// do visualizador o poe ao publicar), e por file:// o Chromium ADIVINHA a
+// codificacao: em 08/09/2026 adivinhou Latin-1 em tres de quatro paginas, sem
+// erro nenhum. Mesma receita do pdf.mjs, que e o irmao.
+function comCharset(caminho) {
+  const html = readFileSync(caminho, 'utf8');
+  if (/<meta[^>]+charset/i.test(html)) {
+    return { url: pathToFileURL(resolve(caminho)).href, limpar() {} };
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'phx-pdf-dossie-'));
+  const copia = join(dir, 'pagina.html');
+  writeFileSync(copia, '<meta charset="utf-8">\n' + html);
+  return { url: pathToFileURL(copia).href,
+           limpar() { rmSync(dir, { recursive: true, force: true }); } };
+}
+
+const alvo = comCharset(entrada);
 const nav = await chromium.launch();
 const pag = await nav.newPage();
 const faltou = [];
 pag.on('requestfailed', r => faltou.push(r.url().slice(0, 70)));
 
-await pag.goto(pathToFileURL(entrada).href, { waitUntil: 'load', timeout: 120000 });
+await pag.goto(alvo.url, { waitUntil: 'load', timeout: 120000 });
 
 const imgs = await pag.evaluate(async () => {
   document.querySelectorAll('img[loading="lazy"]').forEach(i => { i.loading = 'eager'; });
@@ -69,13 +89,14 @@ const imgs = await pag.evaluate(async () => {
 console.log(`imagens: ${imgs.prontas}/${imgs.pedidas}`);
 if (imgs.prontas !== imgs.pedidas) {
   console.error('REPROVA: imagem faltando -- o PDF sairia sem capturas e sem dizer');
-  await nav.close(); process.exit(1);
+  await nav.close(); alvo.limpar(); process.exit(1);
 }
 
 await pag.emulateMedia({ media: 'print' });
 await pag.pdf({ path: saida, format: 'A4', printBackground: true,
                 margin: { top: '14mm', bottom: '16mm', left: '12mm', right: '12mm' } });
 await nav.close();
+alvo.limpar();
 
 if (faltou.length) {
   console.log(`pedidos de rede que falharam: ${faltou.length}`);
