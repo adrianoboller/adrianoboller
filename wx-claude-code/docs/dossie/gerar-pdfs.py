@@ -33,7 +33,10 @@ ALVOS = [
     (DOSSIE / "fluxo-atual.html", DOSSIE / "fluxo-atual.pdf"),
     (RAIZ / "docs/workflow.html", RAIZ / "docs/workflow.pdf"),
     (RAIZ / "docs/apresentacao.html", RAIZ / "docs/apresentacao.pdf"),
+    (RAIZ / "docs/fluxo-explicado.html", RAIZ / "docs/fluxo-explicado.pdf"),
 ]
+# o fluxo explicado e retrato, texto corrido; os outros HTML sao diagramas em paisagem
+RETRATO = {"fluxo-explicado.pdf"}
 
 CSS_MD = """<meta charset="utf-8"><style>
 body{font-family:"Source Serif 4",Georgia,serif;font-size:11pt;line-height:1.45;color:#14161F;max-width:none;margin:0}
@@ -108,7 +111,7 @@ def main() -> int:
             tmp.write_text(html_de_markdown(fonte), encoding="utf-8")
             imprimir(tmp, pdf, paisagem=False)
         else:
-            imprimir(fonte, pdf, paisagem=True)
+            imprimir(fonte, pdf, paisagem=pdf.name not in RETRATO)
         estado[pdf.name] = h
         print(f"  ok {pdf.name} refeito de {fonte.name} ({pdf.stat().st_size // 1024} KiB)")
     if not conferir:
