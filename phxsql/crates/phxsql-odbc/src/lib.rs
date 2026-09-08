@@ -891,6 +891,71 @@ pub unsafe extern "system" fn SQLNumParams(stmt: SqlHandle, saida: *mut SqlSmall
     })
 }
 
+/// Descreve o `?` da posicao `numero` -- e declara TEXTO, sempre.
+///
+/// Nao e preguica, e o que o driver tem: ele nao planeja nada na preparacao
+/// (o parser mora no servidor, e o texto so vai para la na execucao), entao
+/// ele nao sabe a que coluna cada `?` se compara nem qual o tipo dela. Um
+/// `SQL_INTEGER` chutado aqui seria a mesma mentira que o driver ja recusou
+/// contar sobre apelido de coluna (docs/ODBC.md, secao 8): tipo declarado sem
+/// esquema por tras.
+///
+/// `SQL_VARCHAR` nao estreita nada: o `SQLBindParameter` continua aceitando
+/// SQL_C_SLONG, SQL_C_DOUBLE e os outros, e quem coage o literal ao tipo da
+/// coluna e o servidor, na gravacao.
+///
+/// O tamanho volta ZERO, que aqui quer dizer "nao sei" -- e nao ha risco de
+/// buffer nisso: o driver nunca ESCREVE num buffer de parametro, porque
+/// parametro de saida e recusado na ligacao.
+///
+/// # Safety
+///
+/// Contrato da ABI do ODBC.
+#[no_mangle]
+pub unsafe extern "system" fn SQLDescribeParam(
+    stmt: SqlHandle,
+    numero: SqlUSmallint,
+    tipo: *mut SqlSmallint,
+    tamanho: *mut SqlULen,
+    casas: *mut SqlSmallint,
+    nulavel: *mut SqlSmallint,
+) -> SqlReturn {
+    blindado(|| {
+        let id = registro::id_de(stmt);
+        if !limpar_diag(id) {
+            return SQL_INVALID_HANDLE;
+        }
+        let texto = registro::com(id, |p| match p {
+            Punho::Comando(c) => Some(c.preparado.clone()),
+            _ => None,
+        });
+        let quantos = match texto {
+            None | Some(None) => return SQL_INVALID_HANDLE,
+            Some(Some(None)) => {
+                anotar(id, "HY010", "SQLDescribeParam sem um SQLPrepare antes");
+                return SQL_ERROR;
+            }
+            Some(Some(Some(sql))) => parametro::contar_interrogacoes(&sql),
+        };
+        if numero == 0 || usize::from(numero) > quantos {
+            anotar(
+                id,
+                "07009",
+                &format!("nao ha parametro {numero}: esta instrucao tem {quantos}"),
+            );
+            return SQL_ERROR;
+        }
+        escrever_num(tipo, SQL_VARCHAR);
+        escrever_num(tamanho, 0usize as SqlULen);
+        escrever_num(casas, 0);
+        // NULAVEL e a verdade, e nao o "desconhecido" de praxe: qualquer `?`
+        // deste driver aceita NULL pelo indicador (SQL_NULL_DATA), sem
+        // excecao.
+        escrever_num(nulavel, SQL_NULLABLE);
+        SQL_SUCCESS
+    })
+}
+
 /// # Safety
 ///
 /// Contrato da ABI do ODBC.
@@ -1843,6 +1908,73 @@ mod testes {
             assert_eq!(SQLDisconnect(dbc), SQL_SUCCESS);
             assert_eq!(SQLFreeHandle(SQL_HANDLE_DBC, dbc), SQL_SUCCESS);
             assert_eq!(SQLFreeHandle(SQL_HANDLE_ENV, env), SQL_SUCCESS);
+        }
+    }
+
+    // O par SQLNumParams/SQLDescribeParam: o `isql` e as ferramentas de grade
+    // perguntam os dois antes de ligar qualquer coisa, e sem SQLPrepare antes
+    // a resposta e HY010 e nao zero -- zero seria lido como "esta instrucao
+    // nao tem parametros", e a ferramenta nem tentaria ligar.
+    #[test]
+    fn a_contagem_e_a_descricao_dos_parametros_pela_abi() {
+        let (porta, _recebe) = servidor_de_eco();
+        unsafe {
+            let mut env: SqlHandle = std::ptr::null_mut();
+            SQLAllocHandle(SQL_HANDLE_ENV, std::ptr::null_mut(), &mut env);
+            let mut dbc: SqlHandle = std::ptr::null_mut();
+            SQLAllocHandle(SQL_HANDLE_DBC, env, &mut dbc);
+            let receita = format!("Server=127.0.0.1;Port={porta};Database=b\0");
+            assert_eq!(
+                SQLDriverConnect(
+                    dbc,
+                    std::ptr::null_mut(),
+                    receita.as_ptr(),
+                    SQL_NTS as SqlSmallint,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    0
+                ),
+                SQL_SUCCESS
+            );
+            let mut stmt: SqlHandle = std::ptr::null_mut();
+            SQLAllocHandle(SQL_HANDLE_STMT, dbc, &mut stmt);
+
+            let mut quantos: SqlSmallint = -9;
+            assert_eq!(SQLNumParams(stmt, &mut quantos), SQL_ERROR);
+            assert_eq!(estado_do_diag(stmt), "HY010");
+            assert_eq!(quantos, -9, "sem preparar, nao se escreve numero nenhum");
+
+            // O `?` de dentro das aspas nao entra na conta -- a mesma regra do
+            // contador, agora pela ABI.
+            let sql = "SELECT * FROM c WHERE n = 'e ai?' AND id = ? AND cidade = ?\0";
+            assert_eq!(SQLPrepare(stmt, sql.as_ptr(), SQL_NTS), SQL_SUCCESS);
+            assert_eq!(SQLNumParams(stmt, &mut quantos), SQL_SUCCESS);
+            assert_eq!(quantos, 2);
+
+            let mut tipo: SqlSmallint = 0;
+            let mut tamanho: SqlULen = 7;
+            let mut casas: SqlSmallint = 7;
+            let mut nulavel: SqlSmallint = 7;
+            assert_eq!(
+                SQLDescribeParam(stmt, 1, &mut tipo, &mut tamanho, &mut casas, &mut nulavel),
+                SQL_SUCCESS
+            );
+            assert_eq!(
+                (tipo, tamanho, casas, nulavel),
+                (SQL_VARCHAR, 0, 0, SQL_NULLABLE)
+            );
+            // Fora da faixa e 07009, nomeando quantos ha.
+            assert_eq!(
+                SQLDescribeParam(stmt, 3, &mut tipo, &mut tamanho, &mut casas, &mut nulavel),
+                SQL_ERROR
+            );
+            assert_eq!(estado_do_diag(stmt), "07009");
+
+            SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+            SQLDisconnect(dbc);
+            SQLFreeHandle(SQL_HANDLE_DBC, dbc);
+            SQLFreeHandle(SQL_HANDLE_ENV, env);
         }
     }
 
