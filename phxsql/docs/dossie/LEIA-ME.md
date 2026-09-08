@@ -299,6 +299,34 @@ Publique **passando essa URL**. Ela **não se edita** — sai do
 `pagina-dos-pedidos.py`, que lê o `docs/PENDENCIAS.md` e conta os três estados
 sozinho. A fonte da verdade é o `.md`; mexeu lá, rode isto.
 
+## A quinta página: o status dos dez recursos
+
+`status.html` é a tabela A–J que o Adriano pediu em 08/09/2026 — nota de 0 a
+10, o que existe e o que falta em cada recurso —, publicada em:
+
+**https://claude.ai/code/artifact/51330b6a-7c5c-4f8f-831a-93a9fb7cba9c**
+
+Ela **não se edita**: `python3 docs/dossie/pagina-de-status.py` a gera do
+`docs/STATUS.md`, que é a fonte e **se edita** — a avaliação, datada, com as
+fontes nomeadas em cada linha. Rode **depois** do `numeros-do-projeto.py`,
+porque o painel lê o `CAPABILITIES.json`; a corrida da rodada faz isso na
+ordem certa.
+
+Dois tipos de número, separados de propósito: a **nota** é avaliação (uma
+leitura do código e dos testes, na data dita) e o **painel** é medido — do
+`CAPABILITIES.json` e dos `resultados.json` de gestão, replicação e cluster,
+cada um com a data em que foi medido. O cluster não grava a data no próprio
+resultado, e a página diz «data do arquivo», como a dos testes; bancada sem
+arquivo aparece como NÃO MEDIDA. A régua carrega o tipo na **forma** da barra
+(cheia = construído, meia = parcial, hachurada = recusa medida, só contorno =
+promessa), e o número fica depois do traço.
+
+`olhar.mjs` faz uma captura local para a olhada antes de publicar. O
+`playwright` entra pelo caminho absoluto, como no `capturar-dossie.mjs`: não há
+`node_modules` no repositório, e o pacote global não se resolve pelo nome — o
+Node cai com `ERR_MODULE_NOT_FOUND` e, cortado no `tail`, parece que só
+imprimiu a versão dele.
+
 ## O que só apareceu abrindo no navegador
 
 - **`thead` grudento dentro de `overflow-x:auto` cai por cima da primeira

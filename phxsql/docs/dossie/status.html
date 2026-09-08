@@ -1,0 +1,191 @@
+<title>Os dez recursos do PhxSql</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --papel:#fbf9f7; --papel-2:#f3efec; --papel-3:#e9e3de;
+  --tinta:#1a1210; --tinta-2:#4a3f3a; --tinta-3:#7a6d66;
+  --linha:#ded6d0; --acento:#c63c0a;
+  --construido:#2f7a3e; --parcial:#8a6a1f; --recusa:#5b6470; --promessa:#c63c0a;
+  --ausente:#8a6a1f;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --papel:#040814; --papel-2:#0a1122; --papel-3:#131c31;
+    --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#7c8598;
+    --linha:#1e2940; --acento:#ff8a1c;
+    --construido:#5cbf74; --parcial:#d5a83c; --recusa:#8e9ab0; --promessa:#ff8a1c;
+    --ausente:#d5a83c;
+  }
+}
+:root[data-theme="dark"]{
+  --papel:#040814; --papel-2:#0a1122; --papel-3:#131c31;
+  --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#7c8598;
+  --linha:#1e2940; --acento:#ff8a1c;
+  --construido:#5cbf74; --parcial:#d5a83c; --recusa:#8e9ab0; --promessa:#ff8a1c;
+  --ausente:#d5a83c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--papel);color:var(--tinta);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;font-size:16px;line-height:1.55;
+  -webkit-font-smoothing:antialiased}
+h1,h2,h3,.rotulo,.pino,.nota-n,.regua .l{font-family:"Exo 2","Helvetica Neue",Arial,sans-serif}
+code,.mono,.num,.placar .q{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+code{font-size:.86em;background:var(--papel-2);padding:1px 4px;border-radius:3px;color:var(--tinta-2)}
+.envelope{max-width:1120px;margin:0 auto;padding:0 20px 80px}
+header{padding:52px 0 28px;border-bottom:1px solid var(--linha)}
+.rotulo{font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--acento);font-weight:600;margin-bottom:12px}
+h1{font-size:clamp(30px,5vw,46px);font-weight:700;line-height:1.08;margin:0 0 14px;letter-spacing:-.015em;text-wrap:balance}
+h1 .x{color:var(--acento)}
+.chamada{max-width:66ch;color:var(--tinta-2);font-size:17px;margin:0 0 4px}
+h2{font-size:22px;font-weight:600;margin:52px 0 6px;letter-spacing:-.01em}
+h2 + .sub{color:var(--tinta-3);font-size:15px;margin:0 0 20px;max-width:66ch}
+
+.placar{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:30px 0 0}
+.placar .c{border:1px solid var(--linha);border-radius:6px;padding:14px 16px;background:var(--papel-2);display:flex;flex-direction:column;gap:6px}
+.placar .c.larga{grid-column:span 2}
+.placar .v{font-family:"Exo 2",sans-serif;font-size:30px;font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.placar .larga .v{font-size:20px}
+.placar .r{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--tinta-3)}
+.placar .q{font-size:10.5px;color:var(--tinta-3);margin-top:auto}
+.placar .ausente .v{color:var(--ausente);font-size:22px}
+.placar .ausente .q{color:var(--ausente)}
+
+/* A regua: uma barra por recurso, 0-10. A FORMA carrega o tipo, nao so a cor:
+   cheia = construido, meia = parcial, hachurada = recusa medida, so contorno
+   = promessa. Numero depois do traco, nunca por cima dele. */
+.regua{list-style:none;margin:18px 0 0;padding:0;display:grid;gap:9px}
+.regua li{display:grid;grid-template-columns:2.2em minmax(11ch,18ch) 1fr 2.6em;gap:12px;align-items:center}
+.regua .k{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--tinta-3);text-align:right}
+.regua .l{font-size:14px;font-weight:500;color:var(--tinta)}
+.regua .t{height:14px;background:var(--papel-3);border-radius:3px;position:relative;overflow:hidden}
+.regua .b{position:absolute;inset:0 auto 0 0;border-radius:3px}
+.regua .construido .b{background:var(--construido)}
+.regua .parcial .b{background:linear-gradient(90deg,var(--parcial) 0 100%);opacity:.75}
+.regua .recusa .b{background:repeating-linear-gradient(135deg,var(--recusa) 0 4px,transparent 4px 8px)}
+.regua .promessa .b{background:transparent;border:2px solid var(--promessa)}
+.regua .n{font-family:"Exo 2",sans-serif;font-weight:700;font-size:16px;font-variant-numeric:tabular-nums;text-align:right}
+.legenda{display:flex;flex-wrap:wrap;gap:14px 22px;margin:16px 0 0;font-size:13px;color:var(--tinta-2)}
+.legenda span{display:inline-flex;align-items:center;gap:7px}
+.legenda i{display:inline-block;width:22px;height:10px;border-radius:2px}
+.legenda .construido i{background:var(--construido)}
+.legenda .parcial i{background:var(--parcial);opacity:.75}
+.legenda .recusa i{background:repeating-linear-gradient(135deg,var(--recusa) 0 3px,transparent 3px 6px)}
+.legenda .promessa i{border:2px solid var(--promessa);background:transparent;height:8px}
+
+.rolo{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;min-width:760px}
+thead th{font-family:"IBM Plex Mono",monospace;font-weight:500;font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--tinta-3);text-align:left;padding:12px 12px 8px;border-bottom:1px solid var(--linha)}
+tbody td{padding:16px 12px;border-bottom:1px solid var(--linha);vertical-align:top;font-size:14.5px}
+tbody tr:hover td{background:var(--papel-2)}
+td.k{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--tinta-3);width:2.4em;white-space:nowrap}
+td.rc{width:15%;color:var(--tinta)}
+td.rc .nome{font-family:"Exo 2",sans-serif;font-weight:600;font-size:15px;display:block;margin-bottom:6px}
+td.co,td.fa{color:var(--tinta-2)}
+.nota-n{display:inline-block;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;margin-right:8px}
+.pino{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.03em;white-space:nowrap}
+.pino::before{content:"";width:9px;height:9px;border-radius:50%;border:1.5px solid currentColor;flex:none}
+.pino.construido{color:var(--construido)}.pino.construido::before{background:currentColor}
+.pino.parcial{color:var(--parcial)}.pino.parcial::before{background:linear-gradient(90deg,currentColor 50%,transparent 50%)}
+.pino.recusa{color:var(--recusa)}.pino.recusa::before{background:repeating-linear-gradient(135deg,currentColor 0 2px,transparent 2px 4px)}
+.pino.promessa{color:var(--promessa)}
+
+.nota{border-left:3px solid var(--acento);background:var(--papel-2);padding:14px 18px;border-radius:0 5px 5px 0;margin:26px 0;font-size:15px;color:var(--tinta-2);max-width:68ch}
+.nota .t{display:block;font-family:"Exo 2",sans-serif;font-weight:600;color:var(--tinta);font-size:14px;margin-bottom:5px}
+.leitura p{max-width:68ch;color:var(--tinta-2)}
+footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--linha);color:var(--tinta-3);font-size:13.5px;max-width:68ch}
+@media (max-width:640px){.regua li{grid-template-columns:2em 1fr 2.4em}.regua .l{grid-column:2}.regua .t{grid-column:1/4}.placar .c.larga{grid-column:span 1}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+<div class="envelope">
+<header>
+  <div class="rotulo">PhxSql 0.18.0 · status dos dez recursos</div>
+  <h1>Dez recursos, dez notas —<br>e o que <span class="x">falta</span> em cada um</h1>
+  <p class="chamada">Duas coisas nesta página, separadas de propósito. As <strong>notas</strong>
+  são <em>avaliação</em>: leitura do código e dos testes de cada recurso em
+  <strong>08/09/2026</strong>, com as fontes nomeadas na linha. O <strong>painel</strong> é
+  <em>medido</em>: cada número traz a data em que foi medido, e a bancada que não
+  rodou aparece como não medida em vez de sumir.</p>
+
+  <div class="placar">
+    <div class="c"><div class="v">1.852</div><div class="r">testes, na suíte inteira</div><div class="q">medido em 08/09/2026 · <span title="CAPABILITIES.json">CAPABILITIES.json</span></div></div>
+    <div class="c"><div class="v">130</div><div class="r">operações do protocolo</div><div class="q">medido em 08/09/2026 · <span title="CAPABILITIES.json">CAPABILITIES.json</span></div></div>
+    <div class="c"><div class="v">156.831</div><div class="r">linhas de Rust</div><div class="q">medido em 08/09/2026 · <span title="CAPABILITIES.json">CAPABILITIES.json</span></div></div>
+    <div class="c"><div class="v">0</div><div class="r">dependências externas</div><div class="q">medido em 08/09/2026 · <span title="CAPABILITIES.json">CAPABILITIES.json</span></div></div>
+    <div class="c"><div class="v">127</div><div class="r">testes na crate SQL</div><div class="q">contados hoje, 08/09/2026 · <span title="crates/phxsql-sql">phxsql-sql</span></div></div>
+    <div class="c larga"><div class="v">15 ok · 0 parcial · 0 planejado</div><div class="r">gestão do banco, pelo efeito</div><div class="q">medido em 08/09/2026 · <span title="bancada/gestao/resultados.json">resultados.json</span></div></div>
+    <div class="c"><div class="v">33.883</div><div class="r">linhas/s no master, replicando</div><div class="q">medido em 07/09/2026 · <span title="bancada/replicacao/resultados.json">resultados.json</span></div></div>
+    <div class="c"><div class="v">37.311</div><div class="r">eventos/s na réplica</div><div class="q">medido em 07/09/2026 · <span title="bancada/replicacao/resultados.json">resultados.json</span></div></div>
+    <div class="c"><div class="v">2,7 s</div><div class="r">alcance da réplica</div><div class="q">medido em 07/09/2026 · <span title="bancada/replicacao/resultados.json">resultados.json</span></div></div>
+    <div class="c"><div class="v">sim</div><div class="r">réplicas iguais no fim (SHA-256)</div><div class="q">medido em 07/09/2026 · <span title="bancada/replicacao/resultados.json">resultados.json</span></div></div>
+    <div class="c"><div class="v">4,3 s</div><div class="r">promoção após matar o master</div><div class="q">data do arquivo: 07/09/2026 · <span title="bancada/cluster/resultados.json">resultados.json</span></div></div>
+    <div class="c"><div class="v">sim</div><div class="r">a minoria não se elegeu</div><div class="q">data do arquivo: 07/09/2026 · <span title="bancada/cluster/resultados.json">resultados.json</span></div></div>
+    <div class="c"><div class="v">0</div><div class="r">falhas na bancada do cluster</div><div class="q">data do arquivo: 07/09/2026 · <span title="bancada/cluster/resultados.json">resultados.json</span></div></div>
+  </div>
+</header>
+
+<h2>A régua</h2>
+<p class="sub">Uma barra por recurso, de 0 a 10. A <strong>forma</strong> diz o que a nota
+significa, e não só a cor: 7 construídos, 1 parcial,
+1 recusa medida e 1 promessa. Média das dez: 6,6.</p>
+<ul class="regua">
+  <li class="construido"><span class="k">A</span><span class="l">Paginação</span><span class="t" role="img" aria-label="A: nota 9 de 10, Construído"><span class="b" style="width:90%"></span></span><span class="n">9</span></li>
+  <li class="construido"><span class="k">B</span><span class="l">Replicação</span><span class="t" role="img" aria-label="B: nota 8 de 10, Construído"><span class="b" style="width:80%"></span></span><span class="n">8</span></li>
+  <li class="construido"><span class="k">C</span><span class="l">Tabela na memória</span><span class="t" role="img" aria-label="C: nota 7 de 10, Construído"><span class="b" style="width:70%"></span></span><span class="n">7</span></li>
+  <li class="recusa"><span class="k">D</span><span class="l">Colunar / vetorial tipo HANA</span><span class="t" role="img" aria-label="D: nota 2 de 10, Recusa medida"><span class="b" style="width:20%"></span></span><span class="n">2</span></li>
+  <li class="promessa"><span class="k">E</span><span class="l">IA cognitiva / ações automáticas</span><span class="t" role="img" aria-label="E: nota 3 de 10, Promessa"><span class="b" style="width:30%"></span></span><span class="n">3</span></li>
+  <li class="construido"><span class="k">F</span><span class="l">Backup e restauração</span><span class="t" role="img" aria-label="F: nota 8 de 10, Construído"><span class="b" style="width:80%"></span></span><span class="n">8</span></li>
+  <li class="parcial"><span class="k">G</span><span class="l">Comandos SQL</span><span class="t" role="img" aria-label="G: nota 6 de 10, Parcial"><span class="b" style="width:60%"></span></span><span class="n">6</span></li>
+  <li class="construido"><span class="k">H</span><span class="l">Stored Procedures</span><span class="t" role="img" aria-label="H: nota 7 de 10, Construído"><span class="b" style="width:70%"></span></span><span class="n">7</span></li>
+  <li class="construido"><span class="k">I</span><span class="l">Triggers</span><span class="t" role="img" aria-label="I: nota 8 de 10, Construído"><span class="b" style="width:80%"></span></span><span class="n">8</span></li>
+  <li class="construido"><span class="k">J</span><span class="l">Jobs</span><span class="t" role="img" aria-label="J: nota 8 de 10, Construído"><span class="b" style="width:80%"></span></span><span class="n">8</span></li>
+</ul>
+<div class="legenda">
+  <span class="construido"><i></i>construído — existe e está provado</span>
+  <span class="parcial"><i></i>parcial — existe, com a metade que falta nomeada</span>
+  <span class="recusa"><i></i>recusa medida — não existe <em>porque</em> foi medido que não compensa</span>
+  <span class="promessa"><i></i>promessa — a documentação prometeu mais do que o código entrega</span>
+</div>
+
+<div class="nota">
+  <span class="t">Nota é avaliação; número é medida</span>
+  Uma nota 8 não é «80% medido». É o que uma leitura do código e dos testes
+  concluiu, na data dita, com as fontes na linha — e quem discordar muda a linha
+  do <code>docs/STATUS.md</code> com o motivo, e roda o gerador. Os números do
+  painel, ao contrário, ninguém digita: saem dos arquivos que as bancadas gravam.
+</div>
+
+<h2>Os dez, um a um</h2>
+<p class="sub">Como está hoje, e o que falta — com o arquivo, o teste ou o documento que sustenta cada afirmação.</p>
+<div class="rolo">
+  <table>
+    <thead><tr><th class="k">#</th><th>recurso</th><th>como está</th><th>o que falta</th></tr></thead>
+    <tbody>
+      <tr class="construido"><td class="k">A</td><td class="rc"><span class="nome">Paginação</span><span class="nota-n">9/10</span><span class="pino construido">Construído</span></td><td class="co">Endereço por conta (<code>rowid → volume</code>) em <code>paginacao.rs</code>, <code>.pag</code> gerado, partição A–Z de 37 baldes, cursor/keyset, <code>rownum</code> por bisseção, quatro modos de varredura. Testes em <code>phxsql-core</code>, em <code>phxsql-store/tests/paginacao.rs</code> e <code>alfanumerica.rs</code>, mais os de protocolo; os defeitos históricos estão corrigidos e documentados no <code>PENDENCIAS.md</code>.</td><td class="fa">Comando na CLI — só protocolo e tela (pedido 14). A varredura por índice ainda usa posição, não cursor: decisão documentada em <code>op_varrer</code>.</td></tr>
+      <tr class="construido"><td class="k">B</td><td class="rc"><span class="nome">Replicação</span><span class="nota-n">8/10</span><span class="pino construido">Construído</span></td><td class="co">Diário <code>.log</code>, quatro modos, cluster com eleição e promoção automáticas. A bancada mede <strong>1 master + 3 réplicas</strong> com <code>iguais_no_fim</code> (retrato SHA-256 idêntico) e o cluster com <strong>3 nós</strong> — a minoria não se elege. Os números estão no painel acima, com a data.</td><td class="fa">Configuração só à mão no <code>config.json</code>, não pela tela. Bidirecional provado só no par. Pulso do cluster em claro. Nó a quente não entra. A busca do lote acontece <strong>dentro da trava</strong> — uma réplica cortada parou 30,7 s (<code>REPLICACAO.md</code> §13). Sem TLS real: a cifra é a Noise-like da casa.</td></tr>
+      <tr class="construido"><td class="k">C</td><td class="rc"><span class="nome">Tabela na memória</span><span class="nota-n">7/10</span><span class="pino construido">Construído</span></td><td class="co"><code>TabelaMemoria</code> guarda a linha <strong>decodificada</strong> em RAM com mapa de igualdade por coluna, coerente com o disco na mesma trava e sob o teto <code>memoria_max_mb</code>. Doze testes unitários mais a integração ponta a ponta; o ganho sobre o disco está em <code>DESEMPENHO.md</code>, medido pelo <code>examples/memoria.rs</code>.</td><td class="fa">Carga e liberação manuais. Mapa só de igualdade — sem min–max para faixa e <code>BETWEEN</code>. O pivot decodifica cada linha duas vezes. O catálogo prometia um <code>mmap</code> que não existe — corrigido em 08/09/2026.</td></tr>
+      <tr class="recusa"><td class="k">D</td><td class="rc"><span class="nome">Colunar / vetorial tipo HANA</span><span class="nota-n">2/10</span><span class="pino recusa">Recusa medida</span></td><td class="co"><strong>Nada colunar existe</strong>: o motor é 100% row-store. Column store como segundo motor foi recusado com número em três documentos (<code>MEMORIA.md</code> §4, <code>VETORES.md</code> §0, <code>GPU.md</code> §7): achatar linha→coluna custa uma passada inteira pela memória, <strong>mais que a varredura que aceleraria</strong>.</td><td class="fa">É recusa medida, não buraco — reabre só com gargalo analítico medido. A proposta de vetor <strong>de IA</strong> (<code>VECTOR</code> + HNSW, <code>VETORES.md</code>) é outra coisa, e está «proposta, não construída».</td></tr>
+      <tr class="promessa"><td class="k">E</td><td class="rc"><span class="nome">IA cognitiva / ações automáticas</span><span class="nota-n">3/10</span><span class="pino promessa">Promessa</span></td><td class="co">Integração 100% no navegador: o <code>claude.js</code> fala com a API; a IA <strong>propõe</strong> — SQL, plano de modelagem, índice — e toda gravação exige um clique. Quatro testes Rust em <code>http.rs</code> (CSP liberado, sem chave no binário).</td><td class="fa"><strong>Nenhuma ação autônoma do motor</strong>, e isso é escolha registrada (<code>CLAUDE-IA.md</code> §10), não falta. As 79 provas de navegador da documentação <strong>não estão no repositório</strong> — pedido 231. Nunca testado com chave real.</td></tr>
+      <tr class="construido"><td class="k">F</td><td class="rc"><span class="nome">Backup e restauração</span><span class="nota-n">8/10</span><span class="pino construido">Construído</span></td><td class="co">Backup de dados em zip com manifesto SHA-256; restauração com palco fora da raiz e <em>rename</em> atômico; operações de protocolo e botão na tela; espelho <code>.bkp</code>. Round-trip testado <strong>nos dois sentidos</strong> e por soquete (<code>backup.rs</code>, <code>restaurar.rs</code>, <code>servidor.rs</code>). O <code>backup.sh</code> da raiz é do repositório git, não dos dados.</td><td class="fa">Sem ZIP64 — acima de 4 GiB recusa alto. Sem prova de autoria: SHA é integridade, não assinatura. Um banco por vez. Não avisa tabela já carregada em memória.</td></tr>
+      <tr class="parcial"><td class="k">G</td><td class="rc"><span class="nome">Comandos SQL</span><span class="nota-n">6/10</span><span class="pino parcial">Parcial</span></td><td class="co"><code>SELECT</code> simples (<code>WHERE</code> de um comparador, <code>ORDER BY</code> de uma coluna, <code>LIMIT/OFFSET</code>) e, desde 08/09/2026, <strong><code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> por chave única</strong> (<code>dml.rs</code>: três passos, com a linha mesclada e a <code>versao</code>). Transação, gatilhos, procedimentos, usuários e diretivas entram pelo mesmo texto. Recusas <strong>nomeadas</strong>, nunca «sintaxe inválida». Os testes da crate estão no painel.</td><td class="fa"><code>JOIN</code>, <code>UNION</code>, <code>GROUP BY</code>, <code>DISTINCT</code>, <code>LIKE</code>/<code>IN</code>/<code>BETWEEN</code>, <code>AND</code>/<code>OR</code>, expressão, subconsulta e <strong>planejador</strong> — «o trabalho de verdade». <code>UPDATE</code>/<code>DELETE</code> por índice não único ou por faixa. Só <code>READ COMMITTED</code>. Era <strong>5</strong> na manhã de 08/09; o DML por chave subiu para 6.</td></tr>
+      <tr class="construido"><td class="k">H</td><td class="rc"><span class="nome">Stored Procedures</span><span class="nota-n">7/10</span><span class="pino construido">Construído</span></td><td class="co">Guardadas em <code>base/&lt;database&gt;/procedimentos.json</code> — <strong>uma por database</strong>, não por tabela. <code>CREATE</code>/<code>DROP</code>/<code>CALL</code>; corpo com <code>IF</code>/<code>WHILE</code>/<code>DECLARE</code>/<code>SET</code>/<code>SIGNAL</code>/<code>INSERT</code>/<code>SELECT INTO</code>, decimal exato em <code>i128</code>; portão <code>administrar</code>. Dezesseis testes mais a prova por soquete (<code>bancada/rotinas/prova-rotinas.py</code>: <code>CALL somar(100)</code> → 5050). <strong>Funciona.</strong></td><td class="fa">Sem <code>UPDATE</code>/<code>DELETE</code> no corpo; sem <code>CASE</code>/<code>LOOP</code>, cursor, <code>FUNCTION</code>, <code>CALL</code> aninhado ou transação. Job com corpo <code>CALL</code> funciona, mas <strong>sem teste por soquete</strong>.</td></tr>
+      <tr class="construido"><td class="k">I</td><td class="rc"><span class="nome">Triggers</span><span class="nota-n">8/10</span><span class="pino construido">Construído</span></td><td class="co">Guardados em <code>base/&lt;database&gt;/gatilhos.json</code>. <code>BEFORE</code>/<code>AFTER</code> × <code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code>; o <code>BEFORE</code> roda <strong>com a trava</strong> (altera <code>NEW</code>, cancela por <code>SIGNAL</code>, não fala com o motor); o <code>AFTER</code> solto (audita, falha vira aviso). Teto de cadeia de 8. A bateria achou e corrigiu <strong>dois defeitos graves</strong> — estouro de pilha e um <em>deadlock</em> (<code>TRIGGERS.md</code> §9).</td><td class="fa">O mesmo subconjunto de corpo do item H. Sem <code>FOLLOWS</code>/<code>PRECEDES</code>. Diferenças em relação ao MySQL(R) documentadas.</td></tr>
+      <tr class="construido"><td class="k">J</td><td class="rc"><span class="nome">Jobs</span><span class="nota-n">8/10</span><span class="pino construido">Construído</span></td><td class="co">Agendador de 30 s; o job carrega um pedido inteiro do protocolo; <code>jobs.json</code> mais <code>jobs.log</code> <em>append-only</em>. Roda <strong>com o poder do usuário do job</strong> — provado: <code>so_le</code> recusado a criar database, <code>root</code> cria. Aviso por e-mail (falhou, parado) <em>opt-in</em>. Dez testes por soquete mais <code>prova-avisos.py</code> com SMTP falso.</td><td class="fa">Sem cron completo — a agenda é o enum <code>Agenda</code>. Job com corpo <code>CALL</code> sem teste por soquete.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>Leitura</h2>
+<div class="leitura">
+<p>O núcleo <strong>de armazenamento</strong> — paginação, replicação, backup, jobs, triggers — está entre 8 e 9: construído, medido e provado por soquete, com defeitos de produção já caçados. Os pontos finos são a <strong>camada de superfície SQL</strong> (o planejador e as junções ainda não) e os dois pedidos que hoje quase não existem: colunar tipo HANA e IA autônoma. E a distinção que importa: dessas duas notas baixas, <strong>D é recusa medida</strong> (o número diz que o colunar custaria mais do que renderia), enquanto <strong>E é promessa maior que a entrega</strong> — a UI assistiva funciona, mas «ações automáticas» e as provas documentadas não estão no código.</p>
+</div>
+
+<footer>
+  Gerado de <code>docs/STATUS.md</code> por <code>docs/dossie/pagina-de-status.py</code>
+  em 08/09/2026 15:14. Os números do painel vêm de <code>CAPABILITIES.json</code> e dos
+  <code>resultados.json</code> de <code>bancada/gestao</code>, <code>bancada/replicacao</code>
+  e <code>bancada/cluster</code>, cada um com a própria data. O dossiê técnico, a
+  página dos pedidos, a dos testes e a dos gráficos são as outras quatro.
+</footer>
+</div>

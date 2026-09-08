@@ -96,6 +96,25 @@ apareceram **exercitando no navegador**: a escala saía só das medianas e a
 faixa ia parar fora do `viewBox`, e o número era escrito depois da barra em vez
 de depois do traço, saindo riscado por cima da linha.
 
+E uma **quinta**, o status dos dez recursos — a tabela A–J com a nota, o que
+existe e o que falta em cada um:
+
+- **URL:** https://claude.ai/code/artifact/51330b6a-7c5c-4f8f-831a-93a9fb7cba9c
+- **Fonte:** `phxsql/docs/STATUS.md`, que **se edita** — é a avaliação, datada,
+  com as fontes em cada linha —, e `phxsql/docs/dossie/status.html`, que **não
+  se edita**: `python3 phxsql/docs/dossie/pagina-de-status.py` a gera daquele
+  arquivo e injeta ao lado os números medidos do `CAPABILITIES.json` e dos
+  `resultados.json` de gestão, replicação e cluster, cada um com a data.
+
+Ela separa **nota** de **número** de propósito, em texto e em forma: a nota é
+avaliação (uma leitura do código e dos testes, na data dita) e o painel é
+medida — e a régua carrega o tipo na barra (cheia, meia, hachurada, só
+contorno), não só na cor. Quem discorda de uma nota muda a linha do
+`STATUS.md` com o motivo e roda o gerador; quem discorda de um número roda a
+bancada. Ao lado há o `olhar.mjs`, uma captura local antes de publicar: o
+`playwright` só resolve pelo caminho absoluto, e rodado de fora do repositório
+o Node cala e imprime só a versão dele.
+
 ## Todo aprendizado novo vira um arquivo de cognição
 
 Ordem do dono, 02/09/2026: *«Todo aprendizado novo seu deve virar um
