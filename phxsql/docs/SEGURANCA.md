@@ -2466,4 +2466,235 @@ O teste que trava isso é o do comportamento **velho**:
 - A **tela** não cria usuário. A porta é do protocolo; a aba de Usuários
   continua lendo, e a nota nela diz por quê.
 - **Papéis e grupos** continuam não existindo: o poder é por usuário.
-- **Direito por coluna** continua não existindo: o direito desce até a tabela.
+- **Direito por coluna** passou a existir — é a §15, logo abaixo.
+
+---
+
+<!-- direito-por-coluna: gerado por docs/geradores/direito-por-coluna.py -->
+## 15. Direito por coluna: as 5 que devolvem linha, as 3 que escrevem e as 17 que recusam
+
+Medido em 130 operações do catálogo (`crates/phxsql-server/src/catalogo.rs`), classificadas uma a uma em `CLASSES`, no `crates/phxsql-server/src/direito_coluna.rs`. Os apelidos viajam com a operação e não contam de novo.
+
+| classe | quantas | o que o servidor faz |
+|---|---:|---|
+| `Le` | 5 | devolve linha, e a peneira a alcança |
+| `Escreve` | 3 | recebe colunas para gravar |
+| `Estrutura` | 1 | descreve a estrutura |
+| `Recusa` | 17 | devolve ou grava linha por caminho que a peneira não alcança |
+| `Nenhum` | 104 | não toca em dado de linha |
+
+As listas que decidem alguma coisa:
+
+- **Devolvem linha, e a coluna negada sai da resposta** (5): `ler`, `varrer`, `buscar`, `procurar_texto`, `SelectMemory`.
+- **Recebem colunas, e a coluna negada é conferida** (3): `inserir`, `inserir_lote`, `atualizar`.
+- **Descreve a estrutura, que continua inteira** (1): `esquema`.
+- **Recusam a tabela restrita, para não vazar** (17): `pivotar`, `juntar`, `unir`, `checksum`, `exportar`, `importar_conferir`, `lixeira`, `trilha`, `duplicar_tabela`, `renomear_tabela`, `copiar_tabela`, `diario`, `replicar`, `aplicar`, `backup`, `profiler`, `dblink_sincronizar`.
+
+As outras 104 não devolvem nem recebem dado de linha, e por isso passam sem custo nenhum.
+
+<!-- fim direito-por-coluna -->
+
+A folha de pagamento e a tabela de clientes moram no mesmo banco porque o
+negócio é um só — e o direito por tabela já resolveu esse caso. Falta o de
+dentro: o RH lê a folha inteira, o gestor lê a folha **sem o salário**, e não
+há como dizer «tudo menos uma coluna» com uma regra que para na tabela.
+
+### O cadastro
+
+Dentro do objeto da tabela, um objeto `colunas`:
+
+```json
+"bases": { "Z": {
+  "ler": true, "inserir": true, "alterar": true,
+  "tabelas": {
+    "folha": {
+      "ler": true, "inserir": true, "alterar": true,
+      "colunas": { "salario": { "ler": false, "alterar": false } }
+    }
+  }
+}}
+```
+
+**Sem `colunas`, nada muda** — e é o teste que mais importa
+(`sem_colunas_no_cadastro_nada_muda`), pelo mesmo motivo de sempre: regra nova
+que muda o significado da configuração que já existe tira o direito de alguém
+sem ninguém ter pedido. Aqui tiraria **dado**, que é pior — o `atualizar`
+passaria a repor colunas por conta.
+
+Duas decisões do formato:
+
+- **Só `ler` e `alterar` existem por coluna**, e um direito desconhecido ali
+  **recusa a carga do cadastro**, nomeando usuário, base, tabela e coluna. Não
+  se `reindexa` um campo nem se `administra` metade de uma linha: aceitar
+  `"excluir": false` calado seria um campo que ninguém lê — e campo que
+  ninguém lê mente, e mente pior quando o assunto é quem alcança o dado.
+- **Nega por omissão**, como a base e a tabela: `{"salario": {}}` tira as duas.
+  A precedência é a mesma de `permissoes_em` — a tabela nesta base, `"*"` nesta
+  base, a tabela na base `"*"`, `"*"` na base `"*"` —, e é a mesma de propósito:
+  quem já entendeu como a regra da tabela se resolve não precisa aprender uma
+  segunda regra.
+
+### A lista medida, que é o que decide o alcance
+
+É a mesma lição das **7 de 116** do portão por tabela: *lei que lista menos
+casos do que existem não protege menos hoje — protege menos no dia em que
+alguém usar a lista como inventário.* Então a lista não se digita: ela sai da
+tabela `CLASSES` do `crates/phxsql-server/src/direito_coluna.rs`, que é onde
+ela **decide** alguma coisa, e o gerador
+`docs/geradores/direito-por-coluna.py` a escreve aqui. Um par de testes trava
+os dois sentidos do laço — operação do catálogo sem classe, e classe para
+operação que não existe.
+
+A varredura já pagou: quatro apelidos passariam batidos se a classificação
+tivesse olhado só o nome canônico — `sequences`, e os três de `SelectMemory`
+(`selectmemory`, `selecionar_memoria`). O apelido chega ao portão como o nome
+chega, e o `SelectMemory` devolve **as mesmas linhas do `varrer`** por outro
+caminho: sem ele classificado, bastaria um `memoria_carregar` para a coluna
+negada sair inteira.
+
+### Um lugar só, e três irmãos que o chamam
+
+`aplicar_direito_por_coluna` **embrulha** o `executar` em vez de ser um
+portão, e o motivo é que metade do trabalho é antes e metade é depois: antes,
+recusar a escrita e repor o valor que quem não lê a coluna não tem como
+mandar; depois, tirar a coluna da resposta. Um portão só vê o pedido; uma
+peneira só vê a resposta. Separá-los daria **dois** lugares para esquecer.
+
+Irmão aqui não é quem tem nome parecido: é **quem chama `portoes_do_pedido` e
+depois `executar`, na mesma ordem**. São três, e os três passam por lá:
+
+1. `despachar` — a rede, e com ela o MCP, o REST e a tela, que entram todos
+   pelo `ExecutorLocal`;
+2. `executar_derivado` — a op `sql` e cada passo que ela produz;
+3. `executar_job` — o agendador, que roda sob o usuário do job.
+
+O segundo é o que mais importa e o mais fácil de esquecer: um `UPDATE` pelo
+SQL é um `buscar` → `ler` → `atualizar`, e **nenhum dos três chega pelo
+`despachar`**. A prova real mediu isso nos dois sentidos: tirando a chamada do
+`executar_derivado`, só `o_sql_herda_o_direito_por_coluna` cai; tirando a do
+`despachar`, caem oito testes e esse **passa**.
+
+**Custo zero para quem não pediu.** A primeira linha lê um `bool` da ficha da
+sessão (`Usuario::restringe_colunas`). Sem cadastro, sem usuário, supervisor,
+ou cadastro sem `colunas`, o pedido segue para o `executar` sem uma alocação
+sequer — nem a busca na tabela de classes. É a lição do Profiler: o portão que
+decide se há trabalho vem **antes** do trabalho.
+
+### A escrita: os três estados de uma coluna dentro do pedido
+
+Tratar dois deles como um só foi o defeito que motivou a funcionalidade
+inteira. O `atualizar` grava a linha **inteira**, e `json_para_linha` preenche
+com NULL o que não veio. Quem não lê a coluna manda a linha sem ela — e o
+motor zerava o salário do outro em silêncio. Sem erro, sem registro, e o dado
+não volta.
+
+| no pedido | o que quer dizer | o que o servidor faz |
+|---|---|---|
+| **valor** | «grave isto aqui» | recusa nomeando a coluna |
+| **nulo explícito** | «esvazie» | recusa: pôr NULL também é alterar |
+| **ausente** | não disse nada | no `atualizar`, **repõe o valor gravado**; no `inserir`, nasce nula |
+
+A exceção que evita quebrar quem **lê** a coluna e não a altera
+(`{"ler": true, "alterar": false}`): o cliente lê a linha inteira e a devolve
+inteira, e recusar todo valor faria toda gravação pela tela parar. Então um
+valor **igual ao gravado** passa — ele não altera nada.
+
+E a restrição que essa linha carrega é a parte que importa: **a comparação só
+acontece quando o usuário pode ler a coluna.** Para quem não lê, «aceito
+quando bate» é um oráculo — vinte tentativas e o salário aparece sem nunca ter
+sido devolvido.
+
+A reposição fecha a própria janela: junto com o valor, o servidor lê a
+**versão** e a manda no `atualizar` quando o pedido não trouxe uma. Sem isso,
+quem gravasse entre o `ler` daqui e o `atualizar` lá embaixo teria o valor
+dele reposto pelo antigo — a mesma perda calada que esta função existe para
+impedir. Versão zero (tabela sem controle de versão) não confere nada, byte a
+byte como antes.
+
+**A carga colada é recusada**, e é a mesma decisão do Profiler: o que não se
+**analisa** não se redige. Achar o nome de uma coluna recortando um CSV
+depende de o texto estar escrito de um jeito, e o dia em que não estiver a
+coluna negada entra gravada. Quem tem regra de coluna manda as linhas em
+`"linhas"`.
+
+### A leitura: a peneira, e o que chega antes dela
+
+A coluna sai da resposta de `ler` (nas duas formas), `varrer`, `buscar`,
+`procurar_texto` e `SelectMemory` — e, por tabela, de tudo o que a op `sql`
+produz, porque cada passo dela é um desses.
+
+A peneira sozinha não fecha o caso, porque **a pergunta também responde**:
+
+- `onde` filtrando pela coluna negada devolve a **contagem** das linhas que
+  casam, e vinte perguntas dessas dizem o salário sem ele nunca ter aparecido;
+- `indice` cuja chave inclui a coluna negada: `buscar` por chave exata diz
+  quem tem aquele valor, e varrer por ele devolve a **ordem**;
+- coluna por **número** em vez de nome: ali não há esquema para resolver a
+  posição, e adivinhar é pior que recusar.
+
+As três recusam, e a recusa diz qual coluna. O esquema só é pedido quando o
+pedido nomeia um índice — a varredura de sempre, que é o laço quente da tela,
+não paga nada.
+
+### O `esquema` continua inteiro — e diz o que falta
+
+Decisão, e ela é do mesmo naipe do «Blumenau» virando «BLUMENAU»: **estrutura
+não é dado.** Esconder a coluna do esquema faria a tela desenhar um formulário
+que não bate com a tabela, e faria o tradutor de SQL planejar contra um
+esquema que não existe.
+
+O que a resposta ganha, **só para quem tem regra**, são dois campos:
+`colunas_sem_leitura` e `colunas_sem_alteracao`. Sem eles a tela pinta um
+campo que nunca chega preenchido, e quem olha conclui que a coluna está vazia
+no banco — que é uma mentira sobre o dado pela porta oposta.
+
+### As que recusam, e por que recusar é a resposta certa
+
+Uma peneira só sabe tirar a coluna de onde ela sabe procurar. O `exportar`
+devolve um CSV; o `juntar`, colunas prefixadas de duas tabelas; o `diario`, a
+imagem da linha; o `checksum`, um número que resume os bytes dela. Filtrar
+cada um seria escrever quatro peneiras novas — e a quinta, no dia em que
+entrasse uma operação nova, nasceria vazando calada. **Recusar é mais seguro
+que vazar**, e a recusa diz o nome da operação para quem a recebeu saber o que
+pedir no lugar.
+
+Quatro entram nessa lista por motivo que não é «devolve linha»:
+
+- `duplicar_tabela`, `copiar_tabela` e `renomear_tabela` — a regra de coluna é
+  **por nome de tabela**. Sem a recusa, `duplicar_tabela` era o botão «tire a
+  restrição»;
+- `backup` — leva os arquivos embora, com a coluna dentro deles.
+
+E a recusa vale para a **tabela** que a operação nomeia, inclusive quando ela
+esconde o nome do portão geral: `juntar` guarda as duas em `a.tabela` e
+`b.tabela`, `unir` numa lista, `pivotar` põe as de consulta dentro de um
+`juntar` aninhado. Quando a operação **não nomeia tabela nenhuma** — `backup`,
+`profiler` —, ela recusa para quem tem qualquer regra de coluna: lista vazia
+não quer dizer «não toca em tabela», quer dizer «não dá para saber qual», e
+adivinhar seria a peneira mentindo.
+
+### O que ficou de fora, com o motivo
+
+- **Supervisor ignora tudo**, como já ignora o portão por tabela. E é
+  supervisor, **não `nivel: admin`**: o portão por tabela só abre para o
+  supervisor, e inventar um segundo caminho de exceção aqui faria os dois
+  portões poderem discordar sobre a mesma pessoa.
+- **A tela não edita regra de coluna.** O `config.json` e a op
+  `usuario_alterar` gravam (o `bases` viaja para a árvore inteiro), e a ficha
+  do usuário passou a mostrá-las num campo `colunas` — plano, e não aninhado
+  dentro de `tabelas`, para não mudar a forma de um campo que clientes já
+  consomem.
+- **`restaurar_backup` não recusa.** Ele põe arquivo de volta e não mostra
+  coluna a ninguém; recusar tiraria a recuperação de desastre de quem tem uma
+  regra de coluna em qualquer tabela do servidor.
+- **Coluna que não existe na tabela é regra inerte, e nada avisa.** Validar o
+  nome contra o esquema na carga do cadastro exigiria que a tabela já
+  existisse — e declarar o direito antes de criar a tabela é ordem legítima de
+  modelagem. Então uma regra sobre `salrio` (com o erro de digitação) não
+  protege nada e não reclama. É a mesma forma de dívida da «chave morta» dos
+  idiomas, e o lugar certo para fechá-la é uma conferência **na abertura da
+  tabela**, não na carga.
+- **Não há projeção obrigatória.** Quem tem `ler` negado em `salario` continua
+  podendo pedir `SELECT *`: o que volta é a linha sem a coluna, e não um erro.
+  Recusar o `SELECT *` quebraria todo cliente que o escreve — e a proteção que
+  quebra todo cliente antigo não é proteção, é estrago.
