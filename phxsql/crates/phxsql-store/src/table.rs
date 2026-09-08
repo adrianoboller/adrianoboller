@@ -599,10 +599,15 @@ impl Table {
     /// Confere os dois lados e conserta o que der. Ver `RegFile::reparar`.
     ///
     /// Reconta as marcadas no fim: o reparo pode ter trazido de volta um slot
-    /// que estava ilegivel, e o contador do cabecalho nao sabia dele.
+    /// que estava ilegivel, e o contador do cabecalho nao sabia dele. E
+    /// reconcilia a sequencia pela mesma razao: um reparo pode devolver uma
+    /// linha cujo numero era o maior de todos, e o contador do cabecalho nao
+    /// sabia dele. E o caminho de reparo que o bloco 16 nao tinha -- um
+    /// contador atras do dado passava a repetir numero, calado.
     pub fn reparar(&mut self) -> Result<(u64, u64, u64)> {
         let r = self.reg.reparar()?;
         self.recontar_marcadas()?;
+        self.reconciliar_sequencia()?;
         Ok(r)
     }
 
@@ -2580,6 +2585,53 @@ impl Table {
     /// Ajusta o contador da sequencia. Ver `RegFile::ajustar_sequencia`.
     pub fn ajustar_sequencia(&mut self, proxima: u64) -> Result<()> {
         self.reg.ajustar_sequencia(proxima)
+    }
+
+    /// Empurra o contador da sequencia para depois do MAIOR valor gravado, se
+    /// ele tiver ficado para tras. Devolve o maior valor encontrado (0 = tabela
+    /// sem `Sequence` ou vazia).
+    ///
+    /// # Por que existe
+    ///
+    /// O CRC-32 do cabecalho pega bytes ADULTERADOS, mas nao um contador
+    /// legitimamente atrasado: `ajustar_sequencia` para tras (bloco 16 da
+    /// sonda) e a restauracao de um backup antigo reescrevem o cabecalho com
+    /// CRC valido. Um contador atras do dado faz a proxima insercao REPETIR um
+    /// numero, calada, quando nao ha indice unico sobre a coluna. Esta e a
+    /// varredura que o refaz -- a mesma filosofia do `recontar_marcadas`.
+    ///
+    /// So empurra para a FRENTE: se o contador ja estava a frente do maior,
+    /// nada muda (uma sequencia com buracos por exclusao fisica fica onde
+    /// esta, que e o certo -- o numero excluido nunca volta).
+    ///
+    /// # O que ela NAO resolve, e esta em `docs/AUTONUMBER.md`
+    ///
+    /// Na promocao de uma replica ATRASADA, os numeros que o master emitiu e
+    /// esta ponta nunca recebeu NAO estao no `.reg` daqui -- entao o maior
+    /// gravado aqui e menor que o do master morto, e continuar dele exige uma
+    /// decisao de projeto (faixa por no, ou contador duravel propagado). Aqui
+    /// garante-se so o alcancavel: o contador nunca fica atras do que ESTA
+    /// gravado nesta ponta.
+    pub fn reconciliar_sequencia(&mut self) -> Result<u64> {
+        let Some(i) = self.esquema.coluna_sequencia() else {
+            return Ok(0);
+        };
+        let mut maior = 0u64;
+        let mut rowid = 1;
+        // Inclui as marcadas (exclusao suave): o `proximo_ativo` traz o slot
+        // fisico, e o numero de uma linha suave-excluida tambem nunca volta.
+        while let Some((id, payload)) = self.reg.proximo_ativo(rowid)? {
+            rowid = id + 1;
+            let valores = self.decodificar(&payload, false)?;
+            if let Value::UInt(n) = valores[i] {
+                maior = maior.max(n);
+            }
+        }
+        let alvo = maior.saturating_add(1);
+        if alvo > self.reg.sequencia_atual() {
+            self.reg.ajustar_sequencia(alvo)?;
+        }
+        Ok(maior)
     }
 
     /// As fronteiras de volume do `.reg`, para quem quiser mostra-las.

@@ -483,6 +483,125 @@ falha na tabela mais comum que existe.
 
 ---
 
+# PARTE C — O que a frente G2 fechou, e o que ficou de decisão
+
+A frente G2 atacou os **três defeitos medidos** da Parte A — os blocos 19, 23 e
+24 — sem tocar no formato `PSCH`. O «ideal» da Parte B (início/passo no esquema,
+`IDENTITY ALWAYS`, `Uuid` que nasce sozinho, sequência nomeada) **é mudança de
+formato e continua sendo o próximo passo**; a G2 não o implementou. Cada
+conserto entrou com prova real nos dois sentidos e uma guarda no catálogo.
+
+## C.1 O teto de 2⁵³ (defeito b) — recusado na entrada, honesto na saída
+
+O que estava calado: um id acima de 2⁵³ mandado como **número cru** volta
+trocado, porque o `Json` desta casa só tem `Numero(f64)` e a perda acontece
+**no `Json::analisar`**, antes de o `numerar` ver o valor. É a correção de rota
+mais importante deste documento: a Parte B (§B.2.6, item 2) propunha recusar no
+`numerar` e no `ajustar_sequencia` — mas **o `numerar` já recebe o número
+arredondado**, então uma recusa só ali não pegaria o número cru. O crivo tem de
+morar onde o `Json` vira `Value`.
+
+O que a G2 fez:
+
+- **Na entrada** (`json_para_valor`, ramo `Sequence`): um `Json::Numero` cru
+  com valor `≥ 2⁵³` é **recusado** com a mensagem que aponta a saída — *«acima
+  de 9.007.199.254.740.992 o protocolo perde precisão num número cru; envie o id
+  como texto (…)»*. O teste é `≥` e não `>` de propósito: um `f64` que lê
+  exatamente 2⁵³ tanto pode ser o próprio quanto um `2⁵³+1` arredondado, e os
+  dois são indistinguíveis. O mesmo `ajustar_sequencia` ganhou a mesma recusa
+  para o campo `proxima`.
+- **A saída existe e é lossless**: o mesmo número **como texto** atravessa
+  intacto (não passa por `f64`), porque o alargamento do pedido 223 já aceita
+  texto na `Sequence`. Quem precisa de faixa ainda maior usa `Uuid256`.
+- **Na volta** (`valor_para_json`): um id **já gravado** acima de 2⁵³ — que
+  chega ao `.reg` por replicação ou por `ajustar_sequencia`, sem passar pelo
+  crivo da entrada — sai como **texto**, não como número mentiroso. Abaixo do
+  teto continua número, para o id comum não trocar de tipo na grade.
+
+O `f64` não mudou: a constante `INTEIRO_EXATO_MAX = 2⁵³` mora no `json.rs`, e a
+prova do vazamento (`f64_perde_precisao_acima_de_dois_elevado_a_cinquenta_e_tres`)
+caracteriza o limite da plataforma antes do conserto.
+
+**O irmão que fica, nomeado:** `Int8`/`UInt8` partilham o mesmo teto — um número
+cru grande numa coluna `Int8` também se corrompe. A G2 **não** alargou a recusa
+a eles, porque mudaria o comportamento de todo cliente que hoje manda `Int8`
+grande como número, e isso é decisão de projeto (papel C). O crivo
+(`Json::inteiro_impreciso`) já está pronto para alcançá-los quando a decisão for
+tomada; a `Sequence` — que é a chave da tela — entrou agora porque é onde dói.
+
+## C.2 O bidirecional na mesma faixa (defeito a) — deixou de ser calado
+
+O que estava calado: dois masters `multi` na mesma faixa numeram a mesma chave;
+o casamento por chave com «mais recente vence» aplica uma `Inclusão` como
+`atualizar` sobre a linha que já existe, e **apaga uma linha em silêncio** — 4
+inserções → 2 linhas (bloco 24).
+
+O conserto **pleno** é `início`/`passo` no esquema (§B.2.2) — faixas disjuntas
+por nó, no molde do `auto_increment_offset` do MariaDB. **Isso muda o formato
+`PSCH` e não entra nesta frente.** O que a G2 fez é o **mínimo seguro**: tornar
+o estrago **visível**.
+
+- `bidirecional::colisao_de_criacao` reconhece a assinatura: operação remota é
+  `Inclusão`, já existe um toque **vivo** para a chave, e ele é de uma **origem
+  diferente**. A terceira condição separa a colisão real da reaplicação
+  inofensiva do mesmo evento (mesma origem não apaga nada).
+- No `aplicar_por_chave` a detecção roda **antes** de decidir quem vence — de
+  propósito, porque os dois lados perdem uma linha, cada um no seu `.reg`, e a
+  detecção tem de disparar dos dois lados (inclusive quando o local vence e o
+  evento remoto é descartado).
+- O laço **não para** (parar travaria o par para sempre — ver
+  `Table::inserir_replicado`): a colisão vira um **contador por tabela** em
+  `MapaDeToques.colisoes`, publicado em `replicacao_estado` sob
+  `colisoes_de_sequencia`, e uma linha no log do processo apontando para este
+  documento.
+
+Fim aberto (decisão de projeto): a linha perdida ainda se perde — a proteção
+que a preserva é a faixa disjunta do §B.2.2. A G2 entrega o **alarme**, não a
+paridade.
+
+## C.3 A promoção de réplica atrasada (defeito c) — mínimo local + limite honesto
+
+O que estava calado: a réplica promovida continua o contador de onde **ela**
+parou; se estava atrasada, reemite os números que o master emitiu e ela nunca
+recebeu (bloco 23: 5 reemitidos).
+
+**O limite é honesto e não se contorna localmente:** os números que a réplica
+**nunca recebeu não estão no `.reg` dela**. Nenhuma varredura local os recupera
+— a proteção plena é contador durável propagado ou faixa por nó, e é decisão de
+projeto.
+
+O que a G2 fez, que é o **alcançável**:
+
+- `Table::reconciliar_sequencia` varre a tabela (a mesma varredura do
+  `recontar_marcadas`) e **empurra o contador para depois do maior valor
+  gravado**, se ele tiver ficado para trás. Só empurra para a frente — buraco
+  por exclusão física fica onde está.
+- `reparar` passou a chamá-la: é o **caminho de reparo que o bloco 16 não
+  tinha**. Um contador atrás do próprio dado (por `ajustar_sequencia` para trás,
+  ou restauração de backup antigo) repetia número calado quando não havia índice
+  único; agora `reparar` conserta.
+- A promoção (`spare_promover`) devolve um **aviso** (`aviso_sequencia`)
+  mandando rodar `reparar` nas tabelas com `Sequence` e avisando que, se a
+  réplica estava atrasada, números **podem** ser reemitidos — ver este
+  documento.
+
+Ou seja: a G2 garante que o contador **nunca fica atrás do que está gravado
+nesta ponta**, e diz com todas as letras o que só uma decisão de projeto
+resolve.
+
+## C.4 O que a G2 recusou fazer sozinha (é papel C / próximo passo)
+
+- **Alargar a recusa de 2⁵³ ao `Int8`/`UInt8`** — muda o comportamento de
+  cliente que já manda número grande; decisão de projeto.
+- **`início`/`passo` no `PSCH`** — muda formato; é o conserto pleno do bloco 24.
+- **Contador durável propagado / faixa por nó na promoção** — o conserto pleno
+  do bloco 23.
+- **Reescrever o `Json` com uma variante `Inteiro(i64)`** (§B.2.6, item 1) —
+  787 chamadas atravessam o tipo; não é item desta frente, e o item 2 (recusar
+  cedo) não a impede depois.
+
+---
+
 ## Como se refaz
 
 ```bash

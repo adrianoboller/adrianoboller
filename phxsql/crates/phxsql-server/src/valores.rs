@@ -601,6 +601,16 @@ pub fn valor_para_json(v: &Value, ty: &ColumnType) -> Json {
         }
         (Value::Decimal(n), _) => Json::texto_de(n.to_string()),
         (Value::Int(n), _) => Json::de_i64(*n),
+        // Um id (`Sequence`) acima de 2^53 nao cabe num `f64` sem perda: sair
+        // como `Json::de_u64` volta trocado no fio (bloco 19). Acima do teto
+        // ele sai como TEXTO, que e a unica forma honesta -- e a mesma que o
+        // `json_para_valor` aceita de volta sem perda. Abaixo do teto continua
+        // numero, exatamente como antes, para nao trocar o tipo do id comum
+        // debaixo de quem le a grade. Vale so para a `Sequence`; o `UInt8`
+        // partilha o teto e esta anotado em `docs/AUTONUMBER.md` como irmao.
+        (Value::UInt(n), ColumnType::Sequence) if *n > phxsql_core::json::INTEIRO_EXATO_MAX => {
+            Json::texto_de(n.to_string())
+        }
         (Value::UInt(n), _) => Json::de_u64(*n),
         (Value::Real(n), _) => Json::Numero(*n),
         (Value::Str(s), _) | (Value::Memo(s), _) => Json::texto_de(s),
@@ -713,6 +723,25 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
         // Texto(\"2\")" enquanto o irmao `Int8`/`UInt8` passava por aqui ao
         // lado sem problema -- pedido 223.
         ColumnType::Sequence => {
+            // O teto REAL de uma `Sequence` pelo protocolo nao e o do formato
+            // (2^64-1): e 2^53, o teto do `f64` do `Json` desta casa. Um numero
+            // CRU acima dele ja chegou aqui trocado -- a perda aconteceu no
+            // `Json::analisar`, antes desta funcao ver o valor. Recusar e o que
+            // transforma corrupcao silenciosa (bloco 19) em erro lido. O mesmo
+            // numero como TEXTO atravessa intacto (nao passa por f64), entao a
+            // saida esta na propria mensagem. Ver `docs/AUTONUMBER.md`.
+            if j.inteiro_impreciso() {
+                return Err(PhxError::Tipo(format!(
+                    "acima de {} o protocolo perde precisao num numero cru; \
+                     envie o id como texto (\"{}\") ou use Uuid256 se precisar \
+                     dessa faixa",
+                    phxsql_core::json::INTEIRO_EXATO_MAX,
+                    // O texto do f64 ja arredondado -- proposital: mostra o
+                    // valor que SERIA gravado, para o cliente ver que nao era o
+                    // que ele mandou.
+                    j.inteiro().map(|v| v.to_string()).unwrap_or_default()
+                )));
+            }
             let n = inteiro().ok_or_else(|| erro("numero da sequencia"))?;
             if n < 0 {
                 return Err(PhxError::Tipo(format!("{n} e negativo numa sequencia")));
@@ -1630,5 +1659,86 @@ mod testes_inteiro_em_texto {
         let e = json_para_valor(&Json::texto_de("abc"), &ColumnType::Sequence).unwrap_err();
         assert_eq!(e.nome(), "TIPO_INVALIDO", "{e}");
         assert!(e.to_string().contains("numero da sequencia"), "{e}");
+    }
+
+    /// Defeito (b): id acima de 2^53 mandado como NUMERO CRU perdia precisao
+    /// em silencio. Prova real nos dois sentidos.
+    ///
+    /// Reponha o defeito tirando o `if j.inteiro_impreciso()` do ramo
+    /// `Sequence`: o valor volta a ser aceito como `Value::UInt(9007199254740992)`
+    /// -- o `2^53+1` mandado vira `2^53` gravado -- e este teste cai na
+    /// primeira asserção. Ver `docs/AUTONUMBER.md`, bloco 19.
+    #[test]
+    fn sequencia_recusa_numero_cru_acima_do_teto_do_f64() {
+        // Como o cliente manda pelo fio: `Json::analisar` de um numero cru, que
+        // e onde o f64 ja arredonda `2^53+1` para `2^53`.
+        let cru = Json::analisar("9007199254740993").unwrap();
+        let e = json_para_valor(&cru, &ColumnType::Sequence).unwrap_err();
+        assert_eq!(e.nome(), "TIPO_INVALIDO", "{e}");
+        assert!(e.to_string().contains("perde precisao"), "{e}");
+        // A mensagem aponta a saida: mandar como texto.
+        assert!(e.to_string().contains("texto"), "{e}");
+
+        // 2^53 exato tambem cai, e de proposito: um f64 que le 2^53 tanto pode
+        // ser o proprio quanto um `2^53+1` arredondado, e aqui sao a mesma
+        // coisa -- indistinguiveis.
+        let no_teto = Json::analisar("9007199254740992").unwrap();
+        assert!(json_para_valor(&no_teto, &ColumnType::Sequence).is_err());
+
+        // Logo abaixo do teto continua passando, exatamente como antes.
+        let abaixo = Json::analisar("9007199254740991").unwrap();
+        assert_eq!(
+            json_para_valor(&abaixo, &ColumnType::Sequence).unwrap(),
+            Value::UInt(9_007_199_254_740_991)
+        );
+    }
+
+    /// A saida que a recusa aponta funciona: o MESMO numero grande como TEXTO
+    /// atravessa sem perda -- porque texto nao passa por f64. E o `Uuid256`
+    /// continua sendo a alternativa para faixas ainda maiores.
+    #[test]
+    fn sequencia_grande_como_texto_atravessa_intacta() {
+        assert_eq!(
+            json_para_valor(&Json::texto_de("9007199254740993"), &ColumnType::Sequence).unwrap(),
+            Value::UInt(9_007_199_254_740_993),
+            "o 2^53+1 exato so sobrevive como texto"
+        );
+        // Bem acima do teto, tambem exato, ainda como texto.
+        assert_eq!(
+            json_para_valor(&Json::texto_de("3000000000000000"), &ColumnType::Sequence).unwrap(),
+            Value::UInt(3_000_000_000_000_000)
+        );
+    }
+
+    /// E o lado de VOLTA: um id acima do teto gravado no `.reg` (ele chega la
+    /// por replicacao ou por `ajustar_sequencia`, que nao passam por este
+    /// crivo) sai do servidor como TEXTO, nao como numero mentiroso.
+    ///
+    /// Reponha o defeito tirando o ramo `(Value::UInt(n), ColumnType::Sequence)`
+    /// de `valor_para_json`: ele volta a `Json::de_u64`, o f64 arredonda, e a
+    /// asserção do texto exato cai.
+    #[test]
+    fn sequencia_grande_sai_como_texto_no_json() {
+        assert_eq!(
+            valor_para_json(&Value::UInt(9_007_199_254_740_993), &ColumnType::Sequence),
+            Json::texto_de("9007199254740993"),
+        );
+        // Abaixo do teto continua numero -- o id comum nao troca de tipo.
+        assert_eq!(
+            valor_para_json(&Value::UInt(42), &ColumnType::Sequence),
+            Json::de_u64(42),
+        );
+        // 2^53 exato ainda cabe no f64, entao sai numero (o corte e `> 2^53`
+        // na saida, porque aqui o valor JA e exato e nao ha ambiguidade).
+        assert_eq!(
+            valor_para_json(&Value::UInt(9_007_199_254_740_992), &ColumnType::Sequence),
+            Json::de_u64(9_007_199_254_740_992),
+        );
+        // E um `UInt8` comum acima do teto continua numero: o irmao fica, e a
+        // decisao de alcanca-lo esta anotada em docs/AUTONUMBER.md.
+        assert!(matches!(
+            valor_para_json(&Value::UInt(9_007_199_254_740_993), &ColumnType::UInt8),
+            Json::Numero(_)
+        ));
     }
 }

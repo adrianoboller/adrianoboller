@@ -47,6 +47,7 @@ use std::path::Path;
 use phxsql_core::error::Result;
 use phxsql_core::json::Json;
 use phxsql_core::schema::Schema;
+use phxsql_store::log::Operacao;
 
 /// A identidade numerica de um servidor, derivada do `id_servidor`.
 ///
@@ -97,6 +98,32 @@ pub fn remoto_vence(carimbo: i64, origem: u16, local: &Toque) -> bool {
     carimbo > local.carimbo || (carimbo == local.carimbo && origem > local.origem)
 }
 
+/// Um evento de INCLUSAO remoto colidindo com uma linha viva de OUTRA origem?
+///
+/// Esta e a assinatura do defeito (a) do pedido 229: dois masters na MESMA
+/// faixa numeraram a mesma chave, e o casamento por chave com "mais recente
+/// vence" apaga uma das linhas em silencio -- 4 insercoes viraram 2 linhas
+/// (bloco 24 da sonda). O conserto pleno e faixa por no (`inicio`/`passo` no
+/// esquema, mudanca de formato, fora desta frente); o minimo seguro e nao
+/// deixar o estrago passar CALADO -- este predicado e o olho que o ve.
+///
+/// So conta como colisao quando as tres coisas valem ao mesmo tempo:
+///
+/// * a operacao remota e `Inclusao` -- o outro lado diz "criei uma linha NOVA",
+///   e nao "alterei a que ja existe";
+/// * ja existe um toque LOCAL para a chave, e ele nao e uma lapide (`excluido`)
+///   -- ou seja, uma linha VIVA ocupa a chave aqui;
+/// * esse toque local e de uma ORIGEM diferente da do evento.
+///
+/// A terceira condicao e o que separa a colisao real da reaplicacao inofensiva
+/// do MESMO evento (posicao recomecada do zero, ou dois caminhos ate a mesma
+/// replica): a reaplicacao vem da mesma origem, e nao apaga trabalho de
+/// ninguem. Sem ela, todo evento reaplicado seria contado como perda.
+pub fn colisao_de_criacao(operacao: Operacao, origem_ev: u16, local: Option<&Toque>) -> bool {
+    operacao == Operacao::Inclusao
+        && matches!(local, Some(t) if !t.excluido && t.origem != origem_ev)
+}
+
 /// A chave unica de UMA coluna que identifica a linha entre servidores.
 ///
 /// Na ordem: a chave primaria, senao o primeiro indice unico de uma coluna.
@@ -130,6 +157,10 @@ pub struct MapaDeToques {
     pub vistos: u64,
     /// Chave canonica -> ultimo toque.
     pub toques: HashMap<String, Toque>,
+    /// Quantas colisoes de criacao (defeito (a)) esta tabela ja sofreu neste
+    /// processo. So sobe; e o numero que `replicacao_estado` publica para o
+    /// estrago deixar de ser calado. Ver [`colisao_de_criacao`].
+    pub colisoes: u64,
 }
 
 /// O que o laco de uma origem conta para a operacao `replicacao_estado`.
@@ -329,6 +360,68 @@ mod testes {
             excluido: false,
         };
         assert!(!remoto_vence(500, 7, &toque));
+    }
+
+    // -------------------------------------------------- a colisao, defeito (a)
+
+    /// Defeito (a): duas insercoes de origens diferentes na MESMA chave sao uma
+    /// colisao -- o casamento por chave apagaria uma das linhas em silencio.
+    ///
+    /// Reponha o defeito trocando `colisao_de_criacao` por `|_,_,_| false` (o
+    /// olho fechado de antes): a primeira asserção deste teste cai, e o
+    /// `replicacao_estado` volta a publicar zero colisoes enquanto perde linha.
+    #[test]
+    fn inclusao_de_outra_origem_sobre_chave_viva_e_colisao() {
+        let (alfa, beta) = (hash_id("alfa"), hash_id("beta"));
+        let local_alfa = Toque {
+            carimbo: 500,
+            origem: alfa,
+            excluido: false,
+        };
+        // Chega a INCLUSAO de beta numa chave que alfa ja ocupa: colisao.
+        assert!(colisao_de_criacao(
+            Operacao::Inclusao,
+            beta,
+            Some(&local_alfa)
+        ));
+    }
+
+    #[test]
+    fn nao_ha_colisao_sem_esses_tres_sinais() {
+        let (alfa, beta) = (hash_id("alfa"), hash_id("beta"));
+        let vivo_alfa = Toque {
+            carimbo: 500,
+            origem: alfa,
+            excluido: false,
+        };
+        // 1. Reaplicar a criacao da MESMA origem nao apaga nada de ninguem.
+        assert!(!colisao_de_criacao(
+            Operacao::Inclusao,
+            alfa,
+            Some(&vivo_alfa)
+        ));
+        // 2. Alteracao de outra origem e o conflito NORMAL (a mesma linha
+        //    logica editada dos dois lados), nao uma perda de identidade.
+        assert!(!colisao_de_criacao(
+            Operacao::Alteracao,
+            beta,
+            Some(&vivo_alfa)
+        ));
+        // 3. Primeira vez que a chave aparece aqui: nao ha linha local a
+        //    perder.
+        assert!(!colisao_de_criacao(Operacao::Inclusao, beta, None));
+        // 4. Toque local que ja e lapide (excluido): a chave esta livre, a
+        //    criacao remota pode ocupa-la sem apagar linha viva.
+        let lapide_alfa = Toque {
+            carimbo: 500,
+            origem: alfa,
+            excluido: true,
+        };
+        assert!(!colisao_de_criacao(
+            Operacao::Inclusao,
+            beta,
+            Some(&lapide_alfa)
+        ));
     }
 
     // ------------------------------------------------------------ a chave
