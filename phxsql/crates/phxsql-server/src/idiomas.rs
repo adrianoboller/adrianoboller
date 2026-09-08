@@ -96,6 +96,8 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     // ------------------------------------------------------- os campos
     texto!("tela.servidor", "Servidor", "Serveur", "Server", "Server", "Server", "Servidor"),
     texto!("tela.servidor_dica", "IP ou DNS", "IP ou DNS", "IP or DNS", "IP o DNS", "IP oder DNS", "IP o DNS"),
+    texto!("tela.destino_cifrado", "🔒 Túnel cifrado, com pino.", "🔒 Tunnel chiffré, avec épinglage.", "🔒 Encrypted tunnel, pinned.", "🔒 Tunnel cifrato, con pin.", "🔒 Verschlüsselter Tunnel, mit Pinning.", "🔒 Túnel cifrado, con anclaje."),
+    texto!("tela.destino_cifrado_sem_pino", "🔒 Túnel cifrado SEM pino: protege só da escuta passiva, não de quem está no meio.", "🔒 Tunnel chiffré SANS épinglage : protège seulement de l'écoute passive, pas de l'homme du milieu.", "🔒 Encrypted tunnel WITHOUT a pin: guards only against passive eavesdropping, not a man-in-the-middle.", "🔒 Tunnel cifrato SENZA pin: protegge solo dall'ascolto passivo, non da chi sta nel mezzo.", "🔒 Verschlüsselter Tunnel OHNE Pinning: schützt nur vor passivem Mithören, nicht vor Man-in-the-Middle.", "🔒 Túnel cifrado SIN anclaje: protege solo de la escucha pasiva, no de quien está en medio."),
     texto!("tela.porta", "Porta", "Port", "Port", "Porta", "Port", "Puerto"),
     texto!("tela.usuario", "Usuário", "Utilisateur", "User", "Utente", "Benutzer", "Usuario"),
     texto!("tela.senha", "Senha", "Mot de passe", "Password", "Password", "Kennwort", "Contraseña"),

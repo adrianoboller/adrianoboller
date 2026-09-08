@@ -269,7 +269,16 @@ Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
     web               Centro de Controle pelo navegador. Desligado por
                       padrao; ver a secao 9
     web.servidores    outros PhxSql que a interface pode alcancar. VAZIO =
-                      so este servidor, e esse e o padrao certo
+                      so este servidor, e esse e o padrao certo. Cada item e um
+                      texto "host:porta" (em claro, como sempre foi) OU um
+                      objeto que tambem liga o tunel cifrado ate aquele destino:
+                        {"host":"10.0.0.9","porta":5000,
+                         "cifra":true,
+                         "chave_do_fio":"<64 digitos hex, o pino do destino>"}
+                      cifra:false (o padrao, e o unico valor do texto solto) =
+                      JSON em claro. cifra:true sem chave_do_fio = tunel SEM
+                      pino: protege so da escuta passiva, e o arranque avisa.
+                      Ver docs/CIFRA-DO-FIO.md.
     replicacao.escuta socket onde o source serve os eventos. Ver a secao 16
     replicacao.replicas_autorizadas
                       IPs que podem pedir posicao/replicar/aplicar neste

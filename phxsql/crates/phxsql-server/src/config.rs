@@ -1452,6 +1452,76 @@ fn gravar_chave(caminho: &Path, chave: &[u8; 32]) -> std::io::Result<()> {
     arq.sync_all()
 }
 
+/// Um servidor que a interface pode alcancar.
+///
+/// Nasceu como texto `"host:porta"` e CONTINUA aceitando texto solto -- essa e
+/// a forma de sempre, sem cifra. O objeto `{host,porta,cifra,chave_do_fio}` e
+/// o que faltava: ele carrega o pino, e sem lugar para o pino o `Remoto` nao
+/// tinha como ligar o tunel com protecao contra quem esta no meio. Ligar sem
+/// pino seria protecao so contra escuta passiva vendida como se fosse mais --
+/// e por isso a mudanca de formato entra COM o pino junto. Ver
+/// `docs/CIFRA-DO-FIO.md` §8 e §10.
+#[derive(Debug, Clone)]
+pub struct ServidorWeb {
+    /// `"host:porta"` -- o texto EXATO que casa o destino do navegador e abre
+    /// a conexao. O texto solto vira este campo direto; o objeto o remonta a
+    /// partir de `host` e `porta`, para que a comparacao com o destino
+    /// continue sendo textual (nada de resolver nome e comparar IP, que deixa
+    /// quem controla o DNS decidir o que a lista permite).
+    pub endereco: String,
+    /// Falar por dentro do tunel cifrado com este destino. Ver
+    /// `docs/CIFRA-DO-FIO.md`.
+    ///
+    /// `false` (o padrao, e o UNICO valor do texto solto) e como sempre foi:
+    /// JSON em claro. Ligar exige que o destino ATENDA o aperto -- um servidor
+    /// de versao anterior nao atende, entao ligar isto e decisao dos dois
+    /// lados, nao de um.
+    pub cifra: bool,
+    /// A chave publica que se ESPERA do destino, em hexadecimal -- o pino.
+    ///
+    /// Vazia com `cifra` ligada e tunel SEM pino: protege da escuta passiva e
+    /// nao protege de quem esta no meio, porque o atacante apresenta a chave
+    /// dele e nao ha com o que comparar. O arranque avisa exatamente isso.
+    pub chave_do_fio: String,
+}
+
+impl ServidorWeb {
+    fn de_texto(t: &str) -> ServidorWeb {
+        ServidorWeb {
+            endereco: t.trim().to_string(),
+            cifra: false,
+            chave_do_fio: String::new(),
+        }
+    }
+
+    fn de_objeto(o: &Json) -> ServidorWeb {
+        let host = o.texto_ou("host", "").trim().to_string();
+        let porta = o.inteiro_ou("porta", PORTA_PADRAO as i64).clamp(1, 65_535) as u16;
+        ServidorWeb {
+            endereco: format!("{host}:{porta}"),
+            cifra: o.booleano_ou("cifra", false),
+            chave_do_fio: o.texto_ou("chave_do_fio", "").trim().to_string(),
+        }
+    }
+
+    /// O pino do destino ja em bytes -- ou o erro que diz o que corrigir.
+    ///
+    /// Mesma disciplina da [`Origem::pino_do_fio`], e pela mesma razao:
+    /// `None` significa "sem pino", nunca "qualquer chave serve por engano".
+    /// Hexadecimal torto vira ERRO em vez de virar `None`, senao um pino
+    /// escrito errado viraria silenciosamente um tunel sem pino -- que e
+    /// exatamente o estrago que o pino existe para impedir.
+    pub fn pino_do_fio(&self) -> Result<Option<[u8; 32]>> {
+        if self.chave_do_fio.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(chave_de_hex(
+            &self.chave_do_fio,
+            &format!("web.servidores[{}].chave_do_fio", self.endereco),
+        )?))
+    }
+}
+
 /// Interface web: um servidor HTTP separado, que serve a pagina do Centro de
 /// Controle e traduz o clique do navegador no mesmo protocolo da porta 5000.
 ///
@@ -1464,12 +1534,14 @@ pub struct Web {
     pub bind: String,
     /// Minutos que uma sessao do navegador vale sem uso. Cada clique renova.
     pub sessao_minutos: u64,
-    /// Servidores PhxSql que esta interface pode alcancar, como "host:porta".
+    /// Servidores PhxSql que esta interface pode alcancar.
     ///
     /// VAZIO = so este servidor. E o padrao, e e o padrao certo: uma interface
     /// que fala com qualquer endereco e um proxy aberto de saida, e quem
-    /// invadir a porta da web ganha a rede inteira junto.
-    pub servidores: Vec<String>,
+    /// invadir a porta da web ganha a rede inteira junto. Cada item e um
+    /// texto `"host:porta"` (em claro, como sempre foi) ou um objeto que
+    /// tambem carrega o pino do tunel -- ver [`ServidorWeb`].
+    pub servidores: Vec<ServidorWeb>,
 }
 
 impl Default for Web {
@@ -1494,9 +1566,31 @@ impl Web {
                 sessao_minutos: w
                     .inteiro_ou("sessao_minutos", padrao.sessao_minutos as i64)
                     .max(1) as u64,
-                servidores: w.textos("servidores"),
+                servidores: Web::servidores_de(w),
             },
         }
+    }
+
+    /// Le a lista `web.servidores`, que aceita as DUAS formas ao mesmo tempo.
+    ///
+    /// Texto solto = como sempre foi, sem cifra. Objeto = a forma que carrega o
+    /// pino. Aceitar as duas na mesma lista e o que faz a mudanca de formato
+    /// ser retrocompativel: um `config.json` de antes desta rodada continua
+    /// valendo byte a byte, e so quem precisa do tunel troca aquele item por
+    /// objeto. O `textos` de antes descartava calado tudo o que nao fosse
+    /// texto -- por isso ele nao servia mais.
+    fn servidores_de(w: &Json) -> Vec<ServidorWeb> {
+        w.campo("servidores")
+            .and_then(Json::lista)
+            .map(|l| {
+                l.iter()
+                    .map(|e| match e {
+                        Json::Texto(t) => ServidorWeb::de_texto(t),
+                        _ => ServidorWeb::de_objeto(e),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn endereco(&self) -> Result<SocketAddr> {
@@ -1523,8 +1617,22 @@ impl Web {
     }
 
     pub fn servidor_permitido(&self, alvo: &str) -> bool {
+        self.servidor(alvo).is_some()
+    }
+
+    /// O servidor da lista que casa este destino, ou `None`.
+    ///
+    /// A conferencia e a mesma do `servidor_permitido` -- endereco vazio nunca
+    /// casa --, e e por aqui que o `Remoto` descobre se o destino pede tunel e
+    /// com qual pino. Um so ponto de casamento: se `servidor_permitido` deixou
+    /// passar, este devolve o item; se recusou, este devolve `None`, e as duas
+    /// respostas nunca divergem porque saem da mesma comparacao.
+    pub fn servidor(&self, alvo: &str) -> Option<&ServidorWeb> {
         let d = alvo.trim();
-        !d.is_empty() && self.servidores.iter().any(|p| p.trim() == d)
+        if d.is_empty() {
+            return None;
+        }
+        self.servidores.iter().find(|s| s.endereco.trim() == d)
     }
 }
 
@@ -2965,6 +3073,13 @@ impl Config {
         if let Some(c) = &self.cluster {
             c.validar(&self.replicacao)?;
         }
+        // O pino de cada servidor da interface e conferido no arranque, pela
+        // mesma razao do pino das origens: hexadecimal torto tem de virar erro
+        // NA HORA em que se escreveu, e nao um tunel sem pino descoberto no dia
+        // do primeiro `Remoto`. `pino_do_fio` ja carrega essa disciplina.
+        for s in &self.web.servidores {
+            s.pino_do_fio()?;
+        }
         // A lista de tabelas sigilosas e conferida SEMPRE, e nao so com a
         // cifra ligada: quem escreve a lista antes de ligar a cifra -- que e a
         // ordem natural de quem esta configurando -- merece o erro na hora em
@@ -3153,8 +3268,18 @@ impl Config {
                     ("bind", Json::texto_de(&self.web.bind)),
                     ("sessao_minutos", Json::de_u64(self.web.sessao_minutos)),
                     (
+                        // So o endereco, como sempre foi -- a tela de
+                        // Configuracoes junta esta lista num texto. O estado do
+                        // tunel (cifra e se ha pino) sai por outro caminho, o
+                        // `/saude`, que e onde o login escolhe o destino.
                         "servidores",
-                        Json::Lista(self.web.servidores.iter().map(Json::texto_de).collect()),
+                        Json::Lista(
+                            self.web
+                                .servidores
+                                .iter()
+                                .map(|s| Json::texto_de(&s.endereco))
+                                .collect(),
+                        ),
                     ),
                 ]),
             ),
@@ -5131,6 +5256,101 @@ mod tests {
         let fechado = Config::de_json(&Json::analisar(r#"{"token":"x"}"#).unwrap()).unwrap();
         assert!(!fechado.web.alcanca_outro_servidor());
         assert!(!fechado.web.servidor_permitido("qualquer:5000"));
+    }
+
+    /// COMPORTAMENTO VELHO: a lista de textos continua sendo texto solto, em
+    /// claro e sem pino. E o teste que impede a mudanca de formato de tirar de
+    /// alguem o que ja funcionava -- um `config.json` de antes desta rodada.
+    #[test]
+    fn web_servidores_texto_solto_continua_em_claro() {
+        let txt = r#"{"token":"x","web":{"servidores":["10.1.1.5:5000","curitiba:5000"]}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert_eq!(c.web.servidores.len(), 2);
+        for s in &c.web.servidores {
+            assert!(!s.cifra, "texto solto nunca liga cifra");
+            assert!(s.chave_do_fio.is_empty(), "texto solto nao tem pino");
+            assert!(s.pino_do_fio().unwrap().is_none());
+        }
+        assert_eq!(c.web.servidores[0].endereco, "10.1.1.5:5000");
+        c.validar().unwrap();
+    }
+
+    /// FORMATO NOVO: o objeto `{host,porta,cifra,chave_do_fio}` carrega o pino,
+    /// e o endereco sai remontado como "host:porta" para casar o destino.
+    #[test]
+    fn web_servidores_aceita_objeto_com_cifra_e_pino() {
+        let pino = "aa".repeat(32);
+        let txt = format!(
+            r#"{{"token":"x","web":{{"servidores":[
+                {{"host":"10.0.0.9","porta":5000,"cifra":true,"chave_do_fio":"{pino}"}}
+            ]}}}}"#
+        );
+        let c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        let s = &c.web.servidores[0];
+        assert_eq!(s.endereco, "10.0.0.9:5000");
+        assert!(s.cifra);
+        assert_eq!(s.pino_do_fio().unwrap(), Some([0xaau8; 32]));
+        // E o endereco remontado casa o destino, igual ao texto solto.
+        assert!(c.web.servidor_permitido("10.0.0.9:5000"));
+        assert!(c.web.servidor("10.0.0.9:5000").unwrap().cifra);
+        c.validar().unwrap();
+    }
+
+    /// As DUAS formas na mesma lista -- o que faz a mudanca ser retrocompativel:
+    /// so o item que precisa do tunel vira objeto, o resto fica texto.
+    #[test]
+    fn web_servidores_mistura_texto_e_objeto() {
+        let txt = r#"{"token":"x","web":{"servidores":[
+            "claro:5000",
+            {"host":"cifrado","porta":6000,"cifra":true,"chave_do_fio":"bb"}
+        ]}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert_eq!(c.web.servidores.len(), 2);
+        assert_eq!(c.web.servidores[0].endereco, "claro:5000");
+        assert!(!c.web.servidores[0].cifra);
+        assert_eq!(c.web.servidores[1].endereco, "cifrado:6000");
+        assert!(c.web.servidores[1].cifra);
+    }
+
+    /// `cifra:true` SEM pino = tunel so passivo, e o pino vem `None` de
+    /// proposito (nao um erro): e o caso legitimo que o arranque AVISA. O que
+    /// nao pode e virar `None` calado por pino torto -- esse e o proximo teste.
+    #[test]
+    fn web_servidor_com_cifra_sem_pino_e_passivo() {
+        let txt = r#"{"token":"x","web":{"servidores":[
+            {"host":"h","porta":5000,"cifra":true}
+        ]}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        let s = &c.web.servidores[0];
+        assert!(s.cifra);
+        assert!(s.chave_do_fio.is_empty());
+        assert!(
+            s.pino_do_fio().unwrap().is_none(),
+            "sem pino e None, nao erro"
+        );
+        c.validar().unwrap();
+    }
+
+    /// Pino TORTO vira erro no arranque, e nao um tunel sem pino calado -- a
+    /// mesma disciplina que `pino_torto_na_origem_e_erro_e_nao_ausencia` trava
+    /// para a replicacao. Um pino escrito errado que virasse `None` seria
+    /// exatamente o estrago que o pino existe para impedir.
+    #[test]
+    fn web_pino_torto_e_erro_no_arranque() {
+        let mau = r#"{"token":"x","web":{"servidores":[
+            {"host":"h","porta":5000,"cifra":true,"chave_do_fio":"abacaxi"}
+        ]}}"#;
+        let c = Config::de_json(&Json::analisar(mau).unwrap()).unwrap();
+        assert!(
+            c.validar().is_err(),
+            "hex torto tinha de reprovar o arranque"
+        );
+
+        let curto = r#"{"token":"x","web":{"servidores":[
+            {"host":"h","porta":5000,"cifra":true,"chave_do_fio":"aaaa"}
+        ]}}"#;
+        let c = Config::de_json(&Json::analisar(curto).unwrap()).unwrap();
+        assert!(c.validar().is_err(), "2 bytes passaram por 32");
     }
     #[test]
     fn o_backup_vem_desligado() {
