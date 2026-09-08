@@ -13673,10 +13673,14 @@ impl Servidor {
         let corrente = p.texto_ou("database", "").trim().to_string();
         let plano = match comando {
             Comando::Insercao(i) => {
-                // Os indices entram porque o `INSERT ... ON CONFLICT` precisa
-                // saber qual chave unica decide "ja existe" -- a mesma
-                // pergunta que o `crate::upsert` responde do outro lado.
-                let indices = self.indices_para_o_sql(&i.em, &corrente, sessao)?;
+                // Os indices so servem ao `ON CONFLICT`, que precisa achar o
+                // indice unico da coluna; o INSERT de sempre nao paga a
+                // leitura do esquema.
+                let indices = if i.se_existir.is_some() {
+                    self.indices_para_o_sql(&i.em, &corrente, sessao)?
+                } else {
+                    Vec::new()
+                };
                 phxsql_sql::traduzir_insercao(i, &indices, &corrente)?
             }
             Comando::Atualizacao(a) => {
