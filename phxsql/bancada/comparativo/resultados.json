@@ -1,25 +1,25 @@
 {
-  "quando": "2026-09-07T03:22:28",
+  "quando": "2026-09-08T19:06:18",
   "motores_vivos": {
     "sqlite": "3.45.1",
     "mysql": "8.0.46-0ubuntu0.24.04.3",
     "postgres": "16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)",
-    "phxsql": "phxsqld 0.18.0 (b63856744b1f-sujo) x86_64-unknown-linux-gnu"
+    "phxsql": "phxsqld 0.18.0 (51620a0e998f-sujo) x86_64-unknown-linux-gnu"
   },
   "sem_motor_nesta_maquina": {
     "cassandra": "docs/CASSANDRA.md, fonte da 5.0.10 commit 7b5ab44, lido em sessão anterior",
     "hfsql": "docs/HFSQL.md, folha de 2013-10 que NÃO está nesta sessão"
   },
   "capacidades": 19,
-  "faltam_no_phxsql": 18,
+  "faltam_no_phxsql": 3,
   "linhas": [
     {
       "chave": "view",
       "titulo": "Visão (`CREATE VIEW`)",
       "como": "SQL no motor vivo",
       "phxsql": [
-        "nao",
-        "nenhuma operacao de visao entre as 119 que o catalogo lista"
+        "tem",
+        "CREATE VIEW v_c AS SELECT * FROM c e SELECT * FROM v_c devolveram as 1 linha(s) de `c`"
       ],
       "mysql": [
         "tem",
@@ -47,8 +47,8 @@
       "titulo": "Subconsulta e CTE (`WITH … AS`)",
       "como": "SQL no motor vivo",
       "phxsql": [
-        "nao",
-        "[SP000018] esquema invalido: SQL, coluna 1: WITH nao e um comando desta camada"
+        "tem",
+        "aceitou"
       ],
       "mysql": [
         "tem",
@@ -76,8 +76,8 @@
       "titulo": "Subconsulta no `WHERE`",
       "como": "SQL no motor vivo",
       "phxsql": [
-        "nao",
-        "[SP000018] esquema invalido: SQL, coluna 26: IN e uma lista de buscas; o motor faz cada um"
+        "tem",
+        "aceitou"
       ],
       "mysql": [
         "tem",
@@ -105,8 +105,8 @@
       "titulo": "Função de janela (`OVER`)",
       "como": "SQL no motor vivo",
       "phxsql": [
-        "nao",
-        "[SP000018] esquema invalido: SQL, coluna 18: esperava FROM, e veio \"(\""
+        "tem",
+        "aceitou"
       ],
       "mysql": [
         "tem",
@@ -134,8 +134,8 @@
       "titulo": "`GROUP BY` com agregação",
       "como": "SQL no motor vivo",
       "phxsql": [
-        "nao",
-        "[SP000018] esquema invalido: SQL, coluna 21: esperava FROM, e veio \"(\""
+        "tem",
+        "aceitou"
       ],
       "mysql": [
         "tem",
@@ -163,8 +163,8 @@
       "titulo": "Expressão no `WHERE` (`preco * 1.1 > 100`)",
       "como": "SQL no motor vivo",
       "phxsql": [
-        "nao",
-        "[SP000018] esquema invalido: SQL, coluna 29: esperava um comparador (=, <>, <, <=, >, >=)"
+        "tem",
+        "aceitou"
       ],
       "mysql": [
         "tem",
@@ -192,8 +192,8 @@
       "titulo": "Índice parcial (`CREATE INDEX … WHERE`)",
       "como": "SQL no motor vivo",
       "phxsql": [
-        "nao",
-        "o campo `onde` foi aceito e IGNORADO: devolveu 1"
+        "tem",
+        "guardou a incluida e nao a filtrada"
       ],
       "mysql": [
         "nao",
@@ -221,8 +221,8 @@
       "titulo": "Índice por expressão (`lower(nome)`)",
       "como": "SQL no motor vivo",
       "phxsql": [
-        "nao",
-        "o indice aceita NOME de coluna e recusa expressao: [SP000018] esquema invalido: indice usa coluna inexistente: \"lower(nom"
+        "meio",
+        "criou -- conferir o que guardou"
       ],
       "mysql": [
         "tem",
@@ -250,8 +250,8 @@
       "titulo": "Restrição `CHECK`",
       "como": "SQL no motor vivo",
       "phxsql": [
-        "nao",
-        "o campo `check` foi aceito e IGNORADO: gravou v = -5"
+        "tem",
+        "recusou -5 e aceitou 5"
       ],
       "mysql": [
         "tem",
@@ -279,8 +279,8 @@
       "titulo": "`DEFAULT` de coluna",
       "como": "SQL no motor vivo",
       "phxsql": [
-        "nao",
-        "o campo `padrao` foi aceito e IGNORADO: v = None"
+        "tem",
+        "a linha nasceu com 7"
       ],
       "mysql": [
         "tem",
@@ -308,8 +308,8 @@
       "titulo": "Coluna calculada (`GENERATED ALWAYS AS`)",
       "como": "SQL no motor vivo",
       "phxsql": [
-        "nao",
-        "o campo `calculada` foi aceito e IGNORADO: b = None"
+        "tem",
+        "b saiu 6"
       ],
       "mysql": [
         "tem",
@@ -337,8 +337,8 @@
       "titulo": "Upsert (`ON CONFLICT` / `ON DUPLICATE KEY`)",
       "como": "SQL no motor vivo",
       "phxsql": [
-        "nao",
-        "[SP000018] esquema invalido: SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SEL"
+        "tem",
+        "aceitou"
       ],
       "mysql": [
         "tem",
@@ -367,7 +367,7 @@
       "como": "SQL no motor vivo",
       "phxsql": [
         "nao",
-        "[SP000018] esquema invalido: SQL, coluna 1: SET nao e um comando desta camada"
+        "[SP000018] esquema invalido: SQL, coluna 1: SET TRANSACTION ISOLATION LEVEL SERIALIZABLE n"
       ],
       "mysql": [
         "tem",
@@ -397,7 +397,7 @@
       "nota": "vale DENTRO de transação: `esperar_trava` recusa com «sem transação» quem a pede fora dela, e aí a trava GLOBAL de dados serializa como antes",
       "phxsql": [
         "tem",
-        "gestor em crates/phxsql-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:573; pedida em crates/phxsql-server/src/servidor.rs:8649"
+        "gestor em crates/phxsql-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:669; pedida em crates/phxsql-server/src/servidor.rs:12174"
       ],
       "mysql": [
         "citado",
@@ -454,10 +454,10 @@
       "chave": "direito_por_coluna",
       "titulo": "Direito por COLUNA",
       "como": "sonda de código",
-      "nota": "o direito por tabela existe desde o pedido 124",
+      "nota": "o direito por TABELA existe desde o pedido 124; o cadastro e o molde de `testes_direito_por_coluna` em servidor.rs e do MANUAL 14.3.2",
       "phxsql": [
-        "nao",
-        "o portão lê `tabela`, e para aí: crates/phxsql-server/src/usuarios.rs:101"
+        "tem",
+        "o varrer de ana (salario negado) veio SEM a coluna; o de bea (controle, mesmo cadastro sem `colunas`) veio COM ela"
       ],
       "mysql": [
         "citado",
@@ -484,10 +484,10 @@
       "chave": "pitr",
       "titulo": "Recuperação a um ponto no tempo (PITR)",
       "como": "sonda de código",
-      "nota": "o `.log` por tabela É o diário que um PITR usaria",
+      "nota": "sequência de docs/RESTAURACAO.md § 7.10 -- a mesma que bancada/pitr/provar.py roda com 22 conferências",
       "phxsql": [
-        "nao",
-        "o backup é cópia inteira; o `.log` guarda o evento mas não há quem o reaplique até um instante"
+        "tem",
+        "`ate`=corte devolveu [(1, 'um alterado'), (2, 'dois')] (a 1 alterada, a 2, nada da 3); reaplicados=2, pulados=1"
       ],
       "mysql": [
         "citado",
@@ -514,10 +514,10 @@
       "chave": "parametro_no_prepared",
       "titulo": "Parâmetro em instrução preparada (`?`)",
       "como": "sonda de código",
-      "nota": "o driver guarda o texto e o reenvia",
+      "nota": "o driver ODBC já liga e manda `parametros` desde o `SQLBindParameter`; a promoção que faltava era o servidor ler `parametros` na op `sql`, medida aqui pelo soquete",
       "phxsql": [
-        "nao",
-        "crates/phxsql-odbc/src/lib.rs:617 — «Preparar aqui e guardar o texto: nao ha parametros nem plano no driver, e»"
+        "tem",
+        "`WHERE id = ?` com `parametros:[1]` devolveu a linha 1; sem `parametros` recusou: [SP000018] esquema invalido: SQL, coluna 1: vieram 0 parametros e o co"
       ],
       "mysql": [
         "citado",
@@ -544,10 +544,10 @@
       "chave": "diff_de_dados",
       "titulo": "Dizer ONDE duas tabelas diferem",
       "como": "sonda de código",
-      "nota": "falta a operação que devolve as linhas divergentes",
+      "nota": "o `checksum` dizia SE diferem; a op `diferencas` é o terceiro irmão da conferência própria, junto de `juntar` e `unir`",
       "phxsql": [
-        "meio",
-        "o `checksum` diz SE diferem: crates/phxsql-server/src/catalogo.rs:516"
+        "tem",
+        "`diferencas` nomeou a chave [1] e a coluna `nome`: [{'chave': [1], 'colunas': ['nome'], 'a': {'id': 1, 'nome': 'um', 'softdeleted': False, 'rownum': 1}, 'b': {'id': 1, 'nome': 'dois', 'softdeleted': False, 'rownum': 1}}]"
       ],
       "mysql": [
         "citado",
