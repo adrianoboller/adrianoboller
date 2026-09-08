@@ -215,6 +215,60 @@ feito, e a razão não é de tamanho, é de natureza:
 > se reconstrói.** Ele é a história, com carimbo de hora e autor, e é a posição
 > de que a replicação depende — uma réplica pularia a linha em silêncio.
 
+### 2.2.1 O split do `.reg` heap: onde vão os 4,45 µs
+
+Depois que o `.ndx` ganhou cache e o `.log` moveu o contador para o
+`sincronizar`, sobrou o `.reg` como o maior pedaço do inserto. **Medir o que ele
+faz por linha era premissa antes de qualquer plano** — e o número derrubou a
+hipótese óbvia.
+
+O `RegFile` sozinho **não** toca o `.log` (isso é do `Table`), então medi-lo
+direto dá o custo PURO do heap, sem subtração. O `onde-doi` ganhou uma seção que
+insere no `RegFile` cru e abre o custo em parcelas isoladas, cada uma com
+`black_box`, reconciliadas contra a verdade de campo (`--example onde-doi`,
+200.000 linhas, 08/09/2026; ~±8% de ruído de relógio entre corridas):
+
+| parcela | µs/linha | % |
+|---|---:|---:|
+| **`.reg inserir` direto (verdade de campo)** | **4,45** | **100%** |
+| os dois writes (slot + contadores) | 1,84 | 41,3% |
+| — o slot, 1 seek+write | 0,98 | 22,0% |
+| — os contadores, 2º seek+write **por linha** | 0,86 | 19,3% |
+| `garantir`: `caminho()` (um `format!`) + `exists()` (um **stat**) | 1,28 | 28,8% |
+| `montar_cabecalho`: alocar + `agora()` (um relógio) + CRC | 0,15 | 3,3% |
+| montar o slot: alocar + copiar + campos + CRC | 0,10 | 2,4% |
+| — **dos quais o CRC-32 do corpo** | **0,04** | **0,9%** |
+| resto: `paginacao()`/`localizar`, `arquivo()` no cache, `marcar_escrito`, campos | 1,08 | 24,3% |
+
+**A hipótese do CRC morreu medida.** O CRC-32 do corpo do slot (98 bytes) custa
+0,04 µs — **0,9%**. Quem imaginava que o `.reg` gastava no CRC, como o `.ndx`
+gastava antes do *slice-by-16*, estava apontando para o arquivo errado: o corpo
+do slot é pequeno, e o CRC de 98 bytes é ruído.
+
+**O custo é syscall e filesystem, não CPU.** Os dois writes (41%) mais o `stat`
+por linha do `garantir` (29%) são 70% do inserto do `.reg`. E dentro disso
+aparecem **dois trabalhos feitos POR LINHA que só precisariam ser POR LOTE** — a
+mesma forma do cache do `.ndx` e do contador do `.log` já movido na §2.2:
+
+- **O cabeçalho de contadores reescrito a cada inserto** (o 2º write, 19,3%, mais
+  o `montar_cabecalho` que o alimenta, 3,3%). É o **irmão exato** do que o `.log`
+  resolveu logo acima: um contador que a leitura sabe recuperar, indo ao disco em
+  toda linha quando poderia ir no `sincronizar`.
+- **O `exists()` do `garantir`** (28,8%): um `stat` de filesystem — mais um
+  `format!` que aloca o caminho — a cada inserto, só para confirmar que o volume
+  existe. Depois da 1ª linha a resposta é sempre «sim», e o descritor já está no
+  cache `abertos` do `Volumes`.
+
+**Isto é só a medição — nenhuma linha de conserto foi escrita.** O caminho de
+escrita do `.reg` é sagrado (a ordem de digitação, a durabilidade que passa pelo
+`sincronizar`, o reparo que a §2.2 descreve), então mover qualquer um desses dois
+para «por lote» é decisão do DBA sênior e uma frente própria, não um efeito
+colateral de medir. O que a medição entrega é o alvo certo, com número: **não é o
+CRC; são as duas idas ao núcleo que se repetem por linha.**
+
+O split sai do próprio `onde-doi` (`fn medir_reg_split`), então se recompõe a
+cada corrida em vez de envelhecer no papel.
+
 ### 2.3 O Profiler desligado custava 7% da carga
 
 Não estava no `onde-doi` porque não é do motor: é do **servidor**, e só aparece

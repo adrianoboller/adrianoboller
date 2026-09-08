@@ -26,6 +26,7 @@ use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
 use phxsql_store::log::{LogFile, Operacao};
+use phxsql_store::reg::{RegFile, SLOT_CAB};
 use phxsql_store::table::Table;
 
 const CIDADES: [&str; 8] = [
@@ -130,6 +131,201 @@ fn medir_so_log(n: i64) -> f64 {
     let s = inicio.elapsed().as_secs_f64();
     let _ = std::fs::remove_dir_all(&dir);
     s * 1e6 / n as f64
+}
+
+/// O split do `.reg` heap: onde vao os ~3,8 us da gravacao do DADO em si -- a
+/// parcela que sobrou como gargalo do inserto depois que o `.ndx` ganhou cache.
+///
+/// O `RegFile` sozinho NAO toca o `.log` (isso e do `Table`), entao medi-lo
+/// direto da o custo PURO do heap, sem a subtracao que o resto do medidor usa.
+/// Por linha, sem cifra e num volume so, ele faz duas coisas:
+///
+/// - montar o slot: alocar `slot_size` bytes, copiar o payload, e o CRC-32 do
+///   corpo (o que vai ao disco);
+/// - DOIS `escrever`: o slot no offset dele, e o cabecalho de contadores no
+///   offset 0 -- este ultimo a CADA linha, dentro de `gravar_contadores`.
+///
+/// As parcelas saem medidas ISOLADAS e reconciliadas contra o custo direto; o
+/// que sobra e nomeado, nao varrido para baixo do tapete.
+fn medir_reg_split(n: i64) {
+    use std::hint::black_box;
+    use std::io::{Seek, SeekFrom, Write};
+
+    // --- verdade de campo: o custo direto e puro do `.reg` ---
+    let dir = std::env::temp_dir().join(format!("phx-reg-split-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let esquema = Schema::new("precos", colunas(), vec![]).unwrap();
+    let plen = esquema.payload_len();
+    let mut reg = RegFile::criar(&dir, "precos", esquema).unwrap();
+    // O conteudo do payload nao entra na conta: o inserir copia `plen` bytes e
+    // passa o corpo pelo CRC, seja qual for o valor. Bytes fixos bastam.
+    let payload = vec![0x5Au8; plen];
+    let inicio = Instant::now();
+    for _ in 1..=n {
+        reg.inserir(&payload).unwrap();
+    }
+    reg.sincronizar().unwrap();
+    let direto = inicio.elapsed().as_secs_f64() * 1e6 / n as f64;
+    let slot_size = reg.slot_size();
+    drop(reg);
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let corpo = slot_size - SLOT_CAB; // exatamente o que o CRC cobre
+
+    // --- A. CRC-32 do corpo do slot, isolado ---
+    let corpo_bytes = vec![0x5Au8; corpo];
+    let inicio = Instant::now();
+    let mut acc = 0u32;
+    for _ in 0..n {
+        acc = acc.wrapping_add(crc32(black_box(&corpo_bytes)));
+    }
+    let crc = inicio.elapsed().as_secs_f64() * 1e6 / n as f64;
+
+    // --- B. montar o slot como o inserir monta (sem cifra), com o CRC dentro.
+    // `black_box` no payload e no slot para o LLVM nao apagar o trabalho: a
+    // primeira versao deste medidor sem ele mediu 0,00 us, que e impossivel. ---
+    let inicio = Instant::now();
+    let mut soma = 0u64;
+    for _ in 0..n {
+        let mut slot = vec![0u8; slot_size];
+        slot[0] = 1; // STATUS_ATIVO
+        slot[8..16].copy_from_slice(&1u64.to_le_bytes()); // versao
+        slot[SLOT_CAB..SLOT_CAB + plen].copy_from_slice(black_box(&payload));
+        let c = crc32(&slot[SLOT_CAB..]);
+        slot[4..8].copy_from_slice(&c.to_le_bytes());
+        soma += black_box(&slot)[0] as u64;
+    }
+    let montagem = inicio.elapsed().as_secs_f64() * 1e6 / n as f64;
+
+    // --- C e D. O padrao de syscall que `volume::escrever` faz: seek + write_all
+    // num arquivo CRU (o volume nao usa BufWriter), sem fsync por linha, como o
+    // laco do inserir. C e' so o slot; D acrescenta o segundo write -- o
+    // cabecalho de contadores no offset 0, que `gravar_contadores` faz a CADA
+    // linha. `D - C` e' o preco desse segundo write.
+    //
+    // O cabecalho tem 128 B (o CAB_LEN uncifrado do reg.rs, privado). O custo do
+    // segundo write e' do SYSCALL (seek + write), nao dos bytes: 64, 128 ou 192
+    // dariam o mesmo numero, entao mudar o CAB_LEN nao move este resultado. ---
+    const CAB: usize = 128;
+    let slot_buf = vec![0x5Au8; slot_size];
+    let cab_buf = vec![0u8; CAB];
+    let data_offset: u64 = 4096;
+
+    let alvo = std::env::temp_dir().join(format!("phx-reg-1w-{}", std::process::id()));
+    let mut f = std::fs::File::create(&alvo).unwrap();
+    let inicio = Instant::now();
+    for i in 0..n as u64 {
+        f.seek(SeekFrom::Start(data_offset + i * slot_size as u64))
+            .unwrap();
+        f.write_all(black_box(&slot_buf)).unwrap();
+    }
+    let um_write = inicio.elapsed().as_secs_f64() * 1e6 / n as f64;
+    drop(f);
+    let _ = std::fs::remove_file(&alvo);
+
+    let alvo = std::env::temp_dir().join(format!("phx-reg-2w-{}", std::process::id()));
+    let mut f = std::fs::File::create(&alvo).unwrap();
+    let inicio = Instant::now();
+    for i in 0..n as u64 {
+        f.seek(SeekFrom::Start(data_offset + i * slot_size as u64))
+            .unwrap();
+        f.write_all(black_box(&slot_buf)).unwrap();
+        f.seek(SeekFrom::Start(0)).unwrap();
+        f.write_all(black_box(&cab_buf)).unwrap();
+    }
+    let dois_writes = inicio.elapsed().as_secs_f64() * 1e6 / n as f64;
+    drop(f);
+    let _ = std::fs::remove_file(&alvo);
+
+    // --- E. o que `garantir` faz a CADA linha, mesmo com o volume ja aberto:
+    // `existe(volume)` monta o caminho (um `format!` que ALOCA) e chama
+    // `Path::exists()` -- um STAT de filesystem -- so para confirmar que o
+    // volume existe. Depois da 1a linha a resposta e sempre "sim" e o arquivo ja
+    // esta no cache `abertos`. Replico as duas operacoes num arquivo que existe.
+    let dir_s = std::env::temp_dir();
+    let caminho_real = dir_s.join(format!("phx-reg-stat-{}.reg", std::process::id()));
+    std::fs::write(&caminho_real, b"x").unwrap();
+    let inicio = Instant::now();
+    let mut vivos = 0u64;
+    for _ in 0..n {
+        let c = dir_s.join(format!("phx-reg-stat-{}.reg", std::process::id()));
+        vivos += black_box(&c).exists() as u64;
+    }
+    let garantir = inicio.elapsed().as_secs_f64() * 1e6 / n as f64;
+    let _ = std::fs::remove_file(&caminho_real);
+
+    // --- F. o que `montar_cabecalho` faz a CADA linha, dentro de
+    // `gravar_contadores`, ALEM do write que ja contamos: alocar o buf, o
+    // `agora()` (um clock_gettime) e o CRC-32 do cabecalho. Os ~15 campos e o
+    // `material.gravar` sao copias pequenas e ficam no resto. ---
+    // `agora()` do store e' exatamente este SystemTime::now() -> duration_since,
+    // um clock_gettime. Replicado aqui porque o modulo `util` e' privado.
+    let inicio = Instant::now();
+    let mut soma2 = 0u64;
+    for _ in 0..n {
+        let mut buf = vec![0u8; CAB];
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        buf[68..76].copy_from_slice(&black_box(t).to_le_bytes());
+        let c = crc32(&buf[..CAB - 4]);
+        buf[CAB - 4..].copy_from_slice(&c.to_le_bytes());
+        soma2 += black_box(&buf)[0] as u64;
+    }
+    let cabecalho = inicio.elapsed().as_secs_f64() * 1e6 / n as f64;
+
+    let contadores = dois_writes - um_write;
+    let montagem_sem_crc = montagem - crc;
+    let resto = direto - montagem - dois_writes - garantir - cabecalho;
+    // Os acumuladores existem so para o `black_box` ter onde ancorar; imprimi-los
+    // impede o "valor nao usado" e prova que o laco nao foi apagado.
+    let ancora = acc as u64 ^ soma ^ vivos ^ soma2;
+
+    println!("\n=== o split do .reg heap, por linha ({n} linhas) ===\n");
+    println!(
+        "  slot {slot_size} B  (corpo sob CRC {corpo} B; payload {plen} B)  ancora={ancora:x}\n"
+    );
+    println!("  .reg inserir DIRETO (verdade de campo) ...... {direto:>7.2} us   100.0%");
+    println!("  {:-<49}", "");
+    println!(
+        "  montar o slot (aloca+copia+campos+CRC) ...... {montagem:>7.2} us   {:>5.1}%",
+        montagem / direto * 100.0
+    );
+    println!(
+        "     -- CRC-32 do corpo ....................... {crc:>7.2} us   {:>5.1}%",
+        crc / direto * 100.0
+    );
+    println!(
+        "     -- aloca + copia + campos ................ {montagem_sem_crc:>7.2} us   {:>5.1}%",
+        montagem_sem_crc / direto * 100.0
+    );
+    println!(
+        "  os dois writes (slot + contadores) .......... {dois_writes:>7.2} us   {:>5.1}%",
+        dois_writes / direto * 100.0
+    );
+    println!(
+        "     -- o slot (1 seek+write) ................. {um_write:>7.2} us   {:>5.1}%",
+        um_write / direto * 100.0
+    );
+    println!(
+        "     -- os contadores (2o seek+write/linha) ... {contadores:>7.2} us   {:>5.1}%",
+        contadores / direto * 100.0
+    );
+    println!(
+        "  garantir: caminho() (format!) + exists() stat {garantir:>7.2} us   {:>5.1}%",
+        garantir / direto * 100.0
+    );
+    println!(
+        "  montar_cabecalho (alloc + agora() + CRC) .... {cabecalho:>7.2} us   {:>5.1}%",
+        cabecalho / direto * 100.0
+    );
+    println!("  {:-<49}", "");
+    println!(
+        "  resto (paginacao/localizar, arquivo() no cache,\n         campos do cabecalho, marcar_escrito) . {resto:>7.2} us   {:>5.1}%",
+        resto / direto * 100.0
+    );
 }
 
 fn main() {
@@ -273,4 +469,8 @@ fn main() {
         "\n  Um lseek custa {por_seek:.2} us: mesmo 41 chamadas por linha dariam {:.1} us.",
         41.0 * por_seek
     );
+
+    // O `.reg` heap e a parcela que sobrou como gargalo do inserto depois que o
+    // `.ndx` ganhou cache. Aqui ela se abre em CRC x montagem x syscall.
+    medir_reg_split(n);
 }
