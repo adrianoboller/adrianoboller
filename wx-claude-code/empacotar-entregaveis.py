@@ -66,6 +66,11 @@ def arquivos_do_plugin():
         # de documentos. No do cliente eram 55 MB de 91 -- medido no zip
         if rel.parts[:2] in {("docs", "video"), ("docs", "prints")}:
             continue
+        # material de VENDA (apresentacao, fluxo explicado, pagina de investidor) tambem
+        # vai no pacote de documentos: no do cliente fez o zip crescer de 13 para 21 MiB
+        if rel.parts[:2] == ("docs", "investidor") or rel.name in {
+                "apresentacao-wx-claude-code.pptx", "fluxo-explicado.html", "fluxo-explicado.pdf"}:
+            continue
         yield p, rel
 
 
@@ -178,8 +183,7 @@ def pacote_documentos(v: str, saida: Path) -> Path:
         ("docs/SEGURANCA.md", "SEGURANCA.md"),
         ("MANUAL.md", "MANUAL.md"),
         ("README.md", "README.md"),
-        ("docs/video/wx-claude-code-video-de-uso.mp4", "video-de-uso.mp4"),
-        ("docs/video/wx-claude-code-video-php.mp4", "video-legado-php.mp4"),
+        ("docs/investidor/wx-claude-code-para-investidores.pdf", "para-investidores.pdf"),
     ]
     faltando, n = [], 0
     with zipfile.ZipFile(alvo, "w", zipfile.ZIP_DEFLATED) as z:
@@ -191,6 +195,27 @@ def pacote_documentos(v: str, saida: Path) -> Path:
             else:
                 faltando.append(origem)
     print(f"documentos {alvo.name}  {n} arquivos" + (f"  (faltaram: {faltando})" if faltando else ""))
+    return alvo
+
+
+def pacote_videos(v: str, saida: Path) -> Path:
+    """Os cinco videos num zip proprio: junto dos PDFs o pacote de documentos
+    passava de 30 MiB, o limite dos canais por onde isto viaja."""
+    alvo = saida / "videos" / f"videos-{v}.zip"
+    alvo.parent.mkdir(parents=True, exist_ok=True)
+    itens = [("wx-claude-code-video-de-uso.mp4", "video-de-uso.mp4"),
+             ("wx-claude-code-video-php.mp4", "video-legado-php.mp4"),
+             ("wx-claude-code-video-bateria.mp4", "video-bateria-de-testes.mp4"),
+             ("wx-claude-code-video-primeiro.mp4", "video-primeiro-projeto.mp4"),
+             ("wx-claude-code-video-windev.mp4", "video-windev-para-rust-react.mp4")]
+    n = 0
+    with zipfile.ZipFile(alvo, "w", zipfile.ZIP_STORED) as z:
+        for origem, nome in itens:
+            p = RAIZ / "docs/video" / origem
+            if p.is_file():
+                z.write(p, f"videos/{nome}")
+                n += 1
+    print(f"videos     {alvo.name}  {n} arquivos  {alvo.stat().st_size / 1048576:.1f} MiB")
     return alvo
 
 
@@ -214,14 +239,15 @@ def main() -> int:
     saida = a.saida.resolve()
     saida.mkdir(parents=True, exist_ok=True)
     pacotes = [pacote_cliente(v, saida, a.separar_corpus), pacote_vendedor(v, saida),
-               pacote_binarios(v, saida, a.sem_binarios), pacote_documentos(v, saida)]
+               pacote_binarios(v, saida, a.sem_binarios), pacote_documentos(v, saida), pacote_videos(v, saida)]
     ficha = {"versao": v, "empacotado_em": date.today().isoformat(), "pacotes": []}
     linhas = [f"# Entregáveis WX Claude Code {v}", "", f"Empacotado em {ficha['empacotado_em']}.", "",
               "| arquivo | para quem | bytes | SHA-256 |", "| --- | --- | --- | --- |"]
     publico = {"cliente": "quem compra: o plugin para instalar",
                "vendedor": "SÓ VOCÊ: emissor de serial e receptor do aviso",
                "binarios": "quem usa modelo local: wx-modelos Linux e Windows",
-               "documentos": "reunião e contrato: PDFs, termos, segurança, vídeos"}
+               "documentos": "reunião e contrato: PDFs, termos, segurança, apresentação",
+               "videos": "reunião: os cinco vídeos, saída real de sessão"}
     if a.separar_corpus:
         pacotes.append(saida / "cliente" / CORPUS.name)
         publico[CORPUS.name] = "quem compra: o corpus do Help, para ./instalar.sh --corpus"
