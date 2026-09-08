@@ -28,19 +28,7 @@ use phxsql_core::value::Value;
 
 /// Formata um decimal escalado como texto: 1234 com escala 2 vira "12.34".
 pub fn decimal_para_texto(valor: i128, escala: u8) -> String {
-    if escala == 0 {
-        return valor.to_string();
-    }
-    let divisor = 10i128.pow(escala as u32);
-    let sinal = if valor < 0 { "-" } else { "" };
-    let a = valor.unsigned_abs();
-    let d = divisor.unsigned_abs();
-    format!(
-        "{sinal}{}.{:0>largura$}",
-        a / d,
-        a % d,
-        largura = escala as usize
-    )
+    phxsql_core::carga::decimal_para_texto(valor, escala)
 }
 
 /// Bytes crus em hexadecimal minusculo, para a tela e para o JSON.
