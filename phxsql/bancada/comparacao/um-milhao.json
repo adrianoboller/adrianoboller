@@ -2,197 +2,248 @@
   "linhas": 1000000,
   "operacoes_por_fase_pontual": 20000,
   "rodadas": 3,
-  "medido_em": "2026-09-01 18:30:03",
+  "medido_em": "2026-09-08 02:49:47",
   "carga_da_maquina": [
-    1.51171875,
-    0.97802734375,
-    0.61083984375
+    1.095703125,
+    0.65625,
+    0.544921875
   ],
   "motores_medidos": [
     "phxsql",
     "sqlite",
-    "mysql"
+    "mysql",
+    "mariadb"
   ],
   "fases": {
     "inserir": {
       "phxsql": {
-        "mediana_s": 9.9281,
-        "min_s": 8.3846,
-        "max_s": 11.6465,
+        "mediana_s": 7.8731,
+        "min_s": 7.8548,
+        "max_s": 7.9202,
         "amostras": [
-          11.6465,
-          9.9281,
-          8.3846
+          7.8548,
+          7.8731,
+          7.9202
         ]
       },
       "mysql": {
-        "mediana_s": 12.3419,
-        "min_s": 12.2766,
-        "max_s": 17.1424,
+        "mediana_s": 10.6003,
+        "min_s": 10.1824,
+        "max_s": 10.665,
         "amostras": [
-          17.1424,
-          12.3419,
-          12.2766
+          10.665,
+          10.6003,
+          10.1824
         ]
       },
       "sqlite": {
-        "mediana_s": 2.5569,
-        "min_s": 2.5256,
-        "max_s": 2.9418,
+        "mediana_s": 2.1014,
+        "min_s": 2.0769,
+        "max_s": 2.1586,
         "amostras": [
-          2.9418,
-          2.5569,
-          2.5256
+          2.1586,
+          2.0769,
+          2.1014
+        ]
+      },
+      "mariadb": {
+        "mediana_s": 6.6904,
+        "min_s": 6.6648,
+        "max_s": 6.8824,
+        "amostras": [
+          6.8824,
+          6.6904,
+          6.6648
         ]
       }
     },
     "buscar": {
       "phxsql": {
-        "mediana_s": 0.1637,
-        "min_s": 0.151,
-        "max_s": 0.2149,
+        "mediana_s": 0.1588,
+        "min_s": 0.1519,
+        "max_s": 0.1596,
         "amostras": [
-          0.2149,
-          0.151,
-          0.1637
+          0.1596,
+          0.1588,
+          0.1519
         ]
       },
       "mysql": {
-        "mediana_s": 2.4813,
-        "min_s": 2.4738,
-        "max_s": 2.5261,
+        "mediana_s": 1.5091,
+        "min_s": 1.4871,
+        "max_s": 1.5437,
         "amostras": [
-          2.4738,
-          2.4813,
-          2.5261
+          1.5091,
+          1.4871,
+          1.5437
         ]
       },
       "sqlite": {
-        "mediana_s": 0.1655,
-        "min_s": 0.1575,
-        "max_s": 0.2321,
+        "mediana_s": 0.1499,
+        "min_s": 0.1466,
+        "max_s": 0.1537,
         "amostras": [
-          0.2321,
-          0.1575,
-          0.1655
+          0.1499,
+          0.1537,
+          0.1466
+        ]
+      },
+      "mariadb": {
+        "mediana_s": 2.5577,
+        "min_s": 2.4704,
+        "max_s": 2.6711,
+        "amostras": [
+          2.4704,
+          2.5577,
+          2.6711
         ]
       }
     },
     "atualizar": {
       "phxsql": {
-        "mediana_s": 0.2766,
-        "min_s": 0.2648,
-        "max_s": 0.2905,
+        "mediana_s": 0.2558,
+        "min_s": 0.2419,
+        "max_s": 0.3002,
         "amostras": [
-          0.2766,
-          0.2648,
-          0.2905
+          0.2419,
+          0.3002,
+          0.2558
         ]
       },
       "mysql": {
-        "mediana_s": 3.5369,
-        "min_s": 3.4787,
-        "max_s": 22.9694,
+        "mediana_s": 2.1642,
+        "min_s": 2.1302,
+        "max_s": 2.2347,
         "amostras": [
-          22.9694,
-          3.5369,
-          3.4787
+          2.1642,
+          2.2347,
+          2.1302
         ]
       },
       "sqlite": {
-        "mediana_s": 1.0282,
-        "min_s": 0.817,
-        "max_s": 1.1833,
+        "mediana_s": 0.511,
+        "min_s": 0.505,
+        "max_s": 0.55,
         "amostras": [
-          1.1833,
-          1.0282,
-          0.817
+          0.55,
+          0.511,
+          0.505
+        ]
+      },
+      "mariadb": {
+        "mediana_s": 2.7947,
+        "min_s": 2.6015,
+        "max_s": 2.9265,
+        "amostras": [
+          2.6015,
+          2.7947,
+          2.9265
         ]
       }
     },
     "excluir": {
       "phxsql": {
-        "mediana_s": 1.0527,
-        "min_s": 0.9488,
-        "max_s": 1.0783,
+        "mediana_s": 1.2494,
+        "min_s": 1.2292,
+        "max_s": 1.2533,
         "amostras": [
-          1.0527,
-          1.0783,
-          0.9488
+          1.2494,
+          1.2292,
+          1.2533
         ]
       },
       "mysql": {
-        "mediana_s": 4.0626,
-        "min_s": 3.9704,
-        "max_s": 5.3166,
+        "mediana_s": 2.2428,
+        "min_s": 2.2397,
+        "max_s": 2.4116,
         "amostras": [
-          5.3166,
-          4.0626,
-          3.9704
+          2.4116,
+          2.2397,
+          2.2428
         ]
       },
       "sqlite": {
-        "mediana_s": 0.5744,
-        "min_s": 0.4877,
-        "max_s": 0.7716,
+        "mediana_s": 0.4138,
+        "min_s": 0.407,
+        "max_s": 0.4241,
         "amostras": [
-          0.4877,
-          0.5744,
-          0.7716
+          0.4138,
+          0.407,
+          0.4241
+        ]
+      },
+      "mariadb": {
+        "mediana_s": 2.471,
+        "min_s": 2.4659,
+        "max_s": 2.6026,
+        "amostras": [
+          2.471,
+          2.4659,
+          2.6026
         ]
       }
     }
   },
   "sqlite_2ind": {
     "inserir": {
-      "mediana_s": 2.9137,
-      "min_s": 2.8425,
-      "max_s": 3.2966,
+      "mediana_s": 2.4226,
+      "min_s": 2.411,
+      "max_s": 2.4654,
       "amostras": [
-        2.9137,
-        3.2966,
-        2.8425
+        2.4226,
+        2.411,
+        2.4654
       ]
     },
     "buscar": {
-      "mediana_s": 0.2163,
-      "min_s": 0.204,
-      "max_s": 0.2209,
+      "mediana_s": 0.1885,
+      "min_s": 0.187,
+      "max_s": 0.1929,
       "amostras": [
-        0.2163,
-        0.204,
-        0.2209
+        0.187,
+        0.1885,
+        0.1929
       ]
     },
     "atualizar": {
-      "mediana_s": 1.0742,
-      "min_s": 0.7994,
-      "max_s": 1.1142,
+      "mediana_s": 0.5625,
+      "min_s": 0.5013,
+      "max_s": 0.6213,
       "amostras": [
-        1.0742,
-        1.1142,
-        0.7994
+        0.6213,
+        0.5013,
+        0.5625
       ]
     },
     "excluir": {
-      "mediana_s": 0.7444,
-      "min_s": 0.7193,
-      "max_s": 0.7964,
+      "mediana_s": 0.5992,
+      "min_s": 0.5679,
+      "max_s": 0.6295,
       "amostras": [
-        0.7964,
-        0.7193,
-        0.7444
+        0.5992,
+        0.5679,
+        0.6295
       ]
     }
   },
   "piso_do_mysql_s": {
-    "mediana_s": 1.4794,
-    "min_s": 1.0128,
-    "max_s": 1.4977,
+    "mediana_s": 0.9158,
+    "min_s": 0.8971,
+    "max_s": 0.9807,
     "amostras": [
-      1.4794,
-      1.0128,
-      1.4977
+      0.8971,
+      0.9807,
+      0.9158
+    ]
+  },
+  "piso_do_mariadb_s": {
+    "mediana_s": 1.7454,
+    "min_s": 1.6788,
+    "max_s": 1.7665,
+    "amostras": [
+      1.6788,
+      1.7665,
+      1.7454
     ]
   },
   "trabalho_conferido": {
@@ -252,34 +303,59 @@
           401908270000,
           19795510000
         ]
+      ],
+      "mariadb": [
+        [
+          1000000,
+          410099600000,
+          20199500000
+        ],
+        [
+          1000000,
+          421906270000,
+          20199500000
+        ],
+        [
+          980000,
+          401908270000,
+          19795510000
+        ]
       ]
     },
     "buscar_achou": {
       "phxsql": 20000,
       "sqlite": 20000,
-      "mysql": 20000
+      "mysql": 20000,
+      "mariadb": 20000
     }
   },
   "disco_bytes": {
     "phxsql": 265886531,
     "sqlite": 60088320,
-    "mysql": 109051904
+    "mysql": 109051904,
+    "mariadb": 109053744
   },
-  "durabilidade": {
-    "PhxSql": "sincroniza uma vez por fase (exclusão na janela)",
-    "MySQL(R)": "uma transação por fase; flush_log_at_trx_commit=1, sync_binlog=1, versao=8.0.46-0ubuntu0.24.04.3",
-    "SQLite(R)": "synchronous=FULL, journal DELETE, uma transação por fase"
-  },
-  "ressalvas": [
-    "A carga inicial não tem a mesma FORMA nos três: o PhxSql faz 1.000.000 chamadas de função, o SQLite(R) executa a mesma instrução preparada 1.000.000 vezes, e o MySQL(R) recebe 20 instruções de 50.000 linhas. A forma do MySQL(R) é a mais barata das três por linha, então a barra dele nesta fase é OTIMISTA. As fases pontuais são uma instrução por operação nos três.",
-    "O MySQL(R) é o único que recebe o trabalho como TEXTO por soquete — não existe MySQL(R) embutido nesta máquina, e os outros dois são biblioteca no próprio processo. O piso desse formato foi medido: 1.479 s para 20.000 instruções que não fazem nada (`DO 1;`), que é o que há para subtrair da barra dele nas fases pontuais.",
-    "O SQLite(R) publicado é a variante `rowid` (`id INTEGER PRIMARY KEY`), que é a que casa com o InnoDB por ter a chave agrupada e a que FAVORECE o SQLite(R) — são duas estruturas contra as três da variante `2ind`. A outra corre na mesma rodada e está no JSON, em `sqlite_2ind`.",
-    "Durabilidade casada: uma sincronização no fim de cada fase nos três. Não é o regime de quem grava pedido a pedido — uma bancada com `commit` por linha daria outros números, e é a que importa para esse caso.",
-    "Uma máquina só, com o que mais estivesse rodando nela. O bigode de mínimo a máximo das 3 rodadas é a medida dessa inquietude: barra lisa afirmaria uma precisão que o número não tem."
-  ],
   "ajuste_do_mysql": {
     "flush_log_at_trx_commit": "1",
     "sync_binlog": "1",
     "versao": "8.0.46-0ubuntu0.24.04.3"
-  }
+  },
+  "ajuste_do_mariadb": {
+    "flush_log_at_trx_commit": "1",
+    "sync_binlog": "0",
+    "versao": "11.8.9-MariaDB-ubu2404"
+  },
+  "durabilidade": {
+    "PhxSql": "sincroniza uma vez por fase (exclusão na janela)",
+    "MySQL(R)": "uma transação por fase; flush_log_at_trx_commit=1, sync_binlog=1, versao=8.0.46-0ubuntu0.24.04.3",
+    "SQLite(R)": "synchronous=FULL, journal DELETE, uma transação por fase",
+    "MariaDB(R)": "uma transação por fase; flush_log_at_trx_commit=1, sync_binlog=0, versao=11.8.9-MariaDB-ubu2404"
+  },
+  "ressalvas": [
+    "A carga inicial não tem a mesma FORMA nos três: o PhxSql faz 1.000.000 chamadas de função, o SQLite(R) executa a mesma instrução preparada 1.000.000 vezes, e o MySQL(R) recebe 20 instruções de 50.000 linhas. A forma do MySQL(R) é a mais barata das três por linha, então a barra dele nesta fase é OTIMISTA. As fases pontuais são uma instrução por operação nos três.",
+    "O MySQL(R) é o único que recebe o trabalho como TEXTO por soquete — não existe MySQL(R) embutido nesta máquina, e os outros dois são biblioteca no próprio processo. O piso desse formato foi medido: 0.916 s para 20.000 instruções que não fazem nada (`DO 1;`), que é o que há para subtrair da barra dele nas fases pontuais.",
+    "O SQLite(R) publicado é a variante `rowid` (`id INTEGER PRIMARY KEY`), que é a que casa com o InnoDB por ter a chave agrupada e a que FAVORECE o SQLite(R) — são duas estruturas contra as três da variante `2ind`. A outra corre na mesma rodada e está no JSON, em `sqlite_2ind`.",
+    "Durabilidade casada: uma sincronização no fim de cada fase nos três. Não é o regime de quem grava pedido a pedido — uma bancada com `commit` por linha daria outros números, e é a que importa para esse caso.",
+    "Uma máquina só, com o que mais estivesse rodando nela. O bigode de mínimo a máximo das 3 rodadas é a medida dessa inquietude: barra lisa afirmaria uma precisão que o número não tem."
+  ]
 }
