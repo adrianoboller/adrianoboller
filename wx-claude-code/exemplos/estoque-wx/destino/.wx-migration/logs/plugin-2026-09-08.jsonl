@@ -1,7 +1,0 @@
-{"instante": "2026-09-08T15:46:35+00:00", "operacao": "grafo", "argumentos": ["--project-root", "/home/user/adrianoboller/wx-claude-code/exemplos/estoque-wx/destino", "--json", "conferir"], "codigo": 1, "ms": 9.3}
-{"instante": "2026-09-08T15:47:00+00:00", "operacao": "grafo", "argumentos": ["--project-root", "/home/user/adrianoboller/wx-claude-code/exemplos/estoque-wx/destino", "--json", "conferir"], "codigo": 1, "ms": 6.2}
-{"instante": "2026-09-08T15:47:08+00:00", "operacao": "grafo", "argumentos": ["--project-root", "exemplos/estoque-wx/destino", "--json", "conferir"], "codigo": 1, "ms": 6.1}
-{"instante": "2026-09-08T15:47:17+00:00", "operacao": "grafo", "argumentos": ["--project-root", "/home/user/adrianoboller/wx-claude-code/exemplos/estoque-wx/destino", "--json", "conferir"], "codigo": 1, "ms": 5.6}
-{"instante": "2026-09-08T15:49:15+00:00", "operacao": "grafo", "argumentos": ["--project-root", "/home/user/adrianoboller/wx-claude-code/exemplos/estoque-wx/destino", "--json", "conferir"], "codigo": 1, "ms": 5.7}
-{"instante": "2026-09-08T15:50:59+00:00", "operacao": "grafo", "argumentos": ["--project-root", "/home/user/adrianoboller/wx-claude-code/exemplos/estoque-wx/destino", "--json", "conferir"], "codigo": 1, "ms": 6.1}
-{"instante": "2026-09-08T16:34:26+00:00", "operacao": "grafo", "argumentos": ["--project-root", "/home/user/adrianoboller/wx-claude-code/exemplos/estoque-wx/destino", "--json", "conferir"], "codigo": 1, "ms": 7.4}

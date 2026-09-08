@@ -11,3 +11,6 @@ entregas/
 
 # alvo do wl-rt: se refaz com cargo test
 ferramentas/wl-rt/target/
+
+# registro de operacoes que os testes gravam ao rodar o grafo sobre os exemplos
+exemplos/*/destino/.wx-migration/logs/
