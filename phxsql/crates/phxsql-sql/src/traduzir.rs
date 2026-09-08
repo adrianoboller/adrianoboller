@@ -26,7 +26,9 @@
 //! Entao a recusa fica, sobre o motivo honesto: falta o indice que torna a
 //! pergunta respondivel inteira.
 
-use crate::sintaxe::{Alvo, Condicao, Onde, Ordenacao, Projecao, Selecao};
+use crate::sintaxe::{
+    Alvo, Condicao, FuncaoAgregada, ItemProjetado, Onde, Ordenacao, Projecao, Selecao,
+};
 use phxsql_core::json::Json;
 use phxsql_core::{PhxError, Result};
 
@@ -128,6 +130,17 @@ pub fn traduzir(s: &Selecao, indices: &[IndiceInfo], database_corrente: &str) ->
         ));
     }
 
+    // GROUP BY (ou agregado fora dele) sempre vira `agrupar` -- e a excecao
+    // documentada em `docs/propostas/comparativo-19.md`: um COUNT(*) que
+    // teria ido pelo caminho rapido, mas o WHERE virou expressao, tambem
+    // precisa de `agrupar`, porque contar com filtro exige varrer e testar
+    // cada linha (o `registros` do cabecalho nao sabe nada do filtro).
+    let count_com_expressao =
+        matches!(s.projecao, Projecao::Contagem) && matches!(s.onde, Some(Onde::Expressao(_)));
+    if matches!(s.projecao, Projecao::Agregada(_)) || count_com_expressao {
+        return plano_agrupar(s, &database, notas);
+    }
+
     let saida = saida_de(&s.projecao);
 
     match &s.onde {
@@ -151,7 +164,156 @@ fn saida_de(p: &Projecao) -> Saida {
                 .map(|c| (c.nome.clone(), c.rotulo().to_string()))
                 .collect(),
         ),
+        Projecao::Agregada(_) => {
+            unreachable!("Agregada sempre passa por plano_agrupar antes de chegar aqui")
+        }
     }
+}
+
+/// O apelido PADRAO de um agregado sem `AS`: `contagem` sozinho, os outros
+/// com `_coluna` na cauda (`soma_preco`) -- os dois exemplos que o proprio
+/// contrato mostra.
+fn apelido_padrao(funcao: FuncaoAgregada, coluna: Option<&str>) -> String {
+    match coluna {
+        Some(c) => format!("{}_{}", funcao.nome_no_protocolo(), c.to_lowercase()),
+        None => funcao.nome_no_protocolo().to_string(),
+    }
+}
+
+/// `GROUP BY` (e o agregado sem ele) vira `agrupar`. Ela nunca escolhe
+/// indice -- agregar precisa varrer os grupos inteiros, entao `onde` (ou
+/// `expressao`) e sempre um FILTRO da varredura, nunca uma descida de
+/// arvore.
+fn plano_agrupar(s: &Selecao, database: &str, mut notas: Vec<String>) -> Result<Plano> {
+    let mut pares = base_do_pedido(&s.de, database);
+    pares.push((
+        "por".to_string(),
+        Json::Lista(s.agrupar_por.iter().map(Json::texto_de).collect()),
+    ));
+
+    let (agregados, saida) = match &s.projecao {
+        Projecao::Agregada(itens) => {
+            let mut agregados = Vec::with_capacity(itens.len());
+            let mut colunas_saida = Vec::with_capacity(itens.len());
+            for item in itens {
+                match item {
+                    ItemProjetado::Coluna(c) => {
+                        colunas_saida.push((c.nome.clone(), c.rotulo().to_string()));
+                    }
+                    ItemProjetado::Agregado {
+                        funcao,
+                        coluna,
+                        apelido,
+                    } => {
+                        let apelido = apelido
+                            .clone()
+                            .unwrap_or_else(|| apelido_padrao(*funcao, coluna.as_deref()));
+                        let mut par = vec![
+                            (
+                                "funcao".to_string(),
+                                Json::texto_de(funcao.nome_no_protocolo()),
+                            ),
+                            ("apelido".to_string(), Json::texto_de(&apelido)),
+                        ];
+                        if let Some(c) = coluna {
+                            par.push(("coluna".to_string(), Json::texto_de(c)));
+                        }
+                        agregados.push(Json::Objeto(par));
+                        colunas_saida.push((apelido.clone(), apelido));
+                    }
+                }
+            }
+            (agregados, Saida::Colunas(colunas_saida))
+        }
+        // O COUNT(*) que caiu aqui por causa do WHERE em forma de expressao
+        // -- ver `count_com_expressao` em `traduzir`. Sai como um agregado
+        // `contagem` solto, com o mesmo apelido padrao de sempre.
+        Projecao::Contagem => {
+            let apelido = apelido_padrao(FuncaoAgregada::Contagem, None);
+            let agregado = Json::Objeto(vec![
+                ("funcao".to_string(), Json::texto_de("contagem")),
+                ("apelido".to_string(), Json::texto_de(&apelido)),
+            ]);
+            notas.push(
+                "COUNT(*) com WHERE em forma de expressao vira `agrupar` com um agregado \
+                 `contagem` solto -- a resposta tem `linhas` (uma so) em vez do campo \
+                 `registros` do caminho rapido"
+                    .into(),
+            );
+            (
+                vec![agregado],
+                Saida::Colunas(vec![(apelido.clone(), apelido)]),
+            )
+        }
+        _ => unreachable!("so Agregada e Contagem (com WHERE-expressao) chegam em plano_agrupar"),
+    };
+    pares.push(("agregados".to_string(), Json::Lista(agregados)));
+
+    match &s.onde {
+        None => {
+            pares.push(("onde".to_string(), Json::Lista(Vec::new())));
+            pares.push(("expressao".to_string(), Json::texto_de("")));
+        }
+        Some(Onde::Simples(c)) => {
+            pares.push((
+                "onde".to_string(),
+                Json::Lista(vec![Json::Objeto(vec![
+                    ("coluna".to_string(), Json::texto_de(&c.coluna)),
+                    ("op".to_string(), Json::texto_de(c.op.simbolo())),
+                    ("valor".to_string(), literal_para_json(&c.valor)),
+                ])]),
+            ));
+            pares.push(("expressao".to_string(), Json::texto_de("")));
+        }
+        Some(Onde::Expressao(e)) => {
+            pares.push(("onde".to_string(), Json::Lista(Vec::new())));
+            pares.push(("expressao".to_string(), Json::texto_de(e)));
+        }
+    }
+
+    pares.push((
+        "tendo".to_string(),
+        Json::texto_de(s.tendo.as_deref().unwrap_or("")),
+    ));
+
+    pares.push((
+        "ordem".to_string(),
+        Json::Lista(
+            s.ordem_lista
+                .iter()
+                .map(|o| {
+                    Json::Objeto(vec![
+                        ("coluna".to_string(), Json::texto_de(&o.coluna)),
+                        ("desc".to_string(), Json::Bool(o.desc)),
+                    ])
+                })
+                .collect(),
+        ),
+    ));
+
+    if let Some(l) = s.limite {
+        pares.push(("max".to_string(), Json::de_u64(l)));
+    }
+    if s.salto > 0 {
+        return Err(PhxError::Esquema(
+            "OFFSET com GROUP BY nao tem substrato nesta rodada: o contrato de `agrupar` \
+             nao tem campo `pular` -- pagine com HAVING ou um LIMIT maior, por enquanto"
+                .into(),
+        ));
+    }
+
+    notas.push(format!(
+        "GROUP BY vira `agrupar`: {} coluna(s) de agrupamento -- sem indice nenhum, porque \
+         agregar precisa varrer os grupos inteiros",
+        s.agrupar_por.len()
+    ));
+
+    Ok(Plano {
+        op: "agrupar".into(),
+        pedido: pedido_com_op("agrupar", pares),
+        saida,
+        notas,
+    })
 }
 
 pub(crate) fn base_do_pedido(de: &Alvo, database: &str) -> Vec<(String, Json)> {
@@ -261,19 +423,16 @@ fn plano_varrer(
     let mut pares = base_do_pedido(&s.de, database);
 
     if let Some(e) = expressao {
-        // O COUNT(*) rapido le `registros` do cabecalho -- e essa conta NAO
-        // sabe nada do filtro. Contar com expressao precisa varrer e testar
-        // linha por linha, que e o caminho `agrupar` (com `por: []`) faz.
-        // Ate ele existir nesta camada, a recusa e honesta em vez de devolver
-        // o total da tabela com cara de resposta filtrada.
-        if matches!(s.projecao, Projecao::Contagem) {
-            return Err(PhxError::Esquema(
-                "COUNT(*) com WHERE em forma de expressao nao tem substrato AINDA nesta \
-                 camada: contar com filtro exige varrer e testar cada linha, e esse caminho \
-                 e o `agrupar` com `por` vazio -- que e outro item deste roteiro"
-                    .into(),
-            ));
-        }
+        // O COUNT(*) rapido le `registros` do cabecalho, que nao sabe nada
+        // de filtro -- por isso `traduzir` desvia esse caso para
+        // `plano_agrupar` ANTES de chegar aqui, e este `debug_assert!` e o
+        // cinto alem do suspensorio: se algum dia esse desvio esquecer um
+        // caso, isto acusa em teste em vez de devolver o total da tabela com
+        // cara de resposta filtrada.
+        debug_assert!(
+            !matches!(s.projecao, Projecao::Contagem),
+            "COUNT(*) com WHERE em forma de expressao tinha de ter ido por plano_agrupar"
+        );
         pares.push(("expressao".to_string(), Json::texto_de(e)));
         notas.push("varredura com expressao: nao ha indice para esta forma".into());
     }
@@ -627,11 +786,100 @@ mod testes {
     /// `agrupar` (o proximo item). Ate la a recusa e honesta.
     #[test]
     fn count_com_expressao_recusa_ate_o_agrupar_existir() {
-        let e = recusa("SELECT COUNT(*) FROM Clientes WHERE limite > 100 AND ativo = TRUE");
-        assert!(e.contains("COUNT(*)"), "{e}");
-        assert!(e.contains("agrupar"), "{e}");
+        // O item 3 fechou a excecao que o item 2 deixou documentada: agora
+        // COUNT(*) com WHERE em forma de expressao vira `agrupar`, nao
+        // recusa mais.
+        let p = plano("SELECT COUNT(*) FROM Clientes WHERE limite > 100 AND ativo = TRUE");
+        assert_eq!(p.op, "agrupar");
+        assert_eq!(p.pedido.campo("por").unwrap(), &Json::Lista(vec![]));
+        assert_eq!(
+            p.pedido.texto_ou("expressao", ""),
+            "limite > 100 AND ativo = TRUE"
+        );
+        let ags = p.pedido.campo("agregados").unwrap().lista().unwrap();
+        assert_eq!(ags.len(), 1);
+        assert_eq!(ags[0].texto_ou("funcao", ""), "contagem");
+        assert_eq!(ags[0].texto_ou("apelido", ""), "contagem");
+
         // Mas COUNT(*) com filtro SIMPLES continua no caminho de sempre.
         let p = plano("SELECT COUNT(*) FROM Clientes WHERE id = 1");
         assert_eq!(p.op, "buscar");
+    }
+
+    // ------------------------------------- item 3: agrupar (GROUP BY)
+
+    #[test]
+    fn group_by_vira_agrupar_com_o_json_do_contrato() {
+        let p = plano(
+            "SELECT cidade, COUNT(*), SUM(preco) AS total FROM Clientes WHERE ativo = TRUE \
+             GROUP BY cidade HAVING total > 1 ORDER BY total DESC LIMIT 10",
+        );
+        assert_eq!(p.op, "agrupar");
+        assert_eq!(p.pedido.texto_ou("database", ""), "Comercial");
+        assert_eq!(p.pedido.texto_ou("tabela", ""), "Clientes");
+        assert_eq!(
+            p.pedido.campo("por").unwrap(),
+            &Json::Lista(vec![Json::texto_de("cidade")])
+        );
+        let ags = p.pedido.campo("agregados").unwrap().lista().unwrap();
+        assert_eq!(ags.len(), 2);
+        assert_eq!(ags[0].texto_ou("funcao", ""), "contagem");
+        assert_eq!(ags[0].texto_ou("apelido", ""), "contagem");
+        assert!(ags[0].campo("coluna").is_none(), "COUNT(*) nao leva coluna");
+        assert_eq!(ags[1].texto_ou("funcao", ""), "soma");
+        assert_eq!(ags[1].texto_ou("coluna", ""), "preco");
+        assert_eq!(ags[1].texto_ou("apelido", ""), "total");
+
+        assert_eq!(
+            p.pedido.campo("onde").unwrap(),
+            &Json::Lista(vec![Json::Objeto(vec![
+                ("coluna".to_string(), Json::texto_de("ativo")),
+                ("op".to_string(), Json::texto_de("=")),
+                ("valor".to_string(), Json::Bool(true)),
+            ])])
+        );
+        assert_eq!(p.pedido.texto_ou("expressao", ""), "");
+        assert_eq!(p.pedido.texto_ou("tendo", ""), "total > 1");
+        assert_eq!(
+            p.pedido.campo("ordem").unwrap(),
+            &Json::Lista(vec![Json::Objeto(vec![
+                ("coluna".to_string(), Json::texto_de("total")),
+                ("desc".to_string(), Json::Bool(true)),
+            ])])
+        );
+        assert_eq!(p.pedido.inteiro_ou("max", 0), 10);
+
+        assert_eq!(
+            p.saida,
+            Saida::Colunas(vec![
+                ("cidade".into(), "cidade".into()),
+                ("contagem".into(), "contagem".into()),
+                ("total".into(), "total".into()),
+            ])
+        );
+    }
+
+    #[test]
+    fn agregado_sem_group_by_manda_por_vazio() {
+        let p = plano("SELECT SUM(preco) FROM Clientes");
+        assert_eq!(p.op, "agrupar");
+        assert_eq!(p.pedido.campo("por").unwrap(), &Json::Lista(vec![]));
+        let ags = p.pedido.campo("agregados").unwrap().lista().unwrap();
+        // Apelido padrao: "soma_preco" -- o proprio exemplo do contrato.
+        assert_eq!(ags[0].texto_ou("apelido", ""), "soma_preco");
+    }
+
+    #[test]
+    fn where_expressao_no_agrupar_usa_o_campo_expressao() {
+        let p =
+            plano("SELECT cidade, COUNT(*) FROM Clientes WHERE a > 1 AND b < 2 GROUP BY cidade");
+        assert_eq!(p.pedido.campo("onde").unwrap(), &Json::Lista(vec![]));
+        assert_eq!(p.pedido.texto_ou("expressao", ""), "a > 1 AND b < 2");
+    }
+
+    #[test]
+    fn offset_com_group_by_recusa() {
+        let e = recusa("SELECT cidade, COUNT(*) FROM Clientes GROUP BY cidade LIMIT 5 OFFSET 1");
+        assert!(e.contains("OFFSET"), "{e}");
     }
 }

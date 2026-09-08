@@ -73,7 +73,8 @@ pub use dml::{
 pub use lexico::{Comparador, Simbolo, Token};
 pub use sintaxe::{
     analisar, analisar_comando, analisar_comando_com, comando_empilhado, Alvo, ColunaPedida,
-    Comando, Condicao, Literal, Onde, Ordenacao, Projecao, Selecao, RESERVADAS_DO_MOTOR,
+    Comando, Condicao, FuncaoAgregada, ItemProjetado, Literal, Onde, Ordenacao, Projecao, Selecao,
+    RESERVADAS_DO_MOTOR,
 };
 pub use traduzir::{traduzir, ColunaDoIndice, IndiceInfo, Plano, Saida};
 

@@ -69,10 +69,155 @@ impl ColunaPedida {
 pub enum Projecao {
     /// `SELECT *`
     Tudo,
-    /// `SELECT COUNT(*)` -- o unico agregado, e so porque o `varrer` ja
-    /// responde a contagem em O(1), lendo dois campos do cabecalho.
+    /// `SELECT COUNT(*)` -- o unico agregado do caminho RAPIDO, e so porque
+    /// o `varrer` ja responde a contagem em O(1), lendo dois campos do
+    /// cabecalho. Um `COUNT(*)` que precisa de `agrupar` (por causa de um
+    /// `WHERE` em forma de expressao) continua sendo ESTE variante -- quem
+    /// decide qual dos dois caminhos usar e `traduzir`, nao a sintaxe.
     Contagem,
     Colunas(Vec<ColunaPedida>),
+    /// `GROUP BY`, ou agregado fora dele (`SELECT SUM(x) FROM t`, sem
+    /// `GROUP BY` nenhum -- vira `agrupar` com `por: []`). Cada item e uma
+    /// coluna simples (que so entra aqui se estiver no `GROUP BY`) ou um
+    /// agregado.
+    Agregada(Vec<ItemProjetado>),
+}
+
+/// As funcoes de `agrupar.agregados.funcao` -- as mesmas seis do `pivotar`
+/// (`crates/phxsql-server/src/pivot.rs::Agregador`), e os MESMOS nomes que
+/// vao no JSON: essa camada nao inventa vocabulario novo, so fala a lingua
+/// que o motor ja fala.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FuncaoAgregada {
+    Contagem,
+    Soma,
+    Media,
+    Minimo,
+    Maximo,
+    /// `COUNT(DISTINCT coluna)`.
+    Distintos,
+}
+
+impl FuncaoAgregada {
+    fn de_nome_de_funcao(nome: &str) -> Option<FuncaoAgregada> {
+        match nome {
+            "COUNT" => Some(FuncaoAgregada::Contagem),
+            "SUM" => Some(FuncaoAgregada::Soma),
+            "AVG" => Some(FuncaoAgregada::Media),
+            "MIN" => Some(FuncaoAgregada::Minimo),
+            "MAX" => Some(FuncaoAgregada::Maximo),
+            _ => None,
+        }
+    }
+
+    /// O texto que vai no campo `"funcao"` do pedido.
+    pub fn nome_no_protocolo(&self) -> &'static str {
+        match self {
+            FuncaoAgregada::Contagem => "contagem",
+            FuncaoAgregada::Soma => "soma",
+            FuncaoAgregada::Media => "media",
+            FuncaoAgregada::Minimo => "minimo",
+            FuncaoAgregada::Maximo => "maximo",
+            FuncaoAgregada::Distintos => "distintos",
+        }
+    }
+}
+
+/// Um item da projecao quando ela pode ter agregado: coluna simples (tem de
+/// estar no `GROUP BY`) ou uma chamada de agregado.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ItemProjetado {
+    Coluna(ColunaPedida),
+    Agregado {
+        funcao: FuncaoAgregada,
+        /// `None` so em `COUNT(*)` -- os outros cinco exigem coluna.
+        coluna: Option<String>,
+        apelido: Option<String>,
+    },
+}
+
+/// O que a projecao leu ANTES de saber se ha `GROUP BY`/`HAVING` -- so dai
+/// da para decidir a forma final (`finalizar_projecao`), porque `GROUP BY`
+/// vem DEPOIS na frase.
+enum ProjecaoBruta {
+    Tudo,
+    Itens(Vec<ItemProjetado>),
+}
+
+/// Decide a forma final da projecao, agora que se sabe se ha `GROUP
+/// BY`/`HAVING`. Preserva os DOIS caminhos rapidos de sempre -- `Tudo` e
+/// `Contagem` -- quando nada os empurra para `Agregada`, para nao mudar o
+/// plano de quem nunca usou agregado nenhum.
+fn finalizar_projecao(
+    bruta: ProjecaoBruta,
+    agrupar_por: &[String],
+    tem_having: bool,
+) -> Result<Projecao> {
+    match bruta {
+        ProjecaoBruta::Tudo => {
+            if !agrupar_por.is_empty() || tem_having {
+                return Err(PhxError::Esquema(
+                    "SELECT * nao combina com GROUP BY: cada coluna do resultado tem de \
+                     ser uma das colunas do agrupamento ou um agregado, e `*` nao diz qual \
+                     -- nomeie as colunas"
+                        .into(),
+                ));
+            }
+            Ok(Projecao::Tudo)
+        }
+        ProjecaoBruta::Itens(itens) => {
+            let tem_agregado = itens
+                .iter()
+                .any(|i| matches!(i, ItemProjetado::Agregado { .. }));
+
+            // O caminho de sempre: so colunas, sem GROUP BY nem HAVING.
+            if !tem_agregado && agrupar_por.is_empty() && !tem_having {
+                return Ok(Projecao::Colunas(
+                    itens
+                        .into_iter()
+                        .map(|i| match i {
+                            ItemProjetado::Coluna(c) => c,
+                            ItemProjetado::Agregado { .. } => unreachable!(),
+                        })
+                        .collect(),
+                ));
+            }
+
+            // O caminho rapido de sempre: SO `COUNT(*)`, sem GROUP BY/HAVING
+            // e sem mais nada na lista.
+            if agrupar_por.is_empty() && !tem_having && itens.len() == 1 {
+                if let ItemProjetado::Agregado {
+                    funcao: FuncaoAgregada::Contagem,
+                    coluna: None,
+                    ..
+                } = &itens[0]
+                {
+                    return Ok(Projecao::Contagem);
+                }
+            }
+
+            // Dali para baixo e sempre `agrupar`: cada coluna simples tem de
+            // estar no GROUP BY, ou a resposta teria um valor que nao e nem
+            // a chave do grupo nem um agregado -- SQL nenhum garante QUAL
+            // linha do grupo aquele valor viria.
+            for item in &itens {
+                if let ItemProjetado::Coluna(c) = item {
+                    if !agrupar_por
+                        .iter()
+                        .any(|g| crate::traduzir::igual_sem_caso(g, &c.nome))
+                    {
+                        return Err(PhxError::Esquema(format!(
+                            "a coluna {:?} aparece no SELECT mas nao esta no GROUP BY e nao \
+                             e agregado -- cada coluna do resultado tem de ser uma das \
+                             colunas do agrupamento ou uma chamada de agregado",
+                            c.nome
+                        )));
+                    }
+                }
+            }
+            Ok(Projecao::Agregada(itens))
+        }
+    }
 }
 
 /// Para onde o `FROM` aponta, ja separado nas tres partes que o motor usa.
@@ -134,7 +279,18 @@ pub struct Selecao {
     pub projecao: Projecao,
     pub de: Alvo,
     pub onde: Option<Onde>,
+    /// `GROUP BY` -- vazio quando nao ha, e vazio TAMBEM quando ha agregado
+    /// sem `GROUP BY` (`por: []` no pedido).
+    pub agrupar_por: Vec<String>,
+    /// `HAVING`, ja normalizado a texto -- a mesma forma de `Onde::Expressao`,
+    /// porque o `HAVING` sempre vira texto: nao ha "forma simples" dele.
+    pub tendo: Option<String>,
+    /// `ORDER BY` de UMA coluna, do caminho antigo -- exige indice, e por
+    /// isso continua limitado a uma coluna so.
     pub ordem: Option<Ordenacao>,
+    /// `ORDER BY` de `agrupar`/`consultar`: sobre um resultado JA computado
+    /// em memoria, entao varias colunas nao pedem indice nenhum.
+    pub ordem_lista: Vec<Ordenacao>,
     pub limite: Option<u64>,
     pub salto: u64,
 }
@@ -448,7 +604,7 @@ impl Analisador {
                  repetido numa varredura",
             ));
         }
-        let projecao = self.projecao()?;
+        let bruta = self.projecao()?;
         self.exigir_palavra("FROM")?;
         let de = self.alvo()?;
 
@@ -470,35 +626,39 @@ impl Analisador {
             None
         };
 
-        if self.aceitar_palavra("GROUP") {
-            return Err(lexico::erro(
-                self.posicao_atual(),
-                "GROUP BY geral nao existe embaixo. A tabulacao cruzada e a operacao \
-                 pivotar, que e um caso e nao o geral",
-            ));
-        }
-
-        let ordem = if self.aceitar_palavra("ORDER") {
+        let agrupar_por = if self.aceitar_palavra("GROUP") {
             self.exigir_palavra("BY")?;
-            let coluna = self.identificador("nome de coluna")?;
-            let desc = if self.aceitar_palavra("DESC") {
-                true
-            } else {
-                self.aceitar_palavra("ASC");
-                false
-            };
-            if self.aceitar(&Token::Virgula) {
+            self.lista_de_colunas_do_group_by()?
+        } else {
+            Vec::new()
+        };
+
+        let tendo = if self.aceitar_palavra("HAVING") {
+            let tokens = self.capturar_ate_clausula(&["ORDER", "LIMIT", "OFFSET"])?;
+            if tokens.is_empty() {
                 return Err(lexico::erro(
                     self.posicao_atual(),
-                    "ORDER BY de mais de uma coluna precisa de um indice composto com \
-                     essas colunas nessa ordem -- e quem escolhe o indice ainda e quem \
-                     chama, porque nao ha planejador",
+                    "esperava uma condicao depois de HAVING",
                 ));
             }
-            Some(Ordenacao { coluna, desc })
+            Some(normalizar_tokens(&tokens))
         } else {
             None
         };
+
+        let projecao = finalizar_projecao(bruta, &agrupar_por, tendo.is_some())?;
+        let e_agrupada = matches!(projecao, Projecao::Agregada(_));
+
+        let mut ordem = None;
+        let mut ordem_lista = Vec::new();
+        if self.aceitar_palavra("ORDER") {
+            self.exigir_palavra("BY")?;
+            if e_agrupada {
+                ordem_lista = self.lista_de_ordenacoes()?;
+            } else {
+                ordem = Some(self.uma_ordenacao_restrita()?);
+            }
+        }
 
         let mut limite = None;
         let mut salto = 0u64;
@@ -516,72 +676,157 @@ impl Analisador {
             projecao,
             de,
             onde,
+            agrupar_por,
+            tendo,
             ordem,
+            ordem_lista,
             limite,
             salto,
         })
     }
 
-    fn projecao(&mut self) -> Result<Projecao> {
-        if self.aceitar(&Token::Asterisco) {
-            return Ok(Projecao::Tudo);
+    /// Uma ordenacao SO, do caminho antigo -- ela exige indice, e por isso
+    /// uma segunda coluna recusa (nao ha indice composto escolhido aqui).
+    fn uma_ordenacao_restrita(&mut self) -> Result<Ordenacao> {
+        let coluna = self.identificador("nome de coluna")?;
+        let desc = if self.aceitar_palavra("DESC") {
+            true
+        } else {
+            self.aceitar_palavra("ASC");
+            false
+        };
+        if self.aceitar(&Token::Virgula) {
+            return Err(lexico::erro(
+                self.posicao_atual(),
+                "ORDER BY de mais de uma coluna precisa de um indice composto com \
+                 essas colunas nessa ordem -- e quem escolhe o indice ainda e quem \
+                 chama, porque nao ha planejador",
+            ));
         }
-        // COUNT(*) -- e so ele. Os outros agregados (SUM, AVG, MIN, MAX) nao
-        // tem quem calcule: o `varrer` conta pelo cabecalho, mas nao soma.
-        if let Some(nome) = self.espiar().and_then(|s| s.token.palavra_chave()) {
-            if ["COUNT", "SUM", "AVG", "MIN", "MAX"].contains(&nome.as_str())
-                && self.s.get(self.i + 1).map(|s| &s.token) == Some(&Token::AbreParen)
-            {
-                let pos = self.posicao_atual();
-                if nome != "COUNT" {
-                    return Err(lexico::erro(
-                        pos,
-                        &format!(
-                            "{nome}() nao tem quem calcule embaixo. So COUNT(*) passa, \
-                             porque a contagem sai do cabecalho da tabela em O(1)"
-                        ),
-                    ));
-                }
-                self.i += 2;
-                if !self.aceitar(&Token::Asterisco) {
-                    return Err(lexico::erro(
-                        self.posicao_atual(),
-                        "so COUNT(*) -- contar coluna pediria olhar o valor de cada linha",
-                    ));
-                }
-                if !self.aceitar(&Token::FechaParen) {
-                    return Err(lexico::erro(self.posicao_atual(), "esperava ) do COUNT(*)"));
-                }
-                // `COUNT(*) AS quantos` e comum demais para recusar.
-                if self.aceitar_palavra("AS") {
-                    self.identificador("apelido do COUNT(*)")?;
-                }
-                return Ok(Projecao::Contagem);
-            }
-        }
+        Ok(Ordenacao { coluna, desc })
+    }
 
-        let mut colunas = Vec::new();
+    /// A lista de `ORDER BY` de `agrupar`/`consultar`: sobre um resultado JA
+    /// computado em memoria, entao varias colunas nao pedem indice nenhum --
+    /// e por isso NAO tem a restricao de uma coluna so da forma antiga.
+    fn lista_de_ordenacoes(&mut self) -> Result<Vec<Ordenacao>> {
+        let mut ordens = Vec::new();
         loop {
-            let nome = self.identificador("nome de coluna")?;
-            // `t.coluna` -- o qualificador e aceito e descartado, porque so ha
-            // uma tabela. Recusa-lo obrigaria a reescrever consulta de cliente
-            // que sempre qualifica.
-            let nome = if self.aceitar(&Token::Ponto) {
-                self.identificador("nome de coluna depois do ponto")?
+            let coluna = self.identificador("nome de coluna no ORDER BY")?;
+            let desc = if self.aceitar_palavra("DESC") {
+                true
             } else {
-                nome
+                self.aceitar_palavra("ASC");
+                false
             };
-            let apelido = if self.aceitar_palavra("AS") {
-                Some(self.identificador("apelido depois de AS")?)
-            } else {
-                None
-            };
-            colunas.push(ColunaPedida { nome, apelido });
+            ordens.push(Ordenacao { coluna, desc });
             if !self.aceitar(&Token::Virgula) {
                 break;
             }
         }
-        Ok(Projecao::Colunas(colunas))
+        Ok(ordens)
+    }
+
+    fn lista_de_colunas_do_group_by(&mut self) -> Result<Vec<String>> {
+        let mut colunas = Vec::new();
+        loop {
+            colunas.push(self.identificador("nome de coluna no GROUP BY")?);
+            if !self.aceitar(&Token::Virgula) {
+                break;
+            }
+        }
+        Ok(colunas)
+    }
+
+    /// Le a projecao CRUA: `*`, ou uma lista de colunas e/ou chamadas de
+    /// agregado. A decisao de qual `Projecao` isso vira fica para
+    /// `finalizar_projecao`, chamada DEPOIS do `GROUP BY`/`HAVING` -- so
+    /// entao da para saber se `COUNT(*)` sozinho e o caminho rapido ou se
+    /// uma coluna simples precisa estar no `GROUP BY`.
+    fn projecao(&mut self) -> Result<ProjecaoBruta> {
+        if self.aceitar(&Token::Asterisco) {
+            return Ok(ProjecaoBruta::Tudo);
+        }
+        let mut itens = Vec::new();
+        loop {
+            itens.push(self.item_de_projecao()?);
+            if !self.aceitar(&Token::Virgula) {
+                break;
+            }
+        }
+        Ok(ProjecaoBruta::Itens(itens))
+    }
+
+    /// Um item da projecao: coluna simples, ou chamada de agregado
+    /// (`COUNT/SUM/AVG/MIN/MAX(...)`, e `COUNT(DISTINCT coluna)`).
+    fn item_de_projecao(&mut self) -> Result<ItemProjetado> {
+        if let Some(nome) = self.espiar().and_then(|s| s.token.palavra_chave()) {
+            if let Some(funcao) = FuncaoAgregada::de_nome_de_funcao(&nome) {
+                if self.s.get(self.i + 1).map(|s| &s.token) == Some(&Token::AbreParen) {
+                    return self.chamada_de_agregado(funcao);
+                }
+            }
+        }
+        let nome = self.identificador("nome de coluna")?;
+        // `t.coluna` -- o qualificador e aceito e descartado, porque so ha
+        // uma tabela. Recusa-lo obrigaria a reescrever consulta de cliente
+        // que sempre qualifica.
+        let nome = if self.aceitar(&Token::Ponto) {
+            self.identificador("nome de coluna depois do ponto")?
+        } else {
+            nome
+        };
+        let apelido = if self.aceitar_palavra("AS") {
+            Some(self.identificador("apelido depois de AS")?)
+        } else {
+            None
+        };
+        Ok(ItemProjetado::Coluna(ColunaPedida { nome, apelido }))
+    }
+
+    /// Depois de espiar `FUNCAO (` sem consumir -- consome os dois e le o
+    /// resto da chamada.
+    fn chamada_de_agregado(&mut self, funcao: FuncaoAgregada) -> Result<ItemProjetado> {
+        let pos = self.posicao_atual();
+        self.i += 2; // a palavra da funcao, e o `(`
+        let (funcao, coluna) =
+            if funcao == FuncaoAgregada::Contagem && self.aceitar(&Token::Asterisco) {
+                (FuncaoAgregada::Contagem, None)
+            } else if funcao == FuncaoAgregada::Contagem && self.aceitar_palavra("DISTINCT") {
+                let c = self.identificador("coluna de COUNT(DISTINCT ...)")?;
+                (FuncaoAgregada::Distintos, Some(c))
+            } else if funcao == FuncaoAgregada::Contagem {
+                // `COUNT(coluna)` -- contar nao-nulo de uma coluna -- nao e
+                // `COUNT(*)` nem `COUNT(DISTINCT ...)`, e o acumulador desta
+                // casa (`pivot.rs::Agregador::Contagem`) conta LINHA, nao
+                // nao-nulo de uma coluna: aceitar calado devolveria a mesma
+                // conta de `COUNT(*)` com cara de ter contado outra coisa.
+                return Err(lexico::erro(
+                    pos,
+                    "COUNT(coluna) nao tem substrato nesta rodada -- so COUNT(*) e \
+                 COUNT(DISTINCT coluna). Contar so os nao-nulos de uma coluna e outro \
+                 acumulador, que este item nao construiu",
+                ));
+            } else {
+                let c = self.identificador("coluna do agregado")?;
+                (funcao, Some(c))
+            };
+        if !self.aceitar(&Token::FechaParen) {
+            return Err(lexico::erro(
+                self.posicao_atual(),
+                &format!("esperava ) do agregado{}", self.mas_veio()),
+            ));
+        }
+        let apelido = if self.aceitar_palavra("AS") {
+            Some(self.identificador("apelido do agregado")?)
+        } else {
+            None
+        };
+        Ok(ItemProjetado::Agregado {
+            funcao,
+            coluna,
+            apelido,
+        })
     }
 
     /// `tabela`, `schema.tabela` ou `database.schema.tabela`.
@@ -955,11 +1200,12 @@ mod testes {
         for (sql, pedaco) in [
             // AND/OR, LIKE, IN (lista), BETWEEN e IS NULL sairam daqui no dia
             // em que o item 2 (WHERE em forma de expressao) entrou -- a prova
-            // deles esta em `onde_em_forma_de_expressao`, la embaixo.
-            ("SELECT SUM(x) FROM t", "SUM()"),
+            // deles esta em `onde_em_forma_de_expressao`, la embaixo. SUM(x)
+            // e GROUP BY sairam no dia do item 3 -- a prova deles esta em
+            // `sintaxe::testes::group_by_e_agregados` e em `traduzir::testes`.
             ("SELECT DISTINCT a FROM t", "DISTINCT"),
-            ("SELECT * FROM t GROUP BY a", "GROUP BY"),
             ("SELECT * FROM a JOIN b", "junção"),
+            ("SELECT COUNT(a) FROM t", "COUNT(coluna)"),
             // INSERT, UPDATE e DELETE sairam daqui no dia em que passaram a
             // existir: as recusas DELES moram em `dml.rs`, uma por falta.
         ] {
@@ -1192,5 +1438,151 @@ mod testes {
             analisar_comando("SELECT * FROM t WHERE id = 1").unwrap(),
             analisar_comando_com("SELECT * FROM t WHERE id = 1", &[]).unwrap()
         );
+    }
+
+    // ------------------------------------ item 3: GROUP BY e agregados
+
+    #[test]
+    fn count_estrela_sozinho_continua_o_caminho_rapido() {
+        // Sem GROUP BY, sem mais nada na lista -- Projecao::Contagem, igual
+        // a antes do item 3.
+        let s = analisar("SELECT COUNT(*) FROM c").unwrap();
+        assert_eq!(s.projecao, Projecao::Contagem);
+        assert!(s.agrupar_por.is_empty());
+    }
+
+    #[test]
+    fn agregado_sozinho_sem_group_by_vira_agregada_com_por_vazio() {
+        let s = analisar("SELECT SUM(preco) AS total FROM c").unwrap();
+        assert!(s.agrupar_por.is_empty());
+        let Projecao::Agregada(itens) = s.projecao else {
+            panic!("esperava Agregada")
+        };
+        assert_eq!(itens.len(), 1);
+        assert_eq!(
+            itens[0],
+            ItemProjetado::Agregado {
+                funcao: FuncaoAgregada::Soma,
+                coluna: Some("preco".into()),
+                apelido: Some("total".into()),
+            }
+        );
+    }
+
+    #[test]
+    fn group_by_com_coluna_e_agregados_e_having() {
+        let s = analisar(
+            "SELECT cidade, COUNT(*), SUM(preco) AS total, AVG(preco), MIN(preco), \
+             MAX(preco), COUNT(DISTINCT preco) FROM c WHERE ativo = TRUE GROUP BY cidade \
+             HAVING total > 100 ORDER BY total DESC LIMIT 5",
+        )
+        .unwrap();
+        assert_eq!(s.agrupar_por, vec!["cidade".to_string()]);
+        assert_eq!(s.tendo.as_deref(), Some("total > 100"));
+        let Projecao::Agregada(itens) = &s.projecao else {
+            panic!("esperava Agregada")
+        };
+        assert_eq!(itens.len(), 7);
+        assert_eq!(
+            itens[0],
+            ItemProjetado::Coluna(ColunaPedida {
+                nome: "cidade".into(),
+                apelido: None
+            })
+        );
+        assert_eq!(
+            itens[1],
+            ItemProjetado::Agregado {
+                funcao: FuncaoAgregada::Contagem,
+                coluna: None,
+                apelido: None
+            }
+        );
+        assert_eq!(
+            itens[6],
+            ItemProjetado::Agregado {
+                funcao: FuncaoAgregada::Distintos,
+                coluna: Some("preco".into()),
+                apelido: None
+            }
+        );
+        assert_eq!(
+            s.ordem_lista,
+            vec![Ordenacao {
+                coluna: "total".into(),
+                desc: true
+            }]
+        );
+        assert_eq!(s.limite, Some(5));
+        // O onde SIMPLES continua Simples mesmo dentro do caminho agrupado.
+        assert!(matches!(s.onde, Some(Onde::Simples(_))));
+    }
+
+    #[test]
+    fn order_by_de_varias_colunas_so_vale_no_caminho_agrupado() {
+        // Sem GROUP BY, duas colunas no ORDER BY continuam recusando (pediria
+        // indice composto).
+        let e = analisar("SELECT * FROM t ORDER BY a, b")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("indice composto"), "{e}");
+
+        // Com GROUP BY, varias colunas no ORDER BY sao aceitas -- o
+        // resultado ja esta em memoria.
+        let s = analisar("SELECT a, COUNT(*) FROM t GROUP BY a ORDER BY a, a DESC").unwrap();
+        assert_eq!(
+            s.ordem_lista,
+            vec![
+                Ordenacao {
+                    coluna: "a".into(),
+                    desc: false
+                },
+                Ordenacao {
+                    coluna: "a".into(),
+                    desc: true
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn coluna_fora_do_group_by_recusa_nomeando() {
+        let e = analisar("SELECT cidade, bairro, COUNT(*) FROM c GROUP BY cidade")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("bairro"), "{e}");
+        assert!(e.contains("GROUP BY"), "{e}");
+    }
+
+    #[test]
+    fn agregado_misturado_com_coluna_sem_group_by_recusa() {
+        let e = analisar("SELECT nome, COUNT(*) FROM c")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("nome"), "{e}");
+    }
+
+    #[test]
+    fn estrela_com_group_by_recusa() {
+        let e = analisar("SELECT * FROM c GROUP BY cidade")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("GROUP BY"), "{e}");
+    }
+
+    #[test]
+    fn count_de_coluna_sem_distinct_recusa_pelo_nome() {
+        let e = analisar("SELECT COUNT(preco) FROM c")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("COUNT(coluna)"), "{e}");
+    }
+
+    #[test]
+    fn having_sem_condicao_recusa() {
+        let e = analisar("SELECT cidade, COUNT(*) FROM c GROUP BY cidade HAVING")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("HAVING"), "{e}");
     }
 }
