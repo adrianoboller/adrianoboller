@@ -180,6 +180,57 @@ pub(crate) fn apelido_padrao(funcao: FuncaoAgregada, coluna: Option<&str>) -> St
     }
 }
 
+/// `CREATE VIEW nome AS SELECT ...` (item 6) vira `criar_visao`. O `sql`
+/// ja foi analisado uma vez em `sintaxe::criar_visao` (para recusar cedo);
+/// aqui so falta embrulhar no pedido -- ele guarda TEXTO, e e reanalisado a
+/// CADA uso, entao esta funcao nao abre mao de nada validando de novo.
+pub fn traduzir_criar_visao(nome: &str, sql: &str, database_corrente: &str) -> Result<Plano> {
+    if database_corrente.is_empty() {
+        return Err(PhxError::Esquema(
+            "nao sei em qual database: escolha o banco antes do CREATE VIEW".into(),
+        ));
+    }
+    Ok(Plano {
+        op: "criar_visao".into(),
+        pedido: pedido_com_op(
+            "criar_visao",
+            vec![
+                ("database".to_string(), Json::texto_de(database_corrente)),
+                ("nome".to_string(), Json::texto_de(nome)),
+                ("sql".to_string(), Json::texto_de(sql)),
+            ],
+        ),
+        saida: Saida::LinhaInteira,
+        notas: vec![
+            "CREATE VIEW vira `criar_visao`: a visao guarda TEXTO e e reanalisada a cada \
+             uso -- se a tabela dela sumir, quem descobre e quem tenta USAR a visao, \
+             nomeando a tabela, nao quem a criou"
+                .into(),
+        ],
+    })
+}
+
+/// `DROP VIEW nome` vira `excluir_visao`.
+pub fn traduzir_excluir_visao(nome: &str, database_corrente: &str) -> Result<Plano> {
+    if database_corrente.is_empty() {
+        return Err(PhxError::Esquema(
+            "nao sei em qual database: escolha o banco antes do DROP VIEW".into(),
+        ));
+    }
+    Ok(Plano {
+        op: "excluir_visao".into(),
+        pedido: pedido_com_op(
+            "excluir_visao",
+            vec![
+                ("database".to_string(), Json::texto_de(database_corrente)),
+                ("nome".to_string(), Json::texto_de(nome)),
+            ],
+        ),
+        saida: Saida::LinhaInteira,
+        notas: vec!["DROP VIEW vira `excluir_visao`".into()],
+    })
+}
+
 /// `GROUP BY` (e o agregado sem ele) vira `agrupar`. Ela nunca escolhe
 /// indice -- agregar precisa varrer os grupos inteiros, entao `onde` (ou
 /// `expressao`) e sempre um FILTRO da varredura, nunca uma descida de
@@ -881,5 +932,33 @@ mod testes {
     fn offset_com_group_by_recusa() {
         let e = recusa("SELECT cidade, COUNT(*) FROM Clientes GROUP BY cidade LIMIT 5 OFFSET 1");
         assert!(e.contains("OFFSET"), "{e}");
+    }
+
+    // ---------------------------------------------------- item 6: visoes
+
+    #[test]
+    fn traduzir_criar_visao_monta_o_pedido() {
+        let p = traduzir_criar_visao("v_c", "SELECT * FROM c", "loja").unwrap();
+        assert_eq!(p.op, "criar_visao");
+        assert_eq!(p.pedido.texto_ou("op", ""), "criar_visao");
+        assert_eq!(p.pedido.texto_ou("database", ""), "loja");
+        assert_eq!(p.pedido.texto_ou("nome", ""), "v_c");
+        assert_eq!(p.pedido.texto_ou("sql", ""), "SELECT * FROM c");
+    }
+
+    #[test]
+    fn traduzir_criar_visao_sem_banco_recusa() {
+        let e = traduzir_criar_visao("v_c", "SELECT * FROM c", "")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("database"), "{e}");
+    }
+
+    #[test]
+    fn traduzir_excluir_visao_monta_o_pedido() {
+        let p = traduzir_excluir_visao("v_c", "loja").unwrap();
+        assert_eq!(p.op, "excluir_visao");
+        assert_eq!(p.pedido.texto_ou("nome", ""), "v_c");
+        assert_eq!(p.pedido.texto_ou("database", ""), "loja");
     }
 }

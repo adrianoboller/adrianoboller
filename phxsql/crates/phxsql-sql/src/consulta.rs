@@ -254,6 +254,125 @@ pub fn traduzir_consulta(
     })
 }
 
+/// O gancho para o servidor resolver `FROM v_c` quando `v_c` e uma VISAO
+/// (item 6). `plano_de_dentro` e o pedido JA TRADUZIDO do SQL guardado na
+/// visao -- o servidor reanalisa esse texto e chama `traduzir` com os
+/// indices da tabela QUE A VISAO USA (so ele conhece esse esquema); esta
+/// funcao so aplica por cima o resto do `SELECT` de FORA: `WHERE`,
+/// colunas, `ORDER BY`, `LIMIT`/`OFFSET` -- os MESMOS campos que
+/// `traduzir_consulta` ja produz, porque uma visao usada num `FROM` e
+/// exatamente uma subconsulta com nome.
+///
+/// # Por que nao reusa `traduzir_consulta`
+///
+/// `traduzir_consulta` pede um RESOLVEDOR porque ela mesma decide QUANDO
+/// chamar (`de`, cada `em`...). Aqui o pedido de dentro ja chegou pronto --
+/// pedir para resolver de novo seria abrir o esquema da visao duas vezes.
+///
+/// # O que esta rodada NAO cobre
+///
+/// `COUNT(*)`/`GROUP BY` sobre uma visao recusam nomeando -- o `consultar`
+/// nao agrupa, so filtra e projeta. Quem precisa agregar sobre uma visao
+/// compoe por fora: `SELECT COUNT(*) FROM (SELECT * FROM v_c) AS x`.
+pub fn planejar_sobre(selecao: &Selecao, plano_de_dentro: Json) -> Result<Plano> {
+    let database = if !selecao.de.database.is_empty() {
+        selecao.de.database.clone()
+    } else {
+        plano_de_dentro.texto_ou("database", "").to_string()
+    };
+    if database.is_empty() {
+        return Err(PhxError::Esquema(
+            "nao sei em qual database: escreva FROM banco.visao ou escolha o banco antes".into(),
+        ));
+    }
+
+    let colunas: Option<Vec<ColunaComposta>> = match &selecao.projecao {
+        Projecao::Tudo => None,
+        Projecao::Colunas(cs) => Some(
+            cs.iter()
+                .map(|c| ColunaComposta {
+                    coluna: c.nome.clone(),
+                    apelido: c.apelido.clone(),
+                })
+                .collect(),
+        ),
+        Projecao::Contagem | Projecao::Agregada(_) => {
+            return Err(PhxError::Esquema(
+                "COUNT(*)/GROUP BY sobre visao nao tem substrato nesta rodada -- componha \
+                 por fora, com outro SELECT sobre o resultado da visao"
+                    .into(),
+            ));
+        }
+    };
+
+    let mut pares = vec![
+        ("database".to_string(), Json::texto_de(&database)),
+        ("de".to_string(), plano_de_dentro),
+        (
+            "expressao".to_string(),
+            Json::texto_de(selecao.onde.as_ref().map(Onde::texto).unwrap_or_default()),
+        ),
+    ];
+    if let Some(cols) = &colunas {
+        pares.push((
+            "colunas".to_string(),
+            Json::Lista(
+                cols.iter()
+                    .map(|c| match &c.apelido {
+                        None => Json::texto_de(&c.coluna),
+                        Some(a) => Json::Objeto(vec![
+                            ("coluna".to_string(), Json::texto_de(&c.coluna)),
+                            ("apelido".to_string(), Json::texto_de(a)),
+                        ]),
+                    })
+                    .collect(),
+            ),
+        ));
+    }
+    if let Some(o) = &selecao.ordem {
+        pares.push((
+            "ordem".to_string(),
+            Json::Lista(vec![Json::Objeto(vec![
+                ("coluna".to_string(), Json::texto_de(&o.coluna)),
+                ("desc".to_string(), Json::Bool(o.desc)),
+            ])]),
+        ));
+    }
+    if selecao.salto > 0 {
+        pares.push(("pular".to_string(), Json::de_u64(selecao.salto)));
+    }
+    if let Some(l) = selecao.limite {
+        pares.push(("max".to_string(), Json::de_u64(l)));
+    }
+
+    let saida = match &colunas {
+        None => Saida::LinhaInteira,
+        Some(cols) => Saida::Colunas(
+            cols.iter()
+                .map(|c| {
+                    (
+                        c.coluna.clone(),
+                        c.apelido.clone().unwrap_or(c.coluna.clone()),
+                    )
+                })
+                .collect(),
+        ),
+    };
+
+    Ok(Plano {
+        op: "consultar".into(),
+        pedido: crate::traduzir::pedido_com_op("consultar", pares),
+        saida,
+        notas: vec![
+            "FROM sobre uma visao vira `consultar`: o pedido de dentro (a visao, ja \
+             traduzida com os indices da tabela DELA) e o `de`, e o resto do SELECT de \
+             fora aplica por cima -- WHERE vira expressao, ORDER BY/LIMIT/OFFSET valem \
+             sobre o resultado da visao, nao sobre a tabela"
+                .into(),
+        ],
+    })
+}
+
 /// O nome da unica coluna que uma subconsulta (IN ou escalar) projeta -- ou
 /// a recusa, quando ela projeta zero, mais de uma, ou `*`.
 pub(crate) fn campo_escalar(p: &Projecao) -> Result<String> {
@@ -1149,5 +1268,73 @@ mod testes {
         let c = consulta("SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS n FROM clientes");
         assert_eq!(c.de.de.tabela, "clientes");
         assert_eq!(c.janela[0].apelido, "n");
+    }
+
+    // ---------------------------------------- item 6: planejar_sobre (visoes)
+
+    fn plano_de_dentro() -> Json {
+        Json::Objeto(vec![
+            ("op".to_string(), Json::texto_de("varrer")),
+            ("database".to_string(), Json::texto_de("loja")),
+            ("tabela".to_string(), Json::texto_de("clientes")),
+        ])
+    }
+
+    #[test]
+    fn planejar_sobre_select_estrela_da_visao() {
+        let sel = crate::sintaxe::analisar("SELECT * FROM v_c").unwrap();
+        let p = planejar_sobre(&sel, plano_de_dentro()).unwrap();
+        assert_eq!(p.op, "consultar");
+        assert_eq!(p.pedido.texto_ou("database", ""), "loja");
+        assert_eq!(
+            p.pedido.campo("de").unwrap().texto_ou("tabela", ""),
+            "clientes"
+        );
+        assert!(p.pedido.campo("colunas").is_none());
+        assert_eq!(p.saida, Saida::LinhaInteira);
+    }
+
+    #[test]
+    fn planejar_sobre_aplica_where_colunas_ordem_e_limite() {
+        let sel = crate::sintaxe::analisar(
+            "SELECT nome AS n FROM v_c WHERE ativo = TRUE ORDER BY nome LIMIT 5 OFFSET 1",
+        )
+        .unwrap();
+        let p = planejar_sobre(&sel, plano_de_dentro()).unwrap();
+        assert_eq!(p.pedido.texto_ou("expressao", ""), "ativo = TRUE");
+        assert_eq!(
+            p.pedido.campo("colunas").unwrap(),
+            &Json::Lista(vec![Json::Objeto(vec![
+                ("coluna".to_string(), Json::texto_de("nome")),
+                ("apelido".to_string(), Json::texto_de("n")),
+            ])])
+        );
+        assert_eq!(
+            p.pedido.campo("ordem").unwrap(),
+            &Json::Lista(vec![Json::Objeto(vec![
+                ("coluna".to_string(), Json::texto_de("nome")),
+                ("desc".to_string(), Json::Bool(false)),
+            ])])
+        );
+        assert_eq!(p.pedido.inteiro_ou("max", 0), 5);
+        assert_eq!(p.pedido.inteiro_ou("pular", 0), 1);
+        assert_eq!(p.saida, Saida::Colunas(vec![("nome".into(), "n".into())]));
+    }
+
+    #[test]
+    fn planejar_sobre_count_ou_group_by_recusa() {
+        let sel = crate::sintaxe::analisar("SELECT COUNT(*) FROM v_c").unwrap();
+        let e = planejar_sobre(&sel, plano_de_dentro())
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("GROUP BY"), "{e}");
+    }
+
+    #[test]
+    fn planejar_sobre_usa_o_database_do_pedido_de_dentro_quando_from_nao_diz() {
+        let sel = crate::sintaxe::analisar("SELECT * FROM v_c").unwrap();
+        let p = planejar_sobre(&sel, plano_de_dentro()).unwrap();
+        // "loja" veio do plano_de_dentro, nao de `sel.de.database` (vazio).
+        assert_eq!(p.pedido.texto_ou("database", ""), "loja");
     }
 }

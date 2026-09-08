@@ -321,6 +321,19 @@ pub enum Comando {
     Insercao(Insercao),
     Atualizacao(Atualizacao),
     Exclusao(Exclusao),
+    /// `CREATE VIEW nome AS SELECT ...` (item 6). `sql` e o TEXTO do
+    /// SELECT, verbatim -- ja analisado uma vez (para recusar cedo), mas
+    /// guardado como texto porque a visao e reanalisada a CADA uso: se a
+    /// tabela dela sumir, quem descobre e quem tenta usar a visao, nao
+    /// quem a criou.
+    CriarVisao {
+        nome: String,
+        sql: String,
+    },
+    /// `DROP VIEW nome`.
+    ExcluirVisao {
+        nome: String,
+    },
 }
 
 impl Comando {
@@ -331,6 +344,8 @@ impl Comando {
             Comando::Insercao(_) => "INSERT",
             Comando::Atualizacao(_) => "UPDATE",
             Comando::Exclusao(_) => "DELETE",
+            Comando::CriarVisao { .. } => "CREATE VIEW",
+            Comando::ExcluirVisao { .. } => "DROP VIEW",
         }
     }
 
@@ -340,6 +355,14 @@ impl Comando {
     /// toca outras (`juntar`, `escalar`, `em`), e quem precisa dos indices
     /// de cada uma chama `crate::consulta::traduzir_consulta` com o
     /// resolvedor, nao este metodo.
+    ///
+    /// # Por que nao existe para visao
+    ///
+    /// `criar_visao`/`excluir_visao` nao leem esquema de tabela nenhuma
+    /// antes de traduzir -- a visao guarda TEXTO, e so e analisada de novo
+    /// no uso. Quem despacha por `Comando` trata esses dois casos ANTES de
+    /// chegar aqui, exatamente como ja trata `Insercao`/`Atualizacao`/
+    /// `Exclusao` num caminho proprio.
     pub fn alvo(&self) -> &Alvo {
         match self {
             Comando::Selecao(s) => &s.de,
@@ -347,6 +370,12 @@ impl Comando {
             Comando::Insercao(i) => &i.em,
             Comando::Atualizacao(a) => &a.em,
             Comando::Exclusao(e) => &e.de,
+            Comando::CriarVisao { .. } | Comando::ExcluirVisao { .. } => {
+                unreachable!(
+                    "CriarVisao/ExcluirVisao nao tem tabela alvo -- quem despacha por \
+                     Comando trata os dois ANTES de chamar alvo()"
+                )
+            }
         }
     }
 }
@@ -406,7 +435,7 @@ pub fn comando_empilhado(entrada: &str) -> bool {
     // ponto-e-virgula legitimo, e classificar por simbolo solto acusaria todo
     // `CREATE PROCEDURE ... BEGIN a; b; END` que falhasse por qualquer outro
     // motivo.
-    if p.comando().is_err() {
+    if p.comando(entrada).is_err() {
         return false;
     }
     while p.aceitar(&Token::PontoEVirgula) {}
@@ -453,7 +482,7 @@ pub fn analisar_comando_com(
     }
     let simbolos = lexico::resolver_parametros(simbolos, parametros)?;
     let mut p = Analisador { s: simbolos, i: 0 };
-    let cmd = p.comando()?;
+    let cmd = p.comando(entrada)?;
     p.aceitar(&Token::PontoEVirgula);
     if let Some(sobra) = p.espiar() {
         return Err(lexico::erro(
@@ -570,7 +599,7 @@ impl Analisador {
         }
     }
 
-    fn comando(&mut self) -> Result<Comando> {
+    fn comando(&mut self, texto: &str) -> Result<Comando> {
         let Some(primeiro) = self.espiar() else {
             return Err(PhxError::Esquema("comando SQL vazio".into()));
         };
@@ -590,6 +619,19 @@ impl Analisador {
             "WITH" => {
                 self.i += 1;
                 Ok(Comando::Consulta(self.com_cte()?))
+            }
+            // CREATE VIEW/DROP VIEW (item 6). So VIEW chega aqui -- as
+            // outras formas de CREATE/DROP (TRIGGER, PROCEDURE, TABLE, ...)
+            // sao interceptadas antes, por `rotina::comando`.
+            "CREATE" => {
+                self.i += 1;
+                self.exigir_palavra("VIEW")?;
+                self.criar_visao(texto)
+            }
+            "DROP" => {
+                self.i += 1;
+                self.exigir_palavra("VIEW")?;
+                self.excluir_visao()
             }
             // O passo 2 do roteiro de `docs/SQL.md`: escrita por chave. O
             // parser mora em `dml.rs`, sobre este mesmo cursor.
@@ -632,6 +674,66 @@ impl Analisador {
                 &format!("{outro} nao e um comando desta camada"),
             )),
         }
+    }
+
+    /// Depois de `CREATE VIEW` ja consumidos.
+    ///
+    /// O `sql` guardado e o TEXTO original (por posicao de CARACTERE, como
+    /// `rotina::texto_a_partir` ja faz para corpo de gatilho/procedimento)
+    /// -- nunca reconstruido dos tokens, que perderia espaco, caixa e
+    /// comentario exatamente como o autor escreveu.
+    fn criar_visao(&mut self, texto: &str) -> Result<Comando> {
+        let nome = self.identificador("nome da visao")?;
+        self.exigir_palavra("AS")?;
+        if self
+            .espiar()
+            .and_then(|s| s.token.palavra_chave())
+            .as_deref()
+            != Some("SELECT")
+        {
+            return Err(lexico::erro(
+                self.posicao_atual(),
+                &format!("esperava SELECT depois de AS na visao{}", self.mas_veio()),
+            ));
+        }
+        let Some(s) = self.espiar() else {
+            unreachable!("acabou de conferir que ha um SELECT aqui");
+        };
+        let sql: String = texto.chars().skip(s.posicao).collect();
+
+        // Analisa AGORA, para recusar cedo -- e o mesmo texto que sera
+        // reanalisado a CADA uso da visao, entao um SELECT que esta camada
+        // nao entende hoje tambem nao vai entender no primeiro uso; melhor
+        // a mensagem chegar na hora do CREATE, com a visao no topo da
+        // cabeca de quem escreveu, do que num SELECT * FROM v_x qualquer
+        // dali a um mes.
+        match analisar_comando(&sql)? {
+            Comando::Selecao(_) | Comando::Consulta(_) => {}
+            outro => {
+                return Err(lexico::erro(
+                    self.posicao_atual(),
+                    &format!(
+                        "o corpo de uma visao tem de ser um SELECT, e {} nao e",
+                        outro.verbo()
+                    ),
+                ))
+            }
+        }
+
+        // O resto do texto ja virou o `sql` da visao -- nao ha mais nada
+        // para o cursor principal ler. Sem isto, `analisar_comando_com`
+        // acusaria "sobrou SELECT ... depois do fim do comando", porque os
+        // tokens do SELECT continuam na lista, so que nao foram consumidos
+        // um por um.
+        self.i = self.s.len();
+
+        Ok(Comando::CriarVisao { nome, sql })
+    }
+
+    /// Depois de `DROP VIEW` ja consumidos.
+    fn excluir_visao(&mut self) -> Result<Comando> {
+        let nome = self.identificador("nome da visao")?;
+        Ok(Comando::ExcluirVisao { nome })
     }
 
     pub(crate) fn selecao(&mut self) -> Result<Selecao> {
@@ -1645,5 +1747,74 @@ mod testes {
             .unwrap_err()
             .to_string();
         assert!(e.contains("HAVING"), "{e}");
+    }
+
+    // ---------------------------------------------------- item 6: visoes
+
+    #[test]
+    fn create_view_guarda_o_sql_verbatim() {
+        let c = analisar_comando("CREATE VIEW v_c AS SELECT * FROM c WHERE id = 1").unwrap();
+        let Comando::CriarVisao { nome, sql } = c else {
+            panic!("esperava CriarVisao: {c:?}")
+        };
+        assert_eq!(nome, "v_c");
+        assert_eq!(sql, "SELECT * FROM c WHERE id = 1");
+    }
+
+    #[test]
+    fn create_view_preserva_caixa_e_espaco_do_sql() {
+        // O texto e VERBATIM -- nem reconstruido dos tokens, que perderia a
+        // caixa original e o espaco duplo.
+        let c = analisar_comando("CREATE VIEW v AS   SeLeCT  *  FROM  Clientes").unwrap();
+        let Comando::CriarVisao { sql, .. } = c else {
+            panic!("esperava CriarVisao")
+        };
+        assert_eq!(sql, "SeLeCT  *  FROM  Clientes");
+    }
+
+    #[test]
+    fn create_view_com_sql_invalido_recusa_na_hora_de_criar() {
+        let e = analisar_comando("CREATE VIEW v AS SELECT * FROM")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("esperava"), "{e}");
+    }
+
+    #[test]
+    fn create_view_de_select_composto_tambem_e_analisavel() {
+        // O corpo pode ser qualquer SELECT que esta camada ja traduza --
+        // inclusive um WITH/subconsulta (item 4) ou agrupar (item 3).
+        let c =
+            analisar_comando("CREATE VIEW v AS SELECT id FROM (SELECT id FROM c) AS x").unwrap();
+        assert!(matches!(c, Comando::CriarVisao { .. }));
+        let c = analisar_comando("CREATE VIEW v AS SELECT cidade, COUNT(*) FROM c GROUP BY cidade")
+            .unwrap();
+        assert!(matches!(c, Comando::CriarVisao { .. }));
+    }
+
+    #[test]
+    fn create_view_de_insert_recusa_nomeando() {
+        // Nao da para escrever isto pela gramatica (CREATE VIEW exige AS
+        // SELECT), mas o proprio corpo poderia, em teoria, comecar por
+        // outra coisa se alguem inventasse -- a checagem existe mesmo
+        // assim, e o teste prova que ela dispara.
+        let e = analisar_comando("CREATE VIEW v AS UPDATE t SET a = 1 WHERE id = 1")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("esperava SELECT"), "{e}");
+    }
+
+    #[test]
+    fn drop_view_le_o_nome() {
+        let c = analisar_comando("DROP VIEW v_c").unwrap();
+        assert_eq!(c, Comando::ExcluirVisao { nome: "v_c".into() });
+    }
+
+    #[test]
+    fn create_view_nao_deixa_sobra_no_cursor_principal() {
+        // O texto inteiro depois de AS virou `sql` -- analisar_comando_com
+        // nao pode achar "sobra" nenhuma so porque os tokens do SELECT
+        // continuam na lista.
+        assert!(analisar_comando("CREATE VIEW v AS SELECT * FROM c;").is_ok());
     }
 }

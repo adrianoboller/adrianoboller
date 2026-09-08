@@ -67,7 +67,9 @@ pub mod traduzir;
 pub mod transacao;
 pub mod usuario;
 
-pub use consulta::{traduzir_consulta, ColunaComposta, Consulta, EmSubconsulta, Resolvedor};
+pub use consulta::{
+    planejar_sobre, traduzir_consulta, ColunaComposta, Consulta, EmSubconsulta, Janela, Resolvedor,
+};
 pub use dml::{
     traduzir_atualizacao, traduzir_exclusao, traduzir_insercao, Atualizacao, Exclusao, Insercao,
     PlanoDml, SeExistir,
@@ -78,7 +80,10 @@ pub use sintaxe::{
     Comando, Condicao, FuncaoAgregada, ItemProjetado, Literal, Onde, Ordenacao, Projecao, Selecao,
     RESERVADAS_DO_MOTOR,
 };
-pub use traduzir::{traduzir, ColunaDoIndice, IndiceInfo, Plano, Saida};
+pub use traduzir::{
+    traduzir, traduzir_criar_visao, traduzir_excluir_visao, ColunaDoIndice, IndiceInfo, Plano,
+    Saida,
+};
 
 /// Le e traduz de uma vez, para quem so quer o pedido.
 pub fn compilar(

@@ -777,6 +777,18 @@ pub fn comando(texto: &str) -> Result<Option<Comando>> {
     let verbo = primeiro.token.palavra_chave().unwrap_or_default();
     let mut p = Analisador { s: simbolos, i: 0 };
     match verbo.as_str() {
+        // CREATE VIEW/DROP VIEW (item 6 do roteiro de `docs/propostas/
+        // comparativo-19.md`) sao da camada SELECT (`sintaxe::Comando::
+        // CriarVisao`/`ExcluirVisao`), nao deste modulo -- `criar`/
+        // `excluir` abaixo reclamam de QUALQUER coisa que nao seja
+        // TRIGGER/PROCEDURE, e sem este desvio VIEW cairia nessa recusa
+        // ERRADA antes de `analisar_comando` nunca ver o texto.
+        "CREATE" if p.s.get(1).and_then(|s| s.token.palavra_chave()).as_deref() == Some("VIEW") => {
+            Ok(None)
+        }
+        "DROP" if p.s.get(1).and_then(|s| s.token.palavra_chave()).as_deref() == Some("VIEW") => {
+            Ok(None)
+        }
         "CREATE" => {
             p.i += 1;
             criar(&mut p, texto).map(Some)
@@ -2807,6 +2819,24 @@ mod testes {
             comando("SHOW PROCEDURE STATUS").unwrap().unwrap(),
             Comando::MostrarProcedimentos
         );
+    }
+
+    /// `CREATE VIEW`/`DROP VIEW` sao da camada SELECT
+    /// (`sintaxe::Comando::CriarVisao`/`ExcluirVisao`, item 6), nao deste
+    /// modulo -- sem o desvio, `criar()`/`excluir()` reclamariam "so
+    /// TRIGGER ou PROCEDURE" antes de `analisar_comando` nunca ver o texto.
+    #[test]
+    fn create_e_drop_view_nao_sao_desta_camada() {
+        assert!(comando("CREATE VIEW v AS SELECT * FROM c")
+            .unwrap()
+            .is_none());
+        assert!(comando("DROP VIEW v").unwrap().is_none());
+        // CREATE TABLE continua sendo RECUSADO por este modulo (com o texto
+        // que manda para a operacao criar_tabela) -- e nao cai calado no
+        // `None` que deixaria passar direto.
+        assert!(comando("CREATE TABLE t (a INT)").is_err());
+        // TRIGGER continua reconhecido e aceito normalmente.
+        assert!(comando("DROP TRIGGER t").unwrap().is_some());
     }
 
     /// **O que nao cabe recusa pelo nome** — a regra da camada SELECT vale
