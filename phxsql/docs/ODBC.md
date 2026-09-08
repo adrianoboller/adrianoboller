@@ -30,6 +30,10 @@ Driver=PhxSql;Server=10.0.0.7;Port=5000;Token=o-token;UID=maria;PWD=a-senha;Data
 | `UID` | `User`, `Usuario` | login do usuario |
 | `PWD` | `Password`, `Senha` | senha (aceita `{chaves}` para `;` dentro) |
 | `Database` | `Db` | banco padrao dos comandos |
+| `CIFRA` | `Encrypt` | `1`/`true`/`sim` liga o aperto de mao (a cifra do fio) |
+| `CHAVE_DO_FIO` | `Pino` | o pino: a chave publica X25519 do servidor, em hexa |
+
+A cifra do fio tem uma secao propria (1.1); o resto do driver nao muda com ela.
 
 Duas decisoes que valem saber:
 
@@ -44,6 +48,39 @@ Duas decisoes que valem saber:
   arquivo do sistema normalmente; so os PARAMETROS da conexao e que viajam
   na string. `SQLConnect` existe e aceita `host:porta/database` (ou uma
   connection string inteira) no lugar do nome do DSN.
+
+## 1.1. A cifra do fio (o aperto de mao)
+
+O desenho inteiro esta em `docs/CIFRA-DO-FIO.md`. O driver e um cliente comum
+da porta de dados, e por isso ele fala o mesmo aperto de mao estilo Noise que a
+`replica::Cliente` fala — reusando o `fio` do `phxsql-core`, sem uma segunda
+copia de cripto aqui.
+
+* **`CIFRA=1`** liga o tunel: antes de qualquer pedido, o driver manda
+  `{"op":"cifrar",...}`, fecha o aperto e, da linha seguinte em diante, fala
+  registros selados. O login e o token passam a viajar POR DENTRO do tunel.
+* **`CHAVE_DO_FIO=<64 hexa>`** e o PINO — a chave publica que se ESPERA do
+  servidor. Com pino, um servidor que apresente outra chave derruba a conexao
+  (a defesa contra quem esta no meio). Sem pino, o tunel protege so da escuta
+  PASSIVA. O pino sai do proprio servidor: `phxsqld --chave-do-fio` o imprime.
+* Escrever o pino **liga a cifra sozinho**: cair para claro por ter esquecido
+  `CIFRA=1` seria rebaixar em silencio o que a pessoa pediu. Para falar claro,
+  nao escreva o pino.
+* **Sem essas chaves, o driver fala CLARO, exatamente como sempre falou.** Um
+  servidor com `cifra_fio.exigir: true` recusa o claro com erro nomeado ("este
+  servidor exige a cifra do fio"), e a conexao falha no primeiro pedido — em vez
+  de um silencio.
+
+Dois limites, ditos sem enfeite:
+
+* **Pino torto e ERRO, nao "siga sem pino".** Um `CHAVE_DO_FIO` que nao seja uma
+  X25519 de 64 hexa recusa a conexao, em vez de virar "sem pino" — deixar um
+  pino invalido rebaixar a garantia e o oposto do que ele existe para fazer.
+* **O login do driver e a senha em claro DENTRO do tunel**, e nao o
+  desafio-resposta. Ele nao amarra a credencial ao canal (`amarrar_canal`),
+  entao um servidor com `cifra_fio.exigir_amarra: true` recusaria esse login.
+  `exigir` (a decisao desta rodada) o driver atende; `exigir_amarra` fica para
+  quando o driver aprender o desafio-resposta.
 
 ## 2. O que o driver cobre — e o que ficou de fora, com o motivo
 
@@ -255,6 +292,36 @@ Resultado registrado (2026-08-29, Linux x86_64, unixODBC 2.3.12):
   como se fosse o nome inteiro. Com o conserto, 73/73. E o defeito
   classico de driver ODBC, e agora esta preso por teste dos dois lados.
 
+### A cifra do fio, de ponta a ponta
+
+`bancada/odbc/prova-cifra.py` sobe um phxsqld PROPRIO com `cifra_fio.exigir:
+true` — um servidor que recusa todo pedido em claro — e prova o driver nos dois
+sentidos, contra ele:
+
+```bash
+cargo build --release && cargo build --release -p phxsql-odbc
+python3 bancada/odbc/prova-cifra.py
+```
+
+* **com a cifra** (`CIFRA=1;CHAVE_DO_FIO=<pino>`): o `SQLDriverConnect` fecha o
+  aperto, o login vai por dentro do tunel e o `SELECT COUNT(*)` responde `3`;
+* **defeito reposto** (a mesma receita SEM a cifra): a conexao e recusada, e o
+  diagnostico nomeia o motivo ("este servidor exige a cifra do fio") — o driver
+  velho, que fala claro, esbarrando no `exigir`;
+* **pino errado**: a cifra liga, mas a chave apresentada nao e a pinada, e o
+  aperto cai no cliente sem vazar material de chave no diagnostico.
+
+Os dados sao montados POR DENTRO do tunel com o cliente Noise independente da
+`bancada/cifra-do-fio/prova.py` (Python puro), porque com `exigir: true` nem a
+montagem pode falar claro. E o aperto tem prova em Rust tambem, sem gerenciador
+de driver: `conexao::testes::aperto_pelo_canal_fecha_e_fala_por_dentro` sobe um
+servidor de aperto em processo (so o `fio` do core) e confere que o `pedir`
+viaja selado; `pino_errado_derruba_o_aperto_sem_vazar_chave` e o par do pino.
+
+Registrado (2026-09-08, Linux x86_64, unixODBC 2.3.12): as tres conferencias
+passam pelo `ctypes` e pelo `isql -k` de verdade — `SELECT COUNT(*)` devolve
+`3` pelo tunel, e o claro cai com "Could not SQLDriverConnect".
+
 ## 8. Aprendizados da prova (frutiferos e infrutiferos)
 
 * **`SQLRETURN` tem 16 bits, e a ABI so promete os 16 de baixo.** A
@@ -296,5 +363,6 @@ crates/phxsql-odbc/          o driver (cdylib de ABI C)
   src/texto.rs               truncamento e strings pela fronteira C
 bancada/odbc/montar-dados.py o banco conhecido da prova
 bancada/odbc/prova-abi.py    a prova pela ABI (dlopen + ctypes), 73 conferencias
+bancada/odbc/prova-cifra.py  a cifra de ponta a ponta contra um servidor exigir:true
 docs/ODBC.md                 este documento
 ```

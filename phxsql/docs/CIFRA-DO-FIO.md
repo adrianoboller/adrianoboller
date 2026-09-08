@@ -308,6 +308,10 @@ do túnel, são dois vereditos diferentes.
   source: `replica::Cliente` faz o mesmo aperto, e a origem em `config.json`
   ganha `cifra` e `chave_do_fio` (o pino). É a resposta ao item aberto de
   `docs/REPLICACAO.md` §13.
+* **O driver ODBC.** Ele é um cliente comum da porta de dados, e aprendeu o
+  mesmo aperto — reusando o `fio` do core, como a réplica. A connection string
+  ganha `CIFRA=1` e `CHAVE_DO_FIO=<hex>` (o pino), e sem elas o driver fala
+  claro como sempre. Ver `docs/ODBC.md` §1.1 e a §10 aqui.
 
 ### Não vale: a interface web
 
@@ -329,8 +333,6 @@ não se entrega.
 
 ### Também não vale
 
-* **A conexão do driver ODBC** enquanto ele não aprender o aperto — ele fala a
-  porta 5000 em claro, e com `exigir: true` ele para. Está dito na §10.
 * **O `Remoto`** — a conexão que a interface usa para falar com outro PhxSql —
   e **o cluster**. Os dois estão na §10 com o motivo.
 * **Nada disto é TLS.** Não há certificado, não há cadeia, não há autoridade,
@@ -547,8 +549,27 @@ isso, com estas palavras.
   sentidos: exige+túnel+não-amarra recusa nomeada, amarra entra, sem túnel não
   muda, e desligado entra como sempre). As guardas `amarra-ao-canal-ignorada` e
   `amarra-exigida-ignorada` repõem os dois defeitos.
-* **O driver ODBC não fala o aperto.** Com `exigir: true` ele para. Ou ele
-  aprende, ou o servidor que exige não é o mesmo que atende ODBC.
+* **O driver ODBC fala o aperto — FEITO (08/09/2026).** Ele era o cliente da
+  porta 5000 que ainda falava só claro, e com `exigir: true` parava. Agora a
+  connection string liga o túnel: `CIFRA=1` faz o driver mandar
+  `{"op":"cifrar",...}` antes de qualquer pedido, fechar o aperto com
+  `Iniciador::terminar` e falar registros pelo `Canal` — reusando o `fio` do
+  core, exatamente como a `replica::Cliente`, sem uma segunda cópia de cripto.
+  `CHAVE_DO_FIO=<hex>` é o pino, e escrevê-lo já liga a cifra (esquecer
+  `CIFRA=1` não rebaixa para claro em silêncio). O login e o token passam a
+  viajar por dentro do túnel. A prova real é nos dois sentidos:
+  `bancada/odbc/prova-cifra.py` sobe um `phxsqld` com `exigir: true`, monta os
+  dados por dentro do túnel e confere pelo `ctypes` **e** pelo `isql -k` de
+  verdade que a conexão cifrada trabalha e que a **em claro é recusada** com o
+  erro nomeado; em Rust,
+  `conexao::testes::aperto_pelo_canal_fecha_e_fala_por_dentro` prova o aperto
+  sem gerenciador de driver, e o defeito reposto (driver ignorando a cifra)
+  derruba a prova. Ver `docs/ODBC.md` §1.1 e §7.
+
+  **O limite:** o login do driver é a senha em claro *dentro* do túnel, não o
+  desafio-resposta, então ele não amarra a credencial ao canal — um servidor
+  com `exigir_amarra: true` o recusaria. `exigir` ele atende; `exigir_amarra`
+  fica para quando o driver aprender o desafio-resposta.
 * **O `Remoto` (multi-servidor da interface) não liga o túnel.** Não é
   esquecimento: `web.servidores` é uma **lista de textos** `"host:porta"`, e
   não há onde escrever o pino de cada um. Ligar sem pino seria proteção só
