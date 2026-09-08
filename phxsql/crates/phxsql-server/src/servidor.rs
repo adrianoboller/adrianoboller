@@ -3853,11 +3853,7 @@ impl Servidor {
                 let pasta = b.destino.join(
                     phxsql_core::datahora::instante_iso(quando).replace([' ', ':', ','], "-"),
                 );
-                let r = phxsql_store::backup::executar(
-                    &self.config.base,
-                    &pasta,
-                    &phxsql_core::datahora::instante_iso(quando),
-                )?;
+                let r = phxsql_store::backup::executar(&self.config.base, &pasta, quando)?;
                 (pasta.display().to_string(), r)
             }
         };
@@ -5376,7 +5372,476 @@ impl Servidor {
     fn executar_derivado(&self, op: &str, pedido: &Json, sessao: &Sessao) -> Result<Json> {
         self.politica_do_pedido(op, pedido)?;
         self.portoes_do_pedido(op, pedido, sessao)?;
-        self.executar(op, pedido, sessao)
+        // O direito por COLUNA entra aqui e nao no `executar`, pelo mesmo
+        // motivo de o portao entrar aqui: e este o irmao do `despachar`. Um
+        // `UPDATE` pelo SQL nunca passa pelo despachar -- ele e um `buscar`,
+        // um `ler` e um `atualizar` derivados --, e sem esta linha o `ler`
+        // devolveria a linha SEM a coluna negada e o `atualizar` a gravaria
+        // nula. Ver `aplicar_direito_por_coluna`.
+        self.aplicar_direito_por_coluna(op, pedido, sessao)
+    }
+
+    /// O direito por COLUNA, no unico lugar em que ele existe.
+    ///
+    /// # Por que ele EMBRULHA o `executar`, em vez de ser um portao
+    ///
+    /// Porque metade do trabalho e antes e metade e depois. Antes: recusar a
+    /// escrita que mudaria a coluna negada, e repor no pedido o valor que
+    /// quem nao le a coluna nao tem como mandar. Depois: tirar a coluna da
+    /// resposta. Um portao so ve o pedido; uma peneira so ve a resposta.
+    /// Separa-los daria dois lugares para esquecer -- e a petrea ja diz o que
+    /// acontece com o segundo lugar.
+    ///
+    /// # Os IRMAOS que chamam isto, e por que sao TRES
+    ///
+    /// Irmao aqui nao e quem tem nome parecido: e **quem chama
+    /// `portoes_do_pedido` e depois `executar`, na mesma ordem**. Sao tres, e
+    /// os tres passam por aqui:
+    ///
+    /// 1. `despachar` -- a rede, e com ela o MCP, o REST e a tela, que entram
+    ///    todos pelo `ExecutorLocal`;
+    /// 2. `executar_derivado` -- a op `sql` e cada passo que ela produz. E o
+    ///    irmao que mais importa: o `UPDATE` pelo SQL e um `buscar` -> `ler`
+    ///    -> `atualizar`, e nenhum dos tres chega pelo `despachar`;
+    /// 3. `executar_job` -- o agendador, que roda sob o usuario do job.
+    ///
+    /// Deixar um de fora nao aparece em teste de portao nenhum: o pedido
+    /// continua sendo recusado quando a TABELA e negada, e so a coluna vaza.
+    ///
+    /// # Custo zero para quem nao pediu
+    ///
+    /// A primeira linha le um `bool` da ficha da sessao. Sem cadastro, sem
+    /// usuario, supervisor, ou cadastro sem `"colunas"`: o pedido segue para o
+    /// `executar` sem uma alocacao sequer -- nem a busca na tabela de classes.
+    /// E a licao do Profiler: o portao que decide se ha trabalho vem ANTES do
+    /// trabalho.
+    fn aplicar_direito_por_coluna(&self, op: &str, pedido: &Json, sessao: &Sessao) -> Result<Json> {
+        let Some(u) = sessao.usuario.as_ref().filter(|u| u.restringe_colunas()) else {
+            return self.executar(op, pedido, sessao);
+        };
+        use crate::direito_coluna::{self as dc, PorColuna};
+        let base = pedido.texto_ou("database", "").to_string();
+        let tabela = pedido.texto_ou("tabela", "").trim().to_string();
+
+        match dc::classe(op) {
+            PorColuna::Nenhum => self.executar(op, pedido, sessao),
+
+            // Devolve (ou grava) dado de linha por um caminho que a peneira
+            // nao sabe percorrer. Recusar e mais seguro que vazar.
+            PorColuna::Recusa => {
+                let alvos = dc::tabelas_do_pedido(op, pedido);
+                // Lista vazia nao e "nao toca em tabela": e "nao da para saber
+                // qual". `backup` leva os arquivos, `profiler` devolve o texto
+                // dos pedidos capturados -- nenhum dos dois nomeia a tabela que
+                // alcanca, e adivinhar seria a peneira mentindo.
+                let motivo = match alvos.iter().find(|t| u.tem_regra_de_coluna(&base, t)) {
+                    Some(t) => Some(format!("ha coluna negada em {base}.{t}")),
+                    None if alvos.is_empty() => Some(
+                        "esta operacao nao diz que tabela alcanca, e este usuario tem \
+                         regra de coluna"
+                            .to_string(),
+                    ),
+                    None => None,
+                };
+                if let Some(motivo) = motivo {
+                    return Err(PhxError::Autorizacao(format!(
+                        "{}: o direito por coluna nao e aplicado em {op}, e {motivo} -- \
+                         recusado para nao vazar. Peca as colunas por ler, varrer, \
+                         buscar ou SELECT",
+                        u.login
+                    )));
+                }
+                self.executar(op, pedido, sessao)
+            }
+
+            // Estrutura NAO e dado: a coluna continua no esquema, e a resposta
+            // ganha a lista do que este usuario nao alcanca -- senao a tela
+            // pinta um campo que nunca vai chegar preenchido, e quem olha
+            // conclui que a coluna esta vazia no banco.
+            PorColuna::Estrutura => {
+                let r = self.executar(op, pedido, sessao)?;
+                let sem_ler = u.colunas_negadas(&base, &tabela, Atividade::Ler);
+                let sem_alterar = u.colunas_negadas(&base, &tabela, Atividade::Alterar);
+                if sem_ler.is_empty() && sem_alterar.is_empty() {
+                    return Ok(r);
+                }
+                let Json::Objeto(mut pares) = r else {
+                    return Ok(r);
+                };
+                for (nome, lista) in [
+                    ("colunas_sem_leitura", sem_ler),
+                    ("colunas_sem_alteracao", sem_alterar),
+                ] {
+                    pares.push((
+                        nome.to_string(),
+                        Json::Lista(lista.iter().map(Json::texto_de).collect()),
+                    ));
+                }
+                Ok(Json::Objeto(pares))
+            }
+
+            PorColuna::Le(onde) => {
+                let negadas = u.colunas_negadas(&base, &tabela, Atividade::Ler);
+                if negadas.is_empty() {
+                    return self.executar(op, pedido, sessao);
+                }
+                self.recusar_pergunta_sobre_coluna_negada(
+                    pedido, sessao, &base, &tabela, &negadas,
+                )?;
+                Ok(dc::peneirar(
+                    self.executar(op, pedido, sessao)?,
+                    onde,
+                    &negadas,
+                ))
+            }
+
+            PorColuna::Escreve => {
+                if u.regras_de_coluna(&base, &tabela).is_empty() {
+                    return self.executar(op, pedido, sessao);
+                }
+                let ajustado =
+                    self.escrita_sob_direito_por_coluna(op, pedido, sessao, &base, &tabela)?;
+                self.executar(op, &ajustado, sessao)
+            }
+        }
+    }
+
+    /// A leitura tambem PERGUNTA, e a pergunta responde sem mostrar a coluna.
+    ///
+    /// A peneira tira o valor da resposta -- e chega tarde para tres coisas
+    /// que acontecem antes dela:
+    ///
+    /// * `onde` filtrando pela coluna negada: a CONTAGEM das linhas que casam
+    ///   e a resposta, e vinte perguntas dessas dizem o salario sem ele nunca
+    ///   ter aparecido;
+    /// * `indice` cuja chave inclui a coluna negada: `buscar` por chave exata
+    ///   diz quem tem aquele valor, e varrer por ele devolve a ordem;
+    /// * `coluna` por NUMERO em vez de nome: aqui nao ha esquema para
+    ///   resolver a posicao, e adivinhar e pior que recusar.
+    ///
+    /// O esquema so e pedido quando o pedido nomeia um indice -- entao a
+    /// varredura de sempre, que e o laco quente da tela, nao paga nada.
+    fn recusar_pergunta_sobre_coluna_negada(
+        &self,
+        pedido: &Json,
+        sessao: &Sessao,
+        base: &str,
+        tabela: &str,
+        negadas: &[String],
+    ) -> Result<()> {
+        use crate::direito_coluna::mesmo_nome;
+        let recusa = |coluna: &str, por_que: &str| -> PhxError {
+            PhxError::Autorizacao(format!(
+                "a coluna {coluna:?} de {base}.{tabela} nao pode ser lida por este usuario, \
+                 e {por_que} responderia sobre ela sem mostra-la"
+            ))
+        };
+        for campo in ["onde", "ordenar"] {
+            for f in pedido.campo(campo).and_then(Json::lista).unwrap_or(&[]) {
+                let Some(c) = f.campo("coluna") else { continue };
+                match c.texto() {
+                    Some(nome) => {
+                        if let Some(n) = negadas.iter().find(|n| mesmo_nome(n, nome)) {
+                            return Err(recusa(n, campo));
+                        }
+                    }
+                    // Coluna por numero: sem o esquema aqui, a posicao 3 pode
+                    // ser qualquer uma. Recusar custa um erro que diz o que
+                    // fazer; adivinhar custaria a coluna.
+                    None => {
+                        return Err(PhxError::Autorizacao(format!(
+                            "ha coluna negada em {base}.{tabela}: neste caso o campo \
+                             {campo:?} tem de nomear a coluna, e nao a posicao dela"
+                        )))
+                    }
+                }
+            }
+        }
+        // A projecao (`colunas`) do SelectMemory: pedir a coluna negada por
+        // nome tem de recusar, e nao voltar uma lista com um buraco.
+        for c in pedido.campo("colunas").and_then(Json::lista).unwrap_or(&[]) {
+            match c.texto() {
+                Some(nome) => {
+                    if let Some(n) = negadas.iter().find(|n| mesmo_nome(n, nome)) {
+                        return Err(recusa(n, "a projecao"));
+                    }
+                }
+                None => {
+                    return Err(PhxError::Autorizacao(format!(
+                        "ha coluna negada em {base}.{tabela}: a projecao tem de nomear \
+                         as colunas, e nao as posicoes delas"
+                    )))
+                }
+            }
+        }
+        let indice = pedido.texto_ou("indice", "").trim();
+        if indice.is_empty() {
+            return Ok(());
+        }
+        for c in self.colunas_do_indice(base, tabela, indice, sessao)? {
+            if let Some(n) = negadas.iter().find(|n| mesmo_nome(n, &c)) {
+                return Err(recusa(n, format!("o indice {indice:?}").as_str()));
+            }
+        }
+        Ok(())
+    }
+
+    /// As colunas de um indice, lidas do proprio `esquema` do servidor.
+    ///
+    /// Pelo `executar` e nao abrindo a tabela na mao: um segundo caminho para
+    /// ler esquema seria mais um lugar que a sobreposicao da transacao e a
+    /// qualificacao `schema.tabela` teriam de aprender de novo.
+    fn colunas_do_indice(
+        &self,
+        base: &str,
+        tabela: &str,
+        indice: &str,
+        sessao: &Sessao,
+    ) -> Result<Vec<String>> {
+        let ped = Json::objeto(vec![
+            ("database", Json::texto_de(base)),
+            ("tabela", Json::texto_de(tabela)),
+        ]);
+        let e = self.executar("esquema", &ped, sessao)?;
+        Ok(e.campo("indices")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .filter(|i| i.texto_ou("nome", "") == indice)
+            .flat_map(|i| i.campo("colunas").and_then(Json::lista).unwrap_or(&[]))
+            .map(|c| c.texto_ou("coluna", "").to_string())
+            .collect())
+    }
+
+    /// A escrita numa tabela com regra de coluna: recusa o que mudaria a
+    /// coluna negada, e REPOE o que o pedido nao tinha como trazer.
+    ///
+    /// # Os tres estados de uma coluna dentro do pedido, e por que sao tres
+    ///
+    /// * **valor** -- o cliente disse o que quer gravar ali;
+    /// * **nulo explicito** -- o cliente disse "esvazie";
+    /// * **ausente** -- o cliente nao disse nada.
+    ///
+    /// Tratar os dois ultimos como um so foi o defeito que motivou tudo isto:
+    /// o `atualizar` grava a linha INTEIRA e `json_para_linha` preenche com
+    /// NULL o que nao veio. Quem nao le a coluna manda a linha sem ela, e o
+    /// motor zerava o salario do outro em silencio -- que e o pior desfecho
+    /// possivel, porque nao ha erro, nao ha registro e o dado nao volta.
+    /// Ausente vira **o valor gravado**; nulo explicito continua sendo um
+    /// pedido de mudanca, e por isso e recusado como qualquer outro.
+    ///
+    /// # A excecao que evita quebrar quem LE a coluna e nao a altera
+    ///
+    /// Com `{"ler": true, "alterar": false}` o cliente le a linha inteira e a
+    /// devolve inteira -- e recusar todo valor faria toda gravacao pela tela
+    /// parar. Entao um valor IGUAL ao gravado passa: ele nao altera nada.
+    ///
+    /// A comparacao so acontece quando o usuario PODE ler a coluna, e a
+    /// restricao e a razao de ser da linha: para quem nao le, "aceito quando
+    /// bate" e um oraculo -- vinte tentativas e o salario aparece sem nunca
+    /// ter sido devolvido.
+    fn escrita_sob_direito_por_coluna(
+        &self,
+        op: &str,
+        pedido: &Json,
+        sessao: &Sessao,
+        base: &str,
+        tabela: &str,
+    ) -> Result<Json> {
+        use crate::direito_coluna::mesmo_nome;
+        let regras: crate::usuarios::RegrasDeColuna = match &sessao.usuario {
+            Some(u) => u.regras_de_coluna(base, tabela).to_vec(),
+            None => return Ok(pedido.clone()),
+        };
+
+        // A carga COLADA nao passa por aqui, e a recusa e a mesma decisao do
+        // Profiler: o que nao se ANALISA nao se redige. Achar o nome de uma
+        // coluna recortando um CSV depende de o texto estar escrito de um
+        // jeito, e o dia em que nao estiver a coluna negada entra gravada.
+        if pedido
+            .campo("texto")
+            .and_then(Json::texto)
+            .is_some_and(|t| !t.trim().is_empty())
+        {
+            return Err(PhxError::Autorizacao(format!(
+                "ha coluna negada em {base}.{tabela}: a carga colada nao e analisada pelo \
+                 direito por coluna, e por isso e recusada. Mande as linhas em \"linhas\""
+            )));
+        }
+
+        // Onde as linhas do pedido moram. `inserir` e `atualizar` mandam uma;
+        // `inserir_lote` manda muitas. O nome do campo importa porque e ele
+        // que precisa voltar reescrito.
+        let campo = ["valores", "linha", "linhas"]
+            .into_iter()
+            .find(|c| pedido.campo(c).is_some());
+        let Some(campo) = campo else {
+            // Sem linha nenhuma nao ha o que conferir -- e a operacao recusa
+            // por conta, com a mensagem dela.
+            return Ok(pedido.clone());
+        };
+        let bruto = pedido.campo(campo).cloned().unwrap_or(Json::Nulo);
+        let uma_so = campo != "linhas";
+        let linhas: Vec<Json> = if uma_so {
+            vec![bruto.clone()]
+        } else {
+            // `"linhas"` que nao e lista e um pedido malformado, e quem diz
+            // isso e a operacao. Reescrever para `[]` trocaria a mensagem
+            // dela por «zero linhas gravadas», que e uma resposta de sucesso.
+            match bruto.lista() {
+                Some(l) => l.to_vec(),
+                None => return Ok(pedido.clone()),
+            }
+        };
+
+        // A ordem das colunas so e pedida quando alguma linha vem como LISTA
+        // -- e ai a posicao e a unica forma de saber qual coluna e qual.
+        let ordem: Vec<String> = if linhas.iter().any(|l| matches!(l, Json::Lista(_))) {
+            self.colunas_da_tabela(base, tabela, sessao)?
+        } else {
+            Vec::new()
+        };
+
+        // O valor GRAVADO, lido uma vez para a linha inteira. So o `atualizar`
+        // precisa dele -- e so quando ha coluna a repor ou a comparar.
+        let precisa_do_gravado =
+            op == "atualizar" && regras.iter().any(|(_, d)| !d.ler || !d.alterar);
+        // Rowid zero ou ausente: nao ha linha para ler, e a operacao ja recusa
+        // por conta com a mensagem dela. Ler aqui primeiro trocaria «informe
+        // "rowid"» por um erro sobre uma linha que ninguem pediu.
+        let rowid = pedido.inteiro_ou("rowid", 0).max(0) as u64;
+        let gravada = if precisa_do_gravado && rowid > 0 {
+            let ped = Json::objeto(vec![
+                ("database", Json::texto_de(base)),
+                ("tabela", Json::texto_de(tabela)),
+                ("rowid", Json::de_u64(rowid)),
+                ("com_versao", Json::Bool(true)),
+            ]);
+            // Pelo `executar`, e nao pelo derivado: o portao de permissao ja
+            // foi conferido para ESTE pedido, e um segundo portao aqui
+            // recusaria por `ler` quem tem `alterar` e nao tem `ler`.
+            self.executar("ler", &ped, sessao)?
+        } else {
+            Json::Nulo
+        };
+        let valor_gravado = |coluna: &str| -> Option<Json> {
+            let linha = gravada.campo("linha")?;
+            match linha {
+                Json::Objeto(pares) => pares
+                    .iter()
+                    .find(|(k, _)| mesmo_nome(k, coluna))
+                    .map(|(_, v)| v.clone()),
+                _ => None,
+            }
+        };
+
+        let mut saida: Vec<Json> = Vec::with_capacity(linhas.len());
+        for linha in linhas {
+            let mut nova = linha.clone();
+            for (coluna, direito) in &regras {
+                let posicao = || ordem.iter().position(|c| mesmo_nome(c, coluna));
+                let atual = match &nova {
+                    Json::Objeto(pares) => pares
+                        .iter()
+                        .find(|(k, _)| mesmo_nome(k, coluna))
+                        .map(|(_, v)| v.clone()),
+                    Json::Lista(itens) => posicao().and_then(|i| itens.get(i).cloned()),
+                    _ => None,
+                };
+                match atual {
+                    // Ausente: o cliente nao disse nada sobre esta coluna.
+                    None => {
+                        if op != "atualizar" || (direito.ler && direito.alterar) {
+                            continue;
+                        }
+                        let Some(v) = valor_gravado(coluna) else {
+                            continue;
+                        };
+                        nova = Self::repor_coluna(nova, coluna, v, posicao());
+                    }
+                    // Nulo explicito e valor sao os dois um pedido de mudanca.
+                    Some(v) => {
+                        if direito.alterar {
+                            continue;
+                        }
+                        let igual = !v.e_nulo()
+                            && direito.ler
+                            && valor_gravado(coluna).is_some_and(|g| g.escrever() == v.escrever());
+                        if igual {
+                            continue;
+                        }
+                        return Err(PhxError::Autorizacao(format!(
+                            "a coluna {coluna:?} de {base}.{tabela} nao pode ser alterada por \
+                             este usuario; tire-a do pedido e o valor gravado fica como esta"
+                        )));
+                    }
+                }
+            }
+            saida.push(nova);
+        }
+
+        let Json::Objeto(pares) = pedido else {
+            return Ok(pedido.clone());
+        };
+        let mut novo: Vec<(String, Json)> =
+            pares.iter().filter(|(k, _)| k != campo).cloned().collect();
+        novo.push((
+            campo.to_string(),
+            if uma_so {
+                saida.into_iter().next().unwrap_or(Json::Nulo)
+            } else {
+                Json::Lista(saida)
+            },
+        ));
+        // A VERSAO lida junto com a linha fecha a janela entre o `ler` daqui e
+        // o `atualizar` la embaixo: sem ela, quem gravasse no meio teria o
+        // valor dele reposto pelo antigo -- perda calada de uma coluna, que e
+        // o mesmo estrago que esta funcao existe para impedir. Versao zero
+        // (tabela sem controle de versao) nao confere nada, byte a byte como
+        // antes; e quem ja mandou a sua nao e sobrescrito.
+        if precisa_do_gravado && pedido.campo("versao").is_none() {
+            let versao = gravada.inteiro_ou("versao", 0).max(0) as u64;
+            if versao > 0 {
+                novo.push(("versao".to_string(), Json::de_u64(versao)));
+            }
+        }
+        Ok(Json::Objeto(novo))
+    }
+
+    /// Poe o valor de volta na linha, seja ela objeto ou lista.
+    fn repor_coluna(linha: Json, coluna: &str, valor: Json, posicao: Option<usize>) -> Json {
+        match linha {
+            Json::Objeto(mut pares) => {
+                pares.push((coluna.to_string(), valor));
+                Json::Objeto(pares)
+            }
+            Json::Lista(mut itens) => {
+                if let Some(i) = posicao {
+                    while itens.len() <= i {
+                        itens.push(Json::Nulo);
+                    }
+                    itens[i] = valor;
+                }
+                Json::Lista(itens)
+            }
+            outra => outra,
+        }
+    }
+
+    /// Os nomes das colunas da tabela, na ordem do esquema.
+    fn colunas_da_tabela(&self, base: &str, tabela: &str, sessao: &Sessao) -> Result<Vec<String>> {
+        let ped = Json::objeto(vec![
+            ("database", Json::texto_de(base)),
+            ("tabela", Json::texto_de(tabela)),
+        ]);
+        Ok(self
+            .executar("esquema", &ped, sessao)?
+            .campo("colunas")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .map(|c| c.texto_ou("nome", "").to_string())
+            .collect())
     }
 
     fn executar_job(&self, job: &crate::jobs::Job, op: &str) -> Result<Json> {
@@ -5386,7 +5851,10 @@ impl Servidor {
         self.politica_do_pedido(op, &job.pedido)?;
         let sessao = self.sessao_do_job(job)?;
         self.portoes_do_pedido(op, &job.pedido, &sessao)?;
-        self.executar(op, &job.pedido, &sessao)
+        // O TERCEIRO irmao. Um job roda sob o usuario dele, e um job de
+        // `exportar` da tabela restrita e exatamente o caminho que ninguem
+        // olharia -- ele nao chega nem pelo soquete nem pelo SQL.
+        self.aplicar_direito_por_coluna(op, &job.pedido, &sessao)
     }
 
     /// A sessao sob a qual o job roda.
@@ -7508,7 +7976,10 @@ impl Servidor {
             return (op, true, Err(e));
         }
 
-        let r = self.executar(&op, &pedido, sessao);
+        // O direito por COLUNA embrulha o `executar` -- ver
+        // `aplicar_direito_por_coluna`, que explica por que ele nao cabe num
+        // portao. Sem regra de coluna no cadastro, e uma leitura de `bool`.
+        let r = self.aplicar_direito_por_coluna(&op, &pedido, sessao);
 
         // Pedido 215 -- a injecao de SQL que ninguem bloqueava.
         //
@@ -14421,7 +14892,7 @@ impl Servidor {
                     phxsql_store::backup::executar(
                         &self.config.base,
                         std::path::Path::new(&destino),
-                        &phxsql_core::datahora::instante_iso(quando),
+                        quando,
                     )?,
                 )
             }
@@ -14632,6 +15103,11 @@ impl Servidor {
         let caminho = std::path::PathBuf::from(&origem);
         let conteudo = phxsql_store::restaurar::conteudo(&caminho)?;
 
+        // O PITR e lido AQUI, antes de o pedido tocar em disco. Todas as
+        // recusas que dao para conferir sem restaurar acontecem antes da
+        // restauracao -- ver `reaplicar_diario_ate`.
+        let ate_ms = Self::instante_pedido(p, "ate", "ate_ms")?;
+
         // Qual database de dentro do backup. Quando so ha um, nao ha o que
         // escolher -- pedir o nome de qualquer jeito seria burocracia.
         let pedido_de = p.texto_ou("de", "").trim().to_string();
@@ -14734,6 +15210,72 @@ impl Servidor {
             }
         }
 
+        // ------------------------------------------------------------ PITR
+        //
+        // As cinco recusas que se conferem SEM tocar em disco. Uma restauracao
+        // que criasse o database e so entao descobrisse que nao consegue
+        // reaplicar deixaria o pior estado possivel: um banco novo com o nome
+        // pedido, no instante errado, e um erro na resposta.
+        if let Some(ate_ms) = ate_ms {
+            if por_cima {
+                // A restauracao por cima TIRA o database vivo da raiz de dados
+                // -- e e o diario dele que o PITR reaplica. As duas coisas na
+                // mesma operacao se cancelam.
+                return Err(PhxError::Esquema(format!(
+                    "restaurar POR CIMA tira o database {destino} do lugar, e e o \
+                     diario VIVO dele que o \"ate\" reaplica. Restaure com OUTRO \
+                     nome, confira, e so entao decida o que fazer com o original"
+                )));
+            }
+            let Some(copia_ms) = conteudo.quando_ms else {
+                return Err(PhxError::Esquema(
+                    "o manifesto deste backup nao diz em que instante a copia foi \
+                     tirada: falta o \"quando_ms\" do backup.json, e o \"quando\" \
+                     que ele traz nao e um instante legivel. Sem isso nao da para \
+                     saber de ONDE reaplicar o diario. O campo entrou com o PITR, \
+                     e uma copia nova feita por este servidor o traz. Sem \"ate\", \
+                     a restauracao simples continua funcionando"
+                        .into(),
+                ));
+            };
+            if ate_ms < copia_ms {
+                return Err(PhxError::Esquema(format!(
+                    "\"ate\" ({}) e ANTES do instante da copia ({}): o diario so \
+                     sabe andar para a frente. Escolha um backup mais antigo",
+                    phxsql_core::datahora::instante_iso(ate_ms),
+                    phxsql_core::datahora::instante_iso(copia_ms)
+                )));
+            }
+            // O interruptor da imagem, conferido no config e nao no diario: sem
+            // ele o evento diz que o rowid 42 mudou e nao diz PARA QUE. O
+            // `aplicar_evento` recusa evento a evento com a mesma mensagem, mas
+            // descobrir isso depois de restaurar seria descobrir tarde.
+            if !self.config.replicacao.imagem_da_linha {
+                return Err(PhxError::Esquema(
+                    "o diario deste servidor nao guarda a imagem da linha, e sem ela \
+                     um evento nao da para reaplicar. Ligue \
+                     \"replicacao\": {\"imagem_da_linha\": true} no config.json -- \
+                     ela vale para o que for gravado DAQUI EM DIANTE, e nao para o \
+                     diario que ja esta no disco"
+                        .into(),
+                ));
+            }
+            // O diario vivo mora no database de ORIGEM. Se ele nao existe mais
+            // aqui, nao ha o que reaplicar -- e restaurar a copia inteira
+            // chamando aquilo de PITR seria mentir sobre o instante.
+            let existe = {
+                let trava = self.travar_dados()?;
+                trava.abrir_database(&de).is_ok()
+            };
+            if !existe {
+                return Err(PhxError::NaoEncontrado(format!(
+                    "o database {de} nao existe mais neste servidor, e e o diario \
+                     VIVO dele que o \"ate\" reaplica. Sem \"ate\", a restauracao \
+                     simples continua funcionando"
+                )));
+            }
+        }
+
         // O caro acontece FORA da trava: ler o backup, conferir o SHA-256 de
         // cada arquivo e escrever o palco. Segurar a trava por esse tempo
         // pararia o servidor inteiro pela duracao da copia.
@@ -14764,6 +15306,15 @@ impl Servidor {
             ("substituiu", Json::Bool(r.substituiu)),
             ("ms", Json::de_u64(inicio.elapsed().as_millis() as u64)),
         ];
+        if let Some(ate_ms) = ate_ms {
+            // A copia ja esta no lugar; agora ela alcanca o diario vivo. O
+            // `copia_ms` volta do manifesto -- foi conferido la em cima.
+            let copia_ms = conteudo.quando_ms.unwrap_or_default();
+            campos.push((
+                "pitr",
+                self.reaplicar_diario_ate(&de, &r.database, copia_ms, ate_ms)?,
+            ));
+        }
         if let Some(onde) = &r.anterior_em {
             campos.push(("anterior_em", Json::texto_de(onde)));
             campos.push((
@@ -14775,6 +15326,335 @@ impl Servidor {
             ));
         }
         Ok(Json::objeto(campos))
+    }
+
+    /// Le um instante do pedido, por texto (`ate`) ou por numero (`ate_ms`).
+    ///
+    /// # Por que os dois, e por que o texto e o principal
+    ///
+    /// O numero e exato e nao se digita: quem escreve um pedido a mao escreve
+    /// `2026-09-08T15:00:00Z`, que e a forma do contrato e a que uma pessoa
+    /// consegue conferir olhando. O numero existe para quem ja tem o instante
+    /// na mao -- o `carimbo_ms` que o proprio `diario` devolveu, por exemplo --
+    /// e assim nao precisa formatar para o servidor voltar a ler.
+    ///
+    /// Os dois juntos e RECUSA, e nao "um deles ganha": dois campos de tempo
+    /// no mesmo pedido querendo dizer coisas diferentes e um pedido que quem
+    /// escreveu nao entende, e escolher por ele esconderia o engano.
+    fn instante_pedido(p: &Json, campo: &str, campo_ms: &str) -> Result<Option<i64>> {
+        let texto = p.texto_ou(campo, "").trim().to_string();
+        let numero = p.campo(campo_ms).and_then(Json::inteiro);
+        if !texto.is_empty() && numero.is_some() {
+            return Err(PhxError::Esquema(format!(
+                "mande \"{campo}\" OU \"{campo_ms}\", nao os dois"
+            )));
+        }
+        if let Some(n) = numero {
+            return Ok(Some(n));
+        }
+        if texto.is_empty() {
+            return Ok(None);
+        }
+        phxsql_core::datahora::ms_de_instante_iso(&texto)
+            .map(Some)
+            .ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "\"{campo}\": {texto:?} nao e um instante. Escreva \
+                     2026-09-08T15:00:00Z (tudo em UTC -- fuso escrito na mao e \
+                     recusado em vez de ignorado), ou mande os milissegundos em \
+                     \"{campo_ms}\""
+                ))
+            })
+    }
+
+    /// **PITR** -- a copia restaurada vira REPLICA do diario vivo, da hora da
+    /// copia ate o instante pedido.
+    ///
+    /// # A ideia inteira, em uma linha
+    ///
+    /// Um backup e um retrato do instante T0. O diario de cada tabela guarda
+    /// tudo que aconteceu depois. Entao restaurar a um instante T e restaurar
+    /// o retrato e **reaplicar o diario de T0 ate T** -- e isso ja existe
+    /// pronto nesta casa com outro nome: e o que uma replica faz. O PITR nao
+    /// escreve um segundo aplicador; ele chama o mesmo
+    /// [`Table::aplicar_evento`] da replicacao, que **aplica e nao julga**. Um
+    /// segundo caminho seria o caminho que um dia esquece uma conferencia.
+    ///
+    /// # De onde sai o COMECO, e por que ele nao sai do relogio
+    ///
+    /// O `.log` viaja dentro do backup -- medido: uma copia tirada com um
+    /// evento no diario tem `c.log` com um evento, e o `.log` vivo passa a ter
+    /// dois, com o primeiro **byte a byte igual** ao copiado. Entao o diario
+    /// da copia diz, sozinho, a POSICAO em que o mundo estava na hora da
+    /// copia: `td.eventos()`. Comecar dali e exato; comecar por «o primeiro
+    /// evento cujo carimbo passou de T0» dependeria do relogio para achar o
+    /// comeco, e o relogio e justamente a parte fraca (ver abaixo).
+    ///
+    /// O relogio entra **so no corte de cima**, o `ate`.
+    ///
+    /// # O carimbo NAO e monotonico -- medido
+    ///
+    /// Dois motivos, os dois no codigo: o `agora_ms` e relogio de parede
+    /// (`SystemTime::now`, `store/util.rs`), que anda para tras num acerto de
+    /// NTP; e o caminho bidirecional carimba o evento com o relogio de OUTRO
+    /// servidor (`Table::forcar_proximo_evento`), porque e o instante do
+    /// NASCIMENTO da escrita que decide o conflito la. Medido aqui, num diario
+    /// de tres eventos: `[1788884516705, 1000000000000, 1788884516705]` -- o
+    /// do meio vinte e cinco anos atras, com `origem: 7`.
+    ///
+    /// Por isso o filtro e **evento a evento** (`carimbo <= ate`), e nunca
+    /// «corte a lista no primeiro que passou». Cortar por posicao jogaria fora
+    /// os eventos bons que vem depois de um carimbo torto.
+    ///
+    /// E a consequencia de pular um evento no meio e uma GUARDA, nao um
+    /// defeito: o `aplicar_evento` confere o rowid, entao pular uma inclusao e
+    /// aplicar a seguinte para na hora, com «o source diz rowid 2 e aqui saiu
+    /// 1». O `parou_em` da resposta diz isso, em vez de gravar a linha errada
+    /// no slot errado.
+    ///
+    /// # O que ele NAO refaz, e por que
+    ///
+    /// * **Cascata.** O `aplicar_evento` acende `como_replica`, e com ela o
+    ///   `julga_integridade` cala. A origem ja cascateou quando aceitou a
+    ///   escrita, e os eventos que a cascata dela gerou estao no diario das
+    ///   FILHAS -- refazer aqui criaria evento que o original nunca teve.
+    /// * **Chave estrangeira.** Pelo mesmo portao e pelo mesmo motivo: a
+    ///   reaplicacao anda por tabela, e nao ha ordem global entre tabelas.
+    ///   Filha orfa no meio da passada se cura quando a tabela da mae for
+    ///   reaplicada; recusar travaria a restauracao inteira por uma ordem que
+    ///   se resolve sozinha.
+    /// * **O `.tx`.** A marca de commit em curso ja viaja dentro do backup de
+    ///   proposito, e quem a completa e a recuperacao do arranque
+    ///   (`transacao::recuperar`, chamada em `Servidor::novo`) -- e ela e
+    ///   **idempotente pelo rowid**, entao reaplicar o diario por cima nao
+    ///   duplica inclusao nenhuma. O PITR nao mexe nela: dois donos para o
+    ///   mesmo commit seria um a mais.
+    ///
+    /// # As tabelas que existem de um lado so
+    ///
+    /// * **Na copia e nao mais viva** (foi apagada depois do backup): fica
+    ///   como estava na copia, e sai na resposta em `sem_diario_vivo`. Nao da
+    ///   para saber QUANDO ela foi apagada -- apagar tabela nao deixa evento
+    ///   em diario nenhum --, e sumir com ela em silencio seria pior.
+    /// * **Viva e nao na copia** (nasceu depois do backup): **nao e criada.**
+    ///   Refaze-la exigiria a historia do esquema, que o formato nao guarda.
+    ///   Sai em `novas_na_origem`, para quem restaurou saber o que falta.
+    ///
+    /// # `ate` e INCLUSIVO
+    ///
+    /// `carimbo <= ate`. Quem pede «ate as 15:00:00» quer o que aconteceu as
+    /// 15:00:00,000 -- e o instante que a tela mostra e o instante que se
+    /// digita de volta.
+    ///
+    /// # Por que a recusa por tabela nao aborta a restauracao
+    ///
+    /// As recusas que dao para conferir ANTES de tocar em disco acontecem
+    /// antes (ver `op_restaurar_backup`): `ate` ilegivel, backup sem carimbo,
+    /// `ate` anterior a copia, modo por cima, interruptor da imagem desligado,
+    /// database vivo que sumiu. Sobra a continuidade, que so se confere com o
+    /// diario da copia na mao -- ou seja, com a copia ja restaurada. Devolver
+    /// erro ali deixaria o pedido com um database CRIADO e uma resposta de
+    /// fracasso, que e o pior dos dois mundos. Entao ela sai **nomeada, por
+    /// tabela**, no `parou_em`: aquela tabela ficou no instante da copia, e a
+    /// resposta diz qual e por que.
+    fn reaplicar_diario_ate(
+        &self,
+        de: &str,
+        destino: &str,
+        copia_ms: i64,
+        ate_ms: i64,
+    ) -> Result<Json> {
+        // Lotes, e nao o diario inteiro: um `.log` de meio milhao de eventos
+        // com imagem nao cabe em RAM de uma vez. Mesmo teto do `replicar`.
+        const LOTE: u64 = 500;
+
+        let trava = self.travar_dados()?;
+        let db_vivo = trava.abrir_database(de)?;
+        let db_destino = trava.abrir_database(destino)?;
+        // O catalogo de verdade, e nao a vitrine dos nomes de arquivo: depois
+        // de restaurado quem responde "que tabelas ha aqui" e o diretorio.
+        let restauradas = db_destino.todas_as_tabelas()?;
+        let vivas = db_vivo.todas_as_tabelas()?;
+
+        let mut por_tabela = Vec::new();
+        let mut sem_diario_vivo = Vec::new();
+        let mut total = 0u64;
+
+        for nome in &restauradas {
+            if !vivas.contains(nome) {
+                sem_diario_vivo.push(Json::texto_de(nome));
+                continue;
+            }
+            let mut td = db_destino.abrir_qualificada(nome)?;
+            let mut tv = db_vivo.abrir_qualificada(nome)?;
+            // O restaurado tambem grava imagem no diario dele, pelo mesmo
+            // motivo da replica intermediaria: sem isso, um backup TIRADO do
+            // restaurado nasce sem o que reaplicar.
+            td.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
+
+            let posicao = td.eventos()?;
+            let vivos = tv.eventos()?;
+            let mut reaplicados = 0u64;
+            let mut pulados = 0u64;
+            let mut ultimo: Option<i64> = None;
+            let mut parou: Option<String> = None;
+
+            match Self::diario_vivo_continua(&mut td, &mut tv, posicao, vivos) {
+                Ok(()) => {
+                    let mut pos = posicao;
+                    'tabela: while pos < vivos {
+                        let lote = tv.diario_com_imagem(pos, LOTE)?;
+                        if lote.is_empty() {
+                            break;
+                        }
+                        for (e, imagem) in &lote {
+                            pos += 1;
+                            // O corte de cima, evento a evento. Ver o cabecalho.
+                            if e.carimbo > ate_ms {
+                                pulados += 1;
+                                continue;
+                            }
+                            // O evento reaplicado guarda o carimbo e a origem
+                            // do ORIGINAL, e nao a hora da restauracao: o
+                            // diario e trilha de auditoria, e um restaurado
+                            // que jurasse que tudo aconteceu agora destruiria
+                            // justamente o que se foi buscar nele.
+                            td.forcar_proximo_evento(e.carimbo, e.origem);
+                            if let Err(erro) = td.aplicar_evento(e.operacao, e.rowid, imagem) {
+                                parou = Some(format!(
+                                    "no evento {pos} do diario ({}): {erro}",
+                                    phxsql_core::datahora::instante_iso(e.carimbo)
+                                ));
+                                break 'tabela;
+                            }
+                            reaplicados += 1;
+                            ultimo = Some(e.carimbo);
+                        }
+                    }
+                }
+                Err(motivo) => parou = Some(motivo),
+            }
+
+            if reaplicados > 0 {
+                td.sincronizar()?;
+            }
+            total += reaplicados;
+            let mut campos = vec![
+                ("tabela", Json::texto_de(nome)),
+                ("reaplicados", Json::de_u64(reaplicados)),
+                ("pulados", Json::de_u64(pulados)),
+                (
+                    "ultimo_carimbo_ms",
+                    match ultimo {
+                        Some(c) => Json::Numero(c as f64),
+                        None => Json::Nulo,
+                    },
+                ),
+            ];
+            if let Some(c) = ultimo {
+                campos.push((
+                    "ultimo",
+                    Json::texto_de(phxsql_core::datahora::instante_iso(c)),
+                ));
+            }
+            if let Some(motivo) = parou {
+                campos.push(("parou_em", Json::texto_de(motivo)));
+            }
+            por_tabela.push(Json::objeto(campos));
+        }
+
+        let novas: Vec<Json> = vivas
+            .iter()
+            .filter(|n| !restauradas.contains(n))
+            .map(Json::texto_de)
+            .collect();
+
+        Ok(Json::objeto(vec![
+            ("de", Json::texto_de(de)),
+            ("copia_ms", Json::Numero(copia_ms as f64)),
+            (
+                "copia",
+                Json::texto_de(phxsql_core::datahora::instante_iso(copia_ms)),
+            ),
+            ("ate_ms", Json::Numero(ate_ms as f64)),
+            (
+                "ate",
+                Json::texto_de(phxsql_core::datahora::instante_iso(ate_ms)),
+            ),
+            ("reaplicados", Json::de_u64(total)),
+            ("tabelas", Json::Lista(por_tabela)),
+            ("sem_diario_vivo", Json::Lista(sem_diario_vivo)),
+            ("novas_na_origem", Json::Lista(novas)),
+        ]))
+    }
+
+    /// O diario vivo CONTINUA o da copia, ou ja e outro diario?
+    ///
+    /// # O que ela protege, e por que a conta e esta
+    ///
+    /// A reaplicacao comeca na posicao `posicao` do diario vivo porque essa e
+    /// a posicao que a copia tinha. Isso so vale se o diario vivo for o MESMO
+    /// arquivo, crescido -- e o `.log` e append-only e nunca gira (o
+    /// `rodizio.rs` desta casa e dos logs de TEXTO: `perfil.txt`,
+    /// `diretivas.log`, `acessos.log`; o unico lugar que apaga um `.log` de
+    /// tabela e o `excluir_tabela`, que leva a tabela junto).
+    ///
+    /// Sobra um caso, e ele e real: a tabela foi **apagada e recriada** depois
+    /// do backup. Ai o diario vivo comeca do zero, a posicao da copia aponta
+    /// para o meio de uma historia que nao e a mesma, e reaplicar dali gravaria
+    /// linhas de outra vida.
+    ///
+    /// # E UM guarda, com duas explicacoes -- e isso foi medido
+    ///
+    /// O guarda e a comparacao: o ultimo evento da copia tem de ser IGUAL ao
+    /// evento daquela posicao no diario vivo. A conta de tamanho que vem antes
+    /// **nao pega nenhum caso que a comparacao deixaria passar** -- diario mais
+    /// curto que a posicao devolve lista vazia, e lista vazia ja cai na recusa.
+    /// Provado sabotando: com a conta desligada, os dois testes de
+    /// continuidade continuam vermelhos pela comparacao.
+    ///
+    /// Ela fica porque a MENSAGEM e outra: «tem 1 evento e a copia tinha 2»
+    /// diz a um operador o que aconteceu, e «o evento 1 nao e o mesmo» nao diz.
+    /// Guarda que nao guarda mas explica melhor e mensagem, e o teste que a
+    /// prova e o que confere o TEXTO -- nao o que confere a recusa.
+    ///
+    /// Com a copia de diario vazio nao ha o que comparar, e a funcao diz que
+    /// sim: nao havia historia para continuar. Quem cobre esse caso e o rowid
+    /// do `aplicar_evento`, que e a mesma guarda de sempre.
+    fn diario_vivo_continua(
+        td: &mut Table,
+        tv: &mut Table,
+        posicao: u64,
+        vivos: u64,
+    ) -> std::result::Result<(), String> {
+        if vivos < posicao {
+            return Err(format!(
+                "o diario vivo tem {vivos} evento(s) e a copia tinha {posicao}: \
+                 ele nao continua o da copia -- a tabela foi apagada e recriada \
+                 depois do backup. Esta tabela ficou no instante da copia"
+            ));
+        }
+        if posicao == 0 {
+            return Ok(());
+        }
+        let da_copia = td.diario(posicao - 1, 1).map_err(|e| e.to_string())?;
+        let do_vivo = tv.diario(posicao - 1, 1).map_err(|e| e.to_string())?;
+        match (da_copia.first(), do_vivo.first()) {
+            (Some(a), Some(b))
+                if a.carimbo == b.carimbo
+                    && a.operacao == b.operacao
+                    && a.rowid == b.rowid
+                    && a.versao == b.versao => {}
+            _ => {
+                return Err(format!(
+                    "o evento {} do diario vivo nao e o mesmo que a copia tinha ali: \
+                     o diario vivo nao continua o da copia. Esta tabela ficou no \
+                     instante da copia",
+                    posicao - 1
+                ))
+            }
+        }
+        Ok(())
     }
 
     /// A impressao digital de uma tabela, para comparar duas copias.
@@ -21009,6 +21889,7 @@ mod testes_exclusao {
             chave_publica: None,
             bases: vec![("*".into(), permissoes)],
             tabelas: Vec::new(),
+            colunas: Vec::new(),
         });
         let usuario = cadastro.usuarios[0].clone();
         let s = com_dados(&dir, cadastro);
@@ -21969,6 +22850,671 @@ mod testes_direito_por_tabela {
             r#""op":"ler","database":"b","tabela":"folha","rowid":1"#
         )
         .is_ok());
+    }
+}
+
+/// # Direito por COLUNA -- o nivel abaixo do direito por tabela
+///
+/// A folha de pagamento e a tabela de clientes moram no mesmo banco, e o
+/// direito por tabela ja resolveu isso. Falta o caso de dentro: o RH le a
+/// folha inteira, o gestor le a folha SEM o salario -- e nao ha como dar
+/// «tudo menos uma coluna» com uma regra que para na tabela.
+///
+/// O que estes testes travam, em ordem de importancia:
+///
+/// 1. **um `config.json` sem `"colunas"` continua se comportando igual** --
+///    e o teste que mais importa, e e o do comportamento VELHO;
+/// 2. a coluna negada sai da resposta de `ler`, `varrer` e `buscar`;
+/// 3. escrever nela recusa nomeando-a;
+/// 4. **nao escrever nela PRESERVA o valor gravado** -- porque quem nao le a
+///    coluna manda a linha sem ela, e o motor trataria ausencia como NULL;
+/// 5. o SQL herda os dois lados, e herda pelo `executar_derivado`;
+/// 6. as operacoes que devolvem linha por outro caminho RECUSAM a tabela;
+/// 7. a pergunta tambem responde: filtro e indice sobre a coluna negada param
+///    antes de a peneira ter chance de agir.
+#[cfg(test)]
+mod testes_direito_por_coluna {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir_temp(nome: &str) -> DirTemp {
+        DirTemp::novo(&format!("dc-{nome}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// O cadastro sai do JSON, e nao de uma struct montada a mao: e a LEITURA
+    /// do `config.json` que precisa ser exercitada, porque e la que o direito
+    /// por coluna e escrito de verdade.
+    fn cadastro(bases: &str) -> Cadastro {
+        Cadastro::de_json(&pedido(&format!(
+            r#"{{"usuarios":[{{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00","bases":{bases}}}]}}"#
+        )))
+        .unwrap()
+    }
+
+    /// Ana pode tudo na base, e a folha tem uma regra de coluna: `salario`
+    /// nao se le nem se altera.
+    fn so_a_folha_tem_regra() -> Cadastro {
+        cadastro(
+            r#"{"*":{"ler":true,"inserir":true,"alterar":true,"excluir":true,
+                 "criar":true,"reindexar":true,"diario":true,"verificar":true,
+                 "replicar":true,"administrar":true,
+                 "tabelas":{"folha":{"ler":true,"inserir":true,"alterar":true,
+                   "excluir":true,"criar":true,"diario":true,"administrar":true,
+                   "replicar":true,"verificar":true,"reindexar":true,
+                   "colunas":{"salario":{"ler":false,"alterar":false}}}}}}"#,
+        )
+    }
+
+    /// O MESMO cadastro sem o campo `"colunas"`. E o controle de toda esta
+    /// bateria: o que muda entre os dois e uma linha de JSON.
+    fn sem_regra_de_coluna() -> Cadastro {
+        cadastro(
+            r#"{"*":{"ler":true,"inserir":true,"alterar":true,"excluir":true,
+                 "criar":true,"reindexar":true,"diario":true,"verificar":true,
+                 "replicar":true,"administrar":true,
+                 "tabelas":{"folha":{"ler":true,"inserir":true,"alterar":true,
+                   "excluir":true,"criar":true,"diario":true,"administrar":true,
+                   "replicar":true,"verificar":true,"reindexar":true}}}}"#,
+        )
+    }
+
+    /// Uma base `b` com `clientes` (id, nome) e `folha` (id, nome, salario).
+    fn servidor(dir: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            cadastro: cadastro.clone(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"clientes",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,
+                                "primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"folha",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"},
+                               {"nome":"salario","tipo":"Int4"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,
+                                "primario":true},
+                               {"nome":"porSalario","colunas":["salario"]}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"clientes","linha":{"id":1,"nome":"x"}}"#),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "inserir",
+            &pedido(
+                r#"{"database":"b","tabela":"folha",
+                    "linha":{"id":1,"nome":"ana","salario":5000}}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        let sessao = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        (s, sessao)
+    }
+
+    /// Pelo `despachar`, que e por onde o pedido entra de verdade.
+    fn pede(s: &Arc<Servidor>, sessao: &Sessao, corpo: &str) -> Result<Json> {
+        let mut ses = Sessao {
+            usuario: sessao.usuario.clone(),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    /// O que esta GRAVADO, visto por quem nao tem restricao nenhuma. E o
+    /// arbitro de toda prova de preservacao: perguntar pela mesma sessao
+    /// restrita nunca mostraria a coluna, e o teste passaria por engano.
+    fn salario_gravado(s: &Arc<Servidor>) -> i64 {
+        s.executar(
+            "ler",
+            &pedido(r#"{"database":"b","tabela":"folha","rowid":1}"#),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .inteiro_ou("salario", -1)
+    }
+
+    // ------------------------------------------------------- comportamento velho
+
+    /// **O teste que mais importa.** Regra nova que muda o significado da
+    /// configuracao que ja existe tira o direito de alguem sem ninguem ter
+    /// pedido -- e aqui tiraria dado, que e pior: o `atualizar` de sempre
+    /// passaria a repor colunas por conta.
+    #[test]
+    fn sem_colunas_no_cadastro_nada_muda() {
+        let dir = dir_temp("igual");
+        let (s, ses) = servidor(&dir, sem_regra_de_coluna());
+
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(l.inteiro_ou("salario", -1), 5000, "a coluna sumiu: {l:?}");
+
+        let v = pede(&s, &ses, r#""op":"varrer","database":"b","tabela":"folha""#).unwrap();
+        let linha = &v.campo("linhas").and_then(Json::lista).unwrap()[0];
+        assert_eq!(linha.inteiro_ou("salario", -1), 5000);
+
+        // As que passam a RECUSAR com regra de coluna continuam passando.
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"exportar","database":"b","tabela":"folha","formato":"json""#
+        )
+        .is_ok());
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"juntar","database":"b","a":{"tabela":"folha","chave":"id"},
+               "b":{"tabela":"clientes","chave":"id"}"#
+        )
+        .is_ok());
+
+        // E o `atualizar` sem a coluna continua ZERANDO, que e o
+        // comportamento de sempre do motor: a linha inteira e gravada e o
+        // ausente vira nulo. Preservar aqui seria a guarda nova entrando
+        // imposta -- e mudaria o que todo cliente de hoje ja faz.
+        pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"b","tabela":"folha","rowid":1,
+               "valores":{"id":1,"nome":"z"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            salario_gravado(&s),
+            -1,
+            "o comportamento velho do atualizar mudou para quem nao pediu nada"
+        );
+    }
+
+    // ------------------------------------------------------------------ leitura
+
+    /// A coluna negada sai da resposta -- nas duas formas do `ler`, no
+    /// `varrer` e no `buscar`.
+    #[test]
+    fn a_leitura_esconde_a_coluna_negada() {
+        let dir = dir_temp("esconde");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert!(l.campo("salario").is_none(), "vazou: {}", l.escrever());
+        assert_eq!(l.texto_ou("nome", ""), "ana", "levou o resto junto");
+
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1,"com_versao":true"#,
+        )
+        .unwrap();
+        assert!(l.campo("linha").unwrap().campo("salario").is_none());
+        assert!(l.campo("versao").is_some(), "o envelope se perdeu");
+
+        for corpo in [
+            r#""op":"varrer","database":"b","tabela":"folha""#,
+            r#""op":"buscar","database":"b","tabela":"folha","indice":"porId","chave":[1]"#,
+            r#""op":"varrer","database":"b","tabela":"folha","indice":"porId""#,
+        ] {
+            let r = pede(&s, &ses, corpo).unwrap_or_else(|e| panic!("{corpo}: {e}"));
+            let linha = &r.campo("linhas").and_then(Json::lista).unwrap()[0];
+            assert!(
+                linha.campo("salario").is_none(),
+                "{corpo} vazou: {}",
+                r.escrever()
+            );
+            assert_eq!(linha.texto_ou("nome", ""), "ana", "{corpo}");
+        }
+
+        // E a tabela SEM regra da mesma base continua inteira.
+        let c = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"clientes","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(c.texto_ou("nome", ""), "x");
+    }
+
+    /// **A pergunta tambem responde.** A peneira tira o valor DEPOIS de o
+    /// filtro ja ter contado as linhas que casam -- vinte perguntas dessas
+    /// dizem o salario sem ele nunca ter aparecido.
+    #[test]
+    fn perguntar_pela_coluna_negada_recusa() {
+        let dir = dir_temp("pergunta");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        for corpo in [
+            r#""op":"varrer","database":"b","tabela":"folha",
+               "onde":[{"coluna":"salario","op":"=","valor":5000}]"#,
+            r#""op":"varrer","database":"b","tabela":"folha","indice":"porSalario""#,
+            r#""op":"buscar","database":"b","tabela":"folha","indice":"porSalario","chave":[5000]"#,
+        ] {
+            let e = pede(&s, &ses, corpo).expect_err("a pergunta passou");
+            assert_eq!(e.nome(), "ACESSO_NEGADO", "{corpo}: {e}");
+            assert!(
+                format!("{e}").contains("salario"),
+                "a recusa tem de dizer QUAL coluna: {e}"
+            );
+        }
+        // Filtrar por uma coluna que se pode ler continua funcionando.
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"varrer","database":"b","tabela":"folha",
+               "onde":[{"coluna":"nome","op":"=","valor":"ana"}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 1);
+    }
+
+    /// Estrutura nao e dado: a coluna continua no esquema, e a resposta diz o
+    /// que este usuario nao alcanca -- senao a tela pinta um campo que nunca
+    /// chega preenchido, e quem olha conclui que a coluna esta vazia.
+    #[test]
+    fn o_esquema_continua_inteiro_e_diz_o_que_falta() {
+        let dir = dir_temp("esquema");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"esquema","database":"b","tabela":"folha""#,
+        )
+        .unwrap();
+        let nomes: Vec<String> = e
+            .campo("colunas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|c| c.texto_ou("nome", "").to_string())
+            .collect();
+        assert!(
+            nomes.contains(&"salario".to_string()),
+            "a estrutura foi podada: {nomes:?}"
+        );
+        for campo in ["colunas_sem_leitura", "colunas_sem_alteracao"] {
+            let l = e.campo(campo).and_then(Json::lista).unwrap_or(&[]);
+            assert_eq!(
+                l.iter()
+                    .map(|x| x.texto().unwrap_or(""))
+                    .collect::<Vec<_>>(),
+                vec!["salario"],
+                "{campo}: {}",
+                e.escrever()
+            );
+        }
+        // A tabela sem regra nao ganha campo nenhum: quem nao pediu nada
+        // continua recebendo a resposta de sempre.
+        let c = pede(
+            &s,
+            &ses,
+            r#""op":"esquema","database":"b","tabela":"clientes""#,
+        )
+        .unwrap();
+        assert!(c.campo("colunas_sem_leitura").is_none(), "{}", c.escrever());
+    }
+
+    // ------------------------------------------------------------------ escrita
+
+    /// Mandar valor na coluna negada recusa, e a recusa NOMEIA a coluna --
+    /// senao quem recebeu o erro nao sabe qual campo tirar do formulario.
+    #[test]
+    fn a_escrita_com_valor_na_coluna_negada_recusa_nomeando() {
+        let dir = dir_temp("recusa");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        for corpo in [
+            r#""op":"inserir","database":"b","tabela":"folha",
+               "linha":{"id":2,"nome":"beto","salario":9000}"#,
+            r#""op":"atualizar","database":"b","tabela":"folha","rowid":1,
+               "valores":{"id":1,"nome":"ana","salario":9000}"#,
+            // Nulo EXPLICITO tambem e um pedido de mudanca: esvaziar a coluna
+            // do outro e alterar o valor dela.
+            r#""op":"atualizar","database":"b","tabela":"folha","rowid":1,
+               "valores":{"id":1,"nome":"ana","salario":null}"#,
+            r#""op":"inserir_lote","database":"b","tabela":"folha",
+               "linhas":[{"id":3,"nome":"caio","salario":1}]"#,
+        ] {
+            let e = pede(&s, &ses, corpo).expect_err("gravou na coluna negada");
+            assert_eq!(e.nome(), "ACESSO_NEGADO", "{corpo}: {e}");
+            assert!(
+                format!("{e}").contains("salario"),
+                "a recusa tem de nomear a coluna: {e}"
+            );
+        }
+        assert_eq!(salario_gravado(&s), 5000, "alguma passou");
+
+        // E inserir SEM a coluna passa: ela nasce nula, que e o que o motor
+        // ja faria com uma coluna que ninguem mandou.
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"b","tabela":"folha","linha":{"id":2,"nome":"beto"}"#,
+        )
+        .expect("inserir sem a coluna negada tinha de passar");
+    }
+
+    /// **O caso que motivou tudo.** Quem nao le a coluna manda a linha sem
+    /// ela, e o `atualizar` grava a linha INTEIRA: sem esta reposicao, alterar
+    /// o nome zerava o salario do outro em silencio.
+    #[test]
+    fn o_atualizar_sem_a_coluna_preserva_o_valor_gravado() {
+        let dir = dir_temp("preserva");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"b","tabela":"folha","rowid":1,
+               "valores":{"id":1,"nome":"ana maria"}"#,
+        )
+        .expect("o atualizar sem a coluna negada tinha de passar");
+        assert_eq!(
+            salario_gravado(&s),
+            5000,
+            "o salario foi zerado por quem nem podia ve-lo"
+        );
+        // E o que ele PODIA alterar mudou mesmo -- senao a prova passaria com
+        // um servidor que simplesmente nao gravou nada.
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(l.texto_ou("nome", ""), "ana maria");
+    }
+
+    /// Com `{"ler": true, "alterar": false}` o cliente le a linha inteira e a
+    /// devolve inteira. Recusar todo valor faria toda gravacao pela tela
+    /// parar -- entao o valor IGUAL passa, porque ele nao altera nada. A
+    /// comparacao so existe para quem PODE ler: para quem nao le ela seria um
+    /// oraculo.
+    #[test]
+    fn quem_le_a_coluna_e_nao_a_altera_continua_gravando() {
+        let dir = dir_temp("so-leitura");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(
+                r#"{"*":{"ler":true,"inserir":true,"alterar":true,
+                     "tabelas":{"folha":{"ler":true,"inserir":true,"alterar":true,
+                       "colunas":{"salario":{"ler":true,"alterar":false}}}}}}"#,
+            ),
+        );
+        // A coluna continua chegando: `ler` nao foi negado.
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(l.inteiro_ou("salario", -1), 5000);
+
+        // Devolver a linha inteira, com o MESMO salario, passa.
+        pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"b","tabela":"folha","rowid":1,
+               "valores":{"id":1,"nome":"outra","salario":5000}"#,
+        )
+        .expect("devolver o valor igual e nao alterar nada");
+        assert_eq!(salario_gravado(&s), 5000);
+
+        // Mudar recusa.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"b","tabela":"folha","rowid":1,
+               "valores":{"id":1,"nome":"outra","salario":6000}"#,
+        )
+        .expect_err("alterou a coluna negada para alterar");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert_eq!(salario_gravado(&s), 5000);
+    }
+
+    // -------------------------------------------------- os outros caminhos
+
+    /// As operacoes que devolvem linha por um caminho que a peneira nao
+    /// percorre recusam a TABELA -- e so ela: as outras da mesma base
+    /// continuam abrindo.
+    #[test]
+    fn quem_nao_peneira_recusa_a_tabela_restrita() {
+        let dir = dir_temp("recusa-op");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        for (rotulo, corpo) in [
+            (
+                "exportar",
+                r#""op":"exportar","database":"b","tabela":"folha","formato":"json""#,
+            ),
+            (
+                "juntar",
+                r#""op":"juntar","database":"b","a":{"tabela":"clientes","chave":"id"},
+                   "b":{"tabela":"folha","chave":"id"}"#,
+            ),
+            (
+                "unir",
+                r#""op":"unir","database":"b","tabelas":["clientes","folha"]"#,
+            ),
+            ("diario", r#""op":"diario","database":"b","tabela":"folha""#),
+            (
+                "lixeira",
+                r#""op":"lixeira","database":"b","tabela":"folha""#,
+            ),
+            (
+                "checksum",
+                r#""op":"checksum","database":"b","tabela":"folha""#,
+            ),
+            (
+                "duplicar_tabela",
+                r#""op":"duplicar_tabela","database":"b","tabela":"folha","destino":"copia""#,
+            ),
+        ] {
+            let e = pede(&s, &ses, corpo)
+                .err()
+                .unwrap_or_else(|| panic!("{rotulo} devolveu a tabela restrita inteira"));
+            assert_eq!(e.nome(), "ACESSO_NEGADO", "{rotulo}: {e}");
+            assert!(
+                format!("{e}").contains(rotulo),
+                "{rotulo}: a recusa tem de dizer qual operacao nao aplica o direito: {e}"
+            );
+        }
+        // E a tabela SEM regra de coluna continua saindo por todas elas.
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"exportar","database":"b","tabela":"clientes","formato":"json""#
+        )
+        .is_ok());
+    }
+
+    /// O `juntar` esconde a tabela do portao GERAL -- e tem de esconde-la
+    /// tambem deste. Sem isto, pedir a folha como o lado B era o caminho de
+    /// fora da peneira.
+    #[test]
+    fn a_tabela_escondida_do_portao_tambem_recusa_aqui() {
+        let dir = dir_temp("escondida");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"juntar","database":"b","a":{"tabela":"clientes","chave":"id"},
+               "b":{"tabela":"folha","chave":"id"}"#,
+        )
+        .expect_err("a folha saiu inteira pelo lado B da juncao");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("juntar"), "{e}");
+
+        // E a juncao de duas tabelas SEM regra continua acontecendo.
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"unir","database":"b","tabelas":["clientes","clientes"]"#
+        )
+        .is_ok());
+    }
+
+    // ---------------------------------------------------------------------- SQL
+
+    /// **O irmao que so o `executar_derivado` alcanca.** Um `SELECT` esconde a
+    /// coluna, e um `UPDATE` de OUTRA coluna deixa o salario como estava --
+    /// e nenhum dos passos do UPDATE chega pelo `despachar`.
+    #[test]
+    fn o_sql_herda_o_direito_por_coluna() {
+        let dir = dir_temp("sql");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"b","texto":"SELECT * FROM folha""#,
+        )
+        .unwrap();
+        let linhas = r
+            .campo("linhas")
+            .and_then(Json::lista)
+            .or_else(|| {
+                r.campo("resultado")
+                    .and_then(|x| x.campo("linhas"))
+                    .and_then(Json::lista)
+            })
+            .expect("o SELECT nao devolveu linhas");
+        assert!(
+            linhas[0].campo("salario").is_none(),
+            "o SELECT vazou a coluna: {}",
+            r.escrever()
+        );
+
+        // E o UPDATE de outra coluna PRESERVA o salario. E o buscar -> ler ->
+        // atualizar do `executar_dml`: o `ler` volta sem a coluna, e a
+        // mesclagem gravaria NULL nela.
+        pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"b","texto":"UPDATE folha SET nome = 'zeta' WHERE id = 1""#,
+        )
+        .expect("o UPDATE de outra coluna tinha de passar");
+        assert_eq!(
+            salario_gravado(&s),
+            5000,
+            "o UPDATE pelo SQL zerou a coluna que quem mandou nem le"
+        );
+
+        // E o UPDATE da propria coluna negada recusa.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"b","texto":"UPDATE folha SET salario = 1 WHERE id = 1""#,
+        )
+        .expect_err("o UPDATE alterou a coluna negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert_eq!(salario_gravado(&s), 5000);
+    }
+
+    // ------------------------------------------------------------- as excecoes
+
+    /// Supervisor passa por cima, como ja passa por cima da regra de tabela.
+    /// **E supervisor, e nao `nivel: admin`** -- o portao por tabela so abre
+    /// para o supervisor, e inventar um segundo caminho de excecao aqui faria
+    /// os dois portoes poderem discordar sobre a mesma pessoa.
+    #[test]
+    fn o_supervisor_ignora_o_direito_por_coluna() {
+        let dir = dir_temp("super");
+        let c = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,"supervisor":true,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"tabelas":{"folha":{
+                   "colunas":{"salario":{"ler":false,"alterar":false}}}}}}}]}"#,
+        ))
+        .unwrap();
+        let (s, ses) = servidor(&dir, c);
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert_eq!(l.inteiro_ou("salario", -1), 5000);
+        assert!(pede(
+            &s,
+            &ses,
+            r#""op":"exportar","database":"b","tabela":"folha","formato":"json""#
+        )
+        .is_ok());
+    }
+
+    /// Direito que nao existe por coluna RECUSA a carga do cadastro, e a
+    /// recusa nomeia onde ele esta. Campo que ninguem le mente -- e mente
+    /// pior quando o assunto e quem alcanca o dado.
+    #[test]
+    fn o_cadastro_recusa_direito_que_nao_existe_por_coluna() {
+        let e = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"b":{"tabelas":{"folha":{
+                   "colunas":{"salario":{"excluir":false}}}}}}}]}"#,
+        ))
+        .expect_err("aceitou um direito que nao existe por coluna");
+        let t = e.to_string();
+        for pedaco in ["excluir", "salario", "folha", "ana"] {
+            assert!(t.contains(pedaco), "a recusa nao diz {pedaco}: {t}");
+        }
+    }
+
+    /// A ficha mostra as regras de coluna: administrador que nao consegue ver
+    /// o que concedeu acaba concedendo duas vezes.
+    #[test]
+    fn a_ficha_do_usuario_mostra_as_regras_de_coluna() {
+        let c = so_a_folha_tem_regra();
+        let f = c.por_login("ana").unwrap().ficha();
+        let d = f
+            .campo("colunas")
+            .and_then(|x| x.campo("*"))
+            .and_then(|x| x.campo("folha"))
+            .and_then(|x| x.campo("salario"))
+            .expect("a ficha nao mostra a regra de coluna");
+        assert!(!d.booleano_ou("ler", true));
+        assert!(!d.booleano_ou("alterar", true));
     }
 }
 
@@ -24397,6 +25943,7 @@ mod testes_cadastro_de_usuarios {
                 },
             )],
             tabelas: Vec::new(),
+            colunas: Vec::new(),
         }
     }
 
@@ -25151,6 +26698,7 @@ mod testes_config_gravar {
                 },
             )],
             tabelas: Vec::new(),
+            colunas: Vec::new(),
         }
     }
 
@@ -25754,6 +27302,651 @@ mod testes_config_gravar {
         assert!(!s.espelho());
         assert!(!s.somente_leitura());
         assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
+    }
+}
+
+/// **PITR** -- restaurar a um INSTANTE, e nao so ao instante da copia.
+///
+/// A prova de ponta a ponta e uma so, e ela conta uma historia: linha 1, copia,
+/// linha 2, alteracao da 1, linha 3. Restaurando com `ate` entre a alteracao e
+/// a linha 3, o restaurado tem a 1 ALTERADA e a 2, e NAO tem a 3. Cada um dos
+/// tres pedacos morre se o filtro de carimbo morrer.
+#[cfg(test)]
+mod testes_pitr {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn ped(t: &str) -> Json {
+        Json::analisar(t).unwrap()
+    }
+
+    /// Um servidor com a imagem da linha LIGADA -- e sem ela nao ha PITR, que
+    /// e o que o teste da recusa prova.
+    fn servidor(dir: &std::path::Path, imagem: bool) -> Arc<Servidor> {
+        let mut c = Config {
+            base: dir.join("dados"),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            cadastro: Cadastro::default(),
+            ..Config::default()
+        };
+        c.replicacao.imagem_da_linha = imagem;
+        Servidor::novo(c).unwrap()
+    }
+
+    fn criar_banco(s: &Arc<Servidor>) {
+        let ses = Sessao::default();
+        s.executar("criar_database", &ped(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &ped(r#"{"database":"b","tabela":"c",
+                 "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                            {"nome":"nome","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#),
+            &ses,
+        )
+        .unwrap();
+    }
+
+    fn inserir(s: &Arc<Servidor>, id: i64, nome: &str) {
+        s.executar(
+            "inserir",
+            &ped(&format!(
+                r#"{{"database":"b","tabela":"c","linha":{{"id":{id},"nome":"{nome}"}}}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap();
+    }
+
+    fn backup(s: &Arc<Servidor>, dir: &std::path::Path) -> String {
+        let destino = dir.join("copias").display().to_string();
+        s.executar(
+            "backup",
+            &ped(&format!(
+                r#"{{"destino":"{destino}","database":"b","zip":true}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .texto_ou("arquivo", "")
+        .to_string()
+    }
+
+    /// Os `(carimbo_ms, operacao, rowid)` do diario vivo, em ordem.
+    fn diario(s: &Arc<Servidor>) -> Vec<(i64, String, u64)> {
+        s.executar(
+            "diario",
+            &ped(r#"{"database":"b","tabela":"c","max":100}"#),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .campo("eventos")
+        .and_then(Json::lista)
+        .unwrap()
+        .iter()
+        .map(|e| {
+            (
+                e.campo("carimbo_ms").and_then(Json::inteiro).unwrap(),
+                e.texto_ou("operacao", "").to_string(),
+                e.campo("rowid").and_then(Json::inteiro).unwrap() as u64,
+            )
+        })
+        .collect()
+    }
+
+    fn linhas(s: &Arc<Servidor>, db: &str) -> Vec<(i64, String)> {
+        s.executar(
+            "varrer",
+            &ped(&format!(r#"{{"database":"{db}","tabela":"c"}}"#)),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .campo("linhas")
+        .and_then(Json::lista)
+        .unwrap()
+        .iter()
+        .map(|l| {
+            (
+                l.campo("id").and_then(Json::inteiro).unwrap(),
+                l.texto_ou("nome", "").to_string(),
+            )
+        })
+        .collect()
+    }
+
+    /// Espera o relogio andar um milissegundo. Sem isto, tres escritas seguidas
+    /// podem cair no MESMO carimbo, e um `ate` entre duas delas nao existiria.
+    fn passa_um_ms() {
+        let antes = crate::agora_ms();
+        while crate::agora_ms() == antes {
+            std::hint::spin_loop();
+        }
+    }
+
+    /// A PROVA DE PONTA A PONTA.
+    ///
+    /// Sabotagem que a derruba: aplicar tudo, sem olhar o carimbo -- trocar o
+    /// `if e.carimbo > ate_ms { pulados += 1; continue; }` por nada faz a
+    /// linha 3 aparecer no restaurado, e as tres asserces de baixo caem.
+    #[test]
+    fn restaura_ate_um_instante_no_meio_do_diario() {
+        let dir = DirTemp::novo("pitr-ponta-a-ponta");
+        let s = servidor(&dir.0, true);
+        criar_banco(&s);
+        inserir(&s, 1, "um");
+        passa_um_ms();
+        let zip = backup(&s, &dir.0);
+
+        passa_um_ms();
+        inserir(&s, 2, "dois");
+        passa_um_ms();
+        s.executar(
+            "atualizar",
+            &ped(r#"{"database":"b","tabela":"c","rowid":1,
+                     "linha":{"id":1,"nome":"um alterado"}}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        passa_um_ms();
+        inserir(&s, 3, "tres");
+
+        // O corte fica ENTRE a alteracao da 1 (evento 3) e a inclusao da 3
+        // (evento 4). Os carimbos saem do proprio diario, medidos: um `ate`
+        // digitado a mao seria um numero que ninguem mediu.
+        let eventos = diario(&s);
+        assert_eq!(eventos.len(), 4, "{eventos:?}");
+        let corte = eventos[3].0 - 1;
+        assert!(corte >= eventos[2].0, "o relogio nao andou: {eventos:?}");
+
+        let r = s
+            .executar(
+                "restaurar_backup",
+                &ped(&format!(
+                    r#"{{"origem":"{zip}","database":"b_no_meio","ate_ms":{corte}}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let pitr = r.campo("pitr").expect("a resposta traz o bloco pitr");
+        assert_eq!(
+            pitr.campo("reaplicados").and_then(Json::inteiro),
+            Some(2),
+            "{}",
+            pitr.escrever()
+        );
+
+        let restaurado = linhas(&s, "b_no_meio");
+        assert_eq!(
+            restaurado,
+            vec![(1, "um alterado".into()), (2, "dois".into())],
+            "a 1 alterada e a 2 entram; a 3 e depois do corte"
+        );
+        // E o original nao foi tocado: quatro linhas, com a 3.
+        assert_eq!(linhas(&s, "b").len(), 3);
+
+        // A resposta diz por tabela o que fez, e ate quando chegou.
+        let t = &pitr.campo("tabelas").and_then(Json::lista).unwrap()[0];
+        assert_eq!(t.texto_ou("tabela", ""), "c");
+        assert_eq!(t.campo("reaplicados").and_then(Json::inteiro), Some(2));
+        assert_eq!(t.campo("pulados").and_then(Json::inteiro), Some(1));
+        assert_eq!(
+            t.campo("ultimo_carimbo_ms").and_then(Json::inteiro),
+            Some(eventos[2].0),
+            "o ultimo aplicado e a alteracao da linha 1"
+        );
+        assert!(t.campo("parou_em").is_none(), "{}", t.escrever());
+    }
+
+    /// O carimbo do evento reaplicado e o do ORIGINAL, e nao a hora da
+    /// restauracao: o diario do restaurado e trilha de auditoria.
+    #[test]
+    fn o_diario_do_restaurado_guarda_o_carimbo_original() {
+        let dir = DirTemp::novo("pitr-carimbo");
+        let s = servidor(&dir.0, true);
+        criar_banco(&s);
+        inserir(&s, 1, "um");
+        passa_um_ms();
+        let zip = backup(&s, &dir.0);
+        passa_um_ms();
+        inserir(&s, 2, "dois");
+
+        let eventos = diario(&s);
+        s.executar(
+            "restaurar_backup",
+            &ped(&format!(
+                r#"{{"origem":"{zip}","database":"b2","ate_ms":{}}}"#,
+                eventos[1].0
+            )),
+            &Sessao::default(),
+        )
+        .unwrap();
+
+        let d = s
+            .executar(
+                "diario",
+                &ped(r#"{"database":"b2","tabela":"c","max":100}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let lista = d.campo("eventos").and_then(Json::lista).unwrap();
+        assert_eq!(lista.len(), 2);
+        assert_eq!(
+            lista[1].campo("carimbo_ms").and_then(Json::inteiro),
+            Some(eventos[1].0),
+            "o evento reaplicado guarda o instante em que a escrita NASCEU"
+        );
+    }
+
+    /// **O TESTE DO COMPORTAMENTO VELHO.** Sem `ate`, nada muda: nem a
+    /// resposta ganha campo, nem o diario e reaplicado.
+    #[test]
+    fn quem_nao_manda_ate_nao_ve_diferenca() {
+        let dir = DirTemp::novo("pitr-velho");
+        let s = servidor(&dir.0, true);
+        criar_banco(&s);
+        inserir(&s, 1, "um");
+        let zip = backup(&s, &dir.0);
+        inserir(&s, 2, "depois do backup");
+
+        let r = s
+            .executar(
+                "restaurar_backup",
+                &ped(&format!(r#"{{"origem":"{zip}","database":"b_igual"}}"#)),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert!(r.campo("pitr").is_none(), "{}", r.escrever());
+        assert_eq!(
+            linhas(&s, "b_igual"),
+            vec![(1, "um".into())],
+            "a restauracao simples continua sendo o retrato da copia"
+        );
+    }
+
+    /// `ate` ANTES da copia: o diario so anda para a frente.
+    ///
+    /// Sabotagem: trocar `if ate_ms < copia_ms` por `if false` faz a
+    /// restauracao passar e devolver zero reaplicados -- e o teste cai na
+    /// primeira linha, porque esperava erro.
+    #[test]
+    fn ate_antes_da_copia_e_recusado() {
+        let dir = DirTemp::novo("pitr-antes");
+        let s = servidor(&dir.0, true);
+        criar_banco(&s);
+        inserir(&s, 1, "um");
+        let zip = backup(&s, &dir.0);
+
+        let erro = s
+            .executar(
+                "restaurar_backup",
+                &ped(&format!(
+                    r#"{{"origem":"{zip}","database":"b_antes","ate":"2020-01-01T00:00:00Z"}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(erro.contains("ANTES do instante da copia"), "{erro}");
+        assert!(erro.contains("2020-01-01"), "diz o instante pedido: {erro}");
+        // E nada foi criado: a recusa acontece antes de o disco ser tocado.
+        assert!(!dir.0.join("dados/b_antes").exists());
+    }
+
+    /// Backup sem o carimbo em milissegundos: PITR recusa NOMEANDO o campo, e
+    /// a restauracao simples do mesmo arquivo continua funcionando.
+    ///
+    /// Sabotagem: fazer o `quando_ms` cair no `unwrap_or(0)` em vez de recusar
+    /// faz a restauracao aceitar e reaplicar o diario INTEIRO, porque tudo e
+    /// depois da epoca -- e a segunda asserçao cai.
+    #[test]
+    fn backup_sem_carimbo_recusa_o_pitr_e_nao_a_restauracao() {
+        let dir = DirTemp::novo("pitr-sem-carimbo");
+        let s = servidor(&dir.0, true);
+        criar_banco(&s);
+        inserir(&s, 1, "um");
+        // Uma copia em PASTA, para dar para reescrever o manifesto como um
+        // backup velho: sem `quando_ms`, e com o `quando` que um manifesto
+        // escrito a mao teria.
+        let pasta = dir.0.join("copia_velha");
+        s.executar(
+            "backup",
+            &ped(&format!(
+                r#"{{"destino":"{}","zip":false}}"#,
+                pasta.display()
+            )),
+            &Sessao::default(),
+        )
+        .unwrap();
+        let man = pasta.join("backup.json");
+        let j = Json::analisar(&std::fs::read_to_string(&man).unwrap()).unwrap();
+        let mut campos = vec![
+            ("phxsql", Json::texto_de(j.texto_ou("phxsql", ""))),
+            ("quando", Json::texto_de("agora")),
+            (
+                "arquivos",
+                j.campo("arquivos").cloned().unwrap_or(Json::Nulo),
+            ),
+            ("bytes", j.campo("bytes").cloned().unwrap_or(Json::Nulo)),
+        ];
+        campos.push(("conteudo", j.campo("conteudo").cloned().unwrap()));
+        std::fs::write(&man, Json::objeto(campos).escrever()).unwrap();
+
+        inserir(&s, 2, "depois");
+        let erro = s
+            .executar(
+                "restaurar_backup",
+                &ped(&format!(
+                    r#"{{"origem":"{}","de":"b","database":"b_velho",
+                         "ate":"2099-01-01T00:00:00Z"}}"#,
+                    pasta.display()
+                )),
+                &Sessao::default(),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(
+            erro.contains("quando_ms"),
+            "nomeia o campo que falta: {erro}"
+        );
+
+        // E o MESMO arquivo restaura sem `ate`, como sempre restaurou.
+        s.executar(
+            "restaurar_backup",
+            &ped(&format!(
+                r#"{{"origem":"{}","de":"b","database":"b_velho"}}"#,
+                pasta.display()
+            )),
+            &Sessao::default(),
+        )
+        .unwrap();
+        assert_eq!(linhas(&s, "b_velho"), vec![(1, "um".into())]);
+    }
+
+    /// Sem imagem no diario o evento nao da para reaplicar, e a recusa diz
+    /// QUAL interruptor ligar.
+    ///
+    /// Sabotagem: tirar o `if !self.config.replicacao.imagem_da_linha` faz a
+    /// restauracao seguir; o `aplicar_evento` recusa evento a evento e o
+    /// `parou_em` aparece -- ou seja, o teste cai na primeira asserçao (nao
+    /// houve erro) e o estrago vira "restaurou e nao reaplicou".
+    #[test]
+    fn sem_imagem_no_diario_o_pitr_recusa_dizendo_o_interruptor() {
+        let dir = DirTemp::novo("pitr-sem-imagem");
+        let s = servidor(&dir.0, false);
+        criar_banco(&s);
+        inserir(&s, 1, "um");
+        let zip = backup(&s, &dir.0);
+        inserir(&s, 2, "dois");
+
+        let erro = s
+            .executar(
+                "restaurar_backup",
+                &ped(&format!(
+                    r#"{{"origem":"{zip}","database":"b_sem","ate":"2099-01-01T00:00:00Z"}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(erro.contains("imagem_da_linha"), "{erro}");
+        assert!(!dir.0.join("dados/b_sem").exists(), "nada foi escrito");
+    }
+
+    /// Restaurar POR CIMA tira do lugar o database cujo diario o PITR leria.
+    #[test]
+    fn por_cima_com_ate_e_recusado() {
+        let dir = DirTemp::novo("pitr-por-cima");
+        let s = servidor(&dir.0, true);
+        criar_banco(&s);
+        inserir(&s, 1, "um");
+        let zip = backup(&s, &dir.0);
+
+        let erro = s
+            .executar(
+                "restaurar_backup",
+                &ped(&format!(
+                    r#"{{"origem":"{zip}","database":"b","modo":"por_cima",
+                         "confirmar":true,"ate":"2099-01-01T00:00:00Z"}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(erro.contains("POR CIMA"), "{erro}");
+        assert!(erro.contains("diario VIVO"), "{erro}");
+    }
+
+    /// O database de origem sumiu: nao ha diario vivo para reaplicar.
+    #[test]
+    fn sem_o_database_vivo_o_pitr_recusa() {
+        let dir = DirTemp::novo("pitr-sem-vivo");
+        let s = servidor(&dir.0, true);
+        criar_banco(&s);
+        inserir(&s, 1, "um");
+        let zip = backup(&s, &dir.0);
+        // Nao ha operacao de apagar database no protocolo; o que se simula
+        // aqui e o banco tirado do lugar por fora -- que e exatamente o estado
+        // em que o PITR nao tem diario vivo para ler.
+        std::fs::rename(dir.0.join("dados/b"), dir.0.join("b_fora")).unwrap();
+
+        let erro = s
+            .executar(
+                "restaurar_backup",
+                &ped(&format!(
+                    r#"{{"origem":"{zip}","database":"b_orfao","ate":"2099-01-01T00:00:00Z"}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(erro.contains("nao existe mais neste servidor"), "{erro}");
+    }
+
+    /// `ate` que nao e instante recusa NOMEANDO o que se espera -- e o fuso
+    /// escrito na mao e recusado em vez de ignorado.
+    #[test]
+    fn ate_ilegivel_recusa_e_o_fuso_nao_e_engolido() {
+        let dir = DirTemp::novo("pitr-ate-ruim");
+        let s = servidor(&dir.0, true);
+        criar_banco(&s);
+        inserir(&s, 1, "um");
+        let zip = backup(&s, &dir.0);
+
+        for ate in ["ontem", "2026-09-08T15:00:00+03:00"] {
+            let erro = s
+                .executar(
+                    "restaurar_backup",
+                    &ped(&format!(
+                        r#"{{"origem":"{zip}","database":"b_x","ate":"{ate}"}}"#
+                    )),
+                    &Sessao::default(),
+                )
+                .unwrap_err()
+                .to_string();
+            assert!(erro.contains("nao e um instante"), "{ate}: {erro}");
+        }
+        // Os dois campos juntos tambem.
+        let erro = s
+            .executar(
+                "restaurar_backup",
+                &ped(&format!(
+                    r#"{{"origem":"{zip}","database":"b_x",
+                         "ate":"2099-01-01T00:00:00Z","ate_ms":1}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(erro.contains("nao os dois"), "{erro}");
+    }
+
+    /// A tabela apagada e RECRIADA depois do backup: o diario vivo nao
+    /// continua o da copia, e a tabela para no instante da copia em vez de
+    /// receber linhas de outra vida.
+    ///
+    /// Sabotagem: fazer `diario_vivo_continua` devolver sempre `Ok(())` faz o
+    /// `parou_em` sumir e a reaplicacao gravar; o teste cai nas duas ultimas
+    /// asserçoes.
+    #[test]
+    fn diario_que_nao_continua_a_copia_para_nomeando_a_tabela() {
+        let dir = DirTemp::novo("pitr-recriada");
+        let s = servidor(&dir.0, true);
+        criar_banco(&s);
+        inserir(&s, 1, "um");
+        inserir(&s, 2, "dois");
+        passa_um_ms();
+        let zip = backup(&s, &dir.0);
+
+        // A tabela morre e volta a nascer: o `.log` dela recomeca do zero.
+        s.executar(
+            "excluir_tabela",
+            &ped(r#"{"database":"b","tabela":"c","confirmar":"c"}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        criar_banco_tabela_de_novo(&s);
+        inserir(&s, 9, "outra vida");
+
+        let r = s
+            .executar(
+                "restaurar_backup",
+                &ped(&format!(
+                    r#"{{"origem":"{zip}","database":"b_recriada","ate":"2099-01-01T00:00:00Z"}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let t = &r
+            .campo("pitr")
+            .and_then(|p| p.campo("tabelas"))
+            .and_then(Json::lista)
+            .unwrap()[0];
+        assert_eq!(t.campo("reaplicados").and_then(Json::inteiro), Some(0));
+        let motivo = t.texto_ou("parou_em", "");
+        // O TEXTO da conta de tamanho, e nao so «recusou»: e ele que diz ao
+        // operador o que houve, e e a unica coisa que essa metade acrescenta.
+        assert!(
+            motivo.contains("tem 1 evento(s) e a copia tinha 2"),
+            "{motivo}"
+        );
+        assert!(motivo.contains("nao continua o da copia"), "{motivo}");
+        assert_eq!(
+            linhas(&s, "b_recriada"),
+            vec![(1, "um".into()), (2, "dois".into())],
+            "a tabela ficou no instante da copia"
+        );
+    }
+
+    /// O irmao do teste de cima, e ele existe porque os dois GUARDAS de
+    /// `diario_vivo_continua` sao dois, e um teste que so acorda um deles
+    /// deixa o outro sem prova.
+    ///
+    /// Ali o diario vivo ficou mais CURTO que a copia, e a conta de tamanho
+    /// bastava. Aqui a tabela recriada recebe TRES linhas, entao o diario
+    /// vivo tem tres eventos contra os dois da copia -- a conta de tamanho
+    /// passa, e quem acha a troca e a comparacao do evento daquela posicao.
+    #[test]
+    fn diario_vivo_maior_e_diferente_tambem_para() {
+        let dir = DirTemp::novo("pitr-recriada-maior");
+        let s = servidor(&dir.0, true);
+        criar_banco(&s);
+        inserir(&s, 1, "um");
+        inserir(&s, 2, "dois");
+        passa_um_ms();
+        let zip = backup(&s, &dir.0);
+
+        s.executar(
+            "excluir_tabela",
+            &ped(r#"{"database":"b","tabela":"c","confirmar":"c"}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        criar_banco_tabela_de_novo(&s);
+        for (id, nome) in [(7, "sete"), (8, "oito"), (9, "nove")] {
+            inserir(&s, id, nome);
+        }
+
+        let r = s
+            .executar(
+                "restaurar_backup",
+                &ped(&format!(
+                    r#"{{"origem":"{zip}","database":"b_maior","ate":"2099-01-01T00:00:00Z"}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let t = &r
+            .campo("pitr")
+            .and_then(|p| p.campo("tabelas"))
+            .and_then(Json::lista)
+            .unwrap()[0];
+        assert_eq!(t.campo("reaplicados").and_then(Json::inteiro), Some(0));
+        let motivo = t.texto_ou("parou_em", "");
+        assert!(
+            motivo.contains("nao e o mesmo que a copia tinha ali"),
+            "{motivo}"
+        );
+        assert_eq!(
+            linhas(&s, "b_maior"),
+            vec![(1, "um".into()), (2, "dois".into())],
+            "a tabela ficou no instante da copia, sem as linhas da outra vida"
+        );
+    }
+
+    fn criar_banco_tabela_de_novo(s: &Arc<Servidor>) {
+        s.executar(
+            "criar_tabela",
+            &ped(r#"{"database":"b","tabela":"c",
+                 "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                            {"nome":"nome","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+    }
+
+    /// Tabela que NASCEU depois da copia nao e criada, e sai nomeada em
+    /// `novas_na_origem`: refaze-la exigiria a historia do esquema.
+    #[test]
+    fn tabela_nova_na_origem_aparece_na_resposta_e_nao_e_criada() {
+        let dir = DirTemp::novo("pitr-nova");
+        let s = servidor(&dir.0, true);
+        criar_banco(&s);
+        inserir(&s, 1, "um");
+        passa_um_ms();
+        let zip = backup(&s, &dir.0);
+        s.executar(
+            "criar_tabela",
+            &ped(r#"{"database":"b","tabela":"nova",
+                 "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+
+        let r = s
+            .executar(
+                "restaurar_backup",
+                &ped(&format!(
+                    r#"{{"origem":"{zip}","database":"b_nova","ate":"2099-01-01T00:00:00Z"}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let pitr = r.campo("pitr").unwrap();
+        let novas: Vec<&str> = pitr
+            .campo("novas_na_origem")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .filter_map(Json::texto)
+            .collect();
+        assert_eq!(novas, vec!["nova"], "{}", pitr.escrever());
+        assert!(!dir.0.join("dados/b_nova/nova.reg").exists());
     }
 }
 
@@ -29785,6 +31978,7 @@ mod testes_diretivas {
                 },
             )],
             tabelas: Vec::new(),
+            colunas: Vec::new(),
         }
     }
 

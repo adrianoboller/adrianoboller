@@ -685,11 +685,7 @@ fn backup(args: &[String], base: &str, destino: &str) -> phxsql_core::error::Res
         return Ok(());
     }
 
-    let r = phxsql_store::backup::executar(
-        Path::new(base),
-        Path::new(destino),
-        &phxsql_core::datahora::instante_iso(agora),
-    )?;
+    let r = phxsql_store::backup::executar(Path::new(base), Path::new(destino), agora)?;
     diga!("copiados {} arquivos, {} bytes", r.arquivos.len(), r.bytes);
     diga!(
         "manifesto em {}/{}",

@@ -291,7 +291,8 @@ pub const OPERACOES: &[Operacao] = &[
         nome: "esquema",
         apelidos: &[],
         resumo: "Descreve uma tabela: colunas, tipos, índices, chaves \
-                 estrangeiras e a marca de dado pessoal.",
+                 estrangeiras e a marca de dado pessoal. Para quem tem direito por \
+                 coluna, diz também quais ele não lê e quais não altera.",
         parametros: &[DB, TAB],
         exemplo: r#"{"op":"esquema","database":"loja","tabela":"clientes"}"#,
         ferramenta_mcp: true,
@@ -1424,7 +1425,8 @@ pub const OPERACOES: &[Operacao] = &[
     Operacao {
         nome: "usuarios",
         apelidos: &[],
-        resumo: "O cadastro e o poder de cada um. Nunca devolve senha nem hash.",
+        resumo: "O cadastro e o poder de cada um -- por base, por tabela e por \
+                 coluna. Nunca devolve senha nem hash.",
         parametros: &[],
         exemplo: r#"{"op":"usuarios"}"#,
         ferramenta_mcp: false,
@@ -1451,8 +1453,9 @@ pub const OPERACOES: &[Operacao] = &[
     Operacao {
         nome: "usuario_alterar",
         apelidos: &[],
-        resumo: "Muda senha, direitos por base e por tabela, nivel ou o liga/desliga. So o que o \
-                 pedido traz muda; o resto do cadastro fica como estava.",
+        resumo: "Muda senha, direitos por base, por tabela e por coluna, nivel ou o \
+                 liga/desliga. So o que o pedido traz muda; o resto do cadastro fica \
+                 como estava.",
         parametros: &[
             obr("login", "string", "quem alterar"),
             opc("senha", "string", "a senha NOVA, em claro; omita para nao mexer nela"),
@@ -1462,7 +1465,13 @@ pub const OPERACOES: &[Operacao] = &[
             opc("nivel", "string", "leitor, operador, dono ou admin"),
             opc("supervisor", "boolean", "so um supervisor promove outro"),
             opc("ativo", "boolean", "false desliga a conta e derruba a sessao dela no pedido seguinte"),
-            opc("bases", "object", "o poder por base; substitui o bloco inteiro"),
+            opc(
+                "bases",
+                "object",
+                "o poder por base; substitui o bloco inteiro. Dentro dela, \"tabelas\" \
+                 desce a tabela e \"colunas\", dentro da tabela, desce a coluna \
+                 ({\"salario\":{\"ler\":false,\"alterar\":false}})",
+            ),
         ],
         exemplo: r#"{"op":"usuario_alterar","login":"carlos","senha":"a-senha-nova"}"#,
         ferramenta_mcp: false,
@@ -1747,7 +1756,8 @@ pub const OPERACOES: &[Operacao] = &[
     Operacao {
         nome: "restaurar_backup",
         apelidos: &[],
-        resumo: "Restaura um database de dentro de um backup, com outro nome ou por cima.",
+        resumo: "Restaura um database de dentro de um backup, com outro nome ou por \
+                 cima -- e, com \"ate\", a um INSTANTE, reaplicando o diario vivo.",
         parametros: &[
             obr("origem", "string", "o .zip ou a pasta do backup"),
             opc(
@@ -1775,8 +1785,22 @@ pub const OPERACOES: &[Operacao] = &[
                 "boolean",
                 "so le o manifesto e devolve o que ha dentro, sem escrever nada",
             ),
+            opc(
+                "ate",
+                "string",
+                "PITR: depois de restaurar, reaplica o diario VIVO de cada tabela \
+                 da hora da copia ate este instante (`2026-09-08T15:00:00Z`, UTC, \
+                 inclusive). Exige `modo` novo e a imagem da linha no diario",
+            ),
+            opc(
+                "ate_ms",
+                "integer",
+                "o mesmo instante em milissegundos desde a epoca -- para quem ja \
+                 tem o numero, como o `carimbo_ms` que o `diario` devolve. Com \
+                 `ate` junto, recusa",
+            ),
         ],
-        exemplo: r#"{"op":"restaurar_backup","origem":"/backup/Z_ana_2026-08-29_0300.zip","database":"Z_restaurado"}"#,
+        exemplo: r#"{"op":"restaurar_backup","origem":"/backup/Z_ana_2026-08-29_0300.zip","database":"Z_restaurado","ate":"2026-08-29T15:00:00Z"}"#,
         ferramenta_mcp: false,
     },
     // ------------------------------------------------------------- jobs

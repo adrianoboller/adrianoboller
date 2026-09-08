@@ -2769,6 +2769,46 @@ RESTAURAR
     clique seriam seis estragos com um clique. A copia da raiz continua
     servindo -- diga em "de" qual database dela restaurar.
 
+    RESTAURAR A UM INSTANTE (PITR)
+
+    {"token":"...","op":"restaurar_backup",
+     "origem":"/backup/Comercial_ana_2026-08-29_0300.zip",
+     "database":"Comercial_as_15h",
+     "ate":"2026-08-29T15:00:00Z"}
+
+    Com "ate", a restauracao nao para no instante da copia: depois de gravar
+    a copia, ela reaplica o diario VIVO de cada tabela, da hora do backup ate
+    o instante pedido. Quem aplica e o mesmo caminho da replicacao -- aplica,
+    nao julga: nao refaz cascata, nao confere chave estrangeira, e nao
+    recalcula nada. A origem ja julgou quando aceitou a escrita.
+
+    O instante e UTC e INCLUSIVO. Aceita "2026-08-29T15:00:00Z", com espaco
+    no lugar do T, com ou sem o Z, e com fracao de segundo. Fuso escrito na
+    mao ("+03:00") e RECUSADO em vez de ignorado. Quem ja tem o numero manda
+    "ate_ms" (milissegundos), que e o "carimbo_ms" que o "diario" devolve --
+    os dois campos juntos recusam.
+
+    A RESPOSTA traz um bloco "pitr" com o instante da copia, o instante
+    pedido, e por tabela: quantos eventos reaplicou, quantos pulou (depois do
+    corte), o ultimo carimbo aplicado, e "parou_em" quando aquela tabela nao
+    foi ate o fim. Traz tambem "sem_diario_vivo" (tabelas que a copia tem e a
+    origem nao tem mais) e "novas_na_origem" (tabelas que nasceram depois da
+    copia, e que NAO sao criadas: refaze-las exigiria a historia do esquema).
+
+    O QUE O PITR EXIGE, E RECUSA NOMEANDO
+
+    - "modo":"novo". Por cima nao: o por cima tira o database vivo da raiz, e
+      e o diario DELE que a reaplicacao le.
+    - a imagem da linha no diario ("replicacao":{"imagem_da_linha":true}).
+      Sem ela o evento diz que o rowid 42 mudou e nao diz para que.
+    - o backup dizendo em que instante foi tirado ("quando_ms" no
+      backup.json). Copia gravada antes desse campo, cujo "quando" seja um
+      instante legivel, continua servindo.
+    - "ate" DEPOIS do instante da copia: o diario so anda para a frente.
+    - o database de origem ainda existindo neste servidor.
+
+    Sem "ate", nada disso vale e a restauracao e a de sempre.
+
     PELA TELA
 
     Arquivo -> Restaurar um backup..., ou o botao Restaurar da barra.
@@ -2978,7 +3018,66 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     A arvore e o catalogo (tabelas, sistabelas, siscolunas) listam so o que
     da para abrir: o nome de uma tabela ja conta parte da historia.
 
-    O que ainda nao desce e o direito por COLUNA.
+14.3.2 E desce ate a COLUNA
+
+    O nivel de dentro: o RH le a folha inteira, o gestor le a folha SEM o
+    salario. Dentro do objeto da TABELA, "colunas" escreve a regra de cada
+    uma:
+
+      "bases": {
+        "Z": {
+          "ler": true, "inserir": true, "alterar": true,
+          "tabelas": {
+            "folha": {
+              "ler": true, "inserir": true, "alterar": true,
+              "colunas": { "salario": { "ler": false, "alterar": false } }
+            }
+          }
+        }
+      }
+
+    POR COLUNA SO EXISTEM "ler" E "alterar". Direito diferente ali RECUSA a
+    carga do cadastro, nomeando usuario, base, tabela e coluna: nao se
+    reindexa um campo, e um campo que ninguem le mentiria calado. NEGA POR
+    OMISSAO, como a base e a tabela: { "salario": {} } tira as duas. A
+    ordem de precedencia e a MESMA de 14.3.1.
+
+    UM config.json SEM "colunas" SE COMPORTA EXATAMENTE COMO ANTES.
+
+    LEITURA. A coluna negada sai da resposta de ler, varrer, buscar,
+    procurar_texto, SelectMemory -- e do que a op sql produz, porque cada
+    passo dela e um desses. Perguntar pela coluna tambem responde, entao
+    tres coisas RECUSAM: filtrar por ela no "onde", pedi-la na projecao, e
+    usar um indice cuja chave a inclui. A recusa diz qual coluna e.
+
+    ESCRITA. Mandar valor na coluna negada RECUSA nomeando-a; mandar null
+    tambem, porque esvaziar e alterar. NAO mandar a coluna num "atualizar"
+    PRESERVA o valor gravado -- sem isso, quem nao le a coluna manda a linha
+    sem ela e o motor a zeraria em silencio. Quem tem "ler":true e
+    "alterar":false pode devolver a linha inteira: valor IGUAL ao gravado
+    nao altera nada e passa.
+
+    A carga colada ("texto" no inserir_lote, e o importar_conferir) e
+    RECUSADA: o que nao se analisa nao se confere. Mande as linhas em
+    "linhas".
+
+    ESQUEMA. A coluna continua aparecendo -- estrutura nao e dado --, e a
+    resposta ganha "colunas_sem_leitura" e "colunas_sem_alteracao", para a
+    tela nao pintar campo que nunca chega preenchido.
+
+    O QUE RECUSA A TABELA INTEIRA para quem tem regra de coluna nela, porque
+    devolve linha por um caminho que a peneira nao percorre:
+
+        exportar, juntar, unir, pivotar, diario, replicar, aplicar,
+        checksum, lixeira, trilha, importar_conferir, duplicar_tabela,
+        copiar_tabela, renomear_tabela, backup, profiler,
+        dblink_sincronizar
+
+    As tres copias de tabela entram porque a regra e por NOME de tabela:
+    sem a recusa, duplicar_tabela seria o botao "tire a restricao".
+
+    SUPERVISOR ignora tudo isto, como ja ignora a regra de tabela. A lista
+    medida operacao a operacao esta na secao 15 do docs/SEGURANCA.md.
 
 14.4 Os tres portoes
 

@@ -570,6 +570,80 @@ impl Permissoes {
     }
 }
 
+/// O direito sobre uma COLUNA de uma tabela.
+///
+/// So duas atividades cabem aqui, e a escolha e do dado, nao de gosto:
+/// `ler` decide se a coluna sai na resposta e `alterar` decide se ela pode
+/// mudar de valor. As outras oito da base nao tem significado por coluna --
+/// nao se `reindexa` um campo nem se `administra` metade de uma linha --, e
+/// por isso um direito desconhecido dentro de `colunas` **recusa a carga do
+/// cadastro** em vez de ser ignorado: campo que ninguem le mente, e mente
+/// pior quando o assunto e quem alcanca o dado.
+///
+/// Nega por omissao, como a base e a tabela: `{"salario": {}}` tira as duas.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DireitoDeColuna {
+    pub ler: bool,
+    pub alterar: bool,
+}
+
+impl DireitoDeColuna {
+    pub fn pode(self, atividade: Atividade) -> bool {
+        match atividade {
+            Atividade::Ler => self.ler,
+            Atividade::Alterar => self.alterar,
+            // As outras oito nao existem por coluna, e responder `false` aqui
+            // faria `colunas_negadas` devolver a tabela inteira para uma
+            // pergunta que nao se faz. Quem pergunta por elas nao tem
+            // restricao de coluna nenhuma -- que e a verdade.
+            _ => true,
+        }
+    }
+
+    fn de_json(j: &Json, onde: &str) -> Result<DireitoDeColuna> {
+        if let Json::Objeto(pares) = j {
+            for (chave, _) in pares {
+                if chave != "ler" && chave != "alterar" {
+                    return Err(PhxError::Esquema(format!(
+                        "{onde}: direito {chave:?} nao existe por coluna; \
+                         por coluna so ha \"ler\" e \"alterar\""
+                    )));
+                }
+            }
+        } else {
+            return Err(PhxError::Esquema(format!(
+                "{onde}: o direito de uma coluna e um objeto \
+                 {{\"ler\": false, \"alterar\": false}}"
+            )));
+        }
+        Ok(DireitoDeColuna {
+            ler: j.booleano_ou("ler", false),
+            alterar: j.booleano_ou("alterar", false),
+        })
+    }
+
+    fn para_json(self) -> Json {
+        Json::objeto(vec![
+            ("ler", Json::Bool(self.ler)),
+            ("alterar", Json::Bool(self.alterar)),
+        ])
+    }
+}
+
+/// As regras de coluna de uma TABELA: coluna -> direito.
+pub type RegrasDeColuna = Vec<(String, DireitoDeColuna)>;
+
+/// As regras de coluna de uma BASE: tabela (ou `"*"`) -> [`RegrasDeColuna`].
+pub type ColunasDaBase = Vec<(String, RegrasDeColuna)>;
+
+/// O direito por coluna inteiro: base (ou `"*"`) -> [`ColunasDaBase`].
+///
+/// Tres niveis porque a precedencia tem tres niveis, e ela e a MESMA de
+/// [`Usuario::permissoes_em`] -- achatar em uma chave `"base.tabela.coluna"`
+/// custaria montar uma `String` por pergunta e perderia o `"*"` de cada
+/// nivel.
+pub type DireitoPorColuna = Vec<(String, ColunasDaBase)>;
+
 #[derive(Debug, Clone)]
 pub struct Usuario {
     /// Identificacao numerica, gravada no `.log` de cada tabela como autor da
@@ -619,6 +693,29 @@ pub struct Usuario {
     /// listado so por causa das tabelas teria as dez permissoes em `false`.
     /// Separado, a precedencia de base fica exatamente como era.
     pub tabelas: Vec<(String, Vec<(String, Permissoes)>)>,
+    /// Direito por COLUNA, dentro de cada tabela de cada base.
+    ///
+    /// Base (ou `"*"`) -> tabela (ou `"*"`) -> coluna -> direito. Vem de
+    /// `"colunas"` dentro do objeto da tabela, no `config.json`:
+    ///
+    /// ```json
+    /// "bases": { "Z": { "ler": true, "alterar": true, "tabelas": {
+    ///   "folha": { "ler": true, "alterar": true,
+    ///              "colunas": { "salario": { "ler": false, "alterar": false } } }
+    /// }}}
+    /// ```
+    ///
+    /// **Sem `colunas`, nada muda** -- e a lista fica vazia, que e o que faz
+    /// [`Usuario::restringe_colunas`] responder `false` e o servidor inteiro
+    /// nao pagar nada por uma funcionalidade que ninguem pediu.
+    ///
+    /// # Por que aqui e nao dentro de `tabelas`
+    ///
+    /// Pelo mesmo motivo de `tabelas` nao morar dentro de `bases`: a busca de
+    /// permissao PARA e na primeira regra que casa, e uma tabela listada so
+    /// para escrever uma regra de coluna nela passaria a substituir a regra da
+    /// base. Separado, a precedencia de tabela fica exatamente como era.
+    pub colunas: DireitoPorColuna,
 }
 
 impl Usuario {
@@ -709,6 +806,69 @@ impl Usuario {
         self.ativo && self.permissoes_em(database, tabela).pode(atividade)
     }
 
+    /// Este usuario tem ALGUMA regra de coluna, em qualquer base?
+    ///
+    /// E o interruptor que faz o direito por coluna custar zero para todo
+    /// mundo que nao o pediu: e um `bool` lido da ficha da sessao, antes de
+    /// qualquer trabalho. Supervisor responde `false` porque ele ja ignora o
+    /// portao por tabela -- inventar um segundo caminho de excecao aqui faria
+    /// os dois portoes poderem discordar.
+    pub fn restringe_colunas(&self) -> bool {
+        !self.supervisor && !self.colunas.is_empty()
+    }
+
+    /// As regras de coluna que valem nesta tabela desta base.
+    ///
+    /// A precedencia e a MESMA de [`Usuario::permissoes_em`], e ela e a mesma
+    /// de proposito: quem ja entendeu como a regra da tabela se resolve nao
+    /// precisa aprender uma segunda regra para a coluna. Do mais especifico
+    /// para o mais geral: a tabela nesta base, `"*"` nesta base, a tabela na
+    /// base `"*"`, `"*"` na base `"*"` -- e a primeira que casa **substitui**,
+    /// nao intercede.
+    pub fn regras_de_coluna(&self, database: &str, tabela: &str) -> &[(String, DireitoDeColuna)] {
+        if self.supervisor || tabela.is_empty() {
+            return &[];
+        }
+        for base in [database, "*"] {
+            if let Some((_, tabelas)) = self.colunas.iter().find(|(b, _)| b == base) {
+                for alvo in [tabela, "*"] {
+                    if let Some((_, regras)) = tabelas.iter().find(|(t, _)| t == alvo) {
+                        return regras;
+                    }
+                }
+            }
+        }
+        &[]
+    }
+
+    /// Ha alguma regra de coluna nesta tabela desta base?
+    ///
+    /// E a pergunta que as operacoes que NAO passam pela peneira fazem antes
+    /// de recusar: elas devolvem linha por um caminho que ninguem filtra, e
+    /// recusar e mais seguro que vazar.
+    pub fn tem_regra_de_coluna(&self, database: &str, tabela: &str) -> bool {
+        !self.regras_de_coluna(database, tabela).is_empty()
+    }
+
+    /// As colunas desta tabela em que este usuario NAO pode a atividade.
+    ///
+    /// Devolve o nome como o cadastro o escreveu. Quem compara com o esquema
+    /// compara sem caixa, porque um `config.json` escrito a mao dificilmente
+    /// acerta a caixa de `DataNascimento` -- e uma regra de seguranca que
+    /// falha calada por causa de uma maiuscula e pior que uma que nao existe.
+    pub fn colunas_negadas(
+        &self,
+        database: &str,
+        tabela: &str,
+        atividade: Atividade,
+    ) -> Vec<String> {
+        self.regras_de_coluna(database, tabela)
+            .iter()
+            .filter(|(_, d)| !d.pode(atividade))
+            .map(|(c, _)| c.clone())
+            .collect()
+    }
+
     /// Ficha do usuario, sem a senha. Nunca devolve o hash.
     pub fn ficha(&self) -> Json {
         Json::objeto(vec![
@@ -744,6 +904,39 @@ impl Usuario {
                                     regras
                                         .iter()
                                         .map(|(t, p)| (t.clone(), p.para_json()))
+                                        .collect(),
+                                ),
+                            )
+                        })
+                        .collect(),
+                ),
+            ),
+            // As regras de coluna saem PLANAS, e nao aninhadas dentro de
+            // `tabelas`: a tela que ja le `tabelas` continua lendo o mesmo
+            // objeto de sempre, e quem quiser as colunas pede o campo novo.
+            // Aninhar mudaria a forma de um campo que clientes ja consomem.
+            (
+                "colunas",
+                Json::Objeto(
+                    self.colunas
+                        .iter()
+                        .map(|(b, tabelas)| {
+                            (
+                                b.clone(),
+                                Json::Objeto(
+                                    tabelas
+                                        .iter()
+                                        .map(|(t, regras)| {
+                                            (
+                                                t.clone(),
+                                                Json::Objeto(
+                                                    regras
+                                                        .iter()
+                                                        .map(|(c, d)| (c.clone(), d.para_json()))
+                                                        .collect(),
+                                                ),
+                                            )
+                                        })
                                         .collect(),
                                 ),
                             )
@@ -794,6 +987,11 @@ impl Usuario {
         // nao entra aqui: uma lista vazia e uma lista ausente dariam na mesma
         // no lookup, e a ausente nao ocupa lugar.
         let mut tabelas: Vec<(String, Vec<(String, Permissoes)>)> = Vec::new();
+        // E o direito por COLUNA sai de dentro do objeto da TABELA, um nivel
+        // abaixo -- pelo mesmo motivo e com a mesma poda: tabela sem
+        // `"colunas"` nao entra, e cadastro sem nenhuma deixa a lista vazia,
+        // que e o que faz `restringe_colunas` responder `false`.
+        let mut colunas: DireitoPorColuna = Vec::new();
         if let Some(Json::Objeto(pares)) = j.campo("bases") {
             for (base, perm) in pares {
                 if let Some(Json::Objeto(porta)) = perm.campo("tabelas") {
@@ -807,6 +1005,27 @@ impl Usuario {
                             .map(|(t, p)| (t.clone(), Permissoes::de_json(p)))
                             .collect(),
                     ));
+                    let mut por_tabela: ColunasDaBase = Vec::new();
+                    for (tabela, regra) in porta {
+                        let Some(Json::Objeto(cols)) = regra.campo("colunas") else {
+                            continue;
+                        };
+                        if cols.is_empty() {
+                            continue;
+                        }
+                        let mut lista = Vec::with_capacity(cols.len());
+                        for (coluna, direito) in cols {
+                            // A recusa nomeia usuario, base, tabela e coluna
+                            // porque um `config.json` tem dezenas delas: dizer
+                            // so "direito desconhecido" manda procurar.
+                            let onde = format!("{login}, {base}.{tabela}, coluna {coluna:?}");
+                            lista.push((coluna.clone(), DireitoDeColuna::de_json(direito, &onde)?));
+                        }
+                        por_tabela.push((tabela.clone(), lista));
+                    }
+                    if !por_tabela.is_empty() {
+                        colunas.push((base.clone(), por_tabela));
+                    }
                 }
             }
         }
@@ -831,6 +1050,7 @@ impl Usuario {
             chave_publica,
             bases,
             tabelas,
+            colunas,
         })
     }
 }
@@ -1699,6 +1919,7 @@ mod tests {
             chave_publica: None,
             bases: Vec::new(),
             tabelas: Vec::new(),
+            colunas: Vec::new(),
         }
     }
 
