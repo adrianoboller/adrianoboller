@@ -393,6 +393,42 @@ encontro das seis frentes, paga de novo. As outras três frentes uniram sem
 conflito, por tocarem funções diferentes do `servidor.rs`. Portões inteiros do
 workspace verdes no fim (fmt, clippy zero, suíte inteira), 824 no server lib.
 
+### Onda 2 da rodada dos gaps — 8 de setembro de 2026 (as 4 frentes cifradas)
+
+A 2ª onda pegou os quatro que a 1ª segurou de propósito, cada um pelo motivo que
+o segurou. As quatro tocam a **cifra do fio**, então o escalão foi **projeto e
+risco** nas quatro: é criptografia e protocolo, e o erro mora no dia do
+homem-no-meio, não no teste feliz.
+
+| frente | escalão | por quê | papéis dispensados |
+|---|---|---|---|
+| H1 — cluster INTEIRO cifrado (pulso **e** replicação, um só interruptor, pino por nó) | **projeto e risco** | cripto/protocolo/concorrência do cluster; medido antes, o trabalho era **fiação, não formato**, e por isso entrou inteiro em vez de meia cifra — meia cifra parece protegida e não está (§12) | C-DBA (config em runtime, sem `PSCH`), D-zelador; **E-designer NÃO dispensado, fica PENDENTE**: o `/saude` já diz `cifra`/`tem_pino`, mas tela só se prova exercitando |
+| H2 — o `Remoto` da interface liga o túnel | **projeto e risco** | cripto **mais** a mudança de formato do `config.json` (`web.servidores`: texto **ou** objeto), retrocompatível — texto solto continua valendo | **C-DBA convocado** para a mudança de formato, e aprovou por ser aditiva e retrocompatível; E-designer PENDENTE (o aviso do login se prova na tela) |
+| H3 — o driver ODBC fala o aperto de mão | **projeto e risco** | cripto/protocolo dentro do driver: reusa o `fio::Canal` do cliente da réplica, com `CIFRA`/`CHAVE_DO_FIO` na string de conexão | C-DBA, E-designer, D-zelador |
+| H4 — compressão no fio, pedida por PEDIDO (226) | **projeto e risco** | o DEFLATE já existia; o **risco** é a decisão de segurança — comprimir-e-cifrar vaza o tamanho (CRIME/BREACH), então a compressão **recusa** dentro do túnel, medido nos dois sentidos | C, E, D |
+
+Papéis cumpridos na onda: **F** — prova real por soquete em cada frente, com o
+defeito reposto (`compressao-do-fio.rs`, `o_remoto_liga_o_tunel_e_carrega_um_
+pedido_real`, `o_pino_certo_entra_o_errado_derruba`, as bancadas do cluster);
+**G** — as guardas `remoto-em-claro-para-quem-exige`, `pulso-do-cluster-em-claro`,
+`cluster-cifrado` e `replicacao-do-cluster-em-claro` no catálogo, catracas
+intactas; **H** — `CIFRA-DO-FIO.md` §8/§10/§12, `PENDENCIAS.md` (226 fechado, com
+os dois números medidos, 9,69× do `zlib` e 5,66× do DEFLATE da casa), e a
+cognição do dia; **J** dispensado com registro — o desenho já estava escrito no
+§10, e o único conhecimento de fora (CRIME/BREACH) é princípio conhecido, citado,
+não receita a medir.
+
+E a integração foi de novo papel do orquestrador, e de novo o defeito **só
+apareceu no encontro**: as quatro frentes ramificaram **antes** de as irmãs
+mesclarem, então cada uma escrevia no §10 do `CIFRA-DO-FIO.md` o próprio «feito»
+e via as outras três como «não feito». O merge nu teria publicado três bullets
+desmentindo o que já estava pronto. Resolvido **por seção**, combinando o bullet
+FEITO de cada lado (ODBC da H3, `Remoto` da H2, cluster INTEIRO da H1), com
+`cargo check` limpo **entre** os merges. É a cicatriz da onda 1 e das seis
+frentes, paga mais uma vez: *ramo que ramificou cedo mostra a irmã como
+não-feita, e o merge acredita*. Portões verdes no fim — `fmt`, `clippy` zero, e a
+suíte inteira sem falha (271 no core, 837 no server, 9 no store, 1 no odbc).
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:
