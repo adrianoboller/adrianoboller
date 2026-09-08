@@ -11,7 +11,7 @@ const [, , outDir, capsDir, roteiroNome = 'uso'] = process.argv;
 // roteiro ESCOLHIDO e conferido depois -- ai sim falta e erro, com o nome.
 const FALTA = '\u0000FALTA:';
 const cap = (n) => {
-  try { return readFileSync(`${capsDir}/${n}.txt`, 'utf8').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/primeiro\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/primeiro\/cliente-casa/g, '~/.wx-claude-code').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/(proj|pmo2|demo|ex2?)/g, '.').replace(/\/root\//g, '~/'); }
+  try { return readFileSync(`${capsDir}/${n}.txt`, 'utf8').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/primeiro\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/estoque\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/estoque\/entrega/g, '~/entregas/estoque').replace(/\/tmp\/claude-0\/[^ ]*?\/primeiro\/cliente-casa/g, '~/.wx-claude-code').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/(proj|pmo2|demo|ex2?)/g, '.').replace(/\/root\//g, '~/'); }
   catch { return FALTA + n; }
 };
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -133,6 +133,31 @@ ROTEIROS.primeiro = [
   ['/wx-claude-code:procedencia slsa', '23 · A procedência de cada artefato, com o nível SLSA dito com honestidade', cap('22-procedencia')],
   ['/wx-claude-code:exportar', '24 · A entrega: pastas numeradas, SHA-256 de cada arquivo, nada sensível junto', cap('23-exportar')],
   ['card', 'Built to convert. Engineered to prove.', 'Uma tabela, um CRUD, três linguagens — e nenhuma regra sem prova.\n\nO exemplo inteiro está em exemplos/clientes-php-mysql/'],
+];
+
+// Quinto roteiro: os PDFs do WINDEV virando Rust + React. O exemplo ESTOQUE (WINDEV 2025,
+// quatro PDFs, sem projeto nativo) atravessa o plugin ate a entrega: o G0 diz FORENSIC, o
+// PDF vira Markdown com pagina, o golden master vem da amostra, o Rust cita a pagina do PDF,
+// o PostgreSQL 16 e o Axum sao os da letra H, a tela React reproduz os quatro estados que o
+// PDF de interfaces descreve, e o grafo fecha com UMA lacuna: o GAP plantado no exemplo.
+ROTEIROS.windev = [
+  ['card', 'Dos PDFs do WINDEV ao Rust + React', 'WX Claude Code 3.45.0\nO exemplo ESTOQUE: WINDEV 2025, quatro PDFs, sete tabelas, oito regras — e nenhum projeto nativo.\nDestino: Rust + Axum + PostgreSQL 16, tela em React 19.\n\nTudo a seguir é saída real da sessão.'],
+  ['/wx-claude-code:questionario · aplicar', '1 · O questionário aplicado: WINDEV 2025, os quatro PDFs como evidência, H = Rust + Axum + PostgreSQL, I = React', cap('01-aplicar')],
+  ['/wx-claude-code:preflight (G0)', '2 · O portão G0: CONDITIONAL, classe FORENSIC — sem projeto nativo nem baseline executável, e o relatório diz o limite disso', cap('02-g0')],
+  ['/wx-claude-code:pdf', '3 · Cada PDF vira Markdown citável: uma seção por página, SHA-256 no cabeçalho, o WLanguage marcado como código', cap('03-pdf')],
+  ['/wx-claude-code:dependencias', '4 · As dependências externas achadas no texto: o HFSQL Client/Server e o estoque.ini', cap('03b-dependencias')],
+  ['/wx-claude-code:golden capturar', '5 · O golden master: 10 casos capturados do legado com os dados de amostra, do desconto à comissão', cap('04-golden-capturar')],
+  ['src/regras.rs · cargo test', '6 · O Rust: cada regra cita estoque-codigo.pdf e a página; dinheiro em centavos inteiros, porque currency do WLanguage é ponto fixo', cap('05-rust')],
+  ['/wx-claude-code:golden comparar', '7 · A prova: 10/10 — inclusive a comissão, que roda a query no PostgreSQL 16 sobre a amostra migrada', cap('06-golden-comparar')],
+  ['estoque-rs servir · Axum', '8 · A API no ar, com o esquema HFSQL traduzido para PostgreSQL e o CHECK que o legado não tinha', cap('07-api')],
+  ['web/src/App.tsx · React 19', '9 · WIN_Venda em React: os mesmos controles, na mesma ordem do PDF de interfaces; as regras ficam no servidor', cap('08-react')],
+  ['node web/tela.mjs', '10 · A tela exercitada pelo Playwright: vazia, com itens (os números do screenshot do legado), erro de estoque, acima do limite — 16/16', cap('09-tela')],
+  ['psql estoque', '11 · No banco: venda, itens, baixa e títulos numa transação só — e a diferença de arredondamento na última parcela', cap('09-banco')],
+  ['/wx-claude-code:converter inventario', '12 · A matriz: 17 linhas, cada uma apontando para a página do PDF de origem — e o GAP plantado, aberto', cap('10-matriz')],
+  ['/wx-claude-code:evidencia · grafo', '13 · As evidências dizem o que provam e o que não provam; o grafo fecha com uma lacuna: EstornaEstoque, que o PDF de código não tem', cap('11-evidencias-e-grafo')],
+  ['/wx-claude-code:procedencia slsa', '14 · A procedência, com o nível SLSA dito com honestidade', cap('12-procedencia')],
+  ['/wx-claude-code:exportar', '15 · A entrega: pastas numeradas, SHA-256 de cada arquivo', cap('13-exportar')],
+  ['card', 'Built to convert. Engineered to prove.', 'Quatro PDFs, oito regras, uma tela — e o que o PDF não diz fica escrito como lacuna, não inventado.\n\nO exemplo inteiro está em exemplos/estoque-wx/'],
 ];
 
 const scenes = ROTEIROS[roteiroNome];

@@ -62,6 +62,59 @@ python3 ../../skills/conversao-wx/scripts/golden.py capturar --casos inputs/dado
 
 Ou, dentro do Claude Code com o plugin: `/wx-claude-code:converter inventario .`
 
+## O destino: Rust + Axum + PostgreSQL 16, tela em React 19
+
+`destino/` é o resultado da conversão feita com o plugin a partir **só dos
+PDFs** (não há projeto WINDEV nativo), gravada em
+`docs/video/wx-claude-code-video-windev.mp4`:
+
+```text
+destino/
+  Cargo.toml, src/           regras.rs (BR-001, 003, 004, 005, cada uma citando estoque-codigo.pdf e a página),
+                             repo.rs (BR-002, 006, 007, QRY-001, 003, 005 sobre o PostgreSQL), main.rs (golden | servir)
+  database/                  esquema-postgresql.sql (DB-001, traduzido do banco.sql) e amostra-postgresql.sql
+  web/                       WIN_Venda em React (App.tsx), tela.mjs (Playwright: 16 conferências)
+  golden-master/             casos.json (10, capturados da amostra) e comparacao.json (10/10)
+  .wx-migration/             traceability.csv (17 linhas), evidências EVID-0001..0003, DEC-001
+```
+
+O grafo fecha com **uma** lacuna, e ela é o GAP plantado: `EstornaEstoque`
+continua sem código para converter.
+
+### O que ele ensinou
+
+- **`currency` é ponto fixo; f64 não é.** As regras trabalham em centavos
+  inteiros, e os juros pro rata die são `valor_cent × 2 × dias / 3000` com
+  arredondamento inteiro, não `valor × 0.02 / 30 × dias` em f64.
+- **O tipo do parâmetro é do banco, não da linguagem.** `CURRENT_DATE + $2`
+  caiu com «operator is not unique: date + unknown», e `$1::date` com uma
+  string caiu com «error serializing parameter 0». O `tokio-postgres` infere o
+  tipo do parâmetro pelo contexto do SQL; o cast explícito (`$2::int`,
+  `$1::text::date`) é o que fecha a conta. O Display do erro diz só «db
+  error»; a mensagem do servidor está em `as_db_error()`.
+- **A venda inteira numa transação (DEC-001).** O legado gravava `VENDA` e
+  `ITEMVENDA` fora da transação e só a baixa dentro: sobrava venda `A` órfã
+  quando a baixa falhava. O comportamento visível é o mesmo; o órfão some.
+- **Olhar a tela achou o que o teste não media.** A pergunta «Fechar mesmo
+  assim?» saía espremida na primeira coluna da grade (120 px): faltava
+  `grid-column: 1/-1`. As 14 conferências passavam.
+- **Uma linha de matriz por arquivo de código, ou o grafo acusa.** `main.tsx`
+  e `vite.config.ts` entraram como UI-002 e CFG-001, com o teste da tela.
+
+### Para reproduzir
+
+```bash
+apt-get install postgresql && service postgresql start
+su postgres -c "psql -c \"CREATE USER estoque WITH PASSWORD 'estoque123'\" -c 'CREATE DATABASE estoque OWNER estoque'"
+export PGPASSWORD=estoque123 ESTOQUE_DB_PASS=estoque123
+psql -h localhost -U estoque -d estoque -f destino/database/esquema-postgresql.sql
+psql -h localhost -U estoque -d estoque -f destino/database/amostra-postgresql.sql
+cd destino && cargo build --release && cargo test
+python3 ../../../skills/conversao-wx/scripts/golden.py comparar --golden golden-master/casos.json --comando "target/release/estoque-rs golden"
+./target/release/estoque-rs servir 8081 &
+cd web && npm install && npx vite build && (npx vite preview --port 4174 &) && node tela.mjs
+```
+
 ## Regenerar os anexos
 
 ```bash

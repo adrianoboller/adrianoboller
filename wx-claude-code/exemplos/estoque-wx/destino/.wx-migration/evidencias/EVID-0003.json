@@ -1,0 +1,17 @@
+{
+  "id": "EVID-0003",
+  "afirmacao": "WIN_Venda em React: os 4 estados do PDF de interfaces, BR-002, BR-006, BR-007, QRY-001, QRY-003 e QRY-005 pela tela e pela API",
+  "metodo": "teste de tela (Playwright)",
+  "estado": "verificado",
+  "medida": "16/16",
+  "prova": "node web/tela.mjs: 16/16 (TST-UI-001, TST-QRY-003)",
+  "nao_prova": "nada sobre WIN_Cliente, WIN_ListaVendas nem relatorios",
+  "assunto": {
+    "arquivo": "web/src/App.tsx",
+    "sha256": "2bf3471b4b4ab32aa963bc7044978af4ef21b3aaba478e059c76dad3a3372f4c",
+    "bytes": 8735
+  },
+  "requisito": "UI-001",
+  "constraint": "",
+  "registrado_em": "2026-09-08T15:44:17+00:00"
+}

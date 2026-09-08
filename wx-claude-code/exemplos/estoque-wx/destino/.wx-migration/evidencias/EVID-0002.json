@@ -1,0 +1,17 @@
+{
+  "id": "EVID-0002",
+  "afirmacao": "BR-001, 003, 004 e 005 reproduzem o WLanguage do PDF",
+  "metodo": "teste",
+  "estado": "verificado",
+  "medida": "4/4",
+  "prova": "cargo test: 4 passed (TST-BR-001, TST-BR-003, TST-BR-004, TST-BR-005)",
+  "nao_prova": "nada sobre o banco, a API nem a tela",
+  "assunto": {
+    "arquivo": "src/regras.rs",
+    "sha256": "a6c34ebf38c8cbba4d83ba9ad455df2dd60e87e68bddabfe8388878915662919",
+    "bytes": 5370
+  },
+  "requisito": "BR-001",
+  "constraint": "",
+  "registrado_em": "2026-09-08T15:44:17+00:00"
+}

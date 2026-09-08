@@ -1,0 +1,33 @@
+/* DESIGN.md do projeto: contorno, nunca fundo cheio; verde inclui, amarelo altera, rosa marca, vermelho exclui, azul consulta.
+   A sequencia da tela e a de WIN_Venda (estoque-interfaces.pdf p.1): cliente, deposito, data, produto + quantidade, itens, desconto, totais, parcelas, fechar. */
+:root{--i:#14161F;--m:#6B6F82;--l:#E4E2DB;--p:#fff;--g:#FBFAF7;--vd:#1F7A4D;--am:#9A6B00;--rs:#B0306A;--az:#1F4E9A;--a:#C63C0A}
+body{margin:0;background:var(--g);color:var(--i);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+main{max-width:900px;margin:0 auto;padding:22px 18px}
+header{display:flex;align-items:baseline;gap:14px;border-bottom:2px solid var(--i);padding-bottom:10px;margin-bottom:16px}
+h1{margin:0;font-size:24px}.sub{color:var(--m);font-size:13px}
+.bloco{background:var(--p);border:1px solid var(--l);padding:14px;margin-bottom:14px;display:grid;gap:12px}
+.cabecalho{grid-template-columns:2fr 1fr 1fr}
+.item{grid-template-columns:2fr 140px auto;align-items:end}
+label{display:flex;flex-direction:column;font-size:12px;color:var(--m);gap:4px}
+input,select{font:inherit;padding:7px 9px;border:1px solid var(--l);border-radius:4px;background:#fff}
+input:read-only{background:var(--g);color:var(--i);font-weight:600;text-align:right}
+.info{grid-column:1/-1;font-size:13px;color:var(--m);margin:0}
+button{font:inherit;background:none;border:1.5px solid;border-radius:5px;padding:6px 14px;cursor:pointer}
+button:hover:not(:disabled){color:#fff}
+button:disabled{opacity:.45;cursor:not-allowed}
+.incluir{color:var(--vd);border-color:var(--vd)}.incluir:hover:not(:disabled){background:var(--vd)}
+.fechar{color:var(--az);border-color:var(--az)}.fechar:hover:not(:disabled){background:var(--az)}
+.cancelar{color:var(--m);border-color:var(--m)}.cancelar:hover{background:var(--m)}
+.erro{color:var(--a);margin:0;font-weight:600}
+.aviso{color:var(--am);margin:0;font-weight:600}
+.ok{color:var(--vd);margin:0;font-weight:600}
+table{width:100%;border-collapse:collapse;background:var(--p);border:1px solid var(--l);margin-bottom:14px}
+th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--m);padding:8px 10px;border-bottom:2px solid var(--l)}
+td{padding:8px 10px;border-bottom:1px solid var(--l)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.vazio{text-align:center;color:var(--m)}
+.totais{grid-template-columns:120px 1fr 1fr 1fr 110px;align-items:end}
+.rodape{display:flex;gap:8px;justify-content:flex-end}
+@media (max-width:640px){.cabecalho,.item,.totais{grid-template-columns:1fr}}
+
+.totais p{grid-column:1/-1}

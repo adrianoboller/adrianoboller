@@ -1,0 +1,111 @@
+{
+  "comparado_em": "2026-09-08",
+  "golden": "golden-master/casos.json",
+  "tolerancia": 0.005,
+  "total": 10,
+  "passaram": 10,
+  "falharam": 0,
+  "equivalencia": "10/10",
+  "casos": [
+    {
+      "id": "TST-BR-001-a",
+      "regra": "BR-001 CalculaDesconto",
+      "esperado": 249.38,
+      "obtido": 249.38,
+      "passou": true
+    },
+    {
+      "id": "TST-BR-001-b",
+      "regra": "BR-001 CalculaDesconto",
+      "esperado": -1.0,
+      "obtido": -1.0,
+      "passou": true
+    },
+    {
+      "id": "TST-BR-001-c",
+      "regra": "BR-001 CalculaDesconto",
+      "esperado": 250.0,
+      "obtido": 250.0,
+      "passou": true
+    },
+    {
+      "id": "TST-BR-003-a",
+      "regra": "BR-003 CalculaJurosAtraso",
+      "esperado": 7.48,
+      "obtido": 7.48,
+      "passou": true
+    },
+    {
+      "id": "TST-BR-003-b",
+      "regra": "BR-003 CalculaJurosAtraso",
+      "esperado": 0.0,
+      "obtido": 0.0,
+      "passou": true
+    },
+    {
+      "id": "TST-BR-004-a",
+      "regra": "BR-004 GeraTitulos",
+      "esperado": [
+        748.14,
+        748.14,
+        748.14
+      ],
+      "obtido": [
+        748.14,
+        748.14,
+        748.14
+      ],
+      "passou": true
+    },
+    {
+      "id": "TST-BR-004-b",
+      "regra": "BR-004 GeraTitulos",
+      "esperado": [
+        33.33,
+        33.33,
+        33.34
+      ],
+      "obtido": [
+        33.33,
+        33.33,
+        33.34
+      ],
+      "passou": true
+    },
+    {
+      "id": "TST-BR-005-a",
+      "regra": "BR-005 ValidaCPF",
+      "esperado": true,
+      "obtido": true,
+      "passou": true
+    },
+    {
+      "id": "TST-BR-005-b",
+      "regra": "BR-005 ValidaCPF",
+      "esperado": false,
+      "obtido": false,
+      "passou": true
+    },
+    {
+      "id": "TST-QRY-003-a",
+      "regra": "QRY-003 ComissaoMensal",
+      "esperado": [
+        {
+          "comissao": 97.33,
+          "qtd_vendas": 2.0,
+          "total_vendido": 3244.42,
+          "vendedor": "carlos.m"
+        }
+      ],
+      "obtido": [
+        {
+          "comissao": 97.33,
+          "qtd_vendas": 2.0,
+          "total_vendido": 3244.42,
+          "vendedor": "carlos.m"
+        }
+      ],
+      "passou": true
+    }
+  ]
+}

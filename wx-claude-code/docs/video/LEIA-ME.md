@@ -83,3 +83,19 @@ O projeto inteiro (entrada, questionário e destino) está em
 ```bash
 node gravar-video.mjs <pasta-saida> <pasta-capturas> primeiro
 ```
+
+## O quinto vídeo: dos PDFs do WINDEV ao Rust + React
+
+`wx-claude-code-video-windev.mp4` (roteiro `windev`) é o caminho principal do
+plugin exercitado de ponta a ponta: o exemplo ESTOQUE (WINDEV 2025, quatro
+PDFs, sem projeto nativo) virando Rust + Axum + PostgreSQL 16 com a tela
+WIN_Venda em React 19. O G0 diz FORENSIC, cada PDF vira Markdown com a página,
+o golden master vem da amostra (10/10, inclusive a query sobre a amostra
+migrada), o Rust cita a página do PDF em cada regra, a tela reproduz os quatro
+estados do PDF de interfaces (16/16 pelo Playwright), e o grafo fecha com uma
+lacuna só: o GAP plantado no exemplo, `EstornaEstoque`, que o PDF de código
+não tem. O destino inteiro está em `../../exemplos/estoque-wx/destino/`.
+
+```bash
+node gravar-video.mjs <pasta-saida> <pasta-capturas> windev
+```

@@ -147,6 +147,7 @@ igualdade contra o legado rodando.
 - hoje: Nenhum projeto WINDEV real passou pelos gates G1 a G7; o exemplo é sintético.
 - construir: Um cliente piloto, com contrato, medido: horas, tokens, GAP-* abertas, defeitos achados em homologação. O resultado vira o `DESEMPENHO.md` do plugin.
 - medido: na 3.43.0 o **primeiro projeto** atravessou o plugin inteiro, do zelador à entrega, gravado em vídeo: um CRUD PHP + MySQL de uma tabela virando Rust + MySQL + React, golden master capturado do legado rodando (5/5), matriz com 10 linhas, grafo em zero. Continua `falta` porque é sintético e PHP, não um WINDEV real com contrato — mas os quatro defeitos que ele achou no plugin (a escolha da interface que não chegava ao conversor, o zip sem marketplace, a prova refeita acusada como vencida, a tela com botões vazando) são a prova de que o item vale o que custa
+- medido: na 3.45.0 o caminho **WINDEV** foi o exercitado: o exemplo ESTOQUE (WINDEV 2025, só PDFs, sem projeto nativo) virou Rust + Axum + PostgreSQL 16 com tela React, golden 10/10 inclusive a query sobre a amostra migrada, tela 16/16 pelo Playwright nos quatro estados do PDF de interfaces, matriz com 17 linhas citando a página do PDF, e o grafo fechando com uma lacuna só — o GAP plantado. Continua `falta` pelo mesmo motivo: é sintético, sem contrato nem homologação
 
 ### 16. Testes do destino gerados da matriz
 

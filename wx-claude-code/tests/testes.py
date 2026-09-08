@@ -1816,6 +1816,40 @@ class Questionario(unittest.TestCase):
         self.assertEqual(html.count('class="etapa"'), 8)
         self.assertIn("Provar o resultado", html)
 
+    def test_exemplo_estoque_destino_fecha_o_grafo_e_reproduz_o_golden(self):
+        """O destino do ESTOQUE (PDFs do WINDEV -> Rust + React) e teste de regressao
+        do fluxo inteiro: o grafo tem de fechar com UMA lacuna, que e o GAP plantado
+        no exemplo (EstornaEstoque sem codigo), e o golden gravado tem de bater com
+        os casos. Com cargo na maquina, o binario e recompilado e as nove regras
+        puras sao reprovadas de verdade; a decima (a query) precisa do PostgreSQL
+        e tem de FALHAR dizendo isso, nao passar por engano."""
+        destino = RAIZ / "exemplos/estoque-wx/destino"
+        g = json.loads(run(SCRIPTS / "grafo.py", "--project-root", destino, "--json", "conferir").stdout)
+        lacunas = {k: v for k, v in g["achados"].items() if v}
+        self.assertEqual(list(lacunas), ["requisito_sem_teste"], lacunas)
+        self.assertEqual([x["trace_id"] for x in lacunas["requisito_sem_teste"]], ["GAP-001"])
+        casos = json.loads((destino / "golden-master/casos.json").read_text(encoding="utf-8"))["casos"]
+        comp = json.loads((destino / "golden-master/comparacao.json").read_text(encoding="utf-8"))
+        self.assertEqual(comp["equivalencia"], f"{len(casos)}/{len(casos)}")
+        self.assertEqual({c["id"] for c in comp["casos"]}, {c["id"] for c in casos})
+        if not shutil.which("cargo"):
+            self.skipTest("cargo nao instalado neste ambiente")
+        alvo = self.tmp / "estoque-rs"
+        shutil.copytree(destino, alvo, ignore=shutil.ignore_patterns("web", "target"))
+        b = subprocess.run(["cargo", "build", "--release", "--quiet"], cwd=alvo, capture_output=True, text=True, timeout=1800)
+        if b.returncode and "failed to" in b.stderr and "download" in b.stderr:
+            self.skipTest("sem acesso ao registro de crates para compilar o destino")
+        self.assertEqual(b.returncode, 0, b.stderr)
+        env = {k: v for k, v in os.environ.items() if k != "ESTOQUE_DB_PASS"}
+        r = subprocess.run([sys.executable, str(SCRIPTS / "golden.py"), "comparar", "--golden", "golden-master/casos.json",
+                            "--comando", "target/release/estoque-rs golden", "--relatorio", str(self.tmp / "comp.json")],
+                           cwd=alvo, capture_output=True, text=True, env=env)
+        rel = json.loads((self.tmp / "comp.json").read_text(encoding="utf-8"))
+        self.assertEqual(rel["passaram"], len(casos) - 1, r.stdout)
+        falhou = [c for c in rel["casos"] if not c["passou"]]
+        self.assertEqual([c["id"] for c in falhou], ["TST-QRY-003-a"])
+        self.assertIn("ESTOQUE_DB_PASS", json.dumps(falhou[0]["obtido"]), "a query sem banco tem de dizer por que")
+
     def test_wx_modelos_compila_e_nao_inventa_numero(self):
         """A ferramenta de modelo local e Rust a parte; o que ela promete e nao
         inventar numero. Aqui roda a bateria dela e o binario de verdade."""
