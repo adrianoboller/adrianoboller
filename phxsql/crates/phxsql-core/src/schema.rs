@@ -5,6 +5,7 @@
 //! reabrir e ler os dados, sem dicionario externo.
 
 use crate::error::{PhxError, Result};
+use crate::expressao::Expressao;
 use crate::keyenc::largura_componente;
 use crate::paginacao::{ModoParticao, Paginacao, BALDES};
 use crate::types::{ColumnType, DadoPessoal};
@@ -47,7 +48,7 @@ const MAGIC_ESQUEMA: &[u8; 4] = b"PSCH";
 /// sem atualizar o `.fts`, que e corrupcao silenciosa do indice. Com a versao
 /// nova ele RECUSA o arquivo (a leitura confere a faixa), e recusa alta e
 /// melhor que aceite errado.
-const VERSAO_ESQUEMA: u16 = 8;
+const VERSAO_ESQUEMA: u16 = 9;
 const VERSAO_ESQUEMA_MINIMA: u16 = 2;
 
 /// Nome da coluna de sistema que marca a linha como excluida sem excluir.
@@ -273,6 +274,18 @@ pub struct Column {
     /// relatorio de conformidade e pior que nenhum relatorio -- porque quem
     /// le acredita.
     pub dado_pessoal: DadoPessoal,
+    /// v9. O valor que a coluna ganha no `inserir` quando vem nula -- uma
+    /// expressao, avaliada contra a propria linha. So no inserir: o
+    /// `atualizar` recebe a linha inteira, e nulo ali e nulo.
+    pub padrao: Option<Expressao>,
+    /// v9. A restricao CHECK: avaliada no inserir e no atualizar com a linha
+    /// inteira; `FALSE` recusa, `NULL` passa (e o SQL).
+    pub check: Option<Expressao>,
+    /// v9. Coluna calculada: SEMPRE recalculada na gravacao, e o valor que
+    /// vier no pedido e ignorado -- a coluna nao tem dado proprio, e o
+    /// protocolo nao distingue ausente de presente (o merge do UPDATE devolve
+    /// o valor velho junto com a linha).
+    pub calculada: Option<Expressao>,
 }
 
 impl Column {
@@ -287,7 +300,34 @@ impl Column {
             ty,
             nullable: true,
             dado_pessoal: DadoPessoal::Nao,
+            padrao: None,
+            check: None,
+            calculada: None,
         }
+    }
+
+    /// O DEFAULT, em texto de expressao. Texto vazio tira o padrao.
+    pub fn com_padrao(mut self, texto: &str) -> Result<Self> {
+        self.padrao = expressao_ou_nada(texto, "padrao", &self.nome)?;
+        Ok(self)
+    }
+
+    /// A restricao CHECK, em texto de expressao. Texto vazio tira a restricao.
+    pub fn com_check(mut self, texto: &str) -> Result<Self> {
+        self.check = expressao_ou_nada(texto, "check", &self.nome)?;
+        Ok(self)
+    }
+
+    /// A expressao da coluna calculada. Texto vazio a torna coluna comum.
+    pub fn com_calculada(mut self, texto: &str) -> Result<Self> {
+        self.calculada = expressao_ou_nada(texto, "calculada", &self.nome)?;
+        Ok(self)
+    }
+
+    /// Alguma regra de escrita (padrao, check ou calculada)? E o portao que
+    /// mantem o caminho quente de quem nao declarou nada custando zero.
+    pub fn tem_regra(&self) -> bool {
+        self.padrao.is_some() || self.check.is_some() || self.calculada.is_some()
     }
 
     /// Classifica a coluna para a LGPD / GDPR.
@@ -423,16 +463,50 @@ pub struct IndexDef {
     /// campos formam a chave. So um indice pode ser primario, e ele e sempre
     /// unico -- `Schema::new` recusa o contrario.
     pub primario: bool,
+    /// v9. Indice PARCIAL: a linha so entra no indice quando a expressao da
+    /// `TRUE`. No `atualizar`, sai se saiu do filtro e entra se entrou.
+    pub onde: Option<Expressao>,
+    /// v9. Uma entrada por coluna do indice: `None` e a coluna crua; `Some`
+    /// e a expressao de UMA coluna (`lower(nome)`) cujo resultado, coagido
+    /// para o tipo da coluna, vira a chave. Lista paralela a `colunas` de
+    /// proposito: `IndexColumn` continua `Copy` e nenhum chamador muda.
+    pub expressoes: Vec<Option<Expressao>>,
 }
 
 impl IndexDef {
     pub fn new(nome: impl Into<String>, colunas: Vec<IndexColumn>) -> Self {
+        let n = colunas.len();
         IndexDef {
             nome: nome.into(),
             colunas,
             unico: false,
             primario: false,
+            onde: None,
+            expressoes: vec![None; n],
         }
+    }
+
+    /// O filtro do indice parcial, em texto de expressao.
+    pub fn com_onde(mut self, texto: &str) -> Result<Self> {
+        self.onde = expressao_ou_nada(texto, "onde", &self.nome)?;
+        Ok(self)
+    }
+
+    /// A expressao da coluna `k` do indice.
+    pub fn com_expressao(mut self, k: usize, texto: &str) -> Result<Self> {
+        if k >= self.colunas.len() {
+            return Err(PhxError::Esquema(format!(
+                "indice {} nao tem coluna {k}",
+                self.nome
+            )));
+        }
+        self.expressoes[k] = expressao_ou_nada(texto, "expressao", &self.nome)?;
+        Ok(self)
+    }
+
+    /// Alguma coluna com expressao?
+    pub fn tem_expressao(&self) -> bool {
+        self.expressoes.iter().any(Option::is_some)
     }
 
     pub fn unico(mut self) -> Self {
@@ -583,6 +657,12 @@ impl Schema {
                 }
             }
         }
+
+        // As expressoes de esquema se conferem AQUI, na declaracao, e nao na
+        // gravacao -- a mesma decisao do `ao_excluir`: uma tabela nasce uma
+        // vez e grava um milhao de vezes. Coluna inexistente numa expressao
+        // e um esquema que so quebraria na primeira insercao.
+        conferir_expressoes(&colunas, &indices)?;
 
         // A particao por periodo aponta uma coluna, e ela tem de existir e ser
         // uma data. Conferir aqui e nao na gravacao: um esquema que so quebra
@@ -1128,6 +1208,25 @@ impl Schema {
         self.colunas.iter().position(|c| c.nome == nome)
     }
 
+    /// Posicao da coluna sem distinguir caixa -- e como uma expressao a
+    /// nomeia.
+    pub fn posicao_sem_caixa(&self, nome: &str) -> Option<usize> {
+        posicao_sem_caixa(&self.colunas, nome)
+    }
+
+    /// Alguma coluna com padrao, check ou calculada? Portao do caminho de
+    /// escrita: tabela sem regra nao paga a chamada.
+    pub fn tem_regras(&self) -> bool {
+        self.colunas.iter().any(Column::tem_regra)
+    }
+
+    /// Algum indice parcial ou por expressao?
+    pub fn tem_indice_condicional(&self) -> bool {
+        self.indices
+            .iter()
+            .any(|i| i.onde.is_some() || i.tem_expressao())
+    }
+
     pub fn indice_por_nome(&self, nome: &str) -> Option<usize> {
         self.indices.iter().position(|i| i.nome == nome)
     }
@@ -1233,6 +1332,22 @@ impl Schema {
             out.extend_from_slice(&(it.coluna as u16).to_le_bytes());
             out.push(it.dobrar as u8);
         }
+        // v9: as expressoes de esquema -- padrao, check e calculada por
+        // coluna, e o filtro e as expressoes por indice --, em TEXTO, na ordem
+        // das colunas e dos indices. Texto vazio e «nao tem». Quem le uma v8
+        // para antes daqui e fica sem regra nenhuma, que e o que aquela
+        // tabela tinha.
+        for c in &self.colunas {
+            escrever_texto(&mut out, c.padrao.as_ref().map_or("", Expressao::texto));
+            escrever_texto(&mut out, c.check.as_ref().map_or("", Expressao::texto));
+            escrever_texto(&mut out, c.calculada.as_ref().map_or("", Expressao::texto));
+        }
+        for idx in &self.indices {
+            escrever_texto(&mut out, idx.onde.as_ref().map_or("", Expressao::texto));
+            for e in &idx.expressoes {
+                escrever_texto(&mut out, e.as_ref().map_or("", Expressao::texto));
+            }
+        }
         out
     }
 
@@ -1287,6 +1402,10 @@ impl Schema {
                 // A marca da v6 vem no fim do bloco, e nao aqui. Ver a nota
                 // em `VERSAO_ESQUEMA`.
                 dado_pessoal: DadoPessoal::Nao,
+                // As expressoes da v9 tambem vem no fim.
+                padrao: None,
+                check: None,
+                calculada: None,
             });
         }
 
@@ -1307,11 +1426,14 @@ impl Schema {
                     nocase: flags & 2 != 0,
                 });
             }
+            let n_cols = cols.len();
             indices.push(IndexDef {
                 nome,
                 colunas: cols,
                 unico,
                 primario,
+                onde: None,
+                expressoes: vec![None; n_cols],
             });
         }
 
@@ -1389,6 +1511,32 @@ impl Schema {
             }
         }
 
+        // v9: as expressoes de esquema. Ao contrario da v6 e da v8, um bloco
+        // TRUNCADO aqui e erro, e nao «fica sem»: uma restricao CHECK que
+        // sumisse calada seria uma garantia perdida sem ninguem saber -- e
+        // arquivo que se diz v9 tem o bloco inteiro ou esta corrompido.
+        if versao >= 9 {
+            let truncado = || PhxError::Esquema("bloco de expressoes (v9) truncado".into());
+            for c in colunas.iter_mut() {
+                let (p, k, g) = (
+                    leitor.texto().map_err(|_| truncado())?,
+                    leitor.texto().map_err(|_| truncado())?,
+                    leitor.texto().map_err(|_| truncado())?,
+                );
+                c.padrao = expressao_ou_nada(&p, "padrao", &c.nome)?;
+                c.check = expressao_ou_nada(&k, "check", &c.nome)?;
+                c.calculada = expressao_ou_nada(&g, "calculada", &c.nome)?;
+            }
+            for idx in indices.iter_mut() {
+                let o = leitor.texto().map_err(|_| truncado())?;
+                idx.onde = expressao_ou_nada(&o, "onde", &idx.nome)?;
+                for k in 0..idx.colunas.len() {
+                    let e = leitor.texto().map_err(|_| truncado())?;
+                    idx.expressoes[k] = expressao_ou_nada(&e, "expressao", &idx.nome)?;
+                }
+            }
+        }
+
         // `do_disco`, e nao `new`: a lista de colunas gravada e a verdade
         // inteira. Ver a nota em `VERSAO_ESQUEMA`.
         Schema::do_disco(nome, colunas, indices)?
@@ -1397,6 +1545,103 @@ impl Schema {
             .map(|e| e.com_paginacao_do_disco(paginacao))
             .map(|e| e.com_motivo_obrigatorio(motivo_obrigatorio))
     }
+}
+
+/// Toda expressao do esquema so pode falar de coluna que existe -- e a
+/// calculada nao pode falar de outra calculada, porque a ordem de calculo
+/// viraria uma pergunta que ninguem respondeu. A expressao de indice e de
+/// UMA coluna, e tem de ser a coluna daquela posicao do indice: a chave sai
+/// codificada com o tipo dela.
+fn conferir_expressoes(colunas: &[Column], indices: &[IndexDef]) -> Result<()> {
+    let existe = |e: &Expressao, onde: String| -> Result<()> {
+        for nome in e.colunas() {
+            if posicao_sem_caixa(colunas, nome).is_none() {
+                return Err(PhxError::Esquema(format!(
+                    "{onde} usa a coluna {nome:?}, que a tabela nao tem"
+                )));
+            }
+        }
+        Ok(())
+    };
+    for c in colunas {
+        if let Some(e) = &c.padrao {
+            existe(e, format!("o padrao de {}", c.nome))?;
+        }
+        if let Some(e) = &c.check {
+            existe(e, format!("o check de {}", c.nome))?;
+        }
+        if let Some(e) = &c.calculada {
+            existe(e, format!("a expressao da coluna calculada {}", c.nome))?;
+            if matches!(c.ty, ColumnType::Bin) {
+                return Err(PhxError::Esquema(format!(
+                    "a coluna calculada {} e Bin, e expressao nao produz binario",
+                    c.nome
+                )));
+            }
+            for nome in e.colunas() {
+                let i = posicao_sem_caixa(colunas, nome).unwrap_or(usize::MAX);
+                if colunas.get(i).is_some_and(|o| o.calculada.is_some()) {
+                    return Err(PhxError::Esquema(format!(
+                        "a coluna calculada {} usa {nome:?}, que tambem e calculada: \
+                         calculada nao se apoia em calculada",
+                        c.nome
+                    )));
+                }
+            }
+        }
+    }
+    for idx in indices {
+        if let Some(e) = &idx.onde {
+            existe(e, format!("o filtro do indice {}", idx.nome))?;
+        }
+        if idx.expressoes.len() != idx.colunas.len() {
+            return Err(PhxError::Esquema(format!(
+                "indice {}: {} expressoes para {} colunas",
+                idx.nome,
+                idx.expressoes.len(),
+                idx.colunas.len()
+            )));
+        }
+        for (k, e) in idx.expressoes.iter().enumerate() {
+            let Some(e) = e else { continue };
+            existe(e, format!("a expressao do indice {}", idx.nome))?;
+            let usadas: Vec<usize> = e
+                .colunas()
+                .iter()
+                .filter_map(|n| posicao_sem_caixa(colunas, n))
+                .collect();
+            if usadas.len() != 1 || usadas[0] != idx.colunas[k].coluna {
+                return Err(PhxError::Esquema(format!(
+                    "a expressao {:?} do indice {} tem de usar exatamente a coluna {} \
+                     e nenhuma outra: a chave sai com o tipo dela",
+                    e.texto(),
+                    idx.nome,
+                    colunas
+                        .get(idx.colunas[k].coluna)
+                        .map_or("?", |c| c.nome.as_str())
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Texto vazio quer dizer «sem expressao»; qualquer outro tem de analisar.
+fn expressao_ou_nada(texto: &str, campo: &str, coluna: &str) -> Result<Option<Expressao>> {
+    if texto.trim().is_empty() {
+        return Ok(None);
+    }
+    Expressao::analisar(texto)
+        .map(Some)
+        .map_err(|e| PhxError::Esquema(format!("{campo} de {coluna}: {e}")))
+}
+
+/// Posicao da coluna pelo nome, sem distinguir caixa -- e como a expressao
+/// se refere a ela.
+fn posicao_sem_caixa(colunas: &[Column], nome: &str) -> Option<usize> {
+    colunas
+        .iter()
+        .position(|c| c.nome.eq_ignore_ascii_case(nome))
 }
 
 fn escrever_texto(out: &mut Vec<u8>, s: &str) {
@@ -1670,8 +1915,20 @@ mod tests {
         s.marcar_dado_pessoal("cnpj", DadoPessoal::Sensivel)
             .unwrap();
 
-        let bytes = s.serializar();
+        let mut bytes = s.serializar();
         let n = s.colunas().len();
+        // Um v6 DE VERDADE: sem os blocos da v8 (a lista vazia de indices de
+        // texto, 2 bytes) e da v9 (tres textos vazios por coluna, um por
+        // indice mais um por coluna do indice, 2 bytes cada), e com a versao
+        // 6 no cabecalho. Cortar o rabo de um v9 nao simula um v6 truncado:
+        // simula um v9 truncado, e esse e erro de proposito.
+        let v9 = 6 * n
+            + s.indices()
+                .iter()
+                .map(|i| 2 * (1 + i.colunas.len()))
+                .sum::<usize>();
+        bytes.truncate(bytes.len() - v9 - 2);
+        bytes[4..6].copy_from_slice(&6u16.to_le_bytes());
         // Corta o bloco de marcas ao meio.
         let cortado = &bytes[..bytes.len() - n / 2];
         let lido = Schema::desserializar(cortado).unwrap();
@@ -1858,6 +2115,182 @@ mod testes_indice_de_texto {
         let volta = Schema::desserializar(&e.serializar()).unwrap();
         assert_eq!(volta, e);
         assert!(volta.indices_de_texto().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod testes_das_expressoes_de_esquema {
+    use super::*;
+
+    fn cols() -> Vec<Column> {
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40)),
+            Column::new(
+                "preco",
+                ColumnType::Decimal {
+                    precisao: 12,
+                    escala: 2,
+                },
+            ),
+            Column::new("v", ColumnType::Int8),
+        ]
+    }
+
+    /// O PSCH v9 leva as cinco expressoes de ida e volta, iguais.
+    #[test]
+    fn as_expressoes_atravessam_o_disco() {
+        let mut c = cols();
+        c[3] = Column::new("v", ColumnType::Int8)
+            .com_padrao("7")
+            .unwrap()
+            .com_check("v > 0")
+            .unwrap();
+        c.push(
+            Column::new("dobro", ColumnType::Int8)
+                .com_calculada("v * 2")
+                .unwrap(),
+        );
+        let indices = vec![
+            IndexDef::new("pk", vec![IndexColumn::asc(0)]).primaria(),
+            IndexDef::new("so_positivo", vec![IndexColumn::asc(3)])
+                .com_onde("v > 0")
+                .unwrap(),
+            IndexDef::new("por_baixo", vec![IndexColumn::asc(1)])
+                .com_expressao(0, "lower(nome)")
+                .unwrap(),
+        ];
+        let e = Schema::new("t", c, indices).unwrap();
+        assert!(e.tem_regras());
+        assert!(e.tem_indice_condicional());
+        let volta = Schema::desserializar(&e.serializar()).unwrap();
+        assert_eq!(volta, e);
+        let v = volta.coluna_por_nome("v").unwrap();
+        assert_eq!(volta.colunas()[v].padrao.as_ref().unwrap().texto(), "7");
+        assert_eq!(volta.colunas()[v].check.as_ref().unwrap().texto(), "v > 0");
+        assert_eq!(volta.indices()[1].onde.as_ref().unwrap().texto(), "v > 0");
+        assert_eq!(
+            volta.indices()[2].expressoes[0].as_ref().unwrap().texto(),
+            "lower(nome)"
+        );
+    }
+
+    /// **O teste do arquivo velho.** Um v8 -- sem o bloco -- abre inteiro e
+    /// sem regra nenhuma, e continua igual ao que era.
+    #[test]
+    fn esquema_v8_abre_sem_regra_nenhuma() {
+        let e = Schema::new(
+            "t",
+            cols(),
+            vec![IndexDef::new("pk", vec![IndexColumn::asc(0)]).primaria()],
+        )
+        .unwrap();
+        let mut v9 = e.serializar();
+        let n = e.colunas().len();
+        let bloco = 6 * n + 2 * (1 + 1);
+        v9.truncate(v9.len() - bloco);
+        v9[4..6].copy_from_slice(&8u16.to_le_bytes());
+        let lido = Schema::desserializar(&v9).unwrap();
+        assert_eq!(lido, e);
+        assert!(!lido.tem_regras());
+        assert!(!lido.tem_indice_condicional());
+    }
+
+    /// Um v9 cortado no bloco das expressoes e ERRO, nao «fica sem»: CHECK
+    /// que some calado e garantia perdida.
+    #[test]
+    fn v9_truncado_no_bloco_de_expressoes_recusa() {
+        let mut c = cols();
+        c[3] = Column::new("v", ColumnType::Int8)
+            .com_check("v > 0")
+            .unwrap();
+        let e = Schema::new("t", c, vec![]).unwrap();
+        let bytes = e.serializar();
+        let erro = Schema::desserializar(&bytes[..bytes.len() - 3])
+            .unwrap_err()
+            .to_string();
+        assert!(erro.contains("v9") && erro.contains("truncado"), "{erro}");
+    }
+
+    /// A recusa e na DECLARACAO, nomeando a coluna e o motivo.
+    #[test]
+    fn a_declaracao_recusa_o_que_nao_fecha() {
+        let com =
+            |c: Column| Schema::new("t", vec![Column::new("id", ColumnType::Int8), c], vec![]);
+        let e = com(Column::new("v", ColumnType::Int8)
+            .com_check("w > 0")
+            .unwrap())
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("check de v") && e.contains("\"w\""), "{e}");
+        let e = Column::new("v", ColumnType::Int8)
+            .com_padrao("1 +")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("padrao de v"), "{e}");
+        let e = Schema::new(
+            "t",
+            vec![
+                Column::new("a", ColumnType::Int8)
+                    .com_calculada("1")
+                    .unwrap(),
+                Column::new("b", ColumnType::Int8)
+                    .com_calculada("a * 2")
+                    .unwrap(),
+            ],
+            vec![],
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("calculada nao se apoia em calculada"), "{e}");
+        let e = com(Column::new("v", ColumnType::Bin)
+            .com_calculada("1")
+            .unwrap())
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("nao produz binario"), "{e}");
+        // Indice: expressao de duas colunas, e expressao da coluna errada.
+        let dois = Schema::new(
+            "t",
+            cols(),
+            vec![IndexDef::new("i", vec![IndexColumn::asc(1)])
+                .com_expressao(0, "concat(nome, id)")
+                .unwrap()],
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(dois.contains("exatamente a coluna nome"), "{dois}");
+        let errada = Schema::new(
+            "t",
+            cols(),
+            vec![IndexDef::new("i", vec![IndexColumn::asc(1)])
+                .com_expressao(0, "abs(v)")
+                .unwrap()],
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(errada.contains("exatamente a coluna nome"), "{errada}");
+        let filtro = Schema::new(
+            "t",
+            cols(),
+            vec![IndexDef::new("i", vec![IndexColumn::asc(1)])
+                .com_onde("w > 0")
+                .unwrap()],
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(filtro.contains("filtro do indice i"), "{filtro}");
+        // E o caso legitimo passa: o controle da recusa.
+        Schema::new(
+            "t",
+            cols(),
+            vec![IndexDef::new("i", vec![IndexColumn::asc(1)])
+                .com_expressao(0, "LOWER(Nome)")
+                .unwrap()
+                .com_onde("preco > 0")
+                .unwrap()],
+        )
+        .unwrap();
     }
 }
 

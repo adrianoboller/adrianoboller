@@ -259,12 +259,23 @@ pub enum Expr {
 }
 
 /// Uma expressao analisada uma vez e avaliada muitas.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// Duas expressoes sao iguais quando o TEXTO e igual: e o texto que o esquema
+/// grava e compara, e a arvore carrega um `f64` (o real), que nao tem `Eq`.
+#[derive(Debug, Clone)]
 pub struct Expressao {
     texto: String,
     raiz: Expr,
     colunas: Vec<String>,
 }
+
+impl PartialEq for Expressao {
+    fn eq(&self, outro: &Self) -> bool {
+        self.texto == outro.texto
+    }
+}
+
+impl Eq for Expressao {}
 
 impl Expressao {
     pub fn analisar(texto: &str) -> Result<Expressao> {
