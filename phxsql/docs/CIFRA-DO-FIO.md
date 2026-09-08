@@ -562,6 +562,47 @@ isso, com estas palavras.
 * **Moldura binária no lugar do Base64**, se os 33% doerem em alguma medição.
   Hoje não doeram porque ninguém mediu com o túnel ligado — e a regra da casa
   diz que isso é palpite até alguém medir.
+* **Compressão DENTRO do túnel — decisão de segurança adiada de propósito,
+  medida antes.** O pedido 226 mediu a premissa (uma resposta de `varrer` com
+  5.000 linhas cai de 535.870 para 55.284 bytes com o `zlib` do Python,
+  **9,69×**) e faltava só a negociação. A frente que fechou o pedido
+  implementou a compressão **apenas no caminho em claro** —
+  `Servidor::talvez_comprimir` recusa comprimir sempre que `canal.cifrado()`
+  é verdadeiro, ainda que o pedido mande `"aceita_compressao":true` — e mediu
+  de novo com o DEFLATE **desta casa** (Huffman fixo, não o dinâmico do
+  zlib): **5,66×** nas mesmas 5.000 linhas (535.871 → 94.694 bytes,
+  `compressao-do-fio.rs::medir_o_ganho_do_deflate_desta_casa`). A diferença
+  entre 9,69× e 5,66× não é «uns por cento», como o comentário do
+  `phxsql_core::zip` supunha — é o preço concreto de não montar a árvore
+  dinâmica, e fica registrado aqui para não virar número citado de memória na
+  próxima medição.
+
+  **Por que não comprimir e depois cifrar.** Comprimir o texto claro antes de
+  selar o registro (compress-then-encrypt) faz o TAMANHO do registro cifrado
+  depender do quanto o conteúdo comprimiu — e quando parte do conteúdo é
+  influenciável por quem ataca (um campo ecoado na resposta, por exemplo) e
+  outra parte é secreta, o tamanho observado vaza se as duas partes têm um
+  trecho em comum. É o mesmo mecanismo do CRIME/BREACH contra TLS: o atacante
+  não lê o segredo, mas *infere* um byte dele por vez, observando quando a
+  compressão encolhe mais um pouco. Este servidor tem campos ecoados de volta
+  ao cliente (mensagens de erro com o texto do pedido, por exemplo) na mesma
+  resposta que pode carregar dado sensível — a superfície existe, mesmo que
+  ninguém a tenha explorado ainda.
+
+  **O que decidiria isso, e por que não é papel de quem fechou o 226.**
+  Mitigar exigiria escolha de projeto de segurança — por exemplo, comprimir
+  só campos que nunca ecoam entrada do cliente, ou preencher (padding) o
+  registro para esconder o tamanho real, ou aceitar o risco documentando quais
+  campos podem ser ecoados e proibindo compressão quando um deles aparece.
+  Qualquer uma dessas é decisão de arquitetura de segurança, não implementação
+  mecânica — por isso continua **fora do escopo** de quem só tinha a
+  negociação e o enquadramento para fechar. Enquanto ninguém tomar essa
+  decisão, a regra que vale é a mais simples e a mais segura: **dentro do
+  túnel não se comprime, ponto**, provado pelo soquete em
+  `compressao-do-fio.rs::dentro_do_tunel_o_pedido_de_compressao_e_ignorado`
+  (inclusive com o defeito reposto — comentar a conferência de `cifrado()`
+  faz esse teste cair, mostrando o envelope `{"cz":...}` vazando para dentro
+  do túnel decifrado).
 * **Estática de cliente (IK)** para recusar o estranho antes do login, se um
   dia o ciclo de vida da chave de cliente valer o próprio custo.
 
