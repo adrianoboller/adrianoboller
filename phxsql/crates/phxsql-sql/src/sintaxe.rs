@@ -1295,6 +1295,29 @@ mod testes {
         }
     }
 
+    /// `phxsql_core::expressao` (o avaliador que ganhou a rodada de 08/09) le
+    /// `c.uf` como UM token -- e so quando ele vem sem espaco em volta do
+    /// ponto. Se a normalizacao juntasse os tokens com espaco tambem no
+    /// ponto (`c . uf`), o avaliador do outro lado nao leria mais coluna
+    /// nenhuma: essa e a prova de que os dois lados falam a mesma lingua,
+    /// nao so um teste desta camada isolado.
+    #[test]
+    fn nome_qualificado_normaliza_sem_espaco_e_o_avaliador_do_core_le() {
+        let s = analisar("SELECT * FROM Clientes c WHERE c.uf = 'SC' AND c.saldo > 0").unwrap();
+        let texto = match s.onde {
+            Some(Onde::Expressao(t)) => t,
+            outro => panic!("esperava Expressao, veio {outro:?}"),
+        };
+        assert_eq!(texto, "c.uf = 'SC' AND c.saldo > 0");
+        assert!(!texto.contains(" . "), "{texto}");
+
+        // A prova real: o mesmo texto tem de ANALISAR no avaliador do core,
+        // e citar as duas colunas qualificadas -- nao "c", "uf", "saldo"
+        // separados.
+        let e = phxsql_core::expressao::Expressao::analisar(&texto).unwrap();
+        assert_eq!(e.colunas(), &["c.uf", "c.saldo"]);
+    }
+
     #[test]
     fn erro_diz_onde() {
         let e = analisar("SELECT * FRON t").unwrap_err().to_string();

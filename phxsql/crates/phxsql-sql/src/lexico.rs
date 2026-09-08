@@ -134,12 +134,40 @@ impl Token {
 /// que `docs/propostas/comparativo-19.md` pede, e ela e deliberadamente
 /// literal: quem le do outro lado e um analisador de tokens, nao alguem
 /// lendo a tela, entao o espaco extra ao redor de `(` nao custa nada.
+///
+/// # A UNICA excecao: nome qualificado
+///
+/// `phxsql_core::expressao` (o avaliador do core, do lado do motor) le
+/// `p.id` como um token SO -- e precisa, porque uma junção poe duas tabelas
+/// na mesma linha, e as duas podem ter uma coluna `id`. Um espaco em volta
+/// do ponto ("p . id") quebraria essa leitura: o lexico do core so estende o
+/// identificador pelo ponto quando ele vem GRUDADO, sem espaco. Entao
+/// `Palavra Ponto Palavra` funde num pedaco so sem espaco -- e so essa
+/// sequencia; `a.b.c` nao acontece nesta gramatica (o alvo de tres partes
+/// mora no `FROM`, nunca dentro de uma expressao).
 pub(crate) fn normalizar_tokens(tokens: &[Simbolo]) -> String {
-    tokens
-        .iter()
-        .map(|s| s.token.normalizar())
-        .collect::<Vec<_>>()
-        .join(" ")
+    let mut partes: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < tokens.len() {
+        if matches!(tokens[i].token, Token::Palavra { .. })
+            && matches!(tokens.get(i + 1).map(|s| &s.token), Some(Token::Ponto))
+            && matches!(
+                tokens.get(i + 2).map(|s| &s.token),
+                Some(Token::Palavra { .. })
+            )
+        {
+            partes.push(format!(
+                "{}.{}",
+                tokens[i].token.normalizar(),
+                tokens[i + 2].token.normalizar()
+            ));
+            i += 3;
+            continue;
+        }
+        partes.push(tokens[i].token.normalizar());
+        i += 1;
+    }
+    partes.join(" ")
 }
 
 /// Um simbolo e onde ele comeca no texto original.
