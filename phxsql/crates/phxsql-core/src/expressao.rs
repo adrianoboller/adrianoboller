@@ -456,6 +456,20 @@ fn lexer(texto: &str) -> Result<Vec<Token>> {
             while i < c.len() && (c[i].is_alphanumeric() || c[i] == '_') {
                 i += 1;
             }
+            // Nome QUALIFICADO (`p.id`, `clientes.nome`): um token so, com o
+            // ponto dentro. E a juncao que precisa dele -- duas tabelas na
+            // mesma linha tem duas colunas `id` --, e quem resolve o nome
+            // (o servidor) e quem sabe o que o prefixo quer dizer. Numa
+            // expressao de esquema o resolvedor nao acha `p.id`, e a recusa
+            // ja diz «coluna que a tabela nao tem».
+            if c.get(i) == Some(&'.')
+                && c.get(i + 1).is_some_and(|x| x.is_alphabetic() || *x == '_')
+            {
+                i += 1;
+                while i < c.len() && (c[i].is_alphanumeric() || c[i] == '_') {
+                    i += 1;
+                }
+            }
             saida.push(Token::Palavra(c[ini..i].iter().collect()));
             continue;
         }
@@ -1470,6 +1484,29 @@ mod testes {
             .unwrap_err()
             .to_string();
         assert!(e.contains("divisao por zero"), "{e}");
+    }
+
+    /// A juncao poe duas tabelas na mesma linha, e `p.id` e `c.id` sao
+    /// colunas diferentes: o nome qualificado e um token so.
+    #[test]
+    fn nome_qualificado_e_uma_coluna_so() {
+        let e = Expressao::analisar("p.total > 100 AND c.cidade = 'Blumenau'").unwrap();
+        assert_eq!(e.colunas(), &["p.total", "c.cidade"]);
+        let v = &[
+            ("p.total", ColumnType::Int8, Value::Int(150)),
+            (
+                "c.cidade",
+                ColumnType::Str(40),
+                Value::Str("Blumenau".into()),
+            ),
+        ];
+        assert_eq!(e.avaliar_bool(&linha(v)).unwrap(), Some(true));
+        // `1.5` continua numero, e `p.5` nao e nome.
+        assert_eq!(
+            Expressao::analisar("1.5").unwrap().colunas(),
+            &[] as &[String]
+        );
+        assert!(Expressao::analisar("p.5").is_err());
     }
 
     #[test]
