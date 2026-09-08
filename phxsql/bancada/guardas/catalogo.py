@@ -3834,4 +3834,93 @@ pub fn limpar() {
             "servidor::testes_direito_por_tabela::a_estrela_de_tabela_vale_para_as_nao_listadas",
         ],
     },
+    {
+        "id": "sequencia-numero-cru-perde-precisao",
+        "titulo": "id acima de 2⁵³ mandado como número cru é gravado trocado, calado",
+        "porque": (
+            "docs/AUTONUMBER.md bloco 19 -- o Json desta casa so tem "
+            "Numero(f64), e acima de 2^53 o inteiro cru volta arredondado. O "
+            "teto do formato (2^64-1) nao e o teto do fio; recusar cedo troca "
+            "corrupcao silenciosa por erro lido."
+        ),
+        "arquivo": "crates/phxsql-server/src/valores.rs",
+        "trecho": """            if j.inteiro_impreciso() {""",
+        "troca": """            if false && j.inteiro_impreciso() {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "valores::testes_inteiro_em_texto::sequencia_recusa_numero_cru_acima_do_teto_do_f64",
+        ],
+        "seguem": [
+            "valores::testes_inteiro_em_texto::sequencia_grande_como_texto_atravessa_intacta",
+        ],
+    },
+    {
+        "id": "sequencia-grande-sai-numero-mentiroso",
+        "titulo": "id acima de 2⁵³ já gravado sai do servidor como número f64 trocado",
+        "porque": (
+            "docs/AUTONUMBER.md bloco 19 -- um id que chegou ao .reg por "
+            "replicacao ou por ajuste e maior que 2^53 nao cabe num f64; sair "
+            "como numero volta trocado no fio. Texto e a unica forma honesta."
+        ),
+        "arquivo": "crates/phxsql-server/src/valores.rs",
+        "trecho": """        (Value::UInt(n), ColumnType::Sequence) if *n > phxsql_core::json::INTEIRO_EXATO_MAX => {""",
+        "troca": """        (Value::UInt(n), ColumnType::Sequence) if false && *n > phxsql_core::json::INTEIRO_EXATO_MAX => {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "valores::testes_inteiro_em_texto::sequencia_grande_sai_como_texto_no_json",
+        ],
+        "seguem": [
+            "valores::testes_inteiro_em_texto::sequencia_grande_como_texto_atravessa_intacta",
+        ],
+    },
+    {
+        "id": "colisao-de-sequence-calada",
+        "titulo": "dois masters na mesma faixa perdem uma linha sem contar a ninguém",
+        "porque": (
+            "docs/AUTONUMBER.md bloco 24 -- 4 insercoes viraram 2 linhas. O "
+            "conserto pleno e faixa por no (inicio/passo, muda formato); o "
+            "minimo seguro e nao deixar o estrago passar CALADO. "
+            "colisao_de_criacao e o olho que o ve."
+        ),
+        "arquivo": "crates/phxsql-server/src/bidirecional.rs",
+        "trecho": """    operacao == Operacao::Inclusao
+        && matches!(local, Some(t) if !t.excluido && t.origem != origem_ev)""",
+        "troca": """    let _ = (operacao, origem_ev, local);
+    false""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "bidirecional::testes::inclusao_de_outra_origem_sobre_chave_viva_e_colisao",
+        ],
+        "seguem": [
+            "bidirecional::testes::nao_ha_colisao_sem_esses_tres_sinais",
+        ],
+    },
+    {
+        "id": "contador-de-sequence-atras-do-dado",
+        "titulo": "contador de Sequence atrás do dado repete número, e não havia reparo",
+        "porque": (
+            "docs/AUTONUMBER.md bloco 16 -- ajustar_sequencia para tras repete "
+            "id calado, e o CRC do cabecalho nao pega ajuste legitimo. "
+            "reconciliar_sequencia e o caminho de reparo que faltava, chamado "
+            "pelo reparar."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        if alvo > self.reg.sequencia_atual() {
+            self.reg.ajustar_sequencia(alvo)?;
+        }""",
+        "troca": """        if false && alvo > self.reg.sequencia_atual() {
+            self.reg.ajustar_sequencia(alvo)?;
+        }""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "reconciliar-sequencia"],
+        "caem": [
+            "reconciliar_empurra_o_contador_para_depois_do_maior",
+        ],
+        "seguem": [
+            "reconciliar_nunca_recua_o_contador",
+        ],
+    },
 ]

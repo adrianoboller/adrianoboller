@@ -441,6 +441,13 @@ def bloco_19():
     # 2^53 o inteiro deixa de ser representavel, e a perda acontece em SILENCIO.
     # A coluna `c` guarda o texto do que foi MANDADO, para a divergencia
     # aparecer lado a lado em vez de precisar de fe.
+    #
+    # DEPOIS DO CONSERTO DA FRENTE G2 (defeito b, ver docs/AUTONUMBER.md Parte
+    # C): num numero CRU acima de 2^53 o `inserir` passa a RECUSAR ("perde
+    # precisao"), entao a linha nem entra -- ler "0 de 3 divergentes" aqui NAO
+    # quer dizer que o numero foi gravado certo, quer dizer que foi recusado. O
+    # mesmo valor como TEXTO ("id": str(v)) atravessa intacto. Quem reexecutar
+    # esta sonda com o binario novo deve olhar o `ok` de cada `inserir`.
     with Servidor(PORTA + 4, "teto") as sv:
         sv.pedir(op="criar_database", database="loja")
         tabela_com_sequencia(sv, "loja", "t", unico=False)
@@ -564,6 +571,11 @@ def bloco_22_23(h):
 
 def bloco_24(h):
     print("\n=== 24. Bidirecional: os dois numerando a mesma faixa, e a faixa disjunta que nao dura")
+    # DEPOIS DO CONSERTO DA FRENTE G2 (defeito a, ver docs/AUTONUMBER.md Parte
+    # C): a perda de linha na mesma faixa CONTINUA (o conserto pleno e faixa por
+    # no, que muda formato), mas deixou de ser calada -- `replicacao_estado`
+    # agora traz `colisoes_de_sequencia` com o contador por tabela. Quem
+    # reexecutar deve conferir que esse contador ficou > 0 nas tabelas `p`/`q`.
     pa, pb = PORTA + 12, PORTA + 13
     a = servidor_replicado(pa, "alfa", {
         "papel": "multi", "id_servidor": "alfa", "imagem_da_linha": True,

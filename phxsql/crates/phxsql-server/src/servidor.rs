@@ -1031,6 +1031,23 @@ impl Servidor {
                      config.json antes do proximo arranque",
                 ),
             ),
+            // O contador da sequencia continua de onde ESTA replica parou. Se
+            // ela estava ATRASADA, o master emitiu numeros que nunca chegaram
+            // aqui, e a proxima insercao os reemite -- reparar nao os recupera
+            // (eles nao estao no `.reg` daqui). O `reparar` garante so que o
+            // contador nao fica atras do que ESTA gravado nesta ponta. A
+            // protecao plena (faixa por no) e decisao de projeto. Ver
+            // `docs/AUTONUMBER.md`, defeito (c).
+            (
+                "aviso_sequencia",
+                Json::texto_de(
+                    "o contador de cada Sequence continua do ponto desta ponta; \
+                     rode `reparar` nas tabelas com Sequence para garantir que o \
+                     contador nao ficou atras do dado local. Se esta replica \
+                     estava atrasada, numeros que o master emitiu e ela nao \
+                     recebeu PODEM ser reemitidos -- ver docs/AUTONUMBER.md",
+                ),
+            ),
         ]))
     }
 
@@ -3561,13 +3578,37 @@ impl Servidor {
         // que e a leitura errada para um evento que veio DELE.
         let origem_ev = if e.origem == 0 { hash_dele } else { e.origem };
 
-        let vence = {
+        // A colisao e detectada ANTES de decidir quem vence, e de proposito: os
+        // dois lados perdem uma linha, cada um no seu `.reg`, e a deteccao tem
+        // de disparar dos dois lados -- inclusive quando o LOCAL vence e o
+        // evento remoto e descartado (a linha remota morre no outro `.reg`).
+        // Ver `bidirecional::colisao_de_criacao`.
+        let (vence, colisao) = {
             let guarda = self.toques_bidi.lock().map_err(|_| trava_envenenada())?;
-            match guarda.get(chave_tab).and_then(|m| m.toques.get(&chave)) {
-                Some(local) => bidirecional::remoto_vence(e.carimbo_ms, origem_ev, local),
+            let local = guarda
+                .get(chave_tab)
+                .and_then(|m| m.toques.get(&chave))
+                .copied();
+            let vence = match local.as_ref() {
+                Some(l) => bidirecional::remoto_vence(e.carimbo_ms, origem_ev, l),
                 None => true,
-            }
+            };
+            let colisao = bidirecional::colisao_de_criacao(e.operacao, origem_ev, local.as_ref());
+            (vence, colisao)
         };
+        if colisao {
+            // Nao para o laco (isso travaria o par para sempre -- ver
+            // `Table::inserir_replicado`); torna o defeito VISIVEL. O contador
+            // vai para `replicacao_estado`, e a linha vai ao log do processo.
+            if let Ok(mut guarda) = self.toques_bidi.lock() {
+                guarda.entry(chave_tab.to_string()).or_default().colisoes += 1;
+            }
+            eprintln!(
+                "COLISAO DE SEQUENCE em {chave_tab}: chave {chave} criada em dois nos \
+                 da MESMA faixa; \"mais recente vence\" apaga uma linha. Declare faixas \
+                 disjuntas (inicio/passo) -- ver docs/AUTONUMBER.md, defeito (a)"
+            );
+        }
         if !vence {
             return Ok(false);
         }
@@ -11028,7 +11069,23 @@ impl Servidor {
     /// faz a proxima insercao repetir, e o erro aparece longe de quem causou.
     /// Por isso a resposta diz o que era e o que passou a ser.
     fn op_ajustar_sequencia(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
-        let proxima = p.inteiro_ou("proxima", -1);
+        // Um "proxima" cru acima de 2^53 ja chegou arredondado -- ajustar o
+        // contador para um valor que nao foi o pedido e o mesmo estrago do
+        // bloco 19, so que no contador em vez de na linha. Recusa cedo, com a
+        // saida (texto) na mensagem. Ver `docs/AUTONUMBER.md`, bloco 16 e 19.
+        if p.campo("proxima").is_some_and(Json::inteiro_impreciso) {
+            return Err(PhxError::Tipo(format!(
+                "acima de {} o protocolo perde precisao num numero cru; \
+                 envie \"proxima\" como texto se precisar dessa faixa",
+                phxsql_core::json::INTEIRO_EXATO_MAX
+            )));
+        }
+        // Aceita "proxima" como texto tambem, pelo mesmo motivo do id: e a unica
+        // forma que atravessa acima do teto sem perda.
+        let proxima = match p.campo("proxima") {
+            Some(Json::Texto(t)) => t.trim().parse::<i64>().unwrap_or(-1),
+            _ => p.inteiro_ou("proxima", -1),
+        };
         if proxima < 0 {
             return Err(PhxError::Esquema(
                 "informe \"proxima\" com o numero que a sequencia deve dar em seguida \
@@ -16947,6 +17004,21 @@ impl Servidor {
             }
             Err(_) => return Err(trava_envenenada()),
         };
+        // Colisoes de Sequence do modo multi (defeito (a)): so as tabelas com
+        // count > 0 aparecem, para o campo ficar vazio no caso comum e gritar
+        // quando ha estrago. Duas faixas iguais numerando a mesma chave perdem
+        // linha em silencio; este e o numero que tira o silencio.
+        let colisoes = match self.toques_bidi.lock() {
+            Ok(g) => {
+                let pares: Vec<(String, Json)> = g
+                    .iter()
+                    .filter(|(_, m)| m.colisoes > 0)
+                    .map(|(k, m)| (k.clone(), Json::de_u64(m.colisoes)))
+                    .collect();
+                Json::Objeto(pares)
+            }
+            Err(_) => Json::Objeto(vec![]),
+        };
         Ok(Json::objeto(vec![
             ("papel", Json::texto_de(self.papel_atual().nome())),
             (
@@ -16962,6 +17034,7 @@ impl Servidor {
                 Json::Bool(self.somente_leitura_vivo.load(Ordering::Relaxed)),
             ),
             ("origens", origens),
+            ("colisoes_de_sequencia", colisoes),
         ]))
     }
 

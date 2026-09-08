@@ -13,6 +13,17 @@
 use crate::error::{PhxError, Result};
 use std::fmt::Write as _;
 
+/// O maior inteiro que um `f64` representa sem ambiguidade: 2^53.
+///
+/// O `Json` desta casa tem um so tipo numerico, `Numero(f64)`. Ate 2^53 todo
+/// inteiro tem representacao exata; a partir de 2^53 o passo do `f64` vira 2, e
+/// dois inteiros vizinhos caem no MESMO `f64` -- o `9007199254740993` mandado
+/// pelo fio volta `9007199254740992`, calado. Por isso um id (a `Sequence`) que
+/// atravessa o protocolo como numero cru so e confiavel abaixo deste teto; a
+/// receita de multi-master por faixa ("o servidor 3 comeca em 3*10^15") cai
+/// bem dentro da zona onde o numero se corrompe. Ver `docs/AUTONUMBER.md`.
+pub const INTEIRO_EXATO_MAX: u64 = 1 << 53; // 9_007_199_254_740_992
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Json {
     Nulo,
@@ -76,6 +87,21 @@ impl Json {
         match self {
             Json::Numero(n) if n.fract() == 0.0 && n.is_finite() => Some(*n as i64),
             _ => None,
+        }
+    }
+
+    /// Este numero cru pode ter perdido precisao ao virar `f64`?
+    ///
+    /// So faz sentido para `Json::Numero`; qualquer outra variante -- inclusive
+    /// o mesmo inteiro escrito como TEXTO, que nao passa por `f64` -- devolve
+    /// `false`. O teste e `>= 2^53` e nao `> 2^53` de proposito: um `f64` que le
+    /// exatamente 2^53 tanto pode ser o proprio 2^53 quanto um `2^53 + 1`
+    /// arredondado para baixo, e os dois sao indistinguiveis aqui. Quem manda o
+    /// numero como texto atravessa sem perda e nao cai neste crivo.
+    pub fn inteiro_impreciso(&self) -> bool {
+        match self {
+            Json::Numero(n) => n.is_finite() && n.abs() >= INTEIRO_EXATO_MAX as f64,
+            _ => false,
         }
     }
 
@@ -749,6 +775,38 @@ mod tests {
             Json::analisar("\"ola\"").unwrap(),
             Json::Texto("ola".into())
         );
+    }
+
+    /// Prova real do VAZAMENTO que motiva o crivo, antes de consertar: o `f64`
+    /// nao guarda `2^53 + 1`, e o numero cru volta trocado sem erro. Este teste
+    /// caracteriza o limite da plataforma -- ele passa hoje e continua passando
+    /// depois do conserto, porque o conserto nao muda o `f64`, muda quem se
+    /// recusa a confiar nele. Ver `docs/AUTONUMBER.md`, bloco 19.
+    #[test]
+    fn f64_perde_precisao_acima_de_dois_elevado_a_cinquenta_e_tres() {
+        // 2^53 ainda e exato.
+        assert_eq!(
+            Json::analisar("9007199254740992").unwrap().inteiro(),
+            Some(9_007_199_254_740_992)
+        );
+        // 2^53 + 1 NAO e: volta como 2^53, calado.
+        assert_eq!(
+            Json::analisar("9007199254740993").unwrap().inteiro(),
+            Some(9_007_199_254_740_992),
+            "o f64 arredonda 2^53+1 para 2^53 -- e a perda que o crivo pega"
+        );
+        // E o crivo enxerga a zona insegura no numero cru, mas nao no MESMO
+        // inteiro escrito como texto, que atravessa sem passar por f64.
+        assert!(Json::analisar("9007199254740993")
+            .unwrap()
+            .inteiro_impreciso());
+        assert!(Json::analisar("9007199254740992")
+            .unwrap()
+            .inteiro_impreciso());
+        assert!(!Json::analisar("9007199254740991")
+            .unwrap()
+            .inteiro_impreciso());
+        assert!(!Json::Texto("9007199254740993".into()).inteiro_impreciso());
     }
 
     #[test]
