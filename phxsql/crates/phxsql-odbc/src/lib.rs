@@ -2067,20 +2067,24 @@ mod testes {
 
     // --- A ponta a ponta, contra um phxsqld DE VERDADE ---
     //
-    // Ignorada com o motivo, e o motivo e verificavel: a `op_sql` desta arvore
-    // le so `texto`/`sql` (crates/phxsql-server/src/servidor.rs:11795) e o
-    // lexico recusa o caractere `?` -- entao HOJE este SELECT volta com erro
-    // de sintaxe, e nao com a linha. Quando a F-CONSULTA ligar o
-    // `sql.parametros`, tire o `#[ignore]` e rode com o servidor da prova de
-    // pe (docs/ODBC.md, secao 7):
+    // FECHADO em 08/09/2026: a F-CONSULTA ligou `sql.parametros`, o lexico
+    // aceita `?` e este teste passa contra o motor vivo -- confirmado aqui,
+    // e de novo pela sonda viva do passo 7c de `bancada/odbc/prova-abi.py`.
     //
+    // Continua `#[ignore]`, e o motivo que sobra e' o unico que sempre foi
+    // estrutural: este teste PRECISA de um `phxsqld` de pe, o que nenhum
+    // outro teste desta suite exige. Rode com o servidor da prova no ar
+    // (docs/ODBC.md, secao 7):
+    //
+    //     python3 bancada/odbc/provar.py        # sobe, monta os dados, prova
+    //     # ou, so para este teste, com o mesmo servidor de pe:
     //     python3 bancada/odbc/montar-dados.py
     //     cargo test -p phxsql-odbc -- --ignored
     //
     // A receita sai do ambiente para a prova nao ficar presa a uma porta:
     // PHXSQL_ODBC_PROVA="Driver=PhxSql;Server=...;Port=...;..."
     #[test]
-    #[ignore = "espera a op sql aceitar parametros (F-CONSULTA), e um phxsqld em PHXSQL_ODBC_PROVA"]
+    #[ignore = "exige um phxsqld vivo em PHXSQL_ODBC_PROVA -- nao roda sozinho na suite"]
     fn ponta_a_ponta_where_id_igual_pergunta() {
         let receita = std::env::var("PHXSQL_ODBC_PROVA").unwrap_or_else(|_| {
             "Driver=PhxSql;Server=127.0.0.1;Port=5305;Token=prova-odbc;\
