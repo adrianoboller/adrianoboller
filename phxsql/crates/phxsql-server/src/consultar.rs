@@ -49,6 +49,89 @@ pub fn campo<'a>(linha: &'a Linha, nome: &str) -> Option<&'a Json> {
         .map(|(_, v)| v)
 }
 
+/// Poe o prefixo do apelido em toda coluna da linha.
+///
+/// Depois de UMA junção a linha tem colunas de duas tabelas, e as duas tem
+/// `id`. Prefixar os DOIS lados -- e nao so o que chegou -- e o que faz o
+/// nome qualificado significar sempre a mesma coisa: sem isso, `id` seria a
+/// coluna da esquerda antes da junção e um nome ambiguo depois dela, e a
+/// mesma consulta mudaria de sentido conforme alguem acrescentasse um `JOIN`.
+pub fn prefixar(linhas: &mut [Linha], apelido: &str) {
+    for l in linhas.iter_mut() {
+        for (n, _) in l.iter_mut() {
+            *n = format!("{apelido}.{n}");
+        }
+    }
+}
+
+/// O nome REAL de uma coluna, a partir do nome como ele foi PEDIDO.
+///
+/// Duas regras, nesta ordem: o nome bate inteiro (`p.id` acha `p.id`), ou --
+/// so quando o pedido nao traz ponto -- ele bate com o sufixo de um nome
+/// qualificado (`nome` acha `c.nome`). A segunda so vale quando ha UM
+/// candidato: `id` depois de juntar duas tabelas e ambiguo, e escolher um dos
+/// dois seria responder sobre a coluna errada calado.
+///
+/// A resolucao acontece contra o MODELO -- a primeira linha --, uma vez por
+/// pedido e nao por linha: as linhas de um mesmo resultado tem todas a mesma
+/// forma, porque quem as monta e o mesmo laco.
+pub fn resolver(modelo: &Linha, nome: &str) -> Result<Option<String>> {
+    let nome = nome.trim();
+    if let Some((n, _)) = modelo.iter().find(|(n, _)| n.eq_ignore_ascii_case(nome)) {
+        return Ok(Some(n.clone()));
+    }
+    if nome.contains('.') {
+        return Ok(None);
+    }
+    let candidatos: Vec<&String> = modelo
+        .iter()
+        .map(|(n, _)| n)
+        .filter(|n| {
+            n.split_once('.')
+                .is_some_and(|(_, sufixo)| sufixo.eq_ignore_ascii_case(nome))
+        })
+        .collect();
+    match candidatos.len() {
+        0 => Ok(None),
+        1 => Ok(Some(candidatos[0].clone())),
+        _ => Err(PhxError::Esquema(format!(
+            "o nome {nome:?} e ambiguo depois da junção: pode ser {}. \
+             Escreva o nome com o apelido do lado",
+            candidatos
+                .iter()
+                .map(|s| format!("{s:?}"))
+                .collect::<Vec<_>>()
+                .join(" ou ")
+        ))),
+    }
+}
+
+/// Um nome pedido, ja ligado ao nome que a linha tem.
+pub struct Ligacao {
+    /// Como quem escreveu a consulta o pediu (`total`, ou `p.total`).
+    pub pedido: String,
+    /// Como a linha o chama depois das junções (`p.total`).
+    pub real: String,
+}
+
+/// Liga uma lista de nomes pedidos aos nomes reais, ou recusa nomeando.
+///
+/// Nome que nao existe NAO e erro aqui: ha quem possa faltar de propósito --
+/// a coluna de um lado esquerdo que voltou vazio. Quem precisa que ele exista
+/// confere depois, e diz o que ha.
+pub fn ligar(modelo: &Linha, pedidos: &[String]) -> Result<Vec<Ligacao>> {
+    let mut saida = Vec::with_capacity(pedidos.len());
+    for pedido in pedidos {
+        if let Some(real) = resolver(modelo, pedido)? {
+            saida.push(Ligacao {
+                pedido: pedido.clone(),
+                real,
+            });
+        }
+    }
+    Ok(saida)
+}
+
 /// Um valor JSON no par (valor, tipo) que o avaliador de expressoes pede.
 ///
 /// A decisao esta no cabecalho do modulo: o formato do JSON e a unica pista
@@ -80,16 +163,22 @@ pub fn valor_de_json(j: &Json) -> (Value, ColumnType) {
 /// devolve REFERENCIAS -- e uma conversao feita dentro do fecho morreria antes
 /// de a expressao usa-la. Sao duas alocacoes por linha, e elas so acontecem
 /// para quem manda `expressao`: quem nao manda nao chega aqui.
-pub fn avaliar_sobre(linha: &Linha, e: &Expressao) -> Result<Option<bool>> {
-    let convertidos: Vec<(&str, (Value, ColumnType))> = linha
+pub fn avaliar_sobre(linha: &Linha, e: &Expressao, ligacoes: &[Ligacao]) -> Result<Option<bool>> {
+    // So as colunas que a expressao usa sao convertidas -- e nao a linha
+    // inteira. Numa linha de quarenta colunas com um filtro sobre duas, isso e
+    // a diferenca entre duas conversoes e quarenta, por linha.
+    let convertidos: Vec<(Value, ColumnType)> = ligacoes
         .iter()
-        .map(|(n, v)| (n.as_str(), valor_de_json(v)))
+        .map(|l| campo(linha, &l.real).map(valor_de_json))
+        // Coluna que a linha nao tem e NULA, e nao um estouro: e o caso do
+        // lado esquerdo que nao casou.
+        .map(|x| x.unwrap_or((Value::Null, ColumnType::Int8)))
         .collect();
     e.avaliar_bool(&|nome| {
-        convertidos
+        ligacoes
             .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case(nome))
-            .map(|(_, (v, ty))| (v, ty))
+            .position(|l| l.pedido.eq_ignore_ascii_case(nome))
+            .map(|i| (&convertidos[i].0, &convertidos[i].1))
     })
     .map_err(|erro| enriquecer(erro, e))
 }
@@ -249,6 +338,118 @@ pub fn numerar(
     Ok(())
 }
 
+/// Como a junção liga os dois lados: pares de igualdade.
+pub struct Par {
+    pub esquerda: String,
+    pub direita: String,
+}
+
+/// O que a junção faz com a linha da esquerda que nao casou.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TipoJuncao {
+    /// So quem casa.
+    Interno,
+    /// A linha da esquerda fica, com as colunas da direita nulas.
+    Esquerdo,
+}
+
+impl TipoJuncao {
+    /// `direito`, `completo` e `cruzado` RECUSAM nomeando nesta rodada, e a
+    /// recusa diz o que fazer no lugar. Aceitar a palavra e fazer um interno
+    /// seria responder com menos linha do que o pedido pediu, calado.
+    pub fn de_texto(t: &str) -> Result<TipoJuncao> {
+        Ok(match t.trim().to_ascii_lowercase().as_str() {
+            "" | "interno" | "inner" => TipoJuncao::Interno,
+            "esquerdo" | "left" => TipoJuncao::Esquerdo,
+            outro @ ("direito" | "right") => {
+                return Err(PhxError::Esquema(format!(
+                    "a junção {outro:?} nao existe nesta rodada: a direita se \
+                     escreve trocando os lados -- ponha a outra tabela no \
+                     \"de\" e esta no \"juntar\", com tipo \"esquerdo\""
+                )))
+            }
+            outro @ ("completo" | "full" | "cruzado" | "cross") => {
+                return Err(PhxError::Esquema(format!(
+                    "a junção {outro:?} nao existe nesta rodada; ha \"interno\" \
+                     e \"esquerdo\""
+                )))
+            }
+            outro => {
+                return Err(PhxError::Esquema(format!(
+                    "junção desconhecida: {outro:?} (use interno ou esquerdo)"
+                )))
+            }
+        })
+    }
+}
+
+/// Junta dois conjuntos de linhas por igualdade de pares, em memoria.
+///
+/// # Por que espalhamento, e nao um laco de dois
+///
+/// O laco de dois custa esquerda x direita comparacoes; o mapa custa uma
+/// passada em cada lado. Para a forma de dado que se junta aqui -- muitos
+/// fatos, poucas dimensoes -- e a mesma escolha que o `pivotar` ja fez, e pelo
+/// mesmo motivo.
+///
+/// # O lado esquerdo vazio, e a limitacao que ele carrega
+///
+/// Numa junção `esquerdo` cuja DIREITA nao devolveu linha nenhuma, nao ha de
+/// onde tirar os NOMES das colunas da direita -- o protocolo devolve linhas,
+/// e nao esquema. Entao a linha sai com as colunas da esquerda apenas, e quem
+/// depois pedir uma coluna daquele lado recebe a recusa que a nomeia. E o
+/// unico canto em que esta junção sabe menos que o SQL, e ele esta escrito
+/// aqui em vez de aparecer como uma coluna que some.
+pub fn juntar(
+    esquerda: Vec<Linha>,
+    direita: &[Linha],
+    pares: &[(String, String)],
+    tipo: TipoJuncao,
+) -> Vec<Linha> {
+    let chave = |l: &Linha, lado: fn(&(String, String)) -> &String| -> Option<String> {
+        let mut k = String::new();
+        for par in pares {
+            let v = campo(l, lado(par)).and_then(chave_de_juncao)?;
+            k.push_str(&v);
+            // Separador, pelo mesmo motivo do `agrupar`: sem ele `("ab","c")` e
+            // `("a","bc")` casariam.
+            k.push('\u{1}');
+        }
+        Some(k)
+    };
+    let mut mapa: std::collections::HashMap<String, Vec<&Linha>> = std::collections::HashMap::new();
+    for d in direita {
+        if let Some(k) = chave(d, |p| &p.1) {
+            mapa.entry(k).or_default().push(d);
+        }
+    }
+    let mut saida = Vec::with_capacity(esquerda.len());
+    for e in esquerda {
+        let casadas = chave(&e, |p| &p.0).and_then(|k| mapa.get(&k));
+        match casadas {
+            Some(ds) if !ds.is_empty() => {
+                for d in ds {
+                    let mut nova = e.clone();
+                    nova.extend(d.iter().cloned());
+                    saida.push(nova);
+                }
+            }
+            _ => {
+                if tipo == TipoJuncao::Esquerdo {
+                    let mut nova = e;
+                    // As colunas da direita entram NULAS -- e o que faz o
+                    // `esquerdo` ser um `esquerdo` e nao um filtro.
+                    if let Some(modelo) = direita.first() {
+                        nova.extend(modelo.iter().map(|(n, _)| (n.clone(), Json::Nulo)));
+                    }
+                    saida.push(nova);
+                }
+            }
+        }
+    }
+    saida
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -277,7 +478,8 @@ mod testes {
     fn comparar_decimal_com_numero_recusa_ensinando() {
         let l = linha(&[("preco", Json::texto_de("10.01"))]);
         let e = Expressao::analisar("preco > 10").unwrap();
-        let erro = avaliar_sobre(&l, &e).expect_err("texto contra numero tinha de recusar");
+        let lig = ligar(&l, e.colunas()).unwrap();
+        let erro = avaliar_sobre(&l, &e, &lig).expect_err("texto contra numero tinha de recusar");
         let t = erro.to_string();
         assert!(t.contains("Decimal"), "{t}");
         assert!(t.contains("sub-pedido"), "{t}");
@@ -287,7 +489,8 @@ mod testes {
         );
         // E a comparacao com TEXTO funciona, que e a saida documentada.
         let e = Expressao::analisar("preco = '10.01'").unwrap();
-        assert_eq!(avaliar_sobre(&l, &e).unwrap(), Some(true));
+        let lig = ligar(&l, e.colunas()).unwrap();
+        assert_eq!(avaliar_sobre(&l, &e, &lig).unwrap(), Some(true));
     }
 
     /// `NULL` nunca casa numa junção nem num `IN` -- os dois lados.

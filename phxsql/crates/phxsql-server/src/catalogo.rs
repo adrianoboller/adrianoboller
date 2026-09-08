@@ -479,6 +479,29 @@ pub const OPERACOES: &[Operacao] = &[
                  um pedido que chega pela rede",
             ),
             opc(
+                "apelido",
+                "string",
+                "o prefixo das colunas do `de` depois de uma junção (padrão: o \
+                 nome da tabela dele); depois de QUALQUER junção toda coluna \
+                 passa a se chamar `apelido.coluna` nos dois lados",
+            ),
+            opc(
+                "juntar",
+                "array",
+                "junções aplicadas na ordem, sempre à esquerda: \
+                 `{de, apelido, tipo, em:[{esquerda, direita}]}`. `tipo` é \
+                 `interno` ou `esquerdo`; `direito`, `completo` e `cruzado` \
+                 recusam. `em` é igualdade entre colunas -- o resto vai para \
+                 `expressao`",
+            ),
+            opc(
+                "escalar",
+                "array",
+                "subconsulta não correlacionada que devolve UMA linha: \
+                 `{nome, de, campo}` -- o valor vira a coluna `nome`, visível \
+                 na `expressao` e fora da resposta a menos que pedida",
+            ),
+            opc(
                 "em",
                 "array",
                 "o `IN (SELECT …)`: `{coluna, de, campo}` -- o sub-pedido `de` \
