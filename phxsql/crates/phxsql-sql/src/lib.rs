@@ -68,7 +68,7 @@ pub mod usuario;
 
 pub use dml::{
     traduzir_atualizacao, traduzir_exclusao, traduzir_insercao, Atualizacao, Exclusao, Insercao,
-    PlanoDml,
+    PlanoDml, SeExistir,
 };
 pub use lexico::{Comparador, Simbolo, Token};
 pub use sintaxe::{
