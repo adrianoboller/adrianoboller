@@ -526,7 +526,25 @@ impl Volumes {
     }
 
     /// Cria o volume se ainda nao existir. Devolve `true` se criou agora.
+    ///
+    /// # O atalho pelo cache, e por que ele e seguro
+    ///
+    /// Um volume que ja esta em `abertos` existe com CERTEZA: foi este processo
+    /// que o abriu, e no Linux o descritor sobrevive ate a um `unlink` externo.
+    /// Entao, quando ele esta no cache, pular o `existe()` nao arrisca nada -- e
+    /// `existe()` fazia um `caminho()` (um `format!` que aloca) e um
+    /// `Path::exists()` (um STAT de filesystem) A CADA inserto, medido em ~29%
+    /// do custo do `.reg` (ver DESEMPENHO.md 2.2.1), so para confirmar o que o
+    /// cache ja sabia. Depois da 1a linha a resposta e sempre "sim".
+    ///
+    /// O `registrar_uso` continua sendo chamado para o volume nao ser despejado
+    /// do LRU por parecer ocioso -- se ele sair de `abertos`, o caminho longo
+    /// (com o `existe()`) volta a valer, e a correcao se mantem.
     pub fn garantir(&mut self, volume: u32) -> Result<bool> {
+        if self.abertos.contains_key(&volume) {
+            self.registrar_uso(volume);
+            return Ok(false);
+        }
         if self.existe(volume) {
             self.arquivo(volume, false)?;
             Ok(false)
@@ -760,6 +778,40 @@ mod tests {
             "cadastroClientes_042.reg"
         );
         std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Fix 2 do split do `.reg`: `garantir` confia no cache `abertos` em vez de
+    /// um `stat` de filesystem por inserto (medido em ~29% do custo do `.reg`).
+    ///
+    /// **Prova real:** tire o atalho `if self.abertos.contains_key(&volume)` do
+    /// `garantir` e este teste falha. Com o volume ja aberto, o caminho velho
+    /// chama `existe()` -- que ve o arquivo sumido, cai no `criar`, devolve um
+    /// arquivo VAZIO (perdendo o dado que o descritor aberto ainda guarda) e diz
+    /// `Ok(true)`, "criei agora", que re-gravaria o cabecalho. O atalho confia no
+    /// descritor, que no Linux sobrevive ao unlink -- e e por isso que ele e
+    /// SEGURO, nao so rapido: o cache so conhece volume que este processo abriu.
+    #[test]
+    fn garantir_confia_no_cache_aberto_em_vez_de_re_statar() {
+        let d = dir_temp("garantir-cache");
+        let mut v = Volumes::novo(&d, "t", "reg", Paginacao::DESLIGADA);
+        assert!(v.garantir(1).unwrap(), "a 1a vez cria e devolve true");
+        v.escrever(1, 0, b"marca viva").unwrap();
+        // Some com o arquivo por baixo: o descritor aberto continua valido.
+        std::fs::remove_file(v.caminho(1)).unwrap();
+        // Volume em `abertos`: garantir NAO re-stata, NAO recria, e diz que ja
+        // existia.
+        assert!(
+            !v.garantir(1).unwrap(),
+            "volume ja aberto: garantir tem de devolver false sem recriar"
+        );
+        let mut buf = vec![0u8; b"marca viva".len()];
+        v.ler(1, 0, &mut buf).unwrap();
+        assert_eq!(
+            &buf[..],
+            b"marca viva",
+            "o descritor aberto preservou o dado"
+        );
+        std::fs::remove_dir_all(&d).ok();
     }
 
     /// A prova do registro de escritas pendentes, no caso que motivou tudo:

@@ -238,22 +238,11 @@ fn medir_reg_split(n: i64) {
     drop(f);
     let _ = std::fs::remove_file(&alvo);
 
-    // --- E. o que `garantir` faz a CADA linha, mesmo com o volume ja aberto:
-    // `existe(volume)` monta o caminho (um `format!` que ALOCA) e chama
-    // `Path::exists()` -- um STAT de filesystem -- so para confirmar que o
-    // volume existe. Depois da 1a linha a resposta e sempre "sim" e o arquivo ja
-    // esta no cache `abertos`. Replico as duas operacoes num arquivo que existe.
-    let dir_s = std::env::temp_dir();
-    let caminho_real = dir_s.join(format!("phx-reg-stat-{}.reg", std::process::id()));
-    std::fs::write(&caminho_real, b"x").unwrap();
-    let inicio = Instant::now();
-    let mut vivos = 0u64;
-    for _ in 0..n {
-        let c = dir_s.join(format!("phx-reg-stat-{}.reg", std::process::id()));
-        vivos += black_box(&c).exists() as u64;
-    }
-    let garantir = inicio.elapsed().as_secs_f64() * 1e6 / n as f64;
-    let _ = std::fs::remove_file(&caminho_real);
+    // O `stat` por linha do `garantir` -- medido em ~29% do custo do `.reg` na
+    // 1a corrida (DESEMPENHO.md 2.2.1) -- SAIU do caminho na Fix 2: `garantir`
+    // passou a confiar no cache `abertos`. Por isso ele nao aparece mais aqui: o
+    // medidor mede o caminho de HOJE, e o `direto` acima ja caiu de 4,45 para
+    // ~2,64 us por linha. A conta da recusa fica no papel, nao no laco.
 
     // --- F. o que `montar_cabecalho` faz a CADA linha, dentro de
     // `gravar_contadores`, ALEM do write que ja contamos: alocar o buf, o
@@ -278,10 +267,10 @@ fn medir_reg_split(n: i64) {
 
     let contadores = dois_writes - um_write;
     let montagem_sem_crc = montagem - crc;
-    let resto = direto - montagem - dois_writes - garantir - cabecalho;
+    let resto = direto - montagem - dois_writes - cabecalho;
     // Os acumuladores existem so para o `black_box` ter onde ancorar; imprimi-los
     // impede o "valor nao usado" e prova que o laco nao foi apagado.
-    let ancora = acc as u64 ^ soma ^ vivos ^ soma2;
+    let ancora = acc as u64 ^ soma ^ soma2;
 
     println!("\n=== o split do .reg heap, por linha ({n} linhas) ===\n");
     println!(
@@ -314,17 +303,16 @@ fn medir_reg_split(n: i64) {
         contadores / direto * 100.0
     );
     println!(
-        "  garantir: caminho() (format!) + exists() stat {garantir:>7.2} us   {:>5.1}%",
-        garantir / direto * 100.0
-    );
-    println!(
         "  montar_cabecalho (alloc + agora() + CRC) .... {cabecalho:>7.2} us   {:>5.1}%",
         cabecalho / direto * 100.0
     );
     println!("  {:-<49}", "");
     println!(
-        "  resto (paginacao/localizar, arquivo() no cache,\n         campos do cabecalho, marcar_escrito) . {resto:>7.2} us   {:>5.1}%",
+        "  resto (garantir no cache, paginacao/localizar,\n         arquivo(), campos do cabecalho, marcar) {resto:>7.2} us   {:>5.1}%",
         resto / direto * 100.0
+    );
+    println!(
+        "\n  (o stat por linha do garantir, ~29% na 1a corrida, saiu na Fix 2:\n   agora garantir confia no cache abertos -- DESEMPENHO.md 2.2.1)"
     );
 }
 

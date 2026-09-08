@@ -269,6 +269,62 @@ CRC; são as duas idas ao núcleo que se repetem por linha.**
 O split sai do próprio `onde-doi` (`fn medir_reg_split`), então se recompõe a
 cada corrida em vez de envelhecer no papel.
 
+### 2.2.2 A frente do time: uma mudança landou, a outra o DBA recusou
+
+Com o número na mão, o dono ativou o time (os dez papéis). Das duas idas ao
+núcleo por linha, **uma era segura e uma quebrava uma garantia** — e o DBA sênior
+disse não à segunda. É o papel dele: dizer não quando uma proposta boa quebra uma
+garantia.
+
+**A que landou — o `stat` do `garantir` (Fix 2).** `garantir` passou a confiar no
+cache `abertos`: um volume que este processo abriu existe com certeza (o descritor
+sobrevive ao `unlink` no Linux), então o `existe()` — `caminho()` mais um `stat` —
+não precisa ir ao filesystem a cada inserto. Não muda o que se grava, nem a ordem,
+nem a durabilidade: só troca uma pergunta ao disco por uma consulta ao cache.
+
+Medido, `.reg inserir` direto (`--example onde-doi`, 200k linhas):
+
+| | µs/linha | |
+|---|---:|---:|
+| antes (com o `stat` por linha) | 4,45 | |
+| **depois (confia no cache)** | **~2,7** | **~1,65×** |
+
+O ganho veio maior que os 28,8% previstos porque tirar o `garantir` por linha
+levou junto os `arquivo()` que ele fazia. No laço real (via `Table`), o `.reg`
+heap caiu de 6,1 para 3,6 µs e o inserto de 2 índices de 10,8 para 9,0 µs. A prova
+real é `garantir_confia_no_cache_aberto_em_vez_de_re_statar` no `volume.rs`: com o
+atalho removido, o teste falha — o caminho velho re-`stat`a, vê o arquivo sumido,
+recria vazio e perde o dado do descritor aberto.
+
+**A que o DBA recusou — o cabeçalho de contadores por linha (Fix 1).** Parecia o
+irmão do contador do `.log` (§2.2): mover a gravação do cabeçalho para o
+`sincronizar`. **Não é o mesmo caso, e a diferença destrói dado.** A pesquisa (papel
+J) mediu contra o código:
+
+- O `.reg` de hoje **confia** no `slot_count` do cabeçalho ao reabrir
+  (`reg.rs` `montar`, byte 20) — não há varredura de recuperação nenhuma, ao
+  contrário do `.log`, que tem a `curar` (varre para a frente validando o CRC de
+  cada evento).
+- Sem esse write por linha, uma queda antes do `sincronizar` deixaria o
+  `slot_count` atrasado; a inserção seguinte calcularia `rowid = slot_count + 1`
+  com o valor velho e **gravaria por cima** de slots já escritos e não contados —
+  o estrago que o comentário do `.log` nomeia, e uma violação direta de «a ordem
+  de digitação é sagrada, o `.reg` nunca reaproveita slot».
+- E construir a `curar` do `.reg` **não é** portar a do `.log`: no `.log` todo byte
+  gravado é um evento real, então lixo/zero falha no CRC e a varredura para com
+  segurança. No `.reg`, `STATUS_LIVRE = 0` é um estado vazio **legítimo** —
+  indistinguível de «nunca escrito» e de «escrito e depois excluído» —, e a
+  paginação por balde/período faz do `slot_count` uma marca-d'água que **tolera
+  buracos**. Uma varredura para a frente não sabe, ao topar no primeiro
+  `STATUS_LIVRE`, se ali acabou tudo ou se é um buraco de exclusão com ATIVOs
+  adiante.
+
+Então o ~22% do cabeçalho por linha **fica recusado nesta frente**, e a recusa é
+medida: capturá-lo com segurança é uma frente própria — projetar uma recuperação
+de marca-d'água com seus testes de queda, tratando a ambiguidade do `STATUS_LIVRE`
+no modo paginado —, não um efeito colateral de mover uma linha. Mudança de
+garantia entra discutida, não de carona.
+
 ### 2.3 O Profiler desligado custava 7% da carga
 
 Não estava no `onde-doi` porque não é do motor: é do **servidor**, e só aparece
