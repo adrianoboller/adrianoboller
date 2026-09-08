@@ -123,6 +123,10 @@ pub struct Consulta {
     pub juntar: Vec<Juncao>,
     /// `IN (SELECT …)` do WHERE.
     pub em: Vec<EmSubconsulta>,
+    /// `coluna OP (SELECT …)` do WHERE -- subconsulta ESCALAR (item 9),
+    /// numerada `sub_1`, `sub_2`... na ordem em que apareceu. A comparacao
+    /// vira `coluna OP sub_N` dentro da `expressao`.
+    pub escalar: Vec<Escalar>,
     /// O resto do WHERE, sempre como TEXTO -- aqui nao existe "onde" (lista
     /// de filtro) separado de "expressao": tudo vira texto, simples ou nao.
     pub onde: Option<Onde>,
@@ -132,6 +136,16 @@ pub struct Consulta {
     pub ordem: Vec<Ordenacao>,
     pub pular: u64,
     pub max: Option<u64>,
+}
+
+/// `coluna OP (SELECT …)` -- subconsulta escalar, NAO correlacionada, que
+/// devolve exatamente uma linha e uma coluna. `nome` (`sub_1`, `sub_2`...)
+/// e o que aparece na `expressao` de fora no lugar da subconsulta.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Escalar {
+    pub nome: String,
+    pub de: Selecao,
+    pub campo: String,
 }
 
 /// O resolvedor que quem chama fornece: dado um SELECT (de `de`, de um
@@ -222,6 +236,24 @@ pub fn traduzir_consulta(
         notas.push(format!(
             "{} IN (SELECT …) rodam ANTES, cada um pelo portao, e viram conjunto",
             c.em.len()
+        ));
+    }
+
+    if !c.escalar.is_empty() {
+        let mut escalar_json = Vec::with_capacity(c.escalar.len());
+        for e in &c.escalar {
+            let ep = resolver(&e.de, &database)?;
+            escalar_json.push(Json::Objeto(vec![
+                ("nome".to_string(), Json::texto_de(&e.nome)),
+                ("de".to_string(), ep.pedido),
+                ("campo".to_string(), Json::texto_de(&e.campo)),
+            ]));
+        }
+        pares.push(("escalar".to_string(), Json::Lista(escalar_json)));
+        notas.push(format!(
+            "{} subconsulta(s) ESCALAR -- roda ANTES pelo portao, e a comparacao usa o \
+             nome dela (sub_N) na expressao",
+            c.escalar.len()
         ));
     }
 
@@ -627,7 +659,7 @@ impl Analisador {
 
         let (juntar, extras_do_on) = self.juncoes()?;
 
-        let (onde, em) = self.onde_composta(extras_do_on)?;
+        let (onde, em, escalar) = self.onde_composta(extras_do_on)?;
 
         let ordem = if self.aceitar_palavra("ORDER") {
             self.exigir_palavra("BY")?;
@@ -652,6 +684,7 @@ impl Analisador {
             apelido_de,
             juntar,
             em,
+            escalar,
             onde,
             colunas,
             janela,
@@ -964,8 +997,10 @@ impl Analisador {
     fn onde_composta(
         &mut self,
         mut fragmentos: Vec<String>,
-    ) -> Result<(Option<Onde>, Vec<EmSubconsulta>)> {
+    ) -> Result<(Option<Onde>, Vec<EmSubconsulta>, Vec<Escalar>)> {
         let mut em = Vec::new();
+        let mut escalar = Vec::new();
+        let mut contador_escalar = 1usize;
         if self.aceitar_palavra("WHERE") {
             let tokens = self.capturar_ate_clausula(&["ORDER", "LIMIT", "OFFSET"])?;
             if tokens.is_empty() {
@@ -979,6 +1014,11 @@ impl Analisador {
                     em.push(e);
                     continue;
                 }
+                if let Some((fragmento, esc)) = tentar_escalar(&conj, &mut contador_escalar)? {
+                    fragmentos.push(fragmento);
+                    escalar.push(esc);
+                    continue;
+                }
                 recusar_forma_nao_suportada(&conj)?;
                 fragmentos.push(normalizar_tokens(&conj));
             }
@@ -988,7 +1028,7 @@ impl Analisador {
         } else {
             Some(Onde::Expressao(fragmentos.join(" AND ")))
         };
-        Ok((onde, em))
+        Ok((onde, em, escalar))
     }
 }
 
@@ -1124,6 +1164,58 @@ fn tentar_in_subconsulta(conj: &[Simbolo]) -> Result<Option<EmSubconsulta>> {
         de: dentro,
         campo,
     }))
+}
+
+/// `coluna[.coluna] OP (SELECT ...)`, ocupando o conjunto INTEIRO -- a
+/// subconsulta ESCALAR (item 9). Devolve o fragmento de texto pronto
+/// (`coluna OP sub_N`) e o `Escalar` correspondente; `None` quando o
+/// conjunto nao bate esse molde (quem chama tenta o resto).
+fn tentar_escalar(conj: &[Simbolo], contador: &mut usize) -> Result<Option<(String, Escalar)>> {
+    let mut i = 0usize;
+    let Some(coluna) = ler_nome_qualificado(conj, &mut i) else {
+        return Ok(None);
+    };
+    let Some(Token::Comparador(op)) = conj.get(i).map(|s| &s.token) else {
+        return Ok(None);
+    };
+    let op = *op;
+    i += 1;
+    if !matches!(conj.get(i).map(|s| &s.token), Some(Token::AbreParen)) {
+        return Ok(None);
+    }
+    i += 1;
+    if conj.get(i).and_then(|s| s.token.palavra_chave()).as_deref() != Some("SELECT") {
+        return Ok(None);
+    }
+    i += 1;
+    let Some(ultimo) = conj.last() else {
+        return Ok(None);
+    };
+    if !matches!(ultimo.token, Token::FechaParen) || i >= conj.len() - 1 {
+        return Ok(None);
+    }
+    let interior = conj[i..conj.len() - 1].to_vec();
+    let mut sub = Analisador { s: interior, i: 0 };
+    let dentro = sub.selecao()?;
+    if sub.espiar().is_some() {
+        return Err(lexico::erro(
+            sub.posicao_atual(),
+            "sobrou algo dentro da subconsulta escalar",
+        ));
+    }
+    recusa_se_correlacionada(&dentro)?;
+    let campo = campo_escalar(&dentro.projecao)?;
+    let nome = format!("sub_{contador}");
+    *contador += 1;
+    let fragmento = format!("{coluna} {} {nome}", op.simbolo());
+    Ok(Some((
+        fragmento,
+        Escalar {
+            nome,
+            de: dentro,
+            campo,
+        },
+    )))
 }
 
 /// `EXISTS (...)` e um `SELECT` solto (nao reconhecido como IN/escalar) nao
@@ -1754,6 +1846,108 @@ mod testes {
             if sel.de.tabela == "clientes" {
                 return Err(PhxError::Esquema(
                     "tabela clientes negada para este usuario".into(),
+                ));
+            }
+            resolver_simples(sel, db)
+        };
+        let e = traduzir_consulta(&c, "loja", &mut resolver_com_negacao)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("negada"), "{e}");
+    }
+
+    // -------------------------------------------- item 9: subconsulta escalar
+
+    #[test]
+    fn subconsulta_escalar_no_where() {
+        let c = consulta("SELECT * FROM pedidos WHERE preco > (SELECT AVG(preco) FROM pedidos)");
+        assert_eq!(c.escalar.len(), 1);
+        assert_eq!(c.escalar[0].nome, "sub_1");
+        assert_eq!(c.escalar[0].campo, "media_preco");
+        assert_eq!(c.escalar[0].de.de.tabela, "pedidos");
+        let Some(Onde::Expressao(texto)) = &c.onde else {
+            panic!("esperava Expressao")
+        };
+        assert_eq!(texto, "preco > sub_1");
+    }
+
+    #[test]
+    fn duas_subconsultas_escalares_numeram_em_ordem() {
+        let c = consulta(
+            "SELECT * FROM pedidos WHERE preco > (SELECT AVG(preco) FROM pedidos) AND preco \
+             < (SELECT MAX(preco) FROM pedidos)",
+        );
+        assert_eq!(c.escalar.len(), 2);
+        assert_eq!(c.escalar[0].nome, "sub_1");
+        assert_eq!(c.escalar[1].nome, "sub_2");
+        let Some(Onde::Expressao(texto)) = &c.onde else {
+            panic!("esperava Expressao")
+        };
+        assert_eq!(texto, "preco > sub_1 AND preco < sub_2");
+    }
+
+    #[test]
+    fn subconsulta_escalar_combinada_com_outra_condicao() {
+        let c = consulta(
+            "SELECT * FROM pedidos WHERE ativo = TRUE AND preco > (SELECT AVG(preco) FROM \
+             pedidos)",
+        );
+        let Some(Onde::Expressao(texto)) = &c.onde else {
+            panic!("esperava Expressao")
+        };
+        assert_eq!(texto, "ativo = TRUE AND preco > sub_1");
+    }
+
+    #[test]
+    fn subconsulta_escalar_com_mais_de_uma_coluna_recusa() {
+        let e = recusa(
+            "SELECT * FROM pedidos WHERE preco > (SELECT AVG(preco), MAX(preco) FROM pedidos)",
+        );
+        assert!(e.contains("mais de uma coluna"), "{e}");
+    }
+
+    #[test]
+    fn subconsulta_escalar_correlacionada_recusa() {
+        let e = recusa(
+            "SELECT * FROM pedidos p WHERE p.preco > (SELECT AVG(preco) FROM pedidos x WHERE \
+             x.cidade = p.cidade)",
+        );
+        assert!(e.contains("correlacionada"), "{e}");
+    }
+
+    #[test]
+    fn subconsulta_escalar_traduz_com_o_json_do_contrato() {
+        let c = consulta("SELECT * FROM pedidos WHERE preco > (SELECT AVG(preco) FROM pedidos)");
+        let p = traduzir_consulta(&c, "loja", &mut resolver_simples).unwrap();
+        let escalar = p.pedido.campo("escalar").unwrap().lista().unwrap();
+        assert_eq!(escalar.len(), 1);
+        assert_eq!(escalar[0].texto_ou("nome", ""), "sub_1");
+        assert_eq!(escalar[0].texto_ou("campo", ""), "media_preco");
+        assert_eq!(
+            escalar[0].campo("de").unwrap().texto_ou("tabela", ""),
+            "pedidos"
+        );
+        assert_eq!(p.pedido.texto_ou("expressao", ""), "preco > sub_1");
+    }
+
+    #[test]
+    fn subconsulta_escalar_com_apelido_de_agregado() {
+        let c = consulta(
+            "SELECT * FROM pedidos WHERE preco > (SELECT AVG(preco) AS media FROM pedidos)",
+        );
+        assert_eq!(c.escalar[0].campo, "media");
+    }
+
+    /// Tabela negada dentro da subconsulta escalar recusa a consulta
+    /// inteira -- a MESMA prova das outras tres formas de composicao.
+    #[test]
+    fn tabela_negada_no_escalar_recusa_a_consulta_inteira() {
+        let c =
+            consulta("SELECT * FROM pedidos WHERE preco > (SELECT AVG(preco) FROM outra_tabela)");
+        let mut resolver_com_negacao = |sel: &Selecao, db: &str| -> Result<Plano> {
+            if sel.de.tabela == "outra_tabela" {
+                return Err(PhxError::Esquema(
+                    "tabela outra_tabela negada para este usuario".into(),
                 ));
             }
             resolver_simples(sel, db)

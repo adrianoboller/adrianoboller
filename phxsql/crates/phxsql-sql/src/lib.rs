@@ -68,7 +68,8 @@ pub mod transacao;
 pub mod usuario;
 
 pub use consulta::{
-    planejar_sobre, traduzir_consulta, ColunaComposta, Consulta, EmSubconsulta, Janela, Resolvedor,
+    planejar_sobre, traduzir_consulta, ColunaComposta, Consulta, EmSubconsulta, Escalar, Janela,
+    Juncao, Resolvedor, TipoJuncao,
 };
 pub use dml::{
     traduzir_atualizacao, traduzir_exclusao, traduzir_insercao, Atualizacao, Exclusao, Insercao,
