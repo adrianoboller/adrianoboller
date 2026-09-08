@@ -51,7 +51,7 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
 
 **Conferir.** Numa sessão nova, peça «liste as skills e os agentes com prefixo
 `wx-claude-code:`». Os números de hoje estão em `docs/dossie/numeros.json`
-(<!-- numeros: gerado -->33 comandos, 21 skills, 94 agentes<!-- fim dos numeros -->).
+(<!-- numeros: gerado -->34 comandos, 21 skills, 94 agentes<!-- fim dos numeros -->).
 A listagem que o modelo devolve pode omitir um item; confira por nome, não por
 contagem.
 
@@ -74,6 +74,12 @@ script — nenhuma linha digitada. A tabela sai do medidor:
 | `wx-claude-code-video-passos.mp4` | o passo a passo na versão atual: dezoito comandos, do instalador à entrega | 1 min 58 s | 18 |
 | `wx-claude-code-video-ativacao.mp4` | a ativação passo a passo, nos dois lados: emitir, instalar, aceitar, e o que chega ao vendedor | 1 min 07 s | 10 |
 <!-- fim dos videos -->
+
+**O semáforo.** Vermelho aguardando você, amarelo em execução, verde pronto:
+os eventos dos hooks acendem as três cores num semáforo físico (ESP32 com três
+LEDs), num painel na tela ou por um comando seu. Vem desligado e custa zero;
+liga com `~/.wx-claude-code/semaforo.json`. Comando `/wx-claude-code:semaforo`
+e a receita em `ferramentas/wx-semaforo/LEIA-ME.md`.
 
 **Validar o pacote** (roda a bateria de testes por dentro):
 
@@ -120,6 +126,7 @@ claude plugin validate wx-claude-code
 | `/wx-claude-code:rag` | Indexa e busca nos documentos do projeto (BM25 local, sem dependencia), devolvendo trechos com arquivo e linha. |
 | `/wx-claude-code:exportar` | Exporta o projeto resultante, organizado em sete pastas, com manifesto e SHA-256, para a pasta que o usuario escolheu. |
 | `/wx-claude-code:zelador` | Limpa temporarios antigos do projeto (preflight, logs, caches) uma vez por dia e mede o espaco, sem tocar no que importa. |
+| `/wx-claude-code:semaforo` | Semaforo fisico ou na tela: vermelho aguardando voce, amarelo em execucao, verde pronto. Liga por um arquivo de configuracao; desligado custa zero. |
 | `/wx-claude-code:licenca` | Ativa o plugin por serial, confere a licenca instalada e explica o que ela protege e o que nao. |
 | `/wx-claude-code:laudo-tokens` | Laudo de uso de tokens em 3 fases (auditar, corrigir, habitos). Somente leitura; nada muda sem aprovacao. |
 <!-- fim dos comandos -->
@@ -164,6 +171,7 @@ scripts por trás, que você também pode rodar direto, em
 | `replay.py` | Decisao reproduzivel: guarda COM QUE informacao ela foi tomada, e reconfere |
 | `rotear_modelo.py` | Escolhe modelo e effort para uma tarefa da conversao WX |
 | `safe_unpack_bundle.py` | Safely unpack an untrusted ZIP into one new, atomically published folder |
+| `semaforo.py` | Hook do semaforo: vermelho aguardando voce, amarelo trabalhando, verde pronto |
 | `telemetria.py` | Telemetria em OTLP/JSON, gerada do registro de operacoes -- sem crate, sem agente |
 | `uso_de_tokens.py` | Le o uso de tokens medido pelo proprio Claude Code e alimenta o orcamento do PMO |
 | `validate_plugin_bundle.py` | Offline structural validator used when the Claude CLI is unavailable.""" |

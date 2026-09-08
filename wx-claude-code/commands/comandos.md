@@ -43,6 +43,7 @@ Se `$1` vier preenchido, filtre por essa palavra e mostre só o que casa; sem ar
 | `/wx-claude-code:rag` | indexar e buscar nos documentos do projeto, com `arquivo#linha` |
 | `/wx-claude-code:exportar` | salvar o projeto resultante, organizado, na pasta do usuário |
 | `/wx-claude-code:zelador` | limpar temporários e medir espaço |
+| `/wx-claude-code:semaforo` | semáforo físico ou na tela: vermelho aguardando você, amarelo em execução, verde pronto |
 | `/wx-claude-code:licenca` | ativar por serial e conferir a licença |
 | `/wx-claude-code:laudo-tokens` | laudo de uso de tokens |
 

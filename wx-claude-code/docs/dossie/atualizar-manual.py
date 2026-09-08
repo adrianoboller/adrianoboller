@@ -34,7 +34,7 @@ ORDEM = ["questionario", "pergunta", "progresso", "comandos", "artefato", "pdf",
          "preflight", "converter", "interface", "estilo-telas", "golden", "testes-da-matriz",
          "constraints", "evidencia", "efeito", "grafo", "procedencia", "replay", "gemeo",
          "pmo", "equipe", "contrato", "telemetria", "identidade", "log", "ambiente", "help-wl",
-         "rag", "exportar", "zelador", "licenca", "laudo-tokens"]
+         "rag", "exportar", "zelador", "semaforo", "licenca", "laudo-tokens"]
 
 
 # o que cada destino e, dito uma vez aqui e nao a mao no manual; o golden vem do medidor

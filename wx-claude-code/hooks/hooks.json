@@ -34,6 +34,16 @@
             "statusMessage": "Design deep pass"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/semaforo.py\"",
+            "timeout": 5,
+            "statusMessage": "Semáforo: verde"
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -80,6 +90,16 @@
             "statusMessage": "Papel da sessão"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/semaforo.py\"",
+            "timeout": 5,
+            "statusMessage": "Semáforo: amarelo"
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -101,6 +121,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/semaforo.py\"",
+            "timeout": 5,
+            "statusMessage": "Semáforo: verde"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -116,6 +146,28 @@
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/rag.py\" hook",
             "timeout": 15,
             "statusMessage": "RAG do projeto"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/semaforo.py\"",
+            "timeout": 5,
+            "statusMessage": "Semáforo: amarelo"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/conversao-wx/scripts/semaforo.py\"",
+            "timeout": 5,
+            "statusMessage": "Semáforo: vermelho"
           }
         ]
       }

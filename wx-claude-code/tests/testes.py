@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -2361,6 +2362,48 @@ class HooksERag(unittest.TestCase):
         outro = Path(tempfile.mkdtemp())  # projeto sem .wx-migration nao e afetado
         r = run(RAIZ / "hooks/guarda_anexos_e_segredos.py", entrada=json.dumps({"tool_name": "Write", "tool_input": {"file_path": "inputs/x", "content": "x"}, "cwd": str(outro)}))
         self.assertEqual(r.stdout, ""); shutil.rmtree(outro, ignore_errors=True)
+
+    def test_semaforo_acende_pelos_eventos_e_desligado_custa_zero(self):
+        """O semaforo fisico: os eventos dos hooks dao as tres cores. Ligado, cada
+        evento chega na URL configurada na cor certa e o estado fica gravado;
+        desligado (sem semaforo.json) o hook nem le o stdin e nada sai pela rede."""
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        from urllib.parse import parse_qs, urlparse
+        recebidas = []
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a): pass
+            def do_GET(self):
+                recebidas.append(parse_qs(urlparse(self.path).query).get("cor", [""])[0])
+                self.send_response(204); self.end_headers()
+        srv = HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        casa = self.tmp / "casa"; casa.mkdir()
+        hook = SCRIPTS / "semaforo.py"
+        env = dict(os.environ, WX_CASA=str(casa))
+        def evento(nome):
+            return subprocess.run([sys.executable, str(hook)], input=json.dumps({"hook_event_name": nome}),
+                                  capture_output=True, text=True, env=env)
+        # desligado: nada na rede, nada gravado, saida 0
+        self.assertEqual(evento("Notification").returncode, 0)
+        self.assertEqual(recebidas, []); self.assertFalse((casa / "semaforo.estado").exists())
+        # ligado
+        (casa / "semaforo.json").write_text(json.dumps({"url": f"http://127.0.0.1:{srv.server_port}/luz"}), encoding="utf-8")
+        for ev in ("SessionStart", "UserPromptSubmit", "PreToolUse", "Notification", "Stop"):
+            self.assertEqual(evento(ev).returncode, 0)
+        self.assertEqual(recebidas, ["verde", "amarelo", "amarelo", "vermelho", "verde"])
+        estado = json.loads((casa / "semaforo.estado").read_text(encoding="utf-8"))
+        self.assertEqual((estado["cor"], estado["evento"]), ("verde", "Stop"))
+        # evento que nao muda a cor (SubagentStop) nao acende nada
+        self.assertEqual(evento("SubagentStop").returncode, 0); self.assertEqual(len(recebidas), 5)
+        # semaforo fora do ar nao trava: sai 0 em menos de 3 s
+        (casa / "semaforo.json").write_text(json.dumps({"url": "http://127.0.0.1:1/luz"}), encoding="utf-8")
+        t0 = time.time(); self.assertEqual(evento("Stop").returncode, 0); self.assertLess(time.time() - t0, 3)
+        # e os cinco eventos estao registrados no hooks.json
+        hooks = json.loads((RAIZ / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]
+        for ev in ("SessionStart", "UserPromptSubmit", "PreToolUse", "Notification", "Stop"):
+            self.assertTrue(any("semaforo.py" in h["command"] for e in hooks[ev] for h in e["hooks"]), ev)
+        srv.shutdown()
 
     def test_sincronizar_pmo_regera_kanban_e_marca_rag(self):
         r = run(RAIZ / "hooks/sincronizar_pmo.py", entrada=json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(self.tmp / ".wx-migration/traceability.csv")}, "cwd": str(self.tmp)}))

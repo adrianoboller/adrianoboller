@@ -1,4 +1,4 @@
-# Relatório do plugin WX Claude Code 3.48.0
+# Relatório do plugin WX Claude Code 3.49.0
 
 Medido em 2026-09-08 por `docs/dossie/numeros-do-plugin.py`; nenhum número abaixo foi digitado.
 
@@ -14,14 +14,14 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | papéis A–J | 10 |
 | subagentes PDCA | 40 |
 | especialistas WLanguage por tema | 7 |
-| comandos / | 33 |
+| comandos / | 34 |
 | skills | 21 |
 | skills de ERP (pacote skills.sh) | 8 |
-| scripts Python | 40 |
-| linhas de Python (scripts e hooks) | 17488 |
+| scripts Python | 41 |
+| linhas de Python (scripts e hooks) | 17593 |
 | documentos de referência | 19 |
-| testes de regressão | 109 |
-| hooks do plugin | 9 |
+| testes de regressão | 110 |
+| hooks do plugin | 14 |
 | blocos do questionário (0, A–M) | 14 |
 | itens do bloco 0 | 16 |
 | subperguntas de F (F0–F13) | 14 |
@@ -48,7 +48,7 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | testes do runtime WLanguage em Rust (wl-rt) | 16 |
 | corpus do Help (bytes) | 26750976 |
 | páginas válidas do corpus | 12035 |
-| linhas do manual | 937 |
+| linhas do manual | 945 |
 | tabelas do exemplo ESTOQUE | 7 |
 
 ## O que foi provado em sessão real

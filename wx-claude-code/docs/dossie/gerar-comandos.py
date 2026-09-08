@@ -23,7 +23,7 @@ E = H.escape
 ORDEM = ["questionario", "pergunta", "progresso", "comandos", "artefato", "pdf", "dependencias", "preflight", "converter", "interface",
          "estilo-telas", "golden", "testes-da-matriz", "constraints", "evidencia", "efeito", "grafo", "procedencia", "replay", "gemeo",
          "pmo", "equipe", "contrato", "telemetria", "identidade", "log", "ambiente", "help-wl", "rag",
-         "exportar", "zelador", "licenca", "laudo-tokens"]
+         "exportar", "zelador", "semaforo", "licenca", "laudo-tokens"]
 GRUPO = {
     "questionario": "Começar", "pergunta": "Começar", "progresso": "Começar", "comandos": "Começar",
     "artefato": "Entrada", "pdf": "Entrada", "dependencias": "Entrada", "preflight": "Entrada",
@@ -32,7 +32,7 @@ GRUPO = {
     "pmo": "Governar", "equipe": "Governar", "contrato": "Governar", "log": "Governar",
     "telemetria": "Governar", "identidade": "Governar",
     "ambiente": "Apoio", "help-wl": "Apoio", "rag": "Apoio",
-    "exportar": "Entregar", "zelador": "Entregar", "licenca": "Entregar", "laudo-tokens": "Entregar",
+    "exportar": "Entregar", "zelador": "Entregar", "semaforo": "Entregar", "licenca": "Entregar", "laudo-tokens": "Entregar",
 }
 CORES = {"Começar": "--a", "Entrada": "--a2", "Converter": "--ok", "Provar": "--a2",
          "Governar": "--roxo", "Apoio": "--m", "Entregar": "--am"}
