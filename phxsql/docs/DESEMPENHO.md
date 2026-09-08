@@ -42,12 +42,22 @@ morreu medida, como a localidade do pedido 113: o alvo mudou de arquivo, e quem
 o «atacasse» hoje gastaria esforço onde só sobra **um terço** do custo.
 
 E parte do `.reg` + `.log` é o **`.log` da replicação** — um evento por linha
-que o SQLite não tem e que o MariaDB desta bancada rodou desligado, e é aí que
-mora parte da distância do inserto em massa (o PhxSql grava 266 MB contra 60 do
-SQLite). **O que falta medir, ANTES de qualquer conserto, é quanto dos 4,5 µs é
-`.log` (recurso) e quanto é `.reg` (o dado, inevitável):** se for o `.log`, o
-ganho é um par com a replicação — lotear o diário, ou torná-lo opcional —, e
-não um speedup puro. *Medir a premissa do item vem antes de implementar o item.*
+que o SQLite não tem e que o MariaDB desta bancada rodou desligado. O `onde-doi`
+ganhou a fatia `.log` isolada (o diário montado **igual ao da `Table`**,
+`esquema.paginacao().para_externos()`, com o `registrar` que o `inserir` chama
+por linha), e o split foi **medido em 08/09/2026**: dos 7,4 µs, o **`.reg` (heap)
+são 3,8 µs (51,2%)** e o **`.log` da replicação são 0,7 µs (9,8%)**.
+
+**Ou seja: o `.log` não é a distância.** Lotear ou desligar o diário salva ~0,7
+µs (7,4 → 6,7 µs), e isso não fecha o vão para o MariaDB (6,7) nem chega perto do
+SQLite (2,1). O custo de verdade do inserto é a **gravação do dado no `.reg`,
+51,2%** — o formato do slot, o CRC da página e o append (o PhxSql grava 266 MB
+contra 60 do SQLite, e é o `.reg` que carrega isso). É aí, e só aí, que sobra I/O
+de escrita a ganhar. E como é **formato em disco**, entra pela porta do DBA e
+**com a sua própria premissa medida antes** — quanto dos 3,8 µs é CRC de página
+× serialização do slot × chamada de sistema —, porque esta casa já mirou o
+arquivo errado **duas vezes seguidas** nesta mesma busca (a localidade do 113, e
+o `.ndx` de agora). *Medir a premissa do item vem antes de implementar o item.*
 
 ---
 

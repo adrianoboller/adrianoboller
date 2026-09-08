@@ -25,6 +25,7 @@ use phxsql_core::crc::crc32;
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
+use phxsql_store::log::{LogFile, Operacao};
 use phxsql_store::table::Table;
 
 const CIDADES: [&str; 8] = [
@@ -107,6 +108,30 @@ fn medir(rotulo: &str, indices: Vec<IndexDef>, n: i64) -> Medida {
     }
 }
 
+/// So o `.log` (o diario da replicacao), isolado do `.reg`.
+///
+/// O diario e montado EXATAMENTE como a `Table::criar` monta o dela -- a mesma
+/// `esquema.paginacao().para_externos()` --, e `registrar` e o que o `inserir`
+/// chama por linha (`registrar_detalhado(op, rowid, versao, &[], None, 0)`, com
+/// `imagem_no_diario: false`). Assim o custo isolado e o MESMO que o inserto
+/// paga, e nao um parente. Sem `fsync` por linha, como o laco do `inserir`.
+fn medir_so_log(n: i64) -> f64 {
+    let dir = std::env::temp_dir().join(format!("phx-onde-doi-log-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let esquema = Schema::new("precos", colunas(), vec![]).unwrap();
+    let externos = esquema.paginacao().para_externos();
+    let mut log = LogFile::criar(&dir, "precos", externos).unwrap();
+    let inicio = Instant::now();
+    for i in 1..=n {
+        log.registrar(Operacao::Inclusao, i as u64, 1).unwrap();
+    }
+    log.sincronizar().unwrap();
+    let s = inicio.elapsed().as_secs_f64();
+    let _ = std::fs::remove_dir_all(&dir);
+    s * 1e6 / n as f64
+}
+
 fn main() {
     let n: i64 = std::env::args()
         .nth(1)
@@ -116,6 +141,7 @@ fn main() {
     println!("=== insercao de {n} linhas, um fator por vez ===\n");
 
     let so_reg = medir("so .reg", vec![], n).us_por_linha;
+    let so_log = medir_so_log(n);
     let um = medir(
         "+1 indice",
         vec![IndexDef::new("porId", vec![IndexColumn::asc(0)])],
@@ -140,8 +166,13 @@ fn main() {
 
     println!("\n=== o que cada parcela custa, por linha ===\n");
     println!(
-        "  .reg + .log ................ {so_reg:>7.1} us   {:>5.1}%",
-        so_reg / dois * 100.0
+        "  .reg (heap) ................ {:>7.1} us   {:>5.1}%",
+        so_reg - so_log,
+        (so_reg - so_log) / dois * 100.0
+    );
+    println!(
+        "  .log (diario/replicacao) ... {so_log:>7.1} us   {:>5.1}%",
+        so_log / dois * 100.0
     );
     println!(
         "  primeiro indice ............ {:>7.1} us   {:>5.1}%",
