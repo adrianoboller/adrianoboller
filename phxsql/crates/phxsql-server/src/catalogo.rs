@@ -464,6 +464,50 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: true,
     },
     Operacao {
+        nome: "agrupar",
+        apelidos: &["group_by"],
+        resumo: "O `GROUP BY`: agrupa por colunas e resume cada grupo com \
+                 soma, média, contagem, mínimo, máximo ou distintos.",
+        parametros: &[
+            DB,
+            TAB,
+            opc(
+                "por",
+                "array",
+                "as colunas do agrupamento; lista vazia (ou ausente) é UM grupo \
+                 só -- o `SELECT COUNT(*) FROM t`",
+            ),
+            opc(
+                "agregados",
+                "array",
+                "`{funcao, coluna, apelido}` -- `funcao` é `contagem`, `soma`, \
+                 `media`, `minimo`, `maximo` ou `distintos`; só `contagem` \
+                 dispensa `coluna`; sem `apelido` sai `contagem`/`soma_preco`",
+            ),
+            opc("onde", "array", "filtros `{coluna, op, valor}` sobre a linha CRUA"),
+            opc(
+                "expressao",
+                "string",
+                "predicado por expressão sobre a linha CRUA, junto com `onde` (E)",
+            ),
+            opc(
+                "tendo",
+                "string",
+                "o `HAVING`: expressão sobre a linha AGREGADA, onde os apelidos \
+                 e as colunas de `por` são as colunas (`n > 1`)",
+            ),
+            opc(
+                "ordem",
+                "array",
+                "`{coluna, desc}` sobre a linha agregada; a coluna é um nome de \
+                 `por` ou um apelido",
+            ),
+            MAX,
+        ],
+        exemplo: r#"{"op":"agrupar","database":"loja","tabela":"vendas","por":["cidade"],"agregados":[{"funcao":"contagem","apelido":"n"},{"funcao":"soma","coluna":"total","apelido":"total"}],"tendo":"n > 1"}"#,
+        ferramenta_mcp: true,
+    },
+    Operacao {
         nome: "pivotar",
         apelidos: &["pivot"],
         resumo: "Tabulação cruzada: soma, conta ou tira a média de uma coluna \

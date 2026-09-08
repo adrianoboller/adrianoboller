@@ -113,8 +113,11 @@ impl Atividade {
             // "tabela", a propria operacao filtra tabela a tabela por dentro.
             "dados_pessoais" | "lgpd" => Atividade::Ler,
             // O pivot resume o que a varredura leria: quem pode ler a tabela
-            // pode ver o total dela.
-            "pivotar" | "pivot" => Atividade::Ler,
+            // pode ver o total dela. O `agrupar` e o mesmo argumento: um total
+            // por cidade nao diz nada que a varredura ja nao entregasse linha
+            // a linha -- e pedir mais aqui esconderia por agregacao um dado
+            // que quem pode ler ja ve inteiro.
+            "pivotar" | "pivot" | "agrupar" | "group_by" => Atividade::Ler,
             // Junção e união leem duas ou mais tabelas da MESMA base, e o
             // poder de ler vale por base -- entao ler e o suficiente, e a
             // operacao confere de novo antes de abrir a segunda tabela.

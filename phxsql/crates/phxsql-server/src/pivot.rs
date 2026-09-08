@@ -83,8 +83,8 @@ impl Agregador {
 /// inteiro escalado (exato), o resto soma em `f64`. Manter os dois custa 40
 /// bytes por celula e evita um enum que teria de ser conferido a cada linha.
 #[derive(Debug, Default, Clone)]
-struct Acumulador {
-    n: u64,
+pub(crate) struct Acumulador {
+    pub(crate) n: u64,
     soma_i: i128,
     soma_f: f64,
     min_f: Option<f64>,
@@ -97,14 +97,14 @@ struct Acumulador {
 }
 
 impl Acumulador {
-    fn novo(distinta: bool) -> Acumulador {
+    pub(crate) fn novo(distinta: bool) -> Acumulador {
         Acumulador {
             vistos: distinta.then(std::collections::HashSet::new),
             ..Default::default()
         }
     }
 
-    fn somar(&mut self, v: &Value) {
+    pub(crate) fn somar(&mut self, v: &Value) {
         self.n += 1;
         if let Some(s) = &mut self.vistos {
             s.insert(rotulo_cru(v));
@@ -171,6 +171,74 @@ fn rotulo_cru(v: &Value) -> String {
         Value::Uuid(u) => u.to_string(),
         Value::Uuid256(u) => u.to_string(),
         Value::Bin(b) => format!("<{} bytes>", b.len()),
+    }
+}
+
+/// Fecha um acumulador no VALOR tipado, e nao no texto da celula.
+///
+/// O pivot fecha em `String` porque celula de grade e texto. O `agrupar`
+/// precisa de valor por duas razoes: o `tendo` avalia uma EXPRESSAO sobre ele
+/// (`n > 1` tem de comparar numero com numero, nao texto com numero), e a
+/// resposta sai por `valores::valor_para_json`, que decide o formato pelo
+/// TIPO -- e e assim que o `Decimal` sai como texto sem perder centavo, como
+/// em todo o resto do protocolo.
+///
+/// Duas saidas do MESMO acumulador, e nao dois acumuladores: a soma exata em
+/// dominio inteiro escalado e a media que divide uma vez no fim moram aqui em
+/// cima, e uma segunda copia delas divergiria no primeiro arredondamento.
+pub(crate) fn fechar_valor(
+    a: &Acumulador,
+    ag: Agregador,
+    decimal: bool,
+    escala: u8,
+) -> (Value, phxsql_core::types::ColumnType) {
+    use phxsql_core::types::ColumnType;
+    match ag {
+        Agregador::Contagem => (Value::UInt(a.n), ColumnType::UInt8),
+        Agregador::ContagemDistinta => (
+            Value::UInt(a.vistos.as_ref().map_or(0, |s| s.len()) as u64),
+            ColumnType::UInt8,
+        ),
+        _ if decimal => {
+            let v = match ag {
+                Agregador::Soma => a.soma_i,
+                Agregador::Media if a.n > 0 => a.soma_i / a.n as i128,
+                Agregador::Media => 0,
+                Agregador::Minimo => a.min_i.unwrap_or(0),
+                Agregador::Maximo => a.max_i.unwrap_or(0),
+                _ => 0,
+            };
+            // Nao ha valor nenhum no grupo -> NULO, e nao zero: somar «nada»
+            // nao da zero reais, da resposta nenhuma. E o que todo SQL faz.
+            let v = if a.n == 0 {
+                Value::Null
+            } else {
+                Value::Decimal(v)
+            };
+            (
+                v,
+                ColumnType::Decimal {
+                    precisao: 38,
+                    escala,
+                },
+            )
+        }
+        _ => {
+            let v = match ag {
+                Agregador::Soma => a.soma_f,
+                Agregador::Media if a.n > 0 => a.soma_f / a.n as f64,
+                Agregador::Media => 0.0,
+                Agregador::Minimo => a.min_f.unwrap_or(0.0),
+                Agregador::Maximo => a.max_f.unwrap_or(0.0),
+                _ => 0.0,
+            };
+            let v = if a.n == 0 {
+                Value::Null
+            } else {
+                Value::Real(v)
+            };
+            (v, ColumnType::Real8)
+        }
     }
 }
 
@@ -385,7 +453,12 @@ pub fn cruzar(
 }
 
 /// Fecha um acumulador no numero que a celula mostra.
-fn fechar_acumulador(a: &Acumulador, ag: Agregador, decimal: bool, escala: u8) -> String {
+pub(crate) fn fechar_acumulador(
+    a: &Acumulador,
+    ag: Agregador,
+    decimal: bool,
+    escala: u8,
+) -> String {
     match ag {
         Agregador::Contagem => a.n.to_string(),
         Agregador::ContagemDistinta => a.vistos.as_ref().map_or(0, |s| s.len()).to_string(),

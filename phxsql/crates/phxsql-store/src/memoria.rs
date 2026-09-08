@@ -142,7 +142,17 @@ pub struct Resultado {
 /// `Date(5)` tem a mesma chave, porque comparam iguais. Se comparassem iguais
 /// e tivessem chaves diferentes, o mapa daria uma resposta e a varredura daria
 /// outra -- e o defeito so apareceria na tabela grande.
-fn chave(v: &Value) -> Vec<u8> {
+///
+/// PUBLICA porque o `agrupar` do servidor precisa da mesma nocao de «mesmo
+/// valor» para juntar duas linhas no mesmo grupo. Escrever a segunda faria
+/// `GROUP BY` e mapa de igualdade discordarem sobre o que e igual -- e a
+/// divergencia apareceria como um total que nao fecha com a contagem.
+///
+/// Ela nao distingue `Int(1000)` de `Decimal(1000)`, e isso e seguro nos dois
+/// usos: os dois olham UMA coluna, e uma coluna tem UM tipo. O que ela
+/// distingue de proposito e o `NULL`, que ganha familia propria em vez de
+/// virar um rotulo de texto que uma linha poderia guardar de verdade.
+pub fn chave(v: &Value) -> Vec<u8> {
     let mut k = Vec::with_capacity(17);
     match v {
         Value::Null => k.push(0),

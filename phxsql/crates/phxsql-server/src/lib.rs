@@ -4,6 +4,7 @@
 //! `config.json`), fala JSON Lines e registra todo acesso com IP, data e hora.
 
 pub mod acesso;
+pub mod agrupar;
 #[cfg(test)]
 mod apoio_teste;
 pub mod bidirecional;

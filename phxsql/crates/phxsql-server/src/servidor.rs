@@ -8176,6 +8176,7 @@ impl Servidor {
             "dados_pessoais" | "lgpd" => self.op_dados_pessoais(p, sessao),
             "sequencias" | "sequences" => self.op_sequencias(p, sessao),
             "ajustar_sequencia" => self.op_ajustar_sequencia(p, sessao),
+            "agrupar" | "group_by" => self.op_agrupar(p, sessao),
             "pivotar" | "pivot" => self.op_pivotar(p, sessao),
             "juntar" | "join" => self.op_juntar(p, sessao),
             "unir" | "union" => self.op_unir(p, sessao),
@@ -9139,6 +9140,270 @@ impl Servidor {
     ///   "colunas": [ {"campo":"emissao", "granularidade":"mes"} ],
     ///   "valor": "total", "agregador": "soma", "max": 200000 }
     /// ```
+    /// `agrupar`: o `GROUP BY` generico -- agrupa por colunas e resume cada
+    /// grupo.
+    ///
+    /// # Por que ela nao e um `pivotar` com outra roupa
+    ///
+    /// O `pivotar` cruza DUAS listas de campos numa grade e resume UMA coluna.
+    /// Isto aqui resume VARIAS colunas de uma vez, com apelido para cada uma, e
+    /// peneira o resultado ja agregado (`tendo`). Sao perguntas diferentes com
+    /// o mesmo acumulador embaixo -- e e o acumulador que e compartilhado, e
+    /// nao copiado: ver `crate::agrupar`.
+    ///
+    /// # O portao continua sendo UM
+    ///
+    /// Esta operacao nomeia UMA tabela, no campo `"tabela"` -- o mesmo que o
+    /// `despachar` ja confere. Nao ha conferencia propria aqui porque nao ha
+    /// segunda tabela escondida em lugar nenhum, ao contrario do `juntar`, do
+    /// `unir` e do `pivotar`. **No dia em que o `agrupar` ganhar um `de`
+    /// aninhado, ele passa a precisar de uma** -- e a pergunta que decide e
+    /// «esta operacao nomeia tabela onde o portao nao olha?».
+    fn op_agrupar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let max = self.limite(p);
+        let teto_grupos = self.max_linhas();
+        let comeco = Instant::now();
+        let _trava = self.travar_dados()?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+        let esquema = t.esquema().clone();
+
+        let mut por = Vec::new();
+        for c in p.campo("por").and_then(Json::lista).unwrap_or(&[]) {
+            por.push(coluna_de(c, &esquema)?);
+        }
+        let nomes_por: Vec<String> = por
+            .iter()
+            .map(|i| esquema.colunas()[*i].nome.clone())
+            .collect();
+
+        // Sem `agregados` a resposta seria a lista de valores distintos --
+        // que e um `SELECT DISTINCT`, e nao um `GROUP BY`. Contar e o padrao
+        // porque e o que quem esquece o campo quase sempre queria.
+        let pedidos = p.campo("agregados").and_then(Json::lista);
+        let mut agregados: Vec<crate::agrupar::Agregado> = Vec::new();
+        for a in pedidos.unwrap_or(&[]) {
+            let funcao = Agregador::de_texto(a.texto_ou("funcao", "contagem"))?;
+            let nome_coluna = a.texto_ou("coluna", "").trim().to_string();
+            let coluna = match nome_coluna.as_str() {
+                "" => {
+                    if funcao.precisa_de_valor() {
+                        return Err(PhxError::Esquema(format!(
+                            "o agregado {:?} precisa de \"coluna\": so a contagem \
+                             conta linhas em vez de valores",
+                            funcao.nome()
+                        )));
+                    }
+                    None
+                }
+                c => Some(posicao_da_coluna(&esquema, c).ok_or_else(|| {
+                    PhxError::Esquema(format!(
+                        "o agregado {:?} usa a coluna {c:?}, que nao existe em {}",
+                        funcao.nome(),
+                        esquema.nome()
+                    ))
+                })?),
+            };
+            let apelido = match a.texto_ou("apelido", "").trim() {
+                "" => crate::agrupar::Agregado::apelido_padrao(
+                    funcao,
+                    (!nome_coluna.is_empty()).then_some(nome_coluna.as_str()),
+                ),
+                outro => outro.to_string(),
+            };
+            agregados.push(crate::agrupar::Agregado {
+                funcao,
+                coluna,
+                apelido,
+            });
+        }
+        if agregados.is_empty() {
+            agregados.push(crate::agrupar::Agregado {
+                funcao: Agregador::Contagem,
+                coluna: None,
+                apelido: "contagem".to_string(),
+            });
+        }
+        // Apelido repetido recusa AQUI, e nao vira a segunda chave de um
+        // objeto JSON: quem le a resposta veria uma das duas e nao saberia
+        // qual -- numero errado calado, que e o que este projeto nao faz.
+        for (i, a) in agregados.iter().enumerate() {
+            if nomes_por.iter().any(|n| n.eq_ignore_ascii_case(&a.apelido)) {
+                return Err(PhxError::Esquema(format!(
+                    "o apelido {:?} colide com a coluna de agrupamento de mesmo \
+                     nome; de outro apelido ao agregado",
+                    a.apelido
+                )));
+            }
+            if agregados[..i]
+                .iter()
+                .any(|b| b.apelido.eq_ignore_ascii_case(&a.apelido))
+            {
+                return Err(PhxError::Esquema(format!(
+                    "dois agregados usam o apelido {:?}; um deles ficaria \
+                     invisivel na resposta",
+                    a.apelido
+                )));
+            }
+        }
+
+        // A peneira da linha CRUA, no mesmo lugar unico do `varrer`.
+        let onde = filtros_do_pedido(p, &esquema)?;
+        let expressao = expressao_do_pedido(p, &esquema)?;
+
+        // O `tendo` fala da linha AGREGADA, entao ele e conferido contra os
+        // nomes que existem DEPOIS de agrupar -- as colunas de `por` e os
+        // apelidos. Conferir contra o esquema aqui aceitaria `preco > 10`, que
+        // nao quer dizer nada num grupo de mil linhas.
+        let tendo = match p.campo("tendo").and_then(Json::texto) {
+            Some(txt) if !txt.trim().is_empty() => {
+                let e = phxsql_core::expressao::Expressao::analisar(txt)?;
+                for nome in e.colunas() {
+                    let conhecido = nomes_por.iter().any(|n| n.eq_ignore_ascii_case(nome))
+                        || agregados
+                            .iter()
+                            .any(|a| a.apelido.eq_ignore_ascii_case(nome));
+                    if !conhecido {
+                        return Err(PhxError::Esquema(format!(
+                            "o \"tendo\" usa {nome:?}, que nao e coluna de \"por\" \
+                             nem apelido de agregado. O que ele pode ver e: {}",
+                            nomes_por
+                                .iter()
+                                .cloned()
+                                .chain(agregados.iter().map(|a| a.apelido.clone()))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )));
+                    }
+                }
+                Some(e)
+            }
+            _ => None,
+        };
+
+        let rowids: Vec<u64> = t.varrer()?.into_iter().map(|(r, _)| r).collect();
+        let mut fonte = LinhasPeneiradas {
+            rowids: rowids.into_iter(),
+            tabela: &mut t,
+            onde,
+            expressao,
+            esquema: &esquema,
+            examinadas: 0,
+        };
+        let r = crate::agrupar::agrupar(&mut fonte, &esquema, &por, &agregados, teto_grupos)?;
+        let examinadas = fonte.examinadas;
+
+        // A linha da resposta, montada uma vez e usada pelo `tendo`, pela
+        // `ordem` e pela saida -- porque as tres falam dos MESMOS nomes.
+        let mut linhas: Vec<Vec<(String, Value, phxsql_core::types::ColumnType)>> = Vec::new();
+        for g in &r.grupos {
+            let mut campos = Vec::with_capacity(por.len() + agregados.len());
+            for (i, c) in por.iter().enumerate() {
+                campos.push((
+                    nomes_por[i].clone(),
+                    g.chave[i].clone(),
+                    esquema.colunas()[*c].ty,
+                ));
+            }
+            for (a, (v, ty)) in agregados.iter().zip(g.valores.iter()) {
+                campos.push((a.apelido.clone(), v.clone(), *ty));
+            }
+            if let Some(e) = &tendo {
+                let passa = e.avaliar_bool(&|nome| {
+                    campos
+                        .iter()
+                        .find(|(n, _, _)| n.eq_ignore_ascii_case(nome))
+                        .map(|(_, v, ty)| (v, ty))
+                })?;
+                // `NULL` exclui, como em todo filtro deste motor -- e como no
+                // HAVING do SQL. No CHECK ele passa, e a diferenca esta escrita
+                // no `phxsql_core::expressao`.
+                if passa != Some(true) {
+                    continue;
+                }
+            }
+            linhas.push(campos);
+        }
+
+        if let Some(l) = p.campo("ordem").and_then(Json::lista) {
+            let mut chaves: Vec<(usize, bool)> = Vec::new();
+            for o in l {
+                let nome = match o {
+                    Json::Texto(t) => t.as_str(),
+                    outro => outro.texto_ou("coluna", ""),
+                };
+                let i = linhas
+                    .first()
+                    .and_then(|c| c.iter().position(|(n, _, _)| n.eq_ignore_ascii_case(nome)));
+                // Sem grupo nenhum nao ha o que ordenar, e recusar ali seria
+                // recusar por causa de uma tabela vazia.
+                let Some(i) = i else {
+                    if linhas.is_empty() {
+                        break;
+                    }
+                    return Err(PhxError::Esquema(format!(
+                        "a ordem pede {nome:?}, que nao e coluna de \"por\" nem \
+                         apelido de agregado"
+                    )));
+                };
+                chaves.push((i, o.booleano_ou("desc", false)));
+            }
+            linhas.sort_by(|a, b| {
+                for (i, desc) in &chaves {
+                    let ord = phxsql_store::memoria::comparar(&a[*i].1, &b[*i].1);
+                    let ord = if *desc { ord.reverse() } else { ord };
+                    if ord != std::cmp::Ordering::Equal {
+                        return ord;
+                    }
+                }
+                std::cmp::Ordering::Equal
+            });
+        }
+
+        let grupos = linhas.len() as u64;
+        let truncado = grupos > max;
+        let saida: Vec<Json> = linhas
+            .iter()
+            .take(max as usize)
+            .map(|campos| {
+                Json::Objeto(
+                    campos
+                        .iter()
+                        .map(|(n, v, ty)| (n.clone(), crate::valores::valor_para_json(v, ty)))
+                        .collect(),
+                )
+            })
+            .collect();
+
+        // A TRILHA, pelo mesmo motivo do `varrer`: os rotulos dos grupos SAO
+        // os valores da coluna agrupada. Agrupar por `cpf` e ler os CPFs, e
+        // uma trilha que nao registrasse isso deixaria de responder «quem leu
+        // o dado pessoal?» justamente por onde ele sai resumido.
+        let devolvidas = saida.len() as u64;
+        Self::trilhar_acesso(&mut t, 0, devolvidas, || {
+            format!(
+                "agrupar por={} agregados={}",
+                nomes_por.join(","),
+                agregados.len()
+            )
+        })?;
+
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            // `grupos` conta o que sobrou DEPOIS do `tendo`, e nao antes: e o
+            // tamanho do resultado, que e o que quem pagina precisa saber.
+            ("grupos", Json::de_u64(grupos)),
+            ("devolvidas", Json::de_u64(devolvidas)),
+            // As duas do `varrer`, e pela mesma razao: sem elas a tela nao
+            // sabe se o numero que mostra e da tabela ou da pagina.
+            ("examinadas", Json::de_u64(examinadas)),
+            ("consideradas", Json::de_u64(r.lidas)),
+            ("truncado", Json::Bool(truncado)),
+            ("linhas", Json::Lista(saida)),
+            ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
+        ]))
+    }
+
     fn op_pivotar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let agregador = Agregador::de_texto(p.texto_ou("agregador", "soma"))?;
         let max = self.limite_pivot(p);
@@ -18759,6 +19024,45 @@ impl Contagem {
 struct LinhasDaTabela<'a> {
     rowids: std::vec::IntoIter<u64>,
     tabela: &'a mut Table,
+}
+
+/// As linhas de uma tabela ja PENEIRADAS -- o `onde` e a `expressao` decididos
+/// pelo mesmo `memoria::passa` do `varrer`.
+///
+/// Existe para o `agrupar` receber so o que passa, e para o filtro do
+/// `agrupar` ser, letra por letra, o filtro do `varrer`. Escrever a peneira
+/// aqui de novo faria `WHERE cidade = 'X'` significar uma coisa numa operacao
+/// e outra na irma -- e a divergencia so apareceria quando alguem comparasse
+/// a soma com a lista.
+struct LinhasPeneiradas<'a> {
+    rowids: std::vec::IntoIter<u64>,
+    tabela: &'a mut Table,
+    onde: Vec<Filtro>,
+    expressao: Option<phxsql_core::expressao::Expressao>,
+    esquema: &'a Schema,
+    /// Quantas linhas foram OLHADAS -- o irmao do `examinadas` do `varrer`.
+    examinadas: u64,
+}
+
+impl crate::pivot::Iterador for LinhasPeneiradas<'_> {
+    fn proxima(&mut self) -> Result<Option<Vec<Value>>> {
+        for rowid in self.rowids.by_ref() {
+            let Some(l) = self.tabela.ler(rowid)? else {
+                continue;
+            };
+            self.examinadas += 1;
+            if phxsql_store::memoria::passa(
+                &l,
+                &self.onde,
+                None,
+                self.expressao.as_ref(),
+                self.esquema,
+            )? {
+                return Ok(Some(l));
+            }
+        }
+        Ok(None)
+    }
 }
 
 impl crate::pivot::Iterador for LinhasDaTabela<'_> {
@@ -28946,6 +29250,323 @@ mod testes_varrer_expressao {
             "127.0.0.1",
         );
         assert_eq!(ids(&r.unwrap()), vec![2, 3, 4]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// A op `agrupar` -- o `GROUP BY` pelo protocolo.
+#[cfg(test)]
+mod testes_agrupar {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("agrupar-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Uma base `loja` com `vendas` (o que se agrupa) e `folha` (a negada).
+    fn servidor(d: &std::path::Path, cadastro: Cadastro) -> Arc<Servidor> {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            cadastro,
+            max_linhas: 10_000,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let ses = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"loja"}"#), &ses)
+            .unwrap();
+        for tab in ["vendas", "folha"] {
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"loja","tabela":"{tab}","colunas":[
+                        {{"nome":"id","tipo":"Int8","obrigatoria":true}},
+                        {{"nome":"cidade","tipo":"Str(30)"}},
+                        {{"nome":"total","tipo":"Decimal(12,2)"}}],
+                     "indices":[{{"nome":"porId","colunas":["id"],"unico":true,
+                                  "primario":true}}]}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        // 10,00 + 0,01 em Blumenau; 20,50 em Itajai; uma linha sem cidade.
+        for (id, cidade, total) in [
+            (1, r#""Blumenau""#, r#""10.00""#),
+            (2, r#""Itajai""#, r#""20.50""#),
+            (3, r#""Blumenau""#, r#""0.01""#),
+            (4, "null", r#""5.00""#),
+            (5, r#""Blumenau""#, "null"),
+        ] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"loja","tabela":"vendas",
+                         "linha":{{"id":{id},"cidade":{cidade},"total":{total}}}}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        }
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"loja","tabela":"folha","linha":{"id":1,"cidade":"x","total":"9.99"}}"#),
+            &ses,
+        )
+        .unwrap();
+        s
+    }
+
+    fn agrupar(s: &Arc<Servidor>, extra: &str) -> Result<Json> {
+        s.executar(
+            "agrupar",
+            &pedido(&format!(
+                r#"{{"database":"loja","tabela":"vendas"{extra}}}"#
+            )),
+            &Sessao::default(),
+        )
+    }
+
+    fn linhas(r: &Json) -> Vec<Json> {
+        r.campo("linhas").and_then(Json::lista).unwrap().to_vec()
+    }
+
+    /// **A PROVA REAL: a soma sai EXATA, e o teste mede o valor -- nao se
+    /// agrupou.**
+    ///
+    /// 10,00 + 0,01 e 10,01. Uma soma em `f64` daria `10.009999999999999`, e
+    /// um teste que so contasse os grupos passaria com esse defeito reposto.
+    /// A linha de `total` nulo conta como LINHA (o `COUNT(*)`) e nao entra na
+    /// SOMA -- somar «sem valor» como zero afundaria a media.
+    #[test]
+    fn a_soma_por_cidade_e_exata_e_o_nulo_conta_linha_sem_somar() {
+        let d = dir("soma");
+        let s = servidor(&d, Cadastro::default());
+        let r = agrupar(
+            &s,
+            r#","por":["cidade"],
+               "agregados":[{"funcao":"contagem","apelido":"n"},
+                            {"funcao":"soma","coluna":"total","apelido":"total"},
+                            {"funcao":"media","coluna":"total","apelido":"media"}],
+               "ordem":[{"coluna":"cidade"}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("grupos", -1), 3, "Blumenau, Itajai e o nulo");
+        assert_eq!(r.inteiro_ou("examinadas", -1), 5);
+        let l = linhas(&r);
+        // A ordem por `cidade` poe o NULO primeiro (ele compara menor).
+        assert_eq!(l[1].texto_ou("cidade", ""), "Blumenau");
+        assert_eq!(l[1].inteiro_ou("n", -1), 3, "a linha de total nulo e linha");
+        assert_eq!(
+            l[1].texto_ou("total", ""),
+            "10.01",
+            "a soma de Decimal perdeu centavo"
+        );
+        // A media divide pelas linhas que TEM valor (duas), e nao pelas tres.
+        assert_eq!(l[1].texto_ou("media", ""), "5.00");
+        assert_eq!(l[2].texto_ou("cidade", ""), "Itajai");
+        assert_eq!(l[2].texto_ou("total", ""), "20.50");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// `por` vazio e UM grupo: e o `SELECT COUNT(*), SUM(total) FROM vendas`.
+    #[test]
+    fn sem_por_e_um_grupo_so() {
+        let d = dir("um");
+        let s = servidor(&d, Cadastro::default());
+        let r = agrupar(
+            &s,
+            r#","agregados":[{"funcao":"contagem","apelido":"n"},
+                             {"funcao":"soma","coluna":"total","apelido":"total"}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("grupos", -1), 1);
+        let l = linhas(&r);
+        assert_eq!(l[0].inteiro_ou("n", -1), 5);
+        assert_eq!(l[0].texto_ou("total", ""), "35.51");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O `tendo` peneira o RESULTADO, e nao a linha crua.
+    ///
+    /// Com `n > 1` so Blumenau sobra. E `grupos` passa a contar o que sobrou:
+    /// e o tamanho do resultado, que e o que quem pagina precisa saber.
+    #[test]
+    fn o_tendo_peneira_o_grupo_e_nao_a_linha() {
+        let d = dir("tendo");
+        let s = servidor(&d, Cadastro::default());
+        let r = agrupar(
+            &s,
+            r#","por":["cidade"],
+               "agregados":[{"funcao":"contagem","apelido":"n"}],
+               "tendo":"n > 1""#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("grupos", -1), 1);
+        let l = linhas(&r);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].texto_ou("cidade", ""), "Blumenau");
+        assert_eq!(l[0].inteiro_ou("n", -1), 3);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O `onde`/`expressao` peneira a linha CRUA, ANTES de agrupar.
+    ///
+    /// A ordem dos dois nao e detalhe: com `total > 5` avaliado depois do
+    /// grupo, Blumenau sairia com `n = 3`; avaliado antes, sai com `n = 1`.
+    #[test]
+    fn a_expressao_peneira_antes_de_agrupar() {
+        let d = dir("antes");
+        let s = servidor(&d, Cadastro::default());
+        let r = agrupar(
+            &s,
+            r#","por":["cidade"],
+               "agregados":[{"funcao":"contagem","apelido":"n"}],
+               "expressao":"total > 5","ordem":[{"coluna":"cidade"}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("examinadas", -1), 5, "a varredura olha todas");
+        assert_eq!(r.inteiro_ou("consideradas", -1), 2, "so duas passam");
+        let l = linhas(&r);
+        assert_eq!(l.len(), 2);
+        assert_eq!(l[0].texto_ou("cidade", ""), "Blumenau");
+        assert_eq!(l[0].inteiro_ou("n", -1), 1);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A `ordem` fala dos nomes da linha AGREGADA -- inclusive dos apelidos.
+    #[test]
+    fn a_ordem_enxerga_o_apelido() {
+        let d = dir("ordem");
+        let s = servidor(&d, Cadastro::default());
+        let r = agrupar(
+            &s,
+            r#","por":["cidade"],
+               "agregados":[{"funcao":"contagem","apelido":"n"}],
+               "ordem":[{"coluna":"n","desc":true}]"#,
+        )
+        .unwrap();
+        let l = linhas(&r);
+        assert_eq!(l[0].texto_ou("cidade", ""), "Blumenau");
+        assert_eq!(l[0].inteiro_ou("n", -1), 3);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Cada recusa diz O QUE esta errado, com o nome dentro.
+    #[test]
+    fn as_recusas_nomeiam() {
+        let d = dir("recusa");
+        let s = servidor(&d, Cadastro::default());
+
+        // Coluna que nao existe no agregado.
+        let e = agrupar(&s, r#","agregados":[{"funcao":"soma","coluna":"lucro"}]"#).unwrap_err();
+        assert!(e.to_string().contains("lucro"), "{e}");
+
+        // Soma sem coluna: so a contagem dispensa valor.
+        let e = agrupar(&s, r#","agregados":[{"funcao":"soma"}]"#).unwrap_err();
+        assert!(e.to_string().contains("coluna"), "{e}");
+
+        // `tendo` falando de coluna crua: ela nao existe depois de agrupar.
+        let e = agrupar(
+            &s,
+            r#","por":["cidade"],"agregados":[{"funcao":"contagem","apelido":"n"}],
+               "tendo":"total > 5""#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("total"), "{e}");
+        assert!(
+            e.to_string().contains('n'),
+            "a recusa tem de listar o que da: {e}"
+        );
+
+        // Apelido repetido: um dos dois ficaria invisivel na resposta.
+        let e = agrupar(
+            &s,
+            r#","agregados":[{"funcao":"contagem","apelido":"n"},
+                             {"funcao":"soma","coluna":"total","apelido":"n"}]"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("\"n\""), "{e}");
+
+        // Apelido colidindo com a coluna de agrupamento.
+        let e = agrupar(
+            &s,
+            r#","por":["cidade"],"agregados":[{"funcao":"contagem","apelido":"cidade"}]"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("cidade"), "{e}");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O teto de GRUPOS recusa nomeando, em vez de engasgar a maquina.
+    #[test]
+    fn o_teto_de_grupos_recusa_nomeando() {
+        let d = dir("teto");
+        let s = servidor(&d, Cadastro::default());
+        // Um servidor com `max_linhas` de 2 e tres cidades distintas.
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            max_linhas: 2,
+            ..Config::default()
+        };
+        let s2 = Servidor::novo(c).unwrap();
+        let e = s2
+            .executar(
+                "agrupar",
+                &pedido(r#"{"database":"loja","tabela":"vendas","por":["id"]}"#),
+                &Sessao::default(),
+            )
+            .unwrap_err();
+        assert!(e.to_string().contains("max_linhas"), "{e}");
+        assert_eq!(e.nome(), "LIMITE_EXCEDIDO", "{e}");
+        drop(s);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **O portao continua sendo UM: `agrupar` nomeia tabela no campo que ele
+    /// ja le, e a tabela negada para no portao geral.**
+    ///
+    /// Pelo `despachar`, que e por onde o pedido entra de verdade.
+    #[test]
+    fn o_agrupar_da_tabela_negada_para_no_portao() {
+        let d = dir("portao");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"folha":{}}}}}]}"#,
+        ))
+        .unwrap();
+        let s = servidor(&d, cadastro.clone());
+        let mut ses = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        let corpo = |tab: &str| {
+            format!(
+                r#"{{"token":"t","op":"agrupar","database":"loja","tabela":"{tab}",
+                     "por":["cidade"]}}"#
+            )
+        };
+        let (_, _, ok) = s.despachar(&corpo("vendas"), &mut ses, "127.0.0.1");
+        ok.expect("a tabela permitida tinha de passar");
+        let (_, _, negado) = s.despachar(&corpo("folha"), &mut ses, "127.0.0.1");
+        let e = negado.expect_err("agrupou a tabela negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("folha"), "{e}");
         let _ = std::fs::remove_dir_all(&d);
     }
 }
