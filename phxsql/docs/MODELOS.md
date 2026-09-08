@@ -459,6 +459,38 @@ evita um custo que ja nao e disco (0,0 MiB lidos) e que a `TabelaMemoria` ja
 cobre, e a unica alavanca nova (cache colunar leve dentro do `SelectMemory`)
 espera **uma** premissa medida. `docs/MEMORIA.md` carrega a decisao inteira.
 
+### Rodada da corrida de I/O — 8 de setembro de 2026
+
+O dono pediu: «o PhxSql supere a velocidade de I/O do MySQL e do MariaDB». O
+numero do MySQL ja existia (superado nas quatro), mas era de binario velho e de
+maquina com carga, e o MariaDB **nunca fora medido** — receita de fora se mede,
+nao se supoe. O orquestrador montou o ambiente (o Docker de pe, o MariaDB 11 num
+container por TCP:3307, o MySQL 8 local por soquete, os dois vivos ao mesmo tempo
+sem conflito), recompilou o `carga`, e mediu na maquina parada pela porta
+`esta-medindo.sh`.
+
+| papel | o que fez |
+|---|---|
+| **A — orquestrador** | montou o ambiente, sequenciou a medicao DEPOIS do `.tbm` (duas bancadas juntas medem a carga), integrou o 4o motor nos tres desenhos |
+| **B — dev** | o parametro `cli` no `medir.py`, reusando a MESMA logica de fase para o MariaDB entrar por TCP sem duplicar codigo |
+| **F — prova real** | o `confere_trio` provou trabalho igual dos quatro (mesmas somas em cada fase); o smoke test dos quatro antes da corrida de 1M |
+| **E — designer** | a cor teal do 4o motor nos dois temas, tirada do token `--bin` da marca (ja validado), e o `viewBox` crescendo com o numero de motores |
+| **H — documentacao** | o dossie, os graficos e o SVG regenerados com os quatro motores, numeros medidos |
+
+**Dispensados, com registro:** **C-DBA** — o `medir.py` e ferramenta de medicao,
+nao formato em disco, e o MariaDB e motor externo; **G-QA** — nenhuma catraca
+nova (a corrida e medicao, nao guarda); **D**, **I** (rotina), e **J** — o MariaDB
+e motor conhecido, sem receita de fora a trazer alem do numero.
+
+O veredito medido: **MySQL superado nas quatro** (inserir 1,35x, buscar 9,5x,
+alterar 8,5x, excluir 1,8x); **MariaDB superado em tres** (buscar 16x, alterar
+11x, excluir 2x), com o **inserto em massa do MariaDB 1,18x a frente** (6,69 vs
+7,87s) — e isso e o gargalo do `.ndx` (63,6% da insercao), ja medido, unico lugar
+onde sobra I/O de escrita a ganhar. As duas honestidades que a bancada gravou: o
+MariaDB rodou `sync_binlog=0` (uma sincronizacao por fase de diferenca, nao
+explica 1,18s no milhao), e o piso do TCP (1,75s) e maior que o do soquete
+(0,92s), medido a parte.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:
