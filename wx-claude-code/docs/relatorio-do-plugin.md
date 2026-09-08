@@ -37,7 +37,7 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | duração do vídeo da bateria de testes | 0 min 52 s |
 | corpus do Help (bytes) | 26750976 |
 | páginas válidas do corpus | 12035 |
-| linhas do manual | 884 |
+| linhas do manual | 890 |
 | tabelas do exemplo ESTOQUE | 7 |
 
 ## O que foi provado em sessão real

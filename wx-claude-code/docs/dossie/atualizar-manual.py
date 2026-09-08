@@ -85,6 +85,13 @@ def main() -> int:
     atual = MANUAL.read_text(encoding="utf-8")
     novo = trocar(atual, INI_C, FIM_C, tabela_de_comandos())
     novo = trocar(novo, INI_S, FIM_S, tabela_de_scripts())
+    # o capitulo 1 dizia «5 comandos, 3 skills, 27 testes» quatro meses depois
+    # de deixar de ser verdade: os numeros do manual tambem saem do medidor
+    import json
+    n = json.loads((RAIZ / "docs/dossie/numeros.json").read_text(encoding="utf-8"))
+    novo = trocar(novo, "<!-- numeros: gerado -->", "<!-- fim dos numeros -->",
+                  f"{n['comandos']} comandos, {n['skills']} skills, {n['agentes']} agentes").replace(
+        "<!-- numeros: gerado -->\n", "<!-- numeros: gerado -->").replace("\n<!-- fim dos numeros -->", "<!-- fim dos numeros -->")
     if conferir:
         if novo != atual:
             print("MANUAL.md desatualizado: rode docs/dossie/atualizar-manual.py", file=sys.stderr)

@@ -50,11 +50,17 @@ python3 wx-claude-code/skills/conversao-wx/scripts/query_wlanguage_help.py --ver
    `claude plugin install wx-claude-code@wx-claude-code`.
 
 **Conferir.** Numa sessão nova, peça «liste as skills e os agentes com prefixo
-`wx-claude-code:`». Devem aparecer 5 comandos, 3 skills e 94 agentes. A
-listagem que o modelo devolve pode omitir um item; confira por nome, não
-por contagem.
+`wx-claude-code:`». Os números de hoje estão em `docs/dossie/numeros.json`
+(<!-- numeros: gerado -->33 comandos, 21 skills, 94 agentes<!-- fim dos numeros -->).
+A listagem que o modelo devolve pode omitir um item; confira por nome, não por
+contagem.
 
-**Validar o pacote** (roda os 27 testes de regressão):
+**Escopo.** O plugin instala **uma vez por máquina** (`~/.claude`) e vale para
+todos os projetos; a licença também (`~/.wx-claude-code/`). O que é por projeto
+é o trabalho: `/wx-claude-code:questionario` cria o `.wx-migration/` daquela
+pasta, e só onde ele existe os hooks agem.
+
+**Validar o pacote** (roda a bateria de testes por dentro):
 
 ```bash
 python3 wx-claude-code/skills/conversao-wx/scripts/validate_plugin_bundle.py wx-claude-code --strict
