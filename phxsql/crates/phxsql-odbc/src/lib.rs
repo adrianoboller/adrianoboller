@@ -5,9 +5,10 @@
 //! e um cliente comum da porta de dados: TCP, uma linha JSON por pedido.
 //!
 //! O recorte e o nucleo que um consumidor real usa para LER: conectar
-//! (DSN-less), `SQLExecDirect` de um SELECT, descrever colunas com tipo
-//! honesto, fetch e SQLGetData com truncamento avisado, diagnostico. O que
-//! ficou de fora e por que esta em `docs/ODBC.md`.
+//! (DSN-less), `SQLExecDirect` de um SELECT, instrucao preparada com
+//! parametros (`?`), descrever colunas com tipo honesto, fetch e SQLGetData
+//! com truncamento avisado, diagnostico. O que ficou de fora e por que esta
+//! em `docs/ODBC.md`.
 //!
 //! Sao as funcoes ANSI (`SQLDriverConnect`, nao `...W`): o gerenciador de
 //! driver converte as chamadas wide do aplicativo para elas sozinho. O texto
@@ -682,10 +683,23 @@ pub unsafe extern "system" fn SQLExecDirect(
     })
 }
 
-/// Preparar aqui e guardar o texto: nao ha parametros nem plano no driver, e
-/// o servidor analisa na execucao. Existe porque o isql e outros clientes so
-/// falam prepare/execute -- sem ele, "Connected!" e a ultima coisa que
-/// funciona.
+/// Preparar aqui e guardar o TEXTO: o PLANO continua sendo do servidor, que
+/// analisa na execucao.
+///
+/// O que este comentario dizia ate a rodada dos parametros -- «nao ha
+/// parametros nem plano no driver» -- deixou de ser verdade na primeira
+/// metade, e o `docs/COMPARATIVO.md` citava esta linha como prova da
+/// ausencia. Hoje o texto guardado e a FONTE da contagem de `?` do
+/// `SQLNumParams` e do `SQLDescribeParam`, e as ligacoes do
+/// `SQLBindParameter` se leem no `SQLExecute` que vier depois.
+///
+/// Preparar NAO desfaz ligacao, e isso nao e esquecimento: a especificacao
+/// manda o contrario, e o laco de carga depende disso -- prepara uma vez, liga
+/// uma vez, executa mil trocando so o buffer. Ligacao que sobra alem do numero
+/// de `?` e ignorada; quem quer zerar chama `SQLFreeStmt(SQL_RESET_PARAMS)`.
+///
+/// Existe porque o isql e outros clientes so falam prepare/execute -- sem ele,
+/// "Connected!" e a ultima coisa que funciona.
 ///
 /// # Safety
 ///

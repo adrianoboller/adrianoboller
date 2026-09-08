@@ -81,9 +81,10 @@ pub struct Parametro {
 pub struct Comando {
     /// Handle da ligacao dona, para achar o canal na hora de executar.
     pub dono: usize,
-    /// O texto guardado pelo SQLPrepare, que o SQLExecute roda. Nao ha
-    /// parametros nem plano: preparar aqui e so guardar -- e o que permite ao
-    /// isql e companhia, que so falam prepare/execute, funcionarem.
+    /// O texto guardado pelo SQLPrepare, que o SQLExecute roda -- e a fonte da
+    /// contagem de `?` do SQLNumParams e do SQLDescribeParam. O PLANO continua
+    /// sendo do servidor; preparar aqui e guardar, e e o que permite ao isql e
+    /// companhia, que so falam prepare/execute, funcionarem.
     pub preparado: Option<String>,
     pub resultado: Option<Resultado>,
     /// Proxima linha do fetch (0-based). `linha_atual` e cursor-1.
