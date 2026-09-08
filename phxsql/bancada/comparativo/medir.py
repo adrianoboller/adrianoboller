@@ -24,9 +24,17 @@ tres vereditos na primeira corrida: `materializar a linha` num comentario virou
 «view materializada», e o `ON DUPLICATE KEY UPDATE` que o DbLink manda para o
 MySQL(R) virou upsert NOSSO. Sonda por padrao de texto acha o que nao e.
 
-**Sonda de codigo**, so onde SQL nao alcanca (trava, TLS, PITR, direito por
-coluna). Cada uma aponta arquivo e linha, e o texto do veredito diz o que a
-sonda olhou.
+**Sonda de codigo**, so onde SQL nao alcanca e a resposta mora na LEITURA do
+fonte (trava, TLS). Cada uma aponta arquivo e linha, e o texto do veredito diz
+o que a sonda olhou.
+
+**Sonda VIVA**, para PITR, direito por coluna, parametro (`?`) e diferencas de
+dados: nenhuma delas se prova por grep -- cada uma sobe o servidor de verdade
+(a de coluna e a de PITR, um `phxsqld` PROPRIO, porque precisam de um
+cadastro ou de uma `replicacao` que o servidor principal deste medidor nao
+tem) e mede o EFEITO, com o CONTROLE na mesma corrida. Ate 08/09/2026 as
+quatro eram sonda de codigo com veredito CRAVADO -- e cravar um `nao` que virou
+`tem` no motor e o mesmo erro que a celula da trava por linha ja pagou.
 
 **CITADO**, para quem nao esta aqui:
 
@@ -45,15 +53,20 @@ import json
 import os
 import pathlib
 import re
+import shutil
+import signal
+import socket
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 
 AQUI = pathlib.Path(__file__).resolve().parent
 RAIZ = AQUI.parents[1]
 ALVO = AQUI / "resultados.json"
 PORTA = 7731
+PHXSQLD_BIN = RAIZ / "target" / "release" / "phxsqld"
 
 sys.path.insert(0, str(RAIZ / "bancada" / "utilizacao-padrao"))
 
@@ -222,59 +235,277 @@ def sonda_codigo():
                 "dependências é pétrea",
     }
 
-    ond = tem("crates/phxsql-server/src/usuarios.rs", r'"tabelas"')
-    fora["direito_por_coluna"] = {
-        "titulo": "Direito por COLUNA",
-        "phxsql": (NAO, f"o portão lê `tabela`, e para aí: {ond}"),
-        "nota": "o direito por tabela existe desde o pedido 124",
-    }
-
-    fora["pitr"] = {
-        "titulo": "Recuperação a um ponto no tempo (PITR)",
-        "phxsql": (NAO, "o backup é cópia inteira; o `.log` guarda o evento "
-                        "mas não há quem o reaplique até um instante"),
-        "nota": "o `.log` por tabela É o diário que um PITR usaria",
-    }
-
-    # A sonda tem DOIS lados desde 08/09/2026, e a citação de antes ficou
-    # obsoleta: ela apontava para o comentário «nao ha parametros nem plano no
-    # driver», que deixou de ser verdade quando o SQLBindParameter entrou.
-    # Sonda que cita comentário morre quando o comentário é consertado — e
-    # morre calada, imprimindo "sem menção" como se fosse a medida.
-    #
-    # O lado que FALTA é o do servidor, e ele se mede onde dói: o léxico
-    # (`crates/phxsql-sql/src/lexico.rs`) ainda recusa o caractere `?`, então
-    # nenhum `WHERE id = ?` chega a virar plano. Enquanto isso, é NÃO.
-    #
-    # E quando o `?` entrar no léxico esta sonda para em MEIO, nunca em TEM:
-    # código dos dois lados não é efeito. Quem promove a célula é a sonda VIVA
-    # (`bancada/odbc/prova-abi.py`, passo 7c), que confere a LINHA que voltou.
-    lig = citar("crates/phxsql-odbc/src/lib.rs",
-                r'extern "system" fn SQLBindParameter',
-                "sem ligação de parâmetro no driver")
-    lex = tem("crates/phxsql-sql/src/lexico.rs", r"'\?'")
-    fora["parametro_no_prepared"] = {
-        "titulo": "Parâmetro em instrução preparada (`?`)",
-        "phxsql": (MEIO, f"o driver liga e manda `parametros`: {lig}; e o léxico "
-                         f"já conhece o `?`: {lex} — falta a prova viva "
-                         "(bancada/odbc/prova-abi.py, passo 7c)")
-                  if lex else
-                  (NAO, f"o driver já liga e manda `parametros` ({lig}), mas o "
-                        "léxico do servidor recusa o caractere `?`: "
-                        "crates/phxsql-sql/src/lexico.rs — «caractere nao faz "
-                        "parte da linguagem»"),
-        "nota": "o lado do driver está pronto e provado; falta a op sql ler "
-                "`parametros` (frente F-CONSULTA)",
-    }
-
-    ck = tem("crates/phxsql-server/src/catalogo.rs", r'nome: "checksum"')
-    fora["diff_de_dados"] = {
-        "titulo": "Dizer ONDE duas tabelas diferem",
-        "phxsql": (MEIO, f"o `checksum` diz SE diferem: {ck}"),
-        "nota": "falta a operação que devolve as linhas divergentes",
-    }
+    # As QUATRO sondas que moravam aqui ate 08/09/2026 -- direito por coluna,
+    # PITR, parametro (`?`) e diferencas de dados -- viraram sonda VIVA:
+    # `sonda_direito_coluna()`, `sonda_pitr()`, e os dois probes dentro de
+    # `por_phxsql()` (parametro_no_prepared, diff_de_dados). Grep prova que um
+    # trecho existe, nunca que o EFEITO acontece -- e a diferenca era real: as
+    # quatro estavam cravadas em NAO/MEIO com o motor ja respondendo.
 
     return fora
+
+
+# --------------------------------------------------------- servidor PROPRIO
+#
+# `por_phxsql()` sobe UM `phxsqld` com o cadastro padrao (adm com tudo). Duas
+# capacidades precisam de um servidor DIFERENTE -- coluna precisa de um
+# cadastro com regra por coluna, e PITR precisa de `replicacao.imagem_da_linha`
+# ligada ANTES de subir -- entao as duas sondas abrem o SEU PROPRIO processo,
+# fora de `por_phxsql()`, e nunca derrubam por pkill: so pelo PID que
+# guardaram.
+def _sobe(base, cfg):
+    os.makedirs(base, exist_ok=True)
+    with open(os.path.join(base, "config.json"), "w") as f:
+        json.dump(cfg, f)
+    log = open(os.path.join(base, "servidor.log"), "a")
+    p = subprocess.Popen([str(PHXSQLD_BIN)], cwd=base, stdout=log,
+                         stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+    porta = int(cfg["bind"].rsplit(":", 1)[1])
+    fim = time.monotonic() + 25
+    while True:
+        try:
+            socket.create_connection(("127.0.0.1", porta), 0.3).close()
+            return p
+        except OSError:
+            if p.poll() is not None or time.monotonic() > fim:
+                p.kill()
+                raise SystemExit(
+                    f"o servidor proprio nao subiu na porta {porta}:\n"
+                    + open(os.path.join(base, "servidor.log")).read())
+            time.sleep(0.1)
+
+
+def _derruba(p, base):
+    try:
+        p.send_signal(signal.SIGTERM)
+        p.wait(timeout=8)
+    except Exception:
+        try:
+            p.kill()
+        except Exception:
+            pass
+    shutil.rmtree(base, ignore_errors=True)
+
+
+class _Fala:
+    """Uma conexao crua, json-por-linha -- para servidores com cadastro
+    proprio que o `oficina.Conexao` (login fixo do adm) nao serve, porque
+    aqui e a IDENTIDADE de quem conecta que esta sob prova."""
+
+    def __init__(self, porta, token):
+        self.s = socket.create_connection(("127.0.0.1", porta), timeout=10)
+        self.s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self.f = self.s.makefile("rwb")
+        self.token = token
+
+    def __call__(self, **pedido):
+        pedido.setdefault("token", self.token)
+        self.f.write((json.dumps(pedido) + "\n").encode())
+        self.f.flush()
+        linha = self.f.readline()
+        if not linha:
+            raise ConnectionError("o servidor fechou a conexao")
+        return json.loads(linha.decode())
+
+    def fechar(self):
+        for c in (self.f, self.s):
+            try:
+                c.close()
+            except OSError:
+                pass
+
+
+def _hash(senha):
+    """`phxsqld --senha`, o mesmo caminho que `oficina.hash_da_senha` usa --
+    aqui direto, sem depender do sys.path que `por_phxsql()` arruma."""
+    r = subprocess.run([str(PHXSQLD_BIN), "--senha"], input=senha + "\n",
+                       capture_output=True, text=True)
+    return r.stdout.split('": "')[1].split('"')[0]
+
+
+def sonda_direito_coluna():
+    """Servidor PROPRIO com um cadastro de direito por COLUNA, e o EFEITO
+    medido: o `varrer` de quem tem `salario` negado volta SEM a coluna, e o
+    MESMO `varrer` por quem NAO tem a regra (o controle) volta COM ela.
+
+    O molde do cadastro e o mesmo do teste
+    `testes_direito_por_coluna::so_a_folha_tem_regra` em `servidor.rs`, e do
+    MANUAL 14.3.2: a base `"*"` com a tabela `"folha"` carregando `"colunas"`.
+    """
+    regra = {"ler": True, "inserir": True, "alterar": True, "excluir": True,
+             "criar": True, "diario": True, "administrar": True,
+             "replicar": True, "verificar": True, "reindexar": True}
+    token = "prova-coluna"
+    cfg = {
+        "base": "base", "bind": f"127.0.0.1:{PORTA + 1}", "token": token,
+        "usuarios": [
+            {"login": "bea", "nome": "Bea (controle, sem regra)", "id": 1,
+             "senha_hash": _hash("senha-da-bea"), "bases": {"*": dict(regra)}},
+            {"login": "ana", "nome": "Ana (salario negado)", "id": 2,
+             "senha_hash": _hash("senha-da-ana"),
+             "bases": {"*": {**regra, "tabelas": {"folha": {
+                 **regra,
+                 "colunas": {"salario": {"ler": False, "alterar": False}}}}}}},
+        ],
+    }
+    base = tempfile.mkdtemp(prefix="phx-cmp-coluna-")
+    p = _sobe(base, cfg)
+    try:
+        bea = _Fala(PORTA + 1, token)
+        if not bea(op="login", usuario="bea", senha="senha-da-bea").get("ok"):
+            raise SystemExit("MESA NAO POSTA: bea nao logou")
+        if not bea(op="criar_database", database="b").get("ok"):
+            raise SystemExit("MESA NAO POSTA: database b nao nasceu")
+        r = bea(op="criar_tabela", database="b", tabela="folha",
+                colunas=[{"nome": "id", "tipo": "Int4", "obrigatoria": True},
+                         {"nome": "nome", "tipo": "Str(20)"},
+                         {"nome": "salario", "tipo": "Int4"}],
+                indices=[{"nome": "porId", "colunas": ["id"], "unico": True,
+                          "primario": True}])
+        if not r.get("ok"):
+            raise SystemExit(f"MESA NAO POSTA: folha nao nasceu -- {r.get('erro')}")
+        r = bea(op="inserir", database="b", tabela="folha",
+                linha={"id": 1, "nome": "ana", "salario": 5000})
+        if not r.get("ok"):
+            raise SystemExit(f"MESA NAO POSTA: a linha nao gravou -- {r.get('erro')}")
+
+        linha_bea = (bea(op="varrer", database="b", tabela="folha")
+                    .get("resultado") or {}).get("linhas", [{}])[0]
+
+        ana = _Fala(PORTA + 1, token)
+        if not ana(op="login", usuario="ana", senha="senha-da-ana").get("ok"):
+            raise SystemExit("MESA NAO POSTA: ana nao logou")
+        linha_ana = (ana(op="varrer", database="b", tabela="folha")
+                    .get("resultado") or {}).get("linhas", [{}])[0]
+        ana.fechar()
+        bea.fechar()
+
+        # **O CONTROLE.** So a coluna sumir NA RESTRITA e continuar no
+        # controle prova a regra -- se as duas viessem sem ela, o dado nunca
+        # teria sido gravado; se as duas viessem com ela, a regra nao vale
+        # nada. E' a mesma disciplina das outras sondas de efeito deste
+        # medidor: recusa (ou ausencia) sem controle nao prova nada sozinha.
+        if "salario" not in linha_bea:
+            veredito = (NAO, "veredito ANULADO pelo controle: nem quem NAO "
+                             f"tem regra de coluna viu `salario` ({linha_bea!r})")
+        elif "salario" not in linha_ana:
+            veredito = (TEM, "o varrer de ana (salario negado) veio SEM a "
+                             "coluna; o de bea (controle, mesmo cadastro sem "
+                             "`colunas`) veio COM ela")
+        else:
+            veredito = (NAO, f"a coluna `salario` vazou para ana: {linha_ana!r}")
+    finally:
+        _derruba(p, base)
+
+    return {
+        "titulo": "Direito por COLUNA",
+        "phxsql": veredito,
+        "nota": "o direito por TABELA existe desde o pedido 124; o cadastro "
+                "e o molde de `testes_direito_por_coluna` em servidor.rs e do "
+                "MANUAL 14.3.2",
+    }
+
+
+def sonda_pitr():
+    """Servidor PROPRIO com `replicacao.imagem_da_linha` ligada (sem ela nao
+    ha PITR: o evento nao carrega a linha, e o `restaurar_backup` recusa
+    nomeando o interruptor), e o EFEITO de uma restauracao a um INSTANTE.
+
+    A sequencia e a de `docs/RESTAURACAO.md` § 7.10 -- REAPROVEITADA, nao
+    copiada por inteiro: aqui e um veredito so (TEM/NAO), nao as 22
+    conferencias de `bancada/pitr/provar.py` (essa continua sendo a prova
+    funda; esta e a que alimenta a tabela).
+    """
+    token = "prova-pitr"
+    base = tempfile.mkdtemp(prefix="phx-cmp-pitr-")
+    cfg = {
+        "base": "base", "bind": f"127.0.0.1:{PORTA + 2}", "token": token,
+        "replicacao": {"papel": "isolado", "imagem_da_linha": True},
+        "backup": {"destino": os.path.join(base, "backup")},
+    }
+    p = _sobe(base, cfg)
+    try:
+        f = _Fala(PORTA + 2, token)
+
+        def corpo(r):
+            return r.get("resultado", r)
+
+        r = f(op="criar_database", database="loja")
+        if not r.get("ok"):
+            raise SystemExit(f"MESA NAO POSTA: database loja nao nasceu -- {r.get('erro')}")
+        r = f(op="criar_tabela", database="loja", tabela="clientes",
+              colunas=[{"nome": "id", "tipo": "Int4", "obrigatoria": True},
+                       {"nome": "nome", "tipo": "Str(20)"}],
+              indices=[{"nome": "porId", "colunas": ["id"], "unico": True,
+                        "primario": True}])
+        if not r.get("ok"):
+            raise SystemExit(f"MESA NAO POSTA: clientes nao nasceu -- {r.get('erro')}")
+
+        # A historia: linha 1, COPIA, linha 2, alteracao da 1, linha 3 -- e o
+        # CORTE fica entre a alteracao e a linha 3. O relogio precisa ANDAR
+        # entre cada passo, senao tres escritas caem no mesmo milissegundo e
+        # nao existe instante entre elas (a mesma armadilha que
+        # `bancada/pitr/provar.py` ja paga).
+        f(op="inserir", database="loja", tabela="clientes", linha={"id": 1, "nome": "um"})
+        time.sleep(0.01)
+        r = f(op="backup", destino=cfg["backup"]["destino"], database="loja", zip=True)
+        copia = corpo(r).get("arquivo")
+        if not copia:
+            raise SystemExit(f"MESA NAO POSTA: o backup nao saiu -- {r.get('erro')}")
+        time.sleep(0.01)
+        f(op="inserir", database="loja", tabela="clientes", linha={"id": 2, "nome": "dois"})
+        time.sleep(0.01)
+        f(op="atualizar", database="loja", tabela="clientes", rowid=1,
+          linha={"id": 1, "nome": "um alterado"})
+        time.sleep(0.01)
+        f(op="inserir", database="loja", tabela="clientes", linha={"id": 3, "nome": "tres"})
+
+        # O CORTE sai do PROPRIO diario, medido -- nunca digitado. E' o mesmo
+        # erro que esta casa ja pagou quatro vezes com numero de painel.
+        eventos = corpo(f(op="diario", database="loja", tabela="clientes", max=100))["eventos"]
+        if len(eventos) != 4:
+            raise SystemExit(f"PITR SEM DIARIO: esperava 4 eventos, veio {len(eventos)}")
+        carimbos = [e["carimbo_ms"] for e in eventos]
+        corte = carimbos[3] - 1
+        if corte < carimbos[2]:
+            raise SystemExit("PITR SEM CORTE: o relogio nao andou entre a "
+                             f"alteracao e a terceira linha ({carimbos})")
+
+        r = f(op="restaurar_backup", origem=copia, database="loja_no_meio", ate_ms=corte)
+        pitr = corpo(r).get("pitr")
+        linhas = [(l["id"], l["nome"]) for l in
+                  corpo(f(op="varrer", database="loja_no_meio", tabela="clientes"))
+                  .get("linhas", [])]
+
+        # **O CONTROLE.** O MESMO backup, SEM `ate`, tem de voltar SO com a
+        # linha 1 -- sem ele uma restauracao que devolvesse duas linhas por
+        # acaso passaria como se tivesse cortado certo.
+        r2 = f(op="restaurar_backup", origem=copia, database="loja_da_copia")
+        ctl = [(l["id"], l["nome"]) for l in
+               corpo(f(op="varrer", database="loja_da_copia", tabela="clientes"))
+               .get("linhas", [])]
+        controle_ok = "pitr" not in corpo(r2) and ctl == [(1, "um")]
+
+        if not controle_ok:
+            veredito = (NAO, "veredito ANULADO pelo controle: o MESMO backup "
+                             f"SEM `ate` nao voltou so com a linha 1 ({ctl!r})")
+        elif pitr is not None and linhas == [(1, "um alterado"), (2, "dois")]:
+            veredito = (TEM, f"`ate`=corte devolveu {linhas!r} (a 1 alterada, "
+                             f"a 2, nada da 3); reaplicados="
+                             f"{pitr.get('reaplicados')}, pulados="
+                             f"{pitr.get('tabelas', [{}])[0].get('pulados')}")
+        else:
+            veredito = (NAO, f"o EFEITO nao bateu: {linhas!r} (esperava a 1 "
+                             "alterada, a 2 e nada da 3)")
+    finally:
+        _derruba(p, base)
+
+    return {
+        "titulo": "Recuperação a um ponto no tempo (PITR)",
+        "phxsql": veredito,
+        "nota": "sequência de docs/RESTAURACAO.md § 7.10 -- a mesma que "
+                "bancada/pitr/provar.py roda com 22 conferências",
+    }
 
 
 # ------------------------------------------------------------- os motores
@@ -359,6 +590,12 @@ def por_phxsql(perguntas, base):
         if not mesa.get("ok"):
             raise SystemExit(f"MESA NAO POSTA: a tabela `c` nao nasceu -- "
                              f"{mesa.get('erro')}")
+        # Uma linha em `c`, para a sonda de EFEITO da visao (§ abaixo) ter o
+        # que comparar -- as treze perguntas de SQL testam se a INSTRUCAO
+        # passa, e nao encostam no dado.
+        c.fala({"op": "inserir", "database": "cmp", "tabela": "c",
+                "linha": {"id": 1, "nome": "um", "cidade": "Blumenau",
+                          "preco": "10.00"}})
         saida = {}
         for chave, _t, sql in perguntas:
             q = sql.get("phxsql")
@@ -569,6 +806,106 @@ def por_phxsql(perguntas, base):
                          (NAO, f"nenhuma operacao de visao entre as {len(nomes)} "
                                "que o catalogo lista"))
 
+        # O EFEITO da visao, acrescentado em 08/09/2026: o catalogo listar a
+        # OPERACAO nao prova que `CREATE VIEW` pela op `sql` funciona nem que
+        # ler dela devolve o dado certo -- so prova que o verbo existe. So
+        # tenta o SQL quando o catalogo ja disse TEM: sem a operacao, o SQL
+        # abaixo recusaria por op ausente, e isso nao acrescentaria nada ao
+        # veredito que o catalogo ja deu.
+        if saida["view"][0] == TEM:
+            linhas_c = corpo(c.fala({"op": "varrer", "database": "cmp",
+                                     "tabela": "c"})).get("linhas") or []
+            cv = c.fala({"op": "sql", "database": "cmp",
+                        "sql": "CREATE VIEW v_c AS SELECT * FROM c"})
+            sv = c.fala({"op": "sql", "database": "cmp", "sql": "SELECT * FROM v_c"})
+            linhas_v = corpo(sv).get("linhas") if sv.get("ok") else None
+            if cv.get("ok") and sv.get("ok") and linhas_c and linhas_v == linhas_c:
+                saida["view"] = (
+                    TEM, f"CREATE VIEW v_c AS SELECT * FROM c e SELECT * FROM "
+                         f"v_c devolveram as {len(linhas_c)} linha(s) de `c`")
+            else:
+                saida["view"] = (
+                    NAO, "catálogo lista `criar_visao`, mas o EFEITO falhou: "
+                         f"CREATE VIEW -> {cv.get('erro') or 'ok'}; "
+                         f"SELECT * FROM v_c -> {sv.get('erro') or linhas_v!r}")
+
+        # PARAMETRO EM INSTRUCAO PREPARADA (`?`): grava um valor conhecido,
+        # busca por `?` com `parametros`, e o CONTROLE e o MESMO `?` SEM
+        # `parametros` -- que tem de RECUSAR nomeando quantos vieram e
+        # quantos faltam. So a recusa do sem-parametro ao lado do achado do
+        # com-parametro prova que quem respondeu foi o parametro, e nao
+        # coincidencia de `id = ?` sempre passar.
+        cria("t_param", [{"nome": "id", "tipo": "Int8", "obrigatoria": True},
+                         {"nome": "nome", "tipo": "Str(20)"}])
+        c.fala({"op": "inserir", "database": "cmp", "tabela": "t_param",
+                "linha": {"id": 1, "nome": "um"}})
+        com_param = c.fala({"op": "sql", "database": "cmp",
+                            "sql": "SELECT * FROM t_param WHERE id = ?",
+                            "parametros": [1]})
+        linhas_p = corpo(com_param).get("linhas") if com_param.get("ok") else None
+        sem_param = c.fala({"op": "sql", "database": "cmp",
+                            "sql": "SELECT * FROM t_param WHERE id = ?"})
+        if sem_param.get("ok"):
+            saida["parametro_no_prepared"] = (
+                NAO, "veredito ANULADO pelo controle: o `?` SEM `parametros` "
+                     f"foi ACEITO ({corpo(sem_param)!r}) -- o motor nao esta "
+                     "amarrando o `?` ao parametro")
+        elif not linhas_p or len(linhas_p) != 1 or linhas_p[0].get("id") != 1:
+            saida["parametro_no_prepared"] = (
+                NAO, f"com `parametros:[1]` o motor nao devolveu a linha 1: "
+                     f"{(com_param.get('erro') or linhas_p)!r}")
+        else:
+            saida["parametro_no_prepared"] = (
+                TEM, "`WHERE id = ?` com `parametros:[1]` devolveu a linha 1; "
+                     f"sem `parametros` recusou: "
+                     f"{(sem_param.get('erro') or '')[:70]}")
+
+        # DIFERENCAS: duas tabelas com a MESMA chave unica e uma linha
+        # diferente; `diferencas` tem de NOMEAR a chave e a coluna. O
+        # CONTROLE e o par IGUAL, que tem de vir com `diferentes` vazio e
+        # `iguais == 1` -- sem ele, um bug que marcasse tudo como diferente
+        # passaria junto.
+        cria("t_diff_a", [{"nome": "id", "tipo": "Int8", "obrigatoria": True},
+                          {"nome": "nome", "tipo": "Str(20)"}])
+        cria("t_diff_b", [{"nome": "id", "tipo": "Int8", "obrigatoria": True},
+                          {"nome": "nome", "tipo": "Str(20)"}])
+        c.fala({"op": "inserir", "database": "cmp", "tabela": "t_diff_a",
+                "linha": {"id": 1, "nome": "um"}})
+        c.fala({"op": "inserir", "database": "cmp", "tabela": "t_diff_b",
+                "linha": {"id": 1, "nome": "dois"}})
+        r_dif = c.fala({"op": "diferencas", "database": "cmp", "a": "t_diff_a",
+                        "b": "t_diff_b", "indice": "pk"})
+        dif = corpo(r_dif).get("diferentes") if r_dif.get("ok") else None
+
+        cria("t_diff_c", [{"nome": "id", "tipo": "Int8", "obrigatoria": True},
+                          {"nome": "nome", "tipo": "Str(20)"}])
+        cria("t_diff_d", [{"nome": "id", "tipo": "Int8", "obrigatoria": True},
+                          {"nome": "nome", "tipo": "Str(20)"}])
+        c.fala({"op": "inserir", "database": "cmp", "tabela": "t_diff_c",
+                "linha": {"id": 1, "nome": "um"}})
+        c.fala({"op": "inserir", "database": "cmp", "tabela": "t_diff_d",
+                "linha": {"id": 1, "nome": "um"}})
+        r_igual = c.fala({"op": "diferencas", "database": "cmp", "a": "t_diff_c",
+                          "b": "t_diff_d", "indice": "pk"})
+        igual = corpo(r_igual) if r_igual.get("ok") else None
+
+        controle_diff_ok = (bool(igual) and igual.get("diferentes") == []
+                            and igual.get("iguais") == 1)
+        if not controle_diff_ok:
+            saida["diff_de_dados"] = (
+                NAO, "veredito ANULADO pelo controle: o par IGUAL nao voltou "
+                     f"`diferentes: []` e `iguais: 1` ({igual!r})")
+        elif not dif:
+            saida["diff_de_dados"] = (
+                NAO, f"`diferencas` nao apontou a linha diferente: "
+                     f"{(r_dif.get('erro') or dif)!r}")
+        elif dif[0].get("chave") == [1] and dif[0].get("colunas") == ["nome"]:
+            saida["diff_de_dados"] = (
+                TEM, f"`diferencas` nomeou a chave [1] e a coluna `nome`: {dif}")
+        else:
+            saida["diff_de_dados"] = (
+                MEIO, f"achou diferenca, mas fora do formato esperado: {dif}")
+
         # O controle sai da MESMA conexao, senao ele provaria a saude de outra.
         r = c.fala({"op": "sql", "database": "cmp",
                     "sql": "CREATE ZZZZ nao_existe_de_proposito"})
@@ -706,6 +1043,30 @@ def main():
             "coluna vale")
 
     codigo = sonda_codigo()
+
+    # As quatro sondas VIVAS: cada uma sobe o efeito, nao o grep. As duas que
+    # precisam de servidor PROPRIO (cadastro de coluna; `replicacao` ligada
+    # antes do arranque) entram por chamada direta; as outras duas ja foram
+    # medidas dentro de `por_phxsql()`, e so precisam do titulo e da nota.
+    codigo["direito_por_coluna"] = sonda_direito_coluna()
+    print("  direito_coluna  medido (servidor proprio, ana x bea)")
+    codigo["pitr"] = sonda_pitr()
+    print("  pitr            medido (servidor proprio, replicacao ligada)")
+    codigo["parametro_no_prepared"] = {
+        "titulo": "Parâmetro em instrução preparada (`?`)",
+        "phxsql": motores["phxsql"]["parametro_no_prepared"],
+        "nota": "o driver ODBC já liga e manda `parametros` desde o "
+                "`SQLBindParameter`; a promoção que faltava era o servidor "
+                "ler `parametros` na op `sql`, medida aqui pelo soquete",
+    }
+    codigo["diff_de_dados"] = {
+        "titulo": "Dizer ONDE duas tabelas diferem",
+        "phxsql": motores["phxsql"]["diff_de_dados"],
+        "nota": "o `checksum` dizia SE diferem; a op `diferencas` é o "
+                "terceiro irmão da conferência própria, junto de `juntar` e "
+                "`unir`",
+    }
+
     linhas = []
     for chave, titulo, _s in perguntas:
         linhas.append({
