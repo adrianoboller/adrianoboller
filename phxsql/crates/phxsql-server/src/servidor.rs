@@ -81,6 +81,10 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // estrutura que existe aqui.
     "acrescentar_coluna",
     "excluir_tabela",
+    // As duas que gravam o `visoes.json` do database. Catalogo, mas catalogo
+    // gravado em disco -- e num servidor somente-leitura ninguem cria visao.
+    "criar_visao",
+    "excluir_visao",
     "duplicar_tabela",
     "copiar_tabela",
     "renomear_tabela",
@@ -733,6 +737,14 @@ pub struct Servidor {
     /// E a mesma decisao do `profiler_ligado`, tomada ANTES de doer: o portao
     /// que decide se ha trabalho vem antes de qualquer trabalho.
     ha_gatilhos: AtomicBool,
+    /// As visoes (`CREATE VIEW`), por database, guardadas como TEXTO.
+    visoes: Mutex<crate::visoes::Visoes>,
+    /// Espelho de "existe alguma visao?", pelo mesmo motivo do `ha_gatilhos`:
+    /// a op `sql` pergunta isto ANTES de olhar o nome do `FROM`, e num
+    /// servidor sem visao nenhuma -- que e o de hoje -- ela paga um load
+    /// atomico e nada mais. O portao que decide se ha trabalho vem antes do
+    /// trabalho.
+    ha_visoes: AtomicBool,
     /// Ligacoes para bancos de fora.
     dblink: Mutex<crate::dblink::Registro>,
     /// Jobs de execucao: cadastro e a hora da ultima corrida de cada um.
@@ -906,6 +918,8 @@ impl Servidor {
         });
         let rotinas = crate::rotinas::Rotinas::carregar(&config.base)?;
         let ha_gatilhos = AtomicBool::new(rotinas.ha_gatilhos());
+        let visoes = crate::visoes::Visoes::carregar(&config.base)?;
+        let ha_visoes = AtomicBool::new(visoes.ha_visoes());
         let mensagens = Mensagens::nova(&config.idioma, &config.base);
         let papel = config.replicacao.papel;
         let posicoes_bidi =
@@ -960,6 +974,8 @@ impl Servidor {
             profiler_ligado: AtomicBool::new(false),
             rotinas: Mutex::new(rotinas),
             ha_gatilhos,
+            visoes: Mutex::new(visoes),
+            ha_visoes,
             max_linhas_vivo: AtomicU64::new(max_linhas),
             espelho_vivo: AtomicBool::new(espelho),
             estatica_do_fio: Mutex::new(None),
@@ -8684,6 +8700,9 @@ impl Servidor {
             "ajustar_sequencia" => self.op_ajustar_sequencia(p, sessao),
             "agrupar" | "group_by" => self.op_agrupar(p, sessao),
             "consultar" => self.op_consultar(p, sessao),
+            "criar_visao" => self.op_criar_visao(p, sessao),
+            "visoes" => self.op_visoes(p),
+            "excluir_visao" => self.op_excluir_visao(p),
             "pivotar" | "pivot" => self.op_pivotar(p, sessao),
             "juntar" | "join" => self.op_juntar(p, sessao),
             "unir" | "union" => self.op_unir(p, sessao),
@@ -9638,34 +9657,248 @@ impl Servidor {
         ]))
     }
 
-    /// Monta a tabulacao cruzada de uma tabela, com junção opcional.
+    // ------------------------------------------------------------- visoes
+
+    /// `criar_visao`: guarda o TEXTO de um `SELECT` por database.
     ///
-    /// ```json
-    /// { "database": "loja", "tabela": "vendas",
-    ///   "juntar": [ {"tabela":"clientes", "coluna":"cliente_id", "prefixo":"cliente"} ],
-    ///   "linhas": [ {"campo":"cliente.cidade"} ],
-    ///   "colunas": [ {"campo":"emissao", "granularidade":"mes"} ],
-    ///   "valor": "total", "agregador": "soma", "max": 200000 }
-    /// ```
-    /// `agrupar`: o `GROUP BY` generico -- agrupa por colunas e resume cada
-    /// grupo.
+    /// # Duas recusas na DECLARACAO, e nao na hora de usar
     ///
-    /// # Por que ela nao e um `pivotar` com outra roupa
+    /// 1. **SQL que a camada nao analisa.** Guardar o texto sem analisa-lo
+    ///    faria o erro de sintaxe aparecer meses depois, na consulta de outra
+    ///    pessoa, com o nome da visao no lugar do nome de quem a escreveu.
+    /// 2. **Nome que colide com tabela.** Duas coisas com o mesmo nome no
+    ///    `FROM` e uma delas invisivel para sempre -- e qual das duas ganha
+    ///    viraria detalhe de implementacao.
     ///
-    /// O `pivotar` cruza DUAS listas de campos numa grade e resume UMA coluna.
-    /// Isto aqui resume VARIAS colunas de uma vez, com apelido para cada uma, e
-    /// peneira o resultado ja agregado (`tendo`). Sao perguntas diferentes com
-    /// o mesmo acumulador embaixo -- e e o acumulador que e compartilhado, e
-    /// nao copiado: ver `crate::agrupar`.
+    /// E a mesma decisao do `ao_excluir`: uma visao nasce uma vez e e usada um
+    /// milhao de vezes. Recusar cedo custa um erro lido enquanto se cria;
+    /// recusar tarde custa uma consulta quebrada no dia do primeiro uso.
     ///
-    /// # O portao continua sendo UM
+    /// O que NAO se confere na declaracao e a existencia da TABELA de dentro:
+    /// ela pode ser criada depois, e sobretudo pode ser APAGADA depois -- uma
+    /// conferencia na criacao daria uma garantia que o tempo desfaz. Quem
+    /// confere e o uso, que recusa nomeando a tabela que sumiu.
+    fn op_criar_visao(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let base = p.texto_ou("database", "").trim().to_string();
+        let nome = p.texto_ou("nome", "").trim().to_string();
+        let sql = p
+            .texto_ou("sql", p.texto_ou("texto", ""))
+            .trim()
+            .to_string();
+        if sql.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"sql\" com o SELECT da visao".into(),
+            ));
+        }
+        // Analisada AQUI, e o resultado jogado fora de proposito: o que
+        // interessa e o veredito. Guardar o plano congelaria a visao contra um
+        // esquema que envelhece (ver `crate::visoes`).
+        match phxsql_sql::analisar_comando(&sql)? {
+            phxsql_sql::Comando::Selecao(_) => {}
+            outro => {
+                return Err(PhxError::Esquema(format!(
+                    "uma visao guarda um SELECT, e este texto e um {}",
+                    outro.verbo()
+                )))
+            }
+        }
+        {
+            let dados = self.travar_dados()?;
+            if let Ok(db) = dados.abrir_database(&base) {
+                if db
+                    .todas_as_tabelas()?
+                    .iter()
+                    .any(|t| t.eq_ignore_ascii_case(&nome))
+                {
+                    return Err(PhxError::Duplicado(format!(
+                        "{base}.{nome} ja e uma TABELA: uma visao com esse nome \
+                         deixaria uma das duas invisivel no FROM"
+                    )));
+                }
+            }
+        }
+        let mut v = self.visoes.lock().map_err(|_| trava_envenenada())?;
+        let criada = v.criar(
+            &base,
+            &nome,
+            &sql,
+            sessao.login(),
+            p.booleano_ou("substituir", false),
+        )?;
+        self.ha_visoes.store(v.ha_visoes(), Ordering::Relaxed);
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(&base)),
+            ("visao", criada.para_json()),
+        ]))
+    }
+
+    /// `visoes`: o que ha, com o texto verbatim.
+    fn op_visoes(&self, p: &Json) -> Result<Json> {
+        let base = p.texto_ou("database", "").trim().to_string();
+        let v = self.visoes.lock().map_err(|_| trava_envenenada())?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(&base)),
+            (
+                "visoes",
+                Json::Lista(
+                    v.do_db(&base)
+                        .iter()
+                        .map(crate::visoes::Visao::para_json)
+                        .collect(),
+                ),
+            ),
+        ]))
+    }
+
+    /// `excluir_visao`. Visao que nao existia devolve `excluida: false` em vez
+    /// de erro -- e o mesmo `DROP VIEW IF EXISTS` que todo mundo escreve, e
+    /// erro aqui obrigaria a listar antes para poder apagar.
+    fn op_excluir_visao(&self, p: &Json) -> Result<Json> {
+        let base = p.texto_ou("database", "").trim().to_string();
+        let nome = p.texto_ou("nome", "").trim().to_string();
+        let mut v = self.visoes.lock().map_err(|_| trava_envenenada())?;
+        let saiu = v.excluir(&base, &nome)?;
+        self.ha_visoes.store(v.ha_visoes(), Ordering::Relaxed);
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(&base)),
+            ("nome", Json::texto_de(&nome)),
+            ("excluida", Json::Bool(saiu)),
+        ]))
+    }
+
+    /// O `FROM` desta selecao aponta para uma VISAO? Entao o pedido vira um
+    /// `consultar` sobre o plano dela.
     ///
-    /// Esta operacao nomeia UMA tabela, no campo `"tabela"` -- o mesmo que o
-    /// `despachar` ja confere. Nao ha conferencia propria aqui porque nao ha
-    /// segunda tabela escondida em lugar nenhum, ao contrario do `juntar`, do
-    /// `unir` e do `pivotar`. **No dia em que o `agrupar` ganhar um `de`
-    /// aninhado, ele passa a precisar de uma** -- e a pergunta que decide e
-    /// «esta operacao nomeia tabela onde o portao nao olha?».
+    /// # O portao atomico vem primeiro
+    ///
+    /// A primeira linha e um `load` num `AtomicBool`. Num servidor sem visao
+    /// nenhuma -- que e o de hoje -- toda consulta paga isso e mais nada: nem
+    /// trava, nem String, nem busca. E a mesma decisao do `ha_gatilhos`,
+    /// tomada antes de doer.
+    ///
+    /// # Por que o plano de dentro sai do MESMO caminho de sempre
+    ///
+    /// A visao guarda TEXTO. Analisar aqui e traduzir com
+    /// `phxsql_sql::traduzir` -- os mesmos dois passos de um `SELECT` comum --
+    /// e o que faz a visao envelhecer junto com a tabela: coluna nova aparece,
+    /// tabela apagada RECUSA nomeando, no dia em que alguem consulta.
+    ///
+    /// # A integração que falta, e o que ela troca
+    ///
+    /// A frente F-SQL entrega `phxsql_sql::planejar_sobre(&selecao,
+    /// plano_de_dentro)`, que monta o `consultar` de fora a partir da `Selecao`
+    /// externa. Ela NAO existe nesta arvore ainda, entao o `consultar` e
+    /// montado aqui, campo por campo -- e a integração troca este bloco pela
+    /// chamada, sem mexer no resto: o que sai daqui e um pedido JSON, e o
+    /// pedido e o contrato.
+    fn selecao_sobre_visao(
+        &self,
+        selecao: &phxsql_sql::Selecao,
+        base: &str,
+        sessao: &Sessao,
+    ) -> Result<Option<Json>> {
+        if !self.ha_visoes.load(Ordering::Relaxed) {
+            return Ok(None);
+        }
+        let alvo = selecao.de.nome_no_protocolo();
+        let sql_da_visao = {
+            let v = self.visoes.lock().map_err(|_| trava_envenenada())?;
+            match v.por_nome(base, &alvo) {
+                Some(x) => x.sql.clone(),
+                None => return Ok(None),
+            }
+        };
+
+        // O SELECT de DENTRO, traduzido como qualquer outro -- inclusive
+        // pedindo o esquema pelo protocolo, que ja exige `ler` naquela tabela.
+        // E daqui que sai a recusa nomeando quando a tabela sumiu.
+        let dentro = match phxsql_sql::analisar_comando(&sql_da_visao)? {
+            phxsql_sql::Comando::Selecao(s) => s,
+            outro => {
+                return Err(PhxError::Esquema(format!(
+                    "a visao {alvo:?} guarda um {}, e nao um SELECT",
+                    outro.verbo()
+                )))
+            }
+        };
+        let base_de_dentro = match dentro.de.database.trim() {
+            "" => base.to_string(),
+            outro => outro.to_string(),
+        };
+        let tabela_de_dentro = dentro.de.nome_no_protocolo();
+        let ped_esquema = Json::objeto(vec![
+            ("database", Json::texto_de(&base_de_dentro)),
+            ("tabela", Json::texto_de(&tabela_de_dentro)),
+        ]);
+        let esquema = self
+            .executar_derivado("esquema", &ped_esquema, sessao)
+            .map_err(|e| erro_da_visao(&alvo, &tabela_de_dentro, e))?;
+        let plano = phxsql_sql::traduzir(&dentro, &indices_do_esquema(&esquema), &base_de_dentro)?;
+
+        // O `consultar` de FORA. `planejar_sobre` da F-SQL substitui este
+        // bloco -- ver a nota do cabecalho.
+        let mut de = plano.pedido.clone();
+        if let Json::Objeto(pares) = &mut de {
+            pares.push(("op".to_string(), Json::texto_de(&plano.op)));
+        }
+        let mut fora = vec![
+            ("database".to_string(), Json::texto_de(base)),
+            ("de".to_string(), de),
+        ];
+        // O `WHERE` de fora vira EXPRESSAO, e nao um `onde`: o `onde` compara
+        // coluna com literal, e a gramatica da expressao ja diz tudo o que a
+        // `Condicao` do analisador sabe dizer. Uma tradução so, e nao duas.
+        if let Some(c) = &selecao.onde {
+            fora.push((
+                "expressao".to_string(),
+                Json::texto_de(format!(
+                    "{} {} {}",
+                    c.coluna,
+                    c.op.simbolo(),
+                    c.valor.escrever()
+                )),
+            ));
+        }
+        if let phxsql_sql::Projecao::Colunas(cs) = &selecao.projecao {
+            fora.push((
+                "colunas".to_string(),
+                Json::Lista(
+                    cs.iter()
+                        .map(|c| {
+                            Json::objeto(vec![
+                                ("coluna", Json::texto_de(&c.nome)),
+                                ("apelido", Json::texto_de(c.rotulo())),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ));
+        }
+        if let phxsql_sql::Projecao::Contagem = &selecao.projecao {
+            return Err(PhxError::Esquema(format!(
+                "COUNT(*) sobre a visao {alvo:?} nao existe nesta rodada: conte \
+                 com {{\"op\":\"agrupar\"}} sobre a tabela de dentro, ou peca as \
+                 linhas e conte-as"
+            )));
+        }
+        if let Some(o) = &selecao.ordem {
+            fora.push((
+                "ordem".to_string(),
+                Json::Lista(vec![Json::objeto(vec![
+                    ("coluna", Json::texto_de(&o.coluna)),
+                    ("desc", Json::Bool(o.desc)),
+                ])]),
+            ));
+        }
+        if selecao.salto > 0 {
+            fora.push(("pular".to_string(), Json::de_u64(selecao.salto)));
+        }
+        if let Some(l) = selecao.limite {
+            fora.push(("max".to_string(), Json::de_u64(l)));
+        }
+        Ok(Some(Json::Objeto(fora)))
+    }
+
     /// As linhas de um sub-pedido, pelo MESMO portao de qualquer cliente.
     ///
     /// # Esta e a funcao inteira do `consultar`
@@ -9750,6 +9983,27 @@ impl Servidor {
     /// que ja esta ordenado, e a projecao vem POR ULTIMO porque a expressao e
     /// a ordem podem falar de uma coluna que a resposta nao mostra --
     /// `ORDER BY preco` num `SELECT nome` e SQL legitimo.
+    ///
+    /// # A profundidade tem teto
+    ///
+    /// Um `consultar` cujo `de` e outro `consultar` desce a pilha de verdade.
+    /// Sem teto, um pedido de duzentos niveis derruba a thread por estouro de
+    /// pilha -- e derrubar a thread nao e recusar, e cair. O contador e por
+    /// thread e o guarda o devolve na saida, inclusive quando o passo do meio
+    /// falha.
+    /// `consultar`: a composicao -- o passo do SQL que nao e leitura de tabela.
+    ///
+    /// # A ordem dos passos, e por que ela e fixa
+    ///
+    /// `de` -> `juntar` (na ordem) -> `escalar` -> `em` -> `expressao` ->
+    /// `janela` -> `ordem` -> `pular`/`max` -> `colunas`. Cada um depende do
+    /// anterior: a junção tem de acontecer antes de qualquer filtro que fale
+    /// das duas tabelas, o escalar entra antes da expressao porque e ela quem
+    /// o ve, a janela numera o que sobrou do filtro (numerar antes daria
+    /// buracos na numeracao), o recorte corta o que ja esta ordenado, e a
+    /// PROJECAO VEM POR ULTIMO porque a expressao e a ordem podem falar de uma
+    /// coluna que a resposta nao mostra -- `ORDER BY preco` num `SELECT nome`
+    /// e SQL legitimo.
     ///
     /// # A profundidade tem teto
     ///
@@ -10109,6 +10363,25 @@ impl Servidor {
         ]))
     }
 
+    /// `agrupar`: o `GROUP BY` generico -- agrupa por colunas e resume cada
+    /// grupo.
+    ///
+    /// # Por que ela nao e um `pivotar` com outra roupa
+    ///
+    /// O `pivotar` cruza DUAS listas de campos numa grade e resume UMA coluna.
+    /// Isto aqui resume VARIAS colunas de uma vez, com apelido para cada uma, e
+    /// peneira o resultado ja agregado (`tendo`). Sao perguntas diferentes com
+    /// o mesmo acumulador embaixo -- e e o acumulador que e compartilhado, e
+    /// nao copiado: ver `crate::agrupar`.
+    ///
+    /// # O portao continua sendo UM
+    ///
+    /// Esta operacao nomeia UMA tabela, no campo `"tabela"` -- o mesmo que o
+    /// `despachar` ja confere. Nao ha conferencia propria aqui porque nao ha
+    /// segunda tabela escondida em lugar nenhum, ao contrario do `juntar`, do
+    /// `unir` e do `pivotar`. **No dia em que o `agrupar` ganhar um `de`
+    /// aninhado, ele passa a precisar de uma** -- e a pergunta que decide e
+    /// «esta operacao nomeia tabela onde o portao nao olha?».
     fn op_agrupar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let max = self.limite(p);
         let teto_grupos = self.max_linhas();
@@ -10354,6 +10627,15 @@ impl Servidor {
         ]))
     }
 
+    /// Monta a tabulacao cruzada de uma tabela, com junção opcional.
+    ///
+    /// ```json
+    /// { "database": "loja", "tabela": "vendas",
+    ///   "juntar": [ {"tabela":"clientes", "coluna":"cliente_id", "prefixo":"cliente"} ],
+    ///   "linhas": [ {"campo":"cliente.cidade"} ],
+    ///   "colunas": [ {"campo":"emissao", "granularidade":"mes"} ],
+    ///   "valor": "total", "agregador": "soma", "max": 200000 }
+    /// ```
     fn op_pivotar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let agregador = Agregador::de_texto(p.texto_ou("agregador", "soma"))?;
         let max = self.limite_pivot(p);
@@ -13105,6 +13387,21 @@ impl Servidor {
             "" => p.texto_ou("database", "").trim().to_string(),
             outro => outro.to_string(),
         };
+        // O `FROM` aponta para uma VISAO? Entao o pedido vira um `consultar`
+        // sobre o plano dela. A pergunta comeca por um load atomico: num
+        // servidor sem visao nenhuma, ela custa isso e mais nada.
+        if let Some(ped) = self.selecao_sobre_visao(&selecao, &base, sessao)? {
+            let bruto = self.executar_derivado("consultar", &ped, sessao)?;
+            return Ok(Json::objeto(vec![
+                ("sql", Json::texto_de(&texto)),
+                ("op", Json::texto_de("consultar")),
+                (
+                    "devolvidas",
+                    Json::de_u64(bruto.inteiro_ou("devolvidas", 0).max(0) as u64),
+                ),
+                ("resultado", bruto),
+            ]));
+        }
         let tabela = selecao.de.nome_no_protocolo();
         let ped_esquema = Json::objeto(vec![
             ("database", Json::texto_de(&base)),
@@ -20426,6 +20723,20 @@ impl Profundidade {
 impl Drop for Profundidade {
     fn drop(&mut self) {
         FUNDO.with(|f| f.set(f.get().saturating_sub(1)));
+    }
+}
+
+/// A recusa de uma visao cuja tabela sumiu -- com o nome das DUAS.
+///
+/// Sem isto, quem consulta `v_clientes` recebe «clientes nao existe» e vai
+/// procurar quem apagou uma tabela que ele nem citou. **Envolver nao e
+/// substituir**: o erro de dentro continua inteiro no fim da frase, porque e
+/// ele que diz se a tabela sumiu ou se foi a permissao que faltou.
+fn erro_da_visao(visao: &str, tabela: &str, e: PhxError) -> PhxError {
+    let recado = format!("a visao {visao:?} le a tabela {tabela:?}, e ela nao respondeu: {e}");
+    match e {
+        PhxError::Autorizacao(_) => PhxError::Autorizacao(recado),
+        _ => PhxError::NaoEncontrado(recado),
     }
 }
 
@@ -33292,6 +33603,374 @@ mod testes_consultar_juncao {
         )
         .unwrap_err();
         assert!(e.to_string().contains("apelido"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// As visoes pelo protocolo, e o `FROM v` da op `sql`.
+#[cfg(test)]
+mod testes_visoes {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("visao-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn servidor(d: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            cadastro: cadastro.clone(),
+            max_linhas: 10_000,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        for tab in ["clientes", "folha"] {
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{tab}","colunas":[
+                        {{"nome":"id","tipo":"Int4","obrigatoria":true}},
+                        {{"nome":"nome","tipo":"Str(20)"}},
+                        {{"nome":"cidade","tipo":"Str(20)"}}],
+                     "indices":[{{"nome":"porId","colunas":["id"],"unico":true,
+                                  "primario":true}}]}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        for (id, nome, cidade) in [
+            (1, "ana", "Blumenau"),
+            (2, "bia", "Itajai"),
+            (3, "caio", "Blumenau"),
+        ] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"clientes",
+                         "linha":{{"id":{id},"nome":"{nome}","cidade":"{cidade}"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"folha","linha":{"id":1,"nome":"segredo"}}"#),
+            &dono,
+        )
+        .unwrap();
+        let sessao = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        (s, sessao)
+    }
+
+    fn dono(s: &Arc<Servidor>, op: &str, corpo: &str) -> Result<Json> {
+        s.executar(op, &pedido(corpo), &Sessao::default())
+    }
+
+    fn sql(s: &Arc<Servidor>, texto: &str) -> Result<Json> {
+        s.executar(
+            "sql",
+            &pedido(&format!(
+                r#"{{"database":"b","texto":{}}}"#,
+                Json::texto_de(texto).escrever()
+            )),
+            &Sessao::default(),
+        )
+    }
+
+    fn linhas_do_sql(r: &Json) -> Vec<Json> {
+        r.campo("resultado")
+            .and_then(|x| x.campo("linhas"))
+            .and_then(Json::lista)
+            .unwrap()
+            .to_vec()
+    }
+
+    /// **A PROVA REAL do item: o `FROM v` le a visao, e o teste mede QUANTAS
+    /// linhas e QUAIS -- nao se a op respondeu.**
+    ///
+    /// Sabotagem: com o `if let Some(ped) = self.selecao_sobre_visao(...)`
+    /// fora do `op_sql`, o `SELECT * FROM v_blumenau` volta a procurar uma
+    /// TABELA chamada `v_blumenau` e recusa -- e este teste reprova na
+    /// primeira assercao.
+    #[test]
+    fn o_from_de_uma_visao_le_a_visao() {
+        let d = dir("from");
+        let (s, _) = servidor(&d, Cadastro::default());
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_blumenau",
+                "sql":"SELECT * FROM clientes"}"#,
+        )
+        .unwrap();
+
+        let r = sql(&s, "SELECT * FROM v_blumenau").expect("a visao nao respondeu");
+        assert_eq!(r.texto_ou("op", ""), "consultar");
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 3);
+
+        // E o WHERE de FORA vale sobre a visao.
+        let r = sql(&s, "SELECT * FROM v_blumenau WHERE cidade = 'Blumenau'").unwrap();
+        let l = linhas_do_sql(&r);
+        assert_eq!(l.len(), 2, "o WHERE de fora nao filtrou");
+        assert_eq!(l[0].texto_ou("nome", ""), "ana");
+
+        // A projecao e a ordem de fora tambem.
+        let r = sql(
+            &s,
+            "SELECT nome AS quem FROM v_blumenau ORDER BY id DESC LIMIT 2",
+        )
+        .unwrap();
+        let l = linhas_do_sql(&r);
+        assert_eq!(l.len(), 2);
+        assert_eq!(l[0].texto_ou("quem", ""), "caio");
+        assert!(l[0].campo("cidade").is_none(), "a projecao nao cortou");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **Visao que aponta para tabela que sumiu RECUSA na hora de usar,
+    /// nomeando as duas.**
+    ///
+    /// Nomear so a tabela mandaria quem consulta `v_x` procurar quem apagou
+    /// uma tabela que ele nem citou.
+    #[test]
+    fn visao_com_tabela_que_sumiu_recusa_nomeando() {
+        let d = dir("sumiu");
+        let (s, _) = servidor(&d, Cadastro::default());
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_folha","sql":"SELECT * FROM folha"}"#,
+        )
+        .unwrap();
+        // A visao funciona enquanto a tabela existe -- o controle.
+        assert_eq!(
+            sql(&s, "SELECT * FROM v_folha")
+                .unwrap()
+                .inteiro_ou("devolvidas", -1),
+            1
+        );
+        dono(
+            &s,
+            "excluir_tabela",
+            r#"{"database":"b","tabela":"folha","confirmar":"folha"}"#,
+        )
+        .unwrap();
+        let e = sql(&s, "SELECT * FROM v_folha").expect_err("a visao orfa respondeu");
+        let t = e.to_string();
+        assert!(t.contains("v_folha"), "a recusa nao diz a visao: {t}");
+        assert!(t.contains("folha"), "a recusa nao diz a tabela: {t}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// As duas recusas da DECLARACAO: SQL que nao analisa, e nome de tabela.
+    #[test]
+    fn a_declaracao_recusa_o_que_nao_analisa_e_o_nome_de_tabela() {
+        let d = dir("declara");
+        let (s, _) = servidor(&d, Cadastro::default());
+
+        let e = dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v","sql":"SELECT FROM"}"#,
+        )
+        .unwrap_err();
+        assert!(!e.to_string().is_empty(), "recusa muda nao ensina nada");
+
+        // Um INSERT nao e visao.
+        let e = dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v","sql":"INSERT INTO clientes (id) VALUES (9)"}"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("INSERT"), "{e}");
+
+        // Nome que ja e tabela: uma das duas ficaria invisivel no FROM.
+        let e = dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"clientes","sql":"SELECT * FROM folha"}"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("TABELA"), "{e}");
+        assert!(e.to_string().contains("clientes"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Listar, substituir e excluir -- e o `excluir` de quem nao existia nao
+    /// e erro, como todo `DROP VIEW IF EXISTS`.
+    #[test]
+    fn listar_substituir_e_excluir() {
+        let d = dir("ciclo");
+        let (s, _) = servidor(&d, Cadastro::default());
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v","sql":"SELECT * FROM clientes"}"#,
+        )
+        .unwrap();
+        let r = dono(&s, "visoes", r#"{"database":"b"}"#).unwrap();
+        let l = r.campo("visoes").and_then(Json::lista).unwrap();
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].texto_ou("sql", ""), "SELECT * FROM clientes");
+
+        // Sem `substituir`, o nome repetido recusa.
+        let e = dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v","sql":"SELECT * FROM folha"}"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("substituir"), "{e}");
+
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v","sql":"SELECT * FROM folha","substituir":true}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            sql(&s, "SELECT * FROM v")
+                .unwrap()
+                .inteiro_ou("devolvidas", -1),
+            1
+        );
+
+        let r = dono(&s, "excluir_visao", r#"{"database":"b","nome":"v"}"#).unwrap();
+        assert!(r.booleano_ou("excluida", false));
+        let r = dono(&s, "excluir_visao", r#"{"database":"b","nome":"v"}"#).unwrap();
+        assert!(
+            !r.booleano_ou("excluida", true),
+            "excluiu o que nao existia"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A visao NAO e a porta dos fundos: ela le pela tabela de dentro, e a
+    /// tabela de dentro passa pelo portao de quem consulta -- e nao pelo de
+    /// quem criou.**
+    ///
+    /// Este e o furo que uma visao abriria se o plano de dentro fosse
+    /// executado sem `executar_derivado`: o administrador cria
+    /// `v_folha AS SELECT * FROM folha`, e quem nao le a folha passa a ler.
+    #[test]
+    fn a_visao_nao_e_a_porta_dos_fundos_para_a_tabela_negada() {
+        let d = dir("porta");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"*":{"ler":true,"tabelas":{"folha":{}}}}}]}"#,
+        ))
+        .unwrap();
+        let (s, ses) = servidor(&d, cadastro);
+        // O DONO cria as duas visoes.
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_folha","sql":"SELECT * FROM folha"}"#,
+        )
+        .unwrap();
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_clientes","sql":"SELECT * FROM clientes"}"#,
+        )
+        .unwrap();
+
+        let pede = |corpo: &str| -> Result<Json> {
+            let mut sessao = Sessao {
+                usuario: ses.usuario.clone(),
+                ..Sessao::default()
+            };
+            let (_, _, r) = s.despachar(
+                &format!(
+                    r#"{{"token":"t","op":"sql","database":"b","texto":{}}}"#,
+                    Json::texto_de(corpo).escrever()
+                ),
+                &mut sessao,
+                "127.0.0.1",
+            );
+            r
+        };
+
+        // O controle: a visao sobre a tabela permitida responde.
+        let ok = pede("SELECT * FROM v_clientes").expect("a visao permitida foi barrada");
+        assert_eq!(ok.inteiro_ou("devolvidas", -1), 3);
+
+        // E a visao sobre a tabela negada recusa, dizendo as duas.
+        let e = pede("SELECT * FROM v_folha").expect_err("a visao leu a tabela negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("folha"), "{e}");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **Sem visao nenhuma, NADA muda no caminho do `sql`.**
+    ///
+    /// O portao e um `load` atomico antes de qualquer trabalho, e a prova de
+    /// que ele nao mexeu em nada e esta: o `SELECT` de sempre continua virando
+    /// `varrer`, e nao `consultar`.
+    #[test]
+    fn sem_visao_nenhuma_o_sql_continua_como_era() {
+        let d = dir("nada-muda");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = sql(&s, "SELECT * FROM clientes").unwrap();
+        assert_eq!(r.texto_ou("op", ""), "varrer", "o caminho de sempre mudou");
+        // E uma tabela que nao existe continua recusando como tabela, e nao
+        // como visao.
+        let e = sql(&s, "SELECT * FROM inventada").unwrap_err();
+        assert!(e.to_string().contains("inventada"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A visao sobrevive ao restart: ela mora no diretorio do banco, e viaja
+    /// com o backup dele.
+    #[test]
+    fn a_visao_sobrevive_ao_restart() {
+        let d = dir("restart");
+        {
+            let (s, _) = servidor(&d, Cadastro::default());
+            dono(
+                &s,
+                "criar_visao",
+                r#"{"database":"b","nome":"v","sql":"SELECT * FROM clientes"}"#,
+            )
+            .unwrap();
+        }
+        assert!(d.join("b").join(crate::visoes::ARQUIVO).is_file());
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s2 = Servidor::novo(c).unwrap();
+        assert_eq!(
+            sql(&s2, "SELECT * FROM v")
+                .unwrap()
+                .inteiro_ou("devolvidas", -1),
+            3
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 }

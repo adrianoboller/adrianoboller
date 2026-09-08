@@ -465,6 +465,41 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: true,
     },
     Operacao {
+        nome: "criar_visao",
+        apelidos: &[],
+        resumo: "Guarda um `SELECT` com nome, por banco -- o `CREATE VIEW`. O \
+                 texto é analisado a cada uso, não congelado.",
+        parametros: &[
+            DB,
+            obr("nome", "string", "o nome da visão; colidir com tabela recusa"),
+            obr("sql", "string", "o `SELECT` que ela guarda, verbatim"),
+            opc(
+                "substituir",
+                "boolean",
+                "troca o texto de uma visão que já existe (o `CREATE OR REPLACE`)",
+            ),
+        ],
+        exemplo: r#"{"op":"criar_visao","database":"loja","nome":"v_blumenau","sql":"SELECT * FROM clientes"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "visoes",
+        apelidos: &[],
+        resumo: "As visões do banco, com o SQL de cada uma como foi escrito.",
+        parametros: &[DB],
+        exemplo: r#"{"op":"visoes","database":"loja"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "excluir_visao",
+        apelidos: &[],
+        resumo: "Apaga uma visão. Visão que não existia devolve \
+                 `excluida: false`, e não erro.",
+        parametros: &[DB, obr("nome", "string", "o nome da visão")],
+        exemplo: r#"{"op":"excluir_visao","database":"loja","nome":"v_blumenau"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "consultar",
         apelidos: &[],
         resumo: "Compõe operações: pega as linhas de um sub-pedido e aplica \

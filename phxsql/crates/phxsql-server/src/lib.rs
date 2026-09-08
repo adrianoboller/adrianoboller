@@ -47,6 +47,7 @@ pub mod transacao;
 pub mod travas;
 pub mod usuarios;
 pub mod valores;
+pub mod visoes;
 
 pub use acesso::{Acesso, LogAcessos, ResumoIp};
 pub use blacklist::{Blacklist, Bloqueio, Firewall, Politica};

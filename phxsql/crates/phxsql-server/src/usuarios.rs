@@ -140,6 +140,14 @@ impl Atividade {
             // so pode apertar, e `ler` e o piso certo: quem nao pode ler nada
             // nao tem o que compor.
             "consultar" => Atividade::Ler,
+            // Listar as visoes e LER o catalogo do banco: o texto de um
+            // `SELECT` diz que tabelas existem, e nao o que ha nelas. Ja
+            // CRIAR uma exige `criar`, o mesmo poder de criar tabela, e
+            // EXCLUIR exige `excluir`: quem apaga uma visao apaga a consulta
+            // de todo mundo que a usa.
+            "visoes" => Atividade::Ler,
+            "criar_visao" => Atividade::Criar,
+            "excluir_visao" => Atividade::Excluir,
             // A soma de verificacao le a tabela inteira e devolve um numero:
             // quem pode ler a tabela pode saber se ela mudou.
             "checksum" | "soma_de_verificacao" => Atividade::Ler,
