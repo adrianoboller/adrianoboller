@@ -1819,7 +1819,7 @@ class Questionario(unittest.TestCase):
     def test_exemplo_estoque_destino_fecha_o_grafo_e_reproduz_o_golden(self):
         """O destino do ESTOQUE (PDFs do WINDEV -> Rust + React) e teste de regressao
         do fluxo inteiro: o grafo tem de fechar com UMA lacuna, que e o GAP plantado
-        no exemplo (EstornaEstoque sem codigo), e o golden gravado tem de bater com
+        no exemplo (UI-003, EstornaEstoque sem codigo), e o golden gravado tem de bater com
         os casos. Com cargo na maquina, o binario e recompilado e as nove regras
         puras sao reprovadas de verdade; a decima (a query) precisa do PostgreSQL
         e tem de FALHAR dizendo isso, nao passar por engano."""
@@ -1827,7 +1827,7 @@ class Questionario(unittest.TestCase):
         g = json.loads(run(SCRIPTS / "grafo.py", "--project-root", destino, "--json", "conferir").stdout)
         lacunas = {k: v for k, v in g["achados"].items() if v}
         self.assertEqual(list(lacunas), ["requisito_sem_teste"], lacunas)
-        self.assertEqual([x["trace_id"] for x in lacunas["requisito_sem_teste"]], ["GAP-001"])
+        self.assertEqual([x["trace_id"] for x in lacunas["requisito_sem_teste"]], ["UI-003"])  # bloqueada pelo GAP-001
         casos = json.loads((destino / "golden-master/casos.json").read_text(encoding="utf-8"))["casos"]
         comp = json.loads((destino / "golden-master/comparacao.json").read_text(encoding="utf-8"))
         self.assertEqual(comp["equivalencia"], f"{len(casos)}/{len(casos)}")

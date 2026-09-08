@@ -1,4 +1,4 @@
-# Fontes do WX Claude Code 3.46.0
+# Fontes do WX Claude Code 3.47.0
 
 Inventário medido em 2026-09-08 por `docs/dossie/gerar-fontes.py`. Não se edita à mão: rode o script depois de acrescentar arquivo, e o teste `test_fontes_md_esta_em_dia` avisa quando ele envelhece.
 
@@ -12,14 +12,14 @@ Inventário medido em 2026-09-08 por `docs/dossie/gerar-fontes.py`. Não se edit
 | Referências | 19 | 1.323 | o que os agentes leem antes de decidir |
 | Modelos | 6 | 863 | questionário, CLAUDE.md e matriz que viram o projeto do cliente |
 | Testes | 3 | 3.179 | a bateria; o validador estrito a roda |
-| Exemplo | 55 | 2.078 | projeto sintético que é o teste de regressão do fluxo inteiro |
+| Exemplo | 55 | 2.084 | projeto sintético que é o teste de regressão do fluxo inteiro |
 | Exemplo PHP | 15 | 1.584 | legado PHP procedural sintético: o segundo exemplo, sem nada de WX |
 | Ferramenta Rust | 6 | 1.647 | wx-modelos: escolha e controle do modelo local, std pura, sem crate |
 | Runtime WLanguage em Rust | 5 | 759 | wl-rt: moeda de ponto fixo, data AAAAMMDD, comparação de string e máscaras, com a semântica lida do Help |
-| Documentos | 5 | 1.491 | manual, README, fontes e a instrução de ativação, na raiz |
-| Documentos de apoio | 7 | 629 | relatório, análises, origens dos prints e o vídeo |
+| Documentos | 5 | 1.492 | manual, README, fontes e a instrução de ativação, na raiz |
+| Documentos de apoio | 7 | 645 | relatório, análises, origens dos prints e o vídeo |
 | Instaladores | 2 | 459 | bash para Linux e macOS, PowerShell para Windows |
-| **total** | **315** | **40.423** | |
+| **total** | **315** | **40.446** | |
 
 ## O que não é fonte, mas vem no pacote
 
@@ -48,4 +48,4 @@ python3 skills/conversao-wx/scripts/validate_plugin_bundle.py . --strict
 
 Esperado: `valid: true`, `tests: OK`, zero erros e zero avisos. O `--strict` roda a bateria inteira.
 
-Último commit no momento da medição: `8e146b3 2026-09-08`.
+Último commit no momento da medição: `7cd33f0 2026-09-08`.

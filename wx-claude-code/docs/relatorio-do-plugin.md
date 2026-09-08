@@ -1,4 +1,4 @@
-# Relatório do plugin WX Claude Code 3.46.0
+# Relatório do plugin WX Claude Code 3.47.0
 
 Medido em 2026-09-08 por `docs/dossie/numeros-do-plugin.py`; nenhum número abaixo foi digitado.
 
@@ -39,12 +39,14 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | duração do vídeo do primeiro projeto | 3 min 35 s |
 | cenas do vídeo dos PDFs do WINDEV a Rust + React | 15 |
 | duração do vídeo dos PDFs do WINDEV a Rust + React | 1 min 42 s |
+| cenas do vídeo passo a passo | 18 |
+| duração do vídeo passo a passo | 1 min 58 s |
 | projetos de exemplo convertidos de ponta a ponta | 2 |
 | golden master dos destinos | 5/5 (clientes-php-mysql) · 10/10 (estoque-wx) |
 | testes do runtime WLanguage em Rust (wl-rt) | 16 |
 | corpus do Help (bytes) | 26750976 |
 | páginas válidas do corpus | 12035 |
-| linhas do manual | 935 |
+| linhas do manual | 936 |
 | tabelas do exemplo ESTOQUE | 7 |
 
 ## O que foi provado em sessão real

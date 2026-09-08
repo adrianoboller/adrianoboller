@@ -199,7 +199,7 @@ def pacote_documentos(v: str, saida: Path) -> Path:
 
 
 def pacote_videos(v: str, saida: Path) -> Path:
-    """Os cinco videos num zip proprio: junto dos PDFs o pacote de documentos
+    """Os seis videos num zip proprio: junto dos PDFs o pacote de documentos
     passava de 30 MiB, o limite dos canais por onde isto viaja."""
     alvo = saida / "videos" / f"videos-{v}.zip"
     alvo.parent.mkdir(parents=True, exist_ok=True)
@@ -207,7 +207,8 @@ def pacote_videos(v: str, saida: Path) -> Path:
              ("wx-claude-code-video-php.mp4", "video-legado-php.mp4"),
              ("wx-claude-code-video-bateria.mp4", "video-bateria-de-testes.mp4"),
              ("wx-claude-code-video-primeiro.mp4", "video-primeiro-projeto.mp4"),
-             ("wx-claude-code-video-windev.mp4", "video-windev-para-rust-react.mp4")]
+             ("wx-claude-code-video-windev.mp4", "video-windev-para-rust-react.mp4"),
+             ("wx-claude-code-video-passos.mp4", "video-passo-a-passo.mp4")]
     n = 0
     with zipfile.ZipFile(alvo, "w", zipfile.ZIP_STORED) as z:
         for origem, nome in itens:
@@ -247,7 +248,7 @@ def main() -> int:
                "vendedor": "SÓ VOCÊ: emissor de serial e receptor do aviso",
                "binarios": "quem usa modelo local: wx-modelos Linux e Windows",
                "documentos": "reunião e contrato: PDFs, termos, segurança, apresentação",
-               "videos": "reunião: os cinco vídeos, saída real de sessão"}
+               "videos": "reunião: os seis vídeos, saída real de sessão"}
     if a.separar_corpus:
         pacotes.append(saida / "cliente" / CORPUS.name)
         publico[CORPUS.name] = "quem compra: o corpus do Help, para ./instalar.sh --corpus"

@@ -99,3 +99,17 @@ não tem. O destino inteiro está em `../../exemplos/estoque-wx/destino/`.
 ```bash
 node gravar-video.mjs <pasta-saida> <pasta-capturas> windev
 ```
+
+## O sexto vídeo: o passo a passo na versão atual
+
+`wx-claude-code-video-passos.mp4` (roteiro `passos`) é a lista do manual
+virando saída real: dezoito comandos, do `instalar.sh --conferir` ao zelador,
+rodados nesta versão no momento da gravação sobre o exemplo ESTOQUE. O que o
+C-GATE achou no caminho — as linhas «verified» da matriz sem `test_result_ref`
+— foi corrigido no exemplo antes, e a saída mostrada é a de depois do
+conserto; a captura do golden foi refeita quando o PostgreSQL estava fora do
+ar, porque 9/10 por banco parado não é o número do plugin.
+
+```bash
+node gravar-video.mjs <pasta-saida> <pasta-capturas> passos
+```

@@ -103,7 +103,8 @@ def main() -> int:
               ("wx-claude-code-video-php.mp4", "de PHP para Rust, sem nada de WINDEV", n["video_php_duracao"], n["video_php_cenas"]),
               ("wx-claude-code-video-bateria.mp4", "a bateria de testes rodando", n["video_bateria_duracao"], n["video_bateria_cenas"]),
               ("wx-claude-code-video-primeiro.mp4", "o primeiro projeto: instalação, licença e um CRUD PHP + MySQL → Rust + MySQL + React", n["video_primeiro_duracao"], n["video_primeiro_cenas"]),
-              ("wx-claude-code-video-windev.mp4", "os PDFs do WINDEV → Rust + Axum + PostgreSQL + React", n["video_windev_duracao"], n["video_windev_cenas"])]
+              ("wx-claude-code-video-windev.mp4", "os PDFs do WINDEV → Rust + Axum + PostgreSQL + React", n["video_windev_duracao"], n["video_windev_cenas"]),
+              ("wx-claude-code-video-passos.mp4", "o passo a passo na versão atual: dezoito comandos, do instalador à entrega", n["video_passos_duracao"], n["video_passos_cenas"])]
     tabela_videos = "\n".join(["| Vídeo (`docs/video/`) | O que mostra | Duração | Cenas |", "| --- | --- | --- | --- |"]
                                + [f"| `{a}` | {b} | {c} | {d} |" for a, b, c, d in videos])
     novo = trocar(novo, "<!-- videos: gerado -->", "<!-- fim dos videos -->", tabela_videos)

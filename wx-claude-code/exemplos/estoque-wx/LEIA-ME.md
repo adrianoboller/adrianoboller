@@ -78,8 +78,9 @@ destino/
   .wx-migration/             traceability.csv (17 linhas), evidências EVID-0001..0003, DEC-001
 ```
 
-O grafo fecha com **uma** lacuna, e ela é o GAP plantado: `EstornaEstoque`
-continua sem código para converter.
+O grafo fecha com **uma** lacuna, e ela é a linha UI-003, bloqueada pelo GAP
+plantado: `EstornaEstoque` continua sem código para converter, e a condição de
+desbloqueio está escrita na própria linha.
 
 ### O que ele ensinou
 
@@ -99,7 +100,12 @@ continua sem código para converter.
   assim?» saía espremida na primeira coluna da grade (120 px): faltava
   `grid-column: 1/-1`. As 14 conferências passavam.
 - **Uma linha de matriz por arquivo de código, ou o grafo acusa.** `main.tsx`
-  e `vite.config.ts` entraram como UI-002 e CFG-001, com o teste da tela.
+  e `vite.config.ts` entraram como UI-002 e NFR-001, com o teste da tela.
+- **A matriz feita à mão não passava no validador do próprio plugin.** O C-GATE
+  do vídeo passo a passo acusou: linhas «verified» sem `test_result_ref`,
+  `target_commit`, `expected` e `actual`; `GAP-001` como id, que a matriz não
+  aceita — gap é uma linha de tela **bloqueada**, com a condição de desbloqueio
+  nas notas. Corrigida, o validador diz VALID e o C-GATE aprova a CONST-0005.
 
 ### Para reproduzir
 

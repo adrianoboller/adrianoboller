@@ -11,7 +11,7 @@ const [, , outDir, capsDir, roteiroNome = 'uso'] = process.argv;
 // roteiro ESCOLHIDO e conferido depois -- ai sim falta e erro, com o nome.
 const FALTA = '\u0000FALTA:';
 const cap = (n) => {
-  try { return readFileSync(`${capsDir}/${n}.txt`, 'utf8').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/primeiro\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/estoque\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/estoque\/entrega/g, '~/entregas/estoque').replace(/\/tmp\/claude-0\/[^ ]*?\/primeiro\/cliente-casa/g, '~/.wx-claude-code').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/(proj|pmo2|demo|ex2?)/g, '.').replace(/\/root\//g, '~/'); }
+  try { return readFileSync(`${capsDir}/${n}.txt`, 'utf8').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/primeiro\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/estoque\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/passos\/projeto/g, '.').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/passos\/entrega/g, '~/entregas/estoque').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/passos\/plugins/g, '~/plugins').replace(/\/home\/user\/adrianoboller\/wx-claude-code\/entregas\/cliente/g, '~/Downloads').replace(/\/home\/user\/adrianoboller\/wx-claude-code/g, '~/plugins/wx-claude-code').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/estoque\/entrega/g, '~/entregas/estoque').replace(/\/tmp\/claude-0\/[^ ]*?\/primeiro\/cliente-casa/g, '~/.wx-claude-code').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/(proj|pmo2|demo|ex2?)/g, '.').replace(/\/root\//g, '~/'); }
   catch { return FALTA + n; }
 };
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -158,6 +158,33 @@ ROTEIROS.windev = [
   ['/wx-claude-code:procedencia slsa', '14 · A procedência, com o nível SLSA dito com honestidade', cap('12-procedencia')],
   ['/wx-claude-code:exportar', '15 · A entrega: pastas numeradas, SHA-256 de cada arquivo', cap('13-exportar')],
   ['card', 'Built to convert. Engineered to prove.', 'Quatro PDFs, oito regras, uma tela — e o que o PDF não diz fica escrito como lacuna, não inventado.\n\nO exemplo inteiro está em exemplos/estoque-wx/'],
+];
+
+// Sexto roteiro: o PASSO A PASSO na versao atual, comando por comando, do instalador a
+// entrega -- a lista do manual virando saida real. Cada captura foi rodada nesta versao
+// no momento da gravacao; o que o C-GATE achou no caminho (matriz sem test_result_ref)
+// foi corrigido antes, e a saida mostrada e a de depois do conserto.
+ROTEIROS.passos = [
+  ['card', 'Passo a passo', 'WX Claude Code 3.47.0\nDo instalador à entrega, um comando por passo, na versão atual.\nProjeto: o ESTOQUE (WINDEV 2025, quatro PDFs) → Rust + Axum + PostgreSQL + React.\n\nTudo a seguir é saída real, gravada nesta versão.'],
+  ['instalar.sh --conferir', '1 · Instalar: o zip do cliente, e o instalador em modo conferir — mostra os cinco passos sem mudar nada', cap('01-instalar')],
+  ['/wx-claude-code:licenca verificar', '2 · A licença: sem serial válido nada roda', cap('02-licenca')],
+  ['/wx-claude-code:questionario · aplicar', '3 · O questionário aplicado: contexto, mapa, manifesto e esqueleto', cap('03-aplicar')],
+  ['/wx-claude-code:progresso', '4 · O progresso sabe o que ninguém confirmou ainda', cap('04-progresso')],
+  ['/wx-claude-code:dependencias', '5 · As dependências externas lidas do texto do legado', cap('05-dependencias')],
+  ['/wx-claude-code:preflight (G0)', '6 · O primeiro portão: CONDITIONAL, classe FORENSIC, e o relatório diz o limite', cap('06-preflight')],
+  ['/wx-claude-code:pdf', '7 · O PDF vira Markdown citável: página e SHA-256 no cabeçalho, WLanguage marcado como código', cap('07-pdf')],
+  ['/wx-claude-code:golden capturar · interface', '8 · O golden master capturado da amostra, e a interface do destino medida no rustc', cap('08-golden-e-interface')],
+  ['/wx-claude-code:converter inventario', '9 · A matriz: 17 linhas, cada uma com a página do PDF de origem — e o validador do plugin dizendo VALID', cap('09-inventario')],
+  ['cargo test · golden comparar', '10 · A prova: 10/10 contra o golden, inclusive a query no PostgreSQL', cap('10-golden-comparar')],
+  ['/wx-claude-code:testes-da-matriz', '11 · O teste que a matriz ainda pede nasce falhando: a tela bloqueada pelo GAP plantado, sem prova', cap('11-testes-da-matriz')],
+  ['/wx-claude-code:evidencia listar', '12 · O livro de evidências: o que cada uma prova, e o que não prova', cap('12-evidencia')],
+  ['/wx-claude-code:constraints c-gate', '13 · O C-GATE: restrições sem validador são INCONCLUSIVAS, e isso não é aprovação', cap('13-constraints')],
+  ['/wx-claude-code:grafo conferir', '14 · O grafo: uma lacuna, e ela é a tela bloqueada pelo GAP plantado no exemplo', cap('14-grafo')],
+  ['/wx-claude-code:pmo', '15 · O PMO: plano, orçamento, Kanban e o painel medido', cap('15-pmo')],
+  ['/wx-claude-code:contrato', '16 · O contrato ativo: o que vale hoje, com hash', cap('16-contrato')],
+  ['/wx-claude-code:procedencia · exportar', '17 · Procedência com o nível SLSA dito com honestidade, e a entrega com SHA-256', cap('17-procedencia-e-exportar')],
+  ['/wx-claude-code:log · zelador', '18 · O registro de tudo que o plugin fez, e o zelador limpando o que sobrou', cap('18-log-e-zelador')],
+  ['card', 'Built to convert. Engineered to prove.', 'Dezoito passos, um comando cada — e o que o portão achou no caminho foi consertado, não escondido.\n\nManual: MANUAL.md · Fluxograma: docs/dossie/fluxo-atual.pdf'],
 ];
 
 const scenes = ROTEIROS[roteiroNome];
