@@ -274,6 +274,22 @@ protocolo. Quem chama `aplicar` pela rede é um empurrão de fora, e o único
 servidor que tem motivo para aceitá-lo trancado é o que existe para receber
 replicação.
 
+### O `aplicar_evento` ganhou um segundo dono: o PITR
+
+Desde 08/09/2026 o `Table::aplicar_evento` não é mais só da replicação. A
+restauração a um instante (`docs/RESTAURACAO.md` § 7) reaplica o diário vivo
+sobre a cópia recém-restaurada **pelo mesmo método**, com a mesma marca de
+`como_replica` — e isso foi escolha, não coincidência: *o segundo caminho é o
+que um dia esquece uma conferência*.
+
+Consequência a escrever antes que alguém a descubra pelo defeito: **quem mexer
+no `aplicar_evento` mexe nos dois**. A guarda do rowid, a recusa do evento sem
+imagem e o `julga_integridade` calado têm agora dois chamadores, e os testes
+que os travam moram em lugares diferentes — os da réplica em
+`phxsql-store/tests/replicacao*.rs`, os do PITR em `servidor.rs::testes_pitr`.
+Rodar só um dos dois conjuntos e achar que provou o método é o engano que esta
+nota existe para impedir.
+
 Mais quatro campos e três operações que os modos novos trouxeram:
 
 ```json

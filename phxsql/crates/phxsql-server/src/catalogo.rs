@@ -1684,7 +1684,8 @@ pub const OPERACOES: &[Operacao] = &[
     Operacao {
         nome: "restaurar_backup",
         apelidos: &[],
-        resumo: "Restaura um database de dentro de um backup, com outro nome ou por cima.",
+        resumo: "Restaura um database de dentro de um backup, com outro nome ou por \
+                 cima -- e, com \"ate\", a um INSTANTE, reaplicando o diario vivo.",
         parametros: &[
             obr("origem", "string", "o .zip ou a pasta do backup"),
             opc(
@@ -1712,8 +1713,22 @@ pub const OPERACOES: &[Operacao] = &[
                 "boolean",
                 "so le o manifesto e devolve o que ha dentro, sem escrever nada",
             ),
+            opc(
+                "ate",
+                "string",
+                "PITR: depois de restaurar, reaplica o diario VIVO de cada tabela \
+                 da hora da copia ate este instante (`2026-09-08T15:00:00Z`, UTC, \
+                 inclusive). Exige `modo` novo e a imagem da linha no diario",
+            ),
+            opc(
+                "ate_ms",
+                "integer",
+                "o mesmo instante em milissegundos desde a epoca -- para quem ja \
+                 tem o numero, como o `carimbo_ms` que o `diario` devolve. Com \
+                 `ate` junto, recusa",
+            ),
         ],
-        exemplo: r#"{"op":"restaurar_backup","origem":"/backup/Z_ana_2026-08-29_0300.zip","database":"Z_restaurado"}"#,
+        exemplo: r#"{"op":"restaurar_backup","origem":"/backup/Z_ana_2026-08-29_0300.zip","database":"Z_restaurado","ate":"2026-08-29T15:00:00Z"}"#,
         ferramenta_mcp: false,
     },
     // ------------------------------------------------------------- jobs

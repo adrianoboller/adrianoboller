@@ -1636,7 +1636,8 @@ torna a cópia **conferível** e restaurável.
 ```json
 {
   "phxsql": "0.18.0",
-  "quando": "2026-08-29 03:00:04",
+  "quando": "2026-08-29 03:00:04,132",
+  "quando_ms": 1787972404132,
   "arquivos": 9,
   "bytes": 1048576,
   "escopo": "database",
@@ -1650,17 +1651,39 @@ torna a cópia **conferível** e restaurável.
 | Campo | Forma | O que é |
 |---|---|---|
 | `phxsql` | v1 | a versão que gravou a cópia |
-| `quando` | v1 | instante da cópia, ISO |
+| `quando` | v1 | instante da cópia, em texto de tela |
 | `arquivos`, `bytes` | v1 | totais do conteúdo |
 | `conteudo[]` | v1 | caminho relativo (sempre com `/`), tamanho e SHA-256 |
 | `escopo` | **v2** | `raiz` (cada diretório de primeiro nível é um database) ou `database` |
 | `database` | **v2** | o nome do banco, quando o escopo é `database` |
+| `quando_ms` | **v3** | o mesmo instante em milissegundos desde a época |
 
-Os dois campos novos são **acréscimos**: manifesto antigo não os tem e continua
+Os campos novos são **acréscimos**: manifesto antigo não os tem e continua
 válido — a restauração deduz o escopo pelos caminhos e diz que deduziu. Um
 leitor antigo ignora os campos novos e continua conferindo igual. A ordem de
 `conteudo` é estável (os arquivos entram ordenados), para dois manifestos da
 mesma coisa serem comparáveis.
+
+### `quando_ms`, e por que o `quando` não bastava
+
+O `quando` sempre disse a hora, e com precisão de milissegundo. Só que ele é
+**texto de tela** — `2026-08-29 03:00:04,132` —, e quem precisa do instante
+como número é o PITR (`docs/RESTAURACAO.md`), que compara o instante da cópia
+com o carimbo de cada evento do diário. Ler um número de uma cadeia formatada
+para gente amarra o motor ao jeito de escrever: no dia em que a vírgula virar
+ponto, a restauração a um instante para de achar o começo — e para **calada**.
+
+Os dois saem do **mesmo** `quando_ms` dentro do gerador do manifesto. Dois
+campos de tempo preenchidos por dois caminhos são dois campos que um dia
+divergem.
+
+**Cópia gravada antes do campo continua fazendo PITR**, e não por adivinhação:
+quem escreveu aquele texto foi o `instante_iso` desta casa, e o
+`ms_de_instante_iso` é o inverso dele, com ida e volta provada dia a dia de
+1970 a 2100. O que ele não faz é chutar: manifesto cujo `quando` não seja um
+instante legível (um escrito à mão, com `"agora"`) faz o PITR **recusar
+nomeando o campo**, enquanto a restauração simples do mesmo arquivo continua
+funcionando.
 
 Num backup em ZIP o manifesto vai **dentro** do próprio arquivo, e é a última
 entrada — ele já sabe de todas as outras. O ZIP é escrito com DEFLATE de
