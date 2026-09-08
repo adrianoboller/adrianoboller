@@ -35,27 +35,27 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **1.830 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **1.852 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 457 | 25,0 |
-| Protocolo e portões (despachar) | 311 | 17,0 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 156 | 8,5 |
-| Criptografia e codificação | 124 | 6,8 |
-| Servidor (outros) | 112 | 6,1 |
-| Configuração | 111 | 6,1 |
+| Motor de dados (arquivos, índice, diários) | 458 | 24,7 |
+| Protocolo e portões (despachar) | 319 | 17,2 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 156 | 8,4 |
+| Criptografia e codificação | 124 | 6,7 |
+| Servidor (outros) | 112 | 6,0 |
+| Configuração | 111 | 6,0 |
+| Camada SQL (léxico, sintaxe, tradução) | 91 | 4,9 |
 | DbLink | 81 | 4,4 |
-| Camada SQL (léxico, sintaxe, tradução) | 78 | 4,3 |
 | Telemetria e profiler | 63 | 3,4 |
 | Gatilhos e procedimentos | 44 | 2,4 |
 | Mensagens (i18n do servidor) | 32 | 1,7 |
 | Jobs | 31 | 1,7 |
 | Interface web (servidor HTTP) | 28 | 1,5 |
-| **Usuários e permissões** | **25** | **1,4** |
+| **Usuários e permissões** | **25** | **1,3** |
 | **ODBC** | **24** | **1,3** |
 | **Segurança de rede (blacklist, firewall)** | **21** | **1,1** |
 | **MCP** | **19** | **1,0** |
@@ -64,12 +64,12 @@ contando `#[test]` por arquivo e agrupando:
 | **Replicação** | **13** | **0,7** |
 | **Exportação** | **13** | **0,7** |
 | **Junções e união** | **13** | **0,7** |
-| **Pivot** | **12** | **0,7** |
+| **Pivot** | **12** | **0,6** |
 | **Alertas e e-mail** | **8** | **0,4** |
 | **CLI** | **7** | **0,4** |
 | **Cluster** | **7** | **0,4** |
 | **Monitor de máquina** | **6** | **0,3** |
-| **total** | **1830** | |
+| **total** | **1852** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 

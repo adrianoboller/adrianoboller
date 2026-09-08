@@ -255,7 +255,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☐ | 231 | **As 79 provas de navegador da integração com a Claude não estão no repositório** | Medido em 08/09/2026: o `docs/CLAUDE-IA.md` §8 relata três baterias contra um servidor falso da API (43 + 31 + 5 provas), e os roteiros delas **não existem** em `testes-web/` (só `bateria.mjs` e `medir-regiao.mjs`), nem em `bancada/`, nem no histórico do git — que só conhece o `ui/claude.js`. Rodaram numa sessão e morreram com ela, contra a regra da casa (*script que resolveu algo não pode morrer com a sessão*). O que é reproduzível hoje são os **4 testes Rust** de `http.rs` (`mod testes_da_claude`). O pedido: refazer as baterias como script versionado (servidor falso da API + navegador), com prova real nos dois sentidos — e até lá a §8 diz que os números são relato, não medição. Ligado à nota E (3/10) da tabela de status de 08/09/2026: **não há ação autônoma do motor**, e isso é escolha registrada na §10, não falta. |
 
 <!-- pedidos:contagem:inicio -->
-**230 pedidos: 216 feitos · 8 parciais · 6 planejados.**
+**231 pedidos: 216 feitos · 8 parciais · 7 planejados.**
 
 *(Gerado por `docs/dossie/pagina-dos-pedidos.py` — não conte à mão. A
 conta sai da primeira coluna da tabela acima, e é a mesma que a página
