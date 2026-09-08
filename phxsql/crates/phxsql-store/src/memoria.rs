@@ -32,6 +32,7 @@
 use std::collections::HashMap;
 
 use phxsql_core::error::{PhxError, Result};
+use phxsql_core::expressao::Expressao;
 use phxsql_core::paralelo::mapear_faixa;
 use phxsql_core::schema::Schema;
 use phxsql_core::value::Value;
@@ -113,6 +114,9 @@ pub struct Ordem {
 #[derive(Debug, Clone, Default)]
 pub struct Consulta {
     pub onde: Vec<Filtro>,
+    /// O predicado por EXPRESSAO, ja analisado. `None` = ninguem pediu, e ai
+    /// nada nesta consulta custa um ciclo a mais do que custava.
+    pub expressao: Option<Expressao>,
     pub ordenar: Vec<Ordem>,
     /// Colunas a devolver. Vazio = todas.
     pub colunas: Vec<usize>,
@@ -473,26 +477,38 @@ impl TabelaMemoria {
                         continue;
                     };
                     examinadas += 1;
-                    if c.onde
-                        .iter()
-                        .enumerate()
-                        .all(|(i, f)| i == *pulo || casa(&linha[f.coluna], f))
-                    {
+                    if passa(
+                        linha,
+                        &c.onde,
+                        Some(*pulo),
+                        c.expressao.as_ref(),
+                        &self.esquema,
+                    )? {
                         passaram.push(*rowid);
                     }
                 }
             }
-            None => {
-                // A varredura sem atalho e o unico trecho desta tabela que
-                // divide bem entre nucleos: cada linha e uma pergunta que nao
-                // depende das outras, tudo esta em RAM e nada e gravado.
-                //
-                // `mapear_faixa` preserva a ordem, entao o resultado e o mesmo
-                // do laco simples -- uma consulta que mudasse de ordem
-                // conforme a maquina seria pior do que uma consulta lenta.
+            // A varredura sem atalho e o unico trecho desta tabela que divide
+            // bem entre nucleos: cada linha e uma pergunta que nao depende das
+            // outras, tudo esta em RAM e nada e gravado.
+            //
+            // `mapear_faixa` preserva a ordem, entao o resultado e o mesmo do
+            // laco simples -- uma consulta que mudasse de ordem conforme a
+            // maquina seria pior do que uma consulta lenta.
+            //
+            // A EXPRESSAO NAO ENTRA NO PARALELO, e a dispensa e registrada:
+            // `mapear_faixa` recolhe valores, e nao `Result`, entao um erro de
+            // avaliacao teria de virar «esta linha nao passou» dentro da
+            // thread -- a pagina sairia menor, calada. Quem manda `expressao`
+            // paga o laco simples; quem nao manda -- todo cliente de hoje --
+            // continua paralelo, byte por byte como antes.
+            None if c.expressao.is_none() => {
                 passaram = mapear_faixa(self.linhas.len(), |i, saida| {
                     let Some(linha) = &self.linhas[i] else { return };
-                    if c.onde.iter().all(|f| casa(&linha[f.coluna], f)) {
+                    if c.onde
+                        .iter()
+                        .all(|f| casa(linha.get(f.coluna).unwrap_or(&Value::Null), f))
+                    {
                         saida.push(i as RowId + 1);
                     }
                 });
@@ -500,6 +516,15 @@ impl TabelaMemoria {
                 // compartilhado para nada: o numero e o mesmo, e sai de uma
                 // passada barata.
                 examinadas = self.linhas.iter().filter(|s| s.is_some()).count() as u64;
+            }
+            None => {
+                for (i, slot) in self.linhas.iter().enumerate() {
+                    let Some(linha) = slot else { continue };
+                    examinadas += 1;
+                    if passa(linha, &c.onde, None, c.expressao.as_ref(), &self.esquema)? {
+                        passaram.push(i as RowId + 1);
+                    }
+                }
             }
         }
 
@@ -542,6 +567,61 @@ impl TabelaMemoria {
             por_mapa: atalho.map(|(_, c, _)| self.esquema.colunas()[c].nome.clone()),
         })
     }
+}
+
+/// **«Esta linha passa?» -- e este e o LUGAR UNICO que responde.**
+///
+/// Ha tres chamadores hoje: a varredura com atalho de mapa e a varredura sem
+/// atalho, aqui na tabela residente, e o `varrer_a_pagina` do servidor, que
+/// le do disco. Antes da expressao, o predicado inteiro cabia no `casa` de um
+/// filtro e as tres podiam repetir o mesmo `all(...)` sem risco; agora o
+/// predicado tem DUAS metades (os `Filtro` e a `Expressao`) e a ordem entre
+/// elas importa -- entao a decisao mora aqui, e nao em tres copias.
+///
+/// `ja_respondido` e o indice do filtro que o mapa de igualdade JA respondeu:
+/// a linha veio do balde daquele valor, e reavaliar seria pagar duas vezes.
+///
+/// # `NULL` exclui
+///
+/// A expressao devolve `Option<bool>`: `None` e o `NULL` do SQL, e num filtro
+/// ele EXCLUI -- «nao sei» nao e «sim». (No `CHECK` a mesma `None` passa, e e
+/// por isso que quem decide e quem chama, e nao o avaliador.)
+///
+/// # Por que devolve `Result`
+///
+/// Erro de avaliacao -- somar texto com numero, por exemplo -- nao pode virar
+/// «esta linha nao passou». Uma consulta que engolisse o erro devolveria uma
+/// pagina a menos sem dizer nada, e quem olha a tela nao teria como saber que
+/// faltou linha.
+pub fn passa(
+    linha: &[Value],
+    onde: &[Filtro],
+    ja_respondido: Option<usize>,
+    expressao: Option<&Expressao>,
+    esquema: &Schema,
+) -> Result<bool> {
+    for (i, f) in onde.iter().enumerate() {
+        if Some(i) == ja_respondido {
+            continue;
+        }
+        // `get` e nao indice: uma linha gravada antes de uma coluna nova nasce
+        // curta, e coluna que a linha nao tem e NULA -- que e o que ela e, e
+        // nao um panico.
+        if !casa(linha.get(f.coluna).unwrap_or(&Value::Null), f) {
+            return Ok(false);
+        }
+    }
+    let Some(e) = expressao else {
+        return Ok(true);
+    };
+    let colunas = esquema.colunas();
+    let valor = e.avaliar_bool(&|nome| {
+        let i = colunas
+            .iter()
+            .position(|c| c.nome.eq_ignore_ascii_case(nome))?;
+        Some((linha.get(i).unwrap_or(&Value::Null), &colunas[i].ty))
+    })?;
+    Ok(valor == Some(true))
 }
 
 /// Um valor casa com um filtro?

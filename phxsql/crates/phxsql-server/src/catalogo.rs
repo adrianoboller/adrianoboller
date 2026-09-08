@@ -392,8 +392,16 @@ pub const OPERACOES: &[Operacao] = &[
                  `max` continua sendo quantas linhas o motor EXAMINA, e a \
                  resposta traz `examinadas` ao lado de `devolvidas`",
             ),
+            opc(
+                "expressao",
+                "string",
+                "predicado por EXPRESSÃO, avaliado por linha junto com `onde` \
+                 (E): `preco * 1.1 > 100`, `upper(cidade) = 'BLUMENAU'`, \
+                 `a > b`. É a mesma gramática do `CHECK` e do índice parcial; \
+                 `NULL` exclui a linha",
+            ),
         ],
-        exemplo: r#"{"op":"varrer","database":"loja","tabela":"clientes","max":2500,"onde":[{"coluna":"cidade","op":"=","valor":"Blumenau"}]}"#,
+        exemplo: r#"{"op":"varrer","database":"loja","tabela":"clientes","max":2500,"expressao":"preco * 1.1 > 100"}"#,
         ferramenta_mcp: true,
     },
     Operacao {
@@ -1120,6 +1128,14 @@ pub const OPERACOES: &[Operacao] = &[
                 "onde",
                 "array",
                 "filtros `{coluna, op, valor}` com `=`, `<>`, `<`, `<=`, `>`, `>=`",
+            ),
+            opc(
+                "expressao",
+                "string",
+                "predicado por EXPRESSÃO, avaliado por linha junto com `onde` \
+                 (E): `preco * 1.1 > 100`, `upper(cidade) = 'BLUMENAU'`, \
+                 `a > b`. É a mesma gramática do `CHECK` e do índice parcial; \
+                 `NULL` exclui a linha",
             ),
             opc("ordenar", "string", "a coluna de ordenação"),
             opc("desc", "boolean", "ordem decrescente"),
