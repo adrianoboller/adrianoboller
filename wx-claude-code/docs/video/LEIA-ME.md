@@ -33,3 +33,32 @@ Os dois roteiros vivem no mesmo gerador:
 node gravar-video.mjs <pasta-saida> <pasta-capturas>        # roteiro 'uso'
 node gravar-video.mjs <pasta-saida> <pasta-capturas> php    # roteiro 'php'
 ```
+
+## O terceiro vídeo: a bateria de testes
+
+`wx-claude-code-video-bateria.mp4` (roteiro `bateria`) mostra as sete provas
+rodando: `tests/testes.py -v`, `tests/cenarios.py`, `tests/fluxo.py`, o
+validador estrito, `claude plugin validate`, `cargo test` do wx-modelos e o
+`atualizar-paginas.py --conferir`. Cada cena é a saída real do comando,
+gravada no shell **imediatamente antes** da gravação — nenhuma linha é digitada.
+
+Para regravar, capture de novo e rode o gravador com a pasta das capturas:
+
+```bash
+C=/tmp/caps-bateria; mkdir -p $C
+{ echo '$ python3 tests/testes.py -v'; python3 tests/testes.py -v 2>&1 | grep -E '\.\.\. ok$' \
+    | sed -E 's/ \(__main__\.[A-Za-z0-9_.]+\)//' | head -40; echo '…'; python3 tests/testes.py 2>&1 | tail -3; } > $C/testes-v.txt
+# idem: cenarios, fluxo, validador, plugin-validate, cargo, paginas (ver gravar-video.mjs)
+node docs/video/gravar-video.mjs /tmp/saida $C bateria
+```
+
+Dois retoques saíram de **olhar os quadros**, não de ler o código: o `-v` do
+unittest imprime `(__main__.Classe.nome)` e as linhas quebravam — o `sed`
+acima tira; e `... ok` não saía verde, porque a regra de cor só conhecia os
+marcadores dos outros roteiros.
+
+Um defeito real do gravador apareceu aqui: ele avaliava os três roteiros ao
+carregar, então gravar a bateria com uma pasta que só tinha as capturas dela
+quebrava no `cap('45-instalacao')` do roteiro de uso. Captura ausente agora vira
+sentinela no carregamento e **erro com o nome** só para o roteiro escolhido.
+

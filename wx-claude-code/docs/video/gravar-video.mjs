@@ -5,7 +5,15 @@ import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import { readFileSync, readdirSync, renameSync, rmSync } from 'node:fs';
 
 const [, , outDir, capsDir, roteiroNome = 'uso'] = process.argv;
-const cap = (n) => readFileSync(`${capsDir}/${n}.txt`, 'utf8').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/(proj|pmo2|demo|ex2?)/g, '.');
+// Captura ausente nao derruba o carregamento: os tres roteiros sao avaliados
+// juntos, e gravar a bateria com uma pasta que so tem as capturas DELA quebrava
+// no cap('45-instalacao') do roteiro de uso. Ausente vira sentinela, e o
+// roteiro ESCOLHIDO e conferido depois -- ai sim falta e erro, com o nome.
+const FALTA = '\u0000FALTA:';
+const cap = (n) => {
+  try { return readFileSync(`${capsDir}/${n}.txt`, 'utf8').replace(/\/tmp\/claude-0\/[^ ]*?\/scratchpad\/(proj|pmo2|demo|ex2?)/g, '.'); }
+  catch { return FALTA + n; }
+};
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 function fmt(line) {
   let l = esc(line);
@@ -13,7 +21,8 @@ function fmt(line) {
   if (/^&gt; /.test(l)) return `<span class="prompt">&gt;</span> <span class="cmd">${l.slice(5)}</span>`;
   l = l.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
   if (/^#{1,3} /.test(l)) return `<span class="h">${l.replace(/^#+ /, '')}</span>`;
-  if (/CREATED|√|"valid": true|READY|frutifero\)|sim$/.test(l)) return `<span class="ok">${l}</span>`;
+  // o verde tambem cobre a bateria: "... ok", "OK", "N/N cenarios", "passed", "Validation passed"
+  if (/CREATED|√|"valid": true|READY|frutifero\)|sim$|\.\.\. ok$|^OK$|^\s*ok |\d+\/\d+ (cenários|passos)|test result: ok|passed$|Validation passed|tudo em \d/.test(l)) return `<span class="ok">${l}</span>`;
   if (/BLOCKED|erro|Erros|INVALID|MISSING|×|infrutifero\)|ESTOURADO/.test(l)) return `<span class="warn">${l}</span>`;
   return l;
 }
@@ -74,8 +83,26 @@ ROTEIROS.php = [
   ['card', 'O legado é E/OU. O destino é livre.', 'WLanguage (WINDEV, WEBDEV, WINDEV Mobile) é o caso principal e nunca sai do plugin.\nPHP, C, C++, Clarion, COBOL entram junto ou sozinhos.\n\nclaude plugin install wx-claude-code@wx-claude-code'],
 ];
 
+// Terceiro roteiro: a BATERIA inteira, rodada de verdade na hora da gravacao.
+// Cada cena e a saida real de um comando (caps/*.txt gravados pelo shell
+// imediatamente antes); nenhuma linha e digitada a mao. O que se mostra e o
+// que qualquer um reproduz rodando os mesmos comandos.
+ROTEIROS.bateria = [
+  ['card', 'A bateria de testes', 'WX Claude Code 3.42.0\nTudo que aparece a seguir é a saída real dos comandos, gravada no momento da gravação.\nSete provas, nenhuma montagem.'],
+  ['tests/testes.py -v', '1 · A bateria unitária: cada peça isolada — validação, hooks, licença, PMO, grafo, emissor de serial, aviso de instalação', cap('testes-v')],
+  ['tests/cenarios.py', '2 · A bateria pesada: os caminhos que um cliente real traz — sem licença, PDF que é foto, legado PHP e C++, interface do destino', cap('cenarios')],
+  ['tests/fluxo.py', '3 · O fluxo inteiro num projeto novo: questionário → contexto → G0 → artefato → PDF → PMO → RAG → entrega → registro', cap('fluxo')],
+  ['validate_plugin_bundle.py --strict', '4 · O validador estrito: manifesto, arquivos obrigatórios, e a bateria rodando por dentro — e o aviso da chave de demonstração, fora de warnings', cap('validador')],
+  ['claude plugin validate', '5 · O manifesto pelos olhos do próprio Claude Code', cap('plugin-validate')],
+  ['cargo test · wx-modelos', '6 · O binário Rust, std pura: os 18 testes do medidor de modelo local', cap('cargo')],
+  ['atualizar-paginas.py --conferir', '7 · Nenhuma página envelheceu calada: todos os geradores conferidos contra a versão', cap('paginas')],
+  ['card', 'Built to convert. Engineered to prove.', '105 testes · 19 cenários · 13 passos · validador estrito · claude plugin validate · 18 testes Rust · páginas em dia\n\nReproduza: python3 tests/testes.py'],
+];
+
 const scenes = ROTEIROS[roteiroNome];
 if (!scenes) { console.error(`roteiro desconhecido: ${roteiroNome} (existem: ${Object.keys(ROTEIROS).join(', ')})`); process.exit(2); }
+const faltando = scenes.map((c) => c[2]).filter((t) => typeof t === 'string' && t.startsWith(FALTA)).map((t) => t.slice(FALTA.length));
+if (faltando.length) { console.error(`capturas ausentes para o roteiro ${roteiroNome}: ${faltando.join(', ')}`); process.exit(2); }
 const SAIDA = roteiroNome === 'uso' ? 'wx-claude-code-video-de-uso' : `wx-claude-code-video-${roteiroNome}`;
 const html = `<!doctype html><meta charset="utf-8"><style>
 html,body{margin:0;height:100%;background:#0b0d17;font-family:"DejaVu Sans Mono",Menlo,monospace;overflow:hidden}

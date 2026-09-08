@@ -1,6 +1,6 @@
 # Relatório do plugin WX Claude Code 3.42.0
 
-Medido em 2026-09-07 por `docs/dossie/numeros-do-plugin.py`; nenhum número abaixo foi digitado.
+Medido em 2026-09-08 por `docs/dossie/numeros-do-plugin.py`; nenhum número abaixo foi digitado.
 
 ## O que é
 
@@ -33,6 +33,8 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | duração do vídeo | 3 min 38 s |
 | cenas do vídeo de PHP para Rust | 11 |
 | duração do vídeo de PHP para Rust | 1 min 26 s |
+| cenas do vídeo da bateria de testes | 7 |
+| duração do vídeo da bateria de testes | 0 min 52 s |
 | corpus do Help (bytes) | 26750976 |
 | páginas válidas do corpus | 12035 |
 | linhas do manual | 884 |

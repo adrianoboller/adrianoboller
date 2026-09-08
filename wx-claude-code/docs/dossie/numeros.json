@@ -1,5 +1,5 @@
 {
-  "medido_em": "2026-09-07",
+  "medido_em": "2026-09-08",
   "versao": "3.42.0",
   "agentes": 94,
   "papeis": 10,
@@ -21,6 +21,8 @@
   "video_cenas": 29,
   "video_php_duracao": "1 min 26 s",
   "video_php_cenas": 11,
+  "video_bateria_duracao": "0 min 52 s",
+  "video_bateria_cenas": 7,
   "corpus_bytes": 26750976,
   "corpus_paginas_validas": 12035,
   "hooks": 9,
