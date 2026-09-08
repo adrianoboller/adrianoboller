@@ -429,6 +429,36 @@ frentes, paga mais uma vez: *ramo que ramificou cedo mostra a irmã como
 não-feita, e o merge acredita*. Portões verdes no fim — `fmt`, `clippy` zero, e a
 suíte inteira sem falha (271 no core, 837 no server, 9 no store, 1 no odbc).
 
+### Rodada do acelerador de memoria (o `.tbm`) — 8 de setembro de 2026
+
+O dono trouxe de fora um "Memory Table Accelerator" (arquivo `.tbm` colunar, LSN,
+checkpoint, MVCC) e mandou **ativar o time com 3 DBAs senior**. A obrigacao da
+clausula nao e abrir agentes — e nenhum papel ficar sem dono onde o trabalho toca
+o dominio dele. Aqui o dominio e formato em disco, concorrencia e medicao, entao
+foram tres DBAs e o pesquisador, todos no escalao **forte** (projeto/risco/medicao
+de arquitetura), e a documentacao/integracao com o orquestrador.
+
+| frente | escalao | por que | papeis dispensados |
+|---|---|---|---|
+| DBA-1 — `.tbm` e cache reconstruivel ou toca o formato? | **projeto e risco** | garantia de dado e familia de arquivos (`.reg`/`.ndx`/`.tx`), decisao que «entra cedo» | E, D, I |
+| DBA-2 — MVCC ou invalidar-na-escrita? | **projeto e risco** | concorrencia; mapear a proposta sobre a Sombra e o `RwLock` **ja medidos** | E, D, I |
+| DBA-3 — o NUMERO: onde vai o tempo da consulta analitica | **projeto e risco** | medicao na maquina parada, pela porta `esta-medindo.sh`; escreveu o medidor `onde-doi-na-agregacao.rs` | E, D |
+| J — como DuckDB/SQL Server/MySQL/Cassandra aceleram | **projeto e risco** | receita de fora medida contra o crivo, inspiracao e nao copia | B, E, G, H, I |
+
+**Dispensado com registro em todas: B-dev** — nenhuma linha do acelerador foi
+escrita, porque a medicao mandou **nao construir**; as duas melhorias baratas que
+sobraram (o double-read do `op_pivotar`, o `BufReader` no `varrer`) sao follow-up
+de B, com prova real, e nao entraram nesta rodada.
+
+A integracao foi papel do orquestrador, e aqui o «encontro» **nao** teve defeito
+de merge — as quatro frentes eram relatorios de leitura mais um medidor, sem
+ramo a mesclar. O que o orquestrador procurou foi **contradicao entre os
+pareceres**, e nao houve: os quatro convergiram no mesmo veredito, cada um por um
+caminho — o acelerador ja existe (`TabelaMemoria`, **87x medido**), o `.tbm` novo
+evita um custo que ja nao e disco (0,0 MiB lidos) e que a `TabelaMemoria` ja
+cobre, e a unica alavanca nova (cache colunar leve dentro do `SelectMemory`)
+espera **uma** premissa medida. `docs/MEMORIA.md` carrega a decisao inteira.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:
