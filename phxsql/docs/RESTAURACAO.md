@@ -457,7 +457,14 @@ aquela tabela não foi até o fim, com o motivo escrito.
 
 ### 7.10 A sequência que PROVA o PITR
 
-Esta é a receita exata, para virar sonda viva da bancada. O servidor precisa
+Ela **já roda**, em `bancada/pitr/provar.py` — 22 conferências pelo soquete,
+zero falhas, com o resultado datado em `bancada/pitr/resultados.json`. E a
+prova real é nos dois sentidos: com o filtro de carimbo desligado no servidor,
+a mesma bancada acusa **3 falhas** e mostra a linha 3 dentro do restaurado.
+
+Fica escrita aqui também porque *roteiro que resolveu algo não pode morrer com
+a sessão*, e porque é ela que a `bancada/comparativo/` precisa para trocar a
+sonda de **código** do PITR por uma sonda de **efeito**. O servidor precisa
 de `"replicacao": {"imagem_da_linha": true}` no `config.json` **antes de
 subir** — a imagem vale para o que for gravado daí em diante, e não para o
 diário que já está no disco.
