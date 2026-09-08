@@ -113,6 +113,8 @@ tempo.
 | `modo` | não | `novo` (padrão) ou `por_cima` |
 | `confirmar` | sim, no `por_cima` | `true` |
 | `simular` | não | lê e devolve o conteúdo, sem escrever nada |
+| `ate` | não | **PITR**: reaplica o diário vivo até este instante (§ 7) |
+| `ate_ms` | não | o mesmo instante em milissegundos; com `ate` junto, recusa |
 
 `simular` é o que a tela usa para mostrar o que a cópia tem dentro antes de
 alguém decidir: devolve quando foi gravada, por que versão, quantos arquivos,
@@ -152,7 +154,8 @@ sessão não poderia restaurar, e dizendo **quantos** escondeu.
 
 - **Não junta e não mescla.** O database que sai é byte a byte o que entrou no
   backup. Linha gravada depois da cópia não sobrevive à restauração por cima —
-  é o que restaurar quer dizer.
+  é o que restaurar quer dizer. *A exceção pedida é o `ate` (§ 7), e ela não
+  mescla nada: reaplica o diário na ordem em que ele foi gravado.*
 - **Não restaura a raiz inteira de uma vez.** Um database por vez: restaurar
   seis por cima com um clique seriam seis estragos com um clique. A cópia da
   raiz continua servindo — escolhe-se de qual database dela restaurar.
@@ -180,7 +183,7 @@ sessão não poderia restaurar, e dizendo **quantos** escondeu.
 
 ---
 
-## 5. O manifesto ganhou dois campos
+## 5. O manifesto ganhou três campos
 
 O `backup.json` passou a gravar **de que** a cópia é cópia:
 
@@ -206,6 +209,14 @@ afirmar — a tela mostra a marca «deduzido» ao lado da cópia. Nenhum backup 
 gravado é reescrito, e o `conferir_backup` de sempre lê os manifestos novos
 sem mudança nenhuma: os dois campos são acréscimos que um leitor antigo ignora.
 
+E depois veio o terceiro, `quando_ms`, com o PITR: o `quando` sempre disse a
+hora, mas em **texto de tela**, e quem compara instante com carimbo de evento
+precisa do número. Os dois saem do mesmo valor dentro do gerador do manifesto —
+dois campos de tempo preenchidos por dois caminhos são dois campos que um dia
+divergem. Cópia gravada antes dele continua fazendo PITR pela volta do
+`instante_iso`, e manifesto cujo `quando` não seja instante recusa **nomeando o
+campo**. O leiaute está em `docs/FORMATO.md` § 10.
+
 Nenhum número de versão aparece nesta seção de propósito: o que a restauração
 pergunta é se o **campo está lá**, não em que lançamento ele entrou. Número
 digitado à mão em oito lugares seria oito números que ninguém mediu.
@@ -224,6 +235,14 @@ o conserto.
 | por cima exige o serviço parado | `por_cima_com_a_porta_de_dados_no_ar_e_recusado` | `if false && self.porta_no_ar.load(...)`. O teste falha |
 | o backup do banco alheio não entra por um destino permitido | `o_backup_do_banco_alheio_nao_entra_por_um_destino_permitido` | a chamada a `poder_no_backup` retirada da operação. O teste falha |
 | **o comportamento velho** | `quem_nao_usa_a_operacao_nova_nao_ve_diferenca`, `backup_antigo_sem_escopo_no_manifesto_ainda_restaura`, `zip_antigo_de_um_banco_e_deduzido_como_database` | — (é o teste que trava a regressão, não o que prova o recurso) |
+| **PITR:** o corte de carimbo corta | `restaura_ate_um_instante_no_meio_do_diario` | `if false && e.carimbo > ate_ms` — a linha 3 aparece no restaurado e as três asserções caem |
+| o diário do restaurado não mente sobre quando | `o_diario_do_restaurado_guarda_o_carimbo_original` | a chamada a `forcar_proximo_evento` retirada. O teste falha |
+| sem imagem no diário, recusa nomeando o interruptor | `sem_imagem_no_diario_o_pitr_recusa_dizendo_o_interruptor` | `if false && !self.config.replicacao.imagem_da_linha`. O teste falha |
+| backup sem carimbo recusa o PITR e **não** a restauração | `backup_sem_carimbo_recusa_o_pitr_e_nao_a_restauracao` | `conteudo.quando_ms.or(Some(0))` — o diário inteiro é reaplicado. O teste falha |
+| `ate` antes da cópia recusa | `ate_antes_da_copia_e_recusado` | `if false && ate_ms < copia_ms`. O teste falha |
+| por cima com `ate` recusa | `por_cima_com_ate_e_recusado` | `if false && por_cima`. O teste falha |
+| o diário vivo tem de continuar o da cópia | `diario_que_nao_continua_a_copia_para_nomeando_a_tabela` (a mensagem da contagem), `diario_vivo_maior_e_diferente_tambem_para` (a comparação do evento) | `diario_vivo_continua` devolvendo sempre `Ok(())`: os dois caem. Cada metade sabotada sozinha derruba **só** o teste que a acorda |
+| **o comportamento velho do PITR** | `quem_nao_manda_ate_nao_ve_diferenca` | — (sem `ate`, a resposta não ganha campo e nada é reaplicado) |
 
 O teste do comportamento velho é o que mais importa aqui, e ele guarda três
 coisas: o `restaurar` de **linha** (desfazer uma exclusão) continua sendo o que
@@ -267,7 +286,233 @@ lendo o código.**
 
 ---
 
-## 7. A tela
+## 7. PITR — restaurar a um INSTANTE
+
+Até aqui, restaurar era voltar ao instante da cópia, e nada mais. O backup das
+três da manhã devolve o banco das três da manhã; o que aconteceu entre as três
+e o engano das dez estava perdido junto com o engano.
+
+O PITR fecha essa distância, e a ideia inteira cabe numa frase: **a cópia
+restaurada vira réplica do diário vivo, do instante da cópia até o instante
+pedido.**
+
+```json
+{"op": "restaurar_backup",
+ "origem": "/backup/Comercial_ana_2026-08-29_0300.zip",
+ "database": "Comercial_as_15h",
+ "ate": "2026-08-29T15:00:00Z"}
+```
+
+### 7.1 Por que ele não é código novo
+
+Reaplicar um diário sobre uma cópia é exatamente o que uma réplica faz o dia
+inteiro: pega o evento, tira a imagem da linha de dentro dele, grava. O PITR
+chama **o mesmo `Table::aplicar_evento`** da replicação, com a mesma marca de
+`como_replica` — **aplica, não julga**.
+
+Escrever um segundo aplicador teria sido mais fácil de ler e é a decisão
+errada: *o segundo caminho é o que um dia esquece uma conferência*, e a
+conferência que ele esqueceria é justamente a do rowid, que é o que impede a
+reaplicação de espalhar uma divergência.
+
+### 7.2 O começo sai da POSIÇÃO, e não do relógio
+
+O `.log` de cada tabela **viaja dentro do backup** — medido: uma cópia tirada
+com um evento no diário leva um `clientes.log` de um evento, e o `.log` vivo
+passa a ter dois, com o primeiro byte a byte igual ao copiado.
+
+Isso dá o começo de graça e sem relógio nenhum: **o número de eventos do
+diário da cópia é a posição em que o mundo estava na hora da cópia.** A
+reaplicação lê o diário vivo a partir dali.
+
+Começar por «o primeiro evento cujo carimbo passou da hora da cópia» seria
+pedir ao relógio a única coisa que ele não sabe responder — ver a seguir.
+
+### 7.3 O carimbo NÃO é monotônico, e por isso o filtro é evento a evento
+
+Medido, num diário de três eventos:
+
+```
+carimbos: [1788884516705, 1000000000000, 1788884516705]
+origens:  [0,             7,             0]
+```
+
+O do meio está vinte e cinco anos atrás. Não é defeito: é o caminho
+bidirecional, que carimba o evento com o instante em que a escrita **nasceu**
+no outro servidor (`Table::forcar_proximo_evento`), porque é esse instante que
+decide o conflito lá. E há a segunda causa, mais banal: o `agora_ms` é relógio
+de parede (`SystemTime::now`), que anda para trás num acerto de NTP.
+
+Consequência de projeto: **o corte de cima é aplicado evento a evento**
+(`carimbo <= ate`), e nunca «corte a lista no primeiro que passou». Cortar por
+posição jogaria fora os eventos bons que vêm depois de um carimbo torto.
+
+E pular um evento no meio **não é silencioso**: o `aplicar_evento` confere o
+rowid, então pular uma inclusão e aplicar a seguinte para na hora, com «o
+source diz rowid 2 e aqui saiu 1». Isso vira o `parou_em` da resposta, em vez
+de gravar a linha errada no slot errado. *A guarda que já existia para a
+réplica é a mesma que segura o PITR.*
+
+### 7.4 O que ele NÃO refaz, e por quê
+
+- **Cascata.** A origem já cascateou quando aceitou a escrita, e os eventos
+  que a cascata dela gerou estão no diário das **filhas**. Refazer aqui criaria
+  evento que o original nunca teve.
+- **Chave estrangeira.** Pelo mesmo portão e pelo mesmo motivo: a reaplicação
+  anda por tabela, e não há ordem global entre tabelas. Filha órfã no meio da
+  passada se cura quando a tabela da mãe for reaplicada; recusar travaria a
+  restauração inteira por causa de uma ordem que se resolve sozinha.
+- **Coluna calculada, `padrao`, `check`.** Nada é recalculado: a imagem que
+  vem do diário já saiu da origem com tudo aplicado.
+- **O `.tx`.** A marca de commit em curso já viaja dentro do backup de
+  propósito, e quem a completa é a recuperação do arranque
+  (`transacao::recuperar`). Ela é **idempotente pelo rowid**, então reaplicar o
+  diário por cima não duplica inclusão nenhuma — e o PITR não a toca, porque
+  dois donos para o mesmo commit seriam um a mais.
+
+### 7.5 O carimbo reaplicado é o do ORIGINAL
+
+O evento que a reaplicação grava no diário do restaurado leva o carimbo e a
+origem do evento original, e não a hora da restauração. O diário é trilha de
+auditoria: um restaurado que jurasse que tudo aconteceu na hora em que foi
+restaurado destruiria justamente o que se foi buscar nele.
+
+É o mesmo mecanismo e o mesmo motivo do bidirecional.
+
+### 7.6 As tabelas que existem de um lado só
+
+- **Na cópia e não mais viva** (apagada depois do backup): fica como estava na
+  cópia, e sai na resposta em `sem_diario_vivo`. Não dá para saber **quando**
+  ela foi apagada — apagar tabela não deixa evento em diário nenhum —, e sumir
+  com ela em silêncio seria pior.
+- **Viva e não na cópia** (nasceu depois do backup): **não é criada**, e sai em
+  `novas_na_origem`. Refazê-la exigiria a história do esquema, que o formato
+  não guarda. Dizer que a restauração é «o estado às 15h» e não avisar da
+  tabela que faltou seria a mentira mais cara desta página.
+
+### 7.7 O diário que não alcança mais a cópia
+
+Não há rodízio de `.log` de tabela: o `rodizio.rs` desta casa é dos logs de
+**texto** (`perfil.txt`, `diretivas.log`, `acessos.log`), e o único lugar do
+motor que apaga um `.log` de tabela é o `excluir_tabela`, que leva a tabela
+junto.
+
+Sobra um caso, e ele é real: a tabela foi **apagada e recriada** depois do
+backup. Aí o diário vivo começa do zero, a posição da cópia aponta para o meio
+de uma história que não é a mesma, e reaplicar dali gravaria linhas de outra
+vida.
+
+Quem acha isso é a comparação do último evento da cópia com o evento daquela
+posição no diário vivo. A conta de tamanho que vem antes dela **não pega
+nenhum caso a mais** — diário mais curto que a posição devolve lista vazia, e
+lista vazia já cai na recusa —, e isso foi medido sabotando: com a conta
+desligada, os dois testes de continuidade continuam vermelhos pela comparação.
+Ela fica só pela **mensagem**, que é o que um operador precisa ler, e o teste
+que a prova confere o texto e não o veredito.
+
+### 7.8 As recusas, e quando cada uma acontece
+
+**Antes de tocar em disco** — porque uma restauração que criasse o database e
+só então descobrisse que não consegue reaplicar deixaria o pior estado
+possível: um banco novo, com o nome pedido, no instante errado, e um erro na
+resposta.
+
+| Recusa | O que dispara |
+|---|---|
+| `ate` ilegível | não é instante, ou traz fuso escrito à mão (`+03:00`) |
+| `ate` e `ate_ms` juntos | dois campos de tempo querendo dizer coisas diferentes |
+| modo `por_cima` | o por cima tira o database vivo da raiz, e é o diário **dele** que a reaplicação lê |
+| backup sem carimbo | falta o `quando_ms` do manifesto e o `quando` não é instante |
+| `ate` antes da cópia | o diário só sabe andar para a frente |
+| imagem desligada | `replicacao.imagem_da_linha` está `false`: o evento diz que o rowid 42 mudou e não diz para quê |
+| origem sumiu | o database de dentro do backup não existe mais neste servidor |
+
+**Por tabela, na resposta** — a continuidade só se confere com o diário da
+cópia na mão, ou seja, com a cópia já restaurada. Ela sai **nomeada** no
+`parou_em`, dizendo que aquela tabela ficou no instante da cópia. Devolver erro
+ali deixaria o pedido com um database criado e uma resposta de fracasso.
+
+### 7.9 A resposta
+
+```json
+{"database": "Comercial_as_15h", "de": "Comercial", "…": "…",
+ "pitr": {
+   "de": "Comercial",
+   "copia_ms": 1787972404132, "copia": "2026-08-29 03:00:04,132",
+   "ate_ms": 1788015600000,   "ate":   "2026-08-29 15:00:00,000",
+   "reaplicados": 2,
+   "tabelas": [{"tabela": "clientes", "reaplicados": 2, "pulados": 1,
+                "ultimo_carimbo_ms": 1788015000123,
+                "ultimo": "2026-08-29 14:50:00,123"}],
+   "sem_diario_vivo": [],
+   "novas_na_origem": []}}
+```
+
+`pulados` são os eventos que existem no diário e ficaram **depois** do corte —
+e é o número que prova que o corte aconteceu. `parou_em` só aparece quando
+aquela tabela não foi até o fim, com o motivo escrito.
+
+`ate` é **inclusivo**: quem pede «até as 15:00:00» quer o que aconteceu às
+15:00:00,000. O instante que a tela mostra é o instante que se digita de volta.
+
+### 7.10 A sequência que PROVA o PITR
+
+Ela **já roda**, em `bancada/pitr/provar.py` — 22 conferências pelo soquete,
+zero falhas, com o resultado datado em `bancada/pitr/resultados.json`. E a
+prova real é nos dois sentidos: com o filtro de carimbo desligado no servidor,
+a mesma bancada acusa **3 falhas** e mostra a linha 3 dentro do restaurado.
+
+Fica escrita aqui também porque *roteiro que resolveu algo não pode morrer com
+a sessão*, e porque é ela que a `bancada/comparativo/` precisa para trocar a
+sonda de **código** do PITR por uma sonda de **efeito**. O servidor precisa
+de `"replicacao": {"imagem_da_linha": true}` no `config.json` **antes de
+subir** — a imagem vale para o que for gravado daí em diante, e não para o
+diário que já está no disco.
+
+```json
+1  {"op":"criar_database","database":"loja"}
+2  {"op":"criar_tabela","database":"loja","tabela":"clientes",
+    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+               {"nome":"nome","tipo":"Str(20)"}],
+    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}
+3  {"op":"inserir","database":"loja","tabela":"clientes",
+    "linha":{"id":1,"nome":"um"}}
+4  {"op":"backup","destino":"/backup","database":"loja","zip":true}
+      -> guarde a resposta "arquivo"
+5  {"op":"inserir","database":"loja","tabela":"clientes",
+    "linha":{"id":2,"nome":"dois"}}
+6  {"op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+    "linha":{"id":1,"nome":"um alterado"}}
+7  {"op":"inserir","database":"loja","tabela":"clientes",
+    "linha":{"id":3,"nome":"tres"}}
+8  {"op":"diario","database":"loja","tabela":"clientes","max":100}
+      -> quatro eventos; CORTE = carimbo_ms do 4o menos 1
+9  {"op":"restaurar_backup","origem":"<o arquivo do passo 4>",
+    "database":"loja_no_meio","ate_ms":<CORTE>}
+10 {"op":"varrer","database":"loja_no_meio","tabela":"clientes"}
+```
+
+O que o passo 10 tem de devolver: **id 1 com «um alterado», id 2, e nada de id
+3.** E o passo 9 tem de dizer `reaplicados: 2` e `pulados: 1`.
+
+Duas armadilhas da sonda, e as duas já pagas no teste:
+
+- **Espere o relógio andar** entre os passos 3-4 e 5-6-7. Três escritas
+  seguidas caem no mesmo milissegundo, e aí não existe instante entre a
+  alteração e a inclusão da terceira linha. A sonda confere isso antes de
+  cortar: o carimbo do 4º evento menos 1 tem de ser **maior ou igual** ao
+  carimbo do 3º; se não for, repita com pausa.
+- **O corte sai do próprio diário, medido.** Um `ate` digitado à mão seria um
+  número que ninguém mediu — e é exatamente o erro que esta casa já pagou
+  quatro vezes.
+
+O controle da sonda, na mesma corrida: o mesmo backup restaurado **sem** `ate`
+devolve só o id 1, e o banco `loja` continua com as três linhas. Sem esse
+controle, uma sonda que devolvesse duas linhas por acaso passaria.
+
+---
+
+## 8. A tela
 
 *Arquivo → Restaurar um backup…*, o botão **Restaurar** na barra de
 ferramentas (ao lado do Backup), ou o botão dentro de *Backup e restauração*.

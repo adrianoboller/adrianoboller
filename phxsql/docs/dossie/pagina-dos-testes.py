@@ -228,6 +228,20 @@ BANCADAS = [
                    ("ficou_pela_metade", "ficou pela metade", "")],
     },
     {
+        "nome": "PITR — restaurar a um instante, pelo soquete",
+        "json": "bancada/pitr/resultados.json",
+        "roda": "python3 bancada/pitr/provar.py",
+        "prova": "a linha 3 é gravada DEPOIS do corte e tem de NÃO aparecer no "
+                 "restaurado — e o mesmo backup restaurado sem ate volta com "
+                 "uma linha só, que é o controle positivo na mesma corrida. "
+                 "Sem ele, uma restauração que devolvesse duas linhas por "
+                 "acaso passaria",
+        "campos": [("conferencias", "conferências pelo soquete", ""),
+                   ("falhas", "falhas", ""),
+                   ("eventos_reaplicados", "eventos reaplicados", ""),
+                   ("eventos_pulados", "pulados depois do corte", "")],
+    },
+    {
         "nome": "Quórum — o que custaria esperar as réplicas",
         "json": "bancada/quorum/resultados.json",
         "roda": "python3 bancada/quorum/medir.py 60",

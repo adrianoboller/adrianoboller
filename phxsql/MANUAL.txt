@@ -2769,6 +2769,46 @@ RESTAURAR
     clique seriam seis estragos com um clique. A copia da raiz continua
     servindo -- diga em "de" qual database dela restaurar.
 
+    RESTAURAR A UM INSTANTE (PITR)
+
+    {"token":"...","op":"restaurar_backup",
+     "origem":"/backup/Comercial_ana_2026-08-29_0300.zip",
+     "database":"Comercial_as_15h",
+     "ate":"2026-08-29T15:00:00Z"}
+
+    Com "ate", a restauracao nao para no instante da copia: depois de gravar
+    a copia, ela reaplica o diario VIVO de cada tabela, da hora do backup ate
+    o instante pedido. Quem aplica e o mesmo caminho da replicacao -- aplica,
+    nao julga: nao refaz cascata, nao confere chave estrangeira, e nao
+    recalcula nada. A origem ja julgou quando aceitou a escrita.
+
+    O instante e UTC e INCLUSIVO. Aceita "2026-08-29T15:00:00Z", com espaco
+    no lugar do T, com ou sem o Z, e com fracao de segundo. Fuso escrito na
+    mao ("+03:00") e RECUSADO em vez de ignorado. Quem ja tem o numero manda
+    "ate_ms" (milissegundos), que e o "carimbo_ms" que o "diario" devolve --
+    os dois campos juntos recusam.
+
+    A RESPOSTA traz um bloco "pitr" com o instante da copia, o instante
+    pedido, e por tabela: quantos eventos reaplicou, quantos pulou (depois do
+    corte), o ultimo carimbo aplicado, e "parou_em" quando aquela tabela nao
+    foi ate o fim. Traz tambem "sem_diario_vivo" (tabelas que a copia tem e a
+    origem nao tem mais) e "novas_na_origem" (tabelas que nasceram depois da
+    copia, e que NAO sao criadas: refaze-las exigiria a historia do esquema).
+
+    O QUE O PITR EXIGE, E RECUSA NOMEANDO
+
+    - "modo":"novo". Por cima nao: o por cima tira o database vivo da raiz, e
+      e o diario DELE que a reaplicacao le.
+    - a imagem da linha no diario ("replicacao":{"imagem_da_linha":true}).
+      Sem ela o evento diz que o rowid 42 mudou e nao diz para que.
+    - o backup dizendo em que instante foi tirado ("quando_ms" no
+      backup.json). Copia gravada antes desse campo, cujo "quando" seja um
+      instante legivel, continua servindo.
+    - "ate" DEPOIS do instante da copia: o diario so anda para a frente.
+    - o database de origem ainda existindo neste servidor.
+
+    Sem "ate", nada disso vale e a restauracao e a de sempre.
+
     PELA TELA
 
     Arquivo -> Restaurar um backup..., ou o botao Restaurar da barra.

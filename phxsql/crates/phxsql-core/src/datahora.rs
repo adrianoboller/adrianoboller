@@ -68,6 +68,93 @@ pub fn instante_iso(milissegundos: i64) -> String {
     format!("{} {h:02}:{m:02}:{s:02},{ms:03}", data_iso(dias))
 }
 
+/// Le um instante em texto e devolve os milissegundos desde a epoca.
+///
+/// # Por que ela existe, e por que aceita mais de uma forma
+///
+/// E a volta do [`instante_iso`], e nasceu para o PITR: quem pede «restaure
+/// ate as 15h» escreve `2026-09-08T15:00:00Z`, e quem le o `quando` de um
+/// manifesto de backup gravado por esta casa recebe `2026-09-08 15:00:00,749`.
+/// Sao a mesma data em duas roupas -- a de fora, do ISO 8601, e a nossa, que o
+/// `instante_iso` escreve. **Um leitor que so entendesse o proprio dialeto
+/// recusaria justamente o texto que o operador acabou de copiar da tela**, e
+/// essa licao ja foi paga aqui pelo leitor de ZIP que so falava Huffman fixo.
+///
+/// O que ela aceita:
+///
+/// ```text
+/// 2026-09-08                    -- meia-noite daquele dia
+/// 2026-09-08T15:00:00Z          -- o que a tela e o contrato escrevem
+/// 2026-09-08 15:00:00           -- o mesmo com espaco, sem o Z
+/// 2026-09-08 15:00:00,749       -- o que o `instante_iso` grava
+/// 2026-09-08T15:00:00.749Z      -- o mesmo com ponto
+/// ```
+///
+/// **Tudo e UTC**, e um deslocamento explicito (`+03:00`) e RECUSADO em vez de
+/// ignorado: em lugar nenhum deste motor existe fuso, e engolir o `+03:00`
+/// devolveria um instante tres horas errado sem ninguem perceber -- que e pior
+/// que recusar. `None` diz «nao entendi», e quem chama nomeia o campo.
+pub fn ms_de_instante_iso(texto: &str) -> Option<i64> {
+    let t = texto.trim();
+    // O `Z` e o unico sufixo de fuso aceito, porque e o unico que nao muda
+    // nada. Qualquer outro cai fora pelos digitos que sobram.
+    let t = t
+        .strip_suffix('Z')
+        .or_else(|| t.strip_suffix('z'))
+        .unwrap_or(t);
+    let (data, resto) = match t.split_once(['T', 't', ' ']) {
+        Some((d, r)) => (d, r.trim()),
+        None => (t, ""),
+    };
+    let mut partes = data.split('-');
+    let ano: i32 = partes.next()?.parse().ok()?;
+    let mes: u32 = partes.next()?.parse().ok()?;
+    let dia: u32 = partes.next()?.parse().ok()?;
+    if partes.next().is_some() || !(1..=12).contains(&mes) || !(1..=31).contains(&dia) {
+        return None;
+    }
+    // O calendario tem de FECHAR: `2026-02-31` vira 3 de marco na conta de
+    // Hinnant, e aceitar isso deixaria um erro de digitacao virar outro dia.
+    let dias = dias_de_civil(ano, mes, dia);
+    if civil_de_dias(dias) != (ano, mes, dia) {
+        return None;
+    }
+    let mut ms = dias as i64 * 86_400_000;
+    if resto.is_empty() {
+        return Some(ms);
+    }
+    // A fracao aceita virgula (a nossa) ou ponto (a de fora), e vale sempre em
+    // milissegundos: `,7` e 700 ms, e nao 7.
+    let (hms, fracao) = match resto.split_once([',', '.']) {
+        Some((h, f)) => (h, f),
+        None => (resto, ""),
+    };
+    let mut hp = hms.split(':');
+    let h: i64 = hp.next()?.parse().ok()?;
+    let mi: i64 = hp.next().unwrap_or("0").parse().ok()?;
+    let sg: i64 = hp.next().unwrap_or("0").parse().ok()?;
+    if hp.next().is_some()
+        || !(0..24).contains(&h)
+        || !(0..60).contains(&mi)
+        || !(0..60).contains(&sg)
+    {
+        return None;
+    }
+    ms += h * 3_600_000 + mi * 60_000 + sg * 1_000;
+    if !fracao.is_empty() {
+        if !fracao.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let mut digitos = fracao.to_string();
+        digitos.truncate(3);
+        while digitos.len() < 3 {
+            digitos.push('0');
+        }
+        ms += digitos.parse::<i64>().ok()?;
+    }
+    Some(ms)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +192,76 @@ mod tests {
         let ms = 20_000i64 * 86_400_000 + 13 * 3_600_000 + 45 * 60_000 + 30 * 1_000 + 250;
         assert_eq!(instante_iso(ms), "2024-10-04 13:45:30,250");
         assert_eq!(instante_iso(0), "1970-01-01 00:00:00,000");
+    }
+
+    /// A volta do `instante_iso` fecha em toda a faixa util, dia a dia.
+    ///
+    /// Ida e volta com o proprio formatador nao prova que a gente le o que os
+    /// OUTROS escrevem -- por isso os casos de fora estao no teste seguinte --,
+    /// mas prova a unica coisa que este par tem de garantir sozinho: que o
+    /// texto que esta casa grava num manifesto volta como o mesmo numero.
+    #[test]
+    fn a_volta_do_instante_fecha_em_toda_a_faixa() {
+        let inicio = dias_de_civil(1970, 1, 1) as i64;
+        let fim = dias_de_civil(2100, 1, 1) as i64;
+        for dias in inicio..fim {
+            let ms = dias * 86_400_000 + 13 * 3_600_000 + 45 * 60_000 + 30 * 1_000 + 250;
+            assert_eq!(ms_de_instante_iso(&instante_iso(ms)), Some(ms));
+        }
+    }
+
+    /// O que vem de FORA: o ISO 8601 com `T` e `Z`, que e o que o contrato do
+    /// PITR escreve e o que uma pessoa copia da tela.
+    #[test]
+    fn as_formas_de_fora_tambem_entram() {
+        let meia_noite = dias_de_civil(2026, 9, 8) as i64 * 86_400_000;
+        assert_eq!(ms_de_instante_iso("2026-09-08"), Some(meia_noite));
+        let quinze = meia_noite + 15 * 3_600_000;
+        for t in [
+            "2026-09-08T15:00:00Z",
+            "2026-09-08t15:00:00z",
+            "2026-09-08 15:00:00",
+            "2026-09-08T15:00:00",
+            "  2026-09-08T15:00:00Z  ",
+            "2026-09-08 15:00",
+        ] {
+            assert_eq!(ms_de_instante_iso(t), Some(quinze), "falhou em {t:?}");
+        }
+        // A fracao vale em MILISSEGUNDOS, com ponto ou virgula, e o quarto
+        // digito e cortado em vez de virar dez vezes o valor.
+        assert_eq!(
+            ms_de_instante_iso("2026-09-08T15:00:00.7Z"),
+            Some(quinze + 700)
+        );
+        assert_eq!(
+            ms_de_instante_iso("2026-09-08 15:00:00,749"),
+            Some(quinze + 749)
+        );
+        assert_eq!(
+            ms_de_instante_iso("2026-09-08T15:00:00.7499Z"),
+            Some(quinze + 749)
+        );
+    }
+
+    /// O que ela RECUSA, e o caso que decide e o fuso: engolir o `+03:00`
+    /// devolveria um instante tres horas errado sem ninguem perceber.
+    #[test]
+    fn o_que_nao_e_instante_nao_vira_numero() {
+        for t in [
+            "",
+            "agora",
+            "2026-09-08T15:00:00+03:00",
+            "2026-09-08T15:00:00-03:00",
+            "2026-02-31", // o calendario nao fecha
+            "2026-13-01",
+            "2026-09-08T25:00:00Z",
+            "2026-09-08T15:61:00Z",
+            "2026-09-08T15:00:00,7a9",
+            "2026-09",
+            "2026-09-08-09T15:00:00Z",
+        ] {
+            assert_eq!(ms_de_instante_iso(t), None, "devia recusar {t:?}");
+        }
     }
 
     #[test]

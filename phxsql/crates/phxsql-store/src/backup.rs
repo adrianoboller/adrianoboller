@@ -82,10 +82,33 @@ impl Relatorio {
         self.divergencias.is_empty()
     }
 
-    pub fn para_json(&self, quando: &str) -> Json {
+    /// O manifesto, com os dois carimbos saindo do MESMO numero.
+    ///
+    /// # Por que `quando_ms` existe, se `quando` ja dizia a hora
+    ///
+    /// Porque o `quando` e texto de TELA -- `2026-08-29 03:00:04,132` --, e o
+    /// PITR precisa do instante como NUMERO para comparar com o carimbo de
+    /// cada evento do diario. Ler o instante de uma cadeia formatada para
+    /// gente amarra o motor ao jeito de escrever: no dia em que o
+    /// `instante_iso` mudar de virgula para ponto, a restauracao a um instante
+    /// para de achar o comeco -- e para calada. **Quando um gerador depende de
+    /// uma lista, a lista sai do codigo**; aqui a regra e a mesma, com um
+    /// numero no lugar da lista.
+    ///
+    /// Os dois saem do mesmo `quando_ms` de proposito: dois campos de tempo
+    /// preenchidos por dois caminhos sao dois campos que um dia divergem.
+    ///
+    /// **Acrescimo, como o `escopo`**: manifesto gravado antes disto nao tem
+    /// `quando_ms` e continua restaurando igual -- o que ele nao faz e PITR, e
+    /// a recusa nomeia o campo em vez de adivinhar a hora pelo texto.
+    pub fn para_json(&self, quando_ms: i64) -> Json {
         Json::objeto(vec![
             ("phxsql", Json::texto_de(env!("CARGO_PKG_VERSION"))),
-            ("quando", Json::texto_de(quando)),
+            (
+                "quando",
+                Json::texto_de(phxsql_core::datahora::instante_iso(quando_ms)),
+            ),
+            ("quando_ms", Json::Numero(quando_ms as f64)),
             ("arquivos", Json::de_u64(self.arquivos.len() as u64)),
             ("bytes", Json::de_u64(self.bytes)),
             // Os dois campos entraram JUNTO com a restauracao. Manifesto
@@ -222,7 +245,6 @@ pub fn executar_zip(
         quando_ms,
     ));
 
-    let quando = phxsql_core::datahora::instante_iso(quando_ms);
     let mut zip = phxsql_core::zip::Zip::novo(quando_ms);
     let mut r = Relatorio {
         database: (!banco.is_empty()).then(|| banco.to_string()),
@@ -240,7 +262,7 @@ pub fn executar_zip(
         });
     }
     // O manifesto entra por ultimo, ja sabendo de todos os outros.
-    zip.acrescentar(MANIFESTO, r.para_json(&quando).escrever().as_bytes());
+    zip.acrescentar(MANIFESTO, r.para_json(quando_ms).escrever().as_bytes());
 
     let bytes = zip.terminar();
     r.comprimido = bytes.len() as u64;
@@ -277,7 +299,7 @@ pub fn escolher_para_apagar(nomes: &[String], manter: usize) -> Vec<String> {
 ///
 /// Quem chama e responsavel por segurar a trava de dados. Ver a nota de
 /// consistencia no topo do modulo.
-pub fn executar(raiz: &Path, destino: &Path, quando: &str) -> Result<Relatorio> {
+pub fn executar(raiz: &Path, destino: &Path, quando_ms: i64) -> Result<Relatorio> {
     if !raiz.is_dir() {
         return Err(PhxError::NaoEncontrado(format!(
             "a raiz de dados {} nao existe",
@@ -309,7 +331,7 @@ pub fn executar(raiz: &Path, destino: &Path, quando: &str) -> Result<Relatorio> 
         });
     }
 
-    std::fs::write(destino.join(MANIFESTO), r.para_json(quando).escrever())?;
+    std::fs::write(destino.join(MANIFESTO), r.para_json(quando_ms).escrever())?;
     Ok(r)
 }
 
@@ -404,7 +426,7 @@ mod tests {
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
 
-        let r = executar(&raiz, &destino, "2026-08-27 20:00:00").unwrap();
+        let r = executar(&raiz, &destino, 1_787_000_000_000).unwrap();
         assert_eq!(r.arquivos.len(), 4);
         assert!(r.bytes > 0);
         assert!(destino.join(MANIFESTO).is_file());
@@ -428,7 +450,7 @@ mod tests {
         let destino = base.join("copia");
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
-        executar(&raiz, &destino, "agora").unwrap();
+        executar(&raiz, &destino, 1_787_000_000_000).unwrap();
 
         // Mesmo tamanho, conteudo diferente: so o SHA pega.
         std::fs::write(destino.join("Z/cadastroClientes.reg"), b"registros AQUI").unwrap();
@@ -448,7 +470,7 @@ mod tests {
         let destino = base.join("copia");
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
-        executar(&raiz, &destino, "agora").unwrap();
+        executar(&raiz, &destino, 1_787_000_000_000).unwrap();
 
         std::fs::remove_file(destino.join("Z/cadastroClientes.ndx")).unwrap();
         std::fs::write(destino.join("Z/intruso.reg"), b"nao estava no manifesto").unwrap();
@@ -469,7 +491,7 @@ mod tests {
         let destino = base.join("copia");
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
-        executar(&raiz, &destino, "agora").unwrap();
+        executar(&raiz, &destino, 1_787_000_000_000).unwrap();
         std::fs::write(destino.join("Z/cadastroClientes.reg"), b"curto").unwrap();
         let c = conferir(&destino).unwrap();
         assert!(c.divergencias[0].contains("bytes"), "{:?}", c.divergencias);
@@ -482,8 +504,8 @@ mod tests {
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
         // Copiar a raiz para dentro dela copiaria a copia, sem parar.
-        assert!(executar(&raiz, &raiz.join("copia"), "agora").is_err());
-        assert!(executar(&raiz, &raiz, "agora").is_err());
+        assert!(executar(&raiz, &raiz.join("copia"), 0).is_err());
+        assert!(executar(&raiz, &raiz, 0).is_err());
     }
 
     #[test]
@@ -501,8 +523,8 @@ mod tests {
         let raiz = base.join("dados");
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
-        let a = executar(&raiz, &base.join("c1"), "agora").unwrap();
-        let b = executar(&raiz, &base.join("c2"), "depois").unwrap();
+        let a = executar(&raiz, &base.join("c1"), 1_787_000_000_000).unwrap();
+        let b = executar(&raiz, &base.join("c2"), 1_787_000_001_000).unwrap();
         assert_eq!(a.arquivos, b.arquivos);
     }
     #[test]
