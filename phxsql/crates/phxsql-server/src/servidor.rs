@@ -12353,6 +12353,17 @@ impl Servidor {
         // mensagem que diz ONDE consertar.
         let selecao = match phxsql_sql::analisar_comando(&texto)? {
             phxsql_sql::Comando::Selecao(s) => s,
+            // A composicao (WITH, juncao, IN (SELECT), janela, escalar) e
+            // executada pela op `consultar`, da frente F-CONSULTA; ate ela
+            // entrar a recusa e nomeada, e nao a mensagem do caminho de
+            // escrita.
+            phxsql_sql::Comando::Consulta(_) => {
+                return Err(PhxError::Esquema(
+                    "esta forma de SELECT vira a op consultar, que esta em integracao \
+                     -- por enquanto so SELECT simples, GROUP BY e DML por chave"
+                        .into(),
+                ))
+            }
             // INSERT, UPDATE e DELETE por chave: outro caminho, MESMO portao.
             escrita => return self.executar_dml(&escrita, &texto, p, sessao),
         };
@@ -12435,7 +12446,17 @@ impl Servidor {
         use phxsql_sql::{Comando, PlanoDml};
         let corrente = p.texto_ou("database", "").trim().to_string();
         let plano = match comando {
-            Comando::Insercao(i) => phxsql_sql::traduzir_insercao(i, &corrente)?,
+            Comando::Insercao(i) => {
+                // Os indices so servem ao `ON CONFLICT`, que precisa achar o
+                // indice unico da coluna; o INSERT de sempre nao paga a
+                // leitura do esquema.
+                let indices = if i.se_existir.is_some() {
+                    self.indices_para_o_sql(&i.em, &corrente, sessao)?
+                } else {
+                    Vec::new()
+                };
+                phxsql_sql::traduzir_insercao(i, &indices, &corrente)?
+            }
             Comando::Atualizacao(a) => {
                 let indices = self.indices_para_o_sql(&a.em, &corrente, sessao)?;
                 phxsql_sql::traduzir_atualizacao(a, &indices, &corrente)?
@@ -12444,9 +12465,19 @@ impl Servidor {
                 let indices = self.indices_para_o_sql(&e.de, &corrente, sessao)?;
                 phxsql_sql::traduzir_exclusao(e, &indices, &corrente)?
             }
-            Comando::Selecao(_) => {
+            Comando::Selecao(_) | Comando::Consulta(_) => {
                 return Err(PhxError::Esquema(
                     "consulta nao entra pelo caminho de escrita".into(),
+                ))
+            }
+            // As visoes sao executadas pelas ops `criar_visao`/`excluir_visao`
+            // (frente F-CONSULTA); ate a integracao delas a recusa e nomeada,
+            // e nao um `todo`.
+            Comando::CriarVisao { .. } | Comando::ExcluirVisao { .. } => {
+                return Err(PhxError::Esquema(
+                    "CREATE VIEW / DROP VIEW: o servidor ainda nao executa visoes -- \
+                     a op criar_visao esta em integracao"
+                        .into(),
                 ))
             }
         };
