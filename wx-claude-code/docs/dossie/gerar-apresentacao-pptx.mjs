@@ -250,7 +250,7 @@ porque('Por que comprar: o resto do argumento', [
   ['Sabe WLanguage de verdade', `${n.especialistas_wl} especialistas por tema sobre ${n.corpus_paginas_validas.toLocaleString('pt-BR')} páginas do Help, e um runtime em Rust que faz o Round e a comparação de strings como o WINDEV. Saiu de ler o Help, não da memória do modelo.`],
   ['Serve para projeto novo', 'O mesmo questionário gera o esqueleto, os hooks, o PMO e a entrega auditável para quem não tem legado nenhum.'],
   ['Custa menos do que parece', 'Laudo de uso de tokens, roteador que escolhe o modelo pelo peso da tarefa, orçamento que bloqueia, modelo local para o que não precisa sair da máquina.'],
-  ['O mais forte: o que ele admite não fazer', 'Não lê o binário do WX, não faz OCR sozinho, não certifica LGPD, não aprova gate no lugar de gente. Quem esconde limites vende promessa. Quem publica limites vende ferramenta.'],
+  ['O que ele admite não fazer', 'Não lê o binário do WX, não faz OCR sozinho, não certifica LGPD, não aprova gate no lugar de gente. Quem esconde limites vende promessa. Quem publica limites vende ferramenta.'],
 ], false);
 {
   const s = pres.addSlide(); escuro(s);
