@@ -9989,7 +9989,9 @@ impl Servidor {
         }
     }
 
-    /// As linhas de um sub-pedido, pelo MESMO portao de qualquer cliente.
+    /// As linhas de um sub-pedido, pelo MESMO portao de qualquer cliente --
+    /// e o MODELO delas, que e o que a linha JSON perdeu ao atravessar o
+    /// protocolo.
     ///
     /// # Esta e a funcao inteira do `consultar`
     ///
@@ -10000,6 +10002,22 @@ impl Servidor {
     /// `SELECT ... FROM folha` de quem nao le a folha para AQUI, com o mesmo
     /// erro, e nao ha conferencia propria que alguem possa esquecer de
     /// atualizar.
+    ///
+    /// # De onde vem o modelo
+    ///
+    /// `varrer`/`buscar`: do `esquema` da tabela, pedido pelo MESMO
+    /// `executar_derivado` (como `planejar_consulta` ja fazia para o SQL) --
+    /// `rowid` na frente, como a linha traz, e SEM as colunas que o direito
+    /// por coluna nega a este usuario, que o `esquema` lista em
+    /// `colunas_sem_leitura`. `agrupar` e `consultar`: do cabecalho `colunas`
+    /// que as duas respondem, montado no mesmo lugar que tipou os valores.
+    ///
+    /// E depois o modelo e ACERTADO pela primeira linha, quando ha uma: a
+    /// ordem e os nomes passam a ser os da linha, e coluna que a linha tem e o
+    /// modelo nao conhece entra com o tipo que o FORMATO do JSON sugere -- o
+    /// que este modulo fazia antes de existir modelo. Assim o modelo nunca
+    /// nomeia coluna que a linha nao tem, e nunca deixa de nomear uma que ela
+    /// tem; sobre resultado vazio, ele e a unica forma que existe.
     ///
     /// # A lista de ops e curta de proposito
     ///
@@ -10014,7 +10032,7 @@ impl Servidor {
         base_de_fora: &str,
         rotulo: &str,
         sessao: &Sessao,
-    ) -> Result<Vec<crate::consultar::Linha>> {
+    ) -> Result<(Vec<crate::consultar::Linha>, crate::consultar::Modelo)> {
         const OPS_QUE_DEVOLVEM_LINHAS: &[&str] =
             &["varrer", "buscar", "agrupar", "group_by", "consultar"];
         let op = sub.texto_ou("op", "varrer").trim().to_string();
@@ -10050,7 +10068,7 @@ impl Servidor {
                 lista.len()
             )));
         }
-        Ok(lista
+        let linhas: Vec<crate::consultar::Linha> = lista
             .iter()
             .map(|l| match l {
                 Json::Objeto(pares) => pares.clone(),
@@ -10060,40 +10078,86 @@ impl Servidor {
                 // que nomeia a coluna, que ensina mais.
                 _ => Vec::new(),
             })
-            .collect())
+            .collect();
+
+        let declarado = match op.as_str() {
+            "varrer" | "buscar" => self.modelo_da_tabela(&pedido, sessao)?,
+            _ => crate::consultar::modelo_de_json(bruto.campo("colunas")),
+        };
+        let modelo = match linhas.first() {
+            Some(primeira) => primeira
+                .iter()
+                .map(|(n, v)| {
+                    let tipo = crate::consultar::tipo_no_modelo(&declarado, n)
+                        .unwrap_or_else(|| crate::consultar::valor_de_json(v).1);
+                    (n.clone(), tipo)
+                })
+                .collect(),
+            None => declarado,
+        };
+        Ok((linhas, modelo))
+    }
+
+    /// O modelo de uma tabela como o `varrer` e o `buscar` a devolvem:
+    /// `rowid` e depois cada coluna do esquema, menos as negadas a este
+    /// usuario.
+    ///
+    /// Passa pelo `esquema` via `executar_derivado`, e nao por uma leitura
+    /// propria do arquivo: o portao continua sendo UM, e o `esquema` e quem
+    /// ja sabe listar o que o direito por coluna esconde deste usuario --
+    /// tirar as negadas aqui pela mesma lista e o que impede o modelo de
+    /// nomear uma coluna que a peneira acabou de tirar da linha.
+    fn modelo_da_tabela(&self, pedido: &Json, sessao: &Sessao) -> Result<crate::consultar::Modelo> {
+        let esquema = self.executar_derivado(
+            "esquema",
+            &Json::objeto(vec![
+                ("database", Json::texto_de(pedido.texto_ou("database", ""))),
+                ("tabela", Json::texto_de(pedido.texto_ou("tabela", ""))),
+            ]),
+            sessao,
+        )?;
+        let negadas = esquema.textos("colunas_sem_leitura");
+        let mut modelo = vec![("rowid".to_string(), phxsql_core::types::ColumnType::UInt8)];
+        for c in esquema
+            .campo("colunas")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+        {
+            let nome = c.texto_ou("nome", "").trim();
+            if nome.is_empty() || negadas.iter().any(|n| n.eq_ignore_ascii_case(nome)) {
+                continue;
+            }
+            modelo.push((
+                nome.to_string(),
+                crate::valores::tipo_de_texto(c.texto_ou("tipo", ""))?,
+            ));
+        }
+        Ok(modelo)
     }
 
     /// `consultar`: a composicao -- o passo do SQL que nao e leitura de tabela.
     ///
     /// # A ordem dos passos, e por que ela e fixa
     ///
-    /// `de` -> `em` -> `expressao` -> `janela` -> `ordem` -> `pular`/`max` ->
-    /// `colunas`. Cada um depende do anterior: a janela numera o que sobrou do
-    /// filtro (numerar antes daria buracos na numeracao), o recorte corta o
-    /// que ja esta ordenado, e a projecao vem POR ULTIMO porque a expressao e
-    /// a ordem podem falar de uma coluna que a resposta nao mostra --
-    /// `ORDER BY preco` num `SELECT nome` e SQL legitimo.
+    /// `de` -> `juntar` (na ordem) -> `escalar` -> `existe` -> `em` ->
+    /// `expressao` -> `janela` -> `ordem` -> `pular`/`max` -> `colunas`. Cada
+    /// um depende do anterior: a junção tem de acontecer antes de qualquer
+    /// filtro que fale das duas tabelas, o escalar entra antes da expressao
+    /// porque e ela quem o ve, o `existe` e o `em` sao filtros de conjunto e
+    /// filtrar cedo evita avaliar a expressao sobre linha que ja saiu, a
+    /// janela numera o que sobrou do filtro (numerar antes daria buracos na
+    /// numeracao), o recorte corta o que ja esta ordenado, e a PROJECAO VEM
+    /// POR ULTIMO porque a expressao e a ordem podem falar de uma coluna que a
+    /// resposta nao mostra -- `ORDER BY preco` num `SELECT nome` e SQL
+    /// legitimo.
     ///
-    /// # A profundidade tem teto
+    /// # O modelo anda junto das linhas
     ///
-    /// Um `consultar` cujo `de` e outro `consultar` desce a pilha de verdade.
-    /// Sem teto, um pedido de duzentos niveis derruba a thread por estouro de
-    /// pilha -- e derrubar a thread nao e recusar, e cair. O contador e por
-    /// thread e o guarda o devolve na saida, inclusive quando o passo do meio
-    /// falha.
-    /// `consultar`: a composicao -- o passo do SQL que nao e leitura de tabela.
-    ///
-    /// # A ordem dos passos, e por que ela e fixa
-    ///
-    /// `de` -> `juntar` (na ordem) -> `escalar` -> `em` -> `expressao` ->
-    /// `janela` -> `ordem` -> `pular`/`max` -> `colunas`. Cada um depende do
-    /// anterior: a junção tem de acontecer antes de qualquer filtro que fale
-    /// das duas tabelas, o escalar entra antes da expressao porque e ela quem
-    /// o ve, a janela numera o que sobrou do filtro (numerar antes daria
-    /// buracos na numeracao), o recorte corta o que ja esta ordenado, e a
-    /// PROJECAO VEM POR ULTIMO porque a expressao e a ordem podem falar de uma
-    /// coluna que a resposta nao mostra -- `ORDER BY preco` num `SELECT nome`
-    /// e SQL legitimo.
+    /// Cada passo que muda a forma da linha muda o modelo no mesmo lugar: a
+    /// junção concatena os dois, o escalar e a janela acrescentam uma coluna,
+    /// a projecao escolhe e renomeia. A resposta traz o modelo final em
+    /// `colunas`, e e por ele que um `consultar` aninhado e o cliente sabem a
+    /// forma da linha sem esperar a primeira linha chegar.
     ///
     /// # A profundidade tem teto
     ///
@@ -10103,6 +10167,7 @@ impl Servidor {
     /// thread e o guarda o devolve na saida, inclusive quando o passo do meio
     /// falha.
     fn op_consultar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        use crate::consultar::{self as cs, Modelo};
         let _fundo = Profundidade::descer()?;
         let comeco = Instant::now();
         let base = p.texto_ou("database", "").trim().to_string();
@@ -10110,7 +10175,7 @@ impl Servidor {
         let de = p
             .campo("de")
             .ok_or_else(|| PhxError::Esquema("o consultar precisa de \"de\"".into()))?;
-        let mut linhas = self.linhas_do_sub_pedido(de, &base, "\"de\"", sessao)?;
+        let (mut linhas, mut modelo) = self.linhas_do_sub_pedido(de, &base, "\"de\"", sessao)?;
 
         // ------------------------------------------------------------ juntar
         //
@@ -10118,6 +10183,10 @@ impl Servidor {
         // E o mesmo que o SQL faz com `A JOIN B JOIN C`, e a ordem importa
         // porque um `esquerdo` no meio muda quantas linhas chegam ao proximo.
         let juncoes = p.campo("juntar").and_then(Json::lista).unwrap_or(&[]);
+        // O lado de fora so ganha prefixo quando ha junção: sem ela nenhuma
+        // coluna precisa dele, e prefixar mudaria a forma da resposta de todo
+        // cliente que existe. Quem precisa saber se prefixou e o `existe`.
+        let mut prefixado = false;
         if !juncoes.is_empty() {
             // Prefixar acontece ANTES da primeira junção e vale para os DOIS
             // lados: sem isso, `id` seria a coluna da esquerda antes do JOIN e
@@ -10125,11 +10194,12 @@ impl Servidor {
             // sentido conforme alguem acrescentasse uma junção.
             let apelido = apelido_do_lado(p, de, "de")?;
             let mut usados = vec![apelido.to_lowercase()];
-            crate::consultar::prefixar(&mut linhas, &apelido);
+            cs::prefixar(&mut linhas, &mut modelo, &apelido);
+            prefixado = true;
 
             for (i, j) in juncoes.iter().enumerate() {
                 let rotulo = format!("\"juntar\"[{i}]");
-                let tipo = crate::consultar::TipoJuncao::de_texto(j.texto_ou("tipo", ""))?;
+                let tipo = cs::TipoJuncao::de_texto(j.texto_ou("tipo", ""))?;
                 let sub = j
                     .campo("de")
                     .ok_or_else(|| PhxError::Esquema(format!("a junção {i} precisa de \"de\"")))?;
@@ -10142,39 +10212,70 @@ impl Servidor {
                     )));
                 }
                 usados.push(ap.to_lowercase());
-                let mut direita = self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
-                crate::consultar::prefixar(&mut direita, &ap);
+                let (mut direita, mut modelo_dir) =
+                    self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
+                cs::prefixar(&mut direita, &mut modelo_dir, &ap);
 
-                // Os pares. Sem eles a junção seria um produto cartesiano
-                // disfarcado -- e um produto de duas tabelas de dez mil linhas
-                // e cem milhoes, que ninguem pediu.
                 let itens = j.campo("em").and_then(Json::lista).unwrap_or(&[]);
-                if itens.is_empty() {
-                    return Err(PhxError::Esquema(format!(
-                        "a junção {i} precisa de \"em\" com ao menos um par \
-                         {{esquerda, direita}}: junção sem par e produto \
-                         cartesiano, e ele nao existe nesta rodada"
-                    )));
-                }
+                let teto = self.max_linhas();
                 let mut pares: Vec<(String, String)> = Vec::with_capacity(itens.len());
-                for (k, par) in itens.iter().enumerate() {
-                    let e = par.texto_ou("esquerda", "").trim().to_string();
-                    let d = par.texto_ou("direita", "").trim().to_string();
-                    if e.is_empty() || d.is_empty() {
+                if tipo.casa_por_pares() {
+                    // Os pares. Sem eles a junção seria um produto cartesiano
+                    // disfarcado -- e um produto de duas tabelas de dez mil
+                    // linhas e cem milhoes, que ninguem pediu por engano.
+                    if itens.is_empty() {
                         return Err(PhxError::Esquema(format!(
-                            "o par {k} da junção {i} precisa de \"esquerda\" e \
-                             \"direita\""
+                            "a junção {i} precisa de \"em\" com ao menos um par \
+                             {{esquerda, direita}}: junção sem par e produto \
+                             cartesiano, e ele se pede com tipo \"cruzado\""
                         )));
                     }
-                    // Cada lado se resolve contra o SEU modelo: `p.id` do lado
-                    // de ca, `c.id` do lado de la. O nome sem prefixo vale
-                    // quando e unico naquele lado.
-                    let re = resolver_ou_recusar(linhas.first(), &e, "o lado esquerdo")?;
-                    let rd = resolver_ou_recusar(direita.first(), &d, "o lado direito")?;
-                    pares.push((re, rd));
+                    for (k, par) in itens.iter().enumerate() {
+                        let e = par.texto_ou("esquerda", "").trim().to_string();
+                        let d = par.texto_ou("direita", "").trim().to_string();
+                        if e.is_empty() || d.is_empty() {
+                            return Err(PhxError::Esquema(format!(
+                                "o par {k} da junção {i} precisa de \"esquerda\" e \
+                                 \"direita\""
+                            )));
+                        }
+                        // Cada lado se resolve contra o SEU modelo: `p.id` do
+                        // lado de ca, `c.id` do lado de la. O nome sem prefixo
+                        // vale quando e unico naquele lado.
+                        let re = resolver_ou_recusar(&modelo, &e, "o lado esquerdo")?;
+                        let rd = resolver_ou_recusar(&modelo_dir, &d, "o lado direito")?;
+                        pares.push((re, rd));
+                    }
+                } else {
+                    // O `cruzado` e o produto, e produto nao casa por
+                    // igualdade: um `em` aqui e um pedido que se contradiz, e
+                    // escolher um dos dois sentidos calado seria responder
+                    // outra pergunta.
+                    if j.campo("em").is_some() {
+                        return Err(PhxError::Esquema(format!(
+                            "a junção cruzada {i} nao aceita \"em\": o produto nao \
+                             casa por igualdade -- tire o \"em\", ou use \
+                             \"interno\"/\"esquerdo\" para casar"
+                        )));
+                    }
+                    // O teto e conferido ANTES de materializar. Materializar
+                    // cem milhoes de linhas para depois recusar e o estrago, e
+                    // nao a protecao.
+                    let produto = (linhas.len() as u128) * (direita.len() as u128);
+                    if produto > teto as u128 {
+                        return Err(PhxError::LimiteExcedido(format!(
+                            "a junção cruzada {i} produziria {} x {} = {produto} \
+                             linhas, acima do teto de {teto} de \
+                             `recursos.max_linhas` -- recusada ANTES de \
+                             materializar. Filtre um dos lados dentro do \
+                             sub-pedido dele",
+                            linhas.len(),
+                            direita.len()
+                        )));
+                    }
                 }
-                linhas = crate::consultar::juntar(linhas, &direita, &pares, tipo);
-                let teto = self.max_linhas();
+                linhas = cs::juntar(linhas, &modelo, &direita, &modelo_dir, &pares, tipo);
+                modelo.extend(modelo_dir);
                 if linhas.len() as u64 > teto {
                     return Err(PhxError::LimiteExcedido(format!(
                         "a junção {i} produziu {} linhas, acima do teto de {teto} \
@@ -10189,8 +10290,11 @@ impl Servidor {
         // ----------------------------------------------------------- escalar
         //
         // Uma subconsulta NAO CORRELACIONADA que devolve uma linha so: ela roda
-        // UMA vez, e o valor vira coluna de todas. Correlacionada exigiria
-        // roda-la por linha, e isso recusa nomeando (ver `docs/SQL.md`).
+        // UMA vez, e o valor vira coluna de todas -- com o tipo que o
+        // sub-pedido dela declarou, que e o que faz `preco > media` comparar
+        // Decimal com Decimal. Correlacionada exigiria roda-la por linha, e
+        // isso recusa nomeando (ver `docs/SQL.md`); a correlacao por igualdade
+        // e o `existe`, logo abaixo.
         let mut escalares: Vec<String> = Vec::new();
         for (i, e) in p
             .campo("escalar")
@@ -10209,7 +10313,7 @@ impl Servidor {
                 .campo("de")
                 .ok_or_else(|| PhxError::Esquema(format!("o escalar {i} precisa de \"de\"")))?;
             let rotulo = format!("\"escalar\"[{i}]");
-            let dentro = self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
+            let (dentro, modelo_dentro) = self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
             // Zero ou duas linhas RECUSA nomeando. Escolher a primeira faria a
             // resposta depender da ordem em que o motor devolveu as linhas, e
             // «depende da ordem» num numero e o defeito que nao se acha.
@@ -10223,7 +10327,7 @@ impl Servidor {
             }
             let campo_alvo = e.texto_ou("campo", "").trim().to_string();
             let unica = &dentro[0];
-            let valor = if campo_alvo.is_empty() {
+            let (real, valor) = if campo_alvo.is_empty() {
                 // Sem `campo`, a linha tem de ter UMA coluna so -- senao nao ha
                 // como saber qual delas e o valor.
                 if unica.len() != 1 {
@@ -10233,26 +10337,29 @@ impl Servidor {
                         unica.len()
                     )));
                 }
-                unica[0].1.clone()
+                (unica[0].0.clone(), unica[0].1.clone())
             } else {
-                crate::consultar::campo(unica, &campo_alvo)
-                    .cloned()
-                    .ok_or_else(|| {
-                        PhxError::Esquema(format!(
-                            "o escalar {nome:?} pede o campo {campo_alvo:?}, que a \
-                             linha devolvida nao tem. As que ha: {}",
-                            unica
-                                .iter()
-                                .map(|(n, _)| n.as_str())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ))
-                    })?
+                let real = resolver_ou_recusar(
+                    &modelo_dentro,
+                    &campo_alvo,
+                    &format!("o escalar {nome:?}"),
+                )?;
+                let valor = cs::campo(unica, &real).cloned().ok_or_else(|| {
+                    PhxError::Esquema(format!(
+                        "o escalar {nome:?} pede o campo {campo_alvo:?}, que a \
+                         linha devolvida nao tem. As que ha: {}",
+                        unica
+                            .iter()
+                            .map(|(n, _)| n.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ))
+                })?;
+                (real, valor)
             };
-            if linhas
-                .first()
-                .is_some_and(|l| crate::consultar::campo(l, &nome).is_some())
-            {
+            let tipo = cs::tipo_no_modelo(&modelo_dentro, &real)
+                .unwrap_or_else(|| cs::valor_de_json(&valor).1);
+            if modelo.iter().any(|(n, _)| n.eq_ignore_ascii_case(&nome)) {
                 return Err(PhxError::Esquema(format!(
                     "o escalar {nome:?} usa o nome de uma coluna que a linha ja \
                      tem; de outro nome"
@@ -10261,7 +10368,76 @@ impl Servidor {
             for l in linhas.iter_mut() {
                 l.push((nome.clone(), valor.clone()));
             }
+            modelo.push((nome.clone(), tipo));
             escalares.push(nome);
+        }
+
+        // ------------------------------------------------------------ existe
+        //
+        // O `[NOT] EXISTS (SELECT ... WHERE fora.c = dentro.c)`: semijunção
+        // por espalhamento. Vem DEPOIS do escalar, que acrescenta coluna, e
+        // ANTES da expressao, que e filtro por linha -- e nao acrescenta
+        // coluna nenhuma, so decide quem fica. Cada `de` passa pelo mesmo
+        // portao dos outros quatro caminhos; ver `crate::consultar::semijuntar`
+        // para a divergencia (so igualdade) e o motivo dela.
+        for (i, item) in p
+            .campo("existe")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            let rotulo = format!("\"existe\"[{i}]");
+            let sub = item
+                .campo("de")
+                .ok_or_else(|| PhxError::Esquema(format!("o existe {i} precisa de \"de\"")))?;
+            let ap = apelido_do_lado(item, sub, &rotulo)?;
+            let (mut dentro, mut modelo_dentro) =
+                self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
+            cs::prefixar(&mut dentro, &mut modelo_dentro, &ap);
+            let itens = item.campo("em").and_then(Json::lista).unwrap_or(&[]);
+            if itens.is_empty() {
+                return Err(PhxError::Esquema(format!(
+                    "o existe {i} precisa de \"em\" com ao menos um par {{esquerda, \
+                     direita}}: e por igualdade que a semijunção casa, e sem par \
+                     ela seria «a tabela tem alguma linha?»"
+                )));
+            }
+            // O lado de fora sem junção nao tem prefixo, mas quem escreve
+            // `EXISTS` escreve `c.id` -- entao o prefixo do proprio lado de
+            // fora e aceito e descartado quando o lado nao foi prefixado.
+            // Outro prefixo continua recusando, porque nao nomeia lado nenhum.
+            let apelido_de_fora = if prefixado {
+                None
+            } else {
+                apelido_do_lado(p, de, "de").ok()
+            };
+            let mut pares: Vec<(String, String)> = Vec::with_capacity(itens.len());
+            for (k, par) in itens.iter().enumerate() {
+                let e = par.texto_ou("esquerda", "").trim().to_string();
+                let d = par.texto_ou("direita", "").trim().to_string();
+                if e.is_empty() || d.is_empty() {
+                    return Err(PhxError::Esquema(format!(
+                        "o par {k} do existe {i} precisa de \"esquerda\" e \"direita\""
+                    )));
+                }
+                let e = match (&apelido_de_fora, e.split_once('.')) {
+                    (Some(ap), Some((prefixo, resto))) if prefixo.eq_ignore_ascii_case(ap) => {
+                        resto.to_string()
+                    }
+                    _ => e,
+                };
+                let re =
+                    resolver_ou_recusar(&modelo, &e, &format!("o lado de fora do existe {i}"))?;
+                let rd = resolver_ou_recusar(
+                    &modelo_dentro,
+                    &d,
+                    &format!("o lado de dentro do existe {i}"),
+                )?;
+                pares.push((re, rd));
+            }
+            let nao = item.booleano_ou("nao", false);
+            linhas = cs::semijuntar(linhas, &dentro, &pares, nao);
         }
 
         // ---------------------------------------------------------------- em
@@ -10286,39 +10462,32 @@ impl Servidor {
                 PhxError::Esquema(format!("o item {i} de \"em\" precisa de \"de\""))
             })?;
             let rotulo = format!("\"em\"[{i}]");
-            let dentro = self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
+            let (dentro, _) = self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
             let campo_alvo = item.texto_ou("campo", &coluna).trim().to_string();
             let conjunto: std::collections::HashSet<String> = dentro
                 .iter()
-                .filter_map(|l| {
-                    crate::consultar::campo(l, &campo_alvo)
-                        .and_then(crate::consultar::chave_de_juncao)
-                })
+                .filter_map(|l| cs::campo(l, &campo_alvo).and_then(cs::chave_de_juncao))
                 .collect();
-            let real = resolver_ou_recusar(linhas.first(), &coluna, "o \"em\"")?;
+            let real = resolver_ou_recusar(&modelo, &coluna, "o \"em\"")?;
             linhas.retain(|l| {
-                crate::consultar::campo(l, &real)
-                    .and_then(crate::consultar::chave_de_juncao)
+                cs::campo(l, &real)
+                    .and_then(cs::chave_de_juncao)
                     .is_some_and(|k| conjunto.contains(&k))
             });
         }
 
-        // A expressao, sobre a linha JSON. Ver `crate::consultar` para o que a
-        // ausencia do esquema custa e por que a recusa ensina.
+        // A expressao, sobre a linha composta, com cada coluna convertida
+        // PELO TIPO do modelo. Ver `crate::consultar` para o que isso comprou.
         if let Some(txt) = p.campo("expressao").and_then(Json::texto) {
             if !txt.trim().is_empty() {
                 let e = phxsql_core::expressao::Expressao::analisar(txt)?;
-                // A ligacao dos nomes acontece UMA vez, contra a primeira
-                // linha, e e ela que recusa o nome ambiguo -- por pedido, e
-                // nao por linha.
-                let ligacoes = match linhas.first() {
-                    Some(modelo) => crate::consultar::ligar(modelo, e.colunas())?,
-                    None => Vec::new(),
-                };
+                // A ligacao dos nomes acontece UMA vez, contra o modelo, e e
+                // ela que recusa o nome ambiguo -- por pedido, e nao por linha.
+                let ligacoes = cs::ligar(&modelo, e.colunas())?;
                 let mut mantidas = Vec::with_capacity(linhas.len());
                 for l in linhas {
                     // `NULL` exclui, como em todo filtro deste motor.
-                    if crate::consultar::avaliar_sobre(&l, &e, &ligacoes)? == Some(true) {
+                    if cs::avaliar_sobre(&l, &e, &ligacoes)? == Some(true) {
                         mantidas.push(l);
                     }
                 }
@@ -10345,57 +10514,58 @@ impl Servidor {
             let mut particao: Vec<String> = Vec::new();
             for x in j.campo("particao").and_then(Json::lista).unwrap_or(&[]) {
                 if let Some(t) = x.texto() {
-                    particao.push(resolver_ou_recusar(linhas.first(), t, "a particao")?);
+                    particao.push(resolver_ou_recusar(&modelo, t, "a particao")?);
                 }
             }
-            let mut ordem =
-                crate::consultar::Criterio::da_lista(j.campo("ordem").and_then(Json::lista));
+            let mut ordem = cs::Criterio::da_lista(j.campo("ordem").and_then(Json::lista));
             for c in ordem.iter_mut() {
-                c.coluna = resolver_ou_recusar(linhas.first(), &c.coluna, "a ordem da janela")?;
+                c.coluna = resolver_ou_recusar(&modelo, &c.coluna, "a ordem da janela")?;
             }
+            cs::tipar(&mut ordem, &modelo);
             let apelido = match j.texto_ou("apelido", "").trim() {
                 "" => "row_number".to_string(),
                 outro => outro.to_string(),
             };
-            crate::consultar::numerar(&mut linhas, &particao, &ordem, &apelido)?;
+            cs::numerar(&mut linhas, &mut modelo, &particao, &ordem, &apelido)?;
         }
 
-        let mut ordem =
-            crate::consultar::Criterio::da_lista(p.campo("ordem").and_then(Json::lista));
+        let mut ordem = cs::Criterio::da_lista(p.campo("ordem").and_then(Json::lista));
         if !ordem.is_empty() {
             for c in ordem.iter_mut() {
-                c.coluna = resolver_ou_recusar(linhas.first(), &c.coluna, "a ordem")?;
+                c.coluna = resolver_ou_recusar(&modelo, &c.coluna, "a ordem")?;
             }
-            conferir_colunas(&linhas, ordem.iter().map(|c| c.coluna.as_str()), "a ordem")?;
-            linhas.sort_by(|a, b| crate::consultar::comparar_por(a, b, &ordem));
+            cs::tipar(&mut ordem, &modelo);
+            linhas.sort_by(|a, b| cs::comparar_por(a, b, &ordem));
         }
 
         let achadas = linhas.len() as u64;
         let pular = p.inteiro_ou("pular", 0).max(0) as usize;
         let max = self.limite(p) as usize;
-        let recorte: Vec<crate::consultar::Linha> =
-            linhas.into_iter().skip(pular).take(max).collect();
+        let recorte: Vec<cs::Linha> = linhas.into_iter().skip(pular).take(max).collect();
 
         // A PROJECAO VEM POR ULTIMO, e e por isso que `ordem` pode falar de uma
         // coluna que a resposta nao mostra.
         let pedidas = p.campo("colunas").and_then(Json::lista);
-        let saida: Vec<Json> = match pedidas {
+        let (saida, modelo_saida): (Vec<Json>, Modelo) = match pedidas {
             // Sem projecao, sai a linha inteira MENOS as colunas de `escalar`:
             // elas existem para a expressao ver, e nao para engordar a
             // resposta com um numero repetido em toda linha. Quem as quer
             // pede-as pelo nome.
-            None => recorte
-                .into_iter()
-                .map(|l| {
-                    Json::Objeto(
-                        l.into_iter()
-                            .filter(|(n, _)| !escalares.iter().any(|e| e.eq_ignore_ascii_case(n)))
-                            .collect(),
-                    )
-                })
-                .collect(),
+            None => {
+                let e_escalar = |n: &str| escalares.iter().any(|e| e.eq_ignore_ascii_case(n));
+                (
+                    recorte
+                        .into_iter()
+                        .map(|l| {
+                            Json::Objeto(l.into_iter().filter(|(n, _)| !e_escalar(n)).collect())
+                        })
+                        .collect(),
+                    modelo.into_iter().filter(|(n, _)| !e_escalar(n)).collect(),
+                )
+            }
             Some(l) => {
-                let mut escolhas: Vec<(String, String)> = Vec::new();
+                let mut escolhas: Vec<(String, String, phxsql_core::types::ColumnType)> =
+                    Vec::new();
                 for c in l {
                     let (nome, apelido) = match c {
                         Json::Texto(t) => (t.clone(), t.clone()),
@@ -10414,32 +10584,33 @@ impl Servidor {
                     // O nome REAL para procurar, e o APELIDO para a chave da
                     // resposta: `{"coluna":"c.nome","apelido":"cliente"}` sai
                     // como `cliente`, e sem apelido sai como foi pedido.
-                    let real = resolver_ou_recusar(recorte.first(), &nome, "a projecao")?;
-                    escolhas.push((real, apelido));
+                    let real = resolver_ou_recusar(&modelo, &nome, "a projecao")?;
+                    let tipo = cs::tipo_no_modelo(&modelo, &real)
+                        .unwrap_or(phxsql_core::types::ColumnType::Str(0));
+                    escolhas.push((real, apelido, tipo));
                 }
-                conferir_colunas(
-                    &recorte,
-                    escolhas.iter().map(|(n, _)| n.as_str()),
-                    "a projecao",
-                )?;
-                recorte
-                    .iter()
-                    .map(|linha| {
-                        Json::Objeto(
-                            escolhas
-                                .iter()
-                                .map(|(nome, apelido)| {
-                                    (
-                                        apelido.clone(),
-                                        crate::consultar::campo(linha, nome)
-                                            .cloned()
-                                            .unwrap_or(Json::Nulo),
-                                    )
-                                })
-                                .collect(),
-                        )
-                    })
-                    .collect()
+                (
+                    recorte
+                        .iter()
+                        .map(|linha| {
+                            Json::Objeto(
+                                escolhas
+                                    .iter()
+                                    .map(|(nome, apelido, _)| {
+                                        (
+                                            apelido.clone(),
+                                            cs::campo(linha, nome).cloned().unwrap_or(Json::Nulo),
+                                        )
+                                    })
+                                    .collect(),
+                            )
+                        })
+                        .collect(),
+                    escolhas
+                        .into_iter()
+                        .map(|(_, apelido, tipo)| (apelido, tipo))
+                        .collect(),
+                )
             }
         };
 
@@ -10448,6 +10619,9 @@ impl Servidor {
             // `achadas` antes do recorte, como no `varrer`: sem ele quem
             // pagina nao sabe se a pagina e a ultima.
             ("achadas", Json::de_u64(achadas)),
+            // A forma da linha, ANTES das linhas: e por ela que um consultar
+            // aninhado e o cliente sabem o que vem, mesmo quando nao vem nada.
+            ("colunas", cs::modelo_para_json(&modelo_saida)),
             ("linhas", Json::Lista(saida)),
             ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
         ]))
@@ -10558,6 +10732,23 @@ impl Servidor {
                 )));
             }
         }
+
+        // O MODELO da resposta, montado ANTES de existir grupo: e o que diz a
+        // forma da linha a um `consultar` que receba zero grupos, e sai do
+        // mesmo `tipo_do_agregado` que tipa cada valor -- um lugar, nao dois.
+        let cabecalho: crate::consultar::Modelo = nomes_por
+            .iter()
+            .zip(por.iter())
+            .map(|(n, c)| (n.clone(), esquema.colunas()[*c].ty))
+            .chain(agregados.iter().map(|a| {
+                let (decimal, escala) =
+                    crate::pivot::decimal_e_escala(a.coluna.map(|c| &esquema.colunas()[c].ty));
+                (
+                    a.apelido.clone(),
+                    crate::pivot::tipo_do_agregado(a.funcao, decimal, escala),
+                )
+            }))
+            .collect();
 
         // A peneira da linha CRUA, no mesmo lugar unico do `varrer`.
         let onde = filtros_do_pedido(p, &esquema)?;
@@ -10712,6 +10903,9 @@ impl Servidor {
             ("examinadas", Json::de_u64(examinadas)),
             ("consideradas", Json::de_u64(r.lidas)),
             ("truncado", Json::Bool(truncado)),
+            // A forma da linha, para quem compoe: nome e tipo de cada coluna
+            // de `por` e de cada agregado, na ordem em que saem.
+            ("colunas", crate::consultar::modelo_para_json(&cabecalho)),
             ("linhas", Json::Lista(saida)),
             ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
         ]))
@@ -20350,6 +20544,14 @@ fn resposta_do_sql(texto: &str, plano: &phxsql_sql::Plano, bruto: Json) -> Json 
     let ja_projetou = plano.op == "consultar";
     if let Json::Objeto(campos) = bruto {
         for (k, v) in campos {
+            // O `consultar` responde o SEU `colunas` -- o modelo tipado,
+            // `[{nome, tipo}]` -- e o `sql` ja tem o dele, a lista de rotulos.
+            // Copiar o de dentro poria a mesma chave duas vezes no objeto,
+            // com formas diferentes, e quem le veria uma sem saber qual. O
+            // contrato do `sql` continua sendo a lista de rotulos.
+            if k == "colunas" && ja_projetou {
+                continue;
+            }
             if k == "linhas" && !ja_projetou {
                 if let (phxsql_sql::Saida::Colunas(cols), Json::Lista(linhas)) = (&plano.saida, &v)
                 {
@@ -21344,18 +21546,21 @@ fn apelido_do_lado(dono: &Json, sub: &Json, rotulo: &str) -> Result<String> {
     Ok(curto.to_string())
 }
 
-/// Resolve um nome contra o modelo da linha, ou RECUSA nomeando.
+/// Resolve um nome contra o MODELO do lado, ou RECUSA nomeando.
 ///
-/// Sem linha nenhuma nao ha modelo, e o nome segue como veio: recusar sobre
-/// resultado vazio seria recusar por causa de uma tabela vazia.
+/// Modelo vazio quer dizer «nao sei a forma» -- um sub-pedido que nao
+/// devolveu linha nem cabecalho --, e ai o nome segue como veio: recusar
+/// sobre o que nao se conhece seria recusar por causa de uma tabela vazia.
+/// Com modelo, a resolucao vale tambem sobre resultado vazio, e a coluna que
+/// nao existe recusa nomeando as que ha.
 fn resolver_ou_recusar(
-    modelo: Option<&crate::consultar::Linha>,
+    modelo: &crate::consultar::Modelo,
     nome: &str,
     onde: &str,
 ) -> Result<String> {
-    let Some(modelo) = modelo else {
+    if modelo.is_empty() {
         return Ok(nome.to_string());
-    };
+    }
     match crate::consultar::resolver(modelo, nome)? {
         Some(real) => Ok(real),
         None => Err(PhxError::Esquema(format!(
@@ -21367,33 +21572,6 @@ fn resolver_ou_recusar(
                 .join(", ")
         ))),
     }
-}
-
-/// Coluna pedida que nao existe na linha RECUSA, nomeando.
-///
-/// Sobre resultado vazio nao ha o que conferir, e recusar ali seria recusar
-/// por causa de uma tabela vazia -- a mesma decisao do `agrupar`.
-fn conferir_colunas<'a>(
-    linhas: &[crate::consultar::Linha],
-    pedidas: impl Iterator<Item = &'a str>,
-    onde: &str,
-) -> Result<()> {
-    let Some(primeira) = linhas.first() else {
-        return Ok(());
-    };
-    for nome in pedidas {
-        if crate::consultar::campo(primeira, nome).is_none() {
-            return Err(PhxError::Esquema(format!(
-                "{onde} pede {nome:?}, que nao e coluna do resultado. As que ha: {}",
-                primeira
-                    .iter()
-                    .map(|(n, _)| n.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )));
-        }
-    }
-    Ok(())
 }
 
 /// As linhas de uma tabela ja PENEIRADAS -- o `onde` e a `expressao` decididos
@@ -34032,6 +34210,14 @@ mod testes_consultar_juncao {
     /// O pedido 4 aponta para o cliente 9, que nao existe: e a linha que a
     /// junção interna descarta e a esquerda mantem com nulos.
     fn servidor(d: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        servidor_com_teto(d, cadastro, 10_000)
+    }
+
+    fn servidor_com_teto(
+        d: &std::path::Path,
+        cadastro: Cadastro,
+        max_linhas: u64,
+    ) -> (Arc<Servidor>, Sessao) {
         let c = Config {
             base: d.to_path_buf(),
             log_acessos: d.join("acessos.log"),
@@ -34039,7 +34225,7 @@ mod testes_consultar_juncao {
             dblink: d.join("dblink.json"),
             token: "t".into(),
             cadastro: cadastro.clone(),
-            max_linhas: 10_000,
+            max_linhas,
             ..Config::default()
         };
         let s = Servidor::novo(c).unwrap();
@@ -34081,7 +34267,50 @@ mod testes_consultar_juncao {
             &dono,
         )
         .unwrap();
-        for (id, nome, cidade) in [(1, "ana", "Blumenau"), (2, "bia", "Itajai")] {
+        // `produtos` tem um Decimal e um codigo que e TEXTO com cara de
+        // numero; `limites` da o escalar Decimal; `vazia` nao tem linha
+        // nenhuma -- e a direita vazia do pedido 237.
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"produtos","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"codigo","tipo":"Str(10)"},
+                    {"nome":"preco","tipo":"Decimal(10,2)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"limites","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"valor","tipo":"Decimal(10,2)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"vazia","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"nome","tipo":"Str(20)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        // O cliente 3 nao tem pedido: e a linha da DIREITA que nao casa, a que
+        // o `direito` e o `completo` mantem e o `existe` com `nao` acha.
+        for (id, nome, cidade) in [
+            (1, "ana", "Blumenau"),
+            (2, "bia", "Itajai"),
+            (3, "caio", "Joinville"),
+        ] {
             s.executar(
                 "inserir",
                 &pedido(&format!(
@@ -34092,6 +34321,23 @@ mod testes_consultar_juncao {
             )
             .unwrap();
         }
+        for (id, codigo, preco) in [(1, "10", "9.50"), (2, "7", "20.00"), (3, "100", "100.00")] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"produtos",
+                         "linha":{{"id":{id},"codigo":"{codigo}","preco":"{preco}"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"limites","linha":{"id":1,"valor":"10.00"}}"#),
+            &dono,
+        )
+        .unwrap();
         for (id, cliente, total) in [(1, 1, 100), (2, 1, 50), (3, 2, 300), (4, 9, 7)] {
             s.executar(
                 "inserir",
@@ -34264,22 +34510,16 @@ mod testes_consultar_juncao {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// `direito`, `completo` e `cruzado` RECUSAM nomeando, e a recusa do
-    /// `direito` ensina o que fazer no lugar.
+    /// Junção de tipo desconhecido recusa nomeando; sem par (fora do
+    /// `cruzado`) recusa como produto cartesiano disfarcado; e o `cruzado`
+    /// COM `em` recusa, porque produto nao casa por igualdade.
     #[test]
-    fn os_tipos_que_nao_existem_recusam_nomeando() {
+    fn as_recusas_de_tipo_e_de_par_nomeiam() {
         let d = dir("tipos");
         let (s, _) = servidor(&d, Cadastro::default());
-        for (tipo, pedaco) in [
-            ("direito", "trocando os lados"),
-            ("completo", "esquerdo"),
-            ("cruzado", "esquerdo"),
-        ] {
-            let e = consultar(&s, &JUNCAO.replace("TIPO", tipo)).unwrap_err();
-            let t = e.to_string();
-            assert!(t.contains(tipo), "{tipo}: {t}");
-            assert!(t.contains(pedaco), "{tipo}: a recusa nao ensina: {t}");
-        }
+        let e = consultar(&s, &JUNCAO.replace("TIPO", "lateral")).unwrap_err();
+        let t = e.to_string();
+        assert!(t.contains("lateral") && t.contains("cruzado"), "{t}");
         // Junção sem par nenhum e produto cartesiano disfarcado.
         let e = consultar(
             &s,
@@ -34288,6 +34528,9 @@ mod testes_consultar_juncao {
         )
         .unwrap_err();
         assert!(e.to_string().contains("cartesiano"), "{e}");
+        // E o cruzado com `em` se contradiz.
+        let e = consultar(&s, &JUNCAO.replace("TIPO", "cruzado")).unwrap_err();
+        assert!(e.to_string().contains("nao aceita \"em\""), "{e}");
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -34338,7 +34581,7 @@ mod testes_consultar_juncao {
         )
         .unwrap_err();
         let t = e.to_string();
-        assert!(t.contains('2') && t.contains("exatamente uma"), "{t}");
+        assert!(t.contains('3') && t.contains("exatamente uma"), "{t}");
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -34443,6 +34686,493 @@ mod testes_consultar_juncao {
         )
         .unwrap_err();
         assert!(e.to_string().contains("apelido"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+    /// **A junção ESQUERDA com a DIREITA VAZIA traz as colunas da direita
+    /// PRESENTES e NULAS** (pedido 237, defeito 1).
+    ///
+    /// Com o defeito reposto (o modelo da direita saindo de `direita.first()`),
+    /// as colunas `v.id` e `v.nome` SOMEM da linha: a forma da linha muda entre
+    /// o caso que casou e o que nao casou, e quem le por posicao quebra na
+    /// primeira orfa. O cabecalho `colunas` tem de nomea-las tambem, porque e
+    /// por ele que um `consultar` aninhado sabe a forma sem esperar linha.
+    #[test]
+    fn a_juncao_esquerda_com_a_direita_vazia_traz_as_colunas_nulas() {
+        let d = dir("direita-vazia");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"pedidos"},"apelido":"p",
+               "juntar":[{"de":{"op":"varrer","tabela":"vazia"},"apelido":"v",
+                          "tipo":"esquerdo",
+                          "em":[{"esquerda":"p.cliente_id","direita":"v.id"}]}],
+               "ordem":[{"coluna":"p.id"}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 4);
+        for l in linhas(&r) {
+            assert_eq!(
+                l.campo("v.nome"),
+                Some(&Json::Nulo),
+                "a coluna da direita vazia sumiu em vez de vir nula: {l:?}"
+            );
+            assert_eq!(l.campo("v.id"), Some(&Json::Nulo), "{l:?}");
+        }
+        let nomes: Vec<String> = r
+            .campo("colunas")
+            .and_then(Json::lista)
+            .expect("a resposta traz o modelo em \"colunas\"")
+            .iter()
+            .map(|c| c.texto_ou("nome", "").to_string())
+            .collect();
+        assert!(nomes.contains(&"v.nome".to_string()), "{nomes:?}");
+        assert!(nomes.contains(&"p.total".to_string()), "{nomes:?}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    fn ids(r: &Json) -> Vec<i64> {
+        linhas(r).iter().map(|l| l.inteiro_ou("id", -1)).collect()
+    }
+
+    /// A FORMA de cada linha: os nomes, na ordem. Toda linha de uma resposta
+    /// tem de ter a mesma.
+    fn formas(r: &Json) -> Vec<Vec<String>> {
+        linhas(r)
+            .iter()
+            .map(|l| l.chaves().into_iter().map(String::from).collect())
+            .collect()
+    }
+
+    fn cabecalho(r: &Json) -> Vec<(String, String)> {
+        r.campo("colunas")
+            .and_then(Json::lista)
+            .expect("a resposta traz \"colunas\"")
+            .iter()
+            .map(|c| {
+                (
+                    c.texto_ou("nome", "").to_string(),
+                    c.texto_ou("tipo", "").to_string(),
+                )
+            })
+            .collect()
+    }
+
+    /// **`preco > media` com `preco` Decimal `9.50` e `media` `10.00` da
+    /// FALSO** (pedido 237, defeito 2).
+    ///
+    /// Com o defeito reposto (a celula convertida pelo FORMATO do JSON e nao
+    /// pelo tipo do modelo), `"9.50" > "10.00"` compara como texto e da
+    /// verdadeiro -- e o produto de 9,50 passa por um filtro que pede acima
+    /// de 10. O teste mede QUANTAS linhas sobraram, e nao se a consulta
+    /// respondeu.
+    #[test]
+    fn o_decimal_da_expressao_compara_como_numero() {
+        let d = dir("decimal");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"produtos"},
+               "escalar":[{"nome":"media","campo":"valor",
+                           "de":{"op":"varrer","tabela":"limites"}}],
+               "expressao":"preco > media","ordem":[{"coluna":"id"}]"#,
+        )
+        .unwrap();
+        let l = linhas(&r);
+        let ids: Vec<i64> = l.iter().map(|x| x.inteiro_ou("id", -1)).collect();
+        assert_eq!(ids, vec![2, 3], "9,50 passou de 10,00: {l:?}");
+
+        // O literal tambem: `preco > 10` compara Decimal com numero.
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"produtos"},
+               "expressao":"preco > 10","ordem":[{"coluna":"id"}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 2);
+
+        // E a coluna Str que CONTEM "10" continua texto: rotulo se estiliza,
+        // dado nunca. `codigo = '10'` casa; `codigo > 9` recusa por tipo.
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"produtos"},"expressao":"codigo = '10'""#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 1);
+        let e = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"produtos"},"expressao":"codigo > 9""#,
+        )
+        .expect_err("texto contra numero tinha de recusar");
+        assert!(e.to_string().contains("nao da para comparar"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **`direito` e `completo`, medidos em QUANTAS linhas e em que FORMA.**
+    ///
+    /// `direito`: as tres casadas mais o caio, que nao tem pedido -- e a linha
+    /// dele sai com `p.*` NULO na frente, na mesma forma das outras. O pedido
+    /// 4 (orfao da esquerda) NAO entra. `completo`: as tres, o pedido 4 e o
+    /// caio -- cinco, todas com a mesma forma.
+    #[test]
+    fn as_juncoes_direita_e_completa_mantem_o_lado_certo() {
+        let d = dir("direito-completo");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            &format!(
+                r#"{},"ordem":[{{"coluna":"c.id"}},{{"coluna":"p.id"}}]"#,
+                JUNCAO.replace("TIPO", "direito")
+            ),
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 4, "{}", r.escrever());
+        let l = linhas(&r);
+        let caio = l
+            .iter()
+            .find(|x| x.texto_ou("c.nome", "") == "caio")
+            .expect("o cliente sem pedido sumiu do direito");
+        assert_eq!(caio.campo("p.id"), Some(&Json::Nulo), "{caio:?}");
+        assert_eq!(caio.campo("p.total"), Some(&Json::Nulo), "{caio:?}");
+        assert!(
+            l.iter().all(|x| x.inteiro_ou("p.id", -1) != 4),
+            "o orfao da esquerda entrou no direito: {l:?}"
+        );
+        let f = formas(&r);
+        assert!(
+            f.iter().all(|x| *x == f[0]),
+            "a forma mudou entre linhas: {f:?}"
+        );
+        assert_eq!(
+            f[0][0], "p.rowid",
+            "a esquerda tem de vir na frente: {:?}",
+            f[0]
+        );
+
+        let r = consultar(&s, &JUNCAO.replace("TIPO", "completo")).unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 5, "{}", r.escrever());
+        let l = linhas(&r);
+        assert!(
+            l.iter()
+                .any(|x| x.inteiro_ou("p.id", -1) == 4 && x.campo("c.nome") == Some(&Json::Nulo)),
+            "o orfao da esquerda sumiu do completo: {l:?}"
+        );
+        assert!(
+            l.iter()
+                .any(|x| x.texto_ou("c.nome", "") == "caio" && x.campo("p.id") == Some(&Json::Nulo)),
+            "o orfao da direita sumiu do completo: {l:?}"
+        );
+        let f = formas(&r);
+        assert!(f.iter().all(|x| *x == f[0]), "{f:?}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **`cruzado` e o produto, e o teto e conferido ANTES de materializar.**
+    ///
+    /// 4 pedidos x 3 clientes = 12. Com `max_linhas` 10, a recusa nomeia os
+    /// dois tamanhos e diz que veio antes -- e o teste confere que ela vem
+    /// como `LimiteExcedido`, e nao como um produto que estourou depois.
+    #[test]
+    fn a_juncao_cruzada_e_o_produto_e_o_teto_vem_antes() {
+        let d = dir("cruzado");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"pedidos"},"apelido":"p",
+               "juntar":[{"de":{"op":"varrer","tabela":"clientes"},"apelido":"c",
+                          "tipo":"cruzado"}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 12);
+        let f = formas(&r);
+        assert!(f.iter().all(|x| *x == f[0]), "{f:?}");
+        let _ = std::fs::remove_dir_all(&d);
+
+        let d = dir("cruzado-teto");
+        let (s, _) = servidor_com_teto(&d, Cadastro::default(), 10);
+        let e = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"pedidos"},"apelido":"p",
+               "juntar":[{"de":{"op":"varrer","tabela":"clientes"},"apelido":"c",
+                          "tipo":"cruzado"}]"#,
+        )
+        .expect_err("12 linhas com teto 10 tinham de recusar");
+        let t = e.to_string();
+        assert!(
+            t.contains("4 x 3") && t.contains("12"),
+            "nao nomeia os tamanhos: {t}"
+        );
+        assert!(t.contains("ANTES"), "{t}");
+        assert!(matches!(e, PhxError::LimiteExcedido(_)), "{e:?}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **`existe`: quem tem par fica UMA vez; `nao` inverte; sem `em` recusa;
+    /// e sem `existe` nada muda.**
+    ///
+    /// Ana tem dois pedidos e sai uma vez -- e a diferenca entre `EXISTS` e
+    /// `JOIN`, e `ids` a mede. O caio nao tem pedido: e o unico do `nao`.
+    #[test]
+    fn o_existe_filtra_quem_tem_par_e_o_nao_quem_nao_tem() {
+        let d = dir("existe");
+        let (s, _) = servidor(&d, Cadastro::default());
+        const EXISTE: &str = r#""de":{"op":"varrer","tabela":"clientes"},"apelido":"c",
+            "existe":[{"de":{"op":"varrer","tabela":"pedidos"},"apelido":"x",
+                       "em":[{"esquerda":"c.id","direita":"x.cliente_id"}],
+                       "nao":NAO}],
+            "ordem":[{"coluna":"id"}]"#;
+        let r = consultar(&s, &EXISTE.replace("NAO", "false")).unwrap();
+        assert_eq!(ids(&r), vec![1, 2], "{}", r.escrever());
+        // Nao acrescenta coluna nenhuma: a forma e a do `varrer` de clientes.
+        let l = linhas(&r);
+        assert!(
+            l[0].campo("x.id").is_none() && l[0].campo("cliente_id").is_none(),
+            "{l:?}"
+        );
+        assert_eq!(l[0].texto_ou("nome", ""), "ana");
+
+        let r = consultar(&s, &EXISTE.replace("NAO", "true")).unwrap();
+        assert_eq!(ids(&r), vec![3], "{}", r.escrever());
+
+        // Sem `em` recusa nomeando o campo.
+        let e = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},
+               "existe":[{"de":{"op":"varrer","tabela":"pedidos"}}]"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("\"em\""), "{e}");
+
+        // Com junção na frente, o lado de fora ja esta prefixado e `c.id`
+        // resolve contra o modelo composto: os pedidos da ana (cliente 1),
+        // porque `limites` so tem o id 1.
+        let r = consultar(
+            &s,
+            &format!(
+                r#"{},"existe":[{{"de":{{"op":"varrer","tabela":"limites"}},"apelido":"l",
+                                "em":[{{"esquerda":"c.id","direita":"l.id"}}]}}],
+                   "ordem":[{{"coluna":"p.id"}}]"#,
+                JUNCAO.replace("TIPO", "interno")
+            ),
+        )
+        .unwrap();
+        let l = linhas(&r);
+        let ps: Vec<i64> = l.iter().map(|x| x.inteiro_ou("p.id", -1)).collect();
+        assert_eq!(ps, vec![1, 2], "{l:?}");
+
+        // O comportamento VELHO: sem `existe`, os tres clientes, como sempre.
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},"ordem":[{"coluna":"id"}]"#,
+        )
+        .unwrap();
+        assert_eq!(ids(&r), vec![1, 2, 3]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A PORTA DOS FUNDOS numero cinco: `existe[].de`.**
+    ///
+    /// Ana nao le a folha. O `existe` nao devolve coluna nenhuma da tabela de
+    /// dentro -- e mesmo assim tem de recusar, porque «quais clientes tem
+    /// linha na folha?» ja e uma pergunta sobre a folha. O controle na mesma
+    /// corrida: o mesmo `existe` sobre a tabela permitida responde.
+    ///
+    /// PROVA REAL: trocando `executar_derivado` por `executar` em
+    /// `linhas_do_sub_pedido`, a recusa vira `Ok` e este teste reprova.
+    #[test]
+    fn o_existe_nao_e_a_porta_dos_fundos() {
+        let d = dir("existe-porta");
+        let (s, ses) = servidor(&d, so_le_o_que_nao_e_folha());
+        let ok = pede(
+            &s,
+            &ses,
+            r#""op":"consultar","database":"b",
+               "de":{"op":"varrer","tabela":"clientes"},
+               "existe":[{"de":{"op":"varrer","tabela":"pedidos"},"apelido":"x",
+                          "em":[{"esquerda":"id","direita":"x.cliente_id"}]}]"#,
+        )
+        .expect("a tabela permitida tinha de passar");
+        assert_eq!(ok.inteiro_ou("devolvidas", -1), 2);
+
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"consultar","database":"b",
+               "de":{"op":"varrer","tabela":"clientes"},
+               "existe":[{"de":{"op":"varrer","tabela":"folha"},"apelido":"f",
+                          "em":[{"esquerda":"id","direita":"f.id"}]}]"#,
+        )
+        .expect_err("o existe leu a tabela negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("folha"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **`COUNT(coluna)` conta valores NAO NULOS; sem coluna conta linhas** --
+    /// e o cabecalho diz o tipo de cada agregado, MEDIDO: contagem `UInt8`,
+    /// soma e media de inteiro `Real8` (e nao o tipo da coluna, como o
+    /// contrato supunha), soma e media de Decimal `Decimal { 38, escala }`.
+    #[test]
+    fn a_contagem_por_coluna_ignora_o_nulo_e_o_cabecalho_diz_o_tipo() {
+        let d = dir("contagem");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let dono = Sessao::default();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"notas","colunas":[
+                    {"nome":"id","tipo":"Int4","obrigatoria":true},
+                    {"nome":"valor","tipo":"Int4"},
+                    {"nome":"preco","tipo":"Decimal(10,2)"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        for linha in [
+            r#"{"id":1,"valor":5,"preco":"1.50"}"#,
+            r#"{"id":2,"valor":null,"preco":"2.50"}"#,
+            r#"{"id":3,"valor":7,"preco":null}"#,
+        ] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"notas","linha":{linha}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        let r = s
+            .executar(
+                "agrupar",
+                &pedido(
+                    r#"{"database":"b","tabela":"notas","agregados":[
+                        {"funcao":"contagem"},
+                        {"funcao":"contagem","coluna":"valor","apelido":"com_valor"},
+                        {"funcao":"soma","coluna":"valor"},
+                        {"funcao":"media","coluna":"valor"},
+                        {"funcao":"soma","coluna":"preco"},
+                        {"funcao":"media","coluna":"preco"}]}"#,
+                ),
+                &dono,
+            )
+            .unwrap();
+        let l = linhas(&r);
+        assert_eq!(l[0].inteiro_ou("contagem", -1), 3, "{}", r.escrever());
+        assert_eq!(
+            l[0].inteiro_ou("com_valor", -1),
+            2,
+            "contou o nulo: {}",
+            r.escrever()
+        );
+        assert_eq!(l[0].inteiro_ou("soma_valor", -1), 12);
+        assert_eq!(l[0].inteiro_ou("media_valor", -1), 6);
+        assert_eq!(l[0].texto_ou("soma_preco", ""), "4.00");
+        assert_eq!(l[0].texto_ou("media_preco", ""), "2.00");
+        let tipos = cabecalho(&r);
+        let tipo = |n: &str| tipos.iter().find(|(m, _)| m == n).map(|(_, t)| t.as_str());
+        assert_eq!(tipo("contagem"), Some("UInt8"));
+        assert_eq!(tipo("com_valor"), Some("UInt8"));
+        assert_eq!(tipo("soma_valor"), Some("Real8"));
+        assert_eq!(tipo("media_valor"), Some("Real8"));
+        assert_eq!(
+            tipo("soma_preco"),
+            Some("Decimal { precisao: 38, escala: 2 }")
+        );
+        assert_eq!(
+            tipo("media_preco"),
+            Some("Decimal { precisao: 38, escala: 2 }")
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A ordem aceita nome QUALIFICADO, resolve o unico sem prefixo, recusa
+    /// o ambiguo nomeando os dois -- e ordena `Decimal` como NUMERO.**
+    ///
+    /// Como texto, `"100.00"` viria antes de `"9.50"`. E a mesma raiz do
+    /// defeito 2 do pedido 237, no `ordem`.
+    #[test]
+    fn a_ordem_aceita_nome_qualificado_e_ordena_decimal_como_numero() {
+        let d = dir("ordem");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let base = JUNCAO.replace("TIPO", "interno");
+        let e = consultar(&s, &format!(r#"{base},"ordem":[{{"coluna":"id"}}]"#)).unwrap_err();
+        let t = e.to_string();
+        assert!(t.contains("p.id") && t.contains("c.id"), "{t}");
+
+        let r = consultar(
+            &s,
+            &format!(r#"{base},"ordem":[{{"coluna":"total","desc":true}}]"#),
+        )
+        .unwrap();
+        assert_eq!(linhas(&r)[0].inteiro_ou("p.total", -1), 300);
+
+        let r = consultar(
+            &s,
+            &format!(r#"{base},"ordem":[{{"coluna":"c.nome","desc":true}},"p.id"]"#),
+        )
+        .unwrap();
+        assert_eq!(linhas(&r)[0].texto_ou("c.nome", ""), "bia");
+
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"produtos"},"ordem":[{"coluna":"preco"}]"#,
+        )
+        .unwrap();
+        let precos: Vec<String> = linhas(&r)
+            .iter()
+            .map(|l| l.texto_ou("preco", "").to_string())
+            .collect();
+        assert_eq!(precos, vec!["9.50", "20.00", "100.00"]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **O cabecalho `colunas` diz a forma -- inclusive sobre o VAZIO -- e um
+    /// `consultar` aninhado o recebe sem perder o tipo.**
+    ///
+    /// O de dentro projeta `preco` como `valor`; o de fora compara `valor > 10`
+    /// e so acerta se o tipo Decimal atravessou o cabecalho. Sobre a tabela
+    /// vazia, a forma existe e a coluna que nao existe recusa nomeando as que
+    /// ha -- antes do modelo, o vazio nao tinha contra o que resolver.
+    #[test]
+    fn o_cabecalho_colunas_faz_a_ida_e_volta_no_consultar_aninhado() {
+        let d = dir("cabecalho");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = consultar(
+            &s,
+            r#""de":{"op":"consultar","de":{"op":"varrer","tabela":"produtos"},
+                     "colunas":["id",{"coluna":"preco","apelido":"valor"}]},
+               "expressao":"valor > 10","ordem":[{"coluna":"id"}]"#,
+        )
+        .unwrap();
+        assert_eq!(ids(&r), vec![2, 3], "{}", r.escrever());
+        assert_eq!(
+            cabecalho(&r),
+            vec![
+                ("id".to_string(), "Int4".to_string()),
+                (
+                    "valor".to_string(),
+                    "Decimal { precisao: 10, escala: 2 }".to_string()
+                ),
+            ]
+        );
+
+        let r = consultar(&s, r#""de":{"op":"varrer","tabela":"vazia"}"#).unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 0);
+        let nomes: Vec<String> = cabecalho(&r).into_iter().map(|(n, _)| n).collect();
+        assert_eq!(nomes[0], "rowid");
+        assert!(nomes.contains(&"nome".to_string()), "{nomes:?}");
+
+        let e = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"vazia"},"colunas":["nome_errado"]"#,
+        )
+        .unwrap_err();
+        let t = e.to_string();
+        assert!(
+            t.contains("nome_errado") && t.contains("rowid, id, nome"),
+            "{t}"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 }
@@ -35275,6 +36005,31 @@ mod testes_sql_composto {
             )),
             &Sessao::default(),
         )
+    }
+
+    /// **O `sql` responde UM `colunas` -- a lista de rotulos --, mesmo agora
+    /// que o `consultar` de dentro responde o modelo tipado no mesmo nome.**
+    ///
+    /// Com o `continue` de `resposta_do_sql` fora, a chave sairia DUAS vezes
+    /// no objeto, com formas diferentes, e quem le veria uma sem saber qual.
+    #[test]
+    fn o_sql_nao_sai_com_colunas_em_dobro() {
+        let d = dir("colunas-uma-vez");
+        let (s, _) = servidor(&d, Cadastro::default());
+        let r = sql(
+            &s,
+            "SELECT p.id, c.nome FROM pedidos p JOIN clientes c ON p.cliente_id = c.id",
+        )
+        .unwrap();
+        let quantas = r.chaves().iter().filter(|k| **k == "colunas").count();
+        assert_eq!(quantas, 1, "{}", r.escrever());
+        let col = r.campo("colunas").and_then(Json::lista).unwrap();
+        assert!(
+            col.iter().all(|c| c.texto().is_some()),
+            "o modelo tipado vazou para o sql: {}",
+            r.escrever()
+        );
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     fn linhas(r: &Json) -> Vec<Json> {

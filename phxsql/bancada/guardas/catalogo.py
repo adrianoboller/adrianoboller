@@ -4100,4 +4100,86 @@ pub fn limpar() {
             "servidor::testes_direito_por_tabela::sem_regra_de_tabela_nada_muda",
         ],
     },
+    # C20-CONSULTA (09/09/2026): o modelo tipado e os cinco caminhos ao dado
+    # -----------------------------------------------------------------------
+    {
+        "id": "juncao-direita-vazia-perde-colunas",
+        "titulo": "LEFT JOIN com a direita vazia sai sem as colunas da direita, e a forma da linha muda",
+        "porque": (
+            "pedido 237 -- a linha sem casamento tinha de trazer TODAS as "
+            "colunas da direita nulas; com o modelo saindo da primeira linha "
+            "(direita.first()), a direita vazia nao tinha de onde tirar os "
+            "nomes e as colunas sumiam. Coluna que some quebra quem le por "
+            "posicao, o defeito que esta casa ja pagou tres vezes."
+        ),
+        "arquivo": "crates/phxsql-server/src/consultar.rs",
+        "trecho": "                    nova.extend(nulos(modelo_dir));",
+        "troca": """                    // DEFEITO REPOSTO: os nomes das colunas da direita saiam
+                    // da PRIMEIRA linha dela -- e com a direita vazia, de lugar
+                    // nenhum, entao a coluna sumia em vez de vir nula.
+                    let _ = &modelo_dir;
+                    if let Some(primeira) = direita.first() {
+                        nova.extend(primeira.iter().map(|(n, _)| (n.clone(), Json::Nulo)));
+                    }""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_consultar_juncao::a_juncao_esquerda_com_a_direita_vazia_traz_as_colunas_nulas",
+            "consultar::testes::a_direita_vazia_da_colunas_nulas_pelo_modelo",
+        ],
+        "seguem": [
+            "servidor::testes_consultar_juncao::a_juncao_esquerda_mantem_a_linha_com_nulos",
+        ],
+    },
+    {
+        "id": "decimal-do-consultar-compara-como-texto",
+        "titulo": "Decimal no consultar.expressao compara como texto, e 9,50 passa por um filtro de acima de 10",
+        "porque": (
+            "pedido 237 -- a celula tinha de ser convertida PELO TIPO do "
+            "modelo antes de a expressao ve-la; convertida pelo FORMATO do "
+            "JSON, um Decimal (texto \"9.50\") comparava como texto e "
+            "\"9.50\" > \"10.00\" dava verdadeiro."
+        ),
+        "arquivo": "crates/phxsql-server/src/consultar.rs",
+        "trecho": """    match crate::valores::json_para_valor(j, tipo) {
+        Ok(v) => (v, *tipo),
+        Err(_) => valor_de_json(j),
+    }""",
+        "troca": """    // DEFEITO REPOSTO: a celula convertida pelo FORMATO do JSON, e nao
+    // pelo tipo do modelo -- o Decimal volta a comparar como texto.
+    let _ = tipo;
+    valor_de_json(j)""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "consultar::testes::o_decimal_compara_como_numero_pelo_modelo",
+            "consultar::testes::a_celula_se_converte_pelo_tipo_do_modelo",
+            "servidor::testes_consultar_juncao::o_decimal_da_expressao_compara_como_numero",
+        ],
+        "seguem": [
+            "consultar::testes::texto_contra_numero_recusa_ensinando",
+            "consultar::testes::o_numero_redondo_vira_inteiro",
+        ],
+    },
+    {
+        "id": "existe-fora-do-inventario-de-tabelas",
+        "titulo": "existe[].de fora de tabelas_do_pedido: quem pergunta que tabelas o consultar alcanca nao ve a de dentro do EXISTS",
+        "porque": (
+            "pedido 236 e a lei da casa -- quando o portao passa a olhar um "
+            "campo novo, procure quem NAO tem esse campo. O existe entrou como "
+            "quinto caminho ao dado; a lista que o ignora vira o inventario que "
+            "deixa de valer no dia em que alguem o usa como inventario."
+        ),
+        "arquivo": "crates/phxsql-server/src/direito_coluna.rs",
+        "trecho": '            for lista in ["juntar", "escalar", "em", "existe"] {',
+        "troca": '            for lista in ["juntar", "escalar", "em"] {',
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "direito_coluna::testes::os_cinco_caminhos_do_consultar_aparecem",
+        ],
+        "seguem": [
+            "direito_coluna::testes::as_tabelas_escondidas_aparecem",
+        ],
+    },
 ]

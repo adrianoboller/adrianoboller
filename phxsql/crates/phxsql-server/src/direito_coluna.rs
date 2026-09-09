@@ -365,6 +365,29 @@ pub fn tabelas_do_pedido(op: &str, p: &Json) -> Vec<String> {
         "duplicar_tabela" | "copiar_tabela" | "renomear_tabela" => {
             junte(p.texto_ou("destino", ""));
         }
+        // O `consultar` nao nomeia tabela em campo nenhum seu: ela mora nos
+        // SUB-PEDIDOS -- `de`, `juntar[].de`, `escalar[].de`, `em[].de` e
+        // `existe[].de` --, e cada um deles pode ser outro `consultar`. A
+        // varredura desce, porque a lista que parasse no primeiro nivel
+        // seria o inventario que deixa de valer no dia em que alguem a usar
+        // como inventario. (A peneira nao passa por aqui para o `consultar`:
+        // cada sub-pedido paga a dele no `executar_derivado`. Esta lista
+        // existe para quem PERGUNTA que tabelas um pedido alcanca.)
+        "consultar" => {
+            let mut subs: Vec<&Json> = Vec::new();
+            subs.extend(p.campo("de"));
+            for lista in ["juntar", "escalar", "em", "existe"] {
+                for item in p.campo(lista).and_then(Json::lista).unwrap_or(&[]) {
+                    subs.extend(item.campo("de"));
+                }
+            }
+            for sub in subs {
+                let op = sub.texto_ou("op", "varrer").trim().to_string();
+                for t in tabelas_do_pedido(&op, sub) {
+                    junte(&t);
+                }
+            }
+        }
         _ => {}
     }
     alvos
@@ -530,6 +553,28 @@ mod testes {
         assert_eq!(
             tabelas_do_pedido("duplicar_tabela", &c),
             vec!["folha", "copia"]
+        );
+    }
+
+    /// **Os cinco caminhos do `consultar` aparecem, e a varredura DESCE.**
+    ///
+    /// `existe[].de` e o campo que entrou em 09/09/2026: quando o portao
+    /// passa a olhar um campo novo, procure quem nao tem esse campo -- e este
+    /// teste e o que cai se alguem acrescentar um sexto caminho e esquecer
+    /// desta lista.
+    #[test]
+    fn os_cinco_caminhos_do_consultar_aparecem() {
+        let c = Json::analisar(
+            r#"{"de":{"op":"consultar","de":{"op":"varrer","tabela":"pedidos"}},
+                "juntar":[{"de":{"op":"varrer","tabela":"clientes"}}],
+                "escalar":[{"de":{"op":"agrupar","tabela":"limites"}}],
+                "em":[{"de":{"op":"varrer","tabela":"cidades"}}],
+                "existe":[{"de":{"op":"varrer","tabela":"folha"}}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            tabelas_do_pedido("consultar", &c),
+            vec!["pedidos", "clientes", "limites", "cidades", "folha"]
         );
     }
 
