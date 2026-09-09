@@ -256,16 +256,16 @@ subconsulta, CTE e junção — a §7 conta a gramática e o JSON de cada um. O 
   vence, e o plano diz isso na nota.
 - **Janela além de `ROW_NUMBER`.** `RANK`, `DENSE_RANK`, `SUM() OVER (...)` e
   companhia recusam nomeando — só `ROW_NUMBER() OVER (...)` tem substrato.
-- **`RIGHT`/`FULL`/`CROSS JOIN`.** Recusam nomeando; a direita se escreve
-  trocando os lados.
-- **Correlação e `EXISTS`.** Uma subconsulta (`IN` ou escalar) que cita coluna
-  de fora, ou um `EXISTS (...)`, exigiriam rodar a subconsulta por LINHA da
-  consulta de fora — não existe.
+- **Correlação que não é igualdade.** `IN (SELECT …)` correlacionado,
+  subconsulta ESCALAR correlacionada, e um termo de `EXISTS` que cita coluna
+  de fora sem ser `fora.col = dentro.col` (outro comparador, os dois lados de
+  fora, ou o termo inteiro dentro de um `OR`) recusam nomeando — exigiriam
+  rodar a subconsulta por LINHA da consulta de fora.
+- **`EXISTS`/`NOT EXISTS` NÃO correlacionado.** Sem nenhum par
+  `fora.col = dentro.col`, o `EXISTS` é só "tem linha?" e ainda não tem
+  substrato (pedido 236, §4 conta a forma que TEM).
 - **`WITH RECURSIVE` e mais de uma CTE.** Só uma CTE, não recursiva.
 - **`UNION`.** Não há.
-- **`COUNT(coluna)`** sem `DISTINCT` e sem `*`. Contar só os não-nulos de uma
-  coluna é outro acumulador, que esta camada não construiu — `COUNT(*)` e
-  `COUNT(DISTINCT coluna)` têm substrato, `COUNT(coluna)` sozinho recusa.
 - **`COUNT(*)`/`GROUP BY` sobre visão.** `FROM v_c` vira `consultar` (filtra e
   projeta); agregar sobre o resultado de uma visão ainda não compõe — quem
   precisa disso escreve `SELECT COUNT(*) FROM (SELECT * FROM v_c) AS x`.
@@ -598,8 +598,8 @@ FROM tabela [WHERE ...] [GROUP BY coluna {, coluna}] [HAVING expr]
 [ORDER BY coluna [DESC] {, coluna [DESC]}] [LIMIT n]
 ```
 
-`FUNCAO` ∈ `COUNT(*)`, `COUNT(DISTINCT coluna)`, `SUM`, `AVG`, `MIN`, `MAX`.
-Vira `agrupar`:
+`FUNCAO` ∈ `COUNT(*)`, `COUNT(coluna)`, `COUNT(DISTINCT coluna)`, `SUM`, `AVG`,
+`MIN`, `MAX`. Vira `agrupar`:
 
 ```json
 {"op": "agrupar", "database": "b", "tabela": "c",
@@ -622,18 +622,28 @@ forma de expressão, que precisa varrer para contar e por isso também vira
 continua limitado a uma (exige índice). `OFFSET` com `GROUP BY` recusa: o
 contrato de `agrupar` não tem `"pular"`.
 
-### 4. `WITH`, subconsulta no `FROM`, `IN (SELECT …)`
+**`COUNT(coluna)`** (pedido 236) é o MESMO agregado, só que com `"coluna"` no
+JSON — `{"funcao": "contagem", "coluna": "c"}` conta os valores NÃO NULOS de
+`c`, diferente de `COUNT(*)` (conta linha, sem `"coluna"` nenhuma). A
+distinção entre as duas contagens mora no acumulador do lado do MOTOR
+(`phxsql-server`, outra frente do mesmo pedido); a camada SQL só faltava
+gerar o JSON — a tradução nunca decidiu isso sozinha.
+
+### 4. `WITH`, subconsulta no `FROM`, `IN (SELECT …)`, `[NOT] EXISTS (...)`
 
 ```text
 [WITH nome AS (SELECT ...)]
-SELECT ( * | coluna [AS apelido] {, ...} )
+SELECT ( * | coluna[.coluna] [AS apelido] {, ...} )
 FROM ( tabela [[AS] apelido] | nome_da_cte | (SELECT ...) AS apelido )
-[WHERE ...] [ORDER BY ...] [LIMIT n [OFFSET m]]
+[WHERE ...] [ORDER BY coluna[.coluna] [DESC] {, ...}] [LIMIT n [OFFSET m]]
 ```
 
 Uma CTE só, não recursiva — duas ou `WITH RECURSIVE` recusam nomeando.
-`WHERE coluna IN (SELECT campo FROM ...)`, ocupando o conjunto INTEIRO de um
-`AND` de nível superior, vira `em`. Tudo vira `consultar`:
+`ORDER BY` aceita coluna QUALIFICADA (`p.id`, pedido 236) — quem resolve se o
+qualificador existe e não é ambíguo é o `consultar`, do mesmo jeito que já
+resolve a projeção. `WHERE coluna IN (SELECT campo FROM ...)`, ocupando o
+conjunto INTEIRO de um `AND` de nível superior, vira `em`. Tudo vira
+`consultar`:
 
 ```json
 {"op": "consultar", "database": "b",
@@ -641,7 +651,7 @@ Uma CTE só, não recursiva — duas ou `WITH RECURSIVE` recusam nomeando.
  "em": [{"coluna": "id", "de": {"op": "varrer", "tabela": "c"}, "campo": "id"}],
  "expressao": "preco > 10",
  "colunas": ["id", "nome"],
- "ordem": [{"coluna": "id", "desc": false}], "pular": 0, "max": 1000}
+ "ordem": [{"coluna": "p.id", "desc": false}], "pular": 0, "max": 1000}
 ```
 
 `de` (e cada `em`) é traduzido por quem chama, via um **resolvedor**
@@ -649,10 +659,40 @@ Uma CTE só, não recursiva — duas ou `WITH RECURSIVE` recusam nomeando.
 roda pelo MESMO portão de permissão de qualquer pedido; é isto que faz da
 composição uma composição, e não uma porta dos fundos (há prova com tabela
 negada dentro do `IN`). Subconsulta correlacionada (cita coluna que não é a
-dela mesma) e `EXISTS` recusam nomeando. `(SELECT` em qualquer lugar do
-comando desvia para esta gramática — mesmo quando a forma ainda não existe
-(escalar de um lado errado, `EXISTS`), porque cair aqui dá recusa nomeada em
-vez de virar texto de expressão que o motor não lê.
+dela mesma) recusa nomeando, tanto no `IN` quanto na escalar do item 9.
+`(SELECT` em qualquer lugar do comando desvia para esta gramática — mesmo
+quando a forma ainda não existe, porque cair aqui dá recusa nomeada em vez de
+virar texto de expressão que o motor não lê.
+
+#### `[NOT] EXISTS (SELECT … FROM t [AS x] WHERE c1 AND c2 …)` (pedido 236)
+
+A divergência desta casa: `EXISTS` correlacionado é, no caso comum, uma
+**semijunção por igualdade** — e semijunção por espalhamento (uma passada em
+cada lado) custa muito menos que rodar a subconsulta por LINHA. Por isso só a
+correlação POR IGUALDADE tem substrato:
+
+```json
+{"existe": [{"de": {"op": "varrer", "tabela": "pedidos"}, "apelido": "x",
+             "em": [{"esquerda": "c.id", "direita": "x.cliente_id"}],
+             "nao": false}]}
+```
+
+- Termo `fora.col = x.col` (em qualquer ordem dos lados) vira par em `em`
+  (`esquerda` é sempre a coluna de FORA, `direita` a de DENTRO); termo que só
+  cita coluna de dentro vai para a `expressao` do sub-pedido; termo que cita
+  coluna de fora sem ser essa igualdade, ou o termo inteiro dentro de um
+  `OR`, recusa nomeando. Qualificador de fora é qualquer apelido ou tabela
+  que não seja o de dentro; nome sem qualificador é sempre de dentro.
+- `apelido` é o do lado de dentro — o `AS x`, ou o nome da tabela quando não
+  há `AS` (a mesma convenção do `juntar`). `nao: true` para `NOT EXISTS`.
+- Sem par nenhum (`EXISTS` não correlacionado, "tem linha?") recusa nomeando
+  — ainda não tem substrato. `IN (SELECT …)` correlacionado e subconsulta
+  ESCALAR correlacionada continuam recusando: só o `EXISTS` ganhou a forma
+  por espalhamento nesta rodada.
+- Aplicado DEPOIS de `juntar`/`escalar` e ANTES da `expressao`, filtrando
+  linha por semijunção sem acrescentar coluna nenhuma; cada `de` roda por
+  `executar_derivado`, o MESMO portão (há prova com tabela negada dentro do
+  `EXISTS`).
 
 ### 5. `ROW_NUMBER() OVER (...)`
 
@@ -713,12 +753,14 @@ nomeia coluna) pelo mesmo critério do `UPDATE`/`DELETE` por chave — só índi
 `ON DUPLICATE KEY UPDATE` nunca nomeia índice: o servidor escolhe a primária.
 `excluded.coluna` e expressão no `SET` recusam nomeando.
 
-### 8. `[INNER|LEFT] JOIN ... ON`
+### 8. `[INNER|LEFT|RIGHT|FULL|CROSS] JOIN ... [ON]`
 
 ```text
 FROM t1 [[AS] a1]
-  ([INNER] | LEFT [OUTER]) JOIN ( t2 [[AS] a2] | (SELECT ...) AS a2 )
-  ON coluna[.coluna] = coluna[.coluna] {AND ...}
+  ([INNER] | LEFT [OUTER] | RIGHT [OUTER] | FULL [OUTER]) JOIN
+    ( t2 [[AS] a2] | (SELECT ...) AS a2 )
+    ON coluna[.coluna] = coluna[.coluna] {AND ...}
+  | CROSS JOIN ( t2 [[AS] a2] | (SELECT ...) AS a2 )
   {JOIN ...}*
 ```
 
@@ -735,8 +777,16 @@ quando não há `AS`. O `ON` se divide pelos `AND` de nível superior; cada
 pedaço `coluna = coluna` vira um par em `em` (junção por espalhamento em
 memória), e qualquer outra condição vira fragmento de texto, ANDado na
 `expressao` de fora junto com o `WHERE` — o contrato não tem campo de
-expressão por junção. `RIGHT`, `FULL` e `CROSS` recusam nomeando; `ON` sem
-nenhuma igualdade também.
+expressão por junção. `ON` sem nenhuma igualdade recusa nomeando.
+
+Os cinco `tipo` que o `"tipo"` do JSON leva: `interno`, `esquerdo`, `direito`,
+`completo` (pedido 236) e `cruzado` (idem). Os quatro primeiros levam `em`
+como acima; `cruzado` é o ÚNICO sem `ON` — a chave `em` sai OMITIDA do JSON
+(nunca `[]`, que teria cara de junção comum sem par nenhum), e `CROSS
+JOIN ... ON` recusa nomeando (é produto, sem filtro). Isto é o que a CAMADA
+SQL traduz 1:1; se `direito`/`completo`/`cruzado` têm substrato no
+`consultar` (o motor) é outra frente do mesmo pedido 236 — a direita não se
+escreve mais trocando os lados, mas quem executa é quem decide.
 
 ### 9. Subconsulta ESCALAR no `WHERE`
 
@@ -757,7 +807,11 @@ Não correlacionada, devolvendo exatamente uma linha e uma coluna — o `campo`
  "expressao": "preco > sub_1"}
 ```
 
-Correlação e `EXISTS` recusam nomeando, como no item 4.
+Correlação (cita coluna que não é a dela mesma) recusa nomeando, como no item
+4 — o item 4 abriu correlação por igualdade para `EXISTS`, mas a subconsulta
+ESCALAR continua fechada: aqui é sempre uma comparação com o VALOR de fora, e
+"rodar por linha" custaria uma execução completa por linha da consulta de
+fora, não uma passada só.
 
 ## 8. Quem EXECUTA: as ops que o servidor ganhou, e a costura entre as duas
 
@@ -830,11 +884,18 @@ de lá porque ele é o contrato da resposta.
 
 ### O que ainda recusa nomeando, e onde consertar
 
-- **`ORDER BY p.id`** — nome qualificado na ordem: o analisador recusa com
-  «sobrou "." depois do fim do comando». É da gramática, não da execução.
+O pedido 236 fechou quatro destes pela metade do TRADUTOR (`ORDER BY p.id`,
+`COUNT(coluna)`, os quatro `tipo` de junção, `EXISTS` correlacionado por
+igualdade) — o que segue é o que continua sem substrato depois dessa rodada:
+
 - **`COUNT(*)` sobre visão** — recusa dizendo que não há substrato nesta
   rodada; a contagem se faz com `agrupar` sobre a tabela de dentro.
-- **Junção `RIGHT`, `FULL`, `CROSS`** — recusam nomeando nos dois lados (o
-  tradutor e o `consultar`), e a do `RIGHT` ensina a trocar os lados.
-- **Correlação e `EXISTS`** — recusam nomeando: exigiriam rodar a subconsulta
-  por linha.
+- **`direito`/`completo`/`cruzado` no `consultar`** — a CAMADA SQL já traduz
+  1:1; se o `consultar` (o motor) já sabe executar os três é outra frente do
+  mesmo pedido, não desta seção.
+- **Correlação que não é igualdade** — `IN (SELECT …)` correlacionado,
+  subconsulta ESCALAR correlacionada, e um termo de `EXISTS` que cita coluna
+  de fora sem ser `fora.col = dentro.col` recusam nomeando: exigiriam rodar a
+  subconsulta por linha.
+- **`EXISTS` não correlacionado** — sem par nenhum, é só "tem linha?" e ainda
+  não tem substrato.
