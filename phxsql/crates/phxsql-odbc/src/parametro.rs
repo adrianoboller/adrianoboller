@@ -7,7 +7,7 @@
 //! sem ponteiro.
 
 use crate::registro::Parametro;
-use crate::texto::ler_texto;
+use crate::texto::{ler_texto, ler_texto_utf16};
 use crate::tipos::*;
 use phxsql_core::json::Json;
 
@@ -102,16 +102,18 @@ pub fn recusa_do_tipo_c(tipo_c: SqlSmallint) -> Option<String> {
         // que este driver declara no SQLDescribeParam e SQL_VARCHAR -- cujo
         // padrao e SQL_C_CHAR. Tratar como texto aqui nao e chute: e a
         // consequencia do que o proprio driver responde.
-        SQL_C_CHAR | SQL_C_DEFAULT | SQL_C_SSHORT | SQL_C_SHORT | SQL_C_SLONG | SQL_C_LONG
-        | SQL_C_SBIGINT | SQL_C_DOUBLE | SQL_C_FLOAT | SQL_C_BIT => None,
-        SQL_C_WCHAR => Some(
-            "SQL_C_WCHAR (UTF-16) nao serve de parametro neste driver, que e ANSI \
-             (docs/ODBC.md, secao 2): ligue o valor como SQL_C_CHAR em UTF-8"
-                .into(),
-        ),
+        //
+        // SQL_C_WCHAR entrou no pedido 238: o driver e ANSI (so as funcoes
+        // sem `W`), mas nada impede um cliente de ligar um BUFFER `SQL_C_
+        // WCHAR` -- e converter UTF-16 -> UTF-8 na BORDA (`ler` mais abaixo)
+        // e mais barato para quem chama do que obrigar todo cliente Windows
+        // a converter sozinho antes de ligar.
+        SQL_C_CHAR | SQL_C_DEFAULT | SQL_C_WCHAR | SQL_C_SSHORT | SQL_C_SHORT | SQL_C_SLONG
+        | SQL_C_LONG | SQL_C_SBIGINT | SQL_C_DOUBLE | SQL_C_FLOAT | SQL_C_BIT => None,
         outro => Some(format!(
             "tipo C {outro} nao serve de parametro neste driver; ele le SQL_C_CHAR, \
-             SQL_C_SSHORT, SQL_C_SLONG, SQL_C_SBIGINT, SQL_C_DOUBLE, SQL_C_FLOAT e SQL_C_BIT"
+             SQL_C_WCHAR, SQL_C_SSHORT, SQL_C_SLONG, SQL_C_SBIGINT, SQL_C_DOUBLE, \
+             SQL_C_FLOAT e SQL_C_BIT"
         )),
     }
 }
@@ -220,6 +222,29 @@ pub unsafe fn ler(p: &Parametro) -> Result<Json, (&'static str, String)> {
             };
             Ok(Json::texto_de(ler_texto(p.buf as *const SqlChar, tamanho)))
         }
+        SQL_C_WCHAR => {
+            // O mesmo criterio do SQL_C_CHAR ali em cima -- quem manda quantos
+            // BYTES valem e o indicador, e sem ele (ou com SQL_NTS) vai ate a
+            // unidade 0x0000. So difere no LEITOR: aqui cada unidade tem 2
+            // bytes, e por isso a convencao WCHAR do proprio ODBC ja separa os
+            // dois (`ler_texto_utf16` sabe interpretar o tamanho em bytes).
+            let tamanho = match indicador {
+                Some(i) if i >= 0 => i.min(SqlInteger::MAX as SqlLen) as SqlInteger,
+                _ => SQL_NTS,
+            };
+            match ler_texto_utf16(p.buf as *const SqlWchar, tamanho) {
+                Ok(s) => Ok(Json::texto_de(s)),
+                // 22018: "invalid character value for cast" -- o mesmo estado
+                // que `lib.rs::entregar` ja usa quando o texto de uma celula
+                // nao vira o inteiro/numero pedido; um par substituto quebrado
+                // e a mesma familia de defeito, so que no sentido inverso (o
+                // aplicativo mandou o lixo, nao o servidor).
+                Err(posicao) => Err((
+                    "22018",
+                    format!("parametro {n}: par substituto UTF-16 invalido na unidade {posicao}"),
+                )),
+            }
+        }
         SQL_C_SSHORT | SQL_C_SHORT => Ok(json_de_inteiro(i64::from(std::ptr::read_unaligned(
             p.buf as *const i16,
         )))),
@@ -318,9 +343,13 @@ mod testes {
     // errou.
     #[test]
     fn o_tipo_c_que_o_driver_le_passa_e_o_resto_recusa_nomeando() {
+        // SQL_C_WCHAR entrou na lista do que passa no pedido 238 -- o driver
+        // continua ANSI (so as funcoes sem `W`), mas o BUFFER de um parametro
+        // agora pode ser UTF-16, convertido na borda.
         for bom in [
             SQL_C_CHAR,
             SQL_C_DEFAULT,
+            SQL_C_WCHAR,
             SQL_C_SLONG,
             SQL_C_LONG,
             SQL_C_SSHORT,
@@ -331,11 +360,6 @@ mod testes {
         ] {
             assert!(recusa_do_tipo_c(bom).is_none(), "tipo C {bom} devia passar");
         }
-        let w = recusa_do_tipo_c(SQL_C_WCHAR).expect("UTF-16 tem de recusar neste driver ANSI");
-        assert!(
-            w.contains("SQL_C_CHAR"),
-            "a recusa tem de dizer o que usar: {w}"
-        );
         let outro = recusa_do_tipo_c(-99).expect("tipo C inventado tem de recusar");
         assert!(
             outro.contains("-99"),
@@ -476,6 +500,58 @@ mod testes {
         assert_eq!(
             contar_interrogacoes("SELECT * FROM c WHERE d = 'ação' AND x = ?"),
             1
+        );
+    }
+
+    // Pedido 238, a prova real que o contrato pede: "São João" (acento no
+    // BMP) MAIS um emoji (fora do BMP, par substituto) de ida e volta -- o
+    // buffer UTF-16 montado A MAO, na ordem nativa, como o gestor de drivers
+    // entrega, e o JSON de `parametros` carregando o UTF-8. Comprimento em
+    // BYTES (a convencao WCHAR), pelo indicador.
+    #[test]
+    fn wchar_de_entrada_vira_utf8_pelo_indicador_em_bytes() {
+        let texto = "São João 😀";
+        let unidades: Vec<u16> = texto.encode_utf16().collect();
+        let mut ind: SqlLen = (unidades.len() * 2) as SqlLen;
+        let p = liga(
+            SQL_C_WCHAR,
+            unidades.as_ptr() as usize,
+            &mut ind as *mut SqlLen as usize,
+        );
+        assert_eq!(unsafe { ler(&p) }.unwrap(), Json::texto_de(texto));
+    }
+
+    // A outra forma de tamanho: SQL_NTS, achando o fim pela unidade 0x0000 --
+    // sem indicador nenhum ligado (o mesmo "sem indicador vale NTS" do
+    // SQL_C_CHAR).
+    #[test]
+    fn wchar_de_entrada_por_sql_nts() {
+        let texto = "São João 😀";
+        let mut unidades: Vec<u16> = texto.encode_utf16().collect();
+        unidades.push(0);
+        let p = liga(SQL_C_WCHAR, unidades.as_ptr() as usize, 0);
+        assert_eq!(unsafe { ler(&p) }.unwrap(), Json::texto_de(texto));
+    }
+
+    // Substituto invalido recusa NOMEANDO A POSICAO -- nunca vira U+FFFD
+    // calado, porque um "?" no lugar do emoji seria o dado errado gravado sem
+    // erro nenhum.
+    #[test]
+    fn wchar_substituto_invalido_recusa_nomeando_a_posicao() {
+        let mut unidades: Vec<u16> = "ok".encode_utf16().collect();
+        unidades.push(0xD800); // alto solto na unidade 2
+        let mut ind: SqlLen = (unidades.len() * 2) as SqlLen;
+        let p = liga(
+            SQL_C_WCHAR,
+            unidades.as_ptr() as usize,
+            &mut ind as *mut SqlLen as usize,
+        );
+        let erro = unsafe { ler(&p) }.unwrap_err();
+        assert_eq!(erro.0, "22018");
+        assert!(
+            erro.1.contains('2'),
+            "a recusa tem de nomear a posicao (unidade 2): {}",
+            erro.1
         );
     }
 }
