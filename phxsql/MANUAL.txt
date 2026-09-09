@@ -3249,6 +3249,25 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
 
     UM config.json SEM "colunas" SE COMPORTA EXATAMENTE COMO ANTES.
 
+    A COLUNA E CONFERIDA CONTRA O ESQUEMA (a partir de 09/09/2026). Uma
+    regra que cita coluna que a tabela NAO TEM era inerte e calada: quem
+    escrevia "salrio" achava que restringiu e nao restringiu nada. Agora o
+    arranque e as tres operacoes de cadastro (14.5) conferem cada nome
+    contra a tabela, quando ela existe:
+
+        - coluna que a tabela nao tem: RECUSA, nomeando usuario, base,
+          tabela e coluna, e listando as colunas que existem;
+        - base ou tabela que ainda nao existe: ACEITA COM AVISO -- e a mesma
+          decisao da chave estrangeira declarada antes da tabela. A regra
+          passa a valer quando ela nascer, e o criar_tabela devolve a lista
+          "avisos" se a tabela nascer SEM a coluna citada (a regra continua
+          la, inerte, ate o cadastro ser corrigido);
+        - "*" em base ou tabela: nao se confere -- o curinga nao nomeia
+          tabela nenhuma.
+
+    A comparacao e sem caixa, como a da propria peneira: "Salario" nao e
+    erro de digitacao.
+
     LEITURA. A coluna negada sai da resposta de ler, varrer, buscar,
     procurar_texto, SelectMemory -- e do que a op sql produz, porque cada
     passo dela e um desses. Perguntar pela coluna tambem responde, entao
@@ -3341,7 +3360,13 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
         - mexer no "root": ele e a porta de entrada de quando o cadastro
           sai errado, e continua sendo edicao do arquivo;
         - login que nunca autenticaria -- vazio, com espaco na ponta (o
-          login apara antes de comparar) ou com caractere de controle.
+          login apara antes de comparar) ou com caractere de controle;
+        - regra de coluna ("colunas", secao 14.3.2) que cita coluna que a
+          tabela NAO TEM: a recusa nomeia usuario, base, tabela e coluna,
+          e lista as colunas que existem, para o erro de digitacao se
+          achar. Tabela que ainda nao existe e aceita, e a resposta traz a
+          lista "avisos" dizendo qual -- a regra passa a valer quando ela
+          nascer. O arranque confere o config.json do mesmo jeito.
 
     QUEM E EXCLUIDO OU DESATIVADO perde a sessao no PEDIDO SEGUINTE da
     propria conexao, com o "faca login" de sempre. A conexao nao e
