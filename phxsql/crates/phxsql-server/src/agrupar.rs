@@ -165,13 +165,9 @@ pub fn agrupar(
             .iter()
             .zip(accs.iter())
             .map(|(a, acc)| {
-                let (decimal, escala) = match a.coluna.and_then(|c| colunas.get(c)) {
-                    Some(c) => match c.ty {
-                        ColumnType::Decimal { escala, .. } => (true, escala),
-                        _ => (false, 0),
-                    },
-                    None => (false, 0),
-                };
+                let (decimal, escala) = crate::pivot::decimal_e_escala(
+                    a.coluna.and_then(|c| colunas.get(c)).map(|c| &c.ty),
+                );
                 fechar_valor(acc, a.funcao, decimal, escala)
             })
             .collect();

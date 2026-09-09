@@ -174,6 +174,42 @@ fn rotulo_cru(v: &Value) -> String {
     }
 }
 
+/// O TIPO com que um agregado sai -- decidido num lugar so, e usado tanto
+/// para tipar o valor de cada grupo (`fechar_valor`) quanto para o cabecalho
+/// `colunas` do `agrupar`, que precisa dizer a forma ANTES de existir grupo.
+///
+/// Medido em 09/09/2026, e diferente do que o contrato do pedido 237 dizia:
+/// `soma`/`media`/`minimo`/`maximo` de uma coluna que NAO e `Decimal` saem
+/// como `Real8`, e nao como o tipo da coluna -- o acumulador soma em `f64`
+/// para tudo que nao e inteiro escalado, e a media de inteiros e uma fracao.
+/// `Decimal` sai `Decimal { 38, escala da coluna }`, com a media dividindo o
+/// inteiro escalado UMA vez (truncando na escala da coluna). Contagem e
+/// distintos sao `UInt8`.
+pub(crate) fn tipo_do_agregado(
+    ag: Agregador,
+    decimal: bool,
+    escala: u8,
+) -> phxsql_core::types::ColumnType {
+    use phxsql_core::types::ColumnType;
+    match ag {
+        Agregador::Contagem | Agregador::ContagemDistinta => ColumnType::UInt8,
+        _ if decimal => ColumnType::Decimal {
+            precisao: 38,
+            escala,
+        },
+        _ => ColumnType::Real8,
+    }
+}
+
+/// `(decimal, escala)` de uma coluna: o par que `fechar_valor` e
+/// `tipo_do_agregado` pedem. So o `Decimal` tem escala; o resto e `(false, 0)`.
+pub(crate) fn decimal_e_escala(ty: Option<&phxsql_core::types::ColumnType>) -> (bool, u8) {
+    match ty {
+        Some(phxsql_core::types::ColumnType::Decimal { escala, .. }) => (true, *escala),
+        _ => (false, 0),
+    }
+}
+
 /// Fecha um acumulador no VALOR tipado, e nao no texto da celula.
 ///
 /// O pivot fecha em `String` porque celula de grade e texto. O `agrupar`
@@ -185,20 +221,18 @@ fn rotulo_cru(v: &Value) -> String {
 ///
 /// Duas saidas do MESMO acumulador, e nao dois acumuladores: a soma exata em
 /// dominio inteiro escalado e a media que divide uma vez no fim moram aqui em
-/// cima, e uma segunda copia delas divergiria no primeiro arredondamento.
+/// cima, e uma segunda copia delas divergiria no primeiro arredondamento. O
+/// TIPO da saida vem de `tipo_do_agregado`, pelo mesmo motivo.
 pub(crate) fn fechar_valor(
     a: &Acumulador,
     ag: Agregador,
     decimal: bool,
     escala: u8,
 ) -> (Value, phxsql_core::types::ColumnType) {
-    use phxsql_core::types::ColumnType;
-    match ag {
-        Agregador::Contagem => (Value::UInt(a.n), ColumnType::UInt8),
-        Agregador::ContagemDistinta => (
-            Value::UInt(a.vistos.as_ref().map_or(0, |s| s.len()) as u64),
-            ColumnType::UInt8,
-        ),
+    let tipo = tipo_do_agregado(ag, decimal, escala);
+    let v = match ag {
+        Agregador::Contagem => Value::UInt(a.n),
+        Agregador::ContagemDistinta => Value::UInt(a.vistos.as_ref().map_or(0, |s| s.len()) as u64),
         _ if decimal => {
             let v = match ag {
                 Agregador::Soma => a.soma_i,
@@ -210,18 +244,11 @@ pub(crate) fn fechar_valor(
             };
             // Nao ha valor nenhum no grupo -> NULO, e nao zero: somar «nada»
             // nao da zero reais, da resposta nenhuma. E o que todo SQL faz.
-            let v = if a.n == 0 {
+            if a.n == 0 {
                 Value::Null
             } else {
                 Value::Decimal(v)
-            };
-            (
-                v,
-                ColumnType::Decimal {
-                    precisao: 38,
-                    escala,
-                },
-            )
+            }
         }
         _ => {
             let v = match ag {
@@ -232,14 +259,14 @@ pub(crate) fn fechar_valor(
                 Agregador::Maximo => a.max_f.unwrap_or(0.0),
                 _ => 0.0,
             };
-            let v = if a.n == 0 {
+            if a.n == 0 {
                 Value::Null
             } else {
                 Value::Real(v)
-            };
-            (v, ColumnType::Real8)
+            }
         }
-    }
+    };
+    (v, tipo)
 }
 
 /// Um campo agrupado por periodo em vez de valor exato.

@@ -735,8 +735,20 @@ quando não há `AS`. O `ON` se divide pelos `AND` de nível superior; cada
 pedaço `coluna = coluna` vira um par em `em` (junção por espalhamento em
 memória), e qualquer outra condição vira fragmento de texto, ANDado na
 `expressao` de fora junto com o `WHERE` — o contrato não tem campo de
-expressão por junção. `RIGHT`, `FULL` e `CROSS` recusam nomeando; `ON` sem
-nenhuma igualdade também.
+expressão por junção.
+
+**`tipo`** é `interno`, `esquerdo`, `direito`, `completo` ou `cruzado`, e os
+cinco vivem no MOTOR (`consultar.rs::juntar`) — não por troca de lados no
+tradutor. A linha sem casamento sai com **todas** as colunas do outro lado
+nulas, e os nomes dessas colunas vêm do **modelo** do outro lado, não da
+primeira linha dele: por isso o `esquerdo` com a **direita vazia** ainda traz
+as colunas da direita, presentes e nulas. A ordem das colunas é sempre
+esquerda e depois direita, nos dois sentidos. O `cruzado` é o produto e **não**
+leva `em` (se vier, recusa nomeando); seu teto `recursos.max_linhas` é
+conferido **antes** de materializar, e esquerda × direita acima do teto recusa
+nomeando os dois tamanhos. Fora do `cruzado`, `ON` sem nenhuma igualdade
+recusa. O tradutor SQL faz `RIGHT [OUTER] JOIN`, `FULL [OUTER] JOIN` e
+`CROSS JOIN` → 1:1 (frente C20-SQL).
 
 ### 9. Subconsulta ESCALAR no `WHERE`
 
@@ -747,7 +759,8 @@ coluna[.coluna] ( = | <> | < | <= | > | >= ) (SELECT ...)
 Não correlacionada, devolvendo exatamente uma linha e uma coluna — o `campo`
 é o nome dela (o apelido, dado ou padrão, quando é um agregado). Numerada
 `sub_1`, `sub_2`... na ordem em que apareceu; a comparação é reescrita na
-`expressao` de fora:
+`expressao` de fora, e o escalar entra no modelo com o **tipo** que o
+sub-pedido dele declara (por isso `preco > sub_1` compara Decimal com Decimal):
 
 ```json
 {"escalar": [{"nome": "sub_1",
@@ -757,7 +770,39 @@ Não correlacionada, devolvendo exatamente uma linha e uma coluna — o `campo`
  "expressao": "preco > sub_1"}
 ```
 
-Correlação e `EXISTS` recusam nomeando, como no item 4.
+### 10. `[NOT] EXISTS` correlacionado — a semijunção `existe`
+
+`EXISTS` correlacionado por **igualdade** é uma semijunção por espalhamento: uma
+passada em cada lado, sem rodar a subconsulta por linha. É a divergência desta
+casa — correlação só por igualdade, e o resto recusa nomeando, porque cada
+sub-pedido é materializado inteiro pelo portão de permissão e rodá-lo N vezes
+seria N passagens por ele.
+
+```json
+{"existe": [{"de": {"op": "varrer", "tabela": "pedidos"}, "apelido": "x",
+             "em": [{"esquerda": "c.id", "direita": "x.cliente_id"}],
+             "nao": false}]}
+```
+
+Aplicado **depois** de `juntar` e `escalar` e **antes** de `expressao`; mantém
+a linha de fora que tem (ou, com `"nao": true`, que não tem) casamento; **não
+acrescenta coluna**. `em` obrigatório com ao menos um par; nome sem prefixo
+resolve quando é único naquele lado, como no `juntar`. Cada `de` roda pelo
+mesmo `executar_derivado` e entra em `direito_coluna::tabelas_do_pedido` (o
+quinto caminho ao dado). Tradutor SQL:
+`[NOT] EXISTS (SELECT … FROM t [AS x] WHERE c1 AND c2 …)` — termo
+`fora.col = x.col` vira par em `em`, termo só de dentro vai para a `expressao`
+do sub-pedido, e correlação que não seja igualdade (ou dentro de um `OR`)
+recusa nomeando. `IN (SELECT …)` correlacionado e escalar correlacionado
+continuam recusando.
+
+### 11. `COUNT(coluna)` e `ORDER BY` qualificado
+
+`{"funcao": "contagem", "coluna": "c"}` no `agrupar` conta os valores **não
+nulos** de `c`; sem `coluna`, conta linhas (`COUNT(*)`). `COUNT(DISTINCT c)` é
+`distintos`. E `ordem` aceita nome qualificado — `{"coluna": "p.id"}` —,
+resolvendo o único sem prefixo e recusando o ambíguo nomeando os dois; o
+`Decimal` ordena como número, não como texto.
 
 ## 8. Quem EXECUTA: as ops que o servidor ganhou, e a costura entre as duas
 
@@ -791,9 +836,12 @@ chega pela rede. Ler uma tabela por ali exigiria acrescentar um caminho de
 leitura a um módulo que não tem nenhum, e isso aparece na revisão; espalhar o
 portão por dentro da composição é que seria invisível.
 
-São **quatro** os caminhos até uma tabela dentro de um `consultar` — o `de`, o
-`de` de cada junção, o de cada `escalar` e o de cada `em` — e os quatro passam
-pela mesma função. Há teste com tabela negada em cada um.
+São **cinco** os caminhos até uma tabela dentro de um `consultar` — o `de`, o
+`de` de cada junção, o de cada `escalar`, o de cada `em` e o de cada `existe` —
+e os cinco passam pela mesma função. Há teste com tabela negada em cada um, e
+`existe[].de` entrou também em `direito_coluna::tabelas_do_pedido` — a lei da
+casa: quando o portão passa a olhar um campo novo, procure quem não tem esse
+campo.
 
 E a permissão entra **duas vezes** num `SELECT` composto, porque o
 planejamento também lê: `planejar_consulta` pede o `esquema` de cada tabela
@@ -801,19 +849,27 @@ citada pelo `executar_derivado`, para pegar os índices que o tradutor precisa.
 A primeira recusa antes de montar o plano; a segunda recusaria de qualquer
 jeito.
 
-### O `Decimal` do `consultar` compara como TEXTO — e a recusa diz isso
+### O `Decimal` do `consultar` compara como NÚMERO — pelo tipo do modelo
 
-A linha chega ao `consultar` como o sub-pedido a devolveu, sem esquema. O
-resolvedor decide pelo formato do JSON: número sem parte fracionária é
-inteiro, com parte fracionária é real, texto é texto. Um `Decimal` viaja como
-**texto** no protocolo inteiro (para não passar por um `f64`), então
-`preco = '10.01'` funciona e `preco > 10` **recusa dizendo** que o filtro deve
-ir para a `expressao` do próprio sub-pedido, que lê o tipo do esquema e compara
-no domínio inteiro escalado.
+Cada lado chega ao `consultar` com o **modelo** ao lado das linhas — nome e
+tipo de cada coluna, de `Vec<(String, ColumnType)>`. Ele sai do esquema da
+tabela (`varrer`/`buscar`), do cabeçalho `colunas` que `agrupar` e o próprio
+`consultar` respondem, e viaja prefixado junto das linhas a cada junção. A
+`expressao` converte cada célula **pelo tipo do modelo** (o mesmo
+`json_para_valor` do `inserir`), então um `Decimal`, que viaja como texto
+(`"9.50"`), **compara como número**: `preco > media` com `9.50` e `10.00` dá
+falso, e `preco > 10` também.
 
-Converter todo texto que *parece* número seria pior: mudaria o significado de
-uma coluna de texto — `codigo = '10'` deixaria de casar com o código `10`
-gravado como texto.
+Uma coluna `Str` que contém `"10"` **continua texto** — rótulo se estiliza,
+dado nunca —, e `codigo > 9` recusa por tipo, dizendo que uma coluna de texto
+continua texto mesmo quando guarda dígitos. A chave de junção e de `IN` segue
+sendo o texto canônico do valor, e `"10.00"` continua não casando com `10`:
+são colunas de tipos diferentes.
+
+E a resposta traz `"colunas": [{"nome": …, "tipo": …}]` — o modelo final, na
+grafia do `esquema` —, antes das linhas: é por ele que um `consultar` aninhado
+e o cliente sabem a forma da linha sem esperar a primeira chegar, e é o que dá
+nome às colunas de um resultado **vazio**.
 
 ### O defeito que só apareceu na costura: a projeção acontecia duas vezes
 
@@ -828,13 +884,19 @@ caminho inteiro, num `SELECT nome AS quem FROM v_todos`. Hoje `resposta_do_sql`
 não reprojeta o que a op já projetou, e o cabeçalho `colunas` continua saindo
 de lá porque ele é o contrato da resposta.
 
-### O que ainda recusa nomeando, e onde consertar
+### O que o MOTOR já faz, e o que ainda recusa
 
-- **`ORDER BY p.id`** — nome qualificado na ordem: o analisador recusa com
-  «sobrou "." depois do fim do comando». É da gramática, não da execução.
+O motor (`consultar`) passou a fazer, em 09/09/2026: as junções `direito`,
+`completo` e `cruzado`; a semijunção `existe`; `COUNT(coluna)` contando não
+nulos; `ORDER BY` por nome qualificado; e o modelo tipado dos dois lados, com
+`Decimal` comparando como número. O tradutor SQL dessas formas
+(`RIGHT`/`FULL`/`CROSS JOIN`, `EXISTS`, `COUNT(coluna)`, `ORDER BY p.id`) é da
+frente C20-SQL.
+
+Continuam recusando nomeando, por decisão:
+
+- **Correlação que não seja igualdade** (ou dentro de um `OR`), `IN (SELECT …)`
+  correlacionado e subconsulta **escalar** correlacionada — exigiriam rodar a
+  subconsulta por linha, N passagens pelo portão.
 - **`COUNT(*)` sobre visão** — recusa dizendo que não há substrato nesta
   rodada; a contagem se faz com `agrupar` sobre a tabela de dentro.
-- **Junção `RIGHT`, `FULL`, `CROSS`** — recusam nomeando nos dois lados (o
-  tradutor e o `consultar`), e a do `RIGHT` ensina a trocar os lados.
-- **Correlação e `EXISTS`** — recusam nomeando: exigiriam rodar a subconsulta
-  por linha.
