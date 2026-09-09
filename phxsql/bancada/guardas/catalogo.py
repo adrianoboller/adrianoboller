@@ -1008,6 +1008,55 @@ GUARDAS = [
             "tabela_escrita_antes_da_cifra_continua_abrindo",
         ],
     },
+    {
+        "id": "coluna-externa-sozinha-em-claro",
+        "titulo": "tabela cujas únicas colunas marcadas são externas nasce em claro",
+        "porque": (
+            "pedido 210, entregue vermelho em 05/09/2026 e consertado em "
+            "09/09/2026. A condicao que LIGA o material do `.reg` era derivada "
+            "das faixas INLINE (`faixas.is_empty()`): coluna `Memo`/`Bin` "
+            "marcada nao gera faixa, entao a tabela nascia `EM_CLARO` com o "
+            "cofre ligado e o `selar_externo` -- escrito e certo -- nunca era "
+            "ligado. O conserto le `Schema::tem_dado_pessoal`, que enxerga as "
+            "externas. E a forma dos pedidos 172, 173 e 176: o conserto entrou "
+            "no caminho que o motivou e o irmao ficou."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        let material = if esquema.tem_dado_pessoal() {
+            cofre::Material::novo()?
+        } else {
+            cofre::Material::EM_CLARO
+        };
+""",
+        "troca": """        // DEFEITO REPOSTO: o material sai das faixas inline, e coluna externa
+        // marcada nao gera faixa.
+        let material = if faixas.is_empty() {
+            cofre::Material::EM_CLARO
+        } else {
+            cofre::Material::novo()?
+        };
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cifra-dos-dados"],
+        "caem": [
+            "coluna_externa_marcada_sozinha_nao_pode_ir_em_claro",
+            # As duas provam o mesmo lado por outro caminho: com o material em
+            # claro, marcar depois passa a ser aceito (a recusa so existe em
+            # tabela cifrada) e a coluna inline acrescentada nao ganha etiqueta.
+            "marcar_coluna_depois_numa_tabela_cifrada_e_recusado_e_o_grau_pode_mudar",
+            "acrescentar_coluna_inline_marcada_a_tabela_cifrada_so_de_externas_sela_a_nova",
+        ],
+        # O comportamento velho tem de continuar de pe com o defeito reposto:
+        # tabela sem marca em claro, tabela com inline marcada cifrada. Se um
+        # deles cair, a troca quebrou mais que o defeito de origem.
+        "seguem": [
+            "tabela_sem_coluna_marcada_continua_em_claro_com_o_cofre_ligado",
+            "coluna_inline_marcada_continua_com_a_etiqueta_de_16_bytes",
+            "o_dado_da_coluna_marcada_some_do_disco",
+            "cifrada_a_tabela_funciona_igual",
+            "sem_cofre_nada_muda_no_disco",
+        ],
+    },
     # -----------------------------------------------------------------------
     # 9. A catraca dos textos fora da fabrica
     # -----------------------------------------------------------------------

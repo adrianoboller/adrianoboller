@@ -262,11 +262,20 @@ impl RegFile {
         // Uma tabela SEM coluna marcada nasce em claro mesmo com o cofre
         // ligado: nao ha o que cifrar, e carimba-la de cifrada custaria 16
         // bytes por linha e um cabecalho maior para nao proteger nada.
+        //
+        // O que decide e «ha dado pessoal DECLARADO» -- inline OU externa --,
+        // e nao «ha faixa inline». Ate 09/09/2026 (pedido 210) a condicao lia
+        // `faixas.is_empty()`, e uma tabela cujas unicas colunas marcadas eram
+        // `Memo`/`Bin` nascia em claro com o cofre ligado: o `selar_externo`
+        // estava escrito e certo, e nunca era ligado, porque o material que o
+        // liga saia so das colunas inline. Com so externas o slot continua
+        // sem etiqueta (o rabo e zero: nao ha faixa para selar), e o material
+        // existe pelo conteudo do `.memo`/`.bin`.
         let faixas = faixas_pessoais(&esquema)?;
-        let material = if faixas.is_empty() {
-            cofre::Material::EM_CLARO
-        } else {
+        let material = if esquema.tem_dado_pessoal() {
             cofre::Material::novo()?
+        } else {
+            cofre::Material::EM_CLARO
         };
         let cab_len = if material.cifrado() {
             CAB_LEN_CIFRADO
@@ -443,10 +452,16 @@ impl RegFile {
         };
 
         let faixas = faixas_pessoais(&esquema)?;
-        if material.cifrado() && faixas.is_empty() {
+        if material.cifrado() && !esquema.tem_dado_pessoal() {
             // O arquivo diz que cifrou e o esquema nao tem coluna marcada:
             // alguem desmarcou a coluna DEPOIS de a tabela nascer. Ler assim
             // devolveria o texto cifrado como se fosse texto, sem erro.
+            //
+            // `tem_dado_pessoal`, e nao `faixas.is_empty()`: uma tabela so de
+            // externas tem material e nenhuma faixa. Esta conferencia lia a
+            // mesma premissa do `criar` -- medido em 09/09/2026, com a
+            // condicao do `criar` trocada e esta nao, a guarda passava e a
+            // tabela nao reabria, recusada por «desmarcar nao decifra».
             return Err(PhxError::Corrompido(format!(
                 "{nome_arq} foi gravado com coluna cifrada e o esquema nao tem \
                  nenhuma coluna marcada como dado pessoal: desmarcar a coluna \
@@ -1005,6 +1020,16 @@ impl RegFile {
         self.volumes.tem_espelho()
     }
 
+    /// Este `.reg` nasceu cifrado?
+    ///
+    /// E do ARQUIVO, e nao do processo: `cofre::ligado()` diz se ha chave no
+    /// servidor, isto diz se esta tabela usa uma. Divergem em toda tabela
+    /// nascida antes de o cofre ser ligado -- e nas que nasceram em claro pelo
+    /// defeito do pedido 210, que e o motivo de o acessor existir.
+    pub fn cifrada(&self) -> bool {
+        self.material.cifrado()
+    }
+
     pub fn esquema(&self) -> &Schema {
         &self.esquema
     }
@@ -1061,10 +1086,40 @@ impl RegFile {
         for (coluna, grau) in marcas {
             novo.marcar_dado_pessoal(coluna, *grau)?;
         }
+        // Numa tabela CIFRADA o conjunto das colunas marcadas e o que decide o
+        // que foi selado -- as faixas de cada slot e os blocos do `.memo` e do
+        // `.bin` ja gravados. Marcar uma coluna a mais deixaria o que ja esta
+        // no disco em claro sob um esquema que diz «cifrado»: a faixa nova
+        // seria lida como cifrada e devolveria lixo. Desmarcar devolveria
+        // bytes cifrados como se fossem texto. Os dois exigiriam reselar a
+        // tabela inteira, e essa operacao nao existe. O GRAU (pessoal ou
+        // sensivel) pode mudar: ele nao muda o que se sela.
+        //
+        // Ate 09/09/2026 isto era recusado por acidente: a conta do slot_size
+        // abaixo nao contava o rabo da etiqueta e recusava TODA remarcacao em
+        // tabela cifrada, com uma mensagem que falava de estrutura. Uma tabela
+        // so de externas tem rabo zero, passaria por ela com as faixas velhas
+        // na memoria, e reabriria com «slot_size nao bate com o esquema».
+        if self.material.cifrado() {
+            let posicoes = |e: &Schema| -> Vec<usize> {
+                e.colunas_pessoais().into_iter().map(|(i, _)| i).collect()
+            };
+            if posicoes(&self.esquema) != posicoes(&novo) {
+                return Err(PhxError::Esquema(format!(
+                    "a tabela {} nasceu cifrada com as colunas marcadas que tem: marcar \
+                     ou desmarcar uma coluna depois exigiria reselar o que ja esta \
+                     gravado, e isso nao existe -- so o grau (pessoal/sensivel) pode mudar",
+                    self.esquema.nome()
+                )));
+            }
+        }
         // O mesmo cinto de seguranca do outro caminho: se um dia a marca
         // passar a mexer no payload, o erro aparece aqui e nao numa linha
         // lida pelo tamanho errado.
-        if SLOT_CAB + novo.payload_len() != self.slot_size {
+        let faixas_novas = faixas_pessoais(&novo)?;
+        let esperado =
+            SLOT_CAB + novo.payload_len() + self.material.rabo(largura_marcada(&faixas_novas));
+        if esperado != self.slot_size {
             return Err(PhxError::Esquema(
                 "marcar dado pessoal mudaria o slot_size; isso e alterar \
                  estrutura, e nao declaracao"
@@ -1202,6 +1257,13 @@ impl RegFile {
         let origem = self.data_offset;
         let slot_velho = self.slot_size;
         let faixas_velhas = self.faixas.clone();
+        // O material e o da tabela e nao se rederiva aqui: coluna marcada
+        // acrescentada a uma tabela que nasceu em claro continua em claro.
+        // «Ligar a cifra nao cifra o que ja existe» vale para a coluna nova
+        // tambem -- cifrar so a partir dela exigiria virar o volume inteiro
+        // para a versao 5, e isso e uma operacao com nome, nao um efeito de
+        // acrescentar coluna. Nomeado em FORMATO.md §1.1; o `esquema` responde
+        // `material` para que isso nao fique invisivel.
         let material = self.material;
 
         let refazer_payload = |antigo: &[u8]| -> Vec<u8> {
@@ -2153,6 +2215,14 @@ fn alinhar(v: u64, a: u64) -> u64 {
 /// ponteiro daria a aparencia de protecao com o conteudo aberto do lado, que
 /// e pior que nao cifrar. O conteudo de coluna externa marcada e selado pela
 /// `Table`, antes de chegar ao bloco. Ver `table.rs`.
+///
+/// # O que esta lista decide, e o que ela NAO decide
+///
+/// Ela decide o que se sela DENTRO do slot e o tamanho do rabo. Ela nao
+/// decide se a tabela tem material: isso sai de `Schema::tem_dado_pessoal`,
+/// que enxerga as externas. Derivar o material daqui foi o defeito do pedido
+/// 210 -- lista vazia lida como «nada a proteger», quando era «nada a
+/// proteger no slot».
 fn faixas_pessoais(esquema: &Schema) -> Result<Vec<(usize, usize)>> {
     let mut faixas = Vec::new();
     for (i, col) in esquema.colunas_pessoais() {

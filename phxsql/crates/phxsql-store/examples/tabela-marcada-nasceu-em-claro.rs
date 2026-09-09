@@ -8,10 +8,13 @@
 //! # Por que ele existe
 //!
 //! Medido em 05/09/2026: uma tabela cujas UNICAS colunas marcadas sao
-//! EXTERNAS (`Memo`/`Bin`) nasce em claro mesmo com o cofre ligado, e o texto
-//! sigiloso vai legivel para o `.memo`. A cadeia esta na guarda vermelha
+//! EXTERNAS (`Memo`/`Bin`) nascia em claro mesmo com o cofre ligado, e o texto
+//! sigiloso ia legivel para o `.memo`. A cadeia esta na guarda
 //! `coluna_externa_marcada_sozinha_nao_pode_ir_em_claro`
-//! (`tests/cifra-dos-dados.rs`) e na cognicao do dia.
+//! (`tests/cifra-dos-dados.rs`), entregue vermelha naquele dia e consertada
+//! em 09/09/2026 (pedido 210). Desde entao este conferidor e CATRACA: o que
+//! ele acha nasceu antes do conserto, e continua em claro de proposito --
+//! guarda nova entra pedida, nao imposta.
 //!
 //! O achado veio com um buraco nomeado junto: **ninguem sabia quantas tabelas
 //! estao nesse estado**, e sem esse numero o alcance do defeito era suposicao.
@@ -194,9 +197,12 @@ fn main() {
         }
     }
     println!(
-        "\nUma tabela so nasce cifrada quando ha coluna marcada INLINE: a\n\
-         condicao que liga a cifra ignora as externas (`faixas_pessoais`,\n\
-         reg.rs). Ver a guarda `coluna_externa_marcada_sozinha_nao_pode_ir_em_claro`."
+        "\nAte 09/09/2026 (pedido 210) a condicao que liga a cifra so olhava as\n\
+         colunas INLINE, e uma tabela cujas unicas marcadas eram externas nascia\n\
+         em claro. O conserto vale para o que se CRIA daqui em diante; estas\n\
+         nasceram antes e continuam em claro -- nao ha recifragem automatica.\n\
+         Para recifrar: crie a tabela de novo e copie as linhas. A op `esquema`\n\
+         responde `material` por tabela, para isto nao ficar invisivel."
     );
     std::process::exit(1);
 }

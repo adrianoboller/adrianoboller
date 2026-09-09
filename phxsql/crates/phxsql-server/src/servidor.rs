@@ -866,6 +866,21 @@ pub struct Servidor {
 }
 
 /// Texto de expressao no JSON do esquema: o texto, ou nulo quando nao ha.
+/// O material EM DISCO de uma tabela, como texto de resposta.
+///
+/// `cifra.ligada` (op `config`) e do PROCESSO; isto e do ARQUIVO. Divergem em
+/// toda tabela nascida antes de o cofre ser ligado -- e nas que nasceram em
+/// claro pelo defeito do pedido 210 (unicas colunas marcadas externas). Sem
+/// este campo, «cifra ligada» era meia-verdade por tabela, e ninguem tinha
+/// como perguntar ao servidor qual tabela protege o que declarou.
+fn material_da_tabela(t: &Table) -> &'static str {
+    if t.cifrada() {
+        "cifrado"
+    } else {
+        "em_claro"
+    }
+}
+
 fn texto_ou_nulo(t: Option<&str>) -> Json {
     match t {
         Some(t) => Json::texto_de(t),
@@ -9711,6 +9726,10 @@ impl Servidor {
                 achados.push(Json::objeto(vec![
                     ("tabela", Json::texto_de(&nome)),
                     ("registros", Json::de_u64(t.registros())),
+                    // Um relatorio de conformidade que lista a coluna
+                    // sensivel e nao diz se ela esta protegida no disco
+                    // conta metade da historia. Ver `material_da_tabela`.
+                    ("material", Json::texto_de(material_da_tabela(&t))),
                     ("total", Json::de_u64(da_tabela.len() as u64)),
                     ("colunas", Json::Lista(da_tabela)),
                 ]));
@@ -14807,6 +14826,9 @@ impl Servidor {
             ("arquivos", Json::Lista(arquivos)),
             ("registros", Json::de_u64(t.registros())),
             ("slots", Json::de_u64(t.slots())),
+            // O material do `.reg` desta tabela -- e nao o interruptor do
+            // servidor. Ver `material_da_tabela`.
+            ("material", Json::texto_de(material_da_tabela(&t))),
             // A UNICA diretiva que e da tabela e nao da geometria nem do
             // servidor. Ela era lida no `excluir` e nao aparecia em lugar
             // nenhum do esquema: a tela de Configuracoes da tabela nao tinha
@@ -24868,6 +24890,30 @@ mod testes_direito_por_coluna {
         )
         .unwrap();
         assert!(c.campo("colunas_sem_leitura").is_none(), "{}", c.escrever());
+    }
+
+    /// O `esquema` diz o material EM DISCO da tabela. Aqui o cofre esta
+    /// desligado -- este binario nao pode liga-lo, a chave e do processo --,
+    /// entao a resposta certa e `em_claro`, e o campo tem de EXISTIR: um
+    /// campo que so aparece quando cifrado deixaria a tela sem saber se a
+    /// tabela e antiga ou se o servidor nao sabe responder. O lado `cifrado`
+    /// esta em `tests/cifra-pelo-config.rs`, num processo proprio.
+    #[test]
+    fn o_esquema_diz_o_material_em_disco() {
+        let dir = dir_temp("material");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"esquema","database":"b","tabela":"clientes""#,
+        )
+        .unwrap();
+        assert_eq!(
+            e.texto_ou("material", "<ausente>"),
+            "em_claro",
+            "{}",
+            e.escrever()
+        );
     }
 
     // ------------------------------------------------------------------ escrita
