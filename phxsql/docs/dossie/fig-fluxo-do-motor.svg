@@ -93,7 +93,7 @@
     <text x="850" y="294" text-anchor="middle" font-size="8.5" opacity=".7">grave demais: bloqueio de IP</text>
     <path d="M250 498 L250 520" stroke="var(--ok)" stroke-width="1.6" marker-end="url(#setaMotO)"/>
     <rect x="60" y="522" width="380" height="34" rx="4" fill="var(--ok)" fill-opacity=".10" stroke="var(--ok)" stroke-width="1.5"/>
-    <text x="250" y="543" text-anchor="middle" font-size="10.5">a operação, entre as 136 do catálogo</text>
+    <text x="250" y="543" text-anchor="middle" font-size="10.5">a operação, entre as 137 do catálogo</text>
     <text x="264" y="514" font-size="9.5" opacity=".7">passou os 10</text>
     <rect x="60" y="572" width="380" height="46" rx="4" fill="none" stroke="var(--pend)" stroke-width="1.4"/>
     <text x="250" y="590" text-anchor="middle" font-size="10.5" fill="var(--pend)">a trava de dados</text>

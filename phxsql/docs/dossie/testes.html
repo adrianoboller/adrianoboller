@@ -86,23 +86,23 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
   retrato que nunca existiu.</p>
 
   <div class="placar">
-    <div class="c"><div class="v">2.180</div><div class="r">testes</div></div>
-    <div class="c"><div class="v">113</div><div class="r">guardas</div></div>
+    <div class="c"><div class="v">2.207</div><div class="r">testes</div></div>
+    <div class="c"><div class="v">124</div><div class="r">guardas</div></div>
     <div class="c"><div class="v">26</div><div class="r">casos de tela</div></div>
     <div class="c"><div class="v">18</div><div class="r">catracas</div></div>
     <div class="c"><div class="v">0</div><div class="r">dependências</div></div>
   </div>
 </header>
 
-<h2 class="mal">0. 2 guarda(s) VERMELHA(S) — defeito provado, conserto pendente</h2><p class="sub">Entregues falhando de proposito. Elas nao entram na suite (levam <code>#[ignore]</code>, senao a catraca deixaria de segurar o resto), e rodam com <code>-- --ignored</code>. <b>Enquanto estiverem aqui, os numeros verdes abaixo nao cobrem o que elas provam.</b></p><ul class="vermelhas"><li><code>coluna_externa_marcada_sozinha_nao_pode_ir_em_claro</code> — VERMELHA de proposito: prova um vazamento que ainda nao foi consertado<br><span class="q">crates/phxsql-store/tests/cifra-dos-dados.rs</span></li><li><code>tabela_que_nao_abre_nao_pode_encolher_a_posicao_em_silencio</code> — VERMELHA de proposito: prova um erro engolido que ainda nao foi consertado<br><span class="q">crates/phxsql-server/src/servidor.rs</span></li></ul>
+<h2 class="mal">0. 1 guarda(s) VERMELHA(S) — defeito provado, conserto pendente</h2><p class="sub">Entregues falhando de proposito. Elas nao entram na suite (levam <code>#[ignore]</code>, senao a catraca deixaria de segurar o resto), e rodam com <code>-- --ignored</code>. <b>Enquanto estiverem aqui, os numeros verdes abaixo nao cobrem o que elas provam.</b></p><ul class="vermelhas"><li><code>tabela_que_nao_abre_nao_pode_encolher_a_posicao_em_silencio</code> — VERMELHA de proposito: prova um erro engolido que ainda nao foi consertado<br><span class="q">crates/phxsql-server/src/servidor.rs</span></li></ul>
 
 <h2>1. O motor, por dentro</h2>
 <p class="sub"><code>cargo test --workspace</code>. É a camada mais barata e a
 mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 <div class="nota">
-  <b>2.180 testes</b> em 177.663 linhas de Rust, versão
-  <code>0.18.0</code>, commit <code>b60f4ce</code>, 136 operações no
-  protocolo. Medido em 2026-09-09 06:31:53, por
+  <b>2.207 testes</b> em 180.454 linhas de Rust, versão
+  <code>0.18.0</code>, commit <code>1005ad4</code>, 137 operações no
+  protocolo. Medido em 2026-09-09 08:02:50, por
   <code>docs/dossie/numeros-do-projeto.py</code>, que <b>aborta se o
   <code>cargo test</code> falhar</b>.
 </div>
@@ -113,7 +113,7 @@ mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 periodicamente. Teste que passa por engano é pior que teste que falta, e esta
 camada existe por causa disso.</p>
 <div class="nota">
-  <b>113 guardas</b> no catálogo (<code>bancada/guardas/catalogo.py</code>),
+  <b>124 guardas</b> no catálogo (<code>bancada/guardas/catalogo.py</code>),
   cada uma com o defeito reposto, o arquivo, o trecho e quais testes têm de cair.
   Roda por <code>python3 bancada/guardas/provar-guardas.py</code>.
 </div>
@@ -141,7 +141,7 @@ uma lista digitada aqui.</p>
       <tr><td class="mono">TETO_INVENTARIO_DESCASADO</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor_inventario.rs</td></tr>
       <tr><td class="mono">TETO_JUNCAO</td><td class="n mono">500.000</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
       <tr><td class="mono">TETO_PIVOT</td><td class="n mono">5.000.000</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
-      <tr><td class="mono">TETO_ROTULOS_E_CRASE</td><td class="n mono">1.050</td><td class="mono peq">crates/phxsql-server/src/conferidor.rs</td></tr>
+      <tr><td class="mono">TETO_ROTULOS_E_CRASE</td><td class="n mono">1.049</td><td class="mono peq">crates/phxsql-server/src/conferidor.rs</td></tr>
       <tr><td class="mono">TETO_TABELA_NA_MAO</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor_grades.rs</td></tr>
       <tr><td class="mono">TETO_TEMP_DIR_SOLTO</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor_temporarios.rs</td></tr>
       <tr><td class="mono">TETO_VERMELHA_SEM_PEDIDO</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor_vermelhas.rs</td></tr>
@@ -162,6 +162,7 @@ medida</b> em vez de sumir da tabela.</p>
       <tr><td class="nome">Cobertura da tela sobre o protocolo<div class="prova">as duas listas saem do código — as operações do array OPERACOES e os arquivos da tela dos include_str! do http.rs</div></td><td class="q mono">2026-09-09T06:26:06</td><td class="v"><b>operações no catálogo</b> 136 · <b>alcançadas pela tela</b> 109</td></tr>
       <tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-07 16:34 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 4,3 s · <b>escrita aceita em</b> 4,3 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
       <tr><td class="nome">Replicação — quatro servidores<div class="prova">master e três espelhos no ar, com retrato SHA-256 de cada linha nos quatro</div></td><td class="q mono">2026-09-07</td><td class="v"><b>master</b> 33.883 linhas/s · <b>réplica aplica</b> 37.311 eventos/s · <b>alcance</b> 2,7 s · <b>os quatro iguais no fim</b> sim</td></tr>
+      <tr><td class="nome">Replicação — credencial recusada não bloqueia o IP<div class="prova">um master e uma réplica com o hash errado, pelo soquete: a réplica tenta UMA vez e estaciona, o blacklist.json fica vazio e o operador do mesmo IP entra — com dois controles na mesma corrida: cinco logins errados da própria bancada continuam bloqueando o master, e a origem fora do ar continua sendo procurada com recuo crescente</div></td><td class="q mono">2026-09-09 06:59:41</td><td class="v"><b>tentativas da réplica</b> 1 · <b>bloqueou o IP</b> NÃO · <b>operador derrubado</b> NÃO · <b>recuo de rede</b> [1.0, 2.0, 4.0, 8.0] s</td></tr>
       <tr><td class="nome">Transações — atomicidade pelo soquete<div class="prova">SIGKILL no meio de um COMMIT de 3.000 linhas, e o banco reaberto depois — a exigência não é «as 3.000 estão lá», é NUNCA METADE, com o relatório dizendo qual dos dois. E o portão se prova apagando a marca .tx: sem ela o banco volta pela metade, que é o preço da garantia aparecendo</div></td><td class="q mono">2026-09-07 09:06</td><td class="v"><b>conferências pelo soquete</b> 36 · <b>falhas</b> 0 · <b>linhas depois da queda</b> 3.001 · <b>ficou pela metade</b> NÃO</td></tr>
       <tr><td class="nome">PITR — restaurar a um instante, pelo soquete<div class="prova">a linha 3 é gravada DEPOIS do corte e tem de NÃO aparecer no restaurado — e o mesmo backup restaurado sem ate volta com uma linha só, que é o controle positivo na mesma corrida. Sem ele, uma restauração que devolvesse duas linhas por acaso passaria</div></td><td class="q mono">2026-09-08 17:11</td><td class="v"><b>conferências pelo soquete</b> 22 · <b>falhas</b> 0 · <b>eventos reaplicados</b> 2 · <b>pulados depois do corte</b> 1</td></tr>
       <tr><td class="nome">Quórum — o que custaria esperar as réplicas<div class="prova">esta não prova recurso: mede o PREÇO de uma decisão que ainda não foi tomada. Separa o que a bancada de replicação somava num número só — os 826 ms publicados lá são 99,9% sono do laço, e o transporte custa 0,475 ms. Tudo em localhost: é o PISO, e a rede real custa mais</div></td><td class="q mono">2026-09-07 16:37</td><td class="v"><b>gravar no master</b> 0,206 ms · <b>levar a uma réplica</b> 0,47 ms · <b>commit esperando 2 de 3</b> 3,08 × · <b>commit esperando 3 de 3</b> 3,56 ×</td></tr>
@@ -215,7 +216,7 @@ diz onde não confiar.</p>
 </div>
 
 <footer>
-  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 09/09/2026 06:31. Nenhum
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 09/09/2026 08:02. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
   do catálogo de guardas, dos <code>resultados.json</code> das bancadas, dos
   arquivos de <code>testes-web/</code> e das constantes do próprio fonte. O

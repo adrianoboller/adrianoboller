@@ -10,6 +10,44 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — a revisão do motor: segurança e integridade do que a rodada trouxe
+
+### Corrigido
+
+- **Direito por coluna, upsert e a ficha (A1 + o achado crítico da tela):**
+  uma coluna que o usuário não pode ALTERAR passa a ser **mantida no valor
+  gravado**, nunca zerada nem motivo de recusa. Antes, o upsert `atualizar`
+  por quem tinha a coluna negada a ZERAVA (perda de dado calada), e a ficha
+  não conseguia salvar nem incluir NADA para um usuário com regra de coluna,
+  porque a presença da coluna no pedido era lida como alteração e recusava a
+  operação inteira — proteção que quebrava todo cliente. A resposta agora diz
+  `colunas_mantidas`. Presença não é intenção.
+- **`INSERT … ON CONFLICT DO UPDATE SET` / `ON DUPLICATE KEY UPDATE` (A2):** o
+  SET era ignorado e o VALUES gravava por cima com NULL onde faltava. Agora o
+  `op_inserir` e o empilhar da transação leem `atualizar` e mesclam o SET sobre
+  a linha existente; `atualizar` desconhecido recusa em vez de ser ignorado.
+- **Índice parcial vira oráculo (A3):** `varrer`/`buscar` por um índice cujo
+  `onde` cita a coluna negada respondia «quem tem salario > 5000?». As colunas
+  do `onde` do índice entram no crivo do direito por coluna.
+- **Junção materializava antes do teto (A4):** um `interno` 1000×1000 alocava
+  +561 MiB para recusar 1 milhão de linhas; agora `consultar::juntar` para na
+  linha teto+1 (+0,3 MiB).
+- **`SELECT coluna_negada` devolvia `{coluna: null}` (A8)** em vez de recusar,
+  e `consultar.em` com campo inexistente respondia 0 linhas calado (A14): os
+  dois agora recusam nomeando.
+- **Literal negativo em `SET`/`VALUES` (A10)** passou a parsear; **tabela
+  inexistente (A13)** é nomeada em vez de vazar o caminho do disco.
+
+### Sabido
+
+- Ficam nomeados os pedidos 240-245: EXISTS correlacionado por apelido de fora,
+  visão que perde a projeção sob `SELECT *`, CHECK julgado só no commit da
+  transação, índice por expressão com operador, `CREATE VIEW` com JOIN, e as
+  seis observações menores.
+- O front-end do direito por coluna e da coluna calculada (a ficha mandar só o
+  que mudou, usar `colunas_sem_leitura`/`colunas_sem_alteracao`, a calculada
+  nascer read-only) é a frente seguinte.
+
 ## Não lançado — as dezoito do comparativo, junções, subconsultas e os limites nomeados
 
 ### Corrigido

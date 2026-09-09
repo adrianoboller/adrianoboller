@@ -35,51 +35,50 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **2.180 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **2.207 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 464 | 21,3 |
-| Protocolo e portões (despachar) | 431 | 19,8 |
-| Camada SQL (léxico, sintaxe, tradução) | 208 | 9,5 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 174 | 8,0 |
-| Servidor (outros) | 149 | 6,8 |
-| Criptografia e codificação | 124 | 5,7 |
-| Configuração | 111 | 5,1 |
+| Motor de dados (arquivos, índice, diários) | 470 | 21,3 |
+| Protocolo e portões (despachar) | 442 | 20,0 |
+| Camada SQL (léxico, sintaxe, tradução) | 209 | 9,5 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 174 | 7,9 |
+| Servidor (outros) | 150 | 6,8 |
+| Criptografia e codificação | 124 | 5,6 |
+| Configuração | 112 | 5,1 |
 | DbLink | 81 | 3,7 |
 | Telemetria e profiler | 63 | 2,9 |
 | ODBC | 55 | 2,5 |
-| Gatilhos e procedimentos | 45 | 2,1 |
-| **Mensagens (i18n do servidor)** | **32** | **1,5** |
-| **Usuários e permissões** | **32** | **1,5** |
+| Gatilhos e procedimentos | 45 | 2,0 |
+| **Mensagens (i18n do servidor)** | **32** | **1,4** |
+| **Usuários e permissões** | **32** | **1,4** |
 | **Jobs** | **31** | **1,4** |
 | **Interface web (servidor HTTP)** | **28** | **1,3** |
 | **Segurança de rede (blacklist, firewall)** | **21** | **1,0** |
+| **Replicação** | **19** | **0,9** |
 | **MCP** | **19** | **0,9** |
 | **Console de terminal (phxsqlcmd)** | **18** | **0,8** |
 | **Transações** | **16** | **0,7** |
-| **Replicação** | **13** | **0,6** |
 | **Exportação** | **13** | **0,6** |
 | **Junções e união** | **13** | **0,6** |
-| **Pivot** | **12** | **0,6** |
+| **Pivot** | **12** | **0,5** |
 | **Alertas e e-mail** | **8** | **0,4** |
 | **CLI** | **7** | **0,3** |
 | **Cluster** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,3** |
-| **total** | **2181** | |
+| **total** | **2207** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 4879 |
+| `phxsql-store/src/table.rs` | 4884 |
 | `phxsql-store/src/ndx.rs` | 1655 |
 | `phxsql-ffi/src/lib.rs` | 1453 |
 | `phxsql-server/src/main.rs` | 488 |
-| `phxsql-server/src/replica.rs` | 425 |
 | `phxsql-ffi/src/valor.rs` | 290 |
 | `phxsql-store/src/integridade.rs` | 278 |
 | `phxsql-server/src/dblink/conexao.rs` | 275 |
