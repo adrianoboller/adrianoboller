@@ -2888,3 +2888,92 @@ conserto, 22 de 22 no módulo `testes_direito_por_coluna` — os dezessete
 velhos, `sem_colunas_no_cadastro_nada_muda` à frente, sem mudar uma linha. A
 guarda `regra-de-coluna-com-typo-carrega-calada` do catálogo repõe o
 `if false` e prova o mesmo pela bancada.
+
+### 15.13 A tela: o front-end passou a usar `colunas_sem_leitura`/`colunas_sem_alteracao` (G5-TELA, 09/09/2026)
+
+A revisão de tela de 09/09/2026 (`docs/cognicao/`, e o relatório da frente
+que a repassou) achou o motor certo e a tela vazando: o `esquema` já
+devolvia `colunas_sem_leitura`/`colunas_sem_alteracao` — o §15.4/§15.5 desta
+seção descreve o mecanismo —, mas **zero ocorrências** das duas strings em
+`ui/` inteiro. A ficha continuava mandando a linha inteira, coluna negada
+incluída; a grade e a ficha continuavam mostrando nome e tipo da coluna que
+o usuário não lê. Três achados, um conserto só: `crates/phxsql-server/ui/index.html`,
+funções `abrirFicha`, `campoDaColuna`, `dialogoConflito` e `verConteudoEditavel`.
+
+**O que mudou, e onde.**
+
+- `direitoDeColuna(e)` — um par de `Set` (`semLer`, `semAlterar`) tirado do
+  `esquema` — é lido em três lugares: a grade (`verConteudoEditavel`, os
+  `cabecalhos` que viram coluna do `PhxGrid`), a ficha (`abrirFicha`, a lista
+  `editaveis`) e a aba Estrutura (`ligarEstrutura`, a grade de colunas do
+  cadastro). Em todos, a coluna cujo nome está em `semLer` **não é filtrada
+  do valor** — é tirada da LISTA de colunas antes de a tela desenhar nada, e
+  por isso nem o nome nem o tipo chegam ao DOM. Mostrar o campo vazio (o
+  desenho de antes) já vazava os dois: quem olha o `<label>` lê o nome, e o
+  `<span class="tipo">` ao lado lê o tipo — a mesma estrutura que o servidor
+  já protegia por um caminho, a tela reabria por outro.
+- A coluna em `semAlterar` continua visível (é `ler:true, alterar:false`) e
+  passou a nascer `readonly` na ficha, com a tag `sem alterar` — o mesmo
+  desenho que já existia para a coluna FIXA da programação (`COLUNAS_FIXAS`),
+  só que com o motivo certo no `title`.
+- **A ficha parou de mandar a coluna negada.** O `valores()` de `abrirFicha`
+  trocou de forma: era um `Array` posicional com UMA entrada por coluna
+  visível (a linha inteira, negada incluída, sempre — o vazio virava
+  `null`); passou a ser um `Object` por NOME, que pula de propósito as
+  colunas em `semAlterar` e as colunas `calculada` (a seguir). A troca de
+  forma é o que resolve o achado, e não uma peneira nova: o servidor (§15.6)
+  já distingue COLUNA AUSENTE do pedido (nada a dizer — «o cliente não
+  mexeu») de COLUNA PRESENTE com um valor, mesmo `null` (uma tentativa de
+  escrita, que ele recusa em silêncio e lista em `colunas_mantidas`). A
+  ficha de antes mandava toda coluna negada como `Some(null)` — presente —,
+  então TODO salvar de um usuário com regra de coluna aparecia em
+  `colunas_mantidas`, mesmo quando ele nunca tocou naquele campo. Por nome e
+  ausente, o pedido para de mencionar o que a pessoa não mexeu, e
+  `colunas_mantidas` volta a significar o que o nome promete: uma tentativa
+  de escrita real, revertida.
+- **Coluna calculada nasce `readonly`**, com a tag `calculada`, pelo mesmo
+  motivo estrutural: o `Table::atualizar`/`Table::inserir` do motor
+  RECALCULA a coluna calculada sempre, na gravação (v9 do esquema,
+  `docs/FORMATO.md`) — o que a ficha mandasse nela seria descartado calado.
+  Deixá-la editável convidava a digitar um valor que nunca ia valer; agora o
+  `valores()` nem a manda, pelo mesmo motivo da coluna sem alterar.
+- **O diálogo de conflito de merge** (`dialogoConflito`) comparava por
+  POSIÇÃO num array que agora é objeto — e o ajuste abriu espaço para fechar
+  o resto do achado 3: a lista `comparaveis` (o que entra na tabela de
+  divergência, e no que se grava ao confirmar) exclui as mesmas duas
+  categorias que `valores()` já excluía. Sem isso, uma coluna calculada
+  cujo valor dependesse de OUTRA coluna que alguém mudou apareceria como
+  "divergência" no diálogo — uma escolha que o usuário faria e o servidor
+  ignoraria, porque a calculada nunca sai do que foi escolhido ali: sai do
+  que o motor recalcula.
+
+**O que NÃO mudou**, e o motivo: a assinatura de `atualizar`/`inserir` no
+protocolo continua aceitando tanto `Array` (posicional, pela ORDEM do
+esquema) quanto `Object` (por nome, com ausente = «não mexeu») — os dois já
+eram aceitos desde antes desta rodada (`json_para_linha`, `valores.rs`); a
+tela só passou a usar a segunda forma. Nenhum cliente escrito contra a
+primeira forma quebra.
+
+**Prova real, medida com um usuário de verdade.** `vendedor`, nível
+`operador`, com `Comercial.clientes.limite_credito` em `ler:false,
+alterar:false` — o par que a revisão usou — e uma coluna `resumo`
+calculada. Duas rodadas do MESMO roteiro Playwright, uma por binário
+(`phxsqld` antes desta rodada e depois), capturando tela e o CORPO do
+pedido `atualizar` que a ficha manda (não só o que a tela mostra):
+
+| | antes | depois |
+|---|---|---|
+| cabeçalhos da grade | `…, cidade, limite_credito, resumo, …` | `…, cidade, resumo, …` |
+| campos da ficha | `f_id, f_nome, f_cidade, f_limite_credito, f_resumo` | `f_id, f_nome, f_cidade, f_resumo` |
+| `#f_resumo` é `readonly`? | não | sim |
+| `valores` do `atualizar` (só mudou `cidade`) | `[1,"Comércio Ñandú","Joinville",null,"Comércio Ñandú - Blumenau"]` | `{"id":1,"nome":"Comércio Ñandú","cidade":"Joinville"}` |
+| linha gravada, `limite_credito` | `15000.00` (o servidor já protegia) | `15000.00` (igual — e agora a ficha nem tentou) |
+
+A linha gravada não muda — o servidor já estava certo dos dois lados, como
+o pedido descreveu. O que muda é o PEDIDO: a versão «antes» mandava `null`
+na coluna negada em TODA gravação, e a versão «depois» não a menciona.
+
+O roteiro deste teste virou caso da bateria:
+`testes-web/casos/27-direito-por-coluna.mjs` — grade, aba Estrutura, ficha
+(incluir e salvar) com o `vendedor`, contra o servidor de verdade, nos dois
+temas.

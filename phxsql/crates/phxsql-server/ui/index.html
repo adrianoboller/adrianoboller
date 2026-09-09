@@ -2986,7 +2986,12 @@ function ligarEstrutura(db, tab) {
     ],
     // Cada linha ganha `posicao` (a ordem de digitação, que e a mesma da API
     // `esquema`) porque a grade nao tem indice de array como o `.map` tinha.
-    dados: e.colunas.map((c, i) => ({ ...c, posicao: i })),
+    // A posição é tirada ANTES de filtrar: a coluna que este usuário não lê
+    // some da lista (nome e tipo são estrutura, e estrutura também não se
+    // vaza), mas as que ficam continuam com o número de ordem verdadeiro —
+    // um "#" que pulasse não seria mentira, mas a posição errada seria.
+    dados: e.colunas.map((c, i) => ({ ...c, posicao: i }))
+      .filter(c => !direitoDeColuna(e).semLer.has(c.nome)),
     pagina: { tamanho: 100, opcoes: [50, 100, 200] },
   });
 
@@ -4340,8 +4345,15 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
   // estilo da linha e o botão de restaurar, e o número de ordem tem coluna
   // própria à esquerda. Repetir "softdeleted: não" em toda linha só ocuparia
   // espaço.
+  //
+  // A coluna que este usuário não LÊ também some daqui — não só o valor
+  // (que o `varrer` já peneira, tirando a chave da linha), mas o CABEÇALHO:
+  // um `LIMITE_CREDITO` sem uma célula preenchida embaixo já diz que a
+  // coluna existe e como ela se chama, e isso é estrutura vazando por outra
+  // porta.
+  const { semLer } = direitoDeColuna(e);
   const sistemas = e.colunas.filter(c => c.sistema).map(c => c.nome);
-  const cols = e.colunas.filter(c => !c.sistema).map(c => c.nome);
+  const cols = e.colunas.filter(c => !c.sistema && !semLer.has(c.nome)).map(c => c.nome);
   const temRownum = e.colunas.some(c => c.nome === "rownum");
 
   // Quantas páginas, e em qual estamos. O total é exato porque `visiveis` é
@@ -4474,6 +4486,25 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
    Na INCLUSÃO continuam editáveis, porque é ali que nascem. */
 const COLUNAS_FIXAS = { "phxsys/mensagens": ["id", "TextName"] };
 
+/** As colunas que o direito por coluna esconde deste usuário, em dois
+ * conjuntos — porque as duas proibições têm efeito diferente na tela.
+ *
+ * Quem NÃO LÊ a coluna nunca a vê: nem cabeçalho na grade, nem campo na
+ * ficha, nem linha na aba Estrutura. Mostrar o NOME e o TIPO dela já seria
+ * vazar estrutura — o servidor protege o valor desde a 0.17, mas a lista
+ * `colunas_sem_leitura`/`colunas_sem_alteracao` só chegou ao `esquema` na
+ * revisão que achou este buraco, e até então nenhuma tela a lia (zero
+ * ocorrências nas duas strings em todo `ui/`).
+ *
+ * Quem só não ALTERA continua vendo o valor — é `ler:true, alterar:false` —,
+ * e por isso o campo dela aparece na ficha, só que travado. */
+function direitoDeColuna(e) {
+  return {
+    semLer: new Set(e.colunas_sem_leitura || []),
+    semAlterar: new Set(e.colunas_sem_alteracao || []),
+  };
+}
+
 /** Um campo por coluna, do tipo certo. `Bin` e `Memo` moram fora do slot.
  *
  * Numa linha NOVA, a coluna que é a IDENTIDADE da linha nasce com a palavra
@@ -4488,8 +4519,16 @@ const COLUNAS_FIXAS = { "phxsys/mensagens": ["id", "TextName"] };
  * screenshot mostrou o estrago: a coluna `turma_id` — a chave ESTRANGEIRA —
  * também vinha com `novo`, o que geraria um id sorteado apontando para turma
  * nenhuma. Um campo em branco quem olha corrige; um campo preenchido com a
- * resposta errada ninguém corrige, porque parece certo. */
-function campoDaColuna(c, valor, fixa = false, novo = false) {
+ * resposta errada ninguém corrige, porque parece certo.
+ *
+ * `soLeitura` é `false` ou um motivo — `"fixo"` (a coluna de programação,
+ * que só se edita na inclusão), `"sem_alteracao"` (o direito por coluna
+ * negou `alterar` a este usuário, mas ele lê o valor) ou `"calculada"` (o
+ * servidor recalcula a cada gravação — o que se digitar aqui é descartado
+ * em silêncio, e por isso nem vale a pena deixar digitar). Os três travam
+ * o campo do mesmo jeito; só o rótulo e a dica do `title` mudam, para quem
+ * olha entender POR QUE não dá para mexer. */
+function campoDaColuna(c, valor, soLeitura = false, novo = false) {
   const id = `f_${c.nome}`;
   const ehIdentidade = (c.tipo === "Uuid" || c.tipo === "Uuid256")
     && c.primaria && !c.estrangeira;
@@ -4501,10 +4540,23 @@ function campoDaColuna(c, valor, fixa = false, novo = false) {
 
   // readonly, e não disabled: o valor continua indo no salvar — a linha
   // inteira é gravada, e sumir com a coluna apagaria o que não se pode mudar.
-  if (fixa)
-    return `<label><span>${esc(c.nome)} <span class="tipo">${esc(txt("tela.cf_fixo","fixo"))}</span> ${dica}</span>
+  // Exceto quando o motivo é "sem_alteracao" ou "calculada": aí o `valores()`
+  // do `abrirFicha` tira a coluna do que se manda de propósito (ver o
+  // comentário lá) — mandar de volta um valor que nunca vai ser usado seria
+  // a mesma mentira que este campo readonly existe para não contar.
+  if (soLeitura) {
+    const rotulo = soLeitura === "sem_alteracao" ? txt("tela.cf_sem_alteracao","sem alterar")
+                 : soLeitura === "calculada" ? txt("tela.cf_calculada","calculada")
+                 : txt("tela.cf_fixo","fixo");
+    const dicaTitulo = soLeitura === "sem_alteracao"
+      ? txt("tela.cf_sem_alteracao_dica","este usuário não tem direito de alterar esta coluna; o valor gravado continua")
+      : soLeitura === "calculada"
+      ? txt("tela.cf_calculada_dica","o servidor recalcula este valor a cada gravação; o que se digitar aqui é descartado")
+      : txt("tela.cf_usado_programacao_busca","usado na programação e na busca; não muda depois de criado");
+    return `<label><span>${esc(c.nome)} <span class="tipo">${esc(rotulo)}</span> ${dica}</span>
       <input id="${id}" value="${esc(v)}" readonly style="opacity:.6"
-        title="${esc(txt("tela.cf_usado_programacao_busca","usado na programação e na busca; não muda depois de criado"))}"></label>`;
+        title="${esc(dicaTitulo)}"></label>`;
+  }
 
   if (c.tipo === "Memo")
     return `<label class="largo"><span>${esc(c.nome)}${obrig} ${dica}</span>
@@ -4560,11 +4612,24 @@ async function abrirFicha(db, tab, rowid) {
   // TODO salvar e TODO incluir pela tela falhavam com «a lista tem 8 valores».
   // O servidor completa as duas no fim — herdando o valor anterior, que é o
   // que impede um salvar de rotina de ressuscitar linha excluída ou renumerar.
-  const editaveis = e.colunas.filter(c => !c.sistema);
+  //
+  // A coluna que este usuário não LÊ some pelo mesmo motivo que some da
+  // grade (ver `verConteudoEditavel`): mostrar o campo vazio já diz o nome
+  // e o tipo dela, que é estrutura, e estrutura não se vaza.
+  const { semLer, semAlterar } = direitoDeColuna(e);
+  const editaveis = e.colunas.filter(c => !c.sistema && !semLer.has(c.nome));
   const marcada = linha["softdeleted"] === true;
   // As colunas fixas da programação (id/TextName da tabela de mensagens) só
   // se editam na inclusão — depois, aparecem travadas.
   const fixas = novo ? [] : (COLUNAS_FIXAS[`${db}/${tab}`] || []);
+  // Por que a coluna nasce travada na ficha — três motivos, e cada um vira
+  // um rótulo diferente em `campoDaColuna`. A ordem importa pouco: nenhuma
+  // coluna cai em dois motivos ao mesmo tempo hoje, mas se cair um dia, o
+  // primeiro que bater é quem explica.
+  const motivoSoLeitura = c => fixas.includes(c.nome) ? "fixo"
+                              : semAlterar.has(c.nome) ? "sem_alteracao"
+                              : c.calculada ? "calculada"
+                              : false;
 
   folha(novo ? preencher(txt("tela.tt_nova_linha_em","Nova linha em {tab}"), {tab})
              : preencher(txt("tela.tt_tab_registro","{tab} · registro {rowid}"), {tab, rowid}),
@@ -4576,7 +4641,7 @@ async function abrirFicha(db, tab, rowid) {
         <button class="botao mini incluir" id="btRestaurarFicha">${esc(txt("tela.bt_restaurar","restaurar"))}</button>
       </div>` : ""}
      <form class="ficha-edit" id="fichaEdit" autocomplete="off">
-       ${editaveis.map(c => campoDaColuna(c, linha[c.nome], fixas.includes(c.nome), novo)).join("")}
+       ${editaveis.map(c => campoDaColuna(c, linha[c.nome], motivoSoLeitura(c), novo)).join("")}
      </form>
      <div class="acoes">
        <button class="botao ${novo ? "incluir" : "alterar"}" id="btSalvar">${
@@ -4586,18 +4651,46 @@ async function abrirFicha(db, tab, rowid) {
        <span class="leg" id="recadoFicha"></span>
      </div>`);
 
-  // A lista sai SEM a coluna de sistema, e o motor entende: numa inclusao ela
-  // nasce falsa, e numa alteracao mantem o que a linha ja tinha. E o que
-  // impede um «salvar» de rotina de ressuscitar linha marcada.
-  const valores = () => editaveis.map(c => {
-    const el = $(`#f_${c.nome}`);
-    const v = el.value.trim();
-    if (v === "") return null;              // vazio e NULL, sempre
-    if (c.tipo === "Bool") return v === "true";
-    if (/^Int|^UInt|^Sequence$/.test(c.tipo)) return Number(v);
-    if (c.tipo === "Real4" || c.tipo === "Real8") return Number(v);
-    return v;                                // texto, data, decimal, uuid…
-  });
+  // Um OBJETO por nome de coluna, e não mais a lista posicional de antes —
+  // e é essa troca que fecha o achado 1. A lista mandava a linha INTEIRA,
+  // com a coluna negada dentro dela como `null` (o campo estava vazio
+  // porque nem aparecia, e vazio vira null); o servidor já foi consertado
+  // para não zerar nem recusar por causa disso — mas ele só sabe que
+  // "ninguém mexeu" quando a coluna está AUSENTE do pedido, não quando ela
+  // chega `null` "de graça". Chegando `null`, `direito_coluna` conta como
+  // "o cliente mandou um valor" e lista a coluna em `colunas_mantidas` toda
+  // vez que um vendedor salva `cidade` — mesmo sem ele saber que
+  // `limite_credito` existe. Por objeto e por nome, a coluna some do
+  // pedido inteiro, e o servidor lê "ausente" pelo que é: ninguém mexeu.
+  //
+  // Duas colunas SEMPRE ficam de fora, pelo mesmo motivo — mandar um valor
+  // que nunca vai valer não é "o que eu mudei", é ruído:
+  //  - `semAlterar`: o direito por coluna nega `alterar` a este usuário; o
+  //    campo é readonly e o valor mostrado já É o gravado, então não há o
+  //    que "mandar de volta" — e mandar seria a mesma mentira do parágrafo
+  //    acima, só que pelo campo visível em vez do invisível.
+  //  - `calculada`: o servidor RECALCULA sempre, na gravação (v9 do
+  //    esquema) — o que este campo tem é só o que a leitura trouxe, e
+  //    reenviar não muda o que fica gravado. Ver `dialogoConflito`: é o
+  //    mesmo motivo que tira `resumo` da comparação de conflito no achado 3.
+  //
+  // As colunas FIXAS continuam indo, com o valor que já tinham: elas não
+  // têm regra de direito por coluna, e o servidor não tem de onde repor um
+  // `id`/`TextName` ausente — sumir com elas gravaria NULL por cima.
+  const valores = () => {
+    const o = {};
+    for (const c of editaveis) {
+      if (semAlterar.has(c.nome) || c.calculada) continue;
+      const el = $(`#f_${c.nome}`);
+      const bruto = el.value.trim();
+      o[c.nome] = bruto === "" ? null                   // vazio e NULL, sempre
+        : c.tipo === "Bool" ? (bruto === "true")
+        : /^Int|^UInt|^Sequence$/.test(c.tipo) ? Number(bruto)
+        : (c.tipo === "Real4" || c.tipo === "Real8") ? Number(bruto)
+        : bruto;                                          // texto, data, decimal, uuid…
+    }
+    return o;
+  };
 
   if (marcada) $("#btRestaurarFicha").onclick = ev => {
     ev.preventDefault();
@@ -4629,7 +4722,7 @@ async function abrirFicha(db, tab, rowid) {
       // comparação lado a lado.
       if (err.nome === "CONFLITO" && !novo) {
         return dialogoConflito(db, tab, rowid, {
-          editaveis, lida: linha, versaoLida: versao, meus: valores(),
+          editaveis, semAlterar, lida: linha, versaoLida: versao, meus: valores(),
           aoTerminar: () => { est.esquemaAtual = null; verConteudoEditavel(db, tab); }
         });
       }
@@ -8570,13 +8663,24 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar, versao) {
 
 /** Mostra os três valores e grava a escolha.
  *
- * `ctx`: `{ editaveis, lida, versaoLida, meus, aoTerminar }` — as colunas do
- * formulário, a linha como você a leu, a versão que ela tinha, o que você ia
- * gravar, e o que fazer depois. Vai num objeto e não em sete parâmetros
- * soltos porque a caixa se chama de novo quando um terceiro grava no meio, e
- * uma lista posicional dessa altura erra calada na recursão. */
+ * `ctx`: `{ editaveis, semAlterar, lida, versaoLida, meus, aoTerminar }` — as
+ * colunas do formulário, o conjunto do que este usuário não altera, a linha
+ * como você a leu, a versão que ela tinha, o que você ia gravar (um OBJETO
+ * por nome — ver o comentário do `valores()` em `abrirFicha`), e o que fazer
+ * depois. Vai num objeto e não em sete parâmetros soltos porque a caixa se
+ * chama de novo quando um terceiro grava no meio, e uma lista posicional
+ * dessa altura erra calada na recursão.
+ *
+ * `comparaveis` é `editaveis` menos as colunas que `meus` nunca teve — as
+ * que este usuário não altera, e as calculadas. Comparar uma coluna
+ * calculada aqui seria o achado 3 de volta por outra porta: o `resumo` que
+ * "eu ia gravar" é só o que a leitura trouxe, o servidor RECALCULA sempre
+ * na gravação (v9 do esquema) e ignora os dois lados — mostrar como
+ * divergência algo que o servidor nem olha é uma "briga" que não existe. */
 async function dialogoConflito(db, tab, rowid, ctx) {
-  const { editaveis, lida, versaoLida, meus, aoTerminar } = ctx;
+  const { editaveis, semAlterar, lida, versaoLida, meus, aoTerminar } = ctx;
+  const comparaveis = editaveis.filter(c =>
+    !(semAlterar && semAlterar.has(c.nome)) && !c.calculada);
   // O que o outro escreveu só se sabe relendo. É uma leitura a mais, e ela só
   // acontece no conflito — que é raro. Pagar isso em toda gravação para ter o
   // valor à mão seria trocar o caso raro pelo caso comum.
@@ -8622,11 +8726,11 @@ async function dialogoConflito(db, tab, rowid, ctx) {
   // como texto — divergência que só existiria na cabeça do JavaScript.
   const igual = (a, b) => mostrar(a) === mostrar(b);
 
-  const linhas = editaveis.map((c, i) => ({
+  const linhas = comparaveis.map(c => ({
     nome: c.nome,
     antes: lida[c.nome] === undefined ? null : lida[c.nome],
     outro: outra[c.nome] === undefined ? null : outra[c.nome],
-    meu: meus[i]
+    meu: meus[c.nome] === undefined ? null : meus[c.nome]
   }));
   const briga = linhas.filter(l => !igual(l.outro, l.meu));
   const iguais = linhas.length - briga.length;
@@ -8689,12 +8793,16 @@ async function dialogoConflito(db, tab, rowid, ctx) {
 
   fundo.querySelector("#btCfSim").onclick = async ev => {
     ev.preventDefault();
-    const escolhido = editaveis.map((c, i) => {
+    // Objeto por nome, como o `valores()` da ficha — e pelo mesmo motivo:
+    // só as `comparaveis` entram, então a coluna que este usuário não
+    // altera e a calculada continuam AUSENTES do pedido, nunca `null`.
+    const escolhido = {};
+    for (const c of comparaveis) {
       const r = fundo.querySelector(`input[name="cf_${c.nome}"]:checked`);
-      if (!r) return meus[i];                     // coluna sem briga
-      return r.value === "meu" ? meus[i]
-                               : (outra[c.nome] === undefined ? null : outra[c.nome]);
-    });
+      escolhido[c.nome] = !r ? meus[c.nome]        // coluna sem briga
+        : r.value === "meu" ? meus[c.nome]
+        : (outra[c.nome] === undefined ? null : outra[c.nome]);
+    }
     try {
       await api("atualizar", { database: db, tabela: tab, rowid,
                                valores: escolhido, versao: atual.versao });
@@ -8707,7 +8815,7 @@ async function dialogoConflito(db, tab, rowid, ctx) {
       // «você escreve» — e não um «tente de novo» que perderia o trabalho.
       if (err.nome === "CONFLITO") {
         fechar();
-        return dialogoConflito(db, tab, rowid, { editaveis, lida: outra,
+        return dialogoConflito(db, tab, rowid, { editaveis, semAlterar, lida: outra,
           versaoLida: atual.versao, meus: escolhido, aoTerminar });
       }
       fundo.querySelector("#cfRecado").innerHTML =
@@ -8716,10 +8824,71 @@ async function dialogoConflito(db, tab, rowid, ctx) {
   };
 }
 
+/* ============================================ prompt() com a cara da marca
+   `restaurarLinha`, `backupAgora` e `conferirBackup` pediam um texto com o
+   `prompt()` nativo do navegador — sem tema, sem tipografia da marca, sem
+   textarea — enquanto a exclusão (mesma ação, mesma gravidade) já usa o
+   componente próprio da casa (`dialogoExcluir`, acima). A inconsistência
+   visual era o menor dos dois problemas: um `prompt()`/`confirm()` sem
+   tratamento é DESCARTADO por padrão em qualquer automação — foi o que fez
+   a primeira tentativa de restaurar, na revisão que achou isto, não
+   restaurar nada, em silêncio (`window.confirm`/`window.prompt` devolvem
+   `false`/`null` quando ninguém os trata, e o código seguia como se a
+   pessoa tivesse cancelado).
+
+   O molde é o `dialogoExcluir`: mesmo `.sobre`/`.caixa`, mesmo `label.cmp`
+   com `.campo` e `.leg`, mesma tecla Escape e clique fora fechando. */
+
+/** Um campo de texto num diálogo da marca, no lugar do `prompt()` nativo.
+ *
+ * Devolve uma Promise com o texto digitado, ou `null` quando a pessoa
+ * cancelou (Escape, clique fora, ou o botão secundário) — a MESMA forma que
+ * `prompt()` devolve, para quem chama não ter de mudar a lógica de "null
+ * quer dizer cancelou", só trocar a chamada por um `await`. */
+function perguntarTexto({ titulo, sub = "", rotulo, legenda = "", valorInicial = "",
+                           placeholder = "", textoOk, textoCancelar }) {
+  return new Promise(resolve => {
+    const fundo = document.createElement("div");
+    fundo.className = "sobre";
+    fundo.innerHTML = `
+      <div class="caixa" role="dialog" aria-modal="true" aria-label="${esc(titulo)}">
+        <h3>${esc(titulo)}</h3>
+        ${sub ? `<div class="sub">${esc(sub)}</div>` : ""}
+        <label class="cmp"><span>${esc(rotulo)}</span>
+          <input id="ptTexto" class="campo" maxlength="2000"
+                 placeholder="${esc(placeholder)}" value="${esc(valorInicial)}">
+          ${legenda ? `<span class="leg">${esc(legenda)}</span>` : ""}</label>
+        <div class="acoes">
+          <button class="botao secundario" id="ptNao">${esc(textoCancelar || txt("tela.cancelar","Cancelar"))}</button>
+          <button class="botao alterar" id="ptSim">${esc(textoOk)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(fundo);
+
+    const campo = fundo.querySelector("#ptTexto");
+    const fechar = valor => {
+      document.removeEventListener("keydown", fuga);
+      fundo.remove();
+      resolve(valor);
+    };
+    function fuga(ev) { if (ev.key === "Escape") fechar(null); }
+    document.addEventListener("keydown", fuga);
+    fundo.onclick = ev => { if (ev.target === fundo) fechar(null); };
+    fundo.querySelector("#ptNao").onclick = ev => { ev.preventDefault(); fechar(null); };
+    fundo.querySelector("#ptSim").onclick = ev => { ev.preventDefault(); fechar(campo.value); };
+    campo.onkeydown = ev => { if (ev.key === "Enter") { ev.preventDefault(); fechar(campo.value); } };
+    setTimeout(() => campo.focus(), 30);
+  });
+}
+
 /** Restaura uma linha marcada. */
 async function restaurarLinha(db, tab, rowid, aoTerminar) {
-  const motivo = prompt(preencher(txt("tela.g_prompt_restaurar_registro",
-    "Restaurar o registro {rowid}?\n\nMotivo (fica no .reason):"), {rowid}), "");
+  const motivo = await perguntarTexto({
+    titulo: preencher(txt("tela.tt_restaurar_registro","Restaurar o registro {rowid}"), {rowid}),
+    rotulo: txt("tela.rot_motivo","Motivo"),
+    legenda: txt("tela.leg_fica_no_reason","Fica no .reason, com a data, a hora e quem você é."),
+    textoOk: txt("tela.bt_restaurar","restaurar"),
+  });
   if (motivo === null) return;
   try {
     await api("restaurar", { database: db, tabela: tab, rowid, motivo: motivo.trim() });
@@ -13924,7 +14093,12 @@ async function novoDatabase() {
 
 async function backupAgora() {
   const db = est.atual ? est.atual.db : (est.database || "");
-  const alvo = prompt(txt("tela.g_prompt_db_backup","Database para o backup (vazio = todos):"), db);
+  const alvo = await perguntarTexto({
+    titulo: txt("tela.fer_backup","Backup"),
+    rotulo: txt("tela.g_prompt_db_backup","Database para o backup (vazio = todos):"),
+    valorInicial: db,
+    textoOk: txt("tela.fer_backup","Backup"),
+  });
   if (alvo === null) return;
   folha(txt("tela.fer_backup","Backup"), txt("tela.st_copiando_conferindo","copiando e conferindo…"), `<div class="centro">rodando…</div>`);
   const r = await api("backup", alvo.trim() ? { database: alvo.trim() } : {});
@@ -13935,8 +14109,12 @@ async function backupAgora() {
 }
 
 async function conferirBackup() {
-  const caminho = prompt(txt("tela.g_prompt_caminho_backup","Caminho do backup a conferir:"));
-  if (!caminho) return;
+  const caminho = await perguntarTexto({
+    titulo: txt("tela.tt_conferencia_backup","Conferência do backup"),
+    rotulo: txt("tela.g_prompt_caminho_backup","Caminho do backup a conferir:"),
+    textoOk: txt("tela.bt_conferir","Conferir"),
+  });
+  if (!caminho || !caminho.trim()) return;
   folha(txt("tela.tt_conferencia_backup","Conferência do backup"), txt("tela.st_recalculando_sha","recalculando o SHA-256 de cada arquivo…"),
         `<div class="centro">conferindo…</div>`);
   const r = await api("conferir_backup", { destino: caminho.trim() });

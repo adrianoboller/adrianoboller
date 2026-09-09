@@ -192,11 +192,23 @@ export const caso = {
 
     await botao('[data-rowid] (restaurar)', 'restaurar a linha excluida', async () => {
       const antes = await ativas(page, db, tab);
-      // O motivo vem por `prompt` NATIVO, e sem alguem escutando o Playwright
-      // o descarta: a funcao voltaria na primeira linha e o teste passaria
-      // sem restaurar nada.
-      page.once('dialog', d => d.accept('prova da bateria de botoes'));
+      // O motivo passou a vir por um dialogo proprio da marca
+      // (`perguntarTexto`, com o rotulo #ptTexto e os botoes #ptSim/#ptNao) --
+      // ja nao ha `dialog` nativo do navegador para escutar aqui. Prova nos
+      // DOIS sentidos, como toda bateria desta casa exige: primeiro cancela
+      // (#ptNao) e confere que a linha continua excluida, so depois confirma
+      // (#ptSim) e confere que ela volta.
       await clicarOuExplicar(page, `#gradeEdit .restaurar[data-rowid="${alvo}"]`);
+      await page.waitForSelector('#ptTexto', { timeout: 5000 });
+      await clicarOuExplicar(page, '#ptNao');
+      await assentar(page, 300);
+      verdade(await ativas(page, db, tab) === antes,
+        'cancelar o dialogo de restaurar (#ptNao) restaurou a linha assim mesmo');
+
+      await clicarOuExplicar(page, `#gradeEdit .restaurar[data-rowid="${alvo}"]`);
+      await page.waitForSelector('#ptTexto', { timeout: 5000 });
+      await page.fill('#ptTexto', 'prova da bateria de botoes');
+      await clicarOuExplicar(page, '#ptSim');
       await assentar(page, 900);
       const depois = await ativas(page, db, tab);
       verdade(depois === antes + 1,
