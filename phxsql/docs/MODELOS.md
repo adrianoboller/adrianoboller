@@ -573,6 +573,41 @@ rodada.
   (o mesmo valor que `CAPABILITIES.json` grava, com o commit conferido contra
   o `HEAD` desta árvore).
 
+### Rodada dos limites nomeados — 9 de setembro de 2026
+
+Ordem do dono: *«Next»*, depois de a rodada das dezoito fechar 17 de 19. A
+rodada anterior deixou seis pedidos nomeados (234 a 239); o 239 é decisão do
+dono e fica de fora; os outros cinco são esta rodada. Os contratos estão na
+seção «Os limites nomeados» de `docs/propostas/comparativo-19.md`, escritos
+**depois** de medir: os dois defeitos do 237 têm uma raiz só (o `consultar`
+compõe linhas JSON sem tipo), e foi essa medição que decidiu a divisão —
+`RIGHT`/`FULL`/`CROSS` entram no motor e não por troca de lados no tradutor.
+
+| frente | escalão | por quê | papéis dispensados, e por quê |
+|---|---|---|---|
+| **C20-CONSULTA** — modelo tipado de cada lado do `consultar`, `direito`/`completo`/`cruzado`, `existe`, `COUNT(coluna)` no motor | **projeto e risco** | **forma da linha** (o defeito que já pagou três vezes: coluna que some quebra quem lê por posição), **protocolo** (`colunas` na resposta) e **portão de permissão** (`existe[].de` tem de ser visto pelo direito por coluna, ou vira a porta dos fundos) | **C** (nada de formato em disco: o modelo tipado vive na resposta, não no `.reg`), **E** (não há tela), **J** (semijunção por espalhamento é técnica de todo motor; a divergência nossa — só igualdade, porque cada sub-pedido passa inteiro pelo portão — está escrita no contrato) |
+| **C20-SQL** — `ORDER BY` qualificado, `COUNT(coluna)`, `RIGHT`/`FULL`/`CROSS JOIN`, `[NOT] EXISTS` no tradutor | **mecânico e verificável** | tradução para contrato já escrito; o JSON produzido se confere campo a campo em teste de unidade, e o encontro com o motor é da integração | **C**, **E**, **D**, **J** |
+| **C20-DIREITO** — regra de coluna que cita coluna inexistente recusa na carga | **projeto e risco** | segurança: **configuração que não é lida mente** — quem escreveu `salrio` acha que restringiu `salario`; e a decisão «tabela que ainda não existe aceita com aviso» é a mesma da chave estrangeira, e tem de ser tomada com a lei na mão | **E**, **J**, **D**; **C** só pela decisão da tabela-que-ainda-não-existe, herdada da FK |
+| **C20-QA-ODBC** — o teste 234 fora do estado global; `SQL_C_WCHAR` nos dois sentidos | **mecânico e verificável** | o erro se vê: a suíte verde N vezes, e UTF-16 conferido contra um buffer montado à mão com par substituto | **C**, **E**, **J** |
+| **C20-INTEGRAÇÃO** — merge, portões, PENDENCIAS/CHANGELOG/MODELOS, geradores, cinco páginas, push, backup | **projeto e risco**, feita pelo orquestrador | é onde aparece o defeito que nenhuma frente vê: `docs/SQL.md` e `bancada/guardas/catalogo.py` são tocados por mais de uma; o `existe` da C20-CONSULTA tem de ser o que a C20-SQL gera; e o direito por coluna (C20-DIREITO) atravessa o `existe` (C20-CONSULTA) | **E**; **D** rodou de hora em hora sem decisão desta rodada |
+
+**Papéis convocados fora de frente:** **D** (zelador) — não por decisão desta
+rodada: as **dezesseis** worktrees das rodadas anteriores, todas já
+integradas (`git merge-base --is-ancestor`), saíram na abertura desta, com a
+prova de que nenhum processo tinha `cwd` nelas nem havia `cargo`/`rustc`
+vivo; e o cache incremental do `target` principal (2,8 GB) saiu pelo mesmo
+motivo da cognição de 07/09 — o disco foi de 4,5 para 8,5 GB livres antes de
+abrir as quatro. **F** (prova real) fica com cada frente: teste que falha com
+o defeito reposto, saída guardada, e só depois o conserto. **G** (QA) é a
+C20-QA-ODBC mais a entrada de cada guarda nova no catálogo. **H** (documentação)
+e **I** (versionador) são a integração.
+
+**Uma decisão de modelo que merece o motivo escrito:** as duas frentes de
+projeto e risco foram no escalão **mais forte disponível**, e não no forte
+comum, porque as duas tocam o portão de permissão — a C20-CONSULTA pelo
+`existe`, a C20-DIREITO pela carga do cadastro — e o erro ali não aparece em
+teste de tradução nem em tela: aparece como dado de outro que alguém leu.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:
