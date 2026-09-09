@@ -856,10 +856,25 @@ impl Analisador {
     /// A lista de `ORDER BY` de `agrupar`/`consultar`: sobre um resultado JA
     /// computado em memoria, entao varias colunas nao pedem indice nenhum --
     /// e por isso NAO tem a restricao de uma coluna so da forma antiga.
+    ///
+    /// Aceita coluna QUALIFICADA (`p.id`, pedido 236) -- antes so lia o
+    /// primeiro pedaco e deixava o ponto sobrando (o comando inteiro
+    /// estourava mais na frente, com "esperava FROM" em vez de dizer que o
+    /// problema era no `ORDER BY`). Quem resolve se o qualificador existe e
+    /// se e ambiguo e o `consultar`, do mesmo jeito que ja resolve a
+    /// projecao -- aqui e so leitura.
     pub(crate) fn lista_de_ordenacoes(&mut self) -> Result<Vec<Ordenacao>> {
         let mut ordens = Vec::new();
         loop {
             let coluna = self.identificador("nome de coluna no ORDER BY")?;
+            let coluna = if self.aceitar(&Token::Ponto) {
+                format!(
+                    "{coluna}.{}",
+                    self.identificador("nome de coluna no ORDER BY depois do ponto")?
+                )
+            } else {
+                coluna
+            };
             let desc = if self.aceitar_palavra("DESC") {
                 true
             } else {
@@ -934,7 +949,6 @@ impl Analisador {
     /// Depois de espiar `FUNCAO (` sem consumir -- consome os dois e le o
     /// resto da chamada.
     fn chamada_de_agregado(&mut self, funcao: FuncaoAgregada) -> Result<ItemProjetado> {
-        let pos = self.posicao_atual();
         self.i += 2; // a palavra da funcao, e o `(`
         let (funcao, coluna) =
             if funcao == FuncaoAgregada::Contagem && self.aceitar(&Token::Asterisco) {
@@ -943,17 +957,14 @@ impl Analisador {
                 let c = self.identificador("coluna de COUNT(DISTINCT ...)")?;
                 (FuncaoAgregada::Distintos, Some(c))
             } else if funcao == FuncaoAgregada::Contagem {
-                // `COUNT(coluna)` -- contar nao-nulo de uma coluna -- nao e
-                // `COUNT(*)` nem `COUNT(DISTINCT ...)`, e o acumulador desta
-                // casa (`pivot.rs::Agregador::Contagem`) conta LINHA, nao
-                // nao-nulo de uma coluna: aceitar calado devolveria a mesma
-                // conta de `COUNT(*)` com cara de ter contado outra coisa.
-                return Err(lexico::erro(
-                    pos,
-                    "COUNT(coluna) nao tem substrato nesta rodada -- so COUNT(*) e \
-                 COUNT(DISTINCT coluna). Contar so os nao-nulos de uma coluna e outro \
-                 acumulador, que este item nao construiu",
-                ));
+                // `COUNT(coluna)` -- conta so os NAO-NULOS da coluna, e nao
+                // LINHA como `COUNT(*)` (pedido 236). O JSON e o mesmo
+                // agregado de sempre (`"funcao":"contagem","coluna":c`); a
+                // distincao entre contar linha e contar nao-nulo mora no
+                // acumulador do lado do motor, que nao e desta crate --
+                // aqui so faltava a leitura SQL.
+                let c = self.identificador("coluna de COUNT(...)")?;
+                (FuncaoAgregada::Contagem, Some(c))
             } else {
                 let c = self.identificador("coluna do agregado")?;
                 (funcao, Some(c))
@@ -1342,24 +1353,25 @@ mod testes {
         }
     }
 
+    // AND/OR, LIKE, IN (lista), BETWEEN e IS NULL sairam daqui no dia em que
+    // o item 2 (WHERE em forma de expressao) entrou -- a prova deles esta em
+    // `onde_em_forma_de_expressao`, la embaixo. SUM(x) e GROUP BY sairam no
+    // dia do item 3 -- a prova deles esta em
+    // `sintaxe::testes::group_by_e_agregados` e em `traduzir::testes`. JOIN
+    // saiu no dia do item 8 -- a prova esta em `consulta::testes`
+    // (`junção...`). `COUNT(coluna)` saiu no dia do pedido 236 -- a prova
+    // (agora de PASSAR) esta em
+    // `count_de_coluna_sem_distinct_vira_agregado_de_contagem`. INSERT,
+    // UPDATE e DELETE sairam daqui no dia em que passaram a existir: as
+    // recusas DELES moram em `dml.rs`, uma por falta. So sobrou DISTINCT --
+    // um `for` de um elemento so seria a mesma coisa por um caminho mais
+    // longo.
     #[test]
     fn o_que_falta_recusa_pelo_nome() {
-        for (sql, pedaco) in [
-            // AND/OR, LIKE, IN (lista), BETWEEN e IS NULL sairam daqui no dia
-            // em que o item 2 (WHERE em forma de expressao) entrou -- a prova
-            // deles esta em `onde_em_forma_de_expressao`, la embaixo. SUM(x)
-            // e GROUP BY sairam no dia do item 3 -- a prova deles esta em
-            // `sintaxe::testes::group_by_e_agregados` e em `traduzir::testes`.
-            // JOIN saiu no dia do item 8 -- a prova esta em
-            // `consulta::testes` (`junção...`).
-            ("SELECT DISTINCT a FROM t", "DISTINCT"),
-            ("SELECT COUNT(a) FROM t", "COUNT(coluna)"),
-            // INSERT, UPDATE e DELETE sairam daqui no dia em que passaram a
-            // existir: as recusas DELES moram em `dml.rs`, uma por falta.
-        ] {
-            let e = analisar(sql).unwrap_err().to_string();
-            assert!(e.contains(pedaco), "{sql} -> {e}");
-        }
+        let e = analisar("SELECT DISTINCT a FROM t")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("DISTINCT"), "{e}");
     }
 
     // ------------------------------------------- item 2: WHERE-expressao
@@ -1741,12 +1753,43 @@ mod testes {
         assert!(e.contains("GROUP BY"), "{e}");
     }
 
+    /// Pedido 236: `COUNT(coluna)` vira agregado `contagem` com `coluna`
+    /// (conta nao-nulo), diferente de `COUNT(*)` (conta linha, `coluna:
+    /// None`). Ate esta rodada a forma recusava pelo nome
+    /// ("COUNT(coluna) nao tem substrato") -- este teste falhava contra o
+    /// defeito reposto (esperava `Agregada`, vinha `Err`) e passa com o
+    /// conserto.
     #[test]
-    fn count_de_coluna_sem_distinct_recusa_pelo_nome() {
-        let e = analisar("SELECT COUNT(preco) FROM c")
-            .unwrap_err()
-            .to_string();
-        assert!(e.contains("COUNT(coluna)"), "{e}");
+    fn count_de_coluna_sem_distinct_vira_agregado_de_contagem() {
+        let s = analisar("SELECT COUNT(preco) FROM c").unwrap();
+        let Projecao::Agregada(itens) = s.projecao else {
+            panic!("esperava Agregada")
+        };
+        assert_eq!(
+            itens,
+            vec![ItemProjetado::Agregado {
+                funcao: FuncaoAgregada::Contagem,
+                coluna: Some("preco".into()),
+                apelido: None,
+            }]
+        );
+        // Continua distinto de COUNT(*) (coluna None) e de
+        // COUNT(DISTINCT ...) (funcao Distintos) -- os dois caminhos de
+        // sempre nao mudam de forma.
+        let s2 = analisar("SELECT COUNT(*) FROM c").unwrap();
+        assert_eq!(s2.projecao, Projecao::Contagem);
+        let s3 = analisar("SELECT COUNT(DISTINCT preco) FROM c").unwrap();
+        let Projecao::Agregada(itens3) = s3.projecao else {
+            panic!("esperava Agregada")
+        };
+        assert_eq!(
+            itens3,
+            vec![ItemProjetado::Agregado {
+                funcao: FuncaoAgregada::Distintos,
+                coluna: Some("preco".into()),
+                apelido: None,
+            }]
+        );
     }
 
     #[test]
