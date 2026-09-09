@@ -22,7 +22,7 @@
     <text x="20" y="305" font-size="9.5" opacity=".75">vá até o fim — senão um que parasse</text>
     <text x="20" y="318" font-size="9.5" opacity=".75">sempre passaria em tudo.</text>
     <rect x="262" y="52" width="198" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="361" y="72" text-anchor="middle" font-size="10.5">comparativo/</text><text x="361" y="87" text-anchor="middle" font-size="9.5" opacity=".75">resultados.json · 19 linhas</text>
-    <rect x="262" y="116" width="198" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="361" y="136" text-anchor="middle" font-size="10.5">cobertura-da-tela/</text><text x="361" y="151" text-anchor="middle" font-size="9.5" opacity=".75">resultados.json · 123 ops</text>
+    <rect x="262" y="116" width="198" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="361" y="136" text-anchor="middle" font-size="10.5">cobertura-da-tela/</text><text x="361" y="151" text-anchor="middle" font-size="9.5" opacity=".75">resultados.json · 136 ops</text>
     <rect x="262" y="180" width="198" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="361" y="200" text-anchor="middle" font-size="10.5">docs/PENDENCIAS.md</text><text x="361" y="215" text-anchor="middle" font-size="9.5" opacity=".75">este é escrito à mão</text>
     <path d="M220 74 L256 74" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaWf)"/>
     <path d="M220 138 L256 138" stroke="currentColor" stroke-width="1.3" marker-end="url(#setaWf)"/>
@@ -46,6 +46,6 @@
     <line x1="20" y1="336" x2="918" y2="336" stroke="currentColor" stroke-width="1" opacity=".22"/>
     <text x="20" y="358" font-size="11" opacity=".85"><tspan font-weight="600">A regra que fecha o desenho:</tspan> nada da coluna 4 se edita. Quem quiser mudar uma palavra mexe na coluna 3, e quem quiser</text>
     <text x="20" y="375" font-size="11" opacity=".85">mudar um número mexe na coluna 1 — porque número digitado à mão envelhece calado, e a receita do número envelhece junto.</text>
-    <text x="20" y="399" font-size="10.5" opacity=".6">Medido nesta rodada: 19 capacidades, 123 operações no catálogo, 105 alcançadas pela tela. Os três saem da coluna 1, nenhum do teclado.</text>
+    <text x="20" y="399" font-size="10.5" opacity=".6">Medido nesta rodada: 19 capacidades, 136 operações no catálogo, 109 alcançadas pela tela. Os três saem da coluna 1, nenhum do teclado.</text>
   </g>
 </svg>

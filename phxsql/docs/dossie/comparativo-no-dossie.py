@@ -95,8 +95,19 @@ RAZAO_DE_FORA = {
     # Falta mesmo: sem tela ainda, e sem decisao registrada dizendo que nao
     # havera uma.
     "renomear_tabela": "falta", "procurar_texto": "falta",
-    # A tela faz por OUTRO CAMINHO (outra operacao cobre o mesmo efeito).
+    # A tela faz por OUTRO CAMINHO (outra operacao cobre o mesmo efeito):
+    # `consultar`, `agrupar` e as visoes nascem do `sql` que a tela de Query
+    # manda; as diretivas se leem e se gravam pela tela de configuracao, que
+    # fala `config`/`config_gravar`.
     "buscar": "outro_caminho",
+    "consultar": "outro_caminho", "agrupar": "outro_caminho",
+    "criar_visao": "outro_caminho", "visoes": "outro_caminho",
+    "excluir_visao": "outro_caminho",
+    "diretivas": "outro_caminho", "diretiva_gravar": "outro_caminho",
+    # Falta mesmo (09/09/2026): `diferencas` nao tem forma SQL nem botao, e as
+    # tres de cadastro sao o pedido 230 -- a aba de Usuarios ainda so le.
+    "diferencas": "falta",
+    "usuario_criar": "falta", "usuario_alterar": "falta", "usuario_excluir": "falta",
 }
 
 # Frases sem flexao de numero de proposito -- "1 X: a" e "3 X: a, b, c" tem

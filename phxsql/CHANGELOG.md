@@ -10,9 +10,49 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
-## Não lançado — as dezoito do comparativo, mais junções e subconsultas
+## Não lançado — as dezoito do comparativo, junções, subconsultas e os limites nomeados
+
+### Corrigido
+
+- **`LEFT JOIN` com a direita vazia perdia as colunas da direita** (pedido
+  237): os nomes saíam da primeira linha da direita, e com a direita vazia a
+  coluna sumia em vez de vir nula — a forma da linha mudava entre o caso
+  casado e o órfão. Agora os nomes vêm do **modelo tipado** do lado, e a linha
+  órfã traz todas as colunas do outro lado, nulas.
+- **`Decimal` no `consultar.expressao` comparava como texto** (pedido 237):
+  `"9.50" > "10.00"` era verdadeiro. A célula passa a ser convertida pelo tipo
+  do modelo antes de a expressão vê-la.
+- **Regra de direito por coluna que citava coluna inexistente carregava
+  calada** (pedido 235): `colunas: {salrio: …}` entrava sem aviso e `salario`
+  ficava sem regra. Recusa na carga quando a tabela existe, nomeando as
+  colunas que existem; tabela que ainda não existe aceita com aviso, e
+  `criar_tabela` avisa a regra inerte.
+- **`threads_e_cpu_viram_o_teto_do_paralelo` caía na suíte inteira e passava
+  sozinho** (pedido 234): estado global de processo (`paralelo::TETO`)
+  disputado com `Config::ler`. Conserto por contrato, verde em 300 corridas.
+- **A lei e a marca diziam que «não há transação»**, e há desde o pedido 162;
+  o motivo de *ACID compliant* continuar falso é o isolamento `READ COMMITTED`
+  e o C parcial (`docs/ACID.md` §0). Mais dezessete pontos da revisão de
+  documentação de 09/09: três telas do `MANUAL.txt` descritas como apagadas
+  quando funcionam, seis contagens de operações digitadas e envelhecidas, o
+  bloco morto do `LEIA-ME.md` do dossiê, quatro operações de idiomas sem
+  manual, e os dois números da cobertura da tela que viviam à mão no dossiê e
+  agora saem do gerador.
 
 ### Adicionado
+
+- **Junções `direito`, `completo` e `cruzado`** no `consultar`
+  (`RIGHT`/`FULL`/`CROSS JOIN` no SQL, 1:1), com o teto do produto conferido
+  **antes** de materializar.
+- **`existe`**: `[NOT] EXISTS` correlacionado por igualdade, como semijunção
+  por espalhamento — cada `de` pelo portão único e visível ao direito por
+  coluna.
+- **`COUNT(coluna)`** contando não nulos, **`ORDER BY p.id`** qualificado, e
+  **`colunas: [{nome, tipo}]`** na resposta do `consultar` e do `agrupar`.
+- **`SQL_C_WCHAR`** no driver ODBC, nos dois sentidos (UTF-16 ↔ UTF-8 na
+  borda), com par substituto.
+- **Aviso de regra de coluna inerte** nas três operações de cadastro e em
+  `criar_tabela`.
 
 - **Expressões no esquema**: `padrao` (DEFAULT no inserir), `check`
   (restrição avaliada no inserir e no atualizar), coluna `calculada`
@@ -52,6 +92,18 @@ Os números são **medidos**, nunca estimados.
   cravado (direito por coluna, PITR, parâmetro, diferenças) viraram sonda
   VIVA — exercitam o servidor pelo soquete e medem o EFEITO, com o
   controle na mesma corrida.
+
+### Sabido
+
+- Correlação que não seja igualdade, `IN (SELECT …)` correlacionado, escalar
+  correlacionada e `EXISTS` sem par recusam nomeando: rodar a subconsulta por
+  linha seria N passagens pelo portão.
+- Parâmetro ODBC de saída recusa: nenhuma operação do servidor devolve valor
+  além da linha.
+- Isolamento acima de `READ COMMITTED` e TLS no transporte continuam NÃO, por
+  decisão do dono (pedido 239).
+- A média de inteiro no `agrupar` sai como `Real8`, não como o tipo da
+  coluna — medido no acumulador, não no contrato.
 
 ## Não lançado — a auditoria externa, medida; e os números que ninguém digita mais
 

@@ -1,10 +1,15 @@
 {
-  "quando": "2026-09-07T03:17:08",
-  "operacoes": 123,
-  "alcancadas_pela_tela": 105,
+  "quando": "2026-09-09T06:26:06",
+  "operacoes": 136,
+  "alcancadas_pela_tela": 109,
   "fora": [
     "catalogo",
-    "procurar_texto",
+    "criar_visao",
+    "visoes",
+    "excluir_visao",
+    "diferencas",
+    "consultar",
+    "agrupar",
     "bulkinsert",
     "begin",
     "commit",
@@ -18,7 +23,11 @@
     "replicar",
     "aplicar",
     "cluster_pulso",
-    "cluster_estado",
+    "diretivas",
+    "diretiva_gravar",
+    "usuario_criar",
+    "usuario_alterar",
+    "usuario_excluir",
     "telemetria_ligar",
     "telemetria_desligar"
   ],
@@ -34,5 +43,5 @@
     "crates/phxsql-server/ui/telemetria.css",
     "crates/phxsql-server/ui/telemetria.js"
   ],
-  "apelidos_no_catalogo": 24
+  "apelidos_no_catalogo": 26
 }

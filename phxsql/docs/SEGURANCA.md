@@ -2473,7 +2473,7 @@ O teste que trava isso é o do comportamento **velho**:
 <!-- direito-por-coluna: gerado por docs/geradores/direito-por-coluna.py -->
 ## 15. Direito por coluna: as 5 que devolvem linha, as 3 que escrevem e as 17 que recusam
 
-Medido em 130 operações do catálogo (`crates/phxsql-server/src/catalogo.rs`), classificadas uma a uma em `CLASSES`, no `crates/phxsql-server/src/direito_coluna.rs`. Os apelidos viajam com a operação e não contam de novo.
+Medido sobre **todas** as operações do catálogo (`crates/phxsql-server/src/catalogo.rs`), classificadas uma a uma em `CLASSES`, no `crates/phxsql-server/src/direito_coluna.rs` — e o teste `a_lista_e_o_catalogo_sao_a_mesma_lista` reprova no dia em que o catálogo ganhar uma operação que a tabela não conhece, então a contagem não se digita aqui: ela envelheceu uma vez (dizia 130 quando eram 136), e quem quer o número roda o teste ou lê o `CAPABILITIES.json`. Os apelidos viajam com a operação e não contam de novo.
 
 | classe | quantas | o que o servidor faz |
 |---|---:|---|
