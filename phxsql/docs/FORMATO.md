@@ -120,8 +120,24 @@ cobrindo os bytes 0..188.
 
 A versão 5 nasce **só** quando duas coisas valem ao mesmo tempo: o cofre está
 ligado (`cifra.ligada`) e o esquema tem ao menos uma coluna marcada como dado
-pessoal. Uma tabela sem coluna marcada nasce na 4 mesmo com o cofre ligado — não
-há o que cifrar. A **4 continua sendo lida e gravada** como sempre foi.
+pessoal — **inline ou externa** (`Memo`/`Bin`). Uma tabela sem coluna marcada
+nasce na 4 mesmo com o cofre ligado — não há o que cifrar. A **4 continua sendo
+lida e gravada** como sempre foi.
+
+**Tabela cujas únicas colunas marcadas são externas** nasce na 5 com o
+cabeçalho de 192 e o material dentro dele, e o slot **sem etiqueta**: não há
+faixa inline para selar, e o rabo é zero (`Material::rabo(0)`). O `slot_size`
+é o mesmo da tabela em claro; o que a cifra protege ali é o conteúdo do
+`.memo`/`.bin`, selado com a chave que mora neste cabeçalho.
+
+> **Até 09/09/2026 (pedido 210) a condição lia só as faixas inline**, e uma
+> tabela só de externas nascia na **4**, em claro, com o cofre ligado e sem
+> aviso. O conserto vale para o que se **cria** daqui em diante: essas
+> tabelas continuam na 4 e em claro — não há recifragem automática, pela
+> mesma regra de «ligar a cifra não cifra o que já existe». O conferidor
+> `--example tabela-marcada-nasceu-em-claro` diz quantas há; a operação
+> `esquema` responde `material` (`cifrado` ou `em_claro`) por tabela, e o
+> relatório `dados_pessoais` traz o mesmo campo em cada achado.
 
 Logo após o cabeçalho vem o **esquema serializado** (`schema_len` bytes), e
 `data_offset` é o próximo múltiplo de 64. A tabela é auto-descritiva: o
@@ -159,7 +175,13 @@ de virar bloco do `.bin`/`.memo`, com o nonce de 24 bytes à frente:
 
 O bloco de esquema é imutável, com **duas** exceções. A primeira é
 declaração: `declarar_fk` e `excluir_fk` o regravam para mudar a lista de
-chaves estrangeiras — payload e `slot_size` não mudam. Quando o bloco novo
+chaves estrangeiras — payload e `slot_size` não mudam —, e `marcar_lgpd`
+regrava a marca de dado pessoal pelo mesmo caminho. **Numa tabela da versão 5
+o conjunto das colunas marcadas é fixo**: as faixas de cada slot e os blocos
+do `.memo`/`.bin` já gravados foram selados sob ele, e marcar ou desmarcar
+uma coluna depois exigiria reselar a tabela inteira, operação que não existe.
+O motor recusa, dizendo isso; só o **grau** (pessoal ↔ sensível) muda, porque
+ele não muda o que se sela. Quando o bloco novo
 cabe antes do `data_offset` (a folga do alinhamento deixa até 63 bytes), ele é
 regravado no lugar, em cada volume; quando não cabe, cada volume é reescrito
 num arquivo ao lado (`*.novo`) com o `data_offset` mais adiante e os slots
@@ -205,6 +227,16 @@ novo. Copiar o corpo cifrado byte a byte não serviria: o texto cifrado mora
 *no offset* da coluna marcada, e a etiqueta cobre as faixas marcadas juntas —
 mover os offsets sem reselar deixaria a linha ilegível para sempre, sem erro
 na hora.
+
+**O material não se rederiva aqui.** Coluna marcada acrescentada a uma tabela
+que nasceu na **4** continua em claro — externa ou inline —, porque a cifra é
+decidida na criação, e virar um volume da 4 para a 5 seria uma operação com
+nome, não um efeito de acrescentar coluna. É decisão, provada pelo teste
+`acrescentar_coluna_marcada_a_tabela_em_claro_continua_em_claro`, e a
+operação `esquema` a torna visível pelo campo `material`. O caminho inverso
+funciona: coluna inline marcada acrescentada a uma tabela da 5 que só tinha
+externas ganha a faixa **e** a etiqueta (o slot cresce a largura dela mais 16),
+e as linhas antigas são reseladas com o valor padrão já dentro da faixa.
 
 **Os arquivos irmãos:**
 

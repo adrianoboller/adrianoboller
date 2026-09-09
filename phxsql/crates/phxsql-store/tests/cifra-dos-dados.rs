@@ -94,6 +94,38 @@ fn geometria(d: &Path, nome: &str) -> (usize, usize) {
     (slot, off)
 }
 
+/// O tamanho do cabecalho declarado nos bytes 10..12: 128 em claro, 192 com
+/// material. E o segundo discriminador do formato, e o unico que diz se o
+/// sal e a prova da chave estao no arquivo.
+fn cab_len(d: &Path, nome: &str) -> u16 {
+    let b = std::fs::read(d.join(format!("{nome}.reg"))).unwrap();
+    u16::from_le_bytes([b[10], b[11]])
+}
+
+/// O esquema do pedido 210: a UNICA coluna marcada e EXTERNA. `nome` existe e
+/// nao esta marcada -- e o que deixa provar, mais abaixo, que marca-la depois
+/// e recusado.
+fn esquema_so_externas(nome: &str) -> Schema {
+    Schema::new(
+        nome,
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40)).obrigatoria(),
+            Column::new("obs", ColumnType::Memo).com_dado_pessoal(DadoPessoal::Sensivel),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap()
+}
+
+fn ficha(i: i64) -> Vec<Value> {
+    vec![
+        Value::Int(i),
+        Value::Str(format!("ficha {i:04}")),
+        Value::Memo(format!("{MEMO_SECRETO} numero {i}")),
+    ]
+}
+
 // ---------------------------------------------------------------------------
 // O teste que mais importa: o comportamento VELHO
 // ---------------------------------------------------------------------------
@@ -554,36 +586,37 @@ fn acrescentar_coluna_em_tabela_cifrada_mantem_a_linha_legivel() {
     let _ = std::fs::remove_dir_all(&d);
 }
 
-/// **GUARDA VERMELHA, entregue falhando de proposito em 05/09/2026.**
+/// **Guarda entregue VERMELHA em 05/09/2026 e consertada em 09/09/2026**
+/// (pedido 210).
 ///
-/// Tabela cujas UNICAS colunas marcadas sao EXTERNAS (`Memo`/`Bin`). Hoje ela
-/// nasce em claro com o cofre ligado, e o texto sigiloso vai para o `.memo`
-/// legivel -- sem erro, sem aviso, e com `{"op":"config"}` respondendo
-/// `cifra.ligada: true`.
+/// Tabela cujas UNICAS colunas marcadas sao EXTERNAS (`Memo`/`Bin`). Ate o
+/// conserto ela nascia em claro com o cofre ligado, o texto sigiloso ia para
+/// o `.memo` legivel -- sem erro, sem aviso, e com `{"op":"config"}`
+/// respondendo `cifra.ligada: true`.
 ///
 /// # A cadeia, medida no fonte
 ///
-/// 1. `faixas_pessoais` (`reg.rs:2117`) faz `continue` em `col.ty.externo()`,
-///    entao coluna externa marcada NAO gera faixa;
-/// 2. sem faixa, `faixas.is_empty()` e o volume nasce `Material::EM_CLARO`
-///    (`reg.rs:266`) -- e o comentario ao lado diz «uma tabela SEM coluna
-///    marcada nasce em claro», que nao e este caso: ha coluna marcada;
-/// 3. `selar_externo` (`reg.rs:1591`) devolve o dado intacto porque
-///    `!self.material.cifrado()`.
+/// 1. `faixas_pessoais` faz `continue` em `col.ty.externo()`, entao coluna
+///    externa marcada NAO gera faixa;
+/// 2. sem faixa, `faixas.is_empty()` e o volume nascia `Material::EM_CLARO`
+///    -- e o comentario ao lado dizia «uma tabela SEM coluna marcada nasce em
+///    claro», que nao era este caso: havia coluna marcada;
+/// 3. `selar_externo` devolvia o dado intacto porque `!self.material.cifrado()`.
 ///
-/// O caminho de selar o externo esta escrito e esta CERTO. O que nao alcanca
-/// este caso e a condicao que o LIGA, derivada so das colunas inline.
+/// O caminho de selar o externo estava escrito e estava CERTO. O que nao
+/// alcancava este caso era a condicao que o LIGA, derivada so das colunas
+/// inline. Hoje ela le `Schema::tem_dado_pessoal`, que enxerga as externas.
 ///
 /// # Por que nenhum teste pegava
 ///
 /// O `esquema()` deste arquivo marca `nome` (Str, INLINE) alem de `obs`
 /// (Memo). Com uma inline marcada, `faixas` nao fica vazio, o material nasce
-/// cifrado, e o `.memo` e selado -- entao toda a bateria de cifra prova o
+/// cifrado, e o `.memo` e selado -- entao toda a bateria de cifra provava o
 /// caminho que FUNCIONA, e o irmao nunca foi exercitado. E a mesma forma dos
 /// pedidos 172, 173 e 176: o conserto entrou no caminho que o motivou e o
 /// irmao ficou.
 ///
-/// Medido com dez linhas pelo soquete, nos dois sentidos:
+/// Medido com dez linhas pelo soquete, nos dois sentidos, em 05/09:
 ///
 /// ```text
 /// so externas (Memo+Bin)         .memo 6264 B   texto em claro? SIM
@@ -592,43 +625,427 @@ fn acrescentar_coluna_em_tabela_cifrada_mantem_a_linha_legivel() {
 ///
 /// Os 400 bytes de diferenca sao os 40 por valor (nonce de 24 + etiqueta de
 /// 16) das dez linhas.
+///
+/// # Por que a prova REABRE a tabela
+///
+/// Ate 09/09 este teste so olhava o `.memo`. Medido com a condicao do
+/// `criar` trocada e o resto intacto: o `.memo` saia selado, o teste
+/// passava -- e a tabela NAO reabria, recusada pela conferencia do `abrir`
+/// contra «desmarcar nao decifra», que lia a mesma premissa («cifrado, logo
+/// ha faixa inline»). Guarda que nao percorre o ciclo inteiro -- gravar,
+/// fechar, reabrir, ler, alterar -- prova meio conserto.
 #[test]
-#[ignore = "VERMELHA de proposito: prova um vazamento que ainda nao foi consertado"]
 fn coluna_externa_marcada_sozinha_nao_pode_ir_em_claro() {
     let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
     cofre::desligar();
     let d = dir("so-externa");
+    // A gemea em claro diz quanto e o slot SEM cifra: mesmo esquema, sem
+    // cofre. E contra ela que se prova que o slot nao ganhou etiqueta.
+    let gemea = dir("so-externa-gemea");
+    {
+        let mut t = Table::criar(&gemea, esquema_so_externas("fichas")).unwrap();
+        t.inserir(&ficha(1)).unwrap();
+        t.sincronizar().unwrap();
+    }
     cofre::definir(SENHA, RAPIDO).unwrap();
 
-    // NENHUMA coluna inline marcada -- e a unica diferenca para o `esquema()`
-    // deste arquivo, que marca `nome`.
-    let e = Schema::new(
-        "fichas",
-        vec![
-            Column::new("id", ColumnType::Int8).obrigatoria(),
-            Column::new("obs", ColumnType::Memo).com_dado_pessoal(DadoPessoal::Sensivel),
-        ],
-        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
-    )
-    .unwrap();
-
     {
-        let mut t = Table::criar(&d, e).unwrap();
+        let mut t = Table::criar(&d, esquema_so_externas("fichas")).unwrap();
+        assert!(
+            t.cifrada(),
+            "a tabela cuja unica coluna marcada e externa nasceu sem material"
+        );
         for i in 1..=10 {
-            t.inserir(&[
-                Value::Int(i),
-                Value::Memo(format!("{MEMO_SECRETO} numero {i}")),
-            ])
-            .unwrap();
+            t.inserir(&ficha(i)).unwrap();
         }
         t.sincronizar().unwrap();
     }
 
-    let memo = bytes_com_extensao(d.as_ref(), "memo");
+    let memo = bytes_com_extensao(&d, "memo");
+    assert!(!memo.is_empty(), "o teste nao achou nenhum .memo");
     assert!(
         !contem(&memo, MEMO_SECRETO.as_bytes()),
         "o `.memo` de uma tabela com coluna EXTERNA marcada como sensivel \
          guardou o texto em claro, com o cofre ligado"
     );
+
+    // O formato: versao 5 e cabecalho de 192 (o sal e a prova da chave estao
+    // la), e o slot do MESMO tamanho da gemea em claro -- nao ha faixa inline
+    // para selar, entao nao ha etiqueta. E o rabo zero do `Material::rabo`.
+    assert_eq!(versao(&d, "fichas", "reg"), 5);
+    assert_eq!(cab_len(&d, "fichas"), 192);
+    assert_eq!(
+        geometria(&d, "fichas").0,
+        geometria(&gemea, "fichas").0,
+        "o slot ganhou etiqueta sem ter faixa inline para selar"
+    );
+
+    // O ciclo inteiro: reabrir, ler tudo, alterar, reabrir, reler.
+    {
+        let mut t = Table::abrir(&d, "fichas").unwrap();
+        assert!(t.cifrada());
+        for i in 1..=10i64 {
+            let l = t.ler(i as u64).unwrap().unwrap();
+            assert_eq!(l[1], Value::Str(format!("ficha {i:04}")));
+            assert_eq!(l[2], Value::Memo(format!("{MEMO_SECRETO} numero {i}")));
+        }
+        let mut alterada = ficha(3);
+        alterada[2] = Value::Memo("outro segredo, alterado depois".into());
+        t.atualizar(3, &alterada).unwrap();
+        t.sincronizar().unwrap();
+    }
+    {
+        let mut t = Table::abrir(&d, "fichas").unwrap();
+        assert_eq!(
+            t.ler(3).unwrap().unwrap()[2],
+            Value::Memo("outro segredo, alterado depois".into())
+        );
+    }
+    assert!(!contem(
+        &bytes_com_extensao(&d, "memo"),
+        b"outro segredo, alterado depois"
+    ));
+    cofre::desligar();
+}
+
+// ---------------------------------------------------------------------------
+// O comportamento VELHO ao redor do conserto do pedido 210: o que NAO mudou
+// ---------------------------------------------------------------------------
+
+/// Tabela SEM coluna marcada continua nascendo em claro com o cofre ligado:
+/// versao 4, cabecalho de 128, e o mesmo slot da gemea criada sem cofre.
+///
+/// E o outro lado da condicao trocada: «ha dado pessoal declarado» tem de
+/// continuar dizendo NAO quando nao ha marca nenhuma -- senao toda tabela
+/// nasceria com material e 64 bytes de cabecalho para nao proteger nada.
+#[test]
+fn tabela_sem_coluna_marcada_continua_em_claro_com_o_cofre_ligado() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("sem-marca");
+    let gemea = dir("sem-marca-gemea");
+    let sem_marca = |nome: &str| {
+        Schema::new(
+            nome,
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("nome", ColumnType::Str(40)).obrigatoria(),
+                Column::new("obs", ColumnType::Memo),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap()
+    };
+    {
+        let mut t = Table::criar(&gemea, sem_marca("simples")).unwrap();
+        t.inserir(&linha(1)).unwrap();
+        t.sincronizar().unwrap();
+    }
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    {
+        let mut t = Table::criar(&d, sem_marca("simples")).unwrap();
+        assert!(!t.cifrada(), "tabela sem marca nasceu com material");
+        for i in 1..=5 {
+            t.inserir(&linha(i)).unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    assert_eq!(versao(&d, "simples", "reg"), 4);
+    assert_eq!(cab_len(&d, "simples"), 128);
+    assert_eq!(geometria(&d, "simples"), geometria(&gemea, "simples"));
+    assert!(
+        contem(&bytes_com_extensao(&d, "reg"), SEGREDO.as_bytes()),
+        "sem marca o nome TEM de estar legivel no .reg"
+    );
+    assert!(
+        contem(&bytes_com_extensao(&d, "memo"), MEMO_SECRETO.as_bytes()),
+        "sem marca o memo TEM de estar legivel"
+    );
+    cofre::desligar();
+}
+
+/// Coluna INLINE marcada continua exatamente como era: versao 5, cabecalho de
+/// 192, e o slot 16 bytes maior que o da gemea em claro -- a etiqueta. A
+/// coluna `Memo` NAO marcada continua em claro, porque a escolha e por coluna.
+#[test]
+fn coluna_inline_marcada_continua_com_a_etiqueta_de_16_bytes() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("so-inline");
+    let gemea = dir("so-inline-gemea");
+    let so_inline = |nome: &str| {
+        Schema::new(
+            nome,
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("nome", ColumnType::Str(40))
+                    .obrigatoria()
+                    .com_dado_pessoal(DadoPessoal::Pessoal),
+                Column::new("obs", ColumnType::Memo),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap()
+    };
+    {
+        let mut t = Table::criar(&gemea, so_inline("clientes")).unwrap();
+        t.inserir(&linha(1)).unwrap();
+        t.sincronizar().unwrap();
+    }
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    {
+        let mut t = Table::criar(&d, so_inline("clientes")).unwrap();
+        assert!(t.cifrada());
+        for i in 1..=5 {
+            t.inserir(&linha(i)).unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    assert_eq!(versao(&d, "clientes", "reg"), 5);
+    assert_eq!(cab_len(&d, "clientes"), 192);
+    assert_eq!(
+        geometria(&d, "clientes").0,
+        geometria(&gemea, "clientes").0 + 16,
+        "a etiqueta da linha e de 16 bytes, uma so para as faixas marcadas"
+    );
+    assert!(!contem(&bytes_com_extensao(&d, "reg"), SEGREDO.as_bytes()));
+    assert!(
+        contem(&bytes_com_extensao(&d, "memo"), MEMO_SECRETO.as_bytes()),
+        "o memo NAO marcado tem de continuar em claro: a escolha e por coluna"
+    );
+    {
+        let mut t = Table::abrir(&d, "clientes").unwrap();
+        assert_eq!(
+            t.ler(5).unwrap().unwrap()[1],
+            Value::Str(format!("{SEGREDO} 0005"))
+        );
+    }
+    cofre::desligar();
+}
+
+// ---------------------------------------------------------------------------
+// O encontro: o que o conserto do 210 abriria se viesse sozinho
+// ---------------------------------------------------------------------------
+
+/// Numa tabela CIFRADA, marcar ou desmarcar uma coluna depois e recusado --
+/// e o grau (pessoal/sensivel) pode mudar.
+///
+/// # O defeito que este teste impede, medido antes de escrever o conserto
+///
+/// O `remarcar_dado_pessoal` nao recalcula as faixas nem o `slot_size`. Numa
+/// tabela cifrada com faixa inline isso nunca doeu, porque a conta do
+/// `slot_size` (sem contar o rabo) recusava toda remarcacao por acidente. A
+/// tabela so de externas tem rabo ZERO: a conta passava, `nome` ficava
+/// marcada no esquema com as faixas velhas na memoria, as linhas seguintes
+/// iam com `nome` em claro sob um esquema que diz «cifrado», e a reabertura
+/// seguinte recusava com «slot_size nao bate com o esquema». Desmarcar a
+/// unica marcada passava tambem, e a reabertura caia em «desmarcar nao
+/// decifra».
+#[test]
+fn marcar_coluna_depois_numa_tabela_cifrada_e_recusado_e_o_grau_pode_mudar() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("remarcar");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+
+    // So de externas: rabo zero, o caso que passava pela conta antiga.
+    {
+        let mut t = Table::criar(&d, esquema_so_externas("fichas")).unwrap();
+        for i in 1..=5 {
+            t.inserir(&ficha(i)).unwrap();
+        }
+        let e = t
+            .marcar_dado_pessoal(&[("nome".into(), DadoPessoal::Pessoal)])
+            .unwrap_err();
+        assert!(
+            e.to_string().contains("reselar"),
+            "a recusa tem de dizer o motivo, e nao falar de estrutura: {e}"
+        );
+        let e = t
+            .marcar_dado_pessoal(&[("obs".into(), DadoPessoal::Nao)])
+            .unwrap_err();
+        assert!(e.to_string().contains("reselar"), "{e}");
+        // O grau nao muda o que se sela: passa.
+        t.marcar_dado_pessoal(&[("obs".into(), DadoPessoal::Pessoal)])
+            .unwrap();
+        t.sincronizar().unwrap();
+    }
+    {
+        let mut t = Table::abrir(&d, "fichas").unwrap();
+        assert_eq!(
+            t.esquema()
+                .coluna_por_nome("obs")
+                .map(|i| t.esquema().colunas()[i].dado_pessoal),
+            Some(DadoPessoal::Pessoal)
+        );
+        assert_eq!(
+            t.esquema()
+                .coluna_por_nome("nome")
+                .map(|i| t.esquema().colunas()[i].dado_pessoal),
+            Some(DadoPessoal::Nao),
+            "a marca recusada nao pode ter ficado gravada"
+        );
+        for i in 1..=5i64 {
+            assert_eq!(
+                t.ler(i as u64).unwrap().unwrap()[2],
+                Value::Memo(format!("{MEMO_SECRETO} numero {i}"))
+            );
+        }
+    }
+
+    // Com faixa inline (rabo de 16): a conta nova conta o rabo, entao mudar
+    // o grau passa -- antes era recusado com a mensagem errada -- e marcar
+    // uma coluna a mais continua recusado, agora pelo motivo certo.
+    let d2 = dir("remarcar-inline");
+    {
+        let mut t = Table::criar(&d2, esquema("clientes")).unwrap();
+        for i in 1..=5 {
+            t.inserir(&linha(i)).unwrap();
+        }
+        t.marcar_dado_pessoal(&[("nome".into(), DadoPessoal::Sensivel)])
+            .unwrap();
+        let e = t
+            .marcar_dado_pessoal(&[("id".into(), DadoPessoal::Pessoal)])
+            .unwrap_err();
+        assert!(e.to_string().contains("reselar"), "{e}");
+        t.sincronizar().unwrap();
+    }
+    {
+        let mut t = Table::abrir(&d2, "clientes").unwrap();
+        assert_eq!(
+            t.ler(2).unwrap().unwrap()[1],
+            Value::Str(format!("{SEGREDO} 0002"))
+        );
+    }
+    cofre::desligar();
+}
+
+/// Acrescentar uma coluna INLINE marcada a uma tabela cifrada so de externas
+/// sela a coluna nova: o slot ganha a largura dela E a etiqueta, e nem o valor
+/// padrao das linhas velhas nem o das novas aparece no `.reg`.
+///
+/// E o caminho de `acrescentar_coluna` com as faixas indo de vazias para uma
+/// -- o unico jeito legitimo de uma tabela so de externas ganhar faixa inline.
+#[test]
+fn acrescentar_coluna_inline_marcada_a_tabela_cifrada_so_de_externas_sela_a_nova() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("add-inline");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    {
+        let mut t = Table::criar(&d, esquema_so_externas("fichas")).unwrap();
+        for i in 1..=5 {
+            t.inserir(&ficha(i)).unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    let (slot_antes, _) = geometria(&d, "fichas");
+    const PADRAO: &str = "98765432100";
+    const NOVO: &str = "12345678909";
+    {
+        let mut t = Table::abrir(&d, "fichas").unwrap();
+        let n = t
+            .acrescentar_coluna(
+                Column::new("cpf", ColumnType::Str(11)).com_dado_pessoal(DadoPessoal::Pessoal),
+                Some(Value::Str(PADRAO.into())),
+            )
+            .unwrap();
+        assert_eq!(n, 5);
+        let mut nova = ficha(6);
+        nova.push(Value::Str(NOVO.into()));
+        t.inserir(&nova).unwrap();
+        t.sincronizar().unwrap();
+    }
+    let (slot_depois, _) = geometria(&d, "fichas");
+    assert_eq!(
+        slot_depois,
+        slot_antes + 11 + 16,
+        "a faixa nova de 11 bytes e a etiqueta que passou a existir"
+    );
+    let reg = bytes_com_extensao(&d, "reg");
+    assert!(
+        !contem(&reg, PADRAO.as_bytes()),
+        "o padrao das linhas velhas foi em claro"
+    );
+    assert!(
+        !contem(&reg, NOVO.as_bytes()),
+        "o valor da linha nova foi em claro"
+    );
+    {
+        let mut t = Table::abrir(&d, "fichas").unwrap();
+        let cpf = t.esquema().coluna_por_nome("cpf").unwrap();
+        for i in 1..=5i64 {
+            let l = t.ler(i as u64).unwrap().unwrap();
+            assert_eq!(l[cpf], Value::Str(PADRAO.into()));
+            assert_eq!(l[2], Value::Memo(format!("{MEMO_SECRETO} numero {i}")));
+        }
+        assert_eq!(t.ler(6).unwrap().unwrap()[cpf], Value::Str(NOVO.into()));
+    }
+    cofre::desligar();
+}
+
+/// **Nomeado, e decidido pelo comportamento velho:** coluna marcada
+/// acrescentada a uma tabela que nasceu EM CLARO continua em claro -- externa
+/// ou inline. «Ligar a cifra nao cifra o que ja existe» vale para a coluna
+/// nova: o material e decidido na criacao, e virar um volume da versao 4 para
+/// a 5 e uma operacao com nome, que nao existe. O `esquema` responde
+/// `material` para isso nao ficar invisivel.
+///
+/// Se um dia essa decisao mudar, este e o teste que cai -- e cair aqui e o
+/// aviso para reescrever o paragrafo do FORMATO.md §1.1 junto.
+#[test]
+fn acrescentar_coluna_marcada_a_tabela_em_claro_continua_em_claro() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("add-em-claro");
+    // A tabela de ontem: nasceu antes de o cofre ligar.
+    {
+        let e = Schema::new(
+            "antiga",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("nome", ColumnType::Str(40)).obrigatoria(),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap();
+        let mut t = Table::criar(&d, e).unwrap();
+        for i in 1..=3 {
+            t.inserir(&[Value::Int(i), Value::Str(format!("cliente {i}"))])
+                .unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    {
+        let mut t = Table::abrir(&d, "antiga").unwrap();
+        assert!(!t.cifrada());
+        t.acrescentar_coluna(
+            Column::new("obs", ColumnType::Memo).com_dado_pessoal(DadoPessoal::Sensivel),
+            None,
+        )
+        .unwrap();
+        t.acrescentar_coluna(
+            Column::new("apelido", ColumnType::Str(40)).com_dado_pessoal(DadoPessoal::Pessoal),
+            Some(Value::Str("sem apelido".into())),
+        )
+        .unwrap();
+        assert!(!t.cifrada(), "acrescentar coluna nao pode virar o material");
+        t.inserir(&[
+            Value::Int(4),
+            Value::Str("cliente 4".into()),
+            Value::Memo(MEMO_SECRETO.into()),
+            Value::Str(SEGREDO.into()),
+        ])
+        .unwrap();
+        t.sincronizar().unwrap();
+    }
+    assert_eq!(versao(&d, "antiga", "reg"), 4);
+    assert_eq!(cab_len(&d, "antiga"), 128);
+    assert!(
+        contem(&bytes_com_extensao(&d, "memo"), MEMO_SECRETO.as_bytes()),
+        "a decisao e que continua em claro; se isto caiu, a decisao mudou"
+    );
+    assert!(contem(&bytes_com_extensao(&d, "reg"), SEGREDO.as_bytes()));
     cofre::desligar();
 }

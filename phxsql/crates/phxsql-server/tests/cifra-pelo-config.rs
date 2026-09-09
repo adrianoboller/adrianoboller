@@ -11,11 +11,16 @@
 mod comum;
 use comum::DirTemp;
 
-use std::sync::Mutex;
+use std::io::{BufRead, BufReader, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use phxsql_core::json::Json;
 use phxsql_core::paginacao::Paginacao;
 use phxsql_server::config::Config;
+use phxsql_server::servidor::Servidor;
 use phxsql_store::cofre;
 use phxsql_store::log::{LogFile, Operacao};
 
@@ -132,4 +137,142 @@ fn a_resposta_do_protocolo_nao_leva_a_senha() {
     assert!(!texto.contains("segredo do cofre"), "{texto}");
     // E nem no `Debug`, que e por onde um diagnostico apressado vazaria.
     assert!(!format!("{:?}", c.cifra).contains("segredo do cofre"));
+}
+
+// ---------------------------------------------------------------------------
+// O material POR TABELA, pelo soquete -- a outra metade do `cifra.ligada`
+// ---------------------------------------------------------------------------
+
+/// Uma porta que ninguem mais esta usando, na faixa deste arquivo. Os outros
+/// binarios de teste tem as suas (7200, 7250, 7300); faixas separadas porque
+/// `cargo test` roda os binarios em paralelo.
+fn porta_livre() -> u16 {
+    static PROXIMA: AtomicU16 = AtomicU16::new(7350);
+    loop {
+        let porta = PROXIMA.fetch_add(1, Ordering::SeqCst);
+        assert!(porta < 7399, "acabaram as portas entre 7350 e 7398");
+        if let Ok(l) = TcpListener::bind(("127.0.0.1", porta)) {
+            drop(l);
+            return porta;
+        }
+    }
+}
+
+fn esperar_porta(porta: u16) {
+    let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
+    let ate = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < ate {
+        if TcpStream::connect_timeout(&alvo, Duration::from_millis(200)).is_ok() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("o servidor nao subiu na porta {porta}");
+}
+
+/// Uma linha de JSON para o servidor, uma linha de volta.
+fn pedir(porta: u16, corpo: &str) -> String {
+    let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
+    let fluxo = TcpStream::connect_timeout(&alvo, Duration::from_secs(3)).unwrap();
+    fluxo
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .unwrap();
+    let mut escrita = fluxo.try_clone().unwrap();
+    let mut leitor = BufReader::new(fluxo);
+    writeln!(escrita, "{{\"token\":\"t\",{}}}", corpo.replace('\n', " ")).unwrap();
+    let mut resposta = String::new();
+    leitor.read_line(&mut resposta).unwrap();
+    assert!(resposta.contains("\"ok\":true"), "{corpo} -> {resposta}");
+    resposta
+}
+
+/// `{"op":"config"}` responde `cifra.ligada: true` pelo PROCESSO; `esquema`
+/// responde `material` pelo ARQUIVO -- e os dois so contam a mesma historia
+/// quando toda tabela com dado pessoal nasceu depois do cofre.
+///
+/// # Por que este teste existe -- pedido 210
+///
+/// Ate 09/09/2026 uma tabela cujas unicas colunas marcadas eram externas
+/// (`Memo`/`Bin`) nascia em claro com o cofre ligado, e `cifra.ligada: true`
+/// era meia-verdade: o servidor tinha chave e a tabela nao a usava. Este
+/// teste sobe o servidor com a cifra ligada pelo `config.json`, cria a tabela
+/// exatamente nesse formato, e exige `material: cifrado` na resposta -- e
+/// `em_claro` numa tabela sem marca, criada no mesmo servidor, porque o campo
+/// e do arquivo e nao do interruptor.
+#[test]
+fn o_esquema_diz_o_material_de_cada_tabela_com_a_cifra_ligada() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("material");
+    let porta = porta_livre();
+    let caminho = d.join("config.json");
+    std::fs::write(
+        &caminho,
+        format!(
+            r#"{{
+              "token": "t",
+              "bind": "127.0.0.1:{porta}",
+              "base": "{}",
+              "cifra": {{ "ligada": true, "senha": "a chave do cofre", "iteracoes": 10000 }}
+            }}"#,
+            d.join("dados").display()
+        ),
+    )
+    .unwrap();
+    let mut c = Config::ler(&caminho).unwrap();
+    assert!(cofre::ligado(), "o config.json nao ligou o cofre");
+    c.web.ligado = false;
+    c.log_acessos = d.join("acessos.log");
+    c.blacklist = d.join("blacklist.json");
+    c.dblink = d.join("dblink.json");
+    c.jobs = d.join("jobs.json");
+    let s = Servidor::novo(c).unwrap();
+    let copia = Arc::clone(&s);
+    std::thread::spawn(move || {
+        let _ = copia.escutar();
+    });
+    esperar_porta(porta);
+
+    pedir(porta, r#""op":"criar_database","database":"loja""#);
+    // O formato do pedido 210: a UNICA coluna marcada e um Memo.
+    pedir(
+        porta,
+        r#""op":"criar_tabela","database":"loja","tabela":"fichas",
+           "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                      {"nome":"obs","tipo":"Memo","dado_pessoal":"sensivel"}],
+           "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]"#,
+    );
+    pedir(
+        porta,
+        r#""op":"criar_tabela","database":"loja","tabela":"simples",
+           "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+           "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]"#,
+    );
+
+    let cfg = pedir(porta, r#""op":"config""#);
+    assert!(cfg.contains("\"ligada\":true"), "{cfg}");
+    let fichas = pedir(
+        porta,
+        r#""op":"esquema","database":"loja","tabela":"fichas""#,
+    );
+    assert!(
+        fichas.contains("\"material\":\"cifrado\""),
+        "a tabela so de externas nao nasceu cifrada, ou o esquema nao diz: {fichas}"
+    );
+    let simples = pedir(
+        porta,
+        r#""op":"esquema","database":"loja","tabela":"simples""#,
+    );
+    assert!(
+        simples.contains("\"material\":\"em_claro\""),
+        "tabela sem marca tem de dizer em_claro mesmo com o cofre ligado: {simples}"
+    );
+    // O relatorio de conformidade traz o mesmo campo no achado.
+    let lgpd = pedir(porta, r#""op":"dados_pessoais","database":"loja""#);
+    assert!(
+        lgpd.contains("\"material\":\"cifrado\""),
+        "o achado de `fichas` nao diz o material: {lgpd}"
+    );
+
+    cofre::desligar();
 }

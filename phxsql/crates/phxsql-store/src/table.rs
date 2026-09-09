@@ -597,6 +597,11 @@ impl Table {
         self.reg.tem_espelho()
     }
 
+    /// O `.reg` desta tabela nasceu cifrado? Ver [`RegFile::cifrada`].
+    pub fn cifrada(&self) -> bool {
+        self.reg.cifrada()
+    }
+
     /// Confere os dois lados e conserta o que der. Ver `RegFile::reparar`.
     ///
     /// Reconta as marcadas no fim: o reparo pode ter trazido de volta um slot

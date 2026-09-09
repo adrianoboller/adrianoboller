@@ -1506,6 +1506,48 @@ cifrados como se fossem o nome do cliente.
 há o que cifrar, e carimbá-la de cifrada custaria 16 bytes por linha e um
 cabeçalho maior para não proteger nada.
 
+**Colunas externas sozinhas — o vazamento do pedido 210, e o conserto.**
+Até 09/09/2026, «tem coluna marcada» era lido como «tem faixa inline»: a
+condição que liga o material do `.reg` saía de `faixas_pessoais`, e essa lista
+pula `Memo`/`Bin` de propósito (o payload deles é um ponteiro, §11.2). Uma
+tabela cujas **únicas** colunas marcadas fossem externas nascia em claro com o
+cofre ligado, o texto sigiloso ia legível para o `.memo`, e `{"op":"config"}`
+respondia `cifra.ligada: true` — sem erro e sem aviso. Medido pelo soquete em
+05/09, dez linhas: só externas, `.memo` de **6.264 B** e texto em claro; com
+uma inline marcada ao lado, **6.664 B** e nada legível — os 400 B são os 40
+por valor da selagem. O caminho que sela o externo estava certo; o que não o
+alcançava era a condição que o **liga**.
+
+O conserto troca a premissa: o material nasce quando há dado pessoal
+**declarado**, inline ou externa (`Schema::tem_dado_pessoal`), e a lista de
+faixas continua decidindo só o que se sela dentro do slot. Uma tabela só de
+externas nasce na versão 5 com o slot **sem etiqueta** — rabo zero, não há
+faixa — e o conteúdo selado no `.memo`/`.bin`. E a troca teve **dois irmãos**,
+achados medindo e não lendo:
+
+- a conferência do `abrir` contra «desmarcar não decifra» (o parágrafo acima)
+  lia a **mesma** premissa. Com só a condição do `criar` trocada, a guarda
+  vermelha **passava** e a tabela não reabria — recusada como corrompida. A
+  guarda agora percorre o ciclo inteiro: grava, fecha, reabre, lê, altera;
+- `marcar_lgpd` numa tabela cifrada. Ele não recalcula as faixas nem o
+  `slot_size`, e só não doía porque a conta do `slot_size` recusava toda
+  remarcação em tabela cifrada por acidente (não contava o rabo). A tabela só
+  de externas tem rabo zero, passaria, e reabriria com «slot_size não bate».
+  Hoje a regra é dita: **em tabela cifrada o conjunto das colunas marcadas é
+  fixo** — marcar ou desmarcar exigiria reselar o que já está gravado, e isso
+  não existe; o grau (pessoal ↔ sensível) muda, porque não muda o que se sela.
+
+**O que NÃO mudou, e está provado**: tabela sem marca continua na 4 com o mesmo
+slot da gêmea sem cofre; tabela com inline marcada continua na 5 com os 16
+bytes de etiqueta; coluna marcada acrescentada a uma tabela nascida em claro
+**continua em claro** (o material é decidido na criação — nomeado no
+`FORMATO.md` §1.1). E as tabelas que nasceram em claro pelo defeito **continuam
+em claro**: guarda nova entra pedida, não imposta, e não há recifragem
+automática. Para que isso não seja invisível, `esquema` responde `material`
+(`cifrado` / `em_claro`) por tabela e `dados_pessoais` traz o campo em cada
+achado — `cifra.ligada` é do processo, `material` é do arquivo, e os dois
+divergem em toda tabela nascida antes do cofre ou pelo defeito.
+
 ### 11.7 O diário, a lixeira e a trilha
 
 **A decisão mais importante desta frente**, e ela não é sobre o `.reg`: *uma
@@ -1575,6 +1617,11 @@ Em `crates/phxsql-store/tests/cifra-dos-dados.rs`,
 | embaralhar as linhas não passa | copia o slot 5 sobre o 9 **com o CRC certo**, estraga o espelho junto, e exige erro |
 | o nonce nunca se repete | grava 200 vezes o **mesmo** conteúdo e exige 200 textos cifrados diferentes |
 | o `.ndx` vaza — de propósito | procura o nome dentro do `.ndx` e exige **achá-lo** |
+| só externas marcadas nasce cifrada | versão 5, cabeçalho 192, slot **igual** ao da gêmea em claro (sem etiqueta), memo selado; reabre, lê, altera, relê |
+| sem marca continua em claro com o cofre ligado | versão 4, cabeçalho 128, slot igual ao da gêmea; nome e memo legíveis |
+| inline marcada continua igual | versão 5 e slot 16 bytes maior que o da gêmea; o memo **não** marcado continua legível |
+| marcar depois em tabela cifrada é recusado | recusa nomeando «reselar», nos dois sentidos; o grau muda e a tabela reabre |
+| coluna marcada acrescentada a tabela em claro continua em claro | decisão nomeada: versão 4 mantida, memo e nome legíveis |
 | o custo do FrogCript é o escrito | subtrai o `slot_size` em claro do cifrado e compara com a conta do módulo |
 | o modo sai do arquivo | grava em AEAD, troca o processo para FrogCript, e a tabela antiga continua abrindo |
 | salto e separador são segredo | grava com `(7, '#')`, tenta abrir com `(5, '|')`, exige erro que nomeia o separador |
@@ -1592,6 +1639,9 @@ Em `crates/phxsql-store/tests/cifra-dos-dados.rs`,
 | não limpar o cache de derivadas em `definir` | `senha_errada_e_falta_de_senha_param_na_abertura` **abre com a senha errada** — foi assim que o defeito apareceu |
 | trocar `chars()` por `bytes()` no `pular` | `o_pulo_conta_caractere_e_nao_byte` devolve texto inválido |
 | tirar a `FLAG_FROGCRIPT` da leitura do material | `o_modo_sai_do_arquivo_e_nao_da_configuracao` cai |
+| repor `faixas.is_empty()` na condição que liga o material (pedido 210) | `coluna_externa_marcada_sozinha_nao_pode_ir_em_claro` acha o memo **em claro**; caem também o `acrescentar` inline e o `marcar` depois, e os 5 do comportamento velho seguem — está no catálogo de guardas |
+| repor `faixas.is_empty()` na conferência do `abrir` contra «desmarcar» | os mesmos 3 caem, todos na **reabertura**: é o irmão que lia a mesma premissa |
+| tirar a recusa de marcar/desmarcar em tabela cifrada | `marcar_coluna_depois_numa_tabela_cifrada_e_recusado_e_o_grau_pode_mudar` cai |
 
 ### 11.10 Aprendizado, inclusive o infrutífero
 
