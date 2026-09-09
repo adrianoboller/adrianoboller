@@ -29,7 +29,7 @@ use phxsql_core::json::Json;
 use registro::{Amarra, Comando, Diag, Ligacao, Punho};
 use resultado::{alvo_do_from, fichas_do_esquema, montar, Ficha};
 use std::sync::{Arc, Mutex};
-use texto::{escrever_texto, ler_texto};
+use texto::{bytes_utf16, escrever_texto, escrever_utf16, ler_texto};
 use tipos::*;
 
 /// Celula ja entregue por inteiro ao aplicativo: a proxima SQLGetData da
@@ -133,6 +133,44 @@ unsafe fn entregar(
             // O indicador leva o que havia ANTES desta chamada: e assim que o
             // aplicativo dimensiona o proximo pedaco.
             escrever_num(indicador, restante.len() as SqlLen);
+            if truncou {
+                (
+                    SQL_SUCCESS_WITH_INFO,
+                    ja + n,
+                    Some((
+                        "01004",
+                        "texto truncado; o resto vem na proxima chamada".into(),
+                    )),
+                )
+            } else {
+                (SQL_SUCCESS, ENTREGUE, None)
+            }
+        }
+        // O espelho do SQL_C_CHAR ali em cima, para o pedido 238: quem so
+        // fala UTF-16 fala nos DOIS sentidos, e o mesmo truncamento-com-
+        // continuacao vale, so que a unidade e de 2 bytes e nunca pode cortar
+        // um par substituto ao meio (`escrever_utf16` cuida disso).
+        SQL_C_WCHAR => {
+            let restante = texto_celula.get(ja..).unwrap_or("");
+            if buf.is_null() {
+                return (
+                    SQL_ERROR,
+                    ja,
+                    Some(("HY009", "buffer nulo no SQLGetData".into())),
+                );
+            }
+            if cap <= 0 {
+                return (
+                    SQL_ERROR,
+                    ja,
+                    Some(("HY090", "tamanho de buffer invalido".into())),
+                );
+            }
+            let (n, truncou) = escrever_utf16(restante, buf as *mut SqlWchar, cap);
+            // Como no SQL_C_CHAR: o indicador leva o que havia ANTES desta
+            // chamada, so que em bytes de UTF-16 (a convencao WCHAR), nao de
+            // UTF-8.
+            escrever_num(indicador, bytes_utf16(restante) as SqlLen);
             if truncou {
                 (
                     SQL_SUCCESS_WITH_INFO,
@@ -1665,6 +1703,70 @@ mod testes {
         }
     }
 
+    // O espelho em UTF-16 do teste acima (pedido 238): "São João" com um
+    // emoji (fora do BMP, par substituto) truncando exatamente na fronteira
+    // que sobra so para "São João" -- nunca cortando o par do emoji ao meio.
+    // O buffer e lido de volta como u16 na ordem NATIVA, como o gestor de
+    // drivers faria.
+    #[test]
+    fn entregar_wchar_trunca_por_caractere_inteiro_e_continua() {
+        unsafe {
+            let texto = "São João 😀";
+            let celula = Some(texto.to_string());
+            let unidades_totais: Vec<u16> = texto.encode_utf16().collect();
+            // Espaco para "São João " inteiro (9 unidades) + NUL, mas nao
+            // para o emoji (2 unidades a mais) -- 10 unidades = 20 bytes.
+            let mut buf = vec![0u16; 16];
+            let cap = (10 * 2) as SqlLen;
+            let mut ind: SqlLen = 0;
+
+            let (codigo, ja, diag) = entregar(
+                &celula,
+                0,
+                SQL_C_WCHAR,
+                buf.as_mut_ptr() as SqlPointer,
+                cap,
+                &mut ind,
+            );
+            assert_eq!(codigo, SQL_SUCCESS_WITH_INFO);
+            assert_eq!(diag.unwrap().0, "01004");
+            assert_eq!(&buf[..9], &unidades_totais[..9], "\"São João \" inteiro");
+            assert_eq!(buf[9], 0, "NUL logo apos, sem metade de par substituto");
+            assert_eq!(
+                ind as usize,
+                bytes_utf16(texto),
+                "o indicador conta TODO o restante em bytes utf-16, antes desta chamada"
+            );
+
+            let mut buf2 = vec![0u16; 4];
+            let (codigo, ja2, _) = entregar(
+                &celula,
+                ja,
+                SQL_C_WCHAR,
+                buf2.as_mut_ptr() as SqlPointer,
+                8,
+                &mut ind,
+            );
+            assert_eq!(codigo, SQL_SUCCESS);
+            assert_eq!(
+                &buf2[..2],
+                &unidades_totais[9..11],
+                "o par do emoji, inteiro"
+            );
+            assert_eq!(buf2[2], 0);
+
+            let (codigo, _, _) = entregar(
+                &celula,
+                ja2,
+                SQL_C_WCHAR,
+                buf2.as_mut_ptr() as SqlPointer,
+                8,
+                &mut ind,
+            );
+            assert_eq!(codigo, SQL_NO_DATA);
+        }
+    }
+
     #[test]
     fn entregar_null_exige_indicador() {
         unsafe {
@@ -2046,9 +2148,12 @@ mod testes {
                 SQL_ERROR
             );
             assert_eq!(estado_do_diag(stmt), "HYC00");
-            // UTF-16 num driver ANSI.
-            assert_eq!(ligar(1, SQL_PARAM_INPUT, SQL_C_WCHAR, ptr), SQL_ERROR);
-            assert_eq!(estado_do_diag(stmt), "HYC00");
+            // UTF-16 num driver ANSI: pedido 238 -- o BUFFER pode ser
+            // SQL_C_WCHAR mesmo com as funcoes ANSI, porque a conversao mora
+            // na borda. Este teste E o defeito reposto do pedido: antes dele
+            // esta linha esperava SQL_ERROR, e reintroduzir a recusa antiga
+            // faz esta asercao cair.
+            assert_eq!(ligar(1, SQL_PARAM_INPUT, SQL_C_WCHAR, ptr), SQL_SUCCESS);
             // Ponteiro nulo sem indicador: nao ha como dizer NULL.
             assert_eq!(
                 ligar(1, SQL_PARAM_INPUT, SQL_C_SLONG, std::ptr::null_mut()),

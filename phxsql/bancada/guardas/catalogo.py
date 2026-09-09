@@ -4182,4 +4182,36 @@ pub fn limpar() {
             "direito_coluna::testes::as_tabelas_escondidas_aparecem",
         ],
     },
+    {
+        "id": "wchar-recusa-no-driver-odbc",
+        "titulo": "SQL_C_WCHAR volta a recusar no driver ODBC, que agora fala UTF-16 na borda",
+        "porque": (
+            "pedido 238 -- o driver e ANSI (so as funcoes sem `W`), mas isso "
+            "nunca proibiu o BUFFER de um parametro de ser SQL_C_WCHAR: o "
+            "gestor de drivers so decide qual FUNCAO chamar, nunca que tipo C "
+            "um SQLBindParameter liga. `recusa_do_tipo_c` e o UNICO portao "
+            "dessa aceitacao -- ele nao toca a conversao (texto.rs::"
+            "ler_texto_utf16/escrever_utf16, provada a parte), so decide se o "
+            "tipo C passa da ligacao."
+        ),
+        "arquivo": "crates/phxsql-odbc/src/parametro.rs",
+        "trecho": """        SQL_C_CHAR | SQL_C_DEFAULT | SQL_C_WCHAR | SQL_C_SSHORT | SQL_C_SHORT | SQL_C_SLONG
+        | SQL_C_LONG | SQL_C_SBIGINT | SQL_C_DOUBLE | SQL_C_FLOAT | SQL_C_BIT => None,""",
+        "troca": """        SQL_C_CHAR | SQL_C_DEFAULT | SQL_C_SSHORT | SQL_C_SHORT | SQL_C_SLONG | SQL_C_LONG
+        | SQL_C_SBIGINT | SQL_C_DOUBLE | SQL_C_FLOAT | SQL_C_BIT => None,""",
+        "pacote": "phxsql-odbc",
+        "alvo": ["--lib"],
+        "caem": [
+            "parametro::testes::o_tipo_c_que_o_driver_le_passa_e_o_resto_recusa_nomeando",
+            "testes::ligacao_recusa_na_hora_o_que_o_driver_nao_sabe_mandar",
+        ],
+        # As duas continuam de pe porque nao pertencem ao PORTAO de ligacao:
+        # sao a CONVERSAO (parametro::ler e entregar), que este trecho nunca
+        # toca. Se caissem junto, o achado seria outro: um portao que esconde
+        # duas funcoes atras de si.
+        "seguem": [
+            "parametro::testes::wchar_de_entrada_vira_utf8_pelo_indicador_em_bytes",
+            "testes::entregar_wchar_trunca_por_caractere_inteiro_e_continua",
+        ],
+    },
 ]

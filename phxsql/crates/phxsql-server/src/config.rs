@@ -2372,6 +2372,18 @@ impl Recursos {
     /// do `cache_paginas` sem cache.
     pub fn aplicar(&self) {
         phxsql_store::diario::definir_bytes_por_volume(self.diario_volume_mib * 1024 * 1024);
+        // Compoe duas metades testadas em separado (pedido 234): o calculo
+        // de `self.nucleos()` prova sozinho em `testes_recursos` (sem tocar
+        // `paralelo::TETO`), e o global `definir_teto`/`nucleos()` prova
+        // sozinho em `phxsql_core::paralelo::tests` (sem nada mais mexer nele
+        // naquele binario). Nenhum teste liga as duas pontas AQUI de proposito:
+        // `aplicar()` roda dentro de `Config::ler`, chamado por uma dezena de
+        // testes deste arquivo em paralelo, e um teste que lesse `paralelo::
+        // nucleos()` logo depois desta linha estaria apostando contra os
+        // vizinhos -- foi exatamente essa aposta que caiu 4 vezes em 200
+        // corridas antes do conserto. A linha revisada: `self.nucleos()` ja
+        // aplica o `cpu_percentual` e nunca devolve zero, e `definir_teto`
+        // so guarda o numero -- nao ha conversao nem faixa para errar aqui.
         phxsql_core::paralelo::definir_teto(self.nucleos());
         // O leitor do `exclusao_na_janela`. Sem esta linha o campo estaria no
         // config.json, no MANUAL e na tela sem nada o ler -- que e exatamente
@@ -5592,15 +5604,35 @@ mod testes_recursos {
     /// trabalho dividido. Antes disto os dois campos existiam no config.json,
     /// no MANUAL e na tela, e `paralelo::nucleos()` perguntava direto a
     /// maquina -- a mesma armadilha do `cache_paginas` sem cache.
+    ///
+    /// Pedido 234: esta prova era `aplicar()` seguido de
+    /// `assert_eq!(phxsql_core::paralelo::nucleos(), 1)` -- e `paralelo::TETO`
+    /// e ESTADO GLOBAL DE PROCESSO, nao coisa deste teste. Toda dezena de
+    /// outros testes deste arquivo chama `Config::ler`, que chama
+    /// `recursos.aplicar()`, que redefine o mesmo global; numa suite paralela
+    /// (o padrao do `cargo test`) um vizinho podia redefinir o teto ENTRE o
+    /// `aplicar()` e o `assert_eq!` daqui, e o teste caia sem o calculo estar
+    /// errado. Medido: 4 quedas em 200 corridas do binario de teste
+    /// (`docs/cognicao/cognicao_estado-global-entre-testes-do-mesmo-binario_20260909_0610.md`),
+    /// sempre com `left` igual ao numero de nucleos da maquina (o teto que
+    /// OUTRO teste tinha acabado de gravar), nunca um numero aleatorio --
+    /// prova de que era o vizinho, nao um calculo furado.
+    ///
+    /// O conserto e por CONTRATO, nao por mutex: este teste prova so o
+    /// CALCULO (`Recursos::nucleos()`), sem tocar `phxsql_core::paralelo`; o
+    /// global isolado (`definir_teto`/`nucleos()`) tem prova propria em
+    /// `phxsql_core::paralelo::tests::o_teto_configurado_vale`, no binario de
+    /// teste do `phxsql-core`, onde mais nenhum teste mexe em `TETO`. A linha
+    /// que compoe os dois -- `Recursos::aplicar()` chamando
+    /// `paralelo::definir_teto(self.nucleos())`, poucas linhas acima -- fica
+    /// correta por revisao: cada metade e testada onde ela sozinha decide o
+    /// resultado.
     #[test]
     fn threads_e_cpu_viram_o_teto_do_paralelo() {
         // 4 threads a 25% = teto de UM nucleo -- e um e o resultado em
         // qualquer maquina, porque o teto so corta, nunca inventa nucleo.
         let c = cfg(r#"{"token":"t","recursos":{"threads":4,"cpu_percentual":25}}"#);
-        c.recursos.aplicar();
-        assert_eq!(phxsql_core::paralelo::nucleos(), 1, "o teto nao valeu");
-        // Devolve o processo ao estado sem teto, para nao morder os vizinhos.
-        phxsql_core::paralelo::definir_teto(0);
+        assert_eq!(c.recursos.nucleos(), 1, "o calculo do teto nao bateu");
     }
 
     #[test]
