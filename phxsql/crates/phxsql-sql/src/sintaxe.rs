@@ -1167,6 +1167,19 @@ impl Analisador {
         let Some(s) = self.espiar() else {
             return Err(lexico::erro(pos, "esperava um valor, e o comando acabou"));
         };
+        // O NUMERO NEGATIVO. O lexico entrega `-5` como dois simbolos --
+        // `Menos` e `Numero("5")` --, e este e o unico lugar que os junta:
+        // um `SET a = -5` e um `VALUES (40, -3)` caiam com «esperava um valor
+        // e veio "-"», enquanto o `WHERE a = -5` passava por outro caminho (a
+        // expressao). O sinal so vale colado num numero: `- 'x'` continua
+        // recusando pela frase de sempre, porque texto nao tem sinal.
+        if matches!(s.token, Token::Menos) {
+            if let Some(Token::Numero(n)) = self.s.get(self.i + 1).map(|x| &x.token) {
+                let lit = Literal::Numero(format!("-{n}"));
+                self.i += 2;
+                return Ok(lit);
+            }
+        }
         let lit = match &s.token {
             Token::Numero(n) => Literal::Numero(n.clone()),
             Token::Texto(t) => Literal::Texto(t.clone()),
