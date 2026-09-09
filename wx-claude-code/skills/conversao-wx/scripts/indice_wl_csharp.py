@@ -2,8 +2,9 @@
 """Le o metadado .NET do WL.dll (WL_C#) e gera resources/wl-csharp/funcoes.json.
 
 So std. Le as tabelas TypeDef e MethodDef do fluxo #~ (ECMA-335 II.22) e lista
-os metodos publicos e estaticos das classes publicas — que e o que o codigo C#
-convertido pode chamar. Antes o indice saia de `strings`, que truncava nome
+o que o codigo C# convertido pode chamar: metodos publicos e estaticos das
+classes estaticas (as funcoes), classes de instancia (os tipos avancados, com
+propriedades e metodos), enumeracoes e constantes. Antes o indice saia de `strings`, que truncava nome
 com acento e nao enxergava tudo; por isso o numero mudou de 261 para o que o
 metadado tem de fato.
 
@@ -132,45 +133,87 @@ def ler_tabelas(dados, fluxos):
 
     tipos = [campos(0x02, i) for i in range(1, linhas.get(0x02, 0) + 1)]
     metodos = [campos(0x06, i) for i in range(1, linhas.get(0x06, 0) + 1)]
-    return tipos, metodos, texto
+    tiporefs = [campos(0x01, i) for i in range(1, linhas.get(0x01, 0) + 1)]
+    fields = [campos(0x04, i) for i in range(1, linhas.get(0x04, 0) + 1)]
+    return Tabelas(tipos, metodos, tiporefs, fields, texto)
 
 
-def listar_funcoes(dados):
-    """Metodos publicos e estaticos das classes publicas, agrupados por classe."""
-    fluxos = ler_metadado(dados)
-    tipos, metodos, texto = ler_tabelas(dados, fluxos)
-    n_met = len(metodos)
-    por_classe = {}
-    for i, (flags, nome_i, ns_i, _ext, _campo, met_ini) in enumerate(tipos):
-        visib = flags & 7
-        if visib not in (1, 2):  # Public, NestedPublic
+class Tabelas:
+    def __init__(self, tipos, metodos, tiporefs, fields, texto):
+        self.tipos, self.metodos, self.tiporefs, self.fields, self.texto = tipos, metodos, tiporefs, fields, texto
+
+    def nome_base(self, extends):
+        """Nome do tipo pai (coded index TypeDefOrRef): e o que separa enum e delegate de classe."""
+        tag, idx = extends & 3, extends >> 2
+        if idx == 0:
+            return ""
+        if tag == 0:
+            return self.texto(self.tipos[idx - 1][1])
+        if tag == 1:
+            return self.texto(self.tiporefs[idx - 1][1])
+        return ""
+
+    def faixa(self, i, col, tabela):
+        ini = self.tipos[i][col]
+        fim = self.tipos[i + 1][col] if i + 1 < len(self.tipos) else len(tabela) + 1
+        return range(ini, fim)
+
+
+OCULTOS = (".", "<", "get_", "set_", "add_", "remove_", "op_")
+
+
+def listar(dados):
+    """Le do metadado o que o codigo C# convertido pode chamar: funcoes (metodos
+    publicos e estaticos das classes estaticas), tipos avancados (classes de
+    instancia, com propriedades e metodos), enumeracoes e constantes."""
+    tb = ler_tabelas(dados, ler_metadado(dados))
+    texto = tb.texto
+    funcoes, tipos_av, enums, constantes = {}, {}, {}, {}
+    for i, (flags, nome_i, ns_i, ext, _campo, _met) in enumerate(tb.tipos):
+        if flags & 7 not in (1, 2):  # Public, NestedPublic
             continue
-        met_fim = tipos[i + 1][5] if i + 1 < len(tipos) else n_met + 1
         classe = texto(nome_i)
         if classe.startswith("<"):
             continue
-        nomes = set()
-        for m in range(met_ini, met_fim):
-            _rva, _impl, mflags, mnome_i, _sig, _par = metodos[m - 1]
-            if mflags & 7 != 6 or not mflags & 0x10:  # Public e Static
-                continue
-            nome = texto(mnome_i)
-            if nome.startswith((".", "<", "get_", "set_", "add_", "remove_", "op_")):
-                continue
-            nomes.add(nome)
-        if nomes:
-            ns = texto(ns_i)
-            chave = f"{ns}.{classe}" if ns else classe
-            por_classe[chave] = sorted(nomes, key=str.casefold)
-    return por_classe
+        base = tb.nome_base(ext)
+        ns = texto(ns_i)
+        chave = f"{ns}.{classe}" if ns else classe
+        campos = [tb.fields[f - 1] for f in tb.faixa(i, 4, tb.fields)]
+        if base == "Enum":
+            enums[chave] = [texto(n) for fl, n, _ in campos if fl & 0x40]  # Literal
+            continue
+        if base == "MulticastDelegate":
+            continue
+        pub = [(tb.metodos[m - 1][2], texto(tb.metodos[m - 1][3])) for m in tb.faixa(i, 5, tb.metodos)]
+        pub = [(fl, n) for fl, n in pub if fl & 7 == 6]
+        estaticos = sorted({n for fl, n in pub if fl & 0x10 and not n.startswith(OCULTOS)}, key=str.casefold)
+        # campos publicos, estaticos e literais: as constantes do WLanguage (Vrai, Faux, TAB, RC...)
+        lits = sorted({texto(n) for fl, n, _ in campos if fl & 7 == 6 and fl & 0x10 and fl & 0x40}, key=str.casefold)
+        if lits:
+            constantes[chave] = lits
+        # metodo estatico e funcao chamavel, esteja numa classe estatica (WL.Chaines)
+        # ou num tipo avancado (WL.Image.ChargeImage): entra no indice de funcoes dos dois jeitos
+        if estaticos:
+            funcoes[chave] = estaticos
+        if (flags & 0x180) == 0x180:  # Abstract|Sealed: classe estatica, sem instancia
+            continue
+        props = sorted({n[4:] for fl, n in pub if not fl & 0x10 and n.startswith("get_")}, key=str.casefold)
+        mets = sorted({n for fl, n in pub if not fl & 0x10 and not n.startswith(OCULTOS)}, key=str.casefold)
+        if props or mets or estaticos:
+            tipos_av[chave.replace("`1", "<T>")] = {"propriedades": props, "metodos": mets, "estaticos": estaticos}
+    return funcoes, tipos_av, enums, constantes
+
+
+def listar_funcoes(dados):
+    return listar(dados)[0]
 
 
 def montar(dll, versao, origem):
     dados = dll.read_bytes()
-    por_classe = listar_funcoes(dados)
+    por_classe, tipos_av, enums, constantes = listar(dados)
     todas = sorted({f for fs in por_classe.values() for f in fs}, key=str.casefold)
     return {
-        "origem": f"WL_C# {versao} ({origem}), metodos publicos e estaticos lidos das tabelas TypeDef/MethodDef do metadado .NET de WL.dll",
+        "origem": f"WL_C# {versao} ({origem}), funcoes, tipos avancados, enumeracoes e constantes lidos das tabelas TypeDef/MethodDef/Field do metadado .NET de WL.dll",
         "gerado_por": "skills/conversao-wx/scripts/indice_wl_csharp.py",
         "sha256_wl_dll": hashlib.sha256(dados).hexdigest(),
         "tamanho_wl_dll": len(dados),
@@ -179,6 +222,10 @@ def montar(dll, versao, origem):
         "classes": {k: len(v) for k, v in sorted(por_classe.items())},
         "por_classe": dict(sorted(por_classe.items())),
         "funcoes": todas,
+        "quantidade_tipos_avancados": len(tipos_av),
+        "tipos_avancados": dict(sorted(tipos_av.items())),
+        "enumeracoes": dict(sorted(enums.items())),
+        "constantes": dict(sorted(constantes.items())),
     }
 
 
@@ -193,7 +240,7 @@ def main():
     novo = montar(a.dll, a.versao, a.origem)
     if a.conferir:
         velho = json.loads(a.saida.read_text(encoding="utf-8"))
-        chaves = ("sha256_wl_dll", "tamanho_wl_dll", "quantidade", "funcoes", "por_classe")
+        chaves = ("sha256_wl_dll", "tamanho_wl_dll", "quantidade", "funcoes", "por_classe", "tipos_avancados", "enumeracoes", "constantes")
         dif = [k for k in chaves if velho.get(k) != novo[k]]
         if dif:
             print(f"funcoes.json difere do DLL em: {', '.join(dif)}", file=sys.stderr)
@@ -201,7 +248,8 @@ def main():
         print(f"funcoes.json confere: {novo['quantidade']} funcoes, sha256 {novo['sha256_wl_dll'][:16]}…")
         return 0
     a.saida.write_text(json.dumps(novo, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print(f"{a.saida}: {novo['quantidade']} funcoes em {len(novo['classes'])} classes, {novo['tamanho_wl_dll']} bytes, sha256 {novo['sha256_wl_dll']}")
+    print(f"{a.saida}: {novo['quantidade']} funcoes em {len(novo['classes'])} classes, {novo['quantidade_tipos_avancados']} tipos avancados, "
+          f"{len(novo['enumeracoes'])} enumeracoes, {sum(len(v) for v in novo['constantes'].values())} constantes; {novo['tamanho_wl_dll']} bytes, sha256 {novo['sha256_wl_dll']}")
     return 0
 
 

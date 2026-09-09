@@ -840,7 +840,8 @@ mínimos.
 
 **Sobre o WL_C#.** É a biblioteca de Bernard Sobra
 (https://bernardsobra.github.io/WL-web/). O plugin traz um índice de 608
-funções em 26 classes, lido do metadado do `WL.dll` 1.2 por
+funções em 26 classes, mais 61 tipos avançados, 2 enumerações e 863
+constantes, tudo lido do metadado do `WL.dll` 1.2 por
 `indice_wl_csharp.py`, e o hash da release; o DLL você baixa da
 release oficial, e o especialista de funções padrão marca cada função como
 `equivalente`, `adaptar` ou `substituir`. HFSQL, telas, comunicação e

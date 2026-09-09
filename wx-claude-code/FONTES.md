@@ -7,20 +7,20 @@ Inventário medido em 2026-09-09 por `docs/dossie/gerar-fontes.py`. Não se edit
 | Comandos | 34 | 1.187 | um por recurso; `/wx-claude-code:<nome>` invoca cada um |
 | Agentes | 94 | 3.459 | conversão, papéis PDCA, Impeccable e a equipe prioritária |
 | Skills | 21 | 4.310 | conversão, PHP, PDF, laudo de tokens, Impeccable e as oito de ERP |
-| Scripts | 42 | 17.381 | o que faz o trabalho: questionário, gates, PMO, licença, RAG, registro |
+| Scripts | 42 | 17.429 | o que faz o trabalho: questionário, gates, PMO, licença, RAG, registro |
 | Hooks | 4 | 421 | as guardas que rodam nos eventos do Claude Code |
-| Referências | 19 | 1.335 | o que os agentes leem antes de decidir |
+| Referências | 19 | 1.357 | o que os agentes leem antes de decidir |
 | Modelos | 6 | 863 | questionário, CLAUDE.md e matriz que viram o projeto do cliente |
-| Testes | 3 | 3.252 | a bateria; o validador estrito a roda |
+| Testes | 3 | 3.260 | a bateria; o validador estrito a roda |
 | Exemplo | 54 | 2.084 | projeto sintético que é o teste de regressão do fluxo inteiro |
 | Exemplo PHP | 15 | 1.584 | legado PHP procedural sintético: o segundo exemplo, sem nada de WX |
 | Ferramenta Rust | 6 | 1.647 | wx-modelos: escolha e controle do modelo local, std pura, sem crate |
 | Semáforo | 3 | 101 | painel na tela e sketch do ESP32 para o semáforo do Claude Code |
 | Runtime WLanguage em Rust | 5 | 759 | wl-rt: moeda de ponto fixo, data AAAAMMDD, comparação de string e máscaras, com a semântica lida do Help |
-| Documentos | 5 | 1.505 | manual, README, fontes e a instrução de ativação, na raiz |
-| Documentos de apoio | 8 | 792 | relatório, análises, origens dos prints e o vídeo |
+| Documentos | 5 | 1.506 | manual, README, fontes e a instrução de ativação, na raiz |
+| Documentos de apoio | 8 | 794 | relatório, análises, origens dos prints e o vídeo |
 | Instaladores | 2 | 459 | bash para Linux e macOS, PowerShell para Windows |
-| **total** | **321** | **41.139** | |
+| **total** | **321** | **41.220** | |
 
 ## O que não é fonte, mas vem no pacote
 
@@ -49,4 +49,4 @@ python3 skills/conversao-wx/scripts/validate_plugin_bundle.py . --strict
 
 Esperado: `valid: true`, `tests: OK`, zero erros e zero avisos. O `--strict` roda a bateria inteira.
 
-Último commit no momento da medição: `6f89d60 2026-09-08`.
+Último commit no momento da medição: `d6ffc8c 2026-09-09`.

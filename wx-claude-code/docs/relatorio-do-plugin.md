@@ -18,7 +18,7 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | skills | 21 |
 | skills de ERP (pacote skills.sh) | 8 |
 | scripts Python | 42 |
-| linhas de Python (scripts e hooks) | 17802 |
+| linhas de Python (scripts e hooks) | 17850 |
 | documentos de referência | 19 |
 | testes de regressão | 111 |
 | hooks do plugin | 14 |
@@ -48,9 +48,11 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | testes do runtime WLanguage em Rust (wl-rt) | 16 |
 | funções da WL_C# 1.2 no índice (lidas do metadado do WL.dll) | 608 |
 | classes da WL_C# no índice | 26 |
+| tipos avançados da WL_C# no índice | 61 |
+| constantes da WL_C# no índice | 863 |
 | corpus do Help (bytes) | 26750976 |
 | páginas válidas do corpus | 12035 |
-| linhas do manual | 947 |
+| linhas do manual | 948 |
 | tabelas do exemplo ESTOQUE | 7 |
 
 ## O que foi provado em sessão real

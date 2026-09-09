@@ -1886,6 +1886,14 @@ class Questionario(unittest.TestCase):
         self.assertEqual(set(d["funcoes"]), {f for fs in d["por_classe"].values() for f in fs})
         self.assertRegex(d["sha256_wl_dll"], r"^[0-9a-f]{64}$")
         self.assertIn("WL.Chaines", d["por_classe"])
+        self.assertEqual(d["quantidade_tipos_avancados"], len(d["tipos_avancados"]))
+        self.assertIn("Sujet", d["tipos_avancados"]["WL.Email"]["propriedades"])
+        self.assertIn("crypteSécurisé", d["constantes"]["WL.Constantes"])
+        self.assertNotIn("Vrai", d["constantes"]["WL.Constantes"], "Vrai nao e constante da WL_C#; o perfil diz isso")
+        self.assertIn("Vide", d["enumeracoes"]["WL.JsonType"])
+        # a classe estatica nao e tipo avancado, e o metodo estatico do tipo avancado continua funcao
+        self.assertNotIn("WL.Chaines", d["tipos_avancados"])
+        self.assertIn("WL.Image", d["por_classe"])
         for nome in ("DateVersChaîne", "ChaîneOccurrence", "TableauAjoute", "fRepEnCours"):
             self.assertIn(nome, d["funcoes"], f"{nome} sumiu do indice: acento truncado?")
         q = d["quantidade"]
