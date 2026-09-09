@@ -127,11 +127,35 @@ mod tests {
     /// O teto configurado corta a divisao -- e zero o solta de novo.
     ///
     /// O teto e global do processo, entao o teste devolve o zero no fim para
-    /// nao morder os vizinhos que rodam em paralelo.
+    /// nao morder os vizinhos que rodam em paralelo -- e as DUAS aserções de
+    /// valor exato ficam NUM teste so, de proposito (pedido 234): duas
+    /// funcoes de teste separadas, cada uma gravando e lendo o mesmo global,
+    /// correriam uma contra a outra do mesmo jeito que
+    /// `threads_e_cpu_viram_o_teto_do_paralelo` corria contra
+    /// `Config::ler` em `phxsql-server` -- e o defeito, ali, nao era o
+    /// calculo: era duas provas de VALOR EXATO do mesmo global soltas na
+    /// mesma suite paralela. Aqui, no binario de teste do `phxsql-core`, mais
+    /// nenhum outro teste deste arquivo pina um valor exato de `TETO`
+    /// (`nucleos_nunca_e_zero` e os testes de `mapear_faixa` valem para
+    /// QUALQUER teto, entao nao correm risco nenhum), e e por isso que esta
+    /// prova pode morar num teste so em vez de precisar de mutex.
     #[test]
     fn o_teto_configurado_vale() {
         definir_teto(1);
         assert_eq!(nucleos(), 1, "o teto de 1 nao valeu");
+
+        // A outra metade da propriedade: o teto so CORTA, nunca INVENTA
+        // nucleo acima do que a maquina tem.
+        let disponiveis = std::thread::available_parallelism()
+            .map(NonZeroUsize::get)
+            .unwrap_or(1);
+        definir_teto(disponiveis + 1_000_000);
+        assert_eq!(
+            nucleos(),
+            disponiveis,
+            "teto acima do disponivel nao pode aumentar o numero de nucleos"
+        );
+
         definir_teto(0);
         assert!(nucleos() >= 1);
     }
