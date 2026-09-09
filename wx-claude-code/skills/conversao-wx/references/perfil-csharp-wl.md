@@ -4,9 +4,14 @@
 biblioteca C# gratuita que reproduz funções do WLanguage com o nome francês
 original e o mesmo comportamento: `DateVersChaîne`, `ChaîneOccurrence`,
 `TableauAjoute`, `fRepEnCours`, `JSONVersVariant`, `MarkdownVersPDF`. A
-página declara mais de 480 funções, 43 tipos avançados e mais de 1.900 testes
-automatizados. O código-fonte não é publicado; a distribuição é o `WL.dll`
-da release.
+release **v1.2** (2026-09-09, «première version officielle») declara 693
+funções em 19 categorias, 50 tipos avançados e mais de 2.580 testes
+automatizados; onze categorias estão completas (strings, comandos, cores,
+datas e horas, arquivos e diretórios, FTP, listas, numéricos, pilhas e
+filas, registro do Windows, tabelas) e as demais parciais (Sistema 81 %,
+Diálogos 40 %, utilitários diversos 10 %). O código-fonte não é publicado; a
+distribuição é o `WL_v1.2.zip` da release, com o `WL.dll` e a pasta
+`Donnees`.
 
 Para o plugin ela importa por um motivo: numa conversão para C#, a maior
 parte das funções padrão do WLanguage (strings, datas, arquivos, conversões,
@@ -15,16 +20,23 @@ tradução dessas procedures fica quase mecânica.
 
 ## O que o plugin embute
 
-- `resources/wl-csharp/funcoes.json`: 261 nomes de função lidos do metadado
-  do `WL.dll` 1.0 (SHA-256 `2ad2acdfee5c9a9d…`, 381.952 bytes). É um índice
-  de existência, não a documentação: nomes com acento podem vir truncados e a
-  lista é menor que as 480 declaradas porque a leitura por strings não
-  enxerga tudo. Serve para o especialista responder «existe em WL_C#?» sem
-  adivinhar.
+- `resources/wl-csharp/funcoes.json`: **608 nomes de função em 26 classes**,
+  lidos das tabelas `TypeDef` e `MethodDef` do metadado .NET do `WL.dll`
+  **1.2** (SHA-256 `1b2d48b997fcaeee…`, 546.304 bytes; o `WL_v1.2.zip` tem
+  SHA-256 `69a220c2245c2e93…`). Entram os métodos públicos e estáticos das
+  classes públicas (`WL.Chaines`, `WL.Date`, `WL.Fichiers`, `WL.Numeriques`,
+  `WL.Tableaux`, `WL.Système`…), que é o que o código convertido chama. É um
+  índice de existência, não a documentação. A diferença para as 693 que a
+  release declara é de contagem, não de leitura: o autor conta sobrecargas e
+  os métodos dos 50 tipos avançados; aqui cada nome entra uma vez.
+- O índice **não se edita**: `skills/conversao-wx/scripts/indice_wl_csharp.py
+  <WL.dll>` o gera do DLL, e `--conferir` falha se o gravado difere. Até a
+  3.49.0 a lista saía de `strings` e tinha 261 nomes, com acento truncado e
+  ajudante privado no meio; o leitor de metadado substituiu isso.
 - Este documento e a linha do perfil em `perfis-de-destino.md`.
 
 O `WL.dll` **não** vem no plugin: é obtido pelo usuário na release oficial
-(https://github.com/BernardSobra/WL-web/releases/tag/1.0) e conferido pelo
+(https://github.com/BernardSobra/WL-web/releases/tag/v1.2) e conferido pelo
 hash acima. A licença de redistribuição não está publicada; o site diz
 «100 % gratuit», e o plugin trata isso como uso livre pelo usuário, não como
 autorização para empacotar.

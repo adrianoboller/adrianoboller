@@ -67,7 +67,7 @@ igualdade contra o legado rodando.
 - estado: `falta`
 - tamanho: 4 · muito grande
 - por que importa: É o que faz a conversão ser igual entre agentes e entre sessões.
-- hoje: Só o perfil C# tem a WL_C# (480 funções). Rust, Go, Python e os outros têm o Help por tema, sem tabela.
+- hoje: Só o perfil C# tem a WL_C# (693 funções declaradas na v1.2; 608 nomes no índice medido). Rust, Go, Python e os outros têm o Help por tema, sem tabela.
 - construir: Para cada perfil, uma tabela função WLanguage → equivalente (biblioteca, chamada, diferença de semântica), gerada a partir dos 12k e revisada por perfil; começando pelas 300 mais usadas (medir num projeto real).
 
 ### 7. Semântica dos tipos: datas, numéricos, strings

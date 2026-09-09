@@ -157,6 +157,7 @@ scripts por trás, que você também pode rodar direto, em
 | `grafo.py` | Grafo de rastreabilidade: liga requisito, decisao, codigo, teste e evidencia |
 | `i18n.py` | Tradutor multilíngue: centraliza todos os textos da interface num unico JSON |
 | `identidade.py` | Identidade do agente (SPIFFE) e atestado do que a maquina REALMENTE prova |
+| `indice_wl_csharp.py` | Le o metadado .NET do WL.dll (WL_C#) e gera resources/wl-csharp/funcoes.json |
 | `interface_do_destino.py` | Qual a interface do programa Rust que sai da conversao -- e onde ela roda |
 | `inventario_de_dependencias.py` | O que o legado usa DE FORA dele -- e que a conversao vai ter de resolver |
 | `licenca.py` | Serial de ativacao do WX Claude Code: assinatura RSA-2048 sem dependencias |
@@ -815,7 +816,7 @@ recomendada primeiro. Estas três estão sempre presentes:
 | --- | --- | --- | --- |
 | **Rust** (Axum + PostgreSQL) | desempenho previsível, binário único, erros pegos em compilação | curva alta, equipe rara | volume alto, motor de cálculo, quem já usa o PhxSql |
 | **Python** (FastAPI + PostgreSQL) | entrega rápida, biblioteca para fiscal, relatório e dados | desempenho por processo, deploy com runtime | sistemas de gestão que vão evoluir rápido |
-| **C# (.NET 8) + WL_C#** | a biblioteca WL_C# porta mais de 480 funções do WLanguage com o mesmo nome; tradução das procedures quase mecânica | HFSQL e telas ficam fora da biblioteca; código fechado | a equipe WINDEV que vai manter o código; desktop Windows |
+| **C# (.NET 8) + WL_C#** | a biblioteca WL_C# 1.2 porta 693 funções do WLanguage com o mesmo nome; tradução das procedures quase mecânica | HFSQL e telas ficam fora da biblioteca; código fechado | a equipe WINDEV que vai manter o código; desktop Windows |
 
 Go, Java e Node entram quando os sinais apontarem. A escolha é sua e vira
 `DEC-0001` na abertura do G3.
@@ -838,8 +839,9 @@ mínimos.
 | já existe Java ou .NET na empresa | Java ou C# | React ou Blazor |
 
 **Sobre o WL_C#.** É a biblioteca de Bernard Sobra
-(https://bernardsobra.github.io/WL-web/). O plugin traz um índice de 261
-funções lido do `WL.dll` 1.0 e o hash da release; o DLL você baixa da
+(https://bernardsobra.github.io/WL-web/). O plugin traz um índice de 608
+funções em 26 classes, lido do metadado do `WL.dll` 1.2 por
+`indice_wl_csharp.py`, e o hash da release; o DLL você baixa da
 release oficial, e o especialista de funções padrão marca cada função como
 `equivalente`, `adaptar` ou `substituir`. HFSQL, telas, comunicação e
 relatórios seguem pelos outros especialistas, em qualquer perfil.

@@ -52,7 +52,9 @@ def main() -> int:
          "| grupo | arquivos | linhas | o que é |", "| --- | ---: | ---: | --- |"]
     total_arq = total_lin = 0
     for nome, padrao, oque in GRUPOS:
-        arquivos = [p for p in RAIZ.glob(padrao) if p.is_file() and "__pycache__" not in str(p)]
+        # .wx-migration/logs e ignorado pelo git e a propria bateria o grava: contar
+        # faria o inventario oscilar conforme os testes rodaram ou nao (ja oscilou)
+        arquivos = [p for p in RAIZ.glob(padrao) if p.is_file() and "__pycache__" not in str(p) and "/.wx-migration/logs/" not in p.as_posix()]
         lin = sum(linhas_py(p) for p in arquivos if p.suffix in {".py", ".md", ".json", ".csv", ".sh", ".ps1", ".sql", ".rs", ".toml", ".php"})
         total_arq += len(arquivos)
         total_lin += lin

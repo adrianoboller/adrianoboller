@@ -1871,6 +1871,36 @@ class Questionario(unittest.TestCase):
         self.assertIsNotNone(m, r.stdout)
         self.assertGreaterEqual(int(m.group(1)), 16)
 
+    def test_indice_wl_csharp_e_medido_e_os_textos_citam_o_mesmo_numero(self):
+        """O indice da WL_C# passou tres versoes com 261 nomes lidos por `strings`;
+        agora sai do metadado .NET pelo leitor proprio. Aqui se confere que o JSON
+        e consistente consigo mesmo e que MANUAL, README e perfil citam a mesma
+        quantidade: numero digitado a mao envelhece calado. Com WX_WL_DLL apontando
+        para o WL.dll, o leitor roda de verdade e tem de bater com o gravado."""
+        raiz = RAIZ / "skills/conversao-wx"
+        d = json.loads((raiz / "resources/wl-csharp/funcoes.json").read_text(encoding="utf-8"))
+        self.assertEqual(d["gerado_por"], "skills/conversao-wx/scripts/indice_wl_csharp.py")
+        self.assertEqual(d["quantidade"], len(d["funcoes"]))
+        self.assertEqual(len(set(d["funcoes"])), len(d["funcoes"]), "nome repetido no indice")
+        self.assertEqual(d["classes"], {k: len(v) for k, v in d["por_classe"].items()})
+        self.assertEqual(set(d["funcoes"]), {f for fs in d["por_classe"].values() for f in fs})
+        self.assertRegex(d["sha256_wl_dll"], r"^[0-9a-f]{64}$")
+        self.assertIn("WL.Chaines", d["por_classe"])
+        for nome in ("DateVersChaîne", "ChaîneOccurrence", "TableauAjoute", "fRepEnCours"):
+            self.assertIn(nome, d["funcoes"], f"{nome} sumiu do indice: acento truncado?")
+        q = d["quantidade"]
+        for rel in ("MANUAL.md", "README.md", "skills/conversao-wx/references/perfil-csharp-wl.md",
+                    "docs/investidor/wx-claude-code-para-investidores.html"):
+            texto = (RAIZ / rel).read_text(encoding="utf-8")
+            self.assertRegex(texto, rf"\b{q}\b[^.]{{0,40}}(funções|nomes)", f"{rel} nao cita as {q} funcoes do indice")
+            self.assertNotRegex(texto, r"(índice de|embute um índice de) 261\b|261 nomes lidos", f"{rel} ainda cita o indice velho")
+        dll = os.environ.get("WX_WL_DLL")
+        if not dll or not Path(dll).is_file():
+            self.skipTest("WX_WL_DLL nao aponta para o WL.dll; o indice se confere so por consistencia")
+        r = subprocess.run([sys.executable, str(raiz / "scripts/indice_wl_csharp.py"), dll, "--conferir"],
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
     def test_wx_modelos_compila_e_nao_inventa_numero(self):
         """A ferramenta de modelo local e Rust a parte; o que ela promete e nao
         inventar numero. Aqui roda a bateria dela e o binario de verdade."""

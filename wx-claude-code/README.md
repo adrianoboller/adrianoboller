@@ -172,8 +172,9 @@ WL_C#**, com Go, Java e Node quando os sinais apontarem. A matriz completa
 está em `skills/conversao-wx/references/perfis-de-destino.md`.
 
 **WL_C#** (https://bernardsobra.github.io/WL-web/) é a biblioteca de Bernard
-Sobra que porta mais de 480 funções do WLanguage para C# com o mesmo nome.
-O plugin embute um índice de 261 nomes lidos do `WL.dll` 1.0 e o perfil em
+Sobra que porta 693 funções do WLanguage para C# com o mesmo nome (release
+v1.2). O plugin embute um índice de 608 nomes lidos do metadado do `WL.dll`
+1.2 por `indice_wl_csharp.py` e o perfil em
 `references/perfil-csharp-wl.md`; o `WL.dll` é baixado da release oficial e
 conferido por hash, não redistribuído. Provado em sessão real: com os sinais
 «equipe WINDEV, desktop Windows, prazo manda», a recomendação foi C# + WL_C#.

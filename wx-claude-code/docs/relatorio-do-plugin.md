@@ -1,6 +1,6 @@
-# Relatório do plugin WX Claude Code 3.49.0
+# Relatório do plugin WX Claude Code 3.50.0
 
-Medido em 2026-09-08 por `docs/dossie/numeros-do-plugin.py`; nenhum número abaixo foi digitado.
+Medido em 2026-09-09 por `docs/dossie/numeros-do-plugin.py`; nenhum número abaixo foi digitado.
 
 ## O que é
 
@@ -17,10 +17,10 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | comandos / | 34 |
 | skills | 21 |
 | skills de ERP (pacote skills.sh) | 8 |
-| scripts Python | 41 |
-| linhas de Python (scripts e hooks) | 17593 |
+| scripts Python | 42 |
+| linhas de Python (scripts e hooks) | 17802 |
 | documentos de referência | 19 |
-| testes de regressão | 110 |
+| testes de regressão | 111 |
 | hooks do plugin | 14 |
 | blocos do questionário (0, A–M) | 14 |
 | itens do bloco 0 | 16 |
@@ -46,9 +46,11 @@ Plugin do Claude Code que converte projetos WINDEV, WEBDEV e WINDEV Mobile para 
 | projetos de exemplo convertidos de ponta a ponta | 2 |
 | golden master dos destinos | 5/5 (clientes-php-mysql) · 10/10 (estoque-wx) |
 | testes do runtime WLanguage em Rust (wl-rt) | 16 |
+| funções da WL_C# 1.2 no índice (lidas do metadado do WL.dll) | 608 |
+| classes da WL_C# no índice | 26 |
 | corpus do Help (bytes) | 26750976 |
 | páginas válidas do corpus | 12035 |
-| linhas do manual | 945 |
+| linhas do manual | 947 |
 | tabelas do exemplo ESTOQUE | 7 |
 
 ## O que foi provado em sessão real
