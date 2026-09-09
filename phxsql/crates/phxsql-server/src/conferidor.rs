@@ -1297,7 +1297,11 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// e desde a 0.18 existe no protocolo), e a reescrita juntou dois trechos que
 /// antes eram dois. Nao foi traducao -- foi um rotulo a menos --, e a catraca
 /// desce igual: catraca frouxa nao segura nada.
-pub const TETO_ROTULOS_E_CRASE: usize = 1_050;
+///
+/// 09/09/2026, pedido 203: 1.050 -> 1.049. O «ultimo erro do laco:» do
+/// dialogo de replicacao entrou na fabrica junto com o aviso de credencial
+/// recusada e o botao de religar, que ja nasceram por `txt(`.
+pub const TETO_ROTULOS_E_CRASE: usize = 1_049;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

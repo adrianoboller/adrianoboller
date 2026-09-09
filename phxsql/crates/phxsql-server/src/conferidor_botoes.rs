@@ -166,6 +166,18 @@ pub const DISPENSADOS: &[(&str, &str, &str)] = &[
          clicado no meio de uma varredura, o resto dela nao teria onde \
          acontecer",
     ),
+    (
+        "ui/index.html",
+        "[data-religar]",
+        "o «Religar» do dialogo de acompanhar replica so nasce quando o laco \
+         de uma origem ESTACIONOU por credencial recusada (pedido 203) -- e \
+         o servidor isolado da bateria nao tem origem nenhuma. A prova real \
+         esta em `testes-web/religar-na-tela.mjs`, que a bancada \
+         `bancada/replicacao/credencial-recusada.py --tela` roda contra um \
+         master e uma replica de verdade: entra pela tela da replica, ve o \
+         aviso, clica, e a bancada confere pelo protocolo que o laco tentou \
+         UMA vez e estacionou de novo",
+    ),
     // -------------------------------------------------- a tela de Cluster
     //
     // Os quatro botoes dela NAO existem no servidor da bateria, e isso nao e

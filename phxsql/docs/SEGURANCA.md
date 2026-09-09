@@ -129,6 +129,30 @@ derrubou a sessão de quem estava operando.
 | `contar_injecao_sql` | a recusa «sobrou X depois do fim do comando» — o `; DROP TABLE` empilhado | 07/09/2026: sem ele, **211.290 tentativas por minuto** com uma conexão nova a cada uma e `blacklist.json` vazio antes e depois |
 | `contar_linha_acima_do_teto` | a linha maior que os 128 MiB do fio | 07/09/2026: 134.218.794 bytes derrubavam a conexão em 0,41 s sem resposta, sem log e sem violação |
 
+### A réplica com credencial recusada, e por que o bloqueio NÃO mudou
+
+O pedido 203 foi medido pelo soquete em 09/09/2026
+(`bancada/replicacao/credencial-recusada.py`): uma réplica com o `senha_hash`
+errado e `reconectar_em: 1` fazia **75 tentativas por minuto**; o master
+bloqueou o `127.0.0.1` na quinta, em **4,0 s**, por **60 min**, e o login do
+operador do mesmo endereço caiu junto — «bloqueado desde … por credencial
+invalida (login)». Com o padrão de 10 s, a mesma conta em ~40 s.
+
+**O bloqueio está certo, e ficou como estava.** A alternativa — distinguir «a
+mesma credencial N vezes do mesmo processo» de «N credenciais diferentes» —
+abriria a porta que ele fecha: repetir o mesmo login com provas diferentes é
+exatamente a assinatura de quem adivinha senha. O conserto foi do lado de quem
+insistia: a réplica **estaciona** na primeira recusa e só volta por
+`replicacao_ligar` ou reinício (`docs/REPLICACAO.md` §20). Depois dele, a
+mesma corrida mede **1 tentativa**, `blacklist.json` vazio e o operador
+entrando — e o controle da própria bancada, cinco logins errados pelo
+soquete, **continua bloqueando na quinta**.
+
+O que a `blacklist.json` já dizia — `motivo: credencial invalida`,
+`comando: login` — não ganhou o login que causou o bloqueio, e a omissão é
+decisão: o formato em disco não muda por conforto, e o `acessos.log` já traz
+o `usuario` em cada linha recusada, que é onde se procura.
+
 Ligadas, as duas contam pela **mesma** política leve que já existe
 (`tentativas_ate_bloquear` na `janela_minutos`), pelo mesmo `violacao_leve` do
 token inválido e da credencial errada. **Não há um N próprio para elas**, e a

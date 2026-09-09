@@ -391,7 +391,11 @@ impl Atividade {
             // Promover um spare vira o papel do servidor inteiro; o estado do
             // laco expoe origem, endereco e erro de conexao. Os dois sao
             // decisao e mapa de administrador, nao de replica.
-            "spare_promover" | "replicacao_estado" | "replicacao_testar" => Atividade::Administrar,
+            // `replicacao_ligar` religa um laco que parou por credencial
+            // recusada: e o mesmo mapa de administrador.
+            "spare_promover" | "replicacao_estado" | "replicacao_testar" | "replicacao_ligar" => {
+                Atividade::Administrar
+            }
             // ------------------------------------------------------------
             // As 13 que o conferidor `toda_operacao_do_catalogo_declara_o_
             // poder_que_pede` achou caindo no `_`.

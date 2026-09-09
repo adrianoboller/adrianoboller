@@ -726,7 +726,8 @@ igual que já está registrado — custa releitura, nunca dado.
 | ☐ | **Escrever a configuração pela tela.** Não há op que grave `replicacao` no `config.json`, e reescrevê-lo perderia os comentários do administrador — o caminho que o projeto já escolheu duas vezes é um arquivo próprio (como `dblink.json` e `jobs.json`). Enquanto não existir, um assistente configura *mostrando o que pôr no arquivo* e prova o resto pelas ops |
 | ☐ | Bidirecional com **mais de dois** servidores: o desenho suporta, só o par foi provado |
 | ☐ | Long-poll no Source, para a réplica não perguntar à toa |
-| ☐ | Espera crescente na reconexão (hoje é intervalo fixo) |
+| ☑️ | **Espera crescente na reconexão** — só para falha de REDE: dobra a partir do `reconectar_em` até 60 s, e zera na primeira rodada boa. Medido pelo soquete: 21 conexões em 20 s viraram 5 (1, 2, 4, 8 s). §20 |
+| ☑️ | **Credencial recusada pela origem ESTACIONA o laço** (pedido 203) — uma tentativa, e o laço só volta por `replicacao_ligar` ou reinício. Antes: 75 tentativas/min, o master bloqueava o IP na quinta, em 4 s, por 60 min, e derrubava o operador do mesmo endereço. §20 |
 | ☑️ | **Cifra do fio no transporte** — aperto de mão estilo Noise (X25519 + HKDF + ChaCha20-Poly1305), ligado por origem com `"cifra": true` e o pino em `"chave_do_fio"`. Não é TLS, e o limite está escrito: sem pino protege só de escuta passiva. Ver [CIFRA-DO-FIO.md](CIFRA-DO-FIO.md) |
 | ☐ | **O pulso do CLUSTER continua em claro.** A replicação do cluster passa pelo mesmo laço e poderia ir cifrada, mas o pulso da eleição vai por outro caminho (`cluster.rs`): cifrar metade do tráfego do cluster é pior que não cifrar nenhuma, porque parece protegido |
 | ☑️ | **`replicas_autorizadas` passou a ser lido** — era campo sem leitor até a bancada de contêiner medir 200 de 200 eventos vazando com a lista preenchida (§7) |
@@ -1670,3 +1671,106 @@ Ele **para** — em vez de publicar um número bonito — se uma réplica puxar
 sozinha (zero eventos no `replicar` significa que ela chegou antes, e o medidor
 estaria medindo o próprio concorrente), e se as réplicas não alcançarem o
 esquema antes da primeira volta.
+
+## 20. A réplica que insistia na credencial recusada — e derrubava o operador junto
+
+Pedido 203, filmado em 07/09/2026 e **medido pelo soquete em 09/09/2026**
+(`bancada/replicacao/credencial-recusada.py`, contra o binário de antes do
+conserto):
+
+| | antes | depois |
+|---|---|---|
+| tentativas de login da réplica com `senha_hash` errado (`reconectar_em: 1`) | **5 em 4,0 s** — 75/min, até o bloqueio | **1**, e o laço estaciona |
+| o master bloqueou o `127.0.0.1`? | sim, na 5ª, por **60 min**, «credencial invalida (login)» | não — `blacklist.json` vazio |
+| conexões da réplica barradas na porta depois do bloqueio | 8 em 8 s (continuava batendo) | 0 |
+| o operador do mesmo IP entra com a senha certa? | **não** — «bloqueado desde … até … por credencial invalida (login)» | sim |
+| `replicacao_estado` diz por quê? | só `ultimo_erro` — o texto do bloqueio | `parada: "credencial_recusada"`, mais `ultimo_erro` |
+| origem fora do ar (escuta que aceita e fecha) | 21 conexões em 20 s, intervalo fixo de 1 s | 5 conexões: **1, 2, 4, 8 s**, com `falhas_de_rede_seguidas` e `proxima_tentativa` publicados |
+| 5 logins errados feitos pela própria bancada | bloqueia na 5ª | **bloqueia na 5ª** — a defesa do master não mudou |
+
+Com o `reconectar_em` padrão de 10 s a conta é a mesma, só mais devagar: 6 por
+minuto, bloqueio em ~40 s.
+
+### O que estava errado, e onde
+
+O laço tratava «a origem me recusou» como «a origem caiu»: dormia
+`reconectar_em` e voltava. As duas têm a mesma cara no `Err` e são opostas na
+natureza — a credencial recusada é **determinística** (a mesma prova contra o
+mesmo hash dá a mesma resposta amanhã), e cada tentativa a mais só gasta a
+tolerância de `tentativas_ate_bloquear` do master; a queda de rede é
+transitória, e insistir nela é o trabalho da réplica.
+
+**O bloqueio do master está certo e não mudou.** Distinguir «a mesma credencial
+N vezes do mesmo processo» de «N credenciais diferentes» abriria a porta que
+ele fecha: repetir o mesmo login com provas diferentes é exatamente a
+assinatura de quem adivinha senha. O conserto é do lado de quem insistia.
+
+### O desenho: três respostas para três falhas
+
+`replica.rs` ganhou a classificação e a máquina de estados (`Falha`, `Ritmo`,
+`Decisao`), puras e testadas sem thread:
+
+- **`CredencialRecusada`** — `Autorizacao` vinda de `ligar` (token, login ou
+  a própria porta barrada) → **estaciona**. Só sai por `replicacao_ligar` ou
+  por reinício com a configuração corrigida. Por tempo, nunca: um laço que
+  voltasse sozinho depois de uma hora seria o mesmo defeito em câmera lenta.
+- **`Rede`** — `Io` (não conectou, ou caiu no meio) → **recuo exponencial**:
+  `reconectar_em × 2^n`, teto de 60 s, sem nunca encurtar a base. O teto é
+  baixo de propósito: uma conexão por minuto a um host morto não custa nada, e
+  uma origem que volta depois de uma noite é encontrada em até um minuto.
+- **`Outra`** — esquema, tabela recusada, corrompido → o intervalo fixo de
+  sempre. Ninguém mediu que o recuo ajudaria aqui, e guarda nova entra pedida.
+
+Só a fase de `ligar` classifica `Autorizacao` como credencial: um `replicar`
+sem direito depois de entrar não conta como tentativa leve no master e se
+corrige lá, sem religar aqui.
+
+`replicacao_estado` publica `parada`, `religadas`, `falhas_de_rede_seguidas` e
+`proxima_tentativa`. A operação nova **`replicacao_ligar`** (`administrar`)
+deixa um pedido que o **laço** consome no passo seguinte dele, em até 1 s —
+estacionado, ele acorda e tenta uma vez; só dormindo, vale como «tente já».
+Pela tela, o diálogo «Acompanhar réplica…» mostra a parada com o botão
+**Religar**.
+
+### O irmão, e o que só a tela achou
+
+Dois caminhos chamam o mesmo `ligar`, e os dois receberam o conserto:
+
+- **o laço do cluster** puxa do master corrente pela credencial do bloco
+  `cluster`. Ali não se estaciona para sempre, porque o master **muda**: a
+  recusa fica anotada por master, e o laço volta a tentar quando a eleição
+  entregar outro — ou por `replicacao_ligar` com a origem `cluster:<id>`;
+- **a sonda da tela**: `replicacao_testar` com uma origem configurada liga
+  nela com a mesma credencial do laço, e o diálogo «Acompanhar réplica…» a
+  chamava a cada 3 s. **Medido só ao exercitar no navegador**: com o laço já
+  estacionado direito, o diálogo aberto fez **uma tentativa a cada 3 s — cinco
+  em 12 s** — e o master bloqueou o `127.0.0.1` pela sonda, não pelo laço. E
+  o botão de
+  religar nunca aparecia, porque a sonda falhada apagava as fichas e deixava
+  só o erro dela. Hoje o diálogo lê o estado local **antes** de sondar, não
+  sonda uma origem estacionada, e mostra parada + botão nos três caminhos; e
+  `replicacao_testar` **recusa** uma origem estacionada nomeando o caminho de
+  volta, porque a tela é um cliente entre vários e portão é um só.
+
+### A prova, e os dois erros que ela me cobrou
+
+`python3 bancada/replicacao/credencial-recusada.py` — oito casos pelo soquete,
+com os dois controles na mesma corrida (o master continua bloqueando 5
+erradas; a origem fora do ar continua sendo procurada, com recuo). Com
+`--tela`, o religar do caso 7 é o **botão**, num navegador de verdade
+(`testes-web/religar-na-tela.mjs`), e a bancada confere pelo protocolo que o
+clique rendeu uma tentativa e o laço estacionou de novo. Sai com FALHA contra
+o binário antigo — é a mesma corrida que serviu de antes e de depois.
+
+Dois erros meus ficaram escritos nela: `usuario_alterar` não aceita
+`senha_hash` pelo protocolo (hash pronto escolheria o próprio custo), e
+consertar pelo master **não** serviria de qualquer jeito — o `senha_hash` da
+réplica tem de ser o **mesmo texto** do cadastro de lá, porque é do sal dele
+que ela deriva a chave; a senha certa com outro sal continua recusada. O
+conserto do operador é no `config.json` da réplica, e o reinício é o outro
+caminho de volta.
+
+Guarda: `replica-insiste-na-credencial-recusada` no catálogo
+(`bancada/guardas/catalogo.py`) — repõe o `Dormir` no lugar do `Estacionar` e
+o teste cai. Cognição:
+`docs/cognicao/cognicao_credencial-recusada-nao-e-falha-transitoria_20260909_0632.md`.

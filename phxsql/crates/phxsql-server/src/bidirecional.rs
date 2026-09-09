@@ -178,6 +178,26 @@ pub struct EstadoOrigem {
     pub posicoes: BTreeMap<String, u64>,
     /// Proxima janela do agendamento, ms desde a epoca. Zero = streaming.
     pub proxima_janela_ms: i64,
+    /// Por que o laco esta PARADO, quando esta. Vazio enquanto ele roda.
+    ///
+    /// Hoje o unico valor e `"credencial_recusada"`: a origem recusou o
+    /// token, a credencial ou a propria conexao, e o laco nao volta sozinho
+    /// -- so por `replicacao_ligar` ou por reinicio. Pedido 203: insistir
+    /// numa credencial recusada bloqueava o IP no master em 4 s e derrubava
+    /// o operador junto.
+    pub parada: String,
+    /// Quantas vezes `replicacao_ligar` religou este laco neste processo.
+    pub religadas: u64,
+    /// Pedido de religar ainda nao atendido. E o LACO quem o consome, e nao
+    /// a operacao: um pedido feito com o laco a dormir vale assim que ele
+    /// acorda, sem a operacao ter de saber em que passo ele esta.
+    pub religar_pedido: bool,
+    /// Falhas de REDE seguidas -- o expoente do recuo. Zero quando a ultima
+    /// rodada deu certo.
+    pub falhas_de_rede_seguidas: u32,
+    /// Quando o laco vai tentar de novo depois de uma falha, ms desde a
+    /// epoca. Zero quando ele nao esta esperando por falha nenhuma.
+    pub proxima_tentativa_ms: i64,
 }
 
 impl EstadoOrigem {
@@ -225,6 +245,29 @@ impl EstadoOrigem {
                     Json::Nulo
                 } else {
                     Json::texto_de(phxsql_core::datahora::instante_iso(self.proxima_janela_ms))
+                },
+            ),
+            (
+                "parada",
+                if self.parada.is_empty() {
+                    Json::Nulo
+                } else {
+                    Json::texto_de(&self.parada)
+                },
+            ),
+            ("religadas", Json::de_u64(self.religadas)),
+            (
+                "falhas_de_rede_seguidas",
+                Json::de_u64(self.falhas_de_rede_seguidas as u64),
+            ),
+            (
+                "proxima_tentativa",
+                if self.proxima_tentativa_ms == 0 {
+                    Json::Nulo
+                } else {
+                    Json::texto_de(phxsql_core::datahora::instante_iso(
+                        self.proxima_tentativa_ms,
+                    ))
                 },
             ),
         ])

@@ -12695,6 +12695,29 @@ function painelDaProva(alvo, origens) {
     <div id="pdpGrade${i}"></div>`).join("");
   const porOrigem = origens.map(() => ({ linhas: [], grade: null }));
 
+  // O laço que PAROU por credencial recusada (pedido 203) diz isso em vez de
+  // deixar só o último erro: o erro conta o que a origem respondeu; a parada
+  // conta que ninguém vai tentar de novo até alguém religar — e o botão é o
+  // religar. Sai daqui nos três caminhos do `medir`: sonda pulada, sonda
+  // falhada e sonda bem-sucedida.
+  const avisoDoLaco = (eo, nome) =>
+    (eo && eo.parada === "credencial_recusada"
+      ? `<div class="aviso mal">${esc(txt("tela.rep_credencial_recusada",
+           "credencial recusada pela origem; o laço parou de tentar — corrija a configuração e religue"))}
+         <button type="button" class="botao mini consultar pdpReligar" data-religar="${esc(nome)}">${esc(txt("tela.rep_religar", "Religar"))}</button></div>` : "") +
+    (eo && eo.ultimo_erro
+      ? `<div class="aviso mal">${esc(txt("tela.rep_ultimo_erro", "último erro do laço:"))} ${esc(eo.ultimo_erro)}</div>` : "");
+  // Religar é PEDIDO ao laço, que atende no passo seguinte dele; a medição
+  // seguinte deste painel mostra o que ele fez com o pedido.
+  const ligarReligar = (fichas, campoErro) => {
+    const religar = fichas.querySelector(".pdpReligar");
+    if (religar) religar.onclick = async () => {
+      religar.disabled = true;
+      try { await api("replicacao_ligar", { origem: religar.dataset.religar }); }
+      catch (e) { campoErro.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
+    };
+  };
+
   const medir = async () => {
     // O estado do laço DESTE servidor, quando o motor o oferece: é ele que
     // sabe o modo em vigor, a última rodada, o último erro e as tabelas
@@ -12710,18 +12733,34 @@ function painelDaProva(alvo, origens) {
       const fichas = alvo.querySelector(`#pdpFichas${i}`), campoErro = alvo.querySelector(`#pdpErro${i}`);
       // O diálogo pode ter sido fechado enquanto a sonda falava.
       if (!fichas || !campoErro) continue;
+      const eo = estado && estado.origens ? estado.origens[org.nome] : null;
+      // O laço desta origem PAROU por credencial recusada: NÃO sondar. A
+      // sonda (`replicacao_testar`) liga na origem com a MESMA credencial
+      // que acabou de ser recusada, e a cada 3 s seria uma tentativa a mais
+      // contra este IP no bloqueio de lá — medido em 09/09/2026 com o laço
+      // já estacionado: uma sonda a cada 3 s, cinco em 12 s, e o master
+      // bloqueou o 127.0.0.1 pela sonda, não pelo laço. O que se mostra é o
+      // estado local, que é o que importa.
+      if (eo && eo.parada) {
+        fichas.innerHTML = avisoDoLaco(eo, org.nome);
+        campoErro.innerHTML = "";
+        ligarReligar(fichas, campoErro);
+        continue;
+      }
       let s;
       try {
         // Origem configurada: a credencial sai do config do servidor e não
         // viaja.
         s = await sondarOutro(null, { origem: org.nome });
       } catch (e) {
-        fichas.innerHTML = "";
+        // A sonda falhou, mas o estado do laço local continua valendo — e
+        // é ele que diz se alguém vai tentar de novo.
+        fichas.innerHTML = avisoDoLaco(eo, org.nome);
         campoErro.innerHTML = `<div class="aviso mal">${esc(org.nome)}: ${esc(String(e))}</div>`;
+        ligarReligar(fichas, campoErro);
         continue;
       }
       campoErro.innerHTML = "";
-      const eo = estado && estado.origens ? estado.origens[org.nome] : null;
       const linhas = [];
       let totalLa = 0, totalAqui = 0;
       const locais = {};
@@ -12752,9 +12791,8 @@ function painelDaProva(alvo, origens) {
           <div class="ficha"><div class="v">${fmt(totalAqui)}</div><div class="r">eventos aqui</div></div>
           <div class="ficha"><div class="v">${atrasoTotal > 0 ? fmt(atrasoTotal) : "em dia"}</div>
             <div class="r">atraso</div></div>
-        </div>` +
-        (eo && eo.ultimo_erro
-          ? `<div class="aviso mal">último erro do laço: ${esc(eo.ultimo_erro)}</div>` : "");
+        </div>` + avisoDoLaco(eo, org.nome);
+      ligarReligar(fichas, campoErro);
 
       // `dados:` mudado NO LUGAR -- trocar a referencia faria a grade
       // continuar lendo o array antigo (o mesmo cuidado de `desenharThreads`).

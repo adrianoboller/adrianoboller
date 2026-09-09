@@ -214,6 +214,21 @@ BANCADAS = [
                    ("iguais_no_fim", "os quatro iguais no fim", "")],
     },
     {
+        "nome": "Replicação — credencial recusada não bloqueia o IP",
+        "json": "bancada/replicacao/credencial-recusada.json",
+        "roda": "python3 bancada/replicacao/credencial-recusada.py",
+        "prova": "um master e uma réplica com o hash errado, pelo soquete: a "
+                 "réplica tenta UMA vez e estaciona, o blacklist.json fica "
+                 "vazio e o operador do mesmo IP entra — com dois controles na "
+                 "mesma corrida: cinco logins errados da própria bancada "
+                 "continuam bloqueando o master, e a origem fora do ar continua "
+                 "sendo procurada com recuo crescente",
+        "campos": [("tentativas_da_replica", "tentativas da réplica", ""),
+                   ("bloqueou", "bloqueou o IP", ""),
+                   ("operador_derrubado", "operador derrubado", ""),
+                   ("rede_intervalos_s", "recuo de rede", "s")],
+    },
+    {
         "nome": "Transações — atomicidade pelo soquete",
         "json": "bancada/transacoes/resultados.json",
         "roda": "python3 bancada/transacoes/provar.py",

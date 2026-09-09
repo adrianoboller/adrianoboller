@@ -43,6 +43,8 @@ própria sessão aqui.*
 | `medir.py` | a bancada: atraso por tipo de escrita, vazão, queda e retomada |
 | `modos.py` | os quatro modos, nas portas 5330-5339 |
 | `trava.py` | **a trava de dados contra a leitura de rede**, nas portas 7050-7055 — ver abaixo |
+| `credencial-recusada.py` | **a réplica com credencial recusada não pode bloquear o próprio IP** (pedido 203), nas portas 5870-5879: um master, uma réplica com o hash errado, o operador do mesmo IP, e dois controles — o master continua bloqueando 5 erradas, e a origem fora do ar continua sendo procurada com recuo. `--tela` clica o **Religar** num navegador de verdade (`testes-web/religar-na-tela.mjs`). Sai com FALHA contra o binário antigo |
+| `credencial-recusada.json` | a última corrida dela |
 | `resultados.json` | a última corrida completa |
 | `trava.json` | a última corrida do `trava.py` |
 | `docker/` | **os mesmos quatro modos em contêineres**, que é onde endereço, firewall e partição existem de verdade — ver `docker/LEIA-ME.md` |

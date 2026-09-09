@@ -1,0 +1,66 @@
+{
+  "medido_em": "2026-09-09 06:59:41 UTC",
+  "binario": "target/debug/phxsqld",
+  "reconectar_em_s": 1,
+  "observado_s": 12,
+  "politica": {
+    "tentativas_ate_bloquear": 5,
+    "janela_minutos": 10,
+    "bloqueio_minutos": 60
+  },
+  "tentativas_da_replica": 1,
+  "tentativas_por_minuto": 5.0,
+  "conexoes_barradas": 0,
+  "bloqueou": false,
+  "bloqueio_apos_s": null,
+  "bloqueio_tentativas": null,
+  "bloqueio_minutos_medido": null,
+  "bloqueio_motivo": null,
+  "operador_derrubado": false,
+  "estado_da_replica": {
+    "parada": "credencial_recusada",
+    "ultimo_erro": "[SP000025] acesso negado: login: [SP000025] acesso negado: usuario ou senha invalidos",
+    "religadas": 0,
+    "falhas_de_rede_seguidas": 0,
+    "proxima_tentativa": null
+  },
+  "master_bloqueia_n_erradas": true,
+  "rede_conexoes": 5,
+  "rede_intervalos_s": [
+    1.0,
+    2.0,
+    4.0,
+    8.0
+  ],
+  "rede_estado": {
+    "parada": null,
+    "falhas_de_rede_seguidas": 5,
+    "proxima_tentativa": "2026-09-09 07:00:25,079"
+  },
+  "religar_com_erro": {
+    "resposta": {
+      "ok": true,
+      "aviso_visto": true,
+      "botao_visto": true,
+      "clicou": true,
+      "origem": "master",
+      "aviso": "credencial recusada pela origem; o laço parou de tentar — corrija a configuração e religue Religar",
+      "captura": "/tmp/claude-0/-home-user-adrianoboller/34595649-0af6-575a-8f79-80dbe8cb7a5d/scratchpad/g3-replica/tela/religar-na-tela.png"
+    },
+    "tentativas": 1,
+    "religadas": 1,
+    "parada": "credencial_recusada"
+  },
+  "religar_corrigida": {
+    "resposta": {
+      "ok": true,
+      "reiniciada": true
+    },
+    "eventos_na_replica": 3,
+    "parada": null,
+    "aplicados": 3
+  },
+  "casos": 8,
+  "passaram": 8,
+  "veredito": "PASSA"
+}

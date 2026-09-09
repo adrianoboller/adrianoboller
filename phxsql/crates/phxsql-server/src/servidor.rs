@@ -215,6 +215,7 @@ pub(crate) const OPS_NO_SPARE: &[&str] = &[
     "aplicar",
     "replicacao_estado",
     "replicacao_testar",
+    "replicacao_ligar",
     "spare_promover",
 ];
 
@@ -2218,7 +2219,7 @@ impl Servidor {
         if origem.agendada() {
             return self.laco_agendado(origem);
         }
-        let espera = Duration::from_secs(origem.reconectar_em);
+        let mut ritmo = crate::replica::Ritmo::novo(Duration::from_secs(origem.reconectar_em));
         loop {
             // A promocao encerra o laco: um primario nao puxa de ninguem.
             if !self.papel_atual().puxa_de_origem() {
@@ -2230,22 +2231,129 @@ impl Servidor {
             }
             match self.uma_rodada(&origem) {
                 // Nada a fazer: agora sim, espera antes de perguntar de novo.
-                Ok(0) => std::thread::sleep(espera),
+                Ok(0) => {
+                    ritmo.sucesso();
+                    if !self.dormir_vigiando(&origem.nome, ritmo.base()) {
+                        return;
+                    }
+                }
                 Ok(n) => {
+                    ritmo.sucesso();
                     eprintln!("replicacao [{}]: {n} evento(s) aplicado(s)", origem.nome);
                     // Sem sono: volta ja. `alcancar_tabela` recusa girar em
                     // falso -- ela erra se aplicar e a posicao nao andar --,
                     // entao um `Ok(n)` com n > 0 e progresso de verdade e este
                     // laco nao tem como virar giro em vazio.
                 }
-                // Erro dorme, e e de proposito: source fora do ar ou conexao
-                // caida pedem espera, senao a replica bate na porta fechada
-                // num laco fechado.
-                Err(e) => {
+                // A falha decide o passo seguinte, e sao TRES passos -- ver
+                // `replica::Ritmo`. Pedido 203: tratar a credencial recusada
+                // como se fosse a origem caida, dormindo e voltando, e o que
+                // bloqueava o IP no master em 4 s e derrubava o operador junto.
+                Err((falha, e)) => {
                     eprintln!("replicacao [{}]: {e}", origem.nome);
-                    std::thread::sleep(espera);
+                    if !self.apos_a_falha(&origem.nome, &mut ritmo, falha) {
+                        return;
+                    }
                 }
             }
+        }
+    }
+
+    /// O passo depois de uma rodada que falhou: dorme (vigiando o religar e a
+    /// promocao) ou estaciona ate alguem religar. Devolve `false` quando o
+    /// laco tem de encerrar, porque o servidor foi promovido no meio.
+    ///
+    /// Estacionado, o laco so volta por `replicacao_ligar` ou por reinicio --
+    /// por tempo, nunca: um laco que voltasse sozinho depois de uma hora seria
+    /// o mesmo defeito em camera lenta, gastando a tolerancia do bloqueio do
+    /// master uma vez por hora.
+    fn apos_a_falha(
+        &self,
+        origem: &str,
+        ritmo: &mut crate::replica::Ritmo,
+        falha: crate::replica::Falha,
+    ) -> bool {
+        match ritmo.apos(falha) {
+            crate::replica::Decisao::Dormir(espera) => {
+                let seguidas = ritmo.seguidas;
+                self.anotar_estado(origem, |e| {
+                    e.falhas_de_rede_seguidas = seguidas;
+                    e.proxima_tentativa_ms = crate::agora_ms() + espera.as_millis() as i64;
+                });
+                let continua = self.dormir_vigiando(origem, espera);
+                self.anotar_estado(origem, |e| e.proxima_tentativa_ms = 0);
+                continua
+            }
+            crate::replica::Decisao::Estacionar => {
+                eprintln!(
+                    "replicacao [{origem}]: credencial recusada pela origem; o laco PAROU \
+                     de tentar -- corrija a configuracao e religue (replicacao_ligar). \
+                     Cada tentativa a mais contaria contra este IP no bloqueio de la"
+                );
+                self.anotar_estado(origem, |e| {
+                    e.parada = "credencial_recusada".to_string();
+                    e.falhas_de_rede_seguidas = 0;
+                    e.proxima_tentativa_ms = 0;
+                });
+                let continua = self.esperar_religar(origem);
+                if continua {
+                    self.anotar_estado(origem, |e| {
+                        e.parada.clear();
+                        e.religadas += 1;
+                    });
+                    eprintln!("replicacao [{origem}]: religada, tentando de novo");
+                }
+                continua
+            }
+        }
+    }
+
+    /// Consome o pedido de religar desta origem, se houver.
+    fn tomar_religar(&self, origem: &str) -> bool {
+        match self.estado_replicacao.lock() {
+            Ok(mut estados) => match estados.get_mut(origem) {
+                Some(e) if e.religar_pedido => {
+                    e.religar_pedido = false;
+                    true
+                }
+                _ => false,
+            },
+            Err(_) => false,
+        }
+    }
+
+    /// Dorme `quanto` em passos de ate um segundo, acordando antes se alguem
+    /// religou a origem -- «tente ja». Devolve `false` se o servidor foi
+    /// promovido no meio: o laco tem de encerrar, e nao pode esperar um recuo
+    /// inteiro para perceber.
+    fn dormir_vigiando(&self, origem: &str, quanto: Duration) -> bool {
+        let fim = Instant::now() + quanto;
+        loop {
+            if !self.papel_atual().puxa_de_origem() {
+                return false;
+            }
+            if self.tomar_religar(origem) {
+                return true;
+            }
+            let resta = fim.saturating_duration_since(Instant::now());
+            if resta.is_zero() {
+                return true;
+            }
+            std::thread::sleep(resta.min(Duration::from_secs(1)));
+        }
+    }
+
+    /// Espera, sem prazo, ate alguem religar a origem. `false` se o servidor
+    /// foi promovido antes disso.
+    fn esperar_religar(&self, origem: &str) -> bool {
+        loop {
+            if !self.papel_atual().puxa_de_origem() {
+                return false;
+            }
+            if self.tomar_religar(origem) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_secs(1));
         }
     }
 
@@ -2278,7 +2386,24 @@ impl Servidor {
                             origem.nome
                         )
                     }
-                    Err(e) => {
+                    // A credencial recusada estaciona aqui tambem: janela a
+                    // cada minuto e uma tentativa por minuto, e cinco delas
+                    // bloqueiam o IP no master do mesmo jeito (pedido 203).
+                    // Religada, tenta de novo agora, sem esperar a janela.
+                    Err((crate::replica::Falha::CredencialRecusada, e)) => {
+                        eprintln!("replicacao [{}]: {e}", origem.nome);
+                        let mut ritmo =
+                            crate::replica::Ritmo::novo(Duration::from_secs(origem.reconectar_em));
+                        if !self.apos_a_falha(
+                            &origem.nome,
+                            &mut ritmo,
+                            crate::replica::Falha::CredencialRecusada,
+                        ) {
+                            return;
+                        }
+                    }
+                    // O resto espera a janela seguinte, como sempre.
+                    Err((_, e)) => {
                         eprintln!("replicacao [{}]: {e}", origem.nome);
                         break;
                     }
@@ -2308,12 +2433,11 @@ impl Servidor {
 
     /// Uma rodada, no modo do papel: por rowid (replica fiel) ou por chave
     /// (bidirecional). Anota o estado para `replicacao_estado` nos dois.
-    fn uma_rodada(&self, origem: &crate::config::Origem) -> Result<u64> {
-        let resultado = if self.papel_atual() == Papel::Multi {
-            self.rodada_bidirecional(origem)
-        } else {
-            self.rodada_da_replica(origem)
-        };
+    fn uma_rodada(
+        &self,
+        origem: &crate::config::Origem,
+    ) -> std::result::Result<u64, (crate::replica::Falha, PhxError)> {
+        let resultado = self.rodada_classificada(origem);
         match &resultado {
             Ok(n) => {
                 let n = *n;
@@ -2321,9 +2445,11 @@ impl Servidor {
                     e.ultima_rodada_ms = crate::agora_ms();
                     e.aplicados += n;
                     e.ultimo_erro.clear();
+                    e.falhas_de_rede_seguidas = 0;
+                    e.proxima_tentativa_ms = 0;
                 });
             }
-            Err(erro) => {
+            Err((_, erro)) => {
                 let texto = erro.to_string();
                 self.anotar_estado(&origem.nome, |e| {
                     e.ultima_rodada_ms = crate::agora_ms();
@@ -2334,11 +2460,32 @@ impl Servidor {
         resultado
     }
 
+    /// Uma rodada com a falha CLASSIFICADA -- e classificada onde ela e
+    /// conhecida: o erro de `ligar` e da fase em que a origem diz sim ou nao
+    /// para quem chega (token, credencial, IP barrado); o de depois e da
+    /// rodada. Sem esta separacao o laco teria de adivinhar pelo texto do
+    /// erro, e texto se compara por chave, nunca por frase.
+    fn rodada_classificada(
+        &self,
+        origem: &crate::config::Origem,
+    ) -> std::result::Result<u64, (crate::replica::Falha, PhxError)> {
+        let cliente = crate::replica::ligar_classificado(origem)?;
+        let r = if self.papel_atual() == Papel::Multi {
+            self.rodada_bidirecional(cliente, origem)
+        } else {
+            self.rodada_da_replica(cliente, origem)
+        };
+        r.map_err(|e| (crate::replica::Falha::na_rodada(&e), e))
+    }
+
     /// Uma passada por todas as tabelas de todos os databases da origem.
     ///
     /// Devolve quantos eventos aplicou.
-    fn rodada_da_replica(&self, origem: &crate::config::Origem) -> Result<u64> {
-        let mut cliente = crate::replica::ligar(origem)?;
+    fn rodada_da_replica(
+        &self,
+        mut cliente: crate::replica::Cliente,
+        origem: &crate::config::Origem,
+    ) -> Result<u64> {
         let databases = if origem.databases.is_empty() {
             cliente.databases()?
         } else {
@@ -3037,6 +3184,8 @@ impl Servidor {
             return;
         };
         let espera = Duration::from_secs(estado.config.pulso_s);
+        // O master que recusou a credencial do cluster, enquanto for ele.
+        let mut recusado_por: Option<String> = None;
         loop {
             let c = &estado.config;
             if estado.papel() == crate::cluster::PapelVivo::Master {
@@ -3052,11 +3201,50 @@ impl Servidor {
                 continue;
             };
             let origem = origem_do_master(c, &no);
-            match self.rodada_da_replica(&origem) {
-                // Nada novo: espera o pulso seguinte.
-                Ok(0) => std::thread::sleep(espera),
-                Ok(n) => eprintln!("cluster: {n} evento(s) aplicado(s) do master {}", no.id),
-                Err(e) => {
+            // O IRMAO do laco da replica, e a mesma licao do pedido 203: a
+            // credencial que o master corrente recusou nao muda por insistir,
+            // e cada insistencia conta contra este IP no bloqueio de la. Aqui
+            // nao se estaciona para sempre, porque o master MUDA -- a eleicao
+            // pode entregar outro, e esse pode aceitar. Entao a recusa fica
+            // anotada por master: enquanto o corrente for o que recusou, nada
+            // de tentar; mudou o master, ou alguem religou (`replicacao_ligar`
+            // com a origem `cluster:<id>`), tenta uma vez.
+            if recusado_por.as_deref() == Some(no.id.as_str()) && !self.tomar_religar(&origem.nome)
+            {
+                std::thread::sleep(espera);
+                continue;
+            }
+            let retomando = recusado_por.take().is_some();
+            match self.rodada_classificada(&origem) {
+                Ok(n) => {
+                    if retomando {
+                        self.anotar_estado(&origem.nome, |e| {
+                            e.parada.clear();
+                            e.ultimo_erro.clear();
+                        });
+                    }
+                    if n == 0 {
+                        // Nada novo: espera o pulso seguinte.
+                        std::thread::sleep(espera);
+                    } else {
+                        eprintln!("cluster: {n} evento(s) aplicado(s) do master {}", no.id);
+                    }
+                }
+                Err((crate::replica::Falha::CredencialRecusada, e)) => {
+                    eprintln!(
+                        "cluster: o master {} recusou a credencial ({e}); parei de tentar \
+                         nele -- corrija cluster.usuario/senha_hash e religue \
+                         (replicacao_ligar, origem {:?}), ou espere outro master",
+                        no.id, origem.nome
+                    );
+                    let texto = e.to_string();
+                    self.anotar_estado(&origem.nome, |est| {
+                        est.parada = "credencial_recusada".to_string();
+                        est.ultimo_erro = texto;
+                    });
+                    recusado_por = Some(no.id.clone());
+                }
+                Err((_, e)) => {
                     eprintln!("cluster: replicacao do master {}: {e}", no.id);
                     std::thread::sleep(espera);
                 }
@@ -3470,10 +3658,13 @@ impl Servidor {
     /// pelo carimbo do nascimento da escrita, e a posicao consumida vira
     /// estado proprio -- o diario local mistura escrita local com aplicada e
     /// deixa de ser a contagem da origem.
-    fn rodada_bidirecional(&self, origem: &crate::config::Origem) -> Result<u64> {
+    fn rodada_bidirecional(
+        &self,
+        mut cliente: crate::replica::Cliente,
+        origem: &crate::config::Origem,
+    ) -> Result<u64> {
         let meu_id = self.config.replicacao.id_servidor.trim().to_string();
         let meu_hash = bidirecional::hash_id(&meu_id);
-        let mut cliente = crate::replica::ligar(origem)?;
         let databases = if origem.databases.is_empty() {
             cliente.databases()?
         } else {
@@ -8828,6 +9019,7 @@ impl Servidor {
             "cluster_no_remover" => self.op_cluster_no_remover(p, sessao),
             "replicacao_estado" => self.op_replicacao_estado(),
             "replicacao_testar" => self.op_replicacao_testar(p),
+            "replicacao_ligar" => self.op_replicacao_ligar(p),
             // Casca fina: a operacao so escolhe o texto do motivo. Toda a
             // promocao mora em `promover_para_primario`.
             "spare_promover" => {
@@ -20025,16 +20217,28 @@ impl Servidor {
     fn op_replicacao_testar(&self, p: &Json) -> Result<Json> {
         let origem = match p.texto_ou("origem", "").trim() {
             // Uma origem ja configurada: a credencial nao viaja.
-            nome if !nome.is_empty() => self
-                .config
-                .replicacao
-                .origens
-                .iter()
-                .find(|o| o.nome == nome)
-                .cloned()
-                .ok_or_else(|| {
-                    PhxError::NaoEncontrado(format!("nao ha origem {nome:?} em replicacao.origens"))
-                })?,
+            nome if !nome.is_empty() => {
+                // O laco desta origem ESTACIONOU por credencial recusada:
+                // testar agora e ligar na origem com a mesma credencial, e
+                // cada teste conta como tentativa leve no bloqueio de la. O
+                // dialogo da tela sondava a cada 3 s -- medido em 09/09/2026,
+                // cinco tentativas em 12 s de dialogo aberto, e o master
+                // bloqueou o IP pela SONDA depois de o laco ter parado direito. A tela
+                // deixou de sondar; este portao e para todo outro cliente,
+                // porque portao e um so.
+                self.recusar_se_estacionada(nome)?;
+                self.config
+                    .replicacao
+                    .origens
+                    .iter()
+                    .find(|o| o.nome == nome)
+                    .cloned()
+                    .ok_or_else(|| {
+                        PhxError::NaoEncontrado(format!(
+                            "nao ha origem {nome:?} em replicacao.origens"
+                        ))
+                    })?
+            }
             _ => {
                 let host = p.texto_ou("host", "").trim().to_string();
                 if host.is_empty() {
@@ -20221,6 +20425,76 @@ impl Servidor {
             ),
             ("origens", origens),
             ("colisoes_de_sequencia", colisoes),
+        ]))
+    }
+
+    /// A origem esta com o laco estacionado por credencial recusada?
+    /// Recusa nomeando o caminho de volta, em vez de gastar mais uma
+    /// tentativa contra o IP no bloqueio da origem.
+    fn recusar_se_estacionada(&self, origem: &str) -> Result<()> {
+        let parada = self
+            .estado_replicacao
+            .lock()
+            .map_err(|_| trava_envenenada())?
+            .get(origem)
+            .map(|e| e.parada.clone())
+            .unwrap_or_default();
+        if parada.is_empty() {
+            return Ok(());
+        }
+        Err(PhxError::Esquema(format!(
+            "o laco da origem {origem:?} esta parado ({parada}): testar agora seria mais \
+             uma tentativa com a credencial que a origem recusou, contra este IP no \
+             bloqueio de la. Corrija a configuracao e religue com replicacao_ligar"
+        )))
+    }
+
+    /// `replicacao_ligar`: manda o laco de uma origem tentar de novo AGORA.
+    ///
+    /// E o unico caminho de volta de um laco que estacionou por credencial
+    /// recusada (pedido 203) -- o outro e reiniciar com a configuracao
+    /// corrigida. Por tempo, nunca: um laco que voltasse sozinho depois de
+    /// uma hora seria o mesmo defeito em camera lenta. Num laco que so esta
+    /// dormindo (recuo de rede, ou o intervalo entre rodadas em vao) o pedido
+    /// vale como «tente ja».
+    ///
+    /// Quem consome o pedido e o LACO, no passo seguinte dele -- ate 1 s.
+    fn op_replicacao_ligar(&self, p: &Json) -> Result<Json> {
+        let nome = p.texto_ou("origem", "").trim().to_string();
+        if nome.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"origem\": um nome de replicacao.origens, ou cluster:<id>".into(),
+            ));
+        }
+        let mut estados = self
+            .estado_replicacao
+            .lock()
+            .map_err(|_| trava_envenenada())?;
+        let Some(estado) = estados.get_mut(&nome) else {
+            let mut conhecidas: Vec<&String> = estados.keys().collect();
+            conhecidas.sort();
+            return Err(PhxError::NaoEncontrado(format!(
+                "nao ha laco de replicacao para a origem {nome:?}; as que este \
+                 servidor conhece: {conhecidas:?}"
+            )));
+        };
+        let estava_parada = estado.parada.clone();
+        estado.religar_pedido = true;
+        Ok(Json::objeto(vec![
+            ("origem", Json::texto_de(&nome)),
+            ("pedido", Json::Bool(true)),
+            (
+                "estava_parada",
+                if estava_parada.is_empty() {
+                    Json::Nulo
+                } else {
+                    Json::texto_de(&estava_parada)
+                },
+            ),
+            (
+                "aviso",
+                Json::texto_de("o laco atende no passo seguinte dele, em ate 1 s"),
+            ),
         ]))
     }
 
@@ -21770,6 +22044,65 @@ mod testes_firewall_e_mensagens {
 
     fn pedido(txt: &str) -> Json {
         Json::analisar(txt).unwrap()
+    }
+
+    /// `replicacao_ligar` e o pedido que o laco consome -- e so ele: a
+    /// operacao nao religa nada por conta propria, porque quem sabe em que
+    /// passo o laco esta e o laco. Pedido 203.
+    #[test]
+    fn replicacao_ligar_deixa_o_pedido_para_o_laco_consumir() {
+        let dir = dir_temp("religar");
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        // Origem desconhecida: erro nomeado, e nada e marcado.
+        let e = s
+            .op_replicacao_ligar(&pedido(r#"{"origem":"ninguem"}"#))
+            .unwrap_err();
+        assert!(matches!(e, PhxError::NaoEncontrado(_)), "{e}");
+        assert!(!s.tomar_religar("ninguem"));
+
+        // Um laco estacionado por credencial recusada.
+        s.anotar_estado("matriz", |e| e.parada = "credencial_recusada".into());
+        let r = s
+            .op_replicacao_ligar(&pedido(r#"{"origem":"matriz"}"#))
+            .unwrap();
+        assert_eq!(r.texto_ou("estava_parada", ""), "credencial_recusada");
+        assert!(r.booleano_ou("pedido", false));
+        // A operacao NAO limpa a parada: e o laco, ao acordar, que a limpa.
+        let estado = s.op_replicacao_estado().unwrap();
+        let matriz = estado.campo("origens").unwrap().campo("matriz").unwrap();
+        assert_eq!(matriz.texto_ou("parada", ""), "credencial_recusada");
+        // O laco consome o pedido UMA vez.
+        assert!(s.tomar_religar("matriz"));
+        assert!(!s.tomar_religar("matriz"));
+
+        // Estacionada, a origem tambem NAO se testa: `replicacao_testar` e
+        // ligar nela com a credencial recusada, e cada teste conta la.
+        let e = s
+            .op_replicacao_testar(&pedido(r#"{"origem":"matriz"}"#))
+            .unwrap_err();
+        assert!(
+            matches!(&e, PhxError::Esquema(m) if m.contains("replicacao_ligar")),
+            "a recusa nomeia o caminho de volta: {e}"
+        );
+
+        // O laco acordou e limpou a parada (e o que `apos_a_falha` faz ao
+        // consumir o pedido). Dali em diante o laco so dorme, e o pedido vale
+        // como «tente ja»: estava_parada volta nulo, e o pedido fica igual.
+        s.anotar_estado("matriz", |e| e.parada.clear());
+        // E sem parada o teste segue o caminho de sempre -- aqui, ate a
+        // recusa de sempre, porque "matriz" nao esta em replicacao.origens.
+        let e = s
+            .op_replicacao_testar(&pedido(r#"{"origem":"matriz"}"#))
+            .unwrap_err();
+        assert!(matches!(e, PhxError::NaoEncontrado(_)), "{e}");
+        let r = s
+            .op_replicacao_ligar(&pedido(r#"{"origem":"matriz"}"#))
+            .unwrap();
+        assert!(
+            matches!(r.campo("estava_parada"), Some(Json::Nulo)),
+            "{r:?}"
+        );
+        assert!(s.tomar_religar("matriz"));
     }
 
     /// **O teste que mais importa**: sem o bloco `seguranca` no config, nada

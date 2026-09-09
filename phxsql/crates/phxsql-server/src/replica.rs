@@ -423,3 +423,223 @@ pub fn ligar(origem: &Origem) -> Result<Cliente> {
     }
     Ok(c)
 }
+
+// ---------------------------------------------------------------------------
+// O que o laco faz quando a rodada falha -- e por que sao TRES respostas.
+//
+// Pedido 203, filmado em 07/09/2026: uma replica com a credencial errada
+// tentava entrar a cada `reconectar_em`, o master contava cada recusa como
+// tentativa leve e bloqueava o IP em 4 s -- levando junto o operador que
+// saia do mesmo 127.0.0.1. Medido pelo soquete
+// (`bancada/replicacao/credencial-recusada.py`): 75 tentativas por minuto,
+// bloqueio na quinta, por 60 minutos.
+//
+// O bloqueio do master esta certo e nao mudou. O que estava errado era tratar
+// «a origem me recusou» como se fosse «a origem caiu»: uma e deterministica
+// -- a mesma prova contra o mesmo hash da a mesma resposta amanha -- e a
+// outra e transitoria. Insistir na primeira so gasta a tolerancia do bloqueio
+// do outro lado; insistir na segunda e o proprio trabalho da replica.
+// ---------------------------------------------------------------------------
+
+/// Por que uma rodada falhou. Decide o que o laco faz em seguida.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Falha {
+    /// A origem RECUSOU o token, a credencial ou a propria conexao (IP
+    /// barrado). Nao e transitorio: tentar de novo com a mesma configuracao
+    /// da o mesmo resultado, e cada tentativa conta contra o IP no master.
+    CredencialRecusada,
+    /// Nao deu para chegar na origem, ou a conexao caiu no meio. Passa
+    /// sozinho: a origem volta, a rede volta.
+    Rede,
+    /// Qualquer outra coisa -- esquema, tabela recusada, dado corrompido.
+    /// Continua no intervalo fixo de sempre, porque ninguem mediu que o
+    /// recuo ajudaria aqui e guarda nova entra pedida.
+    Outra,
+}
+
+impl Falha {
+    /// A classificacao de um erro que veio de [`ligar`] -- a fase em que a
+    /// origem diz sim ou nao para QUEM chega.
+    ///
+    /// So aqui `Autorizacao` vira credencial recusada. Uma `Autorizacao`
+    /// depois de entrar (um `replicar` sem direito, por exemplo) e outra
+    /// coisa: nao conta como tentativa leve no master, e um administrador de
+    /// la pode corrigir sem que ninguem religue aqui.
+    pub fn ao_ligar(e: &PhxError) -> Falha {
+        match e {
+            PhxError::Autorizacao(_) => Falha::CredencialRecusada,
+            PhxError::Io(_) => Falha::Rede,
+            _ => Falha::Outra,
+        }
+    }
+
+    /// A classificacao de um erro DEPOIS de entrar: so a rede se distingue.
+    pub fn na_rodada(e: &PhxError) -> Falha {
+        match e {
+            PhxError::Io(_) => Falha::Rede,
+            _ => Falha::Outra,
+        }
+    }
+}
+
+/// [`ligar`] com a falha ja classificada, para quem chama decidir sem
+/// adivinhar pelo texto do erro -- texto se compara por chave, nunca por
+/// frase.
+pub fn ligar_classificado(origem: &Origem) -> std::result::Result<Cliente, (Falha, PhxError)> {
+    ligar(origem).map_err(|e| (Falha::ao_ligar(&e), e))
+}
+
+/// O que o laco faz depois de uma rodada que falhou.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decisao {
+    /// Espera tanto e tenta de novo.
+    Dormir(Duration),
+    /// Para de tentar ate alguem religar (`replicacao_ligar`) ou a
+    /// configuracao mudar (reinicio).
+    Estacionar,
+}
+
+/// O ritmo do laco: intervalo fixo entre rodadas em vao, recuo exponencial
+/// para a REDE, estacionamento para a credencial.
+///
+/// O recuo da rede dobra a partir do `reconectar_em` e para em
+/// [`Ritmo::TETO`] -- um minuto. O teto e baixo de proposito: uma conexao por
+/// minuto a um host morto nao custa nada, e uma origem que volta depois de
+/// uma noite fora e encontrada em ate um minuto, que e o que importa para o
+/// atraso da replica. Um `reconectar_em` acima do teto vale como esta: o teto
+/// nunca encurta o que o administrador pediu.
+#[derive(Debug, Clone)]
+pub struct Ritmo {
+    base: Duration,
+    /// Falhas de rede SEGUIDAS -- o expoente do recuo. Zera no sucesso.
+    pub seguidas: u32,
+}
+
+impl Ritmo {
+    pub const TETO: Duration = Duration::from_secs(60);
+
+    pub fn novo(base: Duration) -> Ritmo {
+        Ritmo { base, seguidas: 0 }
+    }
+
+    /// O intervalo entre rodadas que nao acharam nada -- o `reconectar_em`.
+    pub fn base(&self) -> Duration {
+        self.base
+    }
+
+    /// A rodada deu certo (achou algo ou nao): o recuo volta ao comeco.
+    pub fn sucesso(&mut self) {
+        self.seguidas = 0;
+    }
+
+    /// A rodada falhou assim: o que fazer.
+    pub fn apos(&mut self, falha: Falha) -> Decisao {
+        match falha {
+            Falha::CredencialRecusada => {
+                self.seguidas = 0;
+                Decisao::Estacionar
+            }
+            Falha::Rede => {
+                let espera = self.espera_de_rede();
+                self.seguidas = self.seguidas.saturating_add(1);
+                Decisao::Dormir(espera)
+            }
+            Falha::Outra => Decisao::Dormir(self.base),
+        }
+    }
+
+    /// `base * 2^seguidas`, sem passar do teto e sem nunca ficar abaixo da
+    /// base. O deslocamento e limitado antes de multiplicar, senao um laco
+    /// que passou a noite recuando estouraria o `u32` ao chegar em 2^32.
+    fn espera_de_rede(&self) -> Duration {
+        let fator = 1u32 << self.seguidas.min(20);
+        let crescida = self.base.saturating_mul(fator);
+        crescida.min(Self::TETO).max(self.base)
+    }
+}
+
+#[cfg(test)]
+mod testes_do_ritmo {
+    use super::*;
+
+    fn s(n: u64) -> Duration {
+        Duration::from_secs(n)
+    }
+
+    /// A tres respostas do `ao_ligar`: e ESTA classificacao que separa
+    /// «a origem me recusou» de «a origem caiu».
+    #[test]
+    fn ao_ligar_separa_credencial_de_rede_e_do_resto() {
+        let recusa = PhxError::Autorizacao("login: credencial invalida".into());
+        let queda = PhxError::Io(std::io::Error::other("connection refused"));
+        let esquema = PhxError::Esquema("imagem_da_linha desligada".into());
+        assert_eq!(Falha::ao_ligar(&recusa), Falha::CredencialRecusada);
+        assert_eq!(Falha::ao_ligar(&queda), Falha::Rede);
+        assert_eq!(Falha::ao_ligar(&esquema), Falha::Outra);
+        // Depois de entrar, `Autorizacao` NAO e credencial recusada: um
+        // `replicar` sem direito se corrige no master, sem religar aqui.
+        assert_eq!(Falha::na_rodada(&recusa), Falha::Outra);
+        assert_eq!(Falha::na_rodada(&queda), Falha::Rede);
+    }
+
+    /// O defeito do pedido 203 reposto seria este teste caindo: a credencial
+    /// recusada tem de ESTACIONAR na primeira, e nao dormir e voltar.
+    #[test]
+    fn credencial_recusada_estaciona_na_primeira() {
+        let mut r = Ritmo::novo(s(1));
+        assert_eq!(r.apos(Falha::CredencialRecusada), Decisao::Estacionar);
+        // E de novo: religou, recusou de novo, estaciona de novo -- nunca
+        // uma segunda tentativa por conta propria.
+        assert_eq!(r.apos(Falha::CredencialRecusada), Decisao::Estacionar);
+        assert_eq!(r.seguidas, 0);
+    }
+
+    /// A rede recua dobrando: 1, 2, 4, 8, 16, 32, e para no teto de 60 s.
+    #[test]
+    fn rede_recua_dobrando_ate_o_teto() {
+        let mut r = Ritmo::novo(s(1));
+        let esperas: Vec<Duration> = (0..8)
+            .map(|_| match r.apos(Falha::Rede) {
+                Decisao::Dormir(d) => d,
+                Decisao::Estacionar => panic!("rede nunca estaciona"),
+            })
+            .collect();
+        assert_eq!(
+            esperas,
+            vec![s(1), s(2), s(4), s(8), s(16), s(32), s(60), s(60)]
+        );
+        assert_eq!(r.seguidas, 8);
+        // O sucesso zera: a proxima queda volta a esperar a base.
+        r.sucesso();
+        assert_eq!(r.apos(Falha::Rede), Decisao::Dormir(s(1)));
+    }
+
+    /// Um `reconectar_em` acima do teto vale como esta: o teto nunca encurta
+    /// o que o administrador pediu.
+    #[test]
+    fn o_teto_nunca_encurta_a_base() {
+        let mut r = Ritmo::novo(s(300));
+        assert_eq!(r.apos(Falha::Rede), Decisao::Dormir(s(300)));
+        assert_eq!(r.apos(Falha::Rede), Decisao::Dormir(s(300)));
+    }
+
+    /// Uma noite inteira de recuo nao estoura o expoente.
+    #[test]
+    fn muitas_falhas_seguidas_nao_estouram() {
+        let mut r = Ritmo::novo(s(10));
+        for _ in 0..100_000 {
+            let _ = r.apos(Falha::Rede);
+        }
+        assert_eq!(r.apos(Falha::Rede), Decisao::Dormir(s(60)));
+    }
+
+    /// As outras falhas ficam no intervalo fixo de sempre -- guarda nova
+    /// entra pedida, e ninguem mediu que o recuo ajudaria aqui.
+    #[test]
+    fn outra_falha_mantem_o_intervalo_fixo() {
+        let mut r = Ritmo::novo(s(10));
+        assert_eq!(r.apos(Falha::Outra), Decisao::Dormir(s(10)));
+        assert_eq!(r.apos(Falha::Outra), Decisao::Dormir(s(10)));
+        assert_eq!(r.seguidas, 0);
+    }
+}

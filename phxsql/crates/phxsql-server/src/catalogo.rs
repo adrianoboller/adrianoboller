@@ -1392,6 +1392,24 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "replicacao_ligar",
+        apelidos: &[],
+        resumo: "Manda o laço de replicação de UMA origem tentar de novo agora. \
+                 É o caminho de volta de um laço que parou por credencial \
+                 recusada pela origem (`parada` em `replicacao_estado`): ele \
+                 não volta por tempo, porque cada tentativa a mais contaria \
+                 contra este IP no bloqueio do outro lado. Num laço que só \
+                 dorme, vale como «tente já».",
+        parametros: &[obr(
+            "origem",
+            "string",
+            "o nome da origem em `replicacao.origens`, ou `cluster:<id>` para \
+             o master de um cluster que recusou a credencial",
+        )],
+        exemplo: r#"{"op":"replicacao_ligar","origem":"matriz"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "replicacao_testar",
         apelidos: &[],
         resumo: "Prova a ligação com o outro servidor pela MESMA conexão e \

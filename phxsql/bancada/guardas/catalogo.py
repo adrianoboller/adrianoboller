@@ -4263,4 +4263,36 @@ pub fn limpar() {
             "testes::entregar_wchar_trunca_por_caractere_inteiro_e_continua",
         ],
     },
+    {
+        "id": "replica-insiste-na-credencial-recusada",
+        "titulo": "a réplica com credencial recusada insistia a cada `reconectar_em` e bloqueava o próprio IP — derrubando o operador junto",
+        "porque": (
+            "Pedido 203, filmado em 07/09/2026 e medido pelo soquete em "
+            "09/09 (bancada/replicacao/credencial-recusada.py): 75 tentativas "
+            "por minuto, o master bloqueou o 127.0.0.1 na quinta, em 4 s, por "
+            "60 min, e o login do operador do mesmo IP caiu junto. O defeito "
+            "era tratar «a origem me recusou» como «a origem caiu»: a "
+            "credencial recusada e deterministica, e cada tentativa a mais "
+            "so gasta a tolerancia do bloqueio de la. Repor o defeito e fazer "
+            "o Ritmo DORMIR e voltar em vez de ESTACIONAR."
+        ),
+        "arquivo": "crates/phxsql-server/src/replica.rs",
+        "trecho": """            Falha::CredencialRecusada => {
+                self.seguidas = 0;
+                Decisao::Estacionar
+            }""",
+        "troca": """            Falha::CredencialRecusada => {
+                self.seguidas = 0;
+                Decisao::Dormir(self.base)
+            }""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "replica::testes_do_ritmo::credencial_recusada_estaciona_na_primeira",
+        ],
+        "seguem": [
+            "replica::testes_do_ritmo::rede_recua_dobrando_ate_o_teto",
+            "replica::testes_do_ritmo::outra_falha_mantem_o_intervalo_fixo",
+        ],
+    },
 ]
