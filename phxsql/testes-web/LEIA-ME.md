@@ -151,6 +151,51 @@ Sem isso, uma afirmação que falha no meio deixa a escolha de pé e o passo
 seguinte reprova por um defeito que não é o dele — aconteceu na primeira
 rodada, com o diagrama ER acusado de estar em espanhol por causa da grade.
 
+## A bateria da integração com a Claude, também à parte
+
+`node testes-web/claude-bateria.mjs` prova as três baterias que
+`docs/CLAUDE-IA.md` §8 descreve — pedido 231: elas rodaram numa sessão em
+08/09/2026 e morreram com ela, e este é o roteiro versionado que faltava.
+Roda nas portas **6870/6871** (o `phxsqld`) e **6872** (a Anthropic falsa) —
+fora da faixa da bateria geral. `--bateria 1|2|3` roda só uma; `--so <pedaço>`
+roda só as provas cuja chave contém o pedaço (útil para depurar, mas cada
+prova pressupõe o estado que a anterior deixou — rodar uma isolada de
+`--bateria 2` em diante pode reprovar por falta de navegação, não por
+defeito).
+
+| arquivo | o que é |
+|---|---|
+| `claude-falsa.mjs` | o servidor falso da API da Anthropic — `POST /v1/messages`, com e sem `stream`, o SSE pedaço a pedaço, os erros do §2. Roteiro controlável por `POST /_controle/roteiro` (fila, um item por chamada), lido de volta por `GET /_controle/pedidos`. Roda também standalone (`node testes-web/claude-falsa.mjs --porta N`) |
+| `claude-apoio.mjs` | os ajudantes específicos desta integração: ligar/ler a gaveta `phxsql.ia` do `localStorage`, abrir as telas, "Testar a chave", medir o streaming por EFEITO (não por relógio) |
+| `claude-interceptar.mjs` | como repor um defeito sem recompilar o `phxsqld` — dois caminhos, ver abaixo |
+| `claude-bateria.mjs` | o executor das três baterias; grava `claude-resultados.json`, versionado no molde dos `resultados.json` de `bancada/` — refaça a corrida e recommite quando o número mudar |
+
+**Como repor um defeito com o binário já compilado.** O `phxsqld` embute
+`ui/claude.js` por `include_str!`; mudar o arquivo no disco não muda uma
+linha do que o binário já compilado serve, e esta frente está proibida de
+rodar `cargo`. Dois caminhos, e a escolha entre eles não é gosto:
+
+- **Interceptação do Playwright** (`interceptarPaginaPrincipal`) — troca o
+  corpo ou o cabeçalho `Content-Security-Policy` da resposta do documento
+  antes do navegador a ver. Funciona bem quando o alvo da chamada que se quer
+  provar é uma origem **pública** (a Bateria 3 usa isto para o `connect-src`,
+  contra `https://api.anthropic.com`).
+- **Proxy reverso em `http` puro** (`subirCopiaComPatch`) — um servidor à
+  parte que reescreve só o `/` (com o `claude.js` patcheado) e repassa
+  `/api`/`/saude` sem tocar, para o `phxsqld` de verdade por trás. **Achado
+  medido nesta rodada:** a interceptação do Playwright no documento faz o
+  Chromium classificar a página resultante como de **"unknown address
+  space"** para Private Network Access — e depois disso, TODA chamada para
+  OUTRO endereço de loopback (a Anthropic falsa, também `127.0.0.1`) é
+  recusada por CORS, mesmo os dois sendo loopback. O proxy, acessado por
+  conexão direta, não sofre disso. É o caminho das Baterias 1 e 2 (o defeito
+  aí precisa alcançar a Anthropic falsa).
+
+**As três provas nos dois sentidos**, uma por bateria: a chave no corpo de um
+pedido ao PhxSql (Bateria 1), criar do plano sem confirmação (Bateria 2), e
+`connect-src 'self'` sozinho (Bateria 3) — todas em `docs/CLAUDE-IA.md` §8,
+com a saída da corrida que as mediu.
+
 ## Os três canais de erro
 
 `pageerror` não é o único. O `ligarMenu` manda **toda** exceção de item de
