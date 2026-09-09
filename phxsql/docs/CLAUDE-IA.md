@@ -329,53 +329,128 @@ funciona exatamente como hoje».
 ## 8. As provas
 
 Sem chave de verdade não dá para chamar a Anthropic — e inventar uma seria
-inventar o resultado. Então o caminho inteiro foi exercitado contra um
+inventar o resultado. Então o caminho inteiro é exercitado contra um
 **servidor falso** que fala o formato da API, **inclusive o SSE pedaço a
 pedaço**, e que encena os erros.
 
-> **Aviso de 08/09/2026, medido:** os roteiros dessas três baterias **não
-> estão neste repositório** — `testes-web/` tem só `bateria.mjs` e
-> `medir-regiao.mjs`, `bancada/` não tem servidor falso da API, e o histórico
-> do git só conhece o `ui/claude.js`. Elas rodaram numa sessão e morreram com
-> ela, contra a regra da casa: *script que resolveu algo não pode morrer com a
-> sessão*. O que é reproduzível daqui hoje são os **4 testes Rust** de
-> `http.rs` (`mod testes_da_claude`). Os números abaixo (43 + 31 + 5) são o
-> **relato daquela sessão**, não uma medição que se refaça — refazer as
-> baterias como script versionado é o pedido 231 do `PENDENCIAS.md`.
+> **Correção de 09/09/2026 (pedido 231), medida.** Até 08/09/2026 esta seção
+> relatava três baterias (43 + 31 + 5 provas) cujo roteiro **não existia no
+> repositório** — rodaram numa sessão e morreram com ela, contra a lei da casa
+> (*script que resolveu algo não pode morrer com a sessão*). Hoje o roteiro
+> existe, é versionado, e os números abaixo são **medidos nesta corrida**, não
+> relatados de memória:
+>
+> ```
+> node testes-web/claude-bateria.mjs
+> ```
+>
+> **48 provas, 48 passaram**, medido em 09/09/2026 contra o `phxsqld` de
+> `target/release/` — Bateria 1: 28/28, Bateria 2: 15/15, Bateria 3: 5/5. O
+> resultado bruto vai para `testes-web/claude-resultados.json`, versionado no
+> molde dos `resultados.json` de `bancada/` — refaça a corrida e recommite
+> quando o número mudar. **O total não
+> é 43+31+5**: onde o relato antigo não dava detalhe suficiente para
+> reproduzir a prova ao pé da letra, esta rodada escreveu a prova que o
+> CONTRATO desta página exige (§2/§5/§6) em vez de adivinhar a contagem
+> antiga — a diferença está discutida logo abaixo de cada bateria.
 
-**Bateria 1 — o caminho inteiro (43 provas).** Comportamento velho;
-configuração; «Testar a chave»; os quatro recursos; o painel do que sobe; o
-streaming aparecendo aos pedaços (4 tamanhos parciais vistos); o SQL caindo no
-editor sem executar; o *Executar* da pessoa trazendo linhas; a recusa do motor
-com o motivo quando o SQL não tem substrato; as linhas de exemplo com o dado
-pessoal redigido; os erros 401/429/500/529/400, o erro no meio do fluxo e a
-rede caída; os dois temas; e a chave que não vaza.
+**Bateria 1 — o caminho inteiro (28 provas).** Comportamento velho;
+configuração (abrir, salvar pela forma de verdade, mascarar, remover); «Testar
+a chave» com sucesso e com 401/429/400/529; rede caída; o painel do que sobe;
+o streaming aparecendo em mais de um pedaço (medido pelo **efeito** — o
+crescimento do texto na tela — e não por um relógio fixo); o SQL caindo no
+editor sem executar; o *Executar* da pessoa trazendo linhas reais; a recusa do
+motor com o motivo (`índice`) quando o SQL não tem substrato; a receita
+Explicar; a receita de índice/desempenho carregando a instrução de medir no
+`system`; as linhas de exemplo com o dado pessoal redigido (`"***"`, por
+análise da coluna, não por recorte); o erro no meio do fluxo (`event: error`
+com HTTP 200); a chave que nunca aparece num pedido ao PhxSql e aparece de
+verdade nos pedidos à Anthropic falsa; **a prova dupla da chave no corpo de um
+pedido ao PhxSql** (abaixo); e os dois temas.
 
-**Bateria 2 — a modelagem que cria (31 provas).** O diagrama e o dicionário sem
-chave; o plano com tipo inexistente recusado antes de tocar o banco; o plano que
-colide com tabela existente; a resposta que não é plano; a revisão com a
-contagem antes de escrever; a criação confirmada; **as tabelas existindo de
-verdade, provadas pela operação `esquema` e não pela tela**; os índices e a
-marcação de dado pessoal gravados; o diagrama e o dicionário mostrando o que
-nasceu; a segunda rodada já colidindo com o que nasceu; e o botão *Desfazer*
-removendo.
+> *Diferente do relato:* o relato citava «4 tamanhos parciais vistos» — a
+> prova de hoje mede quantos tamanhos DISTINTOS aparecem numa janela curta
+> (tipicamente 4–5, dependendo de quantos pedaços o roteiro manda), porque
+> fixar «4» faria a prova depender de um detalhe do roteiro e não do
+> mecanismo. Não há uma prova separada para «os dois temas» como conjunto de
+> ~10 provas (design, contraste, responsividade) — isso é o domínio do
+> designer gráfico (papel E), fora do escopo desta correção; aqui os dois
+> temas só provam que o painel da Claude renderiza sem erro de página nos
+> dois.
+
+**Bateria 2 — a modelagem que cria (15 provas).** O diagrama ER e o SysColumns
+sem chave (chamados pela função da tela, sem menu-por-texto porque o
+SysColumns não tem chave de idioma); o plano com tipo inexistente recusado
+antes de tocar o banco; o plano que colide com tabela existente; a resposta
+que não é plano; a revisão com a contagem antes de escrever; a criação
+confirmada; **as tabelas existindo de verdade, provadas pela operação
+`esquema` e não pela tela**; os índices e a marcação de dado pessoal
+gravados; **a FK que a IA declarou já sendo imposta de verdade** (filha órfã
+recusada pelo motor); o diagrama mostrando o que nasceu; a segunda rodada já
+colidindo; o *Desfazer* removendo; e **a prova dupla de "criar sem
+confirmação"** (abaixo).
+
+> *Diferente do relato:* 15 provas contra as 31 relatadas — o relato não
+> detalhava o suficiente para saber se as 31 eram 31 asserções distintas ou
+> várias verificações dentro de menos "casos"; esta rodada preferiu um caso
+> por comportamento do CONTRATO (§6), verificável e nomeado, a inflar a
+> contagem repetindo a mesma afirmação de formas diferentes.
 
 **Bateria 3 — a política real (5 provas).** Sem `bypassCSP`, com o endereço
-**oficial** `https://api.anthropic.com/v1/messages`: a chamada **sai** da página
-(a política não a barra), leva a chave, o cabeçalho de navegador e a versão, e a
-resposta chega à tela.
+**oficial** `https://api.anthropic.com/v1/messages` (interceptado só para não
+sair à rede de verdade, nunca para contornar a política): o `Content-Security-
+Policy` da página lista a origem oficial; a chamada **sai** da página (a
+política não a barra); leva a chave, o cabeçalho de navegador e a versão; e
+**a prova dupla do `connect-src 'self'`** (abaixo).
 
-### Os defeitos repostos, e o que cada um derrubou
+### As três provas nos dois sentidos
+
+Uma por bateria, como o pedido 231 exigiu. O binário embute a tela por
+`include_str!` e esta frente está proibida de rodar `cargo` — então nenhuma
+delas edita `ui/claude.js` no lugar que o binário serve.
+`testes-web/claude-interceptar.mjs` documenta os dois caminhos usados:
+
+- **Bateria 1 — chave no corpo de um pedido ao PhxSql.** O `phxsqld` real
+  serve o app inteiro (login, árvore, protocolo) através de um **proxy
+  reverso em `http` puro** (`subirCopiaComPatch`) que reescreve só o `/` com
+  uma cópia de `claude.js` patcheada (a `montarContexto` ganha
+  `_chave: cfg().chave` no corpo do `tabelas`) e repassa tudo o mais
+  (`/api`, `/saude`) sem tocar. Com o defeito: a chave aparece num
+  `POST /api`, e a prova FALHA. Sem ele: não aparece, e a prova PASSA.
+  *Achado que decidiu a técnica:* interceptar o documento pelo
+  `route.fetch()+fulfill()` do Playwright (a alternativa óbvia) faz o
+  Chromium classificar a página como de **"unknown address space"** para
+  Private Network Access — e todo `fetch` seguinte para OUTRO endereço de
+  loopback (a Anthropic falsa) é recusado por CORS, mesmo os dois sendo
+  `127.0.0.1`. Um proxy de verdade, acessado por conexão direta, não sofre
+  isso. Medido e documentado em `docs/cognicao/`.
+- **Bateria 2 — criar do plano sem confirmação.** Mesma técnica de proxy: a
+  cópia patcheada acrescenta um `.click()` programático em cima da linha real
+  que liga o botão *Criar* ao `criarDoPlano` — o clique nasce no mesmo
+  instante em que a revisão termina de desenhar, sem esperar a pessoa. Com o
+  defeito: a tabela já existe assim que a revisão aparece, e a prova FALHA.
+  Sem ele: não existe, e a prova PASSA.
+- **Bateria 3 — `connect-src 'self'` sozinho.** Aqui o alvo é o cabeçalho
+  HTTP, não o corpo, e o destino é uma origem PÚBLICA (`api.anthropic.com`) —
+  então a interceptação do documento pelo Playwright (`route.fulfill` trocando
+  só o `Content-Security-Policy`) já basta, sem o problema de PNA acima (que é
+  especificamente sobre alcançar OUTRO endereço de loopback). Com o defeito:
+  "Testar a chave" nunca fica `bom` (a CSP barra o `fetch` antes de ele sair,
+  sem erro visível ao script, e a rota interceptada nunca é chamada) — a
+  prova estoura por tempo e FALHA como esperado. Sem ele: a resposta chega, e
+  a prova PASSA.
 
 Teste que não falha com o defeito de volta é teste que passa por engano — e
-esse é pior que teste que falta.
+esse é pior que teste que falta. Os dois pares dos defeitos originais que esta
+rodada não repôs (CSP à parte, que ganhou a prova dupla acima) continuam
+provados só na direção "correta" pelas provas de comportamento normal:
 
-| defeito reposto | o que caiu |
+| defeito relatado | onde está coberto hoje |
 |---|---|
-| `connect-src 'self'` sozinho | `a_pagina_pode_chamar_a_api_da_anthropic` (Rust) e a Bateria 3 inteira |
-| chave embutida no `claude.js` | `o_servidor_nao_carrega_chave_da_anthropic` |
-| chave no corpo de um pedido ao PhxSql (`_chave` no `tabelas`) | «a chave NUNCA aparece em pedido ao servidor PhxSql» — e o Profiler passou a ver 13 eventos com ela |
-| criar do plano sem confirmação | «antes de confirmar, as tabelas do plano ainda NÃO existem», e mais duas |
+| `connect-src 'self'` sozinho | teste Rust `a_pagina_pode_chamar_a_api_da_anthropic` **e** a prova dupla da Bateria 3 |
+| chave embutida no `claude.js` | teste Rust `o_servidor_nao_carrega_chave_da_anthropic` (varre a página inteira) |
+| chave no corpo de um pedido ao PhxSql | a prova dupla da Bateria 1, acima |
+| criar do plano sem confirmação | a prova dupla da Bateria 2, acima |
 
 ---
 

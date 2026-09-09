@@ -1,0 +1,459 @@
+{
+  "quando": "2026-09-09T07:04:41.704Z",
+  "pedido": 231,
+  "binario": {
+    "caminho": "/home/user/adrianoboller/phxsql/target/release/phxsqld",
+    "versao": "phxsqld 0.18.0 (da425a4721ec-sujo) x86_64-unknown-linux-gnu",
+    "aviso": null
+  },
+  "falsa_api": {
+    "arquivo": "testes-web/claude-falsa.mjs"
+  },
+  "resumo_por_bateria": [
+    {
+      "numero": 1,
+      "total": 28,
+      "ok": 28,
+      "falharam": 0
+    },
+    {
+      "numero": 2,
+      "total": 15,
+      "ok": 15,
+      "falharam": 0
+    },
+    {
+      "numero": 3,
+      "total": 5,
+      "ok": 5,
+      "falharam": 0
+    }
+  ],
+  "provas": [
+    {
+      "bateria": 1,
+      "chave": "guarda_velha_sem_configuracao_nenhuma",
+      "titulo": "Sem chave nem ligado: a tela de Query fica exatamente como antes -- o botao da Claude nao e desenhado.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 74
+    },
+    {
+      "bateria": 1,
+      "chave": "guarda_velha_ligado_mas_sem_chave",
+      "titulo": "\"ligado\" sozinho nao basta -- ligada() exige chave E interruptor.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 75
+    },
+    {
+      "bateria": 1,
+      "chave": "config_tela_sem_chave_pino_oficial",
+      "titulo": "Sem endpoint configurado, a tela mostra o endereco OFICIAL com o pino verde.",
+      "veredito": "ok",
+      "detalhe": {
+        "texto": "oficial",
+        "classe": "pino ok"
+      },
+      "ms": 137
+    },
+    {
+      "bateria": 1,
+      "chave": "config_salva_pela_tela_e_mascara",
+      "titulo": "Salvar pela FORMA de verdade grava a chave, o modelo e o interruptor; a tela volta so com os 4 ultimos digitos.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 279
+    },
+    {
+      "bateria": 1,
+      "chave": "config_pino_fica_vermelho_com_endpoint_de_teste",
+      "titulo": "Apontado para o servidor falso, o pino muda para \"NAO e o oficial\".",
+      "veredito": "ok",
+      "detalhe": {
+        "texto": "NÃO é o oficial",
+        "classe": "pino mal"
+      },
+      "ms": 68
+    },
+    {
+      "bateria": 1,
+      "chave": "config_remover_chave_desliga_tudo",
+      "titulo": "Remover apaga a chave e desliga o interruptor; o botao de remover fica desabilitado.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 117
+    },
+    {
+      "bateria": 1,
+      "chave": "testar_chave_sucesso_mostra_resposta_e_tokens",
+      "titulo": "\"Testar a chave\" com sucesso mostra a resposta e os tokens de entrada/saida.",
+      "veredito": "ok",
+      "detalhe": {
+        "ok": true,
+        "texto": "A chave funciona. A API respondeu «ok» · 4 token(s) de entrada, 1 de saída."
+      },
+      "ms": 136
+    },
+    {
+      "bateria": 1,
+      "chave": "testar_chave_erro_401",
+      "titulo": "\"Testar a chave\" com 401 mostra o recado certo, nao \"erro\" generico.",
+      "veredito": "ok",
+      "detalhe": {
+        "ok": false,
+        "texto": "A chave não foi aceita (401). Confira se ela está inteira e ainda válida em Configurações → Integração com a Claude. A API disse: «mensagem de teste 401»"
+      },
+      "ms": 146
+    },
+    {
+      "bateria": 1,
+      "chave": "testar_chave_erro_429",
+      "titulo": "\"Testar a chave\" com 429 mostra o recado certo, nao \"erro\" generico.",
+      "veredito": "ok",
+      "detalhe": {
+        "ok": false,
+        "texto": "Limite de uso atingido (429). Espere um pouco e peça de novo — ou escolha um modelo mais barato em Configurações. A API disse: «mensagem de teste 429»"
+      },
+      "ms": 132
+    },
+    {
+      "bateria": 1,
+      "chave": "testar_chave_erro_400",
+      "titulo": "\"Testar a chave\" com 400 mostra o recado certo, nao \"erro\" generico.",
+      "veredito": "ok",
+      "detalhe": {
+        "ok": false,
+        "texto": "A API recusou o pedido (400). A API disse: «mensagem de teste 400»"
+      },
+      "ms": 135
+    },
+    {
+      "bateria": 1,
+      "chave": "testar_chave_erro_529_sobrecarga",
+      "titulo": "529/5xx mostra \"sobrecarregada\", e diz que nao e culpa da chave nem do pedido.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 137
+    },
+    {
+      "bateria": 1,
+      "chave": "testar_chave_rede_caida",
+      "titulo": "Endpoint que nao responde vira o recado de rede, citando o endereco configurado.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 147
+    },
+    {
+      "bateria": 1,
+      "chave": "painel_query_botao_aparece_ligado",
+      "titulo": "Com chave e ligado, o botao \"Perguntar a Claude\" aparece na tela de Query.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 94
+    },
+    {
+      "bateria": 1,
+      "chave": "painel_o_que_vai_subir_mostra_corpo_e_chave_mascarada",
+      "titulo": "O painel \"Ver o que vai subir\" mostra o corpo exato do POST e os cabecalhos com a chave mascarada.",
+      "veredito": "ok",
+      "detalhe": "O que vai subir para a Anthropic — 1 tabela(s) de esquema, 0 linha(s) de exemplo, 0 valor(es) redigido(s) por serem dado pessoal.",
+      "ms": 196
+    },
+    {
+      "bateria": 1,
+      "chave": "receita_sql_cai_no_editor_sem_executar",
+      "titulo": "O SQL que a Claude devolve cai no editor -- e NAO executa sozinho.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 502
+    },
+    {
+      "bateria": 1,
+      "chave": "streaming_aparece_em_mais_de_um_pedaco",
+      "titulo": "O streaming pinta o texto aos pedacos -- mais de um tamanho distinto visto antes do final.",
+      "veredito": "ok",
+      "detalhe": {
+        "tamanhos_vistos": [
+          0,
+          1,
+          9,
+          18,
+          27,
+          36,
+          41
+        ]
+      },
+      "ms": 1273
+    },
+    {
+      "bateria": 1,
+      "chave": "executar_do_editor_traz_linhas_reais",
+      "titulo": "Clicar Executar roda o SQL de verdade pela operacao `sql` do protocolo, e traz linhas reais.",
+      "veredito": "ok",
+      "detalhe": {
+        "linhas": 2
+      },
+      "ms": 68
+    },
+    {
+      "bateria": 1,
+      "chave": "recusa_do_motor_com_o_motivo_chega_a_tela",
+      "titulo": "SQL sem indice na coluna do WHERE volta com o motivo do MOTOR, nao um \"erro\" generico.",
+      "veredito": "ok",
+      "detalhe": "[SP000018] esquema invalido: WHERE cidade = ... exige um indice de uma coluna sobre cidade. Nao existe. O `varrer` filtra, mas dentro da pagina que ele EXAMINA -- e um SELECT que respondesse sobre a primeira pagina teria a cara de ter respondido sobre a tabela. Ha indice de coluna unica sobre: id",
+      "ms": 84
+    },
+    {
+      "bateria": 1,
+      "chave": "receita_explicar_mostra_prosa_sem_editor",
+      "titulo": "A receita \"Explicar o SQL\" nao tem editor -- so mostra a explicacao.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 203
+    },
+    {
+      "bateria": 1,
+      "chave": "receita_desempenho_instrui_o_modelo_a_medir",
+      "titulo": "O `system` da receita de indice OBRIGA a resposta a terminar mandando medir -- confere que a INSTRUCAO viaja no pedido.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 189
+    },
+    {
+      "bateria": 1,
+      "chave": "linhas_de_exemplo_saem_com_dado_pessoal_redigido",
+      "titulo": "Marcar \"linhas de exemplo\" manda dado real, mas a coluna de dado pessoal sai como \"***\".",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 212
+    },
+    {
+      "bateria": 1,
+      "chave": "erro_no_meio_do_fluxo_e_detectado",
+      "titulo": "Um `event: error` no MEIO do streaming (HTTP 200) e tratado, e nao ignorado.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 205
+    },
+    {
+      "bateria": 1,
+      "chave": "chave_nunca_aparece_em_pedido_ao_phxsql",
+      "titulo": "Em 27+ pedidos /api desta corrida, a chave de teste nunca aparece.",
+      "veredito": "ok",
+      "detalhe": {
+        "pedidos_conferidos": 27
+      },
+      "ms": 0
+    },
+    {
+      "bateria": 1,
+      "chave": "chave_aparece_de_verdade_nos_pedidos_a_anthropic_falsa",
+      "titulo": "Sem isto a prova acima nao mediria nada: a chave TEM de aparecer, so que no lugar certo.",
+      "veredito": "ok",
+      "detalhe": {
+        "pedidos_na_falsa": 9
+      },
+      "ms": 0
+    },
+    {
+      "bateria": 1,
+      "chave": "chave_no_corpo_de_pedido_ao_phxsql__com_defeito_reposto",
+      "titulo": "Defeito da SS8: a `montarContexto` mandava a chave da Anthropic dentro do corpo de um pedido `tabelas` ao PROPRIO PhxSql. (defeito reposto: deve FALHAR)",
+      "veredito": "ok",
+      "detalhe": {
+        "comportamento_visto": "a chave apareceu num corpo de pedido POST /api ao servidor PhxSql"
+      },
+      "ms": 743
+    },
+    {
+      "bateria": 1,
+      "chave": "chave_no_corpo_de_pedido_ao_phxsql__com_o_conserto",
+      "titulo": "Defeito da SS8: a `montarContexto` mandava a chave da Anthropic dentro do corpo de um pedido `tabelas` ao PROPRIO PhxSql. (conserto: deve PASSAR)",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 754
+    },
+    {
+      "bateria": 1,
+      "chave": "tema_escuro_sem_erro_de_pagina",
+      "titulo": "O painel da Claude renderiza sem erro de pagina no tema escuro.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 75
+    },
+    {
+      "bateria": 1,
+      "chave": "tema_claro_sem_erro_de_pagina",
+      "titulo": "O painel da Claude renderiza sem erro de pagina no tema claro.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 97
+    },
+    {
+      "bateria": 2,
+      "chave": "diagrama_er_sem_chave_funciona_como_antes",
+      "titulo": "Sem chave nenhuma configurada, o diagrama ER abre e desenha normalmente.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 33
+    },
+    {
+      "bateria": 2,
+      "chave": "dicionario_sem_chave_funciona_como_antes",
+      "titulo": "Sem chave nenhuma configurada, o SysColumns (dicionario de dados) abre normalmente.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 36
+    },
+    {
+      "bateria": 2,
+      "chave": "plano_com_tipo_inexistente_recusado_antes_de_criar",
+      "titulo": "Um tipo que o motor nao tem (ex: VARCHAR) trava o item na revisao, e nada e criado.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 268
+    },
+    {
+      "bateria": 2,
+      "chave": "plano_que_colide_com_tabela_existente_e_recusado",
+      "titulo": "Propor de novo uma tabela que ja existe trava o item dizendo isso, sem propor ALTER.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 206
+    },
+    {
+      "bateria": 2,
+      "chave": "resposta_que_nao_e_plano_json_e_recusada",
+      "titulo": "Se a Claude devolver prosa em vez de JSON, a tela avisa do formato e mostra o texto cru.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 218
+    },
+    {
+      "bateria": 2,
+      "chave": "revisao_mostra_contagem_antes_de_escrever_nada",
+      "titulo": "A revisao conta \"2 tabela(s)\" e \"1 relacionamento(s)\" ANTES de qualquer escrita no banco.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 225
+    },
+    {
+      "bateria": 2,
+      "chave": "criacao_confirmada_cria_de_verdade",
+      "titulo": "Clicar \"Criar o que esta marcado\" grava as tabelas e o relacionamento, com o resultado por item.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 89
+    },
+    {
+      "bateria": 2,
+      "chave": "tabelas_existem_de_verdade_provado_pela_operacao_esquema",
+      "titulo": "A prova NAO e a tela: e a operacao `esquema`, direto no motor.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 6
+    },
+    {
+      "bateria": 2,
+      "chave": "indices_e_marcacao_de_dado_pessoal_gravados",
+      "titulo": "O indice primario e a marcacao dado_pessoal do plano chegam gravados no esquema.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 8
+    },
+    {
+      "bateria": 2,
+      "chave": "fk_declarada_recusa_filha_orfa_de_verdade",
+      "titulo": "A FK que a IA declarou ja e imposta pelo motor: filha sem pai e recusada, pai com filha nao se apaga.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 5
+    },
+    {
+      "bateria": 2,
+      "chave": "diagrama_e_dicionario_mostram_o_que_nasceu",
+      "titulo": "Depois de criar, o painel \"o modelo agora\" mostra as tabelas e o relacionamento recem-criados.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 8
+    },
+    {
+      "bateria": 2,
+      "chave": "segunda_rodada_do_mesmo_plano_ja_colide",
+      "titulo": "Rodar o MESMO plano de novo trava as duas tabelas como \"ja existe\".",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 255
+    },
+    {
+      "bateria": 2,
+      "chave": "desfazer_remove_o_que_esta_rodada_criou",
+      "titulo": "O botao Desfazer remove, pelas mesmas operacoes de excluir, o que a rodada criou.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 369
+    },
+    {
+      "bateria": 2,
+      "chave": "criar_do_plano_sem_confirmacao__com_defeito_reposto",
+      "titulo": "Defeito historico da SS8: a tela criava a tabela sem esperar o clique em \"Criar o que esta marcado\". (defeito reposto: deve FALHAR)",
+      "veredito": "ok",
+      "detalhe": {
+        "comportamento_visto": "a tabela \"semconfirmar\" ja existe logo apos a revisao aparecer -- ninguem clicou em Criar ainda"
+      },
+      "ms": 1823
+    },
+    {
+      "bateria": 2,
+      "chave": "criar_do_plano_sem_confirmacao__com_o_conserto",
+      "titulo": "Defeito historico da SS8: a tela criava a tabela sem esperar o clique em \"Criar o que esta marcado\". (conserto: deve PASSAR)",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 1727
+    },
+    {
+      "bateria": 3,
+      "chave": "csp_da_pagina_inclui_a_origem_oficial",
+      "titulo": "O Content-Security-Policy da pagina lista https://api.anthropic.com no connect-src.",
+      "veredito": "ok",
+      "detalhe": "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; img-src data:; connect-src 'self' https://api.anthropic.com; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
+      "ms": 0
+    },
+    {
+      "bateria": 3,
+      "chave": "sem_bypasscsp_a_chamada_sai_para_o_endereco_oficial",
+      "titulo": "Sem bypassCSP nenhum, \"Testar a chave\" alcanca https://api.anthropic.com/v1/messages -- a politica NAO barra.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 136
+    },
+    {
+      "bateria": 3,
+      "chave": "a_chamada_leva_chave_cabecalho_de_navegador_e_versao",
+      "titulo": "O pedido capturado tem x-api-key, anthropic-version e o cabecalho de acesso direto do navegador.",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 0
+    },
+    {
+      "bateria": 3,
+      "chave": "connect_src_apenas_self__com_defeito_reposto",
+      "titulo": "Defeito da SS8: `connect-src 'self'` sozinho mata a chamada ANTES de ela sair, sem erro visivel ao script. (defeito reposto: deve FALHAR)",
+      "veredito": "ok",
+      "detalhe": {
+        "comportamento_visto": "page.waitForFunction: Timeout 6000ms exceeded."
+      },
+      "ms": 6506
+    },
+    {
+      "bateria": 3,
+      "chave": "connect_src_apenas_self__com_o_conserto",
+      "titulo": "Defeito da SS8: `connect-src 'self'` sozinho mata a chamada ANTES de ela sair, sem erro visivel ao script. (conserto: deve PASSAR)",
+      "veredito": "ok",
+      "detalhe": null,
+      "ms": 494
+    }
+  ],
+  "tempo_total_ms": 26411
+}
