@@ -235,10 +235,13 @@ impl Instancia {
     pub fn abrir_database(&self, nome: &str) -> Result<Database> {
         validar_nome("database", nome)?;
         let caminho = self.base.join(nome);
+        // Sem o caminho da base: e o IRMAO da tabela que nao existe (ver
+        // `tabela_que_nao_existe`), e pela mesma razao -- a frase sai pelo
+        // protocolo para quem errou o nome, e o diretorio do servidor nao e
+        // resposta para ninguem que esta do lado de fora.
         if !caminho.is_dir() {
             return Err(PhxError::NaoEncontrado(format!(
-                "database {nome} nao existe em {}",
-                self.base.display()
+                "database {nome} nao existe neste servidor"
             )));
         }
         Ok(Database {
@@ -400,7 +403,11 @@ impl Raiz {
         // O motivo vem do COMPONENTE que recusou, e nao de uma frase generica:
         // quem le isto num log precisa saber se foi a lixeira que faltava ou o
         // diario que precisava de cura, porque as duas se consertam diferente.
-        Ok(match Table::abrir_para_ler(dir, &nome)? {
+        // A UNICA excecao e a tabela que nao existe, e ela e nomeada pela
+        // mesma regra do `abrir_tabela` -- ver `tabela_que_nao_existe`.
+        let aberta = Table::abrir_para_ler(dir, &nome)
+            .map_err(|e| db.tabela_que_nao_existe(e, schema.as_deref(), &nome));
+        Ok(match aberta? {
             SemEscrever::Aberta(t) => Aberta::Pronta(crate::leitura::TabelaLeitura::nova(t)),
             SemEscrever::PrecisaEscrever(porque) => Aberta::PrecisaDaFichaExclusiva(porque),
         })
@@ -486,6 +493,44 @@ impl Database {
     pub fn abrir_tabela(&self, schema: Option<&str>, nome: &str) -> Result<Table> {
         validar_nome("tabela", nome)?;
         Table::abrir(self.diretorio(schema)?, nome)
+            .map_err(|e| self.tabela_que_nao_existe(e, schema, nome))
+    }
+
+    /// Troca o erro cru de «nenhum volume de x.reg em /tmp/.../base» por «a
+    /// tabela x nao existe em base» -- e SO quando a tabela nao existe mesmo.
+    ///
+    /// O erro cru e verdadeiro e serve a quem opera o disco, mas ele sai pelo
+    /// protocolo para quem digitou `SELECT * FROM x` com o nome errado: manda
+    /// procurar arquivo em vez de conferir o nome, e publica o caminho
+    /// absoluto do servidor a todo cliente que erra uma letra. E a mesma
+    /// correcao que a chave conferida ja pagou em `table.rs`, quando a mae
+    /// nao existia.
+    ///
+    /// # Por que a conferencia e no caminho do ERRO, e por que ela confere
+    ///
+    /// O store nao sabe qual dos dez arquivos faltou: um `NaoEncontrado` ao
+    /// abrir tanto pode ser a tabela inteira ausente quanto uma tabela com o
+    /// `.reg` perdido -- e a segunda NAO pode virar «nao existe», porque ai o
+    /// operador criaria outra por cima de uma tabela quebrada. Entao a
+    /// tradução so acontece quando o diretorio nao tem arquivo nenhum com
+    /// aquele nome, e a lista do diretorio so e lida depois de a abertura
+    /// falhar: o laco quente, que abre a tabela a cada pedido, nao paga um
+    /// `read_dir` por isso.
+    fn tabela_que_nao_existe(&self, e: PhxError, schema: Option<&str>, nome: &str) -> PhxError {
+        if !matches!(e, PhxError::NaoEncontrado(_)) {
+            return e;
+        }
+        // Erro ao listar o diretorio (schema inexistente, permissao) mantem
+        // o erro original: `unwrap_or(true)` diz «nao sei se existe», e na
+        // duvida a frase que fica e a que nomeia o componente.
+        if self.existe_tabela(schema, nome).unwrap_or(true) {
+            return e;
+        }
+        PhxError::NaoEncontrado(format!(
+            "a tabela {} nao existe em {}",
+            qualificar(schema, nome),
+            self.nome
+        ))
     }
 
     /// Abre por nome qualificado: `schema.tabela` ou so `tabela`.
@@ -1040,6 +1085,67 @@ mod tests {
         );
         assert_eq!(qualificar(Some("X"), "pedidos"), "X.pedidos");
         assert_eq!(qualificar(None, "pedidos"), "pedidos");
+    }
+
+    /// **A tabela que nao existe e nomeada, e o caminho do disco nao sai.**
+    ///
+    /// O erro cru -- «nenhum volume de x.reg em /tmp/.../Z» -- publicava o
+    /// caminho absoluto do servidor a todo cliente que errasse uma letra no
+    /// `FROM`, e mandava procurar arquivo em vez de conferir o nome. A
+    /// tradução so vale para a tabela AUSENTE: uma tabela que perdeu um
+    /// arquivo continua com o erro que nomeia o arquivo, porque chama-la de
+    /// inexistente faria alguem criar outra por cima da quebrada.
+    #[test]
+    fn a_tabela_que_nao_existe_e_nomeada_sem_o_caminho_do_disco() {
+        let base = dir_temp("sem-caminho");
+        let inst = Instancia::nova(&base).unwrap();
+        let z = inst.criar_database("Z").unwrap();
+        z.criar_tabela(None, esquema("clientes")).unwrap();
+        z.criar_tabela(Some("X"), esquema("pedidos")).unwrap();
+        let caminho = base.display().to_string();
+
+        // As duas fichas dizem a mesma coisa, na raiz e dentro de um schema.
+        let raiz = Raiz::nova(&base).unwrap();
+        for nome in ["inventada", "X.inventada"] {
+            let Err(e) = z.abrir_qualificada(nome) else {
+                panic!("{nome} abriu");
+            };
+            let t = e.to_string();
+            assert!(matches!(e, PhxError::NaoEncontrado(_)), "{t}");
+            assert!(
+                t.contains(&format!("a tabela {nome} nao existe em Z")),
+                "{t}"
+            );
+            assert!(!t.contains(&caminho), "vazou o caminho: {t}");
+            let Err(e) = raiz.abrir_para_ler("Z", nome) else {
+                panic!("{nome} abriu para ler");
+            };
+            let t = e.to_string();
+            assert!(
+                t.contains(&format!("a tabela {nome} nao existe em Z")),
+                "{t}"
+            );
+            assert!(!t.contains(&caminho), "vazou o caminho: {t}");
+        }
+        // O database que nao existe tambem nao publica o diretorio da base.
+        let Err(e) = inst.abrir_database("W") else {
+            panic!("W abriu");
+        };
+        let t = e.to_string();
+        assert!(t.contains("database W nao existe"), "{t}");
+        assert!(!t.contains(&caminho), "vazou o caminho: {t}");
+
+        // A tabela que PERDEU um arquivo existe -- o `.reg` esta la -- e o
+        // erro continua sendo o do componente, e nao «nao existe».
+        std::fs::remove_file(base.join("Z/clientes.ndx")).unwrap();
+        let Err(e) = z.abrir_qualificada("clientes") else {
+            panic!("a tabela sem .ndx abriu");
+        };
+        let t = e.to_string();
+        assert!(
+            !t.contains("nao existe em Z"),
+            "tabela quebrada virou inexistente: {t}"
+        );
     }
 
     #[test]
