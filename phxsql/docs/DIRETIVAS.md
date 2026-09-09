@@ -217,7 +217,7 @@ ALTER DATABASE erp SET comandos_proibidos = (reindexar) MOTIVO 'auditoria';
   aberta justamente a janela em que alguém está fechando a porta;
 - **recusa o nome que não existe**: proibir `voar` deixaria a lista com uma
   guarda que nunca fecha e quem escreveu achando que fechou a porta. O
-  catálogo das 125 operações é quem sabe os nomes;
+  catálogo inteiro de operações (`catalogo.rs`) é quem sabe os nomes;
 - **recusa a lista vazia**, dizendo por onde se retira. Retirar continua sendo
   edição do arquivo, e isso é a guarda e não a falta dela: `seguranca.*` está
   fora do `CAMPOS_EDITAVEIS` porque *uma sessão roubada não esvazia a lista de

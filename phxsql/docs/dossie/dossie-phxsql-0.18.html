@@ -3506,21 +3506,10 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     </table>
   </div>
 
-  <p><strong>100 das 112 operações do protocolo têm tela</strong> — medido
-  casando os <code>api("…")</code> de <code>ui/</code> com os nomes da constante
-  <code>OPERACOES</code> de <code>server/src/catalogo.rs</code>, e não lembrado.
-  O «57 de 60» que ficou aqui por versões envelheceu junto com o catálogo, que
-  quase dobrou.</p>
-
-  <p>As <strong>12</strong> que ficam de fora não são buracos. Sete são
-  <em>de máquina</em>, e não de gente: <code>replicar</code>, <code>aplicar</code>,
-  <code>bulkinsert</code>, <code>cluster_pulso</code>, <code>cluster_estado</code>,
-  <code>spare_promover</code> e <code>catalogo</code>. Uma acontece sozinha —
-  <code>criar_schema</code>, quando a tela cria tabela dentro de um schema que
-  ainda não existe. Duas a tela alcança por expressão em vez de literal
-  (<code>telemetria_ligar</code>/<code>telemetria_desligar</code>, no botão que
-  alterna). Sobram <code>buscar</code> e <code>SelectMemory</code>, que a tela faz
-  por outro caminho.</p>
+<!-- cobertura-tela:inicio (gerado por docs/dossie/comparativo-no-dossie.py) -->
+  <p><strong>105 das 123 operações do protocolo têm tela</strong> — medido casando os <code>api("…")</code> de <code>ui/</code> com os nomes da constante <code>OPERACOES</code> de <code>server/src/catalogo.rs</code>, em <strong>07/09/2026</strong> (<code>bancada/cobertura-da-tela/resultados.json</code>).</p>
+  <p>As <strong>18</strong> que ficam de fora — a última categoria à parte, que é lacuna de verdade: 7 de <em>máquina</em>, não de gente: <code>catalogo</code>, <code>bulkinsert</code>, <code>SelectMemory</code>, <code>replicar</code>, <code>aplicar</code>, <code>cluster_pulso</code>, <code>cluster_estado</code>; 1 sem botão próprio — acontece dentro de outra ação da tela: <code>criar_schema</code>; 2 a tela alcança por expressão em vez de literal: <code>telemetria_ligar</code>, <code>telemetria_desligar</code>; 6 verbo de transação, com caminho só pelo <code>sql</code> e pelo driver: <code>begin</code>, <code>commit</code>, <code>rollback</code>, <code>savepoint</code>, <code>rollback_para</code>, <code>release_savepoint</code>; 2 sem tela mesmo — lacuna de verdade, não decisão: <code>procurar_texto</code>, <code>renomear_tabela</code>.</p>
+<!-- cobertura-tela:fim -->
 
   <h3>Gestão de tabelas: o que cada operação toca no disco</h3>
 

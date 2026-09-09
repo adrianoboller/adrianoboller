@@ -84,16 +84,23 @@ precisam se distinguir **entre si e do acento**. Por isso o `.bin`, que era
 âmbar, virou ciano: âmbar ao lado do laranja da marca vira ruído. O `.log`
 ficou com o vermelho `#D71A1A` da paleta, que é onde ele encaixa sozinho.
 
-## Atenção: a folha de marca promete o que o motor ainda não faz
+## Atenção: a folha de marca promete o que o motor ainda não faz por completo
 
-Dois dos quatro pilares da folha **não são verdade hoje**:
+Um dos quatro pilares da folha **ainda não é totalmente verdade**:
 
-- *"Reliable storage — ACID compliant"* — **não há transações**. Sem elas não
-  há o A nem o I do ACID. O que existe é durabilidade por CRC e o desfazer de
-  uma inserção que falha no índice.
-- *"Built-in replication — high availability and failover ready"* — a
-  replicação está **desenhada** (`docs/REPLICACAO.md`), não implementada.
+- *"Reliable storage — ACID compliant"* — falso, mas a razão mudou. Há
+  transação desde o pedido 162 (`BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`, com
+  escopo, prazos e travas): a premissa «sem transação não há o A nem o I»
+  caducou. O que falta hoje é outra coisa — o isolamento entregue é
+  `READ COMMITTED`, sem leitura repetível (a Sombra que a compraria está
+  parada por decisão do dono, `docs/SOMBRA.md`), e o **C** continua parcial:
+  a cascata do `ao_alterar` escreve em tabela que a transação não declarou.
+  Ver `docs/ACID.md` §0 e `docs/PENDENCIAS.md` #189.
+- *"Built-in replication — high availability and failover ready"* — **virou
+  verdade**: a replicação está medida com quatro servidores, e o cluster faz
+  eleição e promoção automática (`docs/REPLICACAO.md`).
 
-Isso é normal numa marca feita antes do produto ficar pronto, mas os dois
-precisam virar verdade antes de a folha ir para cliente. O dossiê e o
-`README.md` dizem o estado real; a folha de marca, não.
+Isso é normal numa marca feita antes do produto ficar pronto, mas o primeiro
+ponto precisa virar verdade — ou a folha precisa de uma frase mais precisa —
+antes de ir para cliente. O dossiê e o `README.md` dizem o estado real; a
+folha de marca, não.

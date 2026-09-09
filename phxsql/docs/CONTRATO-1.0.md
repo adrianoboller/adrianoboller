@@ -124,7 +124,7 @@ A regra primordial: **nunca se mata o pai que tem filhos.**
 
 | | garantia | prova |
 |---|---|---|
-| **G** | **121 operações no protocolo**, e o catálogo **é** o `despachar` — travado por teste, não por disciplina | teste `o_catalogo_e_o_despachar_sao_a_mesma_lista`; número gerado em `CAPABILITIES.json` |
+| **G** | **121 operações no protocolo**, e o catálogo **é** o `despachar` — travado por teste, não por disciplina | teste `o_catalogo_e_o_despachar_sao_a_mesma_lista`; número gerado em `CAPABILITIES.json` — o da data desta proposta (§6); o `CAPABILITIES.json` da árvore atual tem o valor de hoje |
 | **G** | **A especificação OpenAPI sai da tabela de despacho**, com guarda nos **dois** lados do laço: operação sem rota e rota sem operação | `REST.md` §1, com o defeito reposto de cada uma |
 | **G** | **No REST, o caminho manda sobre o corpo.** Um `"op"` no corpo diferente do caminho é **recusado**, não ignorado — senão um `POST /v1/ping` seria um `excluir` no servidor e continuaria um `ping` em tudo o que observa de fora | `REST.md` §6 |
 | **G** | **As duas portas REST nascem DESLIGADAS** | `REST.md` §3 |
@@ -461,6 +461,12 @@ aprova?**
 
 Nenhum número deste documento foi digitado de memória. A tabela é o crivo:
 quem quiser conferir um, roda o gerador.
+
+**Estes são os números da data da proposta** (commit `d1e84da`, medidos em
+2026-09-03) — ficam fixos aqui porque a proposta é o retrato de um momento,
+não uma página que se atualiza sozinha. Para o estado **atual**, leia o
+`CAPABILITIES.json` da raiz do repositório: ele é regerado a cada rodada e
+não tem por que bater com os valores fixados nesta tabela.
 
 | número | de onde sai |
 |---|---|

@@ -232,6 +232,26 @@ byte desempatar por `rowid` sem ambiguidade — provado por teste de
 propriedade (`mod tests`/`mod testes` do próprio `ndx.rs`), não por vetor de
 terceiro, porque não há terceiro: o formato é nosso.
 
+### A rodada das dezoito capacidades do comparativo, e das junções
+
+Escrito à mão nesta rodada, sem depender de crate nenhuma — a mesma disciplina
+das normas acima, aplicada à camada SQL. As contagens de linhas e testes de
+cada peça saem de `python3 docs/tecnologias/extrair.py` (que chama
+`cargo test`, então não rodam aqui); o que segue é o mapa de arquivo e
+documento, para quem for medir depois.
+
+| peça | onde mora | documentado em |
+|---|---|---|
+| Expressões no esquema (`padrao`, `check`, coluna `calculada`, índice parcial por `onde`, índice por expressão) | `phxsql_core::expressao` — a mesma gramática que os gatilhos já usavam | `docs/SQL.md`, `CHANGELOG.md` («Não lançado — as dezoito do comparativo…») |
+| `agrupar` (`GROUP BY` genérico, com os agregadores do `pivotar`) | operação `agrupar` no catálogo | `docs/SQL.md` |
+| `consultar` (composição de sub-pedidos: `de`, `em` para `IN (SELECT…)`, `escalar`, `janela`, `juntar` por igualdade com nome qualificado) | `crates/phxsql-server/src/consultar.rs` | `docs/SQL.md` §4 e §7 |
+| Visões (`criar_visao`, `visoes`, `excluir_visao`) | catálogo — a visão guarda texto, analisado a cada uso dentro de um `consultar` | `docs/SQL.md` |
+| `diferencas` (diz ONDE duas tabelas com a mesma chave única divergem, não só SE divergem) | extraído do `aplicar_para_ca` do DbLink para um lugar só | `CHANGELOG.md`, `docs/DBLINK.md` |
+| Direito por COLUNA (`tabelas.<t>.colunas`, com `ler`/`alterar` por coluna) | `crates/phxsql-server/src/direito_coluna.rs` | `docs/SEGURANCA.md` |
+| PITR (`restaurar_backup` com `ate`/`ate_ms`, reaplicando o diário vivo pelo mesmo `Table::aplicar_evento` da replicação) | `crates/phxsql-server/src/servidor.rs` (aplica, não julga) | `docs/RESTAURACAO.md` |
+| ODBC com parâmetros (`SQLBindParameter` ligando o `?` do lado do driver, `sql.parametros` do lado do servidor) | `crates/phxsql-odbc/`, léxico por TOKEN em `crates/phxsql-sql` | `docs/ODBC.md` |
+| Semijunção — **em curso, não fechada**: `existe` (semijunção por espalhamento, pedido 236) é proposta, ainda sem o modelo tipado do `consultar` que ela exigiria | — (proposta) | `docs/propostas/comparativo-19.md` §«existe — semijunção por espalhamento», `docs/MODELOS.md` (linha **C20-CONSULTA**) |
+
 ---
 
 ## 4. As ferramentas do trabalho
@@ -567,6 +587,29 @@ inclusive quando o item é nosso.*
   verdade.** São recursos com roteiro próprio, não superfície de operação
   recusada — a réplica multi-servidor, por exemplo, **já existe e está
   medida** (§4 acima).
+
+### 5.6 TLS e a Sombra — parados por decisão do dono, não por falta de código
+
+Os dois itens mais recentes do comparativo de 19 capacidades (`docs/
+COMPARATIVO.md`) que continuam `❌` para o PhxSql, e por que não são buraco:
+
+- **TLS no transporte.** Esbarra na mesma pétrea das zero dependências: TLS
+  1.3 em casa exigiria X.509/ASN.1, assinatura ECDSA P-256 (Ed25519 os
+  navegadores não aceitam em certificado) e gestão de certificado — uma
+  superfície inteira de crate ou de código próprio que nenhuma outra peça
+  desta casa pediu ainda. A cifra do fio (Noise, `cifra.rs`) já protege a
+  porta de dados; o que falta é só o canal do navegador. Avaliado com o custo
+  em `docs/propostas/comparativo-19.md` («TLS no transporte»).
+- **Isolamento acima de `READ COMMITTED` — a Sombra.** O desenho existe e
+  está medido (`docs/SOMBRA.md`): compra leitura repetível fechando o
+  fantasma e tornando o *write skew* sistemático, ao custo de uma faixa
+  estreita ao redor de 1× em `por_lote` (o regime padrão) — a pesquisa mede
+  1,00×–1,21× conforme a carga, e é mais cara em `por_operacao`. **O dono
+  decidiu não construir agora** (05/09/2026): a urgência que justificava
+  decidir cedo morreu quando a Sombra em RAM deixou de exigir mudança de
+  formato em disco — decidir «quando um cliente pedir leitura repetível»
+  passou a custar o mesmo que decidir hoje. Números e a ordem completa das
+  alternativas mais baratas em `docs/SOMBRA.md` §3 e §6.
 
 ---
 

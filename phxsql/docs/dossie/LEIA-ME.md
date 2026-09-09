@@ -17,17 +17,20 @@ impossível de cumprir depois que o diretório temporário sumisse.
 
 1. Edite o `dossie-phxsql-*.html` da pasta — **só existe um**, e é essa regra
    que faz os geradores o acharem sozinhos.
-2. **Rode os dez geradores** (abaixo). Nenhum número visível se digita.
+2. **Rode os geradores** (abaixo — são catorze, contados script por script em
+   09/09/2026). Nenhum número visível se digita.
 3. Publique **passando a URL acima**, para cair na mesma página em vez de criar
    uma nova.
 
-## Os dez geradores, e o que cada um regrava
-1. **LEIA o artefato publicado antes de qualquer coisa** (`action: "read"` com
-   a URL acima).
-2. Compare com `dossie-phxsql-0.15.html` — pelo menos o número de `<h2>`.
-3. Edite `dossie-phxsql-0.15.html`.
-4. Publique **passando a URL acima**, para cair na mesma página em vez de criar
-   uma nova.
+## Os catorze geradores, e o que cada um regrava
+
+São **catorze** os scripts de `docs/dossie/*.py` que escrevem número ou texto
+numa página publicada — o dossiê principal e as quatro páginas satélites
+(pedidos, testes, gráficos e status). Os outros dois arquivos da pasta,
+`dossie_da_pasta.py` (só acha o arquivo, por varredura) e `embutir-fontes.py`
+(embute fontes numa cópia offline para o PDF), não escrevem número nenhum e
+não entram na conta. A lista de comandos e a tabela «script → o que ele
+escreve» estão em «O que conferir antes de publicar», abaixo.
 
 ### O degrau 1 não é formalidade — medido
 

@@ -2226,33 +2226,62 @@ VIEW DATABASE: VER E EDITAR OS DADOS
 
 BARRA DE FERRAMENTAS
 
-    Abaixo do menu, quinze ferramentas com icone colorido. Dez funcionam;
-    cinco aparecem APAGADAS, com um ponto ambar no canto, e clicar nelas diz o
-    que falta e do que depende -- em vez de nao fazer nada.
+    Abaixo do menu, a barra de ferramentas com icone colorido. Medido em
+    09/09/2026 no index.html (array FERRAMENTAS): 24 ferramentas, e HOJE
+    TODAS funcionam -- nenhuma aparece apagada na barra. As duas que ainda
+    nao existem, Server Mail e Blockchain, sairam da barra por decisao do
+    dono e foram para o menu Ferramentas: la o item nasce apagado e clicar
+    nele diz o que falta e de que depende, em vez de sumir da lista.
 
+        Bancos        os databases em disco
+        Tabelas       abre a gestao da tabela corrente
+        Query         NAO e SQL. E o SelectMemory, que consulta uma tabela ja
+                      carregada na RAM. Coluna, operador, valor e teto.
+        Pivot         tabela dinamica (ROLAP) com hash join
         Start/Stop    estado do servico, endereco e limite de conexoes.
                       Parar e subir pela tela ainda nao da: use o systemd ou o
                       Gerenciador de Servicos.
-        Query         NAO e SQL. E o SelectMemory, que consulta uma tabela ja
-                      carregada na RAM. Coluna, operador, valor e teto.
+        Exportar      XLSX, JSON, XML, HTML, CSV, DOCX, TXT
+        Importar      le CSV, TXT, JSON, XML ou HTML, confere antes e so
+                      entao grava -- funciona, pela operacao
+                      importar_conferir
         Usuarios      o cadastro do config.json
+        Conexoes      quantas agora, sessoes web, acessos e de onde vem
+        Telemetria    graficos bolha ordenados por peso
+        Profiler      o que chega pela porta de dados, antes de virar dado
+        Jobs          cadastro em jobs.json, relogio de 30s e corridas
+                      append-only em jobs.log -- funciona, tela desde o
+                      pedido 51
+        Backup        copia e confere, com manifesto SHA-256
+        Restaurar     traz uma copia de volta: com outro nome, ou por cima
+        Lixeira       as linhas que sairam do .reg, inteiras
+        Transacoes    as abertas agora, com escopo declarado e efetivo,
+                      travas e o que cada uma espera -- funciona, pela
+                      operacao transacoes; ha BEGIN/COMMIT/ROLLBACK/SAVEPOINT
+                      desde o pedido 162
+        DbLink        liga a outro PhxSql, a um MySQL(R) ou a um PostgreSQL(R)
+        SysTables     o catalogo de tabelas em forma de dado
+        Diagrama ER   diagrama e editor de modelo, arrastando
+        LGPD          dado marcado como pessoal, e a trilha de quem acessou
+        Replicacao    papel e portas. As portas sao configuracao, nao servico
+        Cluster       os nos, quem e o master, e acrescentar ou tirar no sem
+                      reiniciar ninguem
         Diretivas     a politica: comandos proibidos, IPs permitidos, somente
                       leitura, firewall e espelho. Le; mudar e no config.json
-        Bancos        os databases em disco
-        Duplicar      APAGADA -- copiar um database para outro nome
-        Conexoes      quantas agora, sessoes web, acessos e de onde vem
-        Transacoes    APAGADA -- nao existem; e o furo do uso como livro-razao
-        Importar      APAGADA -- ler CSV ou .tps e gravar como tabela PhxSql
         Repair        conserta a tabela aberta pelo espelho .bkp
-        Backup        copia e confere, com manifesto SHA-256
-        Replicacao    papel e portas. As portas sao configuracao, nao servico
-        Server Mail   APAGADA -- o armazenamento serve; falta o servico, e sem
-                      SMTP nao troca correio com o mundo
-        Blockchain    APAGADA -- o formato encaixa; faltam as transacoes antes
-        Ajuda         versao e o que o motor e
 
-    A cor agrupa por familia: verde e servico e salvaguarda, roxo e consulta e
-    replica, azul e gente e mensagem, turquesa e dado, ambar e conserto.
+    Duplicar um DATABASE inteiro (nao uma tabela) continua sem operacao: o
+    item mora no menu de contexto da arvore (clique com o botao direito no
+    banco), nasce apagado e diz o motivo -- o backup ja sabe copiar a arvore
+    e conferir SHA-256; falta a operacao que grava com outro nome e reescreve
+    o catalogo.
+
+    A cor agrupa por familia, e nao por gosto: verde e servico e salvaguarda
+    (Start/Stop, Backup), roxo e consulta e replica (Query, Pivot,
+    Replicacao, Diagrama ER), azul e gente (Usuarios), laranja e politica
+    (Diretivas, LGPD), turquesa e dados (Bancos, Tabelas, Importar),
+    verde-claro e rede (Conexoes), vermelho e risco (Transacoes), ambar e
+    conserto (Repair, Restaurar).
 
 BARRA DE MENU
 
@@ -2329,18 +2358,34 @@ BARRA DE MENU
 
     GESTAO DO BANCO
 
-    O botao Gerir Banco -- ou o menu Banco, ou Alt+6 -- junta o que se faz sobre
-    o database inteiro, em quatro grupos:
+    O botao Gerir Banco -- ou o menu Banco, ou Alt+6 -- junta o que se faz
+    sobre o database inteiro. Medido em 09/09/2026 no index.html (funcao
+    itensDoDatabase): dezoito itens em cinco grupos -- quinze abrem tela, e
+    tres so explicam o que falta.
 
-        Dados e catalogo    Tabelas, SysTables, SysColumns, Copiar tabela
-        Config. e acesso    Configuracoes do banco, Diretivas de acesso,
-                            Editor de menu
-        Operacao            Conexoes, Arquivos bloqueados, Transacoes,
-                            Backup e restauracao
-        Ainda nao existe    Triggers, Procedures, Jobs, Modo exclusivo
+        Dados e catalogo    Tabelas, SysTables, SysColumns, Tabela dinamica,
+                            Sequencias, Copiar tabela
+        Config. e acesso    Configuracoes do banco, Diretivas de acesso ao
+                            banco, Editor de menu
+        Operacao            Sessoes e conexoes, Estatisticas de uso,
+                            Arquivos bloqueados, Transacoes, Backup e
+                            restauracao, Jobs de execucao
+        Comando             Triggers, Procedures -- EXISTEM, e nao por esta
+                            tela: entram pela operacao sql, no mesmo
+                            interpretador, com CREATE/DROP/SHOW e 17 recusas
+                            nomeadas para o gatilho (docs/TRIGGERS.md). O que
+                            falta e so o formulario, e de proposito: um
+                            formulario aqui seria um SEGUNDO caminho para
+                            escrever rotina
+        Ainda nao existe    Modo exclusivo -- abrir a tabela em uso exclusivo
+                            para reorganizar ou compactar sem ninguem
+                            escrevendo junto. Depende da trava por tabela,
+                            que e o mesmo trabalho da concorrencia fina
 
-    Os quatro ultimos ficam APAGADOS e, clicados, abrem uma tela que diz o que
-    falta e de que depende. Sumir com eles esconderia o roteiro.
+    Jobs de execucao tem tela propria desde o pedido 51 -- o botao Jobs da
+    barra de ferramentas -- por isso nao fica mais neste grupo como
+    pendencia. "Modo exclusivo" fica APAGADO e, clicado, abre uma tela que
+    diz o que falta e de que depende; sumir com ele esconderia o roteiro.
 
     AS TELAS DE CONFIGURACAO LEEM, NAO GRAVAM. Sao tres -- servidor, banco e
     usuarios --, e cada campo aparece com o nome que tem no config.json, o valor
@@ -3547,6 +3592,38 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     (fail2ban) nao quebrar por troca de idioma.
 
     Detalhes em docs/MENSAGENS.md.
+
+15.7 Os textos da tela, em seis idiomas -- a mesma tabela phxsys.mensagens
+
+    A tela (Portugues, Frances, Ingles, Italiano, Alemao, Espanhol) usa a
+    MESMA tabela phxsys.mensagens do item 15.6, e nao uma segunda: cada
+    chave de texto da tela (tela.*) e uma linha, do mesmo jeito que cada
+    mensagem de erro e. O texto se resolve por CHAVE, nunca por comparacao
+    da frase.
+
+        {"op":"idiomas","idioma":"Frances"}
+            o estado: quantos textos de tela existem, quantos estao
+            traduzidos no idioma pedido (padrao: Portugues)
+
+        {"op":"idiomas_carga"}
+            cria phxsys.mensagens se faltar e semeia os textos de tela
+            ausentes, sem tocar nos que ja existem
+
+        {"op":"idiomas_padrao","idioma":"Frances"}
+        {"op":"idiomas_padrao","tudo":true}
+            devolve os textos de FABRICA por cima do que esta gravado -- de
+            um idioma so, ou dos seis com "tudo". APAGA traducao: peca
+            confirmacao antes de mandar
+
+        {"op":"idiomas_exportar"}
+            a tabela de textos inteira em JSON, para guardar fora do banco
+
+        {"op":"idiomas_importar","backup":{"versao":1,"linhas":[]}}
+            devolve um backup de textos para a tabela, gravando por
+            TextName -- o objeto e o mesmo que idiomas_exportar devolveu
+
+    Pela tela: Configuracoes > Mensagens do servidor, na mesma grade de
+    phxsys.mensagens do item anterior. Detalhes em docs/MENSAGENS.md.
 
 
 16. REPLICACAO

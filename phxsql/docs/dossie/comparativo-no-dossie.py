@@ -67,6 +67,50 @@ def solto(svg: str) -> str:
 ABRE = "<!-- comparativo:inicio (gerado por docs/dossie/comparativo-no-dossie.py) -->"
 FECHA = "<!-- comparativo:fim -->"
 
+ABRE_CT = "<!-- cobertura-tela:inicio (gerado por docs/dossie/comparativo-no-dossie.py) -->"
+FECHA_CT = "<!-- cobertura-tela:fim -->"
+
+# Por que cada operacao "de fora" fica de fora, classificada UMA vez aqui --
+# nao no dossie, que so le o resultado. E o mesmo desenho do CLASSES de
+# `direito_coluna.rs`: uma tabela por nome, com um teste que reprova quando
+# `resultados.json` traz uma operacao que esta tabela nao conhece, em vez de
+# a prosa emitir uma frase generica que mentiria por omissao.
+RAZAO_DE_FORA = {
+    # Sete: de maquina, nao de gente -- fala servidor-com-servidor ou e uso
+    # interno, nunca aparece num clique.
+    "catalogo": "maquina", "bulkinsert": "maquina", "SelectMemory": "maquina",
+    "replicar": "maquina", "aplicar": "maquina", "cluster_pulso": "maquina",
+    "cluster_estado": "maquina", "spare_promover": "maquina",
+    # Uma: acontece sozinha, sem tela propria, quando a tela cria tabela
+    # dentro de um schema que ainda nao existe.
+    "criar_schema": "sozinha",
+    # A tela alcanca por EXPRESSAO (variavel montada em runtime), nao por
+    # literal `api("nome")` -- por isso a varredura de texto nao acha.
+    "telemetria_ligar": "expressao", "telemetria_desligar": "expressao",
+    # Os verbos de transacao: so tem caminho pelo `sql` e pelo driver, nunca
+    # por um botao dedicado.
+    "begin": "transacao", "commit": "transacao", "rollback": "transacao",
+    "savepoint": "transacao", "rollback_para": "transacao",
+    "release_savepoint": "transacao",
+    # Falta mesmo: sem tela ainda, e sem decisao registrada dizendo que nao
+    # havera uma.
+    "renomear_tabela": "falta", "procurar_texto": "falta",
+    # A tela faz por OUTRO CAMINHO (outra operacao cobre o mesmo efeito).
+    "buscar": "outro_caminho",
+}
+
+# Frases sem flexao de numero de proposito -- "1 X: a" e "3 X: a, b, c" tem
+# de ler bem os dois, e verbo concordando com uma contagem que só se sabe em
+# tempo de execucao vira "e(m)" feio ou, pior, errado.
+RAZAO_TEXTO = {
+    "maquina": "de <em>máquina</em>, não de gente",
+    "sozinha": "sem botão próprio — acontece dentro de outra ação da tela",
+    "expressao": "a tela alcança por expressão em vez de literal",
+    "transacao": "verbo de transação, com caminho só pelo <code>sql</code> e pelo driver",
+    "falta": "sem tela mesmo — lacuna de verdade, não decisão",
+    "outro_caminho": "a tela cobre por outro caminho",
+}
+
 COLUNAS = [("phxsql", "PhxSql"), ("hfsql", "HFSQL(R)"),
            ("postgres", "PostgreSQL(R)"), ("cassandra", "Cassandra(R)"),
            ("mysql", "MySQL(R)"), ("sqlite", "SQLite(R)")]
@@ -344,6 +388,53 @@ def bloco(d, c, n_fig):
     return "\n".join(t)
 
 
+def bloco_cobertura_tela(c):
+    """O paragrafo «N das M operações têm tela», na secao do Centro de
+    Controle -- pedido 209/210. Vivia escrito a mao ali e envelheceu duas
+    vezes (100/112 na pagina, 123/105 no `resultados.json` que já tinha
+    sido remedido por cima). Agora sai do MESMO `resultados.json` que a
+    Figura 30 (workflow) já lia -- um leitor, duas saidas.
+    """
+    ops, tela = c["operacoes"], c["alcancadas_pela_tela"]
+    fora = c["fora"]
+    quando = datetime.datetime.fromisoformat(c["quando"]).strftime("%d/%m/%Y")
+
+    desconhecidas = [op for op in fora if op not in RAZAO_DE_FORA]
+    if desconhecidas:
+        sys.exit(
+            "comparativo-no-dossie.py: RAZAO_DE_FORA nao classifica "
+            f"{desconhecidas} -- classifique antes de gerar, ou a prosa "
+            "mentiria por omissao sobre por que a tela nao alcanca")
+
+    t = [ABRE_CT]
+    t.append(f'  <p><strong>{tela} das {ops} operações do protocolo têm '
+              f'tela</strong> — medido casando os <code>api("…")</code> de '
+              f'<code>ui/</code> com os nomes da constante <code>OPERACOES</code> '
+              f'de <code>server/src/catalogo.rs</code>, em <strong>{quando}</strong> '
+              f'(<code>bancada/cobertura-da-tela/resultados.json</code>).</p>')
+
+    grupos = {}
+    for op in fora:
+        grupos.setdefault(RAZAO_DE_FORA[op], []).append(op)
+    # A ordem e fixa (maquina, sozinha, expressao, transacao, outro_caminho,
+    # falta) para o "falta mesmo" sempre fechar o paragrafo -- e' a unica
+    # categoria que e' lacuna de verdade, entao fica por ultimo, nao
+    # escondida no meio das legitimas.
+    ordem = ["maquina", "sozinha", "expressao", "transacao", "outro_caminho", "falta"]
+    frases = []
+    for cat in ordem:
+        if cat not in grupos:
+            continue
+        nomes = ", ".join(f"<code>{op}</code>" for op in grupos[cat])
+        n = len(grupos[cat])
+        frases.append(f'{n} {RAZAO_TEXTO[cat]}: {nomes}')
+    t.append(f'  <p>As <strong>{len(fora)}</strong> que ficam de fora — a '
+              f'última categoria à parte, que é lacuna de verdade: '
+              f'{"; ".join(frases)}.</p>')
+    t.append(FECHA_CT)
+    return "\n".join(t)
+
+
 def main():
     alvo = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else achar_o_dossie()
     if not FONTE.exists():
@@ -357,12 +448,12 @@ def main():
     i, j = texto.find(ABRE), texto.find(FECHA)
     if i < 0 or j < 0:
         sys.exit(f"{alvo.name} nao tem as marcas comparativo:inicio/fim")
-
-    # O NUMERO DA FIGURA sai do proprio arquivo, contando as legendas ANTES
-    # deste bloco. Digitado, ele apontaria para a figura errada no dia em que
-    # alguem acrescentasse uma figura acima -- e ninguem perceberia, porque
-    # legenda errada nao quebra nada.
-    n_fig = texto[:i].count("<b>Figura ") + 1
+    ict, jct = texto.find(ABRE_CT), texto.find(FECHA_CT)
+    if ict < 0 or jct < 0:
+        sys.exit(f"{alvo.name} nao tem as marcas cobertura-tela:inicio/fim -- "
+                 "acrescente-as uma vez em volta do paragrafo \"N das M "
+                 "operações do protocolo têm tela\", na secao do Centro de "
+                 "Controle")
 
     linhas = d["linhas"]
     por_sql = sum(1 for l in linhas if l["como"] == "SQL no motor vivo")
@@ -373,11 +464,32 @@ def main():
         solto(workflow(len(linhas), c["operacoes"], c["alcancadas_pela_tela"])),
         encoding="utf-8")
 
+    # A cobertura-tela vem ANTES do comparativo no documento. Troca-se ela
+    # primeiro E SEMPRE pelas marcas (nao por indice numerico): trocar por
+    # indice exigiria recalcular `i`/`j` do bloco comparativo depois desta
+    # troca mudar o tamanho do texto -- um jeito fácil de apontar para o
+    # lugar errado. Re-achar as marcas do zero no texto ja trocado evita o
+    # problema por construcao.
+    texto = texto[:ict] + bloco_cobertura_tela(c) + texto[jct + len(FECHA_CT):]
+    i, j = texto.find(ABRE), texto.find(FECHA)
+    if i < 0 or j < 0:
+        sys.exit(f"{alvo.name}: as marcas comparativo:inicio/fim sumiram "
+                 "depois de trocar a cobertura-tela -- bug neste gerador")
+
+    # O NUMERO DA FIGURA sai do proprio arquivo, contando as legendas ANTES
+    # deste bloco -- ja no texto COM a cobertura-tela trocada, para o caso de
+    # uma figura nova ter entrado ali. Digitado, ele apontaria para a figura
+    # errada no dia em que alguem acrescentasse uma figura acima -- e
+    # ninguem perceberia, porque legenda errada nao quebra nada.
+    n_fig = texto[:i].count("<b>Figura ") + 1
+
     novo = texto[:i] + bloco(d, c, n_fig) + texto[j + len(FECHA):]
     alvo.write_text(novo, encoding="utf-8")
     print(f"{alvo.name}: bloco comparativo com {len(d['linhas'])} capacidades")
     print(f"  figuras {n_fig} e {n_fig + 1}; SVG solto em "
           f"{SVG_FLUXO.name} e {SVG_WORKFLOW.name}")
+    print(f"  cobertura-tela: {c['alcancadas_pela_tela']} de {c['operacoes']} "
+          f"operações com tela, {len(c['fora'])} de fora classificadas")
 
 
 if __name__ == "__main__":

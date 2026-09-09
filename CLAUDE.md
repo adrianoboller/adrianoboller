@@ -36,7 +36,10 @@ anunciando sucesso.** O `pagina-dos-pedidos.py` gravava a página, gravava a
 contagem, imprimia três linhas de êxito e pulava o painel do dossiê — porque o
 alvo do painel só existia se viesse por argumento. Gerador que faz menos do que
 o nome dele promete tem de dizer que fez menos. **Nenhum número visível se digita
-mais**: são **onze** geradores, listados no `LEIA-ME.md` da pasta — eram nove
+mais**: são **catorze** geradores, listados no `LEIA-ME.md` da pasta — contados
+script por script em 09/09/2026: onze escrevem no dossiê principal e três nas
+páginas de status, testes e gráficos, e a revisão de documentação achou a lei
+dizendo «onze» enquanto a corrente já rodava catorze — eram nove
 nesta conta até 07/09/2026, porque o `trio-de-motores.py` escrevia no dossiê e
 estava **fora da receita**, então quem a seguia nunca o rodava; o décimo
 primeiro é o `perguntas-no-dossie.py`, a seção 36, que lê as respostas do PDF. Eles
@@ -156,8 +159,14 @@ escurece para `#C63C0A` no tema claro, por contraste.
 Atenção: a folha de marca afirma *ACID compliant* e *built-in replication*.
 O segundo **virou verdade** — a replicação funciona, está medida com quatro
 servidores, e o cluster faz eleição e promoção automática. O primeiro
-**continua falso**, e continuará enquanto não houver transação: sem ela não há
-o A nem o I do ACID. Não repita *ACID compliant* em documento técnico.
+**continua falso, mas a razão mudou**: há transação desde o pedido 162
+(`BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`, com escopo, prazos e travas) — a
+premissa «sem transação não há o A nem o I» caducou. O que falta hoje é outra
+coisa: o isolamento entregue é `READ COMMITTED`, sem leitura repetível (a
+Sombra que a compraria está parada por decisão do dono, `docs/SOMBRA.md`), e o
+**C** continua parcial — a cascata do `ao_alterar` escreve em tabela que a
+transação não declarou. Ver `docs/ACID.md` §0 e `docs/PENDENCIAS.md` #189. Não
+repita *ACID compliant* em documento técnico.
 
 ## Regras que não se quebram
 
