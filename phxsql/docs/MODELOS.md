@@ -608,6 +608,45 @@ comum, porque as duas tocam o portão de permissão — a C20-CONSULTA pelo
 `existe`, a C20-DIREITO pela carga do cadastro — e o erro ali não aparece em
 teste de tradução nem em tela: aparece como dado de outro que alguém leu.
 
+### Rodada dos limites nomeados e dos gaps — 9 de setembro de 2026 (continuação)
+
+Ordem do dono, depois de a rodada Next fechar: *«Fazer a revisão e fazer os
+gaps»*. A revisão foi feita por três revisores só de leitura e prova viva; os
+gaps de código, por frentes que reaproveitaram as worktrees das frentes Next à
+medida que elas devolviam — o `target` já compilado de cada uma, e o disco em
+5–8 GB, não comportava abrir quatro worktrees novas do zero.
+
+| frente | escalão | por quê | papéis dispensados, e por quê |
+|---|---|---|---|
+| **Revisor do motor** | **projeto e risco** | procura vazamento e quebra de integridade nas ops novas, provando por soquete — o erro aqui não aparece em teste unitário | (não conserta; só mede) |
+| **Revisor da documentação** | **mecânico e verificável** | número visível casado com o código; o erro salta na comparação | **C**, **E**; **F** é a própria medição |
+| **Revisor da tela** | **mecânico e verificável**, mas exercitando | interface só se prova exercitando; o CSS global morde o componente novo | — |
+| **G3-CIFRA** (gap 210) | **projeto e risco** | formato em disco e cifra; a guarda vermelha esperava desde 05/09, e o irmão só apareceu na reabertura | **E**, **J**; **C** é a própria frente (byte de material, `FORMATO.md`) |
+| **G3-REPLICA** (gap 203) | **projeto e risco** | segurança: mexer em bloqueio sem medir o alcance abre a porta que ele fecha | **E**; **J** consultado (o `QUORUM` do Cassandra já medido) |
+| **G3-CLAUDE** (gap 231) | **mecânico e verificável** | roteiro de navegador contra servidor falso; o número ou bate ou não | **C** (não toca motor), **E** (não edita tela) |
+| **Integração** (orquestrador) | **projeto e risco** | o defeito do encontro: `catalogo.py` e `SQL.md` tocados por mais de uma frente, e o `existe` da C20-CONSULTA tinha de ser o que a C20-SQL gera | **E** |
+
+**O defeito do encontro apareceu, de novo, e foi visto só na integração:** as
+frentes C20-CONSULTA e C20-SQL escreveram entradas no fim do mesmo
+`bancada/guardas/catalogo.py` e no mesmo `docs/SQL.md`; o merge nu conflitou
+nos dois. Resolvido mantendo as duas listas no catálogo (as guardas de cada
+frente são defeitos distintos) e combinando o `SQL.md` por seção — o que o
+motor faz e o que o tradutor faz são a mesma capacidade contada de dois lados,
+e a prosa tinha de dizer isso sem repetir nem se contradizer.
+
+**Uma decisão de modelo com o motivo escrito:** o revisor do motor e as duas
+frentes de gap que tocam segurança (G3-CIFRA, G3-REPLICA) foram no escalão de
+projeto e risco; o revisor de documentação, o de tela e a G3-CLAUDE, no
+mecânico — porque o erro deles se vê na comparação ou na captura, e o erro dos
+primeiros aparece como dado vazado ou tabela que não reabre, meses depois.
+
+**O limite de uso da plataforma entrou na conta desta rodada.** Às ~03:50 a
+sessão bateu no teto (HTTP 429, reset 05:20) e os sete agentes e a corrente do
+batimento morreram juntos. Não é escolha de modelo, é teto de plataforma — e a
+lição é a mesma da limitação do 403: **limitação que bloqueia um papel se
+remede a cada rodada, e some quando o teto passa**. A retomada foi por
+`SendMessage` a cada agente com o contexto preservado, e a worktree limpa de
+cada um provou que nenhum tinha escrito antes de morrer.
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:
