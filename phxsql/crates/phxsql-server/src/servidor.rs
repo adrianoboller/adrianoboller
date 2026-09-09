@@ -873,6 +873,36 @@ fn texto_ou_nulo(t: Option<&str>) -> Json {
     }
 }
 
+/// As colunas de `base.tabela` como estao no disco -- `None` quando a base,
+/// o schema ou a tabela ainda nao existem.
+///
+/// E o resolvedor que `Cadastro::conferir_colunas` recebe, nos dois lugares
+/// que a chamam: o arranque e a porta das tres operacoes de cadastro. Abre a
+/// tabela pela ficha EXCLUSIVA de proposito: a conferencia acontece uma vez
+/// por carga de cadastro, sobre as poucas tabelas que o cadastro cita, e a
+/// exclusiva e a unica que termina uma troca de volume interrompida em vez de
+/// devolver «precisa da ficha exclusiva» -- e no arranque ainda nao ha com
+/// quem disputar.
+fn colunas_em_disco(dados: &Instancia, base: &str, tabela: &str) -> Result<Option<Vec<String>>> {
+    let db = match dados.abrir_database(base) {
+        Ok(db) => db,
+        Err(PhxError::NaoEncontrado(_)) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let (schema, nome) = phxsql_store::catalogo::separar_qualificado(tabela);
+    if !db.diretorio(schema.as_deref())?.is_dir() || !db.existe_tabela(schema.as_deref(), &nome)? {
+        return Ok(None);
+    }
+    let t = db.abrir_tabela(schema.as_deref(), &nome)?;
+    Ok(Some(
+        t.esquema()
+            .colunas()
+            .iter()
+            .map(|c| c.nome.clone())
+            .collect(),
+    ))
+}
+
 impl Servidor {
     pub fn novo(config: Config) -> Result<Arc<Servidor>> {
         // `recursos.cache_paginas` estava no config.json e na documentacao
@@ -900,6 +930,26 @@ impl Servidor {
         let recuperacao = crate::transacao::recuperar(&raiz.exclusiva());
         if recuperacao.houve() {
             eprintln!("{}", recuperacao.texto(&config.base));
+        }
+        // O cadastro contra o esquema -- pedido 235 -- com as tabelas em
+        // disco e ANTES de a porta abrir. `Config::ler` carregou o cadastro
+        // sem tabela nenhuma, porque o `--usuarios` le o mesmo arquivo sem
+        // subir servidor; aqui a raiz existe e ja passou pela recuperacao, e
+        // a regra de coluna que cita coluna que a tabela nao tem recusa o
+        // arranque nomeando-a. A que cita tabela que ainda nao existe entra
+        // com aviso, e o aviso vai para a lista do cadastro (a mesma que o
+        // `main` imprime) e para o log daqui, porque o `main` ja imprimiu a
+        // lista dele antes de chegar aqui. Ver `Cadastro::conferir_colunas`.
+        let mut config = config;
+        {
+            let dados = raiz.exclusiva();
+            let avisos = config
+                .cadastro
+                .conferir_colunas(&mut |base, tabela| colunas_em_disco(&dados, base, tabela))?;
+            for aviso in &avisos {
+                eprintln!("AVISO: {aviso}");
+            }
+            config.cadastro.avisos.extend(avisos);
         }
         let mut log = LogAcessos::abrir(&config.log_acessos)?;
         // O rodizio do `acessos.log` -- pedido 228, mesma logica do
@@ -4229,8 +4279,22 @@ impl Servidor {
         // contra o cadastro vivo no `refrescar_a_sessao`.
         let quem = sessao.usuario.clone();
         let mut login = String::new();
+        let mut avisos = Vec::new();
         let novo = crate::config::Config::gravar_a_secao(&caminho, "usuarios", |arvore| {
             login = crate::usuarios::aplicar_na_arvore(arvore, acao, p, quem.as_ref())?;
+            // O cadastro que VAI ao disco, conferido contra o esquema antes
+            // de ir -- pedido 235, pela MESMA passada do arranque. Dentro do
+            // fecho porque a recusa tem de vir antes da gravacao: gravar e
+            // depois recusar deixaria no arquivo a regra que o proximo
+            // arranque recusaria, e o servidor nao subiria mais. O `de_json`
+            // e relido aqui (o `aplicar_na_arvore` ja o leu para as guardas
+            // de si-mesmo, e devolve so o login): e a analise de um arquivo
+            // de poucos KiB, uma vez por operacao de cadastro. A trava de
+            // dados e tomada so pelo tempo de abrir as tabelas citadas.
+            let cadastro = crate::usuarios::Cadastro::de_json(arvore)?;
+            let dados = self.travar_dados()?;
+            avisos = cadastro
+                .conferir_colunas(&mut |base, tabela| colunas_em_disco(&dados, base, tabela))?;
             Ok(())
         })?;
 
@@ -4287,6 +4351,19 @@ impl Servidor {
         // teste que falha se trouxer.
         if let Some(u) = novo.cadastro.por_login(&login) {
             pares.push(("usuario", u.ficha()));
+        }
+        // A regra de coluna sobre tabela que ainda nao existe: aceita, e o
+        // aviso vai a quem pediu -- na resposta, porque a lista de avisos do
+        // cadastro so e impressa no arranque, e quem chamou a op nao esta
+        // olhando o log. So quando ha, para a resposta de sempre nao mudar.
+        if !avisos.is_empty() {
+            for aviso in &avisos {
+                eprintln!("AVISO: {aviso}");
+            }
+            pares.push((
+                "avisos",
+                Json::Lista(avisos.iter().map(Json::texto_de).collect()),
+            ));
         }
         Ok(Json::objeto(pares))
     }
@@ -13123,7 +13200,15 @@ impl Servidor {
             )));
         }
         let t = db.criar_tabela(schema.as_deref(), esquema)?;
-        Ok(Json::objeto(vec![
+        let qualificado = phxsql_store::catalogo::qualificar(schema.as_deref(), &nome);
+        // A regra de coluna que ja ESPERAVA por esta tabela -- pedido 235. O
+        // cadastro a aceitou com aviso porque a tabela nao existia; se ela
+        // nasce sem a coluna citada, a regra e inerte, e este e o unico
+        // momento em que alguem esta olhando. Nao recusa: a tabela e a
+        // modelagem certa e o cadastro e o que esta errado -- e o cadastro se
+        // conserta pelo `usuario_alterar`, que agora recusa a mesma coluna.
+        let avisos = self.regras_de_coluna_inertes(database, &qualificado, t.esquema());
+        let mut pares = vec![
             ("database", Json::texto_de(database)),
             (
                 "schema",
@@ -13132,17 +13217,67 @@ impl Servidor {
                     None => Json::Nulo,
                 },
             ),
-            (
-                "tabela",
-                Json::texto_de(phxsql_store::catalogo::qualificar(schema.as_deref(), &nome)),
-            ),
+            ("tabela", Json::texto_de(qualificado)),
             ("colunas", Json::de_u64(t.esquema().colunas().len() as u64)),
             ("indices", Json::de_u64(t.esquema().indices().len() as u64)),
             (
                 "paginada",
                 Json::Bool(t.esquema().paginacao().registros_por_arquivo > 0),
             ),
-        ]))
+        ];
+        // So quando ha: a resposta de sempre nao ganha campo vazio.
+        if !avisos.is_empty() {
+            for aviso in &avisos {
+                eprintln!("AVISO: {aviso}");
+            }
+            pares.push((
+                "avisos",
+                Json::Lista(avisos.iter().map(Json::texto_de).collect()),
+            ));
+        }
+        Ok(Json::objeto(pares))
+    }
+
+    /// As regras de coluna do cadastro vivo que citam, em `base.tabela`,
+    /// coluna que este esquema nao tem -- uma mensagem por regra inerte.
+    ///
+    /// Casa base e tabela por nome EXATO, e nao pela precedencia de
+    /// `regras_de_coluna`: o curinga `"*"` nao nomeia esta tabela, e uma
+    /// regra `"*"` citando `salario` e legitima em toda tabela que o tenha.
+    /// Custa uma passada pelas listas de coluna do cadastro, que sao vazias
+    /// para quem nunca escreveu `"colunas"`.
+    fn regras_de_coluna_inertes(&self, base: &str, tabela: &str, esquema: &Schema) -> Vec<String> {
+        let cadastro = self.cadastro();
+        let mut avisos = Vec::new();
+        for u in cadastro.root.iter().chain(cadastro.usuarios.iter()) {
+            let Some((_, tabelas)) = u.colunas.iter().find(|(b, _)| b == base) else {
+                continue;
+            };
+            let Some((_, regras)) = tabelas.iter().find(|(t, _)| t == tabela) else {
+                continue;
+            };
+            for (coluna, _) in regras {
+                let existe = esquema
+                    .colunas()
+                    .iter()
+                    .any(|c| crate::direito_coluna::mesmo_nome(&c.nome, coluna));
+                if !existe {
+                    avisos.push(format!(
+                        "usuario {}: a regra de coluna em {base}.{tabela} cita {coluna:?}, e a \
+                         tabela que acabou de nascer nao tem essa coluna -- a regra esta \
+                         INERTE. As colunas sao: {}",
+                        u.login,
+                        esquema
+                            .colunas()
+                            .iter()
+                            .map(|c| c.nome.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+            }
+        }
+        avisos
     }
 
     /// Declara uma chave estrangeira numa tabela QUE JA EXISTE.
@@ -24278,18 +24413,22 @@ mod testes_direito_por_coluna {
         )
     }
 
-    /// Uma base `b` com `clientes` (id, nome) e `folha` (id, nome, salario).
-    fn servidor(dir: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
-        let c = Config {
+    /// O `Config` de um servidor que mora em `dir`, com este cadastro.
+    fn config_em(dir: &std::path::Path, cadastro: Cadastro) -> Config {
+        Config {
             base: dir.to_path_buf(),
             log_acessos: dir.join("acessos.log"),
             blacklist: dir.join("blacklist.json"),
             dblink: dir.join("dblink.json"),
             token: "t".into(),
-            cadastro: cadastro.clone(),
+            cadastro,
             ..Config::default()
-        };
-        let s = Servidor::novo(c).unwrap();
+        }
+    }
+
+    /// Uma base `b` com `clientes` (id, nome) e `folha` (id, nome, salario).
+    fn servidor(dir: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
+        let s = Servidor::novo(config_em(dir, cadastro.clone())).unwrap();
         let dono = Sessao::default();
         s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
             .unwrap();
@@ -24965,6 +25104,264 @@ mod testes_direito_por_coluna {
             .expect("a ficha nao mostra a regra de coluna");
         assert!(!d.booleano_ou("ler", true));
         assert!(!d.booleano_ou("alterar", true));
+    }
+
+    // -------------------------- a carga confere a coluna contra o esquema
+
+    /// Um servidor nascido de um `config.json` DE VERDADE, com `b.folha`
+    /// (id, nome, salario) ja em disco. As tres operacoes de cadastro gravam
+    /// no arquivo, e a conferencia de coluna precisa de tabela em disco: sem
+    /// os dois nao ha o que exercitar.
+    fn servidor_de_arquivo(nome: &str) -> (Arc<Servidor>, DirTemp) {
+        let dir = dir_temp(nome);
+        let caminho = dir.join("config.json");
+        std::fs::write(
+            &caminho,
+            format!(
+                r#"{{"token":"t","bind":"127.0.0.1:5399","base":"{}",
+                    "usuarios":[{{"id":1,"login":"ana","supervisor":true,
+                                  "senha_hash":"pbkdf2-sha256$1000$00$00"}}]}}"#,
+                dir.join("dados").display()
+            ),
+        )
+        .unwrap();
+        let mut c = Config::ler(&caminho).unwrap();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"folha",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"},
+                               {"nome":"salario","tipo":"Int4"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,
+                                "primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        (s, dir)
+    }
+
+    /// A sessao da ana, supervisora, que e quem pode mexer no cadastro.
+    fn como_ana(s: &Servidor) -> Sessao {
+        Sessao {
+            usuario: s.cadastro().por_login("ana").cloned(),
+            ..Sessao::default()
+        }
+    }
+
+    /// `usuario_criar` da bia, com UMA regra de coluna em `b.<tabela>`.
+    fn criar_bia_com_regra_em(s: &Arc<Servidor>, tabela: &str, coluna: &str) -> Result<Json> {
+        s.executar(
+            "usuario_criar",
+            &pedido(&format!(
+                r#"{{"login":"bia","senha":"segredo-da-bia","nivel":"leitor",
+                    "bases":{{"b":{{"ler":true,"tabelas":{{"{tabela}":{{"ler":true,
+                    "colunas":{{"{coluna}":{{"ler":false,"alterar":false}}}}}}}}}}}}}}"#
+            )),
+            &como_ana(s),
+        )
+    }
+
+    /// **O defeito do pedido 235.** `"colunas": {"salrio": …}` carregava
+    /// calado, e `salario` continuava sem regra: quem escreveu o cadastro
+    /// achava que restringiu e nao restringiu nada. Com a tabela em disco, o
+    /// arranque RECUSA -- nomeando usuario, base, tabela e coluna, e listando
+    /// as colunas que existem, para o erro de digitacao se achar.
+    #[test]
+    fn arranque_recusa_regra_que_cita_coluna_que_a_tabela_nao_tem() {
+        let dir = dir_temp("typo-arranque");
+        // As tabelas nascem por um servidor sem regra nenhuma; ele morre, e
+        // o segundo sobe do MESMO diretorio com a regra errada.
+        drop(servidor(&dir, sem_regra_de_coluna()));
+        let com_typo = cadastro(
+            r#"{"b":{"ler":true,"tabelas":{"folha":{"ler":true,
+                 "colunas":{"salrio":{"ler":false,"alterar":false}}}}}}"#,
+        );
+        let e = Servidor::novo(config_em(&dir, com_typo))
+            .err()
+            .expect("subiu com uma regra que cita coluna que a tabela nao tem");
+        let texto = e.to_string();
+        for pedaco in ["ana", "b.folha", "salrio", "salario"] {
+            assert!(
+                texto.contains(pedaco),
+                "a recusa nao diz {pedaco:?}: {texto}"
+            );
+        }
+    }
+
+    /// O controle, na mesma corrida: a MESMA regra com a coluna escrita certa
+    /// sobe sem aviso -- e continua valendo com a tabela ja em disco.
+    #[test]
+    fn arranque_aceita_regra_cuja_coluna_existe_e_ela_continua_valendo() {
+        let dir = dir_temp("certa-arranque");
+        drop(servidor(&dir, sem_regra_de_coluna()));
+        let certa = cadastro(
+            r#"{"b":{"ler":true,"tabelas":{"folha":{"ler":true,
+                 "colunas":{"salario":{"ler":false,"alterar":false}}}}}}"#,
+        );
+        let s = Servidor::novo(config_em(&dir, certa.clone())).expect("recusou coluna que existe");
+        assert!(
+            s.config().cadastro.avisos.is_empty(),
+            "{:?}",
+            s.config().cadastro.avisos
+        );
+        let ses = Sessao {
+            usuario: certa.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        let l = pede(
+            &s,
+            &ses,
+            r#""op":"ler","database":"b","tabela":"folha","rowid":1"#,
+        )
+        .unwrap();
+        assert!(l.campo("salario").is_none(), "a coluna negada saiu: {l:?}");
+    }
+
+    /// A tabela que ainda NAO existe aceita, com aviso -- a mesma decisao da
+    /// chave estrangeira declarada antes da tabela: e ordem legitima de
+    /// modelagem. O aviso nomeia usuario e tabela e entra na lista do
+    /// cadastro, que e a que o arranque imprime.
+    #[test]
+    fn arranque_aceita_regra_sobre_tabela_que_ainda_nao_existe_e_avisa() {
+        let dir = dir_temp("futura-arranque");
+        drop(servidor(&dir, sem_regra_de_coluna()));
+        let futura = cadastro(
+            r#"{"b":{"ler":true,"tabelas":{"bonus":{"ler":true,
+                 "colunas":{"valor":{"ler":false}}}}}}"#,
+        );
+        let s =
+            Servidor::novo(config_em(&dir, futura)).expect("recusou tabela que ainda nao existe");
+        let avisos = &s.config().cadastro.avisos;
+        assert_eq!(avisos.len(), 1, "{avisos:?}");
+        assert!(
+            avisos[0].contains("b.bonus") && avisos[0].contains("ana"),
+            "{avisos:?}"
+        );
+    }
+
+    /// As tres operacoes de cadastro passam pela MESMA conferencia do
+    /// arranque: `usuario_criar` com a regra errada recusa nomeando -- e nao
+    /// grava nada, nem no arquivo nem no cadastro vivo.
+    #[test]
+    fn usuario_criar_recusa_regra_que_cita_coluna_que_a_tabela_nao_tem() {
+        let (s, dir) = servidor_de_arquivo("typo-op");
+        let e = criar_bia_com_regra_em(&s, "folha", "salrio").unwrap_err();
+        let texto = e.to_string();
+        for pedaco in ["bia", "b.folha", "salrio", "salario"] {
+            assert!(
+                texto.contains(pedaco),
+                "a recusa nao diz {pedaco:?}: {texto}"
+            );
+        }
+        let arquivo = std::fs::read_to_string(dir.join("config.json")).unwrap();
+        assert!(
+            !arquivo.contains("bia"),
+            "a recusa gravou assim mesmo: {arquivo}"
+        );
+        assert!(s.cadastro().por_login("bia").is_none());
+    }
+
+    /// O controle: a mesma regra com a coluna certa grava sem aviso; e a regra
+    /// sobre tabela que ainda nao existe grava COM aviso na resposta -- e a
+    /// unica porta por onde quem chamou a op fica sabendo.
+    #[test]
+    fn usuario_criar_aceita_coluna_que_existe_e_avisa_da_tabela_futura() {
+        let (s, _dir) = servidor_de_arquivo("certa-op");
+        let r = criar_bia_com_regra_em(&s, "folha", "salario").expect("recusou coluna que existe");
+        assert!(r.campo("avisos").is_none(), "{}", r.escrever());
+
+        let r = s
+            .executar(
+                "usuario_alterar",
+                &pedido(
+                    r#"{"login":"bia","bases":{"b":{"ler":true,"tabelas":{"bonus":{"ler":true,
+                        "colunas":{"valor":{"ler":false}}}}}}}"#,
+                ),
+                &como_ana(&s),
+            )
+            .expect("recusou tabela que ainda nao existe");
+        let avisos = r
+            .campo("avisos")
+            .and_then(Json::lista)
+            .expect("a tabela futura passou sem aviso na resposta");
+        assert_eq!(avisos.len(), 1, "{}", r.escrever());
+        assert!(
+            avisos[0].texto().unwrap().contains("b.bonus"),
+            "{}",
+            r.escrever()
+        );
+    }
+
+    /// A tabela que nasce DEPOIS, com uma regra ja cadastrada citando coluna
+    /// que ela nao tem: a regra e inerte, e o `criar_tabela` diz isso na
+    /// resposta -- em vez de deixar quem modelou achar que a coluna esta
+    /// protegida.
+    #[test]
+    fn criar_tabela_avisa_da_regra_de_coluna_que_ficou_inerte() {
+        let dir = dir_temp("nasce-depois");
+        let (s, _) = servidor(
+            &dir,
+            cadastro(
+                r#"{"b":{"ler":true,"criar":true,"tabelas":{"bonus":{"ler":true,
+                     "colunas":{"valr":{"ler":false}}}}}}"#,
+            ),
+        );
+        let r = s
+            .executar(
+                "criar_tabela",
+                &pedido(
+                    r#"{"database":"b","tabela":"bonus",
+                        "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                                   {"nome":"valor","tipo":"Int4"}]}"#,
+                ),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let avisos = r
+            .campo("avisos")
+            .and_then(Json::lista)
+            .expect("a regra inerte passou calada");
+        let texto = avisos[0].texto().unwrap();
+        assert!(
+            texto.contains("valr") && texto.contains("ana") && texto.contains("valor"),
+            "{texto}"
+        );
+    }
+
+    /// E o controle: regra cuja coluna a tabela nova TEM nao gera aviso, e a
+    /// resposta do `criar_tabela` fica exatamente como era.
+    #[test]
+    fn criar_tabela_nao_avisa_quando_a_regra_casa_com_a_coluna() {
+        let dir = dir_temp("nasce-certa");
+        let (s, _) = servidor(
+            &dir,
+            cadastro(
+                r#"{"b":{"ler":true,"criar":true,"tabelas":{"bonus":{"ler":true,
+                     "colunas":{"valor":{"ler":false}}}}}}"#,
+            ),
+        );
+        let r = s
+            .executar(
+                "criar_tabela",
+                &pedido(
+                    r#"{"database":"b","tabela":"bonus",
+                        "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                                   {"nome":"valor","tipo":"Int4"}]}"#,
+                ),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert!(r.campo("avisos").is_none(), "{}", r.escrever());
     }
 }
 

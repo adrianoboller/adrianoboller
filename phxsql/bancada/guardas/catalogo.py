@@ -4062,4 +4062,42 @@ pub fn limpar() {
             "reconciliar_nunca_recua_o_contador",
         ],
     },
+    # -----------------------------------------------------------------------
+    # 26. O direito por coluna que cita coluna inexistente -- pedido 235
+    # -----------------------------------------------------------------------
+    {
+        "id": "regra-de-coluna-com-typo-carrega-calada",
+        "titulo": "regra de direito por coluna que cita coluna inexistente carrega calada e não protege nada",
+        "porque": (
+            "docs/SEGURANCA.md 15, pedido 235 -- `colunas: {salrio: ...}` "
+            "carregava sem aviso e `salario` continuava sem regra: quem "
+            "escreveu o cadastro achava que restringiu e nao restringiu nada. "
+            "Configuracao que nao e lida mente, e mente pior quando o assunto "
+            "e quem alcanca o dado. A conferencia mora numa passada depois da "
+            "carga (`Cadastro::conferir_colunas`), chamada pelo arranque e "
+            "pela porta das tres operacoes de cadastro; o defeito reposto e a "
+            "recusa desligada, que e exatamente o estado de 08/09."
+        ),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": """                    if !faltam.is_empty() {""",
+        "troca": """                    if false && !faltam.is_empty() {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuarios::tests::coluna_com_erro_de_digitacao_recusa_nomeando",
+            "servidor::testes_direito_por_coluna::arranque_recusa_regra_que_cita_coluna_que_a_tabela_nao_tem",
+            "servidor::testes_direito_por_coluna::usuario_criar_recusa_regra_que_cita_coluna_que_a_tabela_nao_tem",
+        ],
+        # O comportamento VELHO e o que tem de sobreviver ao defeito e ao
+        # conserto: cadastro sem `colunas`, cadastro cuja coluna existe, e o
+        # direito por tabela sem regra nenhuma.
+        "seguem": [
+            "usuarios::tests::sem_colunas_a_conferencia_nao_pergunta_nada",
+            "usuarios::tests::coluna_que_existe_passa_sem_aviso",
+            "usuarios::tests::tabela_que_ainda_nao_existe_aceita_com_aviso",
+            "servidor::testes_direito_por_coluna::sem_colunas_no_cadastro_nada_muda",
+            "servidor::testes_direito_por_coluna::arranque_aceita_regra_cuja_coluna_existe_e_ela_continua_valendo",
+            "servidor::testes_direito_por_tabela::sem_regra_de_tabela_nada_muda",
+        ],
+    },
 ]
