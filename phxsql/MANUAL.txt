@@ -1563,9 +1563,9 @@ OPERACOES
                     [agregador], [juntar], [max]   a tabulacao cruzada
     agrupar         database, tabela, [por], [agregados], [onde],
                     [expressao], [tendo], [ordem], [max]   o GROUP BY
-    consultar       database, de, [apelido], [juntar], [escalar], [em],
-                    [expressao], [janela], [ordem], [pular], [max],
-                    [colunas]               compoe o resultado de outras ops
+    consultar       database, de, [apelido], [juntar], [escalar],
+                    [existe], [em], [expressao], [janela], [ordem],
+                    [pular], [max], [colunas]   compoe o resultado de outras ops
     criar_visao     database, nome, sql, [substituir]
     visoes          database                 as visoes, com o SQL de cada uma
     excluir_visao   database, nome
@@ -1855,12 +1855,16 @@ CONSULTAR: A COMPOSICAO
          "colunas":["p.id",{"coluna":"c.nome","apelido":"cliente"}],
          "ordem":[{"coluna":"p.id"}],"max":1000}
 
-    Resposta: {"devolvidas":n,"achadas":n,"linhas":[...]}.
+    Resposta: {"devolvidas":n,"achadas":n,"colunas":[{nome,tipo}],
+    "linhas":[...]}. O "colunas" e o MODELO da linha -- nome e tipo de cada
+    coluna, na grafia do "esquema" --, e vem ANTES das linhas: e por ele que
+    um consultar aninhado e o cliente sabem a forma mesmo quando nao vem
+    linha nenhuma.
 
-    OS PASSOS, NESTA ORDEM: de -> juntar (na ordem) -> escalar -> em ->
-    expressao -> janela -> ordem -> pular/max -> colunas. A projecao vem por
-    ULTIMO, e e por isso que a ordem pode falar de coluna que a resposta nao
-    mostra -- ORDER BY preco num SELECT nome e SQL legitimo.
+    OS PASSOS, NESTA ORDEM: de -> juntar (na ordem) -> escalar -> existe ->
+    em -> expressao -> janela -> ordem -> pular/max -> colunas. A projecao vem
+    por ULTIMO, e e por isso que a ordem pode falar de coluna que a resposta
+    nao mostra -- ORDER BY preco num SELECT nome e SQL legitimo.
 
     "de": varrer, buscar, agrupar ou outro consultar. Ate oito niveis de
     aninhamento; alem disso recusa, porque pilha estourada nao e recusa.
@@ -1871,15 +1875,26 @@ CONSULTAR: A COMPOSICAO
     e unico entre os lados; ambiguo RECUSA dizendo os dois candidatos.
 
     "juntar": lista aplicada na ordem, sempre a esquerda. tipo e "interno"
-    (so quem casa) ou "esquerdo" (a linha da esquerda fica, com as colunas da
-    direita nulas). "direito", "completo" e "cruzado" recusam nomeando -- a
-    direita se escreve trocando os lados. "em" e igualdade entre colunas; o
-    resto da condicao vai para "expressao". Sem par nenhum recusa: junção sem
-    par e produto cartesiano.
+    (so quem casa), "esquerdo" (a linha da esquerda fica, com as colunas da
+    direita nulas -- INCLUSIVE com a direita vazia, que traz as colunas dela
+    nulas pelo modelo), "direito" (o espelho: a linha da direita fica, com as
+    da esquerda nulas), "completo" (os dois) ou "cruzado" (o produto). "em" e
+    igualdade entre colunas; o resto da condicao vai para "expressao". Fora do
+    "cruzado", junção sem par recusa: seria produto cartesiano. O "cruzado"
+    nao leva "em", e seu teto (recursos.max_linhas) e conferido ANTES de
+    materializar -- esquerda x direita acima do teto recusa nomeando os dois
+    tamanhos.
 
     "escalar": subconsulta NAO correlacionada que devolve exatamente UMA
-    linha; o "campo" dela vira a coluna "nome", visivel na expressao. Zero ou
-    duas linhas recusam nomeando. Sem "colunas" ela nao sai na resposta.
+    linha; o "campo" dela vira a coluna "nome", com o TIPO que o sub-pedido
+    declara, visivel na expressao. Zero ou duas linhas recusam nomeando. Sem
+    "colunas" ela nao sai na resposta.
+
+    "existe": a semijunção [NOT] EXISTS, aplicada DEPOIS de juntar/escalar e
+    ANTES da expressao. {de, apelido, em:[{esquerda, direita}], nao}: mantem a
+    linha de fora que TEM (ou, com "nao":true, que NAO tem) casamento por
+    igualdade. Nao acrescenta coluna e nao multiplica linha -- e a diferenca
+    entre EXISTS e JOIN. Correlacao so por igualdade; o resto recusa nomeando.
 
     "em": o IN (SELECT campo FROM ...). O sub-pedido roda primeiro e vira o
     conjunto dos valores de "campo".
@@ -3294,6 +3309,25 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
 
     UM config.json SEM "colunas" SE COMPORTA EXATAMENTE COMO ANTES.
 
+    A COLUNA E CONFERIDA CONTRA O ESQUEMA (a partir de 09/09/2026). Uma
+    regra que cita coluna que a tabela NAO TEM era inerte e calada: quem
+    escrevia "salrio" achava que restringiu e nao restringiu nada. Agora o
+    arranque e as tres operacoes de cadastro (14.5) conferem cada nome
+    contra a tabela, quando ela existe:
+
+        - coluna que a tabela nao tem: RECUSA, nomeando usuario, base,
+          tabela e coluna, e listando as colunas que existem;
+        - base ou tabela que ainda nao existe: ACEITA COM AVISO -- e a mesma
+          decisao da chave estrangeira declarada antes da tabela. A regra
+          passa a valer quando ela nascer, e o criar_tabela devolve a lista
+          "avisos" se a tabela nascer SEM a coluna citada (a regra continua
+          la, inerte, ate o cadastro ser corrigido);
+        - "*" em base ou tabela: nao se confere -- o curinga nao nomeia
+          tabela nenhuma.
+
+    A comparacao e sem caixa, como a da propria peneira: "Salario" nao e
+    erro de digitacao.
+
     LEITURA. A coluna negada sai da resposta de ler, varrer, buscar,
     procurar_texto, SelectMemory -- e do que a op sql produz, porque cada
     passo dela e um desses. Perguntar pela coluna tambem responde, entao
@@ -3386,7 +3420,13 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
         - mexer no "root": ele e a porta de entrada de quando o cadastro
           sai errado, e continua sendo edicao do arquivo;
         - login que nunca autenticaria -- vazio, com espaco na ponta (o
-          login apara antes de comparar) ou com caractere de controle.
+          login apara antes de comparar) ou com caractere de controle;
+        - regra de coluna ("colunas", secao 14.3.2) que cita coluna que a
+          tabela NAO TEM: a recusa nomeia usuario, base, tabela e coluna,
+          e lista as colunas que existem, para o erro de digitacao se
+          achar. Tabela que ainda nao existe e aceita, e a resposta traz a
+          lista "avisos" dizendo qual -- a regra passa a valer quando ela
+          nascer. O arranque confere o config.json do mesmo jeito.
 
     QUEM E EXCLUIDO OU DESATIVADO perde a sessao no PEDIDO SEGUINTE da
     propria conexao, com o "faca login" de sempre. A conexao nao e

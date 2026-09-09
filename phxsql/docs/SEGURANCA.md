@@ -2687,14 +2687,81 @@ adivinhar seria a peneira mentindo.
 - **`restaurar_backup` não recusa.** Ele põe arquivo de volta e não mostra
   coluna a ninguém; recusar tiraria a recuperação de desastre de quem tem uma
   regra de coluna em qualquer tabela do servidor.
-- **Coluna que não existe na tabela é regra inerte, e nada avisa.** Validar o
-  nome contra o esquema na carga do cadastro exigiria que a tabela já
-  existisse — e declarar o direito antes de criar a tabela é ordem legítima de
-  modelagem. Então uma regra sobre `salrio` (com o erro de digitação) não
-  protege nada e não reclama. É a mesma forma de dívida da «chave morta» dos
-  idiomas, e o lugar certo para fechá-la é uma conferência **na abertura da
-  tabela**, não na carga.
+- **Coluna que não existe na tabela deixou de ser regra inerte calada**
+  (pedido 235, 09/09/2026 — ver «A conferência na carga», abaixo). O que
+  este item dizia até 08/09 — «o lugar certo para fechá-la é uma conferência
+  na abertura da tabela, não na carga» — era diagnóstico plausível, e a
+  medição o desfez: a abertura é o laço quente (toda operação abre a tabela)
+  e quem escreveu o cadastro não está olhando ali. A carga é o lugar: acontece
+  uma vez, e quem a dispara é exatamente quem escreveu a regra.
 - **Não há projeção obrigatória.** Quem tem `ler` negado em `salario` continua
   podendo pedir `SELECT *`: o que volta é a linha sem a coluna, e não um erro.
   Recusar o `SELECT *` quebraria todo cliente que o escreve — e a proteção que
   quebra todo cliente antigo não é proteção, é estrago.
+
+### A conferência na carga: a coluna que a tabela não tem (pedido 235)
+
+Medido em 08/09/2026 lendo `Usuario::de_json`: `"colunas": {"salrio": …}`
+carregava sem aviso, e `salario` continuava sem regra — quem escreveu o
+cadastro achava que restringiu e não restringiu nada. É a família do
+`recursos.cache_paginas`: configuração que não é lida mente, e mente pior
+quando o assunto é quem alcança o dado.
+
+**Onde a conferência mora.** É uma passada depois da carga —
+`Cadastro::conferir_colunas`, em `usuarios.rs` —, e não um resolvedor dentro
+de `Usuario::de_json`. Medido antes de decidir: `Cadastro::de_json` é lido em
+três lugares que não abrem tabela nenhuma — `Config::ler` monta o cadastro
+antes de a raiz de dados existir, `phxsqld --usuarios` lista o cadastro sem
+subir servidor, e as provas do cadastro rodam sem disco. Um resolvedor
+obrigatório faria os três passar um resolvedor vazio, que é não conferir com
+uma linha a mais. A passada recebe o resolvedor (`colunas_em_disco`, em
+`servidor.rs`) de quem tem o esquema, e são **dois chamadores da mesma
+função**, não duas conferências: o arranque (`Servidor::novo`, com as tabelas
+em disco, depois da recuperação e antes de a porta abrir) e a porta das três
+operações de cadastro (`op_usuario`, dentro do fecho de `gravar_a_secao`, para
+a recusa vir **antes** da gravação — gravar e depois recusar deixaria no
+arquivo a regra que o próximo arranque recusaria, e o servidor não subiria
+mais).
+
+**O que recusa, o que avisa, o que passa.**
+
+| a regra cita | o que acontece |
+|---|---|
+| coluna que a tabela não tem | **recusa**, nomeando usuário, base, tabela e coluna, e listando as colunas que existem — `salrio` se acha ao lado de `salario` |
+| base ou tabela que ainda não existe | **aceita com aviso** — a mesma decisão da chave estrangeira declarada antes da tabela: ordem legítima de modelagem |
+| `"*"` em base ou em tabela | passa sem conferir: o curinga não nomeia tabela, e conferir contra todas recusaria «`salario` em qualquer tabela que o tenha» |
+| tabela que não abre | aviso com o motivo; a carga não derruba o servidor por uma tabela que o resto do arranque ainda vai tratar |
+
+A régua de nome é **a da peneira** (`direito_coluna::mesmo_nome`, sem caixa e
+aparada): uma mais dura recusaria `Salario`, que a peneira aplica; uma mais
+frouxa deixaria passar o que a peneira não acha — e as duas divergindo é o
+furo com cara de conferência.
+
+**Onde o aviso chega.** A lista `Cadastro.avisos` só era impressa no arranque
+e no `--usuarios`; as três operações de cadastro a descartavam. Então o aviso
+da tabela futura sai no log do servidor e, nas três operações, no campo
+`avisos` da resposta — só quando há, para a resposta de sempre não mudar.
+
+**A tabela que nasce depois.** `criar_tabela` confere as regras já
+cadastradas sobre a tabela recém-nascida (`regras_de_coluna_inertes`): a que
+cita coluna que ela não tem aparece como **INERTE** no log e no campo
+`avisos` da resposta. Não recusa — a tabela é a modelagem certa, o cadastro é
+o que está errado, e o cadastro se conserta pelo `usuario_alterar`, que agora
+recusa a mesma coluna.
+
+**O que ficou nomeado.** `duplicar_tabela`, `copiar_tabela`,
+`restaurar_backup` e `dblink_ligar` também fazem tabela nascer, e não avisam
+da regra inerte; `renomear_tabela` e `excluir_tabela` deixam a regra citando
+tabela que não existe mais, sem aviso — é o mesmo estado da «tabela futura»,
+que o arranque seguinte nomeia. Nenhum dos seis abre furo novo: a regra
+inerte continua exatamente como era antes de 09/09, e o próximo arranque a
+avisa.
+
+Prova real nos dois sentidos, 09/09/2026: com o código de 08/09, os cinco
+testes que afirmam o comportamento novo **caem** (`subiu com uma regra que
+cita coluna que a tabela nao tem`, `gravou uma regra…`, `a tabela futura
+passou sem aviso na resposta`, `a regra inerte passou calada`); com o
+conserto, 22 de 22 no módulo `testes_direito_por_coluna` — os dezessete
+velhos, `sem_colunas_no_cadastro_nada_muda` à frente, sem mudar uma linha. A
+guarda `regra-de-coluna-com-typo-carrega-calada` do catálogo repõe o
+`if false` e prova o mesmo pela bancada.

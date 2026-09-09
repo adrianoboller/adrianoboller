@@ -920,6 +920,31 @@ mod testes {
         assert_eq!(ags[0].texto_ou("apelido", ""), "soma_preco");
     }
 
+    /// Pedido 236: `COUNT(coluna)` vira o mesmo agregado de sempre, so que
+    /// com `"coluna"` no JSON (conta nao-nulo, nao linha). Falhava antes do
+    /// conserto (a traducao inteira recusava com "COUNT(coluna) nao tem
+    /// substrato", entao nem chegava a montar `Plano`); passa depois.
+    #[test]
+    fn count_de_coluna_manda_funcao_contagem_com_coluna() {
+        let p = plano("SELECT COUNT(preco) AS n FROM Clientes");
+        assert_eq!(p.op, "agrupar");
+        let ags = p.pedido.campo("agregados").unwrap().lista().unwrap();
+        assert_eq!(ags.len(), 1);
+        assert_eq!(ags[0].texto_ou("funcao", ""), "contagem");
+        assert_eq!(ags[0].texto_ou("coluna", ""), "preco");
+        assert_eq!(ags[0].texto_ou("apelido", ""), "n");
+    }
+
+    /// `COUNT(DISTINCT c)` ja tinha substrato antes desta rodada -- este
+    /// teste e o controle: continua "distintos", nao "contagem".
+    #[test]
+    fn count_distinct_continua_distintos() {
+        let p = plano("SELECT COUNT(DISTINCT preco) FROM Clientes");
+        let ags = p.pedido.campo("agregados").unwrap().lista().unwrap();
+        assert_eq!(ags[0].texto_ou("funcao", ""), "distintos");
+        assert_eq!(ags[0].texto_ou("coluna", ""), "preco");
+    }
+
     #[test]
     fn where_expressao_no_agrupar_usa_o_campo_expressao() {
         let p =

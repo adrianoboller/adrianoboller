@@ -21,6 +21,9 @@ pub type SqlULen = usize;
 pub type SqlHandle = *mut c_void;
 pub type SqlPointer = *mut c_void;
 pub type SqlChar = u8;
+/// Uma unidade de codigo UTF-16 (o `wchar_t` de 2 bytes do ODBC wide, nao o
+/// `wchar_t` de 4 bytes do C -- e por isso um alias proprio, e nao `u32`).
+pub type SqlWchar = u16;
 
 // Codigos de retorno.
 pub const SQL_SUCCESS: SqlReturn = 0;
@@ -79,8 +82,11 @@ pub const SQL_TYPE_TIMESTAMP: SqlSmallint = 93;
 
 // Tipos C (o que o SQLGetData/SQLBindCol entrega ao aplicativo).
 pub const SQL_C_CHAR: SqlSmallint = 1;
-/// UTF-16. O driver e ANSI (so as funcoes sem `W`), entao ele o reconhece so
-/// para recusar com o motivo, e nao para ler UTF-16 de um lado so.
+/// UTF-16. O driver e ANSI (so as funcoes sem `W`, que o gestor de drivers
+/// converte sozinho), mas um cliente pode ligar um BUFFER `SQL_C_WCHAR` --
+/// pedido 238. A conversao mora na BORDA (`texto::ler_texto_utf16`/
+/// `escrever_utf16`): dentro do driver tudo continua UTF-8, como o servidor
+/// fala.
 pub const SQL_C_WCHAR: SqlSmallint = -8;
 pub const SQL_C_LONG: SqlSmallint = 4;
 pub const SQL_C_SHORT: SqlSmallint = 5;

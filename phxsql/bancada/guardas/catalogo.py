@@ -4062,4 +4062,156 @@ pub fn limpar() {
             "reconciliar_nunca_recua_o_contador",
         ],
     },
+    # -----------------------------------------------------------------------
+    # 26. O direito por coluna que cita coluna inexistente -- pedido 235
+    # -----------------------------------------------------------------------
+    {
+        "id": "regra-de-coluna-com-typo-carrega-calada",
+        "titulo": "regra de direito por coluna que cita coluna inexistente carrega calada e não protege nada",
+        "porque": (
+            "docs/SEGURANCA.md 15, pedido 235 -- `colunas: {salrio: ...}` "
+            "carregava sem aviso e `salario` continuava sem regra: quem "
+            "escreveu o cadastro achava que restringiu e nao restringiu nada. "
+            "Configuracao que nao e lida mente, e mente pior quando o assunto "
+            "e quem alcanca o dado. A conferencia mora numa passada depois da "
+            "carga (`Cadastro::conferir_colunas`), chamada pelo arranque e "
+            "pela porta das tres operacoes de cadastro; o defeito reposto e a "
+            "recusa desligada, que e exatamente o estado de 08/09."
+        ),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": """                    if !faltam.is_empty() {""",
+        "troca": """                    if false && !faltam.is_empty() {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuarios::tests::coluna_com_erro_de_digitacao_recusa_nomeando",
+            "servidor::testes_direito_por_coluna::arranque_recusa_regra_que_cita_coluna_que_a_tabela_nao_tem",
+            "servidor::testes_direito_por_coluna::usuario_criar_recusa_regra_que_cita_coluna_que_a_tabela_nao_tem",
+        ],
+        # O comportamento VELHO e o que tem de sobreviver ao defeito e ao
+        # conserto: cadastro sem `colunas`, cadastro cuja coluna existe, e o
+        # direito por tabela sem regra nenhuma.
+        "seguem": [
+            "usuarios::tests::sem_colunas_a_conferencia_nao_pergunta_nada",
+            "usuarios::tests::coluna_que_existe_passa_sem_aviso",
+            "usuarios::tests::tabela_que_ainda_nao_existe_aceita_com_aviso",
+            "servidor::testes_direito_por_coluna::sem_colunas_no_cadastro_nada_muda",
+            "servidor::testes_direito_por_coluna::arranque_aceita_regra_cuja_coluna_existe_e_ela_continua_valendo",
+            "servidor::testes_direito_por_tabela::sem_regra_de_tabela_nada_muda",
+        ],
+    },
+    # C20-CONSULTA (09/09/2026): o modelo tipado e os cinco caminhos ao dado
+    # -----------------------------------------------------------------------
+    {
+        "id": "juncao-direita-vazia-perde-colunas",
+        "titulo": "LEFT JOIN com a direita vazia sai sem as colunas da direita, e a forma da linha muda",
+        "porque": (
+            "pedido 237 -- a linha sem casamento tinha de trazer TODAS as "
+            "colunas da direita nulas; com o modelo saindo da primeira linha "
+            "(direita.first()), a direita vazia nao tinha de onde tirar os "
+            "nomes e as colunas sumiam. Coluna que some quebra quem le por "
+            "posicao, o defeito que esta casa ja pagou tres vezes."
+        ),
+        "arquivo": "crates/phxsql-server/src/consultar.rs",
+        "trecho": "                    nova.extend(nulos(modelo_dir));",
+        "troca": """                    // DEFEITO REPOSTO: os nomes das colunas da direita saiam
+                    // da PRIMEIRA linha dela -- e com a direita vazia, de lugar
+                    // nenhum, entao a coluna sumia em vez de vir nula.
+                    let _ = &modelo_dir;
+                    if let Some(primeira) = direita.first() {
+                        nova.extend(primeira.iter().map(|(n, _)| (n.clone(), Json::Nulo)));
+                    }""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_consultar_juncao::a_juncao_esquerda_com_a_direita_vazia_traz_as_colunas_nulas",
+            "consultar::testes::a_direita_vazia_da_colunas_nulas_pelo_modelo",
+        ],
+        "seguem": [
+            "servidor::testes_consultar_juncao::a_juncao_esquerda_mantem_a_linha_com_nulos",
+        ],
+    },
+    {
+        "id": "decimal-do-consultar-compara-como-texto",
+        "titulo": "Decimal no consultar.expressao compara como texto, e 9,50 passa por um filtro de acima de 10",
+        "porque": (
+            "pedido 237 -- a celula tinha de ser convertida PELO TIPO do "
+            "modelo antes de a expressao ve-la; convertida pelo FORMATO do "
+            "JSON, um Decimal (texto \"9.50\") comparava como texto e "
+            "\"9.50\" > \"10.00\" dava verdadeiro."
+        ),
+        "arquivo": "crates/phxsql-server/src/consultar.rs",
+        "trecho": """    match crate::valores::json_para_valor(j, tipo) {
+        Ok(v) => (v, *tipo),
+        Err(_) => valor_de_json(j),
+    }""",
+        "troca": """    // DEFEITO REPOSTO: a celula convertida pelo FORMATO do JSON, e nao
+    // pelo tipo do modelo -- o Decimal volta a comparar como texto.
+    let _ = tipo;
+    valor_de_json(j)""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "consultar::testes::o_decimal_compara_como_numero_pelo_modelo",
+            "consultar::testes::a_celula_se_converte_pelo_tipo_do_modelo",
+            "servidor::testes_consultar_juncao::o_decimal_da_expressao_compara_como_numero",
+        ],
+        "seguem": [
+            "consultar::testes::texto_contra_numero_recusa_ensinando",
+            "consultar::testes::o_numero_redondo_vira_inteiro",
+        ],
+    },
+    {
+        "id": "existe-fora-do-inventario-de-tabelas",
+        "titulo": "existe[].de fora de tabelas_do_pedido: quem pergunta que tabelas o consultar alcanca nao ve a de dentro do EXISTS",
+        "porque": (
+            "pedido 236 e a lei da casa -- quando o portao passa a olhar um "
+            "campo novo, procure quem NAO tem esse campo. O existe entrou como "
+            "quinto caminho ao dado; a lista que o ignora vira o inventario que "
+            "deixa de valer no dia em que alguem o usa como inventario."
+        ),
+        "arquivo": "crates/phxsql-server/src/direito_coluna.rs",
+        "trecho": '            for lista in ["juntar", "escalar", "em", "existe"] {',
+        "troca": '            for lista in ["juntar", "escalar", "em"] {',
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "direito_coluna::testes::os_cinco_caminhos_do_consultar_aparecem",
+        ],
+        "seguem": [
+            "direito_coluna::testes::as_tabelas_escondidas_aparecem",
+        ],
+    },
+    {
+        "id": "wchar-recusa-no-driver-odbc",
+        "titulo": "SQL_C_WCHAR volta a recusar no driver ODBC, que agora fala UTF-16 na borda",
+        "porque": (
+            "pedido 238 -- o driver e ANSI (so as funcoes sem `W`), mas isso "
+            "nunca proibiu o BUFFER de um parametro de ser SQL_C_WCHAR: o "
+            "gestor de drivers so decide qual FUNCAO chamar, nunca que tipo C "
+            "um SQLBindParameter liga. `recusa_do_tipo_c` e o UNICO portao "
+            "dessa aceitacao -- ele nao toca a conversao (texto.rs::"
+            "ler_texto_utf16/escrever_utf16, provada a parte), so decide se o "
+            "tipo C passa da ligacao."
+        ),
+        "arquivo": "crates/phxsql-odbc/src/parametro.rs",
+        "trecho": """        SQL_C_CHAR | SQL_C_DEFAULT | SQL_C_WCHAR | SQL_C_SSHORT | SQL_C_SHORT | SQL_C_SLONG
+        | SQL_C_LONG | SQL_C_SBIGINT | SQL_C_DOUBLE | SQL_C_FLOAT | SQL_C_BIT => None,""",
+        "troca": """        SQL_C_CHAR | SQL_C_DEFAULT | SQL_C_SSHORT | SQL_C_SHORT | SQL_C_SLONG | SQL_C_LONG
+        | SQL_C_SBIGINT | SQL_C_DOUBLE | SQL_C_FLOAT | SQL_C_BIT => None,""",
+        "pacote": "phxsql-odbc",
+        "alvo": ["--lib"],
+        "caem": [
+            "parametro::testes::o_tipo_c_que_o_driver_le_passa_e_o_resto_recusa_nomeando",
+            "testes::ligacao_recusa_na_hora_o_que_o_driver_nao_sabe_mandar",
+        ],
+        # As duas continuam de pe porque nao pertencem ao PORTAO de ligacao:
+        # sao a CONVERSAO (parametro::ler e entregar), que este trecho nunca
+        # toca. Se caissem junto, o achado seria outro: um portao que esconde
+        # duas funcoes atras de si.
+        "seguem": [
+            "parametro::testes::wchar_de_entrada_vira_utf8_pelo_indicador_em_bytes",
+            "testes::entregar_wchar_trunca_por_caractere_inteiro_e_continua",
+        ],
+    },
 ]

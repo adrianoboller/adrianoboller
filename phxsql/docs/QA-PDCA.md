@@ -626,6 +626,7 @@ tabela.
 | `campo_estranho_dentro_do_rest_avisa` | `config.rs:3881` | campo desconhecido dentro de uma seção válida passando sem aviso |
 | `tipo_errado_e_recusado_antes_de_gravar` | `config.rs:4794` | tipo de coluna errado só sendo pego na gravação, não na declaração |
 | `pino_torto_na_origem_e_erro_e_nao_ausencia` | `config.rs:3401` | endereço mal formado na origem de replicação sendo tratado como "ausente" em vez de erro |
+| `threads_e_cpu_viram_o_teto_do_paralelo` | `config.rs:5631` | pedido 234 — provava um `static` GLOBAL de processo (`phxsql_core::paralelo::TETO`) que uma dezena de outros testes deste arquivo redefine ao chamar `Config::ler`; caiu **4 vezes em 200 corridas** por um vizinho ganhar a corrida entre o `aplicar()` e o `assert_eq!`. O conserto foi por contrato, não por mutex: este teste passou a provar só o CÁLCULO (`Recursos::nucleos()`), e o par isolado `phxsql_core::paralelo::tests::o_teto_configurado_vale` (`paralelo.rs:143`) prova o global sozinho, no binário do `phxsql-core`, onde mais nada mexe em `TETO` |
 
 **Profiler**
 

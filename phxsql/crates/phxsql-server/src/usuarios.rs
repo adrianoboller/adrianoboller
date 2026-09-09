@@ -1099,6 +1099,12 @@ fn extrair_hash(j: &Json, login: &str, avisos: &mut Vec<String>) -> Result<Strin
     )))
 }
 
+/// O resolvedor de esquema que [`Cadastro::conferir_colunas`] recebe:
+/// `(base, tabela)` responde `Ok(Some(colunas))` quando a tabela existe e
+/// `Ok(None)` quando a base ou a tabela ainda nao existem. Quem tem o disco
+/// o fornece (`servidor.rs`); as provas do cadastro passam um de mentira.
+pub type ResolvedorDeEsquema<'a> = &'a mut dyn FnMut(&str, &str) -> Result<Option<Vec<String>>>;
+
 /// O cadastro inteiro: o root e os demais.
 #[derive(Debug, Clone, Default)]
 pub struct Cadastro {
@@ -1161,6 +1167,120 @@ impl Cadastro {
             usuarios,
             avisos,
         })
+    }
+
+    /// Confere cada regra de coluna contra o esquema da tabela que ela cita
+    /// -- pedido 235.
+    ///
+    /// `esquema(base, tabela)` responde `Ok(Some(colunas))` quando a tabela
+    /// existe e `Ok(None)` quando a base ou a tabela ainda nao existem.
+    ///
+    /// # Por que e uma PASSADA depois da carga, e nao um resolvedor dentro de `de_json`
+    ///
+    /// Porque [`Cadastro::de_json`] e lido por quem nao abre tabela nenhuma:
+    /// o `phxsqld --usuarios` lista o cadastro sem subir o servidor, o
+    /// `Config::ler` monta o cadastro antes de a raiz de dados existir, e as
+    /// provas do cadastro rodam sem disco. Um resolvedor obrigatorio faria os
+    /// tres carregar um esquema que nao tem -- ou passar um resolvedor vazio,
+    /// que e nao conferir com uma linha a mais. A passada separada deixa o
+    /// `de_json` puro e poe a conferencia onde o esquema existe: no arranque
+    /// do servidor, com as tabelas em disco, e na porta das tres operacoes de
+    /// cadastro, antes de gravar. Sao dois chamadores da MESMA funcao, e nao
+    /// duas conferencias.
+    ///
+    /// # O que recusa, o que avisa e o que passa calado
+    ///
+    /// * coluna que a tabela nao tem: **recusa**, nomeando usuario, base,
+    ///   tabela e coluna, e listando as colunas que existem -- a lista e o
+    ///   que faz `salrio` se achar ao lado de `salario`. Ate aqui essa regra
+    ///   carregava calada e nao protegia nada: configuracao que nao e lida
+    ///   mente;
+    /// * base ou tabela que ainda nao existe: **avisa** e aceita. E a mesma
+    ///   decisao da chave estrangeira declarada antes da tabela -- ordem
+    ///   legitima de modelagem; a regra passa a valer quando a tabela nascer,
+    ///   e o `criar_tabela` avisa se ela nascer sem a coluna;
+    /// * `"*"` em base ou em tabela: passa sem conferir, porque o curinga nao
+    ///   nomeia tabela nenhuma. Conferir contra todas as tabelas recusaria a
+    ///   regra legitima «`salario` em qualquer tabela que o tenha».
+    ///
+    /// A regua de nome e a MESMA da peneira ([`crate::direito_coluna::mesmo_nome`]):
+    /// sem caixa e aparada. Uma regua mais dura recusaria `Salario`, que a
+    /// peneira aplica; uma mais frouxa deixaria passar o que a peneira nao
+    /// acha -- e as duas divergindo e o furo com cara de conferencia.
+    ///
+    /// Devolve os avisos desta passada; quem chama decide onde eles aparecem
+    /// (o arranque imprime, a operacao de cadastro devolve na resposta).
+    pub fn conferir_colunas(&self, esquema: ResolvedorDeEsquema<'_>) -> Result<Vec<String>> {
+        let mut avisos = Vec::new();
+        for u in self.root.iter().chain(self.usuarios.iter()) {
+            for (base, tabelas) in &u.colunas {
+                if base == "*" {
+                    continue;
+                }
+                for (tabela, regras) in tabelas {
+                    if tabela == "*" {
+                        continue;
+                    }
+                    let citadas = || {
+                        regras
+                            .iter()
+                            .map(|(c, _)| format!("{c:?}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    };
+                    let existentes = match esquema(base, tabela) {
+                        Ok(Some(colunas)) => colunas,
+                        Ok(None) => {
+                            avisos.push(format!(
+                                "usuario {}: a regra de coluna em {base}.{tabela} cita uma \
+                                 tabela que ainda nao existe (colunas {}). Ela passa a valer \
+                                 quando a tabela nascer, e so entao a coluna sera conferida",
+                                u.login,
+                                citadas()
+                            ));
+                            continue;
+                        }
+                        // O erro aqui INFORMA (tabela que nao abre, nome que
+                        // nao vale), e por isso viaja inteiro: a conferencia
+                        // nao pode derrubar um servidor por uma tabela que o
+                        // resto do arranque ainda vai tratar.
+                        Err(e) => {
+                            avisos.push(format!(
+                                "usuario {}: nao consegui conferir a regra de coluna em \
+                                 {base}.{tabela} contra o esquema ({e}); a regra ficou como \
+                                 esta, sem conferir",
+                                u.login
+                            ));
+                            continue;
+                        }
+                    };
+                    let faltam: Vec<String> = regras
+                        .iter()
+                        .filter(|(c, _)| {
+                            !existentes
+                                .iter()
+                                .any(|e| crate::direito_coluna::mesmo_nome(e, c))
+                        })
+                        .map(|(c, _)| format!("{c:?}"))
+                        .collect();
+                    if !faltam.is_empty() {
+                        return Err(PhxError::Esquema(format!(
+                            "usuario {}: a regra de coluna em {base}.{tabela} cita {}, e a \
+                             tabela nao tem {}. As colunas de {base}.{tabela} sao: {}",
+                            u.login,
+                            faltam.join(", "),
+                            if faltam.len() == 1 {
+                                "essa coluna"
+                            } else {
+                                "essas colunas"
+                            },
+                            existentes.join(", ")
+                        )));
+                    }
+                }
+            }
+        }
+        Ok(avisos)
     }
 
     /// Ha alguem cadastrado? Sem cadastro, o servidor cai no token de servico.
@@ -2063,5 +2183,121 @@ mod tests {
         assert_eq!(Nivel::de_texto("nenhum").unwrap(), Nivel::Nenhum);
         assert_eq!(Nivel::de_texto("leitor").unwrap(), Nivel::Leitor);
         assert_eq!(Nivel::de_texto("owner").unwrap(), Nivel::Dono);
+    }
+
+    // ------------------------ a conferencia da coluna contra o esquema (235)
+
+    /// O cadastro da ana com UMA regra de coluna em `<base>.<tabela>`.
+    fn com_regra_em(base: &str, tabela: &str, coluna: &str) -> Cadastro {
+        cadastro(&format!(
+            r#"{{"usuarios":[{{"login":"ana","senha_hash":"{}",
+                "bases":{{"{base}":{{"ler":true,"tabelas":{{"{tabela}":{{"ler":true,
+                "colunas":{{"{coluna}":{{"ler":false}}}}}}}}}}}}}}]}}"#,
+            hash_rapido("x")
+        ))
+    }
+
+    /// O esquema de `b.folha`: id, nome, salario. Nenhuma outra tabela existe.
+    fn so_a_folha(base: &str, tabela: &str) -> Result<Option<Vec<String>>> {
+        Ok((base == "b" && tabela == "folha").then(|| {
+            ["id", "nome", "salario"]
+                .iter()
+                .map(|c| c.to_string())
+                .collect()
+        }))
+    }
+
+    /// **Comportamento velho.** Cadastro sem `"colunas"` nao pergunta esquema
+    /// nenhum -- o resolvedor que panica prova que nem e chamado. E o que faz
+    /// a conferencia custar zero para todo `config.json` de hoje.
+    #[test]
+    fn sem_colunas_a_conferencia_nao_pergunta_nada() {
+        let c = cadastro(&format!(
+            r#"{{"usuarios":[{{"login":"ana","senha_hash":"{}",
+                "bases":{{"b":{{"ler":true,"tabelas":{{"folha":{{"ler":true}}}}}}}}}}]}}"#,
+            hash_rapido("x")
+        ));
+        let avisos = c
+            .conferir_colunas(&mut |b, t| panic!("perguntou por {b}.{t} sem regra de coluna"))
+            .unwrap();
+        assert!(avisos.is_empty());
+    }
+
+    /// **Comportamento velho.** A coluna existe: passa calado, sem aviso.
+    #[test]
+    fn coluna_que_existe_passa_sem_aviso() {
+        let avisos = com_regra_em("b", "folha", "salario")
+            .conferir_colunas(&mut so_a_folha)
+            .unwrap();
+        assert!(avisos.is_empty(), "{avisos:?}");
+    }
+
+    /// **O defeito do pedido 235.** `salrio` carregava calado e `salario`
+    /// continuava sem regra. Agora recusa nomeando usuario, base, tabela e
+    /// coluna -- e listando as colunas que existem, para o erro de digitacao
+    /// se achar.
+    #[test]
+    fn coluna_com_erro_de_digitacao_recusa_nomeando() {
+        let e = com_regra_em("b", "folha", "salrio")
+            .conferir_colunas(&mut so_a_folha)
+            .unwrap_err();
+        let texto = e.to_string();
+        eprintln!("a recusa: {texto}");
+        for pedaco in ["ana", "b.folha", "\"salrio\"", "id, nome, salario"] {
+            assert!(
+                texto.contains(pedaco),
+                "a recusa nao diz {pedaco:?}: {texto}"
+            );
+        }
+    }
+
+    /// Tabela que ainda nao existe: aceita, com um aviso que nomeia usuario,
+    /// tabela e as colunas citadas -- a mesma decisao da chave estrangeira
+    /// declarada antes da tabela.
+    #[test]
+    fn tabela_que_ainda_nao_existe_aceita_com_aviso() {
+        let avisos = com_regra_em("b", "bonus", "valor")
+            .conferir_colunas(&mut so_a_folha)
+            .unwrap();
+        assert_eq!(avisos.len(), 1, "{avisos:?}");
+        assert!(
+            avisos[0].contains("ana")
+                && avisos[0].contains("b.bonus")
+                && avisos[0].contains("\"valor\""),
+            "{avisos:?}"
+        );
+    }
+
+    /// A regua e a da peneira: sem caixa e aparada. `Salario` nao e erro de
+    /// digitacao -- a peneira o aplica, e a conferencia nao pode recusar o que
+    /// a peneira aceita.
+    #[test]
+    fn a_caixa_nao_e_erro_de_digitacao() {
+        let avisos = com_regra_em("b", "folha", "Salario")
+            .conferir_colunas(&mut so_a_folha)
+            .unwrap();
+        assert!(avisos.is_empty(), "{avisos:?}");
+    }
+
+    /// O curinga nao nomeia tabela: nem se confere, nem se avisa.
+    #[test]
+    fn curinga_de_base_ou_de_tabela_nao_se_confere() {
+        for (base, tabela) in [("*", "folha"), ("b", "*"), ("*", "*")] {
+            let avisos = com_regra_em(base, tabela, "salrio")
+                .conferir_colunas(&mut |b, t| panic!("perguntou por {b}.{t}, que e curinga"))
+                .unwrap();
+            assert!(avisos.is_empty(), "{base}.{tabela}: {avisos:?}");
+        }
+    }
+
+    /// Tabela que nao abre nao derruba a carga: vira aviso com o motivo, e a
+    /// regra fica como esta. O resto do arranque e que trata a tabela.
+    #[test]
+    fn tabela_que_nao_abre_vira_aviso_e_nao_recusa() {
+        let avisos = com_regra_em("b", "folha", "salrio")
+            .conferir_colunas(&mut |_, _| Err(PhxError::Corrompido("folha.reg truncado".into())))
+            .unwrap();
+        assert_eq!(avisos.len(), 1, "{avisos:?}");
+        assert!(avisos[0].contains("folha.reg truncado"), "{avisos:?}");
     }
 }

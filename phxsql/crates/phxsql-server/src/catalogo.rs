@@ -550,16 +550,25 @@ pub const OPERACOES: &[Operacao] = &[
                 "array",
                 "junções aplicadas na ordem, sempre à esquerda: \
                  `{de, apelido, tipo, em:[{esquerda, direita}]}`. `tipo` é \
-                 `interno` ou `esquerdo`; `direito`, `completo` e `cruzado` \
-                 recusam. `em` é igualdade entre colunas -- o resto vai para \
-                 `expressao`",
+                 `interno`, `esquerdo`, `direito`, `completo` ou `cruzado`; o \
+                 `cruzado` é o produto e não leva `em`. `em` é igualdade entre \
+                 colunas -- o resto vai para `expressao`",
             ),
             opc(
                 "escalar",
                 "array",
                 "subconsulta não correlacionada que devolve UMA linha: \
-                 `{nome, de, campo}` -- o valor vira a coluna `nome`, visível \
-                 na `expressao` e fora da resposta a menos que pedida",
+                 `{nome, de, campo}` -- o valor vira a coluna `nome`, com o \
+                 TIPO que o sub-pedido dele declara, visível na `expressao` e \
+                 fora da resposta a menos que pedida",
+            ),
+            opc(
+                "existe",
+                "array",
+                "a semijunção `[NOT] EXISTS`: \
+                 `{de, apelido, em:[{esquerda, direita}], nao}` -- mantém a \
+                 linha de fora que tem (ou, com `nao`, não tem) casamento por \
+                 igualdade; não acrescenta coluna",
             ),
             opc(
                 "em",
@@ -587,7 +596,9 @@ pub const OPERACOES: &[Operacao] = &[
                 "colunas",
                 "array",
                 "a projeção, aplicada POR ÚLTIMO: `\"id\"` ou \
-                 `{coluna, apelido}`",
+                 `{coluna, apelido}`. A resposta traz o modelo em \
+                 `colunas: [{nome, tipo}]`, com a mesma grafia de tipo do \
+                 `esquema`",
             ),
         ],
         exemplo: r#"{"op":"consultar","database":"loja","de":{"op":"varrer","tabela":"clientes"},"expressao":"id > 2","ordem":[{"coluna":"id","desc":true}],"max":10}"#,

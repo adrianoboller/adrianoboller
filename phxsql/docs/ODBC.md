@@ -107,17 +107,25 @@ SQLGetDiagRec    SQLGetInfo       SQLSetConnectAttr SQLSetStmtAttr
   existem desde a rodada das dezoito** e tem secao propria (2.1).
 * O conjunto de resultados chega INTEIRO na resposta (o servidor corta em
   `max_linhas`, 1000 por padrao). Consulta grande pede `LIMIT`/`OFFSET`.
-* O fetch entrega texto (`SQL_C_CHAR`), inteiros (`SQL_C_SLONG` e parentes,
-  com conferencia de faixa — estourar da `22003`) e ponto flutuante
-  (`SQL_C_DOUBLE`/`FLOAT`). Buffer curto trunca AVISANDO (`01004`,
-  `SQL_SUCCESS_WITH_INFO`) e a proxima chamada continua de onde parou — ha
-  teste com o defeito reposto para isso (secao 7).
-* **So as funcoes ANSI.** As `...W` (UTF-16) ficaram de fora: o gerenciador
-  de driver converte as chamadas wide do aplicativo para as ANSI sozinho, e
-  o texto aqui e UTF-8 dos dois lados. O custo de dobrar a superficie nao
-  comprava funcionalidade nesta rodada. Consequencia pratica: acento chega
-  como UTF-8 — aplicativo Windows que exija UCS-2 no buffer vai mostrar
-  acento errado ate a rodada das `W`.
+* O fetch entrega texto (`SQL_C_CHAR` ou, desde o pedido 238, `SQL_C_WCHAR`
+  — secao 2.1.1), inteiros (`SQL_C_SLONG` e parentes, com conferencia de
+  faixa — estourar da `22003`) e ponto flutuante (`SQL_C_DOUBLE`/`FLOAT`).
+  Buffer curto trunca AVISANDO (`01004`, `SQL_SUCCESS_WITH_INFO`) e a proxima
+  chamada continua de onde parou — ha teste com o defeito reposto para isso
+  (secao 7).
+* **So as funcoes ANSI.** As `...W` (`SQLDriverConnectW` e companhia)
+  continuam de fora: o gerenciador de driver converte as chamadas wide do
+  aplicativo para as ANSI sozinho, e o custo de dobrar a superficie de 24
+  funcoes nao comprava funcionalidade nesta rodada. **O que MUDOU no pedido
+  238**: um cliente pode ligar um BUFFER `SQL_C_WCHAR` (UTF-16) num parametro
+  de entrada ou numa coluna de saida mesmo por essas funcoes ANSI — o gestor
+  de drivers so decide QUAL FUNCAO chamar (`SQLDriverConnect` vs
+  `...ConnectW`), nunca que TIPO C um `SQLBindParameter`/`SQLBindCol`
+  liga, e por isso o driver pode continuar ANSI e ainda assim falar UTF-16
+  na BORDA de um parametro ou de uma coluna. Um aplicativo Windows que
+  exija UCS-2 no buffer agora liga `SQL_C_WCHAR` explicitamente em vez de
+  mostrar acento errado; quem nao liga nada continua recebendo `SQL_C_CHAR`
+  em UTF-8, sem mudanca nenhuma (guarda nova entra pedida, nao imposta).
 * **Sem transacoes NO DRIVER** — e o motivo mudou, entao a frase mudou junto.
   `SQLGetInfo(SQL_TXN_CAPABLE)` responde `SQL_TC_NONE` e desligar o autocommit
   e recusado com `HYC00`, como antes; o que ja **nao** e verdade e a
@@ -159,6 +167,7 @@ nao imposta.
 | tipo C | vai no JSON como |
 |---|---|
 | `SQL_C_CHAR`, `SQL_C_DEFAULT` | texto |
+| `SQL_C_WCHAR` | texto — UTF-16 convertido para UTF-8 na borda (2.1.1, pedido 238) |
 | `SQL_C_SSHORT`, `SQL_C_SHORT`, `SQL_C_SLONG`, `SQL_C_LONG` | numero |
 | `SQL_C_SBIGINT` | numero ate 2^53, **texto acima** |
 | `SQL_C_DOUBLE`, `SQL_C_FLOAT` | **texto**, sempre |
@@ -196,12 +205,12 @@ escreveu.
 | o que | SQLSTATE | onde | motivo |
 |---|---|---|---|
 | posicao zero | `07009` | ligacao | o primeiro `?` e o 1 |
-| `SQL_PARAM_OUTPUT` / `_INPUT_OUTPUT` | `HYC00` | ligacao | saida pediria valor por posicao de volta; a op `sql` devolve linhas |
-| `SQL_C_WCHAR` | `HYC00` | ligacao | o driver e ANSI (secao 2); ligue `SQL_C_CHAR` em UTF-8 |
-| outro tipo C | `HYC00` | ligacao | a mensagem NOMEIA o tipo e lista os que servem |
+| `SQL_PARAM_OUTPUT` / `_INPUT_OUTPUT` | `HYC00` | ligacao | saida pediria valor por posicao de volta; a op `sql` devolve linhas — **continua recusando** mesmo apos o pedido 238 (2.1.1) |
+| outro tipo C (nao `SQL_C_WCHAR` desde o pedido 238) | `HYC00` | ligacao | a mensagem NOMEIA o tipo e lista os que servem |
 | valor nulo sem indicador | `HY009` | ligacao | `NULL` se manda pelo indicador |
 | `SQL_DATA_AT_EXEC` | `HYC00` | execucao | `SQLPutData` nao existe aqui; ler o buffer pegaria lixo |
 | NaN / infinito | `22003` | execucao | nao ha literal para eles nesta linguagem |
+| par substituto UTF-16 invalido | `22018` | execucao | `SQL_C_WCHAR` de entrada com alto/baixo solto — nomeia a UNIDADE (2.1.1) |
 | faltou ligacao para um `?` | `07002` | execucao | **antes da rede**: nada sai, e a mensagem diz a posicao e os dois numeros |
 
 ### A contagem dos `?`
@@ -234,6 +243,51 @@ preparacao, entao nao sabe a que coluna cada `?` se compara — e um
 `SQL_INTEGER` chutado seria a mesma mentira que a secao 8 ja recusou contar
 sobre apelido de coluna. Nao ha risco de buffer no tamanho zero, porque o
 driver nunca ESCREVE num buffer de parametro: saida e recusada na ligacao.
+
+### 2.1.1. `SQL_C_WCHAR` — UTF-16 na borda (pedido 238)
+
+O driver continua ANSI (secao 2): so as funcoes sem `W`. Mas nada nessas
+funcoes impede um APLICATIVO de ligar um buffer `SQL_C_WCHAR` — o gestor de
+drivers so decide qual FUNCAO chamar, nunca que TIPO C um `SQLBindParameter`
+ou `SQLBindCol` liga. Dentro do driver tudo continua UTF-8, como o servidor
+fala; a conversao mora inteira na BORDA, em `crates/phxsql-odbc/src/texto.rs`
+(`ler_texto_utf16`/`escrever_utf16`, so `std`, sem crate nenhuma).
+
+**Parametro de ENTRADA.** `ligar(SQL_PARAM_INPUT, SQL_C_WCHAR, ...)` agora
+PASSA (antes recusava com `HYC00`; era a unica linha da tabela 2.1 que
+sobrava so por ser WCHAR). O comprimento aceita as duas formas do ODBC:
+`SQL_NTS` (achado pela unidade `0x0000`) ou bytes no indicador — NUNCA
+unidades, porque essa e a convencao WCHAR da propria especificacao. UTF-16 na
+ORDEM NATIVA que o gestor de drivers entrega vira UTF-8 com
+`char::decode_utf16` (da `std`); um par substituto quebrado (alto sem baixo,
+baixo solto) recusa `22018` NOMEANDO A UNIDADE onde o defeito comeca, em vez
+de calar virando `U+FFFD` — um cliente WCHAR que manda lixo tem bug no
+CLIENTE, e apontar o lugar e mais barato para quem depura.
+
+**Saida (`SQLGetData`/`SQLBindCol`)** e o ESPELHO exato do que a secao 2 ja
+descreve para `SQL_C_CHAR`: truncamento com continuacao, `01004`/
+`SQL_SUCCESS_WITH_INFO`, e o indicador levando o que faltava ANTES da
+chamada — so que em bytes de UTF-16 (duas por unidade), nao de UTF-8. A
+UNICA diferenca de comportamento e a fronteira do corte: uma unidade UTF-16
+(ou um PAR substituto inteiro, para um caractere fora do BMP) nunca sai pela
+metade — um buffer que so cabe a metade alta de um par deixa o caractere
+INTEIRO de fora, porque um caractere pela metade nao e truncamento, e
+corrupcao.
+
+**Parametro de SAIDA continua recusando**, com ou sem `SQL_C_WCHAR`: o
+`SQL_PARAM_OUTPUT`/`_INPUT_OUTPUT` cai ANTES de o driver sequer olhar o tipo
+C (tabela acima), porque exigiria a op do servidor devolver um valor alem da
+linha — e nenhuma operacao tem isso hoje. Fica nomeado no `PENDENCIAS.md`
+como o que sobrou do pedido 238.
+
+Prova real: `crates/phxsql-odbc/src/parametro.rs` (`wchar_de_entrada_*`,
+`wchar_substituto_invalido_*`) e `crates/phxsql-odbc/src/texto.rs`
+(`wchar_le_*`, `escrever_utf16_*`) fazem "São João" mais um emoji (fora do
+BMP, par substituto) de ida e volta com o buffer UTF-16 montado A MAO; o
+teste de ABI que antes provava a recusa (`ligacao_recusa_na_hora_o_que_o_
+driver_nao_sabe_mandar`, em `lib.rs`) teve a linha do `SQL_C_WCHAR`
+INVERTIDA — e o proprio teste do defeito reposto: reintroduzir a recusa
+antiga faz essa linha cair.
 
 ### O limite honesto de hoje
 
