@@ -1024,6 +1024,28 @@ mod testes {
         assert_eq!(at.texto_ou("saldo", ""), "20");
     }
 
+    /// **O literal negativo grava.** `SET a = -5` e `VALUES (40, -3)` caiam
+    /// com «esperava um valor e veio "-"» enquanto `WHERE a = -5` passava
+    /// pela expressao -- o mesmo numero aceito num lado do comando e recusado
+    /// no outro. O lexico entrega `-5` como dois simbolos, e o `literal` e
+    /// quem os junta. O sinal so vale colado num numero: `- 'x'` continua
+    /// recusando pela frase de sempre.
+    #[test]
+    fn o_literal_negativo_vale_no_set_e_no_values() {
+        let a = atualizacao("UPDATE t SET a = -5 WHERE id = 32");
+        assert_eq!(a.atribuicoes[0].1, Literal::Numero("-5".into()));
+        let i = insercao("INSERT INTO t (id, a, w) VALUES (40, -3, 1)");
+        assert_eq!(i.valores[1], Literal::Numero("-3".into()));
+        // O WHERE por chave tambem, que e o mesmo `literal`.
+        let a = atualizacao("UPDATE t SET a = 1 WHERE id = -1");
+        assert_eq!(a.onde.valor, Literal::Numero("-1".into()));
+        // E a expressao continua recusada: `-5` e literal, `- 5 + 1` nao.
+        let e = analisar_comando("UPDATE t SET a = -5 + 1 WHERE id = 1").unwrap_err();
+        assert!(e.to_string().contains("nao tem quem avalie"), "{e}");
+        let e = analisar_comando("UPDATE t SET a = - 'x' WHERE id = 1").unwrap_err();
+        assert!(e.to_string().contains("esperava um valor"), "{e}");
+    }
+
     #[test]
     fn on_duplicate_key_update_vira_atualizar_sem_indice() {
         let i = insercao(

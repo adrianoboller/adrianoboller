@@ -542,6 +542,18 @@ impl TipoJuncao {
 /// A ordem das colunas e sempre esquerda e depois direita, nos dois sentidos:
 /// no `direito`, a linha da direita que nao casou tambem sai com as da
 /// esquerda (nulas) NA FRENTE.
+///
+/// # O teto e conferido AQUI, linha a linha, e nao depois
+///
+/// `None` quando a saida passaria de `teto` linhas -- e a junção PARA na
+/// linha `teto + 1`, sem materializar o resto. Antes o teto era conferido
+/// por quem chamava, sobre a lista pronta: um `interno` muitos-para-muitos
+/// de 1000 x 1000 materializava um milhao de linhas (+561 MiB medidos) para
+/// entao recusar 1.000.000 contra um teto de 1000. «Recusar depois de
+/// materializar e o estrago, e nao a protecao» ja valia para o `cruzado`, que
+/// e conferido antes pelo produto dos tamanhos; para as outras quatro nao ha
+/// produto que se calcule antes -- quantas linhas casam depende das chaves --,
+/// entao a conferencia e o proprio laco, que custa o que ja custava.
 pub fn juntar(
     esquerda: Vec<Linha>,
     modelo_esq: &Modelo,
@@ -549,9 +561,14 @@ pub fn juntar(
     modelo_dir: &Modelo,
     pares: &[(String, String)],
     tipo: TipoJuncao,
-) -> Vec<Linha> {
+    teto: usize,
+) -> Option<Vec<Linha>> {
     if tipo == TipoJuncao::Cruzado {
-        let mut saida = Vec::with_capacity(esquerda.len().saturating_mul(direita.len()));
+        let produto = esquerda.len().saturating_mul(direita.len());
+        if produto > teto {
+            return None;
+        }
+        let mut saida = Vec::with_capacity(produto);
         for e in &esquerda {
             for d in direita {
                 let mut nova = e.clone();
@@ -559,7 +576,7 @@ pub fn juntar(
                 saida.push(nova);
             }
         }
-        return saida;
+        return Some(saida);
     }
 
     let mut mapa: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
@@ -575,12 +592,17 @@ pub fn juntar(
             .collect()
     };
     let mut casou_direita = vec![false; direita.len()];
-    let mut saida = Vec::with_capacity(esquerda.len());
+    // A capacidade e o menor dos dois: a saida pode ser bem menor que a
+    // esquerda (interno com poucos pares) e nunca precisa passar do teto.
+    let mut saida = Vec::with_capacity(esquerda.len().min(teto));
     for e in esquerda {
         let casadas = chave_composta(&e, pares, |p| &p.0).and_then(|k| mapa.get(&k));
         match casadas {
             Some(is) if !is.is_empty() => {
                 for &i in is {
+                    if saida.len() >= teto {
+                        return None;
+                    }
                     casou_direita[i] = true;
                     let mut nova = e.clone();
                     nova.extend(direita[i].iter().cloned());
@@ -589,6 +611,9 @@ pub fn juntar(
             }
             _ => {
                 if matches!(tipo, TipoJuncao::Esquerdo | TipoJuncao::Completo) {
+                    if saida.len() >= teto {
+                        return None;
+                    }
                     let mut nova = e;
                     nova.extend(nulos(modelo_dir));
                     saida.push(nova);
@@ -599,13 +624,16 @@ pub fn juntar(
     if matches!(tipo, TipoJuncao::Direito | TipoJuncao::Completo) {
         for (i, d) in direita.iter().enumerate() {
             if !casou_direita[i] {
+                if saida.len() >= teto {
+                    return None;
+                }
                 let mut nova = nulos(modelo_esq);
                 nova.extend(d.iter().cloned());
                 saida.push(nova);
             }
         }
     }
-    saida
+    Some(saida)
 }
 
 /// A semijunção (e a antijunção) por espalhamento: o `EXISTS`.
@@ -844,6 +872,10 @@ mod testes {
         vec![("p.c".to_string(), "c.id".to_string())]
     }
 
+    /// O teto que nao existe, para as provas de FORMA -- o teto tem prova
+    /// propria.
+    const SEM_TETO: usize = usize::MAX;
+
     /// Os cinco tipos, medidos em QUANTAS linhas e em que FORMA saem.
     ///
     /// Esquerda: 1 casa com ana, 2 aponta para 9 (nao existe), 3 tem chave
@@ -854,23 +886,148 @@ mod testes {
         let forma = |l: &Linha| -> Vec<String> { l.iter().map(|(n, _)| n.clone()).collect() };
         let esperada = vec!["p.id", "p.c", "c.id", "c.nome"];
 
-        let r = juntar(esq.clone(), &me, &dir, &md, &pares(), TipoJuncao::Interno);
+        let r = juntar(
+            esq.clone(),
+            &me,
+            &dir,
+            &md,
+            &pares(),
+            TipoJuncao::Interno,
+            SEM_TETO,
+        )
+        .unwrap();
         assert_eq!(r.len(), 1);
-        let r = juntar(esq.clone(), &me, &dir, &md, &pares(), TipoJuncao::Esquerdo);
+        let r = juntar(
+            esq.clone(),
+            &me,
+            &dir,
+            &md,
+            &pares(),
+            TipoJuncao::Esquerdo,
+            SEM_TETO,
+        )
+        .unwrap();
         assert_eq!(r.len(), 3);
         assert_eq!(campo(&r[1], "c.nome"), Some(&Json::Nulo));
-        let r = juntar(esq.clone(), &me, &dir, &md, &pares(), TipoJuncao::Direito);
+        let r = juntar(
+            esq.clone(),
+            &me,
+            &dir,
+            &md,
+            &pares(),
+            TipoJuncao::Direito,
+            SEM_TETO,
+        )
+        .unwrap();
         assert_eq!(r.len(), 2, "ana casada + caio orfao");
         assert_eq!(campo(&r[1], "c.nome"), Some(&Json::texto_de("caio")));
         assert_eq!(campo(&r[1], "p.id"), Some(&Json::Nulo));
         assert_eq!(forma(&r[1]), esperada, "a orfa da direita mudou a forma");
-        let r = juntar(esq.clone(), &me, &dir, &md, &pares(), TipoJuncao::Completo);
+        let r = juntar(
+            esq.clone(),
+            &me,
+            &dir,
+            &md,
+            &pares(),
+            TipoJuncao::Completo,
+            SEM_TETO,
+        )
+        .unwrap();
         assert_eq!(r.len(), 4, "1 casada + 2 orfas da esquerda + caio");
         for l in &r {
             assert_eq!(forma(l), esperada, "{l:?}");
         }
-        let r = juntar(esq, &me, &dir, &md, &[], TipoJuncao::Cruzado);
+        let r = juntar(esq, &me, &dir, &md, &[], TipoJuncao::Cruzado, SEM_TETO).unwrap();
         assert_eq!(r.len(), 6);
+    }
+
+    /// **O teto para a junção na linha `teto + 1`, sem materializar o
+    /// resto.** Medido antes: 1000 x 1000 com a mesma chave materializava um
+    /// milhao de linhas (+561 MiB) para recusar contra um teto de 1000. A
+    /// prova conta o que a junção DEVOLVE: no teto exato ela devolve tudo;
+    /// uma linha a menos de teto, `None` -- e o `None` tem de vir de todos os
+    /// cinco tipos, inclusive das orfas do `direito` e do `completo`, que
+    /// saem num segundo laco.
+    #[test]
+    fn o_teto_para_a_juncao_antes_de_materializar_o_resto() {
+        // Dez linhas de cada lado, todas com a mesma chave: 100 pares.
+        let me: Modelo = vec![
+            ("p.id".into(), ColumnType::Int4),
+            ("p.c".into(), ColumnType::Int4),
+        ];
+        let md: Modelo = vec![
+            ("c.id".into(), ColumnType::Int4),
+            ("c.nome".into(), ColumnType::Str(5)),
+        ];
+        let esq: Vec<Linha> = (0..10)
+            .map(|i| linha(&[("p.id", Json::Numero(i as f64)), ("p.c", Json::Numero(1.0))]))
+            .collect();
+        let dir: Vec<Linha> = (0..10)
+            .map(|i| {
+                linha(&[
+                    ("c.id", Json::Numero(1.0)),
+                    ("c.nome", Json::texto_de(format!("n{i}"))),
+                ])
+            })
+            .collect();
+        for tipo in [
+            TipoJuncao::Interno,
+            TipoJuncao::Esquerdo,
+            TipoJuncao::Direito,
+            TipoJuncao::Completo,
+        ] {
+            let r = juntar(esq.clone(), &me, &dir, &md, &pares(), tipo, 100);
+            assert_eq!(
+                r.map(|l| l.len()),
+                Some(100),
+                "{tipo:?}: no teto exato devolve tudo"
+            );
+            let r = juntar(esq.clone(), &me, &dir, &md, &pares(), tipo, 99);
+            assert!(
+                r.is_none(),
+                "{tipo:?}: uma linha acima do teto tinha de dar None"
+            );
+        }
+        // As orfas do segundo laco tambem contam: 1 casada + 9 orfas da
+        // direita = 10 no `direito`; com teto 9, `None`.
+        let uma: Vec<Linha> = vec![linha(&[
+            ("p.id", Json::Numero(0.0)),
+            ("p.c", Json::Numero(1.0)),
+        ])];
+        let so_uma_casa: Vec<Linha> = (0..10)
+            .map(|i| {
+                linha(&[
+                    ("c.id", Json::Numero(if i == 0 { 1.0 } else { 2.0 })),
+                    ("c.nome", Json::Nulo),
+                ])
+            })
+            .collect();
+        let r = juntar(
+            uma.clone(),
+            &me,
+            &so_uma_casa,
+            &md,
+            &pares(),
+            TipoJuncao::Direito,
+            10,
+        );
+        assert_eq!(r.map(|l| l.len()), Some(10));
+        let r = juntar(
+            uma,
+            &me,
+            &so_uma_casa,
+            &md,
+            &pares(),
+            TipoJuncao::Direito,
+            9,
+        );
+        assert!(
+            r.is_none(),
+            "a orfa da direita passou do teto sem ninguem ver"
+        );
+        // O cruzado confere pelo produto, antes de qualquer linha.
+        let r = juntar(esq.clone(), &me, &dir, &md, &[], TipoJuncao::Cruzado, 99);
+        assert!(r.is_none());
     }
 
     /// **A direita VAZIA continua tendo colunas** -- elas vem do modelo, e
@@ -879,7 +1036,7 @@ mod testes {
     #[test]
     fn a_direita_vazia_da_colunas_nulas_pelo_modelo() {
         let (esq, me, _, md) = lados();
-        let r = juntar(esq, &me, &[], &md, &pares(), TipoJuncao::Esquerdo);
+        let r = juntar(esq, &me, &[], &md, &pares(), TipoJuncao::Esquerdo, SEM_TETO).unwrap();
         assert_eq!(r.len(), 3);
         for l in &r {
             assert_eq!(campo(l, "c.nome"), Some(&Json::Nulo), "{l:?}");

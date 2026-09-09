@@ -458,8 +458,15 @@ pub fn aplicar_para_ca(
     let _ = pos_chave;
     let (mut inseridas, mut alteradas) = (0u64, 0u64);
     for l in linhas {
-        let feito =
-            crate::upsert::aplicar(t, indice_da_chave, l, crate::upsert::SeExistir::Atualizar)?;
+        // Sem `atualizar`: a sincronia traz a linha INTEIRA de la, e e ela que
+        // entra por cima.
+        let feito = crate::upsert::aplicar(
+            t,
+            indice_da_chave,
+            l,
+            crate::upsert::SeExistir::Atualizar,
+            None,
+        )?;
         if feito.atualizada {
             alteradas += 1;
         } else {

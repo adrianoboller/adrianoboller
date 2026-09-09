@@ -24,6 +24,7 @@
 //! funcao.
 
 use phxsql_core::error::{PhxError, Result};
+use phxsql_core::json::Json;
 use phxsql_core::schema::Schema;
 use phxsql_core::value::Value;
 use phxsql_core::RowId;
@@ -76,6 +77,23 @@ pub fn valores_do_indice(esquema: &Schema, indice: &str, linha: &[Value]) -> Vec
         .collect()
 }
 
+/// Um indice candidato a decidir «ja existe?» -- o que a escolha precisa
+/// saber dele, e nada mais.
+///
+/// Existe para a regra da escolha ter UMA implementacao servindo dois donos:
+/// o motor, que tem o `Schema`, e o direito por coluna, que so tem o
+/// `esquema` em JSON e precisa achar a MESMA linha que o upsert vai
+/// sobrescrever para repor nela o que o usuario nao pode alterar. Uma
+/// segunda copia da regra la seria a que envelhece: o dia em que a escolha
+/// aprendesse a olhar outro criterio, o direito por coluna reporia o valor
+/// numa linha e o motor gravaria em outra.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Candidato {
+    pub nome: String,
+    pub unico: bool,
+    pub primario: bool,
+}
+
 /// Qual indice unico decide "ja existe?".
 ///
 /// # A ordem, e por que ambiguo RECUSA
@@ -89,17 +107,28 @@ pub fn valores_do_indice(esquema: &Schema, indice: &str, linha: &[Value]) -> Vec
 /// "a mesma linha" -- e num cadastro com `cpf` unico e `email` unico as duas
 /// respostas sao diferentes e as duas parecem certas.
 pub fn indice_do_upsert(esquema: &Schema, pedido: &str) -> Result<String> {
+    let candidatos: Vec<Candidato> = esquema
+        .indices()
+        .iter()
+        .map(|i| Candidato {
+            nome: i.nome.clone(),
+            unico: i.unico,
+            primario: i.primario,
+        })
+        .collect();
+    escolher_indice(esquema.nome(), &candidatos, pedido)
+}
+
+/// A regra de [`indice_do_upsert`], sobre a lista de candidatos -- ver
+/// [`Candidato`] para o motivo de ela estar separada do `Schema`.
+pub fn escolher_indice(tabela: &str, candidatos: &[Candidato], pedido: &str) -> Result<String> {
     let pedido = pedido.trim();
     if !pedido.is_empty() {
-        let def = esquema
-            .indices()
+        let def = candidatos
             .iter()
             .find(|i| i.nome.eq_ignore_ascii_case(pedido))
             .ok_or_else(|| {
-                PhxError::NaoEncontrado(format!(
-                    "o indice {pedido:?} nao existe em {}",
-                    esquema.nome()
-                ))
+                PhxError::NaoEncontrado(format!("o indice {pedido:?} nao existe em {tabela}"))
             })?;
         if !def.unico {
             return Err(PhxError::Esquema(format!(
@@ -109,27 +138,24 @@ pub fn indice_do_upsert(esquema: &Schema, pedido: &str) -> Result<String> {
         }
         return Ok(def.nome.clone());
     }
-    if let Some(pk) = esquema.chave_primaria() {
+    if let Some(pk) = candidatos.iter().find(|i| i.primario) {
         return Ok(pk.nome.clone());
     }
-    let unicos: Vec<&str> = esquema
-        .indices()
+    let unicos: Vec<&str> = candidatos
         .iter()
         .filter(|i| i.unico)
         .map(|i| i.nome.as_str())
         .collect();
     match unicos.len() {
         0 => Err(PhxError::Esquema(format!(
-            "{} nao tem chave primaria nem indice unico, entao nao ha como saber \
-             se a linha ja existe. Declare um indice unico ou nao use \"se_existir\"",
-            esquema.nome()
+            "{tabela} nao tem chave primaria nem indice unico, entao nao ha como saber \
+             se a linha ja existe. Declare um indice unico ou nao use \"se_existir\""
         ))),
         1 => Ok(unicos[0].to_string()),
         _ => Err(PhxError::Esquema(format!(
-            "{} tem mais de um indice unico e nenhuma chave primaria: diga em \
+            "{tabela} tem mais de um indice unico e nenhuma chave primaria: diga em \
              \"indice\" qual deles decide se a linha ja existe. Os candidatos \
              sao {}",
-            esquema.nome(),
             unicos
                 .iter()
                 .map(|n| format!("{n:?}"))
@@ -139,12 +165,76 @@ pub fn indice_do_upsert(esquema: &Schema, pedido: &str) -> Result<String> {
     }
 }
 
+/// O campo `"atualizar"` do pedido: o que entra POR CIMA da linha que ja
+/// existe, conferido contra o `se_existir`.
+///
+/// E o `ON CONFLICT (c) DO UPDATE SET ...` e o `ON DUPLICATE KEY UPDATE ...`
+/// do SQL -- o tradutor poe o SET aqui --, e vale igual pelo protocolo. Com
+/// ele, a linha existente recebe SO estas colunas; a `linha`/`valores` do
+/// pedido so entra quando a chave nao existe. Sem ele, o contrato de sempre:
+/// a linha do pedido inteira por cima.
+///
+/// Ele so faz sentido com `se_existir: "atualizar"`, e fora disso RECUSA em
+/// vez de ignorar: o motor passou uma rodada inteira ignorando o campo
+/// calado -- o `INSERT ... ON CONFLICT DO UPDATE SET nome = 'B'` gravava o
+/// `VALUES` por cima da linha, com NULL nas colunas que o `VALUES` nao
+/// trazia --, e nenhum erro apareceu porque nenhum foi emitido.
+pub fn atualizar_do_pedido(p: &Json, modo: Option<SeExistir>) -> Result<Option<&Json>> {
+    let Some(a) = p.campo("atualizar") else {
+        return Ok(None);
+    };
+    if modo != Some(SeExistir::Atualizar) {
+        return Err(PhxError::Esquema(
+            "o campo \"atualizar\" so vale com se_existir: \"atualizar\" -- ele diz o \
+             que entra por cima da linha que ja existe, e sem esse modo nenhuma \
+             linha e sobrescrita"
+                .into(),
+        ));
+    }
+    if !matches!(a, Json::Objeto(_)) {
+        return Err(PhxError::Esquema(
+            "\"atualizar\" precisa ser um objeto {coluna: valor}: sao as colunas que \
+             entram por cima da linha que ja existe"
+                .into(),
+        ));
+    }
+    Ok(Some(a))
+}
+
+/// A linha LIDA com o `atualizar` por cima, coluna a coluna e pelo tipo do
+/// esquema -- o `VALUES` fica de fora, como no SQL.
+///
+/// Por VALOR e nao por um vaivem JSON: converter a linha inteira para JSON
+/// e de volta so para trocar duas colunas pagaria a conversao de toda coluna
+/// da tabela, e `json_para_valor` ja sabe converter uma. Coluna que nao
+/// existe recusa nomeando, como o `json_para_linha` faz na insercao.
+pub fn mesclar(velha: &[Value], set: &Json, esquema: &Schema) -> Result<Vec<Value>> {
+    let Json::Objeto(pares) = set else {
+        return Err(PhxError::Esquema(
+            "\"atualizar\" precisa ser um objeto {coluna: valor}".into(),
+        ));
+    };
+    let mut nova = velha.to_vec();
+    for (k, v) in pares {
+        let i = esquema.coluna_por_nome(k).ok_or_else(|| {
+            PhxError::Tipo(format!("coluna {k:?} nao existe em {}", esquema.nome()))
+        })?;
+        let ty = &esquema.colunas()[i].ty;
+        nova[i] = crate::valores::json_para_valor(v, ty)?;
+    }
+    Ok(nova)
+}
+
 /// O que aconteceu com uma linha.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Feito {
     pub rowid: RowId,
     pub atualizada: bool,
     pub ignorada: bool,
+    /// A linha como FICOU gravada, quando ela nao e a que veio: o upsert com
+    /// `atualizar` grava a lida mesclada, e quem mantem a copia em memoria
+    /// precisa dessa e nao da do pedido. `None` quer dizer «a que veio».
+    pub gravada: Option<Vec<Value>>,
 }
 
 impl Feito {
@@ -153,6 +243,7 @@ impl Feito {
             rowid,
             atualizada: false,
             ignorada: false,
+            gravada: None,
         }
     }
 }
@@ -166,7 +257,21 @@ impl Feito {
 /// `NULL`, nem para efeito de chave unica. Uma tabela cuja chave e uma
 /// `Sequence` cai sempre aqui na primeira gravacao, e tem de cair: o valor
 /// ainda nao existe quando a linha e montada.
-pub fn aplicar(t: &mut Table, indice: &str, linha: &[Value], modo: SeExistir) -> Result<Feito> {
+///
+/// # O `atualizar`, quando vem
+///
+/// Com `Some(set)`, a linha que ja existe recebe SO o `set` por cima da que
+/// esta gravada -- e a `linha` do pedido nao entra nela. E o que o SQL
+/// promete no `ON CONFLICT DO UPDATE SET`: o `VALUES` e para a linha nova, o
+/// `SET` e para a que existe. Sem `set`, a `linha` inteira por cima, que e o
+/// contrato de sempre do `se_existir: "atualizar"`.
+pub fn aplicar(
+    t: &mut Table,
+    indice: &str,
+    linha: &[Value],
+    modo: SeExistir,
+    atualizar: Option<&Json>,
+) -> Result<Feito> {
     let chave = valores_do_indice(t.esquema(), indice, linha);
     if chave.is_empty() || chave.iter().any(Value::e_null) {
         return Ok(Feito::inserida(t.inserir(linha)?));
@@ -177,13 +282,27 @@ pub fn aplicar(t: &mut Table, indice: &str, linha: &[Value], modo: SeExistir) ->
                 rowid,
                 atualizada: false,
                 ignorada: true,
+                gravada: None,
             }),
             SeExistir::Atualizar => {
-                t.atualizar(rowid, linha)?;
+                let gravada = match atualizar {
+                    None => None,
+                    Some(set) => {
+                        let velha = t.ler(rowid)?.ok_or_else(|| {
+                            PhxError::Corrompido(format!(
+                                "o indice {indice} apontou para o rowid {rowid}, que nao \
+                                 se le"
+                            ))
+                        })?;
+                        Some(mesclar(&velha, set, t.esquema())?)
+                    }
+                };
+                t.atualizar(rowid, gravada.as_deref().unwrap_or(linha))?;
                 Ok(Feito {
                     rowid,
                     atualizada: true,
                     ignorada: false,
+                    gravada,
                 })
             }
         },
