@@ -36,10 +36,21 @@
 //!
 //! # O que esta rodada NAO cobre, e recusa nomeando
 //!
-//! Correlação (subconsulta que cita coluna de fora) e `EXISTS` recusam --
-//! exigiriam rodar a subconsulta por linha. `RIGHT`/`FULL`/`CROSS JOIN`
-//! recusam -- a direita se escreve trocando os lados. Uma CTE so, nao
-//! recursiva. E o WHERE composto so reconhece subconsulta (IN ou escalar)
+//! `RIGHT`/`FULL`/`CROSS JOIN` (pedido 236) e `EXISTS`/`NOT EXISTS`
+//! correlacionado POR IGUALDADE (idem) ganharam substrato nesta rodada --
+//! quatro tipos de junção 1:1, e semijuncao por espalhamento no `existe`.
+//! O que continua faltando, e ainda recusa nomeando:
+//!
+//! - **Correlação que nao e igualdade** -- `IN (SELECT …)` correlacionado,
+//!   subconsulta ESCALAR correlacionada, e um termo de `EXISTS` que cita
+//!   coluna de fora sem ser `fora.col = dentro.col` (op diferente de `=`,
+//!   os dois lados de fora, ou o termo inteiro dentro de um `OR`) --
+//!   exigiriam rodar a subconsulta por LINHA da consulta de fora.
+//! - **`EXISTS` NAO correlacionado** -- "tem linha?" sem nenhum par
+//!   `fora.col = dentro.col` ainda nao tem substrato.
+//! - Uma CTE so, nao recursiva.
+//!
+//! E o WHERE composto so reconhece subconsulta (IN, escalar ou EXISTS)
 //! quando ela e o conjunto INTEIRO de um `AND` de nivel superior -- uma
 //! subconsulta dentro de `OR` ou de uma expressao maior nao e detectada, e
 //! cai na recusa de "forma nao suportada" em vez de virar texto errado.
@@ -80,13 +91,19 @@ pub struct Janela {
     pub apelido: String,
 }
 
-/// `interno` (so quem casa) ou `esquerdo` (a linha da esquerda fica, com as
-/// colunas da direita nulas). `direito`, `completo` e `cruzado` recusam
-/// nomeando nesta rodada -- a direita se escreve trocando os lados.
+/// `interno` (so quem casa), `esquerdo`/`direito` (a linha do lado que fica
+/// entra com as colunas do outro lado nulas quando nao casa), `completo`
+/// (a uniao dos dois) e `cruzado` (produto, sem `ON`). Os quatro sao 1:1 no
+/// tradutor desde o pedido 236 -- quem decide se `direito`/`completo`/
+/// `cruzado` tem substrato no `consultar` e o MOTOR (outra frente, mesmo
+/// pedido); aqui so a traducao.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TipoJuncao {
     Interno,
     Esquerdo,
+    Direito,
+    Completo,
+    Cruzado,
 }
 
 impl TipoJuncao {
@@ -94,6 +111,9 @@ impl TipoJuncao {
         match self {
             TipoJuncao::Interno => "interno",
             TipoJuncao::Esquerdo => "esquerdo",
+            TipoJuncao::Direito => "direito",
+            TipoJuncao::Completo => "completo",
+            TipoJuncao::Cruzado => "cruzado",
         }
     }
 }
@@ -112,6 +132,27 @@ pub struct Juncao {
     pub em: Vec<(String, String)>,
 }
 
+/// `[NOT] EXISTS (SELECT … FROM t [AS x] WHERE …)` do WHERE -- semijuncao
+/// por espalhamento (pedido 236). So a forma correlacionada por IGUALDADE
+/// tem substrato: `em` guarda os pares `fora.col = dentro.col` (esquerda e
+/// sempre a coluna de FORA, direita a de DENTRO, na mesma convencao do `em`
+/// de `Juncao`), e nunca vem vazio -- sem par nenhum a forma recusa
+/// nomeando antes de existir um `Existe` para construir.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Existe {
+    /// O `FROM t [AS x] WHERE ...` de dentro -- roda por `executar_derivado`
+    /// como qualquer outro pedaco (o `de` de uma junção, um `escalar`...):
+    /// o portao de permissao e um so.
+    pub de: Selecao,
+    /// O apelido do lado de dentro -- sempre presente (o nome da tabela
+    /// quando nao ha `AS`), porque e ele que decide se um `nome.coluna` do
+    /// WHERE de dentro e de fora ou de dentro.
+    pub apelido: Option<String>,
+    pub em: Vec<(String, String)>,
+    /// `true` para `NOT EXISTS`.
+    pub nao: bool,
+}
+
 /// A consulta composta pronta para traduzir.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Consulta {
@@ -123,6 +164,10 @@ pub struct Consulta {
     pub juntar: Vec<Juncao>,
     /// `IN (SELECT …)` do WHERE.
     pub em: Vec<EmSubconsulta>,
+    /// `[NOT] EXISTS (SELECT …)` do WHERE (pedido 236) -- aplicado DEPOIS
+    /// de `juntar`/`escalar` e ANTES da `expressao`, filtrando linha por
+    /// semijuncao sem acrescentar coluna nenhuma.
+    pub existe: Vec<Existe>,
     /// `coluna OP (SELECT …)` do WHERE -- subconsulta ESCALAR (item 9),
     /// numerada `sub_1`, `sub_2`... na ordem em que apareceu. A comparacao
     /// vira `coluna OP sub_N` dentro da `expressao`.
@@ -158,6 +203,11 @@ pub type Resolvedor<'a> = dyn FnMut(&Selecao, &str) -> Result<Plano> + 'a;
 /// que sobraram (nao eram igualdade de colunas) -- o que
 /// `condicao_de_juncao` devolve.
 type ParesEFragmentosDoOn = (Vec<(String, String)>, Vec<String>);
+
+/// O que o `WHERE` composto separa: o texto que sobrou (`onde`), o `IN
+/// (SELECT ...)`, a subconsulta ESCALAR e o `EXISTS`/`NOT EXISTS` -- o que
+/// `onde_composta` devolve.
+type PartesDoWhereComposto = (Option<Onde>, Vec<EmSubconsulta>, Vec<Escalar>, Vec<Existe>);
 
 /// Traduz uma consulta composta para o pedido `consultar`.
 pub fn traduzir_consulta(
@@ -200,19 +250,26 @@ pub fn traduzir_consulta(
                 "tipo".to_string(),
                 Json::texto_de(j.tipo.nome_no_protocolo()),
             ));
-            par.push((
-                "em".to_string(),
-                Json::Lista(
-                    j.em.iter()
-                        .map(|(esq, dir)| {
-                            Json::Objeto(vec![
-                                ("esquerda".to_string(), Json::texto_de(esq)),
-                                ("direita".to_string(), Json::texto_de(dir)),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ));
+            // `cruzado` e o UNICO tipo sem `ON` -- `j.em` vem sempre vazio
+            // (a gramatica ja recusa `CROSS JOIN ... ON`), e o contrato
+            // pede a chave OMITIDA nesse caso, nao uma lista vazia: um
+            // `[]` teria cara de junção comum que por acaso nao casou par
+            // nenhum, em vez de dizer "isto e produto".
+            if !j.em.is_empty() {
+                par.push((
+                    "em".to_string(),
+                    Json::Lista(
+                        j.em.iter()
+                            .map(|(esq, dir)| {
+                                Json::Objeto(vec![
+                                    ("esquerda".to_string(), Json::texto_de(esq)),
+                                    ("direita".to_string(), Json::texto_de(dir)),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ));
+            }
             juntar_json.push(Json::Objeto(par));
         }
         pares.push(("juntar".to_string(), Json::Lista(juntar_json)));
@@ -254,6 +311,42 @@ pub fn traduzir_consulta(
             "{} subconsulta(s) ESCALAR -- roda ANTES pelo portao, e a comparacao usa o \
              nome dela (sub_N) na expressao",
             c.escalar.len()
+        ));
+    }
+
+    if !c.existe.is_empty() {
+        // Depois de juntar/escalar e antes da expressao -- a ordem que o
+        // pedido 236 fixou, porque `existe` filtra LINHA (semijuncao) sem
+        // acrescentar coluna, e a `expressao` de fora pode citar coluna que
+        // so existe depois de juntar/escalar terem rodado.
+        let mut existe_json = Vec::with_capacity(c.existe.len());
+        for e in &c.existe {
+            let ep = resolver(&e.de, &database)?;
+            let mut par = vec![("de".to_string(), ep.pedido)];
+            if let Some(a) = &e.apelido {
+                par.push(("apelido".to_string(), Json::texto_de(a)));
+            }
+            par.push((
+                "em".to_string(),
+                Json::Lista(
+                    e.em.iter()
+                        .map(|(esq, dir)| {
+                            Json::Objeto(vec![
+                                ("esquerda".to_string(), Json::texto_de(esq)),
+                                ("direita".to_string(), Json::texto_de(dir)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ));
+            par.push(("nao".to_string(), Json::Bool(e.nao)));
+            existe_json.push(Json::Objeto(par));
+        }
+        pares.push(("existe".to_string(), Json::Lista(existe_json)));
+        notas.push(format!(
+            "{} EXISTS/NOT EXISTS -- semijuncao por espalhamento (roda por INTEIRO pelo \
+             portao, nao por linha da consulta de fora)",
+            c.existe.len()
         ));
     }
 
@@ -659,7 +752,7 @@ impl Analisador {
 
         let (juntar, extras_do_on) = self.juncoes()?;
 
-        let (onde, em, escalar) = self.onde_composta(extras_do_on)?;
+        let (onde, em, escalar, existe) = self.onde_composta(extras_do_on)?;
 
         let ordem = if self.aceitar_palavra("ORDER") {
             self.exigir_palavra("BY")?;
@@ -684,6 +777,7 @@ impl Analisador {
             apelido_de,
             juntar,
             em,
+            existe,
             escalar,
             onde,
             colunas,
@@ -694,15 +788,20 @@ impl Analisador {
         })
     }
 
-    /// A cadeia de `[INNER|LEFT [OUTER]] JOIN fonte ON em {AND em}` -- zero
-    /// ou mais, aplicadas na ordem escrita. Devolve as junções e os
-    /// fragmentos de `ON` que NAO eram igualdade de colunas (viram texto,
-    /// ANDados na `expressao` de fora junto com o `WHERE`).
+    /// A cadeia de
+    /// `[INNER|LEFT [OUTER]|RIGHT [OUTER]|FULL [OUTER]|CROSS] JOIN fonte
+    /// [ON em {AND em}]` -- zero ou mais, aplicadas na ordem escrita.
+    /// Devolve as junções e os fragmentos de `ON` que NAO eram igualdade de
+    /// colunas (viram texto, ANDados na `expressao` de fora junto com o
+    /// `WHERE`).
+    ///
+    /// `CROSS JOIN` e o unico sem `ON` -- e por isso o unico tratado a
+    /// parte: os outros quatro tipos exigem `ON` com pelo menos um par
+    /// (pedido 236 nao muda essa exigencia, so acrescenta tipo).
     fn juncoes(&mut self) -> Result<(Vec<Juncao>, Vec<String>)> {
         let mut juntar = Vec::new();
         let mut extras = Vec::new();
         loop {
-            let pos = self.posicao_atual();
             let tipo = if self.aceitar_palavra("INNER") {
                 self.exigir_palavra("JOIN")?;
                 TipoJuncao::Interno
@@ -711,33 +810,42 @@ impl Analisador {
                 self.exigir_palavra("JOIN")?;
                 TipoJuncao::Esquerdo
             } else if self.aceitar_palavra("RIGHT") {
-                return Err(lexico::erro(
-                    pos,
-                    "RIGHT JOIN recusa nomeando nesta rodada: escreva trocando os lados -- o \
-                     que estava a direita vira o FROM (ou o lado esquerdo da junção \
-                     anterior), com LEFT JOIN",
-                ));
+                self.aceitar_palavra("OUTER");
+                self.exigir_palavra("JOIN")?;
+                TipoJuncao::Direito
             } else if self.aceitar_palavra("FULL") {
                 self.aceitar_palavra("OUTER");
-                return Err(lexico::erro(
-                    pos,
-                    "FULL JOIN recusa nomeando nesta rodada -- so INNER e LEFT",
-                ));
+                self.exigir_palavra("JOIN")?;
+                TipoJuncao::Completo
             } else if self.aceitar_palavra("CROSS") {
-                return Err(lexico::erro(
-                    pos,
-                    "CROSS JOIN recusa nomeando nesta rodada: junção por espalhamento em \
-                     memoria precisa de pelo menos uma igualdade em ON",
-                ));
+                self.exigir_palavra("JOIN")?;
+                TipoJuncao::Cruzado
             } else if self.aceitar_palavra("JOIN") {
                 TipoJuncao::Interno
             } else {
                 break;
             };
             let (de_j, apelido_j) = self.fonte_do_from(&None)?;
-            self.exigir_palavra("ON")?;
-            let (em, extras_da_on) = self.condicao_de_juncao()?;
-            extras.extend(extras_da_on);
+            let em = if tipo == TipoJuncao::Cruzado {
+                // Produto: SEM `ON`. Se vier um `ON` mesmo assim, recusa
+                // nomeando -- aceitar calado ignoraria uma condicao que
+                // quem escreveu achava que estava filtrando o produto.
+                let pos_on = self.posicao_atual();
+                if self.aceitar_palavra("ON") {
+                    return Err(lexico::erro(
+                        pos_on,
+                        "CROSS JOIN ... ON recusa nomeando: CROSS JOIN e produto, sem \
+                         filtro nenhum -- se ha condicao de igualdade, e um JOIN comum \
+                         (INNER/LEFT/RIGHT/FULL) com ON",
+                    ));
+                }
+                Vec::new()
+            } else {
+                self.exigir_palavra("ON")?;
+                let (em, extras_da_on) = self.condicao_de_juncao()?;
+                extras.extend(extras_da_on);
+                em
+            };
             juntar.push(Juncao {
                 de: de_j,
                 apelido: apelido_j,
@@ -994,12 +1102,10 @@ impl Analisador {
     /// `fragmentos` chega com o que sobrou de nao-igualdade do `ON` de cada
     /// junção (item 8) -- eles entram na MESMA `expressao`, porque o
     /// contrato nao tem um campo de expressao por junção.
-    fn onde_composta(
-        &mut self,
-        mut fragmentos: Vec<String>,
-    ) -> Result<(Option<Onde>, Vec<EmSubconsulta>, Vec<Escalar>)> {
+    fn onde_composta(&mut self, mut fragmentos: Vec<String>) -> Result<PartesDoWhereComposto> {
         let mut em = Vec::new();
         let mut escalar = Vec::new();
+        let mut existe = Vec::new();
         let mut contador_escalar = 1usize;
         if self.aceitar_palavra("WHERE") {
             let tokens = self.capturar_ate_clausula(&["ORDER", "LIMIT", "OFFSET"])?;
@@ -1019,6 +1125,10 @@ impl Analisador {
                     escalar.push(esc);
                     continue;
                 }
+                if let Some(ex) = tentar_existe(&conj)? {
+                    existe.push(ex);
+                    continue;
+                }
                 recusar_forma_nao_suportada(&conj)?;
                 fragmentos.push(normalizar_tokens(&conj));
             }
@@ -1028,14 +1138,25 @@ impl Analisador {
         } else {
             Some(Onde::Expressao(fragmentos.join(" AND ")))
         };
-        Ok((onde, em, escalar))
+        Ok((onde, em, escalar, existe))
     }
 }
 
 /// Divide os tokens de uma clausula pelos `AND` de NIVEL SUPERIOR (fora de
-/// parenteses) -- serve para o `WHERE` composto (item 4/9) e para o `ON`
-/// de junção (item 8), que sao as duas gramaticas desta camada que tratam
-/// AND como lista em vez de arvore.
+/// parenteses) -- serve para o `WHERE` composto (item 4/9), para o `ON`
+/// de junção (item 8) e para o `WHERE` de dentro de um `EXISTS` (pedido
+/// 236), que sao as tres gramaticas desta camada que tratam AND como lista
+/// em vez de arvore.
+///
+/// # A entrada vazia devolve UM conjunto vazio, nao zero
+///
+/// `dividir_por_and(Vec::new())` devolve `vec![vec![]]`, nao `vec![]` --
+/// o laco que acumula em `atual` nunca ve um `AND` para separar, e o
+/// `partes.push(atual)` final entra do mesmo jeito. Quem itera o resultado
+/// sem WHERE nenhum (um `EXISTS (SELECT ... FROM t)` sem clausula) processa
+/// UM termo vazio, e tem de pular explicitamente (`if termo.is_empty() {
+/// continue; }`) em vez de contar com "zero termos" para decidir que nao
+/// ha filtro.
 pub(crate) fn dividir_por_and(tokens: Vec<Simbolo>) -> Vec<Vec<Simbolo>> {
     let mut partes = Vec::new();
     let mut atual = Vec::new();
@@ -1218,17 +1339,239 @@ fn tentar_escalar(conj: &[Simbolo], contador: &mut usize) -> Result<Option<(Stri
     )))
 }
 
-/// `EXISTS (...)` e um `SELECT` solto (nao reconhecido como IN/escalar) nao
-/// tem substrato nesta rodada -- e a recusa nomeia isso, em vez de deixar
-/// o texto virar uma expressao que o avaliador do motor nao entende.
+/// `[NOT] EXISTS ( SELECT ... FROM t [AS x] WHERE c1 AND c2 ... )`, ocupando
+/// o conjunto INTEIRO -- a semijuncao por espalhamento (pedido 236). `None`
+/// quando o conjunto nao COMECA com `[NOT] EXISTS` (nao e erro: quem chama
+/// tenta o resto, que cai em `recusar_forma_nao_suportada`). A partir do
+/// `EXISTS` reconhecido, qualquer forma que nao bate o molde vira erro
+/// NOMEADO -- nunca "nao bateu" -- porque a essa altura ja se sabe que e um
+/// EXISTS, e o texto cru dele nunca vira uma expressao que o avaliador do
+/// motor consiga ler.
+///
+/// # A regra de correlacao (a divergencia desta casa)
+///
+/// So `fora.col = dentro.col` (em qualquer ordem dos lados) correlaciona --
+/// e so por igualdade, porque a semijuncao roda por ESPALHAMENTO (uma
+/// passada em cada lado), nao rodando a subconsulta por linha. Termo que so
+/// cita coluna de dentro vira filtro do sub-pedido; termo que cita coluna
+/// de fora sem ser essa igualdade (op diferente de `=`, os dois lados de
+/// fora, ou o termo inteiro dentro de um `OR` -- que nunca bate
+/// `tentar_igualdade_de_colunas` sozinho) recusa NOMEANDO o termo. Sem par
+/// nenhum, o `EXISTS` e so "tem linha?" e ainda nao tem substrato.
+fn tentar_existe(conj: &[Simbolo]) -> Result<Option<Existe>> {
+    let mut i = 0usize;
+    let nao = conj
+        .first()
+        .and_then(|s| s.token.palavra_chave())
+        .as_deref()
+        == Some("NOT")
+        && conj.get(1).and_then(|s| s.token.palavra_chave()).as_deref() == Some("EXISTS");
+    if nao {
+        i = 1;
+    }
+    if conj.get(i).and_then(|s| s.token.palavra_chave()).as_deref() != Some("EXISTS") {
+        return Ok(None);
+    }
+    let pos = conj[i].posicao;
+    i += 1;
+    if !matches!(conj.get(i).map(|s| &s.token), Some(Token::AbreParen)) {
+        return Err(lexico::erro(pos, "esperava ( depois de EXISTS"));
+    }
+    i += 1;
+    if conj.get(i).and_then(|s| s.token.palavra_chave()).as_deref() != Some("SELECT") {
+        return Err(lexico::erro(pos, "esperava SELECT dentro do EXISTS (...)"));
+    }
+    i += 1;
+    let Some(ultimo) = conj.last() else {
+        return Err(lexico::erro(pos, "esperava ) fechando o EXISTS (...)"));
+    };
+    if !matches!(ultimo.token, Token::FechaParen) || i >= conj.len() - 1 {
+        return Err(lexico::erro(pos, "esperava ) fechando o EXISTS (...)"));
+    }
+    let interior = &conj[i..conj.len() - 1];
+
+    // Pula a projecao (EXISTS so pergunta "tem linha?"; o que vem entre
+    // SELECT e FROM nunca importa) ate o FROM de nivel superior.
+    let mut j = 0usize;
+    let mut prof = 0i32;
+    loop {
+        let Some(s) = interior.get(j) else {
+            return Err(lexico::erro(pos, "esperava FROM dentro do EXISTS (...)"));
+        };
+        match &s.token {
+            Token::AbreParen => prof += 1,
+            Token::FechaParen => prof -= 1,
+            _ if prof == 0 && s.token.palavra_chave().as_deref() == Some("FROM") => break,
+            _ => {}
+        }
+        j += 1;
+    }
+    let resto = interior[j + 1..].to_vec();
+    let mut sub = Analisador { s: resto, i: 0 };
+    let alvo = sub.alvo()?;
+    let apelido_interno = alvo.apelido.clone().unwrap_or_else(|| alvo.tabela.clone());
+
+    let onde_tokens: Vec<Simbolo> = if sub.aceitar_palavra("WHERE") {
+        sub.s[sub.i..].to_vec()
+    } else if sub.espiar().is_some() {
+        // GROUP BY, ORDER BY, outro JOIN... nada disso tem substrato
+        // dentro de um EXISTS nesta rodada -- so FROM e WHERE.
+        return Err(lexico::erro(
+            pos,
+            "EXISTS so aceita FROM tabela [AS apelido] WHERE ... nesta rodada",
+        ));
+    } else {
+        Vec::new()
+    };
+
+    let mut pares_em = Vec::new();
+    let mut fragmentos_de_dentro = Vec::new();
+    for termo in dividir_por_and(onde_tokens) {
+        if termo.is_empty() {
+            // `dividir_por_and(Vec::new())` (EXISTS sem WHERE) devolve UM
+            // conjunto vazio, nao zero -- ver o comentario de `dividir_por_and`.
+            continue;
+        }
+        if let Some((esq, dir)) = tentar_igualdade_de_colunas(&termo) {
+            let esq_fora = eh_qualificador_de_fora(&esq, &apelido_interno);
+            let dir_fora = eh_qualificador_de_fora(&dir, &apelido_interno);
+            match (esq_fora, dir_fora) {
+                (true, false) => {
+                    pares_em.push((esq, dir));
+                    continue;
+                }
+                (false, true) => {
+                    pares_em.push((dir, esq));
+                    continue;
+                }
+                (false, false) => {
+                    fragmentos_de_dentro.push(normalizar_tokens(&termo));
+                    continue;
+                }
+                (true, true) => {
+                    return Err(lexico::erro(
+                        pos,
+                        &format!(
+                            "EXISTS: {:?} compara duas colunas de FORA -- correlacao e \
+                             sempre fora.col = dentro.col",
+                            normalizar_tokens(&termo)
+                        ),
+                    ));
+                }
+            }
+        }
+        if let Some((qualificador, pos_termo)) =
+            primeiro_qualificador_de_fora(&termo, &apelido_interno)
+        {
+            return Err(lexico::erro(
+                pos_termo,
+                &format!(
+                    "EXISTS: termo {:?} cita coluna de fora ({qualificador:?}) sem ser \
+                     igualdade -- so \"fora.col = dentro.col\" correlaciona (dentro de um \
+                     OR recusa pelo mesmo motivo: o termo inteiro nao bate essa forma)",
+                    normalizar_tokens(&termo)
+                ),
+            ));
+        }
+        fragmentos_de_dentro.push(normalizar_tokens(&termo));
+    }
+
+    if pares_em.is_empty() {
+        return Err(lexico::erro(
+            pos,
+            "EXISTS sem correlacao (nenhum par fora.col = dentro.col) nao tem substrato \
+             nesta rodada: um EXISTS nao correlacionado e so \"tem linha?\", e ainda nao ha \
+             substrato para isso",
+        ));
+    }
+
+    let onde_de_dentro = if fragmentos_de_dentro.is_empty() {
+        None
+    } else {
+        Some(Onde::Expressao(fragmentos_de_dentro.join(" AND ")))
+    };
+
+    let dentro = Selecao {
+        projecao: Projecao::Tudo,
+        de: alvo,
+        onde: onde_de_dentro,
+        agrupar_por: Vec::new(),
+        tendo: None,
+        ordem: None,
+        ordem_lista: Vec::new(),
+        limite: None,
+        salto: 0,
+    };
+
+    Ok(Some(Existe {
+        de: dentro,
+        apelido: Some(apelido_interno),
+        em: pares_em,
+        nao,
+    }))
+}
+
+/// O qualificador (antes do `.`) de `nome` NAO e o apelido de dentro? Nome
+/// SEM qualificador (sem `.`) e SEMPRE de dentro -- a mesma regra da
+/// projecao e do `juntar`.
+fn eh_qualificador_de_fora(nome: &str, apelido_interno: &str) -> bool {
+    match nome.split_once('.') {
+        Some((qualificador, _)) => !igual_sem_caso(qualificador, apelido_interno),
+        None => false,
+    }
+}
+
+/// Acha, em QUALQUER lugar do termo (funcao, parenteses, `OR`...), o
+/// primeiro `qualificador.coluna` cujo qualificador NAO e o apelido de
+/// dentro -- ou `None` se toda referencia qualificada do termo e de dentro
+/// (ou nao ha qualificador nenhum). Devolve tambem a posicao, para a
+/// mensagem apontar o lugar certo em vez do `EXISTS` la na frente.
+fn primeiro_qualificador_de_fora(
+    termo: &[Simbolo],
+    apelido_interno: &str,
+) -> Option<(String, usize)> {
+    let mut i = 0usize;
+    while i < termo.len() {
+        if let Token::Palavra {
+            texto,
+            citado: false,
+        } = &termo[i].token
+        {
+            if matches!(termo.get(i + 1).map(|s| &s.token), Some(Token::Ponto))
+                && matches!(
+                    termo.get(i + 2).map(|s| &s.token),
+                    Some(Token::Palavra { citado: false, .. })
+                )
+            {
+                if !igual_sem_caso(texto, apelido_interno) {
+                    return Some((texto.clone(), termo[i].posicao));
+                }
+                i += 3;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Chega aqui o que `tentar_existe` ja recusou como "nao e a forma dele" --
+/// ou seja, um `EXISTS` que nao ocupa o `AND` INTEIRO (esta dentro de um
+/// `OR`, ou combinado com outra coisa no mesmo termo). So o `[NOT] EXISTS
+/// (...)` sozinho tem substrato (pedido 236); um `SELECT` solto (nao
+/// reconhecido como IN/escalar/EXISTS) tambem nao tem -- e a recusa nomeia
+/// os dois casos, em vez de deixar o texto virar uma expressao que o
+/// avaliador do motor nao entende.
 fn recusar_forma_nao_suportada(conj: &[Simbolo]) -> Result<()> {
     for s in conj {
         if let Some(p) = s.token.palavra_chave() {
             if p == "EXISTS" {
                 return Err(lexico::erro(
                     s.posicao,
-                    "EXISTS recusa nomeando nesta rodada: exigiria rodar a subconsulta por \
-                     linha da consulta de fora",
+                    "EXISTS recusa nomeando: so tem substrato quando ocupa o AND inteiro \
+                     ([NOT] EXISTS (SELECT ...) sozinho) -- dentro de um OR, ou combinado \
+                     com outra coisa no mesmo termo, exigiria rodar a subconsulta por linha \
+                     da consulta de fora",
                 ));
             }
             if p == "SELECT" {
@@ -1397,12 +1740,200 @@ mod testes {
         assert!(e.contains("mais de uma coluna"), "{e}");
     }
 
+    /// Sem WHERE nenhum dentro do EXISTS nao ha como correlacionar --
+    /// continua recusando, so que agora pelo motivo certo (falta de par),
+    /// nao mais "EXISTS nao tem substrato nenhum".
     #[test]
-    fn exists_recusa_nomeando() {
+    fn exists_sem_correlacao_recusa_nomeando() {
         let e = recusa("SELECT * FROM pedidos WHERE EXISTS (SELECT 1 FROM clientes)");
+        assert!(e.contains("EXISTS"), "{e}");
+        assert!(e.contains("correlacao"), "{e}");
+    }
+
+    // ------------------------------------------------- EXISTS (pedido 236)
+
+    /// A forma do contrato: falhava com o defeito reposto (recusava
+    /// "EXISTS recusa nomeando..." antes de sequer olhar o WHERE de
+    /// dentro); passa com o conserto, com o JSON exato do exemplo do
+    /// pedido 236.
+    #[test]
+    fn exists_correlacionado_vira_existe_com_par_em() {
+        let c = consulta(
+            "SELECT * FROM clientes c WHERE EXISTS (SELECT 1 FROM pedidos AS x WHERE \
+             x.cliente_id = c.id)",
+        );
+        assert_eq!(c.existe.len(), 1);
+        let ex = &c.existe[0];
+        assert_eq!(ex.de.de.tabela, "pedidos");
+        assert_eq!(ex.apelido, Some("x".to_string()));
+        assert_eq!(
+            ex.em,
+            vec![("c.id".to_string(), "x.cliente_id".to_string())]
+        );
+        assert!(!ex.nao);
+
+        let p = traduzir_consulta(&c, "loja", &mut resolver_simples).unwrap();
+        let existe = p.pedido.campo("existe").unwrap().lista().unwrap();
+        assert_eq!(existe.len(), 1);
+        assert_eq!(existe[0].texto_ou("apelido", ""), "x");
+        assert_eq!(
+            existe[0].campo("em").unwrap(),
+            &Json::Lista(vec![Json::Objeto(vec![
+                ("esquerda".to_string(), Json::texto_de("c.id")),
+                ("direita".to_string(), Json::texto_de("x.cliente_id")),
+            ])])
+        );
+        assert_eq!(existe[0].campo("nao").unwrap(), &Json::Bool(false));
+        assert!(existe[0].campo("de").is_some());
+    }
+
+    /// A ordem dos lados da igualdade nao importa -- `x.col = c.col` casa
+    /// igual a `c.col = x.col`, e o par sai SEMPRE com a de fora na
+    /// esquerda.
+    #[test]
+    fn exists_aceita_igualdade_com_lado_de_dentro_primeiro() {
+        let c = consulta(
+            "SELECT * FROM clientes c WHERE EXISTS (SELECT 1 FROM pedidos AS x WHERE \
+             x.cliente_id = c.id)",
+        );
+        let c2 = consulta(
+            "SELECT * FROM clientes c WHERE EXISTS (SELECT 1 FROM pedidos AS x WHERE \
+             c.id = x.cliente_id)",
+        );
+        assert_eq!(c.existe[0].em, c2.existe[0].em);
+    }
+
+    #[test]
+    fn not_exists_marca_nao_true() {
+        let c = consulta(
+            "SELECT * FROM clientes c WHERE NOT EXISTS (SELECT 1 FROM pedidos AS x WHERE \
+             x.cliente_id = c.id)",
+        );
+        assert!(c.existe[0].nao);
+        let p = traduzir_consulta(&c, "loja", &mut resolver_simples).unwrap();
+        let existe = p.pedido.campo("existe").unwrap().lista().unwrap();
+        assert_eq!(existe[0].campo("nao").unwrap(), &Json::Bool(true));
+    }
+
+    /// Termo que so cita coluna de DENTRO (sem qualificador de fora) vai
+    /// para a `expressao` do sub-pedido, nao para `em`.
+    #[test]
+    fn exists_com_filtro_de_dentro_alem_da_correlacao() {
+        let c = consulta(
+            "SELECT * FROM clientes c WHERE EXISTS (SELECT 1 FROM pedidos AS x WHERE \
+             x.cliente_id = c.id AND x.status = 'aberto')",
+        );
+        assert_eq!(
+            c.existe[0].em,
+            vec![("c.id".to_string(), "x.cliente_id".to_string())]
+        );
+        assert_eq!(
+            c.existe[0].de.onde,
+            Some(Onde::Expressao("x.status = 'aberto'".to_string()))
+        );
+    }
+
+    /// Quando o apelido de dentro nao vem com AS, o padrao e o nome da
+    /// tabela -- a mesma convencao do `juntar`.
+    #[test]
+    fn exists_sem_as_usa_o_nome_da_tabela_como_apelido() {
+        let c = consulta(
+            "SELECT * FROM clientes c WHERE EXISTS (SELECT 1 FROM pedidos WHERE \
+             pedidos.cliente_id = c.id)",
+        );
+        assert_eq!(c.existe[0].apelido, Some("pedidos".to_string()));
+        assert_eq!(
+            c.existe[0].em,
+            vec![("c.id".to_string(), "pedidos.cliente_id".to_string())]
+        );
+    }
+
+    /// Nome de coluna SEM qualificador dentro do EXISTS e sempre de
+    /// DENTRO -- mesmo sem AS, `cliente_id = c.id` correlaciona igual a
+    /// `pedidos.cliente_id = c.id`.
+    #[test]
+    fn exists_coluna_de_dentro_sem_qualificador_tambem_correlaciona() {
+        let c = consulta(
+            "SELECT * FROM clientes c WHERE EXISTS (SELECT 1 FROM pedidos WHERE cliente_id \
+             = c.id)",
+        );
+        assert_eq!(
+            c.existe[0].em,
+            vec![("c.id".to_string(), "cliente_id".to_string())]
+        );
+    }
+
+    /// Termo que cita coluna de fora sem ser igualdade recusa nomeando.
+    #[test]
+    fn exists_correlacao_nao_igualdade_recusa_nomeando() {
+        let e = recusa(
+            "SELECT * FROM clientes c WHERE EXISTS (SELECT 1 FROM pedidos AS x WHERE \
+             x.preco > c.limite)",
+        );
+        assert!(e.contains("EXISTS"), "{e}");
+        assert!(e.contains("limite") || e.contains("igualdade"), "{e}");
+    }
+
+    /// Termo de correlacao dentro de um OR recusa nomeando -- o `OR`
+    /// impede o termo de bater `fora.col = dentro.col` sozinho, entao ele
+    /// cai no crivo de "cita coluna de fora sem ser igualdade".
+    #[test]
+    fn exists_correlacao_dentro_de_or_recusa_nomeando() {
+        let e = recusa(
+            "SELECT * FROM clientes c WHERE EXISTS (SELECT 1 FROM pedidos AS x WHERE \
+             x.cliente_id = c.id OR x.status = 'aberto')",
+        );
         assert!(e.contains("EXISTS"), "{e}");
     }
 
+    /// EXISTS com filtro so de DENTRO (sem nenhum par de correlacao)
+    /// continua recusando -- e "tem linha?" sem substrato ainda.
+    #[test]
+    fn exists_so_com_filtro_de_dentro_sem_correlacao_recusa() {
+        let e = recusa(
+            "SELECT * FROM clientes c WHERE EXISTS (SELECT 1 FROM pedidos AS x WHERE \
+             x.status = 'aberto')",
+        );
+        assert!(e.contains("EXISTS"), "{e}");
+        assert!(e.contains("correlacao"), "{e}");
+    }
+
+    /// `existe` roda pelo MESMO portao (`resolver`) que qualquer outro
+    /// pedaco -- tabela negada dentro do EXISTS recusa a consulta INTEIRA,
+    /// nao so o EXISTS. E o teste do comportamento velho ao lado: sem
+    /// EXISTS, a mesma consulta nao muda.
+    #[test]
+    fn tabela_negada_dentro_do_exists_recusa_a_consulta_inteira() {
+        let c = consulta(
+            "SELECT * FROM clientes c WHERE EXISTS (SELECT 1 FROM pedidos AS x WHERE \
+             x.cliente_id = c.id)",
+        );
+        let mut resolver_com_negacao = |sel: &Selecao, db: &str| -> Result<Plano> {
+            if sel.de.tabela == "pedidos" {
+                return Err(PhxError::Esquema(
+                    "tabela pedidos negada para este usuario".into(),
+                ));
+            }
+            resolver_simples(sel, db)
+        };
+        let e = traduzir_consulta(&c, "loja", &mut resolver_com_negacao)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("negada"), "{e}");
+    }
+
+    #[test]
+    fn sem_exists_nada_muda() {
+        // Uma consulta composta (aqui, com JOIN) sem EXISTS nenhum -- o
+        // campo `existe` fica vazio e a chave nem aparece no JSON.
+        let c = consulta("SELECT * FROM p JOIN clientes c ON p.cliente_id = c.id");
+        assert!(c.existe.is_empty());
+        let p = traduzir_consulta(&c, "loja", &mut resolver_simples).unwrap();
+        assert!(p.pedido.campo("existe").is_none());
+    }
+
+    /// IN correlacionado continua recusando -- o pedido 236 so abriu
+    /// EXISTS por igualdade, nao correlacao em geral.
     #[test]
     fn subconsulta_correlacionada_recusa_nomeando() {
         let e = recusa(
@@ -1444,6 +1975,34 @@ mod testes {
         );
         assert_eq!(c.max, Some(10));
         assert_eq!(c.pular, 5);
+    }
+
+    /// Pedido 236: `ORDER BY p.id` (qualificado) -- o mais barato dos
+    /// quatro, porque o `consultar` ja aceita `{"coluna":"p.id"}` na ordem;
+    /// faltava so o tradutor SQL gerar isso. Antes do conserto, o `.` sem
+    /// qualificador tratado sobrava para o `FROM`, e a recusa dizia
+    /// "esperava FROM" -- confuso, porque o problema era no ORDER BY.
+    #[test]
+    fn order_by_qualificado_vira_coluna_com_ponto() {
+        let c = consulta(
+            "SELECT p.id, c.nome FROM pedidos p JOIN clientes c ON p.cliente_id = c.id \
+             ORDER BY p.id DESC",
+        );
+        assert_eq!(
+            c.ordem,
+            vec![Ordenacao {
+                coluna: "p.id".into(),
+                desc: true,
+            }]
+        );
+        let p = traduzir_consulta(&c, "loja", &mut resolver_simples).unwrap();
+        assert_eq!(
+            p.pedido.campo("ordem").unwrap(),
+            &Json::Lista(vec![Json::Objeto(vec![
+                ("coluna".to_string(), Json::texto_de("p.id")),
+                ("desc".to_string(), Json::Bool(true)),
+            ])])
+        );
     }
 
     // ------------------------------------------------------------- projecao
@@ -1734,20 +2293,77 @@ mod testes {
         assert_eq!(a.juntar[0].tipo, b.juntar[0].tipo);
     }
 
+    /// Pedido 236: os quatro tipos que faltavam viram `tipo` 1:1 -- nao
+    /// mais troca de lado nem recusa. Falhava antes do conserto (os quatro
+    /// SQLs abaixo davam `Err` nomeando "RIGHT/FULL/CROSS JOIN recusa");
+    /// passa depois, com o `tipo` certo e (so no cruzado) sem `em`.
     #[test]
-    fn right_full_cross_recusam_nomeando() {
-        for (sql, pedaco) in [
-            ("SELECT * FROM p RIGHT JOIN c ON p.id = c.id", "RIGHT JOIN"),
-            ("SELECT * FROM p FULL JOIN c ON p.id = c.id", "FULL JOIN"),
-            (
-                "SELECT * FROM p FULL OUTER JOIN c ON p.id = c.id",
-                "FULL JOIN",
-            ),
-            ("SELECT * FROM p CROSS JOIN c", "CROSS JOIN"),
-        ] {
-            let e = recusa(sql);
-            assert!(e.contains(pedaco), "{sql} -> {e}");
-        }
+    fn right_full_cross_viram_tipo_1_para_1() {
+        let r = consulta("SELECT * FROM p RIGHT JOIN c ON p.id = c.id");
+        assert_eq!(r.juntar[0].tipo, TipoJuncao::Direito);
+        assert_eq!(
+            r.juntar[0].em,
+            vec![("p.id".to_string(), "c.id".to_string())]
+        );
+
+        let ro = consulta("SELECT * FROM p RIGHT OUTER JOIN c ON p.id = c.id");
+        assert_eq!(ro.juntar[0].tipo, TipoJuncao::Direito);
+
+        let f = consulta("SELECT * FROM p FULL JOIN c ON p.id = c.id");
+        assert_eq!(f.juntar[0].tipo, TipoJuncao::Completo);
+
+        let fo = consulta("SELECT * FROM p FULL OUTER JOIN c ON p.id = c.id");
+        assert_eq!(fo.juntar[0].tipo, TipoJuncao::Completo);
+
+        let cr = consulta("SELECT * FROM p CROSS JOIN c");
+        assert_eq!(cr.juntar[0].tipo, TipoJuncao::Cruzado);
+        assert!(
+            cr.juntar[0].em.is_empty(),
+            "CROSS JOIN nao tem ON -- em tem de vir vazio"
+        );
+    }
+
+    /// O JSON que cada um produz -- o exemplo do relatorio. `direito` e
+    /// `completo` levam `em` como qualquer junção comum; `cruzado` sai SEM
+    /// a chave `em` (nao com `[]`), porque `[]` teria cara de junção que
+    /// nao casou par nenhum, e cruzado nunca teve par para casar.
+    #[test]
+    fn json_de_direito_completo_e_cruzado() {
+        let r = consulta("SELECT * FROM p RIGHT JOIN c ON p.id = c.id");
+        let pr = traduzir_consulta(&r, "loja", &mut resolver_simples).unwrap();
+        let jr = pr.pedido.campo("juntar").unwrap().lista().unwrap();
+        assert_eq!(jr[0].texto_ou("tipo", ""), "direito");
+        assert_eq!(
+            jr[0].campo("em").unwrap(),
+            &Json::Lista(vec![Json::Objeto(vec![
+                ("esquerda".to_string(), Json::texto_de("p.id")),
+                ("direita".to_string(), Json::texto_de("c.id")),
+            ])])
+        );
+
+        let f = consulta("SELECT * FROM p FULL JOIN c ON p.id = c.id");
+        let pf = traduzir_consulta(&f, "loja", &mut resolver_simples).unwrap();
+        let jf = pf.pedido.campo("juntar").unwrap().lista().unwrap();
+        assert_eq!(jf[0].texto_ou("tipo", ""), "completo");
+
+        let cr = consulta("SELECT * FROM p CROSS JOIN c");
+        let pcr = traduzir_consulta(&cr, "loja", &mut resolver_simples).unwrap();
+        let jcr = pcr.pedido.campo("juntar").unwrap().lista().unwrap();
+        assert_eq!(jcr[0].texto_ou("tipo", ""), "cruzado");
+        assert!(
+            jcr[0].campo("em").is_none(),
+            "CROSS JOIN nao leva a chave em no JSON"
+        );
+    }
+
+    /// `CROSS JOIN ... ON` recusa nomeando: e produto, sem filtro. Aceitar
+    /// calado ignoraria uma condicao que quem escreveu achava que estava
+    /// filtrando.
+    #[test]
+    fn cross_join_com_on_recusa_nomeando() {
+        let e = recusa("SELECT * FROM p CROSS JOIN c ON p.id = c.id");
+        assert!(e.contains("CROSS JOIN"), "{e}");
+        assert!(e.contains("produto"), "{e}");
     }
 
     #[test]
