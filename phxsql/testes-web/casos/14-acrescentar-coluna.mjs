@@ -69,7 +69,15 @@ export const caso = {
     await page.fill('#acNome', 'situacao');
     await page.selectOption('#acTipo', 'Str(60)');
     await page.fill('#acCaption', 'Situação');
-    await page.fill('#acPadrao', 'ativo');
+    // O campo e uma EXPRESSAO (o mesmo "padrao" do `criar_tabela`), nao um
+    // valor cru -- por isso o literal de texto leva aspas. Sem elas o motor
+    // le `ativo` como referencia a uma COLUNA chamada "ativo", que esta
+    // tabela nao tem, e recusa com `[SP000018] esquema invalido: o padrao
+    // de situacao usa a coluna "ativo", que a tabela nao tem`. Achado
+    // exercitando (nao lendo o codigo) ao investigar por que este caso
+    // travava sempre no mesmo `waitForSelector` -- pre-existente a este
+    // commit, sem relacao com o direito por coluna que motivou a rodada.
+    await page.fill('#acPadrao', "'ativo'");
     await page.click('#acFazer');
     // O cartão fecha e a aba se redesenha.
     await page.waitForSelector('#acNome', { state: 'detached', timeout: 20000 });

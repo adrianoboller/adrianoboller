@@ -30,8 +30,15 @@ export function contem(texto, pedaco, oQue) {
  * O caminho da pessoa e o caminho do teste: o desafio-resposta, o
  * `crypto.subtle` e o `abrirApp()` inteiro so se exercitam clicando no
  * botao. Preencher `est.usuario` por dentro provaria o resto e nao provaria
- * a entrada, que e por onde todo mundo passa. */
-export async function entrar(page, url) {
+ * a entrada, que e por onde todo mundo passa.
+ *
+ * `credenciais` e opcional -- por padrao entra como o supervisor que sobe
+ * junto do servidor da bateria (`USUARIO`/`SENHA`/`TOKEN`). Um caso que
+ * precisa provar o DIREITO POR COLUNA (que so existe para quem NAO e
+ * supervisor) cria o usuario restrito pela API, como o supervisor, e chama
+ * `entrar` de novo com `{ usuario, senha, token }` dele -- numa aba nova,
+ * porque a sessao do supervisor nao pode ser a mesma que testa a restricao. */
+export async function entrar(page, url, credenciais = CREDENCIAL) {
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#btEntrar');
   // Sem servidor a pagina cai em «modo demonstracao» com dados embutidos, e
@@ -41,9 +48,9 @@ export async function entrar(page, url) {
   // por isso se le pelo NOME e nao por `window.est`, que e undefined.
   await page.waitForFunction(() => typeof est === 'object' && est.demo === false, { timeout: 15000 })
     .catch(() => { throw new Falha('a pagina caiu em modo demonstracao: nao achou o servidor'); });
-  await page.fill('#u', USUARIO);
-  await page.fill('#s', SENHA);
-  await page.fill('#t', TOKEN);
+  await page.fill('#u', credenciais.usuario ?? credenciais.USUARIO);
+  await page.fill('#s', credenciais.senha ?? credenciais.SENHA);
+  await page.fill('#t', credenciais.token ?? credenciais.TOKEN);
   await page.click('#btEntrar');
   await page.waitForSelector('#app.ativo', { timeout: 20000 });
   await page.waitForSelector('#arvore .no', { timeout: 20000 });

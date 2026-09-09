@@ -26,6 +26,19 @@ const FORA = new Map([
   // estado, e a acopla de volta.
   ['Soltar esta tela numa janela',
     'deixa uma janela flutuante por cima do resto do passeio — o caso `multitela` é o dono dela'],
+  // As tres pediam um texto por `prompt()` NATIVO, e o comentario do topo
+  // deste arquivo explica por que isso nunca incomodou o passeio: sem
+  // ninguem escutando, o Playwright DESCARTA o dialogo nativo e a funcao
+  // volta na primeira linha. Viraram `perguntarTexto` (o dialogo proprio da
+  // marca, molde do `dialogoExcluir`) -- e um `<div class="sobre">` NAO se
+  // descarta sozinho: fica por cima da pagina, e o clique seguinte do
+  // passeio bateria nele, do mesmo jeito que a janela flutuante batia.
+  // Quem prova o fluxo de verdade e o caso `botoes-do-conteudo` (o
+  // `restaurar`, nos dois sentidos — cancelar e confirmar) e a prova manual
+  // do achado 4 (`docs/dossie/…` -- ver a cognicao da rodada).
+  ['Backup', 'abre o dialogo proprio de motivo (`perguntarTexto`), que fica por cima da pagina e bloqueia o proximo clique do passeio — provado no caso `botoes-do-conteudo` (o mesmo dialogo, via restaurar)'],
+  ['Backup agora…', 'mesmo motivo de «Backup»: mesmo dialogo, mesmo bloqueio'],
+  ['Conferir um backup…', 'mesmo motivo de «Backup»: mesmo dialogo, mesmo bloqueio'],
 ]);
 
 export const caso = {
@@ -109,6 +122,15 @@ export const caso = {
     const quantas = await page.locator('#ferramentas .fer').count();
     for (let i = 0; i < quantas; i++) {
       const bt = page.locator('#ferramentas .fer').nth(i);
+      const soRotulo = (await bt.locator('.rot').textContent()).trim();
+      // O mesmo FORA dos menus vale aqui -- e passou a valer de verdade
+      // nesta rodada: ate entao nenhum item da BARRA abria dialogo que
+      // ficasse por cima da pagina, entao o laco nunca precisou olhar o
+      // denylist. `perguntarTexto` (o `backupAgora` da ferramenta «Backup»)
+      // mudou isso — sem este `if`, o passeio clicava «Backup», o dialogo
+      // ficava aberto, e todo clique seguinte -- ferramenta, aba -- batia
+      // nele, do mesmo jeito que a janela flutuante batia antes.
+      if (FORA.has(soRotulo)) continue;
       const rotulo = `barra › ${(await bt.textContent()).trim()}`;
       await garantirTabela();
       await limpar();

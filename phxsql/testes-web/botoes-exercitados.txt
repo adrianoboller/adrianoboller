@@ -44,6 +44,8 @@
 #pgFim
 #pgInicio
 #ptIr
+#ptNao
+#ptSim
 #ptVoltar
 #tabAddCol
 #tabConteudo
@@ -117,7 +119,6 @@
 [data-f="10"]
 [data-f="11"]
 [data-f="12"]
-[data-f="14"]
 [data-f="15"]
 [data-f="16"]
 [data-f="17"]
@@ -128,7 +129,8 @@
 [data-f="21"]
 [data-f="22"]
 [data-f="23"]
-[data-f="25"]
+[data-f="24"]
+[data-f="26"]
 [data-f="3"]
 [data-f="4"]
 [data-f="5"]
@@ -187,7 +189,9 @@
 [data-p="1"]
 [data-p="2"]
 [data-p]
+[data-pino="0"]
 [data-pino="1"]
+[data-pino="2"]
 [data-pino="nome"]
 [data-pino]
 [data-rodape="1"]
@@ -200,5 +204,6 @@
 [data-todos="fechar"]
 [data-todos]
 [data-x="0"]
+[data-x="1"]
 [data-x="2"]
 [data-x]
