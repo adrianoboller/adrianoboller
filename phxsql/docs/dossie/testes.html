@@ -88,7 +88,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
   <div class="placar">
     <div class="c"><div class="v">2.207</div><div class="r">testes</div></div>
     <div class="c"><div class="v">124</div><div class="r">guardas</div></div>
-    <div class="c"><div class="v">26</div><div class="r">casos de tela</div></div>
+    <div class="c"><div class="v">27</div><div class="r">casos de tela</div></div>
     <div class="c"><div class="v">18</div><div class="r">catracas</div></div>
     <div class="c"><div class="v">0</div><div class="r">dependências</div></div>
   </div>
@@ -100,9 +100,9 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
 <p class="sub"><code>cargo test --workspace</code>. É a camada mais barata e a
 mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 <div class="nota">
-  <b>2.207 testes</b> em 180.454 linhas de Rust, versão
-  <code>0.18.0</code>, commit <code>1005ad4</code>, 137 operações no
-  protocolo. Medido em 2026-09-09 08:02:50, por
+  <b>2.207 testes</b> em 180.470 linhas de Rust, versão
+  <code>0.18.0</code>, commit <code>ccb45b1</code>, 137 operações no
+  protocolo. Medido em 2026-09-09 09:31:33, por
   <code>docs/dossie/numeros-do-projeto.py</code>, que <b>aborta se o
   <code>cargo test</code> falhar</b>.
 </div>
@@ -181,14 +181,14 @@ medida</b> em vez de sumir da tabela.</p>
 demonstração achou três defeitos em cinco minutos que ler o código não acharia,
 e o pior deles quebrava todo salvar e todo incluir pela tela.</p>
 <div class="nota">
-  <b>26 casos</b> em <code>testes-web/casos/</code>, quase todos nos dois
+  <b>27 casos</b> em <code>testes-web/casos/</code>, quase todos nos dois
   temas, contra um <code>phxsqld</code> de verdade num navegador de verdade — sem
-  maquete e sem mockup. E <b>157 botões</b> com clique gravado
-  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-07 11:08 (mtime)):
+  maquete e sem mockup. E <b>160 botões</b> com clique gravado
+  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-09 09:22 (mtime)):
   a evidência é escrita pela própria corrida, e só em corrida <b>inteira e
   verde</b>, porque uma corrida que cai no meio grava menos do que provou.
 </div>
-<ul class="casos"><li><code>01-entrada.mjs</code></li><li><code>02-passeio.mjs</code></li><li><code>03-ficha.mjs</code></li><li><code>04-arvore.mjs</code></li><li><code>05-grade.mjs</code></li><li><code>06-css-global.mjs</code></li><li><code>07-responsivo.mjs</code></li><li><code>08-lateral.mjs</code></li><li><code>09-cores.mjs</code></li><li><code>10-primeira-pintura.mjs</code></li><li><code>11-lgpd.mjs</code></li><li><code>12-multitela.mjs</code></li><li><code>13-monitores.mjs</code></li><li><code>14-acrescentar-coluna.mjs</code></li><li><code>15-transacoes.mjs</code></li><li><code>16-telemetria.mjs</code></li><li><code>17-barra-e-popup.mjs</code></li><li><code>18-tela-atropelada.mjs</code></li><li><code>19-conflito.mjs</code></li><li><code>20-pushdown.mjs</code></li><li><code>21-botoes-da-grade.mjs</code></li><li><code>22-botoes-do-conteudo.mjs</code></li><li><code>23-botoes-da-tira.mjs</code></li><li><code>24-fts-na-tela.mjs</code></li><li><code>25-botoes-do-diagrama-e-da-gestao.mjs</code></li><li><code>26-multitela-abas.mjs</code></li></ul>
+<ul class="casos"><li><code>01-entrada.mjs</code></li><li><code>02-passeio.mjs</code></li><li><code>03-ficha.mjs</code></li><li><code>04-arvore.mjs</code></li><li><code>05-grade.mjs</code></li><li><code>06-css-global.mjs</code></li><li><code>07-responsivo.mjs</code></li><li><code>08-lateral.mjs</code></li><li><code>09-cores.mjs</code></li><li><code>10-primeira-pintura.mjs</code></li><li><code>11-lgpd.mjs</code></li><li><code>12-multitela.mjs</code></li><li><code>13-monitores.mjs</code></li><li><code>14-acrescentar-coluna.mjs</code></li><li><code>15-transacoes.mjs</code></li><li><code>16-telemetria.mjs</code></li><li><code>17-barra-e-popup.mjs</code></li><li><code>18-tela-atropelada.mjs</code></li><li><code>19-conflito.mjs</code></li><li><code>20-pushdown.mjs</code></li><li><code>21-botoes-da-grade.mjs</code></li><li><code>22-botoes-do-conteudo.mjs</code></li><li><code>23-botoes-da-tira.mjs</code></li><li><code>24-fts-na-tela.mjs</code></li><li><code>25-botoes-do-diagrama-e-da-gestao.mjs</code></li><li><code>26-multitela-abas.mjs</code></li><li><code>27-direito-por-coluna.mjs</code></li></ul>
 
 <h2>6. O que estas provas NÃO cobrem</h2>
 <p class="sub">A parte que uma página de testes costuma esconder, e a única que
@@ -216,7 +216,7 @@ diz onde não confiar.</p>
 </div>
 
 <footer>
-  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 09/09/2026 08:02. Nenhum
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 09/09/2026 09:31. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
   do catálogo de guardas, dos <code>resultados.json</code> das bancadas, dos
   arquivos de <code>testes-web/</code> e das constantes do próprio fonte. O

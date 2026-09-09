@@ -624,7 +624,9 @@ medida que elas devolviam — o `target` já compilado de cada uma, e o disco em
 | **G3-CIFRA** (gap 210) | **projeto e risco** | formato em disco e cifra; a guarda vermelha esperava desde 05/09, e o irmão só apareceu na reabertura | **E**, **J**; **C** é a própria frente (byte de material, `FORMATO.md`) |
 | **G3-REPLICA** (gap 203) | **projeto e risco** | segurança: mexer em bloqueio sem medir o alcance abre a porta que ele fecha | **E**; **J** consultado (o `QUORUM` do Cassandra já medido) |
 | **G3-CLAUDE** (gap 231) | **mecânico e verificável** | roteiro de navegador contra servidor falso; o número ou bate ou não | **C** (não toca motor), **E** (não edita tela) |
-| **Integração** (orquestrador) | **projeto e risco** | o defeito do encontro: `catalogo.py` e `SQL.md` tocados por mais de uma frente, e o `existe` da C20-CONSULTA tinha de ser o que a C20-SQL gera | **E** |
+| **G4-MOTOR** (conserta os achados do revisor do motor) | **projeto e risco** | segurança e integridade: coluna negada que vazava, virava oráculo ou era zerada, e a junção que materializava antes do teto — o erro aparece como dado vazado ou perdido, não em teste feliz | **E** (a metade de tela foi para a G5-TELA), **J** |
+| **G5-TELA** (front-end do direito por coluna e da coluna calculada) | **mecânico e verificável, exercitando** | interface só se prova exercitando; a prova é a bateria 51/51 nos dois temas e as capturas antes/depois. A decisão de risco de dentro — mandar a linha como objeto por nome só é seguro porque a coluna negada é de sistema ou calculada, e o servidor recusa o resto — está escrita na cognição | **C** (não toca formato em disco), **J** |
+| **Integração** (orquestrador) | **projeto e risco** | o defeito do encontro: `catalogo.py` e `SQL.md` tocados por mais de uma frente, e o `existe` da C20-CONSULTA tinha de ser o que a C20-SQL gera; e o encontro da G5-TELA com o `adae44a`, medido antes de confiar (o doc do dono não toca tela nem motor) | **E** |
 
 **O defeito do encontro apareceu, de novo, e foi visto só na integração:** as
 frentes C20-CONSULTA e C20-SQL escreveram entradas no fim do mesmo
@@ -638,7 +640,13 @@ e a prosa tinha de dizer isso sem repetir nem se contradizer.
 frentes de gap que tocam segurança (G3-CIFRA, G3-REPLICA) foram no escalão de
 projeto e risco; o revisor de documentação, o de tela e a G3-CLAUDE, no
 mecânico — porque o erro deles se vê na comparação ou na captura, e o erro dos
-primeiros aparece como dado vazado ou tabela que não reabre, meses depois.
+primeiros aparece como dado vazado ou tabela que não reabre, meses depois. As
+duas frentes que consertaram o que os revisores acharam seguiram cada uma o seu
+revisor: a **G4-MOTOR** no projeto e risco (conserta dado que vaza ou some), a
+**G5-TELA** no mecânico-exercitando (a prova é a bateria e a captura) — com a
+ressalva de que a única decisão de risco da G5-TELA, mandar a linha como objeto
+por nome, foi decidida contra a restrição de que só a coluna de sistema ou
+calculada pode sair assim, e escrita na cognição.
 
 **O limite de uso da plataforma entrou na conta desta rodada.** Às ~03:50 a
 sessão bateu no teto (HTTP 429, reset 05:20) e os sete agentes e a corrente do

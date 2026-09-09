@@ -37,6 +37,23 @@ Os números são **medidos**, nunca estimados.
   dois agora recusam nomeando.
 - **Literal negativo em `SET`/`VALUES` (A10)** passou a parsear; **tabela
   inexistente (A13)** é nomeada em vez de vazar o caminho do disco.
+- **O front-end do direito por coluna e da coluna calculada (a metade de tela
+  do A1 mais três achados da revisão de tela):** a ficha passa a mandar **só as
+  colunas que o usuário mexeu** — objeto por nome, não array posicional —,
+  então a coluna negada em `alterar` não vai mais como `null` e o operador com
+  regra de coluna volta a salvar e a incluir pela tela (o servidor já protegia
+  a linha; o que muda é o pedido deixar de mencionar o que ele não tocou).
+  `colunas_sem_leitura` esconde a coluna na grade, na ficha e na aba Estrutura;
+  a **coluna calculada nasce read-only** e sai do diálogo de conflito, para não
+  gerar divergência falsa contra o que o servidor recalcula sempre; os
+  `prompt()`/`confirm()` nativos de restaurar, backup e conferir-backup viram o
+  diálogo da marca. Prova viva nos dois sentidos: caso `27-direito-por-coluna`
+  novo e o `22-botoes` estendido, bateria de tela **51/51 nos dois temas**.
+  Dois defeitos pré-existentes que travavam a prova também caíram, confirmados
+  contra `e27775b`: o laço da barra do passeio nunca conferia o denylist
+  `FORA`, e o `14-acrescentar-coluna` mandava literal sem aspas a um campo de
+  expressão. Catracas intactas: `TETO_BOTAO_SEM_PROVA` em 194,
+  `TETO_ROTULOS_E_CRASE` em 1.049.
 
 ### Sabido
 
@@ -44,9 +61,6 @@ Os números são **medidos**, nunca estimados.
   visão que perde a projeção sob `SELECT *`, CHECK julgado só no commit da
   transação, índice por expressão com operador, `CREATE VIEW` com JOIN, e as
   seis observações menores.
-- O front-end do direito por coluna e da coluna calculada (a ficha mandar só o
-  que mudou, usar `colunas_sem_leitura`/`colunas_sem_alteracao`, a calculada
-  nascer read-only) é a frente seguinte.
 
 ## Não lançado — as dezoito do comparativo, junções, subconsultas e os limites nomeados
 
