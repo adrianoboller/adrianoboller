@@ -398,6 +398,20 @@ continua recusando número: alargar não pode virar engolir.
 testes comparavam o plano com o plano esperado; o que faltava era alguém
 executar o plano contra o motor. É a mesma lição do soquete, num degrau acima.
 
+**A tabela que não existe dizia o caminho do disco.** `SELECT * FROM x` com o
+nome errado — e o `varrer` pelo protocolo — respondia «nenhum volume de x.reg
+em /tmp/…/base»: o erro cru do store, que manda procurar arquivo em vez de
+conferir o nome e publica o diretório absoluto do servidor a todo cliente que
+erra uma letra (achado A13 da revisão do motor, 09/09/2026). O catálogo passou
+a traduzir para «a tabela x não existe em base» — e «database y não existe
+neste servidor», o irmão —, e só quando a tabela não existe **mesmo**: a
+conferência acontece no caminho do erro, lendo o diretório depois de a
+abertura falhar, então o laço quente não paga nada, e uma tabela que perdeu um
+arquivo continua com o erro que nomeia o arquivo — chamá-la de inexistente
+faria alguém criar outra por cima da quebrada. É a mesma correção que a chave
+conferida já tinha pago em `table.rs`. Prova em `catalogo.rs`,
+`a_tabela_que_nao_existe_e_nomeada_sem_o_caminho_do_disco`.
+
 ### Endereço de três partes, e o que ele não faz
 
 `FROM banco.schema.tabela` escolhe o banco; `FROM schema.tabela` **não** — duas
@@ -505,6 +519,15 @@ faltou — os casos estão em `dml.rs`, teste `o_que_falta_recusa_pelo_nome`.
 E `SET`, `VALUES` e `INTO` entraram nas cláusulas da gramática por um motivo
 concreto: o endereço aceita apelido sem `AS`, e `UPDATE t SET` leria `SET`
 como apelido da tabela.
+
+O literal **negativo** — `SET a = -5`, `VALUES (40, -3)`, `WHERE id = -1` — é
+aceito desde 09/09/2026 (achado A10 da revisão do motor): o léxico entrega `-`
+e `5` como dois símbolos e o `literal()` do `sintaxe.rs` é quem os junta.
+Antes, `SET a = -5` caía com «esperava um valor e veio "-"» enquanto
+`WHERE a = -5` passava pela expressão — o mesmo número aceito num lado do
+comando e recusado no outro. O sinal só vale colado num número: `-5 + 1`
+continua sendo expressão, e recusa como antes. Prova em `dml.rs`,
+`o_literal_negativo_vale_no_set_e_no_values`.
 
 ### A resposta
 
@@ -753,6 +776,20 @@ nomeia coluna) pelo mesmo critério do `UPDATE`/`DELETE` por chave — só índi
 `ON DUPLICATE KEY UPDATE` nunca nomeia índice: o servidor escolhe a primária.
 `excluded.coluna` e expressão no `SET` recusam nomeando.
 
+O `atualizar` é o **SET**, e o servidor o honra desde 09/09/2026 — passou uma
+rodada ignorando-o calado (achado A2 da revisão do motor): o tradutor punha o
+SET no campo, `op_inserir` nunca o lia, e `… DO UPDATE SET nome = 'B'` gravava
+o `VALUES` por cima da linha, com NULL nas colunas que o `VALUES` não trazia.
+Hoje a linha que **já existe** recebe **só o SET** por cima do que está
+gravado — o `VALUES` não entra nela, como no PostgreSQL(R) e no MySQL(R) —, e
+a linha **nova** recebe o `VALUES`, e o SET não. A mescla é por valor e pelo
+tipo do esquema (`upsert::mesclar`), a mesma no `op_inserir` e no `empilhar`
+da transação. Pelo protocolo é o mesmo campo, e `atualizar` fora de
+`se_existir: "atualizar"` **recusa** em vez de ser ignorado: campo de protocolo
+sem leitor é primo do `recursos.cache_paginas`. Provas em `servidor.rs`:
+`o_atualizar_grava_a_lida_com_o_set_por_cima_e_nao_o_values` e
+`o_atualizar_fora_do_modo_atualizar_recusa`.
+
 ### 8. `[INNER|LEFT|RIGHT|FULL|CROSS] JOIN ... [ON]`
 
 ```text
@@ -789,7 +826,16 @@ esquerda e depois direita, nos dois sentidos. O `cruzado` é o produto e **não*
 leva `em` — a chave sai **omitida** do JSON (nunca `[]`, que teria cara de
 junção comum sem par nenhum); se vier, recusa nomeando. Seu teto
 `recursos.max_linhas` é conferido **antes** de materializar, e esquerda ×
-direita acima do teto recusa nomeando os dois tamanhos. O tradutor SQL faz
+direita acima do teto recusa nomeando os dois tamanhos. As outras quatro
+param **na linha `teto + 1`**, dentro do próprio laço (`consultar::juntar`
+devolve `None`): antes, o teto era conferido sobre a lista pronta, e um
+`interno` muitos-para-muitos de 1000 × 1000 materializava um milhão de linhas
+para recusar contra um teto de 1000 — **+561.6 MiB de pico e 1128 ms**,
+medidos pelo soquete no `VmHWM` do servidor (achado A4 da revisão do motor,
+09/09/2026); com a parada no laço, o mesmo pedido custa **+0.3 MiB e
+8 ms**. Não há produto que se calcule antes para as quatro — quantas
+linhas casam depende das chaves —, então a conferência é o próprio laço, que
+custa o que já custava. O tradutor SQL faz
 `RIGHT [OUTER] JOIN`, `FULL [OUTER] JOIN` e `CROSS JOIN` → 1:1, e
 `CROSS JOIN … ON` recusa nomeando (é produto, sem filtro). Os dois lados
 entraram na mesma rodada (09/09/2026, pedido 236).

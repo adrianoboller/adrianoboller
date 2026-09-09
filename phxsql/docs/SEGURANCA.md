@@ -2545,26 +2545,26 @@ O teste que trava isso é o do comportamento **velho**:
 ---
 
 <!-- direito-por-coluna: gerado por docs/geradores/direito-por-coluna.py -->
-## 15. Direito por coluna: as 5 que devolvem linha, as 3 que escrevem e as 17 que recusam
+## 15. Direito por coluna: as 5 que devolvem linha, as 3 que escrevem e as 19 que recusam
 
-Medido sobre **todas** as operações do catálogo (`crates/phxsql-server/src/catalogo.rs`), classificadas uma a uma em `CLASSES`, no `crates/phxsql-server/src/direito_coluna.rs` — e o teste `a_lista_e_o_catalogo_sao_a_mesma_lista` reprova no dia em que o catálogo ganhar uma operação que a tabela não conhece, então a contagem não se digita aqui: ela envelheceu uma vez (dizia 130 quando eram 136), e quem quer o número roda o teste ou lê o `CAPABILITIES.json`. Os apelidos viajam com a operação e não contam de novo.
+Medido em 137 operações do catálogo (`crates/phxsql-server/src/catalogo.rs`), classificadas uma a uma em `CLASSES`, no `crates/phxsql-server/src/direito_coluna.rs`. Os apelidos viajam com a operação e não contam de novo.
 
 | classe | quantas | o que o servidor faz |
 |---|---:|---|
 | `Le` | 5 | devolve linha, e a peneira a alcança |
 | `Escreve` | 3 | recebe colunas para gravar |
 | `Estrutura` | 1 | descreve a estrutura |
-| `Recusa` | 17 | devolve ou grava linha por caminho que a peneira não alcança |
-| `Nenhum` | 104 | não toca em dado de linha |
+| `Recusa` | 19 | devolve ou grava linha por caminho que a peneira não alcança |
+| `Nenhum` | 109 | não toca em dado de linha |
 
 As listas que decidem alguma coisa:
 
 - **Devolvem linha, e a coluna negada sai da resposta** (5): `ler`, `varrer`, `buscar`, `procurar_texto`, `SelectMemory`.
 - **Recebem colunas, e a coluna negada é conferida** (3): `inserir`, `inserir_lote`, `atualizar`.
 - **Descreve a estrutura, que continua inteira** (1): `esquema`.
-- **Recusam a tabela restrita, para não vazar** (17): `pivotar`, `juntar`, `unir`, `checksum`, `exportar`, `importar_conferir`, `lixeira`, `trilha`, `duplicar_tabela`, `renomear_tabela`, `copiar_tabela`, `diario`, `replicar`, `aplicar`, `backup`, `profiler`, `dblink_sincronizar`.
+- **Recusam a tabela restrita, para não vazar** (19): `diferencas`, `agrupar`, `pivotar`, `juntar`, `unir`, `checksum`, `exportar`, `importar_conferir`, `lixeira`, `trilha`, `duplicar_tabela`, `renomear_tabela`, `copiar_tabela`, `diario`, `replicar`, `aplicar`, `backup`, `profiler`, `dblink_sincronizar`.
 
-As outras 104 não devolvem nem recebem dado de linha, e por isso passam sem custo nenhum.
+As outras 109 não devolvem nem recebem dado de linha, e por isso passam sem custo nenhum.
 
 <!-- fim direito-por-coluna -->
 
@@ -2654,29 +2654,62 @@ ou cadastro sem `colunas`, o pedido segue para o `executar` sem uma alocação
 sequer — nem a busca na tabela de classes. É a lição do Profiler: o portão que
 decide se há trabalho vem **antes** do trabalho.
 
-### A escrita: os três estados de uma coluna dentro do pedido
+### A escrita: a coluna que não se altera é mantida, nunca recusada
 
-Tratar dois deles como um só foi o defeito que motivou a funcionalidade
-inteira. O `atualizar` grava a linha **inteira**, e `json_para_linha` preenche
-com NULL o que não veio. Quem não lê a coluna manda a linha sem ela — e o
-motor zerava o salário do outro em silêncio. Sem erro, sem registro, e o dado
-não volta.
+O defeito que motivou a funcionalidade inteira: o `atualizar` grava a linha
+**inteira**, e `json_para_linha` preenche com NULL o que não veio. Quem não lê
+a coluna manda a linha sem ela — e o motor zerava o salário do outro em
+silêncio. Sem erro, sem registro, e o dado não volta.
 
-| no pedido | o que quer dizer | o que o servidor faz |
+A primeira versão desta regra recusava o **valor** e o **nulo explícito** («pôr
+NULL também é alterar») e só repunha o **ausente**. A revisão de tela de
+09/09/2026 mostrou o preço: a ficha manda a linha inteira, com a coluna que
+não leu como `null`, e um usuário com **qualquer** regra de coluna não
+conseguia incluir nem salvar nada — nem mexendo só no que podia. *Proteção que
+quebra todo cliente não é proteção, é estrago.* Decisão do dono, no mesmo dia:
+**repor, nunca recusar.**
+
+| no pedido | no `atualizar` e no upsert que atualiza | no `inserir` |
 |---|---|---|
-| **valor** | «grave isto aqui» | recusa nomeando a coluna |
-| **nulo explícito** | «esvazie» | recusa: pôr NULL também é alterar |
-| **ausente** | não disse nada | no `atualizar`, **repõe o valor gravado**; no `inserir`, nasce nula |
+| **valor** | o valor gravado fica; `colunas_mantidas` diz | a coluna sai do pedido e nasce nula (ou pelo `padrao`); `colunas_mantidas` diz |
+| **nulo explícito** | idem | idem |
+| **ausente** | o valor gravado fica | nasce nula (ou pelo `padrao`) |
 
-A exceção que evita quebrar quem **lê** a coluna e não a altera
-(`{"ler": true, "alterar": false}`): o cliente lê a linha inteira e a devolve
-inteira, e recusar todo valor faria toda gravação pela tela parar. Então um
-valor **igual ao gravado** passa — ele não altera nada.
+A resposta **diz** o que foi mantido contra o pedido, em `colunas_mantidas` —
+manter calado seria a resposta errada com cara de certa: o cliente mandou
+6000, recebeu `ok`, e o banco tem 5000. O campo só aparece quando há o que
+dizer, e viaja também no envelope do `sql` (`UPDATE folha SET salario = 1` por
+quem não altera `salario` responde `afetadas: 1` **e** `colunas_mantidas:
+["salario"]`).
 
-E a restrição que essa linha carrega é a parte que importa: **a comparação só
-acontece quando o usuário pode ler a coluna.** Para quem não lê, «aceito
-quando bate» é um oráculo — vinte tentativas e o salário aparece sem nunca ter
-sido devolvido.
+Para quem **lê** a coluna e não a altera (`{"ler": true, "alterar": false}`),
+o valor **igual ao gravado** não é mantido contra nada — é a ficha devolvendo a
+linha como leu — e não aparece na lista. A comparação só acontece para quem
+pode ler: para quem não lê, «aceito quando bate» seria um oráculo, vinte
+tentativas e o salário aparece sem nunca ter sido devolvido; ali a coluna
+presente aparece sempre.
+
+O que continua **recusando** é outra coisa: **ler** a coluna que não se lê (a
+peneira e a pergunta, abaixo) e **gravar a tabela** que não se grava (o portão
+por tabela).
+
+**O upsert é um `atualizar` para esta regra.** `inserir` com `se_existir:
+"atualizar"` grava a linha que já existe pelo mesmo `Table::atualizar`, e
+passou uma rodada zerando a coluna negada — para quem não lê, para quem lê e
+não altera, pelo protocolo, pelo SQL `ON CONFLICT DO UPDATE` e dentro de
+transação (achado A1 da revisão do motor, 09/09/2026) — porque a regra olhava
+o `op`, e o `op` dizia `inserir`. A linha a repor se acha pelo **mesmo índice**
+que o upsert vai usar (`upsert::escolher_indice`, uma implementação para os
+dois donos), e o `atualizar` do pedido (o SET) obedece à mesma regra: a coluna
+que não se altera sai do SET, e a mescla parte da linha gravada.
+
+As provas, no módulo `testes_direito_por_coluna`:
+`a_escrita_com_valor_na_coluna_negada_mantem_o_gravado_e_diz_isso`,
+`a_ficha_de_quem_tem_regra_de_coluna_inclui_e_salva` (o vendedor sem
+`limite_credito` inclui e salva um cliente),
+`o_upsert_sem_a_coluna_preserva_o_valor_gravado`, e o teste do comportamento
+velho, `sem_colunas_no_cadastro_nada_muda` — quem não tem regra grava
+exatamente como antes.
 
 A reposição fecha a própria janela: junto com o valor, o servidor lê a
 **versão** e a manda no `atualizar` quando o pedido não trouxe uma. Sem isso,
@@ -2703,10 +2736,26 @@ A peneira sozinha não fecha o caso, porque **a pergunta também responde**:
   casam, e vinte perguntas dessas dizem o salário sem ele nunca ter aparecido;
 - `indice` cuja chave inclui a coluna negada: `buscar` por chave exata diz
   quem tem aquele valor, e varrer por ele devolve a **ordem**;
+- `indice` **parcial** cujo filtro (`onde`) cita a coluna negada: `porId` com
+  `onde: "salario > 5000"` só tem quem ganha mais que isso, varrer por ele
+  devolve exatamente essa lista, e `buscar` por id responde «este ganha mais
+  que 5000?». A conferência do índice olhava só a chave (achado A3 da revisão
+  do motor, 09/09/2026); hoje o filtro é analisado pelo mesmo avaliador do
+  motor, e a recusa diz «o filtro do índice»;
 - coluna por **número** em vez de nome: ali não há esquema para resolver a
-  posição, e adivinhar é pior que recusar.
+  posição, e adivinhar é pior que recusar;
+- a **projeção do `SELECT`**: `SELECT salario FROM folha` devolvia
+  `{"salario": null}` em toda linha — o `varrer` saía peneirado e a projeção
+  punha `null` na coluna que a linha não tinha, certo cada um sozinho e
+  mentira sobre o dado os dois juntos (achado A8). Recusa nomeando, a partir
+  do `colunas_sem_leitura` do próprio `esquema` que o tradutor pediu;
+  `SELECT *` continua devolvendo a linha sem ela;
+- `em` do `consultar` com `campo` na coluna negada: o sub-pedido chega sem a
+  coluna, e o filtro respondia «nenhum casa» com `ok: true` (achado A14).
+  Hoje o `campo` se resolve contra o modelo do sub-pedido, como `escalar` e
+  `existe` já faziam, e a ausência recusa nomeando.
 
-As três recusam, e a recusa diz qual coluna. O esquema só é pedido quando o
+As seis recusam, e a recusa diz qual coluna. O esquema só é pedido quando o
 pedido nomeia um índice — a varredura de sempre, que é o laço quente da tela,
 não paga nada.
 

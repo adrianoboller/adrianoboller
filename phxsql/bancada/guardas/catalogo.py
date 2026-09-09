@@ -4295,4 +4295,278 @@ pub fn limpar() {
             "replica::testes_do_ritmo::outra_falha_mantem_o_intervalo_fixo",
         ],
     },
+    # -----------------------------------------------------------------------
+    # Revisao do motor, 09/09/2026 (1/9): upsert-zera-a-coluna-negada
+    # -----------------------------------------------------------------------
+    {
+        "id": "upsert-zera-a-coluna-negada",
+        "titulo": "o upsert (`inserir` com `se_existir: \"atualizar\"`) zerava a coluna que o usuário não altera — para quem não lê, para quem lê e não altera, pelo SQL `ON CONFLICT DO UPDATE` e em transação",
+        "porque": (
+            "Achado A1 da revisao do motor (09/09/2026, p01_upsert_direito_coluna.py): `escrita_sob_direito_por_coluna` so repunha o gravado quando `op == \"atualizar\"`, e o upsert grava a linha inteira pelo MESMO `Table::atualizar` com `op == \"inserir\"`. O defeito que motivou o direito por coluna, de volta pela porta do `se_existir`. Repor o defeito e a regra deixar de enxergar o upsert como um atualizar."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let upsert = op == "inserir"
+            && crate::upsert::SeExistir::de_texto(pedido.texto_ou("se_existir", ""))
+                .ok()
+                .flatten()
+                == Some(crate::upsert::SeExistir::Atualizar);
+""",
+        "troca": """        // DEFEITO REPOSTO: o upsert nao e um `atualizar` para esta regra --
+        // o `op` diz `inserir`, e a linha que ja existe e gravada inteira.
+        let upsert = false;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ['--lib'],
+        "caem": [
+            "servidor::testes_direito_por_coluna::o_upsert_sem_a_coluna_preserva_o_valor_gravado",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_coluna::o_atualizar_sem_a_coluna_preserva_o_valor_gravado",
+            "servidor::testes_direito_por_coluna::sem_colunas_no_cadastro_nada_muda",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # Revisao do motor, 09/09/2026 (2/9): presenca-da-coluna-negada-recusa-a-ficha
+    # -----------------------------------------------------------------------
+    {
+        "id": "presenca-da-coluna-negada-recusa-a-ficha",
+        "titulo": "a presença da coluna que o usuário não altera recusava a operação inteira — e a ficha, que manda a linha inteira com a coluna como `null`, não incluía nem salvava nada",
+        "porque": (
+            "Acrescimo do orquestrador a revisao do motor (09/09/2026), provado na tela: um usuario com QUALQUER regra de coluna nao conseguia incluir nem salvar pela ficha, mesmo mexendo so no permitido. «Protecao que quebra todo cliente nao e protecao, e estrago» (CLAUDE.md). Decisao do dono: a coluna que nao se altera e MANTIDA, nunca recusada, e a resposta diz em `colunas_mantidas`. Repor o defeito e voltar a recusar quando a coluna esta presente."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                    Some(v) => {
+                        if direito.alterar {
+                            continue;
+                        }
+                        match valor_gravado(coluna) {
+""",
+        "troca": """                    Some(v) => {
+                        if direito.alterar {
+                            continue;
+                        }
+                        // DEFEITO REPOSTO: valor ou nulo explicito na coluna que
+                        // nao se altera recusa a operacao inteira.
+                        if !direito.alterar {
+                            return Err(PhxError::Autorizacao(format!(
+                                "a coluna {coluna:?} de {base}.{tabela} nao pode ser alterada por \\
+                                 este usuario; tire-a do pedido e o valor gravado fica como esta"
+                            )));
+                        }
+                        match valor_gravado(coluna) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ['--lib'],
+        "caem": [
+            "servidor::testes_direito_por_coluna::a_ficha_de_quem_tem_regra_de_coluna_inclui_e_salva",
+            "servidor::testes_direito_por_coluna::a_escrita_com_valor_na_coluna_negada_mantem_o_gravado_e_diz_isso",
+            "servidor::testes_direito_por_coluna::quem_le_a_coluna_e_nao_a_altera_continua_gravando",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_coluna::sem_colunas_no_cadastro_nada_muda",
+            "servidor::testes_direito_por_coluna::o_atualizar_sem_a_coluna_preserva_o_valor_gravado",
+            "servidor::testes_direito_por_coluna::a_leitura_esconde_a_coluna_negada",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # Revisao do motor, 09/09/2026 (3/9): set-do-on-conflict-ignorado
+    # -----------------------------------------------------------------------
+    {
+        "id": "set-do-on-conflict-ignorado",
+        "titulo": "o `SET` do `INSERT … ON CONFLICT DO UPDATE` / `ON DUPLICATE KEY UPDATE` (o campo `atualizar`) era ignorado calado, e o `VALUES` ia por cima da linha com NULL no que ele não trazia",
+        "porque": (
+            "Achado A2 da revisao do motor (09/09/2026, p02_sql_on_conflict_set.py): o tradutor punha o SET em `atualizar`, `op_inserir` nunca o lia. Campo de protocolo sem leitor e primo do `recursos.cache_paginas` -- «configuracao que nao e lida mente». Repor o defeito e o `op_inserir` voltar a chamar o upsert sem o SET."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                crate::upsert::aplicar(&mut t, &indice, &linha, modo, atualizar)?
+""",
+        "troca": """                // DEFEITO REPOSTO: o `atualizar` do pedido nao chega ao motor.
+                crate::upsert::aplicar(&mut t, &indice, &linha, modo, None)?
+""",
+        "pacote": "phxsql-server",
+        "alvo": ['--lib'],
+        "caem": [
+            "servidor::testes_upsert::o_atualizar_grava_a_lida_com_o_set_por_cima_e_nao_o_values",
+        ],
+        "seguem": [
+            "servidor::testes_upsert::atualizar_grava_por_cima_sem_criar_linha",
+            "servidor::testes_upsert::ignorar_devolve_o_rowid_de_quem_ja_estava_la",
+            "servidor::testes_upsert::o_atualizar_fora_do_modo_atualizar_recusa",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # Revisao do motor, 09/09/2026 (4/9): filtro-do-indice-parcial-e-oraculo
+    # -----------------------------------------------------------------------
+    {
+        "id": "filtro-do-indice-parcial-e-oraculo",
+        "titulo": "o índice parcial cujo `onde` cita a coluna negada respondia sobre ela: varrer por ele devolvia exatamente quem tem `salario > 5000`",
+        "porque": (
+            "Achado A3 da revisao do motor (09/09/2026, p03_indice_parcial_oraculo.py): `colunas_do_indice` lia so `indices[].colunas[].coluna`; o `onde` do indice saia no `esquema` e ninguem olhava. Repor o defeito e voltar a ignorar o filtro."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            if let Some(onde) = i.campo("onde").and_then(Json::texto) {
+                if !onde.trim().is_empty() {
+                    let e = phxsql_core::expressao::Expressao::analisar(onde)?;
+                    filtro.extend(e.colunas().iter().map(|c| c.to_string()));
+                }
+            }
+""",
+        "troca": """            // DEFEITO REPOSTO: o filtro do indice parcial nao e olhado.
+            let _ = i.campo("onde");
+""",
+        "pacote": "phxsql-server",
+        "alvo": ['--lib'],
+        "caem": [
+            "servidor::testes_direito_por_coluna::o_indice_parcial_cujo_filtro_cita_a_coluna_negada_recusa",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_coluna::perguntar_pela_coluna_negada_recusa",
+            "servidor::testes_direito_por_coluna::a_leitura_esconde_a_coluna_negada",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # Revisao do motor, 09/09/2026 (5/9): juncao-materializa-antes-do-teto
+    # -----------------------------------------------------------------------
+    {
+        "id": "juncao-materializa-antes-do-teto",
+        "titulo": "as junções `interno`/`esquerdo`/`direito`/`completo` materializavam a saída inteira antes de conferir o teto — 1000 × 1000 com a mesma chave custava +561 MiB para recusar contra um teto de 1000",
+        "porque": (
+            "Achado A4 da revisao do motor (09/09/2026, p08_juntar_memoria.py: +561,6 MiB e 1128 ms antes; +0,3 MiB e 8 ms depois). «Recusar depois de materializar e o estrago, nao a protecao» ja valia para o `cruzado`; as outras quatro param na linha teto+1 dentro do laco. Repor o defeito e tirar a parada do laco das linhas casadas -- que e por onde passa o muitos-para-muitos."
+        ),
+        "arquivo": "crates/phxsql-server/src/consultar.rs",
+        "trecho": """                for &i in is {
+                    if saida.len() >= teto {
+                        return None;
+                    }
+                    casou_direita[i] = true;
+""",
+        "troca": """                for &i in is {
+                    // DEFEITO REPOSTO: o teto so e conferido depois, sobre a
+                    // lista pronta -- e aqui ninguem confere nada.
+                    casou_direita[i] = true;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ['--lib'],
+        "caem": [
+            "consultar::testes::o_teto_para_a_juncao_antes_de_materializar_o_resto",
+            "servidor::testes_consultar_juncao::as_juncoes_por_par_param_no_teto_sem_materializar_o_resto",
+        ],
+        "seguem": [
+            "consultar::testes::os_cinco_tipos_de_juncao_produzem_a_forma_certa",
+            "servidor::testes_consultar_juncao::a_juncao_cruzada_e_o_produto_e_o_teto_vem_antes",
+            "servidor::testes_consultar_juncao::a_juncao_interna_descarta_quem_nao_casa",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # Revisao do motor, 09/09/2026 (6/9): select-da-coluna-negada-devolve-nulo
+    # -----------------------------------------------------------------------
+    {
+        "id": "select-da-coluna-negada-devolve-nulo",
+        "titulo": "`SELECT salario FROM folha` por quem não lê `salario` devolvia `{\"salario\": null}` em toda linha, em vez de recusar",
+        "porque": (
+            "Achado A8 da revisao do motor (09/09/2026, p04_agrupar_consultar_direito.py): o `varrer` do plano Simples saia peneirado e `projetar` punha `null` na coluna que a linha nao tinha -- certo cada um sozinho, mentira sobre o dado os dois juntos. O `consultar` (visao, juncao) ja recusava; este era o irmao. Repor o defeito e nao conferir a projecao contra o `colunas_sem_leitura` do esquema."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        recusar_projecao_sobre_coluna_negada(&plano, &esquema, &base, &tabela)?;
+""",
+        "troca": """        // DEFEITO REPOSTO: a projecao do plano Simples nao e conferida.
+        let _ = (&esquema, &tabela);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ['--lib'],
+        "caem": [
+            "servidor::testes_direito_por_coluna::o_select_da_coluna_negada_recusa_em_vez_de_devolver_nulo",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_coluna::o_sql_herda_o_direito_por_coluna",
+            "servidor::testes_direito_por_coluna::a_leitura_esconde_a_coluna_negada",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # Revisao do motor, 09/09/2026 (7/9): em-engole-o-campo-ausente
+    # -----------------------------------------------------------------------
+    {
+        "id": "em-engole-o-campo-ausente",
+        "titulo": "`consultar.em` com `campo` que o sub-pedido não devolve — inclusive a coluna negada — respondia zero linhas com `ok: true`",
+        "porque": (
+            "Achado A14 da revisao do motor (09/09/2026, p04 e p11_consultar_contratos.py): o `filter_map` engolia a ausencia e o conjunto vazio virava «nenhum casa». `escalar` e `existe` ja resolviam o campo contra o modelo do sub-pedido; o `em` era o irmao. Repor o defeito e voltar a usar o nome cru sem resolver."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            let campo_real = resolver_ou_recusar(
+                &modelo_dentro,
+                &campo_alvo,
+                &format!("o \\"campo\\" do \\"em\\"[{i}]"),
+            )?;
+""",
+        "troca": """            // DEFEITO REPOSTO: o campo nao e resolvido contra o modelo, e a
+            // ausencia vira um conjunto vazio.
+            let _ = &modelo_dentro;
+            let campo_real = campo_alvo.clone();
+""",
+        "pacote": "phxsql-server",
+        "alvo": ['--lib'],
+        "caem": [
+            "servidor::testes_consultar::o_em_com_campo_que_o_sub_pedido_nao_devolve_recusa_nomeando",
+            "servidor::testes_direito_por_coluna::o_em_com_campo_negado_recusa_em_vez_de_zero_linhas",
+        ],
+        "seguem": [
+            "servidor::testes_consultar::o_em_e_o_in_de_subconsulta",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # Revisao do motor, 09/09/2026 (8/9): literal-negativo-nao-parseia
+    # -----------------------------------------------------------------------
+    {
+        "id": "literal-negativo-nao-parseia",
+        "titulo": "o literal negativo não parseava em `SET`/`VALUES` («esperava um valor e veio \"-\"») enquanto `WHERE a = -5` passava pela expressão",
+        "porque": (
+            "Achado A10 da revisao do motor (09/09/2026, p07b_esquema_reteste.py): o lexico entrega `-` e `5` separados e `literal()` nao os juntava. Repor o defeito e tirar a juncao."
+        ),
+        "arquivo": "crates/phxsql-sql/src/sintaxe.rs",
+        "trecho": """        if matches!(s.token, Token::Menos) {
+            if let Some(Token::Numero(n)) = self.s.get(self.i + 1).map(|x| &x.token) {
+                let lit = Literal::Numero(format!("-{n}"));
+                self.i += 2;
+                return Ok(lit);
+            }
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO: `Menos` seguido de `Numero` cai no `outro`.
+""",
+        "pacote": "phxsql-sql",
+        "alvo": ['--lib'],
+        "caem": [
+            "dml::testes::o_literal_negativo_vale_no_set_e_no_values",
+        ],
+        "seguem": [
+            "dml::testes::update_escolhe_o_indice_unico_e_monta_o_buscar",
+            "dml::testes::on_conflict_do_update_vira_atualizar_com_o_set_no_campo_atualizar",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # Revisao do motor, 09/09/2026 (9/9): tabela-inexistente-vaza-o-caminho
+    # -----------------------------------------------------------------------
+    {
+        "id": "tabela-inexistente-vaza-o-caminho",
+        "titulo": "a tabela que não existe respondia «nenhum volume de x.reg em /tmp/…» — o caminho absoluto do disco do servidor, a todo cliente que erra uma letra",
+        "porque": (
+            "Achado A13 da revisao do motor (09/09/2026, p12_existe_sql_e_mensagens.py). A mesma correcao que a chave conferida ja pagou em `table.rs`: nomear a tabela em vez de vazar o caminho, e so quando ela nao existe mesmo. Repor o defeito e abrir sem traduzir."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        Table::abrir(self.diretorio(schema)?, nome)
+            .map_err(|e| self.tabela_que_nao_existe(e, schema, nome))
+""",
+        "troca": """        // DEFEITO REPOSTO: o erro cru do store, com o caminho, sai como esta.
+        Table::abrir(self.diretorio(schema)?, nome)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ['--lib'],
+        "caem": [
+            "catalogo::tests::a_tabela_que_nao_existe_e_nomeada_sem_o_caminho_do_disco",
+        ],
+        "seguem": [
+            "catalogo::tests::hierarquia_database_schema_tabela",
+            "catalogo::tests::mesmo_nome_em_schemas_diferentes_nao_colide",
+        ],
+    },
 ]
