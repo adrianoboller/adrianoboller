@@ -84,8 +84,11 @@ aviso): a origem passa a ser o master **corrente**, descoberto pelo pulso.
   `cluster_pulso` a cada `pulso_s`, autenticado como a réplica já se
   autentica (token + desafio-resposta a partir do `senha_hash`; permissão
   `replicar`). O pulso carrega id, papel vivo, época, posição do diário
-  (soma dos eventos das tabelas replicadas) e prioridade — o pedido leva os
-  meus, a resposta traz os do outro.
+  (soma dos eventos das tabelas replicadas), se essa posição está **incompleta**
+  (pedido 211) e a prioridade — o pedido leva os meus, a resposta traz os do
+  outro. Um pulso velho, de antes do 211, não traz o campo `incompleta` e volta
+  `false`: o significado de sempre — posição completa —, então um par que não
+  sabe avisar conta como antes.
 - **Papel vivo e época.** O papel do `config.json` é só o inicial. O vivo
   mora em `base/cluster.estado.json` junto com a **época** — um contador que
   cresce a cada eleição. O arquivo ganha do config no arranque: um master
@@ -96,11 +99,16 @@ aviso): a origem passa a ser o master **corrente**, descoberto pelo pulso.
 - **Eleição** (função pura `cluster::vencedor`, com a bateria de testes em
   volta): só há eleito se os vivos passam da **metade dos nós
   configurados** — metade exata não basta, senão os dois lados de uma
-  partição ao meio elegeriam um master cada. Entre os elegíveis vence a
-  maior posição do diário; empate quebra pela prioridade e depois pelo menor
-  id (este último só para a conta dar igual em todo nó). Cada nó faz a conta
-  localmente e **só quem se vê vencedor se promove**, com época =
-  maior época vista + 1. «Vivos» é *quem pulsou dentro da janela* — o que não
+  partição ao meio elegeriam um master cada. Entre os elegíveis, uma posição
+  **completa ganha de uma incompleta antes de qualquer número** (pedido 211):
+  uma posição incompleta é menor que a real — o nó não abriu uma tabela —, e
+  promover quem não abre uma tabela é pôr no comando quem não a serve nem a
+  replica. Só entre posições do mesmo tipo é que vence a maior posição do
+  diário; se **todos** estão incompletos a preferência se anula e a maior
+  posição volta a decidir (um cluster ainda precisa de master). Empate de
+  posição quebra pela prioridade e depois pelo menor id (este último só para a
+  conta dar igual em todo nó). Cada nó faz a conta localmente e **só quem se vê
+  vencedor se promove**, com época = maior época vista + 1. «Vivos» é *quem pulsou dentro da janela* — o que não
   é a mesma coisa que *quem está de pé agora*, e a diferença tem consequência
   medida: §2.4, item 5.
 - **Promoção.** `Servidor::promover_a_master(motivo)` é o **único** caminho:

@@ -94,35 +94,50 @@ pub fn varrer() -> Vec<Vermelha> {
         let Ok(texto) = std::fs::read_to_string(&arq) else {
             continue;
         };
-        let linhas: Vec<&str> = texto.lines().collect();
-        for (i, linha) in linhas.iter().enumerate() {
-            if !linha.contains(MARCA) || !linha.trim_start().starts_with("#[ignore") {
-                continue;
-            }
-            let motivo = linha
-                .split_once('"')
-                .and_then(|(_, r)| r.rsplit_once('"'))
-                .map(|(m, _)| m.to_string())
-                .unwrap_or_default();
-            // A funcao vem logo abaixo; pode haver outros atributos no meio.
-            let funcao = linhas[i + 1..]
-                .iter()
-                .take(6)
-                .find_map(|l| {
-                    l.trim_start()
-                        .strip_prefix("fn ")
-                        .and_then(|r| r.split('(').next())
-                        .map(str::to_string)
-                })
-                .unwrap_or_default();
-            achadas.push(Vermelha {
-                arquivo: rel.clone(),
-                linha: i + 1,
-                tem_pedido: !funcao.is_empty() && pendencias.contains(&funcao),
-                funcao,
-                motivo,
-            });
+        achadas.extend(casar_arquivo(&rel, &texto, &pendencias));
+    }
+    achadas
+}
+
+/// Casa as provas vermelhas de UM arquivo ja lido.
+///
+/// Fica separada de `varrer` de proposito: a prova real do casador precisa
+/// exercita-lo contra um texto SINTETICO, sem depender de a arvore ter uma
+/// vermelha viva -- e desde o pedido 211 ela pode nao ter (a arvore limpa e o
+/// objetivo, nao um defeito). Enquanto o casamento vivia dentro do laco que le
+/// o disco, a unica forma de prova-lo era achar uma vermelha real, e um teste
+/// que EXIGE uma vermelha real falha justamente quando o projeto conserta a
+/// ultima -- punindo o sucesso.
+fn casar_arquivo(rel: &str, texto: &str, pendencias: &str) -> Vec<Vermelha> {
+    let linhas: Vec<&str> = texto.lines().collect();
+    let mut achadas = Vec::new();
+    for (i, linha) in linhas.iter().enumerate() {
+        if !linha.contains(MARCA) || !linha.trim_start().starts_with("#[ignore") {
+            continue;
         }
+        let motivo = linha
+            .split_once('"')
+            .and_then(|(_, r)| r.rsplit_once('"'))
+            .map(|(m, _)| m.to_string())
+            .unwrap_or_default();
+        // A funcao vem logo abaixo; pode haver outros atributos no meio.
+        let funcao = linhas[i + 1..]
+            .iter()
+            .take(6)
+            .find_map(|l| {
+                l.trim_start()
+                    .strip_prefix("fn ")
+                    .and_then(|r| r.split('(').next())
+                    .map(str::to_string)
+            })
+            .unwrap_or_default();
+        achadas.push(Vermelha {
+            arquivo: rel.to_string(),
+            linha: i + 1,
+            tem_pedido: !funcao.is_empty() && pendencias.contains(&funcao),
+            funcao,
+            motivo,
+        });
     }
     achadas
 }
@@ -183,26 +198,46 @@ mod testes {
         );
     }
 
-    /// Prova real do conferidor, no sentido que importa: ele ACHA as vermelhas
-    /// que existem. Um casador que parasse de reconhecer a marca continuaria
-    /// imprimindo "nenhuma solta" -- que e o zero que nao prova nada.
+    /// Prova real do casador, no sentido que importa: ele ACHA a marca e o nome
+    /// da funcao logo abaixo. Um casador que parasse de reconhecer a marca
+    /// devolveria vazio -- o zero que nao prova nada.
+    ///
+    /// # Por que contra um texto sintetico, e nao contra a arvore (pedido 211)
+    ///
+    /// A versao anterior fazia `varrer()` e exigia `!todas.is_empty()`. Isso
+    /// amarrava a prova do casador a haver uma vermelha VIVA na arvore -- e no
+    /// dia em que o projeto consertou a ultima (a posicao do diario, este mesmo
+    /// pedido 211), o teste passou a falhar por SUCESSO: arvore limpa e o
+    /// objetivo, nao um defeito. O casador agora se prova contra um fonte
+    /// montado aqui, e continua valendo com a arvore vazia ou cheia.
+    ///
+    /// A marca vem partida (`"VERMELHA de " , "proposito"`) pelo mesmo motivo da
+    /// `MARCA`: escrita inteira num literal, esta linha viraria uma vermelha
+    /// sintetica que o proprio conferidor acharia na arvore.
     #[test]
-    fn o_conferidor_enxerga_as_vermelhas_que_existem() {
-        let todas = varrer();
-        assert!(
-            !todas.is_empty(),
-            "o conferidor nao achou NENHUMA prova vermelha. Ou a arvore nao tem mais \
-             (e ai a catraca vira codigo morto e sai), ou o casador quebrou -- e a \
-             segunda e indistinguivel da primeira sem esta afirmacao"
+    fn o_casador_enxerga_uma_vermelha_sintetica() {
+        let fonte = concat!(
+            "    #[test]\n",
+            "    #[ignore = \"",
+            "VERMELHA de ",
+            "proposito: exemplo do controle\"]\n",
+            "    fn defeito_de_exemplo() {\n",
+            "        // corpo\n",
+            "    }\n",
+        );
+        let achadas = casar_arquivo("crates/exemplo/src/lib.rs", fonte, "");
+        assert_eq!(
+            achadas.len(),
+            1,
+            "o casador tinha de achar a unica vermelha sintetica"
+        );
+        assert_eq!(
+            achadas[0].funcao, "defeito_de_exemplo",
+            "o casador leu o atributo e nao achou o `fn` logo abaixo"
         );
         assert!(
-            todas.iter().all(|v| !v.funcao.is_empty()),
-            "prova vermelha sem nome de funcao: o casador leu o atributo e nao achou o \
-             `fn` abaixo dele -- {:?}",
-            todas
-                .iter()
-                .filter(|v| v.funcao.is_empty())
-                .collect::<Vec<_>>()
+            !achadas[0].tem_pedido,
+            "com o PENDENCIAS vazio, a vermelha conta como SEM pedido"
         );
     }
 

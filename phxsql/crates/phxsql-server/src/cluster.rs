@@ -70,6 +70,12 @@ pub struct PulsoDeNo {
     pub papel: PapelVivo,
     pub epoca: u64,
     pub posicao: u64,
+    /// A posicao veio marcada INCOMPLETA -- o no nao conseguiu abrir ou contar
+    /// alguma tabela replicada, entao a posicao publicada e MENOR que a real
+    /// (pedido 211). Um pulso VELHO, de antes desta versao, nao carrega o
+    /// campo e volta `false`: e o significado de sempre -- posicao completa --,
+    /// e por isso um par que nao sabe avisar continua contando como antes.
+    pub incompleta: bool,
     pub prioridade: i64,
     pub quando_ms: i64,
 }
@@ -89,6 +95,7 @@ impl PulsoDeNo {
                 papel,
                 epoca: j.inteiro_ou("epoca", 0).max(0) as u64,
                 posicao: j.inteiro_ou("posicao", 0).max(0) as u64,
+                incompleta: j.booleano_ou("incompleta", false),
                 prioridade: j.inteiro_ou("prioridade", 0),
                 quando_ms: crate::agora_ms(),
             },
@@ -101,6 +108,12 @@ impl PulsoDeNo {
 pub struct Candidato {
     pub id: String,
     pub posicao: u64,
+    /// A posicao deste candidato veio INCOMPLETA (pedido 211): faltou abrir ou
+    /// contar uma tabela replicada. Uma posicao incompleta e sempre MENOR que a
+    /// real, e promover quem nao abre uma tabela e promover quem nao a serve
+    /// nem a replica -- por isso a eleicao prefere completa antes de olhar o
+    /// numero.
+    pub incompleta: bool,
     pub prioridade: i64,
 }
 
@@ -110,17 +123,23 @@ pub struct Candidato {
 /// promover e a decisao: metade nao e maioria, senao os dois lados de uma
 /// particao ao meio elegeriam um master cada.
 ///
-/// Entre os elegiveis vence a maior posicao do diario (quem menos perdeu),
-/// empate quebra pela prioridade (maior ganha) e depois pelo MENOR id -- o
-/// ultimo criterio existe so para a resposta ser a mesma em todo no que fizer
-/// a mesma conta.
+/// Uma posicao COMPLETA ganha de uma incompleta antes de qualquer numero
+/// (pedido 211): quem nao abre uma tabela publica posicao menor que a real, e
+/// promove-lo poe no comando um no que nao serve nem replica aquela tabela.
+/// So entre posicoes do mesmo tipo e que vence a maior posicao do diario (quem
+/// menos perdeu); empate quebra pela prioridade (maior ganha) e depois pelo
+/// MENOR id -- o ultimo criterio existe so para a resposta ser a mesma em todo
+/// no que fizer a mesma conta. Se TODOS estiverem incompletos, a preferencia
+/// se anula e a eleicao segue pelo numero: um cluster ainda precisa de master.
 pub fn vencedor(vivos: &[Candidato], total_configurado: usize) -> Option<&Candidato> {
     if vivos.len() * 2 <= total_configurado {
         return None;
     }
     vivos.iter().max_by(|a, b| {
-        a.posicao
-            .cmp(&b.posicao)
+        // `!incompleta`: completa (true) ordena acima de incompleta (false).
+        (!a.incompleta)
+            .cmp(&(!b.incompleta))
+            .then(a.posicao.cmp(&b.posicao))
             .then(a.prioridade.cmp(&b.prioridade))
             // Invertido de proposito: no empate total, o id MENOR ganha.
             .then_with(|| b.id.cmp(&a.id))
@@ -146,6 +165,11 @@ pub struct EstadoCluster {
     /// Posicao local do diario, somada sobre as tabelas replicadas. Cache
     /// atualizado pelo arbitro para o pulso nao tomar a trava de dados.
     posicao: AtomicU64,
+    /// A ultima posicao contada saiu INCOMPLETA -- alguma tabela replicada nao
+    /// abriu ou nao contou (pedido 211). Anda junto do cache da posicao porque
+    /// e a mesma medida: o numero e a confianca nele. O pulso publica os dois,
+    /// e a eleicao prefere quem esta completo.
+    posicao_incompleta: AtomicBool,
     /// Master COM maioria visivel = escrita liberada. Quem atualiza e o
     /// arbitro; o portao so le.
     escrita_liberada: AtomicBool,
@@ -220,6 +244,7 @@ impl EstadoCluster {
             }),
             epoca: AtomicU64::new(epoca),
             posicao: AtomicU64::new(0),
+            posicao_incompleta: AtomicBool::new(false),
             // Nasce liberada para o master nao recusar escrita no arranque,
             // antes do primeiro pulso: a primeira rodada do arbitro corrige.
             escrita_liberada: AtomicBool::new(papel == PapelVivo::Master),
@@ -258,8 +283,17 @@ impl EstadoCluster {
         self.posicao.load(Ordering::SeqCst)
     }
 
-    pub fn definir_posicao(&self, p: u64) {
+    /// A ultima posicao contada saiu incompleta (pedido 211).
+    pub fn posicao_incompleta(&self) -> bool {
+        self.posicao_incompleta.load(Ordering::SeqCst)
+    }
+
+    /// Grava a posicao E a confianca nela na MESMA chamada: sao a mesma medida,
+    /// e deixar o `incompleta` de fora abriria a janela em que o pulso publica
+    /// um numero novo com a bandeira velha.
+    pub fn definir_posicao(&self, p: u64, incompleta: bool) {
         self.posicao.store(p, Ordering::SeqCst);
+        self.posicao_incompleta.store(incompleta, Ordering::SeqCst);
     }
 
     pub fn escrita_liberada(&self) -> bool {
@@ -419,6 +453,7 @@ impl EstadoCluster {
         let mut v = vec![Candidato {
             id: self.config.id.clone(),
             posicao: self.posicao(),
+            incompleta: self.posicao_incompleta(),
             prioridade: self.config.prioridade,
         }];
         for (id, p) in self.mapa() {
@@ -426,6 +461,7 @@ impl EstadoCluster {
                 v.push(Candidato {
                     id,
                     posicao: p.posicao,
+                    incompleta: p.incompleta,
                     prioridade: p.prioridade,
                 });
             }
@@ -578,7 +614,16 @@ mod testes {
         Candidato {
             id: id.into(),
             posicao,
+            incompleta: false,
             prioridade,
+        }
+    }
+
+    /// Um candidato com a posicao marcada INCOMPLETA (pedido 211).
+    fn ci(id: &str, posicao: u64, prioridade: i64) -> Candidato {
+        Candidato {
+            incompleta: true,
+            ..c(id, posicao, prioridade)
         }
     }
 
@@ -615,6 +660,38 @@ mod testes {
     fn empate_total_cai_no_menor_id() {
         let vivos = [c("no2", 250, 1), c("no1", 250, 1), c("no3", 250, 1)];
         assert_eq!(vencedor(&vivos, 3).unwrap().id, "no1");
+    }
+
+    /// **Pedido 211: a eleicao prefere posicao COMPLETA a incompleta, ANTES do
+    /// numero.**
+    ///
+    /// # Por que a prova pega
+    ///
+    /// O `ci("b", ...)` tem posicao MAIOR e ainda assim NAO pode vencer: uma
+    /// posicao incompleta e menor que a real (o no nao abriu uma tabela), e
+    /// promover quem nao abre uma tabela poe no comando um master que nao a
+    /// serve nem a replica. Se a preferencia por completa sair do `vencedor`,
+    /// o `b` (250, incompleta) ganha do `a` (100, completa) pelo numero cru --
+    /// e e exatamente esse o caso que este teste barra.
+    #[test]
+    fn eleicao_prefere_completa_a_incompleta() {
+        // b tem MAIS diario, mas incompleto; a tem menos e completo -> vence a.
+        let vivos = [c("a", 100, 0), ci("b", 250, 9)];
+        assert_eq!(
+            vencedor(&vivos, 2).unwrap().id,
+            "a",
+            "uma posicao completa (a=100) tem de ganhar de uma incompleta \
+             MAIOR (b=250): a incompleta e menor que a real."
+        );
+
+        // Se TODOS estao incompletos, a preferencia se anula e vale o numero:
+        // um cluster ainda precisa eleger alguem.
+        let so_incompletos = [ci("a", 100, 0), ci("b", 250, 0)];
+        assert_eq!(
+            vencedor(&so_incompletos, 2).unwrap().id,
+            "b",
+            "com todos incompletos, a maior posicao volta a decidir"
+        );
     }
 
     fn config_de_teste() -> Cluster {
@@ -679,6 +756,7 @@ mod testes {
                 papel: PapelVivo::Master,
                 epoca: 2,
                 posicao: 10,
+                incompleta: false,
                 prioridade: 0,
                 quando_ms: crate::agora_ms(),
             },
@@ -716,6 +794,7 @@ mod testes {
                 papel: PapelVivo::Master,
                 epoca: 5,
                 posicao: 10,
+                incompleta: false,
                 prioridade: 0,
                 quando_ms: crate::agora_ms(),
             },
@@ -730,6 +809,7 @@ mod testes {
                 papel: PapelVivo::Master,
                 epoca: 1,
                 posicao: 99,
+                incompleta: false,
                 prioridade: 0,
                 quando_ms: crate::agora_ms(),
             },

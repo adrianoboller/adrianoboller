@@ -1686,12 +1686,15 @@ fecho só roda reexecutado por `fecho_da_janela_sincroniza_o_reg_de_verdade` —
 os dois são ignorados por **custo**, não por defeito. Misturá-los encheria a
 catraca de ruído e a faria parar de significar «há defeito conhecido aqui».
 
-**Prova real nos dois sentidos**: apagando um dos dois nomes do
-`PENDENCIAS.md`, a catraca fica vermelha nomeando arquivo, linha e função; com
-os dois de volta, verde. E ela tem controle próprio
-(`o_conferidor_enxerga_as_vermelhas_que_existem`), porque um casador que
-parasse de reconhecer a marca continuaria imprimindo «0 sem pedido» — o zero
-que não prova nada, que é a mesma armadilha do pedido 150.
+**Prova real nos dois sentidos**: com um nome de função inventado a catraca fica
+vermelha nomeando arquivo, linha e função; com um nome que está mesmo no
+`PENDENCIAS.md`, verde. E ela tem controle próprio
+(`o_casador_enxerga_uma_vermelha_sintetica`), porque um casador que parasse de
+reconhecer a marca continuaria imprimindo «0 sem pedido» — o zero que não prova
+nada, que é a mesma armadilha do pedido 150. Esse controle **mudou no 211**: até
+então ele exigia achar uma vermelha viva na árvore, e falhou por **sucesso** no
+dia em que o projeto consertou a última; agora prova o casador contra um fonte
+sintético, e vale com a árvore vazia (que é o estado de hoje) ou cheia.
 
 ## 17. As 26 perguntas do dono, exercitadas — 07/09/2026
 

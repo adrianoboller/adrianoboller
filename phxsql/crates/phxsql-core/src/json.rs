@@ -217,6 +217,10 @@ impl Json {
         Json::Numero(n as f64)
     }
 
+    pub fn de_bool(b: bool) -> Json {
+        Json::Bool(b)
+    }
+
     // ---------------------------------------------------------- escrita
 
     /// JSON compacto, numa linha so -- o formato do protocolo.

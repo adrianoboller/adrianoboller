@@ -2870,6 +2870,7 @@ impl Servidor {
                 ("papel", Json::texto_de(estado.papel().nome())),
                 ("epoca", Json::de_u64(estado.epoca())),
                 ("posicao", Json::de_u64(estado.posicao())),
+                ("incompleta", Json::de_bool(estado.posicao_incompleta())),
                 ("prioridade", Json::de_i64(c.prioridade)),
             ])?;
             if let Some((id, pulso)) = crate::cluster::PulsoDeNo::de_json(&r) {
@@ -2893,8 +2894,8 @@ impl Servidor {
             // A posicao local no ritmo do pulso, e nao do tique: ela toma a
             // trava de dados, e o dobro da frequencia nao compraria nada.
             if agora - ultima_conta >= estado.config.pulso_s as i64 * 1_000 {
-                let p = self.posicao_do_diario(&estado.config.databases);
-                estado.definir_posicao(p);
+                let (p, incompleta) = self.posicao_do_diario(&estado.config.databases);
+                estado.definir_posicao(p, incompleta);
                 ultima_conta = agora;
             }
             let motivos = self.rodada_do_arbitro(&estado, agora);
@@ -2968,11 +2969,13 @@ impl Servidor {
                         let eu = Candidato {
                             id: c.id.clone(),
                             posicao: estado.posicao(),
+                            incompleta: estado.posicao_incompleta(),
                             prioridade: c.prioridade,
                         };
                         let ele = Candidato {
                             id: id.clone(),
                             posicao: p.posicao,
+                            incompleta: p.incompleta,
                             prioridade: p.prioridade,
                         };
                         let vence = crate::cluster::vencedor(&[eu, ele], 1).map(|v| v.id.clone());
@@ -3152,9 +3155,24 @@ impl Servidor {
     /// A soma dos eventos das tabelas replicadas -- a posicao que o pulso
     /// carrega e que a eleicao compara. Toma a trava de dados; por isso quem
     /// chama e o arbitro, no ritmo do pulso, e o resultado fica em cache.
-    fn posicao_do_diario(&self, so_estes: &[String]) -> u64 {
+    ///
+    /// # Devolve a soma E se ela esta INCOMPLETA (pedido 211)
+    ///
+    /// Uma tabela que nao abre, ou que abre e nao conta, some da soma -- e uma
+    /// posicao menor que a real faz o no se declarar mais atrasado do que e,
+    /// perdendo uma eleicao que deveria vencer. Por decisao do dono (10/09/2026,
+    /// saida (b)), a posicao NAO e recusada: ela sai marcada `incompleta`, e a
+    /// eleicao (`cluster::vencedor`) prefere quem esta completo. Aqui a funcao
+    /// so RELATA a falha; quem a publica e o pulso.
+    ///
+    /// E `true` sempre que faltou contar algo do que se devia: a trava nao
+    /// veio, um database nao abriu, a lista de tabelas de um database falhou,
+    /// uma tabela nao abriu, ou a contagem dela deu erro. Uma so basta.
+    fn posicao_do_diario(&self, so_estes: &[String]) -> (u64, bool) {
         let Ok(trava) = self.travar_dados() else {
-            return 0;
+            // Sem a trava nao ha o que somar: posicao zero, e incompleta,
+            // porque nao se contou nada do que se devia contar.
+            return (0, true);
         };
         let bases = if so_estes.is_empty() {
             trava.databases().unwrap_or_default()
@@ -3162,17 +3180,27 @@ impl Servidor {
             so_estes.to_vec()
         };
         let mut total = 0u64;
+        let mut incompleta = false;
         for b in bases {
             let Ok(db) = trava.abrir_database(&b) else {
+                incompleta = true;
                 continue;
             };
-            for t in db.todas_as_tabelas().unwrap_or_default() {
-                if let Ok(mut tab) = db.abrir_qualificada(&t) {
-                    total += tab.eventos().unwrap_or(0);
+            let Ok(tabelas) = db.todas_as_tabelas() else {
+                incompleta = true;
+                continue;
+            };
+            for t in tabelas {
+                match db.abrir_qualificada(&t) {
+                    Ok(mut tab) => match tab.eventos() {
+                        Ok(n) => total += n,
+                        Err(_) => incompleta = true,
+                    },
+                    Err(_) => incompleta = true,
                 }
             }
         }
-        total
+        (total, incompleta)
     }
 
     /// O laco que puxa do master CORRENTE -- e a unica diferenca para o laco
@@ -3290,6 +3318,7 @@ impl Servidor {
             ("papel", Json::texto_de(estado.papel().nome())),
             ("epoca", Json::de_u64(estado.epoca())),
             ("posicao", Json::de_u64(estado.posicao())),
+            ("incompleta", Json::de_bool(estado.posicao_incompleta())),
             ("prioridade", Json::de_i64(estado.config.prioridade)),
         ]))
     }
@@ -3586,11 +3615,12 @@ impl Servidor {
             .lista()
             .iter()
             .map(|n| {
-                let (papel, epoca, posicao, idade_ms) = if n.id == c.id {
+                let (papel, epoca, posicao, incompleta, idade_ms) = if n.id == c.id {
                     (
                         Some(estado.papel().nome()),
                         estado.epoca(),
                         estado.posicao(),
+                        estado.posicao_incompleta(),
                         0i64,
                     )
                 } else {
@@ -3599,9 +3629,10 @@ impl Servidor {
                             Some(p.papel.nome()),
                             p.epoca,
                             p.posicao,
+                            p.incompleta,
                             agora - p.quando_ms,
                         ),
-                        None => (None, 0, 0, -1),
+                        None => (None, 0, 0, false, -1),
                     }
                 };
                 Json::objeto(vec![
@@ -3617,6 +3648,9 @@ impl Servidor {
                     ),
                     ("epoca", Json::de_u64(epoca)),
                     ("posicao", Json::de_u64(posicao)),
+                    // Pedido 211: a posicao saiu incompleta (tabela nao abriu).
+                    // A tela mostra isso ao lado da posicao -- a verdade visivel.
+                    ("posicao_incompleta", Json::de_bool(incompleta)),
                     // -1 = nunca deu pulso; 0 = este proprio no.
                     ("ultimo_pulso_ms", Json::de_i64(idade_ms)),
                     (
@@ -38002,59 +38036,54 @@ mod testes_posicao_do_diario {
         s
     }
 
-    /// **GUARDA VERMELHA, entregue falhando de proposito em 05/09/2026.**
+    /// **GUARDA do pedido 211 -- nasceu VERMELHA em 05/09/2026, virou VERDE em
+    /// 10/09/2026 com a decisao (b) do dono.**
     ///
-    /// Uma tabela que NAO ABRE some da soma da posicao do diario, em silencio,
-    /// e a funcao devolve um numero menor como se fosse a verdade.
+    /// Uma tabela que NAO ABRE some da soma da posicao do diario. O que mudou
+    /// nao foi a soma -- uma posicao incompleta continua MENOR que a real --,
+    /// foi o SILENCIO: agora a posicao volta marcada `incompleta`, e a eleicao
+    /// (`cluster::vencedor`) prefere quem esta completo.
     ///
     /// # Por que isso e grave, e nao um detalhe de contagem
     ///
     /// O comentario da propria `posicao_do_diario` diz o que esse numero e:
     /// *«a soma dos eventos das tabelas replicadas -- a posicao que o pulso
     /// carrega e que a ELEICAO compara»*. E o `cluster.rs` fecha a conta:
-    /// *«entre os elegiveis vence a maior posicao do diario (quem menos
-    /// perdeu)»*.
+    /// *«uma posicao COMPLETA ganha de uma incompleta antes de qualquer
+    /// numero»*.
     ///
-    /// Entao um no que nao consegue abrir uma tabela **se declara mais
-    /// atrasado do que e**, perde uma eleicao que deveria vencer, e quem
-    /// assume no lugar dele tem MENOS dado. O erro engolido nao custa uma
-    /// contagem: custa a promocao do no errado.
-    ///
-    /// # O que engole, medido
-    ///
-    /// Duas vezes em quatro linhas:
-    ///
-    /// ```text
-    /// if let Ok(mut tab) = db.abrir_qualificada(&t) {   // descarta a tabela
-    ///     total += tab.eventos().unwrap_or(0);          // descarta a contagem
-    /// }
-    /// ```
-    ///
-    /// E a assinatura fecha a porta: a funcao devolve `u64`, e nao `Result` --
-    /// nao ha por onde a falha sair mesmo que alguem queira propaga-la.
+    /// Antes do conserto, um no que nao conseguia abrir uma tabela **se
+    /// declarava mais atrasado do que era** e perdia uma eleicao que deveria
+    /// vencer, EM SILENCIO. Agora ele ainda conta menos -- nao ha como contar
+    /// o que nao abre --, mas a bandeira `incompleta` conta a verdade, e a
+    /// eleicao a le.
     ///
     /// # Por que a causa aqui e um `.reg` estragado, e nao a cifra
     ///
-    /// Porque o que se prova e o ENGOLIR, e nao uma causa. Cifrada sem chave,
-    /// corrompida, sem permissao: para esta funcao sao todas «nao abriu», e
-    /// uma so basta para provar o silencio. Estragar o arquivo e a causa mais
+    /// Porque o que se prova e o marcar da falha, e nao uma causa. Cifrada sem
+    /// chave, corrompida, sem permissao: para esta funcao sao todas «nao
+    /// abriu», e uma so basta. Estragar o arquivo e a causa mais
     /// deterministica das tres, e nao depende do estado do cofre do processo.
     ///
-    /// # O conserto NAO vem junto
+    /// # A prova pega nos dois sentidos
     ///
-    /// Fazer a posicao recusar, ou marca-la como incompleta, muda o que o
-    /// pulso publica e portanto o que a eleicao compara. E decisao do dono, e
-    /// esta na fila com as outras.
+    /// Antes de estragar, a posicao e COMPLETA (a bandeira e `false`). Depois,
+    /// a bandeira vira `true` E o numero encolhe -- as duas coisas. Se o
+    /// conserto for revertido (a funcao volta a devolver so `u64`, ou o
+    /// `incompleta` fica sempre `false`), a asserção da bandeira falha.
     #[test]
-    #[ignore = "VERMELHA de proposito: prova um erro engolido que ainda nao foi consertado"]
     fn tabela_que_nao_abre_nao_pode_encolher_a_posicao_em_silencio() {
         let d = dir_temp("engole");
         let s = com_duas(&d);
 
-        let inteira = s.posicao_do_diario(&[]);
+        let (inteira, incompleta_antes) = s.posicao_do_diario(&[]);
         assert!(
             inteira > 0,
             "as duas tabelas somadas tem de dar posicao maior que zero"
+        );
+        assert!(
+            !incompleta_antes,
+            "com as duas tabelas abrindo, a posicao ({inteira}) e COMPLETA"
         );
 
         // Estraga o `.reg` de UMA delas: a partir daqui ela existe e nao abre.
@@ -38065,12 +38094,17 @@ mod testes_posicao_do_diario {
         );
         std::fs::write(&alvo, b"nao sou um PHXREG").unwrap();
 
-        let depois = s.posicao_do_diario(&[]);
-        assert_eq!(
-            depois, inteira,
-            "a posicao ENCOLHEU de {inteira} para {depois} porque uma tabela \
-             nao abriu -- e e essa posicao que a eleicao compara. Encolher em \
-             silencio faz o no se declarar mais atrasado do que e."
+        let (depois, incompleta_depois) = s.posicao_do_diario(&[]);
+        assert!(
+            incompleta_depois,
+            "a tabela que nao abre NAO some em silencio: a posicao ({depois}) \
+             volta marcada INCOMPLETA, e a eleicao prefere posicao completa."
+        );
+        assert!(
+            depois < inteira,
+            "a posicao incompleta ({depois}) e MENOR que a inteira ({inteira}), \
+             como manda a verdade -- nao ha como contar a tabela que nao abre. \
+             O que mudou e que agora ela vem MARCADA, nao engolida."
         );
     }
 }

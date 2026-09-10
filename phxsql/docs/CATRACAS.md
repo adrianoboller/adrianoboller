@@ -318,6 +318,12 @@ a bateria fica verde, o `cargo test` diz «0 falharam», e o defeito não aparec
 em nenhum lugar que alguém leia. *Papel que não está cumprindo tem de aparecer
 como não cumprindo* — e ali ele não aparecia. Abriram os pedidos 210 e 211.
 
+**Hoje as duas estão VERDES**: o 210 fechou em 08/09 (a tabela nasce cifrada) e o
+211 em 10/09 (a posição sai marcada `incompleta` e a eleição prefere a completa).
+A árvore ficou **sem nenhuma prova vermelha** — que é o estado desejado, e não um
+defeito. A catraca segue de pé para a **próxima** vermelha: guarda vermelha nova
+entra com o pedido no mesmo commit, ou a catraca desce.
+
 **O que ela conta**: cada `#[ignore = "VERMELHA de proposito…` em
 `crates/*/src` e `crates/*/tests`, com o nome da função logo abaixo, exigindo
 que esse nome apareça no `PENDENCIAS.md`. A lista de arquivos sai do disco.
@@ -328,12 +334,16 @@ fecho só roda reexecutado por outro teste — os dois são ignorados por **cust
 e não por defeito. Misturá-los encheria a catraca de ruído e a faria parar de
 significar «há defeito conhecido aqui», que é a única coisa que ela diz.
 
-**A prova real, nos dois sentidos**: apagando um dos dois nomes do
-`PENDENCIAS.md`, a catraca fica **vermelha** nomeando arquivo, linha e função;
-com os dois de volta, verde. E o conferidor tem controle próprio
-(`o_conferidor_enxerga_as_vermelhas_que_existem`), porque um casador que
-parasse de reconhecer a marca continuaria imprimindo «0 sem pedido» — que é o
-zero que não prova nada.
+**A prova real, nos dois sentidos**: com um nome de função inventado a catraca
+fica **vermelha** nomeando arquivo, linha e função; com um nome que está mesmo no
+`PENDENCIAS.md`, verde. E o casador tem controle próprio
+(`o_casador_enxerga_uma_vermelha_sintetica`), porque um casador que parasse de
+reconhecer a marca continuaria imprimindo «0 sem pedido» — o zero que não prova
+nada. Esse controle **mudou no 211**: antes ele fazia `varrer()` e exigia achar
+uma vermelha viva na árvore — e no dia em que o projeto consertou a última
+(justamente a posição do diário), passou a falhar por **sucesso**. Agora prova o
+casador contra um fonte sintético montado no próprio teste, e vale com a árvore
+vazia ou cheia.
 
 ### 8. `TETO_INVENTARIO_DESCASADO` — o `.fts` que faltava em três lugares
 
