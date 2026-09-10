@@ -23,6 +23,10 @@ orquestrador e vale o que vale: quem decide é o dono.
    motivo escrito. Recomendação: (b) até haver quem precise de leitura
    repetível de fato; é o único item da lista cujo custo não está inteiramente
    medido.
+   **DECIDIDO 10/09/2026 — (b) não agora.** Palavra do Patrão. A Sombra fica
+   parada por decisão (SOMBRA.md §0 já registra), a linha do comparativo segue
+   NÃO com o motivo, e reabre-se quando houver cliente que precise de leitura
+   repetível de fato. Nada muda em disco nem em outro arquivo.
 2. **194 — senha própria por tabela na cifra em repouso.** Medido: o cofre é
    um static do processo e a sessão é por conexão — nenhum dos dois guarda
    segredo; a alternativa (chave como parâmetro) toca 35 chamadas em 7
@@ -31,6 +35,9 @@ orquestrador e vale o que vale: quem decide é o dono.
    casos falham). Saídas: (a) não fazer, e a proteção por tabela fica no
    direito por coluna que já existe; (b) fazer, pagando os 35 sítios.
    Recomendação: (a).
+   **DECIDIDO 10/09/2026 — (a) não fazer.** Palavra do Patrão. A proteção por
+   tabela fica no direito por coluna que já existe; nenhum dos 35 sítios é
+   tocado. Nada muda em disco.
 3. **197 — senha do banco vinda do login.** Sua palavra de 05/09: senha do
    SGBD e opcional por banco, e a senha do banco não pode ser a de
    administração (§13.12, argumento técnico que fecha). Medido: 17 sítios
@@ -42,6 +49,12 @@ orquestrador e vale o que vale: quem decide é o dono.
    a saída em que esses 8 recebem a senha do banco pela configuração do
    serviço (não pela sessão), porque é a única que não deixa job nem réplica
    sem acesso quando ninguém está logado.
+   **DECIDIDO 10/09/2026 — (a) manter no `config.json`.** Palavra do Patrão.
+   Fica o estado de hoje: a senha do banco vem do `config.json`, os 8 sítios
+   sem sessão seguem funcionando, e o ganho de fronteira («quem lê o config
+   não tem a chave») não é perseguido agora. Nenhum código muda. O cabeçalho
+   do `cofre.rs` que diz «quem lê o config.json tem a senha» continua verdade,
+   por decisão. Reabre-se se um cliente exigir a fronteira fechada.
 4. **207 — quórum de escrita.** O canal existe (0,089 ms vazio, 0,466 ms com
    evento) e o campo cluster.quorum_minimo entrou com quorum_imposto=false.
    Falta a decisão 1 de 5: o que o «ok» da réplica significa — recebeu,
@@ -51,6 +64,12 @@ orquestrador e vale o que vale: quem decide é o dono.
    porque é a única garantia que um cliente consegue nomear sem ler o manual;
    custa o fsync da réplica dentro do commit do master, e a bancada do caso
    ruim (réplica morta no meio) vem junto.
+   **DECIDIDO 10/09/2026 — «aplicou e sincronizou».** Palavra do Patrão. O «ok»
+   da réplica passa a significar `fsync` feito na réplica antes de responder.
+   Isto ABRE uma frente de construção (quórum imposto de fato + a bancada do
+   caso ruim, réplica morta no meio) — que fica na lista de rodada futura e NÃO
+   se inicia sem ordem explícita. Restam 4 das 5 decisões da frente do quórum,
+   a serem levantadas quando a construção começar.
 5. **211 — posição do diário com tabela que não abre.** Hoje a tabela ilegível
    é descartada e a posição publicada é menor que a real; a eleição compara
    esse número. Saídas: (a) recusar (a réplica não publica posição, sai da
@@ -58,6 +77,13 @@ orquestrador e vale o que vale: quem decide é o dono.
    eleição prefere posição completa. Recomendação: (b), porque (a) tira do
    ar uma réplica que ainda serve leitura, e (b) mantém a verdade visível
    no pulso e na tela.
+   **DECIDIDO 10/09/2026 — (b) publicar incompleta, com a flag.** Palavra do
+   Patrão. A réplica que não abre uma tabela publica a posição marcada como
+   incompleta, e a eleição passa a preferir posição completa. Isto ABRE a
+   frente que fecha a guarda vermelha
+   `tabela_que_nao_abre_nao_pode_encolher_a_posicao_em_silencio` (hoje vermelha
+   por design) e conserta o `posicao_do_diario:2505` (as duas engolidas). Frente
+   de rodada futura — NÃO se inicia sem ordem explícita.
 6. **239 — isolamento acima de READ COMMITTED e TLS.** Isolamento é o item 1.
    TLS: a pétrea das zero dependências; TLS 1.3 em casa exige X.509/ASN.1,
    ECDSA P-256 e gestão de certificado; o Noise já protege a porta de dados e
@@ -66,3 +92,10 @@ orquestrador e vale o que vale: quem decide é o dono.
    camada de rede: um proxy que termina TLS na frente do phxsqld (documentado,
    sem crate); (c) escrever TLS 1.3 em casa, provado contra vetores.
    Recomendação: (b) agora, (c) só se um cliente exigir TLS nativo.
+   **DECIDIDO 10/09/2026 — (b) proxy que termina TLS na frente, sem crate.**
+   Palavra do Patrão. A metade do isolamento acima de READ COMMITTED é a
+   decisão 179, fechada em (b) não agora. Para o TLS: um proxy documentado na
+   frente do `phxsqld`, sem crate, sem furar a pétrea das zero dependências; o
+   Noise segue protegendo a porta de dados. (c) — TLS 1.3 em casa — fica na
+   reserva, só se um cliente exigir TLS nativo. Segue uma frente de documentação
+   pequena (a receita do proxy), a iniciar só com ordem.
