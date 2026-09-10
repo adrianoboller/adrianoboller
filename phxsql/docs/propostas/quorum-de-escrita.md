@@ -210,6 +210,34 @@ caminho acima:
   (i) «aceita e avisa». Este é o **primeiro passo do build**, e é de projeto e
   risco: nenhuma linha de código antes do veredito do DBA.
 
+### 5.2 O veredito do DBA (10/09/2026) — (iii) NÃO compõe, cai para (i)
+
+O parecer do C (DBA) rodou antes de qualquer código e voltou firme: **(iii) não
+compõe**, e por regra escrita em 207-B cai para **(i) «aceita e avisa»** nesta
+rodada. As evidências, com file:line:
+
+- **O `ROLLBACK` do pedido 162 é pré-commit, não é undo.** `transacao.rs:9-13`:
+  nada vai a disco antes do COMMIT; o ROLLBACK joga a lista da RAM fora, zero
+  bytes. Depois que a linha foi gravada (COMMIT aplicado), **não há ROLLBACK** —
+  removê-la fisicamente reaproveitaria slot, o que fura «o `.reg` nunca
+  reaproveita slot» e «a ordem de digitação é sagrada». Provado por
+  `o_rollback_de_um_insert_nao_queima_slot` (`servidor.rs:32985`).
+- **O desenho já tinha proibido este cenário por escrito:** `transacao.rs:15-19`
+  — «um INSERT gravado e depois revertido deixaria um buraco permanente -- e,
+  pior, teria de deixar o MESMO buraco na replica». É a saída (iii) palavra por
+  palavra.
+- **As réplicas que confirmaram já aplicaram+`fsync`** (decisão 207) e o aplicar
+  é só-para-a-frente: `log.rs:96-100` só conhece Inclusao/Alteracao/Exclusao, não
+  há reverter. Forçar recuo bate em rowid divergente e **trava a replicação**
+  (`table.rs:3670-3677`) — divergência dura, não auto-curável.
+
+**A saída (iii) só volta a existir se o Patrão REABRIR a 207** para tornar o
+aplicar da réplica revogável via um protocolo de duas fases (prepare/commit,
+espelhando o `.tx` do master). Isso é protocolo novo, **contradiz o «ok =
+aplicou e sincronizou»** da 207 (viraria um quarto sentido de «ok»), é de
+projeto e risco, e tem premissa a medir (o round-trip de prepare+commit, ainda
+não medido). Fica registrado como caminho, decisão do dono — não como código.
+
 A premissa que envelheceu, registrada: a §3.3 dizia «a transação que ainda não
 existe». Existe desde o pedido 162 — e é o que torna (iii) possível. A §3.3
 fica com esta ressalva.
