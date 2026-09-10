@@ -190,6 +190,30 @@ Na ordem, e cada passo com o número que o justifica:
 de garantia não é uma funcionalidade pela metade, é uma promessa errada
 inteira.
 
+### 5.1 As decisões do dono, tomadas em 10/09/2026
+
+O passo 1 e mais duas sub-decisões da §3.3 fecharam com o Patrão. O que muda no
+caminho acima:
+
+- **O «ok» significa «aplicou e sincronizou»** (decisão 207): a réplica só
+  confirma depois do `fsync`. É o que o passo 2 (`replicar_empurrar`) tem de
+  esperar antes de contar o voto.
+- **O prazo é um campo** (207-A): `cluster.quorum_prazo_ms`, ao lado de
+  `quorum_minimo`. **O padrão NÃO se crava agora** — fixa-se depois de medir o
+  round-trip com `fsync` na réplica, número que ainda não existe. Isto é o
+  passo 4 alimentando o passo 5.
+- **A falha recusa e desfaz** (207-B, saída iii): quando N réplicas não
+  confirmam no prazo, a escrita — envolvida numa transação (pedido 162) — faz
+  `ROLLBACK` no master. **CONDICIONADO**: o C (DBA) confirma primeiro que o
+  `ROLLBACK` compõe com o evento que já foi empurrado para as réplicas que
+  confirmaram; se não compuser sem desfazer também na réplica, a saída cai para
+  (i) «aceita e avisa». Este é o **primeiro passo do build**, e é de projeto e
+  risco: nenhuma linha de código antes do veredito do DBA.
+
+A premissa que envelheceu, registrada: a §3.3 dizia «a transação que ainda não
+existe». Existe desde o pedido 162 — e é o que torna (iii) possível. A §3.3
+fica com esta ressalva.
+
 ---
 
 ## 6. Onde estão os números

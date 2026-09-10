@@ -639,6 +639,62 @@ silêncio), e a conexão fecha em seguida.
 - **As tentativas vivem em memória** — as leves e as graves contadas.
   Reiniciar o servidor zera os contadores; os bloqueios já gravados, não.
 
+### 7.1 A receita do proxy TLS — a saída para quem exige TLS nativo (pedido 239)
+
+Decisão do dono, 10/09/2026: **para TLS nativo, um proxy que termina o TLS na
+frente do `phxsqld` — não TLS escrito em casa.** O motivo é a pétrea das zero
+dependências: TLS 1.3 próprio exigiria X.509/ASN.1, ECDSA P-256 e gestão de
+certificado — milhares de linhas de norma para conferir contra vetor, e uma
+superfície de ataque que não é a que este projeto quer manter. O Noise da §7 já
+protege a **porta de dados** (5000); o cliente que pediria TLS (o WINDEV) **não
+fala Noise** — ou seja, o gargalo é o cliente, e o proxy o resolve **sem** o
+`phxsqld` ganhar uma dependência de cifra de fio nova.
+
+**Por que isto não fura a pétrea:** o proxy é **infraestrutura de fora**, não
+uma *crate* ligada ao binário. O `phxsqld` continua `cargo build --offline`, só
+`std`. Nada muda no que se compila.
+
+**O desenho, e ele é o padrão da indústria:** um *reverse proxy* que termina
+TLS (o operador escolhe o seu — a receita não amarra a um) escuta a porta
+pública em TLS e reencaminha em claro para o `phxsqld` no laço local. Vale para
+a porta web (§6) e, para um cliente que só fale TLS, também para a 5000.
+
+```
+cliente  --TLS-->  proxy (termina o TLS)  --claro, 127.0.0.1-->  phxsqld
+```
+
+**As três regras que fazem o proxy proteger em vez de enganar:**
+
+1. **O `phxsqld` escuta SÓ em `127.0.0.1`.** É a regra que já vale para a porta
+   web (§6: «quando ligada escuta só em `127.0.0.1`»). Se o `phxsqld` ficar
+   aberto à rede *ao lado* do proxy, o atacante liga direto e **pula o TLS
+   inteiro** — o proxy vira teatro. O proxy é o único que escuta a porta
+   pública; o motor, nunca.
+2. **O salto proxy→`phxsqld` é claro, então tem de ser laço local** (mesma
+   máquina, `127.0.0.1`) **ou dentro de um túnel** (WireGuard/IPSec, a outra
+   saída da §6). Terminar TLS no proxy e cruzar a rede em claro até o motor
+   noutra máquina desfaz o que o TLS comprou.
+3. **Os quatro portões continuam valendo.** O proxy **não** é caminho
+   privilegiado: ele fala o mesmo `POST /api`, que passa por política, token,
+   login e permissão (§6, «os mesmos portões»). O proxy acrescenta TLS na
+   frente; não tira portão nenhum de trás.
+
+**O que o proxy acrescenta, e o Noise não dá:** certificado, cadeia, autoridade
+e revogação — a confiança por CA que a §7 lista como o que o pino do Noise
+**não** é. Para o navegador, é a única saída honesta: ele fala TLS ou fala
+claro, e um aperto em JavaScript é teatro (§7, «O que ela NÃO é»).
+
+**O que o proxy NÃO substitui:** o Noise da porta 5000. São camadas de
+concerns diferentes — o proxy dá TLS ao cliente que o exige; o Noise protege a
+porta de dados para o cliente que fala o aperto. Ligar um não desliga o outro,
+e a cifra do fio (§7) e a cifra em repouso (§8) seguem intactas por baixo.
+
+**O que fica na reserva:** TLS 1.3 escrito em casa e provado contra vetores
+(a saída (c) do pedido 239) — só se um cliente exigir TLS **nativo no
+`phxsqld`**, sem proxy possível. Até lá, o proxy é a resposta, e é a mesma
+escolha de quem termina TLS na frente de qualquer serviço que não quer carregar
+a pilha de TLS por dentro.
+
 ---
 
 ## 8. A cifra dos diários: ChaCha20-Poly1305
