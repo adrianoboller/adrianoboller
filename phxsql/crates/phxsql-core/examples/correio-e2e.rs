@@ -13,8 +13,12 @@
 //!      telefone/SMS) + MASSON (flag X, 3a camada). Ler exige a senha da conta e,
 //!      quando ligadas, a frase e a chave Masson.
 //!   6. Anexos num armazem A PARTE; a mensagem guarda so a referencia.
-//!   7. Moderacao: banir/quarentena/multa com MOTIVO obrigatorio.
+//!   7. Moderacao: banir/quarentena/multa com MOTIVO obrigatorio; a DECISAO
+//!      (deferir/indeferir) tambem exige motivo.
 //!   8. Porta configuravel; padrao 8000.
+//!   9. STATUS das solicitacoes, por usuario: confianca com estado
+//!      (pendente/aceita/recusada) e moderacao com estado
+//!      (aberta/deferida/indeferida). Recusar NAO e bloquear.
 //!
 //! Rodar: cargo run -q --example correio-e2e -p phxsql-core
 
@@ -96,6 +100,44 @@ impl TipoSolicitacao {
             TipoSolicitacao::Banir => "banir",
             TipoSolicitacao::Quarentena => "quarentena",
             TipoSolicitacao::Multa => "multa",
+        }
+    }
+}
+
+/// Estado de uma solicitacao de confianca. O bool antigo confundia "pendente"
+/// com "recusada": quem manda precisa saber se foi RECUSADO ou se so nao houve
+/// resposta ainda. Recusar e um "nao, obrigado" (pode-se pedir de novo depois);
+/// bloquear e o "nunca mais" — sao coisas diferentes e o status mostra as duas.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum EstadoConfianca {
+    Pendente,
+    Aceita,
+    Recusada,
+}
+impl EstadoConfianca {
+    fn rotulo(self) -> &'static str {
+        match self {
+            EstadoConfianca::Pendente => "pendente",
+            EstadoConfianca::Aceita => "aceita",
+            EstadoConfianca::Recusada => "recusada",
+        }
+    }
+}
+
+/// Estado de uma solicitacao de moderacao vista pelo lado de quem abriu: o
+/// moderador defere ou indefere, e essa decisao tambem carrega motivo.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum EstadoModeracao {
+    Aberta,
+    Deferida,
+    Indeferida,
+}
+impl EstadoModeracao {
+    fn rotulo(self) -> &'static str {
+        match self {
+            EstadoModeracao::Aberta => "aberta",
+            EstadoModeracao::Deferida => "deferida",
+            EstadoModeracao::Indeferida => "indeferida",
         }
     }
 }
@@ -267,19 +309,37 @@ struct Envio<'a> {
     masson: Option<&'a str>,       // flag X: 3a camada
 }
 
+struct Confianca {
+    de: String,
+    para: String,
+    estado: EstadoConfianca,
+}
+
 struct Solicitacao {
     tipo: TipoSolicitacao,
     de: String,
     alvo: String,
     motivo: String,
     link_pagamento: Option<String>,
+    estado: EstadoModeracao,
+    decisao: Option<String>, // motivo de quem deferiu/indeferiu
+}
+
+/// Retrato das solicitacoes de UM usuario, para a tela "Status das solicitacoes".
+struct StatusSolicitacoes {
+    /// confianca que EU recebi e ainda nao respondi (aprovar/recusar)
+    receber: Vec<String>,
+    /// confianca que EU pedi, com o estado de cada uma
+    pedi: Vec<(String, EstadoConfianca)>,
+    /// moderacao que EU abri, com o alvo e o estado
+    moderacao: Vec<(TipoSolicitacao, String, EstadoModeracao)>,
 }
 
 struct ServerMail {
     dominio_base: String,
     porta: u16,
     usuarios: Vec<Usuario>,
-    confiancas: Vec<(String, String, bool)>,
+    confiancas: Vec<Confianca>,
     bloqueios: Vec<(String, String)>,
     mensagens: Vec<Mensagem>,
     anexos: Vec<Anexo>,
@@ -319,9 +379,10 @@ impl ServerMail {
         Ok(endereco)
     }
     fn confia(&self, a: &str, b: &str) -> bool {
-        self.confiancas
-            .iter()
-            .any(|c| c.2 && ((c.0 == a && c.1 == b) || (c.0 == b && c.1 == a)))
+        self.confiancas.iter().any(|c| {
+            c.estado == EstadoConfianca::Aceita
+                && ((c.de == a && c.para == b) || (c.de == b && c.para == a))
+        })
     }
     fn bloqueado(&self, dono: &str, quem: &str) -> bool {
         self.bloqueios.iter().any(|x| x.0 == dono && x.1 == quem)
@@ -329,7 +390,7 @@ impl ServerMail {
     fn pendentes_para(&self, para: &str) -> usize {
         self.confiancas
             .iter()
-            .filter(|c| c.1 == para && !c.2)
+            .filter(|c| c.para == para && c.estado == EstadoConfianca::Pendente)
             .count()
     }
     fn mesma_empresa(&self, a: &str, b: &str) -> bool {
@@ -346,7 +407,7 @@ impl ServerMail {
         if self
             .confiancas
             .iter()
-            .any(|c| c.0 == de && c.1 == para && !c.2)
+            .any(|c| c.de == de && c.para == para && c.estado == EstadoConfianca::Pendente)
         {
             return Err(format!("RECUSADO: ja ha uma solicitacao pendente de {de}"));
         }
@@ -355,7 +416,11 @@ impl ServerMail {
                 "RECUSADO: {para} atingiu o teto de solicitacoes pendentes"
             ));
         }
-        self.confiancas.push((de.into(), para.into(), false));
+        self.confiancas.push(Confianca {
+            de: de.into(),
+            para: para.into(),
+            estado: EstadoConfianca::Pendente,
+        });
         let cruz = if self.mesma_empresa(de, para) {
             "mesma empresa"
         } else {
@@ -366,16 +431,27 @@ impl ServerMail {
     }
     fn aceitar_confianca(&mut self, de: &str, para: &str) {
         for c in &mut self.confiancas {
-            if c.0 == de && c.1 == para {
-                c.2 = true;
+            if c.de == de && c.para == para && c.estado == EstadoConfianca::Pendente {
+                c.estado = EstadoConfianca::Aceita;
             }
         }
         println!("   {para} ACEITOU a confianca de {de}");
     }
+    /// Recusar e um "nao, obrigado": o pedido sai de pendente e vira recusada,
+    /// mas o outro pode pedir de novo depois (diferente de bloquear, que e o
+    /// "nunca mais"). O status mostra a diferenca.
+    fn recusar_confianca(&mut self, de: &str, para: &str) {
+        for c in &mut self.confiancas {
+            if c.de == de && c.para == para && c.estado == EstadoConfianca::Pendente {
+                c.estado = EstadoConfianca::Recusada;
+            }
+        }
+        println!("   {para} RECUSOU a confianca de {de} (pode pedir de novo)");
+    }
     fn bloquear(&mut self, dono: &str, quem: &str) {
         self.bloqueios.push((dono.into(), quem.into()));
         self.confiancas
-            .retain(|c| !(c.0 == quem && c.1 == dono && !c.2));
+            .retain(|c| !(c.de == quem && c.para == dono && c.estado == EstadoConfianca::Pendente));
         println!("   {dono} BLOQUEOU {quem}");
     }
 
@@ -402,6 +478,8 @@ impl ServerMail {
             alvo: alvo.into(),
             motivo: motivo.into(),
             link_pagamento: link.map(|s| s.into()),
+            estado: EstadoModeracao::Aberta,
+            decisao: None,
         });
         println!(
             "   solicitacao [{}] {de} -> {alvo}  [{}]  motivo: \"{motivo}\"{}",
@@ -410,6 +488,71 @@ impl ServerMail {
             link.map(|l| format!("  link: {l}")).unwrap_or_default()
         );
         Ok(self.solicitacoes.len() - 1)
+    }
+
+    /// Decisao do moderador. Deferir ou indeferir, mas SEMPRE com motivo —
+    /// a mesma lei do .reason: quem julga tem de dizer por que. E so decide
+    /// solicitacao ainda ABERTA (nao se re-julga o que ja foi julgado).
+    fn resolver_moderacao(
+        &mut self,
+        idx: usize,
+        deferir: bool,
+        motivo_decisao: &str,
+    ) -> Result<(), String> {
+        if motivo_decisao.trim().is_empty() {
+            return Err("RECUSADO: a decisao de moderacao exige motivo".into());
+        }
+        let s = self
+            .solicitacoes
+            .get_mut(idx)
+            .ok_or("solicitacao inexistente")?;
+        if s.estado != EstadoModeracao::Aberta {
+            return Err(format!(
+                "RECUSADO: solicitacao ja {} — nao se re-julga",
+                s.estado.rotulo()
+            ));
+        }
+        s.estado = if deferir {
+            EstadoModeracao::Deferida
+        } else {
+            EstadoModeracao::Indeferida
+        };
+        s.decisao = Some(motivo_decisao.into());
+        println!(
+            "   moderacao [{}] {} -> {}  {}  decisao: \"{motivo_decisao}\"",
+            s.tipo.rotulo(),
+            s.de,
+            s.alvo,
+            s.estado.rotulo()
+        );
+        Ok(())
+    }
+
+    /// O retrato que a tela "Status das solicitacoes" mostra para UM usuario.
+    fn status_solicitacoes(&self, quem: &str) -> StatusSolicitacoes {
+        let receber = self
+            .confiancas
+            .iter()
+            .filter(|c| c.para == quem && c.estado == EstadoConfianca::Pendente)
+            .map(|c| c.de.clone())
+            .collect();
+        let pedi = self
+            .confiancas
+            .iter()
+            .filter(|c| c.de == quem)
+            .map(|c| (c.para.clone(), c.estado))
+            .collect();
+        let moderacao = self
+            .solicitacoes
+            .iter()
+            .filter(|s| s.de == quem)
+            .map(|s| (s.tipo, s.alvo.clone(), s.estado))
+            .collect();
+        StatusSolicitacoes {
+            receber,
+            pedi,
+            moderacao,
+        }
     }
 
     fn enviar(&mut self, e: Envio) -> Result<usize, String> {
@@ -566,7 +709,7 @@ fn main() {
     let mut res: Vec<(bool, String)> = vec![];
     let mut ok = |c: bool, n: &str| res.push((c, n.to_string()));
 
-    println!("===== correio PhxSql: dominios, tres camadas de cripto, anexos, moderacao =====\n");
+    println!("===== correio PhxSql: dominios, 3 camadas, anexos, moderacao, status =====\n");
 
     println!("1) server mail (porta padrao) + contas nos dois dominios permitidos:");
     let mut srv = ServerMail::novo("phxsql.com.br");
@@ -742,22 +885,24 @@ fn main() {
             .is_err(),
         "solicitacao sem motivo recusada",
     );
-    srv.solicitar_moderacao(
-        TipoSolicitacao::Banir,
-        &b,
-        &spammer,
-        "phishing com prejuizo",
-        None,
-    )
-    .unwrap();
-    srv.solicitar_moderacao(
-        TipoSolicitacao::Quarentena,
-        &b,
-        &spammer,
-        "flood sem prejuizo direto",
-        None,
-    )
-    .unwrap();
+    let idx_banir = srv
+        .solicitar_moderacao(
+            TipoSolicitacao::Banir,
+            &b,
+            &spammer,
+            "phishing com prejuizo",
+            None,
+        )
+        .unwrap();
+    let idx_quarentena = srv
+        .solicitar_moderacao(
+            TipoSolicitacao::Quarentena,
+            &b,
+            &spammer,
+            "flood sem prejuizo direto",
+            None,
+        )
+        .unwrap();
     srv.solicitar_moderacao(
         TipoSolicitacao::Multa,
         &b,
@@ -791,6 +936,100 @@ fn main() {
     println!("\n8) porta configuravel:");
     srv.configurar_porta(9443);
     ok(srv.porta == 9443, "porta pode ser diferente de 8000");
+
+    println!("\n9) status das solicitacoes (confianca e moderacao, com estado):");
+    let carlos = srv
+        .criar_conta("carlos", "empresa.phxsql.com.br", "senha-do-carlos-3q")
+        .unwrap();
+    srv.solicitar_confianca(&carlos, &b).unwrap();
+    let sc = srv.status_solicitacoes(&carlos);
+    let sj = srv.status_solicitacoes(&b);
+    ok(
+        sj.receber.iter().any(|d| d == &carlos)
+            && sc
+                .pedi
+                .iter()
+                .any(|(p, e)| p == &b && *e == EstadoConfianca::Pendente),
+        "pendente aparece: joana recebe, carlos ve como pendente",
+    );
+
+    // recusar NAO e bloquear: sai de pendente, vira recusada, e nao entrega.
+    // Se recusar fosse no-op, o estado ficaria Pendente e a checagem falha;
+    // se recusar "aceitasse", confia() viraria true e a de baixo falha.
+    srv.recusar_confianca(&carlos, &b);
+    let sc = srv.status_solicitacoes(&carlos);
+    let sj = srv.status_solicitacoes(&b);
+    ok(
+        sc.pedi
+            .iter()
+            .any(|(p, e)| p == &b && *e == EstadoConfianca::Recusada)
+            && !sj.receber.iter().any(|d| d == &carlos)
+            && !srv.confia(&carlos, &b),
+        "recusar: carlos ve 'recusada', sai da caixa de joana, sem confianca",
+    );
+    ok(
+        srv.enviar(Envio {
+            de: &carlos,
+            senha: "senha-do-carlos-3q",
+            para: &b,
+            corpo: "deixa eu passar?",
+            pri: Prioridade::Baixa,
+            tipo: Tipo::Normal,
+            anexos: vec![],
+            alto_segredo: None,
+            masson: None,
+        })
+        .is_err(),
+        "confianca recusada nao entrega mensagem",
+    );
+
+    ok(
+        srv.resolver_moderacao(idx_banir, true, "  ").is_err(),
+        "decisao de moderacao sem motivo recusada",
+    );
+    srv.resolver_moderacao(idx_banir, true, "phishing confirmado nos logs")
+        .unwrap();
+    srv.resolver_moderacao(idx_quarentena, false, "sem evidencia suficiente")
+        .unwrap();
+    ok(
+        srv.resolver_moderacao(idx_banir, false, "mudei de ideia")
+            .is_err(),
+        "nao se re-julga solicitacao ja decidida",
+    );
+    let sj = srv.status_solicitacoes(&b);
+    ok(
+        sj.moderacao
+            .iter()
+            .any(|(t, _, e)| *t == TipoSolicitacao::Banir && *e == EstadoModeracao::Deferida)
+            && sj.moderacao.iter().any(|(t, _, e)| {
+                *t == TipoSolicitacao::Quarentena && *e == EstadoModeracao::Indeferida
+            })
+            && sj
+                .moderacao
+                .iter()
+                .any(|(t, _, e)| *t == TipoSolicitacao::Multa && *e == EstadoModeracao::Aberta),
+        "moderacao: banir deferida, quarentena indeferida, multa ainda aberta",
+    );
+    ok(
+        srv.solicitacoes[idx_banir].decisao.as_deref() == Some("phishing confirmado nos logs"),
+        "a decisao guarda o motivo de quem julgou",
+    );
+
+    // o retrato que a tela "Status das solicitacoes" mostra
+    let imprimir = |quem: &str, s: &StatusSolicitacoes| {
+        println!("   [{quem}]");
+        for d in &s.receber {
+            println!("      a aprovar: {d}");
+        }
+        for (p, e) in &s.pedi {
+            println!("      pedi a {p}: {}", e.rotulo());
+        }
+        for (t, alvo, e) in &s.moderacao {
+            println!("      moderacao [{}] {alvo}: {}", t.rotulo(), e.rotulo());
+        }
+    };
+    imprimir(&carlos, &srv.status_solicitacoes(&carlos));
+    imprimir(&b, &srv.status_solicitacoes(&b));
 
     println!("\n===== RESULTADO =====");
     let mut falhas = 0;
