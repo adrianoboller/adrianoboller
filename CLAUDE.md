@@ -299,6 +299,44 @@ Ou seja: a fonte é excelente **e** cada receita dela continua passando pelo
 crivo do nosso gargalo. Inspiração que pula a medição não é inspiração — é
 cópia com outro nome.
 
+**Três motores maduros convergindo é aceite automático — decisão do dono,
+11/09/2026.** Palavra dele: *«Se o PostgreSQL, MariaDB e MySQL faz de um jeito
+em comum então é verdade absoluta e pode tomar como um aceite automaticamente
+sem me perguntar.»*
+
+É o contrapeso exato da lei de cima. «Receita de fora se mede antes de virar
+plano» nasceu de **uma** fonte trazendo **uma** arquitetura (o WAL), e ali a
+medição é obrigatória porque uma fonte só sabe do gargalo dela. Três motores
+independentes, maduros e de famílias diferentes chegando ao **mesmo
+comportamento** é outra coisa: não é aposta de arquitetura, é o consenso de quem
+já apanhou de todos os casos-limite que nós ainda nem vimos. Onde os três
+concordam no **que o banco faz** — a semântica do `NULL` num `UNIQUE`, a ordem
+de avaliação de um `WHERE`, o que um `GROUP BY` sem agregação devolve, como um
+`LEFT JOIN` preenche o lado vazio — o consenso é verdade absoluta e entra sem
+pergunta.
+
+E o limite, que é onde a lei de cima continua mandando: **o aceite é do
+comportamento, não do meio**, e convergência dos três **não revoga pétrea
+nossa.** Quando o consenso bate numa, o choque **aparece** — não se aceita
+calado, nem se ignora calado. Dois choques vivos hoje dizem a diferença:
+
+- **TLS na conexão.** Os três cifram a conexão; por «verdade absoluta»
+  seríamos obrigados a fazer igual. Mas cifrar pede biblioteca, e **zero
+  dependências externas** é pétrea. O comportamento (conexão cifrada) entra
+  como meta; o **meio** (puxar uma crate de TLS) não passa sem o dono, porque
+  a pétrea é mais forte que a convergência — ou se escreve aqui, como o
+  SHA-256, ou se discute.
+- **Isolamento acima de `READ COMMITTED`.** Os três oferecem leitura repetível
+  (MySQL e MariaDB até como padrão). A convergência diz que deveríamos ter.
+  Mas quem compraria isso é a *Sombra*/MVCC, **parada por decisão do dono**
+  (`docs/SOMBRA.md`). Convergência não reabre o que o dono fechou — vira item
+  medido na pendência, não aceite automático.
+
+Ou seja: onde os três concordam e **nada nosso se opõe**, entra sem pergunta —
+é o caso comum, e poupar a pergunta é o ganho que o dono pediu. Onde concordam
+e **uma pétrea se opõe**, a pétrea ganha e o choque vai para a mesa, nunca para
+o silêncio.
+
 **Lógica que passou pela nossa cabeça e saiu DIFERENTE não é cópia — e a prova
 de que passou é a divergência.** Ordem do dono, 04/09/2026: *«uma lógica uma vez
 refatorada não é cópia.»*
