@@ -13,7 +13,7 @@ flock /tmp/phx-cargo.lock python3 docs/qa/medir.py
 > que ela não cobre. Os números do dia saem do gerador
 > (`python3 docs/qa/medir.py --gravar`, que escreve dentro do
 > `docs/QA-PDCA.md`) e são sete em 07/09/2026, não cinco: entraram a
-> `TETO_BOTAO_SEM_PROVA` (pedido 190), a `TETO_TEMP_DIR_SOLTO` (pedido 150,
+> `TETO_BOTAO_SEM_PROVA` (pedido 190, §9), a `TETO_TEMP_DIR_SOLTO` (pedido 150,
 > §6) e a `TETO_VERMELHA_SEM_PEDIDO` (pedido 212, §7) — oito ao todo. Número
 > datado numa prosa não é número errado; número datado **sem dizer que é
 > datado** é.
@@ -45,7 +45,7 @@ limite de funcionamento subindo não é catraca afrouxando.
 Um terceiro caso, à parte dos dois: **portão binário**. `cargo fmt --check`,
 `cargo clippy -D warnings`, `cargo test --workspace`, o conferidor de zero
 dependências (`conferidor_dependencias.rs`) e o **portão dos geradores**
-(`docs/dossie/portao-dos-geradores.py`, seção 9 abaixo) não têm "folga" — são
+(`docs/dossie/portao-dos-geradores.py`, seção 10 abaixo) não têm "folga" — são
 verdadeiro/falso, não contagem. Não entram na tabela abaixo pelo mesmo
 motivo que `TETO_DA_CASCATA` não entra: não há número que decresça. **Não crie
 um `TETO` para o portão dos geradores**: «um derivado velho» não é uma dívida
@@ -403,7 +403,51 @@ antes do pedido 213), os três testes que provam `excluir_tabela`,
 `renomear_tabela` e `arquivos_da_tabela` ficam vermelhos, nomeando o `.fts`
 órfão.
 
-## 9. O portão dos geradores — o derivado velho que anuncia sucesso pelo silêncio
+### 9. `TETO_BOTAO_SEM_PROVA` — botão de tela sem prova de clique
+
+**O defeito que motivou** (pedido 190): *interface só se prova exercitando*. Um
+botão pode quebrar sem que a leitura do código perceba — foi o que a coluna de
+sistema `rownum` fez com *todo salvar e todo incluir* pela tela, e o que só um
+vídeo achou em cinco minutos. Ler o `onclick` não prova que o botão funciona;
+clicá-lo, sim. Sem catraca, cada tela nova traz botões que ninguém exercita, e
+a regressão fica escondida até alguém clicar em produção.
+
+**O que ela conta** (`crates/phxsql-server/src/conferidor_botoes.rs`,
+`sem_prova()`): todo botão da tela (`<button>` e `role="button"`) cuja chave
+estável (`#id`, `data-*` ou classe-gancho) **não** é clicada por nenhum caso da
+bateria de navegador (`testes-web/casos/`) e **não** está em `DISPENSADOS` com o
+motivo. Botão sem chave estável não dá para provar nem dispensar — entra na
+conta como dívida até ganhar uma.
+
+**O PISO, que obriga a descer junto da conversão**: além de `medido <= teto`, o
+teste cobra `faltam.len() + 15 >= teto` — quem escreve dez casos e não baixa o
+teto no mesmo commit deixa a catraca frouxa, e o piso reprova isso. É o mesmo
+lado-da-folga que a §5 (fsync) tem.
+
+**Aposenta, não sobe.** Se a régua passar a enxergar mais botões (hoje ela não
+vê, por exemplo, um handler ligado por `addEventListener` sem chave no HTML),
+nasce uma `..._V2` no número medido do dia, e esta é aposentada — a mesma lei
+das §1 e §5, nunca subir um teto com o motivo ao lado.
+
+**Medido hoje** (11/09/2026, `cargo run --example botoes-sem-prova -p
+phxsql-server` — lê a evidência gravada em `testes-web/casos/`, não abre
+navegador): **310** botões (308 `<button>` + 2 `role="button"`; 229 por `#id`,
+69 por `data-*`, 11 por classe-gancho, 1 sem chave estável); **109** clicados
+pela bateria; **9** dispensados com motivo; **194** sem prova — **teto 194,
+folga 0**. Ela **nasceu em 211** (05/09/2026), num dia que começou em **268** de
+298 botões com a bateria clicando 28; hoje clica 109. Só desceu.
+
+**A prova real, nos dois sentidos**: `o_conferidor_acha_o_que_promete` prova que
+o conferidor PEGA — um zero por engano (conferidor quebrado) é pior que um
+número alto. Mais quatro guardas de crivo blindam os falsos: `a_chave_nao_e_a_frase`
+(a chave é o `#id`, não o texto), `a_interpolacao_nao_fecha_a_etiqueta_cedo`,
+`classe_de_estilo_nao_e_chave` e `a_lista_de_ganchos_sai_do_codigo`. E dois
+laços fecham a evidência dos dois lados: `nenhuma_dispensa_morta` (dispensa que
+não bate mais em botão nenhum) e `nenhuma_chave_morta_na_evidencia` (caso
+gravado para um botão que não existe mais) — chave morta é pior que chave
+faltando, a mesma lição da fábrica de idiomas.
+
+## 10. O portão dos geradores — o derivado velho que anuncia sucesso pelo silêncio
 
 **O defeito que motivou** (revisão de gaps, 11/09/2026): a pasta `docs/dossie/`
 tem **catorze** geradores que escrevem TODO número visível do dossiê e das cinco
