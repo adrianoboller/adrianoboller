@@ -167,6 +167,20 @@
   .cfg .vv{font-family:var(--mono);font-size:12.5px;color:var(--tinta);word-break:break-all}
   .cfg .vv .hl{color:var(--rede)}
 
+  /* dns / cloudflare */
+  .dns{padding:12px 14px}
+  .dns-nota{margin:0 0 12px;color:var(--fraco);font-size:12px;line-height:1.5}
+  .dns-nota code{font-family:var(--mono);color:var(--rede)}
+  .dns-linha{display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid var(--linha2);flex-wrap:wrap}
+  .dns-linha:last-child{border-bottom:0}
+  .dns-linha .emp{min-width:172px}
+  .dns-linha .emp .ip{color:var(--rede);font-family:var(--mono);font-size:12px;margin-top:3px}
+  .dns-linha .emp .ip.vazio{color:var(--fraco2)}
+  .dns-linha .regs{display:flex;flex-direction:column;gap:6px;flex:1;min-width:230px}
+  .dns-linha .reg{display:flex;align-items:center;gap:8px;font-size:12px}
+  .dns-linha .reg .mono{color:var(--tinta)}
+  .dns-linha .acao{flex:none}
+
   .rodape{grid-column:1 / -1;padding:14px 20px;border-top:1px solid var(--linha);color:var(--fraco2);
     font-size:11px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;background:#040820}
   .rodape .assin{letter-spacing:.14em;text-transform:uppercase;color:var(--fraco)}
@@ -230,12 +244,12 @@
       <div class="corpo">
         <table>
           <thead><tr>
-            <th>Empresa</th><th>Alias DNS</th><th class="num">Contas</th><th class="num">Armazenado</th><th>Estado</th><th style="text-align:right">Ações</th>
+            <th>Empresa</th><th>IP fixo</th><th class="num">Contas</th><th class="num">Armazenado</th><th>Estado</th><th style="text-align:right">Ações</th>
           </tr></thead>
           <tbody>
             <tr>
               <td><span class="dado">Prado &amp; Filhos Ltda</span><div class="sub2">Blumenau · SC</div></td>
-              <td class="mono">prado.phxsql.com.br</td>
+              <td class="mono">203.0.113.10</td>
               <td class="num">312</td><td class="num mono">86,4 GB</td>
               <td><span class="est ok"><span class="pt"></span>ativa</span></td>
               <td><div class="acoes" style="justify-content:flex-end">
@@ -246,7 +260,7 @@
             </tr>
             <tr>
               <td><span class="dado">Time Ágil S.A.</span><div class="sub2">São Paulo · SP</div></td>
-              <td class="mono">time.phxmail.com.br</td>
+              <td class="mono">198.51.100.20</td>
               <td class="num">468</td><td class="num mono">129,1 GB</td>
               <td><span class="est ok"><span class="pt"></span>ativa</span></td>
               <td><div class="acoes" style="justify-content:flex-end">
@@ -257,7 +271,7 @@
             </tr>
             <tr>
               <td><span class="dado">Loja da Esquina ME</span><div class="sub2">Joinville · SC</div></td>
-              <td class="mono">loja.phxmail.com.br</td>
+              <td class="mono">203.0.113.42</td>
               <td class="num">3</td><td class="num mono">412 MB</td>
               <td><span class="est espera"><span class="pt"></span>implantando</span></td>
               <td><div class="acoes" style="justify-content:flex-end">
@@ -268,7 +282,7 @@
             </tr>
             <tr>
               <td><span class="dado">Cadastro vazio (rascunho)</span><div class="sub2">— sem cidade —</div></td>
-              <td class="mono">rascunho.phxsql.com.br</td>
+              <td class="mono" style="color:var(--fraco2)">— sem IP —</td>
               <td class="num">0</td><td class="num mono">0 B</td>
               <td><span class="est parado"><span class="pt"></span>sem contas</span></td>
               <td><div class="acoes" style="justify-content:flex-end">
@@ -280,6 +294,52 @@
           </tbody>
         </table>
         <p class="sub2" style="padding:8px 12px 4px">🔒 <b>RESTRICT</b> — empresa com contas (filhas) não pode ser apagada; o botão fica travado com o motivo. Regra primordial da integridade, imposta na tela e no motor.</p>
+      </div>
+    </div>
+
+    <div class="painel" style="margin-bottom:16px">
+      <header>
+        <h2>🌐 IP fixo &amp; DNS no Cloudflare</h2>
+        <span class="conta">1 IP fixo por servermail · 2 registros A por empresa</span>
+      </header>
+      <div class="dns">
+        <p class="dns-nota"><code>nome_empresa.phxsql.com.br</code> e <code>nome_empresa.phxmail.com.br</code> apontam para o IP fixo do servermail (A, <b>proxied=off</b>), cadastrados via <b>API do Cloudflare</b> de forma idempotente (cria ou atualiza). As zonas ainda não estão no Cloudflare — <b>passo de implantação</b>; os estados abaixo são de exemplo.</p>
+
+        <div class="dns-linha">
+          <div class="emp"><span class="dado">Prado &amp; Filhos Ltda</span><div class="ip">203.0.113.10</div></div>
+          <div class="regs">
+            <span class="reg"><span class="est ok"><span class="pt"></span>no ar</span><span class="mono">prado.phxsql.com.br</span></span>
+            <span class="reg"><span class="est ok"><span class="pt"></span>no ar</span><span class="mono">prado.phxmail.com.br</span></span>
+          </div>
+          <button class="acao consultar">Reprovisionar</button>
+        </div>
+
+        <div class="dns-linha">
+          <div class="emp"><span class="dado">Time Ágil S.A.</span><div class="ip">198.51.100.20</div></div>
+          <div class="regs">
+            <span class="reg"><span class="est ok"><span class="pt"></span>no ar</span><span class="mono">timeagil.phxsql.com.br</span></span>
+            <span class="reg"><span class="est ok"><span class="pt"></span>no ar</span><span class="mono">timeagil.phxmail.com.br</span></span>
+          </div>
+          <button class="acao consultar">Reprovisionar</button>
+        </div>
+
+        <div class="dns-linha">
+          <div class="emp"><span class="dado">Loja da Esquina ME</span><div class="ip">203.0.113.42</div></div>
+          <div class="regs">
+            <span class="reg"><span class="est espera"><span class="pt"></span>pendente</span><span class="mono">loja.phxsql.com.br</span></span>
+            <span class="reg"><span class="est espera"><span class="pt"></span>pendente</span><span class="mono">loja.phxmail.com.br</span></span>
+          </div>
+          <button class="acao incluir">Provisionar DNS</button>
+        </div>
+
+        <div class="dns-linha">
+          <div class="emp"><span class="dado">Cadastro vazio (rascunho)</span><div class="ip vazio">— sem IP fixo —</div></div>
+          <div class="regs">
+            <span class="reg"><span class="est parado"><span class="pt"></span>sem IP</span><span class="mono">rascunho.phxsql.com.br</span></span>
+            <span class="reg"><span class="est parado"><span class="pt"></span>sem IP</span><span class="mono">rascunho.phxmail.com.br</span></span>
+          </div>
+          <button class="acao incluir" disabled title="defina o IP fixo do servermail antes de provisionar">Provisionar DNS</button>
+        </div>
       </div>
     </div>
 
