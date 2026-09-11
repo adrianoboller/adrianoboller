@@ -3,7 +3,22 @@
 
     python3 docs/tecnologias/extrair.py
 
-Imprime, em ordem, os blocos Markdown que o TECNOLOGIAS.md cola verbatim.
+Por padrao GRAVA: le o TECNOLOGIAS.md, acha cada par de marcas
+`<!-- GERADO: bloco_x() -->` ... `<!-- /GERADO -->`, chama a(s) funcao(oes)
+citada(s) no proprio marcador e regrava o miolo com o resultado. E o mesmo
+molde do `docs/dossie/cobertura-por-area.py` (marcas de inicio/fim, miolo
+substituido, write_text). `--imprimir` volta ao comportamento antigo: so
+imprime no stdout, sem tocar no arquivo -- para quem so quer olhar.
+
+Ate 11/09/2026 este script SO imprimia, e um humano colava a saida no
+documento -- exatamente o anti-padrao que a casa ja pagou: "gerador que so
+IMPRIME nunca muda o arquivo, e o portao de re-rodar-e-comparar e cego a
+ele" (ver a docstring de `bloco_testes()`, que conta como isso deixou o
+documento 550 testes atras uma vez). Gravar no lugar fecha esse buraco: o
+`docs/dossie/portao-dos-geradores.py` passa a rodar este extrator e comparar
+o TECNOLOGIAS.md antes/depois, do mesmo jeito que ja faz com os outros
+treze geradores.
+
 Cada numero sai daqui porque a regra do projeto e clara: "todo numero
 visivel sai de um gerador, ou esta errado e ninguem percebeu ainda" -- e o
 corolario que ja custou caro: quando um gerador depende de uma lista, a
@@ -12,6 +27,12 @@ aqui: a lista dos arquivos que a interface embute sai do proprio
 crates/phxsql-server/src/http.rs (funcao `arquivos_da_interface`), no lugar
 de uma lista digitada -- foi exatamente essa lista digitada que fez o
 rodape do dossie publicar 780 KiB quando eram 1.032.
+
+A lista de FUNCOES que cada marcador chama tambem sai do codigo: nunca de
+uma segunda lista digitada aqui. `_funcoes_do_marcador()` le o proprio texto
+do marcador (ex.: "bloco_conferidores() + bloco_catracas() + bloco_guardas()")
+com um regex `bloco_\\w+` e resolve cada nome via `globals()`. Marcador novo
+com bloco novo funciona sem editar mapa nenhum -- a mesma lei de sempre.
 
 Quem editar este arquivo: nao digite um numero que da para medir. Se algo
 nao for medivel daqui, a funcao correspondente devolve None e o texto que
@@ -883,10 +904,81 @@ def bloco_modelos() -> str:
     )
 
 
+# ================================================================ GRAVACAO
+#
+# Molde: docs/dossie/cobertura-por-area.py -- marcas de inicio/fim, miolo
+# substituido, write_text(encoding="utf-8"). A diferenca e que aqui ha
+# DEZESSEIS pares de marcas no mesmo arquivo, cada um com um LABEL proprio
+# (o texto depois de "GERADO: "), entao a substituicao e por regex sobre
+# todos os pares de uma vez, nao por um split() de duas marcas fixas.
+
+ALVO_TECNOLOGIAS = RAIZ / "docs" / "TECNOLOGIAS.md"
+
+PADRAO_REGIAO = re.compile(
+    r"<!-- GERADO: (?P<label>[^\n]+?) -->\n"
+    r"(?P<corpo>.*?)"
+    r"<!-- /GERADO -->",
+    re.S,
+)
+
+_NOME_FUNCAO = re.compile(r"bloco_\w+")
+
+
+def _funcoes_do_marcador(label: str) -> list[str]:
+    """Extrai os nomes `bloco_*` citados no proprio texto do marcador --
+    nunca de uma segunda lista digitada aqui (ver docstring do modulo)."""
+    nomes = _NOME_FUNCAO.findall(label)
+    if not nomes:
+        raise SystemExit(
+            f"marcador sem nenhum bloco_*() reconhecivel: {label!r} -- "
+            "o LABEL do <!-- GERADO: ... --> tem de citar ao menos uma "
+            "funcao bloco_*()."
+        )
+    return nomes
+
+
+def _chamar_bloco(nome: str) -> str:
+    fn = globals().get(nome)
+    if fn is None or not callable(fn):
+        raise SystemExit(
+            f"um marcador <!-- GERADO: ... --> cita `{nome}()`, mas este "
+            f"script nao tem essa funcao -- pare e nomeie o defeito em vez "
+            f"de gravar meia-boca."
+        )
+    resultado = fn()
+    if resultado is None:
+        return f"NAO MEDIDO (`{nome}()` nao encontrou fonte nesta rodada)."
+    return resultado
+
+
+def _regiao_regravada(m: re.Match) -> str:
+    label = m.group("label")
+    nomes = _funcoes_do_marcador(label)
+    partes = [_chamar_bloco(nome) for nome in nomes]
+    novo_corpo = "\n\n".join(partes)
+    return f"<!-- GERADO: {label} -->\n{novo_corpo}\n<!-- /GERADO -->"
+
+
+def gravar(alvo: Path = ALVO_TECNOLOGIAS) -> int:
+    """Regrava toda regiao <!-- GERADO: ... --> ... <!-- /GERADO --> de
+    `alvo` com a saida fresca da(s) funcao(oes) que o proprio marcador cita.
+    Devolve o numero de regioes regravadas; para com erro nomeado se algum
+    marcador citar uma funcao que nao existe (nunca grava meia-boca)."""
+    texto = ler(alvo)
+    n = len(PADRAO_REGIAO.findall(texto))
+    if n == 0:
+        raise SystemExit(
+            f"{alvo} nao tem nenhum par <!-- GERADO: ... --> / <!-- /GERADO -->"
+        )
+    novo_texto = PADRAO_REGIAO.sub(_regiao_regravada, texto)
+    alvo.write_text(novo_texto, encoding="utf-8")
+    return n
+
+
 # ================================================================ MAIN
 
 
-def main():
+def imprimir():
     print("# GERADO POR docs/tecnologias/extrair.py -- nao editar a mao\n")
 
     print("## Rust por crate\n")
@@ -961,6 +1053,14 @@ def main():
     print("## MODELOS.md\n")
     print(bloco_modelos())
     print()
+
+
+def main():
+    if "--imprimir" in sys.argv:
+        imprimir()
+        return
+    n = gravar()
+    print(f"{ALVO_TECNOLOGIAS.relative_to(RAIZ)}: {n} regioes <!-- GERADO --> regravadas")
 
 
 if __name__ == "__main__":

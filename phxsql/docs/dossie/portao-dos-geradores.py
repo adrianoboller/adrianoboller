@@ -129,6 +129,9 @@ PLANO = [
      "conta os tres estados do PENDENCIAS.md; deterministico"),
     ("cobertura-por-area.py", [DOSSIE, "docs/TESTES.md"], "exato",
      "conta #[test] por area no fonte; deterministico"),
+    ("docs/tecnologias/extrair.py", ["docs/TECNOLOGIAS.md"], "exato",
+     "regrava os 16 blocos GERADO (pedido 156); CAPABILITIES.json e "
+     "versionado e o script nao tem relogio -- funcao pura das fontes"),
     ("capturas-no-dossie.py", [DOSSIE], "exato",
      "embute os PNG ja reduzidos de capturas/ como data URI; deterministico"),
     ("tetos-da-trava.py", [DOSSIE], "exato",
@@ -163,6 +166,15 @@ MEDICAO_TRIO = RAIZ / "bancada" / "comparacao" / "um-milhao.json"
 
 def resolver(alvo: str, dossie: pathlib.Path) -> pathlib.Path:
     return dossie if alvo == DOSSIE else (RAIZ / alvo)
+
+
+def caminho_do_gerador(script: str) -> pathlib.Path:
+    """Onde o .py do gerador mora. Todo gerador desta lista sempre viveu em
+    docs/dossie/ -- mas o extrair.py (pedido 156) mora em docs/tecnologias/,
+    porque a pasta de tecnologias e dele, nao do dossie. Em vez de mudar a
+    convencao para os catorze, o nome no PLANO vira caminho relativo a RAIZ
+    quando tem "/"; sem "/" cai no comportamento antigo (AQUI/script)."""
+    return (RAIZ / script) if "/" in script else (AQUI / script)
 
 
 def primeiro_hunk(antes: str, depois: str, nome: str) -> str:
@@ -207,7 +219,7 @@ def conferir_um(script: str, alvos, modo: str, dossie: pathlib.Path):
 
     try:
         r = subprocess.run(
-            [sys.executable, str(AQUI / script)],
+            [sys.executable, str(caminho_do_gerador(script))],
             cwd=RAIZ, capture_output=True, text=True,
         )
     except Exception as e:  # noqa: BLE001 -- o portao nunca cai; ele reprova

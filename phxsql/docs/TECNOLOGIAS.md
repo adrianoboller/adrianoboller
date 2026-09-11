@@ -34,25 +34,28 @@ foi estimado no lugar de uma medição que faltou.
 <!-- GERADO: bloco_linguagens_rust() -->
 | crate | arquivos .rs | codigo | teste | comentario | vazias | total |
 |---|---:|---:|---:|---:|---:|---:|
-| `phxsql-cli` | 1 | 819 | 79 | 106 | 73 | 1077 |
+| `phxsql-cli` | 1 | 815 | 104 | 113 | 78 | 1110 |
 | `phxsql-cmd` | 2 | 579 | 110 | 171 | 62 | 922 |
-| `phxsql-core` | 26 | 8180 | 2441 | 2047 | 1090 | 13758 |
-| `phxsql-ffi` | 7 | 1407 | 1014 | 697 | 235 | 3353 |
-| `phxsql-odbc` | 6 | 1637 | 281 | 365 | 123 | 2406 |
-| `phxsql-server` | 40 | 31444 | 13611 | 11519 | 3187 | 59761 |
-| `phxsql-sql` | 6 | 3495 | 1069 | 554 | 321 | 5439 |
-| `phxsql-store` | 18 | 10985 | 2445 | 3042 | 1237 | 17709 |
-| **total** | **106** | **58546** | **21050** | **18501** | **6328** | **104425** |
+| `phxsql-core` | 29 | 9886 | 3162 | 2424 | 1252 | 16724 |
+| `phxsql-ffi` | 7 | 1408 | 1014 | 703 | 235 | 3360 |
+| `phxsql-odbc` | 7 | 2348 | 1022 | 852 | 219 | 4441 |
+| `phxsql-server` | 55 | 41509 | 24504 | 18852 | 4545 | 89410 |
+| `phxsql-sql` | 10 | 6486 | 3235 | 1858 | 726 | 12305 |
+| `phxsql-store` | 23 | 12585 | 3156 | 5111 | 1432 | 22284 |
+| **total** | **134** | **75616** | **36307** | **30084** | **8549** | **150556** |
 
-Proporção teste/código (só `src/`, sem comentário nem linha vazia):
-**21.050 / 58.546 = 0,36×** — pouco mais de uma linha de teste para cada três
-de produto. `phxsql-server` sozinho concentra mais da metade do código
-(31.444 de 58.546 linhas, 54%) e quase dois terços do teste (13.611 de
-21.050, 65%): é onde mora o protocolo, o SQL embutido nas operações, a
-interface HTTP e a réplica — `phxsql-cli` e `phxsql-cmd`, as duas
-ferramentas de linha de comando mais finas, têm a proporção mais baixa
-(0,10× e 0,19×) porque a lógica que importa já está testada nas camadas de
-baixo que elas chamam.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **36307/75616 = 0.48×**.
+
+Alem do `src/`: **62** programas de medicao em `examples/` (12280 linhas — bancada em Rust, nao produto nem teste) e **54** arquivos em `tests/` de integracao fora de `src/` (18076 linhas).
+<!-- /GERADO -->
+
+A proporção teste/código sai medida no bloco acima, não digitada aqui. O
+retrato que a tabela desenha é estável: `phxsql-server` sozinho concentra
+mais da metade do código e a maior parte do teste — é onde mora o protocolo,
+o SQL embutido nas operações, a interface HTTP e a réplica —, enquanto
+`phxsql-cli` e `phxsql-cmd`, as duas ferramentas de linha de comando mais
+finas, têm a proporção mais baixa, porque a lógica que importa já está
+testada nas camadas de baixo que elas chamam.
 
 Contagem feita **por um tokenizador de Rust escrito para este extrator**
 (comentário de linha e de bloco, string, string bruta `r#"…"#` e caractere
@@ -63,58 +66,53 @@ chaves confundiria com abertura/fechamento de bloco de teste. O classificador
 foi conferido contra `wc -l` linha a linha em arquivos de amostra antes de
 rodar no workspace inteiro.
 
-Além do `src/`: **36** programas de medição em `examples/` (6.806 linhas —
-bancada em Rust, não produto nem teste unitário) e **36** arquivos de teste
-de integração em `tests/`, fora de `src/` (12.498 linhas).
-
 ### 1.2 A interface web embutida no binário
 
 <!-- GERADO: bloco_interface() -->
-Lista extraída de `crates/phxsql-server/src/http.rs` — todo
-`include_str!`/`include_bytes!` que aponta para dentro de `ui/` — e não
-digitada. É a mesma lista, lida do mesmo lugar, que decide o que o binário
-`phxsqld` embute:
+Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`include_bytes!` que aponta para `ui/`), nao digitada -- e a mesma lista que decide o que o binario embute:
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 14.068 | 761,1 |
-| `ui/grid/phx-grid.css` | 168 | 12,3 |
-| `ui/grid/phx-grid.js` | 1.837 | 88,5 |
-| `ui/diagrama-er.js` | 712 | 29,1 |
-| `ui/telemetria.css` | 447 | 19,8 |
-| `ui/telemetria.js` | 1.799 | 88,0 |
-| `ui/multitela.css` | 156 | 8,6 |
-| `ui/multitela.js` | 1.549 | 66,5 |
-| `ui/claude.js` | 1.346 | 66,6 |
-| `ui/grid/CHANGELOG-phx-grid.md` | 205 | 28,7 |
-| **total (10 arquivos)** | **22.287** | **1.169,3** |
+| `ui/index.html` | 14969 | 842.7 |
+| `ui/grid/phx-grid.css` | 168 | 12.3 |
+| `ui/grid/phx-grid.js` | 1860 | 90.1 |
+| `ui/diagrama-er.js` | 712 | 29.1 |
+| `ui/telemetria.css` | 447 | 19.8 |
+| `ui/telemetria.js` | 1799 | 88.0 |
+| `ui/multitela.css` | 156 | 8.6 |
+| `ui/multitela.js` | 1588 | 69.0 |
+| `ui/claude.js` | 1357 | 67.2 |
+| `ui/grid/CHANGELOG-phx-grid.md` | 224 | 29.7 |
+| **total (10 arquivos)** | **23280** | **1256.7** |
 
-Em `ui/` mas **fora** desse `include_str!`/`include_bytes!` (não embutidos no
-binário — servidos de outro jeito ou remanescentes):
-`explorador.css`, `explorador.html`, `explorador.js`,
-`grid/LEIAME-phx-grid.md`.
+Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
+- `crates/phxsql-server/ui/explorador.css`
+- `crates/phxsql-server/ui/explorador.html`
+- `crates/phxsql-server/ui/explorador.js`
+- `crates/phxsql-server/ui/grid/LEIAME-phx-grid.md`
+<!-- /GERADO -->
 
 Esta é exatamente a lista que o `CLAUDE.md` do projeto manda tratar assim: a
 receita do KiB de interface do rodapé do dossiê "era uma lista de três
-arquivos copiada no script"; hoje ela sai do próprio `http.rs`, e o número
-que ela produz — **1.169,3 KiB**, 10 arquivos — é maior que os 1.032 KiB
-registrados na última correção do dossiê (feita com 9 arquivos na lista; o
-`CHANGELOG` da grade é o décimo, presente hoje em `http.rs`). Não importa
-exatamente quando cada arquivo entrou: o que importa é que este número saiu
-de ler `http.rs` agora, não de repetir um número de uma rodada anterior — se
-este documento tivesse copiado o 1.032 antigo, estaria errado pelo mesmo
-motivo que o rodapé já errou uma vez.
+arquivos copiada no script"; hoje ela sai do próprio `http.rs`, e o total que
+a tabela acima soma — maior que os 1.032 KiB registrados na última correção do
+dossiê (feita com 9 arquivos na lista; o `CHANGELOG` da grade é o décimo,
+presente hoje em `http.rs`) — sai de ler `http.rs` agora, não de repetir um
+número de uma rodada anterior. Não importa exatamente quando cada arquivo
+entrou: se este documento tivesse copiado o 1.032 antigo, estaria errado pelo
+mesmo motivo que o rodapé já errou uma vez.
 
 ### 1.3 Outras linguagens
 
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 26 | 4.545 |
-| Python (bancada de medição) | `bancada/` | 44 | 17.866 |
-| Shell (empacotar, zelador, provas) | todo o repositório | 9 | 1.365 |
-| Markdown (documentação técnica) | `docs/` (raso; não recursivo em `dossie/`, `design/`, `video/`) | 53 | 28.744 |
-| Python (geradores de dossiê/pedidos) | `docs/dossie/` | 6 | 2.010 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 46 | 9926 |
+| Python (bancada de medicao) | `bancada/` | 97 | 41189 |
+| Shell (empacotar, zelador, provas) | todo o repositorio | 14 | 2194 |
+| Markdown (documentacao tecnica) | `docs/` (nao recursivo em `dossie/`, `design/`, `video/`) | 286 | 72068 |
+| Python (geradores de dossie/pedidos) | `docs/dossie/` | 17 | 5263 |
+<!-- /GERADO -->
 
 Não incluído acima porque já está na tabela 1.1: os `.rs` de `examples/` e
 `tests/` (bancada e prova em Rust). Não medido: HTML/CSS/JS fora de
@@ -129,24 +127,23 @@ A regra do projeto é **zero dependências externas** — só a `std`. Provado
 pelo arquivo, não pela lembrança:
 
 <!-- GERADO: bloco_dependencias() -->
-`Cargo.lock` lista **8** pacotes: `phxsql-cli`, `phxsql-cmd`, `phxsql-core`,
-`phxsql-ffi`, `phxsql-odbc`, `phxsql-server`, `phxsql-sql`, `phxsql-store` —
-os 8 crates deste próprio workspace, um por um. Nenhuma linha `source = ` no
-arquivo inteiro: todo pacote é `path`, nenhum vem de um registro (crates.io)
-nem de um `git`. Pacotes externos ao workspace: **0**.
+`Cargo.lock` lista **8** pacotes. Todos: `phxsql-cli, phxsql-cmd, phxsql-core, phxsql-ffi, phxsql-odbc, phxsql-server, phxsql-sql, phxsql-store`.
 
-Conferido também pelo `[dependencies]` de cada `Cargo.toml`, crate por crate:
+Nenhuma linha `source = ` no arquivo (contadas: 0) -- todo pacote e `path`, isto e, um crate deste proprio workspace. Pacotes externos ao workspace: **0**.
 
-| crate | dependências |
+Confirmando pelo `[dependencies]` de cada `Cargo.toml`:
+
+| crate | dependencias (`[dependencies]`) |
 |---|---|
-| `phxsql-cli` | `phxsql-core`, `phxsql-store` |
-| `phxsql-cmd` | `phxsql-core`, `phxsql-server` |
+| `phxsql-cli` | phxsql-core.workspace, phxsql-store.workspace |
+| `phxsql-cmd` | phxsql-core.workspace, phxsql-server.workspace |
 | `phxsql-core` | (nenhuma) |
-| `phxsql-ffi` | `phxsql-core`, `phxsql-store` |
-| `phxsql-odbc` | `phxsql-core` |
-| `phxsql-server` | `phxsql-core`, `phxsql-store`, `phxsql-sql` |
-| `phxsql-sql` | `phxsql-core` |
-| `phxsql-store` | `phxsql-core` |
+| `phxsql-ffi` | phxsql-core, phxsql-store |
+| `phxsql-odbc` | phxsql-core |
+| `phxsql-server` | phxsql-core.workspace, phxsql-store.workspace, phxsql-sql.workspace |
+| `phxsql-sql` | phxsql-core.workspace |
+| `phxsql-store` | phxsql-core.workspace |
+<!-- /GERADO -->
 
 `phxsql-core` é a base e não depende de nada — nem de outro crate deste
 workspace. Todo o grafo de dependência é uma árvore de quatro níveis dentro
@@ -155,21 +152,32 @@ da própria casa.
 ### O que essa escolha pagou, medido
 
 <!-- GERADO: bloco_empacotamento_zero_deps() (docs/EMPACOTAMENTO.md §5) -->
-> O pedido 9 diz *«tudo em Rust, sem dependência»*. Continua verdade, e o
-> número sai de comando, não do teclado:
->
-> ```bash
-> cargo metadata --offline --format-version 1   # pacotes no grafo == os
->                                                # crates deste repositório,
->                                                # 0 com "source"
-> ```
->
-> O `Cargo.lock` inteiro cabe em poucas dezenas de linhas e não cita registro
-> nem git. A prova que vale é a do diretório limpo: com `CARGO_HOME` vazio
-> (zero entradas), `CARGO_NET_OFFLINE=true` e as variáveis de proxy apagadas —
-> **28,6 s, 30,3 s e 34,3 s** em três medições, para os crates do workspace e
-> os quatro binários finais (`phxsqld`, `phxsql`, `phxsqlcmd`,
-> `libphxsql_odbc.so`). Nada foi baixado porque não há nada para baixar.
+O pedido 9 diz *«tudo em Rust, sem dependência»*. Continua verdade, e o número
+sai de comando, não do teclado:
+
+```bash
+cargo metadata --offline --format-version 1   # 7 pacotes no grafo, os 7 deste
+                                              # repositório, 0 com "source"
+```
+
+O `Cargo.lock` inteiro cabe em 53 linhas e não cita registro nem git. A prova
+que vale é a do diretório limpo, que é o que o dono vai fazer:
+
+```bash
+unzip phxsql-<versão>-fontes.zip -d /tmp/limpo
+cd /tmp/limpo/phxsql-<versão>-fontes
+CARGO_HOME=/tmp/limpo/cargo-home cargo build --offline --release
+```
+
+Com o `CARGO_HOME` vazio (zero entradas), `CARGO_NET_OFFLINE=true` e as
+variáveis de proxy apagadas: **28,6 s, 30,3 s e 34,3 s** em três medições,
+sete crates, quatro binários — `phxsqld`, `phxsql`, `phxsqlcmd` e
+`libphxsql_odbc.so`. Nada foi baixado porque não há nada para baixar.
+
+E o laço fecha: de dentro desse diretório extraído, `./empacotar.sh linux`
+remonta o pacote de Linux inteiro. O de fontes não sai dali, e o empacotador
+diz por quê — ele nasce do histórico do git, que o zip não carrega.
+<!-- /GERADO -->
 
 É o mesmo motivo, dito de outro jeito, que fez a compilação cruzada para
 Windows e ARM funcionar sem uma segunda toolchain de dependências para
@@ -187,21 +195,22 @@ confere cada um contra vetor publicado.
 ## 3. O que foi escrito à mão, e as normas conferidas
 
 <!-- GERADO: bloco_normas() -->
-| arquivo | o que implementa | norma citada no próprio código | teste(s) que conferem |
+| arquivo | o que implementa | norma citada no proprio codigo | teste(s) que conferem |
 |---|---|---|---|
-| `sha1.rs` | SHA-1, só para falar o protocolo do MySQL(R). | FIPS 180-4 | `vetores_do_fips_180_4` |
+| `sha1.rs` | SHA-1, so para falar o protocolo do MySQL(R). | FIPS 180-4 | `vetores_do_fips_180_4` |
 | `sha512.rs` | SHA-512, conferido contra o FIPS 180-4. | FIPS 180-4, RFC 8032 | `vetores_oficiais` |
-| `hash.rs` | SHA-256, HMAC-SHA256 e PBKDF2-HMAC-SHA256, sem dependências externas. | FIPS 180-4, RFC 2104, RFC 2898, RFC 4231 | `sha256_vetores_oficiais`, `hmac_vetores_rfc4231`, `pbkdf2_vetores_conhecidos` |
-| `ed25519.rs` | Ed25519: assinatura com chave pública e privada, conferida contra a RFC 8032. | RFC 8032 | `vetores_da_rfc_8032`, `o_vetor_de_1023_bytes` |
-| `x25519.rs` | X25519: a troca de chaves da RFC 7748, sem dependências externas. | RFC 7748, RFC 8032 | `vetor_1_da_secao_5_2`, `vetor_2_da_secao_5_2` |
-| `hkdf.rs` | HKDF-SHA256, a derivação de chave da RFC 5869, sobre o HMAC que já existe. | RFC 5869 | `caso_1_do_anexo_a`, `caso_2_do_anexo_a`, `caso_3_do_anexo_a` |
-| `cifra.rs` | ChaCha20-Poly1305 (RFC 8439), sem dependências externas. | RFC 8439, draft-irtf-cfrg-xchacha-03 | `bloco_do_chacha20_bate_com_o_rfc`, `cifragem_do_chacha20_bate_com_o_rfc`, `poly1305_bate_com_o_rfc`, `chave_de_uma_vez_so_bate_com_o_rfc`, `aead_bate_com_o_rfc` |
-| `base64.rs` | Base64 (RFC 4648), sem dependências externas. | RFC 4648 | `vetores_rfc4648` |
+| `hash.rs` | SHA-256, HMAC-SHA256 e PBKDF2-HMAC-SHA256, sem dependencias externas. | FIPS 180-4, RFC 2104, RFC 2898, RFC 4231 | `sha256_vetores_oficiais`, `hmac_vetores_rfc4231`, `pbkdf2_vetores_conhecidos` |
+| `ed25519.rs` | Ed25519: assinatura com chave publica e privada, conferida contra a RFC 8032. | RFC 8032 | `vetores_da_rfc_8032`, `o_vetor_de_1023_bytes` |
+| `x25519.rs` | X25519: a troca de chaves da RFC 7748, sem dependencias externas. | RFC 7748, RFC 8032 | `vetor_1_da_secao_5_2`, `vetor_2_da_secao_5_2` |
+| `hkdf.rs` | HKDF-SHA256, a derivacao de chave da RFC 5869, sobre o HMAC que ja existe. | RFC 5869 | `caso_1_do_anexo_a`, `caso_2_do_anexo_a`, `caso_3_do_anexo_a` |
+| `cifra.rs` | ChaCha20-Poly1305 (RFC 8439), sem dependencias externas. | RFC 8439, draft-irtf-cfrg-xchacha-03 | `bloco_do_chacha20_bate_com_o_rfc`, `cifragem_do_chacha20_bate_com_o_rfc`, `poly1305_bate_com_o_rfc`, `chave_de_uma_vez_so_bate_com_o_rfc`, `aead_bate_com_o_rfc` |
+| `base64.rs` | Base64 (RFC 4648), sem dependencias externas. | RFC 4648 | `vetores_rfc4648` |
 | `uuid.rs` | Identificadores: UUID de 128 bits (v4 e v7) e identificador de 256 bits. | FIPS 180-4, RFC 9562 | `v7_tem_o_layout_do_rfc_9562` |
-| `crc.rs` | CRC-32 (IEEE 802.3, refletido, polinômio 0xEDB88320). | (nenhuma citada — CRC-32 não tem RFC próprio) | `vetores_conhecidos` |
-| `json.rs` | Leitor e escritor de JSON, sem dependências externas. | (nenhuma citada) | (nenhum com esse padrão de nome — ver nota) |
-| `zip.rs` | Arquivo ZIP: escrita e leitura, com o DEFLATE escrito aqui. | RFC 1951 | (nenhum com esse padrão de nome — ver nota) |
-| `pg/scram.rs` | SCRAM-SHA-256 (RFC 5802 + RFC 7677), do lado do CLIENTE — para falar com PostgreSQL(R) 10+. | RFC 5802, RFC 7677 | `troca_do_rfc_7677` |
+| `crc.rs` | CRC-32 (IEEE 802.3, refletido, polinomio 0xEDB88320). | (nenhuma citada) | `vetores_conhecidos` |
+| `json.rs` | Leitor e escritor de JSON, sem dependencias externas. | (nenhuma citada) | (nenhum teste com esse padrao de nome) |
+| `zip.rs` | Arquivo ZIP: escrita e leitura, com o DEFLATE escrito aqui. | RFC 1951 | (nenhum teste com esse padrao de nome) |
+| `pg/scram.rs` | SCRAM-SHA-256 (RFC 5802 + RFC 7677), do lado do CLIENTE. | RFC 5802, RFC 7677 | `troca_do_rfc_7677` |
+<!-- /GERADO -->
 
 A coluna de teste é achada por padrão de **nome** de função (`vetor`, `rfc`,
 `fips`, `oficial`, `anexo`, `conhecid`) dentro de cada arquivo da lista — a
@@ -264,26 +273,24 @@ de modelo por frente — nunca o nome do modelo, só "projeto e risco" contra
 "mecânico e verificável" — fica registrada em `docs/MODELOS.md`:
 
 <!-- GERADO: bloco_modelos() -->
-`docs/MODELOS.md` registra **4** rodadas até esta escrita: a "Rodada de 1–2
-de setembro de 2026", registrada como **NÃO CUMPRIDA** (27 commits, todos no
-escalão de projeto e risco, sem nenhum agente convocado depois da retomada da
-sessão — o próprio documento diz isso, porque "papel que não está cumprindo
-tem de aparecer como não cumprindo"); a frente "toda tabela é PhxGrid", que
-registrou a escolha na hora; a "Rodada das sprints abertas"; e a "Rodada do
-comparativo", que registra **dez papéis um a um** — cinco convocados e cinco
-**dispensados com o motivo escrito**, que é o que a cláusula realmente cobra.
+`docs/MODELOS.md` registra **17** rodadas: Rodada de 1–2 de setembro de 2026 — NÃO CUMPRIDA; Frente «toda tabela é PhxGrid» — 2 de setembro de 2026; Rodada das sprints abertas — 4 de setembro de 2026; Rodada do comparativo — 7 de setembro de 2026; Rodada do batimento e dos geradores — 7 de setembro de 2026; Rodada da pergunta e do botão — 7 de setembro de 2026; Rodada do quórum — 7 de setembro de 2026; Rodada das 26 perguntas — 7 de setembro de 2026; Rodada das diretivas HFSQL e do fluxo do auto number — 7 de setembro de 2026; Rodada de 7 de setembro de 2026 (noite) — channel binding do login; Rodada de 8 de setembro de 2026 — onda dos gaps (4 frentes paralelas); Onda 2 da rodada dos gaps — 8 de setembro de 2026 (as 4 frentes cifradas); Rodada do acelerador de memoria (o `.tbm`) — 8 de setembro de 2026; Rodada da corrida de I/O — 8 de setembro de 2026; Rodada das dezoito do comparativo — 8 de setembro de 2026; Rodada dos limites nomeados — 9 de setembro de 2026; Rodada dos limites nomeados e dos gaps — 9 de setembro de 2026 (continuação)
+<!-- /GERADO -->
+
+A contagem de rodadas sai do bloco acima, não daqui; o que elas ensinam, não.
+Duas valem o exemplo: a primeira, a "Rodada de 1–2 de setembro de 2026",
+entrou como **NÃO CUMPRIDA** — sem nenhum agente convocado depois da retomada
+da sessão, e o próprio documento diz isso, porque "papel que não está
+cumprindo tem de aparecer como não cumprindo"; e a "Rodada do comparativo",
+que registra **dez papéis um a um** — cinco convocados e cinco **dispensados
+com o motivo escrito**, que é o que a cláusula realmente cobra.
 
 ### 4.2 Como se mediu
 
 <!-- GERADO: bloco_bancadas() -->
-`bancada/` reúne **34** frentes de medição — `acid`, `alter`, `arm`,
-`bateria`, `carga`, `cifra`, `cifra-do-fio`, `cluster`, `cobertura-da-tela`,
-`comparacao`, `comparativo`, `concorrencia`, `dblink`, `docker`,
-`durabilidade`, `embutido`, `exclusao`, `fts`, `guardas`, `jobs`, `manual`,
-`mvcc`, `odbc`, `pacote`, `phxsql`, `profiler`, `replicacao`, `rest`,
-`rotinas`, `sqlite`, `telemetria`, `transacoes`, `utilizacao-padrao`,
-`windows` — das quais **21** documentam a própria metodologia num `LEIA-ME.md`
-local. A carga do lado do motor é
+`bancada/` tem **48** frentes de medicao (acid, alfanumerica, alter, arm, bateria, carga, cifra, cifra-do-fio, cluster, cobertura-da-tela, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, registro, replicacao, rest, rotinas, seguranca, sequencias, sql-exemplos, sqlite, telemetria, transacoes, usuarios, utilizacao-padrao, windows), das quais **35** documentam a propria metodologia em `LEIA-ME.md`.
+<!-- /GERADO -->
+
+A carga do lado do motor é
 `crates/phxsql-store/examples/carga.rs`, rodando cada fase num processo
 separado para que os contadores de `/proc` sejam só daquela fase. As quatro
 regras que fazem a bancada contra outros motores valer — mesmos dados, mesmo
@@ -296,56 +303,72 @@ leitura de 20.000 (5× a favor do PhxSql sem o motor ter feito nada por isso).
 ### 4.3 Como se provou
 
 <!-- GERADO: bloco_conferidores() + bloco_catracas() + bloco_guardas() -->
-- **Ponta a ponta, pelo navegador**: `testes-web/` — 26 arquivos `.mjs`,
-  4.545 linhas — fala com o servidor de verdade pelo soquete e pela tela, não
-  com um duplo em memória. `bateria.mjs` é o comando que roda tudo.
-- **Conferidores de estilo/texto, com catraca que só desce** — a linha
-  abaixo sai do `bloco_conferidores()`, que **acha os arquivos no disco**:
+Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes.rs`, `conferidor_dependencias.rs`, `conferidor_grades.rs`, `conferidor_inventario.rs`, `conferidor_temporarios.rs`, `conferidor_vermelhas.rs`. Executaveis de prova em `crates/phxsql-server/examples/`: `botoes-sem-prova.rs`, `grades-fora-do-padrao.rs`, `prova-dblink.rs`, `prova-exportar.rs`, `textos-fora-da-fabrica.rs`.
 
-  > Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`,
-  > `conferidor_botoes.rs`, `conferidor_dependencias.rs`,
-  > `conferidor_grades.rs`, `conferidor_temporarios.rs`. Executaveis de prova
-  > em `crates/phxsql-server/examples/`: `botoes-sem-prova.rs`,
-  > `grades-fora-do-padrao.rs`, `prova-dblink.rs`, `prova-exportar.rs`,
-  > `textos-fora-da-fabrica.rs`.
+| constante | valor | arquivo |
+|---|---:|---|
+| `TETO_COLADO` | 0 | `crates/phxsql-server/src/conferidor.rs` |
+| `TETO_FRASE_REPETIDA` | 0 | `crates/phxsql-server/src/conferidor.rs` |
+| `TETO_ROTULOS_E_CRASE` | 1_049 | `crates/phxsql-server/src/conferidor.rs` |
+| `TETO_BOTAO_SEM_PROVA` | 194 | `crates/phxsql-server/src/conferidor_botoes.rs` |
+| `TETO_TABELA_NA_MAO` | 0 | `crates/phxsql-server/src/conferidor_grades.rs` |
+| `TETO_INVENTARIO_DESCASADO` | 0 | `crates/phxsql-server/src/conferidor_inventario.rs` |
+| `TETO_TEMP_DIR_SOLTO` | 0 | `crates/phxsql-server/src/conferidor_temporarios.rs` |
+| `TETO_VERMELHA_SEM_PEDIDO` | 0 | `crates/phxsql-server/src/conferidor_vermelhas.rs` |
+| `TETO_DO_CAMPO` | 120 | `crates/phxsql-server/src/profiler.rs` |
+| `TETO_DO_ERRO` | 500 | `crates/phxsql-server/src/profiler.rs` |
+| `TETO_DO_CABECALHO` | 400 | `crates/phxsql-server/src/profiler.rs` |
+| `TETO` | Duration::from_secs(60) | `crates/phxsql-server/src/replica.rs` |
+| `TETO_DO_LOTE_SERVIDO` | 16 * 1024 * 1024 | `crates/phxsql-server/src/servidor.rs` |
+| `TETO_PIVOT` | 5_000_000 | `crates/phxsql-server/src/servidor.rs` |
+| `TETO_JUNCAO` | 500_000 | `crates/phxsql-server/src/servidor.rs` |
+| `TETO_ANINHAMENTO` | 8 | `crates/phxsql-server/src/servidor.rs` |
 
-  São **12** constantes `TETO*` no código do servidor (`bloco_catracas()`,
-  07/09/2026), das quais **6** são catraca de varredura —
-  `TETO_ROTULOS_E_CRASE` (1.050), `TETO_COLADO` (0), `TETO_FRASE_REPETIDA`
-  (0), `TETO_BOTAO_SEM_PROVA` (194), `TETO_TABELA_NA_MAO` (0, fechada em
-  03/09) e `TETO_TEMP_DIR_SOLTO` (0, nascida em 07/09 com o pedido 150) — e
-  as outras 6 são **limite de funcionamento**, não catraca: tamanho de campo
-  e de lote no `profiler.rs` e no `servidor.rs`. A diferença está em
-  `docs/CATRACAS.md`, e confundir as duas é o erro que aquele documento
-  existe para não cometer.
+**16** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-  **Achado ao atualizar este trecho em 07/09/2026**: ele estava marcado
-  `GERADO` e trazia números **digitados** — `TETO_ROTULOS_E_CRASE = 1.720`
-  quando o medido era 1.051, e «ao todo 10 constantes» quando eram 12. A
-  marca `GERADO` diz de onde o número **deveria** vir; ela não impede que
-  alguém escreva o número à mão embaixo dela. *Marca de gerador não é
-  gerador*, e a única defesa é a que o `medir.py` já dá: a tabela viva mora
-  no `docs/QA-PDCA.md`, escrita por comando, e é ela que manda.
+`bancada/guardas/catalogo.py` cataloga **124** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 4572. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+<!-- /GERADO -->
+
+- **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
+  contados no bloco de outras linguagens (§1.3), não redigitados aqui — falam com o
+  servidor de verdade pelo soquete e pela tela, não com um duplo em memória.
+  `bateria.mjs` é o comando que roda tudo.
+- **Conferidores de estilo/texto, com catraca que só desce.** Os
+  conferidores, os seus executáveis de prova e as constantes `TETO*` com o
+  valor de cada uma saem do bloco gerado logo acima (`bloco_conferidores()` +
+  `bloco_catracas()` + `bloco_guardas()`), que **acha os arquivos no disco** e
+  **lê a constante no fonte** — não são digitados aqui. Nem toda `TETO*` é
+  catraca de varredura: parte é **limite de funcionamento** (tamanho de campo
+  e de lote no `profiler.rs` e no `servidor.rs`), e confundir as duas é o erro
+  que `docs/CATRACAS.md` existe para não cometer.
+
+  **A lição que este trecho pagou, e que só fecha nesta rodada:** ele já
+  esteve marcado `GERADO` trazendo números **digitados à mão embaixo da
+  marca** — em 07/09/2026 dizia `TETO_ROTULOS_E_CRASE = 1.720` com o medido em
+  1.051, e «ao todo 10 constantes» quando eram outras. *Marca de gerador não
+  era gerador.* Esta rodada fecha o buraco: o `docs/tecnologias/extrair.py`
+  agora **escreve** o número dentro da marca, e o `portao-dos-geradores.py`
+  reprova quem editar à mão — a marca passou a ser cumprida, não só declarada.
 - **Guardas — prova de que a prova pega**: `bancada/guardas/catalogo.py`
-  cataloga **99** defeitos repostos (contado de `len(GUARDAS)`, não por
-  regex), cada um com o trecho de código de hoje, o trecho de antes do
-  conserto, e os testes que têm de cair quando o defeito volta.
-  `python3 bancada/guardas/provar-guardas.py` copia a árvore, repõe cada
-  defeito, roda os testes nomeados e julga — prova real nos dois sentidos,
-  não só "o teste existe". **Achado desta rodada, no próprio extrator**: a
-  versão anterior de `bloco_guardas()` contava `"{" seguido de quebra de
-  linha` no texto do arquivo, e isso conta certo só enquanto toda guarda é um
-  dicionário raso. As guardas que usam o campo `trocas` — a lista documentada
-  no próprio `catalogo.py` para o defeito que mexe em mais de um ponto —
-  trazem sub-dicionários `{arquivo, trecho, troca}` que batem no mesmo padrão
-  sem ser guarda nova, e o número inflava por isso: dizia **142** aqui, e uma
-  nova rodada da mesma regex, sem nenhuma guarda a mais, deu **180** — o
-  padrão nunca teve relação estável com a contagem certa. Corrigido para
-  importar o módulo e contar `len(GUARDAS)`, do mesmo jeito que
-  `bancada/guardas/tabela-no-testes.py` já fazia ao lado.
+  cataloga os defeitos repostos (a contagem sai do bloco acima, de
+  `len(GUARDAS)`, não de regex), cada um com o trecho de código de hoje, o
+  trecho de antes do conserto, e os testes que têm de cair quando o defeito
+  volta. `python3 bancada/guardas/provar-guardas.py` copia a árvore, repõe
+  cada defeito, roda os testes nomeados e julga — prova real nos dois
+  sentidos, não só "o teste existe". **Por que a contagem sai de
+  `len(GUARDAS)` e não de regex**: a versão anterior de `bloco_guardas()`
+  contava `"{" seguido de quebra de linha` no texto do arquivo, e isso conta
+  certo só enquanto toda guarda é um dicionário raso. As guardas que usam o
+  campo `trocas` — a lista documentada no próprio `catalogo.py` para o defeito
+  que mexe em mais de um ponto — trazem sub-dicionários `{arquivo, trecho,
+  troca}` que batem no mesmo padrão sem ser guarda nova, e o número inflava
+  por isso: uma leitura da regex deu **142**, e uma nova rodada dela, sem
+  nenhuma guarda a mais, deu **180** — o padrão nunca teve relação estável com
+  a contagem certa. Corrigido para importar o módulo e contar `len(GUARDAS)`,
+  do mesmo jeito que `bancada/guardas/tabela-no-testes.py` já fazia ao lado.
 - **Executáveis de prova dedicados**, em `crates/phxsql-server/examples/` —
-  os cinco nomeados no bloco acima, achados por glob e não listados aqui,
-  pelo mesmo motivo de sempre: lista digitada envelhece calado.
+  achados por glob e nomeados no bloco acima, não listados de novo aqui, pelo
+  mesmo motivo de sempre: lista digitada envelhece calado.
 - **A cobertura por área**, já contada e mantida por outro gerador desta
   mesma casa (não duplicado aqui): `docs/dossie/cobertura-por-area.py`
   regrava a tabela de `docs/TESTES.md` §1 a partir de `#[test]` por arquivo,
@@ -358,21 +381,41 @@ leitura de 20.000 (5× a favor do PhxSql sem o motor ter feito nada por isso).
 | Plataforma | Estado | O que falta |
 |---|---|---|
 | Linux x86-64 | **roda, exercitado** | — |
-| Windows x86-64 | **roda: gravou e leu 50 linhas sob `wine`** | um Windows de verdade, para desempenho e para o driver ODBC |
-| Linux ARM64 / ARMv7 | **roda: gravou e leu 50 linhas sob emulação** (`qemu-user-static`) | o desempenho real, que só a placa mede |
+| Windows x86-64 | **roda: gravou e leu 50 linhas sob `wine`** (§6.1) | um Windows de verdade, para desempenho e para o driver ODBC |
+| Linux ARM64 / ARMv7 | **roda: gravou e leu 50 linhas sob emulação** | o desempenho real, que só a placa mede |
 | Android (Termux) | **compila; link precisa do NDK** | o NDK, e uma corrida real |
 | Android (dentro de app) | **a biblioteca existe e roda** (`cdylib`, provada em x86-64 e ARM64) | a camada JNI, e o NDK para o alvo bionic |
 | iOS | **a biblioteca existe e roda** (`staticlib` aarch64, exercitada sob emulação) | Mac com Xcode, o alvo `aarch64-apple-ios`, e o invólucro em Swift |
 
-O `phxsqld` como daemon não é o caminho nos dois últimos — não por
-limitação nossa, é o que Android e iOS permitem; a forma que cabe num
-aparelho é biblioteca embutida (`phxsql-ffi`, `cdylib`/`staticlib`) mais
-cliente de sincronia, nunca um mini-servidor escutando porta
-(`docs/MOBILE.md`, `docs/EMPACOTAMENTO.md` §7).
+O `phxsqld` como daemon continua **não** sendo o caminho nesses dois últimos, e
+isso não é limitação nossa: é o que os dois sistemas permitem.
+| Android (dentro de app) | não | `staticlib` + camada FFI em C + camada JNI, e **largar o daemon** |
+| iOS | não | Mac com Xcode, camada FFI, e virar biblioteca embutida |
+
+As duas últimas linhas deixaram de ser só «o que falta compilar» e ganharam
+documento próprio: **`docs/MOBILE.md`** mede o motor contra o SQLite(R), diz
+onde cada um ganha, e desenha a forma que cabe num aparelho — biblioteca
+embutida mais cliente de sincronia, e **não** um mini-servidor escutando porta,
+porque o iOS proíbe e o Android mata.
+
+Duas correções que aquele documento trouxe para cá, e que valem no ato de
+empacotar:
+
+- **`cdylib` não é o caminho no aparelho, `staticlib` é.** A §7.4 já registrava
+  que `musl` não produz `cdylib`; para dentro de um aplicativo o que se liga é
+  uma biblioteca **estática**, e aí a restrição do `musl` deixa de importar.
+- **O binário não é o custo maior.** Os 6,8 MB da §7.1 são o que se soma ao
+  aplicativo; o **dado** é o que cresce, e ele ocupa **4,3× o do SQLite(R)**
+  nas mesmas 200.000 linhas (`docs/MOBILE.md` §2). Num telefone, é a segunda
+  conta que decide.
+<!-- /GERADO -->
 
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
+`cargo test --workspace`: **2209** testes passaram, **0** falharam (medido em 2026-09-11 06:16:08, commit `6858fa43`, do `CAPABILITIES.json`).
+<!-- /GERADO -->
+
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
 por um motivo bom: testes entram na árvore. O que **não** muda mais é de onde
 o número vem. Até 11/09/2026 este extrator rodava o seu próprio
@@ -386,14 +429,13 @@ documento passou a dizer **1.659** enquanto o resto do projeto já media
 JSON). Quem **aborta se a suíte falhar** é o `numeros-do-projeto.py` que emite
 esse arquivo; então, se o `CAPABILITIES.json` existe, nenhum teste falhou.
 
-`cargo test --workspace`: **2209** testes passaram, **0** falharam (medido em 2026-09-11 06:16:08, commit `6858fa43`, do `CAPABILITIES.json`).
-
 (O README e o `docs/TESTES.md` §1, mantidos pelo mesmo
 `docs/dossie/numeros-do-projeto.py`, registram o mesmo número — por construção,
-não por coincidência: os três leem o `CAPABILITIES.json`. O buraco que ainda
-resta — amarrar este extrator, que **imprime** e alguém **cola**, a um portão
-que confira o resto dos blocos — está registrado na cognição de 11/09/2026, e
-a escolha entre escrever-no-lugar e um portão próprio é decisão de projeto.)
+não por coincidência: os três leem o `CAPABILITIES.json`. O buraco que a
+cognição de 11/09/2026 registrava — este extrator **imprimia** e alguém
+**colava**, fora de qualquer portão — está fechado nesta rodada: ele agora
+**escreve** os blocos no lugar, e o `docs/dossie/portao-dos-geradores.py`
+reprova quem editar um número à mão.)
 
 ### 4.6 Como se prova uma garantia DE TIPO — o par de doctests
 
@@ -441,8 +483,42 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **201** pedidos numerados; **18** trazem a palavra
-RECUSADO no próprio texto. Os dois mais relevantes para este documento —
+`docs/PENDENCIAS.md` tem **245** pedidos numerados; **29** trazem a palavra RECUSADO no proprio texto:
+
+| # | pedido |
+|---:|---|
+| 83 | **Comandos SQL reconhecem `matriz.estoque` e `filial.estoque`** |
+| 101 | **Cifrar e compactar `.log`, `.trash` e `.reason`** |
+| 114 | **Índice não único fora do caminho crítico** |
+| 148 | **`ALTER TABLE ADD COLUMN` preservando o rowid** (sprint 25) |
+| 153 | **Criar VM para provar o binário Windows e o Android** |
+| 156 | **Auditoria técnica externa da 0.18.0 — «melhorias»** |
+| 159 | **Furo na numeração por exclusão: renomear entra, renumerar fica RECUSADO** |
+| 160 | **Phoenix Web Absorber FX SDK — RECUSADO com número** |
+| 161 | **Impressão / relatório — RECUSADO por escopo** |
+| 169 | **A cascata só planejava um nível — a três, recusava DEPOIS de gravar** |
+| 174 | **A auto-referência sai da cascata em SILÊNCIO — e os dois motores de referência RECUSAM** |
+| 176 | **A tabela que aponta para si devolve «o índice ficou para trás numa queda» quando não houve queda nenhuma** |
+| 180 | **O comboio do fecho de janela é real, e nem `RwLock` nem MVCC o consertam** |
+| 186 | **O fecho da janela de durabilidade não sincronizava o arquivo de DADOS** |
+| 191 | **Bateria de testes de utilização padrão: criar base, incluir 20.000 registros em tabela complexa, com e sem binários e memos** |
+| 192 | **Testes de paginação alfabética** |
+| 194 | **Senha própria por tabela na cifra em repouso — medir primeiro, decidir depois** |
+| 196 | **A lista `cifra.tabelas` no `config.json`, qualificada por banco — e o campo diz o que faz e o que NÃO faz** |
+| 200 | **Índice de texto (`.fts`): o motor fecha a maior lacuna do HFSQL(R), e a tela ainda não** |
+| 203 | **A réplica com credencial recusada bloqueia o IP — e derruba o operador junto** |
+| 204 | **O batimento de comunicação de 15 em 15 minutos** |
+| 215 | **Injeção de SQL não bloqueia ninguém: 311.250 tentativas por minuto sem entrar na blacklist** |
+| 217 | **Escalonar o cluster a quente não funciona — e o caminho que funciona custa 0,367 s no master, sem eleição** |
+| 219 | **Três recusas do SQL que dizem a coisa errada, achadas exercitando os 56 comandos** |
+| 220 | **`comandos_proibidos` é global, não por banco — e o pedido era «para um banco x»** |
+| 224 | **O catálogo documenta valores que o motor recusa: `unir` com `distinto`, e o exemplo colável do `pivotar`** |
+| 229 | **Auto number: tres defeitos de produto medidos pela F8** |
+| 242 | **CHECK dentro de transação é julgado só no COMMIT e derruba a transação inteira (A9 da revisão do motor)** |
+| 245 | **Seis observações da revisão do motor, menores, para varrer numa rodada de higiene (O1-O6)** |
+<!-- /GERADO -->
+
+Os dois mais relevantes para este documento —
 porque avaliam receita de fora contra o nosso gargalo, o mesmo teste que a
 cláusula pétrea do pesquisador exige:
 
@@ -480,22 +556,23 @@ entrou no lugar).
 > **Não compensa, e não é por pouco.** O trabalho pesado deste motor não é
 > aritmético: **99,4% de uma inserção** é descida de B+tree e escrita — o
 > CRC-32, único candidato lá dentro, custa **0,58%**, e mesmo instantâneo
-> deixaria a inserção 1,006× mais rápida. No backup, o maior bloco contíguo
-> de CPU que este motor produz, **63,0% é DEFLATE** — busca de repetição num
-> dicionário que depende do byte anterior, o oposto do que uma GPU acelera —
-> e o SHA-256, que é o candidato, é **12,1%**: de graça, o backup ganharia
+> deixaria a inserção 1,006× mais rápida. No backup, o maior bloco contíguo de
+> CPU que este motor produz, **63,0% é DEFLATE** — busca de repetição num
+> dicionário que depende do byte anterior, o oposto do que uma GPU acelera — e
+> o SHA-256, que é o candidato, é **12,1%**: de graça, o backup ganharia
 > **1,14×**.
 >
-> **A agregação morre na conta do barramento, e morre em qualquer
-> tamanho:** o `SUM` sobre uma coluna anda a **28.234 MiB/s** nesta CPU,
-> **1,79× o pico teórico do PCIe 3.0 x16**. Não há limiar que conserte — a
-> CPU já consome os bytes mais depressa do que o barramento os entregaria.
+> **A agregação morre na conta do barramento, e morre em qualquer tamanho:**
+> o `SUM` sobre uma coluna anda a **28.234 MiB/s** nesta CPU, **1,79× o pico
+> teórico do PCIe 3.0 x16**. Não há limiar que conserte — a CPU já consome os
+> bytes mais depressa do que o barramento os entregaria.
 >
 > **O que o dono pediu — mais velocidade no processamento pesado — existe, e
 > sem CUDA:** dividir pelos 4 núcleos com a `std` que já está aqui dá
-> **3,90× no ChaCha20-Poly1305, 3,59× no CRC-32 e 2,51× no SHA-256**,
-> medidos; e `ORDER BY` tem **1,51×** parado numa troca de algoritmo de
-> ordenação que não depende de placa nenhuma.
+> **3,90× no ChaCha20-Poly1305, 3,59× no CRC-32 e 2,51× no SHA-256**, medidos;
+> e `ORDER BY` tem **1,51×** parado numa troca de algoritmo de ordenação que
+> não depende de placa nenhuma.
+<!-- /GERADO -->
 
 Medido na própria máquina desta casa (4 núcleos, sem `/dev/nvidia*`, sem
 `nvcc`/`nvidia-smi`/`clinfo`/`rocm-smi`, nenhuma lib CUDA/OpenCL no
@@ -506,16 +583,17 @@ Medido na própria máquina desta casa (4 núcleos, sem `/dev/nvidia*`, sem
 <!-- GERADO: bloco_dez_propostas() (docs/DESEMPENHO.md §3) -->
 | # | Proposta | Estado no PhxSql | Veredito |
 |---:|---|---|---|
-| 1 | WAL exclusivamente sequencial | O `.reg` já é *append-only* | **Aponta para o arquivo errado** — não há escrita aleatória no `.reg`, há no `.ndx` |
-| 2 | MemTable em RAM | Existe `TabelaMemoria`/`SelectMemory` (87× medido), mas é cache de leitura | **Meia peça, do outro lado** |
-| 3 | Single writer + fila MPSC | O servidor já serializa tudo numa trava global única | **Já é assim** — o gargalo é excesso de serialização, não falta |
-| 4 | Três modos de durabilidade | `por_operacao`, `por_lote`, `sistema` | **Já existe, e medido**: 1.289 → 18.264 → 24.858 → 26.301 linhas/s (20,4×) |
-| 5 | Não atualizar índice secundário na hora | — | **REAL, e é o maior** ganho da lista |
-| 6 | UUID v7 ou sequência, nunca v4 | `Uuid` v4/v7 (RFC 9562), `Uuid256`, `Sequence` | **Já existe** |
-| 7 | Não alterar o arquivo principal no INSERT | O `.reg` só anexa | **Já é assim** |
-| 8 | Segmentos imutáveis, SSTable, compactação | — | **Incompatível** com a ordem de digitação |
-| 9 | Buffers grandes em vez de escritas pequenas | 2,06 páginas de `.ndx` por linha, medidas | **Medido, e é pequeno** — o custo é o CRC (4,8 µs), não a chamada `lseek` (0,10 µs) |
-| 10 | Pré-alocar o WAL | Volumes crescem conforme escrevem | **Aplicável**, ganho provavelmente pequeno |
+| 1 | WAL exclusivamente sequencial | O `.reg` **já é** *append-only*: `rowid = slots + 1`, endereço por multiplicação, nenhuma página reescrita | **Aponta para o arquivo errado.** Um WAL existe para transformar escrita aleatória de página em sequencial. Não há escrita aleatória no `.reg` — há no `.ndx` |
+| 2 | MemTable em RAM | Existe `TabelaMemoria`/`SelectMemory` (87× medido), mas é cache de **leitura** | **Meia peça, do outro lado.** Como buffer de escrita ajudaria o `.ndx` |
+| 3 | Single writer + fila MPSC | O servidor **já** serializa tudo numa trava global única | **Já é assim** — e o roteiro quer o contrário: trava por tabela. O gargalo de concorrência é o excesso de serialização, não a falta |
+| 4 | Três modos de durabilidade | Existem, com esses três nomes: `por_operacao`, `por_lote`, `sistema` | **Já existe, e medido:** 1.289 → 18.264 → 24.858 → 26.301 linhas/s (20,4×) |
+| 5 | Não atualizar índice secundário na hora | Todos os índices são mantidos dentro da inserção | **REAL, e é o maior.** Ver §4 |
+| 6 | UUID v7 ou sequência, nunca v4 | `Uuid` v4/v7 (RFC 9562), `Uuid256` e `Sequence` prontos; o dossiê tem uma seção sobre por que v7 | **Já existe** |
+| 7 | Não alterar o arquivo principal no INSERT | O `.reg` só anexa. Sem *double-write*, sem divisão de página no arquivo de dados | **Já é assim** |
+| 8 | Segmentos imutáveis, SSTable, compactação | — | **Incompatível.** Ver §5 |
+| 9 | Buffers grandes em vez de escritas pequenas | Escreve por slot; são 2,06 páginas de `.ndx` gravadas por linha, medidas | **Medido, e é pequeno.** Um `lseek` custa 0,10 µs: mesmo 41 chamadas por linha dariam 4,0 µs de 15,9. O que custa nessas gravações é o **CRC** (4,8 µs), não a chamada |
+| 10 | Pré-alocar o WAL | Os volumes crescem conforme escrevem | **Aplicável aos volumes**, ganho provavelmente pequeno pela mesma razão do item 9 |
+<!-- /GERADO -->
 
 O item 5 — índice fora do caminho crítico — é o único que a medição sustenta
 com número grande, mas só a metade dele: índice **não único** adiado é
@@ -535,6 +613,15 @@ inclusive quando o item é nosso.*
 ### 5.4 Transações: o que não entrou, e por quê — `docs/TRANSACOES.md` §11
 
 <!-- GERADO: bloco_transacoes_nao_entrou() -->
+Subsecoes de `docs/TRANSACOES.md` §11 ("O que NAO entrou, e o motivo de cada um"):
+
+- 11.1 MVCC — não implementar
+- 11.2 WAL, undo log, PageLSN, full-page-write, VACUUM
+- 11.3 Detecção de deadlock
+- 11.4 DDL transacional
+- 11.5 Transação entre databases
+<!-- /GERADO -->
+
 - **11.1 MVCC — não implementar.** Aqui o `rowid` é o endereço; uma segunda
   versão da linha pediria um segundo `rowid`, quebrando a ordem de digitação
   e a replicação (`aplicar_evento` para quando o `rowid` diverge do que o
@@ -563,22 +650,29 @@ inclusive quando o item é nosso.*
 ### 5.5 O que a comparação com motores maduros deixou de fora, e por quê
 
 <!-- GERADO: bloco_comparacao_fora() (docs/COMPARACAO.md) -->
-- **`OPTIMIZE TABLE` (compactação).** Esbarra na regra do projeto: o `.reg`
-  nunca reaproveita slot excluído. Compactar reescreveria `rowid`, que é
-  endereço — quem guardou um passa a apontar para outra linha. Uma tabela com
-  muitas exclusões cresce e não encolhe; é consequência aceita da garantia,
-  não esquecimento.
-- **`ANALYZE TABLE`.** Não há planejador de consultas: quem escolhe o
-  índice é quem escreve a operação. Estatística sem consumidor é arquivo
-  para manter atualizado sem ninguém ler.
-- **`EXPLAIN`.** Faz sentido depois da camada SQL, não antes.
-- **`information_schema` com 79 tabelas.** O catálogo daqui —
-  `sistabelas`/`siscolunas` — cobre o que existe; tabela de catálogo para
-  recurso que não existe seria promessa em forma de esquema.
-- **Transações, `SAVEPOINT`, `XA`, tabelas temporais, replicação de
-  verdade.** São recursos com roteiro próprio, não superfície de operação
-  recusada — a réplica multi-servidor, por exemplo, **já existe e está
-  medida** (§4 acima).
+**`OPTIMIZE TABLE` (compactação).** Aqui ele esbarra numa regra do projeto: o
+`.reg` **nunca reaproveita slot excluído**, e a ordem de digitação é a garantia
+que o TopSpeed(R) não dava. Compactar significa reescrever `rowid`, e `rowid` é
+endereço — quem guardou um passa a apontar para outra linha. Uma tabela com
+muitas exclusões cresce e não encolhe, e isso é hoje uma **consequência aceita**
+da garantia, não um esquecimento. Mudar exige a sua decisão, não a minha.
+
+**`ANALYZE TABLE` (estatísticas para o planejador).** Não há planejador: quem
+escolhe o índice é quem escreve a operação. Estatística sem consumidor é
+arquivo para manter atualizado sem ninguém ler.
+
+**`EXPLAIN`.** Faz sentido **depois** da camada SQL. Antes dela, o equivalente
+honesto seria «esta junção vai ler N linhas de A e M de B» — e isso as
+estatísticas já contam depois do fato.
+
+**`information_schema` com 79 tabelas.** O catálogo daqui são `sistabelas` e
+`siscolunas`, e eles cobrem o que existe. Tabela de catálogo para recurso que
+não existe seria promessa em forma de esquema.
+
+**Transações, `SAVEPOINT`, `XA`, tabelas temporais, replicação de verdade.**
+São recursos, não superfície de operação — já estão no roteiro com o que falta
+de cada um.
+<!-- /GERADO -->
 
 ### 5.6 TLS e a Sombra — parados por decisão do dono, não por falta de código
 
@@ -632,8 +726,10 @@ python3 docs/tecnologias/extrair.py
 ```
 
 Sem argumento — lê o repositório onde está (raiz calculada a partir do
-próprio caminho do script) e imprime, em ordem, todos os blocos marcados
-`<!-- GERADO: … -->` acima. `cargo test --workspace` faz parte da rodada e
-pode demorar; se `cargo` estiver ocupado por outra frente nesta árvore
-compartilhada, o extrator ainda roda e sinaliza a rodada como suspeita em vez
-de reportar um número contaminado — refaça quando a árvore estiver parada.
+próprio caminho do script) e **escreve** cada bloco no lugar, entre a sua
+marca `<!-- GERADO: … -->` e o `<!-- /GERADO -->`, sem tocar na prosa em volta
+(`--imprimir` mantém o comportamento antigo, de só imprimir). Ele **não roda
+`cargo`**: o número de testes sai do `CAPABILITIES.json`, fonte única emitida
+pelo `numeros-do-projeto.py`, então esta rodada não disputa disco nem árvore
+com quem estiver compilando. O que custa é tokenizar o workspace Rust inteiro
+para separar código de teste — é demorado, mas não contamina nada.
