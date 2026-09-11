@@ -340,7 +340,8 @@ def montar():
         secoes="\n".join(secoes))
 
 
-TEMPLATE = """<title>Gráficos de desempenho do PhxSql</title>
+TEMPLATE = """<meta charset="utf-8">
+<title>Gráficos de desempenho do PhxSql</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500&display=swap">

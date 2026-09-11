@@ -42,22 +42,22 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 470 | 21,3 |
-| Protocolo e portões (despachar) | 442 | 20,0 |
-| Camada SQL (léxico, sintaxe, tradução) | 209 | 9,5 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 174 | 7,9 |
+| Motor de dados (arquivos, índice, diários) | 474 | 21,4 |
+| Protocolo e portões (despachar) | 443 | 20,0 |
+| Camada SQL (léxico, sintaxe, tradução) | 209 | 9,4 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 179 | 8,1 |
 | Servidor (outros) | 151 | 6,8 |
 | Criptografia e codificação | 124 | 5,6 |
-| Configuração | 112 | 5,1 |
+| Configuração | 112 | 5,0 |
 | DbLink | 81 | 3,7 |
-| Telemetria e profiler | 63 | 2,9 |
+| Telemetria e profiler | 63 | 2,8 |
 | ODBC | 55 | 2,5 |
 | Gatilhos e procedimentos | 45 | 2,0 |
 | **Mensagens (i18n do servidor)** | **32** | **1,4** |
 | **Usuários e permissões** | **32** | **1,4** |
 | **Jobs** | **31** | **1,4** |
 | **Interface web (servidor HTTP)** | **28** | **1,3** |
-| **Segurança de rede (blacklist, firewall)** | **21** | **1,0** |
+| **Segurança de rede (blacklist, firewall)** | **21** | **0,9** |
 | **Replicação** | **19** | **0,9** |
 | **MCP** | **19** | **0,9** |
 | **Console de terminal (phxsqlcmd)** | **18** | **0,8** |
@@ -69,7 +69,7 @@ contando `#[test]` por arquivo e agrupando:
 | **Alertas e e-mail** | **8** | **0,4** |
 | **CLI** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,3** |
-| **total** | **2209** | |
+| **total** | **2219** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 

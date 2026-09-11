@@ -353,6 +353,14 @@ def main() -> None:
     so_medir = "--so-medir" in sys.argv
     html = DOSSIE.read_text(encoding="utf-8")
 
+    # O charset: sem ele a pagina so renderiza acento certo DENTRO do wrapper
+    # do publicador de Artifact (que injeta <meta charset=utf8>). Fora dele --
+    # arquivo local, outro host -- os bytes continuam UTF-8 corretos, mas o
+    # navegador adivinha latin-1 e "avaliacao" vira "avaliaÃ§Ã£o". Tem de ser
+    # a PRIMEIRA linha, antes do <title>; guarda idempotente, nao duplica.
+    if not html.startswith('<meta charset="utf-8">'):
+        html = '<meta charset="utf-8">\n' + html
+
     n = {
         "rust": linhas_de_rust(),
         "crates": quantos_crates(),

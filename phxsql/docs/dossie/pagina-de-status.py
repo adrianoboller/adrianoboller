@@ -318,7 +318,8 @@ def pagina(data_av, itens, leitura, versao, fichas, agora):
     media = sum(i["nota"] for i in itens) / len(itens)
     contas = {c: sum(1 for i in itens if i["classe"] == c) for c in ("construido", "parcial", "recusa", "promessa")}
     leitura_html = "\n".join(f"<p>{p}</p>" for p in leitura)
-    return f"""<title>Os dez recursos do PhxSql</title>
+    return f"""<meta charset="utf-8">
+<title>Os dez recursos do PhxSql</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">

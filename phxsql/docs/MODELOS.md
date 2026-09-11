@@ -687,6 +687,35 @@ jeito. Segurar frente por disco é decisão do dono — a regra do zelador.
 sem quebrar «nunca dois elos»: o elo atrasado só refrescou o pulso, o sucessor
 já pendente seguiu sozinho.
 
+## Rodada dos três tipos de database, da estrutura do hive e do charset do dossiê — 11/09/2026
+
+Ordem do dono, três pedidos numa mensagem: criar a **infraestrutura dos três
+tipos de database** (padrão/hive/vetorial); explicar **por que a página de
+status apareceu com acentuação errada e formato diferente** das outras; e
+desenhar **a estrutura do banco hive**. E, por cima: *«acione o time»*.
+
+| frente | escalão | por quê | papéis convocados | dispensados, e por quê |
+|---|---|---|---|---|
+| **Infra dos 3 tipos** (enum no núcleo + marcador `_database.json` + portão do motor) | **projeto e risco** | é formato em disco e invariante de concorrência de catálogo; a decisão «onde mora o portão do motor — no store, não no despachar» é arquitetura, não digitação | A, C, B, F, H, I | D (nada a limpar na hora), E (sem tela — o tipo ainda não tem UI), G (sem catraca nova — invariante provada por teste, não por `TETO`), J (os motores são frente futura, que começa por medir a premissa) |
+| **Estrutura do hive** (proposta de formato) | **projeto e risco** | desenho de formato em disco inspirado no REGF, decidido contra as pétreas (append-only, cache no lugar de `mmap`, `.tx`, UTF-8) — não delegado, o núcleo arquitetural fica no forte | A+C+J (o orquestrador) | B/D/E/G — proposta, não código: nada a compilar, limpar, pintar ou travar; I só entra no commit |
+| **STATUS — charset do dossiê** | **mecânico e verificável** | emitir `<meta charset="utf-8">` nos geradores, regenerar, conferir os bytes; o defeito se **reproduz** (latin-1 sobre UTF-8 dá o mojibake exato) e se vê no diff | E+H+F | C/D — não toca formato de dado nem ambiente; I é o integrador |
+| **Zelador** | **mecânico** | inventário roteirizado + limpeza pelo `zelador.sh` sancionado, que erra para o lado seguro (prova por `cwd` real, nunca por data/nome) | D | — |
+| **Integração** (orquestrador) | **projeto e risco** | o defeito do encontro apareceu de novo: o portão dos geradores voltou **VERMELHO** no `cobertura-por-area.py` — drift da contagem de testes que a **própria infra dos 3 tipos** criou (adicionei testes e não regenerei a cobertura no mesmo commit). Nenhuma frente sozinha via: o agente do charset não sabia que a contagem mudara, e a infra não sabia que a cobertura era derivada. Regenerado aqui (sem cargo — contagem estática), portão VERDE | A | — |
+
+**O escalão pela natureza, não pelo tamanho.** Duas frentes de charset e
+zelador são mecânicas — o erro se vê no diff ou na comparação de bytes, e é o
+que o escalão leve/médio quer dizer. As duas de database são projeto: uma põe um
+invariante de concorrência, a outra desenha formato em disco — e formato errado
+depois vira migração, não `git revert`.
+
+**O encontro cobrou de novo, e o culpado fui eu.** A regra «há defeito que só
+aparece no encontro das frentes» bateu no `cobertura-por-area.py`: o meu commit
+da infra dos 3 tipos (`61cf097`) somou testes e **não** rodou o gerador de
+cobertura — o número ficou velho, calado, até a frente do charset rodar o portão
+e ele acusar. A lição não é nova (é a pétrea «todo número sai de gerador»); o
+**alcance** é: *quem soma teste fecha a cobertura no mesmo fôlego*, senão o
+portão da próxima frente herda o vermelho.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:
