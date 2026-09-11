@@ -372,36 +372,28 @@ cliente de sincronia, nunca um mini-servidor escutando porta
 
 ### 4.5 Testes, medidos agora
 
-<!-- GERADO: bloco_testes_cargo() -->
-Esta é a única tabela deste documento que pode legitimamente sair diferente
-a cada rodada de geração, e por um motivo bom: vários papéis mexem na mesma
-árvore ao mesmo tempo nesta casa. O extrator roda `cargo test --workspace` —
-o mesmo comando que o `CLAUDE.md` do projeto manda rodar antes de
-commitar — e soma os `test result:`. Quando a árvore está parada, o número é
-a contagem real de testes passando; quando `cargo` pega a árvore no meio de
-uma gravação de outra frente, a rodada aborta cedo com poucos binários e
-erro de compilação, e o extrator **recusa reportar isso como se fosse o
-número final** (ver o texto de aviso que ele mesmo produz nesse caso).
+<!-- GERADO: bloco_testes() -->
+Esta é a única linha deste documento que muda legitimamente a cada rodada, e
+por um motivo bom: testes entram na árvore. O que **não** muda mais é de onde
+o número vem. Até 11/09/2026 este extrator rodava o seu próprio
+`cargo test --workspace` e somava os `test result:` — uma **segunda** medição,
+paralela à do `numeros-do-projeto.py`, que já mede a mesma coisa e a escreve no
+README, no `docs/TESTES.md` e no `CAPABILITIES.json`. Duas medições da mesma
+coisa divergem no dia em que uma é recolada e a outra não: foi assim que este
+documento passou a dizer **1.659** enquanto o resto do projeto já media
+**2.209** — 550 testes atrás, calados. Agora o número sai do
+`CAPABILITIES.json`, fonte única, e este bloco nem toca no `cargo` (lê um
+JSON). Quem **aborta se a suíte falhar** é o `numeros-do-projeto.py` que emite
+esse arquivo; então, se o `CAPABILITIES.json` existe, nenhum teste falhou.
 
-Na medição limpa desta rodada — árvore parada, sem `cargo` concorrente —:
+`cargo test --workspace`: **2209** testes passaram, **0** falharam (medido em 2026-09-11 06:16:08, commit `6858fa43`, do `CAPABILITIES.json`).
 
-```
-cargo test --workspace: 67 binarios de teste, 2.209 testes passaram,
-0 falharam, 3 ignorados.
-```
-
-Na rodada anterior o mesmo comando media **62 binários e 1.659 testes** — a
-diferença são testes que entraram desde então, e não mudança de método: a soma
-dos `test result:` é a mesma.
-
-```
-```
-
-(`docs/TESTES.md` §1, mantido por `docs/dossie/numeros-do-projeto.py`,
-registra o mesmo **2.209** desta rodada. Quando os dois divergem, a causa é
-sempre a mesma e não é método: são testes de outra frente que entraram na
-árvore compartilhada entre uma medição e a outra — os dois somam os mesmos
-`test result:`.)
+(O README e o `docs/TESTES.md` §1, mantidos pelo mesmo
+`docs/dossie/numeros-do-projeto.py`, registram o mesmo número — por construção,
+não por coincidência: os três leem o `CAPABILITIES.json`. O buraco que ainda
+resta — amarrar este extrator, que **imprime** e alguém **cola**, a um portão
+que confira o resto dos blocos — está registrado na cognição de 11/09/2026, e
+a escolha entre escrever-no-lugar e um portão próprio é decisão de projeto.)
 
 ### 4.6 Como se prova uma garantia DE TIPO — o par de doctests
 

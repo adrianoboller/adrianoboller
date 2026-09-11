@@ -61,3 +61,29 @@ então incluí-lo no portão de *run-and-diff*; ou (b) um portão próprio que r
 `.md`. Enquanto uma das duas não entra, o TECNOLOGIAS continua sendo o único
 número visível do projeto que um humano precisa lembrar de colar — o mesmo tipo
 de esquecimento que o portão dos 14 existe para matar.
+
+## 6. O que entrou depois (11/09/2026, mais tarde no mesmo dia)
+
+A **raiz** foi consertada, e ela é anterior à escolha entre (a) e (b): o
+`extrair.py` **rodava o seu próprio `cargo test --workspace`** e somava os
+`test result:` — uma SEGUNDA medição, paralela à do `numeros-do-projeto.py`,
+que já mede a mesma coisa e a escreve no README, no `TESTES.md` e no
+`CAPABILITIES.json`. **A divergência de 550 não foi só «alguém não recolou»:
+foi duas medições da mesma coisa**, e duas medições da mesma coisa divergem
+sempre que uma é refeita e a outra não — recolar não resolve, só adia. O
+`bloco_testes_cargo` virou `bloco_testes`, que **lê o `CAPABILITIES.json`**
+(fonte única, com a data e o commit da medição) em vez de re-medir. Agora o
+número de TECNOLOGIAS é, por construção, o mesmo do README e do `TESTES.md`;
+não pode divergir. De quebra, o extrator ficou **sem `cargo`** — não disputa
+disco nem árvore com outra frente, que era o motivo do aviso «RODADA
+SUSPEITA» que o código antigo precisava emitir.
+
+Isto é a regra da casa aplicada a um gerador: **quando um número depende de
+uma medição, ele sai do lugar que já a fez, nunca de refazê-la em paralelo** —
+o mesmo que fez a lista do KiB de interface sair do `http.rs` em vez de ser
+copiada. O que a raiz **não** fecha é a mesma coisa da §4: o `extrair.py`
+ainda **imprime e alguém cola**, então o portão de *run-and-diff* continua
+cego a ele. A escolha (a)/(b) segue de pé, e agora é a única parte que resta —
+e ela é decisão de projeto porque mexe na ESTRUTURA do `TECNOLOGIAS.md`
+(marcadores de fim em 16 blocos), um documento escrito à mão, não gerado
+inteiro como as páginas do dossiê.

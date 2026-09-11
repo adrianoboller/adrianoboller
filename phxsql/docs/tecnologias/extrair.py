@@ -20,8 +20,8 @@ usa isso tem de dizer "nao medido", nunca estimar.
 
 from __future__ import annotations
 
+import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -716,62 +716,36 @@ def bloco_conferidores() -> str:
     )
 
 
-def bloco_testes_cargo() -> str | None:
-    """Roda `cargo test --workspace` e soma os `test result:`.
+def bloco_testes() -> str | None:
+    """O numero de testes sai do `CAPABILITIES.json` -- fonte UNICA, emitida
+    pelo `numeros-do-projeto.py` -- e NAO de uma segunda corrida do cargo
+    aqui.
 
-    Devolve None se nao rodar (por exemplo, cargo ocupado por outra
-    frente) -- quem chama tem de escrever "nao medido", nunca chutar."""
-    # Sem --release: e o comando que o CLAUDE.md do projeto manda rodar
-    # antes de commitar, entao e o numero que qualquer pessoa reproduz
-    # sem esperar a compilacao otimizada.
-    try:
-        r = subprocess.run(
-            ["cargo", "test", "--workspace"],
-            cwd=RAIZ,
-            capture_output=True,
-            text=True,
-            timeout=1800,
-        )
-    except Exception:  # pragma: no cover - so no ambiente do operador
+    Foi exatamente uma segunda corrida (a antiga `bloco_testes_cargo`) que
+    deixou este documento **550 testes atras**: o `numeros-do-projeto.py`
+    media 2.209 e escrevia no README, no `TESTES.md` e no `CAPABILITIES.json`;
+    este extrator media DE NOVO, imprimia, e um humano colava. Duas medicoes
+    da mesma coisa divergem no dia em que uma e' recolada e a outra nao -- e
+    o portao de re-rodar-e-comparar e' cego a isto por construcao, porque um
+    gerador que so IMPRIME nunca muda o arquivo. A cura e a mesma regra da
+    casa: quando um numero depende de uma medicao, ele sai do lugar que ja a
+    fez, nunca de refaze-la em paralelo. De quebra, este bloco ficou barato:
+    le um JSON, nao roda o cargo (e por isso nao disputa disco nem arvore com
+    outra frente, que era o motivo do aviso 'RODADA SUSPEITA' de antes).
+
+    Devolve None se o `CAPABILITIES.json` nao existir ou nao trouxer o campo
+    -- quem chama escreve "nao medido", nunca chuta."""
+    alvo = RAIZ / "CAPABILITIES.json"
+    if not alvo.exists():
         return None
-    saida = r.stdout + r.stderr
-    linhas_resultado = re.findall(
-        r"test result: (\w+)\. (\d+) passed; (\d+) failed; (\d+) ignored", saida
+    d = json.loads(ler(alvo))
+    if "testes" not in d:
+        return None
+    return (
+        f"`cargo test --workspace`: **{d['testes']}** testes passaram, "
+        f"**0** falharam (medido em {d.get('medido_em', '?')}, commit "
+        f"`{d['commit'][:8]}`, do `CAPABILITIES.json`)."
     )
-    if not linhas_resultado:
-        return None
-    total_passou = sum(int(p) for _, p, _, _ in linhas_resultado)
-    total_falhou = sum(int(f) for _, _, f, _ in linhas_resultado)
-    total_ignorado = sum(int(i) for _, _, _, i in linhas_resultado)
-    linhas_out = []
-    # Esta casa tem varias frentes mexendo na mesma arvore ao mesmo tempo.
-    # Um `cargo test` que comeca no meio de uma gravacao de outra frente
-    # aborta cedo (fail-fast) com poucos binarios e erro de compilacao --
-    # numero real, mas da arvore instavel, nao do codigo. Reportar isso
-    # como se fosse "979 passaram, 1 falhou" seria um numero medido que
-    # mente por contexto faltando. Sinaliza em vez de fingir que e limpo.
-    tem_erro_de_compilacao = bool(re.search(r"^error(\[E\d+\])?:", saida, re.M))
-    suspeito = r.returncode != 0 and (tem_erro_de_compilacao or len(linhas_resultado) < 40)
-    if suspeito:
-        linhas_out.append(
-            "**RODADA SUSPEITA, NAO USAR COMO NUMERO FINAL.** "
-            f"`cargo test --workspace` terminou com codigo {r.returncode} "
-            f"depois de so **{len(linhas_resultado)}** binarios "
-            f"({total_passou} passaram, {total_falhou} falharam) -- "
-            f"{'com erro de compilacao' if tem_erro_de_compilacao else 'bem menos que o esperado'}. "
-            "Rodada normal tem dezenas de binarios; parar cedo e o padrao "
-            "de pegar a arvore no meio da gravacao de outra frente "
-            "(varios `.rs` estavam `M` no `git status` nesta rodada). "
-            "Refazer com `cargo test --workspace` quando a arvore estiver parada."
-        )
-    else:
-        linhas_out.append(
-            f"`cargo test --workspace`: **{len(linhas_resultado)}** "
-            f"binarios de teste, **{total_passou}** testes passaram, "
-            f"{total_falhou} falharam, {total_ignorado} ignorados "
-            f"(codigo de saida do processo: {r.returncode})."
-        )
-    return "\n".join(linhas_out)
 
 
 # =================================================== 6. RECUSADO, COM NUMERO
@@ -960,8 +934,8 @@ def main():
     print()
 
     print("## Testes (cargo test --workspace)\n")
-    r = bloco_testes_cargo()
-    print(r if r else "NAO MEDIDO nesta rodada (ver motivo no relatorio).")
+    r = bloco_testes()
+    print(r if r else "NAO MEDIDO (CAPABILITIES.json ausente -- rode o numeros-do-projeto.py).")
     print()
 
     print("## Pedidos recusados, com numero\n")
