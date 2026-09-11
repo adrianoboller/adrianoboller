@@ -337,6 +337,37 @@ Ou seja: onde os três concordam e **nada nosso se opõe**, entra sem pergunta �
 e **uma pétrea se opõe**, a pétrea ganha e o choque vai para a mesa, nunca para
 o silêncio.
 
+**Quando os motores NÃO convergem, decide a média ponderada — decisão do dono,
+11/09/2026.** Peso **PostgreSQL 4, MariaDB 3, MySQL 2, SQLite 1**. É a régua
+para o que a convergência não resolve: onde eles divergem e nenhuma pétrea
+alcança, soma-se o peso de cada lado e ganha o maior. O PostgreSQL pesa mais
+porque é o mais fiel ao padrão; o SQLite menos, porque troca rigor por caber
+embarcado. Medido pela pesquisa dos quatro (papel J, `docs/propostas/semantica-4-motores.md`):
+no `GROUP BY` com coluna não agregada, «errar» soma PG 4 + MySQL 2 = **6**
+contra «aceitar» MariaDB 3 + SQLite 1 = **4** → o motor **erra**; na
+subconsulta escalar que devolve mais de uma linha, «errar» soma 4+3+2 = **9**
+contra 1 → **erra**. MySQL e MariaDB, primos, divergem no padrão de fábrica do
+`GROUP BY` — é o caso que mostra por que a régua ponderada existe.
+
+E **dois invariantes que o dono pôs ACIMA do voto** (pétrea, do mesmo modo que
+convergência não revoga pétrea):
+
+- **Só existe filho se o pai existir primeiro.** É a regra primordial da
+  integridade vista pelo tempo. Dentro de uma transação, o pai empilhado tem de
+  ser visível à conferência da FK do filho — o read-your-own-writes que a
+  leitura tem (pedido 162) e que a **conferência de constraint** ainda não tem
+  (o defeito grave de 11/09: `Table::conferir_fks` lê a mãe do disco e não
+  enxerga o pai empilhado). Mas o caminho contrário — **filho antes do pai**,
+  resolvido no commit — **não entra**, mesmo o PostgreSQL peso-4 tendo
+  `DEFERRABLE`: não há trio (só o PG adia entre os maduros) e a pétrea proíbe.
+- **Impossível o filho ter a MESMA data do pai.** Decisão do dono, 11/09/2026:
+  nasce uma **coluna de data/hora de sistema por linha** (mudança de formato,
+  PSCH novo — entra cedo, é do DBA), e no commit o pai é carimbado com instante
+  **estritamente anterior** ao do filho. Commitar pai e filho juntos nunca lhes
+  dá o mesmo instante: o pai veio primeiro, e isso passa a ser provável no dado,
+  não só no diário. *Implementação pendente* — formato se decide com o dono
+  antes de gravar.
+
 **Lógica que passou pela nossa cabeça e saiu DIFERENTE não é cópia — e a prova
 de que passou é a divergência.** Ordem do dono, 04/09/2026: *«uma lógica uma vez
 refatorada não é cópia.»*
