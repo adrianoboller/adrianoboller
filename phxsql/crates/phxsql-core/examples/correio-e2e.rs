@@ -19,6 +19,10 @@
 //!   9. STATUS das solicitacoes, por usuario: confianca com estado
 //!      (pendente/aceita/recusada) e moderacao com estado
 //!      (aberta/deferida/indeferida). Recusar NAO e bloquear.
+//!  10. O FLUXO INTEIRO se encaixa: (A) aceitar a confianca cobrando um pix
+//!      (valor sem teto) ou de graca; (B) ligar "seguro alto" = p12 + cada um
+//!      a sua senha (E2E); (C) Masson cuja chave da 3a camada E o id da
+//!      maconaria — id errado nao abre. Tudo NATIVO, zero-deps, sem OpenSSL.
 //!
 //! Rodar: cargo run -q --example correio-e2e -p phxsql-core
 
@@ -313,6 +317,10 @@ struct Confianca {
     de: String,
     para: String,
     estado: EstadoConfianca,
+    // A) quem aceita pode cobrar para conversar: chave pix + valor, SEM teto.
+    pix: Option<(String, f64)>,
+    // B) a relacao pediu seguro e criptografia alta (p12 + cada um a sua senha).
+    seguro_alto: bool,
 }
 
 struct Solicitacao {
@@ -420,6 +428,8 @@ impl ServerMail {
             de: de.into(),
             para: para.into(),
             estado: EstadoConfianca::Pendente,
+            pix: None,
+            seguro_alto: false,
         });
         let cruz = if self.mesma_empresa(de, para) {
             "mesma empresa"
@@ -436,6 +446,39 @@ impl ServerMail {
             }
         }
         println!("   {para} ACEITOU a confianca de {de}");
+    }
+    /// A) aceitar cobrando (ou nao) e escolhendo seguro alto. O valor do pix
+    /// NAO tem teto — pode ser 50,00 ou muito mais.
+    fn aceitar_confianca_com(
+        &mut self,
+        de: &str,
+        para: &str,
+        pix: Option<(&str, f64)>,
+        seguro_alto: bool,
+    ) {
+        for c in &mut self.confiancas {
+            if c.de == de && c.para == para && c.estado == EstadoConfianca::Pendente {
+                c.estado = EstadoConfianca::Aceita;
+                c.pix = pix.map(|(chave, valor)| (chave.to_string(), valor));
+                c.seguro_alto = seguro_alto;
+            }
+        }
+        let cobranca = match pix {
+            Some((chave, valor)) => format!("  cobrando pix {chave} R$ {valor:.2}"),
+            None => "  sem cobranca".to_string(),
+        };
+        let sel = if seguro_alto {
+            "  [seguro alto: p12]"
+        } else {
+            ""
+        };
+        println!("   {para} ACEITOU {de}{cobranca}{sel}");
+    }
+    fn confianca(&self, a: &str, b: &str) -> Option<&Confianca> {
+        self.confiancas.iter().find(|c| {
+            c.estado == EstadoConfianca::Aceita
+                && ((c.de == a && c.para == b) || (c.de == b && c.para == a))
+        })
     }
     /// Recusar e um "nao, obrigado": o pedido sai de pendente e vira recusada,
     /// mas o outro pode pedir de novo depois (diferente de bloquear, que e o
@@ -1030,6 +1073,115 @@ fn main() {
     };
     imprimir(&carlos, &srv.status_solicitacoes(&carlos));
     imprimir(&b, &srv.status_solicitacoes(&b));
+
+    println!("\n10) tudo se encaixa: A) confianca com pix, B) seguro alto (p12), C) Masson = id da maconaria:");
+    let juliana = srv
+        .criar_conta("juliana", "empresa.phxsql.com.br", "senha-da-juliana-8h")
+        .unwrap();
+
+    // A) adriano pede; juliana ACEITA COBRANDO um pix, e liga o seguro alto.
+    srv.solicitar_confianca(&a, &juliana).unwrap();
+    srv.aceitar_confianca_com(&a, &juliana, Some(("juliana@pix.com.br", 50.00)), true);
+    let cj = srv.confianca(&a, &juliana).expect("confianca aceita");
+    let pix_ok = match &cj.pix {
+        Some((chave, v)) => chave.as_str() == "juliana@pix.com.br" && (*v - 50.00).abs() < 1e-9,
+        None => false,
+    };
+    ok(
+        pix_ok && cj.seguro_alto,
+        "A: juliana aceitou cobrando pix R$ 50,00 e com seguro alto",
+    );
+    // sem teto: outra relacao aceita um valor enorme
+    srv.solicitar_confianca(&ana, &juliana).unwrap();
+    srv.aceitar_confianca_com(
+        &ana,
+        &juliana,
+        Some(("juliana@pix.com.br", 1_000_000.00)),
+        false,
+    );
+    let sem_teto =
+        matches!(&srv.confianca(&ana, &juliana).unwrap().pix, Some((_, v)) if *v >= 1_000_000.00);
+    ok(
+        sem_teto,
+        "A: o valor do pix nao tem teto (1.000.000,00 aceito)",
+    );
+    // e aceitar DE GRACA (sem pix) continua valendo — adriano<->joana da secao 3
+    ok(
+        srv.confianca(&a, &b)
+            .map(|c| c.pix.is_none())
+            .unwrap_or(false),
+        "A: aceitar de graca (sem cobranca) tambem vale",
+    );
+
+    // B) com seguro alto, a mensagem viaja E2E (p12 + cada um a SUA senha).
+    let ix_b = srv
+        .enviar(Envio {
+            de: &a,
+            senha: "senha-do-adriano-9f",
+            para: &juliana,
+            corpo: "Contrato, seguro alto.",
+            pri: Prioridade::Media,
+            tipo: Tipo::Normal,
+            anexos: vec![],
+            alto_segredo: None,
+            masson: None,
+        })
+        .expect("envia com seguro alto");
+    let mb = &srv.mensagens[ix_b];
+    ok(
+        !mb.ct.is_empty() && mb.ct.windows(8).all(|w| w != b"Contrato"),
+        "B: registro so com ciphertext (texto claro nao aparece)",
+    );
+    let (tb, _, _) = srv
+        .ler(ix_b, &juliana, "senha-da-juliana-8h", None, None)
+        .unwrap();
+    ok(
+        tb == "Contrato, seguro alto.",
+        "B: juliana abre com a PROPRIA senha (p12/ECDH)",
+    );
+    ok(
+        srv.ler(ix_b, &juliana, "senha-ERRADA", None, None).is_err(),
+        "B: sem a senha certa, nao abre",
+    );
+
+    // C) Masson: a chave da 3a camada E o ID DA MACONARIA. Sem ele, nem a senha abre.
+    let masson_id = "LOJA-ADR-4211"; // id da maconaria = chave Masson
+    let ix_c = srv
+        .enviar(Envio {
+            de: &a,
+            senha: "senha-do-adriano-9f",
+            para: &juliana,
+            corpo: "So para irmaos.",
+            pri: Prioridade::Alta,
+            tipo: Tipo::Alerta,
+            anexos: vec![],
+            alto_segredo: None,
+            masson: Some(masson_id),
+        })
+        .expect("envia com Masson (id da maconaria)");
+    ok(
+        srv.ler(ix_c, &juliana, "senha-da-juliana-8h", None, None)
+            .is_err(),
+        "C: senha sozinha nao abre a camada Masson",
+    );
+    ok(
+        srv.ler(
+            ix_c,
+            &juliana,
+            "senha-da-juliana-8h",
+            None,
+            Some("LOJA-ERRADA"),
+        )
+        .is_err(),
+        "C: id da maconaria ERRADO nao abre",
+    );
+    let (tc, _, _) = srv
+        .ler(ix_c, &juliana, "senha-da-juliana-8h", None, Some(masson_id))
+        .unwrap();
+    ok(
+        tc == "So para irmaos.",
+        "C: com o id da maconaria CERTO, abre a 3a camada",
+    );
 
     println!("\n===== RESULTADO =====");
     let mut falhas = 0;
