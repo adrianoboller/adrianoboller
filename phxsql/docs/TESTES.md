@@ -35,7 +35,7 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **2.207 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **2.209 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
@@ -46,7 +46,7 @@ contando `#[test]` por arquivo e agrupando:
 | Protocolo e portões (despachar) | 442 | 20,0 |
 | Camada SQL (léxico, sintaxe, tradução) | 209 | 9,5 |
 | Núcleo (JSON, tipos, UUID, zip, paralelo) | 174 | 7,9 |
-| Servidor (outros) | 150 | 6,8 |
+| Servidor (outros) | 151 | 6,8 |
 | Criptografia e codificação | 124 | 5,6 |
 | Configuração | 112 | 5,1 |
 | DbLink | 81 | 3,7 |
@@ -65,11 +65,11 @@ contando `#[test]` por arquivo e agrupando:
 | **Exportação** | **13** | **0,6** |
 | **Junções e união** | **13** | **0,6** |
 | **Pivot** | **12** | **0,5** |
+| **Cluster** | **8** | **0,4** |
 | **Alertas e e-mail** | **8** | **0,4** |
 | **CLI** | **7** | **0,3** |
-| **Cluster** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,3** |
-| **total** | **2207** | |
+| **total** | **2209** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 

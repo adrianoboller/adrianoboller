@@ -86,7 +86,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
   retrato que nunca existiu.</p>
 
   <div class="placar">
-    <div class="c"><div class="v">2.207</div><div class="r">testes</div></div>
+    <div class="c"><div class="v">2.209</div><div class="r">testes</div></div>
     <div class="c"><div class="v">124</div><div class="r">guardas</div></div>
     <div class="c"><div class="v">27</div><div class="r">casos de tela</div></div>
     <div class="c"><div class="v">18</div><div class="r">catracas</div></div>
@@ -94,15 +94,15 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
   </div>
 </header>
 
-<h2 class="mal">0. 1 guarda(s) VERMELHA(S) — defeito provado, conserto pendente</h2><p class="sub">Entregues falhando de proposito. Elas nao entram na suite (levam <code>#[ignore]</code>, senao a catraca deixaria de segurar o resto), e rodam com <code>-- --ignored</code>. <b>Enquanto estiverem aqui, os numeros verdes abaixo nao cobrem o que elas provam.</b></p><ul class="vermelhas"><li><code>tabela_que_nao_abre_nao_pode_encolher_a_posicao_em_silencio</code> — VERMELHA de proposito: prova um erro engolido que ainda nao foi consertado<br><span class="q">crates/phxsql-server/src/servidor.rs</span></li></ul>
+
 
 <h2>1. O motor, por dentro</h2>
 <p class="sub"><code>cargo test --workspace</code>. É a camada mais barata e a
 mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 <div class="nota">
-  <b>2.207 testes</b> em 180.470 linhas de Rust, versão
-  <code>0.18.0</code>, commit <code>ccb45b1</code>, 137 operações no
-  protocolo. Medido em 2026-09-09 09:31:33, por
+  <b>2.209 testes</b> em 180.623 linhas de Rust, versão
+  <code>0.18.0</code>, commit <code>6858fa4</code>, 137 operações no
+  protocolo. Medido em 2026-09-11 06:16:08, por
   <code>docs/dossie/numeros-do-projeto.py</code>, que <b>aborta se o
   <code>cargo test</code> falhar</b>.
 </div>
@@ -216,7 +216,7 @@ diz onde não confiar.</p>
 </div>
 
 <footer>
-  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 09/09/2026 09:31. Nenhum
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 11/09/2026 06:16. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
   do catálogo de guardas, dos <code>resultados.json</code> das bancadas, dos
   arquivos de <code>testes-web/</code> e das constantes do próprio fonte. O

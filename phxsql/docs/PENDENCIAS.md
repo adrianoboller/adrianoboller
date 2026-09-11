@@ -269,7 +269,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☐ | 245 | **Seis observações da revisão do motor, menores, para varrer numa rodada de higiene (O1-O6)** | Medidas em 09/09/2026: O1 `criar_tabela` aceita campo desconhecido na coluna calado (`"cheque"` em vez de `check` vira ausência de regra — família do `recursos.cache_paginas`); O2 `acrescentar_coluna` com CHECK que as linhas velhas violam é aceito sem aviso e depois todo `atualizar` da linha velha recusa, e a `calculada` acrescentada não preenche as linhas velhas; O3 upsert parcial pelo protocolo põe NULL nas ausentes (contrato, mas é a forma perigosa); O4 parâmetro `1e21` recusado como «Texto»; O5 a recusa do direito por coluna manda «peça as colunas» também para `agrupar`; O6 `SELECT * FROM v_ord` recusa por direção do índice (limitação já documentada). E o buraco nomeado pela G4-MOTOR: no upsert com `atualizar`, o gatilho BEFORE vê a linha do VALUES, não a mesclada. |
 
 <!-- pedidos:contagem:inicio -->
-**245 pedidos: 226 feitos · 8 parciais · 11 planejados.**
+**245 pedidos: 227 feitos · 8 parciais · 10 planejados.**
 
 *(Gerado por `docs/dossie/pagina-dos-pedidos.py` — não conte à mão. A
 conta sai da primeira coluna da tabela acima, e é a mesma que a página
