@@ -89,3 +89,31 @@ voto (PG+MySQL contra MariaDB+SQLite) decide por **errar**.
   decide com o dono antes de gravar.
 - O **caso concreto** da consulta SQL que o dono viu falhar: se é um dos quatro
   acima (em especial o `#240`), ou um novo, para a caça mirar o bug certo.
+
+## 5. Medição de 11/09/2026 — três dos quatro já estão certos
+
+Ao voltar a esta lista, medi o código em vez de supor. Três das quatro
+decisões da §2 **já estão implementadas e corretas** — a hipótese de que eram
+bugs morreu medida, que é resultado tão válido quanto ganho:
+
+- **`GROUP BY` com coluna não agregada → ERRAR:** já recusa, nomeando, em
+  `crates/phxsql-sql/src/sintaxe.rs:209` (`finalizar_projecao`), case-insensitive
+  pelo `igual_sem_caso`; e `SELECT *` com `GROUP BY` também recusa (linha 159).
+- **subconsulta escalar > 1 linha → ERRAR:** já recusa em
+  `crates/phxsql-server/src/servidor.rs:10845` (`if dentro.len() != 1`), com a
+  razão certa escrita ao lado («escolher a primeira faria a resposta depender da
+  ordem»).
+- **`= NULL` não diverge por caminho** (a suspeita que trouxe a caça aqui): o
+  filtro simples guarda `_ if v.e_null() || f.valor.e_null() => false` em
+  `crates/phxsql-store/src/memoria.rs:651` (nenhuma comparação casa com nulo, nem
+  a `Igual`), e o avaliador de expressão usa lógica de três valores (`NULL`
+  exclui no filtro). Os dois caminhos **concordam** — não há bug.
+
+O `LEFT JOIN` NULL já convergia (aceite automático). Sobra **um** item SQL
+decidido e não construído: o **`#240` — `[NOT] EXISTS` correlacionado**, que a
+régua manda RODAR e que hoje **recusa nomeando** — é recurso faltando, não
+resposta errada. Construí-lo roda a subconsulta por linha da consulta de fora
+(N passagens pelo portão de permissão), e por isso é decisão de escopo do dono,
+não conserto automático. **A caça segue precisando da consulta concreta que o
+dono viu falhar** — se for o `#240`, o alvo está nomeado; se for outra, ela
+ainda não está nesta lista.
