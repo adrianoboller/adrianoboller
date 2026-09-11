@@ -1,0 +1,10 @@
+{
+  "quando": "2026-09-11 22:20:31",
+  "passo_1_instalar": true,
+  "passos_2347_banco": true,
+  "passo_5_replicacao": true,
+  "passo_6_dns": true,
+  "passo_8_cluster": true,
+  "passo_9_correio_e2e": true,
+  "todos_verdes": true
+}
