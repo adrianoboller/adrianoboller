@@ -102,3 +102,8 @@ para o dado de negócio; a colmeia, para o estado do sistema.
 3. **Se a premissa passar**, a colmeia entra como frente de formato (PSCH-like
    para colmeia, a camada de montagem que junta várias numa árvore), decidida
    contra as restrições da §2, com o dono aprovando o formato antes de gravar.
+
+O desenho concreto da estrutura em disco — bloco base, bins, células, os três
+níveis (database → colmeias → árvore montada) e as divergências que as pétreas
+forçam — está em [`colmeia-estrutura.md`](colmeia-estrutura.md). É proposta de
+formato: nada gravado, nada decidido, à espera do dono e da premissa medida.
