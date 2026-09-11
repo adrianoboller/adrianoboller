@@ -91,8 +91,24 @@ outra frente segura o `flock /tmp/phx-cargo.lock` — aconteceu na revisão de
 grava, e o painel fica com o de ontem anunciando sucesso pelo silêncio. Rodar o
 laço com `|| echo FALHOU: $g` custa nada e é a diferença entre saber e supor.
 
+### O portão dos geradores fecha o laço — rode-o por último
+
+Conferir o código de saída de cada gerador não basta: a rodada pode **esquecer
+de rodar um** por inteiro, e aí o painel dele fica com o número de ontem sem
+ninguém ver falha nenhuma. O portão dos geradores é a catraca que reprova esse
+estado:
+
 ```bash
+python3 docs/dossie/portao-dos-geradores.py     # sai != 0 se algum ficou velho
 ```
+
+Para cada gerador ele responde a uma pergunta — *re-rodar mudaria algum número
+visível?* — rodando o gerador de verdade e comparando o alvo antes/depois, e é
+**read-only** (devolve os bytes originais). Derivado que mudaria, ou gerador que
+falha, é VERMELHO, com o nome do gerador e do arquivo. O `numeros-do-projeto.py`
+sai como NOTA (chama `cargo`, e o portão não martela o build); rode-o à mão. A
+lei da catraca, o defeito que a motivou e os três modos de comparação estão em
+`docs/CATRACAS.md` §9. Depois de consertar um, `--so <nome>` reconfere só ele.
 
 **Sem argumento nenhum**, e isso é conserto de 07/09/2026, não estilo. O nome
 do dossiê some da receita porque ele muda a cada refação, e quem o acha é o

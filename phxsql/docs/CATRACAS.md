@@ -43,10 +43,14 @@ Confundir os dois é o erro que este documento existe para não cometer: um
 limite de funcionamento subindo não é catraca afrouxando.
 
 Um terceiro caso, à parte dos dois: **portão binário**. `cargo fmt --check`,
-`cargo clippy -D warnings`, `cargo test --workspace` e o conferidor de zero
-dependências (`conferidor_dependencias.rs`) não têm "folga" — são
+`cargo clippy -D warnings`, `cargo test --workspace`, o conferidor de zero
+dependências (`conferidor_dependencias.rs`) e o **portão dos geradores**
+(`docs/dossie/portao-dos-geradores.py`, seção 9 abaixo) não têm "folga" — são
 verdadeiro/falso, não contagem. Não entram na tabela abaixo pelo mesmo
-motivo que `TETO_DA_CASCATA` não entra: não há número que decresça.
+motivo que `TETO_DA_CASCATA` não entra: não há número que decresça. **Não crie
+um `TETO` para o portão dos geradores**: «um derivado velho» não é uma dívida
+que encolhe de dez para nove — é zero ou não-zero, e um teto que aceitasse «só
+três painéis velhos» seria a catraca frouxa que a própria casa proíbe.
 
 ## As cinco catracas de qualidade — medidas hoje
 
@@ -398,6 +402,86 @@ mesmo vale para o código: com `EXT_FTS` fora de `EXTENSOES_TODAS` (o estado
 antes do pedido 213), os três testes que provam `excluir_tabela`,
 `renomear_tabela` e `arquivos_da_tabela` ficam vermelhos, nomeando o `.fts`
 órfão.
+
+## 9. O portão dos geradores — o derivado velho que anuncia sucesso pelo silêncio
+
+**O defeito que motivou** (revisão de gaps, 11/09/2026): a pasta `docs/dossie/`
+tem **catorze** geradores que escrevem TODO número visível do dossiê e das cinco
+páginas satélites, e a rodada podia **esquecer de rodá-los**. Quando esquecia, o
+painel publicado ficava com o número de ontem — ninguém digitou errado, e mesmo
+assim a vitrine mentia. Não havia um portão único que reprovasse esse estado; a
+única defesa era a disciplina de lembrar, e disciplina não é catraca. O custo já
+estava medido nesta casa: em 07/09/2026, **três painéis atrasados sem um único
+dígito digitado** (198 pedidos onde eram 203, 428 testes onde eram 451, 26.762
+linhas/s onde eram 37.810).
+
+**O que ele faz** (`docs/dossie/portao-dos-geradores.py`): para cada gerador,
+responde a uma pergunta — *re-rodar mudaria algum número visível?* Roda o gerador
+de verdade, guarda os bytes do alvo ANTES, compara com o DEPOIS, e **devolve os
+bytes originais** (é read-only: confere, não conserta). Duas doenças são
+VERMELHO: **derivado que mudaria** (a desatualização) e **gerador que FALHA**
+(saída ≠ 0 — emitir nada quando a fonte sumiu é a mesma doença do conferidor que
+diz «limpo» sem ter conferido). Reprova com saída ≠ 0, nomeando gerador, arquivo
+e o primeiro trecho que difere.
+
+**É portão binário, não catraca numérica** — não tem `TETO`, pelo motivo da
+seção «O que é catraca»: um derivado velho é zero-ou-não-zero, não uma contagem
+que desce.
+
+**Os três modos, e por que três e não um** — cada gerador leva o crivo mais
+forte que suporta, e fingir que todos suportam byte-cru faria o portão gritar
+VERMELHO sem defeito, que é o portão em que ninguém acredita:
+
+- **`exato`** — o alvo é função pura das fontes versionadas (pedidos, cobertura,
+  bancada, tetos, comparativo, fluxo, numeração de figuras, capturas). Byte a
+  byte, zero máscara, zero VERDE-falso. É o núcleo forte.
+- **`sem-carimbo`** — o gerador embute um CARIMBO DE PROCEDÊNCIA que muda sozinho
+  a cada corrida e **não é número medido**: o relógio de parede do «gerado em», a
+  data de hoje do «contados hoje», o `mtime` do arquivo lido (que o `git
+  checkout` reescreve para a hora do checkout — o git não preserva mtime) e o
+  commit curto do rodapé. Comparar isso por byte dá VERMELHO em toda árvore,
+  sempre, sem defeito nenhum. Este modo apaga só o carimbo dos dois lados e
+  compara o resto — pega mudança de VALOR medido, ignora a data. A máscara é
+  cirúrgica: o `commit <code>…</code>` do rodapé some, mas o build-id
+  `(41e82efa97c8)` que a página de testes mostra **fica**, porque é valor medido.
+  São `sem-carimbo`: `perguntas`, `pagina-de-status`, `pagina-dos-testes`,
+  `graficos`.
+- **`nota-cargo`** — o `numeros-do-projeto.py` chama `cargo test` e `cargo run
+  --example`, e esta worktree tem disco escasso. Ele **não é rodado** pelo
+  portão; sai como NOTA, com o comando para rodá-lo à mão. *Papel que não está
+  cumprindo aparece como não cumprindo*, em vez de sumir do relatório.
+
+O `trio-de-motores` é `exato` com um ajuste: a guarda própria dele compara o
+`mtime` da figura com o da medição, e essa comparação **não sobrevive a um
+checkout** (as duas saem com a hora do checkout). O portão põe a figura como a
+mais nova antes de rodar — reproduz a pré-condição que a receita real garante
+rodando o `grafico.py` — e confere o bloco. A frescura figura-vs-medição fica a
+cargo da guarda do trio, na receita real; o portão não a reproduz, e isto está
+dito no fonte.
+
+**A prova real, nos dois sentidos** (11/09/2026, gerador barato `tetos-da-trava`,
+para não furar o piso de disco): com o portão VERDE, editei à mão um número
+medido no bloco `tetos:` do dossiê (`RwLock` por_lote `1,54x` → `1,49x`) — o
+portão ficou **VERMELHO** nomeando `tetos-da-trava.py`, o dossiê e o hunk exato,
+e saiu com código 1; rodado o gerador de verdade, **VERDE** de novo, saída 0. E
+o portão restaurou o defeito depois de acusá-lo, provando o read-only.
+
+**E ele pagou por si na primeira corrida completa**, achando três derivados
+velhos no próprio HEAD (`6858fa4`) que nenhuma leitura acharia: `pagina-dos-pedidos`
+(226 feitos onde eram **227**, 11 planejados onde eram **10**), `cobertura-por-area`
+(150 testes em «Servidor (outros)» onde eram **151**, e a linha inteira do
+**Cluster** faltando) e `pagina-dos-testes` (a página ainda anunciava **1 guarda
+VERMELHA** que o commit 211 já consertara — pega pelo modo `sem-carimbo`, que viu
+o valor mudar por baixo do carimbo de mtime). Os três ficaram para o passo de
+integração regenerar num só golpe, com os mtimes certos e o `cargo` à mão — uma
+regeneração parcial aqui trocaria as datas de medição de `testes.html` pela hora
+do checkout, que é o defeito que a própria página existe para não cometer.
+
+**O que ele NÃO cobre, e é decisão**: (a) o `numeros-do-projeto.py`, por
+`nota-cargo`; (b) uma DATA que envelheceu sozinha nas quatro páginas
+`sem-carimbo` — mas essas datas vêm de `mtime`/hoje/agora e não se reproduzem
+entre checkouts de qualquer jeito; o que o modo garante é o VALOR medido; (c) a
+frescura figura-vs-medição do trio, que é guarda de mtime do próprio trio.
 
 ## Os limites de funcionamento encontrados (não são catracas)
 
