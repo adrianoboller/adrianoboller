@@ -1,0 +1,157 @@
+<title>Fluxogramas do Correio PhxSql</title>
+<style>
+  :root{
+    --fundo:#010418; --tinta:#eef1fb; --fraco:#9aa3c7; --linha:#2b3566;
+    --caixa:#0c1330; --caixa2:#111a3f;
+    --server:#5aa9ff;   /* azul consulta */
+    --client:#4fd08a;   /* verde inclui */
+    --cripto:#f2b23a;   /* ambar */
+    --rede:#c77dff;     /* roxo ligacao */
+    --alerta:#ff6b6b;   /* vermelho */
+    --rosa:#ff7ab6;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--fundo);color:var(--tinta);margin:0;
+    font-family:"Exo 2","Segoe UI",system-ui,-apple-system,sans-serif;
+    padding:28px 22px 40px}
+  h1{font-size:26px;margin:0 0 2px;letter-spacing:.2px}
+  h1 .fogo{color:var(--cripto)}
+  .sub{color:var(--fraco);font-size:13px;margin:0 0 4px}
+  .maquete{display:inline-block;margin:8px 0 18px;font-size:12px;color:var(--cripto);
+    border:1px solid #4a3d16;background:#1a1405;border-radius:8px;padding:6px 10px}
+  .maquete b{color:#ffd77a}
+  .grade{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:8px}
+  @media(max-width:900px){.grade{grid-template-columns:1fr}}
+  figure{margin:0;background:linear-gradient(180deg,#060b22,#040718);
+    border:1px solid var(--linha);border-radius:16px;padding:18px 18px 14px}
+  figure.larga{grid-column:1 / -1}
+  figcaption{font-size:15px;font-weight:700;margin:0 0 2px}
+  figcaption .tag{font-size:11px;font-weight:600;color:var(--fundo);
+    border-radius:6px;padding:2px 7px;margin-left:8px;vertical-align:2px}
+  .cap-nota{color:var(--fraco);font-size:12px;margin:0 0 14px}
+  .fluxo{display:flex;flex-direction:column;align-items:stretch;gap:0}
+  .no{border:1.5px solid var(--linha);background:var(--caixa);border-radius:11px;
+    padding:9px 12px;position:relative}
+  .no .t{font-size:13.5px;font-weight:600}
+  .no .d{font-size:11.5px;color:var(--fraco);margin-top:2px;line-height:1.35}
+  .no.ini{border-color:var(--server);box-shadow:inset 3px 0 0 var(--server)}
+  .no.cli{border-color:var(--client);box-shadow:inset 3px 0 0 var(--client)}
+  .no.cri{border-color:var(--cripto);box-shadow:inset 3px 0 0 var(--cripto)}
+  .no.red{border-color:var(--rede);box-shadow:inset 3px 0 0 var(--rede)}
+  .no.gate{border-color:var(--rosa);background:var(--caixa2);border-style:dashed}
+  .no.armo{border-color:var(--alerta);box-shadow:inset 3px 0 0 var(--alerta)}
+  .seta{align-self:center;color:var(--fraco);font-size:11px;line-height:1;
+    padding:5px 0;text-align:center}
+  .seta b{color:var(--tinta);font-weight:600}
+  .seta::before{content:"▼";display:block;color:var(--linha);font-size:13px;margin-bottom:2px}
+  .ramo{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:2px 0}
+  .legenda{display:flex;flex-wrap:wrap;gap:14px;margin:16px 2px 0;font-size:11.5px;color:var(--fraco)}
+  .legenda span{display:inline-flex;align-items:center;gap:6px}
+  .chip{width:12px;height:12px;border-radius:4px;display:inline-block}
+  /* ligacao: duas raias */
+  .raias{display:grid;grid-template-columns:1fr 90px 1fr;gap:0;align-items:stretch}
+  .cabraia{text-align:center;font-weight:700;font-size:13px;padding:8px 0;border-radius:9px;margin-bottom:8px}
+  .cabraia.c{color:var(--client);border:1px solid var(--client);background:#08160f}
+  .cabraia.s{color:var(--server);border:1px solid var(--server);background:#071022}
+  .cabraia.mid{color:var(--rede)}
+  .passo{display:contents}
+  .cel{padding:6px 0}
+  .cel .no{margin:0}
+  .via{display:flex;flex-direction:column;justify-content:center;align-items:center;color:var(--rede);font-size:10.5px;text-align:center;gap:2px;padding:0 4px}
+  .via .arr{font-size:15px;letter-spacing:-2px}
+  .via .lbl{color:var(--fraco);line-height:1.2}
+  .via.rl .arr{transform:scaleX(-1)}
+  .vazio{}
+  .rodape{color:var(--fraco);font-size:11px;margin-top:22px;border-top:1px solid var(--linha);padding-top:12px;line-height:1.5}
+  .rodape b{color:var(--tinta)}
+</style>
+
+<h1><span class="fogo">🔥</span> Fluxogramas do Correio PhxSql <span style="font-size:14px;color:var(--fraco);font-weight:400">— phxservermail · phxclientmail · a ligação</span></h1>
+<p class="sub">BUILT TO STORE · ENGINEERED TO SCALE — porta 8000, TCP/IP, sem SMTP, cifra E2E.</p>
+<div class="maquete"><b>MODELO/MAQUETE.</b> Desenho da arquitetura. O motor da cripto está provado nos exemplos (correio-niveis/masson/texto, PROVA VERDE); o servidor de rede no ar é o pedido #159, em construção. O que é passo de implantação (DNS, WX) está marcado.</div>
+
+<div class="grade">
+
+  <!-- ================= SERVER MAIL ================= -->
+  <figure>
+    <figcaption>phxSERVERMAIL — o servidor<span class="tag" style="background:var(--server)">fluxo interno</span></figcaption>
+    <p class="cap-nota">Instala, hospeda muitas empresas (tenants) e guarda as caixas cifradas — sem nunca ler o conteúdo.</p>
+    <div class="fluxo">
+      <div class="no ini"><div class="t">1 · Instala + configura</div><div class="d">phxsqld --config caminho/nome.ext (config junto do binário por padrão) · porta 8000</div></div>
+      <div class="seta">cria a <b>base</b></div>
+      <div class="no ini"><div class="t">2 · Sobe multi-tenant</div><div class="d">N empresas; cada uma um alias DNS na Cloudflare → empresa.phxsql.com.br</div></div>
+      <div class="seta">por empresa</div>
+      <div class="no cri"><div class="t">3 · Contas &amp; chaves</div><div class="d">id do usuário = UUID v7; identidade X25519, p12, assinatura Ed25519 — todas seladas sob a senha (PBKDF2)</div></div>
+      <div class="seta">recebe conexão · aperto cifrado (Noise)</div>
+      <div class="no red"><div class="t">4 · Atende na porta 8000</div><div class="d">client mail e outros servers; usuário+senha amarrados ao canal</div></div>
+      <div class="seta">guarda o <b>blob cifrado</b></div>
+      <div class="no cri"><div class="t">5 · Caixas cifradas (E2E)</div><div class="d">tabelas PSCH; anexos num armazém à parte; o servidor NÃO decifra</div></div>
+      <div class="ramo">
+        <div class="no red"><div class="t">6 · Replicação</div><div class="d">master → slaves; imagem da linha no .log; SHA-256 idêntico</div></div>
+        <div class="no red"><div class="t">7 · Cluster</div><div class="d">eleição + promoção/failover; 4 modos</div></div>
+      </div>
+      <div class="seta">e sempre</div>
+      <div class="no gate"><div class="t">8 · Moderação</div><div class="d">banir / quarentena / multa — com motivo obrigatório; decisão também com motivo</div></div>
+    </div>
+  </figure>
+
+  <!-- ================= CLIENT MAIL ================= -->
+  <figure>
+    <figcaption>phxCLIENTMAIL — o cliente<span class="tag" style="background:var(--client)">fluxo interno</span></figcaption>
+    <p class="cap-nota">Uma senha só; o p12 é invisível. Cifra ao enviar, decifra ao ler — a senha do outro nunca sai da máquina dele.</p>
+    <div class="fluxo">
+      <div class="no cli"><div class="t">1 · Login com UMA senha</div><div class="d">os certificados (p12) são gerados e selados sozinhos — a pessoa leiga não os vê</div></div>
+      <div class="seta">conecta · porta 8000 · aperto cifrado</div>
+      <div class="no red"><div class="t">2 · Autentica no server</div><div class="d">usuário+senha; pina a chave pública do servidor</div></div>
+      <div class="seta">e fica</div>
+      <div class="no cli"><div class="t">3 · Monitora a caixa</div><div class="d">chegou e-mail novo → popup + flag (🚨/🔔 por prioridade/tipo)</div></div>
+      <div class="ramo">
+        <div class="no cri"><div class="t">4 · LER</div><div class="d">abre com a PRÓPRIA senha + a pública do remetente (ECDH); confere assinatura Ed25519</div></div>
+        <div class="no cri"><div class="t">5 · COMPOR</div><div class="d">nível 0–3/Masson; corpo sem acento (ASCII); anexo à parte; cifra E2E</div></div>
+      </div>
+      <div class="seta">ao aceitar confiança paga</div>
+      <div class="no gate"><div class="t">6 · Confiança &amp; pix</div><div class="d">pedir/aceitar/recusar/bloquear; categoria paga → gera o QR do pix no lado de QUEM paga</div></div>
+    </div>
+  </figure>
+
+</div>
+
+<!-- ================= A LIGACAO (a parte) ================= -->
+<figure class="larga">
+  <figcaption>A LIGAÇÃO — phxclientmail ↔ phxservermail<span class="tag" style="background:var(--rede)">fluxograma à parte</span></figcaption>
+  <p class="cap-nota">Como os dois conversam: aperto de mão cifrado na porta 8000, e o E2E de ponta a ponta — o servidor roteia o blob, nunca o abre.</p>
+  <div class="raias">
+    <div class="cabraia c">CLIENT MAIL (quem envia / quem lê)</div>
+    <div class="cabraia mid">porta 8000</div>
+    <div class="cabraia s">SERVER MAIL (guarda, roteia)</div>
+
+    <div class="cel"><div class="no cli"><div class="t">Abre a própria privada com a senha</div><div class="d">local; a senha nunca vai para o fio</div></div></div>
+    <div class="via"><span class="arr">→→</span><span class="lbl">TCP + aperto<br>cifrado (Noise)</span></div>
+    <div class="cel"><div class="no red"><div class="t">Aceita o canal cifrado</div><div class="d">apresenta a pública pinável; amarra ao canal</div></div></div>
+
+    <div class="cel"><div class="no cri"><div class="t">Cifra E2E o corpo</div><div class="d">ECDH com a pública do DESTINATÁRIO; prioridade/tipo no AAD</div></div></div>
+    <div class="via"><span class="arr">→→</span><span class="lbl">blob cifrado<br>(de/para no AAD)</span></div>
+    <div class="cel"><div class="no cri"><div class="t">Guarda na caixa · NÃO lê</div><div class="d">só a senha do destinatário abre</div></div></div>
+
+    <div class="cel"><div class="no gate"><div class="t">Sem confiança aceita → recusa</div><div class="d">anti-spam nos dois canais (mensagem e pedido)</div></div></div>
+    <div class="via"><span class="lbl">portão de<br>confiança</span></div>
+    <div class="cel"><div class="no red"><div class="t">Entre empresas: server X → server Y</div><div class="d">federação cercada; entrega o blob na 8000; Y também não lê</div></div></div>
+
+    <div class="cel"><div class="no cli"><div class="t">Lê: decifra local</div><div class="d">própria senha + pública do remetente; confere assinatura</div></div></div>
+    <div class="via rl"><span class="arr">→→</span><span class="lbl">monitor puxa<br>o novo</span></div>
+    <div class="cel"><div class="no red"><div class="t">Entrega o blob ao client</div><div class="d">roteou, nunca decifrou</div></div></div>
+  </div>
+  <div class="legenda">
+    <span><i class="chip" style="background:var(--server)"></i>servidor</span>
+    <span><i class="chip" style="background:var(--client)"></i>cliente</span>
+    <span><i class="chip" style="background:var(--cripto)"></i>cripto E2E</span>
+    <span><i class="chip" style="background:var(--rede)"></i>rede / porta 8000</span>
+    <span><i class="chip" style="background:var(--rosa)"></i>portão (confiança/moderação)</span>
+  </div>
+</figure>
+
+<p class="rodape">
+  <b>Provado (em memória, PROVA VERDE):</b> identidade selada pela senha; portão de domínio e de confiança; E2E por ECDH (envio dentro da empresa e entre empresas); 5 níveis; respostas assinadas; corpo sem acento; UUID v7; QR do pix; split Masson. &nbsp;·&nbsp;
+  <b>Passo de implantação:</b> DNS de phxsql.com.br/phxmail.com.br ainda NÃO resolve; armazenar o v7 nos servidores da WX Soluções. &nbsp;·&nbsp;
+  <b>Em construção (#159):</b> o servidor de rede na porta 8000 abrindo soquete de verdade.
+</p>
