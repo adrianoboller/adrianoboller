@@ -226,6 +226,10 @@ pub fn montar_resposta_fechada(codigo: u16, tipo: &str, corpo: &str) -> String {
 fn montar_com_folga(codigo: u16, tipo: &str, corpo: &str, externo: bool) -> String {
     let motivo = match codigo {
         200 => "OK",
+        // O MCP sobre HTTP responde 202 sem corpo a uma notificacao (mensagem
+        // sem `id`): responder qualquer outra coisa quebra o cliente logo no
+        // `notifications/initialized`, a mesma armadilha do transporte stdio.
+        202 => "Accepted",
         400 => "Bad Request",
         401 => "Unauthorized",
         403 => "Forbidden",

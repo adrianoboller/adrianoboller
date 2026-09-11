@@ -53,7 +53,15 @@ pub const VERSAO_MCP: &str = "2025-06-18";
 /// Quando o cliente pede uma que está aqui, a resposta ECOA a dele -- é assim
 /// que o MCP negocia. Quando pede uma que não está, a resposta traz a nossa, e
 /// cabe ao cliente decidir se continua.
-const VERSOES_ACEITAS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
+///
+/// **`2025-03-26` saiu de propósito, e é uma decisão de honestidade.** Aquela
+/// revisão EXIGE lote JSON-RPC (array de mensagens), e esta ponte atende uma
+/// mensagem por vez -- ver [`Ponte::atender`], que agora RECUSA um lote em vez
+/// de calar. Anunciar uma revisão cuja obrigação não se cumpre é prometer o que
+/// não se serve; não anunciá-la faz o cliente negociar `2025-06-18`, que
+/// *removeu* o lote, e aí o caso nem aparece. As duas que ficam não obrigam
+/// lote, e a recusa do `atender` cobre um array que chegue por engano.
+const VERSOES_ACEITAS: [&str; 2] = ["2025-06-18", "2024-11-05"];
 
 // Códigos de erro do JSON-RPC 2.0. São os do padrão, e não inventados.
 const ERRO_ANALISE: i64 = -32_700;
@@ -143,6 +151,26 @@ impl<E: Executor> Ponte<E> {
                 )
             }
         };
+
+        // Uma mensagem JSON-RPC é um OBJETO. Um lote (array) ou um escalar cai
+        // aqui, e o defeito que isto tranca é o SILÊNCIO, não o erro: `campo`
+        // só enxerga objeto, então um lote virava `id = None`, o `?` lá embaixo
+        // devolvia `None` como se fosse notificação, e o cliente ficava
+        // esperando para sempre uma resposta que nunca vinha -- o pior dos
+        // defeitos de protocolo, porque não há erro em lugar nenhum. Não
+        // servimos lote (por isso `2025-03-26` saiu das versões aceitas); mas
+        // RESPONDER o erro em vez de calar é o que impede o travamento.
+        if !matches!(pedido, Json::Objeto(_)) {
+            return Some(
+                resposta_erro(
+                    Json::Nulo,
+                    ERRO_PEDIDO_INVALIDO,
+                    "esta ponte atende uma mensagem por vez; lote JSON-RPC (array) nao e \
+                     suportado -- envie um objeto por linha",
+                )
+                .escrever(),
+            );
+        }
 
         let id = pedido.campo("id").cloned();
         let metodo = pedido.texto_ou("method", "").to_string();
@@ -555,6 +583,52 @@ mod testes {
             Some(ERRO_METODO)
         );
         assert_eq!(r.campo("id").unwrap().inteiro(), Some(7));
+    }
+
+    /// **O defeito do LOTE, que travava o cliente em SILÊNCIO.** A ponte
+    /// anunciava uma revisão que exige lote JSON-RPC (array), mas `atender` só
+    /// sabia ler um objeto: o array caía como `id = None`, virava "notificação"
+    /// e `atender` devolvia `None`. O cliente esperava para sempre uma resposta
+    /// que nunca vinha -- o pior dos defeitos de protocolo, porque não há erro
+    /// em canto nenhum. Reponha o silêncio -- tire o `matches!(_, Objeto)` de
+    /// `atender` -- e este teste falha no `expect`, porque `atender` volta a
+    /// devolver `None`.
+    #[test]
+    fn um_lote_jsonrpc_recebe_erro_em_vez_de_silencio() {
+        let p = Ponte::nova(Espiao::novo());
+        let bruto = p
+            .atender(
+                r#"[{"jsonrpc":"2.0","id":1,"method":"ping"},
+                    {"jsonrpc":"2.0","id":2,"method":"ping"}]"#,
+            )
+            .expect("um lote TEM de receber resposta, e nao o silencio que trava o cliente");
+        let r = Json::analisar(&bruto).unwrap();
+        assert_eq!(
+            r.campo("error").unwrap().campo("code").unwrap().inteiro(),
+            Some(ERRO_PEDIDO_INVALIDO)
+        );
+        assert!(r.campo("id").unwrap().e_nulo());
+        // E o executor NAO foi tocado: um lote recusado nao roda pergunta
+        // nenhuma -- e, quando a escrita ligar, nao vira porta dos fundos.
+        assert!(p.executor.recebidos.borrow().is_empty());
+    }
+
+    /// A ponte NÃO ecoa uma revisão cujo contrato ela não cumpre. `2025-03-26`
+    /// exige lote, que não servimos; pedir por ela devolve a NOSSA,
+    /// `2025-06-18`, que removeu o lote -- e assim o caso do lote nem nasce.
+    #[test]
+    fn nao_ecoamos_uma_revisao_que_exige_lote() {
+        let p = Ponte::nova(Espiao::novo());
+        let r = atender(
+            &p,
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize",
+                "params":{"protocolVersion":"2025-03-26"}}"#,
+        );
+        assert_eq!(
+            r.campo("result").unwrap().texto_ou("protocolVersion", ""),
+            VERSAO_MCP,
+            "2025-03-26 exige lote e por isso nao pode ser ecoada"
+        );
     }
 
     /// `tools/list` e `tools/call` têm de concordar: toda ferramenta anunciada

@@ -7184,7 +7184,12 @@ impl Servidor {
     }
 
     /// Atende um pedido da porta REST.
-    fn atender_rest(&self, mut fluxo: TcpStream, par: SocketAddr) {
+    ///
+    /// Recebe `self` como `Arc` porque o endpoint `/mcp` monta um
+    /// [`ExecutorLocal`], que precisa de posse compartilhada do servidor -- a
+    /// mesma que o `--mcp` por stdio usa. As rotas `/v1/<op>`, `/openapi.json`
+    /// e `/saude` nao mudaram em nada com isso.
+    fn atender_rest(self: &Arc<Self>, mut fluxo: TcpStream, par: SocketAddr) {
         let ip = par.ip().to_string();
         let porta = par.port();
         let _ = fluxo.set_read_timeout(Some(Duration::from_secs(self.config.timeout_s)));
@@ -7220,7 +7225,26 @@ impl Servidor {
                         ("phxsql", Json::texto_de(VERSAO)),
                         ("servico", Json::texto_de(self.config.rest.titulo())),
                         ("openapi", Json::texto_de("/openapi.json")),
+                        // O endpoint MCP viaja pela MESMA porta: quem descobre a
+                        // porta pelo /saude descobre a conversa com IA junto.
+                        ("mcp", Json::texto_de("/mcp")),
                     ]),
+                );
+            }
+            // O endpoint MCP (Model Context Protocol) sobre HTTP: o MESMO
+            // JSON-RPC 2.0 do `--mcp`, agora pela porta REST -- para o N8n e o
+            // Claude Code falarem por HTTP, e nao so pelo cano de um processo.
+            // Somente leitura, sem valvula de escrita aqui -- ver `mcp_http`.
+            ("POST", "/mcp") => self.mcp_http(&mut fluxo, &pedido, &ip, porta),
+            // Streamable HTTP: um GET no endpoint abriria um fluxo SSE, e esta
+            // ponte nao serve SSE -- responde uma resposta por POST e nada mais.
+            // O 405 e o que a spec manda dizer, e evita um cliente ficar preso
+            // esperando um stream que nunca vem.
+            ("GET", "/mcp") => {
+                let _ = http::erro_json(
+                    &mut fluxo,
+                    405,
+                    "o endpoint MCP nao abre fluxo SSE; use POST /mcp",
                 );
             }
             ("POST", caminho) => match crate::rest::operacao_do_caminho(caminho) {
@@ -7229,7 +7253,8 @@ impl Servidor {
                     let _ = http::erro_json(
                         &mut fluxo,
                         404,
-                        "rota desconhecida: as operacoes estao em /openapi.json",
+                        "rota desconhecida: as operacoes estao em /openapi.json, \
+                         e o endpoint MCP e POST /mcp",
                     );
                 }
             },
@@ -7237,11 +7262,12 @@ impl Servidor {
                 let _ = http::erro_json(
                     &mut fluxo,
                     404,
-                    "esta porta atende POST /v1/<operacao>, GET /openapi.json e GET /saude",
+                    "esta porta atende POST /v1/<operacao>, POST /mcp, \
+                     GET /openapi.json e GET /saude",
                 );
             }
             _ => {
-                let _ = http::erro_json(&mut fluxo, 405, "use POST /v1/<operacao>");
+                let _ = http::erro_json(&mut fluxo, 405, "use POST /v1/<operacao> ou POST /mcp");
             }
         }
     }
@@ -7310,25 +7336,32 @@ impl Servidor {
         }
     }
 
-    /// Uma operacao pedida por REST: monta o pedido, estreita e despacha.
+    /// O segredo da porta REST -- o `Bearer` -- traduzido para o token do
+    /// protocolo, ou `None` quando a recusa 401 ja foi escrita e nao ha mais o
+    /// que fazer com esta conexao.
     ///
-    /// Tudo o que decide ACESSO acontece no `despachar`, como em toda outra
-    /// porta. O que mora aqui e o que e proprio do HTTP: de onde vem o token,
-    /// de onde vem a sessao, e que codigo devolver.
-    fn api_rest(
+    /// # Por que num lugar so
+    ///
+    /// A porta REST (`/v1/<op>`) e o endpoint MCP (`/mcp`) compartilham esta
+    /// porta da rede, e a regra dela e sutil: quando `rest.token` existe, ele
+    /// SUBSTITUI o token do protocolo -- e o do protocolo deixa de abrir a
+    /// porta, senao ligar o segredo do REST nao fecharia nada. Duas copias
+    /// divergiriam na primeira correcao feita numa so, e a que ficasse para
+    /// tras viraria a porta dos fundos. E o mesmo motivo do `portao_de_rede_http`
+    /// morar num lugar so.
+    ///
+    /// Isto NAO e o portao de permissao: quem decide o que a sessao pode e o
+    /// `despachar`, e ele confere o token de novo la dentro. Aqui e so a chave
+    /// da porta da rede.
+    fn token_do_rest(
         &self,
         fluxo: &mut TcpStream,
         pedido: &http::Pedido,
         ip: &str,
         porta: u16,
-        op: &'static str,
-    ) {
-        let agora = crate::agora_ms();
-        let inicio = Instant::now();
-
-        // O portao da porta: o `Bearer`. Um segredo proprio, quando existe,
-        // SUBSTITUI o token do protocolo aqui -- e o do protocolo deixa de
-        // abrir esta porta, senao rodar o segredo do REST nao fecharia nada.
+        op: &str,
+        agora: i64,
+    ) -> Option<String> {
         let apresentado = pedido
             .cabecalho("authorization")
             .unwrap_or("")
@@ -7337,12 +7370,12 @@ impl Servidor {
             .unwrap_or("")
             .trim()
             .to_string();
-        let token_do_pedido = if self.config.rest.token.is_empty() {
-            apresentado.clone()
+        if self.config.rest.token.is_empty() {
+            Some(apresentado)
         } else if apresentado == self.config.rest.token {
             // Passou pelo segredo da porta; o portao 1 continua conferindo o
             // token do protocolo, que e o que ele sempre conferiu.
-            self.config.token.clone()
+            Some(self.config.token.clone())
         } else {
             self.violacao_leve(ip, op, "token do REST invalido");
             self.anotar(&Acesso {
@@ -7372,6 +7405,91 @@ impl Servidor {
                     ("repetir", Json::Bool(false)),
                 ]),
             );
+            None
+        }
+    }
+
+    /// O endpoint MCP sobre HTTP: o MESMO JSON-RPC 2.0 do `--mcp`, pela porta
+    /// REST.
+    ///
+    /// # Por que reusa a Ponte, e nao reescreve a traducao
+    ///
+    /// A [`crate::mcp::Ponte`] traduz o vocabulario MCP e ja despacha por um
+    /// [`ExecutorLocal`], que passa pelos quatro portoes do `despachar`. O
+    /// transporte stdio (`mcp::servir`) e este HTTP sao duas portas para a
+    /// MESMA sala: reescrever a traducao aqui seria a segunda verdade que o
+    /// proprio `mcp.rs` recusou ter, e a que ficasse para tras esqueceria uma
+    /// conferencia.
+    ///
+    /// # Somente leitura -- e SEM valvula de escrita nesta porta (fase 1)
+    ///
+    /// O `--mcp` por stdio tem `--escrita` porque quem o liga esta no terminal
+    /// do servidor, com a mao na maquina. Aqui do outro lado ha a rede e um
+    /// modelo de linguagem, e a escrita guardada pela IA e seguranca-sensivel:
+    /// fica para a fase 2, depois da revisao do dono. A ponte nasce recusando
+    /// escrita e esta porta NAO oferece como liga-la -- uma tentativa de
+    /// `phx_inserir` volta com erro JSON-RPC dizendo por que. A fronteira e a
+    /// prova: o teste `escrita_pelo_mcp_http_e_recusada` falha se alguem a abrir.
+    ///
+    /// # Uma resposta por pedido, sem sessao entre eles
+    ///
+    /// Cada POST /mcp e uma conexao (`Connection: close`) e a ponte nasce nova
+    /// a cada uma: nao ha login que sobreviva de um pedido ao outro nesta fase
+    /// -- login por usuario sobre HTTP e, como a escrita, materia da revisao do
+    /// dono. O token e o da porta (o `Bearer`, ou o do protocolo), carimbado
+    /// em todo pedido pela ponte, e o modelo nunca escolhe a credencial.
+    fn mcp_http(
+        self: &Arc<Self>,
+        fluxo: &mut TcpStream,
+        pedido: &http::Pedido,
+        ip: &str,
+        porta: u16,
+    ) {
+        let agora = crate::agora_ms();
+        let Some(token) = self.token_do_rest(fluxo, pedido, ip, porta, "mcp", agora) else {
+            return;
+        };
+
+        // O `ip` no lugar da origem: leitura pela IA que nao deixa rastro seria
+        // um buraco na auditoria justamente na origem mais nova. O log sai de
+        // dentro do `ExecutorLocal`, a cada `tools/call`.
+        let executor = ExecutorLocal::novo(Arc::clone(self), ip);
+        let ponte =
+            crate::mcp::Ponte::nova(executor).com_campo_fixo("token", Json::texto_de(&token));
+
+        match ponte.atender(&pedido.corpo) {
+            Some(resposta) => {
+                let _ = http::responder(fluxo, 200, "application/json; charset=utf-8", &resposta);
+            }
+            // Notificacao (mensagem sem `id`): o MCP manda 202 sem corpo. Um
+            // corpo aqui seria uma resposta que o cliente nao espera -- o mesmo
+            // engano que quebra o cliente no `notifications/initialized`.
+            None => {
+                let _ = http::responder(fluxo, 202, "application/json; charset=utf-8", "");
+            }
+        }
+    }
+
+    /// Uma operacao pedida por REST: monta o pedido, estreita e despacha.
+    ///
+    /// Tudo o que decide ACESSO acontece no `despachar`, como em toda outra
+    /// porta. O que mora aqui e o que e proprio do HTTP: de onde vem o token,
+    /// de onde vem a sessao, e que codigo devolver.
+    fn api_rest(
+        &self,
+        fluxo: &mut TcpStream,
+        pedido: &http::Pedido,
+        ip: &str,
+        porta: u16,
+        op: &'static str,
+    ) {
+        let agora = crate::agora_ms();
+        let inicio = Instant::now();
+
+        // O portao da porta: o `Bearer`. Mora num lugar so porque o endpoint
+        // MCP sobre HTTP entra pela mesma porta e pela mesma regra -- ver
+        // `token_do_rest`. `None` quer dizer que a recusa 401 ja foi escrita.
+        let Some(token_do_pedido) = self.token_do_rest(fluxo, pedido, ip, porta, op, agora) else {
             return;
         };
 
