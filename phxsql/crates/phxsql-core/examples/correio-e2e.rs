@@ -24,8 +24,8 @@
 //!      a sua senha (E2E); (C) Masson cuja chave da 3a camada E o id da
 //!      maconaria — id errado nao abre. Tudo NATIVO, zero-deps, sem OpenSSL.
 //!  11. CATEGORIAS definidas pelo dono ao aceitar: familia/amigos (gratis),
-//!      negocios e atencao moderada/alta/total — cada valor escolhido por
-//!      CADA usuario (a tabela do adriano difere da da juliana).
+//!      negocios e atencao baixa/moderada/total — cada valor escolhido por
+//!      CADA usuario (a tabela do adriano difere da da juliana), e PUBLICO.
 //!
 //! Rodar: cargo run -q --example correio-e2e -p phxsql-core
 
@@ -156,8 +156,8 @@ impl EstadoModeracao {
 enum Categoria {
     FamiliaAmigos,
     Negocios,
+    AtencaoBaixa,
     AtencaoModerada,
-    AtencaoAlta,
     AtencaoTotal,
 }
 impl Categoria {
@@ -165,8 +165,8 @@ impl Categoria {
         match self {
             Categoria::FamiliaAmigos => "familia/amigos",
             Categoria::Negocios => "negocios",
+            Categoria::AtencaoBaixa => "atencao baixa",
             Categoria::AtencaoModerada => "atencao moderada",
-            Categoria::AtencaoAlta => "atencao alta",
             Categoria::AtencaoTotal => "atencao total",
         }
     }
@@ -531,6 +531,15 @@ impl ServerMail {
             .find(|(d, _)| d == dono)
             .and_then(|(_, t)| t.iter().find(|(c, _)| *c == cat))
             .and_then(|(_, p)| p.clone())
+    }
+    /// Os precos sao PUBLICOS: qualquer um le a tabela de um dono ANTES de pedir,
+    /// como um cardapio. A chave pix e publica de proposito (so recebe dinheiro).
+    fn tabela_publica(&self, dono: &str) -> PrecoCat {
+        self.tabelas
+            .iter()
+            .find(|(d, _)| d == dono)
+            .map(|(_, t)| t.clone())
+            .unwrap_or_default()
     }
     /// Aceitar escolhendo a categoria: o valor vem da tabela de QUEM aceita.
     fn aceitar_confianca_cat(&mut self, de: &str, para: &str, cat: Categoria) {
@@ -1259,11 +1268,11 @@ fn main() {
             (Categoria::FamiliaAmigos, None),
             (Categoria::Negocios, Some(("juliana@pix.com.br", 120.00))),
             (
-                Categoria::AtencaoModerada,
+                Categoria::AtencaoBaixa,
                 Some(("juliana@pix.com.br", 250.00)),
             ),
             (
-                Categoria::AtencaoAlta,
+                Categoria::AtencaoModerada,
                 Some(("juliana@pix.com.br", 1000.00)),
             ),
             (
@@ -1326,6 +1335,21 @@ fn main() {
     ok(
         neg_adr && neg_jul,
         "cada usuario define o SEU valor (negocios adriano 80 != juliana 120)",
+    );
+
+    // os valores sao PUBLICOS: um estranho SEM confianca le a tabela como um
+    // cardapio, ANTES de pedir. E o que deixa a decisao de pedir ser informada.
+    let estranho = srv
+        .criar_conta("estranho", "outra.phxmail.com.br", "senha-do-estranho-3z")
+        .unwrap();
+    let sem_relacao = srv.confianca(&estranho, &juliana).is_none();
+    let cardapio = srv.tabela_publica(&juliana);
+    let ve_negocios = cardapio.iter().any(|(c, p)| {
+        *c == Categoria::Negocios && matches!(p, Some((_, v)) if (*v - 120.00).abs() < 1e-9)
+    });
+    ok(
+        sem_relacao && cardapio.len() == 5 && ve_negocios,
+        "precos publicos: estranho sem confianca ve o cardapio inteiro (5 categorias, negocios 120)",
     );
 
     println!("\n===== RESULTADO =====");
