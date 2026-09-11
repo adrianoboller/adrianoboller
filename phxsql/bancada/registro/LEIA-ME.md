@@ -86,15 +86,22 @@ corrida que não provou o que gravou. É o mesmo crivo do `.fts` e da
 `bancada/comparacao`, que recusam publicar quando o lido não bate com o
 escrito.
 
-## Onde o número entra depois de medido
+## MEDIDO em 11/09/2026 — e a estimativa estava errada na escrita
 
-Rodou no Windows? Guarde a saída (as três linhas `*_us_op` + `verificacao`,
-com **data e nome da máquina**, que o próprio `.exe` imprime) num
-`resultados.json` aqui, e aí ele deixa de ser estimativa: entra ao lado das
-medianas dos quatro bancos de `bancada/comparacao/um-milhao.json` para desenhar
-o comparativo — com o Registro finalmente **medido**, e não raciocinado. Até
-lá, a estimativa (e o porquê de ser estimativa) é a que foi entregue ao dono
-como página; **número citado é número que não se mede**, e este ainda não foi.
+O dono rodou o `bench-registro.exe` no Windows dele (WXSOLUCOES). O resultado
+está em `resultados.json`, com `verificacao: OK`. O que ele mostrou, e por que
+vale:
+
+- **Leitura: ~2–5 µs/op** — rápida, como a estimativa previa (~1).
+- **Escrita: ~255–495 µs/op** (preguiçosa e durável próximas nas corridas
+  grandes) — a **mais lenta dos cinco**. A estimativa anterior dizia **~3 µs**
+  para a escrita preguiçosa: **errou por ~100×**. *Número citado é número que
+  não se mede* — a estimativa era plausível e a medição mandou no contrário.
+
+Três ressalvas registradas no `resultados.json`: máquina diferente dos quatro
+bancos (Windows × Linux); o bench grava N valores sob UMA chave, o que estressa
+o eixo fraco do Registro (custo por valor cresce com a contagem); e os bytes ao
+disco (a outra metade) ainda faltam — saem do Process Monitor/ETW ao lado.
 
 ## Arquivos
 

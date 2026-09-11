@@ -1,0 +1,56 @@
+{
+  "bancada": "registro-do-windows",
+  "o_que_mede": "latencia por ponto (us/op) do Registro do Windows: escrita preguicosa, escrita duravel (RegFlushKey por chave) e leitura de colmeia quente",
+  "medido_em": "2026-09-11",
+  "maquina": "WXSOLUCOES (Windows do dono) -- NAO e a mesma maquina dos 4 bancos (Linux, bancada/comparacao, 2026-09-08)",
+  "qpc_hz": 10000000,
+  "ferramenta": "bench-registro.exe (bancada/registro/bench.c), rodado no Windows pelo dono",
+  "corridas_representativas": [
+    {
+      "n": 20000,
+      "valor_bytes": 64,
+      "escrita_preguicosa_us_op": 320.261,
+      "escrita_duravel_us_op": 255.088,
+      "leitura_us_op": 4.884,
+      "verificacao": "OK"
+    },
+    {
+      "n": 50000,
+      "valor_bytes": 128,
+      "escrita_preguicosa_us_op": 494.969,
+      "escrita_duravel_us_op": 436.389,
+      "leitura_us_op": 1.925,
+      "verificacao": "OK"
+    }
+  ],
+  "corridas_tiro_unico_ruido": [
+    {
+      "n": 1,
+      "valor_bytes": 20,
+      "escrita_preguicosa_us_op": 26.7,
+      "escrita_duravel_us_op": 9964.8,
+      "leitura_us_op": 26.5,
+      "verificacao": "OK",
+      "nota": "N=1 por acidente: o `::` do comentario do cmd virou argumento (atoi=0 -> N clampeado a 1). Tiro unico, dominado por custo de primeira chamada -- nao representativo."
+    },
+    {
+      "n": 1,
+      "valor_bytes": 20,
+      "escrita_preguicosa_us_op": 21.1,
+      "escrita_duravel_us_op": 2253.6,
+      "leitura_us_op": 10.5,
+      "verificacao": "OK",
+      "nota": "idem -- N=1 ruido"
+    }
+  ],
+  "veredito_medido": {
+    "leitura": "~2 a 5 us/op -- rapida, na faixa do SQLite/PhxSql (7,5/7,9 us), e bate com a estimativa (~1).",
+    "escrita": "~250 a 500 us/op nos dois regimes -- a MAIS LENTA dos cinco por 2x a 40x. A estimativa de ~3 us/op para a escrita preguicosa ESTAVA ERRADA por ~100x: numero citado e numero que nao se mede.",
+    "duravel_vs_preguicosa": "nas corridas grandes a duravel saiu <= preguicosa (255<320, 436<495), o que e contraintuitivo e NAO esta explicado -- fica para medir com Process Monitor/ETW os bytes ao disco antes de afirmar a causa."
+  },
+  "ressalvas": [
+    "Maquina diferente: Registro no Windows WXSOLUCOES; os 4 bancos no Linux da bancada/comparacao (08/09). Comparacao cross-hardware -- as ordens de grandeza (leitura us, escrita centenas de us) aguentam a diferenca, mas nao e o mesmo metal.",
+    "O bench grava N valores sob UMA chave (HKCU\\Software\\PhxSqlBench). Muitos valores sob uma chave so estressa um eixo em que o Registro e fraco (custo por valor cresce com a contagem: 320 us em 20k -> 495 us em 50k). Um uso real de config tem poucos valores por chave. Isso infla a escrita medida, e e honesto dizer.",
+    "Os bytes ao disco (a outra metade do I/O) ainda nao foram medidos -- faltou o Process Monitor/ETW ao lado."
+  ]
+}
