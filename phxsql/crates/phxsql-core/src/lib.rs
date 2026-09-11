@@ -15,6 +15,7 @@
 //!
 //! Os quatro juntos formam a tabela de dados `cadastroClientes`.
 
+pub mod asn1;
 pub mod base64;
 pub mod carga;
 pub mod cifra;
@@ -42,6 +43,7 @@ pub mod types;
 pub mod uuid;
 pub mod value;
 pub mod x25519;
+pub mod x509;
 pub mod zip;
 
 pub use cifra::{abrir, selar, Sequencia, CHAVE_LEN, NONCE_LEN, TAG_LEN};
