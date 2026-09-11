@@ -1,0 +1,360 @@
+<title>Tela do phxSERVERMAIL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700;800&display=swap">
+<style>
+  :root{
+    --fundo:#010418; --sup:#0a1230; --sup2:#0c1330; --sup3:#111a3f;
+    --linha:#28315f; --linha2:#1b2249;
+    --tinta:#eef1fb; --fraco:#9aa3c7; --fraco2:#6c76a0;
+    --consulta:#5aa9ff;   /* azul consulta */
+    --inclui:#4fd08a;     /* verde inclui  */
+    --altera:#f2b23a;     /* amarelo altera */
+    --marca-cor:#ff7ab6;  /* rosa marca (excluir que volta) */
+    --exclui:#ff5f6b;     /* vermelho exclui de vez */
+    --rede:#c77dff;       /* roxo rede/porta */
+    --ok:#4fd08a; --alerta:#ff6b6b; --espera:#f2b23a;
+    --ui:"Exo 2","Segoe UI",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--fundo);color:var(--tinta);margin:0;font-family:var(--ui);
+    font-size:14px;line-height:1.45}
+  .app{display:grid;grid-template-columns:230px 1fr;min-height:100vh}
+  @media(max-width:820px){.app{grid-template-columns:1fr}}
+
+  /* ---- barra de topo ---- */
+  .topo{grid-column:1 / -1;display:flex;align-items:center;gap:14px;
+    padding:12px 20px;background:linear-gradient(180deg,#060c26,#040820);
+    border-bottom:1px solid var(--linha)}
+  .logo{font-weight:800;font-size:17px;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+  .logo .fogo{filter:saturate(1.2)}
+  .logo b{color:var(--consulta)}
+  .chip{font-size:11px;font-weight:600;border:1px solid var(--linha);border-radius:999px;
+    padding:3px 10px;color:var(--fraco);display:inline-flex;align-items:center;gap:6px}
+  .chip .pt{width:7px;height:7px;border-radius:50%;background:var(--ok);
+    box-shadow:0 0 0 3px rgba(79,208,138,.18)}
+  .chip.porta{color:var(--rede);border-color:#3a2b5c}
+  .topo .dir{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .idi{font-size:15px;letter-spacing:2px;cursor:default}
+  .oper{font-size:12px;color:var(--fraco)}
+  .oper b{color:var(--tinta);font-weight:600}
+
+  /* ---- navegacao ---- */
+  nav{background:var(--sup);border-right:1px solid var(--linha);padding:14px 12px;display:flex;flex-direction:column;gap:3px}
+  @media(max-width:820px){nav{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--linha)}}
+  .rotulo{text-transform:uppercase;letter-spacing:.09em;font-size:10.5px;color:var(--fraco2);font-weight:700}
+  nav .grupo{padding:12px 10px 5px}
+  nav a{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;color:var(--fraco);
+    text-decoration:none;font-weight:500;font-size:13.5px;border:1px solid transparent}
+  nav a .ic{width:18px;text-align:center}
+  nav a:hover{background:var(--sup3);color:var(--tinta)}
+  nav a.on{background:#0b1740;color:var(--tinta);border-color:#254089;box-shadow:inset 3px 0 0 var(--consulta)}
+  nav a .badge{margin-left:auto;font-size:11px;font-weight:700;background:#3a1420;color:#ffb0bd;
+    border:1px solid #6a2233;border-radius:999px;padding:1px 7px}
+
+  /* ---- area principal ---- */
+  main{padding:20px 22px 30px;overflow:auto}
+  .cabeca{display:flex;align-items:baseline;gap:12px;margin:0 0 4px}
+  h1{font-size:20px;margin:0;font-weight:700}
+  .cabeca .sub{color:var(--fraco);font-size:12.5px}
+  .marca-nota{color:var(--fraco2);font-size:11.5px;margin:0 0 16px}
+
+  /* faixa zero-conhecimento */
+  .zk{display:flex;gap:12px;align-items:flex-start;background:linear-gradient(90deg,#0a1a12,#071122);
+    border:1px solid #1f5c3f;border-left:3px solid var(--inclui);border-radius:12px;padding:12px 15px;margin:0 0 18px}
+  .zk .cad{font-size:19px;line-height:1.1}
+  .zk h3{margin:0 0 2px;font-size:13.5px;font-weight:700}
+  .zk p{margin:0;color:var(--fraco);font-size:12.5px}
+  .zk code{font-family:var(--mono);color:var(--rede)}
+
+  /* tiles */
+  .tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:0 0 20px}
+  @media(max-width:1100px){.tiles{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:520px){.tiles{grid-template-columns:1fr}}
+  .tile{background:var(--sup2);border:1px solid var(--linha);border-radius:13px;padding:13px 14px}
+  .tile .k{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.3px}
+  .tile .r{margin-top:2px}
+  .tile .obs{color:var(--fraco);font-size:11.5px;margin-top:5px}
+  .tile.foco{border-color:#254089;background:#0a1330}
+  .tile .k.rede{color:var(--rede)} .tile .k.ok{color:var(--ok)}
+
+  /* cartoes/paineis */
+  .grade2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+  @media(max-width:980px){.grade2{grid-template-columns:1fr}}
+  .painel{background:var(--sup2);border:1px solid var(--linha);border-radius:14px;padding:0;overflow:hidden}
+  .painel > header{display:flex;align-items:center;gap:10px;padding:12px 15px;border-bottom:1px solid var(--linha2)}
+  .painel > header h2{font-size:14px;margin:0;font-weight:700}
+  .painel > header .conta{margin-left:auto;font-size:12px;color:var(--fraco);font-variant-numeric:tabular-nums}
+  .corpo{padding:6px 6px 10px}
+
+  /* tabela */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{ text-align:left;font-weight:700;color:var(--fraco2);font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;
+    padding:8px 10px;border-bottom:1px solid var(--linha2)}
+  td{padding:9px 10px;border-bottom:1px solid var(--linha2);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:#0b1330}
+  .mono{font-family:var(--mono);font-size:12px}
+  .num{font-variant-numeric:tabular-nums;text-align:right}
+  .dado{font-weight:600}           /* DADO: nunca transformado */
+  .sub2{color:var(--fraco);font-size:11.5px}
+
+  /* pastilhas de estado */
+  .est{font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px;border:1px solid;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .est.ok{color:var(--ok);border-color:#1f5c3f;background:#08160f}
+  .est.espera{color:var(--espera);border-color:#5c4a1c;background:#181203}
+  .est.parado{color:var(--exclui);border-color:#5c222a;background:#170608}
+  .est .pt{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+  /* botoes de acao: contorno; hover preenche */
+  .acao{font-family:var(--ui);font-weight:600;font-size:12px;border-radius:8px;padding:5px 11px;cursor:pointer;
+    background:transparent;border:1.5px solid;transition:.12s}
+  .acao:focus-visible{outline:2px solid var(--consulta);outline-offset:2px}
+  .consultar{color:var(--consulta);border-color:var(--consulta)}
+  .consultar:hover{background:var(--consulta);color:#04122b}
+  .alterar{color:var(--altera);border-color:var(--altera)}
+  .alterar:hover{background:var(--altera);color:#1a1403}
+  .incluir{color:var(--inclui);border-color:var(--inclui)}
+  .incluir:hover{background:var(--inclui);color:#04160d}
+  .marcar{color:var(--marca-cor);border-color:var(--marca-cor)}
+  .marcar:hover{background:var(--marca-cor);color:#2a0a1a}
+  .excluir{color:var(--exclui);border-color:var(--exclui)}
+  .excluir:hover{background:var(--exclui);color:#1a0508}
+  .acao[disabled]{opacity:.4;cursor:not-allowed}
+  .acoes{display:flex;gap:6px;flex-wrap:wrap}
+
+  /* replicacao */
+  .rep{display:flex;flex-direction:column;gap:9px;padding:12px 14px}
+  .no-rep{display:flex;align-items:center;gap:11px;background:var(--sup3);border:1px solid var(--linha2);border-radius:10px;padding:9px 12px}
+  .no-rep .papel{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+    border-radius:6px;padding:2px 7px;border:1px solid}
+  .papel.master{color:var(--rede);border-color:#3a2b5c;background:#0f0a1e}
+  .papel.slave{color:var(--consulta);border-color:#254089;background:#08122b}
+  .no-rep .host{font-family:var(--mono);font-size:12px;color:var(--tinta)}
+  .no-rep .sha{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--fraco)}
+  .no-rep .lag{font-size:11px;color:var(--fraco);font-variant-numeric:tabular-nums;min-width:64px;text-align:right}
+  .no-rep.head{background:#0f0a1e;border-color:#3a2b5c}
+
+  /* cluster */
+  .cluster{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:12px 14px}
+  @media(max-width:560px){.cluster{grid-template-columns:repeat(2,1fr)}}
+  .no-cl{background:var(--sup3);border:1px solid var(--linha2);border-radius:11px;padding:11px;text-align:center}
+  .no-cl.lider{border-color:#3a2b5c;background:#0f0a1e;box-shadow:inset 0 0 0 1px #2a2050}
+  .no-cl .coroa{font-size:16px}
+  .no-cl .id{font-family:var(--mono);font-size:12px;margin-top:3px}
+  .no-cl .p{font-size:10.5px;color:var(--fraco);margin-top:3px;text-transform:uppercase;letter-spacing:.05em}
+  .cl-rod{padding:0 14px 13px;color:var(--fraco);font-size:12px}
+  .cl-rod b{color:var(--tinta)}
+
+  /* moderacao */
+  .mod{padding:8px 6px 6px}
+  .mod-item{display:flex;gap:11px;align-items:flex-start;padding:10px 10px;border-bottom:1px solid var(--linha2)}
+  .mod-item:last-child{border-bottom:0}
+  .mod-item .ac{flex:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border-radius:6px;padding:2px 8px;border:1px solid;white-space:nowrap;margin-top:1px}
+  .ac.banir{color:var(--exclui);border-color:#5c222a} .ac.quar{color:var(--espera);border-color:#5c4a1c} .ac.multa{color:var(--marca-cor);border-color:#5c2340}
+  .mod-item .cont{flex:1;min-width:0}
+  .mod-item .acoes{flex:none}
+  .mod-item .quem{font-weight:600}
+  .mod-item .quem,.mod-item .motivo{overflow-wrap:anywhere}
+  .mod-item .motivo{color:var(--fraco);font-size:12px;margin-top:2px}
+  .mod-item .motivo b{color:var(--espera);font-weight:600}
+
+  /* config */
+  .cfg{padding:12px 15px;display:grid;grid-template-columns:1fr 1fr;gap:10px 22px}
+  @media(max-width:560px){.cfg{grid-template-columns:1fr}}
+  .cfg .li{display:flex;flex-direction:column;gap:3px}
+  .cfg .vv{font-family:var(--mono);font-size:12.5px;color:var(--tinta);word-break:break-all}
+  .cfg .vv .hl{color:var(--rede)}
+
+  .rodape{grid-column:1 / -1;padding:14px 20px;border-top:1px solid var(--linha);color:var(--fraco2);
+    font-size:11px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;background:#040820}
+  .rodape .assin{letter-spacing:.14em;text-transform:uppercase;color:var(--fraco)}
+  .rodape .maq{color:var(--espera)}
+</style>
+
+<div class="app">
+
+  <div class="topo">
+    <div class="logo"><span class="fogo">🔥</span> phx<b>SERVERMAIL</b></div>
+    <span class="chip porta">porta 8000 · TCP</span>
+    <span class="chip"><span class="pt"></span> no ar · 41 d 06:12</span>
+    <div class="dir">
+      <span class="oper">nó <b>sm-sp-01</b> · operador <b>root@wxsolucoes</b></span>
+      <span class="idi" title="idioma (multilíngua pela tela)">🇧🇷 🇺🇸 🇪🇸</span>
+    </div>
+  </div>
+
+  <nav aria-label="menu do servidor">
+    <div class="grupo rotulo">Operação</div>
+    <a href="#" class="on"><span class="ic">📊</span>Painel</a>
+    <a href="#"><span class="ic">🏢</span>Empresas <span class="badge">7</span></a>
+    <a href="#"><span class="ic">👤</span>Contas</a>
+    <div class="grupo rotulo">Infraestrutura</div>
+    <a href="#"><span class="ic">🔁</span>Replicação</a>
+    <a href="#"><span class="ic">🗄️</span>Cluster</a>
+    <div class="grupo rotulo">Governança</div>
+    <a href="#"><span class="ic">🛡️</span>Moderação <span class="badge">3</span></a>
+    <a href="#"><span class="ic">⚙️</span>Configuração</a>
+  </nav>
+
+  <main>
+    <div class="cabeca">
+      <h1>Painel do servidor</h1>
+      <span class="sub">o que o operador vê — números e estado, nunca conteúdo</span>
+    </div>
+    <p class="marca-nota">BUILT TO STORE · ENGINEERED TO SCALE — maquete de UI/UX; dados de exemplo.</p>
+
+    <div class="zk">
+      <span class="cad">🔒</span>
+      <div>
+        <h3>Zero-conhecimento — o servidor guarda e roteia, não lê</h3>
+        <p>Cada caixa é um <b>blob cifrado E2E</b>. O console mostra <b>tamanho, contagem e estado</b>; o corpo e os anexos só abrem com a senha do destinatário. O que não se analisa vira <code>tamanho em bytes</code>, nunca prévia.</p>
+      </div>
+    </div>
+
+    <div class="tiles">
+      <div class="tile foco"><div class="k rede">8000</div><div class="r rotulo">porta / protocolo</div><div class="obs">TCP · aperto cifrado (Noise)</div></div>
+      <div class="tile"><div class="k">7</div><div class="r rotulo">empresas (tenants)</div><div class="obs">cada uma um alias DNS</div></div>
+      <div class="tile"><div class="k">1.284</div><div class="r rotulo">contas ativas</div><div class="obs">id do usuário = UUID v7</div></div>
+      <div class="tile"><div class="k">318,7 GB</div><div class="r rotulo">blobs cifrados</div><div class="obs">servidor não decifra</div></div>
+      <div class="tile"><div class="k ok">3</div><div class="r rotulo">fila de moderação</div><div class="obs">motivo obrigatório</div></div>
+    </div>
+
+    <div class="painel" style="margin-bottom:16px">
+      <header>
+        <h2>🏢 Empresas hospedadas</h2>
+        <span class="conta">7 tenants · 1.284 contas</span>
+        <button class="acao incluir" style="margin-left:12px">+ Nova empresa</button>
+      </header>
+      <div class="corpo">
+        <table>
+          <thead><tr>
+            <th>Empresa</th><th>Alias DNS</th><th class="num">Contas</th><th class="num">Armazenado</th><th>Estado</th><th style="text-align:right">Ações</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="dado">Prado &amp; Filhos Ltda</span><div class="sub2">Blumenau · SC</div></td>
+              <td class="mono">prado.phxsql.com.br</td>
+              <td class="num">312</td><td class="num mono">86,4 GB</td>
+              <td><span class="est ok"><span class="pt"></span>ativa</span></td>
+              <td><div class="acoes" style="justify-content:flex-end">
+                <button class="acao consultar">Ver</button>
+                <button class="acao alterar">Editar</button>
+                <button class="acao excluir" disabled title="RESTRICT: tem 312 contas — não se apaga a empresa com filhas">Excluir</button>
+              </div></td>
+            </tr>
+            <tr>
+              <td><span class="dado">Time Ágil S.A.</span><div class="sub2">São Paulo · SP</div></td>
+              <td class="mono">time.phxmail.com.br</td>
+              <td class="num">468</td><td class="num mono">129,1 GB</td>
+              <td><span class="est ok"><span class="pt"></span>ativa</span></td>
+              <td><div class="acoes" style="justify-content:flex-end">
+                <button class="acao consultar">Ver</button>
+                <button class="acao alterar">Editar</button>
+                <button class="acao excluir" disabled title="RESTRICT: tem 468 contas">Excluir</button>
+              </div></td>
+            </tr>
+            <tr>
+              <td><span class="dado">Loja da Esquina ME</span><div class="sub2">Joinville · SC</div></td>
+              <td class="mono">loja.phxmail.com.br</td>
+              <td class="num">3</td><td class="num mono">412 MB</td>
+              <td><span class="est espera"><span class="pt"></span>implantando</span></td>
+              <td><div class="acoes" style="justify-content:flex-end">
+                <button class="acao consultar">Ver</button>
+                <button class="acao alterar">Editar</button>
+                <button class="acao excluir" disabled title="RESTRICT: tem 3 contas">Excluir</button>
+              </div></td>
+            </tr>
+            <tr>
+              <td><span class="dado">Cadastro vazio (rascunho)</span><div class="sub2">— sem cidade —</div></td>
+              <td class="mono">rascunho.phxsql.com.br</td>
+              <td class="num">0</td><td class="num mono">0 B</td>
+              <td><span class="est parado"><span class="pt"></span>sem contas</span></td>
+              <td><div class="acoes" style="justify-content:flex-end">
+                <button class="acao consultar">Ver</button>
+                <button class="acao alterar">Editar</button>
+                <button class="acao excluir" title="sem filhas: pode excluir">Excluir</button>
+              </div></td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="sub2" style="padding:8px 12px 4px">🔒 <b>RESTRICT</b> — empresa com contas (filhas) não pode ser apagada; o botão fica travado com o motivo. Regra primordial da integridade, imposta na tela e no motor.</p>
+      </div>
+    </div>
+
+    <div class="grade2">
+      <div class="painel">
+        <header><h2>🔁 Replicação</h2><span class="conta">master → 3 slaves · SHA-256 idêntico</span></header>
+        <div class="rep">
+          <div class="no-rep head"><span class="papel master">master</span><span class="host">sm-sp-01:8000</span><span class="sha">sha 9f3a…c1</span><span class="lag">—</span></div>
+          <div class="no-rep"><span class="papel slave">slave</span><span class="host">sm-sp-02:8000</span><span class="sha">sha 9f3a…c1 ✓</span><span class="lag">+ 0,3 s</span></div>
+          <div class="no-rep"><span class="papel slave">slave</span><span class="host">sm-rj-01:8000</span><span class="sha">sha 9f3a…c1 ✓</span><span class="lag">+ 0,8 s</span></div>
+          <div class="no-rep"><span class="papel slave">slave</span><span class="host">sm-poa-01:8000</span><span class="sha">sha 9f3a…c1 ✓</span><span class="lag">+ 1,1 s</span></div>
+        </div>
+      </div>
+
+      <div class="painel">
+        <header><h2>🗄️ Cluster</h2><span class="conta">eleição · promoção · failover</span></header>
+        <div class="cluster">
+          <div class="no-cl lider"><div class="coroa">👑</div><div class="id">sm-sp-01</div><div class="p">líder</div></div>
+          <div class="no-cl"><div class="coroa">●</div><div class="id">sm-sp-02</div><div class="p">seguidor</div></div>
+          <div class="no-cl"><div class="coroa">●</div><div class="id">sm-rj-01</div><div class="p">seguidor</div></div>
+          <div class="no-cl"><div class="coroa">●</div><div class="id">sm-poa-01</div><div class="p">seguidor</div></div>
+        </div>
+        <div class="cl-rod">Modo <b>síncrono ao quórum</b> · mandato #14 · última eleição há 41 d · sem failover pendente.</div>
+      </div>
+    </div>
+
+    <div class="grade2">
+      <div class="painel">
+        <header><h2>🛡️ Moderação</h2><span class="conta">3 na fila · decisão exige motivo</span></header>
+        <div class="mod">
+          <div class="mod-item">
+            <span class="ac banir">banir</span>
+            <div class="cont">
+              <div class="quem"><span class="dado">spammer@golpe.phxsql.com.br</span></div>
+              <div class="motivo">Motivo: <b>187 pedidos de confiança recusados em 1 h</b> · denunciado por 12 contas</div>
+            </div>
+            <div class="acoes"><button class="acao excluir">Banir</button><button class="acao consultar">Ver</button></div>
+          </div>
+          <div class="mod-item">
+            <span class="ac quar">quarentena</span>
+            <div class="cont">
+              <div class="quem"><span class="dado">promo@loja.phxmail.com.br</span></div>
+              <div class="motivo">Motivo: <b>volume atípico de anexos</b> (conteúdo cifrado — avaliado por metadados, não por leitura)</div>
+            </div>
+            <div class="acoes"><button class="acao alterar">Quarentenar</button><button class="acao consultar">Ver</button></div>
+          </div>
+          <div class="mod-item">
+            <span class="ac multa">multa</span>
+            <div class="cont">
+              <div class="quem"><span class="dado">cobranca@time.phxmail.com.br</span></div>
+              <div class="motivo">Motivo: <b>categoria paga sem quitar o pix</b> · 2ª ocorrência</div>
+            </div>
+            <div class="acoes"><button class="acao marcar">Aplicar multa</button><button class="acao consultar">Ver</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="painel">
+        <header><h2>⚙️ Configuração</h2><span class="conta">local ajustável (caminho · nome · extensão)</span></header>
+        <div class="cfg">
+          <div class="li"><span class="rotulo">Arranque</span><span class="vv">phxsqld <span class="hl">--config</span> /etc/phxmail/<span class="hl">servidor.conf</span></span></div>
+          <div class="li"><span class="rotulo">Padrão</span><span class="vv">junto do binário, se <span class="hl">--config</span> for omitido</span></div>
+          <div class="li"><span class="rotulo">Porta</span><span class="vv">8000 (TCP)</span></div>
+          <div class="li"><span class="rotulo">Cifra do fio</span><span class="vv">aperto Noise · pinagem de chave</span></div>
+          <div class="li"><span class="rotulo">Base</span><span class="vv">arquivos separados (HFSQL) · PSCH</span></div>
+          <div class="li"><span class="rotulo">Dependências</span><span class="vv">zero externas (só a std)</span></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div class="rodape">
+    <span class="assin">Built to store · Engineered to scale</span>
+    <span>·</span>
+    <span class="maq">Maquete de UI/UX — dados de exemplo; motor da cripto provado (PROVA VERDE), servidor de rede na 8000 em construção (#159).</span>
+  </div>
+
+</div>

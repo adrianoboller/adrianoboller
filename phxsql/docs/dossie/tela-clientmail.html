@@ -1,0 +1,348 @@
+<title>Tela do phxCLIENTMAIL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700;800&display=swap">
+<style>
+  :root{
+    --fundo:#010418; --sup:#0a1230; --sup2:#0c1330; --sup3:#111a3f;
+    --linha:#28315f; --linha2:#1b2249;
+    --tinta:#eef1fb; --fraco:#9aa3c7; --fraco2:#6c76a0;
+    --consulta:#5aa9ff; --inclui:#4fd08a; --altera:#f2b23a;
+    --marca-cor:#ff7ab6; --exclui:#ff5f6b; --rede:#c77dff; --cripto:#f2b23a;
+    --ok:#4fd08a; --alerta:#ff6b6b; --espera:#f2b23a;
+    --ui:"Exo 2","Segoe UI",system-ui,-apple-system,sans-serif;
+    --texto:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; /* corpo longo NAO usa Exo 2 (adaptacao da marca) */
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--fundo);color:var(--tinta);margin:0;font-family:var(--ui);font-size:14px;line-height:1.45;
+    padding:0 0 34px}
+  .rotulo{text-transform:uppercase;letter-spacing:.09em;font-size:10.5px;color:var(--fraco2);font-weight:700}
+  .dado{font-weight:600}   /* DADO nunca e transformado (nem uppercase) */
+
+  /* ---- topo ---- */
+  .topo{display:flex;align-items:center;gap:13px;padding:11px 20px;
+    background:linear-gradient(180deg,#060c26,#040820);border-bottom:1px solid var(--linha)}
+  .logo{font-weight:800;font-size:17px;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+  .logo b{color:var(--inclui)}
+  .chip{font-size:11px;font-weight:600;border:1px solid var(--linha);border-radius:999px;padding:3px 10px;color:var(--fraco);display:inline-flex;align-items:center;gap:6px}
+  .chip.e2e{color:var(--inclui);border-color:#1f5c3f}
+  .conta{margin-left:auto;font-size:12.5px;color:var(--fraco)}
+  .conta b{color:var(--tinta)}
+  .idi{font-size:15px;letter-spacing:2px}
+  .btn-compor{font-family:var(--ui);font-weight:700;font-size:13px;border-radius:9px;padding:7px 15px;cursor:pointer;
+    background:transparent;border:1.5px solid var(--inclui);color:var(--inclui);transition:.12s}
+  .btn-compor:hover{background:var(--inclui);color:#04160d}
+
+  .env{max-width:1180px;margin:18px auto 0;padding:0 16px}
+  .titulo{display:flex;align-items:baseline;gap:10px;margin:0 0 3px}
+  .titulo h1{font-size:19px;margin:0}
+  .titulo .s{color:var(--fraco);font-size:12.5px}
+  .maqn{color:var(--fraco2);font-size:11.5px;margin:0 0 14px}
+
+  /* ---- 3 paineis ---- */
+  .cli{display:grid;grid-template-columns:210px 320px 1fr;gap:0;
+    border:1px solid var(--linha);border-radius:16px;overflow:hidden;background:var(--sup2);min-height:520px}
+  @media(max-width:960px){.cli{grid-template-columns:1fr;min-height:0}}
+
+  /* pastas */
+  .pastas{background:var(--sup);border-right:1px solid var(--linha);padding:12px 10px;display:flex;flex-direction:column;gap:2px}
+  .pastas a{display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:9px;color:var(--fraco);text-decoration:none;font-weight:500;font-size:13px}
+  .pastas a:hover{background:var(--sup3);color:var(--tinta)}
+  .pastas a.on{background:#0b1740;color:var(--tinta);box-shadow:inset 3px 0 0 var(--inclui)}
+  .pastas a.lix.on{box-shadow:inset 3px 0 0 var(--marca-cor)}
+  .pastas a .b{margin-left:auto;font-size:11px;font-weight:700;border-radius:999px;padding:1px 7px;background:#0c2036;color:#9fd0ff;border:1px solid #23456e}
+  .pastas a .b.rosa{background:#2a0f1c;color:#ffb0cf;border-color:#5c2340}
+  .seg{margin-top:auto;background:linear-gradient(180deg,#0a1a12,#071122);border:1px solid #1f5c3f;border-radius:11px;padding:10px 11px}
+  .seg h4{margin:0 0 4px;font-size:11.5px;font-weight:700;display:flex;align-items:center;gap:6px}
+  .seg p{margin:0;font-size:11px;color:var(--fraco);line-height:1.4}
+  .seg .um{color:var(--inclui);font-weight:700}
+
+  /* lista */
+  .lista{border-right:1px solid var(--linha);overflow:auto;background:var(--sup2)}
+  .lista .lh{padding:10px 13px;border-bottom:1px solid var(--linha2);display:flex;align-items:center;gap:8px}
+  .lista .lh .rotulo{margin-right:auto}
+  .busca{background:#050a1e;border:1px solid var(--linha2);border-radius:8px;color:var(--tinta);font-family:var(--ui);
+    font-size:12px;padding:5px 9px;width:120px}
+  .msg{display:flex;gap:10px;padding:11px 13px;border-bottom:1px solid var(--linha2);cursor:pointer;position:relative}
+  .msg:hover{background:#0b1330}
+  .msg.sel{background:#0b1740;box-shadow:inset 3px 0 0 var(--consulta)}
+  .msg .conf{width:9px;height:9px;border-radius:50%;margin-top:5px;flex:none}
+  .conf.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(79,208,138,.16)}
+  .conf.pend{background:var(--espera)}
+  .conf.sem{background:var(--fraco2)}
+  .msg .col{min-width:0;flex:1}
+  .msg .de{display:flex;align-items:center;gap:6px}
+  .msg .de .nome{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .msg .flag{font-size:12px}
+  .msg .quando{margin-left:auto;font-size:11px;color:var(--fraco2);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .msg .assunto{font-size:12.5px;color:var(--tinta);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .msg .previa{font-size:11.5px;color:var(--fraco);margin-top:2px;display:flex;align-items:center;gap:6px}
+  .niv{font-size:9.5px;font-weight:800;letter-spacing:.04em;border-radius:5px;padding:1px 6px;border:1px solid;white-space:nowrap}
+  .niv.n0{color:var(--fraco);border-color:var(--linha)} .niv.n1{color:var(--consulta);border-color:#254089}
+  .niv.n2{color:var(--cripto);border-color:#5c4a1c} .niv.n3{color:var(--exclui);border-color:#5c222a}
+  .niv.mas{color:var(--rede);border-color:#3a2b5c}
+  .cadinha{font-size:10.5px;color:var(--fraco2)}
+
+  /* leitura */
+  .ler{overflow:auto;background:linear-gradient(180deg,#070d24,#050a1e)}
+  .ler .lcab{padding:15px 18px 12px;border-bottom:1px solid var(--linha2)}
+  .ler .assunto-g{font-size:17px;font-weight:700;margin:0 0 8px}
+  .ler .quem{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .avatar{width:34px;height:34px;border-radius:50%;background:#12203f;border:1px solid #24406e;display:grid;place-items:center;font-weight:700;color:#9fd0ff}
+  .ler .quem .nn{font-weight:700}
+  .ler .quem .ee{color:var(--fraco);font-size:12px}
+  .selo{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+  .selo .s{font-size:10.5px;font-weight:700;border-radius:999px;padding:3px 9px;border:1px solid;display:inline-flex;align-items:center;gap:5px}
+  .s.assin{color:var(--ok);border-color:#1f5c3f;background:#08160f}
+  .s.e2e{color:var(--inclui);border-color:#1f5c3f;background:#08160f}
+  .s.conf{color:var(--consulta);border-color:#254089;background:#08122b}
+  .ler .corpo{padding:16px 18px;font-family:var(--texto);font-size:14px;line-height:1.6;color:#dfe4f5}
+  .ler .corpo p{margin:0 0 11px}
+  .ascii-nota{font-family:var(--ui);font-size:11px;color:var(--fraco2);border-left:2px solid var(--linha);padding:2px 0 2px 9px;margin:0 0 12px}
+  .anexos{padding:0 18px 16px}
+  .anx{display:flex;align-items:center;gap:10px;background:var(--sup3);border:1px solid var(--linha2);border-radius:10px;padding:9px 12px;margin-bottom:8px}
+  .anx .ic{font-size:17px}
+  .anx .nm{font-weight:600;font-size:13px}       /* nome do anexo: acentos preservados */
+  .anx .mt{color:var(--fraco);font-size:11px}
+  .anx .baixar{margin-left:auto}
+  .barra-ler{padding:12px 18px;border-top:1px solid var(--linha2);display:flex;gap:8px;flex-wrap:wrap}
+
+  /* botoes acao (contorno; hover preenche) */
+  .acao{font-family:var(--ui);font-weight:600;font-size:12.5px;border-radius:8px;padding:6px 13px;cursor:pointer;background:transparent;border:1.5px solid;transition:.12s}
+  .acao:focus-visible{outline:2px solid var(--consulta);outline-offset:2px}
+  .consultar{color:var(--consulta);border-color:var(--consulta)} .consultar:hover{background:var(--consulta);color:#04122b}
+  .incluir{color:var(--inclui);border-color:var(--inclui)} .incluir:hover{background:var(--inclui);color:#04160d}
+  .alterar{color:var(--altera);border-color:var(--altera)} .alterar:hover{background:var(--altera);color:#1a1403}
+  .marcar{color:var(--marca-cor);border-color:var(--marca-cor)} .marcar:hover{background:var(--marca-cor);color:#2a0a1a}
+  .excluir{color:var(--exclui);border-color:var(--exclui)} .excluir:hover{background:var(--exclui);color:#1a0508}
+
+  /* ---- estados abaixo ---- */
+  .estados{display:grid;grid-template-columns:380px 1fr;gap:16px;margin-top:20px}
+  @media(max-width:900px){.estados{grid-template-columns:1fr}}
+  .quadro{border:1px solid var(--linha);border-radius:16px;background:var(--sup2);overflow:hidden}
+  .quadro > .qh{padding:11px 15px;border-bottom:1px solid var(--linha2);display:flex;align-items:center;gap:8px}
+  .quadro > .qh h2{font-size:14px;margin:0} .quadro > .qh .t{margin-left:auto;font-size:11px;color:var(--fraco)}
+
+  /* login */
+  .login{padding:26px 24px 28px;text-align:center;background:radial-gradient(120% 90% at 50% 0%,#0a1330,#050a1e)}
+  .login .fogo{font-size:30px}
+  .login h3{margin:8px 0 2px;font-size:18px;font-weight:800;letter-spacing:.3px}
+  .login h3 b{color:var(--inclui)}
+  .login .as{color:var(--fraco);font-size:11px;text-transform:uppercase;letter-spacing:.14em;margin-bottom:18px}
+  .campo{text-align:left;margin:0 auto 11px;max-width:280px}
+  .campo label{display:block;margin-bottom:4px}
+  .campo input{width:100%;background:#050a1e;border:1px solid var(--linha);border-radius:9px;color:var(--tinta);
+    font-family:var(--ui);font-size:13px;padding:9px 11px}
+  .campo input:focus{outline:2px solid var(--inclui);outline-offset:1px;border-color:var(--inclui)}
+  .login .entrar{max-width:280px;width:100%;margin:4px auto 0;display:block;padding:10px;font-size:14px}
+  .login .p12{max-width:280px;margin:14px auto 0;background:#0a1a12;border:1px solid #1f5c3f;border-radius:10px;padding:9px 12px;
+    font-size:11.5px;color:var(--fraco);display:flex;gap:8px;align-items:flex-start;text-align:left}
+  .login .p12 b{color:var(--inclui)}
+  .bandeiras{margin-top:16px;font-size:18px;letter-spacing:5px}
+  .bandeiras span{cursor:pointer;opacity:.55} .bandeiras span:first-child{opacity:1}
+
+  /* compor */
+  .compor{padding:14px 16px}
+  .linha-c{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--linha2)}
+  .linha-c .rotulo{width:64px;flex:none}
+  .linha-c .vv{font-weight:600}
+  .niveis{display:flex;gap:6px;flex-wrap:wrap;padding:10px 0}
+  .pilula{font-size:11.5px;font-weight:600;border-radius:999px;padding:5px 11px;border:1.5px solid var(--linha);color:var(--fraco);cursor:pointer;background:transparent}
+  .pilula.on{color:var(--cripto);border-color:var(--cripto);background:#181203}
+  textarea.corpo-c{width:100%;min-height:96px;background:#050a1e;border:1px solid var(--linha);border-radius:10px;color:#dfe4f5;
+    font-family:var(--texto);font-size:13.5px;line-height:1.55;padding:11px;resize:vertical;margin-top:8px}
+  .dica{font-size:11px;color:var(--fraco2);margin:5px 2px 0}
+  .anexo-c{display:flex;align-items:center;gap:9px;margin-top:9px;background:var(--sup3);border:1px solid var(--linha2);border-radius:9px;padding:7px 11px;font-size:12.5px}
+  .anexo-c .nm{font-weight:600}
+  .pix{display:flex;gap:14px;align-items:center;margin-top:12px;background:linear-gradient(90deg,#181203,#0c1330);border:1px solid #5c4a1c;border-radius:12px;padding:12px 14px}
+  .qr{width:78px;height:78px;flex:none;border-radius:8px;background:
+      repeating-linear-gradient(0deg,#010418 0 6px,transparent 6px 12px),
+      repeating-linear-gradient(90deg,#010418 0 6px,#eef1fb 6px 12px);
+    border:5px solid #eef1fb;image-rendering:pixelated}
+  .pix .info h4{margin:0 0 3px;font-size:13px}
+  .pix .info .val{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--cripto)}
+  .pix .info .obs{font-size:11px;color:var(--fraco);margin-top:2px}
+  .barra-c{display:flex;gap:8px;margin-top:13px;justify-content:flex-end}
+
+  .rodape{max-width:1180px;margin:18px auto 0;padding:14px 16px 0;border-top:1px solid var(--linha);color:var(--fraco2);font-size:11px;line-height:1.6}
+  .rodape .assin{letter-spacing:.14em;text-transform:uppercase;color:var(--fraco)}
+  .rodape .maq{color:var(--espera)}
+  .rodape b{color:var(--tinta)}
+</style>
+
+<div class="topo">
+  <div class="logo">🔥 phx<b>CLIENTMAIL</b></div>
+  <span class="chip e2e">🔒 E2E ativo</span>
+  <span class="chip">porta 8000 · pinado</span>
+  <div class="conta">conta <b>adrianoboller@empresa.phxsql.com.br</b></div>
+  <span class="idi" title="idioma">🇧🇷</span>
+  <button class="btn-compor">✚ Compor</button>
+</div>
+
+<div class="env">
+  <div class="titulo"><h1>Caixa de entrada</h1><span class="s">o cliente decifra local; a senha do outro nunca sai da máquina dele</span></div>
+  <p class="maqn">BUILT TO STORE · ENGINEERED TO SCALE — maquete de UI/UX; dados de exemplo.</p>
+
+  <div class="cli">
+    <!-- pastas -->
+    <div class="pastas">
+      <a href="#" class="on">📥 Entrada <span class="b">4</span></a>
+      <a href="#">📤 Enviados</a>
+      <a href="#">🤝 Confiança <span class="b rosa">2</span></a>
+      <a href="#">📝 Rascunhos</a>
+      <a href="#" class="lix">🗑️ Lixeira</a>
+      <div class="seg">
+        <h4>🔐 Segurança</h4>
+        <p><span class="um">Uma senha só.</span> Os certificados (p12) são gerados e selados sozinhos — você nunca precisa lidar com eles.</p>
+      </div>
+    </div>
+
+    <!-- lista -->
+    <div class="lista">
+      <div class="lh"><span class="rotulo">4 novas</span><input class="busca" placeholder="buscar…" aria-label="buscar"></div>
+
+      <div class="msg sel">
+        <span class="conf ok" title="remetente confiável"></span>
+        <div class="col">
+          <div class="de"><span class="nome dado">Joana Prado</span><span class="flag" title="alta prioridade">🚨</span><span class="quando">09:14</span></div>
+          <div class="assunto dado">Fechamento de setembro — números da filial de Blumenau</div>
+          <div class="previa"><span class="niv n2">NÍVEL 2</span><span class="cadinha">🔒 conteúdo cifrado · 4,2 KB</span></div>
+        </div>
+      </div>
+
+      <div class="msg">
+        <span class="conf ok" title="remetente confiável"></span>
+        <div class="col">
+          <div class="de"><span class="nome dado">Ana · Time Ágil</span><span class="flag" title="novo">🔔</span><span class="quando">08:47</span></div>
+          <div class="assunto dado">Re: proposta comercial (assinada)</div>
+          <div class="previa"><span class="niv n3">NÍVEL 3</span><span class="cadinha">🔒 cifrado · assinada · 11 KB</span></div>
+        </div>
+      </div>
+
+      <div class="msg">
+        <span class="conf pend" title="confiança pendente"></span>
+        <div class="col">
+          <div class="de"><span class="nome dado">irmão@loja.maçonaria</span><span class="quando">ontem</span></div>
+          <div class="assunto dado">Convocação — sessão da loja</div>
+          <div class="previa"><span class="niv mas">MASSON</span><span class="cadinha">🔒 id da Maçonaria · split</span></div>
+        </div>
+      </div>
+
+      <div class="msg">
+        <span class="conf sem" title="sem confiança — anti-spam"></span>
+        <div class="col">
+          <div class="de"><span class="nome dado">promo@golpe.phxsql.com.br</span><span class="quando">ontem</span></div>
+          <div class="assunto dado">VOCÊ GANHOU!!! clique aqui</div>
+          <div class="previa"><span class="niv n0">PADRÃO</span><span class="cadinha">⛔ sem confiança — retido</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- leitura -->
+    <div class="ler">
+      <div class="lcab">
+        <p class="assunto-g dado">Fechamento de setembro — números da filial de Blumenau</p>
+        <div class="quem">
+          <div class="avatar">JP</div>
+          <div>
+            <div class="nn dado">Joana Prado</div>
+            <div class="ee dado">joanaprado@empresa.phxsql.com.br</div>
+          </div>
+          <div class="selo">
+            <span class="s conf">🤝 confiável</span>
+            <span class="s e2e">🔒 E2E · nível 2 (p12)</span>
+            <span class="s assin">✓ assinatura Ed25519 conferida</span>
+          </div>
+        </div>
+      </div>
+      <div class="corpo">
+        <p class="ascii-nota">Corpo transliterado para ASCII na origem (sem acento) — regra do correio. Os <b>anexos</b> preservam os bytes, acentos inclusive.</p>
+        <p>Adriano, seguem os numeros fechados de setembro da filial de Blumenau. Receita 12% acima do mes anterior; a proposta comercial vai anexa, assinada.</p>
+        <p>Abri a confianca com voce ontem — categoria Negocios, entao o pix de R$ 120 ja esta quitado do meu lado. Qualquer coisa, respondo por aqui mesmo.</p>
+        <p>Abraco,<br>Joana</p>
+      </div>
+      <div class="anexos">
+        <div class="anx">
+          <span class="ic">📎</span>
+          <div><div class="nm dado">proposta-comercial-são-paulo.pdf</div><div class="mt">318 KB · cifrado · acentos preservados</div></div>
+          <button class="acao consultar baixar">Baixar</button>
+        </div>
+      </div>
+      <div class="barra-ler">
+        <button class="acao incluir">↩ Responder (assinada)</button>
+        <button class="acao consultar">↪ Encaminhar</button>
+        <button class="acao marcar" title="marca para excluir — volta da lixeira">Mover p/ lixeira</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== estados para analise ===== -->
+  <div class="estados">
+
+    <!-- LOGIN -->
+    <div class="quadro">
+      <div class="qh"><h2>Login</h2><span class="t">uma senha · p12 invisível · multilíngua</span></div>
+      <div class="login">
+        <div class="fogo">🔥</div>
+        <h3>phx<b>CLIENTMAIL</b></h3>
+        <div class="as">Built to store · Engineered to scale</div>
+        <div class="campo">
+          <label class="rotulo" for="us">Conta</label>
+          <input id="us" value="adrianoboller@empresa.phxsql.com.br">
+        </div>
+        <div class="campo">
+          <label class="rotulo" for="se">Senha</label>
+          <input id="se" type="password" value="••••••••••••">
+        </div>
+        <button class="acao incluir entrar">Entrar</button>
+        <div class="p12"><span>🔐</span><span>Sem gerenciar certificado: <b>o p12 é gerado e selado sob a sua senha, sozinho</b>. A pessoa leiga não vê, não importa, não escolhe arquivo.</span></div>
+        <div class="bandeiras" title="idioma pela tela de login (pétreo)">🇧🇷 🇺🇸 🇪🇸 🇫🇷 🇩🇪 🇮🇹</div>
+      </div>
+    </div>
+
+    <!-- COMPOR -->
+    <div class="quadro">
+      <div class="qh"><h2>Compor</h2><span class="t">nível de cifra · corpo ASCII · confiança &amp; pix</span></div>
+      <div class="compor">
+        <div class="linha-c"><span class="rotulo">Para</span><span class="vv dado">ana@time.phxmail.com.br</span></div>
+        <div class="linha-c"><span class="rotulo">Assunto</span><span class="vv dado">Re: proposta comercial</span></div>
+
+        <div class="niveis" role="radiogroup" aria-label="nível de cifra">
+          <span class="pilula">Padrão</span>
+          <span class="pilula">Nível 1</span>
+          <span class="pilula on">Nível 2 · p12</span>
+          <span class="pilula">Nível 3 · p12+p12</span>
+          <span class="pilula">Masson</span>
+        </div>
+
+        <textarea class="corpo-c" aria-label="corpo">Ana, aceito a proposta. Fechamos nos termos combinados; o comprovante do pix segue anexo.</textarea>
+        <p class="dica">✍️ O corpo é transliterado para ASCII (sem acento) ao enviar — o cliente cuida disso; o anexo mantém os acentos.</p>
+
+        <div class="anexo-c"><span>📎</span><span class="nm dado">comprovante-são-paulo.pdf</span><span style="margin-left:auto;color:var(--fraco)">204 KB</span></div>
+
+        <div class="pix">
+          <div class="qr" role="img" aria-label="QR do pix (exemplo)"></div>
+          <div class="info">
+            <h4>Confiança — categoria Negócios</h4>
+            <div class="val">R$ 120</div>
+            <div class="obs">valor inteiro (sem centavos) · QR gerado no lado de quem paga · split para a loja quando Masson</div>
+          </div>
+        </div>
+
+        <div class="barra-c">
+          <button class="acao marcar">Salvar rascunho</button>
+          <button class="acao incluir">🔒 Cifrar &amp; enviar</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="rodape">
+    <span class="assin">Built to store · Engineered to scale</span> &nbsp;·&nbsp;
+    <span class="maq">Maquete de UI/UX — dados de exemplo.</span><br>
+    <b>Provado (PROVA VERDE, em memória):</b> 5 níveis de cifra, respostas assinadas (Ed25519), corpo sem acento com anexo byte-a-byte, QR do pix (valor inteiro), split Masson, portão de confiança. &nbsp;·&nbsp;
+    <b>Em construção (#159):</b> o cliente falando com o servidor de rede na porta 8000.
+  </p>
+</div>
