@@ -23,6 +23,9 @@
 //!      (valor sem teto) ou de graca; (B) ligar "seguro alto" = p12 + cada um
 //!      a sua senha (E2E); (C) Masson cuja chave da 3a camada E o id da
 //!      maconaria — id errado nao abre. Tudo NATIVO, zero-deps, sem OpenSSL.
+//!  11. CATEGORIAS definidas pelo dono ao aceitar: familia/amigos (gratis),
+//!      negocios e atencao moderada/alta/total — cada valor escolhido por
+//!      CADA usuario (a tabela do adriano difere da da juliana).
 //!
 //! Rodar: cargo run -q --example correio-e2e -p phxsql-core
 
@@ -145,6 +148,32 @@ impl EstadoModeracao {
         }
     }
 }
+
+/// Categoria da relacao, escolhida por quem ACEITA. Cada usuario define o valor
+/// de cada uma: familia/amigos costuma ser de graca; negocios e os tres niveis
+/// de "atencao" (moderada/alta/total) cobram o que o dono quiser, sem teto.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Categoria {
+    FamiliaAmigos,
+    Negocios,
+    AtencaoModerada,
+    AtencaoAlta,
+    AtencaoTotal,
+}
+impl Categoria {
+    fn rotulo(self) -> &'static str {
+        match self {
+            Categoria::FamiliaAmigos => "familia/amigos",
+            Categoria::Negocios => "negocios",
+            Categoria::AtencaoModerada => "atencao moderada",
+            Categoria::AtencaoAlta => "atencao alta",
+            Categoria::AtencaoTotal => "atencao total",
+        }
+    }
+}
+
+/// Tabela de precos de um dono: cada categoria -> Some(pix, valor) ou None (gratis).
+type PrecoCat = Vec<(Categoria, Option<(String, f64)>)>;
 
 fn rnd16() -> [u8; 16] {
     let mut b = [0u8; 16];
@@ -317,7 +346,10 @@ struct Confianca {
     de: String,
     para: String,
     estado: EstadoConfianca,
+    // a categoria escolhida por quem aceitou (familia, negocios, atencao...)
+    categoria: Option<Categoria>,
     // A) quem aceita pode cobrar para conversar: chave pix + valor, SEM teto.
+    // O valor vem da tabela de categorias do dono, ou de um pix avulso.
     pix: Option<(String, f64)>,
     // B) a relacao pediu seguro e criptografia alta (p12 + cada um a sua senha).
     seguro_alto: bool,
@@ -353,6 +385,8 @@ struct ServerMail {
     anexos: Vec<Anexo>,
     solicitacoes: Vec<Solicitacao>,
     proximo_anexo: u64,
+    // tabela de precos por dono (a de cada usuario e sua)
+    tabelas: Vec<(String, PrecoCat)>,
 }
 
 impl ServerMail {
@@ -367,6 +401,7 @@ impl ServerMail {
             anexos: vec![],
             solicitacoes: vec![],
             proximo_anexo: 1,
+            tabelas: vec![],
         }
     }
     fn configurar_porta(&mut self, p: u16) {
@@ -428,6 +463,7 @@ impl ServerMail {
             de: de.into(),
             para: para.into(),
             estado: EstadoConfianca::Pendente,
+            categoria: None,
             pix: None,
             seguro_alto: false,
         });
@@ -479,6 +515,38 @@ impl ServerMail {
             c.estado == EstadoConfianca::Aceita
                 && ((c.de == a && c.para == b) || (c.de == b && c.para == a))
         })
+    }
+    /// Cada dono define o valor de cada categoria. None = de graca (familia).
+    fn definir_categorias(&mut self, dono: &str, tabela: Vec<(Categoria, Option<(&str, f64)>)>) {
+        let t = tabela
+            .into_iter()
+            .map(|(cat, p)| (cat, p.map(|(chave, valor)| (chave.to_string(), valor))))
+            .collect();
+        self.tabelas.retain(|(d, _)| d != dono);
+        self.tabelas.push((dono.to_string(), t));
+    }
+    fn preco_categoria(&self, dono: &str, cat: Categoria) -> Option<(String, f64)> {
+        self.tabelas
+            .iter()
+            .find(|(d, _)| d == dono)
+            .and_then(|(_, t)| t.iter().find(|(c, _)| *c == cat))
+            .and_then(|(_, p)| p.clone())
+    }
+    /// Aceitar escolhendo a categoria: o valor vem da tabela de QUEM aceita.
+    fn aceitar_confianca_cat(&mut self, de: &str, para: &str, cat: Categoria) {
+        let preco = self.preco_categoria(para, cat);
+        for c in &mut self.confiancas {
+            if c.de == de && c.para == para && c.estado == EstadoConfianca::Pendente {
+                c.estado = EstadoConfianca::Aceita;
+                c.categoria = Some(cat);
+                c.pix = preco.clone();
+            }
+        }
+        let cobranca = match &preco {
+            Some((chave, valor)) => format!("  pix {chave} R$ {valor:.2}"),
+            None => "  de graca".to_string(),
+        };
+        println!("   {para} ACEITOU {de} como [{}]{cobranca}", cat.rotulo());
     }
     /// Recusar e um "nao, obrigado": o pedido sai de pendente e vira recusada,
     /// mas o outro pode pedir de novo depois (diferente de bloquear, que e o
@@ -1181,6 +1249,83 @@ fn main() {
     ok(
         tc == "So para irmaos.",
         "C: com o id da maconaria CERTO, abre a 3a camada",
+    );
+
+    println!("\n11) categorias definidas pelo dono: familia gratis, negocios/atencao pagos:");
+    // juliana define a SUA tabela de precos
+    srv.definir_categorias(
+        &juliana,
+        vec![
+            (Categoria::FamiliaAmigos, None),
+            (Categoria::Negocios, Some(("juliana@pix.com.br", 120.00))),
+            (
+                Categoria::AtencaoModerada,
+                Some(("juliana@pix.com.br", 250.00)),
+            ),
+            (
+                Categoria::AtencaoAlta,
+                Some(("juliana@pix.com.br", 1000.00)),
+            ),
+            (
+                Categoria::AtencaoTotal,
+                Some(("juliana@pix.com.br", 5000.00)),
+            ),
+        ],
+    );
+    // adriano define uma tabela DIFERENTE — os valores sao de cada usuario
+    srv.definir_categorias(
+        &a,
+        vec![
+            (Categoria::FamiliaAmigos, None),
+            (Categoria::Negocios, Some(("adriano@pix.com.br", 80.00))),
+        ],
+    );
+
+    let irmao = srv
+        .criar_conta("irmao", "empresa.phxsql.com.br", "senha-do-irmao-2c")
+        .unwrap();
+    let cliente = srv
+        .criar_conta("cliente", "loja.phxmail.com.br", "senha-do-cliente-9m")
+        .unwrap();
+    let vip = srv
+        .criar_conta("vip", "empresa.phxsql.com.br", "senha-do-vip-7t")
+        .unwrap();
+
+    // familia/amigos = de graca
+    srv.solicitar_confianca(&irmao, &juliana).unwrap();
+    srv.aceitar_confianca_cat(&irmao, &juliana, Categoria::FamiliaAmigos);
+    let ci = srv.confianca(&irmao, &juliana).unwrap();
+    ok(
+        ci.categoria == Some(Categoria::FamiliaAmigos) && ci.pix.is_none(),
+        "familia/amigos: aceita de graca",
+    );
+
+    // negocios = o valor da tabela DA JULIANA (120)
+    srv.solicitar_confianca(&cliente, &juliana).unwrap();
+    srv.aceitar_confianca_cat(&cliente, &juliana, Categoria::Negocios);
+    let cc = srv.confianca(&cliente, &juliana).unwrap();
+    let neg_ok = matches!(&cc.pix, Some((chave, v)) if chave.as_str() == "juliana@pix.com.br" && (*v - 120.00).abs() < 1e-9);
+    ok(
+        cc.categoria == Some(Categoria::Negocios) && neg_ok,
+        "negocios: cobra o valor da tabela da juliana (120,00)",
+    );
+
+    // atencao total = o teto que ela escolheu (5000)
+    srv.solicitar_confianca(&vip, &juliana).unwrap();
+    srv.aceitar_confianca_cat(&vip, &juliana, Categoria::AtencaoTotal);
+    let cv = srv.confianca(&vip, &juliana).unwrap();
+    ok(
+        cv.categoria == Some(Categoria::AtencaoTotal)
+            && matches!(&cv.pix, Some((_, v)) if (*v - 5000.00).abs() < 1e-9),
+        "atencao total: cobra os 5000,00 da categoria",
+    );
+
+    // os valores sao de CADA usuario: negocios do adriano (80) != da juliana (120)
+    let neg_adr = matches!(srv.preco_categoria(&a, Categoria::Negocios), Some((_, v)) if (v - 80.00).abs() < 1e-9);
+    let neg_jul = matches!(srv.preco_categoria(&juliana, Categoria::Negocios), Some((_, v)) if (v - 120.00).abs() < 1e-9);
+    ok(
+        neg_adr && neg_jul,
+        "cada usuario define o SEU valor (negocios adriano 80 != juliana 120)",
     );
 
     println!("\n===== RESULTADO =====");
