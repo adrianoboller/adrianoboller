@@ -393,6 +393,32 @@ antes de dois itens entrarem juntos. Os quatro documentos de origem continuam
 existindo (`docs/SPRINTS-CASSANDRA.md`, `-REDIS.md`, `-MARIADB.md`,
 `-TERADATA.md`).
 
+**Os três tipos de database (11/09/2026) — infraestrutura PRONTA, motores
+abertos.** Decisão do dono: o PhxSql passa a ter três tipos de database —
+**padrão** (relacional, o motor que sempre existiu), **hive/colmeia** e
+**vetorial**. A *infraestrutura* dos três está feita e provada nesta rodada: o
+tipo no núcleo (`TipoDatabase`), o marcador em disco `_database.json` (ausência
+= padrão, sem migração — `docs/FORMATO.md` §11.1), a op `criar_database` aceita
+`"tipo"` e devolve `motor_pronto`, e o motor padrão **recusa honestamente**
+operar tabela num database hive ou vetorial («motor em construção»), em vez de
+gravar um `.reg` relacional calado dentro de uma colmeia. O que continua
+faltando são **os dois motores**, e cada um começa por **medir a premissa**,
+não por escrever formato:
+
+- **Motor hive** — proposta em `docs/propostas/colmeia.md`. Premissa a medir: a
+  nossa colmeia, em Rust e com o nosso cache, lê bem mais rápido que o padrão
+  para dado de configuração? O Registro medido (`bancada/registro/`) lê rápido
+  e escreve devagar (~255–495 µs/op); falta provar o nosso.
+- **Motor vetorial** — proposta em `docs/propostas/vetorial.md`. Premissa a
+  medir: para o N e o d do dono, a busca por força bruta (exata, sem índice,
+  sem formato novo) já responde rápido o suficiente, ou precisamos de um índice
+  ANN? E, em Rust puro sem SIMD, quanto custa a distância. A hipótese «força
+  bruta basta» pode morrer — ou vencer — medida.
+
+Ambos vêm **depois** do P0 de atomicidade: o parecer do Sprint 0010 mandou
+solidificar o núcleo antes de ampliar, e um terceiro (ou segundo) motor antes
+do commit atômico do primeiro é o anti-padrão que ele alertou.
+
 ---
 
 ## 4. O que cada revisão achou de errado — e já consertou

@@ -24,9 +24,44 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use phxsql_core::error::{PhxError, Result};
+use phxsql_core::json::Json;
 use phxsql_core::paginacao::BALDES;
 use phxsql_core::schema::Schema;
+use phxsql_core::TipoDatabase;
 use phxsql_core::EXT_REG;
+
+/// O marcador do TIPO de um database. Ate aqui «a regra era estrutural, sem
+/// arquivo de marcacao» -- um diretorio era um database e ponto. Os tres tipos
+/// (decisao do dono, 11/09/2026) exigem guardar o tipo em algum lugar, e este
+/// arquivo e esse lugar. Nome com prefixo `_` e sufixo `.json`: nao e `.reg`,
+/// entao `tabelas_em` o ignora de graca, e nao colide com nome de tabela.
+///
+/// **Ausencia = Padrao**, de proposito: todo database que nasceu antes desta
+/// decisao nao tem marca, e continua padrao sem migracao -- mesma disciplina do
+/// byte de chave do PSCH v7 («guarda nova entra pedida, nao imposta»).
+const MARCA_DATABASE: &str = "_database.json";
+
+/// Grava o marcador do tipo no diretorio do database.
+fn escrever_marca(diretorio: &Path, tipo: TipoDatabase) -> Result<()> {
+    let j = Json::objeto(vec![
+        ("tipo", Json::texto_de(tipo.como_texto())),
+        ("versao", Json::de_i64(1)),
+    ]);
+    std::fs::write(diretorio.join(MARCA_DATABASE), j.escrever_identado())?;
+    Ok(())
+}
+
+/// Le o tipo do marcador. Ausencia, leitura falha, JSON quebrado ou tipo
+/// desconhecido **caem em Padrao** -- nunca param a abertura de um database que
+/// ja existe. Um tipo estranho no marcador e' dado corrompido do marcador, e a
+/// resposta segura e' tratar como padrao, nao recusar abrir o banco.
+fn ler_marca(diretorio: &Path) -> TipoDatabase {
+    std::fs::read_to_string(diretorio.join(MARCA_DATABASE))
+        .ok()
+        .and_then(|txt| Json::analisar(&txt).ok())
+        .map(|j| TipoDatabase::de_texto(j.texto_ou("tipo", "padrao")).unwrap_or_default())
+        .unwrap_or_default()
+}
 
 use crate::fts::EXT_FTS;
 use crate::table::{SemEscrever, Table};
@@ -219,16 +254,26 @@ impl Instancia {
         &self.base
     }
 
+    /// Cria um database do tipo **padrao** -- o caminho que sempre existiu.
     pub fn criar_database(&self, nome: &str) -> Result<Database> {
+        self.criar_database_com_tipo(nome, TipoDatabase::Padrao)
+    }
+
+    /// Cria um database de um TIPO dado (padrao/hive/vetorial) e grava o
+    /// marcador. O tipo nasce com o database e nao muda depois: um database e'
+    /// de um tipo so, como uma tabela nasce com um esquema.
+    pub fn criar_database_com_tipo(&self, nome: &str, tipo: TipoDatabase) -> Result<Database> {
         validar_nome("database", nome)?;
         let caminho = self.base.join(nome);
         if caminho.exists() {
             return Err(PhxError::Esquema(format!("database {nome} ja existe")));
         }
         std::fs::create_dir_all(&caminho)?;
+        escrever_marca(&caminho, tipo)?;
         Ok(Database {
             nome: nome.to_string(),
             caminho,
+            tipo,
         })
     }
 
@@ -244,9 +289,11 @@ impl Instancia {
                 "database {nome} nao existe neste servidor"
             )));
         }
+        let tipo = ler_marca(&caminho);
         Ok(Database {
             nome: nome.to_string(),
             caminho,
+            tipo,
         })
     }
 
@@ -397,6 +444,7 @@ impl Raiz {
             _so_com_a_ficha: PhantomData,
         };
         let db = so_para_achar_o_caminho.abrir_database(database)?;
+        db.exigir_motor_padrao()?;
         let (schema, nome) = separar_qualificado(qualificado);
         validar_nome("tabela", &nome)?;
         let dir = db.diretorio(schema.as_deref())?;
@@ -418,6 +466,7 @@ impl Raiz {
 pub struct Database {
     nome: String,
     caminho: PathBuf,
+    tipo: TipoDatabase,
 }
 
 impl Database {
@@ -427,6 +476,44 @@ impl Database {
 
     pub fn caminho(&self) -> &Path {
         &self.caminho
+    }
+
+    /// O tipo deste database (padrao/hive/vetorial). Lido do marcador na
+    /// abertura; ausencia = padrao.
+    pub fn tipo(&self) -> TipoDatabase {
+        self.tipo
+    }
+
+    /// O PORTAO do motor, e e UM so: o motor padrao (tabelas relacionais em
+    /// arquivos separados) opera SOMENTE database do tipo `Padrao`. Hive e
+    /// Vetorial tem o tipo reservado e o marcador gravado, mas o MOTOR de cada
+    /// um e frente aberta -- rodar uma operacao de tabela num deles pelo motor
+    /// padrao seria **fingir que gravou** (metade pior que nada): criaria um
+    /// `.reg` relacional num diretorio que se diz colmeia. Recusa honesta, com
+    /// o tipo e o estado.
+    ///
+    /// Chamado no TOPO das entradas do motor padrao que mexem em tabela --
+    /// `criar_tabela`, `abrir_tabela`, `excluir_tabela`, `duplicar_tabela`,
+    /// `copiar_tabela_para` e o `abrir_para_ler` da `Instancia`. Listar o que
+    /// existe (`tabelas`, `existe_tabela`, `bancos`) NAO passa por aqui de
+    /// proposito: um database hive EXISTE e aparece na lista com o seu tipo --
+    /// esconde-lo seria outra mentira. A linha que se recusa a cruzar e'
+    /// **operar** a tabela, nao **enxergar** o database.
+    ///
+    /// Quem acrescentar uma entrada de tabela nova ao motor padrao chama este
+    /// portao tambem -- e a mesma licao do portao de permissao: a operacao que
+    /// alguem esquecer de amarrar vira a porta dos fundos, e aqui a porta dos
+    /// fundos seria uma tabela relacional nascendo dentro de uma colmeia.
+    fn exigir_motor_padrao(&self) -> Result<()> {
+        if self.tipo == TipoDatabase::Padrao {
+            return Ok(());
+        }
+        Err(PhxError::Esquema(format!(
+            "o database {} e do tipo {} e o motor dele esta em construcao: \
+             operacoes de tabela ainda nao funcionam nele",
+            self.nome,
+            self.tipo.como_texto()
+        )))
     }
 
     /// Diretorio de um schema, ou a raiz do database quando `schema` e `None`.
@@ -482,6 +569,7 @@ impl Database {
     }
 
     pub fn criar_tabela(&self, schema: Option<&str>, esquema: Schema) -> Result<Table> {
+        self.exigir_motor_padrao()?;
         validar_nome("tabela", esquema.nome())?;
         let dir = match schema {
             None => self.caminho.clone(),
@@ -491,6 +579,7 @@ impl Database {
     }
 
     pub fn abrir_tabela(&self, schema: Option<&str>, nome: &str) -> Result<Table> {
+        self.exigir_motor_padrao()?;
         validar_nome("tabela", nome)?;
         Table::abrir(self.diretorio(schema)?, nome)
             .map_err(|e| self.tabela_que_nao_existe(e, schema, nome))
@@ -629,6 +718,7 @@ impl Database {
     /// -lo pede varrer todos os schemas por `excluir_tabela`, e essa e uma
     /// decisao de custo que se toma com numero na mao, nao de passagem.
     pub fn excluir_tabela(&self, qualificado: &str) -> Result<Vec<String>> {
+        self.exigir_motor_padrao()?;
         let (schema, nome) = separar_qualificado(qualificado);
         let (schema, nome) = (schema.as_deref(), nome.as_str());
         validar_nome("tabela", nome)?;
@@ -829,6 +919,7 @@ impl Database {
     /// Copiar os arquivos preserva a ordem de digitacao e os rowids; reinserir
     /// linha a linha nao preservaria nem um nem outro.
     pub fn duplicar_tabela(&self, origem: &str, destino: &str) -> Result<usize> {
+        self.exigir_motor_padrao()?;
         let (schema_o, nome_o) = separar_qualificado(origem);
         let (schema_d, nome_d) = separar_qualificado(destino);
         let (schema_o, nome_o) = (schema_o.as_deref(), nome_o.as_str());
@@ -874,6 +965,11 @@ impl Database {
         destino_db: &Database,
         destino: &str,
     ) -> Result<usize> {
+        // Os DOIS lados: colar de OU para uma colmeia e' tao invalido quanto
+        // criar tabela nela. O motor padrao le e escreve tabela relacional, e
+        // nenhuma das duas pontas pode ser de outro tipo.
+        self.exigir_motor_padrao()?;
+        destino_db.exigir_motor_padrao()?;
         let (schema_o, nome_o) = separar_qualificado(origem);
         let (schema_d, nome_d) = separar_qualificado(destino);
         let (schema_o, nome_o) = (schema_o.as_deref(), nome_o.as_str());
@@ -1039,6 +1135,106 @@ mod tests {
         assert!(z.abrir_tabela(None, "fornecedores").is_err());
         assert_eq!(inst.databases().unwrap(), vec!["W", "Z"]);
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn database_nasce_com_o_tipo_declarado_e_le_de_volta() {
+        let base = dir_temp("tipos");
+        let inst = Instancia::nova(&base).unwrap();
+        inst.criar_database_com_tipo("cfg", TipoDatabase::Hive)
+            .unwrap();
+        inst.criar_database_com_tipo("emb", TipoDatabase::Vetorial)
+            .unwrap();
+        inst.criar_database("rel").unwrap(); // sem tipo = padrao
+                                             // Reabre: o tipo vem do marcador NO DISCO, nao da memoria de quem criou.
+        assert_eq!(
+            inst.abrir_database("cfg").unwrap().tipo(),
+            TipoDatabase::Hive
+        );
+        assert_eq!(
+            inst.abrir_database("emb").unwrap().tipo(),
+            TipoDatabase::Vetorial
+        );
+        assert_eq!(
+            inst.abrir_database("rel").unwrap().tipo(),
+            TipoDatabase::Padrao
+        );
+    }
+
+    #[test]
+    fn database_sem_marcador_e_padrao_por_compatibilidade() {
+        // Simula um database criado ANTES desta decisao: diretorio cru, sem o
+        // _database.json. Tem de abrir como padrao, sem migracao e sem recusa.
+        let base = dir_temp("antigo");
+        let inst = Instancia::nova(&base).unwrap();
+        std::fs::create_dir_all(base.join("legado")).unwrap();
+        assert!(!base.join("legado").join(MARCA_DATABASE).exists());
+        assert_eq!(
+            inst.abrir_database("legado").unwrap().tipo(),
+            TipoDatabase::Padrao
+        );
+    }
+
+    #[test]
+    fn marcador_corrompido_cai_em_padrao_nao_recusa_abrir() {
+        // Prova real do ramo de defeito: tipo invalido no marcador NAO pode
+        // travar a abertura de um banco que existe -- cai em padrao.
+        let base = dir_temp("corrompido");
+        let inst = Instancia::nova(&base).unwrap();
+        inst.criar_database_com_tipo("x", TipoDatabase::Hive)
+            .unwrap();
+        std::fs::write(base.join("x").join(MARCA_DATABASE), "{\"tipo\":\"grafo\"}").unwrap();
+        assert_eq!(
+            inst.abrir_database("x").unwrap().tipo(),
+            TipoDatabase::Padrao
+        );
+    }
+
+    #[test]
+    fn hive_recusa_operacao_de_tabela_mas_padrao_funciona() {
+        // PROVA REAL nos dois sentidos. O motor padrao (tabela relacional) so
+        // opera database padrao:
+        // - com o portao (conserto): criar/abrir tabela numa colmeia RECUSA,
+        //   "em construcao"; num padrao PASSA.
+        // - sem o portao (defeito reposto): a colmeia criaria um `.reg`
+        //   relacional calada -- "fingir que gravou", metade pior que nada.
+        //   Este teste fica VERMELHO se alguem tirar o `exigir_motor_padrao`
+        //   de `criar_tabela` (ou de `abrir_tabela`).
+        let base = dir_temp("motor-em-obra");
+        let inst = Instancia::nova(&base).unwrap();
+
+        let colmeia = inst
+            .criar_database_com_tipo("cfg", TipoDatabase::Hive)
+            .unwrap();
+        // `.err()` em vez de `unwrap_err()`: o lado Ok e' `Table`, que nao
+        // implementa `Debug`, entao `unwrap_err` nem compilaria.
+        let erro = colmeia
+            .criar_tabela(None, esquema("clientes"))
+            .err()
+            .expect("criar tabela numa colmeia tinha de recusar");
+        assert!(
+            matches!(erro, PhxError::Esquema(ref m) if m.contains("construcao")),
+            "esperava recusa de motor em construcao, veio {erro:?}"
+        );
+        // E de fato NADA nasceu: nenhum `.reg` relacional no diretorio da
+        // colmeia. Listar continua valendo -- a colmeia existe e aparece vazia.
+        assert!(colmeia.tabelas(None).unwrap().is_empty());
+        // abrir tambem recusa pelo MESMO motivo, antes do «nao existe»: o
+        // portao fira antes de procurar o arquivo.
+        let abrir = colmeia
+            .abrir_tabela(None, "clientes")
+            .err()
+            .expect("abrir numa colmeia tinha de recusar");
+        assert!(
+            matches!(abrir, PhxError::Esquema(ref m) if m.contains("construcao")),
+            "abrir numa colmeia tinha de recusar por motor, veio {abrir:?}"
+        );
+
+        // O padrao, ao lado, opera como sempre -- o portao so barra o que nao
+        // e padrao.
+        let rel = inst.criar_database("rel").unwrap();
+        rel.criar_tabela(None, esquema("clientes")).unwrap();
+        assert_eq!(rel.tabelas(None).unwrap(), vec!["clientes"]);
     }
 
     #[test]

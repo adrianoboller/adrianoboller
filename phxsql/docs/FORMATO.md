@@ -1775,6 +1775,7 @@ devolver lixo.
 ```
 base/
 └── Z/                        database Z
+    ├── _database.json        o TIPO do database (padrão/hive/vetorial)
     ├── cadastroClientes.reg  ┐
     ├── cadastroClientes.ndx  ├ tabelas da raiz (sem schema)
     ├── ...                   ┘
@@ -1789,12 +1790,57 @@ database; um diretório dentro de um database é um schema; um arquivo `.reg` é
 uma tabela. Tabelas soltas na raiz do database são as "tabelas raiz" —
 equivalentes ao `public` do Postgres ou ao `dbo` do SQL Server.
 
+A **única** marcação é o tipo do database (ver §11.1 adiante): a detecção de
+schema e de tabela continua 100% estrutural, como sempre foi. Um diretório sem
+`_database.json` é um database **padrão**, sem migração — por isso a marca não
+muda a regra de descoberta, só acrescenta uma informação que antes não existia.
+
 O nome qualificado é `schema.tabela`, ou só `tabela` na raiz — o mesmo formato
 que o catálogo do FraseSQL espera. Duas tabelas de mesmo nome em schemas
 diferentes não colidem.
 
 Nomes de database, schema e tabela são validados: nada de `..`, barra,
-contrabarra, dois-pontos, curinga ou caractere de controle.
+contrabarra, dois-pontos, curinga ou caractere de controle. O `_database.json`
+começa com `_` e termina em `.json` de propósito: não é `.reg`, então a
+varredura de tabelas o ignora de graça, e o `_` o afasta de qualquer nome de
+tabela válido.
+
+### 11.1 `_database.json` — o tipo do database
+
+Decisão do dono, 11/09/2026: o PhxSql passa a ter **três tipos** de database,
+cada um com um motor de armazenamento próprio. O tipo é gravado numa linha, no
+diretório do database:
+
+```json
+{
+  "tipo": "padrao",
+  "versao": 1
+}
+```
+
+| Campo | Valor | O que significa |
+|---|---|---|
+| `tipo` | `"padrao"` | Relacional, arquivos separados do HFSQL — o motor que sempre existiu. **É o default de todo database sem a marca.** |
+| | `"hive"` | Armazém hierárquico chave→valor, inspirado no REGF do Registro do Windows. Ver [`propostas/colmeia.md`](propostas/colmeia.md). **Motor em construção.** |
+| | `"vetorial"` | Vetores/embeddings com busca por similaridade. Ver [`propostas/vetorial.md`](propostas/vetorial.md). **Motor em construção.** |
+| `versao` | `1` | Versão do formato do próprio marcador. |
+
+Três regras de formato, todas por compatibilidade e honestidade:
+
+1. **Ausência = `padrao`.** Todo database que nasceu antes desta decisão não
+   tem o arquivo, e continua padrão **sem migração** — a mesma disciplina do
+   byte de chave do `PSCH` v7, «guarda nova entra pedida, não imposta».
+2. **Marca corrompida = `padrao`, nunca recusa abrir.** Leitura falha, JSON
+   quebrado ou `tipo` desconhecido no arquivo caem em padrão. Um tipo estranho
+   no marcador é dado corrompido do marcador, e a resposta segura é tratar como
+   padrão, não travar a abertura de um banco que existe.
+3. **O tipo nasce com o database e não muda.** Um database é de um tipo só,
+   como uma tabela nasce com um esquema. O motor padrão (tabelas relacionais)
+   opera **somente** database do tipo `padrao`; operar tabela num database hive
+   ou vetorial é recusado com «motor em construção», em vez de gravar um `.reg`
+   relacional calado dentro de uma colmeia (metade pior que nada). A
+   infraestrutura dos três tipos existe; o motor de hive e o de vetorial são
+   frentes abertas.
 
 ### `phxsys` — o database do próprio servidor
 

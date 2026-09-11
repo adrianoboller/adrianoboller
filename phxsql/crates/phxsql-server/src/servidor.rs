@@ -9916,15 +9916,37 @@ impl Servidor {
 
     fn op_criar_database(&self, p: &Json) -> Result<Json> {
         let nome = p.texto_ou("database", "");
+        // `tipo` ausente/vazio -> padrao, por compatibilidade: todo cliente
+        // escrito antes dos tres tipos manda so `database`, e continua criando
+        // padrao como sempre. Tipo desconhecido e' ERRO (nao palpite) -- a
+        // recusa vem de `de_texto`, na DECLARACAO, antes de criar o diretorio.
+        let tipo = phxsql_core::TipoDatabase::de_texto(p.texto_ou("tipo", ""))?;
         let dados = self.travar_dados()?;
-        let db = dados.criar_database(nome)?;
-        Ok(Json::objeto(vec![
+        let db = dados.criar_database_com_tipo(nome, tipo)?;
+        // O marcador ja foi gravado. Se o motor do tipo ainda nao existe, o
+        // database nasce valido e com o tipo reservado, mas quem tentar operar
+        // tabela nele recebe «motor em construcao» -- a nota avisa de antemao,
+        // em vez de deixar o cliente descobrir no primeiro `criar_tabela`.
+        let mut campos = vec![
             ("database", Json::texto_de(db.nome())),
+            ("tipo", Json::texto_de(tipo.como_texto())),
+            ("motor_pronto", Json::de_bool(tipo.motor_pronto())),
             (
                 "caminho",
                 Json::texto_de(db.caminho().display().to_string()),
             ),
-        ]))
+        ];
+        if !tipo.motor_pronto() {
+            campos.push((
+                "nota",
+                Json::texto_de(format!(
+                    "database do tipo {} criado; o motor dele esta em construcao, \
+                     operacoes de tabela ainda nao funcionam",
+                    tipo.como_texto()
+                )),
+            ));
+        }
+        Ok(Json::objeto(campos))
     }
 
     /// Copia uma tabela para outro database -- o "colar" da tela.
@@ -23750,6 +23772,74 @@ mod testes_criar_qualificada {
         assert_eq!(v.campo("linhas").and_then(Json::lista).unwrap().len(), 1);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// PROVA REAL da infraestrutura dos tres tipos de database. Nos dois
+    /// sentidos: a hive nasce valida e reserva o tipo, mas operar tabela nela
+    /// RECUSA ("motor em construcao") -- sem o portao, a hive criaria um `.reg`
+    /// relacional calada. O padrao, ao lado, opera como sempre.
+    #[test]
+    fn criar_database_hive_reserva_o_tipo_mas_recusa_tabela() {
+        let dir = DirTemp::novo("tres-tipos");
+        let s = servidor(&dir);
+        let ses = Sessao::default();
+
+        // A hive nasce valida: tipo no marcador, motor_pronto=false e a nota
+        // que avisa antes de o cliente tentar a primeira tabela.
+        let r = s
+            .executar(
+                "criar_database",
+                &pedido(r#"{"database":"cfg","tipo":"hive"}"#),
+                &ses,
+            )
+            .unwrap();
+        assert_eq!(r.texto_ou("tipo", ""), "hive");
+        assert!(!r.booleano_ou("motor_pronto", true));
+        assert!(r.texto_ou("nota", "").contains("construcao"));
+
+        // Operar tabela numa hive recusa, e diz por que. Defeito reposto (sem
+        // o portao): esta criacao responderia "criada".
+        let erro = s
+            .executar(
+                "criar_tabela",
+                &pedido(
+                    r#"{"database":"cfg","tabela":"t",
+                        "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}]}"#,
+                ),
+                &ses,
+            )
+            .unwrap_err();
+        assert!(
+            erro.to_string().contains("construcao"),
+            "esperava recusa de motor em construcao, veio {erro}"
+        );
+
+        // Tipo desconhecido e' ERRO na criacao, nao palpite.
+        assert!(s
+            .executar(
+                "criar_database",
+                &pedido(r#"{"database":"g","tipo":"grafo"}"#),
+                &ses,
+            )
+            .is_err());
+
+        // Padrao (sem `tipo`) continua criando e operando tabela como sempre.
+        let p = s
+            .executar("criar_database", &pedido(r#"{"database":"rel"}"#), &ses)
+            .unwrap();
+        assert_eq!(p.texto_ou("tipo", ""), "padrao");
+        assert!(p.booleano_ou("motor_pronto", false));
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"rel","tabela":"t",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}]}"#,
+            ),
+            &ses,
+        )
+        .unwrap();
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// O campo `schema` continua valendo, e vale igual.
