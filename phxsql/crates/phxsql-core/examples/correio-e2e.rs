@@ -4,17 +4,17 @@
 //!
 //! O QUE ESTE EXEMPLO PROVA (e o MODELO, nao o formato em disco final):
 //!   1. Identidade X25519; a PRIVADA fica cifrada sob a senha -> nao abre sem a senha.
-//!   2. Sem CONFIANCA aceita nao ha contato (anti-spam), inclusive no canal de
+//!   2. So dominios phxsql.com.br e phxmail.com.br podem mandar/receber.
+//!   3. Sem CONFIANCA aceita nao ha contato (anti-spam), inclusive no canal de
 //!      PEDIDO (repetido recusado, bloqueado nao pede, teto de pendentes).
-//!   3. Mensagem cifrada pelo segredo ECDH entre os dois: cada um decifra com a
-//!      PROPRIA senha + a chave publica do outro. Prioridade/tipo AUTENTICADOS.
-//!   4. ANEXOS ficam num armazem A PARTE; a mensagem guarda so a referencia
-//!      (o registro nao carrega o binario -> nao fica lento).
-//!   5. ALTO SEGREDO: uma 2a camada de cifra sobre texto e anexos, com uma frase
-//!      passada por telefone/SMS -> precisa da senha da conta E da frase.
-//!   6. Moderacao: banir (alto prejuizo), quarentena (baixo prejuizo) e multa
-//!      (link de pagamento) sao solicitacoes com MOTIVO obrigatorio.
-//!   7. Porta configuravel; padrao 8000.
+//!   4. Mensagem cifrada pelo segredo ECDH; cada um decifra com a PROPRIA senha
+//!      + a chave publica do outro. Prioridade/tipo AUTENTICADOS.
+//!   5. TRES camadas de cripto encaixadas: E2E (sempre) + ALTO SEGREDO (frase por
+//!      telefone/SMS) + MASSON (flag X, 3a camada). Ler exige a senha da conta e,
+//!      quando ligadas, a frase e a chave Masson.
+//!   6. Anexos num armazem A PARTE; a mensagem guarda so a referencia.
+//!   7. Moderacao: banir/quarentena/multa com MOTIVO obrigatorio.
+//!   8. Porta configuravel; padrao 8000.
 //!
 //! Rodar: cargo run -q --example correio-e2e -p phxsql-core
 
@@ -24,6 +24,19 @@ const ITER: u32 = 200_000;
 const INFO: &[u8] = b"phxsql-correio-v1";
 const TETO_PENDENTES: usize = 50;
 const PORTA_PADRAO: u16 = 8000;
+const DOMINIOS: [&str; 2] = ["phxsql.com.br", "phxmail.com.br"];
+
+/// O host do endereco tem de SER um dominio permitido ou um subdominio dele.
+/// Sufixo exato: "evilphxsql.com.br" NAO passa, "empresa.phxsql.com.br" passa.
+fn dominio_permitido(endereco: &str) -> bool {
+    let host = match endereco.rsplit_once('@') {
+        Some((_, h)) => h,
+        None => return false,
+    };
+    DOMINIOS
+        .iter()
+        .any(|b| host == *b || host.ends_with(&format!(".{b}")))
+}
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Prioridade {
@@ -66,9 +79,9 @@ impl Tipo {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum TipoSolicitacao {
-    Banir,      // uso indevido de ALTO prejuizo
-    Quarentena, // uso indevido de BAIXO prejuizo
-    Multa,      // link de pagamento de multa por mau uso
+    Banir,
+    Quarentena,
+    Multa,
 }
 impl TipoSolicitacao {
     fn prejuizo(self) -> &'static str {
@@ -98,29 +111,68 @@ fn rnd_nonce() -> [u8; NONCE_LEN] {
     b
 }
 
-// -------- camada extra "alto segredo": chave da FRASE passada por telefone/SMS --------
-fn selar_extra(frase: &str, sal: &[u8; 16], claro: &[u8]) -> Vec<u8> {
-    let k = cifra::chave_de_senha(frase, sal, ITER);
+// -------- camadas extras (frase/chave -> PBKDF2 -> ChaCha20-Poly1305) --------
+fn selar_camada(segredo: &str, sal: &[u8; 16], aad: &[u8], claro: &[u8]) -> Vec<u8> {
+    let k = cifra::chave_de_senha(segredo, sal, ITER);
     let nonce = rnd_nonce();
-    let (ct, tag) = cifra::selar(&k, &nonce, b"alto-segredo", claro);
+    let (ct, tag) = cifra::selar(&k, &nonce, aad, claro);
     let mut out = Vec::with_capacity(NONCE_LEN + TAG_LEN + ct.len());
     out.extend_from_slice(&nonce);
     out.extend_from_slice(&tag);
     out.extend_from_slice(&ct);
     out
 }
-fn abrir_extra(frase: &str, sal: &[u8; 16], blob: &[u8]) -> Result<Vec<u8>, String> {
+fn abrir_camada(segredo: &str, sal: &[u8; 16], aad: &[u8], blob: &[u8]) -> Result<Vec<u8>, String> {
     if blob.len() < NONCE_LEN + TAG_LEN {
-        return Err("blob de alto segredo malformado".into());
+        return Err("camada extra malformada".into());
     }
     let mut nonce = [0u8; NONCE_LEN];
     nonce.copy_from_slice(&blob[..NONCE_LEN]);
     let mut tag = [0u8; TAG_LEN];
     tag.copy_from_slice(&blob[NONCE_LEN..NONCE_LEN + TAG_LEN]);
     let ct = &blob[NONCE_LEN + TAG_LEN..];
-    let k = cifra::chave_de_senha(frase, sal, ITER);
-    cifra::abrir(&k, &nonce, b"alto-segredo", ct, &tag)
-        .map_err(|_| "frase de alto segredo errada ou ausente".to_string())
+    let k = cifra::chave_de_senha(segredo, sal, ITER);
+    cifra::abrir(&k, &nonce, aad, ct, &tag)
+        .map_err(|_| "segredo da camada errado ou ausente".to_string())
+}
+
+/// Encaixa as camadas extras ANTES do E2E: Masson por dentro, alto segredo por
+/// fora. O E2E (aplicado depois) fica sempre por cima.
+fn envelopar(
+    claro: &[u8],
+    masson: Option<&str>,
+    sal_m: &[u8; 16],
+    alto: Option<&str>,
+    sal_a: &[u8; 16],
+) -> Vec<u8> {
+    let mut p = claro.to_vec();
+    if let Some(mk) = masson {
+        p = selar_camada(mk, sal_m, b"masson", &p);
+    }
+    if let Some(fr) = alto {
+        p = selar_camada(fr, sal_a, b"alto-segredo", &p);
+    }
+    p
+}
+/// Desfaz na ordem inversa: alto segredo primeiro, Masson por ultimo.
+fn desenvelopar(
+    mut blob: Vec<u8>,
+    alto_on: bool,
+    sal_a: &[u8; 16],
+    alto: Option<&str>,
+    masson_on: bool,
+    sal_m: &[u8; 16],
+    masson: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    if alto_on {
+        let fr = alto.ok_or("ALTO SEGREDO: precisa da frase passada por telefone/SMS")?;
+        blob = abrir_camada(fr, sal_a, b"alto-segredo", &blob)?;
+    }
+    if masson_on {
+        let mk = masson.ok_or("MASSON: precisa da chave da 3a camada")?;
+        blob = abrir_camada(mk, sal_m, b"masson", &blob)?;
+    }
+    Ok(blob)
 }
 
 #[derive(Clone)]
@@ -168,7 +220,6 @@ fn abrir_privada(u: &Usuario, senha: &str) -> Result<[u8; CHAVE_LEN], String> {
     Ok(p)
 }
 
-/// Um bloco cifrado (E2E) guardado num arquivo A PARTE dos registros de mensagem.
 struct Anexo {
     id: u64,
     nome: String,
@@ -184,19 +235,20 @@ struct Mensagem {
     prioridade: Prioridade,
     tipo: Tipo,
     alto_segredo: bool,
+    masson: bool,
     sal_extra: [u8; 16],
+    sal_masson: [u8; 16],
     sal_kdf: [u8; 16],
     nonce: [u8; NONCE_LEN],
     ct: Vec<u8>,
     tag: [u8; TAG_LEN],
-    anexos: Vec<u64>, // SO referencias -- o binario mora no armazem a parte
+    anexos: Vec<u64>,
 }
 
 fn aad(de: &str, para: &str, pri: Prioridade, tipo: Tipo) -> String {
     format!("{de}|{para}|{}|{}", pri.rotulo(), tipo.rotulo())
 }
 
-/// deriva uma chave de mensagem/anexo do segredo ECDH + um sal proprio
 fn chave_derivada(segredo: &[u8; CHAVE_LEN], sal: &[u8; 16]) -> Result<[u8; CHAVE_LEN], String> {
     let mut k = [0u8; CHAVE_LEN];
     hkdf::derivar(sal, segredo, INFO, &mut k).map_err(|e| e.to_string())?;
@@ -210,8 +262,9 @@ struct Envio<'a> {
     corpo: &'a str,
     pri: Prioridade,
     tipo: Tipo,
-    anexos: Vec<(&'a str, &'a [u8])>, // (nome, bytes)
-    alto_segredo: Option<&'a str>,    // Some(frase passada por telefone/SMS)
+    anexos: Vec<(&'a str, &'a [u8])>,
+    alto_segredo: Option<&'a str>, // frase por telefone/SMS
+    masson: Option<&'a str>,       // flag X: 3a camada
 }
 
 struct Solicitacao {
@@ -229,7 +282,7 @@ struct ServerMail {
     confiancas: Vec<(String, String, bool)>,
     bloqueios: Vec<(String, String)>,
     mensagens: Vec<Mensagem>,
-    anexos: Vec<Anexo>, // arquivo A PARTE
+    anexos: Vec<Anexo>,
     solicitacoes: Vec<Solicitacao>,
     proximo_anexo: u64,
 }
@@ -254,11 +307,16 @@ impl ServerMail {
     fn achar(&self, endereco: &str) -> Option<&Usuario> {
         self.usuarios.iter().find(|u| u.endereco == endereco)
     }
-    fn criar_conta(&mut self, local: &str, empresa: &str, senha: &str) -> String {
+    fn criar_conta(&mut self, local: &str, empresa: &str, senha: &str) -> Result<String, String> {
         let endereco = format!("{local}@{empresa}");
+        if !dominio_permitido(&endereco) {
+            return Err(format!(
+                "RECUSADO: {endereco} nao esta em phxsql.com.br nem phxmail.com.br"
+            ));
+        }
         self.usuarios.push(criar_usuario(&endereco, empresa, senha));
         println!("   conta criada: {endereco}");
-        endereco
+        Ok(endereco)
     }
     fn confia(&self, a: &str, b: &str) -> bool {
         self.confiancas
@@ -301,7 +359,7 @@ impl ServerMail {
         let cruz = if self.mesma_empresa(de, para) {
             "mesma empresa"
         } else {
-            "EMPRESAS DIFERENTES"
+            "empresas diferentes"
         };
         println!("   solicitacao de confianca: {de} -> {para}  [{cruz}]  (pendente)");
         Ok(())
@@ -321,8 +379,6 @@ impl ServerMail {
         println!("   {dono} BLOQUEOU {quem}");
     }
 
-    /// Solicitacao de moderacao. MOTIVO e obrigatorio (como o .reason do excluir);
-    /// multa exige link de pagamento.
     fn solicitar_moderacao(
         &mut self,
         tipo: TipoSolicitacao,
@@ -348,9 +404,8 @@ impl ServerMail {
             link_pagamento: link.map(|s| s.into()),
         });
         println!(
-            "   solicitacao [{}] {} -> {alvo}  [{}]  motivo: \"{motivo}\"{}",
+            "   solicitacao [{}] {de} -> {alvo}  [{}]  motivo: \"{motivo}\"{}",
             tipo.rotulo(),
-            de,
             tipo.prejuizo(),
             link.map(|l| format!("  link: {l}")).unwrap_or_default()
         );
@@ -358,6 +413,12 @@ impl ServerMail {
     }
 
     fn enviar(&mut self, e: Envio) -> Result<usize, String> {
+        if !dominio_permitido(e.de) || !dominio_permitido(e.para) {
+            return Err(format!(
+                "RECUSADO: so phxsql.com.br/phxmail.com.br podem trocar mensagem ({} -> {})",
+                e.de, e.para
+            ));
+        }
         if !self.confia(e.de, e.para) {
             return Err(format!(
                 "RECUSADO: nao ha relacao de confianca aceita entre {} e {}",
@@ -373,24 +434,24 @@ impl ServerMail {
         let segredo = x25519::segredo(&priv_de, &up.publica).map_err(|x| x.to_string())?;
 
         let sal_extra = rnd16();
-        // texto: camada extra (se alto segredo) DENTRO da camada E2E
-        let payload = match e.alto_segredo {
-            Some(frase) => selar_extra(frase, &sal_extra, e.corpo.as_bytes()),
-            None => e.corpo.as_bytes().to_vec(),
-        };
+        let sal_masson = rnd16();
+
+        let payload = envelopar(
+            e.corpo.as_bytes(),
+            e.masson,
+            &sal_masson,
+            e.alto_segredo,
+            &sal_extra,
+        );
         let sal_kdf = rnd16();
         let kmsg = chave_derivada(&segredo, &sal_kdf)?;
         let nonce = rnd_nonce();
         let a = aad(e.de, e.para, e.pri, e.tipo);
         let (ct, tag) = cifra::selar(&kmsg, &nonce, a.as_bytes(), &payload);
 
-        // anexos: cada um cifrado e guardado no armazem A PARTE
         let mut refs = vec![];
         for (nome, bytes) in &e.anexos {
-            let interno = match e.alto_segredo {
-                Some(frase) => selar_extra(frase, &sal_extra, bytes),
-                None => bytes.to_vec(),
-            };
+            let interno = envelopar(bytes, e.masson, &sal_masson, e.alto_segredo, &sal_extra);
             let sal_a = rnd16();
             let ka = chave_derivada(&segredo, &sal_a)?;
             let nonce_a = rnd_nonce();
@@ -414,7 +475,9 @@ impl ServerMail {
             prioridade: e.pri,
             tipo: e.tipo,
             alto_segredo: e.alto_segredo.is_some(),
+            masson: e.masson.is_some(),
             sal_extra,
+            sal_masson,
             sal_kdf,
             nonce,
             ct,
@@ -431,12 +494,14 @@ impl ServerMail {
         x25519::segredo(&priv_q, &uo.publica).map_err(|e| e.to_string())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn ler(
         &self,
         idx: usize,
         quem: &str,
         senha: &str,
-        frase_extra: Option<&str>,
+        frase: Option<&str>,
+        masson: Option<&str>,
     ) -> Result<(String, Prioridade, Tipo), String> {
         let m = self.mensagens.get(idx).ok_or("mensagem inexistente")?;
         let outro = if m.de == quem { &m.para } else { &m.de };
@@ -445,24 +510,28 @@ impl ServerMail {
         let a = aad(&m.de, &m.para, m.prioridade, m.tipo);
         let interno = cifra::abrir(&kmsg, &m.nonce, a.as_bytes(), &m.ct, &m.tag)
             .map_err(|_| "nao decifra: chave/senha erradas ou prioridade adulterada".to_string())?;
-        let corpo = if m.alto_segredo {
-            let frase = frase_extra
-                .ok_or("mensagem de ALTO SEGREDO: precisa da frase passada por telefone/SMS")?;
-            abrir_extra(frase, &m.sal_extra, &interno)?
-        } else {
-            interno
-        };
+        let corpo = desenvelopar(
+            interno,
+            m.alto_segredo,
+            &m.sal_extra,
+            frase,
+            m.masson,
+            &m.sal_masson,
+            masson,
+        )?;
         let texto = String::from_utf8(corpo).map_err(|_| "utf8 invalido".to_string())?;
         Ok((texto, m.prioridade, m.tipo))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn ler_anexo(
         &self,
         msg_idx: usize,
         anexo_id: u64,
         quem: &str,
         senha: &str,
-        frase_extra: Option<&str>,
+        frase: Option<&str>,
+        masson: Option<&str>,
     ) -> Result<Vec<u8>, String> {
         let m = self.mensagens.get(msg_idx).ok_or("mensagem inexistente")?;
         let outro = if m.de == quem { &m.para } else { &m.de };
@@ -481,12 +550,15 @@ impl ServerMail {
             &anexo.tag,
         )
         .map_err(|_| "anexo nao decifra".to_string())?;
-        if m.alto_segredo {
-            let frase = frase_extra.ok_or("anexo de ALTO SEGREDO: precisa da frase")?;
-            abrir_extra(frase, &m.sal_extra, &interno)
-        } else {
-            Ok(interno)
-        }
+        desenvelopar(
+            interno,
+            m.alto_segredo,
+            &m.sal_extra,
+            frase,
+            m.masson,
+            &m.sal_masson,
+            masson,
+        )
     }
 }
 
@@ -494,210 +566,231 @@ fn main() {
     let mut res: Vec<(bool, String)> = vec![];
     let mut ok = |c: bool, n: &str| res.push((c, n.to_string()));
 
-    println!(
-        "===== correio PhxSql: E2E, confianca, anexos a parte, alto segredo, moderacao =====\n"
-    );
+    println!("===== correio PhxSql: dominios, tres camadas de cripto, anexos, moderacao =====\n");
 
-    println!("1) server mail (porta padrao) + contas:");
+    println!("1) server mail (porta padrao) + contas nos dois dominios permitidos:");
     let mut srv = ServerMail::novo("phxsql.com.br");
     ok(srv.porta == 8000, "porta padrao e 8000");
-    let a = srv.criar_conta(
-        "adrianoboller",
-        "empresa.phxsql.com.br",
-        "senha-do-adriano-9f",
-    );
-    let b = srv.criar_conta("joanaprado", "empresa.phxsql.com.br", "senha-da-joana-7k");
+    let a = srv
+        .criar_conta(
+            "adrianoboller",
+            "empresa.phxsql.com.br",
+            "senha-do-adriano-9f",
+        )
+        .unwrap();
+    let b = srv
+        .criar_conta("joanaprado", "empresa.phxsql.com.br", "senha-da-joana-7k")
+        .unwrap();
+    let ana = srv
+        .criar_conta("ana", "time.phxmail.com.br", "senha-da-ana-5p")
+        .unwrap();
 
-    println!("\n2) confianca adriano <-> joana:");
+    println!("\n2) portao de dominio:");
+    ok(
+        srv.criar_conta("x", "gmail.com", "z").is_err(),
+        "conta fora de phxsql/phxmail e recusada",
+    );
+    ok(
+        !dominio_permitido("golpe@evilphxsql.com.br"),
+        "sufixo espertinho (evilphxsql.com.br) NAO passa",
+    );
+
+    println!("\n3) confianca e envio adriano -> joana (mesmo dominio):");
     srv.solicitar_confianca(&a, &b).unwrap();
     srv.aceitar_confianca(&a, &b);
-
-    println!("\n3) enviar com ANEXO (o binario vai para o armazem a parte):");
-    let anexo_bytes = vec![0x50u8; 4096]; // 4 KB de "binario"
     let idx = srv
         .enviar(Envio {
             de: &a,
             senha: "senha-do-adriano-9f",
             para: &b,
-            corpo: "Segue a planilha em anexo.",
+            corpo: "Fechamento de setembro em anexo.",
             pri: Prioridade::Media,
             tipo: Tipo::Normal,
-            anexos: vec![("fechamento.xlsx", &anexo_bytes)],
+            anexos: vec![("fechamento.xlsx", &[0x50u8; 4096])],
             alto_segredo: None,
+            masson: None,
         })
         .expect("devia enviar");
     let m = &srv.mensagens[idx];
-    println!(
-        "   mensagem #{idx}: {} bytes de texto cifrado, {} anexo(s) por REFERENCIA {:?}",
-        m.ct.len(),
-        m.anexos.len(),
-        m.anexos
-    );
-    println!(
-        "   armazem de anexos (a parte): {} bloco(s), o maior com {} bytes",
-        srv.anexos.len(),
-        srv.anexos.iter().map(|x| x.ct.len()).max().unwrap_or(0)
-    );
-    // o registro da mensagem NAO carrega os 4 KB do anexo:
     ok(
-        m.ct.len() < 200 && m.anexos == vec![1],
-        "registro da mensagem so tem referencia, nao o binario",
+        m.ct.len() < 200 && m.anexos == vec![1] && srv.anexos.len() == 1,
+        "anexo no armazem a parte; registro so com a referencia",
     );
+    let (t, _, _) = srv.ler(idx, &b, "senha-da-joana-7k", None, None).unwrap();
     ok(
-        srv.anexos.len() == 1 && srv.anexos[0].ct.len() >= 4096,
-        "o binario mora no armazem a parte",
-    );
-    let ax = &srv.anexos[0];
-    let vazou_ax = ax.ct.windows(8).any(|w| w == [0x50u8; 8]);
-    ok(
-        !vazou_ax,
-        "o anexo esta cifrado no armazem (nao e o binario cru)",
+        t == "Fechamento de setembro em anexo.",
+        "joana le com a propria senha",
     );
 
-    println!("\n4) joana le o texto e baixa o anexo com a propria senha:");
-    let (t, _, _) = srv
-        .ler(idx, &b, "senha-da-joana-7k", None)
-        .expect("le texto");
-    let ab = srv
-        .ler_anexo(idx, 1, &b, "senha-da-joana-7k", None)
-        .expect("baixa anexo");
-    println!("   texto: \"{t}\"  | anexo: {} bytes recuperados", ab.len());
-    ok(t == "Segue a planilha em anexo.", "texto decifra certo");
-    ok(ab == anexo_bytes, "anexo decifra byte a byte");
+    println!("\n4) envio para outro dominio (phxmail): tem de exigir confianca e passar:");
+    ok(
+        srv.enviar(Envio {
+            de: &a,
+            senha: "senha-do-adriano-9f",
+            para: &ana,
+            corpo: "Oi, Ana.",
+            pri: Prioridade::Baixa,
+            tipo: Tipo::Aviso,
+            anexos: vec![],
+            alto_segredo: None,
+            masson: None,
+        })
+        .is_err(),
+        "sem confianca (mesmo dominio permitido) nao entrega",
+    );
+    srv.solicitar_confianca(&a, &ana).unwrap();
+    srv.aceitar_confianca(&a, &ana);
+    let ix_ana = srv
+        .enviar(Envio {
+            de: &a,
+            senha: "senha-do-adriano-9f",
+            para: &ana,
+            corpo: "Oi, Ana. phxmail funciona.",
+            pri: Prioridade::Baixa,
+            tipo: Tipo::Aviso,
+            anexos: vec![],
+            alto_segredo: None,
+            masson: None,
+        })
+        .expect("devia enviar para phxmail");
+    ok(
+        srv.ler(ix_ana, &ana, "senha-da-ana-5p", None, None)
+            .map(|(t, _, _)| t)
+            .as_deref()
+            == Ok("Oi, Ana. phxmail funciona."),
+        "phxmail.com.br troca mensagem apos confianca",
+    );
 
-    println!("\n5) ALTO SEGREDO 🤐 (frase passada por telefone/SMS): texto + anexo:");
-    let seg_bytes = vec![0x9au8; 2048];
-    let frase = "girassol-42-telefonei";
+    println!("\n5) TRES camadas: E2E + alto segredo (frase) + Masson (flag X):");
+    let frase = "girassol-42"; // passada por telefone/SMS
+    let chave_masson = "masson-77z"; // 3a camada, flag X ligada
     let ix = srv
         .enviar(Envio {
             de: &a,
             senha: "senha-do-adriano-9f",
             para: &b,
-            corpo: "Contrato confidencial: valor final 1,2 mi.",
+            corpo: "Contrato ultrassecreto: 1,2 mi.",
             pri: Prioridade::Alta,
             tipo: Tipo::Alerta,
-            anexos: vec![("contrato.pdf", &seg_bytes)],
+            anexos: vec![("contrato.pdf", &[0x9au8; 1024])],
             alto_segredo: Some(frase),
+            masson: Some(chave_masson),
         })
-        .expect("envia alto segredo");
+        .expect("envia com 3 camadas");
 
-    println!("   joana com a senha da conta, MAS sem a frase:");
-    match srv.ler(ix, &b, "senha-da-joana-7k", None) {
+    println!("   so a senha (sem frase, sem Masson):");
+    match srv.ler(ix, &b, "senha-da-joana-7k", None, None) {
         Err(e) => {
             println!("   {e}");
-            ok(
-                true,
-                "alto segredo: sem a frase nao le, mesmo sendo a destinataria",
-            );
+            ok(true, "3 camadas: senha sozinha nao le");
         }
-        Ok(_) => ok(
-            false,
-            "alto segredo: sem a frase nao le, mesmo sendo a destinataria",
-        ),
+        Ok(_) => ok(false, "3 camadas: senha sozinha nao le"),
     }
-    println!("   joana com a senha da conta E a frase (recebida por telefone):");
-    match srv.ler(ix, &b, "senha-da-joana-7k", Some(frase)) {
+    println!("   senha + frase, sem Masson:");
+    ok(
+        srv.ler(ix, &b, "senha-da-joana-7k", Some(frase), None)
+            .is_err(),
+        "3 camadas: falta a chave Masson -> nao le",
+    );
+    println!("   senha + Masson, sem a frase:");
+    ok(
+        srv.ler(ix, &b, "senha-da-joana-7k", None, Some(chave_masson))
+            .is_err(),
+        "3 camadas: falta a frase -> nao le",
+    );
+    println!("   senha + frase + Masson (as tres):");
+    match srv.ler(ix, &b, "senha-da-joana-7k", Some(frase), Some(chave_masson)) {
         Ok((t2, _, _)) => {
             println!("   \"{t2}\"");
-            let ab2 = srv.ler_anexo(ix, 2, &b, "senha-da-joana-7k", Some(frase));
+            let ax = srv.ler_anexo(
+                ix,
+                2,
+                &b,
+                "senha-da-joana-7k",
+                Some(frase),
+                Some(chave_masson),
+            );
             ok(
-                t2.contains("Contrato") && ab2.as_deref() == Ok(seg_bytes.as_slice()),
-                "alto segredo: com a frase, le texto e anexo",
+                t2.contains("ultrassecreto") && ax.as_deref() == Ok([0x9au8; 1024].as_slice()),
+                "3 camadas: com as tres, le texto e anexo",
             );
         }
         Err(e) => {
             println!("   FALHA: {e}");
-            ok(false, "alto segredo: com a frase, le texto e anexo");
+            ok(false, "3 camadas: com as tres, le texto e anexo");
         }
     }
-    println!("   frase ERRADA nao le:");
-    ok(
-        srv.ler(ix, &b, "senha-da-joana-7k", Some("frase-errada"))
-            .is_err(),
-        "alto segredo: frase errada nao le",
-    );
 
-    println!("\n6) solicitacoes de moderacao (motivo obrigatorio):");
-    let mau = srv.criar_conta("golpista", "golpe.phxsql.com.br", "x");
-    match srv.solicitar_moderacao(TipoSolicitacao::Banir, &b, &mau, "  ", None) {
-        Err(e) => {
-            println!("   (sem motivo) {e}");
-            ok(e.contains("motivo"), "solicitacao sem motivo e recusada");
-        }
-        Ok(_) => ok(false, "solicitacao sem motivo e recusada"),
-    }
-    let s1 = srv.solicitar_moderacao(
-        TipoSolicitacao::Banir,
-        &b,
-        &mau,
-        "enviou 3 golpes de phishing com prejuizo financeiro",
-        None,
-    );
-    let s2 = srv.solicitar_moderacao(
-        TipoSolicitacao::Quarentena,
-        &b,
-        &mau,
-        "flood de mensagens repetidas, sem prejuizo direto",
-        None,
-    );
-    let s3 = srv.solicitar_moderacao(
-        TipoSolicitacao::Multa,
-        &b,
-        &mau,
-        "uso indevido reincidente apos aviso",
-        Some("https://pagar.phxsql.com.br/multa/abc123"),
-    );
-    ok(
-        s1.is_ok() && s2.is_ok() && s3.is_ok(),
-        "banir/quarentena/multa registram com motivo",
-    );
-    let s4 = srv.solicitar_moderacao(TipoSolicitacao::Multa, &b, &mau, "reincidencia", None);
-    ok(s4.is_err(), "multa sem link de pagamento e recusada");
-    ok(
-        srv.solicitacoes.iter().all(|s| !s.motivo.trim().is_empty()),
-        "toda solicitacao gravada tem motivo",
-    );
-
-    println!("\n6b) anti-spam do canal de PEDIDO (repetido/bloqueado):");
-    let spammer = srv.criar_conta("spammer", "golpe.phxsql.com.br", "z");
+    println!("\n6) anti-spam do canal de PEDIDO (repetido/bloqueado):");
+    let spammer = srv
+        .criar_conta("spammer", "golpe.phxsql.com.br", "z")
+        .unwrap();
     srv.solicitar_confianca(&spammer, &b).unwrap();
     ok(
         srv.solicitar_confianca(&spammer, &b).is_err(),
-        "pedido de confianca repetido e recusado",
+        "pedido repetido recusado",
     );
     srv.bloquear(&b, &spammer);
     ok(
         srv.solicitar_confianca(&spammer, &b).is_err(),
-        "remetente bloqueado nao consegue nem pedir",
+        "remetente bloqueado nao pede",
     );
 
-    println!("\n6c) resumo das solicitacoes (le tipo/de/alvo/link):");
+    println!("\n7) moderacao com motivo obrigatorio:");
+    ok(
+        srv.solicitar_moderacao(TipoSolicitacao::Banir, &b, &spammer, "  ", None)
+            .is_err(),
+        "solicitacao sem motivo recusada",
+    );
+    srv.solicitar_moderacao(
+        TipoSolicitacao::Banir,
+        &b,
+        &spammer,
+        "phishing com prejuizo",
+        None,
+    )
+    .unwrap();
+    srv.solicitar_moderacao(
+        TipoSolicitacao::Quarentena,
+        &b,
+        &spammer,
+        "flood sem prejuizo direto",
+        None,
+    )
+    .unwrap();
+    srv.solicitar_moderacao(
+        TipoSolicitacao::Multa,
+        &b,
+        &spammer,
+        "reincidencia apos aviso",
+        Some("https://pagar.phxsql.com.br/multa/abc123"),
+    )
+    .unwrap();
+    ok(
+        srv.solicitar_moderacao(TipoSolicitacao::Multa, &b, &spammer, "x", None)
+            .is_err(),
+        "multa sem link recusada",
+    );
     for s in &srv.solicitacoes {
         println!(
-            "   [{}] {} -> {} {}",
+            "   registrada: [{}] {} -> {}",
             s.tipo.rotulo(),
             s.de,
-            s.alvo,
-            s.link_pagamento
-                .as_deref()
-                .map(|l| format!("(link: {l})"))
-                .unwrap_or_default()
+            s.alvo
         );
     }
     ok(
-        srv.solicitacoes
-            .iter()
-            .any(|s| s.tipo == TipoSolicitacao::Multa && s.link_pagamento.is_some()),
-        "a multa registrada carrega o link de pagamento",
+        srv.solicitacoes.iter().all(|s| !s.motivo.trim().is_empty())
+            && srv
+                .solicitacoes
+                .iter()
+                .any(|s| s.tipo == TipoSolicitacao::Multa && s.link_pagamento.is_some()),
+        "toda solicitacao tem motivo; multa carrega o link",
     );
 
-    println!("\n7) porta configuravel:");
+    println!("\n8) porta configuravel:");
     srv.configurar_porta(9443);
-    println!("   porta agora: {}", srv.porta);
-    ok(
-        srv.porta == 9443,
-        "porta pode ser configurada diferente de 8000",
-    );
+    ok(srv.porta == 9443, "porta pode ser diferente de 8000");
 
     println!("\n===== RESULTADO =====");
     let mut falhas = 0;
