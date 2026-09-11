@@ -655,6 +655,38 @@ lição é a mesma da limitação do 403: **limitação que bloqueia um papel se
 remede a cada rodada, e some quando o teto passa**. A retomada foi por
 `SendMessage` a cada agente com o contexto preservado, e a worktree limpa de
 cada um provou que nenhum tinha escrito antes de morrer.
+
+## Fechar a rodada e o portão que amarra os geradores (11/09/2026)
+
+Ordem do dono: *«pode seguir com o trabalho, ative o time»*. A revisão de gaps
+tinha achado a rodada anterior fechada nas **fontes** (PENDENCIAS, STATUS, as
+seis decisões de 10/09) mas parada nos **derivados**: os painéis apontavam para
+`ccb45b1`, antes do 211. Fechar a rodada foi re-rodar os geradores e, o mais
+importante, **amarrá-los a um portão** para não envelhecerem calados de novo.
+
+| frente | escalão | por quê | papéis dispensados |
+|---|---|---|---|
+| **H — fechar a rodada** (14 geradores) | **mecânico e verificável** | rodar geradores roteirizados; o diff prova, é o «o que se confere sozinho» que a delegação mecânica pede | C, D, E, J — «fechar derivados» não toca formato, ambiente, paleta, nem pede receita de fora |
+| **Portão — G+B+F** | **projeto e risco** | portão de QA cujo falso-negativo reabre a porta que a rodada fechou; os três modos (`exato`/`sem-carimbo`/`nota-cargo`) e a prova real RED→GREEN são desenho | (F é a própria prova; C/E não tocam) |
+| **G-audit** (catálogo de guardas) | **mecânico** | varredura código↔catálogo, só leitura; o erro se vê na comparação | escreve nada |
+| **Comparativo** (papel J, a pedido do dono) | **mecânico-síntese** | reunir número medido com procedência «medido/citado»; o erro se vê no doc | só leitura |
+| **Integração** (orquestrador) | **projeto e risco** | o defeito do encontro apareceu: a H achou o `TECNOLOGIAS` **fora dos 14** (imprime-e-cola, envelhece), e o portão do agente, rodado contra o `6858fa4`, foi VERMELHO nomeando a própria falha que a rodada fechou. A prova real do portão foi **refeita aqui** — agente devolve relatório, não prova | — |
+
+**Dois motivos de escalão medidos.** O forte (Opus) só no portão, porque é o
+único com risco de projeto — um portão em que ninguém acredita não segura nada.
+O resto no mecânico, porque o erro deles se vê no diff ou na comparação.
+
+**O paralelismo segurado, com o número.** Só **uma** worktree isolada (a do
+portão): o disco a 3,2 GB não comporta dois `target/` sem furar o piso de 2 GB
+do zelador, e as frentes serializariam no mesmo `flock` do cargo de qualquer
+jeito. Segurar frente por disco é decisão do dono — a regra do zelador.
+
+**A lição de plataforma voltou por outro lado.** A corrente do batimento fino
+«arrebentou» num falso positivo — um elo disparou **atrasado** (06:02 soltou às
+06:20), e eu, de cabeça na rodada, quase forjei um segundo elo. Reconciliado
+sem quebrar «nunca dois elos»: o elo atrasado só refrescou o pulso, o sucessor
+já pendente seguiu sozinho.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

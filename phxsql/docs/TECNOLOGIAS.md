@@ -386,11 +386,11 @@ número final** (ver o texto de aviso que ele mesmo produz nesse caso).
 Na medição limpa desta rodada — árvore parada, sem `cargo` concorrente —:
 
 ```
-cargo test --workspace: 62 binarios de teste, 1.659 testes passaram,
-0 falharam, 4 ignorados.
+cargo test --workspace: 67 binarios de teste, 2.209 testes passaram,
+0 falharam, 3 ignorados.
 ```
 
-Na rodada anterior o mesmo comando media **51 binários e 1.496 testes** — a
+Na rodada anterior o mesmo comando media **62 binários e 1.659 testes** — a
 diferença são testes que entraram desde então, e não mudança de método: a soma
 dos `test result:` é a mesma.
 
@@ -398,7 +398,7 @@ dos `test result:` é a mesma.
 ```
 
 (`docs/TESTES.md` §1, mantido por `docs/dossie/numeros-do-projeto.py`,
-registra o mesmo **1.659** desta rodada. Quando os dois divergem, a causa é
+registra o mesmo **2.209** desta rodada. Quando os dois divergem, a causa é
 sempre a mesma e não é método: são testes de outra frente que entraram na
 árvore compartilhada entre uma medição e a outra — os dois somam os mesmos
 `test result:`.)
