@@ -245,7 +245,7 @@
       <div class="fo"><div class="n">02</div><div><h3>Zero dependências externas</h3><p>Só a biblioteca padrão. Criptografia, JSON, compressão — tudo escrito e provado aqui. Sem supply‑chain para comprometer; compila offline e cruza de arquitetura.</p></div></div>
       <div class="fo"><div class="n">03</div><div><h3>Provado contra vetor oficial</h3><p>SHA‑256, HMAC, ChaCha20‑Poly1305, X25519, Ed25519, PBKDF2 — conferidos contra FIPS/RFC. Nada de «parece certo»: cada peça passa por prova real.</p></div></div>
       <div class="fo"><div class="n">04</div><div><h3>Sem spam por desenho</h3><p>Não existe contato sem confiança aceita — nos dois canais (mensagem e pedido). O problema que consome o e‑mail tradicional aqui não nasce.</p></div></div>
-      <div class="fo"><div class="n">05</div><div><h3>Conformidade embutida</h3><p>Cadastro exige CPF/CNPJ válidos; o documento fica cifrado em repouso (chave única por índice cego). Apagar é apagar — sem rastro, na trilha LGPD.</p></div></div>
+      <div class="fo"><div class="n">05</div><div><h3>Conformidade embutida</h3><p>Cadastro exige CPF/CNPJ válidos e únicos; o documento é oculto e imutável após o cadastro — nunca exibido em tela. Apagar é apagar — sem rastro, na trilha LGPD.</p></div></div>
       <div class="fo"><div class="n">06</div><div><h3>Portátil e barato de rodar</h3><p>Um binário, sem banco de terceiros nem fila. Roda numa VM modesta; a infra escala por nós, não por um monólito central caro.</p></div></div>
     </div>
   </div>
@@ -263,7 +263,7 @@
           <li>Escada de cifra E2E: <b>5 níveis</b>, respostas assinadas, corpo sem acento</li>
           <li>Replicação master→slaves e <b>cluster</b> (eleição/failover), medidos</li>
           <li>Provisionamento de DNS no Cloudflare (contra servidor falso)</li>
-          <li>Cadastro: <b>CPF/CNPJ válidos</b>, chave única, cifra em repouso</li>
+          <li>Cadastro: <b>CPF/CNPJ válidos</b>, chave única, oculto e imutável</li>
           <li>Cripto escrita à mão, conferida contra <b>FIPS/RFC</b></li>
         </ul>
       </div>

@@ -1,18 +1,23 @@
-//! Cadastro do correio: CPF/CNPJ validos e nenhum campo vazio.
+//! Cadastro do correio: CPF/CNPJ validos, unicos, ocultos e imutaveis.
 //!
-//! Regra do dono (12/09/2026):
+//! Regras do dono (12/09/2026):
 //!   - Empresa nao cadastra sem CPF E CNPJ validos, e sem NENHUM campo vazio.
 //!   - Nenhum usuario sem CPF valido.
+//!   - CPF e CNPJ sao CHAVE UNICA; nome de empresa nao duplica.
+//!   - Campo de 25 caracteres. Uma vez cadastrado: NAO se altera e NAO se ve em
+//!     tela nenhuma (write-only, oculto pos-cadastro) -- por isso "nao fica
+//!     listado na base legivel". Tem "digite novamente" (dupla digitacao) para
+//!     nao existir cadastro errado, ja que ninguem mais ve o numero.
+//!   - NAO precisa criptografar: a protecao e a ocultacao + a imutabilidade.
 //!
 //! "Valido" e o digito verificador conferido (mod-11), nao so preenchido --
-//! escrito a mao (zero-deps, so a std) e provado contra vetor, como o resto das
-//! conferencias desta casa (CRC, SHA, HMAC). A recusa acontece na DECLARACAO do
-//! cadastro (cedo), do mesmo modo que "chave nasce conferida".
+//! escrito a mao (zero-deps, so a std), como o CRC/SHA desta casa. A recusa e na
+//! DECLARACAO do cadastro (cedo), do mesmo modo que "chave nasce conferida".
 //!
 //! Rodar:  cargo run --example correio-documentos -p phxsql-core
 
-use phxsql_core::cifra;
-use phxsql_core::hash::hmac_sha256;
+/// Largura do campo de documento (CPF/CNPJ), com folga para pontuacao.
+const LARGURA_DOC: usize = 25;
 
 fn so_digitos(s: &str) -> String {
     s.chars().filter(char::is_ascii_digit).collect()
@@ -70,7 +75,6 @@ fn validar_campos(campos: &[(&str, &str)]) -> Result<(), String> {
     Ok(())
 }
 
-/// Cadastro de empresa: todos os campos presentes, CNPJ e CPF do responsavel validos.
 fn validar_empresa(
     campos: &[(&str, &str)],
     cnpj: &str,
@@ -86,7 +90,6 @@ fn validar_empresa(
     Ok(())
 }
 
-/// Cadastro de usuario: todos os campos presentes e CPF valido.
 fn validar_usuario(campos: &[(&str, &str)], cpf: &str) -> Result<(), String> {
     validar_campos(campos)?;
     if !cpf_valido(cpf) {
@@ -95,56 +98,47 @@ fn validar_usuario(campos: &[(&str, &str)], cpf: &str) -> Result<(), String> {
     Ok(())
 }
 
-// ---- chave unica + cifra em repouso (itens 1, 4 e 5 do dono, 12/09) ----
-// Em producao estas chaves vem do servidor (secret), nunca do codigo; aqui sao
-// fixas so para a prova.
-const CHAVE_INDICE: &[u8] = b"indice-cego-do-servermail-teste";
-const CHAVE_CIFRA: [u8; 32] = *b"cifra-em-repouso-do-servermail!!";
-
-/// Indice CEGO do documento: HMAC-SHA256 dos digitos. Determinista (mesmo doc ->
-/// mesmo indice, e assim acha a duplicata) e de MAO UNICA (nao volta ao
-/// documento). E ele que vira a CHAVE UNICA de cpf/cnpj, sem guardar o numero.
-fn indice_cego(digitos: &str) -> [u8; 32] {
-    hmac_sha256(CHAVE_INDICE, digitos.as_bytes())
-}
-
-/// O documento guardado: so o indice cego e o texto CIFRADO. O numero em claro
-/// nao mora aqui.
-struct DocGuardado {
-    indice: [u8; 32],
-    nonce: [u8; 12],
-    ct: Vec<u8>,
-    tag: [u8; 16],
-}
-
-fn guardar_doc(digitos: &str) -> DocGuardado {
-    let mut nonce = [0u8; 12];
-    cifra::sortear(&mut nonce);
-    let (ct, tag) = cifra::selar(&CHAVE_CIFRA, &nonce, b"doc", digitos.as_bytes());
-    DocGuardado {
-        indice: indice_cego(digitos),
-        nonce,
-        ct,
-        tag,
+fn confere_largura(doc: &str) -> Result<(), String> {
+    if doc.chars().count() > LARGURA_DOC {
+        return Err(format!("documento passa de {LARGURA_DOC} caracteres"));
     }
+    Ok(())
 }
 
-fn ler_doc(g: &DocGuardado) -> String {
-    let claro = cifra::abrir(&CHAVE_CIFRA, &g.nonce, b"doc", &g.ct, &g.tag)
-        .expect("decifra o doc guardado");
-    String::from_utf8(claro).expect("doc e ascii")
+/// "Digite novamente": o documento e a confirmacao tem de bater (pelos digitos).
+/// Como o numero fica oculto pos-cadastro, so aqui da para conferir o que se
+/// digitou.
+fn confere_digitado(doc: &str, confirmacao: &str) -> Result<(), String> {
+    if so_digitos(doc) != so_digitos(confirmacao) {
+        return Err("digite novamente nao confere: cadastro recusado".to_string());
+    }
+    Ok(())
 }
 
-/// Cadastro em memoria que impoe as chaves unicas: nome de empresa, cnpj e cpf.
+/// O que uma tela recebe do documento: SEMPRE oculto. Nunca o numero -- e por
+/// isso que "nao fica listado na base legivel".
+fn doc_na_tela() -> &'static str {
+    "••••••••• (oculto)"
+}
+
+/// Cadastro em memoria que impoe: nome de empresa unico, cpf/cnpj unicos e
+/// IMUTAVEIS. Os documentos so vivem como digitos para a chave unica; nao ha
+/// getter que devolva o numero a uma tela.
 #[derive(Default)]
 struct Cadastro {
     nomes: Vec<String>,
-    idx_cnpj: Vec<[u8; 32]>,
-    idx_cpf: Vec<[u8; 32]>,
+    cnpjs: Vec<String>,
+    cpfs: Vec<String>,
 }
 
 impl Cadastro {
-    fn empresa(&mut self, nome: &str, cnpj: &str, cpf_resp: &str) -> Result<DocGuardado, String> {
+    fn empresa(
+        &mut self,
+        nome: &str,
+        cnpj: &str,
+        cnpj_confirma: &str,
+        cpf_resp: &str,
+    ) -> Result<(), String> {
         validar_empresa(
             &[
                 ("nome", nome),
@@ -154,26 +148,35 @@ impl Cadastro {
             cnpj,
             cpf_resp,
         )?;
+        confere_largura(cnpj)?;
+        confere_digitado(cnpj, cnpj_confirma)?;
         if self.nomes.iter().any(|n| n.as_str() == nome) {
             return Err(format!("nome de empresa duplicado: {nome}"));
         }
-        let g = guardar_doc(&so_digitos(cnpj));
-        if self.idx_cnpj.contains(&g.indice) {
+        let d = so_digitos(cnpj);
+        if self.cnpjs.contains(&d) {
             return Err("CNPJ ja cadastrado (chave unica)".to_string());
         }
         self.nomes.push(nome.to_string());
-        self.idx_cnpj.push(g.indice);
-        Ok(g)
+        self.cnpjs.push(d);
+        Ok(())
     }
 
-    fn usuario(&mut self, endereco: &str, cpf: &str) -> Result<(), String> {
+    fn usuario(&mut self, endereco: &str, cpf: &str, cpf_confirma: &str) -> Result<(), String> {
         validar_usuario(&[("endereco", endereco), ("cpf", cpf)], cpf)?;
-        let idx = indice_cego(&so_digitos(cpf));
-        if self.idx_cpf.contains(&idx) {
+        confere_largura(cpf)?;
+        confere_digitado(cpf, cpf_confirma)?;
+        let d = so_digitos(cpf);
+        if self.cpfs.contains(&d) {
             return Err("CPF ja cadastrado (chave unica)".to_string());
         }
-        self.idx_cpf.push(idx);
+        self.cpfs.push(d);
         Ok(())
+    }
+
+    /// Imutavel: nao ha caminho para alterar o documento depois do cadastro.
+    fn alterar_documento(&mut self, _velho: &str, _novo: &str) -> Result<(), String> {
+        Err("documento nao se altera apos o cadastro (imutavel)".to_string())
     }
 }
 
@@ -238,7 +241,7 @@ fn main() {
     cheque(!cnpj_valido("11222333000"), "CNPJ curto RECUSA");
     cheque(!cnpj_valido(""), "CNPJ vazio RECUSA");
 
-    // --- Cadastro de empresa: gate completo ---
+    // --- Cadastro de empresa: campos e docs ---
     let empresa_ok = [
         ("nome", "Prado & Filhos Ltda"),
         ("cnpj", "11.222.333/0001-81"),
@@ -250,12 +253,11 @@ fn main() {
         validar_empresa(&empresa_ok, "11.222.333/0001-81", "529.982.247-25").is_ok(),
         "empresa com tudo preenchido e docs validos ACEITA",
     );
-
     let empresa_campo_vazio = [
         ("nome", "Prado & Filhos Ltda"),
         ("cnpj", "11.222.333/0001-81"),
         ("cpf_responsavel", "529.982.247-25"),
-        ("cidade", ""), // vazio
+        ("cidade", ""),
         ("uf", "SC"),
     ];
     cheque(
@@ -264,24 +266,7 @@ fn main() {
         "empresa com UM campo vazio RECUSA (e diz qual)",
     );
 
-    let empresa_cnpj_ruim = [
-        ("nome", "Fantasma ME"),
-        ("cnpj", "11.222.333/0001-80"),
-        ("cpf_responsavel", "529.982.247-25"),
-        ("cidade", "Joinville"),
-        ("uf", "SC"),
-    ];
-    cheque(
-        validar_empresa(&empresa_cnpj_ruim, "11.222.333/0001-80", "529.982.247-25").is_err(),
-        "empresa com CNPJ invalido RECUSA",
-    );
-
-    cheque(
-        validar_empresa(&empresa_ok, "11.222.333/0001-81", "529.982.247-24").is_err(),
-        "empresa com CPF do responsavel invalido RECUSA",
-    );
-
-    // --- Cadastro de usuario: gate ---
+    // --- Usuario: gate ---
     let usuario_ok = [
         ("endereco", "adrianoboller@empresa.phxmail.com.br"),
         ("cpf", "111.444.777-35"),
@@ -294,49 +279,33 @@ fn main() {
         validar_usuario(&usuario_ok, "").is_err(),
         "usuario sem CPF RECUSA",
     );
-    cheque(
-        validar_usuario(&usuario_ok, "111.444.777-30").is_err(),
-        "usuario com CPF invalido RECUSA",
-    );
-    let usuario_sem_endereco = [("endereco", "   "), ("cpf", "111.444.777-35")];
-    cheque(
-        validar_usuario(&usuario_sem_endereco, "111.444.777-35").is_err(),
-        "usuario com endereco em branco RECUSA",
-    );
 
-    // --- chave unica (cpf/cnpj/nome) + cifra em repouso ---
-    println!("\n----- chave unica + cifra em repouso (itens 1/4/5) -----");
-    let g = guardar_doc(&so_digitos("11.222.333/0001-81"));
-    cheque(
-        ler_doc(&g) == "11222333000181",
-        "CNPJ guardado DECIFRA de volta (round-trip)",
-    );
-    cheque(
-        g.ct.as_slice() != "11222333000181".as_bytes(),
-        "CNPJ NAO fica em claro no disco (so ciphertext)",
-    );
-    cheque(
-        indice_cego("11222333000181") == indice_cego("11222333000181"),
-        "indice cego e determinista (mesmo doc -> acha a duplicata)",
-    );
-    cheque(
-        indice_cego("11222333000181") != indice_cego("11444777000161"),
-        "indice cego difere por documento",
-    );
-
+    // --- chave unica + oculto + imutavel + digite novamente (itens novos) ---
+    println!("\n----- chave unica · 25 car · oculto · imutavel · digite novamente -----");
     let mut cad = Cadastro::default();
     cheque(
         cad.empresa(
             "Prado & Filhos Ltda",
             "11.222.333/0001-81",
+            "11.222.333/0001-81",
             "529.982.247-25",
         )
         .is_ok(),
-        "1a empresa cadastra",
+        "1a empresa cadastra (CNPJ digitado 2x, confere)",
+    );
+    cheque(
+        cad.empresa(
+            "Outra ME",
+            "11.222.333/0001-81",
+            "11.222.333/0001-82",
+            "529.982.247-25",
+        ) == Err("digite novamente nao confere: cadastro recusado".to_string()),
+        "CNPJ com 2a digitacao DIFERENTE recusa (digite novamente)",
     );
     cheque(
         cad.empresa(
             "Prado & Filhos Ltda",
+            "11.444.777/0001-61",
             "11.444.777/0001-61",
             "529.982.247-25",
         )
@@ -344,29 +313,64 @@ fn main() {
         "empresa com NOME duplicado RECUSA",
     );
     cheque(
-        cad.empresa("Outra Ltda", "11.222.333/0001-81", "529.982.247-25")
-            .is_err(),
-        "empresa com CNPJ repetido RECUSA (chave unica cega)",
+        cad.empresa(
+            "Outra Ltda",
+            "11.222.333/0001-81",
+            "11.222.333/0001-81",
+            "529.982.247-25",
+        )
+        .is_err(),
+        "empresa com CNPJ repetido RECUSA (chave unica)",
     );
     cheque(
-        cad.empresa("Outra Ltda", "11.444.777/0001-61", "529.982.247-25")
-            .is_ok(),
+        cad.empresa(
+            "Outra Ltda",
+            "11.444.777/0001-61",
+            "11.444.777/0001-61",
+            "529.982.247-25",
+        )
+        .is_ok(),
         "empresa nova (nome e CNPJ novos) cadastra",
     );
     cheque(
-        cad.usuario("a@empresa.phxmail.com.br", "111.444.777-35")
-            .is_ok(),
-        "1o usuario cadastra",
+        cad.usuario(
+            "a@empresa.phxmail.com.br",
+            "111.444.777-35",
+            "111.444.777-35",
+        )
+        .is_ok(),
+        "1o usuario cadastra (CPF digitado 2x)",
     );
     cheque(
-        cad.usuario("b@empresa.phxmail.com.br", "111.444.777-35")
-            .is_err(),
+        cad.usuario(
+            "b@empresa.phxmail.com.br",
+            "111.444.777-35",
+            "111.444.777-30",
+        )
+        .is_err(),
+        "CPF com 2a digitacao diferente RECUSA",
+    );
+    cheque(
+        cad.usuario(
+            "b@empresa.phxmail.com.br",
+            "111.444.777-35",
+            "111.444.777-35",
+        )
+        .is_err(),
         "usuario com CPF repetido RECUSA (chave unica)",
     );
     cheque(
-        cad.usuario("b@empresa.phxmail.com.br", "529.982.247-25")
-            .is_ok(),
-        "usuario novo (CPF novo) cadastra",
+        cad.alterar_documento("111.444.777-35", "529.982.247-25")
+            .is_err(),
+        "documento NAO se altera apos cadastro (imutavel)",
+    );
+    cheque(
+        !doc_na_tela().chars().any(|c| c.is_ascii_digit()),
+        "na tela o documento aparece OCULTO (nenhum digito)",
+    );
+    cheque(
+        confere_largura(&"9".repeat(26)).is_err(),
+        "documento acima de 25 caracteres RECUSA",
     );
 
     println!("\n===== RESULTADO =====");

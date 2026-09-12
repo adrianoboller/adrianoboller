@@ -74,8 +74,8 @@ entrega.
 |---|---|---|---|
 | `id` | UUID v7 | **PK** | |
 | `nome` | texto | **única** | razão social (DADO — nunca estilizado); **não duplica** |
-| `cnpj` | texto (14 díg) | **única** (índice cego) | pessoa jurídica; **validado (mod‑11)**; **cifrado em repouso** — obrigatório |
-| `cpf_responsavel` | texto (11 díg) | | pessoa física responsável; **validado (mod‑11)**; cifrado em repouso — obrigatório |
+| `cnpj` | texto (25 car) | **única** | pessoa jurídica; **validado (mod‑11)**; **oculto e imutável** pós‑cadastro — obrigatório |
+| `cpf_responsavel` | texto (25 car) | | responsável; **validado (mod‑11)**; oculto e imutável pós‑cadastro — obrigatório |
 | `rotulo` | texto | **única** | rótulo DNS (`prado`, `timeagil`); vira o hostname |
 | `cidade` / `uf` | texto | | metadado |
 | `servermail_id` | UUID v7 | **FK → servermail (RESTRICT)** | qual nó hospeda |
@@ -94,16 +94,21 @@ vazio**. A recusa é na **declaração** (cedo), como «chave nasce conferida».
 CNPJ são **PII que o servidor vê** (precisa validar) — vivem no servermail, na
 trilha LGPD, **não** são E2E.
 
-**Chave única + cifra em repouso** (decisão do dono, 12/09): `cpf`, `cnpj` e o
-`nome` da empresa são **únicos** (não duplicam), e o dono pediu que o documento
-fique **cifrado depois de cadastrado**. Os dois pedidos parecem brigar (chave
-única precisa comparar; cifrado não deixa comparar o texto) — a saída é o
-**índice cego**: guarda‑se `HMAC(chave_do_servidor, dígitos)` como a **chave
-única** (determinista → acha a duplicata; de mão única → não volta ao número) e
-o documento em si vai **cifrado** (ChaCha20‑Poly1305) no `.reg`. O número **não
-fica em claro** no disco. Provado em `crates/phxsql-core/examples/
-correio-documentos.rs` (**33/33 VERDE**, vetores conferidos à mão + cifra
-round‑trip + duplicata recusada).
+**Chave única, oculto e imutável** (decisão do dono, 12/09 — revisada): `cpf`,
+`cnpj` (campo de **25 caracteres**) e o `nome` da empresa são **únicos** (não
+duplicam). Uma vez cadastrado, o documento **não se altera e não aparece em tela
+nenhuma** (write‑only, oculto) — é isso que faz «não ficar listado na base
+legível». Como ninguém mais vê o número, o cadastro pede **«digite novamente»**
+(dupla digitação) para não haver cadastro errado. O dono decidiu que **não
+precisa criptografar**: a proteção é a ocultação + a imutabilidade. Provado em
+`crates/phxsql-core/examples/correio-documentos.rs` (**29/29 VERDE**: mod‑11,
+único, digite‑novamente, imutável, oculto e o limite de 25 caracteres).
+
+> **Nota do papel Segurança (a decidir com o dono):** ocultar na tela protege
+> contra quem olha a interface; **não** protege os bytes em repouso — um dump do
+> `.reg` ou de um backup ainda lê o CPF/CNPJ em claro. Se o alvo LGPD é proteger
+> o dado **no disco**, aí entra a cifra em repouso por coluna marcada (que a casa
+> já tem). A pergunta ao dono: ocultar na tela basta, ou também cifrar no disco?
 
 ## 2. Servermail (nó da rede)
 
@@ -150,7 +155,7 @@ cluster pergunta aos nós «quem é meu?», não guarda a lista embutida.
 |---|---|---|---|
 | `id` | UUID v7 | **PK** | «cliente = uuid v7» |
 | `endereco` | texto | **única** | `local@empresa.dominio` — é o login |
-| `cpf` | texto (11 díg) | **única** (índice cego) | **validado (mod‑11)**; **cifrado em repouso**; **nenhum user sem CPF** |
+| `cpf` | texto (25 car) | **única** | **validado (mod‑11)**; **oculto e imutável** pós‑cadastro; **nenhum user sem CPF** |
 | `empresa` | UUID v7 | **FK → empresas (RESTRICT)** | índice dos dois lados |
 | `estado` | enum | índice | `ativo` / `banido` / `quarentena` |
 | `idioma` | enum | | pt/en/es/fr/de/it |
