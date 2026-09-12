@@ -11,6 +11,9 @@
 //!
 //! Rodar:  cargo run --example correio-documentos -p phxsql-core
 
+use phxsql_core::cifra;
+use phxsql_core::hash::hmac_sha256;
+
 fn so_digitos(s: &str) -> String {
     s.chars().filter(char::is_ascii_digit).collect()
 }
@@ -90,6 +93,88 @@ fn validar_usuario(campos: &[(&str, &str)], cpf: &str) -> Result<(), String> {
         return Err(format!("CPF invalido: {cpf}"));
     }
     Ok(())
+}
+
+// ---- chave unica + cifra em repouso (itens 1, 4 e 5 do dono, 12/09) ----
+// Em producao estas chaves vem do servidor (secret), nunca do codigo; aqui sao
+// fixas so para a prova.
+const CHAVE_INDICE: &[u8] = b"indice-cego-do-servermail-teste";
+const CHAVE_CIFRA: [u8; 32] = *b"cifra-em-repouso-do-servermail!!";
+
+/// Indice CEGO do documento: HMAC-SHA256 dos digitos. Determinista (mesmo doc ->
+/// mesmo indice, e assim acha a duplicata) e de MAO UNICA (nao volta ao
+/// documento). E ele que vira a CHAVE UNICA de cpf/cnpj, sem guardar o numero.
+fn indice_cego(digitos: &str) -> [u8; 32] {
+    hmac_sha256(CHAVE_INDICE, digitos.as_bytes())
+}
+
+/// O documento guardado: so o indice cego e o texto CIFRADO. O numero em claro
+/// nao mora aqui.
+struct DocGuardado {
+    indice: [u8; 32],
+    nonce: [u8; 12],
+    ct: Vec<u8>,
+    tag: [u8; 16],
+}
+
+fn guardar_doc(digitos: &str) -> DocGuardado {
+    let mut nonce = [0u8; 12];
+    cifra::sortear(&mut nonce);
+    let (ct, tag) = cifra::selar(&CHAVE_CIFRA, &nonce, b"doc", digitos.as_bytes());
+    DocGuardado {
+        indice: indice_cego(digitos),
+        nonce,
+        ct,
+        tag,
+    }
+}
+
+fn ler_doc(g: &DocGuardado) -> String {
+    let claro = cifra::abrir(&CHAVE_CIFRA, &g.nonce, b"doc", &g.ct, &g.tag)
+        .expect("decifra o doc guardado");
+    String::from_utf8(claro).expect("doc e ascii")
+}
+
+/// Cadastro em memoria que impoe as chaves unicas: nome de empresa, cnpj e cpf.
+#[derive(Default)]
+struct Cadastro {
+    nomes: Vec<String>,
+    idx_cnpj: Vec<[u8; 32]>,
+    idx_cpf: Vec<[u8; 32]>,
+}
+
+impl Cadastro {
+    fn empresa(&mut self, nome: &str, cnpj: &str, cpf_resp: &str) -> Result<DocGuardado, String> {
+        validar_empresa(
+            &[
+                ("nome", nome),
+                ("cnpj", cnpj),
+                ("cpf_responsavel", cpf_resp),
+            ],
+            cnpj,
+            cpf_resp,
+        )?;
+        if self.nomes.iter().any(|n| n.as_str() == nome) {
+            return Err(format!("nome de empresa duplicado: {nome}"));
+        }
+        let g = guardar_doc(&so_digitos(cnpj));
+        if self.idx_cnpj.contains(&g.indice) {
+            return Err("CNPJ ja cadastrado (chave unica)".to_string());
+        }
+        self.nomes.push(nome.to_string());
+        self.idx_cnpj.push(g.indice);
+        Ok(g)
+    }
+
+    fn usuario(&mut self, endereco: &str, cpf: &str) -> Result<(), String> {
+        validar_usuario(&[("endereco", endereco), ("cpf", cpf)], cpf)?;
+        let idx = indice_cego(&so_digitos(cpf));
+        if self.idx_cpf.contains(&idx) {
+            return Err("CPF ja cadastrado (chave unica)".to_string());
+        }
+        self.idx_cpf.push(idx);
+        Ok(())
+    }
 }
 
 fn main() {
@@ -217,6 +302,71 @@ fn main() {
     cheque(
         validar_usuario(&usuario_sem_endereco, "111.444.777-35").is_err(),
         "usuario com endereco em branco RECUSA",
+    );
+
+    // --- chave unica (cpf/cnpj/nome) + cifra em repouso ---
+    println!("\n----- chave unica + cifra em repouso (itens 1/4/5) -----");
+    let g = guardar_doc(&so_digitos("11.222.333/0001-81"));
+    cheque(
+        ler_doc(&g) == "11222333000181",
+        "CNPJ guardado DECIFRA de volta (round-trip)",
+    );
+    cheque(
+        g.ct.as_slice() != "11222333000181".as_bytes(),
+        "CNPJ NAO fica em claro no disco (so ciphertext)",
+    );
+    cheque(
+        indice_cego("11222333000181") == indice_cego("11222333000181"),
+        "indice cego e determinista (mesmo doc -> acha a duplicata)",
+    );
+    cheque(
+        indice_cego("11222333000181") != indice_cego("11444777000161"),
+        "indice cego difere por documento",
+    );
+
+    let mut cad = Cadastro::default();
+    cheque(
+        cad.empresa(
+            "Prado & Filhos Ltda",
+            "11.222.333/0001-81",
+            "529.982.247-25",
+        )
+        .is_ok(),
+        "1a empresa cadastra",
+    );
+    cheque(
+        cad.empresa(
+            "Prado & Filhos Ltda",
+            "11.444.777/0001-61",
+            "529.982.247-25",
+        )
+        .is_err(),
+        "empresa com NOME duplicado RECUSA",
+    );
+    cheque(
+        cad.empresa("Outra Ltda", "11.222.333/0001-81", "529.982.247-25")
+            .is_err(),
+        "empresa com CNPJ repetido RECUSA (chave unica cega)",
+    );
+    cheque(
+        cad.empresa("Outra Ltda", "11.444.777/0001-61", "529.982.247-25")
+            .is_ok(),
+        "empresa nova (nome e CNPJ novos) cadastra",
+    );
+    cheque(
+        cad.usuario("a@empresa.phxmail.com.br", "111.444.777-35")
+            .is_ok(),
+        "1o usuario cadastra",
+    );
+    cheque(
+        cad.usuario("b@empresa.phxmail.com.br", "111.444.777-35")
+            .is_err(),
+        "usuario com CPF repetido RECUSA (chave unica)",
+    );
+    cheque(
+        cad.usuario("b@empresa.phxmail.com.br", "529.982.247-25")
+            .is_ok(),
+        "usuario novo (CPF novo) cadastra",
     );
 
     println!("\n===== RESULTADO =====");

@@ -73,9 +73,9 @@ entrega.
 | Campo | Tipo | Chave / índice | Nota |
 |---|---|---|---|
 | `id` | UUID v7 | **PK** | |
-| `nome` | texto | | razão social (DADO — nunca estilizado) |
-| `cnpj` | texto (14 díg) | **única** | pessoa jurídica; **validado (mod‑11)** — obrigatório |
-| `cpf_responsavel` | texto (11 díg) | | pessoa física responsável; **validado (mod‑11)** — obrigatório |
+| `nome` | texto | **única** | razão social (DADO — nunca estilizado); **não duplica** |
+| `cnpj` | texto (14 díg) | **única** (índice cego) | pessoa jurídica; **validado (mod‑11)**; **cifrado em repouso** — obrigatório |
+| `cpf_responsavel` | texto (11 díg) | | pessoa física responsável; **validado (mod‑11)**; cifrado em repouso — obrigatório |
 | `rotulo` | texto | **única** | rótulo DNS (`prado`, `timeagil`); vira o hostname |
 | `cidade` / `uf` | texto | | metadado |
 | `servermail_id` | UUID v7 | **FK → servermail (RESTRICT)** | qual nó hospeda |
@@ -92,8 +92,18 @@ O registro DNS da empresa (`rotulo.phxmail.com.br`) vive no `CORREIO-DNS.md`.
 válidos** (dígito verificador conferido, mod‑11) **e** com **qualquer campo
 vazio**. A recusa é na **declaração** (cedo), como «chave nasce conferida». CPF e
 CNPJ são **PII que o servidor vê** (precisa validar) — vivem no servermail, na
-trilha LGPD, **não** são E2E. Provado em `crates/phxsql-core/examples/
-correio-documentos.rs` (22/22 VERDE, vetores conferidos à mão).
+trilha LGPD, **não** são E2E.
+
+**Chave única + cifra em repouso** (decisão do dono, 12/09): `cpf`, `cnpj` e o
+`nome` da empresa são **únicos** (não duplicam), e o dono pediu que o documento
+fique **cifrado depois de cadastrado**. Os dois pedidos parecem brigar (chave
+única precisa comparar; cifrado não deixa comparar o texto) — a saída é o
+**índice cego**: guarda‑se `HMAC(chave_do_servidor, dígitos)` como a **chave
+única** (determinista → acha a duplicata; de mão única → não volta ao número) e
+o documento em si vai **cifrado** (ChaCha20‑Poly1305) no `.reg`. O número **não
+fica em claro** no disco. Provado em `crates/phxsql-core/examples/
+correio-documentos.rs` (**33/33 VERDE**, vetores conferidos à mão + cifra
+round‑trip + duplicata recusada).
 
 ## 2. Servermail (nó da rede)
 
@@ -140,7 +150,7 @@ cluster pergunta aos nós «quem é meu?», não guarda a lista embutida.
 |---|---|---|---|
 | `id` | UUID v7 | **PK** | «cliente = uuid v7» |
 | `endereco` | texto | **única** | `local@empresa.dominio` — é o login |
-| `cpf` | texto (11 díg) | | **validado (mod‑11)** — obrigatório; **nenhum user sem CPF** |
+| `cpf` | texto (11 díg) | **única** (índice cego) | **validado (mod‑11)**; **cifrado em repouso**; **nenhum user sem CPF** |
 | `empresa` | UUID v7 | **FK → empresas (RESTRICT)** | índice dos dois lados |
 | `estado` | enum | índice | `ativo` / `banido` / `quarentena` |
 | `idioma` | enum | | pt/en/es/fr/de/it |
