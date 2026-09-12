@@ -1062,7 +1062,16 @@ mod tests {
         let aqui = std::env::current_dir().unwrap();
         let v = vizinho_da_base(Path::new("dados"), "restaurando").unwrap();
         assert_eq!(v.parent().unwrap(), aqui, "o palco saiu do lado da base");
-        assert!(!v.starts_with(std::env::temp_dir()));
+        // O `!starts_with(temp)` so distingue "ao lado da base" de "caiu no
+        // /tmp" quando o proprio diretorio de trabalho NAO esta sob o temp. Ao
+        // extrair os fontes e rodar `cargo test` dentro do /tmp -- o que quem
+        // baixa o zip faz --, `aqui` fica sob o temp_dir e esta asserção
+        // absoluta falharia pelo LUGAR do teste, nao por defeito: o
+        // `v.parent() == aqui` acima ja prova que nao houve fallback, porque o
+        // fallback poria o pai em temp_dir(), e nao no proprio `aqui`.
+        if !aqui.starts_with(std::env::temp_dir()) {
+            assert!(!v.starts_with(std::env::temp_dir()));
+        }
 
         // Com caminho absoluto, o vizinho e o pai mesmo.
         let v = vizinho_da_base(Path::new("/srv/phxsql/dados"), "x").unwrap();
