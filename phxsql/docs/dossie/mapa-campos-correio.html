@@ -242,7 +242,7 @@
           <tr class="meta"><td class="campo">tipo</td><td class="tipo">enum</td><td></td><td class="nota">alerta 🚨 / aviso 🔔 / normal</td></tr>
           <tr class="meta"><td class="campo">nivel</td><td class="tipo">enum</td><td></td><td class="nota">0 padrão / 1 frase / 2 p12 / 3 p12+p12 / masson — <b>autenticado no AAD</b> (<code>de|para|nivel</code>): não se rebaixa calado</td></tr>
           <tr class="meta"><td class="campo">tamanho</td><td class="tipo">inteiro</td><td></td><td class="nota">bytes do blob — o que o servidor mede em vez de ler</td></tr>
-          <tr class="meta"><td class="campo">estado</td><td class="tipo">enum</td><td><span class="kb idx">índice</span></td><td class="nota">na_caixa / lida / <b>na_lixeira</b> (exclusão suave, a marca rosa que volta)</td></tr>
+          <tr class="meta"><td class="campo">estado</td><td class="tipo">enum</td><td><span class="kb idx">índice</span></td><td class="nota">na_caixa / lida / <b>na_lixeira</b> (marca rosa que volta) — <b>não existe rascunho</b>; esvaziar a lixeira é <b>purga</b></td></tr>
           <tr class="meta"><td class="campo">sistema_dt</td><td class="tipo">data/hora GMT</td><td><span class="kb idx">índice</span></td><td class="nota">data/hora completa em GMT; pai <b>estritamente anterior</b> ao filho <span class="decidir">a decidir</span></td></tr>
           <tr class="meta"><td class="campo">anexos</td><td class="tipo">lista de refs</td><td></td><td class="nota">ids de anexos (armazém à parte)</td></tr>
         </tbody>
@@ -278,6 +278,13 @@
           <tr class="e2e"><td class="campo">sal_kdf · nonce · ct · tag</td><td class="tipo">bytes</td><td class="nota">🔒 cifrado à parte, mesma disciplina E2E</td></tr>
         </tbody>
       </table>
+    </div>
+
+    <div class="secao">
+      <div class="st"><span class="barra" style="background:var(--e2e)"></span>🗑️ privacidade — apagar é apagar (exceção declarada ao modelo forense)</div>
+      <p class="nota" style="padding:2px 12px 10px;line-height:1.55">
+        <b>Não existe rascunho</b> (compor não persiste até enviar). <b>Não existe log</b> de e-mail. Esvaziar a lixeira é <b>purga total</b>: sem <code>.trash</code>, sem <code>.reason</code>, sem log — os bytes do blob são <b>zerados</b> no <code>.reg</code> (o slot não se reaproveita: a ordem de digitação é sagrada, some o dado, não a ordem). E <b>não há engenharia reversa</b>: o conteúdo é E2E (servidor sem chave), então mesmo um byte que sobrasse é ciphertext inútil. Ao contrário de toda outra tabela — que é forense de propósito. Ver <code>CORREIO-PRIVACIDADE.md</code>.
+      </p>
     </div>
   </div>
 

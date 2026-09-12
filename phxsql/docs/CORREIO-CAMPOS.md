@@ -134,7 +134,7 @@ Pública clara, privada **selada sob a senha** (PBKDF2 → ChaCha20‑Poly1305):
 | `tipo` | enum | | alerta 🚨 / aviso 🔔 / normal |
 | `nivel` | enum | | 0 / 1 / 2 / 3 / masson — **autenticado no AAD** (`de\|para\|nivel`) |
 | `tamanho` | inteiro | | bytes do blob (o servidor mede, não lê) |
-| `estado` | enum | índice | `na_caixa` / `lida` / `na_lixeira` (exclusão suave) |
+| `estado` | enum | índice | `na_caixa` / `lida` / `na_lixeira`. **Não existe `rascunho`**; esvaziar a lixeira é **purga** total (sem `.trash`/`.reason`/log) — ver `CORREIO-PRIVACIDADE.md` |
 | `sistema_dt` | **data/hora completa GMT** | índice | enviado; pai estritamente anterior ao filho |
 | `anexos` | lista de refs | | ids de anexos (armazém à parte) |
 
@@ -195,3 +195,6 @@ claro (quebra a pétrea) e **não** é o caminho recomendado.
    usuário, e‑mail, anexo, confiança).
 4. **O «meio» do cadastro via Cloudflare** (o binário falando HTTPS) — a pétrea
    zero‑deps × TLS, agora **viva**. Ver `CORREIO-DNS.md` §5 e o fluxo de cadastro.
+5. **O modo «purga» por tabela** (e‑mail e anexo: sem `.trash`, sem `.reason`,
+   sem log; `excluir` zera os bytes) — é o oposto do modelo forense padrão, uma
+   exceção declarada. Ver `CORREIO-PRIVACIDADE.md`.
