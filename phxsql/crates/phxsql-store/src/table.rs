@@ -2641,6 +2641,24 @@ impl Table {
         Ok(Some(linha))
     }
 
+    /// JULGA as regras de escrita (padrao, calculada e CHECK) sobre `valores`
+    /// sem gravar nada e sem devolver a linha transformada -- e para a transacao
+    /// recusar um CHECK NA INSTRUCAO (no `empilhar`), e nao no `COMMIT`, que
+    /// derrubaria a transacao inteira por causa de uma instrucao.
+    ///
+    /// So JULGA de proposito: o `COMMIT` reaplica as regras com `Sequence`/
+    /// `rownum` ja gerados (que aqui ainda sao nulos), e e ele quem transforma a
+    /// linha que vai ao disco -- ter duas transformacoes (uma aqui, outra la)
+    /// arriscaria aplicar uma calculada duas vezes. **Ressalva medida (pedido
+    /// 242):** um CHECK que dependa de `Sequence`/`rownum` ve o numero ainda
+    /// NULO aqui, e a regra do SQL deixa NULO passar -- entao esse CHECK so e
+    /// enforced no `COMMIT`. Nao se forca o numero no empilhar.
+    ///
+    /// Na replica nada disso roda (`aplicar_regras` ja confere `julga_integridade`).
+    pub fn julgar_regras_de_escrita(&self, valores: &[Value], insercao: bool) -> Result<()> {
+        self.aplicar_regras(valores, insercao).map(|_| ())
+    }
+
     // ------------------------------------------------------------ escrita
 
     /// Insere uma linha e devolve o rowid.

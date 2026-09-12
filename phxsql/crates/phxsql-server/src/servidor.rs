@@ -12876,6 +12876,12 @@ impl Servidor {
                             if let Some(set) = atualizar {
                                 linha = crate::upsert::mesclar(&velha, set, t.esquema())?;
                             }
+                            // GAP 242: julga padrao/calculada/CHECK do esquema
+                            // sobre a linha ja mesclada -- este upsert virou um
+                            // `atualizar`, e um CHECK violado recusa AQUI, na
+                            // instrucao, em vez de derrubar a transacao no
+                            // COMMIT.
+                            t.julgar_regras_de_escrita(&linha, false)?;
                             let nova = crate::transacao::Escrita {
                                 database: database.clone(),
                                 tabela: tabela.clone(),
@@ -12902,6 +12908,18 @@ impl Servidor {
                         }
                     }
                 }
+
+                // GAP 242: as regras do esquema -- padrao, calculada e CHECK --
+                // sao JULGADAS aqui, na instrucao, ao lado da unicidade e do
+                // gatilho BEFORE que ja rodam neste `empilhar`. Um CHECK violado
+                // recusa ESTA instrucao e deixa a transacao `ACTIVE`, exatamente
+                // como uma chave duplicada -- em vez de derrubar tudo no COMMIT.
+                // So JULGA: a linha crua e a que empilha, e o COMMIT reaplica as
+                // regras com o numero da `Sequence`/`rownum` ja gerado. Por
+                // isso um CHECK que dependa de `Sequence`/`rownum` NAO e pego
+                // aqui (o numero ainda e nulo, e a regra do SQL deixa nulo
+                // passar) -- so no COMMIT. Nao se forca o numero no empilhar.
+                t.julgar_regras_de_escrita(&linha, true)?;
 
                 // A unicidade contra o INDICE, que e a mesma conferencia que o
                 // `inserir` de hoje faz antes de gravar byte nenhum.
@@ -12993,6 +13011,11 @@ impl Servidor {
                         t.esquema(),
                     )?;
                 }
+                // GAP 242: calculada e CHECK do esquema julgadas na instrucao
+                // (o `atualizar` nao aplica padrao -- por isso `insercao=false`),
+                // ao lado do gatilho BEFORE. CHECK violado recusa AQUI, nao no
+                // COMMIT.
+                t.julgar_regras_de_escrita(&linha, false)?;
                 crate::transacao::Escrita {
                     database: database.clone(),
                     tabela: tabela.clone(),
@@ -33124,6 +33147,101 @@ mod testes_transacoes {
         assert_eq!(r.texto_ou("transaction_state", ""), "IDLE");
         // Nenhuma trava viva no servidor inteiro.
         assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+    }
+
+    // ------------------------------------ GAP 242: CHECK recusa NA INSTRUCAO
+
+    /// **CHECK dentro de transacao recusa NA INSTRUCAO, nao derruba o COMMIT.**
+    ///
+    /// Ate o pedido 242 o `empilhar` conferia unicidade e o gatilho BEFORE, mas
+    /// NAO julgava padrao/calculada/CHECK -- quem julgava era o `t.inserir` do
+    /// COMMIT. Uma instrucao do MEIO com CHECK violado passava batido no
+    /// empilhar e so estourava no COMMIT, derrubando a transacao inteira -- as
+    /// linhas boas junto. Os tres motores maduros recusam CHECK NA INSTRUCAO
+    /// (aceite automatico).
+    ///
+    /// PROVA REAL nos dois sentidos: com o defeito reposto (tirar o
+    /// `julgar_regras_de_escrita` do `empilhar`), o `inserir` proibido volta
+    /// `Ok` -- e este teste reprova no `unwrap_err` -- e o estrago aparece so no
+    /// COMMIT. Com o conserto, o `inserir` recusa AQUI, a transacao segue
+    /// `ACTIVE`, a proxima linha boa empilha, e o COMMIT grava so as duas boas.
+    #[test]
+    fn check_dentro_de_transacao_recusa_na_instrucao_e_nao_derruba_o_commit() {
+        let dir = dir_temp("check-na-instrucao");
+        let s = servidor(&dir);
+        let ses = sessao(42);
+        pede(&s, &ses, r#""op":"criar_database","database":"loja""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"criar_tabela","database":"loja","tabela":"caixa",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                          {"nome":"v","tipo":"Int8","check":"v > 0"}],
+               "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}]"#,
+        )
+        .unwrap();
+
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+
+        // 1. Linha boa -- empilha.
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"caixa","linha":{"id":1,"v":10}"#,
+        )
+        .unwrap();
+
+        // 2. Linha do MEIO que viola o CHECK -- recusa AQUI, na instrucao.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"caixa","linha":{"id":2,"v":-5}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("CHECK da coluna v"), "{e}");
+
+        // A transacao NAO caiu: um CHECK violado e erro de INSTRUCAO (2xxx),
+        // como uma chave duplicada -- segue `ACTIVE`.
+        let est = pede(&s, &ses, r#""op":"transacao""#).unwrap();
+        assert_eq!(
+            est.texto_ou("transaction_state", ""),
+            "ACTIVE",
+            "{}",
+            est.escrever()
+        );
+
+        // 3. Outra linha boa empilha DEPOIS do erro -- a prova de que a
+        //    transacao sobreviveu a instrucao recusada.
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"caixa","linha":{"id":3,"v":20}"#,
+        )
+        .unwrap();
+
+        // 4. COMMIT grava as DUAS boas -- e nao cai por causa da do meio, que
+        //    nunca chegou a empilhar.
+        pede(&s, &ses, r#""op":"commit""#).unwrap();
+        assert_eq!(
+            quantas(&s, &ses, "caixa"),
+            2,
+            "id 1 e id 3 gravados; id 2 nao"
+        );
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"varrer","database":"loja","tabela":"caixa","max":100"#,
+        )
+        .unwrap();
+        let ids: Vec<i64> = r
+            .campo("linhas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|l| l.inteiro_ou("id", -1))
+            .collect();
+        assert_eq!(ids, vec![1, 3]);
     }
 
     // ------------------------------------ SP000006: read-your-own-writes
