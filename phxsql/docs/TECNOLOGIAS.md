@@ -39,12 +39,12 @@ foi estimado no lugar de uma medição que faltou.
 | `phxsql-core` | 33 | 11449 | 3825 | 2870 | 1463 | 19607 |
 | `phxsql-ffi` | 7 | 1408 | 1014 | 703 | 235 | 3360 |
 | `phxsql-odbc` | 7 | 2412 | 1086 | 920 | 226 | 4644 |
-| `phxsql-server` | 55 | 41649 | 24798 | 19158 | 4585 | 90190 |
+| `phxsql-server` | 55 | 41686 | 24798 | 19164 | 4585 | 90233 |
 | `phxsql-sql` | 10 | 6529 | 3279 | 1906 | 732 | 12446 |
 | `phxsql-store` | 23 | 12588 | 3159 | 5134 | 1433 | 22314 |
-| **total** | **138** | **77429** | **37375** | **30975** | **8814** | **154593** |
+| **total** | **138** | **77466** | **37375** | **30981** | **8814** | **154636** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **37375/77429 = 0.48×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **37375/77466 = 0.48×**.
 
 Alem do `src/`: **71** programas de medicao em `examples/` (16052 linhas — bancada em Rust, nao produto nem teste) e **55** arquivos em `tests/` de integracao fora de `src/` (18459 linhas).
 <!-- /GERADO -->
@@ -73,7 +73,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 14969 | 842.7 |
+| `ui/index.html` | 15338 | 860.0 |
 | `ui/grid/phx-grid.css` | 168 | 12.3 |
 | `ui/grid/phx-grid.js` | 1860 | 90.1 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
@@ -83,7 +83,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 | `ui/multitela.js` | 1588 | 69.0 |
 | `ui/claude.js` | 1357 | 67.2 |
 | `ui/grid/CHANGELOG-phx-grid.md` | 224 | 29.7 |
-| **total (10 arquivos)** | **23280** | **1256.7** |
+| **total (10 arquivos)** | **23649** | **1273.9** |
 
 Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
 - `crates/phxsql-server/ui/explorador.css`
@@ -107,7 +107,7 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 46 | 9926 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 47 | 10136 |
 | Python (bancada de medicao) | `bancada/` | 101 | 41682 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 17 | 2466 |
 | Markdown (documentacao tecnica) | `docs/` (nao recursivo em `dossie/`, `design/`, `video/`) | 304 | 74968 |
@@ -413,7 +413,7 @@ empacotar:
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2275** testes passaram, **0** falharam (medido em 2026-09-12 06:23:09, commit `932207ec`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **2275** testes passaram, **0** falharam (medido em 2026-09-12 07:54:27, commit `8e578531`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
