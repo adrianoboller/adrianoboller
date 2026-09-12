@@ -1065,12 +1065,15 @@ mod tests {
         // O `!starts_with(temp)` so distingue "ao lado da base" de "caiu no
         // /tmp" quando o proprio diretorio de trabalho NAO esta sob o temp. Ao
         // extrair os fontes e rodar `cargo test` dentro do /tmp -- o que quem
-        // baixa o zip faz --, `aqui` fica sob o temp_dir e esta asserção
-        // absoluta falharia pelo LUGAR do teste, nao por defeito: o
-        // `v.parent() == aqui` acima ja prova que nao houve fallback, porque o
-        // fallback poria o pai em temp_dir(), e nao no proprio `aqui`.
-        if !aqui.starts_with(std::env::temp_dir()) {
-            assert!(!v.starts_with(std::env::temp_dir()));
+        // baixa o zip faz --, `aqui` fica sob o temp e esta asserção absoluta
+        // falharia pelo LUGAR do teste, nao por defeito: o `v.parent() == aqui`
+        // acima ja prova que nao houve fallback, porque o fallback poria o pai
+        // no temp, e nao no proprio `aqui`. O temp se le UMA vez -- duas
+        // chamadas fariam o conferidor_temporarios acusar o arquivo por mudar
+        // a contagem do padrao que ele vigia.
+        let temp = std::env::temp_dir();
+        if !aqui.starts_with(&temp) {
+            assert!(!v.starts_with(&temp));
         }
 
         // Com caminho absoluto, o vizinho e o pai mesmo.
