@@ -95,6 +95,12 @@ A garantia é, **primeiro, criptográfica** e só **depois** operacional:
 As duas juntas fecham «não há engenharia reversa»: não há texto para reverter
 (E2E) **e** não há blob para tentar (purga).
 
+E há um terceiro eixo, o de **onde o dado mora** (ver `CORREIO-CAMPOS.md` §
+topologia): o servidor central `phxmail.com.br` **não guarda usuário** — só o
+diretório de servermails. **Não há honeypot central**: nem existe um lugar único
+para invadir e reverter, porque os usuários estão espalhados, cada um no seu
+servermail, e o que trafega entre eles é ciphertext.
+
 ## 5. Reconciliação com o resto do PhxSql
 
 - **Replicação.** O que trafega para as réplicas é **ciphertext** (o blob E2E),

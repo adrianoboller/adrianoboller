@@ -20,6 +20,43 @@ Spec dos registros do correio, aterrada no que já roda (`correio-e2e`/`niveis`/
 - **RESTRICT** em toda chave: nunca se mata o pai com filhos; a chave **nasce
   conferida**; **índice dos dois lados**.
 
+## Onde mora cada registro (topologia) — decisão do dono, 12/09
+
+> *«No servidor phxmail.com.br só guarda os dados do servermail. Os usuários
+> cadastrados nos servermail não ficam armazenados no servidor phxmail, apenas
+> entre os servermails pela relação de confiança.»*
+
+O servidor central **`phxmail.com.br` guarda só os dados de servermail** — o
+**diretório** dos nós da rede (`servermail` + `cluster`) e, no Cloudflare, o DNS
+que mapeia `empresa.phxmail.com.br → IP`. **Não** guarda usuário, nem
+empresa‑com‑dados, nem e‑mail.
+
+Os **usuários, empresas, caixas e e‑mails moram em cada servermail** — não no
+central. Um usuário existe no servermail que o cadastrou, e em nenhum outro
+lugar. Entre servermails, a ligação é a **relação de confiança** (federação): o
+server X acha o Y pelo DNS, conecta direto na porta 8000 e entrega o **blob
+cifrado**; Y guarda na caixa do destinatário e também não lê. **Não há repasse
+central** de usuário nem de mensagem.
+
+| Registro | Onde mora |
+|---|---|
+| `servermail`, `cluster` | **diretório central** (`phxmail.com.br`) |
+| DNS `empresa.phxmail.com.br → IP` | Cloudflare (gerido pelo binário) |
+| `empresa`, `usuario`, `email`, `anexo`, `confiança` | **em cada servermail** (nunca no central) |
+| `coligação` (federação servermail↔servermail) | nos dois servermails que se ligam |
+
+**Consequência de privacidade:** não há **honeypot central**. Quem invade o
+`phxmail.com.br` acha a lista de servidores, **não** a de usuários — que nem
+está lá. É a mesma lei do «servidor não lê o conteúdo», agora no eixo de *onde o
+dado mora*, não só de *quem consegue lê‑lo*.
+
+**Dois níveis de confiança, não um.** A `confiança` (§6) é **usuário↔usuário**
+(anti‑spam, com pix/categoria). A **`coligação`** é **servermail↔servermail (ou
+empresa↔empresa)** — a federação que deixa dois servidores trocarem mensagem;
+foi provada na bateria `servermail-ciclo` (tabela `coligacoes`, RESTRICT dos
+dois lados). Sem coligação entre os servidores, nem a confiança entre usuários
+entrega.
+
 ## Três pétreas que mandam nestes campos
 
 1. **O servidor não lê o conteúdo.** O e‑mail se parte em **metadado** (o

@@ -96,6 +96,13 @@
     <div class="pet c"><h3>🔗 RESTRICT</h3><p>usuário→empresa e e-mail→usuário são chaves conferidas: nunca se mata o pai com filhos, a chave <b>nasce conferida</b>, índice dos <b>dois lados</b>.</p></div>
   </div>
 
+  <div style="background:var(--sup2);border:1px solid var(--linha);border-left:3px solid var(--chave);border-radius:12px;padding:12px 15px;margin:0 0 18px">
+    <h3 style="margin:0 0 5px;font-size:13.5px">🗺️ Onde mora cada registro — o central não guarda usuário</h3>
+    <p style="margin:0;color:var(--fraco);font-size:12.5px;line-height:1.5">
+      O servidor central <code style="font-family:var(--mono);color:var(--meta)">phxmail.com.br</code> guarda <b>só o diretório de servermails</b> (<b>servermail</b> + <b>cluster</b>) e o DNS. <b>Empresa, usuário, e‑mail, anexo e confiança moram em cada servermail</b> — nunca no central. Entre servermails, a ligação é a <b>relação de confiança</b> (federação/<b>coligação</b>): X acha Y pelo DNS, entrega o blob direto na 8000, sem repasse central. &nbsp;·&nbsp; <b>Sem honeypot central</b>: quem invade o phxmail acha a lista de servidores, não a de usuários.
+    </p>
+  </div>
+
   <div class="legenda">
     <span class="vchip"><span class="vdot d-meta"></span>servidor vê (metadado)</span>
     <span class="vchip"><span class="vdot d-e2e"></span>🔒 blob cifrado E2E (não lê)</span>
@@ -107,7 +114,7 @@
 
   <!-- ===================== EMPRESA ===================== -->
   <div class="painel">
-    <header><h2>🏢 Empresa</h2><span class="reg">registro: tenant hospedado</span></header>
+    <header><h2>🏢 Empresa</h2><span class="reg" style="color:var(--inclui)">no servermail · tenant hospedado</span></header>
     <div class="secao">
       <table>
         <thead><tr><th>Campo</th><th>Tipo</th><th>Chave</th><th>Nota</th></tr></thead>
@@ -128,7 +135,7 @@
 
   <!-- ===================== SERVERMAIL ===================== -->
   <div class="painel">
-    <header><h2>🗄️ Servermail</h2><span class="reg">registro: nó da rede · id = UUID v7</span></header>
+    <header><h2>🗄️ Servermail</h2><span class="reg" style="color:var(--meta)">diretório central (phxmail) · nó da rede · id v7</span></header>
     <div class="secao">
       <table>
         <thead><tr><th>Campo</th><th>Tipo</th><th>Chave</th><th>Nota</th></tr></thead>
@@ -151,7 +158,7 @@
 
   <!-- ===================== CLUSTER ===================== -->
   <div class="painel">
-    <header><h2>🧭 Cluster</h2><span class="reg">registro: eleição · quórum · failover</span></header>
+    <header><h2>🧭 Cluster</h2><span class="reg" style="color:var(--meta)">diretório central (phxmail) · eleição/quórum/failover</span></header>
     <div class="secao">
       <table>
         <thead><tr><th>Campo</th><th>Tipo</th><th>Chave</th><th>Nota</th></tr></thead>
@@ -171,7 +178,7 @@
 
   <!-- ===================== USUÁRIO ===================== -->
   <div class="painel">
-    <header><h2>👤 Usuário</h2><span class="reg">registro: conta / cliente · id = UUID v7</span></header>
+    <header><h2>👤 Usuário</h2><span class="reg" style="color:var(--inclui)">no servermail · conta/cliente · id v7</span></header>
 
     <div class="secao">
       <div class="st"><span class="barra" style="background:var(--chave)"></span>identidade e chaves de tabela</div>
@@ -228,7 +235,7 @@
 
   <!-- ===================== E-MAIL ===================== -->
   <div class="painel">
-    <header><h2>✉️ E-mail</h2><span class="reg">registro: mensagem</span></header>
+    <header><h2>✉️ E-mail</h2><span class="reg" style="color:var(--inclui)">no servermail · mensagem</span></header>
 
     <div class="secao">
       <div class="st"><span class="barra" style="background:var(--meta)"></span>metadado — o servidor vê (rotear · cobrar · moderar)</div>
@@ -290,7 +297,7 @@
 
   <!-- ===================== CONFIANÇA ===================== -->
   <div class="painel">
-    <header><h2>🤝 Confiança</h2><span class="reg">vizinho — onde moram pix e categoria</span></header>
+    <header><h2>🤝 Confiança</h2><span class="reg" style="color:var(--inclui)">no servermail · usuário↔usuário · pix e categoria</span></header>
     <div class="secao">
       <table>
         <thead><tr><th>Campo</th><th>Tipo</th><th>Nota</th></tr></thead>
