@@ -11,8 +11,9 @@
 
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
-use phxsql_core::uuid::{Uuid, Uuid256};
+use phxsql_core::uuid::Uuid;
 use phxsql_core::value::Value;
+use phxsql_store::ledger::{self, Verificacao};
 use phxsql_store::table::Table;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -58,18 +59,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let comeco = t.slots();
-    let mut anterior = Value::Null;
     for i in 0..10 {
-        let hash = Uuid256::aleatorio();
-        let rowid = t.inserir(&[
+        // O bloco entra pelo modo ledger: `preparar_bloco` liga `anterior` ao
+        // hash do topo, numera a `altura` pela cadeia e calcula o `hash` sobre
+        // o CONTEUDO canonico -- nada de `Uuid256::aleatorio()`, que gravava um
+        // hash que nao dizia nada sobre o bloco.
+        let bruto = vec![
             Value::Uuid(Uuid::v7()),
-            Value::Uuid256(hash),
-            anterior.clone(),
-            Value::Null,
+            Value::Null, // hash: calculado por preparar_bloco
+            Value::Null, // anterior: ligado ao hash do bloco de baixo
+            Value::Null, // altura: numerada pela cadeia (genese = 1)
             Value::Str(format!("mineirador-{}", i % 3)),
             Value::DateTime(agora_ms()),
-        ])?;
-        anterior = Value::Uuid256(hash);
+        ];
+        let bloco = ledger::preparar_bloco(&mut t, bruto)?;
+        let rowid = t.inserir(&bloco)?;
         if i == 0 {
             println!("primeiro rowid: {rowid}");
         }
@@ -81,6 +85,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         t.slots() - comeco,
         t.sequencia_atual()
     );
+
+    // A cadeia se confere por `porAltura`: hash do conteudo, ligacao e altura
+    // contigua. Um bloco antigo adulterado apareceria aqui, na altura certa.
+    match ledger::verificar_cadeia(&mut t)? {
+        Verificacao::Integra {
+            blocos,
+            altura_maxima,
+        } => println!("cadeia integra: {blocos} blocos, altura maxima {altura_maxima}"),
+        Verificacao::Falhou {
+            altura,
+            rowid,
+            prova,
+        } => println!("cadeia QUEBRADA na altura {altura} (rowid {rowid}): {prova:?}"),
+    }
 
     // Percorrer o indice do id devolve na ordem de criacao, sem ordenar nada:
     // e o v7 fazendo o trabalho.

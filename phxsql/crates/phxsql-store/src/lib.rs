@@ -24,6 +24,7 @@ pub mod conferidor_fsync;
 pub mod diario;
 pub mod fts;
 pub mod integridade;
+pub mod ledger;
 pub mod leitura;
 pub mod lixeira;
 pub mod log;
@@ -40,6 +41,9 @@ pub mod volume;
 
 pub use blob::{BlobFile, EstatisticaBlob, MAGIC_BIN, MAGIC_MEMO};
 pub use catalogo::{qualificar, separar_qualificado, Aberta, Database, Instancia, Raiz};
+pub use ledger::{
+    hash_do_bloco, preparar_bloco, topo_da_cadeia, verificar_cadeia, Prova, Verificacao,
+};
 pub use leitura::{Legivel, TabelaLeitura};
 pub use lixeira::{Descartada, LixeiraFile, EXT_TRASH, MAGIC_LIXEIRA};
 pub use log::{Evento, LogFile, Operacao, EXT_LOG, MAGIC_LOG};
