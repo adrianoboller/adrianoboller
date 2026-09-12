@@ -1,9 +1,8 @@
 # Provisionamento de DNS no Cloudflare — a prova
 
 Cada **servermail** tem um **IP fixo**, e esse IP é cadastrado via **API do
-Cloudflare** em dois registros `A` por empresa:
+Cloudflare** num registro `A` por empresa:
 
-    <empresa>.phxsql.com.br  ->  <ip_fixo>
     <empresa>.phxmail.com.br ->  <ip_fixo>
 
 Esta bancada prova o mecanismo **sem tocar o Cloudflare de verdade e sem gastar
@@ -24,19 +23,19 @@ oficial da API v4).
 
     ./rodar.sh          # sobe o falso, prova, derruba o falso; PROVA VERDE/VERMELHA
 
-São **11 checagens**: cria os dois registros; é idempotente (roda de novo e
+São **10 checagens**: cria o registro; é idempotente (roda de novo e
 **atualiza**, não duplica); atualiza quando o IP muda; **falha com token
 errado** (é o que faz a prova pegar); e uma empresa não mexe na outra.
 
 ## Usar de verdade (no host de provisionamento, não aqui)
 
     export CF_API_TOKEN='...'            # segredo; nunca no repositorio
-    export CF_ZONAS='{"phxsql.com.br":"<zone_id>","phxmail.com.br":"<zone_id>"}'
+    export CF_ZONAS='{"phxmail.com.br":"<zone_id>"}'
     python3 provisionar_dns.py prado 203.0.113.10
 
-Pré-requisitos que **faltam** e são decisão/lavoura do dono: as zonas
-`phxsql.com.br` e `phxmail.com.br` existirem no Cloudflare, e um **token com
-escopo `Zone.DNS`** só nessas zonas. Ver `docs/CORREIO-DNS.md`.
+Pré-requisitos que **faltam** e são decisão/lavoura do dono: a zona
+`phxmail.com.br` existir no Cloudflare, e um **token com escopo `Zone.DNS`** só
+nessa zona. Ver `docs/CORREIO-DNS.md`.
 
 ## Por que Python, e não o motor Rust
 

@@ -16,7 +16,7 @@ preço não é vantagem, é propaganda.
 federado, aberto, que liga qualquer endereço a qualquer endereço no planeta desde
 1982 (RFC 821, hoje RFC 5321). O phxmail é outra coisa: um **correio corporativo
 cifrado fim-a-fim, sem spam por desenho, restrito a quem controla as duas pontas**
-— só os domínios `phxsql.com.br` e `phxmail.com.br`, só entre usuários que
+— só o domínio `phxmail.com.br`, só entre usuários que
 aceitaram uma relação de confiança. Está mais perto de um Signal/Matrix federado e
 cercado do que do Gmail.
 
@@ -30,7 +30,7 @@ empresas parceiras) cifrado, auditável e sem spam: é aí que o phxmail ganha.
 
 | Dimensão | SMTP (tradicional) | PhxMail | Quem ganha |
 |---|---|---|---|
-| **Alcance** | Universal e federado: qualquer endereço, qualquer provedor, via DNS MX | Cercado: só `phxsql.com.br`/`phxmail.com.br`, só entre pares com confiança | **SMTP**, e por muito |
+| **Alcance** | Universal e federado: qualquer endereço, qualquer provedor, via DNS MX | Cercado: só `phxmail.com.br`, só entre pares com confiança | **SMTP**, e por muito |
 | **Interoperabilidade** | Décadas de clientes (Outlook, Thunderbird, Apple Mail, apps), bibliotecas, RFCs | Nenhum cliente pronto; protocolo próprio na porta 8000 | **SMTP** |
 | **Cifra do conteúdo** | Texto claro por padrão; TLS só protege salto-a-salto (o servidor LÊ); E2E (PGP/S-MIME) é opcional e raro | **E2E obrigatório**: ECDH X25519 por par, o servidor NÃO lê | **PhxMail** |
 | **Spam** | Aceita de qualquer um; guerra eterna de SPF/DKIM/DMARC/greylist/filtro | **Sem contato sem confiança aceita** — nos dois canais (mensagem e pedido) | **PhxMail** |
@@ -61,7 +61,7 @@ destranca só a **própria** privada, e mais nada.
 
 ### O endereço e o servidor
 
-O endereço é `usuario@empresa.phxsql.com.br`. O `empresa` é um subdomínio, e o
+O endereço é `usuario@empresa.phxmail.com.br`. O `empresa` é um subdomínio, e o
 **alias dele é um registro DNS criado na Cloudflare** apontando para o *server
 mail* que hospeda aquele inquilino (tenant). Um server mail hospeda **muitas
 caixas** e recebe **muitos clientes conectados** ao mesmo tempo — pela porta TCP

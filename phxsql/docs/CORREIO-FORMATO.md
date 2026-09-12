@@ -28,7 +28,7 @@ O que o protótipo prova e esta proposta preserva:
 
 1. Identidade **X25519**; a privada mora **cifrada sob a senha** (PBKDF2 →
    ChaCha20-Poly1305) — não abre sem a senha.
-2. Só os domínios `phxsql.com.br` e `phxmail.com.br` (e subdomínios) mandam/recebem.
+2. Só o domínio `phxmail.com.br` (e subdomínios) manda/recebe.
 3. Sem **confiança aceita** não há contato — nos **dois** canais: o da mensagem
    e o do **pedido** (repetido recusado, bloqueado não pede, teto de pendentes).
 4. Mensagem cifrada pelo segredo **ECDH**: cada um decifra com a **própria**
@@ -170,7 +170,7 @@ O "nunca mais", distinto de recusar (que é "não, obrigado — pode pedir depoi
 - Bloquear um `quem` **retira** o pedido pendente dele (o protótipo faz isso), e
   passa a recusar novos pedidos — a conferência do canal de pedido lê esta
   tabela antes de aceitar um `pendente`.
-- **Aberto para o dono (§6):** bloqueio de **domínio inteiro** (`golpe.phxsql.com.br`
+- **Aberto para o dono (§6):** bloqueio de **domínio inteiro** (`golpe.phxmail.com.br`
   de uma vez) não cabe aqui — seria uma tabela `correio_bloqueios_dominio(dono_id,
   dominio)` ou uma política. Não proponho agora sem a palavra dele.
 

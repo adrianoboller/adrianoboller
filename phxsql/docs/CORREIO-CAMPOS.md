@@ -46,8 +46,8 @@ Spec dos registros do correio, aterrada no que já roda (`correio-e2e`/`niveis`/
 | `sistema_dt` | data/hora GMT | | criação |
 
 RESTRICT: **empresa com contas não se apaga** (já provado em `servermail-ciclo`).
-Os dois registros DNS da empresa (`rotulo.phxsql.com.br` / `.phxmail.com.br`)
-vivem no `CORREIO-DNS.md`.
+O registro DNS da empresa (`rotulo.phxmail.com.br`) vive no `CORREIO-DNS.md`.
+*(O `phxsql.com.br` foi removido em 12/09 — só o `phxmail.com.br`.)*
 
 ## 2. Servermail (nó da rede)
 

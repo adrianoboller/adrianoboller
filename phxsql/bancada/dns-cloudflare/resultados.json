@@ -1,8 +1,8 @@
 {
   "bancada": "dns-cloudflare",
-  "medido_em": "2026-09-11T23:51:57Z",
-  "checagens": 11,
-  "ok": 11,
+  "medido_em": "2026-09-12T00:24:01Z",
+  "checagens": 10,
+  "ok": 10,
   "falhas": 0,
   "todos_verdes": true,
   "observacao": "Cloudflare falso local; nenhum toque na API real; nenhum token real."

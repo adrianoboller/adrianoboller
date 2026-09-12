@@ -4,11 +4,10 @@
 provisionar_dns.py -- cadastra o IP FIXO de um servermail nos dois registros DNS
 da empresa, via API do Cloudflare, de forma IDEMPOTENTE (cria ou atualiza).
 
-    <empresa>.phxsql.com.br  ->  <ip_fixo>   (A)
     <empresa>.phxmail.com.br ->  <ip_fixo>   (A)
 
 Uso:
-    CF_API_TOKEN=...  CF_ZONAS='{"phxsql.com.br":"<zid>","phxmail.com.br":"<zid>"}' \\
+    CF_API_TOKEN=...  CF_ZONAS='{"phxmail.com.br":"<zid>"}' \\
         python3 provisionar_dns.py <empresa> <ip_fixo>
 
 Regras desta casa que a ferramenta honra:
@@ -32,7 +31,7 @@ import urllib.request
 import urllib.error
 
 BASE = os.environ.get("CF_API_BASE", "https://api.cloudflare.com/client/v4").rstrip("/")
-DOMINIOS = ("phxsql.com.br", "phxmail.com.br")  # os dois, sempre; ordem fixa
+DOMINIOS = ("phxmail.com.br",)  # so o phxmail (o dono removeu o phxsql.com.br)
 TTL = 3600
 
 RE_EMPRESA = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")  # rotulo DNS valido

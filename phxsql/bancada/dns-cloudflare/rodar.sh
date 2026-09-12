@@ -8,7 +8,7 @@ cd "$(dirname "$0")"
 TOKEN="token-de-teste"
 PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
 BASE="http://127.0.0.1:${PORT}/client/v4"
-ZONAS='{"phxsql.com.br":"zonaA-phxsql","phxmail.com.br":"zonaB-phxmail"}'
+ZONAS='{"phxmail.com.br":"zona-phxmail"}'
 
 # a ferramenta e o falso nao passam pelo proxy do ambiente (e localhost)
 run_tool(){ env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy no_proxy=127.0.0.1 \
@@ -30,37 +30,36 @@ confere(){ estado | python3 -c "$1" "$2" "$3" && passo ok "$4" || passo x "$4"; 
 
 echo "===== provisionamento de DNS no Cloudflare (falso) ====="
 
-echo "1) primeira vez: cria os dois registros do IP fixo"
+echo "1) primeira vez: cria o registro do IP fixo"
 SAIDA1="$(run_tool "$TOKEN" prado 203.0.113.10)"; RC1=$?
 [ $RC1 -eq 0 ] && passo ok "a ferramenta terminou com exito" || passo x "a ferramenta terminou com exito"
-echo "$SAIDA1" | grep -q 'criado.*prado.phxsql.com.br' && passo ok "criou prado.phxsql.com.br" || passo x "criou prado.phxsql.com.br"
 echo "$SAIDA1" | grep -q 'criado.*prado.phxmail.com.br' && passo ok "criou prado.phxmail.com.br" || passo x "criou prado.phxmail.com.br"
 confere '
 import json,sys
 r=json.load(sys.stdin)["result"]
 nomes=sorted(x["name"] for x in r)
-assert nomes==["prado.phxmail.com.br","prado.phxsql.com.br"], nomes
+assert nomes==["prado.phxmail.com.br"], nomes
 assert all(x["content"]=="203.0.113.10" for x in r), r
 assert all(x["type"]=="A" and x["proxied"] is False for x in r), r
-' - - "no falso: 2 registros A, nome e IP certos, proxied=false"
+' - - "no falso: 1 registro A, nome e IP certos, proxied=false"
 
 echo "2) idempotente: rodar de novo NAO duplica -- atualiza"
 SAIDA2="$(run_tool "$TOKEN" prado 203.0.113.10)"; RC2=$?
 [ $RC2 -eq 0 ] && passo ok "segunda corrida com exito" || passo x "segunda corrida com exito"
-echo "$SAIDA2" | grep -q 'atualizado.*phxsql' && passo ok "reconheceu o existente (atualizado, nao criado)" || passo x "reconheceu o existente"
+echo "$SAIDA2" | grep -q 'atualizado.*phxmail' && passo ok "reconheceu o existente (atualizado, nao criado)" || passo x "reconheceu o existente"
 confere '
 import json,sys
 r=json.load(sys.stdin)["result"]
-assert len(r)==2, "duplicou! agora ha %d"%len(r)
-' - - "no falso: continua com 2 registros (sem duplicata)"
+assert len(r)==1, "duplicou! agora ha %d"%len(r)
+' - - "no falso: continua com 1 registro (sem duplicata)"
 
 echo "3) IP mudou: roda de novo e atualiza o conteudo dos dois"
 run_tool "$TOKEN" prado 203.0.113.11 >/dev/null;
 confere '
 import json,sys
 r=json.load(sys.stdin)["result"]
-assert len(r)==2 and all(x["content"]=="203.0.113.11" for x in r), r
-' - - "no falso: 2 registros, agora no IP novo 203.0.113.11"
+assert len(r)==1 and all(x["content"]=="203.0.113.11" for x in r), r
+' - - "no falso: 1 registro, agora no IP novo 203.0.113.11"
 
 echo "4) prova reversa: token ERRADO tem de FALHAR (a prova pega o erro)"
 ANTES="$(estado)"
@@ -72,12 +71,12 @@ run_tool "$TOKEN" timeagil 198.51.100.20 >/dev/null
 confere '
 import json,sys
 r=json.load(sys.stdin)["result"]
-assert len(r)==4, len(r)
+assert len(r)==2, len(r)
 prado=[x for x in r if x["name"].startswith("prado.")]
 assert all(x["content"]=="203.0.113.11" for x in prado), prado
 tim=sorted(x["name"] for x in r if x["name"].startswith("timeagil."))
-assert tim==["timeagil.phxmail.com.br","timeagil.phxsql.com.br"], tim
-' - - "no falso: 4 registros; prado intacto; timeagil nos dois dominios"
+assert tim==["timeagil.phxmail.com.br"], tim
+' - - "no falso: 2 registros; prado intacto; timeagil no phxmail"
 
 echo
 echo "===== RESULTADO ====="

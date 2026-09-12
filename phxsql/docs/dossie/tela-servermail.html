@@ -300,15 +300,14 @@
     <div class="painel" style="margin-bottom:16px">
       <header>
         <h2>🌐 IP fixo &amp; DNS no Cloudflare</h2>
-        <span class="conta">1 IP fixo por servermail · 2 registros A por empresa</span>
+        <span class="conta">1 IP fixo por servermail · 1 registro A por empresa</span>
       </header>
       <div class="dns">
-        <p class="dns-nota"><code>nome_empresa.phxsql.com.br</code> e <code>nome_empresa.phxmail.com.br</code> apontam para o IP fixo do servermail (A, <b>proxied=off</b>), cadastrados via <b>API do Cloudflare</b> de forma idempotente (cria ou atualiza). As zonas ainda não estão no Cloudflare — <b>passo de implantação</b>; os estados abaixo são de exemplo.</p>
+        <p class="dns-nota"><code>nome_empresa.phxmail.com.br</code> aponta para o IP fixo do servermail (A, <b>proxied=off</b>), cadastrado via <b>API do Cloudflare</b> de forma idempotente (cria ou atualiza). A zona ainda não está no Cloudflare — <b>passo de implantação</b>; os estados abaixo são de exemplo. <i>(O <code>phxsql.com.br</code> foi removido em 12/09.)</i></p>
 
         <div class="dns-linha">
           <div class="emp"><span class="dado">Prado &amp; Filhos Ltda</span><div class="ip">203.0.113.10</div></div>
           <div class="regs">
-            <span class="reg"><span class="est ok"><span class="pt"></span>no ar</span><span class="mono">prado.phxsql.com.br</span></span>
             <span class="reg"><span class="est ok"><span class="pt"></span>no ar</span><span class="mono">prado.phxmail.com.br</span></span>
           </div>
           <button class="acao consultar">Reprovisionar</button>
@@ -317,7 +316,6 @@
         <div class="dns-linha">
           <div class="emp"><span class="dado">Time Ágil S.A.</span><div class="ip">198.51.100.20</div></div>
           <div class="regs">
-            <span class="reg"><span class="est ok"><span class="pt"></span>no ar</span><span class="mono">timeagil.phxsql.com.br</span></span>
             <span class="reg"><span class="est ok"><span class="pt"></span>no ar</span><span class="mono">timeagil.phxmail.com.br</span></span>
           </div>
           <button class="acao consultar">Reprovisionar</button>
@@ -326,7 +324,6 @@
         <div class="dns-linha">
           <div class="emp"><span class="dado">Loja da Esquina ME</span><div class="ip">203.0.113.42</div></div>
           <div class="regs">
-            <span class="reg"><span class="est espera"><span class="pt"></span>pendente</span><span class="mono">loja.phxsql.com.br</span></span>
             <span class="reg"><span class="est espera"><span class="pt"></span>pendente</span><span class="mono">loja.phxmail.com.br</span></span>
           </div>
           <button class="acao incluir">Provisionar DNS</button>
@@ -335,7 +332,6 @@
         <div class="dns-linha">
           <div class="emp"><span class="dado">Cadastro vazio (rascunho)</span><div class="ip vazio">— sem IP fixo —</div></div>
           <div class="regs">
-            <span class="reg"><span class="est parado"><span class="pt"></span>sem IP</span><span class="mono">rascunho.phxsql.com.br</span></span>
             <span class="reg"><span class="est parado"><span class="pt"></span>sem IP</span><span class="mono">rascunho.phxmail.com.br</span></span>
           </div>
           <button class="acao incluir" disabled title="defina o IP fixo do servermail antes de provisionar">Provisionar DNS</button>
@@ -373,7 +369,7 @@
           <div class="mod-item">
             <span class="ac banir">banir</span>
             <div class="cont">
-              <div class="quem"><span class="dado">spammer@golpe.phxsql.com.br</span></div>
+              <div class="quem"><span class="dado">spammer@golpe.phxmail.com.br</span></div>
               <div class="motivo">Motivo: <b>187 pedidos de confiança recusados em 1 h</b> · denunciado por 12 contas</div>
             </div>
             <div class="acoes"><button class="acao excluir">Banir</button><button class="acao consultar">Ver</button></div>

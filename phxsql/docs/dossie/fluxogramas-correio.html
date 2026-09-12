@@ -79,7 +79,7 @@
     <div class="fluxo">
       <div class="no ini"><div class="t">1 · Instala + configura</div><div class="d">phxsqld --config caminho/nome.ext (config junto do binário por padrão) · porta 8000</div></div>
       <div class="seta">cria a <b>base</b></div>
-      <div class="no ini"><div class="t">2 · Sobe multi-tenant</div><div class="d">N empresas; cada uma um alias DNS na Cloudflare → empresa.phxsql.com.br</div></div>
+      <div class="no ini"><div class="t">2 · Sobe multi-tenant</div><div class="d">N empresas; cada uma um alias DNS na Cloudflare → empresa.phxmail.com.br</div></div>
       <div class="seta">por empresa</div>
       <div class="no cri"><div class="t">3 · Contas &amp; chaves</div><div class="d">id do usuário = UUID v7; identidade X25519, p12, assinatura Ed25519 — todas seladas sob a senha (PBKDF2)</div></div>
       <div class="seta">recebe conexão · aperto cifrado (Noise)</div>
@@ -152,6 +152,6 @@
 
 <p class="rodape">
   <b>Provado (em memória, PROVA VERDE):</b> identidade selada pela senha; portão de domínio e de confiança; E2E por ECDH (envio dentro da empresa e entre empresas); 5 níveis; respostas assinadas; corpo sem acento; UUID v7; QR do pix; split Masson. &nbsp;·&nbsp;
-  <b>Passo de implantação:</b> DNS de phxsql.com.br/phxmail.com.br ainda NÃO resolve; armazenar o v7 nos servidores da WX Soluções. &nbsp;·&nbsp;
+  <b>Passo de implantação:</b> DNS de phxmail.com.br ainda NÃO resolve; armazenar o v7 nos servidores da WX Soluções. &nbsp;·&nbsp;
   <b>Em construção (#159):</b> o servidor de rede na porta 8000 abrindo soquete de verdade.
 </p>
