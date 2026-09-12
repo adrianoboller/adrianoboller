@@ -44,6 +44,14 @@ item tocar tela; D (zelador) — roda fora da janela de build.
 
 ## Frente E — Blockchain (ledger encadeado privado, MODO sobre o Padrão)
 
+> **ESTADO 12/09/2026: E1–E3 INTEGRADOS** — commit `540e5cd`, módulo
+> `crates/phxsql-store/src/ledger.rs` (`hash_do_bloco`/`preparar_bloco`/
+> `verificar_cadeia`), 8 testes verdes com prova real dos três casos de
+> adulteração + buraco de altura + hash reproduzível fora do motor;
+> `fmt`/`clippy`/`test` verdes; formato em disco **intocado**. **E4** (Merkle) e
+> **E5** (Ed25519) ficam **sob demanda**; **E6** (medidor `custo-do-bloco` +
+> texto da UI) é do orquestrador, pendente. Frente E: **entregue no núcleo.**
+
 Sem aval de formato. Não gated pelo P0. Fontes: `hash.rs:165` (SHA-256),
 `ed25519.rs:573`, `identificadores.rs:28-72` (tabela `blocos`), `log.rs:1046`
 (modelo de prova), `FORMATO.md §13` (Uuid256).
