@@ -5,6 +5,13 @@ Spec dos registros do correio, aterrada no que já roda (`correio-e2e`/`niveis`/
 `CORREIO-DNS.md`). **Esta é a fonte canônica**; o mapa visual
 (`docs/dossie/mapa-campos-correio.html`) é um retrato dela.
 
+> **O banco do phxmail é o próprio PhxSql — decisão do dono, 12/09.** Os sete
+> registros são tabelas PhxSql no formato **PSCH** (`.reg`/`.ndx`/…); o correio
+> é uma **aplicação** do motor, não um banco à parte, e o protótipo prova isso
+> só com `phxsql-core` (`correio-e2e.rs`). **HFSQL nunca entra no caminho do
+> dado do phxmail** — no resto do repositório ele é, quando aparece, só a
+> inspiração de arquitetura citada.
+
 > **Mudança de formato entra cedo.** Enquanto não há dado em produção, mudar é
 > barato; depois vira migração. Campos marcados **[decidido]** já rodam;
 > **[a decidir]** pedem sua palavra antes de gravar byte (o PSCH a congelar).
