@@ -10403,6 +10403,24 @@ impl Servidor {
         // esquema que envelhece (ver `crate::visoes`).
         match phxsql_sql::analisar_comando(&sql)? {
             phxsql_sql::Comando::Selecao(_) => {}
+            // Um SELECT COMPOSTO (JOIN, subconsulta, `IN (SELECT ...)`, WITH,
+            // janela, UNION) analisa como `Comando::Consulta`, e o `verbo()`
+            // dele tambem e "SELECT" -- por isso a recusa antiga se
+            // contradizia: "uma visao guarda um SELECT, e este texto e um
+            // SELECT". A visao guarda TEXTO e e reanalisada a cada uso por
+            // `selecao_sobre_visao`, que so resolve o `Comando::Selecao`
+            // simples; aceitar o composto aqui gravaria uma visao que so
+            // falharia no dia do primeiro FROM. Ate haver esse substrato, a
+            // recusa e HONESTA e na criacao -- e nomeia o que falta, nao um
+            // verbo que se nega a si mesmo.
+            phxsql_sql::Comando::Consulta(_) => {
+                return Err(PhxError::Esquema(
+                    "visao com JOIN, subconsulta, WITH, janela ou UNION nao tem substrato \
+                     nesta rodada: guarde um SELECT simples, ou componha por fora \
+                     (SELECT ... FROM (a visao) ...)"
+                        .into(),
+                ))
+            }
             outro => {
                 return Err(PhxError::Esquema(format!(
                     "uma visao guarda um SELECT, e este texto e um {}",
@@ -37008,6 +37026,73 @@ mod testes_visoes {
         .unwrap_err();
         assert!(e.to_string().contains("TABELA"), "{e}");
         assert!(e.to_string().contains("clientes"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A PROVA REAL do 244 (A12): a recusa de uma visao com JOIN e HONESTA,
+    /// e nao se contradiz.** Um SELECT composto (JOIN, subconsulta) analisa
+    /// como `Comando::Consulta`, cujo `verbo()` tambem e "SELECT" -- por isso
+    /// a recusa antiga dizia "uma visao guarda um SELECT, e este texto e um
+    /// SELECT". A visao nao nasce, mas quem a pede tem de saber por que.
+    ///
+    /// Sabotagem: tirar o braco `Comando::Consulta` do match faz o composto
+    /// cair no `outro => verbo()` e a mensagem volta a dizer "e este texto e um
+    /// SELECT" -- e a assercao de que a recusa NAO contem essa frase reprova.
+    #[test]
+    fn a_visao_com_join_recusa_com_mensagem_honesta() {
+        let d = dir("join");
+        let (s, _) = servidor(&d, Cadastro::default());
+
+        // JOIN: composto.
+        let e = dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_join",
+                "sql":"SELECT c.nome FROM clientes c JOIN folha f ON c.id = f.id"}"#,
+        )
+        .expect_err("a visao com JOIN nasceu");
+        let t = e.to_string();
+        assert!(
+            !t.contains("e este texto e um SELECT"),
+            "a recusa ainda se contradiz: {t}"
+        );
+        assert!(
+            t.contains("JOIN") || t.contains("substrato"),
+            "a recusa nao diz por que: {t}"
+        );
+
+        // Subconsulta (`IN (SELECT ...)`): tambem composto, mesma recusa.
+        let e = dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_sub",
+                "sql":"SELECT id FROM clientes WHERE id IN (SELECT id FROM folha)"}"#,
+        )
+        .expect_err("a visao com subconsulta nasceu");
+        assert!(
+            !e.to_string().contains("e este texto e um SELECT"),
+            "a recusa da subconsulta se contradiz: {e}"
+        );
+
+        // E a visao com JOIN NAO ficou gravada: quem falha cedo nao deixa
+        // rastro que so quebra no primeiro FROM.
+        let r = dono(&s, "visoes", r#"{"database":"b"}"#).unwrap();
+        assert!(
+            r.campo("visoes").and_then(Json::lista).unwrap().is_empty(),
+            "a visao recusada ficou no catalogo"
+        );
+
+        // O controle: um INSERT continua com a recusa de sempre (nao-SELECT),
+        // que nomeia o verbo de verdade -- o braco novo nao a engoliu.
+        let e = dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_ins",
+                "sql":"INSERT INTO clientes (id) VALUES (9)"}"#,
+        )
+        .expect_err("o INSERT virou visao");
+        assert!(e.to_string().contains("INSERT"), "{e}");
+
         let _ = std::fs::remove_dir_all(&d);
     }
 
