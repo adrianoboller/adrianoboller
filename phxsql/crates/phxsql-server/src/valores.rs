@@ -407,10 +407,38 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
             let mut partes = Vec::new();
             let mut expressoes = Vec::new();
             for c in idx.textos("colunas") {
-                // Uma coluna com parenteses e uma EXPRESSAO de uma coluna
-                // (`lower(nome)`): a chave do indice e o resultado, com o tipo
-                // da coluna. Sem parenteses e o nome cru, com as marcas.
-                if c.contains('(') {
+                // Uma coluna do indice ou e a forma de MARCAS (`cidade desc`,
+                // `total nocase` -- nome da coluna e, opcional, desc/nocase),
+                // ou e uma EXPRESSAO de uma coluna, cuja chave e o RESULTADO
+                // coagido ao tipo da coluna: `lower(nome)` (funcao) e
+                // `salario * 2` (operador aritmetico -- `+ - * /`, que o
+                // contrato promete e o avaliador do core ja rende).
+                //
+                // A escolha e ESTRUTURAL, e nao "expressao quando aparece um
+                // operador em qualquer lugar do texto": so os tokens DEPOIS do
+                // primeiro sao varridos por operador. Por isso `minha-col desc`
+                // continua marca -- o hifen esta no NOME da coluna, nao entre
+                // dois termos --, enquanto `salario * 2` vira expressao. E um
+                // token estranho SEM operador (`cidade descc`) segue caindo na
+                // recusa que ensina desc/nocase, em vez de virar um erro de
+                // sintaxe de expressao, que ensina menos. Antes do 243/A11 so a
+                // forma com parentese virava expressao, e `salario * 2` recebia
+                // "use desc ou nocase" -- recusa que mentia sobre o que o
+                // contrato aceita.
+                let e_expressao = c.contains('(') || {
+                    let mut it = c.split_whitespace();
+                    let primeiro = it.next().unwrap_or("");
+                    let primeiro_e_coluna = colunas
+                        .iter()
+                        .any(|col| col.nome.eq_ignore_ascii_case(primeiro));
+                    // Primeiro token que nem coluna e (`2 + x`, `salario*2`
+                    // colado) e comeco de expressao, nao de marca; primeiro
+                    // token que E coluna vira expressao so quando um token
+                    // seguinte traz operador aritmetico (uma marca nunca tem).
+                    !primeiro_e_coluna
+                        || it.any(|m| m.chars().any(|ch| matches!(ch, '+' | '-' | '*' | '/')))
+                };
+                if e_expressao {
                     let e = phxsql_core::expressao::Expressao::analisar(&c)
                         .map_err(|erro| PhxError::Esquema(format!("indice {inome}: {erro}")))?;
                     let [unica] = e.colunas() else {
@@ -433,8 +461,8 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
                     expressoes.push(Some(c.to_string()));
                     continue;
                 }
-                // "cidade desc" e "cidade nocase" no proprio nome da coluna:
-                // e como se escreve um indice em uma linha.
+                // A forma de MARCAS: "cidade desc" e "cidade nocase" no proprio
+                // nome da coluna -- como se escreve um indice em uma linha.
                 let mut it = c.split_whitespace();
                 let cn = it.next().unwrap_or("").to_string();
                 let mut ic = IndexColumn::asc(posicao(&cn)?);
@@ -1384,6 +1412,62 @@ mod testes_esquema {
                 "erro {erro:?} nao diz o que falta ({pedaco:?})"
             );
         }
+    }
+
+    /// **A PROVA REAL do 243 (A11): o indice por expressao com OPERADOR nasce
+    /// como expressao, e nao cai na recusa de marca.** `salario * 2` usa uma
+    /// coluna e vira a chave do indice; antes desta rodada so a forma com
+    /// parentese virava expressao, e o operador batia em "use desc ou nocase",
+    /// contrariando o `+ - * /` que o contrato promete.
+    ///
+    /// Sabotagem: voltar o teste da linha para `if c.contains('(')` manda
+    /// `salario * 2` ao laco de marcas, que bate no token "*" e recusa com
+    /// "use desc ou nocase" -- e a primeira assercao (`expect`) reprova.
+    #[test]
+    fn indice_por_expressao_com_operador_nasce_como_expressao() {
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"folha",
+                "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                           {"nome":"salario","tipo":"Int8"}],
+                "indices":[{"nome":"porDobro","colunas":["salario * 2"]}]}"#,
+        ))
+        .expect("o indice por expressao com operador foi recusado");
+
+        let i = &e.indices()[0];
+        assert_eq!(i.nome, "porDobro");
+        // A IndexColumn aponta para a UNICA coluna que a expressao usa
+        // (salario, posicao 1), e a chave e o RESULTADO -- guardado no texto
+        // da expressao, nao como marca crua.
+        assert_eq!(i.colunas[0].coluna, 1);
+        assert!(
+            i.expressoes[0].is_some(),
+            "o operador nao virou expressao -- caiu como marca crua"
+        );
+
+        // As funcoes ja aceitas continuam funcionando: `lower(nome)`.
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"c",
+                "colunas":[{"nome":"nome","tipo":"Str(20)"}],
+                "indices":[{"nome":"porNome","colunas":["lower(nome)"]}]}"#,
+        ))
+        .expect("lower(nome) parou de funcionar");
+        assert!(e.indices()[0].expressoes[0].is_some());
+
+        // E o hifen no NOME da coluna nao vira subtracao: `salario-bruto desc`
+        // e marca (desc), porque so os tokens DEPOIS do primeiro sao varridos
+        // por operador. Sem isto, uma coluna com hifen perderia o indice.
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"h",
+                "colunas":[{"nome":"salario-bruto","tipo":"Int8"}],
+                "indices":[{"nome":"porHifen","colunas":["salario-bruto desc"]}]}"#,
+        ))
+        .expect("a coluna com hifen parou de indexar por marca");
+        let i = &e.indices()[0];
+        assert!(i.colunas[0].desc, "o desc da coluna com hifen se perdeu");
+        assert!(
+            i.expressoes[0].is_none(),
+            "a marca com hifen no nome virou expressao"
+        );
     }
 }
 
