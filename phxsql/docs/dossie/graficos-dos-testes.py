@@ -314,9 +314,108 @@ def g_fts():
     return out, q
 
 
+def g_registro():
+    """O Regedit (Registro do Windows) contra os bancos, em us/op.
+
+    Duas fontes, dois metais, duas datas -- e a legenda diz isso alto. O
+    Regedit foi medido no Windows do dono (bancada/registro, 11/09); os
+    bancos no Linux da corrida do milhao (08/09). Nenhum vencedor e'
+    contornado aqui DE PROPOSITO: cross-hardware nao decide campeao, e a
+    escrita ainda por cima nao e' trabalho igual (lote contra por-chave).
+    Os us/op saem derivados dos `resultados.json` -- nao ha numero digitado.
+    """
+    reg, _ = ler("bancada/registro/resultados.json")
+    dbs, _ = ler("bancada/comparacao/um-milhao.json")
+    if not reg or not dbs:
+        falta = []
+        if not reg:
+            falta.append("o Registro (<code>bench-registro.exe</code> no "
+                         "Windows → <code>bancada/registro/resultados.json</code>)")
+        if not dbs:
+            falta.append("os bancos (<code>python3 bancada/comparacao/medir.py</code>)")
+        return (['<div class="ausente-bloco">Regedit contra os bancos — '
+                 '<b>não medido</b>: falta ' + " e ".join(falta) + '.</div>'],
+                ("—", False))
+
+    nomes = {"phxsql": "PhxSql", "mysql": "MySQL®", "mariadb": "MariaDB®",
+             "sqlite": "SQLite®"}
+    corridas = reg.get("corridas_representativas", [])
+    fases = dbs.get("fases", {})
+    ops = dbs.get("operacoes_por_fase_pontual") or 20000
+    linhas = dbs.get("linhas") or 1000000
+
+    def db_us(fase, por):
+        """us/op de uma fase dos bancos: mediana e faixa (segundos → µs)."""
+        serie, faixa = [], {}
+        for motor, v in fases.get(fase, {}).items():
+            rot = nomes.get(motor, motor)
+            med = v.get("mediana_s")
+            serie.append((rot, med / por * 1e6
+                          if isinstance(med, (int, float)) else None))
+            lo, hi = v.get("min_s"), v.get("max_s")
+            if isinstance(lo, (int, float)) and isinstance(hi, (int, float)):
+                faixa[rot] = (lo / por * 1e6, hi / por * 1e6)
+        serie.sort(key=lambda x: (x[1] is None, x[1] or 0))
+        return serie, faixa
+
+    out = []
+
+    # --- LEITURA: a colmeia quente do Registro contra o `buscar` dos bancos ---
+    leituras = [c["leitura_us_op"] for c in corridas
+                if isinstance(c.get("leitura_us_op"), (int, float))]
+    serie, faixa = db_us("buscar", ops)
+    if leituras:
+        serie = [("Regedit (Windows)", sum(leituras) / len(leituras))] + serie
+        faixa["Regedit (Windows)"] = (min(leituras), max(leituras))
+        serie.sort(key=lambda x: (x[1] is None, x[1] or 0))
+    out.append(barras(
+        "Leitura por operação",
+        "O Regedit lê de uma colmeia quente; os bancos são o <code>buscar</code> "
+        f"da corrida do milhão ({num(ops)} operações, segundos ÷ operações). "
+        "<b>Metais diferentes</b>: Regedit no Windows do dono (11/09), bancos no "
+        "Linux da bancada (08/09) — por isso nenhuma barra é contornada como "
+        "vencedora, mesmo quando as faixas não se cruzam.",
+        serie, "microssegundos por leitura (menor é melhor)", 1,
+        menor_e_melhor=True, faixas=faixa, vencedor=False))
+
+    # --- ESCRITA: a metade que engana, e a legenda diz por quê ---
+    escritas = []
+    for c in corridas:
+        for k in ("escrita_preguicosa_us_op", "escrita_duravel_us_op"):
+            if isinstance(c.get(k), (int, float)):
+                escritas.append(c[k])
+    serie2, faixa2 = db_us("inserir", linhas)
+    if escritas:
+        serie2 = serie2 + [("Regedit (Windows)", sum(escritas) / len(escritas))]
+        faixa2["Regedit (Windows)"] = (min(escritas), max(escritas))
+    carga, _ = ler("bancada/carga/resultados.json")
+    ref = ""
+    if carga and isinstance(carga.get("uma_a_uma_por_s"), (int, float)):
+        us1 = 1e6 / carga["uma_a_uma_por_s"]
+        ref = (f" Para referência: o próprio PhxSql gravando <b>uma a uma</b> pela "
+               f"rede faz ~{num(us1, 0)} µs/op (<code>bancada/carga</code>, "
+               f"{str(carga.get('quando'))[:10]}) — a mesma ordem do Registro. "
+               "É o LOTE que derruba o insert dos bancos para a casa de µs.")
+    out.append(barras(
+        "Escrita por operação",
+        "Aqui os lados <b>não fazem o mesmo trabalho</b>, e é a metade que engana: "
+        f"o insert dos bancos é em <b>lote</b> (uma sincronização por fase, "
+        f"amortizada sobre {num(linhas)} linhas), enquanto a escrita do Registro "
+        "é <b>por chave</b> — preguiçosa e durável, 20k×64B e 50k×128B. Comparar "
+        "os dois FAVORECE os bancos." + ref,
+        serie2, "microssegundos por escrita (menor é melhor)", 1,
+        menor_e_melhor=True, faixas=faixa2, vencedor=False))
+
+    q = (f"Regedit {str(reg.get('medido_em'))[:10]} (Windows) · bancos "
+         f"{str(dbs.get('medido_em'))[:10]} (Linux)")
+    return out, (q, False)
+
+
 BLOCOS = [
     ("Os quatro motores, a um milhão de linhas", g_tres_motores,
      "bancada/comparacao/"),
+    ("Regedit (Registro do Windows) contra os bancos, em µs/op", g_registro,
+     "bancada/registro/ + bancada/comparacao/"),
     ("Índice de texto — o .fts contra a varredura", g_fts, "bancada/fts/"),
     ("Utilização padrão — 20.000 linhas em tabela complexa", g_utilizacao,
      "bancada/utilizacao-padrao/"),
