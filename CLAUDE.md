@@ -4,6 +4,18 @@ Motor de dados em Rust no modelo de arquivos separados do HFSQL. O código vive
 em `phxsql/`. Especificação do formato em `phxsql/docs/FORMATO.md`, roteiro em
 `phxsql/docs/PLANO.md`.
 
+## Cláusula pétrea: arquivos `.md` de apoio e controle de contexto
+
+Ordem do dono, 12/09/2026: *«Você está autorizado a fazer arquivos `.md` para
+apoio e controle de contexto — e essa autorização é pétrea.»*
+
+Vale **sem pedir a cada vez**: o agente cria e mantém arquivos `.md` de trabalho
+— backlog/kanban, board da rodada, cognição, status, pareceres de time,
+esqueletos de PDCA — para não perder contexto entre passos, agentes e
+compactações. É **apoio de processo**, não entregável de produto, e segue as
+regras de sempre: português, número **medido** nunca de memória, e **só o
+integrador comita**, por caminho explícito.
+
 ## Ao terminar cada rodada de trabalho: atualize o dossiê
 
 O dossiê é a página que o Adriano usa para enxergar o projeto inteiro:
