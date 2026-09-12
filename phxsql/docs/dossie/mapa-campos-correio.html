@@ -283,7 +283,7 @@
     <div class="secao">
       <div class="st"><span class="barra" style="background:var(--e2e)"></span>🗑️ privacidade — apagar é apagar (exceção declarada ao modelo forense)</div>
       <p class="nota" style="padding:2px 12px 10px;line-height:1.55">
-        <b>Não existe rascunho</b> (compor não persiste até enviar). <b>Não existe log</b> de e-mail. Esvaziar a lixeira é <b>purga total</b>: sem <code>.trash</code>, sem <code>.reason</code>, sem log — os bytes do blob são <b>zerados</b> no <code>.reg</code> (o slot não se reaproveita: a ordem de digitação é sagrada, some o dado, não a ordem). E <b>não há engenharia reversa</b>: o conteúdo é E2E (servidor sem chave), então mesmo um byte que sobrasse é ciphertext inútil. Ao contrário de toda outra tabela — que é forense de propósito. Ver <code>CORREIO-PRIVACIDADE.md</code>.
+        <b>Não existe rascunho</b> — compor é <b>só memória</b>: nada de arquivo temp em disco, nada de autosave, nada de «enviar depois». <b>Não existe log</b> de e-mail. Esvaziar a lixeira é <b>purga total</b>: sem <code>.trash</code>, sem <code>.reason</code>, sem log — os bytes do blob são <b>zerados</b> no <code>.reg</code> (o slot não se reaproveita: a ordem de digitação é sagrada, some o dado, não a ordem). E <b>não há engenharia reversa</b>: o conteúdo é E2E (servidor sem chave), então mesmo um byte que sobrasse é ciphertext inútil. Ao contrário de toda outra tabela — que é forense de propósito. Ver <code>CORREIO-PRIVACIDADE.md</code>.
       </p>
     </div>
   </div>

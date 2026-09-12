@@ -28,12 +28,29 @@ marcada **sem diário, sem lixeira física, sem log**.
 A exceção **não** afrouxa a regra geral — ela vale só para as tabelas do correio,
 onde a promessa de privacidade é o produto. Toda outra tabela continua forense.
 
-## 1. Não existe rascunho
+## 1. Não existe rascunho — e nada toca o disco enquanto escreve
 
-Compor **não persiste** até enviar. Não há estado `rascunho`, não há pasta de
-rascunhos, não há linha meio-escrita gravada em disco. O que está sendo digitado
-vive só na memória do cliente; fechou sem enviar, não sobrou nada. *(Some do
-cliente a pasta «Rascunhos» e o botão «Salvar rascunho».)*
+Regra do dono, 12/09: *«Não existe arquivo em disco temp do e‑mail enquanto é
+escrito, e não existe possibilidade de salvar para enviar depois.»* Compor é uma
+operação **só de memória**, do primeiro caractere ao envio:
+
+- **Nada de rascunho.** Não há estado `rascunho`, não há pasta de rascunhos, não
+  há linha meio-escrita no banco. *(Some do cliente a pasta «Rascunhos» e o
+  botão «Salvar rascunho».)*
+- **Nada de arquivo temporário.** Enquanto se digita, o texto vive **só na RAM**
+  do cliente — **sem** arquivo temp, **sem** autosave, **sem** `localStorage`/
+  `IndexedDB`, **sem** cache em disco. Fechou a janela sem enviar: não sobrou
+  byte nenhum, porque byte nenhum foi escrito.
+- **Nada de «enviar depois».** Não existe *outbox*, fila de saída, nem envio
+  agendado. Ou se envia agora (e aí cifra E2E e vai), ou se descarta. **Não há**
+  o botão que guardaria a mensagem pronta para mandar mais tarde.
+
+O que isto exige do **cliente** (e a honestidade do alcance): o app **não
+escreve** o buffer de composição em lugar nenhum do disco. O único plaintext que
+existe é o da tela, em memória, enquanto a janela está aberta; ao enviar, vira
+ciphertext e o buffer é solto. (O que está fora do app — o SO paginar RAM para
+swap — não é algo que o app grave; e mesmo isso é só a janela aberta, nunca um
+arquivo que o correio tenha criado.)
 
 ## 2. Excluir da lixeira é purga — não fica em lugar nenhum
 
