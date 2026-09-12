@@ -1,0 +1,241 @@
+<title>Mapa de campos do Correio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700;800&display=swap">
+<style>
+  :root{
+    --fundo:#010418; --sup:#0a1230; --sup2:#0c1330; --sup3:#111a3f;
+    --linha:#28315f; --linha2:#1b2249; --tinta:#eef1fb; --fraco:#9aa3c7; --fraco2:#6c76a0;
+    --meta:#5aa9ff;    /* servidor ve (metadado) */
+    --e2e:#f2b23a;     /* blob cifrado E2E */
+    --selado:#4fd08a;  /* selado sob a senha */
+    --chave:#c77dff;   /* PK / FK / RESTRICT */
+    --exclui:#ff5f6b; --rosa:#ff7ab6;
+    --ui:"Exo 2","Segoe UI",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--fundo);color:var(--tinta);margin:0;font-family:var(--ui);font-size:14px;line-height:1.45;padding:0 0 36px}
+  .topo{display:flex;align-items:center;gap:12px;padding:12px 22px;background:linear-gradient(180deg,#060c26,#040820);border-bottom:1px solid var(--linha);flex-wrap:wrap}
+  .logo{font-weight:800;font-size:17px;display:flex;align-items:center;gap:8px}
+  .logo b{color:var(--e2e)}
+  .chip{font-size:11px;font-weight:600;border:1px solid var(--linha);border-radius:999px;padding:3px 10px;color:var(--fraco)}
+  .env{max-width:1120px;margin:18px auto 0;padding:0 16px}
+  h1{font-size:20px;margin:0 0 2px}
+  .sub{color:var(--fraco);font-size:12.5px;margin:0 0 4px}
+  .maqn{color:var(--fraco2);font-size:11.5px;margin:0 0 16px}
+
+  /* pétreas */
+  .petreas{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:0 0 18px}
+  @media(max-width:820px){.petreas{grid-template-columns:1fr}}
+  .pet{background:var(--sup2);border:1px solid var(--linha);border-radius:12px;padding:12px 14px;border-left:3px solid}
+  .pet.a{border-left-color:var(--meta)} .pet.b{border-left-color:var(--selado)} .pet.c{border-left-color:var(--chave)}
+  .pet h3{margin:0 0 3px;font-size:13px}
+  .pet p{margin:0;color:var(--fraco);font-size:12px;line-height:1.45}
+  .pet code{font-family:var(--mono);color:var(--e2e)}
+
+  /* legenda */
+  .legenda{display:flex;flex-wrap:wrap;gap:8px 16px;margin:0 0 18px;font-size:12px;color:var(--fraco);align-items:center}
+  .vchip{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+  .vdot{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .d-meta{background:var(--meta)} .d-e2e{background:var(--e2e)} .d-selado{background:var(--selado)} .d-chave{background:var(--chave)}
+
+  /* painel */
+  .painel{background:var(--sup2);border:1px solid var(--linha);border-radius:14px;overflow:hidden;margin-bottom:18px}
+  .painel > header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--linha2);flex-wrap:wrap}
+  .painel > header h2{font-size:15px;margin:0}
+  .painel > header .reg{font-family:var(--mono);font-size:11.5px;color:var(--fraco);margin-left:auto}
+  .secao{padding:4px 6px 2px}
+  .secao > .st{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--fraco2);padding:12px 12px 6px;display:flex;align-items:center;gap:8px}
+  .secao > .st .barra{width:22px;height:3px;border-radius:2px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-weight:700;color:var(--fraco2);font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding:6px 10px;border-bottom:1px solid var(--linha2)}
+  td{padding:8px 10px;border-bottom:1px solid var(--linha2);vertical-align:top}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:#0b1330}
+  .campo{font-family:var(--mono);font-size:12.5px;font-weight:600;white-space:nowrap}
+  .tipo{font-family:var(--mono);font-size:11.5px;color:var(--fraco)}
+  .nota{color:var(--fraco);font-size:12px}
+  .nota code{font-family:var(--mono);color:var(--e2e)}
+  .nota b{color:var(--tinta);font-weight:600}
+  /* faixa de visibilidade na 1a celula */
+  td.campo{border-left:3px solid transparent}
+  tr.meta td.campo{border-left-color:var(--meta)}
+  tr.e2e td.campo{border-left-color:var(--e2e)}
+  tr.selado td.campo{border-left-color:var(--selado)}
+  tr.chave td.campo{border-left-color:var(--chave)}
+  /* badges de chave */
+  .kb{font-size:9.5px;font-weight:800;letter-spacing:.03em;border-radius:5px;padding:1px 6px;border:1px solid;white-space:nowrap}
+  .kb.pk{color:var(--chave);border-color:#3a2b5c;background:#0f0a1e}
+  .kb.fk{color:var(--rosa);border-color:#5c2340;background:#160910}
+  .kb.uni{color:var(--meta);border-color:#254089;background:#08122b}
+  .kb.idx{color:var(--fraco);border-color:var(--linha)}
+  .cad{color:var(--e2e)}
+  .decidir{font-size:9.5px;font-weight:700;color:var(--e2e);border:1px dashed #5c4a1c;border-radius:5px;padding:0 5px;margin-left:4px}
+
+  .rodape{max-width:1120px;margin:16px auto 0;padding:14px 16px 0;border-top:1px solid var(--linha);color:var(--fraco2);font-size:11.5px;line-height:1.6}
+  .rodape b{color:var(--tinta)} .rodape code{font-family:var(--mono);color:var(--meta)}
+  .rodape .maq{color:var(--e2e)}
+</style>
+
+<div class="topo">
+  <div class="logo">🔥 Mapa de <b>campos</b> do Correio</div>
+  <span class="chip">usuário · e-mail · anexo</span>
+  <span class="chip">fonte canônica: <code style="font-family:var(--mono)">docs/CORREIO-CAMPOS.md</code></span>
+</div>
+
+<div class="env">
+  <h1>Campos do usuário e do e-mail</h1>
+  <p class="sub">o modelo de dados do correio — o que é chave, o que o servidor vê, e o que é blob cifrado que ele nunca abre.</p>
+  <p class="maqn">BUILT TO STORE · ENGINEERED TO SCALE — aterrado nos exemplos correio-* e na bateria servermail-ciclo.</p>
+
+  <div class="petreas">
+    <div class="pet a"><h3>🔒 O servidor não lê o conteúdo</h3><p>O e-mail se parte em <b>metadado</b> (servidor vê para rotear/cobrar/moderar) e <b>blob E2E</b> (guarda e nunca decifra). O corpo não é coluna — é <code>ciphertext</code>.</p></div>
+    <div class="pet b"><h3>🔐 Senha nunca em claro</h3><p>O usuário <b>não tem coluna de senha</b>: só o <code>sal</code> e o material <b>selado</b> por ela (PBKDF2, 200k). Autenticar é abrir esse material.</p></div>
+    <div class="pet c"><h3>🔗 RESTRICT</h3><p>usuário→empresa e e-mail→usuário são chaves conferidas: nunca se mata o pai com filhos, a chave <b>nasce conferida</b>, índice dos <b>dois lados</b>.</p></div>
+  </div>
+
+  <div class="legenda">
+    <span class="vchip"><span class="vdot d-meta"></span>servidor vê (metadado)</span>
+    <span class="vchip"><span class="vdot d-e2e"></span>🔒 blob cifrado E2E (não lê)</span>
+    <span class="vchip"><span class="vdot d-selado"></span>selado sob a senha</span>
+    <span class="vchip"><span class="vdot d-chave"></span>chave / FK RESTRICT</span>
+    <span style="color:var(--fraco2)">·</span>
+    <span class="vchip" style="color:var(--e2e)"><span class="decidir" style="margin:0">a decidir</span>formato PSCH a congelar com o dono</span>
+  </div>
+
+  <!-- ===================== USUÁRIO ===================== -->
+  <div class="painel">
+    <header><h2>👤 Usuário</h2><span class="reg">registro: conta do correio</span></header>
+
+    <div class="secao">
+      <div class="st"><span class="barra" style="background:var(--chave)"></span>identidade e chaves de tabela</div>
+      <table>
+        <thead><tr><th>Campo</th><th>Tipo</th><th>Chave</th><th>Nota</th></tr></thead>
+        <tbody>
+          <tr class="chave"><td class="campo">id</td><td class="tipo">UUID v7</td><td><span class="kb pk">PK</span></td><td class="nota">ordem temporal; é o id guardado na WX <span class="decidir">a decidir</span></td></tr>
+          <tr class="meta"><td class="campo">endereco</td><td class="tipo">texto</td><td><span class="kb uni">ÚNICA</span></td><td class="nota"><code>local@empresa.dominio</code> — é o login</td></tr>
+          <tr class="chave"><td class="campo">empresa</td><td class="tipo">uuid</td><td><span class="kb fk">FK · RESTRICT</span></td><td class="nota">→ empresas; índice dos dois lados; nasce conferida</td></tr>
+          <tr class="meta"><td class="campo">estado</td><td class="tipo">enum</td><td><span class="kb idx">índice</span></td><td class="nota"><b>ativo</b> / banido / quarentena (moderação)</td></tr>
+          <tr class="meta"><td class="campo">idioma</td><td class="tipo">enum</td><td></td><td class="nota">preferência multilíngua (pt/en/es/fr/de/it)</td></tr>
+          <tr class="meta"><td class="campo">sistema_dt</td><td class="tipo">data/hora</td><td></td><td class="nota">data/hora de sistema por linha (decisão 11/09) <span class="decidir">a decidir</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="secao">
+      <div class="st"><span class="barra" style="background:var(--selado)"></span>segurança — nada em claro</div>
+      <table>
+        <thead><tr><th>Campo</th><th>Tipo</th><th>Chave</th><th>Nota</th></tr></thead>
+        <tbody>
+          <tr class="selado"><td class="campo">sal</td><td class="tipo">16 bytes</td><td></td><td class="nota">sal do PBKDF2 (ITER=200.000)</td></tr>
+          <tr class="selado"><td class="campo">verificador_login</td><td class="tipo">32 bytes</td><td></td><td class="nota">verificador PBKDF2 do login/canal — <b>não</b> a senha; teste falha se vazar <span class="decidir">a decidir</span></td></tr>
+        </tbody>
+      </table>
+      <p class="nota" style="padding:6px 12px 8px">🚫 <b>Não existe</b> campo <code>senha</code>. A senha nunca é gravada, nem em log, nem em resposta do protocolo.</p>
+    </div>
+
+    <div class="secao">
+      <div class="st"><span class="barra" style="background:var(--selado)"></span>certificados selados (a leiga nunca vê o p12)</div>
+      <table>
+        <thead><tr><th>Par</th><th>Pública (clara)</th><th>Privada (selada)</th><th>Para quê</th></tr></thead>
+        <tbody>
+          <tr class="selado"><td class="campo">identidade</td><td class="tipo">pub_id · X25519</td><td class="tipo cad">🔒 priv_id_cif +nonce+tag</td><td class="nota">E2E padrão (ECDH)</td></tr>
+          <tr class="selado"><td class="campo">p12</td><td class="tipo">pub_p12 · X25519</td><td class="tipo cad">🔒 priv_p12_cif +nonce+tag</td><td class="nota">nível 2 (segurança alta)</td></tr>
+          <tr class="selado"><td class="campo">p12-b</td><td class="tipo">pub_p12b · X25519</td><td class="tipo cad">🔒 priv_p12b_cif +nonce+tag</td><td class="nota">nível 3 (p12 + p12)</td></tr>
+          <tr class="selado"><td class="campo">assinatura</td><td class="tipo">pub_sig · Ed25519</td><td class="tipo cad">🔒 priv_sig_cif +nonce+tag</td><td class="nota">respostas assinadas</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="secao">
+      <div class="st"><span class="barra" style="background:var(--chave)"></span>maçonaria (opcional)</div>
+      <table>
+        <thead><tr><th>Campo</th><th>Tipo</th><th>Chave</th><th>Nota</th></tr></thead>
+        <tbody>
+          <tr class="meta"><td class="campo">masson_loja</td><td class="tipo">uuid</td><td><span class="kb idx">índice</span></td><td class="nota">qual Loja emitiu — <code>None</code> se não é Masson</td></tr>
+          <tr class="e2e"><td class="campo">masson_id</td><td class="tipo">bytes</td><td></td><td class="nota">o <b>id da Maçonaria</b> — chave da 3ª camada no nível Masson</td></tr>
+          <tr class="selado"><td class="campo">masson_credencial</td><td class="tipo">Ed25519</td><td></td><td class="nota">emitida pela Loja; validada contra a pública conhecida da loja</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===================== E-MAIL ===================== -->
+  <div class="painel">
+    <header><h2>✉️ E-mail</h2><span class="reg">registro: mensagem</span></header>
+
+    <div class="secao">
+      <div class="st"><span class="barra" style="background:var(--meta)"></span>metadado — o servidor vê (rotear · cobrar · moderar)</div>
+      <table>
+        <thead><tr><th>Campo</th><th>Tipo</th><th>Chave</th><th>Nota</th></tr></thead>
+        <tbody>
+          <tr class="chave"><td class="campo">id</td><td class="tipo">UUID v7</td><td><span class="kb pk">PK</span></td><td class="nota">ordem temporal</td></tr>
+          <tr class="chave"><td class="campo">de</td><td class="tipo">uuid</td><td><span class="kb fk">FK · RESTRICT</span></td><td class="nota">→ usuarios (remetente)</td></tr>
+          <tr class="chave"><td class="campo">para</td><td class="tipo">uuid</td><td><span class="kb fk">FK · RESTRICT</span></td><td class="nota">→ usuarios; <b>índice</b> da caixa de entrada</td></tr>
+          <tr class="meta"><td class="campo">prioridade</td><td class="tipo">enum</td><td></td><td class="nota">alta / media / baixa</td></tr>
+          <tr class="meta"><td class="campo">tipo</td><td class="tipo">enum</td><td></td><td class="nota">alerta 🚨 / aviso 🔔 / normal</td></tr>
+          <tr class="meta"><td class="campo">nivel</td><td class="tipo">enum</td><td></td><td class="nota">0 padrão / 1 frase / 2 p12 / 3 p12+p12 / masson — <b>autenticado no AAD</b> (<code>de|para|nivel</code>): não se rebaixa calado</td></tr>
+          <tr class="meta"><td class="campo">tamanho</td><td class="tipo">inteiro</td><td></td><td class="nota">bytes do blob — o que o servidor mede em vez de ler</td></tr>
+          <tr class="meta"><td class="campo">estado</td><td class="tipo">enum</td><td><span class="kb idx">índice</span></td><td class="nota">na_caixa / lida / <b>na_lixeira</b> (exclusão suave, a marca rosa que volta)</td></tr>
+          <tr class="meta"><td class="campo">sistema_dt</td><td class="tipo">data/hora</td><td></td><td class="nota">por linha; pai <b>estritamente anterior</b> ao filho <span class="decidir">a decidir</span></td></tr>
+          <tr class="meta"><td class="campo">anexos</td><td class="tipo">lista de refs</td><td></td><td class="nota">ids de anexos (armazém à parte)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="secao">
+      <div class="st"><span class="barra" style="background:var(--e2e)"></span>🔒 conteúdo E2E — o servidor guarda mas não decifra (blob)</div>
+      <table>
+        <thead><tr><th>Campo</th><th>Tipo</th><th>Nota</th></tr></thead>
+        <tbody>
+          <tr class="e2e"><td class="campo">nonce</td><td class="tipo">12 bytes</td><td class="nota">nonce da camada E2E</td></tr>
+          <tr class="e2e"><td class="campo">sal_kdf</td><td class="tipo">16 bytes</td><td class="nota">deriva a chave da camada (HKDF sobre o segredo ECDH)</td></tr>
+          <tr class="e2e"><td class="campo">sal_extra</td><td class="tipo">16 bytes</td><td class="nota">camada do nível 1 (frase por telefone/SMS)</td></tr>
+          <tr class="e2e"><td class="campo">sal_masson</td><td class="tipo">16 bytes</td><td class="nota">camada Masson (3ª camada = id da Maçonaria)</td></tr>
+          <tr class="e2e"><td class="campo">ct</td><td class="tipo">bytes</td><td class="nota"><b>corpo cifrado</b> (ChaCha20-Poly1305). O corpo já é <b>ASCII</b> (sem acento) antes de cifrar</td></tr>
+          <tr class="e2e"><td class="campo">tag</td><td class="tipo">16 bytes</td><td class="nota">tag AEAD — pega adulteração de prioridade/nível pelo AAD</td></tr>
+        </tbody>
+      </table>
+      <p class="nota" style="padding:6px 12px 8px">A senha do destinatário <b>nunca vai ao fio</b>: só ela + a pública do remetente (ECDH) abrem; a assinatura Ed25519 é conferida na leitura.</p>
+    </div>
+
+    <div class="secao">
+      <div class="st"><span class="barra" style="background:var(--e2e)"></span>anexo (referenciado pelo e-mail)</div>
+      <table>
+        <thead><tr><th>Campo</th><th>Tipo</th><th>Nota</th></tr></thead>
+        <tbody>
+          <tr class="chave"><td class="campo">id</td><td class="tipo">UUID v7 / u64</td><td class="nota"><span class="kb pk">PK</span> — referenciado por <code>email.anexos</code></td></tr>
+          <tr class="meta"><td class="campo">nome</td><td class="tipo">texto</td><td class="nota"><b>acentos preservados</b> — byte a byte (ao contrário do corpo)</td></tr>
+          <tr class="meta"><td class="campo">tamanho</td><td class="tipo">inteiro</td><td class="nota">bytes</td></tr>
+          <tr class="e2e"><td class="campo">sal_kdf · nonce · ct · tag</td><td class="tipo">bytes</td><td class="nota">🔒 cifrado à parte, mesma disciplina E2E</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===================== CONFIANÇA ===================== -->
+  <div class="painel">
+    <header><h2>🤝 Confiança</h2><span class="reg">vizinho — onde moram pix e categoria</span></header>
+    <div class="secao">
+      <table>
+        <thead><tr><th>Campo</th><th>Tipo</th><th>Nota</th></tr></thead>
+        <tbody>
+          <tr class="chave"><td class="campo">de · para</td><td class="tipo">uuid</td><td class="nota">o par da relação</td></tr>
+          <tr class="meta"><td class="campo">estado</td><td class="tipo">enum</td><td class="nota">pendente / aceita / recusada</td></tr>
+          <tr class="meta"><td class="campo">categoria</td><td class="tipo">enum</td><td class="nota">familia/amigos · negocios · atenção baixa/moderada/total</td></tr>
+          <tr class="meta"><td class="campo">pix_chave</td><td class="tipo">texto</td><td class="nota">chave pix de quem cobra</td></tr>
+          <tr class="meta"><td class="campo">pix_valor</td><td class="tipo">inteiro (centavos)</td><td class="nota"><b>corrige o <code>f64</code> do exemplo</b> — pix é valor inteiro; split Masson também em centavos</td></tr>
+          <tr class="meta"><td class="campo">seguro_alto</td><td class="tipo">bool</td><td class="nota">a relação pediu p12 (nível ≥ 2)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <p class="rodape">
+    Fonte canônica: <code>docs/CORREIO-CAMPOS.md</code>. &nbsp;·&nbsp;
+    <b>A decidir com o dono</b> (formato entra cedo, por pétrea): <code>id</code> UUID v7 como PK, a coluna <code>sistema_dt</code>, o <code>verificador_login</code>, e o congelamento do PSCH destes campos.<br>
+    <span class="maq">Maquete de modelo — os campos já rodam em memória nos exemplos correio-*; o formato em disco (PSCH) se congela com o dono antes de gravar byte.</span>
+  </p>
+</div>
