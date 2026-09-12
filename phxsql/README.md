@@ -4,7 +4,7 @@
 
 > Built to store. Engineered to scale.
 
-Motor de dados em Rust no modelo de arquivos separados do HFSQL(R): cada tabela
+Motor de dados em Rust no modelo de arquivos separados por tabela: cada tabela
 lógica é a soma de sete arquivos físicos — mais um oitavo, o espelho `.bkp`,
 quando ele está ligado.
 
