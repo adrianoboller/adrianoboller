@@ -1,0 +1,288 @@
+<title>Infraestrutura do PhxMail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700;800;900&display=swap">
+<style>
+  :root{
+    --fundo:#010418; --sup:#081029; --sup2:#0b1533; --sup3:#101c42;
+    --linha:#26305e; --linha2:#1a2246; --tinta:#eef1fb; --fraco:#a3accb; --fraco2:#6b76a2;
+    --central:#5aa9ff;   /* azul: diretorio central */
+    --no:#4fd08a;        /* verde: servermail / E2E */
+    --cifra:#f2b23a;     /* ambar: cifra / marca fogo */
+    --rede:#c77dff;      /* roxo: federacao / rede */
+    --alerta:#ff6b6b;
+    --ui:"Exo 2","Segoe UI",system-ui,-apple-system,sans-serif;
+    --texto:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--fundo);color:var(--tinta);margin:0;font-family:var(--texto);
+    font-size:15px;line-height:1.6;
+    background-image:radial-gradient(120% 80% at 50% -10%,#0a1636 0%,#010418 55%)}
+  .env{max-width:1080px;margin:0 auto;padding:0 20px}
+  .ui{font-family:var(--ui)}
+  .mono{font-family:var(--mono)}
+  h1,h2,h3{font-family:var(--ui);text-wrap:balance;margin:0}
+  .rot{font-family:var(--ui);text-transform:uppercase;letter-spacing:.16em;font-size:11px;font-weight:700;color:var(--fraco2)}
+
+  /* ---------- hero ---------- */
+  header.hero{padding:56px 0 34px;text-align:center;border-bottom:1px solid var(--linha2)}
+  .selo{display:inline-flex;align-items:center;gap:9px;font-family:var(--ui);font-weight:700;
+    font-size:13px;color:var(--cifra);border:1px solid #4a3d16;background:#160f02;border-radius:999px;padding:6px 14px;letter-spacing:.04em}
+  h1{font-size:clamp(34px,6vw,62px);font-weight:900;letter-spacing:-.02em;margin:20px 0 10px;line-height:1.02}
+  h1 .fog{color:var(--cifra)}
+  h1 b{color:var(--central)}
+  .tese{max-width:640px;margin:0 auto;color:var(--fraco);font-size:clamp(16px,2.3vw,20px)}
+  .assin{font-family:var(--ui);text-transform:uppercase;letter-spacing:.22em;font-size:11px;color:var(--fraco2);margin-top:20px}
+
+  /* ---------- pilares ---------- */
+  .pilares{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:30px 0}
+  @media(max-width:720px){.pilares{grid-template-columns:1fr}}
+  .pil{background:var(--sup2);border:1px solid var(--linha);border-radius:14px;padding:18px;border-top:3px solid}
+  .pil.a{border-top-color:var(--no)} .pil.b{border-top-color:var(--central)} .pil.c{border-top-color:var(--cifra)}
+  .pil .k{font-family:var(--ui);font-weight:800;font-size:24px;letter-spacing:-.01em}
+  .pil .d{color:var(--fraco);font-size:13.5px;margin-top:5px}
+
+  section{padding:40px 0;border-bottom:1px solid var(--linha2)}
+  h2{font-size:clamp(22px,3.4vw,30px);font-weight:800;letter-spacing:-.01em}
+  section > .env > .sub{color:var(--fraco);max-width:680px;margin:8px 0 0}
+
+  /* ---------- diagrama ---------- */
+  figure{margin:26px 0 0;background:linear-gradient(180deg,#070e26,#050a1e);border:1px solid var(--linha);border-radius:18px;padding:12px}
+  figure svg{display:block;width:100%;height:auto}
+  figcaption{color:var(--fraco2);font-size:12.5px;text-align:center;padding:8px 10px 4px}
+  .legd{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:8px;font-size:12px;color:var(--fraco)}
+  .legd span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+  /* ---------- cards infra ---------- */
+  .grade{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px}
+  @media(max-width:820px){.grade{grid-template-columns:1fr}}
+  .card{background:var(--sup2);border:1px solid var(--linha);border-radius:14px;padding:18px;position:relative;overflow:hidden}
+  .card .ic{font-size:22px}
+  .card h3{font-size:16.5px;font-weight:700;margin:8px 0 6px}
+  .card p{color:var(--fraco);font-size:13.5px;margin:0}
+  .card ul{margin:10px 0 0;padding:0;list-style:none;font-size:13px;color:var(--fraco)}
+  .card li{padding:3px 0 3px 18px;position:relative}
+  .card li::before{content:"›";position:absolute;left:2px;color:var(--central);font-weight:700}
+  .card .req{margin-top:12px;font-family:var(--mono);font-size:11.5px;color:var(--no);border-top:1px solid var(--linha2);padding-top:9px}
+  .card.central{border-left:3px solid var(--central)}
+  .card.no{border-left:3px solid var(--no)}
+  .card.cluster{border-left:3px solid var(--rede)}
+
+  /* ---------- fosso ---------- */
+  .fosso{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:24px}
+  @media(max-width:720px){.fosso{grid-template-columns:1fr}}
+  .fo{display:flex;gap:13px;background:var(--sup2);border:1px solid var(--linha);border-radius:13px;padding:15px}
+  .fo .n{font-family:var(--ui);font-weight:900;font-size:22px;color:var(--cifra);line-height:1;flex:none;width:26px}
+  .fo h3{font-size:15px;font-weight:700;margin:0 0 3px}
+  .fo p{margin:0;color:var(--fraco);font-size:13px}
+
+  /* ---------- provado x roadmap ---------- */
+  .duas{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:22px}
+  @media(max-width:720px){.duas{grid-template-columns:1fr}}
+  .col{border:1px solid var(--linha);border-radius:14px;padding:16px 18px;background:var(--sup2)}
+  .col.provado{border-top:3px solid var(--no)} .col.falta{border-top:3px solid var(--cifra)}
+  .col h3{font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .col ul{margin:0;padding:0;list-style:none;font-size:13.5px}
+  .col li{padding:6px 0 6px 24px;position:relative;color:var(--fraco);border-bottom:1px solid var(--linha2)}
+  .col li:last-child{border-bottom:0}
+  .col.provado li::before{content:"✓";position:absolute;left:2px;color:var(--no);font-weight:700}
+  .col.falta li::before{content:"○";position:absolute;left:3px;color:var(--cifra)}
+  .col li b{color:var(--tinta);font-weight:600}
+
+  footer{padding:34px 0 50px;text-align:center;color:var(--fraco2);font-size:12px}
+  footer .assin{margin-top:0;margin-bottom:8px;color:var(--fraco)}
+  footer .maq{color:var(--cifra)}
+</style>
+
+<header class="hero">
+  <div class="env">
+    <span class="selo">🔥 PhxMail · plataforma de correio</span>
+    <h1>Correio corporativo <span class="fog">cifrado</span>,<br><b>sem SMTP</b>, num motor próprio.</h1>
+    <p class="tese">Um jardim murado com garantias fortes: cifra fim‑a‑fim obrigatória, sem spam por desenho, e um motor de dados em Rust com <b>zero dependências externas</b>. O servidor guarda e roteia — <b>nunca lê</b>.</p>
+    <div class="assin">Built to store · Engineered to scale</div>
+
+    <div class="pilares">
+      <div class="pil a"><div class="k">E2E</div><div class="d ui">Cifra ponta‑a‑ponta obrigatória (X25519 + ChaCha20‑Poly1305). O conteúdo nunca chega em claro ao servidor.</div></div>
+      <div class="pil b"><div class="k">0 deps</div><div class="d ui">Só a biblioteca padrão do Rust. Compila offline, cruza para Windows/Linux, sem cadeia de suprimentos para atacar.</div></div>
+      <div class="pil c"><div class="k">8000/TCP</div><div class="d ui">Protocolo próprio na porta 8000, com aperto cifrado (Noise). Sem MX, sem relay aberto, sem SMTP.</div></div>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="env">
+    <span class="rot">A arquitetura</span>
+    <h2>Como a rede se organiza</h2>
+    <p class="sub">Um diretório central leve, nós de servidor por empresa, e federação por confiança — sem um repositório central de usuários para invadir.</p>
+
+    <figure>
+      <svg viewBox="0 0 960 470" role="img" aria-label="Diagrama da infraestrutura do PhxMail: diretorio central com Cloudflare no topo, dois nos servermail por empresa, cliente conectando na porta 8000, e federacao por confianca entre os nos.">
+        <defs>
+          <marker id="ponta" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L7,3 L0,6 Z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <!-- diretorio central -->
+        <g color="#5aa9ff">
+          <rect x="270" y="24" width="420" height="86" rx="14" fill="#08122b" stroke="currentColor" stroke-width="1.5"/>
+          <text x="480" y="52" text-anchor="middle" fill="#eef1fb" font-family="Exo 2, sans-serif" font-weight="700" font-size="18">Diretório central · phxmail.com.br</text>
+          <text x="480" y="74" text-anchor="middle" fill="#a3accb" font-family="system-ui" font-size="13">Só o mapa dos servidores + DNS (Cloudflare). Nenhum usuário.</text>
+          <text x="480" y="95" text-anchor="middle" fill="#5aa9ff" font-family="ui-monospace, monospace" font-size="12.5">empresa.phxmail.com.br → IP fixo (A)</text>
+        </g>
+
+        <!-- setas central -> nos (resolve DNS) -->
+        <g color="#5aa9ff" stroke="currentColor" stroke-width="1.6" fill="none" stroke-dasharray="5 4">
+          <path d="M400,110 L250,196" marker-end="url(#ponta)"/>
+          <path d="M560,110 L710,196" marker-end="url(#ponta)"/>
+        </g>
+        <text x="300" y="165" fill="#7f8ab5" font-family="system-ui" font-size="11" transform="rotate(-27 300 165)">resolve nome→IP</text>
+
+        <!-- servermail A -->
+        <g color="#4fd08a">
+          <rect x="70" y="200" width="330" height="150" rx="14" fill="#08160f" stroke="currentColor" stroke-width="1.5"/>
+          <text x="90" y="230" fill="#eef1fb" font-family="Exo 2, sans-serif" font-weight="700" font-size="16">🗄️ Servermail · Empresa A</text>
+          <text x="90" y="252" fill="#a3accb" font-family="ui-monospace, monospace" font-size="12">IP fixo · porta 8000 · aperto Noise</text>
+          <rect x="90" y="266" width="290" height="30" rx="8" fill="#0b1a12" stroke="#1f5c3f"/>
+          <text x="105" y="286" fill="#4fd08a" font-family="system-ui" font-size="12.5">🔒 caixas cifradas (E2E) — o servidor não lê</text>
+          <text x="90" y="320" fill="#a3accb" font-family="system-ui" font-size="12">Réplicas: master → slaves · failover automático</text>
+          <text x="90" y="338" fill="#6b76a2" font-family="system-ui" font-size="11.5">guarda as empresas, usuários e caixas DESTE nó</text>
+        </g>
+
+        <!-- servermail B -->
+        <g color="#4fd08a">
+          <rect x="560" y="200" width="330" height="150" rx="14" fill="#08160f" stroke="currentColor" stroke-width="1.5"/>
+          <text x="580" y="230" fill="#eef1fb" font-family="Exo 2, sans-serif" font-weight="700" font-size="16">🗄️ Servermail · Empresa B</text>
+          <text x="580" y="252" fill="#a3accb" font-family="ui-monospace, monospace" font-size="12">IP fixo · porta 8000 · aperto Noise</text>
+          <rect x="580" y="266" width="290" height="30" rx="8" fill="#0b1a12" stroke="#1f5c3f"/>
+          <text x="595" y="286" fill="#4fd08a" font-family="system-ui" font-size="12.5">🔒 caixas cifradas (E2E) — o servidor não lê</text>
+          <text x="580" y="320" fill="#a3accb" font-family="system-ui" font-size="12">Réplicas: master → slaves · failover automático</text>
+          <text x="580" y="338" fill="#6b76a2" font-family="system-ui" font-size="11.5">guarda as empresas, usuários e caixas DESTE nó</text>
+        </g>
+
+        <!-- federacao A<->B -->
+        <g color="#c77dff" stroke="currentColor" stroke-width="2" fill="none">
+          <path d="M400,275 L560,275" marker-end="url(#ponta)"/>
+          <path d="M560,290 L400,290" marker-end="url(#ponta)"/>
+        </g>
+        <text x="480" y="266" text-anchor="middle" fill="#c77dff" font-family="Exo 2, sans-serif" font-weight="600" font-size="12">federação · confiança</text>
+        <text x="480" y="308" text-anchor="middle" fill="#7f8ab5" font-family="system-ui" font-size="11">blob cifrado, direto — sem repasse central</text>
+
+        <!-- cliente -->
+        <g color="#4fd08a">
+          <rect x="150" y="398" width="170" height="52" rx="12" fill="#0b1533" stroke="#26305e" stroke-width="1.5"/>
+          <text x="235" y="422" text-anchor="middle" fill="#eef1fb" font-family="Exo 2, sans-serif" font-weight="700" font-size="14">📱 Cliente (phxclientmail)</text>
+          <text x="235" y="440" text-anchor="middle" fill="#a3accb" font-family="system-ui" font-size="11.5">uma senha · decifra local</text>
+        </g>
+        <g color="#4fd08a" stroke="currentColor" stroke-width="1.6" fill="none">
+          <path d="M235,398 L235,352" marker-end="url(#ponta)"/>
+        </g>
+        <text x="245" y="378" fill="#7f8ab5" font-family="system-ui" font-size="11">8000 cifrado</text>
+      </svg>
+      <figcaption>O central só sabe <b>onde</b> estão os servidores. Cada nó guarda os seus dados; os nós se falam direto por confiança. O conteúdo é cifrado ponta‑a‑ponta — nem o servidor que guarda, nem o que roteia, conseguem ler.</figcaption>
+      <div class="legd">
+        <span><i class="dot" style="background:var(--central)"></i>diretório central + DNS</span>
+        <span><i class="dot" style="background:var(--no)"></i>servermail (dados + caixas)</span>
+        <span><i class="dot" style="background:var(--rede)"></i>federação por confiança</span>
+        <span><i class="dot" style="background:var(--cifra)"></i>🔒 cifra E2E</span>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <div class="env">
+    <span class="rot">O que rodar</span>
+    <h2>A infraestrutura necessária</h2>
+    <p class="sub">Enxuta de propósito: sem banco de dados de terceiros, sem fila, sem cache externo. O motor é um binário só.</p>
+    <div class="grade">
+      <div class="card central">
+        <div class="ic">🌐</div>
+        <h3>Diretório central</h3>
+        <p>Publica o mapa nome→IP e sabe quais servidores existem. Leve — não guarda usuário nem mensagem.</p>
+        <ul>
+          <li>1 host pequeno (o diretório)</li>
+          <li>Conta Cloudflare + zona <span class="mono">phxmail.com.br</span></li>
+          <li>Token <span class="mono">Zone.DNS</span> restrito</li>
+        </ul>
+        <div class="req">custo: baixo · 1 VM + DNS</div>
+      </div>
+      <div class="card no">
+        <div class="ic">🗄️</div>
+        <h3>Nó servermail (por empresa)</h3>
+        <p>Hospeda as caixas cifradas da empresa e atende clientes na porta 8000. O binário zero‑deps roda em qualquer lugar.</p>
+        <ul>
+          <li>1 VM/host com <b>IP fixo</b></li>
+          <li>O binário (Linux ou Windows)</li>
+          <li>Disco para as caixas cifradas</li>
+        </ul>
+        <div class="req">escala: 1 nó → N empresas</div>
+      </div>
+      <div class="card cluster">
+        <div class="ic">🧭</div>
+        <h3>Cluster (alta disponibilidade)</h3>
+        <p>Replicação master→slaves com eleição e promoção automática. Um nó cai, outro assume — sem operador.</p>
+        <ul>
+          <li>3+ nós para quórum</li>
+          <li>Réplica idêntica (SHA‑256)</li>
+          <li>Failover automático</li>
+        </ul>
+        <div class="req">resiliência: sem ponto único</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="env">
+    <span class="rot">Por que é defensável</span>
+    <h2>O fosso</h2>
+    <p class="sub">Não é uma camada sobre um servidor de e‑mail existente — é um motor próprio, e cada garantia nasce da arquitetura, não de configuração.</p>
+    <div class="fosso">
+      <div class="fo"><div class="n">01</div><div><h3>Zero‑conhecimento, de verdade</h3><p>O servidor nunca teve a chave: o conteúdo é E2E. E não há honeypot central — os usuários moram espalhados nos nós, não num banco único.</p></div></div>
+      <div class="fo"><div class="n">02</div><div><h3>Zero dependências externas</h3><p>Só a biblioteca padrão. Criptografia, JSON, compressão — tudo escrito e provado aqui. Sem supply‑chain para comprometer; compila offline e cruza de arquitetura.</p></div></div>
+      <div class="fo"><div class="n">03</div><div><h3>Provado contra vetor oficial</h3><p>SHA‑256, HMAC, ChaCha20‑Poly1305, X25519, Ed25519, PBKDF2 — conferidos contra FIPS/RFC. Nada de «parece certo»: cada peça passa por prova real.</p></div></div>
+      <div class="fo"><div class="n">04</div><div><h3>Sem spam por desenho</h3><p>Não existe contato sem confiança aceita — nos dois canais (mensagem e pedido). O problema que consome o e‑mail tradicional aqui não nasce.</p></div></div>
+      <div class="fo"><div class="n">05</div><div><h3>Conformidade embutida</h3><p>Cadastro exige CPF/CNPJ válidos; o documento fica cifrado em repouso (chave única por índice cego). Apagar é apagar — sem rastro, na trilha LGPD.</p></div></div>
+      <div class="fo"><div class="n">06</div><div><h3>Portátil e barato de rodar</h3><p>Um binário, sem banco de terceiros nem fila. Roda numa VM modesta; a infra escala por nós, não por um monólito central caro.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="env">
+    <span class="rot">Honestidade de engenharia</span>
+    <h2>O que está provado, e o que falta</h2>
+    <p class="sub">Esta casa não anuncia o que não mediu. Abaixo, o que já roda com prova verde — e o que ainda é passo de implantação.</p>
+    <div class="duas">
+      <div class="col provado">
+        <h3>✅ Provado (PROVA VERDE)</h3>
+        <ul>
+          <li>Escada de cifra E2E: <b>5 níveis</b>, respostas assinadas, corpo sem acento</li>
+          <li>Replicação master→slaves e <b>cluster</b> (eleição/failover), medidos</li>
+          <li>Provisionamento de DNS no Cloudflare (contra servidor falso)</li>
+          <li>Cadastro: <b>CPF/CNPJ válidos</b>, chave única, cifra em repouso</li>
+          <li>Cripto escrita à mão, conferida contra <b>FIPS/RFC</b></li>
+        </ul>
+      </div>
+      <div class="col falta">
+        <h3>○ Em construção / implantação</h3>
+        <ul>
+          <li>O servidor de rede abrindo o soquete de verdade na 8000 (<span class="mono">#159</span>)</li>
+          <li>DNS real: registrar a zona <span class="mono">phxmail.com.br</span> no Cloudflare</li>
+          <li>Armazenar o id do usuário (UUID v7) nos servidores da WX</li>
+          <li>Congelar o formato em disco (PSCH) do correio</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="env">
+    <div class="assin ui">Built to store · Engineered to scale</div>
+    <div class="maq">Documento de arquitetura para explicação — maquete/proposta; números de arquitetura, não projeções financeiras.</div>
+  </div>
+</footer>
