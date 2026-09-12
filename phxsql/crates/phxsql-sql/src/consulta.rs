@@ -277,6 +277,19 @@ pub fn traduzir_consulta(
             "{} junção(s), aplicadas na ordem, cada uma pelo MESMO portao de permissao",
             c.juntar.len()
         ));
+    } else if let Some(a) = &c.apelido_de {
+        // SEM junção o lado de fora nao ganha prefixo -- nenhuma coluna dele
+        // precisa dizer de qual lado vem, porque so ha um lado. Mas um `EXISTS`
+        // correlacionado cita o apelido de fora (`c.id = x.cliente_id`), e uma
+        // projecao/ordem qualificada tambem (`SELECT c.nome`, `ORDER BY c.id`):
+        // ai o `consultar` precisa SABER qual e esse apelido para reconhecer o
+        // `c.` e descarta-lo antes de resolver `id`/`nome` na linha de fora. Por
+        // isso o apelido entra quando alguem de fora o CITA -- e so entao. Emitir
+        // sempre mudaria a forma do pedido de todo `SELECT ... FROM t apelido`
+        // que ja existe (pedido 240).
+        if apelido_de_citado(c, a) {
+            pares.push(("apelido".to_string(), Json::texto_de(a)));
+        }
     }
 
     if !c.em.is_empty() {
@@ -636,6 +649,68 @@ pub(crate) fn recusa_se_correlacionada(sel: &Selecao) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// O apelido do `de` e CITADO de fora, sem junção? -- ou seja, alguem escreveu
+/// `apelido.coluna` referindo a tabela principal. So entao o `consultar` precisa
+/// do apelido no pedido (para reconhecer e descartar o prefixo). Tres lugares o
+/// citam: o lado de FORA de um par de correlacao do `EXISTS` (`c.id = x.col`, e
+/// `esquerda` e sempre a coluna de fora), uma coluna qualificada na projecao
+/// (`SELECT c.nome`) e uma na ordem (`ORDER BY c.id`). O `IN`/escalar de fora
+/// citam pela coluna e pela expressao, mas essas duas ainda nao descartam o
+/// prefixo no `consultar` sem junção -- ficam de fora ate ganharem, para o
+/// apelido nao entrar prometendo um descarte que nao acontece.
+fn apelido_de_citado(c: &Consulta, alias: &str) -> bool {
+    let cita = |nome: &str| {
+        nome.split_once('.')
+            .is_some_and(|(qualificador, _)| igual_sem_caso(qualificador, alias))
+    };
+    c.existe
+        .iter()
+        .any(|e| e.em.iter().any(|(esquerda, _)| cita(esquerda)))
+        || c.colunas
+            .as_ref()
+            .is_some_and(|cols| cols.iter().any(|col| cita(&col.coluna)))
+        || c.ordem.iter().any(|o| cita(&o.coluna))
+}
+
+/// O texto de um termo do WHERE de DENTRO de um `EXISTS`, com o qualificador
+/// INTERNO (`x.`) removido -- `x.status = 'aberto'` vira `status = 'aberto'`.
+///
+/// # Por que tirar
+///
+/// O sub-pedido do `EXISTS` roda sobre a tabela CRUA (o `consultar` so prefixa a
+/// linha DEPOIS de a ler, no `existe`), entao um `x.` no filtro dele viraria uma
+/// coluna que a tabela nao tem -- e o avaliador do motor recusa nomeando
+/// «a coluna "x.status" que a tabela nao tem». So o apelido de DENTRO se tira: um
+/// qualificador de FORA aqui ja teria sido recusado por `tentar_existe` antes de
+/// chegar a um fragmento (pedido 240).
+fn sem_qualificador_interno(termo: &[Simbolo], apelido_interno: &str) -> String {
+    let mut limpo: Vec<Simbolo> = Vec::with_capacity(termo.len());
+    let mut i = 0;
+    while i < termo.len() {
+        if let Token::Palavra {
+            texto,
+            citado: false,
+        } = &termo[i].token
+        {
+            if igual_sem_caso(texto, apelido_interno)
+                && matches!(termo.get(i + 1).map(|s| &s.token), Some(Token::Ponto))
+                && matches!(
+                    termo.get(i + 2).map(|s| &s.token),
+                    Some(Token::Palavra { .. })
+                )
+            {
+                // Pula `x .` e deixa so a coluna nua.
+                limpo.push(termo[i + 2].clone());
+                i += 3;
+                continue;
+            }
+        }
+        limpo.push(termo[i].clone());
+        i += 1;
+    }
+    normalizar_tokens(&limpo)
 }
 
 // -------------------------------------------------------------- parser
@@ -1445,7 +1520,7 @@ fn tentar_existe(conj: &[Simbolo]) -> Result<Option<Existe>> {
                     continue;
                 }
                 (false, false) => {
-                    fragmentos_de_dentro.push(normalizar_tokens(&termo));
+                    fragmentos_de_dentro.push(sem_qualificador_interno(&termo, &apelido_interno));
                     continue;
                 }
                 (true, true) => {
@@ -1473,7 +1548,7 @@ fn tentar_existe(conj: &[Simbolo]) -> Result<Option<Existe>> {
                 ),
             ));
         }
-        fragmentos_de_dentro.push(normalizar_tokens(&termo));
+        fragmentos_de_dentro.push(sem_qualificador_interno(&termo, &apelido_interno));
     }
 
     if pares_em.is_empty() {
@@ -1816,7 +1891,11 @@ mod testes {
     }
 
     /// Termo que so cita coluna de DENTRO (sem qualificador de fora) vai
-    /// para a `expressao` do sub-pedido, nao para `em`.
+    /// para a `expressao` do sub-pedido, nao para `em` -- e o qualificador
+    /// interno (`x.`) CAI, porque o sub-pedido roda sobre a tabela crua, onde
+    /// a coluna e `status` e nao `x.status` (pedido 240, parte 3). Falhava com
+    /// o defeito reposto: o sub-pedido levava `x.status = 'aberto'`, e o
+    /// avaliador do motor recusa «a coluna "x.status" que a tabela nao tem».
     #[test]
     fn exists_com_filtro_de_dentro_alem_da_correlacao() {
         let c = consulta(
@@ -1829,8 +1908,70 @@ mod testes {
         );
         assert_eq!(
             c.existe[0].de.onde,
-            Some(Onde::Expressao("x.status = 'aberto'".to_string()))
+            Some(Onde::Expressao("status = 'aberto'".to_string())),
+            "o qualificador interno x. tem de cair -- o sub-pedido roda na tabela crua"
         );
+    }
+
+    /// O apelido interno cai TAMBEM quando o filtro de dentro e uma igualdade
+    /// entre duas colunas da propria tabela (`x.a = x.b`): os dois lados sao de
+    /// dentro, o termo nao correlaciona, e vira `a = b` no sub-pedido.
+    #[test]
+    fn exists_filtro_de_dentro_entre_duas_colunas_perde_os_dois_prefixos() {
+        let c = consulta(
+            "SELECT * FROM clientes c WHERE EXISTS (SELECT 1 FROM pedidos AS x WHERE \
+             x.cliente_id = c.id AND x.aberto = x.confirmado)",
+        );
+        assert_eq!(
+            c.existe[0].de.onde,
+            Some(Onde::Expressao("aberto = confirmado".to_string()))
+        );
+    }
+
+    /// Pedido 240, parte 1: o `EXISTS` correlacionado por apelido de fora emite
+    /// o `apelido` do `de` no pedido `consultar` MESMO SEM junção -- e sem ele o
+    /// `consultar` nao sabe que `c.id` e a coluna `id` da linha de fora, e a
+    /// forma-modelo do `docs/SQL.md` §10 recusava. Falha com o defeito reposto
+    /// (tirar a emissao): a chave `apelido` some do pedido.
+    #[test]
+    fn exists_sem_juncao_emite_o_apelido_de_fora() {
+        let c = consulta(
+            "SELECT * FROM clientes c WHERE EXISTS (SELECT 1 FROM pedidos AS x WHERE \
+             x.cliente_id = c.id)",
+        );
+        assert!(c.juntar.is_empty(), "a forma-modelo nao tem junção");
+        let p = traduzir_consulta(&c, "loja", &mut resolver_simples).unwrap();
+        assert_eq!(
+            p.pedido.texto_ou("apelido", ""),
+            "c",
+            "o apelido de fora tem de entrar no pedido para o `existe` casar c.id"
+        );
+    }
+
+    /// O contraponto: uma consulta composta SEM ninguem citar o apelido de fora
+    /// (um IN de subconsulta comum) NAO emite `apelido` -- emitir sempre mudaria
+    /// a forma do pedido de todo `SELECT ... FROM t apelido` que ja existe.
+    #[test]
+    fn sem_citacao_do_apelido_de_fora_o_pedido_nao_muda() {
+        let c = consulta("SELECT * FROM pedidos p WHERE cliente_id IN (SELECT id FROM clientes)");
+        let p = traduzir_consulta(&c, "loja", &mut resolver_simples).unwrap();
+        assert!(
+            p.pedido.campo("apelido").is_none(),
+            "sem citacao do apelido de fora, a chave apelido nem aparece"
+        );
+    }
+
+    /// Uma projecao qualificada pelo apelido de fora (`SELECT c.nome`) tambem
+    /// faz o apelido entrar, para o `consultar` descartar o `c.` (parte 2 e do
+    /// servidor; aqui so a emissao do tradutor).
+    #[test]
+    fn projecao_qualificada_pelo_apelido_de_fora_emite_o_apelido() {
+        let c = consulta(
+            "SELECT c.nome FROM clientes c WHERE EXISTS (SELECT 1 FROM pedidos AS x \
+             WHERE x.cliente_id = c.id)",
+        );
+        let p = traduzir_consulta(&c, "loja", &mut resolver_simples).unwrap();
+        assert_eq!(p.pedido.texto_ou("apelido", ""), "c");
     }
 
     /// Quando o apelido de dentro nao vem com AS, o padrao e o nome da

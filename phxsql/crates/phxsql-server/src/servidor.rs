@@ -10980,6 +10980,19 @@ impl Servidor {
             }
         }
 
+        // O apelido do lado de FORA, SEM junção -- e o que faz `c.id` (num
+        // `EXISTS`, numa projecao `c.nome` ou num `ORDER BY c.id`) casar com a
+        // coluna `id`/`nome` da linha de fora, que sem junção nao ganhou
+        // prefixo. Com junção fica `None`: ali a linha JA vem prefixada e o
+        // `c.` diz de qual lado a coluna vem -- descarta-lo perderia essa
+        // informacao (pedido 240). O tradutor so poe `apelido` no pedido quando
+        // alguem de fora o cita, entao a chave presente ja e sinal de citacao.
+        let apelido_de_fora = if prefixado {
+            None
+        } else {
+            apelido_do_lado(p, de, "de").ok()
+        };
+
         // ----------------------------------------------------------- escalar
         //
         // Uma subconsulta NAO CORRELACIONADA que devolve uma linha so: ela roda
@@ -11098,13 +11111,9 @@ impl Servidor {
             }
             // O lado de fora sem junção nao tem prefixo, mas quem escreve
             // `EXISTS` escreve `c.id` -- entao o prefixo do proprio lado de
-            // fora e aceito e descartado quando o lado nao foi prefixado.
-            // Outro prefixo continua recusando, porque nao nomeia lado nenhum.
-            let apelido_de_fora = if prefixado {
-                None
-            } else {
-                apelido_do_lado(p, de, "de").ok()
-            };
+            // fora e aceito e descartado (`apelido_de_fora`, calculado uma vez
+            // la em cima). Outro prefixo continua recusando, porque nao nomeia
+            // lado nenhum.
             let mut pares: Vec<(String, String)> = Vec::with_capacity(itens.len());
             for (k, par) in itens.iter().enumerate() {
                 let e = par.texto_ou("esquerda", "").trim().to_string();
@@ -11114,12 +11123,7 @@ impl Servidor {
                         "o par {k} do existe {i} precisa de \"esquerda\" e \"direita\""
                     )));
                 }
-                let e = match (&apelido_de_fora, e.split_once('.')) {
-                    (Some(ap), Some((prefixo, resto))) if prefixo.eq_ignore_ascii_case(ap) => {
-                        resto.to_string()
-                    }
-                    _ => e,
-                };
+                let e = tirar_prefixo_de_fora(&e, apelido_de_fora.as_deref());
                 let re =
                     resolver_ou_recusar(&modelo, &e, &format!("o lado de fora do existe {i}"))?;
                 let rd = resolver_ou_recusar(
@@ -11174,6 +11178,10 @@ impl Servidor {
                 .iter()
                 .filter_map(|l| cs::campo(l, &campo_real).and_then(cs::chave_de_juncao))
                 .collect();
+            // O lado de fora do `IN` tambem pode vir prefixado pelo apelido de
+            // fora sem junção (`c.id IN (…)`); o prefixo se descarta, como no
+            // `existe` (pedido 240).
+            let coluna = tirar_prefixo_de_fora(&coluna, apelido_de_fora.as_deref());
             let real = resolver_ou_recusar(&modelo, &coluna, "o \"em\"")?;
             linhas.retain(|l| {
                 cs::campo(l, &real)
@@ -11238,7 +11246,10 @@ impl Servidor {
         let mut ordem = cs::Criterio::da_lista(p.campo("ordem").and_then(Json::lista));
         if !ordem.is_empty() {
             for c in ordem.iter_mut() {
-                c.coluna = resolver_ou_recusar(&modelo, &c.coluna, "a ordem")?;
+                // `ORDER BY c.id` sem junção: o `c.` do apelido de fora se
+                // descarta antes de resolver `id` na linha (pedido 240).
+                let coluna = tirar_prefixo_de_fora(&c.coluna, apelido_de_fora.as_deref());
+                c.coluna = resolver_ou_recusar(&modelo, &coluna, "a ordem")?;
             }
             cs::tipar(&mut ordem, &modelo);
             linhas.sort_by(|a, b| cs::comparar_por(a, b, &ordem));
@@ -11289,8 +11300,12 @@ impl Servidor {
                     }
                     // O nome REAL para procurar, e o APELIDO para a chave da
                     // resposta: `{"coluna":"c.nome","apelido":"cliente"}` sai
-                    // como `cliente`, e sem apelido sai como foi pedido.
-                    let real = resolver_ou_recusar(&modelo, &nome, "a projecao")?;
+                    // como `cliente`, e sem apelido sai como foi pedido. Sem
+                    // junção o `c.` do apelido de fora se descarta ANTES de
+                    // procurar (a linha nao foi prefixada); o rotulo da resposta
+                    // segue como foi pedido, igual ao caminho com junção (240).
+                    let procurar = tirar_prefixo_de_fora(&nome, apelido_de_fora.as_deref());
+                    let real = resolver_ou_recusar(&modelo, &procurar, "a projecao")?;
                     let tipo = cs::tipo_no_modelo(&modelo, &real)
                         .unwrap_or(phxsql_core::types::ColumnType::Str(0));
                     escolhas.push((real, apelido, tipo));
@@ -22416,6 +22431,20 @@ fn apelido_do_lado(dono: &Json, sub: &Json, rotulo: &str) -> Result<String> {
         )));
     }
     Ok(curto.to_string())
+}
+
+/// Tira o prefixo do apelido de FORA de um nome, quando ha um e ele casa --
+/// `c.id` vira `id`. Um nome sem esse prefixo (ou sem ponto nenhum) passa
+/// inteiro. `apelido_de_fora` e `None` quando ha junção: ali o prefixo diz de
+/// qual lado a coluna vem, e descarta-lo seria perder essa informacao. Pedido
+/// 240: sem junção a linha de fora nao ganha prefixo, entao o `c.` que quem
+/// escreveu poe (num `EXISTS`, numa projecao, numa ordem, num `IN`) e ruido que
+/// se descarta antes de resolver a coluna na linha.
+fn tirar_prefixo_de_fora(nome: &str, apelido_de_fora: Option<&str>) -> String {
+    match (apelido_de_fora, nome.split_once('.')) {
+        (Some(ap), Some((prefixo, resto))) if prefixo.eq_ignore_ascii_case(ap) => resto.to_string(),
+        _ => nome.to_string(),
+    }
 }
 
 /// Resolve um nome contra o MODELO do lado, ou RECUSA nomeando.
@@ -36560,6 +36589,74 @@ mod testes_consultar_juncao {
         )
         .unwrap();
         assert_eq!(ids(&r), vec![1, 2, 3]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **Pedido 240, o caminho INTEIRO pela op `sql`: `EXISTS` correlacionado
+    /// por apelido de fora.** A forma-modelo do `docs/SQL.md` §10
+    /// (`FROM clientes c ... WHERE x.cliente_id = c.id`) recusava, porque o
+    /// tradutor nao emitia o apelido do `de` sem junção e o `consultar` nao
+    /// sabia que `c.id` era a coluna `id` da linha de fora.
+    ///
+    /// PROVA REAL nos dois sentidos: com o defeito reposto (o tradutor deixa de
+    /// emitir `apelido` sem junção), a op `sql` recusa nomeando «o lado de fora
+    /// do existe 0 pede "c.id"...»; com o conserto, devolve ana e bia (que tem
+    /// pedido) e nao o caio (que nao tem). O filtro de dentro (`x.total > 200`)
+    /// perde o `x.` (parte 3) e resolve na tabela crua; a projecao e a ordem
+    /// qualificadas (`c.nome`, `c.id`, parte 2) descartam o `c.` no servidor.
+    #[test]
+    fn exists_por_apelido_de_fora_pela_op_sql() {
+        let d = dir("existe-apelido-fora");
+        let (s, ses) = servidor(&d, Cadastro::default());
+        let roda = |texto: &str| {
+            pede(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"sql","database":"b","texto":{}"#,
+                    Json::texto_de(texto).escrever()
+                ),
+            )
+        };
+
+        // A forma-modelo do §10 -- `SELECT *`, ordem por coluna nua.
+        let r = roda(
+            "SELECT * FROM clientes c WHERE EXISTS \
+             (SELECT 1 FROM pedidos AS x WHERE x.cliente_id = c.id) ORDER BY id",
+        )
+        .expect("a forma-modelo do §10 tinha de devolver linhas, nao recusar");
+        assert_eq!(ids(&r), vec![1, 2], "ana e bia tem pedido; caio nao");
+
+        // NOT EXISTS: so o caio, que nao tem pedido.
+        let r = roda(
+            "SELECT * FROM clientes c WHERE NOT EXISTS \
+             (SELECT 1 FROM pedidos AS x WHERE x.cliente_id = c.id) ORDER BY id",
+        )
+        .unwrap();
+        assert_eq!(ids(&r), vec![3]);
+
+        // Parte 3: o filtro de dentro `x.total > 200` perde o `x.` e resolve na
+        // tabela crua. So a bia (pedido de 300) casa; a ana (100 e 50) nao.
+        let r = roda(
+            "SELECT * FROM clientes c WHERE EXISTS \
+             (SELECT 1 FROM pedidos AS x WHERE x.cliente_id = c.id AND x.total > 200) \
+             ORDER BY id",
+        )
+        .expect("o filtro de dentro com x. tinha de resolver, nao recusar");
+        assert_eq!(ids(&r), vec![2], "so a bia tem pedido acima de 200");
+
+        // Parte 2: projecao e ordem qualificadas pelo apelido de fora.
+        let r = roda(
+            "SELECT c.nome FROM clientes c WHERE EXISTS \
+             (SELECT 1 FROM pedidos AS x WHERE x.cliente_id = c.id) ORDER BY c.id",
+        )
+        .expect("projecao e ordem por c. tinham de resolver, nao recusar");
+        let nomes: Vec<String> = linhas(&r)
+            .iter()
+            .map(|l| l.texto_ou("c.nome", "").to_string())
+            .collect();
+        assert_eq!(nomes, vec!["ana".to_string(), "bia".to_string()]);
+
         let _ = std::fs::remove_dir_all(&d);
     }
 
