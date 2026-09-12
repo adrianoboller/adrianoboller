@@ -1153,79 +1153,92 @@ pub fn recuperar(dados: &Instancia) -> Relatorio {
 fn completar(db: &phxsql_store::catalogo::Database, marca: &Marca, r: &mut Relatorio) {
     let mut tabelas: HashMap<String, phxsql_store::table::Table> = HashMap::new();
     for op in &marca.operacoes {
-        let t = match tabelas.entry(op.tabela.clone()) {
-            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
-            std::collections::hash_map::Entry::Vacant(e) => {
-                match db.abrir_qualificada(&op.tabela) {
-                    Ok(mut t) => {
-                        // **O `.ndx` deixado para tras pela queda, e ele foi
-                        // achado pela prova por SOQUETE -- nenhum teste
-                        // unitario o via.**
-                        //
-                        // Um `SIGKILL` no meio da passada deixa levantada a
-                        // marca de «o indice ficou para tras», e enquanto ela
-                        // estiver la TODA operacao de indice recusa. A
-                        // recuperacao entao nao completava o commit: reabria a
-                        // tabela, tentava inserir, e recebia «reconstrua com
-                        // reparar indice». O commit ficava pela metade e a
-                        // tabela ficava inutilizavel ate alguem reparar a mao
-                        // -- sem ninguem ser avisado, porque o servidor subia
-                        // normalmente.
-                        //
-                        // Reconstruir aqui e o unico caminho honesto: o indice
-                        // ja era intrustavel ANTES de a recuperacao chegar, e
-                        // o relatorio CONTA quantos foram reconstruidos.
-                        if t.indice_precisa_reconstruir() {
-                            match t.reindexar() {
-                                Ok(_) => r.indices_reconstruidos += 1,
-                                Err(erro) => {
-                                    r.impossiveis.push(format!(
-                                        "transacao {}: o indice de {} ficou para tras \
-                                         e nao reconstruiu ({erro})",
-                                        marca.id, op.tabela
-                                    ));
-                                    continue;
-                                }
+        // Garante o handle no mapa, aberto e preparado UMA vez.
+        if !tabelas.contains_key(&op.tabela) {
+            match db.abrir_qualificada(&op.tabela) {
+                Ok(mut t) => {
+                    // **O `.ndx` deixado para tras pela queda, e ele foi
+                    // achado pela prova por SOQUETE -- nenhum teste
+                    // unitario o via.**
+                    //
+                    // Um `SIGKILL` no meio da passada deixa levantada a
+                    // marca de «o indice ficou para tras», e enquanto ela
+                    // estiver la TODA operacao de indice recusa. A
+                    // recuperacao entao nao completava o commit: reabria a
+                    // tabela, tentava inserir, e recebia «reconstrua com
+                    // reparar indice». O commit ficava pela metade e a
+                    // tabela ficava inutilizavel ate alguem reparar a mao
+                    // -- sem ninguem ser avisado, porque o servidor subia
+                    // normalmente.
+                    //
+                    // Reconstruir aqui e o unico caminho honesto: o indice
+                    // ja era intrustavel ANTES de a recuperacao chegar, e
+                    // o relatorio CONTA quantos foram reconstruidos.
+                    if t.indice_precisa_reconstruir() {
+                        match t.reindexar() {
+                            Ok(_) => r.indices_reconstruidos += 1,
+                            Err(erro) => {
+                                r.impossiveis.push(format!(
+                                    "transacao {}: o indice de {} ficou para tras \
+                                     e nao reconstruiu ({erro})",
+                                    marca.id, op.tabela
+                                ));
+                                continue;
                             }
                         }
-                        // A cascata desta tabela pode reconstruir o `.ndx`
-                        // da FILHA que ficou sujo -- pedido 172.
-                        //
-                        // O `reindexar` acima cobre a tabela nomeada na marca.
-                        // A filha da cascata nao esta nomeada em marca nenhuma,
-                        // porque a cascata nunca vira `Escrita`: a maquina
-                        // rodava e nao alcancava a tabela que ia consertar. Sem
-                        // isto o commit saia em `operacoes IMPOSSIVEIS` com a
-                        // mae no valor novo e parte das filhas no velho.
-                        //
-                        // Ligado SO aqui, e por isso nasce desligado: no
-                        // caminho normal de escrita, indice sujo quer dizer
-                        // «outro descritor tem escrita pendente», e reconstruir
-                        // seria reparar arquivo sao.
-                        t.ligar_reconstrucao_do_indice_da_filha(true);
-                        e.insert(t)
                     }
-                    Err(erro) => {
-                        r.impossiveis.push(format!(
-                            "transacao {}: nao consegui abrir {} ({erro})",
-                            marca.id, op.tabela
-                        ));
-                        continue;
-                    }
+                    // A cascata desta tabela pode reconstruir o `.ndx`
+                    // da FILHA que ficou sujo -- pedido 172.
+                    //
+                    // O `reindexar` acima cobre a tabela nomeada na marca.
+                    // A filha da cascata nao esta nomeada em marca nenhuma,
+                    // porque a cascata nunca vira `Escrita`: a maquina
+                    // rodava e nao alcancava a tabela que ia consertar. Sem
+                    // isto o commit saia em `operacoes IMPOSSIVEIS` com a
+                    // mae no valor novo e parte das filhas no velho.
+                    //
+                    // Ligado SO aqui, e por isso nasce desligado: no
+                    // caminho normal de escrita, indice sujo quer dizer
+                    // «outro descritor tem escrita pendente», e reconstruir
+                    // seria reparar arquivo sao.
+                    t.ligar_reconstrucao_do_indice_da_filha(true);
+                    tabelas.insert(op.tabela.clone(), t);
+                }
+                Err(erro) => {
+                    r.impossiveis.push(format!(
+                        "transacao {}: nao consegui abrir {} ({erro})",
+                        marca.id, op.tabela
+                    ));
+                    continue;
                 }
             }
-        };
-        match aplicar_uma(t, op) {
-            Ok(true) => r.reaplicadas += 1,
-            Ok(false) => r.ja_aplicadas += 1,
-            Err(e) => r.impossiveis.push(format!(
-                "transacao {}: {} rowid {} em {} ({e})",
-                marca.id,
-                op.acao.nome(),
-                op.rowid,
-                op.tabela
-            )),
         }
+        // Retira a tabela do mapa enquanto reaplica, para que a conferencia de
+        // FK possa emprestar as MAES que a MESMA marca ja reaplicou -- o mesmo
+        // conserto do P0 da passada de commit. Sem isto, uma queda no meio de
+        // um commit de pai+filha nao completava: a filha reabria a mae num
+        // segundo descritor e batia na guarda de visibilidade do `.ndx`. Ela
+        // volta ao mapa em seguida, para o `sincronizar` do fim alcanca-la.
+        let mut t = tabelas
+            .remove(&op.tabela)
+            .expect("a tabela acabou de ser inserida no mapa");
+        {
+            let mut maes = crate::servidor::MaesAbertas {
+                abertas: &mut tabelas,
+            };
+            match aplicar_uma(&mut t, op, &mut maes) {
+                Ok(true) => r.reaplicadas += 1,
+                Ok(false) => r.ja_aplicadas += 1,
+                Err(e) => r.impossiveis.push(format!(
+                    "transacao {}: {} rowid {} em {} ({e})",
+                    marca.id,
+                    op.acao.nome(),
+                    op.rowid,
+                    op.tabela
+                )),
+            }
+        }
+        tabelas.insert(op.tabela.clone(), t);
     }
     for (_, mut t) in tabelas {
         // O relatorio CONTA o que a cascata reconstruiu, junto do que a marca
@@ -1237,7 +1250,15 @@ fn completar(db: &phxsql_store::catalogo::Database, marca: &Marca, r: &mut Relat
 }
 
 /// Aplica uma operacao da marca. `Ok(false)` = ja estava aplicada.
-fn aplicar_uma(t: &mut phxsql_store::table::Table, op: &OperacaoDaMarca) -> Result<bool> {
+///
+/// `maes` empresta a conferencia de FK as tabelas que a mesma marca ja
+/// reaplicou -- o conserto do P0 valendo tambem na recuperacao (ver
+/// [`completar`] e `docs/ACID.md` §0).
+fn aplicar_uma(
+    t: &mut phxsql_store::table::Table,
+    op: &OperacaoDaMarca,
+    maes: &mut dyn phxsql_store::table::MaesEmProgresso,
+) -> Result<bool> {
     match op.acao {
         Acao::Inserir => {
             // O slot ja existe? Entao a passada chegou nele e nao ha o que
@@ -1258,7 +1279,7 @@ fn aplicar_uma(t: &mut phxsql_store::table::Table, op: &OperacaoDaMarca) -> Resu
                     op.rowid
                 )));
             }
-            let saiu = t.inserir(&op.linha)?;
+            let saiu = t.inserir_com_maes(&op.linha, maes)?;
             if saiu != op.rowid {
                 return Err(PhxError::Corrompido(format!(
                     "a marca dizia rowid {} e a insercao saiu {saiu}",
@@ -1274,7 +1295,7 @@ fn aplicar_uma(t: &mut phxsql_store::table::Table, op: &OperacaoDaMarca) -> Resu
                     op.rowid
                 )));
             }
-            t.atualizar(op.rowid, &op.linha)?;
+            t.atualizar_com_maes(op.rowid, &op.linha, maes)?;
             // **O `atualizar` sozinho NAO refaz a cascata, e isso esta
             // medido.** A cascata do `ao_alterar` e planejada pelo delta da
             // mae; se a queda foi depois de a mae ir para o disco e antes de a

@@ -213,6 +213,36 @@ impl Sobreposicao {
     }
 }
 
+/// A visao das MAES que a MESMA transacao ja abriu e ja tocou, para a
+/// conferencia de chave estrangeira enxergar o pai que ainda esta na lista de
+/// escrita -- o *read-your-own-writes* que a leitura tem desde o pedido 162 e
+/// que a conferencia de constraint nao tinha (o P0, `docs/ACID.md` §0).
+///
+/// # Por que um handle emprestado, e nao mais uma estrutura para olhar
+///
+/// Porque o buraco nunca foi de dado que falta -- e de haver DOIS handles para
+/// a mesma tabela na mesma transacao. `conferir_fks` abria a mae num segundo
+/// descritor, e a guarda de visibilidade do `.ndx` -- corretamente -- recusa
+/// ler o indice de uma tabela que outro handle esta escrevendo. O InnoDB nunca
+/// teve esse buraco porque nunca houve dois objetos para a mesma tabela: o pai
+/// empilhado E a pagina. Aqui a passada de commit e a recuperacao ja mantem UM
+/// handle por tabela num mapa; reusar esse handle e' o mesmo desenho.
+///
+/// # O portao vem antes do trabalho
+///
+/// O parametro e `Option<&mut dyn MaesEmProgresso>`: fora de transacao ninguem
+/// passa resolvedor, e a conferencia abre a mae do disco como sempre -- a licao
+/// do Profiler, custo zero para quem nao esta num `BEGIN`.
+pub trait MaesEmProgresso {
+    /// O handle JA ABERTO da mae de nome simples `tabela_ref`, com as escritas
+    /// desta transacao ja aplicadas nele -- ou `None` quando a transacao nao
+    /// tocou essa mae (e ai a conferencia abre do disco, o pai ja esta
+    /// commitado la). A ordem de aplicacao e o que preserva a petrea «so existe
+    /// filho se o pai existir primeiro»: o pai so esta visivel neste handle se
+    /// foi aplicado ANTES da filha na mesma passada.
+    fn mae(&mut self, tabela_ref: &str) -> Option<&mut Table>;
+}
+
 /// O que sai de [`Table::abrir_imagem`]: o payload cru e, para cada coluna
 /// externa, o conteudo dela -- e nao o ponteiro, que so vale na maquina de
 /// origem.
@@ -1203,6 +1233,20 @@ impl Table {
     }
 
     fn conferir_fks(&self, valores: &[Value]) -> Result<()> {
+        self.conferir_fks_com(valores, None)
+    }
+
+    /// Confere as chaves estrangeiras, opcionalmente enxergando as MAES que a
+    /// mesma transacao ja abriu (ver [`MaesEmProgresso`] e o P0 em
+    /// `docs/ACID.md` §0). `maes = None` e o caminho de sempre: abre a mae do
+    /// disco. Com resolvedor, a mae que a transacao ja tocou vem pelo handle
+    /// dela -- que ve o pai empilhado e nao cai na guarda de visibilidade do
+    /// segundo descritor.
+    fn conferir_fks_com(
+        &self,
+        valores: &[Value],
+        mut maes: Option<&mut dyn MaesEmProgresso>,
+    ) -> Result<()> {
         for fk in fks_que_conferem(&self.esquema) {
             // NULO satisfaz: nada a procurar.
             let mut chave = Vec::with_capacity(fk.colunas.len());
@@ -1220,149 +1264,145 @@ impl Table {
                 continue;
             }
 
-            // Abrir a mae num SEGUNDO descritor tem um limite, e ele foi
-            // medido: se a mae esta aberta em outro lugar COM ESCRITA
-            // PENDENTE, o indice dela ainda nao foi para o disco e o store
-            // recusa le-lo -- corretamente, porque ler seria pior.
+            let ref_simples = nome_simples(&fk.tabela_ref);
+            // 1) A MAE QUE ESTA TRANSACAO JA ABRIU. Reusar o handle dela e o
+            // conserto do P0: o pai empilhado esta no `.ndx` em memoria desse
+            // handle, e o handle nao recusa a si mesmo -- some a guarda de
+            // visibilidade que o SEGUNDO descritor batia. E a ordem preserva a
+            // petrea sozinha: o pai so esta visivel aqui se foi aplicado ANTES
+            // da filha na mesma passada; filha antes do pai continua recusada.
+            if let Some(resolvedor) = maes.as_deref_mut() {
+                if let Some(mae) = resolvedor.mae(ref_simples) {
+                    Self::conferir_uma_fk(mae, fk, &chave)?;
+                    continue;
+                }
+            }
+
+            // 2) O CAMINHO DE SEMPRE: abre a mae do disco. Fora de transacao,
+            // ou quando a transacao nao tocou esta mae (o pai ja esta
+            // commitado la), este e o unico caminho -- e ele nao muda.
             //
-            // O limite nao e de descritor, e de VISIBILIDADE, e e o mesmo
-            // buraco do read-your-own-writes: a conferencia enxerga o que ja
-            // foi gravado, e nao o que a mesma unidade de trabalho ainda nao
-            // confirmou. Mae e filha na mesma transacao caem aqui.
-            //
-            // O erro cru diria "indice corrompido", que manda o leitor
-            // reparar um arquivo que esta sao. Este diz o que houve.
             // A MAE PODE NEM EXISTIR, e desde que a chave nasce conferida isso
             // deixou de ser teorico: declarar `pedidos -> clientes` antes de
             // `clientes` existir e ordem legitima de modelagem, e a recusa da
             // gravacao tem de DIZER isso. O erro cru vazava caminho interno --
             // «nenhum volume de clientes.reg em /tmp/.../b» --, que manda o
             // leitor procurar arquivo em vez de criar a tabela.
-            let mut mae =
-                Table::abrir(&self.diretorio, nome_simples(&fk.tabela_ref)).map_err(|e| {
-                    if matches!(e, PhxError::NaoEncontrado(_)) {
-                        PhxError::Integridade(format!(
-                            "a chave {:?} confere contra a tabela {}, que nao existe neste \
-                             banco -- crie-a antes de gravar aqui, ou \
-                             desligue `verificar` na chave",
-                            fk.nome, fk.tabela_ref
-                        ))
-                    } else {
-                        e
-                    }
-                })?;
-            let indice = indice_que_cobre(mae.esquema(), &fk.colunas_ref).ok_or_else(|| {
-                PhxError::Esquema(format!(
-                    "a chave {:?} confere contra {}({}), e essa tabela nao tem \
-                     indice comecando por essas colunas -- crie o indice ou \
-                     desligue `verificar` na chave",
-                    fk.nome,
-                    fk.tabela_ref,
-                    fk.colunas_ref.join(", ")
-                ))
-            })?;
-            // Erro do `buscar` NAO e "nao achou" -- nao achar e `Ok(vazio)`.
-            // Erro aqui e a guarda do indice da mae recusando responder, e ela
-            // recusa quando a mae esta aberta em outro lugar com escrita
-            // pendente. Medido: a limitacao nao e de descritor, e de
-            // VISIBILIDADE, e e o mesmo buraco do read-your-own-writes -- mae
-            // e filha na mesma transacao caem aqui.
-            //
-            // O erro cru manda "reconstrua o indice", o que faria o leitor
-            // reparar um arquivo sao.
-            //
-            // **E este comentario ja dizia isso, com o `({e})` logo abaixo
-            // mandando o texto cru junto.** Medido em 03/09/2026: a mensagem
-            // saia com as duas metades se contradizendo -- primeiro "ficou
-            // para tras numa queda: reconstrua com `reparar indice`", depois a
-            // explicacao certa. Envolver nao e substituir, e um comentario que
-            // se declara resolvido e o motivo de ninguem olhar de novo.
-            //
-            // Quem separa os dois casos e a PERGUNTA A MAE, e nao o texto do
-            // erro: `indice_precisa_reconstruir()` distingue a marca de
-            // visibilidade de uma corrupcao de verdade -- e na corrupcao o
-            // "reconstrua o indice" e o conselho CERTO, entao ali o erro cru
-            // passa inteiro. Casar o texto do erro quebraria calado no dia em
-            // que alguem melhorasse a redacao dele.
-            let pendente = mae
-                .indice_precisa_reconstruir()
-                .then(|| caminho(mae.diretorio(), mae.nome(), EXT_NDX));
-            let achou = mae.buscar(&indice, &chave).map_err(|e| {
-                if let Some(ndx) = pendente {
-                    // A causa CONTINUA nomeada -- qual arquivo e qual guarda --,
-                    // porque jogar a causa fora troca um recado ruim por um
-                    // recado cego, e isso ja era decisao escrita e testada
-                    // aqui. O que sai e so o IMPERATIVO do erro cru
-                    // («reconstrua com `reparar indice`»), que mandava reparar
-                    // um arquivo intacto.
-                    //
-                    // E o arquivo e montado do DADO (`diretorio` + `nome`), e
-                    // nao recortado do texto do erro: recortar quebra calado no
-                    // dia em que alguem melhorar a redacao dele.
+            let mut mae = Table::abrir(&self.diretorio, ref_simples).map_err(|e| {
+                if matches!(e, PhxError::NaoEncontrado(_)) {
                     PhxError::Integridade(format!(
-                        "{}: nao deu para conferir contra {} agora -- a guarda \
-                         de visibilidade de {} recusou responder, e o arquivo \
-                         esta SAO: nao repare nada. A conferencia le o que ja \
-                         foi gravado; mae escrita nesta mesma transacao ainda \
-                         nao esta visivel -- confirme a mae antes da filha",
-                        fk.nome,
-                        fk.tabela_ref,
-                        ndx.display()
-                    ))
-                } else {
-                    PhxError::Integridade(format!(
-                        "{}: nao deu para conferir contra {} agora ({e})",
+                        "a chave {:?} confere contra a tabela {}, que nao existe neste \
+                         banco -- crie-a antes de gravar aqui, ou \
+                         desligue `verificar` na chave",
                         fk.nome, fk.tabela_ref
                     ))
+                } else {
+                    e
                 }
             })?;
-            if achou.is_empty() {
+            Self::conferir_uma_fk(&mut mae, fk, &chave)?;
+        }
+        Ok(())
+    }
+
+    /// Confere UMA chave estrangeira contra o handle da mae `mae` -- aberto do
+    /// disco (segundo descritor) ou emprestado da transacao. O caminho e o
+    /// mesmo nos dois: a diferenca de visibilidade mora no handle, nao aqui.
+    fn conferir_uma_fk(mae: &mut Table, fk: &ForeignKey, chave: &[Value]) -> Result<()> {
+        let indice = indice_que_cobre(mae.esquema(), &fk.colunas_ref).ok_or_else(|| {
+            PhxError::Esquema(format!(
+                "a chave {:?} confere contra {}({}), e essa tabela nao tem \
+                 indice comecando por essas colunas -- crie o indice ou \
+                 desligue `verificar` na chave",
+                fk.nome,
+                fk.tabela_ref,
+                fk.colunas_ref.join(", ")
+            ))
+        })?;
+        // Erro do `buscar` NAO e "nao achou" -- nao achar e `Ok(vazio)`.
+        // Erro aqui e a guarda do indice da mae recusando responder, e ela
+        // recusa quando a mae esta aberta em OUTRO lugar com escrita pendente.
+        // Com o handle emprestado da transacao (o conserto do P0) isso nao
+        // acontece -- o proprio escritor le o seu indice --, mas o segundo
+        // descritor do caminho de disco ainda pode cair aqui, e o recado
+        // continua o mesmo.
+        //
+        // O erro cru manda "reconstrua o indice", o que faria o leitor reparar
+        // um arquivo sao. Quem separa os dois casos e a PERGUNTA A MAE, e nao o
+        // texto do erro: `indice_precisa_reconstruir()` distingue a marca de
+        // visibilidade de uma corrupcao de verdade -- e na corrupcao o
+        // "reconstrua o indice" e o conselho CERTO, entao ali o erro cru passa
+        // inteiro. Casar o texto do erro quebraria calado no dia em que alguem
+        // melhorasse a redacao dele.
+        let pendente = mae
+            .indice_precisa_reconstruir()
+            .then(|| caminho(mae.diretorio(), mae.nome(), EXT_NDX));
+        let achou = mae.buscar(&indice, chave).map_err(|e| {
+            if let Some(ndx) = pendente {
+                PhxError::Integridade(format!(
+                    "{}: nao deu para conferir contra {} agora -- a guarda \
+                     de visibilidade de {} recusou responder, e o arquivo \
+                     esta SAO: nao repare nada. A conferencia le o que ja \
+                     foi gravado; mae escrita nesta mesma transacao ainda \
+                     nao esta visivel -- confirme a mae antes da filha",
+                    fk.nome,
+                    fk.tabela_ref,
+                    ndx.display()
+                ))
+            } else {
+                PhxError::Integridade(format!(
+                    "{}: nao deu para conferir contra {} agora ({e})",
+                    fk.nome, fk.tabela_ref
+                ))
+            }
+        })?;
+        if achou.is_empty() {
+            return Err(PhxError::Integridade(format!(
+                "{}: nao existe {}({}) com esse valor",
+                fk.nome,
+                fk.tabela_ref,
+                fk.colunas_ref.join(", ")
+            )));
+        }
+        // EXISTIR nao e ESTAR VIVA, e a conferencia perguntava so a primeira. A
+        // mae excluida de forma SUAVE continua no `.reg`, com a chave dela no
+        // indice -- entao um pedido novo podia nascer apontando para um cliente
+        // que a tela nao mostra mais.
+        //
+        // E a orfa por construcao, e e a mesma frase da petrea do
+        // `excluir_suave` valendo para o outro lado do tempo: la ela diz que
+        // pai logicamente morto deixa filha apontando para linha que a tela nao
+        // mostra mais, e por isso o suave tambem confere as filhas. Sem esta
+        // metade, a casa fechava a porta e deixava a janela: nao dava para
+        // MATAR a mae com filha, mas dava para NASCER filha de mae morta.
+        //
+        // O portao vem antes do trabalho: tabela sem a coluna de sistema nao
+        // tem marca nenhuma, e ali a pergunta custa um `Option`.
+        if mae.esquema.coluna_softdeleted().is_some() {
+            let mut viva = false;
+            for &r in &achou {
+                // `reg.ler` devolve o payload cru; a marca sai do byte da
+                // coluna de sistema, sem decodificar a linha nem carregar
+                // `.bin`/`.memo` -- ler a linha inteira para olhar um byte
+                // custaria os anexos da mae por filha gravada. E o pai que a
+                // transacao acabou de empilhar ja esta no `.reg` deste handle
+                // (a passada o inseriu antes da filha), entao a leitura o ve.
+                if let Some(p) = mae.reg.ler(r)? {
+                    if !mae.marcada_no_payload(&p)? {
+                        viva = true;
+                        break;
+                    }
+                }
+            }
+            if !viva {
                 return Err(PhxError::Integridade(format!(
-                    "{}: nao existe {}({}) com esse valor",
+                    "{}: {}({}) com esse valor existe, mas esta EXCLUIDA -- \
+                     restaure a linha mae antes de gravar esta, ou aponte \
+                     para outra",
                     fk.nome,
                     fk.tabela_ref,
                     fk.colunas_ref.join(", ")
                 )));
-            }
-            // EXISTIR nao e ESTAR VIVA, e a conferencia perguntava so a
-            // primeira. A mae excluida de forma SUAVE continua no `.reg`, com
-            // a chave dela no indice -- entao um pedido novo podia nascer
-            // apontando para um cliente que a tela nao mostra mais.
-            //
-            // E a orfa por construcao, e e a mesma frase da petrea do
-            // `excluir_suave` valendo para o outro lado do tempo: la ela diz
-            // que pai logicamente morto deixa filha apontando para linha que a
-            // tela nao mostra mais, e por isso o suave tambem confere as
-            // filhas. Sem esta metade, a casa fechava a porta e deixava a
-            // janela: nao dava para MATAR a mae com filha, mas dava para
-            // NASCER filha de mae morta.
-            //
-            // O portao vem antes do trabalho: tabela sem a coluna de sistema
-            // nao tem marca nenhuma, e ali a pergunta custa um `Option`.
-            if mae.esquema.coluna_softdeleted().is_some() {
-                let mut viva = false;
-                for &r in &achou {
-                    // `reg.ler` devolve o payload cru; a marca sai do byte da
-                    // coluna de sistema, sem decodificar a linha nem carregar
-                    // `.bin`/`.memo` -- ler a linha inteira para olhar um byte
-                    // custaria os anexos da mae por filha gravada.
-                    if let Some(p) = mae.reg.ler(r)? {
-                        if !mae.marcada_no_payload(&p)? {
-                            viva = true;
-                            break;
-                        }
-                    }
-                }
-                if !viva {
-                    return Err(PhxError::Integridade(format!(
-                        "{}: {}({}) com esse valor existe, mas esta EXCLUIDA -- \
-                         restaure a linha mae antes de gravar esta, ou aponte \
-                         para outra",
-                        fk.nome,
-                        fk.tabela_ref,
-                        fk.colunas_ref.join(", ")
-                    )));
-                }
             }
         }
         Ok(())
@@ -2795,9 +2835,29 @@ impl Table {
     }
 
     pub fn inserir(&mut self, valores: &[Value]) -> Result<RowId> {
+        self.inserir_com_maes_opt(valores, None)
+    }
+
+    /// [`Table::inserir`] enxergando as MAES que a transacao ja abriu, para a
+    /// conferencia de FK ver o pai empilhado -- o conserto do P0
+    /// (`docs/ACID.md` §0). Fora de transacao, use [`Table::inserir`]: sem
+    /// resolvedor, a mae vem do disco como sempre.
+    pub fn inserir_com_maes(
+        &mut self,
+        valores: &[Value],
+        maes: &mut dyn MaesEmProgresso,
+    ) -> Result<RowId> {
+        self.inserir_com_maes_opt(valores, Some(maes))
+    }
+
+    fn inserir_com_maes_opt(
+        &mut self,
+        valores: &[Value],
+        maes: Option<&mut dyn MaesEmProgresso>,
+    ) -> Result<RowId> {
         self.conferir_aridade(valores)?;
         if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
-            self.conferir_fks(valores)?;
+            self.conferir_fks_com(valores, maes)?;
         }
         // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna
         // estiver num indice, a chave tem de ser a do numero gravado.
@@ -3038,9 +3098,30 @@ impl Table {
     /// Regrava a linha inteira mantendo o mesmo rowid e a mesma posicao
     /// fisica no `.reg`.
     pub fn atualizar(&mut self, rowid: RowId, valores: &[Value]) -> Result<()> {
+        self.atualizar_com_maes_opt(rowid, valores, None)
+    }
+
+    /// [`Table::atualizar`] enxergando as MAES que a transacao ja abriu -- o
+    /// conserto do P0 para a alteracao que muda a coluna de uma FK conferida.
+    /// Ver [`MaesEmProgresso`].
+    pub fn atualizar_com_maes(
+        &mut self,
+        rowid: RowId,
+        valores: &[Value],
+        maes: &mut dyn MaesEmProgresso,
+    ) -> Result<()> {
+        self.atualizar_com_maes_opt(rowid, valores, Some(maes))
+    }
+
+    fn atualizar_com_maes_opt(
+        &mut self,
+        rowid: RowId,
+        valores: &[Value],
+        maes: Option<&mut dyn MaesEmProgresso>,
+    ) -> Result<()> {
         self.conferir_aridade(valores)?;
         if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
-            self.conferir_fks(valores)?;
+            self.conferir_fks_com(valores, maes)?;
         }
         let antigo = self
             .reg

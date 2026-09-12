@@ -61,6 +61,40 @@ use crate::valores::{
 
 pub const VERSAO: &str = env!("CARGO_PKG_VERSION");
 
+/// O nome da tabela sem o esquema qualificador: `vendas.clientes` vira
+/// `clientes`. A chave estrangeira carrega o nome qualificado; o handle no mapa
+/// da passada de commit e o da recuperacao mora pela chave que o pedido usou.
+pub(crate) fn nome_simples_da_tabela(qualificado: &str) -> &str {
+    qualificado.rsplit_once('.').map_or(qualificado, |(_, t)| t)
+}
+
+/// Empresta a conferencia de FK as MAES que a MESMA passada de commit (ou a
+/// recuperacao) ja abriu -- o conserto do P0 (`docs/ACID.md` §0). Sem isto, a
+/// filha abria a mae num SEGUNDO descritor, que a guarda de visibilidade do
+/// `.ndx` recusa enquanto o primeiro handle tem escrita pendente.
+///
+/// Reusar o handle e o mesmo desenho do InnoDB, que nunca teve o buraco porque
+/// nunca houve dois objetos para a mesma tabela na transacao. A ordem preserva
+/// a petrea sozinha: a passada aplica na ordem empilhada, entao o pai so esta
+/// visivel aqui se foi aplicado ANTES da filha -- filha antes do pai continua
+/// recusada, como deve.
+pub(crate) struct MaesAbertas<'a> {
+    pub(crate) abertas: &'a mut HashMap<String, Table>,
+}
+
+impl phxsql_store::table::MaesEmProgresso for MaesAbertas<'_> {
+    fn mae(&mut self, tabela_ref: &str) -> Option<&mut Table> {
+        // A chave do mapa pode vir qualificada; `tabela_ref` ja chega simples.
+        // O `find` fecha o emprestimo imutavel antes do `get_mut`.
+        let chave = self
+            .abertas
+            .keys()
+            .find(|k| nome_simples_da_tabela(k).eq_ignore_ascii_case(tabela_ref))
+            .cloned()?;
+        self.abertas.get_mut(&chave)
+    }
+}
+
 /// Operacoes que alteram dados. Recusadas quando `somente_leitura` esta ligado.
 pub(crate) const OPS_ESCRITA: &[&str] = &[
     "inserir",
@@ -13697,12 +13731,18 @@ impl Servidor {
         let ha_gatilhos = self.ha_gatilhos.load(Ordering::Relaxed);
         for e in escritas {
             let ped = pedido_da_tabela(database, &e.tabela);
-            let t = match abertas.entry(e.tabela.clone()) {
-                std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
-                std::collections::hash_map::Entry::Vacant(v) => {
-                    v.insert(self.abrir_travada(trava, &ped, sessao)?)
-                }
-            };
+            // Abre a tabela UMA vez e a guarda no mapa. A seguir ela e RETIRADA
+            // do mapa enquanto grava, para que a conferencia de FK possa
+            // emprestar as MAES (as outras entradas) -- o conserto do P0. Ela
+            // volta ao mapa no fim do laco; so o caminho de erro a solta, e ali
+            // a passada inteira aborta.
+            if !abertas.contains_key(&e.tabela) {
+                let aberta = self.abrir_travada(trava, &ped, sessao)?;
+                abertas.insert(e.tabela.clone(), aberta);
+            }
+            let mut t = abertas
+                .remove(&e.tabela)
+                .expect("a tabela acabou de ser inserida no mapa");
             let velha = if ha_gatilhos && e.acao != Acao::Inserir {
                 t.ler(e.rowid)?.map(|l| linha_para_json(&l, t.esquema()))
             } else {
@@ -13715,7 +13755,12 @@ impl Servidor {
             };
             match e.acao {
                 Acao::Inserir => {
-                    let saiu = t.inserir(&e.linha)?;
+                    let saiu = {
+                        let mut maes = MaesAbertas {
+                            abertas: &mut abertas,
+                        };
+                        t.inserir_com_maes(&e.linha, &mut maes)?
+                    };
                     // A garantia que a marca prometeu. Divergir aqui quer
                     // dizer que alguem escreveu nesta tabela apesar da
                     // reserva -- e o commit para em vez de gravar no lugar
@@ -13730,7 +13775,12 @@ impl Servidor {
                     self.residente_mut(&ped, |m| m.anotar_insercao(saiu, &e.linha));
                 }
                 Acao::Atualizar => {
-                    t.atualizar(e.rowid, &e.linha)?;
+                    {
+                        let mut maes = MaesAbertas {
+                            abertas: &mut abertas,
+                        };
+                        t.atualizar_com_maes(e.rowid, &e.linha, &mut maes)?;
+                    }
                     self.residente_mut(&ped, |m| m.anotar_alteracao(e.rowid, &e.linha));
                 }
                 Acao::ExcluirSuave => {
@@ -13754,6 +13804,9 @@ impl Servidor {
                 };
                 depois_de_rodar.push((ped, evento, nova, velha));
             }
+            // A filha volta ao mapa: o group commit no fim do laco sincroniza
+            // todas as tabelas abertas, e ela precisa estar la.
+            abertas.insert(e.tabela.clone(), t);
         }
         // **O GROUP COMMIT, e ele e a janela de durabilidade que ja existia.**
         //
@@ -33544,6 +33597,282 @@ mod testes_transacoes {
         .unwrap();
         assert_eq!(l.texto_ou("nome", ""), "c7");
         assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+    }
+
+    /// Um banco com `clientes` e `pedidos(cliente_id -> clientes.id)`, a chave
+    /// CONFERIDA. Pedidos ganha um indice em `cliente_id` -- a cascata do
+    /// `ao_alterar` exige indice dos dois lados.
+    fn base_com_fk(s: &Arc<Servidor>, ses: &Sessao) {
+        pede(s, ses, r#""op":"criar_database","database":"loja""#).unwrap();
+        pede(
+            s,
+            ses,
+            r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                          {"nome":"nome","tipo":"Str(40)"}],
+               "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}]"#,
+        )
+        .unwrap();
+        pede(
+            s,
+            ses,
+            r#""op":"criar_tabela","database":"loja","tabela":"pedidos",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                          {"nome":"cliente_id","tipo":"Int8"}],
+               "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true},
+                          {"nome":"por_cliente","colunas":["cliente_id"]}],
+               "chaves_estrangeiras":[{"nome":"fk_cliente","colunas":["cliente_id"],
+                                       "tabela_ref":"clientes","colunas_ref":["id"],
+                                       "verificar":true,"ao_alterar":"cascata"}]"#,
+        )
+        .unwrap();
+    }
+
+    /// **PROVA REAL P0.** Dentro de UMA transacao, o pai empilhado tem de ser
+    /// visivel a conferencia da FK da filha. `BEGIN; INSERT pai; INSERT filha
+    /// (-> pai); COMMIT` tem de gravar os dois -- e com o defeito reposto
+    /// (`conferir_fks` lendo so o disco) o COMMIT recusa a filha, porque a mae
+    /// aberta num segundo descritor nao ve o pai que ainda esta na lista.
+    #[test]
+    fn p0_pai_empilhado_e_visivel_a_fk_da_filha_no_mesmo_commit() {
+        let dir = dir_temp("p0-pai-empilhado");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base_com_fk(&s, &ses);
+
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":1,"cliente_id":1}"#,
+        )
+        .unwrap();
+        let r = pede(&s, &ses, r#""op":"commit""#).expect(
+            "o COMMIT recusou a filha cujo pai foi inserido na MESMA transacao: \
+             a conferencia de FK nao enxerga o pai empilhado (P0)",
+        );
+        assert_eq!(r.texto_ou("transaction_state", ""), "COMMITTED");
+        assert_eq!(quantas(&s, &ses, "clientes"), 1);
+        assert_eq!(quantas(&s, &ses, "pedidos"), 1);
+    }
+
+    /// **O comportamento VELHO nao muda.** FORA de transacao ninguem empresta
+    /// mae nenhuma: a conferencia le o disco como sempre. A filha orfa e
+    /// recusada, e a filha com o pai JA no disco entra -- byte por byte o
+    /// servidor de sempre. E o `sem_transacao_nada_muda` desta rodada: guarda
+    /// nova entra pedida, nao imposta.
+    #[test]
+    fn p0_fora_de_transacao_a_fk_le_o_disco() {
+        let dir = dir_temp("p0-fora-da-tx");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base_com_fk(&s, &ses);
+
+        // Filha orfa, sem transacao: recusada, como sempre.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":1,"cliente_id":1}"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "INTEGRIDADE", "{e}");
+
+        // Com o pai JA no disco, a filha entra -- o caminho de disco, intocado.
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":1,"cliente_id":1}"#,
+        )
+        .unwrap();
+        assert_eq!(quantas(&s, &ses, "pedidos"), 1);
+    }
+
+    /// **A petrea «so existe filho se o pai existir primeiro» continua de pe.**
+    /// O conserto do P0 reusa o handle da mae, e o handle so ve o pai se ele
+    /// foi aplicado ANTES da filha na passada. Empilhar a filha ANTES do pai e
+    /// resolver no commit -- o `DEFERRABLE` do PostgreSQL -- NAO entra: a
+    /// passada aplica a filha primeiro, a mae ainda nao esta aberta, e a
+    /// conferencia cai no disco vazio e recusa. Filha antes do pai continua
+    /// sendo erro.
+    #[test]
+    fn p0_filha_antes_do_pai_no_commit_ainda_recusa() {
+        let dir = dir_temp("p0-filha-antes");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base_com_fk(&s, &ses);
+
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        // A filha empilha primeiro (empilhar nao confere FK), depois o pai.
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":1,"cliente_id":1}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        let e = pede(&s, &ses, r#""op":"commit""#).unwrap_err();
+        assert_eq!(
+            e.nome(),
+            "INTEGRIDADE",
+            "filha antes do pai tinha de ser recusada no commit: {e}"
+        );
+    }
+
+    /// **PROVA REAL P0 na RECUPERACAO.** Uma queda no meio de um commit de
+    /// pai+filha deixa a marca `.tx` no disco e nada aplicado. Ao reabrir, a
+    /// recuperacao reaplica a marca -- e a filha, reaberta, tem de enxergar o
+    /// pai que a MESMA marca acabou de reaplicar. Com o defeito reposto
+    /// (`aplicar_uma` chamando `inserir` puro), a recuperacao batia na guarda
+    /// de visibilidade do `.ndx` da mae e o commit ficava pela metade, em
+    /// `operacoes IMPOSSIVEIS`.
+    #[test]
+    fn p0_recuperacao_completa_pai_e_filha_no_mesmo_commit() {
+        let dir = dir_temp("p0-recuperar");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base_com_fk(&s, &ses);
+
+        // A marca a mao, na ORDEM pai-depois-filha, como a passada teria
+        // empilhado. Nada aplicado no disco: a intencao inteira mora na marca.
+        let escritas = vec![
+            crate::transacao::Escrita {
+                database: "loja".into(),
+                tabela: "clientes".into(),
+                acao: crate::transacao::Acao::Inserir,
+                rowid: 1,
+                linha: vec![Value::Int(1), Value::Str("Ana".into()), Value::Bool(false)],
+                linha_antiga: Vec::new(),
+                motivo: String::new(),
+            },
+            crate::transacao::Escrita {
+                database: "loja".into(),
+                tabela: "pedidos".into(),
+                acao: crate::transacao::Acao::Inserir,
+                rowid: 1,
+                linha: vec![Value::Int(1), Value::Int(1), Value::Bool(false)],
+                linha_antiga: Vec::new(),
+                motivo: String::new(),
+            },
+        ];
+        crate::transacao::gravar_marca(&dir.join("loja"), 77, crate::agora_ms(), &escritas)
+            .unwrap();
+        drop(s);
+
+        // O arranque acha a marca e COMPLETA o commit -- pai E filha.
+        let s = servidor(&dir);
+        assert_eq!(
+            quantas(&s, &ses, "clientes"),
+            1,
+            "a recuperacao nao reaplicou o pai"
+        );
+        assert_eq!(
+            quantas(&s, &ses, "pedidos"),
+            1,
+            "a recuperacao nao completou a filha -- P0 na recuperacao"
+        );
+        // A marca saiu: o commit foi completado sem sobrar `IMPOSSIVEL`.
+        assert!(
+            marcas(&dir).is_empty(),
+            "a marca ficou pendurada -- a recuperacao nao completou: {:?}",
+            marcas(&dir)
+        );
+    }
+
+    /// Le o `cliente_id` da unica linha de `pedidos`, pela visao de `ses`.
+    fn cliente_id_do_pedido(s: &Arc<Servidor>, ses: &Sessao) -> i64 {
+        let r = pede(
+            s,
+            ses,
+            r#""op":"varrer","database":"loja","tabela":"pedidos","max":10"#,
+        )
+        .unwrap();
+        r.campo("linhas")
+            .and_then(Json::lista)
+            .and_then(|l| l.first().cloned())
+            .and_then(|linha| linha.campo("cliente_id").and_then(Json::inteiro))
+            .unwrap()
+    }
+
+    /// **PROVA REAL VERMELHA do ACID-C -- ainda ABERTO.** A cascata do
+    /// `ao_alterar` escreve na filha FORA do conjunto de escrita da transacao:
+    /// ela nao entra na lista, nao entra na marca `.tx`, e o
+    /// read-your-own-writes nao a alcanca. Medido em 12/09/2026 (probe
+    /// `acidc-probe`, agora este teste):
+    ///
+    /// * dentro da transacao, apos empilhar a alteracao da chave da mae de 1
+    ///   para 2, a MAE volta `id:2` (read-your-own-writes) mas a FILHA volta
+    ///   `cliente_id:1` -- orfa na propria visao da transacao (§4.4);
+    /// * o `COMMIT` responde `gravadas:1`, com DUAS tabelas alteradas -- a
+    ///   cascata da filha nao e contada porque nao esta no conjunto (§3.3);
+    /// * a cascata SO acontece no `aplicar_conjunto` (pos-commit a filha volta
+    ///   `cliente_id:2`), entao o `ROLLBACK` nunca a alcanca.
+    ///
+    /// O conserto (cascata na marca, no molde do super-journal do SQLite) muda
+    /// o CONTEUDO da marca -- mais operacoes, de tabelas nao declaradas -- e
+    /// pede prova por queda. Esta marcado `#[ignore]` para nao reprovar a
+    /// suite enquanto o conserto nao entra: e a prova vermelha que fica de pe
+    /// dizendo o alvo. Ver `docs/ACID.md` §2.4/§3.3 e o parecer do DBA.
+    #[test]
+    #[ignore = "ACID-C aberto: a cascata do ao_alterar escreve fora do conjunto de escrita da \
+                transacao (docs/ACID.md §2.4/§3.3). Prova vermelha do conserto pendente."]
+    fn acidc_a_cascata_entra_no_conjunto_de_escrita_da_transacao() {
+        let dir = dir_temp("acidc-cascata");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base_com_fk(&s, &ses);
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":10,"cliente_id":1}"#,
+        )
+        .unwrap();
+
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+               "linha":{"id":2,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        // (VERMELHO) o read-your-own-writes DEVERIA alcancar a cascata: a mae
+        // agora e id=2, e a filha da mesma transacao deveria acompanhar.
+        assert_eq!(
+            cliente_id_do_pedido(&s, &ses),
+            2,
+            "read-your-own-writes nao alcanca a cascata (ACID-C, §4.4)"
+        );
+        let r = pede(&s, &ses, r#""op":"commit""#).unwrap();
+        // (VERMELHO) a transacao alterou DUAS tabelas; o commit deveria contar
+        // as duas, e a marca deveria descrever as duas.
+        assert_eq!(
+            r.campo("gravadas").and_then(Json::inteiro),
+            Some(2),
+            "a cascata da filha nao entra no conjunto de escrita (ACID-C, §3.3)"
+        );
     }
 
     fn marcas(dir: &std::path::Path) -> Vec<String> {
