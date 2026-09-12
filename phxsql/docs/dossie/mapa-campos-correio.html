@@ -121,6 +121,8 @@
         <tbody>
           <tr class="chave"><td class="campo">id</td><td class="tipo">UUID v7</td><td><span class="kb pk">PK</span></td><td class="nota">ordem temporal</td></tr>
           <tr class="meta"><td class="campo">nome</td><td class="tipo">texto</td><td></td><td class="nota">razão social (DADO — nunca estilizado)</td></tr>
+          <tr class="meta"><td class="campo">cnpj</td><td class="tipo">14 díg</td><td><span class="kb uni">ÚNICA</span></td><td class="nota">pessoa jurídica; <b>validado (mod‑11)</b> — obrigatório</td></tr>
+          <tr class="meta"><td class="campo">cpf_responsavel</td><td class="tipo">11 díg</td><td></td><td class="nota">pessoa física responsável; <b>validado (mod‑11)</b> — obrigatório</td></tr>
           <tr class="meta"><td class="campo">rotulo</td><td class="tipo">texto</td><td><span class="kb uni">ÚNICA</span></td><td class="nota">rótulo DNS (<code>prado</code>) — vira o hostname</td></tr>
           <tr class="meta"><td class="campo">cidade · uf</td><td class="tipo">texto</td><td></td><td class="nota">metadado</td></tr>
           <tr class="chave"><td class="campo">servermail_id</td><td class="tipo">uuid</td><td><span class="kb fk">FK · RESTRICT</span></td><td class="nota">→ servermail (qual nó hospeda)</td></tr>
@@ -129,7 +131,7 @@
           <tr class="meta"><td class="campo">sistema_dt</td><td class="tipo">data/hora GMT</td><td></td><td class="nota">criação</td></tr>
         </tbody>
       </table>
-      <p class="nota" style="padding:6px 12px 8px">🔗 <b>RESTRICT</b>: empresa com contas não se apaga. O registro DNS (<code>rotulo.phxmail.com.br</code>) mora em <code>CORREIO-DNS.md</code>.</p>
+      <p class="nota" style="padding:6px 12px 8px">🔗 <b>RESTRICT</b>: empresa com contas não se apaga. O registro DNS (<code>rotulo.phxmail.com.br</code>) mora em <code>CORREIO-DNS.md</code>. &nbsp;·&nbsp; 🪪 <b>Cadastro recusa</b> sem <b>CNPJ e CPF válidos</b> (mod‑11) ou com <b>qualquer campo vazio</b> — provado em <code>correio-documentos.rs</code> (22/22).</p>
     </div>
   </div>
 
@@ -187,6 +189,7 @@
         <tbody>
           <tr class="chave"><td class="campo">id</td><td class="tipo">UUID v7</td><td><span class="kb pk">PK</span></td><td class="nota">ordem temporal; é o id guardado na WX <span class="decidir">a decidir</span></td></tr>
           <tr class="meta"><td class="campo">endereco</td><td class="tipo">texto</td><td><span class="kb uni">ÚNICA</span></td><td class="nota"><code>local@empresa.dominio</code> — é o login</td></tr>
+          <tr class="meta"><td class="campo">cpf</td><td class="tipo">11 díg</td><td></td><td class="nota"><b>validado (mod‑11)</b> — obrigatório; <b>nenhum user sem CPF</b></td></tr>
           <tr class="chave"><td class="campo">empresa</td><td class="tipo">uuid</td><td><span class="kb fk">FK · RESTRICT</span></td><td class="nota">→ empresas; índice dos dois lados; nasce conferida</td></tr>
           <tr class="meta"><td class="campo">estado</td><td class="tipo">enum</td><td><span class="kb idx">índice</span></td><td class="nota"><b>ativo</b> / banido / quarentena (moderação)</td></tr>
           <tr class="meta"><td class="campo">idioma</td><td class="tipo">enum</td><td></td><td class="nota">preferência multilíngua (pt/en/es/fr/de/it)</td></tr>

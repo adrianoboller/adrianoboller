@@ -74,6 +74,8 @@ entrega.
 |---|---|---|---|
 | `id` | UUID v7 | **PK** | |
 | `nome` | texto | | razão social (DADO — nunca estilizado) |
+| `cnpj` | texto (14 díg) | **única** | pessoa jurídica; **validado (mod‑11)** — obrigatório |
+| `cpf_responsavel` | texto (11 díg) | | pessoa física responsável; **validado (mod‑11)** — obrigatório |
 | `rotulo` | texto | **única** | rótulo DNS (`prado`, `timeagil`); vira o hostname |
 | `cidade` / `uf` | texto | | metadado |
 | `servermail_id` | UUID v7 | **FK → servermail (RESTRICT)** | qual nó hospeda |
@@ -85,6 +87,13 @@ entrega.
 RESTRICT: **empresa com contas não se apaga** (já provado em `servermail-ciclo`).
 O registro DNS da empresa (`rotulo.phxmail.com.br`) vive no `CORREIO-DNS.md`.
 *(O `phxsql.com.br` foi removido em 12/09 — só o `phxmail.com.br`.)*
+
+**Cadastro (decisão do dono, 12/09):** empresa **não** cadastra sem **CNPJ e CPF
+válidos** (dígito verificador conferido, mod‑11) **e** com **qualquer campo
+vazio**. A recusa é na **declaração** (cedo), como «chave nasce conferida». CPF e
+CNPJ são **PII que o servidor vê** (precisa validar) — vivem no servermail, na
+trilha LGPD, **não** são E2E. Provado em `crates/phxsql-core/examples/
+correio-documentos.rs` (22/22 VERDE, vetores conferidos à mão).
 
 ## 2. Servermail (nó da rede)
 
@@ -131,6 +140,7 @@ cluster pergunta aos nós «quem é meu?», não guarda a lista embutida.
 |---|---|---|---|
 | `id` | UUID v7 | **PK** | «cliente = uuid v7» |
 | `endereco` | texto | **única** | `local@empresa.dominio` — é o login |
+| `cpf` | texto (11 díg) | | **validado (mod‑11)** — obrigatório; **nenhum user sem CPF** |
 | `empresa` | UUID v7 | **FK → empresas (RESTRICT)** | índice dos dois lados |
 | `estado` | enum | índice | `ativo` / `banido` / `quarentena` |
 | `idioma` | enum | | pt/en/es/fr/de/it |
