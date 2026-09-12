@@ -33,10 +33,15 @@ empresa‑com‑dados, nem e‑mail.
 
 Os **usuários, empresas, caixas e e‑mails moram em cada servermail** — não no
 central. Um usuário existe no servermail que o cadastrou, e em nenhum outro
-lugar. Entre servermails, a ligação é a **relação de confiança** (federação): o
-server X acha o Y pelo DNS, conecta direto na porta 8000 e entrega o **blob
-cifrado**; Y guarda na caixa do destinatário e também não lê. **Não há repasse
-central** de usuário nem de mensagem.
+lugar. O diretório central guarda **só o IP fixo / DNS** de cada servermail — é o
+**catálogo de endereços**, nada mais.
+
+Entre servermails, a ligação é a **relação de confiança**, e a entrega é **P2P**
+(decisão do dono, 12/09): firmada a confiança, o server X consulta o central
+**uma vez** só para achar o **IP/DNS** do Y, e daí fala **direto** com Y na porta
+8000, entregando o **blob cifrado**; Y guarda na caixa do destinatário e também
+não lê. **Em nenhum momento o e‑mail passa pelo diretório central** — o central é
+catálogo de endereços, nunca correio.
 
 | Registro | Onde mora |
 |---|---|

@@ -99,7 +99,7 @@
   <div style="background:var(--sup2);border:1px solid var(--linha);border-left:3px solid var(--chave);border-radius:12px;padding:12px 15px;margin:0 0 18px">
     <h3 style="margin:0 0 5px;font-size:13.5px">🗺️ Onde mora cada registro — o central não guarda usuário</h3>
     <p style="margin:0;color:var(--fraco);font-size:12.5px;line-height:1.5">
-      O servidor central <code style="font-family:var(--mono);color:var(--meta)">phxmail.com.br</code> guarda <b>só o diretório de servermails</b> (<b>servermail</b> + <b>cluster</b>) e o DNS. <b>Empresa, usuário, e‑mail, anexo e confiança moram em cada servermail</b> — nunca no central. Entre servermails, a ligação é a <b>relação de confiança</b> (federação/<b>coligação</b>): X acha Y pelo DNS, entrega o blob direto na 8000, sem repasse central. &nbsp;·&nbsp; <b>Sem honeypot central</b>: quem invade o phxmail acha a lista de servidores, não a de usuários.
+      O servidor central <code style="font-family:var(--mono);color:var(--meta)">phxmail.com.br</code> guarda <b>só o IP fixo / DNS</b> dos servermails (o <b>catálogo de endereços</b>) + <b>cluster</b>. <b>Empresa, usuário, e‑mail, anexo e confiança moram em cada servermail</b> — nunca no central. A entrega é <b>P2P</b>: firmada a <b>relação de confiança</b> (federação/<b>coligação</b>), X consulta o central <b>uma vez</b> só para achar o IP/DNS do Y e entrega o blob <b>direto</b> na 8000 — <b>o e‑mail nunca passa pelo central</b>. &nbsp;·&nbsp; <b>Sem honeypot central</b>: quem invade o phxmail acha a lista de servidores, não a de usuários.
     </p>
   </div>
 
