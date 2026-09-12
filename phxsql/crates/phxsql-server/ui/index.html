@@ -3956,16 +3956,22 @@ async function abrirAdmin(qual) {
         "cadastro do config.json · a senha nunca sai daqui");
       const us = await api("usuarios");
       if (!aindaEMinha()) return;
-      p.innerHTML = `<div id="gradeAdmUsuarios"></div>`;
-      // PADRONIZACAO: PhxGrid. Sem clique proprio -- criar e alterar usuario
-      // existe no PROTOCOLO desde a 0.18 (`usuario_criar` e as duas irmas),
-      // e ainda nao nesta tela: falta o formulario de poder por base e por
-      // tabela. Ver a nota em `verConfigUsuarios`.
+      p.innerHTML = `<div class="ferramentas">
+          <button class="botao incluir" id="btNovoUsuario">✚ ${esc(txt("tela.tt_novo_usuario","Novo usuário"))}</button>
+        </div>
+        <div id="gradeAdmUsuarios"></div>`;
+      // Gap 230: ate aqui a grade so LIA. `usuario_criar`/`usuario_alterar`/
+      // `usuario_excluir` existem no protocolo desde o pedido 221 -- o que
+      // faltava era o formulario de poder por base e por tabela, que mora em
+      // `abrirFichaUsuario`. A coluna `__acao` abre a ficha; o botao acima cria.
       PhxGrid.criar("#gradeAdmUsuarios", {
         agrupavel: true, buscaGlobal: true, filterRow: true,
         lembrar: "admusuarios",
         nomeVista: "adm-usuarios",
         colunas: [
+          { campo:"__acao", titulo:"", ordenavel:false, filtravel:false, largura:80,
+            formato:(_, u) => `<button class="botao mini alterar bt-editar-usuario"
+              data-login="${esc(u.login)}">${esc(txt("tela.bt_editar","editar"))}</button>` },
           { campo:"id", titulo:txt("tela.col_id","id"), tipo:"numero", fixa:"esq" },
           { campo:"nome", titulo:txt("tela.col_nome_curto","nome") },
           { campo:"login", titulo:txt("tela.col_login","login") },
@@ -3989,6 +3995,14 @@ async function abrirAdmin(qual) {
         dados: us,
         pagina: { tamanho: 100, opcoes: [50, 100, 200] },
       });
+      // Delegacao, e nao `onclick` no botao: o corpo da PhxGrid e reescrito a
+      // cada ordenacao, filtro e virada de pagina -- o mesmo motivo do
+      // `#gradeEdit` em `verConteudoEditavel`.
+      $("#gradeAdmUsuarios").addEventListener("click", ev => {
+        const b = ev.target.closest(".bt-editar-usuario");
+        if (b) abrirFichaUsuario(b.dataset.login);
+      });
+      $("#btNovoUsuario").onclick = () => abrirFichaUsuario(null);
     } else if (qual === "acessos") {
       $("#titulo").textContent = txt("tela.acessos", "Acessos");
       $("#subtitulo").textContent = txt("tela.acessos_sub",
@@ -4145,6 +4159,361 @@ async function abrirAdmin(qual) {
   } catch (e) {
     p.innerHTML = `<div class="aviso mal">${esc(e.message)}</div>`;
   }
+}
+
+/* ================================================ Ficha do usuario (gap 230)
+   Ate aqui a aba de Usuarios so lia: `usuario_criar`/`usuario_alterar`/
+   `usuario_excluir` existem no protocolo desde o pedido 221, sem porta
+   nenhuma na tela -- esta ficha e essa porta, com o poder por base e por
+   tabela que `docs/USUARIOS.md` descreve (mestre-detalhe: usuario -> bases ->
+   tabelas).
+
+   POR QUE UM RASCUNHO, E NAO O DOM DIRETO. Toda vez que uma base ou uma
+   tabela entra ou sai da lista o formulario inteiro e redesenhado -- o mesmo
+   padrao de `est.rascunho` na tela de Nova Tabela (`ligarNovaTabela`). As DEZ
+   atividades sao lidas do DOM a cada `salvar`; o NOME de uma base ou tabela
+   nunca e digitado -- so nasce escolhido num <select> que lista bancos e
+   tabelas de verdade (`api("bancos")`/`api("tabelas")`), entao o pedido nunca
+   carrega um nome inventado.
+
+   RÓTULO SE TRADUZ, DADO NUNCA. Login, nome de base e nome de tabela sao
+   DADO e vao para o HTML sempre por `esc()` puro -- nunca por `txt()`. As
+   DEZ atividades sao a UNICA parte fixa desta ficha, e sao a UNICA que passa
+   pela fabrica (`tela.at_*`). */
+
+/** As dez atividades do pedido 221, na ordem de `docs/USUARIOS.md`: a chave
+ * que vai para o `config.json`, a chave da FABRICA por extenso, e o fallback
+ * de fabrica em portugues.
+ *
+ * A chave da fabrica vai por EXTENSO, e nao por concatenacao de prefixo com
+ * a variavel da atividade, de proposito: o conferidor de idiomas acha chave
+ * usada procurando o texto entre aspas que comeca com o prefixo da tela no
+ * fonte (`chaves_usadas_na_pagina` em `idiomas.rs`), e uma chave montada em
+ * tempo de execucao fica invisivel para ele -- os dois testes do laco
+ * (`todo_data_txt_da_pagina_existe_na_fabrica` e o irmao) FALHAM se esta
+ * lista voltar a concatenar. */
+const ATIVIDADES_USUARIO = [
+  ["ler", "tela.at_ler", "ler"],
+  ["inserir", "tela.at_inserir", "inserir"],
+  ["alterar", "tela.at_alterar", "alterar"],
+  ["excluir", "tela.at_excluir", "excluir"],
+  ["criar", "tela.at_criar", "criar"],
+  ["reindexar", "tela.at_reindexar", "reindexar"],
+  ["diario", "tela.at_diario", "diário"],
+  ["verificar", "tela.at_verificar", "verificar"],
+  ["administrar", "tela.at_administrar", "administrar"],
+  ["replicar", "tela.at_replicar", "replicar"],
+];
+const rotuloAtividade = a => {
+  const item = ATIVIDADES_USUARIO.find(x => x[0] === a);
+  return esc(item ? txt(item[1], item[2]) : a);
+};
+const permissaoZerada = () =>
+  Object.fromEntries(ATIVIDADES_USUARIO.map(([a]) => [a, false]));
+
+/** Le o cadastro vivo (ou nasce vazio, para "novo") e monta o rascunho
+ * mestre-detalhe: uma lista de bases, cada uma com as dez atividades e a
+ * lista de tabelas dela. */
+async function abrirFichaUsuario(login) {
+  const novo = login === null || login === undefined;
+  let u = null;
+  if (!novo) {
+    const lista = await api("usuarios");
+    u = (lista || []).find(x => x.login === login);
+    if (!u) {
+      avisar(preencher(txt("tela.g_usuario_nao_existe","não há usuário com o login {login}"), {login}), true);
+      return abrirAdmin("usuarios");
+    }
+  }
+
+  // `bases` (so as dez atividades, por base) e `tabelas` (base -> tabela ->
+  // atividades) chegam SEPARADOS na ficha do servidor -- ver `Usuario::ficha`
+  // em `usuarios.rs`. Aqui os dois viram UMA lista por base, porque e assim
+  // que `usuario_criar`/`usuario_alterar` esperam de volta: `tabelas` mora
+  // DENTRO do objeto de cada base, e nao ao lado dela.
+  const bases = Object.entries((u && u.bases) || {}).map(([nome, perm]) => ({
+    nome, perm: { ...permissaoZerada(), ...perm }, tabelas: [], _tabs: null,
+  }));
+  for (const [nomeBase, porTabela] of Object.entries((u && u.tabelas) || {})) {
+    const listaTabs = Object.entries(porTabela).map(([nome, perm]) => ({
+      nome, perm: { ...permissaoZerada(), ...perm },
+    }));
+    const alvo = bases.find(b => b.nome === nomeBase);
+    if (alvo) alvo.tabelas = listaTabs;
+    // Defensivo: toda base com "tabelas" ja deveria aparecer em `u.bases`
+    // (mesmo so com as dez atividades zeradas -- e o caso "dar uma tabela a
+    // quem nao le o banco nenhum" do `docs/USUARIOS.md`). Nao devia faltar,
+    // mas uma ficha de outra versao do servidor nao pode travar a tela.
+    else bases.push({ nome: nomeBase, perm: permissaoZerada(), tabelas: listaTabs, _tabs: null });
+  }
+
+  est.rascUsuario = {
+    novo, login: (u && u.login) || "", nome: (u && u.nome) || "",
+    email: (u && u.email) || "", telefone: (u && u.telefone) || "",
+    supervisor: !!(u && u.supervisor), ativo: u ? !!u.ativo : true,
+    senha: "", senha2: "", bases, _bancos: null,
+  };
+  await desenharFichaUsuario();
+}
+
+/** Redesenha a ficha inteira a partir do rascunho -- chamada de novo a cada
+ * base ou tabela que entra ou sai da lista (o mesmo `refazer` da tela de Nova
+ * Tabela). */
+async function desenharFichaUsuario() {
+  const r = est.rascUsuario;
+
+  // Os bancos disponiveis para "adicionar base" -- uma vez por ficha aberta.
+  if (!r._bancos) r._bancos = await api("bancos").catch(() => []);
+  // E as tabelas de CADA base ja adicionada, para o <select> de "adicionar
+  // tabela" dela. So busca o que ainda nao tem: adicionar uma base nova nunca
+  // reconsulta as tabelas das que ja estavam na lista.
+  await Promise.all(r.bases.filter(b => !b._tabs).map(async b => {
+    b._tabs = (await api("tabelas", { database: b.nome }).catch(() => ({ tabelas: [] }))).tabelas || [];
+  }));
+
+  const cabecalhoAtividades = ATIVIDADES_USUARIO.map(([a]) =>
+    `<th class="num">${rotuloAtividade(a)}</th>`).join("");
+  const celulasAtividades = (classe, perm, extra) => ATIVIDADES_USUARIO.map(([a]) =>
+    `<td class="num"><input type="checkbox" class="${classe}" data-at="${a}" ${extra}
+       ${perm[a] ? "checked" : ""}></td>`).join("");
+
+  const linhaBase = (b, bi) => {
+    const tabsDisponiveis = (b._tabs || []).filter(t => !b.tabelas.some(x => x.nome === t));
+    return `<tr class="fu-base-row">
+        <td><b>${esc(b.nome)}</b></td>
+        ${celulasAtividades("fu-perm", b.perm, `data-bi="${bi}"`)}
+        <td><button type="button" class="mini perigo fu-rm-base" data-bi="${bi}"
+          title="${esc(txt("tela.tit_remover_base","remover esta base"))}">✕</button></td>
+      </tr>
+      <tr class="fu-tabelas-row"><td colspan="${ATIVIDADES_USUARIO.length + 2}">
+        <div class="fu-tabelas-bloco">
+          <span class="leg">${esc(txt("tela.lbl_poder_por_tabela","poder por tabela"))}</span>
+          ${tabsDisponiveis.length ? `
+          <select class="fu-addTabSel" data-bi="${bi}">${
+            tabsDisponiveis.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join("")}</select>
+          <button type="button" class="mini fu-addTabBtn" data-bi="${bi}">+ ${
+            esc(txt("tela.bt_adicionar_tabela","Adicionar tabela"))}</button>` : ""}
+          ${b.tabelas.length ? `<div class="rolo"><table class="montar tabelas"><thead><tr>
+              <th>${esc(txt("tela.col_nome_curto","nome"))}</th>${cabecalhoAtividades}<th></th>
+            </tr></thead><tbody>${
+              b.tabelas.map((t, ti) => `<tr>
+                <td>${esc(t.nome)}</td>
+                ${celulasAtividades("fu-permt", t.perm, `data-bi="${bi}" data-ti="${ti}"`)}
+                <td><button type="button" class="mini perigo fu-rm-tab" data-bi="${bi}" data-ti="${ti}"
+                  title="${esc(txt("tela.tit_remover_tabela","remover esta tabela"))}">✕</button></td>
+              </tr>`).join("")
+            }</tbody></table></div>` : ""}
+        </div>
+      </td></tr>`;
+  };
+
+  const basesDisponiveis = (r._bancos || []).filter(nome => !r.bases.some(b => b.nome === nome));
+  const titulo = r.novo ? txt("tela.tt_novo_usuario","Novo usuário")
+    : preencher(txt("tela.tt_editar_usuario","Editar {login}"), {login: r.login});
+
+  folha(titulo, txt("tela.usuarios_sub","cadastro do config.json · a senha nunca sai daqui"),
+    `<form class="criar" id="fichaUsuario" autocomplete="off">
+       <div class="bloco">
+         <label><span>${esc(txt("tela.col_nome_curto","nome"))}</span>
+           <input id="fu_nome" value="${esc(r.nome)}"></label>
+         <label><span>${esc(txt("tela.col_login","login"))}</span>
+           <input id="fu_login" value="${esc(r.login)}" ${r.novo ? "" : `readonly style="opacity:.6"`}></label>
+         <label><span>${esc(txt("tela.col_email","e-mail"))}</span>
+           <input id="fu_email" value="${esc(r.email)}"></label>
+         <label><span>${esc(txt("tela.col_telefone","telefone"))}</span>
+           <input id="fu_telefone" value="${esc(r.telefone)}"></label>
+         <label><span>${esc(txt("tela.senha","Senha"))}${r.novo ? "" :
+             ` <em>${esc(txt("tela.cf_senha_deixe_em_branco","deixe em branco para não mudar a senha"))}</em>`}</span>
+           <input id="fu_senha" type="password" value="${esc(r.senha)}" autocomplete="new-password"></label>
+         <label><span>${esc(txt("tela.lbl_repetir_senha","Repetir senha"))}</span>
+           <input id="fu_senha2" type="password" value="${esc(r.senha2)}" autocomplete="new-password"></label>
+         <label class="chk"><input type="checkbox" id="fu_supervisor" ${r.supervisor ? "checked" : ""}>
+           ${esc(txt("tela.col_supervisor","supervisor"))}</label>
+         <label class="chk"><input type="checkbox" id="fu_ativo" ${r.ativo ? "checked" : ""}>
+           ${esc(txt("tela.col_ativo","ativo"))}</label>
+       </div>
+
+       <h3 class="secao">${esc(txt("tela.col_poder_por_base","poder por base"))}
+         ${basesDisponiveis.length ? `
+         <select id="fu_addBaseSel">${
+           basesDisponiveis.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select>
+         <button type="button" class="mini" id="fu_addBaseBtn">+ ${
+           esc(txt("tela.bt_adicionar_base","Adicionar base"))}</button>` : ""}
+       </h3>
+       ${r.bases.length ? `<div class="rolo"><table class="montar bases"><thead><tr>
+           <th>${esc(txt("tela.col_nome_curto","nome"))}</th>${cabecalhoAtividades}<th></th>
+         </tr></thead><tbody id="fu_bases">${
+           r.bases.map((b, bi) => linhaBase(b, bi)).join("")}</tbody></table></div>`
+         : `<p class="leg">${esc(txt("tela.g_usuario_sem_base",
+             "nenhuma base ainda — sem base e sem \"*\", este usuário não acessa nada"))}</p>`}
+     </form>
+
+     <div class="acoes">
+       <button class="botao ${r.novo ? "incluir" : "alterar"}" id="fu_salvar">${
+         esc(r.novo ? txt("tela.incluir","Incluir") : txt("tela.salvar","Salvar"))}</button>
+       ${r.novo ? "" : `<button class="botao excluir" id="fu_excluir">${
+         esc(txt("tela.bt_excluir_usuario","Excluir usuário"))}</button>`}
+       <button class="botao secundario" id="fu_voltar">${esc(txt("tela.ficha_voltar","Voltar"))}</button>
+       <span class="leg" id="fu_recado"></span>
+     </div>`);
+
+  ligarFichaUsuario();
+}
+
+/** Monta o `bases` do pedido `usuario_criar`/`usuario_alterar` a partir do
+ * rascunho: `tabelas` mora DENTRO de cada base, nunca ao lado. */
+function montarBasesDoPedido(bases) {
+  const out = {};
+  for (const b of bases) {
+    if (!b.nome) continue;
+    const obj = { ...b.perm };
+    if (b.tabelas.length) {
+      obj.tabelas = {};
+      for (const t of b.tabelas) if (t.nome) obj.tabelas[t.nome] = { ...t.perm };
+    }
+    out[b.nome] = obj;
+  }
+  return out;
+}
+
+/** Le o DOM de volta para o rascunho e liga os botoes -- o mesmo par
+ * ler/ligar de `ligarNovaTabela`. */
+function ligarFichaUsuario() {
+  const r = est.rascUsuario;
+
+  const lerIdentidade = () => {
+    r.nome = $("#fu_nome").value.trim();
+    r.login = $("#fu_login").value.trim();
+    r.email = $("#fu_email").value.trim();
+    r.telefone = $("#fu_telefone").value.trim();
+    r.senha = $("#fu_senha").value;
+    r.senha2 = $("#fu_senha2").value;
+    r.supervisor = $("#fu_supervisor").checked;
+    r.ativo = $("#fu_ativo").checked;
+  };
+  const lerPermissoes = () => {
+    $$("#fu_bases .fu-perm").forEach(chk => {
+      const b = r.bases[+chk.dataset.bi];
+      if (b) b.perm[chk.dataset.at] = chk.checked;
+    });
+    $$("#fu_bases .fu-permt").forEach(chk => {
+      const b = r.bases[+chk.dataset.bi];
+      const t = b && b.tabelas[+chk.dataset.ti];
+      if (t) t.perm[chk.dataset.at] = chk.checked;
+    });
+  };
+  // Captura o que esta no DOM SEM redesenhar -- toda mutacao da lista
+  // (adicionar/remover base ou tabela) parte daqui, e o unico redesenho vem
+  // DEPOIS da mutacao. Chamar `desenharFichaUsuario` antes tambem funcionaria,
+  // so que desenharia a tela DUAS vezes por clique de proposito nenhum.
+  const capturar = () => { lerIdentidade(); lerPermissoes(); };
+
+  if ($("#fu_addBaseBtn")) $("#fu_addBaseBtn").onclick = async ev => {
+    ev.preventDefault();
+    capturar();
+    const sel = $("#fu_addBaseSel");
+    if (!sel || !sel.value) return;
+    r.bases.push({ nome: sel.value, perm: permissaoZerada(), tabelas: [], _tabs: null });
+    await desenharFichaUsuario();
+  };
+  $$(".fu-rm-base").forEach(b => b.onclick = async ev => {
+    ev.preventDefault();
+    capturar();
+    r.bases.splice(+b.dataset.bi, 1);
+    await desenharFichaUsuario();
+  });
+  $$(".fu-addTabBtn").forEach(b => b.onclick = async ev => {
+    ev.preventDefault();
+    capturar();
+    const bi = +b.dataset.bi;
+    const sel = $(`.fu-addTabSel[data-bi="${bi}"]`);
+    if (!sel || !sel.value) return;
+    r.bases[bi].tabelas.push({ nome: sel.value, perm: permissaoZerada() });
+    await desenharFichaUsuario();
+  });
+  $$(".fu-rm-tab").forEach(b => b.onclick = async ev => {
+    ev.preventDefault();
+    capturar();
+    r.bases[+b.dataset.bi].tabelas.splice(+b.dataset.ti, 1);
+    await desenharFichaUsuario();
+  });
+
+  $("#fu_voltar").onclick = ev => {
+    ev.preventDefault(); est.rascUsuario = null; abrirAdmin("usuarios");
+  };
+
+  if ($("#fu_excluir")) $("#fu_excluir").onclick = ev => {
+    ev.preventDefault();
+    dialogoExcluirUsuario(r.login, () => { est.rascUsuario = null; abrirAdmin("usuarios"); });
+  };
+
+  $("#fu_salvar").onclick = async ev => {
+    ev.preventDefault();
+    capturar();
+    const rec = $("#fu_recado");
+    if ((r.senha || r.senha2) && r.senha !== r.senha2)
+      return avisar(txt("tela.g_senhas_nao_conferem","as senhas não conferem"), true);
+
+    const pedido = {
+      login: r.login, nome: r.nome, email: r.email, telefone: r.telefone,
+      supervisor: r.supervisor, ativo: r.ativo,
+      bases: montarBasesDoPedido(r.bases),
+    };
+    if (r.senha) pedido.senha = r.senha;
+
+    rec.textContent = "gravando…";
+    try {
+      const res = await api(r.novo ? "usuario_criar" : "usuario_alterar", pedido);
+      avisar(preencher(
+        txt(r.novo ? "tela.g_usuario_criado" : "tela.g_usuario_salvo",
+            r.novo ? "usuário {login} criado" : "usuário {login} salvo"),
+        {login: res.login}));
+      est.rascUsuario = null;
+      abrirAdmin("usuarios");
+    } catch (err) {
+      rec.textContent = "";
+      avisar(String(err), true);
+    }
+  };
+}
+
+/** Confirma e exclui um usuario -- o mesmo padrao visual de `dialogoExcluir`,
+ * mais simples porque excluir usuario nao tem motivo nem modo suave/fisico:
+ * e uma linha do `config.json`, nao uma linha de dado. */
+function dialogoExcluirUsuario(login, aoTerminar) {
+  const fundo = document.createElement("div");
+  fundo.className = "sobre";
+  const tituloBtn = esc(txt("tela.bt_excluir_usuario","Excluir usuário"));
+  fundo.innerHTML = `
+    <div class="caixa" role="dialog" aria-modal="true" aria-label="${tituloBtn}">
+      <h3>${tituloBtn}</h3>
+      <div class="sub">${esc(login)}</div>
+      <div class="aviso mal">${esc(preencher(txt("tela.g_confirmar_excluir_usuario",
+        "Excluir o usuário {login}? Esta ação não pode ser desfeita."), {login}))}</div>
+      <div id="fexcRecado"></div>
+      <div class="acoes">
+        <button class="botao secundario" id="fexcNao">${esc(txt("tela.cancelar","Cancelar"))}</button>
+        <button class="botao excluir" id="fexcSim">${tituloBtn}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(fundo);
+  const fechar = () => fundo.remove();
+  fundo.querySelector("#fexcNao").onclick = ev => { ev.preventDefault(); fechar(); };
+  fundo.onclick = ev => { if (ev.target === fundo) fechar(); };
+  document.addEventListener("keydown", function fuga(ev) {
+    if (ev.key === "Escape") { fechar(); document.removeEventListener("keydown", fuga); }
+  });
+  fundo.querySelector("#fexcSim").onclick = async ev => {
+    ev.preventDefault();
+    try {
+      const res = await api("usuario_excluir", { login });
+      fechar();
+      avisar(preencher(txt("tela.g_usuario_excluido","usuário {login} excluído"), {login: res.login}));
+      if (aoTerminar) aoTerminar();
+    } catch (err) {
+      fundo.querySelector("#fexcRecado").innerHTML = `<div class="aviso mal">${esc(String(err))}</div>`;
+    }
+  };
 }
 
 // =====================================================================

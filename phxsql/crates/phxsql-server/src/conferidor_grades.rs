@@ -236,6 +236,17 @@ pub const ISENTAS: &[(&str, &str, &str)] = &[
          de texto seria heuristica fragil escondendo tabela de verdade \
          amanha. E a unica em prosa nas 20 -- conferido linha a linha",
     ),
+    // ---------------------------------------------------------------- gap 230
+    (
+        "ui/index.html",
+        "desenharFichaUsuario",
+        "as duas sao FORMULARIO da ficha de usuario: poder por base e poder \
+         por tabela, `input` de checkbox por celula (uma por atividade), como \
+         a `desenharNovaTabela`. As linhas nascem e somem por um <select> mais \
+         um botao de adicionar/remover, nunca por edicao de texto -- nao ha \
+         dado para ordenar, filtrar ou paginar: sao no maximo os databases (ou \
+         as tabelas de um database) que este usuario ja recebeu poder",
+    ),
 ];
 
 /// O nome da funcao declarada nesta linha, se ela declara alguma.
