@@ -81,7 +81,7 @@
 
 <div class="topo">
   <div class="logo">🔥 Mapa de <b>campos</b> do Correio</div>
-  <span class="chip">usuário · e-mail · anexo</span>
+  <span class="chip">empresa · servermail · cluster · usuário · e-mail · confiança</span>
   <span class="chip">fonte canônica: <code style="font-family:var(--mono)">docs/CORREIO-CAMPOS.md</code></span>
 </div>
 
@@ -105,9 +105,73 @@
     <span class="vchip" style="color:var(--e2e)"><span class="decidir" style="margin:0">a decidir</span>formato PSCH a congelar com o dono</span>
   </div>
 
+  <!-- ===================== EMPRESA ===================== -->
+  <div class="painel">
+    <header><h2>🏢 Empresa</h2><span class="reg">registro: tenant hospedado</span></header>
+    <div class="secao">
+      <table>
+        <thead><tr><th>Campo</th><th>Tipo</th><th>Chave</th><th>Nota</th></tr></thead>
+        <tbody>
+          <tr class="chave"><td class="campo">id</td><td class="tipo">UUID v7</td><td><span class="kb pk">PK</span></td><td class="nota">ordem temporal</td></tr>
+          <tr class="meta"><td class="campo">nome</td><td class="tipo">texto</td><td></td><td class="nota">razão social (DADO — nunca estilizado)</td></tr>
+          <tr class="meta"><td class="campo">rotulo</td><td class="tipo">texto</td><td><span class="kb uni">ÚNICA</span></td><td class="nota">rótulo DNS (<code>prado</code>) — vira o hostname</td></tr>
+          <tr class="meta"><td class="campo">cidade · uf</td><td class="tipo">texto</td><td></td><td class="nota">metadado</td></tr>
+          <tr class="chave"><td class="campo">servermail_id</td><td class="tipo">uuid</td><td><span class="kb fk">FK · RESTRICT</span></td><td class="nota">→ servermail (qual nó hospeda)</td></tr>
+          <tr class="meta"><td class="campo">estado</td><td class="tipo">enum</td><td><span class="kb idx">índice</span></td><td class="nota">ativa / implantando / suspensa</td></tr>
+          <tr class="meta"><td class="campo">armazenado · contas</td><td class="tipo">inteiro</td><td></td><td class="nota">bytes · contagem (derivada)</td></tr>
+          <tr class="meta"><td class="campo">sistema_dt</td><td class="tipo">data/hora GMT</td><td></td><td class="nota">criação</td></tr>
+        </tbody>
+      </table>
+      <p class="nota" style="padding:6px 12px 8px">🔗 <b>RESTRICT</b>: empresa com contas não se apaga. Os dois registros DNS moram em <code>CORREIO-DNS.md</code>.</p>
+    </div>
+  </div>
+
+  <!-- ===================== SERVERMAIL ===================== -->
+  <div class="painel">
+    <header><h2>🗄️ Servermail</h2><span class="reg">registro: nó da rede · id = UUID v7</span></header>
+    <div class="secao">
+      <table>
+        <thead><tr><th>Campo</th><th>Tipo</th><th>Chave</th><th>Nota</th></tr></thead>
+        <tbody>
+          <tr class="chave"><td class="campo">id</td><td class="tipo">UUID v7</td><td><span class="kb pk">PK</span></td><td class="nota">«id server = uuid v7»</td></tr>
+          <tr class="meta"><td class="campo">host</td><td class="tipo">texto</td><td><span class="kb uni">ÚNICA</span></td><td class="nota"><code>sm-sp-01</code></td></tr>
+          <tr class="meta"><td class="campo">ip_fixo</td><td class="tipo">IPv4</td><td><span class="kb uni">ÚNICA</span></td><td class="nota">cada servermail num IP fixo (CORREIO-DNS)</td></tr>
+          <tr class="meta"><td class="campo">porta</td><td class="tipo">inteiro</td><td></td><td class="nota">8000</td></tr>
+          <tr class="meta"><td class="campo">pub_no</td><td class="tipo">32 bytes</td><td></td><td class="nota">pública pinável do nó (aperto Noise / cifra do fio)</td></tr>
+          <tr class="chave"><td class="campo">cluster_id</td><td class="tipo">uuid</td><td><span class="kb fk">FK · RESTRICT</span></td><td class="nota">→ cluster (chave na filha)</td></tr>
+          <tr class="meta"><td class="campo">papel</td><td class="tipo">enum</td><td></td><td class="nota">lider/seguidor · master/slave</td></tr>
+          <tr class="meta"><td class="campo">cadastro_estado</td><td class="tipo">enum</td><td><span class="kb idx">índice</span></td><td class="nota"><b>pendente / liberado</b> — fluxo por e-mail (cadastro@phxmail)</td></tr>
+          <tr class="meta"><td class="campo">estado · versao</td><td class="tipo">enum · texto</td><td></td><td class="nota">no_ar/fora/implantando · versão do binário</td></tr>
+          <tr class="meta"><td class="campo">sistema_dt</td><td class="tipo">data/hora GMT</td><td></td><td class="nota"></td></tr>
+        </tbody>
+      </table>
+      <p class="nota" style="padding:6px 12px 8px">🔗 <b>RESTRICT</b>: servermail com empresas não se apaga.</p>
+    </div>
+  </div>
+
+  <!-- ===================== CLUSTER ===================== -->
+  <div class="painel">
+    <header><h2>🧭 Cluster</h2><span class="reg">registro: eleição · quórum · failover</span></header>
+    <div class="secao">
+      <table>
+        <thead><tr><th>Campo</th><th>Tipo</th><th>Chave</th><th>Nota</th></tr></thead>
+        <tbody>
+          <tr class="chave"><td class="campo">id</td><td class="tipo">UUID v7</td><td><span class="kb pk">PK</span></td><td class="nota"></td></tr>
+          <tr class="meta"><td class="campo">nome</td><td class="tipo">texto</td><td></td><td class="nota"></td></tr>
+          <tr class="chave"><td class="campo">lider_id</td><td class="tipo">uuid</td><td><span class="kb fk">FK</span></td><td class="nota">→ servermail (líder eleito)</td></tr>
+          <tr class="meta"><td class="campo">mandato</td><td class="tipo">inteiro</td><td></td><td class="nota">termo da eleição (sobe a cada eleição)</td></tr>
+          <tr class="meta"><td class="campo">modo · quorum</td><td class="tipo">enum · inteiro</td><td></td><td class="nota">síncrono ao quórum / assíncrono / … (4 modos) · nº mínimo p/ decidir</td></tr>
+          <tr class="meta"><td class="campo">estado</td><td class="tipo">enum</td><td></td><td class="nota">saudavel / sem_lider / failover</td></tr>
+          <tr class="meta"><td class="campo">ultima_eleicao · sistema_dt</td><td class="tipo">data/hora GMT</td><td></td><td class="nota"></td></tr>
+        </tbody>
+      </table>
+      <p class="nota" style="padding:6px 12px 8px">A filiação é <code>servermail.cluster_id</code> (chave na filha): o cluster pergunta «quem é meu?», não guarda a lista embutida.</p>
+    </div>
+  </div>
+
   <!-- ===================== USUÁRIO ===================== -->
   <div class="painel">
-    <header><h2>👤 Usuário</h2><span class="reg">registro: conta do correio</span></header>
+    <header><h2>👤 Usuário</h2><span class="reg">registro: conta / cliente · id = UUID v7</span></header>
 
     <div class="secao">
       <div class="st"><span class="barra" style="background:var(--chave)"></span>identidade e chaves de tabela</div>
@@ -119,7 +183,7 @@
           <tr class="chave"><td class="campo">empresa</td><td class="tipo">uuid</td><td><span class="kb fk">FK · RESTRICT</span></td><td class="nota">→ empresas; índice dos dois lados; nasce conferida</td></tr>
           <tr class="meta"><td class="campo">estado</td><td class="tipo">enum</td><td><span class="kb idx">índice</span></td><td class="nota"><b>ativo</b> / banido / quarentena (moderação)</td></tr>
           <tr class="meta"><td class="campo">idioma</td><td class="tipo">enum</td><td></td><td class="nota">preferência multilíngua (pt/en/es/fr/de/it)</td></tr>
-          <tr class="meta"><td class="campo">sistema_dt</td><td class="tipo">data/hora</td><td></td><td class="nota">data/hora de sistema por linha (decisão 11/09) <span class="decidir">a decidir</span></td></tr>
+          <tr class="meta"><td class="campo">sistema_dt</td><td class="tipo">data/hora GMT</td><td></td><td class="nota">data/hora completa em GMT, por linha (decisão 11/09) <span class="decidir">a decidir</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -179,10 +243,11 @@
           <tr class="meta"><td class="campo">nivel</td><td class="tipo">enum</td><td></td><td class="nota">0 padrão / 1 frase / 2 p12 / 3 p12+p12 / masson — <b>autenticado no AAD</b> (<code>de|para|nivel</code>): não se rebaixa calado</td></tr>
           <tr class="meta"><td class="campo">tamanho</td><td class="tipo">inteiro</td><td></td><td class="nota">bytes do blob — o que o servidor mede em vez de ler</td></tr>
           <tr class="meta"><td class="campo">estado</td><td class="tipo">enum</td><td><span class="kb idx">índice</span></td><td class="nota">na_caixa / lida / <b>na_lixeira</b> (exclusão suave, a marca rosa que volta)</td></tr>
-          <tr class="meta"><td class="campo">sistema_dt</td><td class="tipo">data/hora</td><td></td><td class="nota">por linha; pai <b>estritamente anterior</b> ao filho <span class="decidir">a decidir</span></td></tr>
+          <tr class="meta"><td class="campo">sistema_dt</td><td class="tipo">data/hora GMT</td><td><span class="kb idx">índice</span></td><td class="nota">data/hora completa em GMT; pai <b>estritamente anterior</b> ao filho <span class="decidir">a decidir</span></td></tr>
           <tr class="meta"><td class="campo">anexos</td><td class="tipo">lista de refs</td><td></td><td class="nota">ids de anexos (armazém à parte)</td></tr>
         </tbody>
       </table>
+      <p class="nota" style="padding:6px 12px 8px">🚫 <b>NÃO existe <code>cc</code> nem <code>cco</code></b> (decisão do dono). O e-mail é <b>de → para</b> (um destinatário): cada destinatário precisa do seu próprio blob selado por ECDH, e «oculto» num sistema fim-a-fim é ilusão. Para vários, N e-mails, cada um cifrado para o seu dono.</p>
     </div>
 
     <div class="secao">
@@ -190,6 +255,7 @@
       <table>
         <thead><tr><th>Campo</th><th>Tipo</th><th>Nota</th></tr></thead>
         <tbody>
+          <tr class="e2e"><td class="campo">assunto_ct</td><td class="tipo">bytes (+nonce/tag)</td><td class="nota"><b>assunto cifrado</b> — decifrado no cliente para a lista e para a <b>busca</b> (o servidor não vê o assunto)</td></tr>
           <tr class="e2e"><td class="campo">nonce</td><td class="tipo">12 bytes</td><td class="nota">nonce da camada E2E</td></tr>
           <tr class="e2e"><td class="campo">sal_kdf</td><td class="tipo">16 bytes</td><td class="nota">deriva a chave da camada (HKDF sobre o segredo ECDH)</td></tr>
           <tr class="e2e"><td class="campo">sal_extra</td><td class="tipo">16 bytes</td><td class="nota">camada do nível 1 (frase por telefone/SMS)</td></tr>
@@ -198,7 +264,7 @@
           <tr class="e2e"><td class="campo">tag</td><td class="tipo">16 bytes</td><td class="nota">tag AEAD — pega adulteração de prioridade/nível pelo AAD</td></tr>
         </tbody>
       </table>
-      <p class="nota" style="padding:6px 12px 8px">A senha do destinatário <b>nunca vai ao fio</b>: só ela + a pública do remetente (ECDH) abrem; a assinatura Ed25519 é conferida na leitura.</p>
+      <p class="nota" style="padding:6px 12px 8px">A senha do destinatário <b>nunca vai ao fio</b>: só ela + a pública do remetente (ECDH) abrem; a assinatura Ed25519 é conferida na leitura. &nbsp;·&nbsp; 🔎 <b>Pesquisável no cliente</b>: ele decifra e alimenta o <code>.fts</code> local — busca por assunto/corpo <b>sem</b> o servidor ler nada.</p>
     </div>
 
     <div class="secao">
@@ -222,12 +288,16 @@
       <table>
         <thead><tr><th>Campo</th><th>Tipo</th><th>Nota</th></tr></thead>
         <tbody>
-          <tr class="chave"><td class="campo">de · para</td><td class="tipo">uuid</td><td class="nota">o par da relação</td></tr>
+          <tr class="chave"><td class="campo">id</td><td class="tipo">UUID v7</td><td class="nota"><span class="kb pk">PK</span></td></tr>
+          <tr class="chave"><td class="campo">de</td><td class="tipo">uuid</td><td class="nota"><span class="kb fk">FK · RESTRICT</span> → usuarios (quem pede; índice «pedi»)</td></tr>
+          <tr class="chave"><td class="campo">para</td><td class="tipo">uuid</td><td class="nota"><span class="kb fk">FK · RESTRICT</span> → usuarios (quem aceita; índice «recebi»)</td></tr>
           <tr class="meta"><td class="campo">estado</td><td class="tipo">enum</td><td class="nota">pendente / aceita / recusada</td></tr>
+          <tr class="meta"><td class="campo">bloqueada</td><td class="tipo">bool</td><td class="nota">o «nunca mais» — recusar ≠ bloquear</td></tr>
           <tr class="meta"><td class="campo">categoria</td><td class="tipo">enum</td><td class="nota">familia/amigos · negocios · atenção baixa/moderada/total</td></tr>
           <tr class="meta"><td class="campo">pix_chave</td><td class="tipo">texto</td><td class="nota">chave pix de quem cobra</td></tr>
           <tr class="meta"><td class="campo">pix_valor</td><td class="tipo">inteiro (centavos)</td><td class="nota"><b>corrige o <code>f64</code> do exemplo</b> — pix é valor inteiro; split Masson também em centavos</td></tr>
           <tr class="meta"><td class="campo">seguro_alto</td><td class="tipo">bool</td><td class="nota">a relação pediu p12 (nível ≥ 2)</td></tr>
+          <tr class="meta"><td class="campo">sistema_dt</td><td class="tipo">data/hora GMT</td><td class="nota">criação / aceite</td></tr>
         </tbody>
       </table>
     </div>
@@ -235,7 +305,7 @@
 
   <p class="rodape">
     Fonte canônica: <code>docs/CORREIO-CAMPOS.md</code>. &nbsp;·&nbsp;
-    <b>A decidir com o dono</b> (formato entra cedo, por pétrea): <code>id</code> UUID v7 como PK, a coluna <code>sistema_dt</code>, o <code>verificador_login</code>, e o congelamento do PSCH destes campos.<br>
+    <b>A decidir com o dono</b> (formato entra cedo, por pétrea): o encode do <code>sistema_dt</code> em GMT (epoch-ms UTC ou ISO-8601 Z), o <code>verificador_login</code>, o congelamento do PSCH dos sete registros, e o <b>«meio»</b> do cadastro via Cloudflare (o binário falando HTTPS — zero-deps × TLS, ver CORREIO-DNS §5).<br>
     <span class="maq">Maquete de modelo — os campos já rodam em memória nos exemplos correio-*; o formato em disco (PSCH) se congela com o dono antes de gravar byte.</span>
   </p>
 </div>
