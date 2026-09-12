@@ -87,7 +87,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
   retrato que nunca existiu.</p>
 
   <div class="placar">
-    <div class="c"><div class="v">2.209</div><div class="r">testes</div></div>
+    <div class="c"><div class="v">2.275</div><div class="r">testes</div></div>
     <div class="c"><div class="v">124</div><div class="r">guardas</div></div>
     <div class="c"><div class="v">27</div><div class="r">casos de tela</div></div>
     <div class="c"><div class="v">18</div><div class="r">catracas</div></div>
@@ -101,9 +101,9 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
 <p class="sub"><code>cargo test --workspace</code>. É a camada mais barata e a
 mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 <div class="nota">
-  <b>2.209 testes</b> em 180.623 linhas de Rust, versão
-  <code>0.18.0</code>, commit <code>6858fa4</code>, 137 operações no
-  protocolo. Medido em 2026-09-11 06:16:08, por
+  <b>2.275 testes</b> em 189.219 linhas de Rust, versão
+  <code>0.18.0</code>, commit <code>932207e</code>, 137 operações no
+  protocolo. Medido em 2026-09-12 06:23:09, por
   <code>docs/dossie/numeros-do-projeto.py</code>, que <b>aborta se o
   <code>cargo test</code> falhar</b>.
 </div>
@@ -161,7 +161,7 @@ medida</b> em vez de sumir da tabela.</p>
     <tbody>
       <tr><td class="nome">Comparativo — o que falta aqui, contra quem tem<div class="prova">a mesma pergunta em quatro motores vivos, com um controle positivo que TODOS têm de recusar — e sonda de efeito, nunca «aceitou»</div></td><td class="q mono">2026-09-08T19:20:04</td><td class="v"><b>capacidades perguntadas</b> 19 · <b>faltam ou pela metade aqui</b> 2</td></tr>
       <tr><td class="nome">Cobertura da tela sobre o protocolo<div class="prova">as duas listas saem do código — as operações do array OPERACOES e os arquivos da tela dos include_str! do http.rs</div></td><td class="q mono">2026-09-09T06:26:06</td><td class="v"><b>operações no catálogo</b> 136 · <b>alcançadas pela tela</b> 109</td></tr>
-      <tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-07 16:34 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 4,3 s · <b>escrita aceita em</b> 4,3 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
+      <tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-11 22:20 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 4,3 s · <b>escrita aceita em</b> 4,3 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
       <tr><td class="nome">Replicação — quatro servidores<div class="prova">master e três espelhos no ar, com retrato SHA-256 de cada linha nos quatro</div></td><td class="q mono">2026-09-07</td><td class="v"><b>master</b> 33.883 linhas/s · <b>réplica aplica</b> 37.311 eventos/s · <b>alcance</b> 2,7 s · <b>os quatro iguais no fim</b> sim</td></tr>
       <tr><td class="nome">Replicação — credencial recusada não bloqueia o IP<div class="prova">um master e uma réplica com o hash errado, pelo soquete: a réplica tenta UMA vez e estaciona, o blacklist.json fica vazio e o operador do mesmo IP entra — com dois controles na mesma corrida: cinco logins errados da própria bancada continuam bloqueando o master, e a origem fora do ar continua sendo procurada com recuo crescente</div></td><td class="q mono">2026-09-09 06:59:41</td><td class="v"><b>tentativas da réplica</b> 1 · <b>bloqueou o IP</b> NÃO · <b>operador derrubado</b> NÃO · <b>recuo de rede</b> [1.0, 2.0, 4.0, 8.0] s</td></tr>
       <tr><td class="nome">Transações — atomicidade pelo soquete<div class="prova">SIGKILL no meio de um COMMIT de 3.000 linhas, e o banco reaberto depois — a exigência não é «as 3.000 estão lá», é NUNCA METADE, com o relatório dizendo qual dos dois. E o portão se prova apagando a marca .tx: sem ela o banco volta pela metade, que é o preço da garantia aparecendo</div></td><td class="q mono">2026-09-07 09:06</td><td class="v"><b>conferências pelo soquete</b> 36 · <b>falhas</b> 0 · <b>linhas depois da queda</b> 3.001 · <b>ficou pela metade</b> NÃO</td></tr>
@@ -217,7 +217,7 @@ diz onde não confiar.</p>
 </div>
 
 <footer>
-  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 11/09/2026 10:01. Nenhum
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 12/09/2026 06:23. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
   do catálogo de guardas, dos <code>resultados.json</code> das bancadas, dos
   arquivos de <code>testes-web/</code> e das constantes do próprio fonte. O

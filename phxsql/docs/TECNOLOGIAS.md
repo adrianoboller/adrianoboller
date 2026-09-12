@@ -36,17 +36,17 @@ foi estimado no lugar de uma medição que faltou.
 |---|---:|---:|---:|---:|---:|---:|
 | `phxsql-cli` | 1 | 815 | 104 | 113 | 78 | 1110 |
 | `phxsql-cmd` | 2 | 579 | 110 | 171 | 62 | 922 |
-| `phxsql-core` | 29 | 9886 | 3162 | 2424 | 1252 | 16724 |
+| `phxsql-core` | 33 | 11449 | 3825 | 2870 | 1463 | 19607 |
 | `phxsql-ffi` | 7 | 1408 | 1014 | 703 | 235 | 3360 |
-| `phxsql-odbc` | 7 | 2348 | 1022 | 852 | 219 | 4441 |
-| `phxsql-server` | 55 | 41509 | 24504 | 18852 | 4545 | 89410 |
-| `phxsql-sql` | 10 | 6486 | 3235 | 1858 | 726 | 12305 |
-| `phxsql-store` | 23 | 12585 | 3156 | 5111 | 1432 | 22284 |
-| **total** | **134** | **75616** | **36307** | **30084** | **8549** | **150556** |
+| `phxsql-odbc` | 7 | 2412 | 1086 | 920 | 226 | 4644 |
+| `phxsql-server` | 55 | 41649 | 24798 | 19158 | 4585 | 90190 |
+| `phxsql-sql` | 10 | 6529 | 3279 | 1906 | 732 | 12446 |
+| `phxsql-store` | 23 | 12588 | 3159 | 5134 | 1433 | 22314 |
+| **total** | **138** | **77429** | **37375** | **30975** | **8814** | **154593** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **36307/75616 = 0.48×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **37375/77429 = 0.48×**.
 
-Alem do `src/`: **62** programas de medicao em `examples/` (12280 linhas — bancada em Rust, nao produto nem teste) e **54** arquivos em `tests/` de integracao fora de `src/` (18076 linhas).
+Alem do `src/`: **71** programas de medicao em `examples/` (16052 linhas — bancada em Rust, nao produto nem teste) e **55** arquivos em `tests/` de integracao fora de `src/` (18459 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -108,9 +108,9 @@ mesmo motivo que o rodapé já errou uma vez.
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
 | JavaScript (prova ponta a ponta) | `testes-web/` | 46 | 9926 |
-| Python (bancada de medicao) | `bancada/` | 97 | 41189 |
-| Shell (empacotar, zelador, provas) | todo o repositorio | 14 | 2194 |
-| Markdown (documentacao tecnica) | `docs/` (nao recursivo em `dossie/`, `design/`, `video/`) | 286 | 72068 |
+| Python (bancada de medicao) | `bancada/` | 101 | 41682 |
+| Shell (empacotar, zelador, provas) | todo o repositorio | 17 | 2466 |
+| Markdown (documentacao tecnica) | `docs/` (nao recursivo em `dossie/`, `design/`, `video/`) | 304 | 74968 |
 | Python (geradores de dossie/pedidos) | `docs/dossie/` | 17 | 5263 |
 <!-- /GERADO -->
 
@@ -287,7 +287,7 @@ com o motivo escrito**, que é o que a cláusula realmente cobra.
 ### 4.2 Como se mediu
 
 <!-- GERADO: bloco_bancadas() -->
-`bancada/` tem **48** frentes de medicao (acid, alfanumerica, alter, arm, bateria, carga, cifra, cifra-do-fio, cluster, cobertura-da-tela, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, registro, replicacao, rest, rotinas, seguranca, sequencias, sql-exemplos, sqlite, telemetria, transacoes, usuarios, utilizacao-padrao, windows), das quais **35** documentam a propria metodologia em `LEIA-ME.md`.
+`bancada/` tem **50** frentes de medicao (acid, alfanumerica, alter, arm, bateria, carga, cifra, cifra-do-fio, cluster, cobertura-da-tela, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, transacoes, usuarios, utilizacao-padrao, windows), das quais **37** documentam a propria metodologia em `LEIA-ME.md`.
 <!-- /GERADO -->
 
 A carga do lado do motor é
@@ -413,7 +413,7 @@ empacotar:
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2209** testes passaram, **0** falharam (medido em 2026-09-11 06:16:08, commit `6858fa43`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **2275** testes passaram, **0** falharam (medido em 2026-09-12 06:23:09, commit `932207ec`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
@@ -483,7 +483,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **245** pedidos numerados; **29** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **245** pedidos numerados; **28** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -514,7 +514,6 @@ proposta de voltar sem medição nova.
 | 220 | **`comandos_proibidos` é global, não por banco — e o pedido era «para um banco x»** |
 | 224 | **O catálogo documenta valores que o motor recusa: `unir` com `distinto`, e o exemplo colável do `pivotar`** |
 | 229 | **Auto number: tres defeitos de produto medidos pela F8** |
-| 242 | **CHECK dentro de transação é julgado só no COMMIT e derruba a transação inteira (A9 da revisão do motor)** |
 | 245 | **Seis observações da revisão do motor, menores, para varrer numa rodada de higiene (O1-O6)** |
 <!-- /GERADO -->
 
