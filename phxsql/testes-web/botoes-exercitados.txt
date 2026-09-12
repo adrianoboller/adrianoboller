@@ -27,6 +27,7 @@
 #btNova
 #btNovaTab
 #btNovoDb
+#btNovoUsuario
 #btPinar
 #btProcTexto
 #btRecarregarTabs
@@ -38,6 +39,12 @@
 #btVoltar
 #btVoltarDb
 #estAddCol
+#fexcNao
+#fexcSim
+#fu_addBaseBtn
+#fu_excluir
+#fu_salvar
+#fu_voltar
 #nt_addFts
 #pgAntes
 #pgDepois
@@ -58,11 +65,15 @@
 .alterar
 .botao
 .bt-editar
+.bt-editar-usuario
 .bt-gt
 .consultar
 .er-rm-fk
 .excluir
 .fer
+.fu-addTabBtn
+.fu-rm-base
+.fu-rm-tab
 .idi
 .incluir
 .item
@@ -114,6 +125,9 @@
 [data-acao="nova"]
 [data-acao="soltar"]
 [data-acao]
+[data-bi="0"]
+[data-bi="1"]
+[data-bi]
 [data-f="0"]
 [data-f="1"]
 [data-f="10"]
@@ -170,6 +184,9 @@
 [data-jan="fechar"]
 [data-jan="pino"]
 [data-jan]
+[data-login="fichausuc"]
+[data-login="fichausue"]
+[data-login]
 [data-m="0"]
 [data-m="1"]
 [data-m="2"]
@@ -200,6 +217,8 @@
 [data-rowid]
 [data-tab="filha"]
 [data-tab]
+[data-ti="0"]
+[data-ti]
 [data-todos="abrir"]
 [data-todos="fechar"]
 [data-todos]
