@@ -1,0 +1,135 @@
+{
+  "bancada": "custo-do-vizinho",
+  "metrica": "cosseno",
+  "k": 10,
+  "sweep_completo": true,
+  "limite_interativo_ms": 50,
+  "distancia_pura": [
+    {
+      "d": 384,
+      "us_por_distancia": 0.8085
+    },
+    {
+      "d": 768,
+      "us_por_distancia": 1.639
+    },
+    {
+      "d": 1536,
+      "us_por_distancia": 3.4001
+    }
+  ],
+  "combinacoes": [
+    {
+      "n": 10000,
+      "d": 384,
+      "consultas": 21,
+      "distancias_por_consulta": 10000,
+      "latencia_mediana_ms": 3.3973,
+      "latencia_faixa_ms": [
+        3.1088,
+        4.9177
+      ],
+      "veredito": "forca_bruta_basta"
+    },
+    {
+      "n": 10000,
+      "d": 768,
+      "consultas": 21,
+      "distancias_por_consulta": 10000,
+      "latencia_mediana_ms": 8.1581,
+      "latencia_faixa_ms": [
+        7.9648,
+        8.5979
+      ],
+      "veredito": "forca_bruta_basta"
+    },
+    {
+      "n": 10000,
+      "d": 1536,
+      "consultas": 21,
+      "distancias_por_consulta": 10000,
+      "latencia_mediana_ms": 17.3177,
+      "latencia_faixa_ms": [
+        16.7162,
+        18.897
+      ],
+      "veredito": "forca_bruta_basta"
+    },
+    {
+      "n": 100000,
+      "d": 384,
+      "consultas": 21,
+      "distancias_por_consulta": 100000,
+      "latencia_mediana_ms": 42.6894,
+      "latencia_faixa_ms": [
+        41.6901,
+        44.2317
+      ],
+      "veredito": "forca_bruta_basta"
+    },
+    {
+      "n": 100000,
+      "d": 768,
+      "consultas": 21,
+      "distancias_por_consulta": 100000,
+      "latencia_mediana_ms": 82.8326,
+      "latencia_faixa_ms": [
+        80.1732,
+        87.9189
+      ],
+      "veredito": "precisa_de_ann"
+    },
+    {
+      "n": 100000,
+      "d": 1536,
+      "consultas": 21,
+      "distancias_por_consulta": 100000,
+      "latencia_mediana_ms": 165.0646,
+      "latencia_faixa_ms": [
+        159.1815,
+        168.9452
+      ],
+      "veredito": "precisa_de_ann"
+    },
+    {
+      "n": 1000000,
+      "d": 384,
+      "consultas": 11,
+      "distancias_por_consulta": 1000000,
+      "latencia_mediana_ms": 410.94,
+      "latencia_faixa_ms": [
+        400.4935,
+        416.8929
+      ],
+      "veredito": "precisa_de_ann"
+    },
+    {
+      "n": 1000000,
+      "d": 768,
+      "consultas": 11,
+      "distancias_por_consulta": 1000000,
+      "latencia_mediana_ms": 841.2699,
+      "latencia_faixa_ms": [
+        818.7101,
+        865.8393
+      ],
+      "veredito": "precisa_de_ann"
+    },
+    {
+      "n": 1000000,
+      "d": 1536,
+      "consultas": 11,
+      "distancias_por_consulta": 1000000,
+      "latencia_mediana_ms": 1656.6274,
+      "latencia_faixa_ms": [
+        1621.0527,
+        1674.3559
+      ],
+      "veredito": "precisa_de_ann"
+    }
+  ],
+  "maquina": "container Linux, 4 nucleos, escalar (sem SIMD/threads)",
+  "carga_1min_no_inicio": 0.79,
+  "aviso_da_maquina": "corpus e consultas em memoria, escalar (sem SIMD); numero e o PISO de uma implementacao ingenua, nao o teto de uma otimizada",
+  "medido_em": "2026-09-12 15:15"
+}

@@ -44,6 +44,7 @@ pub mod tipo_database;
 pub mod types;
 pub mod uuid;
 pub mod value;
+pub mod vetor;
 pub mod x25519;
 pub mod x509;
 pub mod zip;

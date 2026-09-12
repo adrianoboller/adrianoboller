@@ -35,10 +35,23 @@ Onde há consenso de comportamento — a distância é simétrica, o K-NN devolv
 itens ordenados por proximidade, empate desempata de forma estável — isso entra
 sem discussão, porque é matemática, não arquitetura.
 
-## 1. A premissa, que AINDA falta medir, e que decide se construímos
+## 1. A premissa, agora MEDIDA (12/09/2026), e que decide se construímos
 
 A lei manda medir a receita de fora contra o nosso gargalo antes de aceitá-la —
-e aqui a premissa é dupla, e **nenhuma das duas está medida**:
+e aqui a premissa é dupla. **As duas foram medidas** (V1+V2 da frente,
+`bancada/vetorial/resultados.json`, `--example custo-do-vizinho`, máquina
+parada). O resultado, antes das explicações do que cada uma pergunta:
+
+> **Não há «força bruta basta» universal — o corte depende de N×d.** Com o limite
+> «interativo» em ≤ 50 ms/consulta, a busca exata escalar basta até 100.000
+> vetores × d=384 (42,7 ms) e **deixa de bastar** já a partir de 100.000 × d≥768
+> (82,8 ms), chegando a 1,66 s em 1M × 1536. O custo cru de uma distância é 0,809
+> µs (d=384) / 1,639 µs (d=768) / 3,400 µs (d=1536). **Veredito de formato:**
+> corpus pequeno de dimensão baixa pode nascer sem índice; produção (100k+) em
+> dimensões reais de LLM (768/1536) **pede ANN**. Tabela completa em
+> `docs/VETORES.md` §5.
+
+As duas perguntas que esse número respondeu:
 
 1. **Exato (força bruta) basta, ou precisamos de índice aproximado (ANN)?**
    Buscar os K mais próximos por força bruta é varrer os N vetores e calcular N
@@ -57,7 +70,10 @@ e aqui a premissa é dupla, e **nenhuma das duas está medida**:
    «precisamos de ANN».
 
 *Medir a premissa do item vem antes de implementar o item, inclusive quando o
-item é nosso.* Sem esses dois números, qualquer escolha de formato é chute.
+item é nosso.* Os dois números agora existem, então a escolha de formato deixou
+de ser chute: o `.vec` de força bruta serve o corpus pequeno; o `.hnsw` (ANN) é
+o que a produção em 768/1536 exige — e V3+ ainda espera o P0 e o aval do dono do
+formato, medição não revoga gate.
 
 ## 2. As divergências que as nossas pétreas FORÇAM — e é isto que o torna nosso
 

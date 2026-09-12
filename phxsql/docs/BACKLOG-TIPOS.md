@@ -65,12 +65,26 @@ Sem aval de formato. Não gated pelo P0. Fontes: `hash.rs:165` (SHA-256),
 
 ## Frente V — Vetorial (embeddings, `TipoDatabase::Vetorial`)
 
+> **ESTADO 12/09/2026: V1+V2 INTEGRADOS** — commit desta rodada. Núcleo
+> `crates/phxsql-core/src/vetor.rs` (8 testes de valor de referência, prova real
+> dos dois sentidos nos bugs semeados «esqueceu o sqrt» e «esqueceu de dividir
+> pela norma»); bancada `custo-do-vizinho` →
+> `bancada/vetorial/resultados.json` (sweep completo, máquina parada).
+> `fmt`/`clippy`/`test --workspace` verdes, conferidos na integração. Formato em
+> disco **intocado** (dispensa de C registrada: função pura + bancada em
+> memória). **Veredito da premissa: não há «força-bruta basta» universal — o
+> corte cai em N=100k para d≥768** (82,8 ms > 50 ms), força-bruta só serve
+> corpus pequeno de dimensão baixa; produção em 768/1536 **pede ANN**. Docs
+> `VETORES.md §5` e `propostas/vetorial.md §1` atualizados;
+> `cognicao_vetorial-forca-bruta-corta-em-100k-nao-em-milhoes_20260912_1525.md`.
+> **V3+ segue BLOQUEADO** — P0 + aval do dono do formato; medição não revoga gate.
+
 Gate P0 + aval de formato (PSCH v10). Fontes: `vetorial.md`, `VETORES.md`,
 `types.rs` (tag livre 22), `FORMATO.md §1/§3`.
 
 - **V0** — *gate:* P0 fechado. Nada abaixo começa antes.
-- **V1** — núcleo de distância zero-dep (cosseno/PI/euclidiana), provado contra vetor de referência. Dono B. Sem formato.
-- **V2** — bancada `custo-do-vizinho`: sweep N=1e4/1e5/1e6 × d=384/768/1536, máquina parada, mediana+faixa. **Premissa:** força-bruta escalar basta ou precisa de ANN? Dono J. Sem formato.
+- **V1** — ✅ núcleo de distância zero-dep (cosseno/PI/euclidiana), provado contra vetor de referência. Dono B. Sem formato. **Integrado.**
+- **V2** — ✅ bancada `custo-do-vizinho`: sweep N=1e4/1e5/1e6 × d=384/768/1536, máquina parada, mediana+faixa. **Premissa medida:** força-bruta basta só até ~100k×384; produção 768/1536 **pede ANN**. Dono J. Sem formato. **Integrado.**
 - **V3** — `ColumnType::Vetor{elem,dim}` (tag 22) + arquivo `.vec` + força-bruta exata no motor. **[AVAL: PSCH v10 + `.vec`]** Dono C+B.
 - **V4** — integridade (vetor é filho da linha, Restrict), transação (`.tx`), cifra em repouso, portão por tabela. Dono B+F.
 - **V5** — índice ANN (HNSW/IVF) zero-dep, append-only (lápide + VACUUM). **Só se V2 pedir. [AVAL: `.hnsw`/`.ivf`]** Dono C+B+F.

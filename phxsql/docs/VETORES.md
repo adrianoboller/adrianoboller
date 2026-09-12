@@ -99,16 +99,34 @@ drama. O `.hnsw` e o problema de verdade, e bate em duas petreas:
 E o custo escondido: toda edicao de texto vira um **re-embedding** (externo,
 lento, pago se for API). Vale deixar isso explicito na tela.
 
-## 5. O que decide tudo: um numero, na maquina parada
+## 5. O que decide tudo: o numero, agora MEDIDO (12/09/2026)
 
-A busca EXATA por cosseno a 10 mil / 100 mil / 1 milhao de vetores x 1536.
-Para ~100 mil, um scan exato e um produto interno por vetor — talvez poucos ms,
-e o `.hnsw` (que e APROXIMADO) so se paga nos milhoes. Esse numero diz se vale
-o osso da §4.
+Foi medido. `bancada/vetorial/resultados.json`, `--example custo-do-vizinho`,
+maquina parada (`esta-medindo.sh` confirmou: carga 1min 0.79, 4 nucleos, 14 GiB
+livres, nenhum outro processo). Busca EXATA por cosseno, K=10, forca-bruta
+escalar; mediana de 21 consultas, com a faixa min–max ao lado:
 
-E ele so se mede com a **maquina parada** (petrea: numero medido com a maquina
-ocupada mede a carga, nao o item; ver `bancada/esta-medindo.sh`). Nao se mede
-com agentes compilando.
+| N          | d=384        | d=768        | d=1536         |
+|-----------:|-------------:|-------------:|---------------:|
+| 10.000     | 3,40 ms      | 8,16 ms      | 17,32 ms       |
+| 100.000    | 42,69 ms     | 82,83 ms     | 165,07 ms      |
+| 1.000.000  | 410,94 ms    | 841,27 ms    | 1.656,63 ms    |
+
+Custo cru de UMA distancia (produto interno + as duas normas), do mesmo sweep:
+d=384 → 0,809 µs; d=768 → 1,639 µs; d=1536 → 3,400 µs.
+
+**Veredito, com o corte «interativo» em ≤ 50 ms/consulta (explicito no
+medidor):** a forca-bruta basta ate 100.000 × d=384 (42,7 ms) e **deixa de
+bastar** ja a partir de 100.000 × d≥768 (82,8 ms), piorando de forma monotonica
+ate 1,66 s em 1M × 1536. Nao ha «basta» universal: o corte depende de N×d e cai
+**na primeira escala do sweep** (cem mil vetores) para as dimensoes reais de LLM
+(768/1536). Corpus pequeno de dimensao baixa poderia nascer sem indice;
+producao (100k+) em 768/1536 **pede ANN**.
+
+E o que a especulacao anterior tinha de errado (ficava aqui: «para ~100 mil,
+talvez poucos ms»): era otimista por ~15–30×. Cem mil × 1536 custa 165 ms, nao
+«poucos ms». *Numero citado nao e numero medido* — e o `.hnsw` da §4 passa a ter
+gargalo medido que o justifica em producao, nao so nos milhoes.
 
 ## 6. A ordem, entao
 
