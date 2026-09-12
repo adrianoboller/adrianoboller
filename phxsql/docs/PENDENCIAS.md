@@ -405,19 +405,39 @@ gravar um `.reg` relacional calado dentro de uma colmeia. O que continua
 faltando são **os dois motores**, e cada um começa por **medir a premissa**,
 não por escrever formato:
 
-- **Motor hive** — proposta em `docs/propostas/colmeia.md`. Premissa a medir: a
-  nossa colmeia, em Rust e com o nosso cache, lê bem mais rápido que o padrão
-  para dado de configuração? O Registro medido (`bancada/registro/`) lê rápido
-  e escreve devagar (~255–495 µs/op); falta provar o nosso.
-- **Motor vetorial** — proposta em `docs/propostas/vetorial.md`. Premissa a
-  medir: para o N e o d do dono, a busca por força bruta (exata, sem índice,
-  sem formato novo) já responde rápido o suficiente, ou precisamos de um índice
-  ANN? E, em Rust puro sem SIMD, quanto custa a distância. A hipótese «força
-  bruta basta» pode morrer — ou vencer — medida.
+- **Motor hive** — proposta em `docs/propostas/colmeia.md`. **Premissa MEDIDA
+  (12/09/2026):** o protótipo PSHV em Rust + nosso cache lê config-shaped
+  **10,6×–13,7× mais rápido** que o Padrão (busca de ponto × busca de ponto,
+  máquina parada, faixas que não cruzam; `bancada/colmeia/resultados.json`,
+  commit `917bdb2`). A premissa passou → falta o **formato PSHV** (decisão do
+  dono) e o P0.
+- **Motor vetorial** — proposta em `docs/propostas/vetorial.md`. **Premissa
+  MEDIDA (12/09/2026):** não há «força bruta basta» universal — o corte cai em
+  N=100k para d≥768 (82,8 ms > 50 ms); corpus pequeno de dimensão baixa nasce
+  sem índice, produção em 768/1536 **pede ANN** (`bancada/vetorial/resultados.json`,
+  commit `9a17991`). Falta o **formato PSCH v10 + `.vec`** (decisão do dono) e o P0.
 
 Ambos vêm **depois** do P0 de atomicidade: o parecer do Sprint 0010 mandou
 solidificar o núcleo antes de ampliar, e um terceiro (ou segundo) motor antes
 do commit atômico do primeiro é o anti-padrão que ele alertou.
+
+**Pesquisa das bases maduras (12/09/2026) — o que pode entrar, elencado pelo
+DBA.** Nove frentes leram os fontes/manuais de Berkeley/PostgreSQL, Oracle, SQL
+Server, MySQL, MariaDB, SQLite, Rusqlite, Cassandra e SAP HANA (mercado + fonte).
+A análise do DBA — o que entra contra o nosso crivo, o que pede decisão do dono,
+e as recusas medidas — está em **`docs/propostas/dba-bases-2026-09.md`**. O
+achado de maior retorno: SQLite (super-journal) e InnoDB (handle único) apontam
+**o mesmo conserto** para o P0 + ACID-C, sem MVCC nem mudança de formato.
+
+**Ledger — achado URGENTE da leitura das *ledger tables* do SQL Server
+(12/09/2026):** `conteudo_canonico` (`ledger.rs`) usa o esquema **atual** para
+recalcular o hash de qualquer linha; acrescentar coluna **no meio** do esquema de
+uma tabela em modo ledger desloca o layout de todas as linhas antigas e faz
+`verificar_cadeia` acusar **falso positivo de adulteração** (ou mascarar uma
+real). `alterar_tabela`/`acrescentar-coluna.rs` já existe → risco **atual**.
+Conserto: travar `alterar_tabela` para tabela em modo ledger (ou restringir a «só
+no fim, nullable, fora do hash», a régua do SQL Server). Ver
+`docs/propostas/dba-bases-2026-09.md` §2.1.
 
 ---
 
