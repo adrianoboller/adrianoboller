@@ -27,7 +27,7 @@ mod tipos;
 use conexao::{analisar_receita, receita_mascarada, Canal, Falha, Receita};
 use phxsql_core::json::Json;
 use registro::{Amarra, Comando, Diag, Ligacao, Punho};
-use resultado::{alvo_do_from, fichas_do_esquema, montar, Ficha};
+use resultado::{alvo_do_from, desescapar_call, fichas_do_esquema, montar, saidas_do_call, Ficha};
 use std::sync::{Arc, Mutex};
 use texto::{bytes_utf16, escrever_texto, escrever_utf16, ler_texto};
 use tipos::*;
@@ -575,7 +575,15 @@ unsafe fn montar_parametros(
                 ),
             ));
         };
-        saida.push(parametro::ler(ligacao)?);
+        // Um OUT puro nao TEM valor de entrada: o buffer dele e onde o resultado
+        // vai ser escrito, e le-lo aqui mandaria lixo. O `CALL` do servidor
+        // comeca todo OUT em NULL, entao o `?` da posicao vai NULL -- ele so
+        // ocupa o lugar. INOUT e INPUT enviam o valor do buffer (pedido 238).
+        if ligacao.tipo_io == SQL_PARAM_OUTPUT {
+            saida.push(Json::Nulo);
+        } else {
+            saida.push(parametro::ler(ligacao)?);
+        }
     }
     Ok(saida)
 }
@@ -585,6 +593,10 @@ unsafe fn montar_parametros(
 /// problema. O driver so olha o FROM para pedir o esquema, que e de onde
 /// saem os tipos honestos.
 fn executar_sql(id: usize, sql: String) -> SqlReturn {
+    // O escape ODBC `{call proc(?)}` vira `CALL proc(?)` ANTES de tudo -- a
+    // contagem de `?`, o pedido ao servidor e o esquema veem ja o `CALL`
+    // (pedido 238). Texto sem escape passa inteiro.
+    let sql = desescapar_call(&sql);
     {
         // As ligacoes saem do registro por COPIA para os ponteiros serem lidos
         // FORA da trava: ler memoria do aplicativo com a trava do registro na
@@ -681,6 +693,51 @@ fn executar_sql(id: usize, sql: String) -> SqlReturn {
                 if guardou.is_none() {
                     return SQL_INVALID_HANDLE;
                 }
+
+                // Pedido 238: um `CALL` devolve os OUT/INOUT num objeto `saida`
+                // (nome -> valor, na ordem de declaracao). Cada `?` de SAIDA, na
+                // ordem da POSICAO, recebe o proximo valor de `saida`: o k-esimo
+                // `?` de saida casa com o k-esimo OUT/INOUT declarado. Escreve-se
+                // AQUI, dentro da janela de execucao -- a unica em que a ABI
+                // promete que os buffers ligados ainda valem --, com a mesma
+                // conversao de borda (inclusive SQL_C_WCHAR) do `SQLGetData`.
+                let valores_saida = saidas_do_call(&resposta);
+                if !valores_saida.is_empty() {
+                    let mut ligadas: Vec<&registro::Parametro> = ligacoes
+                        .iter()
+                        .filter(|q| {
+                            q.tipo_io == SQL_PARAM_OUTPUT || q.tipo_io == SQL_PARAM_INPUT_OUTPUT
+                        })
+                        .collect();
+                    ligadas.sort_by_key(|q| q.numero);
+                    let mut aviso: Option<(&'static str, String)> = None;
+                    for (param, celula) in ligadas.iter().zip(valores_saida.iter()) {
+                        // SAFETY: janela da execucao -- os buffers ligados valem.
+                        let (codigo, _, diag) = unsafe {
+                            entregar(
+                                celula,
+                                0,
+                                param.tipo_c,
+                                param.buf as SqlPointer,
+                                param.cap,
+                                param.indicador as *mut SqlLen,
+                            )
+                        };
+                        if codigo != SQL_SUCCESS {
+                            if let Some(d) = diag {
+                                aviso = Some(d);
+                            }
+                        }
+                    }
+                    if let Some((estado, msg)) = aviso {
+                        anotar(id, estado, &msg);
+                        return SQL_SUCCESS_WITH_INFO;
+                    }
+                    // Um CALL com OUT nao e "esquema indisponivel": o resultado
+                    // dele sao os OUT escritos, nao uma tabela sem tipos.
+                    return SQL_SUCCESS;
+                }
+
                 if sem_tipos {
                     anotar(
                         id,
@@ -832,7 +889,7 @@ pub unsafe extern "system" fn SQLBindParameter(
     _tamanho_coluna: SqlULen,
     _casas: SqlSmallint,
     valor: SqlPointer,
-    _tamanho_buffer: SqlLen,
+    tamanho_buffer: SqlLen,
     indicador: *mut SqlLen,
 ) -> SqlReturn {
     blindado(|| {
@@ -844,20 +901,26 @@ pub unsafe extern "system" fn SQLBindParameter(
             anotar(id, "07009", "a posicao de parametro comeca em 1, nao em 0");
             return SQL_ERROR;
         }
-        if tipo_io != SQL_PARAM_INPUT {
-            let como = match tipo_io {
-                SQL_PARAM_OUTPUT => "de saida",
-                SQL_PARAM_INPUT_OUTPUT => "de entrada e saida",
-                SQL_PARAM_TYPE_UNKNOWN => "de sentido desconhecido",
-                _ => "de sentido invalido",
+        // ENTRADA, SAIDA e ENTRADA-SAIDA passam (pedido 238): o `CALL` do
+        // servidor devolve os OUT/INOUT num objeto `saida`, e o driver escreve
+        // cada um no buffer ligado depois de executar. So o sentido DESCONHECIDO
+        // e o invalido recusam -- guardar uma ligacao de sentido que ninguem
+        // sabe interpretar so adiaria o erro para a execucao.
+        if !matches!(
+            tipo_io,
+            SQL_PARAM_INPUT | SQL_PARAM_OUTPUT | SQL_PARAM_INPUT_OUTPUT
+        ) {
+            let como = if tipo_io == SQL_PARAM_TYPE_UNKNOWN {
+                "de sentido desconhecido"
+            } else {
+                "de sentido invalido"
             };
             anotar(
                 id,
                 "HYC00",
                 &format!(
-                    "parametro {numero} {como}: este driver so tem SQL_PARAM_INPUT. \
-                     Saida exigiria o servidor devolver valor por posicao, e a op sql \
-                     devolve linhas"
+                    "parametro {numero} {como}: use SQL_PARAM_INPUT, SQL_PARAM_OUTPUT \
+                     ou SQL_PARAM_INPUT_OUTPUT"
                 ),
             );
             return SQL_ERROR;
@@ -868,7 +931,8 @@ pub unsafe extern "system" fn SQLBindParameter(
         }
         // Ponteiro de valor nulo SEM indicador nao pode significar nada: e no
         // indicador que o SQL_NULL_DATA se escreve. Recusar aqui e melhor que
-        // guardar uma ligacao que so falharia na execucao.
+        // guardar uma ligacao que so falharia na execucao. Um OUT puro tambem
+        // precisa de buffer: e onde o valor devolvido vai ser escrito.
         if valor.is_null() && indicador.is_null() {
             anotar(
                 id,
@@ -888,8 +952,10 @@ pub unsafe extern "system" fn SQLBindParameter(
                 c.parametros.retain(|q| q.numero != numero);
                 c.parametros.push(registro::Parametro {
                     numero,
+                    tipo_io,
                     tipo_c,
                     buf: valor as usize,
+                    cap: tamanho_buffer,
                     indicador: indicador as usize,
                 });
                 true
@@ -2140,13 +2206,18 @@ mod testes {
             // Posicao zero nao existe no ODBC: o primeiro `?` e o 1.
             assert_eq!(ligar(0, SQL_PARAM_INPUT, SQL_C_SLONG, ptr), SQL_ERROR);
             assert_eq!(estado_do_diag(stmt), "07009");
-            // Saida e entrada-saida: HYC00, nomeando o que falta.
-            assert_eq!(ligar(1, SQL_PARAM_OUTPUT, SQL_C_SLONG, ptr), SQL_ERROR);
-            assert_eq!(estado_do_diag(stmt), "HYC00");
+            // Saida e entrada-saida ENTRAM no pedido 238: o CALL devolve OUT/
+            // INOUT num objeto `saida`, e o driver escreve no buffer ligado.
+            // Este teste E o defeito reposto do pedido -- ate ele as duas linhas
+            // esperavam SQL_ERROR (HYC00), e reintroduzir a recusa antiga faz
+            // estas asercoes cairem.
+            assert_eq!(ligar(1, SQL_PARAM_OUTPUT, SQL_C_SLONG, ptr), SQL_SUCCESS);
             assert_eq!(
                 ligar(1, SQL_PARAM_INPUT_OUTPUT, SQL_C_SLONG, ptr),
-                SQL_ERROR
+                SQL_SUCCESS
             );
+            // Sentido invalido continua recusando -- ninguem sabe interpreta-lo.
+            assert_eq!(ligar(1, 99, SQL_C_SLONG, ptr), SQL_ERROR);
             assert_eq!(estado_do_diag(stmt), "HYC00");
             // UTF-16 num driver ANSI: pedido 238 -- o BUFFER pode ser
             // SQL_C_WCHAR mesmo com as funcoes ANSI, porque a conversao mora
@@ -2168,6 +2239,48 @@ mod testes {
             SQLFreeHandle(SQL_HANDLE_DBC, dbc);
             SQLFreeHandle(SQL_HANDLE_ENV, env);
         }
+    }
+
+    // Pedido 238: `montar_parametros` manda NULL por um OUT PURO (o buffer dele
+    // e so lugar de saida -- le-lo mandaria lixo ao servidor) e LE o buffer de
+    // um INOUT (a metade de entrada). O INPUT segue lendo, como sempre.
+    //
+    // PROVA REAL: com o defeito reposto (o OUT ler o buffer), a posicao 2
+    // viria `999` em vez de `Nulo`, e esta asercao cai.
+    #[test]
+    fn montar_parametros_manda_nulo_por_out_e_le_o_inout() {
+        let mut ent: i32 = 7;
+        let mut inout: i32 = 42;
+        let mut saida_buf: i32 = 999; // lixo que um OUT NAO pode ler
+        let ligacoes = vec![
+            registro::Parametro {
+                numero: 1,
+                tipo_io: SQL_PARAM_INPUT,
+                tipo_c: SQL_C_SLONG,
+                buf: &mut ent as *mut i32 as usize,
+                cap: 0,
+                indicador: 0,
+            },
+            registro::Parametro {
+                numero: 2,
+                tipo_io: SQL_PARAM_OUTPUT,
+                tipo_c: SQL_C_SLONG,
+                buf: &mut saida_buf as *mut i32 as usize,
+                cap: 4,
+                indicador: 0,
+            },
+            registro::Parametro {
+                numero: 3,
+                tipo_io: SQL_PARAM_INPUT_OUTPUT,
+                tipo_c: SQL_C_SLONG,
+                buf: &mut inout as *mut i32 as usize,
+                cap: 4,
+                indicador: 0,
+            },
+        ];
+        // SAFETY: os buffers vivem nesta funcao durante a chamada inteira.
+        let ps = unsafe { montar_parametros("CALL p(?, ?, ?)", &ligacoes) }.unwrap();
+        assert_eq!(ps, vec![Json::de_i64(7), Json::Nulo, Json::de_i64(42)]);
     }
 
     // --- A ponta a ponta, contra um phxsqld DE VERDADE ---

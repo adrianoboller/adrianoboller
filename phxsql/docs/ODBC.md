@@ -205,7 +205,7 @@ escreveu.
 | o que | SQLSTATE | onde | motivo |
 |---|---|---|---|
 | posicao zero | `07009` | ligacao | o primeiro `?` e o 1 |
-| `SQL_PARAM_OUTPUT` / `_INPUT_OUTPUT` | `HYC00` | ligacao | saida pediria valor por posicao de volta; a op `sql` devolve linhas — **continua recusando** mesmo apos o pedido 238 (2.1.1) |
+| sentido de parametro invalido/desconhecido | `HYC00` | ligacao | so `SQL_PARAM_INPUT`/`_OUTPUT`/`_INPUT_OUTPUT` — os tres passam desde o pedido 238 (2.1.1); `OUTPUT`/`INOUT` NAO recusam mais |
 | outro tipo C (nao `SQL_C_WCHAR` desde o pedido 238) | `HYC00` | ligacao | a mensagem NOMEIA o tipo e lista os que servem |
 | valor nulo sem indicador | `HY009` | ligacao | `NULL` se manda pelo indicador |
 | `SQL_DATA_AT_EXEC` | `HYC00` | execucao | `SQLPutData` nao existe aqui; ler o buffer pegaria lixo |
@@ -241,8 +241,10 @@ eles valem; nada mais no driver os toca.
 («nao sei») e nulavel. Nao e preguica: o driver nao planeja nada na
 preparacao, entao nao sabe a que coluna cada `?` se compara — e um
 `SQL_INTEGER` chutado seria a mesma mentira que a secao 8 ja recusou contar
-sobre apelido de coluna. Nao ha risco de buffer no tamanho zero, porque o
-driver nunca ESCREVE num buffer de parametro: saida e recusada na ligacao.
+sobre apelido de coluna. O driver ESCREVE num buffer de parametro num caso so
+— o `OUT`/`INOUT` de um `CALL`, depois de executar (secao 2.1.1) —, e ali usa a
+capacidade que o `SQLBindParameter` do proprio parametro de saida informou, nao
+o tamanho zero do `SQLDescribeParam`.
 
 ### 2.1.1. `SQL_C_WCHAR` — UTF-16 na borda (pedido 238)
 
@@ -274,11 +276,22 @@ metade — um buffer que so cabe a metade alta de um par deixa o caractere
 INTEIRO de fora, porque um caractere pela metade nao e truncamento, e
 corrupcao.
 
-**Parametro de SAIDA continua recusando**, com ou sem `SQL_C_WCHAR`: o
-`SQL_PARAM_OUTPUT`/`_INPUT_OUTPUT` cai ANTES de o driver sequer olhar o tipo
-C (tabela acima), porque exigiria a op do servidor devolver um valor alem da
-linha — e nenhuma operacao tem isso hoje. Fica nomeado no `PENDENCIAS.md`
-como o que sobrou do pedido 238.
+**Parametro de SAIDA passa (pedido 238, fase DO).** A premissa antiga —
+«nenhuma operacao devolve valor alem da linha» — era FALSA: o `CALL` de
+procedimento ja devolve os `OUT`/`INOUT` num objeto `saida`
+(`servidor.rs::chamar_procedimento`; ver `docs/TRIGGERS.md` §1). Faltava so
+ligar no DRIVER, e agora esta ligado: (1) `SQLBindParameter` com
+`SQL_PARAM_OUTPUT`/`SQL_PARAM_INPUT_OUTPUT` deixa de recusar `HYC00` e guarda o
+buffer e a capacidade; (2) o escape ODBC `{call proc(?)}` vira `CALL proc(?)`
+na op `sql` (`resultado::desescapar_call`); (3) depois de executar, o driver le
+o objeto `saida` (`resultado::saidas_do_call`) e escreve cada valor `OUT` no
+buffer ligado, na ordem da POSICAO do `?`, com a MESMA conversao de borda do
+`SQLGetData` (inclusive `SQL_C_WCHAR`). Um `OUT` puro NAO le o buffer como
+entrada — o `CALL` comeca todo `OUT` em NULL, entao o `?` dele vai NULL; um
+`INOUT` envia o valor do buffer e recebe o de volta. E aditivo: `SELECT`/
+`INSERT` seguem identicos, e ligar `OUT` passa a ACEITAR onde recusava. A forma
+de valor de RETORNO `{? = call ...}` continua sem substrato — procedimento do
+PhxSql nao devolve valor de retorno, so `OUT`/`INOUT`.
 
 Prova real: `crates/phxsql-odbc/src/parametro.rs` (`wchar_de_entrada_*`,
 `wchar_substituto_invalido_*`) e `crates/phxsql-odbc/src/texto.rs`

@@ -171,6 +171,45 @@ pub fn alvo_do_from(sql: &str) -> Option<(String, String)> {
     }
 }
 
+/// O escape ODBC de chamada de procedimento -- `{call proc(?)}` -- vira o
+/// `CALL proc(?)` que o servidor entende (pedido 238). Qualquer outro texto
+/// passa INTEIRO: um `SELECT` nao tem chaves, e a forma de valor de retorno
+/// `{? = call ...}` NAO se reescreve -- procedimento do PhxSql nao devolve valor
+/// de retorno (os resultados saem por `OUT`/`INOUT`), entao ela segue e recusa
+/// no servidor em vez de o driver fingir um retorno que nao existe.
+///
+/// E uma varredura de borda, nao um parser: so olha se o texto, aparado, e
+/// `{ call ... }`. O miolo (nome do procedimento e os `?`) passa como esta --
+/// quem o analisa e o servidor.
+pub fn desescapar_call(sql: &str) -> String {
+    let t = sql.trim();
+    let Some(miolo) = t.strip_prefix('{').and_then(|s| s.strip_suffix('}')) else {
+        return sql.to_string();
+    };
+    let miolo = miolo.trim();
+    // `call` como PRIMEIRA palavra, sem caso -- e seguida de espaco ou `(`, para
+    // `callisto(...)` (um procedimento de nome parecido) nao casar por engano.
+    if miolo.len() < 4 || !miolo[..4].eq_ignore_ascii_case("call") {
+        return sql.to_string();
+    }
+    let resto = &miolo[4..];
+    if !resto.is_empty() && !resto.starts_with(|c: char| c.is_whitespace() || c == '(') {
+        return sql.to_string();
+    }
+    format!("CALL {}", resto.trim_start())
+}
+
+/// Os valores `OUT`/`INOUT` que um `CALL` devolveu, em ORDEM de declaracao (a
+/// ordem do objeto `saida` na resposta), ja no texto canonico de cada celula.
+/// Vazio quando a resposta nao e de um `CALL` (nao tem `saida`) -- um
+/// `SELECT`/`INSERT` nao mexe em buffer de saida nenhum. Pedido 238.
+pub fn saidas_do_call(resposta: &Json) -> Vec<Option<String>> {
+    match resposta.campo("saida") {
+        Some(Json::Objeto(pares)) => pares.iter().map(|(_, v)| celula_texto(v)).collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// O texto canonico de uma celula. `None` e o NULL do SQL.
 pub fn celula_texto(v: &Json) -> Option<String> {
     match v {
@@ -302,6 +341,43 @@ mod testes {
             alvo_do_from("SELECT fromagem FROM queijos"),
             Some((String::new(), "queijos".into()))
         );
+    }
+
+    // Pedido 238: o escape `{call proc(?)}` vira `CALL proc(?)`; o resto passa.
+    #[test]
+    fn escape_de_call_vira_call_e_o_resto_passa() {
+        assert_eq!(desescapar_call("{call somar(?)}"), "CALL somar(?)");
+        // Espacos ao redor e caso de `CALL` nao atrapalham.
+        assert_eq!(
+            desescapar_call("  { CALL  proc(?, ?) } "),
+            "CALL proc(?, ?)"
+        );
+        assert_eq!(desescapar_call("{call limpa}"), "CALL limpa");
+        // Um SELECT nao tem chaves -- passa inteiro.
+        assert_eq!(
+            desescapar_call("SELECT * FROM c WHERE id = ?"),
+            "SELECT * FROM c WHERE id = ?"
+        );
+        // A forma de valor de retorno NAO se reescreve (o PhxSql nao a tem).
+        assert_eq!(desescapar_call("{? = call f(?)}"), "{? = call f(?)}");
+        // Nome parecido com `call` nao casa por engano.
+        assert_eq!(desescapar_call("{callisto(?)}"), "{callisto(?)}");
+    }
+
+    // Pedido 238: os OUT/INOUT saem do objeto `saida`, em ordem de declaracao.
+    #[test]
+    fn saidas_do_call_le_o_objeto_saida_em_ordem() {
+        let resp = Json::analisar(
+            r#"{"procedimento":"somar","saida":{"total":30,"rotulo":"ok","nada":null}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            saidas_do_call(&resp),
+            vec![Some("30".to_string()), Some("ok".to_string()), None]
+        );
+        // Um SELECT nao tem `saida`: nenhum buffer de saida para escrever.
+        let sel = Json::analisar(r#"{"linhas":[{"rowid":1,"id":2}]}"#).unwrap();
+        assert!(saidas_do_call(&sel).is_empty());
     }
 
     #[test]

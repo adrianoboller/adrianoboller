@@ -370,8 +370,12 @@ mod testes {
     fn liga(tipo_c: SqlSmallint, buf: usize, indicador: usize) -> Parametro {
         Parametro {
             numero: 1,
+            // `ler` nao olha o sentido nem a capacidade -- ele so LE o valor de
+            // entrada. Um INPUT com cap 0 basta para estes testes de leitura.
+            tipo_io: SQL_PARAM_INPUT,
             tipo_c,
             buf,
+            cap: 0,
             indicador,
         }
     }

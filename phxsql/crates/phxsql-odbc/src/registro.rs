@@ -72,8 +72,18 @@ pub struct Ligacao {
 pub struct Parametro {
     /// 1 para o primeiro `?`, como no ODBC.
     pub numero: u16,
+    /// Sentido do parametro: `SQL_PARAM_INPUT`, `SQL_PARAM_OUTPUT` ou
+    /// `SQL_PARAM_INPUT_OUTPUT`. Um `INPUT` so envia; um `OUTPUT` so recebe (o
+    /// valor OUT do `CALL` volta escrito no buffer); um `INPUT_OUTPUT` faz os
+    /// dois. Ver o pedido 238.
+    pub tipo_io: SqlSmallint,
     pub tipo_c: SqlSmallint,
     pub buf: usize,
+    /// O `BufferLength` do `SQLBindParameter` -- quantos bytes cabem no buffer.
+    /// So importa quando o driver ESCREVE de volta (OUT/INOUT); num parametro
+    /// de entrada de tipo caractere a especificacao manda ignora-lo, e o `ler`
+    /// segue essa regra.
+    pub cap: SqlLen,
     pub indicador: usize,
 }
 
