@@ -14263,9 +14263,16 @@ impl Servidor {
     /// dizer isso na tela em vez de estimar.
     fn op_acrescentar_coluna(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         // A coluna chega como um objeto `coluna`, ou solta nos campos do
-        // proprio pedido -- que e como a tela mais curta a manda.
-        let corpo = p.campo("coluna").unwrap_or(p);
-        let coluna = crate::valores::coluna_de_json(corpo, 0)?;
+        // proprio pedido -- que e como a tela mais curta a manda. So o objeto
+        // `coluna` proprio e puro; o pedido solto carrega `op`/`token`/
+        // `database`/`tabela`/`default`, entao a conferencia de chave
+        // desconhecida (O1) SO vale para o objeto proprio, senao ela acusaria
+        // os campos de protocolo e quebraria a tela curta que ja existe.
+        let (corpo, estrito) = match p.campo("coluna") {
+            Some(sub) => (sub, true),
+            None => (p, false),
+        };
+        let coluna = crate::valores::coluna_de_json(corpo, 0, estrito)?;
 
         let dados = self.travar_dados()?;
         let mut t = self.abrir_travada(&dados, p, sessao)?;

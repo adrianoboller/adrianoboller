@@ -318,10 +318,65 @@ fn acao_ri_de_texto(t: &str, lado: Lado) -> Result<AcaoRi> {
 /// Num lugar so porque dois pedidos a montam -- o `criar_tabela` e o
 /// `acrescentar_coluna` --, e uma segunda copia deste bloco seria a que
 /// esqueceria o campo novo. `i` entra so na mensagem de erro.
-pub fn coluna_de_json(c: &Json, i: usize) -> Result<Column> {
+pub fn coluna_de_json(c: &Json, i: usize, estrito: bool) -> Result<Column> {
     let cn = c.texto_ou("nome", "").trim().to_string();
     if cn.is_empty() {
         return Err(PhxError::Esquema(format!("coluna {i} sem nome")));
+    }
+    // Chave desconhecida no objeto da coluna e recusada NOMEANDO-A, e nao
+    // engolida: e a familia do "configuracao que nao e lida mente" -- `"cheque"`
+    // no lugar de `check` virava ausencia de regra calada, e a tabela nascia
+    // sem o CHECK que quem modelou pensou ter posto (O1 da revisao do motor).
+    //
+    // `estrito` e FALSO so num caminho: o `acrescentar_coluna` em que a coluna
+    // chega SOLTA nos campos do proprio pedido, que carrega `op`/`token`/
+    // `database`/`tabela`/`default` legitimos -- ali a conferencia acusaria
+    // esses campos de protocolo como se fossem erro. No `criar_tabela` e no
+    // `acrescentar_coluna` com objeto `coluna` proprio, o objeto e so a coluna.
+    if estrito {
+        // As chaves que este montador LE (entrada), mais TODAS as que o
+        // read-back do `esquema` EMITE e que um cliente reenvia ao recriar uma
+        // tabela a partir do esquema devolvido. Recusar uma dessas quebraria a
+        // ida-e-volta esquema->criar_tabela, que e cliente legitimo
+        // (`o_que_o_esquema_devolve_volta_como_criar_tabela`) -- por isso a
+        // lista tem os campos DERIVADOS (`rotulo`, `tamanho`, `nullable`,
+        // `sistema`, `primaria`, `estrangeira`, `composta`, `nos_indices`,
+        // `nas_chaves_estrangeiras`) e o `posicao` da grade: lidos por ninguem
+        // aqui, mas aceitos. Proteção que quebra cliente antigo nao e proteção,
+        // e estrago. `tamanho` tambem e ENTRADA de fato -- `{"tipo":"Str",
+        // "tamanho":20}` e forma que clientes mandam --, so que ainda ninguem
+        // a le (a largura vem do `tipo`); toleramos em vez de recusar.
+        const CONHECIDAS: &[&str] = &[
+            "nome",
+            "tipo",
+            "caption",
+            "descricao",
+            "mascara",
+            "dado_pessoal",
+            "id",
+            "obrigatoria",
+            "padrao",
+            "check",
+            "calculada",
+            // derivadas/toleradas do read-back do `esquema` (e da grade):
+            "rotulo",
+            "tamanho",
+            "nullable",
+            "sistema",
+            "primaria",
+            "estrangeira",
+            "composta",
+            "nos_indices",
+            "nas_chaves_estrangeiras",
+            "posicao",
+        ];
+        if let Some(estranha) = c.chaves().iter().find(|k| !CONHECIDAS.contains(k)) {
+            return Err(PhxError::Esquema(format!(
+                "coluna {cn:?}: campo desconhecido {estranha:?} -- confira a grafia \
+                 (e `check`, nao `cheque`). Campos aceitos: {}",
+                CONHECIDAS.join(", ")
+            )));
+        }
     }
     let ty = tipo_de_texto(c.texto_ou("tipo", "Str(60)"))?;
     let mut col = Column::new(cn, ty)
@@ -387,7 +442,9 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
 
     let mut colunas = Vec::with_capacity(cols_json.len());
     for (i, c) in cols_json.iter().enumerate() {
-        colunas.push(coluna_de_json(c, i)?);
+        // Cada `c` e um objeto de coluna puro (elemento de `colunas`), entao a
+        // conferencia de chave desconhecida vale -- estrito.
+        colunas.push(coluna_de_json(c, i, true)?);
     }
 
     let posicao = |nome: &str| -> Result<usize> {
@@ -1468,6 +1525,49 @@ mod testes_esquema {
             i.expressoes[0].is_none(),
             "a marca com hifen no nome virou expressao"
         );
+    }
+
+    /// **A PROVA REAL do 245/O1: chave desconhecida no objeto da coluna e
+    /// recusada NOMEANDO-A, e a coluna vinda do READ-BACK ainda entra.** O
+    /// `"cheque"` no lugar de `check` virava ausencia de regra calada -- a
+    /// tabela nascia sem o CHECK que quem modelou pensou ter posto (a familia
+    /// do "configuracao que nao e lida mente").
+    ///
+    /// Sabotagem: passar `false` no `estrito` de `coluna_de_json` faz `"cheque"`
+    /// ser engolido e `esquema_de_json` devolver Ok -- e a assercao (a), que
+    /// espera a recusa, reprova.
+    #[test]
+    fn campo_desconhecido_na_coluna_recusa_e_read_back_ainda_entra() {
+        // (a) chave errada de verdade recusa, e a recusa NOMEIA o campo e
+        // ensina a grafia certa.
+        let erro = esquema_de_json(&json(
+            r#"{"tabela":"t",
+                "colunas":[{"nome":"a","tipo":"Int8","cheque":"a > 0"}]}"#,
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(
+            erro.contains("cheque"),
+            "a recusa nao nomeia o campo: {erro}"
+        );
+        assert!(
+            erro.contains("check"),
+            "a recusa nao ensina a grafia certa: {erro}"
+        );
+
+        // (b) a coluna como o read-back do `esquema` a devolve -- com rotulo,
+        // tamanho, nullable, sistema e os derivados de chave -- AINDA entra,
+        // senao a ida-e-volta esquema->criar_tabela (cliente legitimo)
+        // quebraria. Aqui o que importa e NAO recusar.
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"t",
+                "colunas":[{"nome":"a","tipo":"Int8","rotulo":"A","tamanho":8,
+                            "nullable":false,"sistema":false,"primaria":true,
+                            "estrangeira":false,"composta":false,"nos_indices":[],
+                            "nas_chaves_estrangeiras":[]}]}"#,
+        ))
+        .expect("a coluna do read-back deixou de voltar como criar_tabela");
+        assert_eq!(e.colunas()[0].nome, "a");
     }
 }
 
