@@ -1,0 +1,68 @@
+{
+  "bancada": "custo-da-colmeia",
+  "o_que_mede": "H2: leitura por busca de ponto (caminho->valor) config-shaped, protótipo PSHV (H1) contra o motor Padrão de verdade, mesma máquina",
+  "trabalho_comparado": "mesmo par chave->valor, busca de ponto -> busca de ponto nos dois lados (descida de arvore de celulas x indice unico+leitura de registro); nunca varredura de um lado contra busca 1 do outro",
+  "regime_de_cache": "os dois lados medidos QUENTES: colmeia com o arquivo inteiro em memoria desde o abrir; Padrao com definir_cache_paginas(1_000_000) e uma passada de aquecimento antes do cronometro",
+  "maquina": "container Linux, 4 nucleos",
+  "carga_1min_no_inicio": 0.2,
+  "combinacoes": [
+    {
+      "n_alvo": 1000,
+      "n_real": 1000,
+      "consultas_por_repeticao": 4000,
+      "repeticoes": 15,
+      "colmeia_mediana_us": 0.1618,
+      "colmeia_faixa_us": [
+        0.1552,
+        0.1927
+      ],
+      "padrao_mediana_us": 1.7155,
+      "padrao_faixa_us": [
+        1.7028,
+        1.7505
+      ],
+      "razao_padrao_sobre_colmeia": 10.6033,
+      "faixas_se_cruzam": false,
+      "veredito": "colmeia_ganha"
+    },
+    {
+      "n_alvo": 10000,
+      "n_real": 10000,
+      "consultas_por_repeticao": 4000,
+      "repeticoes": 15,
+      "colmeia_mediana_us": 0.2127,
+      "colmeia_faixa_us": [
+        0.1985,
+        0.2406
+      ],
+      "padrao_mediana_us": 2.5633,
+      "padrao_faixa_us": [
+        2.1877,
+        3.1631
+      ],
+      "razao_padrao_sobre_colmeia": 12.0533,
+      "faixas_se_cruzam": false,
+      "veredito": "colmeia_ganha"
+    },
+    {
+      "n_alvo": 100000,
+      "n_real": 100000,
+      "consultas_por_repeticao": 4000,
+      "repeticoes": 15,
+      "colmeia_mediana_us": 0.2894,
+      "colmeia_faixa_us": [
+        0.2564,
+        0.3604
+      ],
+      "padrao_mediana_us": 3.9684,
+      "padrao_faixa_us": [
+        2.9446,
+        5.4361
+      ],
+      "razao_padrao_sobre_colmeia": 13.7137,
+      "faixas_se_cruzam": false,
+      "veredito": "colmeia_ganha"
+    }
+  ],
+  "medido_em": "2026-09-12 16:01"
+}

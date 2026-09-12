@@ -91,11 +91,23 @@ Gate P0 + aval de formato (PSCH v10). Fontes: `vetorial.md`, `VETORES.md`,
 
 ## Frente H — Colmeia/Hive (`TipoDatabase::Hive`, formato PSHV)
 
+> **ESTADO 12/09/2026: H1+H2 INTEGRADOS, premissa CONFIRMADA** — commit desta
+> rodada. Protótipo PSHV em `crates/phxsql-store/examples/custo-da-colmeia.rs`
+> (read-back conferido nos dois lados; pegou um bug de offset sozinho) +
+> `bancada/colmeia/resultados.json` (sweep datado, máquina parada). Comparação
+> justa (busca de ponto × busca de ponto, os dois quentes, faixas que não
+> cruzam): a colmeia lê config-shaped **10,6×–13,7× mais rápido que o Padrão**, e
+> a vantagem cresce com N. `fmt`/`clippy`/`test --workspace` verdes, conferidos
+> na integração. Formato em disco **intocado** (protótipo `.hivep` em `temp_dir`,
+> descartado). Docs `colmeia.md §1` e `STATUS-TIPOS.md` atualizados. A premissa
+> passou → a frente move de `A medir premissa` para **`Em desenho`**. **H4+
+> segue BLOQUEADO** — P0 + aval do dono do formato PSHV.
+
 Gate P0 + aval de formato (PSHV + `.tx` v2). Fontes: `colmeia.md`,
 `colmeia-estrutura.md`, `catalogo.rs:507`, `ndx.rs` (CachePaginas), `transacao.rs`.
 
-- **H1** — protótipo PSHV mínimo (ler/gravar 1 ponto), só `std`, com read-back conferido. Dono B/J. Sem formato (protótipo de bancada).
-- **H2** — medir a premissa × Padrão, **mesma máquina**, config-shaped (poucos valores por chave). **Gate do projeto:** «lê N× mais rápido que o Padrão» ou morre medida. Dono J.
+- **H1** — ✅ protótipo PSHV mínimo (ler/gravar 1 ponto), só `std`, com read-back conferido. Dono B/J. Sem formato (protótipo de bancada). **Integrado.**
+- **H2** — ✅ medir a premissa × Padrão, **mesma máquina**, config-shaped (poucos valores por chave). **Gate do projeto passou:** lê **10,6×–13,7×** mais rápido que o Padrão. Dono J. **Integrado.**
 - **H3** — bytes-ao-disco do REGF (Process Monitor/ETW) — fecha o «durável ≤ preguiçosa». Dono J. (Depende da máquina Windows do dono.)
 - **H4** — **[AVAL]** aprovar o formato PSHV (bloco base, bins, células, `montagem.json`, extensão `.hive`). Dono C+dono.
 - **H5** — **[AVAL]** marca `.tx` v2 aprende o append de célula hive; recuperação de marca órfã provada. Dono C+B.

@@ -33,11 +33,32 @@ Para configuração (escreve-se um punhado de vezes, lê-se milhões), o custo d
 escrita é irrelevante e a leitura rápida é ouro. Para dado transacional, o
 padrão ganha e continua sendo a escolha.
 
-**A premissa que AINDA falta medir, e que decide se construímos:** os números
-acima são do Registro (C, sobre o `mmap` do Windows). **A nossa colmeia, em Rust
-e com o nosso cache, leria tão rápido? Escreveria menos lento que o Registro?**
-Isso é palpite até um protótipo mínimo medir — e *medir a premissa do item vem
-antes de implementar o item*, inclusive quando o item é nosso.
+**A premissa da NOSSA colmeia, agora MEDIDA (12/09/2026).** Os números acima são
+do Registro (C, sobre o `mmap` do Windows). Faltava saber se a *nossa* colmeia,
+em Rust e com o nosso cache, leria tão rápido. Medimos com um protótipo PSHV
+mínimo (`crates/phxsql-store/examples/custo-da-colmeia.rs`,
+`bancada/colmeia/resultados.json`), máquina parada (`esta-medindo.sh`: carga
+0,20, 4 núcleos), **comparação justa** — ler o mesmo par chave→valor por busca de
+ponto → busca de ponto nos dois lados (descida de árvore de células na colmeia ×
+`buscar` por índice único + `ler` no Padrão de verdade), os dois quentes,
+mediana de 15 repetições:
+
+| N pontos | colmeia (µs/op) | Padrão (µs/op) | razão | faixas cruzam? |
+|---:|---:|---:|---:|---|
+| 1.000 | 0,162 [0,155; 0,193] | 1,716 [1,703; 1,751] | **10,6×** | não |
+| 10.000 | 0,213 [0,199; 0,241] | 2,563 [2,188; 3,163] | **12,1×** | não |
+| 100.000 | 0,289 [0,256; 0,360] | 3,968 [2,945; 5,436] | **13,7×** | não |
+
+**A premissa confirma medida, não morre:** a colmeia lê config-shaped
+**10,6×–13,7× mais rápido** que o Padrão, e a vantagem cresce com N (a árvore do
+`.ndx` do Padrão fica mais alta; a colmeia, config-shaped, quase não aprofunda).
+Ressalva honesta para quem repetir: parte do ganho é o protótipo devolver
+`&[u8]` sem alocar contra o Padrão decodificar em `Vec<Value>` — isso é
+*inerente* à diferença dos dois desenhos (config sem decodificação relacional é
+o que um hive-store compra), não artifício de bancada. Isso **justifica seguir
+ao desenho de formato** — mas continua só a premissa: nada aqui autoriza
+`TipoDatabase::Hive` a sair de `motor_pronto()==false`; V3+ do formato PSHV segue
+atrás do P0 e do aval do dono.
 
 ## 2. As divergências que as nossas pétreas FORÇAM — e é isto que a torna nossa
 

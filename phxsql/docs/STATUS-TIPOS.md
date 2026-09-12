@@ -32,7 +32,7 @@ aplicação/modo sobre o Padrão** — não `TipoDatabase`.
 | A | Padrão | `TipoDatabase::Padrao` | tipo | **motor construído e medido** | existe, provado — nada a fazer |
 | B1 | Vetor «tipo SAP HANA» (colunar) | — (não é variante) | layout colunar | **recusa medida** | reabre só com gargalo analítico medido |
 | B2 | Vetor de embeddings (IA) | `TipoDatabase::Vetorial` | tipo | **reservado, sem motor** (proposta) | medir a premissa antes do formato |
-| C | «Dat do regedit» (colmeia/hive) | `TipoDatabase::Hive` | tipo | **reservado, sem motor** (proposta) | premissa do REGF medida; falta o protótipo nosso |
+| C | «Dat do regedit» (colmeia/hive) | `TipoDatabase::Hive` | tipo | **reservado, sem motor** (proposta) | premissa medida (REGF **e** protótipo nosso: 10,6×–13,7× sobre o Padrão); falta P0 + aval do formato PSHV |
 | D | base p/ servermail/clientmail | — (tabelas Padrão) | aplicação | **modelo provado, formato pendente do dono** | é aplicação, não tipo |
 | E | base p/ Blockchain | — (modo sobre o Padrão) | modo/recurso | **esquema já roda; falta calcular o hash e verificar a cadeia** | é modo, não tipo — e é o mais barato dos três |
 
@@ -139,9 +139,11 @@ superfície de rede que o projeto não tem; recusar até haver pedido medido.
 - **B2 (VECTOR/embeddings):** para o **N e o d reais do dono**, a força-bruta escalar em
   Rust puro (produto interno à mão, zero-dep) já responde rápido o bastante — ou precisa
   de ANN? Se bastar, nasce sem índice e sem formato novo. (`propostas/vetorial.md` §1.)
-- **C (colmeia):** a **nossa** colmeia em Rust + nosso cache leria tão rápido (~2–5 µs) e
-  escreveria menos lento que os ~255–495 µs do REGF? — protótipo mínimo × Padrão; faltam
-  ainda os bytes-ao-disco do próprio REGF. (`colmeia.md` §1.)
+- **C (colmeia): MEDIDA (12/09/2026)** — o protótipo PSHV em Rust + nosso cache lê
+  config-shaped **10,6×–13,7× mais rápido** que o Padrão (busca de ponto × busca de ponto,
+  máquina parada, faixas que não cruzam; `bancada/colmeia/resultados.json`). A premissa
+  passou; falta ainda o bytes-ao-disco do próprio REGF (H3, máquina Windows do dono).
+  (`colmeia.md` §1.)
 - **E (blockchain):** qual o custo do SHA-256 **por bloco calculado sobre o conteúdo** e
   da verificação de cadeia por altura — dado que SHA-256 é serial e a casa mede **2,51×
   em 4 núcleos** por arquivo, não por bloco.
