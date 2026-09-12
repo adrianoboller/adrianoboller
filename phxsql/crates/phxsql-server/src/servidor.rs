@@ -10555,6 +10555,38 @@ impl Servidor {
                 pares.push(("op".to_string(), Json::texto_de(&plano.op)));
             }
         }
+        // A visao que PROJETA colunas guarda essa projecao no `plano.saida`, e
+        // nao no `plano.pedido`: o pedido de dentro e um `varrer`/`buscar` que
+        // devolve a linha INTEIRA, e a projecao e um passo de SAIDA do
+        // tradutor. Passar so o `plano.pedido` como `de` descartava esse passo,
+        // e por isso `SELECT * FROM v_so_nome` recebia todas as colunas -- a
+        // visao criada para esconder colunas nao escondia nenhuma. Envolvemos o
+        // `de` num `consultar` que aplica a projecao da visao ANTES do SELECT
+        // de fora, pelo mesmo `colunas` que o `op_consultar` ja projeta: assim
+        // o SELECT externo so enxerga o que a visao expoe, como toda
+        // subconsulta.
+        if let phxsql_sql::Saida::Colunas(cols) = &plano.saida {
+            let colunas = Json::Lista(
+                cols.iter()
+                    .map(|(nome, apelido)| {
+                        if nome == apelido {
+                            Json::texto_de(nome)
+                        } else {
+                            Json::objeto(vec![
+                                ("coluna", Json::texto_de(nome)),
+                                ("apelido", Json::texto_de(apelido)),
+                            ])
+                        }
+                    })
+                    .collect(),
+            );
+            de = Json::objeto(vec![
+                ("op", Json::texto_de("consultar")),
+                ("database", Json::texto_de(&base_de_dentro)),
+                ("de", de),
+                ("colunas", colunas),
+            ]);
+        }
         Ok(Some(phxsql_sql::planejar_sobre(selecao, de)?))
     }
 
@@ -36844,6 +36876,67 @@ mod testes_visoes {
         assert_eq!(l.len(), 2);
         assert_eq!(l[0].texto_ou("quem", ""), "caio");
         assert!(l[0].campo("cidade").is_none(), "a projecao nao cortou");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A PROVA REAL do 241 (A7): a visao que PROJETA colunas nao vaza as
+    /// demais sob `SELECT *`.** A visao expoe so `nome`; um `SELECT * FROM v`
+    /// tem de devolver SO `nome`, e nao a linha inteira da tabela.
+    ///
+    /// Sabotagem: passar `plano.pedido` cru como `de` em
+    /// `selecao_sobre_visao`, sem envolve-lo no `consultar` que aplica
+    /// `plano.saida`, faz o `varrer` de dentro devolver a linha inteira, e
+    /// `id`/`cidade` reaparecem. Este teste reprova na assercao de que `cidade`
+    /// sumiu -- que e o proposito de uma visao que projeta.
+    #[test]
+    fn a_visao_que_projeta_nao_vaza_as_outras_colunas() {
+        let d = dir("projecao");
+        let (s, _) = servidor(&d, Cadastro::default());
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_so_nome",
+                "sql":"SELECT nome FROM clientes"}"#,
+        )
+        .unwrap();
+
+        let r = sql(&s, "SELECT * FROM v_so_nome").expect("a visao nao respondeu");
+        assert_eq!(r.texto_ou("op", ""), "consultar");
+        let l = linhas_do_sql(&r);
+        assert_eq!(l.len(), 3, "a visao mudou quantas linhas");
+        for linha in &l {
+            assert!(linha.campo("nome").is_some(), "a coluna projetada sumiu");
+            assert!(
+                linha.campo("cidade").is_none(),
+                "a visao vazou `cidade`, que ela nao projetou: {}",
+                linha.escrever()
+            );
+            assert!(
+                linha.campo("id").is_none(),
+                "a visao vazou `id`, que ela nao projetou: {}",
+                linha.escrever()
+            );
+        }
+
+        // E a projecao com apelido tambem: `SELECT ... AS quem` continua
+        // valendo por cima da visao que ja projeta.
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_apelido",
+                "sql":"SELECT nome AS pessoa FROM clientes"}"#,
+        )
+        .unwrap();
+        let r = sql(&s, "SELECT * FROM v_apelido").expect("a visao com apelido nao respondeu");
+        let l = linhas_do_sql(&r);
+        assert_eq!(l.len(), 3);
+        assert!(
+            l[0].campo("pessoa").is_some(),
+            "o apelido da visao nao chegou: {}",
+            l[0].escrever()
+        );
+        assert!(l[0].campo("nome").is_none(), "vazou o nome sem apelido");
 
         let _ = std::fs::remove_dir_all(&d);
     }
