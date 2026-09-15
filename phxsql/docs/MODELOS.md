@@ -716,6 +716,21 @@ e ele acusar. A lição não é nova (é a pétrea «todo número sai de gerador
 **alcance** é: *quem soma teste fecha a cobertura no mesmo fôlego*, senão o
 portão da próxima frente herda o vermelho.
 
+## ACID-C — a cascata entra no conjunto de escrita — 15/09/2026
+
+| frente | escalão | por quê | papéis convocados | dispensados, e por quê |
+|---|---|---|---|---|
+| **ACID-C** (cascata no conjunto de escrita, marca v3) | **projeto e risco** | é **formato em disco** (marca `.tx` v3), **concorrência** (ordem de travas entre transações, plano→trava→replaneja) e **integridade referencial** (a cascata da FK) ao mesmo tempo — as três coisas que a cláusula manda no modelo mais forte. Foi feito pelo integrador, sem fan-out: uma mudança coerente que se dividida esconderia o defeito no encontro | A, C, B, F | D (nada a limpar), E (sem tela — transação não tem UI), G (a catraca aqui é a marca v3, provada por teste RED→GREEN, não um `TETO` novo), J (a receita de fora já viera medida na rodada anterior — o super-journal do SQLite e o handle único do InnoDB, `dba-bases-2026-09.md` §1.1) |
+
+**Por que o forte, e não o leve.** A tentação de escalão leve seria «só empilhar
+mais escritas na lista». Mas o que decide certo aqui é o que NÃO se vê no diff:
+que manter a mãe cascateando no commit e sombrear as filhas dá **duas verdades
+que divergem**; que travar as filhas com a trava de dados na mão **congela o
+servidor** na espera; que reaplicar sem o byte da marca **grava a filha duas
+vezes**. Cada uma é decisão de projeto, e errar qualquer uma só aparece rodando
+— foi o escalão forte que as pesou antes do código. A prova real nos dois
+sentidos (reposto o defeito, os testes de comportamento falham) é o que fecha.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

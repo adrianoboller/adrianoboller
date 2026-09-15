@@ -171,14 +171,17 @@ escurece para `#C63C0A` no tema claro, por contraste.
 Atenção: a folha de marca afirma *ACID compliant* e *built-in replication*.
 O segundo **virou verdade** — a replicação funciona, está medida com quatro
 servidores, e o cluster faz eleição e promoção automática. O primeiro
-**continua falso, mas a razão mudou**: há transação desde o pedido 162
+**continua falso, mas a razão mudou de novo**: há transação desde o pedido 162
 (`BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`, com escopo, prazos e travas) — a
-premissa «sem transação não há o A nem o I» caducou. O que falta hoje é outra
-coisa: o isolamento entregue é `READ COMMITTED`, sem leitura repetível (a
-Sombra que a compraria está parada por decisão do dono, `docs/SOMBRA.md`), e o
-**C** continua parcial — a cascata do `ao_alterar` escreve em tabela que a
-transação não declarou. Ver `docs/ACID.md` §0 e `docs/PENDENCIAS.md` #189. Não
-repita *ACID compliant* em documento técnico.
+premissa «sem transação não há o A nem o I» caducou. E o **C parcial também
+caducou**: desde o ACID-C (15/09) a cascata do `ao_alterar` entra INTEIRA no
+conjunto de escrita da transação (super-journal, marca v3), então dentro da
+transação o `ROLLBACK` a alcança, o `COMMIT` a conta e o read-your-own-writes a
+mostra. O que ainda derruba *ACID compliant* seco é **só o I**: o isolamento
+entregue é `READ COMMITTED`, sem leitura repetível (a Sombra que a compraria
+está parada por decisão do dono, `docs/SOMBRA.md`). Ver `docs/ACID.md`
+§2.4/§3.3/§4.4 e `docs/PENDENCIAS.md` #189. Não repita *ACID compliant* em
+documento técnico.
 
 ## Regras que não se quebram
 

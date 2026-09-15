@@ -33,7 +33,7 @@ A resposta não é «sim» nem «não» para nenhuma das quatro. É esta:
 
 | letra | o que o motor **garante** | o que ele **não** garante | onde a configuração muda |
 |---|---|---|---|
-| **A** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não consome slot, rowid nem evento; uma queda no meio da passada é **completada** no arranque pela marca `.tx` | a **cascata** do `ao_alterar` grava em tabela que a transação não declarou, e uma queda no meio dela pode deixar mãe e filhas divergentes — hoje **denunciado ou consertado**, nunca silencioso (§2.4) | nada: a marca `.tx` sincroniza nos três regimes |
+| **A** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não consome slot, rowid nem evento; uma queda no meio da passada é **completada** no arranque pela marca `.tx`; dentro da transação a **cascata** do `ao_alterar` entra no conjunto de escrita (ACID-C, §2.4) — o `ROLLBACK` a alcança e o `COMMIT` a conta | fora de transação, a cascata do `atualizar` solto não é atômica por desenho — uma queda no meio dela é **denunciada ou consertada**, nunca silenciosa (§2.4) | nada: a marca `.tx` sincroniza nos três regimes |
 | **C** | tipo, tamanho, obrigatoriedade, unicidade e **integridade referencial** são impostos na gravação, em toda porta local; «nunca se mata o pai que tem filhos» vale de vez e suave | a réplica **aplica, não julga** — ela não confere o que o outro servidor já julgou; `SET NULL` não existe e não vem; a falta do índice da chave é recusada na **gravação**, não na declaração | `"verificar": false` na chave desliga a conferência daquela chave, e é escolha escrita |
 | **I** | leitura suja **não acontece**; a transação vê a própria escrita; uma **instrução** lê um estado consistente; escrita contra escrita é serializada por linha | **leitura repetível não existe**: entre duas instruções tudo pode mudar. Fantasma, leitura não repetível e **skew de escrita** acontecem, e estão medidos | nada — nenhum ajuste compra leitura repetível hoje |
 | **D** | a marca `.tx` é sincronizada **antes** da passada e é o ponto de compromisso; um `COMMIT` que respondeu OK volta depois da queda nos três regimes | em `por_lote` (o padrão) e em `sistema`, uma escrita **comum** responde OK sem nenhum `fsync`; quem abre mão é quem configurou | `recursos.durabilidade`, e é o campo que mais muda o significado de «OK» |
@@ -255,12 +255,38 @@ caminho, a reaplicação inteira a partir da marca. A tabela distingue os dois, 
 que**, e um sete que veio de o `SIGKILL` ter errado a janela é indistinguível
 de um sete que veio do conserto.
 
-O que **continua** verdadeiro, e não se apaga: a cascata escreve em tabela que
-a transação não declarou, então o `ROLLBACK` não a alcança — e é por isso que
-o **C** não está inteiro. A leitura honesta da frase do 163 hoje é: *a cascata
-não é atômica por desenho; o que ela garante é que nada é gravado antes de a
-árvore inteira ser conferida, e que uma queda no meio dela é **denunciada** no
-relatório do arranque ou **consertada** por ele — nunca silenciosa*.
+**A metade que o ACID-C fechou (dentro da transação):** a frase do 163 nasceu
+*«não há transação»*, e agora há. Dentro de uma transação, a cascata do
+`ao_alterar` **entra INTEIRA no conjunto de escrita** — no molde do
+*super-journal* do SQLite, apontado pela pesquisa do DBA (`docs/propostas/dba-bases-2026-09.md`
+§1.1). A mãe e cada filha viram uma escrita própria da lista, na ordem
+pai-antes-de-filha, e a mãe aplica **sem cascatear** (a corrente já é a lista).
+Com isso, dentro da transação:
+
+- o **`ROLLBACK` alcança a cascata** — ela é a lista, e desfazer a lista a
+  desfaz (`acidc_o_rollback_desfaz_a_cascata`);
+- o **`COMMIT` a conta** — `gravadas` traz a mãe e as filhas, não só a mãe
+  (`acidc_a_cascata_entra_no_conjunto_de_escrita_da_transacao`, §3.3);
+- o **read-your-own-writes a mostra** — a filha da mesma transação acompanha a
+  chave nova da mãe antes do commit (§4.4);
+- a **marca `.tx` a descreve** — é a v3, e uma queda no meio recupera a corrente
+  achatada pela marca, sem re-cascatear (`acidc_a_marca_v3_recupera_a_cascata_achatada`,
+  `docs/FORMATO.md`).
+
+O portão vem antes do trabalho: só o `atualizar` que mexe em chave conferida
+planeja a cascata (`Table::planejar_cascata_para_lista`), e as tabelas filhas
+são travadas **fora** da transação apenas quando há cascata — custo zero para o
+resto.
+
+O que **continua** verdadeiro FORA da transação: uma escrita solta (sem `BEGIN`)
+ainda cascateia dentro do próprio `atualizar`, e ali a cascata não é atômica por
+desenho — o que ela garante é que nada é gravado antes de a árvore inteira ser
+conferida, e que uma queda no meio dela é **denunciada** no relatório do
+arranque ou **consertada** por ele (pedido 172), nunca silenciosa. E há um
+canto, consistente com o `READ COMMITTED` desta casa: uma filha **inserida por
+outra conexão** sob a chave velha, entre o `empilhar` e o `COMMIT`, é um
+fantasma que a cascata da transação não vê — o mesmo fantasma que a §4.1 já
+mede como *acontece*.
 
 ---
 
@@ -332,12 +358,20 @@ a chave, crie o índice*, e as três saídas possíveis estão pesadas em
   matar a mãe é a cascata disfarçada que a regra primordial recusa.
 * **Não há `CHECK`**, nem restrição de domínio além do tipo e do tamanho.
 
-### 3.3 Onde o C não está inteiro, dito sem enfeite
+### 3.3 O C dentro da transação: fechado pelo ACID-C
 
-A lacuna é uma, e mudou de nome duas vezes sem sumir: **a cascata escreve em
-tabela que a transação não declarou** (`docs/TRANSACOES.md` §4.6), então um
-`ROLLBACK` não alcança a filha e o escopo efetivo não a mostra. Enquanto isso
-valer, o **C** é *imposto na gravação e não coberto pela transação*.
+A lacuna que mudou de nome duas vezes — *«a cascata escreve em tabela que a
+transação não declarou»* — **fechou dentro da transação** (ACID-C). A cascata do
+`ao_alterar` entra no conjunto de escrita: cada filha vira uma escrita da lista,
+o escopo efetivo passa a mostrá-la (expansão dinâmica, `docs/TRANSACOES.md`
+§4.6), o `ROLLBACK` a alcança e o `COMMIT` a conta em `gravadas`. A prova está
+em `acidc_a_cascata_entra_no_conjunto_de_escrita_da_transacao` e nas irmãs de
+rollback e de recuperação. Ver a §2.4 para o mecanismo (super-journal) e o preço
+(portão antes do trabalho, tabelas filhas travadas só quando há cascata).
+
+O que **não** entra por aqui, e continua sendo o que derruba *ACID compliant*:
+o isolamento é `READ COMMITTED` (§4), não há leitura repetível, e a cascata de
+uma escrita SOLTA (fora de transação) não é atômica por desenho (§2.4).
 
 ---
 
@@ -419,18 +453,21 @@ escrito aqui para ninguém o ler como proteção. Quem quiser a garantia de duas
 leituras coerentes não a tem em regime nenhum — é a leitura repetível que não
 existe.
 
-### 4.4 Duas imprecisões nomeadas, e a terceira que esta rodada achou
+### 4.4 Duas imprecisões que ficam, e a terceira que o ACID-C fechou
 
 As duas primeiras são do pedido 162 e continuam valendo: na ordem do **índice**
 a linha pendente sai no fim (ela não está no `.ndx`), e `Sequence`/`rownum` só
 nascem no `COMMIT`, então dentro da transação saem nulos.
 
-**A terceira:** o *read-your-own-writes* **não alcança a cascata**. Dentro da
-transação, alterar a chave da mãe faz a mãe já aparecer com a chave nova e a
-filha **ainda apontar para a antiga**; o `COMMIT` acerta as duas. O mecanismo é
-o mesmo da §3.3: a sobreposição é montada a partir do conjunto de escrita, e a
-cascata nunca vira `Escrita`. Não é defeito novo — é o alcance da sobreposição,
-e está medido para não voltar como surpresa.
+**A terceira, agora FECHADA (ACID-C):** o *read-your-own-writes* **alcança a
+cascata**. Dentro da transação, alterar a chave da mãe faz a mãe aparecer com a
+chave nova **e a filha acompanhar** — porque a cascata agora vira `Escrita`, e a
+sobreposição, que é montada a partir do conjunto de escrita, a lê como qualquer
+outra linha pendente. Antes deste conserto a filha continuava apontando para a
+chave antiga até o `COMMIT`; hoje a prova
+`acidc_a_cascata_entra_no_conjunto_de_escrita_da_transacao` mede a filha em `2`
+dentro da transação, e a de rollback mede que ela volta a `1` no `ROLLBACK`. Ver
+a §2.4 e a §3.3.
 
 ---
 
@@ -534,12 +571,17 @@ gravado e depois liberado por falha de E/S no índice (`operacoes IMPOSSIVEIS`,
 
 * **A — atomicidade: entregue.** O conjunto de escrita é tudo-ou-nada, o
   `ROLLBACK` não consome slot nem rowid, e uma queda no meio da passada é
-  completada no arranque. A cascata fica fora do conjunto de escrita, e uma
-  queda no meio dela é denunciada ou consertada, nunca silenciosa.
-* **C — consistência: imposta na gravação, não coberta pela transação.** Tipo,
-  tamanho, obrigatoriedade, unicidade e integridade referencial são conferidos
-  em toda porta local de escrita, e «nunca se mata o pai que tem filhos» vale
-  nos dois excluires. A réplica aplica e não julga, por decisão medida.
+  completada no arranque. Dentro da transação a cascata do `ao_alterar` **entra
+  no conjunto de escrita** (ACID-C, super-journal): o `ROLLBACK` a alcança e o
+  `COMMIT` a conta. Fora de transação, a cascata do `atualizar` solto é
+  denunciada ou consertada numa queda, nunca silenciosa.
+* **C — consistência: imposta na gravação; dentro da transação a cascata é
+  coberta.** Tipo, tamanho, obrigatoriedade, unicidade e integridade
+  referencial são conferidos em toda porta local de escrita, e «nunca se mata o
+  pai que tem filhos» vale nos dois excluires. Dentro da transação a cascata do
+  `ao_alterar` passou a entrar no conjunto de escrita (ACID-C), então o
+  `ROLLBACK` a desfaz e o escopo efetivo a mostra. A réplica aplica e não julga,
+  por decisão medida.
 * **I — isolamento: leitura confirmada, sem leitura repetível.** `READ
   COMMITTED` pela norma, com escrita serializada por linha entre transações. A
   transação compra a consistência de **uma** instrução; entre duas instruções

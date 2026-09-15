@@ -48,12 +48,20 @@ pub const MAGIC: &[u8; 8] = b"PHXTX\0\0\0";
 ///
 /// A **v2** acrescentou a linha ANTIGA do `atualizar`, para a reaplicacao
 /// poder replanejar a cascata do `ao_alterar` -- sem ela a filha fica para
-/// tras e o relatorio ainda diz que completou. A v1 **continua sendo lida**:
-/// marca deixada por um servidor anterior e commit que ja comecou, e
+/// tras e o relatorio ainda diz que completou. A **v3** (ACID-C) muda a
+/// SEMANTICA da cascata: ela deixou de ser replanejada na reaplicacao e passou
+/// a viajar ACHATADA na propria lista -- a mae e cada filha sao uma operacao da
+/// marca, e a operacao carrega o byte `cascata_na_lista` dizendo «aplique-me
+/// SEM cascatear, os elos ja estao aqui». A v1 e a v2 **continuam sendo
+/// lidas**: marca deixada por um servidor anterior e commit que ja comecou, e
 /// descarta-la seria jogar fora uma transacao confirmada por causa de uma
-/// mudanca nossa. Ela volta sem linha antiga, e a cascata dela nao se refaz --
-/// exatamente o comportamento que ela ja tinha.
-pub const VERSAO: u32 = 2;
+/// mudanca nossa. A v2 volta com a cascata IMPLICITA (o `recascatear` da
+/// reaplicacao a refaz, como antes); a v1 volta sem linha antiga.
+pub const VERSAO: u32 = 3;
+
+/// A v2: linha antiga presente, cascata IMPLICITA (replanejada na reaplicacao).
+/// Ainda aceita na leitura.
+pub const VERSAO_LINHA_ANTIGA_SEM_CASCATA: u32 = 2;
 
 /// A primeira versao do formato, ainda aceita na leitura.
 pub const VERSAO_SEM_LINHA_ANTIGA: u32 = 1;
@@ -238,6 +246,14 @@ pub struct Escrita {
     pub linha_antiga: Vec<Value>,
     /// O motivo da exclusao ou da restauracao. Vazio no resto.
     pub motivo: String,
+    /// ACID-C: esta escrita e um elo de uma cascata do `ao_alterar` que ja foi
+    /// ACHATADA nesta lista -- ou a mae dela. Aplique-a SEM cascatear: os elos
+    /// (filha, neta...) sao escritas proprias, logo adiante na lista.
+    ///
+    /// Falso em toda escrita comum (insercao, exclusao, e o `atualizar` que nao
+    /// mexe em chave conferida), e ai a passada cascateia como antes -- que, sem
+    /// filha, e um `is_empty()` de graca. Ver `docs/ACID.md` §2.4.
+    pub cascata_na_lista: bool,
 }
 
 // ------------------------------------------------------------- a transacao
@@ -845,6 +861,10 @@ pub struct OperacaoDaMarca {
     /// Vazia na marca v1 e em tudo que nao e `atualizar`.
     pub linha_antiga: Vec<Value>,
     pub motivo: String,
+    /// ACID-C (v3): esta operacao aplica SEM refazer a cascata, porque os elos
+    /// dela ja sao operacoes proprias desta marca. Falso em marca v1/v2 -- ali
+    /// a cascata e IMPLICITA e o `recascatear` da reaplicacao a refaz.
+    pub cascata_na_lista: bool,
 }
 
 /// A marca inteira, lida de volta.
@@ -898,6 +918,10 @@ pub fn gravar_marca(
         // existiam: assim o leitor da v1 e o da v2 percorrem os mesmos bytes
         // ate aqui, e o CRC continua cobrindo o bloco inteiro de uma vez.
         payload.extend_from_slice(&codificar_linha(&e.linha_antiga));
+        // ACID-C (v3): o byte da cascata vai DEPOIS da linha antiga, pelo mesmo
+        // motivo -- o leitor da v1/v2 nunca chega ate aqui, e o CRC continua
+        // cobrindo o payload inteiro de uma vez.
+        payload.push(u8::from(e.cascata_na_lista));
         b.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         b.extend_from_slice(&payload);
         let crc = crc32(&b[inicio..]);
@@ -941,7 +965,10 @@ pub fn ler_marca(caminho: &Path) -> Result<Option<Marca>> {
     }
     let mut leitor = Leitor { b: &b, i: 8 };
     let versao = leitor.u32()?;
-    if versao != VERSAO && versao != VERSAO_SEM_LINHA_ANTIGA {
+    if versao != VERSAO
+        && versao != VERSAO_LINHA_ANTIGA_SEM_CASCATA
+        && versao != VERSAO_SEM_LINHA_ANTIGA
+    {
         return Ok(None);
     }
     let id = leitor.u64()?;
@@ -991,16 +1018,22 @@ pub fn ler_marca(caminho: &Path) -> Result<Option<Marca>> {
             i: consumido,
         };
         let motivo = m.texto().unwrap_or_default();
-        // Marca v1 nao tem linha antiga, e isso nao e defeito dela: e a
-        // versao em que a reaplicacao nao sabia replanejar a cascata.
-        let linha_antiga = if versao == VERSAO {
+        // A linha antiga existe da v2 em diante; a v1 nao a tem (e ali a
+        // reaplicacao nao sabia replanejar a cascata). Guardo onde ela terminou
+        // para achar o byte da cascata logo em seguida.
+        let (linha_antiga, apos_antiga) = if versao >= VERSAO_LINHA_ANTIGA_SEM_CASCATA {
             match decodificar_linha_em(&payload[m.i..]) {
-                Ok((v, _)) => v,
+                Ok((v, consumido)) => (v, m.i + consumido),
                 Err(_) => return Ok(None),
             }
         } else {
-            Vec::new()
+            (Vec::new(), m.i)
         };
+        // ACID-C (v3): o byte da cascata vem logo depois da linha antiga. Na
+        // v1/v2 ele nao existe -- a cascata e IMPLICITA (falso aqui, e o
+        // `recascatear` da reaplicacao a refaz).
+        let cascata_na_lista =
+            versao == VERSAO && payload.get(apos_antiga).is_some_and(|&byte| byte != 0);
         operacoes.push(OperacaoDaMarca {
             tabela,
             acao,
@@ -1008,6 +1041,7 @@ pub fn ler_marca(caminho: &Path) -> Result<Option<Marca>> {
             linha,
             linha_antiga,
             motivo,
+            cascata_na_lista,
         });
     }
     Ok(Some(Marca {
@@ -1295,6 +1329,17 @@ fn aplicar_uma(
                     op.rowid
                 )));
             }
+            // **ACID-C (marca v3): a cascata viaja ACHATADA na marca.** Cada elo
+            // (filha, neta...) e uma operacao PROPRIA desta mesma marca, na
+            // ordem pai-antes-de-filha. Reaplicar SEM cascatear evita gravar a
+            // filha duas vezes; o `recascatear` abaixo fica so para a marca
+            // v1/v2, em que a cascata era IMPLICITA. Idempotente pelo rowid: o
+            // elo que ja tinha sido gravado antes da queda so regrava os mesmos
+            // valores.
+            if op.cascata_na_lista {
+                t.atualizar_sem_cascata_com_maes(op.rowid, &op.linha, maes)?;
+                return Ok(true);
+            }
             t.atualizar_com_maes(op.rowid, &op.linha, maes)?;
             // **O `atualizar` sozinho NAO refaz a cascata, e isso esta
             // medido.** A cascata do `ao_alterar` e planejada pelo delta da
@@ -1366,6 +1411,7 @@ mod testes {
                 linha: vec![Value::Int(1), Value::Str("Ana".into())],
                 linha_antiga: Vec::new(),
                 motivo: String::new(),
+                cascata_na_lista: false,
             },
             Escrita {
                 database: "loja".into(),
@@ -1375,6 +1421,7 @@ mod testes {
                 linha: Vec::new(),
                 linha_antiga: Vec::new(),
                 motivo: "pedido do titular".into(),
+                cascata_na_lista: false,
             },
         ];
         let caminho = gravar_marca(&d, 99, 1_700_000_000_000, &ops).unwrap();
@@ -1404,6 +1451,7 @@ mod testes {
             linha: vec![Value::Str("Blumenau".into())],
             linha_antiga: Vec::new(),
             motivo: String::new(),
+            cascata_na_lista: false,
         }];
         let caminho = gravar_marca(&d, 1, 0, &ops).unwrap();
         let mut b = std::fs::read(&caminho).unwrap();
@@ -1428,6 +1476,7 @@ mod testes {
             linha: vec![Value::Str("Joinville".into())],
             linha_antiga: Vec::new(),
             motivo: String::new(),
+            cascata_na_lista: false,
         }];
         let caminho = gravar_marca(&d, 2, 0, &ops).unwrap();
         let b = std::fs::read(&caminho).unwrap();

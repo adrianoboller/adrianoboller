@@ -10,6 +10,40 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — ACID-C: a cascata do `ao_alterar` entra na transação
+
+### Corrigido
+
+- **A cascata do `ao_alterar` entra no conjunto de escrita da transação
+  (ACID-C).** Antes, dentro de uma transação, alterar a chave de um pai
+  cascateava só no `COMMIT`: a filha ficava para trás na visão da transação, o
+  `COMMIT` respondia `gravadas:1` com duas tabelas mudadas, e o `ROLLBACK` não
+  alcançava a cascata. Agora a mãe e cada filha viram uma escrita própria da
+  lista (no molde do *super-journal* do SQLite): o read-your-own-writes mostra a
+  filha acompanhando a chave nova, o `COMMIT` conta as duas e o `ROLLBACK` as
+  desfaz. Continua a fundação do P0 (a conferência de FK dentro da transação
+  enxerga o pai empilhado). Provas `acidc_*`, prova real nos dois sentidos.
+
+### Mudado
+
+- **Marca `.tx` v3.** Cada operação carrega, no fim do payload, um byte
+  `cascata_na_lista`: `1` aplica sem re-cascatear (a corrente já é a lista), `0`
+  mantém o `recascatear` da v2. As marcas v1 e v2 continuam sendo lidas — marca é
+  commit que já começou. Sem migração de dado. Ver `docs/FORMATO.md`.
+- **Escopo efetivo.** Uma alteração que de fato cascateia expande o escopo da
+  transação **na hora** (as tabelas filhas entram em `tabelas_expandidas` e são
+  travadas); em `SCOPE MODE STRICT`, uma filha não declarada é recusada nomeando
+  a tabela. Custo zero para quem não cascateia.
+
+### Sabido
+
+- Fora de transação, a cascata segue acontecendo dentro do `atualizar` e não é
+  atômica por desenho. E uma filha inserida por outra conexão sob a chave velha,
+  entre o `empilhar` e o `COMMIT`, é um fantasma que a cascata não vê —
+  consistente com o `READ COMMITTED` desta casa.
+
+---
+
 ## Não lançado — a revisão do motor: segurança e integridade do que a rodada trouxe
 
 ### Corrigido

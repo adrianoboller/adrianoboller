@@ -2069,7 +2069,7 @@ operação   [tam_tabela u16][tabela bytes][op u8][rowid alvo u64]
 | campo | tamanho | o que é |
 |---|---|---|
 | `magic` | 8 | `PHXTX\0\0\0`, como todo arquivo do motor |
-| `versao` | 4 | 2 (a 1 continua sendo **lida**, ver abaixo) |
+| `versao` | 4 | 3 (a 2 e a 1 continuam sendo **lidas**, ver abaixo) |
 | `id` | 8 | o identificador da transação, o mesmo do nome do arquivo |
 | `carimbo` | 8 | ms desde a época, quando a marca foi escrita |
 | `n_operacoes` | 4 | quantas operações vêm a seguir |
@@ -2081,7 +2081,7 @@ E por operação:
 |---|---|---|
 | `op` | 1 | 1 inserir, 2 atualizar, 3 excluir suave, 4 excluir de vez, 5 restaurar |
 | `rowid alvo` | 8 | **o slot que esta operação vai escrever** |
-| `payload` | variável | a linha codificada, o motivo, e a **linha antiga** (v2) |
+| `payload` | variável | a linha codificada, o motivo, a **linha antiga** (v2) e o byte **`cascata_na_lista`** (v3) |
 | `crc32` | 4 | de toda a operação, do `tam_tabela` ao fim do payload |
 
 ### Por que o `rowid alvo`, e não só a linha
@@ -2117,17 +2117,45 @@ Ela custa zero leitura a mais: o servidor já lê a linha do disco ao empilhar o
 O teste é `phxsql-server/tests/cascata-na-recuperacao.rs`, e a prova real é nos
 dois sentidos — tirar a chamada a `recascatear` devolve a filha no valor velho.
 
-### Por que a v1 continua sendo lida
+### v3: a cascata ACHATADA, e o byte que diz «não cascateie de novo»
+
+A v3 (ACID-C) muda a **semântica** da cascata, não só o layout. Antes, uma
+alteração que cascateava deixava na marca **uma** operação (a mãe), e a
+recuperação refazia a cascata pelo `recascatear` (v2). Agora, dentro de uma
+transação, a cascata entra INTEIRA no conjunto de escrita: a mãe e **cada
+filha** viram uma operação própria da marca, na ordem pai-antes-de-filha — é o
+molde do *super-journal* do SQLite, apontado pela pesquisa do DBA
+(`docs/propostas/dba-bases-2026-09.md` §1.1).
+
+Cada operação carrega, **no fim do payload, depois da linha antiga**, um byte
+`cascata_na_lista`. Quando ele é `1`, a reaplicação aplica a operação **sem
+refazer a cascata** — os elos já são operações da marca, e re-cascatear
+gravaria a filha duas vezes. A mãe e todos os elos de uma cascata expandida
+vêm com o byte `1`; o resto vem com `0` e cascateia como antes.
+
+Por que um byte, e não a versão sozinha: a versão sobe para 3 e sinaliza «esta
+marca sabe do byte», mas quem decide re-cascatear ou não é a operação — uma marca
+v3 pode misturar uma alteração comum (byte `0`) com uma cascata achatada (byte
+`1`). O byte vai no fim do payload pela mesma razão do campo da v2: o leitor da
+v1/v2 nunca chega até ali, e o CRC continua cobrindo o payload inteiro de uma vez.
+
+O teste é `acidc_a_marca_v3_recupera_a_cascata_achatada`, e a prova é a mesma dos
+dois sentidos — a marca traz mãe e filha, e o segundo arranque não duplica.
+
+### Por que a v2 e a v1 continuam sendo lidas
 
 Porque **marca é commit que já começou**. Uma marca deixada por um servidor
 anterior representa uma transação confirmada, e descartá-la por causa de uma
 mudança nossa de formato jogaria fora exatamente o que ela existe para
-salvar — que é pior que o defeito que a v2 conserta.
+salvar — que é pior que o defeito que cada versão conserta.
 
-Uma marca v1 volta com a linha antiga vazia, e a cascata dela não se refaz:
-o comportamento que ela já tinha. O leitor da v1 e o da v2 percorrem os mesmos
-bytes até o motivo, e é por isso que o campo novo foi para o **fim** do
-payload em vez de entre os que já existiam.
+Uma marca **v2** volta com a linha antiga e a cascata IMPLÍCITA (byte
+`cascata_na_lista` ausente = `0`): a recuperação a refaz pelo `recascatear`,
+como sempre fez. Uma marca **v1** volta com a linha antiga vazia, e a cascata
+dela não se refaz — o comportamento que ela já tinha. Os leitores das três
+versões percorrem os mesmos bytes até onde a versão anterior parava, e é por
+isso que cada campo novo foi para o **fim** do payload em vez de entre os que já
+existiam.
 
 ### Por que a linha vai em bytes, e não em JSON
 

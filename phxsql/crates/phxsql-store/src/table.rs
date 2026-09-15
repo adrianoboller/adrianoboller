@@ -76,6 +76,28 @@ struct PassoAoAlterar {
     destino: Vec<(usize, Value)>,
 }
 
+/// Uma escrita da cascata do `ao_alterar`, ACHATADA para virar uma escrita da
+/// transacao (ACID-C, `docs/ACID.md` §2.4).
+///
+/// A cascata deixou de acontecer escondida dentro do `atualizar` da mae: cada
+/// filha que ela toca vira uma escrita PROPRIA no conjunto de escrita da
+/// transacao, no molde do super-journal do SQLite. Assim o `ROLLBACK` a
+/// alcanca, o `COMMIT` a conta, a marca `.tx` a descreve e o
+/// read-your-own-writes a mostra.
+#[derive(Debug, Clone)]
+pub struct EscritaDaCascata {
+    /// O nome SIMPLES da filha -- o mesmo espaco de nomes em que o cliente
+    /// pede a tabela, para a passada do commit saber onde aplicar.
+    pub tabela: String,
+    pub rowid: RowId,
+    /// A linha da filha com o destino do `ao_alterar` ja aplicado.
+    pub linha: Vec<Value>,
+    /// A linha da filha ANTES, lida do disco. So para o diagnostico e a
+    /// simetria com a mae; a passada achatada nao a reusa (nao ha cascata a
+    /// replanejar -- a corrente inteira ja esta na lista).
+    pub linha_antiga: Vec<Value>,
+}
+
 /// Ate onde a conferencia da cascata desce antes de recusar.
 ///
 /// # Por que um TETO e nao um detector de ciclo
@@ -1685,6 +1707,78 @@ impl Table {
         Ok(())
     }
 
+    /// Achata a arvore da cascata do `ao_alterar` numa lista de escritas, pai
+    /// antes de filha, para o ACID-C poe-la no conjunto de escrita da
+    /// transacao. Ver [`EscritaDaCascata`] e `docs/ACID.md` §2.4.
+    ///
+    /// Confere a arvore INTEIRA antes de coletar (recusa antes de gravar,
+    /// exatamente como o `atualizar` e o `recascatear`), e devolve vazio quando
+    /// nada cascateia -- o portao `alguma_coluna_indexada_mudou` do
+    /// `planejar_ao_alterar` sai na primeira linha sem abrir filha nenhuma.
+    ///
+    /// # Por que so PLANEJA, e nao grava
+    ///
+    /// Planejar e a metade barata (a cara e gravar, medido no
+    /// `conferir_a_arvore`). Aqui so se descobre O QUE a cascata faria; quem
+    /// grava e a passada do commit, aplicando cada escrita da lista como um
+    /// `atualizar` inteiro sem cascata -- indice, diario e trilha da filha
+    /// mantidos, sem o atalho por baixo que o `aplicar_ao_alterar` recusa.
+    pub fn planejar_cascata_para_lista(
+        &mut self,
+        antes: &[Value],
+        depois: &[Value],
+    ) -> Result<Vec<EscritaDaCascata>> {
+        // Mesmo portao do `atualizar`: na replica a cascata NAO se planeja --
+        // o source ja cascateou, e cada evento vem replicado por conta propria.
+        if !self.julga_integridade() {
+            return Ok(Vec::new());
+        }
+        let mut passos = self.planejar_ao_alterar(antes, depois)?;
+        if passos.is_empty() {
+            return Ok(Vec::new());
+        }
+        Self::conferir_a_arvore(&mut passos, 1)?;
+        let mut lista = Vec::new();
+        Self::coletar_a_arvore(&mut passos, &mut lista)?;
+        Ok(lista)
+    }
+
+    /// Percorre a arvore JA conferida e junta a escrita de cada filha, pai
+    /// antes de filha. Mesma travessia do [`Table::conferir_a_arvore`], mas
+    /// coletando em vez de so validar -- e por isso ela nao repete o teto de
+    /// profundidade: a arvore que chega aqui ja passou por ele.
+    fn coletar_a_arvore(
+        passos: &mut [PassoAoAlterar],
+        lista: &mut Vec<EscritaDaCascata>,
+    ) -> Result<()> {
+        for passo in passos.iter_mut() {
+            let alvos = std::mem::take(&mut passo.rowids);
+            for r in alvos {
+                let Some(antes) = passo.filha.ler(r)? else {
+                    continue;
+                };
+                let mut depois = antes.clone();
+                for (c, v) in &passo.destino {
+                    if let Some(alvo) = depois.get_mut(*c) {
+                        *alvo = v.clone();
+                    }
+                }
+                // O elo desta filha entra ANTES dos elos das netas dela: a
+                // passada aplica na ordem, e a neta so confere a chave nova
+                // da filha depois de a filha ja te-la.
+                lista.push(EscritaDaCascata {
+                    tabela: passo.nome.clone(),
+                    rowid: r,
+                    linha: depois.clone(),
+                    linha_antiga: antes.clone(),
+                });
+                let mut netas = passo.filha.planejar_ao_alterar(&antes, &depois)?;
+                Self::coletar_a_arvore(&mut netas, lista)?;
+            }
+        }
+        Ok(())
+    }
+
     /// A chave que ESTA `fk` aponta mudou entre `antes` e `depois`?
     ///
     /// Mesmas regras do plano, e nao uma segunda versao delas: chave
@@ -3098,7 +3192,7 @@ impl Table {
     /// Regrava a linha inteira mantendo o mesmo rowid e a mesma posicao
     /// fisica no `.reg`.
     pub fn atualizar(&mut self, rowid: RowId, valores: &[Value]) -> Result<()> {
-        self.atualizar_com_maes_opt(rowid, valores, None)
+        self.atualizar_com_maes_opt(rowid, valores, None, true)
     }
 
     /// [`Table::atualizar`] enxergando as MAES que a transacao ja abriu -- o
@@ -3110,7 +3204,33 @@ impl Table {
         valores: &[Value],
         maes: &mut dyn MaesEmProgresso,
     ) -> Result<()> {
-        self.atualizar_com_maes_opt(rowid, valores, Some(maes))
+        self.atualizar_com_maes_opt(rowid, valores, Some(maes), true)
+    }
+
+    /// [`Table::atualizar_com_maes`] SEM refazer a cascata do `ao_alterar`.
+    ///
+    /// # Por que este atalho existe, e por que ele NAO e o «atalho por baixo»
+    /// que o [`Table::aplicar_ao_alterar`] recusa
+    ///
+    /// O ACID-C poe a cascata do `ao_alterar` **inteira** no conjunto de
+    /// escrita da transacao (no molde do super-journal do SQLite): a mae e cada
+    /// filha viram uma escrita propria na lista, na ordem pai-antes-de-filha.
+    /// A passada do commit e a recuperacao aplicam a lista ACHATADA -- se a mae
+    /// cascateasse aqui, gravaria a filha DUAS vezes, porque a filha ja e uma
+    /// escrita da lista.
+    ///
+    /// A gravacao continua sendo um `atualizar` INTEIRO -- indice, diario,
+    /// trilha da propria linha, tudo mantido. O que se suprime e so a RECURSAO
+    /// da cascata, porque a corrente inteira ja foi planejada e conferida no
+    /// `empilhar` (ver `planejar_cascata_para_lista`) e cada elo ja e uma
+    /// escrita da lista. Nao ha atalho por baixo do indice.
+    pub fn atualizar_sem_cascata_com_maes(
+        &mut self,
+        rowid: RowId,
+        valores: &[Value],
+        maes: &mut dyn MaesEmProgresso,
+    ) -> Result<()> {
+        self.atualizar_com_maes_opt(rowid, valores, Some(maes), false)
     }
 
     fn atualizar_com_maes_opt(
@@ -3118,6 +3238,7 @@ impl Table {
         rowid: RowId,
         valores: &[Value],
         maes: Option<&mut dyn MaesEmProgresso>,
+        cascatear: bool,
     ) -> Result<()> {
         self.conferir_aridade(valores)?;
         if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
@@ -3210,7 +3331,11 @@ impl Table {
         // aqui grava duas vezes a mesma filha e -- pior -- deixa no diario da
         // replica um evento que o source nunca mandou, que e divergencia
         // medida em `--example sonda-replica-fk`.
-        let mut cascata = if self.julga_integridade() {
+        // `cascatear` e falso quando a corrente ja foi expandida na lista da
+        // transacao (ACID-C): a filha ja e uma escrita propria, e refazer a
+        // cascata aqui gravaria a filha duas vezes. Ver
+        // `atualizar_sem_cascata_com_maes`.
+        let mut cascata = if cascatear && self.julga_integridade() {
             self.planejar_ao_alterar(&valores_antigos, valores)?
         } else {
             Vec::new()

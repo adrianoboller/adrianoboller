@@ -154,8 +154,11 @@ fn devolver(dir: &std::path::Path, guardados: &[std::path::PathBuf]) {
     std::fs::remove_dir_all(dir.join("__cofre")).ok();
 }
 
-/// A marca `.tx` que a passada teria deixado: um `atualizar` de `clientes`
-/// levando a chave para 7, com a linha ANTIGA que a v2 carrega.
+/// A marca `.tx` que a passada teria deixado ANTES do ACID-C: um `atualizar` de
+/// `clientes` levando a chave para 7, com a linha ANTIGA e a cascata IMPLICITA
+/// (`cascata_na_lista: false`) -- e por isso a reaplicacao ainda a refaz pelo
+/// `recascatear`. E o caminho v2, que segue de pe para marca deixada por
+/// servidor anterior.
 fn marca(db: &Database, id: u64, rowid: u64, antiga: &[Value]) {
     phxsql_server::transacao::gravar_marca(
         db.caminho(),
@@ -169,6 +172,7 @@ fn marca(db: &Database, id: u64, rowid: u64, antiga: &[Value]) {
             linha: vec![Value::Int(7), Value::Str("Ana".into())],
             linha_antiga: antiga.to_vec(),
             motivo: String::new(),
+            cascata_na_lista: false,
         }],
     )
     .unwrap();
@@ -381,6 +385,7 @@ fn a_marca_da_versao_anterior_continua_sendo_completada() {
             linha: vec![Value::Int(2), Value::Str("Bia".into())],
             linha_antiga: Vec::new(),
             motivo: String::new(),
+            cascata_na_lista: false,
         }],
     )
     .unwrap();

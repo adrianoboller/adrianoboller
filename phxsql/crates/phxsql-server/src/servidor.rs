@@ -12924,19 +12924,41 @@ impl Servidor {
                                 linha,
                                 linha_antiga: velha,
                                 motivo: String::new(),
+                                cascata_na_lista: false,
+                            };
+                            // ACID-C: o upsert que virou `atualizar` cascateia
+                            // como qualquer alteracao. Planeja com a mae aberta
+                            // e a trava na mao (disco estavel), e so entao decide
+                            // o caminho.
+                            let plano = if nova.linha_antiga.is_empty() {
+                                Vec::new()
+                            } else {
+                                t.planejar_cascata_para_lista(&nova.linha_antiga, &nova.linha)?
                             };
                             // A trava de dados sai ANTES da do registro de
                             // transacoes, como no caminho de sempre: a ordem
                             // entre as duas e o que a `COM_A_TRAVA` cobra.
                             drop(t);
                             drop(trava);
-                            return self.empilhar_escrita(
+                            if plano.is_empty() {
+                                return self.empilhar_escrita(
+                                    sessao,
+                                    nova,
+                                    &database,
+                                    &tabela,
+                                    chave,
+                                    &[],
+                                    Some("atualizada"),
+                                );
+                            }
+                            return self.empilhar_atualizar_com_cascata(
                                 sessao,
                                 nova,
                                 &database,
                                 &tabela,
                                 chave,
                                 &[],
+                                plano,
                                 Some("atualizada"),
                             );
                         }
@@ -13004,6 +13026,8 @@ impl Servidor {
                     linha,
                     linha_antiga: Vec::new(),
                     motivo: String::new(),
+                    // Insercao nao cascateia: cascata e do `ao_alterar`.
+                    cascata_na_lista: false,
                 }
             }
             Acao::Atualizar => {
@@ -13062,6 +13086,9 @@ impl Servidor {
                     // antes de que a reaplicacao precisa.
                     linha_antiga: velha.unwrap_or_default(),
                     motivo: String::new(),
+                    // O portao adiante decide: se esta alteracao cascatear, a
+                    // mae vira `true` no `empilhar_atualizar_com_cascata`.
+                    cascata_na_lista: false,
                 }
             }
             _ => {
@@ -13100,18 +13127,43 @@ impl Servidor {
                     // `restringir` --, entao nao ha o que replanejar.
                     linha_antiga: Vec::new(),
                     motivo,
+                    cascata_na_lista: false,
                 }
             }
         };
+        // ACID-C: so o `atualizar` que mexe em chave conferida cascateia. O
+        // `planejar_cascata_para_lista` sai de graca (`is_empty()`) no resto --
+        // insercao, exclusao, ou alteracao que nao toca chave --, e por isso o
+        // portao vem ANTES de qualquer trabalho de cascata. A mae ainda esta
+        // aberta e a trava de dados na mao, entao o plano le o disco estavel.
+        let plano_cascata = if escrita.acao == crate::transacao::Acao::Atualizar
+            && !escrita.linha_antiga.is_empty()
+        {
+            t.planejar_cascata_para_lista(&escrita.linha_antiga, &escrita.linha)?
+        } else {
+            Vec::new()
+        };
         drop(t);
         drop(trava);
-        self.empilhar_escrita(
+        if plano_cascata.is_empty() {
+            return self.empilhar_escrita(
+                sessao,
+                escrita,
+                &database,
+                &tabela,
+                chave,
+                &chaves_novas,
+                None,
+            );
+        }
+        self.empilhar_atualizar_com_cascata(
             sessao,
             escrita,
             &database,
             &tabela,
             chave,
             &chaves_novas,
+            plano_cascata,
             None,
         )
     }
@@ -13175,6 +13227,143 @@ impl Servidor {
         // A marca so aparece quando ha o que dizer -- a mesma decisao do
         // `op_inserir`: um campo novo em toda resposta mudaria a forma dela
         // para todo cliente que ja existe.
+        if let Some(m) = marca {
+            resposta.push((m, Json::Bool(true)));
+        }
+        Ok(Json::objeto(resposta))
+    }
+
+    /// ACID-C: poe a mae e a cascata INTEIRA do `ao_alterar` no conjunto de
+    /// escrita, no molde do super-journal do SQLite. Ver `docs/ACID.md` §2.4.
+    ///
+    /// # As tres fases, e por que sao tres
+    ///
+    /// 1. **Descobrir** (ja feito pelo chamador, com a mae aberta e a trava de
+    ///    dados na mao): `planejar_cascata_para_lista` diz QUAIS filhas a
+    ///    cascata toca. E o retrato do disco, estavel porque a trava esta na mao.
+    /// 2. **Travar** cada tabela filha, aqui, FORA da trava de dados -- a espera
+    ///    por trava nunca segura o servidor inteiro (licao do comboio), e o
+    ///    escopo se expande DINAMICAMENTE como ja acontece com o gatilho. Em
+    ///    `STRICT` uma filha nao declarada e recusada nomeando a tabela: guarda
+    ///    nova entra pedida.
+    /// 3. **Replanejar** sob a trava de dados, agora com as filhas travadas: o
+    ///    retrato nao muda mais ate o commit, entao o que entra na lista e
+    ///    exatamente o que a passada vai aplicar. Sem esta fase, uma escrita de
+    ///    outra conexao na fresta entre 1 e 2 deixaria a lista com um retrato
+    ///    velho da filha.
+    ///
+    /// A mae ja esta reservada desde o topo do `empilhar`, entao a
+    /// `linha_antiga` dela continua valendo entre as fases.
+    #[allow(clippy::too_many_arguments)]
+    fn empilhar_atualizar_com_cascata(
+        &self,
+        sessao: &Sessao,
+        mut mae: crate::transacao::Escrita,
+        database: &str,
+        tabela: &str,
+        chave: String,
+        chaves_novas: &[(String, String)],
+        plano_fase1: Vec<phxsql_store::table::EscritaDaCascata>,
+        marca: Option<&'static str>,
+    ) -> Result<Json> {
+        // A mae reserva a propria tabela como toda escrita empilhada faz.
+        let _ = &chave;
+        // FASE 2 -- travar cada tabela filha distinta.
+        let mut filhas: Vec<String> = plano_fase1.iter().map(|e| e.tabela.clone()).collect();
+        filhas.sort();
+        filhas.dedup();
+        for filha in &filhas {
+            let chave_filha = crate::carga::chave(database, filha);
+            self.travar_para_empilhar(sessao, &chave_filha, crate::travas::FIM_DA_TABELA)?;
+        }
+        // FASE 3 -- replanejar com as filhas travadas.
+        let plano = {
+            let trava = self.travar_dados()?;
+            let ped = pedido_da_tabela(database, tabela);
+            let mut t = self.abrir_travada(&trava, &ped, sessao)?;
+            t.ver_so_o_disco();
+            let plano = t.planejar_cascata_para_lista(&mae.linha_antiga, &mae.linha)?;
+            drop(t);
+            drop(trava);
+            plano
+        };
+        // A mae aplica ACHATADA -- os elos ja sao escritas da lista.
+        mae.cascata_na_lista = true;
+        let mut grupo = Vec::with_capacity(1 + plano.len());
+        grupo.push(mae);
+        for elo in plano {
+            grupo.push(crate::transacao::Escrita {
+                database: database.to_string(),
+                tabela: elo.tabela,
+                acao: crate::transacao::Acao::Atualizar,
+                rowid: elo.rowid,
+                linha: elo.linha,
+                linha_antiga: elo.linha_antiga,
+                motivo: String::new(),
+                cascata_na_lista: true,
+            });
+        }
+        self.empilhar_grupo(sessao, grupo, database, tabela, chaves_novas, marca)
+    }
+
+    /// Empilha um GRUPO de escritas de uma vez -- a mae de uma cascata e cada
+    /// elo dela. Ou entra inteiro, ou nao entra: meia cascata na lista seria o
+    /// mesmo estrago que o ACID-C existe para fechar. O teto conta o TOTAL, e
+    /// cada tabela tocada entra na reserva.
+    ///
+    /// A trava de dados JA SAIU quando esta funcao e chamada -- a ordem entre
+    /// ela e a do registro de transacoes e o que a `COM_A_TRAVA` cobra, a mesma
+    /// do `empilhar_escrita`.
+    fn empilhar_grupo(
+        &self,
+        sessao: &Sessao,
+        grupo: Vec<crate::transacao::Escrita>,
+        database: &str,
+        tabela: &str,
+        chaves_novas: &[(String, String)],
+        marca: Option<&'static str>,
+    ) -> Result<Json> {
+        let teto = self.config.recursos.transacao_max_linhas as usize;
+        let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
+        if teto > 0 && tx.escritas.len() + grupo.len() > teto {
+            tx.estado = crate::transacao::Estado::AbortOnly;
+            tx.motivo_do_aborto = format!(
+                "o conjunto de escrita chegou ao teto de {teto} linhas \
+                 (recursos.transacao_max_linhas); a cascata do ao_alterar conta \
+                 cada filha"
+            );
+            return Err(PhxError::TransacaoAbortada(tx.motivo_do_aborto.clone()));
+        }
+        if tx.database.is_empty() {
+            tx.database = database.to_string();
+        }
+        let mae_rowid = grupo.first().map_or(0, |e| e.rowid);
+        let mae_acao = grupo.first().map_or("atualizar", |e| e.acao.nome());
+        let elos = grupo.len().saturating_sub(1);
+        for e in &grupo {
+            let ch = crate::carga::chave(database, &e.tabela);
+            if !tx.tabelas.contains(&ch) {
+                tx.tabelas.push(ch);
+            }
+        }
+        for e in grupo {
+            tx.escritas.push(e);
+        }
+        for (indice, chave) in chaves_novas {
+            tx.guardar_chave(tabela, indice, chave);
+        }
+        let mut resposta = vec![
+            ("empilhada", Json::Bool(true)),
+            ("acao", Json::texto_de(mae_acao)),
+            ("rowid", Json::de_u64(mae_rowid)),
+            ("linhas", Json::de_u64(tx.escritas.len() as u64)),
+            // Quantos elos da cascata entraram junto -- read-your-own-writes ja
+            // os mostra, e o COMMIT ja os conta.
+            ("cascata", Json::de_u64(elos as u64)),
+            ("transaction_id", Json::de_u64(tx.id)),
+            ("transaction_state", Json::texto_de(tx.estado.nome())),
+        ];
         if let Some(m) = marca {
             resposta.push((m, Json::Bool(true)));
         }
@@ -13779,7 +13968,14 @@ impl Servidor {
                         let mut maes = MaesAbertas {
                             abertas: &mut abertas,
                         };
-                        t.atualizar_com_maes(e.rowid, &e.linha, &mut maes)?;
+                        // ACID-C: quando a cascata ja e a lista, a mae e cada
+                        // elo aplicam SEM cascatear -- senao a filha, que ja e
+                        // uma escrita da lista, seria gravada duas vezes.
+                        if e.cascata_na_lista {
+                            t.atualizar_sem_cascata_com_maes(e.rowid, &e.linha, &mut maes)?;
+                        } else {
+                            t.atualizar_com_maes(e.rowid, &e.linha, &mut maes)?;
+                        }
                     }
                     self.residente_mut(&ped, |m| m.anotar_alteracao(e.rowid, &e.linha));
                 }
@@ -33760,6 +33956,7 @@ mod testes_transacoes {
                 linha: vec![Value::Int(1), Value::Str("Ana".into()), Value::Bool(false)],
                 linha_antiga: Vec::new(),
                 motivo: String::new(),
+                cascata_na_lista: false,
             },
             crate::transacao::Escrita {
                 database: "loja".into(),
@@ -33769,6 +33966,7 @@ mod testes_transacoes {
                 linha: vec![Value::Int(1), Value::Int(1), Value::Bool(false)],
                 linha_antiga: Vec::new(),
                 motivo: String::new(),
+                cascata_na_lista: false,
             },
         ];
         crate::transacao::gravar_marca(&dir.join("loja"), 77, crate::agora_ms(), &escritas)
@@ -33810,28 +34008,23 @@ mod testes_transacoes {
             .unwrap()
     }
 
-    /// **PROVA REAL VERMELHA do ACID-C -- ainda ABERTO.** A cascata do
-    /// `ao_alterar` escreve na filha FORA do conjunto de escrita da transacao:
-    /// ela nao entra na lista, nao entra na marca `.tx`, e o
-    /// read-your-own-writes nao a alcanca. Medido em 12/09/2026 (probe
-    /// `acidc-probe`, agora este teste):
+    /// **PROVA REAL do ACID-C -- FECHADO.** A cascata do `ao_alterar` entra
+    /// INTEIRA no conjunto de escrita da transacao (super-journal do SQLite): a
+    /// filha vira uma escrita propria da lista, entao o read-your-own-writes a
+    /// alcanca, o `COMMIT` a conta, a marca `.tx` a descreve e o `ROLLBACK` a
+    /// desfaz. Ver `docs/ACID.md` §2.4/§3.3/§4.4.
     ///
     /// * dentro da transacao, apos empilhar a alteracao da chave da mae de 1
-    ///   para 2, a MAE volta `id:2` (read-your-own-writes) mas a FILHA volta
-    ///   `cliente_id:1` -- orfa na propria visao da transacao (§4.4);
-    /// * o `COMMIT` responde `gravadas:1`, com DUAS tabelas alteradas -- a
-    ///   cascata da filha nao e contada porque nao esta no conjunto (§3.3);
-    /// * a cascata SO acontece no `aplicar_conjunto` (pos-commit a filha volta
-    ///   `cliente_id:2`), entao o `ROLLBACK` nunca a alcanca.
+    ///   para 2, a MAE volta `id:2` E a FILHA volta `cliente_id:2` -- a
+    ///   sobreposicao le a escrita da cascata como qualquer outra (§4.4);
+    /// * o `COMMIT` responde `gravadas:2` -- a mae e a filha, as duas na lista
+    ///   e as duas na marca (§3.3).
     ///
-    /// O conserto (cascata na marca, no molde do super-journal do SQLite) muda
-    /// o CONTEUDO da marca -- mais operacoes, de tabelas nao declaradas -- e
-    /// pede prova por queda. Esta marcado `#[ignore]` para nao reprovar a
-    /// suite enquanto o conserto nao entra: e a prova vermelha que fica de pe
-    /// dizendo o alvo. Ver `docs/ACID.md` §2.4/§3.3 e o parecer do DBA.
+    /// A prova de que ela PEGA: revertido o `empilhar` para nao expandir a
+    /// cascata (a mae voltaria a cascatear so no commit), as duas asserts
+    /// falham -- e a prova por queda vive no
+    /// `acidc_a_marca_v3_recupera_a_cascata_achatada` e no rollback logo abaixo.
     #[test]
-    #[ignore = "ACID-C aberto: a cascata do ao_alterar escreve fora do conjunto de escrita da \
-                transacao (docs/ACID.md §2.4/§3.3). Prova vermelha do conserto pendente."]
     fn acidc_a_cascata_entra_no_conjunto_de_escrita_da_transacao() {
         let dir = dir_temp("acidc-cascata");
         let s = servidor(&dir);
@@ -33873,6 +34066,118 @@ mod testes_transacoes {
             Some(2),
             "a cascata da filha nao entra no conjunto de escrita (ACID-C, §3.3)"
         );
+    }
+
+    /// **O `ROLLBACK` alcanca a cascata, porque ela e escrita da lista.** Antes
+    /// do ACID-C a cascata so acontecia no `aplicar_conjunto`, entao o
+    /// `ROLLBACK` -- que so joga fora a lista -- nao a alcancava. Agora ela E a
+    /// lista: desfazer a lista desfaz a cascata. Ver `docs/ACID.md` §2.4.
+    #[test]
+    fn acidc_o_rollback_desfaz_a_cascata() {
+        let dir = dir_temp("acidc-rollback");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base_com_fk(&s, &ses);
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":10,"cliente_id":1}"#,
+        )
+        .unwrap();
+
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+               "linha":{"id":2,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        // Dentro da transacao a filha ja acompanha (read-your-own-writes).
+        assert_eq!(cliente_id_do_pedido(&s, &ses), 2);
+        pede(&s, &ses, r#""op":"rollback""#).unwrap();
+        // Desfeito nos DOIS: a chave da mae voltou a 1, e a filha com ela.
+        assert_eq!(
+            cliente_id_do_pedido(&s, &ses),
+            1,
+            "o ROLLBACK nao desfez a cascata da filha (ACID-C)"
+        );
+        assert_eq!(quantas(&s, &ses, "clientes"), 1);
+    }
+
+    /// **PROVA POR QUEDA: a marca v3 recupera a cascata ACHATADA, sem duplicar.**
+    /// A marca de um commit pai+cascata escrito a mao, na ORDEM da passada
+    /// (mae primeiro, filha depois), as duas com `cascata_na_lista: true`. O
+    /// arranque acha a marca e completa as DUAS sem re-cascatear -- reaplicar a
+    /// mae com cascata gravaria a filha uma segunda vez. Ver `docs/ACID.md`
+    /// §2.4 e a marca v3 em `docs/FORMATO.md`.
+    #[test]
+    fn acidc_a_marca_v3_recupera_a_cascata_achatada() {
+        let dir = dir_temp("acidc-recuperacao");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base_com_fk(&s, &ses);
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":10,"cliente_id":1}"#,
+        )
+        .unwrap();
+        // A marca que a passada teria deixado ao trocar a chave da mae de 1 para
+        // 2: a mae e a filha, ACHATADAS, as duas `cascata_na_lista: true`. Nada
+        // aplicado ainda -- a intencao inteira mora na marca.
+        let escritas = vec![
+            crate::transacao::Escrita {
+                database: "loja".into(),
+                tabela: "clientes".into(),
+                acao: crate::transacao::Acao::Atualizar,
+                rowid: 1,
+                linha: vec![Value::Int(2), Value::Str("Ana".into()), Value::Bool(false)],
+                linha_antiga: vec![Value::Int(1), Value::Str("Ana".into()), Value::Bool(false)],
+                motivo: String::new(),
+                cascata_na_lista: true,
+            },
+            crate::transacao::Escrita {
+                database: "loja".into(),
+                tabela: "pedidos".into(),
+                acao: crate::transacao::Acao::Atualizar,
+                rowid: 1,
+                linha: vec![Value::Int(10), Value::Int(2), Value::Bool(false)],
+                linha_antiga: vec![Value::Int(10), Value::Int(1), Value::Bool(false)],
+                motivo: String::new(),
+                cascata_na_lista: true,
+            },
+        ];
+        crate::transacao::gravar_marca(&dir.join("loja"), 55, crate::agora_ms(), &escritas)
+            .unwrap();
+        drop(s);
+
+        // O arranque completa o commit -- mae E filha -- pela marca achatada.
+        let s = servidor(&dir);
+        assert_eq!(
+            cliente_id_do_pedido(&s, &ses),
+            2,
+            "a recuperacao nao completou a cascata achatada (ACID-C)"
+        );
+        // Um segundo arranque nao duplica: a marca ja sumiu, e a reaplicacao e
+        // idempotente pelo rowid.
+        drop(s);
+        let s = servidor(&dir);
+        assert_eq!(quantas(&s, &ses, "clientes"), 1);
+        assert_eq!(quantas(&s, &ses, "pedidos"), 1);
+        assert_eq!(cliente_id_do_pedido(&s, &ses), 2);
     }
 
     fn marcas(dir: &std::path::Path) -> Vec<String> {
@@ -34815,6 +35120,7 @@ mod testes_transacoes {
                 ],
                 linha_antiga: Vec::new(),
                 motivo: String::new(),
+                cascata_na_lista: false,
             })
             .collect();
         crate::transacao::gravar_marca(&dir.join("loja"), 42, crate::agora_ms(), &escritas)
@@ -34846,6 +35152,7 @@ mod testes_transacoes {
             linha: vec![Value::Int(1), Value::Str("a".into()), Value::Bool(false)],
             linha_antiga: Vec::new(),
             motivo: String::new(),
+            cascata_na_lista: false,
         }];
         let caminho =
             crate::transacao::gravar_marca(&dir.join("loja"), 7, crate::agora_ms(), &escritas)

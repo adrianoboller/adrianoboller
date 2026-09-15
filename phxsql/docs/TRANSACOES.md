@@ -407,20 +407,23 @@ mesmo comando com outro espaçamento — a mesma armadilha de resolver texto de
 tela comparando a frase. O fecho é transitivo, com teto de voltas, porque um
 gatilho que grava na própria tabela é legítimo.
 
-**A chave estrangeira NÃO entra, e isso foi conferido em vez de suposto.**
+**A chave estrangeira NÃO entra no escopo efetivo ESTÁTICO (o de `BEGIN`), e a
+cascata entra DINAMICAMENTE (no `empilhar`).**
 
-A tentação era somar as tabelas apontadas por FK com `ao_excluir`/`ao_alterar`
-em cascata. Elas não alcançam nada: **o motor declara a chave estrangeira e não
-a impõe.** Há teste travando isso pelo nome —
-`a_chave_e_declarada_mas_ainda_nao_e_imposta_na_gravacao` — e o comentário dele
-diz que uma linha filha apontando para um pai que não existe entra sem
-reclamação. Sem imposição não há cascata, e sem cascata a FK não toca tabela
-nenhuma.
+O `escopo_efetivo`, calculado na abertura, não pré-soma as tabelas apontadas por
+FK — e o motivo é medido, não preguiça: **quais** filhas uma cascata toca
+depende de **qual** coluna a alteração muda, e isso só se sabe no `atualizar`,
+não no `BEGIN`. Somá-las na abertura travaria tabelas que a transação talvez
+nunca toque, e a ficha mostraria um alcance que não existe. O teste
+`o_gatilho_entra_no_escopo_efetivo_e_a_fk_nao` trava esse lado.
 
-Somá-las travaria tabelas que a transação nunca vai tocar, e a ficha mostraria
-um alcance que não existe — que é exatamente a linha que não se imprime porque
-não se mede. **No dia em que aquele teste falhar**, o `escopo_efetivo` é o
-lugar de acrescentar o braço da FK, e o comentário lá diz isso.
+O que mudou com o **ACID-C**: quando uma alteração de fato cascateia, o
+`empilhar` expande o escopo **na hora**, exatamente como já faz com o alvo de um
+gatilho — cada tabela filha entra em `tabelas_expandidas`, tem a trava tomada
+(em `STRICT`, é recusada nomeando a tabela: *guarda nova entra pedida*), e vira
+uma escrita própria do conjunto. Ou seja: a FK não infla o escopo por
+antecipação, mas a cascata que realmente acontece aparece no escopo efetivo e no
+conjunto de escrita. Ver `docs/ACID.md` §2.4/§3.3.
 
 ### 4.7 Os três prazos, e quem encerra
 
@@ -629,9 +632,18 @@ causa de uma mudança nossa de formato jogaria fora exatamente o que ela existe
 para salvar. Ela volta sem linha antiga e sem cascata refeita — o comportamento
 que já tinha.
 
+**E o ACID-C mudou o que uma marca NOVA carrega.** Este `recascatear` da
+reaplicação é hoje o caminho da marca **v2** (ou de uma operação com o byte
+`cascata_na_lista: 0`). Uma transação que cascateia deixa agora uma marca
+**v3** com a cascata **achatada** — a mãe e cada filha são operações próprias,
+e a reaplicação as aplica sem re-cascatear, porque re-cascatear gravaria a filha
+duas vezes. Ver `docs/ACID.md` §2.4 e `docs/FORMATO.md` (v3). Os dois caminhos
+convivem: a marca velha replaneja, a nova replay achatado.
+
 O arquivo é `phxsql-server/tests/cascata-na-recuperacao.rs`, com quatro provas
 e as duas sabotagens: tirar o `recascatear` derruba só o teste da cascata,
-recusar a v1 derruba só o teste da compatibilidade.
+recusar a v1 derruba só o teste da compatibilidade. A prova da v3 é
+`acidc_a_marca_v3_recupera_a_cascata_achatada` (em `servidor.rs`).
 
 ### 5.5.2 A órfã que não precisava de queda nenhuma — fechada, e a premissa do pedido era falsa
 

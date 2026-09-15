@@ -198,6 +198,7 @@ fn so_a_marca(n: u64) -> f64 {
         ],
         linha_antiga: Vec::new(),
         motivo: String::new(),
+        cascata_na_lista: false,
     }];
     let comeco = Instant::now();
     for i in 1..=n {
