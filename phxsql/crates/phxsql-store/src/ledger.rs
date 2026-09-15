@@ -62,6 +62,7 @@ use crate::table::Table;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::hash::sha256;
 use phxsql_core::schema::{e_coluna_de_sistema, Schema};
+use phxsql_core::types::ColumnType;
 use phxsql_core::uuid::Uuid256;
 use phxsql_core::value::Value;
 use phxsql_core::RowId;
@@ -79,6 +80,45 @@ pub const COL_ASSINATURA: &str = "assinatura";
 pub const IDX_POR_ALTURA: &str = "porAltura";
 /// Altura do bloco genese. A `Sequence` do motor comeca em 1, e a cadeia segue.
 pub const GENESE_ALTURA: u64 = 1;
+
+// ------------------------------------------------- reconhecer o modo ledger
+
+/// Este esquema e' de uma tabela em MODO LEDGER?
+///
+/// O modo ledger nao e' um `TipoDatabase` novo nem um sinalizador gravado: e'
+/// uma CONVENCAO de esquema. Uma tabela esta em modo ledger quando reune as
+/// quatro pecas que a cadeia exige -- as tres colunas com os tipos certos
+/// (`hash` e `anterior` Uuid256, `altura` Sequence) E o indice unico
+/// `porAltura`, que devolve os blocos na ordem da cadeia. Exigir os quatro
+/// JUNTOS e' o que separa uma tabela-cadeia de uma tabela comum que por acaso
+/// tem uma coluna chamada `altura`: sem o indice unico a verificacao nao teria
+/// como varrer em ordem, e sem os tipos certos o hash nao fecharia.
+///
+/// # Por que este predicado existe: travar o `alterar_tabela`
+///
+/// `conteudo_canonico` hasheia os valores das colunas de dado NA ORDEM do
+/// esquema ATUAL. Acrescentar uma coluna a uma tabela ja gravada muda essa
+/// serie para TODA linha antiga -- o campo novo entra na conta --, e o
+/// `hash_do_bloco` recalculado deixa de bater o `hash` gravado: `verificar_cadeia`
+/// passaria a gritar adulteracao numa cadeia intacta. Por isso o motor RECUSA
+/// acrescentar coluna numa tabela em modo ledger (ver
+/// `Table::acrescentar_coluna`). A cadeia e' imutavel por desenho -- mexer no
+/// esquema dela e' mexer no passado.
+pub fn e_tabela_ledger(esquema: &Schema) -> bool {
+    let tem_coluna = |nome: &str, ty: ColumnType| {
+        esquema
+            .coluna_por_nome(nome)
+            .is_some_and(|i| esquema.colunas()[i].ty == ty)
+    };
+    let tem_indice_por_altura = esquema
+        .indices()
+        .iter()
+        .any(|idx| idx.nome == IDX_POR_ALTURA && idx.unico);
+    tem_coluna(COL_HASH, ColumnType::Uuid256)
+        && tem_coluna(COL_ANTERIOR, ColumnType::Uuid256)
+        && tem_coluna(COL_ALTURA, ColumnType::Sequence)
+        && tem_indice_por_altura
+}
 
 // --------------------------------------------------------------- E1: o hash
 
@@ -660,6 +700,146 @@ mod testes {
         assert!(
             e.to_string().contains(COL_HASH),
             "o erro tinha de nomear a coluna que falta, veio {e}"
+        );
+    }
+
+    // ---- reconhecer o modo ledger e travar o `alterar_tabela`
+
+    #[test]
+    fn reconhece_o_modo_ledger_pelas_quatro_pecas() {
+        // O esquema da cadeia e' reconhecido.
+        assert!(e_tabela_ledger(&esquema_blocos()));
+
+        // Uma tabela comum, sem a cadeia, NAO e'.
+        let comum = Schema::new(
+            "clientes",
+            vec![
+                Column::new("id", ColumnType::Uuid).obrigatoria(),
+                Column::new("nome", ColumnType::Str(60)),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap();
+        assert!(!e_tabela_ledger(&comum));
+
+        // Falta UMA peca (o indice unico `porAltura`): nao e' ledger. As tres
+        // colunas sozinhas nao bastam -- sem o indice unico a cadeia nao se
+        // varre em ordem.
+        let sem_indice = Schema::new(
+            "quase",
+            vec![
+                Column::new("id", ColumnType::Uuid).obrigatoria(),
+                Column::new("hash", ColumnType::Uuid256).obrigatoria(),
+                Column::new("anterior", ColumnType::Uuid256),
+                Column::new("altura", ColumnType::Sequence),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap();
+        assert!(!e_tabela_ledger(&sem_indice));
+    }
+
+    /// Prova real da guarda, nos dois sentidos: com a guarda, o motor RECUSA
+    /// acrescentar coluna numa tabela em modo ledger; sem a guarda, o
+    /// `acrescentar_coluna` teria sucesso (coluna nula sobre tabela com linha
+    /// passa em todas as outras conferencias) e o `unwrap_err` deste teste
+    /// entraria em panico.
+    #[test]
+    fn alterar_tabela_em_modo_ledger_e_recusado() {
+        let d = DirTemp::novo("ledger-trava-alter");
+        let mut t = Table::criar(&d, esquema_blocos()).unwrap();
+        cadeia(&mut t, 4);
+
+        assert!(
+            matches!(
+                verificar_cadeia(&mut t).unwrap(),
+                Verificacao::Integra { .. }
+            ),
+            "a cadeia tinha de estar integra antes"
+        );
+
+        // Coluna nula -- passaria em todas as outras conferencias do
+        // `acrescentar_coluna`. Quem a recusa e' a guarda do modo ledger.
+        let e = t
+            .acrescentar_coluna(Column::new("observacao", ColumnType::Str(40)), None)
+            .unwrap_err();
+        assert!(
+            e.to_string().contains("ledger"),
+            "o erro tinha de dizer que a tabela e' ledger, veio {e}"
+        );
+
+        // E a recusa nao mexeu em nada: a cadeia segue integra.
+        assert!(
+            matches!(
+                verificar_cadeia(&mut t).unwrap(),
+                Verificacao::Integra { .. }
+            ),
+            "a recusa nao podia ter tocado na cadeia"
+        );
+    }
+
+    /// A guarda e' especifica: uma tabela que NAO e' ledger continua alteravel.
+    /// E o teste do comportamento VELHO -- sem ele, a guarda poderia ter
+    /// travado todo `ALTER` sem ninguem ver.
+    #[test]
+    fn tabela_comum_ainda_aceita_coluna_nova() {
+        let esq = Schema::new(
+            "clientes",
+            vec![
+                Column::new("id", ColumnType::Uuid).obrigatoria(),
+                Column::new("nome", ColumnType::Str(60)),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap();
+        let d = DirTemp::novo("comum-aceita-alter");
+        let mut t = Table::criar(&d, esq).unwrap();
+        t.inserir(&[Value::Uuid(Uuid::v7()), Value::Str("Ana".into())])
+            .unwrap();
+
+        t.acrescentar_coluna(Column::new("email", ColumnType::Str(80)), None)
+            .unwrap();
+        assert!(
+            t.esquema().coluna_por_nome("email").is_some(),
+            "a coluna nova tinha de entrar numa tabela comum"
+        );
+    }
+
+    /// Prova de que a guarda defende um defeito REAL, medido, e nao um medo: o
+    /// hash do MESMO bloco muda quando o esquema ganha uma coluna de dado --
+    /// por isso `verificar_cadeia` acusaria adulteracao numa cadeia intacta.
+    #[test]
+    fn acrescentar_coluna_deslocaria_o_conteudo_do_bloco() {
+        let a = esquema_blocos();
+        // Uma linha como a lida de volta: as seis declaradas mais as duas de
+        // sistema (softdeleted, rownum).
+        let linha = vec![
+            Value::Uuid(Uuid::v7()),
+            Value::Uuid256(Uuid256::NULO),
+            Value::Uuid256(Uuid256::NULO),
+            Value::UInt(1),
+            Value::Str("mineirador".into()),
+            Value::DateTime(1_700_000_000_000),
+            Value::Bool(false), // softdeleted
+            Value::UInt(1),     // rownum
+        ];
+        let antes = hash_do_bloco(&a, &linha);
+
+        // O esquema depois de um `acrescentar_coluna`: a coluna nova entra
+        // depois da ultima do usuario, empurrando as de sistema.
+        let posicao = a.posicao_de_coluna_nova();
+        let b = a
+            .com_coluna(Column::new("extra", ColumnType::Str(20)), posicao)
+            .unwrap();
+        // A mesma linha, relida sob B, traz a coluna nova nula na posicao dela.
+        let mut linha_b = linha.clone();
+        linha_b.insert(posicao, Value::Null);
+        let depois = hash_do_bloco(&b, &linha_b);
+
+        assert_ne!(
+            antes, depois,
+            "acrescentar coluna muda o conteudo canonico do bloco -- \
+             e' o defeito que a guarda impede"
         );
     }
 }

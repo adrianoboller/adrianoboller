@@ -80,15 +80,21 @@ duality views **é exatamente o nosso campo `versao`** — não é candidato a c
 O modo blockchain (E1–E3, `ledger.rs`, integrado em `540e5cd`) tem quatro lacunas
 que o SQL Server já resolveu e que a leitura do desenho deles expôs:
 
-- **[URGENTE] Evolução de esquema quebra o hash retroativo.** `conteudo_canonico`
-  usa o esquema **atual** para recalcular o hash de **qualquer** linha, inclusive
-  antigas. Se alguém inserir uma coluna **no meio** do esquema de uma tabela em
-  modo ledger, o layout binário de todas as linhas gravadas antes desloca, e
-  `verificar_cadeia` acusa **falso positivo de adulteração** (ou pior, mascara
-  uma real). Confirmado: `alterar_tabela`/`acrescentar-coluna.rs` já existe — o
-  risco é **atual, não hipotético**. O SQL Server proíbe explicitamente (só
-  coluna *nullable*, só no fim, ignorada no hash). → vira item de `PENDENCIAS.md`
-  e trava `alterar_tabela` para tabela em modo ledger.
+- **[URGENTE — FECHADO em 15/09/2026] Evolução de esquema quebra o hash
+  retroativo.** `conteudo_canonico` usa o esquema **atual** para recalcular o hash
+  de **qualquer** linha, inclusive antigas. Se alguém acrescentar coluna a uma
+  tabela em modo ledger, o conteúdo canônico de todas as linhas gravadas antes
+  desloca, e `verificar_cadeia` acusa **falso positivo de adulteração** (ou pior,
+  mascara uma real). Confirmado: `alterar_tabela`/`acrescentar-coluna.rs` já
+  existe — o risco era **atual, não hipotético**. **Conserto entregue:** o motor
+  RECUSA `acrescentar_coluna` numa tabela em modo ledger (guarda no topo de
+  `Table::acrescentar_coluna`, portão único; modo reconhecido por convenção de
+  esquema em `ledger::e_tabela_ledger`). **Não** a régua relaxada do SQL Server
+  (só *nullable*, só no fim, fora do hash): o nosso conteúdo canônico pula coluna
+  por **nome**, não por posição-no-fim, então uma coluna nova mesmo nula entra na
+  conta — a proibição é **absoluta** (nem nula, nem em tabela vazia). Prova real
+  nos dois sentidos e mais três testes em `ledger.rs`; item de `PENDENCIAS.md`
+  fechado.
 - **Modo append-only deveria recusar `UPDATE`/`DELETE` no MOTOR**, não só detectar
   depois — no molde de `ao_excluir` só aceitar `restringir` («recusa na gravação,
   não só na declaração»). Hoje nada em `Table::atualizar` sabe que a tabela está

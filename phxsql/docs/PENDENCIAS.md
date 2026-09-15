@@ -439,14 +439,35 @@ gate dos motores V/H está liberado. `docs/ACID.md` §2.4/§3.3/§4.4,
 `docs/cognicao/cognicao_acid-c-a-cascata-vira-super-journal_20260915_*.md`.
 
 **Ledger — achado URGENTE da leitura das *ledger tables* do SQL Server
-(12/09/2026):** `conteudo_canonico` (`ledger.rs`) usa o esquema **atual** para
-recalcular o hash de qualquer linha; acrescentar coluna **no meio** do esquema de
-uma tabela em modo ledger desloca o layout de todas as linhas antigas e faz
-`verificar_cadeia` acusar **falso positivo de adulteração** (ou mascarar uma
-real). `alterar_tabela`/`acrescentar-coluna.rs` já existe → risco **atual**.
-Conserto: travar `alterar_tabela` para tabela em modo ledger (ou restringir a «só
-no fim, nullable, fora do hash», a régua do SQL Server). Ver
-`docs/propostas/dba-bases-2026-09.md` §2.1.
+(12/09/2026), FECHADO em 15/09/2026:** `conteudo_canonico` (`ledger.rs`) usa o
+esquema **atual** para recalcular o hash de qualquer linha; acrescentar coluna
+numa tabela em modo ledger desloca o conteúdo canônico de todas as linhas antigas
+e faz `verificar_cadeia` acusar **falso positivo de adulteração** (ou mascarar
+uma real). **Conserto:** o motor RECUSA `acrescentar_coluna` numa tabela em modo
+ledger — a guarda entra no topo de `Table::acrescentar_coluna`, o único ponto por
+onde o `op_acrescentar_coluna` do servidor passa (portão único, não espalhado). O
+modo ledger é reconhecido por **convenção de esquema** — `e_tabela_ledger`: as
+três colunas com os tipos certos (`hash`/`anterior` Uuid256, `altura` Sequence) e
+o índice único `porAltura` —, não por flag gravada. **A recusa é ABSOLUTA** — nem
+nula, nem com padrão, nem em tabela vazia —, e **não** a régua relaxada do SQL
+Server («só no fim, nullable, fora do hash»): o conteúdo canônico desta casa pula
+coluna por **nome** (`hash`, `assinatura`, sistema), não por posição-no-fim, então
+uma coluna nova, mesmo nula e no fim, **entra** na conta e desloca o hash. A régua
+do SQL Server não mapeia para o nosso desenho; a proibição inteira, sim.
+**Prova real nos dois sentidos, medida:** com a guarda desligada
+(`if false && …`), `acrescentar_coluna` numa tabela ledger com 4 blocos retorna
+`Ok` e o teste `alterar_tabela_em_modo_ledger_e_recusado` entra em pânico no
+`unwrap_err`; com a guarda, recusa. Três provas em `ledger.rs`:
+`reconhece_o_modo_ledger_pelas_quatro_pecas`,
+`alterar_tabela_em_modo_ledger_e_recusado` (com a cadeia seguindo íntegra depois
+da recusa) e `tabela_comum_ainda_aceita_coluna_nova` (o comportamento VELHO — a
+guarda não trava `ALTER` de tabela comum), mais
+`acrescentar_coluna_deslocaria_o_conteudo_do_bloco` (prova, na função pura, de que
+o defeito é real e medido, não um medo). Os outros três itens do §2.1 (recusar
+`UPDATE`/`DELETE` no motor, âncora externa pela replicação, `DROP` redobrado)
+seguem **abertos** — endurecimento, decisão do dono sobre escopo. Ver
+`docs/propostas/dba-bases-2026-09.md` §2.1 e
+`docs/cognicao/cognicao_ledger-trava-alter-por-convencao-de-esquema_20260915_*.md`.
 
 ---
 

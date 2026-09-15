@@ -10,6 +10,29 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — Ledger: `ALTER TABLE ADD COLUMN` travado em tabela-cadeia
+
+### Corrigido
+
+- **O motor RECUSA acrescentar coluna numa tabela em modo ledger.** O hash de
+  cada bloco cobre o conteúdo canônico na ordem do esquema; acrescentar coluna a
+  uma tabela-cadeia já gravada deslocava esse conteúdo para toda linha antiga, e
+  `verificar_cadeia` passaria a acusar **falso positivo de adulteração** numa
+  cadeia intacta (ou a mascarar uma real). A guarda entra no topo de
+  `Table::acrescentar_coluna` — o único ponto por onde o `op_acrescentar_coluna`
+  do servidor passa, portão único e não espalhado. O modo ledger é reconhecido
+  por **convenção de esquema** (`ledger::e_tabela_ledger`): `hash`/`anterior`
+  Uuid256, `altura` Sequence e o índice único `porAltura`, não por flag gravada.
+  A recusa é **absoluta** — nem nula, nem com padrão, nem em tabela vazia —, e
+  não a régua relaxada do SQL Server («só no fim, nullable, fora do hash»): o
+  conteúdo canônico desta casa pula coluna por **nome**, não por posição, então
+  coluna nova mesmo nula entra na conta. Prova real nos dois sentidos, mais três
+  provas em `ledger.rs`. Era o achado URGENTE do §2.1 da pesquisa do DBA
+  (`docs/propostas/dba-bases-2026-09.md`); os outros três itens (recusar
+  `UPDATE`/`DELETE` no motor, âncora externa, `DROP` redobrado) seguem abertos.
+
+---
+
 ## Não lançado — ACID-C: a cascata do `ao_alterar` entra na transação
 
 ### Corrigido

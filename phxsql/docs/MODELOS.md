@@ -731,6 +731,20 @@ vezes**. Cada uma é decisão de projeto, e errar qualquer uma só aparece rodan
 — foi o escalão forte que as pesou antes do código. A prova real nos dois
 sentidos (reposto o defeito, os testes de comportamento falham) é o que fecha.
 
+## Ledger — travar `ALTER` na tabela-cadeia — 15/09/2026
+
+| frente | escalão | por quê | papéis convocados | dispensados, e por quê |
+|---|---|---|---|---|
+| **Ledger `ALTER`** (guarda de `acrescentar_coluna` em modo ledger) | **projeto e risco** | é **integridade de dado** (o hash da cadeia é a garantia que a mudança quebraria) e uma **decisão de desenho não-óbvia**: se a régua relaxada do SQL Server mapeia para o nosso hash — e não mapeia, porque o conteúdo canônico pula coluna por NOME, não por posição. Errar isso deixaria a guarda passar coluna nula que ainda quebra a cadeia. Feito pelo integrador, sem fan-out: uma guarda de uma linha e três provas | A, C, B, F | D (nada a limpar), E (sem tela — `ALTER` de ledger não tem UI própria), G (a guarda aqui é teste RED→GREEN, não um `TETO` novo — catraca nova só quando há um número que só sobe), J (a receita de fora já veio medida: o §2.1 da `dba-bases-2026-09.md` trouxe as *ledger tables* do SQL Server, e a medição contra o nosso hash é justamente o que recusou a régua relaxada) |
+
+**Por que o forte, e não o leve.** «Recusar um `ALTER`» soa mecânico. O que
+pede o escalão forte é a pergunta que decide o ESCOPO da recusa: adotar a régua
+do SQL Server (nula, no fim, fora do hash) ou proibir inteiro? A resposta certa
+— proibir inteiro — só sai de medir o nosso `conteudo_canonico`, que exclui
+coluna por nome e não por posição, então coluna nula no fim **entra** no hash. A
+régua alheia teria compilado e deixado a cadeia quebrável, com teste verde. Foi
+o escalão forte que fez a pergunta antes de copiar a resposta.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

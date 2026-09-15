@@ -791,6 +791,21 @@ impl Table {
         coluna: phxsql_core::schema::Column,
         padrao: Option<Value>,
     ) -> Result<u64> {
+        // Tabela em modo ledger NAO aceita coluna nova, e a recusa e' absoluta
+        // -- nem nula, nem com padrao, nem em tabela vazia. O hash de cada bloco
+        // cobre o conteudo canonico NA ORDEM do esquema; uma coluna a mais muda
+        // essa serie para toda linha ja gravada, e `verificar_cadeia` passaria a
+        // acusar adulteracao numa cadeia intacta. A imutabilidade do esquema e'
+        // o que torna a cadeia verificavel -- mexer nele e' mexer no passado.
+        if crate::ledger::e_tabela_ledger(&self.esquema) {
+            return Err(PhxError::Esquema(format!(
+                "a tabela {} esta em modo ledger e nao aceita coluna nova: \
+                 o hash de cada bloco cobre o conteudo na ordem do esquema, \
+                 e acrescentar coluna faria a verificacao acusar adulteracao \
+                 numa cadeia intacta",
+                self.esquema.nome()
+            )));
+        }
         if phxsql_core::schema::e_coluna_de_sistema(&coluna.nome) {
             return Err(PhxError::Esquema(format!(
                 "{} e coluna do motor e ja existe na tabela",
