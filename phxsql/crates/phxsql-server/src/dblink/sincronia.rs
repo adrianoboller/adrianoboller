@@ -459,12 +459,17 @@ pub fn aplicar_para_ca(
     let (mut inseridas, mut alteradas) = (0u64, 0u64);
     for l in linhas {
         // Sem `atualizar`: a sincronia traz a linha INTEIRA de la, e e ela que
-        // entra por cima.
+        // entra por cima. E sem gancho, por DECISAO e nao por esquecimento: a
+        // sincronia nao dispara gatilho nenhum -- nem o de INSERT --, porque
+        // ela copia o que o outro lado ja julgou. Um BEFORE UPDATE aqui
+        // julgaria a mesma linha duas vezes, e recusaria no meio de uma
+        // rodada que precisa ser reentravel.
         let feito = crate::upsert::aplicar(
             t,
             indice_da_chave,
             l,
             crate::upsert::SeExistir::Atualizar,
+            None,
             None,
         )?;
         if feito.atualizada {

@@ -861,6 +861,12 @@ sem leitor é primo do `recursos.cache_paginas`. Provas em `servidor.rs`:
 `o_atualizar_grava_a_lida_com_o_set_por_cima_e_nao_o_values` e
 `o_atualizar_fora_do_modo_atualizar_recusa`.
 
+**Gatilhos**: o upsert dispara os do ramo que ele **virou** — `BEFORE INSERT`
+sobre a linha proposta sempre; no ramo que atualiza, `BEFORE UPDATE` sobre a
+linha **mesclada** (com `OLD`) e `AFTER UPDATE`; no que ignora, `AFTER` nenhum.
+Desde 16/09/2026 (o gap da G4-MOTOR no pedido 245: o `BEFORE UPDATE` não
+rodava). A tabela por ramo e o motivo estão em `TRIGGERS.md` §1.
+
 ### 8. `[INNER|LEFT|RIGHT|FULL|CROSS] JOIN ... [ON]`
 
 ```text

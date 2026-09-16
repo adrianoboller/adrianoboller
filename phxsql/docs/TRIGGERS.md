@@ -91,6 +91,44 @@ funções `CONCAT`, `UPPER`, `LOWER`, `TRIM`, `LENGTH`/`CHAR_LENGTH`, `ROUND`,
 | `AFTER UPDATE` | sim | não | sim |
 | `AFTER DELETE` | — | — | sim |
 
+### O upsert dispara os gatilhos do ramo que ele VIROU
+
+`inserir` com `se_existir` (o `ON CONFLICT`/`ON DUPLICATE KEY UPDATE` do SQL)
+é um `inserir` que pode virar `atualizar` ou virar nada. Os gatilhos seguem o
+ramo, e não o nome da operação:
+
+| o que o upsert virou | `BEFORE` que roda | `AFTER` que roda |
+|---|---|---|
+| a chave não existia → **inseriu** | `BEFORE INSERT`, sobre a linha proposta | `AFTER INSERT` |
+| a chave existia → **atualizou** | `BEFORE INSERT` sobre a proposta; depois `BEFORE UPDATE` com `NEW` = a gravada com o `SET` por cima e `OLD` = a gravada | `AFTER UPDATE`, com `OLD` |
+| a chave existia → **ignorou** | `BEFORE INSERT`, sobre a proposta | nenhum — nada foi gravado |
+
+É a **lei dos três motores**, aceite automático: PostgreSQL(R) (`ON CONFLICT
+DO UPDATE`), MariaDB(R) e MySQL(R) (`ON DUPLICATE KEY UPDATE`) fazem os três
+exatamente assim, e nenhuma pétrea nossa se opõe. O detalhe que decide a
+semântica: o `BEFORE UPDATE` roda **depois da mescla e antes da gravação** —
+é o único instante em que a linha final existe sem estar no disco. Rodá-lo
+sobre a linha do `VALUES` seria julgar uma linha que, com `SET`, nunca vai
+existir; foi o gap que a revisão G4-MOTOR nomeou no pedido 245, e medido em
+16/09/2026 o `BEFORE UPDATE` simplesmente **não rodava** — o único `BEFORE`
+era o de `INSERT`, sobre a linha crua —, e o `AFTER INSERT` rodava nos três
+ramos, inclusive no ignorado, com a linha que já estava lá como `NEW`.
+
+Sem o `SET` (só pelo protocolo: `se_existir: "atualizar"` sem `atualizar`), a
+linha do pedido inteira é o que entra por cima, e o que o `BEFORE INSERT`
+deixou nela é o que o `BEFORE UPDATE` vê — o mesmo que o `EXCLUDED` do
+PostgreSQL carrega. Com o `SET`, o efeito do `BEFORE INSERT` fica de fora da
+linha final, porque o `SET` desta casa só aceita literal e não há `EXCLUDED`
+para trazê-lo de volta.
+
+Dentro de uma transação vale o mesmo, na mesma ordem: o `BEFORE UPDATE` roda
+na **instrução**, sobre a mesclada; o `AFTER UPDATE` roda no `COMMIT`, pela
+ação empilhada. Onde mora: o gancho `upsert::AntesDeAtualizar`, que o
+`op_inserir` liga e o DbLink não (a sincronia não dispara gatilho nenhum, por
+decisão — ela copia o que o outro lado já julgou). As cinco provas estão em
+`testes_gatilhos`, nomeadas `*upsert*`, e a guarda `upsert-gatilho-do-ramo`
+repõe os três pontos do defeito de uma vez.
+
 ---
 
 ## 2. As três decisões que moldaram o desenho
@@ -263,6 +301,7 @@ repostos à mão, e os dois derrubaram o teste certo:
 |---|---|
 | o motor das rotinas chamando `executar` em vez de `executar_derivado` (sem portão) | `call_nao_e_a_porta_dos_fundos_para_a_tabela_negada` — o `CALL` gravou na tabela negada |
 | o resultado do corpo `BEFORE` descartado (`let _ = resultado`) | `sinal_cancela_a_escrita_e_a_linha_nao_entra` — a linha recusada entrou |
+| o gancho do upsert ignorado, o `AFTER INSERT` nos três ramos e o `BEFORE UPDATE` fora do `empilhar` (guarda `upsert-gatilho-do-ramo`, 16/09/2026) | os cinco `*upsert*` de `testes_gatilhos` — nome `"B"` onde devia ser `"viu Blumenau"`, `["entrou Ana", "entrou Bia"]` onde devia ser `"mudou Ana para Bia"`, e `"entrou Ana"` duas vezes num pedido que não gravou nada |
 
 Com o conserto de volta, os 16 testes do módulo passam.
 

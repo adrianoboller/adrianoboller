@@ -13038,6 +13038,18 @@ impl Servidor {
         };
         let (antes, depois) = self.gatilhos_para(p, evento)?;
         Self::conferir_gatilhos_compilam(&antes, &depois)?;
+        // O upsert que VIRAR `atualizar` roda o BEFORE UPDATE na instrucao,
+        // sobre a linha mesclada -- o irmao do `op_inserir`, que chama as
+        // mesmas funcoes na mesma ordem. Lidos aqui, antes da trava, pelo
+        // mesmo motivo dos de cima; o AFTER UPDATE ja roda no COMMIT pela
+        // acao empilhada, e so entra na conferencia de que compila.
+        let (antes_upd, depois_upd) = match se_existir {
+            Some(crate::upsert::SeExistir::Atualizar) => {
+                self.gatilhos_para(p, phxsql_sql::rotina::Evento::Atualizar)?
+            }
+            _ => (Vec::new(), Vec::new()),
+        };
+        Self::conferir_gatilhos_compilam(&antes_upd, &depois_upd)?;
 
         // AS TRAVAS VEM ANTES DA TRAVA DE DADOS, e a ordem foi corrigida por
         // uma corrida que a revisao achou.
@@ -13184,6 +13196,20 @@ impl Servidor {
                             // nao e para a linha que ja existe.
                             if let Some(set) = atualizar {
                                 linha = crate::upsert::mesclar(&velha, set, t.esquema())?;
+                            }
+                            // O BEFORE UPDATE do ramo que o upsert virou, sobre
+                            // a linha como VAI FICAR -- depois da mescla, com o
+                            // OLD do disco -- e antes de julgar as regras: a
+                            // ordem do ramo `Acao::Atualizar` logo abaixo. Sem
+                            // isto o unico BEFORE desta instrucao era o de
+                            // INSERT, sobre a linha crua (G4-MOTOR, pedido 245).
+                            if !antes_upd.is_empty() {
+                                self.rodar_gatilhos_antes(
+                                    &antes_upd,
+                                    Some(&mut linha),
+                                    Some(&velha),
+                                    t.esquema(),
+                                )?;
                             }
                             // GAP 242: julga padrao/calculada/CHECK do esquema
                             // sobre a linha ja mesclada -- este upsert virou um
@@ -16889,11 +16915,26 @@ impl Servidor {
         // servidor inteiro e um load atomico, e nada mais.
         let (antes, depois) = self.gatilhos_para(p, phxsql_sql::rotina::Evento::Inserir)?;
         Self::conferir_gatilhos_compilam(&antes, &depois)?;
+        // Os gatilhos de UPDATE, so quando o upsert PODE virar um. O ramo que
+        // ele vira decide qual BEFORE e qual AFTER rodam -- PostgreSQL,
+        // MariaDB e MySQL, os tres --, e o gatilho quebrado barra a escrita
+        // antes de ela comecar, inclusive o desse ramo. Lidos aqui, antes da
+        // trava, como os de cima.
+        let (antes_upd, depois_upd) = match se_existir {
+            Some(crate::upsert::SeExistir::Atualizar) => {
+                self.gatilhos_para(p, phxsql_sql::rotina::Evento::Atualizar)?
+            }
+            _ => (Vec::new(), Vec::new()),
+        };
+        Self::conferir_gatilhos_compilam(&antes_upd, &depois_upd)?;
         let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let mut linha = json_para_linha(&valores_json, t.esquema())?;
-        // BEFORE ve a linha ja tipada — e o SIGNAL daqui cancela a escrita
-        // antes de qualquer byte ir para o disco.
+        // BEFORE INSERT ve a linha ja tipada — e o SIGNAL daqui cancela a
+        // escrita antes de qualquer byte ir para o disco. Ele roda tambem
+        // quando o upsert vai virar atualizacao: e a linha PROPOSTA que ele
+        // julga, e nos tres motores ele dispara antes de a chave repetida ser
+        // descoberta.
         if !antes.is_empty() {
             self.rodar_gatilhos_antes(&antes, Some(&mut linha), None, t.esquema())?;
         }
@@ -16906,7 +16947,26 @@ impl Servidor {
             Some(modo) => {
                 let indice =
                     crate::upsert::indice_do_upsert(t.esquema(), p.texto_ou("indice", ""))?;
-                crate::upsert::aplicar(&mut t, &indice, &linha, modo, atualizar)?
+                // O BEFORE UPDATE do ramo que o upsert virou roda pelo gancho,
+                // sobre a linha MESCLADA e com a trava na mao -- a mesma
+                // ordem do `op_atualizar`. Sem o gancho ele nao rodava: o
+                // gatilho decidia sobre a linha do VALUES, que com SET nunca
+                // vai existir (o gap da G4-MOTOR no pedido 245). O gancho
+                // existe quando ha gatilho de UPDATE nesta tabela, BEFORE ou
+                // AFTER: e ele que traz o OLD que o AFTER precisa.
+                let mut gancho = |nova: &mut Vec<Value>, velha: &[Value], esquema: &Schema| {
+                    if antes_upd.is_empty() {
+                        return Ok(());
+                    }
+                    self.rodar_gatilhos_antes(&antes_upd, Some(nova), Some(velha), esquema)
+                };
+                let gancho: Option<crate::upsert::AntesDeAtualizar<'_>> =
+                    if antes_upd.is_empty() && depois_upd.is_empty() {
+                        None
+                    } else {
+                        Some(&mut gancho)
+                    };
+                crate::upsert::aplicar(&mut t, &indice, &linha, modo, atualizar, gancho)?
             }
         };
         let rowid = feito.rowid;
@@ -16925,6 +16985,25 @@ impl Servidor {
             self.residente_mut(p, |m| m.anotar_insercao(rowid, &linha));
         }
         let registros = t.registros();
+        // O AFTER e o do ramo que o upsert VIROU: AFTER UPDATE com o OLD
+        // quando atualizou, AFTER INSERT quando inseriu, e NENHUM quando
+        // ignorou -- nada foi gravado, e um "entrou" na auditoria por uma
+        // linha que ja estava la e mentira sobre o dado. E o consenso dos
+        // tres motores; antes disto o AFTER INSERT rodava nos tres casos.
+        let (depois, velha_json): (&[Arc<crate::rotinas::Gatilho>], Option<Json>) =
+            if feito.ignorada {
+                (&[], None)
+            } else if feito.atualizada {
+                (
+                    &depois_upd,
+                    feito
+                        .velha
+                        .as_deref()
+                        .map(|l| linha_para_json(l, t.esquema())),
+                )
+            } else {
+                (&depois, None)
+            };
         // O NEW do AFTER e a linha como FICOU gravada — sequencia preenchida,
         // rownum de verdade — lida de volta ainda dentro da trava.
         let gravada = if depois.is_empty() {
@@ -16934,7 +17013,7 @@ impl Servidor {
         };
         drop(t);
         drop(_trava);
-        let avisos = self.rodar_gatilhos_depois(&depois, gravada, None, p, sessao);
+        let avisos = self.rodar_gatilhos_depois(depois, gravada, velha_json, p, sessao);
         let mut resposta = vec![
             ("rowid", Json::de_u64(rowid)),
             ("registros", Json::de_u64(registros)),
@@ -29670,6 +29749,284 @@ mod testes_gatilhos {
         )
         .unwrap_err();
         assert!(e.to_string().contains("somente leitura"), "{e}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Os gatilhos do UPSERT honram o ramo que ele virou (o gap da G4-MOTOR no
+    // fim do pedido 245)
+    // -----------------------------------------------------------------------
+
+    /// Le a linha inteira pelo rowid.
+    fn linha(s: &Arc<Servidor>, tabela: &str, rowid: u64) -> Json {
+        s.executar(
+            "ler",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"{tabela}","rowid":{rowid}}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap()
+    }
+
+    /// Os eventos gravados na auditoria, na ordem em que entraram.
+    fn auditoria(s: &Arc<Servidor>) -> Vec<String> {
+        s.executar(
+            "varrer",
+            &pedido(r#"{"database":"b","tabela":"auditoria","max":100}"#),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .campo("linhas")
+        .and_then(Json::lista)
+        .map(|l| {
+            l.iter()
+                .map(|x| x.texto_ou("evento", "").to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+
+    /// O upsert em `clientes` que ATUALIZA quando a chave existe, com ou sem
+    /// o SET (`atualizar`).
+    fn upsert(s: &Arc<Servidor>, ses: &Sessao, corpo: &str) -> Result<Json> {
+        s.executar(
+            "inserir",
+            &pedido(&format!(
+                r#"{{"database":"b","tabela":"clientes","se_existir":"atualizar",{corpo}}}"#
+            )),
+            ses,
+        )
+    }
+
+    /// **No upsert que ATUALIZA, o BEFORE UPDATE roda sobre a linha MESCLADA
+    /// -- a gravada com o SET por cima -- e nao sobre a do VALUES.** E o gap
+    /// que a G4-MOTOR deixou nomeado no fim do pedido 245.
+    ///
+    /// O gatilho le uma coluna que o VALUES NAO traz (a cidade) e deixa o que
+    /// viu no nome, que e a unica saida de um BEFORE. Na linha do VALUES a
+    /// cidade e nula; na mesclada e "Blumenau". Um segundo gatilho RECUSA a
+    /// linha sem cidade: rodar o BEFORE UPDATE sobre a linha do VALUES
+    /// derrubaria o upsert por uma coluna que a linha final tem.
+    ///
+    /// Com o defeito reposto o BEFORE UPDATE nem roda -- o unico BEFORE que
+    /// rodava era o de INSERT, sobre a linha crua -- e o nome fica com o "B"
+    /// do SET.
+    ///
+    /// Lei dos tres motores, aceite automatico: PostgreSQL (`ON CONFLICT DO
+    /// UPDATE`), MariaDB e MySQL (`ON DUPLICATE KEY UPDATE`) disparam o
+    /// BEFORE INSERT sobre a linha proposta e, no ramo que atualiza, o BEFORE
+    /// UPDATE com NEW = a linha existente com o SET por cima e OLD = a
+    /// existente.
+    #[test]
+    fn no_upsert_que_atualiza_o_before_update_ve_a_linha_mesclada() {
+        let guarda = dir_temp("upsert-before");
+        let s = servidor(&guarda);
+        inserir(
+            &s,
+            "clientes",
+            r#"{"id":1,"nome":"Ana","cidade":"Blumenau"}"#,
+        )
+        .unwrap();
+        sql(
+            &s,
+            "CREATE TRIGGER exige_cidade BEFORE UPDATE ON clientes FOR EACH ROW \
+             IF NEW.cidade IS NULL THEN \
+               SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'cidade obrigatoria'; \
+             END IF",
+        )
+        .unwrap();
+        sql(
+            &s,
+            "CREATE TRIGGER carimba BEFORE UPDATE ON clientes FOR EACH ROW \
+             SET NEW.nome = CONCAT('viu ', IFNULL(NEW.cidade, 'nada'))",
+        )
+        .unwrap();
+
+        let r = upsert(
+            &s,
+            &Sessao::default(),
+            r#""linha":{"id":1,"nome":"x"},"atualizar":{"nome":"B"}"#,
+        )
+        .expect("o BEFORE UPDATE julgou a linha do VALUES, que nao tem cidade");
+        assert!(r.booleano_ou("atualizada", false), "{}", r.escrever());
+        let l = linha(&s, "clientes", 1);
+        assert_eq!(l.texto_ou("cidade", ""), "Blumenau", "{}", l.escrever());
+        assert_eq!(
+            l.texto_ou("nome", ""),
+            "viu Blumenau",
+            "o BEFORE UPDATE nao viu a linha mesclada: {}",
+            l.escrever()
+        );
+        assert_eq!(registros(&s, "clientes"), 1);
+    }
+
+    /// **A ordem e BEFORE INSERT primeiro, sobre a linha proposta, e depois
+    /// o BEFORE UPDATE sobre o que sobrou dela.** Sem o SET, a linha do
+    /// pedido inteira e o que entra por cima (o contrato do protocolo), entao
+    /// o que o BEFORE INSERT deixou nela e o que o BEFORE UPDATE ve -- e o
+    /// mesmo que o `EXCLUDED` do PostgreSQL carrega: os efeitos dos BEFORE
+    /// INSERT.
+    #[test]
+    fn o_before_insert_roda_primeiro_e_o_before_update_ve_o_que_ele_deixou() {
+        let guarda = dir_temp("upsert-ordem");
+        let s = servidor(&guarda);
+        inserir(
+            &s,
+            "clientes",
+            r#"{"id":1,"nome":"Ana","cidade":"Blumenau"}"#,
+        )
+        .unwrap();
+        sql(
+            &s,
+            "CREATE TRIGGER maiusc BEFORE INSERT ON clientes FOR EACH ROW \
+             SET NEW.cidade = UPPER(NEW.cidade)",
+        )
+        .unwrap();
+        sql(
+            &s,
+            "CREATE TRIGGER carimba BEFORE UPDATE ON clientes FOR EACH ROW \
+             SET NEW.nome = CONCAT('viu ', IFNULL(NEW.cidade, 'nada'))",
+        )
+        .unwrap();
+        upsert(
+            &s,
+            &Sessao::default(),
+            r#""linha":{"id":1,"nome":"x","cidade":"joinville"}"#,
+        )
+        .unwrap();
+        let l = linha(&s, "clientes", 1);
+        assert_eq!(l.texto_ou("cidade", ""), "JOINVILLE", "{}", l.escrever());
+        assert_eq!(l.texto_ou("nome", ""), "viu JOINVILLE", "{}", l.escrever());
+    }
+
+    /// **O AFTER que dispara e o do ramo que o upsert VIROU: AFTER UPDATE
+    /// quando atualizou, AFTER INSERT quando inseriu -- nunca os dois, e o de
+    /// UPDATE ve o OLD.** Com o defeito reposto, o ramo de atualizacao
+    /// disparava o AFTER INSERT com a linha como ficou: uma auditoria de
+    /// "entrou" para uma linha que ja estava la.
+    #[test]
+    fn no_upsert_o_after_e_o_do_ramo_que_ele_virou() {
+        let guarda = dir_temp("upsert-after");
+        let s = servidor(&guarda);
+        sql(
+            &s,
+            "CREATE TRIGGER entrou AFTER INSERT ON clientes FOR EACH ROW \
+             INSERT INTO auditoria (evento, quem) \
+             VALUES (CONCAT('entrou ', NEW.nome), 'g')",
+        )
+        .unwrap();
+        sql(
+            &s,
+            "CREATE TRIGGER mudou AFTER UPDATE ON clientes FOR EACH ROW \
+             INSERT INTO auditoria (evento, quem) \
+             VALUES (CONCAT('mudou ', OLD.nome, ' para ', NEW.nome), 'g')",
+        )
+        .unwrap();
+        let ses = Sessao::default();
+        // A chave nao existe: inseriu.
+        let r = upsert(&s, &ses, r#""linha":{"id":1,"nome":"Ana","cidade":"X"}"#).unwrap();
+        assert!(!r.booleano_ou("atualizada", false), "{}", r.escrever());
+        assert_eq!(auditoria(&s), vec!["entrou Ana"]);
+        // A chave existe: atualizou -- e o AFTER UPDATE ve o OLD.
+        let r = upsert(
+            &s,
+            &ses,
+            r#""linha":{"id":1,"nome":"x"},"atualizar":{"nome":"Bia"}"#,
+        )
+        .unwrap();
+        assert!(r.booleano_ou("atualizada", false), "{}", r.escrever());
+        assert!(r.campo("gatilhos_avisos").is_none(), "{}", r.escrever());
+        assert_eq!(auditoria(&s), vec!["entrou Ana", "mudou Ana para Bia"]);
+    }
+
+    /// **O upsert IGNORADO nao dispara AFTER nenhum: nada foi gravado.** Com
+    /// o defeito reposto, o AFTER INSERT rodava com a linha que JA ESTAVA LA
+    /// como NEW -- "entrou Ana" numa auditoria, por um pedido que nao gravou
+    /// byte nenhum. E o consenso dos tres: AFTER so roda para a linha que a
+    /// operacao de fato gravou (o `DO NOTHING` do PostgreSQL e o `INSERT
+    /// IGNORE` do MySQL/MariaDB pulam o AFTER INSERT da linha ignorada).
+    #[test]
+    fn o_upsert_ignorado_nao_dispara_after_nenhum() {
+        let guarda = dir_temp("upsert-ignorado");
+        let s = servidor(&guarda);
+        sql(
+            &s,
+            "CREATE TRIGGER entrou AFTER INSERT ON clientes FOR EACH ROW \
+             INSERT INTO auditoria (evento, quem) \
+             VALUES (CONCAT('entrou ', NEW.nome), 'g')",
+        )
+        .unwrap();
+        inserir(&s, "clientes", r#"{"id":1,"nome":"Ana","cidade":"X"}"#).unwrap();
+        assert_eq!(auditoria(&s), vec!["entrou Ana"]);
+        let r = s
+            .executar(
+                "inserir",
+                &pedido(
+                    r#"{"database":"b","tabela":"clientes","se_existir":"ignorar",
+                        "linha":{"id":1,"nome":"outra"}}"#,
+                ),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert!(r.booleano_ou("ignorada", false), "{}", r.escrever());
+        assert_eq!(
+            auditoria(&s),
+            vec!["entrou Ana"],
+            "o AFTER rodou sem gravacao"
+        );
+        assert_eq!(linha(&s, "clientes", 1).texto_ou("nome", ""), "Ana");
+    }
+
+    /// **Dentro da transacao, o mesmo: o BEFORE UPDATE do upsert que virou
+    /// `atualizar` roda na INSTRUCAO, sobre a mesclada.** O irmao do
+    /// `op_inserir` e o `empilhar`, que chama as mesmas funcoes na mesma
+    /// ordem; o AFTER UPDATE ja rodava no COMMIT pela acao empilhada.
+    #[test]
+    fn dentro_da_transacao_o_before_update_do_upsert_ve_a_mesclada() {
+        let guarda = dir_temp("upsert-tx");
+        let s = servidor(&guarda);
+        inserir(
+            &s,
+            "clientes",
+            r#"{"id":1,"nome":"Ana","cidade":"Blumenau"}"#,
+        )
+        .unwrap();
+        sql(
+            &s,
+            "CREATE TRIGGER exige_cidade BEFORE UPDATE ON clientes FOR EACH ROW \
+             IF NEW.cidade IS NULL THEN \
+               SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'cidade obrigatoria'; \
+             END IF",
+        )
+        .unwrap();
+        sql(
+            &s,
+            "CREATE TRIGGER carimba BEFORE UPDATE ON clientes FOR EACH ROW \
+             SET NEW.nome = CONCAT('viu ', IFNULL(NEW.cidade, 'nada'))",
+        )
+        .unwrap();
+        let ses = Sessao {
+            ligacao: 7,
+            ..Sessao::default()
+        };
+        s.executar("begin", &pedido(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        let r = upsert(
+            &s,
+            &ses,
+            r#""linha":{"id":1,"nome":"x"},"atualizar":{"nome":"B"}"#,
+        )
+        .expect("o BEFORE UPDATE julgou a linha do VALUES, que nao tem cidade");
+        assert_eq!(r.texto_ou("acao", ""), "atualizar", "{}", r.escrever());
+        s.executar("commit", &Json::objeto(vec![]), &ses).unwrap();
+        let l = linha(&s, "clientes", 1);
+        assert_eq!(l.texto_ou("cidade", ""), "Blumenau", "{}", l.escrever());
+        assert_eq!(
+            l.texto_ou("nome", ""),
+            "viu Blumenau",
+            "o BEFORE UPDATE nao viu a linha mesclada: {}",
+            l.escrever()
+        );
     }
 }
 

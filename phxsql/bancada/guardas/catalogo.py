@@ -5258,4 +5258,108 @@ pub fn limpar() {
             "uuid::tests::id256_cabe_um_sha256",
         ],
     },
+    # -----------------------------------------------------------------------
+    # Os gatilhos do upsert honram o ramo que ele virou (pedido 245, o gap da
+    # G4-MOTOR) -- frente U, 16/09/2026. Entrada apensa ao FIM, depois das da
+    # frente do fsync, para o integrador separar as duas.
+    # -----------------------------------------------------------------------
+    {
+        "id": "upsert-gatilho-do-ramo",
+        "titulo": "no upsert que atualiza, o BEFORE UPDATE vê a linha mesclada e o AFTER é o do ramo que ele virou",
+        "porque": (
+            "pedido 245, o gap nomeado pela G4-MOTOR: «no upsert com `atualizar`, "
+            "o gatilho BEFORE ve a linha do VALUES, nao a mesclada». Medido em "
+            "16/09/2026 com cinco testes: o BEFORE UPDATE NAO rodava no ramo que "
+            "atualiza -- o unico BEFORE era o de INSERT, sobre a linha crua -- "
+            "nos dois caminhos (`op_inserir` e `empilhar`), e o `op_inserir` "
+            "disparava o AFTER INSERT nos TRES ramos: no que atualizou (com a "
+            "linha como ficou) e no que ignorou (com a linha que ja estava la "
+            "como NEW: «entrou Ana» duas vezes na auditoria por um pedido que "
+            "nao gravou byte nenhum). Lei dos tres motores, aceite automatico: "
+            "PostgreSQL, MariaDB e MySQL disparam o BEFORE INSERT sobre a linha "
+            "proposta e, no ramo que atualiza, BEFORE UPDATE com NEW = a gravada "
+            "com o SET por cima e OLD = a gravada, depois AFTER UPDATE; a linha "
+            "ignorada nao dispara AFTER nenhum. O conserto entrou em tres "
+            "pontos, e repor o defeito e desfazer os tres: o gancho do "
+            "`upsert::aplicar` ignorado, o AFTER INSERT de volta nos tres ramos "
+            "do `op_inserir`, e o BEFORE UPDATE fora do `empilhar`."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/upsert.rs",
+                "trecho": """                if let (Some(gancho), Some(v)) = (antes_de_atualizar, &velha) {
+                    let mut nova = gravada.take().unwrap_or_else(|| linha.to_vec());
+                    gancho(&mut nova, v, t.esquema())?;
+                    gravada = Some(nova);
+                }
+""",
+                "troca": """                // DEFEITO REPOSTO (1/3, pedido 245): o gancho e ignorado -- o
+                // BEFORE UPDATE do ramo que o upsert virou nao roda, e a
+                // linha vai ao disco sem ele.
+                let _ = antes_de_atualizar;
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """            if feito.ignorada {
+                (&[], None)
+            } else if feito.atualizada {
+                (
+                    &depois_upd,
+                    feito
+                        .velha
+                        .as_deref()
+                        .map(|l| linha_para_json(l, t.esquema())),
+                )
+            } else {
+                (&depois, None)
+            };
+""",
+                "troca": """            // DEFEITO REPOSTO (2/3, pedido 245): o AFTER INSERT roda nos tres
+            // ramos -- no que atualizou e no que nao gravou byte nenhum.
+            (&depois, None);
+        let _ = (&depois_upd, &feito.velha);
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """                            if !antes_upd.is_empty() {
+                                self.rodar_gatilhos_antes(
+                                    &antes_upd,
+                                    Some(&mut linha),
+                                    Some(&velha),
+                                    t.esquema(),
+                                )?;
+                            }
+""",
+                "troca": """                            // DEFEITO REPOSTO (3/3, pedido 245): dentro da
+                            // transacao o unico BEFORE da instrucao e o de
+                            // INSERT, sobre a linha crua.
+                            let _ = &antes_upd;
+""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_gatilhos::no_upsert_que_atualiza_o_before_update_ve_a_linha_mesclada",
+            "servidor::testes_gatilhos::o_before_insert_roda_primeiro_e_o_before_update_ve_o_que_ele_deixou",
+            "servidor::testes_gatilhos::no_upsert_o_after_e_o_do_ramo_que_ele_virou",
+            "servidor::testes_gatilhos::o_upsert_ignorado_nao_dispara_after_nenhum",
+            "servidor::testes_gatilhos::dentro_da_transacao_o_before_update_do_upsert_ve_a_mesclada",
+        ],
+        "seguem": [
+            # O BEFORE INSERT continua vendo a linha proposta, o AFTER INSERT
+            # da insercao de verdade continua auditando, e o `atualizar` de
+            # sempre continua vendo OLD: o defeito reposto nao alcanca quem
+            # nao passa pelo upsert.
+            "servidor::testes_gatilhos::before_insert_normaliza_o_campo",
+            "servidor::testes_gatilhos::after_insert_audita_noutra_tabela",
+            "servidor::testes_gatilhos::update_e_delete_veem_old",
+            # E o upsert SEM gatilho grava exatamente o que gravava: a
+            # mesclada com o SET por cima, fora e dentro da transacao.
+            "servidor::testes_upsert::o_atualizar_grava_a_lida_com_o_set_por_cima_e_nao_o_values",
+            "servidor::testes_upsert::dentro_da_transacao_o_upsert_empilha_a_op_que_ele_virou",
+        ],
+    },
 ]

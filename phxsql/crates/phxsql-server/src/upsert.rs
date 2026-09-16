@@ -22,6 +22,13 @@
 //! gatilho para disparar e se ha transacao para empilhar -- e e por isso que
 //! o `op_inserir` continua sendo o dono do caminho de escrita, e nao esta
 //! funcao.
+//!
+//! O que ele OFERECE ao dono e o ponto certo para o gatilho do ramo que o
+//! upsert virou: o gancho [`AntesDeAtualizar`] recebe a linha como VAI FICAR
+//! gravada -- a lida com o SET por cima -- e a que esta la, antes de a
+//! sobrescrita acontecer. Sem ele o BEFORE UPDATE nao tinha onde rodar, e
+//! passou uma rodada sem rodar: o unico BEFORE do upsert era o de INSERT,
+//! sobre a linha crua do pedido (o gap da G4-MOTOR no pedido 245).
 
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
@@ -225,6 +232,21 @@ pub fn mesclar(velha: &[Value], set: &Json, esquema: &Schema) -> Result<Vec<Valu
     Ok(nova)
 }
 
+/// O gancho do dono ANTES de a linha que ja existe ser sobrescrita.
+///
+/// Recebe `(nova, velha, esquema)`: a linha como VAI FICAR -- a lida com o
+/// SET por cima, ou a do pedido inteira quando nao ha SET --, a que esta
+/// gravada, e o esquema para converter o que o gancho tocar. Pode mudar a
+/// `nova`; um erro dele cancela a sobrescrita antes de qualquer byte.
+///
+/// E por aqui que o servidor dispara o BEFORE UPDATE do ramo que o upsert
+/// virou, com NEW = a linha final e OLD = a gravada -- o que PostgreSQL,
+/// MariaDB e MySQL fazem, os tres, no `ON CONFLICT DO UPDATE`/`ON DUPLICATE
+/// KEY UPDATE`. O gancho mora no contrato e nao dentro de [`aplicar`] porque
+/// quem sabe se ha gatilho e quem chama: o DbLink passa `None`, e o caminho
+/// dele nao paga nem a leitura da linha velha.
+pub type AntesDeAtualizar<'a> = &'a mut dyn FnMut(&mut Vec<Value>, &[Value], &Schema) -> Result<()>;
+
 /// O que aconteceu com uma linha.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Feito {
@@ -235,6 +257,11 @@ pub struct Feito {
     /// `atualizar` grava a lida mesclada, e quem mantem a copia em memoria
     /// precisa dessa e nao da do pedido. `None` quer dizer «a que veio».
     pub gravada: Option<Vec<Value>>,
+    /// A linha como ESTAVA gravada, quando o upsert a sobrescreveu e alguem
+    /// precisou dela (o SET mescla por cima dela; o gancho a recebe). E o
+    /// OLD do AFTER UPDATE, lido uma vez so e na mesma trava que gravou.
+    /// `None` quando ninguem pediu.
+    pub velha: Option<Vec<Value>>,
 }
 
 impl Feito {
@@ -244,6 +271,7 @@ impl Feito {
             atualizada: false,
             ignorada: false,
             gravada: None,
+            velha: None,
         }
     }
 }
@@ -265,12 +293,21 @@ impl Feito {
 /// promete no `ON CONFLICT DO UPDATE SET`: o `VALUES` e para a linha nova, o
 /// `SET` e para a que existe. Sem `set`, a `linha` inteira por cima, que e o
 /// contrato de sempre do `se_existir: "atualizar"`.
+///
+/// # O gancho, e a ordem dele
+///
+/// `antes_de_atualizar` roda DEPOIS da mescla e ANTES da gravacao, sobre a
+/// linha como vai ficar: e o unico instante em que a linha final existe sem
+/// estar no disco. Rodar antes da mescla o poria diante da linha do pedido
+/// -- que, com SET, nunca vai existir --; rodar depois da gravacao nao
+/// poderia mais recusar nada.
 pub fn aplicar(
     t: &mut Table,
     indice: &str,
     linha: &[Value],
     modo: SeExistir,
     atualizar: Option<&Json>,
+    antes_de_atualizar: Option<AntesDeAtualizar<'_>>,
 ) -> Result<Feito> {
     let chave = valores_do_indice(t.esquema(), indice, linha);
     if chave.is_empty() || chave.iter().any(Value::e_null) {
@@ -283,26 +320,38 @@ pub fn aplicar(
                 atualizada: false,
                 ignorada: true,
                 gravada: None,
+                velha: None,
             }),
             SeExistir::Atualizar => {
-                let gravada = match atualizar {
-                    None => None,
-                    Some(set) => {
-                        let velha = t.ler(rowid)?.ok_or_else(|| {
-                            PhxError::Corrompido(format!(
-                                "o indice {indice} apontou para o rowid {rowid}, que nao \
-                                 se le"
-                            ))
-                        })?;
-                        Some(mesclar(&velha, set, t.esquema())?)
-                    }
+                // A linha gravada so e lida quando alguem precisa dela: o
+                // SET mescla por cima dela, e o gancho a recebe como OLD. O
+                // upsert sem nenhum dos dois continua sem pagar a leitura.
+                let velha = if atualizar.is_some() || antes_de_atualizar.is_some() {
+                    Some(t.ler(rowid)?.ok_or_else(|| {
+                        PhxError::Corrompido(format!(
+                            "o indice {indice} apontou para o rowid {rowid}, que nao \
+                             se le"
+                        ))
+                    })?)
+                } else {
+                    None
                 };
+                let mut gravada = match (atualizar, &velha) {
+                    (Some(set), Some(v)) => Some(mesclar(v, set, t.esquema())?),
+                    _ => None,
+                };
+                if let (Some(gancho), Some(v)) = (antes_de_atualizar, &velha) {
+                    let mut nova = gravada.take().unwrap_or_else(|| linha.to_vec());
+                    gancho(&mut nova, v, t.esquema())?;
+                    gravada = Some(nova);
+                }
                 t.atualizar(rowid, gravada.as_deref().unwrap_or(linha))?;
                 Ok(Feito {
                     rowid,
                     atualizada: true,
                     ignorada: false,
                     gravada,
+                    velha,
                 })
             }
         },
