@@ -1,7 +1,7 @@
 # Board de controle — backlog aberto por pilar e por escalão
 
 <!-- ROLLUP:inicio -->
-*Gerado por `docs/pmo/rollup.py` em 16/09/2026 06:00 UTC — não conte à mão; o estado sai da última coluna de cada tabela abaixo, e o escalão da coluna `escalão`.*
+*Gerado por `docs/pmo/rollup.py` em 16/09/2026 06:13 UTC — não conte à mão; o estado sai da última coluna de cada tabela abaixo, e o escalão da coluna `escalão`.*
 
 | pilar | aberto | entregue/fechado | parado | total |
 |---|---|---|---|---|
@@ -60,7 +60,7 @@ G QA · H documentação · I versionador · J pesquisador (+ subagentes
 
 | ID | entrega | dono | escalão | depende | status |
 |---|---|---|---|---|---|
-| P2-DESIGN | Desenho do transporte P2P: descoberta, NAT, gossip/anti-entropia, identidade sem domínio — **medido contra o nosso gargalo antes de virar plano** | `pesquisa-rede`, J | **forte** | — | aberto (pesquisa primeiro) |
+| P2-DESIGN | Desenho do transporte P2P: descoberta, NAT, gossip/anti-entropia, identidade sem domínio — **medido contra o nosso gargalo antes de virar plano** | `pesquisa-rede`, J | **forte** | — | aberto — pesquisa entregue em 16/09/2026 (`docs/propostas/p2p-transporte-2026-09.md`: sem DHT/ICE/TURN na v1, par-relé voluntário + convite assinado + mDNS na LAN); o desenho espera a decisão do dono no AAD do selo (pendência #251) e a medição P2 (long-poll contra os 2.012 ms) |
 | P2-CAIXA | Reenquadrar o #159 (server/client → P2P): caixa em disco, formato, protocolo de troca | B, C | **forte** | P2-DESIGN | aberto |
 | P2-CIFRA | Caixa cifrada em repouso + identidade Ed25519 do par (fundação do fio já existe) | SEC, B | **forte** | P2-DESIGN | aberto |
 

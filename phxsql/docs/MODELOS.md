@@ -862,6 +862,20 @@ conta «catorze» do `LEIA-ME.md`, que por definição só conta os scripts de
 definição dela — mas a frase do `CLAUDE.md` que diz «listados no LEIA-ME da
 pasta» passa a valer só para o dossiê, e o portão é a lista completa.
 
+## Pesquisa do transporte P2P (P2-DESIGN) — 16/09/2026
+
+| frente | escalão | por quê | papéis convocados | dispensados, e por quê |
+|---|---|---|---|---|
+| **P2-DESIGN, a pesquisa** — `docs/propostas/p2p-transporte-2026-09.md` (descoberta, NAT, gossip/anti-entropia, identidade sem domínio, transporte sem servidor central) | **meio** | o board marca o item como **forte** porque o *desenho* é arquitetura de rede e formato — mas esta rodada não desenhou: **mediu a premissa antes do item**, que é leitura de fonte primária (RFC, paper, fonte de projeto) confrontada com números que a casa já tinha (`bancada/replicacao`, `bancada/quorum`, contagem de `UdpSocket`/`Condvar` no fonte). O erro aqui se vê — fonte sem URL, número sem «quem mediu e quando» — e o resultado é um documento que o integrador confere linha a linha, não um formato que grava dado. O escalão forte fica reservado para o desenho que vier depois, quando o dono decidir o AAD (pendência #251) | A, J (`pesquisa-rede`) | B (nenhuma linha de Rust, por contrato), C e SEC (**convocados por nome no documento** para a rodada seguinte: quatro itens são formato em disco e um muda o modelo de ameaça — não cabiam nesta pesquisa), F (só quando houver código: P4 e P5 pedem prova real nos dois sentidos), D/E/G/H/I (nada a limpar, nenhuma tela, nenhuma catraca, nenhum commit) |
+
+**Custo medido do escalão meio** (do transcrito do agente, não estimado):
+224.989 tokens, 75 chamadas de ferramenta, 18 min 8 s de parede, em paralelo
+com a frente T (forte) e a governança (leve). O que o escalão meio comprou e o
+leve não compraria: achou que a recusa de DHT do `P2P-DISTRIBUIDO.md` §5.2
+**herdava uma premissa que caducou** (IP fixo e registro `A` no Cloudflare) e a
+remediu em vez de copiá-la — e achou o choque de frentes do AAD do selo, que é
+exatamente o defeito que só aparece no encontro das frentes.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:
