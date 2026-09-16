@@ -1,0 +1,16 @@
+import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
+import { resolve } from 'node:path';
+const b = await chromium.launch(); const c = await b.newContext({ viewport:{width:1440,height:900} }); const p = await c.newPage();
+await p.goto('file://'+resolve('mock/a1.html')); await p.waitForTimeout(400);
+await p.locator('.pp__stage').hover(); await p.locator('[data-pp-next]').click(); await p.waitForTimeout(350);
+const aposSeta = await p.evaluate(() => ({ contador: document.querySelector('[data-pp-count]').textContent.trim(), zoomAberto: document.querySelector('[data-pp-lightbox]').open }));
+await p.locator('[data-pp-prev]').click(); await p.waitForTimeout(350);
+const aposVolta = await p.evaluate(() => ({ contador: document.querySelector('[data-pp-count]').textContent.trim(), zoomAberto: document.querySelector('[data-pp-lightbox]').open }));
+await p.locator('[data-pp-zoom]').click(); await p.waitForTimeout(300);
+const lupa = await p.evaluate(() => document.querySelector('[data-pp-lightbox]').open);
+await p.keyboard.press('Escape'); await p.waitForTimeout(200);
+const box = await p.locator('.pp__stage').boundingBox();
+await p.mouse.click(box.x + box.width/2, box.y + box.height/2); await p.waitForTimeout(300);
+const cliqueNoPalco = await p.evaluate(() => document.querySelector('[data-pp-lightbox]').open);
+console.log(JSON.stringify({ aposSeta, aposVolta, lupaAbre: lupa, cliqueNoPalcoAbre: cliqueNoPalco }));
+await b.close();

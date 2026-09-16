@@ -1,0 +1,1042 @@
+{% comment %}
+  ============================================================
+  SEÇÃO DE PRODUTO — ESTILO NOMAD (PT-BR)  ·  Engine Print
+  ------------------------------------------------------------
+  Instalação (2 min):
+  1. Loja online > Temas > (seu tema) > ⋯ > Editar código.
+  2. Em "Sections", clique em "Adicionar nova seção",
+     nomeie "produto-premium" e cole TODO este arquivo.
+  3. Em "Templates", clique em "Adicionar novo template" >
+     tipo "product" > começar de um template em branco
+     (nomeie ex.: "impressora") e deixe só esta seção nele
+     (ou cole o JSON que enviei junto).
+  4. No produto (ex.: as impressoras), em "Modelo de tema",
+     escolha "impressora".
+  ------------------------------------------------------------
+  Revisão 16/09/2026 — galeria "sleek" e conversão:
+  · palco da galeria vira um canvas unico (#F7F7F7, o cinza de
+    estudio das fotos oficiais da Bambu Lab), sem borda e sem
+    padding: a foto e o palco passam a ser a mesma superficie;
+  · troca de imagem por crossfade de ~260 ms (as duas imagens
+    se sobrepoem e uma dissolve na outra), com swipe no celular,
+    setas no desktop, teclado e contador;
+  · miniaturas numa fila rolavel no celular (sem quebrar linha);
+  · zoom em tela cheia ao tocar na foto;
+  · variantes como cartoes com preco (em vez de <select>);
+  · linha de estoque a partir do dado real da variante;
+  · faixa de confianca com icones; barra fixa de compra no
+    celular quando o botao principal sai da tela;
+  · descricao longa dividida em sanfonas pelos <h3> dela.
+  ============================================================
+{% endcomment %}
+
+{%- liquid
+  assign product_var = product.selected_or_first_available_variant
+
+  comment
+    WX: a variante exibida tem que ser a que a pessoa consegue comprar.
+    Sem ?variant= na URL o Liquid podia devolver a primeira variante
+    (esgotada) enquanto o preco, o id do form e o botao apontavam para
+    outra — o cliente via uma versao e levava outra. Aqui a escolha e
+    explicita: se ninguem escolheu nada e a resolvida esta esgotada,
+    pula para a primeira disponivel.
+  endcomment
+  if product.selected_variant == blank and product_var.available == false
+    for wx_v in product.variants
+      if wx_v.available
+        assign product_var = wx_v
+        break
+      endif
+    endfor
+  endif
+
+  assign free_ship = section.settings.shipping_text
+  assign warranty = section.settings.warranty_text
+  assign pp_canvas = section.settings.canvas_color | default: '#f7f7f7'
+  assign pp_media_count = product.media.size
+
+  comment
+    WX: modelo de preco (setembro/2026).
+    O price da Shopify e o preco no cartao, em 1x ou 2x sem juros.
+    Pix = price com desconto, aplicado no checkout pelo app de
+    desconto Pix. O percentual aqui e so exibicao e PRECISA ser o
+    mesmo configurado no app - senao a pagina promete o que o
+    checkout nao entrega. 3x e 4x levam juros do Mercado Pago:
+    nao mostramos valor fixo de proposito, a taxa e do MP e muda
+    sem avisar; um numero errado aqui foi o problema de agosto.
+    O mesmo pp_pix_pct existe em snippets/product-card.liquid.
+  endcomment
+  assign pp_pix_pct = 5
+  assign pp_pix_mult = 100 | minus: pp_pix_pct
+  assign pp_pix = product_var.price | times: pp_pix_mult | divided_by: 100.0 | round
+  assign pp_2x = product_var.price | divided_by: 2.0 | round
+-%}
+
+<section
+  class="pp color-{{ section.settings.color_scheme }}"
+  data-pp
+  style="--pp-canvas: {{ pp_canvas }};"
+>
+  <div class="pp__wrap">
+
+    {%- comment %}--------- GALERIA ---------{% endcomment -%}
+    <div class="pp__gallery{% if pp_media_count < 2 %} pp__gallery--solo{% endif %}" data-pp-gallery>
+      <div
+        class="pp__stage"
+        data-pp-stage
+        tabindex="0"
+        role="group"
+        aria-roledescription="carrossel"
+        aria-label="Imagens de {{ product.title | escape }}"
+      >
+        {%- if product.featured_media -%}
+          {%- for media in product.media -%}
+            {%- liquid
+              comment
+                WX: a primeira foto e o LCP da pagina — carrega com
+                prioridade alta; as outras ficam lazy. (A versao anterior
+                passava `forloop.first | default: 'eager'` e o navegador
+                recebia loading="true", que nao existe.)
+              endcomment
+              if forloop.first
+                assign pp_load = 'eager'
+                assign pp_prio = 'high'
+              else
+                assign pp_load = 'lazy'
+                assign pp_prio = 'auto'
+              endif
+              comment
+                WX: o alt e calculado AQUI de proposito. Um `|` dentro da lista
+                de argumentos do image_tag (alt: media.alt | default: ...) e
+                lido como o PROXIMO filtro da cadeia, e tudo que vem depois
+                dele (class, draggable) nunca chega na imagem — foi assim que
+                o <img> do palco ficou sem classe na versao anterior.
+              endcomment
+              assign pp_alt = media.alt | default: product.title
+            -%}
+            <figure
+              class="pp__slide{% if forloop.first %} is-active{% endif %}"
+              data-pp-slide="{{ forloop.index0 }}"
+              aria-hidden="{% if forloop.first %}false{% else %}true{% endif %}"
+            >
+              {{
+                media
+                | image_url: width: 1400
+                | image_tag:
+                  loading: pp_load,
+                  fetchpriority: pp_prio,
+                  widths: '480, 720, 960, 1400',
+                  sizes: '(min-width: 900px) min(720px, 55vw), 100vw',
+                  alt: pp_alt,
+                  class: 'pp__img',
+                  draggable: 'false'
+              }}
+            </figure>
+          {%- endfor -%}
+        {%- else -%}
+          <figure class="pp__slide is-active pp__slide--placeholder" data-pp-slide="0">{{ 'product-1' | placeholder_svg_tag: 'pp__img' }}</figure>
+        {%- endif -%}
+
+        {%- if pp_media_count > 1 -%}
+          <button type="button" class="pp__nav pp__nav--prev" data-pp-prev aria-label="Imagem anterior">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M11.5 3.5 6 9l5.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button type="button" class="pp__nav pp__nav--next" data-pp-next aria-label="Próxima imagem">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="m6.5 3.5 5.5 5.5-5.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <span class="pp__count" data-pp-count aria-live="polite">1 / {{ pp_media_count }}</span>
+        {%- endif -%}
+
+        {%- if product.featured_media -%}
+          <button type="button" class="pp__zoom" data-pp-zoom aria-label="Ampliar imagem">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.7"/><path d="M12.2 12.2 16 16M8 5.5v5M5.5 8h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          </button>
+        {%- endif -%}
+
+        {%- if section.settings.badge_image != blank -%}
+          <img class="pp__badge" src="{{ section.settings.badge_image | image_url: width: 220 }}" alt="Selo" loading="lazy">
+        {%- endif -%}
+      </div>
+
+      {%- if pp_media_count > 1 -%}
+        <div class="pp__thumbs" role="tablist" aria-label="Miniaturas">
+          {%- for media in product.media limit: 10 -%}
+            <button
+              type="button"
+              role="tab"
+              class="pp__thumb{% if forloop.first %} is-active{% endif %}"
+              data-pp-thumb="{{ forloop.index0 }}"
+              aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"
+              aria-label="Ver imagem {{ forloop.index }} de {{ pp_media_count }}"
+            >
+              {{ media | image_url: width: 160 | image_tag: loading: 'lazy', widths: '80, 120, 160', sizes: '64px', alt: '' }}
+            </button>
+          {%- endfor -%}
+        </div>
+      {%- endif -%}
+    </div>
+
+    {%- comment %}--------- CARD DE COMPRA ---------{% endcomment -%}
+    <div class="pp__panel">
+      <div class="pp__card">
+        {%- if section.settings.show_reviews and section.settings.reviews_count != blank -%}
+          <a href="{{ section.settings.reviews_link | default: '#' }}" class="pp__reviews">
+            <span class="pp__stars" aria-hidden="true">
+              {%- assign r = section.settings.reviews_stars | default: 5 -%}
+              {%- for i in (1..5) -%}{% if i <= r %}★{% else %}☆{% endif %}{%- endfor -%}
+            </span>
+            <span class="pp__reviews-count">{{ section.settings.reviews_count }}</span>
+          </a>
+        {%- endif -%}
+
+        <div class="pp__head">
+          {%- if product.vendor != blank and product.vendor != shop.name -%}
+            <p class="pp__eyebrow">{{ product.vendor }}</p>
+          {%- endif -%}
+          <h1 class="pp__title">{{ product.title }}</h1>
+          <div class="pp__pricebox" data-pp-pix-pct="{{ pp_pix_pct }}">
+            <div class="pp__price-pix" data-pp-pix><strong>{{ pp_pix | money }}</strong> no Pix <span class="pp__pix-tag">{{ pp_pix_pct }}% de desconto</span></div>
+            <div class="pp__price-card" data-pp-card>ou <strong>2x de {{ pp_2x | money }}</strong> sem juros no cartão <span class="pp__price-base">({{ product_var.price | money }})</span></div>
+            <div class="pp__price-more">até 4x com juros</div>
+          </div>
+        </div>
+
+        {%- if section.settings.subtitle != blank -%}
+          <p class="pp__subtitle">{{ section.settings.subtitle }}</p>
+        {%- elsif product.metafields.custom.resumo != blank -%}
+          <p class="pp__subtitle">{{ product.metafields.custom.resumo }}</p>
+        {%- endif -%}
+
+        {%- comment %}--------- FORM / VARIANTES ---------{% endcomment -%}
+        {%- form 'product', product, id: 'pp-form', class: 'pp__form' -%}
+          <input type="hidden" name="id" value="{{ product_var.id }}" data-pp-id>
+
+          {%- unless product.has_only_default_variant -%}
+            {%- for option in product.options_with_values -%}
+              {%- assign opt_i = forloop.index0 -%}
+              {%- assign opt_sel = product_var.options[opt_i] -%}
+              {%- assign opt_down = option.name | downcase -%}
+              {%- assign is_color = false -%}
+              {%- if opt_down contains 'cor' or opt_down contains 'color' -%}{% assign is_color = true %}{%- endif -%}
+
+              <div class="pp__option" data-pp-option="{{ forloop.index0 }}">
+                <label class="pp__option-label">{{ option.name }}{% if is_color %}: <span data-pp-optval="{{ opt_i }}">{{ opt_sel }}</span>{% endif %}</label>
+
+                {%- if is_color -%}
+                  <div class="pp__swatches" role="list">
+                    {%- for value in option.values -%}
+                      {%- liquid
+                        assign wx_val_ok = false
+                        for wx_v2 in product.variants
+                          if wx_v2.available and wx_v2.options[opt_i] == value
+                            assign wx_val_ok = true
+                            break
+                          endif
+                        endfor
+                      -%}
+                      <button
+                        type="button"
+                        class="pp__swatch{% if opt_sel == value %} is-active{% endif %}{% unless wx_val_ok %} is-oos{% endunless %}"
+                        style="--sw: {{ value | handleize }};"
+                        data-pp-value data-pp-opt-index="{{ forloop.parentloop.index0 }}" data-pp-val="{{ value | escape }}"
+                        title="{{ value | escape }}"
+                        aria-label="{{ value | escape }}"
+                      ><span></span></button>
+                    {%- endfor -%}
+                  </div>
+                {%- elsif option.values.size <= 6 -%}
+                  {%- comment -%}
+                    Cartoes de variante: o cliente ve "Padrão" e "Combo" lado a
+                    lado, com o preco Pix de cada um quando o produto tem uma
+                    opcao so (aí cada valor e exatamente uma variante). Com duas
+                    ou mais opcoes o preco depende do cruzamento e fica so no
+                    bloco de preco, que o JS atualiza.
+                  {%- endcomment -%}
+                  <div class="pp__cards" role="radiogroup" aria-label="{{ option.name | escape }}">
+                    {%- for value in option.values -%}
+                      {%- liquid
+                        assign wx_val_ok = false
+                        assign wx_val_price = nil
+                        for wx_v2 in product.variants
+                          if wx_v2.options[opt_i] == value
+                            if product.options.size == 1
+                              assign wx_val_price = wx_v2.price
+                            endif
+                            if wx_v2.available
+                              assign wx_val_ok = true
+                              break
+                            endif
+                          endif
+                        endfor
+                      -%}
+                      {%- assign wx_val_down = value | downcase -%}
+                      <label class="pp__vcard{% if opt_sel == value %} is-active{% endif %}{% unless wx_val_ok %} is-oos{% endunless %}{% if wx_val_down contains 'breve' %} is-soon{% endif %}">
+                        <input
+                          type="radio"
+                          class="pp__vcard-input"
+                          name="pp-opt-{{ opt_i }}-{{ section.id }}"
+                          value="{{ value | escape }}"
+                          data-pp-radio
+                          data-pp-opt-index="{{ opt_i }}"
+                          {% if opt_sel == value %}checked{% endif %}
+                        >
+                        <span class="pp__vcard-name">{{ value }}</span>
+                        {%- if wx_val_price != nil and wx_val_price > 0 -%}
+                          <span class="pp__vcard-price">{{ wx_val_price | times: pp_pix_mult | divided_by: 100.0 | round | money }} <em>no Pix</em></span>
+                        {%- endif -%}
+                        {%- if wx_val_down contains 'breve' -%}
+                          <span class="pp__vcard-oos">Em breve</span>
+                        {%- elsif wx_val_ok == false -%}
+                          <span class="pp__vcard-oos">Esgotado</span>
+                        {%- endif -%}
+                      </label>
+                    {%- endfor -%}
+                  </div>
+                {%- else -%}
+                  <div class="pp__select-wrap">
+                    <select class="pp__select" data-pp-select data-pp-opt-index="{{ opt_i }}" aria-label="{{ option.name }}">
+                      {%- for value in option.values -%}
+                        {%- liquid
+                          assign wx_val_ok = false
+                          for wx_v2 in product.variants
+                            if wx_v2.available and wx_v2.options[opt_i] == value
+                              assign wx_val_ok = true
+                              break
+                            endif
+                          endfor
+                        -%}
+                        <option value="{{ value | escape }}"{% if opt_sel == value %} selected{% endif %}>{{ value }}{% unless wx_val_ok %} &mdash; esgotado{% endunless %}</option>
+                      {%- endfor -%}
+                    </select>
+                    <svg class="pp__chev" width="14" height="9" viewBox="0 0 14 9" fill="none" aria-hidden="true"><path d="M1.5 1.5 7 7l5.5-5.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </div>
+                {%- endif -%}
+              </div>
+            {%- endfor -%}
+          {%- endunless -%}
+
+          <button type="submit" name="add" class="pp__add" data-pp-add data-label="{{ section.settings.button_text | default: 'Adicionar ao carrinho' | escape }}" {% unless product_var.available %}disabled{% endunless %}>
+            <span data-pp-add-text>{% if product_var.available %}{{ section.settings.button_text | default: 'Adicionar ao carrinho' }}{% else %}Esgotado{% endif %}</span>
+          </button>
+
+          {%- comment -%}
+            Linha de estoque: vem do dado da variante, nunca de texto fixo.
+            "Ultimas N" so aparece com 1..5 unidades contadas pela Shopify;
+            o prazo de envio so aparece se o dono escrever um.
+          {%- endcomment -%}
+          <p class="pp__stock" data-pp-stock data-dispatch="{{ section.settings.dispatch_text | escape }}">
+            {%- if product_var.available -%}
+              {%- if product_var.inventory_management == 'shopify' and product_var.inventory_quantity > 0 and product_var.inventory_quantity <= 5 -%}
+                <i class="pp__dot pp__dot--low"></i>Últimas {{ product_var.inventory_quantity }} unidades
+              {%- else -%}
+                <i class="pp__dot"></i>Em estoque{% if section.settings.dispatch_text != blank %} · {{ section.settings.dispatch_text }}{% endif %}
+              {%- endif -%}
+            {%- else -%}
+              <i class="pp__dot pp__dot--out"></i>Esgotado no momento
+            {%- endif -%}
+          </p>
+
+          {%- comment -%}
+            WX: esta linha tem de bater com o modelo de preco acima (2x sem
+            juros; 3x e 4x com juros do MP). A versao anterior dizia "ate 4x
+            sem juros" — prometia o que o checkout nao entrega.
+          {%- endcomment -%}
+          <p class="pp__pagamento">
+            Pix, boleto ou cart&atilde;o de cr&eacute;dito &middot; 2x sem juros
+            &middot; 3x e 4x com juros do Mercado Pago, calculados no checkout
+          </p>
+
+          <ul class="pp__trust" aria-label="Garantias de compra">
+            {%- if free_ship != blank -%}
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="7" cy="17.5" r="1.8" stroke="currentColor" stroke-width="1.6"/><circle cx="17" cy="17.5" r="1.8" stroke="currentColor" stroke-width="1.6"/></svg>
+                <span>{{ free_ship }}</span>
+              </li>
+            {%- endif -%}
+            {%- if warranty != blank -%}
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 5 6v5c0 4.4 3 8.2 7 9.5 4-1.3 7-5.1 7-9.5V6z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>{% if section.settings.warranty_link != blank %}<a href="{{ section.settings.warranty_link }}">{{ warranty }}</a>{% else %}{{ warranty }}{% endif %}</span>
+              </li>
+            {%- endif -%}
+            {%- if section.settings.trust_3 != blank -%}
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M3 10h18" stroke="currentColor" stroke-width="1.6"/><path d="M7 14h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                <span>{{ section.settings.trust_3 }}</span>
+              </li>
+            {%- endif -%}
+            {%- if section.settings.trust_4 != blank -%}
+              <li>
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.6"/><path d="M12 7.5v9M9.5 10a2.5 2 0 0 1 2.5-1.5c1.5 0 2.5.7 2.5 1.7 0 2.3-5 1.3-5 3.6 0 1 1 1.7 2.5 1.7a2.6 2 0 0 0 2.5-1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                <span>{{ section.settings.trust_4 }}</span>
+              </li>
+            {%- endif -%}
+          </ul>
+        {%- endform -%}
+      </div>
+
+      {%- comment %}--------- DESCRIÇÃO (ex-"Overview") + extras ---------{% endcomment -%}
+      <details class="pp__disc" open data-pp-desc{% if section.settings.split_description %} data-pp-split{% endif %}>
+        <summary class="pp__disc-sum">
+          <span>Descrição</span>
+          <svg class="pp__disc-ic" width="14" height="9" viewBox="0 0 14 9" fill="none" aria-hidden="true"><path d="M1.5 1.5 7 7l5.5-5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </summary>
+        <div class="pp__disc-body rte">
+          {%- if product.description != blank -%}{{ product.description }}{%- else -%}<p>Adicione a descrição do produto no admin.</p>{%- endif -%}
+        </div>
+      </details>
+
+      {%- if product.metafields.custom.mais_informacoes != blank -%}
+        <details class="pp__disc">
+          <summary class="pp__disc-sum"><span>Mais informações</span><svg class="pp__disc-ic" width="14" height="9" viewBox="0 0 14 9" fill="none" aria-hidden="true"><path d="M1.5 1.5 7 7l5.5-5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="pp__disc-body rte">{{ product.metafields.custom.mais_informacoes }}</div>
+        </details>
+      {%- endif -%}
+
+      {%- if product.metafields.custom.faq != blank -%}
+        <details class="pp__disc">
+          <summary class="pp__disc-sum"><span>Perguntas frequentes</span><svg class="pp__disc-ic" width="14" height="9" viewBox="0 0 14 9" fill="none" aria-hidden="true"><path d="M1.5 1.5 7 7l5.5-5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="pp__disc-body rte">{{ product.metafields.custom.faq }}</div>
+        </details>
+      {%- endif -%}
+
+      {%- comment %}--------- COMPRE TAMBÉM ---------{% endcomment -%}
+      {%- if section.settings.cross_sell != blank -%}
+        {%- assign cs = section.settings.cross_sell -%}
+        <div class="pp__cross">
+          <p class="pp__cross-title">{{ section.settings.cross_title | default: 'Compre também:' }}</p>
+          <a href="{{ cs.url }}" class="pp__cross-card">
+            {%- if cs.featured_media -%}{{ cs.featured_media | image_url: width: 140 | image_tag: loading: 'lazy', class: 'pp__cross-img', alt: cs.title }}{%- endif -%}
+            <span class="pp__cross-info">
+              <span class="pp__cross-name">{{ cs.title }}</span>
+              <span class="pp__cross-price">{{ cs.price | times: pp_pix_mult | divided_by: 100.0 | round | money }} no Pix</span>
+            </span>
+            <span class="pp__cross-add" aria-hidden="true">+</span>
+          </a>
+        </div>
+      {%- endif -%}
+    </div>
+  </div>
+
+  {%- comment -%}
+    Barra fixa de compra (celular): aparece quando o botao principal sai
+    da tela. Nao e um segundo form — ela aciona o form principal.
+  {%- endcomment -%}
+  {%- if section.settings.show_sticky -%}
+    <div class="pp__sticky" data-pp-sticky aria-hidden="true">
+      {%- if product.featured_media -%}
+        {{ product.featured_media | image_url: width: 96 | image_tag: loading: 'lazy', class: 'pp__sticky-img', alt: '' }}
+      {%- endif -%}
+      <div class="pp__sticky-info">
+        <strong class="pp__sticky-price" data-pp-sticky-price>{{ pp_pix | money }} no Pix</strong>
+        <span class="pp__sticky-title">{{ product.title }}</span>
+      </div>
+      <button type="button" class="pp__sticky-add" data-pp-sticky-add {% unless product_var.available %}disabled{% endunless %}>
+        {%- if product_var.available -%}Adicionar{%- else -%}Esgotado{%- endif -%}
+      </button>
+    </div>
+  {%- endif -%}
+
+  {%- comment %}--------- ZOOM (tela cheia) ---------{% endcomment -%}
+  {%- if product.featured_media -%}
+    <dialog class="pp__lightbox" data-pp-lightbox aria-label="Imagem ampliada">
+      <button type="button" class="pp__lightbox-close" data-pp-lightbox-close aria-label="Fechar">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="m4 4 10 10M14 4 4 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <div class="pp__lightbox-scroll" data-pp-lightbox-scroll>
+        <img class="pp__lightbox-img" data-pp-lightbox-img alt="" src="" loading="lazy">
+      </div>
+      <span class="pp__lightbox-hint">Toque para aproximar · arraste para mover</span>
+    </dialog>
+  {%- endif -%}
+
+  <script type="application/json" data-pp-variants>
+    {{ product.variants | json }}
+  </script>
+  <script type="application/json" data-pp-media>
+    [{%- for media in product.media -%}{"src":{{ media | image_url: width: 2048 | json }},"alt":{{ media.alt | default: product.title | json }}}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}]
+  </script>
+</section>
+
+{% stylesheet %}
+  .pp { padding: clamp(1.5rem, 4vw, 3rem) 0; }
+  .pp__wrap {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    max-width: var(--page-width, 1300px);
+    margin-inline: auto;
+    padding-inline: clamp(1rem, 4vw, 2.5rem);
+  }
+  .rte > *:first-child { margin-top: 0; }
+  .rte > *:last-child { margin-bottom: 0; }
+
+  /* ---------- galeria ----------
+     O palco e um canvas unico (--pp-canvas), sem borda e sem padding.
+     As fotos oficiais ja vem sobre o mesmo cinza e as WebP transparentes
+     mostram o canvas por tras: a foto e o palco viram uma superficie so.
+     A borda de 1px + padding de ate 2,5rem da versao anterior era o que
+     desenhava um quadrado de outra cor dentro do cartao. */
+  .pp__gallery { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; min-width: 0; }
+  .pp__stage {
+    position: relative; order: 1; isolation: isolate;
+    aspect-ratio: 1 / 1; border-radius: 22px; overflow: hidden;
+    background: var(--pp-canvas, #f7f7f7);
+    outline: none; touch-action: pan-y; user-select: none; -webkit-user-select: none;
+    cursor: zoom-in;
+  }
+  .pp__stage:focus-visible { box-shadow: 0 0 0 3px rgba(10,10,10,.25); }
+  /* crossfade: os slides ficam empilhados; o ativo tem opacidade 1 e o que
+     sai dissolve ao mesmo tempo em que o que entra aparece */
+  /* a <figure> e a <img> sao absolutas de proposito: com display:grid a faixa
+     implicita crescia ate a largura natural da foto (1400px) e width:100%
+     virava 1400px — a foto estourava o palco e so um canto aparecia */
+  .pp__slide {
+    position: absolute; inset: 0; margin: 0; display: block;
+    opacity: 0; pointer-events: none;
+    transition: opacity .26s cubic-bezier(.25, .1, .25, 1);
+    will-change: opacity;
+  }
+  .pp__slide.is-active { opacity: 1; pointer-events: auto; z-index: 1; }
+  .pp__img { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; object-fit: contain; display: block; -webkit-user-drag: none; }
+  .pp__slide--placeholder .pp__img { padding: 12%; box-sizing: border-box; opacity: .35; }
+  .pp__thumb img { position: static; }
+  .pp__badge { position: absolute; bottom: 14px; right: 14px; width: 88px; height: auto; opacity: .9; z-index: 2; pointer-events: none; }
+
+  .pp__nav, .pp__zoom {
+    position: absolute; z-index: 3; display: grid; place-items: center;
+    width: 40px; height: 40px; border-radius: 999px; border: 0; cursor: pointer;
+    background: rgba(255,255,255,.92); color: #0a0a0a;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 6px 18px rgba(0,0,0,.10);
+    opacity: 0; transition: opacity .18s ease, transform .18s ease;
+  }
+  .pp__nav { top: 50%; transform: translateY(-50%); }
+  .pp__nav--prev { left: 12px; }
+  .pp__nav--next { right: 12px; }
+  .pp__zoom { top: 12px; right: 12px; width: 36px; height: 36px; }
+  .pp__stage:hover .pp__nav, .pp__stage:focus-within .pp__nav,
+  .pp__stage:hover .pp__zoom, .pp__stage:focus-within .pp__zoom { opacity: 1; }
+  .pp__nav:hover { background: #fff; }
+  .pp__nav:active { transform: translateY(-50%) scale(.96); }
+  /* sem mouse (celular/tablet) as setas nao existem: o gesto e o swipe */
+  @media (hover: none) { .pp__nav { display: none; } .pp__zoom { opacity: 1; } }
+  .pp__count {
+    position: absolute; left: 12px; bottom: 12px; z-index: 3;
+    padding: .28rem .6rem; border-radius: 999px;
+    background: rgba(10,10,10,.62); color: #fff; font-size: .74rem; font-weight: 600;
+    letter-spacing: .02em; font-variant-numeric: tabular-nums; pointer-events: none;
+  }
+
+  /* miniaturas: no celular uma fila rolavel, sem quebrar linha */
+  .pp__thumbs {
+    order: 2; display: flex; gap: .5rem; overflow-x: auto; padding: 3px;
+    scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .pp__thumbs::-webkit-scrollbar { display: none; }
+  .pp__thumb {
+    flex: 0 0 56px; width: 56px; aspect-ratio: 1 / 1; border-radius: 12px; overflow: hidden;
+    padding: 0; border: 1.5px solid transparent; background: var(--pp-canvas, #f7f7f7);
+    cursor: pointer; opacity: .62; scroll-snap-align: center;
+    transition: opacity .18s ease, border-color .18s ease;
+  }
+  .pp__thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .pp__thumb:hover { opacity: .9; }
+  .pp__thumb.is-active { opacity: 1; border-color: #0a0a0a; }
+  .pp__thumb:focus-visible { outline: 2px solid #0a0a0a; outline-offset: 2px; }
+
+  /* zoom em tela cheia */
+  .pp__lightbox { border: 0; padding: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; background: var(--pp-canvas, #f7f7f7); }
+  .pp__lightbox::backdrop { background: rgba(10,10,10,.5); }
+  .pp__lightbox-scroll { width: 100%; height: 100%; overflow: auto; display: grid; place-items: center; touch-action: pan-x pan-y pinch-zoom; }
+  .pp__lightbox-img { max-width: 100%; max-height: 100dvh; object-fit: contain; cursor: zoom-in; transition: transform .2s ease; }
+  .pp__lightbox.is-zoomed .pp__lightbox-scroll { display: block; }
+  .pp__lightbox.is-zoomed .pp__lightbox-img { max-width: none; max-height: none; width: 200%; cursor: zoom-out; }
+  .pp__lightbox-close {
+    position: fixed; top: 14px; right: 14px; z-index: 2; width: 42px; height: 42px; border-radius: 999px; border: 0;
+    background: rgba(255,255,255,.95); color: #0a0a0a; display: grid; place-items: center; cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 6px 18px rgba(0,0,0,.12);
+  }
+  .pp__lightbox-hint { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); font-size: .74rem; color: #4a4a4f; background: rgba(255,255,255,.85); padding: .3rem .7rem; border-radius: 999px; pointer-events: none; }
+
+  /* ---------- card ---------- */
+  .pp__panel { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+  .pp__card {
+    background: #fff; border-radius: 22px; padding: clamp(1.4rem, 3vw, 2rem);
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 18px 44px rgba(0,0,0,.07);
+  }
+  .pp__reviews { display: inline-flex; align-items: center; gap: .5rem; text-decoration: none; color: inherit; margin-bottom: .5rem; }
+  .pp__stars { color: #111; letter-spacing: 1px; font-size: .95rem; }
+  .pp__reviews-count { font-size: .85rem; text-decoration: underline; opacity: .8; }
+  .pp__head { display: flex; flex-direction: column; align-items: flex-start; gap: .4rem; }
+  .pp__eyebrow { margin: 0; font-size: .82rem; font-weight: 700; letter-spacing: .04em; color: #6e6e73; }
+  .pp__pricebox { display: flex; flex-direction: column; align-items: flex-start; }
+  .pp__price-pix { color: #c2410c; font-size: clamp(1.25rem, 1rem + .9vw, 1.7rem); font-weight: 700; white-space: nowrap; line-height: 1.2; }
+  .pp__pix-tag { display: inline-block; margin-left: .5rem; padding: .16rem .6rem; border-radius: 999px; background: #ff8a1f; color: #0a0a0a; font-size: .68rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; vertical-align: middle; }
+  .pp__price-card { color: #0a0a0a; font-size: .98rem; font-weight: 500; margin-top: 4px; white-space: nowrap; }
+  .pp__price-base { color: #4a4a4f; font-weight: 500; }
+  .pp__price-more { color: #4a4a4f; font-size: .85rem; font-weight: 500; margin-top: 2px; }
+  .pp__title { font-size: clamp(1.6rem, 1.2rem + 1.6vw, 2.3rem); line-height: 1.1; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+  .pp__price { font-size: clamp(1.4rem, 1.1rem + 1vw, 1.9rem); font-weight: 600; white-space: nowrap; }
+  .pp__subtitle { margin: .75rem 0 0; font-size: 1rem; line-height: 1.5; opacity: .82; max-width: 42ch; }
+
+  .pp__form { margin-top: 1.6rem; display: flex; flex-direction: column; gap: 1.1rem; }
+  .pp__option-label { display: block; font-weight: 600; font-size: .95rem; margin-bottom: .5rem; }
+  .pp__select-wrap { position: relative; display: inline-block; }
+  .pp__select {
+    appearance: none; -webkit-appearance: none; font: inherit; cursor: pointer;
+    padding: .8rem 2.6rem .8rem 1.1rem; border-radius: 999px; border: 1px solid rgba(0,0,0,.14);
+    background: #fff; color: inherit; min-width: 220px;
+  }
+  .pp__chev { position: absolute; right: 1.1rem; top: 50%; transform: translateY(-50%); pointer-events: none; opacity: .6; }
+  .pp__swatches { display: flex; gap: .6rem; flex-wrap: wrap; }
+  .pp__swatch {
+    width: 34px; height: 34px; border-radius: 999px; padding: 3px; cursor: pointer;
+    border: 1px solid rgba(0,0,0,.15); background: #fff;
+  }
+  .pp__swatch span { display: block; width: 100%; height: 100%; border-radius: 999px; background: var(--sw, #ccc); box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+  .pp__swatch.is-active { outline: 2px solid #111; outline-offset: 2px; }
+  .pp__swatch.is-oos { opacity: .38; }
+  .pp__select option:disabled { color: #9a9a9a; }
+
+  /* cartoes de variante */
+  .pp__cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .6rem; }
+  .pp__vcard {
+    position: relative; display: flex; flex-direction: column; gap: .15rem; cursor: pointer;
+    padding: .8rem .95rem; border-radius: 14px; border: 1.5px solid #e4e4e7; background: #fff;
+    transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  .pp__vcard:hover { border-color: #0a0a0a; }
+  .pp__vcard.is-active { border-color: #0a0a0a; box-shadow: inset 0 0 0 1px #0a0a0a; }
+  .pp__vcard.is-oos, .pp__vcard.is-soon { opacity: .55; }
+  .pp__vcard.is-oos:not(.is-soon) .pp__vcard-name { text-decoration: line-through; }
+  .pp__vcard-input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+  .pp__vcard:has(.pp__vcard-input:focus-visible) { outline: 2px solid #0a0a0a; outline-offset: 2px; }
+  .pp__vcard-name { font-weight: 600; font-size: .95rem; line-height: 1.25; }
+  .pp__vcard-price { font-size: .82rem; color: #0a0a0a; font-weight: 600; white-space: nowrap; }
+  .pp__vcard-price em { font-style: normal; font-weight: 500; color: #6e6e73; }
+  .pp__vcard-oos { font-size: .74rem; color: #6e6e73; }
+
+  .pp__add {
+    width: 100%; border: 0; border-radius: 999px; cursor: pointer;
+    background: #1b1b1a; color: #fff; font: inherit; font-weight: 600;
+    padding: 1.05rem 1.5rem; font-size: 1.05rem; letter-spacing: .01em;
+    transition: transform .15s ease, opacity .15s ease, box-shadow .15s ease;
+  }
+  .pp__add:hover { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(0,0,0,.18); }
+  .pp__add:active { transform: scale(.99); }
+  .pp__add[disabled] { opacity: .5; cursor: not-allowed; }
+
+  .pp__stock { margin: -.35rem 0 0; display: flex; align-items: center; justify-content: center; gap: .45rem; font-size: .86rem; font-weight: 600; color: #1d7a3a; }
+  .pp__dot { width: 8px; height: 8px; border-radius: 999px; background: #1d7a3a; box-shadow: 0 0 0 3px rgba(29,122,58,.15); }
+  .pp__stock--low, .pp__dot--low { color: #b45309; }
+  .pp__dot--low { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
+  .pp__stock--out, .pp__dot--out { color: #6e6e73; }
+  .pp__dot--out { background: #9a9a9a; box-shadow: none; }
+
+  .pp__pagamento { margin: 0; text-align: center; font-size: .82rem; line-height: 1.5; color: #6e6e73; }
+
+  .pp__trust {
+    list-style: none; margin: .2rem 0 0; padding: .9rem 0 0; border-top: 1px solid #ececee;
+    display: grid; grid-template-columns: 1fr 1fr; gap: .55rem .9rem;
+  }
+  .pp__trust li { display: flex; align-items: center; gap: .55rem; font-size: .83rem; line-height: 1.3; color: #3a3a3f; }
+  .pp__trust svg { flex: 0 0 20px; width: 20px; height: 20px; color: #0a0a0a; opacity: .8; }
+  .pp__trust a { color: inherit; }
+
+  /* colapsáveis */
+  .pp__disc { background: #fff; border-radius: 22px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 30px rgba(0,0,0,.05); overflow: hidden; }
+  .pp__disc-sum {
+    list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+    padding: 1.15rem 1.5rem; font-weight: 600; font-size: 1.05rem;
+  }
+  .pp__disc-sum::-webkit-details-marker { display: none; }
+  .pp__disc-ic { transition: transform .25s ease; opacity: .6; flex: 0 0 auto; }
+  .pp__disc[open] .pp__disc-ic { transform: rotate(180deg); }
+  .pp__disc-body { padding: 0 1.5rem 1.4rem; line-height: 1.6; }
+  .pp__disc-body ul { padding-left: 1.1rem; }
+  .pp__disc-body li { margin: .3rem 0; }
+  /* ficha tecnica em lista vira uma tabela de duas colunas limpa */
+  .pp__disc--specs .pp__disc-body ul { list-style: none; padding: 0; margin: 0; }
+  .pp__disc--specs .pp__disc-body li { margin: 0; padding: .55rem 0; border-top: 1px solid #ececee; display: grid; grid-template-columns: minmax(120px, .8fr) 1.2fr; gap: .25rem .8rem; align-items: baseline; }
+  .pp__disc--specs .pp__disc-body li:first-child { border-top: 0; }
+  .pp__disc--specs .pp__disc-body li > strong:first-child { color: #6e6e73; font-weight: 600; font-size: .86rem; }
+
+  /* cross-sell */
+  .pp__cross-title { font-weight: 700; text-align: center; margin: .5rem 0 .8rem; }
+  .pp__cross-card {
+    display: flex; align-items: center; gap: .9rem; background: #fff; border-radius: 18px;
+    padding: .8rem 1rem; text-decoration: none; color: inherit;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 10px 26px rgba(0,0,0,.06);
+  }
+  .pp__cross-img { width: 54px; height: 54px; object-fit: contain; background: var(--pp-canvas, #f7f7f7); border-radius: 12px; }
+  .pp__cross-info { display: flex; flex-direction: column; flex: 1; }
+  .pp__cross-name { font-weight: 600; font-size: .95rem; }
+  .pp__cross-price { font-weight: 600; }
+  .pp__cross-add { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 999px; background: #f2f2f0; font-size: 1.3rem; }
+
+  /* barra fixa de compra (celular) */
+  .pp__sticky {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+    display: flex; align-items: center; gap: .7rem;
+    padding: .6rem max(.9rem, env(safe-area-inset-right)) max(.6rem, env(safe-area-inset-bottom)) max(.9rem, env(safe-area-inset-left));
+    background: rgba(255,255,255,.96); backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px);
+    border-top: 1px solid #e4e4e7; box-shadow: 0 -8px 30px rgba(0,0,0,.08);
+    transform: translateY(110%); transition: transform .28s cubic-bezier(.22,1,.36,1);
+  }
+  .pp__sticky.is-on { transform: translateY(0); }
+  .pp__sticky-img { width: 44px; height: 44px; object-fit: contain; border-radius: 10px; background: var(--pp-canvas, #f7f7f7); flex: 0 0 auto; }
+  .pp__sticky-info { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+  .pp__sticky-price { color: #c2410c; font-size: .98rem; line-height: 1.15; }
+  .pp__sticky-title { font-size: .76rem; color: #6e6e73; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pp__sticky-add { border: 0; border-radius: 999px; background: #1b1b1a; color: #fff; font: inherit; font-weight: 600; padding: .8rem 1.2rem; cursor: pointer; flex: 0 0 auto; }
+  .pp__sticky-add[disabled] { opacity: .5; }
+  @media screen and (min-width: 900px) { .pp__sticky { display: none; } }
+
+  /* celular estreito: preco pode quebrar linha em vez de vazar */
+  @media screen and (max-width: 480px) {
+    .pp__price-pix, .pp__price-card, .pp__price-more, .pp__price { white-space: normal; }
+    .pp__stage { border-radius: 18px; }
+    .pp__cards { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* a partir do tablet deitado ja valem duas colunas */
+  @media screen and (min-width: 900px) {
+    .pp__wrap {
+      grid-template-columns: minmax(0, 1.1fr) minmax(330px, 0.9fr);
+      gap: 2.5rem;
+      align-items: start;
+    }
+    .pp__gallery { grid-template-columns: 64px minmax(0, 1fr); gap: .9rem; align-items: start; }
+    .pp__thumbs { flex-direction: column; order: 1; overflow-x: hidden; overflow-y: auto; max-height: min(720px, 55vw); scroll-snap-type: y proximity; }
+    .pp__thumb { flex-basis: auto; width: 100%; }
+    .pp__stage { order: 2; }
+    .pp__panel { position: sticky; top: 1.5rem; }
+    .pp__trust { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* AQUI o bug do print: produto com uma imagem so nao tem miniaturas,
+     entao a galeria nao pode reservar a coluna de 64px — o palco caia
+     dentro dela e a foto virava um icone. Duas regras separadas de
+     proposito: se o navegador nao entender :has(), a classe do Liquid
+     ainda resolve (uma lista com seletor invalido derruba a regra toda). */
+  @media screen and (min-width: 900px) {
+    .pp__gallery--solo { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media screen and (min-width: 900px) {
+    .pp__gallery:not(:has(.pp__thumbs)) { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  @media screen and (min-width: 1200px) {
+    .pp__wrap { gap: 3rem; }
+  }
+
+  /* monitor grande e ultrawide: cresce ate um teto e continua centrado,
+     em vez de esticar a linha de texto ate ficar ilegivel */
+  @media screen and (min-width: 1700px) {
+    .pp__wrap { max-width: 1560px; gap: 4rem; }
+    .pp__gallery { grid-template-columns: 76px minmax(0, 1fr); }
+  }
+
+  /* TV: vista de longe, tudo precisa de mais corpo */
+  @media screen and (min-width: 2200px) {
+    .pp__wrap { max-width: 1800px; }
+    .pp__gallery { grid-template-columns: 92px minmax(0, 1fr); }
+    .pp__subtitle, .pp__disc-body { font-size: 1.1rem; }
+    .pp__disc-sum { font-size: 1.2rem; }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .pp__card, .pp__disc { animation: pp-rise .5s cubic-bezier(.22,1,.36,1) both; }
+    @keyframes pp-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pp__slide, .pp__sticky, .pp__nav, .pp__zoom, .pp__thumb { transition: none; }
+  }
+{% endstylesheet %}
+
+{% javascript %}
+  (() => {
+    const init = (root) => {
+      root.querySelectorAll('[data-pp]').forEach((sec) => {
+        if (sec.dataset.ppInit) return;
+        sec.dataset.ppInit = '1';
+
+        /* ---------- galeria (crossfade + swipe + teclado + zoom) ---------- */
+        const stage = sec.querySelector('[data-pp-stage]');
+        const thumbs = Array.from(sec.querySelectorAll('[data-pp-thumb]'));
+        const slides = Array.from(sec.querySelectorAll('[data-pp-slide]'));
+        const count = sec.querySelector('[data-pp-count]');
+        let mediaList = [];
+        try { mediaList = JSON.parse(sec.querySelector('[data-pp-media]').textContent); } catch (e) {}
+        let current = Math.max(0, slides.findIndex((s) => s.classList.contains('is-active')));
+
+        const showSlide = (i) => {
+          i = ((parseInt(i, 10) % slides.length) + slides.length) % slides.length;
+          if (!slides.length || i === current) return;
+          slides.forEach((s, k) => {
+            const on = k === i;
+            s.classList.toggle('is-active', on);
+            s.setAttribute('aria-hidden', on ? 'false' : 'true');
+          });
+          thumbs.forEach((t, k) => {
+            const on = k === i;
+            t.classList.toggle('is-active', on);
+            t.setAttribute('aria-selected', on ? 'true' : 'false');
+            if (on && typeof t.scrollIntoView === 'function') {
+              t.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+            }
+          });
+          if (count) count.textContent = (i + 1) + ' / ' + slides.length;
+          current = i;
+        };
+        thumbs.forEach((t) => t.addEventListener('click', () => showSlide(t.dataset.ppThumb)));
+        sec.querySelector('[data-pp-prev]')?.addEventListener('click', (e) => { e.stopPropagation(); showSlide(current - 1); });
+        sec.querySelector('[data-pp-next]')?.addEventListener('click', (e) => { e.stopPropagation(); showSlide(current + 1); });
+
+        if (stage) {
+          stage.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight') { e.preventDefault(); showSlide(current + 1); }
+            if (e.key === 'ArrowLeft') { e.preventDefault(); showSlide(current - 1); }
+          });
+          // swipe: 40px horizontais decidem; vertical continua rolando a pagina.
+          // O arraste sobre uma <img> vira drag nativo e engole o pointerup —
+          // por isso o dragstart e bloqueado e o ponteiro e capturado no palco.
+          stage.addEventListener('dragstart', (e) => e.preventDefault());
+          let sx = 0, sy = 0, sw = false;
+          const fim = (e) => {
+            if (!sw) return; sw = false;
+            const dx = e.clientX - sx, dy = e.clientY - sy;
+            if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.2) showSlide(dx < 0 ? current + 1 : current - 1);
+          };
+          stage.addEventListener('pointerdown', (e) => {
+            // setas e lupa tem clique proprio: capturar o ponteiro aqui
+            // re-enderecaria o click delas para o palco e abriria o zoom junto
+            if ((e.button && e.button !== 0) || e.target.closest('[data-pp-prev],[data-pp-next],[data-pp-zoom]')) { sw = false; return; }
+            sx = e.clientX; sy = e.clientY; sw = true;
+            try { stage.setPointerCapture(e.pointerId); } catch (err) {}
+          });
+          stage.addEventListener('pointerup', fim);
+          stage.addEventListener('pointercancel', () => { sw = false; });
+        }
+
+        // zoom em tela cheia: <dialog> nativo; um toque alterna 1x/2x
+        const box = sec.querySelector('[data-pp-lightbox]');
+        const boxImg = sec.querySelector('[data-pp-lightbox-img]');
+        const openZoom = () => {
+          if (!box || !boxImg || typeof box.showModal !== 'function') return;
+          const m = mediaList[current] || {};
+          boxImg.src = m.src || (slides[current] && slides[current].querySelector('img')?.currentSrc) || '';
+          boxImg.alt = m.alt || '';
+          box.classList.remove('is-zoomed');
+          box.showModal();
+        };
+        sec.querySelector('[data-pp-zoom]')?.addEventListener('click', (e) => { e.stopPropagation(); openZoom(); });
+        if (stage) {
+          // clique simples abre o zoom; um swipe (moveu > 8px) nao abre
+          let cx = 0, cy = 0;
+          stage.addEventListener('pointerdown', (e) => { cx = e.clientX; cy = e.clientY; }, { passive: true });
+          stage.addEventListener('click', (e) => {
+            if (e.target.closest('[data-pp-prev],[data-pp-next],[data-pp-zoom]')) return;
+            if (Math.hypot(e.clientX - cx, e.clientY - cy) > 8) return;
+            openZoom();
+          });
+        }
+        if (box) {
+          sec.querySelector('[data-pp-lightbox-close]')?.addEventListener('click', () => box.close());
+          box.addEventListener('click', (e) => { if (e.target === box) box.close(); });
+          boxImg?.addEventListener('click', () => {
+            box.classList.toggle('is-zoomed');
+            if (box.classList.contains('is-zoomed')) {
+              const sc = sec.querySelector('[data-pp-lightbox-scroll]');
+              requestAnimationFrame(() => { sc.scrollLeft = (sc.scrollWidth - sc.clientWidth) / 2; sc.scrollTop = (sc.scrollHeight - sc.clientHeight) / 2; });
+            }
+          });
+        }
+
+        /* ---------- variantes ---------- */
+        const dataEl = sec.querySelector('[data-pp-variants]');
+        let variants = [];
+        try { variants = JSON.parse(dataEl.textContent); } catch (e) {}
+        const idInput = sec.querySelector('[data-pp-id]');
+        const priceBox = sec.querySelector('.pp__pricebox');
+        const PIX_PCT = parseInt((priceBox && priceBox.dataset.ppPixPct) || '5', 10);
+        const pixEl = sec.querySelector('[data-pp-pix]');
+        const cardEl = sec.querySelector('[data-pp-card]');
+        const addBtn = sec.querySelector('[data-pp-add]');
+        const addText = sec.querySelector('[data-pp-add-text]');
+        const stockEl = sec.querySelector('[data-pp-stock]');
+        const stickyPrice = sec.querySelector('[data-pp-sticky-price]');
+        const stickyAdd = sec.querySelector('[data-pp-sticky-add]');
+        const selects = sec.querySelectorAll('[data-pp-select]');
+        const radios = sec.querySelectorAll('[data-pp-radio]');
+        const swatchGroups = sec.querySelectorAll('.pp__swatches');
+
+        const money = (cents) => {
+          try {
+            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: (window.Shopify && Shopify.currency && Shopify.currency.active) || 'BRL' }).format(cents / 100);
+          } catch (e) { return 'R$ ' + (cents / 100).toFixed(2); }
+        };
+
+        const chosen = () => {
+          const vals = [];
+          // ordem das opções pela posição no DOM
+          sec.querySelectorAll('[data-pp-option]').forEach((opt) => {
+            const sel = opt.querySelector('[data-pp-select]');
+            const rad = opt.querySelector('[data-pp-radio]:checked');
+            const sw = opt.querySelector('.pp__swatch.is-active');
+            if (sel) vals.push(sel.value);
+            else if (rad) vals.push(rad.value);
+            else if (sw) vals.push(sw.dataset.ppVal);
+          });
+          return vals;
+        };
+
+        const renderStock = (v) => {
+          if (!stockEl) return;
+          const dispatch = stockEl.dataset.dispatch || '';
+          let cls = 'pp__dot', txt;
+          if (!v.available) { cls += ' pp__dot--out'; txt = 'Esgotado no momento'; stockEl.className = 'pp__stock pp__stock--out'; }
+          else if (v.inventory_management === 'shopify' && v.inventory_quantity > 0 && v.inventory_quantity <= 5) { cls += ' pp__dot--low'; txt = 'Últimas ' + v.inventory_quantity + ' unidades'; stockEl.className = 'pp__stock pp__stock--low'; }
+          else { txt = 'Em estoque' + (dispatch ? ' · ' + dispatch : ''); stockEl.className = 'pp__stock'; }
+          stockEl.innerHTML = '<i class="' + cls + '"></i>' + txt;
+        };
+
+        const update = () => {
+          const vals = chosen();
+          const match = variants.find((v) => {
+            const ov = [v.option1, v.option2, v.option3].filter((x) => x != null);
+            return ov.length === vals.length && ov.every((x, i) => x === vals[i]);
+          });
+          if (!match) return;
+          if (idInput) idInput.value = match.id;
+          const pix = Math.round(match.price * (100 - PIX_PCT) / 100);
+          if (pixEl) {
+            pixEl.innerHTML = '<strong>' + money(pix) + '</strong> no Pix <span class="pp__pix-tag">' + PIX_PCT + '% de desconto</span>';
+          }
+          if (cardEl) {
+            cardEl.innerHTML = 'ou <strong>2x de ' + money(Math.round(match.price / 2)) + '</strong> sem juros no cartão <span class="pp__price-base">(' + money(match.price) + ')</span>';
+          }
+          if (stickyPrice) stickyPrice.textContent = money(pix) + ' no Pix';
+          const label = addBtn ? (addBtn.getAttribute('data-label') || 'Adicionar ao carrinho') : 'Adicionar ao carrinho';
+          if (addBtn) {
+            addBtn.disabled = !match.available;
+            if (addText) addText.textContent = match.available ? label : 'Esgotado';
+          }
+          if (stickyAdd) { stickyAdd.disabled = !match.available; stickyAdd.textContent = match.available ? 'Adicionar' : 'Esgotado'; }
+          renderStock(match);
+          // troca imagem se a variante tiver mídia
+          if (match.featured_media && typeof match.featured_media.position === 'number') {
+            showSlide(match.featured_media.position - 1);
+          }
+        };
+
+        selects.forEach((s) => s.addEventListener('change', update));
+        radios.forEach((r) => r.addEventListener('change', () => {
+          const group = r.closest('.pp__cards');
+          group?.querySelectorAll('.pp__vcard').forEach((c) => c.classList.toggle('is-active', c.contains(r)));
+          update();
+        }));
+        swatchGroups.forEach((g) => {
+          g.querySelectorAll('.pp__swatch').forEach((sw) => {
+            sw.addEventListener('click', () => {
+              g.querySelectorAll('.pp__swatch').forEach((x) => x.classList.remove('is-active'));
+              sw.classList.add('is-active');
+              const lbl = sw.closest('.pp__option').querySelector('[data-pp-optval]');
+              if (lbl) lbl.textContent = sw.dataset.ppVal;
+              update();
+            });
+          });
+        });
+
+        /* ---------- barra fixa (celular) ---------- */
+        const sticky = sec.querySelector('[data-pp-sticky]');
+        const form = sec.querySelector('#pp-form') || sec.querySelector('form.pp__form');
+        if (sticky && addBtn) {
+          // liga quando o botao principal ja passou para CIMA da tela
+          let ligada = null;
+          const confere = () => {
+            const on = addBtn.getBoundingClientRect().bottom < 0;
+            if (on === ligada) return;
+            ligada = on;
+            sticky.classList.toggle('is-on', on);
+            sticky.setAttribute('aria-hidden', on ? 'false' : 'true');
+          };
+          if ('IntersectionObserver' in window) new IntersectionObserver(confere, { threshold: 0 }).observe(addBtn);
+          window.addEventListener('scroll', confere, { passive: true });
+          confere();
+          stickyAdd?.addEventListener('click', () => {
+            if (!form) return;
+            if (typeof form.requestSubmit === 'function') form.requestSubmit(addBtn); else addBtn.click();
+          });
+        }
+
+        /* ---------- descricao longa -> sanfonas pelos <h3> ---------- */
+        const desc = sec.querySelector('[data-pp-desc][data-pp-split]');
+        if (desc) {
+          const body = desc.querySelector('.pp__disc-body');
+          const heads = body ? Array.from(body.querySelectorAll(':scope > h3')) : [];
+          if (body && heads.length >= 2) {
+            const ic = desc.querySelector('.pp__disc-ic');
+            let anchor = desc;
+            heads.forEach((h) => {
+              const det = document.createElement('details');
+              det.className = 'pp__disc';
+              const title = h.textContent.trim();
+              if (/ficha|especifica|t[eé]cnic/i.test(title)) det.classList.add('pp__disc--specs');
+              const sum = document.createElement('summary');
+              sum.className = 'pp__disc-sum';
+              sum.innerHTML = '<span></span>';
+              sum.firstChild.textContent = title;
+              if (ic) sum.appendChild(ic.cloneNode(true));
+              const inner = document.createElement('div');
+              inner.className = 'pp__disc-body rte';
+              let n = h.nextSibling;
+              while (n && !(n.nodeType === 1 && n.tagName === 'H3')) { const nx = n.nextSibling; inner.appendChild(n); n = nx; }
+              h.remove();
+              det.appendChild(sum); det.appendChild(inner);
+              anchor.after(det); anchor = det;
+            });
+            // se nao sobrou nada antes do primeiro h3, a "Descrição" some
+            if (!body.textContent.trim() && !body.querySelector('img,ul,table')) desc.remove();
+          }
+        }
+      });
+    };
+    const boot = () => init(document);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+    document.addEventListener('shopify:section:load', (e) => init(e.target));
+  })();
+{% endjavascript %}
+
+{% schema %}
+{
+  "name": "Produto premium",
+  "settings": [
+    { "type": "header", "content": "Aparência" },
+    { "type": "color_scheme", "id": "color_scheme", "label": "Esquema de cores", "default": "scheme-1" },
+    { "type": "color", "id": "canvas_color", "label": "Cor do fundo das fotos", "default": "#f7f7f7", "info": "As fotos oficiais da Bambu Lab são feitas sobre #F7F7F7. Se as suas fotos tiverem outro fundo, iguale aqui." },
+    { "type": "image_picker", "id": "badge_image", "label": "Selo sobre a imagem (opcional)" },
+    { "type": "text", "id": "subtitle", "label": "Subtítulo curto (opcional)", "info": "Se vazio, usa o metafield custom.resumo, se existir." },
+    { "type": "text", "id": "button_text", "label": "Texto do botão", "default": "Adicionar ao carrinho" },
+    { "type": "checkbox", "id": "show_sticky", "label": "Barra fixa de compra no celular", "default": true },
+    { "type": "checkbox", "id": "split_description", "label": "Dividir a descrição em seções pelos títulos (h3)", "default": true },
+    { "type": "header", "content": "Estoque" },
+    { "type": "text", "id": "dispatch_text", "label": "Prazo de envio (opcional)", "placeholder": "envio em até 2 dias úteis", "info": "Aparece ao lado de \"Em estoque\". Vazio = não promete prazo." },
+    { "type": "header", "content": "Frete, garantia e confiança" },
+    { "type": "text", "id": "shipping_text", "label": "Texto de frete", "default": "Frete grátis para todo o Brasil" },
+    { "type": "text", "id": "warranty_text", "label": "Texto de garantia", "default": "Garantia de 2 anos" },
+    { "type": "url", "id": "warranty_link", "label": "Link da garantia" },
+    { "type": "text", "id": "trust_3", "label": "Terceiro item", "default": "Pix, boleto e cartão de crédito" },
+    { "type": "text", "id": "trust_4", "label": "Quarto item", "default": "2x sem juros no cartão" },
+    { "type": "header", "content": "Avaliações" },
+    { "type": "checkbox", "id": "show_reviews", "label": "Mostrar avaliações", "default": false },
+    { "type": "range", "id": "reviews_stars", "label": "Estrelas", "min": 1, "max": 5, "step": 1, "default": 5 },
+    { "type": "text", "id": "reviews_count", "label": "Texto de contagem", "placeholder": "849 avaliações" },
+    { "type": "url", "id": "reviews_link", "label": "Link das avaliações" },
+    { "type": "header", "content": "Compre também" },
+    { "type": "text", "id": "cross_title", "label": "Título", "default": "Compre também:" },
+    { "type": "product", "id": "cross_sell", "label": "Produto sugerido" }
+  ],
+  "presets": [{ "name": "Produto premium" }]
+}
+{% endschema %}
