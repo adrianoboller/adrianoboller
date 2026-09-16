@@ -1,5 +1,5 @@
 {
-  "quando": "2026-08-29",
+  "quando": "2026-09-16",
   "porta": 6300,
   "carga": {
     "quantas": 5000,
@@ -7,56 +7,56 @@
     "cenarios": [
       {
         "cenario": "sem gatilho",
-        "s": 0.1495,
-        "linhas_por_s": 33444,
-        "us_por_linha": 29.9,
-        "espalhamento_us": 4.99,
+        "s": 0.1517,
+        "linhas_por_s": 32954,
+        "us_por_linha": 30.35,
+        "espalhamento_us": 16.67,
         "todas_s": [
-          0.1619,
-          0.1495,
-          0.1369
+          0.1517,
+          0.0987,
+          0.1821
         ]
       },
       {
         "cenario": "BEFORE que normaliza um campo",
-        "s": 0.1487,
-        "linhas_por_s": 33614,
-        "us_por_linha": 29.75,
-        "espalhamento_us": 1.0,
+        "s": 0.1273,
+        "linhas_por_s": 39284,
+        "us_por_linha": 25.46,
+        "espalhamento_us": 4.87,
         "todas_s": [
-          0.1487,
-          0.1516,
-          0.1466
+          0.1273,
+          0.1043,
+          0.1286
         ]
       },
       {
         "cenario": "AFTER que so calcula (nao fala com o motor)",
-        "s": 0.1653,
-        "linhas_por_s": 30251,
-        "us_por_linha": 33.06,
-        "espalhamento_us": 2.56,
+        "s": 0.2042,
+        "linhas_por_s": 24484,
+        "us_por_linha": 40.84,
+        "espalhamento_us": 24.19,
         "todas_s": [
-          0.1756,
-          0.1653,
-          0.1628
+          0.2411,
+          0.1201,
+          0.2042
         ]
       },
       {
         "cenario": "AFTER que grava auditoria (1 INSERT derivado por linha)",
-        "s": 0.5651,
-        "linhas_por_s": 8848,
-        "us_por_linha": 113.03,
-        "espalhamento_us": 4.95,
+        "s": 1.1115,
+        "linhas_por_s": 4498,
+        "us_por_linha": 222.3,
+        "espalhamento_us": 142.06,
         "todas_s": [
-          0.5651,
-          0.5617,
-          0.5865
+          1.1115,
+          0.5401,
+          1.2504
         ]
       }
     ],
-    "uma_a_uma_s": 1.3902,
-    "uma_a_uma_por_s": 3597,
-    "maior_espalhamento_us": 4.99
+    "uma_a_uma_s": 1.869,
+    "uma_a_uma_por_s": 2675,
+    "maior_espalhamento_us": 142.06
   },
   "chave": [
     {
@@ -65,43 +65,43 @@
       "chaves": [
         {
           "chave": "Uuid v7 (crescente)",
-          "s": 2.8279,
-          "linhas_por_s": 35361,
-          "us_por_linha": 28.28,
-          "espalhamento_us": 0.77,
+          "s": 1.9088,
+          "linhas_por_s": 52388,
+          "us_por_linha": 19.09,
+          "espalhamento_us": 5.15,
           "todas_s": [
-            2.7963,
-            2.8733,
-            2.8279
+            2.4125,
+            1.8971,
+            1.9088
           ]
         },
         {
           "chave": "Uuid v4 (sorteado)",
-          "s": 3.0365,
-          "linhas_por_s": 32933,
-          "us_por_linha": 30.36,
-          "espalhamento_us": 0.81,
+          "s": 2.1609,
+          "linhas_por_s": 46276,
+          "us_por_linha": 21.61,
+          "espalhamento_us": 0.65,
           "todas_s": [
-            3.009,
-            3.0365,
-            3.09
+            2.1745,
+            2.1609,
+            2.1096
           ]
         },
         {
           "chave": "Sequence (o motor numera)",
-          "s": 2.4462,
-          "linhas_por_s": 40880,
-          "us_por_linha": 24.46,
-          "espalhamento_us": 0.44,
+          "s": 1.6831,
+          "linhas_por_s": 59412,
+          "us_por_linha": 16.83,
+          "espalhamento_us": 0.72,
           "todas_s": [
-            2.4149,
-            2.4586,
-            2.4462
+            1.6831,
+            1.7533,
+            1.6811
           ]
         }
       ],
-      "v4_sobre_v7": 1.074,
-      "v7_sobre_sequence": 1.156
+      "v4_sobre_v7": 1.132,
+      "v7_sobre_sequence": 1.134
     },
     {
       "quantas": 1000000,
@@ -109,43 +109,43 @@
       "chaves": [
         {
           "chave": "Uuid v7 (crescente)",
-          "s": 28.4484,
-          "linhas_por_s": 35151,
-          "us_por_linha": 28.45,
-          "espalhamento_us": 1.9,
+          "s": 19.7772,
+          "linhas_por_s": 50563,
+          "us_por_linha": 19.78,
+          "espalhamento_us": 0.25,
           "todas_s": [
-            28.4484,
-            30.3163,
-            28.4185
+            19.7257,
+            19.9772,
+            19.7772
           ]
         },
         {
           "chave": "Uuid v4 (sorteado)",
-          "s": 45.3365,
-          "linhas_por_s": 22057,
-          "us_por_linha": 45.34,
-          "espalhamento_us": 2.45,
+          "s": 32.8979,
+          "linhas_por_s": 30397,
+          "us_por_linha": 32.9,
+          "espalhamento_us": 0.32,
           "todas_s": [
-            43.1201,
-            45.3365,
-            45.5653
+            32.8979,
+            32.9968,
+            32.6719
           ]
         },
         {
           "chave": "Sequence (o motor numera)",
-          "s": 28.5487,
-          "linhas_por_s": 35028,
-          "us_por_linha": 28.55,
-          "espalhamento_us": 6.39,
+          "s": 17.7602,
+          "linhas_por_s": 56306,
+          "us_por_linha": 17.76,
+          "espalhamento_us": 22.55,
           "todas_s": [
-            28.5487,
-            24.5553,
-            30.9436
+            17.7602,
+            17.6741,
+            40.2225
           ]
         }
       ],
-      "v4_sobre_v7": 1.594,
-      "v7_sobre_sequence": 0.996
+      "v4_sobre_v7": 1.663,
+      "v7_sobre_sequence": 1.114
     }
   ]
 }

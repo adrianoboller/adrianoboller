@@ -1,0 +1,205 @@
+== bateria de ponta a ponta -- 2026-09-16 06:39 UTC -- HEAD 89ecdb9
+== carga no inicio: 0.32 0.77 0.87 2/154 23079
+== 1/3 cargo build --release
+   Compiling phxsql-cli v0.18.0 (/home/user/adrianoboller/phxsql/crates/phxsql-cli)
+   Compiling phxsql-cmd v0.18.0 (/home/user/adrianoboller/phxsql/crates/phxsql-cmd)
+    Finished `release` profile [optimized] target(s) in 46.95s
+build=0
+== 2/3 cargo build --release --examples -p phxsql-store
+    Finished `release` profile [optimized] target(s) in 3m 00s
+== 3/3 prova-bateria.py --medir
+
+=== item 0: a catraca do mapa da trava ===
+  === a catraca do mapa da trava ===
+      86 secoes criticas no servidor.rs
+     ok                       codigo-do-dono     5 (teto 5)
+     SUBIU                    alcancam-fsync    23 (teto 22)
+          secoes alcancam `fsync` com a trava na mao. E o que um `RwLock` NAO conserta -- o escritor continua exclusivo --, e cada uma nova e 1,3 ms de trava presa (§7.1-bis) que a proxima conexao espera.
+          Reprovado: a catraca nao sobe. Desfaca, ou traga o motivo ao dono.
+     ok                       rede-ou-espera     0 (teto 0)
+  REPROVADO.
+  ERRO as tres catracas do mapa da trava seguram: 1   (esperava 0)
+
+=== item 0b: o portao «esta medindo?» ===
+  ERRO com a maquina limpa, o portao diz que NAO ha medicao: 0   (esperava 1)
+  o crivo por texto (`pgrep -f bancada/`) acha 2 com a maquina limpa; o portao acha 0
+  ok   o crivo por TEXTO se acha (e por isso o portao nao o usa): True
+  24024  exemplo de medicao  /bin/bash -c source /root/.claude/shell-snapshots/snapshot-bash
+  28321  bancada em python  python3 bancada/concorrencia/escolher-o-desenho.py 20 
+  ok   com uma bancada de pe, o portao a ACHA: 0
+  ok   e diz qual crivo a pegou: True
+  ERRO morta a bancada, o portao volta a dizer que nao ha medicao: 0   (esperava 1)
+
+=== item 0c: a catraca do mapa das threads ===
+  === a catraca do mapa das threads ===
+      19 sitios de nascimento fora dos testes, em crates/*/src
+     ok       spawn-sem-teto           0 (teto 0)
+     ok       catalogo-envelhecido     0 (teto 0)
+  As duas catracas seguram.
+  ok   as duas catracas do mapa das threads seguram: 0
+
+=== 1. criar um database ===
+
+  ok   o database nasceu: 'escola'
+  ok   e e um diretorio: True
+  ok   e aparece na lista: True
+
+=== 2. criar tabelas dentro dele ===
+
+  ok   as quatro tabelas existem: ['alunos', 'auditoria', 'sem_gatilho', 'turmas']
+  ok   nao sobra arquivo nenhum da tabela excluida: []
+  ok   e o nome volta a estar livre: True
+  ok   sete colunas (5 + as 2 de sistema): 7
+  ok   as de sistema sao as duas ULTIMAS: ['softdeleted', 'rownum']
+  ok   e sao mesmo as duas do fim: ['softdeleted', 'rownum']
+  ok   o id de cada coluna e um v7: True
+  ok   e eles crescem na ordem de declaracao: ['01a0a8f4-ff81-77f2-bdfd-5d4c7268551e', '01a0a8f4-ff82-7560-a785-75440e685301', '01a0a8f4-ff82-7561-8c0f-dd40282873b7', '01a0a8f4-ff82-7562-9945-a4f6946a1700', '01a0a8f4-ff82-7563-840b-a7701a52d511', '01a0a8f4-ff82-7564-ae1c-050a61ac904f', '01a0a8f4-ff82-7565-833f-d295e8f92bf8']
+
+=== 3a. UUID v7 como chave: crescente de verdade ===
+
+  ok   a versao declarada e 7: {'7'}
+  ok   e a ordem de digitacao ja sai crescente: ['01a0a8f4-ff9b-760a-bffd-d8c6cf7812c9', '01a0a8f4-ff9b-760b-aa7e-381593b3537e', '01a0a8f4-ff9b-760c-b8ee-7469815efa88']
+  ok   200 ids sob 4 conexoes: 200
+  ok   nenhum repetido: 200
+  ok   e a ordem de chegada e a ordem dos ids: ['01a0a8f5-0168-7684-84bd-c5504b710d3e', '01a0a8f5-016e-702d-b77b-dadff7cab357', '01a0a8f5-016e-702e-9f92-6215a65ccce0', '01a0a8f5-016f-7586-8d07-dc876838e64a', '01a0a8f5-016f-7587-8fca-3a095c5a3d28', '01a0a8f5-016f-7588-960b-3297d890a80c', '01a0a8f5-016f-7589-ab61-38723eebb078', '01a0a8f5-016f-758a-89ad-eb3aa5e8d607', '01a0a8f5-016f-758b-9de9-0df1e5c81024', '01a0a8f5-016f-758c-913e-3151a88853cb', '01a0a8f5-0173-7715-bf04-a8565c4ac4ec', '01a0a8f5-0174-7253-b595-7e57639ff66d', '01a0a8f5-0174-7254-9241-f91325c78f76', '01a0a8f5-0174-7255-b2b0-232cd03e180e', '01a0a8f5-0174-7256-b0e9-05804e403cfd', '01a0a8f5-0174-7257-9443-c615999db652', '01a0a8f5-0174-7258-9d1e-df4b50607416', '01a0a8f5-0174-7259-9ecc-6a8279cda04c', '01a0a8f5-0174-725a-8ecc-825652d8958a', '01a0a8f5-0175-76fb-96b3-3d05b947d186', '01a0a8f5-0175-76fc-823c-fc4c17bb2a67', '01a0a8f5-0175-76fd-9392-61318c1dc4c3', '01a0a8f5-0175-76fe-a1a9-ac7a20e528da', '01a0a8f5-0175-76ff-93b2-eddb9854c796', '01a0a8f5-0175-7700-bddf-ca1237c3a3fa', '01a0a8f5-0175-7701-b715-823433d39a67', '01a0a8f5-0176-76cb-aa5c-36c3ca6f7713', '01a0a8f5-0176-76cc-803c-a5ca58a067e8', '01a0a8f5-0176-76cd-bce2-f31b3d68578c', '01a0a8f5-0176-76ce-9e39-e30545b4798c', '01a0a8f5-017a-77fa-8ed8-93d0289cf67d', '01a0a8f5-017b-75cd-9984-adb80597ad11', '01a0a8f5-017b-75ce-8cdf-cbb530e2422e', '01a0a8f5-017b-75cf-8b13-45608ba336bc', '01a0a8f5-017b-75d0-98dd-065d8b1a104d', '01a0a8f5-017b-75d1-b446-d54129491b9e', '01a0a8f5-017b-75d2-8bdb-e8a6557c125d', '01a0a8f5-017b-75d3-8a61-4c26f1b31641', '01a0a8f5-017c-77fb-8ddb-b12734a12848', '01a0a8f5-017c-77fc-819b-b5ae75dd1a55', '01a0a8f5-017c-77fd-85c0-2d58223cd5e7', '01a0a8f5-017c-77fe-b876-143243e09db2', '01a0a8f5-017c-77ff-87ed-27d833430da7', '01a0a8f5-017c-7800-91ac-cce10a7a8b00', '01a0a8f5-017c-7801-99f9-37dc9d1243c7', '01a0a8f5-017d-73a0-ab0f-ea0a361954e9', '01a0a8f5-017d-73a1-aabf-faaece0771ca', '01a0a8f5-017d-73a2-8109-b8e22f4eea8f', '01a0a8f5-017d-73a3-89ae-f32c316580fe', '01a0a8f5-017d-73a4-ad3f-ec5170acd7f7', '01a0a8f5-017d-73a5-ac50-9535557c3039', '01a0a8f5-017d-73a6-a887-c56cde026ee3', '01a0a8f5-017d-73a7-b5d8-5467cbeb9480', '01a0a8f5-017e-71f0-bd2a-b83c0a26cca4', '01a0a8f5-017e-71f1-ada9-5ca31e75be2d', '01a0a8f5-017e-71f2-b4ef-2f27d38f4590', '01a0a8f5-017e-71f3-9bad-7cb55e1b067e', '01a0a8f5-017e-71f4-b5c3-bbdb58cb7105', '01a0a8f5-017f-71a5-9525-71de36cda7ed', '01a0a8f5-0180-7010-b224-c2d81e3000c9', '01a0a8f5-0180-7011-a44d-64456738621d', '01a0a8f5-0180-7012-ae5f-d64796c6d56b', '01a0a8f5-0180-7013-b71d-386b4afd005b', '01a0a8f5-0180-7014-9104-ba5ddef17c3a', '01a0a8f5-0180-7015-984d-a7e15d7e5b6e', '01a0a8f5-0180-7016-88a5-472be8980fc3', '01a0a8f5-0181-755a-b1f4-2e5566ae0d43', '01a0a8f5-0181-755b-bf45-46065259dbfe', '01a0a8f5-0181-755c-ae39-1acdf470eeac', '01a0a8f5-0181-755d-9beb-05e6dcb9c533', '01a0a8f5-0181-755e-b080-225642a57bcc', '01a0a8f5-0181-755f-9f6c-6d9e01f1db97', '01a0a8f5-0181-7560-a8ab-a7501ecd465a', '01a0a8f5-0181-7561-a18b-fbf17db0a0e7', '01a0a8f5-0181-7562-9f81-d5c3b2c37722', '01a0a8f5-0182-7485-8ae0-7d0ad9de3667', '01a0a8f5-0182-7486-b99b-be043ba80117', '01a0a8f5-0182-7487-924a-e26ae1263f50', '01a0a8f5-0184-71ec-83d5-219f6bc55682', '01a0a8f5-0184-71ed-baee-68f7b2362130', '01a0a8f5-0184-71ee-9221-7f0e8dc6ff29', '01a0a8f5-0184-71ef-8020-95b237ebd412', '01a0a8f5-0184-71f0-833e-ff0b5c9d8ca1', '01a0a8f5-0184-71f1-85ff-149f5e82a7f1', '01a0a8f5-0184-71f2-baae-e5141294dc63', '01a0a8f5-0184-71f3-a3c1-eb9e63531046', '01a0a8f5-0184-71f4-9699-ad9b984ea1c9', '01a0a8f5-0185-705d-95c9-5586fba2311b', '01a0a8f5-0185-705e-901b-04a5d06590c7', '01a0a8f5-0185-705f-921e-f3be85cdd530', '01a0a8f5-0185-7060-a8dc-8c2d541a288d', '01a0a8f5-0185-7061-80ea-3091de7b6f33', '01a0a8f5-0185-7062-bc9c-5ac14bb50d6f', '01a0a8f5-0185-7063-ad88-3fa062cf3410', '01a0a8f5-0185-7064-8b9c-31a980730d3e', '01a0a8f5-0185-7065-8d63-fcf617cd9989', '01a0a8f5-0186-7051-8c79-f5dc627f6b8c', '01a0a8f5-0186-7052-b056-5127e93cfef9', '01a0a8f5-0186-7053-b33d-e4fde7abdef4', '01a0a8f5-0186-7054-9c89-5db845200d55', '01a0a8f5-01a2-71ef-adcb-0546e41bfa9b', '01a0a8f5-01a2-71f0-9ee2-23f44401ef49', '01a0a8f5-01a3-72ce-b5e2-97c58cbad7bc', '01a0a8f5-01a3-72cf-800c-d509527f3096', '01a0a8f5-01a3-72d0-8b5a-cbc096ab6914', '01a0a8f5-01a3-72d1-b58c-998e728f5dfd', '01a0a8f5-01a3-72d2-8605-7eac98e13a66', '01a0a8f5-01a4-74a7-88de-f65a696f3337', '01a0a8f5-01a4-74a8-a832-c6dd9b0a6e39', '01a0a8f5-01a4-74a9-98c6-251719f1238d', '01a0a8f5-01a4-74aa-950f-cf2c2c276905', '01a0a8f5-01a4-74ab-8f5f-7f71298feed2', '01a0a8f5-01a4-74ac-87c3-2c2b189b2be6', '01a0a8f5-01a5-70d7-b892-7a30ebb8e5a9', '01a0a8f5-01a5-70d8-8d22-42a9612d3a7d', '01a0a8f5-01a5-70d9-b43e-21995764876f', '01a0a8f5-01a5-70da-ab51-8fad9d89b72e', '01a0a8f5-01a6-7238-8221-41da54cddddc', '01a0a8f5-01a6-7239-a086-8677df79e9fa', '01a0a8f5-01a6-723a-b76a-e54f828f3178', '01a0a8f5-01a6-723b-afe4-63e100a62d1a', '01a0a8f5-01a6-723c-9679-2f5a34bb4186', '01a0a8f5-01a6-723d-a43c-d7cf8c9d33e9', '01a0a8f5-01a6-723e-8985-9a0de3051a7a', '01a0a8f5-01a6-723f-b4a6-965718a0b88c', '01a0a8f5-01a7-7218-84a2-677c5c2e9dee', '01a0a8f5-01a7-7219-9bb9-a6668573cbda', '01a0a8f5-01a7-721a-98e9-479261245872', '01a0a8f5-01a7-721b-8efb-f60cc4c51716', '01a0a8f5-01a7-721c-93bf-2927034449b3', '01a0a8f5-01a7-721d-a0d3-200fe5c6ea27', '01a0a8f5-01a7-721e-8185-ff9e82db6244', '01a0a8f5-01a7-721f-b63d-d0d532473c8f', '01a0a8f5-01a7-7220-8ff4-ea91f171eac3', '01a0a8f5-01a8-710e-9c1b-46686e1370e1', '01a0a8f5-01a8-710f-acc1-ef5d6156536f', '01a0a8f5-01a8-7110-b8f5-9adb30981b0a', '01a0a8f5-01a8-7111-be9e-fc7843f292fe', '01a0a8f5-01a8-7112-8981-ca519aef6f20', '01a0a8f5-01a8-7113-afa1-99ecc189796e', '01a0a8f5-01a8-7114-9bdd-4aaf75abe442', '01a0a8f5-01a8-7115-a5f1-07beb1acdc63', '01a0a8f5-01a8-7116-809b-260735d7c981', '01a0a8f5-01a8-7117-b1b5-3fdc78494749', '01a0a8f5-01a9-73a8-9ab3-5192767d241b', '01a0a8f5-01a9-73a9-8ff2-3daa6a2e66b4', '01a0a8f5-01a9-73aa-b175-e0ef976bacd9', '01a0a8f5-01a9-73ab-84e8-6d8ba3dabc2b', '01a0a8f5-01a9-73ac-9d84-f68f1a1bbd48', '01a0a8f5-01a9-73ad-95d8-2d2a266f2fc8', '01a0a8f5-01a9-73ae-bcf1-97279b16fa19', '01a0a8f5-01a9-73af-a902-cf6b9ce14833', '01a0a8f5-01a9-73b0-8ff8-04936120287d', '01a0a8f5-01a9-73b1-a5aa-c7e5dc1e2f87', '01a0a8f5-01aa-7580-873c-178d75b866d7', '01a0a8f5-01aa-7581-9d1c-5053a262415d', '01a0a8f5-01aa-7582-a197-37d08634659c', '01a0a8f5-01aa-7583-aec5-011968fbd007', '01a0a8f5-01aa-7584-89e5-75163dcf9c78', '01a0a8f5-01aa-7585-af98-25c4f5fb11e4', '01a0a8f5-01aa-7586-9657-6fab19f6972b', '01a0a8f5-01aa-7587-aabc-6c387f8b9dae', '01a0a8f5-01aa-7588-a835-b99b34a67b4b', '01a0a8f5-01aa-7589-8ee5-a65cb1cd8204', '01a0a8f5-01ab-7400-9961-009886e74639', '01a0a8f5-01ab-7401-86c6-0f207e730533', '01a0a8f5-01ab-7402-ab29-81421987bb2d', '01a0a8f5-01ab-7403-97ed-03c7f16037d4', '01a0a8f5-01ab-7404-b68d-655a4ec570bb', '01a0a8f5-01ab-7405-adb3-4f54bc654798', '01a0a8f5-01ab-7406-af60-2800efbbbb9a', '01a0a8f5-01ab-7407-ac6b-a09706c2a8dc', '01a0a8f5-01ac-7100-8257-3e2d5596b263', '01a0a8f5-01ac-7101-aa6b-bb92cbdf8990', '01a0a8f5-01ac-7102-a065-6c98fd79fc25', '01a0a8f5-01ac-7103-a91f-def8c58827a4', '01a0a8f5-01ac-7104-94a8-94c3890ad20e', '01a0a8f5-01ac-7105-a8cd-860336b2263a', '01a0a8f5-01ac-7106-abe1-56a881b10111', '01a0a8f5-01ac-7107-b4a1-5e08fe1492d1', '01a0a8f5-01ac-7108-ba87-12a623638df2', '01a0a8f5-01ac-7109-8e01-908c3bb4b8c2', '01a0a8f5-01ad-753a-b2ba-fa8bf190963b', '01a0a8f5-01ad-753b-a17d-c556caaf6845', '01a0a8f5-01ad-753c-8db6-8650c79e1ead', '01a0a8f5-01ad-753d-9efa-3e1d5a95ecb2', '01a0a8f5-01ad-753e-ad76-fbe7e4ba6938', '01a0a8f5-01ad-753f-a75e-be8ae1a02747', '01a0a8f5-01ae-75e0-88d6-63d625c618b1', '01a0a8f5-01ae-75e1-8ac6-07062cbc4b75', '01a0a8f5-01ae-75e2-a5fa-4838240c9ffb', '01a0a8f5-01ae-75e3-b371-ad5a81ba9f7f', '01a0a8f5-01ae-75e4-badc-8c67fe8f10a6', '01a0a8f5-01ae-75e5-90e4-b8c9cdd2d3f3', '01a0a8f5-01ae-75e6-bee8-4eef266d5883', '01a0a8f5-01ae-75e7-ac97-a46b407833eb', '01a0a8f5-01af-7539-93da-73c0547586ff', '01a0a8f5-01af-753a-9ee2-ed405a7e43b8', '01a0a8f5-01af-753b-a844-37f84da55292', '01a0a8f5-01af-753c-be08-9646711f11cb']
+
+=== 3b. relacionamento 1:N ===
+
+  ok   as cinco filhas da turma 0: 5
+  ok   e todas apontam para ela: {'01a0a8f4-ff9b-760a-bffd-d8c6cf7812c9'}
+  ok   a outra turma tem uma filha so: 1
+  ok   a chave estrangeira esta declarada: 'fk_turma'
+  ok   aponta para a mae: ('turmas', ['id'])
+  ok   com a acao que se pediu: 'Restringir'
+  ok   e a coluna sabe que e estrangeira: [True]
+  ok   a filha orfa e RECUSADA, e pelo codigo da integridade: (False, True)
+  ok   a mae com filhas NAO sai -- restringir restringe: (False, True)
+  ok   e ela continua la: 3
+  nota  a chave estrangeira e declarada E IMPOSTA desde o pedido 171 -- os tres passos acima travam a imposicao, e conferem pelo codigo SP000008 e nao pela redacao da mensagem
+
+=== 4a. BEFORE INSERT normaliza, e o AFTER audita ===
+
+  ok   o BEFORE normalizou: 'JOINVILLE'
+  ok   a resposta nao ganhou campo novo: False
+  ok   o AFTER disparou exatamente uma vez: 1
+  ok   e viu a linha como ela FICOU: 'entrou Ana de JOINVILLE'
+
+=== 4b. SIGNAL recusa, e a linha NAO entra ===
+
+  ok   recusou: False
+  ok   com o nome do erro: 'SINAL'
+  ok   e o codigo: 3005
+  ok   nao adianta repetir: False
+  ok   a MESSAGE_TEXT chega inteira ao cliente: '[SP000021] aluno sem nota nao entra (SIGNAL SQLSTATE 45000)'
+  ok   a linha recusada NAO entrou: 7
+  ok   e o AFTER nao auditou o que nao entrou: 1
+
+=== 4c. o lote de 200 passa pelo BEFORE linha a linha ===
+
+  ok   199 gravadas de 200: (199, 1)
+  ok   e a posicao da recusada e a 101: 101
+  ok   com a frase do dono: '[SP000021] aluno sem nota nao entra (SIGNAL SQLSTATE 45000)'
+  ok   as 199 entraram: 206
+  ok   e o BEFORE normalizou dentro do lote: True
+  ok   o AFTER disparou 199 vezes, uma por linha gravada: 199
+
+=== 4d. a cadeia de gatilhos tem fundo ===
+
+  ok   a conexao NAO caiu: None
+  ok   e a resposta e ok (o AFTER que falha e aviso): True
+  ok   com um aviso dizendo o que aconteceu: True
+  ok   e o aviso nomeia a cadeia: 'a cadeia de gatilhos passou de 8 niveis e foi cortada — um AFTER que grava na propria tabela dispara a si mesmo'
+  ok   o servidor continua atendendo: True
+  nota  a cadeia parou em 9 linhas -- e o teto, nao o infinito
+  ok   e ela parou mesmo (menos de 100 linhas): True
+
+=== 4e. o comportamento VELHO: tabela sem gatilho grava igual ===
+
+  ok   a resposta tem as chaves de sempre e so elas: ['registros', 'rowid']
+  ok   e o dado entrou CRU, sem gatilho de outra tabela mexer: '  blumenau '
+  ok   uma linha a mais: 201
+
+=== 4f. SHOW TRIGGERS, e o DROP volta ao cru ===
+
+  ok   os tres gatilhos aparecem: ['audita', 'exige_nota', 'normaliza']
+  ok   nenhum quebrado: []
+
+=== 4g. os gatilhos sobrevivem ao REINICIO do processo ===
+
+  ok   os tres continuam la depois de subir de novo: ['audita', 'exige_nota', 'normaliza']
+  ok   e a regra do dono ainda recusa: '[SP000021] aluno sem nota nao entra (SIGNAL SQLSTATE 45000)'
+
+=== 5a. procedimento com IN, OUT e WHILE ===
+
+  ok   soma de 1 a 100: 5050
+  ok   soma de 1 a 10: 55
+
+=== 5b. procedimento le o motor com SELECT ... INTO ===
+
+  ok   WHERE sem indice e recusado: False
+  ok   dizendo o que falta: '[SP000018] esquema invalido: WHERE nome = ... exige um indice de uma coluna sobre nome. Nao existe. O `varrer` filtra, m'
+  ok   o COUNT(*) chegou ao OUT: 206
+  ok   e o SELECT ... INTO trouxe a linha: 'Ana'
+
+=== 5c. procedimento GRAVA, e pelo portao de sempre ===
+
+  ok   gravou uma linha: 201
+  ok   com o que o corpo montou: ('matricula de Carlos', 'secretaria')
+
+=== 5d. CALL nao e a porta dos fundos para a tabela negada ===
+
+  ok   pela porta da frente, alunos e negado a ele: False
+  ok   com o motivo escrito: '[SP000025] acesso negado: pedro nao tem permissao de ler em escola.alunos'
+  ok   e pelo CALL tambem: False
+  ok   com o mesmo motivo: '[SP000025] acesso negado: pedro nao tem permissao de ler em escola.alunos'
+  ok   o que ele pode, ele continua podendo pelo CALL: True
+  ok   e a linha entrou: 202
+  ok   mas criar rotina exige administrar: False
+  ok   e a recusa diz qual poder falta: '[SP000025] acesso negado: pedro nao tem permissao de administrar em escola — criar, excluir e listar rotinas exigem admi'
+  ok   listar tambem: False
+
+=== 6. a carga de 5.000 registros, medida ===
+
+  ok   as 5.000 uma a uma entraram: 5000
+
+  5.000 linhas, 2 indices, 3 rodadas intercaladas
+
+  cenario                                                mediana  linhas/s  µs/linha   espalha
+  sem gatilho                                             0.152s     32954     30.35    16.67
+  BEFORE que normaliza um campo                           0.127s     39284     25.46     4.87
+  AFTER que so calcula (nao fala com o motor)             0.204s     24484     40.84    24.19
+  AFTER que grava auditoria (1 INSERT derivado por linha)    1.112s      4498    222.30   142.06
+  uma a uma (op inserir, 5.000 viagens)                   1.869s      2675    373.79
+
+  BEFORE que normaliza um campo                           -4.89 µs/linha   NAO aparece acima do ruido
+  AFTER que so calcula (nao fala com o motor)            +10.50 µs/linha   NAO aparece acima do ruido
+  AFTER que grava auditoria (1 INSERT derivado por linha)  +191.96 µs/linha   acima do ruido
+  nota  maior espalhamento dentro de um cenario: 142.06 µs/linha -- e a regua com que as diferencas acima se leem
+
+=== 6b. a chave: v7 contra v4 contra Sequence. 100.000 linhas ===
+
+  chave primaria                     mediana  linhas/s  µs/linha   espalha
+  Uuid v7 (crescente)                 1.909s     52388     19.09     5.15
+  Uuid v4 (sorteado)                  2.161s     46276     21.61     0.65
+  Sequence (o motor numera)           1.683s     59412     16.83     0.72
+
+  v4 custa 1.13x o v7   |   v7 custa 1.13x a Sequence
+
+=== 6b. a chave: v7 contra v4 contra Sequence. 1.000.000 linhas ===
+
+  chave primaria                     mediana  linhas/s  µs/linha   espalha
+  Uuid v7 (crescente)                19.777s     50563     19.78     0.25
+  Uuid v4 (sorteado)                 32.898s     30397     32.90     0.32
+  Sequence (o motor numera)          17.760s     56306     17.76    22.55
+
+  v4 custa 1.66x o v7   |   v7 custa 1.11x a Sequence
+
+numeros gravados em /home/user/adrianoboller/phxsql/bancada/bateria/resultados.json
+
+==================================================================
+3 PASSO(S) FALHARAM:
+  - as tres catracas do mapa da trava seguram
+  - com a maquina limpa, o portao diz que NAO ha medicao
+  - morta a bancada, o portao volta a dizer que nao ha medicao
+bateria=1
+== fim: 06:48 UTC carga 1.73 1.97 1.57 2/157 29524
