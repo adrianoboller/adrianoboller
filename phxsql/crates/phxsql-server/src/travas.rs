@@ -39,10 +39,13 @@
 //! linhas tocadas. Enquanto a escolha for uma so, dizer que sao dois modos
 //! diferentes seria mentir sobre o mecanismo.
 //!
-//! `TABLE` e `EXCLUSIVE` tambem coincidem hoje, e pelo mesmo motivo: nao ha
-//! trava de tabela COMPARTILHADA para leitura, porque leitura nao trava nada
-//! neste desenho (nada nao confirmado existe em disco). O dia em que existir,
-//! `TABLE` sera a exclusiva de escrita e `EXCLUSIVE` a que barra ate leitor.
+//! `TABLE` e `EXCLUSIVE` tambem coincidem hoje: os dois pedem a exclusiva (X)
+//! na escrita. O que mudou em 16/09/2026 e que a trava COMPARTILHADA (S) para
+//! leitura **passou a existir** -- ela e o substrato da leitura repetivel pela
+//! trava (`docs/SOMBRA.md` §5b). Nao e um quinto modo: quem pede
+//! `"leitura_repetivel": true` segura a S nas tabelas que LE, por toda a
+//! transacao, e o escritor espera esse leitor. Leitura sem esse pedido continua
+//! nao travando nada, como antes -- *guarda nova entra pedida, nao imposta*.
 
 use std::collections::HashMap;
 
@@ -123,6 +126,13 @@ impl EscopoModo {
 /// A trava que uma transacao tem numa tabela.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Trava {
+    /// Leitura repetivel (`docs/SOMBRA.md` §5b): a transacao que PEDE segura a
+    /// tabela COMPARTILHADA por toda a sua vida, para reler o mesmo estado. Duas
+    /// compartilhadas convivem; ela nao convive com escrita alheia -- e o
+    /// «escritor espera o leitor». A consistencia sai por exclusao, nao por
+    /// versao: sob a compartilhada nenhum `INSERT` entra, entao o fantasma nao
+    /// acontece, e a visao de varias tabelas e coerente sem instante inventado.
+    Compartilhada,
     /// Intencao de escrever em ALGUMAS linhas. Duas intencoes convivem.
     Intencao,
     /// A tabela inteira. Nao convive com nada.
@@ -132,6 +142,7 @@ pub enum Trava {
 impl Trava {
     pub fn nome(self) -> &'static str {
         match self {
+            Trava::Compartilhada => "S",
             Trava::Intencao => "IX",
             Trava::Exclusiva => "X",
         }
@@ -140,6 +151,8 @@ impl Trava {
 
 #[derive(Debug, Default)]
 struct EstadoDaTabela {
+    /// Transacoes com leitura repetivel (S). Convivem entre si; barram escrita.
+    compartilhada: Vec<u64>,
     /// Transacoes com intencao (IX). Convivem entre si.
     intencao: Vec<u64>,
     /// A transacao com a tabela inteira (X), se houver.
@@ -150,7 +163,10 @@ struct EstadoDaTabela {
 
 impl EstadoDaTabela {
     fn vazio(&self) -> bool {
-        self.intencao.is_empty() && self.exclusiva.is_none() && self.linhas.is_empty()
+        self.compartilhada.is_empty()
+            && self.intencao.is_empty()
+            && self.exclusiva.is_none()
+            && self.linhas.is_empty()
     }
 }
 
@@ -206,6 +222,41 @@ impl Travas {
                 });
             }
         }
+        // O ESCRITOR espera o LEITOR compartilhado: quem quer intencao ou
+        // exclusiva e barrado pela leitura repetivel de outro. E o «escritor
+        // espera o leitor» da leitura repetivel pela trava -- e o autocommit
+        // (tx = 0) tambem espera, porque 0 != o dono da compartilhada.
+        if matches!(quero, Trava::Intencao | Trava::Exclusiva) {
+            if let Some(dono) = e.compartilhada.iter().find(|o| **o != tx) {
+                return Some(Barrada {
+                    transacao: *dono,
+                    tabela: chave.to_string(),
+                    rowid: None,
+                    trava: Trava::Compartilhada,
+                });
+            }
+        }
+        // O LEITOR repetivel espera a escrita ja anunciada de OUTRO: se ha
+        // intencao ou linha alheia, a foto nao seria estavel. E o outro lado da
+        // mesma incompatibilidade -- e por isso que ela e simetrica.
+        if quero == Trava::Compartilhada {
+            if let Some(outro) = e.intencao.iter().find(|o| **o != tx) {
+                return Some(Barrada {
+                    transacao: *outro,
+                    tabela: chave.to_string(),
+                    rowid: None,
+                    trava: Trava::Intencao,
+                });
+            }
+            if let Some((rowid, outro)) = e.linhas.iter().find(|(_, o)| **o != tx) {
+                return Some(Barrada {
+                    transacao: *outro,
+                    tabela: chave.to_string(),
+                    rowid: Some(*rowid),
+                    trava: Trava::Intencao,
+                });
+            }
+        }
         if quero == Trava::Exclusiva {
             // A exclusiva nao convive com a intencao de OUTRO. A propria
             // intencao desta transacao pode subir para exclusiva -- e
@@ -246,6 +297,16 @@ impl Travas {
                 });
             }
         }
+        // A escrita de UMA linha tambem espera o leitor compartilhado da tabela
+        // inteira: escrever a linha mudaria a foto que ele releria.
+        if let Some(dono) = e.compartilhada.iter().find(|o| **o != tx) {
+            return Some(Barrada {
+                transacao: *dono,
+                tabela: chave.to_string(),
+                rowid: None,
+                trava: Trava::Compartilhada,
+            });
+        }
         match e.linhas.get(&rowid) {
             Some(dono) if *dono != tx => Some(Barrada {
                 transacao: *dono,
@@ -267,6 +328,11 @@ impl Travas {
         }
         let e = self.tabelas.entry(chave.to_string()).or_default();
         match quero {
+            Trava::Compartilhada => {
+                if !e.compartilhada.contains(&tx) {
+                    e.compartilhada.push(tx);
+                }
+            }
             Trava::Intencao => {
                 if !e.intencao.contains(&tx) {
                     e.intencao.push(tx);
@@ -297,6 +363,7 @@ impl Travas {
     /// no estouro do prazo e na queda da conexao -- quatro portas, uma saida.
     pub fn soltar_tudo(&mut self, tx: u64) {
         self.tabelas.retain(|_, e| {
+            e.compartilhada.retain(|o| *o != tx);
             e.intencao.retain(|o| *o != tx);
             if e.exclusiva == Some(tx) {
                 e.exclusiva = None;
@@ -324,6 +391,8 @@ impl Travas {
                     Trava::Exclusiva.nome()
                 } else if e.intencao.contains(&tx) || linhas > 0 {
                     Trava::Intencao.nome()
+                } else if e.compartilhada.contains(&tx) {
+                    Trava::Compartilhada.nome()
                 } else {
                     return None;
                 };
@@ -430,6 +499,79 @@ mod testes {
         t.pegar_tabela("loja/pedidos", 1, Trava::Intencao).unwrap();
         t.pegar_tabela("loja/pedidos", 1, Trava::Exclusiva).unwrap();
         assert_eq!(t.ficha(1), vec![("loja/pedidos".to_string(), "X", 0)]);
+    }
+
+    // ----------------------------------------- leitura repetivel (S) — §5b
+
+    /// Duas leituras repetiveis convivem: e o ganho que a §16 do
+    /// CONCORRENCIA comprou, agora com garantia de consistencia.
+    #[test]
+    fn duas_compartilhadas_convivem() {
+        let mut t = Travas::default();
+        assert!(t
+            .pegar_tabela("loja/clientes", 1, Trava::Compartilhada)
+            .is_ok());
+        assert!(t
+            .pegar_tabela("loja/clientes", 2, Trava::Compartilhada)
+            .is_ok());
+        assert_eq!(t.ficha(1), vec![("loja/clientes".to_string(), "S", 0)]);
+    }
+
+    /// PROVA REAL do «escritor espera o leitor»: com a compartilhada de outro,
+    /// tanto a intencao quanto a exclusiva sao barradas, e ate a escrita de UMA
+    /// linha. Se a matriz nao conhecesse o S, os tres passariam.
+    #[test]
+    fn a_compartilhada_barra_todo_escritor() {
+        let mut t = Travas::default();
+        t.pegar_tabela("loja/clientes", 1, Trava::Compartilhada)
+            .unwrap();
+
+        let e = t
+            .pegar_tabela("loja/clientes", 2, Trava::Intencao)
+            .unwrap_err();
+        assert_eq!(e.transacao, 1);
+        assert_eq!(e.trava, Trava::Compartilhada);
+
+        let e = t
+            .pegar_tabela("loja/clientes", 2, Trava::Exclusiva)
+            .unwrap_err();
+        assert_eq!(e.trava, Trava::Compartilhada);
+
+        let e = t.pegar_linha("loja/clientes", 2, 42).unwrap_err();
+        assert_eq!(e.trava, Trava::Compartilhada);
+
+        // E o autocommit (tx = 0) tambem espera: e o «escritor espera o leitor»
+        // valendo para quem escreve sem BEGIN nenhum.
+        assert!(t
+            .conflito_de_tabela("loja/clientes", 0, Trava::Exclusiva)
+            .is_some());
+    }
+
+    /// O outro lado da simetria: quem QUER ler repetivel espera a escrita ja
+    /// anunciada de outro. Sem isso a foto nasceria por cima de uma escrita a
+    /// caminho.
+    #[test]
+    fn a_leitura_repetivel_espera_a_escrita_anunciada() {
+        let mut t = Travas::default();
+        t.pegar_tabela("loja/clientes", 1, Trava::Intencao).unwrap();
+        let e = t
+            .pegar_tabela("loja/clientes", 2, Trava::Compartilhada)
+            .unwrap_err();
+        assert_eq!(e.transacao, 1);
+        assert_eq!(e.trava, Trava::Intencao);
+    }
+
+    /// Soltar a compartilhada libera o escritor que esperava — as quatro portas
+    /// de saida (commit/rollback/prazo/queda) passam pela mesma `soltar_tudo`.
+    #[test]
+    fn soltar_a_compartilhada_libera_o_escritor() {
+        let mut t = Travas::default();
+        t.pegar_tabela("loja/clientes", 1, Trava::Compartilhada)
+            .unwrap();
+        assert!(t.pegar_tabela("loja/clientes", 2, Trava::Intencao).is_err());
+        t.soltar_tudo(1);
+        assert_eq!(t.quantas(), 0, "a compartilhada tem de sair do mapa");
+        assert!(t.pegar_tabela("loja/clientes", 2, Trava::Intencao).is_ok());
     }
 
     #[test]
