@@ -39,7 +39,7 @@ do HFSQL(R) é o que a folha declara.
 | Backup a quente, agendado | com manifesto SHA-256 e ZIP escrito aqui | o manifesto é uma coisa a mais |
 | Replicação servidor→servidor | `.log` v2 com a imagem da linha, 4 servidores medidos | ver §4 |
 | Cluster | **sim**, com eleição e promoção automática, medido em `bancada/cluster/` | ver §6, verdicto 5 |
-| Transação | `BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`, com escopo, prazos e travas | ver §3.1: o que falta não é a transação, é o **nível de isolamento** |
+| Transação | `BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`, com escopo, prazos e travas | ver §3.1: leitura repetível fechada em 16/09/2026, pela trava e pedida; o que falta é só o nome **SERIALIZABLE** |
 | Gatilhos e procedimentos guardados | sintaxe similar à do MySQL(R)/MariaDB(R), um interpretador só | entram pela op `sql`, não por operação própria (`TRIGGERS.md`) |
 | ODBC | driver ODBC 3.x de verdade, `cdylib` de ABI C, 73 conferências | OLE DB pela ponte oficial `MSDASQL` — recusa fundamentada, não pendência (`ODBC.md` §6–7) |
 | Marcar coluna como dado pessoal (GDPR) | `dado_pessoal` no esquema, ops `marcar_lgpd`, `dados_pessoais` e `trilha`, arquivo `.lgpd` | ver §6, verdicto 3 |
@@ -82,17 +82,25 @@ Curto, e vale registrar:
 
 Em ordem de valor, e cada um medido em 06/09/2026 contra a 0.18.0.
 
-### 3.1 Leitura repetível — o buraco mais caro, porque parece fechado
+### 3.1 Leitura repetível — fechada em 16/09/2026, pela trava e pedida
 
-A transação existe. O **isolamento** não está inteiro, e o `docs/ACID.md` o diz
-com a prova: leitura suja não acontece e a transação enxerga a própria escrita,
-mas *«leitura repetível não existe: entre duas instruções tudo pode mudar»* —
-fantasma, leitura não repetível e **skew de escrita** acontecem, e estão
-medidos. Nenhum ajuste de configuração compra leitura repetível hoje.
+A transação existe. Por padrão, sem pedir nada, o **isolamento** continua
+`READ COMMITTED`: leitura suja não acontece e a transação enxerga a própria
+escrita, mas fantasma, leitura não repetível e **skew de escrita** acontecem
+nesse regime, e estão medidos (`docs/ACID.md`).
 
-Eles anunciam quatro níveis de isolamento. **Este é o item em que ter o verbo
-sem o nível é mais perigoso que não ter o verbo**, porque quem lê `BEGIN`
-supõe o resto.
+**O que fechou:** o dono reabriu o gap e escolheu a via (b) do
+`docs/SOMBRA.md` §5b — quem **pede** `"leitura_repetivel": true` (protocolo)
+ou `BEGIN ISOLATION LEVEL REPEATABLE READ` (SQL) ganha leitura repetível e
+ausência de fantasma pela trava compartilhada, sem MVCC nenhum (`docs/ACID.md`
+§4.5). Custo zero para quem não pede; o escritor espera o leitor que pediu; e
+não há detector de impasse entre duas repetíveis que leram a mesma tabela e
+tentam escrever — o `LOCK TIMEOUT` resolve.
+
+Eles anunciam quatro níveis de isolamento. **O que ainda falta aqui é só o
+nome `SERIALIZABLE`**, que continua recusado e não se reivindica — e é por
+isso que este item, embora resolvido, permanece nesta lista: quem procurar
+`SERIALIZABLE` ainda não encontra.
 
 ### 3.2 Índice de texto completo (*full text*) — **o motor tem, e a tela ainda não**
 
@@ -185,8 +193,12 @@ Quatro peças, e nenhuma é «faltou notar» — são decisões de sequência
 O que **não** falta mais nessa lista é a transação, e a §3 do `SQL.md`
 **deixou de listá-la em 07/09/2026**: era a mesma vencida da §6 aparecendo num
 segundo lugar, e o documento contradizia a própria §2, que descreve o detector
-de transação. No lugar dela entrou o que de fato falta — **nível de isolamento
-acima do `READ COMMITTED`** —, com o número que o `docs/ACID.md` mediu.
+de transação. No lugar dela entrou o que faltava — **nível de isolamento acima
+do `READ COMMITTED`** —, com o número que o `docs/ACID.md` mediu. **Em
+16/09/2026 essa lacuna fechou em boa parte**: quem pede
+`ISOLATION LEVEL REPEATABLE READ` sai do `READ COMMITTED` pela trava
+compartilhada (§3.1 acima); o que sobra é só `SERIALIZABLE`, que continua
+recusado.
 
 ### 3.8 Comparar duas tabelas (o WDHFDiff deles)
 
@@ -232,9 +244,11 @@ entre eles **buscar o lote fora da trava de dados** (medido: `varrer` esperou
 
 - **«ACID».** Já não é falso, e ainda não é verdadeiro: as quatro letras estão
   medidas uma a uma em `docs/ACID.md`, e a resposta não é sim nem não para
-  nenhuma. O que impede a frase é a §3.1 — sem leitura repetível, o **I** não
-  fecha. Continua valendo **não escrever *ACID compliant* em documento
-  técnico** enquanto a decisão da §7 daquele documento não for tomada.
+  nenhuma. A §3.1 fechou em boa parte em 16/09/2026 — quem pede tem leitura
+  repetível pela trava —, e o que ainda impede a frase seca é só o nome
+  `SERIALIZABLE`, não reivindicado em regime nenhum. Continua valendo **não
+  escrever *ACID compliant* em documento técnico** enquanto a decisão da §7
+  daquele documento não for tomada.
 - **Volume.** §3.10.
 - **A folha deles não publica um único número de desempenho reproduzível.**
   Todos os desta comparação são refazíveis com os comandos de `bancada/`. Isto

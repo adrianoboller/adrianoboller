@@ -820,6 +820,31 @@ P2P e sigilo de contrato — e é por isso que nasce o subagente `pesquisa-rede`
 que o `seguranca`/`pesquisa-motor` ganham o contrato do sigilo: **nenhum papel
 sem dono quando o trabalho toca o domínio dele.**
 
+## Leitura repetível pela trava — 16/09/2026
+
+| frente | escalão | por quê | papéis convocados | dispensados, e por quê |
+|---|---|---|---|---|
+| **Fatias 1–4 e o tradutor SQL** (trava compartilhada, portão `dentro_da_transacao`/`travar_leitura_repetivel`, `BEGIN ISOLATION LEVEL REPEATABLE READ`) | **forte** | é **concorrência** (trava nova entre transações, ordem de espera contra intenção/exclusiva/linha alheia) e **protocolo** (novo campo `"leitura_repetivel"`, novo texto de `transaction_isolation`) ao mesmo tempo — as duas coisas que a cláusula manda no modelo mais forte. Errar a ordem de travas aqui trava o servidor inteiro; errar o portão único deixa um caminho de leitura sem a garantia que o nome promete | A, C, B, F | D (nada a limpar), E (a tela só ganhou duas chaves de texto, `tela.tx_isolamento_a/b`, pela fábrica — sem desenho novo), G (a guarda aqui é o par de testes RED→GREEN de `testes_leitura_repetivel`, não um `TETO` novo), J (a via já estava nomeada em `docs/SOMBRA.md` §5b desde a pesquisa de MVCC; o dono só precisava reabrir e escolher) |
+| **Esta varredura de documentação** (ACID.md, TRANSACOES.md, SQL.md, CONCORRENCIA.md, CONTRATO-1.0.md, HFSQL.md, PDCA-GAPS.md, PENDENCIAS.md, CHANGELOG.md, BACKLOG.md, STATUS.md) | **leve** | é propagar um fato já decidido e já provado pela frente forte, verificável por `grep` linha a linha — não há decisão de projeto para tomar, só o texto para deixar de contradizer o código | H | A (orquestra, não se convoca), B/C (o código e o formato já estavam prontos e revisados), D (nada a limpar), E (nenhuma tela nesta varredura), F (nenhuma prova nova — as provas já existiam e só foram citadas), G (nenhuma catraca nova), I (não comita), J (nenhuma pesquisa nova) |
+
+**Por que o forte na trava, e o leve na varredura.** A trava compartilhada
+decide se um leitor pode travar um escritor e por quanto tempo — errar isso é
+o mesmo risco de qualquer trava nova nesta casa (§ acima, ACID-C). A
+varredura, em contraste, não decide nada: ela lê `docs/SOMBRA.md` §5b, os
+testes de `servidor.rs` e o texto do `CLAUDE.md` já escrito pelo dono, e
+propaga a mesma frase para onze documentos. O teste que decide — **«o erro se
+vê?»** — dá sim para a trava (esconderia um servidor congelado) e não para a
+prosa (um `grep` reprova o documento na hora).
+
+**Custo medido do escalão leve nesta rodada** (somado do transcrito do agente,
+não estimado): 246.557 tokens, 175 chamadas de ferramenta, 19 min 24 s de
+parede, correndo em paralelo com fmt, clippy e a suíte inteira (cerca de 6
+min), que rodaram no processo principal. Treze arquivos `.md` tocados, 368
+inserções e 91 remoções. Dois achados que o escalão leve fez e valeram o
+custo: a pendência nova era a #246 e não a #245 (o número no `CLAUDE.md`
+estava errado), e o `COMPARATIVO.md` é gerado por sonda contra um servidor
+vivo, então não se edita — se remede.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

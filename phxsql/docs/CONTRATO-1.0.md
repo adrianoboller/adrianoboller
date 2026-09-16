@@ -78,8 +78,9 @@ A regra primordial: **nunca se mata o pai que tem filhos.**
 | **G** | `BEGIN` / `COMMIT` / `ROLLBACK` / `SAVEPOINT`, pelo protocolo e pelo SQL | `TRANSACOES.md` §14; `bancada/transacoes/provar.py` |
 | **G** | **Nada vai a disco antes do `COMMIT`.** O conjunto de escrita fica em RAM, e por isso o `ROLLBACK` não deixa slot, rowid nem evento — a ordem de digitação sai intacta | `TRANSACOES.md` §3.1 |
 | **G** | **A transação vê as próprias escritas** (*read-your-own-writes*), num lugar só: a `Sobreposicao` presa ao handle, aplicada no `ler`, no `varrer`, nas cinco paginações, no `contar`, no `filtrar` e no `buscar` | medido por soquete: 1→**2**→2→3→2 (`bancada/transacoes/visibilidade.py`); `TRANSACOES.md` §4.4.1 |
-| **G** | **O nível é dito sem enfeite, e é o que o servidor devolve** em `transaction_isolation`: *escrita serializável por tabela, leitura confirmada e não bloqueante, sem leitura repetível* | `TRANSACOES.md` §4.4 |
-| **G** | **Leitor nunca espera escritor.** Não há dado não confirmado em lugar nenhum — ele ainda está em RAM | `TRANSACOES.md` §4.4 e §11.1 |
+| **G** | **O nível é dito sem enfeite, e é o que o servidor devolve** em `transaction_isolation`: por padrão *escrita serializável por tabela, leitura confirmada e não bloqueante, sem leitura repetível*; quem pede recebe o nome do nível pedido | `TRANSACOES.md` §4.4 |
+| **G** | **Desde 16/09/2026, quem pede ganha leitura repetível e ausência de fantasma pela trava compartilhada** — `"leitura_repetivel": true` no `begin`, `BEGIN ISOLATION LEVEL REPEATABLE READ` no SQL. Custo zero para quem não pede; `SERIALIZABLE` não se reivindica | `ACID.md` §4.5; `TRANSACOES.md` §11.1 |
+| **G** | **Leitor nunca espera escritor — por padrão, sem pedir leitura repetível.** Não há dado não confirmado em lugar nenhum — ele ainda está em RAM. Quem pede leitura repetível troca essa garantia pela trava: a leitura pode esperar um escritor que já segure a tabela, e um escritor alheio espera a leitura repetível soltar | `TRANSACOES.md` §4.4 e §11.1; `ACID.md` §4.5 |
 | **G** | **Quem não usa transação não paga.** O único acréscimo é um `AtomicUsize` lido com `load(Relaxed)` **antes** de qualquer trabalho | teste `sem_transacao_nada_muda`; `TRANSACOES.md` §7 |
 | **G** | **DDL dentro de transação é RECUSADO, e não silenciosamente confirmado** | `TRANSACOES.md` §3.4 e §11.4 |
 
@@ -157,7 +158,7 @@ A resposta precisa, letra por letra, está em `TRANSACOES.md` §12:
 | letra | estado | com precisão |
 |---|---|---|
 | **A** | **entregue** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não deixa slot, rowid nem evento |
-| **I** | **entregue, com o nome certo** | escrita serializável por tabela, leitura confirmada e não bloqueante, **sem leitura repetível**. **Não é ANSI SERIALIZABLE** e não pode ser chamado assim |
+| **I** | **entregue, com o nome certo; leitura repetível pela trava desde 16/09/2026, para quem pede** | por padrão, escrita serializável por tabela, leitura confirmada e não bloqueante, **sem leitura repetível**. Quem pede `"leitura_repetivel": true` (ou `BEGIN ISOLATION LEVEL REPEATABLE READ`) fecha a leitura não repetível e o fantasma pela trava compartilhada (`ACID.md` §4.5). **Não é ANSI SERIALIZABLE** em regime nenhum, e não pode ser chamado assim |
 | **C** | **PARCIAL** | tipo, unicidade, gatilhos e integridade referencial são conferidos. O que falta: **a cascata escreve em tabela que a transação não declarou**, então um `ROLLBACK` não alcança a filha. Enquanto isso valer, o **C** não está inteiro |
 | **D** | **entregue, e configurável** | com `durabilidade: sistema` quem abre mão é quem configurou, e está escrito |
 
@@ -188,7 +189,7 @@ declarado acima, consistência dependente do escopo da cascata.*
 | **N** | **A trava de dados é única e global.** Com 2 clientes e metade da máquina ociosa, o mesmo caminho entrega **1,99×** no `ping` (que não a toma) e **1,51–1,59×** no `varrer` — ela come ~20% do paralelismo na leitura e ~25% na escrita já com dois clientes | `DESEMPENHO.md` §14, **com controle** |
 | **N** | **Uma leitura segura a trava 23× mais tempo que uma gravação** no padrão `por_lote`: 3.122 µs contra 137 µs | `CONCORRENCIA.md` §7.1 |
 | **N** | **Mandar parar não para.** São **4 de 76** seções críticas com ponto de cancelamento; nas outras 72 o pedido de cancelamento não é atendido | `CONCORRENCIA.md` §7.2; `bancada/concorrencia/mapa-da-trava.py` |
-| **N** | **Sem MVCC e sem leitura repetível.** Entre duas leituras da mesma transação, outra pode ter confirmado | `TRANSACOES.md` §11.1 |
+| **N** | **Sem MVCC. Sem leitura repetível para quem não pede.** Entre duas leituras da mesma transação, outra pode ter confirmado, a não ser que a transação tenha pedido `"leitura_repetivel": true` — desde 16/09/2026 isso fecha pela trava compartilhada, sem MVCC (§1.3 acima) | `TRANSACOES.md` §11.1; `ACID.md` §4.5 |
 | **N** | **Não há trava de arquivo nem de registro: um processo por diretório**, e **nada impede o segundo**. O caso fácil de acontecer é a CLI `phxsql` num diretório que o `phxsqld` está servindo | `FORMATO.md` §17, e conferido nesta rodada: uma varredura por `flock`, `LOCK_EX`, `libc::open`, `custom_flags` e `create_new(true)` nos oito crates devolve **dois** acertos, e nenhum é trava de instância — a criação de um volume novo (`volume.rs:258`) e a gravação atômica do `config.json` (`config.rs:1219`) |
 | **N** | **Transação entre databases não existe** (*two-phase commit*), e a recusa é fundamentada | `TRANSACOES.md` §2.3 e §11.5 |
 

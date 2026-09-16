@@ -304,6 +304,11 @@ pub struct Transacao {
     pub modo: crate::travas::Modo,
     /// O que fazer com tabela fora do escopo declarado.
     pub escopo_modo: crate::travas::EscopoModo,
+    /// Leitura repetivel PELA TRAVA (`docs/SOMBRA.md` §5b), pedida na
+    /// abertura. Quando ligada, cada tabela que a transacao LE recebe a trava
+    /// compartilhada (S) ate o fim -- o escritor espera o leitor, e a releitura
+    /// devolve o mesmo estado. Quem nao pede continua exatamente como antes.
+    pub leitura_repetivel: bool,
     /// As tabelas que a abertura DECLAROU, em ordem canonica.
     pub declaradas: Vec<String>,
     /// As declaradas mais as que as dependencias do catalogo alcancam.
@@ -429,7 +434,15 @@ impl Transacao {
                 "transaction_start_time",
                 Json::texto_de(phxsql_core::datahora::instante_iso(self.desde_ms)),
             ),
-            ("transaction_isolation", Json::texto_de(NIVEL_DE_ISOLAMENTO)),
+            (
+                "transaction_isolation",
+                Json::texto_de(if self.leitura_repetivel {
+                    NIVEL_DE_ISOLAMENTO_REPETIVEL
+                } else {
+                    NIVEL_DE_ISOLAMENTO
+                }),
+            ),
+            ("leitura_repetivel", Json::Bool(self.leitura_repetivel)),
             (
                 "idade_ms",
                 Json::de_u64((agora_ms - self.desde_ms).max(0) as u64),
@@ -499,6 +512,16 @@ impl Transacao {
 pub const NIVEL_DE_ISOLAMENTO: &str =
     "escrita serializavel por tabela, leitura confirmada e nao bloqueante, sem leitura repetivel";
 
+/// O nivel quando a transacao PEDIU leitura repetivel (`docs/SOMBRA.md` §5b).
+///
+/// E leitura repetivel POR EXCLUSAO, nao por versao: a transacao segura a
+/// trava compartilhada (S) em cada tabela que le, ate o fim, e nenhum escritor
+/// grava nessas tabelas enquanto isso -- logo a releitura devolve o mesmo
+/// estado e nenhuma linha nasce no meio (sem fantasma). Continua sem
+/// SERIALIZABLE: o *write skew* nao esta coberto (`SOMBRA.md` §1.4).
+pub const NIVEL_DE_ISOLAMENTO_REPETIVEL: &str =
+    "leitura repetivel pela trava (S por tabela lida, ate o fim), sem fantasma; escrita serializavel por tabela";
+
 // ------------------------------------------------------------- o registro
 
 /// O que a abertura declarou -- os tres prazos e os dois modos.
@@ -516,6 +539,9 @@ pub struct Abertura {
     pub statement_ms: i64,
     pub modo: crate::travas::Modo,
     pub escopo_modo: crate::travas::EscopoModo,
+    /// `"leitura_repetivel": true` na abertura. Opt-in: guarda nova entra
+    /// pedida, nao imposta.
+    pub leitura_repetivel: bool,
 }
 
 /// Quem tem transacao aberta, por conexao.
@@ -571,6 +597,7 @@ impl Transacoes {
                 statement_timeout_ms: prazos.statement_ms,
                 modo: prazos.modo,
                 escopo_modo: prazos.escopo_modo,
+                leitura_repetivel: prazos.leitura_repetivel,
                 declaradas: Vec::new(),
                 efetivas: Vec::new(),
                 expandidas: Vec::new(),
@@ -1515,6 +1542,7 @@ mod testes {
             statement_ms: 0,
             modo: crate::travas::Modo::Auto,
             escopo_modo: crate::travas::EscopoModo::Dinamico,
+            leitura_repetivel: false,
         }
     }
 

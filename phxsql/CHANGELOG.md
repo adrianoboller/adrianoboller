@@ -10,6 +10,75 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — Leitura repetível pela trava, pedida
+
+### Adicionado
+
+- **Leitura repetível, sem MVCC.** O gap «isolamento acima de READ COMMITTED»
+  (pendência #239) foi reaberto pelo dono e resolvido pela via (b) já nomeada
+  em `docs/SOMBRA.md` §5b: quem **pede** ganha leitura repetível e ausência de
+  fantasma pela trava, sem construir a Sombra. Protocolo: `begin` com
+  `"leitura_repetivel": true` (alias `"repeatable_read": true`). SQL: `BEGIN
+  [TRANSACTION] ISOLATION LEVEL REPEATABLE READ`, em qualquer ordem com
+  SCOPE/TIMEOUT/LOCK TIMEOUT/LOCK MODE/STATEMENT TIMEOUT.
+- **A trava compartilhada (S).** `Trava::Compartilhada`
+  (`crates/phxsql-server/src/travas.rs`), tomada em cada tabela que a
+  transação LÊ, pelo portão único `dentro_da_transacao` →
+  `travar_leitura_repetivel` → `esperar_trava` (respeita LOCK TIMEOUT e o
+  TIMEOUT da transação), solta em COMMIT/ROLLBACK/estouro de prazo/queda da
+  conexão. Leitores compartilham a S entre si; ela barra e é barrada por
+  intenção/exclusiva/linha alheia — o `INSERT` disputa `FIM_DA_TABELA` e,
+  sob S, não entra: sem fantasma, de graça.
+- **A ficha nomeia o nível.** `op transacao` devolve `"leitura_repetivel":
+  true/false` e `transaction_isolation` com o texto do nível que está de fato
+  valendo (`NIVEL_DE_ISOLAMENTO`/`NIVEL_DE_ISOLAMENTO_REPETIVEL`,
+  `crates/phxsql-server/src/transacao.rs`).
+- **Prova real nos dois sentidos**
+  (`crates/phxsql-server/src/servidor.rs::testes_leitura_repetivel`):
+  `sem_pedir_a_leitura_continua_nao_repetivel` (controle),
+  `pedindo_a_leitura_e_repetivel_e_o_escritor_espera`,
+  `pedindo_nao_ha_fantasma`, `a_recusa_e_do_leitor_que_pediu`,
+  `duas_repetiveis_que_leram_a_mesma_tabela_nao_se_atropelam` e
+  `pelo_sql_o_select_tambem_toma_a_s` (um `SELECT` pelo SQL, que não tem
+  campo `tabela` e vira `varrer`/`buscar` derivados, toma a S pelo mesmo
+  portão — a prova de que o gancho está no lugar único). Com o gancho
+  removido do portão, 3 falharam e o controle passou. No tradutor,
+  `crates/phxsql-sql/src/transacao.rs::isolation_level_na_abertura` e
+  `set_isolation_level_nomeia_o_nivel_real`.
+
+### Mudado
+
+- **`READ UNCOMMITTED` deixou de ser recusa muda.** É aceito e vale `READ
+  COMMITTED` — como o PostgreSQL(R), o motor nunca lê sujo.
+- **A mensagem do `SET TRANSACTION ISOLATION LEVEL X`** continua recusando (o
+  tradutor não guarda estado de sessão), mas agora aponta o caminho que
+  funciona: `BEGIN ISOLATION LEVEL REPEATABLE READ`.
+- **Textos de tela novos pela fábrica de idiomas:** `tela.tx_isolamento_a` e
+  `tela.tx_isolamento_b`.
+
+### Sabido
+
+- **Não há detector de impasse.** Duas transações repetíveis que leram a
+  mesma tabela e tentam escrever recebem `LOCK TIMEOUT` nos dois sentidos — o
+  prazo resolve, sem nenhuma completar com um resultado quebrado.
+- **Uma falha não reproduzida em `uuid::tests::v7_nunca_repete_nem_anda_para_tras`.**
+  Na primeira corrida da suíte inteira desta rodada, com clippy e uma segunda
+  suíte rodando ao mesmo tempo em 4 CPUs, esse teste do `phxsql-core` falhou
+  uma vez; o log da corrida só guardou a linha do pânico, não os dois ids. Em
+  seguida: 5 corridas do teste sozinho, 6 da suíte do crate e 1 da suíte
+  inteira sem fail-fast, todas verdes (12 verdes, 1 vermelho). O gerador é
+  monotônico sob o mutex pela leitura do código, e ninguém tocou nesse
+  arquivo desde o commit que o criou. Fica registrado como não explicado
+  (pendência #247) em vez de sumir — teste que falha uma vez sem motivo é
+  pior que teste que falta, porque ninguém sabe em que confiar.
+- **`SERIALIZABLE` não se reivindica.** `ISOLATION LEVEL SERIALIZABLE` recusa
+  nomeando o que existe; o que se afirma é só o que os testes medem.
+- **A Sombra/MVCC continua parada.** A via (b) resolveu o gap sem precisar
+  dela; o território que sobra é só o leitor longo que não pode pagar o
+  escritor esperando.
+
+---
+
 ## Não lançado — SQL: `UPDATE`/`DELETE` por faixa
 
 ### Adicionado

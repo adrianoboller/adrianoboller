@@ -617,6 +617,18 @@ contrário — meia razão a menos para implementá-lo.
 > separadas o veem **73 de 400**. É esse 73 que a Sombra zera —
 > `docs/SOMBRA.md` §1.
 
+> **ATUALIZAÇÃO — 16/09/2026: a frase envelheceu de novo, e desta vez o buraco
+> fechou sem a Sombra.** O dono reabriu o gap e escolheu a via (b) do
+> `docs/SOMBRA.md` §5b: leitura repetível **pela trava, pedida**
+> (`"leitura_repetivel": true` no `begin`, `BEGIN ISOLATION LEVEL REPEATABLE
+> READ` no SQL). Quem pede segura a trava compartilhada em cada tabela que lê
+> até o fim da transação, e o 73 de 400 acima passa a ser **0 de 400** para
+> quem pediu (`docs/ACID.md` §4.5). Isso não zera o mesmo jeito que a Sombra
+> zeraria: não há versão, não há cópia — é exclusão, não *snapshot*, e o preço
+> é o escritor esperar o leitor que pediu. A Sombra/MVCC continua **não
+> implementada**; o que a justificaria agora é só o leitor longo que não pode
+> pagar essa espera.
+
 *(Mudança proposta, não aplicada: `docs/TRANSACOES.md` não é desta frente.)*
 
 ---
@@ -1344,11 +1356,20 @@ menor que um gestor de versões, e não é uma linha. *Documento que se contradi
 na mesma página é pior que documento que falta, porque quem lê a página certa
 sai convencido.*
 
-**NÃO decide a correção, e é aqui que a Sombra continua de pé.** A §4.3 já
-tinha nomeado a única coisa que só o MVCC dá: **leitura repetível**. Uma
-varredura longa hoje enxerga linhas gravadas no meio dela, e nenhum `RwLock`
-conserta isso — ele torna os leitores simultâneos, não consistentes. Esse é um
-defeito de *resultado*, não de *tempo*, e nenhuma medição de p99 o mostraria.
+**NÃO decide a correção, e é aqui que a Sombra continua de pé — mas com o
+território menor.** A §4.3 tinha nomeado a única coisa que só o MVCC dava:
+**leitura repetível**. Uma varredura longa, sem pedir nada, hoje enxerga
+linhas gravadas no meio dela, e nenhum `RwLock` conserta isso — ele torna os
+leitores simultâneos, não consistentes. Esse é um defeito de *resultado*, não
+de *tempo*, e nenhuma medição de p99 o mostraria.
+
+> **ATUALIZAÇÃO — 16/09/2026.** «Só o MVCC dá» deixou de ser verdade: o dono
+> reabriu o gap e a via (b) do `docs/SOMBRA.md` §5b entrega leitura repetível
+> **pela trava, pedida**, sem MVCC nenhum (`docs/ACID.md` §4.5). O que
+> continua exclusivo do MVCC é entregar isso **sem** o escritor esperar o
+> leitor — a via (b) resolve o defeito de resultado pagando um preço de
+> tempo que a Sombra não pagaria. A Sombra fica de pé só para quem tem leitor
+> longo e não pode pagar essa espera.
 
 **A premissa que morreu é a de velocidade, e ela era a que estava escrita.** Foi
 a §5 deste documento que disse *«MVCC não é substituto da SP000011»*; agora há
@@ -2156,9 +2177,13 @@ não se mede** — e o citado teria errado a faixa nos dois sentidos.
   continua sendo um escritor segurando a trava por trabalho que não é dele, e
   nem o `RwLock` nem o MVCC o consertam. A bancada roda com uma tabela.
 * **Nada sobre leitura repetível** (§4.3, §11.3): a ficha compartilhada torna
-  os leitores simultâneos, **não consistentes**. Uma varredura longa continua
-  enxergando linha gravada no meio dela. É defeito de *resultado*, e nenhuma
-  medição de p99 o mostraria.
+  os leitores simultâneos, **não consistentes**, para quem **não pede**. Uma
+  varredura longa sem pedir continua enxergando linha gravada no meio dela. É
+  defeito de *resultado*, e nenhuma medição de p99 o mostraria. **Desde
+  16/09/2026** quem pede `"leitura_repetivel": true` fecha isso pela trava
+  compartilhada (`docs/ACID.md` §4.5) — esta bancada não mediu esse regime, e o
+  preço dele (escritor esperando o leitor) é outro número, ainda por medir
+  aqui.
 * **Nada sobre as outras 75 seções.** Elas continuam exclusivas por decisão, e
   a segunda leva entra medida.
 

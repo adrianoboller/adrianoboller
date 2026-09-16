@@ -35,14 +35,20 @@ A resposta não é «sim» nem «não» para nenhuma das quatro. É esta:
 |---|---|---|---|
 | **A** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não consome slot, rowid nem evento; uma queda no meio da passada é **completada** no arranque pela marca `.tx`; dentro da transação a **cascata** do `ao_alterar` entra no conjunto de escrita (ACID-C, §2.4) — o `ROLLBACK` a alcança e o `COMMIT` a conta | fora de transação, a cascata do `atualizar` solto não é atômica por desenho — uma queda no meio dela é **denunciada ou consertada**, nunca silenciosa (§2.4) | nada: a marca `.tx` sincroniza nos três regimes |
 | **C** | tipo, tamanho, obrigatoriedade, unicidade e **integridade referencial** são impostos na gravação, em toda porta local; «nunca se mata o pai que tem filhos» vale de vez e suave | a réplica **aplica, não julga** — ela não confere o que o outro servidor já julgou; `SET NULL` não existe e não vem; a falta do índice da chave é recusada na **gravação**, não na declaração | `"verificar": false` na chave desliga a conferência daquela chave, e é escolha escrita |
-| **I** | leitura suja **não acontece**; a transação vê a própria escrita; uma **instrução** lê um estado consistente; escrita contra escrita é serializada por linha | **leitura repetível não existe**: entre duas instruções tudo pode mudar. Fantasma, leitura não repetível e **skew de escrita** acontecem, e estão medidos | nada — nenhum ajuste compra leitura repetível hoje |
+| **I** | leitura suja **não acontece**; a transação vê a própria escrita; uma **instrução** lê um estado consistente; escrita contra escrita é serializada por linha; **desde 16/09/2026**, quem pedir `"leitura_repetivel": true` (ou `BEGIN ISOLATION LEVEL REPEATABLE READ`) ganha leitura repetível e ausência de fantasma, pela trava compartilhada (§4.5) | por padrão (sem pedir) **leitura repetível não existe**: entre duas instruções tudo pode mudar. Fantasma, leitura não repetível e **skew de escrita** acontecem nesse regime, e estão medidos; `SERIALIZABLE` não se reivindica em regime nenhum | `"leitura_repetivel": true` no `begin`, ou `ISOLATION LEVEL REPEATABLE READ` no `BEGIN` SQL |
 | **D** | a marca `.tx` é sincronizada **antes** da passada e é o ponto de compromisso; um `COMMIT` que respondeu OK volta depois da queda nos três regimes | em `por_lote` (o padrão) e em `sistema`, uma escrita **comum** responde OK sem nenhum `fsync`; quem abre mão é quem configurou | `recursos.durabilidade`, e é o campo que mais muda o significado de «OK» |
 
-O nome que o próprio servidor devolve em `transaction_isolation`, e ele
-continua exato:
+O nome que o próprio servidor devolve em `transaction_isolation` muda com o
+pedido. Por padrão, sem pedir leitura repetível, continua exato o texto de
+sempre:
 
 > *escrita serializável por tabela, leitura confirmada e não bloqueante, sem
 > leitura repetível.*
+
+Quem pediu `"leitura_repetivel": true` (ou `BEGIN ISOLATION LEVEL REPEATABLE
+READ`) recebe, no mesmo campo, o nome do nível que está de fato valendo —
+constantes `NIVEL_DE_ISOLAMENTO` e `NIVEL_DE_ISOLAMENTO_REPETIVEL`, em
+`crates/phxsql-server/src/transacao.rs`. Ver §4.5.
 
 ---
 
@@ -96,6 +102,12 @@ que é exatamente a mão que este documento não tem.
 
 **32 afirmações, 0 sem confirmar.** Medidas contra `phxsqld 0.18.0 (41e82efa97c8) x86_64-unknown-linux-gnu`.
 <!-- FIM: afirmacoes -->
+
+**Escopo das linhas I sobre leitura repetível e fantasma (73 de 400, 97 de
+400):** a corrida acima mediu o regime **padrão**, sem nenhuma das duas
+transações pedir `"leitura_repetivel": true`. Desde 16/09/2026 quem pede fecha
+os dois — as provas ficam em §4.5, e o transcrito acima não muda porque ele é
+gerado da corrida daquele regime.
 
 ---
 
@@ -369,9 +381,12 @@ em `acidc_a_cascata_entra_no_conjunto_de_escrita_da_transacao` e nas irmãs de
 rollback e de recuperação. Ver a §2.4 para o mecanismo (super-journal) e o preço
 (portão antes do trabalho, tabelas filhas travadas só quando há cascata).
 
-O que **não** entra por aqui, e continua sendo o que derruba *ACID compliant*:
-o isolamento é `READ COMMITTED` (§4), não há leitura repetível, e a cascata de
-uma escrita SOLTA (fora de transação) não é atômica por desenho (§2.4).
+O que **não** entra por aqui, e continua sendo o que derruba *ACID compliant*
+seco: por padrão o isolamento é `READ COMMITTED` (§4), sem pedir não há
+leitura repetível, e a cascata de uma escrita SOLTA (fora de transação) não é
+atômica por desenho (§2.4). Desde 16/09/2026 quem pede `"leitura_repetivel":
+true` ganha leitura repetível pela trava (§4.5); o nome que ainda não se
+reivindica é `SERIALIZABLE`.
 
 ---
 
@@ -408,11 +423,18 @@ leitura suja.
 Os fenômenos que **acontecem** e que impedem o nível seguinte: **leitura não repetível**, **fantasma**. E o **skew de escrita**, que a leitura moderna cobra do `SERIALIZABLE`, acontece.
 <!-- FIM: i-nivel -->
 
-**Não é ANSI `SERIALIZABLE`**, e não pode ser chamado assim — a leitura
-repetível não existe e o skew de escrita acontece. Entre **escritores**, a
-serialização é real e por linha: a segunda escrita espera o `LOCK TIMEOUT` e
-recebe um erro nomeado, ou, se for escrita comum sem transação, recebe
-`4005 EM_TRANSACAO` com `repetir: true` na hora, sem esperar nada.
+**Não é ANSI `SERIALIZABLE`**, e não pode ser chamado assim — o nível de cima é
+o que o padrão entrega, **sem pedir nada**: leitura não repetível e fantasma
+acontecem, e o skew de escrita acontece. Entre **escritores**, a serialização
+é real e por linha: a segunda escrita espera o `LOCK TIMEOUT` e recebe um erro
+nomeado, ou, se for escrita comum sem transação, recebe `4005 EM_TRANSACAO`
+com `repetir: true` na hora, sem esperar nada.
+
+**Desde 16/09/2026, quem pede sai deste nível.** `"leitura_repetivel": true`
+(ou `BEGIN ISOLATION LEVEL REPEATABLE READ`) fecha a leitura não repetível e o
+fantasma pela trava compartilhada — §4.5, onde está também o que acontece com
+o skew de escrita nesse regime (não há detector de impasse; o prazo resolve).
+`SERIALIZABLE` continua não se reivindicando em regime nenhum.
 
 ### 4.3 A matriz que responde o que a transação compra para quem LÊ
 
@@ -439,19 +461,21 @@ o escritor deixou as duas linhas fora de acordo. Com a transação, o mesmo
 instrumento, na mesma tabela, nunca mais vê aquele estado. A única diferença
 entre as duas colunas é a transação.
 
-**Linha de baixo — é o que falta.** Duas leituras separadas veem o par
-inconsistente **mesmo** contra um escritor em transação: o `COMMIT` é atômico,
-mas ele acontece **inteiro** entre a primeira leitura e a segunda. É a leitura
-repetível que não existe, medida sobre um invariante em vez de sobre uma linha
-só.
+**Linha de baixo — é o que faltava por padrão.** Duas leituras separadas veem o
+par inconsistente **mesmo** contra um escritor em transação: o `COMMIT` é
+atômico, mas ele acontece **inteiro** entre a primeira leitura e a segunda. É a
+leitura repetível que a corrida acima mediu — sem nenhuma das duas transações
+pedir `"leitura_repetivel": true`. Desde 16/09/2026 quem pede fecha isto pela
+trava (§4.5); esta matriz não foi remedida sob pedido e continua valendo,
+sem alteração, para quem **não** pede.
 
 E uma leitura que **não** se deve fazer dessa matriz: o número baixo da célula
 de baixo à esquerda **não é garantia nenhuma**. O mesmo par de leituras quebra
 dezenas de vezes na coluna ao lado, então o instrumento enxerga; ali ele é
 baixo porque o ciclo do escritor solto é curto e os pedidos se alternam, e está
 escrito aqui para ninguém o ler como proteção. Quem quiser a garantia de duas
-leituras coerentes não a tem em regime nenhum — é a leitura repetível que não
-existe.
+leituras coerentes sem pedir nada não a tem em regime nenhum — é a leitura
+repetível que, por padrão, não existe (§4.5 para quem pede).
 
 ### 4.4 Duas imprecisões que ficam, e a terceira que o ACID-C fechou
 
@@ -468,6 +492,57 @@ chave antiga até o `COMMIT`; hoje a prova
 `acidc_a_cascata_entra_no_conjunto_de_escrita_da_transacao` mede a filha em `2`
 dentro da transação, e a de rollback mede que ela volta a `1` no `ROLLBACK`. Ver
 a §2.4 e a §3.3.
+
+### 4.5 A leitura repetível pela trava, pedida — 16/09/2026
+
+O gap que as §4.1 a §4.3 medem — leitura não repetível e fantasma acontecendo
+por padrão — foi **reaberto pelo dono e resolvido**, sem construir a Sombra
+(`docs/SOMBRA.md`, via (b) da §5): quem **pede** ganha os dois fechados pela
+trava. A Sombra/MVCC continua parada — este não é o caminho dela.
+
+**Como se pede.** Protocolo: `begin` com `"leitura_repetivel": true` (alias
+`"repeatable_read": true`). SQL: `BEGIN [TRANSACTION] ISOLATION LEVEL
+REPEATABLE READ`, em qualquer ordem com SCOPE/TIMEOUT/LOCK TIMEOUT/LOCK
+MODE/STATEMENT TIMEOUT. `ISOLATION LEVEL READ COMMITTED` é aceito e é o padrão
+(não viaja no pedido). `READ UNCOMMITTED` é aceito e vale READ COMMITTED — como
+o PostgreSQL(R), o motor nunca lê sujo. `ISOLATION LEVEL SERIALIZABLE` recusa,
+nomeando o que existe. `SET TRANSACTION ISOLATION LEVEL X` continua recusado (o
+tradutor não guarda estado de sessão), e a mensagem aponta `BEGIN ISOLATION
+LEVEL REPEATABLE READ`.
+
+**Mecanismo.** A transação que pediu toma a trava **compartilhada (S)**
+(`Trava::Compartilhada`, `crates/phxsql-server/src/travas.rs`) em cada tabela
+que **lê**, pelo portão único `dentro_da_transacao` →
+`travar_leitura_repetivel` → `esperar_trava` (respeita LOCK TIMEOUT e o
+TIMEOUT da transação). A S fica até COMMIT/ROLLBACK/estouro de prazo/queda da
+conexão (`soltar_tudo`). Leitores compartilham a S entre si. A S barra
+escritor alheio: transação (intenção/exclusiva/linha) espera pelo
+`esperar_trava`; escrita autocommit é recusada NA HORA com `EM_TRANSACAO`
+nomeando quem segura (`barrado_por_travas`, em `portoes_do_pedido`). A S é
+barrada por intenção/exclusiva/linha alheia. O `INSERT` disputa o fim da
+tabela (`FIM_DA_TABELA`), então sob S não entra: **sem fantasma**, de graça.
+Várias tabelas lidas saem coerentes porque cada uma toma a S pelo mesmo
+portão. A ficha (`op transacao`) devolve `"leitura_repetivel": true/false` e
+`transaction_isolation` com o texto do nível que está valendo (§0, §4.2).
+
+**Custo e limite.** Custo zero para quem não pede — o gancho devolve antes de
+qualquer trava. A recusa por LOCK TIMEOUT é do **leitor** que pediu (o escritor
+mantém a vazão). **Não há detector de impasse**: duas transações repetíveis
+que leram a mesma tabela e tentam escrever recebem LOCK TIMEOUT nos dois
+sentidos — o prazo resolve, sem nenhuma completar com um resultado quebrado.
+**Não se reivindica `SERIALIZABLE`**: o que se afirma é só o que os testes
+medem. Quem não pede continua exatamente como antes (READ COMMITTED) — guarda
+nova entra pedida, não imposta.
+
+**Provas** (`crates/phxsql-server/src/servidor.rs::testes_leitura_repetivel`):
+`sem_pedir_a_leitura_continua_nao_repetivel` (controle),
+`pedindo_a_leitura_e_repetivel_e_o_escritor_espera`, `pedindo_nao_ha_fantasma`,
+`a_recusa_e_do_leitor_que_pediu`,
+`duas_repetiveis_que_leram_a_mesma_tabela_nao_se_atropelam` (esta última
+escrita depois da medição abaixo). Prova real nos dois sentidos, medida em
+16/09/2026: com o gancho removido do portão, **3 falharam e o controle
+passou**. Em `crates/phxsql-sql/src/transacao.rs`: `isolation_level_na_abertura`
+e `set_isolation_level_nomeia_o_nivel_real`. Ver `docs/PENDENCIAS.md` #246.
 
 ---
 
@@ -582,10 +657,14 @@ gravado e depois liberado por falha de E/S no índice (`operacoes IMPOSSIVEIS`,
   `ao_alterar` passou a entrar no conjunto de escrita (ACID-C), então o
   `ROLLBACK` a desfaz e o escopo efetivo a mostra. A réplica aplica e não julga,
   por decisão medida.
-* **I — isolamento: leitura confirmada, sem leitura repetível.** `READ
-  COMMITTED` pela norma, com escrita serializada por linha entre transações. A
-  transação compra a consistência de **uma** instrução; entre duas instruções
-  não há nada, e o skew de escrita acontece.
+* **I — isolamento: leitura confirmada por padrão; leitura repetível pela
+  trava, pedida.** `READ COMMITTED` é o que se entrega sem pedir nada, com
+  escrita serializada por linha entre transações. Quem pede
+  `"leitura_repetivel": true` (ou `ISOLATION LEVEL REPEATABLE READ`) ganha
+  leitura repetível e ausência de fantasma pela trava compartilhada, desde
+  16/09/2026 (§4.5) — pagando o escritor esperar o leitor. `SERIALIZABLE`
+  continua não se reivindicando em regime nenhum, e sem pedir a transação
+  continua comprando só a consistência de **uma** instrução.
 * **D — durabilidade: configurável, e o padrão não é «no disco».** A marca
   `.tx` é sincronizada sempre e é o ponto de compromisso da transação. Fora de
   transação, `por_lote` responde OK antes de o dado ir à mídia — e é escolha de
@@ -601,7 +680,7 @@ o que segue é o custo medido de cada saída.
 | opção | o que se ganha | o que custa |
 |---|---|---|
 | **(a) tirar a afirmação** | zero risco de contestação; nenhum documento precisa de nota de rodapé | perde-se uma palavra que o mercado procura, e que hoje é **em boa parte** verdade — atomicidade e durabilidade estão entregues e medidas |
-| **(b) manter *ACID compliant* seco** | a palavra que o mercado procura | **é falso hoje**, e o ponto que o derruba não é opinião: `SERIALIZABLE` não existe, leitura repetível não existe, e o skew de escrita está medido acontecendo. Um comprador técnico que rodar esta bancada acha em cinco minutos |
+| **(b) manter *ACID compliant* seco** | a palavra que o mercado procura | **é falso hoje**, e o ponto que o derruba não é opinião: `SERIALIZABLE` não existe (o nome não se reivindica em regime nenhum), e o skew de escrita está medido acontecendo por padrão. A leitura repetível **deixou de ser o ponto que derruba** — desde 16/09/2026 ela existe pela trava, para quem pede (§4.5) —, mas o que falta continua bastando para reprovar a frase seca. Um comprador técnico que rodar esta bancada acha em cinco minutos |
 | **(c) qualificar na própria frase** — *ACID com isolamento **read committed*** | verdadeiro, verificável, e é o que MySQL(R) e PostgreSQL(R) fazem no padrão deles | a frase fica mais longa; e obriga a manter a qualificação em todo lugar que a repetir |
 | **(d) trocar por uma afirmação que é inteira** — p. ex. *transações atômicas e duráveis, integridade referencial imposta* | tudo o que se afirma está medido nesta página, letra por letra | não usa a sigla, então não casa com busca por «ACID» |
 
@@ -611,14 +690,17 @@ precisa. Entre as duas, (c) casa com o vocabulário do mercado e é o que os doi
 grandes fazem; (d) é mais forte tecnicamente porque não pede nota de rodapé.
 
 **O que continua falso em qualquer redação, e não pode aparecer:**
-*SERIALIZABLE*, *snapshot isolation*, *MVCC*, *leitura repetível*, e *ACID
-compliant* **sem** qualificação. O MVCC está recusado com o motivo em
-`docs/TRANSACOES.md` §11.1 — aqui o rowid é endereço.
+*SERIALIZABLE*, *snapshot isolation*, *MVCC*, e *ACID compliant* **sem**
+qualificação. *Leitura repetível* **sem qualificação** também continua falsa —
+por padrão ela não existe —, mas desde 16/09/2026 é verdade **qualificada**:
+*leitura repetível sob pedido, pela trava* (§4.5). O MVCC está recusado com o
+motivo em `docs/TRANSACOES.md` §11.1 — aqui o rowid é endereço.
 
 **O que a marca já pode afirmar sem ressalva nenhuma**, porque está medido
 nesta página: *transações com `BEGIN`/`COMMIT`/`ROLLBACK` e `SAVEPOINT`*,
 *commit atômico e recuperação automática no arranque*, *integridade referencial
-imposta na gravação*, *durabilidade configurável*.
+imposta na gravação*, *durabilidade configurável*, e *leitura repetível sob
+pedido, pela trava*.
 
 ---
 

@@ -177,11 +177,15 @@ premissa «sem transação não há o A nem o I» caducou. E o **C parcial tamb�
 caducou**: desde o ACID-C (15/09) a cascata do `ao_alterar` entra INTEIRA no
 conjunto de escrita da transação (super-journal, marca v3), então dentro da
 transação o `ROLLBACK` a alcança, o `COMMIT` a conta e o read-your-own-writes a
-mostra. O que ainda derruba *ACID compliant* seco é **só o I**: o isolamento
-entregue é `READ COMMITTED`, sem leitura repetível (a Sombra que a compraria
-está parada por decisão do dono, `docs/SOMBRA.md`). Ver `docs/ACID.md`
-§2.4/§3.3/§4.4 e `docs/PENDENCIAS.md` #189. Não repita *ACID compliant* em
-documento técnico.
+mostra. O que ainda derruba *ACID compliant* seco é **só o I, e só por
+padrão**: o isolamento entregue sem pedir é `READ COMMITTED`. A **leitura
+repetível existe desde 16/09/2026, pela trava e pedida** — `"leitura_repetivel":
+true` no `begin`, `BEGIN ISOLATION LEVEL REPEATABLE READ` no SQL: é a via (b)
+do `docs/SOMBRA.md` §5b, que o dono reabriu e escolheu; a Sombra/MVCC continua
+parada. Quem pede segura a compartilhada (S) em cada tabela que lê, até o fim;
+quem não pede continua em leitura confirmada; e `SERIALIZABLE` não se reivindica
+sem prova. Ver `docs/ACID.md` §2.4/§3.3/§4.4 e `docs/PENDENCIAS.md` #189 e
+#246. Não repita *ACID compliant* em documento técnico.
 
 ## Regras que não se quebram
 
@@ -345,7 +349,11 @@ calado, nem se ignora calado. Dois choques vivos hoje dizem a diferença:
   (MySQL e MariaDB até como padrão). A convergência diz que deveríamos ter.
   Mas quem compraria isso é a *Sombra*/MVCC, **parada por decisão do dono**
   (`docs/SOMBRA.md`). Convergência não reabre o que o dono fechou — vira item
-  medido na pendência, não aceite automático.
+  medido na pendência, não aceite automático. **Resolvido pelo dono em
+  16/09/2026**: ele reabriu o gap e escolheu a via (b) do `SOMBRA.md` — leitura
+  repetível **pela trava, pedida** — sem reabrir a Sombra. O choque ensinou o
+  formato: a convergência entrou pelo caminho que a pétrea permitia, e não
+  pelo que o dono tinha fechado.
 
 Ou seja: onde os três concordam e **nada nosso se opõe**, entra sem pergunta —
 é o caso comum, e poupar a pergunta é o ganho que o dono pediu. Onde concordam

@@ -70,9 +70,9 @@ medido, e é isso que a seção final de gaps fechados faz.
 | **229** — auto-number, o que falta | Itens `Uuid`, `verificar`+`reparar` e `Sequence` no INSERT são código sem formato; `inicio`/`passo`, `IDENTITY ALWAYS` e sequência nomeada mudam o PSCH → decisão do dono/DBA, **entram cedo**. | misto: código nosso + formato-dono |
 | **238** — ODBC, parâmetro de SAÍDA | Premissa "precisa de operação de protocolo nova" **morreu medida**: o `CALL` já devolve `saida` (valor além da linha). Não é decisão de protocolo — é conserto no driver. | código nosso (B / driver), **não** protocolo |
 | **230** — aba de Usuários | As três operações de cadastro já existem (pedido 221); a tela só lê. É construção de tela sobre protocolo pronto + chaves de idioma. | construção de tela (E) |
-| **239** — isolamento acima de READ COMMITTED + TLS | Parado por decisão do dono; custo medido e na mesa. | fechado-dono |
+| **239** — isolamento acima de READ COMMITTED + TLS | **Metade isolamento ENTREGUE em 16/09/2026** — dono reabriu e escolheu a via (b) do `SOMBRA.md` §5b: leitura repetível pela trava, pedida. **Metade TLS continua parada** por decisão do dono; custo medido e na mesa. | metade entregue / metade fechado-dono |
 | **164** — trava global / MVCC | `RwLock` ganha 2,48×–2,99× em leitura, mas custa o invariante `!Sync`; parado. | fechado-dono |
-| **179** — teto do MVCC / Sombra | Ganho de velocidade morreu medido (~1,00×–1,21× no padrão `por_lote`); a Sombra só compraria leitura repetível. Parado. | fechado-dono |
+| **179** — teto do MVCC / Sombra | Ganho de velocidade morreu medido (~1,00×–1,21× no padrão `por_lote`); a Sombra só compraria leitura repetível — **e desde 16/09/2026 a leitura repetível já saiu pela trava (GAP 239), sem a Sombra**. Sombra/MVCC continua parada; o que sobra é só o leitor longo que não pode pagar o escritor esperando. | fechado-dono |
 | **207** — quórum de escrita | Rota do canal aberto já **decidida** pelo dono; falta decidir o significado do "ok" — não é reabertura, é o próximo passo do próprio dono. | fechado-dono (rota decidida) |
 
 ---
@@ -405,15 +405,27 @@ de formato.
 
 ### GAP 239 — isolamento acima de READ COMMITTED + TLS no transporte
 
-**Custo medido, na mesa** (`docs/propostas/comparativo-19.md` linhas 53–63):
-isolamento acima de READ COMMITTED é a Sombra, parada em 05/09 — aceitar
-`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE` sem entregar a garantia real
-"seria mentira com aparência de capacidade". TLS no transporte bate na pétrea
-de zero dependências externas (TLS 1.3 em casa exigiria X.509/ASN.1 + ECDSA
-P-256 + gestão de certificado); a cifra do fio (Noise) já protege a porta de
-dados; a auditoria da 0.18 propôs exceção só na camada de rede (proxy que
-termina TLS). Choque com pétrea nomeado, não reaberto. **Decisão do dono —
-não reabrir.**
+**Metade isolamento — ENTREGUE em 16/09/2026, reaberta pelo dono.** O custo
+estava medido e na mesa desde 05/09: a Sombra (MVCC) não se justificava só
+pela leitura repetível, e aceitar `SET TRANSACTION ISOLATION LEVEL
+SERIALIZABLE` sem entregar a garantia real "seria mentira com aparência de
+capacidade". O dono **reabriu** o gap e escolheu, não a Sombra, mas a via (b)
+já nomeada em `docs/SOMBRA.md` §5b: **leitura repetível pela trava, pedida**
+— `"leitura_repetivel": true` no `begin`, `BEGIN ISOLATION LEVEL REPEATABLE
+READ` no SQL. Ela fecha leitura não repetível e fantasma pela trava
+compartilhada, sem MVCC, com prova em `crates/phxsql-server/src/servidor.rs
+::testes_leitura_repetivel` (ver `docs/ACID.md` §4.5, `docs/PENDENCIAS.md`
+#246). `SERIALIZABLE` continua **não** se reivindicando — a mentira que a
+recusa de 05/09 evitava continua evitada, porque o nome que se afirma agora é
+só o que os testes medem. A Sombra/MVCC em si **continua parada**; a via (b)
+resolveu sem precisar dela.
+
+**Metade TLS — continua parada, sem mudança.** TLS no transporte bate na
+pétrea de zero dependências externas (TLS 1.3 em casa exigiria X.509/ASN.1 +
+ECDSA P-256 + gestão de certificado); a cifra do fio (Noise) já protege a
+porta de dados; a auditoria da 0.18 propôs exceção só na camada de rede (proxy
+que termina TLS). Choque com pétrea nomeado, não reaberto. **Decisão do dono
+— não reabrir.**
 
 ### GAP 164 — a trava global e o MVCC
 
@@ -435,6 +447,12 @@ repetível e fantasma; não fecha *write skew*, que piora). "Quem a defender
 por velocidade está defendendo um número que morreu medido." **Parada por
 decisão do dono, sem urgência de formato (a Sombra é em RAM, zero PSCH) — não
 reabrir.**
+
+> **ATUALIZAÇÃO (16/09/2026):** o motivo de correção que justificaria a Sombra
+> ficou menor. A leitura repetível — a única coisa que só o MVCC dava — passou
+> a existir pela trava, pedida (GAP 239). O território exclusivo que resta
+> para a Sombra é só o leitor longo que não pode pagar o escritor esperando; a
+> Sombra continua parada, e a decisão continua do dono.
 
 ### GAP 207 — transação com quórum de escrita
 
@@ -482,10 +500,12 @@ sem dono, primeiro.**
 6. **229 — os itens com formato** (`inicio`/`passo` #6, `IDENTITY ALWAYS`
    #7, sequência nomeada #8): vão ao dono/DBA com o custo na mesa — entram
    cedo (nova versão de PSCH que lê o antigo com padrões) ou viram migração.
-7. **239 / 164 / 179 / 207 — nada a fazer nesta rodada:** fechados/parados
-   por decisão do dono (239/164/179), ou rota já decidida aguardando o dono
-   definir o significado do "ok" (207). Custo documentado acima; não
-   reabrir.
+7. **239 / 164 / 179 / 207:** a metade isolamento do 239 **foi feita**, fora
+   desta rodada de priorização — o dono reabriu em 16/09/2026 e escolheu a
+   via (b) (leitura repetível pela trava, pedida). A metade TLS do 239, e o
+   164/179, seguem **fechados/parados por decisão do dono**; o 207 segue com
+   a rota já decidida aguardando o dono definir o significado do "ok". Custo
+   documentado acima; não reabrir os que continuam parados.
 
 **Regra que atravessou toda a pesquisa:** onde o número já estava medido, foi
 citado com caminho e seção; onde faltava, ficou marcado **"A MEDIR NA FASE

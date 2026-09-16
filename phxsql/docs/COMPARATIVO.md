@@ -1,12 +1,12 @@
 # O que ainda falta no PhxSql, medido contra quem tem
 
-Medido em **08/09/2026**, uma pergunta de cada vez, contra os motores que
+Medido em **16/09/2026**, uma pergunta de cada vez, contra os motores que
 estão **vivos nesta máquina**. Este documento não é o `COMPARACAO.md` (o que
 os motores maduros têm e nós **trouxemos**) nem o `CONCORRENTES.md` (o caminho
 de inserção deles, lido no fonte). É o outro lado: **o que continua faltando
 aqui**, e quem já resolveu.
 
-**2 de 19 capacidades** faltam ou estão pela metade no PhxSql, e **17**
+**1 de 19 capacidades** faltam ou estão pela metade no PhxSql, e **18**
 respondem `tem` — medidas contra o motor vivo desta árvore, nunca digitadas. O
 que falta está na tabela com a recusa que o motor devolveu, e a §8 diz o que é
 decisão e o que é buraco.
@@ -28,7 +28,7 @@ e a mensagem de recusa fica guardada no JSON. Estas versões responderam:
 
 | motor | versão que respondeu |
 |---|---|
-| PhxSql | `phxsqld 0.18.0 (6684eeb62561-sujo) x86_64-unknown-linux-gnu` |
+| PhxSql | `phxsqld 0.18.0 (6e717e6579ad-sujo) x86_64-unknown-linux-gnu` |
 | PostgreSQL(R) | `16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)` |
 | MySQL(R) | `8.0.46-0ubuntu0.24.04.3` |
 | SQLite(R) | `3.45.1` |
@@ -110,7 +110,7 @@ recusa é a própria resposta pedem isso pelo nome (`exigir=False`).
 | `DEFAULT` de coluna | SQL | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
 | Coluna calculada (`GENERATED ALWAYS AS`) | SQL | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
 | Upsert (`ON CONFLICT` / `ON DUPLICATE KEY`) | SQL | ✅ | 📄 | ✅ | ✅ | ✅ | ✅ |
-| Nível de isolamento acima de `READ COMMITTED` | SQL | ❌ | ✅ | ✅ | ❌ | ✅ | — |
+| Nível de isolamento acima de `READ COMMITTED` | SQL | ✅ | ✅ | ✅ | ❌ | ✅ | — |
 | Trava por linha nas transações | sonda | ✅ | ✅ | 📄 | ❌ | 📄 | 📄 |
 | TLS no transporte | sonda | ❌ | ✅ | 📄 | ✅ | 📄 | 📄 |
 | Direito por COLUNA | sonda | ✅ | ✅ | 📄 | ❌ | 📄 | 📄 |
@@ -124,7 +124,7 @@ coluna só é exatamente o que esta tabela recusa fazer:
 
 | motor | ✅ | ◐ | ❌ | 📄 | — | soma | procedência |
 |---|---|---|---|---|---|---|---|
-| PhxSql | 17 | 0 | 2 | 0 | 0 | 19 | medido aqui |
+| PhxSql | 18 | 0 | 1 | 0 | 0 | 19 | medido aqui |
 | HFSQL(R) | 12 | 0 | 0 | 7 | 0 | 19 | citado |
 | PostgreSQL(R) | 13 | 0 | 0 | 6 | 0 | 19 | medido aqui |
 | Cassandra(R) | 4 | 2 | 13 | 0 | 0 | 19 | citado |
@@ -238,9 +238,9 @@ Nos vivos: PostgreSQL(R) ✅ &middot; MySQL(R) ✅ &middot; SQLite(R) ✅.
 HFSQL(R) 📄, citado: não apurado.
 Cassandra(R) ✅, citado: TODO INSERT é upsert: ele não lê antes de gravar.
 
-### Nível de isolamento acima de `READ COMMITTED` &mdash; ❌
+### Nível de isolamento acima de `READ COMMITTED` &mdash; ✅
 
-> [SP000018] esquema invalido: SQL, coluna 1: SET TRANSACTION ISOLATION LEVEL SERIALIZABLE n
+> aceitou
 
 Nos vivos: PostgreSQL(R) ✅ &middot; MySQL(R) ✅ &middot; SQLite(R) —.
 HFSQL(R) ✅, citado: a folha anuncia quatro níveis.
@@ -256,7 +256,7 @@ veredito abaixo nomeia onde olhar.
 
 ### Trava por linha nas transações &mdash; ✅
 
-> gestor em crates/phxsql-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:669; pedida em crates/phxsql-server/src/servidor.rs:12174
+> gestor em crates/phxsql-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:704; pedida em crates/phxsql-server/src/servidor.rs:13489
 
 *Vale DENTRO de transação: `esperar_trava` recusa com «sem transação» quem a
 pede fora dela, e aí a trava GLOBAL de dados serializa como antes.*
@@ -320,7 +320,7 @@ Cassandra(R) ◐, citado: reparo por árvore de Merkle diz o intervalo, não a l
 ## 5. O que passou a responder `tem`, e por que a lição continua
 
 Até 07/09/2026 esta seção listava **um** `tem` só — a trava por linha — e o
-título dizia «único» porque era. **17** das **19** linhas responderam `tem`
+título dizia «único» porque era. **18** das **19** linhas responderam `tem`
 nesta remedição (as dezoito do comparativo entraram por contrato, medidas
 contra o motor vivo em vez de digitadas): a maioria porque o motor GANHOU a
 capacidade nesta rodada, e quatro — coluna, PITR, parâmetro e diferenças —
@@ -354,9 +354,11 @@ lower(nome).
 
 **Upsert (`ON CONFLICT` / `ON DUPLICATE KEY`)** — aceitou.
 
+**Nível de isolamento acima de `READ COMMITTED`** — aceitou.
+
 **Trava por linha nas transações** — gestor em crates/phxsql-
-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:669;
-pedida em crates/phxsql-server/src/servidor.rs:12174. Vale DENTRO de
+server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:704;
+pedida em crates/phxsql-server/src/servidor.rs:13489. Vale DENTRO de
 transação: `esperar_trava` recusa com «sem transação» quem a pede fora dela, e
 aí a trava GLOBAL de dados serializa como antes.
 
@@ -401,10 +403,11 @@ título desta seção acabou de provar, **veredito de unicidade também.**
 Três honestidades, e as três mudam como se lê o resto:
 
 1. **Faltar não é o mesmo que estar errado.** Boa parte destas
-   ausências é sequência, não esquecimento: sem nível de isolamento
-   acima de `READ COMMITTED` não adianta afinar trava, e sem
-   subconsulta correlacionada não há `EXISTS` para pedir. A ordem
-   está no `docs/PENDENCIAS.md`.
+   ausências é sequência, não esquecimento: sem subconsulta
+   correlacionada não há `EXISTS` para pedir. A ordem está no
+   `docs/PENDENCIAS.md`. (O exemplo que esta frase dava antes — o
+   nível de isolamento acima de `READ COMMITTED` — deixou de ser
+   ausência em 16/09/2026: é a leitura repetível pela trava, pedida.)
 2. **Duas colunas são de segunda mão.** 2 motores não
    estão nesta máquina; o que a tabela diz deles saiu de leitura
    anterior, e está marcado 📄 célula a célula. Vantagem nossa contra

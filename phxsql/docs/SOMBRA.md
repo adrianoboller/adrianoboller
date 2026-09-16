@@ -18,6 +18,20 @@ alguém a defende com um ganho de desempenho que ninguém mediu.*
 (§8). Onde não houve como medir, está escrito **«não medido»** com o que
 decidiria o número — nomeado vale, estimado não.
 
+> **ATUALIZAÇÃO — 16/09/2026.** O dono reabriu o gap do isolamento acima de
+> READ COMMITTED e escolheu construir a via **(b) da §5**: leitura repetível
+> **pela trava, pedida** (`"leitura_repetivel": true` no `begin`, `BEGIN
+> ISOLATION LEVEL REPEATABLE READ` no SQL). Ela está implementada e provada
+> (`crates/phxsql-server/src/servidor.rs::testes_leitura_repetivel`,
+> `travas.rs`, `crates/phxsql-sql/src/transacao.rs`). Ela entrega exatamente o
+> que a §5(b) descreveu: leitura repetível e ausência de fantasma, sem sombra,
+> sem purga, sem marca e sem mapa — pelo preço já nomeado ali, o escritor
+> espera o leitor que pediu. Ela **não** entrega SERIALIZABLE, e esse nome
+> continua não se reivindicando. **A Sombra/MVCC (o resto deste documento,
+> incluindo a cadeia de versões da §6) continua parada** — a via (b) resolveu
+> o gap sem precisar dela. Ver `docs/PENDENCIAS.md` #246 e `docs/ACID.md`
+> §4.5.
+
 ---
 
 ## 0. O que é a Sombra, em uma tela

@@ -5,6 +5,7 @@
 //! BEGIN TRANSACTION
 //!   SCOPE (clientes, pedidos, pediditens, estoque)
 //!   SCOPE MODE STRICT
+//!   ISOLATION LEVEL REPEATABLE READ
 //!   TIMEOUT 5s
 //!   LOCK TIMEOUT 500ms
 //!   STATEMENT TIMEOUT 2s
@@ -61,6 +62,9 @@ pub struct Comando {
     pub timeout: Option<String>,
     pub lock_timeout: Option<String>,
     pub statement_timeout: Option<String>,
+    /// O nivel pedido em `ISOLATION LEVEL`, ja normalizado: `READ COMMITTED`
+    /// ou `REPEATABLE READ`. `None` e o padrao da casa (`READ COMMITTED`).
+    pub isolamento: Option<String>,
 }
 
 impl Comando {
@@ -86,6 +90,11 @@ impl Comando {
             if let Some(v) = valor {
                 pares.push((campo.into(), Json::texto_de(v)));
             }
+        }
+        // So o que MUDA o padrao viaja: `READ COMMITTED` e o que o servidor
+        // ja faz sem pedir, e mandar `false` seria ruido no pedido.
+        if self.isolamento.as_deref() == Some("REPEATABLE READ") {
+            pares.push(("leitura_repetivel".into(), Json::Bool(true)));
         }
         Json::Objeto(pares)
     }
@@ -183,9 +192,11 @@ pub fn comando(texto: &str) -> Result<Option<Comando>> {
         // Pedido 219 (item 3): `SET TRANSACTION ISOLATION LEVEL X` caia no
         // fallback generico do `sintaxe.rs` -- "SET nao e um comando desta
         // camada" -- que e verdade e nao ajuda: quem le isso nao sabe se o
-        // motor faz ALGUM nivel. `docs/SQL.md` §3 ja registrava a resposta
-        // certa (o motor faz READ COMMITTED e nada acima, sem leitura
-        // repetivel -- `docs/TRANSACOES.md`); faltava o parser dizer isso.
+        // motor faz ALGUM nivel. Desde 16/09/2026 o nivel acima do padrao
+        // EXISTE (leitura repetivel pela trava, `docs/SOMBRA.md` §5b), mas se
+        // pede na abertura -- `BEGIN ISOLATION LEVEL REPEATABLE READ` --,
+        // porque um SET que vale para a transacao SEGUINTE e estado de sessao,
+        // e este tradutor nao tem sessao. A recusa aponta o caminho que existe.
         //
         // So esta forma exata e reconhecida aqui -- `SET autocommit = 0`,
         // `SET search_path ...` e as outras formas de SET continuam caindo
@@ -221,10 +232,13 @@ pub fn comando(texto: &str) -> Result<Option<Comando>> {
             return Err(lexico::erro(
                 pos,
                 &format!(
-                    "SET TRANSACTION ISOLATION LEVEL {pedido} nao existe: o motor faz \
-                     READ COMMITTED e nada acima disso -- sem leitura repetivel, \
-                     REPEATABLE READ e SERIALIZABLE prometeriam o que o motor nao \
-                     faz. docs/TRANSACOES.md"
+                    "SET TRANSACTION ISOLATION LEVEL {pedido} nao existe aqui: este \
+                     tradutor nao guarda estado de sessao para um SET valer na \
+                     transacao seguinte. O nivel se pede na ABERTURA: BEGIN \
+                     ISOLATION LEVEL REPEATABLE READ (leitura repetivel pela \
+                     trava), e READ COMMITTED e o padrao. SERIALIZABLE nao \
+                     existe: o motor nao promete o nome que nao provou. \
+                     docs/TRANSACOES.md"
                 ),
             ));
         }
@@ -322,8 +336,60 @@ fn clausulas(p: &mut Passo<'_>, c: &mut Comando, pos: usize) -> Result<()> {
                 p.i += 1;
                 c.statement_timeout = Some(p.exigir_duracao(pos, "STATEMENT TIMEOUT")?);
             }
+            "ISOLATION" => {
+                p.i += 1;
+                if p.palavra() != "LEVEL" {
+                    return Err(lexico::erro(pos, "esperava ISOLATION LEVEL"));
+                }
+                p.i += 1;
+                c.isolamento = Some(nivel_de_isolamento(p, pos)?);
+            }
             _ => return Ok(()),
         }
+    }
+}
+
+/// `ISOLATION LEVEL X`, e o que cada nivel vira aqui.
+///
+/// `REPEATABLE READ` e a leitura repetivel pela trava (`docs/SOMBRA.md` §5b):
+/// a transacao segura a compartilhada em cada tabela que le, ate o fim.
+/// `READ COMMITTED` e o padrao da casa. `READ UNCOMMITTED` e aceito e vale
+/// READ COMMITTED -- e o que o PostgreSQL faz, e este motor nunca le sujo,
+/// entao nao ha como prometer menos. `SERIALIZABLE` recusa nomeando o que
+/// existe: o motor nao promete o nome que nao provou.
+fn nivel_de_isolamento(p: &mut Passo<'_>, pos: usize) -> Result<String> {
+    let primeira = p.palavra();
+    if primeira.is_empty() {
+        return Err(lexico::erro(
+            pos,
+            "depois de ISOLATION LEVEL esperava READ COMMITTED ou REPEATABLE READ",
+        ));
+    }
+    p.i += 1;
+    let segunda = p.palavra();
+    match (primeira.as_str(), segunda.as_str()) {
+        ("REPEATABLE", "READ") => {
+            p.i += 1;
+            Ok("REPEATABLE READ".into())
+        }
+        ("READ", "COMMITTED") | ("READ", "UNCOMMITTED") => {
+            p.i += 1;
+            Ok("READ COMMITTED".into())
+        }
+        ("SERIALIZABLE", _) => Err(lexico::erro(
+            pos,
+            "ISOLATION LEVEL SERIALIZABLE nao existe: o motor faz READ COMMITTED \
+             (o padrao) e REPEATABLE READ pela trava, pedido na abertura -- \
+             SERIALIZABLE prometeria o nome que o motor nao provou. \
+             docs/TRANSACOES.md",
+        )),
+        (outro, _) => Err(lexico::erro(
+            pos,
+            &format!(
+                "depois de ISOLATION LEVEL esperava READ COMMITTED ou REPEATABLE \
+                 READ, veio {outro:?}"
+            ),
+        )),
     }
 }
 
@@ -589,7 +655,8 @@ mod testes {
     /// Pedido 219 (item 3): `SET TRANSACTION ISOLATION LEVEL X` tinha de
     /// nomear o nivel REAL (READ COMMITTED), e nao cair no generico "SET nao
     /// e um comando desta camada" do `sintaxe.rs` -- que e verdade e nao diz
-    /// nada sobre o que o motor faz.
+    /// nada sobre o que o motor faz. Desde a leitura repetivel pela trava a
+    /// recusa tambem aponta o caminho que EXISTE: pedir na abertura.
     #[test]
     fn set_isolation_level_nomeia_o_nivel_real() {
         let e = comando("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
@@ -604,6 +671,53 @@ mod testes {
             .to_string();
         assert!(e.contains("READ COMMITTED"), "{e}");
         assert!(e.contains("REPEATABLE READ"), "{e}");
+        assert!(e.contains("BEGIN ISOLATION LEVEL REPEATABLE READ"), "{e}");
+    }
+
+    /// `ISOLATION LEVEL REPEATABLE READ` na abertura vira o campo que o
+    /// servidor le (`leitura_repetivel: true`); `READ COMMITTED` e o padrao e
+    /// NAO viaja; `READ UNCOMMITTED` vale READ COMMITTED, como no PostgreSQL,
+    /// porque este motor nunca le sujo; `SERIALIZABLE` recusa nomeando o que
+    /// existe. Com o defeito reposto (a clausula desconhecida), `BEGIN
+    /// ISOLATION ...` cai em «sobrou» e o primeiro assert fica vermelho.
+    #[test]
+    fn isolation_level_na_abertura() {
+        let c = ok("BEGIN ISOLATION LEVEL REPEATABLE READ");
+        assert_eq!(c.isolamento.as_deref(), Some("REPEATABLE READ"));
+        assert!(c.pedido().booleano_ou("leitura_repetivel", false));
+
+        // Em qualquer ordem com as outras clausulas, e com a palavra
+        // TRANSACTION no meio.
+        let c = ok(
+            "BEGIN TRANSACTION TIMEOUT 5s ISOLATION LEVEL REPEATABLE READ \
+             LOCK TIMEOUT 20ms",
+        );
+        assert!(c.pedido().booleano_ou("leitura_repetivel", false));
+        assert_eq!(c.lock_timeout.as_deref(), Some("20ms"));
+
+        for sql in [
+            "BEGIN ISOLATION LEVEL READ COMMITTED",
+            "BEGIN ISOLATION LEVEL READ UNCOMMITTED",
+        ] {
+            let c = ok(sql);
+            assert_eq!(c.isolamento.as_deref(), Some("READ COMMITTED"), "{sql}");
+            assert!(c.pedido().campo("leitura_repetivel").is_none(), "{sql}");
+        }
+        assert!(ok("BEGIN").pedido().campo("leitura_repetivel").is_none());
+
+        let e = comando("BEGIN ISOLATION LEVEL SERIALIZABLE")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("SERIALIZABLE") && e.contains("REPEATABLE READ"),
+            "{e}"
+        );
+        let e = comando("BEGIN ISOLATION LEVEL SNAPSHOT")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("SNAPSHOT"), "{e}");
+        let e = comando("BEGIN ISOLATION READ").unwrap_err().to_string();
+        assert!(e.contains("ISOLATION LEVEL"), "{e}");
     }
 
     /// As OUTRAS formas de `SET` -- que nao sao de isolamento -- continuam

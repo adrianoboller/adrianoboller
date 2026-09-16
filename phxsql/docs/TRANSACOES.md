@@ -276,14 +276,20 @@ de resposta de todo cliente que já existe.
 | | |
 |---|---|
 | **Entre escritores** | **serializável por linha** nas tabelas da transação, com a tabela inteira quando o modo é `TABLE`/`EXCLUSIVE` |
-| **Para quem lê** | **read committed**, e sem bloquear: um leitor nunca vê dado não confirmado, porque **não há dado não confirmado em lugar nenhum** — ele ainda está em RAM |
+| **Para quem lê, por padrão** | **read committed**, e sem bloquear: um leitor nunca vê dado não confirmado, porque **não há dado não confirmado em lugar nenhum** — ele ainda está em RAM |
+| **Para quem pede** (`"leitura_repetivel": true`, desde 16/09/2026) | **repeatable read pela trava compartilhada** — §11.1: a leitura repetível e a ausência de fantasma passam a valer, e o escritor alheio espera |
 | **Para a própria transação** | **read-your-own-writes** (SP000006): ela enxerga o que ela mesma escreveu, e mais nada. Continua **sem *snapshot*** — entre duas leituras dela, outra transação pode ter confirmado |
 
-**Não é ANSI SERIALIZABLE**, e não vai ser chamado assim. O nome que o servidor
-devolve em `transaction_isolation` é o que ele é:
+**Não é ANSI SERIALIZABLE**, e não vai ser chamado assim — nem por quem pede
+leitura repetível. Por padrão, sem pedir nada, o nome que o servidor devolve em
+`transaction_isolation` é o que ele sempre foi:
 
 > *escrita serializável por tabela, leitura confirmada e não bloqueante, sem
 > leitura repetível.*
+
+Quem pediu `"leitura_repetivel": true` (ou `BEGIN ISOLATION LEVEL REPEATABLE
+READ`) recebe, no mesmo campo, o nome do nível que está de fato valendo. Ver
+§11.1.
 
 ### 4.4.1 O *read-your-own-writes*, e onde ele mora
 
@@ -353,6 +359,7 @@ fina são frentes diferentes; confundi-las é o que faz uma prometer a outra.
 
 ```sql
 BEGIN TRANSACTION
+  ISOLATION LEVEL REPEATABLE READ
   SCOPE (clientes, pedidos, pediditens, estoque)
   SCOPE MODE STRICT
   TIMEOUT 5s
@@ -365,10 +372,16 @@ O mesmo pela porta de dados, que é por onde os clientes falam:
 
 ```json
 {"op":"begin","database":"loja",
+ "leitura_repetivel":true,
  "scope":["clientes","pedidos","pediditens","estoque"],
  "scope_mode":"strict","lock_mode":"auto",
  "timeout":"5s","lock_timeout":"500ms","statement_timeout":"2s"}
 ```
+
+`ISOLATION LEVEL REPEATABLE READ` (SQL) e `"leitura_repetivel": true` (porta
+de dados, alias `"repeatable_read"`) valem em qualquer ordem entre as demais
+cláusulas — §11.1 tem o mecanismo completo. Sem essa cláusula/campo, a
+transação continua `READ COMMITTED`, como sempre foi.
 
 **Parâmetros nomeados, e não posicionais.** A forma posicional —
 `Transaction(clientes, pedidos, estoque, 5s)` — não estende: entrou o segundo
@@ -432,6 +445,7 @@ conjunto de escrita. Ver `docs/ACID.md` §2.4/§3.3.
 | `TIMEOUT` | a transação **inteira** | `recursos.transacao_prazo_min`, 5 min |
 | `LOCK TIMEOUT` | quanto se aceita **esperar por outro** | `recursos.transacao_lock_timeout_ms`, 500 ms |
 | `STATEMENT TIMEOUT` | quanto **uma operação** pode levar | `recursos.transacao_statement_ms`, 0 = sem prazo |
+| `ISOLATION LEVEL` *(não é prazo — vai na mesma cláusula)* | qual nível a transação pede, desde 16/09/2026 | `READ COMMITTED`, sem pedir nada; `REPEATABLE READ` quando pedido (§11.1). `SERIALIZABLE` recusa |
 
 São problemas diferentes, e um número só não responde aos três: uma transação
 pode ser curta e mesmo assim esperar demais por uma trava, e uma operação pode
@@ -1134,13 +1148,29 @@ sobre rowid-como-endereço é do dono do projeto e não voltou.
 **A boa notícia, e ela é metade do que se quer do MVCC:** *readers
 non-blocking* **este desenho já entrega**, por outro caminho e sem MVCC nenhum.
 Como nada vai a disco antes do `COMMIT`, um leitor concorrente nunca vê escrita
-não confirmada e **nunca espera por escritor**. O que continua faltando — e que
-só o MVCC daria — é **leitura repetível** ao longo de um leitor longo.
+não confirmada e **nunca espera por escritor** — enquanto ninguém pediu
+leitura repetível.
 
 > Esta frase dizia também «e ler o que a própria transação escreveu». **Deixou
 > de valer em 02/09**, com a SP000006: o *read-your-own-writes* foi entregue por
-> sobreposição no caminho de leitura, sem MVCC nenhum (§4.4.1). Sobra a leitura
-> repetível, que é uma coisa só e não duas.
+> sobreposição no caminho de leitura, sem MVCC nenhum (§4.4.1). Sobrava a
+> leitura repetível, que era uma coisa só e não duas.
+
+> **ATUALIZAÇÃO (16/09/2026): a premissa «só o MVCC daria leitura repetível»
+> caducou.** O dono reabriu o gap e escolheu a via (b) do `docs/SOMBRA.md`
+> §5b: leitura repetível **pela trava, pedida** —
+> `"leitura_repetivel": true` no `begin`, `BEGIN ISOLATION LEVEL REPEATABLE
+> READ` no SQL. Quem pede segura a trava **compartilhada (S)** em cada tabela
+> que lê até o fim da transação, o que fecha leitura não repetível e fantasma
+> sem versão nenhuma — o preço é o escritor esperar o leitor, e não há
+> detector de impasse entre duas repetíveis que leram a mesma tabela e tentam
+> escrever (o `LOCK TIMEOUT` resolve nos dois sentidos). Isso **não** vira o
+> MVCC entrando pela porta dos fundos: continua sem versão, sem `Sequence`
+> retroativo e sem *snapshot* para um leitor longo que só lê — é uma trava, não
+> uma cópia. A Sombra/MVCC desta seção continua **não implementada**, e o gap
+> que a justificaria ficou menor: só resta o caso do leitor longo que não pode
+> pagar o escritor esperando. Ver `docs/ACID.md` §4.5 e `docs/PENDENCIAS.md`
+> #246.
 
 ### 11.2 WAL, undo log, PageLSN, full-page-write, VACUUM
 
@@ -1214,14 +1244,20 @@ a única resposta útil é a precisa:
 | letra | estado | com precisão |
 |---|---|---|
 | **A** — atomicidade | **entregue** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não deixa slot, rowid nem evento; uma queda no meio da passada é completada pela marca |
-| **I** — isolamento | **entregue, com o nome certo** | *escrita serializável por tabela, leitura confirmada e não bloqueante, sem leitura repetível.* **Não é ANSI SERIALIZABLE** e não pode ser chamado assim: não há leitura repetível. A transação **vê** as próprias escritas desde a SP000006 |
+| **I** — isolamento | **entregue, com o nome certo; leitura repetível pela trava desde 16/09/2026, para quem pede** | por padrão: *escrita serializável por tabela, leitura confirmada e não bloqueante, sem leitura repetível.* Quem pedir `"leitura_repetivel": true` (ou `BEGIN ISOLATION LEVEL REPEATABLE READ`) fecha a leitura não repetível e o fantasma pela trava compartilhada (§4.4, `docs/ACID.md` §4.5). **Não é ANSI SERIALIZABLE** em regime nenhum, e não pode ser chamado assim. A transação **vê** as próprias escritas desde a SP000006 |
 | **C** — consistência | **parcial, e a parte que falta MUDOU de nome** | tipo, unicidade e gatilhos são conferidos ao empilhar. A integridade referencial **passou a ser imposta na gravação**: o `excluir` recusa a linha que tem filha, o `conferir_fks` recusa a filha sem pai, e desde a SP000057 o `ao_alterar` executa as quatro ações. O que falta agora é outra coisa e é menor: **a cascata escreve em tabela que a transação não declarou** (§4.6), então um `ROLLBACK` não alcança a filha. Enquanto isso valer, o **C** não está inteiro |
 | **D** — durabilidade | **entregue, e configurável** | a marca `.tx` é sincronizada antes da passada e é o ponto de compromisso; uma queda depois dela é completada no arranque. Com `durabilidade: sistema` quem abre mão é quem configurou, e está escrito |
 
 **Então: continua sendo errado escrever *ACID compliant* sem qualificação.** O
 que se pode escrever, e é verdade: *atomicidade e durabilidade entregues,
-isolamento entregue no nível declarado acima, consistência dependente do escopo
-da cascata, que hoje escreve fora do que a transação declarou.*
+isolamento entregue no nível declarado acima — read committed por padrão,
+repeatable read pela trava para quem pedir desde 16/09/2026 —, consistência
+dependente do escopo da cascata, que hoje escreve fora do que a transação
+declarou.*
+
+> **ATUALIZAÇÃO (16/09/2026):** a leitura repetível deixou de estar ausente. O
+> que ainda falta para o **I**, e é o único ponto que falta, é o nome
+> `SERIALIZABLE` — não reivindicado em regime nenhum. Ver `docs/ACID.md` §4.5.
 
 > Esta frase dizia «consistência dependente da integridade referencial que o
 > motor ainda não impõe». **O motor passou a impor** — no excluir primeiro, e no

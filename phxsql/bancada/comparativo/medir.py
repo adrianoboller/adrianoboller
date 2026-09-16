@@ -163,7 +163,13 @@ PERGUNTAS = [
      {"mysql": "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE",
       "postgres": "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE",
       "sqlite": None,  # SQLite nao tem o verbo: o isolamento e do journal
-      "phxsql": "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"}),
+      # A pergunta e «existe nivel ACIMA do read committed?», e cada motor a
+      # responde na sintaxe dele. No PhxSql o nivel acima e a leitura
+      # repetivel pela trava (docs/SOMBRA.md §5b, 16/09/2026), pedida na
+      # ABERTURA -- `SET TRANSACTION` continua recusado de proposito, porque
+      # o tradutor nao guarda estado de sessao. Sondar o SET aqui mediria a
+      # recusa de um verbo, nao a ausencia do nivel.
+      "phxsql": "BEGIN ISOLATION LEVEL REPEATABLE READ"}),
 ]
 
 
@@ -606,6 +612,12 @@ def por_phxsql(perguntas, base):
             ok = bool(r.get("ok"))
             saida[chave] = (TEM if ok else NAO,
                             (r.get("erro") or "aceitou")[:90])
+            # Pergunta que ABRE transacao a fecha em seguida: a conexao e uma
+            # so, e uma transacao aberta faria o DDL das sondas seguintes ser
+            # recusado («nao entra em transacao») -- e isso viraria um `nao`
+            # falso publicado em outra linha.
+            if ok and q.strip().upper().startswith(("BEGIN", "START")):
+                c.fala({"op": "rollback", "database": "cmp"})
         # ------------------------------------------------------------------
         # As seis que o tradutor SQL nao alcanca (ele traduz SELECT e as
         # rotinas do dialeto MySQL(R), nao DDL de tabela) vao ao PROTOCOLO --

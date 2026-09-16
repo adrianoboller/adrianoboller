@@ -40,7 +40,7 @@ G QA · H documentação · I versionador · J pesquisador (+ subagentes
 | P1-107 | Conferir se o estado parcial está velho (pedido 164) | B, G | **meio** | — | aberto |
 | P1-82 | Corrida real do JNI (a premissa fechou; a corrida continua) | B, F | **meio** | ambiente | aberto |
 | P1-95 | Bancada 1.000.000 de linhas em tabela complexa, COM e SEM senha | `pesquisa-bancada` | **leve** | — | aberto |
-| P1-ISO | Isolamento acima de `READ COMMITTED` (Sombra/MVCC) | C, B | **forte** | — | **parado por decisão do dono** (`docs/SOMBRA.md`) |
+| P1-ISO | Isolamento acima de `READ COMMITTED` — leitura repetível | C, B | **forte** | — | **entregue 16/09/2026** pela via (b) de `docs/SOMBRA.md` §5b: leitura repetível pela trava, pedida (`"leitura_repetivel": true`/`BEGIN ISOLATION LEVEL REPEATABLE READ`); ver `docs/ACID.md` §4.5, `docs/PENDENCIAS.md` #246. **Sombra/MVCC continua parada** — não foi essa a via escolhida |
 
 ## Pilar 2 — E-mail P2P *(domínio novo)*
 

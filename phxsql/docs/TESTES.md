@@ -35,20 +35,20 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **2.309 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **2.320 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 486 | 21,0 |
-| Protocolo e portões (despachar) | 462 | 20,0 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 223 | 9,7 |
-| Camada SQL (léxico, sintaxe, tradução) | 214 | 9,3 |
-| Servidor (outros) | 156 | 6,8 |
-| Criptografia e codificação | 124 | 5,4 |
-| Configuração | 112 | 4,9 |
+| Motor de dados (arquivos, índice, diários) | 486 | 20,9 |
+| Protocolo e portões (despachar) | 468 | 20,2 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 223 | 9,6 |
+| Camada SQL (léxico, sintaxe, tradução) | 215 | 9,3 |
+| Servidor (outros) | 156 | 6,7 |
+| Criptografia e codificação | 124 | 5,3 |
+| Configuração | 112 | 4,8 |
 | DbLink | 81 | 3,5 |
 | Telemetria e profiler | 63 | 2,7 |
 | ODBC | 58 | 2,5 |
@@ -59,9 +59,9 @@ contando `#[test]` por arquivo e agrupando:
 | **Interface web (servidor HTTP)** | **28** | **1,2** |
 | **Segurança de rede (blacklist, firewall)** | **21** | **0,9** |
 | **MCP** | **21** | **0,9** |
+| **Transações** | **20** | **0,9** |
 | **Replicação** | **19** | **0,8** |
 | **Console de terminal (phxsqlcmd)** | **18** | **0,8** |
-| **Transações** | **16** | **0,7** |
 | **Exportação** | **13** | **0,6** |
 | **Junções e união** | **13** | **0,6** |
 | **Pivot** | **12** | **0,5** |
@@ -69,7 +69,7 @@ contando `#[test]` por arquivo e agrupando:
 | **Alertas e e-mail** | **8** | **0,3** |
 | **CLI** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,3** |
-| **total** | **2309** | |
+| **total** | **2320** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 

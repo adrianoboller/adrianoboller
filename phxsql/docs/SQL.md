@@ -149,6 +149,7 @@ E a abertura declarada, que é o que paga pela trava de linha:
 
 ```sql
 BEGIN TRANSACTION
+  ISOLATION LEVEL REPEATABLE READ   -- desde 16/09/2026; padrão e READ COMMITTED
   SCOPE (clientes, pedidos, pediditens, estoque)
   SCOPE MODE STRICT          -- DYNAMIC é o padrão
   TIMEOUT 5s
@@ -159,6 +160,13 @@ BEGIN TRANSACTION
 
 **As cláusulas não têm ordem.** Ordem obrigatória é uma regra que existe para
 facilitar o analisador, e o preço dela é pago por quem digita.
+
+**`ISOLATION LEVEL`** aceita `READ COMMITTED` (o padrão, e `READ UNCOMMITTED`
+vale o mesmo — o motor nunca lê sujo) e `REPEATABLE READ` (pela trava
+compartilhada, `docs/ACID.md` §4.5). `SERIALIZABLE` recusa nomeando o que
+existe. **`SET TRANSACTION ISOLATION LEVEL X`** continua recusado — o
+tradutor não guarda estado de sessão —, e a recusa aponta `BEGIN ISOLATION
+LEVEL REPEATABLE READ` como o caminho que funciona.
 
 ### Três coisas que a integração ensinou
 
@@ -270,14 +278,18 @@ subconsulta, CTE e junção — a §7 conta a gramática e o JSON de cada um. O 
 - **`COUNT(*)`/`GROUP BY` sobre visão.** `FROM v_c` vira `consultar` (filtra e
   projeta); agregar sobre o resultado de uma visão ainda não compõe — quem
   precisa disso escreve `SELECT COUNT(*) FROM (SELECT * FROM v_c) AS x`.
-- **Nível de isolamento.** A transação **existe** desde o pedido 162 — esta
-  linha dizia «não há» e contradizia a §2 deste mesmo documento, que descreve o
-  detector dela. O que não existe é o que fica **acima** do `READ COMMITTED`:
-  medido em `docs/ACID.md`, leitura não repetível, fantasma e *write skew*
-  acontecem, e a leitura suja **não**. Quem escrever `SET TRANSACTION ISOLATION
-  LEVEL SERIALIZABLE` precisa receber uma recusa que diz o nível real, e não um
-  `Ok` que promete o que o motor não faz. `docs/TRANSACOES.md`, `docs/ACID.md`
-  §5, `docs/SOMBRA.md`.
+- **Nível de isolamento — parcialmente resolvido em 16/09/2026.** A transação
+  **existe** desde o pedido 162, e por padrão continua `READ COMMITTED`:
+  medido em `docs/ACID.md`, sem pedir nada leitura não repetível, fantasma e
+  *write skew* acontecem, e a leitura suja **não**. O que fechou nesta data é
+  `BEGIN ISOLATION LEVEL REPEATABLE READ` (§2b acima) — quem pede sai do
+  `READ COMMITTED` pela trava compartilhada, sem Sombra/MVCC nenhuma
+  (`docs/SOMBRA.md` via (b) da §5b). O que **continua** recusado, por decisão
+  e não por gap: `SET TRANSACTION ISOLATION LEVEL X` (o tradutor não guarda
+  estado de sessão) e `ISOLATION LEVEL SERIALIZABLE` em qualquer forma —
+  quem escrever qualquer um dos dois recebe uma recusa que nomeia o nível
+  real, e não um `Ok` que promete o que o motor não faz.
+  `docs/TRANSACOES.md` §11.1, `docs/ACID.md` §4.5, `docs/SOMBRA.md`.
 
 **O `BULKINSERT` não é transação, e o documento tem de dizer isso alto.** Ele dá
 *exclusividade* e *uma sincronização no fim*. Ele **não** desfaz: se a carga
