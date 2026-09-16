@@ -5,9 +5,11 @@
 //! cargo run --example identificadores -- /caminho/dos/dados/MeuBanco
 //! ```
 //!
-//! Existe porque criar tabela ainda so se faz escrevendo Rust: nao ha operacao
-//! no protocolo nem comando na linha de comando para isso (esta registrado em
-//! `docs/PENDENCIAS.md`). Enquanto nao houver, este exemplo e o caminho curto.
+//! Existe porque a linha de comando ainda nao tem o comando de criar tabela:
+//! e o que o pedido 14 do `docs/PENDENCIAS.md` deixou registrado ao fechar com
+//! a op `criar_tabela` (`phxsql-server::servidor::op_criar_tabela`) e a tela
+//! **Nova tabela**. Pelo protocolo, portanto, ja se cria -- este exemplo e o
+//! caminho curto para quem esta sem servidor no ar, nao o unico caminho.
 
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;

@@ -617,7 +617,7 @@ própria.</figcaption>
 <div class="kpi"><b>19</b><span>marcas <code>// DIVIDA:</code></span><span class="q">2026-09-16</span></div>
 <div class="kpi"><b>15</b><span>arquivos com dívida marcada</span><span class="q">2026-09-16</span></div>
 <div class="kpi"><b>5</b><span>crates atingidos</span><span class="q">2026-09-16</span></div>
-<div class="kpi planejado"><b>4</b><span>que citam um pedido do dono</span><span class="q">2026-09-16</span></div>
+<div class="kpi planejado"><b>5</b><span>que citam um pedido do dono</span><span class="q">2026-09-16</span></div>
 </div>
 <div class="barras">
 <div class="barra-linha"><span class="l">phxsql-server</span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">10</span></div>
@@ -634,7 +634,7 @@ própria.</figcaption>
 <tr><td class="mono">crates/phxsql-server/src/conferidor_temporarios.rs:36</td><td><span class="etiqueta e-plan">#209 Planejado</span></td><td>o conferidor nao varre `examples/`, entao o lixo que eles deixam em `/tmp` continua fora da catraca</td></tr>
 <tr><td class="mono">crates/phxsql-server/src/config.rs:396</td><td><span class="etiqueta e-parcial">#207 Parcial</span></td><td>o quorum e guardado e nao imposto -- a escrita com quorum nao existe, e o master confirma sem esperar replica nenhuma</td></tr>
 <tr><td class="mono">crates/phxsql-server/src/config.rs:1163</td><td><span class="mtime">sem pedido</span></td><td>ligar a cifra nao alcanca o diario que ja existe em claro -- um append-only nao se reescreve, e nao ha migracao que cifre para tras</td></tr>
-<tr><td class="mono">crates/phxsql-server/src/config.rs:1216</td><td><span class="mtime">sem pedido</span></td><td>marcar a tabela nao cifra o que ja esta gravado -- a migracao que reescreve o `.reg` slot a slot nao existe, entao a lista declara mais do que o disco cumpre</td></tr>
+<tr><td class="mono">crates/phxsql-server/src/config.rs:1217</td><td><span class="etiqueta e-plan">#268 Planejado</span></td><td>marcar a tabela nao cifra o que ja esta gravado -- a migracao que reescreve o `.reg` slot a slot nao existe, entao a lista declara mais do que o disco cumpre</td></tr>
 <tr><td class="mono">crates/phxsql-server/src/dblink/sincronia.rs:204</td><td><span class="mtime">sem pedido</span></td><td>o espelho do DbLink so aceita chave primaria de UMA coluna -- tabela remota com chave composta recusa</td></tr>
 <tr><td class="mono">crates/phxsql-server/src/mensagens.rs:113</td><td><span class="mtime">sem pedido</span></td><td>`erro.versao_nao_suportada` vai sem traducao nos cinco idiomas -- quem escolheu outro idioma le portugues nessa frase</td></tr>
 <tr><td class="mono">crates/phxsql-server/src/profiler.rs:41</td><td><span class="mtime">sem pedido</span></td><td>marcar uma tabela nao apaga o `perfil.txt.N` ja gravado em claro -- quem marca depois de perfilar tem de apagar os arquivos a mao</td></tr>
@@ -857,7 +857,7 @@ calado nem se ignora calado.</div>
 <div class="rolo"><table><thead><tr><th>página</th><th class="num">KiB</th><th>quem a escreve</th></tr></thead><tbody>
 <tr><td class="mono">docs/dossie/dossie-phxsql-0.18.html</td><td class="num">2.638</td><td class="mono">docs/dossie/numeros-da-bancada.py</td></tr>
 <tr><td class="mono">docs/dossie/graficos.html</td><td class="num">28</td><td class="mono">docs/dossie/graficos-dos-testes.py</td></tr>
-<tr><td class="mono">docs/dossie/pedidos.html</td><td class="num">559</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
+<tr><td class="mono">docs/dossie/pedidos.html</td><td class="num">563</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
 <tr><td class="mono">docs/pmo/status-do-projeto.html</td><td class="num">47</td><td class="mono">docs/pmo/pagina-do-status-do-projeto.py</td></tr>
 <tr><td class="mono">docs/status/status-do-projeto.html</td><td class="num"><span class="mtime">— (esta página)</span></td><td class="mono">docs/status/riscos.py</td></tr>
 <tr><td class="mono">docs/dossie/status.html</td><td class="num">25</td><td class="mono">docs/dossie/pagina-de-status.py</td></tr>
@@ -916,6 +916,8 @@ calado nem se ignora calado.</div>
 <h2 id="s23"><span class="n">23 ·</span>As últimas frentes</h2>
 <p class="sub">Do próprio <code>git log</code>, só leitura. O commit conta a decisão e o motivo, não a lista de arquivos.</p>
 <div class="rolo"><table><thead><tr><th>commit</th><th>quando</th><th>o que decidiu</th></tr></thead><tbody>
+<tr><td class="mono">c091f98</td><td class="q">2026-09-16 22:17</td><td>O painel PMO alcanca os commits do fecho, pelo mesmo motivo da setima pagina</td></tr>
+<tr><td class="mono">e8c8314</td><td class="q">2026-09-16 22:09</td><td>A setima pagina alcanca o commit que a comitou -- de novo, e de proposito</td></tr>
 <tr><td class="mono">0b14c36</td><td class="q">2026-09-16 22:02</td><td>Fecho da rodada: os 20 geradores, e o portao VERDE na terceira</td></tr>
 <tr><td class="mono">6346558</td><td class="q">2026-09-16 21:31</td><td>Documentacao da rodada, as quatro cognicoes e as paginas geradas</td></tr>
 <tr><td class="mono">c585f83</td><td class="q">2026-09-16 21:30</td><td>Geradores: 264, 265 e 266 -- as quatro secoes que nao nasciam agora nascem</td></tr>
@@ -924,8 +926,6 @@ calado nem se ignora calado.</div>
 <tr><td class="mono">095b264</td><td class="q">2026-09-16 18:02</td><td>Fecho da rodada: os 18 geradores, e o portao VERDE</td></tr>
 <tr><td class="mono">68e67ab</td><td class="q">2026-09-16 17:45</td><td>As duas provas do 259 viram guardas -- e a regua passou a olhar a FORMA</td></tr>
 <tr><td class="mono">ca0a099</td><td class="q">2026-09-16 17:42</td><td>259: o portao da busca reversa era a ORDEM DOS FILTROS -- 30,41 -&gt; 21,07 us</td></tr>
-<tr><td class="mono">595e3f2</td><td class="q">2026-09-16 17:13</td><td>Catraca conta DEFEITO, nao cobertura: os tres buracos das reguas fechados</td></tr>
-<tr><td class="mono">5ca2c26</td><td class="q">2026-09-16 16:43</td><td>Auditoria SEC: dois bloqueantes com prova viva, e os dois sao petrea nossa</td></tr>
 </tbody></table></div>
 <p class="fonte"><b>De onde sai:</b> <code>git log --no-merges -n 10</code> na raiz do repositório. Commit novo muda esta seção — e aí ela estava velha mesmo, que é o que o portão dos geradores existe para pegar.</p>
 
@@ -960,7 +960,7 @@ calado nem se ignora calado.</div>
 <div class="nota g"><b>As quatro que faltavam nasceram em 16/09/2026, e nenhuma nasceu pelo atalho.</b> Riscos e Dívida técnica (pedido 264) exigiram um <code>docs/RISCOS.md</code> tabelado e uma marca <code>// DIVIDA:</code> no fonte; Telemetria e logs (265) exigiu que a bancada passasse a gravar <code>resultados.json</code>, porque sem ele não havia a data em que o número foi medido; Antes × Depois (266) exigiu uma série versionada, porque o <code>CAPABILITIES.json</code> é sobrescrito e só guarda o agora. Nos quatro casos <b>a fonte veio antes do gerador</b> — é isso que a lei cobra, e é por isso que ela demora mais que digitar o número.</div>
 <div class="nota v"><b>Por que isto é a seção mais importante da página.</b> O exemplo trazia <b>677 números no texto visível, todos digitados à mão</b>. Adotá-lo como veio criaria 677 lugares onde um número envelhece calado — e esta casa já pagou isso quatro vezes: o selo da capa parado numa versão por quatro lançamentos, 198 pedidos onde eram 203, 428 testes onde eram 451, 780 KiB de interface onde eram 1.032. A quarta ensina o alcance da lei: <b>gerador certo chamado pela metade entrega número velho anunciando sucesso.</b></div>
 <footer>
-  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 16/09/2026 22:07 UTC,
+  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 16/09/2026 22:19 UTC,
   pelo comando <code>./status-html.sh</code>. <b>Nenhum número desta página foi
   digitado</b>: cada um sai de um gerador, e cada seção diz de qual. Onde o
   gerador não existe, a seção <b>não nasceu</b> — está nomeada na §25, com o
