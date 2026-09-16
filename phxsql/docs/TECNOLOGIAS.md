@@ -41,12 +41,12 @@ foi estimado no lugar de uma medição que faltou.
 | `phxsql-odbc` | 7 | 2412 | 1086 | 920 | 226 | 4644 |
 | `phxsql-server` | 56 | 43301 | 26998 | 20299 | 4839 | 95437 |
 | `phxsql-sql` | 10 | 6621 | 3356 | 1961 | 745 | 12683 |
-| `phxsql-store` | 24 | 13148 | 3555 | 5540 | 1527 | 23770 |
-| **total** | **142** | **79912** | **40360** | **32843** | **9226** | **162341** |
+| `phxsql-store` | 24 | 13179 | 3583 | 5621 | 1532 | 23915 |
+| **total** | **142** | **79943** | **40388** | **32924** | **9231** | **162486** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **40360/79912 = 0.51×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **40388/79943 = 0.51×**.
 
-Alem do `src/`: **75** programas de medicao em `examples/` (18910 linhas — bancada em Rust, nao produto nem teste) e **57** arquivos em `tests/` de integracao fora de `src/` (18731 linhas).
+Alem do `src/`: **75** programas de medicao em `examples/` (18941 linhas — bancada em Rust, nao produto nem teste) e **57** arquivos em `tests/` de integracao fora de `src/` (18731 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -108,10 +108,10 @@ mesmo motivo que o rodapé já errou uma vez.
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
 | JavaScript (prova ponta a ponta) | `testes-web/` | 48 | 10237 |
-| Python (bancada de medicao) | `bancada/` | 109 | 46430 |
+| Python (bancada de medicao) | `bancada/` | 109 | 47007 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 18 | 2608 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 354 | 85102 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 29 | 11747 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 359 | 86973 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 29 | 11879 |
 <!-- /GERADO -->
 
 Não incluído acima porque já está na tabela 1.1: os `.rs` de `examples/` e
@@ -328,7 +328,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 
 **18** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **143** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 5501. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **145** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 5589. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -415,7 +415,7 @@ empacotar:
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2378** testes passaram, **0** falharam (medido em 2026-09-16 11:43:16, commit `bd725536`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **2380** testes passaram, **0** falharam (medido em 2026-09-16 17:50:52, commit `68e67ab0`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e

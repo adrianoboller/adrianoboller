@@ -1,13 +1,13 @@
 {
-  "commit": "bd72553649f22abb7f5352265cdfe244b90e747a",
+  "commit": "68e67ab0be736df146ec6d1ea5ef465d5ded9d57",
   "sujo": true,
   "branch": "claude/capacidades-disponiveis-y6auxh",
   "versao": "0.18.0",
-  "testes": 2378,
+  "testes": 2380,
   "operacoes": 139,
   "crates": 8,
-  "linhas_rust": 199887,
-  "linhas_doc": 65048,
+  "linhas_rust": 200273,
+  "linhas_doc": 65758,
   "dependencias_externas": 0,
   "idiomas": {
     "fabrica": 2042,
@@ -16,5 +16,5 @@
     "total": 3091,
     "pct": 66
   },
-  "medido_em": "2026-09-16 11:43:16"
+  "medido_em": "2026-09-16 17:50:52"
 }

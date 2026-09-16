@@ -420,7 +420,7 @@ com o raciocínio de cada uma, está em `docs/CATRACAS.md`.
 | `TETO_TRECHO_AMBIGUO` (entradas cujo trecho casa duas ou mais vezes no arquivo) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TESTE_MORTO` (testes nomeados que nao existem como `fn` em crates/**/*.rs) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TESTE_FORA_DO_BINARIO` (testes que existem, mas nao no binario que a entrada nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
-| `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 143 | **143** | em cima, sem folga |
+| `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 145 | **145** | em cima, sem folga |
 
 *20 catraca(s) medida(s) por conferidor. Refaz com `python3 docs/qa/medir.py`.*
 
