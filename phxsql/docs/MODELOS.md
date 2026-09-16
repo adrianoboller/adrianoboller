@@ -764,6 +764,7 @@ e o orquestrador o aplica na convocação.
 | `pesquisador` | J | **forte** | pesar a receita de fora contra o nosso gargalo é projeto |
 | `pesquisa-motor` | J-sub | **forte** | cripto, formato e norma — a fronteira do zero-deps |
 | `pesquisa-bancada` | J-sub | **meio** | a medição é roteirizada; a interpretação do número é projeto |
+| `pesquisa-rede` | J-sub | **forte** | transporte P2P, gossip e anti-entropia — o pilar do e-mail P2P é domínio novo, e desenho de rede é projeto e risco |
 | `seguranca` | SEC | **forte** (sempre o mais forte) | adversário; para a segurança, a saída mais conservadora |
 
 **Papéis que NÃO viraram agente, e por quê:** A (orquestrador) é esta sessão —
@@ -780,6 +781,44 @@ pesquisa sem forma. O arquivo dá o contrato (o que o agente faz, e o que ele
 NÃO faz — revisor não escreve, ninguém comita sozinho) e o tier, um lugar só.
 Não é abrir dez por tarefa: é ter o dono pronto quando o trabalho tocar o
 domínio dele.
+
+## O escalão por atividade virou pétrea, e os três pilares — 16/09/2026
+
+Ordem do dono, no mesmo dia: *«Use o modelo 5.1 para atividades difíceis.
+Redistribua as atividades do backlog e gaps do projeto com o modelo de iA
+adequado para não gastar tokens de forma desnecessária. Isso é regra pétria.»*
+
+O que **muda** e o que **não** muda:
+
+- **Não muda o mecanismo** — casar o escalão à atividade já era a decisão do
+  orquestrador, registrada aqui rodada a rodada. A ordem a torna **pétrea**: não
+  é mais boa prática, é lei, e a economia de token é o motivo dito com todas as
+  letras. Abrir o escalão forte para uma varredura de `grep` é o desperdício que
+  a cláusula sempre avisou; agora desperdiçar é **quebrar pétrea**.
+- **Fixa o escalão forte** como o modelo que o dono chama de «5.1». O **nome
+  continua fora do repositório** — é a mesma regra do topo deste arquivo, e vale
+  para «5.1» como valia para qualquer outro: o versionado guarda «escalão forte»
+  e o porquê; o nome mora na conversa. Quem lê o repositório seis meses depois vê
+  *que atividade mereceu o modelo caro*, não a etiqueta comercial dele.
+- **A redistribuição do backlog aberto por escalão** é um entregável, não uma
+  frase: vive em `docs/pmo/BACKLOG.md`, com cada item aberto marcando pilar,
+  papel-dono, escalão e o teste que decide o escalão — *«o erro se vê?»*. É a
+  planilha de controle que o dono pediu no molde do Phoenix Cast, adaptada à
+  nossa casa: **ela não se digita à mão, deriva de `PENDENCIAS.md` e do
+  `STATUS.md`** pela mesma razão de todo número visível — lista digitada
+  envelhece calada.
+
+E o **escopo** que a ordem fixa, porque muda o que é «projeto e risco» daqui em
+diante: o produto deixou de ser só a base de dados. São **três pilares** sobre o
+mesmo motor de zero dependências — a **base de dados** (PhxSql, o que já existe),
+um **sistema de e-mails P2P** e uma **estrutura blockchain genérica para
+gerenciar mini-contratos sigilosos**. O registro está em `docs/VISAO.md`, e a
+pesquisa de blockchain que o fundamenta em
+`docs/propostas/phxblockchain-melhorias-2026-09.md` (com a URL de cada fonte
+primária, 16/09/2026). Os dois pilares novos abrem domínio novo — transporte
+P2P e sigilo de contrato — e é por isso que nasce o subagente `pesquisa-rede` e
+que o `seguranca`/`pesquisa-motor` ganham o contrato do sigilo: **nenhum papel
+sem dono quando o trabalho toca o domínio dele.**
 
 ## Como registrar daqui em diante
 

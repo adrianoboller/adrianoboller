@@ -28,11 +28,23 @@ E os **acréscimos medidos** do comparativo com o Phoenix Cast
 |---|---|---|
 | SEC | `seguranca` | revisor adversário de segurança — o único gap real; antes era ad hoc |
 | RES-subagentes | `pesquisa-motor`, `pesquisa-bancada` | o J deixa de ser um só e coordena subagentes por domínio |
+| RES-rede | `pesquisa-rede` | transporte P2P, gossip e anti-entropia — o pilar do e-mail P2P é domínio novo (16/09/2026) |
 
 **Recusado por escopo, não por mérito:** a camada de domínio do Phoenix Cast
 (conectores, redes sociais, anúncios, marketplaces, atribuição, React) serve a
 um **SaaS de marketing** — o PhxSql é o motor embaixo desse produto, não o
 produto. Reabre quando esse produto for construído.
+
+## Os três pilares e a cobertura de papéis — 16/09/2026
+
+O produto passou a ser três (`phxsql/docs/VISAO.md`): a **base de dados**, um
+**e-mail P2P** e uma **blockchain de mini-contratos sigilosos**. A pergunta «faltam
+agentes?» tem resposta medida: **nenhum papel novo falta** — os dez cobrem os
+três pilares. O que os pilares novos abrem é **profundidade de domínio**, e ela
+entra como **subagente**, não como papel: `pesquisa-rede` para o transporte P2P;
+e o sigilo de contrato é contrato de `seguranca` + `pesquisa-motor` (cripto e
+norma) com o `dba` sobre o formato da cadeia. Abrir papel de topo para isso seria
+o exagero que a cláusula avisa; o dono de cada domínio já existe.
 
 ## Modelo por agente: o NÍVEL, nunca o nome
 
