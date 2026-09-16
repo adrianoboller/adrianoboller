@@ -37,3 +37,21 @@ de classe é um conflito que nenhuma das duas consegue ver sozinha, e que não
 aparece em preview de arquivo nem em mock — só no CSS compilado do tema. Se um
 dia for preciso manter as duas instaladas ao mesmo tempo, a saída é renomear o
 prefixo de uma delas (`.pp__` → `.epp__`), não disputar especificidade.
+
+
+## Duas armadilhas da API de temas, medidas aqui
+
+**`themeFilesDelete` é recusado** pela política do conector (apagar arquivo de
+tema pode derrubar a loja). O caminho que sobra é gravar por cima: a seção morta
+vira comentário + schema, com zero CSS compilado. Efeito igual ao de remover, e
+reversível.
+
+**`themeFilesUpsert` com `body.type: URL` grava em segundo plano e ENGOLE o
+erro** — devolve `upsertedThemeFiles: []` e `userErrors: []` mesmo quando
+recusa o arquivo. Duas gravações seguidas pareceram passar e não mudaram nada.
+Com `body.type: TEXT` a resposta é síncrona e o erro aparece: aqui era
+`Invalid schema: name is too long (max 25 characters)` — o `"name"` do schema
+tem teto de 25 caracteres, e `"Produto premium (aposentada)"` tem 28.
+
+Ou seja: **grave por TEXT quando quiser saber se deu certo**, e confira sempre
+o `size`/`checksumMd5` do arquivo depois — a resposta vazia não é confirmação.
