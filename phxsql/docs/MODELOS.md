@@ -672,7 +672,7 @@ importante, **amarrá-los a um portão** para não envelhecerem calados de novo.
 | **Comparativo** (papel J, a pedido do dono) | **mecânico-síntese** | reunir número medido com procedência «medido/citado»; o erro se vê no doc | só leitura |
 | **Integração** (orquestrador) | **projeto e risco** | o defeito do encontro apareceu: a H achou o `TECNOLOGIAS` **fora dos 14** (imprime-e-cola, envelhece), e o portão do agente, rodado contra o `6858fa4`, foi VERMELHO nomeando a própria falha que a rodada fechou. A prova real do portão foi **refeita aqui** — agente devolve relatório, não prova | — |
 
-**Dois motivos de escalão medidos.** O forte (Opus) só no portão, porque é o
+**Dois motivos de escalão medidos.** O escalão forte só no portão, porque é o
 único com risco de projeto — um portão em que ninguém acredita não segura nada.
 O resto no mecânico, porque o erro deles se vê no diff ou na comparação.
 
@@ -744,6 +744,42 @@ do SQL Server (nula, no fim, fora do hash) ou proibir inteiro? A resposta certa
 coluna por nome e não por posição, então coluna nula no fim **entra** no hash. A
 régua alheia teria compilado e deixado a cadeia quebrável, com teste verde. Foi
 o escalão forte que fez a pergunta antes de copiar a resposta.
+
+## Os agentes viraram arquivos — o tier de cada um — 16/09/2026
+
+Os dez papéis pétreos deixaram de ser só governança e viraram agentes
+invocáveis em `.claude/agents/` (mais o SEC e dois subagentes de pesquisa, do
+comparativo com o Phoenix Cast). **Nenhum arquivo traz `model:`** — a pétrea
+proíbe identificador de modelo em artefato versionado —, então o tier mora aqui
+e o orquestrador o aplica na convocação.
+
+| agente | papel | escalão | por quê |
+|---|---|---|---|
+| `engenheiro` | B | **forte** quando toca motor/formato/concorrência; **leve** no mecânico | o portão é o mesmo; a decisão de projeto não |
+| `dba` | C | **forte** | formato em disco e garantias de dado são projeto e risco por definição |
+| `designer` | E | **meio** — **forte** na marca/acessibilidade, **leve** na varredura de textos | a tela se prova exercitando; o CSS global é a armadilha que pede olho |
+| `prova-real` | F | **forte** | a prova é o que mais engana; medir o VERMELHO é decisão, não roteiro |
+| `qa` | G | **leve** para rodar catraca; **forte** para desenhar guarda nova | rodar é roteirizado; decidir o que a guarda cobre não |
+| `documentacao` | H | **leve** | rodar gerador e medir número é mecânico e verificável |
+| `pesquisador` | J | **forte** | pesar a receita de fora contra o nosso gargalo é projeto |
+| `pesquisa-motor` | J-sub | **forte** | cripto, formato e norma — a fronteira do zero-deps |
+| `pesquisa-bancada` | J-sub | **meio** | a medição é roteirizada; a interpretação do número é projeto |
+| `seguranca` | SEC | **forte** (sempre o mais forte) | adversário; para a segurança, a saída mais conservadora |
+
+**Papéis que NÃO viraram agente, e por quê:** A (orquestrador) é esta sessão —
+não se delega a si mesmo; D (zelador) e I (versionador/backup) rodam por
+**script** (`zelador.sh`, `backup.sh`), não por subagente, e o integrador é
+quem comita. **Dispensa registrada é decisão; dispensa silenciosa é
+esquecimento** — e a camada de domínio SaaS do Phoenix Cast (conectores, redes,
+anúncios, marketplaces, React) foi **dispensada por escopo**: serve a um produto
+que o PhxSql-motor ainda não é.
+
+**Por que arquivo, e por que agora.** Convocar um papel à mão a cada tarefa
+funciona, mas deixa o modelo de cada um sem contrato escrito e o fan-out de
+pesquisa sem forma. O arquivo dá o contrato (o que o agente faz, e o que ele
+NÃO faz — revisor não escreve, ninguém comita sozinho) e o tier, um lugar só.
+Não é abrir dez por tarefa: é ter o dono pronto quando o trabalho tocar o
+domínio dele.
 
 ## Como registrar daqui em diante
 
