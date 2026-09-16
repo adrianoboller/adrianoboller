@@ -236,5 +236,5 @@ Publique sempre **passando a URL da página**, para cair na mesma em vez de
 criar outra. A URL entra aqui na primeira publicação — até lá, esta linha diz
 que ela **ainda não existe**, em vez de trazer um endereço inventado.
 
-- **URL:** *(ainda não publicada)*
+- **URL:** https://claude.ai/artifact/EE4MCkxRcguBMzuRL5CKJt
 - **Fonte:** `docs/status/status-do-projeto.html`

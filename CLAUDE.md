@@ -154,6 +154,32 @@ a caixa da regra está na página. Os dois geradores de `docs/pmo/` moram fora d
 **completa** é o `PLANO` do `portao-dos-geradores.py`, que
 `python3 phxsql/docs/dossie/portao-dos-geradores.py --lista` imprime.
 
+E uma **sétima**, o status do projeto em 21 seções — o molde que o dono mandou
+em 16/09/2026, de um projeto irmão, com a regra que ele escolheu junto:
+
+- **URL:** https://claude.ai/artifact/EE4MCkxRcguBMzuRL5CKJt
+- **Fonte:** `phxsql/docs/status/status-do-projeto.html`, que **não se edita** —
+  `./status-html.sh`, na raiz ao lado do `backup.sh` e do `zelador.sh`, a gera.
+  O `.sh` é a **porta**, não uma segunda implementação: a montagem toda vive em
+  `docs/status/pagina-do-status-do-projeto.py`, e de onde sai cada número está
+  em `docs/status/LEIA-ME.md`, seção por seção.
+
+A regra dela é a mais dura das sete, e foi decisão do dono: **seção só entra
+com gerador.** O molde original trazia 27 seções e **677 números digitados à
+mão** — adotá-lo como veio criaria 677 lugares onde um número envelhece calado.
+Então 21 nasceram amarradas a um gerador e **quatro não nasceram**: Riscos e
+Dívida técnica (#264), Telemetria e logs (#265) e Antes × Depois (#266). Cada
+uma diz **qual gerador falta e por quê** — risco hoje é prosa em três
+documentos, a bancada de telemetria não grava `resultados.json`, e o
+`CAPABILITIES.json` é sobrescrito e só guarda o agora.
+
+E o comando carrega a lei que o `pagina-dos-pedidos.py` ensinou: **ele diz que
+fez menos quando faz menos**, nomeando as quatro ausentes sob um cabeçalho que
+não é linha de êxito. Ela **roda por último** entre os geradores, porque a §17
+mede as outras páginas — e por isso a célula do tamanho dela mesma diz
+«— (esta página)»: escrever o número mudaria o número, e ele nunca chegaria a
+ponto fixo.
+
 ## Todo aprendizado novo vira um arquivo de cognição
 
 Ordem do dono, 02/09/2026: *«Todo aprendizado novo seu deve virar um
