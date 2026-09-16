@@ -3041,6 +3041,95 @@ indexar menos termos (2,0 µs por chave cortada).
 **O despejo em lote está RECUSADO com número** — e recusa medida impede a mesma
 proposta de voltar. Inclusive a minha.
 
+## 23. O `.cache` em CSV: parecer medido — não acelera a carga, e o que acelera está nomeado (16/09)
+
+Pergunta do dono, 16/09/2026: *«Os arquivos cache de uma tabela recebem dados
+alfanuméricos e armazenam em CSV para, numa thread, lançar em segundo plano no
+`.reg`. Isso agilizaria em quanto a carga de dados?»*
+
+**Resposta curta: na vazão da carga, zero ou negativo; no «ok» que o cliente
+recebe, no máximo uns 2,7×, pagando quatro garantias.** Nada foi construído;
+este parecer existe para a proposta não voltar sem medição.
+
+### 23.1 O que o `.cache` é, contra o mapa de onde o tempo vai
+
+Um `.cache` que recebe a linha, responde «ok» e deixa o `.reg` para depois é um
+**buffer de escrita** — a proposta 2 da lista do WAL (§3), «meia peça, do outro
+lado» —, e um diário escrito antes do arquivo de dados é a proposta 1, «aponta
+para o arquivo errado». O `.reg` **já é append-only** e é a parcela pequena da
+inserção; quem custa é o índice, e o índice não some com o CSV: a thread de
+fundo faz o mesmo trabalho, mais uma gravação de CSV e uma segunda análise do
+texto. Os números são os da §1 e da §3:
+
+| parcela | µs por linha | fatia |
+|---|---:|---:|
+| `.ndx` (dois índices e a conferência de chave) | 11,1 | 63,6% |
+| `.reg` + `.log` | 4,8 | 36,4% |
+| total no motor, dois índices | 15,9 | 100% |
+| pela rede, em lote de 5.000 (`bancada/carga`) | 25,5 | — |
+
+O teto do «ok» aparente sai dessa conta: se o motor inteiro (15,9) saísse do
+caminho da resposta, sobrariam ~9,6 µs de rede e análise — **2,7×** no que o
+cliente vê, e **1,0× no que ele consegue consultar**, porque a fila é drenada
+pelo mesmo motor. Este 2,7× é conta sobre números medidos, não medição do
+protótipo; a medição está na §23.4.
+
+### 23.2 O que ele compraria de verdade, e já está medido
+
+O único ganho real de um buffer de escrita é o que ele **permite**: adiar o
+índice e construí-lo em lote no fim (§4.2 e §4.3):
+
+| variante | ganho medido |
+|---|---:|
+| adiar o índice, tabela vazia (`--example indice-adiado`) | 1,59× |
+| adiar o índice, carga que dobra a tabela | 1,22× |
+| carga menor que ~N/3 da tabela | prejuízo |
+| teto teórico se índices e conferência saíssem do caminho (§3) | 3,31× |
+
+O 3,31× não é alcançável sem abrir mão da conferência de unicidade — e é aí que
+entra o custo.
+
+### 23.3 O que o `.cache` quebra, na ordem em que dói
+
+1. **Unicidade e chave estrangeira.** Hoje o «ok» só sai depois de o `.ndx`
+   dizer que a chave não existe. Com o CSV, o cliente ouve «ok» e a linha morre
+   depois, sozinha — o `INSERT` do Cassandra que o `CLAUDE.md` proíbe de
+   propósito. Manter a conferência antes do «ok» exige a descida no `.ndx`,
+   que é 63,6% do custo: o ganho evapora.
+2. **rowid e rownum.** O rowid é a posição do slot; não há como devolvê-lo
+   antes de gravar o `.reg`, e a tela e a janela de conflito leem o rowid de
+   volta.
+3. **Ler o que acabou de gravar.** `buscar` logo depois de `inserir` não acha
+   a linha até a thread passar — o read-your-own-writes do pedido 162, por
+   outra porta.
+4. **Replicação e cluster.** O `.log` é escrito por quem grava o `.reg`; a
+   réplica ficaria atrás do que o cliente já ouviu como aceito, e a posição
+   que o pulso publica não incluiria essas linhas.
+
+E a durabilidade não muda de lugar: «ok» sem `fsync` do CSV é o que `por_lote`
+já faz (20,4× sobre `por_operacao`, pedido 80); com `fsync` no CSV o custo é o
+mesmo do `.reg`. O CSV ainda traz o problema próprio dele — vírgula, aspas e
+quebra de linha dentro de texto alfanumérico —, que o `.log` v2 com imagem da
+linha já resolve em binário: **o diário por tabela já é a versão segura desta
+ideia**.
+
+### 23.4 O que acelera carga, medido, e o que mediria o `.cache`
+
+- Mandar em lote em vez de uma a uma: **2.659 → 39.287 linhas/s**
+  (`bancada/carga`).
+- `BULKINSERT`: **1,53×** por cima do lote (§ do pedido 128, 43.500 → 66.500).
+- Durabilidade `por_lote`: **20,4×** sobre `por_operacao`, já é o padrão.
+- A saída que ainda não foi construída: adiar o índice **dentro** do
+  `BULKINSERT`, onde a tabela está reservada e ninguém lê índice pela metade,
+  fechando com `construir_em_lote` (**23× a 25×** mais rápido que o `reindexar`
+  antigo). Vale 1,59× numa tabela vazia e nada numa carga pequena.
+
+Se o dono quiser o número do `.cache` em si, a medição é uma bancada com o
+protótipo, medindo as duas coisas separadas — **latência do «ok»** e **tempo
+até a linha ficar consultável** — contra o `inserir_lote` de hoje, com a mesma
+tabela, os mesmos índices e a conferência de unicidade ligada nos dois lados;
+sem ela a comparação seria de trabalho diferente.
+
 ## Como refazer tudo
 
 ```bash
