@@ -1,6 +1,10 @@
-# Arquivos removidos do tema (guardados aqui)
+# Arquivos removidos do tema (registro)
 
-## `produto-premium.liquid` — removido em 16/09/2026
+## `sections/produto-premium.liquid` — removido em 16/09/2026
+
+**Onde o original continua:** nos temas `EnginePrint Industrial 11` e
+`EnginePrint Industrial 12`, que não foram tocados. Não há cópia aqui de
+propósito — o que ensina não é o conteúdo do arquivo, é o mecanismo abaixo.
 
 É a **ancestral** de `sections/product-whatsapp.liquid`: mesma seção, versão de
 agosto. Ficou no tema depois que a nova entrou com outro nome, sem nenhum
