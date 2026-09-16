@@ -165,6 +165,17 @@ PLANO = [
     ("docs/pmo/rollup.py", ["docs/pmo/BACKLOG.md"], "sem-carimbo",
      "conta aberto/entregue-fechado/parado por pilar do proprio BACKLOG.md; "
      "funcao pura da fonte versionada, so' o carimbo de hora e' relogio"),
+    # O painel PMO (as tres vistas que o dono pediu no molde do Phoenix Cast).
+    # Mesmo motivo do rollup: gerador de bloco/pagina a partir de fonte
+    # versionada, e a rodada pode esquecer de roda-lo. "sem-carimbo" porque a
+    # pagina carrega "gerado em HH:MM UTC" e o "contados hoje, DD/MM/AAAA" --
+    # os dois ja cobertos pelos _CARIMBOS. O `git log` que ela embute e'
+    # deterministico na arvore parada: commit novo MUDA a pagina, e ai ela
+    # esta velha mesmo.
+    ("docs/pmo/pagina-do-status-do-projeto.py", ["docs/pmo/status-do-projeto.html"],
+     "sem-carimbo",
+     "monta o painel PMO do PENDENCIAS.md, do BACKLOG.md, do CAPABILITIES.json, "
+     "do git log e dos arquivos de .claude/agents/; so' o carimbo e' relogio"),
 ]
 
 # A figura cuja frescura o trio confere por mtime -- que o portao poe como a

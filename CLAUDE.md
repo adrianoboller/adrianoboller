@@ -130,6 +130,30 @@ bancada. Ao lado há o `olhar.mjs`, uma captura local antes de publicar: o
 `playwright` só resolve pelo caminho absoluto, e rodado de fora do repositório
 o Node cala e imprime só a versão dele.
 
+E uma **sexta**, o painel PMO — o que está feito, o que está pela metade e o
+que ainda é só plano, no molde que o dono mandou em 16/09/2026 (os três slides
+do Phoenix Cast: fluxograma, organograma e painel):
+
+- **URL:** https://claude.ai/artifact/VEC7fc38SF5t2fRqrwEy8p
+- **Fonte:** `phxsql/docs/pmo/status-do-projeto.html`, que **não se edita** —
+  `python3 phxsql/docs/pmo/pagina-do-status-do-projeto.py` a gera do
+  `PENDENCIAS.md` (pelo mesmo leitor da página dos pedidos, para as duas nunca
+  divergirem), do `BACKLOG.md` (pelo `rollup.py`), do `CAPABILITIES.json`, do
+  `git log`, dos agentes em `.claude/agents/` e da tabela de escalão do
+  `MODELOS.md`. Como rodar e de onde sai cada número: `phxsql/docs/pmo/LEIA-ME.md`.
+
+Três vistas: **painel** (contadores, rosca, barras por pilar, gates externos,
+últimas frentes, motor com a data), **fluxo** (o caminho de um pedido, com o
+losango «decisão do dono ou bloqueio externo?») e **equipe** (o organograma,
+com o escalão pelo **nível**, nunca pelo nome). Duas disciplinas dela: **gate
+externo é o pedido aberto cujo texto casa um léxico explícito** do gerador, e a
+página mostra a frase que casou — quem lê julga o casamento em vez de acreditar
+nele; e **parcial não vira feito** — só vira com prova real e portões verdes, e
+a caixa da regra está na página. Os dois geradores de `docs/pmo/` moram fora de
+`docs/dossie/` e por isso ficam fora da conta «catorze» de lá; a lista
+**completa** é o `PLANO` do `portao-dos-geradores.py`, que
+`python3 phxsql/docs/dossie/portao-dos-geradores.py --lista` imprime.
+
 ## Todo aprendizado novo vira um arquivo de cognição
 
 Ordem do dono, 02/09/2026: *«Todo aprendizado novo seu deve virar um

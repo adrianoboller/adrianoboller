@@ -1,0 +1,378 @@
+<meta charset="utf-8">
+<title>Painel PMO PhxSql</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --papel:#fbf9f7; --papel-2:#f3efec; --papel-3:#e9e3de;
+  --tinta:#1a1210; --tinta-2:#4a3f3a; --tinta-3:#7a6d66;
+  --linha:#ded6d0; --acento:#c63c0a;
+  --feito:#2f7a3e; --parcial:#8a6a1f; --planejado:#7a6d66;
+  --aberto:#1f5c93; --entregue:#2f7a3e; --parado:#b5257f;
+  --consultar:#1f5c93;
+  --sombra:0 1px 2px rgba(26,18,16,.06),0 8px 24px rgba(26,18,16,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --papel:#010418; --papel-2:#0a1122; --papel-3:#131c31;
+    --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#848da0;
+    --linha:#1e2940; --acento:#ff8a1c;
+    --feito:#5cbf74; --parcial:#d5a83c; --planejado:#8e9ab0;
+    --aberto:#5fa6e8; --entregue:#5cbf74; --parado:#ff8fc7;
+    --consultar:#5fa6e8;
+    --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --papel:#010418; --papel-2:#0a1122; --papel-3:#131c31;
+  --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#848da0;
+  --linha:#1e2940; --acento:#ff8a1c;
+  --feito:#5cbf74; --parcial:#d5a83c; --planejado:#8e9ab0;
+  --aberto:#5fa6e8; --entregue:#5cbf74; --parado:#ff8fc7;
+  --consultar:#5fa6e8;
+  --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--papel);color:var(--tinta);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;font-size:16px;line-height:1.55;
+  -webkit-font-smoothing:antialiased}
+h1,h2,h3,.rotulo,.pino,.aba,.chip,.cartao .nome{font-family:"Exo 2","Helvetica Neue",Arial,sans-serif}
+code,.mono,.num{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+code{font-size:.86em;background:var(--papel-2);padding:1px 4px;border-radius:3px;color:var(--tinta-2)}
+.envelope{max-width:1120px;margin:0 auto;padding:0 16px 80px}
+header{padding:40px 0 20px;border-bottom:1px solid var(--linha)}
+.tarja{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;margin-bottom:12px}
+.rotulo{font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--acento);font-weight:600}
+/* A versao e o commit sao DADO: mono, e sem transformacao nenhuma -- rotulo se
+   estiliza, dado nunca. */
+.versao{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--tinta-3)}
+h1{font-size:clamp(26px,4.6vw,42px);font-weight:700;line-height:1.08;margin:0 0 14px;letter-spacing:-.015em;text-wrap:balance}
+h1 .x{color:var(--acento)}
+.chamada{max-width:68ch;color:var(--tinta-2);font-size:16.5px;margin:0}
+h2{font-size:21px;font-weight:600;margin:44px 0 6px;letter-spacing:-.01em}
+h2:first-child{margin-top:30px}
+h2 + .sub,h3 + .sub{color:var(--tinta-3);font-size:14.5px;margin:0 0 18px;max-width:70ch}
+h3{font-size:15px;font-weight:600;margin:26px 0 10px}
+
+/* As abas sao CONSULTA: contorno sempre, preenchimento so no hover -- a
+   convencao das cores da acao da casa. A ativa se marca por peso e barra, nao
+   por fundo cheio, que e o que o hover reserva para a intencao. */
+.abas{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 4px}
+.aba{background:transparent;border:1px solid var(--consultar);color:var(--consultar);
+  font-size:12.5px;font-weight:600;letter-spacing:.02em;padding:7px 16px;border-radius:5px;
+  cursor:pointer;line-height:1.2}
+.aba:hover{background:var(--consultar);color:var(--papel)}
+.aba[aria-selected="true"]{background:var(--papel-3);border-color:var(--acento);color:var(--acento);
+  box-shadow:inset 0 -2px 0 var(--acento)}
+.aba.tema{border-color:var(--linha);color:var(--tinta-3);margin-left:auto}
+.aba.tema:hover{background:var(--papel-3);color:var(--tinta)}
+body.com-abas .vista{display:none}
+body.com-abas .vista.ativa{display:block}
+
+.placar{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:10px;margin:18px 0 0}
+.placar .c{border:1px solid var(--linha);border-radius:6px;padding:13px 15px;background:var(--papel-2);
+  display:flex;flex-direction:column;gap:5px}
+.placar .v{font-family:"Exo 2",sans-serif;font-size:30px;font-weight:700;line-height:1.05;
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em;overflow-wrap:break-word}
+.placar .v.curta{font-size:19px}
+.placar .c.larga{grid-column:span 2}
+/* Dado comprido (branch, commit) em mono e quebrando no hifen -- na captura o
+   nome da branch partia no meio da palavra, em Exo 2, parecendo outro nome. */
+.placar .dado .v{font-family:"IBM Plex Mono",monospace;font-size:16px;overflow-wrap:break-word;word-break:normal}
+.placar .r{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--tinta-3);line-height:1.35}
+.placar .q{font-size:10.5px;color:var(--tinta-3);margin-top:auto;font-family:"IBM Plex Mono",monospace}
+.placar .feito .v{color:var(--feito)} .placar .parcial .v{color:var(--parcial)}
+.placar .planejado .v{color:var(--planejado)} .placar .parado .v{color:var(--parado)}
+.placar .aberto .v{color:var(--aberto)} .placar .entregue .v{color:var(--entregue)}
+
+.duo{display:grid;grid-template-columns:minmax(232px,auto) minmax(240px,1fr);gap:22px;align-items:center;margin:18px 0 0}
+.rosca{display:block;max-width:100%;height:auto}
+.rosca-n{font-family:"Exo 2",sans-serif;font-size:40px;font-weight:700;fill:var(--tinta);font-variant-numeric:tabular-nums}
+.rosca-r{font-family:"IBM Plex Mono",monospace;font-size:11px;fill:var(--tinta-3);letter-spacing:.1em}
+.fatias{list-style:none;margin:0;padding:0;display:grid;gap:10px;max-width:440px}
+.fatias li{display:grid;grid-template-columns:26px 1fr auto;gap:11px;align-items:center;font-size:14.5px}
+.fatias i{display:inline-block;width:26px;height:13px;border-radius:2px;border:1.5px solid transparent}
+.fatias .feito i{background:var(--feito)}
+.fatias .parcial i{background:repeating-linear-gradient(45deg,var(--parcial) 0 3px,transparent 3px 7px);border-color:var(--parcial)}
+.fatias .planejado i{background:transparent;border-color:var(--planejado)}
+.fatias .n{font-family:"IBM Plex Mono",monospace;font-size:13px;font-variant-numeric:tabular-nums;color:var(--tinta-2)}
+.fatias .s{color:var(--tinta-3)}
+
+/* As barras do board. A forma carrega o estado: aberto so contorno, entregue
+   cheia, parado hachurado -- le-se sem cor. O numero vem DEPOIS da barra,
+   nunca por cima dela. */
+.pilares{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:11px}
+.pilares li{display:grid;grid-template-columns:8.6em 1fr 7.6em;gap:12px;align-items:center}
+.pilares .l{font-family:"Exo 2",sans-serif;font-size:14px;font-weight:500}
+.pilares .t{height:16px;background:var(--papel-3);border-radius:3px;display:flex;overflow:hidden}
+.pilares .t span{display:block;height:100%}
+.pilares .t .b-aberto{border:1.6px solid var(--aberto);background:transparent}
+.pilares .t .b-entregue{background:var(--entregue)}
+.pilares .t .b-parado{background:repeating-linear-gradient(45deg,var(--parado) 0 3px,transparent 3px 7px);border:1.6px solid var(--parado)}
+.pilares .n{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-variant-numeric:tabular-nums;
+  color:var(--tinta-2);text-align:right;white-space:nowrap}
+.pilares .n b{font-weight:600;color:var(--tinta)}
+.legenda{display:flex;flex-wrap:wrap;gap:12px 20px;margin:14px 0 0;font-size:13px;color:var(--tinta-2)}
+.legenda span{display:inline-flex;align-items:center;gap:7px}
+.legenda i{display:inline-block;width:22px;height:11px;border-radius:2px;border:1.5px solid transparent;flex:none}
+.legenda .aberto i{border-color:var(--aberto)}
+.legenda .entregue i{background:var(--entregue)}
+.legenda .parado i{background:repeating-linear-gradient(45deg,var(--parado) 0 3px,transparent 3px 7px);border-color:var(--parado)}
+.legenda .feito i{background:var(--feito)}
+.legenda .parcial i{background:repeating-linear-gradient(45deg,var(--parcial) 0 3px,transparent 3px 7px);border-color:var(--parcial)}
+.legenda .planejado i{border-color:var(--planejado)}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0}
+.chip{font-family:"IBM Plex Mono",monospace;font-size:11.5px;border:1px solid var(--linha);
+  border-radius:4px;padding:3px 8px;color:var(--tinta-2);background:var(--papel-2)}
+.chip.forte{border-color:var(--acento);color:var(--acento)}
+.chip.meio{border-color:var(--aberto);color:var(--aberto)}
+.chip.leve{border-color:var(--tinta-3);color:var(--tinta-3)}
+.chip.frase{border-color:var(--parado);color:var(--parado)}
+
+.regra{border-left:3px solid var(--acento);background:var(--papel-2);padding:15px 18px;
+  border-radius:0 5px 5px 0;margin:26px 0;font-size:15px;color:var(--tinta-2);max-width:72ch}
+.regra .t{display:block;font-family:"Exo 2",sans-serif;font-weight:700;color:var(--tinta);
+  font-size:15px;margin-bottom:6px;letter-spacing:.01em}
+
+.gates{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:12px}
+.gates li{border:1px solid var(--linha);border-left:3px solid var(--parado);border-radius:0 6px 6px 0;
+  padding:13px 16px;background:var(--papel-2)}
+.gates .cab{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline}
+.gates .n{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--tinta-3)}
+.gates .tt{font-weight:600;font-size:15px}
+.gates .tr{margin:9px 0 0;font-size:13.5px;color:var(--tinta-2);border-left:2px solid var(--linha);padding-left:11px}
+.vazio{border:1px dashed var(--linha);border-radius:6px;padding:14px 16px;color:var(--tinta-2);
+  background:var(--papel-2);font-size:14.5px}
+
+.pino{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.pino::before{content:"";width:9px;height:9px;border-radius:50%;border:1.5px solid currentColor;flex:none}
+.pino.feito{color:var(--feito)}.pino.feito::before{background:currentColor}
+.pino.parcial{color:var(--parcial)}.pino.parcial::before{background:linear-gradient(90deg,currentColor 50%,transparent 50%)}
+.pino.planejado{color:var(--planejado)}
+
+.rolo{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:14px}
+table{border-collapse:collapse;width:100%;min-width:560px}
+thead th{font-family:"IBM Plex Mono",monospace;font-weight:500;font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--tinta-3);text-align:left;padding:10px 12px 8px;border-bottom:1px solid var(--linha)}
+tbody td{padding:11px 12px;border-bottom:1px solid var(--linha);vertical-align:top;font-size:14.5px}
+tbody tr:hover td{background:var(--papel-2)}
+td.h,td.d{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--tinta-3);white-space:nowrap}
+td.h{color:var(--acento)}
+
+figure{margin:18px 0 0}
+.fluxo{display:block;width:100%;max-width:540px;height:auto;margin:0 auto;color:var(--tinta-2)}
+.fx-t{font-family:"Exo 2",sans-serif;font-size:13px;font-weight:600;fill:var(--tinta)}
+.fx-s{font-family:"IBM Plex Mono",monospace;font-size:10px;fill:var(--tinta-3)}
+.fx-r{font-family:"IBM Plex Mono",monospace;font-size:11px;fill:var(--tinta-3)}
+.fx-parado{fill:var(--parado)}
+figcaption{margin-top:12px;color:var(--tinta-3);font-size:13.5px;max-width:70ch;margin-left:auto;margin-right:auto}
+
+.topo{display:grid;justify-items:center;gap:0;margin:18px 0 0}
+.cartao{border:1px solid var(--linha);border-radius:7px;background:var(--papel-2);padding:13px 16px;
+  box-shadow:var(--sombra);max-width:100%}
+.cartao .nome{font-size:15.5px;font-weight:600;display:block}
+.cartao .papel{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--tinta-3);display:block;margin-bottom:4px}
+.cartao .dsc{font-size:13.5px;color:var(--tinta-2);margin:8px 0 0}
+.cartao .fr{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--tinta-3);margin:8px 0 0}
+.cartao.dono{border-color:var(--acento);text-align:center}
+.cartao.dono .nome{font-size:19px}
+.haste{width:2px;height:20px;background:var(--linha)}
+.trilho{height:2px;background:var(--linha);width:min(100%,900px);margin:0 auto}
+.grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(252px,1fr));gap:12px;margin:18px 0 0}
+.grade .cartao{align-self:start}
+.conferencia{margin:18px 0 0;font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--tinta-3)}
+
+footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);color:var(--tinta-3);
+  font-size:13.5px;max-width:74ch}
+@media (max-width:700px){
+  .duo{grid-template-columns:1fr}
+  .placar .c.larga{grid-column:span 1}
+  .pilares li{grid-template-columns:1fr auto}
+  .pilares .t{grid-column:1/3}
+  .abas .tema{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+<div class="envelope">
+<header>
+  <div class="tarja">
+    <span class="rotulo">Painel PMO</span>
+    <span class="versao">PhxSql 0.18.0 · claude/capacidades-disponiveis-y6auxh</span>
+  </div>
+  <h1>O que está <span class="x">feito</span>, o que está pela metade,<br>
+  e o que ainda é só plano</h1>
+  <p class="chamada">Três vistas da mesma rodada: o <strong>painel</strong> com os
+  contadores, o <strong>fluxo</strong> que um pedido percorre e a <strong>equipe</strong>
+  que responde por cada pedaço. Nenhum número desta página se digita — todos saem das
+  fontes nomeadas embaixo de cada cartão, e a página inteira se refaz rodando um
+  script. Número digitado à mão envelhece calado.</p>
+  <nav class="abas" role="tablist" aria-label="Vistas">
+    <button class="aba" type="button" data-vista="painel" role="tab" aria-controls="painel" aria-selected="true">Painel</button>
+    <button class="aba" type="button" data-vista="fluxo" role="tab" aria-controls="fluxo" aria-selected="false">Fluxo</button>
+    <button class="aba" type="button" data-vista="equipe" role="tab" aria-controls="equipe" aria-selected="false">Equipe</button>
+    <button class="aba tema" id="bt-tema" type="button">tema claro / escuro</button>
+  </nav>
+</header>
+<section id="painel" class="vista ativa" role="tabpanel" aria-label="Painel">
+<h2>Os pedidos do dono, nos três estados</h2>
+<p class="sub">Contados no <code>docs/PENDENCIAS.md</code> pelo mesmo leitor da página dos
+pedidos — uma receita só para o mesmo número, porque receita duplicada é receita que diverge.</p>
+<div class="placar"><div class="c "><div class="v">249</div><div class="r">pedidos do dono, ao todo</div><div class="q">contados hoje, 16/09/2026 · PENDENCIAS.md</div></div><div class="c feito"><div class="v">235</div><div class="r">feito · 94,4% do total</div><div class="q">contados hoje, 16/09/2026 · PENDENCIAS.md</div></div><div class="c parcial"><div class="v">10</div><div class="r">parcial · 4,0% do total</div><div class="q">contados hoje, 16/09/2026 · PENDENCIAS.md</div></div><div class="c planejado"><div class="v">4</div><div class="r">planejado · 1,6% do total</div><div class="q">contados hoje, 16/09/2026 · PENDENCIAS.md</div></div></div>
+
+<div class="duo">
+  <svg viewBox="0 0 232 232" role="img" width="232" height="232"
+     aria-label="Rosca dos 249 pedidos por estado" class="rosca">
+  <defs>
+    <pattern id="hachura-parcial" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="7" height="7" fill="var(--papel-2)"/>
+      <rect width="3.4" height="7" fill="var(--parcial)"/>
+    </pattern>
+  </defs>
+  <g><title>Feito: 235 de 249 (94,4%)</title><path d="M116.00 20.00 A96 96 0 1 1 82.79 25.93 L95.24 59.71 A60 60 0 1 0 116.00 56.00 Z" fill="var(--feito)" stroke="var(--papel)" stroke-width="1.5"/></g><g><title>Parcial: 10 de 249 (4,0%)</title><path d="M82.79 25.93 A96 96 0 0 1 106.33 20.49 L109.95 56.31 A60 60 0 0 0 95.24 59.71 Z" fill="url(#hachura-parcial)" stroke="var(--parcial)" stroke-width="1.5"/></g><g><title>Planejado: 4 de 249 (1,6%)</title><path d="M106.33 20.49 A96 96 0 0 1 116.00 20.00 L116.00 56.00 A60 60 0 0 0 109.95 56.31 Z" fill="none" stroke="var(--planejado)" stroke-width="2"/></g>
+  <text x="116" y="112" text-anchor="middle" class="rosca-n">249</text>
+  <text x="116" y="134" text-anchor="middle" class="rosca-r">pedidos</text>
+</svg>
+  <ul class="fatias"><li class="feito"><i></i><span>Feito <span class="s">— barra cheia</span></span><span class="n">235 · 94,4%</span></li><li class="parcial"><i></i><span>Parcial <span class="s">— hachurada</span></span><span class="n">10 · 4,0%</span></li><li class="planejado"><i></i><span>Planejado <span class="s">— só contorno</span></span><span class="n">4 · 1,6%</span></li></ul>
+</div>
+
+<div class="regra">
+  <span class="t">iniciado ≠ concluído — parcial não vira feito</span>
+  Um pedido só muda de <em>parcial</em> para <em>feito</em> com prova real nos dois
+  sentidos (o teste falha com o defeito reposto e passa com o conserto) e com os
+  portões verdes. O que está pela metade aparece pela metade, com a metade que
+  falta nomeada na própria linha.
+</div>
+
+<h2>O board, por pilar</h2>
+<p class="sub">Do <code>docs/pmo/BACKLOG.md</code>, pelo <code>rollup.py</code>. A largura da
+barra é o tamanho do pilar; a forma dentro dela é o estado — e ela se lê sem cor.</p>
+<ul class="pilares"><li><span class="l">Pilar 1</span><span class="t" style="width:100.0000%"><span class="b-aberto" style="width:90.9091%" title="aberto: 10"></span><span class="b-entregue" style="width:9.0909%" title="entregue-fechado: 1"></span></span><span class="n">10 · 1 · 0 &nbsp;<b>11</b></span></li><li><span class="l">Pilar 2</span><span class="t" style="width:27.2727%"><span class="b-aberto" style="width:100.0000%" title="aberto: 3"></span></span><span class="n">3 · 0 · 0 &nbsp;<b>3</b></span></li><li><span class="l">Pilar 3</span><span class="t" style="width:54.5455%"><span class="b-aberto" style="width:100.0000%" title="aberto: 6"></span></span><span class="n">6 · 0 · 0 &nbsp;<b>6</b></span></li><li><span class="l">Governança</span><span class="t" style="width:27.2727%"><span class="b-aberto" style="width:33.3333%" title="aberto: 1"></span><span class="b-entregue" style="width:66.6667%" title="entregue-fechado: 2"></span></span><span class="n">1 · 2 · 0 &nbsp;<b>3</b></span></li></ul>
+<div class="legenda">
+  <span class="aberto"><i></i>aberto — só contorno</span>
+  <span class="entregue"><i></i>entregue / fechado — cheia</span>
+  <span class="parado"><i></i>parado — hachurada</span>
+</div>
+<h3>Itens de escalão forte ainda abertos</h3>
+<div class="chips"><span class="chip">P1-108</span><span class="chip">P1-158</span><span class="chip">P1-SQL-2</span><span class="chip">P1-SQL-6</span><span class="chip">P2-CAIXA</span><span class="chip">P2-CIFRA</span><span class="chip">P2-DESIGN</span><span class="chip">P3-1</span><span class="chip">P3-2</span><span class="chip">P3-3</span><span class="chip">P3-5</span></div>
+<div class="placar"><div class="c "><div class="v">23</div><div class="r">itens no board</div><div class="q">contados hoje, 16/09/2026 · pmo/BACKLOG.md</div></div><div class="c aberto"><div class="v">20</div><div class="r">abertos</div><div class="q">contados hoje, 16/09/2026 · pmo/BACKLOG.md</div></div><div class="c entregue"><div class="v">3</div><div class="r">entregues / fechados</div><div class="q">contados hoje, 16/09/2026 · pmo/BACKLOG.md</div></div><div class="c parado"><div class="v">0</div><div class="r">parados</div><div class="q">contados hoje, 16/09/2026 · pmo/BACKLOG.md</div></div><div class="c "><div class="v">11</div><div class="r">itens de escalão forte abertos</div><div class="q">contados hoje, 16/09/2026 · pmo/BACKLOG.md</div></div></div>
+
+<h2>Gates externos pendentes</h2>
+<p class="sub">Pedidos ainda abertos cujo texto casa o léxico do gerador. A frase que
+casou aparece ao lado — quem lê julga o casamento em vez de acreditar nele.</p>
+<ul class="gates"><li><div class="cab"><span class="n">#175</span><span class="tt"><strong>Índice da chave: havia uma terceira saída — CRIAR — e nós não a vimos</strong></span><span class="pino planejado">Planejado</span></div><div class="chips"><span class="chip frase">«decisão do dono»</span></div><p class="tr">… se a resposta for zero o pedido vira documentação e não código. docs/INTEGRIDADE.md §7.5. DECISÃO do dono, 04/09/2026: MEDIR PRIMEIRO — as outras duas saídas (criar o índice da filha como o MySQL® e o MariaDB® fazem, a 2,2 µs/linha; ou …</p></li><li><div class="cab"><span class="n">#179</span><span class="tt"><strong>O teto do MVCC morreu medido — a Sombra continua de pé, por outro motivo</strong></span><span class="pino parcial">Parcial</span></div><div class="chips"><span class="chip frase">«decisão do dono»</span></div><p class="tr">… aqui a três meses alguém a defende com um ganho de desempenho que ninguém mediu. E fica a decisão do dono sobre a ordem. Cuidado com o atalho: a primeira redação da §11.3 dizia que o RwLock «custa uma linha», e isso é a premissa que es …</p></li><li><div class="cab"><span class="n">#197</span><span class="tt"><strong>Senha por banco vinda do login: o parecer com os dois defeitos que só aparecem de fora — e a decisão fica com o dono</strong></span><span class="pino parcial">Parcial</span></div><div class="chips"><span class="chip frase">«decisão fica com o dono»</span></div><p class="tr">… ha por banco vinda do login: o parecer com os dois defeitos que só aparecem de fora — e a decisão fica com o dono — Palavra do dono, 05/09/2026: «uma senha para o SGBD e opcional para a(s) tabela(s)» , «é individual por banco» e «no login […]  …</p></li><li><div class="cab"><span class="n">#239</span><span class="tt"><strong>Nível de isolamento acima de READ COMMITTED e TLS no transporte ficam para decisão do dono</strong></span><span class="pino parcial">Parcial</span></div><div class="chips"><span class="chip frase">«decisão do dono»</span></div><p class="tr">Nível de isolamento acima de READ COMMITTED e TLS no transporte ficam para decisão do dono — Duas das dezenove do comparativo continuavam de propósito em NÃO, com o custo em cima da mesa em vez de código ( docs/propostas …</p></li><li><div class="cab"><span class="n">#251</span><span class="tt"><strong>P2P: a identidade sem domínio bate no AAD do selo por endereço — decisão do dono e do DBA antes de congelar o PSCH do correio</strong></span><span class="pino planejado">Planejado</span></div><div class="chips"><span class="chip frase">«decisão do dono»</span><span class="chip frase">«parado por decisão»</span></div><p class="tr">P2P: a identidade sem domínio bate no AAD do selo por endereço — decisão do dono e do DBA antes de congelar o PSCH do correio — A pesquisa do transporte P2P ( docs/propostas/p2p-transporte-2026-09.md , papel J  …</p></li></ul>
+<h3>O léxico, por extenso</h3>
+<div class="chips"><span class="chip">«decisão do dono»</span><span class="chip">«decisao do dono»</span><span class="chip">«decisão fica com o dono»</span><span class="chip">«decisao fica com o dono»</span><span class="chip">«parado por decisão»</span><span class="chip">«parado por decisao»</span><span class="chip">«parada por decisão»</span><span class="chip">«parada por decisao»</span><span class="chip">«bloqueio externo»</span><span class="chip">«só com o dono»</span><span class="chip">«so com o dono»</span><span class="chip">«o dono decide»</span><span class="chip">«a escolha é do dono»</span><span class="chip">«a escolha e do dono»</span><span class="chip">«depende de você»</span><span class="chip">«depende de voce»</span></div>
+
+<h2>Últimas frentes</h2>
+<p class="sub">Os 8 commits mais recentes, do próprio <code>git log</code>.
+O assunto vai como foi escrito — dado não se estiliza.</p>
+<div class="rolo">
+  <table>
+    <thead><tr><th>commit</th><th>quando</th><th>assunto</th></tr></thead>
+    <tbody><tr><td class="h">f1618ae</td><td class="d">16/09/2026 06:13</td><td>Pesquisa do transporte P2P: sem DHT, ICE nem TURN na v1 -- e o gargalo nao era a rede</td></tr><tr><td class="h">9e489d6</td><td class="d">16/09/2026 06:08</td><td>Governanca: o rollup do board sai de gerador, e o tradutor petreo vira agente</td></tr><tr><td class="h">21ff9b7</td><td class="d">16/09/2026 05:58</td><td>Parecer medido do .cache em CSV: nao acelera a carga, e o que acelera esta nomeado</td></tr><tr><td class="h">90aabfe</td><td class="d">16/09/2026 05:43</td><td>Quadro da rodada: threads com semaforo e saude do disco -- medido antes do contrato</td></tr><tr><td class="h">c9a4a60</td><td class="d">16/09/2026 05:31</td><td>Isolamento: leitura repetivel pela trava, pedida -- a via (b) da Sombra</td></tr><tr><td class="h">6e717e6</td><td class="d">16/09/2026 04:17</td><td>Isolamento: a trava COMPARTILHADA (S) -- fundacao da leitura repetivel pela trava</td></tr><tr><td class="h">e6de10f</td><td class="d">16/09/2026 03:55</td><td>Equipe completa: petrea de escalao por atividade, os tres pilares e o board de controle</td></tr><tr><td class="h">1471ed1</td><td class="d">16/09/2026 03:09</td><td>SQL: UPDATE/DELETE por faixa -- colher os rowids e aplicar por linha</td></tr></tbody>
+  </table>
+</div>
+
+<h2>O motor, medido</h2>
+<p class="sub">Tudo do <code>CAPABILITIES.json</code>, e cada cartão traz a data da medição:
+número sem data é retrato que nunca existiu.</p>
+<div class="placar"><div class="c "><div class="v curta">0.18.0</div><div class="r">versão do motor</div><div class="q">medido em 16/09/2026 · CAPABILITIES.json</div></div><div class="c "><div class="v">2.320</div><div class="r">testes na suíte inteira</div><div class="q">medido em 16/09/2026 · CAPABILITIES.json</div></div><div class="c "><div class="v">138</div><div class="r">operações do protocolo</div><div class="q">medido em 16/09/2026 · CAPABILITIES.json</div></div><div class="c "><div class="v">193.809</div><div class="r">linhas de Rust</div><div class="q">medido em 16/09/2026 · CAPABILITIES.json</div></div><div class="c "><div class="v">63.496</div><div class="r">linhas de documentação</div><div class="q">medido em 16/09/2026 · CAPABILITIES.json</div></div><div class="c "><div class="v">8</div><div class="r">crates no workspace</div><div class="q">medido em 16/09/2026 · CAPABILITIES.json</div></div><div class="c "><div class="v">0</div><div class="r">dependências externas</div><div class="q">medido em 16/09/2026 · CAPABILITIES.json</div></div><div class="c "><div class="v">65%</div><div class="r">textos de tela na fábrica de idiomas · 2.014 de 3.063, teto 1.049</div><div class="q">medido em 16/09/2026 · CAPABILITIES.json</div></div><div class="c dado"><div class="v curta">6e717e6</div><div class="r">commit medido (7 primeiros de 40)</div><div class="q">medido em 16/09/2026 · CAPABILITIES.json</div></div><div class="c dado larga"><div class="v curta">claude/capacidades-disponiveis-y6auxh</div><div class="r">branch</div><div class="q">medido em 16/09/2026 · CAPABILITIES.json</div></div><div class="c "><div class="v curta">sim</div><div class="r">árvore suja ao medir</div><div class="q">medido em 16/09/2026 · CAPABILITIES.json</div></div></div>
+</section><section id="fluxo" class="vista" role="tabpanel" aria-label="Fluxo">
+<h2>Como um pedido vira página publicada</h2>
+<p class="sub">O processo da casa, do pedido do dono ao que se publica. Este quadro é
+conteúdo fixo de propósito — processo não é medida —, e o único desvio dele é o losango:
+o que depende de decisão sua ou de bloqueio externo fica <strong>parado</strong> e vai
+para a lista de gates, em vez de sumir.</p>
+<figure>
+  <svg viewBox="0 0 520 934" role="img" class="fluxo"
+     aria-label="Fluxograma do trabalho: do pedido do dono às páginas publicadas, com o losango da decisão do dono ou bloqueio externo levando ao estado parado">
+  <defs>
+    <marker id="seta-fluxo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="seta-parado" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--parado)"/>
+    </marker>
+  </defs>
+  <rect x="40" y="16" width="280" height="48" rx="6" fill="var(--papel-2)" stroke="currentColor" stroke-width="1.2"/><text x="180" y="36" text-anchor="middle" class="fx-t">pedido do dono</text><text x="180" y="52" text-anchor="middle" class="fx-s">a fonte de tudo</text><rect x="40" y="84" width="280" height="48" rx="6" fill="var(--papel-2)" stroke="currentColor" stroke-width="1.2"/><text x="180" y="104" text-anchor="middle" class="fx-t">pendência numerada</text><text x="180" y="120" text-anchor="middle" class="fx-s">docs/PENDENCIAS.md · ☑️ ◐ ☐</text><rect x="40" y="152" width="280" height="48" rx="6" fill="var(--papel-2)" stroke="currentColor" stroke-width="1.2"/><text x="180" y="172" text-anchor="middle" class="fx-t">board: pilar + escalão</text><text x="180" y="188" text-anchor="middle" class="fx-s">docs/pmo/BACKLOG.md · rollup.py</text><rect x="40" y="220" width="280" height="48" rx="6" fill="var(--papel-2)" stroke="currentColor" stroke-width="1.2"/><text x="180" y="240" text-anchor="middle" class="fx-t">medir a premissa</text><text x="180" y="256" text-anchor="middle" class="fx-s">antes de implementar o item</text><path d="M180 288 L310 344 L180 400 L50 344 Z" fill="var(--papel-2)" stroke="currentColor" stroke-width="1.4"/><text x="180" y="340" text-anchor="middle" class="fx-t">decisão do dono</text><text x="180" y="357" text-anchor="middle" class="fx-t">ou bloqueio externo?</text><rect x="346" y="317" width="166" height="54" rx="6" fill="none" stroke="var(--parado)" stroke-width="1.6" stroke-dasharray="5 3"/><text x="429.0" y="337" text-anchor="middle" class="fx-t fx-parado">PARADO</text><text x="429.0" y="351" text-anchor="middle" class="fx-s">entra na lista de gates —</text><text x="429.0" y="363" text-anchor="middle" class="fx-s">não some da página</text><rect x="40" y="420" width="280" height="48" rx="6" fill="var(--papel-2)" stroke="currentColor" stroke-width="1.2"/><text x="180" y="440" text-anchor="middle" class="fx-t">frente / agente do papel</text><text x="180" y="456" text-anchor="middle" class="fx-s">.claude/agents/</text><rect x="40" y="488" width="280" height="62" rx="6" fill="var(--papel-2)" stroke="currentColor" stroke-width="1.2"/><text x="180" y="508" text-anchor="middle" class="fx-t">prova real</text><text x="180" y="524" text-anchor="middle" class="fx-s">FALHA com o defeito reposto,</text><text x="180" y="537" text-anchor="middle" class="fx-s">passa com o conserto</text><rect x="40" y="570" width="280" height="48" rx="6" fill="var(--papel-2)" stroke="currentColor" stroke-width="1.2"/><text x="180" y="590" text-anchor="middle" class="fx-t">portões</text><text x="180" y="606" text-anchor="middle" class="fx-s">fmt · clippy zero avisos · suíte verde</text><rect x="40" y="638" width="280" height="62" rx="6" fill="var(--papel-2)" stroke="currentColor" stroke-width="1.2"/><text x="180" y="658" text-anchor="middle" class="fx-t">integração</text><text x="180" y="674" text-anchor="middle" class="fx-s">o defeito que só aparece</text><text x="180" y="687" text-anchor="middle" class="fx-s">no encontro das frentes</text><rect x="40" y="720" width="280" height="48" rx="6" fill="var(--papel-2)" stroke="currentColor" stroke-width="1.2"/><text x="180" y="740" text-anchor="middle" class="fx-t">geradores + portão dos geradores</text><text x="180" y="756" text-anchor="middle" class="fx-s">re-rodar mudaria algum número visível?</text><rect x="40" y="788" width="280" height="48" rx="6" fill="var(--papel-2)" stroke="currentColor" stroke-width="1.2"/><text x="180" y="808" text-anchor="middle" class="fx-t">commit · push · backup</text><text x="180" y="824" text-anchor="middle" class="fx-s">só o integrador comita</text><rect x="40" y="856" width="280" height="62" rx="6" fill="var(--papel-2)" stroke="currentColor" stroke-width="1.2"/><text x="180" y="876" text-anchor="middle" class="fx-t">páginas publicadas</text><text x="180" y="892" text-anchor="middle" class="fx-s">dossiê · pedidos · testes · gráficos</text><text x="180" y="905" text-anchor="middle" class="fx-s">status · PMO</text>
+  <line x1="310" y1="344" x2="340" y2="344" stroke="var(--parado)" stroke-width="1.4" marker-end="url(#seta-parado)"/><text x="328.0" y="337" text-anchor="middle" class="fx-r">sim</text><text x="189" y="414" class="fx-r">não</text><line x1="180" y1="64" x2="180" y2="79" stroke="currentColor" stroke-width="1.3" marker-end="url(#seta-fluxo)"/><line x1="180" y1="132" x2="180" y2="147" stroke="currentColor" stroke-width="1.3" marker-end="url(#seta-fluxo)"/><line x1="180" y1="200" x2="180" y2="215" stroke="currentColor" stroke-width="1.3" marker-end="url(#seta-fluxo)"/><line x1="180" y1="268" x2="180" y2="283" stroke="currentColor" stroke-width="1.3" marker-end="url(#seta-fluxo)"/><line x1="180" y1="400" x2="180" y2="415" stroke="currentColor" stroke-width="1.3" marker-end="url(#seta-fluxo)"/><line x1="180" y1="468" x2="180" y2="483" stroke="currentColor" stroke-width="1.3" marker-end="url(#seta-fluxo)"/><line x1="180" y1="550" x2="180" y2="565" stroke="currentColor" stroke-width="1.3" marker-end="url(#seta-fluxo)"/><line x1="180" y1="618" x2="180" y2="633" stroke="currentColor" stroke-width="1.3" marker-end="url(#seta-fluxo)"/><line x1="180" y1="700" x2="180" y2="715" stroke="currentColor" stroke-width="1.3" marker-end="url(#seta-fluxo)"/><line x1="180" y1="768" x2="180" y2="783" stroke="currentColor" stroke-width="1.3" marker-end="url(#seta-fluxo)"/><line x1="180" y1="836" x2="180" y2="851" stroke="currentColor" stroke-width="1.3" marker-end="url(#seta-fluxo)"/>
+</svg>
+  <figcaption>O caminho de um pedido. As caixas são passos; o losango é a única
+  bifurcação, e a saída «sim» não volta para o fluxo: ela vira item da lista de
+  gates externos do painel.</figcaption>
+</figure>
+<div class="legenda"><span class="feito"><i></i>☑️ Feito — barra cheia</span><span class="parcial"><i></i>◐ Parcial — hachurada</span><span class="planejado"><i></i>☐ Planejado — só contorno</span></div>
+<div class="regra">
+  <span class="t">parcial não vira feito</span>
+  Só vira feito com <strong>prova real</strong> — o teste falha com o defeito reposto e
+  passa com o conserto — e com os <strong>portões verdes</strong>: <code>fmt</code>,
+  <code>clippy</code> com zero avisos e a suíte inteira. Teste que passa por engano é
+  pior que teste que falta.
+</div>
+</section><section id="equipe" class="vista" role="tabpanel" aria-label="Equipe">
+<h2>Quem responde por quê</h2>
+<p class="sub">Os papéis pétreos, com o agente que os torna invocáveis. O escalão aparece
+pelo <strong>nível</strong> — nome de modelo é proibido em artefato versionado —, e o papel
+que não tem nível registrado diz isso em vez de ganhar um inventado. O que cada um
+responde sai do próprio arquivo do agente.</p>
+<div class="topo">
+  <div class="cartao dono">
+    <span class="papel">dono / PO</span>
+    <span class="nome">Adriano Boller</span>
+    <p class="dsc">Pede, decide e destrava. O que depende dele fica parado e aparece
+    na lista de gates externos do painel.</p>
+  </div>
+  <div class="haste"></div>
+  <div class="cartao"><span class="papel">A</span><span class="nome">Orquestrador</span><p class="dsc"><em>(esta sessão)</em></p></div>
+  <div class="haste"></div>
+</div>
+<div class="trilho"></div>
+<div class="grade"><div class="cartao"><span class="papel">B</span><span class="nome">engenheiro</span><div class="chips"><span class="chip">Engenheiro</span><span class="chip forte">escalão forte</span></div><p class="dsc">Papel B, engenheiro de desenvolvimento. Use para implementar uma frente de código já delimitada — o contrato e o aceite vêm prontos. Responde pelos portões (fmt, clippy zero avisos, suíte verde) e não entrega meia funcionalidade quando a metade for pior que nada. Escreve código e testes; não comita (o integrador comita).</p><p class="fr">escalão: <strong>forte</strong> quando toca motor/formato/concorrência; <strong>leve</strong> no mecânico</p><p class="fr">ferramentas: Read, Grep, Glob, Bash, Edit, Write</p></div><div class="cartao"><span class="papel">C</span><span class="nome">dba</span><div class="chips"><span class="chip">DBA</span><span class="chip forte">escalão forte</span></div><p class="dsc">Papel C, DBA sênior. Use quando o trabalho toca formato em disco, chave, índice, integridade referencial, ordem de digitação ou migração. Ele diz NÃO quando uma proposta boa quebra uma garantia, e traz a mudança de formato CEDO. Só leitura + provas de leitura; entrega o parecer com o tradeoff, não o conserto.</p><p class="fr">escalão: <strong>forte</strong></p><p class="fr">ferramentas: Read, Grep, Glob, Bash</p></div><div class="cartao"><span class="papel">D</span><span class="nome">Zelador</span><p class="dsc"><em>(script <code>phxsql/zelador.sh</code>)</em></p></div><div class="cartao"><span class="papel">E</span><span class="nome">designer</span><div class="chips"><span class="chip">Designer</span><span class="chip meio">escalão meio</span></div><p class="dsc">Papel E, designer gráfico. Use quando o trabalho toca a tela — paleta, tipografia, contraste, responsividade — e a marca manda sobre qualquer paleta inventada. A lei dele: interface só se prova EXERCITANDO, no navegador; rótulo se estiliza, dado nunca. Escreve UI e a exercita; não comita.</p><p class="fr">escalão: <strong>meio</strong> — <strong>forte</strong> na marca/acessibilidade, <strong>leve</strong> na varredura de textos</p><p class="fr">ferramentas: Read, Grep, Glob, Bash, Edit, Write</p></div><div class="cartao"><span class="papel">F</span><span class="nome">prova-real</span><div class="chips"><span class="chip">Prova real</span><span class="chip forte">escalão forte</span></div><p class="dsc">Papel F, usuários de teste e revisor de prova real. Use para escrever ou auditar um teste de uma mudança — é o papel mais fácil de fingir que se cumpriu. Prova real é nos DOIS sentidos: o teste tem de FALHAR com o defeito reposto e passar com o conserto. Escreve testes e mede o RED; não comita.</p><p class="fr">escalão: <strong>forte</strong></p><p class="fr">ferramentas: Read, Grep, Glob, Bash, Edit, Write</p></div><div class="cartao"><span class="papel">G</span><span class="nome">qa</span><div class="chips"><span class="chip">QA</span><span class="chip leve">escalão leve</span></div><p class="dsc">Papel G, QA. Dona das catracas e do catálogo de guardas — cada guarda com o defeito que a motivou, provada contra ele. Use para auditar se uma mudança respeita as catracas, ou se uma pétrea ficou sem guarda. Só leitura + rodar as catracas; entrega o inventário guarda×pétrea, não o conserto.</p><p class="fr">escalão: <strong>leve</strong> para rodar catraca; <strong>forte</strong> para desenhar guarda nova</p><p class="fr">ferramentas: Read, Grep, Glob, Bash</p></div><div class="cartao"><span class="papel">H</span><span class="nome">documentacao</span><div class="chips"><span class="chip">Documentação</span><span class="chip leve">escalão leve</span></div><p class="dsc">Papel H, documentação. Use para atualizar docs, dossiê, CHANGELOG, PENDENCIAS ou o documento de tecnologias ao fim de uma rodada. A lei dele: todo número visível sai de um GERADOR, nunca de memória — e a receita de um número também envelhece. Escreve docs e roda geradores; não comita.</p><p class="fr">escalão: <strong>leve</strong></p><p class="fr">ferramentas: Read, Grep, Glob, Bash, Edit, Write</p></div><div class="cartao"><span class="papel">H</span><span class="nome">tradutor</span><div class="chips"><span class="chip">Documentação</span><span class="chip">escalão não registrado por papel</span></div><p class="dsc">Tradutor pétreo (pedido #110). Use para levar um LOTE COERENTE de textos de tela cravados até a FABRICA_TELA (`idiomas.rs`) nos seis idiomas, trocar o literal pela chave e baixar `TETO_ROTULOS_E_CRASE` no MESMO commit. Roda o relatório do conferidor antes e depois; não traduz dado, só rótulo; não comita.</p><p class="fr">ferramentas: Read, Grep, Glob, Bash, Edit, Write</p></div><div class="cartao"><span class="papel">I</span><span class="nome">Versionador/Backup</span><p class="dsc"><em>(scripts <code>backup.sh</code>; integrador comita)</em></p></div><div class="cartao"><span class="papel">J</span><span class="nome">pesquisador</span><div class="chips"><span class="chip">Pesquisador</span><span class="chip forte">escalão forte</span></div><p class="dsc">Papel J. Use quando a tarefa precisa trazer o que outros motores/normas/fontes fazem ANTES de virar plano — arquitetura de fora, técnica nova, receita externa. Ele coordena os subagentes pesquisa-motor e pesquisa-bancada e consolida a matriz de evidência. Não implementa; entrega a recomendação medida contra o nosso gargalo.</p><p class="fr">escalão: <strong>forte</strong></p><p class="fr">ferramentas: Read, Grep, Glob, Bash, WebSearch, WebFetch, Agent</p></div><div class="cartao"><span class="papel">SEC</span><span class="nome">seguranca</span><div class="chips"><span class="chip">SEC</span><span class="chip forte">escalão forte</span></div><p class="dsc">Papel SEC (o acréscimo do comparativo com o Phoenix Cast). Revisor adversário de segurança e privacidade, separado do engenheiro e do QA. Use antes de fechar uma rodada que toca autenticação, cifra, permissão, protocolo de rede, segredos ou dado pessoal. Só leitura + provas de leitura; entrega achados priorizados, não conserto.</p><p class="fr">escalão: <strong>forte</strong> (sempre o mais forte)</p><p class="fr">ferramentas: Read, Grep, Glob, Bash</p></div></div>
+<h3>Subagentes do papel J</h3><p class="sub">Profundidade de domínio entra como subagente, não como papel novo — o dono de cada domínio já existe.</p><div class="grade"><div class="cartao"><span class="papel">J-sub</span><span class="nome">pesquisa-bancada</span><div class="chips"><span class="chip">J-sub</span><span class="chip meio">escalão meio</span></div><p class="dsc">Subagente do pesquisador para DESEMPENHO medido — como outros motores aceleram, e o que isso custaria contra o nosso gargalo real. Use quando a pergunta é «vale a pena para nós?» e a resposta tem de ser um número, não uma promessa. Só leitura + rodar medidor; entrega a premissa medida ou o que a mediria.</p><p class="fr">escalão: <strong>meio</strong></p><p class="fr">ferramentas: Read, Grep, Glob, Bash, WebSearch, WebFetch</p></div><div class="cartao"><span class="papel">J-sub</span><span class="nome">pesquisa-motor</span><div class="chips"><span class="chip">J-sub</span><span class="chip forte">escalão forte</span></div><p class="dsc">Subagente do pesquisador para o domínio do MOTOR — formato em disco, criptografia, normas (RFC/FIPS), estruturas de dados, e o fonte de motores maduros (Cassandra, SQLite, Postgres). Use para uma pergunta delimitada de projeto/formato/cripto. Só leitura; entrega mecanismo + custo + fonte primária, não desenho.</p><p class="fr">escalão: <strong>forte</strong></p><p class="fr">ferramentas: Read, Grep, Glob, Bash, WebSearch, WebFetch</p></div><div class="cartao"><span class="papel">J-sub</span><span class="nome">pesquisa-rede</span><div class="chips"><span class="chip">J-sub</span><span class="chip forte">escalão forte</span></div><p class="dsc">Subagente do pesquisador para o domínio de REDE P2P — descoberta de pares, travessia de NAT, gossip e anti-entropia, identidade sem domínio, transporte sem servidor central. Use para uma pergunta delimitada do pilar de e-mail P2P. Só leitura; entrega mecanismo + custo + fonte primária, medido contra o nosso gargalo, não desenho.</p><p class="fr">escalão: <strong>forte</strong></p><p class="fr">ferramentas: Read, Grep, Glob, Bash, WebSearch, WebFetch</p></div></div>
+<p class="conferencia">12 arquivos em <code>.claude/agents/</code>, todos com caixa · 15 caixas no organograma · 11 com escalão registrado em <code>docs/MODELOS.md</code> · nenhum registro do MODELOS.md sem arquivo de agente</p>
+</section><footer>
+  Gerado por <code>docs/pmo/pagina-do-status-do-projeto.py</code> em 16/09/2026 06:24 UTC,
+  de <code>docs/PENDENCIAS.md</code>, <code>docs/pmo/BACKLOG.md</code>,
+  <code>CAPABILITIES.json</code>, <code>git log</code>, <code>.claude/agents/</code> e
+  <code>docs/MODELOS.md</code>. Esta página <strong>não se edita</strong>: mexeu numa
+  fonte, rode o gerador. O portão dos geradores confere, em modo
+  <code>sem-carimbo</code>, se re-rodar mudaria algum número visível.
+</footer>
+</div>
+<script>
+(function(){
+  var raiz=document.documentElement;
+  try{
+    var g=localStorage.getItem("phx-pmo-tema");
+    if(g&&!raiz.hasAttribute("data-theme"))raiz.setAttribute("data-theme",g);
+  }catch(e){}
+  function temaAtual(){
+    var t=raiz.getAttribute("data-theme");
+    if(t)return t;
+    return (window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light";
+  }
+  var bt=document.getElementById("bt-tema");
+  if(bt)bt.addEventListener("click",function(){
+    var novo=temaAtual()==="dark"?"light":"dark";
+    raiz.setAttribute("data-theme",novo);
+    try{localStorage.setItem("phx-pmo-tema",novo);}catch(e){}
+  });
+  var abas=Array.prototype.slice.call(document.querySelectorAll(".aba[data-vista]"));
+  var vistas=Array.prototype.slice.call(document.querySelectorAll(".vista"));
+  if(!abas.length||!vistas.length)return;
+  document.body.classList.add("com-abas");
+  function mostrar(id){
+    vistas.forEach(function(v){v.classList.toggle("ativa",v.id===id);});
+    abas.forEach(function(a){a.setAttribute("aria-selected",String(a.dataset.vista===id));});
+    try{history.replaceState(null,"","#"+id);}catch(e){}
+  }
+  abas.forEach(function(a){a.addEventListener("click",function(){mostrar(a.dataset.vista);});});
+  var inicial=(location.hash||"").replace("#","");
+  mostrar(vistas.some(function(v){return v.id===inicial;})?inicial:vistas[0].id);
+})();
+</script>

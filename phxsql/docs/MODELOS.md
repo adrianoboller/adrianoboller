@@ -876,6 +876,18 @@ leve não compraria: achou que a recusa de DHT do `P2P-DISTRIBUIDO.md` §5.2
 remediu em vez de copiá-la — e achou o choque de frentes do AAD do selo, que é
 exatamente o defeito que só aparece no encontro das frentes.
 
+## Painel PMO — a sexta página, gerada — 16/09/2026
+
+| frente | escalão | por quê | papéis convocados | dispensados, e por quê |
+|---|---|---|---|---|
+| **Painel PMO** — `docs/pmo/pagina-do-status-do-projeto.py` → `status-do-projeto.html` (painel, fluxo, equipe), no molde dos três slides do Phoenix Cast que o dono mandou | **meio** | os números são mecânicos — os leitores já existiam (`pagina-dos-pedidos.py`, `rollup.py`, `CAPABILITIES.json`) e o portão confere a página com o defeito reposto —, mas a **tela** não é: marca, contraste nos dois temas, forma além da cor, 400 px, e a lei «interface só se prova exercitando». O erro aqui se vê **só na captura**, não no código: quatro defeitos saíram das capturas (legenda atravessando a caixa do fluxograma, «sim» encostando no PARADO, a caixa do J esticando a grade, a branch partindo no meio da palavra). É o escalão do designer para tela nova, e não pediu o forte porque nada aqui grava formato ou toca o motor | A, E (com os leitores do H reaproveitados) | B/C (nenhum código do motor, nenhum formato), F (a prova real é o portão dos geradores reprovando com um número trocado à mão — código 1 —, feita pelo próprio E), G (o portão já é a catraca; a entrada nova entrou nele), J (nada de fora a medir), D/I (nada a limpar; o integrador comita e publica) |
+
+**Custo medido do escalão meio** (do transcrito do agente, não estimado):
+228.499 tokens, 75 chamadas de ferramenta, 19 min 32 s de parede, em paralelo
+com a frente T (forte). O que o meio comprou e o leve não compraria: as
+quatro correções de captura acima, e a decisão de mostrar o escalão pelo nível
+com «não registrado por papel» para o tradutor em vez de inventar um.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:
