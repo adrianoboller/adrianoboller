@@ -916,6 +916,7 @@ calado nem se ignora calado.</div>
 <h2 id="s23"><span class="n">23 ·</span>As últimas frentes</h2>
 <p class="sub">Do próprio <code>git log</code>, só leitura. O commit conta a decisão e o motivo, não a lista de arquivos.</p>
 <div class="rolo"><table><thead><tr><th>commit</th><th>quando</th><th>o que decidiu</th></tr></thead><tbody>
+<tr><td class="mono">0a8b606</td><td class="q">2026-09-16 23:04</td><td>Fecho da rodada: os vinte geradores, e o portao VERDE na primeira</td></tr>
 <tr><td class="mono">b6f55ee</td><td class="q">2026-09-16 22:46</td><td>As duas petreas quase sem guarda ganham nove, provadas -- e o pedido 269</td></tr>
 <tr><td class="mono">4eaff53</td><td class="q">2026-09-16 22:26</td><td>Dois ponteiros errados no fonte, e o pedido 268 que um deles devia citar</td></tr>
 <tr><td class="mono">c091f98</td><td class="q">2026-09-16 22:17</td><td>O painel PMO alcanca os commits do fecho, pelo mesmo motivo da setima pagina</td></tr>
@@ -925,7 +926,6 @@ calado nem se ignora calado.</div>
 <tr><td class="mono">c585f83</td><td class="q">2026-09-16 21:30</td><td>Geradores: 264, 265 e 266 -- as quatro secoes que nao nasciam agora nascem</td></tr>
 <tr><td class="mono">f64b822</td><td class="q">2026-09-16 21:30</td><td>Motor: 245 (O2-O6) e 267, e as 19 marcas de divida que moram junto</td></tr>
 <tr><td class="mono">df0050f</td><td class="q">2026-09-16 20:04</td><td>status-html: a setima pagina alcanca o commit que a carrega</td></tr>
-<tr><td class="mono">095b264</td><td class="q">2026-09-16 18:02</td><td>Fecho da rodada: os 18 geradores, e o portao VERDE</td></tr>
 </tbody></table></div>
 <p class="fonte"><b>De onde sai:</b> <code>git log --no-merges -n 10</code> na raiz do repositório. Commit novo muda esta seção — e aí ela estava velha mesmo, que é o que o portão dos geradores existe para pegar.</p>
 
@@ -961,7 +961,7 @@ calado nem se ignora calado.</div>
 <div class="nota g"><b>As quatro que faltavam nasceram em 16/09/2026, e nenhuma nasceu pelo atalho.</b> Riscos e Dívida técnica (pedido 264) exigiram um <code>docs/RISCOS.md</code> tabelado e uma marca <code>// DIVIDA:</code> no fonte; Telemetria e logs (265) exigiu que a bancada passasse a gravar <code>resultados.json</code>, porque sem ele não havia a data em que o número foi medido; Antes × Depois (266) exigiu uma série versionada, porque o <code>CAPABILITIES.json</code> é sobrescrito e só guarda o agora. Nos quatro casos <b>a fonte veio antes do gerador</b> — é isso que a lei cobra, e é por isso que ela demora mais que digitar o número.</div>
 <div class="nota v"><b>Por que isto é a seção mais importante da página.</b> O exemplo trazia <b>677 números no texto visível, todos digitados à mão</b>. Adotá-lo como veio criaria 677 lugares onde um número envelhece calado — e esta casa já pagou isso quatro vezes: o selo da capa parado numa versão por quatro lançamentos, 198 pedidos onde eram 203, 428 testes onde eram 451, 780 KiB de interface onde eram 1.032. A quarta ensina o alcance da lei: <b>gerador certo chamado pela metade entrega número velho anunciando sucesso.</b></div>
 <footer>
-  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 16/09/2026 22:55 UTC,
+  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 16/09/2026 23:06 UTC,
   pelo comando <code>./status-html.sh</code>. <b>Nenhum número desta página foi
   digitado</b>: cada um sai de um gerador, e cada seção diz de qual. Onde o
   gerador não existe, a seção <b>não nasceu</b> — está nomeada na §25, com o
