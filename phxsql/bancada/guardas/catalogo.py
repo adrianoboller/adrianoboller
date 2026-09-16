@@ -3415,7 +3415,7 @@ pub fn limpar() {
         "seguem": [
             "servidor::testes_da_ficha_compartilhada::"
             "quatro_leitores_ao_mesmo_tempo_leem_a_mesma_pagina",
-            "servidor::testes_janela_e_cadeia::so_uma_operacao_usa_a_ficha_compartilhada",
+            "servidor::testes_janela_e_cadeia::so_as_duas_operacoes_medidas_usam_a_ficha_compartilhada",
         ],
     },
     {
@@ -4378,10 +4378,10 @@ pub fn limpar() {
             "Achado A2 da revisao do motor (09/09/2026, p02_sql_on_conflict_set.py): o tradutor punha o SET em `atualizar`, `op_inserir` nunca o lia. Campo de protocolo sem leitor e primo do `recursos.cache_paginas` -- «configuracao que nao e lida mente». Repor o defeito e o `op_inserir` voltar a chamar o upsert sem o SET."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """                crate::upsert::aplicar(&mut t, &indice, &linha, modo, atualizar)?
+        "trecho": """                crate::upsert::aplicar(&mut t, &indice, &linha, modo, atualizar, gancho)?
 """,
         "troca": """                // DEFEITO REPOSTO: o `atualizar` do pedido nao chega ao motor.
-                crate::upsert::aplicar(&mut t, &indice, &linha, modo, None)?
+                crate::upsert::aplicar(&mut t, &indice, &linha, modo, None, gancho)?
 """,
         "pacote": "phxsql-server",
         "alvo": ['--lib'],

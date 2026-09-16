@@ -46,6 +46,26 @@ Três arquivos, e a divisão entre os dois primeiros é o ponto:
 `bancada/` não roda por esse executor. Ver `docs/CATRACAS.md` §11 e
 `docs/cognicao/cognicao_alcance-do-catalogo-de-guardas-e-so-crates_20260916_1050.md`.
 
+**`trecho-vivo.py`, também nesta pasta, também NÃO é uma entrada do catálogo**
+— é a catraca do catálogo *envelhecido* (pedido 263). Ela lê este
+`catalogo.py` pelo próprio módulo (nunca por cópia da lista) e pergunta, para
+cada entrada, se o `trecho` ainda existe literalmente no arquivo que ela
+nomeia e se cada teste de `caem`/`seguem` ainda existe como `fn` em
+`crates/**/*.rs`.
+
+Ela existe por um número: em 16/09/2026 a corrida completa achou **onze
+guardas QUEBRADAS**, e um único commit de 12/09 tinha aposentado **cinco de
+uma vez** sem ninguém ver por quatro dias. A causa não é desleixo, é custo —
+o `provar-guardas.py` leva cerca de uma hora, porque repõe o defeito e roda
+`cargo test` 142 vezes. **Guarda que só se confere em uma hora é guarda que
+não se confere.** O `trecho-vivo.py` custa **0,18 s** e roda no item 0c da
+bateria.
+
+E o limite dela está escrito no próprio arquivo, porque é o que a impede de
+virar falsa segurança: **ela não substitui o provador.** Achar o trecho não
+prova que repô-lo derruba o teste — só o provador prova isso. Ver
+`docs/CATRACAS.md` §12.
+
 ## O que sai
 
 ```

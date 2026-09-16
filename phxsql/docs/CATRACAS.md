@@ -577,6 +577,62 @@ folga 0 — nasce colada, como as quatro do dia 03/09.
 a catraca acusa **SUBIU 4 (teto 0)**, nomeando as quatro linhas; com o
 conserto, `ok 0 (teto 0)`.
 
+## 12. `TETO_TRECHO_MORTO` e `TETO_TESTE_MORTO` — o catálogo envelhecido
+
+**O defeito que a motivou** (pedido 263, 16/09/2026): a corrida inteira do
+`provar-guardas.py` devolveu **11 guardas QUEBRADAS** — nem provadas nem
+reprovadas: o `trecho` que a entrada manda substituir para repor o defeito
+**não existe mais** no arquivo, então a guarda não pode nem ser tentada.
+Guarda que existe e não guarda é pior que guarda faltando, porque o catálogo
+a conta como cobertura.
+
+Medido commit a commit depois: **um único commit aposentou cinco delas de uma
+vez** — `2fe8658` (12/09, «a conferência de FK dentro da transação vê o pai
+empilhado»), que mexeu em `table.rs` e `transacao.rs`. Ninguém percebeu por
+**quatro dias**, e o motivo é o custo: o provador leva cerca de uma hora,
+porque repõe o defeito e roda `cargo test` para cada uma das 142 entradas.
+**Guarda que só se confere em uma hora é guarda que não se confere.**
+
+**O que elas contam**: para cada entrada do catálogo, se o `trecho` ainda
+existe **literalmente** no arquivo que ela nomeia, e se cada teste citado em
+`caem`/`seguem` ainda existe como `fn` em `crates/**/*.rs`.
+
+**O que elas NÃO contam, e isto importa**: elas **não substituem o
+provador**. Achar o trecho não prova que repô-lo derruba o teste — só o
+provador prova isso, e continua sendo ele a autoridade. Esta régua é o aviso
+barato, que pega a classe de envelhecimento que custou os quatro dias.
+
+**Onde mora**: `bancada/guardas/trecho-vivo.py`, chamada pelo item 0c da
+bateria (`bancada/bateria/prova-bateria.py`) — estática, sem servidor e sem
+compilar nada.
+
+**Medido hoje** (16/09/2026): **8** trechos mortos e **0** testes mortos.
+Os dois tetos nascem nesses números, não no desejado. O 8 é dívida velha
+nomeada no pedido 263, cada uma com o commit que a quebrou; o 0 é medido
+*depois* do conserto de `leitura-sem-recuo-para-a-exclusiva`, cuja entrada
+nomeava `so_uma_operacao_usa_a_ficha_compartilhada`, renomeado em `f2b87aa`.
+
+**A prova real, nos três sentidos**: repondo a assinatura velha do
+`upsert::aplicar` no trecho de `set-do-on-conflict-ignorado`, acusa **SUBIU 9
+(teto 8)** nomeando a guarda; repondo o nome velho do teste renomeado, acusa
+**SUBIU 1 (teto 0)**; com o teto adulterado para 9, acusa **DESCEU — BAIXE O
+TETO 8 (teto 9)**. Limpa, `ok 8` e `ok 0`, código de saída 0.
+
+**E a armadilha que a própria medição pagou**, porque ela é a lei da casa por
+outro caminho: a primeira versão varria só `crates/<pacote>/src/` atrás dos
+testes e acusou **154** nomes mortos. Eram 154 falsos — o teste de integração
+mora em `crates/<pacote>/tests/`, não em `src/`. Régua que mede um terço da
+caixa e anuncia o número inteiro é o mesmo defeito do KiB da interface.
+Corrigida, mede `crates/**/*.rs` inteiro, e o número é zero.
+
+**E o custo dela também foi medido, e consertado**: a primeira versão
+guardava o fonte inteiro numa string e corria uma busca de expressão regular
+por nome citado — mais de quatrocentas buscas varrendo os mesmos megabytes,
+**31,6 s** medidos em três corridas. Uma passagem só, com o nome virando
+chave de conjunto, dá o mesmo veredito em **0,18 s** — 180× menos. **Régua
+cara é régua que não se roda**, e uma que custasse meio minuto acabaria
+saindo da bateria pelo mesmo motivo que o provador saiu do dia a dia.
+
 ## Os limites de funcionamento encontrados (não são catracas)
 
 Achados varrendo `TETO`, `MAX` e `LIMITE` em `crates/*/src/**/*.rs` e em

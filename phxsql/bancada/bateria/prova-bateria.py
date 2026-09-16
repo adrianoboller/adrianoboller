@@ -968,6 +968,22 @@ def item_0b_o_portao_nao_se_acha():
         print("  " + r.stderr.strip()[:400])
     confere("a catraca do `pkill` sem PID segura", r.returncode, 0)
 
+    # CATRACA -- pedido 263: nenhuma entrada do catalogo de guardas aponta
+    # para um trecho ou um teste que o codigo nao tem mais. A corrida inteira
+    # do `provar-guardas.py` leva cerca de uma hora (ela repoe o defeito e
+    # roda `cargo test` 142 vezes), e foi por isso que UM commit de 12/09
+    # aposentou cinco guardas sem ninguem ver por quatro dias. Esta regua
+    # custa 0,18 s e pega essa classe -- nao substitui o provador.
+    catraca_catalogo = os.path.join(AQUI, "..", "guardas", "trecho-vivo.py")
+    r = subprocess.run([sys.executable, catraca_catalogo, "--catraca"],
+                       capture_output=True, text=True)
+    for linha in r.stdout.splitlines():
+        if linha.strip():
+            print("  " + linha)
+    if r.returncode != 0 and r.stderr:
+        print("  " + r.stderr.strip()[:400])
+    confere("a catraca do catalogo envelhecido segura", r.returncode, 0)
+
 
 def main():
     if not os.path.exists(PHXSQLD):
