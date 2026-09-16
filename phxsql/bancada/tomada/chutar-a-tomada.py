@@ -60,6 +60,11 @@ resultado.
   mas nao drena `marcas_pendentes` -- a marca de um commit ja duravel fica no
   disco ate a proxima drenagem, e uma queda depois do «ok» faz o arranque
   reportar «transacoes achadas 1 / ja aplicadas N». Nao perde dado; e ruido.
+  CONFIRMADA em 16/09/2026 (3/3 corridas `APOS_BULKINSERT_FALSE_MARCA_REPORTADA`,
+  a marca no disco 300 ms depois do «ok») e consertada no pedido 254: o
+  `bulkinsert(false)` passou a chamar a MESMA drenagem do fecho da janela.
+  Desde entao o ponto e VEREDITO, nao linha informativa: marca depois do «ok»
+  final reprova, e `bancada/tomada/marca-apos-bulkinsert.py` mede so ele.
 * Depois do «ok»: o COMMIT e duravel pela marca `.tx` (fsync incondicional em
   `gravar_marca`), e o `.reg`/`.ndx` nao vao ao disco com a janela aberta; o
   `bulkinsert(false)` e o contrario: `.reg` e `.ndx` sincronizados, marca
@@ -162,7 +167,9 @@ ESPERADO = {
         "no COMMIT, a marca fica PENDENTE, e bulkinsert(false) sincroniza a "
         "tabela sem drenar `marcas_pendentes` -- a marca de um commit ja "
         "duravel fica no disco, e a tomada depois do ok final faz o arranque "
-        "reportar «achadas 1 / ja aplicadas N»"),
+        "reportar «achadas 1 / ja aplicadas N». Hipotese CONFIRMADA em "
+        "16/09/2026 e consertada (pedido 254): hoje o esperado e marca "
+        "NENHUMA depois do ok do bulkinsert(false), e o arranque calado"),
     "reindexar": (
         "ou o indice esta INTEIRO (queda antes de comecar ou depois de "
         "terminar), ou esta SUJO e recusa ate o reindexar. HIPOTESE de "
@@ -849,6 +856,10 @@ def julgar_tx_em_bulk(c, _estado, prog, rel):
         classe = "APOS_BULKINSERT_FALSE" + ("_MARCA_REPORTADA" if rel is not None else "_SEM_MARCA")
         if r_ != N_BULK_TX:
             problemas.append(f"depois do ok final, registros {r_}")
+        # Pedido 254: o «ok» do bulkinsert(false) so sai depois de a marca do
+        # COMMIT ter sido drenada. Marca reportada aqui e o defeito de volta.
+        if rel is not None:
+            problemas.append("marca .tx do COMMIT sobreviveu ao ok do bulkinsert(false) (pedido 254)")
     elif prog.get("commit"):
         classe = "APOS_COMMIT_OK_ANTES_DE_SOLTAR"
         if r_ != N_BULK_TX:
@@ -1163,11 +1174,15 @@ def main():
     ok("tx em bulk: o motor aceita (ou a recusa esta registrada)",
        aceite_b["aceito"] or bool(aceite_b["recusa"]), str(aceite_b)[:300])
     if aceite_b["aceito"]:
-        ok("tx em bulk: HIPOTESE «a marca do COMMIT fica pendente e bulkinsert(false) nao a drena»",
-           True, "medido: apos COMMIT = %s, apos bulkinsert(false) = %s, 300 ms depois = %s -- hipotese %s"
+        # Era linha informativa (a hipotese, sempre True); desde o pedido 254 e
+        # veredito: a marca fica pendente no COMMIT (a janela nao fecha na
+        # reserva) e SAI no bulkinsert(false), que chama a drenagem do fecho.
+        ok("tx em bulk: a marca do COMMIT fica pendente ate o bulkinsert(false) e sai nele (pedido 254)",
+           bool(aceite_b["marcas_apos_commit"]) and not aceite_b["marcas_apos_bulkinsert_false"]
+           and not aceite_b["marcas_300ms_depois"],
+           "medido: apos COMMIT = %s, apos bulkinsert(false) = %s, 300 ms depois = %s"
            % (aceite_b["marcas_apos_commit"], aceite_b["marcas_apos_bulkinsert_false"],
-              aceite_b["marcas_300ms_depois"],
-              "CONFIRMADA" if aceite_b["marcas_apos_bulkinsert_false"] else "MORTA"))
+              aceite_b["marcas_300ms_depois"]))
         p3b = varredura("tx_em_bulk", montar_bulk_tx, roteiro_tx_em_bulk, julgar_tx_em_bulk, N_ATRASOS)
         ok("tx em bulk: nunca METADE, indice de pe, marca nenhuma no fim",
            not p3b["invalidas"],

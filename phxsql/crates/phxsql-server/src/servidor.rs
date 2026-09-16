@@ -12258,14 +12258,32 @@ impl Servidor {
         let r = cargas.soltar(&database, &tabela, sessao.ligacao, forcar, agora)?;
         drop(cargas);
 
-        // O fsync que a carga inteira adiou acontece agora.
+        // O fsync que a carga inteira adiou acontece agora -- e e o MESMO
+        // fecho da janela, na mesma ordem: sincronizar, tirar das sujas,
+        // drenar as marcas. Um COMMIT feito dentro da reserva deixou a marca
+        // `.tx` pendurada esperando exatamente este `fsync` (a janela nao
+        // fecha em tabela reservada); sincronizar sem drenar era o pedido
+        // 254: a marca de um commit ja duravel sobrevivia ao «ok», e toda
+        // tomada chutada depois dele fazia o arranque reportar «achadas 1 /
+        // ja aplicadas N» para um commit que ja tinha acabado.
+        //
+        // O `sincronizar` proprio fica, em vez de deixar a tabela na lista
+        // para o fecho: o fecho engole o erro de E/S (a chave volta para as
+        // sujas e a marca fica, que e o lado seguro), e o cliente receberia
+        // `"sincronizada": true` sobre um `fsync` que falhou. Aqui o erro
+        // sobe para quem pediu.
+        //
+        // E tudo sob a trava de dados, inclusive o `remove`: a reserva ja
+        // foi solta, e entre o `fsync` e o `remove` outro escritor podia
+        // entrar, sujar a tabela de novo e ve-la sair das sujas sem `fsync`.
         {
-            let _trava = self.travar_dados()?;
-            let mut t = self.abrir_travada(&_trava, p, sessao)?;
+            let trava = self.travar_dados()?;
+            let mut t = self.abrir_travada(&trava, p, sessao)?;
             t.sincronizar()?;
-        }
-        if let Ok(mut sujas) = self.sujas.lock() {
-            sujas.remove(&format!("{database}/{tabela}"));
+            if let Ok(mut sujas) = self.sujas.lock() {
+                sujas.remove(&format!("{database}/{tabela}"));
+            }
+            self.descarregar_sujas_com(&trava);
         }
 
         Ok(Json::objeto(vec![
@@ -14389,9 +14407,13 @@ impl Servidor {
             Ok(mut s) => s.drain().collect(),
             Err(_) => return,
         };
-        if lista.is_empty() {
-            return;
-        }
+        // Lista vazia NAO volta daqui: segue ate a drenagem das marcas. Quem
+        // chama pode ter sincronizado a unica tabela suja por conta propria
+        // -- o fecho da janela numa tabela so, e o `bulkinsert(false)` -- e
+        // ai o que falta nao e `fsync` nenhum, e apagar a marca do commit que
+        // esperava por ele. Voltar aqui era o pedido 254: a marca de um
+        // commit ja duravel ficava no disco para sempre, e o relogio de
+        // fundo nao a alcancava porque ele tambem volta sem tabela suja.
         let mut faltaram = Vec::new();
         for pedaco in lista.chunks(FIOS_DO_FECHO) {
             let mut chaves: Vec<String> = Vec::with_capacity(pedaco.len());
@@ -34934,10 +34956,28 @@ mod testes_transacoes {
     ///
     /// Com `durabilidade: por_operacao` a janela fecha em toda gravacao, e a
     /// marca sai no proprio commit.
+    ///
+    /// A janela fica aberta por CONFIGURACAO, e nao pelos 200 ms de fabrica:
+    /// o relogio dela comeca a contar quando o servidor nasce, e numa maquina
+    /// ocupada criar o banco e as duas tabelas ja passava dos 200 ms -- a
+    /// janela fechava no proprio commit, a marca saia na hora e a primeira
+    /// asercao caia sem defeito nenhum (medido em 16/09/2026: 2 quedas em 15
+    /// corridas com outra suite rodando ao lado). Teste que depende do
+    /// relogio de parede passa ou cai conforme a maquina, e nao conforme o
+    /// codigo.
     #[test]
     fn a_marca_espera_o_fsync_e_so_entao_e_apagada() {
         let dir = dir_temp("marca");
-        let s = servidor(&dir);
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.recursos.lote_milissegundos = 3_600_000;
+        let s = Servidor::novo(c).unwrap();
         let ses = sessao(7);
         base(&s, &ses);
         pede(&s, &ses, r#""op":"begin""#).unwrap();
@@ -34988,6 +35028,138 @@ mod testes_transacoes {
         .unwrap();
         pede(&s, &ses, r#""op":"commit""#).unwrap();
         assert!(marcas(&dir).is_empty(), "{:?}", marcas(&dir));
+    }
+
+    /// **Pedido 254**: a marca do COMMIT feito DENTRO de uma tabela reservada
+    /// sai no `bulkinsert(false)`.
+    ///
+    /// Com a tabela reservada a janela nao fecha no commit -- e o segundo
+    /// ganho da reserva --, entao a marca fica pendente esperando o `fsync`,
+    /// que e o do `bulkinsert(false)`. Ele sincronizava a tabela e a tirava
+    /// das sujas por conta propria, sem passar pela drenagem do fecho: a
+    /// marca de um commit ja duravel ficava no disco para sempre, e toda
+    /// tomada chutada depois do «ok» fazia o arranque reportar «achadas 1 /
+    /// ja aplicadas N» para um commit que ja tinha acabado. Medido pela
+    /// bancada `chutar-a-tomada.py` em 16/09/2026, sem queda: a marca
+    /// continuava la 300 ms depois do «ok».
+    #[test]
+    fn a_marca_do_commit_na_reserva_sai_no_bulkinsert_false() {
+        let dir = dir_temp("marca-na-reserva");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base(&s, &ses);
+        pede(
+            &s,
+            &ses,
+            r#""op":"bulkinsert","database":"loja","tabela":"clientes","ligado":true"#,
+        )
+        .unwrap();
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+        )
+        .unwrap();
+        pede(&s, &ses, r#""op":"commit""#).unwrap();
+        // O cenario do pedido: reservada, a janela nao fechou e a marca esta
+        // pendurada -- e assim que tem de estar, ate o fsync acontecer.
+        assert_eq!(
+            marcas(&dir).len(),
+            1,
+            "com a tabela reservada a marca tem de ESPERAR o fsync do \
+             bulkinsert(false)"
+        );
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"bulkinsert","database":"loja","tabela":"clientes","ligado":false"#,
+        )
+        .unwrap();
+        assert_eq!(r.campo("sincronizada").and_then(Json::booleano), Some(true));
+        assert!(
+            marcas(&dir).is_empty(),
+            "o bulkinsert(false) sincronizou a tabela e a marca do commit \
+             ficou no disco: {:?}",
+            marcas(&dir)
+        );
+        assert!(
+            s.marcas_pendentes.lock().unwrap().is_empty(),
+            "a marca saiu do disco mas ficou na lista de pendentes"
+        );
+        assert!(s.sujas.lock().unwrap().is_empty());
+        assert_eq!(quantas(&s, &ses, "clientes"), 1);
+    }
+
+    /// **O irmao do pedido 254**, achado procurando quem mais tira tabela
+    /// das sujas sem passar pela drenagem: nenhuma reserva, `por_lote`, UMA
+    /// tabela so.
+    ///
+    /// O commit deixa a marca pendente (janela aberta). A gravacao que fecha
+    /// a janela sincroniza a tabela, a tira das sujas e chama o fecho -- que
+    /// voltava antes de drenar as marcas porque a lista de sujas JA estava
+    /// vazia. A marca de um commit ja duravel ficava pendurada ate a proxima
+    /// janela que fechasse com DUAS tabelas sujas, ou para sempre; e o
+    /// relogio de fundo nao a alcancava, porque ele tambem volta quando nao
+    /// ha tabela suja. O `bulkinsert(false)` e este fecho chamam as mesmas
+    /// funcoes na mesma ordem -- sincronizar, tirar das sujas, drenar --, e
+    /// por isso o conserto de um sem o outro seria meio conserto.
+    #[test]
+    fn a_janela_que_fecha_numa_tabela_so_leva_a_marca_junto() {
+        let dir = dir_temp("marca-janela-de-uma");
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        // A janela fecha pela CONTAGEM, nunca pelo relogio: um teste que
+        // dependesse dos 200 ms de fabrica passaria ou cairia conforme a
+        // maquina estivesse ocupada.
+        c.recursos.lote_operacoes = 4;
+        c.recursos.lote_milissegundos = 3_600_000;
+        let s = Servidor::novo(c).unwrap();
+        let ses = sessao(7);
+        base(&s, &ses);
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+        )
+        .unwrap();
+        pede(&s, &ses, r#""op":"commit""#).unwrap();
+        assert_eq!(
+            marcas(&dir).len(),
+            1,
+            "a primeira gravacao da janela nao a fecha: a marca tem de esperar"
+        );
+        // Tres gravacoes soltas na MESMA tabela: a quarta operacao da janela
+        // (`lote_operacoes = 4`) e a que fecha, e ela e a unica suja.
+        for id in 2..=4 {
+            pede(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"clientes","linha":{{"id":{id},"nome":"b"}}"#
+                ),
+            )
+            .unwrap();
+        }
+        assert!(
+            s.sujas.lock().unwrap().is_empty(),
+            "a janela nao fechou: o cenario nao e o do teste"
+        );
+        assert!(
+            marcas(&dir).is_empty(),
+            "a janela fechou numa tabela so e a marca do commit ficou \
+             pendurada: {:?}",
+            marcas(&dir)
+        );
+        assert!(s.marcas_pendentes.lock().unwrap().is_empty());
+        assert_eq!(quantas(&s, &ses, "clientes"), 4);
     }
 
     // -------------------------------------------------------- os savepoints

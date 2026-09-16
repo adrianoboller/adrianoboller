@@ -1777,6 +1777,33 @@ Está registrado em
 
 ---
 
+#### 12.6.6 O laço tinha uma porta que não drenava — pedido 254 (16/09)
+
+A regra barata da §12.6.1 — *apaga todas as marcas pendentes quando todas as
+tabelas sujas sincronizaram* — tinha um `return` antes dela: com o conjunto
+de sujas **vazio**, `descarregar_sujas_com` voltava sem chegar às marcas. E
+quem chega com o conjunto vazio é quem acabou de sincronizar a única tabela
+suja por conta própria: o fecho da janela numa tabela só
+(`gravar_de_verdade`) e o `bulkinsert(false)` — que, além disso, nem chamava
+a drenagem. Nos dois, a marca de um commit já durável ficava no disco, e o
+relógio de fundo não a alcançava, porque também volta sem tabela suja.
+
+Medido com a bancada da tomada (`bancada/tomada/marca-apos-bulkinsert.py`,
+16/09/2026): antes, a marca `transacao_1789554685673.tx` gravada às
+10:31:26.377Z pelo COMMIT continuava lá no «ok» do `bulkinsert(false)`
+(10:31:26.391Z) e 300 ms depois, e a tomada chutada depois do «ok» reportou
+`achadas 1 / ja aplicadas 800` em **3/3** corridas; depois, marca nenhuma e
+**3/3** `APOS_BULKINSERT_FALSE_SEM_MARCA`; com o defeito reposto pela guarda,
+3/3 reportadas de novo. O irmão (`por_lote`, uma tabela, a janela fechando
+pela contagem depois de um COMMIT) caiu por teste unitário antes do conserto.
+
+O conserto não mexe no invariante nem no encontro atômico: a drenagem passa
+a rodar sempre que **nada ficou sujo**, e não só quando *havia* algo a
+sincronizar — e o `bulkinsert(false)` chama o mesmo fecho, na mesma ordem,
+sob a mesma trava. Guardas: `bulkinsert-false-nao-drena-a-marca` e
+`fecho-sem-suja-nao-drena-a-marca`. Cognição:
+`cognicao_drenagem-que-so-roda-quando-ha-trabalho_20260916_1026.md`.
+
 ## 13. RETRATADA — a medição não mediu o que dizia medir
 
 **Publicada às 07:25 de 04/09 e retirada às 07:52, pelo autor.** Ela dizia:

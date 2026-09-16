@@ -5014,4 +5014,100 @@ pub fn limpar() {
             "servidor::testes_bulkinsert::o_dono_continua_gravando",
         ],
     },
+    # -----------------------------------------------------------------------
+    # Pedido 254: a marca do COMMIT feito dentro da reserva sobrevivia ao
+    # «ok» do bulkinsert(false). Duas guardas porque o defeito tinha dois
+    # pontos que chamam as mesmas funcoes na mesma ordem (sincronizar, tirar
+    # das sujas, drenar): o `bulkinsert(false)`, que nao drenava, e o fecho da
+    # janela, que voltava antes de drenar quando nao havia tabela suja.
+    # -----------------------------------------------------------------------
+    {
+        "id": "bulkinsert-false-nao-drena-a-marca",
+        "titulo": "o `bulkinsert(false)` sincroniza a tabela e deixa a marca `.tx` do COMMIT no disco",
+        "porque": (
+            "achado 1 da bancada «chutar a tomada» (pedido 253), hipotese "
+            "escrita antes e confirmada sem queda em 16/09/2026: com a tabela "
+            "reservada a janela nao fecha no COMMIT, a marca fica pendente "
+            "esperando o fsync do bulkinsert(false) -- que sincronizava e "
+            "tirava a tabela das sujas por conta propria, sem a drenagem do "
+            "fecho. A marca de um commit ja duravel ficava no disco 300 ms "
+            "depois do «ok», e a tomada chutada depois dele fazia o arranque "
+            "reportar «achadas 1 / ja aplicadas 800» (3/3 corridas "
+            "APOS_BULKINSERT_FALSE_MARCA_REPORTADA). Nao perde nem duplica "
+            "linha: e marca que sobrevive a mais do que devia. O conserto e "
+            "chamar a MESMA drenagem, na mesma ordem, sob a mesma trava."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            t.sincronizar()?;
+            if let Ok(mut sujas) = self.sujas.lock() {
+                sujas.remove(&format!("{database}/{tabela}"));
+            }
+            self.descarregar_sujas_com(&trava);
+        }
+""",
+        "troca": """            t.sincronizar()?;
+            // DEFEITO REPOSTO (pedido 254): a tabela sai das sujas sem passar
+            // pela drenagem do fecho -- a marca do COMMIT feito na reserva
+            // fica no disco depois do «ok».
+            if let Ok(mut sujas) = self.sujas.lock() {
+                sujas.remove(&format!("{database}/{tabela}"));
+            }
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::a_marca_do_commit_na_reserva_sai_no_bulkinsert_false",
+        ],
+        "seguem": [
+            # O irmao (o fecho da janela numa tabela so) e outro ponto: este
+            # defeito nao o alcanca, e e isso que diz que sao DOIS consertos.
+            "servidor::testes_transacoes::a_janela_que_fecha_numa_tabela_so_leva_a_marca_junto",
+            # A soltura continua sincronizando e soltando: o defeito e so a
+            # marca que fica.
+            "servidor::testes_bulkinsert::o_dono_continua_gravando",
+            "servidor::testes_bulkinsert::a_queda_da_conexao_solta",
+        ],
+    },
+    {
+        "id": "fecho-sem-suja-nao-drena-a-marca",
+        "titulo": "o fecho da janela volta antes de drenar as marcas quando não há tabela suja",
+        "porque": (
+            "o irmao do pedido 254, achado procurando quem mais tira tabela "
+            "das sujas sem drenar: `gravar_de_verdade` sincroniza a propria "
+            "tabela, a tira das sujas e so entao chama o fecho -- que, com a "
+            "lista vazia, voltava sem apagar as marcas pendentes. Em "
+            "`por_lote`, um COMMIT seguido das gravacoes que fecham a janela "
+            "na MESMA tabela deixava a marca de um commit ja duravel "
+            "pendurada ate a proxima janela com duas tabelas sujas, ou para "
+            "sempre; e o relogio de fundo tambem volta sem tabela suja. Este "
+            "defeito reposto derruba OS DOIS testes, porque o "
+            "`bulkinsert(false)` consertado passa por este mesmo fecho."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        // fundo nao a alcancava porque ele tambem volta sem tabela suja.
+        let mut faltaram = Vec::new();
+""",
+        "troca": """        // fundo nao a alcancava porque ele tambem volta sem tabela suja.
+        // DEFEITO REPOSTO (pedido 254, o irmao): sem tabela suja o fecho
+        // volta antes de drenar as marcas pendentes.
+        if lista.is_empty() {
+            return;
+        }
+        let mut faltaram = Vec::new();
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::a_janela_que_fecha_numa_tabela_so_leva_a_marca_junto",
+            "servidor::testes_transacoes::a_marca_do_commit_na_reserva_sai_no_bulkinsert_false",
+        ],
+        "seguem": [
+            # Com DUAS tabelas sujas a lista nao esta vazia e a drenagem
+            # sempre aconteceu: o defeito e so o caminho da lista vazia.
+            "servidor::testes_janela_e_cadeia::com_todas_sincronizadas_as_marcas_saem",
+            "servidor::testes_janela_e_cadeia::tabela_que_nao_sincroniza_segura_as_marcas",
+            "servidor::testes_janela_e_cadeia::uma_tabela_so_grava_como_sempre",
+        ],
+    },
 ]

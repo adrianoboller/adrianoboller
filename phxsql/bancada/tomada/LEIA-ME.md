@@ -18,6 +18,7 @@ calibrações que imprime só decidem a faixa dos atrasos.
 |---|---|
 | `chutar-a-tomada.py` | a bancada: cinco pontos, cada um com o resultado esperado escrito **antes** de rodar (`ESPERADO`), uma varredura de dezenas de atrasos e três rodadas por atraso |
 | `resultados.json` | a última corrida completa, crua: data/hora UTC, versão e idade do binário, ponto × atrasos × desfechos, as corridas inválidas com o log, a contagem de `fsync` |
+| `marca-apos-bulkinsert.py` | a prova real do pedido 254, só o ponto `tx_em_bulk`, em menos de um minuto: sem queda (a marca `.tx` com caminho e instante logo depois do «ok» do `bulkinsert(false)` e 300 ms depois) e com a tomada chutada depois do «ok» (a classe do `julgar_tx_em_bulk`). Sai 1 quando a marca sobra. Reusa `corrida()`, `calibrar()` e o portão da bancada |
 
 ## O que a casa já tinha, e por que isto é outra coisa
 
@@ -72,6 +73,8 @@ reuso continua a mesma do ACID: `dur.Ligacao` fixa a porta no *default* do
 | `recuperacao-nao-completa-o-commit` | transação | a marca válida é contada e apagada **sem completar** o commit | `a_recuperacao_completa_o_commit_e_nao_duplica` |
 | `ndx-queda-com-cabecalho-limpo` | bulk | a marca de sujo do `.ndx` fica só em RAM; a queda deixa o índice atrasado **em silêncio** | `a_queda_sem_sincronizar_e_detectada_e_nao_silenciosa`, `a_marca_sai_depois_das_paginas_e_nao_antes` |
 | `reserva-sobrevive-a-queda-da-ligacao` | bulk | a saída da conexão não solta a reserva | `testes_bulkinsert::a_queda_da_conexao_solta` |
+| `bulkinsert-false-nao-drena-a-marca` | bulk + transação | o `bulkinsert(false)` sincroniza a tabela e a tira das sujas **sem a drenagem do fecho**: a marca `.tx` do COMMIT feito na reserva fica no disco (pedido 254) | `testes_transacoes::a_marca_do_commit_na_reserva_sai_no_bulkinsert_false` — e o irmão `a_janela_que_fecha_numa_tabela_so_leva_a_marca_junto` **segue verde**, porque é outro ponto |
+| `fecho-sem-suja-nao-drena-a-marca` | transação | o fecho da janela **volta antes de drenar as marcas** quando não há tabela suja — o irmão do 254, que o `bulkinsert(false)` consertado também atravessa | os dois testes acima |
 
 O que **só o processo morto de verdade** pega — o índice que fica para trás
 numa carga, a marca pendente, o arranque calado — está nesta bancada, não no
@@ -120,6 +123,22 @@ chutada depois do «ok» final, o arranque reporta `achadas 1 / ja aplicadas
 sobrevive a mais do que devia. `op_bulkinsert(false)` chama `t.sincronizar()`
 e tira a tabela de `sujas`, mas quem drena `marcas_pendentes` é o
 `descarregar_sujas`, que ele não chama. Achado para o papel B.
+
+**Consertado no pedido 254 (papel B, 16/09/2026, 10:34 UTC)** — e a hipótese
+tinha a receita certa com uma premissa errada: «chamar a mesma drenagem» não
+bastava, porque `descarregar_sujas_com` **voltava antes de drenar quando não
+havia tabela suja** — e depois do `sincronizar` próprio do `bulkinsert(false)`
+não há. O mesmo `return` deixava a marca pendurada no fecho da janela numa
+tabela só, em `por_lote` sem reserva nenhuma (o irmão, caído por teste
+unitário antes do conserto). Medido por `marca-apos-bulkinsert.py`: antes,
+`transacao_1789554685673.tx` no disco 300 ms depois do «ok» e **3/3** corridas
+`APOS_BULKINSERT_FALSE_MARCA_REPORTADA` (`achadas 1 / ja aplicadas 800`);
+depois, marca nenhuma e **3/3** `APOS_BULKINSERT_FALSE_SEM_MARCA`; com o
+defeito reposto pela guarda, 3/3 reportadas de novo. Desde então o ponto
+`tx_em_bulk` desta bancada é **veredito**: marca depois do «ok» final é
+corrida inválida, e a conferência «a marca fica pendente até o
+`bulkinsert(false)` e sai nele» reprova. O `resultados.json` acima é anterior
+ao conserto; a próxima corrida completa o refaz.
 
 ### O que a tomada ensinou sobre o BULKINSERT
 
