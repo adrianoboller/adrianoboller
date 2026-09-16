@@ -658,13 +658,14 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `nonce-sem-endereco` | só o endereço sai do nonce: o AAD sozinho ainda amarra | — | 🟰 redundante |
 | `endereco-fora-da-amarracao` | as DUAS fechaduras somem: dá para embaralhar as linhas cifradas | 1 | ✅ provada |
 | `cache-de-chaves-nao-limpo` | trocar a senha da cifra não limpa o cache: a senha errada abre | 1 | ✅ provada |
+| `coluna-externa-sozinha-em-claro` | tabela cujas únicas colunas marcadas são externas nasce em claro | 3 | ✅ provada |
 | `catraca-dos-textos` | mais um texto de tela cravado, fora da fábrica de idiomas | 1 | ✅ provada |
 | `trava-fora-do-ponto-unico` | uma tomada da trava de dados fora do `travar_dados()` | 1 | ✅ provada |
-| `trava-sem-guarda-de-reentrancia` | a trava pedida duas vezes pela mesma thread pendura o servidor | 1 | ✅ provada |
+| `trava-sem-guarda-de-reentrancia` | a trava pedida duas vezes pela mesma thread pendura o servidor | 1 | ⚠️ quebrada |
 | `exclusao-na-janela-por-padrao` | a exclusão entra na janela por padrão, sem ninguém pedir | 1 | ✅ provada |
 | `exclusao-na-janela-sem-leitor` | `exclusao_na_janela` no config.json, no MANUAL e na tela — e ninguém o lê | 1 | ✅ provada |
 | `reg-fecha-antes-do-trash` | a janela sincroniza o `.reg` antes do `.trash` | 1 | ✅ provada |
-| `rodizio-do-profiler-ignora-o-zero` | `profiler.arquivo_mib: 0` deixa de querer dizer «sem rodízio» | 1 | ✅ provada |
+| `rodizio-do-profiler-ignora-o-zero` | `profiler.arquivo_mib: 0` deixa de querer dizer «sem rodízio» | 2 | ✅ provada |
 | `cabecalho-do-profiler-forjado` | o cabeçalho do arquivo do Profiler aceita linha forjada | 1 | ✅ provada |
 | `profiler-sem-descritor-calado` | sem descritor, com arquivo pedido, a linha some sem ser contada | 1 | ✅ provada |
 | `trava-atras-da-rede` | o laço da réplica segura a trava de dados enquanto lê do soquete | 1 | ✅ provada |
@@ -673,7 +674,12 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `fio-cortado-vira-fim` | o fio cortado no meio devolvido como fim de conversa | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | 1 | ✅ provada |
 | `transcricao-sem-o-cifrado` | o hash da transcrição sem o texto cifrado da mensagem 2 | 2 | ✅ provada |
+| `amarra-ao-canal-ignorada` | o login amarrado ao canal conferido SEM a transcricao | 1 | ✅ provada |
+| `amarra-exigida-ignorada` | o servidor exige a amarracao ao canal, mas o login nao a cobra | 1 | ✅ provada |
+| `remoto-em-claro-para-quem-exige` | o abrir_remoto manda o login em claro mesmo com cifra: true | 1 | ✅ provada |
 | `fio-sem-teto-de-registro` | a leitura do fio volta a ser ilimitada | 1 | ✅ provada |
+| `pulso-do-cluster-em-claro` | o pulso da eleição saindo em claro com a cifra do cluster ligada | 1 | ✅ provada |
+| `replicacao-do-cluster-em-claro` | a replicação entre os nós do cluster saindo em claro | 1 | ✅ provada |
 | `alter-compacta-o-buraco` | a reescrita da coluna nova pula os slots excluídos e renumera o rowid | 1 | ✅ provada |
 | `alter-sem-remapear-posicao` | a coluna nova desloca as de sistema e ninguém remapeia quem guarda posição | 2 | ✅ provada |
 | `alter-espelho-para-tras` | o espelho `.bkp` fica com a largura velha depois de acrescentar coluna | 1 | ✅ provada |
@@ -740,14 +746,53 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `fts-nasce-na-pista-de-leitura` | a pista de leitura cria o .fts, e escrever sob a ficha compartilhada é o que ela existe para impedir | 1 | ✅ provada |
 | `fts-chave-truncada-nao-se-declara` | a chave truncada não se declara truncada, e a busca acha a mais | 1 | ✅ provada |
 | `operacao-sem-poder-declarado` | operação catalogada sem linha de poder vira administrador em silêncio | 2 | ✅ provada |
+| `sequencia-numero-cru-perde-precisao` | id acima de 2⁵³ mandado como número cru é gravado trocado, calado | 1 | ✅ provada |
+| `sequencia-grande-sai-numero-mentiroso` | id acima de 2⁵³ já gravado sai do servidor como número f64 trocado | 1 | ✅ provada |
+| `colisao-de-sequence-calada` | dois masters na mesma faixa perdem uma linha sem contar a ninguém | 1 | ✅ provada |
+| `contador-de-sequence-atras-do-dado` | contador de Sequence atrás do dado repete número, e não havia reparo | 1 | ✅ provada |
+| `regra-de-coluna-com-typo-carrega-calada` | regra de direito por coluna que cita coluna inexistente carrega calada e não protege nada | 3 | ✅ provada |
+| `juncao-direita-vazia-perde-colunas` | LEFT JOIN com a direita vazia sai sem as colunas da direita, e a forma da linha muda | 2 | ✅ provada |
+| `decimal-do-consultar-compara-como-texto` | Decimal no consultar.expressao compara como texto, e 9,50 passa por um filtro de acima de 10 | 3 | ✅ provada |
+| `existe-fora-do-inventario-de-tabelas` | existe[].de fora de tabelas_do_pedido: quem pergunta que tabelas o consultar alcanca nao ve a de dentro do EXISTS | 1 | ✅ provada |
+| `wchar-recusa-no-driver-odbc` | SQL_C_WCHAR volta a recusar no driver ODBC, que agora fala UTF-16 na borda | 2 | ✅ provada |
+| `replica-insiste-na-credencial-recusada` | a réplica com credencial recusada insistia a cada `reconectar_em` e bloqueava o próprio IP — derrubando o operador junto | 1 | ✅ provada |
+| `upsert-zera-a-coluna-negada` | o upsert (`inserir` com `se_existir: "atualizar"`) zerava a coluna que o usuário não altera — para quem não lê, para quem lê e não altera, pelo SQL `ON CONFLICT DO UPDATE` e em transação | 1 | ✅ provada |
+| `presenca-da-coluna-negada-recusa-a-ficha` | a presença da coluna que o usuário não altera recusava a operação inteira — e a ficha, que manda a linha inteira com a coluna como `null`, não incluía nem salvava nada | 3 | ✅ provada |
+| `set-do-on-conflict-ignorado` | o `SET` do `INSERT … ON CONFLICT DO UPDATE` / `ON DUPLICATE KEY UPDATE` (o campo `atualizar`) era ignorado calado, e o `VALUES` ia por cima da linha com NULL no que ele não trazia | 1 | ✅ provada |
+| `filtro-do-indice-parcial-e-oraculo` | o índice parcial cujo `onde` cita a coluna negada respondia sobre ela: varrer por ele devolvia exatamente quem tem `salario > 5000` | 1 | ✅ provada |
+| `juncao-materializa-antes-do-teto` | as junções `interno`/`esquerdo`/`direito`/`completo` materializavam a saída inteira antes de conferir o teto — 1000 × 1000 com a mesma chave custava +561 MiB para recusar contra um teto de 1000 | 2 | ✅ provada |
+| `select-da-coluna-negada-devolve-nulo` | `SELECT salario FROM folha` por quem não lê `salario` devolvia `{"salario": null}` em toda linha, em vez de recusar | 1 | ✅ provada |
+| `em-engole-o-campo-ausente` | `consultar.em` com `campo` que o sub-pedido não devolve — inclusive a coluna negada — respondia zero linhas com `ok: true` | 2 | ✅ provada |
+| `literal-negativo-nao-parseia` | o literal negativo não parseava em `SET`/`VALUES` («esperava um valor e veio "-"») enquanto `WHERE a = -5` passava pela expressão | 1 | ✅ provada |
+| `tabela-inexistente-vaza-o-caminho` | a tabela que não existe respondia «nenhum volume de x.reg em /tmp/…» — o caminho absoluto do disco do servidor, a todo cliente que erra uma letra | 1 | ✅ provada |
+| `permissao-sem-devolver-a-vaga` | a permissão do semáforo morre sem devolver a vaga — o `fetch_sub` esquecido, com outro nome | 7 | ✅ provada |
+| `permissao-de-dados-sem-raii` | a vaga da porta de dados só volta no caminho feliz — um pânico no `atender` a leva junto | 1 | ✅ provada |
+| `web-sem-teto` | a porta web volta a nascer sem teto — uma thread por pedido, como até a 0.18 | 1 | ✅ provada |
+| `ficha-do-fio-pulada-no-panico` | a ficha da thread na telemetria fica «viva» para sempre quando o corpo entra em pânico | 1 | ✅ provada |
+| `disco-erro-de-es-sem-aviso` | o erro de E/S respondido ao cliente não avisa ninguém | 3 | ✅ provada |
+| `disco-sonda-cega-ao-erro` | a sonda canário diz «passou» num diretório que o sistema operacional recusa | 1 | ✅ provada |
+| `disco-silencio-furado` | todo erro de E/S manda um aviso: cem mil linhas, cem mil e-mails | 2 | ✅ provada |
+| `disco-config-nao-lida` | `alertas.disco.checar_segundos` está no arquivo e ninguém o lê | 2 | ✅ provada |
+| `recuperacao-deixa-a-marca-orfa` | a recuperação completa (ou descarta) a marca `.tx` e a deixa no disco | 1 | ✅ provada |
+| `recuperacao-nao-completa-o-commit` | a recuperação conta e apaga a marca válida sem completar o commit | 1 | ✅ provada |
+| `ndx-queda-com-cabecalho-limpo` | a marca de sujo do `.ndx` fica só em RAM e a queda deixa o índice atrasado em silêncio | 2 | ✅ provada |
+| `reserva-sobrevive-a-queda-da-ligacao` | a saída da conexão não solta a reserva do BULKINSERT | 1 | ✅ provada |
+| `bulkinsert-false-nao-drena-a-marca` | o `bulkinsert(false)` sincroniza a tabela e deixa a marca `.tx` do COMMIT no disco | 1 | ✅ provada |
+| `fecho-sem-suja-nao-drena-a-marca` | o fecho da janela volta antes de drenar as marcas quando não há tabela suja | 2 | ✅ provada |
+| `fsync-do-arquivo-limpo` | `Volumes::sincronizar` leva ao disco todo descritor aberto, sem pular o limpo | 2 | ✅ provada |
+| `fsync-so-dos-escritos` | o fecho confia só no registro em RAM — e o registro nasceu vazio com o processo | 2 | ✅ provada |
+| `relogio-ao-alcance-do-teste` | o estado do gerador de v7 fica ao alcance de um teste, que o escreve para trás | 1 | ✅ provada |
+| `upsert-gatilho-do-ramo` | no upsert que atualiza, o BEFORE UPDATE vê a linha mesclada e o AFTER é o do ramo que ele virou | 5 | ✅ provada |
+| `threads-do-so-pela-diferenca` | a prova de que o SO viu a thread subida é a diferença entre duas leituras do total do processo | 1 | ✅ provada |
 
-**99 guardas: 95 provadas, 4 redundantes** — 848 s de mutação, medido em 2026-09-07 02:15.
+**143 guardas: 138 provadas, 1 quebrada, 4 redundantes** — 3374 s de mutação, medido em 2026-09-16 15:25.
 
 As notas que a rodada deixou:
 
 - `cadeia-sem-teto` — o binario abortou, que e como esta guarda pega
 - `aad-fora-do-slot` — confirmado: tirar so o AAD nao e sentido por teste nenhum, porque o `nonce_de_pedaco` carrega o ROWID. Medido em 03/09/2026, e nao deduzido: tirando o AAD e SO o rowid do nonce -- volume e contador ficando --, o teste CAI. Volume e versao nao entram nesta conta porque o teste copia o slot INTEIRO, e os dois slots moram no mesmo volume com a mesma versao
 - `nonce-sem-endereco` — confirmado: tirar so o endereco do nonce tambem passa despercebido, porque o AAD carrega o ROWID. Medido em 03/09/2026: tirando o endereco do nonce e SO o rowid do AAD -- volume e versao ficando --, o teste CAI
+- `trava-sem-guarda-de-reentrancia` — a rodada estourou o prazo do executor
 - `ffi-panico-atravessa` — o binario abortou, que e como esta guarda pega
 - `rest-fecha-sem-escoar` — confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Quem pega e o passo 13 de `bancada/rest/provar.py`, e esta entrada existe para dizer, com o numero da rodada, que a cobertura mora la e nao aqui
 - `recuperar-sem-reindexar` — confirmado: nenhum teste de unidade pega este defeito. O indice so fica para tras quando o PROCESSO morre no meio da passada, e isso so acontece de verdade em `bancada/transacoes/provar.py` -- que e por isso que a prova por soquete existe.
