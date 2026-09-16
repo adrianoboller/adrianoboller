@@ -1462,9 +1462,15 @@ impl Table {
     /// ele barateia a exclusao e cobra manutencao de TODA criacao e alteracao
     /// de tabela, inclusive das que nao tem chave nenhuma.
     ///
-    /// O portao continua sendo o de sempre: sem nenhuma irma com chave
-    /// conferida, a varredura para no primeiro `is_empty()` e a exclusao nao
-    /// paga nada.
+    /// **E ela NAO e de graca quando nao ha irma nenhuma**, que e o que esta
+    /// linha dizia antes -- «a exclusao nao paga nada». Paga: medido em
+    /// 16/09/2026, com a tabela sozinha no diretorio, a varredura custa
+    /// **4,43 us por exclusao** (eram 9,05 antes de `tabelas_em` olhar a
+    /// extensao antes do tipo), e com 30 irmas SEM chave nenhuma o excluir
+    /// inteiro vai a 283,70 us, porque o esquema de cada irma se le do disco.
+    /// O que e de graca e o resto do trabalho: sem irma apontando para esta
+    /// tabela, nem a linha se le -- ver [`Table::conferir_filhas_com`].
+    /// Numero em `DESEMPENHO.md` §24.6.
     ///
     /// # O que conta como filha
     ///
@@ -1473,13 +1479,34 @@ impl Table {
     /// relacao ja e imposta; sao perguntas diferentes, e misturar as duas
     /// quebraria todo cliente que hoje apaga pais sem pedir nada.
     fn conferir_filhas(&mut self, rowid: RowId) -> Result<()> {
+        self.conferir_filhas_com(rowid, None)
+    }
+
+    /// A mesma conferencia, aproveitando a linha que quem chama JA decodificou.
+    ///
+    /// # Por que a linha entra por parametro
+    ///
+    /// Porque o `excluir_de_vez` le o slot e decodifica a linha logo depois --
+    /// e fazia a mesma coisa aqui antes, por um segundo caminho. Eram tres
+    /// leituras da mesma linha por exclusao, **4,43 us, 15,5% do excluir**
+    /// (`--example custo-do-excluir`, 16/09/2026). Quem ja tem os valores na
+    /// mao passa-os; quem nao tem manda `None` e nada muda.
+    ///
+    /// Os valores entram decodificados SEM os externos (`.bin`/`.memo`), que e
+    /// como o `excluir_de_vez` os tem. Isso nao perde conferencia nenhuma:
+    /// coluna externa nao e indexavel (`ColumnType::indexavel`), e uma chave
+    /// conferida exige indice na mae (`conferir_uma_fk`) -- entao coluna
+    /// referenciada por chave conferida nunca e externa. O caso impossivel
+    /// mesmo assim tem porta: a chave que referencia coluna externa manda ler
+    /// a linha inteira, em vez de sair calada com a chave pela metade.
+    fn conferir_filhas_com(&mut self, rowid: RowId, ja_lida: Option<&[Value]>) -> Result<()> {
         let irmas = crate::catalogo::tabelas_em(&self.diretorio)?;
         let eu = self.nome.clone();
-        // A linha que vai sair, lida UMA vez: sem ela nao ha o que procurar.
-        let minha = match self.ler(rowid)? {
-            None => return Ok(()),
-            Some(l) => l,
-        };
+        // A LINHA NAO SE LE AQUI, e essa e a licao do Profiler: o portao vem
+        // antes do trabalho. Sem nenhuma irma apontando para esta tabela nao
+        // ha o que procurar, e ler a linha para jogar fora custava 1,46 us por
+        // exclusao no caso comum -- que e o de tabela nenhuma referenciar esta.
+        let mut minha: Option<Linha> = None;
         for irma in irmas {
             if irma == eu {
                 continue;
@@ -1495,6 +1522,28 @@ impl Table {
                 if !fk.verificar || nome_simples(&fk.tabela_ref) != eu {
                     continue;
                 }
+                // Agora sim ha quem aponte para esta tabela: a linha entra.
+                if minha.is_none() {
+                    let referencia_externa = fk.colunas_ref.iter().any(|nome| {
+                        self.esquema
+                            .colunas()
+                            .iter()
+                            .any(|c| c.nome == *nome && c.ty.externo())
+                    });
+                    minha = match ja_lida {
+                        Some(v) if !referencia_externa => Some(v.to_vec()),
+                        _ => match self.ler(rowid)? {
+                            None => return Ok(()),
+                            Some(l) => Some(l),
+                        },
+                    };
+                }
+                // `expect` e nao `unwrap_or(&[])`: chave vazia sairia daqui
+                // como «nao tem filha», que e a resposta errada na direcao
+                // errada -- a petrea diz nunca matar pai que tem filho.
+                let minha = minha
+                    .as_deref()
+                    .expect("a linha da mae acabou de ser lida logo acima");
                 // O valor da MINHA linha nas colunas que ela referencia.
                 let mut chave = Vec::with_capacity(fk.colunas_ref.len());
                 for nome in &fk.colunas_ref {
@@ -3461,19 +3510,37 @@ impl Table {
     /// se ganha e a espera de disco; o que se arrisca esta escrito em
     /// `docs/DESEMPENHO.md` §4.12 e no `MANUAL.txt`.
     pub fn excluir_de_vez(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
-        if self.julga_integridade() {
-            self.conferir_filhas(rowid)?;
-        }
+        // O SLOT SE LE UMA VEZ SO'. Antes eram tres leituras da mesma linha
+        // por exclusao -- 4,43 us, 15,5% do custo (`--example
+        // custo-do-excluir`, 16/09/2026): o `conferir_filhas` lia e
+        // decodificava por conta propria, e o `identidade` decodificava o
+        // payload de novo para montar a mesma coisa que o `todas_as_chaves`
+        // ja ia decodificar.
+        //
+        // Ler ANTES do `conferir_filhas` nao inverte guarda nenhuma: ler nao
+        // escreve. O slot vazio passa a sair sem pagar a varredura do
+        // diretorio, que era trabalho para jogar fora.
         let payload = match self.reg.ler(rowid)? {
             None => return Ok(false),
             Some(p) => p,
         };
+        let valores = self.decodificar(&payload, false)?;
+        if self.julga_integridade() {
+            // Com troca empilhada na transacao, a linha que vale e a que a
+            // sobreposicao diz -- e ai a conferencia le por la, como sempre
+            // leu. E o mesmo criterio do `varrer_com`, e nao um segundo.
+            let ja_lida = match self.troca_de(rowid) {
+                None => Some(valores.as_slice()),
+                Some(_) => None,
+            };
+            self.conferir_filhas_com(rowid, ja_lida)?;
+        }
         self.conferir_motivo(motivo)?;
 
         // O conteudo dos externos entra na lixeira junto: os ponteiros do
         // payload apontam para blocos que esta mesma exclusao vai liberar.
         let externos = self.conteudo_externo(&payload)?;
-        let identidade = self.identidade(&payload)?;
+        let identidade = self.identidade_de_valores(&valores);
         // A imagem se monta AGORA, antes de os blocos externos serem
         // liberados: depois, os ponteiros do payload apontariam para o nada.
         let imagem_do_evento = if self.imagem_no_diario && self.imagem_na_exclusao {
@@ -3490,7 +3557,6 @@ impl Table {
         // pode ter.
         self.desindexar_texto(rowid, &payload)?;
 
-        let valores = self.decodificar(&payload, false)?;
         let chaves = self.todas_as_chaves(&valores)?;
         for (i, chave) in chaves.iter().enumerate() {
             if let Some(chave) = chave {

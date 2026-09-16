@@ -173,15 +173,43 @@ fn nome_da_tabela(caminho: &Path) -> Option<String> {
 /// volume das paginadas. Visivel ao `table` porque a busca reversa da
 /// integridade referencial precisa perguntar "quem mais mora aqui?" --
 /// e reescrever a varredura la seria a segunda copia de uma regra sutil.
+///
+/// # A ordem dos filtros, e por que ela e' medida
+///
+/// Uma tabela tem OITO arquivos e so' um deles e' `.reg`. Perguntar ao nucleo
+/// "isto e' arquivo?" antes de olhar a extensao paga um `statx` por arquivo
+/// para jogar sete fora -- e esta varredura roda a cada exclusao, pela regra
+/// primordial da integridade. O `d_type` que o `getdents64` ja' trouxe
+/// responde a mesma pergunta sem chamada nenhuma.
+///
+/// Medido em 16/09/2026, `--example custo-do-excluir`, N = 200.000: a
+/// varredura de um diretorio de uma tabela sai de **9,05 para 4,43 us**
+/// (mediana de 2 e de 6 corridas), e os `statx` por exclusao de **9 para 1**.
+/// Com 30 irmas no diretorio, 309 `statx` por exclusao viram 61. Ver
+/// `DESEMPENHO.md` §24.6.
+///
+/// O elo do symlink fica: `file_type()` nao segue o elo e `is_file()` segue,
+/// entao um `.reg` alcancado por elo sumiria da lista -- e tabela que some da
+/// lista e' tabela que ninguem pergunta se tem filha. Elo e' raro; a volta ao
+/// `is_file()` acontece so' nele.
 pub(crate) fn tabelas_em(diretorio: &Path) -> Result<Vec<String>> {
     if !diretorio.is_dir() {
         return Ok(Vec::new());
     }
     let mut nomes: Vec<String> = std::fs::read_dir(diretorio)?
         .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.is_file())
-        .filter_map(|p| nome_da_tabela(&p))
+        .filter(|e| {
+            Path::new(&e.file_name())
+                .extension()
+                .and_then(|s| s.to_str())
+                == Some(EXT_REG)
+        })
+        .filter(|e| match e.file_type() {
+            Ok(t) if t.is_symlink() => e.path().is_file(),
+            Ok(t) => t.is_file(),
+            Err(_) => e.path().is_file(),
+        })
+        .filter_map(|e| nome_da_tabela(&e.path()))
         .collect();
     nomes.sort();
     nomes.dedup();
@@ -1450,6 +1478,57 @@ mod testes_gestao {
     // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
     fn base_temp(rotulo: &str) -> crate::apoio_teste::DirTemp {
         crate::apoio_teste::DirTemp::novo(&format!("cat2-{rotulo}"))
+    }
+
+    /// O comportamento VELHO da varredura, travado antes de ela ficar barata.
+    ///
+    /// `tabelas_em` deixou de perguntar ao nucleo "isto e' arquivo?" em cada
+    /// uma das oito extensoes -- olha a extensao primeiro e usa o `d_type` que
+    /// o `getdents64` ja trouxe. As duas pontas que a troca podia quebrar
+    /// calada estao aqui:
+    ///
+    /// - **o elo simbolico**: `file_type()` nao segue o elo e `is_file()`
+    ///   segue. Sem a volta ao `is_file()`, uma tabela alcancada por elo
+    ///   sumiria da lista -- e tabela que some da lista e' tabela que a busca
+    ///   reversa nao pergunta se tem filha, que e' a petrea da integridade
+    ///   perdida em silencio. **Prova real**: tirar o ramo `is_symlink` faz
+    ///   este teste falhar.
+    /// - **o diretorio com nome de tabela**: `dados.reg/` nao e' tabela, e o
+    ///   `d_type` tem de recusa-lo como o `is_file()` recusava.
+    #[test]
+    fn a_varredura_barata_ve_o_mesmo_que_a_cara() {
+        let base = base_temp("varredura-barata");
+        let inst = Instancia::nova(&base).unwrap();
+        let db = inst.criar_database("banco").unwrap();
+        db.criar_tabela(None, esquema_simples("precos")).unwrap();
+        let dir = base.join("banco");
+
+        // Um diretorio com nome de tabela: nunca foi tabela, continua nao
+        // sendo.
+        std::fs::create_dir_all(dir.join("pasta.reg")).unwrap();
+
+        // Uma tabela alcancada por ELO: o arquivo mora fora e o `.reg` daqui
+        // e' um elo para o de la'.
+        let fora = base.join("fora-do-banco");
+        std::fs::create_dir_all(&fora).unwrap();
+        std::fs::copy(dir.join("precos.reg"), fora.join("espelho.reg")).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(fora.join("espelho.reg"), dir.join("espelho.reg")).unwrap();
+
+        let achadas = tabelas_em(&dir).unwrap();
+        assert!(
+            achadas.contains(&"precos".to_string()),
+            "a tabela normal sumiu da varredura: {achadas:?}"
+        );
+        assert!(
+            !achadas.contains(&"pasta".to_string()),
+            "um DIRETORIO chamado pasta.reg entrou como tabela: {achadas:?}"
+        );
+        #[cfg(unix)]
+        assert!(
+            achadas.contains(&"espelho".to_string()),
+            "a tabela alcancada por elo simbolico sumiu da varredura: {achadas:?}"
+        );
     }
 
     #[test]

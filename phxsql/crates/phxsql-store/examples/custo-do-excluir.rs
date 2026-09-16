@@ -18,10 +18,13 @@
 //! de fabrica; sem ele a janela nunca fecha e o numero e' o teto, honesto so'
 //! para a carga reservada). Essa secao continua saindo primeiro, igual.
 //!
-//! **A segunda e' a do pedido 259**: sem `fsync` nenhum, o excluir custa
+//! **A segunda e' a do pedido 259**: sem `fsync` nenhum, o excluir custava
 //! 24-28 us onde o inserir custa 3,7-4,4 (bancada CRUD, regime `sistema`), e
 //! o `strace` da bancada viu 8 `write` e ~5 `openat` por exclusao. Este
-//! medidor divide esse tempo em vez de supor -- e' o irmao do `onde-doi`:
+//! medidor divide esse tempo em vez de supor -- e' o irmao do `onde-doi`.
+//! Duas parcelas ja' cairam por causa dele (a varredura do diretorio e a
+//! linha lida tres vezes): 30,41 -> 21,07 us, `DESEMPENHO.md` §24.6. As
+//! secoes sao:
 //!
 //! - **por ablacao**: a mesma tabela com uma peca a menos (sem indice; com
 //!   trinta irmas no diretorio; com o `fsync` da lixeira ligado), e a
@@ -433,6 +436,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     drop(reg);
 
+    // O PRECO DE UMA IRMA, dividido. A busca reversa abre o `.reg` de cada
+    // vizinha so' para ler o esquema dela e perguntar «voce aponta para mim?».
+    // O strace conta 5 chamadas de sistema por irma (openat, 2 read, 2 lseek,
+    // close), e por ablacao a irma custa ~13 us -- os dois numeros nao se
+    // encontram, entao o grosso nao e' o nucleo. A suspeita e' o
+    // `Schema::desserializar`, e ela sai medida ao lado em vez de citada, que
+    // e' a lei do pedido 113: medir a premissa do item antes do item.
+    let dir_i = base.join("isolado-irma");
+    let _ = std::fs::remove_dir_all(&dir_i);
+    std::fs::create_dir_all(&dir_i)?;
+    drop(Table::criar(&dir_i, esquema_com(dois_indices()))?);
+    let abrir_irma = isolado("busca reversa: RegFile::abrir de UMA irma", m, |_| {
+        std::hint::black_box(RegFile::abrir(&dir_i, "precos").unwrap());
+    });
+    let bytes_esquema = esquema().serializar();
+    let desserializar = isolado("  dentro dele: Schema::desserializar", m, |_| {
+        std::hint::black_box(Schema::desserializar(&bytes_esquema).unwrap());
+    });
+    let _ = std::fs::remove_dir_all(&dir_i);
+
     // O registro do `.trash` e o do `.reason` levam um UUID v7 cada (o do
     // `.log` nao leva), e o `sortear` do `phxsql-core/src/uuid.rs` abre
     // `/dev/urandom` a cada chamada -- e mais uma vez a cada milissegundo
@@ -453,10 +476,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ndx = direto - sem_indice;
     let irmas = com_irmas - direto;
     let fsync = com_fsync - direto;
-    // O excluir le a linha DUAS vezes: `conferir_filhas` chama `ler` (decodificada)
-    // e `excluir_de_vez` chama `reg.ler` (o slot) e decodifica de novo para a
-    // identidade e as chaves. As duas entram na soma.
-    let leituras = ler + reg_ler + ler;
+    // O excluir le a linha UMA vez desde 16/09/2026: `excluir_de_vez` le o slot,
+    // decodifica uma vez e passa os valores ao `conferir_filhas` e ao
+    // `identidade`. Eram TRES (o `conferir_filhas` lia por conta propria e o
+    // `identidade` decodificava de novo), e a conta era `ler + reg_ler + ler`.
+    // `Table::ler` e' a medida certa da leitura unica: um `reg.ler` e uma
+    // decodificacao, que e' exatamente o que sobrou no caminho.
+    let leituras = ler;
     let soma = varredura + lixeira + motivo + diario + reg_excluir + leituras + ndx;
     let resto = direto - soma;
     let pct = |x: f64| x / direto * 100.0;
@@ -467,9 +493,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!("     + abrir {IRMAS} irmas (RegFile::abrir cada) {irmas:>7.2} us  (so' com irmas; {:.1}x o excluir)", com_irmas / direto);
     println!(
-        "  ler a linha (2x decodificada + 1x slot) .. {leituras:>7.2} us  {:>5.1}%",
+        "       uma irma: {abrir_irma:.2} us, e {desserializar:.2} deles ({:.0}%) sao Schema::desserializar",
+        desserializar / abrir_irma.max(1e-9) * 100.0
+    );
+    println!(
+        "  ler a linha (1x slot + 1x decodificada) .. {leituras:>7.2} us  {:>5.1}%",
         pct(leituras)
     );
+    println!("     (o slot cru sozinho: {reg_ler:.2} us; o resto e' a decodificacao)");
     println!(
         "  .trash  guardar ........................... {lixeira:>7.2} us  {:>5.1}%",
         pct(lixeira)

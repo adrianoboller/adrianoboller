@@ -3367,6 +3367,141 @@ cargo run --release --example custo-do-excluir -- 200000 20000            # o ex
 python3 bancada/guardas/provar-guardas.py --so fsync-do-arquivo-limpo --so fsync-so-dos-escritos
 ```
 
+### 24.6 O excluir consertado: 30,41 → 21,07 µs, e as duas parcelas que entraram (16/09)
+
+O §24.5 deixou quatro candidatos com o número ao lado. Dois entraram nesta
+rodada — os dois que **não** tocam formato em disco nem garantia de dado —, e
+os outros dois saem daqui medidos, para quem os decide decidir com número em
+vez de com estimativa.
+
+Máquina parada, N = 200.000, 20.000 exclusões espalhadas, cache do `.ndx`
+quente, `--example custo-do-excluir 200000 20000`. **O mesmo binário, o mesmo
+dia e a mesma máquina dos dois lados**: o «antes» é o código de `HEAD`
+recompilado e medido no mesmo intervalo, e não o número do §24.4 — que foi
+medido com a máquina mais carregada e, comparado direto, inflaria o ganho.
+
+| | antes (2 corridas) | depois (6 corridas) | |
+|---|---:|---:|---:|
+| excluir direto, 2 índices, tabela sozinha | **30,41 µs** (29,99–30,83) | **21,07 µs** (20,04–21,46) | **1,44×** |
+| excluir com 30 irmãs no diretório | **438,00 µs** (433,86–442,15) | **283,70 µs** (277,14–291,69) | **1,54×** |
+| a varredura do diretório, isolada | 9,05 µs (9,02–9,08) | 4,43 µs (4,23–5,05) | 2,05× |
+| `statx` por exclusão, tabela sozinha | 9 | **1** | |
+| `statx` por exclusão, com 30 irmãs | 309 | **61** | |
+
+#### O portão que faltava não era o da busca reversa — era a ORDEM dos filtros
+
+A escolha do `CLAUDE.md` não se reabriu: a chave é declarada na filha, a mãe
+pergunta às irmãs, e o catálogo reverso guardado continua recusado. O que
+estava errado era outra coisa, e é a lição do Profiler outra vez: **o portão
+vem antes do trabalho.**
+
+`catalogo::tabelas_em` perguntava ao núcleo «isto é arquivo?» em **toda**
+entrada do diretório e só depois olhava a extensão. Uma tabela tem oito
+arquivos e só um é `.reg`: eram oito `statx` para jogar sete fora. Hoje a
+extensão é conferida primeiro — texto, zero chamadas — e o tipo sai do
+`d_type` que o `getdents64` já trouxe. Nenhum `statx` sobra.
+
+O elo simbólico é a única divergência possível entre os dois jeitos, e ela tem
+porta e teste: `file_type()` não segue o elo e `is_file()` segue, então um
+`.reg` alcançado por elo sumiria da lista — e **tabela que some da lista é
+tabela que ninguém pergunta se tem filha**, que é a pétrea da integridade
+perdida em silêncio. O teste `a_varredura_barata_ve_o_mesmo_que_a_cara` trava
+as duas pontas (o elo entra, o diretório chamado `pasta.reg` não), e a prova
+real foi nos dois sentidos: tirando o ramo do elo, ele falha.
+
+#### A linha lida três vezes virou uma, e o portão da leitura veio junto
+
+`conferir_filhas` lia e decodificava a linha por conta própria; `excluir_de_vez`
+lia o slot de novo e decodificava **duas** vezes — uma para a identidade do
+`.reason`, outra para as chaves do `.ndx`. Agora o slot se lê uma vez, a linha
+se decodifica uma vez, e os valores descem por parâmetro: 4,43 µs (§24.4) → 1,54.
+
+E a leitura ganhou o portão que o trabalho já tinha: a linha **não** se lê no
+começo da conferência, e sim quando aparece a primeira irmã que declara chave
+conferida apontando para esta tabela. No caso comum — ninguém aponta — ela
+nunca é lida.
+
+Três decisões que ficaram escritas no código, porque são o que uma refação
+apagaria calada:
+
+- **A sobreposição da transação manda.** Quem tem troca empilhada não recebe os
+  valores do disco: a conferência lê pela sobreposição, como sempre leu. É o
+  mesmo critério do `varrer_com`, e não um segundo critério.
+- **Coluna externa manda ler a linha inteira.** Os valores que descem vêm
+  decodificados sem `.bin`/`.memo`. Coluna externa não é indexável e chave
+  conferida exige índice na mãe, então isso não perde conferência nenhuma — mas
+  o caso impossível tem porta em vez de sair calado com a chave pela metade.
+- **`expect`, e não `unwrap_or(&[])`.** Chave vazia sairia da conferência como
+  «não tem filha», que é a resposta errada na direção errada.
+
+A prova real dessa parcela não precisou de teste novo: passando uma linha vazia
+adiante, **três** testes de `chave-estrangeira.rs` falham
+(`a_mae_com_filha_nao_pode_ser_apagada`, `a_mae_sem_filha_sai_normalmente`,
+`sem_indice_na_filha_a_recusa_diz_qual_indice_falta`) — e o
+`filha_de_outra_linha_nao_tranca_esta` é o que pega a linha *errada* passada
+adiante, que é o defeito mais sutil dos dois.
+
+#### Uma hipótese que morreu: «o `.ndx` remover não passa pelo write-back»
+
+Morreu lendo, e o que ficou no lugar dela é melhor. O `remover` **passa** pelo
+write-back: ele chama `gravar_pagina`, a mesma função do `inserir`, e a página
+fica suja em RAM. O que ele faz na hora é **o cabeçalho**, e é ali que está a
+assimetria — com o critério escrito no próprio irmão:
+
+```rust
+// inserir_ja_conferido:
+// O contador nao justifica 4 KiB por chave: ele vai no `sincronizar`,
+// e `verificar` sabe recalcula-lo. A ESTRUTURA vai na hora.
+if self.estrutura_mudou { self.gravar_cabecalho()?; }
+
+// remover:
+self.gravar_cabecalho()?;   // sem condicao nenhuma
+```
+
+O conserto entrou no caminho que o motivou e o caminho irmão ficou — de novo, e
+desta vez o irmão é a função vizinha no mesmo arquivo. **Medido com o critério
+do irmão aplicado ao `remover`** (sonda temporária, revertida): o excluir cai de
+21,07 para **18,96 µs** (−10%), a parcela do `.ndx` de 6,4 para 3,99, e os
+`write` no `.ndx` de 4 para 2 por exclusão (11 → 9 no total). A suíte do
+`phxsql-store` passa assim, com a sonda aplicada (`cargo test -p phxsql-store`,
+zero falhas).
+
+**Não entrou, e é de propósito:** o que se adia é o contador de chaves, e o
+`verificar` trata «varredura menor que o contador» como corrupção. Quem decide
+isso é o papel C, com a prova da tomada (pedido 253) refeita — a marca de sujo
+protege o caso da queda, mas a palavra sobre o formato não é do engenheiro.
+
+#### O que também não entrou, com o número: o `/dev/urandom` do UUID
+
+Trocar o `sortear` do `phxsql-core/src/uuid.rs` pelo `cifra::sortear` (ChaCha20
+semeado uma vez por processo, o mesmo que o nonce dos externos usa) leva o
+`Uuid::v7` de **1,08 para 0,11 µs** (9,8×), o `.trash` de 2,6 para 1,45, o
+`.reason` de 2,4 para 1,40, e o excluir de 21,07 para **18,07 µs** (−14%). Os
+`openat` por exclusão caem de 5 para 1 e os `close` de 5 para 1.
+
+Ficou de fora por três motivos, nenhum deles o número: mora no `phxsql-core` e
+muda a fonte de entropia de **todo** UUID da casa; a semeadura única por
+processo é decisão (um `fork` passaria a gerar os mesmos bits sorteados, o que
+o `/dev/urandom` por chamada não faz); e o §24.5 já nomeou o dono do item.
+
+#### Os dois juntos, e o que sobra
+
+Com as duas parcelas que entraram, o excluir sai de 30,41 para 21,07 µs. Com as
+duas que estão medidas e paradas, iria para perto de **16 µs** — contra os
+3,7–4,4 do inserir. O que restaria ali é o que a pétrea manda escrever: a linha
+inteira no `.trash`, o motivo no `.reason`, o evento no `.log`, e a varredura
+que a regra primordial da integridade cobra.
+
+E o limite do instrumento ficou visível, porque o alvo encolheu: a soma das
+parcelas fecha entre **94,8% e 105,6%** do direto conforme a corrida (era
+97–99,7% quando o direto era 28 µs). As parcelas isoladas não encolheram junto
+com o todo, e a mediana de três corridas é o que se publica — não a primeira.
+
+```bash
+cargo build --release --examples -p phxsql-store    # binario velho mede o passado
+cargo run --release --example custo-do-excluir -- 200000 20000
+```
+
 ## Como refazer tudo
 
 ```bash
