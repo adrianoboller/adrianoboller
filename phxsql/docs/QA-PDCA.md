@@ -389,11 +389,13 @@ como uma verdade parada.
 
 ### As catracas numéricas — constante contra medido agora
 
-Quatro catracas numéricas existem hoje na árvore (achadas varrendo `TETO` e
-`catraca` em `crates/`; os outros `TETO_*` — `TETO_DO_CAMPO`,
-`TETO_JUNCAO`, `TETO_PIVOT`, `TETO_DO_LOTE_SERVIDO`, `TETO_DO_REGISTRO` — são
-**limites operacionais** do motor, não catracas de qualidade: não medem uma
-dívida que só deve encolher, travam um comportamento em produção).
+**Quantas são está na tabela abaixo, e só lá** — esta linha dizia «quatro» e
+envelheceu calada enquanto a tabela gerada já contava mais. Os `TETO_*` que
+**não** aparecem lá (`TETO_DO_CAMPO`, `TETO_JUNCAO`, `TETO_PIVOT`,
+`TETO_DO_LOTE_SERVIDO`, `TETO_DO_REGISTRO`, `Ritmo::TETO`) são **limites
+operacionais** do motor, não catracas de qualidade: não medem uma dívida que
+só deve encolher, travam um comportamento em produção. O inventário completo,
+com o raciocínio de cada uma, está em `docs/CATRACAS.md`.
 
 <!-- catracas:inicio -->
 
@@ -401,20 +403,35 @@ dívida que só deve encolher, travam um comportamento em produção).
 |---|---|---:|---:|---|
 | `TETO_BOTAO_SEM_PROVA` (botoes da tela que a bateria nao clica) | `crates/phxsql-server/src/conferidor_botoes.rs` | 194 | **194** | em cima, sem folga |
 | `TETO_TABELA_NA_MAO` (tabelas montadas a mao em vez de PhxGrid) | `crates/phxsql-server/src/conferidor_grades.rs` | 0 | **0** | em cima, sem folga |
+| `TETO_INVENTARIO_DESCASADO` (extensoes que faltam ou sobram entre o codigo e as tres copias) | `crates/phxsql-server/src/conferidor_inventario.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_TEMP_DIR_SOLTO` (chamadas a std::env::temp_dir() fora do catalogo) | `crates/phxsql-server/src/conferidor_temporarios.rs` | 0 | **0** | em cima, sem folga |
-| `TETO_ROTULOS_E_CRASE` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 1.050 | **1.050** | em cima, sem folga |
+| `TETO_ROTULOS_E_CRASE` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 1.049 | **1.049** | em cima, sem folga |
 | `TETO_COLADO` (chaves com os seis idiomas identicos) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_FRASE_REPETIDA` (frase longa repetida em tres ou mais idiomas) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_VERMELHA_SEM_PEDIDO` (provas vermelhas sem pedido no PENDENCIAS.md) | `crates/phxsql-server/src/conferidor_vermelhas.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_FSYNC_POR_FECHO_V2` (fsync gastos por fecho de janela de durabilidade) | `crates/phxsql-store/src/conferidor_fsync.rs` | 8 | **8** | em cima, sem folga |
+| `codigo-do-dono` (secoes criticas que rodam codigo do dono do banco com a trava na mao) | `bancada/concorrencia/mapa-da-trava.py` | 5 | **5** | em cima, sem folga |
+| `alcancam-fsync` (secoes criticas que alcancam `fsync` com a trava na mao) | `bancada/concorrencia/mapa-da-trava.py` | 22 | **23** | **REPROVANDO** — 1 acima |
+| `rede-ou-espera` (secoes criticas que esperam REDE com a trava global na mao) | `bancada/concorrencia/mapa-da-trava.py` | 0 | **0** | em cima, sem folga |
+| `spawn-sem-teto` (sitios de nascimento de thread sem teto no catalogo) | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | em cima, sem folga |
+| `catalogo-envelhecido` (entradas do catalogo de threads que nao casam com sitio nenhum) | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | em cima, sem folga |
+| `TETO_PKILL_SEM_PID` (invocacoes reais de `pkill` em bancada/**/*.py e *.sh) | `bancada/guardas/pkill-sem-pid.py` | 0 | **0** | em cima, sem folga |
+| `TETO_TRECHO_MORTO` (entradas cujo trecho o codigo nao tem mais) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
+| `TETO_TRECHO_AMBIGUO` (entradas cujo trecho casa duas ou mais vezes no arquivo) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
+| `TETO_TESTE_MORTO` (testes nomeados que nao existem como `fn` em crates/**/*.rs) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
+| `TETO_TESTE_FORA_DO_BINARIO` (testes que existem, mas nao no binario que a entrada nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
+| `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 143 | **143** | em cima, sem folga |
 
-*8 catraca(s) medida(s) por conferidor. Refaz com `python3 docs/qa/medir.py`.*
+*20 catraca(s) medida(s) por conferidor. Refaz com `python3 docs/qa/medir.py`.*
 
-**Constantes `TETO*` que NENHUM conferidor reporta.** Elas não são
-catracas: são limites, ou promessas. A diferença importa — catraca
-sem medidor não segura nada e ainda parece que segura:
+**Constantes `TETO*`/`PISO*` que NENHUM conferidor reporta.** Elas não
+são catracas: são limites, ou promessas. A diferença importa — catraca
+sem medidor não segura nada e ainda parece que segura. Em `bancada/`,
+uma constante que seja limite de funcionamento sai daqui escrevendo
+`# nao-e-catraca: <motivo>` na própria linha dela:
 
-- `TETO_DO_REGISTRO` — `crates/phxsql-core/src/fio.rs:494`
+- `TETO` — `crates/phxsql-server/src/replica.rs:519`
+- `TETO_DO_REGISTRO` — `crates/phxsql-core/src/fio.rs:495`
 <!-- catracas:fim -->
 
 > **Esta tabela NÃO se edita à mão — ela se gera.** Com
@@ -427,11 +444,17 @@ sem medidor não segura nada e ainda parece que segura:
 > podia ver a outra. Com trabalho paralelo, número digitado não envelhece
 > «entre versões»: ele já nasce errado.
 >
-> **E o gerador não tem lista de catracas.** Ele varre `crates/*/examples/` atrás
-> de quem imprime `catraca:`, e pergunta a cada um — cada conferidor se
-> descreve. Lista digitada dentro de um script é exatamente a receita que
-> envelhece, e esta casa já pagou por ela: uma lista de três arquivos copiada
-> num gerador fez o rodapé publicar 780 KiB quando a interface tinha 1.032.
+> **E o gerador não tem lista de catracas.** Ele varre `crates/*/examples/` **e
+> `bancada/**/*.py`** atrás de quem imprime `catraca:`, e pergunta a cada um —
+> cada conferidor se descreve. Lista digitada dentro de um script é exatamente
+> a receita que envelhece, e esta casa já pagou por ela: uma lista de três
+> arquivos copiada num gerador fez o rodapé publicar 780 KiB quando a interface
+> tinha 1.032.
+>
+> **O segundo crivo entrou em 16/09/2026, e o buraco estava medido**: as
+> catracas que moram em Python, em `bancada/`, não apareciam aqui — a tabela
+> que existe para dizer quantas catracas há contava menos do que existe. Ver
+> `docs/CATRACAS.md` §14.
 >
 > **Ele acusa dois estados que uma tabela à mão esconde:** catraca **frouxa**
 > (valor acima do medido, e a folga é onde uma regressão se esconde) e

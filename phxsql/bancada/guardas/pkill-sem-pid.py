@@ -2,6 +2,7 @@
 """A catraca do `pkill` sem PID -- pedido 256.
 
     python3 bancada/guardas/pkill-sem-pid.py --catraca
+    python3 bancada/guardas/pkill-sem-pid.py --numeros
 
 # O defeito que motivou
 
@@ -52,6 +53,7 @@ import sys
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.abspath(os.path.join(AQUI, "..", ".."))
 BANCADA = os.path.join(RAIZ, "bancada")
+EU = os.path.relpath(os.path.abspath(__file__), RAIZ)
 
 TETO_PKILL_SEM_PID = 0
 
@@ -112,9 +114,30 @@ def catraca():
     return 0
 
 
+def numeros():
+    """Saida de maquina para o `docs/qa/medir.py` -- o inventario das catracas.
+
+    Ele NAO le a prosa do `--catraca`, e nao le por decisao: `grep` em
+    relatorio e resolver numero por comparacao de FRASE, e no dia em que
+    alguem melhorar a redacao o inventario publica o numero de ontem sem
+    dizer nada. A chave e estavel; o rotulo e livre.
+
+    Este modo nasceu em 16/09/2026, com o buraco que ele fecha medido: o
+    inventario gerado do `docs/QA-PDCA.md` varria `crates/*/examples/*.rs` e
+    `crates/*/src/**`, e esta catraca -- que mora em `bancada/`, em Python --
+    nao aparecia nele. O proprio `docs/CATRACAS.md` listava «sete catracas
+    vivas que a tabela gerada nao conta» e esquecia esta: eram OITO."""
+    print(f"catraca:nome=TETO_PKILL_SEM_PID;onde={EU};"
+          f"valor={TETO_PKILL_SEM_PID};medido={len(achados())};tipo=teto;"
+          "mede=invocacoes reais de `pkill` em bancada/**/*.py e *.sh")
+    return 0
+
+
 def principal():
     if "--catraca" in sys.argv:
         return catraca()
+    if "--numeros" in sys.argv:
+        return numeros()
     for arq, n, trecho in achados():
         print(f"{arq}:{n}: {trecho}")
     return 0

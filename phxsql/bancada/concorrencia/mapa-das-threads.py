@@ -4,6 +4,7 @@
     python3 bancada/concorrencia/mapa-das-threads.py             # o mapa legivel
     python3 bancada/concorrencia/mapa-das-threads.py --json      # para outro gerador
     python3 bancada/concorrencia/mapa-das-threads.py --catraca   # spawn-sem-teto = 0
+    python3 bancada/concorrencia/mapa-das-threads.py --numeros   # para o inventario
     python3 bancada/concorrencia/mapa-das-threads.py --autoteste # as guardas do medidor
 
 Por que este medidor existe
@@ -345,6 +346,10 @@ def medir_para_a_catraca(sitios, envelhecidas, catalogo=None):
 #
 # CATRACA SO DESCE, e esta ja nasce no chao: zero sitios sem teto, zero
 # entradas envelhecidas. Nao ha «baixe o teto» aqui porque nao ha para onde.
+# A quarta coluna e o rotulo curto do inventario (`docs/qa/medir.py`, pelo
+# `--numeros`). Ele nao e regua nem teto: e o «o que esta catraca mede» que a
+# tabela gerada imprime ao lado do numero, para que ela nao precise de uma
+# segunda lista de descricoes que envelheceria sozinha.
 CATRACAS = [
     (
         "spawn-sem-teto",
@@ -353,6 +358,7 @@ CATRACAS = [
         "arquivo. Um so ja e uma enxurrada possivel -- foi assim que a porta "
         "web viveu sem teto ate o pedido 248, com o proprio comentario "
         "confessando.",
+        "sitios de nascimento de thread sem teto no catalogo",
     ),
     (
         "catalogo-envelhecido",
@@ -360,6 +366,7 @@ CATRACAS = [
         "entradas do catalogo que nao casam com sitio nenhum: alguem mexeu no "
         "fonte e o catalogo ficou descrevendo uma thread que nao nasce mais "
         "ali. Catalogo velho e pior que catalogo nenhum, porque parece completo.",
+        "entradas do catalogo de threads que nao casam com sitio nenhum",
     ),
 ]
 
@@ -370,7 +377,7 @@ def catraca():
     print("=== a catraca do mapa das threads ===")
     print(f"    {medido['sitios']} sitios de nascimento fora dos testes, em crates/*/src\n")
     reprovou = False
-    for nome, teto, porque in CATRACAS:
+    for nome, teto, porque, _mede in CATRACAS:
         agora = medido[nome]
         estado = "ok" if agora <= teto else "SUBIU"
         reprovou |= agora > teto
@@ -469,7 +476,38 @@ def autoteste():
 # ----------------------------------------------------------------- o mapa
 
 
+EU = str(Path(__file__).resolve().relative_to(RAIZ))
+
+
+def numeros():
+    """Saida de maquina para o `docs/qa/medir.py` -- o inventario das catracas.
+
+    Ele NAO le a prosa do `--catraca`: `grep` em relatorio e resolver numero
+    por comparacao de FRASE, e no dia em que alguem melhorar a redacao o
+    inventario publica o numero de ontem sem dizer nada. A chave e estavel;
+    o rotulo e livre.
+
+    Este modo nasceu em 16/09/2026, e o buraco que ele fecha estava medido no
+    `docs/CATRACAS.md`: o inventario gerado varria `crates/*/examples/*.rs` e
+    `crates/*/src/**`, e as catracas que moram em `bancada/`, em Python, nao
+    apareciam nele -- a tabela que existe para dizer quantas catracas ha
+    contava menos do que existe.
+
+    Sai SEMPRE com codigo 0, mesmo com catraca vermelha: este modo RELATA, e
+    quem reprova e o `--catraca`. Um codigo de saida != 0 aqui faria o
+    inventario dizer «nao consegui medir» justamente na catraca que esta
+    vermelha -- e ela sumiria da tabela em vez de aparecer vermelha."""
+    sitios, envelhecidas = mapear()
+    medido = medir_para_a_catraca(sitios, envelhecidas)
+    for nome, teto, _porque, mede in CATRACAS:
+        print(f"catraca:nome={nome};onde={EU};valor={teto};"
+              f"medido={medido[nome]};tipo=teto;mede={mede}")
+    return 0
+
+
 def principal():
+    if "--numeros" in sys.argv:
+        return numeros()
     if "--catraca" in sys.argv:
         return catraca()
     if "--autoteste" in sys.argv:

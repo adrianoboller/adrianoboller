@@ -63,7 +63,7 @@ trio, rodada na receita real; o portao nao a reproduz, e isso esta dito.
 
 ## O que fica de fora, e por que
 
-* **`numeros-do-projeto.py`** -- `nota-cargo`, acima.
+* **`numeros-do-projeto.py`** e **`docs/qa/medir.py`** -- `nota-cargo`, acima.
 * **`dossie_da_pasta.py`** e **`embutir-fontes.py`** -- nao escrevem numero
   nenhum (um so acha o arquivo, o outro embute fontes para o PDF).
 
@@ -156,6 +156,16 @@ PLANO = [
      "le resultados.json das bancadas; traz mtime e relogio"),
     ("numeros-do-projeto.py", [DOSSIE, "CAPABILITIES.json"], "nota-cargo",
      "chama cargo test e cargo run --example; nao martelar o build nesta worktree"),
+    # A tabela das catracas do QA. Entrou em 16/09/2026, e o buraco que ela
+    # fecha foi medido no dia: o `docs/QA-PDCA.md` publicado trazia OITO
+    # catracas quando o proprio gerador media VINTE (nove em Rust, onze em
+    # `bancada/`), e um teto de idiomas em 1.050 quando ja era 1.049 -- um
+    # derivado velho que nenhum portao acusava, porque o gerador dele nao
+    # estava no PLANO. E o `numeros-do-projeto.py` que ja estava aqui mostra
+    # o molde: `nota-cargo`, porque ele chama `cargo run --release --example`
+    # seis vezes e martelar o build nesta worktree fura o piso de disco.
+    ("docs/qa/medir.py --gravar", ["docs/QA-PDCA.md"], "nota-cargo",
+     "chama cargo run --example seis vezes; tabela das catracas do QA-PDCA"),
     # Nao e' gerador do dossie -- e' o rollup do board de PMO (GOV-3). Entra
     # aqui pelo mesmo motivo do `docs/tecnologias/extrair.py`: e' um gerador
     # que reescreve um bloco marcado a partir de fonte versionada, e o mesmo
@@ -201,13 +211,27 @@ def resolver(alvo: str, dossie: pathlib.Path) -> pathlib.Path:
     return dossie if alvo == DOSSIE else (RAIZ / alvo)
 
 
+def partir(script: str):
+    """(nome, argumentos) -- o PLANO pode trazer o comando, nao so o arquivo.
+
+    O `docs/qa/medir.py` so escreve com `--gravar`; sem ele, imprime e nao
+    toca em arquivo nenhum. Um PLANO que guardasse so o nome do arquivo faria
+    o portao publicar uma receita que NAO regenera nada -- e receita que nao
+    regenera e a mesma doenca do gerador chamado pela metade que esta casa ja
+    pagou (o `pagina-dos-pedidos.py` imprimindo tres linhas de exito e
+    pulando o painel do dossie)."""
+    pedacos = script.split()
+    return pedacos[0], pedacos[1:]
+
+
 def caminho_do_gerador(script: str) -> pathlib.Path:
     """Onde o .py do gerador mora. Todo gerador desta lista sempre viveu em
     docs/dossie/ -- mas o extrair.py (pedido 156) mora em docs/tecnologias/,
     porque a pasta de tecnologias e dele, nao do dossie. Em vez de mudar a
     convencao para os catorze, o nome no PLANO vira caminho relativo a RAIZ
     quando tem "/"; sem "/" cai no comportamento antigo (AQUI/script)."""
-    return (RAIZ / script) if "/" in script else (AQUI / script)
+    nome, _ = partir(script)
+    return (RAIZ / nome) if "/" in nome else (AQUI / nome)
 
 
 def primeiro_hunk(antes: str, depois: str, nome: str) -> str:
@@ -230,9 +254,12 @@ def conferir_um(script: str, alvos, modo: str, dossie: pathlib.Path):
     estado: 'verde' | 'vermelho' | 'nota'
     """
     if modo == "nota-cargo":
+        rel = caminho_do_gerador(script).relative_to(RAIZ)
+        _, args = partir(script)
         return "nota", [
             f"NAO conferido (chama cargo). Rode a mao antes de publicar:\n"
-            f"      flock /tmp/phx-cargo.lock python3 docs/dossie/{script}"
+            f"      flock /tmp/phx-cargo.lock python3 {rel}"
+            + ("".join(" " + a for a in args))
         ]
 
     caminhos = [resolver(a, dossie) for a in alvos]
@@ -252,7 +279,7 @@ def conferir_um(script: str, alvos, modo: str, dossie: pathlib.Path):
 
     try:
         r = subprocess.run(
-            [sys.executable, str(caminho_do_gerador(script))],
+            [sys.executable, str(caminho_do_gerador(script))] + partir(script)[1],
             cwd=RAIZ, capture_output=True, text=True,
         )
     except Exception as e:  # noqa: BLE001 -- o portao nunca cai; ele reprova

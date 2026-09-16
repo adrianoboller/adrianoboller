@@ -39,6 +39,10 @@ Três arquivos, e a divisão entre os dois primeiros é o ponto:
 | `ultima-corrida.json` | o `--json` da última corrida **completa**, versionado — é dele que a tabela do `docs/TESTES.md` sai. Sem corrida não há tabela, e uma tabela que não venha de um arquivo destes é digitada |
 | `tabela-no-testes.py` | regrava a tabela das guardas no `docs/TESTES.md` a partir do `--json` de uma rodada — número visível que não sai de gerador está errado e ninguém percebeu ainda |
 
+Os dois arquivos abaixo respondem a `--numeros` e por isso entram na tabela
+gerada das catracas (`docs/QA-PDCA.md`, pelo `docs/qa/medir.py`) — antes de
+16/09/2026 o inventário só varria Rust e não os contava.
+
 **`pkill-sem-pid.py`, nesta mesma pasta, NÃO é uma entrada do catálogo** —
 é uma catraca à parte (pedido 256), porque `provar-guardas.py` só copia
 `Cargo.toml`/`Cargo.lock`/`crates`/`exemplos`/`docs`/`testes-web` para rodar
@@ -48,23 +52,51 @@ Três arquivos, e a divisão entre os dois primeiros é o ponto:
 
 **`trecho-vivo.py`, também nesta pasta, também NÃO é uma entrada do catálogo**
 — é a catraca do catálogo *envelhecido* (pedido 263). Ela lê este
-`catalogo.py` pelo próprio módulo (nunca por cópia da lista) e pergunta, para
-cada entrada, se o `trecho` ainda existe literalmente no arquivo que ela
-nomeia e se cada teste de `caem`/`seguem` ainda existe como `fn` em
-`crates/**/*.rs`.
+`catalogo.py` pelo próprio módulo (nunca por cópia da lista) e faz **quatro
+perguntas de texto puro** sobre cada entrada, mais **um piso** sobre o
+catálogo inteiro.
 
 Ela existe por um número: em 16/09/2026 a corrida completa achou **onze
 guardas QUEBRADAS**, e um único commit de 12/09 tinha aposentado **cinco de
 uma vez** sem ninguém ver por quatro dias. A causa não é desleixo, é custo —
 o `provar-guardas.py` leva cerca de uma hora, porque repõe o defeito e roda
 `cargo test` 143 vezes. **Guarda que só se confere em uma hora é guarda que
-não se confere.** O `trecho-vivo.py` custa **0,18 s** e roda no item 0c da
-bateria.
+não se confere.** O `trecho-vivo.py` custa **0,200–0,206 s** (medido, cinco
+corridas a load ~1,0) e roda no item 0c da bateria.
 
-E o limite dela está escrito no próprio arquivo, porque é o que a impede de
-virar falsa segurança: **ela não substitui o provador.** Achar o trecho não
-prova que repô-lo derruba o teste — só o provador prova isso. Ver
-`docs/CATRACAS.md` §12.
+**As cinco formas de QUEBRADA, e as quatro que ela vê.** A régua nasceu vendo
+**uma**, e o preço disso foi medido no mesmo dia: ela dizia `ok 0` enquanto o
+provador dizia **1 QUEBRADA**. Quem lesse o `ok 0` como inventário concluiria
+que o catálogo estava inteiro. O critério de quem entra é um só — **dá para
+ver sem compilar e sem rodar?**
+
+| forma de QUEBRADA | na régua barata? |
+|---|---|
+| o arquivo/o trecho não está mais lá | sim — `TETO_TRECHO_MORTO` |
+| o trecho aparece **duas** vezes | sim — `TETO_TRECHO_AMBIGUO` |
+| o teste nomeado não existe mais | sim — `TETO_TESTE_MORTO` |
+| o teste existe, mas **não no binário** que a entrada nomeia | sim — `TETO_TESTE_FORA_DO_BINARIO` |
+| o código trocado **não compila** | **não** — custa uma compilação por entrada |
+| a rodada **estourou o prazo** | **não** — custa rodar o binário até o prazo |
+| o binário **abortou** sem ser esperado | **não** — custa rodar o binário |
+
+E **a régua diz isso em toda corrida**: o `--catraca` fecha com «o provador
+continua dono de: …» e com a frase *«um `ok` aqui NÃO diz que o catálogo está
+inteiro»*. O limite impresso junto do número é o que a impede de virar falsa
+segurança: **ela não substitui o provador.** Achar o trecho não prova que
+repô-lo derruba o teste — só o provador prova isso.
+
+**E o `PISO_DAS_ENTRADAS`, que é o único que olha para o outro lado.** Os
+quatro tetos contam **defeito**, não **cobertura**: apagar as oito entradas
+velhas teria medido exatamente o mesmo `0` que consertá-las, e apagar é o
+caminho barato. O piso conta **entradas vivas + aposentadas escritas** (143 em
+16/09/2026). Tirar uma entrada é legítimo — guarda cuja lógica deixou de
+existir não tem defeito para repor —, e por isso a saída existe: escreva a
+linha em `APOSENTADAS` com o id, a data e o motivo, no mesmo commit. Quem
+apaga em silêncio faz a soma cair e o piso reprova. **A aposentadoria é
+escrita; o apagamento é que some.**
+
+Ver `docs/CATRACAS.md` §12.
 
 ## O que sai
 

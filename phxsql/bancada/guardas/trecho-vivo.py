@@ -2,6 +2,7 @@
 """A catraca do catalogo envelhecido -- pedido 263.
 
     python3 bancada/guardas/trecho-vivo.py --catraca
+    python3 bancada/guardas/trecho-vivo.py --numeros
 
 # O defeito que motivou
 
@@ -15,21 +16,85 @@ Medido commit a commit depois: **um unico commit aposentou cinco delas de
 uma vez** -- `2fe8658` (12/09, «a conferencia de FK dentro da transacao ve o
 pai empilhado»), que mexeu em `table.rs` e `transacao.rs`. Ninguem percebeu
 por QUATRO DIAS, e o motivo e o custo: o provador leva cerca de uma hora,
-porque repoe o defeito e roda `cargo test` para cada uma das 142 entradas.
+porque repoe o defeito e roda `cargo test` para cada uma das 143 entradas.
 Guarda que so se confere em uma hora e guarda que nao se confere.
+
+# As CINCO formas de QUEBRADA, e quais desta regua pega
+
+O `provar-guardas.py` devolve QUEBRADA por cinco motivos diferentes. Esta
+regua nasceu (16/09, pedido 263) vendo **uma** delas, e o numero que isso
+custou esta medido: a catraca dizia `ok 0` no mesmo dia em que o provador
+dizia **1 QUEBRADA** (`trava-sem-guarda-de-reentrancia`, que estoura o prazo
+de 420 s). A regua estava certa no que prometia -- e quem lesse o `ok 0` como
+INVENTARIO concluiria que o catalogo estava inteiro. Lei que lista menos
+casos do que existem protege igual hoje e menos no dia em que alguem usar a
+lista como inventario.
+
+O criterio de quem entra e um so: **da para ver sem compilar e sem rodar?**
+
+| forma de QUEBRADA | onde ela nasce no provador | aqui? |
+|---|---|---|
+| o arquivo/o trecho nao esta mais la | `Arvore.repor`, `quantas == 0` | SIM -- `TETO_TRECHO_MORTO` |
+| o trecho aparece DUAS vezes | `Arvore.repor`, `quantas > 1` | SIM -- `TETO_TRECHO_AMBIGUO` |
+| o teste nomeado nao existe mais | `julgar`, `sumidos` | SIM -- `TETO_TESTE_MORTO` |
+| o teste existe, mas nao no binario | laco principal, `faltando` | SIM -- `TETO_TESTE_FORA_DO_BINARIO` |
+| o codigo trocado NAO COMPILA | `julgar`, `desfecho == "nao compilou"` | **NAO** |
+| a rodada estourou o prazo | `julgar`, `desfecho == "prazo"` | **NAO** |
+| o binario abortou quando nao devia | `julgar`, `desfecho == "aborta"` | **NAO** |
+
+As tres de baixo **ficam de fora, e ficam de fora por definicao**: as tres
+so existem depois de `cargo test` compilar o `troca` e RODAR o binario. Ver
+o `troca` compilar custa uma compilacao por entrada -- que e exatamente a
+hora do provador que esta regua existe para nao esperar --, e ver o prazo e
+o aborto custa a rodada inteira. Uma regua de 0,2 s nao pode te-las, e
+fingir que as tem seria a mentira que este cabecalho acabou de nomear.
+
+Entao esta regua **diz que nao as tem**, em toda corrida, na linha
+«o provador continua dono de: …» que o `--catraca` imprime no fim. Nao e
+prosa: e o inventario do que este numero NAO cobre, impresso junto do
+numero, para que ninguem precise vir ler este arquivo para saber.
 
 # O que esta regua faz, e o que ela NAO faz
 
-FAZ, em 0,18 s (medido, tres corridas) e sem compilar nada: pergunta, para cada entrada
-do catalogo, se o `trecho` ainda existe **literalmente** no arquivo que ela
-nomeia, e se cada teste citado em `caem`/`seguem` ainda existe como `fn` em
-`crates/**/*.rs`.
+FAZ, em **0,200-0,206 s** (medido, cinco corridas a load ~1,0) e sem
+compilar nada: as quatro perguntas de texto puro da tabela acima, mais o
+**piso** do catalogo (abaixo). A versao de uma regua so custava
+**0,171-0,183 s** no mesmo minuto e na mesma maquina -- duas perguntas a
+mais por 0,03 s. **Regua cara e regua que nao se roda**, e esta roda em toda
+bateria: o custo foi medido a cada passo, e nao no fim.
 
 NAO FAZ, e isto importa: ela **nao substitui o provador**. Achar o trecho
 nao prova que repo-lo derruba o teste -- so o provador prova isso, e
 continua sendo ele a autoridade. Esta regua e o aviso barato, que pega a
 classe de envelhecimento que custou os quatro dias: o codigo andou e a
 entrada ficou para tras.
+
+# O piso: a catraca nao distingue conserto de APAGAMENTO
+
+Buraco medido em 16/09/2026, depois de as oito entradas velhas serem
+consertadas: `TETO_TRECHO_MORTO` conta **trecho morto**, nao **guarda
+viva**. Apagar as oito entradas do `catalogo.py` teria medido exatamente o
+mesmo `0` que conserta-las -- e apagar e o caminho barato. Uma catraca que
+premia o apagamento igual ao conserto nao segura o catalogo; segura so a
+aparencia dele.
+
+O `PISO_DAS_ENTRADAS` fecha esse lado. Ele nao conta as entradas vivas: ele
+conta **vivas + aposentadas escritas**. A diferenca e a armadilha que um
+piso rigido teria -- um piso que so olhasse as vivas impediria aposentar uma
+guarda cuja logica deixou de existir, e guarda impossivel de aposentar vira
+entrada remendada no chute, que e pior que entrada nenhuma.
+
+A saida e a mesma lei da catraca que muda de regua: **a aposentadoria se
+ESCREVE.** Quem tira uma entrada poe uma linha em `APOSENTADAS` com o id, a
+data e o motivo, e a soma nao se mexe; quem apaga uma entrada em silencio
+faz a soma cair, e o piso reprova nomeando quantas sumiram. O piso muda o
+preco relativo dos dois caminhos: consertar continua custando ler o codigo,
+e apagar passa a custar escrever por que.
+
+E ele sobe junto, pelo mesmo motivo que o teto desce junto: catalogo que
+cresceu e piso parado e piso frouxo -- ele voltaria a aceitar o apagamento
+das entradas novas. Crescer reprova pedindo o numero novo no MESMO commit,
+que e o espelho exato do «DESCEU -- BAIXE O TETO».
 
 # A armadilha que esta medicao ja pagou
 
@@ -42,7 +107,8 @@ varredura e `crates/**/*.rs` inteiro, e o numero medido e zero.
 
 # As catracas
 
-So DESCEM. Nascem hoje no numero MEDIDO, nao no numero desejado:
+So DESCEM (as de teto) e so SOBEM (a de piso). Nascem no numero MEDIDO do
+dia, nunca no desejado:
 
 - `TETO_TRECHO_MORTO = 0` -- **DESCEU de 8 para 0 em 16/09/2026**, no mesmo
   passo em que a divida velha foi paga. As oito entradas nomeadas no pedido
@@ -62,6 +128,25 @@ So DESCEM. Nascem hoje no numero MEDIDO, nao no numero desejado:
   `leitura-sem-recuo-para-a-exclusiva`, cuja entrada nomeava
   `so_uma_operacao_usa_a_ficha_compartilhada`, renomeado em `f2b87aa` para
   `so_as_duas_operacoes_medidas_usam_a_ficha_compartilhada`.
+- `TETO_TRECHO_AMBIGUO = 0` -- **nasce em 16/09/2026**, medido. E a segunda
+  forma de QUEBRADA, e ela e barata: `texto.count(trecho) > 1`. Um trecho
+  que casa duas vezes nao e so uma entrada que nao roda -- e uma entrada que
+  provaria OUTRA COISA se o executor escolhesse a ocorrencia errada, e por
+  isso o provador recusa antes de tentar.
+- `TETO_TESTE_FORA_DO_BINARIO = 0` -- **nasce em 16/09/2026**, medido. E o
+  `faltando` do laco principal do provador: o nome do teste existe em algum
+  lugar de `crates/`, entao o `TETO_TESTE_MORTO` o da por vivo, mas ele nao
+  esta no binario que a entrada nomeia (`pacote` + `alvo`) -- e o provador
+  nunca o veria. Conta so o que o `TETO_TESTE_MORTO` ja nao contou: as duas
+  reguas nao se sobrepoem, senao um nome sumido subiria dois numeros e
+  pareceria dois defeitos.
+
+# E a catraca que sobe, porque e piso e nao teto
+
+- `PISO_DAS_ENTRADAS = 143` -- **nasce em 16/09/2026**, contado no
+  `catalogo.py` de hoje (143 entradas, 143 ids distintos) mais as
+  `APOSENTADAS` (hoje nenhuma). Ele e a unica coisa nesta regua que reprova
+  o APAGAMENTO; tudo o mais aqui reprova o envelhecimento.
 """
 import importlib.util
 import os
@@ -70,9 +155,36 @@ import sys
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.abspath(os.path.join(AQUI, "..", ".."))
+EU = os.path.relpath(os.path.abspath(__file__), RAIZ)
 
 TETO_TRECHO_MORTO = 0
 TETO_TESTE_MORTO = 0
+TETO_TRECHO_AMBIGUO = 0
+TETO_TESTE_FORA_DO_BINARIO = 0
+PISO_DAS_ENTRADAS = 143
+
+# ------------------------------------------------------------- APOSENTADAS
+#
+# Cada guarda que SAIU do catalogo de proposito, com o id, a data e o motivo.
+# A soma `len(catalogo) + len(APOSENTADAS)` e o que o `PISO_DAS_ENTRADAS`
+# cobra -- entao tirar uma entrada sem escrever a linha aqui REPROVA, e
+# escrever a linha e a diferenca entre aposentar e apagar.
+#
+# Aposentar e legitimo, e por isso esta lista existe: guarda cuja logica
+# deixou de existir no produto nao tem defeito para repor, e manter a entrada
+# so para o numero fechar produziria justamente a entrada remendada no chute
+# que esta casa trata como pior que a quebrada.
+#
+# O que NAO e aposentadoria: entrada que envelheceu. Essa se conserta -- se
+# acha para onde o ponto de reposicao andou e se prova com o provador. Quem
+# aposenta uma entrada envelhecida escreve aqui um motivo que o proximo
+# leitor consegue conferir, e e' por isso que o motivo e obrigatorio.
+#
+# Formato: {"id": …, "data": "DD/MM/AAAA", "motivo": …}
+APOSENTADAS = []
+
+
+_CATALOGO = None
 
 
 def catalogo():
@@ -80,12 +192,19 @@ def catalogo():
 
     Receita duplicada e receita que diverge: uma segunda lista de guardas
     aqui envelheceria sozinha, e a regua passaria a medir um catalogo que
-    nao e o que o provador roda."""
+    nao e o que o provador roda.
+
+    Guardado: o `exec_module` custa o mesmo que ler o arquivo e compilar, e
+    esta regua o pedia cinco vezes por corrida."""
+    global _CATALOGO
+    if _CATALOGO is not None:
+        return _CATALOGO
     caminho = os.path.join(AQUI, "catalogo.py")
     spec = importlib.util.spec_from_file_location("catalogo_das_guardas", caminho)
     modulo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(modulo)
-    return getattr(modulo, "CATALOGO", None) or getattr(modulo, "GUARDAS")
+    _CATALOGO = getattr(modulo, "CATALOGO", None) or getattr(modulo, "GUARDAS")
+    return _CATALOGO
 
 
 def pares(guarda):
@@ -99,36 +218,127 @@ def pares(guarda):
 
 
 FUNCAO = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+MODULO = re.compile(r"^\s*(?:pub\s+)?mod\s+([a-z_][a-z0-9_]*)\s*;", re.M)
 
 
-def nomes_de_funcao():
-    """Toda `fn` declarada no Rust versionado, num conjunto.
+_FONTES = None
+
+
+def fontes():
+    """UMA passagem por `crates/**/*.rs`: por arquivo, as `fn` e os `mod x;`.
 
     `src/` guarda o teste de modulo e `tests/` o de integracao: varrer so um
     dos dois mede parte da caixa e anuncia o numero inteiro.
 
-    O conjunto e o ponto: a primeira versao guardava o fonte inteiro numa
-    string e corria uma busca por nome citado -- sao mais de quatrocentas
-    buscas varrendo os mesmos megabytes, e medido deu **31,6 s**. Uma
-    passagem so, com o nome virando chave, da o mesmo veredito. Regua cara
-    e regua que nao se roda."""
-    achados_ = set()
+    A passagem unica e o ponto, e ela ja foi paga duas vezes. A primeira
+    versao guardava o fonte inteiro numa string e corria uma busca por nome
+    citado -- mais de quatrocentas buscas varrendo os mesmos megabytes,
+    **31,6 s** medidos. A segunda (16/09, esta) acrescentou a pergunta «em
+    qual binario esse teste mora?» e, escrita do jeito obvio, relia
+    `crates/<pacote>/src/` uma vez por pacote: **0,47 s**. Os tres consertos
+    de custo, medidos um a um em vez de no fim:
+
+      0,47 s  relendo o disco por pacote
+      0,32 s  uma passagem so, guardada por arquivo (esta funcao)
+      0,29 s  o `catalogo.py` guardado e o `achados()` uma vez, nao duas
+      0,20 s  o crivo de `mod x;` so nos 57 arquivos de `tests/`, dos 276
+
+    A regua de antes, com duas perguntas a menos, custava 0,18 s."""
+    global _FONTES
+    if _FONTES is not None:
+        return _FONTES
+    _FONTES = {}
     for dirpath, dirs, arquivos in os.walk(os.path.join(RAIZ, "crates")):
         dirs[:] = [d for d in dirs if d not in ("target", ".git")]
         for nome in sorted(arquivos):
             if not nome.endswith(".rs"):
                 continue
+            caminho = os.path.join(dirpath, nome)
             try:
-                with open(os.path.join(dirpath, nome), encoding="utf-8",
-                          errors="replace") as f:
-                    achados_.update(FUNCAO.findall(f.read()))
+                with open(caminho, encoding="utf-8", errors="replace") as f:
+                    texto = f.read()
             except OSError:
                 continue
+            # O `mod x;` so serve para resolver um alvo `--test`, e alvo de
+            # teste mora em `crates/<pacote>/tests/`: 57 arquivos dos 276.
+            # Correr o segundo crivo nos 276 custa parede a toa -- medido,
+            # 0,29 s contra 0,20 s na mesma maquina e no mesmo minuto.
+            mods = (MODULO.findall(texto)
+                    if (os.sep + "tests" + os.sep) in caminho else [])
+            _FONTES[caminho] = (set(FUNCAO.findall(texto)), mods)
+    return _FONTES
+
+
+def nomes_de_funcao():
+    """Toda `fn` declarada no Rust versionado, num conjunto."""
+    achados_ = set()
+    for fns, _mods in fontes().values():
+        achados_ |= fns
     return achados_
 
 
+_BINARIOS = {}
+
+
+def fns_do_binario(pacote, alvo):
+    """As `fn` que o binario de teste NOMEADO pela entrada enxerga.
+
+    O provador roda `cargo test -p <pacote> <alvo>` e so ve os testes
+    daquele binario: um nome que exista noutro pacote da `QUEBRADA` com
+    «teste que o catalogo nomeia e o binario nao tem», e o
+    `TETO_TESTE_MORTO` -- que pergunta por `crates/**` inteiro -- nao o
+    enxerga.
+
+    `--lib` e `crates/<pacote>/src/**`; `--test <nome>` e
+    `crates/<pacote>/tests/<nome>.rs` mais os `mod x;` que ele declara (o
+    `mod comum;` dos testes de integracao desta casa), resolvidos como o
+    compilador resolve: `x.rs` ou `x/mod.rs`. Nao ha `#[path = …]` nesta
+    arvore -- conferido; se um dia houver, esta funcao passa a medir menos
+    do que existe e o comentario tem de mudar junto."""
+    chave = (pacote, tuple(alvo))
+    if chave in _BINARIOS:
+        return _BINARIOS[chave]
+    lidas = fontes()
+    encontradas = set()
+    if alvo and alvo[0] == "--lib":
+        base = os.path.join(RAIZ, "crates", pacote, "src") + os.sep
+        for caminho, (fns, _mods) in lidas.items():
+            if caminho.startswith(base):
+                encontradas |= fns
+    elif len(alvo) >= 2 and alvo[0] == "--test":
+        pendentes = [os.path.join(RAIZ, "crates", pacote, "tests",
+                                  alvo[1] + ".rs")]
+        vistos = set()
+        while pendentes:
+            caminho = pendentes.pop()
+            if caminho in vistos or caminho not in lidas:
+                continue
+            vistos.add(caminho)
+            fns, mods = lidas[caminho]
+            encontradas |= fns
+            pasta = os.path.dirname(caminho)
+            for mod in mods:
+                for candidato in (os.path.join(pasta, mod + ".rs"),
+                                  os.path.join(pasta, mod, "mod.rs")):
+                    if candidato in lidas:
+                        pendentes.append(candidato)
+    else:
+        # Alvo que esta regua nao sabe resolver (`--bin`, `--bins`, …).
+        # Devolver o conjunto VAZIO acusaria todos os testes dela como fora
+        # do binario -- regua que nao sabe tem de dizer que nao sabe, e nao
+        # inventar um veredito. `None` faz o chamador pular a pergunta.
+        return None
+    _BINARIOS[chave] = encontradas
+    return encontradas
+
+
 def achados():
-    """(trechos mortos, testes mortos), cada um com a guarda que o nomeia."""
+    """Os quatro achados de texto puro, cada um com a guarda que o nomeia.
+
+    Devolve (trechos mortos, trechos ambiguos, testes mortos, testes fora do
+    binario). As duas listas de teste sao DISJUNTAS de proposito: um nome que
+    nao existe em lugar nenhum entra so na primeira, senao um renomear
+    subiria dois numeros e pareceria dois defeitos."""
     lido = {}
 
     def ler(rel):
@@ -142,66 +352,195 @@ def achados():
         return lido[rel]
 
     declaradas = nomes_de_funcao()
-    trechos, testes = [], []
+    trechos, ambiguos, testes, fora = [], [], [], []
     for g in catalogo():
         gid = g.get("id")
         for arq, trecho in pares(g):
             texto = ler(arq)
             if texto is None:
                 trechos.append((gid, arq, "o arquivo nao existe mais"))
-            elif trecho not in texto:
+                continue
+            quantas = texto.count(trecho)
+            if quantas == 0:
                 trechos.append((gid, arq, "o trecho nao esta mais la"))
+            elif quantas > 1:
+                ambiguos.append((gid, arq, "o trecho aparece %d vezes -- trocar "
+                                           "a errada provaria outra coisa" % quantas))
+        no_binario = fns_do_binario(g.get("pacote", ""), g.get("alvo") or [])
         for campo in ("caem", "seguem"):
             for teste in g.get(campo) or []:
-                if teste.split("::")[-1] not in declaradas:
+                curto = teste.split("::")[-1]
+                if curto not in declaradas:
                     testes.append((gid, campo, teste))
-    return trechos, testes
+                elif no_binario is not None and curto not in no_binario:
+                    fora.append((gid, campo, "%s -- nao esta em %s %s"
+                                 % (teste, g.get("pacote"),
+                                    " ".join(g.get("alvo") or []))))
+    return trechos, ambiguos, testes, fora
+
+
+def medido(dados=None):
+    """Os cinco numeros, contados AQUI e nao lidos da saida em texto.
+
+    Catraca que le a propria saida quebra no dia em que alguem melhorar a
+    redacao, e quebra em silencio -- a mesma licao do «texto se resolve por
+    CHAVE, nunca por comparacao da frase».
+
+    `dados` e o retorno de `achados()` quando o chamador ja o tem: sem ele,
+    o `--catraca` varria o catalogo inteiro DUAS vezes (uma para listar, uma
+    para contar) e pagava o dobro por um veredito identico."""
+    trechos, ambiguos, testes, fora = dados if dados else achados()
+    return {
+        "TETO_TRECHO_MORTO": len(trechos),
+        "TETO_TRECHO_AMBIGUO": len(ambiguos),
+        "TETO_TESTE_MORTO": len(testes),
+        "TETO_TESTE_FORA_DO_BINARIO": len(fora),
+        "PISO_DAS_ENTRADAS": len(catalogo()) + len(APOSENTADAS),
+    }
+
+
+# Cada catraca desta regua: nome, valor, o que mede, e de que LADO ela trava.
+# `teto` so desce; `piso` so sobe. Os dois reprovam nos dois sentidos, porque
+# teto frouxo e piso frouxo sao a mesma doenca vista de dois lados.
+AS_CATRACAS = [
+    ("TETO_TRECHO_MORTO", TETO_TRECHO_MORTO, "teto",
+     "entradas cujo trecho o codigo nao tem mais",
+     "guarda que nao pode nem ser tentada nao esta guardando nada -- "
+     "ache para onde o ponto de reposicao andou e prove com o provador."),
+    ("TETO_TRECHO_AMBIGUO", TETO_TRECHO_AMBIGUO, "teto",
+     "entradas cujo trecho casa duas ou mais vezes no arquivo",
+     "o executor recusa a entrada antes de tentar: trocar a ocorrencia "
+     "errada provaria outra coisa. Alongue o trecho ate ele ser unico."),
+    ("TETO_TESTE_MORTO", TETO_TESTE_MORTO, "teto",
+     "testes nomeados que nao existem como `fn` em crates/**/*.rs",
+     "o catalogo nomeia um teste que o fonte nao tem -- alguem renomeou "
+     "o teste e a entrada ficou para tras."),
+    ("TETO_TESTE_FORA_DO_BINARIO", TETO_TESTE_FORA_DO_BINARIO, "teto",
+     "testes que existem, mas nao no binario que a entrada nomeia",
+     "o provador roda so o binario nomeado e nunca veria esse teste -- "
+     "corrija o `pacote`/`alvo` da entrada, ou o nome do teste."),
+    ("PISO_DAS_ENTRADAS", PISO_DAS_ENTRADAS, "piso",
+     "entradas vivas do catalogo mais as aposentadas escritas",
+     "sumiu entrada do catalogo sem aposentadoria escrita. Apagar a entrada "
+     "mede o mesmo que consertar, e e mais barato -- por isso este piso "
+     "existe. Se a guarda deixou mesmo de existir, escreva a linha em "
+     "APOSENTADAS (id, data, motivo) no mesmo commit."),
+]
+
+# O que esta regua NAO ve, impresso junto do numero que ela ve.
+#
+# Nao e prosa de rodape: e o inventario do buraco. O `ok 0` desta catraca ja
+# conviveu com `1 QUEBRADA` no provador (16/09/2026, a
+# `trava-sem-guarda-de-reentrancia`, que estourou os 420 s), e quem lesse o
+# zero como inventario concluiria que o catalogo estava inteiro. As tres so
+# existem depois de compilar e rodar -- e uma regua de 0,2 s nao compila.
+DO_PROVADOR = [
+    ("o codigo com o defeito reposto nao compila",
+     "ver isso custa uma compilacao por entrada"),
+    ("a rodada estourou o prazo do executor",
+     "ver isso custa rodar o binario ate o prazo"),
+    ("o binario abortou quando a entrada nao esperava aborto",
+     "ver isso custa rodar o binario"),
+]
 
 
 def catraca():
-    trechos, testes = achados()
+    dados = achados()
+    trechos, ambiguos, testes, fora = dados
+    agora = medido(dados)
     print("=== a catraca do catalogo envelhecido (pedido 263) ===")
-    print(f"   {len(catalogo())} guardas no catalogo")
+    print(f"   {len(catalogo())} guardas no catalogo"
+          + (f" + {len(APOSENTADAS)} aposentada(s) escrita(s)"
+             if APOSENTADAS else ""))
     if trechos:
         print("   -- trecho que o codigo nao tem mais:")
         for gid, arq, porque in trechos:
+            print(f"      {gid}: {porque} ({arq})")
+    if ambiguos:
+        print("   -- trecho que casa em mais de um lugar:")
+        for gid, arq, porque in ambiguos:
             print(f"      {gid}: {porque} ({arq})")
     if testes:
         print("   -- teste nomeado que nao existe em crates/**/*.rs:")
         for gid, campo, teste in testes:
             print(f"      {gid}: {campo} -> {teste}")
+    if fora:
+        print("   -- teste que existe, mas nao no binario da entrada:")
+        for gid, campo, teste in fora:
+            print(f"      {gid}: {campo} -> {teste}")
 
     ruim = 0
-    for medido, teto, nome, recado in (
-        (len(trechos), TETO_TRECHO_MORTO, "TETO_TRECHO_MORTO",
-         "guarda que nao pode nem ser tentada nao esta guardando nada -- "
-         "ache para onde o ponto de reposicao andou e prove com o provador."),
-        (len(testes), TETO_TESTE_MORTO, "TETO_TESTE_MORTO",
-         "o catalogo nomeia um teste que o fonte nao tem -- alguem renomeou "
-         "o teste e a entrada ficou para tras."),
-    ):
-        if medido > teto:
-            print(f"\n   SUBIU  {nome}: {medido} (teto {teto})")
-            print(f"   Reprovado: {recado}")
+    for nome, valor, lado, _mede, recado in AS_CATRACAS:
+        atual = agora[nome]
+        if lado == "teto":
+            acima, abaixo = "SUBIU", "DESCEU -- BAIXE O TETO"
+            conserto = (f"Melhorou. Ponha o numero novo em {nome}, no mesmo "
+                        "commit -- catraca frouxa nao segura nada.")
+            reprova_acima = True
+        else:
+            acima, abaixo = "CRESCEU -- SUBA O PISO", "ENCOLHEU"
+            conserto = (f"Cresceu. Ponha o numero novo em {nome}, no mesmo "
+                        "commit -- piso parado volta a aceitar o apagamento "
+                        "das entradas novas.")
+            reprova_acima = False
+        if atual > valor:
+            print(f"\n   {acima}  {nome}: {atual} ({lado} {valor})")
+            print("   " + (f"Reprovado: {recado}" if reprova_acima else conserto))
             ruim = 1
-        elif medido < teto:
-            print(f"\n   DESCEU -- BAIXE O TETO  {nome}: {medido} (teto {teto})")
-            print(f"   Melhorou. Ponha o numero novo em {nome}, no mesmo "
-                  "commit -- catraca frouxa nao segura nada.")
+        elif atual < valor:
+            print(f"\n   {abaixo}  {nome}: {atual} ({lado} {valor})")
+            print("   " + (conserto if reprova_acima else f"Reprovado: {recado}"))
             ruim = 1
         else:
-            print(f"\n   ok  {nome}: {medido} (teto {teto})")
+            print(f"\n   ok  {nome}: {atual} ({lado} {valor})")
+
+    # Uma aposentadoria que "voltou" contaria duas vezes na soma do piso e o
+    # deixaria frouxo em silencio -- a mesma entrada de dois lados.
+    vivas = {g.get("id") for g in catalogo()}
+    voltaram = [a["id"] for a in APOSENTADAS if a["id"] in vivas]
+    if voltaram:
+        print("\n   APOSENTADA QUE VOLTOU  " + ", ".join(voltaram))
+        print("   Reprovado: ela conta dos dois lados e infla o piso. "
+              "Tire a linha de APOSENTADAS e baixe o piso, ou renomeie a "
+              "entrada viva.")
+        ruim = 1
+
+    print("\n   o provador continua dono de:")
+    for o_que, porque in DO_PROVADOR:
+        print(f"      {o_que} -- {porque}")
+    print("   Esta regua nao compila e nao roda nada: um `ok` aqui NAO diz "
+          "que o catalogo esta inteiro.")
     return ruim
+
+
+def numeros():
+    """Saida de maquina para o `docs/qa/medir.py`.
+
+    O gerador do inventario NAO le a prosa acima, e nao le por decisao:
+    `grep` em relatorio e resolver numero por comparacao de FRASE, e no dia
+    em que alguem melhorar a redacao o inventario publica o numero de ontem
+    sem dizer nada. A chave e estavel; o rotulo e livre."""
+    agora = medido()
+    for nome, valor, lado, mede, _recado in AS_CATRACAS:
+        print(f"catraca:nome={nome};onde={EU};valor={valor};"
+              f"medido={agora[nome]};tipo={lado};mede={mede}")
+    return 0
 
 
 def principal():
     if "--catraca" in sys.argv:
         return catraca()
-    trechos, testes = achados()
+    if "--numeros" in sys.argv:
+        return numeros()
+    trechos, ambiguos, testes, fora = achados()
     for gid, arq, porque in trechos:
-        print(f"trecho-morto {gid}: {porque} ({arq})")
+        print(f"trecho-morto   {gid}: {porque} ({arq})")
+    for gid, arq, porque in ambiguos:
+        print(f"trecho-ambiguo {gid}: {porque} ({arq})")
     for gid, campo, teste in testes:
-        print(f"teste-morto  {gid}: {campo} -> {teste}")
+        print(f"teste-morto    {gid}: {campo} -> {teste}")
+    for gid, campo, teste in fora:
+        print(f"teste-fora     {gid}: {campo} -> {teste}")
     return 0
 
 

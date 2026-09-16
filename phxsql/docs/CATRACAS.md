@@ -12,9 +12,11 @@ flock /tmp/phx-cargo.lock python3 docs/qa/medir.py
 > raciocínio de cada catraca — por que ela existe, que defeito a motivou, o
 > que ela não cobre. Os números do dia saem do gerador
 > (`python3 docs/qa/medir.py --gravar`, que escreve dentro do
-> `docs/QA-PDCA.md`) e são sete em 07/09/2026, não cinco: entraram a
+> `docs/QA-PDCA.md`). Eram quatro; viraram oito em 07/09/2026 com a
 > `TETO_BOTAO_SEM_PROVA` (pedido 190, §9), a `TETO_TEMP_DIR_SOLTO` (pedido 150,
-> §6) e a `TETO_VERMELHA_SEM_PEDIDO` (pedido 212, §7) — oito ao todo. Número
+> §6) e a `TETO_VERMELHA_SEM_PEDIDO` (pedido 212, §7); e são **vinte** desde
+> 16/09/2026, quando o gerador passou a enxergar também as **onze** que moram
+> em Python, em `bancada/` (§14) — nove em Rust, onze em `bancada/`. Número
 > datado numa prosa não é número errado; número datado **sem dizer que é
 > datado** é.
 
@@ -566,7 +568,11 @@ com o uso. Um arquivo pode e deve continuar dizendo isso acima do `Popen` que
 prova a promessa.
 
 **Onde mora**: `bancada/guardas/pkill-sem-pid.py`, chamada pelo item 0b da
-bateria (`bancada/bateria/prova-bateria.py`) — estática, sem servidor.
+bateria (`bancada/bateria/prova-bateria.py`) — estática, sem servidor. Desde
+16/09/2026 ela também responde a `--numeros` e entra na tabela gerada do
+`docs/QA-PDCA.md`: ela era a **oitava** catraca de `bancada/` que o inventário
+não contava, e a única que o próprio parágrafo da §13 esquecia de nomear
+(§14).
 
 **Medido hoje** (16/09/2026, depois do conserto de `bulkinsert.py` e
 `medir.py`): **0** invocações reais de `pkill` em toda `bancada/`. Teto 0,
@@ -577,7 +583,7 @@ folga 0 — nasce colada, como as quatro do dia 03/09.
 a catraca acusa **SUBIU 4 (teto 0)**, nomeando as quatro linhas; com o
 conserto, `ok 0 (teto 0)`.
 
-## 12. `TETO_TRECHO_MORTO` e `TETO_TESTE_MORTO` — o catálogo envelhecido
+## 12. As cinco réguas do catálogo de guardas — quatro tetos e um piso
 
 **O defeito que a motivou** (pedido 263, 16/09/2026): a corrida inteira do
 `provar-guardas.py` devolveu **11 guardas QUEBRADAS** — nem provadas nem
@@ -593,45 +599,155 @@ empilhado»), que mexeu em `table.rs` e `transacao.rs`. Ninguém percebeu por
 porque repõe o defeito e roda `cargo test` para cada uma das 143 entradas.
 **Guarda que só se confere em uma hora é guarda que não se confere.**
 
-**O que elas contam**: para cada entrada do catálogo, se o `trecho` ainda
-existe **literalmente** no arquivo que ela nomeia, e se cada teste citado em
-`caem`/`seguem` ainda existe como `fn` em `crates/**/*.rs`.
-
-**O que elas NÃO contam, e isto importa**: elas **não substituem o
-provador**. Achar o trecho não prova que repô-lo derruba o teste — só o
-provador prova isso, e continua sendo ele a autoridade. Esta régua é o aviso
-barato, que pega a classe de envelhecimento que custou os quatro dias.
-
 **Onde mora**: `bancada/guardas/trecho-vivo.py`, chamada pelo item 0c da
 bateria (`bancada/bateria/prova-bateria.py`) — estática, sem servidor e sem
 compilar nada.
 
-**Medido hoje** (16/09/2026): **8** trechos mortos e **0** testes mortos.
-Os dois tetos nascem nesses números, não no desejado. O 8 é dívida velha
-nomeada no pedido 263, cada uma com o commit que a quebrou; o 0 é medido
-*depois* do conserto de `leitura-sem-recuo-para-a-exclusiva`, cuja entrada
-nomeava `so_uma_operacao_usa_a_ficha_compartilhada`, renomeado em `f2b87aa`.
+### 12.1 As cinco formas de QUEBRADA, e quais entraram na régua
 
-**A prova real, nos três sentidos**: repondo a assinatura velha do
-`upsert::aplicar` no trecho de `set-do-on-conflict-ignorado`, acusa **SUBIU 9
-(teto 8)** nomeando a guarda; repondo o nome velho do teste renomeado, acusa
-**SUBIU 1 (teto 0)**; com o teto adulterado para 9, acusa **DESCEU — BAIXE O
-TETO 8 (teto 9)**. Limpa, `ok 8` e `ok 0`, código de saída 0.
+A régua nasceu vendo **uma** das cinco, e o número que isso custou está
+medido: no mesmo dia 16/09 ela dizia `ok 0` enquanto o provador dizia **1
+QUEBRADA** (a `trava-sem-guarda-de-reentrancia`, que estoura o prazo de
+420 s). Ela estava certa no que prometia, e o `LEIA-ME` dizia isso — mas
+**quem lesse o `ok 0` como inventário concluiria que o catálogo estava
+inteiro**. É a lei da casa outra vez: lei que lista menos casos do que existem
+protege igual hoje e menos no dia em que alguém usar a lista como inventário.
 
-**E a armadilha que a própria medição pagou**, porque ela é a lei da casa por
-outro caminho: a primeira versão varria só `crates/<pacote>/src/` atrás dos
-testes e acusou **154** nomes mortos. Eram 154 falsos — o teste de integração
-mora em `crates/<pacote>/tests/`, não em `src/`. Régua que mede um terço da
-caixa e anuncia o número inteiro é o mesmo defeito do KiB da interface.
-Corrigida, mede `crates/**/*.rs` inteiro, e o número é zero.
+O critério de quem entra é um só: **dá para ver sem compilar e sem rodar?**
 
-**E o custo dela também foi medido, e consertado**: a primeira versão
-guardava o fonte inteiro numa string e corria uma busca de expressão regular
-por nome citado — mais de quatrocentas buscas varrendo os mesmos megabytes,
-**31,6 s** medidos em três corridas. Uma passagem só, com o nome virando
-chave de conjunto, dá o mesmo veredito em **0,18 s** — 180× menos. **Régua
-cara é régua que não se roda**, e uma que custasse meio minuto acabaria
-saindo da bateria pelo mesmo motivo que o provador saiu do dia a dia.
+| forma de QUEBRADA | onde nasce no provador | na régua? |
+|---|---|---|
+| o arquivo/o trecho não está mais lá | `Arvore.repor`, `quantas == 0` | **sim** — `TETO_TRECHO_MORTO` |
+| o trecho aparece **duas** vezes | `Arvore.repor`, `quantas > 1` | **sim** — `TETO_TRECHO_AMBIGUO` (nova) |
+| o teste nomeado não existe mais | `julgar`, `sumidos` | **sim** — `TETO_TESTE_MORTO` |
+| o teste existe, mas **não no binário** | laço principal, `faltando` | **sim** — `TETO_TESTE_FORA_DO_BINARIO` (nova) |
+| o código trocado **não compila** | `julgar`, `desfecho == "nao compilou"` | **não** |
+| a rodada **estourou o prazo** | `julgar`, `desfecho == "prazo"` | **não** |
+| o binário **abortou** sem ser esperado | `julgar`, `desfecho == "aborta"` | **não** |
+
+As três de baixo ficam de fora **por definição**: só existem depois de o
+`cargo test` compilar o `troca` e RODAR o binário. Ver o `troca` compilar
+custa uma compilação por entrada — que é exatamente a hora do provador que
+esta régua existe para não esperar — e ver o prazo e o aborto custa a rodada
+inteira.
+
+**E a régua diz que ficam de fora, em toda corrida.** O `--catraca` fecha com
+a lista «o provador continua dono de: …» e a frase *«um `ok` aqui NÃO diz que
+o catálogo está inteiro»*. Não é prosa de rodapé: é o inventário do buraco
+impresso **junto do número**, para que ninguém precise abrir o fonte para
+saber o que o zero não cobre.
+
+### 12.2 O piso — a catraca não distinguia conserto de APAGAMENTO
+
+Buraco medido em 16/09/2026, depois de as oito entradas velhas serem
+consertadas: `TETO_TRECHO_MORTO` conta **trecho morto**, não **guarda viva**.
+**Apagar as oito entradas do `catalogo.py` teria medido exatamente o mesmo
+`0` que consertá-las** — e apagar é o caminho barato. Uma catraca que premia
+o apagamento igual ao conserto não segura o catálogo; segura a aparência dele.
+
+`PISO_DAS_ENTRADAS` fecha esse lado, e **conta vivas + aposentadas
+escritas**, não só as vivas. A diferença é a armadilha que um piso rígido
+teria: ele impediria **aposentar** uma guarda cuja lógica deixou de existir, e
+guarda impossível de aposentar vira entrada remendada no chute — que esta casa
+trata como pior que a quebrada.
+
+A saída é a mesma lei da catraca que muda de régua: **a aposentadoria se
+escreve.** Quem tira uma entrada põe uma linha em `APOSENTADAS` com o id, a
+data e o motivo, e a soma não se mexe; quem apaga em silêncio faz a soma cair,
+e o piso reprova dizendo quantas sumiram. **O piso muda o preço relativo dos
+dois caminhos**: consertar continua custando ler o código, e apagar passa a
+custar escrever por quê.
+
+E ele **sobe junto**, pelo mesmo motivo que o teto desce junto: catálogo que
+cresceu e piso parado é piso frouxo — voltaria a aceitar o apagamento das
+entradas novas. Crescer reprova pedindo o número novo no mesmo commit, que é o
+espelho exato do «DESCEU — BAIXE O TETO». Uma entrada de `APOSENTADAS` que
+**volte** ao catálogo também reprova: ela contaria dos dois lados e inflaria o
+piso em silêncio.
+
+### 12.3 Os cinco números, medidos em 16/09/2026
+
+| Régua | Lado | Valor | Medido | Nasceu |
+|---|---|---:|---:|---|
+| `TETO_TRECHO_MORTO` | teto | 0 | **0** | 16/09, em 8; desceu para 0 no mesmo dia |
+| `TETO_TRECHO_AMBIGUO` | teto | 0 | **0** | 16/09, nesta frente |
+| `TETO_TESTE_MORTO` | teto | 0 | **0** | 16/09 |
+| `TETO_TESTE_FORA_DO_BINARIO` | teto | 0 | **0** | 16/09, nesta frente |
+| `PISO_DAS_ENTRADAS` | **piso** | 143 | **143** | 16/09, nesta frente — 143 entradas vivas + 0 aposentadas |
+
+**Nenhum teto subiu e nenhuma catraca se aposentou, e isso é decisão.** A
+régua do `TETO_TRECHO_MORTO` **não mudou**: ela continua respondendo
+exatamente «o trecho está lá?», e as duas perguntas novas nasceram em
+**catracas ao lado**, cada uma no número medido do dia. Fosse o contrário —
+alargar a régua do `TETO_TRECHO_MORTO` para contar também o trecho ambíguo —,
+a lei mandaria aposentá-la e fazer nascer uma `_V2`, perdendo a série com o
+8 → 0 de hoje de manhã. Catraca nova ao lado custa um nome; alargar a velha
+custa a série. **Quando as duas saídas existem, a que não mexe na régua é a
+certa.**
+
+E as duas listas de teste são **disjuntas de propósito**: um nome que não
+existe em lugar nenhum entra só no `TETO_TESTE_MORTO`; o
+`TETO_TESTE_FORA_DO_BINARIO` conta só o que existe em `crates/` e **não** está
+no binário que a entrada nomeia. Sem isso, um renomear subiria dois números e
+pareceria dois defeitos.
+
+### 12.4 O custo, medido a cada passo
+
+**Régua cara é régua que não se roda**, e esta roda em toda bateria. As duas
+perguntas novas, escritas do jeito óbvio, quase a tiraram de lá:
+
+| versão | parede (5 corridas, load ~1,0) |
+|---|---|
+| a régua de hoje de manhã, uma pergunta | 0,171–0,183 s |
+| as quatro perguntas, relendo `src/` por pacote | 0,47 s |
+| uma passagem só, guardada por arquivo | 0,32 s |
+| o `catalogo.py` guardado e o `achados()` uma vez, não duas | 0,29 s |
+| o crivo de `mod x;` só nos 57 arquivos de `tests/`, dos 276 | **0,200–0,206 s** |
+
+Duas perguntas a mais por **0,03 s**. Os três consertos foram medidos um a um
+e não no fim — a conta que diz *qual* deles pagou.
+
+### 12.5 A prova real, nos dois sentidos, régua por régua
+
+Todas em 16/09/2026, com o defeito reposto em `crates/phxsql-server/src/`
+**acima** do `#[cfg(test)]` — a lição que a frente do mapa das threads pagou
+no mesmo dia: o fim de um arquivo Rust quase sempre é território de teste, e
+defeito reposto ali não é defeito reposto.
+
+| régua | defeito reposto | o que ela disse |
+|---|---|---|
+| `TETO_TRECHO_MORTO` | a fórmula do `deve_girar` quebrada em três linhas | `SUBIU 1 (teto 0)`, nomeando `rodizio-do-profiler-ignora-o-zero` |
+| `TETO_TRECHO_AMBIGUO` | a mesma fórmula **duplicada** numa segunda `pub fn` de produção | `SUBIU 1 (teto 0)`, «o trecho aparece 2 vezes» |
+| `TETO_TESTE_MORTO` | `teto_zero_nunca_manda_girar` renomeado | `SUBIU 1 (teto 0)`, nomeando o teste |
+| `TETO_TESTE_FORA_DO_BINARIO` | o mesmo teste **movido** de `src/` para `tests/` | `SUBIU 1 (teto 0)`, «não está em phxsql-server --lib» — e o `TETO_TESTE_MORTO` ficou em **0**, que é a disjunção provada |
+| `PISO_DAS_ENTRADAS` | uma entrada apagada do `catalogo.py` | `ENCOLHEU 142 (piso 143)` — **e os quatro tetos continuaram `ok 0`**, que é o buraco de §12.2 visto acontecer |
+| idem, a saída legítima | a aposentadoria escrita em `APOSENTADAS` | `ok 143`, com «142 guardas no catálogo + 1 aposentada escrita» |
+| idem, a entrada de volta | a aposentada devolvida ao catálogo | `CRESCEU — SUBA O PISO 144` **e** `APOSENTADA QUE VOLTOU` |
+
+Limpa, os cinco `ok` e código de saída 0.
+
+**E uma prova que não precisou de compilação nenhuma**: para confirmar que o
+trecho ambíguo é mesmo `QUEBRADA` no provador — e não uma classe que esta
+régua inventou —, a própria função `Arvore.repor` do `provar-guardas.py` foi
+chamada sobre o arquivo mutado, numa cópia de um arquivo só. Ela devolveu
+*«o trecho aparece 2 vezes em `crates/phxsql-server/src/rodizio.rs`: trocar a
+errada provaria outra coisa»*, que é literalmente o motivo que o laço
+principal transforma em `QUEBRADA`. A correspondência entre as duas réguas
+está **exercitada**, não afirmada.
+
+**O que não foi exercitado de ponta a ponta, e fica dito**: a forma
+`faltando` (teste fora do binário) não foi vista sair do provador com uma
+corrida de verdade. A cópia dele (`~/.cache/phx-guardas`) estava vazia e uma
+corrida `--so` custaria uma compilação fria de ~1,2 GB numa árvore com 7,9 GB
+livres. A correspondência ali é **lida do fonte** (`provar-guardas.py`, o
+`faltando` do laço principal), não medida — e a diferença entre as duas coisas
+fica escrita em vez de sumir.
+
+**E a armadilha que a medição já pagou**, porque é a lei da casa por outro
+caminho: a primeira versão varria só `crates/<pacote>/src/` atrás dos testes e
+acusou **154** nomes mortos. Eram 154 falsos — o teste de integração mora em
+`crates/<pacote>/tests/`. Régua que mede um terço da caixa e anuncia o número
+inteiro é o mesmo defeito do KiB da interface.
 
 ## 13. As cinco catracas dos dois mapas de concorrência — e onde cada uma passou a rodar
 
@@ -755,14 +871,96 @@ reposto não provou nada**, e a segunda tentativa (o `spawn` acima da linha
 118) é que mostrou a régua funcionando. A lição tem alcance: repor defeito em
 arquivo Rust exige saber **onde acaba a produção**, e não só qual arquivo.
 
-**O que este inventário ainda NÃO vê**: `docs/qa/medir.py` varre
-`crates/*/examples/*.rs` atrás de quem imprime `catraca:` e `crates/*/src/**`
-atrás de `pub const TETO*`. **Nenhuma** das cinco catracas acima aparece nele,
-porque os tetos moram em Python, em `bancada/` — e o mesmo vale para a
-`TETO_TRECHO_MORTO` e a `TETO_TESTE_MORTO` da §12. São **sete** catracas vivas
-que a tabela gerada não conta. Ficam nomeadas aqui pelo mesmo motivo de
-sempre: lei que lista menos casos do que existem protege igual hoje e menos no
-dia em que alguém usar a lista como inventário.
+**O que este inventário não via, e passou a ver em 16/09/2026**: o
+`docs/qa/medir.py` varria só `crates/*/examples/*.rs` atrás de quem imprime
+`catraca:` e `crates/*/src/**` atrás de `pub const TETO*`. Nenhuma das cinco
+catracas acima aparecia nele, porque os tetos moram em Python, em `bancada/`.
+Está consertado na **§14**, e a frase que estava aqui rendeu um achado sobre
+ela mesma: ela dizia «**sete** catracas vivas que a tabela gerada não conta» e
+esquecia a `TETO_PKILL_SEM_PID` da §11, que é da mesma família e mora na mesma
+pasta. **Eram oito.** O parágrafo que denunciava uma lista curta era, ele
+próprio, uma lista curta — e é a prova mais barata de que lei que lista menos
+casos do que existem protege menos no dia em que alguém usar a lista como
+inventário, inclusive quando a lista é a dos buracos.
+
+## 14. O inventário gerado passou a contar as catracas de Python
+
+**O defeito que motivou** (16/09/2026): `docs/qa/medir.py` é o gerador da
+tabela das catracas — o arquivo que existe para que **nenhum número desta
+casa se digite**. Ele achava catraca varrendo `crates/*/examples/*.rs` atrás
+de quem imprime `catraca:` e responde a `--numeros`, e teto órfão varrendo
+`crates/*/src/**` atrás de `pub const TETO*`. Os dois crivos são de Rust, e
+**oito catracas vivas moram em Python**, em `bancada/`: as três do
+`mapa-da-trava.py`, as duas do `mapa-das-threads.py` (§13), a
+`TETO_PKILL_SEM_PID` (§11) e as duas do `trecho-vivo.py` (§12). **A tabela que
+existe para dizer quantas catracas há contava menos do que existe.**
+
+**O conserto, e por que ele não traz lista nenhuma**: o crivo é o **mesmo** —
+`bancada/**/*.py` atrás de quem escreve `catraca:nome=`, perguntado com
+`--numeros`. Um critério diferente aqui (um nome de pasta, uma lista de
+scripts) divergiria do de cima na primeira pasta nova; **o conferidor se
+descreve**, dos dois lados, e uma catraca nova em Python entra na tabela sem
+ninguém editar o gerador. Os quatro conferidores de `bancada/` ganharam o
+modo `--numeros` no mesmo commit.
+
+**`tipo=teto` e `tipo=piso`, e a regra de compatibilidade que isso exigiu**:
+o `PISO_DAS_ENTRADAS` (§12.2) reprova quando **desce**, e uma tabela que o
+mostrasse como «FROUXA — baixe-a» estaria mentindo sobre o dado. A linha de
+auto-descrição passou a carregar `tipo=`, e **quem não o diz continua sendo
+teto**: os nove conferidores em Rust não mudaram uma linha. *Guarda nova entra
+pedida, não imposta* — um campo obrigatório teria quebrado todo emissor
+antigo, que é o mesmo estrago da janela de conflito recusando gravação sem
+versão, em miniatura.
+
+**A varredura de órfãs também alcança `bancada/`, e com uma diferença
+medida.** Em Rust, `pub const TETO*` dentro de `src/` é sinal forte. Em
+`bancada/`, um `TETO_*` no topo de um script é sinal **fraco**: das oito que
+existiam no dia, **quatro eram limite de funcionamento** e não dívida de
+código — o prazo de uma sonda (`TETO_VARRER_MS`, `TETO_PING_MS`), o espelho
+de um teto de produção (`TETO_DO_REGISTRO` em `bancada/seguranca/porta.py`),
+um parâmetro de bancada (`TETO` em `enxurrada-web.py`) e o corte de um
+classificador (`PISO_DE_CONFIANCA`). Acusá-las encheria a tabela do ruído que
+a §7 já ensinou a evitar. **A isenção existe e mora na LINHA da constante**,
+não numa lista dentro do gerador: `# nao-e-catraca: <motivo>`. É o molde do
+`ISENTOS` do conferidor de temporários, com a receita saindo do código —
+quando um gerador depende de uma lista, a lista tem de sair do código.
+
+**O número, medido em 16/09/2026**: a tabela publicada no `docs/QA-PDCA.md`
+trazia **8** catracas; o gerador consertado mede **20** (nove em Rust, onze em
+`bancada/`).
+
+**E o derivado estava velho, o que é um segundo achado**: a mesma corrida
+mostrou que a tabela publicada não tinha a `TETO_INVENTARIO_DESCASADO` (§8,
+de 07/09) e dizia `TETO_ROTULOS_E_CRASE` **1.050** quando já era **1.049** —
+número velho anunciando sucesso pelo silêncio, exatamente a doença da §10. O
+motivo: **o gerador da tabela das catracas não estava no `PLANO` do
+`portao-dos-geradores.py`**, então nenhum portão perguntava «re-rodar mudaria
+algum número visível?». Ele entrou, no modo `nota-cargo` — o mesmo do
+`numeros-do-projeto.py`, porque chama `cargo run --release --example` seis
+vezes e martelar o build nesta worktree fura o piso de disco. Ele **não** é
+rodado pelo portão; sai como NOTA com o comando, em vez de sumir do relatório.
+E o `PLANO` passou a aceitar **o comando**, não só o nome do arquivo:
+`docs/qa/medir.py` só escreve com `--gravar`, e um plano que guardasse só o
+nome publicaria uma receita que não regenera nada — a doença do gerador
+chamado pela metade.
+
+**A prova real, nos dois sentidos** (16/09/2026):
+
+- com o `--numeros` **arrancado** do `pkill-sem-pid.py` (o estado em que a
+  catraca sumiria calada), o gerador colhe **10** em vez de 11 e imprime
+  *«`bancada/guardas/pkill-sem-pid.py`: escreve `catraca:nome=` e não
+  respondeu ao `--numeros`»* — e a `TETO_PKILL_SEM_PID` aparece **também** na
+  lista de órfãs, que é o segundo sinal independente. Devolvido, 11 e nenhum
+  problema;
+- com um `TETO_SINTETICO = 7` acrescentado a um script de `bancada/` sem
+  conferidor e sem marca, ele aparece como órfão nomeando arquivo e linha;
+  com o `# nao-e-catraca:` na mesma linha, some. Removido, some do mesmo jeito.
+
+**O que ele continua NÃO vendo, e fica dito**: o crivo de órfãs em Rust
+continua sendo só `pub const TETO*` — um `const` privado ou um `MAX_*`/
+`LIMITE_*` não aparece, e são 26 deles na tabela de limites abaixo. A régua
+não mudou nesta frente e por isso nenhuma catraca de lá se aposentou; o buraco
+está medido e nomeado na seção dos limites, como estava.
 
 ## Os limites de funcionamento encontrados (não são catracas)
 
@@ -801,11 +999,17 @@ Nenhum tem "folga" porque nenhum é contado contra o código-fonte.
 | `PASSOS_MAX` | `phxsql-sql/src/rotina.rs:50` | 1.000.000 | passos que um gatilho/rotina PL roda antes de ser interrompido |
 | `TEXTO_MAX` | `phxsql-sql/src/rotina.rs:69` | 64 MiB | alocação de texto de UM passo do avaliador PL |
 | `TETO` (paralelismo) | `phxsql-core/src/paralelo.rs:39` | dinâmico (`recursos.threads`) | núcleos que o trabalho dividido pode usar; 0 = sem teto |
+| `Ritmo::TETO` | `phxsql-server/src/replica.rs:519` | 60 s | topo do recuo exponencial da réplica entre reconexões |
 
-27 constantes. Nenhuma delas tem um conferidor que meça uma contagem no
-código-fonte contra ela. `docs/qa/medir.py` já sinaliza um pedaço disto
-sozinho — varre `pub const TETO*` e encontrou `TETO_DO_REGISTRO` sem
-medidor —, mas o alcance dele é mais estreito que esta varredura: das outras
+28 constantes — a última achada em 16/09/2026 pela própria varredura de órfãs
+do `docs/qa/medir.py`, que a acusa como `TETO` sem medidor. Ela é `pub const
+TETO*` dentro de `src/`, então cai no crivo; é **limite de funcionamento**, e
+está aqui em vez de virar catraca.
+
+Nenhuma delas tem um conferidor que meça uma contagem no código-fonte contra
+ela. `docs/qa/medir.py` já sinaliza um pedaço disto sozinho — varre `pub const
+TETO*` e hoje acusa **dois**, o `TETO_DO_REGISTRO` e o `Ritmo::TETO` —, mas o
+alcance dele é mais estreito que esta varredura: das outras
 26, sete usam o prefixo `TETO_` mas são `const` privado (`TETO_DA_CASCATA`,
 `TETO_PIVOT`, `TETO_JUNCAO`, `TETO_DO_LOTE_SERVIDO`, `TETO_DO_CAMPO`,
 `TETO_DO_ERRO`, `TETO_DO_CABECALHO`) — invisíveis ao regex por causa da
@@ -832,11 +1036,14 @@ contado contra o código-fonte, e nenhum entra na tabela de catracas.
 - **`conferidor_dependencias.rs`** (zero dependências externas) — portão
   binário, não catraca: não há contagem, é passa/não passa. Documentado na
   seção acima.
-- **`bancada/guardas/catalogo.py`** (o catálogo de defeitos repostos, hoje
-  com 77 entradas) — é a OUTRA metade do papel G, as guardas de regressão
-  provadas por mutação. Não é catraca: cada entrada prova um defeito
-  específico voltando e sendo pego, não uma contagem que sobe e desce. Tem
-  seu próprio inventário em `docs/TESTES.md` §12 e não se repete aqui.
+- **`bancada/guardas/catalogo.py`** (o catálogo de defeitos repostos, **143
+  entradas** medidas em 16/09/2026) — é a OUTRA metade do papel G, as guardas
+  de regressão provadas por mutação. Não é catraca: cada entrada prova um
+  defeito específico voltando e sendo pego, não uma contagem que sobe e desce.
+  Tem seu próprio inventário em `docs/TESTES.md` §12 e não se repete aqui.
+  **O tamanho dele, esse sim, virou número travado** em 16/09/2026: é o
+  `PISO_DAS_ENTRADAS` da §12.2, e o 77 que esta linha trazia até hoje é a
+  demonstração de que um número digitado em prosa envelhece calado.
 - **Os três portões** (`cargo fmt --check`, `clippy -D warnings`, `cargo
   test --workspace`, `docs/PORTOES.md`) — estruturais, sem folga numérica.
 - **As catracas de CONTAGEM NO FONTE dentro de `#[test]`** — hoje

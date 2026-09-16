@@ -63,8 +63,8 @@ SEGUNDOS_DE_SONDA = int(os.environ.get("PHX_SONDA_S", "40"))
 # defeito, o `varrer` da replica esperava 29-30 s atras da trava enquanto o
 # `ping`, que nao precisa dela, respondia em milissegundos -- e e esse
 # contraste que diz que quem espera e a trava e nao o servidor.
-TETO_VARRER_MS = 2_000
-TETO_PING_MS = 1_000
+TETO_VARRER_MS = 2_000  # nao-e-catraca: prazo da sonda, limite de funcionamento
+TETO_PING_MS = 1_000  # nao-e-catraca: prazo da sonda, limite de funcionamento
 
 PROCESSOS = []
 SOQUETES = []

@@ -59,7 +59,7 @@ TOKEN = "enxurrada"
 SENHA = "enxurrada-8765"
 CONEXOES = int(os.environ.get("CONEXOES", "500"))
 SEGURAR = float(os.environ.get("SEGURAR", "3"))
-TETO = int(os.environ.get("TETO", "64"))
+TETO = int(os.environ.get("TETO", "64"))  # nao-e-catraca: parametro da bancada, ajustavel pelo ambiente
 FILA_MS = int(os.environ.get("FILA_MS", "2000"))
 RESULTADOS = RAIZ / "bancada/concorrencia/resultados.json"
 

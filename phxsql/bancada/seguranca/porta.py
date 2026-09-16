@@ -47,7 +47,7 @@ PORTA_TETO = PORTA + 4
 PORTA_FECHADA = PORTA + 9
 
 SENHA = "segredo-da-bancada-f6"
-TETO_DO_REGISTRO = 128 * 1024 * 1024  # phxsql-core/src/fio.rs
+TETO_DO_REGISTRO = 128 * 1024 * 1024  # nao-e-catraca: espelho do limite de phxsql-core/src/fio.rs
 
 PLACAR = []
 

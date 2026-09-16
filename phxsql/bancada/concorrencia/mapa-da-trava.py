@@ -3,6 +3,7 @@
 
     python3 bancada/concorrencia/mapa-da-trava.py            # o mapa legivel
     python3 bancada/concorrencia/mapa-da-trava.py --json     # para outro gerador
+    python3 bancada/concorrencia/mapa-da-trava.py --numeros  # para o inventario
     python3 bancada/concorrencia/mapa-da-trava.py --classe rede   # so uma classe
 
 Por que este medidor existe
@@ -68,7 +69,7 @@ SALTOS = 5
 # Abaixo desta confianca o caminho nao entra no mapa: `disco-escrita via
 # nome(3/35)` nao e suspeita, e ruido -- e ruido que faz tudo parecer caro
 # esconde o que e caro de verdade.
-PISO_DE_CONFIANCA = 0.5
+PISO_DE_CONFIANCA = 0.5  # nao-e-catraca: corte do classificador, nao divida de codigo
 # Acima disto o mapa AFIRMA: todas as definicoes de todo nome do caminho
 # alcancam o marcador, entao qual delas e a certa deixou de importar.
 CERTO = 0.999
@@ -663,6 +664,13 @@ def autoteste():
 # nasce outra, no numero medido do dia, dizendo no nome que substitui a
 # anterior. Perder a serie e mais barato que deixar «mudei a regua» virar a
 # porta pela qual se afrouxa um teto.
+#
+# A quarta coluna e o rotulo curto do inventario (`docs/qa/medir.py`, pelo
+# `--numeros`). Ela NAO e regua nem teto -- e o «o que esta catraca mede» que
+# a tabela gerada imprime ao lado do numero. Dito em voz alta porque uma das
+# tres esta VERMELHA por decisao do dono (#252, metade 1): o teto 22 da
+# `alcancam-fsync` e a funcao `medir_para_a_catraca` nao foram tocados em
+# 16/09/2026, so ganharam rotulo.
 CATRACAS = [
     (
         "codigo-do-dono",
@@ -671,6 +679,7 @@ CATRACAS = [
         "global na mao. Cada uma delas e um pedaco de codigo que nao e nosso "
         "segurando o servidor inteiro; o teto de parede de 500 ms limita a "
         "duracao, nao o numero.",
+        "secoes criticas que rodam codigo do dono do banco com a trava na mao",
     ),
     (
         "alcancam-fsync",
@@ -678,6 +687,7 @@ CATRACAS = [
         "secoes alcancam `fsync` com a trava na mao. E o que um `RwLock` NAO "
         "conserta -- o escritor continua exclusivo --, e cada uma nova e "
         "1,3 ms de trava presa (§7.1-bis) que a proxima conexao espera.",
+        "secoes criticas que alcancam `fsync` com a trava na mao",
     ),
     (
         "rede-ou-espera",
@@ -685,6 +695,7 @@ CATRACAS = [
         "secoes esperam REDE com a trava global na mao. Este teto e zero e "
         "nao e um numero como os outros: uma so ja ata o servidor inteiro ao "
         "tempo de resposta de outra maquina.",
+        "secoes criticas que esperam REDE com a trava global na mao",
     ),
 ]
 
@@ -715,7 +726,7 @@ def catraca():
     print("=== a catraca do mapa da trava ===")
     print(f"    {len(secoes)} secoes criticas no {ALVO.name}\n")
     reprovou = False
-    for nome, teto, porque in CATRACAS:
+    for nome, teto, porque, _mede in CATRACAS:
         agora = medido[nome]
         if agora > teto:
             estado, reprovou = "SUBIU", True
@@ -740,7 +751,32 @@ def catraca():
     return 0
 
 
+EU = str(Path(__file__).resolve().relative_to(RAIZ))
+
+
+def numeros():
+    """Saida de maquina para o `docs/qa/medir.py` -- o inventario das catracas.
+
+    Ele NAO le a prosa do `--catraca`: `grep` em relatorio e resolver numero
+    por comparacao de FRASE, e no dia em que alguem melhorar a redacao o
+    inventario publica o numero de ontem sem dizer nada.
+
+    Sai SEMPRE com codigo 0, mesmo com a `alcancam-fsync` vermelha, e e' por
+    ela que esta linha existe: o `perguntar()` do inventario trata codigo != 0
+    como «nao consegui medir», e a catraca vermelha SUMIRIA da tabela em vez
+    de aparecer vermelha nela. Quem reprova e o `--catraca`; este modo
+    RELATA. Papel que nao esta cumprindo aparece como nao cumprindo."""
+    secoes, _, _ = mapear()
+    medido = medir_para_a_catraca(secoes)
+    for nome, teto, _porque, mede in CATRACAS:
+        print(f"catraca:nome={nome};onde={EU};valor={teto};"
+              f"medido={medido[nome]};tipo=teto;mede={mede}")
+    return 0
+
+
 def principal():
+    if "--numeros" in sys.argv:
+        return numeros()
     if "--catraca" in sys.argv:
         return catraca()
     if "--autoteste" in sys.argv:
