@@ -15065,6 +15065,25 @@ impl Servidor {
                 busca, atribuicoes, ..
             } => (busca, Some(atribuicoes)),
             PlanoDml::Excluir { busca, .. } => (busca, None),
+            // POR FAIXA: coletar_rowids junta as linhas, e o laco aplica por
+            // rowid. Sai por aqui porque o caminho por chave e' de UMA linha.
+            PlanoDml::AtualizarPorFaixa {
+                coletar,
+                atribuicoes,
+                ..
+            } => {
+                return self.executar_dml_por_faixa(
+                    texto,
+                    op,
+                    notas,
+                    &coletar,
+                    Some(&atribuicoes),
+                    sessao,
+                );
+            }
+            PlanoDml::ExcluirPorFaixa { coletar, .. } => {
+                return self.executar_dml_por_faixa(texto, op, notas, &coletar, None, sessao);
+            }
         };
 
         // Passo 1: o rowid da chave.
@@ -15125,6 +15144,102 @@ impl Servidor {
                 ))
             }
         }
+    }
+
+    /// UPDATE/DELETE POR FAIXA: o `coletar_rowids` junta TODAS as linhas que
+    /// casam a condicao ANTES de qualquer gravacao -- e a colheita-antes-da-
+    /// aplicacao que fecha o Halloween: uma linha que o proprio UPDATE tira do
+    /// filtro nao volta a ser vista, porque a lista de rowids ja esta fechada.
+    /// Depois, por rowid, cada linha vira `ler` + `atualizar` (com a linha
+    /// MESCLADA e a versao lida) ou `ler` + `excluir` SUAVE -- os MESMOS passos
+    /// do caminho por chave, um por linha, e por isso cascata, restringir,
+    /// direito por coluna e a janela de versao valem por linha sem um caminho de
+    /// escrita proprio: cada gravacao sai pelo `executar_derivado`, o mesmo
+    /// portao do SELECT.
+    ///
+    /// # Fora de transacao NAO e atomico -- de proposito
+    ///
+    /// Cada linha e um `atualizar`/`excluir` avulso; uma queda no meio deixa as
+    /// ja gravadas gravadas. Numa transacao aberta cada uma empilha no
+    /// super-journal, e o COMMIT/ROLLBACK as alcanca juntas: a atomicidade e da
+    /// transacao, nao deste laco. O SQL nao abre transacao por conta -- quem
+    /// quer tudo-ou-nada envolve o comando em BEGIN/COMMIT.
+    ///
+    /// # A versao lida vai em cada gravacao
+    ///
+    /// Quem gravar uma linha entre o `coletar` e o `ler`/`atualizar` faz o motor
+    /// recusar AQUELA linha em vez de sobrescrever calado -- a mesma janela do
+    /// caminho por chave, agora por linha. E a linha que sumiu entre o colher e
+    /// o ler simplesmente nao conta: outra frente a excluiu, e o laco segue.
+    ///
+    /// # Zero linhas nao e erro
+    ///
+    /// Filtro que nao casa nada devolve `afetadas: 0`, como todo o resto do SQL.
+    fn executar_dml_por_faixa(
+        &self,
+        texto: &str,
+        op: &str,
+        mut notas: Vec<String>,
+        coletar: &Json,
+        atribuicoes: Option<&Vec<(String, Json)>>,
+        sessao: &Sessao,
+    ) -> Result<Json> {
+        // Passo 1: colher os rowids que casam. O `coletar_rowids` RECUSA se a
+        // faixa for maior do que consegue prometer inteira, entao aqui ou vem a
+        // faixa completa ou vem o erro -- nunca um pedaco com cara de tudo.
+        let colhido = self.executar_derivado("coletar_rowids", coletar, sessao)?;
+        let rowids: Vec<u64> = colhido
+            .campo("rowids")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .map(|r| r.inteiro().unwrap_or(0).max(0) as u64)
+            .collect();
+
+        let database = coletar.texto_ou("database", "").to_string();
+        let tabela = coletar.texto_ou("tabela", "").to_string();
+
+        if rowids.is_empty() {
+            notas.push("nenhuma linha casou o filtro: zero afetadas, e nao e erro".into());
+            return Ok(resposta_do_dml(texto, op, &notas, 0, &Json::Nulo, &[]));
+        }
+
+        // Passo 2: por rowid, `ler` a linha e a versao, e gravar com a versao
+        // LIDA. Os MESMOS `pedido_de_atualizar`/`pedido_de_excluir` do caminho
+        // por chave -- a mescla, a marca de excluido preservada, o suave por
+        // padrao. Nao ha caminho de escrita novo aqui.
+        let mut afetadas: u64 = 0;
+        for rowid in rowids {
+            let lida =
+                self.executar_derivado("ler", &pedido_de_ler(&database, &tabela, rowid), sessao)?;
+            if matches!(&lida, Json::Nulo) {
+                continue;
+            }
+            let versao = lida.inteiro_ou("versao", 0).max(0) as u64;
+            match atribuicoes {
+                Some(set) => {
+                    let linha = lida.campo("linha").cloned().unwrap_or(Json::Nulo);
+                    let pedido =
+                        pedido_de_atualizar(&database, &tabela, rowid, &linha, set, versao);
+                    self.executar_derivado("atualizar", &pedido, sessao)?;
+                    afetadas += 1;
+                }
+                None => {
+                    let pedido = pedido_de_excluir(&database, &tabela, rowid, versao);
+                    let r = self.executar_derivado("excluir", &pedido, sessao)?;
+                    afetadas += u64::from(r.booleano_ou("excluido", false));
+                }
+            }
+        }
+
+        Ok(resposta_do_dml(
+            texto,
+            op,
+            &notas,
+            afetadas,
+            &Json::Nulo,
+            &[],
+        ))
     }
 
     /// Os indices da tabela, como o tradutor os espera -- a receita do caminho
@@ -41018,15 +41133,58 @@ mod testes_sql_dml {
         assert_eq!(ler(&s, 1).texto_ou("nome", ""), "Adriano");
     }
 
-    /// Indice comum acha a linha, e por isso e recusado: alcancaria varias.
+    /// **O que era recusa agora e faixa.** Ate o UPDATE/DELETE por faixa,
+    /// `WHERE cidade = 'Blumenau'` sobre o indice COMUM era recusado com «NAO e
+    /// unico» -- o `=` so' passava por chave unica. Agora o mesmo `=` sobre
+    /// indice nao-unico cai no caminho POR FAIXA: `coletar_rowids` junta as
+    /// DUAS linhas de Blumenau e o laco atualiza as duas, deixando a de
+    /// Joinville intacta.
+    ///
+    /// E a prova cobre um ramo que os testes de `>`/`<=` nao tocam: o `=` que
+    /// NAO acha chave unica. Se `tem_chave_unica` voltasse a mandar todo `=`
+    /// pela chave, este `=` erraria «NAO e unico» outra vez e o `unwrap`
+    /// entraria em panico. As duas cidades preservadas provam de quebra que a
+    /// coluna do filtro (fora do SET) nao foi zerada pela mescla.
     #[test]
-    fn indice_nao_unico_recusa_de_ponta_a_ponta() {
+    fn update_por_faixa_no_indice_comum_alcanca_todas_as_que_casam() {
         let dir = dir_temp("comum");
         let s = com_dados(&dir);
-        let e = sql(&s, "UPDATE c SET nome = 'x' WHERE cidade = 'Blumenau'").unwrap_err();
-        assert!(e.to_string().contains("NAO e unico"), "{e}");
-        assert_eq!(ler(&s, 1).texto_ou("nome", ""), "Adriano");
-        assert_eq!(ler(&s, 3).texto_ou("nome", ""), "Joao");
+        let r = sql(&s, "UPDATE c SET nome = 'x' WHERE cidade = 'Blumenau'").unwrap();
+        assert_eq!(
+            r.inteiro_ou("afetadas", -1),
+            2,
+            "as duas linhas de Blumenau: {}",
+            r.escrever()
+        );
+        // As duas de Blumenau viraram 'x'; a de Joinville nao.
+        assert_eq!(ler(&s, 1).texto_ou("nome", ""), "x");
+        assert_eq!(ler(&s, 3).texto_ou("nome", ""), "x");
+        assert_eq!(ler(&s, 2).texto_ou("nome", ""), "Maria");
+        // E a cidade -- coluna do filtro, fora do SET -- ficou de pe nas tres.
+        assert_eq!(ler(&s, 1).texto_ou("cidade", ""), "Blumenau");
+        assert_eq!(ler(&s, 2).texto_ou("cidade", ""), "Joinville");
+    }
+
+    /// O irmao do de cima pelo DELETE: `DELETE FROM c WHERE cidade =
+    /// 'Blumenau'` sobre o indice comum some com as DUAS de Blumenau (suave) e
+    /// deixa a de Joinville. Antes da faixa isto era recusado igual.
+    #[test]
+    fn delete_por_faixa_no_indice_comum_alcanca_todas_as_que_casam() {
+        let dir = dir_temp("comum-del");
+        let s = com_dados(&dir);
+        let r = sql(&s, "DELETE FROM c WHERE cidade = 'Blumenau'").unwrap();
+        assert_eq!(
+            r.inteiro_ou("afetadas", -1),
+            2,
+            "as duas de Blumenau saem: {}",
+            r.escrever()
+        );
+        assert!(ler(&s, 1).booleano_ou("softdeleted", false), "id 1 saiu");
+        assert!(ler(&s, 3).booleano_ou("softdeleted", false), "id 3 saiu");
+        assert!(
+            !ler(&s, 2).booleano_ou("softdeleted", false),
+            "a de Joinville ficou"
+        );
     }
 
     /// Os pedidos dos passos 2 e 3 sao funcoes puras, e e aqui que a versao
@@ -41184,6 +41342,130 @@ mod testes_coletar_rowids {
             ok.inteiro_ou("casaram", -1),
             5,
             "com teto suficiente, passa"
+        );
+    }
+
+    /// Quantas linhas ATIVAS casam este filtro -- a sonda que mede o efeito de
+    /// um UPDATE/DELETE por faixa sem depender de ler rowid por rowid.
+    fn casaram(s: &Arc<Servidor>, dono: &Sessao, onde: &str) -> i64 {
+        let corpo = if onde.is_empty() {
+            r#"{"database":"b","tabela":"nums"}"#.to_string()
+        } else {
+            format!(r#"{{"database":"b","tabela":"nums","onde":[{onde}]}}"#)
+        };
+        s.executar("coletar_rowids", &pedido(&corpo), dono)
+            .unwrap()
+            .inteiro_ou("casaram", -1)
+    }
+
+    /// PROVA REAL do UPDATE por faixa, nos dois sentidos: `UPDATE ... WHERE
+    /// valor > 3` numa tabela de cinco muda EXATAMENTE as duas que casam
+    /// (`afetadas == 2`), as duas passam a ter `valor = 0`, e as tres de baixo
+    /// ficam intactas. Se o laco de `executar_dml_por_faixa` processasse so' a
+    /// PRIMEIRA linha colhida -- o `find` no lugar do `filter` que esta casa ja
+    /// pagou --, `afetadas` viria 1 e so' uma linha mudaria: as duas asserts de
+    /// baixo pegam os dois lados do defeito.
+    #[test]
+    fn update_por_faixa_muda_todas_as_que_casam_e_so_elas() {
+        let dir = DirTemp::novo("faixa-update");
+        let (s, dono) = servidor(dir.as_ref(), 5);
+
+        let r = s
+            .executar(
+                "sql",
+                &pedido(r#"{"database":"b","texto":"UPDATE nums SET valor = 0 WHERE valor > 3"}"#),
+                &dono,
+            )
+            .unwrap();
+        assert_eq!(
+            r.inteiro_ou("afetadas", -1),
+            2,
+            "duas linhas casam valor>3 -- se so' a primeira fosse tratada, viria 1: {}",
+            r.escrever()
+        );
+
+        // As duas que casavam agora valem 0, e nenhuma outra: sao duas medidas,
+        // porque um laco que gravasse 0 em TODAS tambem daria `valor = 0` em
+        // duas... nao, daria em cinco. A conta fecha so' se mudou as certas.
+        assert_eq!(
+            casaram(&s, &dono, r#"{"coluna":"valor","op":"=","valor":0}"#),
+            2,
+            "duas linhas ficaram com valor 0"
+        );
+        assert_eq!(
+            casaram(&s, &dono, r#"{"coluna":"valor","op":">","valor":3}"#),
+            0,
+            "nenhuma linha ainda casa valor>3"
+        );
+        assert_eq!(
+            casaram(&s, &dono, r#"{"coluna":"valor","op":"=","valor":1}"#),
+            1,
+            "a linha de baixo (valor 1) ficou intacta"
+        );
+    }
+
+    /// PROVA REAL do DELETE por faixa: `DELETE FROM nums WHERE valor <= 2`
+    /// apaga EXATAMENTE as duas de baixo (`afetadas == 2`), elas somem da
+    /// visao ativa e sobram tres. E o excluir SUAVE por linha -- a mesma
+    /// medida que o `find` em vez do `filter` derrubaria para 1.
+    #[test]
+    fn delete_por_faixa_apaga_todas_as_que_casam() {
+        let dir = DirTemp::novo("faixa-delete");
+        let (s, dono) = servidor(dir.as_ref(), 5);
+
+        let r = s
+            .executar(
+                "sql",
+                &pedido(r#"{"database":"b","texto":"DELETE FROM nums WHERE valor <= 2"}"#),
+                &dono,
+            )
+            .unwrap();
+        assert_eq!(
+            r.inteiro_ou("afetadas", -1),
+            2,
+            "duas linhas casam valor<=2: {}",
+            r.escrever()
+        );
+
+        assert_eq!(
+            casaram(&s, &dono, ""),
+            3,
+            "sobraram tres linhas ativas apos o DELETE por faixa"
+        );
+        assert_eq!(
+            casaram(&s, &dono, r#"{"coluna":"valor","op":"<=","valor":2}"#),
+            0,
+            "nenhuma linha ativa ainda casa valor<=2"
+        );
+    }
+
+    /// Zero linhas nao e erro: um UPDATE por faixa cujo filtro nao casa nada
+    /// devolve `afetadas: 0` e Ok, como todo o resto do SQL -- e nao um erro,
+    /// que seria a resposta errada calada.
+    #[test]
+    fn por_faixa_que_nao_casa_nada_e_zero_e_nao_erro() {
+        let dir = DirTemp::novo("faixa-zero");
+        let (s, dono) = servidor(dir.as_ref(), 5);
+
+        let r = s
+            .executar(
+                "sql",
+                &pedido(
+                    r#"{"database":"b","texto":"UPDATE nums SET valor = 9 WHERE valor > 100"}"#,
+                ),
+                &dono,
+            )
+            .expect("filtro que nao casa nada nao e erro");
+        assert_eq!(
+            r.inteiro_ou("afetadas", -1),
+            0,
+            "zero afetadas: {}",
+            r.escrever()
+        );
+        assert_eq!(
+            casaram(&s, &dono, r#"{"coluna":"valor","op":"=","valor":9}"#),
+            0,
+            "nada foi gravado"
         );
     }
 }

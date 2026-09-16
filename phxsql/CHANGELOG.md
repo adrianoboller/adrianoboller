@@ -10,6 +10,48 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — SQL: `UPDATE`/`DELETE` por faixa
+
+### Adicionado
+
+- **`UPDATE`/`DELETE` deixaram de exigir chave única** (item 1 do roteiro «SQL
+  para nota 9»). O `= ` sobre um índice único de uma coluna continua no caminho
+  rápido de três passos; qualquer outra condição — `= ` sobre coluna sem chave
+  única, ou faixa (`<>`, `<`, `<=`, `>`, `>=`) — segue o caminho **por faixa**:
+  uma op de leitura nova, `coletar_rowids`, colhe **todos** os `rowid` que casam
+  (aplicando o mesmo `memoria::passa` do `varrer`), e o servidor
+  (`executar_dml_por_faixa`) percorre a lista fazendo `ler`+`atualizar` com a
+  linha mesclada, ou `ler`+`excluir` suave — os **mesmos** pedidos do caminho por
+  chave, um por linha. Colher antes de aplicar **fecha o Halloween**: a lista de
+  `rowid` está fechada antes da primeira gravação, então uma linha que o próprio
+  `UPDATE` tira do filtro não é reprocessada. `docs/SQL.md` §6.1.
+- **Prova real nos dois sentidos.** No nível do servidor,
+  `update_por_faixa_muda_todas_as_que_casam_e_so_elas` e o irmão do `DELETE`
+  medem `afetadas` e o dado gravado; com o defeito reposto (tratar só a primeira
+  linha colhida — o `find` no lugar do `filter` que esta casa já pagou),
+  `afetadas` cai para 1 e as duas falham. No tradutor, o `= ` sem chave única e a
+  desigualdade viram `AtualizarPorFaixa`/`ExcluirPorFaixa` com o filtro certo.
+
+### Mudado
+
+- **A recusa não sumiu — mudou de motivo.** Antes o `UPDATE`/`DELETE` de faixa
+  ou de coluna sem chave única era recusado por não haver índice único; agora a
+  recusa é o **teto** do `coletar_rowids` (`TETO_COLETA_ROWIDS`, um milhão): uma
+  faixa maior do que ele consegue prometer inteira é recusada **nomeando o
+  limite**, em vez de gravar sobre o começo com cara de ter gravado sobre tudo.
+  A régua passou de «tem índice?» para «cabe inteiro?». Cinco testes que
+  afirmavam a recusa antiga foram **reescritos** para provar o novo caminho — a
+  proteção que guardavam continua, no teto.
+
+### Sabido
+
+- **Fora de transação, o `UPDATE`/`DELETE` por faixa não é atômico** (cada linha
+  é um `atualizar`/`excluir` avulso). Dentro de `BEGIN`/`COMMIT` cada uma empilha
+  e o `COMMIT`/`ROLLBACK` as alcança juntas. O comportamento de uma linha
+  empilhada na mesma transação sob faixa **não foi medido** nesta rodada.
+
+---
+
 ## Não lançado — Ledger: `ALTER TABLE ADD COLUMN` travado em tabela-cadeia
 
 ### Corrigido

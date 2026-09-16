@@ -36,17 +36,17 @@ foi estimado no lugar de uma medição que faltou.
 |---|---:|---:|---:|---:|---:|---:|
 | `phxsql-cli` | 1 | 815 | 104 | 113 | 78 | 1110 |
 | `phxsql-cmd` | 2 | 579 | 110 | 171 | 62 | 922 |
-| `phxsql-core` | 33 | 11449 | 3825 | 2870 | 1463 | 19607 |
+| `phxsql-core` | 34 | 11504 | 3906 | 2964 | 1478 | 19852 |
 | `phxsql-ffi` | 7 | 1408 | 1014 | 703 | 235 | 3360 |
 | `phxsql-odbc` | 7 | 2412 | 1086 | 920 | 226 | 4644 |
-| `phxsql-server` | 55 | 41686 | 24798 | 19164 | 4585 | 90233 |
-| `phxsql-sql` | 10 | 6529 | 3279 | 1906 | 732 | 12446 |
-| `phxsql-store` | 23 | 12588 | 3159 | 5134 | 1433 | 22314 |
-| **total** | **138** | **77466** | **37375** | **30981** | **8814** | **154636** |
+| `phxsql-server` | 55 | 42101 | 25314 | 19430 | 4639 | 91484 |
+| `phxsql-sql` | 10 | 6571 | 3321 | 1937 | 740 | 12569 |
+| `phxsql-store` | 24 | 12966 | 3474 | 5431 | 1513 | 23384 |
+| **total** | **140** | **78356** | **38329** | **31669** | **8971** | **157325** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **37375/77466 = 0.48×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **38329/78356 = 0.49×**.
 
-Alem do `src/`: **71** programas de medicao em `examples/` (16052 linhas — bancada em Rust, nao produto nem teste) e **55** arquivos em `tests/` de integracao fora de `src/` (18459 linhas).
+Alem do `src/`: **73** programas de medicao em `examples/` (17245 linhas — bancada em Rust, nao produto nem teste) e **55** arquivos em `tests/` de integracao fora de `src/` (18464 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -110,8 +110,8 @@ mesmo motivo que o rodapé já errou uma vez.
 | JavaScript (prova ponta a ponta) | `testes-web/` | 47 | 10136 |
 | Python (bancada de medicao) | `bancada/` | 101 | 41682 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 17 | 2466 |
-| Markdown (documentacao tecnica) | `docs/` (nao recursivo em `dossie/`, `design/`, `video/`) | 304 | 74968 |
-| Python (geradores de dossie/pedidos) | `docs/dossie/` | 17 | 5263 |
+| Markdown (documentacao tecnica) | `docs/` (nao recursivo em `dossie/`, `design/`, `video/`) | 319 | 78695 |
+| Python (geradores de dossie/pedidos) | `docs/dossie/` | 17 | 5362 |
 <!-- /GERADO -->
 
 Não incluído acima porque já está na tabela 1.1: os `.rs` de `examples/` e
@@ -287,7 +287,7 @@ com o motivo escrito**, que é o que a cláusula realmente cobra.
 ### 4.2 Como se mediu
 
 <!-- GERADO: bloco_bancadas() -->
-`bancada/` tem **50** frentes de medicao (acid, alfanumerica, alter, arm, bateria, carga, cifra, cifra-do-fio, cluster, cobertura-da-tela, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, transacoes, usuarios, utilizacao-padrao, windows), das quais **37** documentam a propria metodologia em `LEIA-ME.md`.
+`bancada/` tem **52** frentes de medicao (acid, alfanumerica, alter, arm, bateria, carga, cifra, cifra-do-fio, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, transacoes, usuarios, utilizacao-padrao, vetorial, windows), das quais **37** documentam a propria metodologia em `LEIA-ME.md`.
 <!-- /GERADO -->
 
 A carga do lado do motor é
@@ -322,9 +322,10 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_DO_LOTE_SERVIDO` | 16 * 1024 * 1024 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_PIVOT` | 5_000_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_JUNCAO` | 500_000 | `crates/phxsql-server/src/servidor.rs` |
+| `TETO_COLETA_ROWIDS` | 1_000_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_ANINHAMENTO` | 8 | `crates/phxsql-server/src/servidor.rs` |
 
-**16** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
+**17** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
 `bancada/guardas/catalogo.py` cataloga **124** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 4572. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
@@ -413,7 +414,7 @@ empacotar:
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2275** testes passaram, **0** falharam (medido em 2026-09-12 07:54:27, commit `8e578531`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **2309** testes passaram, **0** falharam (medido em 2026-09-16 02:51:49, commit `0fb6f910`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e

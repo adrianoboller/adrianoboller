@@ -234,7 +234,7 @@ impl Analisador {
         let em = self.alvo()?;
         self.exigir_palavra("SET")?;
         let atribuicoes = self.lista_de_atribuicoes("no SET")?;
-        let onde = self.condicao_de_chave("UPDATE", "mudaria a tabela INTEIRA")?;
+        let onde = self.condicao_do_where("UPDATE", "mudaria a tabela INTEIRA")?;
         Ok(Atualizacao {
             em,
             atribuicoes,
@@ -308,7 +308,7 @@ impl Analisador {
     pub(crate) fn exclusao(&mut self, _pos: usize) -> Result<Exclusao> {
         self.exigir_palavra("FROM")?;
         let de = self.alvo()?;
-        let onde = self.condicao_de_chave("DELETE", "apagaria a tabela INTEIRA")?;
+        let onde = self.condicao_do_where("DELETE", "apagaria a tabela INTEIRA")?;
         Ok(Exclusao { de, onde })
     }
 
@@ -388,10 +388,14 @@ impl Analisador {
         }
     }
 
-    /// O `WHERE coluna = literal` que localiza a linha. Obrigatorio, e so de
-    /// igualdade: sem ele o comando alcancaria a tabela inteira, e nao ha
-    /// varredura que grave.
-    fn condicao_de_chave(&mut self, verbo: &str, estrago: &str) -> Result<Condicao> {
+    /// O `WHERE coluna OP literal` que localiza as linhas. Obrigatorio: sem
+    /// ele o comando alcancaria a tabela inteira, e nao ha varredura que grave.
+    ///
+    /// Aceita qualquer comparador de UMA coluna. `= ` numa coluna com indice
+    /// unico desce pela chave (uma linha); qualquer outra coisa -- `>`, `<`,
+    /// `!=`, ou `= ` sem indice unico -- e' POR FAIXA, e o tradutor manda para
+    /// o `coletar_rowids`, que junta todas as linhas que casam antes de aplicar.
+    fn condicao_do_where(&mut self, verbo: &str, estrago: &str) -> Result<Condicao> {
         if !self.aceitar_palavra("WHERE") {
             let fim = matches!(
                 self.espiar().map(|s| &s.token),
@@ -402,27 +406,14 @@ impl Analisador {
                 &if fim {
                     format!(
                         "{verbo} sem WHERE {estrago}, e nao ha varredura que grave: diga a \
-                         chave (WHERE coluna = valor)"
+                         condicao (WHERE coluna OP valor)"
                     )
                 } else {
                     format!("esperava WHERE{}", self.mas_veio())
                 },
             ));
         }
-        let pos = self.posicao_atual();
-        let c = self.condicao()?;
-        if c.op != Comparador::Igual {
-            return Err(lexico::erro(
-                pos,
-                &format!(
-                    "{verbo} por faixa ({} {} ...) nao tem substrato: o passo por chave desce \
-                     o indice ate uma chave IGUAL. So `=` passa por aqui",
-                    c.coluna,
-                    c.op.simbolo()
-                ),
-            ));
-        }
-        Ok(c)
+        self.condicao()
     }
 }
 
@@ -442,6 +433,17 @@ pub enum PlanoDml {
     },
     /// `buscar` pela chave; depois `ler` e `excluir` com a versao.
     Excluir { busca: Json, notas: Vec<String> },
+    /// POR FAIXA: `coletar_rowids` junta TODAS as linhas que casam a condicao
+    /// (antes de aplicar -- fecha o Halloween); depois, por rowid, `ler` e
+    /// `atualizar` com a linha mesclada.
+    AtualizarPorFaixa {
+        coletar: Json,
+        atribuicoes: Vec<(String, Json)>,
+        notas: Vec<String>,
+    },
+    /// POR FAIXA: `coletar_rowids` junta as linhas; depois, por rowid, `ler` e
+    /// `excluir` com a versao.
+    ExcluirPorFaixa { coletar: Json, notas: Vec<String> },
 }
 
 impl PlanoDml {
@@ -449,8 +451,8 @@ impl PlanoDml {
     pub fn op(&self) -> &'static str {
         match self {
             PlanoDml::Inserir { .. } => "inserir",
-            PlanoDml::Atualizar { .. } => "atualizar",
-            PlanoDml::Excluir { .. } => "excluir",
+            PlanoDml::Atualizar { .. } | PlanoDml::AtualizarPorFaixa { .. } => "atualizar",
+            PlanoDml::Excluir { .. } | PlanoDml::ExcluirPorFaixa { .. } => "excluir",
         }
     }
 
@@ -458,7 +460,9 @@ impl PlanoDml {
         match self {
             PlanoDml::Inserir { notas, .. }
             | PlanoDml::Atualizar { notas, .. }
-            | PlanoDml::Excluir { notas, .. } => notas,
+            | PlanoDml::Excluir { notas, .. }
+            | PlanoDml::AtualizarPorFaixa { notas, .. }
+            | PlanoDml::ExcluirPorFaixa { notas, .. } => notas,
         }
     }
 }
@@ -565,8 +569,33 @@ fn indice_unico_da_coluna<'a>(indices: &'a [IndiceInfo], coluna: &str) -> Result
     }
 }
 
-/// `UPDATE` por chave: o `buscar` pronto, e o `SET` para o servidor mesclar
-/// na linha que ele vai ler.
+/// Um indice UNICO de UMA coluna sobre esta coluna existe? E' o que separa o
+/// caminho RAPIDO (uma linha, por chave) do caminho POR FAIXA -- sem erro, so'
+/// uma decisao.
+fn tem_chave_unica(indices: &[IndiceInfo], coluna: &str) -> bool {
+    indices
+        .iter()
+        .any(|i| i.atende_igualdade(coluna) && (i.unico || i.primario))
+}
+
+/// O pedido de `coletar_rowids` para uma condicao de UMA coluna -- o substrato
+/// do `UPDATE`/`DELETE` por faixa. O `op` sai do simbolo do comparador, que o
+/// filtro `onde` do motor aceita nome por nome (`<>`, `>=`, ...).
+fn coletar_por_faixa(alvo: &Alvo, database: &str, c: &Condicao) -> Json {
+    let mut pares = base_do_pedido(alvo, database);
+    pares.push((
+        "onde".to_string(),
+        Json::Lista(vec![Json::objeto(vec![
+            ("coluna", Json::texto_de(&c.coluna)),
+            ("op", Json::texto_de(c.op.simbolo())),
+            ("valor", literal_para_json(&c.valor)),
+        ])]),
+    ));
+    pedido_com_op("coletar_rowids", pares)
+}
+
+/// `UPDATE`: caminho rapido por chave unica (`= `), ou POR FAIXA para qualquer
+/// outra condicao. O `SET` vai junto para o servidor mesclar na linha lida.
 pub fn traduzir_atualizacao(
     a: &Atualizacao,
     indices: &[IndiceInfo],
@@ -574,30 +603,49 @@ pub fn traduzir_atualizacao(
 ) -> Result<PlanoDml> {
     let database = database_de(&a.em, database_corrente, "UPDATE")?;
     let mut notas = nota_do_apelido(&a.em);
-    let (busca, ix) = busca_pela_chave(&a.em, &database, &a.onde, indices, "UPDATE")?;
     let atribuicoes = a
         .atribuicoes
         .iter()
         .map(|(c, v)| (c.clone(), literal_para_json(v)))
         .collect();
+
+    if a.onde.op == Comparador::Igual && tem_chave_unica(indices, &a.onde.coluna) {
+        let (busca, ix) = busca_pela_chave(&a.em, &database, &a.onde, indices, "UPDATE")?;
+        notas.push(format!(
+            "UPDATE por chave e TRES passos, nao um: `buscar` no indice {ix} acha o rowid, \
+             `ler` traz a linha inteira e a versao, e `atualizar` grava a linha MESCLADA -- o \
+             protocolo grava a linha inteira, e mandar so o SET zeraria as outras colunas"
+        ));
+        notas.push(
+            "a versao lida vai no `atualizar`: quem gravar a linha entre os passos faz o motor \
+             recusar, em vez de ser sobrescrito em silencio"
+                .into(),
+        );
+        return Ok(PlanoDml::Atualizar {
+            busca,
+            atribuicoes,
+            notas,
+        });
+    }
+
     notas.push(format!(
-        "UPDATE por chave e TRES passos, nao um: `buscar` no indice {ix} acha o rowid, `ler` \
-         traz a linha inteira e a versao, e `atualizar` grava a linha MESCLADA -- o \
-         protocolo grava a linha inteira, e mandar so o SET zeraria as outras colunas"
+        "UPDATE por faixa ({} {} ...): `coletar_rowids` junta TODAS as linhas que casam ANTES \
+         de aplicar -- coletar-antes-de-aplicar fecha o Halloween (uma linha que sai do filtro \
+         nao e reprocessada). Cada linha vira `ler` + `atualizar` com a linha MESCLADA e a \
+         versao, reusando cascata e conferencia. Fora de transacao nao e atomico; numa \
+         transacao aberta cada linha empilha",
+        a.onde.coluna,
+        a.onde.op.simbolo()
     ));
-    notas.push(
-        "a versao lida vai no `atualizar`: quem gravar a linha entre os passos faz o motor \
-         recusar, em vez de ser sobrescrito em silencio"
-            .into(),
-    );
-    Ok(PlanoDml::Atualizar {
-        busca,
+    Ok(PlanoDml::AtualizarPorFaixa {
+        coletar: coletar_por_faixa(&a.em, &database, &a.onde),
         atribuicoes,
         notas,
     })
 }
 
-/// `DELETE` por chave: o `buscar` pronto; o servidor le a versao e exclui.
+/// `DELETE`: caminho rapido por chave unica (`= `), ou POR FAIXA para qualquer
+/// outra condicao.
 pub fn traduzir_exclusao(
     e: &Exclusao,
     indices: &[IndiceInfo],
@@ -605,14 +653,30 @@ pub fn traduzir_exclusao(
 ) -> Result<PlanoDml> {
     let database = database_de(&e.de, database_corrente, "DELETE FROM")?;
     let mut notas = nota_do_apelido(&e.de);
-    let (busca, ix) = busca_pela_chave(&e.de, &database, &e.onde, indices, "DELETE")?;
+
+    if e.onde.op == Comparador::Igual && tem_chave_unica(indices, &e.onde.coluna) {
+        let (busca, ix) = busca_pela_chave(&e.de, &database, &e.onde, indices, "DELETE")?;
+        notas.push(format!(
+            "DELETE por chave: `buscar` no indice {ix} acha o rowid, `ler` traz a versao, e \
+             `excluir` marca a linha. E o excluir SUAVE, o padrao do motor: a linha some da \
+             lista e fica no arquivo, reversivel por `restaurar`. Para apagar de vez ha a \
+             operacao excluir com `fisico`"
+        ));
+        return Ok(PlanoDml::Excluir { busca, notas });
+    }
+
     notas.push(format!(
-        "DELETE por chave: `buscar` no indice {ix} acha o rowid, `ler` traz a versao, e \
-         `excluir` marca a linha. E o excluir SUAVE, o padrao do motor: a linha some da \
-         lista e fica no arquivo, reversivel por `restaurar`. Para apagar de vez ha a \
-         operacao excluir com `fisico`"
+        "DELETE por faixa ({} {} ...): `coletar_rowids` junta TODAS as linhas que casam, e cada \
+         uma vira `ler` + `excluir` SUAVE com a versao (restringir e a marca dos dois lados \
+         valem por linha). Fora de transacao nao e atomico; numa transacao aberta cada linha \
+         empilha",
+        e.onde.coluna,
+        e.onde.op.simbolo()
     ));
-    Ok(PlanoDml::Excluir { busca, notas })
+    Ok(PlanoDml::ExcluirPorFaixa {
+        coletar: coletar_por_faixa(&e.de, &database, &e.onde),
+        notas,
+    })
 }
 
 fn database_de(alvo: &Alvo, corrente: &str, verbo: &str) -> Result<String> {
@@ -785,7 +849,8 @@ mod testes {
             ("INSERT INTO t (a, a) VALUES (1, 2)", "duas vezes"),
             ("INSERT INTO t (a) VALUES (1 + 2)", "expressao nos valores"),
             ("UPDATE t SET a = 1", "UPDATE sem WHERE"),
-            ("UPDATE t SET a = 1 WHERE id > 5", "por faixa"),
+            // `WHERE id > 5` NAO recusa mais: parseia e vira UPDATE por faixa.
+            // A prova disso vive em `update_por_faixa_traduz_o_coletar`.
             (
                 "UPDATE t SET a = 1 WHERE id = 5 AND b = 2",
                 "UMA comparacao",
@@ -806,7 +871,8 @@ mod testes {
             ),
             ("UPDATE t a = 1 WHERE id = 5", "esperava SET"),
             ("DELETE FROM t", "DELETE sem WHERE"),
-            ("DELETE FROM t WHERE id <> 5", "por faixa"),
+            // `WHERE id <> 5` NAO recusa mais: parseia e vira DELETE por faixa
+            // (`delete_por_faixa_traduz_o_coletar`).
             ("DELETE t WHERE id = 5", "esperava FROM"),
         ] {
             let e = analisar_comando(sql).unwrap_err().to_string();
@@ -917,22 +983,46 @@ mod testes {
         assert!(notas.iter().any(|n| n.contains("SUAVE")), "{notas:?}");
     }
 
-    /// Indice comum acha a linha -- e por isso mesmo e recusado: alcancaria
-    /// varias, e o SQL nao diz quantas.
+    /// **Indice comum agora vira faixa, nao recusa.** Ate o UPDATE/DELETE por
+    /// faixa, `WHERE cidade = 'X'` sobre o indice nao-unico era recusado com
+    /// «NAO e unico». Agora o mesmo `=` sobre indice comum cai no caminho POR
+    /// FAIXA: o plano leva um `coletar_rowids` com o filtro da coluna, e o SET
+    /// viaja para o servidor mesclar por linha.
     #[test]
-    fn indice_que_nao_e_unico_recusa_pelo_nome() {
+    fn update_por_faixa_no_indice_comum_traduz_o_coletar() {
         let a = atualizacao("UPDATE clientes SET nome = 'Bia' WHERE cidade = 'X'");
-        let e = traduzir_atualizacao(&a, &[ix("porCidade", "cidade", false, false)], "loja")
-            .unwrap_err()
-            .to_string();
-        assert!(e.contains("NAO e unico"), "{e}");
-        assert!(e.contains("porCidade"), "{e}");
+        let p =
+            traduzir_atualizacao(&a, &[ix("porCidade", "cidade", false, false)], "loja").unwrap();
+        let PlanoDml::AtualizarPorFaixa {
+            coletar,
+            atribuicoes,
+            notas,
+        } = &p
+        else {
+            panic!("um `=` sem chave unica tinha de virar faixa: {p:?}");
+        };
+        assert_eq!(p.op(), "atualizar");
+        assert_eq!(coletar.texto_ou("op", ""), "coletar_rowids");
+        assert_eq!(coletar.texto_ou("database", ""), "loja");
+        assert_eq!(coletar.texto_ou("tabela", ""), "clientes");
+        let onde = coletar.campo("onde").and_then(Json::lista).unwrap();
+        assert_eq!(onde[0].texto_ou("coluna", ""), "cidade");
+        assert_eq!(onde[0].texto_ou("op", ""), "=");
+        assert_eq!(onde[0].texto_ou("valor", ""), "X");
+        assert_eq!(
+            atribuicoes,
+            &vec![("nome".to_string(), Json::texto_de("Bia"))]
+        );
+        assert!(notas.iter().any(|n| n.contains("faixa")), "{notas:?}");
     }
 
+    /// Sem indice unico de UMA coluna que atenda o filtro, o `=` tambem vira
+    /// faixa -- o `coletar_rowids` varre e peneira, entao nao precisa de indice
+    /// nenhum na coluna do WHERE.
     #[test]
-    fn sem_indice_nenhum_recusa_listando_os_unicos() {
+    fn delete_por_faixa_sem_indice_na_coluna_traduz_o_coletar() {
         let e = exclusao("DELETE FROM clientes WHERE cidade = 'X'");
-        let erro = traduzir_exclusao(
+        let p = traduzir_exclusao(
             &e,
             &[
                 ix("porId", "id", true, true),
@@ -940,16 +1030,46 @@ mod testes {
             ],
             "loja",
         )
-        .unwrap_err()
-        .to_string();
-        assert!(erro.contains("exige um indice UNICO"), "{erro}");
-        assert!(erro.contains("id, cpf"), "{erro}");
+        .unwrap();
+        let PlanoDml::ExcluirPorFaixa { coletar, notas } = &p else {
+            panic!("um `=` numa coluna sem chave unica tinha de virar faixa: {p:?}");
+        };
+        assert_eq!(p.op(), "excluir");
+        assert_eq!(coletar.texto_ou("op", ""), "coletar_rowids");
+        let onde = coletar.campo("onde").and_then(Json::lista).unwrap();
+        assert_eq!(onde[0].texto_ou("coluna", ""), "cidade");
+        assert_eq!(onde[0].texto_ou("op", ""), "=");
+        assert!(notas.iter().any(|n| n.contains("faixa")), "{notas:?}");
     }
 
-    /// Chave composta nao serve: mandar so a primeira parte nao e a mesma
-    /// busca -- a mesma regra do SELECT.
+    /// A faixa nasce da desigualdade: `WHERE id > 5`/`id <> 5` NAO tem chave
+    /// unica de igualdade (o operador nem e `=`), entao viram faixa, e o `op`
+    /// do filtro do `coletar` sai do simbolo do comparador -- `>` e `<>`.
     #[test]
-    fn chave_composta_nao_atende() {
+    fn desigualdade_vira_faixa_com_o_simbolo_do_comparador() {
+        let a = atualizacao("UPDATE t SET a = 1 WHERE id > 5");
+        let p = traduzir_atualizacao(&a, &[ix("porId", "id", true, true)], "loja").unwrap();
+        let PlanoDml::AtualizarPorFaixa { coletar, .. } = &p else {
+            panic!("`>` tinha de virar faixa mesmo com chave unica: {p:?}");
+        };
+        let onde = coletar.campo("onde").and_then(Json::lista).unwrap();
+        assert_eq!(onde[0].texto_ou("op", ""), ">");
+
+        let e = exclusao("DELETE FROM t WHERE id <> 5");
+        let p = traduzir_exclusao(&e, &[ix("porId", "id", true, true)], "loja").unwrap();
+        let PlanoDml::ExcluirPorFaixa { coletar, .. } = &p else {
+            panic!("`<>` tinha de virar faixa: {p:?}");
+        };
+        let onde = coletar.campo("onde").and_then(Json::lista).unwrap();
+        assert_eq!(onde[0].texto_ou("op", ""), "<>");
+    }
+
+    /// Chave composta nao atende o `=` de UMA coluna -- mandar so a primeira
+    /// parte nao e a mesma busca (a regra do SELECT). O que ANTES era recusa
+    /// «Nao existe indice» agora e faixa: o `coletar_rowids` varre e peneira
+    /// `id = 1` sem depender do indice composto.
+    #[test]
+    fn chave_composta_nao_atende_e_vira_faixa() {
         let a = atualizacao("UPDATE t SET a = 1 WHERE id = 1");
         let composto = IndiceInfo {
             nome: "porIdEAno".into(),
@@ -966,10 +1086,13 @@ mod testes {
             unico: true,
             primario: true,
         };
-        let e = traduzir_atualizacao(&a, &[composto], "loja")
-            .unwrap_err()
-            .to_string();
-        assert!(e.contains("Nao existe"), "{e}");
+        let p = traduzir_atualizacao(&a, &[composto], "loja").unwrap();
+        let PlanoDml::AtualizarPorFaixa { coletar, .. } = &p else {
+            panic!("a chave composta nao atende UMA coluna: tinha de virar faixa: {p:?}");
+        };
+        let onde = coletar.campo("onde").and_then(Json::lista).unwrap();
+        assert_eq!(onde[0].texto_ou("coluna", ""), "id");
+        assert_eq!(onde[0].texto_ou("op", ""), "=");
     }
 
     // ------------------------------------------------- item 7: upsert

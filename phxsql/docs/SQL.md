@@ -67,6 +67,7 @@ está medida:
 | `INSERT` de muitas | `inserir_lote` | 16,3× a linha a linha |
 | `UPDATE … WHERE chave = ?` | `buscar` → `ler` → `atualizar` | **três passos, ver §6**; com `versao`, recusa o conflito |
 | `DELETE … WHERE chave = ?` | `buscar` → `ler` → `excluir` | suave por padrão, física a pedido — **ver §6** |
+| `UPDATE`/`DELETE` por faixa | `coletar_rowids` → laço `ler` → `atualizar`/`excluir` | colhe os rowids que casam e aplica por linha — **§6.1**; recusa acima do teto |
 | `JOIN` | `juntar` | sete formas, com as três armadilhas documentadas |
 | `UNION` | `unir` | distinta e todas |
 | `GROUP BY` cruzado | `pivotar` | a tabulação cruzada |
@@ -423,12 +424,19 @@ banco que a permissão é conferida, e não contra o do envelope. Sem isso o cam
 
 ### O que a op `sql` ainda não faz
 
-Os três verbos de escrita por chave já entram (§6). O que continua fora é
-tudo o que a seção 3 lista, e pela mesma razão: não há substrato. O que muda é
-que agora a recusa chega ao cliente pela rede, com o nome da cláusula e a
-coluna do texto — `SQL, coluna 10: …`. Um `WHERE cidade = 'Blumenau'` sem
-índice em `cidade` recusa dizendo **quais colunas têm índice**, em vez de virar
-uma varredura com o filtro esquecido no caminho.
+Os três verbos de escrita por chave já entram (§6), e o `UPDATE`/`DELETE` por
+faixa também (§6.1). O que continua fora é tudo o que a seção 3 lista, e pela
+mesma razão: não há substrato. O que muda é que agora a recusa chega ao cliente
+pela rede, com o nome da cláusula e a coluna do texto — `SQL, coluna 10: …`.
+
+Um `SELECT … WHERE cidade = 'Blumenau'` sem índice em `cidade` **recusa** dizendo
+quais colunas têm índice, em vez de virar uma varredura com o filtro esquecido
+no caminho — e aqui está a assimetria com o `UPDATE`/`DELETE` por faixa, que é
+de desenho, não de esquecimento: o `varrer` do `SELECT` **pagina**, então um
+`SELECT` filtrado responderia sobre a primeira página com cara de ter respondido
+inteiro; o `coletar_rowids` do caminho de escrita **recusa acima do teto** em vez
+de paginar, então ele consegue prometer a tabela inteira (até o teto) e por isso
+pode varrer o filtro que o `SELECT` ainda não pode.
 
 ### E um defeito que só a tela mostrou: a contagem arrastava uma linha
 
@@ -455,9 +463,14 @@ A gramática:
 ```text
 INSERT INTO [database.] [schema.] tabela (coluna {, coluna}) VALUES (literal {, literal})
 UPDATE      [database.] [schema.] tabela SET coluna = literal {, coluna = literal}
-            WHERE coluna = literal
-DELETE FROM [database.] [schema.] tabela WHERE coluna = literal
+            WHERE coluna OP literal
+DELETE FROM [database.] [schema.] tabela WHERE coluna OP literal
 ```
+
+`OP` é um de `=  <>  <  <=  >  >=`. O `=` sobre um índice único de uma coluna
+segue o caminho rápido por chave (três passos, abaixo); qualquer outra condição
+segue o caminho **por faixa** (§6.1), que colhe as linhas que casam e aplica uma
+a uma.
 
 ### A tabela da §1 estava certa e enganava
 
@@ -491,14 +504,55 @@ escrita (pedido 123) existe para isso. *Guarda nova entra pedida, não imposta*
 o passo 2 e o 3 faz o motor recusar em vez de ser sobrescrito em silêncio. O
 `buscar` não expõe `versao`; é por isso que o `ler` entra no meio.
 
-### Só chave única
+### O caminho rápido: `=` sobre chave única
 
-O `WHERE` tem de cair num índice **único** (ou primário) de uma coluna. Um
-índice comum acha a linha — e é recusado por isso mesmo: um `UPDATE` que
-alcança N linhas sem dizer quantas é a resposta errada com cara de certa, a
-mesma recusa que o `SELECT` faz com a varredura pela metade. Sem `WHERE`,
-recusa dizendo que mudaria a tabela inteira; com faixa (`>`, `<>`…), recusa
-dizendo que o passo por chave desce até uma chave igual.
+Quando o `WHERE` é `coluna = literal` e essa coluna tem um índice **único** (ou
+primário) de uma coluna, o comando é uma linha só: os três passos acima
+(`buscar` → `ler` → `atualizar`/`excluir`), com a `versao` a proteger a janela.
+É o caso barato, e continua a ser o preferido.
+
+## 6.1. `UPDATE`/`DELETE` por faixa
+
+Ate 16/09/2026 qualquer outra condição — `=` sobre coluna **sem** chave única,
+ou um comparador de **faixa** (`<>`, `<`, `<=`, `>`, `>=`) — era **recusada**: o
+passo por chave só sabia descer até uma igualdade indexada. O item 1 do roteiro
+«SQL para nota 9» abriu esse caminho, e ele **não** é uma segunda escrita: é a
+mesma varredura do `SELECT` seguida dos mesmos `ler`+`atualizar`/`excluir` por
+linha.
+
+Em três passos:
+
+1. `coletar_rowids` colhe **todos** os `rowid` que casam a condição — a op de
+   leitura pura (`Legivel`, não escreve) que anda a tabela na ordem de digitação
+   e aplica o **mesmo** `memoria::passa` do `varrer` e do `SelectMemory`. Um só
+   lugar decide «esta linha passa?».
+2. o servidor (`executar_dml_por_faixa`) percorre a lista colhida e, por
+   `rowid`, faz `ler` (traz a linha e a `versao`) e então `atualizar` com a linha
+   **mesclada**, ou `excluir` suave — os **mesmos** pedidos do caminho por chave.
+3. a resposta soma as `afetadas`.
+
+**Colher antes de aplicar fecha o Halloween.** A lista de `rowid` está fechada
+antes de a primeira gravação acontecer, então uma linha que o próprio `UPDATE`
+tira (ou põe) do filtro nunca é reprocessada. É a razão de o passo 1 ser
+`coletar_rowids` e não uma varredura que grava enquanto anda.
+
+**A recusa não sumiu — ela mudou de motivo.** Antes era «esta coluna não tem
+chave única»; agora é o **teto** do `coletar_rowids` (`TETO_COLETA_ROWIDS`, um
+milhão): uma faixa maior do que ele consegue prometer inteira é **recusada
+nomeando o limite**, em vez de gravar sobre o começo com cara de ter gravado
+sobre tudo. É a mesma filosofia da casa — recusar é melhor do que um trabalho
+pela metade —, só que agora a régua é o **tamanho**, e não a presença de índice.
+
+**Fora de transação não é atômico, e de propósito.** Cada linha é um `atualizar`
+/`excluir` avulso; uma queda no meio deixa as já gravadas gravadas. Dentro de um
+`BEGIN`/`COMMIT` cada uma empilha no super-journal e o `COMMIT`/`ROLLBACK` as
+alcança juntas — a atomicidade é da transação, não do laço. A camada SQL não
+abre transação por conta: quem quer tudo-ou-nada envolve o comando.
+
+**A `versao` viaja por linha:** quem gravar uma das linhas entre o `coletar` e o
+`ler`/`atualizar` faz o motor recusar **aquela** linha, em vez de sobrescrever
+calado — a mesma janela do caminho por chave, agora por linha. E a linha que
+sumiu entre o colher e o ler simplesmente não conta.
 
 ### Uma linha por `INSERT`
 
@@ -513,9 +567,10 @@ teste de que ele empilha.
 
 `INSERT` sem lista de colunas; `INSERT … SELECT`; `DEFAULT`; expressão no
 `SET` ou no `VALUES`; coluna repetida; `SET` em coluna de sistema
-(`softdeleted`, `rownum`); `UPDATE`/`DELETE` sem `WHERE`, por faixa, com
-`AND`, ou sobre coluna sem índice único. Cada um com a frase que diz o que
-faltou — os casos estão em `dml.rs`, teste `o_que_falta_recusa_pelo_nome`.
+(`softdeleted`, `rownum`); `UPDATE`/`DELETE` sem `WHERE` ou com `AND` (mais de
+uma comparação). Cada um com a frase que diz o que faltou — os casos estão em
+`dml.rs`, teste `o_que_falta_recusa_pelo_nome`. O `WHERE` de faixa ou de coluna
+sem chave única **não** recusa mais: vira `UPDATE`/`DELETE` por faixa (§6.1).
 E `SET`, `VALUES` e `INTO` entraram nas cláusulas da gramática por um motivo
 concreto: o endereço aceita apelido sem `AS`, e `UPDATE t SET` leria `SET`
 como apelido da tabela.
@@ -557,12 +612,16 @@ de gestão (`docs/GESTAO.md`, gerado), e não deste texto.
 
 ### O que continua fora, e o que não foi medido
 
-Fora por desenho: `UPDATE`/`DELETE` por índice não único ou por faixa, várias
-linhas por `INSERT`, expressão, `DEFAULT`, `INSERT … SELECT`. **Não medido
-nesta rodada**: `UPDATE`/`DELETE` de uma linha nascida na *mesma* transação
-aberta — o `buscar` do passo 1 desce o índice, e a linha empilhada ainda não
-está nele; o desfecho esperado é `afetadas: 0`, e isso precisa de teste antes
-de virar promessa.
+Fora por desenho: várias linhas por `INSERT`, expressão no `SET`/`VALUES`,
+`DEFAULT`, `INSERT … SELECT`. **`UPDATE`/`DELETE` por faixa e por índice não
+único entraram** em 16/09/2026 (§6.1). **Não medido nesta rodada**:
+`UPDATE`/`DELETE` por chave de uma linha nascida na *mesma* transação aberta —
+o `buscar` do passo 1 desce o índice, e a linha empilhada ainda não está nele;
+o desfecho esperado é `afetadas: 0`, e isso precisa de teste antes de virar
+promessa. Pela faixa o mecanismo é outro — o `coletar_rowids` anda a tabela pela
+posição, não pelo índice, e passa pela mesma sobreposição de transação (pedido
+162) que o `varrer` — mas o comportamento de uma linha empilhada sob faixa
+**também não foi medido nesta rodada**, e fica dito em vez de prometido.
 
 **`ON CONFLICT`/`ON DUPLICATE KEY UPDATE` entraram em 08–09/2026** (item 7,
 §7) — `INSERT` continua sendo uma linha só, mas ganhou o que fazer quando ela
