@@ -317,9 +317,14 @@ BANCADAS = [
     {
         "nome": "Bateria única — o motor por dentro",
         "json": "bancada/bateria/resultados.json",
-        "roda": "python3 bancada/bateria/prova-bateria.py",
-        "prova": "as guardas do catálogo, cada uma contra o defeito que a motivou",
-        "campos": [],
+        "roda": "python3 bancada/bateria/prova-bateria.py --medir",
+        "prova": "os seis itens do dono pelo soquete, mais os itens zero: as "
+                 "catracas dos dois mapas e o portão «está medindo?»",
+        # `aprovada` e `passos_falhados` saem da propria bateria desde 16/09:
+        # uma corrida reprovada no item 0 tem de aparecer reprovada aqui.
+        "campos": [("aprovada", "passou inteira", ""),
+                   ("passos_falhados", "passos que falharam", ""),
+                   ("quando", "corrida de", "")],
     },
     {
         "nome": "Concorrência — enxurrada de 500 conexões na web, com teto",

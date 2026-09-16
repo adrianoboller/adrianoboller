@@ -971,6 +971,14 @@ def main():
         srv.parar()
 
     if medir:
+        # O veredito vai junto dos numeros, e por um motivo pago em 16/09/2026:
+        # a bateria reprovou no item 0 (catraca do mapa da trava furada desde
+        # 08/09) e o `resultados.json` saiu so com a carga e a chave -- a
+        # pagina de testes mostraria uma bateria "medida" e nenhum sinal de que
+        # ela tinha reprovado. Pagina que esconde a bancada que falhou e a pior
+        # de todas.
+        resultados["aprovada"] = not falhas
+        resultados["passos_falhados"] = list(falhas)
         with open(os.path.join(AQUI, "resultados.json"), "w") as f:
             json.dump(resultados, f, indent=2, ensure_ascii=False)
         print(f"\nnumeros gravados em {os.path.join(AQUI, 'resultados.json')}")
