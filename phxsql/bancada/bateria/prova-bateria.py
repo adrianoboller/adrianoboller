@@ -879,6 +879,12 @@ def item_0b_o_portao_nao_se_acha():
     o crivo de texto e refeito aqui com `pgrep -f` e tem de ACHAR alguem com a
     maquina limpa. Se um dia ele parar de se achar, esta conferencia cai --
     e cair aqui e o aviso de que a regua mudou, nao de que o portao quebrou.
+
+    Esta funcao tambem prova o pedido 260: um INVOLUCRO de shell que so
+    MENCIONA uma bancada na propria linha de comando nao pode contar como
+    medicao -- foi assim que esta mesma bateria, lancada de dentro de um
+    `bash -c ... prova-bateria.py`, se viu a propria casca e deu ERRO aqui em
+    16/09/2026.
     """
     print("\n=== item 0b: o portao «esta medindo?» ===")
     portao = os.path.join(AQUI, "..", "esta-medindo.sh")
@@ -899,12 +905,38 @@ def item_0b_o_portao_nao_se_acha():
     confere("o crivo por TEXTO se acha (e por isso o portao nao o usa)",
             achados > 0, True)
 
-    # SENTIDO 2 -- com uma medicao de pe, o portao acha e sai 0. `exec -a`
-    # da a um `sleep` a linha de comando de uma bancada: e o que o portao
-    # enxerga, e nao precisamos rodar uma bateria de verdade para prova-lo.
-    falso = subprocess.Popen(
+    # PEDIDO 260 -- um INVOLUCRO que so MENCIONA a bancada no proprio cmdline
+    # (por exemplo `bash -c "sleep 20; ...bancada/tomada/chutar-a-tomada.py"`)
+    # nunca vira ele mesmo `python3`: com `;` no meio, o bash NAO se
+    # substitui pelo comando (so faz isso com um comando simples), entao a
+    # casca fica de pe com o caminho no proprio texto por 20s inteiros. O
+    # crivo velho (por SUBSTRING do cmdline) casava essa casca; o novo (pelo
+    # `/proc/<pid>/exe`) nao pode, porque o exe da casca continua sendo
+    # `bash`. A conferencia e pelo PID exato da casca, nunca pela contagem
+    # geral -- assim ela vale mesmo com outra compilacao real acontecendo ao
+    # lado, que o portao tem toda razao de continuar enxergando.
+    casca = subprocess.Popen(
         ["bash", "-c",
-         'exec -a "python3 bancada/concorrencia/escolher-o-desenho.py" sleep 20'])
+         "sleep 20; echo bancada/tomada/chutar-a-tomada.py"])
+    try:
+        time.sleep(1.0)
+        r = subprocess.run([portao], capture_output=True, text=True)
+        pids_achados = {linha.split("\t", 1)[0] for linha in r.stdout.splitlines()}
+        print(f"  casca (PID {casca.pid}) de pe; o portao achou os PIDs "
+              f"{pids_achados or '{}'}")
+        confere("o INVOLUCRO que so menciona a bancada nao aparece no portao",
+                str(casca.pid) in pids_achados, False)
+    finally:
+        casca.kill()
+        casca.wait()
+
+    # SENTIDO 2 -- com uma medicao de pe, o portao acha e sai 0. Tem de ser
+    # um `python3` DE VERDADE: o crivo agora exige que o proprio executavel
+    # seja o interprete (pedido 260), entao o caminho da bancada entra so
+    # como argumento extra de um `-c` que nunca o abre como arquivo.
+    falso = subprocess.Popen(
+        ["python3", "-c", "import time; time.sleep(20)",
+         "bancada/concorrencia/escolher-o-desenho.py"])
     try:
         time.sleep(1.0)
         r = subprocess.run([portao], capture_output=True, text=True)
@@ -921,6 +953,20 @@ def item_0b_o_portao_nao_se_acha():
     r = subprocess.run([portao], capture_output=True, text=True)
     confere("morta a bancada, o portao volta a dizer que nao ha medicao",
             r.returncode, 1)
+
+    # CATRACA -- pedido 256: nenhuma bancada versionada mata com `pkill` sem
+    # PID (o comando nem aceita PID -- mata por NOME na maquina inteira). A
+    # regua e `bancada/guardas/pkill-sem-pid.py`, nascida no numero medido do
+    # dia (0, depois do conserto de `bancada/carga/{bulkinsert,medir}.py`).
+    catraca_pkill = os.path.join(AQUI, "..", "guardas", "pkill-sem-pid.py")
+    r = subprocess.run([sys.executable, catraca_pkill, "--catraca"],
+                       capture_output=True, text=True)
+    for linha in r.stdout.splitlines():
+        if linha.strip():
+            print("  " + linha)
+    if r.returncode != 0 and r.stderr:
+        print("  " + r.stderr.strip()[:400])
+    confere("a catraca do `pkill` sem PID segura", r.returncode, 0)
 
 
 def main():

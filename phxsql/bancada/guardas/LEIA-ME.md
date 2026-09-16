@@ -39,6 +39,13 @@ Três arquivos, e a divisão entre os dois primeiros é o ponto:
 | `ultima-corrida.json` | o `--json` da última corrida **completa**, versionado — é dele que a tabela do `docs/TESTES.md` sai. Sem corrida não há tabela, e uma tabela que não venha de um arquivo destes é digitada |
 | `tabela-no-testes.py` | regrava a tabela das guardas no `docs/TESTES.md` a partir do `--json` de uma rodada — número visível que não sai de gerador está errado e ninguém percebeu ainda |
 
+**`pkill-sem-pid.py`, nesta mesma pasta, NÃO é uma entrada do catálogo** —
+é uma catraca à parte (pedido 256), porque `provar-guardas.py` só copia
+`Cargo.toml`/`Cargo.lock`/`crates`/`exemplos`/`docs`/`testes-web` para rodar
+`cargo test`; `bancada/` fica de fora, e uma guarda cujo defeito mora em
+`bancada/` não roda por esse executor. Ver `docs/CATRACAS.md` §11 e
+`docs/cognicao/cognicao_alcance-do-catalogo-de-guardas-e-so-crates_20260916_1050.md`.
+
 ## O que sai
 
 ```

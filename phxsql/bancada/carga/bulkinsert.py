@@ -27,8 +27,20 @@ TOKEN = "carga"
 
 
 def subir():
-    subprocess.run(["pkill", "-x", "phxsqld"], check=False)
-    time.sleep(1)
+    """Sobe o phxsqld PROPRIO desta bancada, na porta 5820, e devolve o
+    processo -- para morrer so pelo PID que ELE MESMO criou.
+
+    Isto aqui chamava `pkill -x phxsqld`, que mata QUALQUER servidor da
+    maquina -- de outro agente ou de outra bancada viva --, contra a regra
+    da casa (`zelador.sh` nem mata processo, `prova-bateria.py` e
+    `chutar-a-tomada.py` matam so o proprio PID). E o `setsid` que existia
+    aqui nao era so cosmetico: `setsid PROGRAMA` FORCA um fork e o
+    `subprocess.Popen` fica com o PID do `setsid`, que sai assim que o filho
+    nasce -- o PID de verdade troca de mao debaixo do tapete, e e por isso
+    que so sobrava `pkill` para derrubar o servidor depois. Sem `setsid`, o
+    `Popen` e o phxsqld direto, do mesmo jeito que as bancadas irmas
+    (`bancada/durabilidade/prova.py`, `bancada/bateria/prova-bateria.py`).
+    """
     subprocess.run(["rm", "-rf", BASE], check=False)
     os.makedirs(BASE, exist_ok=True)
     with open(os.path.join(BASE, "config.json"), "w") as f:
@@ -36,9 +48,31 @@ def subir():
                    "token": TOKEN, "web": {"ligado": False},
                    "recursos": {"carga_prazo_min": 30}}, f, indent=2)
     log = open(os.path.join(BASE, "servidor.log"), "a")
-    subprocess.Popen(["setsid", PHXSQLD], cwd=BASE, stdout=log,
-                     stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
-    time.sleep(2)
+    proc = subprocess.Popen([PHXSQLD], cwd=BASE, stdout=log,
+                            stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+    for _ in range(100):
+        time.sleep(0.1)
+        try:
+            socket.create_connection(("127.0.0.1", PORTA), timeout=0.3).close()
+            return proc
+        except OSError:
+            if proc.poll() is not None:
+                raise SystemExit(
+                    f"o servidor morreu ao subir -- veja {BASE}/servidor.log")
+    proc.kill()
+    raise SystemExit(f"o servidor nao subiu na porta {PORTA}")
+
+
+def derrubar(proc):
+    """Mata SO o PID que `subir` criou -- nunca `pkill`, que alcancaria o
+    phxsqld de outra frente ou de outra bancada viva na mesma maquina."""
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
 
 
 class Cliente:
@@ -84,75 +118,77 @@ if __name__ == "__main__":
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 20_000
     if not os.path.exists(PHXSQLD):
         sys.exit(f"nao achei {PHXSQLD} -- rode `cargo build --release` antes")
-    subir()
+    proc = subir()
+    try:
+        a, b = Cliente(), Cliente()
+        a.ok({"op": "criar_database", "database": "loja"})
+        a.ok({"op": "criar_tabela", "database": "loja", "tabela": "clientes",
+              "colunas": [{"nome": "id", "tipo": "Int8", "obrigatoria": True},
+                          {"nome": "nome", "tipo": "Str(40)"}],
+              "indices": [{"nome": "porId", "colunas": ["id"], "unico": True,
+                           "primario": True}]})
+        alvo = {"database": "loja", "tabela": "clientes"}
+        print("=== 1. exclusividade ===\n")
 
-    a, b = Cliente(), Cliente()
-    a.ok({"op": "criar_database", "database": "loja"})
-    a.ok({"op": "criar_tabela", "database": "loja", "tabela": "clientes",
-          "colunas": [{"nome": "id", "tipo": "Int8", "obrigatoria": True},
-                      {"nome": "nome", "tipo": "Str(40)"}],
-          "indices": [{"nome": "porId", "colunas": ["id"], "unico": True,
-                       "primario": True}]})
-    alvo = {"database": "loja", "tabela": "clientes"}
-    print("=== 1. exclusividade ===\n")
+        r = a.ok({"op": "bulkinsert", **alvo, "ligado": True})
+        print(f"  A reservou; expira em {r['expira_em_s']}s (prazo {r['prazo_min']} min)")
 
-    r = a.ok({"op": "bulkinsert", **alvo, "ligado": True})
-    print(f"  A reservou; expira em {r['expira_em_s']}s (prazo {r['prazo_min']} min)")
+        neg = b.fala({"op": "inserir", **alvo, "linha": {"id": 1, "nome": "x"}})
+        print(f"  B tentou gravar: {neg['nome']} ({neg['codigo']}), repetir={neg['repetir']}")
+        print(f"    «{neg['erro']}»")
+        assert neg["nome"] == "EM_CARGA" and neg["repetir"] is True
 
-    neg = b.fala({"op": "inserir", **alvo, "linha": {"id": 1, "nome": "x"}})
-    print(f"  B tentou gravar: {neg['nome']} ({neg['codigo']}), repetir={neg['repetir']}")
-    print(f"    «{neg['erro']}»")
-    assert neg["nome"] == "EM_CARGA" and neg["repetir"] is True
+        neg = b.fala({"op": "varrer", **alvo})
+        print(f"  B tentou LER:    {neg['nome']} — a leitura tambem para")
+        assert neg["nome"] == "EM_CARGA"
 
-    neg = b.fala({"op": "varrer", **alvo})
-    print(f"  B tentou LER:    {neg['nome']} — a leitura tambem para")
-    assert neg["nome"] == "EM_CARGA"
+        print(f"\n=== 2. a carga do dono, {n} linhas ===\n")
+        t = time.perf_counter()
+        for i in range(0, n, 5_000):
+            a.ok({"op": "inserir_lote", **alvo,
+                  "linhas": linhas(i + 1, min(i + 5_000, n))})
+        s_lote = time.perf_counter() - t
+        print(f"  em lote, com a tabela reservada: {s_lote:.2f}s  "
+              f"{n/s_lote:,.0f} linhas/s".replace(",", "."))
 
-    print(f"\n=== 2. a carga do dono, {n} linhas ===\n")
-    t = time.perf_counter()
-    for i in range(0, n, 5_000):
-        a.ok({"op": "inserir_lote", **alvo, "linhas": linhas(i + 1, min(i + 5_000, n))})
-    s_lote = time.perf_counter() - t
-    print(f"  em lote, com a tabela reservada: {s_lote:.2f}s  {n/s_lote:,.0f} linhas/s"
-          .replace(",", "."))
+        r = a.ok({"op": "bulkinsert", **alvo, "ligado": False})
+        print(f"  A soltou: durou {r['durou_ms']} ms, sincronizada={r['sincronizada']}")
 
-    r = a.ok({"op": "bulkinsert", **alvo, "ligado": False})
-    print(f"  A soltou: durou {r['durou_ms']} ms, sincronizada={r['sincronizada']}")
+        v = b.ok({"op": "varrer", **alvo, "max": 1})
+        print(f"  B agora le: {v['registros']} linhas na tabela")
+        assert v["registros"] == n
 
-    v = b.ok({"op": "varrer", **alvo, "max": 1})
-    print(f"  B agora le: {v['registros']} linhas na tabela")
-    assert v["registros"] == n
+        print("\n=== 3. a queda da conexao solta (a prova que importa) ===\n")
+        c = Cliente()
+        c.ok({"op": "bulkinsert", **alvo, "ligado": True})
+        print("  C reservou")
+        neg = b.fala({"op": "varrer", **alvo, "max": 1})
+        assert neg["nome"] == "EM_CARGA"
+        print("  B barrado, como esperado")
 
-    print("\n=== 3. a queda da conexao solta (a prova que importa) ===\n")
-    c = Cliente()
-    c.ok({"op": "bulkinsert", **alvo, "ligado": True})
-    print("  C reservou")
-    neg = b.fala({"op": "varrer", **alvo, "max": 1})
-    assert neg["nome"] == "EM_CARGA"
-    print("  B barrado, como esperado")
+        c.matar()          # sem bulkinsert(false), sem despedida
+        time.sleep(0.5)
+        print("  C morreu com o soquete fechado, SEM soltar")
 
-    c.matar()          # sem bulkinsert(false), sem despedida
-    time.sleep(0.5)
-    print("  C morreu com o soquete fechado, SEM soltar")
+        depois = b.fala({"op": "varrer", **alvo, "max": 1})
+        print(f"  B agora: {'LIBERADO' if depois.get('ok') else depois['nome']}")
+        assert depois.get("ok"), "a reserva sobreviveu a morte do cliente"
 
-    depois = b.fala({"op": "varrer", **alvo, "max": 1})
-    print(f"  B agora: {'LIBERADO' if depois.get('ok') else depois['nome']}")
-    assert depois.get("ok"), "a reserva sobreviveu a morte do cliente"
+        print("\n=== 4. a lista de quem reservou o que ===\n")
+        d = Cliente()
+        d.ok({"op": "bulkinsert", **alvo, "ligado": True})
+        lista = b.ok({"op": "cargas"})
+        print(f"  cargas ativas: {lista['total']}")
+        for x in lista["cargas"]:
+            print(f"    {x['database']}.{x['tabela']}  ligacao {x['ligacao']}"
+                  f"  ha {x['ha_ms']} ms  expira em {x['expira_em_s']}s")
+        d.ok({"op": "bulkinsert", **alvo, "ligado": False})
 
-    print("\n=== 4. a lista de quem reservou o que ===\n")
-    d = Cliente()
-    d.ok({"op": "bulkinsert", **alvo, "ligado": True})
-    lista = b.ok({"op": "cargas"})
-    print(f"  cargas ativas: {lista['total']}")
-    for x in lista["cargas"]:
-        print(f"    {x['database']}.{x['tabela']}  ligacao {x['ligacao']}"
-              f"  ha {x['ha_ms']} ms  expira em {x['expira_em_s']}s")
-    d.ok({"op": "bulkinsert", **alvo, "ligado": False})
-
-    print("\nRESULTADO " + json.dumps({
-        "linhas": n, "em_lote_s": round(s_lote, 3),
-        "em_lote_por_s": round(n / s_lote),
-        "exclusividade": True, "leitura_barrada": True,
-        "queda_solta": True, "lista_ok": lista["total"] == 1,
-    }))
-    subprocess.run(["pkill", "-x", "phxsqld"], check=False)
+        print("\nRESULTADO " + json.dumps({
+            "linhas": n, "em_lote_s": round(s_lote, 3),
+            "em_lote_por_s": round(n / s_lote),
+            "exclusividade": True, "leitura_barrada": True,
+            "queda_solta": True, "lista_ok": lista["total"] == 1,
+        }))
+    finally:
+        derrubar(proc)

@@ -527,6 +527,56 @@ do checkout, que é o defeito que a própria página existe para não cometer.
 entre checkouts de qualquer jeito; o que o modo garante é o VALOR medido; (c) a
 frescura figura-vs-medição do trio, que é guarda de mtime do próprio trio.
 
+## 11. `TETO_PKILL_SEM_PID` — bancada matando o servidor de outra frente
+
+**O defeito que motivou** (pedido 256, achado pelo papel F na bancada «chutar
+a tomada», lendo as bancadas irmãs para reaproveitar o molde, 16/09/2026):
+`bancada/carga/bulkinsert.py` chamava `pkill -x phxsqld` para subir e para
+derrubar o servidor da própria bancada. `pkill` nunca aceita PID — ele mata
+por NOME ou por PADRÃO na máquina **inteira** —, então a chamada derrubava o
+`phxsqld` de **qualquer** outra frente ou bancada viva ao lado, contra a regra
+da casa: o `zelador.sh` nem mata processo (o processo pode ser de outro
+agente), e `prova-bateria.py`/`chutar-a-tomada.py` já matavam só o PID que
+subiram. O irmão `bancada/carga/medir.py` (mesma pasta, mesma ordem de
+chamadas) tinha o **mesmo defeito**, achado ao ler o caminho que motivou —
+"conserto entra no caminho que o motivou, e o caminho IRMÃO fica" existe
+justamente para não repetir esse.
+
+**Por que aqui, e não em `bancada/guardas/catalogo.py`**: o catálogo de
+guardas prova defeito reposto em código RUST — o executor
+(`provar-guardas.py`) copia só `Cargo.toml`, `Cargo.lock`, `crates/`,
+`exemplos/`, `docs/` e `testes-web/` para rodar `cargo test`; `bancada/` não
+está nessa lista, então uma entrada cujo `arquivo` morasse lá nunca rodaria —
+o executor nem a copiaria. **Alcance da pétrea "cada guarda catalogada",
+medido nesta rodada**: o catálogo cobre `crates/`, não `bancada/`. Uma dívida
+de script pede outro dono — a catraca, que é o que esta seção é.
+
+**O que ela conta**: toda invocação de verdade do comando `pkill` em
+`bancada/**/*.py` e `bancada/**/*.sh` — uma string entre aspas RETAS
+(`"pkill"`/`'pkill'`, do jeito que um `subprocess.run([...])` python passa um
+argv) ou uma linha de shell que **começa** (fora de comentário) com o
+comando. O próprio arquivo do conferidor se exclui da varredura — ele precisa
+escrever `"pkill"` entre aspas para IMPLEMENTAR o crivo, e sem a exclusão se
+acharia, a mesma armadilha do `pgrep -f` que `esta-medindo.sh` documenta.
+
+**O que ela NÃO conta**: a palavra `pkill` dentro de comentário ou docstring
+— esta casa sempre escreve isso entre CRASE (`` `pkill -f` ``), nunca entre
+aspas retas, exatamente para que "nunca pkill" no comentário não se confunda
+com o uso. Um arquivo pode e deve continuar dizendo isso acima do `Popen` que
+prova a promessa.
+
+**Onde mora**: `bancada/guardas/pkill-sem-pid.py`, chamada pelo item 0b da
+bateria (`bancada/bateria/prova-bateria.py`) — estática, sem servidor.
+
+**Medido hoje** (16/09/2026, depois do conserto de `bulkinsert.py` e
+`medir.py`): **0** invocações reais de `pkill` em toda `bancada/`. Teto 0,
+folga 0 — nasce colada, como as quatro do dia 03/09.
+
+**A prova real, nos dois sentidos**: com as versões de `bulkinsert.py` e
+`medir.py` de antes do conserto repostas (as duas, do commit anterior a este),
+a catraca acusa **SUBIU 4 (teto 0)**, nomeando as quatro linhas; com o
+conserto, `ok 0 (teto 0)`.
+
 ## Os limites de funcionamento encontrados (não são catracas)
 
 Achados varrendo `TETO`, `MAX` e `LIMITE` em `crates/*/src/**/*.rs` e em

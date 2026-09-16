@@ -35,6 +35,30 @@
 # Um `phxsqld` sozinho NAO conta como medicao, de proposito: servidor de pe e
 # processo vivo (assunto do zelador, que ja o conta a parte), nao janela de
 # medicao. Quem mede e a bancada, e ela sobe o servidor dela.
+#
+# QUINTA vez que a armadilha do crivo de texto aparece, achada em 16/09/2026
+# (pedido 260) em DOIS encontros no mesmo dia: o item 0b da bateria via a
+# propria casca `bash -c ... prova-bateria.py` e dava ERRO em "maquina
+# limpa"; e as bancadas da colmeia e da tomada, cada uma esperando o portao
+# por dentro, se esperavam ETERNAMENTE porque cada uma enxergava a casca da
+# outra. O crivo 2 (caminho do script no `cmdline`) casava qualquer
+# INVOLUCRO que so MENCIONASSE o caminho -- um `bash -c "cd X && python3
+# bancada/.../foo.py"` NAO exec-substitui o bash quando o comando tem `&&`
+# (so substitui um comando simples), entao o processo do `bash -c` continua
+# de pe com o texto inteiro no proprio `cmdline`, e o crivo por SUBSTRING
+# casava a casca em vez do processo real.
+#
+# O conserto: os dois crivos de "bancada" (python e exemplo) passam a exigir
+# que o PROPRIO EXECUTAVEL do processo seja o interprete ou o binario do
+# exemplo -- nunca so o texto do cmdline. Um `bash -c` continua sendo `bash`
+# no `/proc/<pid>/exe`, nao importa o que esteja escrito dentro do `-c`;
+# so um processo que de fato EXECUTOU `python3 ...script.py` ou o binario de
+# `target/release/examples/` tem o exe correspondente. E o inverso tambem
+# vale: quem faz `exec -a "python3 foo.py" sleep 20` (o truque que o item 0b
+# usa para simular uma bancada sem subir uma de verdade) passa a exec-trocar
+# o proprio binario para `sleep`, e o `exe` deixa de mentir junto com o
+# `cmdline` -- por isso o item 0b passou a lancar um `python3` de verdade
+# (com o caminho da bancada so como argumento extra, nunca executado).
 
 set -u
 
@@ -57,15 +81,31 @@ for d in /proc/[0-9]*; do
 	linha=$(tr '\0' ' ' <"$d/cmdline" 2>/dev/null) || continue
 	[ -n "$linha" ] || continue
 
+	exe=$(readlink "$d/exe" 2>/dev/null)
+	exe_nome=$(basename "$exe" 2>/dev/null)
+
 	motivo=''
-	case "$(basename "$(readlink "$d/exe" 2>/dev/null)" 2>/dev/null)" in
+	case "$exe_nome" in
 	cargo) motivo='compilacao (cargo)' ;;
 	rustc) motivo='compilacao (rustc)' ;;
 	esac
 	if [ -z "$motivo" ]; then
-		case "$linha" in
-		*bancada/*.py*) motivo='bancada em python' ;;
-		*target/release/examples/*) motivo='exemplo de medicao' ;;
+		# so conta como "bancada em python" quem de fato EXECUTOU o
+		# interprete -- um `bash -c` que so tem o caminho escrito dentro
+		# do proprio comando continua sendo `bash` aqui, nunca `python3`
+		case "$exe_nome" in
+		python3*|python)
+			case "$linha" in
+			*bancada/*.py*) motivo='bancada em python' ;;
+			esac
+			;;
+		esac
+	fi
+	if [ -z "$motivo" ]; then
+		# mesma logica para o exemplo: o crivo e o binario que RODOU,
+		# nunca o texto que uma casca de shell carrega sobre ele
+		case "$exe" in
+		*/target/release/examples/*) motivo='exemplo de medicao' ;;
 		esac
 	fi
 	[ -n "$motivo" ] || continue

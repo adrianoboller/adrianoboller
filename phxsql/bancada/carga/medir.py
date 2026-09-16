@@ -42,8 +42,14 @@ def hash_da_senha(senha):
 
 
 def subir():
-    subprocess.run(["pkill", "-x", "phxsqld"], check=False)
-    time.sleep(1)
+    """Sobe o phxsqld PROPRIO desta bancada, na porta 5810, e devolve o
+    processo -- para morrer so pelo PID que ELE MESMO criou.
+
+    Irmao de `bancada/carga/bulkinsert.py` (mesma pasta, mesmo defeito, mesma
+    ordem de chamadas -- pedido 256): tambem chamava `pkill -x phxsqld`, que
+    mata QUALQUER servidor da maquina, e tambem usava `setsid`, que troca o
+    PID do `Popen` pelo do processo que ja saiu. Sem `setsid`, o `Popen` e o
+    phxsqld direto."""
     subprocess.run(["rm", "-rf", BASE], check=False)
     os.makedirs(BASE, exist_ok=True)
     config = {
@@ -64,9 +70,31 @@ def subir():
     with open(os.path.join(BASE, "config.json"), "w") as f:
         json.dump(config, f, indent=2)
     log = open(os.path.join(BASE, "servidor.log"), "a")
-    subprocess.Popen(["setsid", PHXSQLD], cwd=BASE, stdout=log,
-                     stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
-    time.sleep(2)
+    proc = subprocess.Popen([PHXSQLD], cwd=BASE, stdout=log,
+                            stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+    for _ in range(100):
+        time.sleep(0.1)
+        try:
+            socket.create_connection(("127.0.0.1", PORTA), timeout=0.3).close()
+            return proc
+        except OSError:
+            if proc.poll() is not None:
+                raise SystemExit(
+                    f"o servidor morreu ao subir -- veja {BASE}/servidor.log")
+    proc.kill()
+    raise SystemExit(f"o servidor nao subiu na porta {PORTA}")
+
+
+def derrubar(proc):
+    """Mata SO o PID que `subir` criou -- nunca `pkill`, que alcancaria o
+    phxsqld de outra frente ou de outra bancada viva na mesma maquina."""
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
 
 
 def liga():
@@ -134,30 +162,32 @@ if __name__ == "__main__":
     if not os.path.exists(PHXSQLD):
         sys.exit(f"nao achei {PHXSQLD} -- rode `cargo build --release` antes")
 
-    subir()
-    fala = liga()
-    fala({"op": "criar_database", "database": "loja"})
+    proc = subir()
+    try:
+        fala = liga()
+        fala({"op": "criar_database", "database": "loja"})
 
-    print(f"=== carga de {n} linhas pela rede, dois indices ===\n")
-    s_uma = uma_a_uma(fala, n)
-    print(f"  uma a uma      {s_uma:7.2f}s  {n / s_uma:9.0f} linhas/s")
-    s_lote = em_lote(fala, n)
-    print(f"  lotes de {POR_LOTE:<5} {s_lote:7.2f}s  {n / s_lote:9.0f} linhas/s")
-    print(f"\n  o lote e {s_uma / s_lote:.1f}x mais rapido")
+        print(f"=== carga de {n} linhas pela rede, dois indices ===\n")
+        s_uma = uma_a_uma(fala, n)
+        print(f"  uma a uma      {s_uma:7.2f}s  {n / s_uma:9.0f} linhas/s")
+        s_lote = em_lote(fala, n)
+        print(f"  lotes de {POR_LOTE:<5} {s_lote:7.2f}s  {n / s_lote:9.0f} linhas/s")
+        print(f"\n  o lote e {s_uma / s_lote:.1f}x mais rapido")
 
-    # Conferencia: as duas metades tem de ter gravado o mesmo tanto. Comparar
-    # tempo de trabalhos diferentes seria a armadilha que a bancada ja pegou
-    # duas vezes.
-    for tab in ("uma_a_uma", "em_lote"):
-        r = fala({"op": "verificar", "database": "loja", "tabela": tab})
-        assert r.get("registros") == n, f"{tab}: {r.get('registros')} de {n}"
+        # Conferencia: as duas metades tem de ter gravado o mesmo tanto. Comparar
+        # tempo de trabalhos diferentes seria a armadilha que a bancada ja pegou
+        # duas vezes.
+        for tab in ("uma_a_uma", "em_lote"):
+            r = fala({"op": "verificar", "database": "loja", "tabela": tab})
+            assert r.get("registros") == n, f"{tab}: {r.get('registros')} de {n}"
 
-    print("\nRESULTADO " + json.dumps({
-        "linhas": n, "por_lote": POR_LOTE,
-        "uma_a_uma_s": round(s_uma, 3),
-        "uma_a_uma_por_s": round(n / s_uma),
-        "em_lote_s": round(s_lote, 3),
-        "em_lote_por_s": round(n / s_lote),
-        "ganho": round(s_uma / s_lote, 2),
-    }))
-    subprocess.run(["pkill", "-x", "phxsqld"], check=False)
+        print("\nRESULTADO " + json.dumps({
+            "linhas": n, "por_lote": POR_LOTE,
+            "uma_a_uma_s": round(s_uma, 3),
+            "uma_a_uma_por_s": round(n / s_uma),
+            "em_lote_s": round(s_lote, 3),
+            "em_lote_por_s": round(n / s_lote),
+            "ganho": round(s_uma / s_lote, 2),
+        }))
+    finally:
+        derrubar(proc)
