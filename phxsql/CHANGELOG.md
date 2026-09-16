@@ -10,6 +10,37 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — Saúde do disco do banco (pedido 249)
+
+### Adicionado
+
+- **Sonda canário no disco do banco** (`saude_do_disco.rs`): a cada
+  `alertas.disco.checar_segundos` (60 s) escreve, sincroniza, lê e apaga um
+  arquivo próprio de 64 bytes no diretório de dados, e classifica o que falha
+  por `ErrorKind` **e** errno — nesta `std`, `EIO` cai em `Uncategorized`, e
+  só o errno o distingue. Detecta EROFS, disco cheio e erro de E/S.
+- **Erro de E/S no caminho de gravação avisa na hora.** Um `PhxError::Io` que
+  passa pelo sumidouro de erros do servidor vira evento de saúde e, fora do
+  silêncio por tipo, um e-mail imediato — e um SMS por e-mail-para-SMS da
+  operadora (`alertas.sms`), sem caminho do disco no texto. Sob a trava global
+  só se conta e se entrega numa fila; quem manda é a thread da sonda, que é
+  também o carteiro e acorda na hora. Provado pelo soquete com um relé SMTP
+  falso: um e-mail no primeiro erro, nenhum no segundo dentro da janela.
+- `op saude_disco` (direito de leitura; texto do erro só para quem administra),
+  bloco no `painel`, cartão ao lado do espaço em disco, 24 chaves pela fábrica
+  de idiomas, caso de navegador `29-saude-do-disco.mjs` nos dois temas.
+- Quatro guardas no catálogo, provadas vermelhas com o defeito reposto.
+
+### Sabido
+
+- O meio do SMS quando a operadora não oferece gateway por e-mail é decisão do
+  dono: programa externo sem shell (ponto de segurança) ou HTTPS (crate, que a
+  pétrea de zero dependências não deixa entrar calada). SMART, `/proc/mounts`
+  e `df -i` não entraram.
+- A catraca `rede-ou-espera` do mapa da trava pegou a primeira versão desta
+  frente mandando e-mail com a trava na mão (0 → 1) antes do hand-back — o
+  desenho foi refeito e a catraca voltou a 0. Catraca que roda sozinha pega.
+
 ## Não lançado — Semáforo e teto das threads (pedido 248)
 
 ### Corrigido

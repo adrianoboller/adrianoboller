@@ -714,6 +714,12 @@ pub struct Alertas {
     /// Caminhos extras a vigiar, alem do `base` e do destino do backup.
     pub caminhos: Vec<PathBuf>,
     pub email: Email,
+    /// A saude do disco onde o banco grava (pedido 249): a sonda canario e
+    /// o aviso imediato do erro de E/S. Independe de `ligado`, que e o vigia
+    /// de ESPACO -- sao dois relogios com duas perguntas.
+    pub disco: Disco,
+    /// O canal de SMS, pelo gateway e-mail-para-SMS da operadora.
+    pub sms: Sms,
 }
 
 impl Default for Alertas {
@@ -726,6 +732,8 @@ impl Default for Alertas {
             repetir_horas: 6,
             caminhos: Vec::new(),
             email: Email::default(),
+            disco: Disco::default(),
+            sms: Sms::default(),
         }
     }
 }
@@ -762,7 +770,22 @@ impl Alertas {
                 .map(PathBuf::from)
                 .collect(),
             email: Email::de_json(a)?,
+            disco: Disco::de_json(a),
+            sms: Sms::de_json(a)?,
         };
+        // O SMS sai pelo MESMO rele do e-mail (e-mail-para-SMS da operadora):
+        // ligado sem rele e um canal que promete e nunca entrega. A recusa vem
+        // no arranque, e nao na primeira falha de disco.
+        if alertas.sms.ligado && !alertas.email.ligado {
+            return Err(PhxError::Esquema(
+                "alertas.sms ligado sem alertas.email ligado: o SMS sai pelo rele \
+                 de e-mail (numero@gateway), entao o e-mail precisa estar ligado"
+                    .into(),
+            ));
+        }
+        if alertas.sms.ligado {
+            alertas.email.validar()?;
+        }
         if alertas.ligado && alertas.livre_minimo_percentual <= 0.0 && alertas.livre_minimo_mb == 0
         {
             return Err(PhxError::Esquema(
@@ -813,6 +836,173 @@ impl Alertas {
                 ),
             ),
             ("email", self.email.para_json()),
+            ("disco", self.disco.para_json()),
+            ("sms", self.sms.para_json()),
+        ])
+    }
+}
+
+/// A sonda de saude do disco onde o banco grava (pedido 249).
+///
+/// # Por que nasce LIGADA, ao contrario do vigia de espaco
+///
+/// O vigia de espaco manda e-mail, e por isso nasce desligado -- aviso que
+/// ninguem pediu e caixa de entrada cheia. A sonda so MEDE: escreve, sincroniza,
+/// rele e apaga um arquivo de 64 bytes no `base`, uma vez por minuto, e mostra
+/// o resultado no painel. Sem ela o cartao diria «nao medido» para todo mundo
+/// que nunca abriu o config.json, e um monitor que nasce cego nao monitora
+/// nada. O aviso por e-mail e SMS continua dependendo de `alertas.email` e
+/// `alertas.sms` estarem ligados -- a sonda ligada sem rele so pinta o painel.
+/// E a mesma decisao da telemetria, que nasce coletando.
+///
+/// Quem nao quer a escrita periodica escreve `"disco": {"ligado": false}`.
+#[derive(Debug, Clone)]
+pub struct Disco {
+    pub ligado: bool,
+    /// De quantos em quantos segundos a sonda escreve o canario.
+    pub checar_segundos: u64,
+    /// Silencio entre dois avisos do MESMO tipo de evento (E/S, so-leitura,
+    /// sem espaco, conferencia). O primeiro e sempre imediato. Em minutos, e
+    /// nao nas horas do vigia de espaco: disco cheio continua cheio por
+    /// horas, erro de E/S e noticia aguda que merece ser repetida antes.
+    pub repetir_minutos: u64,
+    /// Acima disto a sonda que PASSOU vira estado `aviso` no painel (sem
+    /// e-mail): disco que morre costuma ficar lento antes de falhar. Zero
+    /// desliga o aviso de lentidao.
+    pub lento_ms: u64,
+}
+
+impl Default for Disco {
+    fn default() -> Self {
+        Disco {
+            ligado: true,
+            checar_segundos: 60,
+            repetir_minutos: 30,
+            lento_ms: 1_000,
+        }
+    }
+}
+
+impl Disco {
+    fn de_json(alertas: &Json) -> Disco {
+        let padrao = Disco::default();
+        let Some(d) = alertas.campo("disco") else {
+            return padrao;
+        };
+        Disco {
+            ligado: d.booleano_ou("ligado", padrao.ligado),
+            checar_segundos: d
+                .inteiro_ou("checar_segundos", padrao.checar_segundos as i64)
+                .max(1) as u64,
+            repetir_minutos: d
+                .inteiro_ou("repetir_minutos", padrao.repetir_minutos as i64)
+                .max(0) as u64,
+            lento_ms: d.inteiro_ou("lento_ms", padrao.lento_ms as i64).max(0) as u64,
+        }
+    }
+
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("ligado", Json::Bool(self.ligado)),
+            ("checar_segundos", Json::de_u64(self.checar_segundos)),
+            ("repetir_minutos", Json::de_u64(self.repetir_minutos)),
+            ("lento_ms", Json::de_u64(self.lento_ms)),
+        ])
+    }
+}
+
+/// O canal de SMS: e-mail-para-SMS da operadora.
+///
+/// # Por que este meio, e nao um gateway HTTP
+///
+/// Todo gateway de SMS que se contrata hoje fala HTTPS, HTTPS pede TLS, e TLS
+/// pede crate -- e zero dependencias e petrea. O que funciona sem crate
+/// nenhuma e o que ja existe na casa: o rele de e-mail. Toda operadora que
+/// oferece e-mail-para-SMS entrega `numero@gateway` como texto no celular,
+/// e o `email::enviar` ja sabe falar com o rele. O meio definitivo e decisao
+/// do dono, e esta escrita em `docs/SAUDE-DO-DISCO.md`.
+///
+/// O texto vai numa linha so, com ate 160 caracteres, e NUNCA carrega o
+/// caminho do disco nem segredo: SMS atravessa a operadora em claro.
+#[derive(Debug, Clone, Default)]
+pub struct Sms {
+    pub ligado: bool,
+    /// Os numeros, so digitos e um `+` opcional na frente: eles viram a parte
+    /// local de um endereco de e-mail.
+    pub numeros: Vec<String>,
+    /// O dominio do gateway da operadora (`sms.operadora.com.br`). Sem arroba:
+    /// o endereco final e `numero@gateway`.
+    pub gateway_email: String,
+}
+
+impl Sms {
+    fn de_json(alertas: &Json) -> Result<Sms> {
+        let Some(s) = alertas.campo("sms") else {
+            return Ok(Sms::default());
+        };
+        let sms = Sms {
+            ligado: s.booleano_ou("ligado", false),
+            numeros: s
+                .textos("numeros")
+                .into_iter()
+                .map(|n| n.trim().to_string())
+                .collect(),
+            gateway_email: s.texto_ou("gateway_email", "").trim().to_string(),
+        };
+        if sms.ligado {
+            sms.validar()?;
+        }
+        Ok(sms)
+    }
+
+    fn validar(&self) -> Result<()> {
+        if self.numeros.is_empty() {
+            return Err(PhxError::Esquema(
+                "alertas.sms ligado sem \"numeros\": nao ha para quem mandar".into(),
+            ));
+        }
+        for n in &self.numeros {
+            let digitos = n.strip_prefix('+').unwrap_or(n);
+            if digitos.is_empty() || !digitos.chars().all(|c| c.is_ascii_digit()) {
+                return Err(PhxError::Esquema(format!(
+                    "alertas.sms.numeros: {n:?} nao e um numero (so digitos, com + opcional)"
+                )));
+            }
+        }
+        let g = &self.gateway_email;
+        if g.is_empty() {
+            return Err(PhxError::Esquema(
+                "alertas.sms ligado sem \"gateway_email\": o dominio do gateway da operadora"
+                    .into(),
+            ));
+        }
+        // O gateway vira a metade direita de um endereco: arroba, espaco ou
+        // quebra de linha ali seria um segundo endereco -- ou um cabecalho
+        // injetado na mensagem.
+        if g.contains(['@', ' ', '\r', '\n']) || !g.contains('.') {
+            return Err(PhxError::Esquema(format!(
+                "alertas.sms.gateway_email: {g:?} nao e um dominio (sem arroba, com ponto)"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Os enderecos `numero@gateway`, prontos para o `RCPT TO`.
+    pub fn enderecos(&self) -> Vec<String> {
+        self.numeros
+            .iter()
+            .map(|n| format!("{n}@{}", self.gateway_email))
+            .collect()
+    }
+
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("ligado", Json::Bool(self.ligado)),
+            (
+                "numeros",
+                Json::Lista(self.numeros.iter().map(Json::texto_de).collect()),
+            ),
+            ("gateway_email", Json::texto_de(&self.gateway_email)),
         ])
     }
 }
@@ -2688,7 +2878,7 @@ const CAMPOS_CONHECIDOS: [&str; 30] = [
 /// as duas primeiras estao ganhando campos novos por outras frentes nesta
 /// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
 /// as duas ultimas tem chaves livres (bases, tabelas).
-const SECOES_CONHECIDAS: [(&str, &[&str]); 13] = [
+const SECOES_CONHECIDAS: [(&str, &[&str]); 15] = [
     (
         "recursos",
         &[
@@ -2749,8 +2939,16 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 13] = [
             "repetir_horas",
             "caminhos",
             "email",
+            // Pedido 249: a sonda de saude do disco e o canal de SMS.
+            "disco",
+            "sms",
         ],
     ),
+    (
+        "alertas.disco",
+        &["ligado", "checar_segundos", "repetir_minutos", "lento_ms"],
+    ),
+    ("alertas.sms", &["ligado", "numeros", "gateway_email"]),
     (
         "alertas.email",
         &[
@@ -5672,6 +5870,113 @@ mod testes_recursos {
             .unwrap();
         assert!(lista.contains(&"conexoes_web_max"));
         assert!(lista.contains(&"fila_web_ms"));
+    }
+
+    /// Configuracao que nao e lida mente: cada campo de `alertas.disco` e de
+    /// `alertas.sms` tem leitor, e o valor lido e o do arquivo, nao o padrao.
+    /// Reponha o defeito trocando `d.inteiro_ou("checar_segundos", ..)` pelo
+    /// padrao e este teste cai no primeiro `assert_eq`.
+    #[test]
+    fn alertas_disco_e_sms_sao_lidos_do_arquivo() {
+        let c = Config::de_json(
+            &Json::analisar(
+                r#"{"token":"t","alertas":{
+                    "disco":{"ligado":false,"checar_segundos":7,"repetir_minutos":3,"lento_ms":250},
+                    "email":{"ligado":true,"servidor":"127.0.0.1","de":"a@b.c","para":["x@y.z"]},
+                    "sms":{"ligado":true,"numeros":["+5541999990000","41988887777"],"gateway_email":"sms.op.com.br"}
+                }}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(!c.alertas.disco.ligado);
+        assert_eq!(c.alertas.disco.checar_segundos, 7);
+        assert_eq!(c.alertas.disco.repetir_minutos, 3);
+        assert_eq!(c.alertas.disco.lento_ms, 250);
+        assert!(c.alertas.sms.ligado);
+        assert_eq!(
+            c.alertas.sms.enderecos(),
+            vec!["+5541999990000@sms.op.com.br", "41988887777@sms.op.com.br"]
+        );
+        // Os dois saem no `config` que a tela le, e a secao os conhece.
+        let j = c.alertas.para_json();
+        assert_eq!(
+            j.campo("disco")
+                .and_then(|d| d.campo("checar_segundos"))
+                .and_then(Json::numero),
+            Some(7.0)
+        );
+        assert_eq!(
+            j.campo("sms")
+                .and_then(|d| d.campo("gateway_email"))
+                .and_then(Json::texto),
+            Some("sms.op.com.br")
+        );
+        let (_, lista) = SECOES_CONHECIDAS
+            .iter()
+            .find(|(s, _)| *s == "alertas")
+            .unwrap();
+        assert!(lista.contains(&"disco") && lista.contains(&"sms"));
+        assert!(SECOES_CONHECIDAS.iter().any(|(s, _)| *s == "alertas.disco"));
+        assert!(SECOES_CONHECIDAS.iter().any(|(s, _)| *s == "alertas.sms"));
+    }
+
+    /// Sem o bloco, a sonda nasce LIGADA a cada 60 s -- e sem SMS. E o
+    /// comportamento de quem nunca abriu o config.json: o painel mede.
+    #[test]
+    fn sem_o_bloco_a_sonda_nasce_ligada_e_o_sms_desligado() {
+        let c = Config::de_json(&Json::analisar(r#"{"token":"t"}"#).unwrap()).unwrap();
+        assert!(c.alertas.disco.ligado);
+        assert_eq!(c.alertas.disco.checar_segundos, 60);
+        assert_eq!(c.alertas.disco.repetir_minutos, 30);
+        assert_eq!(c.alertas.disco.lento_ms, 1_000);
+        assert!(!c.alertas.sms.ligado);
+        assert!(c.alertas.sms.enderecos().is_empty());
+        // Zero segundos nao existe: a sonda em laco apertado seria ela mesma
+        // o problema de disco.
+        let c = Config::de_json(
+            &Json::analisar(r#"{"token":"t","alertas":{"disco":{"checar_segundos":0}}}"#).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(c.alertas.disco.checar_segundos, 1);
+    }
+
+    /// O SMS recusa no ARRANQUE o que nao conseguiria entregar: sem e-mail
+    /// ligado, sem numero, numero que nao e numero, gateway com arroba.
+    #[test]
+    fn o_sms_recusa_no_arranque_o_que_nao_entregaria() {
+        let erro = |json: &str| {
+            Config::de_json(&Json::analisar(json).unwrap())
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_default()
+        };
+        let email =
+            r#""email":{"ligado":true,"servidor":"127.0.0.1","de":"a@b.c","para":["x@y.z"]}"#;
+        let e = erro(
+            r#"{"token":"t","alertas":{"sms":{"ligado":true,"numeros":["41999990000"],"gateway_email":"sms.op"}}}"#,
+        );
+        assert!(e.contains("sem alertas.email ligado"), "{e}");
+        let e = erro(&format!(
+            r#"{{"token":"t","alertas":{{{email},"sms":{{"ligado":true,"gateway_email":"sms.op"}}}}}}"#
+        ));
+        assert!(e.contains("sem \"numeros\""), "{e}");
+        let e = erro(&format!(
+            r#"{{"token":"t","alertas":{{{email},"sms":{{"ligado":true,"numeros":["41 99999-0000"],"gateway_email":"sms.op"}}}}}}"#
+        ));
+        assert!(e.contains("nao e um numero"), "{e}");
+        let e = erro(&format!(
+            r#"{{"token":"t","alertas":{{{email},"sms":{{"ligado":true,"numeros":["41999990000"],"gateway_email":"x@sms.op"}}}}}}"#
+        ));
+        assert!(e.contains("nao e um dominio"), "{e}");
+        let e = erro(&format!(
+            r#"{{"token":"t","alertas":{{{email},"sms":{{"ligado":true,"numeros":["41999990000"],"gateway_email":"sms.op"}}}}}}"#
+        ));
+        assert!(e.is_empty(), "configuracao valida recusada: {e}");
+        // Desligado, nada se confere: campo em branco nao pode derrubar o
+        // arranque de quem nao usa SMS.
+        let e = erro(r#"{"token":"t","alertas":{"sms":{"ligado":false,"numeros":["abc"]}}}"#);
+        assert!(e.is_empty(), "{e}");
     }
 
     /// `threads` e `cpu_percentual` tem leitor de verdade: o teto global do

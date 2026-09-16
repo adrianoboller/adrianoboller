@@ -57,6 +57,58 @@ impl AsRef<Path> for DirTemp {
     }
 }
 
+/// Um SMTP falso do tamanho do que o `email.rs` fala: 220/250/354/250/221.
+///
+/// Existe porque teste unitario NAO prova entrega de e-mail -- soquete
+/// prova, e e a mesma licao do `BULKINSERT`. Devolve a porta efemera e o
+/// canal por onde cada mensagem recebida chega inteira (o `DATA`, com os
+/// cabecalhos). Morava no modulo de testes da politica; veio para ca quando a
+/// saude do disco (pedido 249) precisou do mesmo rele.
+pub fn rele_falso() -> (u16, std::sync::mpsc::Receiver<String>) {
+    use std::io::{BufRead, BufReader, Write};
+    let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let porta = ouvinte.local_addr().unwrap().port();
+    let (envia, recebe) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for fluxo in ouvinte.incoming() {
+            let Ok(fluxo) = fluxo else { return };
+            let envia = envia.clone();
+            std::thread::spawn(move || {
+                let Ok(mut escrita) = fluxo.try_clone() else {
+                    return;
+                };
+                let mut leitor = BufReader::new(fluxo);
+                let _ = escrita.write_all(b"220 rele-falso\r\n");
+                let mut linha = String::new();
+                while leitor.read_line(&mut linha).unwrap_or(0) > 0 {
+                    let comando = linha.trim_end().to_uppercase();
+                    linha.clear();
+                    if comando == "DATA" {
+                        let _ = escrita.write_all(b"354 manda\r\n");
+                        let mut corpo = String::new();
+                        let mut l = String::new();
+                        while leitor.read_line(&mut l).unwrap_or(0) > 0 {
+                            if l.trim_end() == "." {
+                                break;
+                            }
+                            corpo.push_str(&l);
+                            l.clear();
+                        }
+                        let _ = envia.send(corpo);
+                        let _ = escrita.write_all(b"250 OK fila-1\r\n");
+                    } else if comando == "QUIT" {
+                        let _ = escrita.write_all(b"221 tchau\r\n");
+                        return;
+                    } else {
+                        let _ = escrita.write_all(b"250 OK\r\n");
+                    }
+                }
+            });
+        }
+    });
+    (porta, recebe)
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;

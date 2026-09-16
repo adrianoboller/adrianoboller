@@ -270,7 +270,7 @@ pub fn data_rfc5322(ms: i64) -> String {
 /// Nome desta maquina para o EHLO. Cai num literal quando nao da para saber:
 /// rele nenhum recusa por causa do EHLO, e travar o alerta por isso seria
 /// perder o aviso justamente quando ele importa.
-fn nome_da_maquina() -> String {
+pub(crate) fn nome_da_maquina() -> String {
     std::fs::read_to_string("/proc/sys/kernel/hostname")
         .ok()
         .map(|s| s.trim().to_string())

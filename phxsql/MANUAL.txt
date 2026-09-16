@@ -2920,6 +2920,53 @@ AGENDADO
     guarda nova entra pedida, nao imposta. A senha do rele, como sempre,
     nunca aparece em mensagem nenhuma.
 
+    SAUDE DO DISCO: SONDA CANARIO, E-MAIL E SMS (pedido 249)
+
+    O vigia de ESPACO acima pergunta «quanto falta». A saude do disco
+    pergunta «o disco ainda aceita escrita?» -- e nao espera relogio nenhum
+    para avisar. Tres pecas:
+
+      - A SONDA: a cada alertas.disco.checar_segundos (60) uma thread propria
+        escreve <base>/.saude-do-disco, sincroniza (fsync), rele, confere e
+        apaga, medindo a duracao. Recusa do sistema vira estado "erro" no
+        painel: EROFS (montagem virou so-leitura), ENOSPC (sem espaco), EIO
+        (o dispositivo). Conteudo que volta diferente tambem e erro. Acima
+        de lento_ms (1000) a sonda que passou vira "aviso" (so painel).
+      - O GANCHO: todo erro de E/S (codigo 5001, SP000010) respondido a um
+        cliente -- inserir, atualizar, excluir, ler -- conta e avisa NA
+        HORA. O fsync do fecho da janela recusado tambem, e o proprio
+        acessos.log que nao aceita escrita.
+      - O AVISO: e-mail pelo bloco alertas.email (o mesmo do disco cheio) e
+        SMS por alertas.sms. O primeiro evento de cada tipo sai imediato; o
+        seguinte do MESMO tipo cala por repetir_minutos (30) -- um erro por
+        linha numa carga de cem mil linhas e UM e-mail, nao cem mil.
+
+        "alertas": {
+          "email": { "ligado": true, "servidor": "127.0.0.1", "porta": 25,
+                     "de": "phxsql@empresa.com.br", "para": ["dba@empresa.com.br"] },
+          "disco": { "ligado": true, "checar_segundos": 60,
+                     "repetir_minutos": 30, "lento_ms": 1000 },
+          "sms":   { "ligado": true, "numeros": ["+5541999990000"],
+                     "gateway_email": "sms.operadora.com.br" }
+        }
+
+    O SMS sai pelo gateway E-MAIL-PARA-SMS da operadora: o mesmo rele manda
+    para numero@gateway, e a operadora entrega como texto. Uma linha de ate
+    160 caracteres, sem o caminho do disco e sem segredo (SMS atravessa a
+    operadora em claro). Exige email.ligado -- sem rele nao ha por onde sair,
+    e a recusa vem no arranque. Gateway HTTP(S) de SMS NAO entra: pede TLS,
+    TLS pede crate, e isso e decisao do dono (docs/SAUDE-DO-DISCO.md).
+
+    A sonda vem LIGADA de fabrica (so mede e pinta o painel; sem e-mail
+    ligado nao sai aviso nenhum). Quem nao quer a escrita periodica poe
+    "disco": {"ligado": false}. Na tela, o cartao "Saude do disco" fica no
+    Painel ao lado do espaco em disco; pelo protocolo, {"op":"saude_disco"}
+    (o texto do ultimo erro e a base dele so saem para quem administra).
+
+    O que NAO se detecta: SMART do dispositivo, montagem so-leitura ANTES
+    da proxima sonda ou gravacao, e disco de outro caminho que nao o base
+    (o destino do backup continua so no vigia de espaco).
+
 
 11.2 PARAR E SUBIR A PORTA DE DADOS
 

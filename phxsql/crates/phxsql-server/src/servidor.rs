@@ -206,6 +206,12 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
 /// Lista de PERMISSAO, e nao de recusa, de proposito: operacao nova nasce
 /// BARRADA no spare ate alguem decidir o contrario -- o mesmo principio do
 /// portao de permissao que nega operacao desconhecida.
+/// O codigo do `PhxError::Io` (5001), como ele chega no `Acesso` que o
+/// `anotar` recebe. E o portao do gancho da saude do disco: uma comparacao de
+/// inteiro, antes de qualquer trabalho. Ha teste que o compara com
+/// `PhxError::Io(..).codigo()`, para o numero nao poder derivar calado.
+const CODIGO_DE_ES: u16 = 5001;
+
 pub(crate) const OPS_NO_SPARE: &[&str] = &[
     // A sessao em si.
     "ping",
@@ -227,6 +233,9 @@ pub(crate) const OPS_NO_SPARE: &[&str] = &[
     "kill",
     "sistema",
     "painel",
+    // A saude do disco do spare e monitoramento como o `painel`: e a reserva
+    // que mais precisa dizer se o disco dela ainda aceita escrita.
+    "saude_disco",
     "servico",
     "servico_parar",
     "servico_subir",
@@ -676,6 +685,11 @@ pub struct Servidor {
     /// Ultimo aviso mandado por caminho, para nao repetir enquanto o disco
     /// continua cheio.
     avisados: Mutex<HashMap<String, i64>>,
+    /// A saude do disco onde o banco grava (pedido 249): a sonda canario, o
+    /// contador de erros de E/S e o silencio por tipo. O vigia de ESPACO
+    /// acima pergunta «quanto falta»; esta pergunta «o disco ainda aceita
+    /// escrita?» -- e a segunda nao espera relogio nenhum para avisar.
+    saude: Arc<crate::saude_do_disco::SaudeDoDisco>,
     /// O que esta chegando pela porta, quando alguem liga para olhar.
     /// Tabelas reservadas para carga (`BULKINSERT`).
     cargas: Mutex<crate::carga::Cargas>,
@@ -1058,6 +1072,12 @@ impl Servidor {
         // numero, e o laco de aceitacao so pede vaga. `conexoes_max` ja
         // chega >= 1 do `Config`; o da web aceita zero, que e «sem teto».
         let permissoes_de_dados = Semaforo::novo(config.conexoes_max);
+        // A saude do disco nasce com o caminho do `base`, que e o disco que
+        // interessa: e nele que todo `.reg` e todo `.ndx` moram.
+        let saude = Arc::new(crate::saude_do_disco::SaudeDoDisco::nova(
+            config.alertas.disco.clone(),
+            &config.base,
+        ));
         let permissoes_http = match config.recursos.conexoes_web_max {
             0 => Semaforo::sem_teto(),
             teto => Semaforo::novo(teto),
@@ -1096,6 +1116,7 @@ impl Servidor {
             proximo_ouvinte: Mutex::new(None),
             endereco_dos_dados: Mutex::new(None),
             avisados: Mutex::new(HashMap::new()),
+            saude,
             permissoes_de_dados,
             permissoes_http,
             http_cheia_ate_ms: AtomicU64::new(0),
@@ -1542,6 +1563,7 @@ impl Servidor {
         self.subir_jobs();
         self.ligar_relogio_de_gravacao();
         self.ligar_vigia_de_disco();
+        self.ligar_sonda_de_disco();
         self.ligar_vigia_de_jobs();
         self.subir_amostrador();
         // A thread PRINCIPAL tambem entra no registro. Ela nao e criada por
@@ -1844,7 +1866,61 @@ impl Servidor {
         if let Ok(mut log) = self.log.lock() {
             if let Err(e) = log.registrar(acesso) {
                 eprintln!("falha ao gravar o log de acessos: {e}");
+                // O proprio log e disco. Um `acessos.log` que nao aceita
+                // escrita e a mesma noticia que um `.reg` que nao aceita --
+                // e chegaria calada, porque nenhum cliente recebe este erro.
+                if let PhxError::Io(io) = &e {
+                    self.evento_de_disco(
+                        crate::saude_do_disco::classificar(io),
+                        "acessos.log",
+                        "",
+                        "",
+                        &e.to_string(),
+                    );
+                }
             }
+        }
+        // O GANCHO DA SAUDE DO DISCO (pedido 249). Este e o unico sumidouro
+        // por onde toda resposta de erro passa -- porta de dados, web, REST,
+        // jobs, fio --, entao o gancho mora aqui e em lugar nenhum mais: em
+        // quarenta operacoes, a que alguem esquecesse seria o furo. O portao
+        // e uma comparacao de inteiro e vem ANTES de qualquer trabalho: o
+        // caminho de sucesso, e o de todo outro erro, nao paga nada.
+        if acesso.codigo == CODIGO_DE_ES {
+            let texto = acesso.erro.as_deref().unwrap_or("");
+            self.evento_de_disco(
+                crate::saude_do_disco::tipo_do_texto(texto),
+                &acesso.op,
+                &acesso.database,
+                &acesso.tabela,
+                texto,
+            );
+        }
+    }
+
+    /// Um erro de E/S visto em qualquer caminho: conta na saude do disco e,
+    /// se o silencio deixar, ENTREGA ao carteiro -- que acorda na hora.
+    ///
+    /// Nada de rede aqui, e isto e lei e nao estilo: quem chama pode estar
+    /// com a trava global de dados na mao (`fecho_recusado` esta, dentro de
+    /// `descarregar_sujas_com`), e um `email::enviar` ali ataria o servidor
+    /// inteiro ao tempo de resposta do rele -- no pior momento, o do disco
+    /// doente. A catraca `rede-ou-espera` do `mapa-da-trava.py` acusou
+    /// exatamente isso na primeira versao, e o teto dela e zero.
+    fn evento_de_disco(
+        &self,
+        tipo: crate::saude_do_disco::Tipo,
+        origem: &str,
+        database: &str,
+        tabela: &str,
+        texto: &str,
+    ) {
+        let agora = crate::agora_ms();
+        if let Some(evento) = self
+            .saude
+            .erro_de_es(agora, tipo, origem, database, tabela, texto)
+        {
+            self.saude.entregar(evento);
         }
     }
 
@@ -9575,6 +9651,7 @@ impl Servidor {
             "memoria_liberar" => self.op_memoria_liberar(p),
             "memoria" => self.op_memoria(),
             "painel" => self.op_painel(sessao),
+            "saude_disco" => Ok(self.op_saude_disco(sessao)),
             "estatisticas" | "estatisticas_uso" => self.op_estatisticas(p),
             "sessoes" | "processlist" => self.op_sessoes(),
             "telemetria" => self.op_telemetria(p, sessao),
@@ -14287,6 +14364,26 @@ impl Servidor {
     ///
     /// O `abrir` fica em serie de proposito: sao os 5-7%, e o catalogo tem
     /// estado compartilhado que nao se ganha nada em disputar.
+    /// O `fsync` do fecho recusado: o IRMAO do gancho do `anotar`.
+    ///
+    /// O fecho da janela nao responde a cliente nenhum, entao um `EIO` aqui
+    /// nunca passa por `anotar` -- a chave voltava para as sujas e ninguem
+    /// ficava sabendo. E o caso mais grave da saude do disco, porque e o
+    /// disco recusando justamente o passo que torna o commit duravel.
+    fn fecho_recusado(&self, chave: &str, e: &PhxError) {
+        let PhxError::Io(io) = e else {
+            return;
+        };
+        let (db, tab) = chave.split_once('/').unwrap_or((chave, ""));
+        self.evento_de_disco(
+            crate::saude_do_disco::classificar(io),
+            "fecho",
+            db,
+            tab,
+            &e.to_string(),
+        );
+    }
+
     fn descarregar_sujas_com(&self, dados: &Instancia) {
         let lista: Vec<String> = match self.sujas.lock() {
             Ok(mut s) => s.drain().collect(),
@@ -14319,12 +14416,13 @@ impl Servidor {
             // Uma tabela so nao tem com quem se sobrepor: sem fio nenhum, o
             // caminho de K=1 continua sendo exatamente o de antes.
             if abertas.len() == 1 {
-                if abertas[0].sincronizar().is_err() {
+                if let Err(e) = abertas[0].sincronizar() {
+                    self.fecho_recusado(&chaves[0], &e);
                     faltaram.push(chaves.remove(0));
                 }
                 continue;
             }
-            let quebrados: Vec<usize> = std::thread::scope(|escopo| {
+            let quebrados: Vec<(usize, Option<PhxError>)> = std::thread::scope(|escopo| {
                 let fios: Vec<_> = abertas
                     .iter_mut()
                     .map(|t| escopo.spawn(move || t.sincronizar()))
@@ -14338,11 +14436,15 @@ impl Servidor {
                     .enumerate()
                     .filter_map(|(i, f)| match f.join() {
                         Ok(Ok(())) => None,
-                        _ => Some(i),
+                        Ok(Err(e)) => Some((i, Some(e))),
+                        Err(_) => Some((i, None)),
                     })
                     .collect()
             });
-            for i in quebrados {
+            for (i, erro) in quebrados {
+                if let Some(e) = &erro {
+                    self.fecho_recusado(&chaves[i], e);
+                }
                 faltaram.push(chaves[i].clone());
             }
         }
@@ -20355,6 +20457,244 @@ impl Servidor {
         t
     }
 
+    // ---------------------------------------------------- a saude do disco
+
+    /// Sobe a thread da saude do disco (pedido 249): a sonda canario E o
+    /// carteiro dos avisos. Thread propria pelo mesmo motivo do vigia de
+    /// espaco: ela faz `fsync` e fala com o rele, e nenhuma das duas coisas
+    /// cabe no caminho de uma consulta -- nem debaixo da trava de dados.
+    ///
+    /// Sobe com a sonda ligada OU com o e-mail ligado: sem sonda ainda ha
+    /// eventos a entregar (os do gancho), e sem e-mail ainda ha canario a
+    /// escrever (o painel). So nao sobe quando nao ha nada a fazer.
+    fn ligar_sonda_de_disco(self: &Arc<Self>) {
+        if !self.saude.ligada() && !self.config.alertas.email.ligado {
+            return;
+        }
+        let d = &self.config.alertas.disco;
+        eprintln!(
+            "sonda de disco: {} a cada {} s | silencio {} min por tipo | lento acima de {} ms | {}",
+            self.config
+                .base
+                .join(crate::saude_do_disco::CANARIO)
+                .display(),
+            d.checar_segundos,
+            d.repetir_minutos,
+            d.lento_ms,
+            match (
+                self.config.alertas.email.ligado,
+                self.config.alertas.sms.ligado
+            ) {
+                (true, true) => "avisa por e-mail e SMS",
+                (true, false) => "avisa por e-mail",
+                _ => "so no painel (e-mail desligado)",
+            }
+        );
+        let servidor = Arc::clone(self);
+        self.telemetria.subir(
+            "sonda-disco",
+            "escreve, sincroniza, rele e apaga o canario `.saude-do-disco` no \
+             base, de tempos em tempos, e e o CARTEIRO dos avisos de saude: \
+             dorme na fila, acorda na hora em que um evento entra e fala com \
+             o rele fora de qualquer trava; thread propria porque `fsync` num \
+             disco doente e rele fora do ar levam segundos -- nada disso cabe \
+             no caminho de uma consulta, nem debaixo da trava de dados",
+            "servico",
+            crate::agora_ms(),
+            move |fio| {
+                let intervalo = Duration::from_secs(servidor.saude.checar_segundos());
+                let sonda_ligada = servidor.saude.ligada();
+                // A primeira sonda e ja: o painel nao pode esperar um minuto
+                // para dizer alguma coisa.
+                let mut proxima = Instant::now();
+                loop {
+                    if sonda_ligada && Instant::now() >= proxima {
+                        fio.fazendo("escrevendo, sincronizando e relendo o canario");
+                        if let Some(evento) = servidor.saude.sondar(crate::agora_ms()) {
+                            servidor.avisar_saude_do_disco(&fio, evento);
+                        }
+                        proxima = Instant::now() + intervalo;
+                    }
+                    // Sem sonda, o prazo e so o ritmo de reconferir o laco.
+                    let ate = if sonda_ligada {
+                        proxima.saturating_duration_since(Instant::now())
+                    } else {
+                        Duration::from_secs(60)
+                    };
+                    fio.fazendo("esperando um evento de saude, ou a hora da proxima sonda");
+                    for evento in servidor.saude.esperar(ate) {
+                        servidor.avisar_saude_do_disco(&fio, evento);
+                    }
+                }
+            },
+        );
+    }
+
+    /// O aviso de um evento de saude que passou pelo silencio. Sempre escreve
+    /// no erro padrao; e-mail e SMS saem se o rele estiver ligado.
+    ///
+    /// SO a thread `sonda-disco` chama isto, fora de qualquer trava do
+    /// servidor. Quem registra o evento (o `anotar`, o fecho) entrega a fila
+    /// e volta -- ver `evento_de_disco`.
+    fn avisar_saude_do_disco(
+        &self,
+        fio: &crate::telemetria::Fio,
+        evento: crate::saude_do_disco::Evento,
+    ) {
+        eprintln!(
+            "SAUDE DO DISCO ({}): {} em {}{} -- {}",
+            evento.tipo.nome(),
+            Self::tipo_de_saude_legivel(evento.tipo),
+            evento.origem,
+            Self::alvo_do_evento(&evento),
+            evento.texto
+        );
+        // Lentidao e aviso de painel, nunca de canal.
+        if !evento.tipo.e_erro() {
+            return;
+        }
+        let email = self.config.alertas.email.clone();
+        // O SMS ja nasce validado como «so com e-mail ligado» (config.rs).
+        if !email.ligado {
+            return;
+        }
+        let sms = self.config.alertas.sms.clone();
+        let assunto = format!(
+            "PhxSql: saude do disco -- {} ({})",
+            Self::tipo_de_saude_legivel(evento.tipo),
+            evento.origem
+        );
+        let corpo = self.texto_do_aviso_de_saude(&evento);
+        let linha_sms = Self::texto_do_sms_de_saude(&evento);
+        fio.fazendo("falando com o rele de e-mail");
+        let r = crate::email::enviar(&email, &assunto, &corpo);
+        match &r {
+            Ok(r) => eprintln!("aviso de saude do disco enviado: {r}"),
+            // Falhar em avisar tambem e noticia, como no disco cheio.
+            Err(e) => eprintln!("aviso de saude do disco NAO ENVIADO: {e}"),
+        }
+        self.saude.anotar_aviso(
+            "email",
+            r.map(|_| ()).map_err(|e| e.to_string()),
+            crate::agora_ms(),
+        );
+        if !sms.ligado {
+            return;
+        }
+        fio.fazendo("mandando o SMS pelo gateway da operadora");
+        // O MESMO rele, com os destinatarios trocados por `numero@gateway`:
+        // e o que a operadora entrega como texto.
+        let mut por_sms = email.clone();
+        por_sms.para = sms.enderecos();
+        let r = crate::email::enviar(&por_sms, "PhxSql", &linha_sms);
+        match &r {
+            Ok(r) => eprintln!("SMS de saude do disco enviado: {r}"),
+            Err(e) => eprintln!("SMS de saude do disco NAO ENVIADO: {e}"),
+        }
+        self.saude.anotar_aviso(
+            "sms",
+            r.map(|_| ()).map_err(|e| e.to_string()),
+            crate::agora_ms(),
+        );
+    }
+
+    fn tipo_de_saude_legivel(tipo: crate::saude_do_disco::Tipo) -> &'static str {
+        use crate::saude_do_disco::Tipo;
+        match tipo {
+            Tipo::SoLeitura => "montagem so-leitura (EROFS)",
+            Tipo::SemEspaco => "sem espaco (ENOSPC)",
+            Tipo::EntradaSaida => "erro de E/S",
+            Tipo::Conferencia => "o dado voltou diferente do escrito",
+            Tipo::Lento => "disco lento",
+        }
+    }
+
+    /// ` (base/tabela)` quando o evento nomeia uma; vazio quando nao.
+    fn alvo_do_evento(e: &crate::saude_do_disco::Evento) -> String {
+        match (e.database.is_empty(), e.tabela.is_empty()) {
+            (true, true) => String::new(),
+            (false, true) => format!(" ({})", e.database),
+            _ => format!(" ({}/{})", e.database, e.tabela),
+        }
+    }
+
+    /// O corpo do e-mail. Leva o servidor, o `base`, o tipo, a origem, a hora
+    /// e o texto do erro -- e NUNCA o pedido que o provocou: a resposta de um
+    /// `inserir` recusado por E/S nao carrega a linha, e o e-mail tambem nao.
+    fn texto_do_aviso_de_saude(&self, e: &crate::saude_do_disco::Evento) -> String {
+        let mut t = String::new();
+        t.push_str("O PhxSql detectou um problema no disco onde o banco grava.\n\n");
+        t.push_str(&format!(
+            "  servidor   {}\n  base       {}\n  tipo       {}\n  origem     {}{}\n  quando     {}\n  erro       {}\n\n",
+            crate::email::nome_da_maquina(),
+            self.config.base.display(),
+            Self::tipo_de_saude_legivel(e.tipo),
+            e.origem,
+            Self::alvo_do_evento(e),
+            phxsql_core::datahora::instante_iso(e.quando_ms),
+            e.texto
+        ));
+        t.push_str(&format!(
+            "  erros de E/S desde o arranque: {}\n",
+            self.saude.erros_es()
+        ));
+        match self.saude.ultima_sonda() {
+            Some(s) => t.push_str(&format!(
+                "  ultima sonda: {} ({} ms, {})\n\n",
+                match &s.falha {
+                    None => "passou".to_string(),
+                    Some((_, texto)) => format!("falhou -- {texto}"),
+                },
+                s.duracao_us / 1_000,
+                phxsql_core::datahora::instante_iso(s.medido_em_ms)
+            )),
+            None => t.push_str("  ultima sonda: ainda nao rodou\n\n"),
+        }
+        t.push_str(&format!(
+            "Enquanto o problema continuar, o proximo aviso deste tipo sai em ate {} min.\n\
+             Servidor PhxSql {VERSAO}\n",
+            self.config.alertas.disco.repetir_minutos
+        ));
+        t
+    }
+
+    /// O SMS: UMA linha, ate 160 caracteres, sem caminho e sem segredo. SMS
+    /// atravessa a operadora em claro, e o nome de usuario dentro de um
+    /// caminho (`/home/fulano/dados`) e mais do que a operadora precisa saber.
+    fn texto_do_sms_de_saude(e: &crate::saude_do_disco::Evento) -> String {
+        let quando = phxsql_core::datahora::instante_iso(e.quando_ms);
+        // `2026-09-16T05:40:12.123` -> `05:40 UTC`.
+        let hora = quando.get(11..16).unwrap_or("").to_string();
+        let linha = format!(
+            "PhxSql {}: disco {} em {}{} {hora} UTC",
+            crate::email::nome_da_maquina(),
+            Self::tipo_de_saude_legivel(e.tipo),
+            e.origem,
+            Self::alvo_do_evento(e)
+        );
+        let uma_linha: String = linha
+            .chars()
+            .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
+            .collect();
+        uma_linha.chars().take(160).collect()
+    }
+
+    /// A op `saude_disco`, so leitura. O texto do ultimo erro e o alvo dele
+    /// (base/tabela) so saem para quem administra: o texto pode carregar
+    /// caminho de disco, e o nome de uma base que a sessao nao pode abrir
+    /// nao e dela.
+    fn op_saude_disco(&self, sessao: &Sessao) -> Json {
+        self.saude.para_json(self.administra(sessao))
+    }
+
+    /// A sessao tem o poder de administrar? Sem cadastro (so o token), tem.
+    fn administra(&self, sessao: &Sessao) -> bool {
+        match &sessao.usuario {
+            None => true,
+            Some(u) => u.pode_em("", "", Atividade::Administrar),
+        }
+    }
+
     // -------------------------------------------------------------- o painel
 
     /// Tudo que o painel mostra, numa chamada so.
@@ -20554,6 +20894,12 @@ impl Servidor {
                 ]),
             ),
             ("bancos", Json::Lista(bancos)),
+            // A saude do disco (pedido 249), ao lado do espaco que o
+            // `sistema` ja traz. Reduzido para quem nao administra.
+            (
+                "saude_do_disco",
+                self.saude.para_json(self.administra(sessao)),
+            ),
             (
                 "maiores_tabelas",
                 Json::Lista(
@@ -23591,55 +23937,7 @@ mod testes_firewall_e_mensagens {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Um SMTP falso do tamanho do que o `email.rs` fala: 220/250/354/250/221.
-    ///
-    /// Existe porque teste unitario NAO prova entrega de e-mail -- soquete
-    /// prova, e e a mesma licao do `BULKINSERT`. Devolve a porta efemera e o
-    /// canal por onde cada mensagem recebida chega inteira.
-    fn rele_falso() -> (u16, std::sync::mpsc::Receiver<String>) {
-        use std::io::{BufRead, BufReader, Write};
-        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
-        let porta = ouvinte.local_addr().unwrap().port();
-        let (envia, recebe) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            for fluxo in ouvinte.incoming() {
-                let Ok(fluxo) = fluxo else { return };
-                let envia = envia.clone();
-                std::thread::spawn(move || {
-                    let Ok(mut escrita) = fluxo.try_clone() else {
-                        return;
-                    };
-                    let mut leitor = BufReader::new(fluxo);
-                    let _ = escrita.write_all(b"220 rele-falso\r\n");
-                    let mut linha = String::new();
-                    while leitor.read_line(&mut linha).unwrap_or(0) > 0 {
-                        let comando = linha.trim_end().to_uppercase();
-                        linha.clear();
-                        if comando == "DATA" {
-                            let _ = escrita.write_all(b"354 manda\r\n");
-                            let mut corpo = String::new();
-                            let mut l = String::new();
-                            while leitor.read_line(&mut l).unwrap_or(0) > 0 {
-                                if l.trim_end() == "." {
-                                    break;
-                                }
-                                corpo.push_str(&l);
-                                l.clear();
-                            }
-                            let _ = envia.send(corpo);
-                            let _ = escrita.write_all(b"250 OK fila-1\r\n");
-                        } else if comando == "QUIT" {
-                            let _ = escrita.write_all(b"221 tchau\r\n");
-                            return;
-                        } else {
-                            let _ = escrita.write_all(b"250 OK\r\n");
-                        }
-                    }
-                });
-            }
-        });
-        (porta, recebe)
-    }
+    use crate::apoio_teste::rele_falso;
 
     /// Liga o rele falso nesta configuracao, com o aviso de seguranca pedido.
     fn com_rele(c: &mut Config, porta: u16, avisar: bool) {
@@ -42307,5 +42605,346 @@ mod testes_das_threads {
         let porta = porta_web(&s);
         let r = get_saude(porta);
         assert!(r.starts_with("HTTP/1.1 200 "), "{r}");
+    }
+}
+
+#[cfg(test)]
+mod testes_da_saude_do_disco {
+    use super::*;
+    use crate::apoio_teste::{rele_falso, DirTemp};
+    use crate::usuarios::{Nivel, Permissoes};
+
+    fn config_base(dir: &std::path::Path) -> Config {
+        Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            token: "t".into(),
+            ..Config::default()
+        }
+    }
+
+    /// Liga o rele falso e, se pedido, o SMS pelo gateway.
+    fn com_rele(c: &mut Config, porta: u16, sms: bool) {
+        c.alertas.email.ligado = true;
+        c.alertas.email.servidor = "127.0.0.1".into();
+        c.alertas.email.porta = porta;
+        c.alertas.email.de = "phxsql@exemplo.com".into();
+        c.alertas.email.para = vec!["admin@exemplo.com".into()];
+        c.alertas.email.timeout_s = 5;
+        if sms {
+            c.alertas.sms.ligado = true;
+            c.alertas.sms.numeros = vec!["+5541999990000".into()];
+            c.alertas.sms.gateway_email = "sms.exemplo".into();
+        }
+    }
+
+    /// Um banco com uma tabela -- e depois o `.reg` dela trocado por um
+    /// DIRETORIO: e o sistema operacional recusando a escrita seguinte, e
+    /// nao um erro fabricado. O `inserir` que vem depois recebe um
+    /// `PhxError::Io` de verdade.
+    fn com_tabela_quebrada(s: &Arc<Servidor>, dir: &std::path::Path) {
+        let sessao = Sessao::default();
+        s.executar(
+            "criar_database",
+            &Json::analisar(r#"{"database":"b"}"#).unwrap(),
+            &sessao,
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &Json::analisar(
+                r#"{"database":"b","tabela":"t","colunas":[{"nome":"n","tipo":"Int8"}]}"#,
+            )
+            .unwrap(),
+            &sessao,
+        )
+        .unwrap();
+        s.executar(
+            "inserir",
+            &Json::analisar(r#"{"database":"b","tabela":"t","valores":{"n":1}}"#).unwrap(),
+            &sessao,
+        )
+        .unwrap();
+        let reg = dir.join("b").join("t.reg");
+        assert!(reg.exists(), "o .reg tem de existir para ser trocado");
+        std::fs::remove_file(&reg).unwrap();
+        std::fs::create_dir(&reg).unwrap();
+    }
+
+    /// Sobe a porta de dados pelo laco DE PRODUCAO: e o `atender` quem chama
+    /// o `anotar`, e o gancho mora no `anotar`. Um `despachar` direto, como
+    /// nos outros testes, provaria a recusa e pularia o gancho.
+    fn porta_de_dados_de_verdade(s: &Arc<Servidor>) -> u16 {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let s = Arc::clone(s);
+        std::thread::spawn(move || s.aceitar_ate_mandarem_parar(&ouvinte));
+        porta
+    }
+
+    /// Um `inserir` pelo soquete, na tabela quebrada. Devolve o `codigo` da
+    /// resposta de erro.
+    fn inserir_quebrado(porta: u16) -> u64 {
+        use std::io::{BufRead, BufReader, Write};
+        let mut c = TcpStream::connect(("127.0.0.1", porta)).unwrap();
+        c.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        c.write_all(
+            b"{\"token\":\"t\",\"op\":\"inserir\",\"database\":\"b\",\"tabela\":\"t\",\"valores\":{\"n\":2}}\n",
+        )
+        .unwrap();
+        let mut linha = String::new();
+        BufReader::new(&c).read_line(&mut linha).unwrap();
+        let r = Json::analisar(&linha).unwrap();
+        assert!(
+            !r.booleano_ou("ok", true),
+            "a tabela quebrada aceitou: {linha}"
+        );
+        r.campo("codigo").and_then(Json::numero).unwrap_or(0.0) as u64
+    }
+
+    fn corpo_do_email(bruto: &str) -> (String, String) {
+        let (cabecalho, corpo) = bruto.split_once("\r\n\r\n").unwrap();
+        let texto = phxsql_core::base64::decodificar_texto(&corpo.replace("\r\n", "")).unwrap();
+        (cabecalho.to_string(), texto)
+    }
+
+    /// O portao do gancho compara com 5001: se o codigo do `Io` mudar, este
+    /// teste cai antes de o gancho virar letra morta.
+    #[test]
+    fn o_codigo_do_gancho_e_o_do_erro_de_es() {
+        assert_eq!(
+            PhxError::Io(std::io::Error::other("x")).codigo(),
+            CODIGO_DE_ES
+        );
+    }
+
+    /// A PROVA DO PEDIDO DO DONO: erro de E/S numa gravacao avisa NA HORA
+    /// (sem esperar o relogio da sonda, que aqui e de 60 s), UMA vez -- o
+    /// segundo erro dentro da janela nao manda segundo e-mail --, e o painel
+    /// conta os dois.
+    ///
+    /// Reponha o defeito tirando o `if acesso.codigo == CODIGO_DE_ES` do
+    /// `anotar` e este teste cai na espera do rele.
+    #[test]
+    fn erro_de_es_numa_gravacao_avisa_na_hora_e_uma_vez_so() {
+        let dir = DirTemp::novo("saude-aviso");
+        let (porta, caixa) = rele_falso();
+        let mut c = config_base(&dir);
+        com_rele(&mut c, porta, false);
+        let s = Servidor::novo(c).unwrap();
+        com_tabela_quebrada(&s, &dir);
+        // O carteiro sobe no `servir`; aqui, sem porta, sobe a mao. E a
+        // mesma thread da sonda, e e ela quem fala com o rele.
+        s.ligar_sonda_de_disco();
+        let porta = porta_de_dados_de_verdade(&s);
+
+        let inicio = Instant::now();
+        let codigo = inserir_quebrado(porta);
+        assert_eq!(
+            codigo, CODIGO_DE_ES as u64,
+            "o defeito plantado nao e de E/S"
+        );
+
+        let bruto = caixa
+            .recv_timeout(Duration::from_secs(10))
+            .expect("nenhum e-mail chegou ao rele depois do erro de E/S");
+        let levou = inicio.elapsed();
+        assert!(
+            levou < Duration::from_secs(5),
+            "o aviso nao foi imediato: {levou:?}"
+        );
+        let (cabecalho, texto) = corpo_do_email(&bruto);
+        assert!(cabecalho.contains("To: admin@exemplo.com"), "{cabecalho}");
+        assert!(cabecalho.contains("saude do disco"), "{cabecalho}");
+        assert!(texto.contains("origem     inserir (b/t)"), "{texto}");
+        assert!(texto.contains("erro de E/S"), "{texto}");
+        // Nunca o pedido: a linha que se tentou gravar nao viaja no e-mail.
+        assert!(
+            !texto.contains("valores"),
+            "o corpo vazou o pedido: {texto}"
+        );
+
+        // O segundo erro do MESMO tipo, dentro da janela: nada sai.
+        inserir_quebrado(porta);
+        assert!(
+            caixa.recv_timeout(Duration::from_millis(700)).is_err(),
+            "o segundo erro dentro da janela mandou segundo e-mail"
+        );
+        // ...mas os dois contam, e o painel diz.
+        let sessao = Sessao::default();
+        let painel = s.op_painel(&sessao).unwrap();
+        let bloco = painel.campo("saude_do_disco").unwrap();
+        assert_eq!(bloco.campo("erros_es").and_then(Json::numero), Some(2.0));
+        assert_eq!(bloco.campo("estado").and_then(Json::texto), Some("erro"));
+        let ev = bloco.campo("ultimo_evento").unwrap();
+        assert_eq!(ev.campo("origem").and_then(Json::texto), Some("inserir"));
+        assert_eq!(ev.campo("tabela").and_then(Json::texto), Some("t"));
+        // O e-mail foi contado como enviado.
+        let avisos = bloco.campo("avisos").unwrap();
+        // O contador e incrementado pela thread do aviso DEPOIS de o rele
+        // responder; espera-se por ele em vez de ler na hora.
+        let fim = Instant::now() + Duration::from_secs(5);
+        let mut enviados = avisos.campo("email").and_then(Json::numero).unwrap_or(0.0);
+        while enviados < 1.0 && Instant::now() < fim {
+            std::thread::sleep(Duration::from_millis(50));
+            enviados = s
+                .op_saude_disco(&sessao)
+                .campo("avisos")
+                .and_then(|a| a.campo("email"))
+                .and_then(Json::numero)
+                .unwrap_or(0.0);
+        }
+        assert_eq!(enviados, 1.0, "o painel tem de contar o e-mail enviado");
+    }
+
+    /// O SMS sai pelo MESMO rele, como `numero@gateway`, numa linha so de ate
+    /// 160 caracteres e SEM o caminho do disco.
+    #[test]
+    fn o_sms_sai_pelo_gateway_da_operadora_numa_linha_sem_caminho() {
+        let dir = DirTemp::novo("saude-sms");
+        let (porta, caixa) = rele_falso();
+        let mut c = config_base(&dir);
+        com_rele(&mut c, porta, true);
+        let s = Servidor::novo(c).unwrap();
+        com_tabela_quebrada(&s, &dir);
+        s.ligar_sonda_de_disco();
+        inserir_quebrado(porta_de_dados_de_verdade(&s));
+
+        let primeiro = caixa
+            .recv_timeout(Duration::from_secs(10))
+            .expect("o e-mail nao chegou");
+        let segundo = caixa
+            .recv_timeout(Duration::from_secs(10))
+            .expect("o SMS nao chegou ao rele");
+        let (cab_email, _) = corpo_do_email(&primeiro);
+        let (cab_sms, texto_sms) = corpo_do_email(&segundo);
+        assert!(cab_email.contains("To: admin@exemplo.com"), "{cab_email}");
+        assert!(
+            cab_sms.contains("To: +5541999990000@sms.exemplo"),
+            "o SMS tem de ir para numero@gateway: {cab_sms}"
+        );
+        assert!(
+            !texto_sms.contains('\n'),
+            "SMS e uma linha so: {texto_sms:?}"
+        );
+        assert!(
+            texto_sms.chars().count() <= 160,
+            "{}",
+            texto_sms.chars().count()
+        );
+        assert!(texto_sms.contains("erro de E/S"), "{texto_sms}");
+        assert!(texto_sms.contains("inserir (b/t)"), "{texto_sms}");
+        let base = dir.display().to_string();
+        assert!(
+            !texto_sms.contains(&base),
+            "o SMS carregou o caminho do disco: {texto_sms}"
+        );
+        assert!(
+            caixa.recv_timeout(Duration::from_millis(500)).is_err(),
+            "mais mensagens do que um e-mail e um SMS"
+        );
+    }
+
+    /// Guarda nova entra pedida, nao imposta: sem e-mail ligado, o erro de
+    /// E/S continua sendo respondido e contado -- e nenhum aviso sai.
+    #[test]
+    fn sem_email_ligado_o_erro_conta_e_nao_avisa() {
+        let dir = DirTemp::novo("saude-calado");
+        let (_, caixa) = rele_falso();
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        com_tabela_quebrada(&s, &dir);
+        assert_eq!(
+            inserir_quebrado(porta_de_dados_de_verdade(&s)),
+            CODIGO_DE_ES as u64
+        );
+        assert!(caixa.recv_timeout(Duration::from_millis(500)).is_err());
+        assert_eq!(s.saude.erros_es(), 1);
+        // O gancho entregou ao carteiro mesmo sem rele -- o painel e quem
+        // consome isso quando o e-mail esta desligado, e a fila nao cresce
+        // sem limite porque o silencio por tipo segura a entrada.
+        assert!(s.saude.na_fila() <= 1);
+    }
+
+    /// O IRMAO do gancho: o `fsync` do fecho recusado chega a mesma saude,
+    /// com origem `fecho` e a base/tabela da chave -- e um erro que nao e de
+    /// E/S (um panico virou `None` la em cima) nao conta como disco.
+    ///
+    /// Prova o METODO. O sitio que o chama (`descarregar_sujas_com`) nao tem
+    /// prova com defeito reposto, porque nao ha como fazer um `fsync` falhar
+    /// sem injecao de falha no sistema de arquivos -- dito em
+    /// `docs/SAUDE-DO-DISCO.md` §6.
+    #[test]
+    fn o_fsync_do_fecho_recusado_conta_como_erro_de_disco() {
+        let dir = DirTemp::novo("saude-fecho");
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        s.fecho_recusado("b/t", &PhxError::Esquema("nao e disco".into()));
+        assert_eq!(s.saude.erros_es(), 0, "erro que nao e de E/S nao conta");
+        s.fecho_recusado("b/t", &PhxError::Io(std::io::Error::from_raw_os_error(5)));
+        assert_eq!(s.saude.erros_es(), 1);
+        let e = s.saude.ultimo_evento().unwrap();
+        assert_eq!(e.origem, "fecho");
+        assert_eq!((e.database.as_str(), e.tabela.as_str()), ("b", "t"));
+        assert_eq!(e.tipo, crate::saude_do_disco::Tipo::EntradaSaida);
+        s.fecho_recusado("b/t", &PhxError::Io(std::io::Error::from_raw_os_error(30)));
+        assert_eq!(
+            s.saude.ultimo_evento().unwrap().tipo,
+            crate::saude_do_disco::Tipo::SoLeitura,
+            "o EROFS do fecho e classificado pelo errno, como o da sonda"
+        );
+    }
+
+    /// O bloco reduzido para quem so le: sem o texto do erro e sem o nome da
+    /// base. A op inteira para quem administra.
+    #[test]
+    fn quem_so_le_nao_ve_o_texto_nem_a_base_do_erro() {
+        let dir = DirTemp::novo("saude-direito");
+        // O leitor existe so na SESSAO: e o `sessao.usuario` que o portao
+        // le. Cadastra-lo no config obrigaria o `inserir` do cenario a fazer
+        // login, e o que se prova aqui e o bloco, nao o login.
+        let leitor = Usuario {
+            id: 7,
+            nome: "Leitor".into(),
+            login: "leitor".into(),
+            senha_hash: String::new(),
+            email: String::new(),
+            telefone: String::new(),
+            supervisor: false,
+            ativo: true,
+            nivel: Nivel::Nenhum,
+            chave_publica: None,
+            bases: vec![(
+                "*".into(),
+                Permissoes {
+                    ler: true,
+                    ..Permissoes::default()
+                },
+            )],
+            tabelas: Vec::new(),
+            colunas: Vec::new(),
+        };
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        com_tabela_quebrada(&s, &dir);
+        inserir_quebrado(porta_de_dados_de_verdade(&s));
+
+        let sessao_leitor = Sessao {
+            usuario: Some(leitor),
+            ..Sessao::default()
+        };
+        let reduzido = s.op_saude_disco(&sessao_leitor);
+        let ev = reduzido.campo("ultimo_evento").unwrap();
+        assert!(ev.campo("texto").is_none(), "{}", reduzido.escrever());
+        assert!(ev.campo("database").is_none(), "{}", reduzido.escrever());
+        assert_eq!(
+            ev.campo("tipo").and_then(Json::texto),
+            Some("entrada_saida")
+        );
+
+        let inteiro = s.op_saude_disco(&Sessao::default());
+        let ev = inteiro.campo("ultimo_evento").unwrap();
+        assert_eq!(ev.campo("database").and_then(Json::texto), Some("b"));
+        assert!(ev.campo("texto").and_then(Json::texto).is_some());
     }
 }

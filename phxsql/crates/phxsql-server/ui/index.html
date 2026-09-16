@@ -1108,6 +1108,15 @@ body,.cartao,.barra,.arvore,table,td,th{
    12px continua com 12px no ultrawide. */
 .carta svg.anel{max-width:320px;margin:0 auto}
 .carta.larga{grid-column:1/-1}
+/* A saude do disco: rotulo a esquerda, valor a direita, em grade -- o valor
+   (uma frase com hora) quebra e nunca passa por cima do rotulo, a mesma
+   licao das barras de disco em HTML. O pino de estado carrega FORMA alem de
+   cor (●▲✕○): daltonico le o estado sem a cor. */
+.sd{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px;align-items:baseline}
+.sd dt{color:var(--texto-3);font-size:11px;white-space:nowrap;margin:0}
+.sd dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.sd .pino{font-size:11px}
+.sd .fraco{color:var(--texto-3)}
 .vazioc{color:var(--texto-3);font-size:12.5px;font-style:italic;padding:14px 0}
 /* display:contents faz o embrulho sumir do grid: os cartoes da maquina viram
    filhos diretos de .cartas, e sao repintados sozinhos a cada leitura sem que
@@ -1492,6 +1501,7 @@ td.nulo{color:var(--texto-3);font-style:italic}
   border:1px solid currentColor;white-space:nowrap;
 }
 .pino.ok{color:var(--ok)} .pino.nao{color:var(--texto-3)} .pino.mal{color:var(--vermelho)}
+.pino.aviso{color:var(--ambar)}
 /* O pino que carrega DADO -- nome de operação, de base, de IP -- não pode
    deformá-lo: `excluir_tabela` mostrado como EXCLUIR_TABELA é uma mentira
    sobre o que está gravado, a mesma do «BLUMENAU». Rótulo nosso pode ser
@@ -3815,6 +3825,69 @@ function ligarLarguraDoGrafico() {
   if (observadorDeLargura) { observadorDeLargura.disconnect(); observadorDeLargura.observe(cx); }
 }
 
+/// O cartão da saúde do disco (pedido 249). Vem do `painel`, ao lado do
+/// espaço em disco que o `sistema` traz.
+///
+/// Estado por FORMA e cor: ● saudável, ▲ lento, ✕ com erro, ○ não medido. O
+/// atributo `data-estado` é o que a bateria lê — nunca a frase, que muda de
+/// idioma. O que é dado (origem, hora, contagem) passa por `esc`; o que é
+/// rótulo passa por `txt`.
+function saudeDiscoHtml(sd) {
+  if (!sd) return "";
+  const carta = (titulo, legenda, corpo) =>
+    `<div class="carta"><h4>${titulo}</h4><p class="leg">${legenda}</p>${corpo}</div>`;
+  const FORMA = { ok: "●", aviso: "▲", erro: "✕", nao_medido: "○" };
+  const CLASSE = { ok: "ok", aviso: "aviso", erro: "mal", nao_medido: "nao" };
+  // Chave LITERAL por estado e por tipo -- nunca montada por concatenação:
+  // o laço da fábrica confere chave a chave, e uma chave montada em tempo
+  // de execução é invisível para ele.
+  const ESTADO = {
+    ok: txt("tela.sd_estado_ok", "saudável"),
+    aviso: txt("tela.sd_estado_aviso", "lento"),
+    erro: txt("tela.sd_estado_erro", "com erro"),
+    nao_medido: txt("tela.sd_estado_nao_medido", "não medido"),
+  };
+  const TIPO = {
+    so_leitura: txt("tela.sd_tipo_so_leitura", "montagem só-leitura (EROFS)"),
+    sem_espaco: txt("tela.sd_tipo_sem_espaco", "sem espaço (ENOSPC)"),
+    entrada_saida: txt("tela.sd_tipo_entrada_saida", "erro de E/S"),
+    conferencia: txt("tela.sd_tipo_conferencia", "o dado voltou diferente do escrito"),
+    lento: txt("tela.sd_tipo_lento", "disco lento"),
+  };
+  const estado = FORMA[sd.estado] ? sd.estado : "nao_medido";
+  const quando = iso => iso ? String(iso).slice(0, 19).replace("T", " ") : "";
+  const tipo = t => TIPO[t] || t;
+  const pino = `<span class="pino ${CLASSE[estado]}" data-estado="${estado}">${FORMA[estado]} ${esc(ESTADO[estado])}</span>`;
+
+  let sonda;
+  if (!sd.ligado && !sd.medido_em) sonda = esc(txt("tela.sd_desligada", "sonda desligada (alertas.disco.ligado)"));
+  else if (!sd.medido_em) sonda = esc(preencher(txt("tela.sd_ainda_nao", "ainda não rodou (a cada {s} s)"), { s: sd.checar_segundos }));
+  else if (sd.canario_falha) sonda = esc(preencher(txt("tela.sd_sonda_falhou", "falhou · {quando}"), { quando: quando(sd.medido_em) }))
+    + `<div class="fraco">${esc(sd.canario_falha)}</div>`;
+  else sonda = esc(preencher(txt("tela.sd_sonda_ok", "passou em {ms} ms · {quando}"),
+    { ms: Number(sd.canario_ms || 0).toFixed(1).replace(".", ","), quando: quando(sd.medido_em) }));
+
+  const ev = sd.ultimo_evento;
+  const evento = ev
+    ? esc(preencher(txt("tela.sd_evento", "{tipo} em {origem} · {quando}"),
+        { tipo: tipo(ev.tipo), origem: ev.origem + (ev.database ? ` (${ev.database}${ev.tabela ? "/" + ev.tabela : ""})` : ""), quando: quando(ev.quando) }))
+      + (ev.texto ? `<div class="fraco">${esc(ev.texto)}</div>` : "")
+    : esc(txt("tela.sd_nenhum", "nenhum"));
+
+  const av = sd.avisos || {};
+  const avisos = esc(preencher(txt("tela.sd_avisos_contagem", "{email} e-mail · {sms} SMS"), { email: fmt(av.email || 0), sms: fmt(av.sms || 0) }))
+    + (av.ultima_falha ? `<div class="fraco">${esc(txt("tela.sd_ultima_falha", "falha ao avisar"))}: ${esc(av.ultima_falha)}</div>` : "");
+
+  return carta(txt("tela.sd_titulo", "Saúde do disco"),
+    txt("tela.sd_leg", "o disco onde o banco grava · sonda canário e erros de E/S"),
+    `<dl class="sd" id="saudeDisco">
+       <dt>${esc(txt("tela.sd_ultima_sonda", "última sonda"))}</dt><dd>${pino} ${sonda}</dd>
+       <dt>${esc(txt("tela.sd_erros_es", "erros de E/S"))}</dt><dd>${esc(preencher(txt("tela.sd_desde_arranque", "{n} desde o arranque"), { n: fmt(sd.erros_es || 0) }))}</dd>
+       <dt>${esc(txt("tela.sd_ultimo_evento", "último evento"))}</dt><dd>${evento}</dd>
+       <dt>${esc(txt("tela.sd_avisos", "avisos enviados"))}</dt><dd>${avisos}</dd>
+     </dl>`);
+}
+
 async function vPainel() {
   // As duas chamadas em paralelo: o `painel` varre os bancos e o `sistema`
   // chama o `df`, e uma esperar a outra dobraria o tempo da tela por nada.
@@ -3851,6 +3924,7 @@ async function vPainel() {
 
   return `<div class="kpis">${kpis}</div><div class="cartas" id="cartas">
     <div id="maquina" class="passa">${maquinaHtml(maquina)}</div>
+    ${saudeDiscoHtml(d.saude_do_disco)}
     ${carta(txt("tela.pa_ops_hora_titulo", "Operações por hora"), txt("tela.pa_ops_hora_leg", "últimas 24 horas · as barras vermelhas são as recusadas"),
         `<div id="grafHoras"></div>`, true)}
     ${carta(txt("tela.pa_ops_pedidas_titulo", "Operações mais pedidas"), txt("tela.pa_ops_pedidas_leg", "verde é o que passou, vermelho o que foi recusado"),

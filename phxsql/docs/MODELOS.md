@@ -904,6 +904,21 @@ ela, uma saturação longa entregaria um 503 a cada 2 s), e trouxe o monitor em
 runtime pedido no meio da tarefa sem largar a prova real do que já estava
 feito.
 
+## Saúde do disco (frente D, pedido 249) — 16/09/2026
+
+| frente | escalão | por quê | papéis convocados | dispensados, e por quê |
+|---|---|---|---|---|
+| **Frente D** — sonda canário, classificação de erro por `ErrorKind` e errno, gancho no sumidouro de erros com aviso imediato fora da trava, e-mail e SMS por gateway da operadora, painel, cartão, guardas, revisão SEC | **forte** | é caminho de **alerta de falha de disco**: errar para um lado é silêncio no dia em que o disco morre, errar para o outro é 100 mil e-mails numa carga com erro por linha — e o gancho mora no caminho de gravação, sob a trava global, onde um envio de rede congela o servidor inteiro (foi exatamente o que a primeira versão fez, e a catraca pegou). O que depende do sistema operacional se prova contra ele, e aqui é errno a errno | A, B, F (quatro guardas vermelhas, prova pelo soquete e contra o SO), E (cartão exercitado nos dois temas), SEC (revisão escrita em `SEGURANCA.md` §3), H (`SAUDE-DO-DISCO.md`, MANUAL, exemplo de config), G (entrada no catálogo do mapa das threads) — todos no mesmo agente, por contrato | C (nenhum formato em disco: o canário é arquivo próprio, fora do `.reg`), D (nada a limpar), J (nenhuma receita de fora a medir), I (o integrador comita) |
+
+**Custo medido do escalão forte**: 415.895 tokens no transcrito inteiro; a
+contagem de chamadas e a duração de parede **se perderam no reinício do
+contêiner** às 07:30 (a notificação final só cobre o trecho retomado: 9
+chamadas, 6 min 38 s) — número que não se mediu não se publica. O que o
+forte comprou: a classificação por errno que a `std` não dá (`EIO` é
+`Uncategorized`), a prova real contra o SO feita como root sem fingir que
+`chmod` segura, e o desenho da fila para o aviso imediato depois de a catraca
+`rede-ou-espera` reprovar a primeira versão.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

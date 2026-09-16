@@ -1894,6 +1894,14 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "saude_disco",
+        apelidos: &[],
+        resumo: "A saúde do disco onde o banco grava: a última sonda canário, o último erro de E/S e os avisos enviados.",
+        parametros: &[],
+        exemplo: r#"{"op":"saude_disco"}"#,
+        ferramenta_mcp: true,
+    },
+    Operacao {
         nome: "sistema",
         apelidos: &[],
         resumo: "O monitor da MÁQUINA: CPU, memória, discos e placas de rede.",

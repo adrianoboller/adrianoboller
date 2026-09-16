@@ -268,6 +268,8 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("telemetria_desligar", PorColuna::Nenhum),
     ("telemetria_encerrar", PorColuna::Nenhum),
     ("painel", PorColuna::Nenhum),
+    // A saude do disco nao le linha nenhuma: e o canario e os contadores.
+    ("saude_disco", PorColuna::Nenhum),
     ("sistema", PorColuna::Nenhum),
     ("servico", PorColuna::Nenhum),
     ("servico_parar", PorColuna::Nenhum),

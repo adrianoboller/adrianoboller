@@ -213,6 +213,18 @@ CATALOGO = [
         "nome": "vigia-disco",
         "teto": "1 (sobe uma vez no arranque)",
     },
+    {
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "agulha": '"sonda-disco"',
+        "nome": "sonda-disco",
+        "teto": "1 (sobe uma vez no arranque, com `alertas.disco.ligado` ou "
+                "`alertas.email.ligado`; pedido 249). E a sonda E o carteiro: "
+                "quem registra um evento so entrega a fila (`SaudeDoDisco::"
+                "entregar`, sem rede, porque pode estar com a trava de dados na "
+                "mao), e esta thread acorda por `Condvar` e fala com o rele. O "
+                "teto mora no `if` de `ligar_sonda_de_disco`, que roda uma vez "
+                "no `servir`.",
+    },
     # ------------------------------------------------ uma por EVENTO, com silencio
     {
         "arquivo": "crates/phxsql-server/src/servidor.rs",

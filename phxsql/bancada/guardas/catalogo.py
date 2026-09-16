@@ -4719,4 +4719,294 @@ pub fn limpar() {
             "telemetria::testes::a_thread_que_termina_deixa_de_ser_viva",
         ],
     },
+    # ------------------------------------------------ a saude do disco (249)
+    {
+        "id": "disco-erro-de-es-sem-aviso",
+        "titulo": "o erro de E/S respondido ao cliente não avisa ninguém",
+        "porque": (
+            "o pedido do dono e literal: «em caso de log de erro, aviso "
+            "imediato por e-mail e SMS». Ate 16/09/2026 um `PhxError::Io` "
+            "(5001) so virava resposta e linha no `acessos.log`. O gancho mora "
+            "no `anotar`, o unico sumidouro de resposta, e o portao e uma "
+            "comparacao de inteiro ANTES de qualquer trabalho. Repor o "
+            "defeito e comparar com um codigo que nunca chega."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if acesso.codigo == CODIGO_DE_ES {
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 249): o gancho compara com um codigo
+        // que nenhum erro carrega -- o erro de E/S volta a ser so uma linha
+        // no acessos.log.
+        if acesso.codigo == CODIGO_DE_ES + 1 {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_saude_do_disco::erro_de_es_numa_gravacao_avisa_na_hora_e_uma_vez_so",
+            "servidor::testes_da_saude_do_disco::o_sms_sai_pelo_gateway_da_operadora_numa_linha_sem_caminho",
+            "servidor::testes_da_saude_do_disco::sem_email_ligado_o_erro_conta_e_nao_avisa",
+        ],
+        "seguem": [
+            "servidor::testes_da_saude_do_disco::o_codigo_do_gancho_e_o_do_erro_de_es",
+            "saude_do_disco::testes::a_sonda_passa_num_diretorio_gravavel_e_apaga_o_canario",
+        ],
+    },
+    {
+        "id": "disco-sonda-cega-ao-erro",
+        "titulo": "a sonda canário diz «passou» num diretório que o sistema operacional recusa",
+        "porque": (
+            "a sonda existe para ver o disco recusar ANTES da proxima gravacao "
+            "de verdade (EROFS, ENOSPC, EIO). Se o `open` que falha for "
+            "engolido, ela pinta o painel de verde num disco morto. A prova e "
+            "contra o sistema operacional: arquivo no lugar do diretorio "
+            "(ENOTDIR) e caminho inexistente (ENOENT) -- e o `chmod 0555` so "
+            "vale sem root, e o teste diz isso."
+        ),
+        "arquivo": "crates/phxsql-server/src/saude_do_disco.rs",
+        "trecho": """    let mut arquivo = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(caminho)
+        .map_err(|e| falha("abrir", e))?;
+""",
+        "troca": """    // DEFEITO REPOSTO (pedido 249): o abrir que falha e engolido -- a
+    // sonda diz «passou» num diretorio que nao aceita escrita.
+    let Ok(mut arquivo) = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(caminho)
+    else {
+        return Ok(());
+    };
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "saude_do_disco::testes::a_sonda_falha_contra_o_sistema_operacional",
+        ],
+        "seguem": [
+            "saude_do_disco::testes::a_sonda_passa_num_diretorio_gravavel_e_apaga_o_canario",
+            "saude_do_disco::testes::erofs_e_enospc_sao_reconhecidos_pelo_kind_e_pelo_numero",
+        ],
+    },
+    {
+        "id": "disco-silencio-furado",
+        "titulo": "todo erro de E/S manda um aviso: cem mil linhas, cem mil e-mails",
+        "porque": (
+            "o aviso e imediato no PRIMEIRO evento de cada tipo, e depois cala "
+            "por `alertas.disco.repetir_minutos`. Sem o silencio por chave, uma "
+            "carga de cem mil linhas num disco doente vira cem mil e-mails, que "
+            "e como um alerta de verdade passa despercebido. E o mesmo desenho "
+            "do vigia de espaco e dos jobs (`jobs::pode_avisar`)."
+        ),
+        "arquivo": "crates/phxsql-server/src/saude_do_disco.rs",
+        "trecho": """        if crate::jobs::pode_avisar(
+            &mut silencio,
+            evento.tipo.nome(),
+            evento.quando_ms,
+            self.silencio_ms(),
+        ) {
+            Some(evento)
+        } else {
+            None
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 249): todo evento avisa -- sem silencio
+        // por tipo, cada linha recusada e um e-mail.
+        let _ = &mut silencio;
+        Some(evento)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "saude_do_disco::testes::o_primeiro_erro_avisa_e_o_segundo_na_janela_cala",
+            "servidor::testes_da_saude_do_disco::erro_de_es_numa_gravacao_avisa_na_hora_e_uma_vez_so",
+        ],
+        "seguem": [
+            "saude_do_disco::testes::a_sonda_passa_num_diretorio_gravavel_e_apaga_o_canario",
+            "servidor::testes_da_saude_do_disco::sem_email_ligado_o_erro_conta_e_nao_avisa",
+        ],
+    },
+    {
+        "id": "disco-config-nao-lida",
+        "titulo": "`alertas.disco.checar_segundos` está no arquivo e ninguém o lê",
+        "porque": (
+            "configuracao que nao e lida mente -- e o `cache_paginas` que passou "
+            "tres versoes prometendo um cache que nao existia. Cada campo novo "
+            "de `alertas.disco` e `alertas.sms` tem leitor e teste; repor o "
+            "defeito e devolver o padrao no lugar do valor do arquivo."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            checar_segundos: d
+                .inteiro_ou("checar_segundos", padrao.checar_segundos as i64)
+                .max(1) as u64,
+""",
+        "troca": """            // DEFEITO REPOSTO (pedido 249): o campo esta no arquivo e
+            // ninguem o le -- a sonda roda no padrao, diga o que disser o
+            // config.json.
+            checar_segundos: padrao.checar_segundos,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::testes_recursos::alertas_disco_e_sms_sao_lidos_do_arquivo",
+            # Cai junto, e DEVE: a ultima asercao dele e «zero vira 1», que e
+            # o mesmo leitor. Medido em 16/09/2026: com ele em `seguem` a
+            # guarda saiu ESTRAGOU, e o achado foi que o teste do padrao
+            # tambem prova a leitura.
+            "config::testes_recursos::sem_o_bloco_a_sonda_nasce_ligada_e_o_sms_desligado",
+        ],
+        "seguem": [
+            "config::testes_recursos::o_sms_recusa_no_arranque_o_que_nao_entregaria",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # Chutar a tomada (bancada/tomada/): quatro defeitos que um SIGKILL
+    # descobriria, repostos onde um teste de unidade AINDA os pega. O que so
+    # o processo morto de verdade pega esta na propria bancada, e nao aqui.
+    # -----------------------------------------------------------------------
+    {
+        "id": "recuperacao-deixa-a-marca-orfa",
+        "titulo": "a recuperação completa (ou descarta) a marca `.tx` e a deixa no disco",
+        "porque": (
+            "a marca e o bilhete de UM commit; completada ou descartada, ela "
+            "tem de sair. Deixada, vira orfa para sempre: todo arranque a acha "
+            "de novo, reaplica de novo (idempotente pelo rowid, entao a "
+            "contagem NAO acusa) e imprime Recovery para um commit que ja "
+            "acabou. E o teste que conta linhas passa com o defeito -- quem "
+            "pega e o que olha o DISCO, `!caminho.exists()`."
+        ),
+        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        "trecho": """            let _ = std::fs::remove_file(&caminho);
+        }
+    }
+    r.ms = comeco.elapsed().as_millis() as u64;
+""",
+        "troca": """            // DEFEITO REPOSTO: a marca fica no disco depois de completada ou
+            // descartada -- orfa para sempre, reaplicada a cada arranque.
+        }
+    }
+    r.ms = comeco.elapsed().as_millis() as u64;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::marca_que_nao_confere_e_commit_que_nunca_comecou",
+        ],
+        "seguem": [
+            # A reaplicacao e idempotente pelo rowid: com a marca deixada, o
+            # segundo arranque reaplica e NAO duplica -- este teste continua
+            # verde com o defeito, e e por isso que ele sozinho nao o pega.
+            "servidor::testes_transacoes::a_recuperacao_completa_o_commit_e_nao_duplica",
+        ],
+    },
+    {
+        "id": "recuperacao-nao-completa-o-commit",
+        "titulo": "a recuperação conta e apaga a marca válida sem completar o commit",
+        "porque": (
+            "e a tomada chutada no meio do COMMIT virando perda em silencio: a "
+            "marca `.tx` diz o que faltava gravar, e a recuperacao anda para a "
+            "frente porque o `.reg` nunca reaproveita slot -- nao ha como "
+            "desfazer, so completar. Contar `completadas` e apagar a marca sem "
+            "reaplicar deixa o relatorio dizendo «1 completada» sobre zero "
+            "linhas."
+        ),
+        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        "trecho": """                Ok(Some(marca)) => {
+                    completar(&db, &marca, &mut r);
+                    r.completadas += 1;
+                }
+""",
+        "troca": """                // DEFEITO REPOSTO: a marca valida e contada e apagada, mas o
+                // commit que ela descreve nunca e completado.
+                Ok(Some(_marca)) => {
+                    r.completadas += 1;
+                }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::a_recuperacao_completa_o_commit_e_nao_duplica",
+        ],
+        "seguem": [
+            # A marca ILEGIVEL continua descartada e apagada: o defeito e so
+            # no ramo da marca valida.
+            "servidor::testes_transacoes::marca_que_nao_confere_e_commit_que_nunca_comecou",
+        ],
+    },
+    {
+        "id": "ndx-queda-com-cabecalho-limpo",
+        "titulo": "a marca de sujo do `.ndx` fica só em RAM e a queda deixa o índice atrasado em silêncio",
+        "porque": (
+            "e o unico contrato que torna o write-back do `.ndx` aceitavel: a "
+            "queda continua possivel, mas e DETECTADA, porque a marca (byte 52) "
+            "vai ao disco ANTES da primeira pagina suja existir. Sem ela, um "
+            "SIGKILL no meio de um BULKINSERT deixa o `.reg` com as linhas e o "
+            "`.ndx` sem as chaves, com o cabecalho dizendo «limpo»: `buscar` "
+            "responde «nao existe» para linha que existe, e `inserir` aceita "
+            "chave repetida. Indice atrasado se reconstroi; atrasado em "
+            "silencio, nao -- ninguem sabe."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        if !self.sujo {
+            self.sujo = true;
+            self.gravar_cabecalho()?;
+        }
+        self.guardar_no_cache(n, p, true)
+""",
+        "troca": """        // DEFEITO REPOSTO: a marca de sujo fica so em RAM. O cabecalho no
+        // disco continua dizendo «limpo» com pagina suja no cache -- a tomada
+        // chutada no meio de uma carga deixa o indice atrasado EM SILENCIO.
+        self.sujo = true;
+        self.guardar_no_cache(n, p, true)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "ndx"],
+        "caem": [
+            "a_queda_sem_sincronizar_e_detectada_e_nao_silenciosa",
+            "a_marca_sai_depois_das_paginas_e_nao_antes",
+        ],
+        "seguem": [
+            # Quem sincroniza ou fecha limpo continua inteiro: o `sincronizar`
+            # e o `fechar` gravam o cabecalho por conta propria.
+            "sincronizar_fecha_o_arquivo_de_verdade",
+            "despejo_de_pagina_suja_chega_ao_arquivo",
+            "lote_sobrevive_a_reabrir_o_arquivo",
+            "o_cache_nao_serve_pagina_velha",
+        ],
+        "prazo": 300,
+    },
+    {
+        "id": "reserva-sobrevive-a-queda-da-ligacao",
+        "titulo": "a saída da conexão não solta a reserva do BULKINSERT",
+        "porque": (
+            "a primeira das duas redes contra reserva orfa (`carga.rs`): o "
+            "cliente cai no meio da carga e a tabela ficaria reservada ate o "
+            "prazo, com todo mundo recebendo EM_CARGA de uma conexao que nao "
+            "existe mais. Foi a prova por SOQUETE que achou, na primeira "
+            "versao, que a queda nao soltava -- e a causa era o teste "
+            "(`makefile()` segurando o descritor), nao o servidor. A guarda "
+            "trava o lado do servidor."
+        ),
+        "arquivo": "crates/phxsql-server/src/carga.rs",
+        "trecho": """            .filter(|(_, r)| r.ligacao == ligacao)
+""",
+        "troca": """            // DEFEITO REPOSTO: a saida da conexao nao solta nada -- a
+            // reserva de quem caiu fica presa ate o prazo.
+            .filter(|(_, r)| r.ligacao == ligacao && r.ligacao == u64::MAX)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_bulkinsert::a_queda_da_conexao_solta",
+        ],
+        "seguem": [
+            # A segunda rede (o prazo) e o caminho normal continuam de pe: o
+            # defeito e so na soltura pela ligacao.
+            "servidor::testes_bulkinsert::o_prazo_solta",
+            "servidor::testes_bulkinsert::o_dono_continua_gravando",
+        ],
+    },
 ]

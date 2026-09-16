@@ -41,6 +41,10 @@ function config(base, hash, portaDados, portaWeb) {
     // que manda procurar defeito no lugar errado.
     web: { ligado: true, bind: `127.0.0.1:${portaWeb}`, sessao_minutos: 60 },
     recursos: { durabilidade: 'sistema', cache_paginas: 512 },
+    // A sonda de saude do disco a cada 2 s, e nao a cada 60: o caso
+    // `saude-do-disco` espera o EVENTO da proxima passada, e um minuto por
+    // espera faria o caso levar tres.
+    alertas: { disco: { checar_segundos: 2 } },
     usuarios: [{
       id: 10, nome: 'Adriano Boller', login: USUARIO, senha_hash: hash,
       supervisor: true, ativo: true, bases: {},

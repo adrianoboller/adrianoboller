@@ -41,6 +41,7 @@ pub mod replica;
 pub mod rest;
 pub mod rodizio;
 pub mod rotinas;
+pub mod saude_do_disco;
 pub mod servidor;
 pub mod sistema;
 pub mod telemetria;

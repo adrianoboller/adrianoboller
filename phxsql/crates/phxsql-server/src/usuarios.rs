@@ -171,6 +171,10 @@ impl Atividade {
             // leitura -- e nao administrar. Um operador tem direito de ver o
             // tamanho do que ele mesmo opera.
             "painel" => Atividade::Ler,
+            // A saude do disco anda com o painel: o bloco reduzido (estado,
+            // tempos, tipo do ultimo erro) e para quem le; o texto do erro e
+            // o alvo dele so saem para quem administra, dentro da propria op.
+            "saude_disco" => Atividade::Ler,
             // Ja o monitor da MAQUINA pede administrar. Nome de placa de rede,
             // nome de disco e ponto de montagem descrevem a infraestrutura, e
             // nao o dado -- quem so le uma tabela nao ganha nada com isso e o

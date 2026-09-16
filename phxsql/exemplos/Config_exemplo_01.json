@@ -133,7 +133,22 @@
     "",
     "senha_env aponta uma variavel de ambiente e e o caminho recomendado:",
     "config.json costuma ir para o controle de versao, variavel nao. A senha",
-    "do rele nunca aparece na resposta de config nem no log."
+    "do rele nunca aparece na resposta de config nem no log.",
+    "",
+    "disco: a SAUDE do disco onde o banco grava (pedido 249). Vem LIGADA:",
+    "a cada checar_segundos uma sonda escreve, sincroniza (fsync), rele e",
+    "apaga <base>/.saude-do-disco e mede a duracao; recusa do sistema",
+    "(EROFS so-leitura, ENOSPC sem espaco, EIO) vira estado erro no painel",
+    "NA HORA. Todo erro de E/S respondido a um cliente tambem conta. O",
+    "aviso por e-mail e SMS so sai com email.ligado; o primeiro evento de",
+    "cada tipo avisa imediatamente e o seguinte cala por repetir_minutos.",
+    "lento_ms: acima disto a sonda que passou vira aviso no painel (sem",
+    "e-mail); zero desliga. Ver docs/SAUDE-DO-DISCO.md.",
+    "",
+    "sms: SMS pelo gateway E-MAIL-PARA-SMS da operadora -- numero@gateway,",
+    "pelo mesmo rele do e-mail, sem crate e sem TLS. Uma linha de ate 160",
+    "caracteres, sem caminho e sem segredo. Exige email.ligado; gateway",
+    "HTTP(S) nao entra sem decisao do dono (TLS pede crate)."
   ],
 
   "alertas": {
@@ -154,6 +169,17 @@
       "senha_env": "PHXSQL_SMTP_SENHA",
       "assunto": "PhxSql: espaco em disco",
       "timeout_s": 10
+    },
+    "disco": {
+      "ligado": true,
+      "checar_segundos": 60,
+      "repetir_minutos": 30,
+      "lento_ms": 1000
+    },
+    "sms": {
+      "ligado": false,
+      "numeros": ["+5541999990000"],
+      "gateway_email": "sms.operadora.com.br"
     }
   },
 

@@ -296,6 +296,42 @@ tudo: a bancada dispara primeiro um aviso que o motor já sabia mandar (job que
 falhou), porque um SMTP falso que não recebe nada não prova ausência de
 e-mail — prova que o SMTP falso não presta.
 
+### O aviso de saúde do disco, por e-mail e SMS (pedido 249)
+
+O sétimo `email::enviar` é o da **saúde do disco** — e o primeiro que também
+sai por **SMS**. O desenho e as provas estão em `docs/SAUDE-DO-DISCO.md`; aqui
+fica só o que é segurança, revisto com o chapéu trocado em 16/09/2026:
+
+1. **O que a mensagem carrega, e o que isso expõe.** O e-mail leva o nome de
+   host (`/proc/sys/kernel/hostname`, o mesmo que o `EHLO` já manda ao relé
+   em toda mensagem desta casa), o caminho do `base`, o tipo do evento, a
+   operação, a base e a tabela, a hora e o texto do erro do sistema. Nada
+   disso é segredo *por si* — o relé é interno por construção (não há TLS) —,
+   mas caminho carrega nome de usuário (`/home/fulano/dados`) e nome de host
+   diz onde o servidor mora. É a mesma exposição do aviso de disco apertado,
+   que já mandava o caminho. **O SMS não leva caminho nenhum**: uma linha de
+   até 160 caracteres com host, tipo, origem e hora, porque SMS atravessa a
+   operadora em claro e a operadora não é parte da rede interna.
+2. **O corpo nunca leva o pedido.** Um `inserir` recusado por E/S carrega a
+   linha que se tentou gravar; o e-mail leva a operação e o alvo, e há
+   teste que reprova se o corpo contiver `valores`.
+3. **A senha do SMTP continua fora de tudo.** O SMS é o mesmo `Email` com o
+   `para` trocado — o campo `senha` continua privado, o `para_json` continua
+   dizendo `(oculta)`, e a resposta da op `saude_disco` não passa pela
+   configuração de e-mail.
+4. **O canário não é porta para encher o disco nem para ler dado.** É um
+   arquivo de 64 bytes, com nome fixo, que o próprio servidor escreve e
+   apaga; ninguém de fora escolhe o nome, o tamanho nem o conteúdo, e ele
+   não entra em resposta nenhuma. Quem já pode escrever no `base` por fora
+   do PhxSql não precisa do canário para nada.
+5. **O painel de saúde pede `ler`, como o `painel`** — e o que pode vazar
+   fica com quem administra: o texto do último erro (que pode carregar
+   caminho) e a base/tabela dele (nome de base que a sessão não pode abrir
+   não é dela) só saem no bloco inteiro. Há teste dos dois lados.
+6. **Os números do SMS viram endereço de e-mail.** Por isso são validados no
+   arranque como dígitos com `+` opcional, e o gateway como domínio sem
+   arroba, sem espaço e sem quebra de linha — o mesmo crivo de injeção de
+   cabeçalho que `email.rs` já aplica ao `de` e ao `para`.
 
 ---
 
