@@ -596,7 +596,7 @@ Medido commit a commit depois: **um único commit aposentou cinco delas de uma
 vez** — `2fe8658` (12/09, «a conferência de FK dentro da transação vê o pai
 empilhado»), que mexeu em `table.rs` e `transacao.rs`. Ninguém percebeu por
 **quatro dias**, e o motivo é o custo: o provador leva cerca de uma hora,
-porque repõe o defeito e roda `cargo test` para cada uma das 151 entradas.
+porque repõe o defeito e roda `cargo test` para cada uma das 160 entradas.
 **Guarda que só se confere em uma hora é guarda que não se confere.**
 
 **Onde mora**: `bancada/guardas/trecho-vivo.py`, chamada pelo item 0c da
@@ -673,7 +673,7 @@ piso em silêncio.
 | `TETO_TRECHO_AMBIGUO` | teto | 0 | **0** | 16/09, nesta frente |
 | `TETO_TESTE_MORTO` | teto | 0 | **0** | 16/09 |
 | `TETO_TESTE_FORA_DO_BINARIO` | teto | 0 | **0** | 16/09, nesta frente |
-| `PISO_DAS_ENTRADAS` | **piso** | 151 | **151** | nasceu 16/09 em 143; **subiu para 145** (frente vizinha, no mesmo dia) e para **151** na frente 245/O2–O6 — 151 entradas vivas + 0 aposentadas. Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
+| `PISO_DAS_ENTRADAS` | **piso** | 160 | **160** | nasceu 16/09 em 143; **subiu para 145** (frente vizinha, no mesmo dia), para **151** na frente 245/O2–O6 e para **160** na frente G-CRIPTO (§15) — 160 entradas vivas + 0 aposentadas. Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
 
 **Nenhum teto subiu e nenhuma catraca se aposentou, e isso é decisão.** A
 régua do `TETO_TRECHO_MORTO` **não mudou**: ela continua respondendo
@@ -961,6 +961,156 @@ continua sendo só `pub const TETO*` — um `const` privado ou um `MAX_*`/
 `LIMITE_*` não aparece, e são 26 deles na tabela de limites abaixo. A régua
 não mudou nesta frente e por isso nenhuma catraca de lá se aposentou; o buraco
 está medido e nomeado na seção dos limites, como estava.
+
+## 15. O catálogo de guardas contra as PÉTREAS — o inventário, e o que continua descoberto
+
+**Por que esta seção existe.** A lei da casa diz que *lei que lista menos
+casos do que existem não protege menos hoje — protege menos no dia em que
+alguém usar a lista como inventário*. O `catalogo.py` **é** um inventário: ele
+diz o que esta casa já pagou e ainda pega. Então ele mesmo tem de ser conferido
+contra a lista de pétreas, e não contra a memória de quem o escreveu.
+
+Levantamento do papel G em **16/09/2026** (frente G-CRIPTO), contra as regras
+da seção «Regras que não se quebram» do `CLAUDE.md`.
+
+### 15.1 Os dois buracos que a varredura achou, medidos
+
+**«Criptografia se confere contra vetor oficial» — ZERO entradas.** Medido:
+nenhuma das 151 entradas do catálogo repunha defeito em SHA-256, HMAC ou
+PBKDF2. Havia **teste** — e teste não é guarda. Os números da cobertura que
+existia:
+
+| onde | o que foi contado | medido |
+|---|---|---:|
+| `crates/phxsql-core/src/hash.rs`, `mod tests` | funções de teste | **9** |
+| idem | funções que afirmam contra vetor **publicado** | **5** |
+| idem | vetores publicados afirmados (4 FIPS 180-4 + 4 RFC 4231 + 3 PBKDF2, mais o de um milhão de letras e o de 40 bytes) | **13** |
+| `crates/phxsql-core` inteiro | funções de teste que afirmam contra vetor publicado, em 9 normas | **28** |
+| catálogo de guardas | entradas que repunham defeito em qualquer uma delas | **0** |
+
+A última linha é o buraco. **Nenhum daqueles 28 testes tinha sido provado
+contra o defeito que ele existe para pegar**, e quem lesse o catálogo como
+inventário concluiria que a pétrea mais citada da casa estava coberta.
+
+**«Portão de permissão é UM só — e o campo que ele lê é o furo» — 13 provas,
+2 catalogadas.** Medido: a árvore tem **13** funções
+`*_nao_e_a_porta_dos_fundos*`, e o catálogo repunha o defeito de **duas** —
+`pivotar-sem-portao` e a metade do `operacao-sem-poder-declarado` que carrega
+o `procurar_texto`. O `juntar` e o `unir`, **que a própria pétrea escreve**
+(«sem conferência própria, bastaria pedir a tabela negada como o lado B de
+uma junção»), estavam de fora.
+
+### 15.2 O que entrou, e o veredito de cada uma
+
+Nove entradas, **todas PROVADAS pelo provador oficial** em 16/09/2026, com a
+árvore limpa verde antes de cada bloco (348 testes no `phxsql-core --lib`,
+1.103 no `phxsql-server --lib`):
+
+| guarda | defeito reposto | caem | veredito |
+|---|---|---:|---|
+| `sha256-sem-somar-o-estado` | a realimentação de Davies-Meyer vira atribuição | 4/4 | ✅ provada |
+| `sha256-com-o-tamanho-em-little-endian` | o tamanho da mensagem no padding em little-endian | 4/4 | ✅ provada |
+| `hmac-com-a-chave-longa-truncada` | chave > 64 bytes truncada em vez de pré-hasheada | 2/2 | ✅ provada |
+| `pbkdf2-com-o-contador-de-bloco-parado` | `bloco += 1` vira `bloco = 1` | 1/1 | ✅ provada |
+| `pbkdf2-sem-o-xor-acumulado` | o XOR acumulado vira atribuição | 2/2 | ✅ provada |
+| `juntar-sem-portao` | a conferência própria do `op_juntar` sai | 1/1 | ✅ provada |
+| `unir-sem-portao` | a conferência da LISTA do `op_unir` sai | 1/1 | ✅ provada |
+| `diferencas-sem-portao` | a conferência dos campos `a`/`b` do `op_diferencas` sai | 1/1 | ✅ provada |
+| `derivado-sem-portao` | `portoes_do_pedido` sai do irmão `executar_derivado` | 8/8 | ✅ provada |
+
+Custo medido: 11,7 s para as cinco de criptografia (2,3–2,4 s cada) e 136 s
+para as quatro do portão (31–36 s cada, com a cópia quente).
+
+### 15.3 A escolha do defeito é o trabalho, e ela se justifica entrada por entrada
+
+Trocar uma constante de `K`, inverter um deslocamento ou cortar uma rodada
+derrubariam o vetor do mesmo jeito — e provariam pouco, porque **ninguém comete
+esses**: as 64 constantes são um bloco copiado da norma e não se «arrumam». O
+critério usado nas cinco foi um só: *um refatorador distraído cometeria este de
+verdade?* Daí o `zip` com `wrapping_add` reduzido a uma atribuição, o
+`if`/`else` de dois `copy_from_slice` «generalizado» num `min`, o segundo
+contador de um `while` reiniciado no lugar errado, o laço de XOR aninhado
+trocado por uma atribuição, e o `to_be_bytes` uniformizado para a ordem da
+máquina.
+
+E as cinco foram escolhidas para provarem **famílias de vetor diferentes**, que
+é o que faz o conjunto valer mais que a soma:
+
+| defeito | quem o pega | quem NÃO o pega — e é o ponto |
+|---|---|---|
+| realimentação do estado | todos os vetores | `sha256_alimentado_em_pedacos_da_o_mesmo` (auto-consistência) |
+| tamanho em little-endian | `"abc"` e os dois longos | **o vetor da mensagem vazia**: zero é zero nas duas ordens |
+| chave longa truncada | **só** o caso 6 da RFC 4231 e o anexo A.2 da RFC 5869 | PBKDF2, `senha.rs`, os anexos A.1 e A.3 |
+| contador de bloco parado | **só** o vetor PBKDF2 de 40 bytes | toda derivação da árvore, que pede 32 bytes |
+| XOR acumulado | os vetores PBKDF2 iterados | ida-e-volta do `senha.rs`, o sal, o custo, o formato |
+
+A coluna da direita é a pétrea escrita como tabela: **auto-consistência,
+ida-e-volta e propriedade sobrevivem a um motor de criptografia quebrado**,
+porque as três perguntam ao próprio motor. Só a norma responde de fora.
+
+### 15.4 As 13 portas dos fundos, uma a uma — e por que 9 entradas bastam
+
+O provador foi usado como **instrumento de medição** antes de virar veredito:
+uma sonda temporária repôs o defeito no `portoes_do_pedido` de
+`executar_derivado` com dez nomes no `caem`, e a corrida disse exatamente
+quais caem por ali e quais não. Oito caíram; `juntar` e `procurar_texto`
+ficaram verdes — porque entram pelo `despachar`, que tem a chamada dele.
+
+| # | prova | quem a repõe |
+|---|---|---|
+| 1 | `procurar_texto_nao_e_a_porta_dos_fundos_para_a_tabela_negada` | `operacao-sem-poder-declarado` (já existia) |
+| 2 | `pivotar_nao_e_a_porta_dos_fundos` | `pivotar-sem-portao` (já existia) |
+| 3 | `juntar_nao_e_a_porta_dos_fundos` | **`juntar-sem-portao`** (nova) |
+| 4 | `unir_nao_e_a_porta_dos_fundos` | **`unir-sem-portao`** (nova) |
+| 5 | `diferencas_nao_e_a_porta_dos_fundos` | **`diferencas-sem-portao`** (nova) |
+| 6 | `o_sql_nao_e_a_porta_dos_fundos_para_a_tabela_negada` | **`derivado-sem-portao`** (nova) |
+| 7 | `o_dml_pelo_sql_nao_e_a_porta_dos_fundos_para_a_tabela_negada` | idem |
+| 8 | `o_join_pelo_sql_nao_e_a_porta_dos_fundos` | idem |
+| 9 | `o_consultar_nao_e_a_porta_dos_fundos_para_a_tabela_negada` | idem |
+| 10 | `o_consultar_nao_e_a_porta_dos_fundos_pela_juncao_nem_pelo_escalar` | idem |
+| 11 | `o_existe_nao_e_a_porta_dos_fundos` | idem |
+| 12 | `a_visao_nao_e_a_porta_dos_fundos_para_a_tabela_negada` | idem |
+| 13 | `call_nao_e_a_porta_dos_fundos_para_a_tabela_negada` | idem |
+
+**Nenhuma ficou sem guarda, e nenhuma dispensa foi preciso registrar.** O que
+o número 8 ensina é outra coisa, e vale mais que a cobertura: os oito caminhos
+que parecem oito operações diferentes têm **um** ponto de conferência, e ele
+mora numa função de três linhas que parece um embrulho fino do `executar`.
+Inliná-la compila, passa no `clippy` e não derruba prova por soquete nenhuma —
+e abre o SQL inteiro.
+
+### 15.5 As pétreas que continuam SEM guarda, nomeadas
+
+Dispensa registrada é decisão; dispensa silenciosa é esquecimento. Estas
+ficaram de fora desta frente, **medidas e nomeadas**:
+
+| pétrea | entradas no catálogo | o que existe hoje |
+|---|---|---|
+| **«Senha nunca em texto puro»** | **0** | **11** testes medidos (`a_ficha_nunca_devolve_a_senha`, `a_resposta_do_protocolo_nao_leva_a_senha`, `a_senha_nao_vai_para_o_disco`, `a_senha_nunca_aparece_no_arquivo_nem_na_resposta`, `a_senha_da_cifra_nunca_sai_em_json`, `a_senha_do_rele_nunca_aparece_no_json`, `a_senha_da_ligacao_nunca_aparece_no_json`, `coluna_de_senha_nao_entrega_o_valor`, os dois do Profiler e o do SQL). É **exatamente o mesmo retrato** que a criptografia tinha antes desta frente: muita prova, nenhuma provada contra o defeito. É a próxima da fila |
+| **«Bancada compara trabalho igual, não só pergunta igual»** | **0** | nem entrada nem catraca. As quatro regras vivem em `bancada/LEIA-ME.md` como prosa, e os dois erros que as fundaram (o `WHERE id IN (…)` contra vinte mil buscas, o `COUNT(*)+SUM` contra a leitura de 20.000) não têm defeito reposto nenhum. Repor este defeito exige mexer no roteiro de uma bancada e medir — não é troca de trecho em Rust, e por isso não cabe neste catálogo sem antes decidir a forma |
+| **«Merge de conflito marca quem MEXEU, não quem perguntou por último»** | **0** | o comportamento é de interface (coluna a coluna), e a prova dele é de tela. Cai na mesma classe da linha abaixo |
+| **«O CSS global morde todo componente novo» / «Interface só se prova exercitando»** | **0** | quem cobre é o `TETO_BOTAO_SEM_PROVA` (§9), que é **outra coisa**: ele conta botão que a bateria não clica, não repõe defeito. As duas lições (o rádio do tamanho da célula, «BLUMENAU») não aparecem lendo código — e também não aparecem repondo trecho |
+| **«Medidor com binário velho mede o passado»** | **0** | a regra tem receita (`cargo build --release --examples` antes de medir) e nenhuma guarda. Repor o defeito aqui é apagar uma linha de um script de bancada, não de `crates/` |
+
+As três últimas têm a mesma causa e ela se diz: **o catálogo só sabe repor
+defeito em arquivo compilado e conferido por `cargo test`.** Pétrea cuja prova
+mora no navegador, num soquete ou num roteiro de bancada não cabe nele como
+ele é hoje. Isso não as deixa protegidas — deixa-as **nomeadas**, que é o que
+esta seção existe para fazer.
+
+### 15.6 Nenhum teto subiu — e o único número que subiu foi piso
+
+`PISO_DAS_ENTRADAS` foi de **151** para **160** no mesmo passo em que as nove
+entradas nasceram. Ele é a exceção declarada e continua sendo a única:
+**conta entradas, não defeitos**, e piso parado com catálogo que cresceu volta
+a aceitar o apagamento das entradas novas. Os quatro tetos do §12 ficaram
+todos em **0** (medidos com o `--catraca` depois de cada escrita), e **nenhuma
+outra catraca da árvore foi tocada.**
+
+E fica dito qual é a que **pediria** para subir, porque é a que um leitor
+apressado «consertaria» primeiro: a `alcancam-fsync` do mapa da trava mede
+**23** hoje com teto **22** — vermelha por decisão registrada (pendência
+#252), e o caminho certo ali é baixar o número medido, nunca levantar o teto.
 
 ## Os limites de funcionamento encontrados (não são catracas)
 

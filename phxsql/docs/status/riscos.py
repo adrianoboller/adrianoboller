@@ -511,6 +511,23 @@ def secoes(P, ctx):
     return secao_riscos(P, ctx), secao_divida(P, ctx)
 
 
+def _curto(caminho):
+    """O caminho relativo a RAIZ -- ou o absoluto, quando ele nao mora la.
+
+    IRMAO do `_curto` de `telemetria-medida.py` e de `serie-historica.py`, e
+    entrou junto por isso: os tres `main()` chamam as mesmas funcoes na mesma
+    ordem sobre um `alvo` que pode vir por argumento, e `/tmp/qualquer.html` e
+    alvo legitimo. `relative_to` LEVANTA fora da raiz, e levantar de dentro da
+    montagem de uma mensagem troca o diagnostico por outro -- foi assim que um
+    «linha 2 quebrada» virou um `ValueError` sobre subpath na prova dos dois
+    sentidos da serie.
+    """
+    try:
+        return str(caminho.relative_to(RAIZ))
+    except ValueError:
+        return str(caminho)
+
+
 def bloco(P, ctx):
     """O texto inteiro entre as marcas -- o mesmo que a pagina monta.
 
@@ -546,10 +563,10 @@ def main():
             "esta lei existe para nao fazer.")
     novo = texto[:i] + bloco(P, ctx) + texto[f + len(MARCA_FIM):]
     if novo == texto:
-        print(f"as duas secoes ja estavam em dia em {alvo.relative_to(RAIZ)}")
+        print(f"as duas secoes ja estavam em dia em {_curto(alvo)}")
     else:
         alvo.write_text(novo, encoding="utf-8")
-        print(f"duas secoes escritas em {alvo.relative_to(RAIZ)}")
+        print(f"duas secoes escritas em {_curto(alvo)}")
     print(f"  riscos: {len(ctx['riscos'])} no catalogo "
           f"({sum(1 for r in ctx['riscos'] if r['impacto'] == 'alto')} de "
           f"impacto alto), de docs/RISCOS.md")

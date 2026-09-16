@@ -143,7 +143,7 @@ dia, nunca no desejado:
 
 # E a catraca que sobe, porque e piso e nao teto
 
-- `PISO_DAS_ENTRADAS = 151` -- nasceu em 16/09/2026 valendo 143, contado no
+- `PISO_DAS_ENTRADAS = 160` -- nasceu em 16/09/2026 valendo 143, contado no
   `catalogo.py` daquele dia (143 entradas, 143 ids distintos) mais as
   `APOSENTADAS` (hoje nenhuma). **SUBIU para 150 em 16/09/2026**, no mesmo
   passo em que a frente 245 (O2-O6) escreveu cinco guardas novas -- o teto de
@@ -151,6 +151,14 @@ dia, nunca no desejado:
   contradiz no `acrescentar_coluna`, o ALTER com regra sem aviso e o upsert
   parcial que viraria mescla. Piso parado com catalogo que cresceu volta a
   aceitar o apagamento das entradas novas, que e o que ele existe para
+  **SUBIU de novo para 160 em 16/09/2026**, na frente G-CRIPTO: nove guardas
+  novas -- cinco da petrea «criptografia se confere contra vetor oficial»,
+  que ate aqui nao tinha entrada NENHUMA neste catalogo, e tres da petrea do
+  portao de permissao -- `juntar`, `unir` e `diferencas`, as operacoes que
+  escondem a tabela do campo que o portao le, mais o `derivado-sem-portao`,
+  que sozinho prova OITO provas de porta dos fundos. Ele e o UNICO numero desta
+  regua que sobe, e sobe porque conta ENTRADAS e nao defeitos: os quatro
+  tetos acima continuam em zero, e nenhum deles foi tocado.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 """
@@ -167,7 +175,7 @@ TETO_TRECHO_MORTO = 0
 TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
-PISO_DAS_ENTRADAS = 151
+PISO_DAS_ENTRADAS = 160
 
 # ------------------------------------------------------------- APOSENTADAS
 #

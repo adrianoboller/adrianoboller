@@ -107,6 +107,19 @@ def contexto():
             "pontos": pontos_de_captura()}
 
 
+def _curto(caminho):
+    """O caminho relativo a RAIZ -- ou o absoluto, quando ele nao mora la.
+
+    `relative_to` LEVANTA fora da raiz, e levantar de dentro da montagem de uma
+    mensagem troca o diagnostico por outro. O alvo pode vir por argumento, e
+    `/tmp/qualquer.html` e um alvo legitimo.
+    """
+    try:
+        return str(caminho.relative_to(RAIZ))
+    except ValueError:
+        return str(caminho)
+
+
 # ------------------------------------------------------------------- a secao
 
 def _nao_medida(P, ctx):
@@ -294,10 +307,10 @@ def main():
             "existe para nao fazer.")
     novo = texto[:i] + bloco(P, ctx) + texto[f + len(MARCA_FIM):]
     if novo == texto:
-        print(f"a secao ja estava em dia em {alvo.relative_to(RAIZ)}")
+        print(f"a secao ja estava em dia em {_curto(alvo)}")
     else:
         alvo.write_text(novo, encoding="utf-8")
-        print(f"secao escrita em {alvo.relative_to(RAIZ)}")
+        print(f"secao escrita em {_curto(alvo)}")
 
     # Gerador que faz menos do que o nome promete TEM de dizer que fez menos.
     dados = ctx["dados"]

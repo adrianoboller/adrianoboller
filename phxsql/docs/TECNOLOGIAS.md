@@ -39,14 +39,14 @@ foi estimado no lugar de uma medição que faltou.
 | `phxsql-core` | 35 | 11628 | 4137 | 3138 | 1514 | 20417 |
 | `phxsql-ffi` | 7 | 1408 | 1014 | 703 | 235 | 3360 |
 | `phxsql-odbc` | 7 | 2412 | 1086 | 921 | 226 | 4645 |
-| `phxsql-server` | 56 | 43502 | 27365 | 20589 | 4871 | 96327 |
+| `phxsql-server` | 56 | 43502 | 27365 | 20590 | 4871 | 96328 |
 | `phxsql-sql` | 10 | 6623 | 3369 | 1979 | 746 | 12717 |
 | `phxsql-store` | 24 | 13209 | 3583 | 5640 | 1533 | 23965 |
-| **total** | **142** | **80176** | **40768** | **33254** | **9265** | **163463** |
+| **total** | **142** | **80176** | **40768** | **33255** | **9265** | **163464** |
 
 Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **40768/80176 = 0.51×**.
 
-Alem do `src/`: **75** programas de medicao em `examples/` (18941 linhas — bancada em Rust, nao produto nem teste) e **57** arquivos em `tests/` de integracao fora de `src/` (18797 linhas).
+Alem do `src/`: **75** programas de medicao em `examples/` (18943 linhas — bancada em Rust, nao produto nem teste) e **57** arquivos em `tests/` de integracao fora de `src/` (18797 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -110,7 +110,7 @@ mesmo motivo que o rodapé já errou uma vez.
 | JavaScript (prova ponta a ponta) | `testes-web/` | 48 | 10237 |
 | Python (bancada de medicao) | `bancada/` | 110 | 47678 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 18 | 2608 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 364 | 87698 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 364 | 87699 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 32 | 13331 |
 <!-- /GERADO -->
 
@@ -489,7 +489,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **267** pedidos numerados; **36** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **268** pedidos numerados; **36** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|

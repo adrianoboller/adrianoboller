@@ -5814,4 +5814,499 @@ pub fn limpar() {
             "traduzir::testes::recusa_o_que_nao_tem_substrato",
         ],
     },
+    # -----------------------------------------------------------------------
+    # 39. «CRIPTOGRAFIA SE CONFERE CONTRA VETOR OFICIAL» -- a petrea que nao
+    #     tinha guarda nenhuma ate 16/09/2026
+    #
+    # Medido antes de escrever: ZERO entradas deste catalogo repunham defeito
+    # em SHA-256, HMAC ou PBKDF2. Havia TESTE -- e teste nao e guarda. Um
+    # teste diz que o codigo passa hoje; uma guarda diz que ele FALHA quando o
+    # defeito volta, e so a segunda afirmacao protege alguma coisa.
+    #
+    # As cinco abaixo nao provam "o SHA-256 esta certo" -- isso e trabalho do
+    # teste. Elas provam que CADA FAMILIA DE VETOR da lista e PORTANTE: que
+    # apagar aquele vetor deixaria passar um defeito real. Por isso cada uma
+    # repoe um defeito DIFERENTE, escolhido por um criterio so -- «um
+    # refatorador distraido cometeria este de verdade?» --, e cada uma leva no
+    # `seguem` os testes que CONTINUAM VERDES com o defeito de pe. Esse
+    # `seguem` e a razao de a petrea dizer «vetor oficial» e nao «teste»:
+    # auto-consistencia, ida-e-volta e propriedade sobrevivem a um motor de
+    # criptografia quebrado, porque as tres perguntam ao PROPRIO MOTOR.
+    #
+    # Onde a producao acaba, neste arquivo: `hash.rs` tem 415 linhas e o
+    # `#[cfg(test)]` comeca na 260. Os cinco trechos estao TODOS antes dela --
+    # conferido por contagem, nao a olho: defeito reposto dentro do
+    # `mod tests` nao e defeito reposto, o teste continua verde e a guarda
+    # «nao pega».
+    # -----------------------------------------------------------------------
+    {
+        "id": "sha256-sem-somar-o-estado",
+        "titulo": "SHA-256 sem a realimentação do estado: a compressão vira permutação reversível",
+        "porque": (
+            "petrea do CLAUDE.md: «criptografia se confere contra vetor "
+            "oficial». Defeito reposto: a soma final do bloco comprimido com "
+            "o estado de ENTRADA -- a construcao de Davies-Meyer -- vira "
+            "atribuicao. Escolhi este, e nao uma constante da tabela K "
+            "trocada, porque o de K ninguem comete: as 64 constantes sao um "
+            "bloco copiado da norma e ninguem as «arruma». Este se comete: o "
+            "ponto e um `zip` com `wrapping_add` dentro de um `for`, e "
+            "reduzi-lo a `*destino = valor` parece limpeza -- o fecho passa a "
+            "ser «o estado E o resultado das rodadas», que e uma frase que "
+            "soa certa. E o estrago e o maximo possivel: sem a realimentacao "
+            "a compressao vira uma PERMUTACAO invertivel, e a "
+            "unidirecionalidade -- a unica coisa que faz guardar senha como "
+            "hash valer algo -- acaba. O `seguem` e o argumento da petrea "
+            "inteiro: o teste de auto-consistencia (a mesma mensagem partida "
+            "de 1 em 1, de 7 em 7, de 64 em 64) fica VERDE, porque pergunta "
+            "ao motor quebrado e recebe a mesma resposta quebrada duas vezes."
+        ),
+        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "trecho": """        for (destino, valor) in self
+            .estado
+            .iter_mut()
+            .zip([a, b, c, d, e, f, g, h].into_iter())
+        {
+            *destino = destino.wrapping_add(valor);
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO: a realimentacao de Davies-Meyer vira ATRIBUICAO.
+        // O estado de entrada some e a compressao passa a ser invertivel; a
+        // saida continua com 32 bytes de cara aleatoria, e por isso a unica
+        // coisa que acusa e o vetor publicado.
+        for (destino, valor) in self
+            .estado
+            .iter_mut()
+            .zip([a, b, c, d, e, f, g, h].into_iter())
+        {
+            *destino = valor;
+        }
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "hash::tests::sha256_vetores_oficiais",
+            "hash::tests::sha256_um_milhao_de_letras_a",
+            "hash::tests::hmac_vetores_rfc4231",
+            "hash::tests::pbkdf2_vetores_conhecidos",
+        ],
+        "seguem": [
+            # Os tres que NAO pegam, e e por isso que estao aqui: os tres
+            # perguntam ao proprio motor em vez de perguntar a norma.
+            "hash::tests::sha256_alimentado_em_pedacos_da_o_mesmo",
+            "hash::tests::pbkdf2_sal_diferente_muda_tudo",
+            "hash::tests::comparacao_em_tempo_constante",
+        ],
+    },
+    {
+        "id": "sha256-com-o-tamanho-em-little-endian",
+        "titulo": "SHA-256 com o tamanho da mensagem, no padding, em little-endian",
+        "porque": (
+            "petrea do CLAUDE.md: «criptografia se confere contra vetor "
+            "oficial». Defeito reposto: `bits.to_be_bytes()` vira "
+            "`to_le_bytes()` no fecho do padding. E o erro classico de hash "
+            "escrito a mao, e continua classico porque a maquina daqui e "
+            "little-endian: `to_le_bytes()`/`to_ne_bytes()` e o que sai dos "
+            "dedos de quem «uniformiza a serializacao do modulo» sem saber "
+            "que a FIPS 180-4 fixa big-endian ali. "
+            "O motivo de esta entrada existir ao lado da de cima e um numero: "
+            "a mensagem VAZIA tem comprimento zero, e zero e igual nas duas "
+            "ordens -- entao o vetor que todo mundo decora "
+            "(`e3b0c442...7852b855`) e exatamente o que NAO pega este "
+            "defeito. Quem reduzisse `sha256_vetores_oficiais` a um caso so "
+            "escolheria o vazio, e a guarda morreria calada. Os quatro casos "
+            "da FIPS existem por isso."
+        ),
+        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "trecho": """        self.atualizar_sem_contar(&bits.to_be_bytes());
+""",
+        "troca": """        // DEFEITO REPOSTO: o tamanho da mensagem entra em little-endian. A
+        // FIPS 180-4 fixa big-endian, e a mensagem VAZIA nao acusa -- zero e
+        // zero nas duas ordens.
+        self.atualizar_sem_contar(&bits.to_le_bytes());
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "hash::tests::sha256_vetores_oficiais",
+            "hash::tests::sha256_um_milhao_de_letras_a",
+            "hash::tests::hmac_vetores_rfc4231",
+            "hash::tests::pbkdf2_vetores_conhecidos",
+        ],
+        "seguem": [
+            "hash::tests::sha256_alimentado_em_pedacos_da_o_mesmo",
+            "hash::tests::pbkdf2_sal_diferente_muda_tudo",
+            "hash::tests::comparacao_em_tempo_constante",
+        ],
+    },
+    {
+        "id": "hmac-com-a-chave-longa-truncada",
+        "titulo": "HMAC com a chave maior que o bloco TRUNCADA em vez de pré-hasheada",
+        "porque": (
+            "petrea do CLAUDE.md: «criptografia se confere contra vetor "
+            "oficial». Defeito reposto: o `if chave.len() > SHA256_BLOCO` some "
+            "e a chave passa a entrar cortada em 64 bytes. Escolhi este "
+            "porque e o defeito de ALCANCE ESTREITO -- e defeito de alcance "
+            "estreito e o que prova que UM vetor especifico da lista e "
+            "portante. Um `if`/`else` cujos dois ramos fazem "
+            "`copy_from_slice` num prefixo e o convite perfeito a "
+            "«simplificacao»: `let n = chave.len().min(BLOCO)` cobre os dois "
+            "casos, compila e passa em toda senha que alguem digita -- as do "
+            "`senha.rs` e do `cofre.rs` tem menos de 64 bytes. "
+            "Na suite inteira do `phxsql-core` so DUAS asercoes usam chave "
+            "maior que o bloco: o caso 6 da RFC 4231 (131 bytes de 0xaa) e o "
+            "sal de 80 bytes do anexo A.2 da RFC 5869, que entra na posicao "
+            "da chave do HMAC. Se alguem apagar o caso 6 «porque os outros "
+            "cinco ja cobrem», o HMAC desta casa deixa de ser HMAC para toda "
+            "chave longa e nada acusa."
+        ),
+        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "trecho": """    if chave.len() > SHA256_BLOCO {
+        chave_bloco[..SHA256_LEN].copy_from_slice(&sha256(chave));
+    } else {
+        chave_bloco[..chave.len()].copy_from_slice(chave);
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO: os dois ramos viram um. A chave maior que o bloco
+    // entra TRUNCADA em vez de pre-hasheada -- e a RFC 2104 manda hashear.
+    let n = chave.len().min(SHA256_BLOCO);
+    chave_bloco[..n].copy_from_slice(&chave[..n]);
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "hash::tests::hmac_vetores_rfc4231",
+            "hkdf::testes::caso_2_do_anexo_a",
+        ],
+        "seguem": [
+            # As chaves curtas nao sentem nada, e e esse o ponto: PBKDF2,
+            # senha e os outros dois casos do anexo A continuam verdes.
+            "hash::tests::sha256_vetores_oficiais",
+            "hash::tests::pbkdf2_vetores_conhecidos",
+            "hash::tests::pbkdf2_saida_longa_atravessa_varios_blocos",
+            "hkdf::testes::caso_1_do_anexo_a",
+            "hkdf::testes::caso_3_do_anexo_a",
+            "senha::tests::cifra_e_confere",
+        ],
+    },
+    {
+        "id": "pbkdf2-com-o-contador-de-bloco-parado",
+        "titulo": "PBKDF2 com o contador de bloco parado: saída longa repete o primeiro bloco",
+        "porque": (
+            "petrea do CLAUDE.md: «criptografia se confere contra vetor "
+            "oficial». Defeito reposto: o `bloco += 1` do fim do laco vira "
+            "`bloco = 1`. Escolhi este pela mesma razao do HMAC de chave "
+            "longa, e num lugar ainda mais estreito: TODA derivacao desta "
+            "arvore pede 32 bytes -- `senha.rs`, `cifra.rs`, `desafio.rs`, o "
+            "cofre --, e 32 bytes sao UM bloco, onde o contador nunca anda. "
+            "Medido: a unica asercao do `phxsql-core` que pede saida maior "
+            "que 32 bytes e `pbkdf2_saida_longa_atravessa_varios_blocos` "
+            "(40 bytes). Ela e a guarda inteira. E o defeito e de refatorador "
+            "de verdade: um `while` com dois contadores (`pos` e `bloco`) "
+            "numa funcao de doze linhas e onde a reinicializacao vai parar no "
+            "lugar errado, e nada no compilador reclama. O estrago: chave "
+            "derivada de 64 bytes com as duas metades IGUAIS -- metade da "
+            "entropia, em silencio."
+        ),
+        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "trecho": """        pos += n;
+        bloco += 1;
+""",
+        "troca": """        pos += n;
+        // DEFEITO REPOSTO: o contador do bloco volta a 1 em vez de andar.
+        // Saida de ate 32 bytes -- que e toda esta arvore -- nao sente nada;
+        // acima disso os blocos saem repetidos.
+        bloco = 1;
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "hash::tests::pbkdf2_saida_longa_atravessa_varios_blocos",
+        ],
+        "seguem": [
+            "hash::tests::pbkdf2_vetores_conhecidos",
+            "hash::tests::pbkdf2_sal_diferente_muda_tudo",
+            "hash::tests::sha256_vetores_oficiais",
+            "hash::tests::hmac_vetores_rfc4231",
+            "senha::tests::cifra_e_confere",
+        ],
+    },
+    {
+        "id": "pbkdf2-sem-o-xor-acumulado",
+        "titulo": "PBKDF2 sem o XOR acumulado: vira HMAC aplicado N vezes",
+        "porque": (
+            "petrea do CLAUDE.md: «criptografia se confere contra vetor "
+            "oficial». Defeito reposto: dentro do laco das iteracoes, o XOR "
+            "de `u` sobre `acumulado` vira `acumulado = u` -- so a ultima "
+            "volta sobrevive. Escolhi este porque e o que melhor mostra o "
+            "buraco que a petrea fecha: o defeito NAO quebra nada do que um "
+            "teste comum pergunta. O custo continua sendo N HMACs (nada fica "
+            "mais rapido, entao nem a bancada acusa), a senha continua sendo "
+            "conferida, o sal continua separando duas senhas iguais, o "
+            "ida-e-volta do `senha.rs` continua fechando. E o resultado "
+            "simplesmente NAO E PBKDF2: perde-se a garantia da RFC 2898 de "
+            "que o encadeamento nao pode ser encurtado. Um refatorador comete "
+            "este de verdade -- ha um `for` de XOR dentro de outro `for`, e "
+            "trocar o interno por uma atribuicao e a forma mais comum de "
+            "«tirar o laco aninhado». O `seguem` desta entrada e o inventario "
+            "do que ficou VERDE com o defeito de pe."
+        ),
+        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "trecho": """        for _ in 1..iteracoes {
+            u = hmac_sha256(senha, &u);
+            for (a, b) in acumulado.iter_mut().zip(u.iter()) {
+                *a ^= b;
+            }
+        }
+""",
+        "troca": """        for _ in 1..iteracoes {
+            u = hmac_sha256(senha, &u);
+            // DEFEITO REPOSTO: o XOR acumulado vira ATRIBUICAO. So a ultima
+            // volta sobra, e o PBKDF2 vira "HMAC aplicado N vezes" -- que
+            // custa o mesmo, confere senha do mesmo jeito e nao e PBKDF2.
+            acumulado = u;
+        }
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "hash::tests::pbkdf2_vetores_conhecidos",
+            "hash::tests::pbkdf2_saida_longa_atravessa_varios_blocos",
+        ],
+        "seguem": [
+            # O inventario do que NAO pega: propriedade, ida-e-volta e sal.
+            "hash::tests::pbkdf2_sal_diferente_muda_tudo",
+            "senha::tests::cifra_e_confere",
+            "senha::tests::duas_senhas_iguais_dao_hashes_diferentes",
+            "senha::tests::hash_estragado_nunca_deixa_entrar",
+            "hash::tests::sha256_vetores_oficiais",
+            "hash::tests::hmac_vetores_rfc4231",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 40. «O PORTAO E UM SO -- E O CAMPO QUE ELE LE E O FURO»: as tres
+    #     operacoes que a petrea NOMEIA e o catalogo nao tinha
+    #
+    # Medido em 16/09/2026: a arvore tem 13 provas
+    # `*_nao_e_a_porta_dos_fundos*` e o catalogo repunha o defeito de DUAS --
+    # `pivotar` e `procurar_texto`. O `juntar` e o `unir`, os dois que a
+    # propria petrea escreve («bastaria pedir a tabela negada como o lado B
+    # de uma junção»), estavam de fora. A terceira aqui, `diferencas`, e a
+    # mesma familia pelo mesmo motivo mecanico: os dois nomes chegam em
+    # campos (`a` e `b`) que o `despachar` nao le.
+    #
+    # E o risco que estas tres entradas existem para cobrir e o que o
+    # CLAUDE.md ja nomeia: numa divisao do `servidor.rs`, esta conferencia
+    # propria PARECE duplicacao do portao geral. Quem a apagar reabre a porta
+    # dos fundos -- e ate aqui nenhuma reposicao de defeito provava que os
+    # testes pegariam. Agora prova.
+    # -----------------------------------------------------------------------
+    {
+        "id": "juntar-sem-portao",
+        "titulo": "`juntar` sem conferência própria: a tabela negada entra como lado B",
+        "porque": (
+            "petrea do CLAUDE.md, e a frase e dela: «sem conferencia propria, "
+            "bastaria pedir a tabela negada como o lado B de uma junção». O "
+            "portao geral do `despachar` confere o campo `tabela` do pedido, "
+            "e uma junção NAO TEM esse campo -- as duas moram em `a.tabela` e "
+            "`b.tabela`. Defeito reposto: a conferencia propria sai inteira, "
+            "comentario junto, e a funcao volta a comecar pela trava de "
+            "dados. O comentario sai DE PROPOSITO: comentario que se declara "
+            "resolvido e o motivo de ninguem olhar de novo, e deixa-lo com o "
+            "codigo fora seria repor meio defeito. "
+            "O `seguem` traz `unir` e `pivotar`: as tres conferencias sao "
+            "independentes, e apagar uma nao derruba as outras -- que e "
+            "exatamente por que a falta nunca apareceu como defeito, e por "
+            "que cada uma precisa da sua entrada. Traz tambem "
+            "`o_join_pelo_sql_nao_e_a_porta_dos_fundos`, medido: um JOIN de "
+            "SQL vira `consultar` no tradutor, e nao `juntar` -- entao ele "
+            "NAO cobre este caminho, e quem confiasse nele estaria coberto "
+            "por um teste que nao passa por aqui."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        // O portao geral confere o campo `tabela` do pedido -- e uma junção
+        // NAO TEM esse campo: as duas tabelas moram em `a.tabela` e
+        // `b.tabela`. Sem esta conferencia, juntar seria a porta dos fundos
+        // para ler uma tabela negada, bastando pedi-la como o lado B.
+        if let Some(u) = &sessao.usuario {
+            let base = p.texto_ou("database", "");
+            for alvo in [na, nb] {
+                if !u.pode_em(base, alvo, Atividade::Ler) {
+                    return Err(PhxError::Autorizacao(format!(
+                        "{} nao tem permissao de ler em {base}.{alvo}",
+                        u.login
+                    )));
+                }
+            }
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO: a conferencia propria some, e com ela o comentario
+        // que a explica -- so o portao geral decide, e ele pergunta por um
+        // campo `tabela` que a junção nao tem.
+        let _ = sessao;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_direito_por_tabela::juntar_nao_e_a_porta_dos_fundos",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_tabela::unir_nao_e_a_porta_dos_fundos",
+            "servidor::testes_direito_por_tabela::pivotar_nao_e_a_porta_dos_fundos",
+            "servidor::testes_sql_composto::o_join_pelo_sql_nao_e_a_porta_dos_fundos",
+            # O teste do comportamento VELHO, que e o que mais importa numa
+            # regra de permissao -- ver `regra-de-tabela-imposta`.
+            "servidor::testes_direito_por_tabela::sem_regra_de_tabela_nada_muda",
+        ],
+    },
+    {
+        "id": "unir-sem-portao",
+        "titulo": "`unir` sem conferência própria: a tabela negada entra na LISTA",
+        "porque": (
+            "petrea do CLAUDE.md: das tres operacoes que escondem tabela do "
+            "portao, esta e a que guarda o campo numa LISTA (`tabelas`) e nao "
+            "num objeto. Defeito reposto: o laco de conferencia sai inteiro, "
+            "com o comentario. "
+            "O que esta entrada guarda alem da permissao e a ORDEM, e e por "
+            "isso que ela nao e copia da do `juntar`: aqui a conferencia tem "
+            "de vir DEPOIS de ler `nomes` -- e a lista que diz o que conferir "
+            "-- e ANTES de `travar_dados`/`abrir_qualificada`. Quem «arrumar» "
+            "a funcao subindo o bloco para junto dos outros portoes confere "
+            "uma lista vazia e nao nega nada; quem o descer para depois da "
+            "materializacao ja leu a tabela negada do disco antes de recusar. "
+            "As duas arrumacoes compilam, e as duas passam em todo teste que "
+            "nao seja este."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        // A conferencia vem DEPOIS de ler a lista, e nao antes, porque e a
+        // lista que diz o que precisa ser conferido: o campo `tabela` que o
+        // portao geral olha nao existe numa união. Cada tabela do pedido
+        // precisa da sua propria permissao -- senao unir vira a porta dos
+        // fundos para ler uma tabela negada.
+        if let Some(u) = &sessao.usuario {
+            for alvo in &nomes {
+                if !u.pode_em(base, alvo, Atividade::Ler) {
+                    return Err(PhxError::Autorizacao(format!(
+                        "{} nao tem permissao de ler em {base}.{alvo}",
+                        u.login
+                    )));
+                }
+            }
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO: a conferencia da LISTA some, e com ela o
+        // comentario que explica por que ela mora aqui e nao la em cima.
+        let _ = sessao;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_direito_por_tabela::unir_nao_e_a_porta_dos_fundos",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_tabela::juntar_nao_e_a_porta_dos_fundos",
+            "servidor::testes_direito_por_tabela::pivotar_nao_e_a_porta_dos_fundos",
+            "servidor::testes_direito_por_tabela::sem_regra_de_tabela_nada_muda",
+        ],
+    },
+    {
+        "id": "diferencas-sem-portao",
+        "titulo": "`diferencas` sem conferência própria: a tabela negada entra em `a` ou em `b`",
+        "porque": (
+            "a quarta da familia que a petrea descreve, achada contando as 13 "
+            "provas `*_nao_e_a_porta_dos_fundos*` da arvore contra as 2 que o "
+            "catalogo tinha. O mecanismo e identico ao do `juntar` e ainda "
+            "mais direto: as duas tabelas chegam em campos de TEXTO chamados "
+            "`a` e `b`, e o portao geral le `tabela`. Defeito reposto: o "
+            "bloco de conferencia sai. "
+            "O `seguem` traz a irma por COLUNA "
+            "(`diferencas_recusa_a_tabela_com_regra_de_coluna`): portao "
+            "vizinho, campo vizinho, e ela tem de continuar de pe, senao a "
+            "troca estaria provando duas coisas ao mesmo tempo e nao "
+            "provaria nenhuma."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        // A CONFERENCIA PROPRIA -- ver a nota do cabecalho.
+        if let Some(u) = &sessao.usuario {
+            for alvo in [&na, &nb] {
+                if !u.pode_em(&base, alvo, Atividade::Ler) {
+                    return Err(PhxError::Autorizacao(format!(
+                        "{} nao tem permissao de ler em {base}.{alvo}",
+                        u.login
+                    )));
+                }
+            }
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO: a conferencia propria some. Os nomes chegam em
+        // `a` e `b`, e o portao geral le `tabela` -- entao ninguem confere.
+        let _ = sessao;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_diferencas::diferencas_nao_e_a_porta_dos_fundos",
+        ],
+        "seguem": [
+            "servidor::testes_diferencas::diferencas_recusa_a_tabela_com_regra_de_coluna",
+            "servidor::testes_direito_por_tabela::juntar_nao_e_a_porta_dos_fundos",
+            "servidor::testes_direito_por_tabela::sem_regra_de_tabela_nada_muda",
+        ],
+    },
+    {
+        "id": "derivado-sem-portao",
+        "titulo": "o portão some do irmão `executar_derivado`: o SQL inteiro vira a porta dos fundos",
+        "porque": (
+            "petrea do CLAUDE.md: «portao de permissao e UM so -- e o campo "
+            "que ele le e o furo», lida pelo outro lado. As tres entradas "
+            "acima cuidam das operacoes que escondem a TABELA do portao; esta "
+            "cuida de quem esconde o PORTAO inteiro. O `despachar` nao e o "
+            "unico caminho: um `UPDATE` pelo SQL e um `buscar` -> `ler` -> "
+            "`atualizar` derivados, e nenhum dos tres passa por ele -- quem "
+            "confere e o irmao `executar_derivado`, e irmao aqui e quem chama "
+            "`portoes_do_pedido` e depois `executar`, na mesma ordem. Defeito "
+            "reposto: a chamada ao portao sai desse irmao, e so a politica "
+            "fica. "
+            "Escolhi este ponto e nao um portao por operacao porque e o que "
+            "um refatorador faz de verdade: `executar_derivado` tem TRES "
+            "linhas e parece um embrulho fino do `executar` -- inlina-lo ou "
+            "«tirar a indirecao» compila, passa no `clippy` e nao derruba "
+            "nenhuma prova por soquete. "
+            "MEDIDO com o defeito de pe, e e por isso que esta entrada "
+            "sozinha vale oito: caem as OITO provas de porta dos fundos que "
+            "chegam por este caminho -- `sql`, o DML pelo SQL, o JOIN pelo "
+            "SQL, os dois do `consultar`, o `existe`, a visao e o `call`. E "
+            "as duas do `seguem` continuam VERDES, tambem medido: `juntar` e "
+            "`procurar_texto` entram pelo `despachar`, que tem a chamada "
+            "dele -- o que prova que a troca e cirurgica e que as duas "
+            "familias de guarda sao mesmo independentes."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        self.politica_do_pedido(op, pedido)?;
+        self.portoes_do_pedido(op, pedido, sessao)?;
+""",
+        "troca": """        self.politica_do_pedido(op, pedido)?;
+        // DEFEITO REPOSTO: o portao sai do irmao. O `despachar` continua com
+        // o dele, entao tudo o que vem pela rede parece protegido -- e o SQL,
+        // o `consultar`, a visao e o `call` passam por baixo.
+        let _ = sessao;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_direito_por_tabela::o_sql_nao_e_a_porta_dos_fundos_para_a_tabela_negada",
+            "servidor::testes_direito_por_tabela::o_dml_pelo_sql_nao_e_a_porta_dos_fundos_para_a_tabela_negada",
+            "servidor::testes_sql_composto::o_join_pelo_sql_nao_e_a_porta_dos_fundos",
+            "servidor::testes_consultar::o_consultar_nao_e_a_porta_dos_fundos_para_a_tabela_negada",
+            "servidor::testes_consultar_juncao::o_consultar_nao_e_a_porta_dos_fundos_pela_juncao_nem_pelo_escalar",
+            "servidor::testes_consultar_juncao::o_existe_nao_e_a_porta_dos_fundos",
+            "servidor::testes_visoes::a_visao_nao_e_a_porta_dos_fundos_para_a_tabela_negada",
+            "servidor::testes_gatilhos::call_nao_e_a_porta_dos_fundos_para_a_tabela_negada",
+        ],
+        "seguem": [
+            # Medidos verdes com o defeito de pe: as duas entram pelo
+            # `despachar`, que guarda a sua propria chamada ao portao.
+            "servidor::testes_direito_por_tabela::juntar_nao_e_a_porta_dos_fundos",
+            "servidor::testes_direito_por_tabela::procurar_texto_nao_e_a_porta_dos_fundos_para_a_tabela_negada",
+        ],
+    },
 ]

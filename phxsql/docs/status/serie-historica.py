@@ -108,6 +108,20 @@ def da_capacidade(cap: dict) -> dict:
     return linha
 
 
+def _curto(caminho: pathlib.Path) -> str:
+    """O caminho relativo a RAIZ -- ou o absoluto, quando ele nao mora la.
+
+    `relative_to` LEVANTA fora da raiz, e levantar de dentro da montagem de uma
+    mensagem de erro troca o diagnostico por outro: a prova dos dois sentidos
+    pegou isto passando um arquivo de `/tmp`, e o «linha 2 quebrada» virou um
+    `ValueError` sobre subpath que nao dizia nada sobre a serie.
+    """
+    try:
+        return str(caminho.relative_to(RAIZ))
+    except ValueError:
+        return str(caminho)
+
+
 def ler(caminho: pathlib.Path = SERIE) -> list:
     """As medicoes, na ordem em que foram gravadas.
 
@@ -125,7 +139,7 @@ def ler(caminho: pathlib.Path = SERIE) -> list:
             fora.append(json.loads(linha))
         except json.JSONDecodeError as e:
             raise SystemExit(
-                f"{caminho.relative_to(RAIZ)}, linha {n}: {e}. A serie e' o "
+                f"{_curto(caminho)}, linha {n}: {e}. A serie e' o "
                 "unico registro do que ja foi medido -- pular a linha quebrada "
                 "em silencio publicaria um «antes» que nao e' o antes.")
     return fora
@@ -321,10 +335,10 @@ def semear():
     cap = json.loads(alvo.read_text(encoding="utf-8"))
     if acrescentar(cap):
         print(f"semeada a medicao de {cap.get('medido_em')} em "
-              f"{SERIE.relative_to(RAIZ)}")
+              f"{_curto(SERIE)}")
     else:
         print(f"a medicao de {cap.get('medido_em')} JA e a ultima linha de "
-              f"{SERIE.relative_to(RAIZ)} -- nada a fazer. Re-rodar o gerador "
+              f"{_curto(SERIE)} -- nada a fazer. Re-rodar o gerador "
               "sem re-medir nao e uma medicao nova.")
     return 0
 
@@ -350,15 +364,14 @@ def main():
             "secao -- rode `./status-html.sh` uma vez.")
     novo = texto[:i] + bloco(P, ctx) + texto[f + len(MARCA_FIM):]
     if novo == texto:
-        print(f"a secao ja estava em dia em {alvo.relative_to(RAIZ)}")
+        print(f"a secao ja estava em dia em {_curto(alvo)}")
     else:
         alvo.write_text(novo, encoding="utf-8")
-        print(f"secao escrita em {alvo.relative_to(RAIZ)}")
+        print(f"secao escrita em {_curto(alvo)}")
 
     # Gerador que faz menos do que o nome promete TEM de dizer que fez menos.
     medicoes = ctx["serie"]
-    print(f"  {len(medicoes)} medicao(oes) em "
-          f"{SERIE.relative_to(RAIZ)}")
+    print(f"  {len(medicoes)} medicao(oes) em {_curto(SERIE)}")
     if len(medicoes) < 2:
         print("  NAO da para desenhar antes x depois com menos de duas "
               "medicoes -- a secao diz isso, e nao inventa o passado do "
