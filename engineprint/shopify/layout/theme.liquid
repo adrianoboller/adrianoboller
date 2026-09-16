@@ -1,0 +1,461 @@
+<!doctype html>
+<html
+  {% if request.design_mode %}
+    class="shopify-design-mode"
+  {% endif %}
+  lang="{{ request.locale.iso_code }}"
+  style="color-scheme: light !important;"
+>
+  <head>
+    <!-- Força modo claro — 3 camadas de proteção -->
+    <meta name="color-scheme" content="light only">
+    <meta name="supported-color-schemes" content="light">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    {%- if settings.favicon != blank -%}
+      <link rel="icon" type="image/png" href="{{ settings.favicon | image_url: width: 32, height: 32 }}">
+    {%- endif -%}
+
+    <link rel="preconnect" href="https://cdn.shopify.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.shopstatic.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="dns-prefetch" href="https://monorail-edge.shopifysvc.com">
+    <link rel="dns-prefetch" href="https://cdn.shopify.com">
+
+    {% if settings.transition_to_main_product or settings.page_transition_enabled %}
+      <link rel="expect" href="#MainContent" id="view-transition-render-blocker">
+    {% endif %}
+
+    {%- render 'meta-tags' -%}
+
+    <style>
+      /* ════════════════════════════════════════════
+         MODO CLARO FORÇADO — bloqueio total
+         Impede que o navegador, o SO ou o tema
+         apliquem qualquer variante de modo escuro.
+      ════════════════════════════════════════════ */
+
+      /* Nível 1 — variável raiz */
+      :root {
+        color-scheme: light !important;
+        supported-color-schemes: light !important;
+      }
+
+      /* Nível 2 — html e body com fundo explícito */
+      html,
+      html[data-color-scheme="dark"],
+      html[style*="color-scheme"] {
+        color-scheme: light !important;
+        background-color: #f2f2f3 !important;
+      }
+
+      /* Nível 3 — bloqueia o @media do sistema */
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: light !important;
+        }
+
+        html {
+          filter: none !important;
+          background-color: #f2f2f3 !important;
+        }
+
+        body {
+          background-color: #f2f2f3 !important;
+          color: #0a0a0a !important;
+          -webkit-text-fill-color: initial !important;
+        }
+
+        /* Impede inversão automática de imagens */
+        img,
+        video,
+        canvas,
+        svg,
+        picture {
+          filter: none !important;
+        }
+
+        /* Garante que inputs não fiquem escuros.
+           color-scheme: light ja basta: e ele que impede o navegador
+           de repintar campo e botao com a cara escura do sistema.
+           Aqui havia tambem "background-color: initial" e
+           "color: initial". Parecia reforco, mas initial para
+           background-color e TRANSPARENTE, nao branco - entao no
+           modo escuro todo campo e todo botao do site perdiam o
+           fundo. Era por isso que o cadastro de e-mail do rodape
+           sumia. Sem essas duas linhas, cada elemento volta a usar
+           a cor do proprio tema, igual ao modo claro. */
+        input,
+        textarea,
+        select,
+        button {
+          color-scheme: light !important;
+        }
+      }
+
+      /* ════════════════════════════════════════════
+         LOADER
+      ════════════════════════════════════════════ */
+      #wx-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 999999;
+        pointer-events: none;
+      }
+
+      .wx-mobile {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .wx-stripe {
+        flex: 1;
+        background: #f2f2f3;
+        transform: translateX(0%);
+        transition: transform 0.45s cubic-bezier(0.77, 0, 0.18, 1);
+      }
+
+      .wx-stripe-1 { transition-delay: 0s; }
+      .wx-stripe-2 { transition-delay: 0.07s; }
+      .wx-stripe-3 { transition-delay: 0.14s; }
+      .wx-stripe-4 { transition-delay: 0.21s; }
+
+      #wx-loader.exit .wx-stripe { transform: translateX(105%); }
+
+      .wx-desktop {
+        display: none;
+        position: absolute;
+        inset: 0;
+      }
+
+      .wx-panel {
+        position: absolute;
+        inset: 0;
+        background: #f2f2f3;
+        transform: translateY(0%);
+        transition: transform 0.6s cubic-bezier(0.77, 0, 0.18, 1);
+      }
+
+      #wx-loader.exit .wx-panel { transform: translateY(-105%); }
+      #wx-loader.done { display: none; }
+
+      body.wx-loading > *:not(#wx-loader) { visibility: hidden; }
+    </style>
+
+    {%- render 'stylesheets' -%}
+    {%- render 'fonts' -%}
+    {%- render 'scripts' -%}
+    {%- render 'theme-styles-variables' -%}
+    {%- render 'color-schemes' -%}
+
+    <!-- Reforço pós color-schemes — garante que o snippet não sobrescreva -->
+    <style>
+      @media (prefers-color-scheme: dark) {
+        :root { color-scheme: light !important; }
+        html  { filter: none !important; }
+        body  { background-color: #f2f2f3 !important; }
+      }
+    </style>
+
+    <style>
+      /* ════════════════════════════════════════════
+         CARTÃO DA VITRINE — o selo e o "+" no clique
+         ────────────────────────────────────────────
+         Ao clicar num cartão, assets/product-card.js marca a galeria:
+
+           cardGallery.setAttribute('data-view-transition-type',
+                                    'product-image-transition');
+
+         e o base.css do tema promove essa galeria para a camada
+         ::view-transition:
+
+           html:active-view-transition-type(product-image-transition)
+             [data-view-transition-type=product-image-transition]
+             { view-transition-name: product-image-transition }
+
+         Essa camada pinta ACIMA de toda a página. O selo
+         ("5% no Pix" / "Esgotado", z-index 1, irmão da galeria) e o
+         botão "+" (z-index 2, dentro dela) não participam da
+         transição — e por isso apareciam meio cobertos pela imagem
+         em voo. Medido: FORA da transição a pilha está correta (o
+         selo fica acima da galeria, que é z-index auto); o defeito
+         é só da camada.
+
+         Enquanto a transição roda, os dois saem de cena em vez de
+         aparecerem pela metade. Sem `transition` de propósito: o
+         instantâneo da página de saída é capturado quase junto com
+         o clique, e um fade seria fotografado no meio.
+
+         A regra se limita sozinha — fora da transição o seletor
+         :active-view-transition-type() não casa, e num navegador que
+         não o entenda a regra inteira é descartada, sem efeito.
+      ════════════════════════════════════════════ */
+      html:active-view-transition-type(product-image-transition)
+        product-card:has(.card-gallery[data-view-transition-triggered])
+        :is(.product-badges, .quick-add) {
+        opacity: 0;
+      }
+    </style>
+
+    {% if request.design_mode %}{%- render 'theme-editor' -%}{% endif %}
+
+    {{ content_for_header }}
+  </head>
+
+  <body class="page-width-{{ settings.page_width }} card-hover-effect-{{ settings.card_hover_effect }} wx-loading">
+
+    <div id="wx-loader">
+      <script>
+        if (window.innerWidth < 750) {
+          document.write('<style>.wx-mobile{display:flex!important}.wx-desktop{display:none!important}</style>');
+        } else {
+          document.write('<style>.wx-mobile{display:none!important}.wx-desktop{display:block!important}</style>');
+        }
+      </script>
+
+      <div class="wx-mobile">
+        <div class="wx-stripe wx-stripe-1"></div>
+        <div class="wx-stripe wx-stripe-2"></div>
+        <div class="wx-stripe wx-stripe-3"></div>
+        <div class="wx-stripe wx-stripe-4"></div>
+      </div>
+
+      <div class="wx-desktop">
+        <div class="wx-panel"></div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var loader  = document.getElementById('wx-loader');
+        var body    = document.body;
+        var entered = Date.now();
+
+        var saiu = false;
+        function exit() {
+          if (saiu) return;
+          saiu = true;
+          body.classList.remove('wx-loading');
+          loader.classList.add('exit');
+
+          loader.addEventListener('transitionend', function handler(e) {
+            var isLast = window.innerWidth >= 750
+              ? e.target.classList.contains('wx-panel')
+              : e.target.classList.contains('wx-stripe-4');
+            if (isLast) {
+              loader.classList.add('done');
+              loader.removeEventListener('transitionend', handler);
+            }
+          });
+        }
+
+        var MIN_DISPLAY = 300;
+
+        function scheduleExit() {
+          var elapsed   = Date.now() - entered;
+          var remaining = Math.max(0, MIN_DISPLAY - elapsed);
+          setTimeout(exit, remaining);
+        }
+
+        if (document.readyState === 'complete') {
+          scheduleExit();
+        } else {
+          window.addEventListener('load', scheduleExit);
+        }
+
+        // Rede lenta ou imagem travada: a página nunca fica presa.
+        // Depois de 4 segundos o site aparece de qualquer jeito.
+        setTimeout(exit, 4000);
+      })();
+    </script>
+
+    {% render 'skip-to-content-link', href: '#MainContent', text: 'accessibility.skip_to_text' %}
+
+    <div id="header-group">
+      {% sections 'header-group' %}
+    </div>
+
+    <script>
+      (function setHeaderHeighCustomProperties() {
+        var header = document.querySelector('header-component');
+        var headerGroup = document.querySelector('#header-group');
+        var hasHeaderSection = headerGroup && headerGroup.querySelector('.header-section');
+
+        if (!header || !headerGroup) return;
+
+        var headerTopRow = header.querySelector('.header__row--top');
+        var headerHeight = header.offsetHeight;
+        var headerGroupHeight = 0;
+        var children = headerGroup.children;
+
+        for (var i = 0; i < children.length; i++) {
+          var element = children[i];
+          if (element === header || !(element instanceof HTMLElement)) continue;
+          headerGroupHeight += element.offsetHeight;
+        }
+
+        if (header.hasAttribute('transparent') && header.parentElement && header.parentElement.nextElementSibling) {
+          headerGroupHeight += headerHeight;
+        }
+
+        document.body.style.setProperty('--header-height', headerHeight + 'px');
+        document.body.style.setProperty('--header-group-height', headerGroupHeight + 'px');
+
+        if (headerTopRow) {
+          window.requestAnimationFrame(function () {
+            document.body.style.setProperty('--top-row-height', headerTopRow.offsetHeight + 'px');
+          });
+        }
+
+        if (!hasHeaderSection || !header.hasAttribute('transparent')) {
+          document.body.style.setProperty('--transparent-header-offset-boolean', '0');
+          return;
+        }
+
+        var hasImmediateSection = hasHeaderSection.nextElementSibling && hasHeaderSection.nextElementSibling.classList.contains('shopify-section');
+        document.body.style.setProperty('--transparent-header-offset-boolean', !hasImmediateSection ? '1' : '0');
+      })();
+
+      (function setHeaderMenuStyle() {
+        var headerComponent = document.querySelector('#header-component');
+        if (headerComponent) {
+          var isTouchDevice = 'ontouchstart' in window && navigator.maxTouchPoints > 0;
+          var overflowList = headerComponent.querySelector('overflow-list');
+          var hasReachedMinimum = overflowList && overflowList.hasAttribute('minimum-reached');
+          headerComponent.dataset.menuStyle = isTouchDevice || hasReachedMinimum ? 'drawer' : 'menu';
+        }
+      })();
+    </script>
+
+    <main
+      id="MainContent"
+      class="content-for-layout"
+      role="main"
+      data-page-transition-enabled="{{ settings.page_transition_enabled }}"
+      data-product-transition="{{ settings.transition_to_main_product }}"
+      data-template="{{ template }}"
+    >
+      {{ content_for_layout }}
+    </main>
+
+    <footer>{% sections 'footer-group' %}</footer>
+
+    {% render 'search-modal' %}
+
+    {% if settings.quick_add or settings.mobile_quick_add %}
+      {% render 'quick-add-modal' %}
+    {% endif %}
+
+    <script>
+    (function () {
+      var selectors = [
+        '.shopify-section > *',
+        '.section > *',
+        '.section-wrapper > *',
+        'text-block',
+        'button-block',
+        'image-block',
+        'video-block',
+        'icon-block'
+      ].join(', ');
+
+      var skip = [
+        '#wx-loader',
+        '.resource-list__item',
+        '.collection-card',
+        'header',
+        'footer'
+      ];
+
+      function shouldSkip(el) {
+        return skip.some(function (s) {
+          return el.closest(s);
+        });
+      }
+
+      document.querySelectorAll(selectors).forEach(function (el) {
+        if (!shouldSkip(el)) {
+          el.classList.add('wx-reveal');
+        }
+      });
+
+      if ('IntersectionObserver' in window) {
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('wx-in');
+              io.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.06, rootMargin: '0px 0px -20px 0px' });
+
+        document.querySelectorAll('.wx-reveal').forEach(function (el) {
+          io.observe(el);
+        });
+      } else {
+        document.querySelectorAll('.wx-reveal').forEach(function (el) {
+          el.classList.add('wx-in');
+        });
+      }
+    })();
+    </script>
+
+    <script>
+    /* Duas coisas pequenas, e vale saber o que cada uma nao faz.
+
+       1) Botao direito sobre imagem — tira o "Salvar imagem como".
+          O escopo e fechado de proposito: so sobre a imagem. Fora
+          dela o menu do navegador continua normal, senao a pagina
+          fica hostil para quem so queria copiar um texto ou abrir
+          um link em outra aba. Isto e um obstaculo para o visitante
+          casual; quem sabe abrir o DevTools passa por cima.
+
+       2) Trava de reenvio no formulario de contato e no cadastro de
+          e-mail. Depois do envio o botao fica bloqueado alguns
+          segundos, o que evita clique duplo e envio repetido na mao.
+          Isto NAO e um rate limiter: rate limiter de verdade mora no
+          servidor, e em loja Shopify quem faz isso e a propria
+          Shopify, na borda dela. Qualquer "limite" escrito aqui vale
+          so dentro desta aba e cai com um F5.
+    */
+    (function () {
+      var MIDIA = 'img, picture, svg, .card-gallery, .product-card__media, .wx-hero__media, .pp__stage, .pp__slide';
+
+      document.addEventListener('contextmenu', function (ev) {
+        var alvo = ev.target;
+        if (!alvo || typeof alvo.closest !== 'function') return;
+        if (alvo.closest(MIDIA)) ev.preventDefault();
+      });
+
+      var FORMS = '.nomad-footer__form, form[action*="/contact"]';
+
+      document.addEventListener('submit', function (ev) {
+        var f = ev.target;
+        if (!f || typeof f.matches !== 'function' || !f.matches(FORMS)) return;
+        var btn = f.querySelector('[type="submit"]');
+        if (!btn || btn.dataset.wxTravado) return;
+        btn.dataset.wxTravado = '1';
+        /* o disable so entra no proximo tick: desabilitar o botao
+           antes do envio cancelaria o proprio envio em alguns
+           navegadores. */
+        setTimeout(function () {
+          btn.disabled = true;
+          btn.style.opacity = '0.6';
+          btn.style.cursor = 'not-allowed';
+        }, 0);
+        setTimeout(function () {
+          btn.disabled = false;
+          btn.style.opacity = '';
+          btn.style.cursor = '';
+          delete btn.dataset.wxTravado;
+        }, 6000);
+      });
+    })();
+    </script>
+
+    {% section 'wx-chat-settings' %}
+  </body>
+</html>
