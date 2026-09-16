@@ -658,13 +658,38 @@ feita numa só):
 | `spawn-sem-teto` | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | sem folga |
 | `catalogo-envelhecido` | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | sem folga |
 
-**O custo, medido antes de escolher o lugar** — três corridas de cada, nesta
-máquina, em 16/09/2026:
+**O custo, medido antes de escolher o lugar — com a CARGA anotada ao lado**,
+que é o que transforma este número em medida. Três corridas de cada, em
+16/09/2026, numa máquina de **4 núcleos** com outras frentes compilando ao
+lado. Tempo de **parede** medido sob carga é **teto superior**, não o custo da
+régua: ele diz quanto a corrida demorou nesta máquina naquele minuto. O custo
+da régua é o tempo de **CPU** (user+sys do processo filho), que não cresce
+porque o vizinho compila:
 
-| Medidor | Corrida 1 | Corrida 2 | Corrida 3 |
-|---|---:|---:|---:|
-| `mapa-das-threads.py --catraca` | 1,122 s | 0,885 s | 0,811 s |
-| `mapa-da-trava.py --catraca` | 3,113 s | 3,056 s | 3,187 s |
+| Medidor | parede @ load ~4,9 | parede @ load ~9,4 | parede @ load ~14,8 | **cpu** @ load ~9,4 / ~14,8 |
+|---|---:|---:|---:|---:|
+| `mapa-das-threads.py --catraca` | 1,122 / 0,885 / 0,811 s | 0,740 / 0,791 / 0,845 s | 0,726 / 0,680 / 0,708 s | **0,67 s** / **0,67 s** |
+| `mapa-da-trava.py --catraca` | 3,113 / 3,056 / 3,187 s | 3,877 / 3,864 / 4,369 s | 4,469 / 3,457 / 3,077 s | **3,10–3,81 s** / **2,94–3,03 s** |
+
+Reproduza com `python3 bancada/concorrencia/custo-das-catracas.py`, que imprime
+parede, CPU e a carga antes e depois de cada corrida. Ele é versionado de
+propósito: **roteiro que resolveu algo não pode morrer com a sessão**, e sem
+ele a próxima pessoa que precisar decidir onde uma catraca mora vai medir de
+novo do jeito que der naquele dia.
+
+E o teste da suíte: **0,68 / 0,67 / 0,69 s** a load ~4,9 e **0,66 / 0,72 /
+0,72 s** a load ~9 — a carga não o moveu.
+
+Três leituras que uma corrida só não daria. A primeira: o `1,122 s` da corrida
+inicial **não era carga, era cache frio** — a rodada com o triplo de carga saiu
+mais rápida. A segunda: o tempo de **CPU do mapa das threads não se mexeu**
+entre load 9,4 e 14,8 (0,67 s nas duas), que é o que se espera de uma régua que
+só lê arquivo — a parede é que balança. A terceira, e a que decide: a **~3,7×
+de sobrescrita** (4 núcleos a load 14,8) a pior corrida do mapa da trava foi
+**4,469 s**, menos da metade dos dez segundos que separariam a suíte do
+gerador. **A escolha do lugar é a mesma nas três cargas** — e é essa
+invariância, não um número solto, que prova que não foi o custo que a
+decidiu.
 
 **Pelo custo as duas caberiam na suíte**: um segundo e três segundos somem
 dentro de um `cargo test --workspace` que leva minutos. **O que separou as
@@ -680,9 +705,9 @@ decidir, e a saída mais barata dessa pressão seria subir o teto de 22 para 23
   `crates/phxsql-server/tests/catraca-do-mapa-das-threads.rs`. O teste **roda
   o medidor** e cobra o veredito dele: uma medição só, num lugar só — é o
   molde do `catraca-fsync-por-fecho.rs` do `phxsql-store`. Medido dentro da
-  suíte: **0,68 s / 0,67 s / 0,69 s**. Sem `python3` ele **falha dizendo que
-  não conferiu**, nunca passa calado: guarda que não roda tem de dizer que não
-  rodou.
+  suíte: **0,68 / 0,67 / 0,69 s** (load ~4,9) e **0,66 / 0,72 / 0,72 s**
+  (load ~9). Sem `python3` ele **falha dizendo que não conferiu**, nunca passa
+  calado: guarda que não roda tem de dizer que não rodou.
 - **Mapa da trava** (vermelha) → `docs/dossie/numeros-do-projeto.py`, que roda
   a cada rodada. Ali ela é **relato com data, não portão**: a reprovação sai
   antes dos minutos de `cargo test` e **de novo na última linha**, que é a que

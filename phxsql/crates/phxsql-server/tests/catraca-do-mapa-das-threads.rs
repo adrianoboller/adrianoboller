@@ -19,12 +19,30 @@
 //!
 //! # Por que ESTA catraca entrou aqui, e a do mapa da trava nao
 //!
-//! Medido em 16/09/2026, tres corridas de cada, nesta maquina:
+//! Medido em 16/09/2026, tres corridas de cada, **com a carga da maquina
+//! anotada ao lado** -- 4 nucleos, e outras frentes compilando. Tempo de
+//! PAREDE medido sob carga e' teto superior, nao o custo da regua: ele diz
+//! quanto a corrida demorou nesta maquina naquele minuto. O custo da regua e'
+//! o tempo de CPU (user+sys), que nao cresce porque o vizinho compila.
 //!
-//! * `mapa-das-threads.py --catraca`: **1,122 s / 0,885 s / 0,811 s** -- verde
-//!   hoje (`spawn-sem-teto` 0/0, `catalogo-envelhecido` 0/0).
-//! * `mapa-da-trava.py --catraca`: **3,113 s / 3,056 s / 3,187 s** -- VERMELHA
-//!   hoje (`alcancam-fsync` 23, teto 22).
+//! | Medidor | parede @ load ~4,9 | parede @ load ~9,4 | parede @ load ~14,8 | cpu @ ~9,4 / ~14,8 |
+//! |---|---|---|---|---|
+//! | `mapa-das-threads.py --catraca` | 1,122 / 0,885 / 0,811 s | 0,740 / 0,791 / 0,845 s | 0,726 / 0,680 / 0,708 s | 0,67 s / 0,67 s |
+//! | `mapa-da-trava.py --catraca` | 3,113 / 3,056 / 3,187 s | 3,877 / 3,864 / 4,369 s | 4,469 / 3,457 / 3,077 s | 3,10-3,81 s / 2,94-3,03 s |
+//!
+//! Reproduza com `python3 bancada/concorrencia/custo-das-catracas.py`.
+//!
+//! O `1,122 s` da primeira corrida nao era carga: era **cache frio** -- a
+//! rodada com o triplo de carga saiu mais rapida. A ~3,7x de sobrescrita (4
+//! nucleos a load 14,8, com o provador de guardas e dois `cargo test` ao
+//! lado) a PIOR corrida do mapa da trava foi 4,469 s, menos da metade dos dez
+//! segundos que separariam a suite do `numeros-do-projeto.py`. **A escolha do
+//! lugar e' a mesma nas tres cargas** -- e e' por isso que ela nao foi
+//! decidida pelo numero, como se le abaixo.
+//!
+//! O estado atual: o das threads esta VERDE (`spawn-sem-teto` 0/0,
+//! `catalogo-envelhecido` 0/0) e o da trava, VERMELHO (`alcancam-fsync` 23,
+//! teto 22).
 //!
 //! Pelo CUSTO as duas caberiam aqui: um segundo e tres segundos somem dentro
 //! de um `cargo test --workspace` que leva minutos. O que separa as duas nao

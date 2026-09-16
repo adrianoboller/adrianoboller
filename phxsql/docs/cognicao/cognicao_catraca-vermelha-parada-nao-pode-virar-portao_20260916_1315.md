@@ -25,6 +25,14 @@ mais barata dessa pressão seria subir o teto de 22 para 23, que é exatamente o
 que a pétrea proíbe. **O critério que eu fui medir era o certo para a metade
 verde e cego para a vermelha.**
 
+E um terceiro erro, que o orquestrador pegou e eu não: publiquei os tempos de
+parede **sem a carga ao lado**. Eu tinha medido `uptime` (load 4,91) no meio da
+janela de medição e guardei o número só na minha cabeça — ou seja, escrevi nos
+documentos um número cuja condição eu conhecia e não contei. **Número com a
+condição escrita é número; número sem ela é palpite com aparência de medida**,
+e a diferença não aparece em nada no texto: os dois se leem igual. É a versão
+por carga do «medidor com binário velho mede o passado».
+
 O segundo erro veio junto e morreu na mesma hora: pensei em pregar a vermelha
 no número de hoje («23, parada, #252») para a suíte ficar verde. Isso é um
 **teto sombra de 23** com outro nome — catraca frouxa com álibi. O próprio
@@ -33,9 +41,23 @@ aceitasse «só três painéis velhos» seria a catraca frouxa que a casa proíb
 
 ## 3. O que a medição disse
 
-- `mapa-das-threads.py --catraca`: **1,122 / 0,885 / 0,811 s** — verde.
-- `mapa-da-trava.py --catraca`: **3,113 / 3,056 / 3,187 s** — vermelha (23, teto 22).
-- Dentro da suíte, o teste novo custa **0,68 / 0,67 / 0,69 s**.
+Duas corridas, em duas cargas, numa máquina de 4 núcleos — porque uma corrida
+só não distingue custo de contenção:
+
+| Medidor | parede @ load ~4,9 | parede @ load ~9,4 | cpu @ load ~9,4 |
+|---|---:|---:|---:|
+| `mapa-das-threads.py` | 1,122 / 0,885 / 0,811 s | 0,740 / 0,791 / 0,845 s | 0,669 / 0,663 / 0,676 s |
+| `mapa-da-trava.py` | 3,113 / 3,056 / 3,187 s | 3,877 / 3,864 / 4,369 s | 3,102 / 3,378 / 3,810 s |
+
+- O teste da suíte: **0,68 / 0,67 / 0,69 s** a load ~4,9; **0,66 / 0,72 /
+  0,72 s** a load ~9. A carga não o moveu.
+- E a medição segunda derrubou a minha leitura da primeira: o **`1,122 s` não
+  era carga, era cache frio** — a corrida com o TRIPLO de carga saiu mais
+  rápida. Dobrar a carga custou ~25% de parede no mapa da trava e **nada** no
+  das threads.
+- Nenhuma das duas cargas põe qualquer um dos dois perto dos dez segundos que
+  separariam a suíte do gerador: **a escolha do lugar é a mesma nas duas**, o
+  que é a prova de que não foi o número que a decidiu.
 - E o motivo de a vermelha não virar portão do gerador também é medido, e não
   de gosto: `portao-dos-geradores.py:251` reprova o gerador que sai com código
   diferente de zero, com a mensagem «gerador que não emite quando a fonte
@@ -48,6 +70,10 @@ aceitasse «só três painéis velhos» seria a catraca frouxa que a casa proíb
 **Onde uma catraca mora decide-se pelo custo E pelo estado: vermelha parada
 com o dono entra como RELATO com data, nunca como portão — e jamais pregada no
 número de hoje, que é teto sombra.**
+
+E a regra irmã, do mesmo dia: **tempo de parede publicado sem a carga ao lado
+é teto superior fingindo de custo. Ou vai a carga junto, ou vai o tempo de
+CPU, que a carga do vizinho não move.**
 
 ## 5. Como está guardado hoje
 
