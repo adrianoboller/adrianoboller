@@ -5,9 +5,15 @@
 //!
 //! ```bash
 //! cargo build --release --examples -p phxsql-store   # binario novo -- pétrea
-//! target/release/examples/custo-da-colmeia            # sweep completo
+//! target/release/examples/custo-da-colmeia            # sweep completo (H2: so leitura)
 //! target/release/examples/custo-da-colmeia 10000      # 1 tamanho (calibragem)
+//! target/release/examples/custo-da-colmeia crud <regime> <n> <ops> <reps> <dir-saida>
+//!                                                     # CRUD: colmeia viva x Padrao
 //! ```
+//!
+//! O modo `crud` e o lado Rust da `bancada/colmeia/medir-crud.py`, que junta o
+//! SQLite (Python) aos dois e grava `bancada/colmeia/resultados-crud.json`.
+//! Ver a secao "CRUD" no fim deste arquivo.
 //!
 //! # O que isto NÃO é
 //!
@@ -149,15 +155,19 @@ fn u64_le(v: u64, buf: &mut Vec<u8>) {
     buf.extend_from_slice(&v.to_le_bytes());
 }
 
-/// Serializa uma célula VALOR (nome + dado) no fim de `celulas` -- NUNCA no
+/// Serializa uma célula VALOR (nome + dado) no fim de `buf` -- NUNCA no
 /// meio (append-only, a pétrea da ordem de digitação por outro nome: aqui não
 /// há reescrita, só nascimento). Devolve o offset ABSOLUTO no arquivo do byte
-/// de STATUS da célula (já somado o cabeçalho de 128 bytes) -- não do campo
-/// `tam` que vem 4 bytes antes: `tam` só serve para varredura sequencial (uma
-/// futura compactação), a leitura por ponto nunca precisa dele, e por isso as
-/// listas de subchaves/valores apontam direto para o status.
-fn escrever_valor(celulas: &mut Vec<u8>, nome: &str, dado: &[u8]) -> u64 {
-    let offset = (TAM_CABECALHO + celulas.len() + 4) as u64;
+/// de STATUS da célula -- não do campo `tam` que vem 4 bytes antes: `tam` só
+/// serve para varredura sequencial (uma futura compactação), a leitura por
+/// ponto nunca precisa dele, e por isso as listas de subchaves/valores apontam
+/// direto para o status.
+///
+/// `base` é o offset absoluto de `buf[0]` no arquivo: `TAM_CABECALHO` quando
+/// `buf` guarda só as células (a construção em bloco de H1), 0 quando `buf` é
+/// o espelho do arquivo inteiro (a colmeia viva do CRUD).
+fn escrever_valor_em(buf: &mut Vec<u8>, base: usize, nome: &str, dado: &[u8]) -> u64 {
+    let offset = (base + buf.len() + 4) as u64;
     let nome_b = nome.as_bytes();
     let mut corpo = Vec::with_capacity(2 + nome_b.len() + 4 + dado.len() + 2);
     corpo.push(TIPO_VALOR);
@@ -166,9 +176,45 @@ fn escrever_valor(celulas: &mut Vec<u8>, nome: &str, dado: &[u8]) -> u64 {
     corpo.extend_from_slice(&(dado.len() as u32).to_le_bytes());
     corpo.extend_from_slice(dado);
     let tam = (4 + 1 + corpo.len()) as u32; // tam + status + corpo
-    u32_le(tam, celulas);
-    celulas.push(STATUS_ATIVA);
-    celulas.extend_from_slice(&corpo);
+    u32_le(tam, buf);
+    buf.push(STATUS_ATIVA);
+    buf.extend_from_slice(&corpo);
+    offset
+}
+
+/// Serializa um NÓ cujas listas JÁ estão ordenadas por hash. É o pedaço que
+/// `escrever_no` (construção em bloco, pós-ordem) e a colmeia viva (cópia de
+/// caminho) têm em comum: o mesmo layout de bytes, venha o nó de uma árvore
+/// em memória ou de um nó lido do disco com uma entrada trocada.
+fn escrever_no_listas(
+    buf: &mut Vec<u8>,
+    base: usize,
+    nome: &str,
+    subchaves: &[(u32, u64)],
+    valores: &[(u32, u64)],
+) -> u64 {
+    // Offset do byte de STATUS -- mesma convenção de `escrever_valor_em`.
+    let offset = (base + buf.len() + 4) as u64;
+    let nome_b = nome.as_bytes();
+    let mut corpo =
+        Vec::with_capacity(1 + 2 + nome_b.len() + 8 + 12 * (subchaves.len() + valores.len()));
+    corpo.push(TIPO_NO);
+    corpo.extend_from_slice(&(nome_b.len() as u16).to_le_bytes());
+    corpo.extend_from_slice(nome_b);
+    corpo.extend_from_slice(&(subchaves.len() as u32).to_le_bytes());
+    for (h, o) in subchaves {
+        u32_le(*h, &mut corpo);
+        u64_le(*o, &mut corpo);
+    }
+    corpo.extend_from_slice(&(valores.len() as u32).to_le_bytes());
+    for (h, o) in valores {
+        u32_le(*h, &mut corpo);
+        u64_le(*o, &mut corpo);
+    }
+    let tam = (4 + 1 + corpo.len()) as u32;
+    u32_le(tam, buf);
+    buf.push(STATUS_ATIVA);
+    buf.extend_from_slice(&corpo);
     offset
 }
 
@@ -189,7 +235,7 @@ fn escrever_no(celulas: &mut Vec<u8>, nome: &str, no: &NoBuilder) -> u64 {
         .valores
         .iter()
         .map(|(nome_valor, dado)| {
-            let off = escrever_valor(celulas, nome_valor, dado);
+            let off = escrever_valor_em(celulas, TAM_CABECALHO, nome_valor, dado);
             (crc32(nome_valor.as_bytes()), off)
         })
         .collect();
@@ -198,28 +244,28 @@ fn escrever_no(celulas: &mut Vec<u8>, nome: &str, no: &NoBuilder) -> u64 {
     subchaves_entradas.sort_by_key(|&(h, _)| h);
     valores_entradas.sort_by_key(|&(h, _)| h);
 
-    // Offset do byte de STATUS -- mesma convenção de `escrever_valor` acima.
-    let offset = (TAM_CABECALHO + celulas.len() + 4) as u64;
-    let nome_b = nome.as_bytes();
-    let mut corpo = Vec::new();
-    corpo.push(TIPO_NO);
-    corpo.extend_from_slice(&(nome_b.len() as u16).to_le_bytes());
-    corpo.extend_from_slice(nome_b);
-    corpo.extend_from_slice(&(subchaves_entradas.len() as u32).to_le_bytes());
-    for (h, o) in &subchaves_entradas {
-        u32_le(*h, &mut corpo);
-        u64_le(*o, &mut corpo);
-    }
-    corpo.extend_from_slice(&(valores_entradas.len() as u32).to_le_bytes());
-    for (h, o) in &valores_entradas {
-        u32_le(*h, &mut corpo);
-        u64_le(*o, &mut corpo);
-    }
-    let tam = (4 + 1 + corpo.len()) as u32;
-    u32_le(tam, celulas);
-    celulas.push(STATUS_ATIVA);
-    celulas.extend_from_slice(&corpo);
-    offset
+    escrever_no_listas(
+        celulas,
+        TAM_CABECALHO,
+        nome,
+        &subchaves_entradas,
+        &valores_entradas,
+    )
+}
+
+/// O bloco base: assinatura, versão, offset da RAIZ, n.º de sequência e o
+/// CRC-32 do próprio bloco. O n.º de sequência é o de `colmeia-estrutura.md`
+/// §4 -- só para detecção de sujo, não é um segundo diário: cada escrita da
+/// colmeia viva o incrementa junto com o offset da raiz nova.
+fn montar_cabecalho(raiz_offset: u64, sequencia: u64) -> [u8; TAM_CABECALHO] {
+    let mut cabecalho = [0u8; TAM_CABECALHO];
+    cabecalho[0..8].copy_from_slice(ASSINATURA);
+    cabecalho[8..12].copy_from_slice(&1u32.to_le_bytes()); // versao
+    cabecalho[12..20].copy_from_slice(&raiz_offset.to_le_bytes());
+    cabecalho[20..28].copy_from_slice(&sequencia.to_le_bytes());
+    let crc = crc32(&cabecalho[0..TAM_CABECALHO - 4]);
+    cabecalho[TAM_CABECALHO - 4..].copy_from_slice(&crc.to_le_bytes());
+    cabecalho
 }
 
 /// Grava uma colmeia PSHV completa a partir da árvore em memória, num único
@@ -228,13 +274,7 @@ fn escrever_no(celulas: &mut Vec<u8>, nome: &str, no: &NoBuilder) -> u64 {
 fn gravar_colmeia(caminho: &std::path::Path, raiz: &NoBuilder) -> std::io::Result<()> {
     let mut celulas = Vec::new();
     let raiz_offset = escrever_no(&mut celulas, "", raiz);
-
-    let mut cabecalho = vec![0u8; TAM_CABECALHO];
-    cabecalho[0..8].copy_from_slice(ASSINATURA);
-    cabecalho[8..12].copy_from_slice(&1u32.to_le_bytes()); // versao
-    cabecalho[12..20].copy_from_slice(&raiz_offset.to_le_bytes());
-    let crc = crc32(&cabecalho[0..TAM_CABECALHO - 4]);
-    cabecalho[TAM_CABECALHO - 4..].copy_from_slice(&crc.to_le_bytes());
+    let cabecalho = montar_cabecalho(raiz_offset, 1);
 
     let mut arquivo = std::fs::File::create(caminho)?;
     arquivo.write_all(&cabecalho)?;
@@ -550,8 +590,802 @@ fn agora_utc_min() -> String {
         .unwrap_or_else(|| "desconhecido".to_string())
 }
 
+// ======================================================================
+// CRUD -- a colmeia VIVA: inserir, atualizar e excluir por APPEND, uma
+// operacao de cada vez. Pergunta do dono (16/09/2026): "compare o tipo
+// colmeia com o sqlite e phxsql -- insert, update, delete e select".
+//
+// H1 gravava a colmeia inteira de uma vez (`gravar_colmeia`): serve para a
+// carga inicial e para o `compactar`, nao para "um INSERT". Aqui cada
+// operacao anexa o que ela precisa, e nada e reescrito -- salvo o bloco base
+// de 128 bytes, o unico lugar do arquivo escrito no lugar (como o REGF faz
+// com os numeros de sequencia dele).
+//
+// Por que COPIA DE CAMINHO, e nao "corrige o ponteiro do pai no lugar": as
+// celulas sao enderecadas por offset e a petrea manda que celula nunca se
+// reescreva nem se reuse. Trocar uma entrada de um NO exige um NO novo -- e o
+// pai aponta para o velho, entao o pai nasce de novo tambem, ate a raiz. O
+// custo e o tamanho da cadeia (3 nos neste conjunto: raiz, grupo, folha), e o
+// maior deles e a raiz, que cresce com o numero de grupos; o medidor publica
+// os bytes anexados por operacao para que isso apareca no numero, nao numa
+// frase. O que se compra: cada escrita e ATOMICA por construcao -- ate o
+// bloco base apontar para a raiz nova, quem le ve a arvore antiga inteira,
+// sem diario e sem marca `.tx`.
+//
+// Celula velha (o valor substituido, os nos copiados) vira lixo INALCANCAVEL
+// a partir da raiz nova, e fica ate um `compactar` explicito -- o "undelete"
+// projetado de `colmeia.md` §2. Este prototipo nao marca o status dela no
+// lugar: seriam 3-4 `pwrite` a mais por operacao para um campo que a leitura
+// nunca consulta; o compactador acha o lixo pelo que NAO alcanca da raiz.
+//
+// O que cada lado FAZ por operacao (a regra 4 da bancada: trabalho igual, nao
+// so pergunta igual) esta na `bancada/colmeia/LEIA-ME.md`, e os `fsync`/`write`
+// por operacao de cada lado saem de `strace`, nao de leitura de codigo.
+// ======================================================================
+
+use std::io::{Seek, SeekFrom};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Regime {
+    /// `fsync` em toda operacao: o `por_operacao` do servidor; do outro lado,
+    /// `synchronous=FULL` + autocommit no SQLite.
+    PorOperacao,
+    /// Nunca `fsync`: o `sistema` do servidor; `synchronous=OFF` no SQLite.
+    Sistema,
+}
+
+impl Regime {
+    fn de(nome: &str) -> Regime {
+        match nome {
+            "por_operacao" => Regime::PorOperacao,
+            "sistema" => Regime::Sistema,
+            outro => panic!("regime desconhecido: {outro} (use por_operacao ou sistema)"),
+        }
+    }
+    fn nome(self) -> &'static str {
+        match self {
+            Regime::PorOperacao => "por_operacao",
+            Regime::Sistema => "sistema",
+        }
+    }
+}
+
+/// Um NO decodificado do buffer: o que a copia de caminho precisa para
+/// escrever o no de novo com UMA entrada diferente.
+struct NoLido {
+    nome: String,
+    subchaves: Vec<(u32, u64)>,
+    valores: Vec<(u32, u64)>,
+}
+
+impl Colmeia {
+    fn ler_no(&self, offset: u64) -> NoLido {
+        let o = offset as usize;
+        assert_eq!(self.buf[o + 1], TIPO_NO, "offset {offset} nao e um NO");
+        let nome_len = le_u16(&self.buf, o + 2) as usize;
+        let nome = std::str::from_utf8(&self.buf[o + 4..o + 4 + nome_len])
+            .unwrap()
+            .to_string();
+        let mut p = o + 4 + nome_len;
+        let n_sub = le_u32(&self.buf, p) as usize;
+        p += 4;
+        let subchaves = (0..n_sub)
+            .map(|i| {
+                (
+                    le_u32(&self.buf, p + i * 12),
+                    le_u64(&self.buf, p + i * 12 + 4),
+                )
+            })
+            .collect();
+        p += n_sub * 12;
+        let n_val = le_u32(&self.buf, p) as usize;
+        p += 4;
+        let valores = (0..n_val)
+            .map(|i| {
+                (
+                    le_u32(&self.buf, p + i * 12),
+                    le_u64(&self.buf, p + i * 12 + 4),
+                )
+            })
+            .collect();
+        NoLido {
+            nome,
+            subchaves,
+            valores,
+        }
+    }
+
+    /// Onde `nome` esta (`Ok(i)`) ou deveria entrar (`Err(i)`) numa lista
+    /// ordenada por hash -- a mesma busca binaria de `achar`, sobre a lista ja
+    /// decodificada, com a mesma defesa contra colisao de CRC-32 (confere o
+    /// nome de cada entrada de hash igual).
+    fn posicao(&self, lista: &[(u32, u64)], hash: u32, nome: &str) -> Result<usize, usize> {
+        let mut lo = 0usize;
+        let mut hi = lista.len();
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            match lista[mid].0.cmp(&hash) {
+                std::cmp::Ordering::Less => lo = mid + 1,
+                std::cmp::Ordering::Greater => hi = mid,
+                std::cmp::Ordering::Equal => {
+                    let mut i = mid;
+                    while i > 0 && lista[i - 1].0 == hash {
+                        i -= 1;
+                    }
+                    while i < lista.len() && lista[i].0 == hash {
+                        if self.nome_da_celula(lista[i].1) == nome {
+                            return Ok(i);
+                        }
+                        i += 1;
+                    }
+                    // hash igual, nome diferente: entra no fim do trecho.
+                    return Err(i);
+                }
+            }
+        }
+        Err(lo)
+    }
+}
+
+enum Escrita<'a> {
+    Inserir(&'a [u8]),
+    Atualizar(&'a [u8]),
+    Excluir,
+}
+
+/// A colmeia aberta para ESCREVER: o espelho do arquivo em memoria (o mesmo
+/// leitor de H1, que continua respondendo `ler`), o descritor posicionado no
+/// fim, e o regime de durabilidade.
+struct ColmeiaViva {
+    base: Colmeia,
+    arquivo: std::fs::File,
+    regime: Regime,
+    sequencia: u64,
+    bytes_anexados: u64,
+    fsyncs: u64,
+}
+
+impl ColmeiaViva {
+    fn abrir(caminho: &std::path::Path, regime: Regime) -> std::io::Result<ColmeiaViva> {
+        let base = Colmeia::abrir(caminho)?;
+        let sequencia = le_u64(&base.buf, 20);
+        let mut arquivo = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(caminho)?;
+        arquivo.seek(SeekFrom::End(0))?;
+        Ok(ColmeiaViva {
+            base,
+            arquivo,
+            regime,
+            sequencia,
+            bytes_anexados: 0,
+            fsyncs: 0,
+        })
+    }
+
+    fn ler(&self, caminho: &str) -> Option<&[u8]> {
+        self.base.ler(caminho)
+    }
+
+    /// Uma escrita: desce guardando a cadeia raiz..folha, mexe na lista de
+    /// valores da folha, e faz a cadeia inteira nascer de novo no fim do
+    /// arquivo (folha primeiro, raiz por ultimo, cada pai apontando para o
+    /// filho novo). Depois o bloco base passa a apontar para a raiz nova.
+    fn escrever(&mut self, caminho: &str, op: Escrita) -> std::io::Result<()> {
+        let segmentos: Vec<&str> = caminho.split('/').filter(|s| !s.is_empty()).collect();
+        let (ultimo, chaves) = segmentos.split_last().expect("caminho vazio");
+
+        // 1. a descida, criando em memoria os nos que ainda nao existem (uma
+        //    subchave nova traz a cadeia nova abaixo dela).
+        let mut cadeia: Vec<NoLido> = Vec::with_capacity(chaves.len() + 1);
+        cadeia.push(self.base.ler_no(self.base.raiz_offset));
+        let mut existe = true;
+        for seg in chaves {
+            let filho = if existe {
+                let pai = cadeia.last().unwrap();
+                match self
+                    .base
+                    .posicao(&pai.subchaves, crc32(seg.as_bytes()), seg)
+                {
+                    Ok(i) => Some(pai.subchaves[i].1),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            };
+            match filho {
+                Some(off) => cadeia.push(self.base.ler_no(off)),
+                None => {
+                    existe = false;
+                    cadeia.push(NoLido {
+                        nome: seg.to_string(),
+                        subchaves: Vec::new(),
+                        valores: Vec::new(),
+                    });
+                }
+            }
+        }
+
+        // 2. a folha: a lista de valores ganha, troca ou perde UMA entrada.
+        let inicio = self.base.buf.len();
+        let hash_v = crc32(ultimo.as_bytes());
+        let pos = {
+            let folha = cadeia.last().unwrap();
+            self.base.posicao(&folha.valores, hash_v, ultimo)
+        };
+        let folha = cadeia.last_mut().unwrap();
+        match (op, pos) {
+            (Escrita::Inserir(dado), Err(i)) => {
+                let off = escrever_valor_em(&mut self.base.buf, 0, ultimo, dado);
+                folha.valores.insert(i, (hash_v, off));
+            }
+            (Escrita::Inserir(_), Ok(_)) => panic!("inserir: {caminho} ja existe"),
+            (Escrita::Atualizar(dado), Ok(i)) => {
+                let off = escrever_valor_em(&mut self.base.buf, 0, ultimo, dado);
+                folha.valores[i].1 = off;
+            }
+            (Escrita::Atualizar(_), Err(_)) => panic!("atualizar: {caminho} nao existe"),
+            (Escrita::Excluir, Ok(i)) => {
+                folha.valores.remove(i);
+            }
+            (Escrita::Excluir, Err(_)) => panic!("excluir: {caminho} nao existe"),
+        }
+
+        // 3. a copia de caminho: da folha a raiz, cada no nasce de novo no fim
+        //    e o pai recebe o offset novo do filho.
+        let mut filho: Option<(String, u64)> = None;
+        while let Some(mut no) = cadeia.pop() {
+            if let Some((nome_f, off_f)) = filho.take() {
+                let h = crc32(nome_f.as_bytes());
+                match self.base.posicao(&no.subchaves, h, &nome_f) {
+                    Ok(i) => no.subchaves[i].1 = off_f,
+                    Err(i) => no.subchaves.insert(i, (h, off_f)),
+                }
+            }
+            let off =
+                escrever_no_listas(&mut self.base.buf, 0, &no.nome, &no.subchaves, &no.valores);
+            filho = Some((no.nome, off));
+        }
+        let raiz_nova = filho.unwrap().1;
+
+        // 4. o disco: as celulas (append), e so entao o bloco base. Em
+        //    `por_operacao` sao DOIS `fsync`, na mesma ordem do `.ndx` da casa
+        //    (paginas, sync, cabecalho, sync): a raiz nova so passa a valer
+        //    depois de as celulas que ela aponta estarem no disco.
+        let anexado = self.base.buf.len() - inicio;
+        self.arquivo.write_all(&self.base.buf[inicio..])?;
+        self.bytes_anexados += anexado as u64;
+        if self.regime == Regime::PorOperacao {
+            self.arquivo.sync_all()?;
+            self.fsyncs += 1;
+        }
+        self.sequencia += 1;
+        self.base.raiz_offset = raiz_nova;
+        let cabecalho = montar_cabecalho(raiz_nova, self.sequencia);
+        self.base.buf[..TAM_CABECALHO].copy_from_slice(&cabecalho);
+        self.arquivo.seek(SeekFrom::Start(0))?;
+        self.arquivo.write_all(&cabecalho)?;
+        self.arquivo.seek(SeekFrom::End(0))?;
+        if self.regime == Regime::PorOperacao {
+            self.arquivo.sync_all()?;
+            self.fsyncs += 1;
+        }
+        Ok(())
+    }
+}
+
+// ----------------------------------------------------------------------
+// O lado Padrao do CRUD: o mesmo par (chave, valor) pelo `Table` de verdade,
+// cada operacao como o servidor a faria -- `buscar` pelo indice unico para
+// achar o rowid, e `sincronizar()` depois de toda escrita em `por_operacao`
+// (e o que `descarregar` do servidor faz nesse regime; em `sistema` ele
+// nunca sincroniza).
+// ----------------------------------------------------------------------
+
+fn rowid_padrao(t: &mut Table, chave: &str) -> Option<u64> {
+    t.buscar("porChave", &[Value::Str(chave.to_string())])
+        .ok()?
+        .first()
+        .copied()
+}
+
+fn inserir_padrao(t: &mut Table, chave: &str, valor: &[u8], regime: Regime) -> usize {
+    let valor_txt = String::from_utf8(valor.to_vec()).unwrap();
+    t.inserir(&[Value::Str(chave.to_string()), Value::Str(valor_txt)])
+        .expect("inserir padrao");
+    if regime == Regime::PorOperacao {
+        t.sincronizar().expect("sincronizar");
+    }
+    valor.len()
+}
+
+fn atualizar_padrao(t: &mut Table, chave: &str, valor: &[u8], regime: Regime) -> usize {
+    let rowid = rowid_padrao(t, chave).expect("atualizar padrao: chave nao existe");
+    let valor_txt = String::from_utf8(valor.to_vec()).unwrap();
+    t.atualizar(
+        rowid,
+        &[Value::Str(chave.to_string()), Value::Str(valor_txt)],
+    )
+    .expect("atualizar padrao");
+    if regime == Regime::PorOperacao {
+        t.sincronizar().expect("sincronizar");
+    }
+    valor.len()
+}
+
+fn excluir_padrao(t: &mut Table, chave: &str, regime: Regime) -> usize {
+    let rowid = rowid_padrao(t, chave).expect("excluir padrao: chave nao existe");
+    let apagou = t.excluir(rowid).expect("excluir padrao");
+    if regime == Regime::PorOperacao {
+        t.sincronizar().expect("sincronizar");
+    }
+    usize::from(apagou)
+}
+
+// ----------------------------------------------------------------------
+// O cronometro do CRUD
+// ----------------------------------------------------------------------
+
+/// Roda `reps + 1` passadas de `ops` operacoes; a primeira e aquecimento e
+/// nao entra na medida. `preparar` monta o estado inicial e, quando `refazer`
+/// e verdadeiro, e chamada de novo antes de CADA passada -- e assim que
+/// inserir/atualizar/excluir partem sempre da mesma base de N, e o mesmo
+/// contrato vale para o SQLite do lado Python. Devolve a medida e o estado da
+/// ultima passada, para a conferencia do que ficou gravado.
+fn cronometrar<H>(
+    reps: usize,
+    ops: usize,
+    refazer: bool,
+    mut preparar: impl FnMut() -> H,
+    mut executar: impl FnMut(&mut H, usize) -> usize,
+) -> (Medida, H) {
+    let mut estado: Option<H> = None;
+    let mut amostras = Vec::with_capacity(reps);
+    for passada in 0..=reps {
+        if estado.is_none() || refazer {
+            // O estado velho morre ANTES de o novo nascer no mesmo caminho:
+            // uma `Table` aberta sobre um diretorio que `preparar` vai apagar.
+            drop(estado.take());
+            estado = Some(preparar());
+        }
+        let h = estado.as_mut().unwrap();
+        let inicio = Instant::now();
+        let mut ancora = 0usize;
+        for k in 0..ops {
+            ancora ^= std::hint::black_box(executar(h, k));
+        }
+        std::hint::black_box(ancora);
+        let us = inicio.elapsed().as_secs_f64() * 1e6 / ops as f64;
+        if passada > 0 {
+            amostras.push(us);
+        }
+    }
+    let min = amostras.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max = amostras.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    (
+        Medida {
+            mediana_us: mediana(amostras),
+            faixa_us: (min, max),
+        },
+        estado.unwrap(),
+    )
+}
+
+/// Os dados de uma combinacao (N): a base, os pontos novos do `inserir`, os
+/// alvos da leitura (com repeticao, como em H2) e os alvos DISTINTOS de
+/// atualizar/excluir (excluir a mesma chave duas vezes nao e operacao; por
+/// isso `min(ops, N)` deles, e o numero real vai para o JSON).
+struct Dados {
+    base: Vec<Ponto>,
+    novos: Vec<Ponto>,
+    alvos_leitura: Vec<usize>,
+    alvos_distintos: Vec<usize>,
+    valores_novos: Vec<Vec<u8>>,
+}
+
+fn gerar_dados(n: usize, ops: usize) -> Dados {
+    // `gerar_pontos` e estavel por prefixo: os N primeiros de N+ops sao os
+    // mesmos N de H2 para o mesmo seed, e os `ops` seguintes sao os novos.
+    let seed = 0x005E_ED12_34C0_FFEE_u64 ^ n as u64;
+    let mut todos = gerar_pontos(n + ops, seed);
+    let novos = todos.split_off(n);
+    let base = todos;
+
+    let mut rng = Splitmix64::novo(0x5EED_C01B_EE1Au64 ^ n as u64);
+    let alvos_leitura: Vec<usize> = (0..ops).map(|_| rng.entre(n)).collect();
+
+    let distintos = ops.min(n);
+    let mut visto = vec![false; n];
+    let mut alvos_distintos = Vec::with_capacity(distintos);
+    while alvos_distintos.len() < distintos {
+        let i = rng.entre(n);
+        if !visto[i] {
+            visto[i] = true;
+            alvos_distintos.push(i);
+        }
+    }
+    // Valor novo do mesmo tamanho tipico (8-64 bytes): atualizar nao pode
+    // ficar mais barato por gravar menos bytes que a base.
+    let valores_novos: Vec<Vec<u8>> = (0..distintos)
+        .map(|_| {
+            let tam = 8 + rng.entre(56);
+            (0..tam).map(|_| b'A' + (rng.entre(26) as u8)).collect()
+        })
+        .collect();
+    Dados {
+        base,
+        novos,
+        alvos_leitura,
+        alvos_distintos,
+        valores_novos,
+    }
+}
+
+fn texto(bytes: &[u8]) -> String {
+    String::from_utf8(bytes.to_vec()).unwrap()
+}
+
+/// O conjunto de dados vai para um JSON que o lado Python LE, em vez de ser
+/// gerado de novo la: "mesmos dados" garantido por construcao, nao por duas
+/// implementacoes do splitmix64 que alguem teria de provar iguais.
+fn json_dos_dados(d: &Dados) -> phxsql_core::json::Json {
+    use phxsql_core::json::Json;
+    let par = |p: &Ponto| {
+        Json::Lista(vec![
+            Json::texto_de(p.caminho.clone()),
+            Json::texto_de(texto(&p.valor)),
+        ])
+    };
+    Json::objeto(vec![
+        ("base", Json::Lista(d.base.iter().map(par).collect())),
+        ("novos", Json::Lista(d.novos.iter().map(par).collect())),
+        (
+            "alvos_leitura",
+            Json::Lista(
+                d.alvos_leitura
+                    .iter()
+                    .map(|&i| Json::texto_de(d.base[i].caminho.clone()))
+                    .collect(),
+            ),
+        ),
+        (
+            "alvos_distintos",
+            Json::Lista(
+                d.alvos_distintos
+                    .iter()
+                    .map(|&i| Json::texto_de(d.base[i].caminho.clone()))
+                    .collect(),
+            ),
+        ),
+        (
+            "valores_novos",
+            Json::Lista(
+                d.valores_novos
+                    .iter()
+                    .map(|v| Json::texto_de(texto(v)))
+                    .collect(),
+            ),
+        ),
+    ])
+}
+
+struct LadoMedido {
+    medida: Medida,
+    bytes_por_op: Option<f64>,
+    fsyncs_por_op: Option<f64>,
+}
+
+fn json_do_lado(l: &LadoMedido) -> phxsql_core::json::Json {
+    use phxsql_core::json::Json;
+    let mut pares = vec![
+        ("mediana_us", Json::Numero(arred(l.medida.mediana_us, 4))),
+        (
+            "faixa_us",
+            Json::Lista(vec![
+                Json::Numero(arred(l.medida.faixa_us.0, 4)),
+                Json::Numero(arred(l.medida.faixa_us.1, 4)),
+            ]),
+        ),
+    ];
+    if let Some(b) = l.bytes_por_op {
+        pares.push(("bytes_anexados_por_op", Json::Numero(arred(b, 1))));
+    }
+    if let Some(f) = l.fsyncs_por_op {
+        pares.push((
+            "fsyncs_por_op_contados_no_codigo",
+            Json::Numero(arred(f, 2)),
+        ));
+    }
+    Json::objeto(pares)
+}
+
+fn imprimir_lado(rotulo: &str, l: &LadoMedido) {
+    print!(
+        "    {rotulo:8} mediana {:>9.3} us/op  faixa [{:.3}; {:.3}]",
+        l.medida.mediana_us, l.medida.faixa_us.0, l.medida.faixa_us.1
+    );
+    if let Some(b) = l.bytes_por_op {
+        print!("  anexa {b:.0} B/op");
+    }
+    println!();
+}
+
+/// `crud <regime> <n> <ops> <reps> <dir-saida> [so_operacao] [so_lado]`
+fn main_crud(args: &[String]) {
+    let regime = Regime::de(&args[2]);
+    let n: usize = args[3].parse().expect("n");
+    let ops: usize = args[4].parse().expect("ops");
+    let reps: usize = args[5].parse().expect("reps");
+    let dir_saida = std::path::PathBuf::from(&args[6]);
+    let so_operacao = args.get(7).cloned().unwrap_or_default();
+    let so_lado = args.get(8).cloned().unwrap_or_default();
+    let quer_op = |nome: &str| so_operacao.is_empty() || so_operacao == nome;
+    let quer_lado = |nome: &str| so_lado.is_empty() || so_lado == nome;
+    std::fs::create_dir_all(&dir_saida).expect("dir de saida");
+
+    println!(
+        "=== custo-da-colmeia crud: regime {}, N = {n}, {ops} ops/rep, {reps} reps ===",
+        regime.nome()
+    );
+    let (maquina, carga1min) = maquina_info();
+    println!("máquina: {maquina}, carga(1min) no início = {carga1min}");
+
+    definir_cache_paginas(1_000_000);
+    // Em `sistema` ninguem espera o disco -- nem a lixeira, que por padrao de
+    // fabrica sincroniza o `.trash` por exclusao (`docs/DESEMPENHO.md` §4.12).
+    // Em `por_operacao` fica o padrao de fabrica: a lixeira espera, e o
+    // `sincronizar()` de depois espera de novo -- e o que o servidor faz.
+    phxsql_store::lixeira::definir_na_janela(regime == Regime::Sistema);
+
+    let dados = gerar_dados(n, ops);
+    let distintos = dados.alvos_distintos.len();
+    std::fs::write(
+        dir_saida.join(format!("dados-{n}.json")),
+        json_dos_dados(&dados).escrever(),
+    )
+    .expect("gravar dados");
+
+    // A arvore em memoria da base, montada UMA vez: e a carga inicial da
+    // colmeia (`gravar_colmeia`, em bloco -- como um `compactar` deixaria).
+    let mut raiz = NoBuilder::nova();
+    for p in &dados.base {
+        let segmentos: Vec<&str> = p.caminho.split('/').collect();
+        let (ultimo, chaves) = segmentos.split_last().unwrap();
+        raiz.gravar(chaves, ultimo, p.valor.clone());
+    }
+    let arquivo_colmeia =
+        std::env::temp_dir().join(format!("phx-colmeia-crud-{}-{n}.hivep", std::process::id()));
+    let dir_padrao = std::env::temp_dir().join(format!(
+        "phx-colmeia-crud-padrao-{}-{n}",
+        std::process::id()
+    ));
+
+    let preparar_colmeia = || {
+        gravar_colmeia(&arquivo_colmeia, &raiz).expect("gravar colmeia");
+        ColmeiaViva::abrir(&arquivo_colmeia, regime).expect("abrir colmeia viva")
+    };
+    let preparar_padrao = || montar_padrao(&dir_padrao, &dados.base);
+
+    let mut secoes = vec![];
+    let operacoes = ["ler", "inserir", "atualizar", "excluir"];
+    for operacao in operacoes {
+        if !quer_op(operacao) {
+            continue;
+        }
+        let ops_desta = match operacao {
+            "atualizar" | "excluir" => distintos,
+            _ => ops,
+        };
+        println!("--- {operacao}: {ops_desta} ops/rep ---");
+
+        let mut lados: Vec<(&str, LadoMedido)> = vec![];
+
+        if quer_lado("colmeia") {
+            let inicio_bytes = |c: &ColmeiaViva| (c.bytes_anexados, c.fsyncs);
+            let (medida, estado, total_ops) = match operacao {
+                "ler" => {
+                    let (m, c) = cronometrar(reps, ops_desta, false, preparar_colmeia, |c, k| {
+                        c.ler(&dados.base[dados.alvos_leitura[k]].caminho)
+                            .map_or(0, |v| v.len())
+                    });
+                    for &i in &dados.alvos_leitura {
+                        assert_eq!(
+                            c.ler(&dados.base[i].caminho),
+                            Some(dados.base[i].valor.as_slice())
+                        );
+                    }
+                    (m, c, 0)
+                }
+                "inserir" => {
+                    let (m, c) = cronometrar(reps, ops_desta, true, preparar_colmeia, |c, k| {
+                        let p = &dados.novos[k];
+                        c.escrever(&p.caminho, Escrita::Inserir(&p.valor))
+                            .expect("inserir colmeia");
+                        p.valor.len()
+                    });
+                    for p in &dados.novos {
+                        assert_eq!(
+                            c.ler(&p.caminho),
+                            Some(p.valor.as_slice()),
+                            "colmeia: inserir nao gravou {}",
+                            p.caminho
+                        );
+                    }
+                    (m, c, ops_desta)
+                }
+                "atualizar" => {
+                    let (m, c) = cronometrar(reps, ops_desta, true, preparar_colmeia, |c, k| {
+                        let p = &dados.base[dados.alvos_distintos[k]];
+                        c.escrever(&p.caminho, Escrita::Atualizar(&dados.valores_novos[k]))
+                            .expect("atualizar colmeia");
+                        dados.valores_novos[k].len()
+                    });
+                    for (k, &i) in dados.alvos_distintos.iter().enumerate() {
+                        assert_eq!(
+                            c.ler(&dados.base[i].caminho),
+                            Some(dados.valores_novos[k].as_slice()),
+                            "colmeia: atualizar nao trocou {}",
+                            dados.base[i].caminho
+                        );
+                    }
+                    (m, c, ops_desta)
+                }
+                _ => {
+                    let (m, c) = cronometrar(reps, ops_desta, true, preparar_colmeia, |c, k| {
+                        let p = &dados.base[dados.alvos_distintos[k]];
+                        c.escrever(&p.caminho, Escrita::Excluir)
+                            .expect("excluir colmeia");
+                        1
+                    });
+                    for &i in &dados.alvos_distintos {
+                        assert!(
+                            c.ler(&dados.base[i].caminho).is_none(),
+                            "colmeia: excluir deixou {}",
+                            dados.base[i].caminho
+                        );
+                    }
+                    (m, c, ops_desta)
+                }
+            };
+            // A ultima passada e a unica cujos contadores ainda estao no
+            // estado (as anteriores morreram com o `preparar`).
+            let (bytes, fsyncs) = inicio_bytes(&estado);
+            let por_op = |x: u64| {
+                if total_ops == 0 {
+                    None
+                } else {
+                    Some(x as f64 / total_ops as f64)
+                }
+            };
+            let lado = LadoMedido {
+                medida,
+                bytes_por_op: por_op(bytes),
+                fsyncs_por_op: por_op(fsyncs),
+            };
+            imprimir_lado("colmeia", &lado);
+            drop(estado);
+            let _ = std::fs::remove_file(&arquivo_colmeia);
+            lados.push(("colmeia", lado));
+        }
+
+        if quer_lado("padrao") {
+            let (medida, t) = match operacao {
+                "ler" => {
+                    let (m, mut t) =
+                        cronometrar(reps, ops_desta, false, preparar_padrao, |t, k| {
+                            ler_padrao(t, &dados.base[dados.alvos_leitura[k]].caminho)
+                                .map_or(0, |v| v.len())
+                        });
+                    for &i in &dados.alvos_leitura {
+                        assert_eq!(
+                            ler_padrao(&mut t, &dados.base[i].caminho).as_deref(),
+                            Some(dados.base[i].valor.as_slice())
+                        );
+                    }
+                    (m, t)
+                }
+                "inserir" => {
+                    let (m, mut t) = cronometrar(reps, ops_desta, true, preparar_padrao, |t, k| {
+                        let p = &dados.novos[k];
+                        inserir_padrao(t, &p.caminho, &p.valor, regime)
+                    });
+                    for p in &dados.novos {
+                        assert_eq!(
+                            ler_padrao(&mut t, &p.caminho).as_deref(),
+                            Some(p.valor.as_slice()),
+                            "padrao: inserir nao gravou {}",
+                            p.caminho
+                        );
+                    }
+                    (m, t)
+                }
+                "atualizar" => {
+                    let (m, mut t) = cronometrar(reps, ops_desta, true, preparar_padrao, |t, k| {
+                        let p = &dados.base[dados.alvos_distintos[k]];
+                        atualizar_padrao(t, &p.caminho, &dados.valores_novos[k], regime)
+                    });
+                    for (k, &i) in dados.alvos_distintos.iter().enumerate() {
+                        assert_eq!(
+                            ler_padrao(&mut t, &dados.base[i].caminho).as_deref(),
+                            Some(dados.valores_novos[k].as_slice()),
+                            "padrao: atualizar nao trocou {}",
+                            dados.base[i].caminho
+                        );
+                    }
+                    (m, t)
+                }
+                _ => {
+                    let (m, mut t) = cronometrar(reps, ops_desta, true, preparar_padrao, |t, k| {
+                        let p = &dados.base[dados.alvos_distintos[k]];
+                        excluir_padrao(t, &p.caminho, regime)
+                    });
+                    for &i in &dados.alvos_distintos {
+                        assert!(
+                            ler_padrao(&mut t, &dados.base[i].caminho).is_none(),
+                            "padrao: excluir deixou {}",
+                            dados.base[i].caminho
+                        );
+                    }
+                    (m, t)
+                }
+            };
+            let registros = t.registros();
+            drop(t);
+            let _ = std::fs::remove_dir_all(&dir_padrao);
+            let esperado = match operacao {
+                "inserir" => n + ops_desta,
+                "excluir" => n - ops_desta,
+                _ => n,
+            } as u64;
+            assert_eq!(registros, esperado, "padrao: contagem depois de {operacao}");
+            let lado = LadoMedido {
+                medida,
+                bytes_por_op: None,
+                fsyncs_por_op: None,
+            };
+            imprimir_lado("padrao", &lado);
+            lados.push(("padrao", lado));
+        }
+
+        use phxsql_core::json::Json;
+        let mut pares = vec![
+            ("operacao", Json::texto_de(operacao)),
+            ("n", Json::de_u64(n as u64)),
+            ("ops_por_repeticao", Json::de_u64(ops_desta as u64)),
+            ("repeticoes", Json::de_u64(reps as u64)),
+            ("conferido", Json::de_bool(true)),
+        ];
+        for (nome, lado) in &lados {
+            pares.push((nome, json_do_lado(lado)));
+        }
+        secoes.push(Json::objeto(pares));
+    }
+
+    use phxsql_core::json::Json;
+    let saida = Json::objeto(vec![
+        ("regime", Json::texto_de(regime.nome())),
+        ("n", Json::de_u64(n as u64)),
+        ("maquina", Json::texto_de(maquina)),
+        ("carga_1min_no_inicio", Json::Numero(carga1min)),
+        ("medido_em", Json::texto_de(agora_utc_min())),
+        ("secoes", Json::Lista(secoes)),
+    ]);
+    let alvo = dir_saida.join(format!("rust-{}-{n}.json", regime.nome()));
+    std::fs::write(&alvo, saida.escrever_identado()).expect("gravar saida");
+    println!("gravado em {}", alvo.display());
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("crud") {
+        if args.len() < 7 {
+            eprintln!("uso: custo-da-colmeia crud <por_operacao|sistema> <n> <ops> <reps> <dir-saida> [operacao] [lado]");
+            std::process::exit(2);
+        }
+        main_crud(&args);
+        return;
+    }
     let tamanhos: Vec<usize> = if let Some(n) = args.get(1).and_then(|s| s.parse().ok()) {
         vec![n]
     } else {

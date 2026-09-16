@@ -933,6 +933,21 @@ esperando o portão). O que o forte comprou: três achados reais (#254, #255,
 #256), uma hipótese morta com número (111/111) e a leitura de que
 «BULKINSERT em transação» é recusa do motor, não ponto de queda.
 
+## Colmeia × SQLite × padrão, as quatro operações (bancada) — 16/09/2026
+
+| frente | escalão | por quê | papéis convocados | dispensados, e por quê |
+|---|---|---|---|---|
+| **Bancada CRUD** — modo `crud` do exemplo, `medir-crud.py`, dois regimes, três lados, syscalls por operação, §1.1 do `colmeia.md`, linha C do `STATUS-TIPOS.md` | **forte** | bancada de três motores com trabalho igual é onde esta casa já errou **duas vezes** (o `WHERE id IN` contra vinte mil buscas; o `COUNT` sobre 1.250.000 contra a leitura de 20.000), e as duas apontaram para lados opostos sem aparecer no número. Aqui o append-only da colmeia, o casamento de durabilidade e o custo por chamada do Python são três lugares para errar calado; o resultado que importa — a colmeia **perdendo** a 100.000 sem fsync — só aparece para quem mede o fanout em vez de declarar vencedor | A, B (o exemplo e o maestro), J (a leitura contra o gargalo), F (read-back e contagem nos três lados, vencedor só fora do ruído) | C (o formato PSHV continua proposta; a premissa nova do fanout vai para a decisão dele), E (sem tela), G (sem catraca nova — o achado do portão virou pendência #260), H (a entrada na página de testes é do integrador), I (o integrador comita) |
+
+**Custo medido do escalão forte**: 337.597 tokens no transcrito inteiro; a
+contagem de chamadas e a duração atravessaram o reinício do contêiner às
+07:30 (a notificação final cobre o trecho retomado: 31 chamadas, 41 min 48 s
+— o trecho anterior não se mediu e não se publica); corrida de bancada 1.154,6 s com 181 s de espera
+pelo `cargo` da frente vizinha. O que o forte comprou: a derrota da colmeia a
+100.000 sem fsync dita como resultado e não escondida, a contagem de fsync
+por lado que explica o número inteiro (2 / 8–9 / 4), e dois achados novos
+sobre o padrão (#258, #259).
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

@@ -32,7 +32,7 @@ aplicação/modo sobre o Padrão** — não `TipoDatabase`.
 | A | Padrão | `TipoDatabase::Padrao` | tipo | **motor construído e medido** | existe, provado — nada a fazer |
 | B1 | Vetor «tipo SAP HANA» (colunar) | — (não é variante) | layout colunar | **recusa medida** | reabre só com gargalo analítico medido |
 | B2 | Vetor de embeddings (IA) | `TipoDatabase::Vetorial` | tipo | **reservado, sem motor** (proposta) | medir a premissa antes do formato |
-| C | «Dat do regedit» (colmeia/hive) | `TipoDatabase::Hive` | tipo | **reservado, sem motor** (proposta) | premissa medida (REGF **e** protótipo nosso: 10,6×–13,7× sobre o Padrão); falta P0 + aval do formato PSHV |
+| C | «Dat do regedit» (colmeia/hive) | `TipoDatabase::Hive` | tipo | **reservado, sem motor** (proposta) | premissa medida (REGF **e** protótipo nosso: 10,6×–13,7× na leitura); **CRUD medido 16/09/2026** contra SQLite(R) e Padrão (`bancada/colmeia/resultados-crud.json`): ler 6,8×–11,2× sobre o Padrão; escrita ganha com `fsync` fazendo menos (2 contra 8–9), e **perde para o Padrão a 100.000 sem `fsync`** — a cópia de caminho anexa 5.144 B/op; falta fanout limitado no formato + P0 + aval do PSHV |
 | D | base p/ servermail/clientmail | — (tabelas Padrão) | aplicação | **modelo provado, formato pendente do dono** | é aplicação, não tipo |
 | E | base p/ Blockchain | — (modo sobre o Padrão) | modo/recurso | **esquema já roda; falta calcular o hash e verificar a cadeia** | é modo, não tipo — e é o mais barato dos três |
 
@@ -94,6 +94,35 @@ forçam (é o que a torna nossa): sem reuso de célula (append-only + `VACUUM` e
 que o próprio `resultados.json` carrega: o bench grava N valores sob **uma** chave (infla
 a escrita), e os bytes-ao-disco do REGF **ainda não foram medidos**.
 
+**CRUD medido em 16/09/2026** — pergunta do dono («compare o tipo colmeia com o sqlite e
+phxsql — insert, update, delete e select»), respondida com o protótipo PSHV escrevendo por
+*append* (cópia de caminho, o que a pétrea do append-only força), o SQLite(R) 3.45.1 e o
+Padrão de verdade, mesmos dados, 4.000 ops × 15 repetições, máquina parada. Fonte:
+`bancada/colmeia/resultados-crud.json` (medianas em µs/op; faixas, razões e vencedor por
+faixa em `docs/propostas/colmeia.md` §1.1):
+
+| regime | operação | N | colmeia | Padrão | SQLite(R) |
+|---|---|---:|---:|---:|---:|
+| sem `fsync` (`sistema`) | ler | 10.000 | 0,192 | 2,140 | 4,974 |
+| sem `fsync` | inserir | 10.000 | 2,501 | 3,911 | 29,256 |
+| sem `fsync` | atualizar | 10.000 | 3,086 | 6,286 | 27,250 |
+| sem `fsync` | excluir | 10.000 | 3,162 | 26,262 | 28,864 |
+| sem `fsync` | inserir | 100.000 | 9,962 | **4,390** | 29,204 |
+| sem `fsync` | atualizar | 100.000 | 11,678 | **8,146** | 32,205 |
+| `fsync` por operação | inserir | 10.000 | 288,657 | 953,064 | 799,526 |
+| `fsync` por operação | excluir | 10.000 | 291,177 | 1.290,409 | 850,707 |
+
+O que a tabela diz: **ler continua sendo o desenho** (6,8×–11,2× sobre o Padrão, 13×–31×
+sobre o SQLite(R)); **com `fsync` manda o disco** e a colmeia ganha fazendo menos (2 `fsync`
+contra 8–9 do Padrão e 4 `fdatasync` + journal do SQLite(R), medidos com `strace`) — e o
+SQLite(R) fica à frente do Padrão nas medianas de toda escrita nesse regime (fora do ruído
+no excluir, 0,66×–0,67×); **sem `fsync` a cópia de
+caminho cobra o fanout da raiz**: 500 B → 922 B → 5.144 B anexados por operação, e a
+100.000 o Padrão ganha inserir e atualizar fora do ruído. Consequência para o formato:
+fanout limitado (lista de subchaves em célula própria, ou mais um nível) é premissa a
+medir **antes** de prometer escrita config-shaped grande. O protótipo continua protótipo:
+`motor_pronto()==false`.
+
 ### D — servermail / clientmail · **aplicação, não tipo**
 Não há variante de `TipoDatabase`. O correio é **dado do PhxSql guardado no PhxSql**:
 seis tabelas PSCH comuns (`docs/CORREIO-FORMATO.md`), sobre o **motor Padrão**, herdando
@@ -143,7 +172,11 @@ superfície de rede que o projeto não tem; recusar até haver pedido medido.
   config-shaped **10,6×–13,7× mais rápido** que o Padrão (busca de ponto × busca de ponto,
   máquina parada, faixas que não cruzam; `bancada/colmeia/resultados.json`). A premissa
   passou; falta ainda o bytes-ao-disco do próprio REGF (H3, máquina Windows do dono).
-  (`colmeia.md` §1.)
+  (`colmeia.md` §1.) **E o CRUD, MEDIDO (16/09/2026)** contra SQLite(R) e Padrão
+  (`bancada/colmeia/resultados-crud.json`, `colmeia.md` §1.1): a escrita append-only por
+  cópia de caminho anexa **5.144 B/op a N = 100.000** e perde para o Padrão sem `fsync`
+  (9,96 contra 4,39 µs no inserir) — a premissa nova que falta é o **fanout limitado** do
+  formato, a medir antes de prometer escrita config-shaped grande.
 - **E (blockchain):** qual o custo do SHA-256 **por bloco calculado sobre o conteúdo** e
   da verificação de cadeia por altura — dado que SHA-256 é serial e a casa mede **2,51×
   em 4 núcleos** por arquivo, não por bloco.

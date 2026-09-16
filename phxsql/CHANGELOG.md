@@ -10,6 +10,33 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — Colmeia × SQLite × padrão nas quatro operações (bancada)
+
+### Adicionado
+
+- **`bancada/colmeia/medir-crud.py`** e o modo `crud` do exemplo
+  `custo-da-colmeia`: ler, inserir, atualizar e excluir de ponto nos três
+  lados, mesma máquina, dois regimes de durabilidade casados, linha de base
+  do Python publicada, syscalls por operação medidas por `strace`. 24
+  combinações, nenhuma não medida (16/09/2026). Ler: colmeia 6,8×–11,2×
+  sobre o padrão e 13×–31× sobre o SQLite. Escrita com fsync: colmeia
+  2,1×–4,4× fazendo menos (2 fsync contra 8–9 do padrão e 4 do SQLite).
+  Escrita sem fsync: a colmeia ganha a 1.000 e 10.000 e **perde para o
+  padrão a 100.000**, porque a cópia de caminho cobra o fanout da raiz (391
+  grupos, 5.144 bytes por inserção). `docs/propostas/colmeia.md` §1.1.
+
+### Sabido
+
+- O padrão paga 8 a 9 `fsync` por operação no regime por operação, porque
+  `Volumes::sincronizar` sincroniza todo descritor aberto sem pular os
+  limpos — é o que o põe atrás do SQLite em toda escrita com fsync
+  (pendência #258, medir antes de consertar).
+- O excluir do padrão custa 24–28 µs sem fsync, seis vezes o inserir, com 8
+  `write` e cerca de 5 `openat` por linha (pendência #259).
+- O portão «está medindo?» casa o invólucro `bash -c` que só menciona uma
+  bancada, e duas bancadas que se esperam por ele travam uma à outra
+  (pendência #260).
+
 ## Não lançado — Chutar a tomada: a bancada da queda na transação e no BULKINSERT
 
 ### Adicionado

@@ -1,0 +1,1608 @@
+{
+  "bancada": "custo-da-colmeia-crud",
+  "pergunta_do_dono": "Compare o tipo colmeia com o sqlite e phxsql — Insert, update, delete e select.",
+  "o_que_mede": "quatro operacoes de PONTO (ler, inserir, atualizar, excluir) sobre o mesmo par caminho->valor config-shaped, em tres lados: protótipo PSHV (colmeia viva, append por operacao), SQLite(R) da biblioteca padrao do Python, e o motor Padrao do PhxSql (Table com indice unico)",
+  "trabalho_comparado": "1 operacao = 1 chamada nos tres lados; mesma chave, mesmo valor, mesma ordem; atualizar e excluir sobre min(ops, N) chaves DISTINTAS; escritas partem sempre de uma base de N refeita antes de cada passada; o que ficou gravado e conferido no fim (read-back, contagem) nos tres lados",
+  "o_que_cada_lado_faz": {
+    "colmeia": "protótipo PSHV em Rust, arquivo inteiro em memória; ler = descida da árvore de células por busca binária (sem alocar); escrever = append da célula nova + cópia de caminho (folha, grupo, raiz nascem de novo no fim) + bloco base de 128 B reescrito no lugar. SEM índice separado, SEM diário, SEM transação, SEM lixeira, SEM tipos: célula velha vira lixo inalcançável até um compactar explícito",
+    "padrao": "phxsql_store::table::Table de verdade (chave Str(64) + valor Str(128), índice único porChave, cache do .ndx de 1.000.000 páginas); ler = buscar no .ndx + ler no .reg com decodificação em Vec<Value>; inserir = .reg (append, ordem de digitação) + .ndx + diário .log + descritor; atualizar = buscar + regravar a linha no lugar + índice + diário; excluir = buscar + conferir filhas + copiar a linha para a lixeira .trash + índice + diário. Em por_operacao, sincronizar() depois de toda escrita (fsync de cada arquivo aberto da tabela)",
+    "sqlite": "sqlite3 da biblioteca padrão do Python (extensão em C), tabela rowid com chave TEXT PRIMARY KEY (b-tree da tabela + b-tree do índice automático da chave), valor TEXT, journal_mode=DELETE, cache_size de 256 MiB; cada operação é uma transação (autocommit): cria o -journal, grava, apaga o -journal. O tempo inclui a chamada Python->C; a linha de base do Python está publicada ao lado"
+  },
+  "casamento_de_durabilidade": {
+    "por_operacao": "Padrão: sincronizar() após cada escrita; colmeia: fsync após as células e fsync após o bloco base; SQLite: synchronous=FULL + autocommit (fsync do journal e do banco em cada transação)",
+    "sistema": "Padrão: nunca sincroniza (lixeira na janela); colmeia: só write; SQLite: synchronous=OFF + autocommit (1 transação por operação, sem fsync)"
+  },
+  "regime_de_cache": "os tres lados QUENTES: colmeia com o arquivo inteiro em memoria; Padrao com definir_cache_paginas(1_000_000); SQLite com cache_size=-262144 (256 MiB); a primeira passada de cada medida e aquecimento e nao entra",
+  "medido_em": "2026-09-16 06:50 UTC",
+  "maquina": "container Linux, 4 nucleos, kernel 6.18.44-fc-v33",
+  "python": "3.11.15",
+  "sqlite": "3.45.1",
+  "binario": {
+    "caminho": "target/release/examples/custo-da-colmeia",
+    "modificado_em": "2026-09-16 06:50 UTC"
+  },
+  "carga_1min_no_inicio": 1.93,
+  "ops_por_repeticao": 4000,
+  "repeticoes": 15,
+  "tamanhos": [
+    1000,
+    10000,
+    100000
+  ],
+  "regimes": [
+    "por_operacao",
+    "sistema"
+  ],
+  "linha_de_base_python": {
+    "o_que_e": "custo por chamada do lado Python, com o mesmo laco `cronometrar` das medidas: `con.execute('SELECT ?', (k,)).fetchone()` nao toca tabela nenhuma; o laco vazio e so a chamada da funcao por iteracao",
+    "execute_select_param_us": {
+      "mediana_us": 0.8378,
+      "faixa_us": [
+        0.8253,
+        0.8581
+      ]
+    },
+    "laco_vazio_us": {
+      "mediana_us": 0.0305,
+      "faixa_us": [
+        0.0298,
+        0.0388
+      ]
+    },
+    "ops_por_repeticao": 4000,
+    "repeticoes": 15,
+    "carga_1min_no_inicio": 0.89
+  },
+  "combinacoes": [
+    {
+      "regime": "por_operacao",
+      "operacao": "ler",
+      "n": 1000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.89,
+        "sqlite": 0.77
+      },
+      "esperou_slot_s": {
+        "rust": 0.2,
+        "sqlite": 120.9
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 0.1417,
+          "faixa_us": [
+            0.1367,
+            0.1575
+          ]
+        },
+        "padrao": {
+          "mediana_us": 1.4427,
+          "faixa_us": [
+            1.4107,
+            1.617
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 4.4403,
+          "faixa_us": [
+            4.3905,
+            4.5316
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 10.1814,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 31.3359,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 3.0778,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "por_operacao",
+      "operacao": "inserir",
+      "n": 1000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.89,
+        "sqlite": 0.77
+      },
+      "esperou_slot_s": {
+        "rust": 0.2,
+        "sqlite": 120.9
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 275.3903,
+          "faixa_us": [
+            263.5042,
+            289.1192
+          ],
+          "bytes_anexados_por_op": 499.8,
+          "fsyncs_por_op_contados_no_codigo": 2
+        },
+        "padrao": {
+          "mediana_us": 909.3014,
+          "faixa_us": [
+            874.8786,
+            983.2806
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 814.8336,
+          "faixa_us": [
+            769.6688,
+            872.1379
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 3.3019,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 2.9588,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 0.8961,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "por_operacao",
+      "operacao": "atualizar",
+      "n": 1000,
+      "ops_por_repeticao": 1000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.89,
+        "sqlite": 0.77
+      },
+      "esperou_slot_s": {
+        "rust": 0.2,
+        "sqlite": 120.9
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 275.8657,
+          "faixa_us": [
+            249.8178,
+            391.5147
+          ],
+          "bytes_anexados_por_op": 622.3,
+          "fsyncs_por_op_contados_no_codigo": 2
+        },
+        "padrao": {
+          "mediana_us": 814.0636,
+          "faixa_us": [
+            775.4495,
+            1119.9934
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 767.5192,
+          "faixa_us": [
+            694.0823,
+            832.928
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 2.9509,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 2.7822,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 0.9428,
+          "faixas_se_cruzam": true
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "por_operacao",
+      "operacao": "excluir",
+      "n": 1000,
+      "ops_por_repeticao": 1000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.89,
+        "sqlite": 0.77
+      },
+      "esperou_slot_s": {
+        "rust": 0.2,
+        "sqlite": 120.9
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 308.6268,
+          "faixa_us": [
+            241.3521,
+            347.1891
+          ],
+          "bytes_anexados_por_op": 518.3,
+          "fsyncs_por_op_contados_no_codigo": 2
+        },
+        "padrao": {
+          "mediana_us": 1157.5978,
+          "faixa_us": [
+            1107.5731,
+            1276.5431
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 771.8736,
+          "faixa_us": [
+            715.4945,
+            818.5761
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 3.7508,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 2.501,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 0.6668,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "por_operacao",
+      "operacao": "ler",
+      "n": 10000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.58,
+        "sqlite": 0.66
+      },
+      "esperou_slot_s": {
+        "rust": 60.5,
+        "sqlite": 60.5
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 0.2003,
+          "faixa_us": [
+            0.1842,
+            0.2493
+          ]
+        },
+        "padrao": {
+          "mediana_us": 2.0836,
+          "faixa_us": [
+            2.0017,
+            2.2725
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 5.6445,
+          "faixa_us": [
+            5.0494,
+            6.2763
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 10.4024,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 28.1802,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 2.709,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "por_operacao",
+      "operacao": "inserir",
+      "n": 10000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.58,
+        "sqlite": 0.66
+      },
+      "esperou_slot_s": {
+        "rust": 60.5,
+        "sqlite": 60.5
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 288.6568,
+          "faixa_us": [
+            260.3044,
+            313.2291
+          ],
+          "bytes_anexados_por_op": 921.8,
+          "fsyncs_por_op_contados_no_codigo": 2
+        },
+        "padrao": {
+          "mediana_us": 953.0641,
+          "faixa_us": [
+            847.9111,
+            1034.3982
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 799.5263,
+          "faixa_us": [
+            766.6353,
+            1699.2002
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 3.3017,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 2.7698,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 0.8389,
+          "faixas_se_cruzam": true
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "por_operacao",
+      "operacao": "atualizar",
+      "n": 10000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.58,
+        "sqlite": 0.66
+      },
+      "esperou_slot_s": {
+        "rust": 60.5,
+        "sqlite": 60.5
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 357.4697,
+          "faixa_us": [
+            299.1612,
+            565.1847
+          ],
+          "bytes_anexados_por_op": 1062.1,
+          "fsyncs_por_op_contados_no_codigo": 2
+        },
+        "padrao": {
+          "mediana_us": 935.6802,
+          "faixa_us": [
+            887.6449,
+            1073.5373
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 806.3909,
+          "faixa_us": [
+            735.1734,
+            5642.8342
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 2.6175,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 2.2558,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 0.8618,
+          "faixas_se_cruzam": true
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "por_operacao",
+      "operacao": "excluir",
+      "n": 10000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.58,
+        "sqlite": 0.66
+      },
+      "esperou_slot_s": {
+        "rust": 60.5,
+        "sqlite": 60.5
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 291.1768,
+          "faixa_us": [
+            270.6574,
+            307.3733
+          ],
+          "bytes_anexados_por_op": 984.2,
+          "fsyncs_por_op_contados_no_codigo": 2
+        },
+        "padrao": {
+          "mediana_us": 1290.4085,
+          "faixa_us": [
+            1204.2402,
+            1985.3168
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 850.7065,
+          "faixa_us": [
+            808.6718,
+            937.5201
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 4.4317,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 2.9216,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 0.6593,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "por_operacao",
+      "operacao": "ler",
+      "n": 100000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.49,
+        "sqlite": 0.65
+      },
+      "esperou_slot_s": {
+        "rust": null,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 0.3903,
+          "faixa_us": [
+            0.3726,
+            0.5168
+          ]
+        },
+        "padrao": {
+          "mediana_us": 3.2691,
+          "faixa_us": [
+            2.9714,
+            3.5918
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 6.2323,
+          "faixa_us": [
+            6.0514,
+            7.0468
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 8.3759,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 15.968,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 1.9064,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "por_operacao",
+      "operacao": "inserir",
+      "n": 100000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.49,
+        "sqlite": 0.65
+      },
+      "esperou_slot_s": {
+        "rust": null,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 391.1897,
+          "faixa_us": [
+            345.1249,
+            6548.0205
+          ],
+          "bytes_anexados_por_op": 5143.6,
+          "fsyncs_por_op_contados_no_codigo": 2
+        },
+        "padrao": {
+          "mediana_us": 996.8741,
+          "faixa_us": [
+            903.5556,
+            28878.5493
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 818.97,
+          "faixa_us": [
+            776.1157,
+            890.869
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 2.5483,
+          "faixas_se_cruzam": true
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 2.0935,
+          "faixas_se_cruzam": true
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 0.8215,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "dentro_do_ruido"
+    },
+    {
+      "regime": "por_operacao",
+      "operacao": "atualizar",
+      "n": 100000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.49,
+        "sqlite": 0.65
+      },
+      "esperou_slot_s": {
+        "rust": null,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 382.8648,
+          "faixa_us": [
+            337.8369,
+            537.7739
+          ],
+          "bytes_anexados_por_op": 5275.5,
+          "fsyncs_por_op_contados_no_codigo": 2
+        },
+        "padrao": {
+          "mediana_us": 914.9662,
+          "faixa_us": [
+            878.1009,
+            951.0446
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 829.5798,
+          "faixa_us": [
+            763.6901,
+            925.4211
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 2.3898,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 2.1668,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 0.9067,
+          "faixas_se_cruzam": true
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "por_operacao",
+      "operacao": "excluir",
+      "n": 100000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.49,
+        "sqlite": 0.65
+      },
+      "esperou_slot_s": {
+        "rust": null,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 373.811,
+          "faixa_us": [
+            323.645,
+            420.3518
+          ],
+          "bytes_anexados_por_op": 5212.4,
+          "fsyncs_por_op_contados_no_codigo": 2
+        },
+        "padrao": {
+          "mediana_us": 1236.6773,
+          "faixa_us": [
+            1138.4665,
+            1374.5214
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 826.3589,
+          "faixa_us": [
+            797.4893,
+            889.1286
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 3.3083,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 2.2106,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 0.6682,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "sistema",
+      "operacao": "ler",
+      "n": 1000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.68,
+        "sqlite": 0.68
+      },
+      "esperou_slot_s": {
+        "rust": 30.0,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 0.1492,
+          "faixa_us": [
+            0.142,
+            0.1786
+          ]
+        },
+        "padrao": {
+          "mediana_us": 1.5456,
+          "faixa_us": [
+            1.4795,
+            1.8454
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 4.5795,
+          "faixa_us": [
+            4.4736,
+            5.0537
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 10.3592,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 30.6937,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 2.9629,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "sistema",
+      "operacao": "inserir",
+      "n": 1000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.68,
+        "sqlite": 0.68
+      },
+      "esperou_slot_s": {
+        "rust": 30.0,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 2.0578,
+          "faixa_us": [
+            1.9668,
+            2.3208
+          ],
+          "bytes_anexados_por_op": 499.8,
+          "fsyncs_por_op_contados_no_codigo": 0
+        },
+        "padrao": {
+          "mediana_us": 3.7295,
+          "faixa_us": [
+            3.6008,
+            3.9781
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 27.9824,
+          "faixa_us": [
+            25.6779,
+            29.7752
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 1.8124,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 13.5982,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 7.503,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "sistema",
+      "operacao": "atualizar",
+      "n": 1000,
+      "ops_por_repeticao": 1000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.68,
+        "sqlite": 0.68
+      },
+      "esperou_slot_s": {
+        "rust": 30.0,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 2.1086,
+          "faixa_us": [
+            2.0489,
+            2.2446
+          ],
+          "bytes_anexados_por_op": 622.3,
+          "fsyncs_por_op_contados_no_codigo": 0
+        },
+        "padrao": {
+          "mediana_us": 4.9472,
+          "faixa_us": [
+            4.7334,
+            5.159
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 25.749,
+          "faixa_us": [
+            24.4122,
+            27.7476
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 2.3462,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 12.2114,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 5.2048,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "sistema",
+      "operacao": "excluir",
+      "n": 1000,
+      "ops_por_repeticao": 1000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.68,
+        "sqlite": 0.68
+      },
+      "esperou_slot_s": {
+        "rust": 30.0,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 2.0062,
+          "faixa_us": [
+            1.8865,
+            2.8524
+          ],
+          "bytes_anexados_por_op": 518.3,
+          "fsyncs_por_op_contados_no_codigo": 0
+        },
+        "padrao": {
+          "mediana_us": 24.1845,
+          "faixa_us": [
+            23.1439,
+            26.9168
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 28.105,
+          "faixa_us": [
+            26.9941,
+            29.2319
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 12.0549,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 14.0091,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 1.1621,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "sistema",
+      "operacao": "ler",
+      "n": 10000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.7,
+        "sqlite": 0.73
+      },
+      "esperou_slot_s": {
+        "rust": 0.0,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 0.1916,
+          "faixa_us": [
+            0.1797,
+            0.2353
+          ]
+        },
+        "padrao": {
+          "mediana_us": 2.14,
+          "faixa_us": [
+            2.0257,
+            2.3041
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 4.9739,
+          "faixa_us": [
+            4.8487,
+            5.5569
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 11.1691,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 25.9598,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 2.3243,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "sistema",
+      "operacao": "inserir",
+      "n": 10000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.7,
+        "sqlite": 0.73
+      },
+      "esperou_slot_s": {
+        "rust": 0.0,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 2.5014,
+          "faixa_us": [
+            2.4289,
+            2.6836
+          ],
+          "bytes_anexados_por_op": 921.8,
+          "fsyncs_por_op_contados_no_codigo": 0
+        },
+        "padrao": {
+          "mediana_us": 3.9109,
+          "faixa_us": [
+            3.6003,
+            4.2426
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 29.2563,
+          "faixa_us": [
+            28.1179,
+            31.5661
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 1.5635,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 11.696,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 7.4807,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "sistema",
+      "operacao": "atualizar",
+      "n": 10000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.7,
+        "sqlite": 0.73
+      },
+      "esperou_slot_s": {
+        "rust": 0.0,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 3.0856,
+          "faixa_us": [
+            2.8906,
+            3.265
+          ],
+          "bytes_anexados_por_op": 1062.1,
+          "fsyncs_por_op_contados_no_codigo": 0
+        },
+        "padrao": {
+          "mediana_us": 6.286,
+          "faixa_us": [
+            5.8557,
+            6.897
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 27.2502,
+          "faixa_us": [
+            26.0403,
+            30.5594
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 2.0372,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 8.8314,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 4.3351,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "sistema",
+      "operacao": "excluir",
+      "n": 10000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.7,
+        "sqlite": 0.73
+      },
+      "esperou_slot_s": {
+        "rust": 0.0,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 3.1618,
+          "faixa_us": [
+            2.9609,
+            3.3494
+          ],
+          "bytes_anexados_por_op": 984.2,
+          "fsyncs_por_op_contados_no_codigo": 0
+        },
+        "padrao": {
+          "mediana_us": 26.2625,
+          "faixa_us": [
+            24.7089,
+            29.1688
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 28.8643,
+          "faixa_us": [
+            27.9011,
+            29.7329
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 8.3062,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 9.1291,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 1.0991,
+          "faixas_se_cruzam": true
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "sistema",
+      "operacao": "ler",
+      "n": 100000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.75,
+        "sqlite": 0.86
+      },
+      "esperou_slot_s": {
+        "rust": 0.0,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 0.4588,
+          "faixa_us": [
+            0.4425,
+            0.6283
+          ]
+        },
+        "padrao": {
+          "mediana_us": 3.1245,
+          "faixa_us": [
+            2.8908,
+            3.6824
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 6.0419,
+          "faixa_us": [
+            5.66,
+            6.7508
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 6.8102,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 13.1689,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 1.9337,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    },
+    {
+      "regime": "sistema",
+      "operacao": "inserir",
+      "n": 100000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.75,
+        "sqlite": 0.86
+      },
+      "esperou_slot_s": {
+        "rust": 0.0,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 9.9624,
+          "faixa_us": [
+            9.5565,
+            11.5638
+          ],
+          "bytes_anexados_por_op": 5143.6,
+          "fsyncs_por_op_contados_no_codigo": 0
+        },
+        "padrao": {
+          "mediana_us": 4.3901,
+          "faixa_us": [
+            4.3066,
+            6.292
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 29.2041,
+          "faixa_us": [
+            28.4463,
+            30.8572
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 0.4407,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 2.9314,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 6.6523,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "padrao_ganha"
+    },
+    {
+      "regime": "sistema",
+      "operacao": "atualizar",
+      "n": 100000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.75,
+        "sqlite": 0.86
+      },
+      "esperou_slot_s": {
+        "rust": 0.0,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 11.6783,
+          "faixa_us": [
+            11.2612,
+            12.5602
+          ],
+          "bytes_anexados_por_op": 5275.5,
+          "fsyncs_por_op_contados_no_codigo": 0
+        },
+        "padrao": {
+          "mediana_us": 8.1464,
+          "faixa_us": [
+            7.7624,
+            8.9272
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 32.2047,
+          "faixa_us": [
+            30.7512,
+            36.1768
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 0.6976,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 2.7577,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 3.9532,
+          "faixas_se_cruzam": false
+        }
+      },
+      "vencedor": "padrao_ganha"
+    },
+    {
+      "regime": "sistema",
+      "operacao": "excluir",
+      "n": 100000,
+      "ops_por_repeticao": 4000,
+      "repeticoes": 15,
+      "carga_1min_no_inicio": {
+        "rust": 0.75,
+        "sqlite": 0.86
+      },
+      "esperou_slot_s": {
+        "rust": 0.0,
+        "sqlite": 0.0
+      },
+      "lados": {
+        "colmeia": {
+          "mediana_us": 11.3684,
+          "faixa_us": [
+            10.8435,
+            12.5482
+          ],
+          "bytes_anexados_por_op": 5212.4,
+          "fsyncs_por_op_contados_no_codigo": 0
+        },
+        "padrao": {
+          "mediana_us": 27.5306,
+          "faixa_us": [
+            26.4674,
+            32.0803
+          ]
+        },
+        "sqlite": {
+          "mediana_us": 33.3441,
+          "faixa_us": [
+            31.9588,
+            35.3462
+          ]
+        }
+      },
+      "pares": {
+        "padrao_sobre_colmeia": {
+          "razao": 2.4217,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_colmeia": {
+          "razao": 2.9331,
+          "faixas_se_cruzam": false
+        },
+        "sqlite_sobre_padrao": {
+          "razao": 1.2112,
+          "faixas_se_cruzam": true
+        }
+      },
+      "vencedor": "colmeia_ganha"
+    }
+  ],
+  "syscalls_por_op": {
+    "por_operacao": {
+      "ler": {
+        "colmeia": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 0.0,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "padrao": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 0.0,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "sqlite": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 0.0,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        }
+      },
+      "inserir": {
+        "colmeia": {
+          "fsync": 2.0,
+          "fdatasync": 0.0,
+          "write": 2.0,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "padrao": {
+          "fsync": 8.0,
+          "fdatasync": 0.0,
+          "write": 8.09,
+          "pwrite64": 0.0,
+          "openat": 1.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "sqlite": {
+          "fsync": 0.0,
+          "fdatasync": 4.0,
+          "write": 0.0,
+          "pwrite64": 14.36,
+          "openat": 2.0,
+          "unlink": 1.0,
+          "unlinkat": 0.0
+        }
+      },
+      "atualizar": {
+        "colmeia": {
+          "fsync": 2.0,
+          "fdatasync": 0.0,
+          "write": 2.0,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "padrao": {
+          "fsync": 8.0,
+          "fdatasync": 0.0,
+          "write": 6.0,
+          "pwrite64": 0.0,
+          "openat": 1.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "sqlite": {
+          "fsync": 0.0,
+          "fdatasync": 4.0,
+          "write": 0.0,
+          "pwrite64": 10.05,
+          "openat": 2.0,
+          "unlink": 1.0,
+          "unlinkat": 0.0
+        }
+      },
+      "excluir": {
+        "colmeia": {
+          "fsync": 2.0,
+          "fdatasync": 0.0,
+          "write": 2.0,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "padrao": {
+          "fsync": 9.0,
+          "fdatasync": 0.0,
+          "write": 13.0,
+          "pwrite64": 0.0,
+          "openat": 6.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "sqlite": {
+          "fsync": 0.0,
+          "fdatasync": 4.0,
+          "write": 0.0,
+          "pwrite64": 14.3,
+          "openat": 2.0,
+          "unlink": 1.0,
+          "unlinkat": 0.0
+        }
+      }
+    },
+    "sistema": {
+      "ler": {
+        "colmeia": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 0.0,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "padrao": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 0.0,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "sqlite": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 0.0,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        }
+      },
+      "inserir": {
+        "colmeia": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 2.0,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "padrao": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 3.06,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "sqlite": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 0.0,
+          "pwrite64": 13.36,
+          "openat": 1.0,
+          "unlink": 1.0,
+          "unlinkat": 0.0
+        }
+      },
+      "atualizar": {
+        "colmeia": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 2.0,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "padrao": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 3.0,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "sqlite": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 0.0,
+          "pwrite64": 9.05,
+          "openat": 1.0,
+          "unlink": 1.0,
+          "unlinkat": 0.0
+        }
+      },
+      "excluir": {
+        "colmeia": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 2.0,
+          "pwrite64": 0.0,
+          "openat": 0.0,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "padrao": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 8.0,
+          "pwrite64": 0.0,
+          "openat": 4.83,
+          "unlink": 0.0,
+          "unlinkat": 0.0
+        },
+        "sqlite": {
+          "fsync": 0.0,
+          "fdatasync": 0.0,
+          "write": 0.0,
+          "pwrite64": 13.3,
+          "openat": 1.0,
+          "unlink": 1.0,
+          "unlinkat": 0.0
+        }
+      }
+    }
+  },
+  "nao_medido": [],
+  "retomado_em": "2026-09-16 07:50 UTC",
+  "duracao_total_s": 1154.6,
+  "terminado_em": "2026-09-16 08:09 UTC"
+}

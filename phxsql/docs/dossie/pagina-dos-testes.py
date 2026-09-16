@@ -373,6 +373,29 @@ BANCADAS = [
                    ("pontos", "pontos de queda", ""),
                    ("corridas", "quedas de verdade", "")],
     },
+    {
+        "nome": "Colmeia × SQLite × padrão — as quatro operações de ponto",
+        "json": "bancada/colmeia/resultados-crud.json",
+        "roda": "python3 bancada/colmeia/medir-crud.py",
+        "prova": "ler, inserir, atualizar e excluir de ponto nos três lados, mesma "
+                 "máquina e mesmos dados por construção, dois regimes de "
+                 "durabilidade casados, vencedor só fora do ruído; o que cada "
+                 "lado faz por operação está dito ao lado do número",
+        "ver": lambda d: {
+            "quando": (d.get("terminado_em") or d.get("medido_em") or "")[:16],
+            "combinacoes": len(d.get("combinacoes") or []),
+            "colmeia_ganha": sum(1 for c in d.get("combinacoes") or []
+                                 if c.get("vencedor") == "colmeia_ganha"),
+            "padrao_ganha": sum(1 for c in d.get("combinacoes") or []
+                                if c.get("vencedor") == "padrao_ganha"),
+            "dentro_do_ruido": sum(1 for c in d.get("combinacoes") or []
+                                   if "ruido" in str(c.get("vencedor"))),
+        },
+        "campos": [("combinacoes", "combinações", ""),
+                   ("colmeia_ganha", "colmeia ganha", ""),
+                   ("padrao_ganha", "padrão ganha", ""),
+                   ("dentro_do_ruido", "dentro do ruído", "")],
+    },
 ]
 
 
