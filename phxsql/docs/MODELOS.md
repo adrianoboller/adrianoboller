@@ -967,3 +967,31 @@ nível acima de onde ele procurou; o do DbLink acertou, e ainda assim a prova
 real foi refeita aqui antes do commit. Isso não é argumento para não delegar —
 é argumento para delegar exatamente o que se confere sozinho, que é o que o
 escalão mecânico quer dizer.
+
+## Rodada de 16/09/2026 — os consertos que nao dependiam do dono
+
+Sete frentes. O criterio foi o de sempre: projeto e risco no escalao forte,
+mecanico e verificavel no leve. A conta que o dono cobra e esta.
+
+| frente | escalao | por que | papeis dispensados |
+|---|---|---|---|
+| B1 — pedido 254, a marca `.tx` que sobrevive ao `bulkinsert(false)` | forte | transacao e durabilidade: quem erra aqui perde commit confirmado | E (nenhuma tela muda), J (o achado e nosso e ja medido, nao ha receita de fora) |
+| B2 — pedidos 258 e 259, os `fsync` por operacao e o custo do excluir | forte | caminho quente e garantia de dado, com mudanca no que vai ao prato | E, J |
+| C — parecer: pode pular descritor limpo? | forte | e o papel que diz NAO quando uma proposta boa quebra uma garantia; so leitura | — |
+| G1 — pedidos 256 e 260, o `pkill` sem PID e o portao que ve a casca | medio | ferramental de bancada, e a regra de QA foi decidida pelo orquestrador antes, entao o agente implementa em vez de desenhar | C (nao toca formato nem chave), E, J |
+| F247 — a falha nao reproduzida do gerador de identificador | forte | garantia de identidade do dado, e a causa podia estar no relogio, no teste ou na concorrencia | E, J |
+| U — pedido 245, o gatilho do upsert | forte | semantica de gatilho e correcao de dado; e a lei dos tres motores decide | C, E |
+| integracao | — | commit por caminho explicito, portoes, geradores, paginas, backup | — |
+
+**O que a escolha do escalao comprou, medido nesta rodada:** as quatro frentes
+fortes derrubaram a premissa escrita do proprio pedido em **tres** dos quatro
+casos — o 254 («chame a mesma drenagem» nao consertaria nada), o 245 («o BEFORE
+ve a linha errada», e ele nao rodava) e o 259 (os `openat` eram do
+`/dev/urandom`, e o instrumento mudava o ritmo que mudava a contagem). A frente
+media entregou os dois consertos dela sem derrubar premissa nenhuma, que e
+exatamente o perfil de trabalho que ela devia receber.
+
+**E o custo de nao ter dispensado ninguem em silencio:** o papel C foi
+convocado por uma pergunta so, e a resposta dele mudou o desenho do 258 antes
+de haver codigo — o sinal em RAM e cego ao processo morto, e sem o batismo a
+mudanca perderia commit confirmado sem bilhete.
