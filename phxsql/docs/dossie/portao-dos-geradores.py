@@ -156,6 +156,15 @@ PLANO = [
      "le resultados.json das bancadas; traz mtime e relogio"),
     ("numeros-do-projeto.py", [DOSSIE, "docs/CAPABILITIES.json"], "nota-cargo",
      "chama cargo test e cargo run --example; nao martelar o build nesta worktree"),
+    # Nao e' gerador do dossie -- e' o rollup do board de PMO (GOV-3). Entra
+    # aqui pelo mesmo motivo do `docs/tecnologias/extrair.py`: e' um gerador
+    # que reescreve um bloco marcado a partir de fonte versionada, e o mesmo
+    # buraco vale -- rodada pode esquecer de roda-lo e o board fica com a
+    # contagem de ontem. "sem-carimbo" porque o bloco carrega "gerado em
+    # HH:MM UTC" (relogio de parede); os _CARIMBOS ja cobrem esse formato.
+    ("docs/pmo/rollup.py", ["docs/pmo/BACKLOG.md"], "sem-carimbo",
+     "conta aberto/entregue-fechado/parado por pilar do proprio BACKLOG.md; "
+     "funcao pura da fonte versionada, so' o carimbo de hora e' relogio"),
 ]
 
 # A figura cuja frescura o trio confere por mtime -- que o portao poe como a

@@ -18,6 +18,7 @@ dele**, e que a dispensa seja registrada.
 | F — Prova real | `prova-real` | o teste FALHA com o defeito reposto e passa com o conserto |
 | G — QA | `qa` | catracas e catálogo de guardas; catraca só desce |
 | H — Documentação | `documentacao` | número visível sai de gerador, nunca de memória |
+| H — Documentação | `tradutor` | agente multilíngua pétreo (GOV-1, pedido #110): lote coerente na `FABRICA_TELA`, catraca `TETO_ROTULOS_E_CRASE` sempre baixando |
 | I — Versionador/Backup | *(scripts `backup.sh`; integrador comita)* | pacote por script, nunca à mão |
 | J — Pesquisador | `pesquisador` | traz o que os outros fazem, **medido contra o nosso gargalo** |
 
@@ -60,6 +61,7 @@ roteirizada, tradução) no mais leve que ainda faça direito.
 
 Revisor não escreve: `dba`, `qa`, `seguranca` e os `pesquisa-*` têm só leitura
 e busca — um revisor que pode editar deixa de ser revisor. `prova-real`,
-`engenheiro`, `designer` e `documentacao` escrevem, porque o entregável deles é
-código, teste, tela ou documento. **Só o integrador comita**, por caminho
-explícito — nenhum agente empurra para o `origin` sozinho.
+`engenheiro`, `designer`, `documentacao` e `tradutor` escrevem, porque o
+entregável deles é código, teste, tela ou documento. **Só o integrador
+comita**, por caminho explícito — nenhum agente empurra para o `origin`
+sozinho.

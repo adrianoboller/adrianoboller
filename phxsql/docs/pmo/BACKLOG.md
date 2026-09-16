@@ -1,5 +1,19 @@
 # Board de controle — backlog aberto por pilar e por escalão
 
+<!-- ROLLUP:inicio -->
+*Gerado por `docs/pmo/rollup.py` em 16/09/2026 06:00 UTC — não conte à mão; o estado sai da última coluna de cada tabela abaixo, e o escalão da coluna `escalão`.*
+
+| pilar | aberto | entregue/fechado | parado | total |
+|---|---|---|---|---|
+| Pilar 1 | 10 | 1 | 0 | 11 |
+| Pilar 2 | 3 | 0 | 0 | 3 |
+| Pilar 3 | 6 | 0 | 0 | 6 |
+| Governança | 1 | 2 | 0 | 3 |
+| **total** | **20** | **3** | **0** | **23** |
+
+**itens em forte abertos:** 11 — P1-108, P1-158, P1-SQL-2, P1-SQL-6, P2-CAIXA, P2-CIFRA, P2-DESIGN, P3-1, P3-2, P3-3, P3-5
+<!-- ROLLUP:fim -->
+
 Esta é a planilha de comunicação que o dono pediu, no molde do Phoenix Cast,
 **adaptada à nossa casa**. Ela responde a três perguntas de uma vez: *o que está
 aberto*, *de que pilar é*, e *qual escalão de modelo cada item merece* — para
@@ -67,9 +81,9 @@ Roteiro medido em `docs/propostas/phxblockchain-melhorias-2026-09.md`.
 
 | ID | entrega | dono | escalão | status |
 |---|---|---|---|---|
-| GOV-1 | Agente multilíngua (tradutor pétreo) + documentador (pedido #110) | H | **leve** | aberto |
+| GOV-1 | Agente multilíngua (tradutor pétreo) + documentador (pedido #110) | H | **leve** | aberto — definição feita em 16/09/2026 (`.claude/agents/tradutor.md`); primeira corrida pendente |
 | GOV-2 | Ativar a equipe completa: pétrea de escalão, `docs/VISAO.md`, este board, e o subagente `pesquisa-rede` (os 11 já eram versionados no `.claude/agents/` do root) | A, I | **leve** | **fechado nesta rodada** |
-| GOV-3 | Gerador do rollup deste board (contar aberto/fechado por pilar e escalão, medido) | H | **leve** | aberto (gap: hoje o rollup seria digitado) |
+| GOV-3 | Gerador do rollup deste board (contar aberto/fechado por pilar e escalão, medido) | H | **leve** | fechado em 16/09/2026: `docs/pmo/rollup.py` |
 
 ---
 

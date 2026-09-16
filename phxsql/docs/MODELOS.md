@@ -845,6 +845,23 @@ custo: a pendência nova era a #246 e não a #245 (o número no `CLAUDE.md`
 estava errado), e o `COMPARATIVO.md` é gerado por sonda contra um servidor
 vivo, então não se edita — se remede.
 
+## Rollup do board e o agente tradutor (GOV-3, GOV-1) — 16/09/2026
+
+| frente | escalão | por quê | papéis convocados | dispensados, e por quê |
+|---|---|---|---|---|
+| **GOV-3** — `docs/pmo/rollup.py`, o gerador que conta aberto/entregue/parado por pilar e os «forte» abertos do `BACKLOG.md`, e a entrada dele no portão dos geradores | **leve** | é varredura roteirizada de uma tabela Markdown com regra explícita (a primeira palavra da célula decide o estado; palavra fora do léxico PARA nomeando a linha) — o resultado se confere sozinho por hash: duas corridas sem mexer na fonte deram o mesmo arquivo | A, H | B/C (nenhum código do motor, nenhum formato), E (não há tela), F (a prova é a idempotência por SHA-256, feita pelo próprio H), G (o portão dos geradores já é a catraca; a entrada nova entrou nele), J (nada de fora a medir), D/I (nada a limpar; o integrador comita) |
+| **GOV-1** — `.claude/agents/tradutor.md`, o agente multilíngua pétreo (pedido #110), e as duas linhas no `README.md` dos agentes | **leve** | é escrever uma definição de papel a partir de leis que já existem (`docs/MENSAGENS.md`, as três armadilhas, a catraca `TETO_ROTULOS_E_CRASE`) — copiar o molde dos agentes irmãos e citar as fontes certas, verificável por leitura | A, H | os mesmos de cima; e o próprio tradutor **não rodou** nesta rodada (a árvore estava ocupada pela frente T compilando), então a primeira corrida dele fica registrada como pendente no board, não como feita |
+
+**Custo medido do escalão leve nas duas** (do transcrito do agente, não
+estimado): 151.598 tokens, 35 chamadas de ferramenta, 9 min 47 s de parede,
+em paralelo com a frente T (forte) e a pesquisa P2-DESIGN. Um achado
+colateral que valeu o custo: o `PLANO` do portão já tinha **15** entradas
+antes desta rodada — o `docs/tecnologias/extrair.py` está no portão e fora da
+conta «catorze» do `LEIA-ME.md`, que por definição só conta os scripts de
+`docs/dossie/`. Com o rollup são 16, e a conta «catorze» continua certa pela
+definição dela — mas a frase do `CLAUDE.md` que diz «listados no LEIA-ME da
+pasta» passa a valer só para o dossiê, e o portão é a lista completa.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:
