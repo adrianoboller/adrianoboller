@@ -37,7 +37,6 @@
 //! impressao digital de arquivo.
 
 use std::fmt;
-use std::sync::Mutex;
 
 use crate::error::{PhxError, Result};
 
@@ -112,17 +111,95 @@ fn agora_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// Ultimo milissegundo emitido e o contador dentro dele.
-///
-/// Guardado num mutex porque a garantia de "nunca repete e nunca anda para
-/// tras" tem de valer entre threads: duas conexoes gravando ao mesmo tempo
-/// pedem id ao mesmo gerador.
-static RELOGIO: Mutex<(u64, u16)> = Mutex::new((0, 0));
-
 /// Faixa util do contador de 12 bits. Comeca sorteado na metade de baixo para
 /// sobrar espaco de contagem sem estourar dentro do mesmo milissegundo.
 const CONTADOR_MASCARA: u16 = 0x0FFF;
 const CONTADOR_SEMENTE: u16 = 0x07FF;
+
+/// Um passo do relogio logico: dado o ultimo par (milissegundo, contador)
+/// emitido e a leitura do relogio da maquina, devolve o proximo par.
+///
+/// E uma funcao PURA de proposito: nao le nem escreve o estado do gerador.
+/// Quem quer provar a logica do passo -- o estouro, o relogio da maquina
+/// andando para tras -- chama esta funcao com um estado local, e o gerador
+/// nem fica sabendo. O estado de verdade mora em `relogio`, que so `v7()`
+/// alcanca; o motivo esta escrito la.
+///
+/// Tres casos, e o terceiro e o que garante a monotonia: se o contador
+/// estourou dentro do mesmo milissegundo, empresta-se um milissegundo do
+/// futuro em vez de repetir ou esperar. O id continua crescente e a geracao
+/// nunca bloqueia.
+///
+/// E o primeiro caso e o que absorve o relogio da maquina: `agora_ms` le
+/// `SystemTime`, que e CLOCK_REALTIME, e o NTP PODE puxa-lo para tras. So um
+/// instante MAIOR que o ultimo emitido abre milissegundo novo; instante igual
+/// ou menor cai no segundo caso e o id cresce pelo contador. O relogio da
+/// maquina retrocede; o id, nao.
+fn avancar(ultimo: (u64, u16), agora: u64) -> (u64, u16) {
+    let (ultimo_ms, contador) = ultimo;
+    if agora > ultimo_ms {
+        let mut semente = [0u8; 2];
+        sortear(&mut semente);
+        (agora, u16::from_be_bytes(semente) & CONTADOR_SEMENTE)
+    } else if contador < CONTADOR_MASCARA {
+        (ultimo_ms, contador + 1)
+    } else {
+        (ultimo_ms + 1, 0)
+    }
+}
+
+/// O estado do relogio logico, fechado num modulo so dele.
+///
+/// Por que um modulo, e nao um `static` ao lado das funcoes -- pedido 247.
+/// O `static RELOGIO` ficava solto no modulo `uuid`, e o teste do contador
+/// estourado o ESCREVIA para tras (`ms = 5_000`) para montar o cenario. Os
+/// testes de um binario rodam em paralelo; sob carga, essa escrita caiu no
+/// meio do laco de `v7_nunca_repete_nem_anda_para_tras`, o gerador viu
+/// «milissegundo novo» dentro do MESMO milissegundo, re-semeou o contador na
+/// metade de baixo e o id andou para tras: contador `0x8ae` seguido de
+/// `0x409`, 54 vezes em 1.000 corridas, medido em 16/09/2026. O gerador
+/// estava certo; o estado dele e que estava ao alcance de quem nao devia.
+///
+/// Aqui dentro o `static` e privado. O modulo `tests` e filho de `uuid`, nao
+/// deste, e nao o enxerga: nao ha como um teste repor o defeito sem antes
+/// abrir este modulo -- e e isso que a guarda `relogio-ao-alcance-do-teste`
+/// do catalogo repoe para provar que o teste de concorrencia cai.
+mod relogio {
+    use std::sync::Mutex;
+
+    /// Ultimo milissegundo emitido e o contador dentro dele.
+    ///
+    /// Num mutex porque a garantia de "nunca repete e nunca anda para tras"
+    /// tem de valer entre threads: duas conexoes gravando ao mesmo tempo pedem
+    /// id ao mesmo gerador. E um so para o processo inteiro, nao por thread:
+    /// por thread, duas conexoes poderiam emitir o mesmo par.
+    static ESTADO: Mutex<(u64, u16)> = Mutex::new((0, 0));
+
+    /// Avanca o relogio logico do processo e devolve o par emitido. Ler o
+    /// estado, decidir e gravar acontecem sob a mesma guarda: nao ha janela
+    /// em que duas threads leiam o mesmo par.
+    pub(super) fn passo(agora: u64) -> (u64, u16) {
+        let mut guarda = match ESTADO.lock() {
+            Ok(g) => g,
+            // Mutex envenenado nao pode derrubar a geracao de id: o estado
+            // dele e so um par de numeros, e seguir com o valor de dentro e
+            // seguro.
+            Err(e) => e.into_inner(),
+        };
+        *guarda = super::avancar(*guarda, agora);
+        *guarda
+    }
+
+    /// Leitura para a mensagem de diagnostico do teste. Le e solta: o unico
+    /// caminho de escrita e `passo`, e e isso que o pedido 247 comprou.
+    #[cfg(test)]
+    pub(super) fn ler() -> (u64, u16) {
+        match ESTADO.lock() {
+            Ok(g) => *g,
+            Err(e) => *e.into_inner(),
+        }
+    }
+}
 
 impl Uuid {
     /// O UUID todo-zeros, `00000000-0000-0000-0000-000000000000`.
@@ -167,7 +244,7 @@ impl Uuid {
     /// UUID v7: relogio em milissegundos nos 48 bits altos, contador de 12
     /// bits e 62 bits sorteados. Estritamente crescente.
     pub fn v7() -> Uuid {
-        let (ms, contador) = proximo_passo(agora_ms());
+        let (ms, contador) = relogio::passo(agora_ms());
         Uuid::montar_v7(ms, contador)
     }
 
@@ -250,34 +327,6 @@ impl Uuid256 {
     }
 }
 
-/// Avanca o relogio logico e devolve (milissegundos, contador).
-///
-/// Tres casos, e o terceiro e o que garante a monotonia: se o contador estourou
-/// dentro do mesmo milissegundo, empresta-se um milissegundo do futuro em vez
-/// de repetir ou esperar. O id continua crescente e a geracao nunca bloqueia.
-fn proximo_passo(agora: u64) -> (u64, u16) {
-    let mut guarda = match RELOGIO.lock() {
-        Ok(g) => g,
-        // Mutex envenenado nao pode derrubar a geracao de id: o estado dele e
-        // so um par de numeros, e seguir com o valor de dentro e seguro.
-        Err(e) => e.into_inner(),
-    };
-    let (ultimo_ms, contador) = *guarda;
-
-    let passo = if agora > ultimo_ms {
-        let mut semente = [0u8; 2];
-        sortear(&mut semente);
-        (agora, u16::from_be_bytes(semente) & CONTADOR_SEMENTE)
-    } else if contador < CONTADOR_MASCARA {
-        (ultimo_ms, contador + 1)
-    } else {
-        (ultimo_ms + 1, 0)
-    };
-
-    *guarda = passo;
-    passo
-}
-
 fn hex_para(s: &str, dst: &mut [u8]) -> std::result::Result<(), String> {
     let b = s.as_bytes();
     for (i, alvo) in dst.iter_mut().enumerate() {
@@ -328,6 +377,45 @@ impl fmt::Display for Uuid256 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
+
+    /// Milissegundo e contador de um v7, lidos dos bytes. Existe para a
+    /// mensagem de falha dizer QUAL das duas metades andou para tras: o log
+    /// do pedido 247 guardou so a linha do panico, e a cacada custou de novo.
+    fn desmontar(u: &Uuid) -> (u64, u16) {
+        let ms = u.instante_ms().unwrap_or(-1) as u64;
+        let contador = (((u.0[6] & 0x0F) as u16) << 8) | u.0[7] as u16;
+        (ms, contador)
+    }
+
+    /// A mensagem inteira de uma falha de monotonia: os dois ids em hexa, o
+    /// milissegundo e o contador de cada um, o relogio da maquina e o estado
+    /// do gerador no instante. Montada so quando cai -- os argumentos do
+    /// `assert!` sao preguicosos -- e por isso nao custa nada no laco.
+    fn diagnostico(i: usize, anterior: &Uuid, u: &Uuid) -> String {
+        let (ms_a, c_a) = desmontar(anterior);
+        let (ms_u, c_u) = desmontar(u);
+        let (ms_r, c_r) = relogio::ler();
+        format!(
+            "id {i} nao cresceu: anterior {anterior} (ms {ms_a}, contador {c_a:#05x}) \
+             depois {u} (ms {ms_u}, contador {c_u:#05x}); \
+             relogio da maquina agora {} ms; estado do gerador = (ms {ms_r}, contador {c_r:#05x})",
+            agora_ms(),
+        )
+    }
+
+    /// O cenario do contador no teto, montado num estado LOCAL: e o que o
+    /// teste do emprestimo confere, e o que `a_geracao_entre_fios...` roda em
+    /// laco enquanto quatro fios geram -- para provar que montar o cenario
+    /// nao alcanca o gerador. A versao antiga escrevia o `static` do modulo
+    /// (`*RELOGIO.lock() = (5_000, MASCARA)`), e era isso que derrubava o
+    /// vizinho que rodava em paralelo (pedido 247).
+    fn cenario_do_contador_estourado() -> (u64, u16) {
+        avancar((5_000, CONTADOR_MASCARA), 5_000)
+    }
 
     #[test]
     fn v7_tem_o_layout_do_rfc_9562() {
@@ -355,7 +443,7 @@ mod tests {
         let mut anterior = Uuid::v7();
         for i in 0..20_000 {
             let u = Uuid::v7();
-            assert!(u > anterior, "id {i} nao cresceu: {anterior} depois {u}",);
+            assert!(u > anterior, "{}", diagnostico(i, &anterior, &u));
             anterior = u;
         }
     }
@@ -373,9 +461,81 @@ mod tests {
     fn contador_estourado_empresta_do_futuro() {
         // Com o contador no teto, o proximo passo anda um milissegundo em vez
         // de repetir -- senao dois ids sairiam iguais.
-        *RELOGIO.lock().unwrap() = (5_000, CONTADOR_MASCARA);
-        let (ms, c) = proximo_passo(5_000);
-        assert_eq!((ms, c), (5_001, 0));
+        assert_eq!(cenario_do_contador_estourado(), (5_001, 0));
+    }
+
+    #[test]
+    fn relogio_da_maquina_para_tras_nao_leva_o_id_junto() {
+        // `agora_ms` e CLOCK_REALTIME, e o NTP pode puxa-lo para tras. O passo
+        // so abre milissegundo novo com instante MAIOR que o ultimo emitido;
+        // igual ou menor conta no mesmo milissegundo -- e o id cresce.
+        assert_eq!(avancar((1_000, 5), 1_000), (1_000, 6));
+        assert_eq!(avancar((1_000, 6), 999), (1_000, 7));
+        assert_eq!(avancar((1_000, 7), 0), (1_000, 8));
+        // Instante maior re-semeia na metade de baixo da faixa, e e por isso
+        // que um estado escrito para tras faz o id cair (pedido 247): o
+        // contador seguinte nasce menor que o anterior no MESMO milissegundo.
+        let (ms, c) = avancar((1_000, 0x0FFE), 1_001);
+        assert_eq!(ms, 1_001);
+        assert!(
+            c <= CONTADOR_SEMENTE,
+            "semente {c:#05x} fora da metade de baixo"
+        );
+    }
+
+    #[test]
+    fn a_geracao_entre_fios_nunca_anda_para_tras() {
+        // O nome comeca com «a_» de proposito: o libtest despacha em ordem
+        // alfabetica, e este e o teste que tem de estar rodando enquanto os
+        // vizinhos do modulo rodam -- foi um vizinho em paralelo que derrubou
+        // o gerador no pedido 247.
+        //
+        // Quatro fios geram ate a bandeira cair (e nunca menos de 2.000 cada),
+        // e cada um confere a propria sequencia. No fim, o conjunto inteiro
+        // nao pode ter repetido: sequencia crescente por fio nao basta, dois
+        // fios poderiam sair iguais entre si.
+        let parar = Arc::new(AtomicBool::new(false));
+        let fios: Vec<_> = (0..4)
+            .map(|f| {
+                let parar = Arc::clone(&parar);
+                thread::spawn(move || {
+                    let mut ids = Vec::with_capacity(50_000);
+                    let mut anterior = Uuid::v7();
+                    let mut i = 0usize;
+                    while !parar.load(Ordering::Relaxed) || i < 2_000 {
+                        let u = Uuid::v7();
+                        assert!(u > anterior, "fio {f}: {}", diagnostico(i, &anterior, &u));
+                        ids.push(u);
+                        anterior = u;
+                        i += 1;
+                    }
+                    ids
+                })
+            })
+            .collect();
+        // Enquanto eles geram, o cenario do contador estourado -- o do teste
+        // vizinho -- e montado 64 vezes, com 1 ms entre cada. Montar cenario
+        // NAO pode ser sentido por quem gera. A versao que escrevia o estado
+        // global era sentida em 5,4% das corridas sob carga com UMA escrita;
+        // com 64, cai sempre -- e e assim que o catalogo prova esta guarda.
+        for _ in 0..64 {
+            assert_eq!(cenario_do_contador_estourado(), (5_001, 0));
+            thread::sleep(Duration::from_millis(1));
+        }
+        parar.store(true, Ordering::Relaxed);
+        let mut todos: Vec<Uuid> = Vec::new();
+        for fio in fios {
+            match fio.join() {
+                Ok(ids) => todos.extend(ids),
+                // O panico do fio ja saiu no log com o diagnostico; aqui so
+                // se repete para o teste cair com ele, e nao com um `Err`.
+                Err(e) => std::panic::resume_unwind(e),
+            }
+        }
+        let n = todos.len();
+        todos.sort();
+        todos.dedup();
+        assert_eq!(todos.len(), n, "houve id repetido entre fios");
     }
 
     #[test]
