@@ -37,7 +37,7 @@ Três arquivos, e a divisão entre os dois primeiros é o ponto:
 | `catalogo.py` | **só dados**: cada defeito, o trecho de hoje, o trecho de antes, e quais testes têm de cair |
 | `provar-guardas.py` | o executor: copia a árvore, repõe um defeito por vez, roda os testes nomeados, desfaz, e julga |
 | `ultima-corrida.json` | o `--json` da última corrida **completa**, versionado — é dele que a tabela do `docs/TESTES.md` sai. Sem corrida não há tabela, e uma tabela que não venha de um arquivo destes é digitada |
-| `tabela-no-testes.py` | regrava a tabela das guardas no `docs/TESTES.md` a partir do `--json` de uma rodada — número visível que não sai de gerador está errado e ninguém percebeu ainda |
+| `tabela-no-testes.py` | regrava a tabela das guardas no `docs/TESTES.md` a partir do `--json` de uma rodada — número visível que não sai de gerador está errado e ninguém percebeu ainda. Desde o pedido 269 ele **nomeia o que a rodada não julgou** e **recusa** encolher a tabela sem um `--parcial` escrito |
 
 Os dois arquivos abaixo respondem a `--numeros` e por isso entram na tabela
 gerada das catracas (`docs/QA-PDCA.md`, pelo `docs/qa/medir.py`) — antes de
@@ -54,7 +54,9 @@ gerada das catracas (`docs/QA-PDCA.md`, pelo `docs/qa/medir.py`) — antes de
 — é a catraca do catálogo *envelhecido* (pedido 263). Ela lê este
 `catalogo.py` pelo próprio módulo (nunca por cópia da lista) e faz **quatro
 perguntas de texto puro** sobre cada entrada, mais **um piso** sobre o
-catálogo inteiro.
+catálogo inteiro — e, desde o pedido 269, uma **quinta** que não olha o
+código: quanto da diferença entre o catálogo e a última corrida a página
+publicada **esconde**.
 
 Ela existe por um número: em 16/09/2026 a corrida completa achou **onze
 guardas QUEBRADAS**, e um único commit de 12/09 tinha aposentado **cinco de
@@ -62,7 +64,11 @@ uma vez** sem ninguém ver por quatro dias. A causa não é desleixo, é custo �
 o `provar-guardas.py` leva cerca de uma hora, porque repõe o defeito e roda
 `cargo test` 143 vezes. **Guarda que só se confere em uma hora é guarda que
 não se confere.** O `trecho-vivo.py` custa **0,200–0,206 s** (medido, cinco
-corridas a load ~1,0) e roda no item 0c da bateria.
+corridas a load ~1,0) e roda no item 0c da bateria. A quinta régua (pedido
+269) acrescentou **+10 ms**: medido no mesmo minuto e na mesma máquina a load
+2,5, sete corridas de cada lado, a mediana foi **197 ms** com quatro réguas e
+**207 ms** com cinco. O custo é medido a cada régua que entra, e não no fim —
+**régua cara é régua que não se roda**.
 
 **As cinco formas de QUEBRADA, e as quatro que ela vê.** A régua nasceu vendo
 **uma**, e o preço disso foi medido no mesmo dia: ela dizia `ok 0` enquanto o
@@ -97,6 +103,61 @@ apaga em silêncio faz a soma cair e o piso reprova. **A aposentadoria é
 escrita; o apagamento é que some.**
 
 Ver `docs/CATRACAS.md` §12.
+
+### A quinta régua: a tabela publicada pode ser MENOR que o catálogo
+
+Pedido 269. As quatro de cima olham o **código** contra a entrada; esta olha a
+**entrada** contra a **última corrida** — e é a única forma de envelhecimento
+que nenhuma delas vê. Uma entrada pode ter trecho vivo, teste vivo, teste no
+binário certo e mesmo assim **nunca ter sido julgada**: basta ela ter entrado
+depois da última corrida do provador.
+
+Medido em 16/09/2026: o catálogo tinha **160** entradas e a tabela publicada
+dizia **«143 guardas»**. A página era honesta sobre a **data** (traz o `medido
+em`, que é a disciplina do `pagina-dos-testes.py`) e **muda sobre o tamanho** —
+quem a lesse como inventário a leria 17 entradas curta.
+
+**O teto conta o escondido, e não o buraco — e o motivo foi medido duas vezes
+no mesmo serão.** O buraco cru era 17 às 21h e **26** às 23h, porque uma frente
+vizinha escreveu nove guardas novas nesse intervalo. Não houve defeito entre as
+duas medições: houve trabalho certo. Um teto sobre o buraco cru ficaria
+vermelho toda vez que alguém escrevesse uma guarda, e os dois caminhos para
+reverdecê-lo seriam rodar o provador inteiro (~3.374 s de mutação mais a
+compilação) ou **subir** o teto, que esta casa proíbe. Catraca cujo único
+caminho verde custa uma hora é catraca que se pula.
+
+Então:
+
+| o quê | o que é | onde aparece |
+|---|---|---|
+| **não julgadas** | o buraco: entradas sem veredito na corrida publicada | **impresso**, na linha «a última corrida julgou N de M» — nunca travado |
+| **escondidas** | a dívida: as não julgadas que a página nem nomeia | `TETO_NAO_JULGADA_ESCONDIDA`, que **só desce** |
+
+A dívida se paga em **0,2 s**, sem prova nova e sem data nova — republicando a
+**mesma** corrida:
+
+```bash
+python3 bancada/guardas/tabela-no-testes.py bancada/guardas/ultima-corrida.json
+```
+
+**E ela vira parada com o motivo quando a fonte some.** Sem a
+`ultima-corrida.json` não há corrida com que comparar; sem as marcas
+`guardas:inicio`/`guardas:fim` no `docs/TESTES.md` não dá para saber o que a
+página nomeia. Nos dois casos a régua reprova com o motivo escrito **e conta o
+pior caso** — corrida ausente julgou zero, página ilegível nomeia zero. O que
+ela não pode é devolver `0` calada e parecer um catálogo inteiro.
+
+Prova real dos dois lados, sem `cargo` e sem provador:
+
+```bash
+python3 bancada/guardas/trecho-vivo.py --autoteste      # a régua
+python3 bancada/guardas/tabela-no-testes.py --autoteste  # o gerador
+```
+
+Um dos casos da régua **passou com o defeito reposto** na primeira escrita: ele
+testava o substring no sentido errado (`g1-longa` não está dentro de `g1`; é
+`g1` que está dentro de `g1-longa`). Quem disse isso foi a mutação, não a
+leitura — **teste que passa por engano é pior que teste que falta**.
 
 ## O que sai
 

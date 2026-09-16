@@ -60,7 +60,7 @@ citava o mesmo número).
 | número | onde (arquivo:linha) | sai de gerador? | gerador / classificação |
 |---|---|---|---|
 | 1.547 testes | `README.md:226`, `docs/TESTES.md:37`, `docs/PENDENCIAS.md` #172 | sim / sim / história datada | `numeros-do-projeto.py`; §5.5.3 de 03/09 |
-| 77 guardas | `docs/TESTES.md:720` | sim | `bancada/guardas/tabela-no-testes.py`, medido em 2026-09-03 15:22 |
+| 143 das 169 guardas do catalogo | `docs/TESTES.md`, entre `<!-- guardas:inicio -->` e `<!-- guardas:fim -->` | sim | `bancada/guardas/tabela-no-testes.py`, corrida medida em 2026-09-16 15:25. **A linha nao se digita e a LINHA do arquivo nao se cita**: ela anda a cada edicao, e citar `:720` foi o que deixou este numero parado em 77 por treze dias |
 | 121 operações | `README.md:226`, `docs/REST.md:35` | sim | `numeros-do-projeto.py` (lê `OPERACOES` de `catalogo.rs`) |
 | 175 pedidos (168/4/3) | dossiê `pedidos:`, `docs/PENDENCIAS.md` `pedidos:contagem:` | sim | `pagina-dos-pedidos.py`; conferido contra a contagem direta do `.md` — bate |
 | 34.048 / 17.450 (replicação) | dossiê `replicacao:`, `docs/REPLICACAO.md:18-19`, `docs/DESEMPENHO.md:644` | sim / sim / história (antes/agora) | `numeros-da-bancada.py`; conferido contra `bancada/replicacao/resultados.json` — bate |

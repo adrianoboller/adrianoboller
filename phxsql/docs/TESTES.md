@@ -785,7 +785,36 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `upsert-gatilho-do-ramo` | no upsert que atualiza, o BEFORE UPDATE vê a linha mesclada e o AFTER é o do ramo que ele virou | 5 | ✅ provada |
 | `threads-do-so-pela-diferenca` | a prova de que o SO viu a thread subida é a diferença entre duas leituras do total do processo | 1 | ✅ provada |
 
-**143 guardas: 138 provadas, 1 quebrada, 4 redundantes** — 3374 s de mutação, medido em 2026-09-16 15:25.
+**143 das 169 guardas do catálogo: 138 provadas, 1 quebrada, 4 redundantes** — 3374 s de mutação, medido em 2026-09-16 15:25.
+
+> **Esta rodada NÃO julgou 26 das 169 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 26 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+
+- `varredura-sem-o-elo` — a varredura barata do diretorio perde a tabela alcancada por elo
+- `linha-vazia-na-conferencia-de-filhas` — a linha descida para a conferencia de filhas vai vazia, e toda mae parece sem filha
+- `teto-de-64-bits-satura` — número cru fora da faixa do `Int8` é GRAVADO saturado, e `1e21`, `1e30` e `1e300` viram todos o mesmo número
+- `saida-do-direito-por-coluna` — a recusa do direito por coluna manda «peça as colunas por varrer» também para o `agrupar` e para o `backup`
+- `check-que-se-contradiz-no-alter` — `acrescentar_coluna` aceita um `padrao` que viola o `check` declarado no MESMO comando, e todo `atualizar` da linha velha passa a recusar
+- `alter-com-regra-sem-aviso` — `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra
+- `upsert-parcial-vira-mescla` — o upsert sem o campo `atualizar` passa a MESCLAR, e a sincronia do DbLink perde a única forma de gravar NULO num destino
+- `direcao-do-indice-sem-saida` — a recusa por direção do índice explica bem por que não dá, e não diz o que fazer
+- `sha256-sem-somar-o-estado` — SHA-256 sem a realimentação do estado: a compressão vira permutação reversível
+- `sha256-com-o-tamanho-em-little-endian` — SHA-256 com o tamanho da mensagem, no padding, em little-endian
+- `hmac-com-a-chave-longa-truncada` — HMAC com a chave maior que o bloco TRUNCADA em vez de pré-hasheada
+- `pbkdf2-com-o-contador-de-bloco-parado` — PBKDF2 com o contador de bloco parado: saída longa repete o primeiro bloco
+- `pbkdf2-sem-o-xor-acumulado` — PBKDF2 sem o XOR acumulado: vira HMAC aplicado N vezes
+- `juntar-sem-portao` — `juntar` sem conferência própria: a tabela negada entra como lado B
+- `unir-sem-portao` — `unir` sem conferência própria: a tabela negada entra na LISTA
+- `diferencas-sem-portao` — `diferencas` sem conferência própria: a tabela negada entra em `a` ou em `b`
+- `derivado-sem-portao` — o portão some do irmão `executar_derivado`: o SQL inteiro vira a porta dos fundos
+- `ficha-do-usuario-devolve-o-hash` — a ficha do usuário passa a devolver o `senha_hash` junto
+- `senha-em-claro-no-cadastro` — a senha entra no config.json em texto puro: o `cifrar` sai do caminho de gravação
+- `senha-velha-fica-no-arquivo` — trocar a senha não leva junto a que estava em texto puro no arquivo
+- `cifra-reserializa-a-senha` — o `para_json` da cifra devolve a senha de verdade em vez de «(oculta)»
+- `debug-da-cifra-mostra-a-senha` — o `Debug` da cifra imprime a senha: um `dbg!` apressado a joga no log
+- `profiler-sem-a-senha-dentro-do-sql` — o Profiler perde a senha que está DENTRO da frase SQL, e não num campo
+- `comando-invalido-vira-texto-cru` — o SQL que o léxico recusa volta inteiro para o log, com a senha dentro
+- `trilha-sem-o-nome-de-segredo` — a trilha LGPD deixa de olhar o NOME da coluna e só analisa o valor
+- `trilha-so-olha-o-nome-da-coluna` — a trilha LGPD deixa de ANALISAR o valor e só confia no nome da coluna
 
 As notas que a rodada deixou:
 

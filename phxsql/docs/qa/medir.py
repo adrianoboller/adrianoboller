@@ -21,7 +21,7 @@ hoje.
 O `bancada/**/*.py` entrou em 16/09/2026, e o buraco que ele fecha estava
 MEDIDO e escrito no `docs/CATRACAS.md`: a varredura so olhava Rust, e as
 catracas que moram em Python -- as tres do `mapa-da-trava.py`, as duas do
-`mapa-das-threads.py`, a do `pkill-sem-pid.py` e as cinco do `trecho-vivo.py`
+`mapa-das-threads.py`, a do `pkill-sem-pid.py` e as seis do `trecho-vivo.py`
 -- nao apareciam nesta tabela. **A tabela que existe para dizer quantas
 catracas ha contava menos do que existe**, e o proprio paragrafo do
 `CATRACAS.md` que denunciava isso dizia «sete» quando eram OITO: ele esquecia

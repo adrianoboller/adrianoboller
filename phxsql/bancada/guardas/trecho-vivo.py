@@ -3,6 +3,7 @@
 
     python3 bancada/guardas/trecho-vivo.py --catraca
     python3 bancada/guardas/trecho-vivo.py --numeros
+    python3 bancada/guardas/trecho-vivo.py --autoteste
 
 # O defeito que motivou
 
@@ -143,7 +144,7 @@ dia, nunca no desejado:
 
 # E a catraca que sobe, porque e piso e nao teto
 
-- `PISO_DAS_ENTRADAS = 160` -- nasceu em 16/09/2026 valendo 143, contado no
+- `PISO_DAS_ENTRADAS = 169` -- nasceu em 16/09/2026 valendo 143, contado no
   `catalogo.py` daquele dia (143 entradas, 143 ids distintos) mais as
   `APOSENTADAS` (hoje nenhuma). **SUBIU para 150 em 16/09/2026**, no mesmo
   passo em que a frente 245 (O2-O6) escreveu cinco guardas novas -- o teto de
@@ -156,13 +157,87 @@ dia, nunca no desejado:
   que ate aqui nao tinha entrada NENHUMA neste catalogo, e tres da petrea do
   portao de permissao -- `juntar`, `unir` e `diferencas`, as operacoes que
   escondem a tabela do campo que o portao le, mais o `derivado-sem-portao`,
-  que sozinho prova OITO provas de porta dos fundos. Ele e o UNICO numero desta
+  que sozinho prova OITO provas de porta dos fundos.
+  **SUBIU de novo para 169 em 16/09/2026**, na frente G-SENHA: nove guardas
+  novas da petrea «senha nunca em texto puro», que ate aqui tinha SEIS provas
+  no `caem` de alguma entrada -- todas as seis do Profiler -- contra 40
+  funcoes de teste medidas na arvore que afirmam que um segredo nao aparece
+  numa saida. As nove cobrem as quatro saidas que a petrea nomeia (arquivo,
+  log, resposta do protocolo e a ficha) mais o `Debug`, que a frase nao nomeia
+  e que nenhum teste de `--lib` alcanca. Ele e o UNICO numero desta
   regua que sobe, e sobe porque conta ENTRADAS e nao defeitos: os quatro
   tetos acima continuam em zero, e nenhum deles foi tocado.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
+
+# A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
+
+Pedido 269. As quatro de cima olham o **codigo** contra a entrada; esta olha a
+**entrada** contra a ULTIMA CORRIDA -- e e' a quinta forma de o catalogo
+envelhecer, a unica que nenhuma delas ve. Uma entrada pode ter trecho vivo,
+teste vivo, teste no binario certo e mesmo assim **nunca ter sido julgada**:
+basta ela ter entrado depois da ultima corrida do provador.
+
+Medido em 16/09/2026: o catalogo tinha 160 entradas e a tabela publicada em
+`docs/TESTES.md` dizia «143 guardas». A pagina era honesta sobre a DATA (traz
+o `medido em`) e **muda sobre o TAMANHO** -- quem a lesse como inventario a
+leria 17 entradas curta.
+
+## Por que o teto conta o ESCONDIDO e nao o buraco
+
+O pedido pedia o buraco cru -- «quantos ids do catalogo nao estao na
+`ultima-corrida.json`» --, nascendo em 17 e so descendo. Esse numero foi
+medido, e foi medido **duas vezes no mesmo serao**: 17 as 21h e **26** as 23h,
+porque uma frente vizinha escreveu nove guardas novas da petrea «senha nunca
+em texto puro» nesse intervalo. Nao houve defeito nenhum entre as duas
+medicoes: houve trabalho certo.
+
+E' isso que decide a forma. Um teto sobre o buraco cru fica VERMELHO toda vez
+que alguem escreve uma guarda nova, e os dois caminhos para reverde-lo sao
+rodar o provador inteiro (~3.374 s de mutacao mais a compilacao) ou SUBIR o
+teto -- que esta casa proibe. Catraca cujo unico caminho verde custa uma hora
+e catraca que se pula, e catraca pulada e catraca frouxa. Pior: ela cobraria
+o preco de quem ESCREVE a guarda e nao cobraria nada de quem nao escreve --
+o espelho exato da doenca que o `PISO_DAS_ENTRADAS` existe para curar.
+
+O buraco nao e o defeito; o buraco e a consequencia aceita de um provador que
+custa uma hora. O defeito e a pagina ficar **muda** sobre ele. Entao o teto
+conta as entradas que a ultima corrida nao julgou **e** que a tabela publicada
+nao nomeia -- e essa divida se paga em 0,2 s, republicando a mesma corrida
+pelo `tabela-no-testes.py`. Sem prova nova, sem data nova, sem numero novo:
+so a pagina passando a dizer o proprio tamanho.
+
+O buraco cru continua MEDIDO e IMPRESSO, na linha «a ultima corrida julgou N
+de M» que o `--catraca` escreve sempre. Ele nao vira teto; vira inventario, do
+mesmo jeito que o «o provador continua dono de:» daqui de cima. Numero que nao
+se pode zerar honestamente nao vira catraca -- vira numero visivel.
+
+## Catraca, e nao parada com o motivo -- e onde ela vira parada
+
+O `conferir_o_formato()` e uma parada com o motivo porque forma errada impede
+a regua de MEDIR: uma entrada sem `id` nao produz um numero ruim, produz
+numero nenhum. Aqui ha um numero, ele e uma divida real (entradas escondidas),
+e ele tem um dono e um conserto conhecido -- entao e catraca, e entra no
+inventario de catracas do `docs/qa/medir.py` junto das outras quatro, que e
+onde esta casa guarda o que segura.
+
+Mas a regua **nao sabe medir** quando falta a fonte: sem `ultima-corrida.json`
+nao ha corrida para comparar, e sem as marcas `guardas:inicio/fim` no
+`docs/TESTES.md` nao da para saber o que a pagina nomeia. Nesses dois casos
+ela reprova com o motivo escrito **e conta o pior caso** -- pagina ilegivel
+nomeia zero, corrida ausente julgou zero. Regua que nao sabe tem de dizer que
+nao sabe; o que ela nao pode e' devolver `0` e parecer um catalogo inteiro.
+
+- `TETO_NAO_JULGADA_ESCONDIDA = 0` -- **nasceu medido em 26 e DESCEU para 0 no
+  mesmo passo** (16/09/2026), como o `TETO_TRECHO_MORTO` nasceu em 8 e desceu
+  a 0 quando a divida velha foi paga: aqui o conserto foi o
+  `tabela-no-testes.py` republicar a corrida de 15:25 ja nomeando as 26 que
+  ela nao julgou -- a mesma medida, a mesma data, so a pagina dizendo o
+  proprio tamanho. Enquanto este teto estiver em 0, a tabela publicada pode
+  ser menor que o catalogo -- mas nao pode ESCONDER que e'.
 """
 import importlib.util
+import json
 import os
 import re
 import sys
@@ -175,7 +250,7 @@ TETO_TRECHO_MORTO = 0
 TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
-PISO_DAS_ENTRADAS = 160
+PISO_DAS_ENTRADAS = 169
 
 # ------------------------------------------------------------- APOSENTADAS
 #
@@ -198,7 +273,21 @@ PISO_DAS_ENTRADAS = 160
 APOSENTADAS = []
 
 
+# ------------------------------------------- A QUINTA REGUA (pedido 269)
+#
+# Longe do bloco dos quatro tetos de proposito: o valor do `PISO_DAS_ENTRADAS`
+# muda toda vez que o catalogo cresce, e duas frentes editando linhas coladas
+# e conflito de merge onde nao havia desacordo nenhum. O motivo e a decisao
+# de forma estao no fim do cabecalho deste arquivo.
+TETO_NAO_JULGADA_ESCONDIDA = 0
+
+CORRIDA = os.path.join(AQUI, "ultima-corrida.json")
+TABELA = os.path.join(RAIZ, "docs", "TESTES.md")
+
+
 _CATALOGO = None
+_GERADOR = None
+_ESCONDIDAS = None
 
 
 def catalogo():
@@ -446,8 +535,93 @@ def achados():
     return trechos, ambiguos, testes, fora
 
 
+def gerador():
+    """O modulo do `tabela-no-testes.py` -- a regua e a pagina pela mesma
+    receita.
+
+    Importa em vez de reescrever a subtracao de conjunto: duas receitas da
+    mesma pergunta divergem na primeira vez que uma delas aprender algo, e
+    divergem em SILENCIO -- uma diria que a pagina esta inteira enquanto a
+    outra publica que nao esta. As marcas do bloco vem pelo mesmo caminho e
+    pelo mesmo motivo: quem escreve o bloco e quem o le tem de concordar sobre
+    onde ele comeca.
+
+    Custa 1,3 ms medidos (o `catalogo.py` entra uma segunda vez, sob o nome
+    que o gerador usa) numa regua de ~190 ms. Regua cara e regua que nao se
+    roda, e esta roda em toda bateria -- por isso o custo foi medido antes de
+    o import entrar, e nao depois."""
+    global _GERADOR
+    if _GERADOR is None:
+        caminho = os.path.join(AQUI, "tabela-no-testes.py")
+        spec = importlib.util.spec_from_file_location("tabela_no_testes", caminho)
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        _GERADOR = modulo
+    return _GERADOR
+
+
+def escondidas():
+    """O que a ultima corrida nao julgou, e o que disso a pagina nao nomeia.
+
+    Duas perguntas e nao uma, e a diferenca entre elas e a regua inteira:
+
+    * **nao julgadas** e o buraco -- entradas sem veredito na corrida
+      publicada. Ele cresce toda vez que alguem escreve uma guarda nova, e
+      isso e trabalho certo. Ele e' IMPRESSO, nunca travado.
+    * **escondidas** e a divida -- as nao julgadas que a tabela publicada
+      nem nomeia. Essa se paga em 0,2 s republicando a mesma corrida, e e' ela
+      que o teto trava.
+
+    Sem a corrida ou sem as marcas da pagina a regua nao sabe medir, e entao
+    conta o PIOR CASO e diz por que: corrida ausente julgou zero, pagina
+    ilegivel nomeia zero. O que ela nao pode e' devolver `0` calada e parecer
+    um catalogo inteiro."""
+    global _ESCONDIDAS
+    if _ESCONDIDAS is not None:
+        return _ESCONDIDAS
+    ferramenta = gerador()
+    avisos = []
+    try:
+        with open(CORRIDA, encoding="utf-8") as f:
+            corrida = json.load(f)
+    except (OSError, ValueError) as e:
+        avisos.append("%s nao deu para ler (%s): sem corrida nao ha com que "
+                      "comparar, e esta regua conta o pior caso -- NENHUMA "
+                      "entrada julgada." % (os.path.relpath(CORRIDA, RAIZ), e))
+        corrida = {"guardas": []}
+    faltam = ferramenta.nao_julgadas(catalogo(), corrida)
+    try:
+        with open(TABELA, encoding="utf-8") as f:
+            texto = f.read()
+    except OSError as e:
+        avisos.append("%s nao deu para ler (%s): a regua conta o pior caso -- "
+                      "a pagina nomeia NENHUMA."
+                      % (os.path.relpath(TABELA, RAIZ), e))
+        texto = ""
+    if ferramenta.INICIO in texto and ferramenta.FIM in texto:
+        bloco = texto.split(ferramenta.INICIO)[1].split(ferramenta.FIM)[0]
+    else:
+        if texto:
+            avisos.append("%s nao tem as marcas %s / %s: nao da para saber o "
+                          "que a pagina nomeia, e a regua conta o pior caso."
+                          % (os.path.relpath(TABELA, RAIZ), ferramenta.INICIO,
+                             ferramenta.FIM))
+        bloco = ""
+    # O id vai entre crases porque e' assim que a pagina o escreve -- na linha
+    # da tabela e na do aviso. Procurar o id solto casaria um id DENTRO de
+    # outro, e a regua daria por nomeada uma entrada que ninguem nomeou.
+    _ESCONDIDAS = {
+        "quando": corrida.get("quando", "?"),
+        "julgadas": len(corrida.get("guardas") or []),
+        "nao_julgadas": faltam,
+        "escondidas": [i for i in faltam if ("`%s`" % i) not in bloco],
+        "avisos": avisos,
+    }
+    return _ESCONDIDAS
+
+
 def medido(dados=None):
-    """Os cinco numeros, contados AQUI e nao lidos da saida em texto.
+    """Os seis numeros, contados AQUI e nao lidos da saida em texto.
 
     Catraca que le a propria saida quebra no dia em que alguem melhorar a
     redacao, e quebra em silencio -- a mesma licao do «texto se resolve por
@@ -462,6 +636,7 @@ def medido(dados=None):
         "TETO_TRECHO_AMBIGUO": len(ambiguos),
         "TETO_TESTE_MORTO": len(testes),
         "TETO_TESTE_FORA_DO_BINARIO": len(fora),
+        "TETO_NAO_JULGADA_ESCONDIDA": len(escondidas()["escondidas"]),
         "PISO_DAS_ENTRADAS": len(catalogo()) + len(APOSENTADAS),
     }
 
@@ -486,6 +661,13 @@ AS_CATRACAS = [
      "testes que existem, mas nao no binario que a entrada nomeia",
      "o provador roda so o binario nomeado e nunca veria esse teste -- "
      "corrija o `pacote`/`alvo` da entrada, ou o nome do teste."),
+    ("TETO_NAO_JULGADA_ESCONDIDA", TETO_NAO_JULGADA_ESCONDIDA, "teto",
+     "entradas que a ultima corrida nao julgou e que a pagina nao nomeia",
+     "a tabela do `docs/TESTES.md` esta menor que o catalogo e nao diz que "
+     "esta -- quem a lesse como inventario a leria curta. O conserto NAO e' "
+     "rodar o provador: e' republicar a MESMA corrida, que ja nomeia o que "
+     "ela nao julgou -- `python3 bancada/guardas/tabela-no-testes.py "
+     "bancada/guardas/ultima-corrida.json`."),
     ("PISO_DAS_ENTRADAS", PISO_DAS_ENTRADAS, "piso",
      "entradas vivas do catalogo mais as aposentadas escritas",
      "sumiu entrada do catalogo sem aposentadoria escrita. Apagar a entrada "
@@ -536,6 +718,23 @@ def catraca():
         for gid, campo, teste in fora:
             print(f"      {gid}: {campo} -> {teste}")
 
+    # O buraco cru sai IMPRESSO e nao travado: ele cresce quando alguem
+    # escreve uma guarda nova, que e trabalho certo. Numero que nao se pode
+    # zerar honestamente vira inventario, como o «o provador continua dono
+    # de:» la de baixo -- nunca catraca.
+    p = escondidas()
+    print(f"   a ultima corrida ({p['quando']}) julgou {p['julgadas']} das "
+          f"{len(catalogo())} entradas")
+    if p["nao_julgadas"]:
+        print(f"   -- {len(p['nao_julgadas'])} sem veredito nessa corrida: "
+              f"{len(p['nao_julgadas']) - len(p['escondidas'])} nomeadas na "
+              f"tabela publicada, {len(p['escondidas'])} escondidas")
+    # So as ESCONDIDAS saem uma a uma: a lista existe para dar o que
+    # consertar, e a corrida em dia tem 26 nomeadas -- imprimi-las todas
+    # afogaria a unica linha que importa no dia em que uma sumir da pagina.
+    for gid in p["escondidas"]:
+        print(f"      {gid}: a pagina publicada nao a nomeia")
+
     ruim = 0
     for nome, valor, lado, _mede, recado in AS_CATRACAS:
         atual = agora[nome]
@@ -572,6 +771,14 @@ def catraca():
               "entrada viva.")
         ruim = 1
 
+    # Parada com o motivo, e nao teto: sem a corrida ou sem as marcas da
+    # pagina nao existe numero para comparar -- existe uma fonte que sumiu.
+    # Reprovar com o motivo e' o unico veredito honesto; o `0` que sairia
+    # calado seria lido como catalogo inteiro.
+    for aviso in p["avisos"]:
+        print("\n   NAO DA PARA MEDIR  " + aviso)
+        ruim = 1
+
     print("\n   o provador continua dono de:")
     for o_que, porque in DO_PROVADOR:
         print(f"      {o_que} -- {porque}")
@@ -594,7 +801,104 @@ def numeros():
     return 0
 
 
+def autoteste_da_quinta():
+    """Prova real da quinta regua, sem `cargo` e sem provador.
+
+    Cada caso repoe um defeito e confere que a regua o ACUSA, e confere
+    tambem os dois silencios que seriam piores que o defeito: dar por nomeada
+    uma entrada que a pagina nao nomeia, e devolver `0` quando a fonte sumiu.
+    Teste que passa por engano e pior que teste que falta."""
+    import tempfile
+    global _CATALOGO, _ESCONDIDAS, CORRIDA, TABELA
+    guardo = (_CATALOGO, CORRIDA, TABELA)
+    falhas = []
+
+    def conferir(nome, cond, detalhe=""):
+        print("   %s  %s%s" % ("ok  " if cond else "FALHOU", nome,
+                               "" if cond else "  -- " + detalhe))
+        if not cond:
+            falhas.append(nome)
+
+    def medir(pagina, corrida, cat):
+        global _CATALOGO, _ESCONDIDAS, CORRIDA, TABELA
+        _CATALOGO, _ESCONDIDAS = cat, None
+        caminho = os.path.join(tmp, "TESTES.md")
+        if pagina is None:
+            caminho = os.path.join(tmp, "nao-existe.md")
+        else:
+            with open(caminho, "w", encoding="utf-8") as f:
+                f.write(pagina)
+        TABELA = caminho
+        alvo = os.path.join(tmp, "corrida.json")
+        if corrida is None:
+            alvo = os.path.join(tmp, "nao-existe.json")
+        else:
+            with open(alvo, "w", encoding="utf-8") as f:
+                json.dump(corrida, f)
+        CORRIDA = alvo
+        return escondidas()
+
+    marcas = gerador().INICIO + "\n%s\n" + gerador().FIM
+    cat = [{"id": "g%d" % i} for i in range(5)] + [{"id": "g1-longa"}]
+    corrida = {"quando": "hoje", "guardas": [{"id": "g0"}, {"id": "g1"}]}
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            # 1. O DEFEITO REPOSTO: a pagina traz so o que a corrida julgou.
+            p = medir(marcas % "| `g0` |\n| `g1` |", corrida, cat)
+            conferir("pagina muda: as 4 nao julgadas saem ESCONDIDAS",
+                     [i for i in p["escondidas"]] == ["g2", "g3", "g4", "g1-longa"],
+                     str(p["escondidas"]))
+            conferir("e o buraco cru continua medido e impresso",
+                     len(p["nao_julgadas"]) == 4 and p["julgadas"] == 2)
+
+            # 2. O CONSERTO: a pagina nomeia as nao julgadas -> divida zero,
+            #    com o buraco INTACTO. Os dois numeros nao podem se confundir.
+            p = medir(marcas % ("| `g0` |\n| `g1` |\n- `g2`\n- `g3`\n- `g4`\n"
+                                "- `g1-longa`"), corrida, cat)
+            conferir("pagina que nomeia todas: zero escondidas",
+                     p["escondidas"] == [], str(p["escondidas"]))
+            conferir("e o buraco NAO zerou junto -- ele nao e' a divida",
+                     len(p["nao_julgadas"]) == 4)
+
+            # 3. A ARMADILHA DO SUBSTRING, e ela so pega no sentido certo: a
+            #    pagina nomeia `g1-longa` e NAO nomeia `g1`. Procurar o id
+            #    solto acharia «g1» DENTRO de «g1-longa» e daria uma entrada
+            #    escondida por nomeada -- a regua mentiria a favor da pagina.
+            #    A primeira versao deste caso testava o contrario e passava
+            #    com o defeito reposto; teste que passa por engano e pior que
+            #    teste que falta, e a mutacao foi quem disse isso.
+            so_g0 = {"quando": "hoje", "guardas": [{"id": "g0"}]}
+            p = medir(marcas % "| `g0` |\n- `g1-longa`\n- `g2`\n- `g3`\n- `g4`",
+                      so_g0, cat)
+            conferir("id que e' prefixo de outro nao passa por nomeado",
+                     p["escondidas"] == ["g1"], str(p["escondidas"]))
+
+            # 4 e 5. Fonte que sumiu: reprova com o motivo e conta o pior caso.
+            p = medir(None, corrida, cat)
+            conferir("pagina ausente: aviso escrito e pior caso contado",
+                     len(p["avisos"]) == 1 and len(p["escondidas"]) == 4,
+                     str(p["avisos"]))
+            p = medir(marcas % "| `g0` |", None, cat)
+            conferir("corrida ausente: aviso escrito e julgadas = 0",
+                     len(p["avisos"]) == 1 and p["julgadas"] == 0,
+                     str(p["avisos"]))
+            p = medir("uma pagina sem marca nenhuma", corrida, cat)
+            conferir("pagina sem as marcas: aviso escrito, nada dado por nomeado",
+                     len(p["avisos"]) == 1 and len(p["escondidas"]) == 4,
+                     str(p["avisos"]))
+    finally:
+        _CATALOGO, CORRIDA, TABELA = guardo
+        _ESCONDIDAS = None
+
+    print("   %s" % ("todos passaram" if not falhas
+                     else "FALHOU: " + ", ".join(falhas)))
+    return 1 if falhas else 0
+
+
 def principal():
+    if "--autoteste" in sys.argv:
+        print("=== autoteste da quinta regua (pedido 269) ===")
+        return autoteste_da_quinta()
     if "--catraca" in sys.argv:
         return catraca()
     if "--numeros" in sys.argv:

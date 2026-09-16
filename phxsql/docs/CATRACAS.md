@@ -583,7 +583,7 @@ folga 0 — nasce colada, como as quatro do dia 03/09.
 a catraca acusa **SUBIU 4 (teto 0)**, nomeando as quatro linhas; com o
 conserto, `ok 0 (teto 0)`.
 
-## 12. As cinco réguas do catálogo de guardas — quatro tetos e um piso
+## 12. As seis réguas do catálogo de guardas — cinco tetos e um piso
 
 **O defeito que a motivou** (pedido 263, 16/09/2026): a corrida inteira do
 `provar-guardas.py` devolveu **11 guardas QUEBRADAS** — nem provadas nem
@@ -596,7 +596,7 @@ Medido commit a commit depois: **um único commit aposentou cinco delas de uma
 vez** — `2fe8658` (12/09, «a conferência de FK dentro da transação vê o pai
 empilhado»), que mexeu em `table.rs` e `transacao.rs`. Ninguém percebeu por
 **quatro dias**, e o motivo é o custo: o provador leva cerca de uma hora,
-porque repõe o defeito e roda `cargo test` para cada uma das 160 entradas.
+porque repõe o defeito e roda `cargo test` para cada uma das 169 entradas.
 **Guarda que só se confere em uma hora é guarda que não se confere.**
 
 **Onde mora**: `bancada/guardas/trecho-vivo.py`, chamada pelo item 0c da
@@ -665,7 +665,7 @@ espelho exato do «DESCEU — BAIXE O TETO». Uma entrada de `APOSENTADAS` que
 **volte** ao catálogo também reprova: ela contaria dos dois lados e inflaria o
 piso em silêncio.
 
-### 12.3 Os cinco números, medidos em 16/09/2026
+### 12.3 Os seis números, medidos em 16/09/2026
 
 | Régua | Lado | Valor | Medido | Nasceu |
 |---|---|---:|---:|---|
@@ -673,7 +673,8 @@ piso em silêncio.
 | `TETO_TRECHO_AMBIGUO` | teto | 0 | **0** | 16/09, nesta frente |
 | `TETO_TESTE_MORTO` | teto | 0 | **0** | 16/09 |
 | `TETO_TESTE_FORA_DO_BINARIO` | teto | 0 | **0** | 16/09, nesta frente |
-| `PISO_DAS_ENTRADAS` | **piso** | 160 | **160** | nasceu 16/09 em 143; **subiu para 145** (frente vizinha, no mesmo dia), para **151** na frente 245/O2–O6 e para **160** na frente G-CRIPTO (§15) — 160 entradas vivas + 0 aposentadas. Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
+| `TETO_NAO_JULGADA_ESCONDIDA` | teto | 0 | **0** | 16/09, pedido 269: nasceu medido em **26** e desceu para **0** no mesmo passo, republicando a corrida de 15:25 |
+| `PISO_DAS_ENTRADAS` | **piso** | 169 | **169** | nasceu 16/09 em 143; **subiu para 145** (frente vizinha, no mesmo dia), para **151** na frente 245/O2–O6, para **160** na frente G-CRIPTO (§15) e para **169** na frente G-SENHA (§15.7) — 169 entradas vivas + 0 aposentadas. Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
 
 **Nenhum teto subiu e nenhuma catraca se aposentou, e isso é decisão.** A
 régua do `TETO_TRECHO_MORTO` **não mudou**: ela continua respondendo
@@ -748,6 +749,68 @@ caminho: a primeira versão varria só `crates/<pacote>/src/` atrás dos testes 
 acusou **154** nomes mortos. Eram 154 falsos — o teste de integração mora em
 `crates/<pacote>/tests/`. Régua que mede um terço da caixa e anuncia o número
 inteiro é o mesmo defeito do KiB da interface.
+
+### 12.6 A quinta forma de envelhecer: a tabela publicada menor que o catálogo
+
+**O defeito que a motivou** (pedido 269, 16/09/2026): as quatro réguas de cima
+olham o **código** contra a entrada. Nenhuma olha a **entrada** contra a
+**última corrida** — e uma entrada pode ter trecho vivo, teste vivo, teste no
+binário certo e **nunca ter sido julgada**, bastando ter entrado depois da
+última corrida do provador.
+
+Medido: o catálogo tinha **160** entradas e a tabela publicada em
+`docs/TESTES.md` dizia **«143 guardas»**. A página era honesta sobre a **data**
+(traz o `medido em`) e **muda sobre o tamanho** — quem a lesse como inventário
+a leria **17 entradas curta**. E nada no caminho recusava o pior caso: rodar o
+provador com `--so` e publicar trocava 143 linhas por 9, escondendo 151, com
+código 0 e uma linha de êxito. **Medido contra o código de então**, não
+deduzido — e o estrago não era só de inventário: a linha de resumo passava a
+publicar **332 s de mutação** onde a bateria custa **3.374 s**.
+
+**Por que o teto conta o ESCONDIDO e não o buraco — e o motivo foi medido duas
+vezes no mesmo serão.** O buraco cru era **17 às 21h** e **26 às 23h**, porque
+uma frente vizinha escreveu nove guardas novas nesse intervalo. Não houve
+defeito entre as duas medições: houve trabalho certo. Um teto sobre o buraco
+cru ficaria vermelho toda vez que alguém escrevesse uma guarda, e os dois
+caminhos para reverdecê-lo seriam rodar o provador inteiro (~3.374 s de
+mutação mais a compilação) ou **subir** o teto — que esta casa proíbe. Catraca
+cujo único caminho verde custa uma hora é catraca que se pula, e ela cobraria o
+preço de quem **escreve** a guarda: o espelho exato da doença de §12.2.
+
+Então o buraco é **inventário** e a dívida é **catraca**:
+
+| o quê | o que é | onde aparece |
+|---|---|---|
+| **não julgadas** | entradas sem veredito na corrida publicada | **impresso** sempre, na linha «a última corrida julgou N de M» — nunca travado |
+| **escondidas** | as não julgadas que a página **nem nomeia** | `TETO_NAO_JULGADA_ESCONDIDA`, que **só desce** |
+
+A dívida se paga em **0,2 s**, sem prova nova e sem data nova, republicando a
+**mesma** corrida: `python3 bancada/guardas/tabela-no-testes.py
+bancada/guardas/ultima-corrida.json`.
+
+**E ela vira parada com o motivo quando a fonte some.** Sem a
+`ultima-corrida.json` não há corrida com que comparar; sem as marcas
+`guardas:inicio`/`guardas:fim` não dá para saber o que a página nomeia. Nos
+dois casos a régua reprova **com o motivo escrito e contando o pior caso** —
+corrida ausente julgou zero, página ilegível nomeia zero. Régua que não sabe
+tem de dizer que não sabe; o que ela não pode é devolver `0` calada e parecer
+um catálogo inteiro.
+
+**A outra metade, no gerador** (`bancada/guardas/tabela-no-testes.py`): ele
+passou a **nomear** o que a rodada não julgou, sob um aviso que não é linha de
+êxito, e a **recusar** encolher a tabela sem um `--parcial` escrito. A recusa
+olha a **cobertura**, não o tamanho: *esta rodada julgou o catálogo inteiro?*
+Se julgou, publica livre — e é assim que a **aposentadoria** de uma guarda
+(§12.2) nunca vira parada permanente, sem precisar de um segundo interruptor.
+
+**Custo**: +10 ms medidos (mediana 197 → 207 ms, sete corridas de cada lado,
+mesma máquina, mesmo minuto, load 2,5).
+
+**Prova real, nos dois sentidos**: `trecho-vivo.py --autoteste` (8 casos) e
+`tabela-no-testes.py --autoteste` (16 casos), sem `cargo` e sem provador — e
+oito mutações do código conferidas uma a uma, cada uma acusada pelo caso certo.
+**Um dos casos passou com o defeito reposto na primeira escrita** (testava o
+substring no sentido errado) e quem disse isso foi a mutação, não a leitura.
 
 ## 13. As cinco catracas dos dois mapas de concorrência — e onde cada uma passou a rodar
 
@@ -892,7 +955,7 @@ de quem imprime `catraca:` e responde a `--numeros`, e teto órfão varrendo
 `crates/*/src/**` atrás de `pub const TETO*`. Os dois crivos são de Rust, e
 **oito catracas vivas moram em Python**, em `bancada/`: as três do
 `mapa-da-trava.py`, as duas do `mapa-das-threads.py` (§13), a
-`TETO_PKILL_SEM_PID` (§11) e as duas do `trecho-vivo.py` (§12). **A tabela que
+`TETO_PKILL_SEM_PID` (§11) e as **seis** do `trecho-vivo.py` (§12). **A tabela que
 existe para dizer quantas catracas há contava menos do que existe.**
 
 **O conserto, e por que ele não traz lista nenhuma**: o crivo é o **mesmo** —
@@ -1086,7 +1149,7 @@ ficaram de fora desta frente, **medidas e nomeadas**:
 
 | pétrea | entradas no catálogo | o que existe hoje |
 |---|---|---|
-| **«Senha nunca em texto puro»** | **0** | **11** testes medidos (`a_ficha_nunca_devolve_a_senha`, `a_resposta_do_protocolo_nao_leva_a_senha`, `a_senha_nao_vai_para_o_disco`, `a_senha_nunca_aparece_no_arquivo_nem_na_resposta`, `a_senha_da_cifra_nunca_sai_em_json`, `a_senha_do_rele_nunca_aparece_no_json`, `a_senha_da_ligacao_nunca_aparece_no_json`, `coluna_de_senha_nao_entrega_o_valor`, os dois do Profiler e o do SQL). É **exatamente o mesmo retrato** que a criptografia tinha antes desta frente: muita prova, nenhuma provada contra o defeito. É a próxima da fila |
+| ~~**«Senha nunca em texto puro»**~~ | **9** | **FECHADA em 16/09/2026** pela frente G-SENHA — ver **§15.7**. Esta linha fica riscada em vez de sair, porque os dois números que ela trazia estavam **errados**, e o erro ensina mais que a linha: eram **2** entradas e não 0 (`profiler-recorta` e `profiler-recorta-largo` já repunham defeito desta pétrea), e eram **40** provas medidas e não 11. Contagem por memória de nome de teste mede a lembrança de quem escreve; a varredura pela **asserção** mede a árvore |
 | **«Bancada compara trabalho igual, não só pergunta igual»** | **0** | nem entrada nem catraca. As quatro regras vivem em `bancada/LEIA-ME.md` como prosa, e os dois erros que as fundaram (o `WHERE id IN (…)` contra vinte mil buscas, o `COUNT(*)+SUM` contra a leitura de 20.000) não têm defeito reposto nenhum. Repor este defeito exige mexer no roteiro de uma bancada e medir — não é troca de trecho em Rust, e por isso não cabe neste catálogo sem antes decidir a forma |
 | **«Merge de conflito marca quem MEXEU, não quem perguntou por último»** | **0** | o comportamento é de interface (coluna a coluna), e a prova dele é de tela. Cai na mesma classe da linha abaixo |
 | **«O CSS global morde todo componente novo» / «Interface só se prova exercitando»** | **0** | quem cobre é o `TETO_BOTAO_SEM_PROVA` (§9), que é **outra coisa**: ele conta botão que a bateria não clica, não repõe defeito. As duas lições (o rádio do tamanho da célula, «BLUMENAU») não aparecem lendo código — e também não aparecem repondo trecho |
@@ -1111,6 +1174,235 @@ E fica dito qual é a que **pediria** para subir, porque é a que um leitor
 apressado «consertaria» primeiro: a `alcancam-fsync` do mapa da trava mede
 **23** hoje com teto **22** — vermelha por decisão registrada (pendência
 #252), e o caminho certo ali é baixar o número medido, nunca levantar o teto.
+
+**E ele subiu de novo no mesmo dia**, de **160** para **169**, na frente
+G-SENHA da §15.7. Duas frentes mexeram nesta mesma catraca em horas
+diferentes do dia 16/09/2026 — e é exatamente o caso que o `CLAUDE.md`
+nomeia: *nesta base, um número digitado envelheceu em noventa minutos porque
+duas frentes mexeram na mesma catraca sem se verem*. Aqui as duas se viram,
+porque a segunda leu esta seção antes de escrever.
+
+
+### 15.7 A pétrea «Senha nunca em texto puro» — nove entradas, e um ponto cego de 1.103 provas
+
+Frente **G-SENHA**, 16/09/2026, no molde da §15. A lei do dono: *«Senha nunca
+em texto puro. Nem em arquivo, nem em log, nem em resposta do protocolo. Há
+teste que falha se a ficha de usuário vazar o hash.»*
+
+#### 15.7.1 O retrato de antes, medido — e os dois números que a §15.5 errou
+
+A §15.5 disse **0 entradas** e **11 testes**. Os dois estavam errados, e o
+jeito de errar é o mesmo nos dois: **contaram nomes de teste lembrados**, não
+a árvore.
+
+A varredura desta frente não pergunta pelo nome. Ela pergunta pela
+**asserção**: uma função `#[test]` defende esta pétrea quando afirma que um
+segredo **não aparece** numa saída — um `!…contains(…)`/`!…windows(…)` em que
+o literal negado é senha, segredo, token, pino ou chave. O `!` da negação
+nunca vem colado num identificador, senão o `assert!` seria contado como
+negação (foi o primeiro erro desta medição, e ele inflava a conta com
+asserções de **presença**).
+
+| o que foi contado | medido |
+|---|---:|
+| funções `#[test]` que afirmam a AUSÊNCIA de um segredo numa saída, em `crates/**` | **40** |
+| destas, as que a §15.5 nomeava | 11 |
+| destas, as que já apareciam no `caem` de alguma entrada | **6** |
+| entradas do catálogo que repunham defeito desta pétrea | **2** (`profiler-recorta`, `profiler-recorta-largo`) |
+| **provas sem defeito reposto nenhum** | **34** |
+| *(depois desta frente)* provas com defeito reposto | **14** — e **26** continuam sem |
+
+**O 40 é remedível, e tem de ser.** Ele saiu de uma varredura escrita para
+esta frente e não de um gerador versionado — o que faz dele exatamente o tipo
+de número que esta casa sabe que envelhece calado. Enquanto não houver régua,
+a receita fica aqui, e ela é curta o bastante para se refazer: varrer
+`crates/**/*.rs`, recortar cada `fn` precedida de `#[test]`, e contar as que
+têm uma linha com negação (`!` **não** colado num identificador — senão o
+`assert!` conta como negação) junto de `contains`/`windows`/`find` e de um
+literal que case
+`senha|segredo|s3nh|secret|passwd|password|token|pino`. **O 40 é um piso, não
+um total**: provas que afirmam ausência sem citar o segredo — como
+`o_que_nao_se_analisa_vira_o_tamanho`, que nega a palavra `aberta` — não
+entram no crivo e existem. Transformar isto numa régua do `trecho-vivo.py` é
+o próximo passo do papel G nesta pétrea.
+
+As seis cobertas eram todas do Profiler — e **nenhuma das quatro saídas que a
+pétrea NOMEIA** (o arquivo, o log, a resposta do protocolo e a ficha) tinha
+entrada. A frase «0 entradas» protegia menos do que parecia por baixo e mais
+do que parecia por cima: havia guarda, e ela cobria o vizinho.
+
+#### 15.7.2 As nove que entraram, e o veredito de cada uma
+
+Todas **PROVADAS pelo provador oficial**, com a árvore limpa verde antes de
+cada bloco: **1.103** testes no `phxsql-server --lib`, **253** no
+`phxsql-sql --lib`, **187** no `phxsql-store --lib` e **5** no
+`phxsql-server --test cifra-pelo-config`.
+
+| guarda | defeito reposto | caem | veredito |
+|---|---|---:|---|
+| `ficha-do-usuario-devolve-o-hash` | a `ficha()` passa a levar o `senha_hash` junto | 2/2 | ✅ provada |
+| `senha-em-claro-no-cadastro` | `senha::cifrar(clara)` vira `clara` em `objeto_do_usuario` | 2/2 | ✅ provada |
+| `senha-velha-fica-no-arquivo` | o `retain` que tira a `senha` em claro do usuário antigo sai | 1/1 | ✅ provada |
+| `cifra-reserializa-a-senha` | o `para_json` da cifra devolve a senha real em vez de `(oculta)` | 2/2 | ✅ provada |
+| `debug-da-cifra-mostra-a-senha` | `.field("senha", &"(oculta)")` vira `&self.senha` | 1/1 | ✅ provada |
+| `profiler-sem-a-senha-dentro-do-sql` | o ramo `sql_sem_senha` sai do `limpar` | 1/1 | ✅ provada |
+| `comando-invalido-vira-texto-cru` | o SQL que o léxico recusa volta inteiro em vez de virar tamanho | 1/1 | ✅ provada |
+| `trilha-sem-o-nome-de-segredo` | a conferência pelo NOME da coluna sai do `valor_para_trilha` | 1/1 | ✅ provada |
+| `trilha-so-olha-o-nome-da-coluna` | a conferência que ANALISA o valor sai do `valor_para_trilha` | 1/1 | ✅ provada |
+
+Custo medido: 12,6–28,1 s cada no `phxsql-server --lib` (com a cópia quente),
+4,5 s na de integração e 1,5–1,6 s nas de `phxsql-store` e `phxsql-sql`. A
+árvore limpa custa 26,6–46,2 s no servidor e 1,6–1,7 s nos outros dois.
+
+#### 15.7.3 O raio de cada defeito, MEDIDO — e não argumentado
+
+`PROVADA 1/1` diz que o teste nomeado caiu. **Não diz que só ele caiu** — um
+defeito que derrubasse quarenta provas também sairia `1/1`, e a coluna «quem
+NÃO o pega» seria escrita de memória. Então o provador foi usado como
+**instrumento de medição** antes de virar veredito: cada defeito correu uma
+segunda vez numa sonda temporária com `espera: "nada muda"`, que lê o veredito
+de **todos** os testes do binário e não só dos nomeados. As sondas foram
+apagadas depois; o número ficou.
+
+| defeito reposto | quem o pega | quem NÃO o pega — e é o ponto |
+|---|---|---|
+| o `Debug` da cifra imprime a senha | **1 dos 5** testes do `--test cifra-pelo-config` | **ZERO dos 1.103** do `--lib`. Nenhum veredito mudou. Os três testes de credencial do `config.rs` — inclusive o genérico, que existe justamente para pegar o campo que alguém acrescentar amanhã — olham o `para_json`, e o `Debug` é outro caminho |
+| o `retain` da senha velha sai | **1 dos 1.103**: `trocar_a_senha_leva_junto_a_que_estava_em_texto_puro` | `a_senha_nunca_aparece_no_arquivo_nem_na_resposta`, que é a prova do MESMO arquivo. O usuário **novo** não sente: `pares` nasce vazio sem anterior, e `senha` não está em `CAMPOS_DO_USUARIO`. Só a ALTERAÇÃO acusa |
+| o ramo `sql_sem_senha` sai do Profiler | **1 dos 1.103**: `a_senha_dentro_do_texto_sql_tambem_sai` | `a_senha_nunca_aparece`, a prova mais completa do arquivo — **oito** pedidos. Os oito nomeiam a senha num CAMPO; nenhum a esconde dentro de uma frase. Ser a mais completa do arquivo não é alcançar o ramo do vizinho |
+| a conferência pelo NOME sai da trilha | **1 dos 187**: `coluna_de_senha_nao_entrega_o_valor` | `hash_em_coluna_de_nome_inocente_e_redigido`. A análise pega o que **já está protegido** (o hash destrincha em `pbkdf2-sha256$…`); a senha em texto puro numa coluna `senha` não é hash, e passa inteira |
+| a ANÁLISE do valor sai da trilha | **1 dos 187**: `hash_em_coluna_de_nome_inocente_e_redigido` | `coluna_de_senha_nao_entrega_o_valor`. É a metade contrária, e o par é a prova de que as duas conferências existem — coisa que nenhuma das duas provas diz sozinha |
+| o comando inválido volta cru | **1 dos 253**: `o_que_nao_se_analisa_vira_o_tamanho` | `a_senha_sai_do_texto_do_comando`, que só passa comandos VÁLIDOS. O caso que mais pede o texto cru no log — `CREATE USER c PASSWORD 'aberta`, recusado **por causa da aspas da senha** — é o que mais o proíbe |
+| a ficha leva o `senha_hash` | **2 dos 1.103**, em dois módulos: `usuarios` e `servidor` | as outras 1.101. Duas provas para uma função por onde passam **três** operações (`usuarios`, `usuario`, e a resposta do login) |
+| o `para_json` da cifra devolve a senha | **3 dos 1.103** | — o terceiro não estava previsto: `a_senha_da_cifra_pode_vir_do_ambiente` cai por tabela, porque a marca `(do ambiente)` some junto. Fica escrito para não ser lido como guarda nova numa corrida futura |
+| `senha::cifrar(clara)` vira `clara` | **5 ou mais dos 1.103** | — é a única larga da leva, porque quebra o LOGIN junto. Ensina menos sobre alcance, e entrou assim mesmo: o defeito estava **escrito no comentário do teste** desde que ele nasceu («repor o defeito é trocar `senha::cifrar(clara)` por `clara` em `objeto_do_usuario`»), e ninguém o executava. Instrução de prova real escrita e nunca corrida é o retrato exato do teste não provado |
+
+A linha de cima é o achado da frente, e ela vale como aviso de método: **mil e
+cento e três provas, e um ponto cego**. E o ponto cego não é «o `Debug` não se
+testa nesta casa» — testa-se, e a §15.7.5 mostra o vizinho `CifraFio` sendo
+conferido em `--lib`, `{:?}` a `{:?}`. O cego é mais fino e por isso mais
+perigoso: **a prova existe, e mora no binário errado**. Quem rodar
+`cargo test -p phxsql-server --lib` — que é o que uma frente com pressa roda —
+vê 1.103 verdes com a senha do cofre saindo em todo `{:?}`.
+
+O `Debug` também não está na frase da pétrea: ela diz «arquivo, log, resposta
+do protocolo». Uma lista de saídas é um inventário, e **lei que lista menos
+casos do que existem protege igual hoje e menos no dia em que alguém usar a
+lista como inventário** — foi exatamente o que aconteceu. O comentário acima
+do `impl` já avisava, com todas as letras, que *«segredo que aparece em
+`Debug` vaza no dia em que alguém acrescentar um `dbg!`»*. **Comentário que se
+declara resolvido é o motivo de ninguém olhar de novo** — a mesma lição que o
+`conferir_a_arvore` custou em 03/09, e a §15.7.5 mostra a terceira estrutura,
+a do DbLink, em que ninguém olhou mesmo.
+
+#### 15.7.4 A escolha do defeito, entrada por entrada
+
+O critério foi o da §15.3: *um refatorador distraído cometeria este de
+verdade?* Aqui houve um segundo crivo, e ele é o que separa sabotagem de
+defeito: **cada um dos nove tem um pedido legítimo por trás**, e é isso que os
+faz sobreviver ao `git diff`.
+
+- a ficha ganha o `senha_hash` porque **a tela de edição precisa devolver o
+  usuário inteiro para salvar de volta** — e o campo da senha é o que falta;
+- o `para_json` da cifra devolve a senha porque a tela lê `(oculta)` e, ao
+  salvar, **mandaria `(oculta)` de volta como senha**. A quebra é real; o
+  conserto certo é a tela não reenviar o campo, e o errado cabe numa linha;
+- o `Debug` mostra a senha porque quem depura *«por que o cofre não abre com a
+  senha certa»* troca essa linha **de propósito** e esquece de desfazer. O que
+  sobra continua sendo um `Debug` escrito à mão, com um campo a mais;
+- o comando inválido volta cru porque `<comando inválido, 31 bytes>` **não
+  ajuda ninguém** a achar a aspas que faltou;
+- a trilha deixa de olhar o nome da coluna porque *«a análise abaixo já
+  destrincha o hash, então a lista de nomes é redundante»* — e deixa de
+  analisar o valor porque `senha::e_hash` roda em **todo** valor de **toda**
+  coluna marcada de **toda** alteração registrada, que é a primeira linha em
+  que se olha ao caçar tempo na trilha.
+
+Nenhum dos nove é uma constante trocada nem um `assert` apagado. Os nove
+compilam, passam no `clippy`, e oito deles deixam **1.100 ou mais** das provas
+do binário verdes.
+
+#### 15.7.5 O caminho IRMÃO — e ele está ABERTO hoje, medido
+
+Registrado como achado, não como dispensa: **esta frente não o cobriu, e ele
+não é hipotético.**
+
+**Primeiro, a hipótese que morreu medida.** Escrevi que o `CifraFio` tinha
+`Debug` escrito à mão e nenhum teste de `{:?}` — e estava errado. O
+`a_privada_do_fio_nunca_sai` (`config.rs`, `--lib`) confere **duas** coisas
+que o teste da `Cifra` não confere: `format!("{:?}", c.cifra_fio)` **e**
+`format!("{c:?}")`, o `Config` **inteiro**. O irmão estava mais protegido que
+o caminho que motivou a entrada, e não menos. Hipótese que morre medida é
+resultado tão válido quanto ganho, e é o que impede a mesma suspeita de
+voltar sem medição.
+
+**Segundo, o que a mesma varredura achou ao lado — e este está aberto.** Há
+**três** estruturas do servidor que guardam segredo em campo privado:
+
+| estrutura | `Debug` | prova de `{:?}` |
+|---|---|---|
+| `Cifra` (`config.rs`) | **escrito à mão**, senha `(oculta)` | `a_resposta_do_protocolo_nao_leva_a_senha` (integração) |
+| `CifraFio` (`config.rs`) | **escrito à mão**, privada `(oculta)` | `a_privada_do_fio_nunca_sai` (`--lib`), e ele cobre o `Config` inteiro |
+| `Definicao` (`dblink/mod.rs`) | **`#[derive(Debug)]`** | **nenhuma** |
+
+Medido em 16/09/2026 com uma sonda temporária (`format!("{d:?}")` sobre uma
+ligação carregada por `Definicao::de_json`, removida em seguida — o
+`crates/` voltou limpo):
+
+```
+Definicao { nome: "x", motor: MySql, host: "h", porta: 3306, usuario: "u",
+            senha: "segredo-do-outro-banco", senha_env: "",
+            token: "token-do-outro", token_env: "", database: "d", … }
+```
+
+**Vazam os dois**: a senha do outro banco e o token de serviço. E o `Registro`
+— `#[derive(Debug, Default)]`, com `pub ligacoes: Vec<Definicao>` — também
+vaza, medido: um `{:?}` no cadastro inteiro despeja a senha e o token de
+**todas** as ligações de uma vez.
+
+O agravante é o de sempre nesta casa, e ele está escrito no próprio arquivo:
+os comentários dos dois campos **declaram o problema resolvido** —
+*«ela nunca sai em JSON nem em log»* na senha, e
+*«ele nunca sai em JSON, em log nem na tela»* no token, este último com o
+motivo mais forte (*«quem o tem alcança a porta de dados do outro servidor sem
+usuário nenhum»*). As duas frases são verdade sobre o `para_json`, que tem
+prova (`a_senha_da_ligacao_nunca_aparece_no_json`), e **mentira sobre o
+`Debug`**, que não tem. É a lei de 03/09 por outro caminho: **comentário que
+se declara resolvido é o motivo de ninguém olhar de novo** — e aqui o
+comentário chega a nomear a saída («em log») que ninguém foi conferir.
+
+Por que ficou sem guarda nesta frente: fechar isto é **mudar produção** —
+trocar o `derive` por um `Debug` escrito à mão, como os dois vizinhos já
+têm —, e esta frente escreve prova, não código. O caminho está pronto para
+quem o pegar, e é curto: o `Debug` da `Cifra` (`config.rs:1224`) é o molde
+literal, a prova nova é um `{:?}` ao lado do
+`a_senha_da_ligacao_nunca_aparece_no_json`, e a entrada de catálogo que nasce
+depois dela é a décima desta pétrea — `debug-da-ligacao-mostra-a-senha`, com
+o `derive` de volta como defeito reposto.
+
+E a ordem importa: **a prova entra com o conserto, não antes**. Prova escrita
+hoje nasceria vermelha, e portão vermelho na árvore limpa é o que faz a
+próxima frente aprender a ignorar o portão.
+
+#### 15.7.6 O que ficou de fora, e por quê
+
+- **`a_senha_nao_vai_para_o_disco`** (`phxsql-store --test
+  cifra-dos-diarios`) — a senha do cofre contra os bytes do `.log`. É uma das
+  quatro saídas da pétrea («nem em arquivo») e ficou sem entrada porque o
+  defeito plausível ali é na derivação da chave, e isso é território da §15.2,
+  que já repõe defeito em PBKDF2. Cobrir por cima seria contar a mesma
+  cobertura duas vezes;
+- **26 das 40 continuam sem defeito reposto.** Contado depois, e não
+  estimado antes: a cobertura foi de **6/40 para 14/40** — nove entradas
+  compram oito provas novas porque duas delas (`ficha-do-usuario-devolve-o-hash`
+  e `senha-em-claro-no-cadastro`) dividem a mesma prova do arquivo, e é assim
+  que tem de ser: a prova é a mesma, os defeitos é que são dois. A frente
+  escolheu nove que cobrem as quatro saídas nomeadas mais o `Debug`, e não as
+  nove mais baratas — as três de `phxsql-store`/`phxsql-sql` custam 1,6 s e as
+  cinco do servidor custam até 29,6 s cada;
+- **nenhuma prova por soquete entrou.** A `bancada/usuarios/provar.py` exercita
+  o servidor vivo e é quem cobre o `acessos.log`, que nenhum teste de módulo
+  percorre. O catálogo não sabe repor defeito contra ela — é a mesma fronteira
+  que a §15.5 nomeia para a bancada e para a tela.
 
 ## Os limites de funcionamento encontrados (não são catracas)
 
@@ -1186,7 +1478,7 @@ contado contra o código-fonte, e nenhum entra na tabela de catracas.
 - **`conferidor_dependencias.rs`** (zero dependências externas) — portão
   binário, não catraca: não há contagem, é passa/não passa. Documentado na
   seção acima.
-- **`bancada/guardas/catalogo.py`** (o catálogo de defeitos repostos, **151
+- **`bancada/guardas/catalogo.py`** (o catálogo de defeitos repostos, **169
   entradas** medidas em 16/09/2026) — é a OUTRA metade do papel G, as guardas
   de regressão provadas por mutação. Não é catraca: cada entrada prova um
   defeito específico voltando e sendo pego, não uma contagem que sobe e desce.

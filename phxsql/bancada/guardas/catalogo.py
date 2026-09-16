@@ -6309,4 +6309,419 @@ pub fn limpar() {
             "servidor::testes_direito_por_tabela::procurar_texto_nao_e_a_porta_dos_fundos_para_a_tabela_negada",
         ],
     },
+    # =======================================================================
+    # A PETREA «SENHA NUNCA EM TEXTO PURO», nove entradas -- 16/09/2026
+    #
+    # A lei do dono: «Senha nunca em texto puro. Nem em arquivo, nem em log,
+    # nem em resposta do protocolo. Ha teste que falha se a ficha de usuario
+    # vazar o hash.»
+    #
+    # O retrato de antes, MEDIDO e nao lembrado: 40 funcoes de teste da arvore
+    # afirmam que um segredo NAO aparece numa saida, e so 6 delas apareciam no
+    # `caem` de alguma entrada -- as seis do `profiler-recorta` e do
+    # `profiler-recorta-largo`. Trinta e quatro provas sem defeito reposto
+    # nenhum, inclusive as quatro que a petrea NOMEIA (a ficha, o arquivo, a
+    # resposta do protocolo e o log).
+    #
+    # As nove foram escolhidas para cobrirem as QUATRO SAIDAS que a petrea
+    # nomeia, e nao a que fosse mais facil de escrever:
+    #
+    #   arquivo    `senha-em-claro-no-cadastro`, `senha-velha-fica-no-arquivo`
+    #   log        `profiler-sem-a-senha-dentro-do-sql`,
+    #              `comando-invalido-vira-texto-cru`,
+    #              `trilha-sem-o-nome-de-segredo`, `trilha-so-olha-o-nome`
+    #   protocolo  `ficha-do-usuario-devolve-o-hash`,
+    #              `cifra-reserializa-a-senha`
+    #   Debug      `debug-da-cifra-mostra-a-senha`
+    #
+    # A quinta saida -- o `Debug` -- nao esta na frase da petrea e esta aqui de
+    # proposito: e a unica que NENHUM teste de `--lib` alcanca, e por isso a
+    # unica entrada desta leva que roda num binario de integracao.
+    # =======================================================================
+    {
+        "id": "ficha-do-usuario-devolve-o-hash",
+        "titulo": "a ficha do usuário passa a devolver o `senha_hash` junto",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro... ha teste que "
+            "falha se a ficha de usuario vazar o hash». A petrea nomeia a "
+            "FICHA, e esta e a entrada que a repoe. O defeito escolhido e o "
+            "que um programador apressado comete de verdade, e ele ate tem um "
+            "pedido legitimo por tras: a tela de edicao quer receber o usuario "
+            "inteiro para salvar de volta, e falta justamente o campo da "
+            "senha. Acrescentar `senha_hash` a ficha resolve a tela, compila, "
+            "passa no clippy e soa defensavel -- «hash nao e a senha». So que "
+            "hash que sai pela rede e hash que se quebra offline, e a petrea "
+            "nao abre excecao: ela diz FICHA. "
+            "O alcance e a parte que ensina: a `ficha()` e uma so, e por ela "
+            "passam o `usuarios`, o `usuario` e a resposta do login -- entao "
+            "um campo acrescentado aqui vaza por tres operacoes, e quem o "
+            "acrescenta enxerga so a tela que estava consertando."
+            "\n\nRAIO MEDIDO (sonda `espera: \"nada muda\"`, 16/09/2026): **2 dos "
+            "1.103** testes do `--lib` caem -- os dois do `caem`, e mais nenhum."
+        ),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": """            ("exige_chave", Json::Bool(self.chave_publica.is_some())),
+""",
+        "troca": """            ("exige_chave", Json::Bool(self.chave_publica.is_some())),
+            // DEFEITO REPOSTO: a ficha leva o hash junto, «porque a tela de
+            // edicao precisa devolver o usuario inteiro para salvar». Hash
+            // que sai pela rede e hash que se quebra offline.
+            ("senha_hash", Json::texto_de(&self.senha_hash)),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuarios::tests::a_ficha_nunca_devolve_a_senha",
+            "servidor::testes_cadastro_de_usuarios::a_senha_nunca_aparece_no_arquivo_nem_na_resposta",
+        ],
+    },
+    {
+        "id": "senha-em-claro-no-cadastro",
+        "titulo": "a senha entra no config.json em texto puro: o `cifrar` sai do caminho de gravação",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro. Nem em "
+            "arquivo». Este defeito esta NOMEADO no proprio comentario do "
+            "teste desde que ele nasceu -- «repor o defeito e trocar "
+            "`senha::cifrar(clara)` por `clara` em `objeto_do_usuario`» --, e "
+            "nunca tinha sido reposto por ninguem: a instrucao estava escrita "
+            "e a maquina nao a executava. E o retrato exato que esta casa "
+            "chama de teste nao provado. "
+            "O `objeto_do_usuario` e o UNICO ponto por onde a senha entra no "
+            "arquivo, e e por isso que o defeito cabe numa linha so: quem "
+            "«simplificasse» a derivacao aqui -- por exemplo para um script "
+            "de importacao que ja traz o hash pronto -- poria a senha em claro "
+            "no `config.json` de todo mundo, e o caminho de leitura "
+            "continuaria funcionando, porque o `extrair_hash` ainda aceita "
+            "`senha` em texto puro (avisando). O servidor subiria, o login "
+            "entraria, e so o arquivo saberia."
+            "\n\nRAIO MEDIDO (16/09/2026): **5 ou mais dos 1.103** -- e a unica "
+            "desta leva que derruba meia duzia de provas, porque quebra o LOGIN "
+            "junto. Ela ensina menos sobre alcance que as vizinhas e esta aqui "
+            "assim mesmo: e o defeito que o comentario do teste manda repor, e "
+            "ficar sem entrada era deixar a instrucao escrita sem ninguem executar."
+        ),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": """            por("senha_hash", Json::texto_de(senha::cifrar(clara)));
+""",
+        "troca": """            // DEFEITO REPOSTO: a senha vai para o arquivo como veio. O
+            // login continua entrando -- o `extrair_hash` aceita `senha` em
+            // texto puro --, entao nada na tela denuncia; so o arquivo.
+            por("senha_hash", Json::texto_de(clara));
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_cadastro_de_usuarios::a_senha_nunca_aparece_no_arquivo_nem_na_resposta",
+            "usuarios::tests::trocar_a_senha_leva_junto_a_que_estava_em_texto_puro",
+        ],
+    },
+    {
+        "id": "senha-velha-fica-no-arquivo",
+        "titulo": "trocar a senha não leva junto a que estava em texto puro no arquivo",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro. Nem em "
+            "arquivo». Esta entrada e a IRMA da de cima, e existe por causa da "
+            "lei «conserto entra no caminho que o motivou, e o caminho IRMAO "
+            "fica»: derivar a senha nova esta certo e nao basta, porque o "
+            "formato ainda aceita `senha` em texto puro num usuario antigo. "
+            "Sem o `retain`, o usuario que tinha a senha em claro no "
+            "`config.json` troca de senha, ganha um `senha_hash` novinho -- e "
+            "continua com a VELHA em claro ao lado dele, agora sem ninguem "
+            "olhar, porque a tela mostra que a troca deu certo. "
+            "O que esta linha ensina esta no `seguem`: o caminho do usuario "
+            "NOVO nao sente nada. `pares` nasce vazio quando nao ha anterior, "
+            "e `senha` nao esta em `CAMPOS_DO_USUARIO` -- entao a prova que "
+            "cobre a criacao fica VERDE com o defeito de pe. Uma so das duas "
+            "provas do arquivo pega isto, e e a da ALTERACAO."
+            "\n\nRAIO MEDIDO (16/09/2026): **1 dos 1.103**. E a mais estreita da "
+            "leva, e por isso a que mais ensina: a prova da CRIACAO fica verde."
+        ),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": """            // A senha em texto puro que o formato ainda aceita sai JUNTO: um
+            // usuario que a tinha e trocou de senha nao pode continuar com a
+            // velha em claro no arquivo, sem ninguem notar.
+            pares.retain(|(k, _)| k != "senha");
+""",
+        "troca": """            // DEFEITO REPOSTO: a senha velha em claro FICA. A troca deu
+            // certo na tela, o hash novo esta la, e o `config.json` guarda a
+            // senha antiga ao lado dele.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuarios::tests::trocar_a_senha_leva_junto_a_que_estava_em_texto_puro",
+        ],
+        "seguem": [
+            # O caminho do usuario NOVO nao sente: `pares` nasce vazio sem
+            # anterior, e "senha" nao esta em CAMPOS_DO_USUARIO.
+            "servidor::testes_cadastro_de_usuarios::a_senha_nunca_aparece_no_arquivo_nem_na_resposta",
+            "usuarios::tests::a_ficha_nunca_devolve_a_senha",
+        ],
+    },
+    {
+        "id": "cifra-reserializa-a-senha",
+        "titulo": "o `para_json` da cifra devolve a senha de verdade em vez de «(oculta)»",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro... nem em "
+            "resposta do protocolo». O `config` e uma operacao do protocolo e "
+            "e o que a tela de configuracao le. O defeito tem um pedido "
+            "legitimo atras dele, e e por isso que ele e plausivel: a tela le "
+            "`(oculta)` e, ao SALVAR, mandaria `(oculta)` de volta como senha "
+            "-- quem visse essa quebra «consertaria» mandando o valor real, e "
+            "o conserto errado cabe numa linha. O certo e a tela nao reenviar "
+            "o campo. "
+            "A escolha do campo tambem e medida: a `Cifra` e o segredo mais "
+            "antigo do `config.json`, e o `para_json` dela esta a UM `else if` "
+            "de distancia do da `Definicao` do dblink e do da `CifraFio` -- os "
+            "tres tem a mesma forma, e o defeito reposto aqui e o que se "
+            "copiaria para os outros dois num `find`/`replace`."
+            "\n\nRAIO MEDIDO (16/09/2026): **3 dos 1.103**. O terceiro nao estava "
+            "previsto e nao entrou no `caem` porque nao e guarda de vazamento: "
+            "`a_senha_da_cifra_pode_vir_do_ambiente` cai por tabela, porque a marca "
+            "`(do ambiente)` some junto. Fica dito para que a proxima corrida nao o "
+            "leia como guarda nova."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            // Nunca a senha. Nem mascarada com asteriscos do tamanho certo --
+            // o tamanho ja e informacao.
+            (
+                "senha",
+                Json::texto_de(if self.senha.is_empty() {
+                    "(vazia)"
+                } else if self.senha_env.is_empty() {
+                    "(oculta)"
+                } else {
+                    "(do ambiente)"
+                }),
+            ),
+""",
+        "troca": """            // DEFEITO REPOSTO: a senha sai inteira, «para a tela de
+            // configuracao conseguir salvar de volta sem apaga-la».
+            ("senha", Json::texto_de(&self.senha)),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::tests::a_senha_da_cifra_nunca_sai_em_json",
+            "config::tests::nenhuma_credencial_do_config_sai_pela_op_config",
+        ],
+        "seguem": [
+            # Os outros dois segredos do mesmo arquivo continuam de pe: cada
+            # `para_json` guarda o seu, e por isso o generico existe.
+            "config::testes_alertas::a_senha_do_rele_nunca_aparece_no_json",
+            "config::tests::a_credencial_do_cluster_nao_sai_em_json",
+        ],
+    },
+    {
+        "id": "debug-da-cifra-mostra-a-senha",
+        "titulo": "o `Debug` da cifra imprime a senha: um `dbg!` apressado a joga no log",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro. ... nem em "
+            "log». Esta e a saida que a frase da petrea nomeia e que NENHUM "
+            "teste de `--lib` alcanca: os tres testes de JSON do `config.rs` "
+            "ficam verdes com este defeito de pe, porque olham o `para_json` e "
+            "o `Debug` e outro caminho. O comentario acima do `impl` ja avisa "
+            "-- «segredo que aparece em `Debug` vaza no dia em que alguem "
+            "acrescentar um `dbg!`» --, e comentario nao e guarda. "
+            "O defeito e o que se comete de verdade, e nem e por descuido: "
+            "quem depura «por que o cofre nao abre com a senha certa» troca "
+            "essa linha de proposito, ve o que precisava ver, e esquece de "
+            "desfazer. Nao ha nada de errado no codigo que sobra -- ele "
+            "continua sendo um `Debug` escrito a mao, com um campo a mais "
+            "aparecendo, que e o que faz o `git diff` parecer inocente."
+            "\n\nRAIO MEDIDO (16/09/2026), e e o numero desta leva: com a senha "
+            "saindo no `Debug`, **ZERO dos 1.103** testes do `--lib` caem. A sonda "
+            "correu o binario inteiro e nenhum veredito mudou. Quem cai e UM teste "
+            "de integracao, dos 5 do `cifra-pelo-config`. Mil e cem provas e um "
+            "ponto cego."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            .field("senha", &"(oculta)")
+""",
+        "troca": """            // DEFEITO REPOSTO: a senha aparece no `Debug`. Quem depurou «por
+            // que o cofre nao abre» trocou esta linha e nao desfez.
+            .field("senha", &self.senha)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "cifra-pelo-config"],
+        "caem": [
+            "a_resposta_do_protocolo_nao_leva_a_senha",
+        ],
+    },
+    {
+        "id": "profiler-sem-a-senha-dentro-do-sql",
+        "titulo": "o Profiler perde a senha que está DENTRO da frase SQL, e não num campo",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro... nem em log», "
+            "com o corolario que o proprio Profiler obrigou a escrever: "
+            "«funcionalidade que mostra texto cru redige ANALISANDO, nunca "
+            "recortando». A redacao deste arquivo e por NOME de campo, e ela "
+            "esta certa -- ate chegar "
+            "`{\\\"op\\\":\\\"sql\\\",\\\"texto\\\":\\\"CREATE USER c PASSWORD 'x'\\\"}`, "
+            "em que a senha nao esta num campo chamado `senha`: esta no meio "
+            "de uma frase, num campo chamado `texto`. Este ramo foi achado "
+            "EXERCITANDO o motor vivo (`bancada/usuarios/provar.py`, parte 8) "
+            "e nao lendo o codigo, e por isso ele parece um enfeite para quem "
+            "le o `limpar` de cima para baixo. "
+            "O `seguem` e a razao de esta entrada existir separada das duas do "
+            "`profiler-recorta`: a lista `SEGREDOS` continua inteira, entao "
+            "`a_senha_nunca_aparece` -- que e a prova mais completa do arquivo, "
+            "com oito pedidos -- fica VERDE com o defeito de pe. Os oito "
+            "pedidos dela nomeiam a senha num campo; nenhum a esconde numa "
+            "frase. Uma prova pode ser a mais completa do arquivo e ainda "
+            "assim nao alcancar o ramo do vizinho."
+            "\n\nRAIO MEDIDO (16/09/2026): **1 dos 1.103**."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """                    } else if let Some(sem) = sql_sem_senha(k, v) {
+                        (k.clone(), Json::Texto(sem))
+                    } else {
+""",
+        "troca": """                    // DEFEITO REPOSTO: o ramo do SQL sai. A lista `SEGREDOS`
+                    // continua inteira e todo pedido com campo `senha` sai
+                    // tapado -- so a senha que mora DENTRO da frase passa.
+                    } else {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes::a_senha_dentro_do_texto_sql_tambem_sai",
+        ],
+        "seguem": [
+            # A prova mais completa do arquivo -- oito pedidos -- fica verde:
+            # os oito nomeiam a senha num CAMPO.
+            "profiler::testes::a_senha_nunca_aparece",
+            "profiler::testes::o_sql_de_sempre_continua_visivel_no_anel",
+            "profiler::testes::chave_com_espaco_no_nome_ainda_e_senha",
+        ],
+    },
+    {
+        "id": "comando-invalido-vira-texto-cru",
+        "titulo": "o SQL que o léxico recusa volta inteiro para o log, com a senha dentro",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro... nem em log», e "
+            "o corolario: «o que nao se analisa nao vira texto -- vira o "
+            "tamanho em bytes. Se a estrutura nao se le, nao ha como tapar o "
+            "campo dentro dela». O `sem_a_senha` redige por analise lexica; "
+            "quando o lexico recusa o texto nao ha simbolo nenhum para tapar, "
+            "e a unica saida honesta e o tamanho. "
+            "O defeito e plausivel porque tem um motivo bom: um comando "
+            "invalido e exatamente o que o operador quer VER no log para "
+            "descobrir o erro de digitacao, e `<comando invalido, 31 bytes>` "
+            "nao ajuda ninguem a achar a aspas que faltou. Quem devolve o "
+            "texto cru esta consertando a usabilidade do log -- e "
+            "`CREATE USER c PASSWORD 'aberta` e justamente um comando que o "
+            "lexico recusa POR CAUSA da aspas da senha, entao o caso que mais "
+            "pede o texto cru e o que mais o proibe. "
+            "Este ponto e o mesmo que o `profiler-sem-a-senha-dentro-do-sql` "
+            "alcanca, mas de fora: o Profiler CHAMA esta funcao. Sao dois "
+            "pacotes e dois binarios, e o defeito repousa em `phxsql-sql`, "
+            "onde nenhuma prova do servidor olha."
+            "\n\nRAIO MEDIDO (16/09/2026): **1 dos 253** do `phxsql-sql --lib`."
+        ),
+        "arquivo": "crates/phxsql-sql/src/usuario.rs",
+        "trecho": """    let Ok(simbolos) = lexico::analisar(texto) else {
+        return format!("<comando invalido, {} bytes>", texto.trim().len());
+    };
+""",
+        "troca": """    let Ok(simbolos) = lexico::analisar(texto) else {
+        // DEFEITO REPOSTO: o comando que o lexico recusou volta inteiro,
+        // «para o operador conseguir ver o erro de digitacao no log». O
+        // comando que ele mais precisa ver e o que tem a aspas da senha
+        // faltando -- e ai a senha vai junto.
+        return texto.trim().to_string();
+    };
+""",
+        "pacote": "phxsql-sql",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuario::testes::o_que_nao_se_analisa_vira_o_tamanho",
+        ],
+        "seguem": [
+            # O comando VALIDO continua redigido: o defeito so alcanca o
+            # caminho em que nao ha estrutura para tapar.
+            "usuario::testes::a_senha_sai_do_texto_do_comando",
+            "usuario::testes::senha_sem_aspas_e_recusada_sem_ecoar_o_que_veio",
+        ],
+    },
+    {
+        "id": "trilha-sem-o-nome-de-segredo",
+        "titulo": "a trilha LGPD deixa de olhar o NOME da coluna e só analisa o valor",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro. Nem em arquivo, "
+            "nem em log» -- e a trilha LGPD e as duas coisas ao mesmo tempo: "
+            "um arquivo que e um log. O `valor_para_trilha` tem DUAS "
+            "conferencias, e esta entrada tira a primeira. "
+            "O defeito e o que um refatorador comete com a melhor das "
+            "intencoes, e o raciocinio dele ate soa certo: «a analise abaixo "
+            "ja destrincha o hash pelo formato, entao a lista de nomes e "
+            "redundante e so gera falso positivo -- uma coluna `token_fiscal` "
+            "que nem segredo e». O erro esta no CASO PIOR, que e exatamente o "
+            "que a petrea nomeia: senha em TEXTO PURO numa coluna `senha` nao "
+            "e um hash, nao destrincha em `pbkdf2-sha256$...`, e passa inteira "
+            "para a trilha. A analise so pega o que JA esta protegido; o nome "
+            "e o que pega o que nao esta."
+            "\n\nRAIO MEDIDO (16/09/2026): **1 dos 187** do `phxsql-store --lib`."
+        ),
+        "arquivo": "crates/phxsql-store/src/trilha.rs",
+        "trecho": """    if nome_de_segredo(coluna) {
+        return redigir(bytes_do_valor(v));
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO: o nome da coluna deixa de contar, «porque a analise
+    // do valor abaixo ja pega o hash». Ela pega o hash; a senha em TEXTO
+    // PURO numa coluna `senha` nao e hash, e passa inteira.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "trilha::testes::coluna_de_senha_nao_entrega_o_valor",
+        ],
+        "seguem": [
+            # A OUTRA conferencia continua inteira, e por isso a prova dela
+            # fica verde: as duas nao se cobrem.
+            "trilha::testes::hash_em_coluna_de_nome_inocente_e_redigido",
+            "trilha::testes::nulo_nao_e_segredo",
+            "trilha::testes::valor_comum_passa_inteiro",
+        ],
+    },
+    {
+        "id": "trilha-so-olha-o-nome-da-coluna",
+        "titulo": "a trilha LGPD deixa de ANALISAR o valor e só confia no nome da coluna",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro», com o "
+            "corolario «redige ANALISANDO, nunca recortando». Esta entrada e a "
+            "METADE CONTRARIA da `trilha-sem-o-nome-de-segredo`, e as duas "
+            "existem juntas de proposito: cada uma tira uma das duas "
+            "conferencias, e a prova que cai numa fica verde na outra. "
+            "E o par que mostra por que «tem teste» nao quer dizer «esta "
+            "coberto»: as duas provas do arquivo tem nome parecido, moram "
+            "coladas, e nenhuma das duas sozinha diz que as duas conferencias "
+            "existem. "
+            "O defeito e plausivel pelo custo: `senha::e_hash` roda em TODO "
+            "valor de TODA coluna marcada de TODA alteracao registrada, e "
+            "quem for caçar tempo na trilha olha para essa linha primeiro -- "
+            "«a coluna ja diz o que e, analisar o conteudo e trabalho "
+            "dobrado». O que se perde e o hash gravado numa coluna de nome "
+            "inocente, que e o caso que nenhum nome alcanca."
+            "\n\nRAIO MEDIDO (16/09/2026): **1 dos 187** -- e o par com a de cima "
+            "cobre as duas conferencias com um teste cada, medido."
+        ),
+        "arquivo": "crates/phxsql-store/src/trilha.rs",
+        "trecho": """        Value::Str(s) | Value::Memo(s) if phxsql_core::senha::e_hash(s) => redigir(s.len()),
+""",
+        "troca": """        // DEFEITO REPOSTO: a analise do valor sai, «porque a coluna ja diz o
+        // que e». O hash numa coluna de nome inocente vai inteiro.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "trilha::testes::hash_em_coluna_de_nome_inocente_e_redigido",
+        ],
+        "seguem": [
+            # A conferencia pelo NOME continua, e a prova dela fica verde.
+            "trilha::testes::coluna_de_senha_nao_entrega_o_valor",
+            "trilha::testes::valor_comum_passa_inteiro",
+        ],
+    },
 ]
