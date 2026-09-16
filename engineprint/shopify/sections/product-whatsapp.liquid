@@ -948,8 +948,26 @@
           });
         });
 
-        /* ---------- barra fixa (celular) ---------- */
+        /* ---------- barra fixa (celular) ----------
+           A barra precisa estar FORA da secao. O tema poe a classe .wx-reveal
+           na <section> com `transform` e `will-change`, e ancestral com
+           transform vira o bloco de contencao do position:fixed -- a barra
+           deixava de se prender na janela e ficava presa no fim da secao,
+           em cima do "Compre tambem". Mudar o CSS nao resolve: qualquer
+           ancestral com transform/filter/will-change refaz o estrago. Mover
+           para o <body> resolve de uma vez, hoje e no tema que vier. */
         const sticky = sec.querySelector('[data-pp-sticky]');
+        if (sticky) {
+          // ao re-inicializar (editor de tema), tira a barra que ficou no body
+          const antiga = document.querySelector(`body > [data-pp-sticky][data-pp-de="${sec.id}"]`);
+          if (antiga && antiga !== sticky) antiga.remove();
+          sticky.setAttribute('data-pp-de', sec.id);
+          // o --pp-canvas vive na <section>; leva junto, senao a miniatura
+          // da barra perde o fundo e cai no valor de reserva
+          const canvas = getComputedStyle(sec).getPropertyValue('--pp-canvas');
+          if (canvas) sticky.style.setProperty('--pp-canvas', canvas.trim());
+          document.body.appendChild(sticky);
+        }
         const form = sec.querySelector('#pp-form') || sec.querySelector('form.pp__form');
         if (sticky && addBtn) {
           // liga quando o botao principal ja passou para CIMA da tela
@@ -960,6 +978,27 @@
             ligada = on;
             sticky.classList.toggle('is-on', on);
             sticky.setAttribute('aria-hidden', on ? 'false' : 'true');
+            // o widget de chat mora no mesmo canto e tem z-index 2147483647:
+            // com a barra ligada ele cairia em cima do botao Adicionar. Ele
+            // expoe --wx-bottom/--wx-bottom-m como medida oficial, entao a
+            // barra so soma a propria altura a essa medida enquanto aparece.
+            const chat = document.getElementById('wx-chat');
+            if (chat) {
+              if (on) {
+                const alt = Math.round(sticky.getBoundingClientRect().height) + 12;
+                if (!chat.dataset.ppBase) {
+                  const cs = getComputedStyle(chat);
+                  chat.dataset.ppBase = (cs.getPropertyValue('--wx-bottom').trim() || '40px') + '|' + (cs.getPropertyValue('--wx-bottom-m').trim() || '28px');
+                }
+                const [b0, m0] = chat.dataset.ppBase.split('|');
+                chat.style.setProperty('--wx-bottom', `calc(${b0} + ${alt}px)`);
+                chat.style.setProperty('--wx-bottom-m', `calc(${m0} + ${alt}px)`);
+              } else if (chat.dataset.ppBase) {
+                const [b0, m0] = chat.dataset.ppBase.split('|');
+                chat.style.setProperty('--wx-bottom', b0);
+                chat.style.setProperty('--wx-bottom-m', m0);
+              }
+            }
           };
           if ('IntersectionObserver' in window) new IntersectionObserver(confere, { threshold: 0 }).observe(addBtn);
           window.addEventListener('scroll', confere, { passive: true });
