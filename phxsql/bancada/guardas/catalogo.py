@@ -5498,4 +5498,92 @@ pub fn limpar() {
         # compilacao a frio da arvore copiada em cima disso.
         "prazo": 420,
     },
+    {
+        "id": "varredura-sem-o-elo",
+        "titulo": "a varredura barata do diretorio perde a tabela alcancada por elo",
+        "porque": (
+            "petrea da integridade: nunca se mata o pai que tem filhos. A busca "
+            "reversa so pergunta «tem filha?» as tabelas que a varredura ENXERGA, "
+            "entao tabela que some da lista e tabela que ninguem confere -- e a orfa "
+            "que nasce dai nao da erro, nasce calada."
+            "A varredura do diretorio que a busca reversa usa passou a decidir "
+            "«isto e arquivo?» pelo `d_type` que o `getdents64` ja trouxe, em vez "
+            "de um `statx` por entrada -- 9 chamadas por exclusao viraram 1, e a "
+            "varredura caiu de 9,05 para 4,43 us (16/09/2026, pedido 259). A "
+            "troca tem UMA divergencia possivel, e ela e da petrea: `file_type()` "
+            "NAO segue o elo simbolico e `is_file()` segue, entao um `.reg` "
+            "alcancado por elo sumiria da lista -- e tabela que some da lista e "
+            "tabela que ninguem pergunta se tem filha. A orfa nao daria erro: ela "
+            "nasceria calada, que e a pior das duas formas."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        .filter(|e| match e.file_type() {
+            Ok(t) if t.is_symlink() => e.path().is_file(),
+            Ok(t) => t.is_file(),
+            Err(_) => e.path().is_file(),
+        })
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 259): o ramo do elo simbolico sai, e a
+        // varredura barata volta a perder a tabela alcancada por elo.
+        .filter(|e| matches!(e.file_type(), Ok(t) if t.is_file()))
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "catalogo::testes_gestao::a_varredura_barata_ve_o_mesmo_que_a_cara",
+        ],
+        "seguem": [
+            # O outro lado do elo -- o diretorio chamado `pasta.reg`, que o
+            # `d_type` tem de recusar como o `is_file()` recusava -- e uma
+            # asserção DENTRO do mesmo teste, e nao um teste proprio: nao da
+            # para lista-lo aqui. Os vizinhos que varrem o mesmo diretorio sem
+            # elo nenhum continuam verdes com o defeito reposto, e e isso que
+            # diz que a guarda mira o elo e nao a varredura inteira.
+            "catalogo::testes_gestao::excluir_tabela_leva_os_arquivos_dela_e_so_os_dela",
+            "catalogo::testes_gestao::pertence_nao_confunde_tabela_de_prefixo_igual",
+        ],
+    },
+    {
+        "id": "linha-vazia-na-conferencia-de-filhas",
+        "titulo": "a linha descida para a conferencia de filhas vai vazia, e toda mae parece sem filha",
+        "porque": (
+            "petrea da integridade: nunca se mata o pai que tem filhos. Quem desce a "
+            "linha adiante decide o que a conferencia enxerga, e a resposta errada "
+            "aqui LIBERA a exclusao da mae -- errado na direcao errada."
+            "O `excluir_de_vez` passou a ler o slot UMA vez e a descer os valores "
+            "ja decodificados para a conferencia de filhas, em vez de cada um ler "
+            "por conta propria (3 leituras -> 1, 4,43 -> 1,54 us). Quem desce a "
+            "linha adiante decide o que a conferencia enxerga: descer a linha "
+            "ERRADA, ou vazia, faz a conferencia responder «nao tem filha» -- a "
+            "resposta errada na direcao errada, porque ela LIBERA a exclusao da "
+            "mae. Por isso o codigo usa `expect` e nao `unwrap_or(&[])`, e por "
+            "isso a sobreposicao da transacao manda: quem tem troca empilhada "
+            "recebe `None` e a conferencia le por la, como sempre leu."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            let ja_lida = match self.troca_de(rowid) {
+                None => Some(valores.as_slice()),
+                Some(_) => None,
+            };
+""",
+        "troca": """            // DEFEITO REPOSTO (pedido 259): a linha desce VAZIA, e a
+            // conferencia responde «nao tem filha» para toda mae.
+            let ja_lida = Some(&valores[..0]);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "chave-estrangeira"],
+        "caem": [
+            "a_mae_com_filha_nao_pode_ser_apagada",
+            "a_mae_sem_filha_sai_normalmente",
+            "sem_indice_na_filha_a_recusa_diz_qual_indice_falta",
+        ],
+        "seguem": [
+            # `filha_de_outra_linha_nao_tranca_esta` e o que pegaria a linha
+            # ERRADA descida adiante (nao a vazia), e `sem_conferir_...` nao
+            # confere nada -- os dois continuam verdes com este defeito reposto,
+            # e e isso que diz que a guarda mira a linha vazia e nao a troca.
+            "filha_de_outra_linha_nao_tranca_esta",
+            "sem_conferir_a_mae_com_filha_sai_como_sempre",
+        ],
+    },
 ]

@@ -161,7 +161,7 @@ TETO_TRECHO_MORTO = 0
 TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
-PISO_DAS_ENTRADAS = 143
+PISO_DAS_ENTRADAS = 145
 
 # ------------------------------------------------------------- APOSENTADAS
 #
@@ -204,7 +204,60 @@ def catalogo():
     modulo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(modulo)
     _CATALOGO = getattr(modulo, "CATALOGO", None) or getattr(modulo, "GUARDAS")
+    conferir_o_formato(_CATALOGO)
     return _CATALOGO
+
+
+# As chaves que o catalogo usa hoje, contadas nele e nao lembradas.
+# OBRIGATORIAS em toda entrada; o par trecho/troca e o `trocas` sao as duas
+# FORMAS alternativas, conferidas separado logo abaixo.
+CHAVES_OBRIGATORIAS = {"id", "titulo", "porque", "pacote", "alvo", "caem"}
+CHAVES_OPCIONAIS = {
+    "seguem",              # os vizinhos que tem de seguir verdes
+    "arquivo", "trecho", "troca",   # a forma comum: um trecho so
+    "trocas",              # a forma de varias trocas, cada item com o seu par
+    "prazo",               # segundos, quando a suite do pacote e lenta
+    "espera",              # a espera propria da entrada
+    "nota_da_redundancia", # por que esta guarda pode sair REDUNDANTE
+}
+
+
+def conferir_o_formato(guardas):
+    """Parada com o motivo quando uma entrada nao tem a FORMA do catalogo.
+
+    Nasceu em 16/09/2026, e nasceu de um erro desta casa: duas entradas
+    entraram escritas com `nome`/`defeito`/`pedido`/`petrea` -- chaves que
+    ninguem le -- em vez de `id`/`titulo`/`porque`. Esta regua deu **ok nos
+    quatro tetos** e no piso, porque ela conferia o CONTEUDO das chaves que
+    conhece (`arquivo`, `trecho`, `caem`) e nunca a FORMA da entrada. Quem
+    acusou foi o provador, com um `KeyError: 'id'` depois de lancado.
+
+    E o alcance da lei «chave morta e pior que chave faltando»: a chave morta
+    aqui nao era da tela nem da traducao, era do proprio catalogo -- e a regua
+    que existe para o catalogo nao envelhecer nao olhava para ela.
+
+    Parada, e nao teto: teto conta quantos: aqui nao ha «quantos» aceitavel.
+    E o mesmo criterio do `dossie_da_pasta.py`, que para com o motivo quando
+    acha zero ou dois dossies em vez de chutar qual atualizar."""
+    conhecidas = CHAVES_OBRIGATORIAS | CHAVES_OPCIONAIS
+    problemas = []
+    for i, g in enumerate(guardas):
+        quem = g.get("id") or g.get("nome") or f"entrada #{i}"
+        falta = CHAVES_OBRIGATORIAS - set(g)
+        if falta:
+            problemas.append(f"{quem}: faltam {sorted(falta)}")
+        sobra = set(g) - conhecidas
+        if sobra:
+            problemas.append(f"{quem}: chaves que ninguem le {sorted(sobra)}")
+        # as duas formas: ou o par comum, ou a lista de trocas -- nunca nenhuma
+        comum = {"arquivo", "trecho", "troca"} <= set(g)
+        if not comum and not g.get("trocas"):
+            problemas.append(
+                f"{quem}: nem o par arquivo/trecho/troca nem `trocas`")
+    if problemas:
+        raise SystemExit(
+            "catalogo.py: entrada fora do formato -- o provador nao carrega "
+            "isto.\n   " + "\n   ".join(problemas))
 
 
 def pares(guarda):
