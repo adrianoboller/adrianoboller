@@ -265,7 +265,9 @@ fi
 # reprovacao aparece de hora em hora como o que e -- papel que nao esta
 # cumprindo aparece como nao cumprindo -- ate alguem desfazer ou o dono
 # decidir a excecao (pendencia #252).
-PHX="$(cd "$(dirname "$0")" && pwd)"
+# Pelo PORTAO, que foi tomado ANTES do `cd` -- depois dele o `$0` relativo
+# mente (o comentario do topo ja dizia, e este bloco pagou para aprender).
+PHX="$(cd "$(dirname "$PORTAO")/.." && pwd)"
 for MAPA in "$PHX/bancada/concorrencia/mapa-da-trava.py" "$PHX/bancada/concorrencia/mapa-das-threads.py"; do
   if [ ! -f "$MAPA" ]; then
     echo "⚠️  medidor sumiu: $(basename "$MAPA") -- a catraca dele nao roda mais"
