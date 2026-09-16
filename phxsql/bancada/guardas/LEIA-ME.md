@@ -57,7 +57,7 @@ Ela existe por um número: em 16/09/2026 a corrida completa achou **onze
 guardas QUEBRADAS**, e um único commit de 12/09 tinha aposentado **cinco de
 uma vez** sem ninguém ver por quatro dias. A causa não é desleixo, é custo —
 o `provar-guardas.py` leva cerca de uma hora, porque repõe o defeito e roda
-`cargo test` 142 vezes. **Guarda que só se confere em uma hora é guarda que
+`cargo test` 143 vezes. **Guarda que só se confere em uma hora é guarda que
 não se confere.** O `trecho-vivo.py` custa **0,18 s** e roda no item 0c da
 bateria.
 

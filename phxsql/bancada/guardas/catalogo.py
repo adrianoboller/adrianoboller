@@ -1284,16 +1284,31 @@ GUARDAS = [
             "dizer uma coisa e fazer outra, que e a armadilha da configuracao "
             "que mente."
         ),
-        "arquivo": "crates/phxsql-server/src/profiler.rs",
-        "trecho": """        if self.teto_do_arquivo == 0 || self.arquivo.is_none() {
-""",
-        "troca": """        // DEFEITO REPOSTO: o zero deixa de desligar o rodizio.
-        if self.arquivo.is_none() {
-""",
+        # O PONTO DE REPOSICAO ANDOU DE ARQUIVO -- pedido 263, 16/09/2026.
+        # Em `d59967a` (08/09, pedido 228) a formula «teto zero nunca gira»
+        # saiu do `profiler::girar_se_encheu` para `rodizio::deve_girar`,
+        # para `acessos.log` e `diretivas.log` chamarem a MESMA em vez de
+        # cada um reescrever a sua. O zero continua sendo lido -- num lugar
+        # so --, e e la que tira-lo reproduz o defeito de origem. A entrada
+        # segue a logica, e nao o nome do arquivo: guardar o `profiler.rs`
+        # so por ser onde a licao nasceu deixaria a guarda apontando para um
+        # arquivo que nao decide mais nada.
+        #
+        # O alcance ficou MAIOR do que o defeito de origem, e isso esta
+        # declarado: tirar o zero de `deve_girar` derruba o teste do
+        # Profiler (o defeito de origem) E o teste da propria formula. Os
+        # dois estao em `caem`; os do `acesso.rs`/`diretivas.rs`, que
+        # tambem sentem, ficam de fora porque nao sao o defeito que esta
+        # entrada descreve.
+        "arquivo": "crates/phxsql-server/src/rodizio.rs",
+        "trecho": """    teto_do_arquivo != 0 && bytes_no_arquivo != 0 && bytes_no_arquivo + proxima > teto_do_arquivo""",
+        "troca": """    // DEFEITO REPOSTO: o zero deixa de desligar o rodizio.
+    bytes_no_arquivo != 0 && bytes_no_arquivo + proxima > teto_do_arquivo""",
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
             "profiler::testes::teto_zero_nao_rodizia",
+            "rodizio::testes::teto_zero_nunca_manda_girar",
         ],
         "seguem": [
             "profiler::testes::o_rodizio_poe_teto_no_disco",
@@ -2570,16 +2585,21 @@ pub fn limpar() {
             "«reconstrua com reparar indice» -- o commit ficava pela metade e "
             "a tabela inutilizavel, sem ninguem ser avisado."
         ),
+        # ATUALIZADO em 16/09/2026 (pedido 263). Mesmo motivo da entrada
+        # `recuperacao-nao-reconstroi-a-filha`, que guarda o interruptor
+        # vinte e poucas linhas abaixo deste bloco no MESMO `completar()`:
+        # `2fe8658` (12/09) desaninhou o laco `for op in &marca.operacoes` e
+        # o bloco inteiro subiu quatro espacos. A logica nao mudou.
         "arquivo": "crates/phxsql-server/src/transacao.rs",
-        "trecho": """                        if t.indice_precisa_reconstruir() {
-                            match t.reindexar() {
-                                Ok(_) => r.indices_reconstruidos += 1,
+        "trecho": """                    if t.indice_precisa_reconstruir() {
+                        match t.reindexar() {
+                            Ok(_) => r.indices_reconstruidos += 1,
 """,
-        "troca": """                        // DEFEITO REPOSTO: a recuperacao nao reconstroi o
-                        // indice, e o commit fica pela metade.
-                        if false {
-                            match t.reindexar() {
-                                Ok(_) => r.indices_reconstruidos += 1,
+        "troca": """                    // DEFEITO REPOSTO: a recuperacao nao reconstroi o
+                    // indice, e o commit fica pela metade.
+                    if false {
+                        match t.reindexar() {
+                            Ok(_) => r.indices_reconstruidos += 1,
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -2782,15 +2802,24 @@ pub fn limpar() {
         # (`fks_que_conferem`). O comentario apos o `}` cresceu junto, entao a
         # amarra e so ate onde ele continua unico neste arquivo (`inserir`; o
         # `atualizar` tem o mesmo `if` mas nao este comentario).
+        #
+        # ATUALIZADO em 16/09/2026 (pedido 263). `2fe8658` (12/09, o P0 da FK
+        # dentro da transacao) renomeou o corpo do `inserir` para
+        # `inserir_com_maes_opt` e trocou `conferir_fks(valores)` por
+        # `conferir_fks_com(valores, maes)`. O PORTAO nao mudou de lugar nem
+        # de forma -- continua sendo o `&& self.julga_integridade()` da mesma
+        # linha --, so a chamada de dentro dele. A amarra continua sendo o
+        # comentario do `// Numerar ANTES`, que segue unico no arquivo (o
+        # `atualizar_com_maes_opt` tem o mesmo `if`, e nao este comentario).
         "trecho": """        self.conferir_aridade(valores)?;
         if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
-            self.conferir_fks(valores)?;
+            self.conferir_fks_com(valores, maes)?;
         }
         // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna""",
         "troca": """        // DEFEITO REPOSTO: a replica volta a julgar o que a origem ja julgou.
         self.conferir_aridade(valores)?;
         if fks_que_conferem(&self.esquema).next().is_some() {
-            self.conferir_fks(valores)?;
+            self.conferir_fks_com(valores, maes)?;
         }
         // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna""",
         "pacote": "phxsql-store",
@@ -2847,13 +2876,25 @@ pub fn limpar() {
             "linha em vez do diario."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """        let mut cascata = if self.julga_integridade() {
+        # ATUALIZADO em 16/09/2026 (pedido 263). `7d29f5f` (15/09, o ACID-C)
+        # acrescentou o `cascatear &&` ao MESMO `if`: dentro da transacao a
+        # corrente ja foi achatada na lista de escritas, e refazer a cascata
+        # aqui gravaria a filha duas vezes. Sao DOIS motivos independentes
+        # para nao cascatear, e esta entrada guarda so o dela -- por isso a
+        # troca tira o `self.julga_integridade()` e DEIXA o `cascatear`.
+        # Tirar os dois reporia dois defeitos de uma vez, e o veredito nao
+        # diria qual dos dois o teste pegou.
+        "trecho": """        let mut cascata = if cascatear && self.julga_integridade() {
             self.planejar_ao_alterar(&valores_antigos, valores)?
         } else {
             Vec::new()
         };""",
         "troca": """        // DEFEITO REPOSTO: a replica planeja e roda a cascata de novo.
-        let mut cascata = self.planejar_ao_alterar(&valores_antigos, valores)?;""",
+        let mut cascata = if cascatear {
+            self.planejar_ao_alterar(&valores_antigos, valores)?
+        } else {
+            Vec::new()
+        };""",
         "pacote": "phxsql-store",
         "alvo": ["--test", "replicacao-integridade"],
         "caem": [
@@ -2905,11 +2946,19 @@ pub fn limpar() {
             "e deixava a janela."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """            if mae.esquema.coluna_softdeleted().is_some() {
-                let mut viva = false;""",
-        "troca": """            // DEFEITO REPOSTO: existir volta a valer por estar viva.
-            if false {
-                let mut viva = false;""",
+        # ATUALIZADO em 16/09/2026 (pedido 263). `2fe8658` (12/09, o P0 da FK
+        # dentro da transacao) tirou o corpo do laco de dentro do
+        # `conferir_fks` e o pos num ajudante proprio,
+        # `Table::conferir_uma_fk(mae, fk, chave)`, para os DOIS caminhos da
+        # mae -- a aberta do disco e a emprestada pela transacao -- passarem
+        # pelo mesmo codigo. A logica nao mudou uma letra; o que mudou foi o
+        # NIVEL de indentacao (doze espacos viraram oito), e foi so isso que
+        # tirou o trecho do lugar. O ponto de reposicao e o mesmo `if`.
+        "trecho": """        if mae.esquema.coluna_softdeleted().is_some() {
+            let mut viva = false;""",
+        "troca": """        // DEFEITO REPOSTO: existir volta a valer por estar viva.
+        if false {
+            let mut viva = false;""",
         "pacote": "phxsql-store",
         "alvo": ["--test", "chave-estrangeira"],
         "caem": [
@@ -3239,12 +3288,19 @@ pub fn limpar() {
             "envolver nao e substituir."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """            let pendente = mae
-                .indice_precisa_reconstruir()
-                .then(|| caminho(mae.diretorio(), mae.nome(), EXT_NDX));""",
-        "troca": """            // DEFEITO REPOSTO: sem o portao, tudo cai no caminho do erro
-            // cru e o recado volta a mandar reparar arquivo intacto.
-            let pendente: Option<std::path::PathBuf> = None;""",
+        # ATUALIZADO em 16/09/2026 (pedido 263). Mesma mudanca que moveu o
+        # `fk-nao-pergunta-se-a-mae-esta-viva`: `2fe8658` (12/09) tirou este
+        # bloco de dentro do laco do `conferir_fks` e o pos no ajudante
+        # `Table::conferir_uma_fk`, que os dois caminhos da mae (a do disco e
+        # a emprestada pela transacao) chamam. A unica diferenca no texto e a
+        # indentacao, de doze espacos para oito -- a pergunta a mae, que e o
+        # que separa arquivo sao de corrupcao de verdade, esta intacta.
+        "trecho": """        let pendente = mae
+            .indice_precisa_reconstruir()
+            .then(|| caminho(mae.diretorio(), mae.nome(), EXT_NDX));""",
+        "troca": """        // DEFEITO REPOSTO: sem o portao, tudo cai no caminho do erro
+        // cru e o recado volta a mandar reparar arquivo intacto.
+        let pendente: Option<std::path::PathBuf> = None;""",
         "pacote": "phxsql-store",
         "alvo": ["--test", "chave-estrangeira"],
         "caem": [
@@ -3299,11 +3355,17 @@ pub fn limpar() {
             "caiam nesse caso. Terceira instancia da lei «conserto entra no "
             "caminho que o motivou e o irmao fica»."
         ),
+        # ATUALIZADO em 16/09/2026 (pedido 263). `2fe8658` (12/09) tirou o
+        # laco `for op in &marca.operacoes` de dentro de um bloco a mais em
+        # `completar()` -- a tabela agora SAI do mapa enquanto reaplica, para
+        # a conferencia de FK poder emprestar as maes que a mesma marca ja
+        # reaplicou. A linha do interruptor e a mesma; o que mudou foi um
+        # nivel de indentacao (vinte e quatro espacos viraram vinte).
         "arquivo": "crates/phxsql-server/src/transacao.rs",
-        "trecho": """                        t.ligar_reconstrucao_do_indice_da_filha(true);""",
-        "troca": """                        // DEFEITO REPOSTO: a recuperacao volta a recusar
-                        // cascatear para a filha com indice sujo.
-                        t.ligar_reconstrucao_do_indice_da_filha(false);""",
+        "trecho": """                    t.ligar_reconstrucao_do_indice_da_filha(true);""",
+        "troca": """                    // DEFEITO REPOSTO: a recuperacao volta a recusar
+                    // cascatear para a filha com indice sujo.
+                    t.ligar_reconstrucao_do_indice_da_filha(false);""",
         "pacote": "phxsql-server",
         "alvo": ["--test", "cascata-na-recuperacao"],
         "caem": [
@@ -3602,16 +3664,26 @@ pub fn limpar() {
             "`join` cobre a falha de quem ja subiu. A matriz de queda esta na "
             "secao 12.6 do `docs/CONCORRENCIA.md`."
         ),
+        # ATUALIZADO em 16/09/2026 (pedido 263). `2d33c5c` (16/09, a saude do
+        # disco) fez o `quebrados` carregar o ERRO junto do indice
+        # (`Vec<(usize, Option<PhxError>)>`), para o `fecho_recusado` poder
+        # avisar por e-mail e SMS. O `join` continua sendo o unico lugar em
+        # que a falha de quem ja subiu chega, e o defeito reposto continua
+        # sendo o mesmo: as duas pernas de erro viram `None` e o indice nunca
+        # volta para o `faltaram`. O `None::<usize>.map(...)` sobrevive de
+        # proposito -- ele engole sem que o compilador reclame de braco
+        # inalcancavel, e mantem visivel que o `i` existia e foi jogado fora.
         "arquivo": "crates/phxsql-server/src/servidor.rs",
         "trecho": """                    .filter_map(|(i, f)| match f.join() {
                         Ok(Ok(())) => None,
-                        _ => Some(i),
+                        Ok(Err(e)) => Some((i, Some(e))),
+                        Err(_) => Some((i, None)),
                     })""",
         "troca": """                    // DEFEITO REPOSTO: o erro do fio some no `join`, e o
                     // fecho segue como se todas tivessem sincronizado.
                     .filter_map(|(i, f)| match f.join() {
                         Ok(Ok(())) => None,
-                        _ => None::<usize>.map(|_: usize| i),
+                        _ => None::<usize>.map(|_: usize| (i, None::<PhxError>)),
                     })""",
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -5361,5 +5433,69 @@ pub fn limpar() {
             "servidor::testes_upsert::o_atualizar_grava_a_lida_com_o_set_por_cima_e_nao_o_values",
             "servidor::testes_upsert::dentro_da_transacao_o_upsert_empilha_a_op_que_ele_virou",
         ],
+    },
+    # -----------------------------------------------------------------------
+    # O teste das threads do SO provava por DIFERENCA entre duas leituras do
+    # total do processo (pedido 261) -- frente F261, 16/09/2026. Entrada apensa
+    # ao FIM, depois da frente do upsert, para o integrador separar as duas.
+    # -----------------------------------------------------------------------
+    {
+        "id": "threads-do-so-pela-diferenca",
+        "titulo": "a prova de que o SO viu a thread subida é a diferença entre duas leituras do total do processo",
+        "porque": (
+            "pedido 261, irmao do 247: o teste lia o `Threads:` do "
+            "`/proc/self/status` ANTES e DEPOIS de subir a thread e exigia "
+            "`agora > so`. O total e do processo INTEIRO e o `libtest` roda os "
+            "testes em paralelo, entao a thread de outro teste que morre entre "
+            "as duas leituras come o `+1` da nossa -- e o teste acusa o motor "
+            "por um movimento que e do executor. Medido em 16/09/2026: num "
+            "amostrador a 2,37 milhoes de leituras durante a suite do crate, o "
+            "total encolheu 651 vezes em 48 s, e 0,72% das janelas de 0,5 ms "
+            "(2,32% das de 2 ms) tinham queda de pelo menos 1; o teste antigo "
+            "caiu 8 vezes em 600 corridas so do modulo, e TODAS com "
+            "`so=6 agora=6 presa_no_so=1` -- a thread subida ja estava na lista "
+            "de tarefas do SO, entao o que faltou veio do vizinho. O conserto "
+            "mede a grandeza que nao depende dos vizinhos: o NOME da thread em "
+            "`/proc/self/task/*/comm`; do total so se cobra piso, que e a unica "
+            "comparacao que o vizinho nao estraga. O leque de quatro vizinhas "
+            "que morrem antes da medida esta na montagem do proprio teste, e e "
+            "o que torna esta reposicao determinista -- com uma so, a diferenca "
+            "sobreviveria a uma thread que nascesse ao lado no mesmo instante, "
+            "e a guarda passaria por engano (medido: uma corrida da suite "
+            "inteira deu `27 -> 25`, ou seja, um vizinho NASCEU no meio)."
+        ),
+        "arquivo": "crates/phxsql-server/src/telemetria.rs",
+        "trecho": """        assert_eq!(
+            tarefas_chamadas("presa-do-teste"),
+            1,
+            "a thread subida nao apareceu no SO pelo nome (o SO ve {agora} tarefas)"
+        );
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 261): a prova volta a ser a DIFERENCA entre
+        // duas leituras do total do processo, e a vizinha que morreu no meio
+        // come o `+1` da thread subida.
+        assert!(
+            agora > so,
+            "a thread subida nao apareceu no SO: {so} -> {agora}"
+        );
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        # Medido com o defeito reposto: 40 em 40 corridas do modulo e 6 em 6 da
+        # suite inteira sob carga (load 13,4), com quedas de 2 a 4 threads.
+        "caem": [
+            "telemetria::testes::as_threads_do_so_se_medem_e_nunca_sao_menos_que_as_registradas",
+        ],
+        "seguem": [
+            # Os vizinhos que sobem e derrubam thread continuam de pe: o defeito
+            # reposto e da MEDIDA do teste, nao do registro de fios.
+            "telemetria::testes::a_thread_que_termina_deixa_de_ser_viva",
+            "telemetria::testes::a_thread_que_entra_em_panico_tambem_deixa_de_ser_viva",
+            "telemetria::testes::o_registro_de_threads_guarda_nome_e_finalidade",
+            "telemetria::testes::le_a_cpu_do_proprio_processo",
+        ],
+        # A suite do crate leva 42 s sozinha e 91 s sob carga; o prazo cobre a
+        # compilacao a frio da arvore copiada em cima disso.
+        "prazo": 420,
     },
 ]

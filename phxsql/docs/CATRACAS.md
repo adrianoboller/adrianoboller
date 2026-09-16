@@ -590,7 +590,7 @@ Medido commit a commit depois: **um único commit aposentou cinco delas de uma
 vez** — `2fe8658` (12/09, «a conferência de FK dentro da transação vê o pai
 empilhado»), que mexeu em `table.rs` e `transacao.rs`. Ninguém percebeu por
 **quatro dias**, e o motivo é o custo: o provador leva cerca de uma hora,
-porque repõe o defeito e roda `cargo test` para cada uma das 142 entradas.
+porque repõe o defeito e roda `cargo test` para cada uma das 143 entradas.
 **Guarda que só se confere em uma hora é guarda que não se confere.**
 
 **O que elas contam**: para cada entrada do catálogo, se o `trecho` ainda

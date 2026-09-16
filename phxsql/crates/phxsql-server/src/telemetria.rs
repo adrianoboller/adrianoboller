@@ -1920,23 +1920,103 @@ mod testes {
         );
     }
 
+    /// Quantas tarefas deste processo tem `comm` comecando por `comeco`.
+    ///
+    /// E a grandeza que NAO depende dos vizinhos: nomeia a thread procurada em
+    /// vez de deduzi-la de uma diferenca no total do processo, que sobe e
+    /// desce por conta dos outros testes. A comparacao e por PREFIXO porque o
+    /// nucleo corta o `comm` em 15 caracteres, como o proprio `subir` faz.
+    fn tarefas_chamadas(comeco: &str) -> usize {
+        let Ok(dir) = std::fs::read_dir("/proc/self/task") else {
+            return 0;
+        };
+        dir.flatten()
+            .filter(|e| {
+                std::fs::read_to_string(e.path().join("comm"))
+                    .map(|c| c.trim().starts_with(comeco))
+                    .unwrap_or(false)
+            })
+            .count()
+    }
+
     /// O `Threads:` do `/proc/self/status` conta esta thread e as que o teste
     /// sobe -- e conta MAIS do que o registro, porque o proprio binario de
     /// teste tem threads que nunca passaram pelo `subir`.
+    ///
+    /// A prova de que o SO VE a thread subida e o NOME dela na lista de
+    /// tarefas, nunca a diferenca entre duas leituras do total: o total e do
+    /// processo INTEIRO e o `libtest` roda os testes em paralelo, entao a
+    /// thread de outro teste que morre entre as duas leituras come o `+1` da
+    /// nossa e o teste acusa o motor por um movimento que e do executor
+    /// (pedido 261, irmao do 247 -- la o vizinho escrevia um `static`, aqui
+    /// ele apenas vive e morre). Medido em 16/09/2026: 8 vermelhos em 600
+    /// corridas so deste modulo, todos com `so=6 agora=6` e a thread subida ja
+    /// na lista de tarefas. Do total so se cobra PISO, que e a unica
+    /// comparacao que o vizinho nao estraga: quem nasce ao lado so aumenta.
+    ///
+    /// O leque de quatro vizinhas que morrem antes da medida esta na montagem
+    /// de proposito -- e o defeito acontecendo sem depender de sorte. Uma so
+    /// nao serviria: a diferenca sobreviveria a qualquer thread que nascesse
+    /// ao lado no mesmo instante.
     #[test]
     fn as_threads_do_so_se_medem_e_nunca_sao_menos_que_as_registradas() {
-        let Some(so) = threads_do_so() else {
+        if threads_do_so().is_none() {
             // Fora do Linux o campo e Nulo, e isso e resposta, nao falha.
             return;
-        };
-        assert!(so >= 1, "o processo tem ao menos esta thread");
+        }
+        let (chegou, aviso) = std::sync::mpsc::channel();
+        let mut soltas = Vec::new();
+        let mut vizinhas = Vec::new();
+        for i in 0..4 {
+            let (segura, solta) = std::sync::mpsc::channel::<()>();
+            let chegou = chegou.clone();
+            vizinhas.push(
+                std::thread::Builder::new()
+                    .name(format!("vizinha-{i}"))
+                    .spawn(move || {
+                        let _ = chegou.send(());
+                        let _ = solta.recv();
+                    })
+                    .unwrap(),
+            );
+            soltas.push(segura);
+        }
+        for _ in 0..4 {
+            aviso.recv().unwrap();
+        }
+        let so = threads_do_so().unwrap();
+        assert!(
+            so >= 5,
+            "o SO ve {so} com quatro vizinhas vivas e esta thread"
+        );
+        drop(soltas);
+        for v in vizinhas {
+            v.join().unwrap();
+        }
+        // `join` volta quando o corpo acabou, e o nucleo ainda lista a tarefa
+        // por um instante: a montagem so vale depois que ela SUMIU.
+        let fim = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while std::time::Instant::now() < fim && tarefas_chamadas("vizinha-") > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(
+            tarefas_chamadas("vizinha-"),
+            0,
+            "as vizinhas nao sairam do SO, e sem isso a montagem nao reproduz o vizinho que morre"
+        );
         let t = Arc::new(Telemetria::nova(true));
         let (envia, recebe) = std::sync::mpsc::channel();
         let (segura, solta) = std::sync::mpsc::channel::<()>();
-        t.subir("presa", "espera o teste soltar", "teste", 0, move |_| {
-            let _ = envia.send(());
-            let _ = solta.recv();
-        });
+        t.subir(
+            "presa-do-teste",
+            "espera o teste soltar",
+            "teste",
+            0,
+            move |_| {
+                let _ = envia.send(());
+                let _ = solta.recv();
+            },
+        );
         recebe.recv().unwrap();
         let agora = threads_do_so().unwrap();
         assert!(
@@ -1944,9 +2024,10 @@ mod testes {
             "o SO ve {agora}, o registro ve {}",
             t.fios_vivos()
         );
-        assert!(
-            agora > so,
-            "a thread subida nao apareceu no SO: {so} -> {agora}"
+        assert_eq!(
+            tarefas_chamadas("presa-do-teste"),
+            1,
+            "a thread subida nao apareceu no SO pelo nome (o SO ve {agora} tarefas)"
         );
         let _ = segura.send(());
     }

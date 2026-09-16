@@ -46,7 +46,7 @@ contando `#[test]` por arquivo e agrupando:
 | Protocolo e portões (despachar) | 487 | 20,5 |
 | Núcleo (JSON, tipos, UUID, zip, paralelo) | 235 | 9,9 |
 | Camada SQL (léxico, sintaxe, tradução) | 215 | 9,0 |
-| Servidor (outros) | 168 | 7,1 |
+| Servidor (outros) | 169 | 7,1 |
 | Criptografia e codificação | 124 | 5,2 |
 | Configuração | 116 | 4,9 |
 | DbLink | 81 | 3,4 |
@@ -69,7 +69,7 @@ contando `#[test]` por arquivo e agrupando:
 | **Alertas e e-mail** | **8** | **0,3** |
 | **CLI** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,3** |
-| **total** | **2378** | |
+| **total** | **2379** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
@@ -1767,3 +1767,97 @@ segurança **antes** dessa mudança. As duas baterias de F6 foram rodadas de nov
 contra o binário com o código de F5: **13/0/3 e 6/0/2, idênticas**. A suíte
 inteira, com os dois testes novos: **1.674 testes, 0 falhas, 0 avisos, 0
 diretório deixado em `/tmp`**.
+
+
+## 18. A prova que o vizinho cancelava — pedido 261
+
+O teste `telemetria::testes::as_threads_do_so_se_medem_e_nunca_sao_menos_que_as_registradas`
+provava que o sistema operacional enxerga a thread recém-subida pela
+**diferença entre duas leituras** do `Threads:` do `/proc/self/status`:
+
+```rust
+let so = threads_do_so().unwrap();      // antes
+// ... sobe a thread e espera ela avisar que chegou ...
+let agora = threads_do_so().unwrap();   // depois
+assert!(agora > so, "a thread subida nao apareceu no SO: {so} -> {agora}");
+```
+
+Esse contador é do **processo inteiro** e o `libtest` roda os testes em
+paralelo: a thread de outro teste que morre entre as duas leituras come o `+1`
+da nossa. Caiu uma vez com a suíte do workspace rodando, e duas frentes o viram
+cair na mesma tarde sem nenhuma delas ter tocado em telemetria.
+
+### 18.1 Não é «flake»: é o número
+
+Um amostrador lendo `/proc/<pid>/status` durante a suíte `--lib` do
+`phxsql-server` (48,4 s, 2.366.687 leituras, pico de 29 threads):
+
+| grandeza | medida |
+|---|---|
+| quedas entre amostras consecutivas | **651** |
+| janelas de 0,5 ms com queda ≥ 1 | **0,72%** |
+| janelas de 2 ms com queda ≥ 1 | **2,32%** |
+
+E a asserção antiga, passando a imprimir o que media — inclusive quantas
+tarefas do processo se chamavam `presa`, por `/proc/self/task/*/comm` —, em 600
+corridas do filtro `telemetria::` (três laços em paralelo):
+
+```
+8 vermelhos (1,33%), TODOS assim:
+MEDIDA so=6 agora=6 vao_us=220 presa_no_so=1 fios_vivos=1
+```
+
+**`presa_no_so=1`**: a thread subida já estava na lista de tarefas do núcleo no
+instante da segunda leitura. O motor tinha feito o que o teste cobrava; o que
+faltava na conta veio do vizinho. Os vizinhos eram os do próprio módulo
+(`a_thread_que_termina_deixa_de_ser_viva` e
+`a_thread_que_entra_em_panico_tambem_deixa_de_ser_viva`) — não é preciso a
+suíte inteira para o defeito aparecer.
+
+### 18.2 O conserto: nomear a nossa, e do total só cobrar piso
+
+Não existe «ler uma vez só» para uma **diferença** — diferença precisa de dois
+pontos no tempo, e o segundo é justamente o que o vizinho mexe. Então o teste
+mudou de grandeza:
+
+- a prova de que o SO viu a thread é o **nome** dela em
+  `/proc/self/task/*/comm` (`presa-do-teste`), que nenhum vizinho altera;
+- do total do processo só se cobra **piso** (`agora >= fios_vivos`, e
+  `so >= 5` com as quatro vizinhas vivas): quem nasce ao lado só aumenta, e
+  piso é a única comparação que ele não estraga.
+
+### 18.3 A montagem também é armadilha: leque, não unidade
+
+O teste monta **quatro** vizinhas que morrem antes da medida — é o vizinho do
+defeito acontecendo sem depender de sorte, e é o que torna a reposição
+determinista. Uma só não serviria, e isso está **medido**: numa corrida da
+suíte inteira com o defeito reposto o par foi `27 -> 25` (queda de 2 onde o
+leque previa 3), porque um vizinho **nasceu** no meio. Com uma vizinha só,
+esse nascimento zeraria a diferença e o `agora > so` **passaria** com o defeito
+reposto — guarda verde por engano.
+
+A montagem se confere sozinha: se as quatro não sumirem da lista de tarefas em
+5 s, o teste diz que a montagem não reproduz o vizinho que morre, em vez de
+virar uma guarda fraca em silêncio.
+
+### 18.4 A prova real, nos dois sentidos
+
+| corrida | com o defeito reposto (`agora > so`) | com o conserto |
+|---|---|---|
+| filtro `telemetria::` | **40 vermelhos em 40** | **0 em 600** |
+| suíte `--lib` inteira, sob carga (load 13,4 / 14,6) | **6 vermelhos em 6** | **6 verdes em 6** |
+
+Nas seis corridas da suíte inteira com o defeito reposto, os outros **1.090**
+testes passaram: a reposição derruba o teste certo, e só ele. A guarda é
+`threads-do-so-pela-diferenca`, no `bancada/guardas/catalogo.py`.
+
+Uma ressalva que é dela e não do teste desta frente: nas seis corridas com o
+conserto, **uma** teve um vermelho de outro teste —
+`panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados`, que exige que os
+três pânicos aconteçam e sob carga alta só viu dois. Está medido e aberto como
+pedido **267**, e não se confunde com este: o teste desta frente passou nas
+seis.
+
+E o teste ficou **mais forte**, não só mais estável: ele agora prova que o nome
+do fio chega ao sistema operacional — o que faz o `top -H` servir para alguma
+coisa —, coisa que a diferença nunca provou.

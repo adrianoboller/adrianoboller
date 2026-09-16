@@ -44,11 +44,20 @@ varredura e `crates/**/*.rs` inteiro, e o numero medido e zero.
 
 So DESCEM. Nascem hoje no numero MEDIDO, nao no numero desejado:
 
-- `TETO_TRECHO_MORTO = 8` -- a divida velha, nomeada no pedido 263, cada uma
-  com o commit que a quebrou. Nao se conserta por varredura: cada entrada
-  pede ler o codigo de hoje, achar para onde o ponto de reposicao andou, e
-  provar que o defeito reposto derruba o teste nomeado. Entrada consertada
-  no chute produz guarda que passa por engano -- pior que a quebrada.
+- `TETO_TRECHO_MORTO = 0` -- **DESCEU de 8 para 0 em 16/09/2026**, no mesmo
+  passo em que a divida velha foi paga. As oito entradas nomeadas no pedido
+  263 tiveram o ponto de reposicao reencontrado no codigo de hoje e foram
+  PROVADAS pelo provador (7 PROVADA + 1 REDUNDANTE -- o
+  `recuperar-sem-reindexar`, que declara `espera: "nada muda"` e continua
+  sendo pego so pela prova por soquete; 0 nao pegaram, 0 estragaram, 0
+  quebradas). Nao se consertou por varredura: cada entrada pediu ler o
+  codigo de hoje, achar para onde o ponto de reposicao andou, e provar. De
+  oito, cinco tinham so MUDADO DE INDENTACAO (`2fe8658` desaninhou laco e
+  extraiu ajudante), uma mudou de ARQUIVO (`d59967a` levou a formula do
+  `profiler.rs` para o `rodizio.rs`) e duas ganharam um braco novo no mesmo
+  ponto (`7d29f5f` e `2d33c5c`). Entrada consertada no chute produz guarda
+  que passa por engano -- pior que a quebrada, e por isso o veredito acima
+  e do provador e nao desta regua.
 - `TETO_TESTE_MORTO = 0` -- medido depois do conserto de
   `leitura-sem-recuo-para-a-exclusiva`, cuja entrada nomeava
   `so_uma_operacao_usa_a_ficha_compartilhada`, renomeado em `f2b87aa` para
@@ -62,7 +71,7 @@ import sys
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.abspath(os.path.join(AQUI, "..", ".."))
 
-TETO_TRECHO_MORTO = 8
+TETO_TRECHO_MORTO = 0
 TETO_TESTE_MORTO = 0
 
 
