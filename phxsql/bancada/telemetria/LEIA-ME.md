@@ -1,3 +1,65 @@
+# A bancada da telemetria — o painel de bolhas, e o que ligar custa
+
+São duas coisas nesta pasta, e elas não se confundem:
+
+| arquivo | o que responde | grava |
+|---|---|---|
+| `custo.py` | **quanto custa ligar a telemetria**, por soquete | `resultados.json` |
+| `monta-bancada.py` + os `.mjs` | **como o painel de bolhas se comporta**, no navegador | nada (retrato guardado envelhece calado) |
+
+## `custo.py` — o preço da instrumentação, com a data ao lado
+
+```bash
+flock /tmp/phx-cargo.lock cargo build --release -p phxsql-server --bin phxsqld
+python3 bancada/telemetria/custo.py
+python3 bancada/telemetria/custo.py --autoteste   # só o veredito, em segundos
+```
+
+Ele existe porque a sétima página tinha uma seção que **não nascia** (pedido
+265): *seção só entra com gerador*, e antes do gerador faltava a **fonte** —
+esta pasta media o painel e não gravava `resultados.json`, então não havia a
+data em que o número foi medido para pôr ao lado dele.
+
+**Um servidor só, com o interruptor virado em tempo de execução.** O
+`bancada/profiler/custo.py` sobe dois porque lá o que se mede é o *portão*
+(`if false` contra `if ligado.load(Relaxed)` são dois binários). Aqui a
+pergunta é outra — o que os pontos de captura cobram quando estão ligados — e
+`telemetria_ligar`/`telemetria_desligar` viram um `AtomicBool`: o mesmo
+processo, os mesmos arquivos e o mesmo cache medem os dois lados, e some do
+número toda diferença que não seja o interruptor.
+
+**Três correções que a primeira corrida obrigou, e o número de cada uma:**
+
+1. **Par curto, e muito par.** Nove pares de 2.000 `ping` numa máquina em carga
+   12 deram a telemetria «acelerando» o servidor em **37%** — as amostras de um
+   mesmo lado iam de 54 a 128 µs. O trabalho total é quase o mesmo; o que muda
+   é o **grão** do par.
+2. **O piso, não a média.** O que a telemetria acrescenta é uma **constante**,
+   e num `t = base + c` o `c` aparece inteiro no *menor* tempo. A média mede o
+   vizinho: a mediana do `ping` andou de 59 µs para 161 µs entre duas corridas
+   com dois minutos de diferença, sem uma linha mudar.
+3. **Veredito e estimativa saem da mesma lista.** Numa corrida o teste de sinal
+   disse «ligada custa» com **231 de 400** pares a favor e a estimativa ao lado
+   dizia **−0,04%**. Hoje o custo é a **mediana das diferenças por par**, e o
+   sinal conta essas mesmas diferenças — os dois não podem discordar.
+
+**O veredito é um teste de sinal a 3 σ**, e não a regra das faixas min–max do
+pedido 155: aqui o efeito é de ~1% e o ruído de uma máquina compartilhada chega
+a 3×, então as faixas sempre se cruzam e a regra crua diria «não sei» para
+sempre — inclusive se a telemetria dobrasse o custo. Carga que não resolve sai
+como `resolvido: false`, e a seção publica «dentro do ruído» com a contagem dos
+pares ao lado, para quem lê julgar o veredito em vez de acreditar nele.
+
+O `--autoteste` prova a porta **nos dois sentidos** sem subir servidor: efeito
+real resolve, ruído simétrico não, a borda dos 3 σ confere, e veredito e
+estimativa nunca discordam.
+
+Quem lê o `resultados.json` é `docs/status/telemetria-medida.py`, que escreve a
+seção «Telemetria e logs» da sétima página. Porta **6340**, diretório próprio,
+e mata **só o PID que subiu**.
+
+---
+
 # A bancada do painel de bolhas
 
 Interface só se prova exercitando, e este diretório é o que torna isso barato:

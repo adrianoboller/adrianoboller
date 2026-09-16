@@ -194,11 +194,38 @@ PLANO = [
     # "sem-carimbo" porque o rodape carrega "gerado em DD/MM/AAAA HH:MM UTC" e
     # varias datas de medicao vem de `mtime` (o git nao preserva mtime); os
     # _CARIMBOS ja cobrem os dois formatos.
+    # As duas secoes que o pedido 264 fez nascer na setima pagina: riscos (do
+    # `docs/RISCOS.md`, que se edita) e divida tecnica (da marca `// DIVIDA:`
+    # no fonte Rust). Ele escreve DENTRO da mesma pagina, entre as marcas
+    # `riscos:inicio`/`riscos:fim` -- e por isso tem de vir ANTES do gerador
+    # da pagina inteira aqui: os dois escrevem no mesmo alvo, e o portao
+    # devolve os bytes depois de cada um. "sem-carimbo" porque a secao traz a
+    # data de hoje em cada cartao e o `mtime` do `docs/QA-PDCA.md` na sonda
+    # das catracas -- os dois ja cobertos pelos _CARIMBOS.
+    ("docs/status/riscos.py", ["docs/status/status-do-projeto.html"],
+     "sem-carimbo",
+     "le docs/RISCOS.md e a marca // DIVIDA: de crates/**/*.rs; escreve as "
+     "duas secoes entre as marcas da propria pagina"),
+    # As duas secoes dos pedidos 265 e 266, pelo mesmo desenho do `riscos.py`:
+    # cada gerador escreve DENTRO da setima pagina, entre as marcas dele. Os
+    # tres tem de vir ANTES do gerador da pagina inteira -- eles escrevem no
+    # mesmo alvo, e o portao devolve os bytes depois de cada um. "sem-carimbo"
+    # porque a pagina toda carrega o "gerado em ... UTC" do rodape, e as datas
+    # de medicao da telemetria sao ISO (ja cobertas pelos _CARIMBOS).
+    ("docs/status/telemetria-medida.py", ["docs/status/status-do-projeto.html"],
+     "sem-carimbo",
+     "le bancada/telemetria/resultados.json e conta os portoes if !self.ligada() "
+     "no telemetria.rs; bancada que nao rodou sai como NAO MEDIDA"),
+    ("docs/status/serie-historica.py", ["docs/status/status-do-projeto.html"],
+     "sem-carimbo",
+     "le docs/status/serie.jsonl, versionado, uma linha por medicao; com menos "
+     "de duas medicoes a secao diz que nao da para comparar"),
     ("docs/status/pagina-do-status-do-projeto.py",
      ["docs/status/status-do-projeto.html"], "sem-carimbo",
      "monta as secoes do CAPABILITIES.json, do PENDENCIAS.md, do BACKLOG.md, "
      "dos resultados.json das bancadas, das constantes do fonte Rust e do git "
-     "log; secao sem gerador NAO nasce e sai nomeada na §21"),
+     "log; secao sem gerador NAO nasce e sai nomeada na ULTIMA secao da pagina "
+     "(o numero dela sai da ORDEM, entao nao se escreve aqui)"),
 ]
 
 # A figura cuja frescura o trio confere por mtime -- que o portao poe como a

@@ -1,0 +1,154 @@
+{
+ "quando": "2026-09-16T20:48:33",
+ "versao": "phxsqld 0.18.0 (df0050f65b27-sujo) x86_64-unknown-linux-gnu",
+ "maquina": "Linux x86_64, 4 nucleos",
+ "metodo": "um servidor so, interruptor virado por `telemetria_ligar`/`telemetria_desligar` a cada par; ordem alternada a cada par; o custo e a mediana das DIFERENCAS por par, medidas no piso (p10) de cada lado, com teste de sinal a 3 sigma",
+ "pares": {
+  "ping": 400,
+  "inserir": 150,
+  "checksum": 80
+ },
+ "carga_da_maquina": 6.5,
+ "linhas_no_checksum": 200000,
+ "cargas": [
+  {
+   "chave": "ping",
+   "titulo": "<code>ping</code> — só o pedido: sem trava de dados e sem linha",
+   "unidade": "µs/pedido",
+   "unidades_por_lado": 200,
+   "desligada": {
+    "mediana": 65.428,
+    "min": 22.205,
+    "max": 77.708,
+    "p10": 25.841,
+    "p90": 71.107
+   },
+   "ligada": {
+    "mediana": 65.673,
+    "min": 23.031,
+    "max": 78.729,
+    "p10": 26.161,
+    "p90": 71.628
+   },
+   "sob_carga": {
+    "desligada": 67.708,
+    "ligada": 67.9945
+   },
+   "custo": 0.253,
+   "custo_faixa": {
+    "mediana": 0.253,
+    "min": -49.168,
+    "max": 48.146,
+    "p10": -1.432,
+    "p90": 2.895
+   },
+   "custo_pct": 0.39,
+   "sinal": {
+    "pares": 400,
+    "a_favor_de_custar": 269,
+    "limite_3_sigma": 230.0,
+    "resolvido": true
+   },
+   "resolvido": true,
+   "carga_da_maquina": 4.72,
+   "quando": "2026-09-16T20:46:50"
+  },
+  {
+   "chave": "inserir",
+   "titulo": "<code>inserir</code> — pedido mais a trava de dados, uma linha por pedido",
+   "unidade": "µs/pedido",
+   "unidades_por_lado": 100,
+   "desligada": {
+    "mediana": 189.247,
+    "min": 117.331,
+    "max": 251.598,
+    "p10": 176.515,
+    "p90": 210.136
+   },
+   "ligada": {
+    "mediana": 191.129,
+    "min": 147.348,
+    "max": 268.376,
+    "p10": 177.634,
+    "p90": 212.249
+   },
+   "sob_carga": {
+    "desligada": 219.3273,
+    "ligada": 219.3815
+   },
+   "custo": 1.613,
+   "custo_faixa": {
+    "mediana": 1.613,
+    "min": -22.141,
+    "max": 58.021,
+    "p10": -12.859,
+    "p90": 17.383
+   },
+   "custo_pct": 0.85,
+   "sinal": {
+    "pares": 150,
+    "a_favor_de_custar": 88,
+    "limite_3_sigma": 93.37,
+    "resolvido": false
+   },
+   "resolvido": false,
+   "carga_da_maquina": 4.58,
+   "quando": "2026-09-16T20:46:58"
+  },
+  {
+   "chave": "checksum",
+   "titulo": "<code>checksum</code> — o pior caso: uma chamada a <code>siga()</code> por linha",
+   "unidade": "µs/linha",
+   "unidades_por_lado": 200000,
+   "desligada": {
+    "mediana": 2.8441,
+    "min": 2.5949,
+    "max": 9.3106,
+    "p10": 2.6755,
+    "p90": 3.2217
+   },
+   "ligada": {
+    "mediana": 2.8523,
+    "min": 2.5661,
+    "max": 8.6964,
+    "p10": 2.6711,
+    "p90": 3.2229
+   },
+   "sob_carga": {
+    "desligada": 2.8441,
+    "ligada": 2.8523
+   },
+   "custo": 0.0103,
+   "custo_faixa": {
+    "mediana": 0.0103,
+    "min": -0.8109,
+    "max": 0.7525,
+    "p10": -0.251,
+    "p90": 0.2456
+   },
+   "custo_pct": 0.36,
+   "sinal": {
+    "pares": 80,
+    "a_favor_de_custar": 41,
+    "limite_3_sigma": 53.42,
+    "resolvido": false
+   },
+   "resolvido": false,
+   "carga_da_maquina": 6.5,
+   "quando": "2026-09-16T20:48:33"
+  }
+ ],
+ "log": {
+  "arquivo": "acessos.log",
+  "bytes": 32793209,
+  "operacoes": 191421,
+  "bytes_por_operacao": 171.3146,
+  "quando": "2026-09-16T20:48:33"
+ },
+ "threads": {
+  "registradas": 6,
+  "de_servico": 4,
+  "efemeras": 2,
+  "quando": "2026-09-16T20:48:33"
+ }
+}

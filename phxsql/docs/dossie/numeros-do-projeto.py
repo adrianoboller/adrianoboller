@@ -34,6 +34,7 @@ Rodar `cargo test` demora; `--sem-testes` reaproveita o numero que ja esta no
 HTML em vez de medir de novo. Use so quando o que mudou nao foi codigo.
 """
 
+import importlib.util
 import json
 import pathlib
 import re
@@ -47,6 +48,26 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from dossie_da_pasta import achar_o_dossie  # noqa: E402
 
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
+
+
+def _serie_historica():
+    """O modulo da serie historica, importado pelo CAMINHO (o nome tem hifen).
+
+    Importado sob demanda, e nao no topo: este script roda `cargo test` e ja e
+    o mais caro da pasta; carregar o leitor da serie so na hora de gravar
+    mantem `--so-medir` sem efeito colateral nenhum.
+    """
+    caminho = RAIZ / "docs" / "status" / "serie-historica.py"
+    if not caminho.exists():
+        sys.exit(
+            "falta docs/status/serie-historica.py -- este script nao reescreve "
+            "o formato da serie. Sem ele a medicao viraria linha por um segundo "
+            "caminho, e dois caminhos divergem.")
+    spec = importlib.util.spec_from_file_location("np_serie", caminho)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["np_serie"] = mod
+    spec.loader.exec_module(mod)
+    return mod
 # Qual dossie reescrever. O nome mudou na 0.15.0 e pode mudar de novo:
 # passar o caminho como primeiro argumento evita editar o script a cada vez.
 def _alvo():
@@ -438,6 +459,24 @@ def escrever_capacidades(n: dict) -> None:
     alvo.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"  CAPABILITIES.json: {d['versao']} @ {d['commit'][:8]}"
           + (" (arvore suja)" if d["sujo"] else ""))
+
+    # E, NO MESMO PASSO, a linha da serie historica (pedido 266). O
+    # `CAPABILITIES.json` e sobrescrito e so guarda o AGORA -- sem esta linha
+    # nao existe «antes», e o antes sairia da memoria de quem escreve, que e
+    # exatamente o que a lei do gerador existe para substituir.
+    #
+    # Aqui, e nao num segundo script: quem monta a linha e o `da_capacidade()`
+    # do proprio `serie-historica.py`, recebendo o MESMO dicionario que acabou
+    # de virar arquivo. Dois caminhos divergiriam na primeira mexida, e a serie
+    # passaria a contar uma historia que o CAPABILITIES.json nao conta.
+    serie = _serie_historica()
+    if serie.acrescentar(d):
+        print(f"  docs/status/serie.jsonl: +1 medicao ({d['medido_em']}) -- "
+              f"{len(serie.ler())} na serie")
+    else:
+        print("  docs/status/serie.jsonl: a medicao repetiu o `medido_em` da "
+              "ultima linha e NAO entrou -- re-rodar sem re-medir nao e "
+              "medicao nova")
 
 
 def main() -> None:

@@ -33,9 +33,12 @@ não entram na conta. A lista de comandos e a tabela «script → o que ele
 escreve» estão em «O que conferir antes de publicar», abaixo.
 
 Fora desta pasta há mais geradores de página, e por isso **fora desta conta**:
-os dois de `docs/pmo/` (o board e o painel PMO) e o de `docs/status/` — a
-**sétima página**, o status do projeto, cujo comando é `./status-html.sh` e
-cuja receita está em `docs/status/LEIA-ME.md`. A lista **completa** é o `PLANO`
+os dois de `docs/pmo/` (o board e o painel PMO) e os **dois** de
+`docs/status/` — a **sétima página**, o status do projeto, cujo comando é
+`./status-html.sh`, e o `riscos.py`, que escreve as seções de riscos e de
+dívida técnica **dentro** dela (pedido 264; ele roda em segundos e o
+`status-html.sh` já o chama por dentro). A receita das duas está em
+`docs/status/LEIA-ME.md`. A lista **completa** é o `PLANO`
 do `portao-dos-geradores.py`, que `python3 docs/dossie/portao-dos-geradores.py
 --lista` imprime. E a sétima roda **depois de todas**: ela publica o tamanho
 das outras páginas, então quem rodar um gerador depois dela a deixa velha.

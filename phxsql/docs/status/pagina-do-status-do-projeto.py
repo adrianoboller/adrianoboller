@@ -59,6 +59,9 @@ import subprocess
 import sys
 
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
+# O contexto da secao de telemetria, guardado pelo `montar()` para o `main()`
+# poder dizer que fez menos sem reler o arquivo (duas leituras podem discordar).
+ctx_tlm_publico = None
 PADRAO = RAIZ / "docs" / "status" / "status-do-projeto.html"
 QUANTAS_FRENTES = 10
 
@@ -88,6 +91,55 @@ GRAF = importar(D / "graficos-dos-testes.py", "st_graf")
 COBERTURA = importar(D / "cobertura-por-area.py", "st_cobertura")
 TEC = importar(RAIZ / "docs" / "tecnologias" / "extrair.py", "st_tec")
 NUMS = importar(D / "numeros-do-projeto.py", "st_nums")
+RISCOS = importar(RAIZ / "docs" / "status" / "riscos.py", "st_riscos")
+TELEMETRIA = importar(RAIZ / "docs" / "status" / "telemetria-medida.py",
+                      "st_telemetria")
+SERIE = importar(RAIZ / "docs" / "status" / "serie-historica.py", "st_serie")
+
+
+# ------------------------------------------------------------------------
+# A ORDEM das secoes, e o NUMERO de cada uma SAI DAQUI -- nunca do texto.
+#
+# Ate 16/09/2026 cada funcao trazia o proprio numero escrito no cabecalho.
+# Ai duas secoes entraram NO MEIO (riscos e divida tecnica, pedido 264) e
+# teriam envelhecido treze titulos de uma vez, mais as duas referencias em
+# prosa. E' exatamente a lesao que a numeracao das figuras do dossie ja pagou,
+# no dia em que duas figuras entraram no meio do documento e envelheceram
+# dezesseis legendas.
+#
+# Quem acrescenta uma secao poe a chave na ordem certa desta lista e usa
+# `H2[chave]`; quem cita uma secao em prosa usa `ref(chave)`. Nenhum dos dois
+# escreve numero.
+ORDEM = [
+    "resumo", "descricao", "crates", "formato", "fluxo", "capacidades",
+    "pedidos", "gates", "riscos", "divida", "testes", "guardas", "catracas",
+    "bancadas", "desempenho", "replicacao", "telemetria", "idiomas",
+    "dependencias", "documentacao", "pacotes", "board", "frentes", "serie",
+    "nao_nasceram",
+]
+H2 = {chave: f'<h2 id="s{i}"><span class="n">{i:02d} ·</span>'
+      for i, chave in enumerate(ORDEM, 1)}
+
+
+def h2(chave, titulo):
+    """O cabecalho de uma secao, com o numero saindo da ORDEM.
+
+    Existe para quem monta uma secao FORA deste arquivo (o `riscos.py` do
+    pedido 264): assim a secao de la nao precisa saber em que posicao caiu, e
+    mover a chave na ORDEM continua sendo a unica coisa que renumera.
+    """
+    if chave not in H2:
+        raise SystemExit(f"secao {chave!r} nao esta na ORDEM.")
+    return H2[chave] + titulo + "</h2>"
+
+
+def ref(chave):
+    """«§NN» para citar uma secao no texto, sem digitar o numero dela."""
+    if chave not in H2:
+        raise SystemExit(f"secao {chave!r} nao esta na ORDEM -- referencia "
+                         "para secao que nao existe e pior que referencia "
+                         "nenhuma: ela parece verificavel.")
+    return f"§{ORDEM.index(chave) + 1:02d}"
 
 
 # ------------------------------------------------------------------------
@@ -99,55 +151,24 @@ NUMS = importar(D / "numeros-do-projeto.py", "st_nums")
 # pior de todas, pelo mesmo motivo que bancada sem resultado aparece como NAO
 # MEDIDA em vez de sumir da tabela.
 SECOES_SEM_GERADOR = [
-    {
-        "titulo": "Riscos",
-        "exemplo": "§11 do exemplo",
-        "gerador": "<code>docs/status/riscos.py</code>, que ainda não existe",
-        "de_onde": "de um <code>docs/RISCOS.md</code> tabelado — risco, "
-                   "probabilidade, impacto, dono e data — que também não "
-                   "existe. Hoje risco é prosa espalhada por "
-                   "<code>PENDENCIAS.md</code>, <code>SOMBRA.md</code> e "
-                   "<code>PDCA-GAPS.md</code>: nada que uma máquina conte sem "
-                   "adivinhar qual parágrafo é risco — e adivinhar é o que "
-                   "esta lei existe para não fazer.",
-        "pedido": 264,
-    },
-    {
-        "titulo": "Dívida técnica",
-        "exemplo": "§12 do exemplo",
-        "gerador": "o mesmo <code>riscos.py</code>, segunda tabela",
-        "de_onde": "de uma marcação no próprio código — um "
-                   "<code>// DIVIDA:</code> com pedido e motivo, varrido como "
-                   "o conferidor varre os textos fora da fábrica. Sem a marca "
-                   "no fonte, contar dívida é opinião, e opinião não é "
-                   "número.",
-        "pedido": 264,
-    },
-    {
-        "titulo": "Telemetria e logs",
-        "exemplo": "§15 e §16 do exemplo",
-        "gerador": "<code>docs/status/telemetria-medida.py</code>, que ainda "
-                   "não existe",
-        "de_onde": "de um <code>bancada/telemetria/resultados.json</code> — a "
-                   "pasta <code>bancada/telemetria/</code> existe e mede o "
-                   "custo do Profiler, mas <b>não grava resultado nesse "
-                   "nome</b>. Sem ele não há a data da medição para pôr ao "
-                   "lado do número — e número sem a data em que foi medido "
-                   "publica um retrato que nunca existiu.",
-        "pedido": 265,
-    },
-    {
-        "titulo": "Antes × Depois",
-        "exemplo": "§21 do exemplo",
-        "gerador": "<code>docs/status/serie-historica.py</code>, que ainda "
-                   "não existe",
-        "de_onde": "de uma série versionada de <code>CAPABILITIES.json</code> "
-                   "— hoje o arquivo é <b>sobrescrito</b> a cada medição e só "
-                   "guarda o AGORA. Sem o retrato de ontem gravado, «antes» "
-                   "sairia da memória de quem escreve, que é exatamente o que "
-                   "esta lei existe para substituir.",
-        "pedido": 266,
-    },
+    # Riscos (§11 do exemplo) e Divida tecnica (§12) SAIRAM desta lista em
+    # 16/09/2026, com o pedido 264: nasceram com gerador -- `docs/status/
+    # riscos.py`, sobre um `docs/RISCOS.md` tabelado e sobre a marca
+    # `// DIVIDA:` do proprio fonte Rust. Nao se apaga o registro de que elas
+    # faltaram; o que muda e o lugar dele, que agora e o CHANGELOG e o pedido.
+    #
+    # Telemetria e logs (§15/§16) e Antes x Depois (§21) sairam na MESMA data,
+    # com os pedidos 265 e 266 -- e nos dois a falta era ANTES do gerador: a
+    # bancada de telemetria nao gravava `resultados.json` (entao nao havia data
+    # de medicao para por ao lado do numero) e o `CAPABILITIES.json` e
+    # sobrescrito (entao nao havia «antes»). Hoje sao `telemetria-medida.py`
+    # sobre `bancada/telemetria/resultados.json` e `serie-historica.py` sobre
+    # `docs/status/serie.jsonl`, versionado.
+    #
+    # A lista ficou VAZIA, e isso NAO e motivo para apagar a secao: ela diz
+    # «nenhuma», que e' uma afirmacao conferivel, e volta a nomear a proxima
+    # secao que alguem quiser sem gerador. Secao que some quando esta vazia
+    # deixa de ser lida no dia em que voltar a ter conteudo.
 ]
 
 
@@ -649,7 +670,7 @@ def fonte(texto):
 def secao_resumo(ctx):
     cap, quando_cap = ctx["cap"], ctx["quando_cap"]
     e = ctx["estados"]
-    h = ['<h2 id="s1"><span class="n">01 ·</span>Resumo executivo</h2>',
+    h = [H2["resumo"] + 'Resumo executivo</h2>',
          '<p class="sub">Cada cartao traz o numero e a <b>data em que ele foi '
          'medido</b>. Nenhum foi digitado.</p>', '<div class="kpis">']
     h.append(kpi(cap["versao"], "versão do motor", quando_cap, curto=True))
@@ -685,7 +706,7 @@ def secao_resumo(ctx):
 
 def secao_descricao(ctx):
     cap = ctx["cap"]
-    return f"""<h2 id="s2"><span class="n">02 ·</span>O que o PhxSql é hoje</h2>
+    return f"""{H2['descricao']}O que o PhxSql é hoje</h2>
 <p>Motor de dados em Rust no modelo de <b>arquivos separados</b> do HFSQL®, com
 {esc(milhar(cap['linhas_rust']))} linhas de Rust em {esc(cap['crates'])} crates e
 <b>{esc(cap['dependencias_externas'])}</b> dependências externas — só a
@@ -715,7 +736,7 @@ def secao_crates(ctx):
     total = sum(c["total"] for c in cs)
     cod = sum(c["codigo"] for c in cs)
     tes = sum(c["teste"] for c in cs)
-    linhas = ['<h2 id="s3"><span class="n">03 ·</span>Os crates, medidos</h2>',
+    linhas = [H2["crates"] + 'Os crates, medidos</h2>',
               '<p class="sub">Linhas de <code>src/</code> classificadas linha a '
               'linha pelo extrator das tecnologias — código, teste, comentário '
               'e vazias são separados, não estimados.</p>',
@@ -747,7 +768,7 @@ def secao_crates(ctx):
                             [("cheia", c["total"])], milhar(c["total"]), maior))
     linhas.append("</div>")
     linhas.append(
-        '<div class="nota a"><b>Este total e o da §01 não são o mesmo número, '
+        '<div class="nota a"><b>Este total e o da ' + ref('resumo') + ' não são o mesmo número, '
         'e nenhum está errado.</b> Aqui são as linhas de <code>src/</code>, '
         'classificadas linha a linha; lá são <b>todos</b> os <code>.rs</code> '
         'de <code>crates/</code> — inclui <code>tests/</code> de integração e '
@@ -765,7 +786,7 @@ def secao_crates(ctx):
 
 def secao_formato(ctx):
     fs = ctx["formato"]
-    linhas = ['<h2 id="s4"><span class="n">04 ·</span>O formato em disco</h2>',
+    linhas = [H2["formato"] + 'O formato em disco</h2>',
               '<p class="sub">Cada arquivo do formato se identifica por uma '
               'marca no cabeçalho, e a marca está no fonte — esta tabela sai '
               'dele, não de uma cópia aqui.</p>',
@@ -798,11 +819,11 @@ def secao_formato(ctx):
 def secao_fluxo(ctx):
     svg = ctx["svg_motor"]
     if not svg:
-        return ('<h2 id="s5"><span class="n">05 ·</span>O caminho de um pedido</h2>'
+        return (H2["fluxo"] + 'O caminho de um pedido</h2>'
                 '<div class="ausente-bloco">A figura <code>'
                 'docs/dossie/fig-fluxo-do-motor.svg</code> não existe — rode '
                 '<code>python3 docs/dossie/fluxo-do-motor.py</code>.</div>')
-    return f"""<h2 id="s5"><span class="n">05 ·</span>O caminho de um pedido</h2>
+    return f"""{H2['fluxo']}O caminho de um pedido</h2>
 <p class="sub">Os portões do <code>despachar</code> e o caminho de gravação,
 desenhados <b>a partir do próprio fonte Rust</b> — portão que entrar no código
 entra na figura.</p>
@@ -819,12 +840,12 @@ própria.</figcaption>
 def secao_capacidades(ctx):
     d = ctx["comparativo"]
     if not d or "__erro__" in d:
-        return ('<h2 id="s6"><span class="n">06 ·</span>O que o motor faz — medido'
+        return (H2["capacidades"] + 'O que o motor faz — medido'
                 '</h2><div class="ausente-bloco">'
                 '<code>bancada/comparativo/resultados.json</code> não existe — '
                 'rode <code>python3 bancada/comparativo/medir.py</code>.</div>')
     motores = d.get("motores_vivos", {})
-    linhas = ['<h2 id="s6"><span class="n">06 ·</span>O que o motor faz — medido</h2>',
+    linhas = [H2["capacidades"] + 'O que o motor faz — medido</h2>',
               '<p class="sub">A mesma pergunta feita a quatro motores '
               '<b>vivos na mesma máquina</b>, com sonda de efeito — nunca '
               '«aceitou» — e um controle positivo que todos têm de recusar.</p>',
@@ -861,7 +882,7 @@ def secao_capacidades(ctx):
 def secao_pedidos(ctx):
     itens, e = ctx["itens"], ctx["estados"]
     total = len(itens)
-    linhas = ['<h2 id="s7"><span class="n">07 ·</span>Os pedidos do dono</h2>',
+    linhas = [H2["pedidos"] + 'Os pedidos do dono</h2>',
               '<p class="sub">Um por linha do <code>docs/PENDENCIAS.md</code>, '
               'lido pelo mesmo <code>ler()</code> da página dos pedidos — duas '
               'contagens divergiriam na primeira mudança de legenda.</p>',
@@ -899,7 +920,7 @@ def secao_pedidos(ctx):
 
 def secao_gates(ctx):
     gates = ctx["gates"]
-    linhas = ['<h2 id="s8"><span class="n">08 ·</span>O que está travado com você</h2>',
+    linhas = [H2["gates"] + 'O que está travado com você</h2>',
               '<p class="sub">Pedido aberto cujo texto casa um <b>léxico '
               'explícito</b> do gerador. A frase que casou aparece: quem lê '
               'julga o casamento em vez de acreditar nele.</p>']
@@ -930,7 +951,7 @@ def secao_gates(ctx):
 def secao_testes(ctx):
     cap, por_area = ctx["cap"], ctx["por_area"]
     total = ctx["testes_area_total"]
-    linhas = ['<h2 id="s9"><span class="n">09 ·</span>Testes e cobertura por área</h2>',
+    linhas = [H2["testes"] + 'Testes e cobertura por área</h2>',
               '<p class="sub">Dois números diferentes de propósito: o de cima é '
               'o que a suíte <b>executou</b>; o de baixo é quantos '
               '<code>#[test]</code> existem no fonte, por área.</p>',
@@ -956,7 +977,7 @@ def secao_testes(ctx):
 
 
 def secao_guardas(ctx):
-    linhas = ['<h2 id="s10"><span class="n">10 ·</span>O catálogo de guardas</h2>',
+    linhas = [H2["guardas"] + 'O catálogo de guardas</h2>',
               '<p class="sub">Cada guarda é um defeito que esta casa já pagou, '
               'escrito de um jeito que a máquina consegue <b>repor</b> — e o '
               'teste nomeado tem de cair quando ele volta. Prova real nos dois '
@@ -1006,7 +1027,7 @@ def secao_guardas(ctx):
 
 def secao_catracas(ctx):
     tetos = ctx["tetos"]
-    linhas = ['<h2 id="s11"><span class="n">11 ·</span>As catracas</h2>',
+    linhas = [H2["catracas"] + 'As catracas</h2>',
               '<p class="sub">Cada <code>TETO_*</code> é um número que <b>só '
               'desce</b>. Catraca frouxa não segura nada — e ela nunca sobe, '
               'nem quando a régua muda: régua que passa a medir mais '
@@ -1030,7 +1051,7 @@ def secao_catracas(ctx):
 
 
 def secao_bancadas(ctx):
-    linhas = ['<h2 id="s12"><span class="n">12 ·</span>As bancadas, com a data de '
+    linhas = [H2["bancadas"] + 'As bancadas, com a data de '
               'cada medição</h2>',
               '<p class="sub">Os <code>resultados.json</code> são de corridas de '
               '<b>dias diferentes</b>: juntá-los sem dizer quando publicaria um '
@@ -1067,7 +1088,7 @@ def secao_bancadas(ctx):
 
 def secao_desempenho(ctx):
     blocos, quando = ctx["trio"]
-    linhas = ['<h2 id="s13"><span class="n">13 ·</span>Desempenho — os quatro '
+    linhas = [H2["desempenho"] + 'Desempenho — os quatro '
               'motores a um milhão</h2>',
               '<p class="sub">Os quatro na <b>mesma rodada</b>, intercalados. '
               'Cada barra traz a faixa min–max, e o vencedor só é contornado '
@@ -1086,14 +1107,14 @@ def secao_desempenho(ctx):
 def secao_replicacao(ctx):
     d = ctx["replicacao"]
     if not d or "__erro__" in d:
-        return ('<h2 id="s14"><span class="n">14 ·</span>Replicação</h2>'
+        return (H2["replicacao"] + 'Replicação</h2>'
                 '<div class="ausente-bloco">'
                 '<code>bancada/replicacao/resultados.json</code> não existe — '
                 'rode a bancada da replicação.</div>')
     q = str(d.get("quando", ""))[:10]
     cascata = d.get("cascata", {})
     cl = ctx["cluster"] or {}
-    linhas = ['<h2 id="s14"><span class="n">14 ·</span>Replicação, medida com '
+    linhas = [H2["replicacao"] + 'Replicação, medida com '
               'quatro servidores</h2>',
               '<p class="sub">Um dos dois pilares que a folha de marca promete '
               '— e este <b>virou verdade</b>: quatro processos '
@@ -1141,7 +1162,7 @@ def secao_replicacao(ctx):
 
 def secao_idiomas(ctx):
     idi = ctx["cap"].get("idiomas") or {}
-    linhas = ['<h2 id="s15"><span class="n">15 ·</span>A fábrica de idiomas</h2>',
+    linhas = [H2["idiomas"] + 'A fábrica de idiomas</h2>',
               '<p class="sub">Texto de tela entra pela fábrica — é pétreo. A '
               'máquina existe desde a 0.17.0; o que faltava era o laço que '
               '<b>conta</b>, e ele é uma catraca que só desce.</p>',
@@ -1176,7 +1197,7 @@ def secao_idiomas(ctx):
 
 def secao_dependencias(ctx):
     cap = ctx["cap"]
-    return f"""<h2 id="s16"><span class="n">16 ·</span>Zero dependências externas</h2>
+    return f"""{H2['dependencias']}Zero dependências externas</h2>
 <p class="sub">Não é ascetismo: é o que fez a compilação cruzada para Windows
 funcionar de primeira e o que permite <code>cargo build --offline</code>.</p>
 <div class="kpis">
@@ -1204,7 +1225,7 @@ calado nem se ignora calado.</div>
 
 
 def secao_documentacao(ctx):
-    linhas = ['<h2 id="s17"><span class="n">17 ·</span>Documentação</h2>',
+    linhas = [H2["documentacao"] + 'Documentação</h2>',
               '<p class="sub">Esta seção <b>nasceu</b> porque o gerador existe: '
               'a lista dos documentos contados sai do código, não de uma cópia '
               'aqui.</p>', '<div class="kpis">',
@@ -1259,7 +1280,7 @@ def secao_documentacao(ctx):
 
 def secao_pacotes(ctx):
     zips, somas = ctx["pacotes"]
-    linhas = ['<h2 id="s18"><span class="n">18 ·</span>O que se baixa</h2>',
+    linhas = [H2["pacotes"] + 'O que se baixa</h2>',
               '<p class="sub">O exemplo do P.O.S tinha «ISO bootável»; o nosso '
               'equivalente é o <b>pacote de fontes e binários</b>, montado por '
               'script e <b>nunca à mão</b> — pacote feito à mão é pacote que '
@@ -1303,7 +1324,7 @@ def secao_board(ctx):
         d = por_pilar.setdefault(b["pilar"], {"aberto": 0, "entregue-fechado": 0,
                                               "parado": 0})
         d[b["estado"]] = d.get(b["estado"], 0) + 1
-    linhas = ['<h2 id="s19"><span class="n">19 ·</span>O board, por pilar</h2>',
+    linhas = [H2["board"] + 'O board, por pilar</h2>',
               '<p class="sub">A forma carrega o estado — aberto só contorno, '
               'entregue cheia, parado hachurado —, então a barra se lê sem '
               'cor.</p>', '<div class="barras">']
@@ -1341,7 +1362,7 @@ def secao_board(ctx):
 
 
 def secao_frentes(ctx):
-    linhas = ['<h2 id="s20"><span class="n">20 ·</span>As últimas frentes</h2>',
+    linhas = [H2["frentes"] + 'As últimas frentes</h2>',
               '<p class="sub">Do próprio <code>git log</code>, só leitura. O '
               'commit conta a decisão e o motivo, não a lista de arquivos.</p>',
               '<div class="rolo"><table><thead><tr><th>commit</th><th>quando</th>'
@@ -1359,22 +1380,51 @@ def secao_frentes(ctx):
 
 
 def secao_nao_nasceram(ctx):
-    linhas = ['<h2 id="s21"><span class="n">21 ·</span>O que <b>não</b> nasceu '
+    # A QUANTIDADE tambem sai da lista. Ate 16/09/2026 este paragrafo dizia
+    # «Quatro secoes do exemplo nao entraram» com o numero escrito -- e nesse
+    # mesmo dia as quatro viraram duas (pedido 264) e depois ZERO (265 e 266),
+    # com a frase intacta. Numero digitado envelhece calado, inclusive dentro
+    # da secao que existe para dizer o que falta.
+    quantas = len(SECOES_SEM_GERADOR)
+    if quantas:
+        sub = (f'{quantas} seç{"ões" if quantas > 1 else "ão"} do exemplo não '
+               f'entr{"aram" if quantas > 1 else "ou"}, e a razão é a mesma '
+               'para todas: <b>o número não sai de gerador nenhum</b>. Elas '
+               'aparecem aqui com o gerador que falta — página que esconde o '
+               'que não mediu é a pior de todas.')
+    else:
+        sub = ('<b>Nenhuma</b> — todas as seções desta página nascem de um '
+               'gerador. Esta seção continua existindo, e continua sendo a '
+               'mais importante: ela é o lugar onde a próxima seção sem '
+               'gerador vai aparecer em vez de entrar com número digitado.')
+    linhas = [H2["nao_nasceram"] + 'O que <b>não</b> nasceu '
               'nesta página</h2>',
-              '<p class="sub">Quatro seções do exemplo não entraram, e a razão '
-              'é a mesma para todas: <b>o número não sai de gerador nenhum</b>. '
-              'Elas aparecem aqui com o gerador que falta — página que esconde '
-              'o que não mediu é a pior de todas.</p>',
-              '<ul class="faltantes">']
-    for s in SECOES_SEM_GERADOR:
+              f'<p class="sub">{sub}</p>']
+    if quantas:
+        linhas.append('<ul class="faltantes">')
+        for s in SECOES_SEM_GERADOR:
+            linhas.append(
+                f'<li><span class="tt">{esc(s["titulo"])} '
+                f'<span class="etiqueta e-nao">não nasceu</span></span>'
+                f'<span class="g">falta: {s["gerador"]}</span>'
+                f'<p class="d">Tiraria o número {s["de_onde"]}</p>'
+                f'<p class="fonte">{esc(s["exemplo"])} · pedido '
+                f'<b>#{s["pedido"]}</b> no <code>docs/PENDENCIAS.md</code>'
+                '</p></li>')
+        linhas.append("</ul>")
+    else:
         linhas.append(
-            f'<li><span class="tt">{esc(s["titulo"])} '
-            f'<span class="etiqueta e-nao">não nasceu</span></span>'
-            f'<span class="g">falta: {s["gerador"]}</span>'
-            f'<p class="d">Tiraria o número {s["de_onde"]}</p>'
-            f'<p class="fonte">{esc(s["exemplo"])} · pedido '
-            f'<b>#{s["pedido"]}</b> no <code>docs/PENDENCIAS.md</code></p></li>')
-    linhas.append("</ul>")
+            '<div class="nota g"><b>As quatro que faltavam nasceram em '
+            '16/09/2026, e nenhuma nasceu pelo atalho.</b> Riscos e Dívida '
+            'técnica (pedido 264) exigiram um <code>docs/RISCOS.md</code> '
+            'tabelado e uma marca <code>// DIVIDA:</code> no fonte; Telemetria '
+            'e logs (265) exigiu que a bancada passasse a gravar '
+            '<code>resultados.json</code>, porque sem ele não havia a data em '
+            'que o número foi medido; Antes × Depois (266) exigiu uma série '
+            'versionada, porque o <code>CAPABILITIES.json</code> é sobrescrito '
+            'e só guarda o agora. Nos quatro casos <b>a fonte veio antes do '
+            'gerador</b> — é isso que a lei cobra, e é por isso que ela demora '
+            'mais que digitar o número.</div>')
     linhas.append(
         '<div class="nota v"><b>Por que isto é a seção mais importante da '
         'página.</b> O exemplo trazia <b>677 números no texto visível, todos '
@@ -1481,15 +1531,49 @@ def montar(saida=PADRAO):
         "n_geradores": len(portao.PLANO),
     }
 
+    # As duas secoes do pedido 264 vem do `riscos.py`, e vem CERCADAS pelas
+    # marcas dele: e' o que deixa aquele gerador reescrever so este pedaco em
+    # segundos, sem re-rodar esta pagina inteira (minutos, porque ela varre
+    # `crates/` cinco vezes). A montagem e a MESMA dos dois lados -- o
+    # `RISCOS.bloco()` repete este `\n\n` -- para que rodar um depois do outro
+    # nao mude um byte, e o portao nao acuse VELHO sem numero nenhum ter
+    # mudado.
+    ctx_risco = RISCOS.contexto(ctx["hoje"])
+    r_riscos, r_divida = RISCOS.secoes(sys.modules[__name__], ctx_risco)
+
+    # O mesmo desenho para as duas secoes dos pedidos 265 e 266: cada uma vem
+    # do seu gerador, cercada pelas marcas dele. Os tres geradores repetem aqui
+    # exatamente a montagem que fazem sozinhos -- se divergissem num espaco em
+    # branco, o portao acusaria a pagina como VELHA sem numero nenhum mudar.
+    ctx_tlm = TELEMETRIA.contexto()
+    ctx_tlm["hoje"] = ctx["hoje"]
+    # O `main()` precisa saber se a bancada rodou para dizer que fez menos --
+    # e quem ja leu o arquivo foi este passo. Reler la seria uma segunda
+    # leitura que pode discordar desta.
+    global ctx_tlm_publico
+    ctx_tlm_publico = ctx_tlm
+    ctx_serie = SERIE.contexto()
+
     secoes = [
         secao_resumo(ctx), secao_descricao(ctx), secao_crates(ctx),
         secao_formato(ctx), secao_fluxo(ctx), secao_capacidades(ctx),
-        secao_pedidos(ctx), secao_gates(ctx), secao_testes(ctx),
+        secao_pedidos(ctx), secao_gates(ctx),
+        RISCOS.MARCA_INICIO + "\n" + r_riscos, r_divida + "\n" + RISCOS.MARCA_FIM,
+        secao_testes(ctx),
         secao_guardas(ctx), secao_catracas(ctx), secao_bancadas(ctx),
-        secao_desempenho(ctx), secao_replicacao(ctx), secao_idiomas(ctx),
+        secao_desempenho(ctx), secao_replicacao(ctx),
+        TELEMETRIA.bloco(sys.modules[__name__], ctx_tlm),
+        secao_idiomas(ctx),
         secao_dependencias(ctx), secao_documentacao(ctx), secao_pacotes(ctx),
-        secao_board(ctx), secao_frentes(ctx), secao_nao_nasceram(ctx),
+        secao_board(ctx), secao_frentes(ctx),
+        SERIE.bloco(sys.modules[__name__], ctx_serie),
+        secao_nao_nasceram(ctx),
     ]
+    if len(secoes) != len(ORDEM):
+        raise SystemExit(
+            f"{len(secoes)} secoes montadas para {len(ORDEM)} chaves na ORDEM "
+            "-- a numeracao sai da ORDEM, entao uma secao que nasce sem chave "
+            "(ou uma chave sem secao) desloca todas as outras em silencio.")
 
     agora = datetime.datetime.now(datetime.timezone.utc).strftime("%d/%m/%Y %H:%M")
     cabecalho = f"""<header class="barra-titulo">
@@ -1520,7 +1604,7 @@ def montar(saida=PADRAO):
   Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em {agora} UTC,
   pelo comando <code>./status-html.sh</code>. <b>Nenhum número desta página foi
   digitado</b>: cada um sai de um gerador, e cada seção diz de qual. Onde o
-  gerador não existe, a seção <b>não nasceu</b> — está nomeada na §21, com o
+  gerador não existe, a seção <b>não nasceu</b> — está nomeada na {ref('nao_nasceram')}, com o
   gerador que falta. Esta página <b>não se edita</b>: mexeu numa fonte, rode o
   gerador. Como rodar e de onde sai cada número:
   <code>docs/status/LEIA-ME.md</code>.
@@ -1542,11 +1626,25 @@ def main():
     # o `pagina-dos-pedidos.py` gravava tres coisas, imprimia tres linhas de
     # exito e pulava o painel do dossie -- e tres paineis ficaram atrasados sem
     # um digito digitado.
-    print(f"  {len(SECOES_SEM_GERADOR)} secao(oes) NAO nasceram por falta de "
-          "gerador (§21 da pagina):")
-    for s in SECOES_SEM_GERADOR:
-        falta = re.sub(r"\s+([,.;])", r"\1", texto_puro(s["gerador"]))
-        print(f"    - {s['titulo']}: falta {falta} (pedido #{s['pedido']})")
+    if SECOES_SEM_GERADOR:
+        print(f"  {len(SECOES_SEM_GERADOR)} secao(oes) NAO nasceram por falta "
+              f"de gerador ({ref('nao_nasceram')} da pagina):")
+        for s in SECOES_SEM_GERADOR:
+            falta = re.sub(r"\s+([,.;])", r"\1", texto_puro(s["gerador"]))
+            print(f"    - {s['titulo']}: falta {falta} (pedido #{s['pedido']})")
+    else:
+        print(f"  nenhuma secao ficou sem gerador ({ref('nao_nasceram')} da "
+              "pagina diz «nenhuma», e continua existindo para a proxima)")
+    # As secoes que vem de gerador IRMAO dizem, elas mesmas, o que nao mediram:
+    # a pagina inteira nao pode engolir isso, senao quem roda `./status-html.sh`
+    # nunca ouve falar da bancada que nao rodou.
+    dados = ctx_tlm_publico.get("dados") if ctx_tlm_publico else None
+    if dados is None or "__erro__" in (dados or {}):
+        print("  a bancada de telemetria NAO rodou: a secao saiu como NAO "
+              "MEDIDA, com o comando (pedido #265)")
+    if len(SERIE.ler()) < 2:
+        print("  a serie tem menos de duas medicoes: a secao «Antes x Depois» "
+              "diz que nao da para comparar, e nao inventa o passado")
     return 0
 
 
