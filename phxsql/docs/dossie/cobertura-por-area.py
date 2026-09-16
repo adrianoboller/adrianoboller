@@ -230,4 +230,9 @@ def main():
           f"{len(sem_teste)} arquivos sem #[test]")
 
 
-main()
+# O `main()` ficava solto aqui, e por isso IMPORTAR este gerador o rodava:
+# quem so quisesse o `medir()` para uma pagina regravava o TESTES.md e o
+# dossie sem pedir. O guarda nao muda nada para quem o chama como script --
+# muda so para quem reusa a receita, que e o jeito de nao duplica-la.
+if __name__ == "__main__":
+    main()

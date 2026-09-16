@@ -426,6 +426,7 @@ bancada/           a medição: carga, comparação, profiler, telemetria
 testes-web/        as baterias que exercitam a tela num navegador
 marca/             a marca oficial e seus derivados
 empacotar.sh       monta os três zips de download
+status-html.sh     gera a página de status do projeto (docs/status/)
 MANUAL.txt         manual do operador
 CHANGELOG.md       o que mudou em cada versão, defeitos primeiro
 provar.py          a bateria inteira num comando só

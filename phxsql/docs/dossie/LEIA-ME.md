@@ -32,6 +32,14 @@ numa página publicada — o dossiê principal e as quatro páginas satélites
 não entram na conta. A lista de comandos e a tabela «script → o que ele
 escreve» estão em «O que conferir antes de publicar», abaixo.
 
+Fora desta pasta há mais geradores de página, e por isso **fora desta conta**:
+os dois de `docs/pmo/` (o board e o painel PMO) e o de `docs/status/` — a
+**sétima página**, o status do projeto, cujo comando é `./status-html.sh` e
+cuja receita está em `docs/status/LEIA-ME.md`. A lista **completa** é o `PLANO`
+do `portao-dos-geradores.py`, que `python3 docs/dossie/portao-dos-geradores.py
+--lista` imprime. E a sétima roda **depois de todas**: ela publica o tamanho
+das outras páginas, então quem rodar um gerador depois dela a deixa velha.
+
 ### O degrau 1 não é formalidade — medido
 
 Numa rodada de agosto de 2026, a página publicada tinha **33 seções e 2,4 MB**

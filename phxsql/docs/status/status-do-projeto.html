@@ -1,0 +1,897 @@
+<meta charset="utf-8">
+<title>Status do projeto — PhxSql</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* A marca manda (marca/LEIA-ME.md): Exo 2, fundo #010418, vermelhao #FF4D10
+   escurecendo para #C63C0A sobre papel -- e essa segunda adaptacao ja estava
+   decidida por contraste. Tres tokens do tema claro seguem a MESMA regra, e o
+   motivo foi medido nesta pagina: sobre o papel (#fbf9f7) eles passavam, mas
+   quase todo texto desta pagina vive dentro de um cartao (#f3efec), e ali
+   #7a6d66 dava 4,37:1 e #8a6a1f dava 4,41:1 -- abaixo do minimo. Escurecidos,
+   dao 4,70:1 e 4,76:1 no cartao. Medir o par que o olho ve, e nao o par que o
+   token sugere. */
+:root{
+  --papel:#fbf9f7; --papel-2:#f3efec; --papel-3:#e9e3de;
+  --tinta:#1a1210; --tinta-2:#4a3f3a; --tinta-3:#756861;
+  --linha:#ded6d0; --acento:#c63c0a; --marca:#010418;
+  --feito:#2f7a3e; --parcial:#84651d; --planejado:#756861;
+  --aberto:#1f5c93; --entregue:#2f7a3e; --parado:#b5257f;
+  --incluir:#2f7a3e; --alterar:#84651d; --marcar:#b5257f;
+  --excluir:#b3261e; --consultar:#1f5c93;
+  --falta:#84651d;
+  --c1:#c63c0a; --c2:#4a6fa5; --c3:#5c7a52; --c4:#0e7a85;
+  --sombra:0 1px 2px rgba(26,18,16,.06),0 8px 24px rgba(26,18,16,.05);
+  --escolhida:var(--tinta);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --papel:#010418; --papel-2:#0a1122; --papel-3:#131c31;
+    --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#848da0;
+    --linha:#1e2940; --acento:#ff8a1c; --marca:#010418;
+    --feito:#5cbf74; --parcial:#d5a83c; --planejado:#8e9ab0;
+    --aberto:#5fa6e8; --entregue:#5cbf74; --parado:#ff8fc7;
+    --incluir:#5cbf74; --alterar:#d5a83c; --marcar:#ff8fc7;
+    --excluir:#ff8a80; --consultar:#5fa6e8;
+    --falta:#d5a83c;
+    --c1:#ff8a1c; --c2:#6f9fe0; --c3:#7fb36e; --c4:#3fc8d4;
+    --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+    --escolhida:var(--tinta);
+  }
+}
+:root[data-theme="dark"]{
+  --papel:#010418; --papel-2:#0a1122; --papel-3:#131c31;
+  --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#848da0;
+  --linha:#1e2940; --acento:#ff8a1c; --marca:#010418;
+  --feito:#5cbf74; --parcial:#d5a83c; --planejado:#8e9ab0;
+  --aberto:#5fa6e8; --entregue:#5cbf74; --parado:#ff8fc7;
+  --incluir:#5cbf74; --alterar:#d5a83c; --marcar:#ff8fc7;
+  --excluir:#ff8a80; --consultar:#5fa6e8;
+  --falta:#d5a83c;
+  --c1:#ff8a1c; --c2:#6f9fe0; --c3:#7fb36e; --c4:#3fc8d4;
+  --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+  --escolhida:var(--tinta);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--papel);color:var(--tinta);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+  font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+h1,h2,h3,.rotulo,.etiqueta,.kpi b,.aba,.barra-linha .l{
+  font-family:"Exo 2","Helvetica Neue",Arial,sans-serif}
+code,.mono,.num{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+code{font-size:.86em;background:var(--papel-2);padding:1px 4px;border-radius:3px;
+  color:var(--tinta-2);overflow-wrap:break-word}
+.envelope{max-width:1100px;margin:0 auto;padding:0 18px 80px}
+
+/* A barra de titulo e a do exemplo em ESTRUTURA; a cor e a da marca --
+   fundo #010418 e a faixa do vermelhao embaixo. */
+.barra-titulo{background:var(--marca);color:#dde2eb;border-bottom:5px solid #ff4d10;
+  padding:26px 22px;border-radius:0 0 12px 12px;margin-bottom:4px}
+.barra-titulo h1{margin:0 0 8px;font-size:clamp(21px,4.2vw,31px);font-weight:700;
+  letter-spacing:-.015em;line-height:1.12;color:#fff;text-wrap:balance}
+.barra-titulo h1 .x{color:#ff8a1c}
+.barra-titulo .sub{color:#a8b0c0;font-size:13px;font-family:"IBM Plex Mono",monospace;
+  overflow-wrap:break-word}
+.barra-titulo .assinatura{color:#7c8598;font-size:12px;font-style:italic;margin-top:6px}
+
+/* As ferramentas sao CONSULTA: contorno sempre, preenchimento so no hover --
+   a convencao das cinco cores da acao desta casa. */
+.ferramentas{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:8px;
+  align-items:center;background:var(--papel);border:1px solid var(--linha);
+  border-radius:9px;padding:9px 11px;margin:14px 0 18px;box-shadow:var(--sombra)}
+.ferramentas button,.ferramentas select{font-family:"Exo 2",sans-serif;font-size:12.5px;
+  font-weight:600;color:var(--consultar);background:transparent;
+  border:1px solid var(--consultar);border-radius:5px;padding:6px 13px;cursor:pointer;
+  line-height:1.2}
+.ferramentas button:hover,.ferramentas select:hover{background:var(--consultar);color:var(--papel)}
+.ferramentas button[aria-pressed="true"]{background:var(--papel-3);border-color:var(--acento);
+  color:var(--acento);box-shadow:inset 0 -2px 0 var(--acento)}
+.ferramentas .sep{flex:1}
+.ferramentas .r{font-family:"IBM Plex Mono",monospace;font-size:11px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--tinta-3)}
+
+/* O seletor pinta TITULO, nunca dado: rotulo se estiliza, dado nunca. */
+h2{font-size:20px;font-weight:600;margin:46px 0 4px;padding-top:16px;
+  border-top:1px solid var(--linha);letter-spacing:-.01em;color:var(--escolhida)}
+h2 .n{font-family:"IBM Plex Mono",monospace;color:var(--acento);font-size:15px;
+  margin-right:7px;font-variant-numeric:tabular-nums}
+h3{font-size:15px;font-weight:600;margin:26px 0 8px;color:var(--escolhida)}
+h2 + .sub,h3 + .sub{color:var(--tinta-3);font-size:13.5px;margin:0 0 16px;max-width:74ch}
+p{margin:11px 0;max-width:76ch}
+.fonte{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--tinta-3);
+  margin:10px 0 0;max-width:80ch;overflow-wrap:break-word}
+.fonte b{color:var(--tinta-2);font-weight:500}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(152px,1fr));gap:10px;margin:18px 0}
+.kpi{background:var(--papel-2);border:1px solid var(--linha);border-left:3px solid var(--acento);
+  border-radius:7px;padding:12px 14px;display:flex;flex-direction:column;gap:4px}
+/* `>` de proposito: `.kpi b` casava tambem o <b> de dentro do ROTULO, e
+   «bancadas NAO MEDIDAS» saiu com o rotulo do tamanho do numero. O CSS global
+   morde todo componente novo, e isto so apareceu olhando a pagina. */
+.kpi > b{font-size:27px;font-weight:700;line-height:1.05;color:var(--tinta);
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em;overflow-wrap:break-word}
+.kpi > b.curto{font-size:18px}
+.kpi span{font-size:12px;color:var(--tinta-2);line-height:1.35}
+.kpi span b{font-size:inherit;font-weight:600;color:var(--tinta)}
+.kpi .q{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--tinta-3);margin-top:auto}
+.kpi.feito > b{color:var(--feito)} .kpi.parcial > b{color:var(--parcial)}
+.kpi.planejado > b{color:var(--planejado)} .kpi.falta > b{color:var(--falta)}
+
+.cartao{background:var(--papel-2);border:1px solid var(--linha);border-radius:8px;
+  padding:16px 18px;margin:16px 0;box-shadow:var(--sombra)}
+.nota{border:1px solid var(--linha);border-left:3px solid var(--acento);background:var(--papel-2);
+  padding:13px 17px;border-radius:0 6px 6px 0;margin:18px 0;font-size:14.5px;
+  color:var(--tinta-2);max-width:76ch}
+.nota b{color:var(--tinta)}
+.nota.g{border-left-color:var(--feito)} .nota.a{border-left-color:var(--falta)}
+.nota.v{border-left-color:var(--excluir)} .nota.c{border-left-color:var(--consultar)}
+
+/* Etiqueta: contorno sempre. Fundo cheio so no hover, quando ha intencao. */
+.etiqueta{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.04em;
+  padding:1px 8px;border-radius:11px;border:1px solid currentColor;white-space:nowrap;
+  background:transparent}
+.e-tem{color:var(--feito)} .e-nao{color:var(--excluir)} .e-parcial{color:var(--parcial)}
+.e-plan{color:var(--consultar)} .e-parado{color:var(--parado)}
+
+.rolo{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:14px 0}
+table{border-collapse:collapse;width:100%;min-width:520px;font-size:14px}
+thead th{font-family:"IBM Plex Mono",monospace;font-weight:500;font-size:10px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--tinta-3);text-align:left;
+  padding:9px 11px 7px;border-bottom:1px solid var(--linha)}
+tbody td{padding:9px 11px;border-bottom:1px solid var(--linha);vertical-align:top}
+tbody tr:hover td{background:var(--papel-2)}
+td.num,th.num{text-align:right;font-family:"IBM Plex Mono",monospace;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+td.mono{font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+td.q{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--tinta-3);white-space:nowrap}
+tr.ausente td{color:var(--falta)}
+.mtime{color:var(--falta);font-size:10.5px}
+
+/* A barra do exemplo, com a regra desta casa: o numero vem DEPOIS da barra,
+   nunca por cima dela, e a forma carrega o estado (cheia, hachurada, so
+   contorno) para se ler sem cor. */
+.barras{margin:16px 0}
+/* A coluna do numero e `auto`, nunca uma medida fixa: com `5.4em` o
+   «244 · 91,4%» nao cabia em 62 px, vazava 21 px para fora da grade e punha
+   3 px de ROLAGEM LATERAL na pagina inteira no telefone. Medido em 390 px com
+   o navegador, nao lendo o CSS -- interface so se prova exercitando. */
+.barra-linha{display:grid;grid-template-columns:minmax(96px,13em) minmax(0,1fr) auto;
+  gap:10px;align-items:center;font-size:13.5px;margin:7px 0}
+.barra-linha .l{font-weight:500;overflow-wrap:break-word}
+.barra-linha .t{height:14px;border-radius:3px;background:var(--papel-3);
+  display:flex;overflow:hidden}
+.barra-linha .t i{display:block;height:100%}
+.barra-linha .t .b-feito,.barra-linha .t .b-entregue{background:var(--feito)}
+.barra-linha .t .b-parcial{background:repeating-linear-gradient(45deg,var(--parcial) 0 3px,transparent 3px 7px);
+  border:1.4px solid var(--parcial)}
+.barra-linha .t .b-planejado{background:transparent;border:1.4px solid var(--planejado)}
+.barra-linha .t .b-aberto{background:transparent;border:1.4px solid var(--aberto)}
+.barra-linha .t .b-parado{background:repeating-linear-gradient(45deg,var(--parado) 0 3px,transparent 3px 7px);
+  border:1.4px solid var(--parado)}
+.barra-linha .t .b-cheia{background:var(--acento);opacity:.8}
+.barra-linha .n{font-family:"IBM Plex Mono",monospace;font-size:12.5px;
+  font-variant-numeric:tabular-nums;color:var(--tinta-2);text-align:right;white-space:nowrap}
+.legenda{display:flex;flex-wrap:wrap;gap:10px 18px;margin:12px 0 0;font-size:12.5px;
+  color:var(--tinta-2)}
+.legenda span{display:inline-flex;align-items:center;gap:6px}
+.legenda i{display:inline-block;width:20px;height:10px;border-radius:2px;
+  border:1.4px solid transparent;flex:none}
+.legenda .feito i{background:var(--feito)}
+.legenda .parcial i{background:repeating-linear-gradient(45deg,var(--parcial) 0 3px,transparent 3px 7px);border-color:var(--parcial)}
+.legenda .planejado i{border-color:var(--planejado)}
+.legenda .aberto i{border-color:var(--aberto)}
+.legenda .entregue i{background:var(--entregue)}
+.legenda .parado i{background:repeating-linear-gradient(45deg,var(--parado) 0 3px,transparent 3px 7px);border-color:var(--parado)}
+
+/* Os graficos vem do `graficos-dos-testes.py`, e trazem as classes dele --
+   copiar o desenho aqui seria a receita duplicada que esta pagina evita. */
+figure.g{margin:0 0 24px;padding:15px 17px;border:1px solid var(--linha);
+  border-radius:7px;background:var(--papel-2)}
+figure.g figcaption{margin-bottom:11px}
+figure.g figcaption b{font-family:"Exo 2",sans-serif;font-size:14.5px}
+figure.g .un{color:var(--tinta-3);font-size:12px;margin-left:6px}
+figure.g figcaption .sub{color:var(--tinta-2);font-size:13px;margin-top:5px;max-width:70ch;line-height:1.45}
+figure.g .dica{display:block;color:var(--tinta-3);font-size:11.5px;margin-top:6px;font-style:italic}
+figure.g svg{width:100%;height:auto;display:block}
+figure.g svg text{font-family:"IBM Plex Mono",monospace;font-size:12px;fill:var(--tinta-2)}
+figure.g svg text.rot{fill:var(--tinta)}
+figure.g svg text.val{fill:var(--tinta);font-weight:500}
+figure.g svg text.vazio{fill:var(--falta);font-style:italic}
+figure.g svg rect{opacity:.82}
+figure.g svg rect.campeao{opacity:1;stroke:var(--tinta);stroke-width:1.5}
+figure.g svg line.faixa{stroke:var(--tinta);stroke-width:1.4;opacity:.55}
+.ausente-bloco{border-left:3px solid var(--falta);background:var(--papel-2);
+  padding:12px 16px;border-radius:0 5px 5px 0;margin:0 0 20px;color:var(--falta);font-size:14px}
+
+/* O fluxograma vem do `fluxo-do-motor.py` e traz o proprio fundo claro; a
+   moldura branca e deliberada, para ele ler igual nos dois temas. */
+.figura{margin:16px 0;border:1px solid var(--linha);border-radius:8px;overflow:hidden;
+  background:#fbf9f7}
+.figura svg{display:block;width:100%;height:auto}
+figcaption.legenda-fig{margin:9px 0 0;color:var(--tinta-3);font-size:13px;max-width:74ch}
+
+ul{margin:11px 0;padding-left:21px;max-width:76ch} li{margin:5px 0}
+.faltantes{list-style:none;margin:16px 0;padding:0;display:grid;gap:12px}
+.faltantes li{border:1px solid var(--linha);border-left:3px solid var(--falta);
+  border-radius:0 6px 6px 0;padding:13px 16px;background:var(--papel-2)}
+.faltantes .tt{font-family:"Exo 2",sans-serif;font-weight:600;font-size:15px;display:block}
+.faltantes .g{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--falta);
+  display:block;margin:5px 0}
+.faltantes .d{font-size:13.5px;color:var(--tinta-2);margin:5px 0 0}
+
+.gates{list-style:none;margin:14px 0;padding:0;display:grid;gap:11px}
+.gates li{border:1px solid var(--linha);border-left:3px solid var(--parado);
+  border-radius:0 6px 6px 0;padding:12px 15px;background:var(--papel-2)}
+.gates .cab{display:flex;flex-wrap:wrap;gap:9px;align-items:baseline}
+.gates .n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--tinta-3)}
+.gates .tt{font-weight:600;font-size:14.5px}
+.gates .tr{margin:8px 0 0;font-size:13px;color:var(--tinta-2);
+  border-left:2px solid var(--linha);padding-left:10px}
+
+footer{margin-top:52px;padding-top:18px;border-top:1px solid var(--linha);
+  color:var(--tinta-3);font-size:13px;max-width:78ch}
+footer code{font-size:.9em}
+
+@media (max-width:640px){
+  .barra-linha{grid-template-columns:minmax(0,1fr) auto}
+  .barra-linha .t{grid-column:1/3;order:3}
+  .ferramentas{position:static}
+  .kpi b{font-size:23px}
+}
+@media print{
+  .ferramentas{display:none!important}
+  html,body{background:#fff!important;color:#1a1210!important}
+  .cartao,.kpi,table,.nota,figure.g,.figura,.gates li,.faltantes li{break-inside:avoid}
+  h2{break-after:avoid}
+  .barra-titulo{border-radius:0}
+  .envelope{max-width:none;padding:0}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+<header class="barra-titulo">
+  <h1>STATUS DO PROJETO — <span class="x">PhxSql</span></h1>
+  <div class="sub">versão 0.18.0 · commit bd725536
+   · árvore suja · branch claude/capacidades-disponiveis-y6auxh ·
+  motor medido em 2026-09-16 11:43:16</div>
+  <div class="assinatura">Built to store. Engineered to scale.</div>
+</header><div class="envelope">
+<div class="ferramentas no-print">
+  <span class="r">tema</span>
+  <button data-tema="light" aria-pressed="false">claro</button>
+  <button data-tema="dark" aria-pressed="false">escuro</button>
+  <span class="r">cor do título</span>
+  <select id="cor-do-texto" aria-label="cor dos títulos">
+    <option value="padrao">padrão</option>
+    <option value="vermelhao">vermelhão</option>
+    <option value="azul">azul</option>
+    <option value="verde">verde</option>
+    <option value="ameixa">ameixa</option>
+  </select>
+  <span class="sep"></span>
+  <button id="imprimir">imprimir / PDF</button>
+</div>
+
+<h2 id="s1"><span class="n">01 ·</span>Resumo executivo</h2>
+<p class="sub">Cada cartao traz o numero e a <b>data em que ele foi medido</b>. Nenhum foi digitado.</p>
+<div class="kpis">
+<div class="kpi"><b class="curto">0.18.0</b><span>versão do motor</span><span class="q">2026-09-16 11:43:16</span></div>
+<div class="kpi"><b>2.378</b><span>testes que passam</span><span class="q">2026-09-16 11:43:16</span></div>
+<div class="kpi"><b>139</b><span>operações do protocolo</span><span class="q">2026-09-16 11:43:16</span></div>
+<div class="kpi"><b>199.887</b><span>linhas de Rust</span><span class="q">2026-09-16 11:43:16</span></div>
+<div class="kpi"><b>8</b><span>crates</span><span class="q">2026-09-16 11:43:16</span></div>
+<div class="kpi feito"><b>0</b><span>dependências externas</span><span class="q">2026-09-16 11:43:16</span></div>
+<div class="kpi"><b>267</b><span>pedidos do dono</span><span class="q">2026-09-16</span></div>
+<div class="kpi feito"><b>244</b><span>pedidos feitos</span><span class="q">2026-09-16</span></div>
+<div class="kpi parcial"><b>13</b><span>pedidos parciais</span><span class="q">2026-09-16</span></div>
+<div class="kpi planejado"><b>10</b><span>pedidos planejados</span><span class="q">2026-09-16</span></div>
+<div class="kpi"><b>143</b><span>guardas no catálogo</span><span class="q">2026-09-16</span></div>
+<div class="kpi"><b>20</b><span>catracas no fonte</span><span class="q">2026-09-16</span></div>
+<div class="kpi"><b class="curto">17/17</b><span>bancadas com resultado</span><span class="q">2026-09-16</span></div>
+<div class="kpi"><b>2.379</b><span><code>#[test]</code> contados no fonte</span><span class="q">2026-09-16</span></div>
+</div>
+<p class="fonte"><b>De onde sai:</b> <code>CAPABILITIES.json</code> (gravado por <code>docs/dossie/numeros-do-projeto.py</code>, que roda <code>cargo test</code>), <code>docs/PENDENCIAS.md</code> pelo <code>ler()</code> de <code>docs/dossie/pagina-dos-pedidos.py</code>, <code>bancada/guardas/catalogo.py</code>, as constantes <code>TETO_*</code> do fonte Rust e a tabela de bancadas de <code>docs/dossie/pagina-dos-testes.py</code>.</p>
+
+<h2 id="s2"><span class="n">02 ·</span>O que o PhxSql é hoje</h2>
+<p>Motor de dados em Rust no modelo de <b>arquivos separados</b> do HFSQL®, com
+199.887 linhas de Rust em 8 crates e
+<b>0</b> dependências externas — só a
+<code>std</code>. JSON, CRC-32, SHA-256, HMAC e PBKDF2 são escritos aqui e
+conferidos contra vetor oficial. Fala um protocolo JSON de
+139 operações na porta de dados, SQL pela camada
+tradutora, ODBC 3.x por uma <code>cdylib</code> de ABI C, e serve o Centro de
+Controle por HTTP.</p>
+<p>O que ele <b>não</b> reivindica: <i>ACID compliant</i> seco. Há transação
+desde o pedido 162 e a cascata do <code>ao_alterar</code> entra inteira no
+conjunto de escrita, mas o isolamento entregue <b>sem pedir</b> é
+<code>READ COMMITTED</code> — a leitura repetível existe pela trava e
+<b>pedida</b>, e <code>SERIALIZABLE</code> não se reivindica sem prova. A folha
+de marca diz <i>ACID compliant</i>; ela não é a fonte da verdade aqui.</p>
+<div class="nota"><b>Esta página não é o dossiê nem o manual.</b> O dossiê
+conta o projeto inteiro; o manual diz como operar; o
+<code>docs/TECNOLOGIAS.md</code> inventaria o que se usou para fazer o produto
+e para fazer o trabalho. Esta é a <b>sétima página</b>: o estado do projeto num
+lugar só, e <b>só com o que sai de gerador</b>.</div>
+<p class="fonte"><b>De onde sai:</b> <code>CAPABILITIES.json</code>. As duas frases sobre ACID e marca saem do <code>CLAUDE.md</code> e de <code>docs/ACID.md</code> — são contrato, não medição, e por isso não trazem número novo.</p>
+
+<h2 id="s3"><span class="n">03 ·</span>Os crates, medidos</h2>
+<p class="sub">Linhas de <code>src/</code> classificadas linha a linha pelo extrator das tecnologias — código, teste, comentário e vazias são separados, não estimados.</p>
+<div class="rolo"><table><thead><tr><th>crate</th><th class="num">arquivos</th><th class="num">código</th><th class="num">teste</th><th class="num">total</th><th>o que é</th></tr></thead><tbody>
+<tr><td class="mono">phxsql-server</td><td class="num">56</td><td class="num">43.301</td><td class="num">26.998</td><td class="num">95.437</td><td>Servidor TCP do PhxSql, porta 5000</td></tr>
+<tr><td class="mono">phxsql-store</td><td class="num">24</td><td class="num">13.148</td><td class="num">3.555</td><td class="num">23.770</td><td>Motor de armazenamento PhxSql: .reg + .ndx + .bin + .memo</td></tr>
+<tr><td class="mono">phxsql-core</td><td class="num">35</td><td class="num">11.628</td><td class="num">4.137</td><td class="num">20.415</td><td>Tipos, esquema, codificacao de chaves e utilitarios do PhxSql</td></tr>
+<tr><td class="mono">phxsql-sql</td><td class="num">10</td><td class="num">6.621</td><td class="num">3.356</td><td class="num">12.683</td><td>Camada SQL do PhxSql: analisador lexico, sintatico e tradutor para as operacoes do protocolo</td></tr>
+<tr><td class="mono">phxsql-odbc</td><td class="num">7</td><td class="num">2.412</td><td class="num">1.086</td><td class="num">4.644</td><td>Driver ODBC 3.x do PhxSql: biblioteca de ABI C sobre o protocolo JSON da porta de dados</td></tr>
+<tr><td class="mono">phxsql-ffi</td><td class="num">7</td><td class="num">1.408</td><td class="num">1.014</td><td class="num">3.360</td><td>PhxSql embutido: o motor como biblioteca, por ABI de C -- para Android, iOS e IoT</td></tr>
+<tr><td class="mono">phxsql-cli</td><td class="num">1</td><td class="num">815</td><td class="num">104</td><td class="num">1.110</td><td>Ferramenta de linha de comando do PhxSql</td></tr>
+<tr><td class="mono">phxsql-cmd</td><td class="num">2</td><td class="num">579</td><td class="num">110</td><td class="num">922</td><td>Console interativo do PhxSql: fala o protocolo JSON com um servidor</td></tr>
+<tr><td class="mono"><b>total</b></td><td class="num"><b>142</b></td><td class="num"><b>79.912</b></td><td class="num"><b>40.360</b></td><td class="num"><b>162.341</b></td><td>proporção teste/código <b>0,51×</b></td></tr>
+</tbody></table></div>
+<div class="barras">
+<div class="barra-linha"><span class="l"><code>phxsql-server</code></span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">95.437</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-store</code></span><span class="t"><i class="b-cheia" style="width:24.91%"></i></span><span class="n">23.770</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-core</code></span><span class="t"><i class="b-cheia" style="width:21.39%"></i></span><span class="n">20.415</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-sql</code></span><span class="t"><i class="b-cheia" style="width:13.29%"></i></span><span class="n">12.683</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-odbc</code></span><span class="t"><i class="b-cheia" style="width:4.87%"></i></span><span class="n">4.644</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-ffi</code></span><span class="t"><i class="b-cheia" style="width:3.52%"></i></span><span class="n">3.360</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-cli</code></span><span class="t"><i class="b-cheia" style="width:1.16%"></i></span><span class="n">1.110</span></div>
+<div class="barra-linha"><span class="l"><code>phxsql-cmd</code></span><span class="t"><i class="b-cheia" style="width:0.97%"></i></span><span class="n">922</span></div>
+</div>
+<div class="nota a"><b>Este total e o da §01 não são o mesmo número, e nenhum está errado.</b> Aqui são as linhas de <code>src/</code>, classificadas linha a linha; lá são <b>todos</b> os <code>.rs</code> de <code>crates/</code> — inclui <code>tests/</code> de integração e os <code>examples/</code> das bancadas. Duas receitas, dois nomes, e cada um dito onde aparece: número sem a receita ao lado é número que o próximo leitor conserta para o lado errado.</div>
+<p class="fonte"><b>De onde sai:</b> o <code>contar_crate()</code> de <code>docs/tecnologias/extrair.py</code> (o mesmo que escreve a tabela do <code>docs/TECNOLOGIAS.md</code>) e a <code>description</code> de cada <code>Cargo.toml</code>. A lista de crates sai da varredura de <code>crates/</code>: crate novo entra sozinho.</p>
+
+<h2 id="s4"><span class="n">04 ·</span>O formato em disco</h2>
+<p class="sub">Cada arquivo do formato se identifica por uma marca no cabeçalho, e a marca está no fonte — esta tabela sai dele, não de uma cópia aqui.</p>
+<div class="rolo"><table><thead><tr><th>constante</th><th>marca</th><th>versões no mesmo arquivo</th><th>fonte</th></tr></thead><tbody>
+<tr><td class="mono">MAGIC_ESQUEMA</td><td class="mono">PSCH</td><td><code>VERSAO_ESQUEMA</code>=9, <code>VERSAO_ESQUEMA_MINIMA</code>=2</td><td class="mono">crates/phxsql-core/src/schema.rs</td></tr>
+<tr><td class="mono">MAGIC</td><td class="mono">PHXTX···</td><td><code>VERSAO</code>=3, <code>VERSAO_LINHA_ANTIGA_SEM_CASCATA</code>=2, <code>VERSAO_SEM_LINHA_ANTIGA</code>=1</td><td class="mono">crates/phxsql-server/src/transacao.rs</td></tr>
+<tr><td class="mono">MAGIC_BIN</td><td class="mono">PHXBIN··</td><td><code>VERSAO</code>=2</td><td class="mono">crates/phxsql-store/src/blob.rs</td></tr>
+<tr><td class="mono">MAGIC_MEMO</td><td class="mono">PHXMEMO·</td><td><code>VERSAO</code>=2</td><td class="mono">crates/phxsql-store/src/blob.rs</td></tr>
+<tr><td class="mono">MAGIC_LIXEIRA</td><td class="mono">PHXTRH··</td><td>—</td><td class="mono">crates/phxsql-store/src/lixeira.rs</td></tr>
+<tr><td class="mono">MAGIC_LOG</td><td class="mono">PHXLOG··</td><td>—</td><td class="mono">crates/phxsql-store/src/log.rs</td></tr>
+<tr><td class="mono">MAGIC_MOTIVO</td><td class="mono">PHXRSN··</td><td>—</td><td class="mono">crates/phxsql-store/src/motivo.rs</td></tr>
+<tr><td class="mono">MAGIC_NDX</td><td class="mono">PHXNDX··</td><td><code>VERSAO</code>=1</td><td class="mono">crates/phxsql-store/src/ndx.rs</td></tr>
+<tr><td class="mono">MAGIC_REG</td><td class="mono">PHXREG··</td><td><code>VERSAO</code>=4, <code>VERSAO_CIFRADO</code>=5</td><td class="mono">crates/phxsql-store/src/reg.rs</td></tr>
+<tr><td class="mono">MAGIC_TRILHA</td><td class="mono">PHXLGP··</td><td>—</td><td class="mono">crates/phxsql-store/src/trilha.rs</td></tr>
+</tbody></table></div>
+<div class="nota"><b>A pétrea do formato:</b> a ordem de digitação é sagrada — o <code>.reg</code> nunca reaproveita slot excluído. E a regra primordial da integridade: <b>nunca se mata o pai que tem filhos</b>; <code>ao_excluir</code> aceita só <code>restringir</code>, e o par Cascata/Cascata não existe por consequência, não por uma segunda regra. A especificação byte a byte está em <code>docs/FORMATO.md</code>.</div>
+<p class="fonte"><b>De onde sai:</b> varredura de <code>crates/*/src/**/*.rs</code> atrás de <code>const MAGIC*: &amp;[u8; N] = b"…"</code> e dos <code>const VERSAO*</code> do mesmo arquivo. O <code>·</code> na marca é o byte <code>\0</code> de preenchimento.</p>
+
+<h2 id="s5"><span class="n">05 ·</span>O caminho de um pedido</h2>
+<p class="sub">Os portões do <code>despachar</code> e o caminho de gravação,
+desenhados <b>a partir do próprio fonte Rust</b> — portão que entrar no código
+entra na figura.</p>
+<figure class="figura"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 804" role="img" aria-label="Fluxograma do caminho de um pedido no PhxSql: uma linha de JSON no soquete atravessa os 10 portoes numerados do despachar, qualquer um deles podendo recusar com codigo e SQLSTATE; passando, a operacao toma a trava de dados e desce para o caminho de gravacao, que confere aridade, chave e unicidade antes de escrever no .reg, depois no .ndx, no .fts e por fim no .log">
+  <style>svg{--ok:#2f7a3e;--log:#b71414;--pend:#8a6a1f;--acento:#c63c0a;--reg:#1f5c93;--ndx:#6a44a8;--bin:#0e7a85;--memo:#37702e;--lgpd:#0f6b4f;--bkp:#4a5d78;color:#4a3f3a;background:#fbf9f7}</style>
+  <defs>
+    <marker id="setaMot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="setaMotN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--log)"/>
+    </marker>
+    <marker id="setaMotO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--ok)"/>
+    </marker>
+  </defs>
+  <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor">
+    <text x="250" y="26" text-anchor="middle" font-size="10" fill="var(--acento)" letter-spacing="1.4">1 &#183; NA PORTA &#8212; O DESPACHAR, QUE É UM SÓ</text>
+    <rect x="60" y="36" width="380" height="34" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <text x="250" y="57" text-anchor="middle" font-size="11">uma linha de JSON no soquete</text>
+    <rect x="60" y="84" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="99" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">0</text>
+    <text x="126" y="99" font-size="10.5">a política</text>
+    <text x="126" y="113" font-size="9" opacity=".7">comando proibido pelo config.json</text>
+    <path d="M440 102 L560 102" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="102" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 120 L250 126" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="126" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="141" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">1</text>
+    <text x="126" y="141" font-size="10.5">o token</text>
+    <text x="126" y="155" font-size="9" opacity=".7">a chave da porta, não a identidade</text>
+    <path d="M440 144 L560 144" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="144" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 162 L250 168" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="168" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="183" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2</text>
+    <text x="126" y="183" font-size="10.5">o login</text>
+    <text x="126" y="197" font-size="9" opacity=".7">quem é você nesta sessão</text>
+    <path d="M440 186 L560 186" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="186" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 204 L250 210" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="210" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="225" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2a</text>
+    <text x="126" y="225" font-size="10.5">o papel do servidor</text>
+    <text x="126" y="239" font-size="9" opacity=".7">réplica não atende escrita</text>
+    <path d="M440 228 L560 228" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="228" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 246 L250 252" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="252" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="267" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2a-bis</text>
+    <text x="126" y="267" font-size="10.5">de ONDE vem a replicação</text>
+    <text x="126" y="281" font-size="9" opacity=".7">o IP da sessão, não o do pedido</text>
+    <path d="M440 270 L560 270" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="270" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 288 L250 294" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="294" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="309" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2b</text>
+    <text x="126" y="309" font-size="10.5">a escrita</text>
+    <text x="126" y="323" font-size="9" opacity=".7">quem decide é o papel VIVO do cluster</text>
+    <path d="M440 312 L560 312" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="312" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 330 L250 336" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="336" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="351" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">2b-bis</text>
+    <text x="126" y="351" font-size="10.5">o `aplicar` respeita somente-leitura</text>
+    <text x="126" y="365" font-size="9" opacity=".7">source/isolado trancados recusam; réplica aplica por dentro</text>
+    <path d="M440 354 L560 354" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="354" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 372 L250 378" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="378" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="393" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">3</text>
+    <text x="126" y="393" font-size="10.5">o poder sobre a base E a tabela</text>
+    <text x="126" y="407" font-size="9" opacity=".7">o campo `tabela` do pedido</text>
+    <path d="M440 396 L560 396" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="396" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 414 L250 420" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="420" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="435" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">4</text>
+    <text x="126" y="435" font-size="10.5">carga de outra ligação?</text>
+    <text x="126" y="449" font-size="9" opacity=".7">a tabela está reservada</text>
+    <path d="M440 438 L560 438" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="438" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M250 456 L250 462" stroke="currentColor" stroke-width="1.2" marker-end="url(#setaMot)"/>
+    <rect x="60" y="462" width="380" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".9"/>
+    <text x="116" y="477" text-anchor="end" font-size="9.5" fill="var(--acento)" font-weight="600">5</text>
+    <text x="126" y="477" font-size="10.5">transação de outra conexão?</text>
+    <text x="126" y="491" font-size="9" opacity=".7">a tabela está segurada</text>
+    <path d="M440 480 L560 480" stroke="var(--log)" stroke-width="1.1" opacity=".65"/>
+    <circle cx="560" cy="480" r="2.4" fill="var(--log)" opacity=".8"/>
+    <path d="M560 102 L560 480" stroke="var(--log)" stroke-width="1.6"/>
+    <path d="M560 273 L742 273" stroke="var(--log)" stroke-width="1.6" marker-end="url(#setaMotN)"/>
+    <text x="572" y="265" font-size="9" fill="var(--log)">qualquer um recusa</text>
+    <rect x="742" y="247" width="200" height="52" rx="4" fill="var(--log)" fill-opacity=".14" stroke="var(--log)" stroke-width="1.5"/>
+    <text x="850" y="267" text-anchor="middle" font-size="10.5" fill="var(--log)" font-weight="600">RECUSA</text>
+    <text x="850" y="282" text-anchor="middle" font-size="9">com código, SQLSTATE e classe</text>
+    <text x="850" y="294" text-anchor="middle" font-size="8.5" opacity=".7">grave demais: bloqueio de IP</text>
+    <path d="M250 498 L250 520" stroke="var(--ok)" stroke-width="1.6" marker-end="url(#setaMotO)"/>
+    <rect x="60" y="522" width="380" height="34" rx="4" fill="var(--ok)" fill-opacity=".10" stroke="var(--ok)" stroke-width="1.5"/>
+    <text x="250" y="543" text-anchor="middle" font-size="10.5">a operação, entre as 139 do catálogo</text>
+    <text x="264" y="514" font-size="9.5" opacity=".7">passou os 10</text>
+    <rect x="60" y="572" width="380" height="46" rx="4" fill="none" stroke="var(--pend)" stroke-width="1.4"/>
+    <text x="250" y="590" text-anchor="middle" font-size="10.5" fill="var(--pend)">a trava de dados</text>
+    <text x="250" y="605" text-anchor="middle" font-size="9" opacity=".75">exclusiva para escrever &#183; o `varrer` tenta a compartilhada</text>
+    <path d="M250 618 L250 638" stroke="currentColor" stroke-width="1.4" marker-end="url(#setaMot)"/>
+    <line x1="20" y1="648" x2="940" y2="648" stroke="currentColor" stroke-width="1" opacity=".22"/>
+    <text x="20" y="664" font-size="10" fill="var(--acento)" letter-spacing="1.4">2 &#183; NO DISCO &#8212; A ORDEM QUE O `inserir` SEGUE</text>
+    <rect x="12" y="678" width="98" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.75"/>
+    <text x="61" y="698" text-anchor="middle" font-size="8.5">confere aridade</text>
+    <path d="M110 704 L115 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="117" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
+    <text x="166" y="698" text-anchor="middle" font-size="8.5">confere a chave</text>
+    <text x="166" y="714" text-anchor="middle" font-size="8.5" fill="var(--ndx)">.ndx da mãe</text>
+    <path d="M215 704 L220 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="222" y="678" width="98" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.75"/>
+    <text x="271" y="698" text-anchor="middle" font-size="8.5">numera a linha</text>
+    <text x="271" y="714" text-anchor="middle" font-size="8.5" fill="currentColor">rownum, seq.</text>
+    <path d="M320 704 L325 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="327" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
+    <text x="376" y="698" text-anchor="middle" font-size="8.5">confere único</text>
+    <text x="376" y="714" text-anchor="middle" font-size="8.5" fill="var(--ndx)">antes de gravar</text>
+    <path d="M425 704 L430 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="432" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--bin)" stroke-width="1.5" opacity="1"/>
+    <text x="481" y="698" text-anchor="middle" font-size="8.5">grava anexos</text>
+    <text x="481" y="714" text-anchor="middle" font-size="8.5" fill="var(--bin)">.bin .memo</text>
+    <path d="M530 704 L535 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="537" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--reg)" stroke-width="1.5" opacity="1"/>
+    <text x="586" y="698" text-anchor="middle" font-size="8.5">grava a linha</text>
+    <text x="586" y="714" text-anchor="middle" font-size="8.5" fill="var(--reg)">.reg</text>
+    <path d="M635 704 L640 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="642" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--ndx)" stroke-width="1.5" opacity="1"/>
+    <text x="691" y="698" text-anchor="middle" font-size="8.5">grava as chaves</text>
+    <text x="691" y="714" text-anchor="middle" font-size="8.5" fill="var(--ndx)">.ndx</text>
+    <path d="M740 704 L745 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="747" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--memo)" stroke-width="1.5" opacity="1"/>
+    <text x="796" y="698" text-anchor="middle" font-size="8.5">indexa o texto</text>
+    <text x="796" y="714" text-anchor="middle" font-size="8.5" fill="var(--memo)">.fts</text>
+    <path d="M845 704 L850 704" stroke="currentColor" stroke-width="1.1" marker-end="url(#setaMot)"/>
+    <rect x="852" y="678" width="98" height="52" rx="4" fill="none" stroke="var(--log)" stroke-width="1.5" opacity="1"/>
+    <text x="901" y="698" text-anchor="middle" font-size="8.5">anota o evento</text>
+    <text x="901" y="714" text-anchor="middle" font-size="8.5" fill="var(--log)">.log</text>
+    <text x="12" y="754" font-size="10.5" opacity=".85"><tspan font-weight="600">A ordem não é arbitrária:</tspan> a unicidade se confere ANTES de qualquer gravação, porque o `.reg` nunca reaproveita slot &#8212; descobrir</text>
+    <text x="12" y="770" font-size="10.5" opacity=".85">a duplicidade depois exigiria desfazer, e o slot desfeito ficaria morto para sempre. O `.fts` fica FORA do desfazer de propósito: índice</text>
+    <text x="12" y="786" font-size="10.5" opacity=".85">atrasado o `reindexar` conserta; linha perdida, não.</text>
+  </g>
+</svg></figure>
+<figcaption class="legenda-fig">O portão de permissão é <b>um só</b>, e o campo
+que ele lê é o furo: três operações escondem tabela dele — <code>juntar</code>,
+<code>unir</code> e <code>pivotar</code> —, e as três pagam conferência
+própria.</figcaption>
+<p class="fonte"><b>De onde sai:</b> <code>docs/dossie/fluxo-do-motor.py</code>, que lê os portões e os passos do fonte e escreve o SVG à mão. A figura entra embutida: a página é um arquivo só.</p>
+
+<h2 id="s6"><span class="n">06 ·</span>O que o motor faz — medido</h2>
+<p class="sub">A mesma pergunta feita a quatro motores <b>vivos na mesma máquina</b>, com sonda de efeito — nunca «aceitou» — e um controle positivo que todos têm de recusar.</p>
+<div class="kpis">
+<div class="kpi"><b>19</b><span>capacidades perguntadas</span><span class="q">2026-09-16</span></div>
+<div class="kpi falta"><b>1</b><span>faltam no PhxSql</span><span class="q">2026-09-16</span></div>
+</div>
+<div class="rolo"><table><thead><tr><th>capacidade</th><th>PhxSql</th><th>a prova que rodou</th></tr></thead><tbody>
+<tr><td>Visão (<code>CREATE VIEW</code>)</td><td><span class="etiqueta e-tem">tem</span></td><td>CREATE VIEW v_c AS SELECT * FROM c e SELECT * FROM v_c devolveram as 1 linha(s) de `c`</td></tr>
+<tr><td>Subconsulta e CTE (<code>WITH … AS</code>)</td><td><span class="etiqueta e-tem">tem</span></td><td>aceitou</td></tr>
+<tr><td>Subconsulta no <code>WHERE</code></td><td><span class="etiqueta e-tem">tem</span></td><td>aceitou</td></tr>
+<tr><td>Função de janela (<code>OVER</code>)</td><td><span class="etiqueta e-tem">tem</span></td><td>aceitou</td></tr>
+<tr><td><code>GROUP BY</code> com agregação</td><td><span class="etiqueta e-tem">tem</span></td><td>aceitou</td></tr>
+<tr><td>Expressão no <code>WHERE</code> (<code>preco * 1.1 &gt; 100</code>)</td><td><span class="etiqueta e-tem">tem</span></td><td>aceitou</td></tr>
+<tr><td>Índice parcial (<code>CREATE INDEX … WHERE</code>)</td><td><span class="etiqueta e-tem">tem</span></td><td>guardou a incluida e nao a filtrada</td></tr>
+<tr><td>Índice por expressão (<code>lower(nome)</code>)</td><td><span class="etiqueta e-tem">tem</span></td><td>achou «ana» e nao «Ana»: a chave e lower(nome)</td></tr>
+<tr><td>Restrição <code>CHECK</code></td><td><span class="etiqueta e-tem">tem</span></td><td>recusou -5 e aceitou 5</td></tr>
+<tr><td><code>DEFAULT</code> de coluna</td><td><span class="etiqueta e-tem">tem</span></td><td>a linha nasceu com 7</td></tr>
+<tr><td>Coluna calculada (<code>GENERATED ALWAYS AS</code>)</td><td><span class="etiqueta e-tem">tem</span></td><td>b saiu 6</td></tr>
+<tr><td>Upsert (<code>ON CONFLICT</code> / <code>ON DUPLICATE KEY</code>)</td><td><span class="etiqueta e-tem">tem</span></td><td>aceitou</td></tr>
+<tr><td>Nível de isolamento acima de <code>READ COMMITTED</code></td><td><span class="etiqueta e-tem">tem</span></td><td>aceitou</td></tr>
+<tr><td>Trava por linha nas transações</td><td><span class="etiqueta e-tem">tem</span></td><td>gestor em crates/phxsql-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:704; pedida em crates/phxsql-server/src/servidor.rs:13489</td></tr>
+<tr><td>TLS no transporte</td><td><span class="etiqueta e-nao">não tem</span></td><td>crates/phxsql-server/src/rest.rs:578 — «TLS aqui: a saida honesta e um proxy que termine TLS na»</td></tr>
+<tr><td>Direito por COLUNA</td><td><span class="etiqueta e-tem">tem</span></td><td>o varrer de ana (salario negado) veio SEM a coluna; o de bea (controle, mesmo cadastro sem `colunas`) veio COM ela</td></tr>
+<tr><td>Recuperação a um ponto no tempo (PITR)</td><td><span class="etiqueta e-tem">tem</span></td><td>`ate`=corte devolveu [(1, &#x27;um alterado&#x27;), (2, &#x27;dois&#x27;)] (a 1 alterada, a 2, nada da 3); reaplicados=2, pulados=1</td></tr>
+<tr><td>Parâmetro em instrução preparada (<code>?</code>)</td><td><span class="etiqueta e-tem">tem</span></td><td>`WHERE id = ?` com `parametros:[1]` devolveu a linha 1; sem `parametros` recusou: [SP000018] esquema invalido: SQL, coluna 1: vieram 0 parametros e o co</td></tr>
+<tr><td>Dizer ONDE duas tabelas diferem</td><td><span class="etiqueta e-tem">tem</span></td><td>`diferencas` nomeou a chave [1] e a coluna `nome`: [{&#x27;chave&#x27;: [1], &#x27;colunas&#x27;: [&#x27;nome&#x27;], &#x27;a&#x27;: {&#x27;id&#x27;: 1, &#x27;nome&#x27;: &#x27;um&#x27;, &#x27;softdeleted&#x27;: False, &#x27;rownum&#x27;: 1}, &#x27;b&#x27;: {&#x27;id&#x27;: 1, &#x27;nome&#x27;: &#x27;dois&#x27;, &#x27;softdeleted&#x27;: False, &#x27;rownum&#x27;: 1}}]</td></tr>
+</tbody></table></div>
+<p class="fonte"><b>Os motores vivos nesta corrida:</b> sqlite 3.45.1 · mysql 8.0.46-0ubuntu0.24.04.3 · postgres 16.13 (Ubuntu 16.13-0ubuntu0.24.04.1) · phxsql phxsqld 0.18.0 (6e717e6579ad-sujo) x86_64-unknown-linux-gnu</p>
+<p class="fonte"><b>De onde sai:</b> <code>bancada/comparativo/resultados.json</code>, medido em <b>2026-09-16T05:17:23</b>. O texto de cada linha é o que a sonda observou, não um veredito escrito à mão.</p>
+
+<h2 id="s7"><span class="n">07 ·</span>Os pedidos do dono</h2>
+<p class="sub">Um por linha do <code>docs/PENDENCIAS.md</code>, lido pelo mesmo <code>ler()</code> da página dos pedidos — duas contagens divergiriam na primeira mudança de legenda.</p>
+<div class="barras">
+<div class="barra-linha"><span class="l">Feito</span><span class="t"><i class="b-feito" style="width:91.39%"></i></span><span class="n">244 · 91,4%</span></div>
+<div class="barra-linha"><span class="l">Parcial</span><span class="t"><i class="b-parcial" style="width:4.87%"></i></span><span class="n">13 · 4,9%</span></div>
+<div class="barra-linha"><span class="l">Planejado</span><span class="t"><i class="b-planejado" style="width:3.75%"></i></span><span class="n">10 · 3,7%</span></div>
+</div>
+<div class="legenda"><span class="feito"><i></i>feito</span><span class="parcial"><i></i>parcial</span><span class="planejado"><i></i>planejado</span></div>
+<h3>Os dez pedidos abertos mais recentes</h3>
+<div class="rolo"><table><thead><tr><th class="num">#</th><th>estado</th><th>o que você pediu</th></tr></thead><tbody>
+<tr><td class="num">267</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong><code>panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados</code> exige que os TRÊS pânicos aconteçam, e sob carga o terceiro não chega</strong></td></tr>
+<tr><td class="num">266</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Uma série histórica versionada — a seção «Antes × Depois» NÃO NASCE na sétima página</strong></td></tr>
+<tr><td class="num">265</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Um gerador de telemetria e logs medidos — a seção NÃO NASCE na sétima página</strong></td></tr>
+<tr><td class="num">264</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Um gerador de riscos e de dívida técnica — hoje as duas seções NÃO NASCEM na sétima página</strong></td></tr>
+<tr><td class="num">263</td><td><span class="etiqueta e-parcial">Parcial</span></td><td><strong>Onze guardas do catálogo estavam QUEBRADAS — o <code>trecho</code> que repõe o defeito não existe mais, então a guarda não pode nem ser tentada</strong></td></tr>
+<tr><td class="num">262</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Gatilho AFTER que grava pela mesma sessão dentro do COMMIT não chega a gravar</strong></td></tr>
+<tr><td class="num">259</td><td><span class="etiqueta e-parcial">Parcial</span></td><td><strong>O excluir do padrão custa 24–28 µs mesmo sem fsync, contra 3,7–4,4 do inserir: 8 <code>write</code> e ~5 <code>openat</code> por exclusão</strong></td></tr>
+<tr><td class="num">255</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Tomada no meio de BULKINSERT ou de <code>reindexar</code> deixa a tabela recusando até um <code>reindexar</code> manual, e o arranque não diz nada — varrer o byte 52 no arranque é decisão de desenho</strong></td></tr>
+<tr><td class="num">252</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>A catraca <code>alcancam-fsync</code> do mapa da trava está em 23 com teto 22 desde 08/09 — a restauração PITR reaplica o diário com a trava na mão, e a catraca só rodava na bateria que ninguém rodou por oito dias</strong></td></tr>
+<tr><td class="num">251</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>P2P: a identidade sem domínio bate no AAD do selo por endereço — decisão do dono e do DBA antes de congelar o PSCH do correio</strong></td></tr>
+</tbody></table></div>
+<p class="fonte"><b>De onde sai:</b> <code>docs/PENDENCIAS.md</code>, pelo <code>ler()</code> de <code>docs/dossie/pagina-dos-pedidos.py</code>. A lista inteira, com o estado de cada um, está em <code>docs/dossie/pedidos.html</code>. Pedido com estado fora da legenda <b>para</b> o leitor com o número da linha — o 150 passou meses invisível por causa disso.</p>
+
+<h2 id="s8"><span class="n">08 ·</span>O que está travado com você</h2>
+<p class="sub">Pedido aberto cujo texto casa um <b>léxico explícito</b> do gerador. A frase que casou aparece: quem lê julga o casamento em vez de acreditar nele.</p>
+<ul class="gates">
+<li><div class="cab"><span class="n">#255</span><span class="etiqueta e-parado">Planejado</span><span class="tt"><strong>Tomada no meio de BULKINSERT ou de <code>reindexar</code> deixa a tabela recusando até um <code>reindexar</code> manual, e o arranque não diz nada — varrer o byte 52 no arranque é decisão de desenho</strong></span></div><p class="tr">… ar — e agora há para onde avisar: a saúde do disco (#249) tem fila e carteiro. Parado por decisão do dono : reconstruir sozinho no arranque muda o tempo de subida; só avisar não muda nada e já cabe no gancho da saúde</p><p class="fonte"><b>Casou:</b> «decisão do dono» · «parado por decisão»</p></li>
+<li><div class="cab"><span class="n">#252</span><span class="etiqueta e-parado">Planejado</span><span class="tt"><strong>A catraca <code>alcancam-fsync</code> do mapa da trava está em 23 com teto 22 desde 08/09 — a restauração PITR reaplica o diário com a trava na mão, e a catraca só rodava na bateria que ninguém rodou por oito dias</strong></span></div><p class="tr">… S.md , com as cinco catracas dos dois mapas catalogadas. A metade (1) continua parada por decisão do dono , e o teto não foi tocado: alcancam-fsync segue 23 com teto 22, vermelha. Os outros dois ERROs da mesma corrida (item 0b, o portã …</p><p class="fonte"><b>Casou:</b> «decisão do dono» · «parada por decisão»</p></li>
+<li><div class="cab"><span class="n">#251</span><span class="etiqueta e-parado">Planejado</span><span class="tt"><strong>P2P: a identidade sem domínio bate no AAD do selo por endereço — decisão do dono e do DBA antes de congelar o PSCH do correio</strong></span></div><p class="tr">P2P: a identidade sem domínio bate no AAD do selo por endereço — decisão do dono e do DBA antes de congelar o PSCH do correio — A pesquisa do transporte P2P ( docs/propostas/p2p-transporte-2026-09.md , papel J  …</p><p class="fonte"><b>Casou:</b> «decisão do dono» · «parado por decisão»</p></li>
+<li><div class="cab"><span class="n">#249</span><span class="etiqueta e-parado">Parcial</span><span class="tt"><strong>Saúde do disco do banco: sonda canário, EROFS, erro de E/S imediato, aviso por e-mail e SMS</strong></span></div><p class="tr">… o, aviso por e-mail e SMS — Entregue em 16/09/2026 (frente D), menos o meio do SMS, que é decisão do dono.  crates/phxsql-server/src/saude_do_disco.rs (957 linhas, 12 testes): sonda canário no diretório de dados (escreve, fsync , lê, a …</p><p class="fonte"><b>Casou:</b> «decisão do dono» · «parado por decisão»</p></li>
+<li><div class="cab"><span class="n">#239</span><span class="etiqueta e-parado">Parcial</span><span class="tt"><strong>Nível de isolamento acima de READ COMMITTED e TLS no transporte ficam para decisão do dono</strong></span></div><p class="tr">Nível de isolamento acima de READ COMMITTED e TLS no transporte ficam para decisão do dono — Duas das dezenove do comparativo continuavam de propósito em NÃO, com o custo em cima da mesa em vez de código ( docs/propostas …</p><p class="fonte"><b>Casou:</b> «decisão do dono»</p></li>
+<li><div class="cab"><span class="n">#197</span><span class="etiqueta e-parado">Parcial</span><span class="tt"><strong>Senha por banco vinda do login: o parecer com os dois defeitos que só aparecem de fora — e a decisão fica com o dono</strong></span></div><p class="tr">… ha por banco vinda do login: o parecer com os dois defeitos que só aparecem de fora — e a decisão fica com o dono — Palavra do dono, 05/09/2026: «uma senha para o SGBD e opcional para a(s) tabela(s)» , «é individual por banco» e «no login […]  …</p><p class="fonte"><b>Casou:</b> «decisão fica com o dono»</p></li>
+<li><div class="cab"><span class="n">#179</span><span class="etiqueta e-parado">Parcial</span><span class="tt"><strong>O teto do MVCC morreu medido — a Sombra continua de pé, por outro motivo</strong></span></div><p class="tr">… aqui a três meses alguém a defende com um ganho de desempenho que ninguém mediu. E fica a decisão do dono sobre a ordem. Cuidado com o atalho: a primeira redação da §11.3 dizia que o RwLock «custa uma linha», e isso é a premissa que es …</p><p class="fonte"><b>Casou:</b> «decisão do dono»</p></li>
+<li><div class="cab"><span class="n">#175</span><span class="etiqueta e-parado">Planejado</span><span class="tt"><strong>Índice da chave: havia uma terceira saída — CRIAR — e nós não a vimos</strong></span></div><p class="tr">… se a resposta for zero o pedido vira documentação e não código. docs/INTEGRIDADE.md §7.5. DECISÃO do dono, 04/09/2026: MEDIR PRIMEIRO — as outras duas saídas (criar o índice da filha como o MySQL® e o MariaDB® fazem, a 2,2 µs/linha; ou …</p><p class="fonte"><b>Casou:</b> «decisão do dono»</p></li>
+</ul>
+<p class="fonte"><b>De onde sai:</b> o <code>achar_gates()</code> de <code>docs/pmo/pagina-do-status-do-projeto.py</code> — o mesmo léxico do painel PMO, importado e não copiado.</p>
+
+<h2 id="s9"><span class="n">09 ·</span>Testes e cobertura por área</h2>
+<p class="sub">Dois números diferentes de propósito: o de cima é o que a suíte <b>executou</b>; o de baixo é quantos <code>#[test]</code> existem no fonte, por área.</p>
+<div class="kpis">
+<div class="kpi feito"><b>2.378</b><span>testes que passaram na suíte</span><span class="q">2026-09-16 11:43:16</span></div>
+<div class="kpi"><b>2.379</b><span><code>#[test]</code> no fonte</span><span class="q">2026-09-16</span></div>
+<div class="kpi"><b>27</b><span>áreas com teste</span><span class="q">2026-09-16</span></div>
+</div>
+<div class="barras">
+<div class="barra-linha"><span class="l">Motor de dados (arquivos, índice, diários)</span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">494 · 20,8%</span></div>
+<div class="barra-linha"><span class="l">Protocolo e portões (despachar)</span><span class="t"><i class="b-cheia" style="width:98.58%"></i></span><span class="n">487 · 20,5%</span></div>
+<div class="barra-linha"><span class="l">Núcleo (JSON, tipos, UUID, zip, paralelo)</span><span class="t"><i class="b-cheia" style="width:47.57%"></i></span><span class="n">235 · 9,9%</span></div>
+<div class="barra-linha"><span class="l">Camada SQL (léxico, sintaxe, tradução)</span><span class="t"><i class="b-cheia" style="width:43.52%"></i></span><span class="n">215 · 9,0%</span></div>
+<div class="barra-linha"><span class="l">Servidor (outros)</span><span class="t"><i class="b-cheia" style="width:34.21%"></i></span><span class="n">169 · 7,1%</span></div>
+<div class="barra-linha"><span class="l">Criptografia e codificação</span><span class="t"><i class="b-cheia" style="width:25.10%"></i></span><span class="n">124 · 5,2%</span></div>
+<div class="barra-linha"><span class="l">Configuração</span><span class="t"><i class="b-cheia" style="width:23.48%"></i></span><span class="n">116 · 4,9%</span></div>
+<div class="barra-linha"><span class="l">DbLink</span><span class="t"><i class="b-cheia" style="width:16.40%"></i></span><span class="n">81 · 3,4%</span></div>
+<div class="barra-linha"><span class="l">Telemetria e profiler</span><span class="t"><i class="b-cheia" style="width:13.16%"></i></span><span class="n">65 · 2,7%</span></div>
+<div class="barra-linha"><span class="l">ODBC</span><span class="t"><i class="b-cheia" style="width:11.74%"></i></span><span class="n">58 · 2,4%</span></div>
+<div class="barra-linha"><span class="l">Gatilhos e procedimentos</span><span class="t"><i class="b-cheia" style="width:9.11%"></i></span><span class="n">45 · 1,9%</span></div>
+<div class="barra-linha"><span class="l">Mensagens (i18n do servidor)</span><span class="t"><i class="b-cheia" style="width:6.48%"></i></span><span class="n">32 · 1,3%</span></div>
+<div class="barra-linha"><span class="l">Usuários e permissões</span><span class="t"><i class="b-cheia" style="width:6.48%"></i></span><span class="n">32 · 1,3%</span></div>
+<div class="barra-linha"><span class="l">Jobs</span><span class="t"><i class="b-cheia" style="width:6.28%"></i></span><span class="n">31 · 1,3%</span></div>
+<div class="barra-linha"><span class="l">Interface web (servidor HTTP)</span><span class="t"><i class="b-cheia" style="width:5.87%"></i></span><span class="n">29 · 1,2%</span></div>
+<div class="barra-linha"><span class="l">Segurança de rede (blacklist, firewall)</span><span class="t"><i class="b-cheia" style="width:4.25%"></i></span><span class="n">21 · 0,9%</span></div>
+<div class="barra-linha"><span class="l">MCP</span><span class="t"><i class="b-cheia" style="width:4.25%"></i></span><span class="n">21 · 0,9%</span></div>
+<div class="barra-linha"><span class="l">Transações</span><span class="t"><i class="b-cheia" style="width:4.05%"></i></span><span class="n">20 · 0,8%</span></div>
+<div class="barra-linha"><span class="l">Replicação</span><span class="t"><i class="b-cheia" style="width:3.85%"></i></span><span class="n">19 · 0,8%</span></div>
+<div class="barra-linha"><span class="l">Console de terminal (phxsqlcmd)</span><span class="t"><i class="b-cheia" style="width:3.64%"></i></span><span class="n">18 · 0,8%</span></div>
+<div class="barra-linha"><span class="l">Exportação</span><span class="t"><i class="b-cheia" style="width:2.63%"></i></span><span class="n">13 · 0,5%</span></div>
+<div class="barra-linha"><span class="l">Junções e união</span><span class="t"><i class="b-cheia" style="width:2.63%"></i></span><span class="n">13 · 0,5%</span></div>
+<div class="barra-linha"><span class="l">Pivot</span><span class="t"><i class="b-cheia" style="width:2.43%"></i></span><span class="n">12 · 0,5%</span></div>
+<div class="barra-linha"><span class="l">Cluster</span><span class="t"><i class="b-cheia" style="width:1.62%"></i></span><span class="n">8 · 0,3%</span></div>
+<div class="barra-linha"><span class="l">Alertas e e-mail</span><span class="t"><i class="b-cheia" style="width:1.62%"></i></span><span class="n">8 · 0,3%</span></div>
+<div class="barra-linha"><span class="l">CLI</span><span class="t"><i class="b-cheia" style="width:1.42%"></i></span><span class="n">7 · 0,3%</span></div>
+<div class="barra-linha"><span class="l">Monitor de máquina</span><span class="t"><i class="b-cheia" style="width:1.21%"></i></span><span class="n">6 · 0,3%</span></div>
+</div>
+<p class="fonte"><b>De onde sai:</b> o <code>medir()</code> de <code>docs/dossie/cobertura-por-area.py</code>, que conta <code>#[test]</code> em <code>crates/*/src</code> e <code>crates/*/tests</code>; e o campo <code>testes</code> do <code>CAPABILITIES.json</code>, que sai de um <code>cargo test</code> de verdade.</p>
+
+<h2 id="s10"><span class="n">10 ·</span>O catálogo de guardas</h2>
+<p class="sub">Cada guarda é um defeito que esta casa já pagou, escrito de um jeito que a máquina consegue <b>repor</b> — e o teste nomeado tem de cair quando ele volta. Prova real nos dois sentidos.</p>
+<div class="kpis">
+<div class="kpi"><b>143</b><span>guardas no catálogo</span><span class="q">2026-09-16</span></div>
+<div class="kpi feito"><b>138</b><span>provada</span><span class="q">2026-09-16 15:25</span></div>
+<div class="kpi falta"><b>1</b><span>quebrada</span><span class="q">2026-09-16 15:25</span></div>
+<div class="kpi parcial"><b>4</b><span>redundante</span><span class="q">2026-09-16 15:25</span></div>
+<div class="kpi falta"><b>0</b><span>guardas VERMELHAS no fonte</span><span class="q">2026-09-16</span></div>
+</div>
+<div class="nota a"><b>Guarda quebrada não é guarda reprovada — é pior.</b> Quebrada não roda, e o catálogo continua a contando como cobertura. O contador acima é o que o catálogo <b>tem</b>; o que ele <b>provou</b> sai da última corrida do provador, que leva cerca de uma hora porque repõe o defeito e roda <code>cargo test</code> para cada entrada.</div>
+<p class="fonte"><b>De onde sai:</b> o <code>guardas()</code> de <code>docs/dossie/pagina-dos-testes.py</code>, que <b>importa</b> <code>bancada/guardas/catalogo.py</code> em vez de contar <code>"id":</code> por regex — contar texto mediria o arquivo, importar mede a lista que a bateria percorre; <code>bancada/guardas/ultima-corrida.json</code>; e a varredura de <code>#[ignore = "VERMELHA …"]</code> no fonte.</p>
+
+<h2 id="s11"><span class="n">11 ·</span>As catracas</h2>
+<p class="sub">Cada <code>TETO_*</code> é um número que <b>só desce</b>. Catraca frouxa não segura nada — e ela nunca sobe, nem quando a régua muda: régua que passa a medir mais <b>aposenta</b> a antiga e faz nascer outra, no número medido do dia.</p>
+<div class="rolo"><table><thead><tr><th>catraca</th><th class="num">teto</th><th>fonte</th></tr></thead><tbody>
+<tr><td class="mono">TETO_ANINHAMENTO</td><td class="num">8</td><td class="mono">crates/phxsql-server/src/servidor.rs</td></tr>
+<tr><td class="mono">TETO_BOTAO_SEM_PROVA</td><td class="num">194</td><td class="mono">crates/phxsql-server/src/conferidor_botoes.rs</td></tr>
+<tr><td class="mono">TETO_COLADO</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor.rs</td></tr>
+<tr><td class="mono">TETO_COLETA_ROWIDS</td><td class="num">1.000.000</td><td class="mono">crates/phxsql-server/src/servidor.rs</td></tr>
+<tr><td class="mono">TETO_DA_CASCATA</td><td class="num">16</td><td class="mono">crates/phxsql-store/src/table.rs</td></tr>
+<tr><td class="mono">TETO_DA_FILA</td><td class="num">32</td><td class="mono">crates/phxsql-server/src/saude_do_disco.rs</td></tr>
+<tr><td class="mono">TETO_DO_CABECALHO</td><td class="num">400</td><td class="mono">crates/phxsql-server/src/profiler.rs</td></tr>
+<tr><td class="mono">TETO_DO_CAMPO</td><td class="num">120</td><td class="mono">crates/phxsql-server/src/profiler.rs</td></tr>
+<tr><td class="mono">TETO_DO_ERRO</td><td class="num">500</td><td class="mono">crates/phxsql-server/src/profiler.rs</td></tr>
+<tr><td class="mono">TETO_DO_LOTE_SERVIDO</td><td class="num">16</td><td class="mono">crates/phxsql-server/src/servidor.rs</td></tr>
+<tr><td class="mono">TETO_DO_REGISTRO</td><td class="num">128</td><td class="mono">crates/phxsql-core/src/fio.rs</td></tr>
+<tr><td class="mono">TETO_FRASE_REPETIDA</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor.rs</td></tr>
+<tr><td class="mono">TETO_FSYNC_POR_FECHO_V2</td><td class="num">8</td><td class="mono">crates/phxsql-store/src/conferidor_fsync.rs</td></tr>
+<tr><td class="mono">TETO_INVENTARIO_DESCASADO</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor_inventario.rs</td></tr>
+<tr><td class="mono">TETO_JUNCAO</td><td class="num">500.000</td><td class="mono">crates/phxsql-server/src/servidor.rs</td></tr>
+<tr><td class="mono">TETO_PIVOT</td><td class="num">5.000.000</td><td class="mono">crates/phxsql-server/src/servidor.rs</td></tr>
+<tr><td class="mono">TETO_ROTULOS_E_CRASE</td><td class="num">1.049</td><td class="mono">crates/phxsql-server/src/conferidor.rs</td></tr>
+<tr><td class="mono">TETO_TABELA_NA_MAO</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor_grades.rs</td></tr>
+<tr><td class="mono">TETO_TEMP_DIR_SOLTO</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor_temporarios.rs</td></tr>
+<tr><td class="mono">TETO_VERMELHA_SEM_PEDIDO</td><td class="num">0</td><td class="mono">crates/phxsql-server/src/conferidor_vermelhas.rs</td></tr>
+</tbody></table></div>
+<p class="fonte"><b>De onde sai:</b> o <code>catracas()</code> de <code>docs/dossie/pagina-dos-testes.py</code>, que varre <code>const TETO*</code> em <code>crates/*/src/**/*.rs</code>. A lista não se digita: catraca nova que ninguém lembrasse de acrescentar sumiria da página, e a página passaria a dizer que há menos trava do que há. O catálogo com o defeito de cada uma está em <code>docs/CATRACAS.md</code>.</p>
+
+<h2 id="s12"><span class="n">12 ·</span>As bancadas, com a data de cada medição</h2>
+<p class="sub">Os <code>resultados.json</code> são de corridas de <b>dias diferentes</b>: juntá-los sem dizer quando publicaria um retrato que nunca existiu. Bancada sem resultado aparece como <b>não medida</b>, com o comando para rodar — nunca some da tabela.</p>
+<div class="kpis">
+<div class="kpi"><b class="curto">17/17</b><span>bancadas com resultado</span><span class="q">2026-09-16</span></div>
+<div class="kpi falta"><b>0</b><span>bancadas <b>não medidas</b></span><span class="q">2026-09-16</span></div>
+</div>
+<div class="rolo"><table><thead><tr><th>bancada e o que ela prova</th><th>medida em</th><th>o que saiu</th></tr></thead><tbody>
+<tr><td class="nome">Comparativo — o que falta aqui, contra quem tem<div class="prova">a mesma pergunta em quatro motores vivos, com um controle positivo que TODOS têm de recusar — e sonda de efeito, nunca «aceitou»</div></td><td class="q mono">2026-09-16T05:17:23</td><td class="v"><b>capacidades perguntadas</b> 19 · <b>faltam ou pela metade aqui</b> 1</td></tr>
+<tr><td class="nome">Cobertura da tela sobre o protocolo<div class="prova">as duas listas saem do código — as operações do array OPERACOES e os arquivos da tela dos include_str! do http.rs</div></td><td class="q mono">2026-09-09T06:26:06</td><td class="v"><b>operações no catálogo</b> 136 · <b>alcançadas pela tela</b> 109</td></tr>
+<tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-11 22:20 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 4,3 s · <b>escrita aceita em</b> 4,3 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
+<tr><td class="nome">Replicação — quatro servidores<div class="prova">master e três espelhos no ar, com retrato SHA-256 de cada linha nos quatro</div></td><td class="q mono">2026-09-07</td><td class="v"><b>master</b> 33.883 linhas/s · <b>réplica aplica</b> 37.311 eventos/s · <b>alcance</b> 2,7 s · <b>os quatro iguais no fim</b> sim</td></tr>
+<tr><td class="nome">Replicação — credencial recusada não bloqueia o IP<div class="prova">um master e uma réplica com o hash errado, pelo soquete: a réplica tenta UMA vez e estaciona, o blacklist.json fica vazio e o operador do mesmo IP entra — com dois controles na mesma corrida: cinco logins errados da própria bancada continuam bloqueando o master, e a origem fora do ar continua sendo procurada com recuo crescente</div></td><td class="q mono">2026-09-09 06:59:41</td><td class="v"><b>tentativas da réplica</b> 1 · <b>bloqueou o IP</b> NÃO · <b>operador derrubado</b> NÃO · <b>recuo de rede</b> [1.0, 2.0, 4.0, 8.0] s</td></tr>
+<tr><td class="nome">Transações — atomicidade pelo soquete<div class="prova">SIGKILL no meio de um COMMIT de 3.000 linhas, e o banco reaberto depois — a exigência não é «as 3.000 estão lá», é NUNCA METADE, com o relatório dizendo qual dos dois. E o portão se prova apagando a marca .tx: sem ela o banco volta pela metade, que é o preço da garantia aparecendo</div></td><td class="q mono">2026-09-07 09:06</td><td class="v"><b>conferências pelo soquete</b> 36 · <b>falhas</b> 0 · <b>linhas depois da queda</b> 3.001 · <b>ficou pela metade</b> NÃO</td></tr>
+<tr><td class="nome">PITR — restaurar a um instante, pelo soquete<div class="prova">a linha 3 é gravada DEPOIS do corte e tem de NÃO aparecer no restaurado — e o mesmo backup restaurado sem ate volta com uma linha só, que é o controle positivo na mesma corrida. Sem ele, uma restauração que devolvesse duas linhas por acaso passaria</div></td><td class="q mono">2026-09-08 17:11</td><td class="v"><b>conferências pelo soquete</b> 22 · <b>falhas</b> 0 · <b>eventos reaplicados</b> 2 · <b>pulados depois do corte</b> 1</td></tr>
+<tr><td class="nome">Quórum — o que custaria esperar as réplicas<div class="prova">esta não prova recurso: mede o PREÇO de uma decisão que ainda não foi tomada. Separa o que a bancada de replicação somava num número só — os 826 ms publicados lá são 99,9% sono do laço, e o transporte custa 0,475 ms. Tudo em localhost: é o PISO, e a rede real custa mais</div></td><td class="q mono">2026-09-07 16:37</td><td class="v"><b>gravar no master</b> 0,206 ms · <b>levar a uma réplica</b> 0,47 ms · <b>commit esperando 2 de 3</b> 3,08 × · <b>commit esperando 3 de 3</b> 3,56 ×</td></tr>
+<tr><td class="nome">ACID — as quatro letras<div class="prova">cada afirmação com o controle da mesma corrida; o nível de isolamento sai medido, não citado</div></td><td class="q mono">2026-09-05 05:49 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>versao</b> phxsqld 0.18.0 (41e82efa97c8) x86_64-unknown-linux-gnu · <b>rapido</b> NÃO</td></tr>
+<tr><td class="nome">Durabilidade — o fecho da janela<div class="prova">os `fsync` contados por `strace` contra o `phxsqld` de pé</div></td><td class="q mono">2026-09-05 08:18 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>defeito_confirmado_a</b> NÃO</td></tr>
+<tr><td class="nome">Carga — uma a uma contra o lote<div class="prova">o custo da viagem de rede, separado do custo de gravar</div></td><td class="q mono">2026-08-29</td><td class="v"><b>quando</b> 2026-08-29 · <b>versao</b> 0.17.0 · <b>linhas</b> 20.000 · <b>por_lote</b> 5.000</td></tr>
+<tr><td class="nome">Os três motores a um milhão<div class="prova">PhxSql, MySQL® e SQLite® intercalados na MESMA rodada, porque medidas de dias diferentes carregam o ambiente junto</div></td><td class="q mono">2026-09-08 02:49:47</td><td class="v"><b>linhas</b> 1.000.000 · <b>operacoes_por_fase_pontual</b> 20.000 · <b>rodadas</b> 3 · <b>medido_em</b> 2026-09-08 02:49:47</td></tr>
+<tr><td class="nome">Índice de texto — o `.fts` contra a varredura<div class="prova">as duas faixas respondem a MESMA pergunta e devolvem o MESMO conjunto de rowids -- o medidor aborta se não baterem, e aborta se nenhuma busca achar linha</div></td><td class="q mono">2026-09-07T01:09:13</td><td class="v"><b>índice sobre varredura</b> 31399,1 (21164,6–33443,8) × · <b>busca pelo índice</b> 137,73 (129,06–212,67) µs · <b>preço na escrita</b> 5,67 (5,38–6,06) × · <b>linhas achadas (conjuntos idênticos)</b> 9.339</td></tr>
+<tr><td class="nome">Bateria única — o motor por dentro<div class="prova">os seis itens do dono pelo soquete, mais os itens zero: as catracas dos dois mapas e o portão «está medindo?»</div></td><td class="q mono">2026-09-16</td><td class="v"><b>passou inteira</b> NÃO · <b>passos que falharam</b> ['as tres catracas do mapa da trava seguram'] · <b>corrida de</b> 2026-09-16</td></tr>
+<tr><td class="nome">Concorrência — enxurrada de 500 conexões na web, com teto<div class="prova">500 conexões HTTP contra um phxsqld próprio, segurando o cabeçalho 3 s; Threads: e VmRSS: lidos do /proc a cada 25 ms; o bloco «depois» é o do teto ligado (pedido 248)</div></td><td class="q mono">2026-09-16T06:16:14</td><td class="v"><b>teto da web</b> 64 threads · <b>pico de threads com teto</b> 68 · <b>pico antes do teto</b> 504 · <b>503 com Retry-After</b> 436</td></tr>
+<tr><td class="nome">Chutar a tomada — SIGKILL na transação aberta e no BULKINSERT<div class="prova">um phxsqld próprio morto com SIGKILL em varreduras de atraso (transação aberta com SAVEPOINT, BULKINSERT, inserir_lote, reindexar, transação dentro da reserva) e reaberto; byte 52 do .ndx lido antes de reabrir; fsync antes do «ok» por strace</div></td><td class="q mono">2026-09-16T07:36:04</td><td class="v"><b>conferências</b> 22 · <b>falhas</b> 0 · <b>pontos de queda</b> 7 · <b>quedas de verdade</b> 408</td></tr>
+<tr><td class="nome">Colmeia × SQLite × padrão — as quatro operações de ponto<div class="prova">ler, inserir, atualizar e excluir de ponto nos três lados, mesma máquina e mesmos dados por construção, dois regimes de durabilidade casados, vencedor só fora do ruído; o que cada lado faz por operação está dito ao lado do número</div></td><td class="q mono">2026-09-16 08:09</td><td class="v"><b>combinações</b> 24 · <b>colmeia ganha</b> 21 · <b>padrão ganha</b> 2 · <b>dentro do ruído</b> 1</td></tr>
+</tbody></table></div>
+<div class="nota"><b>Bancada compara trabalho igual, não só pergunta igual.</b> Os dois erros já cometidos aqui saíram do mesmo lugar e apontaram para lados opostos: um <code>WHERE id IN (…)</code> contra vinte mil buscas separadas (41× a favor do outro motor), e um <code>COUNT(*)+SUM</code> sobre 1.250.000 linhas contra a leitura de 20.000 (5× a favor do nosso). Nenhum dos dois aparecia no número.</div>
+<p class="fonte"><b>De onde sai:</b> a tabela <code>BANCADAS</code> e o <code>linha_bancada()</code> de <code>docs/dossie/pagina-dos-testes.py</code>, importados. A data sai do próprio resultado quando ele a traz; quando sai do <code>mtime</code>, a linha <b>diz</b> <span class="mtime">(mtime)</span> — <code>mtime</code> é a hora em que alguém gravou, não a hora em que se mediu.</p>
+
+<h2 id="s13"><span class="n">13 ·</span>Desempenho — os quatro motores a um milhão</h2>
+<p class="sub">Os quatro na <b>mesma rodada</b>, intercalados. Cada barra traz a faixa min–max, e o vencedor só é contornado quando as faixas <b>não se cruzam</b> — esta casa já declarou vencedor dentro do ruído uma vez.</p>
+<figure class="g"><figcaption><b>Inserir — 1.000.000 linhas</b> <span class="un">segundos (menor é melhor)</span><div class="sub">Os quatro na <b>mesma rodada</b>, intercalados: medidas de dias diferentes carregam o ambiente junto. E a família MySQL recebe o trabalho como <b>texto</b> — o MySQL® por soquete, o MariaDB® por TCP, cujo piso é maior; os dois pisos são medidos à parte.</div><span class="dica">a barra é a mediana; o traço é min–max. Contorno = vencedor, e ele só aparece quando as faixas não se cruzam.</span></figcaption><svg viewBox="0 0 640 178" role="img" aria-label="Inserir — 1.000.000 linhas em segundos (menor é melhor)"><text x="158" y="30" text-anchor="end" class="rot">PhxSql</text><rect x="168" y="10" width="267.2" height="30" rx="3" fill="var(--c1)"/><line x1="434.6" y1="25.0" x2="436.8" y2="25.0" class="faixa"/><line x1="434.6" y1="16" x2="434.6" y2="34" class="faixa"/><line x1="436.8" y1="16" x2="436.8" y2="34" class="faixa"/><text x="445.8" y="30" class="val">7,87</text><text x="158" y="72" text-anchor="end" class="rot">MySQL®</text><rect x="168" y="52" width="359.8" height="30" rx="3" fill="var(--c2)"/><line x1="513.6" y1="67.0" x2="530.0" y2="67.0" class="faixa"/><line x1="513.6" y1="58" x2="513.6" y2="76" class="faixa"/><line x1="530.0" y1="58" x2="530.0" y2="76" class="faixa"/><text x="539.0" y="72" class="val">10,60</text><text x="158" y="114" text-anchor="end" class="rot">SQLite®</text><rect x="168" y="94" width="71.3" height="30" rx="3" fill="var(--c3)" class="campeao"/><line x1="238.5" y1="109.0" x2="241.3" y2="109.0" class="faixa"/><line x1="238.5" y1="100" x2="238.5" y2="118" class="faixa"/><line x1="241.3" y1="100" x2="241.3" y2="118" class="faixa"/><text x="250.3" y="114" class="val">2,10</text><text x="158" y="156" text-anchor="end" class="rot">MariaDB®</text><rect x="168" y="136" width="227.1" height="30" rx="3" fill="var(--c4)"/><line x1="394.2" y1="151.0" x2="401.6" y2="151.0" class="faixa"/><line x1="394.2" y1="142" x2="394.2" y2="160" class="faixa"/><line x1="401.6" y1="142" x2="401.6" y2="160" class="faixa"/><text x="410.6" y="156" class="val">6,69</text></svg></figure>
+<figure class="g"><figcaption><b>Buscar — 20.000 linhas</b> <span class="un">segundos (menor é melhor)</span><div class="sub">Os quatro na <b>mesma rodada</b>, intercalados: medidas de dias diferentes carregam o ambiente junto. E a família MySQL recebe o trabalho como <b>texto</b> — o MySQL® por soquete, o MariaDB® por TCP, cujo piso é maior; os dois pisos são medidos à parte.</div><span class="dica">a barra é a mediana; o traço é min–max. Contorno = vencedor, e ele só aparece quando as faixas não se cruzam.</span></figcaption><svg viewBox="0 0 640 178" role="img" aria-label="Buscar — 20.000 linhas em segundos (menor é melhor)"><text x="158" y="30" text-anchor="end" class="rot">PhxSql</text><rect x="168" y="10" width="21.5" height="30" rx="3" fill="var(--c1)"/><line x1="188.6" y1="25.0" x2="189.6" y2="25.0" class="faixa"/><line x1="188.6" y1="16" x2="188.6" y2="34" class="faixa"/><line x1="189.6" y1="16" x2="189.6" y2="34" class="faixa"/><text x="198.6" y="30" class="val">0,16</text><text x="158" y="72" text-anchor="end" class="rot">MySQL®</text><rect x="168" y="52" width="204.5" height="30" rx="3" fill="var(--c2)"/><line x1="369.5" y1="67.0" x2="377.2" y2="67.0" class="faixa"/><line x1="369.5" y1="58" x2="369.5" y2="76" class="faixa"/><line x1="377.2" y1="58" x2="377.2" y2="76" class="faixa"/><text x="386.2" y="72" class="val">1,51</text><text x="158" y="114" text-anchor="end" class="rot">SQLite®</text><rect x="168" y="94" width="20.3" height="30" rx="3" fill="var(--c3)"/><line x1="187.9" y1="109.0" x2="188.8" y2="109.0" class="faixa"/><line x1="187.9" y1="100" x2="187.9" y2="118" class="faixa"/><line x1="188.8" y1="100" x2="188.8" y2="118" class="faixa"/><text x="197.8" y="114" class="val">0,15</text><text x="158" y="156" text-anchor="end" class="rot">MariaDB®</text><rect x="168" y="136" width="346.6" height="30" rx="3" fill="var(--c4)"/><line x1="502.8" y1="151.0" x2="530.0" y2="151.0" class="faixa"/><line x1="502.8" y1="142" x2="502.8" y2="160" class="faixa"/><line x1="530.0" y1="142" x2="530.0" y2="160" class="faixa"/><text x="539.0" y="156" class="val">2,56</text></svg></figure>
+<figure class="g"><figcaption><b>Atualizar — 20.000 linhas</b> <span class="un">segundos (menor é melhor)</span><div class="sub">Os quatro na <b>mesma rodada</b>, intercalados: medidas de dias diferentes carregam o ambiente junto. E a família MySQL recebe o trabalho como <b>texto</b> — o MySQL® por soquete, o MariaDB® por TCP, cujo piso é maior; os dois pisos são medidos à parte.</div><span class="dica">a barra é a mediana; o traço é min–max. Contorno = vencedor, e ele só aparece quando as faixas não se cruzam.</span></figcaption><svg viewBox="0 0 640 178" role="img" aria-label="Atualizar — 20.000 linhas em segundos (menor é melhor)"><text x="158" y="30" text-anchor="end" class="rot">PhxSql</text><rect x="168" y="10" width="31.6" height="30" rx="3" fill="var(--c1)" class="campeao"/><line x1="197.9" y1="25.0" x2="205.1" y2="25.0" class="faixa"/><line x1="197.9" y1="16" x2="197.9" y2="34" class="faixa"/><line x1="205.1" y1="16" x2="205.1" y2="34" class="faixa"/><text x="214.1" y="30" class="val">0,26</text><text x="158" y="72" text-anchor="end" class="rot">MySQL®</text><rect x="168" y="52" width="267.7" height="30" rx="3" fill="var(--c2)"/><line x1="431.5" y1="67.0" x2="444.4" y2="67.0" class="faixa"/><line x1="431.5" y1="58" x2="431.5" y2="76" class="faixa"/><line x1="444.4" y1="58" x2="444.4" y2="76" class="faixa"/><text x="453.4" y="72" class="val">2,16</text><text x="158" y="114" text-anchor="end" class="rot">SQLite®</text><rect x="168" y="94" width="63.2" height="30" rx="3" fill="var(--c3)"/><line x1="230.5" y1="109.0" x2="236.0" y2="109.0" class="faixa"/><line x1="230.5" y1="100" x2="230.5" y2="118" class="faixa"/><line x1="236.0" y1="100" x2="236.0" y2="118" class="faixa"/><text x="245.0" y="114" class="val">0,51</text><text x="158" y="156" text-anchor="end" class="rot">MariaDB®</text><rect x="168" y="136" width="345.7" height="30" rx="3" fill="var(--c4)"/><line x1="489.8" y1="151.0" x2="530.0" y2="151.0" class="faixa"/><line x1="489.8" y1="142" x2="489.8" y2="160" class="faixa"/><line x1="530.0" y1="142" x2="530.0" y2="160" class="faixa"/><text x="539.0" y="156" class="val">2,79</text></svg></figure>
+<figure class="g"><figcaption><b>Excluir — 20.000 linhas</b> <span class="un">segundos (menor é melhor)</span><div class="sub">Os quatro na <b>mesma rodada</b>, intercalados: medidas de dias diferentes carregam o ambiente junto. E a família MySQL recebe o trabalho como <b>texto</b> — o MySQL® por soquete, o MariaDB® por TCP, cujo piso é maior; os dois pisos são medidos à parte.</div><span class="dica">a barra é a mediana; o traço é min–max. Contorno = vencedor, e ele só aparece quando as faixas não se cruzam.</span></figcaption><svg viewBox="0 0 640 178" role="img" aria-label="Excluir — 20.000 linhas em segundos (menor é melhor)"><text x="158" y="30" text-anchor="end" class="rot">PhxSql</text><rect x="168" y="10" width="173.8" height="30" rx="3" fill="var(--c1)"/><line x1="339.0" y1="25.0" x2="342.3" y2="25.0" class="faixa"/><line x1="339.0" y1="16" x2="339.0" y2="34" class="faixa"/><line x1="342.3" y1="16" x2="342.3" y2="34" class="faixa"/><text x="351.3" y="30" class="val">1,25</text><text x="158" y="72" text-anchor="end" class="rot">MySQL®</text><rect x="168" y="52" width="312.0" height="30" rx="3" fill="var(--c2)"/><line x1="479.5" y1="67.0" x2="503.4" y2="67.0" class="faixa"/><line x1="479.5" y1="58" x2="479.5" y2="76" class="faixa"/><line x1="503.4" y1="58" x2="503.4" y2="76" class="faixa"/><text x="512.4" y="72" class="val">2,24</text><text x="158" y="114" text-anchor="end" class="rot">SQLite®</text><rect x="168" y="94" width="57.6" height="30" rx="3" fill="var(--c3)" class="campeao"/><line x1="224.6" y1="109.0" x2="227.0" y2="109.0" class="faixa"/><line x1="224.6" y1="100" x2="224.6" y2="118" class="faixa"/><line x1="227.0" y1="100" x2="227.0" y2="118" class="faixa"/><text x="236.0" y="114" class="val">0,41</text><text x="158" y="156" text-anchor="end" class="rot">MariaDB®</text><rect x="168" y="136" width="343.7" height="30" rx="3" fill="var(--c4)"/><line x1="511.0" y1="151.0" x2="530.0" y2="151.0" class="faixa"/><line x1="511.0" y1="142" x2="511.0" y2="160" class="faixa"/><line x1="530.0" y1="142" x2="530.0" y2="160" class="faixa"/><text x="539.0" y="156" class="val">2,47</text></svg></figure>
+<p class="fonte"><b>De onde sai:</b> o <code>g_tres_motores()</code> de <code>docs/dossie/graficos-dos-testes.py</code>, que lê <code>bancada/comparacao/um-milhao.json</code> — medido em <b>2026-09-08 02:49:47</b>. O SVG é escrito à mão, sem biblioteca de gráfico, e a regra da faixa é a do pedido 155.</p>
+
+<h2 id="s14"><span class="n">14 ·</span>Replicação, medida com quatro servidores</h2>
+<p class="sub">Um dos dois pilares que a folha de marca promete — e este <b>virou verdade</b>: quatro processos <code>phxsqld</code>, retrato SHA-256 de cada linha conferido no fim.</p>
+<div class="kpis">
+<div class="kpi"><b>33.883</b><span>linhas/s no master</span><span class="q">2026-09-07</span></div>
+<div class="kpi"><b>37.311</b><span>eventos/s na réplica</span><span class="q">2026-09-07</span></div>
+<div class="kpi"><b class="curto">2,7 s</b><span>para a réplica alcançar</span><span class="q">2026-09-07</span></div>
+<div class="kpi"><b>105.001</b><span>linhas replicadas</span><span class="q">2026-09-07</span></div>
+<div class="kpi feito"><b class="curto">sim</b><span>os dois lados iguais no fim</span><span class="q">2026-09-07</span></div>
+<div class="kpi"><b class="curto">1.679 → 1.827 ms</b><span>um salto → dois saltos</span><span class="q">2026-09-07</span></div>
+<div class="kpi"><b class="curto">4,3 s</b><span>promoção automática no cluster</span><span class="q">2026-09-11 22:20</span></div>
+</div>
+<p class="fonte"><b>Topologia da corrida:</b> <code>master -&gt; slave01, slave02, slave03</code> — quatro processos phxsqld em 127.0.0.1, no mesmo container</p>
+<div class="rolo"><table><thead><tr><th>o que se fez no master</th><th class="num">atraso até a réplica (ms)</th></tr></thead><tbody>
+<tr><td>1 insercao</td><td class="num">2.012</td></tr>
+<tr><td>1.000 insercoes em lote</td><td class="num">1.134</td></tr>
+<tr><td>1 alteracao</td><td class="num">1.527</td></tr>
+<tr><td>1 exclusao suave</td><td class="num">1.523</td></tr>
+<tr><td>1 restauracao</td><td class="num">1.368</td></tr>
+<tr><td>1 exclusao fisica</td><td class="num">1.463</td></tr>
+<tr><td>1 linha com memo de 200 KB</td><td class="num">1.557</td></tr>
+</tbody></table></div>
+<div class="nota a"><b>O que este atraso inclui:</b> o sono do laco da replica (2 s nesta bancada) MAIS o transporte. Nao e o custo de levar o dado: esse esta medido separado em bancada/quorum/resultados.json (levar_ms)</div>
+<p class="fonte"><b>De onde sai:</b> <code>bancada/replicacao/resultados.json</code> e <code>bancada/cluster/resultados.json</code>, cada um com a data da própria corrida. O desenho está em <code>docs/REPLICACAO.md</code>.</p>
+
+<h2 id="s15"><span class="n">15 ·</span>A fábrica de idiomas</h2>
+<p class="sub">Texto de tela entra pela fábrica — é pétreo. A máquina existe desde a 0.17.0; o que faltava era o laço que <b>conta</b>, e ele é uma catraca que só desce.</p>
+<div class="kpis">
+<div class="kpi feito"><b>2.042</b><span>textos pela fábrica</span><span class="q">2026-09-16 11:43:16</span></div>
+<div class="kpi falta"><b>1.049</b><span>ainda cravados no fonte</span><span class="q">2026-09-16 11:43:16</span></div>
+<div class="kpi"><b>1.049</b><span>o teto da catraca</span><span class="q">2026-09-16 11:43:16</span></div>
+<div class="kpi"><b class="curto">66%</b><span>da tela pela fábrica</span><span class="q">2026-09-16 11:43:16</span></div>
+</div>
+<div class="barras">
+<div class="barra-linha"><span class="l">pela fábrica</span><span class="t"><i class="b-feito" style="width:66.06%"></i></span><span class="n">2.042</span></div>
+<div class="barra-linha"><span class="l">cravado no fonte</span><span class="t"><i class="b-parcial" style="width:33.94%"></i></span><span class="n">1.049</span></div>
+</div>
+<div class="nota"><b>Três armadilhas já pagas:</b> rótulo se traduz, dado nunca (o conferidor apaga tudo o que a página <b>interpola</b> antes de varrer); texto se resolve por <b>chave</b>, nunca por comparação da frase; e chave morta é pior que chave faltando, porque o tradutor a vê, traduz nos seis idiomas e nada muda na tela.</div>
+<p class="fonte"><b>De onde sai:</b> o campo <code>idiomas</code> do <code>CAPABILITIES.json</code>, que sai do conferidor <code>textos-fora-da-fabrica</code> rodado por <code>docs/dossie/numeros-do-projeto.py</code>. O procedimento de acrescentar um texto está em <code>docs/MENSAGENS.md</code>.</p>
+
+<h2 id="s16"><span class="n">16 ·</span>Zero dependências externas</h2>
+<p class="sub">Não é ascetismo: é o que fez a compilação cruzada para Windows
+funcionar de primeira e o que permite <code>cargo build --offline</code>.</p>
+<div class="kpis">
+<div class="kpi feito"><b>0</b><span>pacotes de terceiros no <code>Cargo.lock</code></span><span class="q">2026-09-16 11:43:16</span></div>
+<div class="kpi"><b>8</b><span>crates, todos deste projeto</span><span class="q">2026-09-16 11:43:16</span></div>
+</div>
+<p>JSON, CRC-32, SHA-256, HMAC e PBKDF2 são escritos aqui e conferidos contra
+<b>vetor oficial</b> — FIPS 180-4, RFC 4231 e os vetores de PBKDF2. O método é
+sempre o mesmo: ler a norma, entender, reescrever, provar contra vetor. Não é
+refatoração de implementação alheia, e a diferença não aparece no código
+pronto: aparece na pergunta «onde esta lógica <b>diverge</b> da de origem, e
+qual restrição nossa causou a divergência?».</p>
+<div class="nota c"><b>Onde a convergência dos motores maduros bate na
+pétrea.</b> PostgreSQL®, MariaDB® e MySQL® cifram a conexão; por «três motores
+convergindo é aceite automático» seríamos obrigados a fazer igual. Mas cifrar
+pede biblioteca, e zero dependências é pétrea: o <b>comportamento</b> entra
+como meta, o <b>meio</b> não passa sem o dono. O choque aparece — não se aceita
+calado nem se ignora calado.</div>
+<p class="fonte"><b>De onde sai:</b> o <code>dependencias_externas()</code> de <code>docs/dossie/numeros-do-projeto.py</code>, que conta <code>[[package]]</code> no <code>Cargo.lock</code> e subtrai os crates deste projeto. Se der outra coisa que zero, a página diz isso em vez de publicar o zero por hábito.</p>
+
+<h2 id="s17"><span class="n">17 ·</span>Documentação</h2>
+<p class="sub">Esta seção <b>nasceu</b> porque o gerador existe: a lista dos documentos contados sai do código, não de uma cópia aqui.</p>
+<div class="kpis">
+<div class="kpi"><b>95</b><span>documentos contados</span><span class="q">2026-09-16</span></div>
+<div class="kpi"><b>65.393</b><span>linhas de documentação</span><span class="q">2026-09-16</span></div>
+<div class="kpi"><b>206</b><span>arquivos de cognição</span><span class="q">2026-09-16</span></div>
+<div class="kpi"><b>7</b><span>páginas geradas e publicadas</span><span class="q">2026-09-16</span></div>
+<div class="kpi"><b>18</b><span>geradores no portão</span><span class="q">2026-09-16</span></div>
+</div>
+<h3>As páginas que esta casa gera</h3>
+<div class="rolo"><table><thead><tr><th>página</th><th class="num">KiB</th><th>quem a escreve</th></tr></thead><tbody>
+<tr><td class="mono">docs/dossie/dossie-phxsql-0.18.html</td><td class="num">2.638</td><td class="mono">docs/dossie/numeros-da-bancada.py</td></tr>
+<tr><td class="mono">docs/dossie/graficos.html</td><td class="num">28</td><td class="mono">docs/dossie/graficos-dos-testes.py</td></tr>
+<tr><td class="mono">docs/dossie/pedidos.html</td><td class="num">526</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
+<tr><td class="mono">docs/pmo/status-do-projeto.html</td><td class="num">47</td><td class="mono">docs/pmo/pagina-do-status-do-projeto.py</td></tr>
+<tr><td class="mono">docs/status/status-do-projeto.html</td><td class="num"><span class="mtime">— (esta página)</span></td><td class="mono">docs/status/pagina-do-status-do-projeto.py</td></tr>
+<tr><td class="mono">docs/dossie/status.html</td><td class="num">25</td><td class="mono">docs/dossie/pagina-de-status.py</td></tr>
+<tr><td class="mono">docs/dossie/testes.html</td><td class="num">21</td><td class="mono">docs/dossie/pagina-dos-testes.py</td></tr>
+</tbody></table></div>
+<p class="fonte">O tamanho <b>desta</b> página não aparece de propósito: escrevê-lo muda o tamanho dela, e o número seguinte já seria outro — número que não chega a ponto fixo não é número medido, é número que persegue a própria cauda.</p>
+<h3>Os dez maiores documentos</h3>
+<div class="barras">
+<div class="barra-linha"><span class="l"><code>CHANGELOG.md</code></span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">5.034</span></div>
+<div class="barra-linha"><span class="l"><code>MANUAL.txt</code></span><span class="t"><i class="b-cheia" style="width:75.67%"></i></span><span class="n">3.809</span></div>
+<div class="barra-linha"><span class="l"><code>DESEMPENHO.md</code></span><span class="t"><i class="b-cheia" style="width:67.62%"></i></span><span class="n">3.404</span></div>
+<div class="barra-linha"><span class="l"><code>SEGURANCA.md</code></span><span class="t"><i class="b-cheia" style="width:61.01%"></i></span><span class="n">3.071</span></div>
+<div class="barra-linha"><span class="l"><code>CONCORRENCIA.md</code></span><span class="t"><i class="b-cheia" style="width:51.83%"></i></span><span class="n">2.609</span></div>
+<div class="barra-linha"><span class="l"><code>FORMATO.md</code></span><span class="t"><i class="b-cheia" style="width:45.83%"></i></span><span class="n">2.307</span></div>
+<div class="barra-linha"><span class="l"><code>TESTES.md</code></span><span class="t"><i class="b-cheia" style="width:37.90%"></i></span><span class="n">1.908</span></div>
+<div class="barra-linha"><span class="l"><code>REPLICACAO.md</code></span><span class="t"><i class="b-cheia" style="width:35.28%"></i></span><span class="n">1.776</span></div>
+<div class="barra-linha"><span class="l"><code>PESQUISA-MVCC-E-FORMATO.md</code></span><span class="t"><i class="b-cheia" style="width:30.75%"></i></span><span class="n">1.548</span></div>
+<div class="barra-linha"><span class="l"><code>CASSANDRA.md</code></span><span class="t"><i class="b-cheia" style="width:26.96%"></i></span><span class="n">1.357</span></div>
+</div>
+<p class="fonte"><b>De onde sai:</b> o <code>arquivos_de_doc()</code> e o <code>linhas_de_doc()</code> de <code>docs/dossie/numeros-do-projeto.py</code> — a mesma receita que alimenta o <code>CAPABILITIES.json</code>, e por isso os dois números não podem divergir. As páginas saem dos <b>alvos</b> do <code>PLANO</code> de <code>docs/dossie/portao-dos-geradores.py</code>: página nova entra na conta sozinha no dia em que o gerador dela entrar no portão.</p>
+
+<h2 id="s18"><span class="n">18 ·</span>O que se baixa</h2>
+<p class="sub">O exemplo do P.O.S tinha «ISO bootável»; o nosso equivalente é o <b>pacote de fontes e binários</b>, montado por script e <b>nunca à mão</b> — pacote feito à mão é pacote que ninguém consegue refazer igual.</p>
+<div class="rolo"><table><thead><tr><th>pacote</th><th class="num">MiB</th><th>gerado em</th><th>no <code>SHA256SUMS</code>?</th></tr></thead><tbody>
+<tr><td class="mono">phxsql-0.18.0-arm32.zip</td><td class="num">4,7</td><td class="q">2026-09-08</td><td><span class="etiqueta e-tem">sim</span></td></tr>
+<tr><td class="mono">phxsql-0.18.0-arm64.zip</td><td class="num">4,6</td><td class="q">2026-09-08</td><td><span class="etiqueta e-tem">sim</span></td></tr>
+<tr><td class="mono">phxsql-0.18.0-conhecimento.zip</td><td class="num">2,4</td><td class="q">2026-09-08</td><td><span class="etiqueta e-tem">sim</span></td></tr>
+<tr><td class="mono">phxsql-0.18.0-dossie.zip</td><td class="num">2,0</td><td class="q">2026-09-08</td><td><span class="etiqueta e-tem">sim</span></td></tr>
+<tr><td class="mono">phxsql-0.18.0-fontes.zip</td><td class="num">23,4</td><td class="q">2026-09-12</td><td><span class="etiqueta e-tem">sim</span></td></tr>
+<tr><td class="mono">phxsql-0.18.0-kit.zip</td><td class="num">46,1</td><td class="q">2026-09-08</td><td><span class="etiqueta e-tem">sim</span></td></tr>
+<tr><td class="mono">phxsql-0.18.0-lei.zip</td><td class="num">1,5</td><td class="q">2026-09-08</td><td><span class="etiqueta e-tem">sim</span></td></tr>
+<tr><td class="mono">phxsql-0.18.0-linux.zip</td><td class="num">5,3</td><td class="q">2026-09-11</td><td><span class="etiqueta e-tem">sim</span></td></tr>
+<tr><td class="mono">phxsql-0.18.0-windows.zip</td><td class="num">5,4</td><td class="q">2026-09-11</td><td><span class="etiqueta e-tem">sim</span></td></tr>
+</tbody></table></div>
+<div class="nota"><b>Cada zip traz o próprio conferidor.</b> <code>./phxsql conferir-pacote</code> viaja dentro do pacote e responde ÍNTEGRO ou o que difere, falta <b>e veio a mais</b> — o arquivo a mais é o que a conferência de hash comum não vê. O segundo caminho, que não depende de rodar nada do zip, é <code>sha256sum -c MANIFESTO.sha256</code>.</div>
+<p class="fonte"><b>De onde sai:</b> varredura de <code>pacotes/*.zip</code> — tamanho e <code>mtime</code> reais do arquivo — cruzada com <code>pacotes/SHA256SUMS</code>. O tamanho é o do arquivo, não um número de catálogo; a data é a de gravação, e por isso ela diz <code>mtime</code> e não «medido».</p>
+
+<h2 id="s19"><span class="n">19 ·</span>O board, por pilar</h2>
+<p class="sub">A forma carrega o estado — aberto só contorno, entregue cheia, parado hachurado —, então a barra se lê sem cor.</p>
+<div class="barras">
+<div class="barra-linha"><span class="l">Governança</span><span class="t"><i class="b-entregue" style="width:18.18%"></i><i class="b-aberto" style="width:9.09%"></i></span><span class="n">3</span></div>
+<div class="barra-linha"><span class="l">Pilar 1</span><span class="t"><i class="b-entregue" style="width:9.09%"></i><i class="b-aberto" style="width:90.91%"></i></span><span class="n">11</span></div>
+<div class="barra-linha"><span class="l">Pilar 2</span><span class="t"><i class="b-aberto" style="width:27.27%"></i></span><span class="n">3</span></div>
+<div class="barra-linha"><span class="l">Pilar 3</span><span class="t"><i class="b-aberto" style="width:54.55%"></i></span><span class="n">6</span></div>
+</div>
+<div class="legenda"><span class="entregue"><i></i>entregue ou fechado</span><span class="parado"><i></i>parado</span><span class="aberto"><i></i>aberto</span></div>
+<div class="kpis">
+<div class="kpi"><b>23</b><span>itens no board</span><span class="q">2026-09-16</span></div>
+<div class="kpi"><b>20</b><span>abertos</span><span class="q">2026-09-16</span></div>
+<div class="kpi feito"><b>3</b><span>entregues ou fechados</span><span class="q">2026-09-16</span></div>
+<div class="kpi falta"><b>0</b><span>parados</span><span class="q">2026-09-16</span></div>
+<div class="kpi falta"><b>11</b><span>abertos de escalão <b>forte</b></span><span class="q">2026-09-16</span></div>
+</div>
+<p class="fonte"><b>De onde sai:</b> o <code>ler()</code> de <code>docs/pmo/rollup.py</code>, sobre <code>docs/pmo/BACKLOG.md</code>. O estado é a <b>primeira palavra</b> da última célula; palavra fora do léxico <b>para</b> o leitor nomeando a linha. O escalão aparece pelo <b>nível</b>, nunca por nome de modelo.</p>
+
+<h2 id="s20"><span class="n">20 ·</span>As últimas frentes</h2>
+<p class="sub">Do próprio <code>git log</code>, só leitura. O commit conta a decisão e o motivo, não a lista de arquivos.</p>
+<div class="rolo"><table><thead><tr><th>commit</th><th>quando</th><th>o que decidiu</th></tr></thead><tbody>
+<tr><td class="mono">0f30363</td><td class="q">2026-09-16 15:26</td><td>A tabela das guardas sai de uma corrida de HOJE, e nao de nove dias atras</td></tr>
+<tr><td class="mono">366b489</td><td class="q">2026-09-16 14:27</td><td>263 fechado e 261 fechado: as oito guardas voltaram a guardar, e a nona nao e quebrada</td></tr>
+<tr><td class="mono">e05cd49</td><td class="q">2026-09-16 13:41</td><td>Remedir as catracas separando PAREDE de CPU, com a carga anotada</td></tr>
+<tr><td class="mono">67d95ff</td><td class="q">2026-09-16 13:38</td><td>262: a premissa do pedido estava errada -- os quatro motores CONVERGEM</td></tr>
+<tr><td class="mono">02e1519</td><td class="q">2026-09-16 13:37</td><td>Parecer do DBA: o CHECK acrescentado quebra a cascata e deixa ORFA</td></tr>
+<tr><td class="mono">418f156</td><td class="q">2026-09-16 13:36</td><td>252 metade (2): catraca que so roda na bateria nao segura nada</td></tr>
+<tr><td class="mono">69b9d58</td><td class="q">2026-09-16 13:11</td><td>263: guarda que so se confere em uma hora e guarda que nao se confere</td></tr>
+<tr><td class="mono">440c5d0</td><td class="q">2026-09-16 12:49</td><td>Planilha das atividades, gerada -- e sem leitor proprio de nada</td></tr>
+<tr><td class="mono">f166504</td><td class="q">2026-09-16 11:53</td><td>Fecho da rodada de 16/09: sete frentes, portoes verdes, corrente inteira</td></tr>
+<tr><td class="mono">bd72553</td><td class="q">2026-09-16 11:35</td><td>245: o gatilho do upsert passa a ser o do ramo que ele virou</td></tr>
+</tbody></table></div>
+<p class="fonte"><b>De onde sai:</b> <code>git log --no-merges -n 10</code> na raiz do repositório. Commit novo muda esta seção — e aí ela estava velha mesmo, que é o que o portão dos geradores existe para pegar.</p>
+
+<h2 id="s21"><span class="n">21 ·</span>O que <b>não</b> nasceu nesta página</h2>
+<p class="sub">Quatro seções do exemplo não entraram, e a razão é a mesma para todas: <b>o número não sai de gerador nenhum</b>. Elas aparecem aqui com o gerador que falta — página que esconde o que não mediu é a pior de todas.</p>
+<ul class="faltantes">
+<li><span class="tt">Riscos <span class="etiqueta e-nao">não nasceu</span></span><span class="g">falta: <code>docs/status/riscos.py</code>, que ainda não existe</span><p class="d">Tiraria o número de um <code>docs/RISCOS.md</code> tabelado — risco, probabilidade, impacto, dono e data — que também não existe. Hoje risco é prosa espalhada por <code>PENDENCIAS.md</code>, <code>SOMBRA.md</code> e <code>PDCA-GAPS.md</code>: nada que uma máquina conte sem adivinhar qual parágrafo é risco — e adivinhar é o que esta lei existe para não fazer.</p><p class="fonte">§11 do exemplo · pedido <b>#264</b> no <code>docs/PENDENCIAS.md</code></p></li>
+<li><span class="tt">Dívida técnica <span class="etiqueta e-nao">não nasceu</span></span><span class="g">falta: o mesmo <code>riscos.py</code>, segunda tabela</span><p class="d">Tiraria o número de uma marcação no próprio código — um <code>// DIVIDA:</code> com pedido e motivo, varrido como o conferidor varre os textos fora da fábrica. Sem a marca no fonte, contar dívida é opinião, e opinião não é número.</p><p class="fonte">§12 do exemplo · pedido <b>#264</b> no <code>docs/PENDENCIAS.md</code></p></li>
+<li><span class="tt">Telemetria e logs <span class="etiqueta e-nao">não nasceu</span></span><span class="g">falta: <code>docs/status/telemetria-medida.py</code>, que ainda não existe</span><p class="d">Tiraria o número de um <code>bancada/telemetria/resultados.json</code> — a pasta <code>bancada/telemetria/</code> existe e mede o custo do Profiler, mas <b>não grava resultado nesse nome</b>. Sem ele não há a data da medição para pôr ao lado do número — e número sem a data em que foi medido publica um retrato que nunca existiu.</p><p class="fonte">§15 e §16 do exemplo · pedido <b>#265</b> no <code>docs/PENDENCIAS.md</code></p></li>
+<li><span class="tt">Antes × Depois <span class="etiqueta e-nao">não nasceu</span></span><span class="g">falta: <code>docs/status/serie-historica.py</code>, que ainda não existe</span><p class="d">Tiraria o número de uma série versionada de <code>CAPABILITIES.json</code> — hoje o arquivo é <b>sobrescrito</b> a cada medição e só guarda o AGORA. Sem o retrato de ontem gravado, «antes» sairia da memória de quem escreve, que é exatamente o que esta lei existe para substituir.</p><p class="fonte">§21 do exemplo · pedido <b>#266</b> no <code>docs/PENDENCIAS.md</code></p></li>
+</ul>
+<div class="nota v"><b>Por que isto é a seção mais importante da página.</b> O exemplo trazia <b>677 números no texto visível, todos digitados à mão</b>. Adotá-lo como veio criaria 677 lugares onde um número envelhece calado — e esta casa já pagou isso quatro vezes: o selo da capa parado numa versão por quatro lançamentos, 198 pedidos onde eram 203, 428 testes onde eram 451, 780 KiB de interface onde eram 1.032. A quarta ensina o alcance da lei: <b>gerador certo chamado pela metade entrega número velho anunciando sucesso.</b></div>
+<footer>
+  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 16/09/2026 15:30 UTC,
+  pelo comando <code>./status-html.sh</code>. <b>Nenhum número desta página foi
+  digitado</b>: cada um sai de um gerador, e cada seção diz de qual. Onde o
+  gerador não existe, a seção <b>não nasceu</b> — está nomeada na §21, com o
+  gerador que falta. Esta página <b>não se edita</b>: mexeu numa fonte, rode o
+  gerador. Como rodar e de onde sai cada número:
+  <code>docs/status/LEIA-ME.md</code>.
+</footer>
+</div>
+<script>
+(function(){
+  var CORES={
+    claro:{padrao:"#1a1210",vermelhao:"#c63c0a",azul:"#1f5c93",verde:"#2f7a3e",ameixa:"#7b2d6b"},
+    escuro:{padrao:"#dde2eb",vermelhao:"#ff8a1c",azul:"#7fb3f0",verde:"#5cbf74",ameixa:"#e79fd6"}
+  };
+  var raiz=document.documentElement;
+  function temaAtual(){
+    var t=raiz.getAttribute("data-theme");
+    if(t)return t;
+    return window.matchMedia&&window.matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";
+  }
+  function pintar(){
+    var sel=document.getElementById("cor-do-texto");
+    if(!sel)return;
+    var paleta=temaAtual()==="dark"?CORES.escuro:CORES.claro;
+    raiz.style.setProperty("--escolhida",paleta[sel.value]||paleta.padrao);
+    try{localStorage.setItem("phxsql-status-cor",sel.value)}catch(e){}
+  }
+  function tema(t){
+    raiz.setAttribute("data-theme",t);
+    document.querySelectorAll("[data-tema]").forEach(function(b){
+      b.setAttribute("aria-pressed",b.dataset.tema===t?"true":"false");
+    });
+    try{localStorage.setItem("phxsql-status-tema",t)}catch(e){}
+    pintar();
+  }
+  document.querySelectorAll("[data-tema]").forEach(function(b){
+    b.onclick=function(){tema(b.dataset.tema)};
+  });
+  var sel=document.getElementById("cor-do-texto");
+  if(sel)sel.onchange=pintar;
+  var imp=document.getElementById("imprimir");
+  if(imp)imp.onclick=function(){window.print()};
+  try{
+    var t=localStorage.getItem("phxsql-status-tema");
+    var c=localStorage.getItem("phxsql-status-cor");
+    if(c&&sel)sel.value=c;
+    if(t)tema(t);else pintar();
+  }catch(e){pintar()}
+})();
+</script>

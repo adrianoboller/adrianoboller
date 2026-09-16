@@ -517,11 +517,22 @@ def bloco_outras_linguagens() -> str:
     a, l = contar_arquivos(["*.sh"], RAIZ, excluir=["/target/", "/.git/"])
     linhas_out.append(f"| Shell (empacotar, zelador, provas) | todo o repositorio | {a} | {l} |")
 
+    # O rotulo dizia «nao recursivo em dossie/, design/, video/» e o
+    # `contar_arquivos` usa `rglob` -- o numero publicado SEMPRE foi o
+    # recursivo. Medido em 16/09/2026: `docs/*.md` no topo sao 86 arquivos e
+    # 54.813 linhas; o que a tabela publicava eram 353 e 85.013, que e a conta
+    # com `cognicao/`, `dossie/`, `propostas/` e as outras dentro. Numero certo,
+    # receita errada ao lado -- e receita que mente e' pior que numero que
+    # falta, porque quem audita procura o erro no lugar errado.
     a, l = contar_arquivos(["*.md"], RAIZ / "docs")
-    linhas_out.append(f"| Markdown (documentacao tecnica) | `docs/` (nao recursivo em `dossie/`, `design/`, `video/`) | {a} | {l} |")
+    linhas_out.append(f"| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | {a} | {l} |")
 
-    a, l = contar_arquivos(["*.py"], RAIZ / "docs" / "dossie")
-    linhas_out.append(f"| Python (geradores de dossie/pedidos) | `docs/dossie/` | {a} | {l} |")
+    # Contava so `docs/dossie/`, e os geradores moram em CINCO pastas desde que
+    # o PMO, a planilha, as tecnologias e a pagina de status nasceram. Medido:
+    # 5.582 linhas contadas contra 9.970 que existem -- 44% do ferramental
+    # invisivel no inventario que existe justamente para conta-lo.
+    a, l = contar_arquivos(["*.py"], RAIZ / "docs")
+    linhas_out.append(f"| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | {a} | {l} |")
 
     # C do lado do embutido, se houver
     a, l = contar_arquivos(["*.c", "*.h"], RAIZ / "bancada" / "embutido")

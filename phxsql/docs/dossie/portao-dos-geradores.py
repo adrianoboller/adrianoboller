@@ -154,7 +154,7 @@ PLANO = [
      "le CAPABILITIES.json + resultados.json; traz mtime e relogio"),
     ("graficos-dos-testes.py", ["docs/dossie/graficos.html"], "sem-carimbo",
      "le resultados.json das bancadas; traz mtime e relogio"),
-    ("numeros-do-projeto.py", [DOSSIE, "docs/CAPABILITIES.json"], "nota-cargo",
+    ("numeros-do-projeto.py", [DOSSIE, "CAPABILITIES.json"], "nota-cargo",
      "chama cargo test e cargo run --example; nao martelar o build nesta worktree"),
     # Nao e' gerador do dossie -- e' o rollup do board de PMO (GOV-3). Entra
     # aqui pelo mesmo motivo do `docs/tecnologias/extrair.py`: e' um gerador
@@ -176,6 +176,19 @@ PLANO = [
      "sem-carimbo",
      "monta o painel PMO do PENDENCIAS.md, do BACKLOG.md, do CAPABILITIES.json, "
      "do git log e dos arquivos de .claude/agents/; so' o carimbo e' relogio"),
+    # A SETIMA pagina -- o status do projeto, no molde que o dono mandou do
+    # projeto irmao (P.O.S). Nome de arquivo IGUAL ao do painel PMO acima e
+    # pasta diferente de proposito: `docs/status/`, e o comando e
+    # `./status-html.sh`. Entra aqui pelo mesmo motivo dos dois de cima -- a
+    # rodada pode esquecer de roda-lo e a pagina fica com o numero de ontem.
+    # "sem-carimbo" porque o rodape carrega "gerado em DD/MM/AAAA HH:MM UTC" e
+    # varias datas de medicao vem de `mtime` (o git nao preserva mtime); os
+    # _CARIMBOS ja cobrem os dois formatos.
+    ("docs/status/pagina-do-status-do-projeto.py",
+     ["docs/status/status-do-projeto.html"], "sem-carimbo",
+     "monta as secoes do CAPABILITIES.json, do PENDENCIAS.md, do BACKLOG.md, "
+     "dos resultados.json das bancadas, das constantes do fonte Rust e do git "
+     "log; secao sem gerador NAO nasce e sai nomeada na §21"),
 ]
 
 # A figura cuja frescura o trio confere por mtime -- que o portao poe como a
