@@ -98,7 +98,9 @@ impl Atividade {
             // poder de quem perguntou, entao a resposta nunca promete mais do
             // que aquela sessao consegue chamar.
             "ping" | "login" | "desafio" | "quem_sou" | "sair" | "catalogo" => return None,
-            "bancos" | "tabelas" | "esquema" | "ler" | "varrer" | "buscar" => Atividade::Ler,
+            "bancos" | "tabelas" | "esquema" | "ler" | "varrer" | "coletar_rowids" | "buscar" => {
+                Atividade::Ler
+            }
             // Procurar uma palavra le a tabela por outro caminho, e devolve as
             // MESMAS linhas que o `varrer` devolveria -- entao pede o mesmo
             // poder. Pedir mais aqui seria esconder pela indexacao um dado que

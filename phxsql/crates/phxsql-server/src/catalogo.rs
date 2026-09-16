@@ -406,6 +406,42 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: true,
     },
     Operacao {
+        nome: "coletar_rowids",
+        apelidos: &[],
+        resumo: "Junta os rowids de TODAS as linhas que casam o filtro (nenhum \
+                 valor de coluna sai) -- o substrato do UPDATE/DELETE por faixa. \
+                 Recusa nomeando o limite se a tabela passa do teto, em vez de \
+                 responder sobre uma faixa com cara de ter respondido inteiro.",
+        parametros: &[
+            DB,
+            TAB,
+            opc(
+                "onde",
+                "array",
+                "filtros `{coluna, op, valor}`, todos valendo juntos (E)",
+            ),
+            opc(
+                "expressao",
+                "string",
+                "predicado por EXPRESSÃO, avaliado por linha junto com `onde` \
+                 (E) -- a mesma gramática do `CHECK` e do `varrer`",
+            ),
+            opc(
+                "visao",
+                "string",
+                "`ativas` (padrão), `excluidas` ou `todas`, quanto à exclusão reversível",
+            ),
+            opc(
+                "teto",
+                "integer",
+                "BAIXA o teto de linhas examinadas (nunca sobe acima do duro); \
+                 se a tabela passar dele, recusa em vez de truncar",
+            ),
+        ],
+        exemplo: r#"{"op":"coletar_rowids","database":"loja","tabela":"clientes","onde":[{"coluna":"cidade","op":"=","valor":"Blumenau"}]}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "buscar",
         apelidos: &[],
         resumo: "Desce um índice até a chave exata e devolve as linhas dela.",

@@ -9423,6 +9423,7 @@ impl Servidor {
             "diferencas" | "diff" => self.op_diferencas(p, sessao),
             "ler" => self.op_ler(p, sessao),
             "varrer" => self.op_varrer(p, sessao),
+            "coletar_rowids" => self.op_coletar_rowids(p, sessao),
             "buscar" => self.op_buscar(p, sessao),
             "procurar_texto" => self.op_procurar_texto(p, sessao),
             "inserir" => self.op_inserir(p, sessao),
@@ -16038,6 +16039,89 @@ impl Servidor {
         Ok(resposta)
     }
 
+    /// Junta os rowids de TODAS as linhas que casam o filtro -- o substrato do
+    /// `UPDATE`/`DELETE` por faixa. Le so' os rowids (nenhum VALOR de coluna
+    /// sai), entao e leitura pura e nao deixa trilha de acesso: quem grava, e
+    /// por isso registra o acesso, e o `atualizar`/`excluir` que vem depois,
+    /// por linha.
+    fn op_coletar_rowids(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        {
+            let trava = self.travar_dados_para_ler()?;
+            if let Some(mut t) = self.abrir_para_ler_travada(&trava, p, sessao)? {
+                return self.coletar_os_rowids(&mut t, p);
+            }
+        }
+        let _trava = self.travar_dados()?;
+        let mut t = self.abrir_travada(&_trava, p, sessao)?;
+        self.coletar_os_rowids(&mut t, p)
+    }
+
+    /// O corpo do `coletar_rowids`, igual nas duas fichas -- `Legivel`, entao
+    /// nao consegue escrever. Anda a tabela na ordem de digitacao ate o teto,
+    /// aplica o MESMO `passa` do `varrer` e do `SelectMemory` (um so lugar
+    /// decide «esta linha passa?»), e junta os rowids que casam. Recusa se a
+    /// tabela passa de `TETO_COLETA_ROWIDS`, para nunca prometer «a tabela
+    /// inteira» sobre uma faixa que so' viu o comeco.
+    fn coletar_os_rowids<T: Legivel>(&self, t: &mut T, p: &Json) -> Result<Json> {
+        let onde = filtros_do_pedido(p, t.esquema())?;
+        let expressao = expressao_do_pedido(p, t.esquema())?;
+        let visao = match p.texto_ou("visao", "ativas").trim() {
+            "" | "ativas" | "ativos" => Visao::Ativas,
+            "excluidas" | "excluidos" => Visao::Excluidas,
+            "todas" | "todos" => Visao::Todas,
+            outro => {
+                return Err(PhxError::Esquema(format!(
+                    "visao {outro:?} nao existe; use ativas, excluidas ou todas"
+                )))
+            }
+        };
+
+        // O pedido pode BAIXAR o teto, nunca subir acima do duro -- o mesmo
+        // padrao do `max` do `varrer`: um cliente cauteloso limita a propria
+        // varredura, e o teste prova a recusa com uma tabela pequena. Zero ou
+        // ausente vale o teto duro.
+        let pedido_teto = p.inteiro_ou("teto", 0).max(0) as u64;
+        let teto = if pedido_teto == 0 {
+            TETO_COLETA_ROWIDS
+        } else {
+            pedido_teto.min(TETO_COLETA_ROWIDS)
+        };
+
+        // Um ALEM do teto: se vier `teto+1`, a tabela e maior do que o coletar
+        // consegue prometer inteiro, e ele recusa nomeando o limite.
+        let (rowids, _como) = t.pagina_por_posicao(0, teto + 1, visao)?;
+        if rowids.len() as u64 > teto {
+            return Err(PhxError::Esquema(format!(
+                "coletar_rowids examina no maximo {teto} linhas para garantir que responde a \
+                 tabela inteira, e esta tem mais que isso. Estreite o filtro por uma faixa que \
+                 caiba, ou faca a operacao em lotes -- gravar sobre uma faixa com cara de ter \
+                 gravado sobre tudo e pior que recusar"
+            )));
+        }
+
+        let atividade = crate::telemetria::corrente();
+        let _fase = atividade
+            .as_ref()
+            .map(|a| a.fase_cancelavel("coletando os rowids que casam"));
+        let mut casaram: Vec<Json> = Vec::new();
+        for &rowid in &rowids {
+            if let Some(a) = &atividade {
+                a.siga(1)?;
+            }
+            if let Some(l) = t.ler(rowid)? {
+                if phxsql_store::memoria::passa(&l, &onde, None, expressao.as_ref(), t.esquema())? {
+                    casaram.push(Json::de_u64(rowid));
+                }
+            }
+        }
+
+        Ok(Json::objeto(vec![
+            ("examinadas", Json::de_u64(rowids.len() as u64)),
+            ("casaram", Json::de_u64(casaram.len() as u64)),
+            ("rowids", Json::Lista(casaram)),
+        ]))
+    }
+
     /// O corpo da varredura, igual nas duas fichas.
     ///
     /// # Por que ele e generico, e o que isso garante
@@ -22492,6 +22576,17 @@ fn ficha_residente(chave: &str, m: &TabelaMemoria) -> Vec<(&'static str, Json)> 
 const TETO_PIVOT: u64 = 5_000_000;
 /// Quantas linhas uma tabela de consulta pode ter para caber na memoria.
 const TETO_JUNCAO: usize = 500_000;
+/// Quantas linhas o `coletar_rowids` EXAMINA, no maximo, para garantir que
+/// responde INTEIRO -- e a razao de ele recusar em vez de truncar.
+///
+/// Ele e o substrato do `UPDATE`/`DELETE` por faixa: junta TODOS os rowids que
+/// casam o filtro ANTES de aplicar (o coletar-antes-de-aplicar que fecha o
+/// *Halloween problem*). Um teto sobre linhas EXAMINADAS, e nao devolvidas: se
+/// a tabela passa disto, o motor nao consegue prometer «respondi sobre a tabela
+/// inteira» -- entao ele recusa nomeando o limite, no lugar de gravar sobre a
+/// primeira faixa com cara de ter gravado sobre tudo (a mesma lei que faz o
+/// `SELECT` sem indice recusar em vez de responder a primeira pagina).
+const TETO_COLETA_ROWIDS: u64 = 1_000_000;
 
 fn posicao_da_coluna(e: &Schema, nome: &str) -> Option<usize> {
     e.colunas().iter().position(|c| c.nome == nome)
@@ -32777,20 +32872,27 @@ mod testes_janela_e_cadeia {
         }
     }
 
-    /// A catraca do ALCANCE da ficha compartilhada: **UMA** operacao a toma.
+    /// A catraca do ALCANCE da ficha compartilhada: **DUAS** operacoes a tomam.
     ///
-    /// A decisao do dono foi «so o `varrer`», e a segunda leva entra medida.
-    /// Sem esta catraca, a segunda leva entra por distracao: `op_ler`,
+    /// A decisao do dono era «so o `varrer`», e a segunda leva entrou MEDIDA
+    /// (15/09/2026): o `coletar_rowids`, o substrato do `UPDATE`/`DELETE` por
+    /// faixa. A medicao que a admitiu e de TIPO, nao de leitura: o corpo dele e
+    /// `coletar_os_rowids<T: Legivel>`, e `Legivel` **nao tem metodo de
+    /// escrita** -- entao ele nao consegue ter a varredura de escrita escondida
+    /// que esta catraca existe para achar (a trilha de dado pessoal, o espelho,
+    /// a criacao do `.trash`), e devolve so' rowids, nenhum valor de coluna.
+    ///
+    /// Sem esta catraca, a proxima leva entra por distracao: `op_ler`,
     /// `op_buscar` e `op_sistabelas` sao todas leituras e todas parecem obvias
-    /// -- e cada uma delas tem escrita escondida propria para achar antes.
+    /// -- e cada uma tem escrita escondida propria para achar antes.
     ///
     /// Ela conta CHAMADAS, e nao operacoes: mover a tomada para um ajudante
-    /// chamado por vinte `op_` continuaria dando um. E ela vale nos dois
-    /// sentidos, como toda catraca desta casa -- quem tirar o `varrer` da
+    /// chamado por vinte `op_` continuaria dando o mesmo. E ela vale nos dois
+    /// sentidos, como toda catraca desta casa -- quem tirar um dos dois da
     /// pista de leitura tambem reprova aqui, e tem de dizer por que no mesmo
     /// commit.
     #[test]
-    fn so_uma_operacao_usa_a_ficha_compartilhada() {
+    fn so_as_duas_operacoes_medidas_usam_a_ficha_compartilhada() {
         let codigo = |l: &&str| !l.trim_start().starts_with("//");
         let agulha = format!("self.{}()?", "travar_dados_para_ler");
         let usos = FONTE
@@ -32799,12 +32901,13 @@ mod testes_janela_e_cadeia {
             .filter(|l| l.contains(&agulha))
             .count();
         assert_eq!(
-            usos, 1,
-            "ha {usos} operacoes tomando a ficha compartilhada, e a decisao \
-             era UMA -- o `varrer`. A segunda leva entra MEDIDA, e cada \
-             operacao nova precisa da propria varredura de escrita escondida: \
-             a trilha de dado pessoal, o espelho e a criacao do .trash ja \
-             pegaram esta"
+            usos, 2,
+            "ha {usos} operacoes tomando a ficha compartilhada, e as medidas \
+             sao DUAS -- o `varrer` e o `coletar_rowids`, os dois provados \
+             so'-leitura pelo tipo `Legivel`. Uma terceira entra MEDIDA: cada \
+             operacao nova precisa da propria varredura de escrita escondida \
+             (a trilha de dado pessoal, o espelho, a criacao do .trash) achada \
+             antes"
         );
     }
 
@@ -40966,5 +41069,121 @@ mod testes_sql_dml {
 
         let p = pedido_de_ler("b", "c", 2);
         assert!(p.booleano_ou("com_versao", false));
+    }
+}
+
+#[cfg(test)]
+mod testes_coletar_rowids {
+    use super::*;
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Um servidor com a base `b` e a tabela `nums` (id, valor), com `linhas`
+    /// linhas cujo `valor` vai de 1 a `linhas`.
+    fn servidor(dir: &std::path::Path, linhas: i64) -> (Arc<Servidor>, Sessao) {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"nums",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"valor","tipo":"Int4"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        for i in 1..=linhas {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"nums","linha":{{"id":{i},"valor":{i}}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        (s, dono)
+    }
+
+    /// Prova real nos dois sentidos: `coletar_rowids` com `valor > 3` numa
+    /// tabela de cinco devolve EXATAMENTE as duas que casam, e sem filtro
+    /// devolve as cinco. Se o `passa` deixasse de peneirar, o `casaram == 2`
+    /// falharia (viriam as cinco).
+    #[test]
+    fn coleta_exatamente_as_linhas_que_casam() {
+        let dir = DirTemp::novo("coletar-casam");
+        let (s, dono) = servidor(dir.as_ref(), 5);
+
+        let r = s
+            .executar(
+                "coletar_rowids",
+                &pedido(
+                    r#"{"database":"b","tabela":"nums",
+                        "onde":[{"coluna":"valor","op":">","valor":3}]}"#,
+                ),
+                &dono,
+            )
+            .unwrap();
+        assert_eq!(r.inteiro_ou("casaram", -1), 2, "valor>3 casa duas linhas");
+        assert_eq!(r.inteiro_ou("examinadas", -1), 5, "examinou as cinco");
+        assert_eq!(r.campo("rowids").and_then(Json::lista).unwrap().len(), 2);
+
+        let todas = s
+            .executar(
+                "coletar_rowids",
+                &pedido(r#"{"database":"b","tabela":"nums"}"#),
+                &dono,
+            )
+            .unwrap();
+        assert_eq!(todas.inteiro_ou("casaram", -1), 5, "sem filtro, todas");
+    }
+
+    /// Prova real do teto: baixado a 3 sobre uma tabela de cinco, o coletar
+    /// RECUSA nomeando o limite, em vez de responder sobre as tres primeiras
+    /// com cara de ter respondido inteiro. Se ele truncasse, viria Ok e o
+    /// `expect_err` entraria em panico.
+    #[test]
+    fn passar_do_teto_recusa_em_vez_de_truncar() {
+        let dir = DirTemp::novo("coletar-teto");
+        let (s, dono) = servidor(dir.as_ref(), 5);
+
+        let e = s
+            .executar(
+                "coletar_rowids",
+                &pedido(r#"{"database":"b","tabela":"nums","teto":3}"#),
+                &dono,
+            )
+            .expect_err("passou do teto e nao recusou");
+        assert!(
+            format!("{e}").contains('3'),
+            "a recusa tem de nomear o limite: {e}"
+        );
+
+        let ok = s
+            .executar(
+                "coletar_rowids",
+                &pedido(r#"{"database":"b","tabela":"nums","teto":5}"#),
+                &dono,
+            )
+            .unwrap();
+        assert_eq!(
+            ok.inteiro_ou("casaram", -1),
+            5,
+            "com teto suficiente, passa"
+        );
     }
 }

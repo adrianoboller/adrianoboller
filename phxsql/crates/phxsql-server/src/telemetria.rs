@@ -115,6 +115,7 @@ pub const OPS_CANCELAVEIS: &[&str] = &[
     "exportar",
     "export",
     "varrer",
+    "coletar_rowids",
     "inserir_lote",
     "importar",
     "carga",

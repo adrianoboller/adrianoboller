@@ -94,6 +94,11 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     // ------------------------------------------------------------- leitura
     ("ler", PorColuna::Le(Onde::Raiz)),
     ("varrer", PorColuna::Le(Onde::Lista)),
+    // O `coletar_rowids` peneira pelo MESMO `onde`/`expressao` do `varrer`, e
+    // por isso a MESMA classe: enumerar quais rowids casam um valor de coluna
+    // negada e' o mesmo vazamento que o `perguntar_pela_coluna_negada_recusa`
+    // fecha no `varrer` -- classificar so' um deixaria o outro de porta aberta.
+    ("coletar_rowids", PorColuna::Le(Onde::Lista)),
     ("buscar", PorColuna::Le(Onde::Lista)),
     ("procurar_texto", PorColuna::Le(Onde::Lista)),
     // A consulta em RAM devolve `linhas` com os mesmos campos do `varrer`, e
