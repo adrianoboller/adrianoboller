@@ -3130,6 +3130,243 @@ até a linha ficar consultável** — contra o `inserir_lote` de hoje, com a mes
 tabela, os mesmos índices e a conferência de unicidade ligada nos dois lados;
 sem ela a comparação seria de trabalho diferente.
 
+## 24. O `fsync` do arquivo limpo, e o excluir dividido: os pedidos 258 e 259, medidos antes de mexer (16/09)
+
+Dois pedidos irmãos, os dois no caminho de escrita, os dois nascidos da bancada
+CRUD do pedido 257 — e os dois sob a lei do pedido 113: *medir a premissa do
+item vem antes de implementar o item, inclusive quando o item é nosso.* Um
+deles virou conserto; o outro virou instrumento e diagnóstico, e o conserto
+ficou para decisão, com o número ao lado de cada candidato.
+
+### 24.1 A premissa do 258, contada pelo núcleo: quais `fsync` iam a arquivo limpo
+
+O pedido dizia «8 `fsync` por inserir e 9 por excluir, e `Volumes::sincronizar`
+não pergunta quem mudou». A bancada tinha contado por `strace -c`, que soma e
+não nomeia. O `--example fsync-por-operacao` traça o corpo num processo filho
+com `strace -f -y` (o `-y` pendura o caminho em cada descritor), e diz, `fsync`
+a `fsync`, se houve `write` naquele arquivo desde o `fsync` anterior. Mesmo
+esquema e mesmo N da bancada (`config(chave, valor)`, índice único, N = 1.000),
+por diferença 1.000 − 200 operações:
+
+| operação | `fsync` | sujos | **limpos** | quem estava limpo |
+|---|---:|---:|---:|---|
+| inserir | 8 | 4 | **4** | `.trash .bin .memo .reason` |
+| atualizar | 8 | 3 | **5** | os quatro, e o **primeiro** do `.ndx` (a chave não mudou; só o cabeçalho é regravado) |
+| excluir | 9 | 6 | **3** | `.bin .memo`, e o **segundo** do `.trash` — o `guardar` já o tinha sincronizado |
+
+A premissa estava certa na contagem e errada num detalhe que importa: não são
+«cinco dos oito» sempre. São 4, 5 e 3 — e um dos limpos do atualizar mora no
+`.ndx`, que está fora do alcance do conserto (§24.3).
+
+### 24.2 A recusa da §16.2 e as três condições, pagas
+
+A §16.2 recusou pular o `fsync` de quem não mudou e escreveu o preço de
+voltar: **o registro ser do processo** (já era), **uma auditoria provando que
+toda escrita nos arquivos passa pelo `Volumes`**, e **uma guarda que reprove
+quem acrescentar um caminho fora dele**. O parecer do papel C para o 258
+acrescentou a condição que a auditoria sozinha não daria, e ela é o que separa
+o conserto da versão ingênua:
+
+> Pular descritor limpo só depois do primeiro `fsync` desta família neste
+> processo: a página suja que um processo morto deixou no núcleo não tem marca
+> em RAM nenhuma, e o primeiro `fsync` é o único que a alcança.
+
+A sequência concreta está no `FORMATO.md` §8 (commit com a marca `.tx`
+gravada, slot no cache do núcleo, `SIGKILL`, arranque, `recuperar` lendo o
+slot e apagando a marca depois de um `sincronizar` que, sem isso, não mandaria
+`fsync` nenhum). O que entrou, em `volume.rs`:
+
+- o registro da família ganhou os **batizados**, os volumes que este processo
+  já levou ao disco alguma vez — **por volume**, e não um bit por família,
+  porque a lista de descritores abertos é a única cobertura entre processos
+  que o motor tem e ela é por volume: um volume do meio que só entra no cache
+  depois do primeiro fecho ainda paga o `fsync` dele na primeira vez, como
+  pagava antes (`volume_do_meio_que_entra_no_cache_depois_do_batismo_paga_o_primeiro_fsync`);
+- `sincronizar_listas` pula o descritor aberto que está batizado **e** sem
+  marca de escrita, e só ele;
+- a marca de escrita passou a nascer **antes** do `write`, no único lugar que
+  entrega descritor de escrita (`Volumes::arquivo(volume, true)`), e saiu dos
+  quatro chamadores: um `write_all` que falha no meio deixa página suja, e
+  «pular limpo» tornaria isso um furo (`a_marca_nasce_ao_pedir_o_descritor_de_escrita`);
+- a auditoria virou teste: `nenhum_caminho_de_escrita_novo_fora_do_volumes`
+  conta os abridores de escrita (`OpenOptions::new()`, `File::create`,
+  `fs::write`, `fs::rename`) em cada `src/*.rs` até o primeiro `#[cfg(test)]` e
+  exige igualdade com a lista de hoje — `ndx.rs` (fora do `Volumes`,
+  sincroniza sozinho), `reg.rs` (`.novo` + `sync_all` + `rename`), `pag.rs`,
+  `restaurar.rs`, `backup.rs`, `catalogo.rs`, `volume.rs`.
+
+O formato em disco **não muda**: a condição vive em RAM.
+
+Contado pelo núcleo depois, o mesmo instrumento: inserir **8 → 4**, atualizar
+**8 → 4** (o limpo que sobra é o primeiro do `.ndx`), excluir **9 → 6**.
+Exatamente o teto que o parecer previa. E cronometrado no mesmo binário
+(`--tempo`: 1.000 operações com `sincronizar()` após cada uma, mediana de 5
+corridas, duas rodadas alternando o binário de antes e o de depois, máquina
+com carga 0,85–1,12 e o portão «está medindo?» livre):
+
+| operação | antes (2 rodadas, mediana) | depois | faixas | ganho |
+|---|---:|---:|---|---:|
+| inserir | 965,5 · 826,1 µs | 667,9 · 684,6 µs | 788,9–971,2 contra 655,5–712,1 | **1,21×–1,45×** |
+| atualizar | 815,7 · 816,4 µs | 588,7 · 622,1 µs | 772,0–889,2 contra 569,7–652,1 | **1,31×–1,39×** |
+| excluir | 1.117,3 · 1.196,0 µs | 972,8 · 997,1 µs | 1.082,0–1.229,9 contra 931,1–1.048,2 | **1,15×–1,20×** |
+
+As faixas não se cruzam em nenhuma das três. E o aviso da §16.2 valeu: cortar
+metade dos `fsync` não compra 2× — compra o custo do `fsync` limpo, 52–54 µs
+cada, quatro por operação, sobre uma operação de ~830 µs. É o mesmo 17–31% que
+a ablação do fecho já tinha medido, agora no caminho que acontece a cada
+gravação em vez de uma vez por janela.
+
+### 24.3 O que ficou de fora do 258, e por quê
+
+**O `.ndx`.** Ele não passa pelo `Volumes`, e o byte de sujo do cabeçalho dele
+responde «a árvore pode estar incompleta», não «não foi ao disco»: o `fechar`
+do fim de cada pedido grava o cabeçalho limpo **sem** `fsync`, então um fecho
+que confiasse nesse byte pularia o índice com as páginas ainda no cache. Os
+dois `fsync` dele por `sincronizar` continuam — inclusive o limpo do
+atualizar. Pular esse pediria um registro de processo para o `.ndx`, que é
+outro item.
+
+**A catraca do fecho não desce.** `TETO_FSYNC_POR_FECHO_V2` continua em 8,
+porque o que ela mede é o **primeiro** fecho de uma família num processo novo
+(o filho traçado do `fsync-por-fecho`), e esse fecho não pula ninguém, de
+propósito. Quem desce é o segundo fecho em diante, e quem o mede é a guarda
+`tests/fsync-por-operacao.rs` (por contador: 2, 2 e 4 arquivos das sete
+famílias por inserir, atualizar e excluir depois do batismo) e o
+`--example fsync-por-operacao` (pelo núcleo). Régua que passasse a medir o
+segundo fecho seria outra catraca, com outro nome.
+
+**Um teste mudou de afirmação, e está dito:**
+`o_fecho_alcanca_o_que_outra_instancia_escreveu` cobrava `+1` no segundo fecho
+(o descritor limpo sincronizado de novo) e passou a cobrar `+0`. Comportamento
+documentado que mudou, não defeito escondido.
+
+**As guardas, provadas nos dois sentidos** (`bancada/guardas/catalogo.py`):
+`fsync-do-arquivo-limpo` repõe o defeito do pedido (todo descritor aberto vai
+ao disco) e derruba os dois testes de contagem; `fsync-so-dos-escritos` repõe
+a versão **ingênua** que o parecer barrou (só quem tem marca vai ao disco) e
+derruba os dois testes do processo morto — enquanto os três testes do caso
+comum continuam verdes com ela, que é exatamente por que ela era tentadora.
+`provar-guardas.py --so`: 2/2 caíram em cada uma.
+
+### 24.4 O excluir dividido: não há um culpado, há quatro (pedido 259)
+
+A bancada CRUD viu o excluir custar 24–28 µs sem `fsync` nenhum onde o inserir
+custa 3,7–4,4, com «8 `write` e ~5 `openat`» por exclusão, e apontou dois
+suspeitos: a lixeira e o `.reason` abrindo arquivo por linha, ou a busca
+reversa da integridade varrendo o diretório. O `--example custo-do-excluir`
+foi reescrito no molde do `onde-doi`: a mesma tabela com uma peça a menos
+(ablação), cada arquivo sozinho fazendo só o que o excluir lhe pede (chamada
+isolada), e o próprio binário reexecutado sob `strace -f -y` contando as
+chamadas **por arquivo** — nesta corrida, e não citando um `strace` de outro
+dia. N = 200.000, 20.000 exclusões espalhadas, cache do `.ndx` quente como na
+bancada, máquina parada (carga 0,33 → 0,79):
+
+| parcela | µs por exclusão | % |
+|---|---:|---:|
+| **busca reversa: varrer o diretório** (`read_dir` + `is_file` em 8 arquivos), sem irmã nenhuma | **8,96** | **32,0%** |
+| `.ndx` remover, 2 índices (por ablação) | 6,87 | 24,5% |
+| ler a linha **três vezes** (`conferir_filhas` decodifica; `excluir_de_vez` lê o slot cru e decodifica de novo para a identidade e para as chaves) | 4,34 | 15,5% |
+| `.trash` guardar | 2,53 | 9,0% |
+| `.reason` registrar | 2,52 | 9,0% |
+| `.reg` excluir (status + contadores) | 2,18 | 7,8% |
+| `.log` registrar | 0,58 | 2,1% |
+| soma das parcelas | 27,98 | 99,7% |
+| resto (chaves, identidade, motivo, marcas) | 0,07 | 0,3% |
+| **excluir direto, 2 índices, sozinha** | **28,05** | 100% |
+
+A soma fecha em 99,7% — o instrumento não deixou parcela sem nome. Sem índice
+nenhum: 21,18 µs. Com o `fsync` da lixeira ligado (a fábrica): 220,26 µs,
+**+192 µs, 7,9×** — o mesmo par que a §4.12 mediu como 6,5×.
+
+E as chamadas de sistema, contadas por diferença 1.000 − 200 exclusões,
+atribuídas pelo `-y`:
+
+| chamada | por exclusão | a quem |
+|---|---:|---|
+| `openat` | 5 | **4 em `/dev/urandom`** e 1 no diretório |
+| `statx` | 9 | os 8 arquivos da tabela (o `is_file()` de cada entrada do `read_dir`) e o diretório |
+| `getdents64` | 2 | o diretório |
+| `write` | 11 | `.ndx` **4** (página e cabeçalho, por índice), `.reg` 2, `.trash` 2, `.reason` 2, `.log` 1 |
+| `read` | 9 | `/dev/urandom` 4, `.reg` 3, `.ndx` 2 |
+| `lseek` | 16 | `.ndx` 6, `.reg` 5, `.trash` 2, `.reason` 2, `.log` 1 |
+| `close` | 5 | `/dev/urandom` 4, o diretório 1 |
+
+Os «~5 `openat`» da bancada não eram a lixeira nem o `.reason` abrindo
+arquivo — os dois escrevem pelo descritor que já está aberto. **Quatro são
+`/dev/urandom`**, e a conta é esta: a exclusão gera dois UUIDs v7 (o registro
+do `.trash` e o do `.reason`), e o `sortear` do `phxsql-core/src/uuid.rs` abre
+o dispositivo **a cada chamada** — uma vez pelos 8 bytes sorteados do id, e
+mais uma vez a cada milissegundo **novo**, pela semente do contador em
+`avancar`. Sob `strace` cada exclusão passa de 1 ms, então toda chamada abre
+milissegundo novo: 2 UUIDs × 2 aberturas = 4. Sem traço, a ~28 µs por
+exclusão, são 2 na maioria das vezes. **O instrumento mudava o ritmo, e o
+ritmo mudava a contagem** — o «~5» da bancada era em parte artefato do próprio
+`strace -c`. O quinto `openat` é o `read_dir` da busca reversa, e esse é real.
+Ninguém tinha suspeitado do UUID: o `cifra::sortear` da casa é um ChaCha20
+semeado uma vez por processo, e o do `uuid.rs` não é ele.
+
+O `Uuid::v7()` isolado custa **1,07 µs** por chamada (corrida final, carga
+1,98): dois por exclusão são 2,14 µs, **7,6%** do excluir — está dentro dos
+9,0% do `.trash` e dos 9,0% do `.reason`, e é a maior parte deles.
+
+**O penhasco que a bancada não via, porque tinha uma tabela só no diretório:**
+com **30 irmãs** ao lado — sem chave estrangeira nenhuma —, o excluir custa
+**430,77 µs**: a busca reversa abre o `.reg` de cada irmã a cada exclusão
+(`RegFile::abrir`, ~13,4 µs cada, 402,72 µs em 30), **15,4× o excluir
+inteiro**. Contado pelo núcleo na corrida final (irmãs criadas depois da
+tabela — a primeira versão do medidor as apagava sem querer e as duas seções
+saíam iguais): por exclusão, **30 `openat`, 90 `statx`, 60 `read`, 60 `lseek`
+e 30 `close` nos `.reg` das irmãs**, mais 30 `statx` em cada uma das outras
+sete extensões delas (o `is_file()` do `read_dir` sobre 8 × 31 arquivos) —
+**309 `statx` e ~340 chamadas de sistema por exclusão**, contra ~57 com a
+tabela sozinha. O `ao_alterar` tem o portão `alguma_coluna_indexada_mudou` na
+frente da mesma varredura; o excluir não tem portão nenhum, e não pode ter o
+mesmo: excluir sempre «muda» a chave referenciada.
+
+### 24.5 O que o número manda, e o que ficou para decisão
+
+Nada do excluir foi mexido nesta rodada, e é decisão: nenhuma das quatro
+parcelas é conserto de uma linha, e as duas maiores batem em desenho.
+
+1. **A busca reversa sem portão** (32% sem irmã; 15× com 30). A pétrea escolheu
+   pagar isto no excluir para o `inserir` não pagar nada, e recusou o catálogo
+   reverso **em disco**. Um catálogo reverso **em memória**, por diretório,
+   compraria os 9 µs e o penhasco inteiro — e cobraria exatamente o que a
+   pétrea não quis: invalidação em toda criação e alteração de tabela do
+   processo, mais o problema do outro processo (a FFI embarcada). É do dono
+   e do papel C.
+2. **O `.ndx` remover escreve na hora** — `gravar_pagina` e
+   `gravar_cabecalho` por índice, 4 `write` por exclusão com 2 índices (24,5%).
+   O inserir passa pelo write-back; o remover não. É a árvore: o cabeçalho
+   regravado a cada remoção é o que a bancada da tomada (pedido 253) provou
+   levar o byte de sujo ao disco, então trocar isto pede a mesma prova de novo.
+   Do papel C.
+3. **A linha lida três vezes** (15,5%): passar os valores decodificados uma
+   vez pelo caminho pouparia ~2,8 µs. O caminho tem irmão
+   (`excluir_de_vez_replicado`), e a ordem lida/gravada é a da pétrea da
+   lixeira — pequeno, e por isso fica para o integrador decidir se entra
+   sozinho.
+4. **O `sortear` do `uuid.rs` abre `/dev/urandom` a cada chamada** — duas a
+   quatro aberturas por exclusão, e uma ou duas em toda gravação de `.trash`,
+   `.reason` e `.lgpd`. A casa já tem o gerador certo para isso, o
+   `cifra::sortear` (ChaCha20 semeado uma vez por processo, usado pelo nonce
+   dos externos e pelo `frogcript`); o `uuid.rs` está em obra por outra
+   frente nesta rodada (relógio e contador), e trocar a fonte de entropia é
+   item para ela ou para a seguinte. O instrumento mede o `Uuid::v7()`
+   isolado para o número ir junto.
+
+**Hipótese que morreu:** «a lixeira e o `.reason` abrem arquivo por linha».
+Não abrem: os `openat` eram o UUID e o `read_dir`. E a que nasceu no lugar
+dela é a do item 1, com o número que a bancada não tinha como ver.
+
+```bash
+cargo build --release --examples -p phxsql-store                         # binario velho mede o passado
+cargo run --release --example fsync-por-operacao -p phxsql-store          # sujo x limpo, pelo nucleo
+cargo run --release --example fsync-por-operacao -p phxsql-store -- --tempo  # o antes/depois, no proprio processo
+cargo run --release --example custo-do-excluir -- 200000 20000            # o excluir dividido
+python3 bancada/guardas/provar-guardas.py --so fsync-do-arquivo-limpo --so fsync-so-dos-escritos
+```
+
 ## Como refazer tudo
 
 ```bash
@@ -3137,6 +3374,8 @@ cargo run --release --example onde-doi -- 200000       # a tabela do §2
 cargo run --release --example custo-do-alter -- 50000 200000 1000000  # a §4.12
 cargo run --release --example custo-do-sync            # os modos de durabilidade
 cargo run --release --example custo-do-excluir -- 200000 20000 200   # o fsync da exclusao, §4.12
+cargo run --release --example custo-do-excluir -- 200000 20000       # o excluir dividido, §24
+cargo run --release --example fsync-por-operacao -p phxsql-store -- --tempo  # o fsync do arquivo limpo, §24
 python3 bancada/exclusao/prova-da-queda.py             # a queda do processo, §4.12
 cargo run --release --example custo-da-pagina -- 800000 200
 cargo run --release --example indice-em-lote -- 1000000   # o lote do §4.3

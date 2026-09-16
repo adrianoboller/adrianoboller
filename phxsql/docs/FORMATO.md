@@ -1604,14 +1604,46 @@ todas terminam, e as marcas `.tx` dos commits que esperavam saem depois do
 sustenta isso, e a recusa medida de *soltar* a trava entre uma tabela e a
 seguinte, estão na §12.6 do `docs/CONCORRENCIA.md`.
 
-**A marca SOMA `fsync`, e nunca subtrai — e essa assimetria é a regra, não um
-detalhe de implementação.** O mesmo registro serviria para *pular* o `fsync` de
-um arquivo que ninguém sujou, e é o que PostgreSQL e InnoDB fazem. Aqui ele é
-lido só no sentido de acrescentar, porque os dois sentidos têm modos de falha
-**opostos**: marca esquecida no caminho de escrita, lida para somar, faz o
-motor cair no comportamento antigo — custa velocidade; lida para subtrair,
-custa o **dado**, calada, e só numa queda de energia. Ver a recusa medida em
-`DESEMPENHO.md` §16.
+**A marca SOMA `fsync` sempre, e SUBTRAI só sob condição (16/09/2026).** Até
+essa data o registro era lido só no sentido de acrescentar, e a assimetria era
+a regra: os dois sentidos têm modos de falha **opostos** — marca esquecida no
+caminho de escrita, lida para somar, faz o motor cair no comportamento antigo e
+custa velocidade; lida para subtrair, custa o **dado**, calada, e só numa queda
+de energia. A recusa medida está em `DESEMPENHO.md` §16.2, com as três
+condições para voltar, e as três foram pagas no pedido 258 (`DESEMPENHO.md`
+§24): o registro é do processo; a marca nasce **antes** do `write`, no único
+lugar que entrega descritor de escrita (`Volumes::arquivo`), e não depois em
+cada chamador; e há uma guarda que reprova caminho de escrita novo fora do
+`Volumes` (`nenhum_caminho_de_escrita_novo_fora_do_volumes`).
+
+A condição que separa isto da versão ingênua é o **batismo**, e ela vive em
+RAM, por família e **por volume** — o formato em disco não muda: *pular
+descritor limpo só depois do primeiro `fsync` daquele volume neste processo.*
+A página suja que um processo morto deixou no núcleo não tem marca em RAM
+nenhuma, e o primeiro `fsync` é o único que a alcança — a sequência concreta é
+um `COMMIT` com a marca `.tx` gravada, o slot ainda no cache do núcleo, um
+`SIGKILL`, e o `transacao::recuperar` do arranque lendo o slot (que está lá,
+vindo do cache) e apagando a marca depois de um `sincronizar` que, sem o
+batismo, não teria mandado `fsync` nenhum. Por isso o primeiro fecho de cada
+descritor aberto continua indo ao disco incondicionalmente; daí em diante só
+vai quem tem marca. É por volume, e não um bit por família, porque a lista de
+descritores abertos é a única cobertura entre processos que o motor tem, e ela
+é por volume: um volume do meio que só entra no cache depois do primeiro fecho
+ainda paga o `fsync` dele na primeira vez, como pagava antes.
+
+**O `.ndx` fica fora, de propósito.** Ele não passa pelo `Volumes`, e o byte de
+sujo do cabeçalho dele (§2) responde «a árvore pode estar incompleta», que não
+é «não foi ao disco»: o `fechar` do fim de cada pedido grava o cabeçalho limpo
+**sem** `fsync`, e um fecho que confiasse nesse byte pularia o índice com as
+páginas ainda no cache. Os dois `fsync` do `.ndx` por `sincronizar` continuam.
+
+Medido pelo núcleo antes da mudança (`--example fsync-por-operacao`, N = 1.000,
+por diferença 1.000 − 200): num inserir em `por_operacao`, **4 dos 8** `fsync`
+iam a arquivo limpo (`.trash .bin .memo .reason`); num atualizar, **5 de 8**
+(os quatro e o primeiro do `.ndx`, porque a chave não mudou); num excluir,
+**3 de 9** (`.bin .memo` e o segundo do `.trash`, que o `guardar` já tinha
+sincronizado). Depois: inserir 4, atualizar 4, excluir 6 — o que sobra é o
+`.ndx` e o que foi escrito de verdade.
 
 **A chave do registro é a família em caminho ABSOLUTO léxico** — `dados/loja`
 e `/srv/dados/loja` são a mesma família, e precisam ser. Isto foi um defeito

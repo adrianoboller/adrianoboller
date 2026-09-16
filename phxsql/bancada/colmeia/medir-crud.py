@@ -79,7 +79,8 @@ O_QUE_CADA_LADO_FAZ = {
         "atualizar = buscar + regravar a linha no lugar + índice + diário; "
         "excluir = buscar + conferir filhas + copiar a linha para a lixeira "
         ".trash + índice + diário. Em por_operacao, sincronizar() depois de "
-        "toda escrita (fsync de cada arquivo aberto da tabela)"
+        "toda escrita (fsync do que a operação escreveu, mais os dois do "
+        ".ndx; até 16/09/2026, de cada arquivo aberto da tabela — pedido 258)"
     ),
     "sqlite": (
         "sqlite3 da biblioteca padrão do Python (extensão em C), tabela rowid "

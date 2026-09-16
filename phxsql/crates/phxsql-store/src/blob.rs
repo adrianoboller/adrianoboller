@@ -346,6 +346,12 @@ impl BlobFile {
         self.volumes.sincronizar()
     }
 
+    /// Quantos arquivos este arquivo externo ja mandou ao disco de verdade. Ver
+    /// `Volumes::sincronizados` -- conta o ARQUIVO, e nao a chamada.
+    pub fn sincronizados(&self) -> u64 {
+        self.volumes.sincronizados()
+    }
+
     /// Percorre todos os blocos de todos os volumes e confere o CRC de cada
     /// um dos vivos. Devolve (blocos vivos, blocos mortos).
     pub fn verificar(&mut self) -> Result<(u64, u64)> {

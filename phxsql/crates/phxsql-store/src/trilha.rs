@@ -757,6 +757,12 @@ impl TrilhaFile {
         self.volumes.sincronizar()
     }
 
+    /// Quantos arquivos o `.lgpd` ja mandou ao disco de verdade. Ver
+    /// `Volumes::sincronizados` -- conta o ARQUIVO, e nao a chamada.
+    pub fn sincronizados(&self) -> u64 {
+        self.volumes.sincronizados()
+    }
+
     pub fn fechar_todos(&mut self) {
         self.volumes.fechar_todos();
     }

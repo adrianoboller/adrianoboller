@@ -5110,4 +5110,152 @@ pub fn limpar() {
             "servidor::testes_janela_e_cadeia::uma_tabela_so_grava_como_sempre",
         ],
     },
+    # 37. O fsync do arquivo limpo -- pedido 258, a forma que o pedido apontou
+    # -----------------------------------------------------------------------
+    {
+        "id": "fsync-do-arquivo-limpo",
+        "titulo": "`Volumes::sincronizar` leva ao disco todo descritor aberto, sem pular o limpo",
+        "porque": (
+            "medido pelo nucleo em 16/09/2026 (`--example fsync-por-operacao`): "
+            "num inserir em por_operacao, 4 dos 8 fsync iam a arquivo limpo "
+            "(.trash .bin .memo .reason); num atualizar, 5 de 8; num excluir, "
+            "3 de 9 -- e era isso, nao a arvore, que punha o padrao atras do "
+            "SQLite em toda escrita com fsync (bancada CRUD, pedido 257). O "
+            "conserto pula o descritor BATIZADO (levado ao disco por este "
+            "processo alguma vez) e sem marca de escrita; repor o defeito e "
+            "tirar o filtro dos batizados."
+        ),
+        "arquivo": "crates/phxsql-store/src/volume.rs",
+        "trecho": """        let mut alvos: BTreeSet<u32> = self
+            .abertos
+            .keys()
+            .copied()
+            .filter(|v| !batizados.contains(v))
+            .collect();
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 258): todo descritor aberto vai ao disco,
+        // pergunte-se ou nao quem mudou -- o batizado limpo paga de novo.
+        let mut alvos: BTreeSet<u32> = self.abertos.keys().copied().collect();
+        let _ = batizados;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fsync-por-operacao"],
+        "caem": [
+            "depois_do_primeiro_fecho_so_o_que_a_operacao_escreveu_vai_ao_disco",
+            "a_tabela_reaberta_no_mesmo_processo_herda_o_batismo",
+        ],
+        "seguem": [
+            # O primeiro fecho de uma familia nova leva tudo nos dois mundos:
+            # o defeito e' so' o que vem DEPOIS dele.
+            "o_primeiro_fecho_de_uma_familia_nova_leva_tudo_o_que_esta_aberto",
+        ],
+    },
+    # 38. A versao INGENUA do mesmo pedido -- o que o parecer do DBA barrou
+    # -----------------------------------------------------------------------
+    {
+        "id": "fsync-so-dos-escritos",
+        "titulo": "o fecho confia só no registro em RAM — e o registro nasceu vazio com o processo",
+        "porque": (
+            "a sequencia do parecer do DBA no pedido 258: COMMIT com a marca "
+            ".tx gravada, slot no .reg ainda no cache do nucleo, SIGKILL, "
+            "arranque, transacao::recuperar le o slot (que esta la', vindo do "
+            "cache), chama sincronizar e apaga a marca. Se sincronizar so' "
+            "olhasse os escritos -- que nasceram vazios com o processo --, "
+            "zero fsync no .reg e a marca sairia mesmo assim: commit "
+            "confirmado perdido numa queda de energia, sem bilhete. O batismo "
+            "existe para isto: o primeiro fsync de cada descritor neste "
+            "processo e' incondicional."
+        ),
+        "arquivo": "crates/phxsql-store/src/volume.rs",
+        "trecho": """        let mut alvos: BTreeSet<u32> = self
+            .abertos
+            .keys()
+            .copied()
+            .filter(|v| !batizados.contains(v))
+            .collect();
+""",
+        "troca": """        // DEFEITO REPOSTO (a versao ingenua do pedido 258): so' quem tem
+        // marca vai ao disco -- e a marca morreu com o processo anterior.
+        let mut alvos: BTreeSet<u32> = BTreeSet::new();
+        let _ = batizados;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "volume::tests::o_primeiro_fecho_do_processo_nao_confia_no_registro",
+            "volume::tests::volume_do_meio_que_entra_no_cache_depois_do_batismo_paga_o_primeiro_fsync",
+        ],
+        "seguem": [
+            # A versao ingenua acerta o caso comum -- e' por isso que ela e'
+            # tentadora: estes tres continuam verdes com ela.
+            "volume::tests::depois_do_batismo_so_quem_foi_escrito_vai_ao_disco",
+            "volume::tests::o_fecho_alcanca_o_que_outra_instancia_escreveu",
+            "volume::tests::o_fecho_alcanca_volume_do_meio_de_tabela_paginada",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # O estado do gerador de UUID v7 ao alcance de um teste (pedido 247)
+    # -----------------------------------------------------------------------
+    {
+        "id": "relogio-ao-alcance-do-teste",
+        "titulo": "o estado do gerador de v7 fica ao alcance de um teste, que o escreve para trás",
+        "porque": (
+            "pedido 247: o `static RELOGIO` ficava solto no modulo `uuid`, e o "
+            "teste do contador estourado o escrevia para tras (`ms = 5_000`) "
+            "para montar o cenario. Os testes de um binario rodam em paralelo; "
+            "sob carga essa escrita caiu no meio do laco do vizinho, o gerador "
+            "viu «milissegundo novo» no MESMO milissegundo, re-semeou o "
+            "contador na metade de baixo e o id andou para tras (contador "
+            "0x8ae seguido de 0x409): 54 falhas em 1.000 corridas do modulo, "
+            "medido em 16/09/2026. O gerador estava certo; o estado dele e que "
+            "estava ao alcance de quem nao devia. O conserto fechou o estado "
+            "num modulo privado (`relogio`) e deu aos testes da logica uma "
+            "funcao pura (`avancar`) com estado local. Repor o defeito e "
+            "reabrir o modulo E voltar a escrever nele: sao dois pontos, e um "
+            "so nao compila -- nao existe meia reposicao aqui."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-core/src/uuid.rs",
+                "trecho": """    static ESTADO: Mutex<(u64, u16)> = Mutex::new((0, 0));
+""",
+                "troca": """    // DEFEITO REPOSTO (1/2): o estado volta a ser alcancavel de fora.
+    pub(super) static ESTADO: Mutex<(u64, u16)> = Mutex::new((0, 0));
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-core/src/uuid.rs",
+                "trecho": """        avancar((5_000, CONTADOR_MASCARA), 5_000)
+""",
+                "troca": """        // DEFEITO REPOSTO (2/2): o cenario e montado ESCREVENDO o estado do
+        // gerador para tras, como o teste antigo fazia.
+        *relogio::ESTADO.lock().unwrap() = (5_000, CONTADOR_MASCARA);
+        relogio::passo(5_000)
+""",
+            },
+        ],
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        # So o teste de concorrencia, e o motivo e MEDIDO: com o defeito
+        # reposto ele monta o cenario 64 vezes enquanto quatro fios geram, e
+        # caiu 20 vezes em 20 corridas. Os dois vizinhos que o defeito original
+        # derrubava (`v7_nunca_repete_nem_anda_para_tras` e
+        # `contador_estourado_empresta_do_futuro`) NAO entram em `caem` nem em
+        # `seguem`: com a escrita unica do teste antigo eles caem quando o
+        # escalonador quer -- 10 e 3 vezes em 20 corridas com o defeito
+        # reposto, 54 em 1.000 no dia -- e uma lista que exige o que o
+        # escalonador nao garante e uma guarda que mente na metade das rodadas.
+        "caem": [
+            "uuid::tests::a_geracao_entre_fios_nunca_anda_para_tras",
+        ],
+        "seguem": [
+            # Nao tocam o estado do gerador, ou o tocam uma vez so e sem
+            # comparar com um anterior: o defeito reposto nao os alcanca.
+            "uuid::tests::v7_tem_o_layout_do_rfc_9562",
+            "uuid::tests::comparar_bytes_e_comparar_tempo",
+            "uuid::tests::relogio_da_maquina_para_tras_nao_leva_o_id_junto",
+            "uuid::tests::texto_vai_e_volta",
+            "uuid::tests::id256_cabe_um_sha256",
+        ],
+    },
 ]

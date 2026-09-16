@@ -87,7 +87,7 @@ sozinho — viaja com esta tabela ao lado:
 | **atualizar** | anexa VALOR novo + cópia de caminho; o valor velho vira lixo inalcançável | `buscar` + regrava a linha **no lugar** + índice + diário | `UPDATE … WHERE chave=?`: journal, regrava a página da tabela |
 | **excluir** | anexa a folha **sem** a entrada + cópia de caminho; a célula fica (o «undelete» projetado) | `buscar` + conferir filhas + copiar a linha para a lixeira `.trash` + índice + diário | `DELETE … WHERE chave=?`: journal, remove da tabela e do índice |
 | **o que NÃO tem** | índice separado, diário, transação, lixeira, tipos, conferência de unicidade fora da própria árvore | — | lixeira, trilha, colunas de sistema |
-| **durabilidade `por_operacao`** | `fsync` após as células, `fsync` após o bloco base (a raiz nova só vale com as células no disco — a ordem do `.ndx` da casa) | `sincronizar()` após cada escrita: `fsync` de **cada arquivo aberto** da tabela, sem pular os limpos | `synchronous=FULL` + autocommit: `fsync` do journal e do banco em cada transação |
+| **durabilidade `por_operacao`** | `fsync` após as células, `fsync` após o bloco base (a raiz nova só vale com as células no disco — a ordem do `.ndx` da casa) | `sincronizar()` após cada escrita: `fsync` do que a operação **escreveu** (mais os dois do `.ndx`, sempre); até 16/09/2026 era de cada arquivo aberto, sem pular os limpos — pedido 258 | `synchronous=FULL` + autocommit: `fsync` do journal e do banco em cada transação |
 | **durabilidade `sistema`** | só `write` | nunca sincroniza; lixeira na janela | `synchronous=OFF` + autocommit (uma transação por operação, sem `fsync`) |
 
 Os `fsync`/`write`/`openat`/`unlink` **por operação** de cada lado não são

@@ -4642,6 +4642,24 @@ impl Table {
         self.lixeira.sincronizacoes()
     }
 
+    /// Quantos arquivos as sete familias do `Volumes` desta tabela ja mandaram
+    /// ao disco de verdade: `.reg .bin .memo .log .trash .reason .lgpd`.
+    ///
+    /// O `.ndx` nao entra, de proposito: ele nao passa pelo `Volumes` e paga
+    /// dois `sync_all` por `sincronizar`, sempre -- e' o que a bancada CRUD
+    /// (pedido 257) viu como os dois `fsync` que nao descem. E' o numero que
+    /// a guarda `tests/fsync-por-operacao.rs` cobra por operacao, e ele
+    /// conta o FATO (o `sync_all` que confirmou), nao a chamada.
+    pub fn arquivos_sincronizados(&self) -> u64 {
+        self.reg.sincronizados()
+            + self.bin.sincronizados()
+            + self.memo.sincronizados()
+            + self.log.sincronizados()
+            + self.lixeira.sincronizados()
+            + self.motivos.sincronizados()
+            + self.trilha.sincronizados()
+    }
+
     /// As senhas da ultima sincronizacao do `.trash` e do `.reg`, nesta ordem.
     ///
     /// A do `.trash` tem de ser MENOR: a copia de recuperacao vai ao disco

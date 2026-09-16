@@ -62,9 +62,10 @@ pub struct Volumes {
     /// senha a ordem estaria escrita no comentario e em lugar nenhum mais --
     /// e comentario nao reprova ninguem.
     selo: u64,
-    /// Os volumes desta FAMILIA de arquivos escritos e ainda nao levados ao
-    /// disco, compartilhados por todas as instancias do processo. Ver
-    /// [`ESCRITAS_PENDENTES`].
+    /// O registro desta FAMILIA de arquivos -- os volumes escritos e ainda
+    /// nao levados ao disco, e os que este processo ja batizou --,
+    /// compartilhado por todas as instancias do processo. Ver
+    /// [`ESCRITAS_PENDENTES`] e [`Registro`].
     pendentes: Pendentes,
     /// Quantos `fsync` de verdade este conjunto ja mandou.
     ///
@@ -86,8 +87,39 @@ pub struct Volumes {
 /// `fsync` que custa dezenas de microssegundos: quatro ordens de grandeza.
 static SENHA: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
-/// Os volumes escritos e ainda nao sincronizados, por familia de arquivos.
-type Pendentes = Arc<Mutex<BTreeSet<u32>>>;
+/// O registro de UMA familia de arquivos, compartilhado por todas as
+/// instancias do processo. Ver [`ESCRITAS_PENDENTES`].
+#[derive(Default)]
+struct Registro {
+    /// Escritos e ainda nao levados ao disco. Lido nos DOIS sentidos desde
+    /// 16/09/2026: para somar um `fsync` a quem foi escrito fora do cache de
+    /// descritores, e para PULAR o de quem esta em `batizados` e nao esta
+    /// aqui.
+    escritos: BTreeSet<u32>,
+    /// Os volumes que ESTE PROCESSO ja levou ao disco pelo menos uma vez.
+    ///
+    /// Pular descritor limpo SO' depois do primeiro `fsync` desta familia
+    /// neste processo: a pagina suja que um processo morto deixou no nucleo
+    /// nao tem marca em RAM nenhuma, e o primeiro `fsync` e' o unico que a
+    /// alcanca. A sequencia concreta esta no parecer do DBA (pedido 258):
+    /// commit com marca `.tx` gravada, slot no `.reg` ainda no cache do
+    /// nucleo, SIGKILL, arranque, `transacao::recuperar` le o slot (que esta
+    /// la', vindo do cache), chama `sincronizar` e apaga a marca. Se esse
+    /// `sincronizar` confiasse so' em `escritos` -- que nasceu vazio com o
+    /// processo --, a marca sairia sem o `fsync`, e uma queda de energia
+    /// perderia um commit confirmado sem bilhete nenhum.
+    ///
+    /// E' por VOLUME, e nao por familia, porque a lista `abertos` e' a unica
+    /// cobertura entre processos que o motor tem, e ela e' por volume: um
+    /// volume do meio de uma tabela paginada que so' entra no cache depois do
+    /// primeiro fecho ainda paga o `fsync` dele na primeira vez -- que e'
+    /// exatamente o que pagava antes desta mudanca. Um bit por familia
+    /// pularia esse volume, e pularia calado.
+    batizados: BTreeSet<u32>,
+}
+
+/// O registro de uma familia, atras da trava do processo.
+type Pendentes = Arc<Mutex<Registro>>;
 
 /// O registro de escritas pendentes DO PROCESSO, e nao de uma instancia.
 ///
@@ -114,15 +146,32 @@ type Pendentes = Arc<Mutex<BTreeSet<u32>>>;
 /// sobrevive a `SIGKILL` --, so numa queda de ENERGIA. Por isso o defeito
 /// atravessou a bateria inteira sem uma falha.
 ///
-/// # A regra que decide a forma: a marca SOMA fsync, nunca subtrai
+/// # A marca SOMA `fsync` sempre, e SUBTRAI so' sob condicao (16/09/2026)
 ///
-/// Este registro e' consultado para acrescentar `fsync`, jamais para pular
-/// um. A assimetria e' a coisa mais importante deste modulo: uma marca
-/// esquecida no caminho de escrita faz `sincronizar` cair no comportamento
-/// ANTIGO (sincroniza o que esta aberto) -- custa velocidade. Uma marca
-/// esquecida num registro usado para PULAR `fsync` custaria o dado, calada, e
-/// so numa queda de energia. Mesmo registro, lido nos dois sentidos, com
-/// modos de falha opostos. Ver `docs/FORMATO.md`.
+/// Ate' 16/09/2026 este registro era consultado so' para acrescentar `fsync`,
+/// jamais para pular um, e a assimetria era a regra: uma marca esquecida no
+/// caminho de escrita fazia `sincronizar` cair no comportamento ANTIGO
+/// (sincroniza o que esta aberto) -- custava velocidade; lida para PULAR,
+/// custaria o dado, calada, e so numa queda de energia. A recusa medida esta
+/// em `docs/DESEMPENHO.md` §16.2, com as tres condicoes para voltar.
+///
+/// As tres foram pagas e o registro passou a ser lido nos dois sentidos:
+///
+/// 1. **o registro e' do processo** (ja era), entao quem sincroniza ve o que
+///    outra instancia escreveu;
+/// 2. **a marca nasce ANTES do `write`, no unico lugar que entrega descritor
+///    de escrita** (`arquivo(volume, true)`), e nao depois em cada chamador:
+///    um `write_all` que falha no meio deixa pagina suja, e ela precisa da
+///    marca -- com "pular limpo" isso deixou de ser inofensivo;
+/// 3. **e ha' uma guarda que reprova caminho de escrita novo fora do
+///    `Volumes`** (`nenhum_caminho_de_escrita_novo_fora_do_volumes`, nos
+///    testes deste modulo), porque a marca so' cobre o que passa por aqui.
+///
+/// E a condicao que o DBA pos, e que e' o que impede a versao ingenua de
+/// perder dado: ver [`Registro::batizados`]. O `.ndx` fica FORA disto de
+/// proposito -- ele nao passa pelo `Volumes`, e o byte de sujo do cabecalho
+/// dele responde «a arvore pode estar incompleta», que nao e' «nao foi ao
+/// disco». Ver `docs/FORMATO.md` §8.
 ///
 /// # A chave, e a grafia que dividia a familia
 ///
@@ -270,7 +319,10 @@ pub fn familias_devendo_em(diretorio: &Path) -> usize {
         .filter(|(caminho, _)| caminho.starts_with(&prefixo))
         .map(|(_, p)| Arc::clone(p))
         .collect();
-    familias.iter().filter(|p| !trava(p).is_empty()).count()
+    familias
+        .iter()
+        .filter(|p| !trava(p).escritos.is_empty())
+        .count()
 }
 
 /// Toma a trava ignorando envenenamento.
@@ -355,7 +407,6 @@ impl Volumes {
         let f = self.arquivo(volume, true)?;
         f.seek(SeekFrom::Start(offset))?;
         f.write_all(buf)?;
-        self.marcar_escrito(volume);
         Ok(())
     }
 
@@ -434,13 +485,16 @@ impl Volumes {
         self.ordem.push_back(volume);
     }
 
-    /// Anota que este volume foi escrito e ainda nao foi ao disco.
+    /// Anota que este volume vai ser escrito e ainda nao foi ao disco.
     ///
-    /// Chamado de TODO caminho de escrita deste modulo, e de nenhum caminho de
-    /// leitura -- e' a distincao que `abertos` nao faz e que o registro
-    /// existe para fazer. Ver [`ESCRITAS_PENDENTES`].
+    /// Chamada de DOIS lugares, e de nenhum caminho de leitura: de
+    /// [`Volumes::arquivo`] quando quem pede quer escrever -- ANTES do
+    /// `write`, para que um `write_all` que falhe no meio nunca deixe pagina
+    /// suja sem marca -- e de [`Volumes::criar`], que faz nascer o inode. E' a
+    /// distincao que `abertos` nao faz e que o registro existe para fazer.
+    /// Ver [`ESCRITAS_PENDENTES`].
     fn marcar_escrito(&mut self, volume: u32) {
-        trava(&self.pendentes).insert(volume);
+        trava(&self.pendentes).escritos.insert(volume);
     }
 
     fn fechar_menos_usado(&mut self) {
@@ -454,10 +508,19 @@ impl Volumes {
         }
     }
 
-    fn arquivo(&mut self, volume: u32, criar: bool) -> Result<&mut File> {
+    /// O descritor do volume, aberto sob demanda.
+    ///
+    /// `escrever` diz a INTENCAO de quem pede: com ela o volume e' criado se
+    /// faltar e -- o que importa -- a marca de escrita nasce AQUI, antes de
+    /// o descritor ser entregue. E' o unico lugar que entrega descritor de
+    /// escrita, entao e' o unico lugar em que a marca pode ser esquecida, e
+    /// ela nao e'. Sem intencao de escrever, nada e' marcado: `ler`,
+    /// `tamanho` e `abrir_para_sincronizar` passam por aqui e o registro nao
+    /// os ve.
+    fn arquivo(&mut self, volume: u32, escrever: bool) -> Result<&mut File> {
         if !self.abertos.contains_key(&volume) {
             let caminho = self.caminho(volume);
-            if !criar && !caminho.exists() {
+            if !escrever && !caminho.exists() {
                 return Err(PhxError::NaoEncontrado(format!(
                     "volume {volume} nao existe: {}",
                     caminho.display()
@@ -467,9 +530,12 @@ impl Volumes {
             let f = OpenOptions::new()
                 .read(true)
                 .write(true)
-                .create(criar)
+                .create(escrever)
                 .open(&caminho)?;
             self.abertos.insert(volume, f);
+        }
+        if escrever {
+            self.marcar_escrito(volume);
         }
         self.registrar_uso(volume);
         Ok(self.abertos.get_mut(&volume).expect("acabou de ser aberto"))
@@ -565,7 +631,6 @@ impl Volumes {
         let f = self.arquivo(volume, true)?;
         f.seek(SeekFrom::Start(offset))?;
         f.write_all(buf)?;
-        self.marcar_escrito(volume);
         // O espelho recebe a mesma coisa, no mesmo lugar. Falhar aqui NAO
         // desfaz a escrita boa: o principal ja tem o dado, e um espelho
         // defasado e melhor do que uma gravacao recusada.
@@ -574,7 +639,6 @@ impl Volumes {
             let g = e.arquivo(volume, true)?;
             g.seek(SeekFrom::Start(offset))?;
             g.write_all(buf)?;
-            e.marcar_escrito(volume);
         }
         Ok(())
     }
@@ -591,14 +655,12 @@ impl Volumes {
         f.seek(SeekFrom::Start(offset))?;
         f.write_all(cabecalho)?;
         f.write_all(conteudo)?;
-        self.marcar_escrito(volume);
         if let Some(e) = &mut self.espelho {
             e.garantir(volume)?;
             let g = e.arquivo(volume, true)?;
             g.seek(SeekFrom::Start(offset))?;
             g.write_all(cabecalho)?;
             g.write_all(conteudo)?;
-            e.marcar_escrito(volume);
         }
         Ok(())
     }
@@ -611,11 +673,9 @@ impl Volumes {
     pub fn definir_tamanho(&mut self, volume: u32, tamanho: u64) -> Result<()> {
         let f = self.arquivo(volume, true)?;
         f.set_len(tamanho)?;
-        self.marcar_escrito(volume);
         if let Some(e) = &mut self.espelho {
             e.garantir(volume)?;
             e.arquivo(volume, true)?.set_len(tamanho)?;
-            e.marcar_escrito(volume);
         }
         Ok(())
     }
@@ -636,14 +696,32 @@ impl Volumes {
     /// falhar, a lista inteira volta ao registro. Uma sincronizacao repetida
     /// custa tempo; uma marca perdida custaria o dado, e o `descarregar_sujas`
     /// do servidor conta justamente com poder tentar de novo.
+    ///
+    /// # O que se PULA, e por que so' isso (pedido 258, 16/09/2026)
+    ///
+    /// Um descritor aberto e' pulado quando este processo ja o levou ao disco
+    /// alguma vez ([`Registro::batizados`]) e ninguem o escreveu desde entao
+    /// (`escritos`). As duas condicoes juntas sao o unico sinal em que o
+    /// motor SABE que o arquivo esta limpo: o batismo apaga o que um processo
+    /// anterior possa ter deixado no cache do nucleo, e a marca -- que nasce
+    /// antes do `write` -- registra tudo o que este processo fez depois. Sem
+    /// a primeira, o registro em RAM e' cego ao processo morto; sem a
+    /// segunda, um `write` que falhou no meio ficaria sem marca.
+    ///
+    /// Medido antes da mudanca (`--example fsync-por-operacao`): num inserir
+    /// em `por_operacao`, 4 dos 8 `fsync` iam a arquivo limpo (`.trash .bin
+    /// .memo .reason`); num atualizar, 5; num excluir, 3 de 9.
     pub fn sincronizar(&mut self) -> Result<()> {
         self.sincronizacoes += 1;
         self.selo = SENHA.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let pendentes: BTreeSet<u32> = std::mem::take(&mut trava(&self.pendentes));
-        match self.sincronizar_listas(&pendentes) {
+        let (escritos, batizados) = {
+            let mut r = trava(&self.pendentes);
+            (std::mem::take(&mut r.escritos), r.batizados.clone())
+        };
+        match self.sincronizar_listas(&escritos, &batizados) {
             Ok(()) => {}
             Err(e) => {
-                trava(&self.pendentes).extend(pendentes);
+                trava(&self.pendentes).escritos.extend(escritos);
                 return Err(e);
             }
         }
@@ -659,13 +737,32 @@ impl Volumes {
     /// laco que sincroniza e ABRE ao mesmo tempo faz o LRU despejar quem acabou
     /// de ser sincronizado, e a volta do laco o sincroniza de novo: com o cache
     /// em 4 e oito volumes sujos saiam **12** `fsync` para oito arquivos.
-    fn sincronizar_listas(&mut self, pendentes: &BTreeSet<u32>) -> Result<()> {
-        let mut alvos: BTreeSet<u32> = self.abertos.keys().copied().collect();
-        for volume in pendentes {
+    ///
+    /// O batismo de cada volume entra no registro logo depois do `sync_all`
+    /// DELE confirmar -- e nao no fim da lista --, porque e' aquele volume
+    /// que esta no disco, e nao os outros.
+    fn sincronizar_listas(
+        &mut self,
+        escritos: &BTreeSet<u32>,
+        batizados: &BTreeSet<u32>,
+    ) -> Result<()> {
+        // Pular descritor limpo SO' depois do primeiro fsync desta familia
+        // neste processo: a pagina suja que um processo morto deixou no
+        // nucleo nao tem marca em RAM nenhuma, e o primeiro fsync e' o unico
+        // que a alcanca.
+        let mut alvos: BTreeSet<u32> = self
+            .abertos
+            .keys()
+            .copied()
+            .filter(|v| !batizados.contains(v))
+            .collect();
+        for volume in escritos {
             // O volume pode ter sumido entre a escrita e agora -- `apagar_tudo`
             // no reindex, um `rename` que trocou o arquivo inteiro. Arquivo que
             // nao existe nao tem pagina suja a levar.
-            if !alvos.contains(volume) && self.existe(*volume) {
+            if !alvos.contains(volume)
+                && (self.abertos.contains_key(volume) || self.existe(*volume))
+            {
                 alvos.insert(*volume);
             }
         }
@@ -677,8 +774,21 @@ impl Volumes {
             f.flush()?;
             f.sync_all()?;
             self.sincronizados += 1;
+            trava(&self.pendentes).batizados.insert(volume);
         }
         Ok(())
+    }
+
+    /// Esquece o que o processo sabe desta familia -- e' o que um processo
+    /// que MORREU sabe do que escreveu: nada.
+    ///
+    /// So' para teste: e' o unico jeito de provar, dentro de um processo, a
+    /// sequencia que motiva o batismo (escreve, morre, outro processo abre e
+    /// sincroniza). A sonda `tests/fecho-da-janela-sincroniza-o-reg.rs` prova
+    /// a mesma coisa com dois processos de verdade e `strace`.
+    #[cfg(test)]
+    fn esquecer_o_que_o_processo_sabe(&self) {
+        *trava(&self.pendentes) = Registro::default();
     }
 
     /// Quantas vezes este conjunto pediu o disco. Ver o campo.
@@ -717,8 +827,10 @@ impl Volumes {
         // As marcas de escrita morrem com os arquivos: nao ha pagina suja a
         // levar para um inode que deixou de existir. `sincronizar_listas`
         // tambem pula o que sumiu, mas limpar aqui evita o registro crescer
-        // com volume que nunca mais vai voltar.
-        trava(&self.pendentes).clear();
+        // com volume que nunca mais vai voltar. O batismo morre junto: o
+        // inode que vier a nascer com o mesmo numero e' outro, e nao herda a
+        // confianca do que se foi.
+        *trava(&self.pendentes) = Registro::default();
         Ok(())
     }
 }
@@ -847,15 +959,228 @@ mod tests {
             "o fecho da janela nao mandou nenhum arquivo ao disco: quem escreveu              foi outra instancia, e `abertos` desta esta vazio"
         );
         // E a marca sai depois de gastar: sincronizar de novo, sem escrita no
-        // meio, nao repete o `fsync` do que ja foi.
+        // meio, nao repete o `fsync` de nada. Ate' 16/09/2026 esta asserção
+        // cobrava `gastos + 1` -- o descritor que o primeiro fecho deixou
+        // aberto era sincronizado de novo, limpo. O batismo (pedido 258)
+        // acabou com isso: o primeiro fecho o levou ao disco, ninguem o
+        // escreveu depois, e o segundo fecho o pula. E' comportamento
+        // documentado que MUDOU, e nao defeito escondido.
         let gastos = b.sincronizados();
         b.sincronizar().unwrap();
         assert_eq!(
             b.sincronizados(),
-            gastos + 1,
-            "o segundo fecho devia gastar so' o descritor que o primeiro deixou              aberto, e nao repetir a lista de pendentes"
+            gastos,
+            "o segundo fecho nao devia gastar nada: o descritor esta batizado e              ninguem o escreveu desde o primeiro"
         );
         std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// A sequencia do parecer do DBA (pedido 258), dentro de um processo: quem
+    /// escreveu morreu de SIGKILL, a pagina suja ficou no cache do nucleo, e
+    /// o processo novo -- que nao tem marca nenhuma em RAM -- e' quem fecha
+    /// a janela. O primeiro `fsync` da familia neste processo tem de acontecer
+    /// mesmo com o registro vazio, porque e' o unico que alcanca aquela
+    /// pagina.
+    ///
+    /// **Prova real:** troque `alvos` em `sincronizar_listas` por «so' os
+    /// `escritos`» (a versao ingenua do pedido) e este teste falha com
+    /// `sincronizados = 0`: a marca `.tx` do commit seria apagada sem o `.reg`
+    /// ter ido ao prato. A sonda `tests/fecho-da-janela-sincroniza-o-reg.rs`
+    /// prova o mesmo com dois processos de verdade e `strace`.
+    #[test]
+    fn o_primeiro_fecho_do_processo_nao_confia_no_registro() {
+        let d = dir_temp("processo-morto");
+        {
+            let mut a = Volumes::novo(&d, "t", "reg", Paginacao::DESLIGADA);
+            a.criar(1).unwrap();
+            a.escrever(1, 0, b"slot que ficou no cache do nucleo")
+                .unwrap();
+            // O SIGKILL: o que o processo sabia vai junto com ele.
+            a.esquecer_o_que_o_processo_sabe();
+        }
+        // O processo novo abre o volume 1 para ler o cabecalho -- e' o que
+        // `RegFile::sincronizar` faz antes de delegar -- e fecha a janela.
+        let mut b = Volumes::novo(&d, "t", "reg", Paginacao::DESLIGADA);
+        b.abrir_para_sincronizar(1).unwrap();
+        b.sincronizar().unwrap();
+        assert_eq!(
+            b.sincronizados(),
+            1,
+            "o primeiro fecho do processo tem de levar o descritor aberto ao              disco mesmo sem marca nenhuma: a marca morreu com o processo,              a pagina suja nao"
+        );
+        // Depois do batismo, sem escrita, nada.
+        b.sincronizar().unwrap();
+        assert_eq!(
+            b.sincronizados(),
+            1,
+            "batizado e limpo: o segundo fecho nao paga"
+        );
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// O que o pedido 258 compra, na menor escala em que da' para prova-lo:
+    /// depois do batismo, so' quem foi ESCRITO vai ao disco -- e ler nao e'
+    /// escrever.
+    ///
+    /// **Prova real:** tire o `.filter(|v| !batizados.contains(v))` de
+    /// `sincronizar_listas` (o comportamento ate' 16/09/2026) e as duas
+    /// asserções de «nao paga» caem, com um `fsync` a mais cada.
+    #[test]
+    fn depois_do_batismo_so_quem_foi_escrito_vai_ao_disco() {
+        let d = dir_temp("batismo");
+        let p = Paginacao::nova(10, 99).unwrap();
+        let mut v = Volumes::novo(&d, "t", "reg", p);
+        v.criar(1).unwrap();
+        v.criar(2).unwrap();
+        // Um byte em cada, para haver o que ler depois: volume vazio nao se le.
+        v.escrever(1, 0, b"a").unwrap();
+        v.escrever(2, 0, b"b").unwrap();
+        v.sincronizar().unwrap();
+        assert_eq!(v.sincronizados(), 2, "o batismo leva os dois");
+        v.sincronizar().unwrap();
+        assert_eq!(
+            v.sincronizados(),
+            2,
+            "descritor aberto, batizado e limpo nao paga fsync"
+        );
+        v.escrever(2, 0, b"x").unwrap();
+        v.sincronizar().unwrap();
+        assert_eq!(v.sincronizados(), 3, "so' o volume escrito");
+        let mut buf = [0u8; 1];
+        v.ler(1, 0, &mut buf).unwrap();
+        v.sincronizar().unwrap();
+        assert_eq!(v.sincronizados(), 3, "leitura nao e' escrita");
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Por que o batismo e' por VOLUME, e nao um bit por familia.
+    ///
+    /// A lista `abertos` e' a unica cobertura entre processos que o motor tem,
+    /// e ela e' por volume. Um volume do meio que so' entra no cache DEPOIS do
+    /// primeiro fecho -- aberto para ler -- nunca foi batizado neste processo:
+    /// tem de pagar o primeiro `fsync` dele, como pagava antes desta mudanca.
+    /// Um bit por familia o pularia, e pularia calado.
+    #[test]
+    fn volume_do_meio_que_entra_no_cache_depois_do_batismo_paga_o_primeiro_fsync() {
+        let d = dir_temp("batismo-do-meio");
+        let p = Paginacao::nova(10, 99).unwrap();
+        {
+            let mut a = Volumes::novo(&d, "t", "reg", p);
+            for vol in 1..=3 {
+                a.criar(vol).unwrap();
+            }
+            a.sincronizar().unwrap();
+            a.escrever(2, 0, b"pagina que o processo morto deixou")
+                .unwrap();
+            a.esquecer_o_que_o_processo_sabe();
+        }
+        let mut b = Volumes::novo(&d, "t", "reg", p);
+        b.abrir_para_sincronizar(1).unwrap();
+        b.sincronizar().unwrap();
+        assert_eq!(b.sincronizados(), 1, "so' o volume 1 estava aberto");
+        let mut buf = [0u8; 1];
+        b.ler(2, 0, &mut buf).unwrap();
+        b.sincronizar().unwrap();
+        assert_eq!(
+            b.sincronizados(),
+            2,
+            "o volume 2 nunca foi batizado neste processo: paga o primeiro              fsync dele, como pagava antes"
+        );
+        b.sincronizar().unwrap();
+        assert_eq!(b.sincronizados(), 2, "e so' o primeiro");
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// A segunda condicao da §16.2: a marca nasce ANTES do `write`, no unico
+    /// lugar que entrega descritor de escrita. Um `write_all` que falha no
+    /// meio deixa pagina suja, e com «pular limpo» pagina suja sem marca e'
+    /// dado perdido numa queda de energia.
+    ///
+    /// **Prova real:** mova o `marcar_escrito` de `arquivo` de volta para
+    /// depois do `write_all` de `escrever` e a primeira asserção cai.
+    #[test]
+    fn a_marca_nasce_ao_pedir_o_descritor_de_escrita() {
+        let d = dir_temp("marca-antes");
+        let mut v = Volumes::novo(&d, "t", "reg", Paginacao::DESLIGADA);
+        v.criar(1).unwrap();
+        v.sincronizar().unwrap();
+        assert!(trava(&v.pendentes).escritos.is_empty());
+        // Pede o descritor para escrever e NAO escreve nada.
+        let _ = v.arquivo(1, true).unwrap();
+        assert!(
+            trava(&v.pendentes).escritos.contains(&1),
+            "a marca tem de existir antes do write"
+        );
+        v.sincronizar().unwrap();
+        // Pedir para ler nao marca.
+        let _ = v.arquivo(1, false).unwrap();
+        assert!(trava(&v.pendentes).escritos.is_empty(), "leitura nao marca");
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// A terceira condicao da §16.2: a marca so' cobre o que passa pelo
+    /// `Volumes`, entao quem acrescentar um caminho de escrita FORA dele --
+    /// num arquivo de uma das sete familias -- tem de passar por aqui e
+    /// dizer por que a marca nao faz falta. Os de hoje, contados:
+    /// `ndx.rs` (fora do `Volumes`, sincroniza por conta propria), `reg.rs`
+    /// (`.novo` escrito, `sync_all`, `rename` -- o inode chega limpo),
+    /// `pag.rs` (nao e' familia do `Volumes`, e sem `fsync` por decisao),
+    /// `restaurar.rs` e `backup.rs` (copias, com `sync_all` proprio),
+    /// `catalogo.rs` (a marca do database e as trocas de nome) e o proprio
+    /// `volume.rs`.
+    ///
+    /// Conta so' ate' o primeiro `#[cfg(test)]` de cada arquivo: teste que
+    /// escreve arquivo nao e' caminho de escrita do motor. E' igualdade, nao
+    /// teto: quem tirar um caminho baixa o numero no mesmo commit.
+    #[test]
+    fn nenhum_caminho_de_escrita_novo_fora_do_volumes() {
+        const HOJE: &[(&str, usize)] = &[
+            ("backup.rs", 3),
+            ("catalogo.rs", 3),
+            ("ndx.rs", 2),
+            ("pag.rs", 2),
+            ("reg.rs", 5),
+            ("restaurar.rs", 2),
+            ("volume.rs", 2),
+        ];
+        const ABRIDORES: [&str; 4] = [
+            "OpenOptions::new()",
+            "File::create(",
+            "fs::write(",
+            "fs::rename(",
+        ];
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut medido: BTreeMap<String, usize> = BTreeMap::new();
+        for item in std::fs::read_dir(&src).unwrap().flatten() {
+            let c = item.path();
+            if c.extension().map_or(true, |e| e != "rs") {
+                continue;
+            }
+            let texto = std::fs::read_to_string(&c).unwrap();
+            let mut n = 0;
+            for l in texto.lines() {
+                if l.contains("#[cfg(test)]") {
+                    break;
+                }
+                let t = l.trim_start();
+                if t.starts_with("//") {
+                    continue;
+                }
+                n += ABRIDORES
+                    .iter()
+                    .map(|a| t.matches(a).count())
+                    .sum::<usize>();
+            }
+            if n > 0 {
+                medido.insert(c.file_name().unwrap().to_string_lossy().into_owned(), n);
+            }
+        }
+        let esperado: BTreeMap<String, usize> =
+            HOJE.iter().map(|(a, n)| (a.to_string(), *n)).collect();
+        assert_eq!(
+            medido, esperado,
+            "mudou quem abre arquivo para escrever fora do `Volumes`. Se e' um              caminho NOVO numa das sete familias, ele precisa ou passar pelo              `Volumes` (para a marca existir) ou sincronizar por conta propria              antes de publicar -- e a lista `HOJE` deste teste muda no mesmo              commit, com o motivo no comentario acima"
+        );
     }
 
     /// O volume do MEIO de uma tabela paginada -- o que nem a reabertura abre,

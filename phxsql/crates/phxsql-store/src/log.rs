@@ -791,6 +791,12 @@ impl LogFile {
         }
         self.volumes.sincronizar()
     }
+
+    /// Quantos arquivos o `.log` ja mandou ao disco de verdade. Ver
+    /// `Volumes::sincronizados` -- conta o ARQUIVO, e nao a chamada.
+    pub fn sincronizados(&self) -> u64 {
+        self.volumes.sincronizados()
+    }
 }
 
 #[cfg(test)]

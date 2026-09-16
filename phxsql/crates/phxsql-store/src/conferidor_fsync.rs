@@ -43,12 +43,19 @@
 /// arquivo nenhum que importe, passaria pela guarda e e' exatamente o que
 /// esta catraca reprova.
 ///
-/// # Como o numero desce
+/// # Por que ele continua em 8 depois do pedido 258
 ///
 /// Quatro dos oito arquivos -- `.trash`, `.reason`, `.bin`, `.memo` -- um
-/// `inserir` comum nao muda. Sincronizar arquivo que ninguem sujou custa
-/// **52 us** medidos nesta maquina (contra 139 us de um `fsync` com pagina
-/// suja), e essa e' a divida que este numero cobra. Ela **nao** se paga com um
-/// sinalizador de sujeira por instancia: ver a recusa medida em
-/// `docs/DESEMPENHO.md`, secao do fecho de janela.
+/// `inserir` comum nao muda, e desde 16/09/2026 `Volumes::sincronizar` os
+/// PULA quando estao batizados (levados ao disco por este processo alguma
+/// vez) e sem marca de escrita. Mas o que este medidor traca e' o PRIMEIRO
+/// fecho de uma familia num processo novo (`fsync-por-fecho --sonda`, num
+/// filho sob `strace`), e esse fecho nao pula ninguem, de proposito: a pagina
+/// suja que um processo morto deixou no nucleo nao tem marca em RAM, e o
+/// primeiro `fsync` e' o unico que a alcanca. Entao o numero daqui mede o
+/// arranque, e o arranque continua custando 8. Quem desce e' o segundo fecho
+/// em diante -- e quem o mede e' a guarda `tests/fsync-por-operacao.rs`, por
+/// contador, e o `--example fsync-por-operacao`, pelo nucleo. Regua que
+/// passasse a medir o segundo fecho seria OUTRA catraca, com outro nome; esta
+/// nao se remenda. Ver `docs/DESEMPENHO.md` §24.
 pub const TETO_FSYNC_POR_FECHO_V2: usize = 8;

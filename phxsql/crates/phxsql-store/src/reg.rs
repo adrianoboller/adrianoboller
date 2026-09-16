@@ -2195,6 +2195,12 @@ impl RegFile {
         self.volumes.sincronizar()
     }
 
+    /// Quantos arquivos o `.reg` ja mandou ao disco de verdade. Ver
+    /// `Volumes::sincronizados` -- conta o ARQUIVO, e nao a chamada.
+    pub fn sincronizados(&self) -> u64 {
+        self.volumes.sincronizados()
+    }
+
     /// A senha da ultima sincronizacao do `.reg`. Ver `Volumes::selo`.
     pub fn selo(&self) -> u64 {
         self.volumes.selo()

@@ -555,6 +555,12 @@ impl LixeiraFile {
         self.volumes.sincronizar()
     }
 
+    /// Quantos arquivos o `.trash` ja mandou ao disco de verdade. Ver
+    /// `Volumes::sincronizados` -- conta o ARQUIVO, e nao a chamada.
+    pub fn sincronizados(&self) -> u64 {
+        self.volumes.sincronizados()
+    }
+
     /// Quantas vezes o `.trash` esperou o disco. Ver `Volumes::sincronizacoes`.
     pub fn sincronizacoes(&self) -> u64 {
         self.volumes.sincronizacoes()
