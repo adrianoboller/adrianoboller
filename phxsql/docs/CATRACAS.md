@@ -633,6 +633,112 @@ chave de conjunto, dá o mesmo veredito em **0,18 s** — 180× menos. **Régua
 cara é régua que não se roda**, e uma que custasse meio minuto acabaria
 saindo da bateria pelo mesmo motivo que o provador saiu do dia a dia.
 
+## 13. As cinco catracas dos dois mapas de concorrência — e onde cada uma passou a rodar
+
+**O defeito que a motivou** (pendência #252, metade (2), 16/09/2026): as
+catracas dos dois mapas de concorrência só rodavam no **item 0 da bateria de
+ponta a ponta**, e a bateria é um comando que alguém tem de lembrar de dar. A
+última corrida versionada era de **29/08**; a seguinte, de **16/09**. Dezoito
+dias — e nos últimos **oito** a `alcancam-fsync` esteve furada (23 com teto
+22, desde o merge `6245491` do PITR em 08/09 17:17), com **três rodadas de
+integração de `fmt`, `clippy` e suíte verdes** sem que nada acusasse. É a mesma
+doença do pedido 263, paga no mesmo dia por outro caminho: **guarda que só se
+confere quando alguém lembra é guarda que não se confere.** Lá foram quatro
+dias e onze guardas quebradas; aqui, dezoito dias.
+
+**As cinco, e o que cada uma conta** (os tetos moram no `CATRACAS` de cada
+medidor, e não numa cópia em Rust — duas contas divergem na primeira correção
+feita numa só):
+
+| Catraca | Medidor | Teto | Medido em 16/09/2026 | Estado |
+|---|---|---:|---:|---|
+| `codigo-do-dono` | `bancada/concorrencia/mapa-da-trava.py` | 5 | **5** | sem folga |
+| `alcancam-fsync` | `bancada/concorrencia/mapa-da-trava.py` | 22 | **23** | **VERMELHA** — #252 (1), parada com o dono |
+| `rede-ou-espera` | `bancada/concorrencia/mapa-da-trava.py` | 0 | **0** | sem folga |
+| `spawn-sem-teto` | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | sem folga |
+| `catalogo-envelhecido` | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | sem folga |
+
+**O custo, medido antes de escolher o lugar** — três corridas de cada, nesta
+máquina, em 16/09/2026:
+
+| Medidor | Corrida 1 | Corrida 2 | Corrida 3 |
+|---|---:|---:|---:|
+| `mapa-das-threads.py --catraca` | 1,122 s | 0,885 s | 0,811 s |
+| `mapa-da-trava.py --catraca` | 3,113 s | 3,056 s | 3,187 s |
+
+**Pelo custo as duas caberiam na suíte**: um segundo e três segundos somem
+dentro de um `cargo test --workspace` que leva minutos. **O que separou as
+duas não foi o número — foi o estado**, e dizer isso importa mais que o
+número: uma catraca **vermelha por decisão do dono** não pode virar portão.
+Posta na suíte, ela deixaria a suíte de **todas** as frentes vermelha até ele
+decidir, e a saída mais barata dessa pressão seria subir o teto de 22 para 23
+— exatamente o que a pétrea proíbe. **Catraca só desce.**
+
+**Onde cada uma passou a rodar:**
+
+- **Mapa das threads** (verde) → `cargo test`, em
+  `crates/phxsql-server/tests/catraca-do-mapa-das-threads.rs`. O teste **roda
+  o medidor** e cobra o veredito dele: uma medição só, num lugar só — é o
+  molde do `catraca-fsync-por-fecho.rs` do `phxsql-store`. Medido dentro da
+  suíte: **0,68 s / 0,67 s / 0,69 s**. Sem `python3` ele **falha dizendo que
+  não conferiu**, nunca passa calado: guarda que não roda tem de dizer que não
+  rodou.
+- **Mapa da trava** (vermelha) → `docs/dossie/numeros-do-projeto.py`, que roda
+  a cada rodada. Ali ela é **relato com data, não portão**: a reprovação sai
+  antes dos minutos de `cargo test` e **de novo na última linha**, que é a que
+  se lê. O gerador **não muda de código de saída** por causa dela — fazê-lo
+  poria o `portao-dos-geradores.py` vermelho a cada rodada com a mensagem
+  errada («gerador que não emite quando a fonte sumiu»), e sinal falso é o que
+  esta casa pune. No dia em que a #252 (1) for decidida, ela entra na suíte do
+  mesmo jeito que a das threads.
+- As duas continuam no **item 0 da bateria** e no aviso de hora em hora
+  (`comunicacao.sh`, desde `560c63c`, 16/09 07:09 — uma frente anterior desta
+  mesma rodada já as tinha posto lá). Nenhum desses dois é portão: a bateria é
+  um comando que alguém dá, e o `comunicacao.sh` imprime `⚠️` sem código de
+  saída, além de depender da corrente do batimento fino, que o próprio arquivo
+  registra ter ficado ~3 h parada.
+
+**O que continua vermelho, e continua vermelho**: `alcancam-fsync` **23, teto
+22**. Nada aqui mexeu nela — nem no teto, nem na régua, nem na seção crítica
+que a furou. A decisão é do dono (#252, metade (1)): ou a catraca ganha a
+exceção nomeada «operação administrativa que troca o banco inteiro» — o que a
+**aposenta** e faz nascer outra no número medido do dia, como manda a lei da
+régua —, ou a reaplicação do diário sai da seção crítica.
+
+**A prova real, nos dois sentidos** (16/09/2026, com o binário do teste já
+compilado e a árvore devolvida em seguida):
+
+- Repondo um `thread::spawn` de produção sem entrada no catálogo
+  (`crates/phxsql-core/src/paralelo.rs`), o teste da suíte **falha** nomeando:
+  `SUBIU spawn-sem-teto 1 (teto 0)` e `SEM TETO
+  crates/phxsql-core/src/paralelo.rs:120 thread::spawn`.
+- Envelhecendo uma entrada do catálogo (agulha que não casa com sítio nenhum),
+  **falha** nomeando `SUBIU catalogo-envelhecido 1 (teto 0)` e `ENVELHECIDA
+  crates/phxsql-server/src/telemetria.rs`.
+- Escondendo o medidor, o gerador **acusa** `mapa-das-threads.py SUMIU … a
+  catraca dele NÃO foi conferida` e o nomeia na linha final.
+- Com a árvore limpa: `ok` nos dois, e a linha final do gerador nomeia só a
+  `mapa-da-trava.py`, que é a que está mesmo vermelha.
+
+**E a armadilha que esta medição pagou, porque ela é a lei da casa por outro
+caminho**: a **primeira** reposição do defeito **passou** — teste verde com o
+defeito na árvore, que é o pior estado possível. A causa não era o teste: eu
+tinha acrescentado o `spawn` no **fim** do `paralelo.rs`, e o fim do arquivo
+fica **depois** do `#[cfg(test)] mod` da linha 118 — território que o medidor
+ignora de propósito, e com razão. **Prova real que não falha com o defeito
+reposto não provou nada**, e a segunda tentativa (o `spawn` acima da linha
+118) é que mostrou a régua funcionando. A lição tem alcance: repor defeito em
+arquivo Rust exige saber **onde acaba a produção**, e não só qual arquivo.
+
+**O que este inventário ainda NÃO vê**: `docs/qa/medir.py` varre
+`crates/*/examples/*.rs` atrás de quem imprime `catraca:` e `crates/*/src/**`
+atrás de `pub const TETO*`. **Nenhuma** das cinco catracas acima aparece nele,
+porque os tetos moram em Python, em `bancada/` — e o mesmo vale para a
+`TETO_TRECHO_MORTO` e a `TETO_TESTE_MORTO` da §12. São **sete** catracas vivas
+que a tabela gerada não conta. Ficam nomeadas aqui pelo mesmo motivo de
+sempre: lei que lista menos casos do que existem protege igual hoje e menos no
+dia em que alguém usar a lista como inventário.
+
 ## Os limites de funcionamento encontrados (não são catracas)
 
 Achados varrendo `TETO`, `MAX` e `LIMITE` em `crates/*/src/**/*.rs` e em
@@ -719,11 +825,15 @@ contado contra o código-fonte, e nenhum entra na tabela de catracas.
   que este inventário não seja lido como completo** — lei que lista menos
   casos do que existem protege igual hoje e menos no dia em que alguém usar a
   lista como inventário.
-- **`bancada/concorrencia/escolher-o-desenho.py`, `mapa-da-trava.py`,
+- **`bancada/concorrencia/escolher-o-desenho.py`,
   `bancada/profiler/sonda-log.py`, `bancada/cifra-do-fio/prova.py`** — usam
   "teto"/"limite" em prosa de bancada de desempenho (teto teórico de
   paralelismo, teto de latência do profiler, overhead do Base64), não são
-  conferidores de qualidade de código.
+  conferidores de qualidade de código. **O `mapa-da-trava.py` saiu desta
+  lista**: ele estava aqui com razão em 03/09, e deixou de estar em `9fe9cc4`,
+  quando ganhou três catracas de verdade — hoje são elas e as duas do
+  `mapa-das-threads.py`, catalogadas na §13. Entrada de catálogo que envelheceu
+  é o defeito da própria §12, visto de dentro.
 - **`crates/phxsql-store/tests/tabela.rs:16`** (`const LIMITE: usize = 3`) —
   falso positivo do grep: é o índice da coluna "limite" (limite de crédito)
   num schema de teste, sem relação nenhuma com catraca.

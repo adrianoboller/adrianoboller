@@ -132,7 +132,13 @@ def arquivos_da_interface() -> tuple:
     return tuple(f"crates/phxsql-server/ui/{n}" for n in dict.fromkeys(nomes))
 
 
-def linhas_de_doc() -> int:
+def arquivos_de_doc() -> list:
+    """A LISTA dos documentos contados, nao so a soma.
+
+    Existe separada porque uma segunda pagina precisa contar os MESMOS
+    arquivos, e uma copia da receita la envelheceria sozinha -- foi o que o
+    KiB da interface ja custou. Quem quer o total chama `linhas_de_doc()`.
+    """
     arquivos = sorted((RAIZ / "docs").glob("*.md"))
     arquivos += [RAIZ / nome for nome in DOCS_AVULSOS]
     faltando = [f for f in arquivos if not f.exists()]
@@ -141,9 +147,13 @@ def linhas_de_doc() -> int:
             "a receita de linhas de doc aponta para arquivo que nao existe: "
             + ", ".join(str(f.relative_to(RAIZ)) for f in faltando)
         )
+    return arquivos
+
+
+def linhas_de_doc() -> int:
     return sum(
         len(f.read_text(encoding="utf-8", errors="replace").splitlines())
-        for f in arquivos
+        for f in arquivos_de_doc()
     )
 
 
@@ -285,6 +295,78 @@ def idiomas() -> dict:
     return n
 
 
+# ---------------------------------------------------------------------------
+# As catracas dos dois mapas de concorrencia -- medidas AQUI porque a bateria
+# nao roda.
+#
+# Medido em 16/09/2026: elas so rodavam no item 0 da bateria de ponta a ponta,
+# e a bateria e um comando que alguem tem de lembrar de dar. A ultima corrida
+# versionada era de 29/08 e a seguinte de 16/09 -- DEZOITO dias, e nos ultimos
+# OITO a `alcancam-fsync` esteve furada (23 secoes criticas alcancando `fsync`
+# com a trava na mao, teto 22, desde o merge do PITR em 08/09) com tres
+# rodadas de integracao de portoes VERDES. Catraca que so roda onde ninguem
+# roda e lembrete, nao guarda.
+#
+# A do mapa das THREADS virou teste da suite
+# (`crates/phxsql-server/tests/catraca-do-mapa-das-threads.rs`), e a suite roda
+# aqui dentro, no `testes_que_passam`. Ela continua sendo chamada aqui de
+# proposito: com `--sem-testes` a suite nao roda, e uma catraca que some
+# quando o gerador e chamado pela metade e a mesma doenca do painel que o
+# `pagina-dos-pedidos.py` pulava.
+#
+# A do mapa da TRAVA nao pode ser portao hoje: ela esta vermelha por decisao do
+# dono -- pendencia #252, metade (1), a restauracao PITR reaplicando o diario
+# sob a trava -- e po-la num portao deixaria a suite de TODAS as frentes
+# vermelha ate ele decidir. A saida mais barata dessa pressao seria subir o
+# teto de 22 para 23, que e exatamente o que a petrea proibe: catraca so
+# desce. Entao aqui ela e RELATO com data, e nao portao: aparece vermelha a
+# cada rodada em vez de sumir por dezoito dias. No dia em que a #252 (1) for
+# decidida, ela entra na suite do mesmo jeito que a das threads.
+#
+# O veredito sai do CODIGO DE SAIDA do medidor e o texto e o dele, reimpresso:
+# catraca lida pela prosa quebra em silencio no dia em que alguem melhorar a
+# redacao. E a mesma lei do «texto se resolve por CHAVE, nunca por comparacao
+# da frase».
+MAPAS = ("mapa-da-trava.py", "mapa-das-threads.py")
+
+
+def catracas_dos_mapas() -> list:
+    """Roda a catraca dos dois mapas. Devolve [(arquivo, reprovou)].
+
+    Medidor que sumiu conta como REPROVADO, nunca como silencio: guarda que
+    nao roda tem de dizer que nao rodou.
+    """
+    fora = []
+    for nome in MAPAS:
+        caminho = RAIZ / "bancada" / "concorrencia" / nome
+        if not caminho.exists():
+            print(f"  !! {nome} SUMIU de bancada/concorrencia -- a catraca "
+                  "dele NAO foi conferida")
+            fora.append((nome, True))
+            continue
+        r = subprocess.run([sys.executable, str(caminho), "--catraca"],
+                           cwd=RAIZ, capture_output=True, text=True)
+        for linha in (r.stdout or r.stderr).splitlines():
+            print("  " + linha)
+        fora.append((nome, r.returncode != 0))
+    return fora
+
+
+def avisar_as_vermelhas(mapas: list) -> None:
+    """Repete a reprovacao na ULTIMA linha, que e a que se le.
+
+    Uma linha vermelha no meio de trinta linhas de numero e uma linha que
+    ninguem ve -- e este gerador existe justamente porque numero que ninguem
+    ve envelhece calado.
+    """
+    vermelhas = [n for n, reprovou in mapas if reprovou]
+    if not vermelhas:
+        return
+    print("\n!!  catraca REPROVADA em: " + ", ".join(vermelhas))
+    print("    O teto NAO sobe. Desfaca o que a furou, ou leve o motivo ao "
+          "dono (pendencia #252).")
+
+
 def testes_do_html(html: str) -> int:
     m = re.search(r'<div class="v">([\d.]+)</div><div class="r">testes</div>', html)
     if not m:
@@ -362,6 +444,15 @@ def main() -> None:
     so_medir = "--so-medir" in sys.argv
     html = DOSSIE.read_text(encoding="utf-8")
 
+    # Antes de tudo, e nao no fim: se uma catraca esta furada, quem roda isto
+    # ve a reprovacao ANTES dos minutos de `cargo test`. Data no cabecalho
+    # porque os numeros desta casa se juntam de corridas de dias diferentes, e
+    # juntar sem dizer quando publica um retrato que nunca existiu.
+    print(f"-- as catracas dos dois mapas de concorrencia, medidas em "
+          f"{time.strftime('%Y-%m-%d %H:%M:%S')}")
+    mapas = catracas_dos_mapas()
+    print()
+
     # O charset: sem ele a pagina so renderiza acento certo DENTRO do wrapper
     # do publicador de Artifact (que injeta <meta charset=utf8>). Fora dele --
     # arquivo local, outro host -- os bytes continuam UTF-8 corretos, mas o
@@ -389,6 +480,7 @@ def main() -> None:
           f"({idi['pct']}%), catraca em {idi['teto']}")
     n["idiomas"] = idi
     if so_medir:
+        avisar_as_vermelhas(mapas)
         return
     escrever_fora_do_dossie(n)
     escrever_capacidades(n)
@@ -439,6 +531,7 @@ def main() -> None:
 
     DOSSIE.write_text(html, encoding="utf-8")
     print(f"\ndossiê atualizado: {DOSSIE.relative_to(RAIZ)}")
+    avisar_as_vermelhas(mapas)
 
 
 if __name__ == "__main__":
