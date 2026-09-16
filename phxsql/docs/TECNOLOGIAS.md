@@ -36,17 +36,17 @@ foi estimado no lugar de uma medição que faltou.
 |---|---:|---:|---:|---:|---:|---:|
 | `phxsql-cli` | 1 | 815 | 104 | 113 | 78 | 1110 |
 | `phxsql-cmd` | 2 | 579 | 110 | 171 | 62 | 922 |
-| `phxsql-core` | 35 | 11628 | 4137 | 3136 | 1514 | 20415 |
+| `phxsql-core` | 35 | 11628 | 4137 | 3138 | 1514 | 20417 |
 | `phxsql-ffi` | 7 | 1408 | 1014 | 703 | 235 | 3360 |
-| `phxsql-odbc` | 7 | 2412 | 1086 | 920 | 226 | 4644 |
-| `phxsql-server` | 56 | 43301 | 26998 | 20299 | 4839 | 95437 |
-| `phxsql-sql` | 10 | 6621 | 3356 | 1961 | 745 | 12683 |
-| `phxsql-store` | 24 | 13179 | 3583 | 5621 | 1532 | 23915 |
-| **total** | **142** | **79943** | **40388** | **32924** | **9231** | **162486** |
+| `phxsql-odbc` | 7 | 2412 | 1086 | 921 | 226 | 4645 |
+| `phxsql-server` | 56 | 43502 | 27365 | 20589 | 4871 | 96327 |
+| `phxsql-sql` | 10 | 6623 | 3369 | 1979 | 746 | 12717 |
+| `phxsql-store` | 24 | 13209 | 3583 | 5640 | 1533 | 23965 |
+| **total** | **142** | **80176** | **40768** | **33254** | **9265** | **163463** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **40388/79943 = 0.51×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **40768/80176 = 0.51×**.
 
-Alem do `src/`: **75** programas de medicao em `examples/` (18941 linhas — bancada em Rust, nao produto nem teste) e **57** arquivos em `tests/` de integracao fora de `src/` (18731 linhas).
+Alem do `src/`: **75** programas de medicao em `examples/` (18941 linhas — bancada em Rust, nao produto nem teste) e **57** arquivos em `tests/` de integracao fora de `src/` (18797 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -108,10 +108,10 @@ mesmo motivo que o rodapé já errou uma vez.
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
 | JavaScript (prova ponta a ponta) | `testes-web/` | 48 | 10237 |
-| Python (bancada de medicao) | `bancada/` | 109 | 47007 |
+| Python (bancada de medicao) | `bancada/` | 110 | 47678 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 18 | 2608 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 359 | 86973 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 29 | 11879 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 364 | 87698 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 32 | 13324 |
 <!-- /GERADO -->
 
 Não incluído acima porque já está na tabela 1.1: os `.rs` de `examples/` e
@@ -328,7 +328,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 
 **18** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **145** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 5589. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **151** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 5817. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -376,6 +376,10 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
   regrava a tabela de `docs/TESTES.md` §1 a partir de `#[test]` por arquivo,
   agrupados por assunto — o documento certo para "quantos testes tem a
   criptografia" ou "quantos tem o DbLink" é aquele, não este.
+- **A varredura da dívida técnica** (16/09/2026, pedido 264) segue o
+  *mecanismo* do `conferidor.rs` — varre o fonte, conta, diz arquivo e linha
+  — mas **não é um conferidor em Rust**: mora em `docs/status/riscos.py` e é
+  função pura de `crates/**/*.rs`. O porquê está medido na §5.7.
 
 ### 4.4 Como se compilou para outra arquitetura
 
@@ -485,7 +489,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **267** pedidos numerados; **34** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **267** pedidos numerados; **36** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -523,6 +527,8 @@ proposta de voltar sem medição nova.
 | 251 | **P2P: a identidade sem domínio bate no AAD do selo por endereço — decisão do dono e do DBA antes de congelar o PSCH do correio** |
 | 253 | **Bancada «chutar a tomada»: SIGKILL dentro da transação aberta, no meio do BULKINSERT, do `inserir_lote`, do `reindexar` e da transação dentro da reserva — 0 desfechos inválidos em 408 quedas** |
 | 258 | **`Volumes::sincronizar` sincroniza todo descritor aberto sem pular os limpos: 8 `fsync` por inserir e 9 por excluir no regime por operação** |
+| 265 | **Um gerador de telemetria e logs medidos — a seção NÃO NASCE na sétima página** |
+| 267 | **`panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados` exige que os TRÊS pânicos aconteçam, e sob carga o terceiro não chega** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —
@@ -703,6 +709,34 @@ COMPARATIVO.md`) que continuam `❌` para o PhxSql, e por que não são buraco:
   formato em disco — decidir «quando um cliente pedir leitura repetível»
   passou a custar o mesmo que decidir hoje. Números e a ordem completa das
   alternativas mais baratas em `docs/SOMBRA.md` §3 e §6.
+
+### 5.7 O conferidor de dívida **em Rust** — recusado com o motivo medido
+
+O pedido 264 pedia uma marcação `// DIVIDA:` no fonte, «varrida como o
+`conferidor.rs` varre os textos fora da fábrica». O **mecanismo** do
+conferidor foi seguido — varre o fonte, conta, diz arquivo e linha, para de
+propósito quando a marca está malformada. O **veículo** foi recusado, e não
+por gosto:
+
+- um conferidor em Rust só responde por `cargo run --example`;
+- no `docs/dossie/portao-dos-geradores.py`, todo gerador que chama `cargo` é
+  **`nota-cargo`** — o portão **não o roda**, porque o disco desta *worktree*
+  é escasso (`numeros-do-projeto.py` e `docs/qa/medir.py` já estão nessa
+  categoria, pelo mesmo motivo, e saem como NOTA em toda corrida);
+- logo, a seção nasceria com um número que **nenhum portão confere** — que é
+  exatamente o estado que o pedido 264 existe para acabar.
+
+Em Python a varredura é **função pura do fonte versionado**, e o portão a
+confere byte a byte a cada rodada. O custo dessa escolha também está medido: a
+sétima página inteira leva **minutos** (ela varre `crates/` cinco vezes), e o
+`riscos.py` sozinho leva **segundos** — foi isso que permitiu que ele escreva
+só o próprio pedaço da página, entre marcas, em vez de re-montar tudo.
+
+O que se perde, dito em vez de escondido: uma marca `// DIVIDA:` malformada só
+é reprovada quando alguém roda o gerador ou o portão, e **não** pelo
+`cargo test` de quem escreveu a linha. Quem quiser o segundo crivo tem de
+aceitar a primeira recusa acima — ou pagar as duas implementações, que é a
+receita duplicada que esta casa recusa em toda parte.
 
 ---
 

@@ -229,6 +229,20 @@ BANCADAS = [
                    ("rede_intervalos_s", "recuo de rede", "s")],
     },
     {
+        "nome": "Telemetria — quanto custa ligar a instrumentação",
+        "json": "bancada/telemetria/resultados.json",
+        "roda": "python3 bancada/telemetria/custo.py",
+        # Sem crase: a celula sai por `esc()` e nao converte Markdown.
+        "prova": "um servidor só, com o interruptor virado em tempo de "
+                 "execução a cada par curto e a ordem alternada — o custo sai "
+                 "do PISO de cada lado (o efeito é aditivo; a média mede o "
+                 "vizinho) e só é declarado quando o teste de sinal passa a 3 "
+                 "sigma. Carga que não resolve aparece como «dentro do ruído», "
+                 "com a contagem dos pares ao lado",
+        "campos": [("carga_da_maquina", "carga da máquina na corrida", ""),
+                   ("linhas_no_checksum", "linhas no pior caso", "")],
+    },
+    {
         "nome": "Transações — atomicidade pelo soquete",
         "json": "bancada/transacoes/resultados.json",
         "roda": "python3 bancada/transacoes/provar.py",

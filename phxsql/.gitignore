@@ -48,5 +48,10 @@
 /bancada/telemetria/bancada.html
 /bancada/telemetria/*.png
 /bancada/telemetria/capturas-cores/
+# O servidor que o `custo.py` sobe para medir: 73 MB de tabela de verdade
+# (200.000 linhas para o pior caso do `siga()` por linha). Refaz-se com
+# `python3 bancada/telemetria/custo.py`; o que vale guardar e o
+# `resultados.json`, que e versionado.
+/bancada/telemetria/srv-custo/
 /bancada/tomada/.base-da-prova/
 /bancada/tomada/.phxsqld-desta-corrida

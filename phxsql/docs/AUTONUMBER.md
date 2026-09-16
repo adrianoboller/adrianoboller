@@ -592,7 +592,31 @@ resolve.
 ## C.4 O que a G2 recusou fazer sozinha (é papel C / próximo passo)
 
 - **Alargar a recusa de 2⁵³ ao `Int8`/`UInt8`** — muda o comportamento de
-  cliente que já manda número grande; decisão de projeto.
+  cliente que já manda número grande; decisão de projeto. **Continua aberta**,
+  e agora tem guarda: `a_faixa_imprecisa_continua_passando_por_decisao_registrada`
+  (`valores.rs`) prova que a faixa passa, e cai no dia em que papel C decidir —
+  apontando para este parágrafo. A frente 245 (16/09/2026) chegou a alargá-la e
+  **desfez**: dispensa que uma frente registrou não se revoga em silêncio por
+  outra.
+- **O que a 245 FECHOU ao lado, e não é este item:** o número cru *fora da
+  faixa do tipo* era **fabricado**, não arredondado — o `as i64` do Rust satura,
+  e `1e21`, `1e30` e `1e300` viravam todos `9223372036854775807` no `.reg`,
+  aceitos calados (medido em 16/09/2026 pelo protocolo, coluna `Int8`; idem
+  `UInt8`). Isso é o **irmão do `Int1`/`Int2`/`Int4`**, que já recusam a faixa
+  no `escrever_inline` («9999 nao cabe em inteiro de 8 bits»): o `Int8` era o
+  único sem a recusa, porque o carregador *é* o `i64` e não havia nada acima
+  dele contra o que conferir. Hoje recusa com `LIMITE_EXCEDIDO`. Duas coisas
+  vieram junto, na mesma função: a recusa de um **texto** numérico grande
+  demais passou a falar de **faixa** e não de tipo (era `esperado inteiro,
+  recebido Texto("1000000000000000000000")`, culpando o portador enquanto
+  `"2"` passava ao lado pelo mesmo caminho — o O4 do pedido 245); e a **metade
+  de cima do `UInt8`** (de `i64::MAX+1` a `u64::MAX`) deixou de ser
+  inalcançável pelo protocolo — o `parse` era para `i64` numa coluna de 64 bits
+  **sem** sinal, então `"18446744073709551615"` voltava como erro de tipo.
+  **O irmão da SAÍDA fica, e é o mesmo deste documento:** um `UInt8` acima de
+  2⁵³ ainda volta como número no JSON (só a `Sequence` sai como texto), então o
+  valor gravado exato lê-se arredondado — a faixa agora é gravável e continua
+  não sendo legível sem perda. É a mesma decisão adiada do primeiro item.
 - **`início`/`passo` no `PSCH`** — muda formato; é o conserto pleno do bloco 24.
 - **Contador durável propagado / faixa por nó na promoção** — o conserto pleno
   do bloco 23.

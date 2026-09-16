@@ -832,6 +832,27 @@ Os números medidos estão na secção seguinte.
 
 ## 7. Os números medidos
 
+**Desde 16/09/2026 há bancada, e é dela que sai o número publicado** —
+`bancada/telemetria/custo.py`, que grava `bancada/telemetria/resultados.json`
+com a data de **cada** carga e é lida pela §17 da sétima página
+(`docs/status/status-do-projeto.html`). As tabelas desta seção são a medição
+**ad-hoc de 09/2026**, feita à mão antes de a bancada existir; ficam aqui pelo
+que ensinam — inclusive o erro documentado logo abaixo —, e não como o número
+corrente. Quem quiser o número de hoje roda a bancada, e ele vem com a data.
+
+A bancada mede diferente em dois pontos, e os dois são conserto do que estas
+tabelas não sabiam:
+
+* **o custo sai do PISO de cada lado, não da média.** O que a telemetria
+  acrescenta é uma constante, e num `t = base + c` o `c` aparece inteiro no
+  *menor* tempo; a média mede o vizinho. A mediana do `ping` andou de 59 µs
+  para 161 µs entre duas corridas com dois minutos de diferença, sem uma linha
+  mudar;
+* **o custo só é declarado quando um teste de sinal passa a 3 σ.** Na primeira
+  corrida da bancada o `checksum` — o «pior caso» que a tabela abaixo dá como
+  +2,28% — ficou **dentro do ruído**, e o `inserir` também. Só o `ping`
+  resolveu, em **+0,25 µs por pedido**.
+
 Máquina: contêiner Linux, `/dev/vda`, `phxsqld` em `--release`. Tabela
 `loja.clientes` com **2.865.000 linhas**, três colunas, um índice.
 

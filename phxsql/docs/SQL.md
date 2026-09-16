@@ -827,6 +827,27 @@ tabela QUE ELA USA) e passa o pedido pronto; esta função só aplica por cima o
 resto do `SELECT` de fora (`WHERE`/colunas/`ORDER BY`/`LIMIT`/`OFFSET`).
 `COUNT(*)`/`GROUP BY` sobre visão recusam nomeando — ver §3.
 
+**`SELECT * FROM v` pode recusar por causa do `ORDER BY` de dentro dela, e isso
+é contrato** (pedido 245, O6). A ordem do PhxSql sai do `.ndx` e **a direção
+está gravada nele**: `ORDER BY nome DESC` só existe se houver um índice que
+guarde `nome` em `DESC`. Medido em 16/09/2026, a recusa pela visão é
+**exatamente a mesma** do `SELECT` direto, letra por letra — a visão não piora
+nada, ela repassa a regra do motor. A guarda
+`a_visao_recusa_a_direcao_com_a_mesma_frase_do_select_direto` cai no dia em que
+as duas divergirem, e aí há mesmo um defeito da visão para achar.
+
+Que o `CREATE VIEW` **aceite** um `SELECT` que hoje não se planeja é
+deliberado e está no `visoes.rs`: a visão guarda TEXTO e é reanalisada a cada
+uso, para falar de um esquema que envelhece — compilá-la na criação a
+congelaria contra a tabela de hoje, e a coluna nova nunca apareceria.
+
+A saída vai na própria recusa, e ela diz **onde** se declara: *«quem precisa das
+duas direções declara dois índices na criação da tabela, um deles com a marca
+`desc`»*. O «na criação» não é estilo — **não há operação de acrescentar índice
+a uma tabela que já existe** (não há `CREATE INDEX` nesta camada nem op no
+protocolo; `reindexar` refaz os que existem). Um conselho genérico mandaria
+fazer o que não dá para fazer.
+
 ### 7. `INSERT ... ON CONFLICT` / `ON DUPLICATE KEY UPDATE`
 
 ```text
@@ -866,6 +887,28 @@ sobre a linha proposta sempre; no ramo que atualiza, `BEFORE UPDATE` sobre a
 linha **mesclada** (com `OLD`) e `AFTER UPDATE`; no que ignora, `AFTER` nenhum.
 Desde 16/09/2026 (o gap da G4-MOTOR no pedido 245: o `BEFORE UPDATE` não
 rodava). A tabela por ramo e o motivo estão em `TRIGGERS.md` §1.
+
+**O upsert do protocolo SEM o campo `atualizar` grava a linha INTEIRA — e isso
+é contrato, não descuido** (pedido 245, O3). Medido em 16/09/2026:
+`{"op":"inserir","se_existir":"atualizar","valores":{"id":1,"nome":"ana"}}`
+sobre uma linha que já tinha `cidade` deixa `cidade` **nula**. É a semântica do
+`inserir`, que grava a linha inteira e preenche com `NULL` o que não veio
+(`json_para_linha`) — a mesma do `REPLACE INTO` do MySQL(R), e não a do
+`ON CONFLICT DO UPDATE`.
+
+Ela **não vira uma mescla**, e o motivo está no irmão: o `crate::upsert` é o
+mesmo caminho da sincronia do DbLink (`dblink/sincronia.rs::aplicar_para_ca`).
+Mesclar aqui tiraria dela a única forma de gravar `NULL` num destino — uma
+sincronia que não consegue apagar um campo deixa o destino diferente da origem,
+calada, que é o que ela existe para impedir. E mudaria o significado do
+`inserir` de todo cliente escrito antes.
+
+**A forma segura existe e é a do SQL**: o campo `atualizar` (o SET). Com ele, a
+linha que já existe recebe só as colunas nomeadas por cima do que está gravado.
+O que faltava era o **catálogo** dizê-lo — o campo não estava listado na
+operação `inserir`, então quem lia o protocolo para descobri-lo não o achava.
+Guardas: `o_upsert_sem_o_set_grava_a_linha_inteira_e_isso_e_contrato` e
+`o_atualizar_grava_a_lida_com_o_set_por_cima_e_nao_o_values`.
 
 ### 8. `[INNER|LEFT|RIGHT|FULL|CROSS] JOIN ... [ON]`
 

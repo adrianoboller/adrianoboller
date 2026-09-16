@@ -42,13 +42,13 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Motor de dados (arquivos, índice, diários) | 495 | 20,8 |
-| Protocolo e portões (despachar) | 487 | 20,5 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 235 | 9,9 |
-| Camada SQL (léxico, sintaxe, tradução) | 215 | 9,0 |
-| Servidor (outros) | 169 | 7,1 |
+| Protocolo e portões (despachar) | 497 | 20,8 |
+| Motor de dados (arquivos, índice, diários) | 497 | 20,8 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 235 | 9,8 |
+| Camada SQL (léxico, sintaxe, tradução) | 216 | 9,0 |
+| Servidor (outros) | 171 | 7,1 |
 | Criptografia e codificação | 124 | 5,2 |
-| Configuração | 116 | 4,9 |
+| Configuração | 116 | 4,8 |
 | DbLink | 81 | 3,4 |
 | Telemetria e profiler | 65 | 2,7 |
 | ODBC | 58 | 2,4 |
@@ -69,20 +69,20 @@ contando `#[test]` por arquivo e agrupando:
 | **Alertas e e-mail** | **8** | **0,3** |
 | **CLI** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,3** |
-| **total** | **2380** | |
+| **total** | **2395** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 5207 |
+| `phxsql-store/src/table.rs` | 5255 |
 | `phxsql-store/src/ndx.rs` | 1655 |
 | `phxsql-ffi/src/lib.rs` | 1453 |
 | `phxsql-server/src/main.rs` | 488 |
 | `phxsql-ffi/src/valor.rs` | 290 |
 | `phxsql-store/src/integridade.rs` | 278 |
 | `phxsql-server/src/dblink/conexao.rs` | 275 |
-| `phxsql-server/src/carga.rs` | 226 |
+| `phxsql-server/src/carga.rs` | 227 |
 | `phxsql-ffi/src/punho.rs` | 188 |
 | `phxsql-cmd/src/main.rs` | 171 |
 | `phxsql-odbc/src/registro.rs` | 149 |
@@ -1901,8 +1901,97 @@ conserto, **uma** teve um vermelho de outro teste —
 `panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados`, que exige que os
 três pânicos aconteçam e sob carga alta só viu dois. Está medido e aberto como
 pedido **267**, e não se confunde com este: o teste desta frente passou nas
-seis.
+seis. **Resolvido na mesma data, na §19** — e a causa era outra: a conexão
+entrava e era recusada por falta de vaga, não por pânico que não aconteceu.
 
 E o teste ficou **mais forte**, não só mais estável: ele agora prova que o nome
 do fio chega ao sistema operacional — o que faz o `top -H` servir para alguma
 coisa —, coisa que a diferença nunca provou.
+
+## 19. A vaga volta DEPOIS de o cliente ver o fim da conexão — pedido 267
+
+O teste `servidor::testes_das_threads::panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados`
+prova a permissão RAII da porta de dados: três conexões entram em pânico dentro
+do `atender` com **teto de duas vagas**, e a quarta tem de ser atendida. A
+versão antiga disparava os três `ping` em fila e só no fim cobrava o total:
+
+```rust
+assert_eq!(s.panicos_de_teste.load(...), 0,
+           "nem todos os panicos aconteceram -- a porta fechou antes");
+```
+
+Caiu **1 vez em 6** corridas da suíte `--lib` inteira sob carga alta (load
+14,6), medido pela frente F261. O log trazia **dois** pânicos onde o cenário
+arma três.
+
+### 19.1 A pergunta que vinha antes do conserto
+
+«O pânico não aconteceu» e «a conexão não foi aceita» são causas **diferentes**,
+e aquele `assert_eq!` não as separa: o `ping` cuja conexão nem chega a ser
+atendida devolve `None` do mesmo jeito que o que caiu no pânico. Separá-las
+custou dois contadores só de teste dentro do laço de aceitação **de produção**
+(`#[cfg(test)] aceitas_de_teste` e `sem_vaga_de_teste`, em `servidor.rs`) — um
+conta toda conexão que o `accept` devolveu, o outro toda recusa por falta de
+vaga.
+
+### 19.2 O número: a conexão ENTROU, e foi recusada por falta de vaga
+
+A sonda `sonda_267_corrida_dos_tres_panicos` (`#[ignore]`, por custo) repete o
+cenário N vezes e conta por `ping`. Rodada **dentro da suíte `--lib` inteira**,
+com três suítes de carga ao lado (load 13–15), em 16/09/2026:
+
+| forma do teste | rodadas | rodadas com pânico faltando | contadores nas que faltaram |
+|---|---:|---:|---|
+| antiga (três `ping` em fila) | 500 | **20 (4,0%)** | `aceitas=3 sem_vaga=1` nas **20** |
+| nova (espera a vaga entre uma e outra) | 500 | **0** | `sem_vaga=0` |
+
+`pings_nao_aceitos=0` nas mil rodadas: **a terceira conexão sempre entrou**. O
+que ela levou foi a recusa por falta de vaga — que é o comportamento certo
+acima do teto, o `max_connections` dos três motores maduros. O teste reprovava
+o motor por um defeito que não existe.
+
+O mecanismo é uma janela que a versão antiga ignorava: o cliente vê o fim da
+conexão quando o **soquete** morre no desenrolar do pânico, e a vaga só volta
+quando a **thread** acaba. Medida com espera ocupada (um `sleep` de 5 ms
+mediria o próprio `sleep`):
+
+| janela entre «o cliente viu o fim» e «a vaga voltou» | p50 | p90 | p99 | máximo |
+|---|---:|---:|---:|---:|
+| sob carga, dentro da suíte | 1–2 µs | 4,1–6,9 ms | 7,6–22,5 ms | **36,7 ms** |
+
+Com teto 2, o terceiro `ping` que chega dentro das janelas dos dois anteriores
+não acha vaga.
+
+### 19.3 A montagem é armadilha, de novo: carga de fora não é o ambiente
+
+A sonda rodada **sozinha**, com a máquina carregada por fora (load 10–12), deu
+**0 em 340 rodadas**. A mesma sonda, com a mesma carga externa, mas dentro da
+suíte `--lib` inteira (`--include-ignored --test-threads=4`), deu 20 em 500. O
+vizinho que importa é o que disputa a CPU **dentro do processo** — é a lição
+§18.3 por outro caminho: reproduzir é montar o vizinho, não apertar a máquina.
+
+### 19.4 O conserto é no TESTE, e isso se diz
+
+Não há defeito no motor: nenhum cliente pode saber que a vaga voltou só porque
+o soquete dele fechou, e a recusa imediata acima do teto é comportamento
+declarado (e tem teste próprio,
+`a_porta_de_dados_continua_recusando_na_hora_acima_do_teto`). No molde do
+pedido 261, **a grandeza medida mudou, e não o número**: em vez de um total
+conferido no fim, cada conexão prova a sua — panicou **e** devolveu a vaga — e
+a próxima só parte com a vaga de volta. As três continuam entrando com teto de
+duas, que é o que prova o reaproveitamento. E a mensagem da falha passou a
+nomear as duas causas, pelos contadores, em vez de confundi-las.
+
+### 19.5 A prova real, nos dois sentidos
+
+| corrida | com o defeito do motor reposto (`ManuallyDrop` sobre a `Permissao`) | com o conserto |
+|---|---|---|
+| teste sozinho | **10 vermelhos em 10** | — |
+| provador de guardas (`--so permissao-de-dados-sem-raii`) | **PROVADA**, 1/1 caíram, o `seguem` verde | árvore limpa verde, 1.092 testes |
+| sonda, 500 rodadas dentro da suíte sob carga | 20 vermelhas de 500 (forma antiga) | **0 de 500** |
+| suíte `--lib` inteira sob carga (load 13,9–15,9) | — | **6 verdes em 6** |
+
+Os dez vermelhos caem sempre na **primeira** conexão, com a mensagem
+`a vaga da conexao 0 nao voltou depois do panico: 1 em uso` — o `ManuallyDrop`
+pula a devolução já na primeira, e a nova forma o pega uma volta antes do que a
+antiga pegava.

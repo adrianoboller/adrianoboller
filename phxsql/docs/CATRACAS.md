@@ -596,7 +596,7 @@ Medido commit a commit depois: **um único commit aposentou cinco delas de uma
 vez** — `2fe8658` (12/09, «a conferência de FK dentro da transação vê o pai
 empilhado»), que mexeu em `table.rs` e `transacao.rs`. Ninguém percebeu por
 **quatro dias**, e o motivo é o custo: o provador leva cerca de uma hora,
-porque repõe o defeito e roda `cargo test` para cada uma das 143 entradas.
+porque repõe o defeito e roda `cargo test` para cada uma das 151 entradas.
 **Guarda que só se confere em uma hora é guarda que não se confere.**
 
 **Onde mora**: `bancada/guardas/trecho-vivo.py`, chamada pelo item 0c da
@@ -673,7 +673,7 @@ piso em silêncio.
 | `TETO_TRECHO_AMBIGUO` | teto | 0 | **0** | 16/09, nesta frente |
 | `TETO_TESTE_MORTO` | teto | 0 | **0** | 16/09 |
 | `TETO_TESTE_FORA_DO_BINARIO` | teto | 0 | **0** | 16/09, nesta frente |
-| `PISO_DAS_ENTRADAS` | **piso** | 143 | **143** | 16/09, nesta frente — 143 entradas vivas + 0 aposentadas |
+| `PISO_DAS_ENTRADAS` | **piso** | 151 | **151** | nasceu 16/09 em 143; **subiu para 145** (frente vizinha, no mesmo dia) e para **151** na frente 245/O2–O6 — 151 entradas vivas + 0 aposentadas. Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
 
 **Nenhum teto subiu e nenhuma catraca se aposentou, e isso é decisão.** A
 régua do `TETO_TRECHO_MORTO` **não mudou**: ela continua respondendo
@@ -1036,14 +1036,18 @@ contado contra o código-fonte, e nenhum entra na tabela de catracas.
 - **`conferidor_dependencias.rs`** (zero dependências externas) — portão
   binário, não catraca: não há contagem, é passa/não passa. Documentado na
   seção acima.
-- **`bancada/guardas/catalogo.py`** (o catálogo de defeitos repostos, **143
+- **`bancada/guardas/catalogo.py`** (o catálogo de defeitos repostos, **151
   entradas** medidas em 16/09/2026) — é a OUTRA metade do papel G, as guardas
   de regressão provadas por mutação. Não é catraca: cada entrada prova um
   defeito específico voltando e sendo pego, não uma contagem que sobe e desce.
   Tem seu próprio inventário em `docs/TESTES.md` §12 e não se repete aqui.
   **O tamanho dele, esse sim, virou número travado** em 16/09/2026: é o
   `PISO_DAS_ENTRADAS` da §12.2, e o 77 que esta linha trazia até hoje é a
-  demonstração de que um número digitado em prosa envelhece calado.
+  demonstração de que um número digitado em prosa envelhece calado. **E ele
+  envelheceu de novo no mesmo dia:** a catraca foi de 143 a 145 numa frente
+  vizinha e este documento continuou dizendo 143 — travar o número no código
+  não o publica. Enquanto estes três não saírem de um gerador, quem mexe no
+  `PISO_DAS_ENTRADAS` atualiza esta seção no mesmo passo.
 - **Os três portões** (`cargo fmt --check`, `clippy -D warnings`, `cargo
   test --workspace`, `docs/PORTOES.md`) — estruturais, sem folga numérica.
 - **As catracas de CONTAGEM NO FONTE dentro de `#[test]`** — hoje
