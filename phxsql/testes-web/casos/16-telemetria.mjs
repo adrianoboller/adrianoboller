@@ -90,6 +90,17 @@ export const caso = {
     const resumo = await page.textContent('#tlmThreadsN');
     verdade(/\d+/.test(resumo || ''),
       `o resumo do gestor de threads nao contou nada: ${JSON.stringify(resumo)}`);
+    // O monitor em runtime (pedido 248): a regua «em_uso/teto» de cada
+    // semaforo esta no mesmo resumo. Confere-se a FORMA do numero, nunca a
+    // frase: `1/64` e `0/∞` sao numeros, e sobrevivem a idioma e a redacao.
+    // Duas reguas, porque sao dois semaforos (dados e HTTP) -- e a propria
+    // bateria e quem ocupa ao menos uma vaga de cada, entao nenhuma pode
+    // sair 0/0.
+    const reguas = (resumo || '').match(/\d+\/(\d+|∞)/g) || [];
+    verdade(reguas.length >= 2,
+      `o resumo nao traz as reguas em_uso/teto dos semaforos: ${JSON.stringify(resumo)}`);
+    verdade(reguas.every(r => !r.startsWith('0/0')),
+      `regua com teto zero nao existe: ${JSON.stringify(reguas)}`);
 
     await capturar(ctx, ctx.nomeCaptura('telemetria-threads'));
 

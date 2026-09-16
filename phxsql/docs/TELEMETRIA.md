@@ -765,13 +765,22 @@ serviço nunca saem, porque elas são a lista que interessa.
 
 ### 5.3 Três achados
 
-**1. A thread da web nasce sem teto.** A porta de dados recusa acima de
-`conexoes_max` e registra a recusa no log; a porta web não conta nada — o laço
-`for conexao in ouvinte.incoming()` cria uma thread por pedido, sem limite.
-Uma enxurrada de pedidos HTTP vira uma enxurrada de threads. O registro agora
-ao menos as **mostra** (e o painel dá a contagem viva); o teto é decisão de
-configuração e ficou de fora desta rodada de propósito — mexer no
-`config.json` é território de outro agente.
+**1. A thread da web nascia sem teto — e desde 16/09/2026 tem (pedido 248).**
+Quando esta seção foi escrita, a porta de dados recusava acima de
+`conexoes_max` e a porta web não contava nada: o laço `for conexao in
+ouvinte.incoming()` criava uma thread por pedido, sem limite, e uma enxurrada
+de pedidos HTTP virava uma enxurrada de threads — medido depois pela
+`bancada/concorrencia/enxurrada-web.py`: **504 threads** para 500 conexões
+seguradas. Hoje as três portas HTTP dividem um semáforo
+(`recursos.conexoes_web_max`, 64; fila `recursos.fila_web_ms`, 2.000 ms; 503
+com `Retry-After`), e a mesma enxurrada dá **68 threads** e 436 recusas. O
+registro continua mostrando cada uma, e a ficha passou a morrer no `Drop` —
+um pânico dentro do corpo deixava a thread «viva» para sempre no registro e
+no contador. E o painel ganhou o monitor em runtime: a resposta traz `tetos`
+(a ocupação viva de cada semáforo — `em_uso`, `teto`, `esperando`) e
+`totais.threads_do_so` (o `Threads:` do `/proc/self/status`, `null` fora do
+Linux) ao lado de `threads_vivas`, e o resumo do gestor desenha a régua
+`em_uso/teto`. Ver `docs/CONCORRENCIA.md` §17.
 
 **2. A moldura da página rola de lado a 430 px, e não é a telemetria.** Medido
 no navegador: a página tem 608 px de largura numa janela de 430, e os

@@ -1057,7 +1057,7 @@ window.PhxTelemetria = (function () {
     aplicarCores(d.cores);
     desenharFaixas(d.limiares);
     desenharBolhas(d.atividades || []);
-    desenharThreads(d.threads || []);
+    desenharThreads(d.threads || [], d.tetos || [], d.totais ? d.totais.threads_do_so : null);
     desenharCartao();
   }
 
@@ -1764,7 +1764,28 @@ window.PhxTelemetria = (function () {
     });
   }
 
-  function desenharThreads(fios) {
+  /* A régua «em_uso/teto» de cada semáforo, e as threads do SO ao lado das
+   * registradas. Só o que é VIVO entra na régua (os tetos fixos do fecho e
+   * da varredura não têm ocupação medida, e mostrá-los como 0/16 seria
+   * inventar dado); «esperando» só aparece quando há alguém na fila, porque
+   * é o número que diz que o teto está apertado. `teto` nulo é sem teto, e
+   * sai como ∞ — símbolo, não texto. */
+  function reguaDosTetos(tetos, so) {
+    const partes = [];
+    for (const t of tetos) {
+      if (!t.vivo) continue;
+      partes.push(preencher(txt("tela.tl_th_teto", "{familia} {em_uso}/{teto}"),
+        { familia: t.familia, em_uso: t.em_uso, teto: t.teto == null ? "∞" : t.teto }));
+    }
+    const fila = tetos.reduce((s, t) => s + (t.esperando || 0), 0);
+    if (fila > 0) partes.push(preencher(txt("tela.tl_th_esperando", "{n} esperando vaga"), { n: fila }));
+    partes.push(so == null
+      ? txt("tela.tl_th_so_nao_medido", "SO não medido")
+      : preencher(txt("tela.tl_th_so", "{n} no sistema operacional"), { n: so }));
+    return partes.join(" · ");
+  }
+
+  function desenharThreads(fios, tetos, so) {
     fiosAtuais.length = 0;
     for (let k = 0; k < fios.length; k++) fiosAtuais.push(fios[k]);
     const vivas = fios.filter(f => f.viva).length;
@@ -1772,7 +1793,7 @@ window.PhxTelemetria = (function () {
     if (n) {
       n.textContent = "· " + preencher(
         txt("tela.tl_th_vivas", "{vivas} viva(s) de {total} registrada(s)"),
-        { vivas, total: fios.length });
+        { vivas, total: fios.length }) + " · " + reguaDosTetos(tetos || [], so);
     }
 
     const det = $("#tlmThreads") && $("#tlmThreads").closest("details");

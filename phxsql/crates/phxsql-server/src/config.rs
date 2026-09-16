@@ -1966,6 +1966,22 @@ pub struct Recursos {
     pub cpu_percentual: u8,
     /// Conexoes simultaneas aceitas.
     pub conexoes_max: usize,
+    /// Threads HTTP ao mesmo tempo, somando as tres portas (interface web,
+    /// REST e explorador da API). Zero = sem teto, que era o comportamento
+    /// ate a 0.18: uma thread por pedido, sem limite.
+    ///
+    /// E um teto DIFERENTE do `conexoes_max`, e de proposito: a porta de
+    /// dados recusa na hora (consenso PostgreSQL/MySQL/MariaDB para
+    /// `max_connections`), e a web ESPERA um pouco antes de recusar -- o molde
+    /// e o de um servidor HTTP (workers + backlog), porque do outro lado ha
+    /// um navegador que refaz o pedido sozinho e uma pessoa que so ve o
+    /// atraso. Ver `fila_web_ms`.
+    pub conexoes_web_max: usize,
+    /// Quanto um pedido HTTP espera por uma thread quando todas estao
+    /// ocupadas, em ms. Estourou, o pedido recebe 503 com `Retry-After`.
+    ///
+    /// Zero quer dizer **nao espere**: recusa na hora, como a porta de dados.
+    pub fila_web_ms: u64,
     /// Minutos que uma reserva de carga (`BULKINSERT`) dura sem ser renovada.
     ///
     /// E a SEGUNDA rede de protecao contra reserva orfa. A primeira e a queda
@@ -2053,6 +2069,13 @@ impl Default for Recursos {
             threads: 0,
             cpu_percentual: 100,
             conexoes_max: 64,
+            // O mesmo numero da porta de dados, e nao um numero medido para a
+            // web: a bancada `enxurrada-web.py` mede o que ele segura, e quem
+            // tiver um numero melhor muda aqui com a medicao ao lado.
+            conexoes_web_max: 64,
+            // Dois segundos e o que um navegador ainda sente como «demorou»
+            // e nao como «caiu»; acima disso a pessoa ja clicou de novo.
+            fila_web_ms: 2_000,
             carga_prazo_min: 30,
             transacao_prazo_min: 5,
             // 100.000 linhas de umas duas centenas de bytes dao ~20 MiB de
@@ -2454,6 +2477,12 @@ impl Recursos {
             // `conexoes_max` no topo continua valendo, para config antigo nao
             // quebrar. Dentro de `recursos` ele ganha.
             conexoes_max: r.inteiro_ou("conexoes_max", conexoes_no_topo as i64).max(1) as usize,
+            conexoes_web_max: r
+                .inteiro_ou("conexoes_web_max", padrao.conexoes_web_max as i64)
+                .max(0) as usize,
+            fila_web_ms: r
+                .inteiro_ou("fila_web_ms", padrao.fila_web_ms as i64)
+                .max(0) as u64,
             usuarios_max: r.inteiro_ou("usuarios_max", 0).max(0) as usize,
         })
     }
@@ -2502,6 +2531,11 @@ impl Recursos {
             ("cpu_percentual", Json::de_u64(self.cpu_percentual as u64)),
             ("nucleos_efetivos", Json::de_u64(self.nucleos() as u64)),
             ("conexoes_max", Json::de_u64(self.conexoes_max as u64)),
+            (
+                "conexoes_web_max",
+                Json::de_u64(self.conexoes_web_max as u64),
+            ),
+            ("fila_web_ms", Json::de_u64(self.fila_web_ms)),
             ("usuarios_max", Json::de_u64(self.usuarios_max as u64)),
         ])
     }
@@ -2667,6 +2701,8 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 13] = [
             "threads",
             "cpu_percentual",
             "conexoes_max",
+            "conexoes_web_max",
+            "fila_web_ms",
             "carga_prazo_min",
             "transacao_prazo_min",
             "transacao_max_linhas",
@@ -3547,6 +3583,10 @@ pub const CAMPOS_EDITAVEIS: &[(&str, TipoDoCampo, bool)] = &[
     ("recursos.threads", TipoDoCampo::Inteiro, true),
     ("recursos.cpu_percentual", TipoDoCampo::Inteiro, true),
     ("recursos.conexoes_max", TipoDoCampo::Inteiro, false),
+    // Os dois da web nao valem a quente pelo mesmo motivo do `conexoes_max`:
+    // o semaforo nasce com o teto no arranque, junto do laco de aceitacao.
+    ("recursos.conexoes_web_max", TipoDoCampo::Inteiro, false),
+    ("recursos.fila_web_ms", TipoDoCampo::Inteiro, false),
     ("recursos.carga_prazo_min", TipoDoCampo::Inteiro, false),
     // Os dois da transacao NAO valem a quente, e a razao e a mesma dos outros
     // tetos de recurso: mudar o teto no meio de uma transacao aberta mudaria a
@@ -5598,6 +5638,40 @@ mod testes_recursos {
         let c = cfg(r#"{"token":"t","conexoes_max":7,"recursos":{"conexoes_max":99}}"#);
         assert_eq!(c.recursos.conexoes_max, 99);
         assert_eq!(c.conexoes_max, 99, "o leitor real nao veria o 99");
+    }
+
+    /// O teto das threads HTTP (pedido 248): nasce em 64 com fila de 2 s,
+    /// le do `recursos`, e zero e uma escolha valida nos dois -- sem teto e
+    /// sem espera --, nao um erro que caia no padrao.
+    #[test]
+    fn o_teto_da_web_nasce_em_64_com_fila_de_dois_segundos_e_le_do_config() {
+        let c = cfg(r#"{"token":"t"}"#);
+        assert_eq!(c.recursos.conexoes_web_max, 64);
+        assert_eq!(c.recursos.fila_web_ms, 2_000);
+
+        let c = cfg(r#"{"token":"t","recursos":{"conexoes_web_max":8,"fila_web_ms":150}}"#);
+        assert_eq!(c.recursos.conexoes_web_max, 8);
+        assert_eq!(c.recursos.fila_web_ms, 150);
+
+        let c = cfg(r#"{"token":"t","recursos":{"conexoes_web_max":0,"fila_web_ms":0}}"#);
+        assert_eq!(
+            c.recursos.conexoes_web_max, 0,
+            "zero = sem teto, e fica zero"
+        );
+        assert_eq!(c.recursos.fila_web_ms, 0, "zero = nao espere, e fica zero");
+
+        // Os dois saem no `config` que a tela le, e a secao os conhece: um
+        // campo que o servidor le e sobre o qual ele avisa «desconhecido»
+        // gasta a confianca do aviso verdadeiro.
+        let j = c.recursos.para_json();
+        assert!(j.campo("conexoes_web_max").is_some());
+        assert!(j.campo("fila_web_ms").is_some());
+        let (_, lista) = SECOES_CONHECIDAS
+            .iter()
+            .find(|(s, _)| *s == "recursos")
+            .unwrap();
+        assert!(lista.contains(&"conexoes_web_max"));
+        assert!(lista.contains(&"fila_web_ms"));
     }
 
     /// `threads` e `cpu_percentual` tem leitor de verdade: o teto global do

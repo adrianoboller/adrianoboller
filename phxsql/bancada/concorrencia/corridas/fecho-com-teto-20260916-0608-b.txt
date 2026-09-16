@@ -1,0 +1,16 @@
+# fecho com teto, corrida b, 2026-09-16 06:08:46 UTC
+# maquina antes: 1% ocupada, ate 2 vizinho(s) | depois: 1% ocupada, ate 1 vizinho(s) | LIMPA
+# 4 nucleos | comando: o-comboio-em-paralelo --tetos 4,8,16,0 16 2000 30
+
+=== o custo do teto de fios no fecho de K=16 tabelas ===
+    2000 linhas semeadas em cada, 30 janelas por teto, tetos alternados
+
+      teto    fecho (us)   vs sem teto
+  --------------------------------------
+         4       12204.4        1.604x
+         8        9088.8        1.194x
+        16        7610.9        1.000x
+       sem        9714.7        1.276x
+
+  linha JSON, para a corrida versionada:
+  {"k":16,"linhas":2000,"janelas":30,"tetos":[{"teto":4,"us":12204.4},{"teto":8,"us":9088.8},{"teto":16,"us":7610.9},{"teto":0,"us":9714.7}]}

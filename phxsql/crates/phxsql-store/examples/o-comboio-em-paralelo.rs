@@ -3,6 +3,7 @@
 //! ```bash
 //! cargo run --release --example o-comboio-em-paralelo -p phxsql-store -- [K_max] [linhas] [janelas]
 //! cargo run --release --example o-comboio-em-paralelo -p phxsql-store -- --contar
+//! cargo run --release --example o-comboio-em-paralelo -p phxsql-store -- --tetos 4,8,16,0 [K] [linhas] [janelas]
 //! ```
 //!
 //! ## Por que este medidor existe
@@ -112,6 +113,97 @@ fn fechar_em_paralelo(inst: &Instancia, nomes: &[String]) {
     });
 }
 
+/// O fecho como o SERVIDOR o faz: as K tabelas em pedacos de `teto`, cada
+/// pedaco com um fio por tabela e os pedacos em serie (`FIOS_DO_FECHO` no
+/// `servidor.rs`). Teto zero = um pedaco so', sem teto.
+///
+/// Existe para responder «o teto custa?» ANTES de mexer nele (pedido 248):
+/// com K=16 e teto 16 o caminho e' o mesmo de «sem teto», e e' de proposito
+/// que os dois entram na tabela -- a diferenca entre eles e' o ruido da
+/// maquina, e um teto so' pode ser acusado de custar acima dessa diferenca.
+fn fechar_com_teto(inst: &Instancia, nomes: &[String], teto: usize) {
+    let passo = if teto == 0 { nomes.len().max(1) } else { teto };
+    for pedaco in nomes.chunks(passo) {
+        fechar_em_paralelo(inst, pedaco);
+    }
+}
+
+/// `--tetos 4,8,16,0 [K] [linhas] [janelas]`: o custo de cada teto de fios
+/// no fecho de K tabelas, alternando os tetos dentro da mesma corrida.
+fn medir_tetos(args: &[String], base: &Path) {
+    let i = args.iter().position(|a| a == "--tetos").unwrap();
+    let tetos: Vec<usize> = args
+        .get(i + 1)
+        .map(|t| t.split(',').filter_map(|x| x.trim().parse().ok()).collect())
+        .unwrap_or_default();
+    if tetos.is_empty() {
+        eprintln!("--tetos precisa de uma lista: 4,8,16,0 (0 = sem teto)");
+        std::process::exit(2);
+    }
+    let mut arg = args[i + 2..].iter().filter_map(|s| s.parse::<usize>().ok());
+    let k: usize = arg.next().unwrap_or(16);
+    let semear: i64 = arg.next().unwrap_or(2_000) as i64;
+    let janelas: usize = arg.next().unwrap_or(30);
+
+    let (inst, nomes) = montar(base, k, semear);
+    let db = inst.abrir_database("bancada").unwrap();
+    println!("=== o custo do teto de fios no fecho de K={k} tabelas ===");
+    println!(
+        "    {semear} linhas semeadas em cada, {janelas} janelas por teto, tetos alternados\n"
+    );
+
+    let mut proxima: i64 = semear;
+    // aquece cada teto uma vez: a primeira janela paga cache frio.
+    for &t in &tetos {
+        proxima += 1;
+        sujar(&db, &nomes, proxima);
+        fechar_com_teto(&inst, &nomes, t);
+    }
+    let mut soma = vec![0.0f64; tetos.len()];
+    for _ in 0..janelas {
+        for (j, &t) in tetos.iter().enumerate() {
+            proxima += 1;
+            sujar(&db, &nomes, proxima);
+            let t0 = Instant::now();
+            fechar_com_teto(&inst, &nomes, t);
+            soma[j] += t0.elapsed().as_secs_f64() * 1e6;
+        }
+    }
+    let _ = std::fs::remove_dir_all(base);
+
+    let sem_teto = tetos
+        .iter()
+        .position(|&t| t == 0 || t >= k)
+        .map(|j| soma[j] / janelas as f64);
+    println!(
+        "  {:>8}  {:>12}  {:>12}",
+        "teto", "fecho (us)", "vs sem teto"
+    );
+    println!("  {}", "-".repeat(38));
+    for (j, &t) in tetos.iter().enumerate() {
+        let media = soma[j] / janelas as f64;
+        let rotulo = if t == 0 {
+            "sem".to_string()
+        } else {
+            t.to_string()
+        };
+        match sem_teto {
+            Some(s) if s > 0.0 => println!("  {rotulo:>8}  {media:>12.1}  {:>11.3}x", media / s),
+            _ => println!("  {rotulo:>8}  {media:>12.1}  {:>12}", "-"),
+        }
+    }
+    println!("\n  linha JSON, para a corrida versionada:");
+    let itens: Vec<String> = tetos
+        .iter()
+        .enumerate()
+        .map(|(j, &t)| format!("{{\"teto\":{t},\"us\":{:.1}}}", soma[j] / janelas as f64))
+        .collect();
+    println!(
+        "  {{\"k\":{k},\"linhas\":{semear},\"janelas\":{janelas},\"tetos\":[{}]}}",
+        itens.join(",")
+    );
+}
+
 /// Monta a base com K tabelas semeadas.
 fn montar(base: &Path, k: usize, semear: i64) -> (Instancia, Vec<String>) {
     let _ = std::fs::remove_dir_all(base);
@@ -179,6 +271,11 @@ fn main() {
 
     let base: PathBuf =
         std::env::temp_dir().join(format!("phx-comboio-par-{}", std::process::id()));
+
+    if args.iter().any(|a| a == "--tetos") {
+        medir_tetos(&args, &base);
+        return;
+    }
 
     if args.iter().any(|a| a == "--contar") {
         let k = 4usize;

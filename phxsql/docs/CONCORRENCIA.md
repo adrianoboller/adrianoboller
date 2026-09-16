@@ -2315,3 +2315,268 @@ E há um segundo custo que a §16.7 não contava, porque ela contava páginas de
 cache e não **alocação**: o `Vec<RowId>` intermediário carregava uma entrada por
 linha da tabela, `RowId = u64` — **7,63 MiB por leitura ordenada, por leitor**, a
 um milhão de linhas. Hoje ele carrega o pedaço que a página precisa.
+
+---
+
+## 17. O mapa das threads — semáforo e teto (16/09/2026, pedido 248)
+
+Pedido do dono, literal: *«Multi threads devem ter um controle altamente
+validado com semáforos adequados do Rust para um ótimo funcionamento.»*
+
+O que esta seção entrega, em uma linha: **toda thread do servidor nasce com um
+teto declarado, o teto é imposto por um semáforo escrito nesta casa, a vaga
+volta mesmo em pânico, e um medidor estático reprova a bateria no dia em que
+alguém subir uma thread sem teto.** Os números abaixo foram medidos em
+16/09/2026, numa máquina de 4 núcleos, com o `quieta.py` dizendo que ela
+estava parada — e as corridas cruas estão em `bancada/concorrencia/corridas/`
+e em `bancada/concorrencia/resultados.json`.
+
+### 17.1 O que existia, medido — e o que o quadro da rodada errou
+
+| onde | como nascia | teto ANTES | teto DEPOIS |
+|---|---|---|---|
+| porta de dados | uma thread por conexão | `conexoes_max` por `AtomicUsize`: `fetch_add` ao aceitar, `fetch_sub` **depois** do `atender` | `Semaforo permissoes_de_dados`, `tentar()` no `accept`; a `Permissao` viaja para dentro da thread e morre com ela |
+| interface web | uma thread por pedido, num laço **próprio** | **nenhum** — o comentário confessava: *«esta thread nasce SEM TETO»* | `Semaforo permissoes_http`, teto `recursos.conexoes_web_max` (64), fila `recursos.fila_web_ms` (2.000), 503 com `Retry-After` |
+| REST e explorador | uma thread por pedido, no `aceitar_http` | **nenhum** | o mesmo semáforo — **um** para as três portas HTTP; a web passou a usar o mesmo `aceitar_http` |
+| fecho da janela | `thread::scope`, um fio por tabela suja | `FIOS_DO_FECHO = 16` por pedaço — **e o quadro da rodada dizia «K, sem teto»** | fica 16, **medido** (§17.5) |
+| varredura em memória | `paralelo::mapear_faixa` | `nucleos()` do config | inalterado |
+| serviços de fundo | `telemetria.subir` | um de cada; os avisos por evento, com silêncio | inalterado; **a ficha passou a morrer no `Drop`** |
+
+**O erro do quadro é o achado mais barato e o mais útil desta seção.** O
+`RODADA-2026-09-16-threads-e-disco.md` foi montado com `grep`, e o `grep`
+achou o `thread::scope` na linha 14216 — não achou o `lista.chunks(FIOS_DO_FECHO)`
+28 linhas acima, nem a constante 13.600 linhas acima, nem a §12.6 deste
+documento que já a registrava com o número medido. **O teto de uma thread
+quase nunca está na linha em que ela nasce.** É por isso que o mapa das
+threads (§17.7) tem o catálogo escrito à mão, com o teto e onde ele mora: o
+que uma máquina acha é o spawn; o que segura o spawn, alguém tem de ler.
+
+### 17.2 O semáforo, e por que a permissão é RAII
+
+`crates/phxsql-core/src/semaforo.rs`. A `std` não tem semáforo (o
+`std::sync::Semaphore` saiu antes do 1.0); o `tokio::sync::Semaphore` é crate
+e é assíncrono — dispensa registrada. O daqui é um contador sobre
+`Mutex<usize>` + `Condvar`: `novo(teto)`, `tentar()`, `adquirir()`,
+`adquirir_ate(Duration)`, `em_uso()`, `teto()`, e `sem_teto()` para o «zero =
+sem teto imposto por aqui» dos `recursos`. Todo `lock` recupera do veneno pelo
+`into_inner`, porque o `Drop` de uma permissão pode rodar **durante** um pânico
+alheio.
+
+O ponto do desenho é a `Permissao`: ela é `Send + 'static`, nasce na thread que
+aceita, vai para dentro da thread que atende e **morre no `Drop`** — que o
+Rust roda no desenrolar do pânico. O defeito que ela substitui era o contador
+de mão: `fetch_add` ao aceitar, `fetch_sub` depois do `atender`, e um pânico
+no meio pulava o `fetch_sub`. Com `conexoes_max` vagas, **N pânicos fechavam a
+porta com o servidor de pé** — o pior tipo de defeito, porque nada cai e todo
+mundo é recusado. Não há `panic = "abort"` em perfil nenhum deste workspace, o
+pânico desenrola, e por isso isto importa em produção.
+
+Provado nos dois sentidos, com `catch_unwind` e com uma thread de verdade
+(`permissao_volta_mesmo_em_panico`,
+`permissao_viaja_para_outra_thread_e_volta_quando_ela_morre`), e no servidor
+com o laço de aceitação **de produção** (§17.3). E o irmão pagou junto: o
+`telemetria::subir` chamava `fio_morreu` **depois** do corpo, na mesma ordem —
+um pânico deixava a ficha «viva» para sempre no registro e no contador. Hoje a
+ficha morre no `Drop` de `FichaViva`
+(`a_thread_que_entra_em_panico_tambem_deixa_de_ser_viva`).
+
+### 17.3 A porta de dados: recusa imediata, e a vaga que volta no pânico
+
+A recusa continua **imediata** e continua no `acessos.log` — consenso dos três
+motores (`max_connections`: *too many clients already* no PostgreSQL, *Too many
+connections* no MySQL e no MariaDB), aceite automático. O que mudou é o que
+acontece quando a thread morre mal.
+
+A prova real: teto 2, três conexões que entram em pânico **dentro** do
+`atender` (um gancho `#[cfg(test)]` por servidor, `panicos_de_teste`, porque o
+pânico simulado por fora provaria outra coisa), pelo `aceitar_ate_mandarem_parar`
+de produção. Com o defeito reposto — a devolução numa chamada depois do corpo,
+via `ManuallyDrop` — duas bastam para a porta fechar, e a quarta conexão nunca
+é atendida. Com a permissão no `Drop`, as três vagas voltam e a quarta recebe o
+`ping`. Guarda `permissao-de-dados-sem-raii`.
+
+E uma consequência que ninguém pediu e que é real: `restaurar` por cima recusa
+enquanto `abertas > 0`. Um pânico numa conexão deixava o contador em 1 para
+sempre, e a restauração ficava **impossível até reiniciar** — sem mensagem que
+dissesse por quê. Hoje `abertas` é `em_uso()` do semáforo, e conta só o que
+está vivo.
+
+### 17.4 As portas HTTP: teto com fila curta, 503 com `Retry-After`
+
+A web tinha uma cópia própria do laço de aceitação — o irmão do `aceitar_http`
+cujo comentário já dizia que *«três cópias divergiriam na primeira correção
+feita numa só»*. A cópia sumiu: `subir_web` chama o mesmo `aceitar_http` das
+outras duas portas, e o teto entrou uma vez.
+
+O molde é o de um servidor HTTP (workers + backlog), e não o da porta de dados:
+do outro lado há um navegador que refaz o pedido sozinho e uma pessoa que só vê
+o atraso. `vaga_http()` faz `tentar()`; sem vaga, espera até `fila_web_ms`
+(2.000 ms de fábrica); estourou, o **próprio aceitador** responde 503 com
+`Retry-After: ⌈fila/1000⌉ s` e corpo `erro.porta_cheia` (pela fábrica de
+mensagens, seis idiomas), anota no `acessos.log` e **não sobe thread nenhuma**.
+Abaixo do teto nada muda — e o teste é o do comportamento velho
+(`abaixo_do_teto_a_web_nao_muda`). `conexoes_web_max: 0` é «sem teto», que era
+o comportamento até a 0.18, e o braço `sem-teto` da bancada (§17.6) prova que
+o zero reproduz o «antes» byte a byte no que se mede.
+
+**A fila declarada cheia — o que eu desenhei primeiro e estava incompleto.** A
+primeira versão era só «espera `fila_web_ms`, depois 503». O aceitador é *uma*
+thread: numa saturação longa, cada pedido esperaria os 2 s inteiros, o
+aceitador entregaria **um 503 a cada 2 s**, e a fila do `listen` estouraria por
+trás dele — o cliente nem 503 receberia, só um `connect` que não responde.
+Por isso, depois de **uma** espera que estourou, os pedidos seguintes recebem o
+503 na hora até `fila_web_ms` depois (`http_cheia_ate_ms`): eles esperariam o
+mesmo tempo pela mesma resposta. A primeira vaga que aparece desfaz a
+declaração. Medido na enxurrada: o primeiro 503 chega em ~3 s, os outros 435 em
+p50 de 21 ms.
+
+E o 503 é escrito pelo aceitador com um escoamento **curto** (uma leitura de
+20 ms, `http::responder_cheio`), não com o `escoar` de 250 ms das threads de
+atendimento — 250 ms por recusa parariam o aceitador numa enxurrada. O risco
+era o RST descartar a resposta em voo; medido: **436 de 436** recusas chegaram
+ao cliente com `Retry-After`, zero `reset`.
+
+### 17.5 O fecho da janela: medido antes de limitar — e fica em 16
+
+O contrato mandava medir K=16 com teto 4, 8, 16 e sem teto, três corridas, e
+só limitar se nenhum teto custasse mais de 5%. `--example o-comboio-em-paralelo
+--tetos 4,8,16,0 16 2000 30`, tetos alternados dentro da mesma corrida, três
+corridas com o vigia dizendo LIMPA (≤ 2 vizinhos rodáveis, ocupação de fundo
+1–11%):
+
+| teto | corrida a (µs) | b | c | vs 16 (a / b / c) |
+|---|---|---|---|---|
+| 4 | 11.653,6 | 12.204,4 | 11.908,6 | **1,675× / 1,604× / 1,345×** |
+| 8 | 8.702,5 | 9.088,8 | 8.862,8 | **1,251× / 1,194× / 1,001×** |
+| 16 | 6.959,2 | 7.610,9 | 8.851,2 | 1,000× |
+| sem | 6.992,3 | 9.714,7 | 7.685,1 | 1,005× / 1,276× / 0,868× |
+
+Com K=16, «teto 16» e «sem teto» são **o mesmo código** (um pedaço só), e os
+dois entram na tabela de propósito: a diferença entre eles é o ruído da
+máquina, e ele chegou a **27,6%** numa corrida. Um teto só pode ser acusado de
+custar acima disso. O teto 4 custa +34% a +68% nas três — fora do ruído.
+O teto 8 custa +19% e +25% em duas e +0,1% na terceira — não passa nos 5%.
+**Decisão: o fecho fica como está, `FIOS_DO_FECHO = 16`**, que já era o número
+medido do pedido 180 (§12.6), e o mapa registra o motivo com estes números.
+
+### 17.6 A enxurrada, antes e depois
+
+`bancada/concorrencia/enxurrada-web.py`: 500 conexões HTTP ao mesmo tempo
+contra um `phxsqld` próprio, duas ondas. **Segurar**: cada cliente manda o
+cabeçalho sem a linha vazia final e espera 3 s — o pior caso de
+uma-thread-por-pedido. **Rápida**: os mesmos 500 pedidos completos de uma vez
+— o comportamento velho, que tem de sair com zero 503. Threads e RSS lidos do
+`/proc/<pid>/status` a cada 25 ms, pico. Três braços, um `resultados.json`
+com a data de cada um:
+
+| | **antes** (binário de 05:17, sem teto por construção) | **depois** (teto 64, fila 2.000 ms) | **sem-teto** (binário novo, `conexoes_web_max: 0`) |
+|---|---|---|---|
+| repouso: threads / RSS | 5 / 7,3 MiB | 4 / 6,3 MiB | 4 / 6,4 MiB |
+| segurar: respostas | 500 × 200 | **64 × 200 + 436 × 503** (436 com `Retry-After`) | 500 × 200 |
+| segurar: pico de threads | **504** | **68** (64 + 4 de serviço) | 504 |
+| segurar: pico de RSS | 14,6 MiB | **7,6 MiB** | 13,9 MiB |
+| segurar: 1º byte p50 / p99 / pior | 3.061 / 3.118 / 3.125 ms | 21 / 3.021 / 3.023 ms | 3.070 / 3.139 / 3.145 ms |
+| segurar: «porta HTTP cheia» no log | 0 | 436 | 0 |
+| rápida: respostas | 500 × 200 | 500 × 200 | 500 × 200 |
+| rápida: pico de threads | 504 | 68 | 504 |
+| rápida: 1º byte p50 / p99 | 37 / 108 ms | 17 / 63 ms | 1 / 3 ms |
+| no fim: threads | 4 | 4 | 4 |
+
+O que a tabela diz, e o que ela não diz. Diz que o teto segura: 504 → 68
+threads, 14,6 → 7,6 MiB, e 436 clientes ouviram «volte em 2 s» em vez de
+prenderem uma thread por 3 s cada. Diz que o zero reproduz o antes. E diz que
+**o `Retry-After` chega**: zero `reset` em 436. O que ela **não** diz é que o
+teto é de graça na onda rápida: com 500 pedidos completos de uma vez, o 1º
+byte p99 foi 63 ms com teto contra 3 ms sem teto no mesmo binário — os 436
+últimos esperam a vez numa fila de 64. O binário antigo, sem teto, deu 108 ms
+no mesmo ponto — criar 500 threads de uma vez também custa —, então o número é
+sensível ao momento e é de **uma** corrida por braço. Quem quiser apertar ou
+alargar o 64 tem a bancada, e mede.
+
+### 17.7 O mapa e a catraca — item 0c da bateria
+
+`bancada/concorrencia/mapa-das-threads.py`, no molde exato do
+`mapa-da-trava.py`: lê o fonte, acha `thread::spawn`, `thread::Builder::new`,
+`thread::scope` e `.subir(` em `crates/*/src` fora dos testes (o módulo
+`#[cfg(test)] mod` de cada arquivo, e os arquivos declarados com `#[cfg(test)]
+mod x;`), e exige que cada sítio esteja no `CATALOGO` com o teto e **onde o
+teto mora** — ou com a dispensa e o motivo. Medido hoje: **19 sítios, 19
+entradas, 0 sem teto, 0 envelhecidas**.
+
+Duas catracas, as duas em zero e nenhuma sobe: `spawn-sem-teto` (um só já é
+uma enxurrada possível) e `catalogo-envelhecido` (entrada que não casa com
+sítio nenhum: catálogo velho é pior que nenhum, porque parece completo). Roda
+como **item 0c** da `prova-bateria.py`, antes de qualquer servidor subir. O
+`--autoteste` repõe sete defeitos do próprio medidor — spawn em comentário,
+spawn dentro do módulo de testes, `fn subir(` contado como sítio, entrada que
+envelheceu — porque medidor estático nunca quebra, passa a responder outra
+coisa.
+
+A thread da saúde do disco (frente D, pedido 249) **entra neste catálogo com
+teto 1** — e enquanto não entrar, a catraca reprova. É o encontro das frentes
+que o integrador vê.
+
+### 17.8 As guardas
+
+Quatro entradas no `bancada/guardas/catalogo.py`, cada uma com o defeito de
+origem reposto e provada nos dois sentidos pelo `provar-guardas.py --so`:
+
+| guarda | o defeito reposto | quem cai |
+|---|---|---|
+| `permissao-sem-devolver-a-vaga` | o `Drop` da `Permissao` não devolve a vaga | 7 dos 9 testes do semáforo; os 2 de prazo seguem |
+| `permissao-de-dados-sem-raii` | a devolução numa chamada depois do `atender` (`ManuallyDrop`) | `panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados` |
+| `web-sem-teto` | um semáforo novo e ilimitado por pedido | `acima_do_teto_a_web_responde_503...`; o do comportamento velho segue |
+| `ficha-do-fio-pulada-no-panico` | `fio_morreu` volta a ser uma chamada depois do corpo | `a_thread_que_entra_em_panico_tambem_deixa_de_ser_viva` |
+
+Os testes que usavam `adquirir()` sem prazo foram escritos com
+`adquirir_ate(5 s)` de propósito: o executor roda o binário inteiro, e um
+defeito que **pendura** em vez de falhar mataria a rodada sob o prazo em vez
+de acusar o defeito.
+
+### 17.9 O monitor em runtime — o que o `mapa-das-threads.py` responde parado, a tela responde vivo
+
+O mapa (§17.7) é estático: lê o fonte. O dono pediu também o **monitor de
+processos thread em runtime**, e ele entrou na mesma `op telemetria`, no
+mesmo painel «Gestor de threads» que já existia, sem pedido novo:
+
+* **`tetos`** — a ocupação viva de cada teto: `{familia, vivo, em_uso, teto,
+  esperando}` para os dois semáforos (`dados`, `http`), lidos no instante do
+  pedido; `teto` nulo é «sem teto». O fecho da janela e a varredura entram
+  com `vivo: false` e só o teto (16 e `nucleos()`), porque as threads deles
+  morrem no fim do `scope` e ninguém as conta no meio — dizer `0/16` ali
+  seria inventar dado. `esperando` é o número que diz se o teto está
+  **apertado**: `em_uso == teto` com `esperando == 0` é um teto justo; com
+  `esperando > 0` é fila — e o semáforo o conta fora do mutex, num
+  `AtomicUsize` com guarda RAII, para que o monitor não dispute a trava com
+  quem está pedindo vaga (`esperando_conta_quem_dorme_na_fila_e_so_enquanto_dorme`).
+* **`totais.threads_do_so`** — o `Threads:` do `/proc/self/status`, ao lado de
+  `totais.threads_vivas` (as registradas pelo `subir`). A diferença é o que
+  nasceu **fora** do `subir` — a versão viva do que o mapa acha no fonte. Fora
+  do Linux o campo é `null`, nunca zero
+  (`as_threads_do_so_se_medem_e_nunca_sao_menos_que_as_registradas`).
+* **Na tela**, o resumo do gestor ganhou a régua: `· 3 viva(s) de 9
+  registrada(s) · dados 1/64 · http 2/64 · 12 no sistema operacional`, com
+  `∞` quando não há teto e «N esperando vaga» só quando há fila. Quatro
+  chaves novas pela fábrica de idiomas (`tela.tl_th_teto`, `_esperando`,
+  `_so`, `_so_nao_medido`), catraca de rótulos em 1.049 como antes, e o caso
+  `16-telemetria.mjs` passou a exigir **duas réguas `n/m`** no resumo — pela
+  forma do número, nunca pela frase.
+
+O que ele **não** faz: não conta as threads do fecho nem da varredura ao
+vivo, e não mostra por porta HTTP (o semáforo é um só para as três, de
+propósito — §17.9).
+
+### 17.10 O que ficou fora, e por quê
+
+* **Thread pool para a porta de dados** — fora do contrato: medir primeiro,
+  noutra rodada. Com a trava global entregando concorrência efetiva 1, um pool
+  não pode aumentar vazão; o que ele compraria é o custo de criar thread por
+  conexão, e esse custo não está medido em separado.
+* **Teto a quente** — os dois campos novos exigem reinício, como o
+  `conexoes_max`: o semáforo nasce com o teto junto do laço de aceitação.
+* **Um semáforo por porta HTTP** — é um só para as três, de propósito: o
+  número que o config diz é o número de threads HTTP que o processo pode ter,
+  e é o que se confere no `/proc`. Um por porta triplicaria o teto sem dizer.
+* **Os avisos por e-mail (`aviso-seguranca`, `aviso-job`)** continuam uma
+  thread por evento, com o silêncio de `alertas.repetir_horas` por chave como
+  teto por construção. Quem quiser um número mede o relé antes.

@@ -10,6 +10,63 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — Semáforo e teto das threads (pedido 248)
+
+### Corrigido
+
+- **Vaga que não voltava depois de um pânico.** A porta de dados contava
+  conexões com `fetch_add`/`fetch_sub`; um pânico no corpo da thread pulava o
+  `fetch_sub` e a vaga nunca voltava — depois de N pânicos a porta recusava
+  todo mundo com o servidor de pé. Hoje a vaga é uma `Permissao` RAII que morre
+  no `Drop`, inclusive no desenrolar do pânico. Guarda
+  `permissao-de-dados-sem-raii`, provada vermelha com o defeito reposto.
+- **Thread em pânico continuava «viva» na telemetria.** O `fio_morreu` era
+  chamada depois do corpo — o mesmo defeito, no irmão que chama as mesmas
+  funções na mesma ordem. A ficha passou a morrer no `Drop` (`FichaViva`).
+  Guarda `ficha-do-fio-pulada-no-panico`.
+
+### Adicionado
+
+- **`Semaforo` da casa** (`phxsql-core/src/semaforo.rs`): `Mutex<usize>` +
+  `Condvar`, zero crate — a `std` não tem semáforo. `tentar`, `adquirir`,
+  `adquirir_ate`, `em_uso`, `esperando`, `teto`; mutex envenenado recuperado
+  por `into_inner`; dez testes, com `catch_unwind` e veneno de propósito.
+- **Teto nas portas web e REST**, que não tinham nenhum:
+  `recursos.conexoes_web_max` (64; 0 = sem teto) e `fila_web_ms` (2.000). Acima
+  do teto e esgotada a fila, **503 com `Retry-After`** e linha no
+  `acessos.log`. Medido com 500 conexões segurando 3 s: pico de 504 threads e
+  14,6 MiB antes, **68 threads e 7,6 MiB** depois, 436 recusas com
+  `Retry-After` e zero reset (`bancada/concorrencia/resultados.json`).
+- **Monitor de threads em runtime**: `op_telemetria.tetos` por família (em
+  uso / teto / esperando) e `totais.threads_do_so` (`/proc/self/status`,
+  `null` fora do Linux) ao lado das registradas; régua no resumo do gestor da
+  telemetria, quatro chaves pela fábrica de idiomas.
+- **Mapa das threads com catraca** (`bancada/concorrencia/mapa-das-threads.py`):
+  todo `spawn`/`Builder`/`scope`/`subir` fora dos testes tem de estar no
+  catálogo com o teto que o segura — 19 sítios, `spawn-sem-teto = 0`; item 0c
+  da bateria. E `enxurrada-web.py`, a bancada das 500 conexões.
+- `erro.porta_cheia` nos seis idiomas; `MANUAL.txt` e `Config_exemplo_01.json`
+  com os dois campos; `docs/CONCORRENCIA.md` §17.
+
+### Mudado
+
+- A porta de dados recusa na hora acima do teto, como `max_connections` no
+  PostgreSQL, MySQL e MariaDB — e o comportamento abaixo do teto é o de antes
+  (`abaixo_do_teto_a_web_nao_muda`, o teste do comportamento velho).
+- `subir_web` deixou de ter laço próprio: chama o `aceitar_http` — era o irmão
+  com cópia.
+
+### Sabido
+
+- O fecho da janela **já tinha teto** (`FIOS_DO_FECHO = 16`); o quadro da
+  rodada leu «sem teto» porque o `grep` acha o spawn e não o teto. Medido com
+  tetos 4/8/16/sem em três corridas: nenhum ganha fora do ruído, fica 16.
+- Na onda rápida o teto da web enfileira: p99 de 63 ms contra 3 ms sem teto,
+  no mesmo binário. Uma corrida por braço, escrito na §17.6.
+- Os dois campos novos exigem reinício, como `conexoes_max`. Não há thread
+  pool na porta de dados (a trava global entrega concorrência 1 — medir
+  primeiro) nem série histórica de `em_uso` (só o instante).
+
 ## Não lançado — Leitura repetível pela trava, pedida
 
 ### Adicionado

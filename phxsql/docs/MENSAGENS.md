@@ -55,7 +55,9 @@ Todas as mensagens que o **servidor** devolve pelo protocolo, em duas camadas:
   `erro.sem_direito`, `erro.somente_leitura`, `erro.comando_proibido`,
   `erro.base_proibida`, `erro.nome_hostil`, `erro.grave_bloqueado`,
   `erro.grave_tentativa`, `erro.ip_bloqueado`, `erro.ip_nao_autorizado`,
-  `erro.operacao_desconhecida`.
+  `erro.operacao_desconhecida`, e `erro.porta_cheia` — o corpo do 503 das
+  portas HTTP quando todas as threads estão ocupadas e a fila esgotou (o
+  `Retry-After` vai no cabeçalho, que é protocolo e não se traduz).
 
 Os marcadores `{assim}` são posicionais por nome — a tradução pode
 reordená-los. Célula vazia **não** é semeada com tradução inventada: cai para

@@ -32,6 +32,7 @@ use phxsql_core::error::{PhxError, Result};
 use phxsql_core::expressao::Expressao;
 use phxsql_core::fio::{Canal, Recebido, TETO_DO_REGISTRO};
 use phxsql_core::json::Json;
+use phxsql_core::semaforo::{Permissao, Semaforo};
 use phxsql_store::catalogo::{Aberta, Instancia, Raiz};
 use phxsql_store::leitura::{Legivel, TabelaLeitura};
 use phxsql_store::log::Operacao;
@@ -814,7 +815,31 @@ pub struct Servidor {
     proximo_ouvinte: Mutex<Option<TcpListener>>,
     /// Onde a porta de dados escuta agora, que nem sempre e o `bind`.
     endereco_dos_dados: Mutex<Option<SocketAddr>>,
-    conexoes: AtomicUsize,
+    /// As vagas da porta de dados: uma [`Permissao`] por conexao viva, teto
+    /// `conexoes_max`. Era um `AtomicUsize` com `fetch_add` ao aceitar e
+    /// `fetch_sub` no fim do fecho da thread -- e um panico dentro do
+    /// `atender` pulava o `fetch_sub`. A permissao morre no `Drop`, que roda
+    /// no desenrolar do panico, e a vaga volta. Pedido 248.
+    permissoes_de_dados: Semaforo,
+    /// As vagas das TRES portas HTTP juntas (interface, REST, explorador),
+    /// teto `recursos.conexoes_web_max`. Antes nao havia teto nenhum: uma
+    /// enxurrada de pedidos virava uma enxurrada de threads.
+    permissoes_http: Semaforo,
+    /// Ate quando (em ms de relogio) a fila HTTP esta declarada CHEIA.
+    ///
+    /// Quando um pedido esperou `fila_web_ms` inteiro e nao achou vaga, quem
+    /// chegar logo depois esperaria o mesmo e receberia a mesma resposta --
+    /// entao recebe na hora. Sem isto o aceitador, que e uma thread so,
+    /// entregaria um 503 a cada `fila_web_ms` numa saturacao longa, e a fila
+    /// do sistema operacional estouraria por tras dele. Zera na primeira
+    /// vaga que aparece.
+    http_cheia_ate_ms: AtomicU64,
+    /// Quantos `atender` seguintes DESTE servidor devem entrar em panico.
+    /// So existe nos testes -- e por servidor, e nao global, porque os
+    /// testes do binario rodam em paralelo e um contador global faria a
+    /// conexao de um teste vizinho cair no panico deste.
+    #[cfg(test)]
+    panicos_de_teste: AtomicUsize,
     /// O estado vivo do cluster -- `None` quando o `config.json` nao traz o
     /// bloco `cluster`, e ai NADA disto existe: nenhuma thread, nenhum portao.
     cluster: Option<Arc<crate::cluster::EstadoCluster>>,
@@ -1029,6 +1054,14 @@ impl Servidor {
         let cadastro_de_arranque = config.cadastro.clone();
         let proibidos_por_base = config.politica.proibidos_por_base.clone();
         let log_diretivas = config.log_acessos.clone();
+        // Os tetos de thread nascem aqui, uma vez: o semaforo carrega o
+        // numero, e o laco de aceitacao so pede vaga. `conexoes_max` ja
+        // chega >= 1 do `Config`; o da web aceita zero, que e «sem teto».
+        let permissoes_de_dados = Semaforo::novo(config.conexoes_max);
+        let permissoes_http = match config.recursos.conexoes_web_max {
+            0 => Semaforo::sem_teto(),
+            teto => Semaforo::novo(teto),
+        };
         let servidor = Arc::new(Servidor {
             cluster,
             mensagens,
@@ -1063,7 +1096,11 @@ impl Servidor {
             proximo_ouvinte: Mutex::new(None),
             endereco_dos_dados: Mutex::new(None),
             avisados: Mutex::new(HashMap::new()),
-            conexoes: AtomicUsize::new(0),
+            permissoes_de_dados,
+            permissoes_http,
+            http_cheia_ate_ms: AtomicU64::new(0),
+            #[cfg(test)]
+            panicos_de_teste: AtomicUsize::new(0),
             cargas: Mutex::new(crate::carga::Cargas::default()),
             marcas_pendentes: Mutex::new(Vec::new()),
             travas: Mutex::new(crate::travas::Travas::default()),
@@ -1584,7 +1621,12 @@ impl Servidor {
                     // exato em que o Nagle atrapalha em vez de ajudar.
                     let _ = fluxo.set_nodelay(true);
                     let par = fluxo.peer_addr().ok();
-                    if self.conexoes.load(Ordering::SeqCst) >= self.config.conexoes_max {
+                    // Uma vaga AGORA, ou recusa: e o `max_connections` do
+                    // PostgreSQL («too many clients already»), do MySQL e do
+                    // MariaDB («Too many connections»), e tres motores
+                    // maduros convergindo e aceite automatico. A espera com
+                    // prazo fica para as portas HTTP, onde o molde e outro.
+                    let Some(permissao) = self.permissoes_de_dados.tentar() else {
                         // Recusa sem derrubar o servico, e deixa registro.
                         if let Some(p) = par {
                             self.anotar(&Acesso {
@@ -1603,9 +1645,8 @@ impl Servidor {
                             });
                         }
                         continue;
-                    }
+                    };
                     let servidor = Arc::clone(self);
-                    self.conexoes.fetch_add(1, Ordering::SeqCst);
                     let endereco = par.unwrap_or_else(|| SocketAddr::from(([0, 0, 0, 0], 0)));
                     self.telemetria.subir(
                         format!("dados-{}", endereco.port()),
@@ -1614,9 +1655,12 @@ impl Servidor {
                         "atendimento",
                         crate::agora_ms(),
                         move |fio| {
+                            // A vaga mora na thread da conexao e morre com
+                            // ela -- pelo fim do `atender` ou por um panico
+                            // dentro dele. Nao ha `fetch_sub` para pular.
+                            let _vaga = permissao;
                             fio.fazendo(&format!("conexao de {endereco}"));
                             servidor.atender(fluxo, endereco);
-                            servidor.conexoes.fetch_sub(1, Ordering::SeqCst);
                         },
                     );
                 }
@@ -5193,7 +5237,7 @@ impl Servidor {
             ),
             (
                 "conexoes",
-                Json::de_u64(self.conexoes.load(Ordering::SeqCst) as u64),
+                Json::de_u64(self.permissoes_de_dados.em_uso() as u64),
             ),
             ("web", Json::texto_de(&self.config.web.bind)),
             ("web_ligada", Json::Bool(self.config.web.ligado)),
@@ -5220,7 +5264,7 @@ impl Servidor {
         if !self.porta_no_ar.load(Ordering::SeqCst) {
             return Err(PhxError::Esquema("a porta de dados ja esta parada".into()));
         }
-        let abertas = self.conexoes.load(Ordering::SeqCst);
+        let abertas = self.permissoes_de_dados.em_uso();
         self.parar_de_aceitar.store(true, Ordering::SeqCst);
         self.acordar_o_accept()?;
         Ok(Json::objeto(vec![
@@ -6842,47 +6886,12 @@ impl Servidor {
                 eprintln!("interface web -> {} | tunel cifrado com pino", sv.endereco);
             }
         }
-        let servidor = Arc::clone(self);
-        self.telemetria.subir(
-            "ouvinte-web",
-            "aceita as conexoes da interface web e entrega cada pedido a uma \
-             thread propria; ela so aceita, nunca atende",
-            "servico",
-            crate::agora_ms(),
-            move |fio| {
-                fio.fazendo("esperando conexao do navegador");
-                for conexao in ouvinte.incoming() {
-                    let fluxo = match conexao {
-                        Ok(f) => f,
-                        Err(_) => continue,
-                    };
-                    // Mesma razao da porta de dados: resposta curta, e o Nagle
-                    // segurando cada clique da tela por 40 ms.
-                    let _ = fluxo.set_nodelay(true);
-                    let par = fluxo
-                        .peer_addr()
-                        .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
-                    let s = Arc::clone(&servidor);
-                    // ACHADO, e ele fica declarado aqui: esta thread nasce SEM
-                    // TETO. A porta de dados recusa acima de `conexoes_max`; a
-                    // web nao conta nada, entao uma enxurrada de pedidos vira
-                    // uma enxurrada de threads. O registro agora ao menos as
-                    // MOSTRA -- o teto e decisao de configuracao, e nao deste
-                    // agente.
-                    s.telemetria.clone().subir(
-                        format!("web-{}", par.port()),
-                        "atende UM pedido HTTP da interface e sai: o protocolo \
-                         aqui e uma resposta por conexao (`Connection: close`)",
-                        "web",
-                        crate::agora_ms(),
-                        move |f| {
-                            f.fazendo(&format!("pedido de {par}"));
-                            s.atender_http(fluxo, par);
-                        },
-                    );
-                }
-            },
-        );
+        // O laco e o MESMO das outras duas portas HTTP, e isso e conserto:
+        // ate o pedido 248 a interface tinha uma copia propria dele -- a que
+        // nascia «SEM TETO», declarado num comentario --, e o teto entrou no
+        // `aceitar_http`. Conserto entra no caminho que o motivou e o irmao
+        // fica: a copia era o irmao, e some para nao divergir de novo.
+        self.aceitar_http(ouvinte, "web", |s, fluxo, par| s.atender_http(fluxo, par));
     }
 
     /// Atende um pedido HTTP. Uma resposta por conexao -- `Connection: close`.
@@ -7140,14 +7149,24 @@ impl Servidor {
             move |fio| {
                 fio.fazendo("esperando conexao");
                 for conexao in ouvinte.incoming() {
-                    let fluxo = match conexao {
+                    let mut fluxo = match conexao {
                         Ok(f) => f,
                         Err(_) => continue,
                     };
+                    // Mesma razao da porta de dados: resposta curta, e o Nagle
+                    // segurando cada clique da tela por 40 ms.
                     let _ = fluxo.set_nodelay(true);
                     let par = fluxo
                         .peer_addr()
                         .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
+                    // A vaga vem ANTES da thread, e nao depois: o portao que
+                    // decide se o trabalho acontece tem de vir antes do
+                    // trabalho. Sem vaga em `fila_web_ms`, 503 daqui mesmo,
+                    // sem subir nada.
+                    let Some(vaga) = servidor.vaga_http() else {
+                        servidor.recusar_http_cheio(&mut fluxo, par, familia);
+                        continue;
+                    };
                     let s = Arc::clone(&servidor);
                     s.telemetria.clone().subir(
                         format!("{familia}-{}", par.port()),
@@ -7156,6 +7175,9 @@ impl Servidor {
                         familia,
                         crate::agora_ms(),
                         move |f| {
+                            // A vaga morre com a thread -- inclusive num
+                            // panico dentro do atendimento.
+                            let _vaga = vaga;
                             f.fazendo(&format!("pedido de {par}"));
                             atender(&s, fluxo, par);
                         },
@@ -7163,6 +7185,90 @@ impl Servidor {
                 }
             },
         );
+    }
+
+    /// Uma vaga de thread HTTP, esperando ate `recursos.fila_web_ms`.
+    ///
+    /// `None` e «a fila estourou», e quem chamou responde 503. A espera e a
+    /// diferenca entre esta porta e a de dados: do outro lado ha um navegador
+    /// que refaz o pedido sozinho, e dois segundos de fila sao um clique que
+    /// demorou -- nao um erro que a pessoa precisa entender.
+    ///
+    /// # O atalho da fila declarada cheia
+    ///
+    /// O aceitador e UMA thread. Se cada pedido de uma saturacao longa
+    /// esperasse `fila_web_ms` inteiro antes do 503, o aceitador entregaria
+    /// uma recusa a cada dois segundos e a fila do sistema operacional
+    /// estouraria por tras dele -- e ai o cliente nem 503 receberia, so um
+    /// `connect` que nao responde. Por isso, depois de UMA espera que
+    /// estourou, os pedidos seguintes recebem o 503 na hora ate `fila_web_ms`
+    /// depois: eles esperariam o mesmo tempo pela mesma resposta. A primeira
+    /// vaga que aparece desfaz a declaracao.
+    fn vaga_http(&self) -> Option<Permissao> {
+        if let Some(p) = self.permissoes_http.tentar() {
+            self.http_cheia_ate_ms.store(0, Ordering::Relaxed);
+            return Some(p);
+        }
+        let fila_ms = self.config.recursos.fila_web_ms;
+        if self.http_cheia_ate_ms.load(Ordering::Relaxed) > crate::agora_ms() as u64 {
+            return None;
+        }
+        match self
+            .permissoes_http
+            .adquirir_ate(Duration::from_millis(fila_ms))
+        {
+            Some(p) => {
+                self.http_cheia_ate_ms.store(0, Ordering::Relaxed);
+                Some(p)
+            }
+            None => {
+                self.http_cheia_ate_ms
+                    .store(crate::agora_ms() as u64 + fila_ms, Ordering::Relaxed);
+                None
+            }
+        }
+    }
+
+    /// O 503 de porta cheia, com `Retry-After` e linha no `acessos.log`.
+    ///
+    /// Roda no aceitador, entao nao le o pedido nem toma trava nenhuma: so
+    /// escreve a recusa e escoa o que ja chegou (ver `http::responder_cheio`).
+    fn recusar_http_cheio(&self, fluxo: &mut TcpStream, par: SocketAddr, familia: &'static str) {
+        let fila_ms = self.config.recursos.fila_web_ms;
+        let teto = self.permissoes_http.teto().to_string();
+        let ms = fila_ms.to_string();
+        let segundos = fila_ms.div_ceil(1_000).max(1);
+        self.anotar(&Acesso {
+            quando_ms: crate::agora_ms(),
+            ip: par.ip().to_string(),
+            porta_origem: par.port(),
+            op: familia.into(),
+            usuario: String::new(),
+            autenticado: false,
+            ok: false,
+            // A duracao e a espera na fila: e o numero que diz se o teto
+            // esta apertado ou se o pedido chegou numa saturacao declarada.
+            duracao_ms: if self.http_cheia_ate_ms.load(Ordering::Relaxed) > 0 {
+                0
+            } else {
+                fila_ms
+            },
+            erro: Some(format!(
+                "porta HTTP cheia ({teto} threads, fila de {ms} ms)"
+            )),
+            database: String::new(),
+            tabela: String::new(),
+            codigo: 0,
+        });
+        let corpo = Json::objeto(vec![
+            ("ok", Json::Bool(false)),
+            (
+                "erro",
+                Json::texto_de(self.msg("erro.porta_cheia", &[("teto", &teto), ("ms", &ms)])),
+            ),
+            ("retry_after_s", Json::de_u64(segundos)),
+        ]);
+        let _ = http::responder_cheio(fluxo, segundos, &corpo.escrever());
     }
 
     /// Os portoes de rede que valem antes de qualquer rota HTTP.
@@ -8029,6 +8135,14 @@ impl Servidor {
     }
 
     fn atender(&self, fluxo: TcpStream, par: SocketAddr) {
+        // So nos testes: a prova real da permissao RAII (pedido 248) precisa
+        // de um panico DE VERDADE dentro da thread da conexao. Simula-lo por
+        // fora provaria outra coisa. Compilado fora do binario de producao.
+        #[cfg(test)]
+        if self.panicos_de_teste.load(Ordering::SeqCst) > 0 {
+            self.panicos_de_teste.fetch_sub(1, Ordering::SeqCst);
+            panic!("panico de teste dentro do atender (pedido 248)");
+        }
         let ip = par.ip().to_string();
         let porta = par.port();
         let _ = fluxo.set_read_timeout(Some(Duration::from_secs(self.config.timeout_s)));
@@ -9333,7 +9447,7 @@ impl Servidor {
                 ),
                 (
                     "conexoes",
-                    Json::de_u64(self.conexoes.load(Ordering::SeqCst) as u64),
+                    Json::de_u64(self.permissoes_de_dados.em_uso() as u64),
                 ),
                 (
                     "no_ar_s",
@@ -17835,7 +17949,7 @@ impl Servidor {
                         .into(),
                 ));
             }
-            let abertas = self.conexoes.load(Ordering::SeqCst);
+            let abertas = self.permissoes_de_dados.em_uso();
             if abertas > 0 {
                 return Err(PhxError::Esquema(format!(
                     "a porta de dados esta parada, mas {abertas} conexao(oes) continuam \
@@ -18511,13 +18625,14 @@ impl Servidor {
                     ),
                 ]),
             ));
+            campos.push(("tetos".into(), self.tetos_das_threads()));
             campos.push((
                 "servidor".into(),
                 Json::objeto(vec![
                     ("phxsql", Json::texto_de(VERSAO)),
                     (
                         "conexoes",
-                        Json::de_u64(self.conexoes.load(Ordering::SeqCst) as u64),
+                        Json::de_u64(self.permissoes_de_dados.em_uso() as u64),
                     ),
                     (
                         "conexoes_max",
@@ -18532,6 +18647,44 @@ impl Servidor {
             ));
         }
         Ok(retrato)
+    }
+
+    /// A ocupacao VIVA de cada teto de threads, para o monitor (pedido 248).
+    ///
+    /// Os dois semaforos trazem `em_uso`, `teto` e `esperando` lidos agora;
+    /// o fecho da janela e a varredura trazem so o teto, com `vivo: false`,
+    /// porque as threads deles morrem no fim do `scope` e ninguem as conta
+    /// no meio -- dizer zero ali seria inventar. `teto` nulo e «sem teto».
+    fn tetos_das_threads(&self) -> Json {
+        let vivo = |familia: &str, s: &Semaforo| {
+            Json::objeto(vec![
+                ("familia", Json::texto_de(familia)),
+                ("vivo", Json::Bool(true)),
+                ("em_uso", Json::de_u64(s.em_uso() as u64)),
+                (
+                    "teto",
+                    if s.limitado() {
+                        Json::de_u64(s.teto() as u64)
+                    } else {
+                        Json::Nulo
+                    },
+                ),
+                ("esperando", Json::de_u64(s.esperando() as u64)),
+            ])
+        };
+        let fixo = |familia: &str, teto: usize| {
+            Json::objeto(vec![
+                ("familia", Json::texto_de(familia)),
+                ("vivo", Json::Bool(false)),
+                ("teto", Json::de_u64(teto as u64)),
+            ])
+        };
+        Json::Lista(vec![
+            vivo("dados", &self.permissoes_de_dados),
+            vivo("http", &self.permissoes_http),
+            fixo("fecho", FIOS_DO_FECHO),
+            fixo("varredura", phxsql_core::paralelo::nucleos()),
+        ])
     }
 
     /// Liga a coleta. Desligada ela custa um `load(Relaxed)` por ponto.
@@ -20379,7 +20532,7 @@ impl Servidor {
                     ),
                     (
                         "conexoes",
-                        Json::de_u64(self.conexoes.load(Ordering::SeqCst) as u64),
+                        Json::de_u64(self.permissoes_de_dados.em_uso() as u64),
                     ),
                     ("sessoes_web", Json::de_u64(sessoes_web)),
                     ("bloqueios", Json::de_u64(bloqueios)),
@@ -41843,5 +41996,316 @@ mod testes_leitura_repetivel {
         manda(&s, &mut a, r#""op":"sql","database":"b","texto":"COMMIT""#).unwrap();
         grava_77(&s, &mut b).expect("o COMMIT soltou a S");
         assert_eq!(valor(&s, &mut conexao(3)), 77);
+    }
+}
+
+/// As threads e os seus tetos -- pedido 248.
+#[cfg(test)]
+mod testes_das_threads {
+    use super::*;
+    use std::io::Read;
+
+    fn config_base(dir: &std::path::Path) -> Config {
+        Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            token: "t".into(),
+            ..Config::default()
+        }
+    }
+
+    /// Sobe a porta de dados pelo laco DE PRODUCAO (`aceitar_ate_mandarem_parar`),
+    /// e nao pelo atalho dos outros testes: a vaga e pedida ali, e e ali que
+    /// a prova tem de passar.
+    fn porta_de_dados_de_verdade(s: &Arc<Servidor>) -> u16 {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let s = Arc::clone(s);
+        std::thread::spawn(move || s.aceitar_ate_mandarem_parar(&ouvinte));
+        porta
+    }
+
+    fn porta_web(s: &Arc<Servidor>) -> u16 {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        s.aceitar_http(ouvinte, "web", |s, fluxo, par| s.atender_http(fluxo, par));
+        porta
+    }
+
+    fn espera_ate(deadline: Duration, condicao: impl Fn() -> bool) -> bool {
+        let fim = Instant::now() + deadline;
+        while Instant::now() < fim {
+            if condicao() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        condicao()
+    }
+
+    fn ping(porta: u16) -> Option<String> {
+        let mut c = TcpStream::connect(("127.0.0.1", porta)).ok()?;
+        c.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        c.write_all(b"{\"op\":\"ping\",\"token\":\"t\"}\n").ok()?;
+        let mut linha = String::new();
+        BufReader::new(&c).read_line(&mut linha).ok()?;
+        if linha.is_empty() {
+            None
+        } else {
+            Some(linha)
+        }
+    }
+
+    /// Le uma resposta HTTP inteira (cabecalho e corpo) ate o outro lado fechar.
+    fn resposta_http(c: &mut TcpStream) -> String {
+        let mut tudo = Vec::new();
+        let _ = c.read_to_end(&mut tudo);
+        String::from_utf8_lossy(&tudo).into_owned()
+    }
+
+    fn get_saude(porta: u16) -> String {
+        let mut c = TcpStream::connect(("127.0.0.1", porta)).unwrap();
+        c.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        c.write_all(b"GET /saude HTTP/1.1\r\nHost: x\r\n\r\n")
+            .unwrap();
+        resposta_http(&mut c)
+    }
+
+    /// **A prova real da permissao RAII.** Tres conexoes entram em panico
+    /// dentro do `atender`, com teto de duas vagas. Com o contador de mao
+    /// (`fetch_add`/`fetch_sub`), duas bastavam para fechar a porta para
+    /// sempre: o `fetch_sub` ficava depois do panico e nunca rodava. Com a
+    /// permissao no `Drop`, as tres vagas voltam e a quarta conexao e
+    /// atendida. O defeito reposto esta no catalogo de guardas
+    /// (`permissao-de-dados-sem-raii`).
+    #[test]
+    fn panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados() {
+        let dir = DirTemp::novo("vaga-raii");
+        let mut c = config_base(&dir);
+        c.conexoes_max = 2;
+        c.recursos.conexoes_max = 2;
+        let s = Servidor::novo(c).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        assert_eq!(s.permissoes_de_dados.teto(), 2);
+
+        s.panicos_de_teste.store(3, Ordering::SeqCst);
+        for i in 0..3 {
+            // Cada uma cai: a thread entra em panico antes de ler, e o
+            // cliente ve o fim da conexao. O que interessa e o que sobra
+            // DEPOIS: a vaga.
+            let r = ping(porta);
+            assert!(
+                r.is_none(),
+                "a conexao {i} devia ter caido, respondeu {r:?}"
+            );
+        }
+        assert!(
+            espera_ate(Duration::from_secs(5), || s.permissoes_de_dados.em_uso()
+                == 0),
+            "as vagas nao voltaram depois dos panicos: {} em uso",
+            s.permissoes_de_dados.em_uso()
+        );
+        assert_eq!(
+            s.panicos_de_teste.load(Ordering::SeqCst),
+            0,
+            "nem todos os panicos aconteceram -- a porta fechou antes"
+        );
+        let r = ping(porta).expect("a quarta conexao tinha de ser atendida");
+        assert!(r.contains("\"ok\":true"), "{r}");
+    }
+
+    /// A recusa da porta de dados continua IMEDIATA e continua no log: e o
+    /// comportamento de sempre, e o teste e do comportamento velho.
+    #[test]
+    fn a_porta_de_dados_continua_recusando_na_hora_acima_do_teto() {
+        let dir = DirTemp::novo("recusa-imediata");
+        let mut c = config_base(&dir);
+        c.conexoes_max = 1;
+        c.recursos.conexoes_max = 1;
+        let s = Servidor::novo(c).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+
+        // A primeira ocupa a unica vaga e fica aberta.
+        let mut a = TcpStream::connect(("127.0.0.1", porta)).unwrap();
+        a.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        a.write_all(b"{\"op\":\"ping\",\"token\":\"t\"}\n").unwrap();
+        let mut linha = String::new();
+        BufReader::new(&a).read_line(&mut linha).unwrap();
+        assert!(linha.contains("\"ok\":true"), "{linha}");
+        assert_eq!(s.permissoes_de_dados.em_uso(), 1);
+
+        // A segunda e recusada na hora -- conexao fechada sem resposta.
+        let t0 = Instant::now();
+        assert!(ping(porta).is_none(), "acima do teto tinha de recusar");
+        assert!(
+            t0.elapsed() < Duration::from_secs(2),
+            "a recusa nao e imediata"
+        );
+        let log = std::fs::read_to_string(dir.join("acessos.log")).unwrap_or_default();
+        assert!(log.contains("limite de conexoes atingido"), "{log}");
+
+        drop(a);
+        assert!(espera_ate(Duration::from_secs(5), || s
+            .permissoes_de_dados
+            .em_uso()
+            == 0));
+        assert!(
+            ping(porta).is_some(),
+            "a vaga tinha de voltar quando a primeira fechou"
+        );
+    }
+
+    /// **O comportamento VELHO**: abaixo do teto nada muda na web -- toda
+    /// resposta e 200, nenhuma e 503, e nenhuma linha de recusa entra no log.
+    #[test]
+    fn abaixo_do_teto_a_web_nao_muda() {
+        let dir = DirTemp::novo("web-abaixo-do-teto");
+        let mut c = config_base(&dir);
+        c.recursos.conexoes_web_max = 4;
+        let s = Servidor::novo(c).unwrap();
+        let porta = porta_web(&s);
+        for _ in 0..6 {
+            let r = get_saude(porta);
+            assert!(r.starts_with("HTTP/1.1 200 "), "{r}");
+            assert!(!r.contains("Retry-After"), "{r}");
+        }
+        assert!(espera_ate(Duration::from_secs(5), || s
+            .permissoes_http
+            .em_uso()
+            == 0));
+        let log = std::fs::read_to_string(dir.join("acessos.log")).unwrap_or_default();
+        assert!(!log.contains("porta HTTP cheia"), "{log}");
+    }
+
+    /// Acima do teto, com a fila esgotada: 503 com `Retry-After`, linha no
+    /// log, e a vaga VOLTA quando o pedido que a segurava termina.
+    #[test]
+    fn acima_do_teto_a_web_responde_503_com_retry_after_e_a_vaga_volta() {
+        let dir = DirTemp::novo("web-503");
+        let mut c = config_base(&dir);
+        c.recursos.conexoes_web_max = 1;
+        c.recursos.fila_web_ms = 100;
+        let s = Servidor::novo(c).unwrap();
+        let porta = porta_web(&s);
+
+        // A segura a unica vaga: manda o cabecalho SEM a linha vazia final,
+        // e a thread dela fica esperando o resto.
+        let mut a = TcpStream::connect(("127.0.0.1", porta)).unwrap();
+        a.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        a.write_all(b"GET /saude HTTP/1.1\r\nHost: x\r\n").unwrap();
+        assert!(
+            espera_ate(Duration::from_secs(5), || s.permissoes_http.em_uso() == 1),
+            "A nao tomou a vaga"
+        );
+
+        // B espera os 100 ms da fila e recebe 503.
+        let t0 = Instant::now();
+        let r = get_saude(porta);
+        let esperou = t0.elapsed();
+        assert!(r.starts_with("HTTP/1.1 503 "), "{r}");
+        assert!(r.contains("\r\nRetry-After: 1\r\n"), "{r}");
+        assert!(r.contains("porta HTTP cheia"), "{r}");
+        assert!(r.contains("\"retry_after_s\":1"), "{r}");
+        assert!(
+            esperou >= Duration::from_millis(100),
+            "nao esperou a fila: {esperou:?}"
+        );
+
+        // C chega com a fila DECLARADA cheia e recebe o 503 sem esperar.
+        let t0 = Instant::now();
+        let r = get_saude(porta);
+        assert!(r.starts_with("HTTP/1.1 503 "), "{r}");
+        assert!(
+            t0.elapsed() < Duration::from_millis(100),
+            "com a fila declarada cheia a recusa tinha de ser imediata: {:?}",
+            t0.elapsed()
+        );
+
+        // A termina o pedido e recebe 200: a vaga dela volta.
+        a.write_all(b"\r\n").unwrap();
+        let r = resposta_http(&mut a);
+        assert!(r.starts_with("HTTP/1.1 200 "), "{r}");
+        assert!(espera_ate(Duration::from_secs(5), || s
+            .permissoes_http
+            .em_uso()
+            == 0));
+        // Passa a janela da fila declarada cheia, para que D nao dependa
+        // de quem chegou primeiro: a vaga ou o relogio.
+        std::thread::sleep(Duration::from_millis(150));
+        let r = get_saude(porta);
+        assert!(
+            r.starts_with("HTTP/1.1 200 "),
+            "depois de A soltar, D tinha de entrar: {r}"
+        );
+
+        let log = std::fs::read_to_string(dir.join("acessos.log")).unwrap_or_default();
+        assert!(
+            log.contains("porta HTTP cheia (1 threads, fila de 100 ms)"),
+            "{log}"
+        );
+    }
+
+    /// O monitor em runtime: os tetos saem com a ocupacao lida AGORA, e o
+    /// que nao se mede ao vivo diz isso em vez de dizer zero.
+    #[test]
+    fn os_tetos_das_threads_saem_com_a_ocupacao_viva() {
+        let dir = DirTemp::novo("tetos-vivos");
+        let mut c = config_base(&dir);
+        c.conexoes_max = 3;
+        c.recursos.conexoes_max = 3;
+        c.recursos.conexoes_web_max = 0;
+        let s = Servidor::novo(c).unwrap();
+        let _vaga = s.permissoes_de_dados.tentar().unwrap();
+        let j = s.tetos_das_threads();
+        let Json::Lista(itens) = &j else {
+            panic!("tetos nao e lista: {}", j.escrever())
+        };
+        let acha = |f: &str| {
+            itens
+                .iter()
+                .find(|i| i.texto_ou("familia", "") == f)
+                .unwrap_or_else(|| panic!("faltou a familia {f}: {}", j.escrever()))
+        };
+        let dados = acha("dados");
+        assert_eq!(dados.inteiro_ou("em_uso", -1), 1);
+        assert_eq!(dados.inteiro_ou("teto", -1), 3);
+        assert_eq!(dados.inteiro_ou("esperando", -1), 0);
+        assert!(dados.booleano_ou("vivo", false));
+        let http = acha("http");
+        assert!(
+            matches!(http.campo("teto"), Some(Json::Nulo)),
+            "sem teto tem de sair nulo, nao um numero: {}",
+            http.escrever()
+        );
+        let fecho = acha("fecho");
+        assert!(
+            !fecho.booleano_ou("vivo", true),
+            "o fecho nao se mede ao vivo"
+        );
+        assert_eq!(fecho.inteiro_ou("teto", -1), FIOS_DO_FECHO as i64);
+        assert!(
+            fecho.campo("em_uso").is_none(),
+            "em_uso inventado: {}",
+            fecho.escrever()
+        );
+        assert!(acha("varredura").inteiro_ou("teto", 0) >= 1);
+    }
+
+    /// `conexoes_web_max: 0` e o comportamento de antes: sem teto, e o
+    /// contador continua contando.
+    #[test]
+    fn zero_no_teto_da_web_e_sem_teto() {
+        let dir = DirTemp::novo("web-sem-teto");
+        let mut c = config_base(&dir);
+        c.recursos.conexoes_web_max = 0;
+        let s = Servidor::novo(c).unwrap();
+        assert!(!s.permissoes_http.limitado());
+        assert_eq!(s.permissoes_http.em_uso(), 0);
+        let porta = porta_web(&s);
+        let r = get_saude(porta);
+        assert!(r.starts_with("HTTP/1.1 200 "), "{r}");
     }
 }

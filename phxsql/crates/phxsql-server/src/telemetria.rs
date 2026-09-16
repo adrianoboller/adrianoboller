@@ -909,6 +909,20 @@ struct Crus {
 
 // ------------------------------------------------------------------ registro
 
+/// A ficha de uma thread ENQUANTO ela vive: morre no `Drop`, que o Rust
+/// roda tambem no desenrolar de um panico. E o que faz `fio_morreu` valer
+/// para toda thread do `subir`, e nao so para a que termina bem.
+struct FichaViva {
+    telemetria: Arc<Telemetria>,
+    fio: Arc<Fio>,
+}
+
+impl Drop for FichaViva {
+    fn drop(&mut self) {
+        self.telemetria.fio_morreu(&self.fio);
+    }
+}
+
 /// O registro central: atividades, threads, contadores e a serie.
 pub struct Telemetria {
     /// **O portao.** Lido com `Relaxed` no comeco de todo ponto de captura.
@@ -1226,8 +1240,17 @@ impl Telemetria {
         // `phxsqld` e o `top` nao ajuda ninguem.
         let nome_do_so: String = ficha.nome.chars().take(15).collect();
         let subiu = std::thread::Builder::new().name(nome_do_so).spawn(move || {
-            corpo(Arc::clone(&para_thread));
-            eu.fio_morreu(&para_thread);
+            // A ficha morre no `Drop`, e nao numa chamada depois do corpo:
+            // um panico dentro do corpo pulava o `fio_morreu`, e a thread
+            // ficava «viva» no registro e no contador para sempre. E o
+            // mesmo defeito do contador de conexoes da porta de dados
+            // (pedido 248), no irmao que chama as mesmas funcoes na mesma
+            // ordem.
+            let _ficha = FichaViva {
+                telemetria: eu,
+                fio: Arc::clone(&para_thread),
+            };
+            corpo(para_thread);
         });
         if subiu.is_err() {
             // Falhar em CRIAR a thread e noticia: o servico que ela prestava
@@ -1239,6 +1262,11 @@ impl Telemetria {
                 ficha.nome, ficha.finalidade
             );
         }
+    }
+
+    /// Quantas threads registradas estao vivas agora.
+    pub fn fios_vivos(&self) -> usize {
+        self.fios_vivos.load(Ordering::Relaxed)
     }
 
     /// As threads, as de servico primeiro.
@@ -1543,6 +1571,13 @@ impl Telemetria {
                         "threads_vivas",
                         Json::de_u64(self.fios_vivos.load(Ordering::Relaxed) as u64),
                     ),
+                    // As do sistema operacional, ao lado das registradas: a
+                    // diferenca e o que nasceu fora do `subir`. `Nulo` fora
+                    // do Linux, nunca zero.
+                    (
+                        "threads_do_so",
+                        threads_do_so().map(Json::de_u64).unwrap_or(Json::Nulo),
+                    ),
                 ]),
             ),
             (
@@ -1613,6 +1648,20 @@ pub fn corrente() -> Option<Arc<Atividade>> {
 }
 
 // ------------------------------------------------------------- /proc, na mao
+
+/// Quantas threads o SISTEMA OPERACIONAL diz que este processo tem.
+///
+/// `Threads:` do `/proc/self/status` -- so Linux, so `std`. Noutro sistema
+/// devolve `None`, e o monitor diz «nao medido» em vez de zero: zero seria
+/// um numero, e um numero falso e pior que uma lacuna. Ao lado de
+/// `fios_vivos()` ele responde o que o `mapa-das-threads.py` responde
+/// estaticamente: a diferenca entre os dois e o que nasceu FORA do `subir`.
+pub fn threads_do_so() -> Option<u64> {
+    let t = std::fs::read_to_string("/proc/self/status").ok()?;
+    t.lines()
+        .find_map(|l| l.strip_prefix("Threads:"))
+        .and_then(|v| v.trim().parse().ok())
+}
 
 /// (jiffies de CPU do processo, memoria residente em KB).
 ///
@@ -1869,6 +1918,68 @@ mod testes {
             t.fios().iter().all(|f| !f.viva()),
             "ficou viva depois de sair"
         );
+    }
+
+    /// O `Threads:` do `/proc/self/status` conta esta thread e as que o teste
+    /// sobe -- e conta MAIS do que o registro, porque o proprio binario de
+    /// teste tem threads que nunca passaram pelo `subir`.
+    #[test]
+    fn as_threads_do_so_se_medem_e_nunca_sao_menos_que_as_registradas() {
+        let Some(so) = threads_do_so() else {
+            // Fora do Linux o campo e Nulo, e isso e resposta, nao falha.
+            return;
+        };
+        assert!(so >= 1, "o processo tem ao menos esta thread");
+        let t = Arc::new(Telemetria::nova(true));
+        let (envia, recebe) = std::sync::mpsc::channel();
+        let (segura, solta) = std::sync::mpsc::channel::<()>();
+        t.subir("presa", "espera o teste soltar", "teste", 0, move |_| {
+            let _ = envia.send(());
+            let _ = solta.recv();
+        });
+        recebe.recv().unwrap();
+        let agora = threads_do_so().unwrap();
+        assert!(
+            agora >= t.fios_vivos() as u64,
+            "o SO ve {agora}, o registro ve {}",
+            t.fios_vivos()
+        );
+        assert!(
+            agora > so,
+            "a thread subida nao apareceu no SO: {so} -> {agora}"
+        );
+        let _ = segura.send(());
+    }
+
+    /// A thread que entra em PANICO tambem deixa de ser viva -- a ficha morre
+    /// no `Drop`, e nao numa chamada depois do corpo que o panico pularia.
+    /// E o irmao do contador de conexoes da porta de dados (pedido 248), e o
+    /// defeito reposto esta no catalogo (`ficha-do-fio-pulada-no-panico`).
+    #[test]
+    fn a_thread_que_entra_em_panico_tambem_deixa_de_ser_viva() {
+        let t = Arc::new(Telemetria::nova(true));
+        let antes = t.fios_vivos();
+        t.subir(
+            "panico",
+            "entra em panico de proposito",
+            "teste",
+            0,
+            move |f| {
+                f.fazendo("prestes a cair");
+                panic!("panico de teste dentro do corpo da thread");
+            },
+        );
+        let fim = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while std::time::Instant::now() < fim && t.fios_vivos() != antes {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(
+            t.fios_vivos(),
+            antes,
+            "o contador nao voltou depois do panico"
+        );
+        let ficha = t.fios().into_iter().find(|f| f.nome == "panico").unwrap();
+        assert!(!ficha.viva(), "a ficha ficou viva depois do panico");
     }
 
     /// **A lista de operacoes cancelaveis sai do CODIGO, e nao da memoria de

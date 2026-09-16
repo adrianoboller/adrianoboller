@@ -36,6 +36,7 @@ pub mod paralelo;
 pub mod pix;
 pub mod qr;
 pub mod schema;
+pub mod semaforo;
 pub mod senha;
 pub mod sha1;
 pub mod sha512;

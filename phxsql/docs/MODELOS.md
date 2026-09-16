@@ -888,6 +888,22 @@ com a frente T (forte). O que o meio comprou e o leve não compraria: as
 quatro correções de captura acima, e a decisão de mostrar o escalão pelo nível
 com «não registrado por papel» para o tradutor em vez de inventar um.
 
+## Semáforo e teto das threads (frente T, pedido 248) — 16/09/2026
+
+| frente | escalão | por quê | papéis convocados | dispensados, e por quê |
+|---|---|---|---|---|
+| **Frente T** — `Semaforo` do core, permissão RAII na porta de dados, teto e 503 na web, `FichaViva` na telemetria, monitor em runtime, mapa das threads com catraca, enxurrada de 500 conexões | **forte** | é **concorrência** pura: um semáforo escrito sobre `Mutex`+`Condvar` (a `std` não tem), com `Drop` que roda no desenrolar de um pânico e mutex envenenado no caminho — errar aqui é o pior tipo de defeito, o servidor de pé recusando todo mundo. E a lei da casa: a instrumentação desligada tem de custar zero e o portão vem antes do trabalho (a vaga se pede ANTES de subir a thread). O erro **não se vê** no teste comum; vê-se em produção depois de N pânicos | A, B, F (as quatro guardas vermelhas com o defeito reposto), G (mapa com catraca, item 0c), E (a régua no gestor, exercitada nos dois temas), H (CONCORRENCIA §17, TELEMETRIA, MENSAGENS, MANUAL) — todos no mesmo agente, por contrato | C (nenhum formato em disco), D (nada a limpar; as corridas ficam versionadas), J (a convergência do trio em `max_connections` já estava medida no quadro), SEC (revisão adiada para a frente D, que toca alerta e e-mail — o 503 não expõe nada além do `Retry-After`) |
+
+**Custo medido do escalão forte** (do transcrito do agente, não estimado):
+412.136 tokens, 157 chamadas de ferramenta, 49 min 43 s de parede — a frente
+mais cara do dia, e a única que compilou nesta árvore enquanto as outras
+corriam em paralelo. O que o forte comprou: achou que o fecho **já tinha
+teto** (o quadro do orquestrador estava errado, e o agente mediu em vez de
+obedecer), desenhou a «fila declarada cheia» que o contrato não previa (sem
+ela, uma saturação longa entregaria um 503 a cada 2 s), e trouxe o monitor em
+runtime pedido no meio da tarefa sem largar a prova real do que já estava
+feito.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

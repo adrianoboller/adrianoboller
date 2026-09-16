@@ -12,6 +12,8 @@ havia o que medir.
 | `quanto-a-trava-fica-presa.py` | **quanto a trava fica PRESA?** O µs de posse por operação, lido por dentro (telemetria), com o par `por_lote` × `por_operacao` isolando o `fsync` | sim |
 | `quieta.py` | **este número vale?** O vigia que reprova a bateria rodada em máquina ocupada | — |
 | `ruido-do-controle.py` | **o teto do próprio vigia está certo?** Muitas corridas seguidas de `ping` puro, para medir — e não citar — a dispersão que o controle mostra hoje, e testar se `tolerancia_controle` merece descer | sim, para achar a base limpa; sem ela, mede a sujeira mesmo |
+| `mapa-das-threads.py` | **onde cada thread nasce, e qual teto a segura?** Todo `spawn`/`scope`/`subir` fora dos testes tem de estar no catálogo com o teto e onde ele mora — ou com a dispensa e o motivo (pedido 248) | **não** — lê o fonte |
+| `enxurrada-web.py` | **o teto da web segura?** 500 conexões HTTP ao mesmo tempo; threads vivas, RSS e quantas receberam 503, antes e depois | sim |
 
 O relatório que sai dos quatro primeiros está em
 [`docs/CONCORRENCIA.md`](../../docs/CONCORRENCIA.md). O quinto responde por
@@ -37,7 +39,26 @@ RODADAS=40 RODADA_S=1.5 python3 bancada/concorrencia/ruido-do-controle.py --json
 
 python3 bancada/concorrencia/escolher-o-desenho.py --autoteste   # a conta do teto exclusivo
 python3 bancada/concorrencia/mapa-da-trava.py --catraca           # os tres tetos de QA
+
+python3 bancada/concorrencia/mapa-das-threads.py                  # o mapa: 19 sitios, cada um com o teto
+python3 bancada/concorrencia/mapa-das-threads.py --catraca        # spawn-sem-teto = 0, catalogo-envelhecido = 0
+python3 bancada/concorrencia/mapa-das-threads.py --autoteste      # as sete guardas do medidor
+python3 bancada/concorrencia/enxurrada-web.py                     # 500 conexoes contra o teto de fabrica
+python3 bancada/concorrencia/enxurrada-web.py --sem-teto          # o mesmo, com conexoes_web_max = 0
+PHX_PHXSQLD=/outro/phxsqld python3 bancada/concorrencia/enxurrada-web.py --rotulo antes
 ```
+
+**As duas catracas do mapa das threads rodam como item 0c da bateria**, ao
+lado do item 0 do mapa da trava, pelo mesmo motivo: são estáticas. As duas
+estão em zero e nenhuma sobe — `spawn-sem-teto` porque um só já é uma
+enxurrada possível, `catalogo-envelhecido` porque entrada que não casa com
+sítio nenhum é catálogo descrevendo uma thread que não nasce mais ali. O
+catálogo é escrito à mão de propósito: o `grep` acha o spawn e não o teto — o
+quadro da rodada de 16/09 leu «K fios, sem teto» num `thread::scope` que tinha
+`FIOS_DO_FECHO = 16` 28 linhas acima. Os números da enxurrada (504 → 68
+threads, 436 recusas com `Retry-After`) e a medição do teto do fecho (fica 16)
+estão na §17 do `docs/CONCORRENCIA.md`; o `resultados.json` desta pasta guarda
+um bloco por rótulo (`antes`, `depois`, `sem-teto`), cada um com a data.
 
 **A catraca do mapa e a unica coisa desta pasta que roda sozinha**, como item 0
 da `bancada/bateria/prova-bateria.py` -- antes de qualquer servidor subir,

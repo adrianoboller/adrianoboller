@@ -685,6 +685,8 @@ RECURSOS DA MAQUINA
       "threads": 0,
       "cpu_percentual": 100,
       "conexoes_max": 64,
+      "conexoes_web_max": 64,
+      "fila_web_ms": 2000,
       "usuarios_max": 0
     }
 
@@ -841,6 +843,18 @@ O RODIZIO DO ACESSOS.LOG E DO DIRETIVAS.LOG
     USUARIOS x CONEXOES. Nao sao a mesma coisa: um usuario pode ter varias
     conexoes. "conexoes_max" conta soquetes; "usuarios_max" conta logins
     diferentes ao mesmo tempo, que e o que uma licenca por posto quer contar.
+
+    THREADS DA WEB. "conexoes_web_max" e o teto de threads HTTP ao mesmo
+    tempo, somando as tres portas (interface, REST e explorador da API); e um
+    teto DIFERENTE do "conexoes_max", e de proposito: a porta de dados recusa
+    na hora acima do teto (como o max_connections do PostgreSQL, do MySQL e
+    do MariaDB), e a web ESPERA "fila_web_ms" milissegundos por uma thread
+    antes de recusar -- do outro lado ha um navegador, que refaz o pedido
+    sozinho. Esgotada a espera, a resposta e 503 com o cabecalho Retry-After
+    e uma linha no acessos.log. Zero em "conexoes_web_max" e sem teto, que era
+    o comportamento ate a 0.18 (uma thread por pedido); zero em "fila_web_ms"
+    e "nao espere", recusa na hora. Medido com 500 conexoes seguradas: 504
+    threads sem teto, 68 com o teto de 64. Os dois exigem reinicio.
 
     O teto de usuarios vale no LOGIN, e conta os logins distintos das conexoes
     vivas e das sessoes do navegador juntos. Quem JA esta dentro nunca e

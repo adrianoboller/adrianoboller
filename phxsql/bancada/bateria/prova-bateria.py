@@ -845,6 +845,27 @@ def item_0_catraca_do_mapa():
     confere("as tres catracas do mapa da trava seguram", r.returncode, 0)
 
 
+def item_0c_catraca_do_mapa_das_threads():
+    """A catraca do mapa das threads (pedido 248), ANTES do servidor -- estatica.
+
+    A regua e o `mapa-das-threads.py`: todo lugar onde uma thread nasce fora
+    dos testes tem de estar no catalogo dele com o teto que a segura, ou com a
+    dispensa e o motivo. `spawn-sem-teto` e zero e nunca sobe -- um so ja e
+    uma enxurrada possivel, e a porta web viveu assim ate 16/09/2026 com o
+    proprio comentario confessando.
+    """
+    print("\n=== item 0c: a catraca do mapa das threads ===")
+    mapa = os.path.join(AQUI, "..", "concorrencia", "mapa-das-threads.py")
+    r = subprocess.run([sys.executable, mapa, "--catraca"],
+                       capture_output=True, text=True)
+    for linha in r.stdout.splitlines():
+        if linha.strip():
+            print("  " + linha)
+    if r.returncode != 0 and r.stderr:
+        print("  " + r.stderr.strip()[:400])
+    confere("as duas catracas do mapa das threads seguram", r.returncode, 0)
+
+
 def item_0b_o_portao_nao_se_acha():
     """O portao «esta medindo?» -- provado nos DOIS sentidos, sem servidor.
 
@@ -918,6 +939,7 @@ def main():
     # Estatica e sem servidor: roda antes de subir qualquer coisa.
     item_0_catraca_do_mapa()
     item_0b_o_portao_nao_se_acha()
+    item_0c_catraca_do_mapa_das_threads()
 
     srv = Servidor()
     resultados = {"quando": time.strftime("%Y-%m-%d"), "porta": PORTA}

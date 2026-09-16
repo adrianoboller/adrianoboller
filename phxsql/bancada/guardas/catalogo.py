@@ -4569,4 +4569,154 @@ pub fn limpar() {
             "catalogo::tests::mesmo_nome_em_schemas_diferentes_nao_colide",
         ],
     },
+    # -----------------------------------------------------------------------
+    # Pedido 248 (16/09/2026): semaforo e teto das threads -- quatro guardas
+    # -----------------------------------------------------------------------
+    {
+        "id": "permissao-sem-devolver-a-vaga",
+        "titulo": "a permissão do semáforo morre sem devolver a vaga — o `fetch_sub` esquecido, com outro nome",
+        "porque": (
+            "O semaforo do `phxsql-core` existe para que a vaga volte no `Drop`, "
+            "inclusive no desenrolar de um panico. Se o `Drop` nao devolve, o "
+            "semaforo e o contador de mao de antes: cada thread que morre leva a "
+            "vaga junto, e depois de N a porta fecha com o servidor de pe. Os "
+            "testes que usam `adquirir` sem prazo foram escritos com "
+            "`adquirir_ate(5 s)` de proposito, para que este defeito FALHE em "
+            "vez de pendurar o binario inteiro sob o prazo do executor."
+        ),
+        "arquivo": "crates/phxsql-core/src/semaforo.rs",
+        "trecho": """        *estado = estado.saturating_sub(1);
+        // Uma vaga, um acordado. `notify_all` faria K esperadores disputarem
+        // uma vaga so, e K-1 voltariam a dormir -- trabalho a toa que cresce
+        // com a fila.
+        self.interno.vaga.notify_one();
+""",
+        "troca": """        // DEFEITO REPOSTO (pedido 248): a permissao morre e a vaga NAO
+        // volta -- e o `fetch_sub` esquecido, com outro nome.
+        let _ = &mut estado;
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "semaforo::testes::nunca_ha_mais_permissoes_que_o_teto",
+            "semaforo::testes::permissao_volta_mesmo_em_panico",
+            "semaforo::testes::permissao_viaja_para_outra_thread_e_volta_quando_ela_morre",
+            "semaforo::testes::adquirir_ate_acorda_quando_a_vaga_volta",
+            "semaforo::testes::a_disputa_nunca_passa_do_teto",
+            "semaforo::testes::teto_zero_vira_um_e_sem_teto_nao_limita",
+            "semaforo::testes::mutex_envenenado_nao_derruba",
+        ],
+        "seguem": [
+            "semaforo::testes::adquirir_ate_devolve_none_quando_o_prazo_acaba",
+            "semaforo::testes::prazo_zero_nao_espera",
+        ],
+    },
+    {
+        "id": "permissao-de-dados-sem-raii",
+        "titulo": "a vaga da porta de dados só volta no caminho feliz — um pânico no `atender` a leva junto",
+        "porque": (
+            "E o defeito de origem do pedido 248: `fetch_add` ao aceitar, "
+            "`fetch_sub` DEPOIS do `atender`, e um panico no meio pulava o "
+            "`fetch_sub`. Com `conexoes_max` vagas, N panicos fechavam a porta "
+            "com o servidor de pe, recusando todo mundo e sem nada ter caido. "
+            "O `ManuallyDrop` reproduz exatamente isso sobre a `Permissao`: a "
+            "devolucao passa a ser uma chamada depois do corpo, e o panico a "
+            "pula. A prova usa o laco de aceitacao DE PRODUCAO e um panico de "
+            "verdade dentro da thread da conexao (`panicos_de_teste`)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                        move |fio| {
+                            // A vaga mora na thread da conexao e morre com
+                            // ela -- pelo fim do `atender` ou por um panico
+                            // dentro dele. Nao ha `fetch_sub` para pular.
+                            let _vaga = permissao;
+                            fio.fazendo(&format!("conexao de {endereco}"));
+                            servidor.atender(fluxo, endereco);
+                        },
+""",
+        "troca": """                        move |fio| {
+                            // DEFEITO REPOSTO (pedido 248): a vaga so volta
+                            // no caminho feliz -- o `fetch_sub` de antes com
+                            // outro nome. Um panico no `atender` pula a
+                            // devolucao, e a porta fecha depois de N panicos.
+                            let vaga = std::mem::ManuallyDrop::new(permissao);
+                            fio.fazendo(&format!("conexao de {endereco}"));
+                            servidor.atender(fluxo, endereco);
+                            drop(std::mem::ManuallyDrop::into_inner(vaga));
+                        },
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_das_threads::panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados",
+        ],
+        "seguem": [
+            "servidor::testes_das_threads::a_porta_de_dados_continua_recusando_na_hora_acima_do_teto",
+        ],
+    },
+    {
+        "id": "web-sem-teto",
+        "titulo": "a porta web volta a nascer sem teto — uma thread por pedido, como até a 0.18",
+        "porque": (
+            "Ate 16/09/2026 o laco da interface confessava num comentario: «esta "
+            "thread nasce SEM TETO». Medido pela `enxurrada-web.py` com 500 "
+            "conexoes seguradas: 504 threads e 14,6 MiB antes, 68 threads e 7,6 "
+            "MiB depois, com 436 recusas 503 e `Retry-After`. Repor o defeito e "
+            "dar a cada pedido um semaforo novo e ilimitado, que e o mesmo que "
+            "nenhum. O teste do comportamento VELHO (abaixo do teto nada muda) "
+            "tem de continuar passando -- guarda nova entra pedida, nao imposta."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                    let Some(vaga) = servidor.vaga_http() else {
+                        servidor.recusar_http_cheio(&mut fluxo, par, familia);
+                        continue;
+                    };
+""",
+        "troca": """                    // DEFEITO REPOSTO (pedido 248): a porta HTTP sem teto --
+                    // uma thread por pedido, como ate a 0.18. Um semaforo novo
+                    // e ilimitado por pedido e o mesmo que nenhum.
+                    let vaga = Semaforo::sem_teto().adquirir();
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_das_threads::acima_do_teto_a_web_responde_503_com_retry_after_e_a_vaga_volta",
+        ],
+        "seguem": [
+            "servidor::testes_das_threads::abaixo_do_teto_a_web_nao_muda",
+            "servidor::testes_das_threads::zero_no_teto_da_web_e_sem_teto",
+        ],
+    },
+    {
+        "id": "ficha-do-fio-pulada-no-panico",
+        "titulo": "a ficha da thread na telemetria fica «viva» para sempre quando o corpo entra em pânico",
+        "porque": (
+            "O irmao do contador de conexoes: `telemetria::subir` chamava "
+            "`fio_morreu` DEPOIS do corpo, na mesma ordem em que o laco da porta "
+            "de dados chamava o `fetch_sub` -- e um panico pulava os dois. Irmao "
+            "e quem chama as mesmas funcoes na mesma ordem, e o conserto entra "
+            "nos dois: a ficha passou a morrer no `Drop` de `FichaViva`. Repor o "
+            "defeito e voltar a chamada depois do corpo."
+        ),
+        "arquivo": "crates/phxsql-server/src/telemetria.rs",
+        "trecho": """            let _ficha = FichaViva {
+                telemetria: eu,
+                fio: Arc::clone(&para_thread),
+            };
+            corpo(para_thread);
+""",
+        "troca": """            // DEFEITO REPOSTO (pedido 248): a ficha morre numa chamada
+            // DEPOIS do corpo -- e o panico pula a chamada.
+            corpo(Arc::clone(&para_thread));
+            eu.fio_morreu(&para_thread);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "telemetria::testes::a_thread_que_entra_em_panico_tambem_deixa_de_ser_viva",
+        ],
+        "seguem": [
+            "telemetria::testes::a_thread_que_termina_deixa_de_ser_viva",
+        ],
+    },
 ]

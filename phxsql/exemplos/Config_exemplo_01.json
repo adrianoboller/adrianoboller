@@ -52,6 +52,8 @@
     "threads": 0,
     "cpu_percentual": 100,
     "conexoes_max": 64,
+    "conexoes_web_max": 64,
+    "fila_web_ms": 2000,
     "usuarios_max": 0
   },
 

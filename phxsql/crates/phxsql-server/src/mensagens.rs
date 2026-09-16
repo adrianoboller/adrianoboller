@@ -562,6 +562,20 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "operación desconocida: {op}",
         ],
     },
+    // O 503 das portas HTTP (pedido 248): todas as threads ocupadas e a fila
+    // de espera esgotada. Vai no corpo da resposta; o `Retry-After` vai no
+    // cabecalho, que e protocolo e nao se traduz.
+    MensagemFabrica {
+        nome: "erro.porta_cheia",
+        textos: [
+            "porta HTTP cheia: {teto} threads ocupadas e a fila de {ms} ms esgotou; tente de novo em instantes",
+            "port HTTP saturé : {teto} threads occupés et la file de {ms} ms est épuisée ; réessayez dans un instant",
+            "HTTP port full: {teto} threads busy and the {ms} ms queue ran out; try again shortly",
+            "porta HTTP piena: {teto} thread occupati e la coda di {ms} ms è esaurita; riprova tra poco",
+            "HTTP-Port voll: {teto} Threads belegt und die Warteschlange von {ms} ms ist erschöpft; versuchen Sie es gleich noch einmal",
+            "puerto HTTP lleno: {teto} hilos ocupados y la cola de {ms} ms se agotó; inténtelo de nuevo en unos instantes",
+        ],
+    },
 ];
 
 /// O texto de fabrica (Portugues) de um TextName conhecido.

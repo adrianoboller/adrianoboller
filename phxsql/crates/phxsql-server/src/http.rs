@@ -224,6 +224,53 @@ pub fn montar_resposta_fechada(codigo: u16, tipo: &str, corpo: &str) -> String {
 }
 
 fn montar_com_folga(codigo: u16, tipo: &str, corpo: &str, externo: bool) -> String {
+    montar_com_folga_e_extras(codigo, tipo, corpo, externo, "")
+}
+
+/// A resposta 503 de «porta cheia»: todas as threads HTTP ocupadas e a fila
+/// de espera esgotada (`recursos.conexoes_web_max` e `recursos.fila_web_ms`).
+///
+/// Leva `Retry-After`, que e o que a norma (RFC 9110 §10.2.3) manda junto do
+/// 503 e o que um cliente bem-comportado le antes de tentar de novo. O valor
+/// e em segundos inteiros, arredondado para cima: `Retry-After: 0` diria
+/// «agora», e agora e exatamente quando nao ha vaga.
+pub fn montar_resposta_cheia(segundos: u64, corpo: &str) -> String {
+    let extras = format!("Retry-After: {}\r\n", segundos.max(1));
+    montar_com_folga_e_extras(
+        503,
+        "application/json; charset=utf-8",
+        corpo,
+        false,
+        &extras,
+    )
+}
+
+/// Responde «porta cheia» e devolve. Quem chama e o LACO DE ACEITACAO, e nao
+/// uma thread de atendimento -- por isso o escoamento aqui e curto de
+/// proposito: o `escoar` normal espera ate 250 ms por mais bytes, e 250 ms
+/// por recusa parariam o aceitador numa enxurrada. Uma leitura so, com 20 ms
+/// de prazo, tira do buffer o pedido que o cliente quase sempre ja mandou
+/// junto do `connect` -- e e isso que impede o RST de descartar a resposta
+/// em voo (ver `escoar`). Um cliente que conectou e nao mandou nada custa
+/// 20 ms ao aceitador, e a bancada `enxurrada-web.py` mede esse preco.
+pub fn responder_cheio(fluxo: &mut TcpStream, segundos: u64, corpo: &str) -> std::io::Result<()> {
+    use std::time::Duration;
+    fluxo.write_all(montar_resposta_cheia(segundos, corpo).as_bytes())?;
+    fluxo.flush()?;
+    let _ = fluxo.set_read_timeout(Some(Duration::from_millis(20)));
+    let mut resto = [0u8; 8192];
+    let _ = fluxo.read(&mut resto);
+    let _ = fluxo.shutdown(std::net::Shutdown::Both);
+    Ok(())
+}
+
+fn montar_com_folga_e_extras(
+    codigo: u16,
+    tipo: &str,
+    corpo: &str,
+    externo: bool,
+    extras: &str,
+) -> String {
     let motivo = match codigo {
         200 => "OK",
         // O MCP sobre HTTP responde 202 sem corpo a uma notificacao (mensagem
@@ -283,6 +330,7 @@ fn montar_com_folga(codigo: u16, tipo: &str, corpo: &str, externo: bool) -> Stri
          script-src 'unsafe-inline'; \
          img-src data:; {conexao}form-action 'none'; \
          frame-ancestors 'none'; base-uri 'none'\r\n\
+         {extras}\
          Connection: close\r\n\
          \r\n{corpo}",
         corpo.len()
@@ -708,6 +756,35 @@ mod tests {
             assert!(r.contains(esperado), "faltou o cabecalho: {esperado}");
         }
         assert!(r.ends_with("\r\n\r\n{\"ok\":true}"));
+    }
+
+    /// O 503 de porta cheia (pedido 248) leva `Retry-After` em segundos
+    /// inteiros, nunca zero, e continua com a moldura de seguranca inteira:
+    /// cabecalho extra entra ANTES do `Connection: close`, nao no lugar de
+    /// nada.
+    #[test]
+    fn a_recusa_por_porta_cheia_traz_retry_after_e_a_moldura_inteira() {
+        let r = montar_resposta_cheia(2, "{\"ok\":false}");
+        assert!(r.starts_with("HTTP/1.1 503 Service Unavailable\r\n"), "{r}");
+        assert!(r.contains("\r\nRetry-After: 2\r\n"), "{r}");
+        for esperado in [
+            "X-Frame-Options: DENY",
+            "Content-Security-Policy: default-src 'none'",
+            "Connection: close",
+        ] {
+            assert!(r.contains(esperado), "faltou o cabecalho: {esperado}");
+        }
+        assert!(r.ends_with("\r\n\r\n{\"ok\":false}"));
+        // Cada cabecalho numa linha propria: o extra nao pode grudar no
+        // vizinho, senao o cliente le um cabecalho so com dois nomes.
+        assert!(
+            r.contains("base-uri 'none'\r\nRetry-After: 2\r\nConnection: close"),
+            "{r}"
+        );
+        assert!(
+            montar_resposta_cheia(0, "").contains("Retry-After: 1\r\n"),
+            "zero segundos diria «agora», e agora e quando nao ha vaga"
+        );
     }
 
     #[test]

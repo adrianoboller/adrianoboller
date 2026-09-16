@@ -321,6 +321,30 @@ BANCADAS = [
         "prova": "as guardas do catálogo, cada uma contra o defeito que a motivou",
         "campos": [],
     },
+    {
+        "nome": "Concorrência — enxurrada de 500 conexões na web, com teto",
+        "json": "bancada/concorrencia/resultados.json",
+        "roda": "python3 bancada/concorrencia/enxurrada-web.py",
+        "prova": "500 conexões HTTP contra um phxsqld próprio, segurando o "
+                 "cabeçalho 3 s; Threads: e VmRSS: lidos do /proc a cada 25 ms; "
+                 "o bloco «depois» é o do teto ligado (pedido 248)",
+        # O JSON tem um bloco por rotulo (antes / depois / sem-teto); a pagina
+        # mostra o «depois», que e' o binario com o teto, e a data dele.
+        "ver": lambda d: {
+            "quando": d.get("rotulos", {}).get("depois", {}).get("quando"),
+            "teto": d.get("rotulos", {}).get("depois", {}).get("teto"),
+            "pico_threads": d.get("rotulos", {}).get("depois", {})
+                             .get("segurando", {}).get("pico_threads"),
+            "com_retry_after": d.get("rotulos", {}).get("depois", {})
+                                .get("segurando", {}).get("com_retry_after"),
+            "pico_threads_antes": d.get("rotulos", {}).get("antes", {})
+                                   .get("segurando", {}).get("pico_threads"),
+        },
+        "campos": [("teto", "teto da web", "threads"),
+                   ("pico_threads", "pico de threads com teto", ""),
+                   ("pico_threads_antes", "pico antes do teto", ""),
+                   ("com_retry_after", "503 com Retry-After", "")],
+    },
 ]
 
 
@@ -358,6 +382,11 @@ def linha_bancada(b):
         return (f'<tr class="ausente"><td class="nome">{esc(b["nome"])}</td>'
                 f'<td class="q">ilegível</td>'
                 f'<td class="v">{esc(dados["__erro__"])}</td></tr>')
+    # Bancada cuja forma e' aninhada (um bloco por rotulo) declara `ver`, que
+    # projeta o JSON num dicionario plano ANTES da leitura -- a tabela
+    # continua declarada, e o extrator continua sem adivinhar.
+    if "ver" in b:
+        dados = b["ver"](dados)
     quando, do_mtime = quando_de(p, dados)
     marca = ' <span class="mtime" title="a data saiu do mtime do arquivo, '\
             'e nao do proprio resultado">(mtime)</span>' if do_mtime else ""

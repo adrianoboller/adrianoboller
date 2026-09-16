@@ -1,0 +1,154 @@
+{
+  "bancada": "enxurrada-web",
+  "rotulos": {
+    "antes": {
+      "quando": "2026-09-16T06:16:02",
+      "binario_de": "2026-09-16T05:53",
+      "sujo": false,
+      "conexoes": 500,
+      "segurar_s": 3.0,
+      "teto": 64,
+      "fila_ms": 2000,
+      "nucleos": 4,
+      "repouso": {
+        "threads": 5,
+        "rss_kib": 7436
+      },
+      "segurando": {
+        "conexoes": 500,
+        "respostas": {
+          "200": 500
+        },
+        "com_retry_after": 0,
+        "pico_threads": 504,
+        "pico_rss_kib": 14976,
+        "primeiro_byte_ms": {
+          "p50": 3060.609595999267,
+          "p99": 3117.709375999766,
+          "pior": 3124.543879999692
+        },
+        "duracao_s": 4.28,
+        "recusas_no_log": 0
+      },
+      "rapida": {
+        "conexoes": 500,
+        "respostas": {
+          "200": 500
+        },
+        "com_retry_after": 0,
+        "pico_threads": 504,
+        "pico_rss_kib": 15656,
+        "primeiro_byte_ms": {
+          "p50": 37.000031000388844,
+          "p99": 107.64030600057595,
+          "pior": 119.6875519999594
+        },
+        "duracao_s": 1.5
+      },
+      "fim": {
+        "threads": 4,
+        "rss_kib": 11868
+      },
+      "nota": "binario do HEAD anterior ao pedido 248, compilado as 2026-09-16T05:17 e COPIADO as 05:53 (o `binario_de` acima e a data da copia); ele nao lia `conexoes_web_max`, entao o `teto: 64` deste bloco e o que o arnes pediu, nao o que o servidor impos"
+    },
+    "depois": {
+      "quando": "2026-09-16T06:16:14",
+      "binario_de": "2026-09-16T06:07",
+      "sujo": false,
+      "conexoes": 500,
+      "segurar_s": 3.0,
+      "teto": 64,
+      "fila_ms": 2000,
+      "nucleos": 4,
+      "repouso": {
+        "threads": 4,
+        "rss_kib": 6500
+      },
+      "segurando": {
+        "conexoes": 500,
+        "respostas": {
+          "200": 64,
+          "503": 436
+        },
+        "com_retry_after": 436,
+        "pico_threads": 68,
+        "pico_rss_kib": 7792,
+        "primeiro_byte_ms": {
+          "p50": 20.69039399975736,
+          "p99": 3021.1065450002934,
+          "pior": 3023.023622999972
+        },
+        "duracao_s": 4.14,
+        "recusas_no_log": 436
+      },
+      "rapida": {
+        "conexoes": 500,
+        "respostas": {
+          "200": 500
+        },
+        "com_retry_after": 0,
+        "pico_threads": 68,
+        "pico_rss_kib": 8524,
+        "primeiro_byte_ms": {
+          "p50": 17.19213599972136,
+          "p99": 62.820548000672716,
+          "pior": 69.4534090007437
+        },
+        "duracao_s": 2.16
+      },
+      "fim": {
+        "threads": 4,
+        "rss_kib": 8196
+      }
+    },
+    "sem-teto": {
+      "quando": "2026-09-16T06:16:25",
+      "binario_de": "2026-09-16T06:07",
+      "sujo": false,
+      "conexoes": 500,
+      "segurar_s": 3.0,
+      "teto": 0,
+      "fila_ms": 2000,
+      "nucleos": 4,
+      "repouso": {
+        "threads": 4,
+        "rss_kib": 6600
+      },
+      "segurando": {
+        "conexoes": 500,
+        "respostas": {
+          "200": 500
+        },
+        "com_retry_after": 0,
+        "pico_threads": 504,
+        "pico_rss_kib": 14192,
+        "primeiro_byte_ms": {
+          "p50": 3069.7449409999535,
+          "p99": 3139.47538299999,
+          "pior": 3145.3186560001996
+        },
+        "duracao_s": 4.29,
+        "recusas_no_log": 0
+      },
+      "rapida": {
+        "conexoes": 500,
+        "respostas": {
+          "200": 500
+        },
+        "com_retry_after": 0,
+        "pico_threads": 504,
+        "pico_rss_kib": 15032,
+        "primeiro_byte_ms": {
+          "p50": 0.7971670002007158,
+          "p99": 3.109944999778236,
+          "pior": 3.6648599998443387
+        },
+        "duracao_s": 1.46
+      },
+      "fim": {
+        "threads": 4,
+        "rss_kib": 11200
+      }
+    }
+  }
+}
