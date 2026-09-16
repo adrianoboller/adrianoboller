@@ -393,6 +393,7 @@ pub struct Cluster {
     /// finge efeito e pior que campo ausente, e esta casa ja pagou por isso
     /// com o `recursos.cache_paginas`, que passou tres versoes no arquivo,
     /// no MANUAL e na tela sem uma linha de codigo o lendo.
+    /// DIVIDA: #207 o quorum e guardado e nao imposto -- a escrita com quorum nao existe, e o master confirma sem esperar replica nenhuma
     pub quorum_minimo: u64,
     /// Credenciais com que ESTE no fala com os outros -- as mesmas tres
     /// pecas da origem de replicacao, e pela mesma razao: a senha nunca
@@ -1159,6 +1160,7 @@ impl Email {
 /// reescrever. Isso esta dito aqui porque a surpresa seria pior que a
 /// limitacao -- quem liga a cifra precisa saber que o dado velho nao mudou de
 /// lugar.
+/// DIVIDA: ligar a cifra nao alcanca o diario que ja existe em claro -- um append-only nao se reescreve, e nao ha migracao que cifre para tras
 ///
 /// # O que ela protege
 ///
@@ -1211,6 +1213,7 @@ pub struct Cifra {
     /// A fonte da verdade sobre "isto esta cifrado?" continua sendo o DISCO --
     /// o cabecalho do `.reg` diz, e e ele que a leitura consulta. A lista e a
     /// INTENCAO; o disco e o estado. Ver `docs/SEGURANCA.md` §13.
+    /// DIVIDA: marcar a tabela nao cifra o que ja esta gravado -- a migracao que reescreve o `.reg` slot a slot nao existe, entao a lista declara mais do que o disco cumpre
     pub tabelas: Vec<String>,
 }
 

@@ -5586,4 +5586,232 @@ pub fn limpar() {
             "sem_conferir_a_mae_com_filha_sai_como_sempre",
         ],
     },
+    # ------------------------------------------------ pedido 245, O2-O6
+    {
+        "id": "teto-de-64-bits-satura",
+        "titulo": "número cru fora da faixa do `Int8` é GRAVADO saturado, e `1e21`, `1e30` e `1e300` viram todos o mesmo número",
+        "porque": (
+            "Conserto entra no caminho que o motivou, e o caminho IRMAO fica. A "
+            "`Sequence` recusa o numero cru grande desde o bloco 19, e o "
+            "comentario ao lado dela dizia que o irmao `Int8`/`UInt8` «passava "
+            "por aqui ao lado sem problema». Passava gravando OUTRO numero: o "
+            "`as i64` do Rust satura em vez de falhar. Medido em 16/09/2026 pelo "
+            "protocolo: `{\"v\":1e21}` numa coluna `Int8` gravava "
+            "9223372036854775807. Os irmaos estreitos (`Int1`/`Int2`/`Int4`) ja "
+            "recusavam a faixa no `escrever_inline`; o `Int8` era o unico sem a "
+            "recusa, porque o carregador E o `i64`."
+        ),
+        "arquivo": "crates/phxsql-server/src/valores.rs",
+        "trecho": "            Value::Int(inteiro_com_sinal(j)?)\n",
+        "troca": (
+            "            // DEFEITO REPOSTO (pedido 245, O4): o fechamento saturante\n"
+            "            // de antes -- `1e21` vira `i64::MAX` e vai para o disco.\n"
+            "            Value::Int(\n"
+            "                match j {\n"
+            "                    Json::Texto(t) => t.trim().parse::<i64>().ok(),\n"
+            "                    o => o.inteiro(),\n"
+            "                }\n"
+            "                .ok_or_else(|| erro(\"inteiro\"))?,\n"
+            "            )\n"
+        ),
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "valores::testes_teto_de_64_bits::numero_cru_fora_da_faixa_recusa_em_vez_de_saturar",
+            "valores::testes_teto_de_64_bits::texto_numerico_grande_demais_fala_de_faixa_e_nao_de_tipo",
+        ],
+        "seguem": [
+            "valores::testes_teto_de_64_bits::abaixo_do_teto_nada_muda",
+            "valores::testes_teto_de_64_bits::a_sequencia_continua_com_a_mensagem_dela",
+            "valores::testes_teto_de_64_bits::a_faixa_imprecisa_continua_passando_por_decisao_registrada",
+        ],
+    },
+    {
+        "id": "saida-do-direito-por-coluna",
+        "titulo": "a recusa do direito por coluna manda «peça as colunas por varrer» também para o `agrupar` e para o `backup`",
+        "porque": (
+            "Funcionalidade que mostra texto cru redige ANALISANDO. Uma frase so "
+            "servia as 28 operacoes recusadas, e ela e conselho apenas para as "
+            "que devolvem LINHA: quem pediu `{\"funcao\":\"maximo\"}` nao quer a "
+            "linha, e o `backup` nem devolve coluna -- leva arquivo. Conselho que "
+            "nao serve gasta a confianca da mensagem inteira: quem o segue uma vez "
+            "e nao chega a lugar nenhum para de ler as outras. Pedido 245, O5."
+        ),
+        "arquivo": "crates/phxsql-server/src/direito_coluna.rs",
+        "trecho": (
+            "    SAIDAS\n"
+            "        .iter()\n"
+            "        .find(|(n, _)| *n == op)\n"
+            "        .map(|(_, s)| *s)\n"
+            "        .unwrap_or(Saida::TabelaInteira)\n"
+        ),
+        "troca": (
+            "    // DEFEITO REPOSTO (pedido 245, O5): uma frase so para todas.\n"
+            "    let _ = op;\n"
+            "    Saida::PelaLinha\n"
+        ),
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "direito_coluna::testes::o_agrupar_nao_manda_mais_pedir_as_colunas",
+        ],
+        "seguem": [
+            "direito_coluna::testes::a_lista_das_saidas_e_a_das_recusadas",
+            "direito_coluna::testes::a_lista_e_o_catalogo_sao_a_mesma_lista",
+        ],
+    },
+    {
+        "id": "check-que-se-contradiz-no-alter",
+        "titulo": "`acrescentar_coluna` aceita um `padrao` que viola o `check` declarado no MESMO comando, e todo `atualizar` da linha velha passa a recusar",
+        "porque": (
+            "A recusa acontece na DECLARACAO, nao na gravacao -- a mesma lei do "
+            "`ao_excluir`: uma tabela nasce uma vez e grava um milhao de vezes. "
+            "Medido em 16/09/2026: `v Int8 check \"v > 0\"` com `padrao = -5` numa "
+            "tabela com linha era aceito, a linha velha ficava com -5, e so "
+            "aparecia no `atualizar` seguinte. Pedido 245, O2."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": "                if check.avaliar_bool(&resolver)? == Some(false) {\n",
+        "troca": (
+            "                // DEFEITO REPOSTO (pedido 245, O2): a contradicao passa.\n"
+            "                if false {\n"
+        ),
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "acrescentar-coluna"],
+        "caem": ["padrao_que_viola_o_proprio_check_recusa_antes_de_tocar_no_reg"],
+        "seguem": [
+            "o_crivo_do_check_nao_pega_quem_depende_da_linha_velha",
+            "obrigatoria_sem_padrao_com_linha_e_recusada",
+            "sem_padrao_a_linha_antiga_recebe_nulo",
+        ],
+    },
+    {
+        "id": "alter-com-regra-sem-aviso",
+        "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
+        "porque": (
+            "«Aceito sem aviso» foi o defeito nomeado pelo pedido 245, O2. O CHECK "
+            "novo nao e conferido contra as linhas que ja existem, e a `calculada` "
+            "acrescentada as deixa NULAS -- duas verdades na mesma coluna, sem erro "
+            "nenhum no caminho. O aviso nao resolve o O2 (o que fazer com a linha "
+            "velha e decisao de garantia de dado, subida para o dono): ele tira a "
+            "parte que era «sem aviso». O portao vem ANTES do trabalho, e coluna "
+            "sem regra nao ganha campo novo na resposta."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": "        if registros > 0 && (coluna.check.is_some() || coluna.calculada.is_some()) {\n",
+        "troca": (
+            "        // DEFEITO REPOSTO (pedido 245, O2): nenhum aviso sai.\n"
+            "        if false {\n"
+        ),
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_regras_de_esquema::acrescentar_coluna_com_regra_avisa_o_que_a_linha_velha_nao_ganhou",
+        ],
+        "seguem": [
+            "servidor::testes_regras_de_esquema::calculada_b_sai_6",
+            "servidor::testes_regras_de_esquema::check_recusa_menos_5_e_aceita_5",
+        ],
+    },
+    {
+        "id": "upsert-parcial-vira-mescla",
+        "titulo": "o upsert sem o campo `atualizar` passa a MESCLAR, e a sincronia do DbLink perde a única forma de gravar NULO num destino",
+        "porque": (
+            "Contrato, nao defeito -- e o `troca` daqui e o «conserto» que alguem "
+            "vai querer fazer ao ler o O3 do pedido 245. O `crate::upsert` e o "
+            "mesmo caminho da sincronia do DbLink (`aplicar_para_ca`): mesclar aqui "
+            "tira dela a unica forma de gravar NULO, e sincronia que nao apaga "
+            "campo deixa o destino diferente da origem, calada. Medido em "
+            "16/09/2026 com este mesmo `troca`: os 15 testes de `dblink::sincronia` "
+            "ficam VERDES -- o irmao que quebraria nao tem teste que o pegue, e "
+            "esta guarda e hoje a unica coisa entre o conserto bem-intencionado e a "
+            "regressao silenciosa. A forma segura ja existe: o campo `atualizar`."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/upsert.rs",
+                "trecho": "                let velha = if atualizar.is_some() || antes_de_atualizar.is_some() {\n",
+                "troca": (
+                    "                // DEFEITO REPOSTO (pedido 245, O3): le sempre, para mesclar.\n"
+                    "                let velha = if true {\n"
+                ),
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/upsert.rs",
+                "trecho": (
+                    "                let mut gravada = match (atualizar, &velha) {\n"
+                    "                    (Some(set), Some(v)) => Some(mesclar(v, set, t.esquema())?),\n"
+                    "                    _ => None,\n"
+                    "                };\n"
+                ),
+                "troca": (
+                    "                let mut gravada = match (atualizar, &velha) {\n"
+                    "                    (Some(set), Some(v)) => Some(mesclar(v, set, t.esquema())?),\n"
+                    "                    // DEFEITO REPOSTO: o ausente do pedido mantem o gravado.\n"
+                    "                    (None, Some(v)) => {\n"
+                    "                        let mut n = linha.to_vec();\n"
+                    "                        for (i, x) in n.iter_mut().enumerate() {\n"
+                    "                            if x.e_null() {\n"
+                    "                                if let Some(o) = v.get(i) {\n"
+                    "                                    *x = o.clone();\n"
+                    "                                }\n"
+                    "                            }\n"
+                    "                        }\n"
+                    "                        Some(n)\n"
+                    "                    }\n"
+                    "                    _ => None,\n"
+                    "                };\n"
+                ),
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_upsert::o_upsert_sem_o_set_grava_a_linha_inteira_e_isso_e_contrato",
+        ],
+        "seguem": [
+            "servidor::testes_upsert::o_atualizar_grava_a_lida_com_o_set_por_cima_e_nao_o_values",
+            "servidor::testes_upsert::sem_se_existir_a_chave_repetida_continua_recusando",
+            "servidor::testes_upsert::ignorar_devolve_o_rowid_de_quem_ja_estava_la",
+        ],
+    },
+    {
+        "id": "direcao-do-indice-sem-saida",
+        "titulo": "a recusa por direção do índice explica bem por que não dá, e não diz o que fazer",
+        "porque": (
+            "Pedido 245, O6. A recusa nomeia o indice e diz que a direcao esta "
+            "gravada no `.ndx` -- e para por ai, num beco. A saida tem uma "
+            "armadilha propria que a medicao achou: NAO ha operacao de "
+            "acrescentar indice a tabela que ja existe (nem `CREATE INDEX` na "
+            "camada SQL nem op no protocolo), entao um conselho generico "
+            "mandaria fazer o que nao da para fazer. Por isso a frase diz «na "
+            "criacao da tabela». Com o defeito reposto, o teste VELHO "
+            "(`direcao_do_indice_e_a_do_ndx`) continua verde -- e e isso que "
+            "mostra que ele sozinho nao bastava."
+        ),
+        "arquivo": "crates/phxsql-sql/src/traduzir.rs",
+        "trecho": (
+            "                     depois. Quem precisa das duas direcoes declara dois indices na \\\n"
+            "                     criacao da tabela, um deles com a marca `desc` ({} desc)\",\n"
+            "                    o.coluna,\n"
+            "                    if o.desc { \"DESC\" } else { \"ASC\" },\n"
+            "                    i.nome,\n"
+            "                    if i.colunas[0].desc { \"DESC\" } else { \"ASC\" },\n"
+            "                    o.coluna\n"
+        ),
+        "troca": (
+            "                     depois\",\n"
+            "                    o.coluna,\n"
+            "                    if o.desc { \"DESC\" } else { \"ASC\" },\n"
+            "                    i.nome,\n"
+            "                    if i.colunas[0].desc { \"DESC\" } else { \"ASC\" }\n"
+        ),
+        "pacote": "phxsql-sql",
+        "alvo": ["--lib"],
+        "caem": ["traduzir::testes::a_recusa_da_direcao_diz_o_que_fazer_e_onde"],
+        "seguem": [
+            "traduzir::testes::direcao_do_indice_e_a_do_ndx",
+            "traduzir::testes::recusa_o_que_nao_tem_substrato",
+        ],
+    },
 ]

@@ -815,8 +815,24 @@ pub const OPERACOES: &[Operacao] = &[
                  primária ou o único índice único da tabela -- ambíguo recusa \
                  nomeando os candidatos",
             ),
+            // O campo existe desde 09/09/2026 e **não estava aqui** (pedido
+            // 245, O3): ele é a forma SEGURA do upsert, e quem lê o catálogo
+            // para descobrir o protocolo não a encontrava. Sem ele o
+            // `inserir` grava a LINHA INTEIRA por cima -- que é o contrato do
+            // `inserir` e é o que a sincronia do DbLink precisa --, e a coluna
+            // que o pedido não trouxe fica NULA.
+            opc(
+                "atualizar",
+                "object",
+                "o SET do upsert: com `se_existir: \"atualizar\"`, a linha que JÁ \
+                 existe recebe só estas colunas por cima do que está gravado, e o \
+                 `valores` fica para a linha nova. SEM ele o `inserir` grava a \
+                 linha inteira por cima, e a coluna ausente do pedido vira NULA -- \
+                 é o contrato do `inserir`, e é a forma perigosa. Fora de \
+                 `se_existir: \"atualizar\"` este campo RECUSA",
+            ),
         ],
-        exemplo: r#"{"op":"inserir","database":"loja","tabela":"clientes","valores":{"id":1,"nome":"Maria"},"se_existir":"atualizar"}"#,
+        exemplo: r#"{"op":"inserir","database":"loja","tabela":"clientes","valores":{"id":1,"nome":"Maria"},"se_existir":"atualizar","atualizar":{"nome":"Maria"}}"#,
         ferramenta_mcp: true,
     },
     Operacao {
@@ -1215,6 +1231,25 @@ pub const OPERACOES: &[Operacao] = &[
                 "padrao",
                 "string",
                 "o valor que as linhas que já existem recebem, no tipo da coluna; sem ele, nulo",
+            ),
+            // As duas regras de esquema eram aceitas aqui e não estavam
+            // documentadas (pedido 245, O2), e o que elas fazem com a linha
+            // que JÁ EXISTE é a parte que surpreende -- então é a parte que o
+            // catálogo diz.
+            opc(
+                "check",
+                "string",
+                "a restrição CHECK da coluna. Ela NÃO é conferida contra as linhas \
+                 que já existem: a que a violar continua gravada, e só é recusada \
+                 no próximo `atualizar` dela. A resposta avisa quando isso pode \
+                 acontecer",
+            ),
+            opc(
+                "calculada",
+                "string",
+                "a expressão da coluna calculada. As linhas que já existem ficam \
+                 NULAS nela -- cada uma só recebe o valor no próximo `atualizar`. A \
+                 resposta avisa",
             ),
             opc("caption", "string", "o rótulo de tela"),
             opc("descricao", "string", "para que a coluna serve"),

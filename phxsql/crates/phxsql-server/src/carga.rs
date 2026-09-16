@@ -13,6 +13,7 @@
 //! **adiar o indice**. A objecao registrada em `docs/DESEMPENHO.md` contra
 //! adiar era que a leitura veria um indice defasado e `buscar` responderia
 //! errado em silencio. Com a tabela reservada nao ha leitura para ver.
+//! DIVIDA: o BULKINSERT ainda paga o indice linha a linha -- adiar o `.ndx` e' a terceira parte, a maior, e nao esta feita
 //!
 //! # A parte perigosa, e as duas redes embaixo dela
 //!

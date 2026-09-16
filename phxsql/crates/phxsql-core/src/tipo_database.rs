@@ -59,6 +59,7 @@ impl TipoDatabase {
     /// O MOTOR deste tipo ja esta implementado? So o padrao, por enquanto. A
     /// infraestrutura existe para os tres; o motor de hive e vetorial e' frente
     /// aberta. Quem rotear por aqui usa isto para dizer "em construcao".
+    /// DIVIDA: so o motor padrao existe -- hive e vetorial tem tipo, marcador e portao de recusa, e o motor de cada um e frente aberta
     pub fn motor_pronto(self) -> bool {
         matches!(self, TipoDatabase::Padrao)
     }

@@ -306,6 +306,107 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("dblink_ligar", PorColuna::Nenhum),
 ];
 
+/// O que pedir NO LUGAR, quando a recusa acontece.
+///
+/// # Por que a frase nao pode ser uma so
+///
+/// Ela era: «Peca as colunas por ler, varrer, buscar ou SELECT». Para o
+/// `juntar` e o `exportar` isso e um conselho -- os dois devolvem linha, e as
+/// tres operacoes citadas devolvem linha com a peneira ligada. Para o
+/// `agrupar` e uma frase sem sentido: quem pediu `{"funcao":"maximo",
+/// "coluna":"salario"}` nao quer a linha, quer o maior salario, e varrer nao
+/// lhe da isso. Para o `backup` e pior ainda -- ele nao devolve coluna
+/// nenhuma, leva arquivo.
+///
+/// Conselho que nao serve gasta a confianca da mensagem inteira: quem o segue
+/// uma vez e nao chega a lugar nenhum para de ler as outras.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Saida {
+    /// A operacao devolve LINHA por um caminho torto. Ha caminho reto.
+    PelaLinha,
+    /// A operacao devolve um RESUMO calculado sobre a coluna negada. Nao ha
+    /// como calcula-lo sem le-la -- o caminho reto nao existe.
+    Resumo,
+    /// A operacao devolve o PASSADO da linha, em imagem. `ler`/`varrer` falam
+    /// do agora e nao substituem nenhuma delas.
+    Historico,
+    /// A operacao leva a TABELA inteira embora (ou a copia). Nao ha coluna a
+    /// pedir: ha um direito a ter.
+    TabelaInteira,
+}
+
+impl Saida {
+    pub fn texto(self) -> &'static str {
+        match self {
+            Saida::PelaLinha => {
+                "Peca as colunas por ler, varrer, buscar ou SELECT, que aplicam o \
+                 direito por coluna"
+            }
+            Saida::Resumo => {
+                "o resumo se calcula SOBRE a coluna negada, entao nao ha como pedi-lo \
+                 sem ela: agregue pelo que voce le, ou peca o direito a coluna"
+            }
+            Saida::Historico => {
+                "o historico guarda a imagem da linha inteira, e imagem nao se \
+                 peneira: peca o direito a coluna, ou peca a quem ja o tem"
+            }
+            Saida::TabelaInteira => {
+                "esta operacao leva a tabela inteira, com a coluna dentro: nao ha \
+                 coluna a pedir, ha direito a ter"
+            }
+        }
+    }
+}
+
+/// A saida de cada operacao RECUSADA -- a lista e a mesma de [`CLASSES`], e um
+/// par de testes trava os dois sentidos do laco, como la.
+pub const SAIDAS: &[(&str, Saida)] = &[
+    ("juntar", Saida::PelaLinha),
+    ("join", Saida::PelaLinha),
+    ("unir", Saida::PelaLinha),
+    ("union", Saida::PelaLinha),
+    ("diferencas", Saida::PelaLinha),
+    ("diff", Saida::PelaLinha),
+    ("pivotar", Saida::PelaLinha),
+    ("pivot", Saida::PelaLinha),
+    ("exportar", Saida::PelaLinha),
+    ("export", Saida::PelaLinha),
+    // O que deu nome ao O5 do pedido 245: o agregado FALA da coluna sem
+    // mostra-la, e por isso «peca as colunas» nunca foi resposta aqui.
+    ("agrupar", Saida::Resumo),
+    ("group_by", Saida::Resumo),
+    ("checksum", Saida::Resumo),
+    ("soma_de_verificacao", Saida::Resumo),
+    ("lixeira", Saida::Historico),
+    ("trash", Saida::Historico),
+    ("trilha", Saida::Historico),
+    ("trilha_lgpd", Saida::Historico),
+    ("diario", Saida::Historico),
+    ("replicar", Saida::Historico),
+    ("profiler", Saida::Historico),
+    ("aplicar", Saida::TabelaInteira),
+    ("duplicar_tabela", Saida::TabelaInteira),
+    ("copiar_tabela", Saida::TabelaInteira),
+    ("renomear_tabela", Saida::TabelaInteira),
+    ("backup", Saida::TabelaInteira),
+    ("dblink_sincronizar", Saida::TabelaInteira),
+    ("importar_conferir", Saida::TabelaInteira),
+];
+
+/// O que pedir no lugar desta operacao.
+///
+/// O padrao e [`Saida::TabelaInteira`] pelo mesmo motivo de `classe` nascer
+/// recusando: operacao nova que ninguem classificou tem de cair no conselho
+/// MAIS conservador -- «peca o direito» nunca e um conselho errado, e «peca as
+/// colunas por varrer» seria, se a operacao nova nao devolver linha.
+pub fn saida(op: &str) -> Saida {
+    SAIDAS
+        .iter()
+        .find(|(n, _)| *n == op)
+        .map(|(_, s)| *s)
+        .unwrap_or(Saida::TabelaInteira)
+}
+
 /// A classe desta operacao.
 ///
 /// Operacao fora da tabela nasce RECUSADA para quem tem regra de coluna. Isso
@@ -528,6 +629,69 @@ mod testes {
             sobrando.is_empty(),
             "classes para operacoes que nao existem: {sobrando:?}"
         );
+    }
+
+    /// **Os dois sentidos do laco da SAIDA** (pedido 245, O5). Operacao
+    /// recusada sem saida propria cai no conselho padrao e ninguem percebe --
+    /// era exatamente esse o defeito, com uma frase so servindo a todas.
+    /// Saida para operacao que NAO recusa e a chave morta: o tradutor a le,
+    /// e nada na tela muda.
+    #[test]
+    fn a_lista_das_saidas_e_a_das_recusadas() {
+        let recusadas: Vec<&str> = CLASSES
+            .iter()
+            .filter(|(_, c)| *c == PorColuna::Recusa)
+            .map(|(n, _)| *n)
+            .collect();
+        let sem_saida: Vec<&&str> = recusadas
+            .iter()
+            .filter(|n| !SAIDAS.iter().any(|(s, _)| s == *n))
+            .collect();
+        assert!(
+            sem_saida.is_empty(),
+            "operacoes recusadas sem saida propria: {sem_saida:?}"
+        );
+        let sobrando: Vec<&str> = SAIDAS
+            .iter()
+            .map(|(n, _)| *n)
+            .filter(|n| !recusadas.contains(n))
+            .collect();
+        assert!(
+            sobrando.is_empty(),
+            "saidas para operacoes que nao recusam: {sobrando:?}"
+        );
+        for (i, (n, _)) in SAIDAS.iter().enumerate() {
+            assert!(
+                !SAIDAS[..i].iter().any(|(o, _)| o == n),
+                "{n} tem duas saidas"
+            );
+        }
+    }
+
+    /// **O defeito medido.** A frase mandava «peca as colunas por ler, varrer,
+    /// buscar ou SELECT» tambem para quem pediu um AGREGADO e para quem pediu
+    /// um BACKUP.
+    ///
+    /// Reponha o defeito fazendo `saida()` devolver sempre
+    /// `Saida::PelaLinha`: as duas primeiras asserções caem.
+    #[test]
+    fn o_agrupar_nao_manda_mais_pedir_as_colunas() {
+        assert_eq!(saida("agrupar"), Saida::Resumo);
+        assert!(
+            !saida("agrupar").texto().contains("varrer"),
+            "{}",
+            saida("agrupar").texto()
+        );
+        assert_eq!(saida("backup"), Saida::TabelaInteira);
+        assert!(!saida("backup").texto().contains("varrer"));
+        // O CONTROLE: quem devolve linha continua recebendo o conselho que
+        // sempre serviu -- tirar a frase de todos seria trocar um defeito por
+        // outro.
+        assert_eq!(saida("juntar"), Saida::PelaLinha);
+        assert!(saida("juntar").texto().contains("varrer"));
+        // Operacao que ninguem classificou cai no conselho conservador, nunca
+        // no que promete um caminho que talvez nao exista.
+        assert_eq!(saida("operacao_que_nao_existe"), Saida::TabelaInteira);
     }
 
     /// Nome repetido na tabela seria duas verdades para a mesma operacao, e a

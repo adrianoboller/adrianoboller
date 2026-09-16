@@ -75,6 +75,7 @@ pub const COL_ANTERIOR: &str = "anterior";
 pub const COL_ALTURA: &str = "altura";
 /// Coluna da assinatura (E5, ainda nao implementada). Fica de fora do hash,
 /// porque uma assinatura assina o hash -- entao ela vem DEPOIS dele.
+/// DIVIDA: a coluna da assinatura existe no esquema e ninguem a preenche -- o ledger prova integridade, nao autoria
 pub const COL_ASSINATURA: &str = "assinatura";
 /// Indice unico ascendente sobre `altura`: devolve os blocos na ordem da cadeia.
 pub const IDX_POR_ALTURA: &str = "porAltura";

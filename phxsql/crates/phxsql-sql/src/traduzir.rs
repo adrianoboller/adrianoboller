@@ -25,6 +25,7 @@
 //! sobre a tabela -- resposta errada com cara de certa, que e pior que erro.
 //! Entao a recusa fica, sobre o motivo honesto: falta o indice que torna a
 //! pergunta respondivel inteira.
+//! DIVIDA: `SELECT` cuja pergunta nenhum indice responde inteira recusa em vez de varrer -- falta o indice, ou o planejador que escolha entre os que ha
 
 use crate::sintaxe::{
     Alvo, Condicao, FuncaoAgregada, ItemProjetado, Onde, Ordenacao, Projecao, Selecao,
@@ -494,14 +495,20 @@ fn plano_varrer(
                 .iter()
                 .find(|i| i.colunas.len() == 1 && igual_sem_caso(&i.colunas[0].nome, &o.coluna));
             return Err(PhxError::Esquema(match mesma_coluna {
+                // A SAIDA vai na mensagem, e ela diz ONDE se declara --
+                // porque nao ha operacao de acrescentar indice a tabela que ja
+                // existe, e um conselho que manda fazer o que nao da para
+                // fazer e pior que nenhum (pedido 245, O6).
                 Some(i) => format!(
                     "ORDER BY {} {} nao tem substrato: o indice {} guarda essa coluna em \
                      {}, e a direcao esta gravada no .ndx -- nao ha quem inverta a lista \
-                     depois",
+                     depois. Quem precisa das duas direcoes declara dois indices na \
+                     criacao da tabela, um deles com a marca `desc` ({} desc)",
                     o.coluna,
                     if o.desc { "DESC" } else { "ASC" },
                     i.nome,
-                    if i.colunas[0].desc { "DESC" } else { "ASC" }
+                    if i.colunas[0].desc { "DESC" } else { "ASC" },
+                    o.coluna
                 ),
                 None => format!(
                     "ORDER BY {} exige um indice de uma coluna sobre {}. Nao existe, e \
@@ -764,6 +771,31 @@ mod testes {
         )
         .unwrap();
         assert_eq!(p.pedido.texto_ou("indice", ""), "porNomeDesc");
+    }
+
+    /// **A recusa diz a SAIDA, e diz onde ela se declara** -- pedido 245, O6.
+    ///
+    /// Ela explicava bem por que nao da, e nao dizia o que fazer. E o «o que
+    /// fazer» aqui tem uma armadilha propria: nao ha operacao de acrescentar
+    /// indice a tabela que ja existe -- o indice se declara no `criar_tabela`
+    /// --, entao um conselho generico («crie um indice DESC») mandaria fazer o
+    /// que nao da para fazer.
+    ///
+    /// Reponha o defeito tirando a segunda frase do `format!`: as duas
+    /// asserções de baixo caem e a primeira continua verde, que e o que
+    /// mostra que ela sozinha nao bastava.
+    #[test]
+    fn a_recusa_da_direcao_diz_o_que_fazer_e_onde() {
+        let e = traduzir(
+            &analisar("SELECT * FROM t ORDER BY nome DESC").unwrap(),
+            &[ix("porNome", "nome", false, false)],
+            "C",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("gravada no .ndx"), "{e}");
+        assert!(e.contains("criacao da tabela"), "{e}");
+        assert!(e.contains("nome desc"), "{e}");
     }
 
     #[test]

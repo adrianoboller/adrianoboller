@@ -755,3 +755,69 @@ fn a_queda_sem_o_novo_recusa_em_vez_de_ler_deslocado() {
         "a mensagem tem de dizer QUAL volume: {e}"
     );
 }
+
+/// **A declaracao que se contradiz recusa NA DECLARACAO** -- pedido 245, O2.
+///
+/// Medido em 16/09/2026: `situacao Str(12) check "situacao <> ''"` com
+/// `padrao = ""` era ACEITO numa tabela com linha, a linha velha ficava com o
+/// valor que viola, e o `atualizar` dela passava a recusar para sempre. A
+/// contradicao estava dentro de um comando so -- nao dependia de dado nenhum
+/// que a funcao nao tivesse na mao.
+///
+/// Reponha o defeito tirando o bloco `if tem_linha && self.julga_integridade()`
+/// de `Table::acrescentar_coluna`: o `unwrap_err` daqui vira `unwrap` de um
+/// `Ok`, e o `atualizar` do fim passa a falhar.
+#[test]
+fn padrao_que_viola_o_proprio_check_recusa_antes_de_tocar_no_reg() {
+    let d = DirTemp::novo("check-contradiz");
+    let mut t = Table::criar(&d.0, esquema()).unwrap();
+    t.inserir(&cliente(1)).unwrap();
+    let coluna = coluna_situacao().com_check("situacao <> 'nao'").unwrap();
+    let e = t
+        .acrescentar_coluna(coluna, Some(Value::Str("nao".into())))
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("CHECK"), "{e}");
+    assert!(e.contains("atualizar"), "{e}");
+    // E a tabela NAO foi tocada: a recusa e antes do `.reg`.
+    assert_eq!(t.esquema().colunas().len(), 5);
+    assert_eq!(
+        t.ler(1).unwrap().unwrap()[NOME],
+        Value::Str("cliente 0001".into())
+    );
+}
+
+/// **O crivo e PRECISO, e sao tres controles que provam isso.**
+///
+/// Ele nao pode virar «CHECK numa tabela com linha recusa»: isso tiraria uma
+/// ordem de modelagem legitima -- «daqui para a frente vale esta regra» -- que
+/// o PostgreSQL(R) atende com `NOT VALID`. O crivo avalia com NULO em todas as
+/// outras colunas, e `NULL` passa no CHECK (e o SQL): entao so cai o que se
+/// contradiz sozinho.
+#[test]
+fn o_crivo_do_check_nao_pega_quem_depende_da_linha_velha() {
+    let d = DirTemp::novo("check-crivo");
+    let mut t = Table::criar(&d.0, esquema()).unwrap();
+    t.inserir(&cliente(1)).unwrap();
+
+    // (a) CHECK que fala de coluna VELHA passa -- o dado nao esta aqui, e
+    //     inventar uma recusa seria pior que a falta dela.
+    let c = coluna_situacao().com_check("nome <> ''").unwrap();
+    t.acrescentar_coluna(c, None).unwrap();
+
+    // (b) CHECK coerente com o padrao passa.
+    let d2 = DirTemp::novo("check-crivo-b");
+    let mut u = Table::criar(&d2.0, esquema()).unwrap();
+    u.inserir(&cliente(1)).unwrap();
+    let c = coluna_situacao().com_check("situacao <> 'nao'").unwrap();
+    u.acrescentar_coluna(c, Some(Value::Str("sim".into())))
+        .unwrap();
+
+    // (c) A MESMA contradicao numa tabela VAZIA passa: nao ha linha velha
+    //     sobre a qual a contradicao exista.
+    let d3 = DirTemp::novo("check-crivo-c");
+    let mut v = Table::criar(&d3.0, esquema()).unwrap();
+    let c = coluna_situacao().com_check("situacao <> 'nao'").unwrap();
+    v.acrescentar_coluna(c, Some(Value::Str("nao".into())))
+        .unwrap();
+}

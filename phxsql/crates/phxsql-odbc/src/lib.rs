@@ -1617,6 +1617,7 @@ pub unsafe extern "system" fn SQLGetInfo(
 /// e o `SQLEndTran` que os chama. Desligar o autocommit sem ele deixaria a
 /// ferramenta achando que abriu uma transacao que ninguem abriu -- e o
 /// `COMMIT` dela nao confirmaria coisa nenhuma.
+/// DIVIDA: falta o `SQLEndTran`, entao o driver so dirige em autocommit -- a transacao que o servidor tem nao alcanca quem chega pelo ODBC
 ///
 /// # Safety
 ///

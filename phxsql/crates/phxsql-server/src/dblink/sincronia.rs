@@ -201,6 +201,7 @@ fn tipo_local(c: &Coluna) -> Result<ColumnType> {
 /// A chave primaria vira indice UNICO local -- e o que permite o upsert sem
 /// varrer -- e tem de ser de UMA coluna: chave composta fica para quando
 /// alguem precisar dela de verdade, com o pedido na mesa.
+/// DIVIDA: o espelho do DbLink so aceita chave primaria de UMA coluna -- tabela remota com chave composta recusa
 pub fn esquema_local_de(nome: &str, colunas: &[Coluna]) -> Result<(Schema, String)> {
     if colunas.is_empty() {
         return Err(PhxError::Esquema(format!(

@@ -755,31 +755,164 @@ pub fn valor_para_json(v: &Value, ty: &ColumnType) -> Json {
     }
 }
 
+/// O texto e um inteiro escrito por extenso -- so digitos, com sinal opcional?
+///
+/// E o crivo que separa «isto nao e numero» de «isto e numero e nao coube»: um
+/// texto so de digitos que falhou no `parse` falhou NECESSARIAMENTE por faixa,
+/// e dizer «esperado inteiro» sobre ele manda o cliente procurar o erro no
+/// lugar errado. Nao aceita expoente nem ponto de proposito -- `"1.5"` e
+/// `"1e21"` nao sao inteiros escritos, e a recusa deles e mesmo de tipo.
+fn so_digitos(t: &str) -> bool {
+    let corpo = t.strip_prefix(['-', '+']).unwrap_or(t);
+    !corpo.is_empty() && corpo.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// A recusa do numero CRU que o `f64` do JSON nao sabe mais distinguir.
+///
+/// O `Json` desta casa tem um so tipo numerico, `f64` (o comentario dele ja
+/// dizia «ate 2^53 todo inteiro e exato»). Acima disso dois inteiros vizinhos
+/// leem o MESMO `f64`, e o `n as i64` do Rust ainda SATURA em vez de falhar.
+/// Medido em 16/09/2026 pelo protocolo, numa coluna `Int8`: `{"v":1e21}`
+/// gravava 9223372036854775807 e `{"v":9007199254740993}` gravava
+/// 9007199254740992 -- as duas aceitas, caladas, com outro numero no disco.
+///
+/// A `Sequence` ja recusava esta faixa desde o bloco 19
+/// (`docs/AUTONUMBER.md`), e o comentario ao lado dela dizia que o irmao
+/// `Int8`/`UInt8` «passava por aqui ao lado sem problema». Passava gravando
+/// outro numero.
+///
+/// # O que ela recusa, e o que ela DEIXA PASSAR de proposito
+///
+/// Recusa so a **faixa**: o valor que nao cabe no tipo. Isso nao e regra nova
+/// -- `Int1`, `Int2` e `Int4` ja recusam exatamente assim, la no
+/// `escrever_inline` («9999 nao cabe em inteiro de 8 bits»). O `Int8`/`UInt8`
+/// era o unico que nao recusava, porque o carregador E o `i64`: nao havia
+/// nada acima dele contra o que conferir. Este e o irmao dos estreitos.
+///
+/// **Deixa passar** a faixa entre 2^53 e o teto do tipo, onde o `f64` ja nao
+/// distingue um inteiro do seguinte. Alargar a recusa de 2^53 ao `Int8`/
+/// `UInt8` esta REGISTRADO como decisao de papel C em `docs/AUTONUMBER.md`
+/// §C.4 -- a frente G2 recusou faze-lo sozinha porque muda o comportamento de
+/// quem hoje manda numero grande e ve a coisa funcionar (arredondada). Uma
+/// frente nao revoga em silencio a dispensa que outra registrou. A `Sequence`
+/// tem o crivo dela, e continua tendo.
+fn conferir_numero_cru(j: &Json, minimo: f64, acima_do_teto: f64, tipo: &str) -> Result<()> {
+    let Json::Numero(n) = j else {
+        return Ok(());
+    };
+    if *n < minimo || *n >= acima_do_teto {
+        // O numero MOSTRADO e o do `f64`, que e o que chegou -- o que o cliente
+        // digitou se perdeu no `Json::analisar`, antes desta funcao existir.
+        return Err(PhxError::LimiteExcedido(format!(
+            "{} nao cabe em {tipo}",
+            j.escrever()
+        )));
+    }
+    Ok(())
+}
+
+/// O inteiro COM sinal deste JSON, ou o erro que diz o que impediu.
+///
+/// Texto tambem serve, e e o alargamento do pedido 223: o tradutor de SQL
+/// guarda TODO literal numerico como texto (`literal_para_json`), e o driver
+/// ODBC e o protocolo do PostgreSQL(R) mandam todo parametro assim. Sem isso
+/// `WHERE id = 2` nao acharia nada numa coluna `Int4`.
+///
+/// O que mudou em 16/09/2026 (pedido 245, O4) foi a RECUSA, nao o que passa.
+/// Ela dizia `esperado inteiro, recebido Texto("1000000000000000000000")` --
+/// culpando o portador quando `"2"` ao lado passa pelo mesmo caminho. O que
+/// impedia era a faixa, e agora e isso que ela diz.
+fn inteiro_com_sinal(j: &Json) -> Result<i64> {
+    // 2^63 escrito como `f64`: `i64::MAX as f64` arredonda PARA CIMA e deixaria
+    // passar o proprio 2^63, que satura. O teto e aberto por isso.
+    const ACIMA_DO_TETO: f64 = 9_223_372_036_854_775_808.0;
+    match j {
+        Json::Texto(t) => {
+            let t = t.trim();
+            if let Ok(v) = t.parse::<i64>() {
+                return Ok(v);
+            }
+            if so_digitos(t) {
+                return Err(PhxError::LimiteExcedido(format!(
+                    "{t} nao cabe em inteiro de 64 bits com sinal ({} a {})",
+                    i64::MIN,
+                    i64::MAX
+                )));
+            }
+            Err(PhxError::Tipo(format!("esperado inteiro, recebido {j:?}")))
+        }
+        Json::Numero(n) if n.is_finite() && n.fract() == 0.0 => {
+            conferir_numero_cru(
+                j,
+                -ACIMA_DO_TETO,
+                ACIMA_DO_TETO,
+                "inteiro de 64 bits com sinal",
+            )?;
+            Ok(*n as i64)
+        }
+        _ => Err(PhxError::Tipo(format!("esperado inteiro, recebido {j:?}"))),
+    }
+}
+
+/// O inteiro SEM sinal deste JSON, ou o erro que diz o que impediu.
+///
+/// `esperado` e `destino` existem porque a `Sequence` e a coluna `UInt*` sao o
+/// mesmo caminho com dois nomes na boca de quem le o erro -- «numero da
+/// sequencia» e «inteiro sem sinal». Um nome so faria uma das duas mensagens
+/// mentir sobre onde o valor ia parar.
+///
+/// **A metade de cima do `UInt8` era inalcancavel pelo protocolo** e isto e
+/// medido: o `parse` era para `i64`, entao `"18446744073709551615"` -- valor
+/// perfeitamente gravavel na coluna -- voltava como
+/// `esperado inteiro sem sinal, recebido Texto("18446744073709551615")`. O
+/// `parse` aqui e para `u64`, que e a largura do tipo.
+fn inteiro_sem_sinal(j: &Json, esperado: &str, destino: &str) -> Result<u64> {
+    // 2^64 escrito como `f64`, pelo mesmo motivo do teto com sinal.
+    const ACIMA_DO_TETO: f64 = 18_446_744_073_709_551_616.0;
+    match j {
+        Json::Texto(t) => {
+            let t = t.trim();
+            if let Ok(v) = t.parse::<u64>() {
+                return Ok(v);
+            }
+            // Negativo escrito por extenso: o erro e o valor, nao a faixa do
+            // tipo, e a mensagem tem de dizer isso para nao mandar procurar
+            // um numero maior.
+            if so_digitos(t) && t.starts_with('-') {
+                return Err(PhxError::Tipo(format!("{t} e negativo numa {destino}")));
+            }
+            if so_digitos(t) {
+                return Err(PhxError::LimiteExcedido(format!(
+                    "{t} nao cabe em inteiro de 64 bits sem sinal (0 a {})",
+                    u64::MAX
+                )));
+            }
+            Err(PhxError::Tipo(format!(
+                "esperado {esperado}, recebido {j:?}"
+            )))
+        }
+        Json::Numero(n) if n.is_finite() && n.fract() == 0.0 => {
+            if *n < 0.0 {
+                return Err(PhxError::Tipo(format!(
+                    "{} e negativo numa {destino}",
+                    j.escrever()
+                )));
+            }
+            conferir_numero_cru(j, 0.0, ACIMA_DO_TETO, "inteiro de 64 bits sem sinal")?;
+            Ok(*n as u64)
+        }
+        _ => Err(PhxError::Tipo(format!(
+            "esperado {esperado}, recebido {j:?}"
+        ))),
+    }
+}
+
 /// JSON em valor do PhxSql, guiado pelo tipo da coluna.
 pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
     if j.e_nulo() {
         return Ok(Value::Null);
     }
     let erro = |esperado: &str| PhxError::Tipo(format!("esperado {esperado}, recebido {j:?}"));
-
-    // Inteiro escrito como TEXTO tambem serve.
-    //
-    // O `Decimal` desta mesma funcao ja EXIGE texto, para nao perder centavo
-    // num `f64` -- e pela mesma razao o tradutor de SQL guarda todo literal
-    // numerico como texto. Sem esta linha, `WHERE id = 2` chegaria como
-    // `["2"]` e seria recusado por tipo, e o SELECT mais simples que existe
-    // nao funcionaria contra uma coluna `Int4`. Vale tambem para o driver
-    // ODBC e para o protocolo do PostgreSQL(R), onde TODO parametro chega
-    // como texto.
-    //
-    // E so alargar: quem manda numero continua igual, e texto que nao e
-    // numero continua recusado com o mesmo erro de tipo.
-    let inteiro = || -> Option<i64> {
-        match j {
-            Json::Texto(t) => t.trim().parse::<i64>().ok(),
-            outro => outro.inteiro(),
-        }
-    };
 
     Ok(match ty {
         ColumnType::Bool => match j {
@@ -788,16 +921,14 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
             _ => return Err(erro("booleano")),
         },
         ColumnType::Int1 | ColumnType::Int2 | ColumnType::Int4 | ColumnType::Int8 => {
-            Value::Int(inteiro().ok_or_else(|| erro("inteiro"))?)
+            Value::Int(inteiro_com_sinal(j)?)
         }
         ColumnType::UInt1 | ColumnType::UInt2 | ColumnType::UInt4 | ColumnType::UInt8 => {
-            let n = inteiro().ok_or_else(|| erro("inteiro sem sinal"))?;
-            if n < 0 {
-                return Err(PhxError::Tipo(format!(
-                    "{n} e negativo numa coluna sem sinal"
-                )));
-            }
-            Value::UInt(n as u64)
+            Value::UInt(inteiro_sem_sinal(
+                j,
+                "inteiro sem sinal",
+                "coluna sem sinal",
+            )?)
         }
         ColumnType::Real4 | ColumnType::Real8 => {
             // Real escrito como TEXTO tambem serve -- o mesmo alargamento do
@@ -845,7 +976,7 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
         // escolhido o numero a mao, e a tabela empurra o contador para depois
         // dele.
         //
-        // `inteiro()` (o fechamento acima, nao o metodo de `Json`) e o mesmo
+        // `inteiro_sem_sinal` (nao o `j.inteiro()` do `Json`) e o mesmo
         // alargamento do `UInt` -- e tem de ser: o tradutor de SQL guarda TODO
         // literal numerico como texto (`literal_para_json` em traduzir.rs), e
         // `Sequence` e o tipo da chave primaria de quase toda tabela nascida
@@ -873,11 +1004,7 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
                     j.inteiro().map(|v| v.to_string()).unwrap_or_default()
                 )));
             }
-            let n = inteiro().ok_or_else(|| erro("numero da sequencia"))?;
-            if n < 0 {
-                return Err(PhxError::Tipo(format!("{n} e negativo numa sequencia")));
-            }
-            Value::UInt(n as u64)
+            Value::UInt(inteiro_sem_sinal(j, "numero da sequencia", "sequencia")?)
         }
         ColumnType::Date => match j {
             Json::Texto(t) => Value::Date(data_de_texto(t)?),
@@ -1970,5 +2097,167 @@ mod testes_inteiro_em_texto {
             valor_para_json(&Value::UInt(9_007_199_254_740_993), &ColumnType::UInt8),
             Json::Numero(_)
         ));
+    }
+}
+
+#[cfg(test)]
+mod testes_teto_de_64_bits {
+    //! O pedido 245, O4 -- o que acontece na fronteira de 64 bits, medido em
+    //! 16/09/2026 e nao suposto.
+    //!
+    //! A observacao original dizia «parametro `1e21` recusado como Texto», e
+    //! ela era a ponta visivel: o mesmo `1e21` pelo caminho do NUMERO CRU nao
+    //! era recusado -- era gravado como `i64::MAX`, calado.
+
+    use super::*;
+
+    /// **O teste do comportamento VELHO, que e o que mais importa numa regra
+    /// nova.** Tudo que passava abaixo do teto continua passando igual, pelos
+    /// dois portadores (numero e texto) e nos tres ramos (Int, UInt, Sequence).
+    #[test]
+    fn abaixo_do_teto_nada_muda() {
+        for (j, ty, esperado) in [
+            (Json::de_i64(42), ColumnType::Int8, Value::Int(42)),
+            (Json::de_i64(-7), ColumnType::Int4, Value::Int(-7)),
+            (Json::texto_de("42"), ColumnType::Int8, Value::Int(42)),
+            (Json::de_u64(42), ColumnType::UInt8, Value::UInt(42)),
+            (Json::texto_de("42"), ColumnType::UInt8, Value::UInt(42)),
+            (Json::de_u64(7), ColumnType::Sequence, Value::UInt(7)),
+            (Json::texto_de("7"), ColumnType::Sequence, Value::UInt(7)),
+            // O maior exato do f64 continua passando cru: o crivo e `>= 2^53`,
+            // e 2^53 e' o proprio limite -- quem o baixasse quebraria quem ja
+            // manda ids nessa faixa.
+            (
+                Json::de_i64(9_007_199_254_740_991),
+                ColumnType::Int8,
+                Value::Int(9_007_199_254_740_991),
+            ),
+            // Texto NAO passa por f64: a faixa inteira do i64 continua
+            // alcancavel por ele, como sempre foi.
+            (
+                Json::texto_de("9223372036854775807"),
+                ColumnType::Int8,
+                Value::Int(i64::MAX),
+            ),
+        ] {
+            assert_eq!(
+                json_para_valor(&j, &ty).unwrap(),
+                esperado,
+                "{j:?} em {ty:?} mudou de comportamento"
+            );
+        }
+    }
+
+    /// **O defeito medido: numero CRU fora da faixa era GRAVADO saturado.**
+    ///
+    /// Isto nao e a decisao adiada do AUTONUMBER.md §C.4 (o teto de 2^53), e a
+    /// diferenca importa: aqui o `as i64` do Rust **fabrica** um numero --
+    /// `1e21`, `1e30` e `1e300` viravam todos 9223372036854775807 --, e e o
+    /// que `Int1`, `Int2` e `Int4` ja recusam no `escrever_inline`. O `Int8`
+    /// era o unico irmao sem a recusa, porque o carregador E o `i64`.
+    ///
+    /// Reponha o defeito trocando o corpo de `inteiro_com_sinal` por
+    /// `j.inteiro().ok_or_else(...)`: `1e21` volta a virar `i64::MAX` e este
+    /// teste cai com `Value::Int(9223372036854775807)` no lugar do erro.
+    #[test]
+    fn numero_cru_fora_da_faixa_recusa_em_vez_de_saturar() {
+        let e = json_para_valor(&Json::Numero(1e21), &ColumnType::Int8).unwrap_err();
+        assert!(matches!(e, PhxError::LimiteExcedido(_)), "{e}");
+        let t = e.to_string();
+        assert!(t.contains("1000000000000000000000"), "{t}");
+        assert!(t.contains("64 bits"), "{t}");
+
+        let e = json_para_valor(&Json::Numero(1e21), &ColumnType::UInt8).unwrap_err();
+        assert!(matches!(e, PhxError::LimiteExcedido(_)), "{e}");
+    }
+
+    /// **A faixa entre 2^53 e o teto continua PASSANDO -- e isso e uma dispensa
+    /// registrada, nao um descuido.**
+    ///
+    /// `docs/AUTONUMBER.md` §C.4 poe «alargar a recusa de 2^53 ao `Int8`/
+    /// `UInt8`» como decisao de papel C, e diz o motivo: muda o comportamento
+    /// de quem hoje manda numero grande e ve funcionar. A frente G2 recusou
+    /// faze-lo sozinha; esta frente nao a revoga em silencio.
+    ///
+    /// O teste existe para que a decisao APARECA: no dia em que papel C a
+    /// tomar, e ele que cai, apontando para o documento.
+    #[test]
+    fn a_faixa_imprecisa_continua_passando_por_decisao_registrada() {
+        // 2^53+1 chega ao `f64` ja como 2^53, e e isso que se grava -- como
+        // antes desta frente. Ver AUTONUMBER.md §C.4.
+        assert_eq!(
+            json_para_valor(&Json::Numero(9_007_199_254_740_993.0), &ColumnType::Int8).unwrap(),
+            Value::Int(9_007_199_254_740_992)
+        );
+        // A saida honesta ja existe e FUNCIONA hoje: o mesmo valor como texto
+        // nao passa por f64 e atravessa intacto.
+        assert_eq!(
+            json_para_valor(&Json::texto_de("9007199254740993"), &ColumnType::Int8).unwrap(),
+            Value::Int(9_007_199_254_740_993)
+        );
+        // E a `Sequence`, que TEM o crivo desde o bloco 19, continua com ele.
+        assert!(json_para_valor(
+            &Json::Numero(9_007_199_254_740_993.0),
+            &ColumnType::Sequence
+        )
+        .is_err());
+    }
+
+    /// **A recusa que deu nome ao O4.** Ela culpava o PORTADOR -- «recebido
+    /// Texto(...)» -- enquanto `"2"` ao lado passava pelo mesmo caminho. O que
+    /// impedia era a faixa.
+    ///
+    /// Reponha o defeito tirando o ramo `so_digitos` de `inteiro_com_sinal`:
+    /// a mensagem volta a ser de tipo e a asserção da faixa cai.
+    #[test]
+    fn texto_numerico_grande_demais_fala_de_faixa_e_nao_de_tipo() {
+        let e = json_para_valor(&Json::texto_de("1000000000000000000000"), &ColumnType::Int8)
+            .unwrap_err();
+        assert!(matches!(e, PhxError::LimiteExcedido(_)), "{e}");
+        assert!(e.to_string().contains("nao cabe"), "{e}");
+
+        // O CONTROLE, e ele e o que impede o crivo de virar uma peneira que
+        // aceita tudo: texto que NAO e inteiro escrito continua sendo erro de
+        // TIPO, com a mensagem de sempre.
+        let e = json_para_valor(&Json::texto_de("abc"), &ColumnType::Int8).unwrap_err();
+        assert!(matches!(e, PhxError::Tipo(_)), "{e}");
+        assert!(e.to_string().contains("esperado inteiro"), "{e}");
+        let e = json_para_valor(&Json::texto_de("1.5"), &ColumnType::Int8).unwrap_err();
+        assert!(matches!(e, PhxError::Tipo(_)), "{e}");
+    }
+
+    /// **A metade de cima do `UInt8` era inalcancavel pelo protocolo.** O
+    /// `parse` era para `i64` numa coluna de 64 bits SEM sinal, entao metade
+    /// da faixa do tipo voltava como erro de tipo.
+    ///
+    /// Reponha o defeito trocando o `parse::<u64>()` de `inteiro_sem_sinal`
+    /// por `parse::<i64>()`: os dois valores voltam a ser recusados.
+    #[test]
+    fn a_metade_de_cima_do_uint8_agora_cabe() {
+        assert_eq!(
+            json_para_valor(&Json::texto_de("18446744073709551615"), &ColumnType::UInt8).unwrap(),
+            Value::UInt(u64::MAX)
+        );
+        assert_eq!(
+            json_para_valor(&Json::texto_de("10000000000000000000"), &ColumnType::UInt8).unwrap(),
+            Value::UInt(10_000_000_000_000_000_000)
+        );
+        // E o negativo continua sendo NEGATIVO e nao «faixa»: quem recebe o
+        // erro precisa saber que o conserto e o sinal, e nao um numero menor.
+        let e = json_para_valor(&Json::texto_de("-5"), &ColumnType::UInt8).unwrap_err();
+        assert!(e.to_string().contains("negativo"), "{e}");
+        let e = json_para_valor(&Json::de_i64(-5), &ColumnType::Sequence).unwrap_err();
+        assert!(e.to_string().contains("negativo numa sequencia"), "{e}");
+    }
+
+    /// A `Sequence` guarda a mensagem DELA, que manda usar `Uuid256` -- e nao
+    /// a generica. O texto esta citado em `docs/AUTONUMBER.md`, e trocar o
+    /// caminho comum embaixo dela nao pode troca-lo.
+    #[test]
+    fn a_sequencia_continua_com_a_mensagem_dela() {
+        let e = json_para_valor(&Json::Numero(1e21), &ColumnType::Sequence)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("Uuid256"), "{e}");
     }
 }

@@ -54,6 +54,7 @@
 //! quando ela e o conjunto INTEIRO de um `AND` de nivel superior -- uma
 //! subconsulta dentro de `OR` ou de uma expressao maior nao e detectada, e
 //! cai na recusa de "forma nao suportada" em vez de virar texto errado.
+//! DIVIDA: correlacao que nao e igualdade, `EXISTS` nao correlacionado e CTE recursiva continuam sem substrato -- a traducao recusa nomeando
 
 use crate::lexico::{self, normalizar_tokens, Simbolo, Token};
 use crate::sintaxe::{
@@ -492,6 +493,7 @@ pub fn traduzir_consulta(
 /// `COUNT(*)`/`GROUP BY` sobre uma visao recusam nomeando -- o `consultar`
 /// nao agrupa, so filtra e projeta. Quem precisa agregar sobre uma visao
 /// compoe por fora: `SELECT COUNT(*) FROM (SELECT * FROM v_c) AS x`.
+/// DIVIDA: `COUNT(*)` e `GROUP BY` sobre visao recusam -- o `consultar` nao agrupa, so filtra e projeta
 pub fn planejar_sobre(selecao: &Selecao, plano_de_dentro: Json) -> Result<Plano> {
     let database = if !selecao.de.database.is_empty() {
         selecao.de.database.clone()

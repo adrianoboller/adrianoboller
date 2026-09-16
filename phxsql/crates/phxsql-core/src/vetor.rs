@@ -36,6 +36,7 @@
 //! menor, como um `zip` faria em silencio -- devolveria um numero ERRADO sem
 //! avisar ninguem, e essa e exatamente a categoria de defeito que este
 //! modulo existe para nao ter.
+//! DIVIDA: a coluna VECTOR<F32,N> da frente V3 nao existe -- hoje ninguem declara a dimensao, e por isso o par de tamanhos diferentes so panica em vez de ser impossivel
 
 /// Produto interno (`a . b`), somado em `f64` e devolvido em `f32`.
 ///

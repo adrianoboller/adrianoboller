@@ -38,6 +38,7 @@
 //! o que ja foi gravado em claro continua em claro. Quem marca uma tabela
 //! depois de ter perfilado tem de APAGAR os arquivos antigos a mao -- e a tela
 //! diz isso, porque a surpresa seria pior que a limitacao.
+//! DIVIDA: marcar uma tabela nao apaga o `perfil.txt.N` ja gravado em claro -- quem marca depois de perfilar tem de apagar os arquivos a mao
 //!
 //! # A senha NAO passa por aqui
 //!

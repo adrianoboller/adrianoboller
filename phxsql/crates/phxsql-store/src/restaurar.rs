@@ -50,6 +50,7 @@
 //! estragos com um clique. E nao confere assinatura: o manifesto prova que o
 //! backup nao APODRECEU, nao que ninguem o reescreveu de proposito (ver
 //! `docs/RESTAURACAO.md`).
+//! DIVIDA: a restauracao nao confere assinatura -- o manifesto prova que o backup nao apodreceu, nao que ninguem o reescreveu de proposito
 
 use std::collections::BTreeMap;
 use std::fs::File;

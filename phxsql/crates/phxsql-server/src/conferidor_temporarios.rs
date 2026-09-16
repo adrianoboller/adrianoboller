@@ -33,6 +33,7 @@
 //! escondaria o que importa. O lixo que os exemplos deixam esta medido e
 //! anotado no `docs/PENDENCIAS.md` como item proprio -- dispensa registrada e
 //! decisao, dispensa silenciosa e esquecimento.
+//! DIVIDA: #209 o conferidor nao varre `examples/`, entao o lixo que eles deixam em `/tmp` continua fora da catraca
 //!
 //! # A lista de arquivos sai do disco, nao do codigo
 //!

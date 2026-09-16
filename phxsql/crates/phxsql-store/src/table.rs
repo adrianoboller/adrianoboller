@@ -855,6 +855,53 @@ impl Table {
             escrever_inline(v, &coluna.ty, &mut bytes)?;
         }
 
+        // A DECLARACAO que se contradiz recusa na declaracao, nao na gravacao
+        // (pedido 245, O2).
+        //
+        // Medido em 16/09/2026: acrescentar `v Int8 check "v > 0"` com
+        // `padrao = -5` a uma tabela com linha era ACEITO, e a linha velha
+        // ficava com -5 -- violando o CHECK que o mesmo comando acabara de
+        // declarar. So aparecia no `atualizar` seguinte, que passava a recusar
+        // para sempre.
+        //
+        // O crivo e a propria regra do SQL, e e ela que o torna PRECISO: a
+        // linha de prova tem o valor novo na coluna nova e NULO em todas as
+        // outras, e `NULL` passa no CHECK. Entao um CHECK que fale de coluna
+        // VELHA (`idade > 18`) nunca e recusado aqui -- ele depende de dado
+        // que esta funcao nao le --, e so cai o que se contradiz sozinho,
+        // dentro de um comando so. Tabela VAZIA nao entra: nao ha linha velha
+        // sobre a qual a contradicao exista.
+        if tem_linha && self.julga_integridade() {
+            if let Some(check) = &novo.colunas()[posicao].check {
+                let prova: Vec<Value> = (0..novo.colunas().len())
+                    .map(|i| {
+                        if i == posicao {
+                            padrao.clone().unwrap_or(Value::Null)
+                        } else {
+                            Value::Null
+                        }
+                    })
+                    .collect();
+                let resolver = |nome: &str| -> Option<(&Value, &ColumnType)> {
+                    let i = novo.posicao_sem_caixa(nome)?;
+                    Some((prova.get(i)?, &novo.colunas()[i].ty))
+                };
+                if check.avaliar_bool(&resolver)? == Some(false) {
+                    return Err(PhxError::Esquema(format!(
+                        "a coluna {} declara CHECK {:?} e as {} linha(s) que ja existem \
+                         receberiam {:?}, que o viola -- gravado assim, todo `atualizar` \
+                         dessas linhas passaria a recusar. Corrija o padrao, o CHECK, ou \
+                         acrescente a coluna sem CHECK e declare-o depois de arrumar as \
+                         linhas",
+                        coluna.nome,
+                        check.texto(),
+                        self.reg.slots(),
+                        padrao.clone().unwrap_or(Value::Null),
+                    )));
+                }
+            }
+        }
+
         let slots = self
             .reg
             .acrescentar_coluna(novo, posicao, &bytes, padrao.is_none())?;
@@ -2958,6 +3005,7 @@ impl Table {
     /// decisao de projeto (faixa por no, ou contador duravel propagado). Aqui
     /// garante-se so o alcancavel: o contador nunca fica atras do que ESTA
     /// gravado nesta ponta.
+    /// DIVIDA: #229 promover uma replica atrasada continua de um numero menor que o do master morto -- falta decidir entre faixa por no e contador duravel propagado
     pub fn reconciliar_sequencia(&mut self) -> Result<u64> {
         let Some(i) = self.esquema.coluna_sequencia() else {
             return Ok(0);

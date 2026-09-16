@@ -16,6 +16,7 @@
 //! aceitas em paralelo, mas as operacoes se enfileiram. E lento sob carga e e
 //! correto -- o contrario seria rapido e corrompido. Travas finas entram junto
 //! com as transacoes.
+//! DIVIDA: #164 nao ha trava de arquivo nem de registro -- toda operacao de dados se enfileira no mutex global, e as travas finas continuam por fazer
 
 #[cfg(test)]
 use crate::apoio_teste::DirTemp;
@@ -854,6 +855,15 @@ pub struct Servidor {
     /// conexao de um teste vizinho cair no panico deste.
     #[cfg(test)]
     panicos_de_teste: AtomicUsize,
+    /// Quantas conexoes o laco de aceitacao da porta de dados JA ACEITOU, e
+    /// quantas ele recusou por falta de vaga. So existe nos testes, e existe
+    /// para separar duas causas que o «nem todos os panicos aconteceram»
+    /// confundia: «a conexao entrou e nao panicou» e «a conexao nunca foi
+    /// aceita» sao defeitos diferentes, e um contador so nao as distingue.
+    #[cfg(test)]
+    aceitas_de_teste: AtomicUsize,
+    #[cfg(test)]
+    sem_vaga_de_teste: AtomicUsize,
     /// O estado vivo do cluster -- `None` quando o `config.json` nao traz o
     /// bloco `cluster`, e ai NADA disto existe: nenhuma thread, nenhum portao.
     cluster: Option<Arc<crate::cluster::EstadoCluster>>,
@@ -1122,6 +1132,10 @@ impl Servidor {
             http_cheia_ate_ms: AtomicU64::new(0),
             #[cfg(test)]
             panicos_de_teste: AtomicUsize::new(0),
+            #[cfg(test)]
+            aceitas_de_teste: AtomicUsize::new(0),
+            #[cfg(test)]
+            sem_vaga_de_teste: AtomicUsize::new(0),
             cargas: Mutex::new(crate::carga::Cargas::default()),
             marcas_pendentes: Mutex::new(Vec::new()),
             travas: Mutex::new(crate::travas::Travas::default()),
@@ -1643,12 +1657,16 @@ impl Servidor {
                     // exato em que o Nagle atrapalha em vez de ajudar.
                     let _ = fluxo.set_nodelay(true);
                     let par = fluxo.peer_addr().ok();
+                    #[cfg(test)]
+                    self.aceitas_de_teste.fetch_add(1, Ordering::SeqCst);
                     // Uma vaga AGORA, ou recusa: e o `max_connections` do
                     // PostgreSQL («too many clients already»), do MySQL e do
                     // MariaDB («Too many connections»), e tres motores
                     // maduros convergindo e aceite automatico. A espera com
                     // prazo fica para as portas HTTP, onde o molde e outro.
                     let Some(permissao) = self.permissoes_de_dados.tentar() else {
+                        #[cfg(test)]
+                        self.sem_vaga_de_teste.fetch_add(1, Ordering::SeqCst);
                         // Recusa sem derrubar o servico, e deixa registro.
                         if let Some(p) = par {
                             self.anotar(&Acesso {
@@ -5931,11 +5949,15 @@ impl Servidor {
                     None => None,
                 };
                 if let Some(motivo) = motivo {
+                    // A SAIDA e por operacao e nao uma frase so: «peca as
+                    // colunas por varrer» e conselho para o `juntar` e nao
+                    // quer dizer nada para o `agrupar`, que devolve agregado,
+                    // nem para o `backup`, que leva arquivo (pedido 245, O5).
                     return Err(PhxError::Autorizacao(format!(
                         "{}: o direito por coluna nao e aplicado em {op}, e {motivo} -- \
-                         recusado para nao vazar. Peca as colunas por ler, varrer, \
-                         buscar ou SELECT",
-                        u.login
+                         recusado para nao vazar. {}",
+                        u.login,
+                        dc::saida(op).texto()
                     )));
                 }
                 self.executar(op, pedido, sessao)
@@ -7646,6 +7668,7 @@ impl Servidor {
     /// escrita e esta porta NAO oferece como liga-la -- uma tentativa de
     /// `phx_inserir` volta com erro JSON-RPC dizendo por que. A fronteira e a
     /// prova: o teste `escrita_pelo_mcp_http_e_recusada` falha se alguem a abrir.
+    /// DIVIDA: a porta MCP por HTTP nasce sem escrita e sem login por usuario -- as duas metades ficaram para a fase 2, com o dono
     ///
     /// # Uma resposta por pedido, sem sessao entre eles
     ///
@@ -14906,7 +14929,38 @@ impl Servidor {
         let slots = t.acrescentar_coluna(coluna.clone(), padrao)?;
         let ms = inicio.elapsed().as_secs_f64() * 1e3;
 
-        Ok(Json::objeto(vec![
+        // O que a linha VELHA nao ganhou, dito na resposta (pedido 245, O2).
+        //
+        // O portao vem antes do trabalho: sao dois `is_some()` de campo ja
+        // carregado, e quem acrescenta coluna sem regra nao paga nem uma
+        // alocacao. As duas frases dizem o que FOI medido, e nenhuma delas
+        // promete conserto: o que fazer com a linha velha que viola um CHECK
+        // novo, e com a `calculada` que nasceu nula nela, e decisao de
+        // garantia de dado e esta com o dono (245, O2).
+        let mut avisos: Vec<String> = Vec::new();
+        let registros = t.registros();
+        if registros > 0 && (coluna.check.is_some() || coluna.calculada.is_some()) {
+            if let Some(check) = &coluna.check {
+                avisos.push(format!(
+                    "o CHECK {:?} da coluna {} NAO foi conferido contra as {registros} \
+                     linha(s) que ja existiam: a que o violar so sera recusada no proximo \
+                     `atualizar` dela",
+                    check.texto(),
+                    coluna.nome
+                ));
+            }
+            if let Some(calc) = &coluna.calculada {
+                avisos.push(format!(
+                    "a coluna calculada {} ({:?}) ficou NULA nas {registros} linha(s) que \
+                     ja existiam: cada uma so recebe o valor calculado no proximo \
+                     `atualizar` dela",
+                    coluna.nome,
+                    calc.texto()
+                ));
+            }
+        }
+
+        let mut pares = vec![
             ("database", Json::texto_de(p.texto_ou("database", ""))),
             ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
             ("coluna", Json::texto_de(coluna.nome.clone())),
@@ -14916,12 +14970,21 @@ impl Servidor {
             ),
             ("colunas", Json::de_u64(t.esquema().colunas().len() as u64)),
             ("slots_reescritos", Json::de_u64(slots)),
-            ("registros", Json::de_u64(t.registros())),
+            ("registros", Json::de_u64(registros)),
             ("ms", Json::Numero(ms)),
             // Quem chamou precisa poder dizer a verdade na tela: o indice nao
             // foi refeito porque nao precisou.
             ("indices_refeitos", Json::Bool(false)),
-        ]))
+        ];
+        // So quando ha, como no `criar_tabela`: a resposta de sempre nao ganha
+        // campo vazio.
+        if !avisos.is_empty() {
+            pares.push((
+                "avisos",
+                Json::Lista(avisos.iter().map(Json::texto_de).collect()),
+            ));
+        }
+        Ok(Json::objeto(pares))
     }
 
     /// Desfaz a declaracao de uma chave estrangeira, pelo nome.
@@ -38976,6 +39039,55 @@ mod testes_visoes {
         r.campo("linhas").and_then(Json::lista).unwrap().to_vec()
     }
 
+    /// **CONTRATO, nao defeito** -- pedido 245, O6.
+    ///
+    /// `SELECT * FROM v_ord` recusa quando a visao pede uma direcao que o
+    /// `.ndx` nao guarda. Isso parece defeito da visao e nao e: medido em
+    /// 16/09/2026, a recusa e **exatamente a mesma** do `SELECT` direto, letra
+    /// por letra. A visao nao piora nada -- ela repassa a regra do motor, que
+    /// e «a ordem sai do indice, e a direcao esta gravada nele».
+    ///
+    /// Que o `CREATE VIEW` ACEITE e deliberado e esta escrito no
+    /// `visoes.rs`: a visao guarda TEXTO e e reanalisada a cada uso, para
+    /// falar de um esquema que envelhece. Compila-la na criacao a congelaria
+    /// contra a tabela de hoje.
+    ///
+    /// Este teste e a guarda do contrato: se um dia as duas recusas
+    /// divergirem, ele cai -- e ai ha mesmo um defeito da visao para achar.
+    #[test]
+    fn a_visao_recusa_a_direcao_com_a_mesma_frase_do_select_direto() {
+        let d = dir("ordem");
+        let (s, _) = servidor(&d, Cadastro::default());
+        // Que o CREATE aceite e a decisao do `visoes.rs`, e nao um descuido.
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_ord",
+                "sql":"SELECT * FROM clientes ORDER BY id DESC"}"#,
+        )
+        .unwrap();
+
+        let pela_visao = sql(&s, "SELECT * FROM v_ord").unwrap_err().to_string();
+        let direto = sql(&s, "SELECT * FROM clientes ORDER BY id DESC")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(pela_visao, direto, "a visao divergiu do caminho direto");
+        assert!(pela_visao.contains("gravada no .ndx"), "{pela_visao}");
+        // E a saida vai na mensagem: onde se declara a outra direcao.
+        assert!(pela_visao.contains("criacao da tabela"), "{pela_visao}");
+
+        // O CONTROLE: no sentido que o indice guarda, a visao responde.
+        dono(
+            &s,
+            "criar_visao",
+            r#"{"database":"b","nome":"v_asc",
+                "sql":"SELECT * FROM clientes ORDER BY id"}"#,
+        )
+        .unwrap();
+        let r = sql(&s, "SELECT * FROM v_asc").expect("a visao ASC tinha de responder");
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 3);
+    }
+
     /// **A PROVA REAL do item: o `FROM v` le a visao, e o teste mede QUANTAS
     /// linhas e QUAIS -- nao se a op respondeu.**
     ///
@@ -39762,6 +39874,67 @@ mod testes_upsert {
         .expect_err("gravou coluna que nao existe");
         assert!(e.to_string().contains("zzz"), "{e}");
         assert_eq!(pessoa(&s, 1).texto_ou("nome", ""), "TX");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **CONTRATO, nao defeito -- e a guarda dele** (pedido 245, O3).
+    ///
+    /// O upsert SEM o campo `atualizar` grava a LINHA INTEIRA por cima, e a
+    /// coluna que o pedido nao trouxe fica NULA. Medido em 16/09/2026: com
+    /// `{"cpf":"1","nome":"dois"}`, o `email` gravado virou nulo.
+    ///
+    /// **Isto nao vira uma mescla**, e a razao esta no IRMAO e nao no gosto:
+    /// o `crate::upsert` e o mesmo caminho da sincronia do DbLink
+    /// (`dblink/sincronia.rs::aplicar_para_ca`). Mesclar aqui tiraria dela a
+    /// unica forma de gravar NULO num destino -- uma sincronia que nao
+    /// consegue apagar um campo deixa o destino diferente da origem, calada,
+    /// que e exatamente o que ela existe para impedir. E mudaria o
+    /// significado do `inserir` de todo cliente escrito antes.
+    ///
+    /// A saida existe e e a do SQL: o campo `atualizar` (o SET), provado no
+    /// teste irmao acima. O que faltava era o catalogo dize-lo -- o campo nao
+    /// estava listado la, entao quem lia o protocolo nao achava a forma
+    /// segura.
+    ///
+    /// Reponha o «conserto» fazendo o upsert mesclar: a primeira asserção
+    /// (o nulo) cai, e com ela a garantia do DbLink.
+    #[test]
+    fn o_upsert_sem_o_set_grava_a_linha_inteira_e_isso_e_contrato() {
+        let d = dir("contrato");
+        let s = servidor(&d);
+        let ins = |corpo: &str| {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"pessoas","indice":"porCpf",{corpo}}}"#
+                )),
+                &Sessao::default(),
+            )
+        };
+        ins(r#""linha":{"cpf":"1","email":"a@x","nome":"um"}"#).unwrap();
+
+        // A forma PERIGOSA, que e o contrato: o que nao veio vira nulo.
+        ins(r#""linha":{"cpf":"1","nome":"dois"},"se_existir":"atualizar""#).unwrap();
+        let l = pessoa(&s, 1);
+        assert!(
+            l.campo("email").map(Json::e_nulo).unwrap_or(false),
+            "o upsert parcial deixou de zerar a coluna ausente: {l:?}"
+        );
+        assert_eq!(l.texto_ou("nome", ""), "dois");
+
+        // A forma SEGURA, no mesmo pedido, sobre a mesma linha: o que nao veio
+        // fica como estava. As duas lado a lado sao o que faz a diferenca
+        // entre elas ser contrato e nao acaso.
+        ins(r#""linha":{"cpf":"1","email":"b@x","nome":"tres"}"#).unwrap_err();
+        ins(r#""linha":{"cpf":"1","email":"b@x"},
+             "se_existir":"atualizar","atualizar":{"nome":"quatro"}"#)
+        .unwrap();
+        let l = pessoa(&s, 1);
+        assert_eq!(l.texto_ou("nome", ""), "quatro");
+        assert!(
+            l.campo("email").map(Json::e_nulo).unwrap_or(false),
+            "o VALUES do pedido entrou na linha que ja existia: {l:?}"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -41974,6 +42147,98 @@ mod testes_regras_de_esquema {
         .to_string();
         assert!(e.contains("check de v") && e.contains("\"w\""), "{e}");
     }
+
+    /// **O que a linha VELHA nao ganhou, dito na resposta** -- pedido 245, O2.
+    ///
+    /// Medido em 16/09/2026: `acrescentar_coluna` com `check` que as linhas
+    /// velhas violam, e com `calculada`, era aceito SEM AVISO NENHUM -- e so
+    /// aparecia no `atualizar` seguinte (que passava a recusar) ou numa
+    /// leitura que mostrava NULO onde o esquema promete uma conta.
+    ///
+    /// O aviso nao resolve o O2, e nao e para resolver: o que fazer com a
+    /// linha velha e decisao de garantia de dado, e esta com o dono. Ele tira
+    /// a parte do defeito que era «sem aviso».
+    ///
+    /// Reponha o defeito tirando o bloco `let mut avisos` de
+    /// `op_acrescentar_coluna`: as duas buscas por `avisos` caem.
+    #[test]
+    fn acrescentar_coluna_com_regra_avisa_o_que_a_linha_velha_nao_ganhou() {
+        let d = DirTemp::novo("regras-aviso");
+        let s = servidor(&d.0);
+        roda(
+            &s,
+            "criar_tabela",
+            r#"{"database":"cmp","tabela":"t_av",
+            "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                       {"nome":"a","tipo":"Int8"}],
+            "indices":[{"nome":"pk","colunas":["id"],"unico":true}]}"#,
+        )
+        .unwrap();
+        roda(
+            &s,
+            "inserir",
+            r#"{"database":"cmp","tabela":"t_av","linha":{"id":1,"a":3}}"#,
+        )
+        .unwrap();
+
+        // (a) CHECK que fala de coluna velha: entra, e diz que NAO conferiu.
+        let r = roda(
+            &s,
+            "acrescentar_coluna",
+            r#"{"database":"cmp","tabela":"t_av",
+                "coluna":{"nome":"nota","tipo":"Int8","check":"a > 18"}}"#,
+        )
+        .unwrap();
+        let avisos = r.campo("avisos").and_then(Json::lista).unwrap();
+        assert_eq!(avisos.len(), 1, "{}", r.escrever());
+        let texto = avisos[0].texto().unwrap();
+        assert!(texto.contains("NAO foi conferido"), "{texto}");
+        assert!(texto.contains("atualizar"), "{texto}");
+
+        // (b) calculada: entra, e diz que a linha velha ficou NULA -- que e o
+        //     que a leitura mostra logo abaixo.
+        let r = roda(
+            &s,
+            "acrescentar_coluna",
+            r#"{"database":"cmp","tabela":"t_av",
+                "coluna":{"nome":"b","tipo":"Int8","calculada":"a*2"}}"#,
+        )
+        .unwrap();
+        let texto = r.campo("avisos").and_then(Json::lista).unwrap()[0]
+            .texto()
+            .unwrap();
+        assert!(texto.contains("NULA"), "{texto}");
+        assert!(linha(&s, "t_av", 1).campo("b").unwrap().e_nulo());
+
+        // **O CONTROLE, e ele e o que importa:** coluna SEM regra nenhuma nao
+        // ganha campo novo na resposta. Aviso que aparece sempre e ruido, e
+        // ruido e o que faz ninguem ler o aviso que importa.
+        let r = roda(
+            &s,
+            "acrescentar_coluna",
+            r#"{"database":"cmp","tabela":"t_av","coluna":{"nome":"c","tipo":"Int8"}}"#,
+        )
+        .unwrap();
+        assert!(r.campo("avisos").is_none(), "{}", r.escrever());
+
+        // E numa tabela VAZIA nao ha linha velha, entao nao ha o que avisar.
+        roda(
+            &s,
+            "criar_tabela",
+            r#"{"database":"cmp","tabela":"t_vz",
+            "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                       {"nome":"a","tipo":"Int8"}]}"#,
+        )
+        .unwrap();
+        let r = roda(
+            &s,
+            "acrescentar_coluna",
+            r#"{"database":"cmp","tabela":"t_vz",
+                "coluna":{"nome":"b","tipo":"Int8","calculada":"a*2"}}"#,
+        )
+        .unwrap();
+        assert!(r.campo("avisos").is_none(), "{}", r.escrever());
+    }
 }
 
 #[cfg(test)]
@@ -42903,11 +43168,33 @@ mod testes_das_threads {
 
     /// **A prova real da permissao RAII.** Tres conexoes entram em panico
     /// dentro do `atender`, com teto de duas vagas. Com o contador de mao
-    /// (`fetch_add`/`fetch_sub`), duas bastavam para fechar a porta para
-    /// sempre: o `fetch_sub` ficava depois do panico e nunca rodava. Com a
-    /// permissao no `Drop`, as tres vagas voltam e a quarta conexao e
-    /// atendida. O defeito reposto esta no catalogo de guardas
-    /// (`permissao-de-dados-sem-raii`).
+    /// (`fetch_add`/`fetch_sub`), a devolucao ficava DEPOIS do corpo e o
+    /// panico a pulava: a vaga nunca voltava, e depois de duas a porta
+    /// fechava com o servidor de pe. Com a permissao no `Drop`, cada vaga
+    /// volta e a quarta conexao e atendida. O defeito reposto esta no
+    /// catalogo de guardas (`permissao-de-dados-sem-raii`).
+    ///
+    /// # Por que a espera da vaga fica DENTRO do laco (pedido 267)
+    ///
+    /// A versao anterior disparava os tres `ping` em fila e so no fim cobrava
+    /// «os tres panicos aconteceram». Isso cobra do motor uma garantia que ele
+    /// nao da: o cliente ve o fim da conexao quando o soquete morre no
+    /// desenrolar do panico, e a vaga volta um pouco DEPOIS, quando a thread
+    /// acaba. Medido (sonda do pedido 267, 500 rodadas do cenario dentro da
+    /// suite `--lib` inteira, com tres suites de carga ao lado, load 13-15):
+    /// a janela entre as duas coisas tem p50 de 1 us, p90 de 4,1 ms e maximo
+    /// de 27,8 ms, e em **20 rodadas de 500 (4,0%)** a terceira conexao
+    /// chegava dentro dela. Nas vinte, os contadores diziam `aceitas=3` e
+    /// `sem_vaga=1`: a conexao ENTROU e foi recusada por falta de vaga, que e
+    /// o comportamento certo acima do teto -- o teste e que reprovava o motor
+    /// por um defeito que nao existe.
+    ///
+    /// **A grandeza mudou, e nao o numero.** Em vez de um total conferido no
+    /// fim, cada conexao prova a sua: panicou e devolveu a vaga, e a proxima
+    /// so parte com a vaga de volta. As tres continuam entrando com teto de
+    /// duas, que e o que prova o reaproveitamento. E a mensagem separa as duas
+    /// causas que o total confundia -- «nao panicou» e «nao entrou» --, pelos
+    /// contadores de aceitas e de recusas por falta de vaga.
     #[test]
     fn panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados() {
         let dir = DirTemp::novo("vaga-raii");
@@ -42920,6 +43207,7 @@ mod testes_das_threads {
 
         s.panicos_de_teste.store(3, Ordering::SeqCst);
         for i in 0..3 {
+            let faltavam = s.panicos_de_teste.load(Ordering::SeqCst);
             // Cada uma cai: a thread entra em panico antes de ler, e o
             // cliente ve o fim da conexao. O que interessa e o que sobra
             // DEPOIS: a vaga.
@@ -42928,20 +43216,126 @@ mod testes_das_threads {
                 r.is_none(),
                 "a conexao {i} devia ter caido, respondeu {r:?}"
             );
+            // A assercao que o `ManuallyDrop` derruba, e ja na primeira volta.
+            assert!(
+                espera_ate(Duration::from_secs(5), || s.permissoes_de_dados.em_uso()
+                    == 0),
+                "a vaga da conexao {i} nao voltou depois do panico: {} em uso",
+                s.permissoes_de_dados.em_uso()
+            );
+            assert_eq!(
+                s.panicos_de_teste.load(Ordering::SeqCst),
+                faltavam - 1,
+                "a conexao {i} nao entrou em panico (aceitas={} recusadas_por_falta_de_vaga={})",
+                s.aceitas_de_teste.load(Ordering::SeqCst),
+                s.sem_vaga_de_teste.load(Ordering::SeqCst)
+            );
         }
-        assert!(
-            espera_ate(Duration::from_secs(5), || s.permissoes_de_dados.em_uso()
-                == 0),
-            "as vagas nao voltaram depois dos panicos: {} em uso",
-            s.permissoes_de_dados.em_uso()
-        );
-        assert_eq!(
-            s.panicos_de_teste.load(Ordering::SeqCst),
-            0,
-            "nem todos os panicos aconteceram -- a porta fechou antes"
-        );
         let r = ping(porta).expect("a quarta conexao tinha de ser atendida");
         assert!(r.contains("\"ok\":true"), "{r}");
+    }
+
+    /// **O instrumento que mediu o pedido 267** -- fora da bateria por custo
+    /// (`#[ignore]`), e nao por defeito.
+    ///
+    /// Ele repete o cenario do teste de cima muitas vezes e conta, por `ping`:
+    /// se a conexao foi ACEITA (`aceitas`), se foi recusada por falta de vaga
+    /// (`sem_vaga`), e quanto tempo separa «o cliente viu o fim da conexao» de
+    /// «a vaga voltou» -- a janela em que a conexao seguinte leva recusa. A
+    /// espera do fim e OCUPADA de proposito: a janela e de microssegundos, e
+    /// um `sleep` de 5 ms mediria o proprio `sleep`.
+    ///
+    /// `ESPERA=1` roda a forma NOVA do teste (espera a vaga voltar entre uma
+    /// conexao e a proxima); sem ela, a forma antiga, a que caia.
+    ///
+    /// **Ele so reproduz DENTRO da suite inteira**: rodado sozinho, mesmo com
+    /// a maquina carregada por fora, deu 0 em 340 rodadas. A receita medida:
+    ///
+    /// ```bash
+    /// # tres suites `--lib` em laco ao lado, para a carga passar de 12
+    /// RODADAS=500 <binario-da-suite> --include-ignored --nocapture --test-threads=4 \
+    ///   2>&1 | grep SONDA267
+    /// ```
+    ///
+    /// Medido em 16/09/2026, load 13-15: forma antiga **20 rodadas de 500
+    /// (4,0%)** com panico faltando, e nas vinte `aceitas=3 sem_vaga=1`;
+    /// forma nova **0 de 500**. Janela: p50 1-2 us, p90 4,1-6,9 ms, maximo
+    /// 36,7 ms.
+    #[test]
+    #[ignore]
+    fn sonda_267_corrida_dos_tres_panicos() {
+        let rodadas: usize = std::env::var("RODADAS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(40);
+        let com_espera = std::env::var("ESPERA").is_ok();
+        let mut sobrou = 0usize;
+        let mut recusados = 0usize;
+        let mut nao_aceitos = 0usize;
+        let mut janelas: Vec<u128> = Vec::new();
+        let mut em_uso_antes = [0usize; 3];
+        for rodada in 0..rodadas {
+            let dir = DirTemp::novo(&format!("sonda267-{rodada}"));
+            let mut c = config_base(&dir);
+            c.conexoes_max = 2;
+            c.recursos.conexoes_max = 2;
+            let s = Servidor::novo(c).unwrap();
+            let porta = porta_de_dados_de_verdade(&s);
+            s.panicos_de_teste.store(3, Ordering::SeqCst);
+            for (i, uso_antes) in em_uso_antes.iter_mut().enumerate() {
+                let antes_ac = s.aceitas_de_teste.load(Ordering::SeqCst);
+                let antes_sv = s.sem_vaga_de_teste.load(Ordering::SeqCst);
+                *uso_antes += s.permissoes_de_dados.em_uso();
+                let _ = ping(porta);
+                let fim_da_conexao = Instant::now();
+                if s.aceitas_de_teste.load(Ordering::SeqCst) == antes_ac {
+                    nao_aceitos += 1;
+                }
+                if s.sem_vaga_de_teste.load(Ordering::SeqCst) > antes_sv {
+                    recusados += 1;
+                }
+                if com_espera {
+                    let _ = espera_ate(Duration::from_secs(5), || {
+                        s.permissoes_de_dados.em_uso() == 0
+                    });
+                }
+                if i == 2 {
+                    while s.permissoes_de_dados.em_uso() > 0
+                        && fim_da_conexao.elapsed() < Duration::from_secs(5)
+                    {
+                        std::hint::spin_loop();
+                    }
+                    janelas.push(fim_da_conexao.elapsed().as_micros());
+                }
+            }
+            let _ = espera_ate(Duration::from_secs(5), || {
+                s.permissoes_de_dados.em_uso() == 0
+            });
+            let resto = s.panicos_de_teste.load(Ordering::SeqCst);
+            if resto > 0 {
+                sobrou += 1;
+                eprintln!(
+                    "SONDA267 rodada={rodada} panicos_restantes={resto} aceitas={} sem_vaga={}",
+                    s.aceitas_de_teste.load(Ordering::SeqCst),
+                    s.sem_vaga_de_teste.load(Ordering::SeqCst)
+                );
+            }
+        }
+        janelas.sort_unstable();
+        let p = |q: f64| janelas[((janelas.len() as f64 - 1.0) * q) as usize];
+        eprintln!(
+            "SONDA267 rodadas={rodadas} espera={com_espera} com_panico_faltando={sobrou} \
+             pings_recusados_por_falta_de_vaga={recusados} pings_nao_aceitos={nao_aceitos} \
+             em_uso_medio_antes_do_ping=[{:.2} {:.2} {:.2}] \
+             janela_us p50={} p90={} p99={} max={}",
+            em_uso_antes[0] as f64 / rodadas as f64,
+            em_uso_antes[1] as f64 / rodadas as f64,
+            em_uso_antes[2] as f64 / rodadas as f64,
+            p(0.50),
+            p(0.90),
+            p(0.99),
+            janelas[janelas.len() - 1]
+        );
     }
 
     /// A recusa da porta de dados continua IMEDIATA e continua no log: e o

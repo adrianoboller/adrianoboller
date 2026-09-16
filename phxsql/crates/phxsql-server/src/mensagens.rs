@@ -110,6 +110,7 @@ pub const FABRICA: &[MensagemFabrica] = &[
     // O texto desta variante nao se divide em moldura + detalhe sem picar a
     // frase em tres. A moldura e o texto inteiro; traducao fica para quando
     // alguem precisar dela de verdade -- celula vazia cai para o portugues.
+    // DIVIDA: `erro.versao_nao_suportada` vai sem traducao nos cinco idiomas -- quem escolheu outro idioma le portugues nessa frase
     MensagemFabrica {
         nome: "erro.versao_nao_suportada",
         textos: ["{detalhe}", "", "", "", "", ""],

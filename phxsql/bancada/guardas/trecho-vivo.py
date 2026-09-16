@@ -143,10 +143,16 @@ dia, nunca no desejado:
 
 # E a catraca que sobe, porque e piso e nao teto
 
-- `PISO_DAS_ENTRADAS = 143` -- **nasce em 16/09/2026**, contado no
-  `catalogo.py` de hoje (143 entradas, 143 ids distintos) mais as
-  `APOSENTADAS` (hoje nenhuma). Ele e a unica coisa nesta regua que reprova
-  o APAGAMENTO; tudo o mais aqui reprova o envelhecimento.
+- `PISO_DAS_ENTRADAS = 151` -- nasceu em 16/09/2026 valendo 143, contado no
+  `catalogo.py` daquele dia (143 entradas, 143 ids distintos) mais as
+  `APOSENTADAS` (hoje nenhuma). **SUBIU para 150 em 16/09/2026**, no mesmo
+  passo em que a frente 245 (O2-O6) escreveu cinco guardas novas -- o teto de
+  64 bits que saturava, a saida do direito por coluna, o CHECK que se
+  contradiz no `acrescentar_coluna`, o ALTER com regra sem aviso e o upsert
+  parcial que viraria mescla. Piso parado com catalogo que cresceu volta a
+  aceitar o apagamento das entradas novas, que e o que ele existe para
+  impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
+  mais aqui reprova o envelhecimento.
 """
 import importlib.util
 import os
@@ -161,7 +167,7 @@ TETO_TRECHO_MORTO = 0
 TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
-PISO_DAS_ENTRADAS = 145
+PISO_DAS_ENTRADAS = 151
 
 # ------------------------------------------------------------- APOSENTADAS
 #
