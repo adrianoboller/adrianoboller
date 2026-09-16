@@ -350,6 +350,29 @@ BANCADAS = [
                    ("pico_threads_antes", "pico antes do teto", ""),
                    ("com_retry_after", "503 com Retry-After", "")],
     },
+    {
+        "nome": "Chutar a tomada — SIGKILL na transação aberta e no BULKINSERT",
+        "json": "bancada/tomada/resultados.json",
+        "roda": "python3 bancada/tomada/chutar-a-tomada.py",
+        "prova": "um phxsqld próprio morto com SIGKILL em varreduras de atraso "
+                 "(transação aberta com SAVEPOINT, BULKINSERT, inserir_lote, "
+                 "reindexar, transação dentro da reserva) e reaberto; byte 52 "
+                 "do .ndx lido antes de reabrir; fsync antes do «ok» por strace",
+        # A data mora em `medido_em_utc` e as invalidas dentro de `pontos`;
+        # a projecao poe os dois onde a tabela declarada os le.
+        "ver": lambda d: {
+            "quando": d.get("medido_em_utc"),
+            "conferencias": d.get("conferencias"),
+            "falhas": len(d.get("falhas") or []),
+            "pontos": len(d.get("pontos") or {}),
+            "corridas": sum(len(v.get("corridas") or []) for v in (d.get("pontos") or {}).values()
+                            if isinstance(v, dict)),
+        },
+        "campos": [("conferencias", "conferências", ""),
+                   ("falhas", "falhas", ""),
+                   ("pontos", "pontos de queda", ""),
+                   ("corridas", "quedas de verdade", "")],
+    },
 ]
 
 

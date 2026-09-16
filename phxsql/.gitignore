@@ -48,3 +48,5 @@
 /bancada/telemetria/bancada.html
 /bancada/telemetria/*.png
 /bancada/telemetria/capturas-cores/
+/bancada/tomada/.base-da-prova/
+/bancada/tomada/.phxsqld-desta-corrida

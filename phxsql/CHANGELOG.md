@@ -10,6 +10,35 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — Chutar a tomada: a bancada da queda na transação e no BULKINSERT
+
+### Adicionado
+
+- **`bancada/tomada/`**: SIGKILL num `phxsqld` próprio em varreduras de atraso
+  — transação aberta com SAVEPOINT e sem COMMIT, BULKINSERT linha a linha,
+  `inserir_lote`, `reindexar` de 10.000 linhas, transação dentro da tabela
+  reservada — e o banco reaberto depois, com o byte de «sujo» do `.ndx` lido
+  antes de reabrir e a contagem de `fsync` antes do «ok» por `strace`. **408
+  quedas, 22 conferências, 0 desfechos inválidos** (16/09/2026). Quatro
+  guardas novas no catálogo, provadas vermelhas com o defeito reposto.
+
+### Sabido
+
+- `bulkinsert(false)` não drena a marca `.tx` de um COMMIT feito dentro da
+  tabela reservada: a marca sobrevive ao «ok» e o arranque seguinte relata uma
+  recuperação de um commit já durável. Nenhuma linha perdida ou duplicada
+  (pendência #254).
+- Queda no meio de um BULKINSERT ou de um `reindexar` deixa o `.ndx` marcado
+  sujo e a tabela recusando toda operação de índice, nomeando o conserto, até
+  um `reindexar` manual — e o arranque não avisa, porque só reconstrói índice
+  de tabela nomeada numa marca (pendência #255, decisão do dono).
+- `inserir_lote` fora de transação não é atômico sob queda: lote parcial
+  possível, sem duplicata. Comportamento medido, não defeito de contrato.
+- BULKINSERT dentro de transação é recusado pelo motor (SP000018); a
+  varredura foi feita na ordem que o portão aceita.
+- `bancada/carga/bulkinsert.py` faz `pkill -x phxsqld` ao subir, contra a
+  regra de matar só o próprio PID (pendência #256).
+
 ## Não lançado — Saúde do disco do banco (pedido 249)
 
 ### Adicionado

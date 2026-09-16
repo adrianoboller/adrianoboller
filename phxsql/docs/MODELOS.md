@@ -919,6 +919,20 @@ forte comprou: a classificação por errno que a `std` não dá (`EIO` é
 `chmod` segura, e o desenho da fila para o aviso imediato depois de a catraca
 `rede-ou-espera` reprovar a primeira versão.
 
+## Chutar a tomada (bancada, pedido do dono) — 16/09/2026
+
+| frente | escalão | por quê | papéis convocados | dispensados, e por quê |
+|---|---|---|---|---|
+| **Bancada «chutar a tomada»** — SIGKILL na transação aberta, no BULKINSERT, no `inserir_lote`, no `reindexar` e na transação dentro da reserva; 408 quedas; quatro guardas | **forte** | é prova de **consistência sob queda**, o lugar onde um teste que passa por engano é pior que teste que falta: cada ponto exige ler o código antes de afirmar o que ele promete, e o veredito depende de um byte no disco lido antes de reabrir, não da palavra do servidor. O escalão se pagou duas vezes na própria corrida: o instrumento cegava a si mesmo recortando o erro antes de casar o texto, e a terceira guarda «não pegou» na primeira troca porque o estado chegava ao disco por caminho irmão — os dois viraram cognição | A, F (prova real nos dois sentidos), G (quatro guardas no catálogo), J (a hipótese sobre o `criar` do índice, morta medida) | B (achados #254/#255 vão para ele, não foram consertados aqui por contrato), C (nenhum formato tocado), E (sem tela), H (a entrada na página de testes é do integrador), I (o integrador comita) |
+
+**Custo medido do escalão forte**: 391.025 tokens no transcrito inteiro; a
+contagem de chamadas e a duração de parede **atravessaram o reinício do
+contêiner** (a notificação final cobre só o trecho retomado: 19 chamadas,
+31 min 39 s; a corrida publicada durou 672,6 s de bancada mais 694 s
+esperando o portão). O que o forte comprou: três achados reais (#254, #255,
+#256), uma hipótese morta com número (111/111) e a leitura de que
+«BULKINSERT em transação» é recusa do motor, não ponto de queda.
+
 ## Como registrar daqui em diante
 
 Uma linha por frente, no fim da rodada, junto do resto da documentação:

@@ -4956,10 +4956,15 @@ pub fn limpar() {
         }
         self.guardar_no_cache(n, p, true)
 """,
-        "troca": """        // DEFEITO REPOSTO: a marca de sujo fica so em RAM. O cabecalho no
-        // disco continua dizendo «limpo» com pagina suja no cache -- a tomada
-        // chutada no meio de uma carga deixa o indice atrasado EM SILENCIO.
-        self.sujo = true;
+        # A primeira versao desta troca deixava `self.sujo = true` em RAM e so
+        # tirava o `gravar_cabecalho()` -- e o executor respondeu NAO PEGOU: o
+        # cabecalho e regravado a cada `inserir` (o `qtd_chaves` muda), e ele
+        # carrega o `sujo` da memoria. A marca chegava ao disco por OUTRA
+        # escrita, e o defeito reposto nao era o defeito. Repor de verdade e
+        # ninguem levantar a marca.
+        "troca": """        // DEFEITO REPOSTO: ninguem levanta a marca de sujo. O cabecalho no
+        // disco diz «limpo» com pagina suja no cache -- a tomada chutada no
+        // meio de uma carga deixa o indice atrasado EM SILENCIO.
         self.guardar_no_cache(n, p, true)
 """,
         "pacote": "phxsql-store",

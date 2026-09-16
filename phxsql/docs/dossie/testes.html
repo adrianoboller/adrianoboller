@@ -88,9 +88,9 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
 
   <div class="placar">
     <div class="c"><div class="v">2.320</div><div class="r">testes</div></div>
-    <div class="c"><div class="v">124</div><div class="r">guardas</div></div>
-    <div class="c"><div class="v">28</div><div class="r">casos de tela</div></div>
-    <div class="c"><div class="v">19</div><div class="r">catracas</div></div>
+    <div class="c"><div class="v">136</div><div class="r">guardas</div></div>
+    <div class="c"><div class="v">29</div><div class="r">casos de tela</div></div>
+    <div class="c"><div class="v">20</div><div class="r">catracas</div></div>
     <div class="c"><div class="v">0</div><div class="r">dependências</div></div>
   </div>
 </header>
@@ -114,7 +114,7 @@ mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 periodicamente. Teste que passa por engano é pior que teste que falta, e esta
 camada existe por causa disso.</p>
 <div class="nota">
-  <b>124 guardas</b> no catálogo (<code>bancada/guardas/catalogo.py</code>),
+  <b>136 guardas</b> no catálogo (<code>bancada/guardas/catalogo.py</code>),
   cada uma com o defeito reposto, o arquivo, o trecho e quais testes têm de cair.
   Roda por <code>python3 bancada/guardas/provar-guardas.py</code>.
 </div>
@@ -133,6 +133,7 @@ uma lista digitada aqui.</p>
       <tr><td class="mono">TETO_COLADO</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor.rs</td></tr>
       <tr><td class="mono">TETO_COLETA_ROWIDS</td><td class="n mono">1.000.000</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
       <tr><td class="mono">TETO_DA_CASCATA</td><td class="n mono">16</td><td class="mono peq">crates/phxsql-store/src/table.rs</td></tr>
+      <tr><td class="mono">TETO_DA_FILA</td><td class="n mono">32</td><td class="mono peq">crates/phxsql-server/src/saude_do_disco.rs</td></tr>
       <tr><td class="mono">TETO_DO_CABECALHO</td><td class="n mono">400</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
       <tr><td class="mono">TETO_DO_CAMPO</td><td class="n mono">120</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
       <tr><td class="mono">TETO_DO_ERRO</td><td class="n mono">500</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
@@ -173,7 +174,9 @@ medida</b> em vez de sumir da tabela.</p>
       <tr><td class="nome">Carga — uma a uma contra o lote<div class="prova">o custo da viagem de rede, separado do custo de gravar</div></td><td class="q mono">2026-08-29</td><td class="v"><b>quando</b> 2026-08-29 · <b>versao</b> 0.17.0 · <b>linhas</b> 20.000 · <b>por_lote</b> 5.000</td></tr>
       <tr><td class="nome">Os três motores a um milhão<div class="prova">PhxSql, MySQL® e SQLite® intercalados na MESMA rodada, porque medidas de dias diferentes carregam o ambiente junto</div></td><td class="q mono">2026-09-08 02:49:47</td><td class="v"><b>linhas</b> 1.000.000 · <b>operacoes_por_fase_pontual</b> 20.000 · <b>rodadas</b> 3 · <b>medido_em</b> 2026-09-08 02:49:47</td></tr>
       <tr><td class="nome">Índice de texto — o `.fts` contra a varredura<div class="prova">as duas faixas respondem a MESMA pergunta e devolvem o MESMO conjunto de rowids -- o medidor aborta se não baterem, e aborta se nenhuma busca achar linha</div></td><td class="q mono">2026-09-07T01:09:13</td><td class="v"><b>índice sobre varredura</b> 31399,1 (21164,6–33443,8) × · <b>busca pelo índice</b> 137,73 (129,06–212,67) µs · <b>preço na escrita</b> 5,67 (5,38–6,06) × · <b>linhas achadas (conjuntos idênticos)</b> 9.339</td></tr>
-      <tr><td class="nome">Bateria única — o motor por dentro<div class="prova">as guardas do catálogo, cada uma contra o defeito que a motivou</div></td><td class="q mono">2026-08-29</td><td class="v"><b>quando</b> 2026-08-29 · <b>porta</b> 6.300</td></tr>
+      <tr><td class="nome">Bateria única — o motor por dentro<div class="prova">os seis itens do dono pelo soquete, mais os itens zero: as catracas dos dois mapas e o portão «está medindo?»</div></td><td class="q mono">2026-09-16</td><td class="v"><b>corrida de</b> 2026-09-16</td></tr>
+      <tr><td class="nome">Concorrência — enxurrada de 500 conexões na web, com teto<div class="prova">500 conexões HTTP contra um phxsqld próprio, segurando o cabeçalho 3 s; Threads: e VmRSS: lidos do /proc a cada 25 ms; o bloco «depois» é o do teto ligado (pedido 248)</div></td><td class="q mono">2026-09-16T06:16:14</td><td class="v"><b>teto da web</b> 64 threads · <b>pico de threads com teto</b> 68 · <b>pico antes do teto</b> 504 · <b>503 com Retry-After</b> 436</td></tr>
+      <tr><td class="nome">Chutar a tomada — SIGKILL na transação aberta e no BULKINSERT<div class="prova">um phxsqld próprio morto com SIGKILL em varreduras de atraso (transação aberta com SAVEPOINT, BULKINSERT, inserir_lote, reindexar, transação dentro da reserva) e reaberto; byte 52 do .ndx lido antes de reabrir; fsync antes do «ok» por strace</div></td><td class="q mono">2026-09-16T07:36:04</td><td class="v"><b>conferências</b> 22 · <b>falhas</b> 0 · <b>pontos de queda</b> 7 · <b>quedas de verdade</b> 408</td></tr>
     </tbody>
   </table>
 </div>
@@ -183,14 +186,14 @@ medida</b> em vez de sumir da tabela.</p>
 demonstração achou três defeitos em cinco minutos que ler o código não acharia,
 e o pior deles quebrava todo salvar e todo incluir pela tela.</p>
 <div class="nota">
-  <b>28 casos</b> em <code>testes-web/casos/</code>, quase todos nos dois
+  <b>29 casos</b> em <code>testes-web/casos/</code>, quase todos nos dois
   temas, contra um <code>phxsqld</code> de verdade num navegador de verdade — sem
   maquete e sem mockup. E <b>172 botões</b> com clique gravado
   (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-12 07:40 (mtime)):
   a evidência é escrita pela própria corrida, e só em corrida <b>inteira e
   verde</b>, porque uma corrida que cai no meio grava menos do que provou.
 </div>
-<ul class="casos"><li><code>01-entrada.mjs</code></li><li><code>02-passeio.mjs</code></li><li><code>03-ficha.mjs</code></li><li><code>04-arvore.mjs</code></li><li><code>05-grade.mjs</code></li><li><code>06-css-global.mjs</code></li><li><code>07-responsivo.mjs</code></li><li><code>08-lateral.mjs</code></li><li><code>09-cores.mjs</code></li><li><code>10-primeira-pintura.mjs</code></li><li><code>11-lgpd.mjs</code></li><li><code>12-multitela.mjs</code></li><li><code>13-monitores.mjs</code></li><li><code>14-acrescentar-coluna.mjs</code></li><li><code>15-transacoes.mjs</code></li><li><code>16-telemetria.mjs</code></li><li><code>17-barra-e-popup.mjs</code></li><li><code>18-tela-atropelada.mjs</code></li><li><code>19-conflito.mjs</code></li><li><code>20-pushdown.mjs</code></li><li><code>21-botoes-da-grade.mjs</code></li><li><code>22-botoes-do-conteudo.mjs</code></li><li><code>23-botoes-da-tira.mjs</code></li><li><code>24-fts-na-tela.mjs</code></li><li><code>25-botoes-do-diagrama-e-da-gestao.mjs</code></li><li><code>26-multitela-abas.mjs</code></li><li><code>27-direito-por-coluna.mjs</code></li><li><code>28-usuarios.mjs</code></li></ul>
+<ul class="casos"><li><code>01-entrada.mjs</code></li><li><code>02-passeio.mjs</code></li><li><code>03-ficha.mjs</code></li><li><code>04-arvore.mjs</code></li><li><code>05-grade.mjs</code></li><li><code>06-css-global.mjs</code></li><li><code>07-responsivo.mjs</code></li><li><code>08-lateral.mjs</code></li><li><code>09-cores.mjs</code></li><li><code>10-primeira-pintura.mjs</code></li><li><code>11-lgpd.mjs</code></li><li><code>12-multitela.mjs</code></li><li><code>13-monitores.mjs</code></li><li><code>14-acrescentar-coluna.mjs</code></li><li><code>15-transacoes.mjs</code></li><li><code>16-telemetria.mjs</code></li><li><code>17-barra-e-popup.mjs</code></li><li><code>18-tela-atropelada.mjs</code></li><li><code>19-conflito.mjs</code></li><li><code>20-pushdown.mjs</code></li><li><code>21-botoes-da-grade.mjs</code></li><li><code>22-botoes-do-conteudo.mjs</code></li><li><code>23-botoes-da-tira.mjs</code></li><li><code>24-fts-na-tela.mjs</code></li><li><code>25-botoes-do-diagrama-e-da-gestao.mjs</code></li><li><code>26-multitela-abas.mjs</code></li><li><code>27-direito-por-coluna.mjs</code></li><li><code>28-usuarios.mjs</code></li><li><code>29-saude-do-disco.mjs</code></li></ul>
 
 <h2>6. O que estas provas NÃO cobrem</h2>
 <p class="sub">A parte que uma página de testes costuma esconder, e a única que
@@ -218,7 +221,7 @@ diz onde não confiar.</p>
 </div>
 
 <footer>
-  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 16/09/2026 05:20. Nenhum
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 16/09/2026 08:08. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
   do catálogo de guardas, dos <code>resultados.json</code> das bancadas, dos
   arquivos de <code>testes-web/</code> e das constantes do próprio fonte. O
