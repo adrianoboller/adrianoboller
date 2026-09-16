@@ -158,7 +158,14 @@ def _linha_da_carga(P, c):
             '<td class="num">' + str(sinal.get("a_favor_de_custar", "—")) + "/"
             + str(sinal.get("pares", "—")) + '</td>'
             '<td>' + veredito + '</td>'
-            '<td class="mono">' + P.esc(str(c.get("quando", "—"))[:19])
+            # O `T` do ISO vira espaco: a celula e estreita, e com o `T` no
+            # meio a quebra de linha parte a data em «2026-09-» / «16T20:46:50».
+            # Nao e maquiagem do dado -- e o mesmo instante, num separador que
+            # o navegador sabe quebrar. `nowrap` aqui seria pior: foi uma
+            # celula `nowrap` que deu os 3 px de rolagem lateral que a sonda de
+            # estouro achou nesta mesma pagina.
+            '<td class="mono">'
+            + P.esc(str(c.get("quando", "—"))[:19].replace("T", " "))
             + '</td></tr>')
 
 

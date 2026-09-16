@@ -111,7 +111,7 @@ mesmo motivo que o rodapé já errou uma vez.
 | Python (bancada de medicao) | `bancada/` | 110 | 47678 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 18 | 2608 |
 | Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 364 | 87698 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 32 | 13324 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 32 | 13331 |
 <!-- /GERADO -->
 
 Não incluído acima porque já está na tabela 1.1: os `.rs` de `examples/` e
@@ -419,7 +419,7 @@ empacotar:
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2380** testes passaram, **0** falharam (medido em 2026-09-16 17:50:52, commit `68e67ab0`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **2394** testes passaram, **0** falharam (medido em 2026-09-16 21:36:25, commit `6346558e`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e

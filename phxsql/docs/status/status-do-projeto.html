@@ -252,9 +252,9 @@ footer code{font-size:.9em}
 </style>
 <header class="barra-titulo">
   <h1>STATUS DO PROJETO — <span class="x">PhxSql</span></h1>
-  <div class="sub">versão 0.18.0 · commit 68e67ab0
+  <div class="sub">versão 0.18.0 · commit 6346558e
    · árvore suja · branch claude/capacidades-disponiveis-y6auxh ·
-  motor medido em 2026-09-16 17:50:52</div>
+  motor medido em 2026-09-16 21:36:25</div>
   <div class="assinatura">Built to store. Engineered to scale.</div>
 </header><div class="envelope">
 <div class="ferramentas no-print">
@@ -276,12 +276,12 @@ footer code{font-size:.9em}
 <h2 id="s1"><span class="n">01 ·</span>Resumo executivo</h2>
 <p class="sub">Cada cartao traz o numero e a <b>data em que ele foi medido</b>. Nenhum foi digitado.</p>
 <div class="kpis">
-<div class="kpi"><b class="curto">0.18.0</b><span>versão do motor</span><span class="q">2026-09-16 17:50:52</span></div>
-<div class="kpi"><b>2.380</b><span>testes que passam</span><span class="q">2026-09-16 17:50:52</span></div>
-<div class="kpi"><b>139</b><span>operações do protocolo</span><span class="q">2026-09-16 17:50:52</span></div>
-<div class="kpi"><b>200.273</b><span>linhas de Rust</span><span class="q">2026-09-16 17:50:52</span></div>
-<div class="kpi"><b>8</b><span>crates</span><span class="q">2026-09-16 17:50:52</span></div>
-<div class="kpi feito"><b>0</b><span>dependências externas</span><span class="q">2026-09-16 17:50:52</span></div>
+<div class="kpi"><b class="curto">0.18.0</b><span>versão do motor</span><span class="q">2026-09-16 21:36:25</span></div>
+<div class="kpi"><b>2.394</b><span>testes que passam</span><span class="q">2026-09-16 21:36:25</span></div>
+<div class="kpi"><b>139</b><span>operações do protocolo</span><span class="q">2026-09-16 21:36:25</span></div>
+<div class="kpi"><b>201.316</b><span>linhas de Rust</span><span class="q">2026-09-16 21:36:25</span></div>
+<div class="kpi"><b>8</b><span>crates</span><span class="q">2026-09-16 21:36:25</span></div>
+<div class="kpi feito"><b>0</b><span>dependências externas</span><span class="q">2026-09-16 21:36:25</span></div>
 <div class="kpi"><b>267</b><span>pedidos do dono</span><span class="q">2026-09-16</span></div>
 <div class="kpi feito"><b>248</b><span>pedidos feitos</span><span class="q">2026-09-16</span></div>
 <div class="kpi parcial"><b>13</b><span>pedidos parciais</span><span class="q">2026-09-16</span></div>
@@ -295,7 +295,7 @@ footer code{font-size:.9em}
 
 <h2 id="s2"><span class="n">02 ·</span>O que o PhxSql é hoje</h2>
 <p>Motor de dados em Rust no modelo de <b>arquivos separados</b> do HFSQL®, com
-200.273 linhas de Rust em 8 crates e
+201.316 linhas de Rust em 8 crates e
 <b>0</b> dependências externas — só a
 <code>std</code>. JSON, CRC-32, SHA-256, HMAC e PBKDF2 são escritos aqui e
 conferidos contra vetor oficial. Fala um protocolo JSON de
@@ -588,7 +588,7 @@ própria.</figcaption>
 <div class="kpi"><b>4</b><span>com sonda — o resto é avaliação pura</span><span class="q">2026-09-16</span></div>
 </div>
 <div class="rolo"><table><thead><tr><th>#</th><th>risco, e a fonte de onde ele saiu</th><th>prob.</th><th>impacto</th><th>dono</th><th>avaliado em</th><th>medida</th></tr></thead><tbody>
-<tr><td class="mono">R1</td><td>A catraca <code>alcancam-fsync</code> está <b>vermelha</b> (23 seções críticas alcançam <code>fsync</code> com a trava global na mão, teto 22) e a decisão de como fechá-la está com o dono desde 08/09. Enquanto isso, a saída mais barata da pressão é subir o teto — que a pétrea G proíbe<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #252 · <code>docs/CATRACAS.md</code> §13</p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">dono</td><td class="q">2026-09-16</td><td><b>1</b><br><span class="mtime">catracas reprovando · 2026-09-16 17:48 (mtime)</span></td></tr>
+<tr><td class="mono">R1</td><td>A catraca <code>alcancam-fsync</code> está <b>vermelha</b> (23 seções críticas alcançam <code>fsync</code> com a trava global na mão, teto 22) e a decisão de como fechá-la está com o dono desde 08/09. Enquanto isso, a saída mais barata da pressão é subir o teto — que a pétrea G proíbe<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #252 · <code>docs/CATRACAS.md</code> §13</p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">dono</td><td class="q">2026-09-16</td><td><b>1</b><br><span class="mtime">catracas reprovando · 2026-09-16 21:34 (mtime)</span></td></tr>
 <tr><td class="mono">R3</td><td>Onze guardas do catálogo estavam <b>quebradas</b> — o trecho que repõe o defeito não existe mais no código, então a guarda não pode nem ser provada contra o defeito que a motivou. Guarda que não se prova é catálogo, não guarda<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #263</p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">G</td><td class="q">2026-09-16</td><td><b>0</b><br><span class="mtime">guardas entregues vermelhas · 2026-09-16</span></td></tr>
 <tr><td class="mono">R2</td><td>A bateria de ponta a ponta <b>só roda quando alguém a chama</b>: não há <code>cron</code> neste contêiner. Ela passou de 29/08 a 16/09 sem rodar, e nesses dezoito dias a <code>alcancam-fsync</code> esteve furada sem ninguém ver<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #252 · <code>docs/cognicao/cognicao_catraca-que-so-roda-na-bateria-que-ninguem-roda-e-catraca-frouxa_20260916_0655.md</code></p></td><td><span class="etiqueta e-parcial">alta</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">G</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R8</td><td>Gatilho <code>AFTER</code> que grava pela mesma sessão <b>dentro do <code>COMMIT</code></b> não chega a gravar. É perda silenciosa: o commit responde bem e o efeito do gatilho não está lá<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #262</p></td><td><span class="etiqueta e-parcial">alta</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">B</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
@@ -654,7 +654,7 @@ própria.</figcaption>
 <h2 id="s11"><span class="n">11 ·</span>Testes e cobertura por área</h2>
 <p class="sub">Dois números diferentes de propósito: o de cima é o que a suíte <b>executou</b>; o de baixo é quantos <code>#[test]</code> existem no fonte, por área.</p>
 <div class="kpis">
-<div class="kpi feito"><b>2.380</b><span>testes que passaram na suíte</span><span class="q">2026-09-16 17:50:52</span></div>
+<div class="kpi feito"><b>2.394</b><span>testes que passaram na suíte</span><span class="q">2026-09-16 21:36:25</span></div>
 <div class="kpi"><b>2.395</b><span><code>#[test]</code> no fonte</span><span class="q">2026-09-16</span></div>
 <div class="kpi"><b>27</b><span>áreas com teste</span><span class="q">2026-09-16</span></div>
 </div>
@@ -798,9 +798,9 @@ própria.</figcaption>
 <div class="kpi"><b>6</b><span>threads com finalidade escrita, vivas no servidor</span><span class="q">2026-09-16</span></div>
 </div>
 <div class="rolo"><table><thead><tr><th>carga</th><th class="num">desligada (piso)</th><th class="num">o que ligar custa</th><th class="num">pares a favor</th><th>veredito</th><th>medida em</th></tr></thead><tbody>
-<tr><td><code>ping</code> — só o pedido: sem trava de dados e sem linha</td><td class="num">65,428</td><td class="num"><b>+0,253</b> µs (+0,39%)</td><td class="num">269/400</td><td><span class="etiqueta e-tem">resolvido</span></td><td class="mono">2026-09-16T20:46:50</td></tr>
-<tr><td><code>inserir</code> — pedido mais a trava de dados, uma linha por pedido</td><td class="num">189,247</td><td class="num"><span class="mtime">dentro do ruído</span></td><td class="num">88/150</td><td><span class="etiqueta e-parcial">não resolvido</span></td><td class="mono">2026-09-16T20:46:58</td></tr>
-<tr><td><code>checksum</code> — o pior caso: uma chamada a <code>siga()</code> por linha</td><td class="num">2,844</td><td class="num"><span class="mtime">dentro do ruído</span></td><td class="num">41/80</td><td><span class="etiqueta e-parcial">não resolvido</span></td><td class="mono">2026-09-16T20:48:33</td></tr>
+<tr><td><code>ping</code> — só o pedido: sem trava de dados e sem linha</td><td class="num">65,428</td><td class="num"><b>+0,253</b> µs (+0,39%)</td><td class="num">269/400</td><td><span class="etiqueta e-tem">resolvido</span></td><td class="mono">2026-09-16 20:46:50</td></tr>
+<tr><td><code>inserir</code> — pedido mais a trava de dados, uma linha por pedido</td><td class="num">189,247</td><td class="num"><span class="mtime">dentro do ruído</span></td><td class="num">88/150</td><td><span class="etiqueta e-parcial">não resolvido</span></td><td class="mono">2026-09-16 20:46:58</td></tr>
+<tr><td><code>checksum</code> — o pior caso: uma chamada a <code>siga()</code> por linha</td><td class="num">2,844</td><td class="num"><span class="mtime">dentro do ruído</span></td><td class="num">41/80</td><td><span class="etiqueta e-parcial">não resolvido</span></td><td class="mono">2026-09-16 20:48:33</td></tr>
 </tbody></table></div>
 <p class="fonte"><b>Em que condição:</b> Linux x86_64, 4 nucleos, <code>phxsqld 0.18.0 (df0050f65b27-sujo) x86_64-unknown-linux-gnu</code>, com a máquina em carga <b>6,5</b> — outras frentes compilando ao lado. A carga entra no resultado de propósito: estas sondas medem diferenças de 1%, e quem lê tem de saber em que condição o número foi tirado sem ter de acreditar na palavra de ninguém.</p>
 <div class="nota"><b>Por que o «piso», e não a média.</b> O que a telemetria acrescenta a um pedido é uma <b>constante</b>: dois <code>Instant::now()</code>, um <code>fetch_add</code>, um <code>lock</code>. Num tempo <code>t = base + c</code>, o <code>c</code> aparece inteiro no <b>menor</b> tempo — e o menor é o único quase sem vizinho dentro. A média mede o vizinho: a primeira corrida desta bancada viu a mediana do <code>ping</code> andar de 59 µs para 161 µs entre duas corridas com dois minutos de diferença, sem uma linha de código mudar. E o veredito é um <b>teste de sinal</b> sobre as diferenças par a par, a 3 σ: o número publicado e o veredito saem da <b>mesma</b> lista, porque numa corrida eles discordaram — 231 de 400 pares a favor com a estimativa em −0,04%.</div>
@@ -811,10 +811,10 @@ própria.</figcaption>
 <h2 id="s18"><span class="n">18 ·</span>A fábrica de idiomas</h2>
 <p class="sub">Texto de tela entra pela fábrica — é pétreo. A máquina existe desde a 0.17.0; o que faltava era o laço que <b>conta</b>, e ele é uma catraca que só desce.</p>
 <div class="kpis">
-<div class="kpi feito"><b>2.042</b><span>textos pela fábrica</span><span class="q">2026-09-16 17:50:52</span></div>
-<div class="kpi falta"><b>1.049</b><span>ainda cravados no fonte</span><span class="q">2026-09-16 17:50:52</span></div>
-<div class="kpi"><b>1.049</b><span>o teto da catraca</span><span class="q">2026-09-16 17:50:52</span></div>
-<div class="kpi"><b class="curto">66%</b><span>da tela pela fábrica</span><span class="q">2026-09-16 17:50:52</span></div>
+<div class="kpi feito"><b>2.042</b><span>textos pela fábrica</span><span class="q">2026-09-16 21:36:25</span></div>
+<div class="kpi falta"><b>1.049</b><span>ainda cravados no fonte</span><span class="q">2026-09-16 21:36:25</span></div>
+<div class="kpi"><b>1.049</b><span>o teto da catraca</span><span class="q">2026-09-16 21:36:25</span></div>
+<div class="kpi"><b class="curto">66%</b><span>da tela pela fábrica</span><span class="q">2026-09-16 21:36:25</span></div>
 </div>
 <div class="barras">
 <div class="barra-linha"><span class="l">pela fábrica</span><span class="t"><i class="b-feito" style="width:66.06%"></i></span><span class="n">2.042</span></div>
@@ -827,8 +827,8 @@ própria.</figcaption>
 <p class="sub">Não é ascetismo: é o que fez a compilação cruzada para Windows
 funcionar de primeira e o que permite <code>cargo build --offline</code>.</p>
 <div class="kpis">
-<div class="kpi feito"><b>0</b><span>pacotes de terceiros no <code>Cargo.lock</code></span><span class="q">2026-09-16 17:50:52</span></div>
-<div class="kpi"><b>8</b><span>crates, todos deste projeto</span><span class="q">2026-09-16 17:50:52</span></div>
+<div class="kpi feito"><b>0</b><span>pacotes de terceiros no <code>Cargo.lock</code></span><span class="q">2026-09-16 21:36:25</span></div>
+<div class="kpi"><b>8</b><span>crates, todos deste projeto</span><span class="q">2026-09-16 21:36:25</span></div>
 </div>
 <p>JSON, CRC-32, SHA-256, HMAC e PBKDF2 são escritos aqui e conferidos contra
 <b>vetor oficial</b> — FIPS 180-4, RFC 4231 e os vetores de PBKDF2. O método é
@@ -857,7 +857,7 @@ calado nem se ignora calado.</div>
 <div class="rolo"><table><thead><tr><th>página</th><th class="num">KiB</th><th>quem a escreve</th></tr></thead><tbody>
 <tr><td class="mono">docs/dossie/dossie-phxsql-0.18.html</td><td class="num">2.638</td><td class="mono">docs/dossie/numeros-da-bancada.py</td></tr>
 <tr><td class="mono">docs/dossie/graficos.html</td><td class="num">28</td><td class="mono">docs/dossie/graficos-dos-testes.py</td></tr>
-<tr><td class="mono">docs/dossie/pedidos.html</td><td class="num">558</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
+<tr><td class="mono">docs/dossie/pedidos.html</td><td class="num">559</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
 <tr><td class="mono">docs/pmo/status-do-projeto.html</td><td class="num">47</td><td class="mono">docs/pmo/pagina-do-status-do-projeto.py</td></tr>
 <tr><td class="mono">docs/status/status-do-projeto.html</td><td class="num"><span class="mtime">— (esta página)</span></td><td class="mono">docs/status/riscos.py</td></tr>
 <tr><td class="mono">docs/dossie/status.html</td><td class="num">25</td><td class="mono">docs/dossie/pagina-de-status.py</td></tr>
@@ -916,6 +916,9 @@ calado nem se ignora calado.</div>
 <h2 id="s23"><span class="n">23 ·</span>As últimas frentes</h2>
 <p class="sub">Do próprio <code>git log</code>, só leitura. O commit conta a decisão e o motivo, não a lista de arquivos.</p>
 <div class="rolo"><table><thead><tr><th>commit</th><th>quando</th><th>o que decidiu</th></tr></thead><tbody>
+<tr><td class="mono">6346558</td><td class="q">2026-09-16 21:31</td><td>Documentacao da rodada, as quatro cognicoes e as paginas geradas</td></tr>
+<tr><td class="mono">c585f83</td><td class="q">2026-09-16 21:30</td><td>Geradores: 264, 265 e 266 -- as quatro secoes que nao nasciam agora nascem</td></tr>
+<tr><td class="mono">f64b822</td><td class="q">2026-09-16 21:30</td><td>Motor: 245 (O2-O6) e 267, e as 19 marcas de divida que moram junto</td></tr>
 <tr><td class="mono">df0050f</td><td class="q">2026-09-16 20:04</td><td>status-html: a setima pagina alcanca o commit que a carrega</td></tr>
 <tr><td class="mono">095b264</td><td class="q">2026-09-16 18:02</td><td>Fecho da rodada: os 18 geradores, e o portao VERDE</td></tr>
 <tr><td class="mono">68e67ab</td><td class="q">2026-09-16 17:45</td><td>As duas provas do 259 viram guardas -- e a regua passou a olhar a FORMA</td></tr>
@@ -923,9 +926,6 @@ calado nem se ignora calado.</div>
 <tr><td class="mono">595e3f2</td><td class="q">2026-09-16 17:13</td><td>Catraca conta DEFEITO, nao cobertura: os tres buracos das reguas fechados</td></tr>
 <tr><td class="mono">5ca2c26</td><td class="q">2026-09-16 16:43</td><td>Auditoria SEC: dois bloqueantes com prova viva, e os dois sao petrea nossa</td></tr>
 <tr><td class="mono">630cd13</td><td class="q">2026-09-16 16:41</td><td>Tecnicas de motor medidas: a divisao 50/50 da pagina, e a nossa petrea a piora</td></tr>
-<tr><td class="mono">164cfb4</td><td class="q">2026-09-16 15:32</td><td>A setima pagina publicada, com a URL onde ela se atualiza</td></tr>
-<tr><td class="mono">17387de</td><td class="q">2026-09-16 15:31</td><td>A setima pagina e o comando `status-html`: 21 secoes nascidas, 4 que nao nasceram</td></tr>
-<tr><td class="mono">0f30363</td><td class="q">2026-09-16 15:26</td><td>A tabela das guardas sai de uma corrida de HOJE, e nao de nove dias atras</td></tr>
 </tbody></table></div>
 <p class="fonte"><b>De onde sai:</b> <code>git log --no-merges -n 10</code> na raiz do repositório. Commit novo muda esta seção — e aí ela estava velha mesmo, que é o que o portão dos geradores existe para pegar.</p>
 
@@ -933,22 +933,23 @@ calado nem se ignora calado.</div>
 <h2 id="s24"><span class="n">24 ·</span>Antes × Depois — a série medida</h2>
 <p class="sub">O <code>CAPABILITIES.json</code> é sobrescrito a cada medição e só guarda o <b>agora</b>. Esta seção sai de <code>docs/status/serie.jsonl</code>, versionado, com uma linha por medição e a data em que ela foi <b>medida</b> — nunca a do commit.</p>
 <div class="kpis">
-<div class="kpi"><b>1</b><span>medições na série</span><span class="q">2026-09-16</span></div>
+<div class="kpi"><b>2</b><span>medições na série</span><span class="q">2026-09-16</span></div>
+<div class="kpi"><b class="curto">2026-09-16 → 2026-09-16</b><span>primeira e última medição</span></div>
 </div>
-<div class="nota v"><b>Ainda não dá para desenhar «antes × depois», e esta caixa diz isso em vez de fingir.</b> A série tem <b>uma</b> medição — a de hoje. O «antes» só existe a partir da segunda, e reconstruí-lo do <code>git log</code> seria fabricar o retrato de ontem: o <code>CAPABILITIES.json</code> é sobrescrito, e o número de testes de um commit antigo só se sabe rodando a suíte naquele commit. A próxima corrida de <code>docs/dossie/numeros-do-projeto.py</code> acrescenta a segunda linha, e esta seção passa a comparar sozinha.</div>
-<div class="rolo"><table><thead><tr><th>o que se mede</th><th class="num">medido em 2026-09-16 17:50:52</th></tr></thead><tbody>
-<tr><td>testes verdes</td><td class="num">2.380</td></tr>
-<tr><td>operações no catálogo</td><td class="num">139</td></tr>
-<tr><td>crates</td><td class="num">8</td></tr>
-<tr><td>linhas de Rust</td><td class="num">200.273</td></tr>
-<tr><td>linhas de documentação</td><td class="num">65.758</td></tr>
-<tr><td>dependências externas</td><td class="num">0</td></tr>
-<tr><td>textos pela fábrica de idiomas</td><td class="num">2.042</td></tr>
-<tr><td>textos ainda cravados no fonte</td><td class="num">1.049</td></tr>
+<div class="rolo"><table><thead><tr><th>o que se mede</th><th class="num">antes — 2026-09-16 17:50:52</th><th class="num">depois — 2026-09-16 21:36:25</th><th class="num">variação</th></tr></thead><tbody>
+<tr><td>testes verdes</td><td class="num">2.380</td><td class="num">2.394</td><td class="num"><span class="etiqueta e-tem">+14</span></td></tr>
+<tr><td>operações no catálogo</td><td class="num">139</td><td class="num">139</td><td class="num"><span class="mtime">sem mudança</span></td></tr>
+<tr><td>crates</td><td class="num">8</td><td class="num">8</td><td class="num"><span class="mtime">sem mudança</span></td></tr>
+<tr><td>linhas de Rust</td><td class="num">200.273</td><td class="num">201.316</td><td class="num"><span class="etiqueta e-tem">+1.043</span></td></tr>
+<tr><td>linhas de documentação</td><td class="num">65.758</td><td class="num">66.048</td><td class="num"><span class="etiqueta e-tem">+290</span></td></tr>
+<tr><td>dependências externas</td><td class="num">0</td><td class="num">0</td><td class="num"><span class="mtime">sem mudança</span></td></tr>
+<tr><td>textos pela fábrica de idiomas</td><td class="num">2.042</td><td class="num">2.042</td><td class="num"><span class="mtime">sem mudança</span></td></tr>
+<tr><td>textos ainda cravados no fonte</td><td class="num">1.049</td><td class="num">1.049</td><td class="num"><span class="mtime">sem mudança</span></td></tr>
 </tbody></table></div>
 <h3>As medições, uma por linha</h3>
 <div class="rolo"><table><thead><tr><th>medida em</th><th>versão</th><th>commit</th><th class="num">testes</th><th class="num">linhas Rust</th></tr></thead><tbody>
 <tr><td class="mono">2026-09-16 17:50:52</td><td>0.18.0 · árvore suja</td><td class="mono">68e67ab0be73</td><td class="num">2.380</td><td class="num">200.273</td></tr>
+<tr><td class="mono">2026-09-16 21:36:25</td><td>0.18.0 · árvore suja</td><td class="mono">6346558edcf8</td><td class="num">2.394</td><td class="num">201.316</td></tr>
 </tbody></table></div>
 <div class="nota"><b>A linha entra pelo mesmo passo que grava o <code>CAPABILITIES.json</code>.</b> O <code>escrever_capacidades()</code> de <code>docs/dossie/numeros-do-projeto.py</code> chama o <code>acrescentar()</code> daqui — não há um segundo caminho que possa divergir. E a série <b>recusa a repetida</b>: re-rodar o gerador sem re-medir não acrescenta linha, senão a contagem passaria a contar corridas do script em vez de medições.</div>
 <p class="fonte"><b>De onde sai:</b> <code>docs/status/serie.jsonl</code>, versionado, escrito por <code>acrescentar()</code> de <code>docs/status/serie-historica.py</code> no mesmo passo em que o <code>docs/dossie/numeros-do-projeto.py</code> grava o <code>CAPABILITIES.json</code>. A data de cada linha é a da <b>medição</b>, carimbada quando o <code>cargo test</code> terminou.</p>
@@ -959,7 +960,7 @@ calado nem se ignora calado.</div>
 <div class="nota g"><b>As quatro que faltavam nasceram em 16/09/2026, e nenhuma nasceu pelo atalho.</b> Riscos e Dívida técnica (pedido 264) exigiram um <code>docs/RISCOS.md</code> tabelado e uma marca <code>// DIVIDA:</code> no fonte; Telemetria e logs (265) exigiu que a bancada passasse a gravar <code>resultados.json</code>, porque sem ele não havia a data em que o número foi medido; Antes × Depois (266) exigiu uma série versionada, porque o <code>CAPABILITIES.json</code> é sobrescrito e só guarda o agora. Nos quatro casos <b>a fonte veio antes do gerador</b> — é isso que a lei cobra, e é por isso que ela demora mais que digitar o número.</div>
 <div class="nota v"><b>Por que isto é a seção mais importante da página.</b> O exemplo trazia <b>677 números no texto visível, todos digitados à mão</b>. Adotá-lo como veio criaria 677 lugares onde um número envelhece calado — e esta casa já pagou isso quatro vezes: o selo da capa parado numa versão por quatro lançamentos, 198 pedidos onde eram 203, 428 testes onde eram 451, 780 KiB de interface onde eram 1.032. A quarta ensina o alcance da lei: <b>gerador certo chamado pela metade entrega número velho anunciando sucesso.</b></div>
 <footer>
-  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 16/09/2026 21:26 UTC,
+  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 16/09/2026 21:48 UTC,
   pelo comando <code>./status-html.sh</code>. <b>Nenhum número desta página foi
   digitado</b>: cada um sai de um gerador, e cada seção diz de qual. Onde o
   gerador não existe, a seção <b>não nasceu</b> — está nomeada na §25, com o
