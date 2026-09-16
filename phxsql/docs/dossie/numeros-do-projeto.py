@@ -192,7 +192,16 @@ def testes_que_passam() -> int:
         cwd=RAIZ, capture_output=True, text=True,
     )
     if r.returncode != 0:
-        sys.exit("cargo test falhou -- corrija antes de publicar numero")
+        # Diga QUAL teste caiu: em 16/09/2026 este gerador recusou publicar
+        # com a suite verde dez minutos antes e dez minutos depois, e como
+        # a saida era engolida ninguem soube se foi flake ou defeito. Numero
+        # que nao se publica sem dizer por que e silencio vestido de rigor.
+        culpados = [l for l in (r.stdout + r.stderr).splitlines()
+                    if "FAILED" in l or "panicked at" in l or "error: test failed" in l]
+        for l in culpados[:20]:
+            print("  " + l.strip(), file=sys.stderr)
+        sys.exit("cargo test falhou -- corrija antes de publicar numero"
+                 + ("" if culpados else " (nenhuma linha FAILED/panicked na saida)"))
     total = 0
     for linha in r.stdout.splitlines():
         m = re.match(r"test result: ok\. (\d+) passed", linha)

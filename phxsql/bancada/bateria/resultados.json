@@ -7,56 +7,56 @@
     "cenarios": [
       {
         "cenario": "sem gatilho",
-        "s": 0.1517,
-        "linhas_por_s": 32954,
-        "us_por_linha": 30.35,
-        "espalhamento_us": 16.67,
+        "s": 0.0996,
+        "linhas_por_s": 50222,
+        "us_por_linha": 19.91,
+        "espalhamento_us": 0.65,
         "todas_s": [
-          0.1517,
-          0.0987,
-          0.1821
+          0.0995,
+          0.0996,
+          0.1028
         ]
       },
       {
         "cenario": "BEFORE que normaliza um campo",
-        "s": 0.1273,
-        "linhas_por_s": 39284,
-        "us_por_linha": 25.46,
-        "espalhamento_us": 4.87,
+        "s": 0.1056,
+        "linhas_por_s": 47329,
+        "us_por_linha": 21.13,
+        "espalhamento_us": 1.58,
         "todas_s": [
-          0.1273,
-          0.1043,
-          0.1286
+          0.1019,
+          0.1056,
+          0.1098
         ]
       },
       {
         "cenario": "AFTER que so calcula (nao fala com o motor)",
-        "s": 0.2042,
-        "linhas_por_s": 24484,
-        "us_por_linha": 40.84,
-        "espalhamento_us": 24.19,
+        "s": 0.1167,
+        "linhas_por_s": 42838,
+        "us_por_linha": 23.34,
+        "espalhamento_us": 1.03,
         "todas_s": [
-          0.2411,
-          0.1201,
-          0.2042
+          0.1139,
+          0.1191,
+          0.1167
         ]
       },
       {
         "cenario": "AFTER que grava auditoria (1 INSERT derivado por linha)",
-        "s": 1.1115,
-        "linhas_por_s": 4498,
-        "us_por_linha": 222.3,
-        "espalhamento_us": 142.06,
+        "s": 0.4307,
+        "linhas_por_s": 11610,
+        "us_por_linha": 86.13,
+        "espalhamento_us": 10.13,
         "todas_s": [
-          1.1115,
-          0.5401,
-          1.2504
+          0.4307,
+          0.4297,
+          0.4803
         ]
       }
     ],
-    "uma_a_uma_s": 1.869,
-    "uma_a_uma_por_s": 2675,
-    "maior_espalhamento_us": 142.06
+    "uma_a_uma_s": 1.0514,
+    "uma_a_uma_por_s": 4756,
+    "maior_espalhamento_us": 10.13
   },
   "chave": [
     {
@@ -65,43 +65,43 @@
       "chaves": [
         {
           "chave": "Uuid v7 (crescente)",
-          "s": 1.9088,
-          "linhas_por_s": 52388,
-          "us_por_linha": 19.09,
-          "espalhamento_us": 5.15,
+          "s": 1.9551,
+          "linhas_por_s": 51147,
+          "us_por_linha": 19.55,
+          "espalhamento_us": 0.9,
           "todas_s": [
-            2.4125,
-            1.8971,
-            1.9088
+            1.9262,
+            2.0166,
+            1.9551
           ]
         },
         {
           "chave": "Uuid v4 (sorteado)",
-          "s": 2.1609,
-          "linhas_por_s": 46276,
-          "us_por_linha": 21.61,
-          "espalhamento_us": 0.65,
+          "s": 2.1767,
+          "linhas_por_s": 45941,
+          "us_por_linha": 21.77,
+          "espalhamento_us": 1.04,
           "todas_s": [
-            2.1745,
-            2.1609,
-            2.1096
+            2.1567,
+            2.2605,
+            2.1767
           ]
         },
         {
           "chave": "Sequence (o motor numera)",
-          "s": 1.6831,
-          "linhas_por_s": 59412,
-          "us_por_linha": 16.83,
-          "espalhamento_us": 0.72,
+          "s": 1.7437,
+          "linhas_por_s": 57351,
+          "us_por_linha": 17.44,
+          "espalhamento_us": 1.57,
           "todas_s": [
-            1.6831,
-            1.7533,
-            1.6811
+            1.7437,
+            1.8476,
+            1.6906
           ]
         }
       ],
-      "v4_sobre_v7": 1.132,
-      "v7_sobre_sequence": 1.134
+      "v4_sobre_v7": 1.113,
+      "v7_sobre_sequence": 1.121
     },
     {
       "quantas": 1000000,
@@ -109,43 +109,47 @@
       "chaves": [
         {
           "chave": "Uuid v7 (crescente)",
-          "s": 19.7772,
-          "linhas_por_s": 50563,
-          "us_por_linha": 19.78,
-          "espalhamento_us": 0.25,
+          "s": 19.9,
+          "linhas_por_s": 50251,
+          "us_por_linha": 19.9,
+          "espalhamento_us": 0.54,
           "todas_s": [
-            19.7257,
-            19.9772,
-            19.7772
+            19.9,
+            19.4006,
+            19.9361
           ]
         },
         {
           "chave": "Uuid v4 (sorteado)",
-          "s": 32.8979,
-          "linhas_por_s": 30397,
-          "us_por_linha": 32.9,
-          "espalhamento_us": 0.32,
+          "s": 32.5267,
+          "linhas_por_s": 30744,
+          "us_por_linha": 32.53,
+          "espalhamento_us": 0.34,
           "todas_s": [
-            32.8979,
-            32.9968,
-            32.6719
+            32.5267,
+            32.2372,
+            32.5743
           ]
         },
         {
           "chave": "Sequence (o motor numera)",
-          "s": 17.7602,
-          "linhas_por_s": 56306,
-          "us_por_linha": 17.76,
-          "espalhamento_us": 22.55,
+          "s": 17.8286,
+          "linhas_por_s": 56090,
+          "us_por_linha": 17.83,
+          "espalhamento_us": 0.31,
           "todas_s": [
-            17.7602,
-            17.6741,
-            40.2225
+            17.9414,
+            17.6361,
+            17.8286
           ]
         }
       ],
-      "v4_sobre_v7": 1.663,
-      "v7_sobre_sequence": 1.114
+      "v4_sobre_v7": 1.635,
+      "v7_sobre_sequence": 1.116
     }
+  ],
+  "aprovada": false,
+  "passos_falhados": [
+    "as tres catracas do mapa da trava seguram"
   ]
 }

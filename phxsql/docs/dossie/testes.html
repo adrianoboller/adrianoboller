@@ -87,7 +87,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
   retrato que nunca existiu.</p>
 
   <div class="placar">
-    <div class="c"><div class="v">2.320</div><div class="r">testes</div></div>
+    <div class="c"><div class="v">2.361</div><div class="r">testes</div></div>
     <div class="c"><div class="v">136</div><div class="r">guardas</div></div>
     <div class="c"><div class="v">29</div><div class="r">casos de tela</div></div>
     <div class="c"><div class="v">20</div><div class="r">catracas</div></div>
@@ -101,9 +101,9 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
 <p class="sub"><code>cargo test --workspace</code>. É a camada mais barata e a
 mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 <div class="nota">
-  <b>2.320 testes</b> em 193.809 linhas de Rust, versão
-  <code>0.18.0</code>, commit <code>6e717e6</code>, 138 operações no
-  protocolo. Medido em 2026-09-16 05:17:41, por
+  <b>2.361 testes</b> em 197.886 linhas de Rust, versão
+  <code>0.18.0</code>, commit <code>c4a47c5</code>, 139 operações no
+  protocolo. Medido em 2026-09-16 08:45:14, por
   <code>docs/dossie/numeros-do-projeto.py</code>, que <b>aborta se o
   <code>cargo test</code> falhar</b>.
 </div>
@@ -174,9 +174,10 @@ medida</b> em vez de sumir da tabela.</p>
       <tr><td class="nome">Carga — uma a uma contra o lote<div class="prova">o custo da viagem de rede, separado do custo de gravar</div></td><td class="q mono">2026-08-29</td><td class="v"><b>quando</b> 2026-08-29 · <b>versao</b> 0.17.0 · <b>linhas</b> 20.000 · <b>por_lote</b> 5.000</td></tr>
       <tr><td class="nome">Os três motores a um milhão<div class="prova">PhxSql, MySQL® e SQLite® intercalados na MESMA rodada, porque medidas de dias diferentes carregam o ambiente junto</div></td><td class="q mono">2026-09-08 02:49:47</td><td class="v"><b>linhas</b> 1.000.000 · <b>operacoes_por_fase_pontual</b> 20.000 · <b>rodadas</b> 3 · <b>medido_em</b> 2026-09-08 02:49:47</td></tr>
       <tr><td class="nome">Índice de texto — o `.fts` contra a varredura<div class="prova">as duas faixas respondem a MESMA pergunta e devolvem o MESMO conjunto de rowids -- o medidor aborta se não baterem, e aborta se nenhuma busca achar linha</div></td><td class="q mono">2026-09-07T01:09:13</td><td class="v"><b>índice sobre varredura</b> 31399,1 (21164,6–33443,8) × · <b>busca pelo índice</b> 137,73 (129,06–212,67) µs · <b>preço na escrita</b> 5,67 (5,38–6,06) × · <b>linhas achadas (conjuntos idênticos)</b> 9.339</td></tr>
-      <tr><td class="nome">Bateria única — o motor por dentro<div class="prova">os seis itens do dono pelo soquete, mais os itens zero: as catracas dos dois mapas e o portão «está medindo?»</div></td><td class="q mono">2026-09-16</td><td class="v"><b>corrida de</b> 2026-09-16</td></tr>
+      <tr><td class="nome">Bateria única — o motor por dentro<div class="prova">os seis itens do dono pelo soquete, mais os itens zero: as catracas dos dois mapas e o portão «está medindo?»</div></td><td class="q mono">2026-09-16</td><td class="v"><b>passou inteira</b> NÃO · <b>passos que falharam</b> ['as tres catracas do mapa da trava seguram'] · <b>corrida de</b> 2026-09-16</td></tr>
       <tr><td class="nome">Concorrência — enxurrada de 500 conexões na web, com teto<div class="prova">500 conexões HTTP contra um phxsqld próprio, segurando o cabeçalho 3 s; Threads: e VmRSS: lidos do /proc a cada 25 ms; o bloco «depois» é o do teto ligado (pedido 248)</div></td><td class="q mono">2026-09-16T06:16:14</td><td class="v"><b>teto da web</b> 64 threads · <b>pico de threads com teto</b> 68 · <b>pico antes do teto</b> 504 · <b>503 com Retry-After</b> 436</td></tr>
       <tr><td class="nome">Chutar a tomada — SIGKILL na transação aberta e no BULKINSERT<div class="prova">um phxsqld próprio morto com SIGKILL em varreduras de atraso (transação aberta com SAVEPOINT, BULKINSERT, inserir_lote, reindexar, transação dentro da reserva) e reaberto; byte 52 do .ndx lido antes de reabrir; fsync antes do «ok» por strace</div></td><td class="q mono">2026-09-16T07:36:04</td><td class="v"><b>conferências</b> 22 · <b>falhas</b> 0 · <b>pontos de queda</b> 7 · <b>quedas de verdade</b> 408</td></tr>
+      <tr><td class="nome">Colmeia × SQLite × padrão — as quatro operações de ponto<div class="prova">ler, inserir, atualizar e excluir de ponto nos três lados, mesma máquina e mesmos dados por construção, dois regimes de durabilidade casados, vencedor só fora do ruído; o que cada lado faz por operação está dito ao lado do número</div></td><td class="q mono">2026-09-16 08:09</td><td class="v"><b>combinações</b> 24 · <b>colmeia ganha</b> 21 · <b>padrão ganha</b> 2 · <b>dentro do ruído</b> 1</td></tr>
     </tbody>
   </table>
 </div>
@@ -221,7 +222,7 @@ diz onde não confiar.</p>
 </div>
 
 <footer>
-  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 16/09/2026 08:08. Nenhum
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 16/09/2026 08:45. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
   do catálogo de guardas, dos <code>resultados.json</code> das bancadas, dos
   arquivos de <code>testes-web/</code> e das constantes do próprio fonte. O

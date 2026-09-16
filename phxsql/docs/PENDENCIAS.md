@@ -284,7 +284,7 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☐ | 260 | **O portão «está medindo?» casa o invólucro `bash -c` que só menciona uma bancada, e duas bancadas que se esperam pelo portão travam uma à outra** | Achado duas vezes em 16/09/2026: no item 0b da bateria (o portão viu a própria casca `bash -c … prova-bateria.py`, ERRO em «com a máquina limpa») e no encontro das bancadas da colmeia e da tomada, que esperaram uma à outra — a tomada espera o portão por dentro, a colmeia também, e o portão via as duas cascas (cognição `portao-de-texto-casa-quem-so-menciona-a-bancada`). Regra proposta pelas duas frentes, a decidir pela QA: invólucro de shell não conta (o portão olha só o processo que executa `python3 bancada/*.py` ou um exemplo de medição, não quem o lançou); quem chegou primeiro mede, e uma bancada só consulta o portão na primeira seção. Prova real: o item 0b da bateria lançado por dentro de um `bash -c` tem de passar, e uma segunda bancada lançada durante a primeira tem de esperar — nos dois sentidos |
 
 <!-- pedidos:contagem:inicio -->
-**249 pedidos: 235 feitos · 10 parciais · 4 planejados.**
+**260 pedidos: 238 feitos · 11 parciais · 11 planejados.**
 
 *(Gerado por `docs/dossie/pagina-dos-pedidos.py` — não conte à mão. A
 conta sai da primeira coluna da tabela acima, e é a mesma que a página

@@ -36,17 +36,17 @@ foi estimado no lugar de uma medição que faltou.
 |---|---:|---:|---:|---:|---:|---:|
 | `phxsql-cli` | 1 | 815 | 104 | 113 | 78 | 1110 |
 | `phxsql-cmd` | 2 | 579 | 110 | 171 | 62 | 922 |
-| `phxsql-core` | 34 | 11504 | 3906 | 2964 | 1478 | 19852 |
+| `phxsql-core` | 35 | 11617 | 4066 | 3064 | 1508 | 20255 |
 | `phxsql-ffi` | 7 | 1408 | 1014 | 703 | 235 | 3360 |
 | `phxsql-odbc` | 7 | 2412 | 1086 | 920 | 226 | 4644 |
-| `phxsql-server` | 55 | 42218 | 25601 | 19528 | 4683 | 92030 |
+| `phxsql-server` | 56 | 43241 | 26617 | 20090 | 4825 | 94773 |
 | `phxsql-sql` | 10 | 6621 | 3356 | 1961 | 745 | 12683 |
 | `phxsql-store` | 24 | 12966 | 3474 | 5431 | 1513 | 23384 |
-| **total** | **140** | **78523** | **38651** | **31791** | **9020** | **157985** |
+| **total** | **142** | **79659** | **39827** | **32453** | **9192** | **161131** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **38651/78523 = 0.49×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **39827/79659 = 0.50×**.
 
-Alem do `src/`: **73** programas de medicao em `examples/` (17245 linhas — bancada em Rust, nao produto nem teste) e **55** arquivos em `tests/` de integracao fora de `src/` (18464 linhas).
+Alem do `src/`: **73** programas de medicao em `examples/` (18176 linhas — bancada em Rust, nao produto nem teste) e **55** arquivos em `tests/` de integracao fora de `src/` (18464 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -73,17 +73,17 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 15338 | 860.0 |
+| `ui/index.html` | 15414 | 864.6 |
 | `ui/grid/phx-grid.css` | 168 | 12.3 |
 | `ui/grid/phx-grid.js` | 1860 | 90.1 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
 | `ui/telemetria.css` | 447 | 19.8 |
-| `ui/telemetria.js` | 1799 | 88.0 |
+| `ui/telemetria.js` | 1820 | 89.2 |
 | `ui/multitela.css` | 156 | 8.6 |
 | `ui/multitela.js` | 1588 | 69.0 |
 | `ui/claude.js` | 1357 | 67.2 |
 | `ui/grid/CHANGELOG-phx-grid.md` | 224 | 29.7 |
-| **total (10 arquivos)** | **23649** | **1273.9** |
+| **total (10 arquivos)** | **23746** | **1279.7** |
 
 Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
 - `crates/phxsql-server/ui/explorador.css`
@@ -107,11 +107,11 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 47 | 10136 |
-| Python (bancada de medicao) | `bancada/` | 101 | 41695 |
-| Shell (empacotar, zelador, provas) | todo o repositorio | 17 | 2466 |
-| Markdown (documentacao tecnica) | `docs/` (nao recursivo em `dossie/`, `design/`, `video/`) | 322 | 79201 |
-| Python (geradores de dossie/pedidos) | `docs/dossie/` | 17 | 5362 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 48 | 10237 |
+| Python (bancada de medicao) | `bancada/` | 105 | 45232 |
+| Shell (empacotar, zelador, provas) | todo o repositorio | 17 | 2499 |
+| Markdown (documentacao tecnica) | `docs/` (nao recursivo em `dossie/`, `design/`, `video/`) | 334 | 81610 |
+| Python (geradores de dossie/pedidos) | `docs/dossie/` | 17 | 5471 |
 <!-- /GERADO -->
 
 Não incluído acima porque já está na tabela 1.1: os `.rs` de `examples/` e
@@ -287,7 +287,7 @@ com o motivo escrito**, que é o que a cláusula realmente cobra.
 ### 4.2 Como se mediu
 
 <!-- GERADO: bloco_bancadas() -->
-`bancada/` tem **52** frentes de medicao (acid, alfanumerica, alter, arm, bateria, carga, cifra, cifra-do-fio, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, transacoes, usuarios, utilizacao-padrao, vetorial, windows), das quais **37** documentam a propria metodologia em `LEIA-ME.md`.
+`bancada/` tem **53** frentes de medicao (acid, alfanumerica, alter, arm, bateria, carga, cifra, cifra-do-fio, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, tomada, transacoes, usuarios, utilizacao-padrao, vetorial, windows), das quais **39** documentam a propria metodologia em `LEIA-ME.md`.
 <!-- /GERADO -->
 
 A carga do lado do motor é
@@ -319,15 +319,16 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_DO_ERRO` | 500 | `crates/phxsql-server/src/profiler.rs` |
 | `TETO_DO_CABECALHO` | 400 | `crates/phxsql-server/src/profiler.rs` |
 | `TETO` | Duration::from_secs(60) | `crates/phxsql-server/src/replica.rs` |
+| `TETO_DA_FILA` | 32 | `crates/phxsql-server/src/saude_do_disco.rs` |
 | `TETO_DO_LOTE_SERVIDO` | 16 * 1024 * 1024 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_PIVOT` | 5_000_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_JUNCAO` | 500_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_COLETA_ROWIDS` | 1_000_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_ANINHAMENTO` | 8 | `crates/phxsql-server/src/servidor.rs` |
 
-**17** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
+**18** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **124** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 4572. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **136** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 5017. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -414,7 +415,7 @@ empacotar:
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2320** testes passaram, **0** falharam (medido em 2026-09-16 05:17:41, commit `6e717e65`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **2361** testes passaram, **0** falharam (medido em 2026-09-16 08:45:14, commit `c4a47c54`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
@@ -484,7 +485,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **247** pedidos numerados; **30** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **260** pedidos numerados; **33** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -518,6 +519,9 @@ proposta de voltar sem medição nova.
 | 239 | **Nível de isolamento acima de READ COMMITTED e TLS no transporte ficam para decisão do dono** |
 | 245 | **Seis observações da revisão do motor, menores, para varrer numa rodada de higiene (O1-O6)** |
 | 246 | **Leitura repetível pela trava, pedida — a via (b) da Sombra** |
+| 249 | **Saúde do disco do banco: sonda canário, EROFS, erro de E/S imediato, aviso por e-mail e SMS** |
+| 251 | **P2P: a identidade sem domínio bate no AAD do selo por endereço — decisão do dono e do DBA antes de congelar o PSCH do correio** |
+| 253 | **Bancada «chutar a tomada»: SIGKILL dentro da transação aberta, no meio do BULKINSERT, do `inserir_lote`, do `reindexar` e da transação dentro da reserva — 0 desfechos inválidos em 408 quedas** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —
