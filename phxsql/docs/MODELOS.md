@@ -995,3 +995,68 @@ exatamente o perfil de trabalho que ela devia receber.
 convocado por uma pergunta so, e a resposta dele mudou o desenho do 258 antes
 de haver codigo — o sinal em RAM e cego ao processo morto, e sem o batismo a
 mudanca perderia commit confirmado sem bilhete.
+
+## Rodada dos parciais e planejados — 264, 265, 266, 267 e 245 — 16/09/2026
+
+Quatro frentes. Escritas **fora de hora** — o registro delas nao entrou no
+mesmo dia, e a falta apareceu na rodada seguinte ao conferir este arquivo.
+Papel A que nao registra a escolha dele cobra dos outros o que nao faz: a
+falha fica dita aqui em vez de ser corrigida em silencio.
+
+| frente | escalao | por que | papeis dispensados |
+|---|---|---|---|
+| 264 — o gerador de riscos: `docs/RISCOS.md` e `docs/status/riscos.py` | forte | a secao nao nascia por falta de FONTE, nao de gerador; escrever a fonte e decidir o vocabulario fechado de probabilidade e impacto e projeto, nao transcricao | C (nao toca formato), E, J |
+| 265+266 — bancada de telemetria e a serie historica | forte | medir o custo de um observador ligado contra desligado numa maquina em carga e estatistica aplicada, e a primeira corrida entregou a telemetria «acelerando» o servidor em 37% | C, E |
+| 267 — os tres panicos que sob carga viram dois | forte | concorrencia: o alvo era o motor e o defeito estava no TESTE, e distinguir os dois exige medir 1.000 corridas em vez de ler | E, J |
+| 245 (O2-O6) — teto de 64 bits, saida do direito por coluna, contratos | forte | semantica de tipo e de permissao, e o O2 acabou escalado ao dono em vez de implementado | E, J |
+
+**O que a escolha comprou, medido:** tres das quatro frentes derrubaram a
+premissa do proprio pedido. O 267 nao tinha defeito no motor — medido em 1.000
+corridas sob carga 13-15, a terceira conexao SEMPRE entrava, e o que faltava
+era uma vaga. O 265 trocou a media pelo **piso (p10)** depois que a mediana do
+`ping` andou de 59 para 161 us entre duas corridas de dois minutos. E o 266
+teve a prova real acontecendo **em campo**: a segunda linha da serie chegou
+sozinha, gravada por uma frente vizinha.
+
+**Uma regua trocada, e ela e do dono decidir:** a frente 265 substituiu a faixa
+min-max do pedido 155 por um teste de sinal a 3 sigma, **so na bancada de
+telemetria**, com o motivo escrito — com efeito de ~1% e ruido de 3x, a faixa
+crua diria «nao sei» ate se a telemetria dobrasse o custo. A troca esta
+registrada, nao aplicada as outras bancadas, e espera a palavra do dono.
+
+## Rodada das duas petreas sem guarda, e dos ponteiros errados — 16/09/2026
+
+Duas frentes, e a segunda nasceu de uma varredura em vez de um pedido.
+
+| frente | escalao | por que | papeis dispensados |
+|---|---|---|---|
+| G-CRIPTO — as petreas «criptografia se confere contra vetor oficial» (0 entradas) e «portao de permissao e UM so» (2 de 13 catalogadas) | forte | escolher QUAL defeito repor e o trabalho; defeito que derruba tudo nao ensina nada, e a tabela «quem NAO o pega» so sai de quem entende a norma | C, E, J |
+| PONTEIROS — dois ponteiros errados no fonte, e o pedido 268 que um deles devia citar | medio | varredura verificavel: o alvo e conferir se o que o comentario aponta ainda existe, e isso se confere sozinho | C, E, F, J |
+
+**O que a escolha comprou:** a frente forte **corrigiu um numero meu** — o
+briefing dizia «11 testes de vetor» e sao **11 vetores** em 28 funcoes de teste
+contra vetor publicado, em 9 normas. Briefing de orquestrador tambem e numero
+citado, e numero citado e numero que nao se mede.
+
+E ela achou, por consequencia, o pedido **269**: fechar os dois buracos levou o
+catalogo de 151 para 160 entradas, e a tabela publicada continuou dizendo 143 —
+17 ids que a corrida publicada nunca julgou. Achado que so aparece porque
+alguem mexeu no numero ao lado.
+
+## Rodada da quinta regua, da senha e do parecer da divida — 16/09/2026
+
+Tres frentes, todas nascidas do `docs/CATRACAS.md` §15.5, que nomeia **medido**
+o que ficou descoberto. Escolher os alvos de uma secao que se escreveu a si
+mesma e o oposto de escolher de memoria.
+
+| frente | escalao | por que | papeis dispensados |
+|---|---|---|---|
+| F-269 — a quinta regua e o gerador que confessa | forte | desenho de catraca: a recusa de encolher nao pode transformar aposentadoria de guarda em parada permanente, e errar a direcao cria uma regua que ESCONDE o encolhimento | C (nao toca formato nem chave), E, J |
+| F-SENHA — a petrea «senha nunca em texto puro», 0 entradas | forte | mesmo motivo da G-CRIPTO: escolher o defeito plausivel e dizer quem NAO o pega e o trabalho todo | C, E, J |
+| F-DIVIDA — parecer: a divida marcada merece catraca? | medio | leitura e medicao com uma pergunta ja delimitada pelo orquestrador; o agente mede e argumenta, nao desenha | B, C, E, F |
+
+**A pergunta que a terceira existe para responder**, e por isso ela e parecer e
+nao conserto: catraca sobre marca de divida pune quem marca honestamente, e o
+jeito mais barato de ficar verde vira **apagar a marca sem pagar a divida**.
+Recomendacao «nenhuma catraca, com o numero» e resultado valido — hipotese que
+morre medida impede a mesma ideia de voltar sem medicao.
