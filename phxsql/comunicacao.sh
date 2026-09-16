@@ -255,6 +255,37 @@ if command -v node >/dev/null 2>&1 && [ -d "$UI" ]; then
   [ "$QUEBRADOS" = 1 ] && PROBLEMAS=$((PROBLEMAS+1))
 fi
 
+# ----------------------------------------------- as catracas que so rodavam na bateria
+# Medido em 16/09/2026: a catraca `alcancam-fsync` do mapa da trava ficou
+# OITO DIAS furada (23 com teto 22, desde o merge do PITR de 08/09) com tres
+# rodadas de portoes verdes -- porque ela so rodava no item 0 da bateria, e
+# a bateria e um comando que alguem tem de lembrar de dar (a ultima corrida
+# era de 29/08). Catraca que so roda onde ninguem roda e lembrete, nao guarda.
+# Os dois mapas leem SO o fonte (nada compila, ~2 s cada), entao cabem aqui:
+# reprovacao aparece de hora em hora como o que e -- papel que nao esta
+# cumprindo aparece como nao cumprindo -- ate alguem desfazer ou o dono
+# decidir a excecao (pendencia #252).
+PHX="$(cd "$(dirname "$0")" && pwd)"
+for MAPA in "$PHX/bancada/concorrencia/mapa-da-trava.py" "$PHX/bancada/concorrencia/mapa-das-threads.py"; do
+  if [ ! -f "$MAPA" ]; then
+    echo "⚠️  medidor sumiu: $(basename "$MAPA") -- a catraca dele nao roda mais"
+    PROBLEMAS=$((PROBLEMAS+1))
+    continue
+  fi
+  # Os dois medidores acham a raiz pelo proprio caminho; rodam de qualquer cwd.
+  SAIDA="$(python3 "$MAPA" --catraca 2>&1)"
+  if printf '%s' "$SAIDA" | grep -q "REPROVAD"; then
+    echo "⚠️  catraca REPROVADA em $(basename "$MAPA"):"
+    printf '%s\n' "$SAIDA" | grep -E "SUBIU|DESCEU|REPROVADO:|catalogo-envelhecido +[1-9]|spawn-sem-teto +[1-9]" | sed 's/^ */    /' | head -4
+    PROBLEMAS=$((PROBLEMAS+1))
+  elif ! printf '%s' "$SAIDA" | grep -qE "APROVAD|seguram"; then
+    # `mapa-da-trava` termina em APROVADO/REPROVADO; `mapa-das-threads` em
+    # «As duas catracas seguram.» ou REPROVADO. Nada disso e' medidor quebrado.
+    echo "⚠️  $(basename "$MAPA") --catraca nao deu veredito -- medidor quebrado?"
+    PROBLEMAS=$((PROBLEMAS+1))
+  fi
+done
+
 # ---------------------------------------------------------------------------
 # A GUARDA DA CORRENTE, e ela existe porque o buraco cobrou.
 #
