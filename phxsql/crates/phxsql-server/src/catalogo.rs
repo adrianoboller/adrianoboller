@@ -1563,8 +1563,10 @@ pub const OPERACOES: &[Operacao] = &[
     Operacao {
         nome: "cluster_estado",
         apelidos: &[],
-        resumo: "Quem é o master agora, a época e o mapa dos nós -- responde \
-                 igual em qualquer nó, e é o endereço único do cluster.",
+        resumo: "Quem é o master agora, a época e a escrita -- responde igual \
+                 em qualquer nó, e é o endereço único do cluster. O mapa dos \
+                 nós (`nos[]`, com endereço, posição e idade do pulso) só vem \
+                 para quem tem `administrar`: é infraestrutura, não dado.",
         parametros: &[],
         exemplo: r#"{"op":"cluster_estado"}"#,
         ferramenta_mcp: false,
@@ -1582,7 +1584,7 @@ pub const OPERACOES: &[Operacao] = &[
                 "propagar",
                 "boolean",
                 "manda a mesma ordem aos demais nós (padrão `true`); `false` é \
-                 como a ordem chega propagada de outro nó",
+                 como a ordem chega propagada de outro nó -- de um cliente é recusado",
             ),
         ],
         exemplo: r#"{"op":"cluster_no_acrescentar","id":"no4","endereco":"10.0.0.4","porta":5000}"#,
@@ -1595,7 +1597,12 @@ pub const OPERACOES: &[Operacao] = &[
                  grava e propaga. Nunca remove ESTE nó nem o master.",
         parametros: &[
             obr("id", "string", "o id do nó a tirar da lista"),
-            opc("propagar", "boolean", "manda a mesma ordem aos demais nós (padrão `true`)"),
+            opc(
+                "propagar",
+                "boolean",
+                "manda a mesma ordem aos demais nós (padrão `true`). `false` só vale \
+                 para a ordem que o próprio cluster propaga -- de um cliente é recusado",
+            ),
         ],
         exemplo: r#"{"op":"cluster_no_remover","id":"no4"}"#,
         ferramenta_mcp: false,

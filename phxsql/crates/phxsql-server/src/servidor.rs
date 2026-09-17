@@ -389,6 +389,56 @@ impl Sessao {
     }
 }
 
+/// Dois textos de endereco apontam para o MESMO IP?
+///
+/// Compara como IP quando os dois analisam (`::ffff:10.0.0.2` e `10.0.0.2`
+/// sao o mesmo endereco), e como texto quando um deles e um nome de host --
+/// sem resolver DNS: resolver aqui seria uma ida a rede dentro de um portao,
+/// e um nome que nao bate como texto simplesmente nao autoriza.
+fn mesmo_endereco_ip(a: &str, b: &str) -> bool {
+    use std::net::IpAddr;
+    match (a.trim().parse::<IpAddr>(), b.trim().parse::<IpAddr>()) {
+        (Ok(x), Ok(y)) => x.to_canonical() == y.to_canonical(),
+        _ => a.trim().eq_ignore_ascii_case(b.trim()),
+    }
+}
+
+/// O nome de host desta entrada da lista resolve para este IP?
+///
+/// Vai a rede (DNS), e por isso e a ULTIMA pergunta de
+/// `sem_propagar_so_de_dentro`, nunca a primeira. Nome que nao resolve nao
+/// autoriza -- e um IP literal na lista nem chega aqui.
+fn endereco_resolve_para(endereco: &str, porta: u16, ip: &str) -> bool {
+    use std::net::{IpAddr, ToSocketAddrs};
+    let Ok(alvo) = ip.trim().parse::<IpAddr>() else {
+        return false;
+    };
+    if endereco.trim().parse::<IpAddr>().is_ok() {
+        return false;
+    }
+    (endereco.trim(), porta)
+        .to_socket_addrs()
+        .map(|mut enderecos| enderecos.any(|e| e.ip().to_canonical() == alvo.to_canonical()))
+        .unwrap_or(false)
+}
+
+/// A chave da fabrica para uma falha de REDE da sonda `replicacao_testar`,
+/// pelo tipo do erro e nunca pela frase do sistema operacional.
+fn chave_da_falha_de_rede(tipo: std::io::ErrorKind) -> &'static str {
+    use std::io::ErrorKind::*;
+    match tipo {
+        ConnectionRefused => "erro.sonda_recusada",
+        TimedOut | WouldBlock => "erro.sonda_prazo",
+        // Sem rota, host inalcancavel, nome que nao resolve, endereco que nao
+        // existe: para quem sonda, e tudo «nao ha caminho ate la».
+        HostUnreachable | NetworkUnreachable | NetworkDown | AddrNotAvailable | NotFound
+        | Unsupported | InvalidInput => "erro.sonda_sem_rota",
+        // Aceitou e derrubou: reset, EOF, cano quebrado -- ou qualquer outro
+        // tipo que o sistema invente. Nunca o texto dele.
+        _ => "erro.sonda_caiu",
+    }
+}
+
 /// Uma conexao viva para outro PhxSql, do lado de ca da interface.
 pub struct Remoto {
     pub destino: String,
@@ -3785,7 +3835,7 @@ impl Servidor {
 
     /// `cluster_pulso`: registra o pulso de OUTRO no e devolve o proprio --
     /// uma troca, e cada lado sai sabendo do outro.
-    fn op_cluster_pulso(&self, p: &Json) -> Result<Json> {
+    fn op_cluster_pulso(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let Some(estado) = &self.cluster else {
             return Err(Self::sem_cluster());
         };
@@ -3797,15 +3847,35 @@ impl Servidor {
         // No fora da lista e configuracao torta em algum lugar -- recusar em
         // voz alta e o que faz o erro aparecer no primeiro pulso, e nao numa
         // eleicao com um eleitor fantasma.
-        if estado.no(&id).is_none() {
-            return Err(PhxError::Autorizacao(format!(
-                "o no {id:?} nao esta na lista de nos deste cluster"
-            )));
-        }
-        if id == estado.config.id {
-            return Err(PhxError::Esquema(format!(
-                "o no {id:?} e ESTE servidor -- dois nos com o mesmo id no ar"
-            )));
+        //
+        // UMA resposta para «nao esta na lista» e «e ESTE servidor» (revisao
+        // SEC de 17/09/2026, A11): duas frases distintas faziam do pulso um
+        // oraculo de ids -- quem tem a credencial de replicacao enumerava a
+        // lista do cluster sem gastar tolerancia nenhuma, e e dessa lista que
+        // o pulso forjado do A1 precisa. O diagnostico do id duplicado nao se
+        // perde: vai para o log DESTE processo, que e de quem opera, e nao
+        // para o fio, que e de quem pergunta. A recusa so conta como tentativa
+        // leve com `seguranca.contar_pulso_desconhecido` ligado, porque o no
+        // que entra a quente pulsa os antigos antes de ser acrescentado --
+        // ver o comentario do campo em `blacklist::Politica`.
+        if estado.no(&id).is_none() || id == estado.config.id {
+            if id == estado.config.id {
+                eprintln!(
+                    "cluster: pulso com o id DESTE servidor ({id}) vindo de {:?} -- \
+                     dois nos com o mesmo id no ar?",
+                    sessao.ip
+                );
+            }
+            if self.config.politica.contar_pulso_desconhecido && !sessao.ip.is_empty() {
+                self.violacao_leve(
+                    &sessao.ip,
+                    "cluster_pulso",
+                    "pulso com id que nao e um no deste cluster",
+                );
+            }
+            return Err(PhxError::Autorizacao(
+                self.msg("erro.pulso_de_no_desconhecido", &[("id", &id)]),
+            ));
         }
         estado.registrar(&id, pulso);
         Ok(Json::objeto(vec![
@@ -3861,6 +3931,7 @@ impl Servidor {
     /// credencial de replica.
     fn op_cluster_no_acrescentar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let estado = self.cluster_para_escalonar(sessao)?;
+        self.sem_propagar_so_de_dentro(&estado, p, sessao)?;
         let id = p.texto_ou("id", "").trim().to_string();
         if id.is_empty() {
             return Err(PhxError::Esquema(
@@ -3944,6 +4015,7 @@ impl Servidor {
     ///   aceitando escrita que ninguem mais conta. Rebaixe primeiro.
     fn op_cluster_no_remover(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let estado = self.cluster_para_escalonar(sessao)?;
+        self.sem_propagar_so_de_dentro(&estado, p, sessao)?;
         let id = p.texto_ou("id", "").trim().to_string();
         if id.is_empty() {
             return Err(PhxError::Esquema(
@@ -4029,6 +4101,57 @@ impl Servidor {
         self.cluster.clone().ok_or_else(Self::sem_cluster)
     }
 
+    /// `"propagar": false` so vale para a ordem que o PROPRIO cluster
+    /// propaga -- revisao SEC de 17/09/2026, A4.
+    ///
+    /// O campo existe para impedir a tempestade (a ordem propagada nao se
+    /// propaga de novo), e vinha do pedido sem ninguem perguntar de quem.
+    /// De um cliente, dois `cluster_no_remover` sem propagar deixavam o master
+    /// sozinho na propria lista -- `1 * 2 > 1`, maioria -- enquanto os outros
+    /// dois, ainda com tres na lista e sem ouvir mais o master, promoviam
+    /// outro: dois masters gravaveis, sem particao de rede nenhuma. E o
+    /// espelho, `cluster_no_acrescentar` com ids fantasmas, recusava toda
+    /// escrita. Nenhuma das duas e falha: e uma lista que os outros nunca
+    /// confirmaram.
+    ///
+    /// Ordem INTERNA e a que chega com a credencial do cluster (quando o
+    /// cluster tem usuario) e de um endereco da lista viva; sem IP e caminho
+    /// de dentro do processo (job, rotina, teste), que nunca teve de quem
+    /// vir. O portao mora aqui, UM so, e as duas ops o chamam -- espalha-lo
+    /// deixaria uma delas de fora no dia em que alguem esquecesse.
+    fn sem_propagar_so_de_dentro(
+        &self,
+        estado: &crate::cluster::EstadoCluster,
+        p: &Json,
+        sessao: &Sessao,
+    ) -> Result<()> {
+        if p.booleano_ou("propagar", true) || sessao.ip.is_empty() {
+            return Ok(());
+        }
+        let c = &estado.config;
+        let credencial_do_cluster = c.usuario.is_empty() || sessao.login() == c.usuario;
+        // Primeiro sem rede: IP contra IP. So quando nao bate e que o nome de
+        // host da lista e resolvido -- `endereco` aceita nome («host ou IP»),
+        // e a propagacao de um cluster configurado por nome chega de um IP;
+        // recusa-la seria a guarda quebrando o cluster que ja rodava. A
+        // resolucao fica atras das duas perguntas baratas de proposito: so
+        // paga quem chegou com `propagar:false`, com IP, e sem casar por texto.
+        let lista = estado.lista();
+        let de_um_no = credencial_do_cluster
+            && (lista
+                .iter()
+                .any(|n| mesmo_endereco_ip(&n.endereco, &sessao.ip))
+                || lista
+                    .iter()
+                    .any(|n| endereco_resolve_para(&n.endereco, n.porta, &sessao.ip)));
+        if de_um_no {
+            return Ok(());
+        }
+        Err(PhxError::Autorizacao(
+            self.msg("erro.escalonar_sem_propagar", &[]),
+        ))
+    }
+
     /// Grava a lista VIVA no `config.json` deste no.
     ///
     /// Servidor sem arquivo (`--config`) nao e erro: a lista viva ja mudou e o
@@ -4099,15 +4222,39 @@ impl Servidor {
     /// respondida igual em QUALQUER no. E o endereco unico do cluster pelo
     /// protocolo: o cliente valida com um endereco qualquer e e apontado ao
     /// certo. VIP de rede e infraestrutura, nao banco.
-    fn op_cluster_estado(&self) -> Result<Json> {
+    ///
+    /// # Duas metades, por permissao (revisao SEC de 17/09/2026, A6)
+    ///
+    /// `ler` recebe o que um cliente precisa para achar quem manda: `master`
+    /// (id e endereco), `escrita_liberada`, epoca e papel deste no. A lista
+    /// `nos[]` -- endereco, epoca, posicao e idade do pulso de CADA no -- so
+    /// vai para quem `administra`, pelo mesmo criterio do `sistema`: nome de
+    /// placa de rede e ponto de montagem descrevem a infraestrutura, e nao o
+    /// dado; quem so le uma tabela nao ganha nada com o mapa, e o atacante
+    /// ganha o alvo do pulso forjado. O campo fica AUSENTE (nao vazio) para
+    /// quem nao pode: lista vazia diria «nao ha nos», que e mentira.
+    fn op_cluster_estado(&self, sessao: &Sessao) -> Result<Json> {
         let Some(estado) = &self.cluster else {
             return Err(Self::sem_cluster());
         };
         let agora = crate::agora_ms();
         let c = &estado.config;
-        let mapa = estado.mapa();
-        let nos: Vec<Json> = estado
-            .lista()
+        // `map_or(true, ..)` e nao `is_none_or`: o MSRV do workspace e 1.75.
+        let administra = sessao
+            .usuario
+            .as_ref()
+            .map_or(true, |u| u.pode_em("", "", Atividade::Administrar));
+        let mapa = if administra {
+            estado.mapa()
+        } else {
+            HashMap::new()
+        };
+        let lista = if administra {
+            estado.lista()
+        } else {
+            Vec::new()
+        };
+        let nos: Vec<Json> = lista
             .iter()
             .map(|n| {
                 let (papel, epoca, posicao, incompleta, idade_ms) = if n.id == c.id {
@@ -4155,7 +4302,7 @@ impl Servidor {
                 ])
             })
             .collect();
-        Ok(Json::objeto(vec![
+        let mut resposta = vec![
             ("id", Json::texto_de(&c.id)),
             ("papel", Json::texto_de(estado.papel().nome())),
             ("epoca", Json::de_u64(estado.epoca())),
@@ -4175,8 +4322,11 @@ impl Servidor {
                 Json::Lista(estado.degradacao().iter().map(Json::texto_de).collect()),
             ),
             ("janela_inatividade_s", Json::de_u64(c.janela_s)),
-            ("nos", Json::Lista(nos)),
-        ]))
+        ];
+        if administra {
+            resposta.push(("nos", Json::Lista(nos)));
+        }
+        Ok(Json::objeto(resposta))
     }
 
     /// Uma passada bidirecional: puxa do outro lado e aplica POR CHAVE.
@@ -4511,6 +4661,34 @@ impl Servidor {
         // Um source antigo manda origem zero; zero aqui significaria "meu",
         // que e a leitura errada para um evento que veio DELE.
         let origem_ev = if e.origem == 0 { hash_dele } else { e.origem };
+        // O carimbo com que o evento DISPUTA e com que ele entra no diario e
+        // no toque daqui. Alem da folga do futuro, vale o relogio local e a
+        // troca e contada -- nunca recusada, porque recusar pararia o par.
+        // Ver `bidirecional::carimbo_alem_da_folga` (revisao SEC, A9).
+        let carimbo = {
+            let agora = crate::agora_ms();
+            if bidirecional::carimbo_alem_da_folga(e.carimbo_ms, agora) {
+                if let Ok(mut guarda) = self.toques_bidi.lock() {
+                    let m = guarda.entry(chave_tab.to_string()).or_default();
+                    m.carimbos_do_futuro += 1;
+                    // Uma linha no log por tabela, e nao por evento: um par
+                    // mentindo o carimbo nao pode encher o log deste lado.
+                    if m.carimbos_do_futuro == 1 {
+                        eprintln!(
+                            "CARIMBO DO FUTURO em {chave_tab}: evento com carimbo {} \
+                             mais de {} ms a frente do relogio local ({agora}); entrou \
+                             com o relogio daqui. Confira o NTP do outro lado -- e se \
+                             o NTP esta certo, o outro lado mente",
+                            e.carimbo_ms,
+                            bidirecional::FOLGA_DO_CARIMBO_MS
+                        );
+                    }
+                }
+                agora
+            } else {
+                e.carimbo_ms
+            }
+        };
 
         // A colisao e detectada ANTES de decidir quem vence, e de proposito: os
         // dois lados perdem uma linha, cada um no seu `.reg`, e a deteccao tem
@@ -4524,7 +4702,7 @@ impl Servidor {
                 .and_then(|m| m.toques.get(&chave))
                 .copied();
             let vence = match local.as_ref() {
-                Some(l) => bidirecional::remoto_vence(e.carimbo_ms, origem_ev, l),
+                Some(l) => bidirecional::remoto_vence(carimbo, origem_ev, l),
                 None => true,
             };
             let colisao = bidirecional::colisao_de_criacao(e.operacao, origem_ev, local.as_ref());
@@ -4554,7 +4732,7 @@ impl Servidor {
                 // O evento local nasce com o carimbo e a origem do NASCIMENTO
                 // da escrita -- e o que faz o conflito ser justo e o evento
                 // nao voltar para de onde veio.
-                tabela.forcar_proximo_evento(e.carimbo_ms, origem_ev);
+                tabela.forcar_proximo_evento(carimbo, origem_ev);
                 match achadas.first() {
                     // O rowid e o rownum sao LOCAIS: `atualizar` mantem os
                     // daqui, `inserir` numera na ordem de chegada daqui. A
@@ -4576,7 +4754,7 @@ impl Servidor {
                 // chegou. O toque gravado abaixo vira a lapide em memoria que
                 // impede uma alteracao MAIS VELHA de ressuscita-la.
                 if let Some(rowid) = achadas.first() {
-                    tabela.forcar_proximo_evento(e.carimbo_ms, origem_ev);
+                    tabela.forcar_proximo_evento(carimbo, origem_ev);
                     tabela.excluir_de_vez_replicado(*rowid, "replicacao bidirecional")?;
                 }
             }
@@ -4590,7 +4768,7 @@ impl Servidor {
                 .insert(
                     chave,
                     Toque {
-                        carimbo: e.carimbo_ms,
+                        carimbo,
                         origem: origem_ev,
                         excluido: e.operacao == Operacao::Exclusao,
                     },
@@ -4794,6 +4972,10 @@ impl Servidor {
                                 ("id", Json::texto_de(&n.id)),
                                 ("endereco", Json::texto_de(&n.endereco)),
                                 ("porta", Json::de_u64(n.porta as u64)),
+                                // Os MESMOS campos que `Cluster::para_json`
+                                // escreve para o no do arquivo: a lista viva
+                                // nao pode dizer menos que a do arranque.
+                                ("tem_pino", Json::Bool(!n.chave_do_fio.is_empty())),
                             ])
                         })
                         .collect(),
@@ -10013,12 +10195,12 @@ impl Servidor {
             "posicao" => self.op_posicao(p, sessao),
             "replicar" => self.op_replicar(p, sessao),
             "aplicar" => self.op_aplicar(p, sessao),
-            "cluster_pulso" => self.op_cluster_pulso(p),
-            "cluster_estado" => self.op_cluster_estado(),
+            "cluster_pulso" => self.op_cluster_pulso(p, sessao),
+            "cluster_estado" => self.op_cluster_estado(sessao),
             "cluster_no_acrescentar" => self.op_cluster_no_acrescentar(p, sessao),
             "cluster_no_remover" => self.op_cluster_no_remover(p, sessao),
             "replicacao_estado" => self.op_replicacao_estado(),
-            "replicacao_testar" => self.op_replicacao_testar(p),
+            "replicacao_testar" => self.op_replicacao_testar(p, sessao),
             "replicacao_ligar" => self.op_replicacao_ligar(p),
             // Casca fina: a operacao so escolhe o texto do motivo. Toda a
             // promocao mora em `promover_para_primario`.
@@ -22202,6 +22384,19 @@ impl Servidor {
             })
             .collect();
 
+        // A trilha de dado pessoal, UM registro por lote (revisao SEC de
+        // 17/09/2026, A8): a imagem viaja com o valor da coluna marcada
+        // dentro, e ate aqui `replicar` era o unico caminho que entregava
+        // todas as linhas de uma vez sem deixar rastro -- «quem viu o
+        // prontuario do fulano?» nao tinha resposta para a replicacao. O
+        // criterio guarda a faixa pedida e `linhas` conta os eventos que de
+        // fato sairam (os suprimidos pela origem nao expuseram nada). Tabela
+        // sem coluna marcada nao paga nem o `format!`: o portao esta dentro
+        // de `trilhar_acesso`, antes do fecho.
+        Self::trilhar_acesso(&mut t, 0, lista.len() as u64, || {
+            format!("replicar desde={desde} ate={}", desde + lidos)
+        })?;
+
         Ok(Json::objeto(vec![
             ("desde", Json::de_u64(desde)),
             ("ate", Json::de_u64(desde + lidos)),
@@ -22290,7 +22485,8 @@ impl Servidor {
     /// esta montando uma ligacao NOVA manda host, porta, token e usuario com
     /// `senha_hash` -- o mesmo hash do cadastro, nunca a senha. Nada disso
     /// volta na resposta.
-    fn op_replicacao_testar(&self, p: &Json) -> Result<Json> {
+    fn op_replicacao_testar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let host_solto = p.texto_ou("origem", "").trim().is_empty();
         let origem = match p.texto_ou("origem", "").trim() {
             // Uma origem ja configurada: a credencial nao viaja.
             nome if !nome.is_empty() => {
@@ -22353,7 +22549,38 @@ impl Servidor {
             }
         };
 
-        let mut cliente = crate::replica::ligar(&origem)?;
+        match self.sondar_origem(&origem, p) {
+            Ok(r) => Ok(r),
+            // A falha de REDE volta classificada, nunca com o texto do sistema
+            // operacional (revisao SEC de 17/09/2026, A5): «Connection refused»
+            // distingue porta fechada de filtrada, e a sonda virava um scanner
+            // com o texto de cada `errno`. O `ErrorKind` sobrevive ao embrulho
+            // em `Cliente::conectar_com_prazo` justamente para se classificar
+            // por tipo e nao por frase. E o host FORA da configuracao que nao
+            // responde conta como tentativa leve: a origem nomeada ja tem o
+            // freio do `recusar_se_estacionada`; o host solto nao tinha nenhum.
+            Err(PhxError::Io(io)) => {
+                if host_solto && !sessao.ip.is_empty() {
+                    self.violacao_leve(
+                        &sessao.ip,
+                        "replicacao_testar",
+                        "sonda para host fora da configuracao sem resposta",
+                    );
+                }
+                let alvo = format!("{}:{}", origem.host, origem.porta);
+                Err(PhxError::Io(std::io::Error::new(
+                    io.kind(),
+                    self.msg(chave_da_falha_de_rede(io.kind()), &[("alvo", &alvo)]),
+                )))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// A conversa da sonda com o outro servidor, separada para a falha de rede
+    /// ter UM lugar de classificacao -- ver [`Servidor::op_replicacao_testar`].
+    fn sondar_origem(&self, origem: &crate::config::Origem, p: &Json) -> Result<Json> {
+        let mut cliente = crate::replica::ligar(origem)?;
         let databases = if origem.databases.is_empty() {
             cliente.databases()?
         } else {
@@ -22474,16 +22701,23 @@ impl Servidor {
         // count > 0 aparecem, para o campo ficar vazio no caso comum e gritar
         // quando ha estrago. Duas faixas iguais numerando a mesma chave perdem
         // linha em silencio; este e o numero que tira o silencio.
-        let colisoes = match self.toques_bidi.lock() {
+        let (colisoes, carimbos_do_futuro) = match self.toques_bidi.lock() {
             Ok(g) => {
                 let pares: Vec<(String, Json)> = g
                     .iter()
                     .filter(|(_, m)| m.colisoes > 0)
                     .map(|(k, m)| (k.clone(), Json::de_u64(m.colisoes)))
                     .collect();
-                Json::Objeto(pares)
+                // Mesmo desenho: so a tabela com contagem aparece. E o
+                // numero que tira o silencio do carimbo mentido (A9).
+                let futuros: Vec<(String, Json)> = g
+                    .iter()
+                    .filter(|(_, m)| m.carimbos_do_futuro > 0)
+                    .map(|(k, m)| (k.clone(), Json::de_u64(m.carimbos_do_futuro)))
+                    .collect();
+                (Json::Objeto(pares), Json::Objeto(futuros))
             }
-            Err(_) => Json::Objeto(vec![]),
+            Err(_) => (Json::Objeto(vec![]), Json::Objeto(vec![])),
         };
         Ok(Json::objeto(vec![
             ("papel", Json::texto_de(self.papel_atual().nome())),
@@ -22501,6 +22735,7 @@ impl Servidor {
             ),
             ("origens", origens),
             ("colisoes_de_sequencia", colisoes),
+            ("carimbos_do_futuro", carimbos_do_futuro),
         ]))
     }
 
@@ -24236,7 +24471,7 @@ mod testes_firewall_e_mensagens {
         // Estacionada, a origem tambem NAO se testa: `replicacao_testar` e
         // ligar nela com a credencial recusada, e cada teste conta la.
         let e = s
-            .op_replicacao_testar(&pedido(r#"{"origem":"matriz"}"#))
+            .op_replicacao_testar(&pedido(r#"{"origem":"matriz"}"#), &Sessao::default())
             .unwrap_err();
         assert!(
             matches!(&e, PhxError::Esquema(m) if m.contains("replicacao_ligar")),
@@ -24250,7 +24485,7 @@ mod testes_firewall_e_mensagens {
         // E sem parada o teste segue o caminho de sempre -- aqui, ate a
         // recusa de sempre, porque "matriz" nao esta em replicacao.origens.
         let e = s
-            .op_replicacao_testar(&pedido(r#"{"origem":"matriz"}"#))
+            .op_replicacao_testar(&pedido(r#"{"origem":"matriz"}"#), &Sessao::default())
             .unwrap_err();
         assert!(matches!(e, PhxError::NaoEncontrado(_)), "{e}");
         let r = s
@@ -32222,6 +32457,16 @@ mod testes_config_gravar {
     /// Um servidor de arquivo COM bloco `cluster` -- o terreno dos testes do
     /// escalonamento a quente (pedido 217).
     fn servidor_em_cluster(nome: &str, cadastro: Cadastro) -> (Arc<Servidor>, PathBuf, DirTemp) {
+        servidor_em_cluster_com(nome, cadastro, |_| {})
+    }
+
+    /// [`servidor_em_cluster`] com um ajuste na `Config` antes de subir -- para
+    /// ligar um interruptor de politica ou dar usuario ao cluster.
+    fn servidor_em_cluster_com(
+        nome: &str,
+        cadastro: Cadastro,
+        ajuste: impl FnOnce(&mut Config),
+    ) -> (Arc<Servidor>, PathBuf, DirTemp) {
         let dir = DirTemp::novo(&format!("cluster-op-{nome}"));
         let caminho = dir.join("config.json");
         std::fs::write(
@@ -32252,7 +32497,50 @@ mod testes_config_gravar {
         c.dblink = dir.join("dblink.json");
         c.jobs = dir.join("jobs.json");
         c.cadastro = cadastro;
+        ajuste(&mut c);
         (Servidor::novo(c).unwrap(), caminho, dir)
+    }
+
+    /// Um usuario que SO le, em toda base: o `ler` do A6.
+    fn leitor() -> Usuario {
+        Usuario {
+            id: 8,
+            nome: "Leitora".into(),
+            login: "le".into(),
+            senha_hash: String::new(),
+            email: String::new(),
+            telefone: String::new(),
+            supervisor: false,
+            ativo: true,
+            nivel: Nivel::Nenhum,
+            chave_publica: None,
+            bases: vec![(
+                "*".into(),
+                Permissoes {
+                    ler: true,
+                    ..Permissoes::default()
+                },
+            )],
+            tabelas: Vec::new(),
+            colunas: Vec::new(),
+        }
+    }
+
+    /// Um administrador de verdade, com IP de fora do cluster.
+    fn administrador() -> Usuario {
+        let mut u = operador();
+        u.id = 9;
+        u.login = "adm".into();
+        u.bases = vec![("*".into(), Permissoes::tudo())];
+        u
+    }
+
+    fn sessao_com(usuario: Option<Usuario>, ip: &str) -> Sessao {
+        Sessao {
+            usuario,
+            ip: ip.to_string(),
+            ..Sessao::default()
+        }
     }
 
     fn pulso_de(id: &str) -> Json {
@@ -32420,6 +32708,362 @@ mod testes_config_gravar {
             );
         }
         assert_eq!(s.cluster.clone().unwrap().total(), 2);
+    }
+
+    // ------------------------------------------------ A6: o mapa so para quem administra
+
+    /// **Prova real do A6 (revisao SEC de 17/09/2026, pedido 283).** Quem so
+    /// tem `ler` recebia a lista inteira dos nos -- endereco, epoca, posicao e
+    /// idade do pulso de cada um --, que e o mapa de que o pulso forjado do
+    /// A1 precisa. `ler` continua achando o master; `nos[]` exige administrar.
+    ///
+    /// **Defeito reposto**: `administra = true` sem consultar a sessao, e a
+    /// primeira asercao cai com `nos` presente.
+    #[test]
+    fn cluster_estado_de_leitor_nao_lista_os_nos() {
+        let (s, _, _guarda) = servidor_em_cluster("estado-leitor", Cadastro::default());
+        let r = s
+            .executar(
+                "cluster_estado",
+                &pedido("{}"),
+                &sessao_com(Some(leitor()), "203.0.113.5"),
+            )
+            .unwrap();
+        assert!(
+            r.campo("nos").is_none(),
+            "o leitor recebeu o mapa dos nos: {}",
+            r.escrever()
+        );
+        // O que o cliente precisa para achar quem manda continua la.
+        assert!(r.campo("master").is_some(), "{}", r.escrever());
+        assert!(r.campo("escrita_liberada").is_some(), "{}", r.escrever());
+        assert_eq!(r.texto_ou("id", ""), "no1");
+        assert!(
+            !r.escrever().contains("5398"),
+            "a porta de outro no vazou para o leitor: {}",
+            r.escrever()
+        );
+    }
+
+    /// O comportamento VELHO: o administrador -- por usuario ou pelo token de
+    /// servico -- continua recebendo a lista inteira, com endereco e tudo.
+    #[test]
+    fn cluster_estado_de_administrador_continua_completo() {
+        let (s, _, _guarda) = servidor_em_cluster("estado-adm", Cadastro::default());
+        for sessao in [
+            Sessao::default(),
+            sessao_com(Some(administrador()), "203.0.113.5"),
+        ] {
+            let r = s
+                .executar("cluster_estado", &pedido("{}"), &sessao)
+                .unwrap();
+            let nos = r
+                .campo("nos")
+                .and_then(Json::lista)
+                .unwrap_or_else(|| panic!("sem `nos` para quem administra: {}", r.escrever()));
+            assert_eq!(nos.len(), 2);
+            assert!(nos
+                .iter()
+                .any(|n| n.texto_ou("endereco", "") == "127.0.0.1:5398"));
+            assert!(nos.iter().all(|n| n.campo("ultimo_pulso_ms").is_some()));
+        }
+    }
+
+    // ------------------------------------------------ A4: propagar:false so de dentro
+
+    /// **Prova real do A4 (revisao SEC de 17/09/2026, pedido 281).** Dois
+    /// `cluster_no_remover` com `propagar:false` vindos de um CLIENTE deixavam
+    /// o master sozinho na propria lista, contando maioria sobre um, enquanto
+    /// os outros dois promoviam outro master: dois masters gravaveis sem
+    /// particao nenhuma. O campo passa a valer so para a ordem que o proprio
+    /// cluster propaga -- credencial do cluster, de um endereco da lista.
+    ///
+    /// **Defeito reposto**: tirar a chamada a `sem_propagar_so_de_dentro` das
+    /// duas ops, e as duas primeiras asercoes caem com `removido: true`.
+    #[test]
+    fn propagar_false_de_cliente_e_recusado() {
+        let (s, _, _guarda) = servidor_em_cluster("sem-propagar-cliente", Cadastro::default());
+        let estado = s.cluster.clone().unwrap();
+        // Tres nos, como no cenario do SEC: de dentro (sem IP), o terceiro
+        // entra -- e o caminho da propagacao, que continua valendo.
+        s.executar(
+            "cluster_no_acrescentar",
+            &pedido(r#"{"id":"no3","endereco":"10.0.0.3","porta":5400,"propagar":false}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        assert_eq!(estado.total(), 3);
+        let cliente = sessao_com(Some(administrador()), "203.0.113.5");
+        let e = s
+            .executar(
+                "cluster_no_remover",
+                &pedido(r#"{"id":"no2","propagar":false}"#),
+                &cliente,
+            )
+            .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(e.to_string().contains("propagar"), "{e}");
+        assert_eq!(estado.total(), 3, "a lista viva mudou apesar da recusa");
+
+        // O espelho: acrescentar fantasmas sem propagar recusaria toda escrita.
+        let e = s
+            .executar(
+                "cluster_no_acrescentar",
+                &pedido(r#"{"id":"no9","endereco":"10.0.0.9","porta":5000,"propagar":false}"#),
+                &cliente,
+            )
+            .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert_eq!(estado.total(), 3);
+
+        // E o mesmo cliente, pelo token de servico, tambem nao passa: o que
+        // decide e de ONDE a ordem vem, nao quem e.
+        let e = s
+            .executar(
+                "cluster_no_remover",
+                &pedido(r#"{"id":"no2","propagar":false}"#),
+                &sessao_com(None, "203.0.113.5"),
+            )
+            .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+    }
+
+    /// A ordem INTERNA continua passando: e a propagacao de um no da lista,
+    /// com a credencial do cluster. E com usuario no cluster, a credencial
+    /// tem de bater -- vir do endereco certo nao basta.
+    #[test]
+    fn propagar_false_de_um_no_do_cluster_passa() {
+        let (s, _, _guarda) = servidor_em_cluster("sem-propagar-no", Cadastro::default());
+        let estado = s.cluster.clone().unwrap();
+        // 127.0.0.1 e o endereco de no2 na lista; cluster sem usuario, so token.
+        let r = s
+            .executar(
+                "cluster_no_acrescentar",
+                &pedido(r#"{"id":"no3","endereco":"10.0.0.3","porta":5400,"propagar":false}"#),
+                &sessao_com(None, "127.0.0.1"),
+            )
+            .unwrap();
+        assert!(r.booleano_ou("acrescentado", false), "{}", r.escrever());
+        assert_eq!(estado.total(), 3);
+        // O IPv4 mapeado em IPv6 e o mesmo endereco.
+        let r = s
+            .executar(
+                "cluster_no_remover",
+                &pedido(r#"{"id":"no3","propagar":false}"#),
+                &sessao_com(None, "::ffff:127.0.0.1"),
+            )
+            .unwrap();
+        assert!(r.booleano_ou("removido", false), "{}", r.escrever());
+
+        // Cluster COM usuario: o endereco certo com outra credencial nao passa.
+        let mut cadastro = Cadastro::default();
+        cadastro.usuarios.push(administrador());
+        let (s, _, _guarda) = servidor_em_cluster_com("sem-propagar-cred", cadastro, |c| {
+            c.cluster.as_mut().unwrap().usuario = "clu".into();
+        });
+        let ordem = pedido(r#"{"id":"no3","endereco":"10.0.0.3","porta":5400,"propagar":false}"#);
+        let e = s
+            .executar(
+                "cluster_no_acrescentar",
+                &ordem,
+                &sessao_com(Some(administrador()), "127.0.0.1"),
+            )
+            .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        // ...e a credencial do cluster, do endereco certo, passa.
+        let mut clu = administrador();
+        clu.login = "clu".into();
+        let r = s
+            .executar(
+                "cluster_no_acrescentar",
+                &ordem,
+                &sessao_com(Some(clu), "127.0.0.1"),
+            )
+            .unwrap();
+        assert!(r.booleano_ou("acrescentado", false), "{}", r.escrever());
+    }
+
+    /// A lista aceita NOME de host («host ou IP»), e a propagacao de um
+    /// cluster configurado por nome chega de um IP. Comparar so texto
+    /// recusaria a propria propagacao do cluster -- guarda que quebra o
+    /// cluster que ja rodava e estrago. `localhost` resolve para 127.0.0.1 em
+    /// qualquer maquina, entao a prova nao depende de DNS de fora.
+    #[test]
+    fn propagar_false_de_um_no_por_nome_de_host_passa() {
+        let (s, _, _guarda) =
+            servidor_em_cluster_com("sem-propagar-nome", Cadastro::default(), |c| {
+                let cl = c.cluster.as_mut().unwrap();
+                for n in cl.nos.iter_mut() {
+                    n.endereco = "localhost".into();
+                }
+            });
+        let estado = s.cluster.clone().unwrap();
+        let r = s
+            .executar(
+                "cluster_no_acrescentar",
+                &pedido(r#"{"id":"no3","endereco":"10.0.0.3","porta":5400,"propagar":false}"#),
+                &sessao_com(None, "127.0.0.1"),
+            )
+            .unwrap();
+        assert!(r.booleano_ou("acrescentado", false), "{}", r.escrever());
+        assert_eq!(estado.total(), 3);
+        // Um IP que o nome NAO resolve continua de fora.
+        let e = s
+            .executar(
+                "cluster_no_remover",
+                &pedido(r#"{"id":"no3","propagar":false}"#),
+                &sessao_com(None, "203.0.113.5"),
+            )
+            .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+    }
+
+    /// O comportamento VELHO, que e o que importa: sem o campo, a ordem de um
+    /// cliente e aceita e PROPAGADA como sempre -- o veredito por no continua
+    /// vindo na resposta (aqui no2 nao esta de pe, e o veredito diz isso).
+    #[test]
+    fn propagar_padrao_continua_igual() {
+        let (s, _, _guarda) = servidor_em_cluster("propagar-padrao", Cadastro::default());
+        let estado = s.cluster.clone().unwrap();
+        let r = s
+            .executar(
+                "cluster_no_acrescentar",
+                &pedido(r#"{"id":"no3","endereco":"10.0.0.3","porta":5400}"#),
+                &sessao_com(Some(administrador()), "203.0.113.5"),
+            )
+            .unwrap();
+        assert!(r.booleano_ou("acrescentado", false), "{}", r.escrever());
+        assert_eq!(estado.total(), 3);
+        let propagado = r
+            .campo("propagado")
+            .unwrap_or_else(|| panic!("sem veredito de propagacao: {}", r.escrever()));
+        assert!(
+            propagado.campo("no2").is_some(),
+            "a ordem nao foi propagada a no2: {}",
+            r.escrever()
+        );
+    }
+
+    // ------------------------------------------------ A10: `config` mostra a lista viva
+
+    /// **Prova real do A10 (revisao SEC de 17/09/2026, pedido 287).** A op
+    /// `config` publicava o retrato do arranque enquanto `cluster_estado`
+    /// tinha a lista viva, e a diferenca entre as duas e o denominador da
+    /// maioria. A injecao da lista viva ja existia desde o 217 (`a446c7a`);
+    /// o que faltava era a prova, e a paridade de campos com o arquivo
+    /// (`tem_pino`).
+    ///
+    /// **Defeito reposto**: tirar o bloco `if let (Some(estado), ...)` do
+    /// `configuracao_json`, e a contagem cai com 2 contra 3.
+    #[test]
+    fn config_mostra_a_lista_viva_do_cluster() {
+        let (s, _, _guarda) = servidor_em_cluster("config-vivo", Cadastro::default());
+        let pino = "ab".repeat(32);
+        s.executar(
+            "cluster_no_acrescentar",
+            &pedido(&format!(
+                r#"{{"id":"no3","endereco":"10.0.0.3","porta":5400,"chave_do_fio":"{pino}","propagar":false}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap();
+        let cfg = s
+            .executar("config", &pedido("{}"), &Sessao::default())
+            .unwrap();
+        let no_config = cfg
+            .campo("cluster")
+            .and_then(|c| c.campo("nos"))
+            .and_then(Json::lista)
+            .map(|l| l.to_vec())
+            .unwrap_or_default();
+        let est = s
+            .executar("cluster_estado", &pedido("{}"), &Sessao::default())
+            .unwrap();
+        let no_estado = est
+            .campo("nos")
+            .and_then(Json::lista)
+            .map(|l| l.len())
+            .unwrap_or(0);
+        assert_eq!(no_estado, 3);
+        assert_eq!(
+            no_config.len(),
+            no_estado,
+            "`config` mostra a lista de ontem: {}",
+            cfg.escrever()
+        );
+        let no3 = no_config
+            .iter()
+            .find(|n| n.texto_ou("id", "") == "no3")
+            .expect("no3 na lista do config");
+        assert!(
+            no3.booleano_ou("tem_pino", false),
+            "a lista viva diz menos que a do arquivo"
+        );
+        assert!(!cfg.escrever().contains(&pino), "o pino vazou no config");
+    }
+
+    // ------------------------------------------------ A11: o pulso nao e oraculo
+
+    /// **Prova real do A11 (revisao SEC de 17/09/2026, pedido 288).** O pulso
+    /// respondia tres coisas -- «nao esta na lista», «e ESTE servidor», ou o
+    /// pulso --, e as duas recusas enumeravam os ids do cluster de graca.
+    /// Agora as duas recusas sao UMA frase, com o id, e o id duplicado vai
+    /// para o log do processo, nao para o fio.
+    ///
+    /// **Defeito reposto**: voltar as duas recusas separadas, e a comparacao
+    /// dos dois textos cai.
+    #[test]
+    fn pulso_de_id_desconhecido_e_do_proprio_id_dao_a_mesma_resposta() {
+        let (s, _, _guarda) = servidor_em_cluster("oraculo", Cadastro::default());
+        let sessao = sessao_com(None, "203.0.113.5");
+        let fora = s
+            .executar("cluster_pulso", &pulso_de("no9"), &sessao)
+            .unwrap_err();
+        let proprio = s
+            .executar("cluster_pulso", &pulso_de("no1"), &sessao)
+            .unwrap_err();
+        assert_eq!(fora.nome(), "ACESSO_NEGADO");
+        assert_eq!(proprio.nome(), "ACESSO_NEGADO");
+        assert_eq!(
+            fora.to_string().replace("no9", "{id}"),
+            proprio.to_string().replace("no1", "{id}"),
+            "as duas recusas diferem, e a diferenca e o oraculo"
+        );
+        // O no da lista continua pulsando, como sempre.
+        s.executar("cluster_pulso", &pulso_de("no2"), &sessao)
+            .unwrap_or_else(|e| panic!("o pulso do no da lista: {e}"));
+    }
+
+    /// A recusa conta como tentativa leve SO com o interruptor ligado: o no
+    /// que entra a quente pulsa os antigos antes de ser acrescentado, e com
+    /// isto de fabrica cinco pulsos bloqueariam o IP dele por uma hora em
+    /// cada antigo -- na bancada, onde todos sao 127.0.0.1, o cluster inteiro.
+    /// Guarda nova entra pedida.
+    #[test]
+    fn pulso_desconhecido_conta_leve_so_com_o_interruptor() {
+        let ip = "203.0.113.77";
+        let (s, _, _guarda) = servidor_em_cluster("oraculo-leve-off", Cadastro::default());
+        for _ in 0..3 {
+            let _ = s.executar("cluster_pulso", &pulso_de("no9"), &sessao_com(None, ip));
+        }
+        assert_eq!(
+            s.lista_negra.lock().unwrap().tentativas_de(ip),
+            0,
+            "sem o interruptor, o pulso desconhecido contou tentativa"
+        );
+
+        let (s, _, _guarda) =
+            servidor_em_cluster_com("oraculo-leve-on", Cadastro::default(), |c| {
+                c.politica.contar_pulso_desconhecido = true;
+            });
+        for _ in 0..3 {
+            let _ = s.executar("cluster_pulso", &pulso_de("no9"), &sessao_com(None, ip));
+        }
+        assert_eq!(s.lista_negra.lock().unwrap().tentativas_de(ip), 3);
+        // O no da lista nunca conta.
+        s.executar("cluster_pulso", &pulso_de("no2"), &sessao_com(None, ip))
+            .unwrap();
+        assert_eq!(s.lista_negra.lock().unwrap().tentativas_de(ip), 3);
     }
 
     /// Guarda nova entra PEDIDA, nao imposta: um servidor SEM bloco `cluster`
@@ -34836,6 +35480,112 @@ mod testes_da_ficha_compartilhada {
             "a varredura de uma tabela com coluna marcada nao deixou rastro \
              na trilha: a pista de leitura engoliu o registro"
         );
+    }
+
+    /// **Prova real do A8 (revisao SEC de 17/09/2026, pedido 285).** O
+    /// `replicar` entrega a linha INTEIRA, com o valor da coluna marcada
+    /// dentro, e nao deixava registro na trilha: a pergunta «quem viu o
+    /// prontuario do fulano?» nao tinha resposta para o caminho que entrega
+    /// todas as linhas de uma vez. Um registro por chamada, com o criterio
+    /// `replicar desde=N ate=M` e `linhas` = eventos servidos -- o mesmo
+    /// desenho por operacao do `varrer` (`docs/LGPD.md` §4).
+    ///
+    /// **Defeito reposto**: tirar a chamada a `trilhar_acesso` do
+    /// `op_replicar` deixa a trilha em zero e este teste cai na contagem.
+    #[test]
+    fn replicar_numa_tabela_marcada_deixa_rastro_na_trilha() {
+        let (s, dir) = servidor("trilha-replicar", false);
+        s.executar(
+            "marcar_lgpd",
+            &pedido(r#"{"database":"b","tabela":"c","colunas":{"cpf":"pessoal"}}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        let lgpd = dir.join("b/c.lgpd");
+        let antes = std::fs::metadata(&lgpd).map(|m| m.len()).unwrap_or(0);
+        let r = s
+            .executar(
+                "replicar",
+                &pedido(r#"{"database":"b","tabela":"c","desde":2,"max":4}"#),
+                &Sessao {
+                    ip: "192.0.2.9".into(),
+                    ..Sessao::default()
+                },
+            )
+            .unwrap();
+        let servidos = r
+            .campo("eventos")
+            .and_then(Json::lista)
+            .map(|l| l.len())
+            .unwrap_or(0);
+        assert_eq!(
+            servidos,
+            4,
+            "o lote nao serviu o que devia: {}",
+            r.escrever()
+        );
+
+        let t = s
+            .executar(
+                "trilha",
+                &pedido(r#"{"database":"b","tabela":"c","tipo":"acesso"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        let registros: Vec<Json> = t
+            .campo("registros")
+            .and_then(Json::lista)
+            .map(|l| l.to_vec())
+            .unwrap_or_default();
+        assert_eq!(
+            registros.len(),
+            1,
+            "um `replicar` numa tabela marcada tem de deixar UM registro na \
+             trilha; veio {}",
+            t.escrever()
+        );
+        let e = &registros[0];
+        assert_eq!(e.texto_ou("identidade", ""), "replicar desde=2 ate=6");
+        assert_eq!(e.inteiro_ou("linhas", 0), 4, "linhas = eventos servidos");
+        assert_eq!(e.texto_ou("coluna", ""), "cpf");
+        assert_eq!(e.texto_ou("ip", ""), "192.0.2.9", "o IP de quem puxou");
+        // O custo de um registro por lote, medido no proprio arquivo -- e o
+        // numero que o relatorio desta frente cita (nao e asserido: ele muda
+        // com o tamanho do criterio).
+        let depois = std::fs::metadata(&lgpd).map(|m| m.len()).unwrap_or(0);
+        eprintln!("trilha do replicar: +{} bytes por lote", depois - antes);
+    }
+
+    /// O comportamento VELHO, que e o que o conserto nao pode encarecer: uma
+    /// tabela SEM coluna marcada continua sem trilha nenhuma depois do
+    /// `replicar` -- nem arquivo, nem registro. O portao (`tem_dado_pessoal`)
+    /// vem antes do `format!` do criterio, como no `varrer`.
+    #[test]
+    fn replicar_sem_coluna_marcada_nao_grava_trilha() {
+        let (s, dir) = servidor("trilha-replicar-sem-marca", false);
+        let r = s
+            .executar(
+                "replicar",
+                &pedido(r#"{"database":"b","tabela":"c","desde":0,"max":10}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            r.campo("eventos").and_then(Json::lista).map(|l| l.len()),
+            Some(10)
+        );
+        assert!(
+            !dir.join("b/c.lgpd").exists(),
+            "tabela sem coluna marcada ganhou trilha por causa do replicar"
+        );
+        let t = s
+            .executar(
+                "trilha",
+                &pedido(r#"{"database":"b","tabela":"c","tipo":"acesso"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(t.inteiro_ou("total", -1), 0, "{}", t.escrever());
     }
 
     /// O espelho continua nascendo numa leitura, como nascia antes.
@@ -44581,5 +45331,275 @@ mod testes_do_lote_de_replicacao {
         let r = s.op_diario(&p, &Sessao::default()).unwrap();
         assert_eq!(r.campo("eventos").and_then(Json::lista).unwrap().len(), 30);
         assert_eq!(r.inteiro_ou("total", 0), 30);
+    }
+}
+
+/// A sonda `replicacao_testar` e a falha de REDE -- revisao SEC de 17/09/2026,
+/// A5 (pedido 282). O caminho feliz pelo soquete esta em
+/// `tests/sonda-da-replicacao.rs`; aqui e o que a sonda diz quando NAO chega.
+#[cfg(test)]
+mod testes_da_sonda_de_rede {
+    use super::*;
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Uma porta que acabou de ser solta: conectar nela e recusado na hora.
+    fn porta_fechada() -> u16 {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    }
+
+    fn origem(nome: &str, porta: u16) -> crate::config::Origem {
+        crate::config::Origem {
+            nome: nome.into(),
+            host: "127.0.0.1".into(),
+            porta,
+            token: "x".into(),
+            databases: Vec::new(),
+            reconectar_em: 10,
+            usuario: String::new(),
+            senha_hash: String::new(),
+            senha: String::new(),
+            cada_minutos: 0,
+            hora: String::new(),
+            cifra: false,
+            chave_do_fio: String::new(),
+        }
+    }
+
+    fn servidor(nome: &str, porta_da_origem: u16) -> (Arc<Servidor>, DirTemp) {
+        let dir = DirTemp::novo(&format!("sonda-{nome}"));
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.replicacao.origens.push(origem("alfa", porta_da_origem));
+        (Servidor::novo(c).unwrap(), dir)
+    }
+
+    /// A classificacao e por TIPO, e cobre todo tipo que o sistema invente.
+    #[test]
+    fn a_falha_de_rede_se_classifica_pelo_tipo() {
+        use std::io::ErrorKind::*;
+        assert_eq!(
+            chave_da_falha_de_rede(ConnectionRefused),
+            "erro.sonda_recusada"
+        );
+        assert_eq!(chave_da_falha_de_rede(TimedOut), "erro.sonda_prazo");
+        assert_eq!(
+            chave_da_falha_de_rede(HostUnreachable),
+            "erro.sonda_sem_rota"
+        );
+        assert_eq!(
+            chave_da_falha_de_rede(NetworkUnreachable),
+            "erro.sonda_sem_rota"
+        );
+        assert_eq!(chave_da_falha_de_rede(NotFound), "erro.sonda_sem_rota");
+        assert_eq!(chave_da_falha_de_rede(ConnectionReset), "erro.sonda_caiu");
+        assert_eq!(chave_da_falha_de_rede(Other), "erro.sonda_caiu");
+    }
+
+    /// **Prova real do A5.** A porta fechada respondia «Connection refused»
+    /// com o texto do sistema dentro -- uma sonda de rede com o `errno` de
+    /// cada alvo. Agora a resposta e a frase da fabrica, e o host FORA da
+    /// configuracao que nao responde conta como tentativa leve.
+    ///
+    /// **Defeito reposto**: `Err(e) => Err(e)` no lugar do braco `Io` do
+    /// `op_replicacao_testar`, e as duas asercoes de texto caem.
+    #[test]
+    fn a_falha_de_rede_da_sonda_nao_vaza_o_texto_do_sistema() {
+        let porta = porta_fechada();
+        let (s, _dir) = servidor("texto", porta);
+        let ip = "198.51.100.7";
+        let e = s
+            .executar(
+                "replicacao_testar",
+                &pedido(&format!(
+                    r#"{{"host":"127.0.0.1","porta":{porta},"token_remoto":"x"}}"#
+                )),
+                &Sessao {
+                    ip: ip.into(),
+                    ..Sessao::default()
+                },
+            )
+            .unwrap_err();
+        let texto = e.to_string();
+        assert_eq!(e.nome(), "ERRO_DE_ES", "a classe do erro nao muda: {texto}");
+        assert!(texto.contains("recusou a conexao"), "{texto}");
+        assert!(
+            !texto.to_lowercase().contains("refused") && !texto.contains("os error"),
+            "o texto do sistema vazou: {texto}"
+        );
+        assert!(texto.contains(&format!("127.0.0.1:{porta}")), "{texto}");
+        assert_eq!(
+            s.lista_negra.lock().unwrap().tentativas_de(ip),
+            1,
+            "o host solto sem resposta nao contou tentativa leve"
+        );
+    }
+
+    /// O comportamento VELHO: a origem NOMEADA (a que esta no `config.json`)
+    /// recebe a mesma classificacao e NAO conta tentativa -- ela ja tem o
+    /// freio do `recusar_se_estacionada`, e testar a propria origem e rotina
+    /// de quem administra, nao sonda.
+    #[test]
+    fn origem_nomeada_sem_resposta_nao_conta_tentativa() {
+        let porta = porta_fechada();
+        let (s, _dir) = servidor("nomeada", porta);
+        let ip = "198.51.100.8";
+        let e = s
+            .executar(
+                "replicacao_testar",
+                &pedido(r#"{"origem":"alfa"}"#),
+                &Sessao {
+                    ip: ip.into(),
+                    ..Sessao::default()
+                },
+            )
+            .unwrap_err();
+        assert!(e.to_string().contains("recusou a conexao"), "{e}");
+        assert_eq!(s.lista_negra.lock().unwrap().tentativas_de(ip), 0);
+    }
+}
+
+/// O carimbo do modo B vem do outro lado -- revisao SEC de 17/09/2026, A9
+/// (pedido 286). A regra pura esta em `bidirecional.rs`; aqui e o caminho que
+/// aplica o evento e guarda o toque.
+#[cfg(test)]
+mod testes_do_carimbo_do_futuro {
+    use super::*;
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Um servidor com `b.c` (id primaria, nome), uma linha, e a tabela
+    /// aberta a parte para o `aplicar_por_chave`.
+    fn terreno(nome: &str) -> (Arc<Servidor>, Table, DirTemp) {
+        let dir = DirTemp::novo(&format!("carimbo-{nome}"));
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"c",
+                    "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"c","linha":{"id":1,"nome":"um"}}"#),
+            &dono,
+        )
+        .unwrap();
+        let t = Table::abrir(dir.join("b"), "c").unwrap();
+        (s, t, dir)
+    }
+
+    fn evento(t: &mut Table, carimbo_ms: i64) -> crate::replica::EventoRecebido {
+        crate::replica::EventoRecebido {
+            operacao: Operacao::Alteracao,
+            rowid: 1,
+            versao: 2,
+            imagem: t.imagem_da_linha_do_rowid(1).unwrap(),
+            carimbo_ms,
+            origem: 0,
+        }
+    }
+
+    fn toque_de(s: &Servidor) -> (Toque, u64) {
+        let g = s.toques_bidi.lock().unwrap();
+        let m = g.get("b/c").expect("mapa da tabela");
+        let toque = *m.toques.values().next().expect("um toque");
+        (toque, m.carimbos_do_futuro)
+    }
+
+    /// **Prova real do A9.** O evento com `i64::MAX` entrava como veio, e o
+    /// toque guardado ficava num instante que nenhuma escrita local alcanca.
+    ///
+    /// **Defeito reposto**: `let carimbo = e.carimbo_ms;` no
+    /// `aplicar_por_chave`, e a asercao do toque cai com `i64::MAX`.
+    #[test]
+    fn carimbo_do_futuro_entra_com_o_relogio_local_e_e_contado() {
+        let (s, mut t, _dir) = terreno("futuro");
+        let antes = crate::agora_ms();
+        let e = evento(&mut t, i64::MAX);
+        let aplicou = s
+            .aplicar_por_chave(&mut t, "b/c", "porId", 0, &e, bidirecional::hash_id("beta"))
+            .unwrap();
+        assert!(
+            aplicou,
+            "o evento nao e recusado: entra com o relogio daqui"
+        );
+        let (toque, contados) = toque_de(&s);
+        let depois = crate::agora_ms();
+        assert!(
+            (antes..=depois).contains(&toque.carimbo),
+            "o toque guardou o carimbo mentido: {}",
+            toque.carimbo
+        );
+        assert_eq!(contados, 1, "a troca nao foi contada");
+        // E a escrita local do instante seguinte vence de novo.
+        assert!(bidirecional::remoto_vence(depois + 1, 1, &toque));
+
+        // O contador chega ao `replicacao_estado`, so para a tabela atingida.
+        let r = s
+            .executar("replicacao_estado", &pedido("{}"), &Sessao::default())
+            .unwrap();
+        assert_eq!(
+            r.campo("carimbos_do_futuro")
+                .and_then(|c| c.campo("b/c"))
+                .and_then(Json::inteiro),
+            Some(1),
+            "{}",
+            r.escrever()
+        );
+    }
+
+    /// O comportamento VELHO: dentro da folga o carimbo vale como veio -- a
+    /// deriva de relogio que a regra sempre tolerou --, e nada e contado.
+    #[test]
+    fn carimbo_dentro_da_folga_entra_como_veio() {
+        let (s, mut t, _dir) = terreno("folga");
+        let adiantado = crate::agora_ms() + bidirecional::FOLGA_DO_CARIMBO_MS - 1_000;
+        let e = evento(&mut t, adiantado);
+        s.aplicar_por_chave(&mut t, "b/c", "porId", 0, &e, bidirecional::hash_id("beta"))
+            .unwrap();
+        let (toque, contados) = toque_de(&s);
+        assert_eq!(toque.carimbo, adiantado);
+        assert_eq!(contados, 0);
+        let r = s
+            .executar("replicacao_estado", &pedido("{}"), &Sessao::default())
+            .unwrap();
+        assert!(
+            r.campo("carimbos_do_futuro")
+                .and_then(|c| c.campo("b/c"))
+                .is_none(),
+            "tabela sem troca apareceu no contador: {}",
+            r.escrever()
+        );
     }
 }

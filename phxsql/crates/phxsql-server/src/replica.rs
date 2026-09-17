@@ -94,13 +94,23 @@ impl Cliente {
     ) -> Result<Cliente> {
         use std::net::ToSocketAddrs;
         let alvo = format!("{host}:{porta}");
+        // O `ErrorKind` do sistema sobrevive ao embrulho: e por ele que a sonda
+        // `replicacao_testar` classifica a falha (recusada, prazo, sem rota)
+        // sem devolver o texto cru do sistema operacional -- revisao SEC de
+        // 17/09/2026, A5. `Error::other` apagava o tipo e obrigava a
+        // classificar pela frase, que se compara por chave e nunca por texto.
         let endereco = alvo
             .to_socket_addrs()
-            .map_err(|e| PhxError::Io(std::io::Error::other(format!("{alvo}: {e}"))))?
+            .map_err(|e| PhxError::Io(std::io::Error::new(e.kind(), format!("{alvo}: {e}"))))?
             .next()
-            .ok_or_else(|| PhxError::Io(std::io::Error::other(format!("{alvo}: sem endereco"))))?;
+            .ok_or_else(|| {
+                PhxError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("{alvo}: sem endereco"),
+                ))
+            })?;
         let fluxo = TcpStream::connect_timeout(&endereco, prazo_conexao)
-            .map_err(|e| PhxError::Io(std::io::Error::other(format!("{alvo}: {e}"))))?;
+            .map_err(|e| PhxError::Io(std::io::Error::new(e.kind(), format!("{alvo}: {e}"))))?;
         Cliente::montar(fluxo, token, espera)
     }
 

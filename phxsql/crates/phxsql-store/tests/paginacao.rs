@@ -99,6 +99,92 @@ fn excluir_nao_devolve_o_numero() {
     assert_eq!(t.rownum_atual(), 7);
 }
 
+/// **Prova real do pedido 291** (parecer do DBA §2.1 e bateria de 17/09/2026,
+/// estágio `rownum`). Numa carga com `parar_no_erro: false` a linha recusada
+/// consumia um número de ordem: o contador andava ANTES da unicidade, do
+/// `CHECK` e da coluna obrigatória, e a linha seguinte nascia com um buraco
+/// atrás dela. O source ficava com `1,2,3,5,6` e a réplica -- que aplica só
+/// os eventos que existem -- com `1,2,3,4,5`: o retrato SHA-256 divergia por
+/// causa de uma inserção que nunca gravou nada.
+///
+/// Repondo o consumo antes das conferências (`numerar_linha` chamando
+/// `proximo_do_rownum` em vez de reservar), a asserção dos números cai com
+/// `[1, 2, 3, 5]`.
+#[test]
+fn linha_recusada_no_lote_nao_consome_rownum() {
+    let dir = DirTemp::novo("lote-recusa-nao-consome");
+    let mut t = Table::criar(&dir.0, esquema()).unwrap();
+    // Cinco linhas; a quarta repete a chave da terceira e é recusada.
+    let linhas = vec![linha(1), linha(2), linha(3), linha(3), linha(4)];
+    let lote = t.inserir_lote(&linhas, false).unwrap();
+    assert_eq!(
+        lote.rowids,
+        vec![1, 2, 3, 4],
+        "o lote gravou o que não devia"
+    );
+    assert_eq!(lote.recusadas.len(), 1);
+    assert_eq!(
+        lote.recusadas[0].0, 3,
+        "a recusada é a quarta linha (posição 3)"
+    );
+
+    let numeros: Vec<u64> = lote.rowids.iter().map(|r| rownum(&mut t, *r)).collect();
+    assert_eq!(
+        numeros,
+        vec![1, 2, 3, 4],
+        "a linha recusada consumiu um rownum: buraco na ordem de chegada"
+    );
+    assert_eq!(
+        t.rownum_atual(),
+        5,
+        "o contador andou por uma linha que não gravou"
+    );
+}
+
+/// O mesmo defeito no `inserir` simples, na MESMA instância aberta. Pelo
+/// soquete ele não aparecia porque o servidor reabre a tabela entre duas
+/// operações e o contador renasce do disco -- mas dentro de uma transação, de
+/// um job ou de qualquer caminho que segure o handle, a queima sobreviveria.
+/// Irmão do lote: chama as mesmas funções na mesma ordem.
+#[test]
+fn insercao_recusada_nao_consome_rownum() {
+    let dir = DirTemp::novo("simples-recusa-nao-consome");
+    let mut t = Table::criar(&dir.0, esquema()).unwrap();
+    t.inserir(&linha(1)).unwrap();
+    // Chave repetida: recusada pela unicidade.
+    assert!(t.inserir(&linha(1)).is_err());
+    // Coluna obrigatória com NULL: recusada na montagem do payload, que vem
+    // DEPOIS da unicidade -- o consumo tem de vir depois dela também.
+    assert!(t.inserir(&[Value::Int(2), Value::Null]).is_err());
+    let r = t.inserir(&linha(2)).unwrap();
+    assert_eq!(
+        rownum(&mut t, r),
+        2,
+        "duas recusas seguidas queimaram número"
+    );
+    assert_eq!(t.rownum_atual(), 3);
+}
+
+/// O comportamento VELHO, que é o teste que mais importa: um lote sem recusa
+/// numera exatamente como sempre numerou -- de um em um, na ordem em que as
+/// linhas chegaram, e o contador para em `n + 1`.
+#[test]
+fn lote_sem_recusa_numera_como_antes() {
+    let dir = DirTemp::novo("lote-sem-recusa");
+    let mut t = Table::criar(&dir.0, esquema()).unwrap();
+    let linhas: Vec<Vec<Value>> = (1..=5).map(linha).collect();
+    let lote = t.inserir_lote(&linhas, false).unwrap();
+    assert_eq!(lote.rowids, vec![1, 2, 3, 4, 5]);
+    assert!(lote.recusadas.is_empty());
+    let numeros: Vec<u64> = lote.rowids.iter().map(|r| rownum(&mut t, *r)).collect();
+    assert_eq!(numeros, vec![1, 2, 3, 4, 5]);
+    assert_eq!(t.rownum_atual(), 6);
+    // E o número sobrevive ao disco: reabrir devolve o mesmo contador.
+    drop(t);
+    let t = Table::abrir(&dir.0, "clientes").unwrap();
+    assert_eq!(t.rownum_atual(), 6);
+}
+
 #[test]
 fn alterar_nao_renumera() {
     let dir = DirTemp::novo("nao-renumera");

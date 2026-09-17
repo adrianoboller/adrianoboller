@@ -466,6 +466,78 @@ pub const FABRICA: &[MensagemFabrica] = &[
         ],
     },
     MensagemFabrica {
+        nome: "erro.pulso_de_no_desconhecido",
+        textos: [
+            "o pulso de {id} nao e aceito por este no: nao e um dos OUTROS nos deste cluster",
+            "",
+            "the heartbeat of {id} is not accepted by this node: it is not one of the OTHER nodes of this cluster",
+            "",
+            "",
+            "",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.escalonar_sem_propagar",
+        textos: [
+            "\"propagar\": false so vale para a ordem que o proprio cluster \
+             propaga, vinda de um no da lista. De um cliente, mudar a lista sem \
+             propagar deixa este no contando maioria sobre uma lista que os \
+             outros nao confirmaram. Mande sem \"propagar\"",
+            "",
+            "\"propagar\": false is only for the order the cluster itself \
+             propagates, coming from a listed node. From a client, changing the \
+             list without propagating leaves this node counting a majority the \
+             others never confirmed. Send it without \"propagar\"",
+            "",
+            "",
+            "",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.sonda_recusada",
+        textos: [
+            "{alvo} recusou a conexao",
+            "{alvo} a refuse la connexion",
+            "{alvo} refused the connection",
+            "{alvo} ha rifiutato la connessione",
+            "{alvo} hat die Verbindung abgelehnt",
+            "{alvo} rechazo la conexion",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.sonda_prazo",
+        textos: [
+            "{alvo} nao respondeu dentro do prazo",
+            "{alvo} n'a pas repondu dans le delai",
+            "{alvo} did not answer within the deadline",
+            "{alvo} non ha risposto entro il termine",
+            "{alvo} hat nicht innerhalb der Frist geantwortet",
+            "{alvo} no respondio dentro del plazo",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.sonda_sem_rota",
+        textos: [
+            "nao ha caminho ate {alvo}",
+            "aucun chemin vers {alvo}",
+            "there is no route to {alvo}",
+            "nessun percorso verso {alvo}",
+            "kein Weg zu {alvo}",
+            "no hay camino hasta {alvo}",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.sonda_caiu",
+        textos: [
+            "{alvo} aceitou a conexao e a derrubou antes de responder",
+            "{alvo} a accepte la connexion et l'a coupee avant de repondre",
+            "{alvo} accepted the connection and dropped it before answering",
+            "{alvo} ha accettato la connessione e l'ha interrotta prima di rispondere",
+            "{alvo} hat die Verbindung angenommen und vor der Antwort getrennt",
+            "{alvo} acepto la conexion y la corto antes de responder",
+        ],
+    },
+    MensagemFabrica {
         nome: "erro.somente_leitura",
         textos: [
             "servidor em modo somente leitura",

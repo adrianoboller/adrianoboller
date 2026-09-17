@@ -3853,6 +3853,10 @@ impl Config {
                         "contar_linha_acima_do_teto",
                         Json::Bool(self.politica.contar_linha_acima_do_teto),
                     ),
+                    (
+                        "contar_pulso_desconhecido",
+                        Json::Bool(self.politica.contar_pulso_desconhecido),
+                    ),
                 ]),
             ),
             (

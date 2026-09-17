@@ -160,6 +160,19 @@ pub struct Politica {
     /// erra o tamanho do lote cinco vezes trancaria o proprio operador para
     /// fora. Ligado, conta pela politica leve que ja existe.
     pub contar_linha_acima_do_teto: bool,
+    /// Contar o `cluster_pulso` com id que NAO e um no deste cluster como
+    /// tentativa leve?
+    ///
+    /// Nasce DESLIGADO, e pela mesma medicao dos dois de cima: o no que
+    /// entra a quente no cluster pulsa os antigos ANTES de ser acrescentado
+    /// (`bancada/cluster/escalonar.py`, etapa 2: «no4 ja nasce sabendo dos 4»
+    /// e e recusado a cada pulso durante a janela inteira). Com isto ligado
+    /// de fabrica, cinco pulsos -- dez segundos -- bloqueariam o IP do no novo
+    /// por uma hora em cada antigo, e na bancada, onde todos sao 127.0.0.1,
+    /// bloqueariam o cluster inteiro. Ligado, a recusa conta pela politica
+    /// leve que ja existe, e quem tem a credencial de replicacao deixa de
+    /// enumerar os ids do cluster de graca (revisao SEC de 17/09/2026, A11).
+    pub contar_pulso_desconhecido: bool,
 }
 
 impl Default for Politica {
@@ -176,6 +189,7 @@ impl Default for Politica {
             firewall: None,
             contar_injecao_sql: false,
             contar_linha_acima_do_teto: false,
+            contar_pulso_desconhecido: false,
         }
     }
 }
@@ -221,6 +235,10 @@ impl Politica {
             contar_linha_acima_do_teto: j.booleano_ou(
                 "contar_linha_acima_do_teto",
                 padrao.contar_linha_acima_do_teto,
+            ),
+            contar_pulso_desconhecido: j.booleano_ou(
+                "contar_pulso_desconhecido",
+                padrao.contar_pulso_desconhecido,
             ),
         }
     }

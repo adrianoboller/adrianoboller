@@ -98,6 +98,30 @@ pub fn remoto_vence(carimbo: i64, origem: u16, local: &Toque) -> bool {
     carimbo > local.carimbo || (carimbo == local.carimbo && origem > local.origem)
 }
 
+/// Quanto o carimbo de um evento remoto pode estar A FRENTE do relogio local
+/// e ainda contar como «mais recente». Cinco minutos.
+///
+/// A regra «mais recente vence» confia no PAR, e nao so no NTP dele
+/// (`docs/REPLICACAO.md` §12): um par que MENTE o carimbo -- nao um relogio
+/// que deriva -- fixaria o toque local num instante que nenhuma escrita
+/// daqui alcanca, e passaria a sobrescrever calado toda alteracao deste
+/// lado, para sempre (revisao SEC de 17/09/2026, A9). Cinco minutos e a
+/// tolerancia de deriva que o Kerberos usa ha decadas: acima de qualquer
+/// NTP sadio, e a 2^40 de distancia de `i64::MAX`.
+pub const FOLGA_DO_CARIMBO_MS: i64 = 5 * 60 * 1_000;
+
+/// O carimbo esta alem do que o relogio local admite como futuro?
+///
+/// Quem chama troca o carimbo pelo `agora` local e CONTA a troca
+/// (`MapaDeToques::carimbos_do_futuro`) em vez de recusar o evento: recusar
+/// pararia o par de servidores por causa de um relogio errado do outro lado
+/// (a licao do `Table::inserir_replicado`), e aceitar como veio e o estrago
+/// descrito acima. Com o carimbo trocado, a proxima escrita local vence de
+/// novo -- o envenenamento nao dura mais que um evento.
+pub fn carimbo_alem_da_folga(carimbo: i64, agora: i64) -> bool {
+    carimbo > agora.saturating_add(FOLGA_DO_CARIMBO_MS)
+}
+
 /// Um evento de INCLUSAO remoto colidindo com uma linha viva de OUTRA origem?
 ///
 /// Esta e a assinatura do defeito (a) do pedido 229: dois masters na MESMA
@@ -161,6 +185,11 @@ pub struct MapaDeToques {
     /// processo. So sobe; e o numero que `replicacao_estado` publica para o
     /// estrago deixar de ser calado. Ver [`colisao_de_criacao`].
     pub colisoes: u64,
+    /// Quantos eventos chegaram com carimbo alem da folga do futuro e
+    /// entraram com o relogio local no lugar. So sobe; publicado em
+    /// `replicacao_estado` como `carimbos_do_futuro`. Ver
+    /// [`carimbo_alem_da_folga`].
+    pub carimbos_do_futuro: u64,
 }
 
 /// O que o laco de uma origem conta para a operacao `replicacao_estado`.
@@ -392,6 +421,47 @@ mod testes {
         assert_ne!(
             b_vence_em_a, a_vence_em_b,
             "exatamente UM lado aplica; os dois aplicando desfariam um ao outro"
+        );
+    }
+
+    /// **Prova real do A9 (revisao SEC de 17/09/2026, pedido 286).** Um par
+    /// que mente o carimbo (`i64::MAX`) fixava o toque local num instante que
+    /// nenhuma escrita daqui alcanca: a partir dali TODA alteracao local
+    /// perdia, calada, para sempre. Com o carimbo trocado pelo `agora` local
+    /// quando passa da folga, a escrita local seguinte volta a vencer.
+    ///
+    /// Repondo o defeito (`carimbo_alem_da_folga` devolvendo sempre `false`),
+    /// a ultima asercao cai: `i64::MAX` continua maior que `agora + 1`.
+    #[test]
+    fn carimbo_no_futuro_nao_ganha_para_sempre() {
+        let agora = 1_800_000_000_000i64;
+        let mentiroso = i64::MAX;
+        assert!(carimbo_alem_da_folga(mentiroso, agora));
+        // Dentro da folga, o carimbo vale como veio: e a deriva de relogio
+        // que a regra sempre tolerou.
+        assert!(!carimbo_alem_da_folga(agora + FOLGA_DO_CARIMBO_MS, agora));
+        assert!(!carimbo_alem_da_folga(agora - 1, agora));
+        assert!(carimbo_alem_da_folga(
+            agora + FOLGA_DO_CARIMBO_MS + 1,
+            agora
+        ));
+
+        // O que quem aplica guarda no toque e o carimbo SANEADO...
+        let guardado = if carimbo_alem_da_folga(mentiroso, agora) {
+            agora
+        } else {
+            mentiroso
+        };
+        let toque = Toque {
+            carimbo: guardado,
+            origem: 9,
+            excluido: false,
+        };
+        // ...e por isso a escrita local de um milissegundo depois vence de
+        // novo: o envenenamento nao dura mais que um evento.
+        assert!(
+            remoto_vence(agora + 1, 3, &toque),
+            "a escrita local seguinte perdeu para um carimbo do futuro"
         );
     }
 

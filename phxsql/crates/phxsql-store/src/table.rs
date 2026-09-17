@@ -2352,27 +2352,60 @@ impl Table {
         Some(novos)
     }
 
-    /// Poe o proximo `rownum` na linha, se ela ainda nao tiver um.
+    /// Poe o proximo `rownum` na linha, se ela ainda nao tiver um -- SEM andar
+    /// o contador. Devolve o numero reservado, e e [`Table::consumir_rownum`]
+    /// quem o consome, depois da ultima guarda que ainda pode recusar a linha.
     ///
     /// Quem chama nao escolhe o numero: `rownum` e ordem de chegada, e um
     /// valor escolhido a mao seria uma ordem inventada. Valor diferente de
     /// zero que chegue de fora e ignorado -- e o caso de uma linha remontada
     /// por um cliente antigo que devolveu tudo que recebeu.
-    fn numerar_linha(&mut self, valores: &mut [Value], anterior: Option<&Linha>) {
-        let Some(i) = self.esquema.coluna_rownum() else {
-            return;
-        };
+    ///
+    /// # Por que reservar e consumir sao dois passos (pedido 291)
+    ///
+    /// O numero precisa estar na linha ANTES das chaves -- se a coluna estiver
+    /// num indice, a chave tem de ser a do numero gravado. Mas ate 17/09/2026
+    /// esse "antes" consumia o contador, e uma linha recusada pela unicidade,
+    /// pelo `CHECK` ou pela coluna obrigatoria deixava um buraco atras de si.
+    /// Numa carga com `parar_no_erro: false` o source numerava `1,2,3,5,6` e a
+    /// replica, que so aplica os eventos que existem, `1,2,3,4,5` -- retrato
+    /// divergente por causa de uma insercao que nunca gravou nada. Devolver o
+    /// numero na recusa seria reuso de numero de ordem (o NAO 1 do parecer do
+    /// DBA); reservar e consumir tarde nao reusa nada: a linha recusada nunca
+    /// chegou a ter numero. Entre a reserva e o consumo ninguem mais toca o
+    /// `Reg`, porque tudo acontece dentro do mesmo `&mut self`.
+    fn numerar_linha(&mut self, valores: &mut [Value], anterior: Option<&Linha>) -> Option<u64> {
+        let i = self.esquema.coluna_rownum()?;
         if let Some(linha) = anterior {
             // Alteracao: mantem o numero que a linha ja tinha.
             if let Value::UInt(n) = linha[i] {
                 if n > 0 {
                     valores[i] = Value::UInt(n);
-                    return;
+                    return None;
                 }
             }
         }
         if !matches!(valores[i], Value::UInt(n) if n > 0) || anterior.is_none() {
-            valores[i] = Value::UInt(self.reg.proximo_do_rownum());
+            let reservado = self.reg.rownum_atual();
+            valores[i] = Value::UInt(reservado);
+            return Some(reservado);
+        }
+        None
+    }
+
+    /// Anda o contador pelo numero que [`Table::numerar_linha`] reservou.
+    ///
+    /// Chamada UMA vez por escrita, depois da ultima guarda que recusa a
+    /// linha e antes de o `.reg` gravar: dali para baixo a linha vai ao disco
+    /// com o numero que ja carrega, e o contador tem de acompanhar.
+    fn consumir_rownum(&mut self, reservado: Option<u64>) {
+        if let Some(n) = reservado {
+            let entregue = self.reg.proximo_do_rownum();
+            debug_assert_eq!(
+                entregue, n,
+                "o rownum reservado nao e o que o contador entregou: alguem \
+                 andou o contador entre a reserva e o consumo"
+            );
         }
     }
 
@@ -3066,12 +3099,14 @@ impl Table {
             self.conferir_fks_com(valores, maes)?;
         }
         // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna
-        // estiver num indice, a chave tem de ser a do numero gravado.
+        // estiver num indice, a chave tem de ser a do numero gravado. So
+        // RESERVA: o contador anda em `consumir_rownum`, la embaixo, depois
+        // da ultima guarda -- linha recusada nunca consome numero.
         let mut completos = match self.completar(valores, None) {
             Some(v) => v,
             None => valores.to_vec(),
         };
-        self.numerar_linha(&mut completos, None);
+        let rownum_reservado = self.numerar_linha(&mut completos, None);
         let valores = &completos[..];
 
         // A sequencia entra ANTES das chaves: se a coluna estiver num indice,
@@ -3119,11 +3154,18 @@ impl Table {
         // Linha que ja nasce marcada existe: a importacao traz o campo, e a
         // restauracao de uma lixeira tambem. O contador tem de saber.
         let nasce_marcada = self.marcada_no_payload(&payload)?;
-        let rowid = match self.balde_da_linha(valores)? {
+        let balde = self.balde_da_linha(valores)?;
+        let periodo = match balde {
+            Some(_) => None,
+            None => self.chave_do_periodo(valores)?,
+        };
+        // A ultima guarda que recusa a linha ficou acima (a coluna obrigatoria
+        // e a particao). Daqui para baixo ela vai ao disco: e AQUI que o
+        // contador do `rownum` anda -- ver `numerar_linha`, pedido 291.
+        self.consumir_rownum(rownum_reservado);
+        let rowid = match balde {
             Some(balde) => self.reg.inserir_no_balde(&payload, balde)?,
-            None => self
-                .reg
-                .inserir_no_periodo(&payload, self.chave_do_periodo(valores)?)?,
+            None => self.reg.inserir_no_periodo(&payload, periodo)?,
         };
 
         for (i, chave) in chaves.iter().enumerate() {
@@ -3369,7 +3411,10 @@ impl Table {
             Some(v) => v,
             None => valores.to_vec(),
         };
-        self.numerar_linha(&mut completos, Some(&valores_antigos));
+        // Reserva um numero so para a linha que ainda nao tinha (gravada antes
+        // de a coluna existir); o consumo vem depois das guardas, como no
+        // `inserir` -- irmao que chama as mesmas funcoes na mesma ordem.
+        let rownum_reservado = self.numerar_linha(&mut completos, Some(&valores_antigos));
         let valores = &completos[..];
 
         // Nulo na coluna de sequencia guarda o numero que a linha ja tinha.
@@ -3465,6 +3510,7 @@ impl Table {
         // manda a coluna escrita pode virar o valor por aqui.
         let delta = i64::from(self.marcada_no_payload(&payload)?)
             - i64::from(self.marcada_no_payload(&antigo)?);
+        self.consumir_rownum(rownum_reservado);
         let versao = self.reg.atualizar(rowid, &payload)?;
         if delta != 0 {
             self.reg.mudar_marcadas(delta)?;
