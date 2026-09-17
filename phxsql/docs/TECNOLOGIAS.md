@@ -422,7 +422,7 @@ empacotar:
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2487** testes passaram, **0** falharam (medido em 2026-09-17 12:36:42, commit `0fd434c8`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **2499** testes passaram, **0** falharam (medido em 2026-09-17 15:10:53, commit `89302203`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
