@@ -288,10 +288,10 @@ footer code{font-size:.9em}
 <div class="kpi"><b>210.141</b><span>linhas de Rust</span><span class="q">2026-09-17 15:10:53</span></div>
 <div class="kpi"><b>8</b><span>crates</span><span class="q">2026-09-17 15:10:53</span></div>
 <div class="kpi feito"><b>0</b><span>dependências externas</span><span class="q">2026-09-17 15:10:53</span></div>
-<div class="kpi"><b>325</b><span>pedidos do dono</span><span class="q">2026-09-17</span></div>
+<div class="kpi"><b>327</b><span>pedidos do dono</span><span class="q">2026-09-17</span></div>
 <div class="kpi feito"><b>269</b><span>pedidos feitos</span><span class="q">2026-09-17</span></div>
 <div class="kpi parcial"><b>12</b><span>pedidos parciais</span><span class="q">2026-09-17</span></div>
-<div class="kpi planejado"><b>44</b><span>pedidos planejados</span><span class="q">2026-09-17</span></div>
+<div class="kpi planejado"><b>46</b><span>pedidos planejados</span><span class="q">2026-09-17</span></div>
 <div class="kpi"><b>194</b><span>guardas no catálogo</span><span class="q">2026-09-17</span></div>
 <div class="kpi"><b>23</b><span>catracas no fonte</span><span class="q">2026-09-17</span></div>
 <div class="kpi"><b class="curto">18/18</b><span>bancadas com resultado</span><span class="q">2026-09-17</span></div>
@@ -549,13 +549,15 @@ própria.</figcaption>
 <h2 id="s7"><span class="n">07 ·</span>Os pedidos do dono</h2>
 <p class="sub">Um por linha do <code>docs/PENDENCIAS.md</code>, lido pelo mesmo <code>ler()</code> da página dos pedidos — duas contagens divergiriam na primeira mudança de legenda.</p>
 <div class="barras">
-<div class="barra-linha"><span class="l">Feito</span><span class="t"><i class="b-feito" style="width:82.77%"></i></span><span class="n">269 · 82,8%</span></div>
-<div class="barra-linha"><span class="l">Parcial</span><span class="t"><i class="b-parcial" style="width:3.69%"></i></span><span class="n">12 · 3,7%</span></div>
-<div class="barra-linha"><span class="l">Planejado</span><span class="t"><i class="b-planejado" style="width:13.54%"></i></span><span class="n">44 · 13,5%</span></div>
+<div class="barra-linha"><span class="l">Feito</span><span class="t"><i class="b-feito" style="width:82.26%"></i></span><span class="n">269 · 82,3%</span></div>
+<div class="barra-linha"><span class="l">Parcial</span><span class="t"><i class="b-parcial" style="width:3.67%"></i></span><span class="n">12 · 3,7%</span></div>
+<div class="barra-linha"><span class="l">Planejado</span><span class="t"><i class="b-planejado" style="width:14.07%"></i></span><span class="n">46 · 14,1%</span></div>
 </div>
 <div class="legenda"><span class="feito"><i></i>feito</span><span class="parcial"><i></i>parcial</span><span class="planejado"><i></i>planejado</span></div>
 <h3>Os dez pedidos abertos mais recentes</h3>
 <div class="rolo"><table><thead><tr><th class="num">#</th><th>estado</th><th>o que você pediu</th></tr></thead><tbody>
+<tr><td class="num">327</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>O botão «baixar» do dossiê não funciona para quem vê a página — e agora a causa está nomeada pelo próprio serviço, com o remédio</strong></td></tr>
+<tr><td class="num">326</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>O dossiê compartilhado mostra uma versão FIXADA e antiga: quem abre o link não vê o que a rodada acabou de publicar</strong></td></tr>
 <tr><td class="num">325</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>PEDIDO DO DONO — 20 caixas de supermercado e 1 servidor: o servidor cai, o operador não percebe, grava local, e ao voltar sobe sozinho. Hoje NÃO, e três das seis pernas não existem em linha de código nenhuma</strong></td></tr>
 <tr><td class="num">324</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>DECISÃO DO DONO — adiar o <code>.ndx</code> e reconstruir EM THREAD: a carga ganha 2,10× e a operação inteira PARA por 1,63 s a um milhão de linhas. É troca de SLA, não conta de desempenho</strong></td></tr>
 <tr><td class="num">323</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>O <code>comunicacao.sh</code> diz «nada compilando nem rodando agora» com um GERADOR no meio da escrita e um subagente vivo — a mesma mentira que ele próprio já nomeia, pela porta irmã</strong></td></tr>
@@ -564,8 +566,6 @@ própria.</figcaption>
 <tr><td class="num">320</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Ninguem mediu quantas tabelas do acervo carregam hoje dois ids de coluna iguais</strong></td></tr>
 <tr><td class="num">319</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>O grito do unidirecional e pobre: nao nomeia tabela, chave nem linha, e para a origem INTEIRA</strong></td></tr>
 <tr><td class="num">318</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>A parada do par por tabela nao aparece na tela, e nao ha botao de pular</strong></td></tr>
-<tr><td class="num">317</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>O zelador nunca alcanca o maior consumidor da maquina: ele e tudo-ou-nada no <code>target</code>, e falta o corte cirurgico do cache incremental</strong></td></tr>
-<tr><td class="num">314</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Tabela em modo ledger NAO migra para o <code>PSCH</code> v10, e isso nao estava em nenhum dos tres pedidos</strong></td></tr>
 </tbody></table></div>
 <p class="fonte"><b>De onde sai:</b> <code>docs/PENDENCIAS.md</code>, pelo <code>ler()</code> de <code>docs/dossie/pagina-dos-pedidos.py</code>. A lista inteira, com o estado de cada um, está em <code>docs/dossie/pedidos.html</code>. Pedido com estado fora da legenda <b>para</b> o leitor com o número da linha — o 150 passou meses invisível por causa disso.</p>
 
@@ -862,7 +862,7 @@ calado nem se ignora calado.</div>
 <p class="sub">Esta seção <b>nasceu</b> porque o gerador existe: a lista dos documentos contados sai do código, não de uma cópia aqui.</p>
 <div class="kpis">
 <div class="kpi"><b>96</b><span>documentos contados</span><span class="q">2026-09-17</span></div>
-<div class="kpi"><b>69.112</b><span>linhas de documentação</span><span class="q">2026-09-17</span></div>
+<div class="kpi"><b>69.114</b><span>linhas de documentação</span><span class="q">2026-09-17</span></div>
 <div class="kpi"><b>236</b><span>arquivos de cognição</span><span class="q">2026-09-17</span></div>
 <div class="kpi"><b>7</b><span>páginas geradas e publicadas</span><span class="q">2026-09-17</span></div>
 <div class="kpi"><b>22</b><span>geradores no portão</span><span class="q">2026-09-17</span></div>
@@ -871,7 +871,7 @@ calado nem se ignora calado.</div>
 <div class="rolo"><table><thead><tr><th>página</th><th class="num">KiB</th><th>quem a escreve</th></tr></thead><tbody>
 <tr><td class="mono">docs/dossie/dossie-phxsql-0.18.html</td><td class="num">2.638</td><td class="mono">docs/dossie/numeros-da-bancada.py</td></tr>
 <tr><td class="mono">docs/dossie/graficos.html</td><td class="num">43</td><td class="mono">docs/dossie/graficos-dos-testes.py</td></tr>
-<tr><td class="mono">docs/dossie/pedidos.html</td><td class="num">878</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
+<tr><td class="mono">docs/dossie/pedidos.html</td><td class="num">887</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
 <tr><td class="mono">docs/pmo/status-do-projeto.html</td><td class="num">56</td><td class="mono">docs/pmo/pagina-do-status-do-projeto.py</td></tr>
 <tr><td class="mono">docs/status/status-do-projeto.html</td><td class="num"><span class="mtime">— (esta página)</span></td><td class="mono">docs/status/riscos.py</td></tr>
 <tr><td class="mono">docs/dossie/status.html</td><td class="num">29</td><td class="mono">docs/dossie/pagina-de-status.py</td></tr>
@@ -930,6 +930,7 @@ calado nem se ignora calado.</div>
 <h2 id="s23"><span class="n">23 ·</span>As últimas frentes</h2>
 <p class="sub">Do próprio <code>git log</code>, só leitura. O commit conta a decisão e o motivo, não a lista de arquivos.</p>
 <div class="rolo"><table><thead><tr><th>commit</th><th>quando</th><th>o que decidiu</th></tr></thead><tbody>
+<tr><td class="mono">cbebc30</td><td class="q">2026-09-17 15:31</td><td>O ponto fixo fechou em quatro giros, e a razao dos quatro e estrutural: dois geradores moram FORA do portao</td></tr>
 <tr><td class="mono">8930220</td><td class="q">2026-09-17 15:09</td><td>321, terceira ocorrencia: o teste que treme agora BLOQUEIA o gerador do CAPABILITIES.json</td></tr>
 <tr><td class="mono">e2d6c03</td><td class="q">2026-09-17 15:04</td><td>Portao dos geradores: vermelho no primeiro giro, verde no segundo -- seis derivados velhos que a rodada do Uuid e o pedido 325 deixaram para tras</td></tr>
 <tr><td class="mono">acfaf60</td><td class="q">2026-09-17 14:43</td><td>O Uuid nasce sozinho -- e a «uma linha» que eu mandei escrever teria inventado um pai que nao existe</td></tr>
@@ -939,7 +940,6 @@ calado nem se ignora calado.</div>
 <tr><td class="mono">52d7cfe</td><td class="q">2026-09-17 13:52</td><td>Pedidos 322 e 323, a catraca que andou de 23 para 25, e o filtro que matou dois de tres achados</td></tr>
 <tr><td class="mono">c94fa78</td><td class="q">2026-09-17 13:38</td><td>DBA: parecer do adiamento do .ndx no BULKINSERT, e a correcao do numero que o pediu</td></tr>
 <tr><td class="mono">e37353e</td><td class="q">2026-09-17 12:59</td><td>O README publicava 2.411 testes quando sao 2.487 -- e o ponto cego era o proprio portao</td></tr>
-<tr><td class="mono">0fd434c</td><td class="q">2026-09-17 12:33</td><td>O portao achou SETE derivados velhos, e um deles publicava medida de dez dias atras</td></tr>
 </tbody></table></div>
 <p class="fonte"><b>De onde sai:</b> <code>git log --no-merges -n 10</code> na raiz do repositório. Commit novo muda esta seção — e aí ela estava velha mesmo, que é o que o portão dos geradores existe para pegar.</p>
 
@@ -978,7 +978,7 @@ calado nem se ignora calado.</div>
 <div class="nota g"><b>As quatro que faltavam nasceram em 16/09/2026, e nenhuma nasceu pelo atalho.</b> Riscos e Dívida técnica (pedido 264) exigiram um <code>docs/RISCOS.md</code> tabelado e uma marca <code>// DIVIDA:</code> no fonte; Telemetria e logs (265) exigiu que a bancada passasse a gravar <code>resultados.json</code>, porque sem ele não havia a data em que o número foi medido; Antes × Depois (266) exigiu uma série versionada, porque o <code>CAPABILITIES.json</code> é sobrescrito e só guarda o agora. Nos quatro casos <b>a fonte veio antes do gerador</b> — é isso que a lei cobra, e é por isso que ela demora mais que digitar o número.</div>
 <div class="nota v"><b>Por que isto é a seção mais importante da página.</b> O exemplo trazia <b>677 números no texto visível, todos digitados à mão</b>. Adotá-lo como veio criaria 677 lugares onde um número envelhece calado — e esta casa já pagou isso quatro vezes: o selo da capa parado numa versão por quatro lançamentos, 198 pedidos onde eram 203, 428 testes onde eram 451, 780 KiB de interface onde eram 1.032. A quarta ensina o alcance da lei: <b>gerador certo chamado pela metade entrega número velho anunciando sucesso.</b></div>
 <footer>
-  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 17/09/2026 15:24 UTC,
+  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 17/09/2026 15:39 UTC,
   pelo comando <code>./status-html.sh</code>. <b>Nenhum número desta página foi
   digitado</b>: cada um sai de um gerador, e cada seção diz de qual. Onde o
   gerador não existe, a seção <b>não nasceu</b> — está nomeada na §25, com o
