@@ -219,6 +219,116 @@ pub const DISPENSADOS: &[(&str, &str, &str)] = &[
          `testes-web/capturas-cluster.mjs`, que grava o quorum e confere que a \
          tela continua dizendo que ele NAO e imposto",
     ),
+    // ------------------------------- o assistente de replicacao, do passo 4
+    //
+    // O pedido 190 dizia que ele inteiro «pede outro servidor». MEDIDO em
+    // 17/09/2026, isso vale para SETE dos dezenove: o caso
+    // `botoes-do-assistente-de-replicacao` clica os outros doze apontando a
+    // sonda para o PROPRIO servidor da bateria -- `replicacao_testar` e um
+    // cliente do protocolo, e 127.0.0.1 na porta de dados dela responde de
+    // verdade.
+    //
+    // O que trava os sete e medido, nao suposto: a sonda volta com
+    // `impedimentos` porque o servidor da bateria nao declara
+    // `replicacao.id_servidor` nem `replicacao.imagem_da_linha`, e o passo 3
+    // desenha `#rzDeNovo` no lugar de `#rzIr3`. Ligar a imagem no config da
+    // bateria nao e caminho: o `ligar_imagem_no_diario` vale para TODA tabela
+    // de TODO caso, e seria trocar a cobertura de sete botoes por uma mudanca
+    // de gravacao debaixo dos outros trinta e dois casos.
+    //
+    // O que tira estas dispensas: uma segunda origem de verdade -- um phxsqld
+    // declarado `source`, com id e imagem --, que e onde a bancada de
+    // replicacao ja vive.
+    (
+        "ui/index.html",
+        "#rzIr3",
+        "so nasce quando a sonda volta SEM impedimento, e o servidor da bateria \
+         se reprova como origem: nao declara `replicacao.id_servidor` nem \
+         `replicacao.imagem_da_linha`. O passo 3 desenha `#rzDeNovo` no lugar, \
+         e o caso `botoes-do-assistente-de-replicacao` clica ESSE",
+    ),
+    (
+        "ui/index.html",
+        "#rzIr4",
+        "irmao do `#rzIr3`: vive no passo 4, que so existe depois da sonda \
+         limpa. Precisa de uma origem de verdade, como a bancada de replicacao",
+    ),
+    (
+        "ui/index.html",
+        "#rzIr5",
+        "irmao do `#rzIr3`: passo 5, so alcancavel pelo passo 4",
+    ),
+    (
+        "ui/index.html",
+        "#rzAplicar",
+        "irmao do `#rzIr3`: passo 6, so alcancavel pelo passo 5",
+    ),
+    (
+        "ui/index.html",
+        "#rzConferir",
+        "irmao do `#rzIr3`: so nasce no «aplicar pelo config.json», que vem \
+         depois do passo 6",
+    ),
+    (
+        "ui/index.html",
+        "#rzFim",
+        "so nasce no «Pronto», e o Pronto exige que ESTE servidor ja seja \
+         replica -- o `#rzConferir` rele o `config` do servidor e compara o \
+         papel, entao nao ha como armar isso pela tela. Pede reinicio com o \
+         bloco de replicacao no config, que e a bancada e nao o navegador",
+    ),
+    (
+        "ui/index.html",
+        "#rzJaAcomp",
+        "o «acompanhar a replicacao em andamento» so aparece quando o servidor \
+         JA e replica com origem: o `cfg` que decide isso e lido de dentro do \
+         proprio assistente (`api(\"config\")`), entao nem armar o estado da \
+         pagina o faz nascer. Pede um servidor configurado como replica",
+    ),
+    // --------------------------------- o assistente de DbLink, do passo 2
+    //
+    // Mesma medida, mesmo dia: dos catorze, OITO sao clicaveis aqui (o caso
+    // `botoes-do-dblink` grava a definicao, cai no ramo «Nao conectou» e usa
+    // o `#azVolta` e o `#azSair`). Os seis abaixo so existem depois de um
+    // MySQL(R)/MariaDB(R) responder -- e o cliente de PostgreSQL(R) nem
+    // escrito esta. Nao ha um desses nesta maquina, e subir um seria trazer
+    // uma dependencia externa para dentro da bateria.
+    (
+        "ui/index.html",
+        "#azIr2",
+        "so nasce quando o `dblink_testar` CONECTA num MySQL(R) de verdade; \
+         sem ele o passo 2 desenha «Nao conectou», e o caso `botoes-do-dblink` \
+         clica o `#azVolta` desse ramo",
+    ),
+    (
+        "ui/index.html",
+        "#azIr3",
+        "irmao do `#azIr2`: o passo 3 lista as BASES do outro banco pelo \
+         `dblink_bancos`, que precisa da conexao de pe",
+    ),
+    (
+        "ui/index.html",
+        "#azIr4",
+        "irmao do `#azIr2`: o passo 4 lista as TABELAS de la pelo \
+         `dblink_tabelas`",
+    ),
+    (
+        "ui/index.html",
+        "#azFim0",
+        "irmao do `#azIr2`: o passo 5 so nasce depois de o `dblink_ligar` \
+         responder, e ligar pede as tabelas do outro lado",
+    ),
+    (
+        "ui/index.html",
+        "#azFim",
+        "irmao do `#azFim0`, no mesmo passo 5",
+    ),
+    (
+        "ui/index.html",
+        "#azFechar",
+        "irmao do `#azIr2`: so existe na folha «Pronto», depois da primeira \
+         sincronia de verdade",
+    ),
 ];
 
 /// As classes que a interface usa para ACHAR elemento -- e que por isso valem
@@ -726,7 +836,13 @@ pub fn sem_prova() -> Vec<Botao> {
 /// nome e no comentario que substitui esta. A serie com o passado se perde de
 /// proposito -- perder a comparacao e mais barato que deixar «mudei a regua»
 /// virar a porta pela qual se afrouxa uma catraca.
-pub const TETO_BOTAO_SEM_PROVA: usize = 194;
+///
+/// Desceu para **119** em 17/09/2026, medido depois da leva dos dois
+/// assistentes, do DbLink, do pivot, dos idiomas e do backup: 194 → 132 pelos
+/// 62 botoes que passaram a receber clique (120 → 182), e 132 → 119 pelas 13
+/// dispensas novas, cada uma com o motivo MEDIDO no lugar do «pede outro
+/// servidor» generico que o pedido 190 carregava.
+pub const TETO_BOTAO_SEM_PROVA: usize = 119;
 
 #[cfg(test)]
 mod testes {

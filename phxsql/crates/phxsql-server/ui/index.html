@@ -6563,8 +6563,13 @@ async function pivotPasso3() {
     r.rotulos_linha.forEach((l, i) =>
       linhas.push([l, ...r.celulas[i].map(c => c ?? ""), r.total_linha[i] ?? ""].join(";")));
     linhas.push(["total", ...r.total_coluna.map(c => c ?? ""), r.total ?? ""].join(";"));
-    const txt = linhas.join("\n");
-    if (navigator.clipboard) navigator.clipboard.writeText(txt).then(
+    // `csv`, e NAO `txt`: um `const txt` aqui sombreia a funcao `txt()` da
+    // fabrica de idiomas dentro deste bloco, e os tres recados abaixo morriam
+    // em «txt is not a function» -- a copia acontecia e a tela ficava calada.
+    // Achado clicando (pedido 190); o `--example textos-fora-da-fabrica` nao
+    // ve isto, porque a chave ESTA na fabrica: quem quebra e o escopo.
+    const csv = linhas.join("\n");
+    if (navigator.clipboard) navigator.clipboard.writeText(csv).then(
       () => avisar(preencher(txt("tela.g_linhas_copiadas","{n} linha(s) copiadas"), {n: linhas.length})),
       () => avisar(txt("tela.g_sem_copiar","o navegador não deixou copiar"), true));
     else avisar(txt("tela.g_sem_area_transferencia","o navegador não tem área de transferência"), true);
@@ -10187,7 +10192,12 @@ async function telaDbLink(nome) {
   const atual = ligacoes.find(l => l.nome === DBL.ligacao);
 
   if (!ligacoes.length) {
-    return folha("DbLink", txt("tela.st_nenhuma_ligacao","nenhuma ligação cadastrada ainda"),
+    // SEM `return` no `folha(...)`: com ele as duas linhas de baixo ficavam
+    // inalcançáveis, e os dois únicos botões desta tela nasciam MORTOS --
+    // `onclick` nulo, clique sem efeito. Era a primeira tela de quem ainda
+    // não tem ligação nenhuma, e as duas saídas dela não saíam. Achado
+    // clicando (pedido 190); ler o código não o achou em nenhuma revisão.
+    folha("DbLink", txt("tela.st_nenhuma_ligacao","nenhuma ligação cadastrada ainda"),
       `<div class="aviso">
          <p><strong>Um DbLink guarda um apelido, um endereço e uma
          credencial.</strong> Depois disso o banco de fora aparece nesta tela
@@ -14543,10 +14553,34 @@ async function backupAgora() {
   });
   if (alvo === null) return;
   folha(txt("tela.fer_backup","Backup"), txt("tela.st_copiando_conferindo","copiando e conferindo…"), `<div class="centro">rodando…</div>`);
-  const r = await api("backup", alvo.trim() ? { database: alvo.trim() } : {});
+  // O `destino` e OBRIGATORIO no protocolo e a tela nao o mandava: o pedido
+  // voltava «informe "destino"», a excecao subia sem dono, e a folha ficava em
+  // «rodando…» PARA SEMPRE -- sem backup e sem erro, que e a pior das duas
+  // noticias juntas. Ele sai do config, o mesmo que a ficha «destino» desta
+  // area ja mostra. Achado clicando (pedido 190).
+  let r;
+  try {
+    const c = await api("config");
+    const destino = ((c.backup || {}).destino || "").trim();
+    r = await api("backup", {
+      ...(destino ? { destino } : {}),
+      ...(alvo.trim() ? { database: alvo.trim() } : {}),
+    });
+  } catch (e) {
+    // Erro que nao aparece e pior que erro: quem clicou tem de saber que nao
+    // houve copia. O irmao `conferirBackup` ganhou o mesmo tratamento.
+    return folha(txt("tela.fer_backup","Backup"), "",
+      `<div class="aviso mal">${esc(String(e))}</div>`);
+  }
   folha(txt("tela.fer_backup","Backup"), r.zip ? "em zip, com manifesto SHA-256" : "com manifesto SHA-256",
-    fichasDe(r, [["destino","destino"],["arquivos","arquivos"],
-                 ["bytes","bytes"],["segundos","segundos"]]) +
+    // `ms`, e nao `segundos`: a resposta do `backup` traz `ms`, e a quarta
+    // ficha vinha «—». Medido clicando em 17/09/2026 -- «segundos = —» com o
+    // numero existindo logo abaixo, no `<pre>`. Os rotulos que a fabrica ja
+    // tem passam a sair dela, que e o que a lei pede de quem mexe na linha.
+    fichasDe(r, [["destino", txt("tela.fc_destino","destino")],
+                 ["arquivos", txt("tela.fc_arquivos","arquivos")],
+                 ["bytes","bytes"],
+                 ["ms", txt("tela.fc_ms","ms")]]) +
     `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
 
@@ -14559,12 +14593,28 @@ async function conferirBackup() {
   if (!caminho || !caminho.trim()) return;
   folha(txt("tela.tt_conferencia_backup","Conferência do backup"), txt("tela.st_recalculando_sha","recalculando o SHA-256 de cada arquivo…"),
         `<div class="centro">conferindo…</div>`);
-  const r = await api("conferir_backup", { destino: caminho.trim() });
+  // O IRMAO do `backupAgora`: pasta que nao existe deixava a folha em
+  // «conferindo…» para sempre, pela mesma falta de dono na excecao.
+  let r;
+  try { r = await api("conferir_backup", { destino: caminho.trim() }); }
+  catch (e) {
+    return folha(txt("tela.tt_conferencia_backup","Conferência do backup"), "",
+      `<div class="aviso mal">${esc(String(e))}</div>`);
+  }
   const ok = r.integro !== false;
   folha(txt("tela.tt_conferencia_backup","Conferência do backup"),
         ok ? "confere com o manifesto" : "NÃO confere com o manifesto",
-        fichasDe(r, [["conferidos","conferidos"],["diferentes","diferentes"],
-                     ["faltando","faltando"]]) +
+        // As tres fichas pediam `conferidos`, `diferentes` e `faltando`; a
+        // resposta traz `arquivos`, `bytes` e `divergencias`. Medido clicando
+        // em 17/09/2026: as TRES saiam «—», com os numeros existindo no
+        // `<pre>` logo abaixo. `divergencias` e lista, entao o que a ficha
+        // mostra e a CONTA dela -- imprimir a lista inteira numa ficha seria
+        // trocar um traco por um paragrafo.
+        fichasDe({ arquivos: r.arquivos, bytes: r.bytes,
+                   divergencias: (r.divergencias || []).length },
+                 [["arquivos", txt("tela.fc_arquivos","arquivos")],
+                  ["bytes","bytes"],
+                  ["divergencias","divergências"]]) +
         `<pre class="dado">${esc(JSON.stringify(r, null, 1))}</pre>`);
 }
 
