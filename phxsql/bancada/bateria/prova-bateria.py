@@ -865,6 +865,21 @@ def item_0c_catraca_do_mapa_das_threads():
         print("  " + r.stderr.strip()[:400])
     confere("as duas catracas do mapa das threads seguram", r.returncode, 0)
 
+    # CATRACA -- o `Debug` com segredo dentro: nove structs derivavam `Debug`
+    # carregando senha e token (consertadas em 74de67e), e a guarda
+    # `debug-da-cifra-mostra-a-senha` JA EXISTIA -- travava UMA struct, nao a
+    # lei. A regua e `bancada/guardas/debug-com-segredo.py`, nascida no numero
+    # medido do dia (0), com os falsos positivos declarados nela mesma.
+    catraca_debug = os.path.join(AQUI, "..", "guardas", "debug-com-segredo.py")
+    r = subprocess.run([sys.executable, catraca_debug, "--catraca"],
+                       capture_output=True, text=True)
+    for linha in r.stdout.splitlines():
+        if linha.strip():
+            print("  " + linha)
+    if r.returncode != 0 and r.stderr:
+        print("  " + r.stderr.strip()[:400])
+    confere("a catraca do `Debug` com segredo segura", r.returncode, 0)
+
 
 def item_0b_o_portao_nao_se_acha():
     """O portao «esta medindo?» -- provado nos DOIS sentidos, sem servidor.
