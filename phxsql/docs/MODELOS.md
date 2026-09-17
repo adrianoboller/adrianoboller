@@ -1121,3 +1121,41 @@ fabrica. E a regua do pedido 273 entrou no fecho **pelo proprio A, com o
 chapeu de G, sem agente**: cabia em trinta linhas, e a decisao de forma (so
 `--lib`) saiu da medicao antes do codigo -- a receita do pedido nasceria em
 **164**, nao em 0. Dispensa registrada, com o numero.
+
+## Rodada da replicação — bateria, revisão e conclusão — 17/09/2026 02:27 UTC
+
+Ordem do dono: *«Dossiê atualizado · Status · Replicação bateria de testes,
+revisão e conclusão»*. Board: `docs/pmo/RODADA-2026-09-17-replicacao.md`.
+Onda 1, em paralelo — cada frente **só leitura** ou bancada isolada, para não
+disputar `flock`/soquetes com a bateria de tempo:
+
+| papel | frente | escalao | por que | dispensa |
+|---|---|---|---|---|
+| F | a bateria inteira: build, `montar`+`medir`, `modos`, `trava`, `credencial-recusada`, `cluster/provar`+`fresta`+`escalonar`, `quorum/medir`+`canal`, docker se o daemon subir | forte | prova real e o papel mais facil de fingir; cada ERRO precisa de diagnostico medido separando motor/bancada/encontro de frentes | — |
+| SEC | revisao adversaria de replica/cluster/quorum/portoes 2a-2b-bis, so leitura | forte | sempre o mais forte; cada achado exige prova de leitura e severidade | — |
+| C | parecer das garantias de dado: o que a replica garante, o commit com cascata, a posicao, o bidirecional, PITR, formato pendente | forte | formato em disco e garantias; e quem diz NAO | — |
+| G | inventario guarda x petrea da replicacao, ESTATICO, e a lista dos `--so` para depois da bateria | medio | inventario e mecanico mas «petrea sem guarda» exige leitura; nao compila para nao disputar o flock com F | — |
+| J | frente paralela: material do Query Designer do Phoenix — verificar se ha algo a aproveitar | forte | recusar ou aproveitar codigo de outro projeto exige ler o fonte inteiro e medir contra o nosso gargalo (injecao, portao unico, zero-deps), nao so ler o mockup | — |
+| E (designer) | nenhuma tela nova; as paginas se regeneram do mesmo molde exercitado esta noite | — | — | dispensa registrada |
+| D (zelador) | rodou as 02:15 (33 MiB; 2,3 GiB livres); o gatilho de hora em hora continua; F apaga o que a bancada cria, por caminho | — | — | dispensa registrada |
+| tradutor | nenhum texto de tela nesta rodada | — | — | dispensa registrada |
+
+**Onda 2** — depois da onda 1: G roda `provar-guardas.py --so` da familia da
+replicacao (compila, so depois de F soltar as portas e o flock); **B entra
+so se F/SEC/C acharem defeito com conserto delimitado** (forte, por ser
+motor/concorrencia) — nesta etapa nenhuma frente convocou B ainda, porque a
+bateria (F) nao devolveu; H (medio) escreve `REPLICACAO.md` §21, `STATUS.md`
+linha B, `PENDENCIAS.md` e `CHANGELOG.md` — todo numero sai de gerador ou dos
+relatorios das frentes, e e varredura verificavel; A/I integram, rodam os
+portoes e publicam as sete paginas.
+
+**Por que forte em quatro papeis de uma vez**: e projeto e risco em quatro
+eixos diferentes — SEC audita seguranca de um protocolo de rede com
+credencial compartilhada, C decide sobre formato em disco e garantia de dado,
+F prova concorrencia e queda de processo pelo soquete, e J precisa ler
+898 linhas de Rust alheio e decidir se algo entra na base zero-dependencias
+desta casa. Nenhum dos quatro e varredura roteirizada. G e o unico medio
+desta onda porque o trabalho e mecanico (grep no catalogo, leitura de
+`ultima-corrida.json`) apesar de exigir leitura para nomear a petrea — e H e
+medio pelo mesmo motivo: documentacao desta rodada e transcrever numero
+medido por quem mediu, com a fonte e a data ao lado, nao decidir arquitetura.

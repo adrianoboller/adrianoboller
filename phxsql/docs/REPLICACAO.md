@@ -1774,3 +1774,297 @@ Guarda: `replica-insiste-na-credencial-recusada` no catálogo
 (`bancada/guardas/catalogo.py`) — repõe o `Dormir` no lugar do `Estacionar` e
 o teste cai. Cognição:
 `docs/cognicao/cognicao_credencial-recusada-nao-e-falha-transitoria_20260909_0632.md`.
+
+## 21. A revisão de 17/09/2026 — o que a replicação garante, o que não garante, e o que ficou para decidir
+
+Ordem do dono, 17/09/2026 02:27 UTC: *«Dossiê atualizado · Status · Replicação
+bateria de testes, revisão e conclusão»*. Três frentes correram em paralelo na
+onda 1 (`docs/pmo/RODADA-2026-09-17-replicacao.md`): SEC fez a revisão
+adversária (§21.1), C o parecer de DBA sobre as garantias de dado (§21.2) e G o
+inventário estático de guarda × pétrea (§21.3) — todas **só leitura**, sem
+subir servidor nem tocar `crates/`, porque a bateria de tempo (papel F) corria
+ao mesmo tempo e disputaria o `flock`/soquetes. A bateria de F, a conclusão da
+rodada e a linha B do `STATUS.md` entram nas §21.4 e §21.5 quando F devolver.
+
+### 21.1 SEC — revisão adversária de replicação, cluster e quórum
+
+**Quem:** papel SEC (revisor adversário), leitura pura — nenhum servidor
+subido, nenhuma bancada de tempo rodada nesta frente. **Quando:** 17/09/2026,
+parecer datado 02:41 UTC, integrado em `75b2f33` às 02:54 UTC (20 min 10 s de
+frente, 116 ferramentas). **Fonte:** `docs/propostas/revisao-sec-replicacao-2026-09-17.md`
+(879 linhas). O que a revisão procurou: o que quem tem o token, quem tem a
+credencial de réplica (`replicar`) e quem tem `administrar` consegue pela
+frente de replicação, e onde o portão que a casa já tem não alcança.
+
+Onze achados, cada um com arquivo:linha, cenário de exploração e teste
+adverso nomeado no parecer — o resumo, um por linha, com severidade e pedido
+correspondente em `docs/PENDENCIAS.md`:
+
+| # | severidade | uma frase | pedido |
+|---|---|---|---:|
+| A1 | **alta** | o pulso do cluster aceita identidade auto-declarada e época/posição/prioridade sem teto: um pulso forjado rebaixa o master e paralisa a eleição para sempre, inclusive depois de reiniciar | 278 |
+| A2 | **alta** | `replicar` com `"max":0` lê o diário inteiro com as imagens para a RAM com a trava global de dados na mão; o teto de 16 MiB corta a **resposta**, depois | 279 |
+| A3 | **média-alta** | `aplicar` é o caminho de gravação que desliga FK, CHECK, cascata e `conferir_filhas` — num source/multi sem `somente_leitura` ele está aberto e mata o pai que tem filhos, contra a pétrea | 280 |
+| A4 | **média** | `cluster_no_remover` com `"propagar":false` cria maiorias assimétricas: dois masters graváveis, sem partição de rede nenhuma | 281 |
+| A5 | **média** | `replicacao_testar` com host/porta livres é sonda de rede interna (SSRF cego), sem prazo de conexão nem teto de tentativas | 282 |
+| A6 | **média** | `cluster_estado` entrega o mapa da infraestrutura (endereço:porta de cada nó, época, posição) a quem só tem `ler` | 283 |
+| A7 | **média** | `replicas_autorizadas` é o mesmo portão da porta web: atrás de proxy reverso ou NAT a lista colapsa num IP só | 284 |
+| A8 | **média** | `replicar` entrega o valor das colunas marcadas como dado pessoal e não grava registro na trilha (`.lgpd`) | 285 |
+| A9 | **baixa-média** | modo B: o `carimbo_ms` vem do outro lado sem teto; um par hostil ganha todo conflito para sempre e sobrescreve calado | 286 |
+| A10 | **baixa-média** | a op `config` publica a lista de nós do arranque, não a viva: o denominador da maioria mente depois de um escalonamento a quente | 287 |
+| A11 | **baixa** | `cluster_pulso` é oráculo de ids de nó, com três respostas distintas e sem contar violação leve | 288 |
+
+**§Z — já documentado e ainda aberto no código.** Não é achado novo: está em
+`docs/SEGURANCA.md` §12.4 desde o pedido 194/item 16 de `docs/PENDENCIAS.md`
+§3.2, e a SEC o reconferiu porque cai na fronteira desta frente. `reg.rs:1827-1830`
+(`abrir_externo`) continua devolvendo os bytes cifrados como conteúdo quando a
+réplica está sem cifra — *«o pior dos três casos, porque é o único que não dá
+erro»*. Continua faltando a conferência que falta em `decodificar_com_externos`
+(`table.rs:4051-4082`). Reconferido e cruzado no mesmo dia pelo parecer do
+papel C (§21.2, pedido 293).
+
+A revisão também nomeou dezoito pontos que **já estão bem**, cada um com
+arquivo:linha — do túnel vindo antes do login à credencial nunca saindo em
+resposta de protocolo — «para a conclusão do papel H não elogiar de memória»
+(SEC, §«O que está bem»). E nomeou nove frentes que **exigem servidor de pé** e
+ficam para o papel F (A1 e A2 pelo soquete, A5 contra o sistema operacional,
+A4 pelo soquete, a cifra do fio ponta a ponta, os vetores de cripto, o quórum
+de escrita, a porta REST/MCP).
+
+**Posição de SEC para a conclusão desta rodada**, citada aqui porque a §21.5
+vai decidir sobre ela: *«A1, A2 e A3 exigem decisão registrada (conserto ou
+aceite do dono) antes de a replicação se declarar revisada e conclusa.»*
+
+### 21.2 C — parecer do DBA sênior sobre as garantias de dado da replicação
+
+**Quem:** papel C (DBA sênior), leitura pura — nenhuma linha de código
+alterada, nenhum commit partiu desta frente. **Quando:** 17/09/2026 02:39 UTC,
+integrado em `9da28a4` às 02:47 UTC (16 min 49 s de frente, 92 ferramentas).
+**Fonte:** `docs/propostas/parecer-dba-replicacao-2026-09-17.md` (556 linhas).
+Escopo: o que uma réplica entrega ao fim de um alcance, garantia por garantia,
+com o cenário exato que quebra cada uma que não vale.
+
+**Duas correções ao briefing**, antes de qualquer conclusão: o evento do
+`.log` tem **44 bytes** de cabeçalho, não 36 (`log.rs:81`; os 36 são a
+fronteira do CRC); e `reconciliar_sequencia` mora no *store*
+(`table.rs:3009`), não no bidirecional.
+
+**Três medições novas, feitas num binário isolado fora do repositório** (sem
+tocar `crates/`, sem disputar o `flock` com a bateria de F):
+
+- **`rownum` diverge depois de uma inserção recusada** — 2 de 5 linhas com
+  `rownum` diferente entre source e réplica, rowids iguais nas 5 (§2.1;
+  pedido 291). **Confirmado pelo soquete pela bateria de F, com o alcance
+  corrigido**: a divergência só sobrevive dentro de um `inserir_lote` com
+  `"parar_no_erro": false` — recusa em operação própria reabre a instância e
+  a queima do contador se perde. Isso não diminui o achado (o caminho de
+  importação/carga é exatamente onde a recusa é rotina); ver a §21.4 para a
+  prova com controle por estágio, em vez de repetir aqui o alcance antigo.
+- **Unicidade num índice secundário trava o par de servidores no
+  bidirecional para sempre** — `[SP000020] chave duplicada`, o mesmo erro em
+  `inserir_replicado` e `aplicar_evento` (§2.5; pedido 292).
+- **12 eventos gravados num único milissegundo** — um só carimbo distinto
+  para os 12, medindo o que a coluna de data/hora de sistema por linha (decisão
+  do dono de 11/09/2026) precisa resolver antes de nascer (§4.2; pedido 289).
+
+**A tabela garantia × vale?** (§1 do parecer) resume treze linhas — rowid,
+linha, `.memo`, `.bin`, `rownum`, `versao`, `.trash`/`.reason`, carimbo e
+origem do `.log`, integridade referencial, unicidade, atomicidade de commit,
+posição do cluster. As que **não valem**, com o pedido que as carrega:
+
+| garantia | vale? | pedido |
+|---|---|---:|
+| mesmo `rownum` | **NÃO**, silencioso | 291 (decisão do dono, 3/6) |
+| mesma `versao` | por construção, nunca conferida | 296 |
+| mesmo `.trash`/`.reason` | NÃO, por desenho — sem ressalva escrita | 297 |
+| mesmo carimbo/origem no `.log` | NÃO, unidirecional — o PITR já faz certo | 298 |
+| integridade referencial na réplica | NÃO, decisão **já** registrada | pedido 171/`INTEGRIDADE.md` §3 |
+| unicidade na réplica | SIM, mas trava o par no bidirecional | 292 (decisão do dono, 4/6) |
+| atomicidade de commit | NÃO, e RECUSADO consertar sem o dono | 299 |
+| posição somada do cluster | NÃO em quatro cenários | 294, 295, 300 |
+
+**As seis decisões do dono** (§6 do parecer, pedidos 289–294): coluna de
+data/hora de sistema por linha e sua resolução; `inicio`/`passo` da `Sequence`
+no mesmo bump de `PSCH`; quem honra o `rownum` numa réplica; o que fazer com
+único secundário no bidirecional; replicar coluna externa marcada — recusar no
+motor ou esperar o envelope da §11.5 (cruza com o §Z de SEC, §21.1); o
+critério de eleição do cluster.
+
+**O item de maior retorno** (pedido 295): dar à réplica a mesma conferência
+de continuidade que o PITR já tem (`diario_vivo_continua`,
+`servidor.rs:18640-18673`) — não é formato, não é consenso, não muda cliente
+nenhum, é a guarda que já foi escrita alcançando o caminho irmão, no mesmo
+padrão dos pedidos 172/173/176.
+
+**O NÃO do papel C** — cinco propostas boas, recusadas com o número, para não
+voltarem sem medição: devolver o contador do `rownum` na recusa (reintroduz
+reuso de número de ordem, pedido 291); id de transação no evento do `.log`
+(muda o formato do cabeçalho e não compra atomicidade entre tabelas, pedido
+299); a réplica conferir a unicidade do secundário como confere FK (calaria um
+índice declarado único, pedido 292); trocar a soma do cluster por vetor de
+posições por tabela (mexe no critério de eleição, pedido 294); replicar coluna
+externa e resolver a senha na configuração (a condição nunca se satisfaz,
+pedido 293).
+
+### 21.3 G — inventário QA: guarda × pétrea na família da replicação
+
+**Quem:** papel G (QA), frente **estática** — nenhum `cargo`, nenhum
+`provar-guardas.py`, nenhum servidor subido, para não disputar o `flock` nem
+os soquetes com a bateria de F. **Quando:** 17/09/2026, medições com hora UTC
+de cada comando (02:34 UTC para as réguas estáticas), integrado em `728a46f`
+às 02:43 UTC (12 min 48 s de frente, 93 ferramentas). **Fonte:**
+`docs/propostas/inventario-qa-replicacao-2026-09-17.md`.
+
+**Treze entradas do catálogo** (`bancada/guardas/catalogo.py`) tocam
+replicação/cluster/quórum, contra o veredito da última corrida do provador
+(16/09/2026 15:25): doze **PROVADAS**, e a treze-ésima
+(`cluster-devolve-a-credencial-na-tela`, nascida em 17/09) corretamente
+nomeada como **NÃO JULGADA** — a sexta régua do catálogo
+(`TETO_NAO_JULGADA_ESCONDIDA`) mede **0** entradas escondidas, ela incluída.
+
+**O achado que atravessa a lista inteira**: `crates/phxsql-server/src/cluster.rs`
+tem **zero** entradas em `bancada/guardas/catalogo.py` (confirmado por
+`grep '"arquivo": ".*cluster.rs"'`), apesar de ser o arquivo da eleição
+(pedido 211), do escalonamento a quente (pedido 217) e dos quatro modos A–D
+(pedido 214), todos com teste real e comentado como prova — o catálogo tem
+uma entrada em `replica.rs` e nenhuma em `cluster.rs` (pedido 302).
+
+**Sete pétreas com teste real e sem guarda no catálogo** (pedido 301), cada
+uma com o teste que existe hoje e o teste que cairia se o defeito voltasse:
+`replicas_autorizadas` vazia libera; `incompleta:false` por omissão não
+encolhe a posição em silêncio; a eleição prefere completa; réplica não atende
+escrita (portão 2b-bis); `spare` não atende ninguém; read replica recusa
+escrita apontando o master; e o pulso de id fora da lista + nó novo sem
+reiniciar.
+
+**`TETO_DO_LOTE_SERVIDO` e `TETO_DA_RESPOSTA`** (pedido 147) não têm prova
+nenhuma, nem unitária nem de bancada — cruza com o A2 de SEC (§21.1, pedido
+279): SEC mediu que o teto corta a resposta e não a leitura; G mediu que não
+há nenhum teste do corte por bytes (pedido 303).
+
+**Catracas de replicação/concorrência medidas nesta sessão** (17/09/2026
+02:34 UTC): `TETO_TRECHO_MORTO`, `TETO_TRECHO_AMBIGUO`, `TETO_TESTE_MORTO`,
+`TETO_TESTE_FORA_DO_BINARIO`, `TETO_TESTE_SEM_MODULO` e
+`TETO_NAO_JULGADA_ESCONDIDA` em **0**; `codigo-do-dono` em **5** (teto 5, sem
+folga); `rede-ou-espera` (a catraca de REPLICACAO §18) em **0**;
+`alcancam-fsync` em **23** (teto 22, **vermelha por decisão do dono já
+registrada**, pendência #252, não mexida por esta frente); `PISO_DAS_ENTRADAS`
+em **180**, subindo dos 177 anteriores — o comportamento correto de um piso
+que só sobe.
+
+Fora de escopo de guarda, por decisão já registrada: transação com quórum
+(pesquisa/plano, papel J, `docs/propostas/quorum-de-escrita.md`, ainda não
+implementado) e `alcancam-fsync` (dívida já registrada, pendência #252).
+
+### 21.4 F — a bateria de 17/09, número por número, contra servidores de pé
+
+**Quem:** papel F (usuários de teste e revisor de prova real) — a bateria
+propriamente dita, rodando contra `phxsqld` de verdade, nunca por dentro do
+motor. **Quando:** 17/09/2026, 02:29–03:01 UTC, integrada em `34ef2c1`.
+**Fonte:** `docs/propostas/bateria-replicacao-2026-09-17.md` (500 linhas) e os
+`resultados.json` que a própria bateria regravou. Binário: `flock
+/tmp/phx-cargo.lock cargo build --release`, `target/release/phxsqld` de
+**02:29:41 UTC** — mais novo que a tradução da noite (01:01:51), o que a lei
+do binário velho exige conferir antes de qualquer número.
+
+#### As dez bancadas, hoje × antes
+
+| bancada | hoje (17/09) | antes | fonte do «antes» | veredito |
+|---|---|---|---|---|
+| replicação clássica (`montar.py`+`medir.py`) — master | **45.117 linhas/s** | 33.883 | `resultados.json`, 07/09 | **1,33×** |
+| idem — réplica aplica | **43.606 eventos/s** | 37.311 | idem | 1,17× |
+| idem — retrato SHA-256 dos 4 | `72554b753253cd5d` nos quatro | iguais | idem | **PASSA** |
+| os quatro modos (`modos.py`, não grava arquivo) | **9 de 9 estágios [ok]** | — | veredito ditado nesta página (§1.2), porque a bancada não grava | ok |
+| a trava de dados (`trava.py`) — alcance de 200.000 eventos | **2,39 s — 83.567 ev/s** | 4,54 s — 44.062 | `trava.json`, 05/09 | **1,90×** |
+| idem — queda: soma de verificação | `1aa1e8124df2cba0` nos dois lados | a mesma soma | idem | **PASSA** |
+| credencial recusada (`credencial-recusada.py --tela`) | **8 de 8 casos — PASSA**, incluindo o botão «Religar» num navegador de verdade | idêntico | `credencial-recusada.json`, 09/09 | ok |
+| cluster (`cluster/provar.py`) | **26 de 26 conferências ok**, `falhas: []` | idem (arquivo **byte a byte igual**) | `cluster/resultados.json`, 11/09 | **PASSA** |
+| a fresta (`cluster/fresta.py`, não grava arquivo) | **10 de 10**, `falhas: []`, nas duas ordens de morte | — | veredito ditado nesta página (§1.6) | ok |
+| escalonar a quente (`cluster/escalonar.py`) | escritas recusadas **0 de 43** | 0 de 42 | `resultados-escalonar.json`, 07/09 | ok |
+| quórum (`quorum/medir.py`) — commit 2-de-3 / 3-de-3 | **3,04× / 3,56×** | 3,08× / 3,56× | `quorum/resultados.json`, 07/09 16:37 | **a razão se manteve** |
+| o canal do pulso (`quorum/canal.py`) | pulso quente **0,146 ms** [0,078; 0,388] | 0,089 [0,069; 0,232] | `resultados-canal.json`, 07/09 17:54 | **faixas se cruzam — sem vencedor** |
+| os quatro modos em contêiner (`docker/provar.py`) — source em contêiner | **16.030 linhas/s**; réplica alcança em 1,92 s | 13.462; 2,94 s | `docker/resultados.json`, 05/09 | ok |
+| idem — retrato SHA-256 | `39787c620feeed8f` nos dois, 101.013 linhas | iguais | idem | **PASSA** |
+
+A regra do pedido 155 vale aqui como valeu no quórum de 07/09: onde a mediana
+caiu mas as **faixas se cruzam** (quórum e canal do pulso), não se declara
+vencedor dentro do ruído — o que se sustenta é a **razão** entre os regimes,
+que saiu igual em corridas de dez dias de distância.
+
+#### Os três achados do papel C, confirmados pelo soquete com controle por estágio
+
+Ler código não prova defeito de replicação — o que depende de dois processos
+e um soquete se prova contra dois processos e um soquete. F escreveu
+`bancada/replicacao/achados-do-dba.py`, em que **cada estágio roda o cenário
+E o controle** (o mesmo roteiro com a única linha do defeito retirada),
+rodado às **02:58:51–03:00:08 UTC**, resultado em
+`bancada/replicacao/achados-do-dba.json`:
+
+- **`rownum` divergente (§21.2) — CONFIRMADO, com o alcance mais estreito do
+  que o parecer descreve.** A leitura do código (que `numerar_linha` consome
+  o contador antes da conferência de unicidade) está certa, mas a prova pelo
+  soquete separou onde ela morde: recusa por chave duplicada na primária, por
+  chave duplicada num único secundário, ou por coluna obrigatória faltando —
+  todas em **operação própria** — **não** divergem, porque `proximo_rownum`
+  é estado da instância aberta do `Reg`, e o servidor reabre a tabela entre
+  operações (a queima se perde). A divergência só sobrevive **dentro de um
+  `inserir_lote` com `"parar_no_erro": false`**, onde a instância é a mesma
+  do começo ao fim do lote: `[1,2,3,5,6]` no source contra `[1,2,3,4,5]` na
+  réplica, retrato SHA-256 diferente (`252fa89db5038769` × `d92da11a064d6f11`),
+  contra o controle das mesmas 5 linhas sem recusa, que bate
+  (`d92da11a064d6f11` nos dois). O alcance mais estreito **não diminui o
+  achado** — piora, porque `inserir_lote` com `parar_no_erro:false` é
+  exatamente o caminho de importação/carga, onde uma linha recusada é rotina
+  e não acidente. Ver §21.2, que aponta para aqui em vez de descrever o
+  alcance antigo.
+- **Único secundário trava o par bidirecional — CONFIRMADO.** Com
+  e-mails distintos (controle), os ids em beta terminam `[1,2,3]` e a
+  escrita seguinte, que não conflita, chega. Com o mesmo e-mail (cenário),
+  beta fica em `[2]`, a linha do conflito **não** chega e a escrita
+  **seguinte, que não conflita com nada**, também não — é a linha que separa
+  «uma linha perdida» de «o par de servidores parado», e ela julgou a favor
+  do segundo.
+- **Tabela apagada e recriada no source — CONFIRMADO, e o silêncio é o que
+  assusta.** Réplica fica com `[1,2,3,4,5]`/5 eventos enquanto o source tem
+  `[91,92,93]`/3, as linhas novas nunca chegam, e `replicacao_estado`
+  responde `ultimo_erro: null`, `parada: null` — sem uma palavra sobre o
+  descompasso. O PITR pega este caso (`diario_vivo_continua`); a réplica
+  não. Ver pedido 295.
+
+#### Duas hipóteses que morreram medidas
+
+- **«A queda do `master_linhas_s` foi o `fsync` que a onda 2 pôs no caminho
+  de escrita»** (candidato nomeado pelo pedido 193) — **morta, medida**.
+  `strace -f -c -e trace=fsync,fdatasync,sync_file_range` numa carga de
+  100.000 linhas deu **104 chamadas de `fsync`** — 0,00104 por linha, ordem
+  de grandeza de *fecho de janela*, não de linha (bate com
+  `TETO_FSYNC_POR_FECHO_V2`, que mede `fsync` por fecho, e com o comentário
+  de `servidor.rs:14334-14339`, que registra que a primeira versão sim
+  chamava `sincronizar()` por tabela por commit e foi trocada). E o número
+  de hoje, com esse `fsync` de pé, é **45.117 linhas/s** — 1,69× acima dos
+  26.762 que o pedido 193 registrou. O que causou a queda de 05/09 continua
+  sem medir, por falta de disco para o *worktree* — mas deixou de ser
+  urgente, porque o número não está preso em 26.762.
+- **«O contêiner é ~2,8× mais lento que o processo»** — **morta, medida, e a
+  causa é a libc**. A bancada de contêiner roda o estágio de processos com o
+  binário **musl** de propósito (para comparar trabalho igual entre
+  contêiner e processo, regra 4 da bancada), o que torna o número dela
+  incomparável com o `gnu` do `medir.py`. Medido com a mesma carga, mesmo
+  esquema, mesmo cliente (`bancada/replicacao/custo-do-binario.py`, 03:01
+  UTC): **gnu 48.510 linhas/s × musl 20.965 linhas/s = 2,31×** — os 2,31× do
+  binário explicam quase toda a diferença; o resto é o daemon do Docker no
+  ar e uma réplica contra três. O contêiner não é lento: o `musl` é — e isso
+  é informação de produto (a imagem `FROM scratch` que a casa publica **é**
+  a musl), não recomendação de trocar de libc.
+
+#### Três consertos de bancada, cada um com o RED
+
+Todos no roteiro **novo** (`achados-do-dba.py`), nenhum em bancada antiga.
+Os três são da mesma família — *prova que não confere o próprio estrago mede
+outra coisa*:
+
+| # | o defeito | RED (com o defeito) | GREEN (com o conserto) |
+|---|---|---|---|
+| 1 | `excluir_tabela` sem `confirmar` é recusado, e o estágio não conferia a resposta | cenário e controle davam o **mesmo** resultado (réplica com `[1,2,3,4,5,91,92,93]` nos dois — a tabela nunca foi apagada); veredito `[FALHA]`, «o defeito não existe» | com `"confirmar":"clientes"` + parada explícita se a montagem falhar: source `[91,92,93]`/3 eventos, réplica `[1,2,3,4,5]`/5, `chegou=False`, veredito `[ok]` |
+| 2 | `eventos()` pedia `posicao` com `"tabela"` no pedido, mas o campo mora em `resultado.tabelas.<tabela>.eventos` | devolvia `None` calado; todo `esperar(...==5)` esgotava o prazo em vez de esperar; JSON de 02:54 com `eventos_source: null`, `eventos_replica: null` | `eventos_source: 3`, `eventos_replica: 5` — o par que sustenta o achado da tabela recriada |
+| 3 | `--so <estágio>` sobrescrevia o `achados-do-dba.json` inteiro | a corrida `--so rownum` deixava um arquivo só com `{"rownum": …}`, parecendo a bateria completa | mescla por nome + campo `preservados_de_corrida_anterior`: a corrida parcial preserva os outros dois estágios **e diz quais preservou** |

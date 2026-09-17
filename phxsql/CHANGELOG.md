@@ -148,6 +148,38 @@ errado, está dito qual.
   commits entre `c4a47c5` (08:22) e `4eaff53` (22:26): pedidos 245, 247,
   252, 254, 256, 258–263 e 267, a sétima página e seus geradores, a auditoria
   SEC. Lacuna nomeada, não preenchida nesta entrada.
+- **Rodada da replicação — bateria, revisão e conclusão, 17/09/2026 02:27
+  UTC.** A revisão adversária (SEC), o parecer de DBA (C) e o inventário de
+  QA (G) voltaram só de leitura, sem conserto; a bateria (F) voltou verde,
+  dez bancadas de dez, com os três achados medidos de C confirmados pelo
+  soquete (§21.4). `docs/REPLICACAO.md` §21, `docs/PENDENCIAS.md` 278–308.
+- **SEC A1 (alta) — o pulso do cluster aceita identidade auto-declarada, e
+  uma época sem teto rebaixa o master e paralisa a eleição para sempre,
+  inclusive depois de reiniciar** (`docs/propostas/revisao-sec-replicacao-2026-09-17.md`,
+  17/09 02:41 UTC). Pedido 278.
+- **SEC A2 (alta) — `replicar` com `"max":0` lê o diário inteiro com imagens
+  sob a trava global de dados; o teto de 16 MiB corta a resposta, não a
+  leitura** (idem). Pedido 279.
+- **SEC A3 (média-alta) — `aplicar` pela rede desliga FK/CHECK/cascata num
+  source sem `somente_leitura`: mata o pai que tem filhos, contra a pétrea**
+  (idem). Pedido 280.
+- **C — `rownum` diverge entre source e réplica depois de uma inserção
+  recusada por chave duplicada**: 2 de 5 linhas com `rownum` diferente,
+  rowids iguais nas 5 (medido em binário isolado fora do repositório,
+  `docs/propostas/parecer-dba-replicacao-2026-09-17.md` §2.1, 17/09 02:39
+  UTC). Pedido 291.
+- **C — unicidade num índice secundário trava o par de servidores no
+  bidirecional para sempre**: `[SP000020] chave duplicada` recusa o evento e
+  o lote nunca avança (§2.5, idem). Pedido 292.
+- **C — 12 eventos gravados num único milissegundo**: o `.log` carimba em ms
+  e uma passada de commit empata, o que muda o desenho da coluna de
+  data/hora de sistema por linha que o dono pediu em 11/09 (§4.2, idem).
+  Pedido 289.
+- **G — `crates/phxsql-server/src/cluster.rs` tem ZERO entradas no catálogo
+  de guardas** (`docs/propostas/inventario-qa-replicacao-2026-09-17.md`
+  §2.2, 17/09 02:34 UTC) — a eleição (pedido 211), o escalonamento a quente
+  (217) e os quatro modos A–D (214) têm teste real e nenhuma guarda
+  catalogada. Pedido 302.
 
 ## Não lançado — Colmeia × SQLite × padrão nas quatro operações (bancada)
 
