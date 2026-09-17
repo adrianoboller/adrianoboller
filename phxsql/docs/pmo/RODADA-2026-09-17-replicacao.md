@@ -109,6 +109,8 @@ Prova real nos dois sentidos em todos: o teste FALHA com o defeito reposto.
 Fora de B (mesa do dono): A1 identidade (`known_hosts` pela chave do fio),
 A4, A6, A7, A8, A9, A10, A11, as seis decisões de formato de C, o 161.
 
+- **H etapa 2 — integrado em `46b2420` (04:05 UTC)** (10 min 26 s de frente, 75 ferramentas). CHANGELOG +76/−16 (cinco Corrigido, dois Mudado, Sabido reescrito sem contradizer o Corrigido), CLUSTER.md +19, MODELOS +26/−8, PENDENCIAS 279/280/295 ☑️ e 278/282/303 ◐ com commit e testes, REPLICACAO §6/§7/§13/§18/§21.1–21.3 +69/−7, STATUS linha B **8 → 7** datada com fonte por afirmação (e duas afirmações já contraditas por pedidos de 07/09 e 08/09 saíram). Conferido por A: estados no arquivo, zero nome de modelo, zero placeholder (três acertos do crivo eram «todo/todos»). §21.5 espera os vereditos das guardas depois de G2 e B2.
+
 ## Onda 3 — «Continue fazendo os gaps» (ordem do dono, 03:58 UTC)
 
 Os 13 `--so` de G rodados por A às 03:53–03:57 UTC, um por vez, cada um com
