@@ -1,0 +1,49 @@
+{
+  "gerado_em": "2026-09-17T13:53:13+0000",
+  "n": 1000000,
+  "repeticoes": 3,
+  "corridas": [
+    {
+      "n": 1000000,
+      "reindexar_s": 1.6615426920002392,
+      "reindexar_resultado": {
+        "porId": 1000000,
+        "porCidade": 1000000
+      },
+      "baseline_op_s": 5542.99652608326,
+      "durante_op_s": 1.2037006389479592,
+      "depois_op_s": 5675.837194935618,
+      "pior_pausa_durante_s": 1.6612374710002769,
+      "pior_pausa_fora_s": 0.03929030800009059,
+      "total_ops_operador": 35375
+    },
+    {
+      "n": 1000000,
+      "reindexar_s": 1.633632208999643,
+      "reindexar_resultado": {
+        "porId": 1000000,
+        "porCidade": 1000000
+      },
+      "baseline_op_s": 5809.114512268909,
+      "durante_op_s": 0.6121328867605711,
+      "depois_op_s": 5705.34040198901,
+      "pior_pausa_durante_s": 1.6337720440001249,
+      "pior_pausa_fora_s": 0.00521809400015627,
+      "total_ops_operador": 36270
+    },
+    {
+      "n": 1000000,
+      "reindexar_s": 1.628509152999868,
+      "reindexar_resultado": {
+        "porId": 1000000,
+        "porCidade": 1000000
+      },
+      "baseline_op_s": 5851.201084646277,
+      "durante_op_s": 0.6140585689419709,
+      "depois_op_s": 5606.050859301203,
+      "pior_pausa_durante_s": 1.6266418800000793,
+      "pior_pausa_fora_s": 0.004350661999978911,
+      "total_ops_operador": 36067
+    }
+  ]
+}

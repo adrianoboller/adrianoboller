@@ -719,6 +719,122 @@ Sobra adiar o não único, que na forma da bancada vale 1,19 s de 3,93.
 
 ---
 
+### 4.4-bis Remedido em 17/09/2026, a pedido do dono — e o ponto de virada andou CONTRA adiar
+
+O dono reabriu o item com um caso concreto: *«uma carga de novos produtos que
+ainda não tem venda e a operação está a todo vapor, o BULKINSERT adia o `.ndx`
+para essa carga ser rápida e depois em thread atualiza o `.ndx`»*. São **três**
+regimes diferentes, e eles dão respostas diferentes — misturá-los foi o erro
+que o integrador cometeu ao responder «5 a 6×» antes de medir, dividindo um
+custo proporcional a **M** por um proporcional a **N**.
+
+Tudo abaixo foi medido no binário de hoje, com `cargo build --release
+--examples` conferido pelo relógio contra `crates/**/*.rs` antes de cada
+rodada — *medidor com binário velho mede o passado* (§4.10). As faixas são
+min–max de três corridas, e **vencedor só se declara quando as faixas não se
+cruzam**.
+
+#### (a)/(b) Tabela VAZIA — importar, migrar, semear
+
+`--example bulkinsert-adiar-ndx`, que traz a **conferência de mesmo estado
+embutida**: antes de apagar as tabelas, compara `buscar` do índice único (todos
+os N ids) e do não único (as 8 cidades, como conjunto de rowids) entre os dois
+regimes, e só então imprime o número. Sem isso, «reindexar constrói certo»
+seria leitura de código.
+
+| N | índice em linha | adiado (carga + refazer) | ganho |
+|---:|---:|---:|---|
+| 10.000 | 0,053–0,065 s | 0,044–0,055 s | **faixas se cruzam — sem vencedor** |
+| 100.000 | 0,526–0,578 s | 0,384–0,408 s (0,252 + 0,140) | **1,39×** |
+| 1.000.000 | 8,503–8,687 s | 3,994–4,124 s (2,489 + 1,555) | **2,10×** |
+
+#### (b′) Carregar M numa tabela que JÁ TEM N — o regime do pedido 114
+
+`--example adiar-vale-quando 200000`, o medidor de 29/08 rodado **sem mudar uma
+linha**. A recusa do 114 não só se confirma: ela **ficou mais forte**.
+
+| M | 29/08/2026 | 17/09/2026 |
+|---:|---:|---:|
+| 200.000 (dobra) | **1,22×** | **0,67–0,79×** |
+| 100.000 | 1,10× | 0,59–0,67× |
+| 40.000 | 0,86× | 0,43–0,49× |
+| 20.000 | 0,65× | 0,27–0,29× |
+| 4.000 | 0,22× | 0,08× |
+
+**O ponto de virada saiu da tabela.** Em 29/08 havia uma faixa onde adiar pagava
+(M ≳ N/3, culminando em 1,22× no dobro); hoje **nenhum M testado paga, nem
+M = N**. A causa está na assimetria dos ganhos desta casa: *manter* (a inserção
+em linha) ficou cerca de **3×** mais rápido de lá para cá — é a queda de
+44,4 para 15,9 µs/linha —, enquanto *refazer* (o `reindexar`) ficou **parado**:
+0,512 s em 29/08 contra 0,543–0,641 s hoje, a M = 200.000. **Os ganhos que
+aceleraram o caminho em linha — o cache de páginas do `.ndx`, o cabeçalho do
+`.reg`/`.log` — não tocaram o `reindexar`.**
+
+É a lição do §4.4 confirmada por outro caminho, e vale escrevê-la como regra:
+**uma recusa medida envelhece nos dois sentidos.** Esta envelheceu *a favor* de
+quem a escreveu. O que a mudaria continua sendo o que o §4.4 já nomeava —
+**fundir** a série ordenada na árvore existente, para o custo depender de M e
+não de N+M —, e continua sem código.
+
+#### (c) Reconstruir EM THREAD, com a reserva solta — a hipótese do dono
+
+Este regime não existe no motor. Mas a RPC `reindexar` (`servidor.rs:23288`) já
+chama `Table::reindexar()` sob a **mesma trava global** que toda leitura e
+escrita usam, e **o servidor não distingue «RPC de um cliente» de «chamada
+interna de uma thread»**: as duas tomam a trava pela mesma função, do mesmo
+jeito. Então chamar a RPC de uma segunda conexão, enquanto um «operador»
+martela **outra** tabela, reproduz fielmente o que a thread de fundo causaria —
+e prova pelo soquete, com `phxsqld` de pé, em vez de por teste unitário.
+
+`bancada/carga/adiar-ndx/reconstrucao-em-thread.py`, três corridas por escala:
+
+| | 200.000 linhas | 1.000.000 linhas |
+|---|---:|---:|
+| duração do `reindexar` | 296–320 ms | 1.627–1.662 ms |
+| vazão do operador ANTES | 5.541–5.948 op/s | 5.543–5.851 op/s |
+| vazão do operador **DURANTE** | **3–10 op/s** | **0,6–1,2 op/s** |
+| vazão do operador DEPOIS | 5.599–5.944 op/s | 5.606–5.706 op/s |
+| **pior pausa de um pedido** | **296–317 ms** | **1.627–1.661 ms** |
+| pior pausa fora da janela | 4,6–37,8 ms | 4,4–39,3 ms |
+
+**A hipótese «reconstruir em thread é de graça» morre medida.** A pior pausa é,
+dentro de um milissegundo, **igual à duração inteira do `reindexar`** — a thread
+não roda ao lado de ninguém: ela para todo mundo, em qualquer tabela. E a pausa
+é proporcional a **N**, a tabela inteira, não a M: a projeção linear para dez
+milhões de linhas é ~16 s parado (projeção declarada, não medida).
+
+O regime (c) **não tem ponto de virada por tamanho**, ao contrário do (b′): ele
+sempre entrega a carga mais rápida para quem carrega, e sempre cobra uma parada
+concentrada de quem opera. **A decisão não é técnica, é de SLA** — depende de
+quanto a operação tolera parar —, e por isso é do dono.
+
+#### O achado que ninguém pediu, e que confirma o parecer do DBA
+
+Enquanto o `.ndx` está vazio, `buscar` e `verificar` na própria tabela carregada
+respondem **errado** e **CORROMPIDO** («0 chaves para N registros») — visto na
+prova manual do preparo do regime (c). É exatamente o que o parecer do papel C
+previu por leitura, e é a diferença de risco entre (b) e (c): em (b) a **reserva
+cobre a janela inteira** e ninguém vê o índice vazio; em (c), soltar a reserva
+cedo é justamente expor essa janela. É a restrição **R2** do parecer — a marca
+de suspenso vai ao disco **antes** da primeira linha —, e ela deixa de ser
+precaução de projeto para virar consequência medida.
+
+#### O que NÃO foi medido, dito
+
+- **Reconstrução em pedaços** (toma e solta a trava): não há primitivo no motor,
+  nem `reindexar` parcial nem fusão de série ordenada. Medir o teto exigiria
+  escrever a lógica — e *medir a premissa vem antes de implementar o item*,
+  então isso é pesquisa seguinte com alvo nomeado: quanto custa fundir M chaves
+  ordenadas numa árvore de N, contra reconstruir tudo.
+- **Carga mista** (leitura + escrita) no operador: só `inserir` sequencial. A
+  conclusão qualitativa não muda — `buscar` toma a trava compartilhada e o
+  escritor pendente exclui leitores e escritores igual —, mas o número com
+  leitura misturada não foi medido.
+- **N = 10.000.000**: não tentado, por orçamento de disco (3,0–3,1 GiB livres).
+- **Mais de um operador**: não medido; um cliente sequencial já basta para
+  revelar uma trava global, que bloqueia todo mundo e não só quem chegou antes.
+---
+
 ## 4.5 A réplica: a causa registrada estava errada
 
 Estava escrito em dois documentos que a réplica ficava para trás porque
