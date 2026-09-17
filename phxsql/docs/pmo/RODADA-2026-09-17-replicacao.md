@@ -45,3 +45,7 @@ não é entregável de produto. Números só medidos.
 - Todo `cargo` sob `flock /tmp/phx-cargo.lock`; bancada de tempo passa pelo `esta-medindo.sh`.
 - Número só medido, com data e hora; hipótese sem medição é «não medido».
 - Nome de modelo de IA não entra em arquivo nenhum: o `MODELOS.md` guarda o nível.
+
+## Retornos da onda 1
+
+- **G — voltou 02:47 UTC** (12 min 48 s, 93 ferramentas). Treze entradas do catálogo tocam a família (12 provadas em 16/09 15:25, 1 nascida em 17/09 e nomeada como não julgada). Conferido por A: `cluster.rs` tem **0** entradas no `catalogo.py` (grep do campo `arquivo`), e `TETO_DO_LOTE_SERVIDO`/`TETO_DA_RESPOSTA` só existem na declaração (`servidor.rs:567`) e num uso (`:21802`) — sem teste e sem bancada. Sete pétreas com teste real e sem guarda no catálogo, nomeadas com o teste que cairia. Lista de 13 `--so` (~189 s) para depois de F. Entregas: `docs/propostas/inventario-qa-replicacao-2026-09-17.md`, cognição `cluster-fora-do-catalogo-de-guardas_20260917_0234`.
