@@ -6938,6 +6938,18 @@ impl Servidor {
     /// ler esquema seria mais um lugar que a sobreposicao da transacao e a
     /// qualificacao `schema.tabela` teriam de aprender de novo.
     ///
+    /// # Por que ela resolve DUAS listas do esquema
+    ///
+    /// Porque o pedido nomeia o indice num campo so -- `"indice"` --, e o
+    /// esquema o devolve em dois: `indices`, as arvores, e `indices_texto`, o
+    /// `.fts`. Quem le apenas a primeira nao devolve «nao achei»: devolve
+    /// duas listas VAZIAS, e lista vazia atravessa os lacos de quem chama sem
+    /// recusar nada. Era assim que `procurar_texto` -- a unica operacao que
+    /// nomeia indice de texto -- perguntava pela coluna negada com a
+    /// conferencia passando vazia, enquanto o irmao `buscar` recusava pelo
+    /// mesmo campo. A petrea diz que o campo que o portao le e o furo; aqui o
+    /// furo era o campo ser um e a resposta morar em dois lugares.
+    ///
     /// As duas listas vem separadas porque a recusa nomeia qual das duas
     /// respondeu: «o indice» e «o filtro do indice» mandam olhar lugares
     /// diferentes do esquema. O filtro e analisado pelo MESMO avaliador que
@@ -6974,6 +6986,20 @@ impl Servidor {
                     filtro.extend(e.colunas().iter().map(|c| c.to_string()));
                 }
             }
+        }
+        // O indice de TEXTO entra na mesma lista da chave, e nao numa
+        // terceira: a recusa manda olhar o mesmo lugar do esquema -- «o
+        // indice tal» --, e um oraculo por palavra responde tanto quanto um
+        // por valor exato. A coluna aqui e UMA e vem por NOME, porque e assim
+        // que o `esquema` a devolve e assim que o `criar_tabela` a declara.
+        for it in e
+            .campo("indices_texto")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .filter(|it| it.texto_ou("nome", "") == indice)
+        {
+            chave.push(it.texto_ou("coluna", "").to_string());
         }
         Ok((chave, filtro))
     }
@@ -27438,6 +27464,111 @@ mod testes_direito_por_tabela {
             !recado.contains("permiss") && !recado.contains("direito"),
             "a tabela permitida foi barrada pelo portao: {recado}"
         );
+    }
+
+    /// **O indice de TEXTO era o mesmo oraculo, por uma chave que a
+    /// conferencia nao sabia resolver.** `procurar_texto` nomeia o indice no
+    /// MESMO campo `"indice"` que o `buscar`, e
+    /// `recusar_pergunta_sobre_coluna_negada` le esse mesmo campo -- mas
+    /// resolvia o nome por `colunas_do_indice`, que varria so `indices`, as
+    /// arvores. O indice de texto sai do esquema em `indices_texto`, e com a
+    /// coluna por NOME: para um nome de la a conferencia devolvia duas listas
+    /// vazias, nenhum dos dois lacos rodava, e ela retornava `Ok(())` --
+    /// **passava vazia**.
+    ///
+    /// O irmao estava fechado, e e isso que prova esquecimento e nao decisao:
+    /// `buscar` por um indice de arvore sobre a coluna negada recusa desde
+    /// sempre, porque aquele nome mora em `indices`. O mesmo pedido pela
+    /// porta do `.fts` passava.
+    ///
+    /// O que vazava: a peneira tira `nome` de dentro de `linhas`, mas
+    /// `encontrados` e o `rowid` sobrevivem ao lado dela, e o casamento ja
+    /// aconteceu. Com o rowid na mao nao sao vinte perguntas sobre a base --
+    /// sao vinte sobre AQUELA pessoa.
+    ///
+    /// LASTRO, e ele e o motivo de este teste criar tabela propria: o
+    /// `servidor()` desta bateria nao declara indice de texto em lugar
+    /// nenhum, e o irmao logo acima prova o portao de TABELA por uma tabela
+    /// que nem tem `.fts` -- ela responde «nao ha indice de texto
+    /// declarado». Um teste de coluna escrito sobre aquela fixture passaria
+    /// pelo motivo ERRADO, pela recusa do MOTOR, num pedido cujo assunto e
+    /// justamente uma conferencia que passa vazia. Por isso a terceira
+    /// assercao nega a frase do motor: ela diz de ONDE veio a recusa.
+    ///
+    /// PROVA REAL: sem o laco de `indices_texto` em `colunas_do_indice`, o
+    /// primeiro pedido volta `Ok` com `encontrados: 1` -- que E a resposta
+    /// que se queria esconder: «sim, ha uma ficha com a palavra "ana" na
+    /// coluna que este usuario nao le», com o rowid ao lado.
+    #[test]
+    fn o_indice_de_texto_nao_pergunta_pela_coluna_negada() {
+        let dir = dir_temp("fts-coluna");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(
+                r#"{"*":{"ler":true,"tabelas":{"fichas":{"ler":true,
+                     "colunas":{"nome":{"ler":false}}}}}}"#,
+            ),
+        );
+        // A tabela com `.fts` nasce AQUI, e nao na fixture: mexer nela
+        // mudaria o que o irmao logo acima prova.
+        let dono = Sessao::default();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"fichas",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"},
+                               {"nome":"obs","tipo":"Str(40)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,
+                                "primario":true}],
+                    "indices_texto":[{"nome":"porNome","coluna":"nome"},
+                                     {"nome":"porObs","coluna":"obs"}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "inserir",
+            &pedido(
+                r#"{"database":"b","tabela":"fichas",
+                    "linha":{"id":1,"nome":"ana","obs":"cliente antigo"}}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"procurar_texto","database":"b","tabela":"fichas","indice":"porNome","palavra":"ana""#,
+        )
+        .expect_err("o indice de texto respondeu sobre a coluna negada");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        let t = e.to_string();
+        assert!(
+            t.contains("nome") && t.contains("o indice"),
+            "a recusa tem de dizer QUAL coluna e por ONDE: {t}"
+        );
+        // De onde veio a recusa: do PORTAO, e nao do motor dizendo que o
+        // indice de texto nao existe. Sem esta linha o teste passaria pelo
+        // lastro, e nao pela guarda.
+        assert!(
+            !t.contains("nao tem indice de texto"),
+            "a recusa e do motor, e nao do portao: {t}"
+        );
+
+        // O indice de texto sobre coluna que se PODE ler continua servindo --
+        // guarda que recusasse tudo seria pior que a guarda que faltava --, e
+        // a peneira continua tirando a coluna negada da resposta.
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"procurar_texto","database":"b","tabela":"fichas","indice":"porObs","palavra":"cliente""#,
+        )
+        .expect("o indice de texto sobre coluna permitida foi barrado");
+        assert_eq!(r.inteiro_ou("encontrados", -1), 1, "{r:?}");
+        let linhas = r.campo("linhas").and_then(Json::lista).unwrap();
+        assert!(linhas[0].campo("nome").is_none(), "a coluna vazou: {r:?}");
     }
 
     /// A arvore mostra o que da para abrir, e nao o que existe.

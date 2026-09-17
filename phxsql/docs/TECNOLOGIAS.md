@@ -39,12 +39,12 @@ foi estimado no lugar de uma medição que faltou.
 | `phxsql-core` | 35 | 11173 | 4568 | 3473 | 1539 | 20753 |
 | `phxsql-ffi` | 7 | 1408 | 1014 | 703 | 235 | 3360 |
 | `phxsql-odbc` | 7 | 2469 | 1086 | 928 | 228 | 4711 |
-| `phxsql-server` | 57 | 45031 | 29614 | 22062 | 5099 | 101806 |
+| `phxsql-server` | 57 | 45040 | 29675 | 22120 | 5102 | 101937 |
 | `phxsql-sql` | 10 | 6637 | 3381 | 1993 | 748 | 12759 |
 | `phxsql-store` | 24 | 13361 | 3583 | 5781 | 1541 | 24266 |
-| **total** | **143** | **81473** | **43460** | **35224** | **9530** | **169687** |
+| **total** | **143** | **81482** | **43521** | **35282** | **9533** | **169818** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **43460/81473 = 0.53×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **43521/81482 = 0.53×**.
 
 Alem do `src/`: **78** programas de medicao em `examples/` (19877 linhas — bancada em Rust, nao produto nem teste) e **60** arquivos em `tests/` de integracao fora de `src/` (20462 linhas).
 <!-- /GERADO -->
