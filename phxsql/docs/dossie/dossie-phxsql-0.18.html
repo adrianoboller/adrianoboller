@@ -2336,9 +2336,16 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     gasto estava no <em>source</em>: servir «500 eventos a partir de P» caminhava
     pelos P anteriores lendo o cabeçalho de cada um. Uma marca de posição levou
     isso de 4,07&#8201;s para <strong>0,09&#8201;s — 45×</strong>, e a réplica de
-    4.273 para <strong>17.450 eventos/s (4,08×)</strong>. As três juntas aplicam
-    ~52.000/s contra os 34.048 que o master escreve: <strong>ela
-    acompanha</strong>.</p>
+    4.273 para <strong>17.450 eventos/s (4,08×)</strong>.</p>
+    <p><strong>ERRO DE ARITMÉTICA, corrigido em 17/09/2026.</strong> Esta
+    passagem somava as três réplicas — «~52.000/s contra os 34.048 que o master
+    escreve: ela acompanha» — e a conclusão é <strong>falsa</strong>. Somar a
+    vazão de três destinos só valeria se o trabalho fosse
+    <strong>particionado</strong>; réplica completa recebe <strong>todos</strong>
+    os eventos, não um terço. No regime sustentado cada réplica acumula
+    <strong>34.048 − 17.450 = 16.598 eventos/s de atraso</strong>. Achado por
+    parecer técnico externo, e o agravante é que os números estavam
+    <strong>medidos</strong> — a conta em cima deles é que estava errada.</p>
     <p>O <strong>atraso</strong> de 1,3 a 2,1 s é outra coisa: ele é o intervalo do
     laço, e não trabalho. A réplica dorme <code>reconectar_em</code> segundos entre
     uma pergunta e outra. Baixar o intervalo baixa o atraso e sobe o tráfego de
@@ -6415,8 +6422,10 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
     </table>
   </div>
 
-  <p><strong>4,08&#215;.</strong> As três juntas aplicam ~52.000 eventos/s contra
-  os 34.048 que o master escreve. E um terceiro achado, menor, saiu no caminho:
+  <p><strong>4,08×</strong> por réplica. <strong>A soma das três NÃO vale</strong>
+  (erro de aritmética corrigido em 17/09/2026: réplica completa recebe todos os
+  eventos, então cada uma atrasa 34.048 − 17.450 = <strong>16.598/s</strong>).
+  E um terceiro achado, menor, saiu no caminho:
   <code>bytes_para_hex</code> fazia um <code>format!</code> — e uma alocação de
   <code>String</code> — <strong>por byte</strong> da imagem. Tabela de dígitos no
   lugar: 3,48 → 0,24&#8201;µs por evento, <strong>14,5&#215;</strong>.</p>
@@ -7088,10 +7097,10 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
   <div class="painel">
 <!-- pedidos:inicio (gerado por docs/dossie/pagina-dos-pedidos.py) -->
-    <div><div class="v">333</div><div class="r">pedidos, ao todo</div></div>
+    <div><div class="v">339</div><div class="r">pedidos, ao todo</div></div>
     <div><div class="v">269</div><div class="r">feitos</div></div>
     <div><div class="v">12</div><div class="r">parciais</div></div>
-    <div><div class="v">52</div><div class="r">planejados</div></div>
+    <div><div class="v">58</div><div class="r">planejados</div></div>
   <!-- pedidos:fim -->
   </div>
 

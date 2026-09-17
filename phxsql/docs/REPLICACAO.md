@@ -893,8 +893,20 @@ esperado **antes** de rodar. A corrida completa:
   caiu, e a causa que estava escrita aqui estava errada.** Medido
   (`DESEMPENHO.md` §4.5): reencodar o payload custa 0,35 µs de 229; o que
   custava era o **source** varrendo o diário desde o começo a cada lote. Com a
-  marca de posição, cada réplica aplica **17.450 eventos/s** e as três juntas
-  ~52.000 — mais do que os 34.048 que o master escreve. O que continua
+  marca de posição, cada réplica aplica **17.450 eventos/s**.
+
+  > **ERRO DE ARITMÉTICA, CORRIGIDO EM 17/09/2026 — e o texto errado fica
+  > aqui, porque apagá-lo esconderia como ele passou.** Este parágrafo dizia:
+  > *«as três juntas ~52.000 — mais do que os 34.048 que o master escreve»*, e
+  > concluía que o conjunto acompanha a origem. **Não acompanha.** Somar a
+  > vazão de três réplicas só valeria se o trabalho fosse **particionado**
+  > entre elas; réplica completa recebe **todos** os eventos, não um terço. No
+  > regime sustentado, cada réplica acumula **34.048 − 17.450 = 16.598
+  > eventos/s de atraso**. Achado por parecer técnico externo (17/09/2026), e
+  > o agravante é o pior possível para esta casa: os números estavam
+  > **medidos** e a conta em cima deles estava errada. *Número citado é número
+  > que não se mede* pega o número; **não pega a aritmética.** Nenhuma das
+  > seis revisões anteriores olhou a conta. O que continua
   verdadeiro: o atraso normal é o `reconectar_em`, e réplica não é backup.
 - ~~Não resolve conflito de escrita nos dois lados~~ — **resolve, no papel
   `multi`**: mais recente vence, pelo carimbo, com as três exigências da §12
