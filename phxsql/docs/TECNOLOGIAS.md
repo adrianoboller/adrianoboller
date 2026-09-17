@@ -110,7 +110,7 @@ mesmo motivo que o rodapé já errou uma vez.
 | JavaScript (prova ponta a ponta) | `testes-web/` | 53 | 11059 |
 | Python (bancada de medicao) | `bancada/` | 116 | 53000 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2816 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 403 | 100237 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 404 | 100383 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 32 | 13481 |
 <!-- /GERADO -->
 
@@ -492,7 +492,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **327** pedidos numerados; **53** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **332** pedidos numerados; **54** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -549,6 +549,7 @@ proposta de voltar sem medição nova.
 | 305 | **J — aproveitar a IDEIA do construtor visual de consulta com N filtros e AND/OR: a tela «Consulta» hoje e de UMA condicao so, e a op `sql` so e alcancavel de UM lugar na interface** |
 | 308 | **F (bateria) — quatro `resultados.json` de replicação/cluster não trazem campo de data, e a página de testes cai no `mtime` — que já mentiu uma vez nesta rodada** |
 | 316 | **A guarda que impede transplantar um slot cifrado de um `.reg` para outro existe POR CONSEQUENCIA, e ninguem a escreveu** |
+| 331 | **Chave COMPOSTA nao replica no modo bidirecional: a tabela e recusada inteira — e o proprio fonte pede este pedido por escrito** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —
