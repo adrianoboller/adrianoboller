@@ -142,3 +142,7 @@ Medido por A nos logs; a suíte no repositório passa (2.427/0/4).
 
 Fora de qualquer onda (mesa do dono, formato): as seis decisões de C
 (289–294), o 161, e o que B2 devolver como parecer.
+
+### Retornos da onda 3
+
+- **G2 — integrado em `6470943` (04:31 UTC)** (28 min 10 s de frente, 128 ferramentas, sem cargo). `trava-atras-da-rede` reancorada no laço do `puxar` (mesmo defeito); `COPIAR` do provador ganha os dois arquivos que testes leem por `CARGO_MANIFEST_DIR` (`debug-com-segredo.py` e `mapa-das-threads.py` — o segundo era buraco latente) e o conferidor `verificar_copiar()` com autoteste nos dois sentidos; `--so --json` mescla por id (8 casos de autoteste); sete entradas novas, `cluster.rs` sai do zero, `PISO_DAS_ENTRADAS` 180→187; `docs/TESTES.md` republicado nomeando 44 não julgadas de 187. Conferido por A às 04:30: `trecho-vivo.py --catraca` sete réguas verdes (rc 0), `--autoteste-copiar`, `--autoteste-mescla-json` e `--conferir-copiar` todos rc 0, zero nome de modelo. Fica: 13 `--so` para A rodar depois de B2 (5 sem veredito + 1 reancorada + 7 novas), num só `--json bancada/guardas/ultima-corrida.json` para usar a mescla; `TETO_DA_RESPOSTA` continua sem guarda por não haver teste que caia (F2). Cognição `copiar-e-lista-que-precisa-de-conferidor_20260917_0426`; parecer `docs/propostas/qa-onda3-replicacao-2026-09-17.md`.
