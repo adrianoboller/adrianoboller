@@ -399,9 +399,13 @@ impl Atividade {
             // decisao e mapa de administrador, nao de replica.
             // `replicacao_ligar` religa um laco que parou por credencial
             // recusada: e o mesmo mapa de administrador.
-            "spare_promover" | "replicacao_estado" | "replicacao_testar" | "replicacao_ligar" => {
-                Atividade::Administrar
-            }
+            // `replicacao_pular` DESCARTA um evento do outro lado: e a
+            // operacao mais perigosa das cinco, e vai no mesmo poder porque
+            // acima de administrar nao ha. O portao dela le o campo
+            // `"tabela"` do pedido, que ela obriga -- por isso ela nao entra
+            // na lista das que escondem tabela do portao.
+            "spare_promover" | "replicacao_estado" | "replicacao_testar" | "replicacao_ligar"
+            | "replicacao_pular" => Atividade::Administrar,
             // ------------------------------------------------------------
             // As 13 que o conferidor `toda_operacao_do_catalogo_declara_o_
             // poder_que_pede` achou caindo no `_`.

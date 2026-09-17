@@ -1481,6 +1481,28 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "replicacao_pular",
+        apelidos: &[],
+        resumo: "Solta o par que um conflito de unicidade PAROU: pula aquele \
+                 evento pela posição e manda a origem adiante. É a saída \
+                 manual do modo multi — a replicação daquela tabela naquele \
+                 par para marcada (`paradas` em `replicacao_estado`), com o \
+                 índice, o valor da chave e as duas linhas no `detalhe`, e só \
+                 volta a andar por aqui. O evento pulado NÃO entra: os dois \
+                 lados só voltam a ser iguais se alguém os igualar.",
+        parametros: &[
+            obr(
+                "origem",
+                "string",
+                "o nome da origem em `replicacao.origens`",
+            ),
+            DB,
+            TAB,
+        ],
+        exemplo: r#"{"op":"replicacao_pular","origem":"parceiro","database":"loja","tabela":"clientes"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "replicacao_testar",
         apelidos: &[],
         resumo: "Prova a ligação com o outro servidor pela MESMA conexão e \

@@ -194,7 +194,7 @@ pub struct MapaDeToques {
     /// indice unico. So sobe; publicado em `replicacao_estado` como
     /// `recusas_por_unicidade`.
     ///
-    /// # Por que contar em vez de parar o laco (pedido 292)
+    /// # O contador FICA, e o que mudou foi o que acontece depois dele
     ///
     /// O casamento entre servidores usa UMA chave ([`chave_unica`]), e a
     /// unicidade dos OUTROS indices continua sendo conferida na gravacao --
@@ -203,13 +203,205 @@ pub struct MapaDeToques {
     /// primaria `porId` e um secundario `porEmail`, o evento de A com um
     /// e-mail que ja existe em B e recusado, e a recusa subia pelo `?` do
     /// laco: a posicao consumida nunca andava e o MESMO lote voltava para
-    /// sempre. Nao e uma linha perdida -- e o par de servidores parado, sem
-    /// ninguem saber.
+    /// sempre, CALADO. Nao e uma linha perdida -- e o par de servidores
+    /// parado, sem ninguem saber.
     ///
-    /// E a mesma decisao do [`colisao_de_criacao`] e do
-    /// `Table::inserir_replicado`: o estrago que o laco nao sabe desfazer
-    /// vira NUMERO e grito, nunca silencio nem parada.
+    /// A parte (2) do pedido 292 contou e SEGUIU; a parte (1), depois de a
+    /// regua dos motores maduros derrubar a recusa na declaracao, PARA o par
+    /// naquela tabela ([`ParadaDaTabela`]) -- que e o que os tres motores
+    /// maduros fazem, e o oposto do laco calado. O numero continua servindo ao
+    /// mesmo para que serve o do [`colisao_de_criacao`]: dizer quantas vezes,
+    /// e nao so que houve. Ele sobe **uma vez por parada**, porque a rodada
+    /// seguinte nem chega ao evento.
     pub recusas_por_unicidade: u64,
+}
+
+/// Por que a replicacao de UMA tabela naquele par PAROU, e onde ela parou.
+///
+/// # Por que parar, se a parte (2) do pedido 292 fazia seguir
+///
+/// Porque a regua dos motores maduros derrubou a forma antiga e desenhou
+/// esta: **nenhum dos tres recusa a tabela** por ter indice unico secundario,
+/// e os tres fazem o conflito APARECER em vez de sumir -- o PostgreSQL para a
+/// assinatura (`disable_on_error`) e grita com o indice, a chave e as duas
+/// linhas; o Galera devolve `ER_LOCK_DEADLOCK` e conta; o Group Replication
+/// tira o membro do grupo (`exit_state_action`). Seguir em frente contando e
+/// melhor que o laco preso e calado de antes, e continua sendo divergencia
+/// permanente que ninguem e obrigado a ver.
+///
+/// A posicao NAO anda quando o par para, e isso e a mesma decisao escrita no
+/// fonte do PostgreSQL (`worker.c`, `replorigin_reset`): nao avancar a origem
+/// e o que impede perder o evento. Quem manda o par adiante e um ser humano,
+/// pela operacao `replicacao_pular`.
+///
+/// # Por que isto NAO e gravado em disco
+///
+/// Porque a parada e DERIVADA do dado: a rodada seguinte reencontra o mesmo
+/// conflito e remarca sozinha. Gravar criaria uma segunda verdade, que mente
+/// no dia em que o operador conserta a linha pela tela -- a tabela ficaria
+/// parada por um conflito que nao existe mais. Mesma filosofia do
+/// [`MapaDeToques`]: perder isto custa uma rodada, nunca um dado.
+#[derive(Debug, Clone, Default)]
+pub struct ParadaDaTabela {
+    /// Por que parou, em CHAVE e nao em frase -- quem decide compara por
+    /// chave, e frase se reescreve no dia em que alguem melhora a redacao.
+    /// Hoje o unico valor e `"conflito_de_unicidade"`.
+    pub motivo: String,
+    /// A posicao, no diario da ORIGEM, do evento que parou o par. E a que
+    /// `replicacao_pular` consome: ele anda para `posicao + 1`.
+    pub posicao: u64,
+    /// A chave de [`crate::servidor`] em `posicoes_bidi` -- `origem|db/tab`.
+    /// Guardada em vez de remontada: remontar exigiria repetir aqui a regra
+    /// de como o nome da tabela entra na chave, e duas receitas da mesma
+    /// chave divergem no dia em que uma delas aprende um caso a mais.
+    pub chave_da_posicao: String,
+    /// O grito ja REDIGIDO: indice, valor da chave, a linha daqui e a de la.
+    /// E o conteudo que o PostgreSQL carrega no `conflict=insert_exists`.
+    pub detalhe: String,
+    pub em_ms: i64,
+}
+
+impl ParadaDaTabela {
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("motivo", Json::texto_de(&self.motivo)),
+            ("posicao", Json::de_u64(self.posicao)),
+            ("detalhe", Json::texto_de(&self.detalhe)),
+            (
+                "desde",
+                Json::texto_de(phxsql_core::datahora::instante_iso(self.em_ms)),
+            ),
+        ])
+    }
+}
+
+/// O conflito de unicidade ja ANALISADO: qual indice, que valor, e as duas
+/// linhas redigidas.
+///
+/// Analisado, e nao recortado da mensagem de erro: `PhxError::Duplicado`
+/// carrega o nome do indice dentro de uma frase, e quem recorta frase quebra
+/// calado no dia em que alguem melhora a redacao. Aqui as chaves unicas sao
+/// percorridas de novo contra o esquema, que e a mesma conta que a gravacao
+/// fez -- so que agora para DIZER, e nao para recusar.
+#[derive(Debug, Clone, Default)]
+pub struct Conflito {
+    /// O indice unico que recusou. Vazio quando a analise nao achou nenhum --
+    /// e ai o grito diz isso, em vez de inventar um nome.
+    pub indice: String,
+    /// O valor da chave desse indice, no evento que chegou.
+    pub valor: String,
+    /// A linha que JA ocupa a chave aqui, redigida.
+    pub linha_daqui: String,
+    /// A linha que chegou do outro lado, redigida.
+    pub linha_de_la: String,
+}
+
+/// O que [`crate::servidor`] fez com UM evento do bidirecional.
+///
+/// Trocou um `bool` porque `false` passou a significar duas coisas muito
+/// diferentes: «o toque local venceu», que e o conflito funcionando, e «o
+/// indice unico recusou», que PARA o par. Um `bool` obrigaria quem chama a
+/// adivinhar pela diferenca, e quem adivinha erra no dia do caso novo.
+#[derive(Debug)]
+pub enum Aplicacao {
+    /// O evento entrou.
+    Aplicado,
+    /// Nao entrou, e nao ha nada de errado: o toque local venceu, ou a
+    /// exclusao nao achou o que excluir.
+    Ignorado,
+    /// Chave duplicada num indice unico: o par PARA nesta tabela.
+    Conflito(Box<Conflito>),
+}
+
+impl Aplicacao {
+    /// O evento entrou no `.reg` daqui?
+    pub fn entrou(&self) -> bool {
+        matches!(self, Aplicacao::Aplicado)
+    }
+}
+
+/// Redige UMA linha para o grito do conflito, coluna a coluna.
+///
+/// # A petrea, e por que aqui ela e ANALISE e nao recorte
+///
+/// Dado pessoal e senha nunca vao a log. A linha chega aqui como valores JA
+/// TIPADOS contra o esquema, entao nao ha texto cru que alguem precise
+/// vasculhar: cada coluna se decide pelo que o esquema diz dela. Coluna
+/// marcada como dado pessoal sai como o TAMANHO em bytes, e o mesmo vale para
+/// `Bin`/`Memo`, que nao se leem sem carregar o bloco externo, e para o valor
+/// que passa do teto -- «o que nao se analisa vira o tamanho em bytes».
+///
+/// Coluna de sistema (`softdeleted`, `rownum`) fica de fora: ela e local dos
+/// dois lados e nunca explica um conflito de chave.
+pub fn linha_redigida(esquema: &Schema, valores: &[phxsql_core::value::Value]) -> String {
+    /// Quantas colunas cabem antes do resumo. Uma tabela de quarenta colunas
+    /// daria uma linha de log ilegivel; as primeiras bastam para reconhecer.
+    const TETO_DE_COLUNAS: usize = 12;
+
+    let mut partes: Vec<String> = Vec::new();
+    let mut restantes = 0usize;
+    for (i, c) in esquema.colunas().iter().enumerate() {
+        if phxsql_core::schema::e_coluna_de_sistema(&c.nome) {
+            continue;
+        }
+        let Some(v) = valores.get(i) else { continue };
+        if partes.len() >= TETO_DE_COLUNAS {
+            restantes += 1;
+            continue;
+        }
+        partes.push(format!("{}={}", c.nome, valor_redigido(c, v)));
+    }
+    if restantes > 0 {
+        partes.push(format!("... (+{restantes} coluna(s))"));
+    }
+    format!("({})", partes.join(", "))
+}
+
+/// UM valor, decidido pelo que o ESQUEMA diz da coluna dele.
+///
+/// A regra e a petrea: dado pessoal nunca sai, e o que nao sai vira o tamanho
+/// em bytes. Vale para a linha inteira e vale para o VALOR DA CHAVE -- e e o
+/// ponto em que divergimos do PostgreSQL de proposito: ele imprime a chave
+/// (`Key (c)=(1)`) porque nao tem marca de dado pessoal no esquema; nos temos,
+/// e uma chave primaria de CPF sairia no log do processo se copiassemos o
+/// comportamento dele. Quem opera perde o valor e ganha o tamanho, o nome da
+/// coluna e o indice: da para achar a linha sem publicar o dado.
+pub fn valor_redigido(
+    coluna: &phxsql_core::schema::Column,
+    v: &phxsql_core::value::Value,
+) -> String {
+    /// Acima disto o valor vira o tamanho. Um grito nao e um dump: ele existe
+    /// para quem opera reconhecer a linha, e uma coluna de 4 KiB nao ajuda
+    /// ninguem a reconhecer nada -- so enche o diario do processo.
+    const TETO_DO_VALOR: usize = 48;
+
+    if v.e_null() {
+        return "NULO".to_string();
+    }
+    if coluna.dado_pessoal.e_pessoal() {
+        return format!("<dado pessoal, {} bytes>", tamanho_em_bytes(v));
+    }
+    // `Bin` e `Memo` moram fora do slot: o que a imagem traz e conteudo que
+    // so se le carregando o bloco externo. O que nao se analisa vira bytes.
+    if coluna.ty.externo() {
+        return format!("<{} bytes>", tamanho_em_bytes(v));
+    }
+    let t = v.para_texto();
+    if t.len() > TETO_DO_VALOR {
+        format!("<{} bytes>", t.len())
+    } else {
+        t
+    }
+}
+
+/// Quantos bytes o valor ocupa -- o que sobra quando o conteudo nao pode sair.
+fn tamanho_em_bytes(v: &phxsql_core::value::Value) -> usize {
+    use phxsql_core::value::Value;
+    match v {
+        Value::Bin(b) => b.len(),
+        Value::Str(s) | Value::Memo(s) => s.len(),
+        outro => outro.para_texto().len(),
+    }
 }
 
 /// O que o laco de uma origem conta para a operacao `replicacao_estado`.
@@ -227,6 +419,11 @@ pub struct EstadoOrigem {
     pub recusas: BTreeMap<String, String>,
     /// "database/tabela" -> posicao consumida na origem.
     pub posicoes: BTreeMap<String, u64>,
+    /// "database/tabela" -> por que a replicacao DAQUELA tabela neste par
+    /// esta parada. Vazio no caso comum, e e o que faz o campo servir: mapa
+    /// que aparece cheio em toda instalacao sa e mapa que ninguem le quando
+    /// enche. Ver [`ParadaDaTabela`] e a operacao `replicacao_pular`.
+    pub paradas: BTreeMap<String, ParadaDaTabela>,
     /// Proxima janela do agendamento, ms desde a epoca. Zero = streaming.
     pub proxima_janela_ms: i64,
     /// Por que o laco esta PARADO, quando esta. Vazio enquanto ele roda.
@@ -287,6 +484,15 @@ impl EstadoOrigem {
                     self.posicoes
                         .iter()
                         .map(|(k, v)| (k.clone(), Json::de_u64(*v)))
+                        .collect(),
+                ),
+            ),
+            (
+                "paradas",
+                Json::Objeto(
+                    self.paradas
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.para_json()))
                         .collect(),
                 ),
             ),
@@ -653,5 +859,84 @@ mod testes {
         gravar_posicoes(&caminho, &p).unwrap();
         assert_eq!(ler_posicoes(&caminho), p);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // ------------------------------------------- a redacao do grito (292/1)
+
+    fn esquema_do_grito() -> Schema {
+        use phxsql_core::schema::Column;
+        use phxsql_core::types::{ColumnType, DadoPessoal};
+        Schema::new(
+            "clientes",
+            vec![
+                Column::new("id", ColumnType::Int8),
+                Column::new("cpf", ColumnType::Str(14)).com_dado_pessoal(DadoPessoal::Pessoal),
+                Column::new("obs", ColumnType::Memo),
+                Column::new("cidade", ColumnType::Str(60)),
+            ],
+            vec![],
+        )
+        .unwrap()
+    }
+
+    /// **Prova real da petrea.** O grito do conflito carrega a linha, e a
+    /// coluna marcada como dado pessoal sai como TAMANHO -- nunca o valor.
+    ///
+    /// **Defeito reposto**: tirar o ramo do `dado_pessoal` de
+    /// `valor_redigido`; o CPF aparece inteiro e a primeira asercao cai.
+    #[test]
+    fn a_coluna_marcada_sai_como_tamanho_e_nunca_como_valor() {
+        use phxsql_core::value::Value;
+        let e = esquema_do_grito();
+        let linha = vec![
+            Value::Int(7),
+            Value::Str("111.444.777-35".into()),
+            // CURTO de proposito: um `Memo` grande cairia no teto do valor e
+            // o teste passaria por engano, sem provar o ramo do externo.
+            Value::Memo("segredo".into()),
+            Value::Str("Blumenau".into()),
+        ];
+        let saida = linha_redigida(&e, &linha);
+        assert!(
+            !saida.contains("111.444.777-35"),
+            "o dado pessoal vazou no grito: {saida}"
+        );
+        assert!(
+            saida.contains("cpf=<dado pessoal, 14 bytes>"),
+            "o tamanho nao saiu no lugar do valor: {saida}"
+        );
+        // O que nao se analisa vira o tamanho em bytes -- e `Memo` mora fora
+        // do slot, entao ele nunca sai por extenso nem quando e curto.
+        assert!(
+            saida.contains("obs=<7 bytes>"),
+            "o externo nao virou tamanho: {saida}"
+        );
+        // E o que NAO e nem marcado nem externo continua legivel: o grito
+        // existe para quem opera reconhecer a linha.
+        assert!(
+            saida.contains("id=7") && saida.contains("cidade=Blumenau"),
+            "{saida}"
+        );
+    }
+
+    /// Valor grande demais numa coluna comum tambem vira tamanho: um grito
+    /// nao e um dump do registro.
+    #[test]
+    fn valor_alem_do_teto_vira_tamanho_e_o_nulo_se_diz() {
+        use phxsql_core::value::Value;
+        let e = esquema_do_grito();
+        let saida = linha_redigida(
+            &e,
+            &[
+                Value::Null,
+                Value::Null,
+                Value::Null,
+                Value::Str("a".repeat(200)),
+            ],
+        );
+        assert!(saida.contains("cidade=<200 bytes>"), "{saida}");
+        assert!(saida.contains("id=NULO"), "{saida}");
+        // Coluna marcada e NULA nao inventa tamanho de nada.
+        assert!(saida.contains("cpf=NULO"), "{saida}");
     }
 }

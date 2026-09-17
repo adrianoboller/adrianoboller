@@ -261,6 +261,9 @@ pub(crate) const OPS_NO_SPARE: &[&str] = &[
     "replicacao_estado",
     "replicacao_testar",
     "replicacao_ligar",
+    // Soltar o par que um conflito parou e administracao do laco, como o
+    // religar: um spare que virasse multi amanha precisa da porta de saida.
+    "replicacao_pular",
     "spare_promover",
 ];
 
@@ -318,6 +321,16 @@ pub(crate) const OPS_EMPILHAVEIS: &[&str] = &["inserir", "atualizar", "excluir",
 /// `administrar`, e quem administra nao e uma replica remota. Trancar essas
 /// pela lista de replicas faria a lista significar duas coisas.
 pub(crate) const OPS_DE_REPLICACAO: &[&str] = &["posicao", "replicar", "aplicar", "cluster_pulso"];
+
+/// O que a fase 3 de um alcance de tabela BIDIRECIONAL devolveu.
+#[derive(Default)]
+struct LoteBidi {
+    /// Eventos que entraram no `.reg` daqui.
+    aplicados: u64,
+    /// O evento que PAROU o par: a posicao dele no diario da origem e o
+    /// conflito ja analisado. `None` = o lote inteiro passou.
+    parou_em: Option<(u64, bidirecional::Conflito)>,
+}
 
 /// O que a fase 3 de um alcance de tabela devolveu.
 enum Lote {
@@ -1436,6 +1449,52 @@ impl Servidor {
         if let Ok(mut e) = self.estado_replicacao.lock() {
             f(e.entry(origem.to_string()).or_default());
         }
+    }
+
+    /// A replicacao desta tabela nesta origem esta parada?
+    ///
+    /// Uma comparacao num mapa pequeno, sob o mesmo mutex do
+    /// `replicacao_estado` -- e o portao que vem ANTES do trabalho do
+    /// alcance. Ver [`bidirecional::ParadaDaTabela`].
+    fn esta_parada(&self, origem: &str, chave_tab: &str) -> bool {
+        self.estado_replicacao
+            .lock()
+            .ok()
+            .and_then(|e| e.get(origem).map(|o| o.paradas.contains_key(chave_tab)))
+            .unwrap_or(false)
+    }
+
+    /// Marca a parada de UMA tabela num par. Grita UMA vez, e nao a cada
+    /// rodada: a rodada seguinte nem chega aqui, porque o portao a tira antes.
+    fn parar_o_par(
+        &self,
+        origem: &str,
+        chave_tab: &str,
+        chave_pos: &str,
+        posicao: u64,
+        conflito: bidirecional::Conflito,
+    ) {
+        let detalhe = format!(
+            "indice {:?}, valor {:?}; a linha daqui e {}, a de la e {}",
+            conflito.indice, conflito.valor, conflito.linha_daqui, conflito.linha_de_la
+        );
+        eprintln!(
+            "replicacao [{origem}]: {chave_tab} PAROU na posicao {posicao} -- {detalhe}. \
+             Resolva o conflito e solte o par com \
+             {{\"op\":\"replicacao_pular\",\"origem\":\"{origem}\",...}}"
+        );
+        self.anotar_estado(origem, |e| {
+            e.paradas.insert(
+                chave_tab.to_string(),
+                bidirecional::ParadaDaTabela {
+                    motivo: "conflito_de_unicidade".to_string(),
+                    posicao,
+                    chave_da_posicao: chave_pos.to_string(),
+                    detalhe,
+                    em_ms: crate::agora_ms(),
+                },
+            );
+        });
     }
 
     /// O teto de linhas por resposta que vale AGORA.
@@ -4469,7 +4528,7 @@ impl Servidor {
         eventos: &[crate::replica::EventoRecebido],
         meu_hash: u16,
         hash_dele: u16,
-    ) -> Result<u64> {
+    ) -> Result<LoteBidi> {
         let trava = self.travar_dados()?;
         let db = trava.abrir_database(database)?;
         let mut tabela = db.abrir_qualificada(&no.nome)?;
@@ -4479,7 +4538,7 @@ impl Servidor {
         tabela.ligar_imagem_no_diario(true);
         tabela.ligar_imagem_na_exclusao(true);
         let chave_tab = format!("{database}/{}", no.nome);
-        let mut aplicados = 0u64;
+        let mut saida = LoteBidi::default();
         for e in eventos {
             // Cinto e suspensorio: o source ja suprimiu pelo `para`, e
             // ainda assim um evento com a MINHA origem nao se aplica --
@@ -4487,13 +4546,29 @@ impl Servidor {
             if e.origem == meu_hash {
                 continue;
             }
-            if self.aplicar_por_chave(&mut tabela, &chave_tab, indice, pos_chave, e, hash_dele)? {
-                aplicados += 1;
+            match self.aplicar_por_chave(
+                &mut tabela,
+                &chave_tab,
+                indice,
+                pos_chave,
+                e,
+                hash_dele,
+            )? {
+                bidirecional::Aplicacao::Aplicado => saida.aplicados += 1,
+                bidirecional::Aplicacao::Ignorado => {}
+                // O lote PARA aqui, e os eventos seguintes ficam para depois
+                // do `replicacao_pular`: seguir aplicaria uma alteracao de uma
+                // linha que o conflito deixou de fora, e a divergencia se
+                // espalharia em vez de ficar num ponto que se sabe nomear.
+                bidirecional::Aplicacao::Conflito(c) => {
+                    saida.parou_em = Some((e.posicao, *c));
+                    break;
+                }
             }
         }
         // Um `fsync` por alcance, e nao por lote -- ver a nota em
         // `aplicar_lote_da_replica`, onde a conta esta medida.
-        Ok(aplicados)
+        Ok(saida)
     }
 
     /// Traz UMA tabela ate a posicao do outro lado, casando pela chave.
@@ -4521,11 +4596,20 @@ impl Servidor {
         meu_hash: u16,
         hash_dele: u16,
     ) -> Result<u64> {
+        let chave_tab = format!("{database}/{}", no.nome);
+        // O PORTAO VEM ANTES DO TRABALHO: a tabela parada sai daqui sem tomar
+        // a trava de dados, sem absorver o diario local e sem uma unica ida e
+        // volta de rede. E a licao do Profiler aplicada a uma parada: quem
+        // pergunta se esta ligado DEPOIS de trabalhar paga o trabalho a cada
+        // rodada, e aqui isso seria o laco apertado que o pedido 292 existe
+        // para matar. Ver `bidirecional::ParadaDaTabela`.
+        if self.esta_parada(&origem.nome, &chave_tab) {
+            return Ok(0);
+        }
         let Some((indice, pos_chave)) = self.abrir_para_bidi(database, no, origem, meu_hash)?
         else {
             return Ok(0);
         };
-        let chave_tab = format!("{database}/{}", no.nome);
         let chave_pos = format!("{}|{}", origem.nome, chave_tab);
         let mut desde = self
             .posicoes_bidi
@@ -4545,7 +4629,7 @@ impl Servidor {
             if lote.ate <= desde {
                 break;
             }
-            aplicados += self.aplicar_lote_bidi(
+            let feito = self.aplicar_lote_bidi(
                 database,
                 no,
                 &indice,
@@ -4554,6 +4638,17 @@ impl Servidor {
                 meu_hash,
                 hash_dele,
             )?;
+            aplicados += feito.aplicados;
+            // O conflito de unicidade PARA o par nesta tabela, e a posicao
+            // NAO anda -- e a mesma decisao escrita no `worker.c` do
+            // PostgreSQL: nao avancar a origem e o que impede perder o evento.
+            // Reaplicar os que entraram antes dele, quando o par for solto, e
+            // inofensivo: o casamento e por chave e a regra e "mais recente
+            // vence".
+            if let Some((posicao, conflito)) = feito.parou_em {
+                self.parar_o_par(&origem.nome, &chave_tab, &chave_pos, posicao, conflito);
+                break;
+            }
             // A posicao consumida so anda DEPOIS de o lote estar gravado: uma
             // queda entre a leitura e a aplicacao deixa a posicao onde estava,
             // e o mesmo lote volta na proxima rodada. Repetir e inofensivo
@@ -4647,7 +4742,7 @@ impl Servidor {
         pos_chave: usize,
         e: &crate::replica::EventoRecebido,
         hash_dele: u16,
-    ) -> Result<bool> {
+    ) -> Result<bidirecional::Aplicacao> {
         if e.imagem.is_empty() {
             return Err(PhxError::Esquema(format!(
                 "evento de {} sem imagem no bidirecional: o outro lado precisa \
@@ -4715,14 +4810,20 @@ impl Servidor {
             if let Ok(mut guarda) = self.toques_bidi.lock() {
                 guarda.entry(chave_tab.to_string()).or_default().colisoes += 1;
             }
+            // A chave sai REDIGIDA aqui pelo mesmo motivo que no grito do
+            // conflito logo abaixo: este e o IRMAO -- as duas linhas imprimem
+            // a mesma `chave` canonica, e uma primaria de CPF marcada como
+            // dado pessoal vazaria por qualquer uma das duas. Consertar so a
+            // de baixo deixaria a porta aberta nesta.
             eprintln!(
-                "COLISAO DE SEQUENCE em {chave_tab}: chave {chave} criada em dois nos \
+                "COLISAO DE SEQUENCE em {chave_tab}: chave {} criada em dois nos \
                  da MESMA faixa; \"mais recente vence\" apaga uma linha. Declare faixas \
-                 disjuntas (inicio/passo) -- ver docs/AUTONUMBER.md, defeito (a)"
+                 disjuntas (inicio/passo) -- ver docs/AUTONUMBER.md, defeito (a)",
+                Self::chave_dita(tabela, pos_chave, &valores)
             );
         }
         if !vence {
-            return Ok(false);
+            return Ok(bidirecional::Aplicacao::Ignorado);
         }
 
         let valor_chave = valores[pos_chave].clone();
@@ -4767,16 +4868,22 @@ impl Servidor {
             }
             Ok(())
         })();
-        // Chave duplicada num indice unico NAO para o laco (pedido 292). O
-        // casamento entre servidores usa UMA chave, e a unicidade dos outros
+        // Chave duplicada num indice unico NAO sobe pelo `?` (pedido 292): ela
+        // PARA o par naquela tabela, marcada, contada e gritada com o que o
+        // PostgreSQL grita -- indice, valor da chave, a linha daqui e a de la.
+        //
+        // O casamento entre servidores usa UMA chave, e a unicidade dos outros
         // indices continua valendo na gravacao -- entao o evento que colide
-        // com a linha de OUTRA chave e recusado aqui, e essa recusa subia pelo
-        // `?` de quem chama: `desde` nunca andava e o MESMO lote voltava para
-        // sempre. Agora ela e contada e gritada, como a colisao de Sequence
-        // logo acima, e o laco segue -- inclusive para as linhas seguintes,
-        // que nada tem a ver com o conflito. O erro que NAO for duplicidade
-        // continua subindo: disco, imagem corrompida e trava envenenada
-        // continuam parando a rodada, que e o comportamento de sempre.
+        // com a linha de OUTRA chave e recusado aqui. Subindo pelo `?`, `desde`
+        // nunca andava e o MESMO lote voltava para sempre, calado. Agora quem
+        // chama recebe o conflito ANALISADO e decide: marca a tabela como
+        // parada e nao anda a posicao, que e a decisao do `worker.c` do
+        // PostgreSQL (nao avancar a origem e o que impede perder o evento). O
+        // caminho de volta e humano: `replicacao_pular`.
+        //
+        // O erro que NAO for duplicidade continua subindo: disco, imagem
+        // corrompida e trava envenenada continuam parando a rodada, que e o
+        // comportamento de sempre.
         if let Err(PhxError::Duplicado(qual)) = &escrita {
             if let Ok(mut guarda) = self.toques_bidi.lock() {
                 guarda
@@ -4784,14 +4891,23 @@ impl Servidor {
                     .or_default()
                     .recusas_por_unicidade += 1;
             }
+            let conflito = self.analisar_conflito(tabela, indice, pos_chave, &valores, qual)?;
+            let chave_dita = Self::chave_dita(tabela, pos_chave, &valores);
             eprintln!(
-                "RECUSA POR UNICIDADE em {chave_tab}: o evento de {} da chave {chave} \
-                 colide com uma linha daqui ({qual}); a linha do outro lado NAO entrou, \
-                 e o laco seguiu. O casamento entre servidores usa so a chave unica de \
-                 uma coluna -- ver docs/PENDENCIAS.md, pedido 292",
-                e.operacao.nome()
+                "CONFLITO DE UNICIDADE em {chave_tab}: o evento de {} da chave \
+                 {chave_dita} colide com uma linha daqui. indice={:?} valor={:?} \
+                 linha daqui={} \
+                 linha de la={}. A replicacao DESTA tabela neste par PAROU na posicao \
+                 {}; solte-a com replicacao_pular depois de resolver -- ver \
+                 docs/REPLICACAO.md §21 e docs/PENDENCIAS.md, pedido 292",
+                e.operacao.nome(),
+                conflito.indice,
+                conflito.valor,
+                conflito.linha_daqui,
+                conflito.linha_de_la,
+                e.posicao
             );
-            return Ok(false);
+            return Ok(bidirecional::Aplicacao::Conflito(Box::new(conflito)));
         }
         escrita?;
 
@@ -4809,7 +4925,110 @@ impl Servidor {
                     },
                 );
         }
-        Ok(true)
+        Ok(bidirecional::Aplicacao::Aplicado)
+    }
+
+    /// A chave do casamento pronta para IR A LOG -- redigida pelo esquema.
+    ///
+    /// A `chave` canonica que o mapa de toques usa e o dado cru, e serve para
+    /// casar linha; para dizer, ela passa por `valor_redigido`. So se monta
+    /// quando ha grito: no caminho sa ninguem paga nada.
+    fn chave_dita(tabela: &Table, pos_chave: usize, valores: &[Value]) -> String {
+        match (
+            tabela.esquema().colunas().get(pos_chave),
+            valores.get(pos_chave),
+        ) {
+            (Some(c), Some(v)) => bidirecional::valor_redigido(c, v),
+            _ => String::new(),
+        }
+    }
+
+    /// Descobre QUAL indice unico recusou o evento, e com que linha.
+    ///
+    /// # Analisa, nao recorta
+    ///
+    /// `PhxError::Duplicado` carrega o nome do indice dentro de uma frase
+    /// («indice unico porEmail ja tem essa chave»), e recortar a frase quebra
+    /// calado no dia em que alguem melhorar a redacao -- texto se resolve por
+    /// chave, nunca por comparacao de frase. Entao aqui as chaves unicas sao
+    /// percorridas de novo contra o esquema, que e exatamente a conta que a
+    /// gravacao ja fez para recusar: a diferenca e que agora ela serve para
+    /// DIZER. A frase do erro entra so como ultimo recurso, quando a analise
+    /// nao acha indice nenhum (uma corrida, ou um indice parcial cuja
+    /// condicao mudou entre a recusa e esta releitura) -- e ai ela vai no
+    /// campo `valor`, dita como o que e, em vez de virar um nome inventado.
+    ///
+    /// # Custo
+    ///
+    /// Zero no caminho sa: so roda depois de um `Err(Duplicado)`, que agora
+    /// para o par -- ou seja, uma vez por parada, e nao uma vez por evento.
+    fn analisar_conflito(
+        &self,
+        tabela: &mut Table,
+        indice: &str,
+        pos_chave: usize,
+        valores: &[Value],
+        qual: &str,
+    ) -> Result<bidirecional::Conflito> {
+        let mut achado = bidirecional::Conflito {
+            linha_de_la: bidirecional::linha_redigida(tabela.esquema(), valores),
+            ..Default::default()
+        };
+        // A linha que o evento ia ESCREVER, pela chave do casamento. Ela nao
+        // e conflito com ela mesma: numa alteracao o indice do casamento acha
+        // justamente o alvo, e conta-lo como culpado diria o indice errado a
+        // quem opera.
+        let alvo = valores
+            .get(pos_chave)
+            .and_then(|v| tabela.buscar(indice, std::slice::from_ref(v)).ok())
+            .and_then(|r| r.first().copied());
+        let unicos: Vec<(String, Vec<usize>)> = tabela
+            .esquema()
+            .indices()
+            .iter()
+            .filter(|i| i.unico)
+            .map(|i| (i.nome.clone(), i.colunas.iter().map(|c| c.coluna).collect()))
+            .collect();
+        for (nome, colunas) in unicos {
+            let Some(chave): Option<Vec<Value>> = colunas
+                .iter()
+                .map(|c| valores.get(*c).cloned())
+                .collect::<Option<Vec<Value>>>()
+            else {
+                continue;
+            };
+            // Chave com nulo nao participa de unicidade -- o indice nao a
+            // guarda, entao ela nunca pode ter sido a que recusou.
+            if chave.iter().any(Value::e_null) {
+                continue;
+            }
+            let Ok(rowids) = tabela.buscar(&nome, &chave) else {
+                continue;
+            };
+            let Some(rowid) = rowids.iter().copied().find(|r| Some(*r) != alvo) else {
+                continue;
+            };
+            achado.indice = nome;
+            // A chave sai REDIGIDA coluna a coluna, e nao pelo `para_texto`
+            // cru: uma primaria de CPF marcada como dado pessoal iria ao log
+            // do processo se copiassemos o `Key (c)=(1)` do PostgreSQL.
+            achado.valor = colunas
+                .iter()
+                .zip(chave.iter())
+                .map(|(c, v)| match tabela.esquema().colunas().get(*c) {
+                    Some(col) => bidirecional::valor_redigido(col, v),
+                    None => String::new(),
+                })
+                .collect::<Vec<_>>()
+                .join("|");
+            if let Ok(Some(linha)) = tabela.ler(rowid) {
+                achado.linha_daqui = bidirecional::linha_redigida(tabela.esquema(), &linha);
+            }
+            return Ok(achado);
+        }
+        // A analise nao achou: diz isso, com a frase do motor ao lado.
+        achado.valor = format!("(nao analisado; o motor disse: {qual})");
+        Ok(achado)
     }
 
     fn subir_backup_agendado(self: &Arc<Self>) {
@@ -10237,6 +10456,7 @@ impl Servidor {
             "replicacao_estado" => self.op_replicacao_estado(),
             "replicacao_testar" => self.op_replicacao_testar(p, sessao),
             "replicacao_ligar" => self.op_replicacao_ligar(p),
+            "replicacao_pular" => self.op_replicacao_pular(p),
             // Casca fina: a operacao so escolhe o texto do motivo. Toda a
             // promocao mora em `promover_para_primario`.
             "spare_promover" => {
@@ -22458,13 +22678,20 @@ impl Servidor {
 
         let lista: Vec<Json> = eventos
             .into_iter()
-            .filter_map(|(e, imagem)| {
+            .enumerate()
+            .filter_map(|(i, (e, imagem))| {
                 let origem = if e.origem == 0 { meu_hash } else { e.origem };
                 if hash_para.is_some_and(|h| origem != 0 && origem == h) {
                     return None;
                 }
                 Some(Json::objeto(vec![
                     ("operacao", Json::texto_de(e.operacao.nome())),
+                    // ONDE este evento mora no diario DAQUI. So o source sabe
+                    // dizer: quem puxa nao consegue contar, porque a supressao
+                    // logo acima tira eventos da lista e a posicao anda por
+                    // cima deles. E a posicao que `replicacao_pular` recebe --
+                    // o nosso equivalente do LSN do `SKIP` do PostgreSQL.
+                    ("posicao", Json::de_u64(desde + i as u64)),
                     ("rowid", Json::de_u64(e.rowid)),
                     ("versao", Json::de_u64(e.versao)),
                     ("carimbo_ms", Json::Numero(e.carimbo as f64)),
@@ -22912,6 +23139,118 @@ impl Servidor {
             (
                 "aviso",
                 Json::texto_de("o laco atende no passo seguinte dele, em ate 1 s"),
+            ),
+        ]))
+    }
+
+    /// `replicacao_pular`: solta o par que um conflito parou, pulando o
+    /// evento pela POSICAO e mandando a origem adiante.
+    ///
+    /// E o `ALTER SUBSCRIPTION ... SKIP (lsn)` somado ao
+    /// `pg_replication_origin_advance()` do PostgreSQL, na forma que o nosso
+    /// laco permite: a posicao consumida vai para `posicao + 1`, e a marca de
+    /// parada sai. Da rodada seguinte em diante o par volta a andar.
+    ///
+    /// # Por que ela EXIGE uma parada, em vez de aceitar qualquer posicao
+    ///
+    /// O `pg_replication_origin_advance()` aceita qualquer LSN e o manual
+    /// dele diz, com todas as letras, que usar errado leva a inconsistencia.
+    /// Aqui a restricao que causa a divergencia e outra: no nosso laco
+    /// **reaplicar e inofensivo** -- o casamento e por chave e a regra e
+    /// "mais recente vence" --, entao andar a posicao NUNCA conserta nada; so
+    /// pode pular evento que ninguem olhou. Uma posicao livre seria um botao
+    /// que so tem como errar. Com a parada exigida, o unico evento que se
+    /// pula e aquele que um ser humano leu no `detalhe` e decidiu descartar.
+    ///
+    /// # O portao
+    ///
+    /// Administrar, e a tabela vai no campo `"tabela"` -- o campo que o
+    /// portao unico do `despachar` le. Sem isso a operacao seria a setima a
+    /// esconder tabela do portao, e quem tivesse o direito negado naquela
+    /// tabela mexeria no laco dela assim mesmo.
+    fn op_replicacao_pular(&self, p: &Json) -> Result<Json> {
+        let nome = p.texto_ou("origem", "").trim().to_string();
+        let database = p.texto_ou("database", "").trim().to_string();
+        let tabela = p.texto_ou("tabela", "").trim().to_string();
+        if nome.is_empty() || database.is_empty() || tabela.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"origem\", \"database\" e \"tabela\": o pulo e de UMA \
+                 tabela em UM par"
+                    .into(),
+            ));
+        }
+        let mut estados = self
+            .estado_replicacao
+            .lock()
+            .map_err(|_| trava_envenenada())?;
+        let Some(estado) = estados.get_mut(&nome) else {
+            let mut conhecidas: Vec<&String> = estados.keys().collect();
+            conhecidas.sort();
+            return Err(PhxError::NaoEncontrado(format!(
+                "nao ha laco de replicacao para a origem {nome:?}; as que este \
+                 servidor conhece: {conhecidas:?}"
+            )));
+        };
+        // A chave e procurada SEM distinguir maiuscula, porque o nome da
+        // tabela atravessa o protocolo como o cliente o escreveu e a chave
+        // nasceu como o source a nomeou.
+        let procurada = format!("{database}/{tabela}");
+        let Some(chave_tab) = estado
+            .paradas
+            .keys()
+            .find(|k| k.eq_ignore_ascii_case(&procurada))
+            .cloned()
+        else {
+            let mut paradas: Vec<&String> = estado.paradas.keys().collect();
+            paradas.sort();
+            return Err(PhxError::NaoEncontrado(format!(
+                "a replicacao de {procurada:?} na origem {nome:?} nao esta parada: \
+                 nao ha evento para pular. Paradas nesta origem agora: {paradas:?}"
+            )));
+        };
+        let parada = estado.paradas[&chave_tab].clone();
+        if parada.posicao == crate::replica::POSICAO_DESCONHECIDA {
+            return Err(PhxError::Esquema(format!(
+                "a origem {nome:?} nao informou a posicao do evento que parou \
+                 {chave_tab:?} -- ela e de uma versao que ainda nao manda o campo \
+                 \"posicao\" no `replicar`. Pular exigiria adivinhar a posicao, e \
+                 adivinhar aqui descarta evento que ninguem olhou: resolva o \
+                 conflito no dado ({}) e atualize o outro lado",
+                parada.detalhe
+            )));
+        }
+        let nova = parada.posicao + 1;
+        estado.paradas.remove(&chave_tab);
+        estado.posicoes.insert(chave_tab.clone(), nova);
+        drop(estados);
+
+        if let Ok(mut pos) = self.posicoes_bidi.lock() {
+            pos.insert(parada.chave_da_posicao.clone(), nova);
+            let _ = bidirecional::gravar_posicoes(
+                &self.config.base.join("replicacao-posicoes.json"),
+                &pos,
+            );
+        }
+        eprintln!(
+            "replicacao [{nome}]: {chave_tab} SOLTA por replicacao_pular -- o evento \
+             {} foi descartado e a posicao foi para {nova}. O que ele trazia: {}",
+            parada.posicao, parada.detalhe
+        );
+        Ok(Json::objeto(vec![
+            ("origem", Json::texto_de(&nome)),
+            ("database", Json::texto_de(&database)),
+            ("tabela", Json::texto_de(&tabela)),
+            ("motivo", Json::texto_de(&parada.motivo)),
+            ("pulou", Json::de_u64(parada.posicao)),
+            ("posicao", Json::de_u64(nova)),
+            ("detalhe", Json::texto_de(&parada.detalhe)),
+            (
+                "aviso",
+                Json::texto_de(
+                    "o evento pulado NAO entra mais: o outro lado continua com a \
+                     linha dele, e os dois so voltam a ser iguais se alguem os \
+                     igualar",
+                ),
             ),
         ]))
     }
@@ -45815,6 +46154,7 @@ mod testes_do_carimbo_do_futuro {
             imagem: t.imagem_da_linha_do_rowid(1).unwrap(),
             carimbo_ms,
             origem: 0,
+            posicao: 0,
         }
     }
 
@@ -45839,7 +46179,7 @@ mod testes_do_carimbo_do_futuro {
             .aplicar_por_chave(&mut t, "b/c", "porId", 0, &e, bidirecional::hash_id("beta"))
             .unwrap();
         assert!(
-            aplicou,
+            aplicou.entrou(),
             "o evento nao e recusado: entra com o relogio daqui"
         );
         let (toque, contados) = toque_de(&s);
@@ -45892,13 +46232,17 @@ mod testes_do_carimbo_do_futuro {
     }
 }
 
-/// A recusa por chave duplicada num indice unico SECUNDARIO -- pedido 292.
+/// O conflito por chave duplicada num indice unico SECUNDARIO -- pedido 292.
 ///
 /// O casamento entre servidores usa UMA chave (`bidirecional::chave_unica`), e
 /// a unicidade dos outros indices continua sendo conferida na gravacao. Com
 /// primaria `porId` e um secundario `porEmail`, o evento do outro lado com um
-/// e-mail que ja existe aqui e recusado -- e a recusa PARAVA o laco: ela subia
-/// pelo `?`, `desde` nunca andava, e o mesmo lote voltava para sempre.
+/// e-mail que ja existe aqui e recusado -- e a recusa subia pelo `?`, `desde`
+/// nunca andava, e o mesmo lote voltava para sempre, CALADO.
+///
+/// Hoje ela vira `Aplicacao::Conflito`, com o indice, o valor da chave e as
+/// duas linhas redigidas -- o conteudo que o PostgreSQL carrega --, e quem
+/// chama para o par naquela tabela.
 ///
 /// Aqui esta o caminho que aplica o evento; a prova do laco inteiro, pelo
 /// soquete e com dois servidores no ar, e
@@ -45966,6 +46310,7 @@ mod testes_da_recusa_por_unicidade {
             imagem: la.imagem_da_linha_do_rowid(1).unwrap(),
             carimbo_ms: crate::agora_ms(),
             origem: 0,
+            posicao: 7,
         }
     }
 
@@ -45998,17 +46343,18 @@ mod testes_da_recusa_por_unicidade {
     }
 
     /// **Prova real.** O evento de la traz id 2 com o e-mail que a linha 1
-    /// daqui ja ocupa: o `porEmail` recusa, e a recusa NAO pode virar `Err`.
+    /// daqui ja ocupa: o `porEmail` recusa, a recusa NAO pode virar `Err`, e o
+    /// conflito volta ANALISADO -- indice, valor da chave e as duas linhas.
     ///
     /// **Defeito reposto**: trocar o bloco da escrita de volta por
     /// `... tabela.inserir_replicado(&valores)?;` subindo pelo `?` --
-    /// `aplicar_por_chave` devolve `Err(Duplicado)`, o `unwrap` abaixo estoura
+    /// `aplicar_por_chave` devolve `Err(Duplicado)`, o `expect` abaixo estoura
     /// e o contador fica em zero.
     #[test]
-    fn chave_duplicada_no_unico_secundario_e_contada_e_o_laco_segue() {
+    fn chave_duplicada_no_unico_secundario_volta_como_conflito_analisado() {
         let (s, mut aqui, mut la, _dir) = terreno("recusa", "a@x");
         let e = evento(&mut la, Operacao::Inclusao);
-        let aplicou = s
+        let r = s
             .aplicar_por_chave(
                 &mut aqui,
                 "b/c",
@@ -46018,7 +46364,24 @@ mod testes_da_recusa_por_unicidade {
                 bidirecional::hash_id("beta"),
             )
             .expect("a recusa por unicidade nao pode subir: ela para o par de servidores");
-        assert!(!aplicou, "a linha recusada nao pode contar como aplicada");
+        let bidirecional::Aplicacao::Conflito(c) = &r else {
+            panic!("a recusa tinha de voltar como conflito, e voltou {r:?}");
+        };
+        // O grito diz o que o PostgreSQL diz: o INDICE que recusou -- que e o
+        // secundario, e nao o do casamento --, o valor da chave e as duas
+        // linhas. Sem isto o operador sabe que parou e nao sabe em que.
+        assert_eq!(c.indice, "porEmail", "o indice culpado nao foi analisado");
+        assert_eq!(c.valor, "a@x");
+        assert!(
+            c.linha_daqui.contains("id=1") && c.linha_daqui.contains("a@x"),
+            "a linha daqui nao saiu: {}",
+            c.linha_daqui
+        );
+        assert!(
+            c.linha_de_la.contains("id=2") && c.linha_de_la.contains("a@x"),
+            "a linha de la nao saiu: {}",
+            c.linha_de_la
+        );
         assert_eq!(contador(&s), 1, "a recusa nao foi contada");
         assert_eq!(no_estado(&s), Some(1), "o contador nao chegou ao estado");
         // O dado daqui ficou como estava, e a chave recusada NAO ganhou toque:
@@ -46047,7 +46410,7 @@ mod testes_da_recusa_por_unicidade {
                 bidirecional::hash_id("beta"),
             )
             .unwrap();
-        assert!(aplicou, "o evento sem conflito tem de entrar");
+        assert!(aplicou.entrou(), "o evento sem conflito tem de entrar");
         assert_eq!(ids(&mut aqui), vec![1, 2]);
         assert_eq!(contador(&s), 0);
         assert_eq!(no_estado(&s), None, "tabela sem recusa apareceu no campo");
@@ -46067,6 +46430,7 @@ mod testes_da_recusa_por_unicidade {
             imagem: Vec::new(),
             carimbo_ms: crate::agora_ms(),
             origem: 0,
+            posicao: 0,
         };
         let erro = s
             .aplicar_por_chave(
@@ -46080,5 +46444,251 @@ mod testes_da_recusa_por_unicidade {
             .unwrap_err();
         assert!(erro.to_string().contains("sem imagem"), "{erro}");
         assert_eq!(contador(&s), 0, "erro de outro naipe virou recusa contada");
+    }
+}
+
+/// A saida manual do par parado -- `replicacao_pular`, pedido 292 parte (1).
+///
+/// E o `ALTER SUBSCRIPTION ... SKIP (lsn)` somado ao
+/// `pg_replication_origin_advance()` do PostgreSQL: o par que um conflito de
+/// unicidade parou so volta a andar por aqui, pulando AQUELE evento pela
+/// posicao. A prova do ciclo inteiro -- parar, ver, pular, voltar a replicar
+/// -- e pelo soquete, em `tests/laco-do-unico-secundario.rs`; aqui ficam as
+/// recusas e a aritmetica da posicao, que nao precisam de dois servidores.
+#[cfg(test)]
+mod testes_do_pular_manual {
+    use super::*;
+    use crate::usuarios::Cadastro;
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn servidor(dir: &std::path::Path, cadastro: Cadastro) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            cadastro,
+            ..Config::default()
+        };
+        Servidor::novo(c).unwrap()
+    }
+
+    /// Poe o par de pe com uma parada pronta, como o laco a deixaria.
+    fn com_parada(s: &Arc<Servidor>, posicao: u64) {
+        s.parar_o_par(
+            "parceiro",
+            "loja/clientes",
+            "parceiro|loja/clientes",
+            posicao,
+            bidirecional::Conflito {
+                indice: "porEmail".into(),
+                valor: "a@x".into(),
+                linha_daqui: "(id=1, email=a@x)".into(),
+                linha_de_la: "(id=2, email=a@x)".into(),
+            },
+        );
+    }
+
+    fn pular(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        s.op_replicacao_pular(&pedido(corpo))
+    }
+
+    /// **Prova real.** A parada na posicao 7 vira posicao consumida 8, a marca
+    /// sai, e o arquivo de posicoes grava -- senao um reinicio desfaria o pulo
+    /// e o par pararia de novo no mesmo evento.
+    ///
+    /// **Defeito reposto**: trocar `parada.posicao + 1` por `parada.posicao`.
+    /// A posicao volta a 7, o laco reapresenta o evento que parou tudo e a
+    /// asercao do 8 cai.
+    #[test]
+    fn pular_anda_para_depois_do_evento_e_solta_a_parada() {
+        let dir = DirTemp::novo("pular-anda");
+        let s = servidor(&dir, Cadastro::default());
+        com_parada(&s, 7);
+
+        let r = pular(
+            &s,
+            r#"{"origem":"parceiro","database":"loja","tabela":"clientes"}"#,
+        )
+        .expect("o pulo tinha de ser aceito");
+        assert_eq!(r.inteiro_ou("pulou", -1), 7, "nao disse o que pulou");
+        assert_eq!(r.inteiro_ou("posicao", -1), 8, "a posicao nao andou");
+        assert_eq!(r.texto_ou("motivo", ""), "conflito_de_unicidade");
+
+        assert_eq!(
+            s.posicoes_bidi.lock().unwrap()["parceiro|loja/clientes"],
+            8,
+            "a posicao consumida nao andou em memoria"
+        );
+        assert_eq!(
+            bidirecional::ler_posicoes(&dir.join("replicacao-posicoes.json"))
+                .get("parceiro|loja/clientes"),
+            Some(&8),
+            "a posicao nao foi ao disco: um reinicio desfaria o pulo"
+        );
+
+        // A marca some do `replicacao_estado`, senao o painel diria parado
+        // para sempre -- recado que sobrevive ao conserto vira configuracao
+        // que mente.
+        let e = s.op_replicacao_estado().unwrap();
+        assert!(
+            e.campo("origens")
+                .and_then(|o| o.campo("parceiro"))
+                .and_then(|o| o.campo("paradas"))
+                .and_then(|p| p.campo("loja/clientes"))
+                .is_none(),
+            "a parada sobreviveu ao pulo: {}",
+            e.escrever()
+        );
+    }
+
+    /// **O teste do comportamento VELHO.** Par SAO nao se anda pela mao: a
+    /// operacao recusa nomeando o que esta parado, em vez de descartar um
+    /// evento que ninguem leu. E a diferenca deliberada para o
+    /// `pg_replication_origin_advance()`, que aceita qualquer LSN -- aqui
+    /// reaplicar e inofensivo, entao andar a posicao nunca conserta nada e so
+    /// pode perder dado.
+    #[test]
+    fn pular_num_par_sao_recusa_nomeando() {
+        let dir = DirTemp::novo("pular-sao");
+        let s = servidor(&dir, Cadastro::default());
+        // A origem existe e esta sadia -- ela so ficou conhecida por ter
+        // rodado, como o laco a registra.
+        s.anotar_estado("parceiro", |e| e.modo = "streaming".into());
+
+        let erro = pular(
+            &s,
+            r#"{"origem":"parceiro","database":"loja","tabela":"clientes"}"#,
+        )
+        .expect_err("par sao nao se anda pela mao");
+        assert_eq!(erro.nome(), "NAO_ENCONTRADO", "{erro}");
+        assert!(
+            erro.to_string().contains("nao esta parada"),
+            "a recusa nao diz por que: {erro}"
+        );
+        assert!(
+            s.posicoes_bidi.lock().unwrap().is_empty(),
+            "a recusa mexeu na posicao"
+        );
+    }
+
+    /// Origem que nem existe recusa listando as que existem -- e o mesmo
+    /// recado do `replicacao_ligar`, porque errar o nome da origem e o erro
+    /// de digitacao mais comum que ha.
+    #[test]
+    fn origem_desconhecida_recusa_listando_as_conhecidas() {
+        let dir = DirTemp::novo("pular-origem");
+        let s = servidor(&dir, Cadastro::default());
+        s.anotar_estado("matriz", |e| e.modo = "streaming".into());
+        let erro = pular(
+            &s,
+            r#"{"origem":"ninguem","database":"loja","tabela":"clientes"}"#,
+        )
+        .unwrap_err();
+        assert!(erro.to_string().contains("matriz"), "{erro}");
+    }
+
+    /// Source velho demais para dizer ONDE o evento mora: recusa em vez de
+    /// adivinhar. Adivinhar a posicao descarta evento que ninguem olhou.
+    #[test]
+    fn sem_a_posicao_do_source_o_pulo_recusa_em_vez_de_adivinhar() {
+        let dir = DirTemp::novo("pular-sem-posicao");
+        let s = servidor(&dir, Cadastro::default());
+        com_parada(&s, crate::replica::POSICAO_DESCONHECIDA);
+        let erro = pular(
+            &s,
+            r#"{"origem":"parceiro","database":"loja","tabela":"clientes"}"#,
+        )
+        .unwrap_err();
+        assert!(erro.to_string().contains("posicao"), "{erro}");
+        assert!(
+            s.posicoes_bidi.lock().unwrap().is_empty(),
+            "a recusa mexeu na posicao"
+        );
+        // E a parada FICA: recusar nao pode soltar o par calado.
+        assert!(s.esta_parada("parceiro", "loja/clientes"));
+    }
+
+    /// Sem os tres campos a operacao nao adivinha nenhum deles -- e `tabela`
+    /// esta entre eles de proposito: e o campo que o portao unico do
+    /// `despachar` le, e uma operacao que o deixasse vazio cairia na regra da
+    /// base e furaria o direito por tabela.
+    #[test]
+    fn os_tres_campos_sao_obrigatorios() {
+        let dir = DirTemp::novo("pular-campos");
+        let s = servidor(&dir, Cadastro::default());
+        com_parada(&s, 1);
+        for corpo in [
+            r#"{"database":"loja","tabela":"clientes"}"#,
+            r#"{"origem":"parceiro","tabela":"clientes"}"#,
+            r#"{"origem":"parceiro","database":"loja"}"#,
+        ] {
+            let erro = pular(&s, corpo).unwrap_err();
+            assert!(erro.to_string().contains("tabela"), "{corpo}: {erro}");
+        }
+    }
+
+    /// **O portao.** A operacao exige `administrar` NA TABELA: quem tem o
+    /// poder na base e nao nela para aqui. E o portao unico do `despachar`
+    /// fazendo o trabalho, e nao uma conferencia propria -- por isso o pedido
+    /// obriga o campo `"tabela"`.
+    #[test]
+    fn o_pular_passa_pelo_portao_da_tabela() {
+        assert_eq!(
+            Atividade::da_operacao("replicacao_pular"),
+            Some(Atividade::Administrar),
+            "a operacao mais perigosa da replicacao nao declarou poder"
+        );
+        let dir = DirTemp::novo("pular-portao");
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,"nivel":"operador",
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"loja":{"administrar":true,"tabelas":{"clientes":{}}}}}]}"#,
+        ))
+        .unwrap();
+        let s = servidor(&dir, cadastro.clone());
+        com_parada(&s, 3);
+        let mut ses = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            r#"{"token":"t","op":"replicacao_pular","origem":"parceiro","database":"loja","tabela":"clientes"}"#,
+            &mut ses,
+            "127.0.0.1",
+        );
+        let erro = r.expect_err("quem nao administra a tabela nao solta o laco dela");
+        assert_eq!(erro.nome(), "ACESSO_NEGADO", "{erro}");
+        // E o par continua parado: o portao recusou ANTES do trabalho.
+        assert!(s.esta_parada("parceiro", "loja/clientes"));
+
+        // O outro sentido do laco: com o poder na tabela, passa.
+        let cadastro = Cadastro::de_json(&pedido(
+            r#"{"usuarios":[{"login":"ana","id":9,"nivel":"operador",
+                 "senha_hash":"pbkdf2-sha256$1000$00$00",
+                 "bases":{"loja":{"tabelas":{"clientes":{"administrar":true}}}}}]}"#,
+        ))
+        .unwrap();
+        let dir2 = DirTemp::novo("pular-portao-ok");
+        let s2 = servidor(&dir2, cadastro.clone());
+        com_parada(&s2, 3);
+        let mut ses2 = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        let (_, _, r2) = s2.despachar(
+            r#"{"token":"t","op":"replicacao_pular","origem":"parceiro","database":"loja","tabela":"clientes"}"#,
+            &mut ses2,
+            "127.0.0.1",
+        );
+        assert_eq!(
+            r2.expect("quem administra a tabela solta o laco dela")
+                .inteiro_ou("posicao", -1),
+            4
+        );
     }
 }

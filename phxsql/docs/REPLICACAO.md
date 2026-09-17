@@ -237,6 +237,16 @@ A imagem viaja em **hexadecimal**, porque o transporte é JSON e JSON não tem
 bytes. Dobra o tamanho; a alternativa seria acrescentar um formato binário ao
 protocolo, e isso é uma decisão maior do que esta.
 
+**Cada evento carrega a própria `posicao` no diário do source** — desde
+17/09/2026 (pedido 292, parte 1). É o nosso equivalente do LSN que o
+`ALTER SUBSCRIPTION … SKIP (lsn)` do PostgreSQL recebe, e ele vem do source
+porque quem puxa **não consegue contar**: no bidirecional o source suprime os
+eventos cuja origem é quem pede e a posição anda por cima deles, então
+`desde + índice_na_lista` dá um número menor que o verdadeiro. Um source que
+não mande o campo continua funcionando — só não dá para usar o
+`replicacao_pular` naquela tabela, e a operação **recusa dizendo isso** em vez
+de adivinhar e descartar um evento que ninguém olhou.
+
 O `com_esquema` traz o **bloco de esquema cru**, o mesmo que mora dentro do
 `.reg`. É assim que a réplica cria uma tabela que ainda não existe nela: a
 partir dos mesmos bytes, e não de uma remontagem coluna a coluna a partir de
@@ -2325,3 +2335,93 @@ secundário sobrevivendo a um conflito no bidirecional; atomicidade de um
 commit multi-tabela atravessando o fio; coluna externa marcada replicada
 com segurança; identidade criptográfica de quem manda o pulso do cluster. A
 lista acima **é** a garantia — não a frase que a resumiria.
+
+## 22. O conflito de unicidade PARA o par, marcado — e a saída é humana
+
+**Pedido 292, parte (1), 17/09/2026.** O que entra aqui não é a forma que o
+dono decidiu às 07:10 — é a que ele decidiu **depois**, quando a régua dos
+motores maduros derrubou a primeira
+(`docs/propostas/regua-dos-motores-decisoes-289-294-2026-09-17.md` §292).
+
+### O que foi derrubado, e por quê
+
+A forma antiga era **recusar a tabela com índice único secundário no modo
+multi, na declaração**. Medido, nenhum dos três motores maduros faz isso: o
+Galera **certifica por essa chave de propósito** (`ha_innobase::wsrep_append_keys()`
+percorre todas as chaves e promove a exclusiva a que tem `HA_NOSAME`), o
+PostgreSQL aplica e quebra visivelmente, e o Group Replication não recusa por
+único secundário. E a justificativa que existia — «não há ninguém
+funcionando» — é **falsa** para o par que não colide e para todo
+unidirecional, onde só um lado escreve: a recusa tiraria do ar tabelas que
+replicam bem hoje. A pétrea *«guarda nova entra pedida, não imposta»* estava
+batendo de frente.
+
+O teste que trava isso é `sem_colisao_o_laco_replica_como_sempre_e_nada_e_contado`,
+e ele **não é decorativo**: repondo a forma derrubada (recusar a tabela quando
+há único secundário, em `abrir_para_bidi`), os quatro testes de
+`tests/laco-do-unico-secundario.rs` caem — inclusive esse, com «as duas linhas
+do parceiro não aconteceu em 20 s». É a medida do estrago que a recusa teria
+feito.
+
+### O que entra no lugar
+
+A tabela continua nascendo e replicando. No conflito:
+
+1. **O par para naquela tabela**, marcado. `replicacao_estado` ganha
+   `origens.<nome>.paradas`, com `motivo` (chave, nunca frase),
+   `posicao` (onde parou, no diário da origem), `detalhe` e `desde`.
+2. **A posição NÃO anda**, e isso é a mesma decisão escrita no fonte do
+   PostgreSQL (`worker.c`, `replorigin_reset`: não avançar a origem é o que
+   impede perder o evento).
+3. **O grito carrega o que o PostgreSQL carrega** — índice, valor da chave, a
+   linha daqui e a de lá —, no `replicacao_estado` e no diário do processo.
+4. **A saída é manual**: `replicacao_pular`.
+
+```json
+{"op":"replicacao_pular","origem":"parceiro",
+ "database":"loja","tabela":"clientes"}
+{"ok":true,"resultado":{"pulou":0,"posicao":1,
+  "motivo":"conflito_de_unicidade","detalhe":"índice \"porEmail\"...",
+  "aviso":"o evento pulado NAO entra mais: ..."}}
+```
+
+### Três divergências deliberadas com o PostgreSQL, e a restrição de cada uma
+
+- **O valor da chave sai REDIGIDO.** Ele imprime `Key (c)=(1)` porque não tem
+  marca de dado pessoal no esquema; nós temos, e uma primária de CPF sairia no
+  log do processo. A redação é por **análise** — cada coluna decidida pelo que
+  o esquema diz dela —, e o que não se analisa (coluna marcada, `Bin`, `Memo`,
+  valor acima de 48 bytes) vira o **tamanho em bytes**. A pétrea da casa é mais
+  forte que a convergência: o comportamento (o conflito aparece) entrou
+  inteiro; o meio (publicar o valor) não.
+- **`replicacao_pular` EXIGE uma parada.** O `pg_replication_origin_advance()`
+  aceita qualquer LSN, e o manual dele avisa que usar errado leva a
+  inconsistência. Aqui a restrição é outra: no nosso laço **reaplicar é
+  inofensivo** — o casamento é por chave e a regra é «mais recente vence» —,
+  então andar a posição nunca conserta nada; só pode pular evento que ninguém
+  olhou. Sem a parada exigida, a operação seria um botão que só tem como errar.
+- **O estrangulamento é o próprio portão, e ele vem ANTES do trabalho.** O
+  PostgreSQL estrangula em 5 s (`launcher.c`, «once per
+  `wal_retrieve_retry_interval`»); aqui a tabela parada sai do alcance **sem
+  tomar a trava de dados, sem absorver o diário local e sem uma ida e volta de
+  rede**. Medido pelo soquete, contando os `replicar` que o parceiro serve em
+  10 s com o par parado: **0 com o portão, 10 sem ele** — uma por segundo, o
+  `reconectar_em` do cenário —, e as recusas contadas do lado de cá subiram de
+  2 para 12 no mesmo intervalo: uma linha de log por segundo, para sempre.
+
+### O irmão de mão única NÃO mudou, e o motivo é de formato
+
+`alcancar_tabela` → `aplicar_lote_da_replica` → `aplicar_evento` para pelo
+mesmo desenho, e ali parar é **projetado**: a réplica fiel aplica **por
+rowid**, e o `.reg` nunca reaproveita slot, então o rowid que ela gera tem de
+bater com o do evento — é a conferência de fidelidade que sai de graça. Pular
+um evento ali deslocaria **todos** os rowids seguintes e transformaria um
+problema que para num problema que diverge em silêncio. No PostgreSQL o `SKIP`
+funciona porque a replicação lógica não alinha posição física nenhuma. A
+restrição que causa a divergência é a nossa: *a ordem de digitação é sagrada em
+cada servidor*.
+
+Guardas no catálogo (`bancada/guardas/catalogo.py`):
+`laco-preso-no-unico-secundario` (PROVADA 3/3),
+`par-parado-reapresentado-a-cada-rodada` (PROVADA 1/1) e
+`dado-pessoal-no-grito-do-conflito` (PROVADA 1/1).

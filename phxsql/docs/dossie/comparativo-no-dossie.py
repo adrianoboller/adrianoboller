@@ -108,6 +108,13 @@ RAZAO_DE_FORA = {
     # tres de cadastro sao o pedido 230 -- a aba de Usuarios ainda so le.
     "diferencas": "falta",
     "usuario_criar": "falta", "usuario_alterar": "falta", "usuario_excluir": "falta",
+    # Falta mesmo (17/09/2026, pedido 292 parte 1): o par parado por conflito
+    # de unicidade aparece em `replicacao_estado`, e o painel de replicacao
+    # ainda so mostra a parada da ORIGEM inteira (`parada`) e o ultimo erro --
+    # a parada por TABELA (`paradas`) nao tem botao. E a metade de tela do
+    # pedido, e ela pede o tradutor junto: rotulo de tela entra pela fabrica
+    # de idiomas, nunca cravado.
+    "replicacao_pular": "falta",
 }
 
 # Frases sem flexao de numero de proposito -- "1 X: a" e "3 X: a, b, c" tem

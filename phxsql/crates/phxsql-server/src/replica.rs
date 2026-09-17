@@ -356,7 +356,25 @@ pub struct EventoRecebido {
     pub carimbo_ms: i64,
     /// [`crate::bidirecional::hash_id`] do servidor onde a escrita nasceu.
     pub origem: u16,
+    /// A posicao deste evento no diario da ORIGEM -- o nosso equivalente do
+    /// LSN que o `ALTER SUBSCRIPTION ... SKIP` do PostgreSQL recebe.
+    ///
+    /// # Por que ela vem do source, e nao se conta aqui
+    ///
+    /// Porque `desde + indice_na_lista` esta ERRADO no bidirecional: o source
+    /// suprime os eventos cuja origem e quem pediu, e a posicao anda por cima
+    /// deles (ver [`LoteRecebido`]). Contar aqui daria uma posicao menor que a
+    /// verdadeira, e o `replicacao_pular` andaria para o lugar errado --
+    /// pulando um evento inocente e deixando o culpado no caminho.
+    ///
+    /// `u64::MAX` = o source e velho demais para dizer onde o evento mora. A
+    /// operacao de pular RECUSA nesse caso, nomeando: adivinhar a posicao e
+    /// pular dado alheio em silencio.
+    pub posicao: u64,
 }
+
+/// O valor de [`EventoRecebido::posicao`] quando o source nao a informa.
+pub const POSICAO_DESCONHECIDA: u64 = u64::MAX;
 
 /// Um lote do `replicar`, com a posicao ATE ONDE o source andou.
 ///
@@ -447,6 +465,10 @@ fn puxar_ate(
             imagem: hex_para_bytes(e.texto_ou("imagem", ""))?,
             carimbo_ms: e.inteiro_ou("carimbo_ms", 0),
             origem: e.inteiro_ou("origem", 0).clamp(0, u16::MAX as i64) as u16,
+            posicao: match e.campo("posicao").and_then(Json::inteiro) {
+                Some(n) if n >= 0 => n as u64,
+                _ => POSICAO_DESCONHECIDA,
+            },
         });
     }
     Ok(LoteRecebido {
