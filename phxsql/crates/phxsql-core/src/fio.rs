@@ -924,6 +924,126 @@ mod testes {
         );
     }
 
+    /// Uma fonte que FABRICA bytes e CONTA o que entregou.
+    ///
+    /// Fabrica em vez de guardar porque esta prova precisa oferecer mais que o
+    /// teto de 128 MiB, e um `Vec` de 128 MiB dentro do teste seria o proprio
+    /// dano que se esta medindo. Nunca entrega um `\n`: a linha so acaba
+    /// quando o teto a corta.
+    struct Torneira {
+        bloco: Vec<u8>,
+        cursor: usize,
+        entregues: u64,
+        oferta: u64,
+    }
+
+    impl Torneira {
+        fn com(oferta: u64) -> Torneira {
+            Torneira {
+                bloco: vec![b'x'; 64 * 1024],
+                cursor: 0,
+                entregues: 0,
+                oferta,
+            }
+        }
+    }
+
+    impl std::io::Read for Torneira {
+        fn read(&mut self, destino: &mut [u8]) -> std::io::Result<usize> {
+            let quantos = {
+                let fonte = self.fill_buf()?;
+                let n = fonte.len().min(destino.len());
+                destino[..n].copy_from_slice(&fonte[..n]);
+                n
+            };
+            self.consume(quantos);
+            Ok(quantos)
+        }
+    }
+
+    impl BufRead for Torneira {
+        fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+            let falta = self.oferta - self.entregues;
+            if falta == 0 {
+                return Ok(&[]);
+            }
+            let cabe = falta.min(self.bloco.len() as u64) as usize;
+            let ate = (self.cursor + cabe).min(self.bloco.len());
+            Ok(&self.bloco[self.cursor..ate])
+        }
+
+        fn consume(&mut self, quantos: usize) {
+            self.cursor += quantos;
+            self.entregues += quantos as u64;
+            if self.cursor >= self.bloco.len() {
+                self.cursor = 0;
+            }
+        }
+    }
+
+    /// A leitura PADRAO para no `TETO_DO_REGISTRO`, e nao no tamanho que o
+    /// outro lado escolher.
+    ///
+    /// # O que esta prova acrescenta a irma de cima
+    ///
+    /// `o_teto_do_registro_para_a_leitura_e_nao_so_recusa_depois` passa o teto
+    /// NA MAO (64 bytes): ela prova a maquina -- o `take` vem antes da
+    /// leitura. Nenhuma prova amarrava essa maquina a CONSTANTE, e a diferenca
+    /// foi medida em 17/09/2026: com `ler` chamando `ler_ate(leitor,
+    /// u64::MAX - 1)`, os 350 testes do `phxsql-core` continuavam verdes. E
+    /// quem recebe pelo fio chama `ler`, nunca `ler_ate` -- a replica em
+    /// `replica.rs:183` (o `TETO_DA_RESPOSTA` de `docs/REPLICACAO.md` §18) e o
+    /// laco de conexao do servidor em `servidor.rs:8881`. O fio inteiro podia
+    /// ficar sem teto sem uma unica prova cair.
+    ///
+    /// # Por que a assercao e sobre QUANTO, e por igualdade exata
+    ///
+    /// Porque a conferencia `lidos > teto` acontece DEPOIS da leitura: um
+    /// teste que so olhasse o veredito passaria com a memoria ja gasta, que e
+    /// o dano. Exato porque menos seria outro teto, e mais e o defeito.
+    #[test]
+    fn a_leitura_padrao_para_no_teto_do_registro_e_nao_no_que_o_outro_lado_mandar() {
+        let oferta = TETO_DO_REGISTRO + 4096;
+        let mut torneira = Torneira::com(oferta);
+        let mut canal = Canal::Claro;
+
+        // O veredito se desembrulha a mao, e nao com `expect_err`: com o
+        // defeito reposto o `Ok` carrega os 128 MiB, e `expect_err` imprime o
+        // que recebeu -- a reprovacao virava um panico de 134 MB de `x`.
+        // Mensagem de falha ilegivel e mensagem que ninguem le.
+        let erro = match canal.ler(&mut torneira) {
+            Err(e) => e,
+            Ok(Recebido::Linha(l)) => panic!(
+                "registro de {} bytes atravessou em vez de ser recusado pelo \
+                 teto de {TETO_DO_REGISTRO}",
+                l.len()
+            ),
+            Ok(Recebido::Fim) => panic!("a fonte nao acabou, entao nao ha fim a devolver"),
+        };
+        assert!(matches!(erro, PhxError::LimiteExcedido(_)), "{erro:?}");
+        // O numero DENTRO da recusa, como `docs/REPLICACAO.md` §18 promete:
+        // quem investiga compara o teto com o que mediu.
+        assert!(
+            erro.to_string().contains(&TETO_DO_REGISTRO.to_string()),
+            "a recusa nao traz o teto em bytes: {erro}"
+        );
+        assert_eq!(
+            torneira.entregues,
+            TETO_DO_REGISTRO + 1,
+            "a leitura padrao consumiu {} bytes de uma oferta de {oferta}: ela \
+             nao esta presa ao TETO_DO_REGISTRO",
+            torneira.entregues
+        );
+
+        // O COMPORTAMENTO VELHO, no mesmo caminho padrao: o que cabe atravessa
+        // como sempre atravessou. Teto que recusa tudo nao e teto, e parede.
+        let cabe = "{\"op\":\"ping\"}\n";
+        assert_eq!(
+            canal.ler(&mut cabe.as_bytes()).unwrap(),
+            Recebido::Linha(cabe.to_string())
+        );
+    }
+
     #[test]
     fn o_texto_claro_nao_aparece_no_fio() {
         let (cliente, _, _) = aperto();
