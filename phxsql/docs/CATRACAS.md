@@ -474,6 +474,23 @@ e o primeiro trecho que difere.
 seção «O que é catraca»: um derivado velho é zero-ou-não-zero, não uma contagem
 que desce.
 
+**E é por «gerador que FALHA» que entra a guarda do pipe cru (17/09/2026).** O
+`pagina-dos-pedidos.py` passa por toda linha de pedido do `PENDENCIAS.md`, e
+agora **recusa** a que tenha um `|` não escapado dentro de uma célula, nomeando
+a linha e o número do pedido. O defeito que a motivou é do naipe mais difícil de
+achar, porque o gerador ficava **verde**: o regex dele ancora o grupo do texto
+no fim da linha (`(.*?)\s*\|\s*$`), então engole o pipe a mais sem reclamar —
+quem quebra é o renderizador do GitHub, que corta a célula ali e joga o resto do
+texto para colunas que não existem. **Quatro linhas** estavam assim (os pedidos
+175 e 311, mais duas escritas nesta rodada), e nenhuma apareceu em portão nenhum
+até alguém contar os pipes. A cura é `\|`; **crase não protege**, porque em
+tabela do GitHub o corte da célula acontece antes do trecho de código — foi
+exatamente o caso do 311, cujo `${esc(s.versao || "")}` estava entre crases e
+quebrava do mesmo jeito. Prova real nos dois sentidos, medida no dia: com o
+defeito reposto na linha 335 o gerador sai com código **1** nomeando o pedido
+311; desfeito, passa. E ela não precisou de máquina nova — cai no VERMELHO de
+«gerador que FALHA» que este portão já tinha.
+
 **Os três modos, e por que três e não um** — cada gerador leva o crivo mais
 forte que suporta, e fingir que todos suportam byte-cru faria o portão gritar
 VERMELHO sem defeito, que é o portão em que ninguém acredita:

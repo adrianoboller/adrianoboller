@@ -1,0 +1,93 @@
+2026-09-17 11:50:43 UTC
+=== a reparticao do `empilhar`, em maquina parada ===
+    4 nucleos | sonda: reparticao-do-gatilho
+    binario: binario de 11:50:43, fonte mais novo (crates/phxsql-server/src/servidor.rs) de 09:45:22
+
+-- a maquina estava quieta?
+   antes:  1% ocupada, ate 0 vizinho(s)
+   durante (29 amostras): 25% a 33% ocupada, mediana 26%, ate 1 vizinho(s)
+   depois: 1% ocupada, ate 1 vizinho(s)
+   controle: 14837 -> 14810 op/s
+   VEREDITO: quieta o bastante. Os numeros valem.
+
+Reparticao do tempo DENTRO da secao critica do gatilho BEFORE
+  4000 insercoes por cenario e por rodada, 5 rodadas intercaladas
+
+  1. `op_inserir` -- a secao de 86 linhas do `servidor.rs`
+
+  cenario        sob a trava (us/op)        parede (us/op)
+  piso            50.00   faixa   49.00..53.50        59.32
+  minimo          52.25   faixa   48.75..53.25        61.82
+  tipico          55.00   faixa   51.00..55.50        64.65
+  pesado         521.75   faixa  502.25..526.50      534.01
+
+  2. `empilhar` -- a secao de 162 linhas, o mesmo `inserir` DENTRO
+     de uma transacao (1000 por transacao, `commit` fora da conta)
+
+  cenario        sob a trava (us/op)
+  piso           328.00   faixa  300.00..345.00  
+  minimo         330.00   faixa  305.00..336.00  
+  tipico         326.00   faixa  307.00..346.00  
+  pesado         804.00   faixa  795.00..835.00  
+
+  SONDA -- o piso do `empilhar` por TAMANHO DA TRANSACAO
+  (mesma tabela, da maior para a menor: o crescimento da tabela
+   joga contra a hipotese da lista pendente)
+
+     1600 operacoes na transacao     593.75 us/op
+      800 operacoes na transacao     261.25 us/op
+      400 operacoes na transacao     127.50 us/op
+      200 operacoes na transacao      75.00 us/op
+      100 operacoes na transacao      60.00 us/op
+
+  SONDA IRMA -- `ler` dentro da transacao, por pendentes
+  (aqui a sobreposicao e a funcionalidade, nao desperdicio:
+   e o read-your-own-writes. O numero diz o que ela cobra por leitura)
+
+        0 escritas pendentes          35.00 us por `ler`
+      100 escritas pendentes          80.50 us por `ler`
+      400 escritas pendentes         234.50 us por `ler`
+     1600 escritas pendentes        1363.00 us por `ler`
+
+  o CORPO do dono, cronometrado sozinho (sem trava, sem disco):
+    minimo        0.274 us por execucao
+    tipico        1.374 us por execucao
+    pesado      442.686 us por execucao
+    montagem do `Contexto::de_gatilho` com o NEW .....    0.137 us
+    (e a medida DIRETA do naipe da fatia (a): o `linha_para_json` do
+     servidor faz o mesmo trabalho por outro caminho)
+
+  a fatia (c), o `fsync`: o mesmo piso com durabilidade por_operacao
+    piso por_lote    50.00 us/op   piso por_operacao   668.25 us/op   o fsync por linha = +618.25 us
+
+  A REPARTICAO, por insercao, dentro da secao critica do `op_inserir`:
+    (c) gravacao e janela (o piso) .............     50.00 us
+    (a) APARATO do gatilho (minimo - piso) .....     +2.25 us   <- o que o item 164 queria tirar da trava
+        idem no irmao `empilhar` ...............     +2.00 us
+        ruido do medidor, `op_inserir` .........      4.50 us
+        ruido do medidor, `empilhar` ...........     45.00 us
+    (b) corpo do dono, minimo ..................     0.274 us
+    (b) corpo do dono, tipico ..................      2.75 us   (sozinho: 1.37 us)
+    (b) corpo do dono, pesado (mil voltas) .....    469.50 us   (sozinho: 442.69 us)
+    (b) corpo do dono, TETO de parede ..........    500000 us   (PRAZO_DO_GATILHO_ANTES)
+
+  VEREDITO SOBRE A PREMISSA do item («as cinco secoes sao longas demais»):
+    O aparato do gatilho NAO APARECE acima do ruido do proprio
+    medidor, nas DUAS secoes (+2.25 us contra 4.50 no `op_inserir`;
+    +2.00 contra 45.00 no `empilhar`). O teto do que se poderia
+    ganhar tirando a preparacao da trava e, portanto, MENOR que
+    4.50 us -- menos de 8.2% da secao do caso tipico e menos de
+    0.0009% do que o corpo do dono pode segurar ate o teto de parede.
+    => ENCURTAR AS CINCO SECOES NAO COMPRA NADA. O que decide o tempo
+       da secao e o corpo do dono (104x o teto do ganho, no caso pesado)
+       e o `fsync` do piso -- nenhum dos dois sai da trava por
+       refatoracao de quantas linhas a secao tem.
+
+  E a pergunta que fecha o item, e nao e de tempo: tirar a preparacao
+  da trava exige o ESQUEMA, e o esquema so chega por `abrir_travada`,
+  que exige a ficha da trava -- o compilador cobra isso. Prepara-la
+  fora e abrir a tabela fora da trava, e ai o gatilho passa a julgar
+  sobre um esquema que pode ter mudado entre preparar e executar.
+  Meia garantia e pior que nenhuma.
+
+rc=0 fim=11:51:50

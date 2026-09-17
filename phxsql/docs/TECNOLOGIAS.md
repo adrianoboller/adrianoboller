@@ -36,17 +36,17 @@ foi estimado no lugar de uma medição que faltou.
 |---|---:|---:|---:|---:|---:|---:|
 | `phxsql-cli` | 1 | 815 | 104 | 113 | 78 | 1110 |
 | `phxsql-cmd` | 2 | 579 | 110 | 171 | 62 | 922 |
-| `phxsql-core` | 35 | 11628 | 4137 | 3138 | 1514 | 20417 |
+| `phxsql-core` | 35 | 11173 | 4568 | 3473 | 1539 | 20753 |
 | `phxsql-ffi` | 7 | 1408 | 1014 | 703 | 235 | 3360 |
 | `phxsql-odbc` | 7 | 2469 | 1086 | 928 | 228 | 4711 |
-| `phxsql-server` | 57 | 43907 | 27812 | 20975 | 4918 | 97612 |
+| `phxsql-server` | 57 | 45031 | 29482 | 22045 | 5088 | 101646 |
 | `phxsql-sql` | 10 | 6637 | 3381 | 1993 | 748 | 12759 |
-| `phxsql-store` | 24 | 13209 | 3583 | 5640 | 1533 | 23965 |
-| **total** | **143** | **80652** | **41227** | **33661** | **9316** | **164856** |
+| `phxsql-store` | 24 | 13329 | 3583 | 5704 | 1540 | 24156 |
+| **total** | **143** | **81441** | **43328** | **35130** | **9518** | **169417** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **41227/80652 = 0.51×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **43328/81441 = 0.53×**.
 
-Alem do `src/`: **75** programas de medicao em `examples/` (18943 linhas — bancada em Rust, nao produto nem teste) e **57** arquivos em `tests/` de integracao fora de `src/` (18797 linhas).
+Alem do `src/`: **76** programas de medicao em `examples/` (19489 linhas — bancada em Rust, nao produto nem teste) e **60** arquivos em `tests/` de integracao fora de `src/` (20208 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -73,7 +73,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 15411 | 869.3 |
+| `ui/index.html` | 15461 | 872.1 |
 | `ui/grid/phx-grid.css` | 168 | 12.3 |
 | `ui/grid/phx-grid.js` | 1860 | 90.1 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
@@ -83,7 +83,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 | `ui/multitela.js` | 1588 | 69.0 |
 | `ui/claude.js` | 1357 | 67.2 |
 | `ui/grid/CHANGELOG-phx-grid.md` | 224 | 29.7 |
-| **total (10 arquivos)** | **23743** | **1284.4** |
+| **total (10 arquivos)** | **23793** | **1287.2** |
 
 Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
 - `crates/phxsql-server/ui/explorador.css`
@@ -107,11 +107,11 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 49 | 10506 |
-| Python (bancada de medicao) | `bancada/` | 111 | 50627 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 53 | 11059 |
+| Python (bancada de medicao) | `bancada/` | 114 | 52535 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2816 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 374 | 91134 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 32 | 13457 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 397 | 98412 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 32 | 13464 |
 <!-- /GERADO -->
 
 Não incluído acima porque já está na tabela 1.1: os `.rs` de `examples/` e
@@ -205,7 +205,7 @@ confere cada um contra vetor publicado.
 | `hkdf.rs` | HKDF-SHA256, a derivacao de chave da RFC 5869, sobre o HMAC que ja existe. | RFC 5869 | `caso_1_do_anexo_a`, `caso_2_do_anexo_a`, `caso_3_do_anexo_a` |
 | `cifra.rs` | ChaCha20-Poly1305 (RFC 8439), sem dependencias externas. | RFC 8439, draft-irtf-cfrg-xchacha-03 | `bloco_do_chacha20_bate_com_o_rfc`, `cifragem_do_chacha20_bate_com_o_rfc`, `poly1305_bate_com_o_rfc`, `chave_de_uma_vez_so_bate_com_o_rfc`, `aead_bate_com_o_rfc` |
 | `base64.rs` | Base64 (RFC 4648), sem dependencias externas. | RFC 4648 | `vetores_rfc4648` |
-| `uuid.rs` | Identificadores: UUID de 128 bits (v4 e v7) e identificador de 256 bits. | FIPS 180-4, RFC 9562 | `v7_tem_o_layout_do_rfc_9562` |
+| `uuid.rs` | Identificadores: UUID de 128 bits (v4 e v7) e identificador de 256 bits. | FIPS 180-4, RFC 9562 | `v7_tem_o_layout_do_rfc_9562`, `v7_e_v4_daqui_tem_versao_e_variante_da_rfc`, `variante_antiga_e_da_microsoft_nao_sao_da_rfc` |
 | `crc.rs` | CRC-32 (IEEE 802.3, refletido, polinomio 0xEDB88320). | (nenhuma citada) | `vetores_conhecidos` |
 | `json.rs` | Leitor e escritor de JSON, sem dependencias externas. | (nenhuma citada) | (nenhum teste com esse padrao de nome) |
 | `zip.rs` | Arquivo ZIP: escrita e leitura, com o DEFLATE escrito aqui. | RFC 1951 | (nenhum teste com esse padrao de nome) |
@@ -307,10 +307,12 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 
 | constante | valor | arquivo |
 |---|---:|---|
+| `TETO_DE_COLUNAS` | 12 | `crates/phxsql-server/src/bidirecional.rs` |
+| `TETO_DO_VALOR` | 48 | `crates/phxsql-server/src/bidirecional.rs` |
 | `TETO_COLADO` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_FRASE_REPETIDA` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_ROTULOS_E_CRASE` | 950 | `crates/phxsql-server/src/conferidor.rs` |
-| `TETO_BOTAO_SEM_PROVA` | 194 | `crates/phxsql-server/src/conferidor_botoes.rs` |
+| `TETO_BOTAO_SEM_PROVA` | 119 | `crates/phxsql-server/src/conferidor_botoes.rs` |
 | `TETO_TABELA_NA_MAO` | 0 | `crates/phxsql-server/src/conferidor_grades.rs` |
 | `TETO_INVENTARIO_DESCASADO` | 0 | `crates/phxsql-server/src/conferidor_inventario.rs` |
 | `TETO_TEMP_DIR_SOLTO` | 0 | `crates/phxsql-server/src/conferidor_temporarios.rs` |
@@ -321,14 +323,15 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO` | Duration::from_secs(60) | `crates/phxsql-server/src/replica.rs` |
 | `TETO_DA_FILA` | 32 | `crates/phxsql-server/src/saude_do_disco.rs` |
 | `TETO_DO_LOTE_SERVIDO` | 16 * 1024 * 1024 | `crates/phxsql-server/src/servidor.rs` |
+| `TETO_DE_EVENTOS_POR_LOTE` | 5_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_PIVOT` | 5_000_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_JUNCAO` | 500_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_COLETA_ROWIDS` | 1_000_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_ANINHAMENTO` | 8 | `crates/phxsql-server/src/servidor.rs` |
 
-**18** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
+**21** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **180** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 7272. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **194** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 7855. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -489,7 +492,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **277** pedidos numerados; **36** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **321** pedidos numerados; **53** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -502,9 +505,11 @@ proposta de voltar sem medição nova.
 | 159 | **Furo na numeração por exclusão: renomear entra, renumerar fica RECUSADO** |
 | 160 | **Phoenix Web Absorber FX SDK — RECUSADO com número** |
 | 161 | **Impressão / relatório — RECUSADO por escopo** |
+| 164 | **A trava global e o MVCC, medidos antes de virarem plano — e duas premissas morreram** |
 | 169 | **A cascata só planejava um nível — a três, recusava DEPOIS de gravar** |
 | 174 | **A auto-referência sai da cascata em SILÊNCIO — e os dois motores de referência RECUSAM** |
 | 176 | **A tabela que aponta para si devolve «o índice ficou para trás numa queda» quando não houve queda nenhuma** |
+| 179 | **O teto do MVCC morreu medido — a Sombra continua de pé, por outro motivo** |
 | 180 | **O comboio do fecho de janela é real, e nem `RwLock` nem MVCC o consertam** |
 | 186 | **O fecho da janela de durabilidade não sincronizava o arquivo de DADOS** |
 | 191 | **Bateria de testes de utilização padrão: criar base, incluir 20.000 registros em tabela complexa, com e sem binários e memos** |
@@ -527,8 +532,23 @@ proposta de voltar sem medição nova.
 | 251 | **P2P: a identidade sem domínio bate no AAD do selo por endereço — decisão do dono e do DBA antes de congelar o PSCH do correio** |
 | 253 | **Bancada «chutar a tomada»: SIGKILL dentro da transação aberta, no meio do BULKINSERT, do `inserir_lote`, do `reindexar` e da transação dentro da reserva — 0 desfechos inválidos em 408 quedas** |
 | 258 | **`Volumes::sincronizar` sincroniza todo descritor aberto sem pular os limpos: 8 `fsync` por inserir e 9 por excluir no regime por operação** |
+| 259 | **O excluir do padrão custa 24–28 µs mesmo sem fsync, contra 3,7–4,4 do inserir: 8 `write` e ~5 `openat` por exclusão** |
 | 265 | **Um gerador de telemetria e logs medidos — a seção NÃO NASCE na sétima página** |
 | 267 | **`panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados` exige que os TRÊS pânicos aconteçam, e sob carga o terceiro não chega** |
+| 278 | **SEC A1 (alta) — o pulso do cluster aceita identidade auto-declarada, e uma epoca forjada rebaixa o master para sempre, inclusive apos reiniciar** |
+| 280 | **SEC A3 (media-alta) — `aplicar` pela rede desliga FK/CHECK/cascata num source sem `somente_leitura`: mata o pai que tem filhos, contra a petrea** |
+| 281 | **SEC A4 (media) — `cluster_no_remover` com `propagar:false` cria dois masters graváveis, sem partição de rede nenhuma** |
+| 282 | **SEC A5 (media) — `replicacao_testar` e sonda de rede interna sem prazo de conexao, e amplifica ocupando vagas de `conexoes_max`** |
+| 291 | **DECISAO DO DONO (C, 3/6) — quem honra o `rownum` numa replica: ela gera o dela ou aplica o da imagem?** |
+| 292 | **DECISAO DO DONO (C, 4/6) — unicidade num indice secundario trava o par de servidores no bidirecional para sempre: recusar a tabela, casar por N chaves, ou quarentena** |
+| 293 | **DECISAO DO DONO (C, 5/6) — replicar tabela com coluna EXTERNA marcada: recusar no motor, ou esperar o envelope da §11.5 — a condicao para funcionar NUNCA se satisfaz** |
+| 294 | **DECISAO DO DONO (C, 6/6) — o criterio de eleicao do cluster: a posicao somada e um escalar de uma grandeza vetorial, e trocar por vetor de tabelas mexe no consenso** |
+| 299 | **Garantia que nao vale, nao coberta acima (C) — atomicidade de commit NAO atravessa o fio: um commit com cascata chega como N eventos soltos em diarios independentes, e RECUSADO consertar sem o dono** |
+| 300 | **Garantia que nao vale, nao coberta acima (C) — a posicao somada do cluster conta tabela que nao e replicada (comentario diverge do codigo) e uma escrita local na replica pula um evento do source em silencio; e o invariante «so existe filho se o pai existir primeiro» tambem nao vale em nenhum instante intermediario na replica, sem contador de orfas** |
+| 301 | **QA (G) — sete petreas da replicacao/cluster tem teste real e provado no fonte, e NENHUMA esta no catalogo `bancada/guardas/catalogo.py`: nao sao reprovadas a cada rodada** |
+| 305 | **J — aproveitar a IDEIA do construtor visual de consulta com N filtros e AND/OR: a tela «Consulta» hoje e de UMA condicao so, e a op `sql` so e alcancavel de UM lugar na interface** |
+| 308 | **F (bateria) — quatro `resultados.json` de replicação/cluster não trazem campo de data, e a página de testes cai no `mtime` — que já mentiu uma vez nesta rodada** |
+| 316 | **A guarda que impede transplantar um slot cifrado de um `.reg` para outro existe POR CONSEQUENCIA, e ninguem a escreveu** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —

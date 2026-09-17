@@ -3556,13 +3556,25 @@ linha seguinte, **jogando o mapa fora**. O(pendentes) por operação, O(n²) por
 transação, **sob a trava de dados**, para construir exatamente o que a linha
 debaixo apagava.
 
-| escritas pendentes na transação | `empilhar`, ANTES (µs/op, sob a trava) | `empilhar`, DEPOIS (µs/op, sob a trava) |
-|---:|---:|---:|
-| 100 | **60,00** | 41,25 |
-| 200 | sem número citável nesta fonte | 38,75 |
-| 400 | sem número citável nesta fonte | 37,50 |
-| 800 | sem número citável nesta fonte | 35,00 |
-| 1.600 | **625,62** | 40,62 |
+| escritas pendentes na transação | `empilhar`, ANTES (µs/op, sob a trava) | `empilhar`, DEPOIS (µs/op, sob a trava) | razão |
+|---:|---:|---:|---:|
+| 100 | **60,00** | 40,00 | 1,50× |
+| 200 | **75,00** | 40,00 | 1,88× |
+| 400 | **127,50** | 37,50 | 3,40× |
+| 800 | **261,25** | 38,75 | 6,74× |
+| 1.600 | **593,75** | 41,25 | **14,39×** |
+
+Os dez pontos acima são de **17/09/2026**, o par completo em máquina parada,
+com o `quieta.Vigia` aprovando as duas corridas: o lado DEPOIS às **09:43**
+(`bancada/concorrencia/corridas/reparticao-DEPOIS-20260917-0943.txt`) e o lado
+ANTES às **11:50**, com o defeito reposto de propósito
+(`.../reparticao-ANTES-20260917-1150.txt`). Os três furos que esta tabela
+carregava — 200, 400 e 800 do lado ANTES, escritos como «sem número citável
+nesta fonte» porque o commit `20d2c59` só publicava os extremos — **foram
+medidos**, e a forma que eles revelam é a que faltava: o custo marginal por
+escrita pendente **cresce** com a lista (0,15 · 0,26 · 0,33 · 0,42 µs por
+pendente, de 100→200 até 800→1.600), então por transação é pior que O(n²), e
+não apenas O(n²).
 
 A sonda (`reparticao-do-gatilho.rs`) percorre os cinco pontos dos dois lados,
 mas o código e o commit `20d2c59` só **citam por extenso** os dois extremos do
@@ -3615,12 +3627,19 @@ monta a sobreposição a cada chamada, e não pode deixar de montar — ali a
 sobreposição **é** a funcionalidade (o read-your-own-writes que o pedido 162
 deu à transação), não desperdício.
 
-| escritas pendentes | `ler` dentro da transação (µs, sob a trava) |
-|---:|---:|
-| 0 | **38,00** |
-| 100 | sem número citável nesta fonte |
-| 400 | sem número citável nesta fonte |
-| 1.600 | **1.118,50** |
+| escritas pendentes | `ler`, corrida LIMPA 09:43 (µs) | `ler`, corrida com o defeito 11:50 (µs) |
+|---:|---:|---:|
+| 0 | **37,50** | 35,00 |
+| 100 | **83,00** | 80,50 |
+| 400 | **219,50** | 234,50 |
+| 1.600 | **1.059,50** | 1.363,00 |
+
+Os dois furos de 100 e 400 fecharam com as corridas de 17/09/2026. E a segunda
+coluna não é repetição: o defeito reposto estava no `empilhar` e no
+`empilhar_atualizar_com_cascata`, **não** no `ler` — então as duas colunas
+tinham de concordar, e concordam dentro da variação entre corridas. É um
+**controle embutido**: a mesma bateria que vê 14,39× onde mexeu não vê nada
+onde não mexeu.
 
 A mesma sonda testa também 100 e 400 pendentes, mas só os dois extremos (0 e
 1.600) têm valor citado no commit `20d2c59` — os dois pontos do meio ficam sem
@@ -3634,12 +3653,56 @@ meia invalidação seria pior que nenhuma. A saída de desenho é guardar o mapa
 reconstruí-lo do zero em cada `ler`. Nomeado, não implementado:
 `docs/PENDENCIAS.md` #310.
 
+### 25.4 A prova nos DOIS sentidos: o medidor vê, e não há o que ver
+
+O §25.1 é um resultado **nulo** — «o aparato do gatilho não aparece acima do
+ruído» —, e resultado nulo tem um modo de falhar que nenhum número dele
+denuncia: **o medidor pode simplesmente não enxergar nada.** «+0,25 µs, abaixo
+do ruído» e «esta sonda é cega» produzem a mesma linha no relatório.
+
+O que separa os dois é repor um defeito **conhecido** no mesmo caminho e exigir
+que o número se mexa. Foi o que fecharam as duas corridas de 17/09/2026, em
+máquina parada, com o `Vigia` aprovando as duas:
+
+| o que a sonda olhou | com o defeito reposto | sem o defeito | veredito |
+|---|---:|---:|---|
+| `empilhar`, piso a 1.600 pendentes | 593,75 µs | 41,25 µs | **14,39×** — ela vê |
+| `empilhar`, tabela principal (1.000 por transação) | 328,00 µs | 38,00 µs | **8,63×** — ela vê |
+| `op_inserir`, piso (o defeito **não** o tocava) | 50,00 µs (49,00..53,50) | 52,50 µs (46,25..53,00) | faixas se cruzam — ela **não** inventa |
+| aparato do gatilho, `op_inserir` | +2,25 µs (ruído 4,50) | +0,25 µs (ruído 6,75) | abaixo do ruído nas duas |
+| aparato do gatilho, `empilhar` | +2,00 µs (ruído 45,00) | +1,00 µs (ruído 4,00) | abaixo do ruído nas duas |
+
+As três primeiras linhas são o instrumento se provando: mexe onde devia mexer,
+não mexe onde não devia. As duas últimas são o resultado do item — em **quatro**
+leituras independentes, o aparato nunca subiu acima do ruído do próprio medidor,
+enquanto o mesmo medidor via 14× quando havia o que ver. **O nulo do §25.1 é
+nulo medido, não cegueira.**
+
+E a **segunda** linha fecha, de quebra, a confusão que o commit `20d2c59`
+publicou: **8,6× e 15,4× são os dois reais**, e a diferença entre eles nunca
+foi erro de medida — é o **tamanho da transação**. A remedição de hoje, em
+máquina parada, dá **8,63×** com mil operações e **14,39×** com mil e
+seiscentas: o par de mil bate no segundo decimal, e o de mil e seiscentas cai
+de 15,4× para 14,39×, que é variação entre corridas e não desacordo. O defeito
+era O(pendentes) por operação, então a razão **cresce com a transação**: uma
+razão sozinha, sem o tamanho ao lado, não diz nada.
+
 Reproduza com:
 
 ```bash
 cargo build --release --examples -p phxsql-server
-cargo run --release -p phxsql-server --example reparticao-do-gatilho
+# o lado DEPOIS (arvore limpa), com o Vigia na porta e o binario conferido:
+python3 bancada/concorrencia/reparticao-em-maquina-parada.py
 ```
+
+Para refazer o lado ANTES, reponha o defeito nos **dois** chamadores de
+`abrir_travada_sem_sobrepor` no `servidor.rs` (trocar por `abrir_travada` e
+acrescentar `t.ver_so_o_disco();` na linha seguinte), recompile, meça — e
+**desfaça**. A catraca estrutural é `grep -c "t.ver_so_o_disco();"` no
+`servidor.rs`, que tem de voltar a **zero**, e o `cargo build --release -p
+phxsql-server --examples --bins` depois de desfazer não é opcional: binário com
+o defeito dentro de `target/` envenena a próxima bancada, e *medidor com binário
+velho mede o passado*.
 
 ## Como refazer tudo
 

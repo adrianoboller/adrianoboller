@@ -172,6 +172,21 @@ errado, está dito qual.
   número errado. Catraca estrutural nova: **zero**
   chamadas de `ver_so_o_disco()` no servidor. `docs/DESEMPENHO.md` §25,
   `docs/PENDENCIAS.md` #164.
+  **Fechado em 17/09/2026 com a medição final em máquina parada, e com a prova
+  nos dois sentidos.** Duas corridas com o `quieta.Vigia` aprovando as duas — a
+  limpa às 09:43, a do defeito reposto às 11:50, ambas guardadas em
+  `bancada/concorrencia/corridas/`. O par completo de cinco pontos: **60,00 ·
+  75,00 · 127,50 · 261,25 · 593,75 µs/op** com o defeito contra **40,00 · 40,00
+  · 37,50 · 38,75 · 41,25** sem ele. E as duas razões que este arquivo já
+  confundiu uma vez **são as duas reais**: 8,63× com mil operações na
+  transação, **14,39×** com mil e seiscentas — o defeito era O(pendentes) por
+  operação, então *razão sem o tamanho da transação ao lado não diz nada*. A
+  medição carrega o próprio controle: o `op_inserir`, que o defeito não tocava,
+  ficou em 50,00 µs (faixa 49,00..53,50) contra 52,50 (46,25..53,00), faixas que
+  se cruzam. E é isso que torna o resultado NULO do §25.1 confiável — o mesmo
+  instrumento que não vê o aparato do gatilho subir acima do próprio ruído em
+  quatro leituras enxerga 14,39× quando há o que enxergar: *nulo medido não é
+  cegueira*. `docs/DESEMPENHO.md` §25.4.
 - **A tela vazia de DbLink nascia com os dois únicos botões mortos**
   (`6319396`, pedido 190). Um `return folha(...)` deixava as duas linhas de
   `onclick` seguintes inalcançáveis — era a primeira tela de quem ainda não

@@ -73,6 +73,23 @@ def ler():
                     "SUMIA da pagina em silencio -- foi o que aconteceu com o "
                     "150. Declare o estado, ou acrescente o simbolo a legenda.")
         if m:
+            # Pipe CRU dentro de uma celula. O regex de cima SOBREVIVE a ele --
+            # o grupo 4 esta ancorado no fim da linha, entao engole o pipe a
+            # mais e o gerador nao reclama de nada. Quem quebra e' o
+            # renderizador do GitHub, que corta a celula ali e joga o resto do
+            # texto para colunas que nao existem. Por isso a falta passou
+            # despercebida em QUATRO linhas: gerador verde, tabela torta.
+            # E a cura e' escapar (`\|`), nunca crase: em tabela do GitHub o
+            # corte da celula acontece ANTES do trecho de codigo, entao
+            # `a || b` entre crases quebra igual.
+            if l.rstrip("\n").replace("\\|", "").count("|") != 5:
+                raise SystemExit(
+                    f"PENDENCIAS.md:{numero_da_linha}: o pedido {m.group(2)} "
+                    "tem pipe CRU dentro de uma celula -- a linha precisa ter "
+                    "exatamente 5 pipes (quatro colunas), e tem outro numero. "
+                    "O GitHub corta a celula no pipe e o texto vaza para "
+                    "colunas que nao existem. Escreva `\\|` no lugar do `|`; "
+                    "crase NAO protege.")
             classe, rotulo = ESTADOS[m.group(1)]
             itens.append(
                 {
