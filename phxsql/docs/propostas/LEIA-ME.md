@@ -105,3 +105,41 @@ proxy TLS na frente. TLS de verdade fecharia esse buraco junto.
 
 Nenhuma linha de código, nenhuma recusa. A decisão do transporte é do dono, e
 ele a tomou como *analisar depois* em 05/09/2026.
+
+## `catraca-da-divida.md` — a catraca que MORREU medida (parecer do papel G, 16/09/2026)
+
+R19 dizia que a dívida marcada «sobe sozinha». O parecer mediu: as 19 marcas
+`// DIVIDA:` nasceram juntas num único commit, **9 não se pagam por
+engenharia** (consequência de pétrea, recusa certa do motor, espera por demanda,
+decisão do dono), e um teto sobre elas puniria quem marca. Recomendação: piso
+que sobe sobre marcas vivas + baixas escritas. R19 foi reescrito em `RISCOS.md`
+com o risco real — a marca **sumir** de arquivos com 197 commits em 14 dias.
+
+## `parecer-268-migracao-da-cifra.md` — falta a OPERAÇÃO, não um byte (papel C, 17/09/2026)
+
+O cabeçalho do `.reg` já sabe se o arquivo está cifrado (byte 8: v4 claro, v5
+cifrado, desde 29/08). `cifra.tabelas` não cifra nada, nem o novo — só o
+Profiler a lê. Recomendação: `criptografar`/`descriptografar` pelo molde do
+`acrescentar_coluna` (arquivo `.novo` ao lado, `rename` como compromisso), sem
+mudar formato, com `.memo`/`.bin` e a virada dos diários no escopo. 66 `.reg`
+no repositório, todos v4 — «cedo» ainda é agora.
+
+## `revisao-sec-saidas-de-segredo.md` — o `Debug` fechou; e as outras saídas? (papel SEC, 17/09/2026)
+
+19 caminhos auditados, **9 achados** (2 altas, 3 médias, 4 baixas), zero no
+`Debug`. O pior: a lista `SEGREDOS` do profiler casa por nome exato e
+`token_remoto` nunca entrou nela — o token de serviço do OUTRO PhxSql vai em
+texto puro para o `perfil.txt`. Quatro dos nove são a mesma lei por outra
+porta: lista por nome que envelhece, conserto que não voltou ao irmão. A1, A2
+e A4 viraram a frente B-SEC; A3 e A5 são decisões registradas com motivo
+vencido, para o dono.
+
+## `segredo-newtype-vs-conferidor.md` — o compilador conta o que a régua só varre (papel J, 17/09/2026)
+
+A premissa que ninguém mediu antes de construir: nove `impl Debug` à mão mais
+um conferidor de texto, ou um newtype `Segredo(String)`? Medido pelo
+compilador numa cópia: 152 pontos de uso quebram (71 de produto, 34 expõem de
+verdade), migração de 135 linhas alteradas e 361 removidas — as onze `impl`
+(não nove: `Cifra` e `CifraFio` já escreviam o seu). Recomendação **(b)**, o
+tipo, agora: a décima struct que nascer derivando imprime `(oculto)`. Memória
+não vira pétrea, com número. É o pedido 272.
