@@ -290,8 +290,8 @@ footer code{font-size:.9em}
 <div class="kpi feito"><b>0</b><span>dependências externas</span><span class="q">2026-09-17 15:10:53</span></div>
 <div class="kpi"><b>339</b><span>pedidos do dono</span><span class="q">2026-09-17</span></div>
 <div class="kpi feito"><b>269</b><span>pedidos feitos</span><span class="q">2026-09-17</span></div>
-<div class="kpi parcial"><b>12</b><span>pedidos parciais</span><span class="q">2026-09-17</span></div>
-<div class="kpi planejado"><b>58</b><span>pedidos planejados</span><span class="q">2026-09-17</span></div>
+<div class="kpi parcial"><b>13</b><span>pedidos parciais</span><span class="q">2026-09-17</span></div>
+<div class="kpi planejado"><b>57</b><span>pedidos planejados</span><span class="q">2026-09-17</span></div>
 <div class="kpi"><b>194</b><span>guardas no catálogo</span><span class="q">2026-09-17</span></div>
 <div class="kpi"><b>23</b><span>catracas no fonte</span><span class="q">2026-09-17</span></div>
 <div class="kpi"><b class="curto">18/18</b><span>bancadas com resultado</span><span class="q">2026-09-17</span></div>
@@ -519,8 +519,8 @@ própria.</figcaption>
 <h2 id="s6"><span class="n">06 ·</span>O que o motor faz — medido</h2>
 <p class="sub">A mesma pergunta feita a quatro motores <b>vivos na mesma máquina</b>, com sonda de efeito — nunca «aceitou» — e um controle positivo que todos têm de recusar.</p>
 <div class="kpis">
-<div class="kpi"><b>19</b><span>capacidades perguntadas</span><span class="q">2026-09-16</span></div>
-<div class="kpi falta"><b>1</b><span>faltam no PhxSql</span><span class="q">2026-09-16</span></div>
+<div class="kpi"><b>19</b><span>capacidades perguntadas</span><span class="q">2026-09-17</span></div>
+<div class="kpi falta"><b>1</b><span>faltam no PhxSql</span><span class="q">2026-09-17</span></div>
 </div>
 <div class="rolo"><table><thead><tr><th>capacidade</th><th>PhxSql</th><th>a prova que rodou</th></tr></thead><tbody>
 <tr><td>Visão (<code>CREATE VIEW</code>)</td><td><span class="etiqueta e-tem">tem</span></td><td>CREATE VIEW v_c AS SELECT * FROM c e SELECT * FROM v_c devolveram as 1 linha(s) de `c`</td></tr>
@@ -536,22 +536,22 @@ própria.</figcaption>
 <tr><td>Coluna calculada (<code>GENERATED ALWAYS AS</code>)</td><td><span class="etiqueta e-tem">tem</span></td><td>b saiu 6</td></tr>
 <tr><td>Upsert (<code>ON CONFLICT</code> / <code>ON DUPLICATE KEY</code>)</td><td><span class="etiqueta e-tem">tem</span></td><td>aceitou</td></tr>
 <tr><td>Nível de isolamento acima de <code>READ COMMITTED</code></td><td><span class="etiqueta e-tem">tem</span></td><td>aceitou</td></tr>
-<tr><td>Trava por linha nas transações</td><td><span class="etiqueta e-tem">tem</span></td><td>gestor em crates/phxsql-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:704; pedida em crates/phxsql-server/src/servidor.rs:13489</td></tr>
+<tr><td>Trava por linha nas transações</td><td><span class="etiqueta e-tem">tem</span></td><td>gestor em crates/phxsql-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:833; pedida em crates/phxsql-server/src/servidor.rs:14595</td></tr>
 <tr><td>TLS no transporte</td><td><span class="etiqueta e-nao">não tem</span></td><td>crates/phxsql-server/src/rest.rs:578 — «TLS aqui: a saida honesta e um proxy que termine TLS na»</td></tr>
 <tr><td>Direito por COLUNA</td><td><span class="etiqueta e-tem">tem</span></td><td>o varrer de ana (salario negado) veio SEM a coluna; o de bea (controle, mesmo cadastro sem `colunas`) veio COM ela</td></tr>
 <tr><td>Recuperação a um ponto no tempo (PITR)</td><td><span class="etiqueta e-tem">tem</span></td><td>`ate`=corte devolveu [(1, &#x27;um alterado&#x27;), (2, &#x27;dois&#x27;)] (a 1 alterada, a 2, nada da 3); reaplicados=2, pulados=1</td></tr>
 <tr><td>Parâmetro em instrução preparada (<code>?</code>)</td><td><span class="etiqueta e-tem">tem</span></td><td>`WHERE id = ?` com `parametros:[1]` devolveu a linha 1; sem `parametros` recusou: [SP000018] esquema invalido: SQL, coluna 1: vieram 0 parametros e o co</td></tr>
 <tr><td>Dizer ONDE duas tabelas diferem</td><td><span class="etiqueta e-tem">tem</span></td><td>`diferencas` nomeou a chave [1] e a coluna `nome`: [{&#x27;chave&#x27;: [1], &#x27;colunas&#x27;: [&#x27;nome&#x27;], &#x27;a&#x27;: {&#x27;id&#x27;: 1, &#x27;nome&#x27;: &#x27;um&#x27;, &#x27;softdeleted&#x27;: False, &#x27;rownum&#x27;: 1}, &#x27;b&#x27;: {&#x27;id&#x27;: 1, &#x27;nome&#x27;: &#x27;dois&#x27;, &#x27;softdeleted&#x27;: False, &#x27;rownum&#x27;: 1}}]</td></tr>
 </tbody></table></div>
-<p class="fonte"><b>Os motores vivos nesta corrida:</b> sqlite 3.45.1 · mysql 8.0.46-0ubuntu0.24.04.3 · postgres 16.13 (Ubuntu 16.13-0ubuntu0.24.04.1) · phxsql phxsqld 0.18.0 (6e717e6579ad-sujo) x86_64-unknown-linux-gnu</p>
-<p class="fonte"><b>De onde sai:</b> <code>bancada/comparativo/resultados.json</code>, medido em <b>2026-09-16T05:17:23</b>. O texto de cada linha é o que a sonda observou, não um veredito escrito à mão.</p>
+<p class="fonte"><b>Os motores vivos nesta corrida:</b> sqlite 3.45.1 · mysql 8.0.46-0ubuntu0.24.04.3 · postgres 16.13 (Ubuntu 16.13-0ubuntu0.24.04.1) · phxsql phxsqld 0.18.0 (bb7e84186c0a-sujo) x86_64-unknown-linux-gnu</p>
+<p class="fonte"><b>De onde sai:</b> <code>bancada/comparativo/resultados.json</code>, medido em <b>2026-09-17T19:25:54</b>. O texto de cada linha é o que a sonda observou, não um veredito escrito à mão.</p>
 
 <h2 id="s7"><span class="n">07 ·</span>Os pedidos do dono</h2>
 <p class="sub">Um por linha do <code>docs/PENDENCIAS.md</code>, lido pelo mesmo <code>ler()</code> da página dos pedidos — duas contagens divergiriam na primeira mudança de legenda.</p>
 <div class="barras">
 <div class="barra-linha"><span class="l">Feito</span><span class="t"><i class="b-feito" style="width:79.35%"></i></span><span class="n">269 · 79,4%</span></div>
-<div class="barra-linha"><span class="l">Parcial</span><span class="t"><i class="b-parcial" style="width:3.54%"></i></span><span class="n">12 · 3,5%</span></div>
-<div class="barra-linha"><span class="l">Planejado</span><span class="t"><i class="b-planejado" style="width:17.11%"></i></span><span class="n">58 · 17,1%</span></div>
+<div class="barra-linha"><span class="l">Parcial</span><span class="t"><i class="b-parcial" style="width:3.83%"></i></span><span class="n">13 · 3,8%</span></div>
+<div class="barra-linha"><span class="l">Planejado</span><span class="t"><i class="b-planejado" style="width:16.81%"></i></span><span class="n">57 · 16,8%</span></div>
 </div>
 <div class="legenda"><span class="feito"><i></i>feito</span><span class="parcial"><i></i>parcial</span><span class="planejado"><i></i>planejado</span></div>
 <h3>Os dez pedidos abertos mais recentes</h3>
@@ -560,7 +560,7 @@ própria.</figcaption>
 <tr><td class="num">338</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>PARECER EXTERNO — a ordem das prioridades esta INVERTIDA: congelar conveniencia e abrir estabilizacao. As onze sprints do chat/robo/IA sao P2, nao P0</strong></td></tr>
 <tr><td class="num">337</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>DECISAO DO DONO — o parecer externo corrige o RACIOCINIO do nosso ACID e traz argumento novo contra uma justificativa da petrea de zero dependencias</strong></td></tr>
 <tr><td class="num">336</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>PARECER EXTERNO — SIGKILL nao e queda de energia: falta a matriz de classes de falha, e a nossa bancada mede menos do que o nome promete</strong></td></tr>
-<tr><td class="num">335</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>PARECER EXTERNO — SEIS contradicoes no dossie publicado: o contrato nao tem UMA versao da verdade</strong></td></tr>
+<tr><td class="num">335</td><td><span class="etiqueta e-parcial">Parcial</span></td><td><strong>PARECER EXTERNO — SEIS contradicoes no dossie publicado: o contrato nao tem UMA versao da verdade</strong></td></tr>
 <tr><td class="num">334</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>PARECER TECNICO EXTERNO 17/09/2026 — o ERRO DE ARITMETICA da soma das replicas, CORRIGIDO: nos publicamos que a replica acompanha o master, e ela NAO acompanha</strong></td></tr>
 <tr><td class="num">333</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>PEDIDO DO DONO — chat estilo WhatsApp e robô de mensagens estilo bot do Telegram dentro do PhxMail, mais agente de IA em outra porta com MCP (Ollama/Claude/ChatGPT): ONZE sprints, e o console nao acrescenta nenhuma</strong></td></tr>
 <tr><td class="num">332</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>O <code>extrair.py</code> conta <code>docs/</strong>.md</code> — e <code>docs/TECNOLOGIAS.md</code> E UM DELES: o gerador e entrada de si mesmo, e sozinho custa um giro extra do ponto fixo em toda rodada**</td></tr>
@@ -748,7 +748,7 @@ própria.</figcaption>
 <div class="kpi falta"><b>0</b><span>bancadas <b>não medidas</b></span><span class="q">2026-09-17</span></div>
 </div>
 <div class="rolo"><table><thead><tr><th>bancada e o que ela prova</th><th>medida em</th><th>o que saiu</th></tr></thead><tbody>
-<tr><td class="nome">Comparativo — o que falta aqui, contra quem tem<div class="prova">a mesma pergunta em quatro motores vivos, com um controle positivo que TODOS têm de recusar — e sonda de efeito, nunca «aceitou»</div></td><td class="q mono">2026-09-16T05:17:23</td><td class="v"><b>capacidades perguntadas</b> 19 · <b>faltam ou pela metade aqui</b> 1</td></tr>
+<tr><td class="nome">Comparativo — o que falta aqui, contra quem tem<div class="prova">a mesma pergunta em quatro motores vivos, com um controle positivo que TODOS têm de recusar — e sonda de efeito, nunca «aceitou»</div></td><td class="q mono">2026-09-17T19:25:54</td><td class="v"><b>capacidades perguntadas</b> 19 · <b>faltam ou pela metade aqui</b> 1</td></tr>
 <tr><td class="nome">Cobertura da tela sobre o protocolo<div class="prova">as duas listas saem do código — as operações do array OPERACOES e os arquivos da tela dos include_str! do http.rs</div></td><td class="q mono">2026-09-09T06:26:06</td><td class="v"><b>operações no catálogo</b> 136 · <b>alcançadas pela tela</b> 109</td></tr>
 <tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-17 02:38 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 4,3 s · <b>escrita aceita em</b> 4,3 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
 <tr><td class="nome">Replicação — quatro servidores<div class="prova">master e três espelhos no ar, com retrato SHA-256 de cada linha nos quatro</div></td><td class="q mono">2026-09-17</td><td class="v"><b>master</b> 45.117 linhas/s · <b>réplica aplica</b> 43.606 eventos/s · <b>alcance</b> 2,3 s · <b>os quatro iguais no fim</b> sim</td></tr>
@@ -862,8 +862,8 @@ calado nem se ignora calado.</div>
 <p class="sub">Esta seção <b>nasceu</b> porque o gerador existe: a lista dos documentos contados sai do código, não de uma cópia aqui.</p>
 <div class="kpis">
 <div class="kpi"><b>96</b><span>documentos contados</span><span class="q">2026-09-17</span></div>
-<div class="kpi"><b>69.139</b><span>linhas de documentação</span><span class="q">2026-09-17</span></div>
-<div class="kpi"><b>237</b><span>arquivos de cognição</span><span class="q">2026-09-17</span></div>
+<div class="kpi"><b>69.269</b><span>linhas de documentação</span><span class="q">2026-09-17</span></div>
+<div class="kpi"><b>238</b><span>arquivos de cognição</span><span class="q">2026-09-17</span></div>
 <div class="kpi"><b>7</b><span>páginas geradas e publicadas</span><span class="q">2026-09-17</span></div>
 <div class="kpi"><b>22</b><span>geradores no portão</span><span class="q">2026-09-17</span></div>
 </div>
@@ -871,7 +871,7 @@ calado nem se ignora calado.</div>
 <div class="rolo"><table><thead><tr><th>página</th><th class="num">KiB</th><th>quem a escreve</th></tr></thead><tbody>
 <tr><td class="mono">docs/dossie/dossie-phxsql-0.18.html</td><td class="num">2.638</td><td class="mono">docs/dossie/numeros-da-bancada.py</td></tr>
 <tr><td class="mono">docs/dossie/graficos.html</td><td class="num">43</td><td class="mono">docs/dossie/graficos-dos-testes.py</td></tr>
-<tr><td class="mono">docs/dossie/pedidos.html</td><td class="num">958</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
+<tr><td class="mono">docs/dossie/pedidos.html</td><td class="num">966</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
 <tr><td class="mono">docs/pmo/status-do-projeto.html</td><td class="num">56</td><td class="mono">docs/pmo/pagina-do-status-do-projeto.py</td></tr>
 <tr><td class="mono">docs/status/status-do-projeto.html</td><td class="num"><span class="mtime">— (esta página)</span></td><td class="mono">docs/status/riscos.py</td></tr>
 <tr><td class="mono">docs/dossie/status.html</td><td class="num">29</td><td class="mono">docs/dossie/pagina-de-status.py</td></tr>
@@ -880,16 +880,16 @@ calado nem se ignora calado.</div>
 <p class="fonte">O tamanho <b>desta</b> página não aparece de propósito: escrevê-lo muda o tamanho dela, e o número seguinte já seria outro — número que não chega a ponto fixo não é número medido, é número que persegue a própria cauda.</p>
 <h3>Os dez maiores documentos</h3>
 <div class="barras">
-<div class="barra-linha"><span class="l"><code>CHANGELOG.md</code></span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">5.406</span></div>
-<div class="barra-linha"><span class="l"><code>DESEMPENHO.md</code></span><span class="t"><i class="b-cheia" style="width:71.35%"></i></span><span class="n">3.857</span></div>
-<div class="barra-linha"><span class="l"><code>MANUAL.txt</code></span><span class="t"><i class="b-cheia" style="width:70.46%"></i></span><span class="n">3.809</span></div>
-<div class="barra-linha"><span class="l"><code>SEGURANCA.md</code></span><span class="t"><i class="b-cheia" style="width:61.43%"></i></span><span class="n">3.321</span></div>
-<div class="barra-linha"><span class="l"><code>CONCORRENCIA.md</code></span><span class="t"><i class="b-cheia" style="width:48.50%"></i></span><span class="n">2.622</span></div>
-<div class="barra-linha"><span class="l"><code>REPLICACAO.md</code></span><span class="t"><i class="b-cheia" style="width:45.12%"></i></span><span class="n">2.439</span></div>
-<div class="barra-linha"><span class="l"><code>FORMATO.md</code></span><span class="t"><i class="b-cheia" style="width:42.95%"></i></span><span class="n">2.322</span></div>
-<div class="barra-linha"><span class="l"><code>TESTES.md</code></span><span class="t"><i class="b-cheia" style="width:38.86%"></i></span><span class="n">2.101</span></div>
-<div class="barra-linha"><span class="l"><code>CATRACAS.md</code></span><span class="t"><i class="b-cheia" style="width:33.59%"></i></span><span class="n">1.816</span></div>
-<div class="barra-linha"><span class="l"><code>PESQUISA-MVCC-E-FORMATO.md</code></span><span class="t"><i class="b-cheia" style="width:28.63%"></i></span><span class="n">1.548</span></div>
+<div class="barra-linha"><span class="l"><code>CHANGELOG.md</code></span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">5.507</span></div>
+<div class="barra-linha"><span class="l"><code>DESEMPENHO.md</code></span><span class="t"><i class="b-cheia" style="width:70.04%"></i></span><span class="n">3.857</span></div>
+<div class="barra-linha"><span class="l"><code>MANUAL.txt</code></span><span class="t"><i class="b-cheia" style="width:69.17%"></i></span><span class="n">3.809</span></div>
+<div class="barra-linha"><span class="l"><code>SEGURANCA.md</code></span><span class="t"><i class="b-cheia" style="width:60.31%"></i></span><span class="n">3.321</span></div>
+<div class="barra-linha"><span class="l"><code>CONCORRENCIA.md</code></span><span class="t"><i class="b-cheia" style="width:47.61%"></i></span><span class="n">2.622</span></div>
+<div class="barra-linha"><span class="l"><code>REPLICACAO.md</code></span><span class="t"><i class="b-cheia" style="width:44.29%"></i></span><span class="n">2.439</span></div>
+<div class="barra-linha"><span class="l"><code>FORMATO.md</code></span><span class="t"><i class="b-cheia" style="width:42.16%"></i></span><span class="n">2.322</span></div>
+<div class="barra-linha"><span class="l"><code>TESTES.md</code></span><span class="t"><i class="b-cheia" style="width:38.15%"></i></span><span class="n">2.101</span></div>
+<div class="barra-linha"><span class="l"><code>CATRACAS.md</code></span><span class="t"><i class="b-cheia" style="width:32.98%"></i></span><span class="n">1.816</span></div>
+<div class="barra-linha"><span class="l"><code>PESQUISA-MVCC-E-FORMATO.md</code></span><span class="t"><i class="b-cheia" style="width:28.11%"></i></span><span class="n">1.548</span></div>
 </div>
 <p class="fonte"><b>De onde sai:</b> o <code>arquivos_de_doc()</code> e o <code>linhas_de_doc()</code> de <code>docs/dossie/numeros-do-projeto.py</code> — a mesma receita que alimenta o <code>CAPABILITIES.json</code>, e por isso os dois números não podem divergir. As páginas saem dos <b>alvos</b> do <code>PLANO</code> de <code>docs/dossie/portao-dos-geradores.py</code>: página nova entra na conta sozinha no dia em que o gerador dela entrar no portão.</p>
 
@@ -930,6 +930,7 @@ calado nem se ignora calado.</div>
 <h2 id="s23"><span class="n">23 ·</span>As últimas frentes</h2>
 <p class="sub">Do próprio <code>git log</code>, só leitura. O commit conta a decisão e o motivo, não a lista de arquivos.</p>
 <div class="rolo"><table><thead><tr><th>commit</th><th>quando</th><th>o que decidiu</th></tr></thead><tbody>
+<tr><td class="mono">bb7e841</td><td class="q">2026-09-17 18:21</td><td>Um parecer de fora achou em doze paginas o que seis revisoes minhas nao acharam</td></tr>
 <tr><td class="mono">91340c3</td><td class="q">2026-09-17 17:09</td><td>Chat e robo no PhxMail: a licenca veio antes, e o long-poll que eu recomendei estava errado</td></tr>
 <tr><td class="mono">37deb4e</td><td class="q">2026-09-17 16:39</td><td>Cinco pedidos, e o quinto nasceu de um gerador que se conta a si mesmo</td></tr>
 <tr><td class="mono">b7f0116</td><td class="q">2026-09-17 15:56</td><td>Pedidos 326 e 327: o servico de artefatos nomeou a causa de dois achados que estavam ha dias sem diagnostico</td></tr>
@@ -939,7 +940,6 @@ calado nem se ignora calado.</div>
 <tr><td class="mono">acfaf60</td><td class="q">2026-09-17 14:43</td><td>O Uuid nasce sozinho -- e a «uma linha» que eu mandei escrever teria inventado um pai que nao existe</td></tr>
 <tr><td class="mono">4e5ed51</td><td class="q">2026-09-17 14:21</td><td>20 caixas e 1 servidor: o parecer do papel C, o pedido 325, e a moldura minha que ele inverteu</td></tr>
 <tr><td class="mono">32b5b19</td><td class="q">2026-09-17 14:12</td><td>Adiar o .ndx: 2,10x na tabela vazia, PREJUIZO na tabela que ja tem dados, e a thread que para o banco inteiro por 1,63 s</td></tr>
-<tr><td class="mono">b112867</td><td class="q">2026-09-17 13:58</td><td>A catraca subiu porque uma porta compartilhada virou porta privada -- e o codigo ficou mais barato</td></tr>
 </tbody></table></div>
 <p class="fonte"><b>De onde sai:</b> <code>git log --no-merges -n 10</code> na raiz do repositório. Commit novo muda esta seção — e aí ela estava velha mesmo, que é o que o portão dos geradores existe para pegar.</p>
 
@@ -978,7 +978,7 @@ calado nem se ignora calado.</div>
 <div class="nota g"><b>As quatro que faltavam nasceram em 16/09/2026, e nenhuma nasceu pelo atalho.</b> Riscos e Dívida técnica (pedido 264) exigiram um <code>docs/RISCOS.md</code> tabelado e uma marca <code>// DIVIDA:</code> no fonte; Telemetria e logs (265) exigiu que a bancada passasse a gravar <code>resultados.json</code>, porque sem ele não havia a data em que o número foi medido; Antes × Depois (266) exigiu uma série versionada, porque o <code>CAPABILITIES.json</code> é sobrescrito e só guarda o agora. Nos quatro casos <b>a fonte veio antes do gerador</b> — é isso que a lei cobra, e é por isso que ela demora mais que digitar o número.</div>
 <div class="nota v"><b>Por que isto é a seção mais importante da página.</b> O exemplo trazia <b>677 números no texto visível, todos digitados à mão</b>. Adotá-lo como veio criaria 677 lugares onde um número envelhece calado — e esta casa já pagou isso quatro vezes: o selo da capa parado numa versão por quatro lançamentos, 198 pedidos onde eram 203, 428 testes onde eram 451, 780 KiB de interface onde eram 1.032. A quarta ensina o alcance da lei: <b>gerador certo chamado pela metade entrega número velho anunciando sucesso.</b></div>
 <footer>
-  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 17/09/2026 18:14 UTC,
+  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 17/09/2026 19:39 UTC,
   pelo comando <code>./status-html.sh</code>. <b>Nenhum número desta página foi
   digitado</b>: cada um sai de um gerador, e cada seção diz de qual. Onde o
   gerador não existe, a seção <b>não nasceu</b> — está nomeada na §25, com o

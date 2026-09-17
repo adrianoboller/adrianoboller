@@ -108,9 +108,9 @@ mesmo motivo que o rodapé já errou uma vez.
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
 | JavaScript (prova ponta a ponta) | `testes-web/` | 53 | 11059 |
-| Python (bancada de medicao) | `bancada/` | 117 | 53242 |
+| Python (bancada de medicao) | `bancada/` | 117 | 53843 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2816 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 405 | 100714 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 406 | 100827 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 32 | 13481 |
 <!-- /GERADO -->
 
@@ -492,7 +492,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **339** pedidos numerados; **54** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **339** pedidos numerados; **55** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -550,6 +550,7 @@ proposta de voltar sem medição nova.
 | 308 | **F (bateria) — quatro `resultados.json` de replicação/cluster não trazem campo de data, e a página de testes cai no `mtime` — que já mentiu uma vez nesta rodada** |
 | 316 | **A guarda que impede transplantar um slot cifrado de um `.reg` para outro existe POR CONSEQUENCIA, e ninguem a escreveu** |
 | 331 | **Chave COMPOSTA nao replica no modo bidirecional: a tabela e recusada inteira — e o proprio fonte pede este pedido por escrito** |
+| 335 | **PARECER EXTERNO — SEIS contradicoes no dossie publicado: o contrato nao tem UMA versao da verdade** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —

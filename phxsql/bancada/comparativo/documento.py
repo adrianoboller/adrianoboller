@@ -65,6 +65,19 @@ class Texto:
     def l(self, txt=""):
         self.partes.append(txt)
 
+    def cita(self, txt, itens=()):
+        """Paragrafo em citacao de bloco, com `>` em TODA linha.
+
+        `itens` entram na MESMA citacao: uma linha em branco entre dois `>`
+        abre duas citacoes, e a lista se desprende da frase que a apresenta.
+        """
+        enchido = textwrap.fill(" ".join(txt.split()), COLUNA - 2)
+        corpo = ["> " + x for x in enchido.split("\n")]
+        if itens:
+            corpo += [">"] + [f"> - {i}" for i in itens]
+        self.partes.append("\n".join(corpo))
+        self.partes.append("")
+
     def cabeca(self, titulo):
         self.secao += 1
         self.partes += ["---", "", f"## {self.secao}. {titulo}", ""]
@@ -125,6 +138,58 @@ def escrever(d):
     t.l("> Refaça com `python3 bancada/comparativo/medir.py` e depois")
     t.l("> `python3 bancada/comparativo/documento.py`. **Este arquivo não se")
     t.l("> edita** — a prosa mora no gerador, e a medição, no `resultados.json`.")
+    t.l()
+
+    # ------------------------------------------- o ambiente, ou a falta dele
+    #
+    # **Gerador que faz menos do que o nome promete tem de DIZER que fez
+    # menos.** Uma corrida gravada antes de 17/09/2026 nao tem `ambiente`, e
+    # omitir o bloco em silencio publicaria a matriz como se ela fosse
+    # refazivel. Entao a ausencia aparece, com o comando ao lado.
+    amb = d.get("ambiente")
+    cn = d.get("controle_negativo")
+
+    def milhar(kb):
+        """`16482220 kB` -> `16.482.220 kB`. O numero e o que o
+        `/proc/meminfo` deu; muda a escrita, nao a medida."""
+        n, _, resto = str(kb).partition(" ")
+        if not n.isdigit():
+            return str(kb)
+        return f"{int(n):,}".replace(",", ".") + (" " + resto if resto else "")
+    if not amb:
+        t.cita("""**Esta corrida não gravou o ambiente.** Ela é de antes de
+            17/09/2026, quando o medidor passou a registrar commit, estado da
+            árvore, `sha256` do binário, sistema e configuração. Sem isso a
+            matriz não se refaz: rode
+            `python3 bancada/comparativo/medir.py` de novo.""")
+    else:
+        t.p(f"""**O ambiente da corrida, para que ela se refaça:** commit
+            `{amb['commit'][:12]}` no branch `{amb['branch']}`, árvore
+            **{amb['arvore']}**, `{amb['uname']}` com {amb['cpus']} CPUs e
+            {milhar(amb['memoria_total'])} de memória, e o `phxsqld` que respondeu tem
+            `sha256` `{amb['sha256_phxsqld'][:16]}…`. A configuração do
+            servidor está no `resultados.json`, com `token` e `senha_hash`
+            **tarjados** — a chave fica visível, o valor não, porque «senha
+            nunca em texto puro» alcança artefato versionado.""")
+    if cn:
+        aceitou = cn.get("aceitou_o_que_devia_recusar") or []
+        t.p(f"""**E o controle negativo, que é a metade que faltava da prova
+            real:** cada item tem um gêmeo que *tem de ser recusado* — por
+            efeito (a linha que viola o `CHECK`, a escrita na coluna
+            calculada) ou por resolução (nomear dentro do construto algo que
+            não existe). Ele roda só onde a positiva deu `tem`, porque é o
+            veredito afirmativo que pode ser falso: «passou» não distingue «o
+            motor entendeu» de «o motor ignorou o que não entendeu».
+            Nesta corrida **{cn['gemeos_recusaram']}** gêmeos recusaram como
+            devia e **{len(aceitou)}**
+            {'aceitou' if len(aceitou) == 1 else 'aceitaram'} o que devia
+            recusar.""")
+        if aceitou:
+            t.cita("""**As células abaixo dizem `tem`, e a aceitação delas
+                não prova o construto** — o gêmeo passou junto. Trocar o
+                estado é decisão com dado na mão, e o dado é este:""",
+                   [f"`{i.split('/', 1)[0]}` em **{i.split('/', 1)[1]}**"
+                    for i in aceitou])
     t.l()
 
     # ---------------------------------------------------------------- §1

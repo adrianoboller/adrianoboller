@@ -1,10 +1,59 @@
 {
-  "quando": "2026-09-16T05:17:23",
+  "quando": "2026-09-17T19:25:54",
+  "ambiente": {
+    "commit": "bb7e84186c0a862add8814095f381c59b095a2c7",
+    "branch": "claude/capacidades-disponiveis-y6auxh",
+    "arvore": "SUJA: 6 arquivo(s) de entrada fora do commit — `phxsql/bancada/comparativo/LEIA-ME.md`, `phxsql/bancada/comparativo/documento.py`, `phxsql/bancada/comparativo/medir.py`, `phxsql/bancada/comparativo/prova-dos-portoes.py`, `phxsql/docs/PENDENCIAS.md`, `phxsql/docs/cognicao/cognicao_flock-nao-e-reentrante-e-eu-apliquei-a-lei-a-quem-ja-a-cumpria_20260917_1912.md`",
+    "sha256_phxsqld": "bab749c9684b5e1eb18faecc2cfd5df146799e9bb97c3e689c17c2d50b7c5952",
+    "uname": "Linux 6.18.44-fc-v33 x86_64",
+    "cpus": 4,
+    "memoria_total": "16482220 kB",
+    "configuracao_do_phxsqld": {
+      "base": "base",
+      "bind": "127.0.0.1:7731",
+      "token": "‹omitido: pétrea — senha nunca em texto puro, nem o hash›",
+      "max_linhas": 25000,
+      "web": {
+        "ligado": false
+      },
+      "usuarios": [
+        {
+          "login": "adm",
+          "nome": "Adriano",
+          "id": 10,
+          "nivel": "admin",
+          "senha_hash": "‹omitido: pétrea — senha nunca em texto puro, nem o hash›",
+          "bases": {
+            "*": {
+              "ler": true,
+              "inserir": true,
+              "alterar": true,
+              "excluir": true,
+              "criar": true,
+              "administrar": true,
+              "verificar": true,
+              "reindexar": true
+            }
+          }
+        }
+      ]
+    },
+    "porta": 7731,
+    "como_refazer": "python3 bancada/comparativo/medir.py"
+  },
+  "controle_negativo": {
+    "o_que_e": "o gêmeo de cada item que TEM de ser recusado. Roda só onde a positiva deu `tem`, porque é o veredito afirmativo que pode ser falso.",
+    "gemeos_recusaram": 43,
+    "sem_caso": 32,
+    "aceitou_o_que_devia_recusar": [
+      "view/sqlite"
+    ]
+  },
   "motores_vivos": {
     "sqlite": "3.45.1",
     "mysql": "8.0.46-0ubuntu0.24.04.3",
     "postgres": "16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)",
-    "phxsql": "phxsqld 0.18.0 (6e717e6579ad-sujo) x86_64-unknown-linux-gnu"
+    "phxsql": "phxsqld 0.18.0 (bb7e84186c0a-sujo) x86_64-unknown-linux-gnu"
   },
   "sem_motor_nesta_maquina": {
     "cassandra": "docs/CASSANDRA.md, fonte da 5.0.10 commit 7b5ab44, lido em sessão anterior",
@@ -40,7 +89,32 @@
       "hfsql": [
         "tem",
         "a folha lista visões"
-      ]
+      ],
+      "cru": {
+        "phxsql": "não perguntado por SQL: este item vai ao PROTOCOLO na seção das sondas de efeito",
+        "mysql": "$ mysql -N -B cmp_phx -e 'CREATE VIEW v_c AS SELECT * FROM c'\n-- codigo de saida: 0\n-- stdout: (vazio)\n-- stderr: (vazio)",
+        "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'CREATE VIEW v_c AS SELECT * FROM c'\n-- codigo de saida: 0\n-- stdout: CREATE VIEW\n-- stderr: (vazio)",
+        "sqlite": "$ sqlite3 :memory:\nCREATE VIEW v_c AS SELECT * FROM c\n-- aceitou, sem erro"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "o corpo da visão é resolvido: coluna que não existe recusa -- MEDIDO: vale em MySQL(R) e PostgreSQL(R); no SQLite(R) a resolução é diferida para a consulta, então a aceitação da criação não prova o corpo",
+        "phxsql": [
+          "sem-caso",
+          "o gêmeo deste item é a própria sonda de efeito, mais abaixo, com o controle do leitor do lado"
+        ],
+        "mysql": [
+          "recusou",
+          "$ mysql -N -B cmp_phx -e 'CREATE VIEW v_neg AS SELECT nao_existe FROM c'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR 1054 (42S22) at line 1: Unknown column 'nao_existe' in 'field list'"
+        ],
+        "postgres": [
+          "recusou",
+          "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'CREATE VIEW v_neg AS SELECT nao_existe FROM c'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR:  column \"nao_existe\" does not exist\nLINE 1: CREATE VIEW v_neg AS SELECT nao_existe FROM c\n                                    ^"
+        ],
+        "sqlite": [
+          "aceitou",
+          "CREATE VIEW v_neg AS SELECT nao_existe FROM c\n-- ACEITOU, e devia ter recusado"
+        ]
+      }
     },
     {
       "chave": "cte",
@@ -69,7 +143,32 @@
       "hfsql": [
         "citado",
         "não apurado na folha"
-      ]
+      ],
+      "cru": {
+        "phxsql": "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'WITH x AS (SELECT * FROM c) SELECT * FROM x'}\n<- {\"ok\": true, \"op\": \"sql\", \"resultado\": {\"sql\": \"WITH x AS (SELECT * FROM c) SELECT * FROM x\", \"op\": \"consultar\", \"notas\": [\"SELECT composto (WITH/subconsulta/IN/junção/janela) vira `consultar`: cada pedaco roda pelo MESMO portao de permissao que qualquer outro pedido -- e o que faz da composicao uma composicao, e nao uma porta dos fundos\", \"SELECT * -- todas as colunas da linha composta\"], \"devolvidas\": 1, \"achadas\": 1, \"linhas\": [{\"rowid\": 1, \"id\": 1, \"nome\": \"um\", \"cidade\": \"Blumenau\", \"preco\": \"10.00\", \"softdeleted\": false, \"rownum\": 1}], \"ms\": 0}, \"ms\": 0}",
+        "mysql": "$ mysql -N -B cmp_phx -e 'WITH x AS (SELECT * FROM c) SELECT * FROM x'\n-- codigo de saida: 0\n-- stdout: (vazio)\n-- stderr: (vazio)",
+        "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'WITH x AS (SELECT * FROM c) SELECT * FROM x'\n-- codigo de saida: 0\n-- stdout: id | nome | cidade | preco \n----+------+--------+-------\n(0 rows)\n-- stderr: (vazio)",
+        "sqlite": "$ sqlite3 :memory:\nWITH x AS (SELECT * FROM c) SELECT * FROM x\n-- aceitou, sem erro"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "o corpo do `WITH` é resolvido: coluna que não existe recusa",
+        "phxsql": [
+          "recusou",
+          "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'WITH x AS (SELECT * FROM c) SELECT * FROM x WHERE nao_existe = 1'}\n<- {\"ok\": false, \"op\": \"sql\", \"erro\": \"[SP000018] esquema invalido: a expressao usa a coluna \\\"nao_existe\\\", que a tabela nao tem\", \"codigo\": 2001, \"nome\": \"ESQUEMA_INVALIDO\", \"classe\": \"esquema\", \"sprint\": \"SP000018\", \"repetir\": false, \"ms\": 0}"
+        ],
+        "mysql": [
+          "recusou",
+          "$ mysql -N -B cmp_phx -e 'WITH x AS (SELECT * FROM c) SELECT * FROM x WHERE nao_existe = 1'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR 1054 (42S22) at line 1: Unknown column 'nao_existe' in 'where clause'"
+        ],
+        "postgres": [
+          "recusou",
+          "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'WITH x AS (SELECT * FROM c) SELECT * FROM x WHERE nao_existe = 1'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR:  column \"nao_existe\" does not exist\nLINE 1: WITH x AS (SELECT * FROM c) SELECT * FROM x WHERE nao_existe...\n                                                          ^"
+        ],
+        "sqlite": [
+          "recusou",
+          "WITH x AS (SELECT * FROM c) SELECT * FROM x WHERE nao_existe = 1\n-- OperationalError: no such column: nao_existe"
+        ]
+      }
     },
     {
       "chave": "subconsulta",
@@ -98,7 +197,32 @@
       "hfsql": [
         "citado",
         "não apurado na folha"
-      ]
+      ],
+      "cru": {
+        "phxsql": "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'SELECT * FROM c WHERE id IN (SELECT id FROM c)'}\n<- {\"ok\": true, \"op\": \"sql\", \"resultado\": {\"sql\": \"SELECT * FROM c WHERE id IN (SELECT id FROM c)\", \"op\": \"consultar\", \"notas\": [\"SELECT composto (WITH/subconsulta/IN/junção/janela) vira `consultar`: cada pedaco roda pelo MESMO portao de permissao que qualquer outro pedido -- e o que faz da composicao uma composicao, e nao uma porta dos fundos\", \"1 IN (SELECT …) rodam ANTES, cada um pelo portao, e viram conjunto\", \"SELECT * -- todas as colunas da linha composta\"], \"devolvidas\": 1, \"achadas\": 1, \"linhas\": [{\"rowid\": 1, \"id\": 1, \"nome\": \"um\", \"cidade\": \"Blumenau\", \"preco\": \"10.00\", \"softdeleted\": false, \"rownum\": 1}], \"ms\": 0}, \"ms\": 0}",
+        "mysql": "$ mysql -N -B cmp_phx -e 'SELECT * FROM c WHERE id IN (SELECT id FROM c)'\n-- codigo de saida: 0\n-- stdout: (vazio)\n-- stderr: (vazio)",
+        "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'SELECT * FROM c WHERE id IN (SELECT id FROM c)'\n-- codigo de saida: 0\n-- stdout: id | nome | cidade | preco \n----+------+--------+-------\n(0 rows)\n-- stderr: (vazio)",
+        "sqlite": "$ sqlite3 :memory:\nSELECT * FROM c WHERE id IN (SELECT id FROM c)\n-- aceitou, sem erro"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "a subconsulta é compilada: coluna que não existe recusa",
+        "phxsql": [
+          "recusou",
+          "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'SELECT * FROM c WHERE id IN (SELECT nao_existe FROM c)'}\n<- {\"ok\": false, \"op\": \"sql\", \"erro\": \"[SP000018] esquema invalido: o \\\"campo\\\" do \\\"em\\\"[0] pede \\\"nao_existe\\\", que nao e coluna do resultado. As que ha: rowid, id, nome, cidade, preco, softdeleted, rownum\", \"codigo\": 2001, \"nome\": \"ESQUEMA_INVALIDO\", \"classe\": \"esquema\", \"sprint\": \"SP000018\", \"repetir\": false, \"ms\": 0}"
+        ],
+        "mysql": [
+          "recusou",
+          "$ mysql -N -B cmp_phx -e 'SELECT * FROM c WHERE id IN (SELECT nao_existe FROM c)'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR 1054 (42S22) at line 1: Unknown column 'nao_existe' in 'field list'"
+        ],
+        "postgres": [
+          "recusou",
+          "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'SELECT * FROM c WHERE id IN (SELECT nao_existe FROM c)'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR:  column \"nao_existe\" does not exist\nLINE 1: SELECT * FROM c WHERE id IN (SELECT nao_existe FROM c)\n                                            ^"
+        ],
+        "sqlite": [
+          "recusou",
+          "SELECT * FROM c WHERE id IN (SELECT nao_existe FROM c)\n-- OperationalError: no such column: nao_existe"
+        ]
+      }
     },
     {
       "chave": "funcao_de_janela",
@@ -127,7 +251,32 @@
       "hfsql": [
         "citado",
         "não apurado na folha"
-      ]
+      ],
+      "cru": {
+        "phxsql": "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'SELECT ROW_NUMBER() OVER (ORDER BY id) FROM c'}\n<- {\"ok\": true, \"op\": \"sql\", \"resultado\": {\"sql\": \"SELECT ROW_NUMBER() OVER (ORDER BY id) FROM c\", \"op\": \"consultar\", \"notas\": [\"SELECT composto (WITH/subconsulta/IN/junção/janela) vira `consultar`: cada pedaco roda pelo MESMO portao de permissao que qualquer outro pedido -- e o que faz da composicao uma composicao, e nao uma porta dos fundos\", \"1 janela(s) ROW_NUMBER() OVER (...) -- so essa funcao nesta rodada\"], \"colunas\": [\"row_number\"], \"devolvidas\": 1, \"achadas\": 1, \"linhas\": [{\"row_number\": 1}], \"ms\": 0}, \"ms\": 0}",
+        "mysql": "$ mysql -N -B cmp_phx -e 'SELECT ROW_NUMBER() OVER (ORDER BY id) FROM c'\n-- codigo de saida: 0\n-- stdout: (vazio)\n-- stderr: (vazio)",
+        "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'SELECT ROW_NUMBER() OVER (ORDER BY id) FROM c'\n-- codigo de saida: 0\n-- stdout: row_number \n------------\n(0 rows)\n-- stderr: (vazio)",
+        "sqlite": "$ sqlite3 :memory:\nSELECT ROW_NUMBER() OVER (ORDER BY id) FROM c\n-- aceitou, sem erro"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "o `OVER` é lido: ordenar por coluna que não existe recusa",
+        "phxsql": [
+          "recusou",
+          "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'SELECT ROW_NUMBER() OVER (ORDER BY nao_existe) FROM c'}\n<- {\"ok\": false, \"op\": \"sql\", \"erro\": \"[SP000018] esquema invalido: a ordem da janela pede \\\"nao_existe\\\", que nao e coluna do resultado. As que ha: rowid, id, nome, cidade, preco, softdeleted, rownum\", \"codigo\": 2001, \"nome\": \"ESQUEMA_INVALIDO\", \"classe\": \"esquema\", \"sprint\": \"SP000018\", \"repetir\": false, \"ms\": 0}"
+        ],
+        "mysql": [
+          "recusou",
+          "$ mysql -N -B cmp_phx -e 'SELECT ROW_NUMBER() OVER (ORDER BY nao_existe) FROM c'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR 1054 (42S22) at line 1: Unknown column 'nao_existe' in 'window order by'"
+        ],
+        "postgres": [
+          "recusou",
+          "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'SELECT ROW_NUMBER() OVER (ORDER BY nao_existe) FROM c'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR:  column \"nao_existe\" does not exist\nLINE 1: SELECT ROW_NUMBER() OVER (ORDER BY nao_existe) FROM c\n                                           ^"
+        ],
+        "sqlite": [
+          "recusou",
+          "SELECT ROW_NUMBER() OVER (ORDER BY nao_existe) FROM c\n-- OperationalError: no such column: nao_existe"
+        ]
+      }
     },
     {
       "chave": "group_by",
@@ -156,7 +305,32 @@
       "hfsql": [
         "tem",
         "SQL completo na folha"
-      ]
+      ],
+      "cru": {
+        "phxsql": "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'SELECT cidade, COUNT(*) FROM c GROUP BY cidade'}\n<- {\"ok\": true, \"op\": \"sql\", \"resultado\": {\"sql\": \"SELECT cidade, COUNT(*) FROM c GROUP BY cidade\", \"op\": \"agrupar\", \"notas\": [\"GROUP BY vira `agrupar`: 1 coluna(s) de agrupamento -- sem indice nenhum, porque agregar precisa varrer os grupos inteiros\"], \"colunas\": [{\"nome\": \"cidade\", \"tipo\": \"Str(60)\"}, {\"nome\": \"contagem\", \"tipo\": \"UInt8\"}], \"database\": \"cmp\", \"tabela\": \"c\", \"grupos\": 1, \"devolvidas\": 1, \"examinadas\": 1, \"consideradas\": 1, \"truncado\": false, \"linhas\": [{\"cidade\": \"Blumenau\", \"contagem\": 1}], \"ms\": 0}, \"ms\": 0}",
+        "mysql": "$ mysql -N -B cmp_phx -e 'SELECT cidade, COUNT(*) FROM c GROUP BY cidade'\n-- codigo de saida: 0\n-- stdout: (vazio)\n-- stderr: (vazio)",
+        "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'SELECT cidade, COUNT(*) FROM c GROUP BY cidade'\n-- codigo de saida: 0\n-- stdout: cidade | count \n--------+-------\n(0 rows)\n-- stderr: (vazio)",
+        "sqlite": "$ sqlite3 :memory:\nSELECT cidade, COUNT(*) FROM c GROUP BY cidade\n-- aceitou, sem erro"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "o `GROUP BY` é resolvido: agrupar por coluna que não existe recusa",
+        "phxsql": [
+          "recusou",
+          "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'SELECT cidade, COUNT(*) FROM c GROUP BY nao_existe'}\n<- {\"ok\": false, \"op\": \"sql\", \"erro\": \"[SP000018] esquema invalido: a coluna \\\"cidade\\\" aparece no SELECT mas nao esta no GROUP BY e nao e agregado -- cada coluna do resultado tem de ser uma das colunas do agrupamento ou uma chamada de agregado\", \"codigo\": 2001, \"nome\": \"ESQUEMA_INVALIDO\", \"classe\": \"esquema\", \"sprint\": \"SP000018\", \"repetir\": false, \"ms\": 0}"
+        ],
+        "mysql": [
+          "recusou",
+          "$ mysql -N -B cmp_phx -e 'SELECT cidade, COUNT(*) FROM c GROUP BY nao_existe'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR 1054 (42S22) at line 1: Unknown column 'nao_existe' in 'group statement'"
+        ],
+        "postgres": [
+          "recusou",
+          "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'SELECT cidade, COUNT(*) FROM c GROUP BY nao_existe'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR:  column \"nao_existe\" does not exist\nLINE 1: SELECT cidade, COUNT(*) FROM c GROUP BY nao_existe\n                                                ^"
+        ],
+        "sqlite": [
+          "recusou",
+          "SELECT cidade, COUNT(*) FROM c GROUP BY nao_existe\n-- OperationalError: no such column: nao_existe"
+        ]
+      }
     },
     {
       "chave": "expressao_no_where",
@@ -185,7 +359,32 @@
       "hfsql": [
         "tem",
         "SQL completo na folha"
-      ]
+      ],
+      "cru": {
+        "phxsql": "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'SELECT * FROM c WHERE preco * 1.1 > 100'}\n<- {\"ok\": true, \"op\": \"sql\", \"resultado\": {\"sql\": \"SELECT * FROM c WHERE preco * 1.1 > 100\", \"op\": \"varrer\", \"notas\": [\"varredura com expressao: nao ha indice para esta forma\", \"sem ORDER BY a ordem e a de DIGITACAO, que no PhxSql e estavel: o .reg nunca reaproveita slot excluido\", \"sem LIMIT o servidor aplica o teto dele (`max_linhas` do config.json), e a resposta diz se ha mais\"], \"registros\": 1, \"visiveis\": 1, \"marcadas\": 0, \"devolvidas\": 0, \"examinadas\": 1, \"modo\": \"posicao\", \"salto\": \"passo\", \"cursor_inicio\": 1, \"cursor_fim\": 1, \"rownum_inicio\": 1, \"rownum_fim\": 1, \"ha_mais\": false, \"ha_antes\": false, \"ordem\": \"digitacao\", \"linhas\": []}, \"ms\": 0}",
+        "mysql": "$ mysql -N -B cmp_phx -e 'SELECT * FROM c WHERE preco * 1.1 > 100'\n-- codigo de saida: 0\n-- stdout: (vazio)\n-- stderr: (vazio)",
+        "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'SELECT * FROM c WHERE preco * 1.1 > 100'\n-- codigo de saida: 0\n-- stdout: id | nome | cidade | preco \n----+------+--------+-------\n(0 rows)\n-- stderr: (vazio)",
+        "sqlite": "$ sqlite3 :memory:\nSELECT * FROM c WHERE preco * 1.1 > 100\n-- aceitou, sem erro"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "a expressão é compilada: operando que não existe recusa",
+        "phxsql": [
+          "recusou",
+          "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'SELECT * FROM c WHERE nao_existe * 1.1 > 100'}\n<- {\"ok\": false, \"op\": \"sql\", \"erro\": \"[SP000018] esquema invalido: a expressao usa a coluna \\\"nao_existe\\\", que nao existe em c\", \"codigo\": 2001, \"nome\": \"ESQUEMA_INVALIDO\", \"classe\": \"esquema\", \"sprint\": \"SP000018\", \"repetir\": false, \"ms\": 0}"
+        ],
+        "mysql": [
+          "recusou",
+          "$ mysql -N -B cmp_phx -e 'SELECT * FROM c WHERE nao_existe * 1.1 > 100'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR 1054 (42S22) at line 1: Unknown column 'nao_existe' in 'where clause'"
+        ],
+        "postgres": [
+          "recusou",
+          "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'SELECT * FROM c WHERE nao_existe * 1.1 > 100'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR:  column \"nao_existe\" does not exist\nLINE 1: SELECT * FROM c WHERE nao_existe * 1.1 > 100\n                              ^"
+        ],
+        "sqlite": [
+          "recusou",
+          "SELECT * FROM c WHERE nao_existe * 1.1 > 100\n-- OperationalError: no such column: nao_existe"
+        ]
+      }
     },
     {
       "chave": "indice_parcial",
@@ -214,7 +413,32 @@
       "hfsql": [
         "tem",
         "a folha lista índice parcial"
-      ]
+      ],
+      "cru": {
+        "phxsql": "não perguntado por SQL: este item vai ao PROTOCOLO na seção das sondas de efeito",
+        "mysql": "$ mysql -N -B cmp_phx -e 'CREATE INDEX ip ON c (id) WHERE id > 0'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'WHERE id > 0' at line 1",
+        "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'CREATE INDEX ip ON c (id) WHERE id > 0'\n-- codigo de saida: 0\n-- stdout: CREATE INDEX\n-- stderr: (vazio)",
+        "sqlite": "$ sqlite3 :memory:\nCREATE INDEX ip ON c (id) WHERE id > 0\n-- aceitou, sem erro"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "o `WHERE` do índice é lido: coluna que não existe recusa",
+        "phxsql": [
+          "sem-caso",
+          "o gêmeo deste item é a própria sonda de efeito, mais abaixo, com o controle do leitor do lado"
+        ],
+        "mysql": [
+          "sem-caso",
+          "a positiva foi recusada, e a recusa é o próprio veredito -- o gêmeo guarda o `tem`, não o `nao`"
+        ],
+        "postgres": [
+          "recusou",
+          "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'CREATE INDEX ipn ON c (id) WHERE nao_existe > 0'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR:  column \"nao_existe\" does not exist\nLINE 1: CREATE INDEX ipn ON c (id) WHERE nao_existe > 0\n                                         ^"
+        ],
+        "sqlite": [
+          "recusou",
+          "CREATE INDEX ipn ON c (id) WHERE nao_existe > 0\n-- OperationalError: no such column: nao_existe"
+        ]
+      }
     },
     {
       "chave": "indice_por_expressao",
@@ -243,7 +467,32 @@
       "hfsql": [
         "citado",
         "não apurado"
-      ]
+      ],
+      "cru": {
+        "phxsql": "não perguntado por SQL: este item vai ao PROTOCOLO na seção das sondas de efeito",
+        "mysql": "$ mysql -N -B cmp_phx -e 'CREATE INDEX ie ON c ((lower(nome)))'\n-- codigo de saida: 0\n-- stdout: (vazio)\n-- stderr: (vazio)",
+        "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'CREATE INDEX ie ON c (lower(nome))'\n-- codigo de saida: 0\n-- stdout: CREATE INDEX\n-- stderr: (vazio)",
+        "sqlite": "$ sqlite3 :memory:\nCREATE INDEX ie ON c (lower(nome))\n-- aceitou, sem erro"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "a expressão do índice é compilada: aridade errada recusa",
+        "phxsql": [
+          "sem-caso",
+          "o gêmeo deste item é a própria sonda de efeito, mais abaixo, com o controle do leitor do lado"
+        ],
+        "mysql": [
+          "recusou",
+          "$ mysql -N -B cmp_phx -e 'CREATE INDEX ien ON c ((lower()))'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR 1582 (42000) at line 1: Incorrect parameter count in the call to native function 'lower'"
+        ],
+        "postgres": [
+          "recusou",
+          "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'CREATE INDEX ien ON c (lower())'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR:  function lower() does not exist\nLINE 1: CREATE INDEX ien ON c (lower())\n                               ^\nHINT:  No function matches the given name and argument types. You might need to add explicit type casts."
+        ],
+        "sqlite": [
+          "recusou",
+          "CREATE INDEX ien ON c (lower())\n-- OperationalError: wrong number of arguments to function lower()"
+        ]
+      }
     },
     {
       "chave": "check_constraint",
@@ -272,7 +521,32 @@
       "hfsql": [
         "citado",
         "não apurado"
-      ]
+      ],
+      "cru": {
+        "phxsql": "não perguntado por SQL: este item vai ao PROTOCOLO na seção das sondas de efeito",
+        "mysql": "$ mysql -N -B cmp_phx -e 'CREATE TABLE ck (v INT CHECK (v > 0))'\n-- codigo de saida: 0\n-- stdout: (vazio)\n-- stderr: (vazio)",
+        "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'CREATE TABLE ck (v INT CHECK (v > 0))'\n-- codigo de saida: 0\n-- stdout: CREATE TABLE\n-- stderr: (vazio)",
+        "sqlite": "$ sqlite3 :memory:\nCREATE TABLE ck (v INT CHECK (v > 0))\n-- aceitou, sem erro"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "EFEITO: a linha que viola o `CHECK` é recusada",
+        "phxsql": [
+          "sem-caso",
+          "o gêmeo deste item é a própria sonda de efeito, mais abaixo, com o controle do leitor do lado"
+        ],
+        "mysql": [
+          "recusou",
+          "$ mysql -N -B cmp_phx -e 'INSERT INTO ck (v) VALUES (-1)'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR 3819 (HY000) at line 1: Check constraint 'ck_chk_1' is violated."
+        ],
+        "postgres": [
+          "recusou",
+          "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'INSERT INTO ck (v) VALUES (-1)'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR:  new row for relation \"ck\" violates check constraint \"ck_v_check\"\nDETAIL:  Failing row contains (-1)."
+        ],
+        "sqlite": [
+          "recusou",
+          "INSERT INTO ck (v) VALUES (-1)\n-- IntegrityError: CHECK constraint failed: v > 0"
+        ]
+      }
     },
     {
       "chave": "default_de_coluna",
@@ -301,7 +575,32 @@
       "hfsql": [
         "tem",
         "valor padrão no dicionário de dados"
-      ]
+      ],
+      "cru": {
+        "phxsql": "não perguntado por SQL: este item vai ao PROTOCOLO na seção das sondas de efeito",
+        "mysql": "$ mysql -N -B cmp_phx -e 'CREATE TABLE df (v INT DEFAULT 7)'\n-- codigo de saida: 0\n-- stdout: (vazio)\n-- stderr: (vazio)",
+        "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'CREATE TABLE df (v INT DEFAULT 7)'\n-- codigo de saida: 0\n-- stdout: CREATE TABLE\n-- stderr: (vazio)",
+        "sqlite": "$ sqlite3 :memory:\nCREATE TABLE df (v INT DEFAULT 7)\n-- aceitou, sem erro"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "a cláusula `DEFAULT` é lida: escrita pela metade recusa",
+        "phxsql": [
+          "sem-caso",
+          "o gêmeo deste item é a própria sonda de efeito, mais abaixo, com o controle do leitor do lado"
+        ],
+        "mysql": [
+          "recusou",
+          "$ mysql -N -B cmp_phx -e 'CREATE TABLE dfn (v INT DEFAULT)'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ')' at line 1"
+        ],
+        "postgres": [
+          "recusou",
+          "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'CREATE TABLE dfn (v INT DEFAULT)'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR:  syntax error at or near \")\"\nLINE 1: CREATE TABLE dfn (v INT DEFAULT)\n                                       ^"
+        ],
+        "sqlite": [
+          "recusou",
+          "CREATE TABLE dfn (v INT DEFAULT)\n-- OperationalError: near \")\": syntax error"
+        ]
+      }
     },
     {
       "chave": "coluna_calculada",
@@ -330,7 +629,32 @@
       "hfsql": [
         "tem",
         "item calculado no dicionário"
-      ]
+      ],
+      "cru": {
+        "phxsql": "não perguntado por SQL: este item vai ao PROTOCOLO na seção das sondas de efeito",
+        "mysql": "$ mysql -N -B cmp_phx -e 'CREATE TABLE gc (a INT, b INT GENERATED ALWAYS AS (a*2))'\n-- codigo de saida: 0\n-- stdout: (vazio)\n-- stderr: (vazio)",
+        "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'CREATE TABLE gc (a INT, b INT GENERATED ALWAYS AS (a*2) STORED)'\n-- codigo de saida: 0\n-- stdout: CREATE TABLE\n-- stderr: (vazio)",
+        "sqlite": "$ sqlite3 :memory:\nCREATE TABLE gc (a INT, b INT GENERATED ALWAYS AS (a*2))\n-- aceitou, sem erro"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "EFEITO: escrever na coluna calculada é recusado",
+        "phxsql": [
+          "sem-caso",
+          "o gêmeo deste item é a própria sonda de efeito, mais abaixo, com o controle do leitor do lado"
+        ],
+        "mysql": [
+          "recusou",
+          "$ mysql -N -B cmp_phx -e 'INSERT INTO gc (a, b) VALUES (1, 9)'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR 3105 (HY000) at line 1: The value specified for generated column 'b' in table 'gc' is not allowed."
+        ],
+        "postgres": [
+          "recusou",
+          "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'INSERT INTO gc (a, b) VALUES (1, 9)'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR:  cannot insert a non-DEFAULT value into column \"b\"\nDETAIL:  Column \"b\" is a generated column."
+        ],
+        "sqlite": [
+          "recusou",
+          "INSERT INTO gc (a, b) VALUES (1, 9)\n-- OperationalError: cannot INSERT into generated column \"b\""
+        ]
+      }
     },
     {
       "chave": "upsert",
@@ -359,7 +683,32 @@
       "hfsql": [
         "citado",
         "não apurado"
-      ]
+      ],
+      "cru": {
+        "phxsql": "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'INSERT INTO c (id) VALUES (1) ON CONFLICT (id) DO NOTHING'}\n<- {\"ok\": true, \"op\": \"sql\", \"resultado\": {\"sql\": \"INSERT INTO c (id) VALUES (1) ON CONFLICT (id) DO NOTHING\", \"op\": \"inserir\", \"notas\": [\"ON CONFLICT ... DO NOTHING vira `inserir` com se_existir: \\\"ignorar\\\" -- a linha existente fica exatamente como estava\"], \"afetadas\": 1, \"rowid\": 1, \"registros\": 1}, \"ms\": 0}",
+        "mysql": "$ mysql -N -B cmp_phx -e 'INSERT INTO c (id) VALUES (1) ON DUPLICATE KEY UPDATE id=id'\n-- codigo de saida: 0\n-- stdout: (vazio)\n-- stderr: (vazio)",
+        "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'INSERT INTO c (id) VALUES (1) ON CONFLICT (id) DO NOTHING'\n-- codigo de saida: 0\n-- stdout: INSERT 0 1\n-- stderr: (vazio)",
+        "sqlite": "$ sqlite3 :memory:\nINSERT INTO c (id) VALUES (1) ON CONFLICT (id) DO NOTHING\n-- aceitou, sem erro"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "EFEITO: sem o `ON CONFLICT`, a chave repetida é recusada -- senão o upsert passou porque conflito nenhum houve",
+        "phxsql": [
+          "recusou",
+          "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'INSERT INTO c (id) VALUES (1)'}\n<- {\"ok\": false, \"op\": \"sql\", \"erro\": \"[SP000020] chave duplicada: indice unico porId ja tem essa chave\", \"codigo\": 3002, \"nome\": \"DUPLICADO\", \"classe\": \"dado\", \"sprint\": \"SP000020\", \"repetir\": false, \"ms\": 0}"
+        ],
+        "mysql": [
+          "recusou",
+          "$ mysql -N -B cmp_phx -e 'INSERT INTO c (id) VALUES (1)'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR 1062 (23000) at line 1: Duplicate entry '1' for key 'c.PRIMARY'"
+        ],
+        "postgres": [
+          "recusou",
+          "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'INSERT INTO c (id) VALUES (1)'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR:  duplicate key value violates unique constraint \"c_pkey\"\nDETAIL:  Key (id)=(1) already exists."
+        ],
+        "sqlite": [
+          "recusou",
+          "INSERT INTO c (id) VALUES (1)\n-- IntegrityError: UNIQUE constraint failed: c.id"
+        ]
+      }
     },
     {
       "chave": "isolamento_acima_de_rc",
@@ -388,7 +737,32 @@
       "hfsql": [
         "tem",
         "a folha anuncia quatro níveis"
-      ]
+      ],
+      "cru": {
+        "phxsql": "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'BEGIN ISOLATION LEVEL REPEATABLE READ'}\n<- {\"ok\": true, \"op\": \"sql\", \"resultado\": {\"sql\": \"BEGIN ISOLATION LEVEL REPEATABLE READ\", \"op\": \"begin\", \"resultado\": {\"transaction_id\": 1789673153278, \"transaction_state\": \"ACTIVE\", \"transaction_start_time\": \"2026-09-17 19:25:53,634\", \"transaction_isolation\": \"leitura repetivel pela trava (S por tabela lida, ate o fim), sem fantasma; escrita serializavel por tabela\", \"leitura_repetivel\": true, \"idade_ms\": 0, \"expira_em_s\": 300, \"linhas\": 0, \"database\": \"\", \"tabelas\": [], \"tabelas_declaradas\": [], \"tabelas_efetivas\": [], \"tabelas_expandidas\": [], \"lock_mode\": \"AUTO\", \"scope_mode\": \"DYNAMIC\", \"lock_timeout_ms\": 500, \"statement_timeout_ms\": 0, \"esperando\": \"\", \"savepoints\": [], \"ligacao\": 2, \"usuario\": \"adm\", \"ip\": \"127.0.0.1\", \"motivo_do_aborto\": \"\", \"travas\": [], \"linhas_travadas\": 0}}, \"ms\": 0}",
+        "mysql": "$ mysql -N -B cmp_phx -e 'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE'\n-- codigo de saida: 0\n-- stdout: (vazio)\n-- stderr: (vazio)",
+        "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE'\n-- codigo de saida: 0\n-- stdout: SET\n-- stderr: WARNING:  SET TRANSACTION can only be used in transaction blocks",
+        "sqlite": "não perguntado: o verbo não existe neste motor"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "o NOME do nível é lido: nível que não existe recusa",
+        "phxsql": [
+          "recusou",
+          "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'BEGIN ISOLATION LEVEL ZZZ'}\n<- {\"ok\": false, \"op\": \"sql\", \"erro\": \"[SP000018] esquema invalido: SQL, coluna 1: depois de ISOLATION LEVEL esperava READ COMMITTED ou REPEATABLE READ, veio \\\"ZZZ\\\"\", \"codigo\": 2001, \"nome\": \"ESQUEMA_INVALIDO\", \"classe\": \"esquema\", \"sprint\": \"SP000018\", \"repetir\": false, \"ms\": 0}"
+        ],
+        "mysql": [
+          "recusou",
+          "$ mysql -N -B cmp_phx -e 'SET TRANSACTION ISOLATION LEVEL ZZZ'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'ZZZ' at line 1"
+        ],
+        "postgres": [
+          "recusou",
+          "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'SET TRANSACTION ISOLATION LEVEL ZZZ'\n-- codigo de saida: 1\n-- stdout: (vazio)\n-- stderr: ERROR:  syntax error at or near \"ZZZ\"\nLINE 1: SET TRANSACTION ISOLATION LEVEL ZZZ\n                                        ^"
+        ],
+        "sqlite": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ]
+      }
     },
     {
       "chave": "trava_por_linha",
@@ -397,7 +771,7 @@
       "nota": "vale DENTRO de transação: `esperar_trava` recusa com «sem transação» quem a pede fora dela, e aí a trava GLOBAL de dados serializa como antes",
       "phxsql": [
         "tem",
-        "gestor em crates/phxsql-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:704; pedida em crates/phxsql-server/src/servidor.rs:13489"
+        "gestor em crates/phxsql-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:833; pedida em crates/phxsql-server/src/servidor.rs:14595"
       ],
       "mysql": [
         "citado",
@@ -418,7 +792,32 @@
       "hfsql": [
         "tem",
         "trava por linha automática, na folha"
-      ]
+      ],
+      "cru": {
+        "phxsql": "gestor em crates/phxsql-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:833; pedida em crates/phxsql-server/src/servidor.rs:14595",
+        "mysql": "não perguntado por SQL",
+        "postgres": "não perguntado por SQL",
+        "sqlite": "não perguntado por SQL"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "—",
+        "phxsql": [
+          "sem-caso",
+          "LACUNA: sonda de código, sem gêmeo que se recuse -- leitura de fonte não tem"
+        ],
+        "mysql": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ],
+        "postgres": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ],
+        "sqlite": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ]
+      }
     },
     {
       "chave": "tls_no_transporte",
@@ -448,7 +847,32 @@
       "hfsql": [
         "tem",
         "a folha anuncia canal cifrado"
-      ]
+      ],
+      "cru": {
+        "phxsql": "crates/phxsql-server/src/rest.rs:578 — «TLS aqui: a saida honesta e um proxy que termine TLS na»",
+        "mysql": "não perguntado por SQL",
+        "postgres": "não perguntado por SQL",
+        "sqlite": "não perguntado por SQL"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "—",
+        "phxsql": [
+          "sem-caso",
+          "LACUNA: sonda de código, sem gêmeo que se recuse -- e o veredito é `nao`"
+        ],
+        "mysql": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ],
+        "postgres": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ],
+        "sqlite": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ]
+      }
     },
     {
       "chave": "direito_por_coluna",
@@ -478,7 +902,32 @@
       "hfsql": [
         "tem",
         "direito por coluna na folha"
-      ]
+      ],
+      "cru": {
+        "phxsql": "o varrer de ana (salario negado) veio SEM a coluna; o de bea (controle, mesmo cadastro sem `colunas`) veio COM ela",
+        "mysql": "não perguntado por SQL",
+        "postgres": "não perguntado por SQL",
+        "sqlite": "não perguntado por SQL"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "—",
+        "phxsql": [
+          "sem-caso",
+          "sonda VIVA: o controle é ana × bea na mesma corrida"
+        ],
+        "mysql": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ],
+        "postgres": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ],
+        "sqlite": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ]
+      }
     },
     {
       "chave": "pitr",
@@ -508,7 +957,32 @@
       "hfsql": [
         "citado",
         "não apurado"
-      ]
+      ],
+      "cru": {
+        "phxsql": "`ate`=corte devolveu [(1, 'um alterado'), (2, 'dois')] (a 1 alterada, a 2, nada da 3); reaplicados=2, pulados=1",
+        "mysql": "não perguntado por SQL",
+        "postgres": "não perguntado por SQL",
+        "sqlite": "não perguntado por SQL"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "—",
+        "phxsql": [
+          "sem-caso",
+          "sonda VIVA: o controle é a `replicacao` ligada antes do arranque, no servidor próprio"
+        ],
+        "mysql": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ],
+        "postgres": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ],
+        "sqlite": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ]
+      }
     },
     {
       "chave": "parametro_no_prepared",
@@ -538,7 +1012,32 @@
       "hfsql": [
         "tem",
         "consulta parametrizada é o normal do WLangage"
-      ]
+      ],
+      "cru": {
+        "phxsql": "`WHERE id = ?` com `parametros:[1]` devolveu a linha 1; sem `parametros` recusou: [SP000018] esquema invalido: SQL, coluna 1: vieram 0 parametros e o co",
+        "mysql": "não perguntado por SQL",
+        "postgres": "não perguntado por SQL",
+        "sqlite": "não perguntado por SQL"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "—",
+        "phxsql": [
+          "sem-caso",
+          "sonda VIVA pelo soquete: o controle é o efeito medido"
+        ],
+        "mysql": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ],
+        "postgres": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ],
+        "sqlite": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ]
+      }
     },
     {
       "chave": "diff_de_dados",
@@ -568,7 +1067,32 @@
       "hfsql": [
         "tem",
         "WDHFDiff compara estrutura e dados"
-      ]
+      ],
+      "cru": {
+        "phxsql": "`diferencas` nomeou a chave [1] e a coluna `nome`: [{'chave': [1], 'colunas': ['nome'], 'a': {'id': 1, 'nome': 'um', 'softdeleted': False, 'rownum': 1}, 'b': {'id': 1, 'nome': 'dois', 'softdeleted': False, 'rownum': 1}}]",
+        "mysql": "não perguntado por SQL",
+        "postgres": "não perguntado por SQL",
+        "sqlite": "não perguntado por SQL"
+      },
+      "negativo": {
+        "o_que_a_recusa_prova": "—",
+        "phxsql": [
+          "sem-caso",
+          "sonda VIVA: o controle é o par IGUAL, que tem de voltar `diferentes: []`"
+        ],
+        "mysql": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ],
+        "postgres": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ],
+        "sqlite": [
+          "sem-caso",
+          "nenhum caso negativo declarado para este motor"
+        ]
+      }
     }
   ]
 }

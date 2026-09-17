@@ -10,6 +10,107 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — A matriz do comparativo passa a dizer contra o quê (pedido 335, metade 1)
+
+Rodada de 17/09/2026. Um parecer técnico de fora achou em duas linhas o furo
+que seis revisões desta casa não acharam: **a matriz do comparativo publicava
+o veredito e não publicava contra o quê**. Sem ambiente ninguém refaz a
+corrida; sem a saída crua ninguém confere a célula; sem caso negativo, `tem`
+não distingue «o motor entendeu» de «o motor ignorou o que não entendeu».
+
+### Adicionado
+
+- **Os seis campos de evidência no `resultados.json`, nenhum digitado.** O
+  `bancada/comparativo/medir.py` grava agora `ambiente.commit` e `branch`;
+  `ambiente.arvore`; `ambiente.sha256_phxsqld` do binário que **respondeu**;
+  `ambiente.uname`, `cpus` e `memoria_total`; a
+  `ambiente.configuracao_do_phxsqld` **tarjada**; a `linhas[].cru` com
+  comando, código de saída e os dois canais por motor; e a
+  `linhas[].negativo`. Medido nesta corrida: `Linux 6.18.44-fc-v33 x86_64`,
+  4 CPUs, 16.482.220 kB, `phxsqld` `sha256 bab749c9684b…`. A `cru` substitui
+  o recorte de **90 caracteres**, que cabia na tabela e não cabia numa
+  auditoria.
+- **O caso NEGATIVO por item — a metade da prova real que faltava nesta
+  bancada.** Cada item ganhou um gêmeo que **tem de ser recusado**, em dois
+  formatos: por **efeito** (a linha que viola o `CHECK`, a escrita na coluna
+  calculada, a chave repetida **sem** o `ON CONFLICT`) e por **resolução**
+  (nomear dentro do construto algo que não existe). Ele roda só onde a
+  positiva deu `tem`, porque é o veredito **afirmativo** que pode ser falso.
+  Primeira corrida: **43** gêmeos recusaram como devia, **32** sem caso,
+  **1** aceitou o que devia recusar. As recusas do nosso motor são
+  específicas e não genéricas — `[SP000020] chave duplicada: indice unico
+  porId ja tem essa chave` no upsert, e `[SP000018] … depois de ISOLATION
+  LEVEL` no nível inventado.
+- **Portão novo, provado nos dois sentidos: `config-com-segredo`.** Reposto o
+  defeito, a tarja sai e o medidor tem de **parar** com `SEGREDO NO
+  ARTEFATO` — «senha nunca em texto puro, nem em arquivo» alcança artefato
+  versionado, e o `config.json` da oficina carrega `token` e `senha_hash`. O
+  conferidor roda sobre o JSON **já serializado**, não sobre o dicionário:
+  o que vaza é o que se grava, e tarja aplicada no ramo errado passaria por
+  uma conferência feita no ramo certo. São **4** portões provados nos dois
+  sentidos, e a tarja deixa a **chave visível** com o valor omitido — apagar
+  a chave esconderia que a corrida rodou com token.
+- **O `COMPARATIVO.md` publica o ambiente e a conta dos gêmeos**, e **diz que
+  fez menos** quando a corrida é antiga e não tem `ambiente`, em vez de omitir
+  o bloco em silêncio.
+
+### Corrigido
+
+- **A premissa do gêmeo por resolução morreu medida, e o achado FICA.** Eu
+  supus que ela valesse em todo motor. O SQLite(R) **aceitou** `CREATE VIEW
+  v_neg AS SELECT nao_existe FROM c`, porque resolve o corpo da visão na
+  **consulta** e não na criação; MySQL(R) («Unknown column 'nao_existe' in
+  'field list'») e PostgreSQL(R) («column "nao_existe" does not exist»)
+  recusaram. Não quer dizer que o SQLite(R) não tenha visão: quer dizer que
+  **nele a aceitação da criação não prova o corpo**. Não consertei no escuro,
+  porque o gêmeo «óbvio» (`SELECT * FROM v_c WHERE nao_existe = 1`) recusaria
+  **também** se o `CREATE VIEW` fosse um nada-a-fazer — aí a recusa seria «no
+  such table» —, e *recusa pelo motivo errado é a forma mais barata de um
+  controle negativo mentir a favor*.
+- **O campo `arvore` nunca poderia dizer `limpa`.** O `resultados.json` e o
+  `COMPARATIVO.md` são **saídas** da própria corrida e sujam a árvore ao serem
+  escritos: a primeira corrida disse `SUJA: 3` e a segunda `SUJA: 7`, e o
+  leitor não tinha como separar «a fonte divergiu do commit» de «a corrida
+  gravou o que era o trabalho dela gravar». Campo com um único valor possível
+  não ensina nada. Agora as saídas saem da conta, **com o nome**, e os
+  arquivos de **entrada** divergentes vão **nomeados** em vez de contados —
+  lista curta se lê, contagem não.
+- **O leitor do `git status --porcelain` comia o `p` da primeira linha.** O
+  formato é `XY<espaço>caminho` e o arquivo só modificado no disco sai como
+  ` M caminho`; o `.strip()` do ajudante tirava esse espaço **na primeira
+  linha**, e o recorte `[3:]` passava a cortar um caractere a mais. Saiu
+  publicado `hxsql/bancada/comparativo/LEIA-ME.md`. **E a minha conferência
+  do leitor passou por engano**: eu escrevi a entrada à mão, com o espaço no
+  lugar, que é a entrada que o chamador nunca produz. Reprovado agora contra
+  a saída **real** do comando, nos dois sentidos.
+- **A citação de bloco quebrava da segunda linha em diante.** `p("> …")`
+  prefixa só a primeira, e o `textwrap` quebra depois — o resto do parágrafo
+  saía **fora** da citação. Não aparece lendo o gerador; aparece lendo o
+  markdown que ele escreveu. Nasce o `Texto.cita()`, com `>` em toda linha e
+  a lista dentro da **mesma** citação.
+- **Colisão de nome dentro do `por_phxsql`**: já existia ali um `cru` querendo
+  dizer «o valor **cru**, sem `lower()`», e ele apagava o dicionário das
+  saídas cruas. Compila e some — o erro saiu como `KeyError: 'view'` no
+  `main`, 350 linhas longe da causa. O dicionário novo passou a se chamar
+  `cruas`, com o motivo escrito no lugar.
+
+### Sabido
+
+- **A catraca continua de fora, e é metade 2 do pedido 335**: nada reprova
+  ainda a publicação quando a prosa do dossiê contradiz estas células. A
+  escolha entre fonte única interpolada e catraca que só detecta está na mesa
+  do dono; gravar a evidência vale nas duas formas.
+- **Duas sondas de código seguem sem gêmeo, e isso aparece como LACUNA** em
+  vez de sumir da conta: `trava_por_linha` e `tls_no_transporte` saem de
+  leitura de fonte, e leitura de fonte não tem gêmeo que se recuse.
+- **`flock(1)` não é reentrante**, e a lei «todo `cargo` sob `flock`» se
+  aplica **no ponto que invoca o `cargo`, e em um ponto só**: chamar o medidor
+  sob um segundo `flock` do mesmo caminho travou a corrida na primeira linha,
+  com o pai segurando a trava e esperando o filho. O aviso ficou na função
+  que trava. `docs/cognicao/cognicao_flock-nao-e-reentrante-e-eu-apliquei-a-lei-a-quem-ja-a-cumpria_20260917_1912.md`
+
+---
+
 ## Não lançado — As pétreas ganham guarda: vetor, portões, senha — e o `Debug` que vazava
 
 Rodada da noite de 16/09 (`b6f55ee` … `f8b6c92`). Os números abaixo são os

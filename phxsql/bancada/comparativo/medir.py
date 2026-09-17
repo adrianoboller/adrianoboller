@@ -46,9 +46,37 @@ quatro eram sonda de codigo com veredito CRAVADO -- e cravar um `nao` que virou
 
 Citado nao e mentira; e afirmacao de segunda mao, e a tabela diz isso em cada
 celula para que ninguem a leia como medida.
+
+# A EVIDENCIA que cada celula carrega (17/09/2026)
+
+Um parecer de fora achou o furo em duas linhas: a matriz dizia o veredito e
+nao dizia *contra o que*. Sem ambiente, ninguem refaz a corrida; sem a saida
+crua, ninguem confere a celula; sem caso negativo, `tem` nao distingue «o
+motor entendeu» de «o motor ignorou o que nao entendeu». Entao a corrida
+grava seis coisas que antes nao gravava:
+
+1. **`ambiente.commit`** e o branch -- de onde partir para refazer.
+2. **`ambiente.arvore`** -- `limpa`, ou `SUJA` com a conta dos arquivos. A
+   corrida de 16/09 rodou num binario que se chamava `6e717e6579ad-sujo`, e o
+   arquivo nao dizia.
+3. **`ambiente.sha256_phxsqld`** -- qual binario respondeu, e nao qual fonte
+   existia.
+4. **`ambiente.uname`**, cpus e memoria -- e a `configuracao_do_phxsqld`,
+   TARJADA: `token` e `senha_hash` saem, com a chave visivel no lugar.
+5. **`linhas[].cru`** -- o que cada motor respondeu, por motor, com o codigo
+   de saida e os dois canais. Substitui o recorte de 90 caracteres, que cabia
+   na tabela e nao cabia numa auditoria.
+6. **`linhas[].negativo`** -- o gemeo que tem de ser RECUSADO, e o que a
+   recusa prova. Ver a secao `NEGATIVOS`, abaixo.
+
+O que AINDA nao entrou, e por que: a **catraca** que reprova a publicacao
+quando a prosa do dossie contradiz estas celulas. Ela e a metade 2 do pedido
+335 e espera a escolha do dono entre fonte unica interpolada e catraca que so
+detecta. Gravar a evidencia vale nas duas, e nao se perde em nenhuma.
 """
 
 import datetime
+import hashlib
 import json
 import os
 import pathlib
@@ -87,6 +115,13 @@ DEFEITOS = {
     # real desmentiu -- sem `database` ele responde igual. O zero vinha do
     # ENVELOPE lido no nivel errado, e so. Entao o defeito reposto aqui e' o
     # que o portao realmente guarda: a lista chegar vazia.
+    # A pétrea «senha nunca em texto puro» alcanca ESTE arquivo desde
+    # 17/09/2026, quando a `configuracao` da corrida passou a ser gravada: o
+    # `config.json` da oficina carrega `token` e `senha_hash`, e gravar o bloco
+    # cru vazaria os dois num artefato versionado. O defeito reposto tira a
+    # tarja, e o portao `nenhum_segredo_no_json()` tem de PARAR o medidor.
+    "config-com-segredo": "a `configuracao` vai para o JSON sem tarjar `token` "
+                          "e `senha_hash`",
     "catalogo-vazio": "a lista de operacoes chega vazia, venha de onde vier",
 }
 if DEFEITO and DEFEITO not in DEFEITOS:
@@ -171,6 +206,158 @@ PERGUNTAS = [
       # recusa de um verbo, nao a ausencia do nivel.
       "phxsql": "BEGIN ISOLATION LEVEL REPEATABLE READ"}),
 ]
+
+
+# ------------------------------------------------ o CASO NEGATIVO por item
+#
+# **Prova real e nos dois sentidos, e o `tem` era o unico sentido medido.**
+# Ate 17/09/2026 uma celula virava `tem` porque a instrucao passou -- e
+# «passou» nao distingue duas coisas muito diferentes: o motor ENTENDEU o
+# construto, ou o motor IGNOROU o que nao entendeu e devolveu `ok`. O caso
+# classico desta segunda familia nao e hipotese: o MySQL(R) 5.7 aceitava
+# `CHECK` e o descartava em silencio.
+#
+# Entao cada item ganha um GEMEO que tem de ser RECUSADO -- e a recusa tem de
+# vir do construto sob prova, nao de outra coisa. Dois formatos, e o segundo
+# e mais forte que o primeiro:
+#
+#  - **por EFEITO**: cria com o construto e pede o que o construto proibe. A
+#    insercao que viola o `CHECK`, a escrita na coluna calculada, a chave
+#    repetida sem o `ON CONFLICT`. Se a proibicao nao acontece, o construto
+#    nao esta valendo, e o `tem` era a aceitacao de um enfeite.
+#  - **por RESOLUCAO**: nomeia dentro do construto algo que nao existe, ou
+#    escreve o construto pela metade. Se passa, o motor nao leu aquele pedaco.
+#
+# O gemeo so roda quando a positiva deu `tem`: e o veredito AFIRMATIVO que
+# pode ser falso. Onde a positiva foi recusada, a recusa ja e a resposta, e o
+# CONTROLE global (uma instrucao que nenhum motor pode aceitar) ja provou que
+# este cliente sabe ver recusa.
+#
+# E o que acontece quando o gemeo passa: nada de silencio e nada de veredito
+# trocado por mim. A corrida GRAVA `aceitou` naquela celula, conta no topo em
+# `controle_negativo.aceitou_o_que_devia_recusar` e imprime a lista. Trocar
+# `tem` por outro estado e decisao com dado na mao -- e eu ainda nao tenho o
+# dado. *Medir a premissa do item vem antes de implementar o item.*
+#
+# `None` quer dizer «nenhum gemeo declarado para este motor», e aparece nos
+# seis itens que no NOSSO motor nao vao por SQL: eles vao ao protocolo dentro
+# de `por_phxsql()`, medindo o EFEITO com o controle do leitor do lado. Ali o
+# gemeo ja existe, com outro nome.
+NEGATIVOS = {
+    # **A PRIMEIRA CORRIDA DESTE APARATO (17/09/2026) JA MATOU UMA PREMISSA
+    # MINHA, e o gemeo fica como esta porque a premissa morta e o achado.**
+    # Eu supus que o gemeo por RESOLUCAO valesse em todo motor. Nao vale: o
+    # SQLite(R) ACEITOU `CREATE VIEW v_neg AS SELECT nao_existe FROM c`,
+    # porque ele resolve o corpo da visao na CONSULTA e nao na criacao --
+    # enquanto MySQL(R) («Unknown column 'nao_existe' in 'field list'») e
+    # PostgreSQL(R) («column "nao_existe" does not exist») recusaram.
+    #
+    # O que isso quer dizer, e nao e que o SQLite(R) nao tenha visao: quer
+    # dizer que, NELE, «o CREATE VIEW passou» nao prova que o corpo foi lido.
+    # A prova ali e por EFEITO -- consultar a visao e receber a linha --, e e
+    # exatamente o que a celula do NOSSO motor faz.
+    #
+    # E o gemeo «obvio» nao substitui este: `SELECT * FROM v_c WHERE
+    # nao_existe = 1` recusaria TAMBEM se o `CREATE VIEW` tivesse sido um
+    # nada-a-fazer, porque ai a recusa seria «no such table: v_c». Recusa
+    # pelo motivo errado e a forma mais barata de um controle negativo mentir
+    # a favor -- por isso o gemeo mais forte exige um controle POSITIVO ao
+    # lado, e isso e desenho da catraca (metade 2 do pedido 335), nao conserto
+    # de agora. O que fica gravado e o que se mediu.
+    "view": ("o corpo da visão é resolvido: coluna que não existe recusa "
+             "-- MEDIDO: vale em MySQL(R) e PostgreSQL(R); no SQLite(R) a "
+             "resolução é diferida para a consulta, então a aceitação da "
+             "criação não prova o corpo",
+     {"mysql": "CREATE VIEW v_neg AS SELECT nao_existe FROM c",
+      "postgres": "CREATE VIEW v_neg AS SELECT nao_existe FROM c",
+      "sqlite": "CREATE VIEW v_neg AS SELECT nao_existe FROM c",
+      "phxsql": None}),
+    "cte": ("o corpo do `WITH` é resolvido: coluna que não existe recusa",
+     {"mysql": "WITH x AS (SELECT * FROM c) SELECT * FROM x WHERE nao_existe = 1",
+      "postgres": "WITH x AS (SELECT * FROM c) SELECT * FROM x WHERE nao_existe = 1",
+      "sqlite": "WITH x AS (SELECT * FROM c) SELECT * FROM x WHERE nao_existe = 1",
+      "phxsql": "WITH x AS (SELECT * FROM c) SELECT * FROM x WHERE nao_existe = 1"}),
+    "subconsulta": ("a subconsulta é compilada: coluna que não existe recusa",
+     {"mysql": "SELECT * FROM c WHERE id IN (SELECT nao_existe FROM c)",
+      "postgres": "SELECT * FROM c WHERE id IN (SELECT nao_existe FROM c)",
+      "sqlite": "SELECT * FROM c WHERE id IN (SELECT nao_existe FROM c)",
+      "phxsql": "SELECT * FROM c WHERE id IN (SELECT nao_existe FROM c)"}),
+    "funcao_de_janela": ("o `OVER` é lido: ordenar por coluna que não existe recusa",
+     {"mysql": "SELECT ROW_NUMBER() OVER (ORDER BY nao_existe) FROM c",
+      "postgres": "SELECT ROW_NUMBER() OVER (ORDER BY nao_existe) FROM c",
+      "sqlite": "SELECT ROW_NUMBER() OVER (ORDER BY nao_existe) FROM c",
+      "phxsql": "SELECT ROW_NUMBER() OVER (ORDER BY nao_existe) FROM c"}),
+    "group_by": ("o `GROUP BY` é resolvido: agrupar por coluna que não existe recusa",
+     {"mysql": "SELECT cidade, COUNT(*) FROM c GROUP BY nao_existe",
+      "postgres": "SELECT cidade, COUNT(*) FROM c GROUP BY nao_existe",
+      "sqlite": "SELECT cidade, COUNT(*) FROM c GROUP BY nao_existe",
+      "phxsql": "SELECT cidade, COUNT(*) FROM c GROUP BY nao_existe"}),
+    "expressao_no_where": ("a expressão é compilada: operando que não existe recusa",
+     {"mysql": "SELECT * FROM c WHERE nao_existe * 1.1 > 100",
+      "postgres": "SELECT * FROM c WHERE nao_existe * 1.1 > 100",
+      "sqlite": "SELECT * FROM c WHERE nao_existe * 1.1 > 100",
+      "phxsql": "SELECT * FROM c WHERE nao_existe * 1.1 > 100"}),
+    "indice_parcial": ("o `WHERE` do índice é lido: coluna que não existe recusa",
+     {"mysql": "CREATE INDEX ipn ON c (id) WHERE nao_existe > 0",
+      "postgres": "CREATE INDEX ipn ON c (id) WHERE nao_existe > 0",
+      "sqlite": "CREATE INDEX ipn ON c (id) WHERE nao_existe > 0",
+      "phxsql": None}),
+    "indice_por_expressao": ("a expressão do índice é compilada: aridade errada recusa",
+     {"mysql": "CREATE INDEX ien ON c ((lower()))",
+      "postgres": "CREATE INDEX ien ON c (lower())",
+      "sqlite": "CREATE INDEX ien ON c (lower())",
+      "phxsql": None}),
+    "check_constraint": ("EFEITO: a linha que viola o `CHECK` é recusada",
+     {"mysql": "INSERT INTO ck (v) VALUES (-1)",
+      "postgres": "INSERT INTO ck (v) VALUES (-1)",
+      "sqlite": "INSERT INTO ck (v) VALUES (-1)",
+      "phxsql": None}),
+    "default_de_coluna": ("a cláusula `DEFAULT` é lida: escrita pela metade recusa",
+     {"mysql": "CREATE TABLE dfn (v INT DEFAULT)",
+      "postgres": "CREATE TABLE dfn (v INT DEFAULT)",
+      "sqlite": "CREATE TABLE dfn (v INT DEFAULT)",
+      "phxsql": None}),
+    "coluna_calculada": ("EFEITO: escrever na coluna calculada é recusado",
+     {"mysql": "INSERT INTO gc (a, b) VALUES (1, 9)",
+      "postgres": "INSERT INTO gc (a, b) VALUES (1, 9)",
+      "sqlite": "INSERT INTO gc (a, b) VALUES (1, 9)",
+      "phxsql": None}),
+    "upsert": ("EFEITO: sem o `ON CONFLICT`, a chave repetida é recusada -- "
+               "senão o upsert passou porque conflito nenhum houve",
+     {"mysql": "INSERT INTO c (id) VALUES (1)",
+      "postgres": "INSERT INTO c (id) VALUES (1)",
+      "sqlite": "INSERT INTO c (id) VALUES (1)",
+      "phxsql": "INSERT INTO c (id) VALUES (1)"}),
+    "isolamento_acima_de_rc": ("o NOME do nível é lido: nível que não existe recusa",
+     {"mysql": "SET TRANSACTION ISOLATION LEVEL ZZZ",
+      "postgres": "SET TRANSACTION ISOLATION LEVEL ZZZ",
+      "sqlite": None,
+      "phxsql": "BEGIN ISOLATION LEVEL ZZZ"}),
+}
+
+RECUSOU, ACEITOU, SEM_CASO = "recusou", "aceitou", "sem-caso"
+SEM_GEMEO = (SEM_CASO, "nenhum caso negativo declarado para este motor")
+POSITIVA_RECUSADA = (SEM_CASO, "a positiva foi recusada, e a recusa é o próprio "
+                               "veredito -- o gêmeo guarda o `tem`, não o `nao`")
+CORTE_DO_CRU = 4000
+
+
+def negativo_de(chave, lingua):
+    """A instrucao gemea, ou `None` quando nao ha uma declarada."""
+    item = NEGATIVOS.get(chave)
+    return None if item is None else item[1].get(lingua)
+
+
+def cru_de(texto):
+    """A saida do motor como ela veio -- cortada com o corte DECLARADO.
+
+    Cortar em silencio e o mesmo erro do `[:90]` que esta funcao substitui: o
+    leitor nao sabe se a mensagem acabou ali ou se alguem a cortou.
+    """
+    texto = "" if texto is None else str(texto)
+    if len(texto) <= CORTE_DO_CRU:
+        return texto
+    return texto[:CORTE_DO_CRU] + f"\n… (cortado em {CORTE_DO_CRU} caracteres)"
 
 
 # --------------------------------------------------- sondas que SQL nao faz
@@ -516,47 +703,106 @@ def sonda_pitr():
 
 # ------------------------------------------------------------- os motores
 def por_sqlite(perguntas):
-    saida = {}
+    """Tres dicionarios: o veredito, a saida CRUA e o caso NEGATIVO por item.
+
+    O gemeo negativo roda DENTRO do mesmo `SAVEPOINT` da positiva, e isso nao
+    e detalhe: os gemeos de efeito (`INSERT INTO ck VALUES (-1)`) precisam da
+    tabela que a positiva acabou de criar, e o `ROLLBACK TO s` a apaga. Rodar
+    o gemeo depois do rollback mediria «a tabela nao existe» e publicaria isso
+    como se fosse o `CHECK` funcionando -- recusa pelo motivo errado e a forma
+    mais barata de um controle negativo mentir a favor.
+    """
+    saida, cru, neg = {}, {}, {}
     con = sqlite3.connect(":memory:")
     con.execute("CREATE TABLE c (id INTEGER PRIMARY KEY, nome TEXT, cidade TEXT, preco REAL)")
     for chave, _t, sql in perguntas:
         q = sql.get("sqlite")
         if q is None:
             saida[chave] = (SEM, "o verbo não existe neste motor")
+            cru[chave] = "não perguntado: o verbo não existe neste motor"
+            neg[chave] = SEM_GEMEO
             continue
         try:
             con.execute("SAVEPOINT s")
             con.execute(q)
-            con.execute("ROLLBACK TO s")
             saida[chave] = (TEM, "aceitou")
+            cru[chave] = f"$ sqlite3 :memory:\n{q}\n-- aceitou, sem erro"
+            neg[chave] = _neg_sqlite(con, chave, q)
+            con.execute("ROLLBACK TO s")
         except Exception as e:
             saida[chave] = (NAO, str(e)[:90])
-    return saida
+            cru[chave] = (f"$ sqlite3 :memory:\n{q}\n"
+                          f"-- {type(e).__name__}: {cru_de(e)}")
+            neg[chave] = POSITIVA_RECUSADA
+    return saida, cru, neg
+
+
+def _neg_sqlite(con, chave, positiva):
+    """O gemeo, com a conexao viva e a positiva ja aplicada."""
+    qn = negativo_de(chave, "sqlite")
+    if qn is None:
+        return SEM_GEMEO
+    try:
+        con.execute(qn)
+    except Exception as e:
+        return (RECUSOU, f"{qn}\n-- {type(e).__name__}: {cru_de(e)}")
+    return (ACEITOU, f"{qn}\n-- ACEITOU, e devia ter recusado")
 
 
 def por_processo(perguntas, lingua, roda):
-    saida = {}
+    """Tres dicionarios, como `por_sqlite`. Aqui nao ha savepoint: o que a
+    positiva criou continua de pe quando o gemeo roda logo em seguida."""
+    saida, cru, neg = {}, {}, {}
     for chave, _t, sql in perguntas:
         q = sql.get(lingua)
         if q is None:
             saida[chave] = (SEM, "o verbo não existe neste motor")
+            cru[chave] = "não perguntado: o verbo não existe neste motor"
+            neg[chave] = SEM_GEMEO
             continue
-        ok, msg = roda(q)
+        ok, msg, bruto = roda(q)
         saida[chave] = (TEM if ok else NAO, msg[:90])
-    return saida
+        cru[chave] = bruto
+        if not ok:
+            neg[chave] = POSITIVA_RECUSADA
+            continue
+        qn = negativo_de(chave, lingua)
+        if qn is None:
+            neg[chave] = SEM_GEMEO
+            continue
+        ok_n, _m, bruto_n = roda(qn)
+        neg[chave] = ((ACEITOU, bruto_n + "\n-- ACEITOU, e devia ter recusado")
+                      if ok_n else (RECUSOU, bruto_n))
+    return saida, cru, neg
+
+
+def _cru_de_processo(argv, q, r):
+    """O comando, a instrucao e o que voltou dos TRES canais.
+
+    O codigo de saida entra junto porque `stderr` vazio com codigo nao-zero
+    acontece -- e sem o codigo a celula ficaria dizendo «aceitou» por falta de
+    mensagem, que e exatamente o modo de falhar que esta casa ja pagou com o
+    `tail` engolindo o codigo de um cano.
+    """
+    return (f"$ {' '.join(argv[:-1])} {q!r}\n"
+            f"-- codigo de saida: {r.returncode}\n"
+            f"-- stdout: {cru_de(r.stdout).strip() or '(vazio)'}\n"
+            f"-- stderr: {cru_de(r.stderr).strip() or '(vazio)'}")
 
 
 def mysql_roda(q):
-    r = subprocess.run(["mysql", "-N", "-B", "cmp_phx", "-e", q],
-                       capture_output=True, text=True)
-    return r.returncode == 0, (r.stderr or "aceitou").strip()
+    argv = ["mysql", "-N", "-B", "cmp_phx", "-e", q]
+    r = subprocess.run(argv, capture_output=True, text=True)
+    return (r.returncode == 0, (r.stderr or "aceitou").strip(),
+            _cru_de_processo(argv, q, r))
 
 
 def pg_roda(q):
-    r = subprocess.run(["sudo", "-u", "postgres", "psql", "-d", "cmp_phx",
-                        "-v", "ON_ERROR_STOP=1", "-c", q],
-                       capture_output=True, text=True)
-    return r.returncode == 0, (r.stderr or "aceitou").strip()
+    argv = ["sudo", "-u", "postgres", "psql", "-d", "cmp_phx",
+            "-v", "ON_ERROR_STOP=1", "-c", q]
+    r = subprocess.run(argv, capture_output=True, text=True)
+    return (r.returncode == 0, (r.stderr or "aceitou").strip(),
+            _cru_de_processo(argv, q, r))
 
 
 def prepara_mysql():
@@ -602,22 +848,67 @@ def por_phxsql(perguntas, base):
         c.fala({"op": "inserir", "database": "cmp", "tabela": "c",
                 "linha": {"id": 1, "nome": "um", "cidade": "Blumenau",
                           "preco": "10.00"}})
-        saida = {}
+        # `cruas`, e nao `cru`: a sonda do indice por expressao, 350 linhas
+        # abaixo, usa `cru` para «o valor CRU, sem lower()». Chamar os dois de
+        # `cru` compila e some -- a atribuicao de la apaga este dicionario, e o
+        # erro sai como `KeyError: 'view'` no MAIN, longe da causa. Foi o que
+        # aconteceu na primeira corrida desta frente, em 17/09/2026.
+        saida, cruas, neg = {}, {}, {}
+
+        def _abre_transacao(instrucao):
+            return instrucao.strip().upper().startswith(("BEGIN", "START"))
+
+        def _fecha_se_abriu(instrucao):
+            # Pergunta que ABRE transacao a fecha em seguida: a conexao e uma
+            # so, e uma transacao aberta faria o DDL das sondas seguintes ser
+            # recusado («nao entra em transacao») -- e isso viraria um `nao`
+            # falso publicado em outra linha.
+            if _abre_transacao(instrucao):
+                c.fala({"op": "rollback", "database": "cmp"})
+
+        def _cru_do_soquete(instrucao, resposta):
+            """A resposta INTEIRA do servidor, e nao o `erro` recortado dela.
+
+            O que se guardava era `(r["erro"] or "aceitou")[:90]`, e um
+            `aceitou` sintetizado pelo medidor nao e prova de nada: quem audita
+            precisa do envelope como ele voltou do fio.
+            """
+            return (f'-> {{"op": "sql", "database": "cmp", "sql": {instrucao!r}}}\n'
+                    f"<- {cru_de(json.dumps(resposta, ensure_ascii=False))}")
+
         for chave, _t, sql in perguntas:
             q = sql.get("phxsql")
             if q is None:
                 saida[chave] = (SEM, "o verbo não existe neste motor")
+                cruas[chave] = ("não perguntado por SQL: este item vai ao "
+                                "PROTOCOLO na seção das sondas de efeito")
+                neg[chave] = (SEM_CASO, "o gêmeo deste item é a própria sonda "
+                                        "de efeito, mais abaixo, com o "
+                                        "controle do leitor do lado")
                 continue
             r = c.fala({"op": "sql", "database": "cmp", "sql": q})
             ok = bool(r.get("ok"))
             saida[chave] = (TEM if ok else NAO,
                             (r.get("erro") or "aceitou")[:90])
-            # Pergunta que ABRE transacao a fecha em seguida: a conexao e uma
-            # so, e uma transacao aberta faria o DDL das sondas seguintes ser
-            # recusado («nao entra em transacao») -- e isso viraria um `nao`
-            # falso publicado em outra linha.
-            if ok and q.strip().upper().startswith(("BEGIN", "START")):
-                c.fala({"op": "rollback", "database": "cmp"})
+            cruas[chave] = _cru_do_soquete(q, r)
+            _fecha_se_abriu(q)
+            if not ok:
+                neg[chave] = POSITIVA_RECUSADA
+                continue
+            qn = negativo_de(chave, "phxsql")
+            if qn is None:
+                neg[chave] = SEM_GEMEO
+                continue
+            rn = c.fala({"op": "sql", "database": "cmp", "sql": qn})
+            # O rollback vem antes de julgar: se o gemeo ABRIU transacao (o de
+            # `BEGIN ISOLATION LEVEL ZZZ`, se o nivel passar), deixar a
+            # transacao de pe recusaria o DDL das seis sondas de efeito logo
+            # abaixo -- e as seis sairiam `nao` por causa deste gemeo.
+            _fecha_se_abriu(qn)
+            neg[chave] = ((ACEITOU, _cru_do_soquete(qn, rn)
+                           + "\n-- ACEITOU, e devia ter recusado")
+                          if rn.get("ok") else
+                          (RECUSOU, _cru_do_soquete(qn, rn)))
         # ------------------------------------------------------------------
         # As seis que o tradutor SQL nao alcanca (ele traduz SELECT e as
         # rotinas do dialeto MySQL(R), nao DDL de tabela) vao ao PROTOCOLO --
@@ -944,7 +1235,7 @@ def por_phxsql(perguntas, base):
                     "sql": "CREATE ZZZZ nao_existe_de_proposito"})
         saida["__controle__"] = (TEM if r.get("ok") else NAO,
                                  (r.get("erro") or "aceitou")[:90])
-        return saida
+        return saida, cruas, neg
     finally:
         p.kill()
         p.wait()
@@ -1013,12 +1304,156 @@ def compila_o_nosso():
 
     O `flock` e o mesmo de toda compilacao aqui: duas frentes compilando ao
     mesmo tempo derrubam uma a outra.
+
+    **A trava e tomada AQUI, e quem chama este medidor NAO deve toma-la de
+    fora.** `flock(1)` nao e reentrante: a trava pertence a descricao de
+    arquivo aberto, e um `open()` novo enfileira atras de si mesmo. Em
+    17/09/2026 o medidor foi chamado como
+    `flock /tmp/phx-cargo.lock python3 .../medir.py` -- cumprindo a lei «todo
+    cargo sob flock» uma vez a mais -- e a corrida parou para sempre na
+    primeira linha, com o pai segurando a trava e esperando o filho, e o filho
+    esperando a trava. Ver
+    `docs/cognicao/cognicao_flock-nao-e-reentrante-e-eu-apliquei-a-lei-a-quem-ja-a-cumpria_20260917_1912.md`.
     """
     r = subprocess.run(["flock", "/tmp/phx-cargo.lock", "cargo", "build",
                         "--release", "-p", "phxsql-server"],
                        cwd=RAIZ, capture_output=True, text=True)
     if r.returncode != 0:
         raise SystemExit("nao compilou o phxsqld:\n" + r.stderr[-2000:])
+
+
+# ------------------------------------------- o AMBIENTE da corrida, medido
+#
+# **Uma matriz sem ambiente nao se refaz.** O `resultados.json` publicado em
+# 16/09/2026 dizia `phxsqld 0.18.0 (6e717e6579ad-sujo)` -- o proprio binario
+# registrando que a arvore estava SUJA -- e nao havia no arquivo commit,
+# arvore, sistema nem configuracao. Quem quisesse repetir a corrida nao tinha
+# de onde partir; e, medido em 17/09/2026, o `sqlite3` desta maquina nem
+# existe mais, enquanto a matriz publicada lista SQLite(R) 3.45.1 entre os
+# motores vivos. Retrato sem ambiente e retrato que ninguem confere.
+#
+# Tudo aqui e MEDIDO no momento da corrida. Nada digitado.
+TARJA = "‹omitido: pétrea — senha nunca em texto puro, nem o hash›"
+SEGREDOS = ("token", "senha", "senha_hash")
+
+
+def tarjar(v):
+    """Tira segredo, e DEIXA a chave visivel com a tarja no lugar do valor.
+
+    Apagar a chave junto esconderia que o campo existe, e o leitor nao saberia
+    que a corrida rodou com token. A forma certa e a mesma das mensagens de
+    erro desta casa: dizer o que ha, sem dizer o segredo.
+    """
+    if DEFEITO == "config-com-segredo":
+        return v
+    if isinstance(v, dict):
+        return {k: (TARJA if k in SEGREDOS else tarjar(x)) for k, x in v.items()}
+    if isinstance(v, list):
+        return [tarjar(x) for x in v]
+    return v
+
+
+def _saida_de(argv, entrada=None, so_direita=False):
+    """A saida do comando, aparada.
+
+    `so_direita=True` apara SO' a direita, e existe por um defeito medido em
+    17/09/2026: o `git status --porcelain` escreve `XY<espaco>caminho`, e o
+    arquivo apenas modificado no disco sai como ` M caminho`, com espaco na
+    coluna do indice. O `.strip()` come esse espaco **na primeira linha**, e o
+    recorte `[3:]` do leitor passa a tirar um caractere a mais: a primeira
+    linha saiu publicada como `hxsql/bancada/...`, sem o `p`.
+
+    E a conferencia que eu fiz do leitor **passou por engano**: eu escrevi a
+    entrada a mao, com o espaco no lugar, que e a entrada que o chamador nunca
+    produz. Teste que passa por engano e pior que teste que falta.
+    """
+    r = subprocess.run(argv, capture_output=True, text=True, input=entrada)
+    if r.returncode != 0:
+        return f"(falhou: {r.stderr.strip()[:80]})"
+    return r.stdout.rstrip() if so_direita else r.stdout.strip()
+
+
+def sha256_do_arquivo(caminho):
+    h = hashlib.sha256()
+    with open(caminho, "rb") as f:
+        for pedaco in iter(lambda: f.read(1 << 20), b""):
+            h.update(pedaco)
+    return h.hexdigest()
+
+
+# As SAIDAS desta corrida, que sujam a arvore por existirem.
+#
+# **Sem esta lista o campo `arvore` nunca poderia dizer `limpa`**, e campo que
+# so tem um valor possivel nao ensina nada: o `resultados.json` e o
+# `COMPARATIVO.md` sao escritos PELA corrida, entao no instante em que ela
+# mede ja estao diferentes do commit. Medido em 17/09/2026, a primeira corrida
+# com o campo disse `SUJA: 3` e a segunda `SUJA: 7`, e a diferenca era o meu
+# proprio trabalho -- nao havia como um leitor separar «a fonte divergiu do
+# commit» de «a corrida gravou o que era o trabalho dela gravar».
+#
+# O que interessa a quem quer REFAZER e a divergencia das ENTRADAS. Entao as
+# saidas saem da conta, com o nome, e o resto e NOMEADO em vez de contado:
+# lista curta se le, contagem nao.
+SAIDAS_DESTA_CORRIDA = (
+    "phxsql/bancada/comparativo/resultados.json",
+    "phxsql/docs/COMPARATIVO.md",
+)
+QUANTOS_SUJOS_NOMEAR = 12
+
+
+def _arvore(sujos):
+    """`limpa`, ou os arquivos de ENTRADA que divergem do commit, nomeados.
+
+    `sujos` tem de vir do `git status --porcelain` SEM aparar a esquerda: o
+    formato e `XY<espaco>caminho` e o `Y` pode ser espaco.
+    """
+    caminhos = [l[3:].strip().strip('"') for l in sujos.splitlines() if len(l) > 3]
+    entradas = sorted(c for c in caminhos if c not in SAIDAS_DESTA_CORRIDA)
+    if not entradas:
+        return ("limpa (fora das saídas desta própria corrida, "
+                + ", ".join(f"`{s}`" for s in SAIDAS_DESTA_CORRIDA) + ")")
+    mostra = entradas[:QUANTOS_SUJOS_NOMEAR]
+    resto = len(entradas) - len(mostra)
+    return (f"SUJA: {len(entradas)} arquivo(s) de entrada fora do commit — "
+            + ", ".join(f"`{c}`" for c in mostra)
+            + (f" e mais {resto}" if resto else ""))
+
+
+def ambiente():
+    from oficina import config  # noqa: E402  -- sys.path arrumado no topo
+    git = ["git", "-C", str(RAIZ)]
+    sujos = _saida_de(git + ["status", "--porcelain"], so_direita=True)
+    u = os.uname()
+    return {
+        "commit": _saida_de(git + ["rev-parse", "HEAD"]),
+        "branch": _saida_de(git + ["rev-parse", "--abbrev-ref", "HEAD"]),
+        # A arvore SUJA nao invalida a corrida -- invalida a promessa de que o
+        # commit a refaz. Entao ela aparece, e os arquivos vao NOMEADOS.
+        "arvore": _arvore(sujos),
+        "sha256_phxsqld": sha256_do_arquivo(PHXSQLD_BIN),
+        "uname": f"{u.sysname} {u.release} {u.machine}",
+        "cpus": os.cpu_count(),
+        "memoria_total": _saida_de(["sh", "-c",
+                                    "awk '/MemTotal/{print $2\" kB\"}' /proc/meminfo"]),
+        "configuracao_do_phxsqld": tarjar(config(PORTA)),
+        "porta": PORTA,
+        "como_refazer": "python3 bancada/comparativo/medir.py",
+    }
+
+
+def nenhum_segredo_no_json(texto):
+    """**O portao da tarja.** Roda sobre o JSON JA SERIALIZADO, e nao sobre o
+    dicionario: o que vaza e o que se grava, e uma tarja aplicada no ramo
+    errado passaria por uma conferencia feita no dicionario certo.
+    """
+    from oficina import SENHA, TOKEN, hash_da_senha  # noqa: E402
+    for nome, segredo in (("o token", TOKEN), ("a senha", SENHA),
+                          ("o hash da senha", hash_da_senha(SENHA))):
+        if segredo and segredo in texto:
+            raise SystemExit(
+                f"SEGREDO NO ARTEFATO: {nome} apareceu no `resultados.json`, "
+                "que e versionado. «Senha nunca em texto puro, nem em arquivo» "
+                "e petrea -- a corrida para aqui e nada se grava.")
 
 
 def main():
@@ -1028,26 +1463,38 @@ def main():
     compila_o_nosso()
     print("  phxsqld       recompilado antes de medir")
 
-    motores = {}
-    motores["sqlite"] = por_sqlite(perguntas)
+    motores, cru, neg = {}, {}, {}
+
+    def fora_do_ar(lingua):
+        """Motor que nao subiu: `sem-motor` em toda a coluna, e a crua DIZ
+        que nao houve pergunta -- em vez de ficar vazia, que se leria como
+        «perguntou e o motor calou»."""
+        motores[lingua] = {c: (SEM, "motor fora do ar") for c, _t, _s in perguntas}
+        cru[lingua] = {c: "motor fora do ar nesta máquina: nada foi perguntado"
+                       for c, _t, _s in perguntas}
+        neg[lingua] = {c: (SEM_CASO, "motor fora do ar") for c, _t, _s in perguntas}
+
+    motores["sqlite"], cru["sqlite"], neg["sqlite"] = por_sqlite(perguntas)
     print(f"  SQLite(R)     {sqlite3.sqlite_version}: respondeu")
 
     if prepara_mysql():
-        motores["mysql"] = por_processo(perguntas, "mysql", mysql_roda)
+        motores["mysql"], cru["mysql"], neg["mysql"] = por_processo(
+            perguntas, "mysql", mysql_roda)
         print("  MySQL(R)      respondeu")
     else:
         print("  MySQL(R)      NAO SUBIU -- as celulas dele saem 'sem-motor'")
-        motores["mysql"] = {c: (SEM, "motor fora do ar") for c, _t, _s in perguntas}
+        fora_do_ar("mysql")
 
     if prepara_pg():
-        motores["postgres"] = por_processo(perguntas, "postgres", pg_roda)
+        motores["postgres"], cru["postgres"], neg["postgres"] = por_processo(
+            perguntas, "postgres", pg_roda)
         print("  PostgreSQL(R) respondeu")
     else:
         print("  PostgreSQL(R) NAO SUBIU -- as celulas dele saem 'sem-motor'")
-        motores["postgres"] = {c: (SEM, "motor fora do ar") for c, _t, _s in perguntas}
+        fora_do_ar("postgres")
 
     with tempfile.TemporaryDirectory(prefix="phx-cmp-") as base:
-        motores["phxsql"] = por_phxsql(perguntas, base)
+        motores["phxsql"], cru["phxsql"], neg["phxsql"] = por_phxsql(perguntas, base)
     ctl_phx = motores["phxsql"].pop("__controle__")
     print("  PhxSql        respondeu\n")
 
@@ -1064,9 +1511,11 @@ def main():
     # vindo do motor -- esta vindo de um cliente que engole erro.
     CONTROLE = "CREATE ZZZZ nao_existe_de_proposito"
     controles = {
-        "sqlite": por_sqlite([("ctl", "", {"sqlite": CONTROLE})])["ctl"],
-        "mysql": por_processo([("ctl", "", {"mysql": CONTROLE})], "mysql", mysql_roda)["ctl"],
-        "postgres": por_processo([("ctl", "", {"postgres": CONTROLE})], "postgres", pg_roda)["ctl"],
+        "sqlite": por_sqlite([("ctl", "", {"sqlite": CONTROLE})])[0]["ctl"],
+        "mysql": por_processo([("ctl", "", {"mysql": CONTROLE})],
+                             "mysql", mysql_roda)[0]["ctl"],
+        "postgres": por_processo([("ctl", "", {"postgres": CONTROLE})],
+                                "postgres", pg_roda)[0]["ctl"],
         "phxsql": ctl_phx,
     }
     for nome, (ver, msg) in controles.items():
@@ -1100,6 +1549,28 @@ def main():
                 "`unir`",
     }
 
+    # O controle de cada sonda que nao vai por SQL. As quatro VIVAS carregam
+    # o proprio controle DENTRO delas (o leitor que tem de voltar 42, o par
+    # igual do `diferencas`, ana x bea no direito por coluna, a replicacao
+    # ligada no PITR) -- por isso nao ha gemeo declarado aqui. As duas de
+    # CODIGO nao carregam: `trava_por_linha` e `tls_no_transporte` saem de
+    # leitura de fonte, e leitura de fonte nao tem gemeo que se recuse. Isso
+    # e LACUNA, e aparece contada como lacuna em vez de sumir da conta.
+    CONTROLE_DA_SONDA = {
+        "direito_por_coluna": (SEM_CASO, "sonda VIVA: o controle é ana × bea "
+                                         "na mesma corrida"),
+        "pitr": (SEM_CASO, "sonda VIVA: o controle é a `replicacao` ligada "
+                           "antes do arranque, no servidor próprio"),
+        "parametro_no_prepared": (SEM_CASO, "sonda VIVA pelo soquete: o "
+                                            "controle é o efeito medido"),
+        "diff_de_dados": (SEM_CASO, "sonda VIVA: o controle é o par IGUAL, que "
+                                    "tem de voltar `diferentes: []`"),
+        "trava_por_linha": (SEM_CASO, "LACUNA: sonda de código, sem gêmeo que "
+                                      "se recuse -- leitura de fonte não tem"),
+        "tls_no_transporte": (SEM_CASO, "LACUNA: sonda de código, sem gêmeo "
+                                        "que se recuse -- e o veredito é `nao`"),
+    }
+
     linhas = []
     for chave, titulo, _s in perguntas:
         linhas.append({
@@ -1110,6 +1581,13 @@ def main():
             "sqlite": motores["sqlite"][chave],
             "cassandra": CITACOES["cassandra"].get(chave, (CITADO, "não apurado")),
             "hfsql": CITACOES["hfsql"].get(chave, (CITADO, "não apurado")),
+            "cru": {m: cru[m][chave] for m in ("phxsql", "mysql", "postgres", "sqlite")},
+            "negativo": {
+                "o_que_a_recusa_prova": (NEGATIVOS[chave][0]
+                                         if chave in NEGATIVOS else
+                                         "nenhum caso negativo desenhado"),
+                **{m: neg[m][chave] for m in ("phxsql", "mysql", "postgres", "sqlite")},
+            },
         })
     for chave, d in codigo.items():
         linhas.append({
@@ -1121,11 +1599,48 @@ def main():
             "sqlite": (CITADO, "não perguntado por SQL"),
             "cassandra": CITACOES["cassandra"].get(chave, (CITADO, "não apurado")),
             "hfsql": CITACOES["hfsql"].get(chave, (CITADO, "não apurado")),
+            # A crua de uma sonda de codigo e o veredito INTEIRO dela, que ja
+            # traz arquivo e linha -- nao o recorte de 90 caracteres.
+            "cru": {"phxsql": cru_de(d["phxsql"][1]),
+                    "mysql": "não perguntado por SQL",
+                    "postgres": "não perguntado por SQL",
+                    "sqlite": "não perguntado por SQL"},
+            "negativo": {
+                "o_que_a_recusa_prova": "—",
+                "phxsql": CONTROLE_DA_SONDA.get(
+                    chave, (SEM_CASO, "sonda sem controle negativo catalogado")),
+                "mysql": SEM_GEMEO, "postgres": SEM_GEMEO, "sqlite": SEM_GEMEO,
+            },
         })
 
     faltam = [l for l in linhas if l["phxsql"][0] in (NAO, MEIO)]
+
+    # A conta do controle negativo. `aceitou_o_que_devia_recusar` e a unica
+    # lista que importa ler: cada item dela e um `tem` cuja aceitacao nao
+    # provou o construto.
+    MOTORES = ("phxsql", "mysql", "postgres", "sqlite")
+    aceitou, recusou, sem_caso = [], 0, 0
+    for l in linhas:
+        for m in MOTORES:
+            estado = l["negativo"][m][0]
+            if estado == ACEITOU:
+                aceitou.append(f"{l['chave']}/{m}")
+            elif estado == RECUSOU:
+                recusou += 1
+            else:
+                sem_caso += 1
+
     saida = {
         "quando": datetime.datetime.now().isoformat(timespec="seconds"),
+        "ambiente": ambiente(),
+        "controle_negativo": {
+            "o_que_e": "o gêmeo de cada item que TEM de ser recusado. Roda só "
+                       "onde a positiva deu `tem`, porque é o veredito "
+                       "afirmativo que pode ser falso.",
+            "gemeos_recusaram": recusou,
+            "sem_caso": sem_caso,
+            "aceitou_o_que_devia_recusar": aceitou,
+        },
         "motores_vivos": {
             "sqlite": sqlite3.sqlite_version,
             "mysql": subprocess.run(["mysql", "-N", "-B", "-e", "select version()"],
@@ -1144,7 +1659,9 @@ def main():
         "faltam_no_phxsql": len(faltam),
         "linhas": linhas,
     }
-    ALVO.write_text(json.dumps(saida, indent=2, ensure_ascii=False) + "\n")
+    texto = json.dumps(saida, indent=2, ensure_ascii=False) + "\n"
+    nenhum_segredo_no_json(texto)
+    ALVO.write_text(texto)
 
     print(f"{'capacidade':38} {'phx':6} {'my':6} {'pg':6} {'lite':6}")
     print("-" * 68)
@@ -1152,6 +1669,20 @@ def main():
         print(f"{l['titulo'][:37]:38} {l['phxsql'][0]:6} {l['mysql'][0]:6} "
               f"{l['postgres'][0]:6} {l['sqlite'][0]:6}")
     print(f"\n{len(faltam)} de {len(linhas)} capacidades faltam ou estão pela metade no PhxSql")
+
+    a = saida["ambiente"]
+    print(f"\nambiente: {a['commit'][:12]} ({a['arvore']}) · {a['uname']} · "
+          f"phxsqld sha256 {a['sha256_phxsqld'][:12]}…")
+    print(f"controle negativo: {recusou} gêmeo(s) recusaram como devia, "
+          f"{sem_caso} sem caso, {len(aceitou)} "
+          f"{'ACEITOU' if len(aceitou) == 1 else 'ACEITARAM'} o que devia recusar")
+    # **Dizer que fez menos quando faz menos.** A lista abaixo nao vai sob
+    # cabecalho de exito: cada item e uma celula `tem` cuja aceitacao nao
+    # provou nada, e trocar o estado dela e decisao com dado na mao --
+    # a catraca e a metade 2 do pedido 335.
+    for item in aceitou:
+        print(f"  ATENCAO  {item}: o gêmeo passou, então o `tem` desta célula "
+              "não está provado pela aceitação")
     print(f"gravado: {ALVO}")
 
 

@@ -1,6 +1,6 @@
 # O que ainda falta no PhxSql, medido contra quem tem
 
-Medido em **16/09/2026**, uma pergunta de cada vez, contra os motores que
+Medido em **17/09/2026**, uma pergunta de cada vez, contra os motores que
 estão **vivos nesta máquina**. Este documento não é o `COMPARACAO.md` (o que
 os motores maduros têm e nós **trouxemos**) nem o `CONCORRENTES.md` (o caminho
 de inserção deles, lido no fonte). É o outro lado: **o que continua faltando
@@ -15,6 +15,34 @@ decisão e o que é buraco.
 > `python3 bancada/comparativo/documento.py`. **Este arquivo não se
 > edita** — a prosa mora no gerador, e a medição, no `resultados.json`.
 
+**O ambiente da corrida, para que ela se refaça:** commit `bb7e84186c0a` no
+branch `claude/capacidades-disponiveis-y6auxh`, árvore **SUJA: 6 arquivo(s) de
+entrada fora do commit — `phxsql/bancada/comparativo/LEIA-ME.md`,
+`phxsql/bancada/comparativo/documento.py`,
+`phxsql/bancada/comparativo/medir.py`, `phxsql/bancada/comparativo/prova-dos-
+portoes.py`, `phxsql/docs/PENDENCIAS.md`,
+`phxsql/docs/cognicao/cognicao_flock-nao-e-reentrante-e-eu-apliquei-a-lei-a-
+quem-ja-a-cumpria_20260917_1912.md`**, `Linux 6.18.44-fc-v33 x86_64` com 4
+CPUs e 16.482.220 kB de memória, e o `phxsqld` que respondeu tem `sha256`
+`bab749c9684b5e1e…`. A configuração do servidor está no `resultados.json`, com
+`token` e `senha_hash` **tarjados** — a chave fica visível, o valor não,
+porque «senha nunca em texto puro» alcança artefato versionado.
+
+**E o controle negativo, que é a metade que faltava da prova real:** cada item
+tem um gêmeo que *tem de ser recusado* — por efeito (a linha que viola o
+`CHECK`, a escrita na coluna calculada) ou por resolução (nomear dentro do
+construto algo que não existe). Ele roda só onde a positiva deu `tem`, porque
+é o veredito afirmativo que pode ser falso: «passou» não distingue «o motor
+entendeu» de «o motor ignorou o que não entendeu». Nesta corrida **43** gêmeos
+recusaram como devia e **1** aceitou o que devia recusar.
+
+> **As células abaixo dizem `tem`, e a aceitação delas não prova o construto**
+> — o gêmeo passou junto. Trocar o estado é decisão com dado na mão, e o dado
+> é este:
+>
+> - `view` em **sqlite**
+
+
 ---
 
 ## 1. Como cada célula foi decidida
@@ -28,7 +56,7 @@ e a mensagem de recusa fica guardada no JSON. Estas versões responderam:
 
 | motor | versão que respondeu |
 |---|---|
-| PhxSql | `phxsqld 0.18.0 (6e717e6579ad-sujo) x86_64-unknown-linux-gnu` |
+| PhxSql | `phxsqld 0.18.0 (bb7e84186c0a-sujo) x86_64-unknown-linux-gnu` |
 | PostgreSQL(R) | `16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)` |
 | MySQL(R) | `8.0.46-0ubuntu0.24.04.3` |
 | SQLite(R) | `3.45.1` |
@@ -256,7 +284,7 @@ veredito abaixo nomeia onde olhar.
 
 ### Trava por linha nas transações &mdash; ✅
 
-> gestor em crates/phxsql-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:704; pedida em crates/phxsql-server/src/servidor.rs:13489
+> gestor em crates/phxsql-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:833; pedida em crates/phxsql-server/src/servidor.rs:14595
 
 *Vale DENTRO de transação: `esperar_trava` recusa com «sem transação» quem a
 pede fora dela, e aí a trava GLOBAL de dados serializa como antes.*
@@ -357,8 +385,8 @@ lower(nome).
 **Nível de isolamento acima de `READ COMMITTED`** — aceitou.
 
 **Trava por linha nas transações** — gestor em crates/phxsql-
-server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:704;
-pedida em crates/phxsql-server/src/servidor.rs:13489. Vale DENTRO de
+server/src/travas.rs:1; ligado em crates/phxsql-server/src/servidor.rs:833;
+pedida em crates/phxsql-server/src/servidor.rs:14595. Vale DENTRO de
 transação: `esperar_trava` recusa com «sem transação» quem a pede fora dela, e
 aí a trava GLOBAL de dados serializa como antes.
 

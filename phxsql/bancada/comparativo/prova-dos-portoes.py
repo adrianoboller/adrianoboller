@@ -26,6 +26,11 @@ ESPERADO = {
     "indice-velho": "MESA NAO POSTA",
     "envelope": "LEITOR QUEBRADO",
     "catalogo-vazio": "SONDA QUEBRADA",
+    # 17/09/2026: a corrida passou a gravar a `configuracao` do `phxsqld`, e o
+    # `config.json` da oficina carrega `token` e `senha_hash`. Sem a tarja, o
+    # `resultados.json` -- que e versionado -- vazaria os dois. O defeito
+    # reposto tira a tarja.
+    "config-com-segredo": "SEGREDO NO ARTEFATO",
 }
 
 
