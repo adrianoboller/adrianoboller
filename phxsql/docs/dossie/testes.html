@@ -91,9 +91,9 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
 
   <div class="placar">
     <div class="c"><div class="v">2.411</div><div class="r">testes</div></div>
-    <div class="c"><div class="v">180</div><div class="r">guardas</div></div>
-    <div class="c"><div class="v">29</div><div class="r">casos de tela</div></div>
-    <div class="c"><div class="v">20</div><div class="r">catracas</div></div>
+    <div class="c"><div class="v">194</div><div class="r">guardas</div></div>
+    <div class="c"><div class="v">33</div><div class="r">casos de tela</div></div>
+    <div class="c"><div class="v">23</div><div class="r">catracas</div></div>
     <div class="c"><div class="v">0</div><div class="r">dependências</div></div>
   </div>
 </header>
@@ -117,7 +117,7 @@ mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 periodicamente. Teste que passa por engano é pior que teste que falta, e esta
 camada existe por causa disso.</p>
 <div class="nota">
-  <b>180 guardas</b> no catálogo (<code>bancada/guardas/catalogo.py</code>),
+  <b>194 guardas</b> no catálogo (<code>bancada/guardas/catalogo.py</code>),
   cada uma com o defeito reposto, o arquivo, o trecho e quais testes têm de cair.
   Roda por <code>python3 bancada/guardas/provar-guardas.py</code>.
 </div>
@@ -132,16 +132,19 @@ uma lista digitada aqui.</p>
     <thead><tr><th>catraca</th><th class="n">hoje</th><th>onde</th></tr></thead>
     <tbody>
       <tr><td class="mono">TETO_ANINHAMENTO</td><td class="n mono">8</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
-      <tr><td class="mono">TETO_BOTAO_SEM_PROVA</td><td class="n mono">194</td><td class="mono peq">crates/phxsql-server/src/conferidor_botoes.rs</td></tr>
+      <tr><td class="mono">TETO_BOTAO_SEM_PROVA</td><td class="n mono">119</td><td class="mono peq">crates/phxsql-server/src/conferidor_botoes.rs</td></tr>
       <tr><td class="mono">TETO_COLADO</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor.rs</td></tr>
       <tr><td class="mono">TETO_COLETA_ROWIDS</td><td class="n mono">1.000.000</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
       <tr><td class="mono">TETO_DA_CASCATA</td><td class="n mono">16</td><td class="mono peq">crates/phxsql-store/src/table.rs</td></tr>
       <tr><td class="mono">TETO_DA_FILA</td><td class="n mono">32</td><td class="mono peq">crates/phxsql-server/src/saude_do_disco.rs</td></tr>
+      <tr><td class="mono">TETO_DE_COLUNAS</td><td class="n mono">12</td><td class="mono peq">crates/phxsql-server/src/bidirecional.rs</td></tr>
+      <tr><td class="mono">TETO_DE_EVENTOS_POR_LOTE</td><td class="n mono">5.000</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
       <tr><td class="mono">TETO_DO_CABECALHO</td><td class="n mono">400</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
       <tr><td class="mono">TETO_DO_CAMPO</td><td class="n mono">120</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
       <tr><td class="mono">TETO_DO_ERRO</td><td class="n mono">500</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
       <tr><td class="mono">TETO_DO_LOTE_SERVIDO</td><td class="n mono">16</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
       <tr><td class="mono">TETO_DO_REGISTRO</td><td class="n mono">128</td><td class="mono peq">crates/phxsql-core/src/fio.rs</td></tr>
+      <tr><td class="mono">TETO_DO_VALOR</td><td class="n mono">48</td><td class="mono peq">crates/phxsql-server/src/bidirecional.rs</td></tr>
       <tr><td class="mono">TETO_FRASE_REPETIDA</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor.rs</td></tr>
       <tr><td class="mono">TETO_FSYNC_POR_FECHO_V2</td><td class="n mono">8</td><td class="mono peq">crates/phxsql-store/src/conferidor_fsync.rs</td></tr>
       <tr><td class="mono">TETO_INVENTARIO_DESCASADO</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor_inventario.rs</td></tr>
@@ -166,13 +169,13 @@ medida</b> em vez de sumir da tabela.</p>
     <tbody>
       <tr><td class="nome">Comparativo — o que falta aqui, contra quem tem<div class="prova">a mesma pergunta em quatro motores vivos, com um controle positivo que TODOS têm de recusar — e sonda de efeito, nunca «aceitou»</div></td><td class="q mono">2026-09-16T05:17:23</td><td class="v"><b>capacidades perguntadas</b> 19 · <b>faltam ou pela metade aqui</b> 1</td></tr>
       <tr><td class="nome">Cobertura da tela sobre o protocolo<div class="prova">as duas listas saem do código — as operações do array OPERACOES e os arquivos da tela dos include_str! do http.rs</div></td><td class="q mono">2026-09-09T06:26:06</td><td class="v"><b>operações no catálogo</b> 136 · <b>alcançadas pela tela</b> 109</td></tr>
-      <tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-11 22:20 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 4,3 s · <b>escrita aceita em</b> 4,3 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
-      <tr><td class="nome">Replicação — quatro servidores<div class="prova">master e três espelhos no ar, com retrato SHA-256 de cada linha nos quatro</div></td><td class="q mono">2026-09-07</td><td class="v"><b>master</b> 33.883 linhas/s · <b>réplica aplica</b> 37.311 eventos/s · <b>alcance</b> 2,7 s · <b>os quatro iguais no fim</b> sim</td></tr>
-      <tr><td class="nome">Replicação — credencial recusada não bloqueia o IP<div class="prova">um master e uma réplica com o hash errado, pelo soquete: a réplica tenta UMA vez e estaciona, o blacklist.json fica vazio e o operador do mesmo IP entra — com dois controles na mesma corrida: cinco logins errados da própria bancada continuam bloqueando o master, e a origem fora do ar continua sendo procurada com recuo crescente</div></td><td class="q mono">2026-09-09 06:59:41</td><td class="v"><b>tentativas da réplica</b> 1 · <b>bloqueou o IP</b> NÃO · <b>operador derrubado</b> NÃO · <b>recuo de rede</b> [1.0, 2.0, 4.0, 8.0] s</td></tr>
+      <tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-17 02:38 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 4,3 s · <b>escrita aceita em</b> 4,3 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
+      <tr><td class="nome">Replicação — quatro servidores<div class="prova">master e três espelhos no ar, com retrato SHA-256 de cada linha nos quatro</div></td><td class="q mono">2026-09-17</td><td class="v"><b>master</b> 45.117 linhas/s · <b>réplica aplica</b> 43.606 eventos/s · <b>alcance</b> 2,3 s · <b>os quatro iguais no fim</b> sim</td></tr>
+      <tr><td class="nome">Replicação — credencial recusada não bloqueia o IP<div class="prova">um master e uma réplica com o hash errado, pelo soquete: a réplica tenta UMA vez e estaciona, o blacklist.json fica vazio e o operador do mesmo IP entra — com dois controles na mesma corrida: cinco logins errados da própria bancada continuam bloqueando o master, e a origem fora do ar continua sendo procurada com recuo crescente</div></td><td class="q mono">2026-09-17 02:36:30</td><td class="v"><b>tentativas da réplica</b> 1 · <b>bloqueou o IP</b> NÃO · <b>operador derrubado</b> NÃO · <b>recuo de rede</b> [1.0, 2.0, 4.0, 8.0] s</td></tr>
       <tr><td class="nome">Telemetria — quanto custa ligar a instrumentação<div class="prova">um servidor só, com o interruptor virado em tempo de execução a cada par curto e a ordem alternada — o custo sai do PISO de cada lado (o efeito é aditivo; a média mede o vizinho) e só é declarado quando o teste de sinal passa a 3 sigma. Carga que não resolve aparece como «dentro do ruído», com a contagem dos pares ao lado</div></td><td class="q mono">2026-09-16T20:48:33</td><td class="v"><b>carga da máquina na corrida</b> 6,5 · <b>linhas no pior caso</b> 200.000</td></tr>
       <tr><td class="nome">Transações — atomicidade pelo soquete<div class="prova">SIGKILL no meio de um COMMIT de 3.000 linhas, e o banco reaberto depois — a exigência não é «as 3.000 estão lá», é NUNCA METADE, com o relatório dizendo qual dos dois. E o portão se prova apagando a marca .tx: sem ela o banco volta pela metade, que é o preço da garantia aparecendo</div></td><td class="q mono">2026-09-07 09:06</td><td class="v"><b>conferências pelo soquete</b> 36 · <b>falhas</b> 0 · <b>linhas depois da queda</b> 3.001 · <b>ficou pela metade</b> NÃO</td></tr>
       <tr><td class="nome">PITR — restaurar a um instante, pelo soquete<div class="prova">a linha 3 é gravada DEPOIS do corte e tem de NÃO aparecer no restaurado — e o mesmo backup restaurado sem ate volta com uma linha só, que é o controle positivo na mesma corrida. Sem ele, uma restauração que devolvesse duas linhas por acaso passaria</div></td><td class="q mono">2026-09-08 17:11</td><td class="v"><b>conferências pelo soquete</b> 22 · <b>falhas</b> 0 · <b>eventos reaplicados</b> 2 · <b>pulados depois do corte</b> 1</td></tr>
-      <tr><td class="nome">Quórum — o que custaria esperar as réplicas<div class="prova">esta não prova recurso: mede o PREÇO de uma decisão que ainda não foi tomada. Separa o que a bancada de replicação somava num número só — os 826 ms publicados lá são 99,9% sono do laço, e o transporte custa 0,475 ms. Tudo em localhost: é o PISO, e a rede real custa mais</div></td><td class="q mono">2026-09-07 16:37</td><td class="v"><b>gravar no master</b> 0,206 ms · <b>levar a uma réplica</b> 0,47 ms · <b>commit esperando 2 de 3</b> 3,08 × · <b>commit esperando 3 de 3</b> 3,56 ×</td></tr>
+      <tr><td class="nome">Quórum — o que custaria esperar as réplicas<div class="prova">esta não prova recurso: mede o PREÇO de uma decisão que ainda não foi tomada. Separa o que a bancada de replicação somava num número só — os 826 ms publicados lá são 99,9% sono do laço, e o transporte custa 0,475 ms. Tudo em localhost: é o PISO, e a rede real custa mais</div></td><td class="q mono">2026-09-17 02:40</td><td class="v"><b>gravar no master</b> 0,152 ms · <b>levar a uma réplica</b> 0,349 ms · <b>commit esperando 2 de 3</b> 3,04 × · <b>commit esperando 3 de 3</b> 3,56 ×</td></tr>
       <tr><td class="nome">ACID — as quatro letras<div class="prova">cada afirmação com o controle da mesma corrida; o nível de isolamento sai medido, não citado</div></td><td class="q mono">2026-09-05 05:49 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>versao</b> phxsqld 0.18.0 (41e82efa97c8) x86_64-unknown-linux-gnu · <b>rapido</b> NÃO</td></tr>
       <tr><td class="nome">Durabilidade — o fecho da janela<div class="prova">os `fsync` contados por `strace` contra o `phxsqld` de pé</div></td><td class="q mono">2026-09-05 08:18 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>defeito_confirmado_a</b> NÃO</td></tr>
       <tr><td class="nome">Carga — uma a uma contra o lote<div class="prova">o custo da viagem de rede, separado do custo de gravar</div></td><td class="q mono">2026-08-29</td><td class="v"><b>quando</b> 2026-08-29 · <b>versao</b> 0.17.0 · <b>linhas</b> 20.000 · <b>por_lote</b> 5.000</td></tr>
@@ -191,14 +194,14 @@ medida</b> em vez de sumir da tabela.</p>
 demonstração achou três defeitos em cinco minutos que ler o código não acharia,
 e o pior deles quebrava todo salvar e todo incluir pela tela.</p>
 <div class="nota">
-  <b>29 casos</b> em <code>testes-web/casos/</code>, quase todos nos dois
+  <b>33 casos</b> em <code>testes-web/casos/</code>, quase todos nos dois
   temas, contra um <code>phxsqld</code> de verdade num navegador de verdade — sem
-  maquete e sem mockup. E <b>172 botões</b> com clique gravado
-  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-12 07:40 (mtime)):
+  maquete e sem mockup. E <b>186 botões</b> com clique gravado
+  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-17 06:14 (mtime)):
   a evidência é escrita pela própria corrida, e só em corrida <b>inteira e
   verde</b>, porque uma corrida que cai no meio grava menos do que provou.
 </div>
-<ul class="casos"><li><code>01-entrada.mjs</code></li><li><code>02-passeio.mjs</code></li><li><code>03-ficha.mjs</code></li><li><code>04-arvore.mjs</code></li><li><code>05-grade.mjs</code></li><li><code>06-css-global.mjs</code></li><li><code>07-responsivo.mjs</code></li><li><code>08-lateral.mjs</code></li><li><code>09-cores.mjs</code></li><li><code>10-primeira-pintura.mjs</code></li><li><code>11-lgpd.mjs</code></li><li><code>12-multitela.mjs</code></li><li><code>13-monitores.mjs</code></li><li><code>14-acrescentar-coluna.mjs</code></li><li><code>15-transacoes.mjs</code></li><li><code>16-telemetria.mjs</code></li><li><code>17-barra-e-popup.mjs</code></li><li><code>18-tela-atropelada.mjs</code></li><li><code>19-conflito.mjs</code></li><li><code>20-pushdown.mjs</code></li><li><code>21-botoes-da-grade.mjs</code></li><li><code>22-botoes-do-conteudo.mjs</code></li><li><code>23-botoes-da-tira.mjs</code></li><li><code>24-fts-na-tela.mjs</code></li><li><code>25-botoes-do-diagrama-e-da-gestao.mjs</code></li><li><code>26-multitela-abas.mjs</code></li><li><code>27-direito-por-coluna.mjs</code></li><li><code>28-usuarios.mjs</code></li><li><code>29-saude-do-disco.mjs</code></li></ul>
+<ul class="casos"><li><code>01-entrada.mjs</code></li><li><code>02-passeio.mjs</code></li><li><code>03-ficha.mjs</code></li><li><code>04-arvore.mjs</code></li><li><code>05-grade.mjs</code></li><li><code>06-css-global.mjs</code></li><li><code>07-responsivo.mjs</code></li><li><code>08-lateral.mjs</code></li><li><code>09-cores.mjs</code></li><li><code>10-primeira-pintura.mjs</code></li><li><code>11-lgpd.mjs</code></li><li><code>12-multitela.mjs</code></li><li><code>13-monitores.mjs</code></li><li><code>14-acrescentar-coluna.mjs</code></li><li><code>15-transacoes.mjs</code></li><li><code>16-telemetria.mjs</code></li><li><code>17-barra-e-popup.mjs</code></li><li><code>18-tela-atropelada.mjs</code></li><li><code>19-conflito.mjs</code></li><li><code>20-pushdown.mjs</code></li><li><code>21-botoes-da-grade.mjs</code></li><li><code>22-botoes-do-conteudo.mjs</code></li><li><code>23-botoes-da-tira.mjs</code></li><li><code>24-fts-na-tela.mjs</code></li><li><code>25-botoes-do-diagrama-e-da-gestao.mjs</code></li><li><code>26-multitela-abas.mjs</code></li><li><code>27-direito-por-coluna.mjs</code></li><li><code>28-usuarios.mjs</code></li><li><code>29-saude-do-disco.mjs</code></li><li><code>30-botoes-do-assistente-de-replicacao.mjs</code></li><li><code>31-botoes-do-dblink.mjs</code></li><li><code>32-botoes-do-pivot.mjs</code></li><li><code>33-botoes-dos-idiomas-e-do-backup.mjs</code></li></ul>
 
 <h2>6. O que estas provas NÃO cobrem</h2>
 <p class="sub">A parte que uma página de testes costuma esconder, e a única que
@@ -226,7 +229,7 @@ diz onde não confiar.</p>
 </div>
 
 <footer>
-  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 17/09/2026 01:25. Nenhum
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 17/09/2026 12:23. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
   do catálogo de guardas, dos <code>resultados.json</code> das bancadas, dos
   arquivos de <code>testes-web/</code> e das constantes do próprio fonte. O
