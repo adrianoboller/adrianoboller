@@ -11092,68 +11092,65 @@ function aindaNao(f) {
 async function verServico() {
   const [p, s] = await Promise.all([api("ping"), api("servico")]);
   const noAr = !!s.no_ar;
+  // Uma chave por FRASE, com a ênfase virada marca: o corte em <b>/<code>
+  // acontece DEPOIS da tradução, no marcado(). O `<em>` de antes virou
+  // negrito — a marca só tem negrito e crase.
   folha(txt("tela.mi_servico","Serviço"),
-    noAr ? "a porta de dados está aceitando conexão"
-         : "a porta de dados está PARADA — a interface web continua no ar",
+    noAr ? txt("tela.sv_sub_no_ar","a porta de dados está aceitando conexão")
+         : txt("tela.sv_sub_parada","a porta de dados está PARADA — a interface web continua no ar"),
     `<div class="fichas">
        <div class="ficha"><div class="v" style="color:${
-          noAr ? "var(--ok)" : "var(--vermelho)"}">${noAr ? "no ar" : "parada"}</div>
-         <div class="r">porta de dados</div></div>
+          noAr ? "var(--ok)" : "var(--vermelho)"}">${esc(noAr ? txt("tela.sv_no_ar","no ar") : txt("tela.sv_parada","parada"))}</div>
+         <div class="r">${esc(txt("tela.sv_fic_porta","porta de dados"))}</div></div>
        <div class="ficha"><div class="v">${esc(s.endereco || "—")}</div>
-         <div class="r">${noAr ? "escutando em" : "última porta"}</div></div>
+         <div class="r">${esc(noAr ? txt("tela.sv_escutando_em","escutando em") : txt("tela.sv_ultima_porta","última porta"))}</div></div>
        <div class="ficha"><div class="v">${fmt(s.conexoes ?? 0)}</div>
-         <div class="r">conexões abertas</div></div>
+         <div class="r">${esc(txt("tela.sv_fic_conexoes","conexões abertas"))}</div></div>
        <div class="ficha"><div class="v">${esc(p.papel || "—")}</div>
-         <div class="r">papel</div></div>
-       <div class="ficha"><div class="v">${esc(s.web_ligada ? s.web : "desligada")}</div>
-         <div class="r">interface web</div></div>
+         <div class="r">${esc(txt("tela.col_papel","papel"))}</div></div>
+       <div class="ficha"><div class="v">${esc(s.web_ligada ? s.web : txt("tela.sv_web_desligada","desligada"))}</div>
+         <div class="r">${esc(txt("tela.sv_fic_web","interface web"))}</div></div>
      </div>
 
      ${s.difere_do_arquivo ? `<div class="aviso">
-       <p><strong>A porta de agora não é a do arquivo.</strong> O
-       <code>config.json</code> diz <code>${esc(s.bind_configurado)}</code>, e o
-       servidor está em <code>${esc(s.endereco || "—")}</code>. Trocar pela tela
-       vale <b>até o próximo arranque</b> — esta tela não reescreve o
-       <code>config.json</code>, que carrega comentários e o resto da
-       configuração. Para valer sempre, mude o campo <code>bind</code> lá.</p>
+       <p>${marcado(txt("tela.sv_av_porta_1", "**A porta de agora não é a do arquivo.**"))}
+       ${marcado(txt("tela.sv_av_porta_2", "O `config.json` diz `{configurado}`, e o servidor está em `{endereco}`."), {configurado: s.bind_configurado, endereco: s.endereco || "—"})}
+       ${marcado(txt("tela.sv_av_porta_3", "Trocar pela tela vale **até o próximo arranque** — esta tela não reescreve o `config.json`, que carrega comentários e o resto da configuração."))}
+       ${marcado(txt("tela.sv_av_porta_4", "Para valer sempre, mude o campo `bind` lá."))}</p>
      </div>` : ""}
 
-     <h3>Trocar a porta, ou religar</h3>
+     <h3>${esc(txt("tela.sv_h_trocar","Trocar a porta, ou religar"))}</h3>
      <div class="barra-acao">
-       <label>Endereço<input id="svBind" value="${esc(s.endereco || s.bind_configurado || "")}"
+       <label>${esc(txt("tela.sv_lb_endereco","Endereço"))}<input id="svBind" value="${esc(s.endereco || s.bind_configurado || "")}"
          placeholder="127.0.0.1:5000"></label>
        <button class="botao ${noAr ? "alterar" : "incluir"}" id="btSvSubir">${
-         noAr ? "Trocar para esta porta" : "Subir nesta porta"}</button>
-       ${noAr ? `<button class="botao excluir" id="btSvParar">Parar a porta de dados</button>` : ""}
-       <button class="botao consultar" id="btSvVer">Atualizar</button>
+         esc(noAr ? txt("tela.sv_bt_trocar","Trocar para esta porta") : txt("tela.sv_bt_subir","Subir nesta porta"))}</button>
+       ${noAr ? `<button class="botao excluir" id="btSvParar">${esc(txt("tela.sv_bt_parar","Parar a porta de dados"))}</button>` : ""}
+       <button class="botao consultar" id="btSvVer">${esc(txt("tela.gt_atualizar","Atualizar"))}</button>
      </div>
 
      <div class="nota">
-       <p><strong>Quem fica sem resposta.</strong> Ninguém que já está
-       conectado: as conexões vivas seguem até elas mesmas acabarem. O que para
-       é o <code>accept</code> — cliente <em>novo</em> recebe recusa de conexão,
-       o mesmo que receberia com o serviço desligado. Agora há
-       <b>${fmt(s.conexoes ?? 0)}</b> conexão(ões) aberta(s).</p>
-       <p><strong>Como se volta se errar a porta.</strong> A porta nova é
-       <em>presa antes</em> de a antiga ser solta: porta ocupada, permissão
-       negada (abaixo de 1024 sem raiz) ou endereço escrito errado falham sem
-       trocar nada, e o serviço continua exatamente como estava. E mesmo com a
-       porta de dados parada, esta tela continua aqui — a interface web é outro
-       soquete, no mesmo processo.</p>
-       <p><strong>O processo não é derrubado por aqui.</strong> Para isso é o
-       sistema: <code>systemctl stop phxsql</code> no Linux, ou o Gerenciador de
-       Serviços no Windows.</p>
+       <p>${marcado(txt("tela.sv_nota_resposta_1", "**Quem fica sem resposta.**"))}
+         ${marcado(txt("tela.sv_nota_resposta_2", "Ninguém que já está conectado: as conexões vivas seguem até elas mesmas acabarem."))}
+         ${marcado(txt("tela.sv_nota_resposta_3", "O que para é o `accept` — cliente **novo** recebe recusa de conexão, o mesmo que receberia com o serviço desligado."))}
+         ${marcado(txt("tela.sv_nota_resposta_4", "Agora há **{n}** conexão(ões) aberta(s)."), {n: fmt(s.conexoes ?? 0)})}</p>
+       <p>${marcado(txt("tela.sv_nota_volta_1", "**Como se volta se errar a porta.**"))}
+         ${marcado(txt("tela.sv_nota_volta_2", "A porta nova é **presa antes** de a antiga ser solta."))}
+         ${marcado(txt("tela.sv_nota_volta_3", "Porta ocupada, permissão negada (abaixo de 1024 sem raiz) ou endereço escrito errado falham sem trocar nada, e o serviço continua exatamente como estava."))}
+         ${marcado(txt("tela.sv_nota_volta_4", "E mesmo com a porta de dados parada, esta tela continua aqui — a interface web é outro soquete, no mesmo processo."))}</p>
+       <p>${marcado(txt("tela.sv_nota_processo_1", "**O processo não é derrubado por aqui.**"))}
+         ${marcado(txt("tela.sv_nota_processo_2", "Para isso é o sistema: `systemctl stop phxsql` no Linux, ou o Gerenciador de Serviços no Windows."))}</p>
      </div>
-     <p class="cores-acao"><b><i style="background:var(--acao-incluir)"></i>subir</b>
-       <b><i style="background:var(--acao-alterar)"></i>trocar</b>
-       <b><i style="background:var(--acao-excluir)"></i>parar</b>
-       <b><i style="background:var(--acao-consultar)"></i>consultar</b></p>`);
+     <p class="cores-acao"><b><i style="background:var(--acao-incluir)"></i>${esc(txt("tela.sv_leg_subir","subir"))}</b>
+       <b><i style="background:var(--acao-alterar)"></i>${esc(txt("tela.sv_leg_trocar","trocar"))}</b>
+       <b><i style="background:var(--acao-excluir)"></i>${esc(txt("tela.sv_leg_parar","parar"))}</b>
+       <b><i style="background:var(--acao-consultar)"></i>${esc(txt("tela.acl_consultar","consultar"))}</b></p>`);
 
   $("#btSvVer").onclick = () => verServico();
   const parar = $("#btSvParar");
   if (parar) parar.onclick = async () => {
-    if (!confirm("Parar de aceitar conexão nova na porta de dados?\n\n"
-      + "As conexões abertas continuam. Para voltar, use esta mesma tela.")) return;
+    if (!confirm(txt("tela.sv_confirma_parar",
+      "Parar de aceitar conexão nova na porta de dados?\n\nAs conexões abertas continuam. Para voltar, use esta mesma tela."))) return;
     try {
       const r = await api("servico_parar");
       avisar(preencher(txt("tela.g_porta_dados_parando","porta de dados parando · {n} conexão(ões) aberta(s)"), {n: r.conexoes_abertas}));
@@ -11186,13 +11183,16 @@ async function verServico() {
 /** O pino de cada estado. A palavra vem do servidor (`estado`), e a tela só
  * traduz para cor e rótulo — recalcular o estado aqui abriria espaço para os
  * dois discordarem. */
+/* O rótulo vai pelo PAR (`rot:`/`txt:`), como o MENUS: esta tabela é lida no
+ * arranque, antes de existir texto traduzido, e `pinoEstado` chama
+ * `txt(p.txt, p.rot)` na hora de pintar. */
 const PINO_DO_ESTADO = {
-  ok:          ["ok",  "ok"],
-  falhou:      ["mal", "falhou"],
-  desligado:   ["nao", "desligado"],
-  rodando:     ["bin", "rodando"],
-  agendado:    ["reg", "agendado"],
-  nunca_rodou: ["ndx", "nunca rodou"],
+  ok:          { cor:"ok",  rot:"ok",          txt:"tela.ac_ok" },
+  falhou:      { cor:"mal", rot:"falhou",      txt:"tela.st_falhou" },
+  desligado:   { cor:"nao", rot:"desligado",   txt:"tela.g_estado_desligado" },
+  rodando:     { cor:"bin", rot:"rodando",     txt:"tela.jb_est_rodando" },
+  agendado:    { cor:"reg", rot:"agendado",    txt:"tela.jb_est_agendado" },
+  nunca_rodou: { cor:"ndx", rot:"nunca rodou", txt:"tela.jb_est_nunca_rodou" },
 };
 
 async function telaJobs() {
@@ -11210,82 +11210,78 @@ async function telaJobs() {
   };
 
   const pinoEstado = x => {
-    const [cor, rot] = PINO_DO_ESTADO[x.estado] || ["nao", x.estado || "?"];
+    const p = PINO_DO_ESTADO[x.estado];
+    const cor = p ? p.cor : "nao";
+    const rot = p ? txt(p.txt, p.rot) : (x.estado || "?");
     return `<span class="pino ${cor}">${esc(rot)}</span>`;
   };
   // A última corrida com o resultado: a data em cima, o desfecho embaixo.
   // O detalhe inteiro fica no title, porque meia mensagem de erro não ajuda.
   const celUltima = x => {
     const u = x.ultima;
-    if (!u || u.ok === undefined) return '<span class="leg">nunca rodou</span>';
+    if (!u || u.ok === undefined) return `<span class="leg">${esc(txt("tela.jb_est_nunca_rodou","nunca rodou"))}</span>`;
     return `<div>${dt(u.quando_ms)}</div>
       <div class="leg" title="${esc(u.detalhe || "")}">${u.ok
-        ? `ok em ${fmt(u.duracao_ms)} ms`
-        : `FALHOU: ${esc(u.detalhe || "")}`}</div>`;
+        ? esc(preencher(txt("tela.jb_ok_em","ok em {ms} ms"), {ms: fmt(u.duracao_ms)}))
+        : esc(preencher(txt("tela.jb_falhou_detalhe","FALHOU: {detalhe}"), {detalhe: u.detalhe || ""}))}</div>`;
   };
   // A próxima prevista — e a verdade sobre ela: «parado» quando ninguém vai
   // rodá-la (sem relógio), «vencida» quando o relógio a pega na próxima volta.
   const celProxima = x => {
     if (!x.ligado) return '<span class="leg">—</span>';
-    if (x.rodando) return '<span class="leg">rodando agora…</span>';
+    if (x.rodando) return `<span class="leg">${esc(txt("tela.jb_rodando_agora","rodando agora…"))}</span>`;
     const quando = x.proximo_ms ? dt(x.proximo_ms) : "";
-    if (x.parado) return `<div>${quando}</div><span class="pino mal">parado</span>`;
-    if (x.vencido) return `<div>${quando}</div><div class="leg">na próxima volta do relógio</div>`;
+    if (x.parado) return `<div>${quando}</div><span class="pino mal">${esc(txt("tela.jb_parado","parado"))}</span>`;
+    if (x.vencido) return `<div>${quando}</div><div class="leg">${esc(txt("tela.jb_proxima_volta","na próxima volta do relógio"))}</div>`;
     return `<div>${quando}</div>`;
   };
   // O quadro do aviso por e-mail diz a verdade da configuração: quem será
   // avisado, ou o que falta para alguém ser. Sem bloco de e-mail, nada muda —
   // e o quadro diz isso com todas as letras.
+  // Uma chave por FRASE, com a ênfase virada marca (`**assim**`, crase): o
+  // corte em <b>/<code> acontece DEPOIS da tradução, no marcado(). O pino
+  // (ligado/desligado) fica fora da frase — é estado, não prosa.
+  const pinoLigado = `<span class="pino ok">${esc(txt("tela.g_estado_ligado","ligado"))}</span>`;
+  const pinoDesligado = `<span class="pino nao">${esc(txt("tela.g_estado_desligado","desligado"))}</span>`;
   const quadroAviso = aviso.ligado
-    ? `<p><span class="pino ok">ligado</span> Job que <b>falha</b> e job
-         <b>parado</b> (ligado, com a hora vencida e sem relógio) avisam
-         <code>${esc((aviso.para || []).join(", "))}</code>. O mesmo problema
-         repete no máximo a cada ${esc(String(aviso.repetir_horas))} h; quando o
-         job volta a rodar, a próxima falha avisa na hora.</p>`
+    ? `<p>${pinoLigado} ${marcado(txt("tela.jb_av_ligado_1", "Job que **falha** e job **parado** (ligado, com a hora vencida e sem relógio) avisam `{para}`."), {para: (aviso.para || []).join(", ")})}
+         ${marcado(txt("tela.jb_av_ligado_2", "O mesmo problema repete no máximo a cada {h} h; quando o job volta a rodar, a próxima falha avisa na hora."), {h: String(aviso.repetir_horas)})}</p>`
     : aviso.email_ligado
-      ? `<p><span class="pino nao">desligado</span> O e-mail do servidor está
-           configurado (aviso de disco), mas o aviso de jobs não foi pedido.
-           Para ligar: <code>"avisar_jobs": true</code> no bloco
-           <code>alertas.email</code> do config.json. Guarda nova entra pedida —
-           sem pedir, nada muda.</p>`
-      : `<p><span class="pino nao">desligado</span> Este servidor não tem e-mail
-           configurado, então nenhum aviso sai — nada muda para quem não pediu.
-           Para ser avisado de job que falha ou para: configure o bloco
-           <code>alertas.email</code> no config.json (um relé SMTP interno) e
-           acrescente <code>"avisar_jobs": true</code>.</p>`;
+      ? `<p>${pinoDesligado} ${marcado(txt("tela.jb_av_email_1", "O e-mail do servidor está configurado (aviso de disco), mas o aviso de jobs não foi pedido."))}
+           ${marcado(txt("tela.jb_av_email_2", "Para ligar: `\"avisar_jobs\": true` no bloco `alertas.email` do config.json."))}
+           ${marcado(txt("tela.jb_av_email_3", "Guarda nova entra pedida — sem pedir, nada muda."))}</p>`
+      : `<p>${pinoDesligado} ${marcado(txt("tela.jb_av_sem_email_1", "Este servidor não tem e-mail configurado, então nenhum aviso sai — nada muda para quem não pediu."))}
+           ${marcado(txt("tela.jb_av_sem_email_2", "Para ser avisado de job que falha ou para: configure o bloco `alertas.email` no config.json (um relé SMTP interno) e acrescente `\"avisar_jobs\": true`."))}</p>`;
 
+  // O subtítulo vai para textContent: sem esc(), senão um `&` no caminho do
+  // arquivo apareceria como `&amp;`.
   folha(txt("tela.tt_jobs","Jobs de execução"),
-    `${jobs.length} job(s) · cadastro em ${esc(j.arquivo)} · corridas em ${esc(j.log)}`
-    + (j.relogio_no_ar ? "" : " · sem relógio neste arranque"),
+    preencher(txt("tela.jb_sub","{n} job(s) · cadastro em {arquivo} · corridas em {log}"),
+      {n: jobs.length, arquivo: j.arquivo, log: j.log})
+    + (j.relogio_no_ar ? "" : " · " + txt("tela.jb_sub_sem_relogio","sem relógio neste arranque")),
     (jobs.length ? `<div id="gradeJobs"></div>`
-      : `<div class="vazio">nenhum job cadastrado ainda</div>`)
+      : `<div class="vazio">${esc(txt("tela.jb_vazio","nenhum job cadastrado ainda"))}</div>`)
     + `<div class="acoes">
-         <button class="botao incluir" id="btJobNovo">Novo job…</button>
-         <button class="botao consultar" id="btJobVer">Atualizar</button>
+         <button class="botao incluir" id="btJobNovo">${esc(txt("tela.jb_novo","Novo job…"))}</button>
+         <button class="botao consultar" id="btJobVer">${esc(txt("tela.gt_atualizar","Atualizar"))}</button>
        </div>
-       <h3>Aviso por e-mail</h3>
+       <h3>${esc(txt("tela.jb_h_aviso_email","Aviso por e-mail"))}</h3>
        <div class="nota">${quadroAviso}</div>
-       <h3>Últimas corridas</h3>
+       <h3>${esc(txt("tela.jb_h_ultimas_corridas","Últimas corridas"))}</h3>
        ${hist.length ? `<div id="gradeJobsHist"></div>`
-        : `<div class="vazio">nenhuma corrida registrada</div>`}
+        : `<div class="vazio">${esc(txt("tela.jb_sem_corridas","nenhuma corrida registrada"))}</div>`}
        <div class="nota">
-         <p><strong>Um job roda com o poder do usuário dele</strong>, e nem um
-         pingo a mais. Usuário que sumiu do cadastro ou foi desativado
-         <b>para</b> o job, com o motivo escrito — em vez de cair para uma
-         sessão sem dono, que rodaria com tudo liberado.</p>
-         <p><strong>O relógio acorda de 30 em 30 segundos</strong>, e só sobe se
-         havia algum job ligado quando o servidor arrancou. Ligar o primeiro job
-         pela tela vale a partir do próximo arranque — até lá o job fica
-         <b>parado</b>, a tela mostra e o aviso por e-mail (se ligado) cobra.</p>
-         <p><strong>Falha entra no histórico igual</strong> ao acerto: job que
-         falha calado não existe. O detalhe é o resumo da resposta — a resposta
-         inteira não cabe, e uma varredura de vinte mil linhas vira
-         «linhas: 20000 itens».</p>
+         <p>${marcado(txt("tela.jb_nota_poder_1", "**Um job roda com o poder do usuário dele**, e nem um pingo a mais."))}
+           ${marcado(txt("tela.jb_nota_poder_2", "Usuário que sumiu do cadastro ou foi desativado **para** o job, com o motivo escrito — em vez de cair para uma sessão sem dono, que rodaria com tudo liberado."))}</p>
+         <p>${marcado(txt("tela.jb_nota_relogio_1", "**O relógio acorda de 30 em 30 segundos**, e só sobe se havia algum job ligado quando o servidor arrancou."))}
+           ${marcado(txt("tela.jb_nota_relogio_2", "Ligar o primeiro job pela tela vale a partir do próximo arranque — até lá o job fica **parado**, a tela mostra e o aviso por e-mail (se ligado) cobra."))}</p>
+         <p>${marcado(txt("tela.jb_nota_falha_1", "**Falha entra no histórico igual** ao acerto: job que falha calado não existe."))}
+           ${marcado(txt("tela.jb_nota_falha_2", "O detalhe é o resumo da resposta — a resposta inteira não cabe, e uma varredura de vinte mil linhas vira «linhas: 20000 itens»."))}</p>
        </div>
-       <p class="cores-acao"><b><i style="background:var(--acao-incluir)"></i>novo</b>
-         <b><i style="background:var(--acao-alterar)"></i>rodar / ligar / editar</b>
-         <b><i style="background:var(--acao-excluir)"></i>excluir</b>
-         <b><i style="background:var(--acao-consultar)"></i>consultar</b></p>`);
+       <p class="cores-acao"><b><i style="background:var(--acao-incluir)"></i>${esc(txt("tela.acl_novo","novo"))}</b>
+         <b><i style="background:var(--acao-alterar)"></i>${esc(txt("tela.jb_leg_alterar","rodar / ligar / editar"))}</b>
+         <b><i style="background:var(--acao-excluir)"></i>${esc(txt("tela.at_excluir","excluir"))}</b>
+         <b><i style="background:var(--acao-consultar)"></i>${esc(txt("tela.acl_consultar","consultar"))}</b></p>`);
 
   $("#btJobVer").onclick = () => telaJobs();
   $("#btJobNovo").onclick = () => editarJob(null);
@@ -11308,16 +11304,16 @@ async function telaJobs() {
         { campo:"agenda", titulo:txt("tela.col_agenda","agenda") },
         { campo:"op", titulo:txt("tela.col_operacao","operação") },
         { campo:"usuario", titulo:txt("tela.col_roda_como","roda como"),
-          formato:v => v ? esc(v) : `<span class="leg">sem cadastro</span>` },
+          formato:v => v ? esc(v) : `<span class="leg">${esc(txt("tela.jb_sem_cadastro","sem cadastro"))}</span>` },
         { campo:"ultima", titulo:txt("tela.col_ultima_corrida","última corrida"), formato:(_, l) => celUltima(l) },
         { campo:"proximo_ms", titulo:txt("tela.col_proxima","próxima"), formato:(_, l) => celProxima(l) },
         { campo:"__acoes", titulo:"", ordenavel:false, filtravel:false,
           formato:(_, l) => `
-            <button class="botao mini alterar bt-rodar" title="roda agora, fora da agenda"
-              data-n="${esc(l.nome)}">Rodar</button>
+            <button class="botao mini alterar bt-rodar" title="${esc(txt("tela.jb_rodar_dica","roda agora, fora da agenda"))}"
+              data-n="${esc(l.nome)}">${esc(txt("tela.jb_rodar","Rodar"))}</button>
             <button class="botao mini alterar bt-ligar" data-n="${esc(l.nome)}"
-              data-l="${l.ligado ? 0 : 1}">${l.ligado ? "Desligar" : "Ligar"}</button>
-            <button class="botao mini excluir bt-excluir" data-n="${esc(l.nome)}">Excluir</button>` },
+              data-l="${l.ligado ? 0 : 1}">${esc(l.ligado ? txt("tela.jb_desligar","Desligar") : txt("tela.jb_ligar","Ligar"))}</button>
+            <button class="botao mini excluir bt-excluir" data-n="${esc(l.nome)}">${esc(txt("tela.ficha_excluir","Excluir"))}</button>` },
       ],
       dados: jobs,
       pagina: { tamanho: 100, opcoes: [50, 100, 200] },
@@ -11339,8 +11335,8 @@ async function telaJobs() {
           avisar(preencher(txt("tela.g_job_estado","job {nome} {estado}"),
             {nome: bLigar.dataset.n, estado: ligar ? txt("tela.g_estado_ligado","ligado") : txt("tela.g_estado_desligado","desligado")}));
           if (ligar && !r.relogio_no_ar) {
-            avisar(txt("tela.g_ligado_relogio_jobs_nao_subiu","ligado — mas o relógio de jobs não subiu neste arranque: ")
-                 + "reinicie para ele andar sozinho, ou rode pela tela.", true);
+            avisar(txt("tela.g_ligado_relogio_jobs_nao_subiu",
+              "ligado — mas o relógio de jobs não subiu neste arranque: reinicie para ele andar sozinho, ou rode pela tela."), true);
           }
         } catch (e) { avisar(`${e}`, true); }
         return telaJobs();
@@ -11364,7 +11360,7 @@ async function telaJobs() {
       { campo:"op", titulo:txt("tela.col_operacao","operação") },
       { campo:"usuario", titulo:txt("tela.col_como","como"), formato:v => v ? esc(v) : "—" },
       { campo:"ok", titulo:txt("tela.col_resultado","resultado"),
-        formato:v => v ? '<span class="pino ok">ok</span>' : '<span class="pino mal">falhou</span>' },
+        formato:v => v ? `<span class="pino ok">${esc(txt("tela.ac_ok","ok"))}</span>` : `<span class="pino mal">${esc(txt("tela.st_falhou","falhou"))}</span>` },
       { campo:"duracao_ms", titulo:txt("tela.col_ms","ms"), tipo:"numero", formato:fmt },
       { campo:"detalhe", titulo:txt("tela.col_detalhe","detalhe"),
         formato:v => `<span class="prof-pedido" title="${esc(v)}">${esc(v)}</span>` },
@@ -11379,8 +11375,8 @@ async function rodarJob(nome) {
     const r = await api("job_rodar", { nome });
     // O pedido deu certo; o JOB pode ter falhado. São duas coisas, e a tela
     // não pode dizer "pronto" quando o job voltou com erro.
-    avisar(r.ok ? `job ${nome} rodou em ${r.duracao_ms} ms`
-                : `job ${nome} FALHOU: ${r.detalhe}`, !r.ok);
+    avisar(r.ok ? preencher(txt("tela.jb_rodou_em","job {nome} rodou em {ms} ms"), {nome, ms: r.duracao_ms})
+                : preencher(txt("tela.jb_job_falhou","job {nome} FALHOU: {detalhe}"), {nome, detalhe: r.detalhe}), !r.ok);
   } catch (e) { avisar(`${e}`, true); }
   telaJobs();
 }
@@ -11390,16 +11386,18 @@ async function rodarJob(nome) {
  * Não é uma lista fechada: o campo do pedido aceita qualquer operação do
  * protocolo. Ela existe para quem não sabe de cor o nome dos campos. */
 const JOBS_MODELO = [
-  ["backup",     'Backup do servidor',        '{"op":"backup"}'],
-  ["reindexar",  'Refazer o índice de uma tabela',
-    '{"op":"reindexar","database":"Comercial","tabela":"cadastroClientes"}'],
-  ["verificar",  'Conferir a integridade de uma tabela',
-    '{"op":"verificar","database":"Comercial","tabela":"cadastroClientes"}'],
-  ["checksum",   'Soma de verificação de uma tabela',
-    '{"op":"checksum","database":"Comercial","tabela":"cadastroClientes"}'],
-  ["esvaziar_lixeira", 'Esvaziar a lixeira de uma tabela',
-    '{"op":"esvaziar_lixeira","database":"Comercial","tabela":"cadastroClientes"}'],
-  ["ping",       'Só um pulso, para provar que o relógio anda', '{"op":"ping"}'],
+  { op:"backup", rot:"Backup do servidor", txt:"tela.jb_mod_backup",
+    ex:'{"op":"backup"}' },
+  { op:"reindexar", rot:"Refazer o índice de uma tabela", txt:"tela.jb_mod_reindexar",
+    ex:'{"op":"reindexar","database":"Comercial","tabela":"cadastroClientes"}' },
+  { op:"verificar", rot:"Conferir a integridade de uma tabela", txt:"tela.jb_mod_verificar",
+    ex:'{"op":"verificar","database":"Comercial","tabela":"cadastroClientes"}' },
+  { op:"checksum", rot:"Soma de verificação de uma tabela", txt:"tela.jb_mod_checksum",
+    ex:'{"op":"checksum","database":"Comercial","tabela":"cadastroClientes"}' },
+  { op:"esvaziar_lixeira", rot:"Esvaziar a lixeira de uma tabela", txt:"tela.jb_mod_esvaziar_lixeira",
+    ex:'{"op":"esvaziar_lixeira","database":"Comercial","tabela":"cadastroClientes"}' },
+  { op:"ping", rot:"Só um pulso, para provar que o relógio anda", txt:"tela.jb_mod_ping",
+    ex:'{"op":"ping"}' },
 ];
 
 async function editarJob(nome) {
@@ -11408,57 +11406,56 @@ async function editarJob(nome) {
   const porHora = !!(x && x.hora);
   const logins = (Array.isArray(us) ? us : []).filter(u => u.ativo).map(u => u.login);
 
-  folha(x ? `Job ${x.nome}` : "Novo job",
-    x ? "o nome não muda — para renomear, crie outro e apague este"
-      : "letras, números, _ e - no nome · ele nasce desligado, de propósito",
+  folha(x ? preencher(txt("tela.jb_tt_job","Job {nome}"), {nome: x.nome}) : txt("tela.jb_tt_novo","Novo job"),
+    x ? txt("tela.jb_sub_editar","o nome não muda — para renomear, crie outro e apague este")
+      : txt("tela.jb_sub_novo","letras, números, _ e - no nome · ele nasce desligado, de propósito"),
     `<div class="forma-job">
-       <label><span>Nome</span>
+       <label><span>${esc(txt("tela.jb_lb_nome","Nome"))}</span>
          <input id="jbNome" value="${esc(x ? x.nome : "")}" ${x ? "disabled" : ""}></label>
-       <label><span>Roda como</span>
+       <label><span>${esc(txt("tela.jb_lb_roda_como","Roda como"))}</span>
          ${logins.length
            ? `<select id="jbUsuario">${
                logins.map(l => `<option ${x && x.usuario === l ? "selected" : ""}
                  >${esc(l)}</option>`).join("")}</select>`
            : `<input id="jbUsuario" value="${esc(x ? x.usuario : "")}"
-                placeholder="(este servidor não tem cadastro)">`}
-         <span class="leg">o job roda com o poder deste usuário, e nem um pingo a mais</span>
+                placeholder="${esc(txt("tela.jb_ph_sem_cadastro","(este servidor não tem cadastro)"))}">`}
+         <span class="leg">${esc(txt("tela.jb_leg_poder","o job roda com o poder deste usuário, e nem um pingo a mais"))}</span>
        </label>
-       <label class="largo"><span>Descrição</span>
+       <label class="largo"><span>${esc(txt("tela.jb_lb_descricao","Descrição"))}</span>
          <input id="jbDesc" value="${esc(x ? x.descricao : "")}"></label>
 
-       <label><span>Quando</span>
+       <label><span>${esc(txt("tela.jb_lb_quando","Quando"))}</span>
          <select id="jbQuando">
-           <option value="cada" ${porHora ? "" : "selected"}>a cada N minutos</option>
-           <option value="hora" ${porHora ? "selected" : ""}>todo dia, numa hora</option>
+           <option value="cada" ${porHora ? "" : "selected"}>${esc(txt("tela.jb_op_cada","a cada N minutos"))}</option>
+           <option value="hora" ${porHora ? "selected" : ""}>${esc(txt("tela.jb_op_hora","todo dia, numa hora"))}</option>
          </select></label>
-       <label><span>A cada (min)</span>
+       <label><span>${esc(txt("tela.jb_lb_cada","A cada (min)"))}</span>
          <input id="jbCada" type="number" min="1"
            value="${esc(x && x.cada_minutos ? x.cada_minutos : 60)}"></label>
-       <label><span>Hora (HH:MM)</span>
+       <label><span>${esc(txt("tela.jb_lb_hora","Hora (HH:MM)"))}</span>
          <input id="jbHora" value="${esc(x && x.hora ? x.hora : "")}" placeholder="03:00">
-         <span class="leg">preenchida, ela manda — e o job roda uma vez por dia</span></label>
+         <span class="leg">${esc(txt("tela.jb_leg_hora","preenchida, ela manda — e o job roda uma vez por dia"))}</span></label>
 
-       <label class="largo"><span>Modelo de pedido</span>
-         <select id="jbModelo"><option value="">— escolha para preencher abaixo —</option>
-           ${JOBS_MODELO.map(([o, rot, ex]) =>
-             `<option value="${esc(ex)}">${esc(o)} — ${esc(rot)}</option>`).join("")}
+       <label class="largo"><span>${esc(txt("tela.jb_lb_modelo","Modelo de pedido"))}</span>
+         <select id="jbModelo"><option value="">${esc(txt("tela.jb_op_escolha","— escolha para preencher abaixo —"))}</option>
+           ${JOBS_MODELO.map(m =>
+             `<option value="${esc(m.ex)}">${esc(m.op)} — ${esc(txt(m.txt, m.rot))}</option>`).join("")}
          </select></label>
-       <label class="largo"><span>Pedido do protocolo</span>
+       <label class="largo"><span>${esc(txt("tela.jb_lb_pedido","Pedido do protocolo"))}</span>
          <textarea id="jbPedido" spellcheck="false">${
            esc(x ? JSON.stringify(x.pedido, null, 2) : '{\n  "op": "ping"\n}')}</textarea>
-         <span class="leg">o mesmo objeto que a porta 5000 aceita, <b>sem</b> o
-           <code>token</code> — o job não entra pela rede</span></label>
+         <span class="leg">${marcado(txt("tela.jb_leg_pedido","o mesmo objeto que a porta 5000 aceita, **sem** o `token` — o job não entra pela rede"))}</span></label>
 
        <label class="chk largo">
          <input type="checkbox" id="jbLigado" ${x && x.ligado ? "checked" : ""}>
-         <span>Ligado — o relógio passa a considerá-lo</span></label>
+         <span>${esc(txt("tela.jb_chk_ligado","Ligado — o relógio passa a considerá-lo"))}</span></label>
      </div>
      <div class="acoes">
        <button class="botao ${x ? "alterar" : "incluir"}" id="btJbGravar">${
-         x ? "Gravar alterações" : "Criar o job"}</button>
-       ${x ? `<button class="botao alterar" id="btJbRodar">Rodar agora</button>
-              <button class="botao excluir" id="btJbApagar">Excluir job</button>` : ""}
-       <button class="botao consultar" id="btJbVolta">← Jobs</button>
+         esc(x ? txt("tela.jb_gravar","Gravar alterações") : txt("tela.jb_criar","Criar o job"))}</button>
+       ${x ? `<button class="botao alterar" id="btJbRodar">${esc(txt("tela.jb_rodar_agora","Rodar agora"))}</button>
+              <button class="botao excluir" id="btJbApagar">${esc(txt("tela.jb_excluir","Excluir job"))}</button>` : ""}
+       <button class="botao consultar" id="btJbVolta">${esc(txt("tela.jb_voltar","← Jobs"))}</button>
      </div>`);
 
   $("#btJbVolta").onclick = () => telaJobs();
@@ -11501,8 +11498,8 @@ async function editarJob(nome) {
       const r = await api("job_salvar", { job });
       avisar(preencher(txt("tela.g_job_gravado","job {nome} gravado"), {nome: r.salvo}));
       if (job.ligado && !r.relogio_no_ar) {
-        avisar(txt("tela.g_gravado_relogio_jobs_nao_subiu","gravado — mas o relógio de jobs não subiu neste arranque: ")
-             + "ele só sobe quando já há job ligado. Reinicie para o job andar sozinho.", true);
+        avisar(txt("tela.g_gravado_relogio_jobs_nao_subiu",
+          "gravado — mas o relógio de jobs não subiu neste arranque: ele só sobe quando já há job ligado. Reinicie para o job andar sozinho."), true);
       }
       telaJobs();
     } catch (e) { avisar(`${e}`, true); }
@@ -13497,8 +13494,8 @@ let profGrade = null;
  */
 function telaTelemetria() {
   folha(txt("tela.fer_telemetria","Telemetria"),
-        txt("tela.st_telemetria_o_que_faz","o que o servidor está fazendo agora — séries, atividades e threads, ")
-        + "em gráficos bolha no molde do SQL Check da Idera®",
+        txt("tela.st_telemetria_o_que_faz",
+            "o que o servidor está fazendo agora — séries, atividades e threads, em gráficos bolha no molde do SQL Check da Idera®"),
         PhxTelemetria.html());
   const ligar = () => PhxTelemetria.iniciar({
     api,

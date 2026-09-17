@@ -540,6 +540,28 @@ maiores tabelas, de onde vêm, bancos, quem mais usou). 32 chaves novas
 `barras()`/`anel()`/`barrasCheias()`), baixando a catraca em 24 no mesmo
 commit que ensinou o crivo a vê-las.
 
+A terceira, em 17/09/2026 (leva 17): as **duas telas do grupo «operação» do
+menu**, inteiras — **Jobs** (`PINO_DO_ESTADO`, `telaJobs`, `rodarJob`,
+`JOBS_MODELO`, `editarJob`) e **Serviço** (`verServico`). O conferidor via
+64 + 35 = 99, e a catraca desceu de **1.049 para 950** — os mesmos 99,
+medidos pelo conferidor antes e depois. A fábrica ganhou **101** chaves
+(`tela.jb_*`, `tela.sv_*`, `tela.acl_novo`), e a diferença é o ponto da
+leva: **a tela tinha mais texto cravado do que a conta via**, e traduzir só
+o que a conta via entregaria meia tela dizendo zero. Fora da conta estavam
+os ternários dentro de `${…}` («Ligar»/«Desligar», «Gravar alterações»/«Criar
+o job»), o subtítulo do `folha(` depois de um primeiro argumento `txt(` (a
+via só olha o primeiro literal), os seis rótulos do `JOBS_MODELO` (array
+sem receita — viraram o par `rot:`/`txt:`, como o `PINO_DO_ESTADO`), e
+**duas chaves da fábrica que eram meia frase**: terminavam em «: » e a tela
+concatenava o resto em português cravado por `+`. Essa forma está declarada
+abaixo, em «O que ainda escapa da conta». A prova pelo navegador é a
+`prova-idiomas-jobs-servico.mjs`, e o passo que liga um job com o relógio
+parado exige a **segunda metade** do aviso em italiano — é o que reprova se
+alguém voltar a concatenar. Os quatro «isentos» a menos no placar (161 → 157)
+são `config.json` ×2 e `alertas.email` ×2, que eram nomes soltos entre
+`<code>` e agora vivem dentro da frase traduzida como marca de crase — iguais
+nos seis idiomas, que é o que isento quer dizer.
+
 Duas lições saíram da primeira leva, e ficam registradas:
 
 - **Traduzir um título quebra quem compara o título cru.** O relógio de
@@ -614,7 +636,27 @@ O que continua fora, sem mudar nesta rodada:
   traduzidas à mão. `linha(` é um nome curto demais para casar sem falso
   positivo, e existe também no `index.html` com outro sentido;
 - o **texto escrito com `\uXXXX`** — nenhuma das duas vias lê escape Unicode
-  como letra.
+  como letra;
+- a **chave da fábrica concatenada com literal cravado** — `txt("tela.x",
+  "… neste arranque: ") + "reinicie para ele andar sozinho."`. Achado na leva
+  17, na tela de Jobs: a via de rótulo lê o primeiro literal depois de
+  `avisar(`, e ali o primeiro argumento é `txt(`, que já virou marcador antes
+  de a via olhar — o `+ "…"` fica invisível **em qualquer posição**, não é
+  questão de aspa. O placar contava a mensagem como coberta, e em alemão a
+  pessoa lia meia frase em cada língua. Medido antes de decidir por uma
+  receita nova, com uma expressão regular sobre o `index.html` do `HEAD`
+  (`txt("tela.…", "…")` seguido de `+` e aspa): **5** casos, dos quais **3**
+  eram meia frase — os dois de Jobs e a descrição da Telemetria
+  (`tela.st_telemetria_o_que_faz`, que terminava em «, » e ganhava «em
+  gráficos bolha no molde do SQL Check da Idera®» cravado) — e **2** são
+  legítimos, porque o segundo termo é separador seguido de **dado**
+  (`tela.cl_propagacao` + `" "` + a lista de nós; `tela.confirmar_remover`
+  + `"\n\n"` + o apelido). Os três consertados: a frase inteira virou a
+  chave. Uma receita «`txt(` seguido de `+` e literal» pegaria os cinco e
+  reprovaria os dois certos, e guarda que reprova o correto é desligada na
+  primeira semana; separar os dois sem falso positivo ainda não foi escrito.
+  Pista para quem revisa: **chave cujo texto termina em «: », «, », «—» ou
+  espaço é suspeita de meia frase.**
 
 ## A prova das quatro telas, exercitando
 

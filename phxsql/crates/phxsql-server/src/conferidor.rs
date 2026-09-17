@@ -1301,7 +1301,18 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// 09/09/2026, pedido 203: 1.050 -> 1.049. O «ultimo erro do laco:» do
 /// dialogo de replicacao entrou na fabrica junto com o aviso de credencial
 /// recusada e o botao de religar, que ja nasceram por `txt(`.
-pub const TETO_ROTULOS_E_CRASE: usize = 1_049;
+///
+/// 17/09/2026, leva 17: 1.049 -> **950**. Duas telas INTEIRAS do grupo
+/// «operacao» do menu: Jobs (`PINO_DO_ESTADO`, `telaJobs`, `rodarJob`,
+/// `JOBS_MODELO`, `editarJob` -- 64 na conta) e Servico (`verServico` -- 35).
+/// Entrou tambem o que a conta NAO via e que deixaria meia tela em
+/// portugues: ternarios dentro de `${…}`, o subtitulo depois de um `txt(`
+/// (o `folha(` so olha o primeiro literal), os rotulos do `JOBS_MODELO`
+/// (array sem receita) e DUAS chaves da fabrica terminadas em «: » que a
+/// tela concatenava com portugues cravado por `+` -- forma que nenhuma via
+/// enxerga, e que agora esta declarada em `docs/MENSAGENS.md`. Medido pelo
+/// conferidor antes e depois, nunca contado a mao.
+pub const TETO_ROTULOS_E_CRASE: usize = 950;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;
