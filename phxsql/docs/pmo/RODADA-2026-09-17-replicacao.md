@@ -28,8 +28,8 @@ não é entregável de produto. Números só medidos.
 | papel | frente | escalão | por que |
 |---|---|---|---|
 | G (A roda) | `provar-guardas.py --so` da família da replicação, na ordem de G | — | compila; só depois de F soltar as portas e o flock |
-| B | só se F/SEC/C acharem defeito com conserto delimitado | forte | motor/concorrência |
-| H | REPLICACAO.md §21 (bateria de 17/09, revisão, conclusão), STATUS.md linha B reavaliada, PENDENCIAS, CHANGELOG, geradores | médio | todo número sai de gerador ou dos relatórios; varredura verificável |
+| B | os cinco itens delimitados do contrato abaixo (A5, A2+G, A1 parcial, A3, continuidade de C) — **largada 02:59 UTC**, com F ainda de pé mas sem bancada medindo (flock e portas livres, medido) | forte | motor, concorrência e portão de permissão: o escalão mais forte disponível |
+| H | REPLICACAO.md §21 (bateria de 17/09, revisão, conclusão), STATUS.md linha B reavaliada, PENDENCIAS, CHANGELOG, MODELOS — **largada 02:57 UTC em duas etapas**: a revisão (SEC/C/G/J, já devolvidos) agora; a bateria, a conclusão e a linha B quando F e B devolverem | médio | todo número sai de gerador ou dos relatórios; varredura verificável |
 | A/I | integração, portões, commit por caminho, push, sete páginas, backup | — | — |
 
 ## Dispensas registradas
@@ -52,3 +52,51 @@ não é entregável de produto. Números só medidos.
 - **C — integrado em `9da28a4` (02:47 UTC)** (16 min 49 s de frente, 92 ferramentas). Oito garantias que NÃO valem, três delas MEDIDAS num binário isolado fora do repositório: `rownum` diverge entre source e réplica depois de uma inserção recusada (contador consumido antes do CHECK/unicidade; 2 de 5 linhas diferentes com rowids iguais); unicidade num índice secundário na réplica PARA o par (o lote volta para sempre); 12 eventos num único milissegundo («mais recente vence» empata como regra). Duas correções ao briefing (cabeçalho do evento tem 44 bytes, `log.rs:81`; `reconciliar_sequencia` é do store). Seis decisões do dono (a mais urgente: coluna de data/hora de sistema por linha — e a medição dos 12/1 ms muda o desenho). Cinco NÃO. O item de maior retorno não é formato: a réplica não tem a conferência de continuidade que o PITR tem (`diario_vivo_continua`, `servidor.rs:18640`) — o irmão ficou. Conferido por A: `EVENTO_CAB = 44`, `return Ok(0)` em `servidor.rs:2808`, `julga_integridade` e `diario_vivo_continua` existem. Entregas: `docs/propostas/parecer-dba-replicacao-2026-09-17.md` (556 linhas), cognição `contador-consumido-antes-da-recusa_20260917_0239`.
 - **J — integrado em `9da28a4` (02:47 UTC)** (14 min 10 s de frente, 65 ferramentas) — a frente paralela do Query Designer do Phoenix. Recusar o CÓDIGO da crate com número (concatena valor no SQL sem escapar aspa, `lib.rs:309` — conferido por A; 0 linhas `///` em 91 `pub`; a API do `.md` não é a do zip: `sql_detalhe`/`Consulta` têm 0 ocorrências). Aproveitar a IDEIA de duas coisas: `<dataBar>` no XLSX (0 ocorrências em `crates/` — conferido; ~6 linhas de XML) e um construtor visual de consulta com AND/OR (a tela «Consulta» é de UMA condição e a op `sql` só é alcançável da tela pelo painel de IA, `claude.js:1317` — conferido). Seis recursos do mockup já existem aqui, dois deles mais fundo (sete junções com Venn, `juncao.rs` 1.159 linhas; `conferir_uniao` confere contagem E tipo). Correção ao briefing de A: LLM local custa UMA origem no `connect-src` (`http.rs:303`), não cliente HTTP — o `fetch` sai da tela. Relatório com bandas reabre o 161 pela mão do dono. Entregas: `docs/propostas/phoenix-query-designer-2026-09-17.md` (558 linhas), cognição `a-recusa-tambem-se-mede-o-llm-local-custava-uma-linha-de-csp_20260917_0244`.
 - **SEC — integrado em `75b2f33` (02:54 UTC)** (20 min 10 s de frente, 116 ferramentas). Onze achados de leitura, arquivo:linha: dois de severidade alta e independentes — A1, o pulso do cluster aceita identidade auto-declarada e época/posição/prioridade sem teto, porque `cluster_pulso` não está em `OPS_DE_REPLICACAO` (`servidor.rs:309`) e o portão 2a-bis só tranca essa lista; A2, `replicar` com `"max":0` lê o diário inteiro com imagens sob a trava global e o `TETO_DO_LOTE_SERVIDO` corta depois. A3 (média-alta) bate na pétrea: `aplicar` num mestre sem `somente_leitura` desliga FK/CHECK/cascata. Mais A4–A11 (maiorias assimétricas, sonda sem prazo, mapa da infraestrutura a quem só lê, IP atrás de proxy, dado pessoal sem trilha, carimbo sem teto, `config` com a lista do arranque, oráculo de ids) e o §Z já documentado e ainda aberto. **Posição de SEC para a conclusão: A1, A2 e A3 exigem decisão registrada (conserto ou aceite do dono) antes de a replicação se declarar revisada e conclusa.** Conferido por A: os cinco pontos verificáveis batem no fonte (lista, `de_json`, `max` sem clamp com `if limite > 0` em `log.rs:692`, `ligar`→`connect` sem prazo, `cluster_estado`→`Ler`). Entregas: `docs/propostas/revisao-sec-replicacao-2026-09-17.md` (879 linhas), cognições `o-portao-tem-duas-listas…_20260917_0241` e `teto-que-corta-a-resposta…_20260917_0241`.
+
+## Onda 2 — contrato da frente B (escrito às 02:58 UTC, larga quando F soltar o flock)
+
+Escalão **forte** (motor, concorrência e portão de permissão). Cinco itens
+independentes, em ordem de risco crescente; cada um inteiro ou não entra —
+meia funcionalidade que for pior que nada volta como parecer, não como código.
+Prova real nos dois sentidos em todos: o teste FALHA com o defeito reposto.
+
+1. **A5 (SEC)** — `replica::ligar` cai em `Cliente::conectar` sem prazo
+   (`replica.rs:409-415`); `conectar_com_prazo` (`replica.rs:80`) só serve o
+   pulso (`servidor.rs:3010`, `:3742`). Conserto: `ligar` passa a usar o irmão
+   com prazo. Prova: a que o SO permitir (endereço não roteável com prazo
+   curto, medindo o tempo de retorno), documentada.
+2. **A2 (SEC) + G** — `op_replicar` lê `max` sem clamp (`servidor.rs:21770`:
+   `.max(0)`), e `log.rs:692` trata `limite == 0` como «sem limite»; o
+   `TETO_DO_LOTE_SERVIDO` (16 MiB) corta a RESPOSTA depois de ler tudo sob a
+   trava. Conserto: `0` vira o padrão, `max` ganha teto de servidor, e o teto
+   de bytes entra em quem aloca (`diario_com_imagem`/`percorrer`), não em quem
+   responde. Irmãos a conferir com a mesma pergunta: `op_diario`
+   (`servidor.rs:21426`, passa por `self.limite`) e `absorver_diario_local`
+   (`servidor.rs:4130`, passa `0`). Prova: unitário `percorrer_com_limite_zero_nao_le_tudo`
+   medindo QUANTO foi lido; e o teste dos dois tetos que G apontou sem prova.
+3. **A1 parcial (SEC)** — `cluster_pulso` entra em `OPS_DE_REPLICACAO`
+   (`servidor.rs:309`) para o portão 2a-bis alcançá-lo; e época/posição do
+   pulso ganham teto sadio (`maior_epoca_vista + folga`). Prova:
+   `um_pulso_de_epoca_absurda_nao_destrona` (unitário em `cluster.rs`) e o
+   teste do comportamento VELHO: lista vazia, nada muda. **A amarração da
+   identidade do nó à chave do fio é desenho e vai para o dono** — não entra.
+4. **A3 (SEC)** — o crivo de papel do portão 2b-bis (`servidor.rs:9162`) só
+   roda com `somente_leitura`; num source gravável `aplicar` pela rede desliga
+   FK/CHECK/cascata. Conserto: o crivo passa a valer independentemente do
+   `somente_leitura` (cluster continua fora, como hoje). **Antes de mexer,
+   medir quem chama `aplicar` pela rede** num servidor gravável (grep em
+   `bancada/`, `tests/`, `ui/`, docker): se houver uso legítimo, volta como
+   parecer. Prova: `aplicar_pela_rede_num_source_nao_mata_o_pai_com_filhos`
+   + o velho (`excluir` normal recusa; réplica/multi continuam aplicando).
+5. **Continuidade (C)** — `alcancar_tabela` (`servidor.rs:2808`,
+   `if posicao >= no.eventos { return Ok(0) }`) devolve silêncio quando o
+   source apagou e recriou a tabela; o PITR tem `diario_vivo_continua`
+   (`servidor.rs:18640`) para o mesmo caso. Conserto: a réplica confere o
+   evento `posicao-1` do source contra o seu (um evento pela rede) e, se não
+   bate ou o source tem menos eventos, marca a tabela como incompleta com a
+   frase «a tabela foi apagada e recriada» em vez de `Ok(0)`. Sem formato
+   novo. Prova pelo soquete: dois servidores, tabela apagada e recriada no
+   source, réplica acusa em vez de calar.
+
+Fora de B (mesa do dono): A1 identidade (`known_hosts` pela chave do fio),
+A4, A6, A7, A8, A9, A10, A11, as seis decisões de formato de C, o 161.
