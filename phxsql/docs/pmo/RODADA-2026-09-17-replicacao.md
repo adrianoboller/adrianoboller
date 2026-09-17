@@ -280,3 +280,72 @@ e `auto_increment_increment` do MySQL e do MariaDB sao variaveis de servidor e
 nao campo do esquema, que e a nossa decisao; e a 294, porque `seqno` do Galera
 e LSN do WAL sao escalares globais, nao vetores por tabela. Esperanca nao e
 medicao: fica escrito aqui para que o retorno do J possa me desmentir.
+
+## Onda 7 — a regua dos motores derrubou duas das cinco (17/09/2026 07:52)
+
+Papel J foi ao **fonte alheio**, nao ao manual
+(`docs/propostas/regua-dos-motores-decisoes-289-294-2026-09-17.md`). O que voltou,
+e as tres decisoes novas do dono:
+
+| # | veredito | o que o dono decidiu depois |
+|---|---|---|
+| 289 | **MUDA o meio** — nenhum dos tres forca relogio a avancar | duas colunas, 16 bytes: contador que ordena, relogio que pode empatar |
+| 290 | **CONFIRMA** — o Galera faz `auto_increment_offset = own_index()+1` | mantida |
+| 292 | **(1) CHOCA** — nenhum dos tres recusa a tabela | parada visivel do par no lugar da recusa |
+| 293 | os tres **decifram antes de mandar** | recusa fica; a ideia do UUID como sal foi ao SEC |
+| 294 | **CONFIRMA** — LSN, `seqno` e peso+UUID sao todos escalares | mantida |
+
+**O erro que eu cometi e que motivou a ordem do dono**: recomendei as cinco sem
+passar pela regua, porque eu a lia como peneira para receita de FORA. Ela vale
+tambem para decisao nossa sobre **o que o banco faz**.
+
+**E um erro de fato dentro da minha propria justificativa do 292**: escrevi que
+«nao ha ninguem funcionando», e isso e falso para o par que nao colide e para todo
+unidirecional, onde so um lado escreve. A petrea «guarda nova entra pedida, nao
+imposta» estava batendo de frente, e eu a afastei com argumento que nao passa pela
+medicao.
+
+## Onda 8 — o SEC derrubou a ideia do dono, e o fato dele estava certo (08:02)
+
+Veredito **NAO ENTRA** (`docs/propostas/parecer-sec-uuid-como-sal-2026-09-17.md`).
+O `id` da coluna e mesmo um `Uuid::v7()` que chega identico na replica — e e
+identico **pelo motivo errado para o papel de sal**: publico, escolhivel e
+previsivel. Quatro bloqueadores, os quatro reconferidos no fonte pelo integrador
+antes de aceitar; o quarto **nao se conserta**, porque e o comprimento do UUID:
+**62 bits aleatorios onde o NIST manda 128**, com `shall`.
+
+**O que sobrevive da intuicao do dono, e e o que importa**: existe mesmo um caminho
+que replica identico, e o que deve viajar por ele **nao e o sal, e a chave
+envelopada** — o envelope da §11.5.
+
+| frente | escalao | motivo do escalao | resultado |
+|---|---|---|---|
+| J-REGUA | forte | e a lei que decide se quatro frentes constroem a coisa certa | 5 vereditos, fonte primaria em cada um |
+| SEC-UUID | forte | criptografia | NAO ENTRA, com 4 bloqueadores medidos |
+| B-292-PARTE-2 | forte | semantica de replicacao | laco infinito acabou, guarda PROVADA 1/1 |
+| G-CATALOGO | **leve** | catalogar guarda que ja existe e mecanico e verificavel | 3 entradas, as tres provadas |
+
+**A dispensa do escalao leve se pagou, e com juros**: a QA nao so catalogou como
+**corrigiu a razao que eu tinha dado** para nao estender a guarda ao soquete. Eu
+disse «pendura 15,4 s». Ela mediu e achou a causa de verdade, que e pior: com
+aquele defeito reposto **um dos dois testes de soquete fica VERDE**, porque a
+conferencia de quanto foi lido acontece depois de ler os 129 MiB. Veredito certo
+com a memoria ja gasta — a propria lei escrita naquela entrada, aparecendo do
+outro lado.
+
+## O que o ambiente cobrou nesta rodada, e o que ele ensinou
+
+Tres coisas que nao eram do produto e que consumiram tempo real:
+
+- **O backup estava 45 commits atras por uma premissa.** «Refaz no fecho, senao
+  compete com quem compila» nunca foi medido. Sao **15,5 s**, porque o script e
+  `git bundle` e nao compila nada. Diagnostico plausivel nao e diagnostico medido,
+  agora aplicado a um papel em vez de a um numero. `docs/BACKUP.md`.
+- **O disco caiu duas vezes na mesma hora**, a segunda para 986 MiB com frente
+  compilando. Tres buracos, todos medidos: o `target/debug/incremental` (2,8 GiB),
+  o cache do provador de guardas (2,9 GiB, que o zelador so apaga frio e uma
+  corrida deixa quente por meia hora) e o `/tmp` (4,4 GiB, fora do alcance dele).
+  Pedido **317**.
+- **O CHANGELOG ficou com o numero que eu corrigi de madrugada.** Conserto entra no
+  caminho que o motivou e o **irmao fica** — e foi do irmao que a frente seguinte
+  copiou. A lei da casa virada contra quem a escreveu.
