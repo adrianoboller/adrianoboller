@@ -2268,6 +2268,22 @@ fn rotulo_da_prova(versao: u16, slot_size: usize) -> Vec<u8> {
 /// tem o arquivo mas nao a chave ainda poderia embaralhar as linhas, e o
 /// resultado abriria sem erro nenhum.
 ///
+/// # O que ele NAO impede, e quem impede (pedido 316)
+///
+/// «De outro ARQUIVO» nao esta na lista acima, e nao por esquecimento: nada
+/// aqui carrega identidade de arquivo. Duas tabelas de esquema identico dao o
+/// mesmo `slot_size`, e a primeira linha de cada uma tem volume 0, rowid 1 e
+/// versao 1 -- os tres valores deste dado associado IGUAIS. O tempero do nonce
+/// tambem nao ajuda: ele mora dentro do slot, entao viaja junto na copia.
+///
+/// Quem separa dois `.reg` e a CHAVE, porque `cofre::Material::novo()` sorteia
+/// um sal por arquivo. Era garantia por consequencia, e nenhum teste a
+/// afirmava ate 17/09/2026 -- hoje afirmam
+/// `transplantar_slot_entre_dois_reg_e_recusado` e
+/// `dois_reg_novos_nascem_com_sais_diferentes`, em `tests/cifra-dos-dados.rs`,
+/// com a entrada `slot-de-outro-reg` do catalogo de guardas. Quem mexer no sal
+/// por arquivo tem de olhar essas duas antes.
+///
 /// # E ele nao esta sozinho -- medido
 ///
 /// O `cofre::nonce_de_pedaco(rowid, volume, versao, tempero)` carrega os

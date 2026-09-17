@@ -1049,3 +1049,180 @@ fn acrescentar_coluna_marcada_a_tabela_em_claro_continua_em_claro() {
     assert!(contem(&bytes_com_extensao(&d, "reg"), SEGREDO.as_bytes()));
     cofre::desligar();
 }
+
+// ---------------------------------------------------------------------------
+// Pedido 316: o transplante entre DOIS `.reg`
+// ---------------------------------------------------------------------------
+
+/// O esquema do transplante: a UNICA coluna marcada e INLINE.
+///
+/// Sem `Memo` de proposito. Coluna externa poe no slot um PONTEIRO para o
+/// `.memo`, e o slot transplantado passaria a apontar para um offset do
+/// arquivo do OUTRO -- o erro viria da leitura do memo, e nao da etiqueta.
+/// O teste ficaria verde provando outra coisa.
+fn esquema_inline(nome: &str) -> Schema {
+    Schema::new(
+        nome,
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40))
+                .obrigatoria()
+                .com_dado_pessoal(DadoPessoal::Pessoal),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap()
+}
+
+/// O sal de 16 bytes gravado no cabecalho do `.reg` cifrado, lido como
+/// qualquer um que so tenha o arquivo leria: `MATERIAL_EM` (128) + 8.
+fn sal_do_arquivo(d: &Path, nome: &str) -> Vec<u8> {
+    let b = std::fs::read(d.join(format!("{nome}.reg"))).unwrap();
+    b[136..152].to_vec()
+}
+
+/// A `versao` da linha, nos bytes 8..16 do cabecalho do slot. E um dos tres
+/// valores do dado associado, e o teste PRECISA que os dois sejam iguais.
+fn versao_do_slot(d: &Path, nome: &str, rowid: u64) -> u64 {
+    let (slot_size, data_offset) = geometria(d, nome);
+    let b = std::fs::read(d.join(format!("{nome}.reg"))).unwrap();
+    let base = data_offset + (rowid as usize - 1) * slot_size;
+    u64::from_le_bytes(b[base + 8..base + 16].try_into().unwrap())
+}
+
+/// Copiar o slot cifrado de UM `.reg` por cima do slot de OUTRO nao passa.
+///
+/// # A garantia que este teste escreve, e que so existia por consequencia
+///
+/// Nenhuma das amarracoes do slot carrega identidade de ARQUIVO. O
+/// `aad_do_slot` e `(volume, rowid, versao)`; o `rotulo_da_prova` e
+/// `(MAGIC_REG, versao do formato, slot_size)`; o tempero do nonce viaja
+/// dentro do proprio slot, e portanto viaja JUNTO na copia. Duas tabelas de
+/// esquema identico dao slot_size identico, e a primeira linha de cada uma
+/// tem volume 0, rowid 1 e versao 1 -- os tres valores do dado associado
+/// IGUAIS. O unico que difere e a CHAVE, porque `cofre::Material::novo()`
+/// sorteia um sal por arquivo.
+///
+/// O comentario de `aad_do_slot` promete impedir a copia «da linha 7 por cima
+/// da linha 9, ou de outro volume». Nao promete «de outro arquivo» -- quem
+/// cobre esse caso e o sal, que e consequencia e nao promessa escrita. Ate
+/// 17/09/2026 nenhum teste afirmava isso, e consequencia que ninguem escreveu
+/// e a que alguem apaga sem ver.
+///
+/// # O que ele mede, e nao supoe
+///
+/// O teste CONFERE, antes de copiar, que os tres valores do dado associado
+/// batem (geometria igual, rowid 1 nos dois, `versao` lida do disco igual) e
+/// que os sais DIFEREM. Sem isso ele poderia estar verde porque o slot_size
+/// mudou, e nao porque a chave separa os arquivos.
+///
+/// A entrada do catalogo que o prova e `slot-de-outro-reg`: com o sal fixo em
+/// vez de sorteado, os dois arquivos passam a ter a mesma chave e este teste
+/// cai.
+#[test]
+fn transplantar_slot_entre_dois_reg_e_recusado() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("transplante-entre-reg");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+
+    const NOME_A: &str = "Alice de Origem";
+    const NOME_B: &str = "Bruno de Destino";
+
+    for (tabela, quem) in [("a", NOME_A), ("b", NOME_B)] {
+        let mut t = Table::criar(&d, esquema_inline(tabela)).unwrap();
+        t.inserir(&[Value::Int(1), Value::Str(quem.into())])
+            .unwrap();
+        t.sincronizar().unwrap();
+    }
+
+    // As tres premissas do dado associado, MEDIDAS e nao supostas.
+    assert_eq!(
+        geometria(&d, "a"),
+        geometria(&d, "b"),
+        "esquema identico tinha de dar a mesma geometria"
+    );
+    assert_eq!(
+        versao_do_slot(&d, "a", 1),
+        versao_do_slot(&d, "b", 1),
+        "as duas linhas tinham de estar na mesma versao"
+    );
+    // O volume e o mesmo (0, o primeiro de cada tabela) e o rowid tambem (1,
+    // a unica linha de cada uma). O que sobra de diferente e a CHAVE, e isso
+    // e afirmado por um teste proprio -- `dois_reg_novos_nascem_com_sais
+    // _diferentes`. Ficando aqui, ele dispararia ANTES do transplante no dia
+    // em que o sal deixasse de ser por arquivo, e este teste cairia sem ter
+    // provado que o slot de fora ABRE. Conferencia que acontece antes do dano
+    // mede a premissa, nao a guarda.
+
+    // O controle positivo: antes da copia, `b` le a linha DELE.
+    {
+        let mut t = Table::abrir(&d, "b").unwrap();
+        let linha = t.ler(1).unwrap().expect("a linha 1 de b tinha de existir");
+        assert_eq!(linha[1], Value::Str(NOME_B.into()));
+    }
+
+    // O transplante: o slot INTEIRO de `a` -- cabecalho, tempero, corpo
+    // cifrado, etiqueta e CRC -- por cima do slot de `b`. E exatamente o que
+    // quem tem os dois arquivos e nao tem a chave consegue fazer.
+    let (slot_size, data_offset) = geometria(&d, "a");
+    let copia = {
+        let bytes = std::fs::read(d.join("a.reg")).unwrap();
+        bytes[data_offset..data_offset + slot_size].to_vec()
+    };
+    let caminho = d.join("b.reg");
+    let mut bytes = std::fs::read(&caminho).unwrap();
+    assert_ne!(
+        copia,
+        bytes[data_offset..data_offset + slot_size].to_vec(),
+        "os dois slots ja eram iguais: a copia nao provaria nada"
+    );
+    bytes[data_offset..data_offset + slot_size].copy_from_slice(&copia);
+    std::fs::write(&caminho, &bytes).unwrap();
+    // O espelho estraga junto, senao a segunda chance conserta e o teste
+    // passa medindo o `.bkp` em vez da etiqueta.
+    if d.join("b.bkp").exists() {
+        std::fs::write(d.join("b.bkp"), &bytes).unwrap();
+    }
+
+    let mut t = Table::abrir(&d, "b").unwrap();
+    let saiu = t.ler(1);
+    assert!(
+        saiu.is_err(),
+        "o slot de OUTRO arquivo abriu em b: a chave por arquivo era a unica \
+         coisa separando os dois .reg, e ela deixou de separar -- saiu {saiu:?}"
+    );
+
+    drop(t);
+    cofre::desligar();
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// Dois `.reg` novos nascem com SAIS diferentes -- e e so isso que separa
+/// criptograficamente um do outro.
+///
+/// A outra metade do pedido 316, e ela mora num teste proprio de proposito: e
+/// a PREMISSA do transplante, e premissa conferida dentro do teste da guarda
+/// dispararia antes do dano. Aqui a afirmacao esta sozinha e diz o que e --
+/// `cofre::Material::novo()` sorteia um sal por arquivo, e nada mais na
+/// amarracao do slot carrega identidade de arquivo.
+#[test]
+fn dois_reg_novos_nascem_com_sais_diferentes() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("sal-por-arquivo");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+
+    for tabela in ["a", "b"] {
+        let mut t = Table::criar(&d, esquema_inline(tabela)).unwrap();
+        t.inserir(&[Value::Int(1), Value::Str("igual nos dois".into())])
+            .unwrap();
+        t.sincronizar().unwrap();
+    }
+    let (sa, sb) = (sal_do_arquivo(&d, "a"), sal_do_arquivo(&d, "b"));
+    assert_ne!(sa, sb, "os dois .reg nasceram com o MESMO sal");
+    assert_ne!(sa, vec![0u8; 16], "sal em zeros nao e sal sorteado");
+
+    cofre::desligar();
+    let _ = std::fs::remove_dir_all(&d);
+}

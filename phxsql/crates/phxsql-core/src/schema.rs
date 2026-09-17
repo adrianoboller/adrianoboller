@@ -543,6 +543,33 @@ pub struct Schema {
     motivo_obrigatorio: bool,
 }
 
+/// Duas colunas da mesma tabela com o MESMO id, recusado na declaracao.
+///
+/// # Por que aqui e nao no `do_disco`
+///
+/// `do_disco` e o caminho de LER o que ja esta gravado. Uma guarda ali
+/// recusaria ABRIR uma tabela que nasceu antes dela -- e o `id` de coluna e
+/// gravado no `PSCH` desde a v3. Guarda nova entra pedida, nao imposta: ela
+/// protege o dado que ainda vai nascer, nao o que ja esta no disco. Por isso
+/// mora nos dois caminhos de DECLARAR: aqui, para a tabela nova, e em
+/// `Schema::com_coluna`, para a coluna que chega depois.
+///
+/// O laco e O(n^2), como o da duplicata de NOME logo abaixo dele, e pelo
+/// mesmo motivo: uma tabela nasce uma vez e grava um milhao de vezes.
+fn conferir_ids_repetidos(nome: &str, colunas: &[Column]) -> Result<()> {
+    for (i, c) in colunas.iter().enumerate() {
+        if let Some(o) = colunas.iter().take(i).find(|o| o.id == c.id) {
+            return Err(PhxError::Esquema(format!(
+                "as colunas {} e {} da tabela {nome} tem o mesmo id ({}): \
+                 identidade que se repete nao identifica -- omita o campo \"id\" \
+                 numa delas para o motor sortear",
+                o.nome, c.nome, c.id
+            )));
+        }
+    }
+    Ok(())
+}
+
 impl Schema {
     /// Esquema de uma tabela NOVA.
     ///
@@ -584,6 +611,8 @@ impl Schema {
                     ),
             );
         }
+        let nome = nome.into();
+        conferir_ids_repetidos(&nome, &colunas)?;
         Schema::do_disco(nome, colunas, indices)
     }
 
@@ -906,6 +935,22 @@ impl Schema {
             return Err(PhxError::Esquema(format!(
                 "a tabela {} ja tem uma coluna chamada {}",
                 self.nome, coluna.nome
+            )));
+        }
+        // O IRMAO da conferencia de nome, e ele fica: `criar_tabela` e
+        // `acrescentar_coluna` chamam o MESMO montador de coluna
+        // (`valores::coluna_de_json`), entao o `id` de fora entra pelos dois
+        // caminhos e so um deles desce por `Schema::new`. A conferencia olha
+        // so a coluna que CHEGA contra as que ja existem -- e nao a tabela
+        // inteira contra si mesma -- porque tabela gravada antes desta guarda
+        // tem de continuar ganhando coluna: guarda nova entra pedida, nao
+        // imposta, e o que ela protege e o esquecimento de amanha.
+        if let Some(o) = self.colunas.iter().find(|c| c.id == coluna.id) {
+            return Err(PhxError::Esquema(format!(
+                "a coluna {} traz o mesmo id da coluna {} da tabela {} ({}): \
+                 identidade que se repete nao identifica -- omita o campo \"id\" \
+                 para o motor sortear um",
+                coluna.nome, o.nome, self.nome, coluna.id
             )));
         }
 
@@ -2317,5 +2362,107 @@ mod testes_o_crivo_do_indice_comum_ficou {
         .unwrap_err()
         .to_string();
         assert!(e.contains("nao e indexavel"), "{e}");
+    }
+}
+
+/* =========================================================== pedido 315
+IDENTIDADE QUE SE REPETE NAO E IDENTIDADE.
+
+O `id` de coluna e um UUID v7 sorteado em `Column::new` e NUNCA reaproveitado
+-- e o que deixa renomear a coluna sem quebrar tela nem relatorio. Ate
+17/09/2026 nada conferia que ele fosse unico DENTRO da tabela: o `"id"` vindo
+do pedido (`valores::coluna_de_json`) podia repetir o de outra coluna, e as
+duas viravam a mesma identidade para quem aponta por id.
+
+A conferencia entra nos dois caminhos de DECLARAR -- a tabela nova e a coluna
+que chega depois -- e nao no `do_disco`, que e o de LER. Guarda no caminho de
+leitura recusaria abrir tabela gravada antes dela. */
+#[cfg(test)]
+mod testes_id_repetido_de_coluna {
+    use super::*;
+
+    fn com_id(nome: &str, id: Uuid) -> Column {
+        Column::new(nome, ColumnType::Str(20)).com_id(id)
+    }
+
+    /// Tabela NOVA com duas colunas carregando o mesmo id: recusada, e a
+    /// recusa nomeia as duas -- so uma nao diz qual corrigir.
+    #[test]
+    fn tabela_nova_com_id_repetido_e_recusada() {
+        let id = Uuid::v7();
+        let e = Schema::new("t", vec![com_id("a", id), com_id("b", id)], vec![])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains(" a ") && e.contains(" b "), "{e}");
+        assert!(e.contains(&id.to_string()), "a recusa mostra o id: {e}");
+    }
+
+    /// O IRMAO: `acrescentar_coluna` monta a coluna pelo MESMO caminho do
+    /// `criar_tabela` e nao passa por `Schema::new`. Sem esta conferencia, o
+    /// id repetido entrava por aqui mesmo com a tabela nova protegida.
+    #[test]
+    fn coluna_acrescentada_com_id_de_uma_que_ja_existe_e_recusada() {
+        let id = Uuid::v7();
+        let esq = Schema::new(
+            "t",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                com_id("cidade", id),
+            ],
+            vec![],
+        )
+        .unwrap();
+        let e = esq
+            .com_coluna(com_id("bairro", id), esq.posicao_de_coluna_nova())
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("bairro") && e.contains("cidade"), "{e}");
+    }
+
+    /// O COMPORTAMENTO VELHO, nos dois caminhos: id distinto passa, e coluna
+    /// sem id declarado continua ganhando o sorteado. E o caso de 100% das
+    /// tabelas de hoje.
+    #[test]
+    fn id_distinto_e_ausencia_de_id_continuam_passando() {
+        let esq = Schema::new(
+            "t",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                com_id("cidade", Uuid::v7()),
+                com_id("bairro", Uuid::v7()),
+            ],
+            vec![],
+        )
+        .expect("ids distintos deviam passar");
+        let n = esq.colunas().len();
+        let novo = esq
+            .com_coluna(
+                Column::new("uf", ColumnType::Str(2)),
+                esq.posicao_de_coluna_nova(),
+            )
+            .expect("coluna sem id declarado devia passar");
+        assert_eq!(novo.colunas().len(), n + 1);
+
+        // E nenhum id se repete no esquema resultante, contadas tambem as
+        // colunas de sistema que `Schema::new` acrescenta sozinho.
+        let mut ids: Vec<String> = novo.colunas().iter().map(|c| c.id.to_string()).collect();
+        ids.sort();
+        let antes = ids.len();
+        ids.dedup();
+        assert_eq!(ids.len(), antes, "o esquema nasceu com id repetido");
+    }
+
+    /// A guarda NAO desce ao caminho da leitura: um esquema com id repetido
+    /// que ja esteja no disco continua abrindo. Guarda nova entra pedida, nao
+    /// imposta -- ela protege o esquecimento de amanha, nao o dado de ontem.
+    #[test]
+    fn esquema_com_id_repetido_que_ja_esta_no_disco_continua_abrindo() {
+        let id = Uuid::v7();
+        let esq = Schema::do_disco("t", vec![com_id("a", id), com_id("b", id)], vec![])
+            .expect("o caminho do disco nao julga o id");
+        assert_eq!(esq.colunas()[0].id, esq.colunas()[1].id);
+        // E ele vai e volta pelo PSCH sem perder nada.
+        let volta = Schema::desserializar(&esq.serializar()).expect("devia reler");
+        assert_eq!(volta.colunas()[0].id, volta.colunas()[1].id);
     }
 }

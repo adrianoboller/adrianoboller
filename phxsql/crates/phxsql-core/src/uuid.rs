@@ -218,6 +218,25 @@ impl Uuid {
         self.0[6] >> 4
     }
 
+    /// A variante da RFC 9562, nos bits altos do byte 8.
+    ///
+    /// Devolve `true` so para a variante `10x` -- a unica que o v4 e o v7
+    /// desta casa escrevem. `0xx` e a variante antiga da Apollo NCS, `110` e
+    /// a da Microsoft e `111` esta reservada: nenhuma das tres sai daqui, e
+    /// um id que se diz v7 com variante de outra familia foi escrito a mao.
+    pub fn variante_rfc(&self) -> bool {
+        (self.0[8] & 0xC0) == 0x80
+    }
+
+    /// Todos os 16 bytes em zero.
+    ///
+    /// Vale a pena ter nome proprio porque o nulo e o valor que quem monta um
+    /// id a mao escreve primeiro: nem a versao nem a variante o salvam, as
+    /// duas tambem sao zero.
+    pub fn e_nulo(&self) -> bool {
+        self.0 == [0u8; UUID_LEN]
+    }
+
     /// Milissegundos desde a epoca, para um v7. `None` em qualquer outra
     /// versao: ler relogio de um v4 seria ler bits sorteados.
     pub fn instante_ms(&self) -> Option<i64> {
@@ -568,6 +587,56 @@ mod tests {
             Uuid::NULO.to_string(),
             "00000000-0000-0000-0000-000000000000"
         );
+    }
+
+    /// O que `de_texto` NAO confere, dito por teste.
+    ///
+    /// Ele le a forma canonica e nada mais: versao e variante passam como
+    /// vierem. Isso e de proposito -- uma coluna de tipo `Uuid` guarda id de
+    /// fora, e ali o v4, o v1 e ate o nulo sao dado legitimo de quem grava.
+    /// Quem precisa de id v7 DE VERDADE confere no proprio caminho; ver
+    /// `valores::coluna_de_json`, que e onde o `id` de coluna entra.
+    #[test]
+    fn de_texto_nao_julga_versao_nem_variante() {
+        let nulo = Uuid::de_texto("00000000-0000-0000-0000-000000000000").unwrap();
+        assert_eq!(nulo, Uuid::NULO);
+        assert_eq!(nulo.versao(), 0);
+        assert!(!nulo.variante_rfc());
+        assert!(nulo.e_nulo());
+
+        let cheio = Uuid::de_texto("ffffffff-ffff-ffff-ffff-ffffffffffff").unwrap();
+        assert_eq!(cheio.versao(), 15);
+        // `1111` casa `11x`, que e a variante reservada -- nao a da RFC.
+        assert!(!cheio.variante_rfc());
+        assert!(!cheio.e_nulo());
+    }
+
+    /// O que o motor SORTEIA sempre passa nos dois crivos.
+    #[test]
+    fn v7_e_v4_daqui_tem_versao_e_variante_da_rfc() {
+        for _ in 0..64 {
+            let u = Uuid::v7();
+            assert_eq!(u.versao(), 7);
+            assert!(u.variante_rfc(), "v7 com variante fora da RFC: {u}");
+            assert!(!u.e_nulo());
+
+            let q = Uuid::v4();
+            assert_eq!(q.versao(), 4);
+            assert!(q.variante_rfc(), "v4 com variante fora da RFC: {q}");
+        }
+    }
+
+    /// A variante `0xx` (NCS) e a `110` (Microsoft) tambem sao recusadas pelo
+    /// crivo -- e nao so o `11x` do id todo-um.
+    #[test]
+    fn variante_antiga_e_da_microsoft_nao_sao_da_rfc() {
+        let mut b = *Uuid::v7().bytes();
+        b[8] = 0x00; // 0xx -- NCS
+        assert!(!Uuid::de_bytes(b).variante_rfc());
+        b[8] = 0xC0; // 110 -- Microsoft
+        assert!(!Uuid::de_bytes(b).variante_rfc());
+        b[8] = 0xA5; // 101 -- a da RFC, com o resto sorteado
+        assert!(Uuid::de_bytes(b).variante_rfc());
     }
 
     #[test]

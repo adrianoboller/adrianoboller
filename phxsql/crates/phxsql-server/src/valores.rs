@@ -379,7 +379,7 @@ pub fn coluna_de_json(c: &Json, i: usize, estrito: bool) -> Result<Column> {
         }
     }
     let ty = tipo_de_texto(c.texto_ou("tipo", "Str(60)"))?;
-    let mut col = Column::new(cn, ty)
+    let mut col = Column::new(&cn, ty)
         .com_caption(c.texto_ou("caption", ""))
         .com_descricao(c.texto_ou("descricao", ""))
         .com_mascara(c.texto_ou("mascara", ""))
@@ -391,9 +391,7 @@ pub fn coluna_de_json(c: &Json, i: usize, estrito: bool) -> Result<Column> {
     // para que telas e relatorios que apontam para elas continuem valendo.
     let id = c.texto_ou("id", "").trim().to_string();
     if !id.is_empty() {
-        col = col.com_id(
-            Uuid::de_texto(&id).map_err(|e| PhxError::Esquema(format!("id da coluna {i}: {e}")))?,
-        );
+        col = col.com_id(id_de_coluna_de_texto(&id, &cn)?);
     }
     if c.booleano_ou("obrigatoria", false) {
         col = col.obrigatoria();
@@ -406,6 +404,60 @@ pub fn coluna_de_json(c: &Json, i: usize, estrito: bool) -> Result<Column> {
         .com_check(&expressao_de_json(c, "check"))?
         .com_calculada(&expressao_de_json(c, "calculada"))?;
     Ok(col)
+}
+
+/// O `id` de uma coluna, vindo de fora, conferido.
+///
+/// # Por que a conferencia mora AQUI e nao no `Uuid::de_texto`
+///
+/// Porque `de_texto` tambem le DADO: uma coluna de tipo `Uuid` guarda o id
+/// que o cliente mandar (`json_para_valor`, `keyenc`, `carga`), e ali o v4 e
+/// dado legitimo -- o proprio motor o oferece, pela palavra `"v4"`. Exigir v7
+/// no leitor de texto recusaria valor que o motor gera. O `id` de COLUNA e
+/// outra coisa: e identidade que o motor sorteia (`Column::new` faz v7), e
+/// quem manda um de fora esta reapresentando um que saiu daqui.
+///
+/// # O que ele recusa, e por que cada um
+///
+/// - o **nulo**: `00000000-...` e o que quem monta id a mao escreve primeiro,
+///   e identidade que todo mundo consegue adivinhar nao identifica;
+/// - **versao diferente de 7**: os 48 bits altos de um v7 sao o instante, e e
+///   isso que faz o id nao ser escolhivel a dedo. Medido pelo papel SEC:
+///   hoje passam a versao 0 e a versao 15;
+/// - **variante fora da RFC 9562**: os bits `10x` do byte 8. Sem eles o id
+///   diz ser de uma familia que esta casa nao escreve.
+///
+/// A recusa NOMEIA a coluna e o que esta errado, e nao devolve o erro cru de
+/// leitura: quem recebe tem de saber qual coluna do pedido corrigir.
+fn id_de_coluna_de_texto(id: &str, cn: &str) -> Result<Uuid> {
+    let u = Uuid::de_texto(id).map_err(|e| {
+        PhxError::Esquema(format!(
+            "o \"id\" da coluna {cn:?} nao e um UUID: {e}. \
+             Mande a forma 8-4-4-4-12, ou omita o campo para o motor sortear"
+        ))
+    })?;
+    if u.e_nulo() {
+        return Err(PhxError::Esquema(format!(
+            "o \"id\" da coluna {cn:?} e o UUID nulo (todos os bytes em zero), \
+             que nao identifica coluna nenhuma -- omita o campo para o motor \
+             sortear um v7"
+        )));
+    }
+    if u.versao() != 7 || !u.variante_rfc() {
+        return Err(PhxError::Esquema(format!(
+            "o \"id\" da coluna {cn:?} nao e um UUID v7 da RFC 9562 (versao {}, \
+             variante {}): o `id` de coluna e o que o motor sorteia, e so se \
+             manda de volta um que saiu do `esquema`. Omita o campo para o \
+             motor sortear um",
+            u.versao(),
+            if u.variante_rfc() {
+                "certa"
+            } else {
+                "fora da RFC"
+            }
+        )));
+    }
+    Ok(u)
 }
 
 /// O texto de uma expressao de esquema vinda do pedido. Texto e a expressao
@@ -2259,5 +2311,211 @@ mod testes_teto_de_64_bits {
             .unwrap_err()
             .to_string();
         assert!(e.contains("Uuid256"), "{e}");
+    }
+}
+
+/* =========================================================== pedido 315
+O `id` DE COLUNA VINDO DE FORA.
+
+O campo `"id"` de uma coluna existe para UM caso, documentado no montador:
+recriar uma tabela mantendo a identidade das colunas, para que telas e
+relatorios que apontam para elas continuem valendo. Ate 17/09/2026 ele
+entrava sem conferencia nenhuma -- o papel SEC mediu que passavam o UUID
+nulo (versao 0) e o todo-um (versao 15), e que duas colunas da mesma tabela
+podiam carregar o MESMO id.
+
+Estes testes travam os dois sentidos. O que mais importa e o primeiro: o
+caso suportado tem de continuar funcionando, senao a guarda nova quebra o
+cliente que ja existe -- e proteção que quebra cliente antigo e estrago. */
+#[cfg(test)]
+mod testes_id_de_coluna {
+    use super::*;
+    use phxsql_core::uuid::Uuid;
+
+    fn json(t: &str) -> Json {
+        Json::analisar(t).expect("json de teste invalido")
+    }
+
+    /// Um UUID com a versao e a variante escolhidas a dedo, sobre bytes de um
+    /// v7 de verdade -- e o que um cliente conseguiria escrever a mao.
+    fn forjado(versao: u8, variante: u8) -> String {
+        let mut b = *Uuid::v7().bytes();
+        b[6] = (b[6] & 0x0F) | (versao << 4);
+        b[8] = (b[8] & 0x3F) | variante;
+        Uuid::de_bytes(b).to_string()
+    }
+
+    // -----------------------------------------------------------------
+    // O COMPORTAMENTO VELHO -- o teste que mais importa
+    // -----------------------------------------------------------------
+
+    /// Reusar um `id` que saiu do proprio motor continua valendo, nos DOIS
+    /// caminhos que montam coluna: o `criar_tabela` (lista de colunas) e o
+    /// `acrescentar_coluna` (coluna solta ou em objeto proprio).
+    #[test]
+    fn o_id_legitimo_continua_entrando_pelos_dois_caminhos() {
+        let id = Uuid::v7();
+        let e = esquema_de_json(&json(&format!(
+            r#"{{"tabela":"t","colunas":[
+                 {{"nome":"id","tipo":"Int8","id":"{id}"}},
+                 {{"nome":"txt","tipo":"Str(80)"}}]}}"#
+        )))
+        .expect("o id legitimo devia entrar");
+        assert_eq!(e.colunas()[0].id, id, "o id reapresentado nao foi mantido");
+
+        // O irmao: `op_acrescentar_coluna` chama o mesmo montador, com
+        // `estrito` nos dois modos.
+        for estrito in [true, false] {
+            let c = coluna_de_json(
+                &json(&format!(
+                    r#"{{"nome":"nova","tipo":"Str(10)","id":"{id}"}}"#
+                )),
+                0,
+                estrito,
+            )
+            .expect("o id legitimo devia entrar");
+            assert_eq!(c.id, id);
+        }
+    }
+
+    /// Quem NAO manda `"id"` continua ganhando um v7 sorteado, e nenhum dois
+    /// iguais. E o caminho de 100% dos clientes de hoje.
+    #[test]
+    fn sem_id_no_pedido_nada_muda() {
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"t","colunas":[{"nome":"id","tipo":"Int8"},
+                                        {"nome":"txt","tipo":"Str(80)"}]}"#,
+        ))
+        .expect("devia criar");
+        assert_eq!(e.colunas()[0].id.versao(), 7);
+        assert_ne!(e.colunas()[0].id, e.colunas()[1].id);
+    }
+
+    /// E a ida-e-volta inteira: o `id` de uma coluna criada agora volta como
+    /// texto e entra de novo, igual. E o caso que o campo existe para servir.
+    #[test]
+    fn o_id_que_o_motor_sorteou_volta_por_texto() {
+        let nascida = Column::new("cidade", ColumnType::Str(40));
+        let c = coluna_de_json(
+            &json(&format!(
+                r#"{{"nome":"cidade","tipo":"Str(40)","id":"{}"}}"#,
+                nascida.id
+            )),
+            0,
+            true,
+        )
+        .expect("o proprio id do motor devia voltar");
+        assert_eq!(c.id, nascida.id);
+    }
+
+    // -----------------------------------------------------------------
+    // O DEFEITO: o que passava e nao passa mais
+    // -----------------------------------------------------------------
+
+    /// O UUID nulo -- o que quem monta um id a mao escreve primeiro.
+    #[test]
+    fn o_uuid_nulo_e_recusado_e_a_recusa_nomeia_a_coluna() {
+        let e = coluna_de_json(
+            &json(
+                r#"{"nome":"cidade","tipo":"Str(40)","id":"00000000-0000-0000-0000-000000000000"}"#,
+            ),
+            0,
+            true,
+        );
+        let erro = e.expect_err("o UUID nulo devia ser recusado").to_string();
+        assert!(erro.contains("cidade"), "a recusa nomeia a coluna: {erro}");
+        assert!(
+            erro.contains("nulo"),
+            "a recusa diz o que esta errado: {erro}"
+        );
+    }
+
+    /// As duas versoes que o papel SEC mediu passando, e mais o v4 -- que e
+    /// UUID legitimo como DADO e nao e identidade de coluna.
+    #[test]
+    fn versao_fora_do_v7_e_recusada() {
+        for (rotulo, texto) in [
+            (
+                "versao 15",
+                "ffffffff-ffff-ffff-ffff-ffffffffffff".to_string(),
+            ),
+            ("versao 0", forjado(0, 0x80)),
+            ("versao 4", forjado(4, 0x80)),
+            ("versao 8", forjado(8, 0x80)),
+        ] {
+            let e = coluna_de_json(
+                &json(&format!(
+                    r#"{{"nome":"cidade","tipo":"Str(40)","id":"{texto}"}}"#
+                )),
+                0,
+                true,
+            );
+            let erro = e
+                .err()
+                .unwrap_or_else(|| panic!("{rotulo} devia ser recusada"))
+                .to_string();
+            assert!(erro.contains("cidade"), "a recusa nomeia a coluna: {erro}");
+        }
+    }
+
+    /// As tres variantes que nao sao a da RFC 9562, com a versao 7 certa --
+    /// o crivo da variante e separado do da versao, e este teste cai se
+    /// alguem tirar so um dos dois.
+    #[test]
+    fn variante_fora_da_rfc_e_recusada() {
+        for (rotulo, bits) in [
+            ("NCS 0xx", 0x00u8),
+            ("Microsoft 110", 0xC0),
+            ("reservada 111", 0xE0),
+        ] {
+            let texto = forjado(7, bits);
+            let e = coluna_de_json(
+                &json(&format!(
+                    r#"{{"nome":"cidade","tipo":"Str(40)","id":"{texto}"}}"#
+                )),
+                0,
+                true,
+            );
+            let erro = e
+                .err()
+                .unwrap_or_else(|| panic!("a variante {rotulo} devia ser recusada"))
+                .to_string();
+            assert!(
+                erro.contains("RFC 9562"),
+                "a recusa diz o que falta: {erro}"
+            );
+        }
+    }
+
+    /// Texto que nem UUID e continua recusado, e a recusa passou a nomear a
+    /// coluna em vez do INDICE dela -- quem recebe tem de saber o que
+    /// corrigir no pedido, e o indice do JSON nao esta na tela de ninguem.
+    #[test]
+    fn id_que_nao_e_uuid_recusa_nomeando_a_coluna() {
+        let e = coluna_de_json(
+            &json(r#"{"nome":"cidade","tipo":"Str(40)","id":"nao-e-uuid"}"#),
+            0,
+            true,
+        );
+        let erro = e.expect_err("devia recusar").to_string();
+        assert!(erro.contains("cidade"), "{erro}");
+    }
+
+    // -----------------------------------------------------------------
+    // O id REPETIDO dentro da tabela
+    // -----------------------------------------------------------------
+
+    /// Duas colunas com o mesmo id, no `criar_tabela`. A recusa nomeia as
+    /// DUAS, porque so uma delas nao diz qual corrigir.
+    #[test]
+    fn duas_colunas_com_o_mesmo_id_sao_recusadas() {
+        let id = Uuid::v7();
+        let e = esquema_de_json(&json(&format!(
+            r#"{{"tabela":"t","colunas":[
+                 {{"nome":"id","tipo":"Int8","id":"{id}"}},
+                 {{"nome":"txt","tipo":"Str(80)","id":"{id}"}}]}}"#
+        )));
+        let erro = e.expect_err("id repetido devia ser recusado").to_string();
+        assert!(erro.contains("id") && erro.contains("txt"), "{erro}");
     }
 }
