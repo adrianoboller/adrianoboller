@@ -4726,39 +4726,74 @@ impl Servidor {
         }
 
         let valor_chave = valores[pos_chave].clone();
-        match e.operacao {
-            Operacao::Inclusao | Operacao::Alteracao => {
-                let achadas = tabela.buscar(indice, &[valor_chave])?;
-                // O evento local nasce com o carimbo e a origem do NASCIMENTO
-                // da escrita -- e o que faz o conflito ser justo e o evento
-                // nao voltar para de onde veio.
-                tabela.forcar_proximo_evento(carimbo, origem_ev);
-                match achadas.first() {
-                    // O rowid e o rownum sao LOCAIS: `atualizar` mantem os
-                    // daqui, `inserir` numera na ordem de chegada daqui. A
-                    // ordem de digitacao de cada servidor e sagrada NELE.
-                    // Sem julgar: o outro lado ja aceitou esta escrita, e a
-                    // replicacao anda por TABELA -- a filha chega antes da mae.
-                    // Conferindo aqui, o erro subia pelo `?` do laco, a posicao
-                    // nunca andava, e o mesmo lote voltava para sempre: o par
-                    // de servidores PARADO. Ver `Table::inserir_replicado`.
-                    Some(rowid) => tabela.atualizar_replicado(*rowid, &valores)?,
-                    None => {
-                        tabela.inserir_replicado(&valores)?;
+        // A escrita vai num bloco proprio porque a recusa por chave duplicada
+        // NAO pode subir pelo `?`: ela e tratada logo abaixo. Ver o comentario
+        // da recusa, e `bidirecional::MapaDeToques::recusas_por_unicidade`.
+        let escrita = (|| -> Result<()> {
+            match e.operacao {
+                Operacao::Inclusao | Operacao::Alteracao => {
+                    let achadas = tabela.buscar(indice, &[valor_chave])?;
+                    // O evento local nasce com o carimbo e a origem do
+                    // NASCIMENTO da escrita -- e o que faz o conflito ser justo
+                    // e o evento nao voltar para de onde veio.
+                    tabela.forcar_proximo_evento(carimbo, origem_ev);
+                    match achadas.first() {
+                        // O rowid e o rownum sao LOCAIS: `atualizar` mantem os
+                        // daqui, `inserir` numera na ordem de chegada daqui. A
+                        // ordem de digitacao de cada servidor e sagrada NELE.
+                        // Sem julgar: o outro lado ja aceitou esta escrita, e a
+                        // replicacao anda por TABELA -- a filha chega antes da
+                        // mae. Conferindo aqui, o erro subia pelo `?` do laco, a
+                        // posicao nunca andava, e o mesmo lote voltava para
+                        // sempre: o par de servidores PARADO. Ver
+                        // `Table::inserir_replicado`.
+                        Some(rowid) => tabela.atualizar_replicado(*rowid, &valores)?,
+                        None => {
+                            tabela.inserir_replicado(&valores)?;
+                        }
+                    }
+                }
+                Operacao::Exclusao => {
+                    let achadas = tabela.buscar(indice, &[valor_chave])?;
+                    // Sem linha nao ha o que excluir: ela ja saiu daqui, ou
+                    // nunca chegou. O toque gravado abaixo vira a lapide em
+                    // memoria que impede uma alteracao MAIS VELHA de
+                    // ressuscita-la.
+                    if let Some(rowid) = achadas.first() {
+                        tabela.forcar_proximo_evento(carimbo, origem_ev);
+                        tabela.excluir_de_vez_replicado(*rowid, "replicacao bidirecional")?;
                     }
                 }
             }
-            Operacao::Exclusao => {
-                let achadas = tabela.buscar(indice, &[valor_chave])?;
-                // Sem linha nao ha o que excluir: ela ja saiu daqui, ou nunca
-                // chegou. O toque gravado abaixo vira a lapide em memoria que
-                // impede uma alteracao MAIS VELHA de ressuscita-la.
-                if let Some(rowid) = achadas.first() {
-                    tabela.forcar_proximo_evento(carimbo, origem_ev);
-                    tabela.excluir_de_vez_replicado(*rowid, "replicacao bidirecional")?;
-                }
+            Ok(())
+        })();
+        // Chave duplicada num indice unico NAO para o laco (pedido 292). O
+        // casamento entre servidores usa UMA chave, e a unicidade dos outros
+        // indices continua valendo na gravacao -- entao o evento que colide
+        // com a linha de OUTRA chave e recusado aqui, e essa recusa subia pelo
+        // `?` de quem chama: `desde` nunca andava e o MESMO lote voltava para
+        // sempre. Agora ela e contada e gritada, como a colisao de Sequence
+        // logo acima, e o laco segue -- inclusive para as linhas seguintes,
+        // que nada tem a ver com o conflito. O erro que NAO for duplicidade
+        // continua subindo: disco, imagem corrompida e trava envenenada
+        // continuam parando a rodada, que e o comportamento de sempre.
+        if let Err(PhxError::Duplicado(qual)) = &escrita {
+            if let Ok(mut guarda) = self.toques_bidi.lock() {
+                guarda
+                    .entry(chave_tab.to_string())
+                    .or_default()
+                    .recusas_por_unicidade += 1;
             }
+            eprintln!(
+                "RECUSA POR UNICIDADE em {chave_tab}: o evento de {} da chave {chave} \
+                 colide com uma linha daqui ({qual}); a linha do outro lado NAO entrou, \
+                 e o laco seguiu. O casamento entre servidores usa so a chave unica de \
+                 uma coluna -- ver docs/PENDENCIAS.md, pedido 292",
+                e.operacao.nome()
+            );
+            return Ok(false);
         }
+        escrita?;
 
         if let Ok(mut guarda) = self.toques_bidi.lock() {
             guarda
@@ -22757,7 +22792,7 @@ impl Servidor {
         // count > 0 aparecem, para o campo ficar vazio no caso comum e gritar
         // quando ha estrago. Duas faixas iguais numerando a mesma chave perdem
         // linha em silencio; este e o numero que tira o silencio.
-        let (colisoes, carimbos_do_futuro) = match self.toques_bidi.lock() {
+        let (colisoes, carimbos_do_futuro, recusas_por_unicidade) = match self.toques_bidi.lock() {
             Ok(g) => {
                 let pares: Vec<(String, Json)> = g
                     .iter()
@@ -22771,9 +22806,24 @@ impl Servidor {
                     .filter(|(_, m)| m.carimbos_do_futuro > 0)
                     .map(|(k, m)| (k.clone(), Json::de_u64(m.carimbos_do_futuro)))
                     .collect();
-                (Json::Objeto(pares), Json::Objeto(futuros))
+                // Mesmo desenho de novo: e o numero que tira o silencio da
+                // linha que o indice unico secundario recusou (pedido 292).
+                let unicidade: Vec<(String, Json)> = g
+                    .iter()
+                    .filter(|(_, m)| m.recusas_por_unicidade > 0)
+                    .map(|(k, m)| (k.clone(), Json::de_u64(m.recusas_por_unicidade)))
+                    .collect();
+                (
+                    Json::Objeto(pares),
+                    Json::Objeto(futuros),
+                    Json::Objeto(unicidade),
+                )
             }
-            Err(_) => (Json::Objeto(vec![]), Json::Objeto(vec![])),
+            Err(_) => (
+                Json::Objeto(vec![]),
+                Json::Objeto(vec![]),
+                Json::Objeto(vec![]),
+            ),
         };
         Ok(Json::objeto(vec![
             ("papel", Json::texto_de(self.papel_atual().nome())),
@@ -22792,6 +22842,7 @@ impl Servidor {
             ("origens", origens),
             ("colisoes_de_sequencia", colisoes),
             ("carimbos_do_futuro", carimbos_do_futuro),
+            ("recusas_por_unicidade", recusas_por_unicidade),
         ]))
     }
 
@@ -45838,5 +45889,196 @@ mod testes_do_carimbo_do_futuro {
             "tabela sem troca apareceu no contador: {}",
             r.escrever()
         );
+    }
+}
+
+/// A recusa por chave duplicada num indice unico SECUNDARIO -- pedido 292.
+///
+/// O casamento entre servidores usa UMA chave (`bidirecional::chave_unica`), e
+/// a unicidade dos outros indices continua sendo conferida na gravacao. Com
+/// primaria `porId` e um secundario `porEmail`, o evento do outro lado com um
+/// e-mail que ja existe aqui e recusado -- e a recusa PARAVA o laco: ela subia
+/// pelo `?`, `desde` nunca andava, e o mesmo lote voltava para sempre.
+///
+/// Aqui esta o caminho que aplica o evento; a prova do laco inteiro, pelo
+/// soquete e com dois servidores no ar, e
+/// `tests/laco-do-unico-secundario.rs`.
+#[cfg(test)]
+mod testes_da_recusa_por_unicidade {
+    use super::*;
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    const COLUNAS: &str = r#""colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                                       {"nome":"email","tipo":"Str(20)"}],
+                            "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true},
+                                       {"nome":"porEmail","colunas":["email"],"unico":true}]"#;
+
+    /// Dois databases com a MESMA tabela: `b` e este servidor, `r` faz o papel
+    /// do outro lado -- e da o que so o outro lado poderia dar, uma linha com
+    /// id proprio e o e-mail que ja existe aqui.
+    fn terreno(nome: &str, email_de_la: &str) -> (Arc<Servidor>, Table, Table, DirTemp) {
+        let dir = DirTemp::novo(&format!("unicidade-{nome}"));
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        for (db, id, email) in [("b", 1, "a@x"), ("r", 2, email_de_la)] {
+            s.executar(
+                "criar_database",
+                &pedido(&format!(r#"{{"database":"{db}"}}"#)),
+                &dono,
+            )
+            .unwrap();
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(r#"{{"database":"{db}","tabela":"c",{COLUNAS}}}"#)),
+                &dono,
+            )
+            .unwrap();
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"{db}","tabela":"c","linha":{{"id":{id},"email":"{email}"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        let aqui = Table::abrir(dir.join("b"), "c").unwrap();
+        let la = Table::abrir(dir.join("r"), "c").unwrap();
+        (s, aqui, la, dir)
+    }
+
+    fn evento(la: &mut Table, operacao: Operacao) -> crate::replica::EventoRecebido {
+        crate::replica::EventoRecebido {
+            operacao,
+            rowid: 1,
+            versao: 1,
+            imagem: la.imagem_da_linha_do_rowid(1).unwrap(),
+            carimbo_ms: crate::agora_ms(),
+            origem: 0,
+        }
+    }
+
+    fn contador(s: &Servidor) -> u64 {
+        s.toques_bidi
+            .lock()
+            .unwrap()
+            .get("b/c")
+            .map(|m| m.recusas_por_unicidade)
+            .unwrap_or(0)
+    }
+
+    fn no_estado(s: &Servidor) -> Option<i64> {
+        s.executar("replicacao_estado", &pedido("{}"), &Sessao::default())
+            .unwrap()
+            .campo("recusas_por_unicidade")
+            .and_then(|c| c.campo("b/c"))
+            .and_then(Json::inteiro)
+    }
+
+    fn ids(t: &mut Table) -> Vec<i64> {
+        t.varrer()
+            .unwrap()
+            .into_iter()
+            .map(|(_, v)| match v[0] {
+                Value::Int(i) => i,
+                _ => -1,
+            })
+            .collect()
+    }
+
+    /// **Prova real.** O evento de la traz id 2 com o e-mail que a linha 1
+    /// daqui ja ocupa: o `porEmail` recusa, e a recusa NAO pode virar `Err`.
+    ///
+    /// **Defeito reposto**: trocar o bloco da escrita de volta por
+    /// `... tabela.inserir_replicado(&valores)?;` subindo pelo `?` --
+    /// `aplicar_por_chave` devolve `Err(Duplicado)`, o `unwrap` abaixo estoura
+    /// e o contador fica em zero.
+    #[test]
+    fn chave_duplicada_no_unico_secundario_e_contada_e_o_laco_segue() {
+        let (s, mut aqui, mut la, _dir) = terreno("recusa", "a@x");
+        let e = evento(&mut la, Operacao::Inclusao);
+        let aplicou = s
+            .aplicar_por_chave(
+                &mut aqui,
+                "b/c",
+                "porId",
+                0,
+                &e,
+                bidirecional::hash_id("beta"),
+            )
+            .expect("a recusa por unicidade nao pode subir: ela para o par de servidores");
+        assert!(!aplicou, "a linha recusada nao pode contar como aplicada");
+        assert_eq!(contador(&s), 1, "a recusa nao foi contada");
+        assert_eq!(no_estado(&s), Some(1), "o contador nao chegou ao estado");
+        // O dado daqui ficou como estava, e a chave recusada NAO ganhou toque:
+        // um toque de linha que nunca entrou faria o proximo evento dela
+        // disputar contra um passado inventado.
+        assert_eq!(ids(&mut aqui), vec![1]);
+        assert!(
+            s.toques_bidi.lock().unwrap()["b/c"].toques.is_empty(),
+            "a chave recusada ganhou toque"
+        );
+    }
+
+    /// O comportamento VELHO: sem colisao de unicidade o evento entra, nada e
+    /// contado, e a tabela some do campo do `replicacao_estado`.
+    #[test]
+    fn sem_colisao_o_evento_entra_e_nada_e_contado() {
+        let (s, mut aqui, mut la, _dir) = terreno("passa", "b@x");
+        let e = evento(&mut la, Operacao::Inclusao);
+        let aplicou = s
+            .aplicar_por_chave(
+                &mut aqui,
+                "b/c",
+                "porId",
+                0,
+                &e,
+                bidirecional::hash_id("beta"),
+            )
+            .unwrap();
+        assert!(aplicou, "o evento sem conflito tem de entrar");
+        assert_eq!(ids(&mut aqui), vec![1, 2]);
+        assert_eq!(contador(&s), 0);
+        assert_eq!(no_estado(&s), None, "tabela sem recusa apareceu no campo");
+    }
+
+    /// O comportamento VELHO que a recusa nao pode alargar: erro que NAO e
+    /// duplicidade continua subindo e parando a rodada. O evento sem imagem e
+    /// o caso escrito -- o outro lado sem `replicacao.imagem_da_linha` nao tem
+    /// o que aplicar, e seguir calado gravaria menos do que o source tem.
+    #[test]
+    fn erro_que_nao_e_duplicidade_continua_parando_a_rodada() {
+        let (s, mut aqui, _la, _dir) = terreno("outro-erro", "b@x");
+        let e = crate::replica::EventoRecebido {
+            operacao: Operacao::Inclusao,
+            rowid: 1,
+            versao: 1,
+            imagem: Vec::new(),
+            carimbo_ms: crate::agora_ms(),
+            origem: 0,
+        };
+        let erro = s
+            .aplicar_por_chave(
+                &mut aqui,
+                "b/c",
+                "porId",
+                0,
+                &e,
+                bidirecional::hash_id("beta"),
+            )
+            .unwrap_err();
+        assert!(erro.to_string().contains("sem imagem"), "{erro}");
+        assert_eq!(contador(&s), 0, "erro de outro naipe virou recusa contada");
     }
 }

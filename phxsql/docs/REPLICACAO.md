@@ -706,6 +706,40 @@ chave (ou só com chave composta, que fica para quando alguém precisar) é
             indice unico, ou uma chave primaria)"}
 ```
 
+### O índice único SECUNDÁRIO: a recusa é contada, e o laço segue
+
+O casamento usa **uma** chave; a unicidade dos **outros** índices continua
+sendo conferida na gravação — e está certo que continue, porque violação de
+índice único não se cura quando o próximo lote chega, ao contrário da chave
+estrangeira. Com primária `porId` e um secundário `porEmail`, o evento do
+outro lado que traz um e-mail já ocupado aqui é recusado por `porEmail`.
+
+Essa recusa **parava o par de servidores** (pedido 292): ela subia pelo `?` do
+laço, a posição consumida nunca andava e o **mesmo lote voltava para sempre** —
+medido em `tests/laco-do-unico-secundario.rs` com o defeito reposto:
+**20 repetições do mesmo erro em 20 s**, e a linha seguinte do diário, que nada
+tinha a ver com o conflito, nunca chegou. Não é uma linha perdida: é a
+replicação parada, sem ninguém saber.
+
+Hoje ela é **contada e gritada**, no mesmo desenho do `colisoes_de_sequencia`
+(pedido 229(a)) e do `carimbos_do_futuro` (A9): a linha do outro lado **não
+entra**, o número aparece por tabela em `replicacao_estado`, uma linha vai ao
+log do processo nomeando a chave e o índice, e o laço **segue** — inclusive
+para as linhas seguintes do mesmo lote.
+
+```json
+"recusas_por_unicidade": {"loja/clientes": 1}
+```
+
+Só tabela com contagem aparece; instalação sã responde com o objeto vazio. O
+erro que **não** é duplicidade continua subindo e parando a rodada — disco,
+imagem corrompida e trava envenenada são o comportamento de sempre.
+
+O que isto **não** resolve: as duas linhas continuam existindo, cada uma no
+seu servidor, e os dois lados divergem naquela chave até alguém arrumar o
+dado. Casar por N chaves — escolher vencedor por chave secundária — é
+semântica nova de conflito e tem pedido próprio.
+
 ### Exclusão viaja — com a chave dentro
 
 O evento de exclusão existe no diário, então **viaja**. Só que a exclusão

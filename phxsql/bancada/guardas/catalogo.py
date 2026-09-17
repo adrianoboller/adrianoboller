@@ -7522,4 +7522,44 @@ pub fn limpar() {
             "servidor::testes_config_gravar::origem_do_cluster_carrega_a_cifra_e_o_pino",
         ],
     },
+    # -----------------------------------------------------------------------
+    # 188. a chave duplicada no unico SECUNDARIO prendia o laco (pedido 292)
+    # -----------------------------------------------------------------------
+    {
+        "id": "laco-preso-no-unico-secundario",
+        "titulo": "chave duplicada num índice único secundário prende o laço do bidirecional para sempre",
+        "porque": (
+            "parecer do papel C 2.5/6.4, pedido 292 -- o bidirecional casa as "
+            "linhas por UMA chave e a unicidade dos outros indices continua "
+            "valendo na gravacao. Com primaria porId e um secundario porEmail, "
+            "o evento do outro lado com e-mail repetido era recusado, o Err "
+            "subia pelo `?` e o `desde = lote.ate` nunca executava: o mesmo "
+            "lote voltava para sempre. Nao e linha perdida, e o par de "
+            "servidores parado, sem ninguem saber. A recusa passou a ser "
+            "contada e gritada, no padrao do colisao_de_criacao."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if let Err(PhxError::Duplicado(qual)) = &escrita {""",
+        # O padrao nunca casa (`false` contra `true`), entao o bloco inteiro
+        # fica inalcancavel e o `escrita?;` logo abaixo volta a subir o erro --
+        # que e exatamente o defeito de origem, sem apagar linha nenhuma.
+        "troca": """        // DEFEITO REPOSTO: a recusa volta a subir pelo `?` de quem chama.
+        if let (Err(PhxError::Duplicado(qual)), false) = (&escrita, true) {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "laco-do-unico-secundario"],
+        "caem": [
+            "chave_duplicada_no_unico_secundario_nao_prende_o_laco",
+        ],
+        # O teste do comportamento VELHO. Sem ele, um "conserto" que parasse de
+        # replicar passaria com louvor no de cima: laco que nao aplica nada
+        # tambem nao fica preso em lote nenhum.
+        "seguem": [
+            "sem_colisao_o_laco_replica_como_sempre_e_nada_e_contado",
+        ],
+        # Medido: 20,2 s com o defeito reposto (o teste espera 20 s pelo laco
+        # que nunca anda) contra 2,1 s com a arvore limpa. O prazo tem de ser
+        # maior que a soma com o arranque, senao o executor mata a rodada antes
+        # de o teste conseguir reprovar -- a licao do `trava-atras-da-rede`.
+        "prazo": 120,
+    },
 ]

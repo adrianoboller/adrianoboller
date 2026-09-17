@@ -190,6 +190,26 @@ pub struct MapaDeToques {
     /// `replicacao_estado` como `carimbos_do_futuro`. Ver
     /// [`carimbo_alem_da_folga`].
     pub carimbos_do_futuro: u64,
+    /// Quantos eventos remotos esta tabela recusou por chave duplicada num
+    /// indice unico. So sobe; publicado em `replicacao_estado` como
+    /// `recusas_por_unicidade`.
+    ///
+    /// # Por que contar em vez de parar o laco (pedido 292)
+    ///
+    /// O casamento entre servidores usa UMA chave ([`chave_unica`]), e a
+    /// unicidade dos OUTROS indices continua sendo conferida na gravacao --
+    /// e esta certo que continue, porque violacao de indice unico nao se cura
+    /// quando o proximo lote chega, ao contrario da chave estrangeira. Com
+    /// primaria `porId` e um secundario `porEmail`, o evento de A com um
+    /// e-mail que ja existe em B e recusado, e a recusa subia pelo `?` do
+    /// laco: a posicao consumida nunca andava e o MESMO lote voltava para
+    /// sempre. Nao e uma linha perdida -- e o par de servidores parado, sem
+    /// ninguem saber.
+    ///
+    /// E a mesma decisao do [`colisao_de_criacao`] e do
+    /// `Table::inserir_replicado`: o estrago que o laco nao sabe desfazer
+    /// vira NUMERO e grito, nunca silencio nem parada.
+    pub recusas_por_unicidade: u64,
 }
 
 /// O que o laco de uma origem conta para a operacao `replicacao_estado`.
