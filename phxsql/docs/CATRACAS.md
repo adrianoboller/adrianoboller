@@ -583,7 +583,7 @@ folga 0 — nasce colada, como as quatro do dia 03/09.
 a catraca acusa **SUBIU 4 (teto 0)**, nomeando as quatro linhas; com o
 conserto, `ok 0 (teto 0)`.
 
-## 12. As seis réguas do catálogo de guardas — cinco tetos e um piso
+## 12. As sete réguas do catálogo de guardas — seis tetos e um piso
 
 **O defeito que a motivou** (pedido 263, 16/09/2026): a corrida inteira do
 `provar-guardas.py` devolveu **11 guardas QUEBRADAS** — nem provadas nem
@@ -603,7 +603,7 @@ porque repõe o defeito e roda `cargo test` para cada uma das 169 entradas.
 bateria (`bancada/bateria/prova-bateria.py`) — estática, sem servidor e sem
 compilar nada.
 
-### 12.1 As cinco formas de QUEBRADA, e quais entraram na régua
+### 12.1 As seis formas de QUEBRADA, e quais entraram na régua
 
 A régua nasceu vendo **uma** das cinco, e o número que isso custou está
 medido: no mesmo dia 16/09 ela dizia `ok 0` enquanto o provador dizia **1
@@ -621,6 +621,7 @@ O critério de quem entra é um só: **dá para ver sem compilar e sem rodar?**
 | o trecho aparece **duas** vezes | `Arvore.repor`, `quantas > 1` | **sim** — `TETO_TRECHO_AMBIGUO` (nova) |
 | o teste nomeado não existe mais | `julgar`, `sumidos` | **sim** — `TETO_TESTE_MORTO` |
 | o teste existe, mas **não no binário** | laço principal, `faltando` | **sim** — `TETO_TESTE_FORA_DO_BINARIO` (nova) |
+| o nome vem **sem o módulo**, num `--lib` | `julgar`, `sumidos` — o nome curto não está na saída do cargo | **sim** — `TETO_TESTE_SEM_MODULO` (17/09, pedido 273, §12.7) |
 | o código trocado **não compila** | `julgar`, `desfecho == "nao compilou"` | **não** |
 | a rodada **estourou o prazo** | `julgar`, `desfecho == "prazo"` | **não** |
 | o binário **abortou** sem ser esperado | `julgar`, `desfecho == "aborta"` | **não** |
@@ -665,7 +666,7 @@ espelho exato do «DESCEU — BAIXE O TETO». Uma entrada de `APOSENTADAS` que
 **volte** ao catálogo também reprova: ela contaria dos dois lados e inflaria o
 piso em silêncio.
 
-### 12.3 Os seis números, medidos em 16/09/2026
+### 12.3 Os sete números, medidos em 16/09/2026 (a sétima em 17/09)
 
 | Régua | Lado | Valor | Medido | Nasceu |
 |---|---|---:|---:|---|
@@ -673,6 +674,7 @@ piso em silêncio.
 | `TETO_TRECHO_AMBIGUO` | teto | 0 | **0** | 16/09, nesta frente |
 | `TETO_TESTE_MORTO` | teto | 0 | **0** | 16/09 |
 | `TETO_TESTE_FORA_DO_BINARIO` | teto | 0 | **0** | 16/09, nesta frente |
+| `TETO_TESTE_SEM_MODULO` | teto | 0 | **0** | 17/09, pedido 273 — depois do conserto dos três nomes da §15.7.7; §12.7 |
 | `TETO_NAO_JULGADA_ESCONDIDA` | teto | 0 | **0** | 16/09, pedido 269: nasceu medido em **26** e desceu para **0** no mesmo passo, republicando a corrida de 15:25 |
 | `PISO_DAS_ENTRADAS` | **piso** | 177 | **177** | nasceu 16/09 em 143; **subiu para 145** (frente vizinha, no mesmo dia), para **151** na frente 245/O2–O6, para **160** na frente G-CRIPTO (§15), para **169** na frente G-SENHA (§15.7), para **170** com o `Debug` do DbLink (17/09 — a constante subiu e esta linha ficou em 169 até a frente seguinte) e para **177** na segunda leva da pétrea da senha (§15.7.7) — 177 entradas vivas + 0 aposentadas. Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
 
@@ -721,6 +723,7 @@ defeito reposto ali não é defeito reposto.
 | `TETO_TRECHO_AMBIGUO` | a mesma fórmula **duplicada** numa segunda `pub fn` de produção | `SUBIU 1 (teto 0)`, «o trecho aparece 2 vezes» |
 | `TETO_TESTE_MORTO` | `teto_zero_nunca_manda_girar` renomeado | `SUBIU 1 (teto 0)`, nomeando o teste |
 | `TETO_TESTE_FORA_DO_BINARIO` | o mesmo teste **movido** de `src/` para `tests/` | `SUBIU 1 (teto 0)`, «não está em phxsql-server --lib» — e o `TETO_TESTE_MORTO` ficou em **0**, que é a disjunção provada |
+| `TETO_TESTE_SEM_MODULO` (17/09) | o `dblink::testes::` tirado de um `caem` de `debug-da-ligacao-mostra-a-senha` no catálogo | `SUBIU 1 (teto 0)`, nomeando a entrada e o nome curto, saída 1 — e os outros quatro tetos em `ok 0`, que é a forma que só ela vê; restaurado, saída 0 |
 | `PISO_DAS_ENTRADAS` | uma entrada apagada do `catalogo.py` | `ENCOLHEU 142 (piso 143)` — **e os quatro tetos continuaram `ok 0`**, que é o buraco de §12.2 visto acontecer |
 | idem, a saída legítima | a aposentadoria escrita em `APOSENTADAS` | `ok 143`, com «142 guardas no catálogo + 1 aposentada escrita» |
 | idem, a entrada de volta | a aposentada devolvida ao catálogo | `CRESCEU — SUBA O PISO 144` **e** `APOSENTADA QUE VOLTOU` |
@@ -811,6 +814,36 @@ mesma máquina, mesmo minuto, load 2,5).
 oito mutações do código conferidas uma a uma, cada uma acusada pelo caso certo.
 **Um dos casos passou com o defeito reposto na primeira escrita** (testava o
 substring no sentido errado) e quem disse isso foi a mutação, não a leitura.
+
+### 12.7 A sexta forma: o nome sem o módulo — e a régua que o pedido propunha estava errada
+
+**O defeito** (17/09/2026, §15.7.7 item 2): `debug-da-ligacao-mostra-a-senha`
+entrou como «provada 1/1» e estava QUEBRADA no provador — os três nomes de
+`caem`/`seguem` vinham sem o `dblink::testes::`. O `julgar` compara com o que
+o `cargo test` **imprime** (`test dblink::testes::nome ... ok`), e o nome curto
+não está lá. `TETO_TESTE_MORTO` e `TETO_TESTE_FORA_DO_BINARIO` disseram `ok 0`,
+porque procuram a `fn` no fonte, e a `fn` existe.
+
+**A premissa do pedido morreu medida.** O pedido 273 mandava `"::" in nome`
+para toda entrada de `caem`/`seguem`, «nascendo em 0». Contado no catálogo
+antes de escrever: **164 nomes sem `::`**, todos em alvos `--test`, todos
+certos — o cargo imprime o teste do topo de `tests/x.rs` **sem caminho
+nenhum**, e é assim que o provador os casa. A régua crua nasceria em 164 e
+mandaria consertar o que está certo. Num `--lib` é o contrário: todo teste
+mora num `mod`, o cargo sempre imprime o caminho, e um nome sem `::` **nunca**
+casa. Então a régua é **alvo `--lib` exige `::`**, e nasceu em **0**.
+
+**O que ela não vê, e diz no próprio código:** o caminho *errado*
+(`outro::testes::nome`) tem `::` e passa — continua com o provador, no mesmo
+`sumidos`; e um teste de integração que more num `mod comum` e seja nomeado
+sem o `comum::` também só o provador vê.
+
+**Prova real nos dois sentidos**, além do `--autoteste` (cinco casos, com o
+`--test` de nome curto como controle): o `dblink::testes::` tirado de um
+`caem` no `catalogo.py` faz o `--catraca` sair `SUBIU 1 (teto 0)` nomeando
+entrada e nome, código 1, com os outros quatro tetos em `ok 0`; restaurado,
+código 0. Custo remedido com a sétima régua: **0,203–0,216 s** por corrida
+(três corridas, load 0,08) — contra 0,200–0,206 s da versão de seis.
 
 ## 13. As cinco catracas dos dois mapas de concorrência — e onde cada uma passou a rodar
 
@@ -1485,7 +1518,9 @@ um tem um pedido legítimo por trás (a coluna do defeito o cita).
    porque casam pelo nome da `fn`, não pelo caminho. É uma **sexta forma de
    QUEBRADA** para a tabela da §12, do lado que a régua não vê — e é vista sem
    compilar: basta exigir `::` no nome. Consertada no catálogo (os três
-   nomes), re-provada: **1/1.107**, só o `caem`.
+   nomes), re-provada: **1/1.107**, só o `caem`. **A régua nasceu em 17/09**
+   (`TETO_TESTE_SEM_MODULO`, §12.7) — e só para `--lib`, porque o `::`
+   exigido a todos acusaria 164 nomes certos.
 
 3. **A lista genérica de segredos envelheceu.**
    `nenhuma_credencial_do_config_sai_pela_op_config` existe «para pegar o

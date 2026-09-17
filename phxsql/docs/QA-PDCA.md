@@ -421,10 +421,11 @@ com o raciocínio de cada uma, está em `docs/CATRACAS.md`.
 | `TETO_TRECHO_AMBIGUO` (entradas cujo trecho casa duas ou mais vezes no arquivo) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TESTE_MORTO` (testes nomeados que nao existem como `fn` em crates/**/*.rs) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TESTE_FORA_DO_BINARIO` (testes que existem, mas nao no binario que a entrada nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
+| `TETO_TESTE_SEM_MODULO` (testes de alvo --lib nomeados sem o caminho do modulo) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_NAO_JULGADA_ESCONDIDA` (entradas que a ultima corrida nao julgou e que a pagina nao nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 180 | **180** | em cima, sem folga |
 
-*22 catraca(s) medida(s) por conferidor. Refaz com `python3 docs/qa/medir.py`.*
+*23 catraca(s) medida(s) por conferidor. Refaz com `python3 docs/qa/medir.py`.*
 
 **Constantes `TETO*`/`PISO*` que NENHUM conferidor reporta.** Elas não
 são catracas: são limites, ou promessas. A diferença importa — catraca

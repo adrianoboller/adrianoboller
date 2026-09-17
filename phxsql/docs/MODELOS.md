@@ -1097,3 +1097,27 @@ integracao, nao por ela.
 sobre uma arvore com ~4 GiB livres e um compilador serializado. O zelador
 mediu o custo de apagar o cache do provador exatamente porque tres frentes vao
 pagar compilacao fria ao mesmo tempo.
+
+**O que a escolha do escalao comprou, medido no fecho (17/09, 01:15–01:50):**
+as nove frentes voltaram e **nove vezes o briefing do orquestrador estava
+errado, e foi a frente que corrigiu** -- «quatro crates» eram tres, o campo
+era `token` e nao `token_remoto`, «0 entradas/11 testes» eram 2/40, «nove
+nomes» na lista de segredos eram onze, o CHANGELOG mora na raiz e nao em
+`docs/`, o `STATUS.md` nao tem linha de seguranca nem de QA, o `TESTES.md`
+nao e o que a `pagina-dos-testes.py` desenha, e os riscos sao a §09 e nao a
+§18. Todas as nove vieram de frentes **fortes e medias**: quem le o fonte
+antes de obedecer ao briefing e o que o escalao paga, e nesta rodada pagou
+nove vezes. A frente **leve** (tradutor) entregou o que prometeu -- a catraca
+de 1.049 para **950**, 25 testes -- e custou uma coisa que nao estava no
+contrato: um `git stash` na arvore compartilhada as 00:48 escondeu o
+`zelador.sh` do D do commit `86e0b8c`, e ele so entrou em `7219699`. Nao e
+defeito de escalao, e de regra: **nenhuma frente mexe no indice do git**, e a
+regra passou a estar escrita no briefing. O encontro das frentes deu **B-SEC**
+-- aberta as 00:52 depois de A conferir o achado A1 de SEC no fonte, porque
+frente aberta por relatorio de outra frente e frente aberta por ouvir dizer.
+O portao dos geradores saiu **VERDE na primeira** com os vinte, e o
+`CAPABILITIES.json` andou 2.394 → **2.411** testes, 66% → **69%** da tela na
+fabrica. E a regua do pedido 273 entrou no fecho **pelo proprio A, com o
+chapeu de G, sem agente**: cabia em trinta linhas, e a decisao de forma (so
+`--lib`) saiu da medicao antes do codigo -- a receita do pedido nasceria em
+**164**, nao em 0. Dispensa registrada, com o numero.

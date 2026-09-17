@@ -20,10 +20,12 @@ por QUATRO DIAS, e o motivo e o custo: o provador leva cerca de uma hora,
 porque repoe o defeito e roda `cargo test` para cada uma das 143 entradas.
 Guarda que so se confere em uma hora e guarda que nao se confere.
 
-# As CINCO formas de QUEBRADA, e quais desta regua pega
+# As SEIS formas de QUEBRADA, e quais desta regua pega
 
-O `provar-guardas.py` devolve QUEBRADA por cinco motivos diferentes. Esta
-regua nasceu (16/09, pedido 263) vendo **uma** delas, e o numero que isso
+O `provar-guardas.py` devolve QUEBRADA por cinco desfechos diferentes -- e o
+`sumidos` do `julgar` esconde DOIS defeitos distintos, que e o que faz seis
+formas (a sexta e do pedido 273, 17/09). Esta regua nasceu (16/09, pedido
+263) vendo **uma** delas, e o numero que isso
 custou esta medido: a catraca dizia `ok 0` no mesmo dia em que o provador
 dizia **1 QUEBRADA** (`trava-sem-guarda-de-reentrancia`, que estoura o prazo
 de 420 s). A regua estava certa no que prometia -- e quem lesse o `ok 0` como
@@ -39,6 +41,7 @@ O criterio de quem entra e um so: **da para ver sem compilar e sem rodar?**
 | o trecho aparece DUAS vezes | `Arvore.repor`, `quantas > 1` | SIM -- `TETO_TRECHO_AMBIGUO` |
 | o teste nomeado nao existe mais | `julgar`, `sumidos` | SIM -- `TETO_TESTE_MORTO` |
 | o teste existe, mas nao no binario | laco principal, `faltando` | SIM -- `TETO_TESTE_FORA_DO_BINARIO` |
+| o nome vem SEM o modulo, num `--lib` | `julgar`, `sumidos` -- o nome curto nao esta na saida do cargo | SIM -- `TETO_TESTE_SEM_MODULO` |
 | o codigo trocado NAO COMPILA | `julgar`, `desfecho == "nao compilou"` | **NAO** |
 | a rodada estourou o prazo | `julgar`, `desfecho == "prazo"` | **NAO** |
 | o binario abortou quando nao devia | `julgar`, `desfecho == "aborta"` | **NAO** |
@@ -243,6 +246,30 @@ nao sabe; o que ela nao pode e' devolver `0` e parecer um catalogo inteiro.
   ela nao julgou -- a mesma medida, a mesma data, so a pagina dizendo o
   proprio tamanho. Enquanto este teto estiver em 0, a tabela publicada pode
   ser menor que o catalogo -- mas nao pode ESCONDER que e'.
+## A sexta forma: o nome sem o modulo (pedido 273)
+
+Em 17/09/2026 a entrada `debug-da-ligacao-mostra-a-senha` entrou no catalogo
+como «provada 1/1» e estava QUEBRADA no provador: os tres nomes de
+`caem`/`seguem` vinham sem o `dblink::testes::` da frente. O `julgar` compara
+o nome com o que o `cargo test` IMPRIME (`test dblink::testes::nome ... ok`),
+e o nome curto nao esta la. As duas reguas de teste desta casa disseram
+`ok 0`, porque procuram `fn <nome>` no fonte -- e a `fn` existe.
+
+A pergunta e de texto puro, mas a regua **nao e** o `"::" in nome` que o
+pedido propunha, e o motivo foi medido antes de escrever: um teste de
+integracao no topo de `tests/x.rs` e impresso pelo cargo SEM caminho nenhum
+(`test nome ... ok`), e o catalogo tem **164** nomes assim, todos em alvos
+`--test`, todos certos. A regua crua nasceria em 164 e mandaria consertar o
+que esta certo. Num `--lib`, ao contrario, todo teste mora num `mod` (o
+`#[cfg(test)] mod testes` do arquivo), o cargo imprime sempre o caminho, e
+um nome sem `::` **nunca** casa -- entao a regua e: alvo `--lib` exige `::`
+no nome. Nasceu em 0, medido em 17/09/2026 depois do conserto dos tres nomes.
+
+O que ela NAO ve, e diz: o caminho ERRADO (`outro_mod::testes::nome`) tem
+`::` e passa aqui -- esse continua com o provador, no mesmo `sumidos`. E o
+`--test` com nome curto passa por definicao, porque e o certo; se um dia um
+teste de integracao morar num `mod comum` e a entrada o nomear sem o
+`comum::`, tambem so o provador ve.
 """
 import importlib.util
 import json
@@ -258,6 +285,7 @@ TETO_TRECHO_MORTO = 0
 TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
+TETO_TESTE_SEM_MODULO = 0
 PISO_DAS_ENTRADAS = 180
 
 # ------------------------------------------------------------- APOSENTADAS
@@ -496,6 +524,27 @@ def fns_do_binario(pacote, alvo):
     return encontradas
 
 
+def sem_modulo(entradas):
+    """A sexta forma (pedido 273): nome de teste sem `::` num alvo `--lib`.
+
+    So `--lib`, de proposito: num binario de integracao o cargo imprime o
+    teste do topo de `tests/x.rs` SEM caminho, e 164 nomes do catalogo sao
+    assim e estao certos. Num `--lib` o teste sempre mora num `mod`, o cargo
+    sempre imprime o caminho, e o nome curto nunca casa com a saida --
+    QUEBRADA que se ve sem compilar. Recebe a lista em vez de chamar
+    `catalogo()` para que o autoteste a alimente com entradas sinteticas."""
+    achadas = []
+    for g in entradas:
+        alvo = g.get("alvo") or []
+        if not alvo or alvo[0] != "--lib":
+            continue
+        for campo in ("caem", "seguem"):
+            for teste in g.get(campo) or []:
+                if "::" not in teste:
+                    achadas.append((g.get("id"), campo, teste))
+    return achadas
+
+
 def achados():
     """Os quatro achados de texto puro, cada um com a guarda que o nomeia.
 
@@ -644,6 +693,7 @@ def medido(dados=None):
         "TETO_TRECHO_AMBIGUO": len(ambiguos),
         "TETO_TESTE_MORTO": len(testes),
         "TETO_TESTE_FORA_DO_BINARIO": len(fora),
+        "TETO_TESTE_SEM_MODULO": len(sem_modulo(catalogo())),
         "TETO_NAO_JULGADA_ESCONDIDA": len(escondidas()["escondidas"]),
         "PISO_DAS_ENTRADAS": len(catalogo()) + len(APOSENTADAS),
     }
@@ -669,6 +719,11 @@ AS_CATRACAS = [
      "testes que existem, mas nao no binario que a entrada nomeia",
      "o provador roda so o binario nomeado e nunca veria esse teste -- "
      "corrija o `pacote`/`alvo` da entrada, ou o nome do teste."),
+    ("TETO_TESTE_SEM_MODULO", TETO_TESTE_SEM_MODULO, "teto",
+     "testes de alvo --lib nomeados sem o caminho do modulo",
+     "num --lib o cargo imprime `modulo::testes::nome`, e o nome curto "
+     "nunca casa: o provador devolve QUEBRADA («o binario nao tem»). "
+     "Escreva o caminho inteiro no `caem`/`seguem`."),
     ("TETO_NAO_JULGADA_ESCONDIDA", TETO_NAO_JULGADA_ESCONDIDA, "teto",
      "entradas que a ultima corrida nao julgou e que a pagina nao nomeia",
      "a tabela do `docs/TESTES.md` esta menor que o catalogo e nao diz que "
@@ -724,6 +779,11 @@ def catraca():
     if fora:
         print("   -- teste que existe, mas nao no binario da entrada:")
         for gid, campo, teste in fora:
+            print(f"      {gid}: {campo} -> {teste}")
+    curtos = sem_modulo(catalogo())
+    if curtos:
+        print("   -- teste de --lib nomeado sem o caminho do modulo:")
+        for gid, campo, teste in curtos:
             print(f"      {gid}: {campo} -> {teste}")
 
     # O buraco cru sai IMPRESSO e nao travado: ele cresce quando alguem
@@ -903,10 +963,48 @@ def autoteste_da_quinta():
     return 1 if falhas else 0
 
 
+def autoteste_da_sexta():
+    """Prova real da sexta regua, com entradas sinteticas.
+
+    O caso que mais importa e o CONTROLE: o `--test` com nome curto tem de
+    passar, porque e assim que o cargo imprime o teste do topo de um binario
+    de integracao -- a regua crua do pedido acusaria os 164 nomes certos."""
+    falhas = []
+
+    def conferir(nome, cond, detalhe=""):
+        print("   %s  %s%s" % ("ok  " if cond else "FALHOU", nome,
+                               "" if cond else "  -- " + detalhe))
+        if not cond:
+            falhas.append(nome)
+
+    lib_curto = {"id": "a", "alvo": ["--lib"], "caem": ["nome_curto"],
+                 "seguem": ["mod::testes::inteiro"]}
+    lib_inteiro = {"id": "b", "alvo": ["--lib"],
+                   "caem": ["mod::testes::nome"], "seguem": []}
+    test_curto = {"id": "c", "alvo": ["--test", "x"], "caem": ["nome_curto"]}
+    sem_alvo = {"id": "d", "caem": ["nome_curto"]}
+    r = sem_modulo([lib_curto])
+    conferir("--lib com nome curto: acusa, e so o curto",
+             r == [("a", "caem", "nome_curto")], str(r))
+    conferir("--lib com o caminho inteiro: passa", sem_modulo([lib_inteiro]) == [])
+    conferir("--test com nome curto: passa (e o que o cargo imprime)",
+             sem_modulo([test_curto]) == [])
+    conferir("entrada sem alvo: a regua nao inventa veredito",
+             sem_modulo([sem_alvo]) == [])
+    conferir("o catalogo de hoje mede o que o teto diz",
+             len(sem_modulo(catalogo())) == TETO_TESTE_SEM_MODULO,
+             str(len(sem_modulo(catalogo()))))
+    print("   %s" % ("todos passaram" if not falhas
+                     else "FALHOU: " + ", ".join(falhas)))
+    return 1 if falhas else 0
+
+
 def principal():
     if "--autoteste" in sys.argv:
         print("=== autoteste da quinta regua (pedido 269) ===")
-        return autoteste_da_quinta()
+        quinta = autoteste_da_quinta()
+        print("=== autoteste da sexta regua (pedido 273) ===")
+        return quinta or autoteste_da_sexta()
     if "--catraca" in sys.argv:
         return catraca()
     if "--numeros" in sys.argv:

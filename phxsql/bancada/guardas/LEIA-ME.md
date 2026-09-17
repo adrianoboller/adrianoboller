@@ -82,6 +82,7 @@ ver sem compilar e sem rodar?**
 | o trecho aparece **duas** vezes | sim — `TETO_TRECHO_AMBIGUO` |
 | o teste nomeado não existe mais | sim — `TETO_TESTE_MORTO` |
 | o teste existe, mas **não no binário** que a entrada nomeia | sim — `TETO_TESTE_FORA_DO_BINARIO` |
+| o nome vem **sem o módulo**, num alvo `--lib` | sim — `TETO_TESTE_SEM_MODULO` (só `--lib`: num `--test` o cargo imprime o nome curto, e ele está certo) |
 | o código trocado **não compila** | **não** — custa uma compilação por entrada |
 | a rodada **estourou o prazo** | **não** — custa rodar o binário até o prazo |
 | o binário **abortou** sem ser esperado | **não** — custa rodar o binário |
