@@ -1,0 +1,191 @@
+{
+ "rownum": {
+  "ok": true,
+  "medido": "controle SEM recusa: retrato igual=True, rownum diferentes=0; as tres recusas aconteceram=True; QUEIMARAM o contador do source: ['lote']; rownum diferentes por tipo: primaria=0, secundaria=0, obrigatoria=0, lote=2",
+  "controle": {
+   "retratos": [
+    [
+     5,
+     "d92da11a064d6f11"
+    ],
+    [
+     5,
+     "d92da11a064d6f11"
+    ]
+   ],
+   "rownum_diferentes": 0
+  },
+  "por_recusa": {
+   "primaria": {
+    "erro": "[SP000020] chave duplicada: indice unico porId ja tem essa chave",
+    "recusada": true,
+    "rownum_diferentes": [],
+    "retratos": [
+     [
+      5,
+      "d92da11a064d6f11"
+     ],
+     [
+      5,
+      "d92da11a064d6f11"
+     ]
+    ]
+   },
+   "secundaria": {
+    "erro": "[SP000020] chave duplicada: indice unico porEmail ja tem essa chave",
+    "recusada": true,
+    "rownum_diferentes": [],
+    "retratos": [
+     [
+      5,
+      "d92da11a064d6f11"
+     ],
+     [
+      5,
+      "d92da11a064d6f11"
+     ]
+    ]
+   },
+   "obrigatoria": {
+    "erro": "[SP000018] tipo invalido: coluna nome e obrigatoria e recebeu NULL",
+    "recusada": true,
+    "rownum_diferentes": [],
+    "retratos": [
+     [
+      5,
+      "d92da11a064d6f11"
+     ],
+     [
+      5,
+      "d92da11a064d6f11"
+     ]
+    ]
+   },
+   "lote": {
+    "erro": null,
+    "recusada": false,
+    "rownum_diferentes": [
+     [
+      4,
+      5,
+      4
+     ],
+     [
+      5,
+      6,
+      5
+     ]
+    ],
+    "retratos": [
+     [
+      5,
+      "252fa89db5038769"
+     ],
+     [
+      5,
+      "d92da11a064d6f11"
+     ]
+    ]
+   }
+  },
+  "queimaram_o_contador": [
+   "lote"
+  ]
+ },
+ "unico": {
+  "ok": true,
+  "medido": "controle (e-mails distintos): em beta [1, 2, 3], a seguinte chegou=True; CENARIO (mesmo e-mail): em beta [2], a linha do conflito chegou=False e a SEGUINTE, que nao conflita com nada, chegou=False -- o par parou. log: 'replicacao [alfa-def]: [SP000020] chave duplicada: indice unico porEmail ja tem essa chave'",
+  "controle_ids": [
+   1,
+   2,
+   3
+  ],
+  "cenario_ids": [
+   2
+  ],
+  "chegou_conflitante": false,
+  "chegou_seguinte": false,
+  "estado_da_replica": {
+   "papel": "multi",
+   "papel_configurado": "multi",
+   "id_servidor": "beta-def",
+   "somente_leitura": false,
+   "origens": {
+    "alfa-def": {
+     "modo": "streaming",
+     "ultima_rodada": "2026-09-17 02:59:39,698",
+     "aplicados": 0,
+     "ultimo_erro": "[SP000020] chave duplicada: indice unico porEmail ja tem essa chave",
+     "recusas": {},
+     "posicoes": {},
+     "proxima_janela": null,
+     "parada": null,
+     "religadas": 0,
+     "falhas_de_rede_seguidas": 0,
+     "proxima_tentativa": "2026-09-17 02:59:40,698"
+    }
+   },
+   "colisoes_de_sequencia": {}
+  },
+  "log": "replicacao [alfa-def]: [SP000020] chave duplicada: indice unico porEmail ja tem essa chave"
+ },
+ "recriada": {
+  "ok": true,
+  "medido": "controle (sem apagar): na replica [1, 2, 3, 4, 5, 6, 7, 8], as novas chegaram=True; CENARIO: source apagou e recriou, tem [91, 92, 93] com 3 evento(s); a replica ficou com [1, 2, 3, 4, 5] (5 evento(s)), as linhas novas chegaram=False, ultimo_erro=None parada=None",
+  "controle_ids": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8
+  ],
+  "replica_ids": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "source_ids": [
+   91,
+   92,
+   93
+  ],
+  "eventos_source": 3,
+  "eventos_replica": 5,
+  "chegou": false,
+  "estado_da_replica": {
+   "papel": "replica",
+   "papel_configurado": "replica",
+   "id_servidor": "replica-r-def",
+   "somente_leitura": true,
+   "origens": {
+    "fonte-r-def": {
+     "modo": "streaming",
+     "ultima_rodada": "2026-09-17 03:00:08,743",
+     "aplicados": 5,
+     "ultimo_erro": null,
+     "recusas": {},
+     "posicoes": {},
+     "proxima_janela": null,
+     "parada": null,
+     "religadas": 0,
+     "falhas_de_rede_seguidas": 0,
+     "proxima_tentativa": null
+    }
+   },
+   "colisoes_de_sequencia": {}
+  }
+ },
+ "minutos": 1.3,
+ "medido_em": "2026-09-17 03:00 UTC",
+ "binario": "target/release/phxsqld",
+ "confirmados": [
+  "rownum",
+  "unico",
+  "recriada"
+ ]
+}

@@ -1,48 +1,48 @@
 {
   "imagem": {
-    "camada_mb": 8.22,
-    "comprimido_mb": 3.3,
-    "docker_images": "11.5MB"
+    "camada_mb": 10.01,
+    "comprimido_mb": 4.03,
+    "docker_images": "14.1MB"
   },
   "0-endereco": {
     "ok": true,
-    "medido": "vizinho na mesma rede alcancando fonte:5000 = nao ('saida=1 em 424 ms: (silencio)'); eventos na replica depois de 20s = 0",
+    "medido": "vizinho na mesma rede alcancando fonte:5000 = nao ('saida=1 em 661 ms: (silencio)'); eventos na replica depois de 20s = 0",
     "bind_loopback_alcancavel": false,
-    "com_0_0_0_0_s": 0.41
+    "com_0_0_0_0_s": 0.51
   },
   "a": {
     "ok": true,
-    "medido": "13,462 linhas/s no source; a replica alcancou em 2.94s (34,033 eventos/s); convergiu=True; escrita na replica: ACESSO_NEGADO",
-    "fonte_linhas_s": 13462,
-    "alcance_s": 2.94,
-    "replica_eventos_s": 34033,
+    "medido": "16,030 linhas/s no source; a replica alcancou em 1.92s (52,140 eventos/s); convergiu=True; escrita na replica: ACESSO_NEGADO",
+    "fonte_linhas_s": 16030,
+    "alcance_s": 1.92,
+    "replica_eventos_s": 52140,
     "atraso_ms": {
-      "1 insercao": 115,
-      "1.000 insercoes em lote": 2026,
-      "1 alteracao": 58,
-      "1 exclusao suave": 2000,
-      "1 restauracao": 2006,
-      "1 exclusao fisica": 2011,
-      "1 linha com memo de 200 KB": 1993
+      "1 insercao": 2008,
+      "1.000 insercoes em lote": 2063,
+      "1 alteracao": 2009,
+      "1 exclusao suave": 2010,
+      "1 restauracao": 2013,
+      "1 exclusao fisica": 2012,
+      "1 linha com memo de 200 KB": 2061
     },
     "atraso_amostras_ms": [
-      56,
-      2000,
-      2001,
-      2002,
-      2002,
-      2002,
-      2003,
-      2004,
-      2005,
-      2005,
-      2005,
-      2007
+      8,
+      54,
+      1963,
+      1967,
+      2008,
+      2009,
+      2009,
+      2011,
+      2011,
+      2012,
+      2012,
+      2013
     ],
     "atraso_faixa_ms": [
-      56,
-      2003,
-      2007
+      8,
+      2009,
+      2013
     ],
     "soma_fonte": [
       "d93fc6b21b8cc24a",
@@ -67,50 +67,50 @@
   },
   "a2-queda": {
     "ok": true,
-    "medido": "voltou a atender em 538 ms e alcancou os 4.000 eventos em 0.54s desde o arranque; soma igual=True; retrato igual=True",
-    "subiu_ms": 538,
-    "alcance_s": 0.54
+    "medido": "voltou a atender em 459 ms e alcancou os 4.000 eventos em 0.46s desde o arranque; soma igual=True; retrato igual=True",
+    "subiu_ms": 459,
+    "alcance_s": 0.46
   },
   "a3-congelamento": {
     "ok": true,
-    "medido": "em 43 s de corte silencioso, na replica: pior `ping` 9 ms (59454 amostras), pior `varrer` 6 ms (59454 amostras) -- o servidor esta no ar e a trava nao ficou na mao do laco",
-    "pior_ping_ms": 9,
-    "pior_varrer_ms": 6,
-    "amostras": 59454
+    "medido": "em 43 s de corte silencioso, na replica: pior `ping` 7 ms (60710 amostras), pior `varrer` 40 ms (60710 amostras) -- o servidor esta no ar e a trava nao ficou na mao do laco",
+    "pior_ping_ms": 7,
+    "pior_varrer_ms": 40,
+    "amostras": 60710
   },
   "a-processos": {
     "ok": true,
-    "medido": "13,459 linhas/s no source; a replica alcancou em 2.91s (34,361 eventos/s); convergiu=True",
-    "fonte_linhas_s": 13459,
-    "alcance_s": 2.91,
-    "replica_eventos_s": 34361,
+    "medido": "16,060 linhas/s no source; a replica alcancou em 1.82s (54,972 eventos/s); convergiu=True",
+    "fonte_linhas_s": 16060,
+    "alcance_s": 1.82,
+    "replica_eventos_s": 54972,
     "atraso_ms": {
-      "1 insercao": 101,
-      "1.000 insercoes em lote": 2021,
-      "1 alteracao": 56,
-      "1 exclusao suave": 1987,
-      "1 restauracao": 1989,
-      "1 exclusao fisica": 2039,
-      "1 linha com memo de 200 KB": 2026
+      "1 insercao": 2052,
+      "1.000 insercoes em lote": 2011,
+      "1 alteracao": 57,
+      "1 exclusao suave": 1997,
+      "1 restauracao": 1997,
+      "1 exclusao fisica": 1999,
+      "1 linha com memo de 200 KB": 2048
     },
     "atraso_amostras_ms": [
-      55,
-      1990,
-      1990,
-      1991,
-      1991,
-      1992,
-      1994,
-      1995,
-      1995,
+      54,
       1997,
-      2009,
-      2045
+      1998,
+      1998,
+      1998,
+      1999,
+      1999,
+      1999,
+      1999,
+      2000,
+      2000,
+      2051
     ],
     "atraso_faixa_ms": [
-      55,
-      1994,
-      2045
+      54,
+      1999,
+      2051
     ],
     "soma_fonte": [
       "d93fc6b21b8cc24a",
@@ -135,75 +135,75 @@
   "comparacao": {
     "linhas": 100000,
     "docker": {
-      "fonte_linhas_s": 13462,
-      "replica_eventos_s": 34033,
-      "alcance_s": 2.94,
+      "fonte_linhas_s": 16030,
+      "replica_eventos_s": 52140,
+      "alcance_s": 1.92,
       "atraso_ms": {
-        "1 insercao": 115,
-        "1.000 insercoes em lote": 2026,
-        "1 alteracao": 58,
-        "1 exclusao suave": 2000,
-        "1 restauracao": 2006,
-        "1 exclusao fisica": 2011,
-        "1 linha com memo de 200 KB": 1993
+        "1 insercao": 2008,
+        "1.000 insercoes em lote": 2063,
+        "1 alteracao": 2009,
+        "1 exclusao suave": 2010,
+        "1 restauracao": 2013,
+        "1 exclusao fisica": 2012,
+        "1 linha com memo de 200 KB": 2061
       },
       "atraso_faixa_ms": [
-        56,
-        2003,
-        2007
+        8,
+        2009,
+        2013
       ],
       "atraso_amostras_ms": [
-        56,
-        2000,
-        2001,
-        2002,
-        2002,
-        2002,
-        2003,
-        2004,
-        2005,
-        2005,
-        2005,
-        2007
+        8,
+        54,
+        1963,
+        1967,
+        2008,
+        2009,
+        2009,
+        2011,
+        2011,
+        2012,
+        2012,
+        2013
       ]
     },
     "processo": {
-      "fonte_linhas_s": 13459,
-      "replica_eventos_s": 34361,
-      "alcance_s": 2.91,
+      "fonte_linhas_s": 16060,
+      "replica_eventos_s": 54972,
+      "alcance_s": 1.82,
       "atraso_ms": {
-        "1 insercao": 101,
-        "1.000 insercoes em lote": 2021,
-        "1 alteracao": 56,
-        "1 exclusao suave": 1987,
-        "1 restauracao": 1989,
-        "1 exclusao fisica": 2039,
-        "1 linha com memo de 200 KB": 2026
+        "1 insercao": 2052,
+        "1.000 insercoes em lote": 2011,
+        "1 alteracao": 57,
+        "1 exclusao suave": 1997,
+        "1 restauracao": 1997,
+        "1 exclusao fisica": 1999,
+        "1 linha com memo de 200 KB": 2048
       },
       "atraso_faixa_ms": [
-        55,
-        1994,
-        2045
+        54,
+        1999,
+        2051
       ],
       "atraso_amostras_ms": [
-        55,
-        1990,
-        1990,
-        1991,
-        1991,
-        1992,
-        1994,
-        1995,
-        1995,
+        54,
         1997,
-        2009,
-        2045
+        1998,
+        1998,
+        1998,
+        1999,
+        1999,
+        1999,
+        1999,
+        2000,
+        2000,
+        2051
       ]
     }
   },
   "b-laco": {
     "ok": true,
-    "medido": "alfa->beta 0.41s; beta->alfa 0.97s; eventos (2, 2) -> (2, 2) (parados)",
+    "medido": "alfa->beta 0.51s; beta->alfa 1.03s; eventos (2, 2) -> (2, 2) (parados)",
     "eventos": [
       2,
       2
@@ -252,73 +252,81 @@
     ],
     "cego_alfa": {
       "modo": "streaming",
-      "ultima_rodada": "2026-09-05 04:30:31,009",
+      "ultima_rodada": "2026-09-17 02:46:03,805",
       "aplicados": 1,
       "ultimo_erro": null,
       "recusas": {},
       "posicoes": {
         "loja/clientes": 2
       },
-      "proxima_janela": null
+      "proxima_janela": null,
+      "parada": null,
+      "religadas": 0,
+      "falhas_de_rede_seguidas": 0,
+      "proxima_tentativa": null
     },
     "cego_beta": {
       "modo": "streaming",
-      "ultima_rodada": "2026-09-05 04:30:31,034",
+      "ultima_rodada": "2026-09-17 02:46:03,771",
       "aplicados": 1,
       "ultimo_erro": null,
       "recusas": {},
       "posicoes": {
         "loja/clientes": 2
       },
-      "proxima_janela": null
+      "proxima_janela": null,
+      "parada": null,
+      "religadas": 0,
+      "falhas_de_rede_seguidas": 0,
+      "proxima_tentativa": null
     },
     "pior_resposta_ms": {
       "6801": [
-        1328,
+        885,
         "checksum"
       ],
       "6802": [
-        1317,
+        880,
         "checksum"
       ],
       "6811": [
-        298,
+        250,
         "login"
       ],
       "6812": [
-        302,
+        244,
         "login"
       ],
       "6851": [
-        1248,
+        858,
         "checksum"
       ],
       "6852": [
-        1306,
+        864,
         "checksum"
       ]
     }
   },
   "b-cortes": {
     "ok": true,
-    "medido": "retomada depois de a rede voltar, em segundos: REJECT-3s=0.0; REJECT-20s=0.0; REJECT-45s=0.3; DROP-3s=1.0; DROP-20s=0.2; DROP-45s=25.1",
+    "medido": "retomada depois de a rede voltar, em segundos: REJECT-3s=0.0; REJECT-20s=0.0; REJECT-45s=0.2; DROP-3s=0.2; DROP-20s=0.2; DROP-45s=24.8",
     "retomada_s": {
       "REJECT-3s": 0.0,
       "REJECT-20s": 0.0,
-      "REJECT-45s": 0.3,
-      "DROP-3s": 1.0,
+      "REJECT-45s": 0.2,
+      "DROP-3s": 0.2,
       "DROP-20s": 0.2,
-      "DROP-45s": 25.1
+      "DROP-45s": 24.8
     }
   },
   "b-abraco": {
     "ok": true,
-    "medido": "100000 linhas escritas nos dois lados ao mesmo tempo levaram 3.6s (as mesmas 100.000 no modo A levam ~5,6s); convergiram 8.1s depois; EAGAIN novos no diario: alfa +0, beta +0; pior `checksum` 697 ms -- nao houve travamento",
-    "escrita_s": 3.6,
-    "convergencia_s": 8.1,
+    "medido": "100000 linhas escritas nos dois lados ao mesmo tempo levaram 2.9s (as mesmas 100.000 no modo A levam ~5,6s); convergiram 5.4s depois; EAGAIN novos no diario: alfa +0, beta +0; pior `checksum` 596 ms -- nao houve travamento",
+    "escrita_s": 2.9,
+    "convergencia_s": 5.4,
     "eagain_alfa": 0,
     "eagain_beta": 0,
-    "pior_checksum_ms": 697,
+    "pior_checksum_ms": 596,
     "linhas": 100000
   },
   "b-sem-chave": {
@@ -327,8 +335,8 @@
   },
   "c": {
     "ok": true,
-    "medido": "primario morto=True; promocao em 6 ms; papel=source; varrer=ok; inserir=ok; soma do primario antes=('9273e5193d076650', 200, 200), do promovido depois=('4b1feae0f1ca452e', 201, 201)",
-    "promocao_ms": 6,
+    "medido": "primario morto=True; promocao em 7 ms; papel=source; varrer=ok; inserir=ok; soma do primario antes=('9273e5193d076650', 200, 200), do promovido depois=('4b1feae0f1ca452e', 201, 201)",
+    "promocao_ms": 7,
     "soma_antes": [
       "9273e5193d076650",
       200,
@@ -346,10 +354,10 @@
   },
   "d": {
     "ok": true,
-    "medido": "alcancou 500 eventos em 0.16s; leitura devolveu 500 linhas; escrita: REDIRECIONA 4003 -> '[SP000028] REDIRECIONA primario:5000 (primario) -- este servidor e uma replica de leitura; escreva no primario'; soma primario=('e4f5daa52f755316', 500, 500) leitor=('e4f5daa52f755316', 500, 500)",
+    "medido": "alcancou 500 eventos em 0.31s; leitura devolveu 500 linhas; escrita: REDIRECIONA 4003 -> '[SP000028] REDIRECIONA primario:5000 (primario) -- este servidor e uma replica de leitura; escreva no primario'; soma primario=('e4f5daa52f755316', 500, 500) leitor=('e4f5daa52f755316', 500, 500)",
     "endereco_do_redireciona": "REDIRECIONA",
     "resolve_no_hospedeiro": false,
-    "alcance_s": 0.16
+    "alcance_s": 0.31
   },
   "e": {
     "ok": true,
@@ -363,13 +371,13 @@
       "4-source-alcanca-alguem": false,
       "3-lista-negra": true
     },
-    "acessos_log": "89 linha(s) do intruso no acessos.log; a ultima: {\"quando\":\"2026-09-05 04:34:58,366\",\"quando_ms\":1788582898366,\"ip\":\"172.28.90.30\",\"porta_origem\":34174,\"op\":\"conexao\",\"usuario\":\"\",\"autenticado\":false,\"ok\":fals",
+    "acessos_log": "33 linha(s) do intruso no acessos.log; a ultima: {\"quando\":\"2026-09-17 02:49:58,173\",\"quando_ms\":1789613398173,\"ip\":\"172.28.90.30\",\"porta_origem\":39204,\"op\":\"conexao\",\"usuario\":\"\",\"autenticado\":false,\"ok\":fals",
     "iptables": "-P INPUT ACCEPT\n-P FORWARD ACCEPT\n-P OUTPUT ACCEPT\n-A INPUT -i lo -j ACCEPT\n-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n-A INPUT -s 172.28.90.20/32 -p tcp -m tcp --dport 5000 -j ACCEPT\n-A INPUT -s 172.28.90.1/32 -p tcp -m tcp --dport 5000 -j ACCEPT\n-A INPUT -j DROP\n-A OUTPUT -o lo -j ACCEPT\n-A OUTPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n-A OUTPUT -j DROP"
   },
   "e-replicas-autorizadas": {
     "ok": true,
     "medido": "`replicas_autorizadas` sozinho: o intruso levou 0 de 200 eventos (antes do conserto levava 200)"
   },
-  "minutos": 8.1,
+  "minutos": 7.9,
   "reconexoes": 4
 }

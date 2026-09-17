@@ -1,0 +1,34 @@
+{
+ "linhas": 100000,
+ "medido_em": "2026-09-17 03:01 UTC",
+ "gnu": {
+  "linhas": 100000,
+  "carga_s": 2.061,
+  "linhas_s": 48510,
+  "chamadas": {},
+  "total": 0,
+  "por_linha": null,
+  "strace_bruto": null
+ },
+ "musl": {
+  "linhas": 100000,
+  "carga_s": 4.77,
+  "linhas_s": 20965,
+  "chamadas": {},
+  "total": 0,
+  "por_linha": null,
+  "strace_bruto": null
+ },
+ "gnu_sobre_musl": 2.31,
+ "fsync": {
+  "linhas": 100000,
+  "carga_s": 88.273,
+  "linhas_s": 1132,
+  "chamadas": {
+   "fsync": 104
+  },
+  "total": 104,
+  "por_linha": 0.00104,
+  "strace_bruto": "% time     seconds  usecs/call     calls    errors syscall\n------ ----------- ----------- --------- --------- ----------------\n100.00    0.021156         203       104           fsync\n------ ----------- ----------- --------- --------- ----------------\n100.00    0.021156         203       104           total\n"
+ }
+}

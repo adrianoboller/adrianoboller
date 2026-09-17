@@ -31,6 +31,7 @@
         "papel": null,
         "epoca": 0,
         "posicao": 0,
+        "posicao_incompleta": false,
         "ultimo_pulso_ms": -1,
         "vivo": false
       },
@@ -41,6 +42,7 @@
         "papel": null,
         "epoca": 0,
         "posicao": 0,
+        "posicao_incompleta": false,
         "ultimo_pulso_ms": -1,
         "vivo": false
       },
@@ -51,6 +53,7 @@
         "papel": null,
         "epoca": 0,
         "posicao": 0,
+        "posicao_incompleta": false,
         "ultimo_pulso_ms": -1,
         "vivo": false
       },
@@ -61,6 +64,7 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 0,
+        "posicao_incompleta": false,
         "ultimo_pulso_ms": 0,
         "vivo": true
       }
@@ -85,6 +89,7 @@
         "papel": "master",
         "epoca": 0,
         "posicao": 300,
+        "posicao_incompleta": false,
         "ultimo_pulso_ms": 0,
         "vivo": true
       },
@@ -95,7 +100,8 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 300,
-        "ultimo_pulso_ms": 378,
+        "posicao_incompleta": false,
+        "ultimo_pulso_ms": 420,
         "vivo": true
       },
       {
@@ -105,16 +111,17 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 300,
-        "ultimo_pulso_ms": 377,
+        "posicao_incompleta": false,
+        "ultimo_pulso_ms": 420,
         "vivo": true
       }
     ]
   },
-  "reinicio_no2_s": 0.367,
-  "reinicio_no3_s": 0.368,
+  "reinicio_no2_s": 0.342,
+  "reinicio_no3_s": 0.354,
   "reinicio_no1_indisponivel_s": 0.001,
-  "reinicio_no1_total_s": 0.369,
-  "escalonamento_total_s": 1.11,
+  "reinicio_no1_total_s": 0.357,
+  "escalonamento_total_s": 1.056,
   "retratos_finais": {
     "no1": [
       370,
@@ -152,6 +159,7 @@
         "papel": "master",
         "epoca": 0,
         "posicao": 370,
+        "posicao_incompleta": false,
         "ultimo_pulso_ms": 0,
         "vivo": true
       },
@@ -161,8 +169,9 @@
         "este": false,
         "papel": "replica",
         "epoca": 0,
-        "posicao": 300,
-        "ultimo_pulso_ms": 39,
+        "posicao": 320,
+        "posicao_incompleta": false,
+        "ultimo_pulso_ms": 90,
         "vivo": true
       },
       {
@@ -172,7 +181,8 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 300,
-        "ultimo_pulso_ms": 298,
+        "posicao_incompleta": false,
+        "ultimo_pulso_ms": 392,
         "vivo": true
       },
       {
@@ -182,7 +192,8 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 0,
-        "ultimo_pulso_ms": 298,
+        "posicao_incompleta": false,
+        "ultimo_pulso_ms": 392,
         "vivo": true
       }
     ]
@@ -201,14 +212,14 @@
         "no5": "ok"
       }
     },
-    "ms": 4
+    "ms": 7
   },
-  "ordem_a_quente_s": 0.005,
-  "no5_vivo_em_todos_s": 0.207,
+  "ordem_a_quente_s": 0.008,
+  "no5_vivo_em_todos_s": 0.211,
   "batida_no_master": {
-    "tentou": 42,
+    "tentou": 43,
     "recusou": 0,
-    "maior_buraco_ms": 11.5,
+    "maior_buraco_ms": 11.7,
     "erros": []
   },
   "master_indisponivel_a_quente_s": 0.0,
@@ -244,24 +255,24 @@
   },
   "retratos_a_quente": {
     "no1": [
-      462,
-      "701fdaacdcab787c"
+      463,
+      "be1326ecc077b07f"
     ],
     "no2": [
-      462,
-      "701fdaacdcab787c"
+      463,
+      "be1326ecc077b07f"
     ],
     "no3": [
-      462,
-      "701fdaacdcab787c"
+      463,
+      "be1326ecc077b07f"
     ],
     "no4": [
-      462,
-      "701fdaacdcab787c"
+      463,
+      "be1326ecc077b07f"
     ],
     "no5": [
-      462,
-      "701fdaacdcab787c"
+      463,
+      "be1326ecc077b07f"
     ]
   },
   "estado_a_quente": {
@@ -282,7 +293,8 @@
         "este": true,
         "papel": "master",
         "epoca": 0,
-        "posicao": 462,
+        "posicao": 463,
+        "posicao_incompleta": false,
         "ultimo_pulso_ms": 0,
         "vivo": true
       },
@@ -293,7 +305,8 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 370,
-        "ultimo_pulso_ms": 173,
+        "posicao_incompleta": false,
+        "ultimo_pulso_ms": 206,
         "vivo": true
       },
       {
@@ -303,7 +316,8 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 370,
-        "ultimo_pulso_ms": 433,
+        "posicao_incompleta": false,
+        "ultimo_pulso_ms": 508,
         "vivo": true
       },
       {
@@ -313,7 +327,8 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 370,
-        "ultimo_pulso_ms": 433,
+        "posicao_incompleta": false,
+        "ultimo_pulso_ms": 508,
         "vivo": true
       },
       {
@@ -323,16 +338,17 @@
         "papel": "replica",
         "epoca": 0,
         "posicao": 0,
-        "ultimo_pulso_ms": 130,
+        "posicao_incompleta": false,
+        "ultimo_pulso_ms": 8,
         "vivo": true
       }
     ]
   },
   "comparacao": {
-    "reiniciando_master_indisponivel_s": 0.369,
+    "reiniciando_master_indisponivel_s": 0.357,
     "a_quente_master_indisponivel_s": 0.0,
-    "reiniciando_total_s": 1.11,
-    "a_quente_total_s": 0.207
+    "reiniciando_total_s": 1.056,
+    "a_quente_total_s": 0.211
   },
   "falhas": []
 }

@@ -1,25 +1,25 @@
 {
   "congelamento": {
     "ok": true,
-    "medido": "em 40 s de tubo mudo, na replica: pior `ping` 4 ms (118793 amostras), pior `varrer` 5 ms (118793 amostras); a telemetria da replica contou 11.6 s de trava na mao",
-    "pior_ping_ms": 4,
-    "pior_varrer_ms": 5,
-    "amostras": 118793,
-    "posse_da_trava_s": 11.6
+    "medido": "em 40 s de tubo mudo, na replica: pior `ping` 8 ms (188203 amostras), pior `varrer` 24 ms (188203 amostras); a telemetria da replica contou 12.1 s de trava na mao",
+    "pior_ping_ms": 8,
+    "pior_varrer_ms": 24,
+    "amostras": 188203,
+    "posse_da_trava_s": 12.1
   },
   "alcance": {
     "ok": true,
-    "medido": "a replica alcancou 200000 eventos em 4.54s (44,062 eventos/s); durante a aplicacao, pior `varrer` 147 ms (6056 amostras)",
-    "alcance_s": 4.54,
-    "eventos_s": 44062,
-    "pior_varrer_ms": 147,
-    "amostras": 6056,
+    "medido": "a replica alcancou 200000 eventos em 2.39s (83,567 eventos/s); durante a aplicacao, pior `varrer` 128 ms (3730 amostras)",
+    "alcance_s": 2.39,
+    "eventos_s": 83567,
+    "pior_varrer_ms": 128,
+    "amostras": 3730,
     "linhas": 200000
   },
   "queda": {
     "ok": true,
-    "medido": "10 corte(s) de conexao durante o alcance; convergiu=True; soma do source=('1aa1e8124df2cba0', 200000, 200000) da replica=('1aa1e8124df2cba0', 200000, 200000) (IGUAL)",
-    "cortes": 10,
+    "medido": "4 corte(s) de conexao durante o alcance; convergiu=True; soma do source=('1aa1e8124df2cba0', 200000, 200000) da replica=('1aa1e8124df2cba0', 200000, 200000) (IGUAL)",
+    "cortes": 4,
     "soma_fonte": [
       "1aa1e8124df2cba0",
       200000,
@@ -34,17 +34,17 @@
   },
   "abraco": {
     "ok": true,
-    "medido": "200000 linhas nos dois lados ao mesmo tempo levaram 2.5s (as mesmas 200000 num servidor sozinho levam 3.9s = 0.6x); convergiram 3.4s depois; EAGAIN novos: alfa +0, beta +0; durante a carga, em alfa: pior `ping` 26 ms, pior `varrer` 115 ms (31 amostras)",
-    "escrita_s": 2.5,
-    "simples_s": 3.9,
-    "vezes": 0.64,
-    "convergencia_s": 3.4,
+    "medido": "200000 linhas nos dois lados ao mesmo tempo levaram 1.5s (as mesmas 200000 num servidor sozinho levam 2.0s = 0.7x); convergiram 2.7s depois; EAGAIN novos: alfa +0, beta +0; durante a carga, em alfa: pior `ping` 9 ms, pior `varrer` 172 ms (25 amostras)",
+    "escrita_s": 1.5,
+    "simples_s": 2.0,
+    "vezes": 0.73,
+    "convergencia_s": 2.7,
     "eagain_alfa": 0,
     "eagain_beta": 0,
-    "pior_ping_ms": 26,
-    "pior_varrer_ms": 115,
-    "amostras": 31,
+    "pior_ping_ms": 9,
+    "pior_varrer_ms": 172,
+    "amostras": 25,
     "linhas": 200000
   },
-  "minutos": 1.5
+  "minutos": 1.4
 }
