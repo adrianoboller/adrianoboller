@@ -67,16 +67,24 @@ pub struct Cliente {
 }
 
 impl Cliente {
+    /// Conecta com o prazo padrao de conexao, [`PRAZO_DE_CONEXAO`].
+    ///
+    /// Ate 17/09/2026 isto era um `TcpStream::connect` cru, que fica
+    /// pendurado ate o sistema desistir do SYN (no Linux de fabrica, seis
+    /// retransmissoes, perto de 127 s). O prazo tinha entrado so para o pulso
+    /// do cluster, em [`Cliente::conectar_com_prazo`], e os IRMAOS ficaram sem
+    /// ele: o laco da replica e a sonda `replicacao_testar` (via `ligar`), o
+    /// dblink para outro PhxSql e o console de linha de comando -- todos
+    /// chamam esta funcao. Revisao SEC, A5. Ela continua existindo em vez de
+    /// ser apagada porque os tres chamadores nao tem prazo proprio a dizer; o
+    /// que nao existe mais e um caminho SEM prazo.
     pub fn conectar(host: &str, porta: u16, token: &str, espera: Duration) -> Result<Cliente> {
-        let alvo = format!("{host}:{porta}");
-        let fluxo = TcpStream::connect(&alvo)
-            .map_err(|e| PhxError::Io(std::io::Error::other(format!("{alvo}: {e}"))))?;
-        Cliente::montar(fluxo, token, espera)
+        Cliente::conectar_com_prazo(host, porta, token, espera, PRAZO_DE_CONEXAO)
     }
 
-    /// Conecta com PRAZO. O `connect` sem prazo pode ficar minutos pendurado
-    /// num host que caiu -- para a replicacao isso e tolerável, para o pulso
-    /// do cluster nao: um no morto seguraria a conferencia dos vivos.
+    /// Conecta com PRAZO dito por quem chama. O pulso do cluster usa 1-2 s:
+    /// um no morto nao pode segurar a conferencia dos vivos alem do proprio
+    /// pulso.
     pub fn conectar_com_prazo(
         host: &str,
         porta: u16,
@@ -330,6 +338,9 @@ pub fn posicao(cliente: &mut Cliente, database: &str) -> Result<PosicaoDoSource>
 pub struct EventoRecebido {
     pub operacao: Operacao,
     pub rowid: u64,
+    /// Versao do registro depois da operacao -- um dos quatro campos que a
+    /// conferencia de continuidade compara com o diario daqui.
+    pub versao: u64,
     pub imagem: Vec<u8>,
     /// O instante em que a escrita NASCEU, no relogio de quem a fez.
     pub carimbo_ms: i64,
@@ -368,12 +379,41 @@ pub fn puxar_lote(
     desde: u64,
     para: Option<&str>,
 ) -> Result<LoteRecebido> {
+    puxar_ate(cliente, database, tabela, desde, para, LOTE)
+}
+
+/// UM evento do source -- o da posicao `qual` -- ou nenhum, quando o diario
+/// de la nao chega ate ele.
+///
+/// E a conferencia de continuidade no caso em que a replica nao tem nada a
+/// aplicar: o evento que ela ja tem, pedido de novo ao source, para saber se
+/// o diario de la ainda e o daqui.
+pub fn puxar_um(
+    cliente: &mut Cliente,
+    database: &str,
+    tabela: &str,
+    qual: u64,
+) -> Result<Option<EventoRecebido>> {
+    Ok(puxar_ate(cliente, database, tabela, qual, None, 1)?
+        .eventos
+        .into_iter()
+        .next())
+}
+
+fn puxar_ate(
+    cliente: &mut Cliente,
+    database: &str,
+    tabela: &str,
+    desde: u64,
+    para: Option<&str>,
+    max: u64,
+) -> Result<LoteRecebido> {
     let mut campos = vec![
         ("op", Json::texto_de("replicar")),
         ("database", Json::texto_de(database)),
         ("tabela", Json::texto_de(tabela)),
         ("desde", Json::de_u64(desde)),
-        ("max", Json::de_u64(LOTE)),
+        ("max", Json::de_u64(max)),
     ];
     if let Some(quem) = para {
         campos.push(("para", Json::texto_de(quem)));
@@ -393,6 +433,7 @@ pub fn puxar_lote(
                 }
             },
             rowid: e.inteiro_ou("rowid", 0).max(0) as u64,
+            versao: e.inteiro_ou("versao", 0).max(0) as u64,
             imagem: hex_para_bytes(e.texto_ou("imagem", ""))?,
             carimbo_ms: e.inteiro_ou("carimbo_ms", 0),
             origem: e.inteiro_ou("origem", 0).clamp(0, u16::MAX as i64) as u16,
@@ -405,13 +446,32 @@ pub fn puxar_lote(
     })
 }
 
+/// Quanto tempo [`ligar`] espera o `connect` antes de desistir.
+///
+/// Dez segundos: acima de qualquer ida e volta sadia, inclusive fora da rede
+/// local, e igual ao `reconectar_em` de fabrica -- esperar mais para conectar
+/// do que se espera para tentar de novo nao faz sentido. O pulso do cluster
+/// usa 1-2 s porque e rede local e porque um no morto nao pode segurar a
+/// conferencia dos vivos; aqui o custo de esperar e so o atraso da replica.
+pub const PRAZO_DE_CONEXAO: Duration = Duration::from_secs(10);
+
 /// Abre a conexao e entra autenticado. Usado pelo laco e pelos testes.
 pub fn ligar(origem: &Origem) -> Result<Cliente> {
-    let mut c = Cliente::conectar(
+    ligar_com_prazo(origem, PRAZO_DE_CONEXAO)
+}
+
+/// [`ligar`] com o prazo de conexao dito por quem chama.
+///
+/// Existe para a prova contra o sistema operacional: um host que engole o
+/// SYN nao pode prender quem liga, e o teste mede isso com um prazo curto em
+/// vez de esperar os dez segundos de [`PRAZO_DE_CONEXAO`].
+pub fn ligar_com_prazo(origem: &Origem, prazo_conexao: Duration) -> Result<Cliente> {
+    let mut c = Cliente::conectar_com_prazo(
         &origem.host,
         origem.porta,
         &origem.token,
         Duration::from_secs(30),
+        prazo_conexao,
     )?;
     // O tunel ANTES do login, de proposito: e a prova do desafio-resposta e o
     // token que ele existe para esconder, e depois do login ja seria tarde.
@@ -641,5 +701,128 @@ mod testes_do_ritmo {
         assert_eq!(r.apos(Falha::Outra), Decisao::Dormir(s(10)));
         assert_eq!(r.apos(Falha::Outra), Decisao::Dormir(s(10)));
         assert_eq!(r.seguidas, 0);
+    }
+}
+
+/// O prazo de conexao de [`ligar`], provado contra o sistema operacional.
+///
+/// Revisao SEC de 17/09/2026, A5: `ligar` caia num `connect` sem prazo, e o
+/// irmao com prazo (`conectar_com_prazo`) so servia o pulso do cluster.
+#[cfg(test)]
+mod testes_do_prazo_de_conexao {
+    use super::*;
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::time::Instant;
+
+    /// Um buraco negro LOCAL: um ouvinte que nunca aceita, com a fila de
+    /// `accept` cheia.
+    ///
+    /// Com a fila cheia o nucleo DESCARTA o SYN em vez de recusar, e quem
+    /// chega fica pendurado retransmitindo -- e o mesmo que um host que
+    /// engole pacotes, sem depender de rota nenhuma. Medido antes de escrever
+    /// (17/09/2026): neste ambiente `192.0.2.1` responde «Connection refused»
+    /// na hora, entao NAO serve de buraco negro; a fila cheia no loopback
+    /// pendurou um `connect` de 1 s ate o prazo. As conexoes que encheram a
+    /// fila voltam junto, porque fechar qualquer uma abriria uma vaga.
+    ///
+    /// `None` quando o sistema nao encheu a fila em 4.096 conexoes: ai nao ha
+    /// como provar, e o teste diz isso em vez de passar por engano.
+    fn buraco_negro() -> Option<(TcpListener, Vec<TcpStream>, u16)> {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").ok()?;
+        let endereco = ouvinte.local_addr().ok()?;
+        let porta = endereco.port();
+        let mut presos = Vec::new();
+        for _ in 0..4_096 {
+            match TcpStream::connect_timeout(&endereco, Duration::from_millis(200)) {
+                Ok(c) => presos.push(c),
+                Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                    return Some((ouvinte, presos, porta));
+                }
+                Err(_) => return None,
+            }
+        }
+        None
+    }
+
+    fn origem_para(porta: u16) -> Origem {
+        Origem {
+            nome: "buraco-negro".into(),
+            host: "127.0.0.1".into(),
+            porta,
+            token: String::new(),
+            databases: Vec::new(),
+            reconectar_em: 1,
+            usuario: String::new(),
+            senha_hash: String::new(),
+            senha: String::new(),
+            cada_minutos: 0,
+            hora: String::new(),
+            cifra: false,
+            chave_do_fio: String::new(),
+        }
+    }
+
+    /// **Prova real do A5.** Com o `connect` sem prazo reposto em `ligar`,
+    /// este teste nao falha: PENDURA -- e por isso ele mede numa thread e
+    /// reprova pelo `recv_timeout`, em vez de esperar o SO desistir do SYN.
+    ///
+    /// E a falha tem de sair classificada como REDE: e assim que o laco
+    /// recua dobrando em vez de estacionar.
+    #[test]
+    fn ligar_nao_fica_pendurado_num_host_que_engole_o_syn() {
+        let Some((_ouvinte, presos, porta)) = buraco_negro() else {
+            eprintln!(
+                "este sistema nao encheu a fila de accept em 4.096 conexoes: \
+                 sem buraco negro nao ha como provar o prazo aqui"
+            );
+            return;
+        };
+        let prazo = Duration::from_millis(500);
+        let (envio, volta) = mpsc::channel();
+        std::thread::spawn(move || {
+            let inicio = Instant::now();
+            let r = ligar_com_prazo(&origem_para(porta), prazo);
+            let _ = envio.send((
+                r.map(|_| ()).map_err(|e| Falha::ao_ligar(&e)),
+                inicio.elapsed(),
+            ));
+        });
+        match volta.recv_timeout(Duration::from_secs(5)) {
+            Ok((resultado, levou)) => {
+                assert_eq!(
+                    resultado,
+                    Err(Falha::Rede),
+                    "um host que engole o SYN e falha de REDE, e nada mais"
+                );
+                assert!(
+                    levou < Duration::from_secs(3),
+                    "`ligar` levou {levou:?} para desistir com prazo de {prazo:?}"
+                );
+            }
+            Err(_) => panic!(
+                "`ligar` ficou pendurado alem de 5 s num host que engole o SYN \
+                 (prazo pedido: {prazo:?}): o prazo de conexao nao esta valendo"
+            ),
+        }
+        // As conexoes presas so sao soltas AQUI, depois da medida.
+        assert!(
+            !presos.is_empty(),
+            "a fila de accept encheu sem nenhuma conexao?"
+        );
+    }
+
+    /// O padrao que o laco usa tem de ser o de dez segundos -- e a origem que
+    /// existe (um ouvinte que aceita) continua entrando pelo mesmo caminho.
+    #[test]
+    fn o_prazo_padrao_e_de_dez_segundos_e_a_origem_viva_conecta() {
+        assert_eq!(PRAZO_DE_CONEXAO, Duration::from_secs(10));
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        // Sem token e sem usuario, `ligar` so conecta -- e o que se quer medir.
+        let c = ligar(&origem_para(porta));
+        assert!(c.is_ok(), "{:?}", c.err());
+        let (aceita, _) = ouvinte.accept().unwrap();
+        drop(aceita);
     }
 }

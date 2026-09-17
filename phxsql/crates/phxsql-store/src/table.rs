@@ -5074,6 +5074,18 @@ impl Table {
         self.log.ler_com_imagem(pular, limite)
     }
 
+    /// [`Table::diario_com_imagem`] com teto de BYTES de imagem -- ver
+    /// [`crate::log::LogFile::ler_com_imagem_ate`]. E o que o servidor usa
+    /// para servir e para absorver o diario: quem aloca e quem limita.
+    pub fn diario_com_imagem_ate(
+        &mut self,
+        pular: u64,
+        limite: u64,
+        teto_bytes: usize,
+    ) -> Result<Vec<(Evento, Vec<u8>)>> {
+        self.log.ler_com_imagem_ate(pular, limite, teto_bytes)
+    }
+
     /// Eventos de um registro especifico.
     pub fn historico(&mut self, rowid: RowId) -> Result<Vec<Evento>> {
         self.log.historico(rowid)

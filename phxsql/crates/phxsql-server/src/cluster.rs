@@ -149,6 +149,17 @@ pub fn vencedor(vivos: &[Candidato], total_configurado: usize) -> Option<&Candid
 const PAPEL_MASTER: u8 = 1;
 const PAPEL_REPLICA: u8 = 0;
 
+/// Quantas epocas acima da maior ja vista um pulso ainda pode trazer.
+///
+/// A epoca legitima anda de um em um, uma vez por eleicao, e uma eleicao por
+/// janela e o maximo que o arbitro produz. Um no que passou tempo fora ve, ao
+/// voltar, a epoca que os outros alcancaram sem ele -- e por isso a folga
+/// nao e zero nem pequena: um milhao de eleicoes e mais do que um cluster
+/// faz em anos girando a janela inteira, e ainda assim fica a 2^43 de
+/// distancia de onde o `promover(maior + 1)` deixaria de somar. O que ela
+/// barra e o salto para perto de `u64::MAX` de uma vez so.
+pub const FOLGA_DE_EPOCA: u64 = 1_000_000;
+
 /// O estado compartilhado entre as threads do cluster e o portao de escrita.
 ///
 /// # Por que atomos no caminho quente
@@ -325,7 +336,37 @@ impl EstadoCluster {
     /// Um "master" com epoca menor que a nossa NAO renova o sinal de master:
     /// e o destronado que ainda nao se deu conta, e trata-lo como master
     /// adiaria a eleicao de verdade.
+    ///
+    /// # O pulso que NAO conta
+    ///
+    /// Epoca acima de `maior_epoca_vista + FOLGA_DE_EPOCA`, ou posicao que o
+    /// JSON nao consegue nem representar sem perder precisao, e pulso torto
+    /// -- forjado ou de um no doente -- e nao entra no mapa (revisao SEC de
+    /// 17/09/2026, A1). Sem este crivo um unico `"epoca":1e19` saturava em
+    /// `i64::MAX`, o master se rebaixava sozinho ao ve-la, a epoca era
+    /// persistida em todo no e nenhum master legitimo voltava a contar: era
+    /// paralisia que sobrevivia ao reinicio, com conserto a mao em cada
+    /// `cluster.estado.json`. O crivo NAO resolve a identidade do pulso (um
+    /// no da lista continua podendo dizer que e outro) -- isso e desenho, e
+    /// esta na mesa do dono.
     pub fn registrar(&self, id: &str, pulso: PulsoDeNo) {
+        let teto = self.maior_epoca_vista().saturating_add(FOLGA_DE_EPOCA);
+        if pulso.epoca > teto {
+            eprintln!(
+                "cluster: pulso de {id:?} com epoca {} acima do teto sadio {teto} \
+                 (maior vista + {FOLGA_DE_EPOCA}): ignorado",
+                pulso.epoca
+            );
+            return;
+        }
+        if pulso.posicao >= phxsql_core::json::INTEIRO_EXATO_MAX {
+            eprintln!(
+                "cluster: pulso de {id:?} com posicao {} que nem cabe num numero \
+                 exato de JSON: ignorado",
+                pulso.posicao
+            );
+            return;
+        }
         let agora = pulso.quando_ms;
         if pulso.papel == PapelVivo::Master && pulso.epoca >= self.epoca() {
             self.master_visto_ms.store(agora, Ordering::SeqCst);
@@ -817,6 +858,84 @@ mod testes {
         assert_eq!(e.master_atual().unwrap().0, "no1");
         assert_eq!(e.mapa().len(), 2);
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn pulso(papel: PapelVivo, epoca: u64, posicao: u64) -> PulsoDeNo {
+        PulsoDeNo {
+            papel,
+            epoca,
+            posicao,
+            incompleta: false,
+            prioridade: 0,
+            quando_ms: crate::agora_ms(),
+        }
+    }
+
+    /// **Prova real do A1 (o teto), revisao SEC de 17/09/2026.** Um pulso com
+    /// epoca perto de `u64::MAX` -- o que `"epoca":1e19` vira depois de
+    /// saturar em `i64::MAX` -- nao pode envenenar a maior epoca vista nem
+    /// renovar o sinal de master: e por esses dois numeros que o arbitro
+    /// rebaixa o master e as replicas seguem quem pulsou. Com o crivo tirado
+    /// de `registrar`, `maior_epoca_vista` devolve `u64::MAX` e o teste cai.
+    #[test]
+    fn um_pulso_de_epoca_absurda_nao_destrona() {
+        let dir = DirTemp::novo("cluster-epoca-absurda");
+        let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
+        e.promover(3).unwrap();
+        e.registrar("no1", pulso(PapelVivo::Master, u64::MAX, 10));
+        assert!(
+            e.maior_epoca_vista() <= 3 + FOLGA_DE_EPOCA,
+            "a epoca absurda envenenou a maior vista: {}",
+            e.maior_epoca_vista()
+        );
+        assert_eq!(e.papel(), PapelVivo::Master);
+        assert_eq!(
+            e.master_atual().unwrap().0,
+            "no2",
+            "o master corrente continua sendo este no"
+        );
+        assert!(
+            e.mapa().is_empty(),
+            "o pulso torto nao pode entrar no mapa dos vivos"
+        );
+        // O mesmo com `i64::MAX`, que e o que o `json.rs` entrega para 1e19.
+        e.registrar("no3", pulso(PapelVivo::Master, i64::MAX as u64, 10));
+        assert!(e.maior_epoca_vista() <= 3 + FOLGA_DE_EPOCA);
+        assert_eq!(e.papel(), PapelVivo::Master);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// O comportamento VELHO, que a folga existe para preservar: um no que
+    /// volta depois de eleicoes que nao viu aceita a epoca maior dos outros
+    /// -- ate a folga inteira, inclusive. E a posicao continua contando ate o
+    /// maior inteiro exato do JSON.
+    #[test]
+    fn pulso_dentro_da_folga_ainda_conta_e_espelha_a_epoca() {
+        let dir = DirTemp::novo("cluster-folga");
+        let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
+        assert_eq!(e.epoca(), 0);
+        e.registrar("no1", pulso(PapelVivo::Master, FOLGA_DE_EPOCA, 10));
+        assert_eq!(
+            e.epoca(),
+            FOLGA_DE_EPOCA,
+            "a replica espelha a epoca do master"
+        );
+        assert_eq!(e.master_atual().unwrap().0, "no1");
+        // Um degrau acima da folga, a partir da maior vista agora: nao conta.
+        e.registrar("no3", pulso(PapelVivo::Master, 2 * FOLGA_DE_EPOCA + 1, 10));
+        assert_eq!(e.maior_epoca_vista(), FOLGA_DE_EPOCA);
+        assert_eq!(e.mapa().len(), 1);
+        // Posicao no limite do inteiro exato entra; a partir dele, nao.
+        let exato = phxsql_core::json::INTEIRO_EXATO_MAX;
+        e.registrar("no3", pulso(PapelVivo::Replica, FOLGA_DE_EPOCA, exato - 1));
+        assert_eq!(e.mapa().len(), 2);
+        e.registrar("no3", pulso(PapelVivo::Replica, FOLGA_DE_EPOCA, exato));
+        assert_eq!(
+            e.mapa()["no3"].posicao,
+            exato - 1,
+            "o pulso com posicao impossivel nao substitui o bom"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

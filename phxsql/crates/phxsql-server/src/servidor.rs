@@ -294,19 +294,38 @@ pub(crate) const OPS_DE_TRANSACAO: &[&str] = &[
 /// carga de cinco mil linhas que nao precisava de transacao nenhuma.
 pub(crate) const OPS_EMPILHAVEIS: &[&str] = &["inserir", "atualizar", "excluir", "restaurar"];
 
-/// O que uma REPLICA chama no source, e so isso.
+/// O que uma REPLICA chama no source com a credencial de replicacao, e so isso.
 ///
-/// E a lista que `replicacao.replicas_autorizadas` tranca. As tres sao as
-/// mesmas da secao 6 do `docs/REPLICACAO.md`: `posicao` diz ate onde o diario
+/// E a lista que `replicacao.replicas_autorizadas` tranca. As tres primeiras
+/// sao as da secao 6 do `docs/REPLICACAO.md`: `posicao` diz ate onde o diario
 /// foi, `replicar` entrega os eventos com a linha dentro, e `aplicar` grava
 /// com o rowid escolhido. Juntas, elas SAO o dado -- quem pode chamar as tres
 /// leva a base inteira.
+///
+/// `cluster_pulso` e a quarta, desde 17/09/2026 (revisao SEC, A1): ela entra
+/// com a MESMA credencial das outras tres -- a do cluster e a de `replicar`,
+/// ver `usuarios.rs` -- e decide quem manda: epoca, posicao e papel de cada
+/// no saem do pulso, e um pulso forjado destrona o master. A lista tranca
+/// por operacao, e uma lista de operacoes envelhece como envelhece um campo
+/// novo do portao: quando o portao passar a olhar um campo novo, procure
+/// quem nao tem esse campo -- e quando entrar uma operacao com a credencial
+/// de replicacao, procure se ela esta aqui. Consequencia para quem preenche a
+/// lista num cluster: ela tem de trazer TODOS os outros nos, porque cada no
+/// pulsa para cada outro.
 ///
 /// `replicacao_estado`, `replicacao_testar` e `spare_promover` NAO entram, e a
 /// ausencia e deliberada: sao operacoes de administracao, exigem
 /// `administrar`, e quem administra nao e uma replica remota. Trancar essas
 /// pela lista de replicas faria a lista significar duas coisas.
-pub(crate) const OPS_DE_REPLICACAO: &[&str] = &["posicao", "replicar", "aplicar"];
+pub(crate) const OPS_DE_REPLICACAO: &[&str] = &["posicao", "replicar", "aplicar", "cluster_pulso"];
+
+/// O que a fase 3 de um alcance de tabela devolveu.
+enum Lote {
+    /// Aplicou `n` eventos e a posicao local ficou em `nova`.
+    Aplicado { n: u64, nova: u64 },
+    /// O diario do source nao continua o daqui -- o motivo, para o estado.
+    Rompido(String),
+}
 
 /// Estado de uma conexao.
 ///
@@ -566,6 +585,37 @@ const MARCAS_POR_TABELA: usize = 8;
 /// atrasa-la.
 const TETO_DO_LOTE_SERVIDO: usize = 16 * 1024 * 1024;
 
+/// Quantos eventos um `replicar` devolve quando o pedido nao diz -- ou diz
+/// zero, ou diz um numero negativo.
+///
+/// Zero NAO e "sem limite" aqui, e isso e decisao. No store, `limite == 0`
+/// quer dizer "todos os eventos" -- e o contrato que a CLI, o PITR e os
+/// testes usam --, e era exatamente isso que vazava pelo fio (revisao SEC de
+/// 17/09/2026, A2): `"max":0` fazia o source caminhar o diario INTEIRO,
+/// decifrando cada imagem, com a trava global na mao, e o
+/// `TETO_DO_LOTE_SERVIDO` so cortava a resposta depois. Pelo fio, zero vale o
+/// padrao, que e o lote que a propria replica pede.
+const LOTE_PADRAO_DE_REPLICACAO: u64 = 500;
+
+/// O maior lote que um `replicar` serve, pecam o que pedirem.
+///
+/// Dez vezes o lote da replica: sobra para quem quiser lotes maiores, e nunca
+/// o diario inteiro. O teto em BYTES (`TETO_DO_LOTE_SERVIDO`) continua
+/// mandando por cima deste: os dois sao tetos de coisas diferentes, e o de
+/// eventos existe para um diario de linhas minusculas nao virar cinco milhoes
+/// de `Evento` na memoria por causa de um `"max"` absurdo.
+const TETO_DE_EVENTOS_POR_LOTE: u64 = 5_000;
+
+/// O `max` de um `replicar`, ja saneado: ausente, zero ou negativo vale o
+/// padrao; acima do teto vale o teto. E a mesma forma do `limite` das
+/// leituras de cliente, e por isso mora ao lado dos tetos que a explicam.
+pub(crate) fn lote_de_replicacao(p: &Json) -> u64 {
+    match p.inteiro_ou("max", 0) {
+        n if n <= 0 => LOTE_PADRAO_DE_REPLICACAO,
+        n => (n as u64).min(TETO_DE_EVENTOS_POR_LOTE),
+    }
+}
+
 /// Quanto tempo o corpo de um gatilho `BEFORE` pode segurar a trava GLOBAL de
 /// dados.
 ///
@@ -760,6 +810,12 @@ pub struct Servidor {
     /// aproveitariam: a marca so serve para uma posicao DEPOIS dela. Guardar
     /// algumas e escolher a maior que ainda cabe atende todas.
     marcas_do_diario: Mutex<HashMap<String, Vec<phxsql_store::log::MarcaDoDiario>>>,
+    /// A ultima conferencia de continuidade de cada tabela replicada:
+    /// `"database/tabela"` -> (posicao local conferida, o diario do source
+    /// continuava o daqui?). Ver `alcancar_tabela`. Uma tabela ociosa e
+    /// conferida UMA vez por posicao -- e nao a cada rodada --, e uma
+    /// recusada fica recusada ate a posicao local mudar.
+    continuidade_da_replica: Mutex<HashMap<String, (u64, bool)>>,
     profiler: Mutex<crate::profiler::Profiler>,
     /// Espelho de `profiler.ligado`, para o caminho quente nao tomar a trava.
     ///
@@ -1142,6 +1198,7 @@ impl Servidor {
             transacoes: Mutex::new(crate::transacao::Transacoes::nova(crate::agora_ms())),
             transacoes_abertas: AtomicUsize::new(0),
             marcas_do_diario: Mutex::new(HashMap::new()),
+            continuidade_da_replica: Mutex::new(HashMap::new()),
             profiler: Mutex::new(crate::profiler::Profiler::default()),
             profiler_ligado: AtomicBool::new(false),
             rotinas: Mutex::new(rotinas),
@@ -2675,7 +2732,7 @@ impl Servidor {
                 )));
             }
             for no in p.tabelas {
-                aplicados += self.alcancar_tabela(&mut cliente, &database, &no)?;
+                aplicados += self.alcancar_tabela(&mut cliente, &database, &no, &origem.nome)?;
             }
         }
         Ok(aplicados)
@@ -2712,14 +2769,21 @@ impl Servidor {
 
     /// Aplica UM lote ja lido do soquete. Fase 3: so trabalho no dado.
     ///
-    /// Devolve quantos aplicou e a posicao LOCAL depois disso.
+    /// Com `posicao > 0` o lote tem de comecar em `posicao - 1`: o primeiro
+    /// evento e o que esta replica JA TEM, e ele e comparado com o daqui antes
+    /// de os seguintes serem aplicados -- a conferencia de continuidade sem
+    /// ida e volta a mais (pedido do papel C, 17/09/2026). Com `posicao == 0`
+    /// nao ha o que comparar e o lote inteiro se aplica.
+    ///
+    /// Devolve quantos aplicou e a posicao LOCAL depois disso -- ou o motivo
+    /// pelo qual o diario do source nao continua o daqui.
     fn aplicar_lote_da_replica(
         &self,
         database: &str,
         no: &crate::replica::NoSource,
         posicao: u64,
         eventos: &[crate::replica::EventoRecebido],
-    ) -> Result<(u64, u64)> {
+    ) -> Result<Lote> {
         let trava = self.travar_dados()?;
         let db = trava.abrir_database(database)?;
         let mut tabela = db.abrir_qualificada(&no.nome)?;
@@ -2739,10 +2803,32 @@ impl Servidor {
         // custa uma ida e volta, aplicar torto custaria o dado.
         let agora = tabela.eventos()?;
         if agora != posicao {
-            return Ok((0, agora));
+            return Ok(Lote::Aplicado { n: 0, nova: agora });
         }
+        let para_aplicar = if posicao == 0 {
+            eventos
+        } else {
+            let Some(primeiro) = eventos.first() else {
+                return Ok(Lote::Aplicado { n: 0, nova: agora });
+            };
+            let chave = Self::chave_do_diario(database, &no.nome);
+            if let Err(motivo) = self.diario_local_continua(&mut tabela, &chave, posicao, primeiro)
+            {
+                return Ok(Lote::Rompido(motivo));
+            }
+            &eventos[1..]
+        };
         let mut aplicados = 0u64;
-        for e in eventos {
+        for e in para_aplicar {
+            // O evento daqui nasce com o instante e a origem de LA, como o
+            // PITR e o bidirecional ja faziam e a replica fiel nao fazia
+            // (papel C, 17/09/2026, §2.3): o diario e trilha de auditoria, e
+            // uma replica que jurasse que tudo aconteceu na hora em que ela
+            // sincronizou lavaria o carimbo que o proximo salto -- um
+            // bidirecional adiante, um backup tirado daqui -- precisa. E e o
+            // que faz o diario daqui ser A MESMA HISTORIA, comparavel evento a
+            // evento com o de la.
+            tabela.forcar_proximo_evento(e.carimbo_ms, e.origem);
             tabela.aplicar_evento(e.operacao, e.rowid, &e.imagem)?;
             aplicados += 1;
         }
@@ -2751,14 +2837,13 @@ impl Servidor {
         // orienta. Contar do lado do source deixaria os dois numeros
         // andarem separados no primeiro evento que nao gerasse outro.
         let nova = tabela.eventos()?;
-        if nova <= posicao {
+        if aplicados > 0 && nova <= posicao {
             // Aplicou e a posicao nao andou: o proximo pedido traria os
             // mesmos eventos, e o laco giraria em falso para sempre.
             return Err(PhxError::Corrompido(format!(
-                "replicacao de {database}.{}: {} evento(s) aplicado(s) e a \
+                "replicacao de {database}.{}: {aplicados} evento(s) aplicado(s) e a \
                  posicao continua em {posicao}",
-                no.nome,
-                eventos.len()
+                no.nome
             )));
         }
         // SEM `sincronizar` aqui, e isso foi medido. A versao anterior deste
@@ -2770,7 +2855,161 @@ impl Servidor {
         // e a mesma garantia de sempre contra queda do PROCESSO; a garantia
         // contra queda da MAQUINA vem do `sincronizar` unico no fim do
         // alcance, exatamente onde ela estava antes.
-        Ok((aplicados, nova))
+        Ok(Lote::Aplicado { n: aplicados, nova })
+    }
+
+    /// O diario LOCAL continua o do source?
+    ///
+    /// Irma da `diario_vivo_continua` do PITR (pedido 232), que compara os
+    /// mesmos quatro campos -- carimbo, operacao, rowid e versao -- do evento
+    /// de uma posicao nas duas copias. La o conserto entrou e aqui o irmao
+    /// ficou: `alcancar_tabela` tinha um `>=` onde devia haver uma pergunta,
+    /// e uma tabela apagada e recriada no source deixava a replica com a
+    /// tabela velha, calada, para sempre (papel C, 17/09/2026, §2.6.1).
+    ///
+    /// `dele` e o evento `posicao - 1` do source. O daqui e lido com a marca
+    /// do diario, porque o evento nao tem largura fixa e chegar ao N-esimo e
+    /// caminhar pelos anteriores: sem a marca cada lote pagaria uma varredura
+    /// do volume inteiro com a trava na mao.
+    fn diario_local_continua(
+        &self,
+        tabela: &mut Table,
+        chave: &str,
+        posicao: u64,
+        dele: &crate::replica::EventoRecebido,
+    ) -> std::result::Result<(), String> {
+        let ultimo = posicao - 1;
+        tabela.definir_marca_do_diario(self.marca_do_diario_para(chave, ultimo));
+        let meu = tabela.diario(ultimo, 1).map_err(|e| e.to_string())?;
+        if let Some(nova) = tabela.marca_do_diario() {
+            self.guardar_marca_do_diario(chave.to_string(), ultimo, nova);
+        }
+        let iso = phxsql_core::datahora::instante_iso;
+        match meu.first() {
+            Some(m)
+                if m.carimbo == dele.carimbo_ms
+                    && m.operacao == dele.operacao
+                    && m.rowid == dele.rowid
+                    && m.versao == dele.versao =>
+            {
+                Ok(())
+            }
+            Some(m) => Err(format!(
+                "o evento {ultimo} do diario do source nao e o mesmo que esta \
+                 replica tem ali (la: {} rowid {} versao {} em {}; aqui: {} rowid \
+                 {} versao {} em {}): o diario de la nao continua o daqui -- a \
+                 tabela foi apagada e recriada no source. Esta tabela ficou como \
+                 estava; para segui-la de novo, apague-a nesta replica e ela \
+                 renasce do esquema do source",
+                dele.operacao.nome(),
+                dele.rowid,
+                dele.versao,
+                iso(dele.carimbo_ms),
+                m.operacao.nome(),
+                m.rowid,
+                m.versao,
+                iso(m.carimbo),
+            )),
+            None => Err(format!(
+                "esta replica conta {posicao} evento(s) e o diario dela nao \
+                 entrega o evento {ultimo}: nao ha como saber se o diario do \
+                 source continua o daqui. Esta tabela ficou como estava"
+            )),
+        }
+    }
+
+    /// A chave com que o diario local de uma tabela e lembrado -- pelas
+    /// marcas de leitura e pela conferencia de continuidade.
+    fn chave_do_diario(database: &str, tabela: &str) -> String {
+        format!("{}/{}", database.to_lowercase(), tabela.to_lowercase())
+    }
+
+    /// A marca do diario de `chave` que ainda serve para ler a partir de
+    /// `desde` -- a maior que nao passa dele. Ver `marcas_do_diario`.
+    fn marca_do_diario_para(
+        &self,
+        chave: &str,
+        desde: u64,
+    ) -> Option<phxsql_store::log::MarcaDoDiario> {
+        let m = self.marcas_do_diario.lock().ok()?;
+        m.get(chave)
+            .and_then(|v| {
+                v.iter()
+                    .filter(|k| k.evento <= desde)
+                    .max_by_key(|k| k.evento)
+            })
+            .copied()
+    }
+
+    /// Guarda onde uma leitura a partir de `desde` parou. A que acabou de ser
+    /// usada sai: quem le em sequencia nao volta atras. Teto pequeno: sao
+    /// dicas, e a mais antiga e a menos util.
+    fn guardar_marca_do_diario(
+        &self,
+        chave: String,
+        desde: u64,
+        nova: phxsql_store::log::MarcaDoDiario,
+    ) {
+        if let Ok(mut m) = self.marcas_do_diario.lock() {
+            let v = m.entry(chave).or_default();
+            v.retain(|k| k.evento != desde && k.evento != nova.evento);
+            v.push(nova);
+            if v.len() > MARCAS_POR_TABELA {
+                v.sort_unstable_by_key(|k| k.evento);
+                v.remove(0);
+            }
+        }
+    }
+
+    /// Esquece o que se lembrava do diario de uma tabela -- as marcas de
+    /// leitura e a conferencia de continuidade. E o que uma tabela apagada
+    /// exige: uma homonima que nasca depois tem OUTRO diario, e uma marca da
+    /// antiga apontaria para o meio de um evento da nova.
+    fn esquecer_diario(&self, database: &str, tabela: &str) {
+        let chave = Self::chave_do_diario(database, tabela);
+        if let Ok(mut m) = self.marcas_do_diario.lock() {
+            m.remove(&chave);
+        }
+        if let Ok(mut c) = self.continuidade_da_replica.lock() {
+            c.remove(&chave);
+        }
+    }
+
+    /// O veredito guardado da conferencia de continuidade de uma tabela, se
+    /// ele e desta mesma posicao local.
+    fn continuidade_guardada(&self, chave: &str, posicao: u64) -> Option<bool> {
+        self.continuidade_da_replica
+            .lock()
+            .ok()?
+            .get(chave)
+            .filter(|(p, _)| *p == posicao)
+            .map(|(_, ok)| *ok)
+    }
+
+    /// O diario do source continua o daqui ate `posicao`: a tabela segue, e
+    /// um recado antigo de recusa sai -- recado que sobrevive ao conserto vira
+    /// configuracao que mente.
+    fn confirmar_continuidade(&self, origem: &str, chave: &str, posicao: u64) {
+        if let Ok(mut c) = self.continuidade_da_replica.lock() {
+            c.insert(chave.to_string(), (posicao, true));
+        }
+        self.anotar_estado(origem, |e| {
+            e.recusas.remove(chave);
+        });
+    }
+
+    /// O diario do source NAO continua o daqui: a tabela para de ser seguida,
+    /// com o motivo em `replicacao_estado` e no log do processo -- UMA vez,
+    /// porque a recusa fica guardada por posicao e a rodada seguinte nao a
+    /// repete. Nao e erro da rodada: as outras tabelas continuam.
+    fn romper_continuidade(&self, origem: &str, chave: &str, posicao: u64, motivo: String) {
+        eprintln!("replicacao [{origem}]: {chave}: {motivo}");
+        if let Ok(mut c) = self.continuidade_da_replica.lock() {
+            c.insert(chave.to_string(), (posicao, false));
+        }
+        self.anotar_estado(origem, |e| {
+            e.recusas.insert(chave.to_string(), motivo);
+        });
     }
 
     /// Leva ao disco o que o alcance aplicou. Uma vez por alcance, com a trava.
@@ -2796,16 +3035,83 @@ impl Servidor {
     /// As tres fases sao: abrir e ler a posicao COM a trava, ler o lote do
     /// soquete SEM ela, aplicar COM ela de novo. A regra que sai daqui e
     /// geral: *nenhuma leitura de rede acontece com a trava de dados na mao*.
+    ///
+    /// # A continuidade, que o `>=` escondia
+    ///
+    /// Havia aqui `if posicao >= no.eventos { return Ok(0) }`, e esse silencio
+    /// era o achado de maior retorno do papel C em 17/09/2026 (§2.6.1): o
+    /// `excluir_tabela` no source leva o `.log` junto, o diario de la volta a
+    /// zero, e a replica -- com N eventos de outra vida -- nao fazia nada, para
+    /// sempre, sem reclamar. O PITR ja tinha a pergunta certa
+    /// (`diario_vivo_continua`) e o irmao ficou. Agora a pergunta e feita em
+    /// tres formas, e nenhuma custa uma ida e volta a mais no caminho quente:
+    ///
+    /// 1. o source tem MENOS eventos que esta replica: rompido, sem rede;
+    /// 2. a replica tem algo a aplicar: o lote comeca em `posicao - 1`, e a
+    ///    fase 3 compara o primeiro evento com o daqui antes de aplicar o
+    ///    resto -- o lote so fica um evento mais longo;
+    /// 3. nada a aplicar (`posicao == no.eventos`): um evento pela rede, UMA
+    ///    vez por posicao -- o veredito fica guardado e a tabela ociosa nao
+    ///    paga isso a cada rodada.
+    ///
+    /// Rompida, a tabela sai da rodada com o motivo em `replicacao_estado`, e
+    /// as OUTRAS continuam: uma tabela recriada no source nao pode parar a
+    /// replicacao das que estao sas. Ela volta a ser seguida quando a posicao
+    /// local mudar -- o operador a apaga aqui, ela renasce do esquema do
+    /// source, e o `posicao == 0` nao tem o que comparar.
     fn alcancar_tabela(
         &self,
         cliente: &mut crate::replica::Cliente,
         database: &str,
         no: &crate::replica::NoSource,
+        origem: &str,
     ) -> Result<u64> {
         let Some(mut posicao) = self.abrir_para_replicar(database, no)? else {
             return Ok(0);
         };
+        let chave = Self::chave_do_diario(database, &no.nome);
+        if posicao > 0 {
+            if self.continuidade_guardada(&chave, posicao) == Some(false) {
+                return Ok(0);
+            }
+            if no.eventos < posicao {
+                self.romper_continuidade(
+                    origem,
+                    &chave,
+                    posicao,
+                    format!(
+                        "o diario do source tem {} evento(s) e esta replica tem \
+                         {posicao}: ele nao continua o daqui -- a tabela foi \
+                         apagada e recriada no source. Esta tabela ficou como \
+                         estava; para segui-la de novo, apague-a nesta replica e \
+                         ela renasce do esquema do source",
+                        no.eventos
+                    ),
+                );
+                return Ok(0);
+            }
+        }
         if posicao >= no.eventos {
+            if posicao == 0 || self.continuidade_guardada(&chave, posicao) == Some(true) {
+                return Ok(0);
+            }
+            // FORA da trava, como todo `puxar`: um evento, o que ja esta aqui.
+            let Some(dele) = crate::replica::puxar_um(cliente, database, &no.nome, posicao - 1)?
+            else {
+                // O source contou `posicao` eventos e nao entrega o ultimo:
+                // corrida com uma exclusao de tabela la. A proxima rodada ve
+                // a contagem nova e decide.
+                return Ok(0);
+            };
+            match self.aplicar_lote_da_replica(
+                database,
+                no,
+                posicao,
+                std::slice::from_ref(&dele),
+            )? {
+                Lote::Rompido(motivo) => self.romper_continuidade(origem, &chave, posicao, motivo),
+                Lote::Aplicado { .. } => self.confirmar_continuidade(origem, &chave, posicao),
+            }
             return Ok(0);
         }
         let mut aplicados = 0u64;
@@ -2814,13 +3120,30 @@ impl Servidor {
             // foi gravado: a posicao local nao andou, e a proxima rodada pede
             // exatamente os mesmos eventos. Nao ha meio-lote possivel porque
             // o lote inteiro chega antes de a trava ser pedida.
-            let eventos = crate::replica::puxar(cliente, database, &no.nome, posicao)?;
+            //
+            // A partir de `posicao - 1`: o primeiro evento e a conferencia.
+            let desde = posicao.saturating_sub(1);
+            let eventos = crate::replica::puxar(cliente, database, &no.nome, desde)?;
             if eventos.is_empty() {
                 break;
             }
-            let (n, nova) = self.aplicar_lote_da_replica(database, no, posicao, &eventos)?;
-            aplicados += n;
-            posicao = nova;
+            match self.aplicar_lote_da_replica(database, no, posicao, &eventos)? {
+                Lote::Rompido(motivo) => {
+                    self.romper_continuidade(origem, &chave, posicao, motivo);
+                    break;
+                }
+                Lote::Aplicado { n, nova } => {
+                    aplicados += n;
+                    if nova == posicao {
+                        // Nada andou: o lote so trazia o evento de conferencia
+                        // (o source encolheu entre o `posicao` e o `replicar`).
+                        // A proxima rodada decide com a contagem nova.
+                        break;
+                    }
+                    posicao = nova;
+                    self.confirmar_continuidade(origem, &chave, posicao);
+                }
+            }
         }
         if aplicados > 0 {
             self.sincronizar_replicada(database, &no.nome)?;
@@ -4124,26 +4447,40 @@ impl Servidor {
         let total = tabela.eventos()?;
         let mut guarda = self.toques_bidi.lock().map_err(|_| trava_envenenada())?;
         let mapa = guarda.entry(chave_tab.to_string()).or_default();
-        if mapa.vistos >= total {
-            return Ok(());
-        }
-        for (ev, imagem) in tabela.diario_com_imagem(mapa.vistos, 0)? {
-            mapa.vistos += 1;
-            if imagem.is_empty() {
-                continue;
+        // Em LOTES, com os mesmos dois tetos do `replicar`, e nao o diario
+        // inteiro de uma vez: a primeira rodada do bidirecional numa tabela
+        // que engordou carregava todo o diario local com imagens para a RAM
+        // (irmao do A2 da revisao SEC de 17/09/2026 -- nao e entrada de
+        // atacante, e crescimento). A `Table` fica aberta entre os lotes,
+        // entao a marca do diario faz cada lote continuar de onde o anterior
+        // parou, sem recomecar a varredura.
+        while mapa.vistos < total {
+            let lote = tabela.diario_com_imagem_ate(
+                mapa.vistos,
+                LOTE_PADRAO_DE_REPLICACAO,
+                TETO_DO_LOTE_SERVIDO,
+            )?;
+            if lote.is_empty() {
+                break;
             }
-            let valores = tabela.valores_da_imagem(&imagem)?;
-            let chave = crate::dblink::sincronia::chave_canonica(&valores[pos_chave]);
-            mapa.toques.insert(
-                chave,
-                Toque {
-                    carimbo: ev.carimbo,
-                    // Escrita local guarda o hash do PROPRIO servidor, para o
-                    // empate desempatar pela mesma conta nos dois lados.
-                    origem: if ev.origem == 0 { meu_hash } else { ev.origem },
-                    excluido: ev.operacao == Operacao::Exclusao,
-                },
-            );
+            for (ev, imagem) in lote {
+                mapa.vistos += 1;
+                if imagem.is_empty() {
+                    continue;
+                }
+                let valores = tabela.valores_da_imagem(&imagem)?;
+                let chave = crate::dblink::sincronia::chave_canonica(&valores[pos_chave]);
+                mapa.toques.insert(
+                    chave,
+                    Toque {
+                        carimbo: ev.carimbo,
+                        // Escrita local guarda o hash do PROPRIO servidor, para
+                        // o empate desempatar pela mesma conta nos dois lados.
+                        origem: if ev.origem == 0 { meu_hash } else { ev.origem },
+                        excluido: ev.operacao == Operacao::Exclusao,
+                    },
+                );
+            }
         }
         Ok(())
     }
@@ -9155,13 +9492,30 @@ impl Servidor {
         //
         // Por isso o crivo e o PAPEL, e nao a lista de replicas nem a
         // existencia de origens: papel e a declaracao de para que este
-        // servidor serve. Source e isolado trancados passam a recusar; replica,
-        // read_replica, spare e multi continuam byte a byte como antes.
+        // servidor serve. Source e isolado recusam; replica, read_replica,
+        // spare e multi continuam byte a byte como antes.
+        //
+        // # E o crivo vale ABERTO ou trancado -- desde 17/09/2026
+        //
+        // Ate entao ele so rodava com `somente_leitura`, porque nasceu do caso
+        // 4d-ii da bateria, que era um source TRANCADO. Mas `aplicar` grava
+        // com `Table::aplicar_evento`, que desliga o julgamento de integridade
+        // de proposito (a garantia e da origem, e conferir na replica perdia
+        // dado nos tres ordenamentos -- esta medido em `table.rs`): sem chave
+        // estrangeira, sem CHECK, sem cascata. Num source ABERTO -- que e o
+        // source de producao, por definicao -- quem tem `administrar` na
+        // tabela apagava pela rede o pai com filhos, contornando a regra
+        // primordial da integridade por uma operacao que a declaracao da
+        // tabela nunca viu (revisao SEC, A3). O crivo e sobre o que a
+        // operacao FAZ, e o que ela faz nao depende de o servidor estar
+        // trancado. Medido antes de mexer: nenhum chamador legitimo empurra
+        // `aplicar` num source ou isolado -- as bancadas de quorum empurram
+        // em REPLICAS, e a de seguranca e a prova deste portao.
         //
         // O `cluster.is_none()` preserva o cluster inteiro: la quem decide
         // escrita e o papel VIVO da eleicao, e uma segunda regra por cima seria
         // a copia que alguem esquece de atualizar.
-        if op == "aplicar" && self.cluster.is_none() && self.somente_leitura() {
+        if op == "aplicar" && self.cluster.is_none() {
             let papel = self.papel_atual();
             let recebe_replicacao = matches!(
                 papel,
@@ -9169,7 +9523,7 @@ impl Servidor {
             );
             if !recebe_replicacao {
                 return Err(PhxError::Autorizacao(
-                    self.msg("erro.aplicar_somente_leitura", &[("papel", papel.nome())]),
+                    self.msg("erro.aplicar_fora_de_replica", &[("papel", papel.nome())]),
                 ));
             }
         }
@@ -15047,6 +15401,7 @@ impl Servidor {
         let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
         let apagados = db.excluir_tabela(tabela)?;
+        self.esquecer_diario(database, tabela);
         // Os gatilhos da tabela saem junto, como no MySQL(R): um orfao
         // dispararia contra uma homonima futura que nao tem nada com ele.
         let mut gatilhos_apagados = 0usize;
@@ -21421,11 +21776,24 @@ impl Servidor {
         let rowid = p.campo("rowid").and_then(Json::inteiro).map(|n| n as u64);
         let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
-        let eventos = match rowid {
-            Some(r) => t.historico(r)?,
-            None => t.diario(0, 0)?,
+        let (total, eventos) = match rowid {
+            Some(r) => {
+                let h = t.historico(r)?;
+                (h.len() as u64, h)
+            }
+            None => {
+                // So a CAUDA. A resposta sempre foi "os `max` mais recentes",
+                // e para chega-la o diario inteiro era lido para a memoria e
+                // descartado ate sobrar `max` -- com a trava global na mao.
+                // Irmao do A2 da revisao SEC de 17/09/2026: a resposta e a
+                // mesma byte a byte, o que muda e o que se aloca.
+                let total = t.eventos()?;
+                (
+                    total,
+                    t.diario(total.saturating_sub(max as u64), max as u64)?,
+                )
+            }
         };
-        let total = eventos.len();
         let recentes: Vec<Json> = eventos
             .iter()
             .rev()
@@ -21443,7 +21811,7 @@ impl Servidor {
             })
             .collect();
         Ok(Json::objeto(vec![
-            ("total", Json::de_u64(total as u64)),
+            ("total", Json::de_u64(total)),
             ("eventos", Json::Lista(recentes)),
         ]))
     }
@@ -21767,52 +22135,26 @@ impl Servidor {
     /// binario ao protocolo, que e uma decisao maior do que esta.
     fn op_replicar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let desde = p.inteiro_ou("desde", 0).max(0) as u64;
-        let max = p.inteiro_ou("max", 500).max(0) as u64;
+        let max = lote_de_replicacao(p);
         let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         let total = t.eventos()?;
 
         // A dica de onde a leitura anterior desta tabela parou. Sem ela, o
         // `desde` faz o diario ser varrido desde o comeco a cada lote -- ver
-        // `marcas_do_diario`.
-        let chave = format!(
-            "{}/{}",
-            p.texto_ou("database", "").to_lowercase(),
-            p.texto_ou("tabela", "").to_lowercase()
-        );
-        if let Ok(m) = self.marcas_do_diario.lock() {
-            // A maior que ainda cabe: a marca so serve para uma posicao depois
-            // dela.
-            t.definir_marca_do_diario(
-                m.get(&chave)
-                    .and_then(|v| {
-                        v.iter()
-                            .filter(|k| k.evento <= desde)
-                            .max_by_key(|k| k.evento)
-                    })
-                    .copied(),
-            );
-        }
-        let mut eventos = t.diario_com_imagem(desde, max)?;
-        // O corte por BYTES, depois do corte por eventos -- ver
-        // `TETO_DO_LOTE_SERVIDO`. O primeiro evento entra sempre.
-        let mut somados = 0usize;
-        if let Some(corte) = eventos.iter().position(|(_, imagem)| {
-            somados += imagem.len();
-            somados > TETO_DO_LOTE_SERVIDO
-        }) {
-            eventos.truncate(corte.max(1));
-        }
-        if let (Ok(mut m), Some(nova)) = (self.marcas_do_diario.lock(), t.marca_do_diario()) {
-            let v = m.entry(chave).or_default();
-            // A que esta replica acabou de usar sai: ela nao volta atras.
-            v.retain(|k| k.evento != desde && k.evento != nova.evento);
-            v.push(nova);
-            // Teto pequeno: sao dicas, e a mais antiga e a menos util.
-            if v.len() > MARCAS_POR_TABELA {
-                v.sort_unstable_by_key(|k| k.evento);
-                v.remove(0);
-            }
+        // `marcas_do_diario`. A maior que ainda cabe: a marca so serve para
+        // uma posicao depois dela.
+        let chave = Self::chave_do_diario(p.texto_ou("database", ""), p.texto_ou("tabela", ""));
+        t.definir_marca_do_diario(self.marca_do_diario_para(&chave, desde));
+        // O corte por BYTES acontece DENTRO da leitura, no store, que e quem
+        // sabe o tamanho antes de alocar -- ver `TETO_DO_LOTE_SERVIDO`. Ate
+        // 17/09/2026 ele era um `truncate` aqui, depois de o lote inteiro ja
+        // estar na memoria com a trava na mao: o teto cortava a resposta e
+        // nao a leitura, que e a licao do Profiler aplicada a teto em vez de
+        // a interruptor (revisao SEC, A2).
+        let eventos = t.diario_com_imagem_ate(desde, max, TETO_DO_LOTE_SERVIDO)?;
+        if let Some(nova) = t.marca_do_diario() {
+            self.guardar_marca_do_diario(chave, desde, nova);
         }
         // A posicao anda por TODOS os lidos, inclusive os que a supressao de
         // origem vai tirar da lista: suprimir e nao mandar de volta, e nao
@@ -24723,6 +25065,25 @@ mod testes_papel {
         }
     }
 
+    /// A LISTA nao barrou `op`: o pedido passou, ou a recusa veio de outro
+    /// portao. E o encontro de dois consertos de 17/09/2026 no mesmo
+    /// arquivo: `cluster_pulso` entrou em `OPS_DE_REPLICACAO` (A1) e o
+    /// portao 2b-bis passou a recusar `aplicar` num source ABERTO (A3), que
+    /// e o servidor destes testes. O que eles provam e a lista, entao para
+    /// `aplicar` a unica recusa admissivel e a do papel -- e ela nao pode
+    /// citar a lista.
+    fn a_lista_nao_barrou(r: Result<()>, op: &str, contexto: &str) {
+        match r {
+            Ok(()) => {}
+            Err(e)
+                if op == "aplicar"
+                    && e.nome() == "ACESSO_NEGADO"
+                    && e.to_string().contains("aplicar")
+                    && !e.to_string().contains("replicas_autorizadas") => {}
+            Err(e) => panic!("{op} {contexto}: {e}"),
+        }
+    }
+
     /// **Prova real do pedido 214(c).** A bateria
     /// `bancada/seguranca/porta.py` (caso 4d-ii) mediu um SOURCE em
     /// `somente_leitura` recusando `inserir` e aceitando `aplicar` na mesma
@@ -24784,6 +25145,122 @@ mod testes_papel {
         }
     }
 
+    /// O crivo passou a valer ABERTO tambem (revisao SEC de 17/09/2026, A3),
+    /// entao a pergunta obrigatoria e o comportamento VELHO do outro lado:
+    /// uma replica, read_replica, spare ou multi SEM `somente_leitura` continua
+    /// aceitando o diario do source -- o `multi` roda aberto por desenho, e
+    /// trancar o `aplicar` nele pararia o bidirecional por empurrao.
+    #[test]
+    fn replica_destrancada_continua_aceitando_o_diario_do_source() {
+        for papel in ["replica", "read_replica", "spare", "multi"] {
+            let d = dir(&format!("aplicar-aberto-{papel}"));
+            let s = servidor_com_papel(&d, papel, false);
+            s.portoes_do_pedido(
+                "aplicar",
+                &pedido(r#"{"database":"loja","tabela":"clientes"}"#),
+                &Sessao::default(),
+            )
+            .unwrap_or_else(|e| panic!("{papel} aberto: aplicar devia passar: {e}"));
+            std::fs::remove_dir_all(&d).unwrap();
+        }
+    }
+
+    /// **Prova real do A3, no portao.** Source e isolado ABERTOS recusam o
+    /// `aplicar` -- e continuam aceitando `inserir`, que e o que um servidor
+    /// aberto faz, e `posicao`/`replicar`, que so leem. Repondo o
+    /// `&& self.somente_leitura()` no portao 2b-bis, este teste cai.
+    #[test]
+    fn aplicar_num_source_aberto_tambem_e_recusado() {
+        for papel in ["source", "isolado"] {
+            let d = dir(&format!("aplicar-aberto-recusa-{papel}"));
+            let s = servidor_com_papel(&d, papel, false);
+            let sessao = Sessao::default();
+            let alvo = pedido(r#"{"database":"loja","tabela":"clientes"}"#);
+            let e = s.portoes_do_pedido("aplicar", &alvo, &sessao).unwrap_err();
+            assert_eq!(
+                e.nome(),
+                "ACESSO_NEGADO",
+                "{papel}: aplicar tinha de recusar"
+            );
+            assert!(
+                e.to_string().contains("aplicar") && e.to_string().contains(papel),
+                "{papel}: a recusa tem de dizer O QUE e QUAL papel: {e}"
+            );
+            assert!(
+                !e.to_string().contains("somente leitura"),
+                "{papel}: o servidor esta ABERTO, e a recusa nao pode dizer que esta trancado: {e}"
+            );
+            for op in ["inserir", "posicao", "replicar"] {
+                s.portoes_do_pedido(op, &alvo, &sessao)
+                    .unwrap_or_else(|x| panic!("{papel}/{op} devia passar: {x}"));
+            }
+            std::fs::remove_dir_all(&d).unwrap();
+        }
+    }
+
+    /// **Prova real do A3, de ponta a ponta -- a petrea da integridade.**
+    /// Num source ABERTO com `clientes` mae e `pedidos` filha (chave conferida,
+    /// que e como toda chave nasce), o `excluir` normal recusa o pai com filhos
+    /// -- o comportamento velho -- e o `aplicar` pela rede com
+    /// `{"operacao":"exclusao"}` recusa tambem. Repondo o `somente_leitura`
+    /// no portao, o segundo GRAVA: `aplicar_evento` nao julga integridade, e a
+    /// linha 1 de `clientes` some com `pedidos` apontando para ela.
+    #[test]
+    fn aplicar_pela_rede_num_source_nao_mata_o_pai_com_filhos() {
+        let d = dir("aplicar-pai-com-filhos");
+        let s = servidor_com_papel(&d, "source", false);
+        let pede = |corpo: &str| -> Result<Json> {
+            let mut ses = Sessao::default();
+            let (_, _, r) = s.despachar(
+                &format!(r#"{{"token":"t",{corpo}}}"#),
+                &mut ses,
+                "192.168.50.20",
+            );
+            r
+        };
+        pede(r#""op":"criar_database","database":"b""#).unwrap();
+        pede(
+            r#""op":"criar_tabela","database":"b","tabela":"clientes",
+               "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+               "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]"#,
+        )
+        .unwrap();
+        pede(
+            r#""op":"criar_tabela","database":"b","tabela":"pedidos",
+               "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                          {"nome":"cliente_id","tipo":"Int4"}],
+               "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true},
+                          {"nome":"porCliente","colunas":["cliente_id"]}],
+               "chaves_estrangeiras":[{"nome":"fk_cliente","colunas":["cliente_id"],
+                                       "tabela_ref":"clientes","colunas_ref":["id"]}]"#,
+        )
+        .unwrap();
+        pede(r#""op":"inserir","database":"b","tabela":"clientes","linha":{"id":1}"#).unwrap();
+        pede(r#""op":"inserir","database":"b","tabela":"pedidos","linha":{"id":1,"cliente_id":1}"#)
+            .unwrap();
+
+        // O comportamento VELHO: nunca se mata o pai que tem filhos.
+        let e = pede(r#""op":"excluir","database":"b","tabela":"clientes","rowid":1"#).unwrap_err();
+        assert!(
+            e.to_string().contains("pedidos"),
+            "o excluir normal tinha de recusar nomeando a filha: {e}"
+        );
+
+        // A porta que a declaracao da tabela nunca viu.
+        let e = pede(
+            r#""op":"aplicar","database":"b","tabela":"clientes",
+               "eventos":[{"operacao":"exclusao","rowid":1}]"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+
+        // E o pai continua la, com a filha apontando para ele.
+        let l = pede(r#""op":"ler","database":"b","tabela":"clientes","rowid":1"#)
+            .unwrap_or_else(|e| panic!("o pai foi apagado por baixo da chave estrangeira: {e}"));
+        assert_eq!(l.inteiro_ou("id", 0), 1);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
     /// **214(b)** -- a lista vazia continua liberando, e passa a AVISAR. O
     /// aviso nao olha o papel de proposito: a bancada mediu um servidor de
     /// fabrica (papel isolado) entregando o diario a quem so tinha o token.
@@ -24832,8 +25309,11 @@ mod testes_papel {
         let s = source_com_replicas(&d, "");
         for op in OPS_DE_REPLICACAO {
             for ip in ["192.168.50.20", "10.9.9.9", ""] {
-                s.portoes_do_pedido(op, &pedido("{}"), &sessao_de(ip))
-                    .unwrap_or_else(|e| panic!("{op} de {ip:?} devia passar: {e}"));
+                a_lista_nao_barrou(
+                    s.portoes_do_pedido(op, &pedido("{}"), &sessao_de(ip)),
+                    op,
+                    &format!("de {ip:?} devia passar"),
+                );
             }
         }
         std::fs::remove_dir_all(&d).unwrap();
@@ -24859,8 +25339,11 @@ mod testes_papel {
             );
             // A replica da lista continua entrando -- a guarda tranca a porta,
             // nao muda a fechadura.
-            s.portoes_do_pedido(op, &pedido("{}"), &sessao_de("192.168.50.20"))
-                .unwrap_or_else(|e| panic!("{op} da replica autorizada: {e}"));
+            a_lista_nao_barrou(
+                s.portoes_do_pedido(op, &pedido("{}"), &sessao_de("192.168.50.20")),
+                op,
+                "da replica autorizada",
+            );
         }
 
         // O que NAO e da replicacao nao passa a olhar a lista: quem administra
@@ -24886,9 +25369,41 @@ mod testes_papel {
         let d = dir("rep-interno");
         let s = source_com_replicas(&d, r#""192.168.50.20""#);
         for op in OPS_DE_REPLICACAO {
-            s.portoes_do_pedido(op, &pedido("{}"), &Sessao::default())
-                .unwrap_or_else(|e| panic!("{op} de dentro devia passar: {e}"));
+            a_lista_nao_barrou(
+                s.portoes_do_pedido(op, &pedido("{}"), &Sessao::default()),
+                op,
+                "de dentro devia passar",
+            );
         }
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// **Prova real do A1 (parte do portao), revisao SEC de 17/09/2026.** O
+    /// pulso do cluster entra com a credencial de replicacao e decide quem
+    /// manda, e a lista `replicas_autorizadas` nao o alcancava: bastava um
+    /// vizinho com o `config.json` de um no para pulsar epoca e posicao a
+    /// gosto. Tirando `cluster_pulso` de `OPS_DE_REPLICACAO`, este teste cai
+    /// na primeira asercao. O comportamento VELHO -- lista vazia libera todos,
+    /// pulso incluido -- e o `sem_replicas_autorizadas_nada_muda`, que percorre
+    /// a lista inteira.
+    #[test]
+    fn o_pulso_do_cluster_passa_pela_lista_de_replicas() {
+        let d = dir("rep-pulso");
+        let s = source_com_replicas(&d, r#""192.168.50.20""#);
+        let pulso = pedido(r#"{"id":"no2","papel":"replica","epoca":1,"posicao":0}"#);
+        let erro = s
+            .portoes_do_pedido("cluster_pulso", &pulso, &sessao_de("192.168.50.31"))
+            .unwrap_err();
+        assert_eq!(erro.nome(), "ACESSO_NEGADO");
+        assert!(
+            erro.to_string().contains("replicas_autorizadas"),
+            "a recusa tem de dizer QUAL lista barrou: {erro}"
+        );
+        // O no da lista continua pulsando; e de dentro (sem IP) tambem.
+        s.portoes_do_pedido("cluster_pulso", &pulso, &sessao_de("192.168.50.20"))
+            .unwrap_or_else(|e| panic!("o pulso do no autorizado: {e}"));
+        s.portoes_do_pedido("cluster_pulso", &pulso, &Sessao::default())
+            .unwrap_or_else(|e| panic!("o pulso de dentro: {e}"));
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -43870,5 +44385,201 @@ mod testes_da_saude_do_disco {
         let ev = inteiro.campo("ultimo_evento").unwrap();
         assert_eq!(ev.campo("database").and_then(Json::texto), Some("b"));
         assert!(ev.campo("texto").and_then(Json::texto).is_some());
+    }
+}
+
+/// O lote do `replicar` -- revisao SEC de 17/09/2026 (A2), e o buraco que o
+/// papel G apontou na mesma rodada: os dois tetos so existiam na declaracao.
+#[cfg(test)]
+mod testes_do_lote_de_replicacao {
+    use super::*;
+
+    /// Um source com a imagem no diario -- e so isso: a tabela nasce pelo
+    /// store, antes de o servidor subir, porque o que se mede aqui e o que o
+    /// `replicar` LE, e nao como as linhas entraram.
+    fn source(dir: &std::path::Path) -> Arc<Servidor> {
+        let txt = r#"{"token":"t","replicacao":{"papel":"source","id_servidor":"src-01",
+                        "imagem_da_linha":true}}"#;
+        let mut c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        c.base = dir.to_path_buf();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        Servidor::novo(c).unwrap()
+    }
+
+    fn tabela(dir: &std::path::Path, com_memo: bool) -> Table {
+        std::fs::create_dir_all(dir.join("loja")).unwrap();
+        let mut colunas = vec![Column::new("id", ColumnType::Int8).obrigatoria()];
+        if com_memo {
+            colunas.push(Column::new("memo", ColumnType::Memo));
+        }
+        let esquema = Schema::new(
+            "clientes",
+            colunas,
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)])
+                .unico()
+                .primaria()],
+        )
+        .unwrap();
+        Table::criar(dir.join("loja"), esquema)
+            .unwrap()
+            .com_imagem_no_diario(true)
+    }
+
+    fn replicar(s: &Arc<Servidor>, desde: u64, extra: &str) -> Json {
+        let p = Json::analisar(&format!(
+            r#"{{"database":"loja","tabela":"clientes","desde":{desde}{extra}}}"#
+        ))
+        .unwrap();
+        s.op_replicar(&p, &Sessao::default()).unwrap()
+    }
+
+    fn quantos(r: &Json) -> usize {
+        r.campo("eventos").and_then(Json::lista).unwrap().len()
+    }
+
+    /// Ausente, zero e negativo valem o padrao; um numero vale o numero; o
+    /// absurdo vale o teto -- inclusive o que satura ao virar `i64`.
+    #[test]
+    fn max_zero_ou_negativo_vale_o_padrao_e_o_absurdo_vale_o_teto() {
+        let j = |t: &str| Json::analisar(t).unwrap();
+        assert_eq!(lote_de_replicacao(&j("{}")), LOTE_PADRAO_DE_REPLICACAO);
+        assert_eq!(
+            lote_de_replicacao(&j(r#"{"max":0}"#)),
+            LOTE_PADRAO_DE_REPLICACAO
+        );
+        assert_eq!(
+            lote_de_replicacao(&j(r#"{"max":-1}"#)),
+            LOTE_PADRAO_DE_REPLICACAO
+        );
+        assert_eq!(lote_de_replicacao(&j(r#"{"max":7}"#)), 7);
+        assert_eq!(
+            lote_de_replicacao(&j(r#"{"max":5000}"#)),
+            TETO_DE_EVENTOS_POR_LOTE
+        );
+        assert_eq!(
+            lote_de_replicacao(&j(r#"{"max":5001}"#)),
+            TETO_DE_EVENTOS_POR_LOTE
+        );
+        assert_eq!(
+            lote_de_replicacao(&j(r#"{"max":1e19}"#)),
+            TETO_DE_EVENTOS_POR_LOTE
+        );
+        assert_eq!(
+            lote_de_replicacao(&j(r#"{"max":"x"}"#)),
+            LOTE_PADRAO_DE_REPLICACAO
+        );
+    }
+
+    /// **Prova real do A2.** 600 eventos e `"max":0`: voltam 500 -- o padrao
+    /// --, e nao os 600. Com o `.max(0)` de antes reposto no `op_replicar`,
+    /// voltam os 600 e este teste cai na primeira asercao.
+    #[test]
+    fn replicar_com_max_zero_serve_o_lote_padrao_e_nao_o_diario_inteiro() {
+        let dir = DirTemp::novo("lote-max-zero");
+        {
+            let mut t = tabela(&dir, false);
+            for i in 1..=600 {
+                t.inserir(&[Value::Int(i)]).unwrap();
+            }
+            t.sincronizar().unwrap();
+        }
+        let s = source(&dir);
+        for extra in [r#","max":0"#, r#","max":-1"#, ""] {
+            let r = replicar(&s, 0, extra);
+            assert_eq!(
+                quantos(&r),
+                500,
+                "{extra:?}: max zero nao e o diario inteiro"
+            );
+            assert_eq!(r.inteiro_ou("ate", 0), 500, "{extra:?}");
+            assert!(
+                !r.booleano_ou("fim", true),
+                "{extra:?}: ainda ha 100 para servir"
+            );
+        }
+        // O comportamento VELHO: quem pede um numero leva o numero.
+        assert_eq!(quantos(&replicar(&s, 0, r#","max":7"#)), 7);
+        // E a continuacao pelo `ate` fecha o diario sem pular nada.
+        let r = replicar(&s, 500, r#","max":0"#);
+        assert_eq!(quantos(&r), 100);
+        assert!(r.booleano_ou("fim", false));
+    }
+
+    /// O teto de BYTES do lado do source, que nao tinha prova nenhuma (papel
+    /// G, 17/09/2026): tres linhas de 5,6 MiB somam 16,8 MiB, e o lote de
+    /// 16 MiB para na segunda. O primeiro evento entra sempre -- com
+    /// `desde: 2` a terceira, sozinha, sai inteira. Sem o teto na leitura
+    /// (`usize::MAX` no lugar de `TETO_DO_LOTE_SERVIDO`), voltam tres.
+    #[test]
+    fn o_lote_servido_corta_por_bytes_e_o_primeiro_evento_entra_sempre() {
+        const GORDA: usize = 5_600 * 1024;
+        let dir = DirTemp::novo("lote-bytes");
+        {
+            let mut t = tabela(&dir, true);
+            for i in 1..=3 {
+                t.inserir(&[Value::Int(i), Value::Memo("x".repeat(GORDA))])
+                    .unwrap();
+            }
+            t.sincronizar().unwrap();
+        }
+        let s = source(&dir);
+        let r = replicar(&s, 0, "");
+        assert_eq!(
+            quantos(&r),
+            2,
+            "duas de 5,6 MiB cabem em 16 MiB; a terceira nao"
+        );
+        assert_eq!(r.inteiro_ou("ate", 0), 2);
+        assert!(!r.booleano_ou("fim", true));
+        let r = replicar(&s, 2, "");
+        let eventos = r.campo("eventos").and_then(Json::lista).unwrap();
+        assert_eq!(
+            eventos.len(),
+            1,
+            "o primeiro evento entra custe o que custar"
+        );
+        assert!(
+            eventos[0].texto_ou("imagem", "").len() >= 2 * GORDA,
+            "a imagem gorda tem de vir inteira, em hexadecimal"
+        );
+        assert!(r.booleano_ou("fim", false));
+    }
+
+    /// Irmao do A2: `diario` sem `rowid` devolve a CAUDA com o total certo --
+    /// e continua devolvendo a mesma resposta de sempre, byte a byte, porque
+    /// o que mudou foi o que se aloca e nao o que se responde.
+    #[test]
+    fn diario_sem_rowid_devolve_a_cauda_com_o_total_do_diario_inteiro() {
+        let dir = DirTemp::novo("diario-cauda");
+        {
+            let mut t = tabela(&dir, false);
+            for i in 1..=30 {
+                t.inserir(&[Value::Int(i)]).unwrap();
+            }
+            t.sincronizar().unwrap();
+        }
+        let s = source(&dir);
+        let p = Json::analisar(r#"{"database":"loja","tabela":"clientes","max":5}"#).unwrap();
+        let r = s.op_diario(&p, &Sessao::default()).unwrap();
+        assert_eq!(
+            r.inteiro_ou("total", 0),
+            30,
+            "o total e do diario, nao da cauda"
+        );
+        let eventos = r.campo("eventos").and_then(Json::lista).unwrap();
+        let rowids: Vec<i64> = eventos.iter().map(|e| e.inteiro_ou("rowid", 0)).collect();
+        assert_eq!(
+            rowids,
+            vec![26, 27, 28, 29, 30],
+            "os cinco mais recentes, em ordem"
+        );
+        // Pedir mais do que ha devolve tudo, e o total nao muda.
+        let p = Json::analisar(r#"{"database":"loja","tabela":"clientes","max":100}"#).unwrap();
+        let r = s.op_diario(&p, &Sessao::default()).unwrap();
+        assert_eq!(r.campo("eventos").and_then(Json::lista).unwrap().len(), 30);
+        assert_eq!(r.inteiro_ou("total", 0), 30);
     }
 }

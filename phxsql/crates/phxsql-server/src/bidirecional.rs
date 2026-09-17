@@ -172,7 +172,9 @@ pub struct EstadoOrigem {
     /// Eventos aplicados desde o arranque, somando todas as tabelas.
     pub aplicados: u64,
     pub ultimo_erro: String,
-    /// Tabelas recusadas e o motivo -- ex.: sem chave unica no modo multi.
+    /// Tabelas recusadas e o motivo -- sem chave unica no modo multi, ou o
+    /// diario do source que deixou de continuar o daqui (a tabela foi
+    /// apagada e recriada la; a replica fiel para de segui-la e diz por que).
     pub recusas: BTreeMap<String, String>,
     /// "database/tabela" -> posicao consumida na origem.
     pub posicoes: BTreeMap<String, u64>,

@@ -606,7 +606,7 @@ impl LogFile {
     /// `pular` descarta os N primeiros; `limite` zero devolve todos.
     pub fn ler(&mut self, pular: u64, limite: u64) -> Result<Vec<Evento>> {
         Ok(self
-            .percorrer(pular, limite, false)?
+            .percorrer(pular, limite, false, usize::MAX)?
             .into_iter()
             .map(|(e, _)| e)
             .collect())
@@ -618,7 +618,28 @@ impl LogFile {
     /// vetor vazio -- e ai a replica sabe que aquele evento nao da para
     /// aplicar, em vez de aplicar bytes que nao existem.
     pub fn ler_com_imagem(&mut self, pular: u64, limite: u64) -> Result<Vec<(Evento, Vec<u8>)>> {
-        self.percorrer(pular, limite, true)
+        self.percorrer(pular, limite, true, usize::MAX)
+    }
+
+    /// [`LogFile::ler_com_imagem`] com TETO DE BYTES de imagem.
+    ///
+    /// Para de ler quando o proximo evento nao cabe mais em `teto_bytes` --
+    /// e decide isso pelo cabecalho, ANTES de alocar a imagem. `limite` zero
+    /// continua querendo dizer "todos os eventos", mas "todos" passa a caber
+    /// no teto: e o que faz um `replicar` pedido com `max: 0` nao caminhar o
+    /// diario inteiro para a memoria com a trava global na mao (revisao SEC
+    /// de 17/09/2026, A2 -- o teto que cortava a RESPOSTA depois de ler tudo
+    /// nao limitava a leitura). O primeiro evento entra sempre, custe o que
+    /// custar: uma linha maior que o teto atrasa a replicacao em vez de
+    /// para-la para sempre. A marca fica no evento que NAO coube, entao a
+    /// chamada seguinte continua exatamente dali.
+    pub fn ler_com_imagem_ate(
+        &mut self,
+        pular: u64,
+        limite: u64,
+        teto_bytes: usize,
+    ) -> Result<Vec<(Evento, Vec<u8>)>> {
+        self.percorrer(pular, limite, true, teto_bytes)
     }
 
     /// A varredura unica dos dois caminhos.
@@ -627,13 +648,19 @@ impl LogFile {
     /// caminhar pelos anteriores. O que ainda se pula de graca e o VOLUME
     /// inteiro: o `qtd_eventos` do cabecalho diz quantos ele tem, e se todos
     /// eles estao antes do `pular` o arquivo nem se abre.
+    ///
+    /// `teto_bytes` so vale com imagem (sem imagem nada se aloca), e conta o
+    /// `tam_imagem` do cabecalho -- o que vai ser alocado -- e nao o texto
+    /// claro, que num volume cifrado e 16 bytes menor.
     fn percorrer(
         &mut self,
         pular: u64,
         limite: u64,
         com_imagem: bool,
+        teto_bytes: usize,
     ) -> Result<Vec<(Evento, Vec<u8>)>> {
         let mut saida = Vec::new();
+        let mut somados = 0usize;
 
         // De onde comecar. A marca so serve para uma posicao que esteja DEPOIS
         // dela: caminhar para tras nao da, o evento nao tem largura fixa.
@@ -667,6 +694,19 @@ impl LogFile {
                 self.volumes.ler(volume, offset, &mut buf)?;
                 let evento = Evento::ler(&buf)?;
                 if vistos >= pular {
+                    // O teto de BYTES, respondido pelo cabecalho antes de
+                    // qualquer alocacao. O primeiro evento entra sempre.
+                    let ocupa = evento.tam_imagem as usize;
+                    if com_imagem && !saida.is_empty() && somados.saturating_add(ocupa) > teto_bytes
+                    {
+                        self.marca = Some(MarcaDoDiario {
+                            evento: vistos,
+                            volume,
+                            offset,
+                        });
+                        return Ok(saida);
+                    }
+                    somados = somados.saturating_add(ocupa);
                     let mut imagem = Vec::new();
                     if evento.tam_imagem > 0 {
                         imagem = vec![0u8; evento.tam_imagem as usize];
@@ -1062,6 +1102,67 @@ mod tests {
         }
         let mut l = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
         assert!(l.verificar().is_err());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /* ------------------------------------------ o teto de bytes na LEITURA
+
+    Revisao SEC de 17/09/2026, A2: `replicar` com `"max":0` chegava aqui com
+    `limite == 0`, que quer dizer "todos", e o teto de 16 MiB do servidor
+    cortava a RESPOSTA depois de o diario inteiro ja estar na memoria -- com
+    a trava global na mao. O teto desceu para quem aloca. */
+
+    /// Vinte eventos de 1 KiB e um teto de 4 KiB: voltam QUATRO, e a segunda
+    /// chamada continua exatamente do quinto. Com o teto desligado na
+    /// varredura (o defeito reposto), voltam os vinte.
+    #[test]
+    fn percorrer_com_limite_zero_nao_le_tudo() {
+        let d = dir_temp("teto-bytes");
+        let mut l = LogFile::criar(&d, "t", Paginacao::DESLIGADA).unwrap();
+        for i in 1..=20u64 {
+            l.registrar_com_imagem(Operacao::Inclusao, i, 1, &vec![i as u8; 1024])
+                .unwrap();
+        }
+        let lote = l.ler_com_imagem_ate(0, 0, 4 * 1024).unwrap();
+        let bytes: usize = lote.iter().map(|(_, im)| im.len()).sum();
+        assert_eq!(
+            lote.len(),
+            4,
+            "limite zero com teto de 4 KiB devia parar no quarto"
+        );
+        assert_eq!(bytes, 4 * 1024, "o que veio e o que se alocou");
+        // A marca ficou no evento que NAO coube: a chamada seguinte, pedindo
+        // a partir dele, continua dali sem pular nem repetir nada.
+        assert_eq!(l.marca().map(|m| m.evento), Some(4));
+        let seguinte = l.ler_com_imagem_ate(4, 0, 4 * 1024).unwrap();
+        assert_eq!(seguinte.len(), 4);
+        assert_eq!(seguinte[0].0.rowid, 5);
+        assert_eq!(seguinte[3].0.rowid, 8);
+        // Sem teto, `limite` zero continua sendo "todos": e o contrato que a
+        // CLI, o PITR e os testes desta crate usam, e ele nao muda.
+        assert_eq!(l.ler_com_imagem(0, 0).unwrap().len(), 20);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// O primeiro evento entra sempre, mesmo maior que o teto: uma linha
+    /// gorda atrasa a replicacao em vez de para-la para sempre. E o teto so
+    /// conta imagem -- sem imagem nada se aloca, e nada se corta.
+    #[test]
+    fn o_primeiro_evento_entra_sempre_e_o_teto_so_conta_imagem() {
+        let d = dir_temp("teto-primeiro");
+        let mut l = LogFile::criar(&d, "t", Paginacao::DESLIGADA).unwrap();
+        l.registrar_com_imagem(Operacao::Inclusao, 1, 1, &[7u8; 3000])
+            .unwrap();
+        l.registrar_com_imagem(Operacao::Inclusao, 2, 1, &[8u8; 10])
+            .unwrap();
+        let lote = l.ler_com_imagem_ate(0, 0, 100).unwrap();
+        assert_eq!(lote.len(), 1, "o primeiro entra custe o que custar");
+        assert_eq!(lote[0].1.len(), 3000);
+        assert_eq!(l.ler_com_imagem_ate(1, 0, 100).unwrap().len(), 1);
+        // O limite por EVENTOS continua mandando quando chega antes do teto.
+        assert_eq!(l.ler_com_imagem_ate(0, 1, usize::MAX).unwrap().len(), 1);
+        // Sem imagem, o mesmo diario inteiro passa por um teto de 1 byte.
+        assert_eq!(l.ler(0, 0).unwrap().len(), 2);
         std::fs::remove_dir_all(&d).unwrap();
     }
 }

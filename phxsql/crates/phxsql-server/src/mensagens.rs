@@ -450,15 +450,16 @@ pub const FABRICA: &[MensagemFabrica] = &[
         ],
     },
     MensagemFabrica {
-        nome: "erro.aplicar_somente_leitura",
+        nome: "erro.aplicar_fora_de_replica",
         textos: [
-            "servidor em modo somente leitura: `aplicar` grava, e o papel deste \
-             servidor e {papel} -- so replica, read_replica, spare ou multi aceita \
-             o diario de um source estando trancada",
+            "`aplicar` grava sem conferir chave estrangeira, CHECK nem cascata, e so \
+             um servidor que existe para receber replicacao aceita o diario de um \
+             source: replica, read_replica, spare ou multi. O papel deste e {papel}",
             "",
-            "server in read-only mode: `aplicar` writes, and this server's role is \
-             {papel} -- only replica, read_replica, spare or multi accepts a \
-             source's journal while locked",
+            "`aplicar` writes without checking foreign keys, CHECK or cascades, and \
+             only a server that exists to receive replication accepts a source's \
+             journal: replica, read_replica, spare or multi. This server's role is \
+             {papel}",
             "",
             "",
             "",
