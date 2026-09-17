@@ -1080,6 +1080,7 @@ convocado por cortesia.
 | J | newtype `Segredo` vs nove `impl` a mao vs conferidor — a premissa que ninguem mediu antes de construir | forte | e a pergunta que muda o que a frente B+G entrega; le o fonte do `secrecy` e do `zeroize` como leitura, nunca como `Cargo.toml` | — |
 | SEC | revisao adversaria: o `Debug` fechou, e `Display`, erro, log, `para_json`, panico, rede? | forte | so leitura, mas cada achado exige prova de leitura e severidade contra as tres saidas da petrea | — |
 | tradutor | baixar a catraca dos 1.049 textos cravados — um arquivo zerado, o TETO descendo no mesmo commit | leve | mecanico e verificavel: o conferidor conta, a catraca so desce, e a prova e repor um texto e ver a catraca reprovar | — |
+| B-SEC | os achados A1, A2 e A4 da revisao SEC: `token_remoto` fora da lista `SEGREDOS` do profiler, o job que guarda o pedido inteiro, e os dois JSON gravados em 0644 — aberta as 00:52, DEPOIS de conferir o A1 no fonte | forte | conserto de seguranca cuja FORMA e a decisao: a lista por nome e o defeito, e o conserto certo e a regua que a impede de envelhecer, nao mais um nome | C (nenhum formato muda), E, J |
 | A | orquestrar, integrar, registrar — este arquivo | — | — | — |
 | I | o fecho: portoes, commit por caminho explicito, push conferido, os 20 geradores, `./backup.sh` provado restaurando | — | — | — |
 
