@@ -68,7 +68,7 @@ python3 bancada/concorrencia/mapa-da-trava.py --json      # para outro gerador
 |---|---|
 | `self.dados.lock()` em `servidor.rs` | **3 ocorrências**, das quais **2 em comentário** |
 | tomadas reais da trava fora do `travar_dados()` | **0** |
-| chamadas a `travar_dados()` fora da definição e fora dos testes | **76** |
+| chamadas a `travar_dados()` fora da definição e fora dos testes | **76** (**86** em 17/09/2026 — crescimento do código nas duas semanas seguintes, não deste documento; remedido pelo pedido 164) |
 
 O item está fechado e **continua fechado**: a catraca `so_um_lugar_toma_a_trava`
 lê o próprio fonte pelo `include_str!` e reprova a segunda tomada. O comentário
@@ -78,29 +78,31 @@ Mas o número que importa para a SP000011 **nunca foi esse**. «Uma tomada» é 
 número de *portas*; **76** é o número de *seções críticas*, e é sobre elas que
 qualquer desenho substituto tem de decidir.
 
-### 1.2 As 76 seções, pelo que seguram
+### 1.2 As 86 seções (76 em 03/09), pelo que seguram
 
 O gerador classifica cada seção pela coisa mais grave que ela alcança, e a
 ordem da classificação é deliberada: uma seção que roda código do dono também
 toca disco, e rotulá-la «disco» esconderia o que ela tem de pior.
 
-| classe | seções | linhas de código sob a trava |
-|---|---:|---:|
-| **código do dono** (corpo de gatilho `BEFORE`) | **5** | 378 |
-| rede ou espera | **0** | 0 |
-| **escrita durável** (alcança `fsync`) | 19 | 514 |
-| escrita | 14 | 293 |
-| leitura com varredura | 28 | 1.844 |
-| leitura curta | 10 | 101 |
+| classe | seções (03/09) | seções (17/09/2026) | linhas sob a trava (17/09) |
+|---|---:|---:|---:|
+| **código do dono** (corpo de gatilho `BEFORE`) | 5 | **5** | 417 |
+| rede ou espera | 0 | **0** | 0 |
+| **escrita durável** (alcança `fsync`) | 19 | **20** | 667 |
+| escrita | 14 | **14** | 323 |
+| leitura com varredura | 28 | **33** | 2.246 |
+| leitura curta | 10 | **14** | 119 |
 
-Tamanho das seções: menor **3** linhas, mediana **26**, p90 **89**, maior
-**243** (`op_esquema`), somando **3.130** linhas de código sob a trava.
-**8 de 76** soltam a trava cedo por `drop` explícito; **40 de 76** têm laço
-direto dentro da própria seção.
+Tamanho das seções em 17/09/2026: menor **3** linhas, mediana **26**, p90
+**93**, maior **299** (`op_esquema`), somando **3.772** linhas de código sob a
+trava. **9 de 86** soltam a trava cedo por `drop` explícito; **46 de 86** têm
+laço direto dentro da própria seção. O crescimento de 76 para 86 seções é de
+código escrito nestas duas semanas por outras frentes (novas operações do
+protocolo) — nenhuma delas nasceu deste documento nem do pedido 164.
 
 Cada seção aparece em **uma** classe, a mais grave — por isso a linha
-«escrita durável» diz 19 e o §1.3 abaixo diz que **23** alcançam `fsync`: as
-outras quatro estão na linha «código do dono», que é pior. As classes contam
+«escrita durável» diz 20 e o §1.3 abaixo diz que **25** alcançam `fsync`: as
+outras cinco estão na linha «código do dono», que é pior. As classes contam
 seções; as afirmações do §1.3 contam **fatos**, e um fato pode valer para
 seções de classes diferentes.
 
@@ -111,11 +113,22 @@ seções de classes diferentes.
 > frentes vizinhas mexendo nas cadeias que o mapa percorre. *Gerador que existe
 > e ninguém roda de novo é número digitado à mão com passo extra.*
 
+> **Remedido em 17/09/2026 (pedido 164, `docs/PENDENCIAS.md` #164):** 19 / 28 /
+> 23 viraram 20 / 33 / 25. O salto em «escrita durável» e «alcança `fsync`»
+> **não é `fsync` novo** — é atribuição: a régua chama de **porta comum** o
+> caminho que aparece em pelo menos 20% das seções (17 de 86) e herda o custo
+> dela; a porta que o 164 criou, `abrir_travada_sem_sobrepor`, tem só 2
+> chamadores (`empilhar`, `empilhar_atualizar_com_cascata`), fica abaixo do
+> corte, e o `fsync` que antes vinha herdado de `abrir_travada` passa a contar
+> como próprio de cada um. O detalhamento fica em `docs/CATRACAS.md` §13-bis,
+> para não duplicar a régua em dois lugares.
+
 ### 1.3 Os três fatos que o mapa achou, e que decidem a matriz
 
-**(a) O `fsync` acontece com a trava global na mão.** `24 de 76` seções
-alcançam `sync_all` por caminho próprio, com confiança 1,0. Conferido à mão, o
-caminho do `op_inserir` é:
+**(a) O `fsync` acontece com a trava global na mão.** `25 de 86` seções
+alcançam `sync_all` por caminho próprio, com confiança 1,0 (24 de 76 em 03/09;
+o salto é atribuição, não `fsync` novo — ver o quadro do §1.2 e
+`docs/CATRACAS.md` §13-bis). Conferido à mão, o caminho do `op_inserir` é:
 
 ```
 op_inserir
@@ -434,7 +447,7 @@ só então escolher a estrutura que o mantém.
 | **o que NÃO compra** | nada entre dois clientes na mesma tabela | nada entre leitor e escritor: o escritor continua exclusivo | nada entre dois **escritores**; e nada entre dois leitores, que continuam disputando a estrutura |
 | **o invariante que precisa manter** | um conjunto de arquivos por tabela, uma operação de cada vez | leitura não pode abrir `Table` que escreva; hoje **abrir já escreve** quando `recursos.espelho` está ligado | versão velha visível a quem começou antes |
 | **o que custa no nosso formato** | um mapa de travas por `"database/tabela"`, e a ordem canônica para não trocar um gargalo por um abraço mortal — a ordem já existe no `TRANSACOES.md` §11.3 | **precisa de um `Instancia` com estado**, ou o `RwLock` não protege nada (§2) | mudança de formato: `.reg` v6, área de undo, `.ndx` com visibilidade, purga (§4) |
-| **quanto há para recuperar** | não medido nesta máquina | teto estático: **37 de 76** seções não alcançam marcador de escrita por caminho próprio | teto estático: **24 de 76** alcançam `fsync`, e **5 de 76** rodam código do dono, sob a trava |
+| **quanto há para recuperar** | não medido nesta máquina | teto estático: **47 de 86** seções não alcançam marcador de escrita por caminho próprio (37 de 76 em 03/09) | teto estático: **25 de 86** alcançam `fsync` (24 de 76 em 03/09; atribuição, não `fsync` novo — §1.2/§1.3), e **5 de 86** rodam código do dono, sob a trava |
 | **quebra alguma pétrea?** | não | não | **não, se e só se** a versão velha ficar **fora** do `.reg` (§4.2) |
 
 > **O «teto estático» conta SEÇÕES, e não tráfego.** Trinta e sete de setenta e

@@ -3502,6 +3502,145 @@ cargo build --release --examples -p phxsql-store    # binario velho mede o passa
 cargo run --release --example custo-do-excluir -- 200000 20000
 ```
 
+## 25. O `empilhar` sob a trava: a premissa do 164 morreu medida, e a medição achou o conserto que não era do gatilho (17/09/2026)
+
+Pedido 164 (`docs/PENDENCIAS.md` #164, commit `20d2c59`). O pedido mandava
+**encurtar as 5 seções** que rodam código do dono do banco (gatilho `BEFORE`)
+com a trava global na mão. Antes de escrever qualquer código, um medidor
+versionado novo — `crates/phxsql-server/examples/reparticao-do-gatilho.rs` —
+mediu a premissa, lendo o acumulador de tempo **sob a trava** que o próprio
+`travar_dados` já mantém.
+
+### 25.1 A hipótese que morreu: encurtar o gatilho não compra nada mensurável
+
+O aparato inteiro do gatilho — converter o `NEW` para JSON, montar o
+`Contexto::de_gatilho` e a volta de cada coluna tocada — não aparece acima do
+ruído do medidor:
+
+| cenário | `op_inserir` (sob a trava) | `empilhar` (sob a trava) |
+|---|---:|---:|
+| efeito do aparato do gatilho | **+0,50 µs** | **−1,00 µs** |
+| ruído do próprio medidor (faixa min–max) | 6 a 8 µs | maior, e cresce com a lista pendente (§25.2) |
+
+Quatro corridas do delta deram **−0,25 / −0,50 / +1,75 / +0,50 µs** — uma
+delas com o cenário COM gatilho **mais barato** que o cenário sem, que é a
+assinatura de estar medindo ruído e não efeito. Três causas fecham a hipótese:
+
+- **Compilar a rotina já não acontece sob a trava, e nunca aconteceu**: o
+  programa é pré-compilado no carregamento e chega por `Arc::clone`.
+- **A preparação que o pedido listava como candidata já está fora da trava**
+  nas cinco seções, conferida função a função.
+- **O que sobra não pode sair**: `linha_para_json` precisa do esquema, e o
+  esquema só chega com a tabela aberta — preparar fora da trava seria julgar
+  contra um esquema que pode ter mudado entre preparar e executar.
+
+Quem decide o tempo é o **corpo do dono** (471 µs no cenário `pesado`, contra
+o teto de parede `PRAZO_DO_GATILHO_ANTES = 500 ms`) e o **`fsync` do piso**
+(642 a 731 µs por linha, com `durabilidade: por_operacao`) — nenhum dos dois
+sai da trava por refatoração de seção. Encurtar teria comprado **menos de
+6 µs** no melhor caso e custado a garantia do esquema estável.
+
+**RECUSADO COM O NÚMERO.** É o padrão do pedido 113 de novo: alvo certo
+(o pedido apontou para as seções certas), causa errada (o custo não estava no
+aparato do gatilho). Recusa medida impede a mesma proposta de voltar sem
+número novo — falta só a medição final em máquina parada, que este pedido
+continua devendo.
+
+### 25.2 O conserto que a medição achou, e que não era do gatilho
+
+Medindo o `empilhar` — a maior das cinco seções, 162 linhas, o `inserir`
+**dentro** de uma transação — a sonda achou outra coisa: o `empilhar` abria a
+tabela pela porta de sempre (que monta a **sobreposição** da transação
+percorrendo o conjunto de escrita **inteiro**) e chamava `ver_so_o_disco()` na
+linha seguinte, **jogando o mapa fora**. O(pendentes) por operação, O(n²) por
+transação, **sob a trava de dados**, para construir exatamente o que a linha
+debaixo apagava.
+
+| escritas pendentes na transação | `empilhar`, ANTES (µs/op, sob a trava) | `empilhar`, DEPOIS (µs/op, sob a trava) |
+|---:|---:|---:|
+| 100 | **60,00** | 41,25 |
+| 200 | sem número citável nesta fonte | 38,75 |
+| 400 | sem número citável nesta fonte | 37,50 |
+| 800 | sem número citável nesta fonte | 35,00 |
+| 1.600 | **625,62** | 40,62 |
+
+A sonda (`reparticao-do-gatilho.rs`) percorre os cinco pontos dos dois lados,
+mas o código e o commit `20d2c59` só **citam por extenso** os dois extremos do
+lado ANTES (100 e 1.600) — os três do meio não têm número publicado para
+citar aqui, e esta tabela diz isso em vez de interpolar um valor que ninguém
+registrou: *lista digitada é palpite até alguém medir*, e o mesmo vale para
+uma tabela com furo. O que os dois pontos já mostram é a forma — o custo
+cresce com a lista pendente — e a coluna DEPOIS, com os cinco pontos citados
+no teste `so_o_disco_vem_da_porta_e_nao_de_desligar_depois`, mostra a cura:
+**plana**, entre 35 e 41 µs, qualquer que seja o tamanho da transação. No
+ponto de 1.600 pendentes, medido nos dois lados: **625,62 → 40,62
+µs/operação**, uma razão de **15,4×**.
+
+O commit `20d2c59` publicou «8,6×» ao lado desse par, e **o número estava no
+lugar errado**: 8,6× é a razão da medição com **mil** pendentes (335–341 →
+39–40 µs), não com mil e seiscentas. Quem escreveu a mensagem juntou o par de
+uma linha com a razão de outra, e ninguém conferiu a divisão antes de
+publicar — *número citado é número que não se mede*, e desta vez quem
+mediu foi a revisão da documentação, no dia seguinte à publicação. As duas
+razões estão certas cada uma na sua linha; o que não existia era a linha que
+a mensagem descrevia.
+
+**O conserto**: nasce a porta `abrir_travada_sem_sobrepor`, sobre a mesma
+implementação de sempre (`abrir_travada_com`, parametrizada — o portão
+continua sendo um só). O caminho que **empilha** não precisa da sobreposição
+porque já sabe o que está pendente por conta própria, com mensagem melhor
+(`chave_ja_empilhada` nomeia a linha da lista; a conferência contra o disco
+diria só «o índice único já tem essa chave», que manda procurar no lugar
+errado). O irmão — a fase 3 do `empilhar_atualizar_com_cascata`, o único outro
+chamador — entrou no mesmo passo, **antes de doer**: *conserto entra no
+caminho que o motivou, e o caminho irmão fica junto*, não depois.
+
+**Prova real, nos dois sentidos**: a catraca estrutural
+`so_o_disco_vem_da_porta_e_nao_de_desligar_depois` conta **zero** chamadas de
+`ver_so_o_disco()` no `servidor.rs` e só desce; o teste
+`o_empilhar_le_o_disco_e_nao_a_lista_pendente` **discrimina** a semântica
+(excluir de vez e alterar a mesma linha na mesma transação — com a
+sobreposição ligada, a alteração veria a exclusão pendente e seria recusada
+sobre uma linha que está em disco) e cai com o defeito reposto. Um terceiro
+teste, `dentro_da_transacao_o_upsert_decide_contra_o_disco`, **não**
+discrimina — a recusa de `chave_ja_empilhada` acontece antes do `buscar`, e
+ele passa com a sobreposição ligada ou desligada —, e isso está escrito no
+próprio teste em vez de escondido: teste que passa por engano é pior que
+teste que falta.
+
+### 25.3 Nomeado e NÃO consertado: `ler` dentro de transação não pode dispensar o mapa
+
+A mesma sonda, do lado de quem **lê**: dentro de uma transação, `ler` também
+monta a sobreposição a cada chamada, e não pode deixar de montar — ali a
+sobreposição **é** a funcionalidade (o read-your-own-writes que o pedido 162
+deu à transação), não desperdício.
+
+| escritas pendentes | `ler` dentro da transação (µs, sob a trava) |
+|---:|---:|
+| 0 | **38,00** |
+| 100 | sem número citável nesta fonte |
+| 400 | sem número citável nesta fonte |
+| 1.600 | **1.118,50** |
+
+A mesma sonda testa também 100 e 400 pendentes, mas só os dois extremos (0 e
+1.600) têm valor citado no commit `20d2c59` — os dois pontos do meio ficam sem
+número aqui pelo mesmo motivo do §25.2: não inventar o que não foi publicado.
+O custo cresce do mesmo jeito que o do `empilhar` crescia antes do conserto —
+porque é o mesmo mecanismo (montar o mapa do zero a cada chamada) — só que
+aqui não há porta que dispense: dispensar a sobreposição do `ler` mostraria o
+**disco** onde a transação promete mostrar o **próprio trabalho pendente**, e
+meia invalidação seria pior que nenhuma. A saída de desenho é guardar o mapa
+**por transação** (montado uma vez) e invalidá-lo a cada `empilhar`, em vez de
+reconstruí-lo do zero em cada `ler`. Nomeado, não implementado:
+`docs/PENDENCIAS.md` #310.
+
+Reproduza com:
+
+```bash
+cargo build --release --examples -p phxsql-server
+cargo run --release -p phxsql-server --example reparticao-do-gatilho
+```
+
 ## Como refazer tudo
 
 ```bash

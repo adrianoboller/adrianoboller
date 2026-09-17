@@ -156,6 +156,36 @@ errado, está dito qual.
   entra só com `seguranca.contar_pulso_desconhecido`, que **nasce
   desligado** (ligado de fábrica bloquearia o próprio nó novo durante um
   escalonamento a quente).
+- **O `empilhar` montava o mapa da transação sob a trava de dados para
+  apagá-lo na linha seguinte** (`20d2c59`, pedido 164). O caminho que
+  EMPILHA abria a tabela pela porta de sempre — que monta a sobreposição
+  percorrendo o conjunto de escrita **inteiro** da transação —, e chamava
+  `ver_so_o_disco()` logo depois, jogando o mapa fora: O(pendentes) por
+  operação, O(n²) por transação, com a trava global na mão. Nasce a porta
+  `abrir_travada_sem_sobrepor`, e o irmão (`empilhar_atualizar_com_cascata`,
+  fase 3) entrou junto. Medido com 1.600 escritas pendentes: **625,62 →
+  40,62 µs/operação (8,6×)**, curva plana. Catraca estrutural nova: **zero**
+  chamadas de `ver_so_o_disco()` no servidor. `docs/DESEMPENHO.md` §25,
+  `docs/PENDENCIAS.md` #164.
+- **A tela vazia de DbLink nascia com os dois únicos botões mortos**
+  (`6319396`, pedido 190). Um `return folha(...)` deixava as duas linhas de
+  `onclick` seguintes inalcançáveis — era a primeira tela de quem ainda não
+  tem ligação nenhuma, e ela não tinha saída.
+- **Copiar o pivô como CSV morria calado** (`6319396`, pedido 190). Um
+  `const txt` sombreava a função `txt()` da fábrica de idiomas dentro do
+  mesmo bloco; a cópia acontecia e os três recados quebravam em «txt is not
+  a function». Única ocorrência do tipo em toda a `ui/` — o conferidor de
+  textos fora da fábrica não o vê, porque a chave *está* na fábrica; quem
+  quebra é o escopo.
+- **«Backup agora» e «Conferir backup» ficavam presos na tela de progresso
+  para sempre** (`6319396`, pedido 190). O pedido de backup saía sem o
+  `destino` obrigatório, a exceção subia sem tratamento na tela, e a folha
+  nunca mudava — sem cópia e sem erro, as duas piores notícias juntas; o
+  irmão `conferirBackup` tinha o mesmo defeito. As duas fichas de resultado
+  também pediam campos que a resposta não tem (`segundos` em vez de `ms`;
+  `conferidos`/`diferentes`/`faltando` em vez de
+  `arquivos`/`bytes`/`divergencias`) e mostravam travessão onde havia
+  número medido.
 
 ### Adicionado
 
@@ -312,6 +342,25 @@ errado, está dito qual.
   §2.2, 17/09 02:34 UTC) — a eleição (pedido 211), o escalonamento a quente
   (217) e os quatro modos A–D (214) têm teste real e nenhuma guarda
   catalogada. Pedido 302.
+- **164 — falta a medição final em máquina parada.** O que o pedido pedia
+  (encurtar as 5 seções do gatilho `BEFORE`) morreu medida com o número —
+  ver Corrigido; o conserto do `empilhar` entrou de bônus. Falta só rodar de
+  novo com `quieta.Vigia` aprovando, em máquina livre.
+- **`ler` dentro de uma transação paga O(pendentes) sob a trava global** —
+  38 µs com zero escritas pendentes, **1.118,50 µs com 1.600** (medido pelo
+  mesmo medidor do 164). A sobreposição ali é a funcionalidade
+  (read-your-own-writes, pedido 162), então não se remove — falta guardar o
+  mapa por transação e invalidá-lo no empilhamento. Pedido 310.
+- **O assistente de replicação mostra «PhxSql» com um buraco no lugar da
+  versão** — `sondar_origem` (`servidor.rs:22638`) não devolve `versao` nem
+  `ms`, e a tela (`ui/index.html:13037`) escreve os dois. Achado da frente do
+  190, conserto é do servidor. Pedido 311.
+- **190 — 119 botões ainda sem prova**: 12 em `ui/claude.js` (pedem chave de
+  API — decisão em aberto entre interceptar a rota ou dispensa registrada),
+  7 do assistente de replicação e 6 do DbLink (exigem um segundo servidor de
+  verdade do outro protocolo, fora desta bateria), e 16 num rabo parelho de
+  quatro em quatro (`cartaoNovaTabelaER`, `desenharNovaTabela`, `editarJob`,
+  `telemetria.js`) que já são exercitáveis nesta máquina.
 
 ## Não lançado — Colmeia × SQLite × padrão nas quatro operações (bancada)
 

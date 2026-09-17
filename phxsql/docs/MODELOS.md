@@ -1204,3 +1204,30 @@ id; sete entradas novas no catalogo e `cluster.rs` saiu do zero,
 catalogo em Python** — nenhuma linha de `crates/` mudou —, mas a decisao de
 quais sete petreas entram e qual teste cada uma reprova exige leitura, e por
 isso nao e leve.
+
+## Onda 4/5 — os dois pedidos do dono, 164 e 190 (17/09/2026, madrugada)
+
+| frente | escalao | por que | largada |
+|---|---|---|---|
+| 164-B (concorrencia e o gatilho `BEFORE`) | forte | e o mesmo eixo da onda 2/3: medir a repartição do tempo **dentro** da secao critica antes de encurtar, e decidir se ha o que tirar da trava sem mudar o que o gatilho enxerga — projeto e risco (concorrencia, semantica de transacao), nao varredura | 04:58 UTC |
+| 190-E (exercitar os botoes que faltavam: os dois assistentes, DbLink, pivo, idiomas e backup) | forte | tela so se prova exercitando, e exercitar aqui bateu em defeito de **servidor** (excecao sem dono, campo de resposta trocado) alem do de tela — nao e so gravar clique, e diagnosticar por que a folha trava e o que a resposta de verdade carrega | — |
+
+**164-B teve duas partidas, e a primeira nao produziu linha nenhuma**: o
+primeiro lancamento no escalao forte ficou **sem credito** no modelo
+escolhido antes de qualquer medicao rodar, e foi relancado no **mesmo
+escalao** (forte), no primeiro modelo dessa faixa com credito disponivel —
+sem baixar de nivel, porque o trabalho continuava sendo concorrencia e
+formato de secao critica, nao varredura. A frente relancada e a que produziu
+o medidor `reparticao-do-gatilho.rs`, a recusa medida de encurtar o gatilho e
+o conserto do `empilhar` (commit `20d2c59`). **Registrar a queda de credito
+aqui, e nao so na conversa, e a mesma lei do `docs/BACKUP.md` sobre o 403 do
+GitHub: limitacao que bloqueia um papel se remede e se registra, para
+ninguem gastar uma rodada inteira redescobrindo o mesmo bloqueio.**
+
+**190-E** fechou em commit `6319396`: 194 botoes sem prova caem para 119,
+com os quatro defeitos de tela do §13.9 do `docs/TESTES.md` achados
+clicando, nenhum deles visivel so lendo o codigo. Forte pelo mesmo motivo do
+190 original (pedido 190, ondas anteriores): a bateria aqui nao só grava
+clique, ela precisou **diagnosticar** por que `backupAgora` travava («rodando…»
+para sempre) e por que o CSV do pivo saia mudo — os dois exigiram ler a
+funcao inteira, nao so o seletor do botao.

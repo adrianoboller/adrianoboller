@@ -865,7 +865,7 @@ feita numa só):
 | Catraca | Medidor | Teto | Medido em 16/09/2026 | Estado |
 |---|---|---:|---:|---|
 | `codigo-do-dono` | `bancada/concorrencia/mapa-da-trava.py` | 5 | **5** | sem folga |
-| `alcancam-fsync` | `bancada/concorrencia/mapa-da-trava.py` | 22 | **23** | **VERMELHA** — #252 (1), parada com o dono |
+| `alcancam-fsync` | `bancada/concorrencia/mapa-da-trava.py` | 22 | **25** (23 em 16/09; remedida em 17/09/2026, pedido 164 — atribuição, nenhum `fsync` novo, ver §13-bis) | **VERMELHA** — #252 (1), parada com o dono |
 | `rede-ou-espera` | `bancada/concorrencia/mapa-da-trava.py` | 0 | **0** | sem folga |
 | `spawn-sem-teto` | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | sem folga |
 | `catalogo-envelhecido` | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | sem folga |
@@ -935,12 +935,16 @@ decidir, e a saída mais barata dessa pressão seria subir o teto de 22 para 23
   saída, além de depender da corrente do batimento fino, que o próprio arquivo
   registra ter ficado ~3 h parada.
 
-**O que continua vermelho, e continua vermelho**: `alcancam-fsync` **23, teto
-22**. Nada aqui mexeu nela — nem no teto, nem na régua, nem na seção crítica
-que a furou. A decisão é do dono (#252, metade (1)): ou a catraca ganha a
-exceção nomeada «operação administrativa que troca o banco inteiro» — o que a
-**aposenta** e faz nascer outra no número medido do dia, como manda a lei da
-régua —, ou a reaplicação do diário sai da seção crítica.
+**O que continua vermelho, e continua vermelho**: `alcancam-fsync` **25, teto
+22** (23 em 16/09; remedida em 17/09/2026 pelo pedido 164 — ver §13-bis: a
+`abrir_travada_sem_sobrepor` nova tem só 2 chamadores, fica abaixo do corte de
+«porta comum», e o mesmo `fsync` que antes vinha herdado passa a contar como
+próprio de cada um — nenhum `fsync` novo entrou na trava). Nada aqui mexeu no
+TETO, nem na seção crítica que a furou. A decisão é do dono (#252, metade (1)):
+ou a catraca ganha a exceção nomeada «operação administrativa que troca o
+banco inteiro» — o que a **aposenta** e faz nascer outra no número medido do
+dia, como manda a lei da régua —, ou a reaplicação do diário sai da seção
+crítica.
 
 **A prova real, nos dois sentidos** (16/09/2026, com o binário do teste já
 compilado e a árvore devolvida em seguida):
@@ -978,6 +982,41 @@ pasta. **Eram oito.** O parágrafo que denunciava uma lista curta era, ele
 próprio, uma lista curta — e é a prova mais barata de que lei que lista menos
 casos do que existem protege menos no dia em que alguém usar a lista como
 inventário, inclusive quando a lista é a dos buracos.
+
+### 13-bis. A régua conta ATRIBUIÇÃO, não só ocorrência — o salto de 23 para 25 sem `fsync` novo (17/09/2026)
+
+**O defeito que este parágrafo existe para impedir**: alguém lendo só o número
+concluiria que o pedido 164 (`20d2c59`) fez a trava segurar mais `fsync`.
+Mediu-se de novo com o mesmo `bancada/concorrencia/mapa-da-trava.py`, e
+**nenhum `fsync` novo entrou na trava** — o que mudou foi a **atribuição**.
+
+O mapa chama de **porta comum** qualquer caminho que apareça em pelo menos
+**20% das seções** (hoje, 17 de 86) e **herda** o custo dela em vez de contar
+como próprio de quem chama — é a melhor prova disponível em tanta seção que
+não distingue nenhuma, e por isso sai da classificação por seção e vira fato à
+parte. Antes do 164, o `empilhar` e o `empilhar_atualizar_com_cascata` abriam
+a tabela pela porta `abrir_travada` — que **é** comum (23/86 pelo lado do
+disco, 18/86 pelo lado da durabilidade) — e o `fsync` que ela alcança vinha
+**herdado**, não contado por seção.
+
+O pedido 164 trocou essa chamada por uma porta nova,
+`abrir_travada_sem_sobrepor` (a dispensa registrada da sobreposição, ver
+`docs/PENDENCIAS.md` #164). Ela tem **2** chamadores — os dois de sempre —,
+fica bem abaixo do corte de 20%, e por isso **não é comum**: o mesmo `fsync`
+que antes vinha herdado de `abrir_travada` passa a contar como **próprio** de
+`empilhar` e de `empilhar_atualizar_com_cascata`. Duas seções que já
+alcançavam `fsync` (por herança) passam a alcançá-lo **por conta própria** —
+e é exatamente isso, e só isso, que move `alcancam-fsync` de 23 para **25**.
+
+**Por que isto fica escrito aqui, e não só no commit**: é o tipo de coisa que
+faz alguém, daqui a um mês, ler «o 164 fez a trava segurar mais escrita
+durável» — e a régua nunca disse isso. Ela mede o que cada seção alcança pelo
+caminho que o mapa consegue resolver por nome; trocar o NOME de uma porta sem
+trocar o que ela faz pode empurrar seções para dentro ou para fora do corte de
+«comum», e isso é da régua, não do motor. Nenhuma catraca foi tocada por este
+achado — nem o teto, nem a régua: o número medido é que subiu, e a catraca
+`alcancam-fsync` **continua vermelha** por decisão do dono (#252 (1)), como já
+estava. Ver `docs/CONCORRENCIA.md` §1.2/§1.3 e `docs/PENDENCIAS.md` #164.
 
 ## 14. O inventário gerado passou a contar as catracas de Python
 
@@ -1205,8 +1244,10 @@ outra catraca da árvore foi tocada.**
 
 E fica dito qual é a que **pediria** para subir, porque é a que um leitor
 apressado «consertaria» primeiro: a `alcancam-fsync` do mapa da trava mede
-**23** hoje com teto **22** — vermelha por decisão registrada (pendência
-#252), e o caminho certo ali é baixar o número medido, nunca levantar o teto.
+**25** hoje (23 quando esta seção foi escrita; remedida em 17/09/2026 pelo
+pedido 164 — atribuição, não `fsync` novo, ver §13-bis) com teto **22** —
+vermelha por decisão registrada (pendência #252), e o caminho certo ali é
+baixar o número medido, nunca levantar o teto.
 
 **E ele subiu de novo no mesmo dia**, de **160** para **169**, na frente
 G-SENHA da §15.7. Duas frentes mexeram nesta mesma catraca em horas

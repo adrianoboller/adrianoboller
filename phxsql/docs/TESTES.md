@@ -1473,17 +1473,20 @@ arquivo `testes-web/botoes-exercitados.txt` é **gerado** pela corrida inteira
 da bateria. Corrida parcial (`--caso`, `--tema`) **não** reescreve o arquivo:
 evidência parcial é pior que evidência faltando.
 
-### 13.4 O placar do dia
+### 13.4 O placar do dia — e o de hoje, 17/09/2026
 
-| | antes desta rodada | depois |
-|---|---|---|
-| botões da tela | 298 | 298 |
-| clicados pela bateria | **28** | **85** |
-| dispensados com motivo | 0 | 3 |
-| **sem prova** | **268** | **211** |
+| | 05/09 (rodada desta seção) | 17/09/2026 |
+|---|---:|---:|
+| botões da tela | 298 | **321** |
+| clicados pela bateria | 85 (28 antes daquela rodada) | **182** |
+| dispensados com motivo | 3 | **22** |
+| **sem prova** | **211** | **119** |
 
-`TETO_BOTAO_SEM_PROVA = 211`, em
-`crates/phxsql-server/src/conferidor_botoes.rs`. **Só desce.**
+`TETO_BOTAO_SEM_PROVA = 119` (era 211 nesta rodada, 194 em 07/09/2026, e caiu
+para 119 em 17/09/2026 — 62 botões pelo clique, 13 por dispensa nova, cada
+dispensa dizendo o que a tira), em
+`crates/phxsql-server/src/conferidor_botoes.rs`. **Só desce.** O §13.9 conta a
+rodada de 17/09/2026.
 
 ### 13.5 O que exercitar achou — e o que ler o código não acharia
 
@@ -1551,7 +1554,7 @@ pedido 40 já derruba a porta de dados e a levanta pela web.
 | `#btSair` | derruba a sessão. **Tem prova** — o caso `entrada` sai e volta —, e está dispensado pelo mesmo motivo que o `passeio` o tira do laço: clicado no meio de uma varredura, o resto dela não teria onde acontecer |
 | `[data-acao="devolver"]` e `[data-acao="pinar-janela"]` | só existem dentro de uma janela do sistema destacada (`W.destacada`), e essa janela depende da permissão `window-management`, que o Playwright 1.56 não sabe conceder — a mesma limitação que o caso `monitores` já carrega escrita |
 
-### 13.7 O que ficou de fora, nomeado
+### 13.7 O que ficou de fora, nomeado (situação em 05/09/2026 — ver §13.9 para 17/09)
 
 Três lotes entraram inteiros: **a grade** (18 botões), **o conteúdo editável,
 a ficha e a lixeira** (20) e **a tira de abas com a janela solta** (7). Os
@@ -1566,8 +1569,11 @@ maiores lotes que ficaram, medidos:
 | a tela da Claude (`claude.js`) | 12 | precisa de chave de API, que não existe nesta máquina |
 
 Meia cobertura só é pior que nada quando finge ser inteira: o
-`--example botoes-sem-prova` lista os **211** que faltam, por tela, do maior
-lote para o menor.
+`--example botoes-sem-prova` lista os que faltam a cada rodada, por tela, do
+maior lote para o menor. **O diagrama ER e a gestão de tabelas fecharam em
+07/09/2026** (eram 15, não 16+11 — `telaDiagramaER` 4, `cartaoTabelaER` 6,
+`gerirTabelas` 5), e **os dois assistentes e o resto fecharam quase todo em
+17/09/2026** — ver §13.9.
 
 ### 13.8 Um achado que não é meu para consertar: o buraco do pedido 170
 
@@ -1590,6 +1596,57 @@ Três coisas para quem for pegar isto, e a terceira é a que importa:
   mesma prova de uma corrida que só se reproduz segurando a resposta no fio.
   O que resolve é a marca de geração — e essa é decisão de arquitetura da
   tela, não de quem escreve teste.
+
+### 13.9 A fila fechou mais em 17/09/2026 (commit `6319396`), e a frase «pedem outro servidor» morreu medida
+
+Quatro casos novos, um por tema: `30-botoes-do-assistente-de-replicacao.mjs`,
+`31-botoes-do-dblink.mjs`, `32-botoes-do-pivot.mjs`,
+`33-botoes-dos-idiomas-e-do-backup.mjs`. Clicados de 120 para **182**,
+dispensados com motivo de 9 para **22**, sem prova de 194 para **119** — 62
+pelo clique e 13 pela dispensa, cada dispensa nomeando o que a tira. Bateria
+**63 de 63** casos nos dois temas, evidência de 228 para **276** ganchos
+(§13.3).
+
+**A hipótese herdada da §13.7 — que os dois assistentes «pedem outro
+servidor» — morreu medida.** O assistente de replicação **sonda a si mesmo**:
+a porta de dados da bateria é um `phxsqld` de verdade do outro lado do
+soquete, e `replicacao_testar` é só mais um cliente do protocolo. **12 dos
+19** botões do assistente saem disso, inclusive o de testar a conexão; o
+DbLink cede **8 dos 14** pelo mesmo caminho (a tela vazia e o ramo «Não
+conectou»). O que trava os restantes está medido, não suposto:
+
+| resta | quantos | o que trava |
+|---|---:|---|
+| `assistenteReplicacao` (passo 4 em diante) | 7 | a sonda só avança com o servidor de destino declarando `replicacao.id_servidor` e `replicacao.imagem_da_linha`; o servidor da bateria não declara nenhum dos dois |
+| `assistenteDbLink` (passo 3 em diante) | 6 | exige um MySQL(R)/MariaDB(R) de verdade respondendo, e não há um destes nesta máquina — subir um traria dependência externa para dentro da bateria |
+
+**A frente RECUSOU destravar** ligando `imagem_da_linha` no servidor da
+bateria: `ligar_imagem_no_diario` vale para **toda** tabela de **todo** caso, e
+ligá-lo trocaria a cobertura de sete botões por uma mudança de gravação
+debaixo dos outros 32 casos existentes — o mesmo tipo de escolha que
+`docs/CLAUDE.md` nomeia como «recusa registrada, não esquecimento».
+
+**Exercitar achou quatro defeitos que ler o código não acharia** — os quatro
+do commit `6319396`, cada um com o teste que o acusa:
+
+| defeito | onde | o que quebrava | acusado por |
+|---|---|---|---|
+| dois botões mortos | tela vazia de DbLink (a primeira que quem não tem ligação nenhuma vê) | um `return` deixava as duas linhas de `onclick` seguintes inalcançáveis — tela sem saída nenhuma | `botoes-do-dblink`, nomeando `#btDef` |
+| variável sombreando função | copiar como CSV do pivô | `const txt` cobria a `txt()` da fábrica de idiomas; a cópia acontecia e os três recados morriam em «txt is not a function» — o conferidor de textos não vê, porque a chave *está* na fábrica | `botoes-do-pivot` |
+| exceção sem dono | `backupAgora` / `conferirBackup` | o pedido saía sem o `destino` obrigatório, a exceção subia sem tratamento, e a folha ficava em «rodando…»/«conferindo…» **para sempre** — sem cópia e sem erro | `botoes-dos-idiomas-e-do-backup` |
+| ficha com campo errado | as fichas de resultado de backup e de conferência | pediam `segundos`/`conferidos`/`diferentes`/`faltando`, e a resposta traz `ms`/`arquivos`/`bytes`/`divergencias` — a ficha mostrava travessão onde havia número medido no `<pre>` logo abaixo | `botoes-dos-idiomas-e-do-backup` |
+
+**Nomeado e NÃO consertado, porque é de outra frente**: no passo 3 do
+assistente de replicação a tela escreve a versão e os milissegundos que o
+`sondar_origem` não devolve — `docs/PENDENCIAS.md` #311.
+
+**O que falta, 119, com a cauda agora parelha**: `cartaoNovaTabelaER` **4**,
+`desenharNovaTabela` **4**, `editarJob` **4**, `telemetria.js` **4**, todos
+exercitáveis nesta máquina, mais os **7** e **6** que restam dos dois
+assistentes (tabela acima) e **12** em `ui/claude.js`, que pedem chave de API.
+**Pergunta em aberto**: os 12 do `claude.js` resolvem por interceptar a rota
+(há precedente em `testes-web/claude-interceptar.mjs`) ou por dispensa
+registrada — decisão de quem manda na catraca (papel G), não decidida aqui.
 
 ## 14. Os portões de MEDIDOR, e por que eles ficam fora do catálogo de guardas
 
