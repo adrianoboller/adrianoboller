@@ -35,41 +35,41 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **2.394 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **2.411 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Protocolo e portões (despachar) | 497 | 20,8 |
-| Motor de dados (arquivos, índice, diários) | 497 | 20,8 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 235 | 9,8 |
-| Camada SQL (léxico, sintaxe, tradução) | 216 | 9,0 |
-| Servidor (outros) | 171 | 7,1 |
-| Criptografia e codificação | 124 | 5,2 |
-| Configuração | 116 | 4,8 |
-| DbLink | 81 | 3,4 |
-| Telemetria e profiler | 65 | 2,7 |
-| ODBC | 58 | 2,4 |
+| Protocolo e portões (despachar) | 497 | 20,6 |
+| Motor de dados (arquivos, índice, diários) | 497 | 20,6 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 235 | 9,7 |
+| Camada SQL (léxico, sintaxe, tradução) | 217 | 9,0 |
+| Servidor (outros) | 174 | 7,2 |
+| Criptografia e codificação | 124 | 5,1 |
+| Configuração | 120 | 5,0 |
+| DbLink | 84 | 3,5 |
+| Telemetria e profiler | 67 | 2,8 |
+| ODBC | 59 | 2,4 |
 | Gatilhos e procedimentos | 45 | 1,9 |
+| **Jobs** | **33** | **1,4** |
+| **Usuários e permissões** | **33** | **1,4** |
 | **Mensagens (i18n do servidor)** | **32** | **1,3** |
-| **Usuários e permissões** | **32** | **1,3** |
-| **Jobs** | **31** | **1,3** |
 | **Interface web (servidor HTTP)** | **29** | **1,2** |
 | **Segurança de rede (blacklist, firewall)** | **21** | **0,9** |
 | **MCP** | **21** | **0,9** |
 | **Transações** | **20** | **0,8** |
 | **Replicação** | **19** | **0,8** |
-| **Console de terminal (phxsqlcmd)** | **18** | **0,8** |
+| **Console de terminal (phxsqlcmd)** | **18** | **0,7** |
 | **Exportação** | **13** | **0,5** |
 | **Junções e união** | **13** | **0,5** |
 | **Pivot** | **12** | **0,5** |
 | **Cluster** | **8** | **0,3** |
 | **Alertas e e-mail** | **8** | **0,3** |
 | **CLI** | **7** | **0,3** |
-| **Monitor de máquina** | **6** | **0,3** |
-| **total** | **2395** | |
+| **Monitor de máquina** | **6** | **0,2** |
+| **total** | **2412** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
