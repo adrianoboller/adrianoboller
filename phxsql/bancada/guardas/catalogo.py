@@ -7634,8 +7634,12 @@ pub fn limpar() {
             "o evento do outro lado com e-mail repetido era recusado, o Err "
             "subia pelo `?` e o `desde = lote.ate` nunca executava: o mesmo "
             "lote voltava para sempre. Nao e linha perdida, e o par de "
-            "servidores parado, sem ninguem saber. A recusa passou a ser "
-            "contada e gritada, no padrao do colisao_de_criacao."
+            "servidores parado, sem ninguem saber. O DEFEITO e o mesmo desde "
+            "17/09/2026; o que mudou foi a CURA: a parte (2) contava e seguia, "
+            "e a parte (1) -- depois de a regua dos motores maduros derrubar a "
+            "recusa na declaracao -- para o par naquela tabela, MARCADO, com o "
+            "indice, o valor da chave e as duas linhas, e a saida e humana "
+            "(`replicacao_pular`). Por isso os testes que caem mudaram de nome."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
         "trecho": """        if let Err(PhxError::Duplicado(qual)) = &escrita {""",
@@ -7647,7 +7651,9 @@ pub fn limpar() {
         "pacote": "phxsql-server",
         "alvo": ["--test", "laco-do-unico-secundario"],
         "caem": [
-            "chave_duplicada_no_unico_secundario_nao_prende_o_laco",
+            "o_conflito_de_unicidade_para_o_par_marcado",
+            "o_pular_manual_solta_o_par_e_a_linha_seguinte_chega",
+            "a_coluna_marcada_nao_vaza_no_grito_do_conflito",
         ],
         # O teste do comportamento VELHO. Sem ele, um "conserto" que parasse de
         # replicar passaria com louvor no de cima: laco que nao aplica nada
@@ -7659,6 +7665,79 @@ pub fn limpar() {
         # que nunca anda) contra 2,1 s com a arvore limpa. O prazo tem de ser
         # maior que a soma com o arranque, senao o executor mata a rodada antes
         # de o teste conseguir reprovar -- a licao do `trava-atras-da-rede`.
+        "prazo": 120,
+    },
+    # -----------------------------------------------------------------------
+    # 188b. o par PARADO reapresentado a cada rodada (pedido 292, parte 1)
+    # -----------------------------------------------------------------------
+    {
+        "id": "par-parado-reapresentado-a-cada-rodada",
+        "titulo": "a tabela parada por conflito volta a ser puxada a cada rodada, e o grito se repete para sempre",
+        "porque": (
+            "pedido 292 parte (1), item 4. O PostgreSQL fica em laco por "
+            "decisao escrita no fonte (`worker.c`: nao avancar a origem e o "
+            "que impede perder a transacao) e paga o preco ESTRANGULANDO "
+            "(`launcher.c`: uma tentativa por `wal_retrieve_retry_interval`, "
+            "5 s). Aqui o conflito nao avanca a posicao pelo mesmo motivo, "
+            "entao o estrangulamento tinha de existir -- e ele e o PORTAO que "
+            "vem ANTES do trabalho: a tabela parada sai do alcance sem tomar a "
+            "trava de dados, sem absorver o diario local e sem uma ida e volta "
+            "de rede. MEDIDO pelo soquete, contando os `replicar` servidos pelo "
+            "parceiro em 10 s com o par parado: 0 com o portao, 10 sem ele "
+            "(uma por segundo, o `reconectar_em` do cenario) -- e as recusas "
+            "contadas do lado de ca subiram de 2 para 12 no mesmo intervalo, "
+            "ou seja, uma linha de log por segundo para sempre."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if self.esta_parada(&origem.nome, &chave_tab) {""",
+        "troca": """        // DEFEITO REPOSTO: o portao sai, e a tabela parada volta a ser
+        // puxada a cada rodada -- rede, trava e grito, sem nada mudar.
+        if false && self.esta_parada(&origem.nome, &chave_tab) {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "laco-do-unico-secundario"],
+        "caem": [
+            "o_conflito_de_unicidade_para_o_par_marcado",
+        ],
+        # O comportamento VELHO: o par que nao colide nunca chega perto do
+        # portao, e continua replicando igual. Se ele cair, o defeito reposto
+        # foi longe demais.
+        "seguem": [
+            "sem_colisao_o_laco_replica_como_sempre_e_nada_e_contado",
+        ],
+        "prazo": 120,
+    },
+    # -----------------------------------------------------------------------
+    # 188c. o grito do conflito publicando a coluna marcada (pedido 292/1)
+    # -----------------------------------------------------------------------
+    {
+        "id": "dado-pessoal-no-grito-do-conflito",
+        "titulo": "o grito do conflito de unicidade publica a coluna marcada como dado pessoal",
+        "porque": (
+            "petrea da casa -- dado pessoal e senha nunca em log. O grito do "
+            "292 parte (1) carrega o que o PostgreSQL carrega (indice, valor "
+            "da chave, linha local e linha remota), e o PostgreSQL imprime a "
+            "chave crua (`Key (c)=(1)`) porque nao tem marca de dado pessoal "
+            "no esquema. Nos temos: uma primaria de CPF ou um unico de e-mail "
+            "sairiam no `replicacao_estado` E no diario do processo se "
+            "copiassemos o comportamento dele. A redacao e por ANALISE -- cada "
+            "coluna decidida pelo que o esquema diz dela --, e o que nao se "
+            "analisa vira o tamanho em bytes."
+        ),
+        "arquivo": "crates/phxsql-server/src/bidirecional.rs",
+        "trecho": """    if coluna.dado_pessoal.e_pessoal() {""",
+        "troca": """    // DEFEITO REPOSTO: a coluna marcada sai por extenso no grito.
+    if false && coluna.dado_pessoal.e_pessoal() {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "laco-do-unico-secundario"],
+        "caem": [
+            "a_coluna_marcada_nao_vaza_no_grito_do_conflito",
+        ],
+        # O comportamento VELHO: a coluna NAO marcada continua legivel. Um
+        # "conserto" que redigisse tudo tornaria o grito inutil, e passaria no
+        # de cima com louvor.
+        "seguem": [
+            "o_conflito_de_unicidade_para_o_par_marcado",
+        ],
         "prazo": 120,
     },
     # 189. O empilhar abria a porta de sempre so para desligar a sobreposicao
@@ -7706,5 +7785,71 @@ pub fn limpar() {
         "seguem": [
             "servidor::testes_transacoes::dentro_da_transacao_o_upsert_decide_contra_o_disco",
         ],
+    },
+    # 190. so o sal separava dois `.reg` cifrados, e ninguem tinha escrito isso
+    # -----------------------------------------------------------------------
+    # Pedido 316. A guarda existia por CONSEQUENCIA: nenhuma amarracao do slot
+    # carrega identidade de arquivo -- o `aad_do_slot` e (volume, rowid,
+    # versao), o `rotulo_da_prova` e (MAGIC_REG, versao, slot_size) e o tempero
+    # do nonce viaja DENTRO do slot, entao viaja junto na copia. Quem separa os
+    # dois arquivos e so a chave, e a chave so difere porque `Material::novo()`
+    # sorteia um sal por arquivo. Consequencia que ninguem escreveu e a que
+    # alguem apaga sem ver.
+    {
+        "id": "slot-de-outro-reg",
+        "titulo": "o sal deixa de ser por arquivo: o slot cifrado de um `.reg` abre no outro",
+        "porque": (
+            "achado do papel SEC (17/09/2026, parecer A2), que o provou no "
+            "nivel da PRIMITIVA -- com o sal de hoje e recusado, com sal "
+            "compartilhado abre limpo. Faltava a prova sobre dois arquivos de "
+            "verdade, e faltava a catraca: o comentario de `aad_do_slot` "
+            "promete impedir a copia da linha 7 sobre a 9 «ou de outro "
+            "volume», e nao diz «de outro arquivo» porque quem cobre esse "
+            "caso e o sal. Medido com o defeito reposto: a linha 1 de `b` "
+            "devolve `Ok(Some([Int(1), Str(\"Alice de Origem\"), ...]))` -- o "
+            "conteudo do OUTRO arquivo, sem erro nenhum."
+        ),
+        "arquivo": "crates/phxsql-store/src/cofre.rs",
+        # A ancora leva a linha do `derivar` junto porque o par
+        # `let mut sal` + `copy_from_slice` aparece DUAS vezes no arquivo (o
+        # irmao e o cabecalho de volume dos diarios). Com o `"<arquivo novo>"`
+        # ocorre uma so -- conferido antes de gravar.
+        "trecho": """        let mut sal = [0u8; SAL_LEN];
+        sal.copy_from_slice(&phxsql_core::senha::bytes_aleatorios(SAL_LEN));
+        let iteracoes = iteracoes_vigentes()?;
+        let chave = derivar(&sal, iteracoes, "<arquivo novo>")?;
+""",
+        "troca": """        // DEFEITO REPOSTO: o sal deixa de ser sorteado POR ARQUIVO -- dois
+        // `.reg` passam a derivar a MESMA chave, e o slot de um abre no outro.
+        let sal = [0x5Au8; SAL_LEN];
+        let iteracoes = iteracoes_vigentes()?;
+        let chave = derivar(&sal, iteracoes, "<arquivo novo>")?;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cifra-dos-dados"],
+        # Os dois caem, e cada um prova uma metade: o primeiro e a PREMISSA (o
+        # sal e por arquivo) e o segundo e a GUARDA (o slot de fora nao abre).
+        # Eles sao dois testes e nao um porque a premissa conferida dentro do
+        # teste da guarda dispararia ANTES do transplante -- e ai a guarda
+        # cairia sem ter provado que o slot de fora abre.
+        "caem": [
+            "dois_reg_novos_nascem_com_sais_diferentes",
+            "transplantar_slot_entre_dois_reg_e_recusado",
+        ],
+        # O que tem de continuar de pe, e por que cada um: a amarracao DENTRO
+        # do arquivo nao foi tocada (o slot 5 continua sem abrir no 9), a senha
+        # continua mandando na chave (sal fixo nao e chave fixa), o nonce
+        # continua sem repetir e a cifra continua indo e voltando. Se algum
+        # destes cair, a troca quebrou mais do que devia e a guarda nao esta
+        # provada -- seria um teste caindo por outro motivo.
+        "seguem": [
+            "trocar_o_corpo_de_uma_linha_pela_outra_nao_passa",
+            "senha_errada_e_falta_de_senha_param_na_abertura",
+            "regravar_a_mesma_linha_nunca_repete_o_texto_cifrado",
+            "cifrada_a_tabela_funciona_igual",
+        ],
+        # Medido: 9,85 s com o defeito reposto e 9,81 s com a arvore limpa, com
+        # `--test-threads=1` (o PBKDF2 no piso e a trava do processo dominam).
+        "prazo": 120,
     },
 ]
