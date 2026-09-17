@@ -40,7 +40,7 @@ impl Falha {
 /// liga o aperto de mao estilo Noise (`docs/CIFRA-DO-FIO.md`), e
 /// `CHAVE_DO_FIO=<hex>` e o PINO -- a chave publica X25519 que se espera do
 /// servidor. Sem elas o driver fala em claro, exatamente como sempre falou.
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct Receita {
     pub servidor: String,
     pub porta: u16,
@@ -56,6 +56,38 @@ pub struct Receita {
     /// deixar um pino invalido virar "sem pino" seria rebaixar a garantia sem
     /// ninguem pedir, a mesma armadilha que o `pino_torto_na_origem` guarda.
     pub chave_do_fio: String,
+}
+
+/// `Debug` a mao: a receita e montada da linha de conexao do ODBC e carrega o
+/// token e a senha em claro. `chave_do_fio` fica visivel porque e o PINO -- a
+/// chave publica esperada do servidor --, e ve-lo e o que permite diagnosticar
+/// pino torto.
+impl std::fmt::Debug for Receita {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Desestruturar SEM `..`: campo novo para de compilar aqui, e quem
+        // o acrescentar decide na hora se e segredo. Lista de campos escrita
+        // a mao envelhece calada.
+        let Receita {
+            servidor,
+            porta,
+            token: _,
+            usuario,
+            senha: _,
+            database,
+            cifra,
+            chave_do_fio,
+        } = self;
+        f.debug_struct("Receita")
+            .field("servidor", servidor)
+            .field("porta", porta)
+            .field("token", &"(oculto)")
+            .field("usuario", usuario)
+            .field("senha", &"(oculta)")
+            .field("database", database)
+            .field("cifra", cifra)
+            .field("chave_do_fio", chave_do_fio)
+            .finish()
+    }
 }
 
 /// Divide `chave=valor;...` aceitando valor entre chaves `{...}`, que e como
@@ -410,6 +442,40 @@ mod testes {
         assert_eq!(r.usuario, "ana");
         assert_eq!(r.senha, "s3nh4");
         assert_eq!(r.database, "loja");
+    }
+
+    /// A receita nao mostra o token nem a senha no `Debug`.
+    ///
+    /// O driver monta a receita da linha de conexao do ODBC, que traz as duas
+    /// em claro. Um `dbg!(&receita)` num diagnostico de "por que nao conecta"
+    /// e exatamente onde isso vazaria -- e e o diagnostico que mais se faz.
+    ///
+    /// O pino (`chave_do_fio`) e chave PUBLICA e continua visivel: e ve-lo que
+    /// permite achar pino torto.
+    #[test]
+    fn o_debug_da_receita_nunca_mostra_o_token_nem_a_senha() {
+        let r = analisar_receita(
+            "Driver=PhxSql;Server=10.0.0.7;Token=token-secreto-do-fio;\
+             UID=ana;PWD=senha-secreta-da-ana;Database=loja;\
+             CHAVE_DO_FIO=aabbccddeeff00112233445566778899",
+        );
+        assert_eq!(r.token, "token-secreto-do-fio");
+        assert_eq!(r.senha, "senha-secreta-da-ana");
+        for texto in [format!("{:?}", r), format!("{r:?}")] {
+            assert!(
+                !texto.contains("token-secreto-do-fio"),
+                "o token vazou: {texto}"
+            );
+            assert!(
+                !texto.contains("senha-secreta-da-ana"),
+                "a senha vazou: {texto}"
+            );
+            assert!(texto.contains("ana"), "o Debug perdeu o usuario: {texto}");
+            assert!(
+                texto.contains("aabbccddeeff00112233445566778899"),
+                "o pino sumiu do Debug: {texto}"
+            );
+        }
     }
 
     #[test]

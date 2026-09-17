@@ -785,9 +785,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `upsert-gatilho-do-ramo` | no upsert que atualiza, o BEFORE UPDATE vê a linha mesclada e o AFTER é o do ramo que ele virou | 5 | ✅ provada |
 | `threads-do-so-pela-diferenca` | a prova de que o SO viu a thread subida é a diferença entre duas leituras do total do processo | 1 | ✅ provada |
 
-**143 das 169 guardas do catálogo: 138 provadas, 1 quebrada, 4 redundantes** — 3374 s de mutação, medido em 2026-09-16 15:25.
+**143 das 170 guardas do catálogo: 138 provadas, 1 quebrada, 4 redundantes** — 3374 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 26 das 169 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 26 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 27 das 170 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 27 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `varredura-sem-o-elo` — a varredura barata do diretorio perde a tabela alcancada por elo
 - `linha-vazia-na-conferencia-de-filhas` — a linha descida para a conferencia de filhas vai vazia, e toda mae parece sem filha
@@ -815,6 +815,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `comando-invalido-vira-texto-cru` — o SQL que o léxico recusa volta inteiro para o log, com a senha dentro
 - `trilha-sem-o-nome-de-segredo` — a trilha LGPD deixa de olhar o NOME da coluna e só analisa o valor
 - `trilha-so-olha-o-nome-da-coluna` — a trilha LGPD deixa de ANALISAR o valor e só confia no nome da coluna
+- `debug-da-ligacao-mostra-a-senha` — o `Debug` da ligação de DbLink imprime a senha e o token do outro banco
 
 As notas que a rodada deixou:
 

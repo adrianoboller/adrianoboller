@@ -673,7 +673,7 @@ pub type ColunasDaBase = Vec<(String, RegrasDeColuna)>;
 /// nivel.
 pub type DireitoPorColuna = Vec<(String, ColunasDaBase)>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Usuario {
     /// Identificacao numerica, gravada no `.log` de cada tabela como autor da
     /// operacao. Se omitida no `config.json`, sai do CRC-32 do login.
@@ -745,6 +745,51 @@ pub struct Usuario {
     /// para escrever uma regra de coluna nela passaria a substituir a regra da
     /// base. Separado, a precedencia de tabela fica exatamente como era.
     pub colunas: DireitoPorColuna,
+}
+
+/// `Debug` a mao: o `senha_hash` NAO e um resumo inofensivo -- e dele que sai
+/// a chave do desafio-resposta, entao quem o tem se autentica como o usuario
+/// sem nunca saber a senha. E a mesma razao pela qual a ficha do protocolo ja
+/// o escondia; faltava a saida do `Debug`.
+///
+/// `chave_publica` fica visivel: publica e para ser vista, e e ela que permite
+/// conferir de fora qual chave o cadastro aceita.
+impl std::fmt::Debug for Usuario {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Desestruturar SEM `..`: campo novo para de compilar aqui, e quem
+        // o acrescentar decide na hora se e segredo. Lista de campos escrita
+        // a mao envelhece calada.
+        let Usuario {
+            id,
+            nome,
+            login,
+            senha_hash: _,
+            email,
+            telefone,
+            supervisor,
+            ativo,
+            nivel,
+            chave_publica,
+            bases,
+            tabelas,
+            colunas,
+        } = self;
+        f.debug_struct("Usuario")
+            .field("id", id)
+            .field("nome", nome)
+            .field("login", login)
+            .field("senha_hash", &"(oculto)")
+            .field("email", email)
+            .field("telefone", telefone)
+            .field("supervisor", supervisor)
+            .field("ativo", ativo)
+            .field("nivel", nivel)
+            .field("chave_publica", chave_publica)
+            .field("bases", bases)
+            .field("tabelas", tabelas)
+            .field("colunas", colunas)
+            .finish()
+    }
 }
 
 impl Usuario {
@@ -1806,6 +1851,31 @@ mod tests {
         assert!(!ficha.contains("senha"), "a ficha vazou: {ficha}");
         assert!(!ficha.contains("pbkdf2"));
         assert!(ficha.contains("\"login\":\"ana\""));
+    }
+
+    /// O `Debug` do usuario tambem nao devolve o hash.
+    ///
+    /// Irma da de cima, e a saida que faltava: a `ficha` cumpria a promessa e o
+    /// `derive(Debug)` a desfazia. O hash NAO e um resumo inofensivo -- e dele
+    /// que sai a chave do desafio-resposta, entao quem o tem se autentica como
+    /// o usuario sem nunca saber a senha.
+    ///
+    /// Confere as duas formas de escrever, como a `a_privada_do_fio_nunca_sai`.
+    #[test]
+    fn o_debug_do_usuario_nunca_mostra_o_hash() {
+        let h = hash_rapido("segredo");
+        let txt = format!(r#"{{"usuarios":[{{"login":"ana","senha_hash":"{h}"}}]}}"#);
+        let c = cadastro(&txt);
+        let u = c.por_login("ana").unwrap();
+        assert_eq!(u.senha_hash, h, "o hash nem chegou a ser lido");
+
+        for texto in [format!("{:?}", u), format!("{u:?}")] {
+            assert!(!texto.contains(&h), "o hash vazou no Debug: {texto}");
+            assert!(!texto.contains("pbkdf2"), "o algoritmo vazou: {texto}");
+            assert!(texto.contains("ana"), "o Debug perdeu o login: {texto}");
+        }
+        // E o cadastro inteiro, que e o que alguem realmente imprimiria.
+        assert!(!format!("{c:?}").contains(&h), "o hash vazou pelo cadastro");
     }
 
     #[test]

@@ -144,7 +144,7 @@ impl Papel {
 }
 
 /// De onde a replica puxa os eventos.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Origem {
     pub nome: String,
     pub host: String,
@@ -182,6 +182,51 @@ pub struct Origem {
     /// nao protege de quem esta no meio, porque o atacante apresenta a chave
     /// dele e nao ha com o que comparar. O arranque avisa exatamente isso.
     pub chave_do_fio: String,
+}
+
+/// `Debug` a mao, pelo mesmo motivo do da [`Cifra`]: o derivado imprimiria o
+/// token do source, o hash da senha e a senha em claro do caminho antigo. A
+/// `Replicacao` guarda as origens num `Vec`, entao um `dbg!` despejaria as de
+/// TODAS as origens de uma vez.
+///
+/// `chave_do_fio` fica visivel: e a chave PUBLICA do pino, e esconde-la so
+/// atrapalharia o diagnostico de pino torto.
+impl std::fmt::Debug for Origem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Desestruturar SEM `..`: campo novo para de compilar aqui, e quem
+        // o acrescentar decide na hora se e segredo. Lista de campos escrita
+        // a mao envelhece calada.
+        let Origem {
+            nome,
+            host,
+            porta,
+            token: _,
+            databases,
+            reconectar_em,
+            usuario,
+            senha_hash: _,
+            senha: _,
+            cada_minutos,
+            hora,
+            cifra,
+            chave_do_fio,
+        } = self;
+        f.debug_struct("Origem")
+            .field("nome", nome)
+            .field("host", host)
+            .field("porta", porta)
+            .field("token", &"(oculto)")
+            .field("databases", databases)
+            .field("reconectar_em", reconectar_em)
+            .field("usuario", usuario)
+            .field("senha_hash", &"(oculto)")
+            .field("senha", &"(oculta)")
+            .field("cada_minutos", cada_minutos)
+            .field("hora", hora)
+            .field("cifra", cifra)
+            .field("chave_do_fio", chave_do_fio)
+            .finish()
+    }
 }
 
 impl Origem {
@@ -354,7 +399,7 @@ impl NoCluster {
 /// nos configurados, e entre os elegiveis vence a maior posicao do diario,
 /// com empate por prioridade e depois pelo menor id. Nao e Raft -- as
 /// garantias reais e as nao-garantias estao em `docs/CLUSTER.md`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Cluster {
     /// Todos os nos, ESTE incluido. A maioria e contada sobre esta lista.
     pub nos: Vec<NoCluster>,
@@ -413,6 +458,46 @@ pub struct Cluster {
     /// entao e uma decisao do cluster inteiro, nao de um no. Guarda nova entra
     /// PEDIDA: um cluster que ja rodava continua em claro ate alguem ligar.
     pub cifra: bool,
+}
+
+/// `Debug` a mao: as credenciais com que ESTE no fala com os outros. O token
+/// do cluster e portao 1 -- quem o tem alcanca o pulso da eleicao.
+impl std::fmt::Debug for Cluster {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Desestruturar SEM `..`: campo novo para de compilar aqui, e quem
+        // o acrescentar decide na hora se e segredo. Lista de campos escrita
+        // a mao envelhece calada.
+        let Cluster {
+            nos,
+            id,
+            prioridade,
+            janela_s,
+            pulso_s,
+            avisar_cada_min,
+            email,
+            databases,
+            quorum_minimo,
+            token: _,
+            usuario,
+            senha_hash: _,
+            cifra,
+        } = self;
+        f.debug_struct("Cluster")
+            .field("nos", nos)
+            .field("id", id)
+            .field("prioridade", prioridade)
+            .field("janela_s", janela_s)
+            .field("pulso_s", pulso_s)
+            .field("avisar_cada_min", avisar_cada_min)
+            .field("email", email)
+            .field("databases", databases)
+            .field("quorum_minimo", quorum_minimo)
+            .field("token", &"(oculto)")
+            .field("usuario", usuario)
+            .field("senha_hash", &"(oculto)")
+            .field("cifra", cifra)
+            .finish()
+    }
 }
 
 impl Cluster {
@@ -1021,7 +1106,7 @@ impl Sms {
 /// Consequencia direta: se `usuario` e `senha` forem preenchidos, eles viajam
 /// em base64 pela rede, e base64 nao esconde nada. Preencha so para um rele
 /// que voce controla, e prefira liberar o IP no rele a mandar senha.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Email {
     pub ligado: bool,
     /// Avisar tambem sobre JOBS: quando um falha, e quando um esta parado.
@@ -1051,6 +1136,42 @@ pub struct Email {
     senha: String,
     pub assunto: String,
     pub timeout_s: u64,
+}
+
+/// `Debug` a mao: a senha do rele. O comentario do campo dizia «o `para_json`
+/// nunca a inclui», e era verdade -- `Debug` e a OUTRA saida, e estava aberta.
+impl std::fmt::Debug for Email {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Desestruturar SEM `..`: campo novo para de compilar aqui, e quem
+        // o acrescentar decide na hora se e segredo. Lista de campos escrita
+        // a mao envelhece calada.
+        let Email {
+            ligado,
+            avisar_jobs,
+            avisar_seguranca,
+            servidor,
+            porta,
+            de,
+            para,
+            usuario,
+            senha: _,
+            assunto,
+            timeout_s,
+        } = self;
+        f.debug_struct("Email")
+            .field("ligado", ligado)
+            .field("avisar_jobs", avisar_jobs)
+            .field("avisar_seguranca", avisar_seguranca)
+            .field("servidor", servidor)
+            .field("porta", porta)
+            .field("de", de)
+            .field("para", para)
+            .field("usuario", usuario)
+            .field("senha", &"(oculta)")
+            .field("assunto", assunto)
+            .field("timeout_s", timeout_s)
+            .finish()
+    }
 }
 
 impl Email {
@@ -1915,7 +2036,7 @@ impl Web {
 /// `despachar` e pelo direito do usuario exatamente como sempre. Duas verdades
 /// sobre direito de acesso e onde nasce o furo -- a casa ja pagou quatro deles
 /// quando o portao passou a olhar um campo que algumas operacoes nao tem.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Rest {
     pub ligado: bool,
     /// Endereco de escuta do REST. Padrao: so o proprio computador.
@@ -1942,6 +2063,36 @@ pub struct Rest {
     pub swagger_ligado: bool,
     /// Endereco de escuta do explorador.
     pub swagger_bind: String,
+}
+
+/// `Debug` a mao: o token do REST e a chave da porta da rede, e substitui o do
+/// protocolo nesta porta.
+impl std::fmt::Debug for Rest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Desestruturar SEM `..`: campo novo para de compilar aqui, e quem
+        // o acrescentar decide na hora se e segredo. Lista de campos escrita
+        // a mao envelhece calada.
+        let Rest {
+            ligado,
+            bind,
+            nome,
+            database,
+            tabelas,
+            token: _,
+            swagger_ligado,
+            swagger_bind,
+        } = self;
+        f.debug_struct("Rest")
+            .field("ligado", ligado)
+            .field("bind", bind)
+            .field("nome", nome)
+            .field("database", database)
+            .field("tabelas", tabelas)
+            .field("token", &"(oculto)")
+            .field("swagger_ligado", swagger_ligado)
+            .field("swagger_bind", swagger_bind)
+            .finish()
+    }
 }
 
 impl Default for Rest {
@@ -2735,7 +2886,7 @@ impl Recursos {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
     /// Endereco e porta de escuta.
     pub bind: String,
@@ -2829,6 +2980,91 @@ pub struct Config {
     /// E o que permite a tela GRAVAR de volta no mesmo arquivo: sem o caminho,
     /// `gravar_campos` nao tem onde escrever e recusa com a explicacao.
     pub caminho: Option<PathBuf>,
+}
+
+/// `Debug` a mao: o `token` e o segredo exigido em TODO pedido -- o portao 1
+/// deste servidor. Um `dbg!(&config)` num diagnostico apressado o jogaria no
+/// log, e com ele quem le o log fala com o banco.
+///
+/// As pecas de dentro que carregam segredo escrevem o proprio `Debug` (a
+/// [`Cifra`], a [`CifraFio`], o [`Email`], a [`Origem`], o [`Cluster`], o
+/// [`Rest`]), entao aqui basta o campo proprio.
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Desestruturar SEM `..`: campo novo para de compilar aqui, e quem
+        // o acrescentar decide na hora se e segredo. Lista de campos escrita
+        // a mao envelhece calada.
+        let Config {
+            bind,
+            base,
+            token: _,
+            max_linhas,
+            log_acessos,
+            ips_permitidos,
+            conexoes_max,
+            recursos,
+            timeout_s,
+            somente_leitura,
+            espelho,
+            replicacao,
+            cluster,
+            cadastro,
+            politica,
+            blacklist,
+            web,
+            rest,
+            backup,
+            alertas,
+            dblink,
+            jobs,
+            cifra,
+            cifra_fio,
+            lgpd,
+            telemetria,
+            profiler,
+            acessos,
+            diretivas,
+            idioma,
+            estranhas,
+            avisos,
+            caminho,
+        } = self;
+        f.debug_struct("Config")
+            .field("bind", bind)
+            .field("base", base)
+            .field("token", &"(oculto)")
+            .field("max_linhas", max_linhas)
+            .field("log_acessos", log_acessos)
+            .field("ips_permitidos", ips_permitidos)
+            .field("conexoes_max", conexoes_max)
+            .field("recursos", recursos)
+            .field("timeout_s", timeout_s)
+            .field("somente_leitura", somente_leitura)
+            .field("espelho", espelho)
+            .field("replicacao", replicacao)
+            .field("cluster", cluster)
+            .field("cadastro", cadastro)
+            .field("politica", politica)
+            .field("blacklist", blacklist)
+            .field("web", web)
+            .field("rest", rest)
+            .field("backup", backup)
+            .field("alertas", alertas)
+            .field("dblink", dblink)
+            .field("jobs", jobs)
+            .field("cifra", cifra)
+            .field("cifra_fio", cifra_fio)
+            .field("lgpd", lgpd)
+            .field("telemetria", telemetria)
+            .field("profiler", profiler)
+            .field("acessos", acessos)
+            .field("diretivas", diretivas)
+            .field("idioma", idioma)
+            .field("estranhas", estranhas)
+            .field("avisos", avisos)
+            .field("caminho", caminho)
+            .finish()
+    }
 }
 
 /// Campos de primeiro nivel que o `config.json` pode trazer.
@@ -4358,6 +4594,86 @@ mod tests {
         let (privada, avisos) = c.cifra_fio.estatica(None).unwrap();
         assert!(avisos.is_empty());
         assert_eq!(phxsql_core::hash::para_hex(&privada), segredo);
+    }
+
+    /// NENHUM segredo do `config.json` sai no `Debug` -- nem o do topo, nem o
+    /// das pecas de dentro.
+    ///
+    /// Irma da `a_privada_do_fio_nunca_sai`, e do mesmo defeito: ali a
+    /// [`CifraFio`] ja escrevia o proprio `Debug`, e a [`Cifra`] tambem. As
+    /// OUTRAS seis derivavam, entao um `dbg!(&config)` num diagnostico
+    /// apressado despejava o token do protocolo, o do cluster, o do REST, a
+    /// senha do rele de e-mail e as credenciais de cada origem de replicacao.
+    ///
+    /// A prova monta UM `Config` com todos eles porque e assim que o vazamento
+    /// acontece de verdade: ninguem imprime uma `Origem` solta, imprime o
+    /// `Config` inteiro.
+    ///
+    /// Confere as duas formas (`{:?}` e `{c:?}`) pelo mesmo motivo da irma.
+    #[test]
+    fn nenhum_segredo_do_config_sai_no_debug() {
+        // Cada segredo com um valor DIFERENTE e improvavel: se dois fossem
+        // iguais, um vazamento se esconderia atras do outro.
+        const TOKEN: &str = "token-do-protocolo-daqui";
+        const TOKEN_CLUSTER: &str = "token-do-cluster-daqui";
+        const TOKEN_REST: &str = "token-da-porta-rest";
+        const TOKEN_ORIGEM: &str = "token-do-source-remoto";
+        const SENHA_EMAIL: &str = "senha-do-rele-de-email";
+        const SENHA_ORIGEM: &str = "senha-em-claro-da-origem";
+        const HASH_ORIGEM: &str = "hash-da-senha-da-origem";
+        const HASH_CLUSTER: &str = "hash-da-senha-do-cluster";
+        // O pino e chave PUBLICA: tem de continuar aparecendo.
+        const PINO: &str = "aabbccddeeff00112233445566778899";
+
+        let j = Json::analisar(&format!(
+            r#"{{"token":"{TOKEN}",
+                 "alertas":{{"email":{{"senha":"{SENHA_EMAIL}"}}}},
+                 "rest":{{"token":"{TOKEN_REST}"}},
+                 "replicacao":{{"papel":"replica","origens":[
+                     {{"nome":"matriz","token":"{TOKEN_ORIGEM}",
+                       "senha":"{SENHA_ORIGEM}","senha_hash":"{HASH_ORIGEM}",
+                       "chave_do_fio":"{PINO}"}}]}},
+                 "cluster":{{"id":"a","token":"{TOKEN_CLUSTER}",
+                     "senha_hash":"{HASH_CLUSTER}",
+                     "nos":[{{"id":"a","endereco":"127.0.0.1"}}]}}}}"#
+        ))
+        .unwrap();
+        let c = Config::de_json(&j).unwrap();
+
+        // Os valores estao mesmo la -- senao a prova passaria por nao haver
+        // segredo nenhum para vazar.
+        assert_eq!(c.token, TOKEN);
+        assert_eq!(c.alertas.email.senha(), SENHA_EMAIL);
+        assert_eq!(c.rest.token, TOKEN_REST);
+        assert_eq!(c.replicacao.origens[0].token, TOKEN_ORIGEM);
+        assert_eq!(c.replicacao.origens[0].senha, SENHA_ORIGEM);
+        assert_eq!(c.replicacao.origens[0].senha_hash, HASH_ORIGEM);
+        let cl = c.cluster.as_ref().expect("o cluster nao foi lido");
+        assert_eq!(cl.token, TOKEN_CLUSTER);
+        assert_eq!(cl.senha_hash, HASH_CLUSTER);
+
+        for texto in [format!("{:?}", c), format!("{c:?}")] {
+            for (que, segredo) in [
+                ("o token do protocolo", TOKEN),
+                ("o token do cluster", TOKEN_CLUSTER),
+                ("o token do REST", TOKEN_REST),
+                ("o token da origem", TOKEN_ORIGEM),
+                ("a senha do e-mail", SENHA_EMAIL),
+                ("a senha da origem", SENHA_ORIGEM),
+                ("o hash da origem", HASH_ORIGEM),
+                ("o hash do cluster", HASH_CLUSTER),
+            ] {
+                assert!(
+                    !texto.contains(segredo),
+                    "{que} vazou no Debug do Config: {texto}"
+                );
+            }
+            // O pino e publico e continua visivel: `Debug` cego nao
+            // diagnostica pino torto.
+            assert!(texto.contains(PINO), "o pino sumiu do Debug: {texto}");
+            // E o resto do Config continua legivel.
+            assert!(texto.contains("matriz"), "o nome da origem sumiu: {texto}");
+        }
     }
 
     /// A estatica nasce no arquivo, ao lado do `config.json`, e a SEGUNDA

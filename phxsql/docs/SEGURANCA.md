@@ -3069,3 +3069,93 @@ O roteiro deste teste virou caso da bateria:
 `testes-web/casos/27-direito-por-coluna.mjs` — grade, aba Estrutura, ficha
 (incluir e salvar) com o `vendedor`, contra o servidor de verdade, nos dois
 temas.
+
+## 16. `Debug` derivado: a saída que os comentários diziam estar fechada
+
+*16/09/2026.* A pétrea é «senha nunca em texto puro: nem em arquivo, nem em
+log, nem em resposta do protocolo». Esta casa a cumpria nas três saídas que
+alguém escreveu à mão — o `para_json`, a `ficha`, o `sem_a_senha` — e a deixava
+aberta na quarta, que ninguém escreve porque o compilador a escreve sozinho:
+o `#[derive(Debug)]`.
+
+### 16.1 O crivo, e por que a metade dele erra
+
+Procurar `senha` no nome de campo acha **40 campos** em `crates/`, e só **14**
+eram defeito — os outros 26 não. O crivo que separa tem três metades, e cada
+uma sozinha erra:
+
+1. o nome casa o léxico (`senha`, `token`, `chave`, `segredo`, `credencial`,
+   `privada`, `hash`…) **e**
+2. o campo é **portador do valor** (`String`, `Vec<u8>`, `[u8; N]`), **e**
+3. o valor é mesmo segredo — e isto **só se decide lendo o campo**.
+
+A terceira é a que nenhum casador de texto faz. Quatro `chave` do repositório
+são nome de coluna ou seletor de CSS (`Botao.chave`, `Sincronia.chave`,
+`Violacao.chave`, `PassoAoAlterar.chave`), e três `chave_do_fio` são a chave
+**pública** do pino — esconder qualquer uma delas trocaria um vazamento por um
+diagnóstico cego, sem fechar nada.
+
+Medido: **9 estruturas**, **14 campos**, derivavam `Debug` carregando segredo
+de verdade. As outras 26 ocorrências se dividem em três grupos: campo em
+estrutura que não deriva `Debug` (não vaza por essa saída), chave **pública**,
+e nome de coluna. Duas já estavam protegidas: `Cifra` e `CifraFio`.
+
+| onde | o que saía |
+|---|---|
+| `dblink::Definicao` | senha e token do banco de fora |
+| `config::Config` | o `token` do protocolo — o portão 1 **deste** servidor |
+| `config::Origem` | token, senha em claro e hash de cada origem de replicação |
+| `config::Cluster` | token e hash do cluster |
+| `config::Email` | senha do relé de e-mail |
+| `config::Rest` | token da porta REST |
+| `usuarios::Usuario` | `senha_hash` |
+| `sql::usuario::Comando` | a senha em claro, recém-lida do texto SQL |
+| `odbc::Receita` | token e senha da linha de conexão |
+
+### 16.2 O agravante: o comentário que se declara resolvido
+
+Os campos da `Definicao` diziam *«ela nunca sai em JSON nem em log»* e *«ele
+nunca sai em JSON, em log nem na tela»*. O do `Email` dizia *«o `para_json`
+nunca a inclui»*. Os três estavam certos sobre o `para_json` e errados sobre o
+`Debug` — e é o texto do comentário que explica por que ninguém foi conferir:
+**comentário que se declara resolvido é o motivo de ninguém olhar de novo.**
+
+A decisão certa já tinha sido tomada **duas vezes** nesta casa, em
+`config.rs`: a `Cifra` e a `CifraFio` escrevem o `Debug` à mão exatamente por
+isto. Não faltava a ideia; faltou aplicá-la às outras oito. E o despejo do
+`Config` com o defeito reposto mostra as duas certas no meio das erradas —
+`cifra: Cifra { … senha: "(oculta)" … }` ao lado de
+`rest: Rest { … token: "token-da-porta-rest" … }`.
+
+### 16.3 O conserto, e a catraca que ele carrega
+
+`Debug` à mão pelo molde da `Cifra`: o segredo vira `"(oculto)"`, o `_env`
+**fica visível** (o nome da variável de ambiente não é segredo e é o que diz de
+onde a credencial deveria ter vindo), e não se mascara com asteriscos do
+tamanho certo — **o tamanho já é informação**.
+
+Uma diferença em relação ao molde, e ela é o que impede o conserto de
+envelhecer: cada `impl` **desestrutura a struct sem `..`**. Trocar um vazamento
+por uma lista de campos escrita à mão não seria conserto — seria adiar: o campo
+novo simplesmente não apareceria, e no dia em que fosse uma credencial ninguém
+seria avisado. Sem `..`, campo novo **para de compilar** ali, e quem o
+acrescentar decide na hora se é segredo. É a mesma lei do número digitado:
+quando algo depende de uma lista, ou a lista sai do código, ou o compilador a
+cobra.
+
+### 16.4 A prova, nos dois sentidos
+
+Seis provas novas, cada uma ao lado da irmã que já cobria a outra saída
+(`a_senha_da_ligacao_nunca_aparece_no_json`, `a_privada_do_fio_nunca_sai`,
+`a_ficha_nunca_devolve_a_senha`, `a_senha_sai_do_texto_do_comando`). Cada uma
+confere **as duas formas** do `format_args!` — `{:?}` com argumento e `{x:?}`
+interpolado —, e cada uma afirma antes que o segredo **está mesmo lá**: prova
+que passa por não haver segredo é prova que passa por engano.
+
+Com o `derive(Debug)` reposto — os cinco arquivos voltando byte a byte ao que
+eram —, as **seis falham**. A do `Config` é a que mostra o tamanho do buraco:
+um único `{:?}` despeja oito segredos de uma vez.
+
+E duas guardas do que **não** pode sumir: `o_debug_da_ligacao_mantem_o_nome_da_
+variavel_de_ambiente` e, dentro das outras, a afirmação de que o pino e o nome
+da origem continuam visíveis. Esconder tudo seria a outra metade do estrago.

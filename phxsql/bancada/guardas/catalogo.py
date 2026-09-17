@@ -6536,9 +6536,11 @@ pub fn limpar() {
             "ponto cego."
         ),
         "arquivo": "crates/phxsql-server/src/config.rs",
-        "trecho": """            .field("senha", &"(oculta)")
+        "trecho": """            .field("ligada", &self.ligada)
+            .field("senha", &"(oculta)")
 """,
-        "troca": """            // DEFEITO REPOSTO: a senha aparece no `Debug`. Quem depurou «por
+        "troca": """            .field("ligada", &self.ligada)
+            // DEFEITO REPOSTO: a senha aparece no `Debug`. Quem depurou «por
             // que o cofre nao abre» trocou esta linha e nao desfez.
             .field("senha", &self.senha)
 """,
@@ -6724,4 +6726,69 @@ pub fn limpar() {
             "trilha::testes::valor_comum_passa_inteiro",
         ],
     },
+    {
+    "id": "debug-da-ligacao-mostra-a-senha",
+    "titulo": "o `Debug` da ligação de DbLink imprime a senha e o token do outro banco",
+    "porque": (
+        "petrea do CLAUDE.md: «senha nunca em texto puro. ... nem em log». "
+        "E a IRMA da `debug-da-cifra-mostra-a-senha`, e a prova de que aquela "
+        "guarda protegia UMA struct e nao a lei: a `Cifra` e a `CifraFio` "
+        "escreviam o `Debug` a mao desde sempre, e outras nove estruturas "
+        "continuavam derivando -- 14 campos de segredo ao todo, achados na "
+        "varredura de 16/09/2026. "
+        "Os dois campos da `Definicao` traziam o comentario que declarava o "
+        "problema resolvido -- «ela nunca sai em JSON nem em log» e «ele nunca "
+        "sai em JSON, em log nem na tela» --, e os dois estavam certos sobre o "
+        "`para_json` e errados sobre o `Debug`: comentario que se declara "
+        "resolvido e o motivo de ninguem olhar de novo. "
+        "O token e o pior dos dois, e o proprio campo diz por que: no PhxSql "
+        "ele e o portao 1, conferido ANTES do login -- quem o tem alcanca a "
+        "porta de dados do outro servidor sem usuario nenhum. E o `Registro` "
+        "guarda as ligacoes num `Vec`, entao UM `dbg!` despeja a credencial de "
+        "TODAS as ligacoes cadastradas de uma vez."
+        "\n\nA troca desfaz o conserto por dentro em vez de devolver o "
+        "`derive(Debug)`: devolver o derive esbarraria no `impl` escrito a mao "
+        "e o pacote nao compilaria, e guarda que nao compila nao prova nada. "
+        "As duas trocas juntas reproduzem exatamente o que o derivado fazia."
+    ),
+    "trocas": [
+        {
+            "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+            "trecho": """            senha: _,
+            senha_env,
+            token: _,
+""",
+            "troca": """            // DEFEITO REPOSTO (1/2): a senha e o token voltam a ser lidos.
+            senha,
+            senha_env,
+            token,
+""",
+        },
+        {
+            "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+            "trecho": """            .field("senha", &"(oculta)")
+            .field("senha_env", senha_env)
+            .field("token", &"(oculto)")
+""",
+            "troca": """            // DEFEITO REPOSTO (2/2): e voltam a ser impressos, que e o que o
+            // `derive(Debug)` fazia.
+            .field("senha", senha)
+            .field("senha_env", senha_env)
+            .field("token", token)
+""",
+        },
+    ],
+    "pacote": "phxsql-server",
+    "alvo": ["--lib"],
+    "caem": [
+        "o_debug_da_ligacao_nunca_mostra_a_senha_nem_o_token",
+    ],
+    # O `Debug` nao pode ficar CEGO: esconder o nome da variavel de ambiente
+    # trocaria um vazamento por um diagnostico inutil. E o `para_json`, que ja
+    # estava certo, segue verde -- a troca mexe so na saida do `Debug`.
+    "seguem": [
+        "o_debug_da_ligacao_mantem_o_nome_da_variavel_de_ambiente",
+        "a_senha_da_ligacao_nunca_aparece_no_json",
+    ],
+},
 ]

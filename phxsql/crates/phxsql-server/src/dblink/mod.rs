@@ -111,7 +111,7 @@ impl Motor {
 }
 
 /// Uma ligacao cadastrada.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Definicao {
     /// Apelido, unico. E por ele que os comandos chamam a ligacao.
     pub nome: String,
@@ -151,6 +151,62 @@ pub struct Definicao {
     /// Tabelas ligadas por sincronia. Campo ausente no arquivo = nenhuma,
     /// entao todo `dblink.json` escrito antes continua abrindo igual.
     pub sincronias: Vec<sincronia::Sincronia>,
+}
+
+/// `Debug` escrito a mao, pelo mesmo motivo do da [`crate::config::Cifra`]: o
+/// derivado imprimiria a senha e o token, e o `Registro` que guarda as
+/// ligacoes num `Vec` os despejaria TODOS de uma vez num unico `dbg!`.
+///
+/// O comentario dos dois campos ja dizia «nunca sai em JSON nem em log», e era
+/// o `para_json` que cumpria a promessa -- sozinho. `Debug` e a outra saida, e
+/// ela estava aberta: declarar-se resolvido e o que fez ninguem olhar de novo.
+///
+/// `senha_env` e `token_env` ficam VISIVEIS de proposito: o nome da variavel
+/// de ambiente nao e segredo e e o que permite diagnosticar de onde a
+/// credencial deveria ter vindo. E nao se mascara com asteriscos do tamanho
+/// certo -- o tamanho ja e informacao.
+impl std::fmt::Debug for Definicao {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Desestruturar SEM `..` e a catraca deste conserto: um campo novo na
+        // `Definicao` para de compilar aqui, e quem o acrescentar decide na
+        // hora se ele e segredo. Uma lista de campos escrita a mao envelhece
+        // calada -- o campo novo simplesmente nao apareceria, e no dia em que
+        // ele fosse uma credencial ninguem seria avisado.
+        let Definicao {
+            nome,
+            motor,
+            host,
+            porta,
+            usuario,
+            senha: _,
+            senha_env,
+            token: _,
+            token_env,
+            database,
+            descricao,
+            somente_leitura,
+            timeout_s,
+            max_linhas,
+            sincronias,
+        } = self;
+        f.debug_struct("Definicao")
+            .field("nome", nome)
+            .field("motor", motor)
+            .field("host", host)
+            .field("porta", porta)
+            .field("usuario", usuario)
+            .field("senha", &"(oculta)")
+            .field("senha_env", senha_env)
+            .field("token", &"(oculto)")
+            .field("token_env", token_env)
+            .field("database", database)
+            .field("descricao", descricao)
+            .field("somente_leitura", somente_leitura)
+            .field("timeout_s", timeout_s)
+            .field("max_linhas", max_linhas)
+            .field("sincronias", sincronias)
+            .finish()
+    }
 }
 
 impl Default for Definicao {
@@ -731,6 +787,85 @@ mod testes {
         let t = d.para_json().escrever();
         assert!(!t.contains("segredo-do-outro-banco"), "a senha vazou: {t}");
         assert!(t.contains("(oculta)"));
+    }
+
+    /// A senha e o token nao saem no `Debug` -- nem o da `Definicao`, nem o do
+    /// `Registro` que a guarda.
+    ///
+    /// Irma da de cima, e a saida que faltava: o `para_json` cumpria a promessa
+    /// do comentario («nunca sai em JSON nem em log») e o `derive(Debug)` a
+    /// desfazia. Um unico `dbg!(&registro)` despejava a credencial de TODAS as
+    /// ligacoes.
+    ///
+    /// Confere as DUAS formas de escrever o `Debug` -- `{:?}` com argumento e
+    /// `{x:?}` interpolado --, como faz a `a_privada_do_fio_nunca_sai`: sao
+    /// dois caminhos do `format_args!`, e provar so um deixa o outro sem
+    /// guarda.
+    ///
+    /// O token e o pior dos dois, e o proprio campo diz por que: no PhxSql ele
+    /// e o portao 1, conferido ANTES do login -- quem o tem alcanca a porta de
+    /// dados do outro servidor sem usuario nenhum.
+    #[test]
+    fn o_debug_da_ligacao_nunca_mostra_a_senha_nem_o_token() {
+        const SENHA: &str = "segredo-do-outro-banco";
+        const TOKEN: &str = "token-do-outro-servidor";
+        let d = Definicao::de_json(
+            &Json::analisar(&format!(
+                r#"{{"nome":"loja","motor":"phxsql","senha":"{SENHA}",
+                    "token_remoto":"{TOKEN}"}}"#
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        // O valor esta mesmo la -- senao a prova passaria por nao haver segredo.
+        assert_eq!(d.senha(), SENHA);
+        assert_eq!(d.token(), TOKEN);
+
+        for texto in [format!("{:?}", d), format!("{d:?}")] {
+            assert!(!texto.contains(SENHA), "a senha vazou no Debug: {texto}");
+            assert!(!texto.contains(TOKEN), "o token vazou no Debug: {texto}");
+            assert!(texto.contains("(oculta)"), "sem a marca da senha: {texto}");
+            assert!(texto.contains("(oculto)"), "sem a marca do token: {texto}");
+            // O apelido continua visivel: `Debug` cego nao diagnostica nada.
+            assert!(texto.contains("loja"), "o Debug perdeu o nome: {texto}");
+        }
+
+        // O `Registro` fica resolvido por consequencia -- ele imprime um
+        // `Vec<Definicao>` --, mas isso se PROVA, nao se deduz.
+        let r = Registro {
+            caminho: PathBuf::from("/tmp/dblink.json"),
+            ligacoes: vec![d],
+        };
+        for texto in [format!("{:?}", r), format!("{r:?}")] {
+            assert!(
+                !texto.contains(SENHA),
+                "a senha vazou pelo Registro: {texto}"
+            );
+            assert!(
+                !texto.contains(TOKEN),
+                "o token vazou pelo Registro: {texto}"
+            );
+        }
+    }
+
+    /// O nome da variavel de ambiente CONTINUA visivel no `Debug`.
+    ///
+    /// Nao e segredo, e e ele que diz de onde a credencial deveria ter vindo:
+    /// esconde-lo trocaria um vazamento por um diagnostico cego. E a mesma
+    /// escolha do `Debug` da `Cifra`, que mantem `senha_env`.
+    #[test]
+    fn o_debug_da_ligacao_mantem_o_nome_da_variavel_de_ambiente() {
+        let d = Definicao::de_json(
+            &Json::analisar(
+                r#"{"nome":"loja","senha_env":"SENHA_DA_LOJA",
+                    "token_remoto_env":"TOKEN_DA_LOJA"}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let texto = format!("{d:?}");
+        assert!(texto.contains("SENHA_DA_LOJA"), "{texto}");
+        assert!(texto.contains("TOKEN_DA_LOJA"), "{texto}");
     }
 
     #[test]

@@ -45,7 +45,7 @@ use phxsql_core::json::Json;
 use crate::lexico::{self, Token};
 
 /// Um comando de cadastro ja reconhecido.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Comando {
     /// A operacao do protocolo: `usuario_criar`, `usuario_alterar` ou
     /// `usuario_excluir`.
@@ -53,6 +53,28 @@ pub struct Comando {
     pub login: String,
     /// A senha, quando o comando a traz. Nunca vai para log nem para resposta.
     pub senha: Option<String>,
+}
+
+/// `Debug` a mao: este comando carrega a senha em CLARO, recem-lida do texto
+/// SQL. O comentario do campo ja dizia «nunca vai para log nem para resposta»,
+/// e quem cumpria era o `sem_a_senha`; o derivado do `Debug` desfazia isso num
+/// `dbg!`.
+impl std::fmt::Debug for Comando {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Desestruturar SEM `..`: campo novo para de compilar aqui, e quem
+        // o acrescentar decide na hora se e segredo. Lista de campos escrita
+        // a mao envelhece calada.
+        let Comando {
+            op,
+            login,
+            senha: _,
+        } = self;
+        f.debug_struct("Comando")
+            .field("op", op)
+            .field("login", login)
+            .field("senha", &"(oculta)")
+            .finish()
+    }
 }
 
 impl Comando {
@@ -338,5 +360,25 @@ mod testes {
         let r = sem_a_senha("CREATE USER c PASSWORD 'aberta");
         assert!(r.starts_with("<comando invalido"), "{r}");
         assert!(!r.contains("aberta"), "{r}");
+    }
+
+    /// O `Debug` do comando tambem nao mostra a senha.
+    ///
+    /// O `sem_a_senha` redige o TEXTO; o `Comando` ja analisado carrega a senha
+    /// em claro num campo, e o `derive(Debug)` a imprimia. Redigir a entrada e
+    /// deixar a saida aberta protege so metade do caminho.
+    #[test]
+    fn o_debug_do_comando_nunca_mostra_a_senha() {
+        let c = comando("CREATE USER carlos PASSWORD 'segredo1'")
+            .unwrap()
+            .unwrap();
+        assert_eq!(c.senha.as_deref(), Some("segredo1"));
+        for texto in [format!("{:?}", c), format!("{c:?}")] {
+            assert!(!texto.contains("segredo1"), "a senha vazou: {texto}");
+            assert!(texto.contains("carlos"), "o Debug perdeu o login: {texto}");
+        }
+        // O pedido montado continua levando a senha -- e ele que vai ao
+        // servidor. O que se fecha e a saida de DIAGNOSTICO, nao o protocolo.
+        assert!(c.pedido().escrever().contains("segredo1"));
     }
 }
