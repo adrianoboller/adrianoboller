@@ -42,8 +42,8 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Protocolo e portões (despachar) | 541 | 21,7 |
-| Motor de dados (arquivos, índice, diários) | 504 | 20,3 |
+| Protocolo e portões (despachar) | 545 | 21,8 |
+| Motor de dados (arquivos, índice, diários) | 512 | 20,5 |
 | Núcleo (JSON, tipos, UUID, zip, paralelo) | 242 | 9,7 |
 | Camada SQL (léxico, sintaxe, tradução) | 217 | 8,7 |
 | Servidor (outros) | 184 | 7,4 |
@@ -69,13 +69,13 @@ contando `#[test]` por arquivo e agrupando:
 | **Alertas e e-mail** | **8** | **0,3** |
 | **CLI** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,2** |
-| **total** | **2488** | |
+| **total** | **2500** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 5329 |
+| `phxsql-store/src/table.rs` | 5439 |
 | `phxsql-store/src/ndx.rs` | 1655 |
 | `phxsql-ffi/src/lib.rs` | 1453 |
 | `phxsql-server/src/main.rs` | 488 |
