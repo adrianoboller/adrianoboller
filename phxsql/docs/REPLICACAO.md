@@ -2173,3 +2173,121 @@ outra coisa*:
 | 1 | `excluir_tabela` sem `confirmar` é recusado, e o estágio não conferia a resposta | cenário e controle davam o **mesmo** resultado (réplica com `[1,2,3,4,5,91,92,93]` nos dois — a tabela nunca foi apagada); veredito `[FALHA]`, «o defeito não existe» | com `"confirmar":"clientes"` + parada explícita se a montagem falhar: source `[91,92,93]`/3 eventos, réplica `[1,2,3,4,5]`/5, `chegou=False`, veredito `[ok]` |
 | 2 | `eventos()` pedia `posicao` com `"tabela"` no pedido, mas o campo mora em `resultado.tabelas.<tabela>.eventos` | devolvia `None` calado; todo `esperar(...==5)` esgotava o prazo em vez de esperar; JSON de 02:54 com `eventos_source: null`, `eventos_replica: null` | `eventos_source: 3`, `eventos_replica: 5` — o par que sustenta o achado da tabela recriada |
 | 3 | `--so <estágio>` sobrescrevia o `achados-do-dba.json` inteiro | a corrida `--so rownum` deixava um arquivo só com `{"rownum": …}`, parecendo a bateria completa | mescla por nome + campo `preservados_de_corrida_anterior`: a corrida parcial preserva os outros dois estágios **e diz quais preservou** |
+
+### 21.5 A conclusão
+
+**Quem:** papel H, fechando a rodada aberta pela ordem do dono de 17/09/2026
+02:27 UTC. **Quando:** 17/09/2026, depois do último veredito às 05:03 UTC.
+**Fontes:** as quatro anteriores (§21.1–21.4), `git show 49a3af7` e `git show
+eeb9925` (as duas ondas de conserto), e `bancada/guardas/ultima-corrida.json`
+(commit `9438bd0`).
+
+#### O que se declara revisado e provado
+
+- **A bateria inteira**: dez bancadas, todas verdes, com ganho medido sobre a
+  corrida anterior em cada uma (§21.4) — master **1,33×**, trava **1,90×**,
+  cluster **26 de 26**, quórum com a razão do 2-de-3/3-de-3 mantida em duas
+  corridas de dez dias de distância.
+- **Os três achados medidos do parecer de C, confirmados pelo soquete com
+  controle por estágio** (`bancada/replicacao/achados-do-dba.py`, §21.4): o
+  `rownum` diverge só dentro de `inserir_lote` com `parar_no_erro:false`, o
+  único secundário trava o par bidirecional para sempre, a tabela recriada
+  no source congelava a réplica em silêncio.
+- **As treze guardas da família da replicação/cluster/quórum, PROVADAS —
+  13 de 13** (`bancada/guardas/ultima-corrida.json`, commit `9438bd0`,
+  17/09/2026 04:50–05:03 UTC, 16,0 a 36,3 s cada):
+  `replica-lista-e-pedida-nao-imposta` (36,33 s), `posicao-nao-encolhe-em-silencio`
+  (34,80 s), `eleicao-prefere-completa` (29,32 s), `replica-nao-atende-escrita`
+  (34,81 s), `spare-nao-atende-ninguem` (33,83 s), `read-replica-recusa-escrita`
+  (33,88 s), `pulso-fora-da-lista-e-recusado` (34,46 s), `trava-atras-da-rede`
+  (16,01 s), `colisao-de-sequence-calada` (29,23 s), `posicao-sem-portao`
+  (34,81 s), `replicacao-do-cluster-em-claro` (29,39 s),
+  `replica-insiste-na-credencial-recusada` (28,45 s),
+  `cluster-devolve-a-credencial-na-tela` (30,88 s).
+- **Treze consertos, em duas ondas, cada um com prova real nos dois
+  sentidos** (o teste falha com o defeito reposto e passa com o conserto):
+  cinco em `49a3af7` — A2 e A3 inteiros, A1 parcial, A5 parcial, a
+  conferência de continuidade da réplica (item de maior retorno de C); oito
+  em `eeb9925` — o `rownum` pela via (a), A4, A5 completo, A6, A8, A9, A10
+  (por prova) e A11. Portões verdes nas duas integrações e na corrida final
+  das guardas: `fmt` limpo, `clippy` zero avisos, **2.447 testes passaram, 0
+  falharam, 4 ignorados pré-existentes** (71 binários).
+
+#### A posição de SEC, que era o portão desta conclusão
+
+SEC escreveu, ao entregar a revisão (§21.1): *«A1, A2 e A3 exigem decisão
+registrada (conserto ou aceite do dono) antes de a replicação se declarar
+revisada e conclusa.»* Com o que a rodada mediu:
+
+- **A2 e A3 foram consertados**, inteiros, com prova real e teste do
+  comportamento velho ao lado (`49a3af7`).
+- **A1 tem decisão registrada — é parecer com premissa medida, não
+  esquecimento.** O aperto de mão do cluster cifrado é Noise **NX**, e nesse
+  padrão só o respondedor apresenta chave estática; quem manda o pulso é o
+  **iniciador**, anônimo por decisão já tomada quando o `CIFRA-DO-FIO.md` foi
+  escrito. Amarrar a identidade do nó ao pulso exige mudar o protocolo —
+  prova por Diffie-Hellman das estáticas que já existem, ou trocar o aperto
+  para XX/IK — e isso está escrito por inteiro em `docs/CIFRA-DO-FIO.md`
+  §12, com o motivo de cada alternativa não ter entrado nesta rodada. O que
+  cabia num conserto delimitado entrou (`eeb9925`): o teto de época que
+  impede o estrago **permanente**, e o pulso passou a valer só dentro do
+  portão das réplicas autorizadas.
+
+**A condição de SEC está cumprida por essa leitura**: as três exigências
+têm, hoje, ou conserto com prova, ou decisão registrada com a premissa
+medida por escrito. Quem discordar de que um parecer satisfaz a condição —
+e achar que só conserto de código deveria contar — tem onde discordar: o
+parecer de B2 está inteiro em `docs/CIFRA-DO-FIO.md` §12, e a leitura dele
+não depende desta conclusão para ser conferida de novo.
+
+#### O que continua aberto, nomeado com pedido
+
+- **A1 pleno** (278, ◐) — identidade do nó no pulso; exige redesenho do
+  aperto de mão, decisão do dono.
+- **A7** (284) — `replicas_autorizadas` colapsa num IP só atrás de proxy
+  reverso ou NAT; é o único achado de SEC que nenhuma das duas ondas tocou.
+- **Cinco decisões de formato do dono** (parecer de C, §6; pedidos 289, 290,
+  292, 293, 294): a coluna de data/hora de sistema por linha e sua
+  resolução; `inicio`/`passo` da `Sequence` no `PSCH`; o que fazer com único
+  secundário no bidirecional (hoje trava o par para sempre); replicar coluna
+  externa marcada (grava texto cifrado como conteúdo com a cifra desligada);
+  o critério de eleição do cluster (a posição somada é um escalar de uma
+  grandeza vetorial).
+- **A via (b) do `rownum`** (309) — a réplica honrar o número que vem na
+  imagem, para fechar também os buracos já gravados antes de `eeb9925`; a
+  via (a), que já fechou, não é retroativa.
+- **A conferência de continuidade não entrou no bidirecional**
+  (`alcancar_tabela_bidi`) — só o modo unidirecional acusa tabela apagada e
+  recriada; decisão do dono, nomeada e não tomada.
+- **`TETO_DA_RESPOSTA` continua sem guarda no catálogo** (303) — e não por
+  descuido: G mediu que não existe hoje nenhum teste, unitário ou de
+  bancada, cujo defeito reposto o faria cair. Guarda sem teste que caia não
+  é guarda; é uma entrada que passaria sempre.
+
+#### O que a rodada aprendeu sobre si mesma
+
+Três frentes acharam defeito no **próprio instrumento**, não no motor: o
+provador de guardas não copiava um arquivo de `bancada/` que os testes leem
+por `CARGO_MANIFEST_DIR`, e cinco guardas voltavam sem veredito por isso; a
+guarda `trava-atras-da-rede` **envelheceu no dia seguinte** ao próprio
+conserto que ela media, porque a âncora ficou no código que a conferência de
+continuidade reescreveu; e uma corrida parcial (`--so`) sobrescrevia o
+arquivo inteiro, o que teria trocado 143 vereditos de ontem por 13 de hoje e
+escondido tudo que não foi medido nesta rodada. **Instrumento também
+envelhece** — e as três vezes ele foi pego pela mesma disciplina que ele
+existe para impor: medir de novo em vez de confiar na última vez que
+mediu.
+
+#### O que esta replicação garante hoje, e o que não garante
+
+Não se declara «pronta», e não se repete *ACID compliant*. O que a rodada de
+17/09/2026 deixa medido: a replicação entrega o dado — rowid, linha,
+`.memo`, retrato SHA-256 idêntico entre master e réplicas — com throughput e
+recuperação melhores do que a corrida anterior, e a superfície de ataque que
+a revisão achou está fechada em nove de onze pontos, com prova. O que ela
+**não** garante, e cada um tem pedido aberto contra o próprio nome: `rownum`
+idêntico em toda topologia (só a escrita nova, via a); um índice único
+secundário sobrevivendo a um conflito no bidirecional; atomicidade de um
+commit multi-tabela atravessando o fio; coluna externa marcada replicada
+com segurança; identidade criptográfica de quem manda o pulso do cluster. A
+lista acima **é** a garantia — não a frase que a resumiria.
