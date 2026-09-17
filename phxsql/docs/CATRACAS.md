@@ -674,7 +674,7 @@ piso em silêncio.
 | `TETO_TESTE_MORTO` | teto | 0 | **0** | 16/09 |
 | `TETO_TESTE_FORA_DO_BINARIO` | teto | 0 | **0** | 16/09, nesta frente |
 | `TETO_NAO_JULGADA_ESCONDIDA` | teto | 0 | **0** | 16/09, pedido 269: nasceu medido em **26** e desceu para **0** no mesmo passo, republicando a corrida de 15:25 |
-| `PISO_DAS_ENTRADAS` | **piso** | 169 | **169** | nasceu 16/09 em 143; **subiu para 145** (frente vizinha, no mesmo dia), para **151** na frente 245/O2–O6, para **160** na frente G-CRIPTO (§15) e para **169** na frente G-SENHA (§15.7) — 169 entradas vivas + 0 aposentadas. Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
+| `PISO_DAS_ENTRADAS` | **piso** | 177 | **177** | nasceu 16/09 em 143; **subiu para 145** (frente vizinha, no mesmo dia), para **151** na frente 245/O2–O6, para **160** na frente G-CRIPTO (§15), para **169** na frente G-SENHA (§15.7), para **170** com o `Debug` do DbLink (17/09 — a constante subiu e esta linha ficou em 169 até a frente seguinte) e para **177** na segunda leva da pétrea da senha (§15.7.7) — 177 entradas vivas + 0 aposentadas. Piso só sobe, e sobe no mesmo passo em que o catálogo cresce |
 
 **Nenhum teto subiu e nenhuma catraca se aposentou, e isso é decisão.** A
 régua do `TETO_TRECHO_MORTO` **não mudou**: ela continua respondendo
@@ -1226,6 +1226,35 @@ um total**: provas que afirmam ausência sem citar o segredo — como
 entram no crivo e existem. Transformar isto numa régua do `trecho-vivo.py` é
 o próximo passo do papel G nesta pétrea.
 
+**Refeita em 17/09/2026 — e o 40 não se refez pela receita escrita.** A
+receita acima, aplicada ao pé da letra — negação `(?<![A-Za-z0-9_])!`,
+chamada `\.(contains|windows|find)\(` na mesma linha, léxico
+`senha|segredo|s3nh|secret|passwd|password|token|pino` em qualquer lugar da
+linha —, dá **31** no commit em que o 40 foi escrito (`1e3e7e1`, medido
+sobre um `git archive` dele) e **35** hoje. O que a varredura original
+contou e a receita não dizia é o ajudante `contem(` das provas de
+integração do `phxsql-store` — `a_senha_nao_vai_para_o_disco` afirma
+`!contem(SENHA.as_bytes(), &bruto)`, sem ponto e sem `.contains`. Com
+`(contains|contem|windows|find)\(` a conta dá **36** naquele commit e
+**40** hoje. Ou seja: **os dois 40 não são o mesmo 40** — o de hoje carrega
+as quatro provas de `{:?}` do commit `74de67e` que casam o léxico
+(`nenhum_segredo_do_config_sai_no_debug`,
+`o_debug_da_ligacao_nunca_mostra_a_senha_nem_o_token`,
+`o_debug_do_comando_nunca_mostra_a_senha`,
+`o_debug_da_receita_nunca_mostra_o_token_nem_a_senha`; a quinta,
+`o_debug_do_usuario_nunca_mostra_o_hash`, nega `hash`, que o léxico não
+tem), e o de ontem tinha quatro que a receita não descrevia. E a leitura
+**estrita** — o léxico só dentro de um literal `"…"` — dá **27** hoje: oito
+provas negam um identificador (`segredo`, `SENHA`), não um literal, e
+`nenhuma_credencial_do_config_sai_pela_op_config`, a mais larga do
+`config.rs`, fica fora de **todas** as leituras porque nega `marca`, a
+variável do laço. **O 40 continua sendo piso, e agora é remedível**: a
+receita é o regex de cima, com `contem`, na leitura larga — e a régua que
+o versiona continua sendo o próximo passo do papel G, porque um número
+que só se refaz a partir de um parágrafo é um número que se refaz errado
+na primeira vez (foi o que aconteceu aqui: 40 dito, 31 medido, pela mesma
+frase).
+
 As seis cobertas eram todas do Profiler — e **nenhuma das quatro saídas que a
 pétrea NOMEIA** (o arquivo, o log, a resposta do protocolo e a ficha) tinha
 entrada. A frase «0 entradas» protegia menos do que parecia por baixo e mais
@@ -1391,7 +1420,9 @@ próxima frente aprender a ignorar o portão.
   defeito plausível ali é na derivação da chave, e isso é território da §15.2,
   que já repõe defeito em PBKDF2. Cobrir por cima seria contar a mesma
   cobertura duas vezes;
-- **26 das 40 continuam sem defeito reposto.** Contado depois, e não
+- **26 das 40 continuam sem defeito reposto** *(em 16/09; a §15.7.7 levou
+  a conta, refeita pela receita da §15.7.1, de **9/40 para 16/40** em
+  17/09)*. Contado depois, e não
   estimado antes: a cobertura foi de **6/40 para 14/40** — nove entradas
   compram oito provas novas porque duas delas (`ficha-do-usuario-devolve-o-hash`
   e `senha-em-claro-no-cadastro`) dividem a mesma prova do arquivo, e é assim
@@ -1403,6 +1434,155 @@ próxima frente aprender a ignorar o portão.
   o servidor vivo e é quem cobre o `acessos.log`, que nenhum teste de módulo
   percorre. O catálogo não sabe repor defeito contra ela — é a mesma fronteira
   que a §15.5 nomeia para a bancada e para a tela.
+
+#### 15.7.7 A segunda leva (17/09/2026): sete saídas que a frase não nomeia, e quatro achados de método
+
+Frente F com o chapéu de G, 17/09/2026, no molde da §15.7. A primeira leva
+cobriu as quatro saídas que a frase da pétrea nomeia mais o `Debug`. Esta
+cobre o que a árvore **já provava sem guarda** — e a regra de escolha foi
+**uma entrada por SAÍDA, não uma por struct**
+(`docs/cognicao/cognicao_guarda-trava-a-struct-nao-a-lei_20260917_0010.md`):
+as cinco structs que ganharam `impl Debug` em 17/09 sem entrada própria
+continuam sem, de propósito — quando o mesmo defeito cabe em N lugares, o que
+protege a lei é a régua que conta os lugares, e ela é de outra frente.
+
+**O raio, medido antes do veredito.** Como na §15.7.3, cada defeito correu
+primeiro numa sonda que lê o veredito de **todos** os testes do binário
+(reusando `Arvore`, `rodar` e `trocas_de` do próprio `provar-guardas.py`, e
+não uma reimplementação — as notas do provador cortam em cinco nomes, e é por
+isso que a §15.7.3 diz «5 ou mais»). Árvore limpa verde antes: **1.107** no
+`phxsql-server --lib`, **348** no `phxsql-core --lib`, **59** no
+`phxsql-odbc --lib`.
+
+| guarda | a SAÍDA | defeito reposto (a linha que um apressado escreve) | quem o pega | quem NÃO o pega — e é o ponto | raio |
+|---|---|---|---|---|---:|
+| `fio-cifrado-manda-o-claro-junto` | o fio — o protocolo em si, cifrado | a linha em claro vai **depois** do registro selado, «para o `tcpdump` do suporte» | `o_texto_claro_nao_aparece_no_fio` | **hipótese que morreu medida**: eu escrevi que o ida-e-volta ficaria verde «lendo um registro e deixando o claro no buffer». `canal_leva_e_traz` **cai junto** — lê a despedida depois do pedido e acha o claro no meio. As outras 346 ficam verdes, inclusive `fim_e_corte_sao_vereditos_diferentes`, que sela por fora. O defeito é barulhento no formato e silencioso na pétrea: um leitor ensinado a pular a linha que não é Base64 reverdeceria o ida-e-volta com o vazamento de pé | **2/348** |
+| `diario-das-diretivas-guarda-o-segredo-anterior` | o diário das diretivas — log que é arquivo | `valor_anterior` sai inteiro, «para reverter um token durante o incidente» | `o_valor_do_campo_sigiloso_nao_vai_para_o_diario` | `o_show_server_settings_nao_vaza_segredo`, que usa a **mesma** lista `campo_sigiloso` e fica verde: olha o valor vivo, que nunca passa por este `para_json` | **1/1.107** |
+| `cluster-devolve-a-credencial-na-tela` | a op `config`, seção do cluster — hash **e** token | `usuario`/`senha_hash`/`token` no mesmo `vec!`, «hash não é senha» | `a_credencial_do_cluster_nao_sai_em_json` **e** o genérico `nenhuma_credencial_do_config_sai_pela_op_config` | as outras 1.105. Aqui o genérico **alcança** — tem o token e o hash do cluster na lista dele. Compare com as duas linhas abaixo | **2/1.107** |
+| `token-do-rest-entra-pela-tela` | a tela no sentido de **ENTRADA** | `("rest.token", Texto, false)` em `CAMPOS_EDITAVEIS`, «para não editar o arquivo» | `o_token_do_rest_nao_sai_nem_entra_pela_tela` | o genérico e **toda** prova de `para_json`: guarda de saída não vê porta de entrada. É a única das 40 que olha esse lado | **1/1.107** |
+| `receita-odbc-devolve-a-senha` | a *connection string* devolvida ao aplicativo — outro pacote, outro processo | `;PWD=<senha>` inteiro, «para reconectar» | `mascarada_nao_vaza_segredo` | `mascarada_diz_o_modo_e_nao_o_pino` e **todas** as do servidor: o vazamento acontece num processo que o servidor nem vê | **1/59** |
+| `cifra-do-fio-reserializa-a-privada` | a op `config`, a IRMÃ da cifra | `chave_privada` inteira, o mesmo `find`/`replace` que a §15.7 repôs na `Cifra` | `a_privada_do_fio_nunca_sai` | **o genérico fica VERDE** com a privada X25519 do servidor saindo inteira: ela não está na lista dele | **1/1.107** |
+| `especificacao-openapi-leva-o-token` | `GET /openapi.json`, servido **antes de qualquer portão** | `("x-token", rest.token)` no topo do documento, «para o explorador vir pré-autenticado» | `a_especificacao_nao_carrega_o_token` | todas as do `config.rs`: é outra serialização do mesmo `Rest`, num módulo que a lista genérica não conhece | **1/1.107** |
+
+Os sete compilam, passam no `clippy` e deixam **1.105 ou mais** das provas
+do servidor verdes; nenhum é constante trocada nem `assert` apagado, e cada
+um tem um pedido legítimo por trás (a coluna do defeito o cita).
+
+**Os quatro achados de método, na ordem em que doeram:**
+
+1. **O 40 não se refez pela receita escrita** — §15.7.1, parágrafo «Refeita
+   em 17/09». A frase dava 31 no commit em que o 40 foi escrito; faltava o
+   ajudante `contem(`. Hoje o regex está no documento e a conta é **40**
+   (leitura larga) e **27** (estrita), e o 40 de hoje não é o 40 de ontem.
+
+2. **A décima entrada nasceu QUEBRADA, e a régua barata não viu.**
+   `debug-da-ligacao-mostra-a-senha` nomeava os testes **sem o módulo**
+   (`o_debug_da_ligacao_nunca_mostra…` em vez de
+   `dblink::testes::o_debug_da_ligacao_nunca_mostra…`). O `julgar` do
+   provador compara com o nome que o `cargo test` imprime, e devolveu
+   «teste que o catálogo nomeia e o binário não tem» — medido pelo `--so`,
+   1m30s. `TETO_TESTE_MORTO` e `TETO_TESTE_FORA_DO_BINARIO` ficaram em `ok 0`
+   porque casam pelo nome da `fn`, não pelo caminho. É uma **sexta forma de
+   QUEBRADA** para a tabela da §12, do lado que a régua não vê — e é vista sem
+   compilar: basta exigir `::` no nome. Consertada no catálogo (os três
+   nomes), re-provada: **1/1.107**, só o `caem`.
+
+3. **A lista genérica de segredos envelheceu.**
+   `nenhuma_credencial_do_config_sai_pela_op_config` existe «para pegar o
+   campo que alguém acrescentar amanhã», e tem **dez** marcas. A privada do
+   fio e o token do REST **não estão nela** — medido: verde nos dois defeitos.
+   E ela fica **fora das 40** em todas as leituras da receita, porque nega
+   `marca`, a variável do laço. Duas linhas no teste (`crates/`, não desta
+   frente) fecham o buraco; fica reportado ao papel B.
+
+4. **A árvore limpa não estava verde — por trabalho de outra frente.** A
+   cópia do provador sincroniza da árvore de **trabalho**, e a frente dos
+   idiomas tinha `idiomas.rs` e `ui/index.html` sujos no meio de uma troca
+   (`tela.sv_sub_no_ar` na fábrica e nenhuma tela a pedir). O portão da
+   árvore limpa reprovou por motivo alheio, e a saída foi provar contra um
+   `git archive HEAD` com o catálogo desta frente por cima. Com frentes
+   paralelas, «medidor com binário velho mede o passado» ganha um irmão:
+   **provador com árvore suja mede a frente vizinha**.
+
+**O veredito, pelo provador oficial** (`provar-guardas.py --so …`, contra o
+`git archive HEAD` do achado 4, cópia quente; árvore limpa verde antes:
+**1.107** no `phxsql-server --lib`, **348** no `phxsql-core --lib`, **59** no
+`phxsql-odbc --lib`). A `cifra-do-fio-imposta` veio de carona — o `--so`
+casa por substring e `cifra-do-fio` é prefixo das duas — e foi re-provada
+junto:
+
+| guarda | caem | veredito | custo |
+|---|---:|---|---:|
+| `fio-cifrado-manda-o-claro-junto` | 1/1 | ✅ provada | 2,3 s |
+| `diario-das-diretivas-guarda-o-segredo-anterior` | 1/1 | ✅ provada | 28,8 s |
+| `cluster-devolve-a-credencial-na-tela` | 2/2 | ✅ provada | 31,9 s |
+| `token-do-rest-entra-pela-tela` | 1/1 | ✅ provada | 32,1 s |
+| `receita-odbc-devolve-a-senha` | 1/1 | ✅ provada | 1,4 s |
+| `cifra-do-fio-reserializa-a-privada` | 1/1 | ✅ provada | 29,0 s |
+| `especificacao-openapi-leva-o-token` | 1/1 | ✅ provada | 28,6 s |
+| `debug-da-ligacao-mostra-a-senha` (nomes consertados, achado 2) | 1/1 | ✅ provada | 32,9 s |
+| `cifra-do-fio-imposta` (de carona) | 1/1 | ✅ provada | 4,5 s |
+
+`9 guardas: 9 provadas, 0 redundantes, 0 nao pegaram, 0 estragaram, 0
+quebradas`. As entradas de `phxsql-server --lib` custam 28,6–32,9 s cada
+com a cópia quente; as de `phxsql-core` e `phxsql-odbc`, 1,4–2,3 s. Os
+`seguem` de cada uma ficaram verdes — inclusive o genérico do `config.rs` nas
+duas entradas em que a lista dele não alcança, que é o achado 3 visto pelo
+provador e não só pela sonda.
+
+**Cobertura, pela receita refeita (leitura larga com `contem`, 40 provas):**
+no `caem` de alguma entrada antes desta leva **9** (oito provadas e a décima
+quebrada); depois **16**, e a décima provada. As **24** que continuam sem
+guarda estão listadas pela própria receita (`--lista`); as mais próximas de
+uma entrada são `a_senha_do_rele_nunca_aparece_no_json` (mesma saída da
+`cifra-reserializa-a-senha`, e por isso não entrou — seria a segunda por
+struct), `o_show_server_settings_nao_vaza_segredo` (SQL, custa 30 s por
+prova no `servidor.rs`) e `a_senha_nao_vai_para_o_disco` (§15.7.6: é
+território da §15.2).
+
+## 16. `TETO_DEBUG_COM_SEGREDO` — a régua da lei que a guarda só exemplificava
+
+**O defeito que motivou** (16/09/2026): nove structs em três crates
+(`phxsql-server` ×7, `phxsql-sql`, `phxsql-odbc`) derivavam `Debug` carregando
+14 campos de senha, token e hash — um `{:?}` no `Config` despejava oito de uma
+vez. Consertadas em `74de67e`. E a guarda `debug-da-cifra-mostra-a-senha` **já
+existia**, com a lei inteira escrita no `porque`: ela travou UMA struct, não a
+lei (`docs/cognicao/cognicao_guarda-trava-a-struct-nao-a-lei_20260917_0010.md`).
+Com a `debug-da-ligacao-mostra-a-senha` eram 2 structs com catraca, de 9 — e
+nada impedia a décima de nascer derivando.
+
+**A régua**: `bancada/guardas/debug-com-segredo.py` varre `crates/*/src/**/*.rs`
+e conta **campos** que passam pelo crivo de três partes da §16 do
+`SEGURANCA.md` — nome no léxico, tipo portador de valor, e a leitura declarada
+numa lista visível de isenções (7 entradas, cada uma com o motivo; entrada
+morta ou ambígua reprova) — e cujo `Debug` os imprime: por `derive`, **ou por
+`impl` à mão que lê o campo** (a troca literal da guarda velha). Enxerga
+`derive` em várias linhas, `cfg_attr`, enums e structs de tupla, e passa por um
+lexer que apaga comentário e literal — sem ele, `.field("senha", &"(oculta)")`
+contaria como vazamento.
+
+**Medido em 17/09/2026**: **0** (teto 0). 36 campos passam por nome e tipo: 0
+contam, 10 isentos, 26 não vazam por esta saída. Nasceu em zero e só desce.
+
+**A prova, nos dois sentidos**: com o `conexao.rs` de antes do conserto, byte a
+byte, acusa `Receita.token` e `Receita.senha` (SUBIU 2); com a troca da guarda
+da ligação aplicada, acusa `Definicao.senha` e `Definicao.token` pelo caminho
+do `impl` (SUBIU 2); limpa, 0. Os sete isentos não contam. Reproduzida pelo
+integrador antes do commit `db18c87`.
+
+**E a mutação, que é o que esta régua ensinou**: seis cópias, cada uma com uma
+parte do crivo desligada. Quatro mudam o número medido (370, 17, 9, 5); **duas
+não mudam nada** — sem detectar o `derive` ou sem ler o `impl`, a régua mede
+**0**, igual à árvore sã. O autoteste (26 casos) roda por isso **dentro do
+`--catraca` e do `--numeros`**: régua morta responde «não rodou» ao inventário,
+nunca «0, em cima, sem folga». Ver
+`docs/cognicao/cognicao_catraca-que-nasce-em-zero-nao-distingue-regua-morta_20260917_0038.md`.
+
+**O que ela NÃO vê, declarado**: segredo em campo cujo nome não casa o léxico
+(`Direcao { k }` no `fio.rs`); `impl Display`; caminho indireto no `impl`;
+`examples/` e `tests/`. Quem a roda: a bateria (item 0c) e o inventário do
+`docs/qa/medir.py`, que a achou sozinho pelo `catraca:nome=`. Não roda no
+`cargo test`.
 
 ## Os limites de funcionamento encontrados (não são catracas)
 
@@ -1478,8 +1658,8 @@ contado contra o código-fonte, e nenhum entra na tabela de catracas.
 - **`conferidor_dependencias.rs`** (zero dependências externas) — portão
   binário, não catraca: não há contagem, é passa/não passa. Documentado na
   seção acima.
-- **`bancada/guardas/catalogo.py`** (o catálogo de defeitos repostos, **169
-  entradas** medidas em 16/09/2026) — é a OUTRA metade do papel G, as guardas
+- **`bancada/guardas/catalogo.py`** (o catálogo de defeitos repostos, **177
+  entradas** medidas em 17/09/2026) — é a OUTRA metade do papel G, as guardas
   de regressão provadas por mutação. Não é catraca: cada entrada prova um
   defeito específico voltando e sendo pego, não uma contagem que sobe e desce.
   Tem seu próprio inventário em `docs/TESTES.md` §12 e não se repete aqui.

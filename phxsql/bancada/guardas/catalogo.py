@@ -6780,15 +6780,387 @@ pub fn limpar() {
     ],
     "pacote": "phxsql-server",
     "alvo": ["--lib"],
+    # Com o MODULO na frente, porque e o nome que o `cargo test` imprime e
+    # que o `julgar` do provador compara: sem ele a entrada nasceu QUEBRADA
+    # («teste que o catalogo nomeia e o binario nao tem»), medido em
+    # 17/09/2026 -- e a regua barata nao viu, porque ela casa pelo nome da
+    # `fn` e nao pelo caminho.
     "caem": [
-        "o_debug_da_ligacao_nunca_mostra_a_senha_nem_o_token",
+        "dblink::testes::o_debug_da_ligacao_nunca_mostra_a_senha_nem_o_token",
     ],
     # O `Debug` nao pode ficar CEGO: esconder o nome da variavel de ambiente
     # trocaria um vazamento por um diagnostico inutil. E o `para_json`, que ja
     # estava certo, segue verde -- a troca mexe so na saida do `Debug`.
     "seguem": [
-        "o_debug_da_ligacao_mantem_o_nome_da_variavel_de_ambiente",
-        "a_senha_da_ligacao_nunca_aparece_no_json",
+        "dblink::testes::o_debug_da_ligacao_mantem_o_nome_da_variavel_de_ambiente",
+        "dblink::testes::a_senha_da_ligacao_nunca_aparece_no_json",
     ],
 },
+    # =======================================================================
+    # A PETREA «SENHA NUNCA EM TEXTO PURO», segunda leva -- 17/09/2026
+    #
+    # A primeira leva (16/09) cobriu as QUATRO saidas que a frase da petrea
+    # nomeia mais o `Debug`. Esta cobre as saidas que a frase NAO nomeia e que
+    # a arvore ja provava sem guarda: o FIO (o protocolo em si, cifrado), o
+    # DIARIO das diretivas (um log que e arquivo), a op `config` pelo lado do
+    # CLUSTER (hash + token entre nos) e pela IRMA da cifra (a privada do
+    # fio), a TELA no sentido de ENTRADA (o token do REST), e a STRING DE
+    # CONEXAO do ODBC (um arquivo de configuracao de aplicativo, em outro
+    # pacote).
+    #
+    # Uma entrada por SAIDA, e nao uma por struct: onde o mesmo defeito cabe
+    # em N structs, o que protege a lei e uma regua que conte os lugares, nao
+    # N entradas (ver `docs/cognicao/cognicao_guarda-trava-a-struct-nao-a-lei_
+    # 20260917_0010.md`). Por isso as cinco structs que ganharam `impl Debug`
+    # em 17/09 sem entrada propria continuam sem -- de proposito.
+    # =======================================================================
+    {
+        "id": "fio-cifrado-manda-o-claro-junto",
+        "titulo": "o fio cifrado manda a linha em claro junto do registro selado",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro... nem em "
+            "resposta do protocolo» -- e o fio E o protocolo. O `Canal` "
+            "existe, diz o proprio comentario dele, para que «a decisao de "
+            "cifrar seja UMA so, e a que alguem esquecesse mandaria texto "
+            "claro por um fio que o cliente acha cifrado». Esta entrada repoe "
+            "exatamente isso, e nao por esquecimento: por diagnostico. Quem "
+            "depura o tunel quer ver no `tcpdump` o que foi selado, poe a "
+            "linha em claro DEPOIS do registro -- «o cliente le o registro e "
+            "ignora o resto» -- e nao desfaz. O cliente de fato le o registro; "
+            "o claro fica no fio para quem escuta, e o `login` com o token vai "
+            "junto. "
+            "A hipotese com que esta entrada foi escrita MORREU medida: eu "
+            "esperava que as provas de ida e volta ficassem verdes «lendo um "
+            "registro de cada vez, com o claro sobrando no buffer». Nao ficam: "
+            "`canal_leva_e_traz` cai junto, porque le a DESPEDIDA depois do "
+            "pedido e o que encontra no meio e a linha em claro, que nao e "
+            "Base64 de registro nenhum. O que fica verde sao as outras 346 do "
+            "pacote -- inclusive `fim_e_corte_sao_vereditos_diferentes`, que "
+            "sela por fora e nunca passa por `escrever`. O defeito e barulhento "
+            "no protocolo e silencioso na petrea, e e isso que a entrada "
+            "ensina: o ida-e-volta cai por um motivo de FORMATO, e um conserto "
+            "que ensinasse o leitor a pular a linha que nao e Base64 o "
+            "reverdeceria com o vazamento de pe. So a prova que olha os BYTES "
+            "do fio segura o segredo."
+            "\n\nRAIO MEDIDO (sonda `espera: \"nada muda\"` sobre o binario "
+            "inteiro, 17/09/2026): **2 dos 348** do `phxsql-core --lib` -- a "
+            "prova do vazamento e `canal_leva_e_traz`, que nao entra no `caem` "
+            "porque nao e guarda da petrea: cai pelo formato, nao pelo segredo."
+        ),
+        "arquivo": "crates/phxsql-core/src/fio.rs",
+        "trecho": """            Canal::Cifrado(t) => {
+                let registro = t.selar(Tipo::Pedido, linha.as_bytes())?;
+                writeln!(saida, "{registro}")?;
+            }
+""",
+        "troca": """            Canal::Cifrado(t) => {
+                let registro = t.selar(Tipo::Pedido, linha.as_bytes())?;
+                writeln!(saida, "{registro}")?;
+                // DEFEITO REPOSTO: a linha em claro vai junto, depois do
+                // registro, «para o tcpdump do suporte ler o que foi selado».
+                // O cliente le o registro; o claro fica no fio.
+                writeln!(saida, "{linha}")?;
+            }
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "fio::testes::o_texto_claro_nao_aparece_no_fio",
+        ],
+    },
+    {
+        "id": "diario-das-diretivas-guarda-o-segredo-anterior",
+        "titulo": "o diário das diretivas grava o valor ANTERIOR do campo sigiloso em claro",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro. Nem em arquivo, "
+            "nem em log» -- e o diario das diretivas e as duas coisas: um log "
+            "que e arquivo, gravado pelo servidor toda vez que alguem muda um "
+            "campo pela tela. O `para_json` da `Alteracao` mascara os DOIS "
+            "valores do campo sigiloso, e esta entrada destapa so o anterior. "
+            "O defeito tem um incidente por tras, que e o que o faz plausivel: "
+            "«alguem trocou o token da porta REST e o integrador parou; "
+            "preciso do valor ANTERIOR para reverter». Destapar o anterior "
+            "parece inofensivo -- «o novo continua oculto, e o velho ja nao "
+            "vale» --, e esta errado nas duas metades: o token velho continua "
+            "abrindo a porta ate o servidor reler o arquivo, e a senha do "
+            "rele de e-mail que foi trocada por ROTACAO e a mesma que valeu "
+            "por um ano. "
+            "O que esta entrada ensina: o mesmo `campo_sigiloso` alimenta o "
+            "`SHOW SERVER SETTINGS`, e aquela prova fica verde -- ela olha o "
+            "valor VIVO, que nunca passa por este `para_json`. Duas saidas, "
+            "uma lista de nomes, e so uma das duas percorre a linha destapada."
+            "\n\nRAIO MEDIDO (17/09/2026): **1 dos 1.107** do `phxsql-server "
+            "--lib` -- e `o_show_server_settings_nao_vaza_segredo` ficou verde, "
+            "como previsto: o valor vivo nunca passa por este `para_json`."
+        ),
+        "arquivo": "crates/phxsql-server/src/diretivas.rs",
+        "trecho": """            ("valor_anterior", valor(&self.valor_anterior)),
+""",
+        "troca": """            // DEFEITO REPOSTO: o valor anterior sai inteiro, «para reverter
+            // a troca de um token durante um incidente». O diario e um log
+            // em arquivo, e o segredo velho continua valendo ate alguem
+            // trocar de novo.
+            ("valor_anterior", self.valor_anterior.clone()),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "diretivas::testes::o_valor_do_campo_sigiloso_nao_vai_para_o_diario",
+        ],
+        "seguem": [
+            # A linha continua com os nove campos e continua se lendo de
+            # volta: o defeito nao quebra o diario, so o destapa.
+            "diretivas::testes::os_nove_campos_estao_todos_na_linha",
+            "diretivas::testes::grava_e_le_da_mais_recente_para_a_mais_antiga",
+        ],
+    },
+    {
+        "id": "cluster-devolve-a-credencial-na-tela",
+        "titulo": "o resumo do cluster na op `config` leva o token entre nós e o hash do replicador",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro... nem em "
+            "resposta do protocolo. Ha teste que falha se a ficha de usuario "
+            "vazar o hash». O `Cluster::para_json` e o resumo que a tela le, e "
+            "o comentario dele ja diz «sem token e sem hash». O defeito e o "
+            "mesmo da `ficha-do-usuario-devolve-o-hash`, so que numa secao em "
+            "que ninguem o esperaria: a tela do cluster quer mostrar «qual "
+            "usuario este no usa para replicar», e quem acrescenta o `usuario` "
+            "leva `senha_hash` e `token` no mesmo `vec!` porque «hash nao e "
+            "senha» e «o token so vale entre os nos». Hash que sai pela rede "
+            "e hash que se quebra offline; e o token do cluster e o que abre o "
+            "fio entre os nos SEM usuario nenhum. "
+            "O que esta entrada ensina, medido: o teste GENERICO do "
+            "`config.rs` (`nenhuma_credencial_do_config_sai_pela_op_config`) "
+            "tem o token e o hash do cluster na lista dele e cai junto. Ele "
+            "existe para pegar «o campo que alguem acrescentar amanha» -- e "
+            "pega, AQUI. Compare com a `cifra-do-fio-reserializa-a-privada` e "
+            "a `token-do-rest-entra-pela-tela`, logo abaixo, onde a mesma "
+            "lista generica nao alcanca: a lista e digitada, e envelheceu."
+            "\n\nRAIO MEDIDO (17/09/2026): **2 dos 1.107** -- os dois do `caem`, "
+            "e mais nenhum."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            ("email", Json::Bool(self.email.ligado)),
+            ("quorum_minimo", Json::de_u64(self.quorum_minimo)),
+""",
+        "troca": """            ("email", Json::Bool(self.email.ligado)),
+            ("quorum_minimo", Json::de_u64(self.quorum_minimo)),
+            // DEFEITO REPOSTO: a credencial do replicador sai na tela, «para
+            // o operador conferir qual usuario o cluster usa» -- e o hash e
+            // o token vao no mesmo `vec!` porque «hash nao e senha». Hash que
+            // sai pela rede se quebra offline; o token abre o fio entre os nos.
+            ("usuario", Json::texto_de(&self.usuario)),
+            ("senha_hash", Json::texto_de(&self.senha_hash)),
+            ("token", Json::texto_de(&self.token)),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::tests::a_credencial_do_cluster_nao_sai_em_json",
+            "config::tests::nenhuma_credencial_do_config_sai_pela_op_config",
+        ],
+        "seguem": [
+            # A `Cifra` continua guardando o proprio segredo: cada `para_json`
+            # protege o seu, e a troca so mexe no do cluster.
+            "config::tests::a_senha_da_cifra_nunca_sai_em_json",
+        ],
+    },
+    {
+        "id": "token-do-rest-entra-pela-tela",
+        "titulo": "o token da porta REST passa a se gravar pela tela de configuração",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro», lida no sentido "
+            "CONTRARIO ao das outras entradas: nao e o segredo SAINDO para a "
+            "tela, e o segredo ENTRANDO por ela. As 8 entradas desta petrea "
+            "que vieram antes repoem vazamento; esta repoe uma porta de "
+            "entrada, e e a unica prova das 40 que olha esse lado. "
+            "O defeito e um pedido legitimo de operacao: «trocar o token da "
+            "porta REST pela tela em vez de editar o arquivo», e cabe numa "
+            "linha na lista `CAMPOS_EDITAVEIS`, ao lado de sete campos do "
+            "mesmo bloco que ja sao editaveis. O comentario do bloco do "
+            "cluster, cinquenta linhas abaixo, ja diz por que nao: «credencial "
+            "se edita no arquivo». Pela tela o token viaja em claro no corpo do "
+            "pedido, para no historico do navegador e no log do proxy, e uma "
+            "sessao tomada passa a trocar a fechadura -- que e a razao de o "
+            "`token` do servidor nunca ter entrado nessa lista. "
+            "O que esta entrada ensina: o teste generico do `config.rs` e todas "
+            "as provas de `para_json` ficam VERDES, porque olham o que sai. "
+            "Guarda de saida nao ve porta de entrada."
+            "\n\nRAIO MEDIDO (17/09/2026): **1 dos 1.107** -- o generico e as "
+            "provas de `para_json` ficaram verdes, medido e nao argumentado."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """    ("rest.swagger_ligado", TipoDoCampo::Booleano, false),
+    ("rest.swagger_bind", TipoDoCampo::Texto, false),
+""",
+        "troca": """    ("rest.swagger_ligado", TipoDoCampo::Booleano, false),
+    ("rest.swagger_bind", TipoDoCampo::Texto, false),
+    // DEFEITO REPOSTO: o token da porta passa a se trocar pela tela, «para
+    // nao ter de editar o arquivo». Ele viaja em claro no pedido, para no
+    // historico do navegador e no log do proxy -- e uma sessao tomada passa
+    // a trocar a fechadura.
+    ("rest.token", TipoDoCampo::Texto, false),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::tests::o_token_do_rest_nao_sai_nem_entra_pela_tela",
+        ],
+        "seguem": [
+            # Sao provas de SAIDA, e o defeito e de entrada: ficam verdes.
+            "config::tests::nenhuma_credencial_do_config_sai_pela_op_config",
+            "config::tests::a_lista_de_tabelas_so_aceita_lista_de_textos",
+        ],
+    },
+    {
+        "id": "receita-odbc-devolve-a-senha",
+        "titulo": "a connection string mascarada do ODBC devolve a senha inteira",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro. Nem em "
+            "arquivo». A string que `receita_mascarada` devolve e a que o "
+            "driver ODBC entrega de volta ao aplicativo (`SQLDriverConnect` "
+            "com a OutConnectionString), e o aplicativo a grava no PROPRIO "
+            "arquivo de configuracao -- e o comentario do teste que diz isso. "
+            "Fora do servidor, em outro pacote, num arquivo que nao e nosso: "
+            "e a saida mais longe da frase da petrea, e por isso a que menos "
+            "gente lembra. "
+            "O defeito e o pedido que o proprio comentario da funcao recusa: "
+            "«quem quiser reconectar guarda a receita inteira» -- e quem "
+            "escreve um aplicativo que reconecta acha mais simples pedir a "
+            "string de volta com a senha dentro. Uma linha, e a senha do banco "
+            "vai para o `.ini` de todo cliente Windows. "
+            "O que esta entrada ensina: e a unica desta petrea em "
+            "`phxsql-odbc`, e nenhuma prova do servidor a alcanca -- o "
+            "vazamento acontece num processo que o servidor nem ve."
+            "\n\nRAIO MEDIDO (17/09/2026): **1 dos 59** do `phxsql-odbc --lib`."
+        ),
+        "arquivo": "crates/phxsql-odbc/src/conexao.rs",
+        "trecho": """    if !r.senha.is_empty() {
+        s.push_str(";PWD=***");
+    }
+""",
+        "troca": """    if !r.senha.is_empty() {
+        // DEFEITO REPOSTO: a senha volta inteira, «porque o aplicativo
+        // precisa da string completa para reconectar». A string de volta vai
+        // parar no arquivo de configuracao do aplicativo -- senha em texto
+        // puro num arquivo que nao e nosso.
+        s.push_str(&format!(";PWD={}", r.senha));
+    }
+""",
+        "pacote": "phxsql-odbc",
+        "alvo": ["--lib"],
+        "caem": [
+            "conexao::testes::mascarada_nao_vaza_segredo",
+        ],
+        "seguem": [
+            # O pino e o modo continuam como estavam: a troca so destapa a senha.
+            "conexao::testes::mascarada_diz_o_modo_e_nao_o_pino",
+        ],
+    },
+    {
+        "id": "cifra-do-fio-reserializa-a-privada",
+        "titulo": "o `para_json` da cifra do fio devolve a chave privada em vez de «(oculta)»",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro... nem em "
+            "resposta do protocolo». E a IRMA da `cifra-reserializa-a-senha`, "
+            "e existe pela lei de 03/09: «conserto entra no caminho que o "
+            "motivou, e o caminho IRMAO fica». A `CifraFio` tem um `para_json` "
+            "da MESMA forma que o da `Cifra` -- o mesmo `if`/`else if` com "
+            "`(oculta)` e `(do ambiente)` --, e o defeito que a §15.7 repos na "
+            "`Cifra` e o que se copia para ca num `find`/`replace`: a tela le "
+            "`(oculta)`, mandaria `(oculta)` de volta ao salvar, e o conserto "
+            "errado e devolver o valor real. So que aqui o valor real e a "
+            "chave PRIVADA X25519 do servidor: quem a tem faz o aperto de mao "
+            "no lugar dele. "
+            "O que esta entrada ensina, medido: o teste generico do "
+            "`config.rs` -- que existe para pegar «o campo que alguem "
+            "acrescentar amanha» -- NAO tem a privada do fio na lista dele, e "
+            "fica verde. A lista dos dez segredos e digitada, e a `CifraFio` "
+            "nasceu depois dela. Receita de um numero tambem envelhece, e uma "
+            "lista de segredos num teste e uma receita."
+            "\n\nRAIO MEDIDO (17/09/2026): **1 dos 1.107** -- o generico ficou "
+            "VERDE com a privada saindo inteira. E o numero desta leva."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            // Nunca a privada -- nem mascarada, que o tamanho ja e informacao.
+            (
+                "chave_privada",
+                Json::texto_de(if self.chave_privada.is_empty() {
+                    "(do arquivo)"
+                } else if self.chave_privada_env.is_empty() {
+                    "(oculta)"
+                } else {
+                    "(do ambiente)"
+                }),
+            ),
+""",
+        "troca": """            // DEFEITO REPOSTO: a privada sai inteira, «para a tela conseguir
+            // salvar a secao de volta sem apaga-la» -- o mesmo pedido que fez
+            // a `Cifra` vizinha vazar, copiado para a irma.
+            ("chave_privada", Json::texto_de(&self.chave_privada)),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::tests::a_privada_do_fio_nunca_sai",
+        ],
+        "seguem": [
+            # O generico fica VERDE -- e esse e o ponto: a privada do fio nao
+            # esta na lista de segredos dele.
+            "config::tests::nenhuma_credencial_do_config_sai_pela_op_config",
+            "config::tests::a_senha_da_cifra_nunca_sai_em_json",
+        ],
+    },
+    {
+        "id": "especificacao-openapi-leva-o-token",
+        "titulo": "a especificação OpenAPI, servida sem portão, passa a carregar o token da porta",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro... nem em "
+            "resposta do protocolo». A especificacao e a resposta mais publica "
+            "que este servidor da: `GET /openapi.json` responde ANTES de "
+            "qualquer portao (o `match` do caminho vem logo depois de ler o "
+            "pedido, e o comentario ali diz por que -- «documentacao presa "
+            "atras de uma opcao» nao serve a quem gera cliente). Quem alcanca "
+            "a porta le o documento sem token nenhum. "
+            "O defeito e conveniencia de desenvolvimento, e por isso e "
+            "plausivel: «o explorador pede o token toda vez que abre; poe o "
+            "token na especificacao e o Swagger UI vem pre-autenticado». Cabe "
+            "numa linha `x-...` no topo do documento, que nenhum validador "
+            "de OpenAPI recusa -- extensao e para isso. So que o mesmo "
+            "documento vai para o proxy, para o cache do navegador e para o "
+            "gerador de cliente de quem nunca deveria ter o token. "
+            "O que esta entrada ensina: nenhuma prova de `config.rs` a "
+            "alcanca -- o `Rest::para_json` continua sem o token, e e ele "
+            "que todas olham. A especificacao e OUTRA serializacao do mesmo "
+            "`Rest`, num modulo que a lista generica de segredos nem conhece."
+            "\n\nRAIO MEDIDO (17/09/2026): **1 dos 1.107**."
+        ),
+        "arquivo": "crates/phxsql-server/src/rest.rs",
+        "trecho": """        (
+            "security",
+            Json::Lista(vec![Json::objeto(vec![("token", Json::Lista(Vec::new()))])]),
+        ),
+        ("components", componentes()),
+""",
+        "troca": """        (
+            "security",
+            Json::Lista(vec![Json::objeto(vec![("token", Json::Lista(Vec::new()))])]),
+        ),
+        // DEFEITO REPOSTO: o token vai na especificacao, «para o explorador
+        // vir pre-autenticado em vez de pedir o token a cada abertura». O
+        // documento e servido sem portao a quem alcancar a porta.
+        ("x-token", Json::texto_de(&rest.token)),
+        ("components", componentes()),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "rest::testes::a_especificacao_nao_carrega_o_token",
+        ],
+        "seguem": [
+            # O `para_json` do `Rest` continua limpo: e outra serializacao.
+            "config::tests::o_token_do_rest_nao_sai_nem_entra_pela_tela",
+            "config::tests::nenhuma_credencial_do_config_sai_pela_op_config",
+        ],
+    },
 ]

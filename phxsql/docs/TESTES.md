@@ -785,9 +785,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `upsert-gatilho-do-ramo` | no upsert que atualiza, o BEFORE UPDATE vê a linha mesclada e o AFTER é o do ramo que ele virou | 5 | ✅ provada |
 | `threads-do-so-pela-diferenca` | a prova de que o SO viu a thread subida é a diferença entre duas leituras do total do processo | 1 | ✅ provada |
 
-**143 das 170 guardas do catálogo: 138 provadas, 1 quebrada, 4 redundantes** — 3374 s de mutação, medido em 2026-09-16 15:25.
+**143 das 177 guardas do catálogo: 138 provadas, 1 quebrada, 4 redundantes** — 3374 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 27 das 170 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 27 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 34 das 177 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 34 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `varredura-sem-o-elo` — a varredura barata do diretorio perde a tabela alcancada por elo
 - `linha-vazia-na-conferencia-de-filhas` — a linha descida para a conferencia de filhas vai vazia, e toda mae parece sem filha
@@ -816,6 +816,13 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `trilha-sem-o-nome-de-segredo` — a trilha LGPD deixa de olhar o NOME da coluna e só analisa o valor
 - `trilha-so-olha-o-nome-da-coluna` — a trilha LGPD deixa de ANALISAR o valor e só confia no nome da coluna
 - `debug-da-ligacao-mostra-a-senha` — o `Debug` da ligação de DbLink imprime a senha e o token do outro banco
+- `fio-cifrado-manda-o-claro-junto` — o fio cifrado manda a linha em claro junto do registro selado
+- `diario-das-diretivas-guarda-o-segredo-anterior` — o diário das diretivas grava o valor ANTERIOR do campo sigiloso em claro
+- `cluster-devolve-a-credencial-na-tela` — o resumo do cluster na op `config` leva o token entre nós e o hash do replicador
+- `token-do-rest-entra-pela-tela` — o token da porta REST passa a se gravar pela tela de configuração
+- `receita-odbc-devolve-a-senha` — a connection string mascarada do ODBC devolve a senha inteira
+- `cifra-do-fio-reserializa-a-privada` — o `para_json` da cifra do fio devolve a chave privada em vez de «(oculta)»
+- `especificacao-openapi-leva-o-token` — a especificação OpenAPI, servida sem portão, passa a carregar o token da porta
 
 As notas que a rodada deixou:
 

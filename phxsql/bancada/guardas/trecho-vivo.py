@@ -144,7 +144,7 @@ dia, nunca no desejado:
 
 # E a catraca que sobe, porque e piso e nao teto
 
-- `PISO_DAS_ENTRADAS = 170` -- nasceu em 16/09/2026 valendo 143, contado no
+- `PISO_DAS_ENTRADAS = 177` -- nasceu em 16/09/2026 valendo 143, contado no
   `catalogo.py` daquele dia (143 entradas, 143 ids distintos) mais as
   `APOSENTADAS` (hoje nenhuma). **SUBIU para 150 em 16/09/2026**, no mesmo
   passo em que a frente 245 (O2-O6) escreveu cinco guardas novas -- o teto de
@@ -167,6 +167,14 @@ dia, nunca no desejado:
   e que nenhum teste de `--lib` alcanca. Ele e o UNICO numero desta
   regua que sobe, e sobe porque conta ENTRADAS e nao defeitos: os quatro
   tetos acima continuam em zero, e nenhum deles foi tocado.
+  **SUBIU para 170 em 17/09/2026** com a decima da G-SENHA, o `Debug` do
+  DbLink -- a frente subiu a constante sem escrever esta linha, e ela fica
+  aqui para a serie nao ter um buraco. **E para 177 em 17/09/2026**, na
+  segunda leva da mesma petrea: sete guardas, uma por SAIDA que a frase da
+  petrea nao nomeia -- o fio cifrado, o diario das diretivas, o resumo do
+  cluster, a tela no sentido de ENTRADA (o token do REST), a string de
+  conexao do ODBC, a privada do fio e a especificacao OpenAPI. Contado no
+  dia: 177 entradas, 177 ids distintos, zero aposentadas.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -250,7 +258,7 @@ TETO_TRECHO_MORTO = 0
 TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
-PISO_DAS_ENTRADAS = 170
+PISO_DAS_ENTRADAS = 177
 
 # ------------------------------------------------------------- APOSENTADAS
 #
