@@ -97,7 +97,12 @@ if em_uso "$RAIZ"; then
   # relatorio. Afirmar compilacao sem medir compilacao e a mesma doenca do
   # conferidor que diz «limpo» sem ter conferido nada: quem le vai procurar um
   # build que nao existe. O que se sabe se diz; o que nao se sabe, nao.
-  echo "  alguem trabalha aqui ($QUEM_SEGURA), nao toco no target"
+  # E diz QUANTO deixa de tocar, porque e a mesa maior desta maquina: medido
+  # em 17/09/2026, 10,2 GiB aqui contra 1,4 GiB no cache do provador que esta
+  # secao apagava de hora em hora. Quem le o relatorio procurando disco
+  # precisa ver onde ele esta, nao so o que saiu.
+  t=$(kb "$RAIZ/target")
+  echo "  alguem trabalha aqui ($QUEM_SEGURA), nao toco no target ($((${t:-0}/1024)) MiB)"
 else
   apagar "$RAIZ/target/debug" "reconstroi em minutos"
   # Alvo cruzado ja virou pacote: o zip esta em pacotes/, o objeto nao serve
@@ -255,17 +260,74 @@ FIM
 # alcance dela parava no target e nos worktrees».
 #
 # A copia do provador de guardas e derivada POR CONSTRUCAO -- o
-# `provar-guardas.py` a recria e diz «reaproveitada» quando a acha --, entao
-# aqui basta a prova de uso viva.
+# `provar-guardas.py` a recria e diz «reaproveitada» quando a acha. Esta
+# secao dizia «entao basta a prova de uso viva» e apagava o resto, e isso era
+# tratar CACHE DE TRABALHO como lixo. Medido em 17/09/2026: o zelador o apagou
+# as 23:00 (892 MiB) e as 00:09 (1.432 MiB), e entre as duas corridas duas
+# frentes o tinham reconstruido inteiro -- ele e onde o provador guarda o
+# `target/` quente entre rodadas, e cada reconstrucao e compilacao fria que a
+# frente seguinte paga em tempo: `phxsql-server --lib`, o binario de 90 das 170
+# guardas, custa 51,6 s frio contra 27,2 s quente na arvore limpa; `phxsql-sql
+# --lib` 13,6 s contra 2,4 s. (O que o cache poupa e a compilacao das
+# DEPENDENCIAS; o crate mutado recompila em toda chamada, com ou sem cache,
+# porque o `garantir_frescor` do provador o obriga -- os ~31 s por guarda sao
+# do desenho dele, nao do zelador.) Apagar o que vai ser refeito na hora
+# seguinte nao libera disco -- gasta CPU e E/S de quem esta trabalhando, e o
+# disco volta ao mesmo lugar. A regra do cabecalho diz QUANDO NAO apagar; ela
+# nao dizia quando apagar VALE A PENA.
+#
+# A prova de uso vivo continua, e ganhou um lado que faltava: o `cwd` em /proc
+# so pega o `cargo` filho -- ENTRE duas guardas, enquanto o provador repoe e
+# desfaz o defeito, nenhum processo tem `cwd` aqui, e a secao antiga podia
+# apagar o cache no meio de uma rodada. A tranca do proprio provador
+# (`flock` em `phx-guardas.tranca`, segurada do inicio ao fim) fecha o buraco.
+#
+# O que muda e o criterio para o que NAO esta em uso: ele so sai quando esta
+# FRIO -- sem rodada ha QUENTE_MIN ou mais --, ou quando o disco esta abaixo do
+# piso, que e a unica situacao em que o espaco vale mais que a compilacao (e
+# a mesma que `--mesmo-assim` existe para cobrir). QUENTE_MIN vem da cadencia
+# medida: em 30 h (16/09 06:36 a 17/09 00:12) 16 commits passaram pelo
+# provador, e a maior lacuna entre dois usos foi 3 h 45 min. Seis horas cobre
+# essa lacuna com folga e ainda cabe numa noite -- que e a lacuna que se quer
+# pegar. O ultimo uso e o mais novo de tres sinais: a tranca (o provador a
+# reabre para escrita a cada chamada), o `alvo/debug/deps` (o cargo o toca a
+# cada compilacao) e o proprio diretorio. O piso e o MESMO do
+# `comunicacao.sh`, que ja dizia «e o mesmo que o zelador usa» quando o
+# zelador nao usava piso nenhum.
+#
+# As duas variaveis PHX_* existem para a prova nos dois sentidos -- apontar o
+# script para um cache de mentira com data velha, e fingir um piso alto --
+# sem tocar o cache de verdade nem encher o disco. Sem elas, e o de sempre.
 echo "-- copias derivadas fora do repositorio"
-CACHE_GUARDAS=/root/.cache/phx-guardas
+CACHE_GUARDAS=${PHX_CACHE_GUARDAS:-/root/.cache/phx-guardas}
+PISO_MIB=${PHX_PISO_MIB:-2048}
+QUENTE_MIN=360
 if [ -d "$CACHE_GUARDAS" ]; then
+  TRANCA="${CACHE_GUARDAS%/}.tranca"
   if em_uso "$CACHE_GUARDAS"; then
     echo "  cache do provador de guardas em uso ($QUEM_SEGURA), nao toco"
+  elif [ -e "$TRANCA" ] && ! flock -n "$TRANCA" true 2>/dev/null; then
+    echo "  cache do provador de guardas: rodada em curso (tranca tomada), nao toco"
   else
-    t=$(du -sk "$CACHE_GUARDAS" 2>/dev/null | cut -f1)
-    printf '  %-44s %5d MiB  o provador recria\n' "$CACHE_GUARDAS" "$((t/1024))"
-    [ "$VER" = "--ver" ] || rm -rf "$CACHE_GUARDAS"
+    ULTIMO=0
+    for sinal in "$TRANCA" "$CACHE_GUARDAS/alvo/debug/deps" "$CACHE_GUARDAS"; do
+      m=$(stat -c %Y "$sinal" 2>/dev/null) || continue
+      [ "$m" -gt "$ULTIMO" ] && ULTIMO=$m
+    done
+    IDADE_MIN=$(( ($(date +%s) - ULTIMO) / 60 ))
+    LIVRE_MIB=$(( $(df -k "$REPO" | awk 'NR==2{print $4}') / 1024 ))
+    if [ "$IDADE_MIN" -ge "$QUENTE_MIN" ]; then
+      apagar "$CACHE_GUARDAS" "frio: sem rodada ha $((IDADE_MIN/60)) h, o provador recria"
+    elif [ "$LIVRE_MIB" -lt "$PISO_MIB" ]; then
+      apagar "$CACHE_GUARDAS" \
+        "quente (ha $IDADE_MIN min), mas $LIVRE_MIB MiB livres < piso de $PISO_MIB: a proxima rodada paga a compilacao fria"
+    elif [ "$VER" = "--mesmo-assim" ]; then
+      apagar "$CACHE_GUARDAS" "quente (ha $IDADE_MIN min), apagado por --mesmo-assim"
+    else
+      t=$(kb "$CACHE_GUARDAS")
+      printf '  %-44s %5d MiB  quente: rodada ha %d min, fica (apagar so faria a proxima recompilar do zero)\n' \
+             "$CACHE_GUARDAS" "$((${t:-0}/1024))" "$IDADE_MIN"
+    fi
   fi
 fi
 
