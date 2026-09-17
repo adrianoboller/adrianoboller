@@ -1,10 +1,10 @@
 {
-  "quando": "2026-09-17T19:25:54",
+  "quando": "2026-09-17T19:41:13",
   "ambiente": {
-    "commit": "bb7e84186c0a862add8814095f381c59b095a2c7",
+    "commit": "ec4ea12c857b3630006512fa6dc425077892387a",
     "branch": "claude/capacidades-disponiveis-y6auxh",
-    "arvore": "SUJA: 6 arquivo(s) de entrada fora do commit — `phxsql/bancada/comparativo/LEIA-ME.md`, `phxsql/bancada/comparativo/documento.py`, `phxsql/bancada/comparativo/medir.py`, `phxsql/bancada/comparativo/prova-dos-portoes.py`, `phxsql/docs/PENDENCIAS.md`, `phxsql/docs/cognicao/cognicao_flock-nao-e-reentrante-e-eu-apliquei-a-lei-a-quem-ja-a-cumpria_20260917_1912.md`",
-    "sha256_phxsqld": "bab749c9684b5e1eb18faecc2cfd5df146799e9bb97c3e689c17c2d50b7c5952",
+    "arvore": "limpa (fora das saídas desta própria corrida, `phxsql/bancada/comparativo/resultados.json`, `phxsql/docs/COMPARATIVO.md`)",
+    "sha256_phxsqld": "47c6f9c668016d6a42af7550bc8cb7b283626e3849dea333e0040f881471a94e",
     "uname": "Linux 6.18.44-fc-v33 x86_64",
     "cpus": 4,
     "memoria_total": "16482220 kB",
@@ -53,7 +53,7 @@
     "sqlite": "3.45.1",
     "mysql": "8.0.46-0ubuntu0.24.04.3",
     "postgres": "16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)",
-    "phxsql": "phxsqld 0.18.0 (bb7e84186c0a-sujo) x86_64-unknown-linux-gnu"
+    "phxsql": "phxsqld 0.18.0 (ec4ea12c857b) x86_64-unknown-linux-gnu"
   },
   "sem_motor_nesta_maquina": {
     "cassandra": "docs/CASSANDRA.md, fonte da 5.0.10 commit 7b5ab44, lido em sessão anterior",
@@ -739,7 +739,7 @@
         "a folha anuncia quatro níveis"
       ],
       "cru": {
-        "phxsql": "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'BEGIN ISOLATION LEVEL REPEATABLE READ'}\n<- {\"ok\": true, \"op\": \"sql\", \"resultado\": {\"sql\": \"BEGIN ISOLATION LEVEL REPEATABLE READ\", \"op\": \"begin\", \"resultado\": {\"transaction_id\": 1789673153278, \"transaction_state\": \"ACTIVE\", \"transaction_start_time\": \"2026-09-17 19:25:53,634\", \"transaction_isolation\": \"leitura repetivel pela trava (S por tabela lida, ate o fim), sem fantasma; escrita serializavel por tabela\", \"leitura_repetivel\": true, \"idade_ms\": 0, \"expira_em_s\": 300, \"linhas\": 0, \"database\": \"\", \"tabelas\": [], \"tabelas_declaradas\": [], \"tabelas_efetivas\": [], \"tabelas_expandidas\": [], \"lock_mode\": \"AUTO\", \"scope_mode\": \"DYNAMIC\", \"lock_timeout_ms\": 500, \"statement_timeout_ms\": 0, \"esperando\": \"\", \"savepoints\": [], \"ligacao\": 2, \"usuario\": \"adm\", \"ip\": \"127.0.0.1\", \"motivo_do_aborto\": \"\", \"travas\": [], \"linhas_travadas\": 0}}, \"ms\": 0}",
+        "phxsql": "-> {\"op\": \"sql\", \"database\": \"cmp\", \"sql\": 'BEGIN ISOLATION LEVEL REPEATABLE READ'}\n<- {\"ok\": true, \"op\": \"sql\", \"resultado\": {\"sql\": \"BEGIN ISOLATION LEVEL REPEATABLE READ\", \"op\": \"begin\", \"resultado\": {\"transaction_id\": 1789674071601, \"transaction_state\": \"ACTIVE\", \"transaction_start_time\": \"2026-09-17 19:41:11,960\", \"transaction_isolation\": \"leitura repetivel pela trava (S por tabela lida, ate o fim), sem fantasma; escrita serializavel por tabela\", \"leitura_repetivel\": true, \"idade_ms\": 0, \"expira_em_s\": 300, \"linhas\": 0, \"database\": \"\", \"tabelas\": [], \"tabelas_declaradas\": [], \"tabelas_efetivas\": [], \"tabelas_expandidas\": [], \"lock_mode\": \"AUTO\", \"scope_mode\": \"DYNAMIC\", \"lock_timeout_ms\": 500, \"statement_timeout_ms\": 0, \"esperando\": \"\", \"savepoints\": [], \"ligacao\": 2, \"usuario\": \"adm\", \"ip\": \"127.0.0.1\", \"motivo_do_aborto\": \"\", \"travas\": [], \"linhas_travadas\": 0}}, \"ms\": 0}",
         "mysql": "$ mysql -N -B cmp_phx -e 'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE'\n-- codigo de saida: 0\n-- stdout: (vazio)\n-- stderr: (vazio)",
         "postgres": "$ sudo -u postgres psql -d cmp_phx -v ON_ERROR_STOP=1 -c 'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE'\n-- codigo de saida: 0\n-- stdout: SET\n-- stderr: WARNING:  SET TRANSACTION can only be used in transaction blocks",
         "sqlite": "não perguntado: o verbo não existe neste motor"

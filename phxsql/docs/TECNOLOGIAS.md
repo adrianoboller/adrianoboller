@@ -110,7 +110,7 @@ mesmo motivo que o rodapé já errou uma vez.
 | JavaScript (prova ponta a ponta) | `testes-web/` | 53 | 11059 |
 | Python (bancada de medicao) | `bancada/` | 117 | 53843 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2816 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 406 | 100827 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 406 | 100824 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 32 | 13481 |
 <!-- /GERADO -->
 

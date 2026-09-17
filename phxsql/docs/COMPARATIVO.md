@@ -15,16 +15,12 @@ decisão e o que é buraco.
 > `python3 bancada/comparativo/documento.py`. **Este arquivo não se
 > edita** — a prosa mora no gerador, e a medição, no `resultados.json`.
 
-**O ambiente da corrida, para que ela se refaça:** commit `bb7e84186c0a` no
-branch `claude/capacidades-disponiveis-y6auxh`, árvore **SUJA: 6 arquivo(s) de
-entrada fora do commit — `phxsql/bancada/comparativo/LEIA-ME.md`,
-`phxsql/bancada/comparativo/documento.py`,
-`phxsql/bancada/comparativo/medir.py`, `phxsql/bancada/comparativo/prova-dos-
-portoes.py`, `phxsql/docs/PENDENCIAS.md`,
-`phxsql/docs/cognicao/cognicao_flock-nao-e-reentrante-e-eu-apliquei-a-lei-a-
-quem-ja-a-cumpria_20260917_1912.md`**, `Linux 6.18.44-fc-v33 x86_64` com 4
-CPUs e 16.482.220 kB de memória, e o `phxsqld` que respondeu tem `sha256`
-`bab749c9684b5e1e…`. A configuração do servidor está no `resultados.json`, com
+**O ambiente da corrida, para que ela se refaça:** commit `ec4ea12c857b` no
+branch `claude/capacidades-disponiveis-y6auxh`, árvore **limpa (fora das
+saídas desta própria corrida, `phxsql/bancada/comparativo/resultados.json`,
+`phxsql/docs/COMPARATIVO.md`)**, `Linux 6.18.44-fc-v33 x86_64` com 4 CPUs e
+16.482.220 kB de memória, e o `phxsqld` que respondeu tem `sha256`
+`47c6f9c668016d6a…`. A configuração do servidor está no `resultados.json`, com
 `token` e `senha_hash` **tarjados** — a chave fica visível, o valor não,
 porque «senha nunca em texto puro» alcança artefato versionado.
 
@@ -56,7 +52,7 @@ e a mensagem de recusa fica guardada no JSON. Estas versões responderam:
 
 | motor | versão que respondeu |
 |---|---|
-| PhxSql | `phxsqld 0.18.0 (bb7e84186c0a-sujo) x86_64-unknown-linux-gnu` |
+| PhxSql | `phxsqld 0.18.0 (ec4ea12c857b) x86_64-unknown-linux-gnu` |
 | PostgreSQL(R) | `16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)` |
 | MySQL(R) | `8.0.46-0ubuntu0.24.04.3` |
 | SQLite(R) | `3.45.1` |
