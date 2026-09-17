@@ -784,10 +784,18 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `relogio-ao-alcance-do-teste` | o estado do gerador de v7 fica ao alcance de um teste, que o escreve para trás | 1 | ✅ provada |
 | `upsert-gatilho-do-ramo` | no upsert que atualiza, o BEFORE UPDATE vê a linha mesclada e o AFTER é o do ramo que ele virou | 5 | ✅ provada |
 | `threads-do-so-pela-diferenca` | a prova de que o SO viu a thread subida é a diferença entre duas leituras do total do processo | 1 | ✅ provada |
+| `cluster-devolve-a-credencial-na-tela` | o resumo do cluster na op `config` leva o token entre nós e o hash do replicador | 2 | ✅ provada |
+| `replica-lista-e-pedida-nao-imposta` | replicas_autorizadas vazia libera todos -- e so isso e' pedida, nao imposta | 1 | ✅ provada |
+| `posicao-nao-encolhe-em-silencio` | tabela que nao abre some da soma do diario sem marcar `incompleta` | 1 | ✅ provada |
+| `eleicao-prefere-completa` | `cluster::vencedor` volta a comparar so a posicao numerica, ignorando `incompleta` | 1 | ✅ provada |
+| `replica-nao-atende-escrita` | `aplicar` pela rede deixa de exigir um papel que receba replicacao | 2 | ✅ provada |
+| `spare-nao-atende-ninguem` | o papel Spare deixa de recusar toda operacao que nao esta em OPS_NO_SPARE | 1 | ✅ provada |
+| `read-replica-recusa-escrita` | `ReadReplica` deixa de recusar escrita e para de apontar o primario | 1 | ✅ provada |
+| `pulso-fora-da-lista-e-recusado` | `op_cluster_pulso` deixa de conferir o id contra a lista viva de nos | 1 | ✅ provada |
 
-**143 das 187 guardas do catálogo: 138 provadas, 1 quebrada, 4 redundantes** — 3374 s de mutação, medido em 2026-09-16 15:25.
+**151 das 187 guardas do catálogo: 146 provadas, 1 quebrada, 4 redundantes** — 3621 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 44 das 187 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 44 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 36 das 187 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 36 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `varredura-sem-o-elo` — a varredura barata do diretorio perde a tabela alcancada por elo
 - `linha-vazia-na-conferencia-de-filhas` — a linha descida para a conferencia de filhas vai vazia, e toda mae parece sem filha
@@ -818,7 +826,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `debug-da-ligacao-mostra-a-senha` — o `Debug` da ligação de DbLink imprime a senha e o token do outro banco
 - `fio-cifrado-manda-o-claro-junto` — o fio cifrado manda a linha em claro junto do registro selado
 - `diario-das-diretivas-guarda-o-segredo-anterior` — o diário das diretivas grava o valor ANTERIOR do campo sigiloso em claro
-- `cluster-devolve-a-credencial-na-tela` — o resumo do cluster na op `config` leva o token entre nós e o hash do replicador
 - `token-do-rest-entra-pela-tela` — o token da porta REST passa a se gravar pela tela de configuração
 - `receita-odbc-devolve-a-senha` — a connection string mascarada do ODBC devolve a senha inteira
 - `cifra-do-fio-reserializa-a-privada` — o `para_json` da cifra do fio devolve a chave privada em vez de «(oculta)»
@@ -826,13 +833,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `token-remoto-fora-da-lista-de-segredos` — o `token_remoto` sai da lista de segredos: o token do OUTRO servidor vai em claro para o `perfil.txt` e para a op `profiler`
 - `job-recusa-um-nome-e-grava-os-outros` — a guarda do job volta a recusar só `token`: `senha`/`token_remoto` vão para o `jobs.json` e voltam na ficha
 - `config-json-escreve-aberto-e-herda` — o `config.json` volta a nascer na permissão do `umask` e a herdar o `0644` do original
-- `replica-lista-e-pedida-nao-imposta` — replicas_autorizadas vazia libera todos -- e so isso e' pedida, nao imposta
-- `posicao-nao-encolhe-em-silencio` — tabela que nao abre some da soma do diario sem marcar `incompleta`
-- `eleicao-prefere-completa` — `cluster::vencedor` volta a comparar so a posicao numerica, ignorando `incompleta`
-- `replica-nao-atende-escrita` — `aplicar` pela rede deixa de exigir um papel que receba replicacao
-- `spare-nao-atende-ninguem` — o papel Spare deixa de recusar toda operacao que nao esta em OPS_NO_SPARE
-- `read-replica-recusa-escrita` — `ReadReplica` deixa de recusar escrita e para de apontar o primario
-- `pulso-fora-da-lista-e-recusado` — `op_cluster_pulso` deixa de conferir o id contra a lista viva de nos
 
 As notas que a rodada deixou:
 

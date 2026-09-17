@@ -6,70 +6,80 @@
       "titulo": "o Profiler recorta o texto do pedido em vez de analisar",
       "veredito": "PROVADA",
       "segundos": 36.24,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "profiler-recorta-largo",
       "titulo": "o Profiler recorta procurando a palavra `senha` solta",
       "veredito": "PROVADA",
       "segundos": 31.98,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "evento-linha-sem-escape",
       "titulo": "campo livre vai cru para o .txt e forja uma linha inteira",
       "veredito": "PROVADA",
       "segundos": 36.14,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "profiler-sem-portao",
       "titulo": "o portão próprio do Profiler não existe; o leitor lê o pedido alheio",
       "veredito": "PROVADA",
       "segundos": 37.36,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "pivotar-sem-portao",
       "titulo": "`pivotar` sem conferência própria: a junção vira a porta dos fundos",
       "veredito": "PROVADA",
       "segundos": 38.24,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "sequencias-sem-portao",
       "titulo": "`sequencias` mostra o contador de toda tabela, inclusive a negada",
       "veredito": "PROVADA",
       "segundos": 37.82,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "posicao-sem-portao",
       "titulo": "`posicao` entrega eventos e o esquema cru de toda tabela",
       "veredito": "PROVADA",
-      "segundos": 37.96,
-      "notas": []
+      "segundos": 34.81,
+      "notas": [],
+      "quando": "2026-09-17 05:00"
     },
     {
       "id": "duplicar-sem-destino",
       "titulo": "`duplicar_tabela` confere a origem e não o destino",
       "veredito": "PROVADA",
       "segundos": 38.33,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "regra-de-tabela-imposta",
       "titulo": "sem regra de tabela, nega: a guarda nova entra imposta e nao pedida",
       "veredito": "PROVADA",
       "segundos": 38.26,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "sujas-com-a-trava",
       "titulo": "`descarregar_sujas()` chamado com a trava de dados já na mão",
       "veredito": "PROVADA",
       "segundos": 38.48,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "cadeia-sem-teto",
@@ -78,21 +88,24 @@
       "segundos": 29.64,
       "notas": [
         "o binario abortou, que e como esta guarda pega"
-      ]
+      ],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "excluir-tabela-lista-curta",
       "titulo": "`excluir_tabela` apaga SEIS extensões e a tabela já tem NOVE",
       "veredito": "PROVADA",
       "segundos": 2.06,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "backup-sem-sha256",
       "titulo": "restaurar aceita o backup adulterado: só o tamanho é conferido",
       "veredito": "PROVADA",
       "segundos": 2.32,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "aad-fora-do-slot",
@@ -101,7 +114,8 @@
       "segundos": 10.04,
       "notas": [
         "confirmado: tirar so o AAD nao e sentido por teste nenhum, porque o `nonce_de_pedaco` carrega o ROWID. Medido em 03/09/2026, e nao deduzido: tirando o AAD e SO o rowid do nonce -- volume e contador ficando --, o teste CAI. Volume e versao nao entram nesta conta porque o teste copia o slot INTEIRO, e os dois slots moram no mesmo volume com a mesma versao"
-      ]
+      ],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "nonce-sem-endereco",
@@ -110,42 +124,48 @@
       "segundos": 9.9,
       "notas": [
         "confirmado: tirar so o endereco do nonce tambem passa despercebido, porque o AAD carrega o ROWID. Medido em 03/09/2026: tirando o endereco do nonce e SO o rowid do AAD -- volume e versao ficando --, o teste CAI"
-      ]
+      ],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "endereco-fora-da-amarracao",
       "titulo": "as DUAS fechaduras somem: dá para embaralhar as linhas cifradas",
       "veredito": "PROVADA",
       "segundos": 10.2,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "cache-de-chaves-nao-limpo",
       "titulo": "trocar a senha da cifra não limpa o cache: a senha errada abre",
       "veredito": "PROVADA",
       "segundos": 10.02,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "coluna-externa-sozinha-em-claro",
       "titulo": "tabela cujas únicas colunas marcadas são externas nasce em claro",
       "veredito": "PROVADA",
       "segundos": 9.11,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "catraca-dos-textos",
       "titulo": "mais um texto de tela cravado, fora da fábrica de idiomas",
       "veredito": "PROVADA",
       "segundos": 38.38,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "trava-fora-do-ponto-unico",
       "titulo": "uma tomada da trava de dados fora do `travar_dados()`",
       "veredito": "PROVADA",
       "segundos": 40.17,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "trava-sem-guarda-de-reentrancia",
@@ -154,161 +174,184 @@
       "segundos": 420.12,
       "notas": [
         "a rodada estourou o prazo do executor"
-      ]
+      ],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "exclusao-na-janela-por-padrao",
       "titulo": "a exclusão entra na janela por padrão, sem ninguém pedir",
       "veredito": "PROVADA",
       "segundos": 3.93,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "exclusao-na-janela-sem-leitor",
       "titulo": "`exclusao_na_janela` no config.json, no MANUAL e na tela — e ninguém o lê",
       "veredito": "PROVADA",
       "segundos": 3.74,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "reg-fecha-antes-do-trash",
       "titulo": "a janela sincroniza o `.reg` antes do `.trash`",
       "veredito": "PROVADA",
       "segundos": 1.48,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "rodizio-do-profiler-ignora-o-zero",
       "titulo": "`profiler.arquivo_mib: 0` deixa de querer dizer «sem rodízio»",
       "veredito": "PROVADA",
       "segundos": 39.2,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "cabecalho-do-profiler-forjado",
       "titulo": "o cabeçalho do arquivo do Profiler aceita linha forjada",
       "veredito": "PROVADA",
       "segundos": 32.22,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "profiler-sem-descritor-calado",
       "titulo": "sem descritor, com arquivo pedido, a linha some sem ser contada",
       "veredito": "PROVADA",
       "segundos": 31.92,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "trava-atras-da-rede",
       "titulo": "o laço da réplica segura a trava de dados enquanto lê do soquete",
       "veredito": "PROVADA",
-      "segundos": 17.15,
-      "notas": []
+      "segundos": 16.01,
+      "notas": [],
+      "quando": "2026-09-17 04:58"
     },
     {
       "id": "ordem-pequena-aceita",
       "titulo": "o segredo X25519 todo-zeros aceito como chave de sessão",
       "veredito": "PROVADA",
       "segundos": 2.37,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "contador-do-fio-parado",
       "titulo": "o contador de registros do fio parado — nonce repetido",
       "veredito": "PROVADA",
       "segundos": 2.43,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fio-cortado-vira-fim",
       "titulo": "o fio cortado no meio devolvido como fim de conversa",
       "veredito": "PROVADA",
       "segundos": 2.51,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "cifra-do-fio-imposta",
       "titulo": "a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho",
       "veredito": "PROVADA",
       "segundos": 7.94,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "transcricao-sem-o-cifrado",
       "titulo": "o hash da transcrição sem o texto cifrado da mensagem 2",
       "veredito": "PROVADA",
       "segundos": 2.51,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "amarra-ao-canal-ignorada",
       "titulo": "o login amarrado ao canal conferido SEM a transcricao",
       "veredito": "PROVADA",
       "segundos": 38.56,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "amarra-exigida-ignorada",
       "titulo": "o servidor exige a amarracao ao canal, mas o login nao a cobra",
       "veredito": "PROVADA",
       "segundos": 37.68,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "remoto-em-claro-para-quem-exige",
       "titulo": "o abrir_remoto manda o login em claro mesmo com cifra: true",
       "veredito": "PROVADA",
       "segundos": 37.54,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fio-sem-teto-de-registro",
       "titulo": "a leitura do fio volta a ser ilimitada",
       "veredito": "PROVADA",
       "segundos": 2.45,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "pulso-do-cluster-em-claro",
       "titulo": "o pulso da eleição saindo em claro com a cifra do cluster ligada",
       "veredito": "PROVADA",
       "segundos": 20.36,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "replicacao-do-cluster-em-claro",
       "titulo": "a replicação entre os nós do cluster saindo em claro",
       "veredito": "PROVADA",
-      "segundos": 38.33,
-      "notas": []
+      "segundos": 29.39,
+      "notas": [],
+      "quando": "2026-09-17 05:01"
     },
     {
       "id": "alter-compacta-o-buraco",
       "titulo": "a reescrita da coluna nova pula os slots excluídos e renumera o rowid",
       "veredito": "PROVADA",
       "segundos": 1.43,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "alter-sem-remapear-posicao",
       "titulo": "a coluna nova desloca as de sistema e ninguém remapeia quem guarda posição",
       "veredito": "PROVADA",
       "segundos": 2.03,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "alter-espelho-para-tras",
       "titulo": "o espelho `.bkp` fica com a largura velha depois de acrescentar coluna",
       "veredito": "PROVADA",
       "segundos": 1.86,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "alter-queda-no-meio",
       "titulo": "o conjunto de volumes misturado abre e lê o volume 3 com a largura do 1",
       "veredito": "PROVADA",
       "segundos": 1.94,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "ffi-panico-atravessa",
@@ -317,91 +360,104 @@
       "segundos": 1.74,
       "notas": [
         "o binario abortou, que e como esta guarda pega"
-      ]
+      ],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "ffi-panico-nao-envenena",
       "titulo": "o punho continua sendo usado depois de um pânico capturado",
       "veredito": "PROVADA",
       "segundos": 1.29,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "ffi-texto-ate-o-byte-zero",
       "titulo": "a fronteira trunca o dado do cliente no primeiro byte zero",
       "veredito": "PROVADA",
       "segundos": 1.32,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "ffi-erro-global",
       "titulo": "a mensagem de erro é global e uma thread lê o erro da outra",
       "veredito": "PROVADA",
       "segundos": 1.38,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "ffi-rowid-fora-e-erro",
       "titulo": "«não há essa linha» volta de duas formas diferentes conforme o motivo",
       "veredito": "PROVADA",
       "segundos": 1.37,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "ffi-cursor-para-no-lote",
       "titulo": "o cursor entrega só o primeiro lote e diz que a tabela acabou",
       "veredito": "PROVADA",
       "segundos": 1.32,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "texto-colado-nos-seis",
       "titulo": "a mesma frase colada nas seis colunas de idioma",
       "veredito": "PROVADA",
       "segundos": 28.92,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "frase-longa-repetida",
       "titulo": "uma frase longa repetida em três das seis colunas de idioma",
       "veredito": "PROVADA",
       "segundos": 28.2,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "rest-operacao-sem-documento",
       "titulo": "operação nova no despachar que a especificação OpenAPI não documenta",
       "veredito": "PROVADA",
       "segundos": 34.11,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "rest-rota-fantasma",
       "titulo": "a especificação promete uma rota que o servidor não atende",
       "veredito": "PROVADA",
       "segundos": 33.94,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "rest-nasce-ligado",
       "titulo": "o webservice REST passa a escutar numa atualização, sem ninguém pedir",
       "veredito": "PROVADA",
       "segundos": 32.84,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "rest-corpo-manda-no-caminho",
       "titulo": "o corpo do pedido REST troca a operação do caminho, em silêncio",
       "veredito": "PROVADA",
       "segundos": 33.57,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "rest-filtro-so-o-campo-tabela",
       "titulo": "o filtro de tabelas do REST olha só o campo `tabela` — e a junção é a porta dos fundos",
       "veredito": "PROVADA",
       "segundos": 35.23,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "rest-fecha-sem-escoar",
@@ -410,35 +466,40 @@
       "segundos": 34.51,
       "notas": [
         "confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Quem pega e o passo 13 de `bancada/rest/provar.py`, e esta entrada existe para dizer, com o numero da rodada, que a cobertura mora la e nao aqui"
-      ]
+      ],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "transacao-nao-empilha",
       "titulo": "a transação escreve direto no disco em vez de empilhar",
       "veredito": "PROVADA",
       "segundos": 40.12,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "commit-confirma-abortada",
       "titulo": "o COMMIT confirma uma transação que já estava em ABORT_ONLY",
       "veredito": "PROVADA",
       "segundos": 35.39,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "marca-antes-do-fsync",
       "titulo": "a marca `.tx` é apagada antes de a tabela sincronizar",
       "veredito": "PROVADA",
       "segundos": 38.31,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "insert-sem-travar-o-fim",
       "titulo": "duas transações que anexam preveem o mesmo rowid",
       "veredito": "PROVADA",
       "segundos": 38.04,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "recuperar-sem-reindexar",
@@ -447,574 +508,720 @@
       "segundos": 37.82,
       "notas": [
         "confirmado: nenhum teste de unidade pega este defeito. O indice so fica para tras quando o PROCESSO morre no meio da passada, e isso so acontece de verdade em `bancada/transacoes/provar.py` -- que e por isso que a prova por soquete existe."
-      ]
+      ],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "comum-anexa-no-fim-travado",
       "titulo": "a escrita comum que anexa não olha o fim travado",
       "veredito": "PROVADA",
       "segundos": 34.06,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "dependencia-de-fora-fica-invisivel",
       "titulo": "o filtro de dependência externa vira mudo (mede e nunca acusa)",
       "veredito": "PROVADA",
       "segundos": 35.66,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "sem-indice-na-filha-ignora-em-vez-de-recusar",
       "titulo": "sem índice na filha, a exclusão da mãe ignora em vez de recusar",
       "veredito": "PROVADA",
       "segundos": 1.87,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "cache-paginas-nao-chega-ao-motor",
       "titulo": "`cache_paginas` do config.json deixa de chegar ao motor",
       "veredito": "PROVADA",
       "segundos": 7.13,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "replica-julga-fk",
       "titulo": "a replica volta a conferir chave estrangeira no evento que aplica",
       "veredito": "PROVADA",
       "segundos": 1.71,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "cascata-sem-imagem-no-diario",
       "titulo": "a filha que a cascata abre volta a nascer sem imagem no diario",
       "veredito": "PROVADA",
       "segundos": 1.67,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "replica-refaz-a-cascata",
       "titulo": "a replica volta a refazer a cascata que o source ja mandou",
       "veredito": "PROVADA",
       "segundos": 1.68,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "marca-de-replica-fica-acesa",
       "titulo": "a marca de replica nao se apaga na volta do `aplicar_evento`",
       "veredito": "PROVADA",
       "segundos": 1.54,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fk-nao-pergunta-se-a-mae-esta-viva",
       "titulo": "a conferencia da chave volta a perguntar so se a mae EXISTE",
       "veredito": "PROVADA",
       "segundos": 1.83,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "drop-table-mata-o-pai",
       "titulo": "o `excluir_tabela` volta a apagar a mae com filha apontando",
       "veredito": "PROVADA",
       "segundos": 2.3,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "before-sem-prazo-de-parede",
       "titulo": "o corpo do gatilho BEFORE volta a rodar sem prazo, com a trava global na mão",
       "veredito": "PROVADA",
       "segundos": 39.51,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "declara-conferida-sobre-orfa",
       "titulo": "a chave volta a nascer conferida sobre tabela que ja tem orfa",
       "veredito": "PROVADA",
       "segundos": 2.18,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "verificador-nao-pergunta-se-a-mae-esta-viva",
       "titulo": "o verificador volta a aceitar mae excluida como mae",
       "veredito": "PROVADA",
       "segundos": 2.3,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "restaurar-nao-pergunta-pela-mae",
       "titulo": "restaurar volta a ressuscitar a filha sem olhar a mae",
       "veredito": "PROVADA",
       "segundos": 1.64,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "bidirecional-julga-fk",
       "titulo": "o bidirecional volta a conferir a chave do evento que aplica",
       "veredito": "PROVADA",
       "segundos": 1.49,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "bidirecional-julga-as-filhas",
       "titulo": "o bidirecional volta a recusar apagar a mae que tem filha",
       "veredito": "PROVADA",
       "segundos": 1.38,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "recascata-sem-conferir-a-arvore",
       "titulo": "a recuperação gravava a primeira filha e só então descobria que a neta da segunda restringe",
       "veredito": "PROVADA",
       "segundos": 1.8,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "auto-referencia-em-silencio",
       "titulo": "a auto-referência sai da cascata em silêncio e orfana a subordinada",
       "veredito": "PROVADA",
       "segundos": 2.05,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "recado-manda-reparar-arquivo-sao",
       "titulo": "a mãe invisível manda reparar o índice — de um arquivo intacto",
       "veredito": "PROVADA",
       "segundos": 2.11,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "procura-das-filhas-manda-reparar-arquivo-sao",
       "titulo": "a procura pelas filhas manda reparar o índice — de um arquivo intacto",
       "veredito": "PROVADA",
       "segundos": 1.93,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "recuperacao-nao-reconstroi-a-filha",
       "titulo": "a recuperação não reconstrói o índice da filha, e a cascata fica pela metade",
       "veredito": "PROVADA",
       "segundos": 6.93,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "pista-de-leitura-engole-a-trilha",
       "titulo": "a pista de leitura aceita tabela com dado pessoal, e a trilha fica sem o registro",
       "veredito": "PROVADA",
       "segundos": 38.08,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "pista-de-leitura-nao-espelha",
       "titulo": "a pista de leitura aceita tabela sem `.bkp` e o espelho deixa de nascer",
       "veredito": "PROVADA",
       "segundos": 32.74,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "leitura-sem-recuo-para-a-exclusiva",
       "titulo": "a tabela que pede a ficha exclusiva vira erro em vez de recuo",
       "veredito": "PROVADA",
       "segundos": 28.37,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "abrir-para-ler-cria-a-lixeira",
       "titulo": "abrir para LER cria o `.trash` que falta, sob a ficha compartilhada",
       "veredito": "PROVADA",
       "segundos": 2.0,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "leitura-sem-guarda-de-reentrancia",
       "titulo": "a ficha compartilhada pedida com a exclusiva na mão pendura o servidor",
       "veredito": "PROVADA",
       "segundos": 60.21,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "familia-pela-grafia-crua",
       "titulo": "a grafia do caminho divide a família do registro de `fsync`, e o volume sujo fica para trás",
       "veredito": "PROVADA",
       "segundos": 1.24,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "pag-gravado-com-truncagem",
       "titulo": "o `.pag` escrito com `fs::write` aparece pela metade para quem lê de fora",
       "veredito": "PROVADA",
       "segundos": 1.48,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "pagina-anterior-de-um-em-um",
       "titulo": "a página anterior anda de um em um pelo vazio entre baldes — e ali o `ler` cru RECUSA em vez de dizer «vazio»",
       "veredito": "PROVADA",
       "segundos": 1.47,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fecho-em-paralelo-engole-o-erro",
       "titulo": "o `fsync` que falha dentro do fio, e o `join` que engole o erro",
       "veredito": "PROVADA",
       "segundos": 38.8,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fecho-em-paralelo-fio-que-nao-sobe",
       "titulo": "uma tabela do fecho fica sem fio, e ninguém percebe",
       "veredito": "PROVADA",
       "segundos": 39.68,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "pagina-ordenada-varre-o-indice-inteiro",
       "titulo": "a grade ordenada percorre o índice inteiro para devolver 50 linhas",
       "veredito": "PROVADA",
       "segundos": 3.21,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "cursor-do-pedaco-sem-o-mais-um",
       "titulo": "o cursor da varredura em pedaços devolve de novo a linha da borda",
       "veredito": "PROVADA",
       "segundos": 3.25,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "perfil-grava-o-texto-da-tabela-declarada",
       "titulo": "o perfil.txt grava em claro o pedido de uma tabela declarada em cifra.tabelas",
       "veredito": "PROVADA",
       "segundos": 40.38,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "perfil-so-olha-a-tabela-do-primeiro-nivel",
       "titulo": "o Profiler so olha a tabela do primeiro nível e a junção vira a porta dos fundos",
       "veredito": "PROVADA",
       "segundos": 32.28,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fase-da-telemetria-com-dado-do-usuario",
       "titulo": "a fase do SQL Check passa a carregar dado do usuário, e o furo nasce calado",
       "veredito": "PROVADA",
       "segundos": 32.93,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "cache-de-derivadas-sobrevive-a-troca-de-senha",
       "titulo": "o cache de chaves derivadas responde a quem não deu a senha",
       "veredito": "PROVADA",
       "segundos": 5.73,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fts-reindexar-sem-o-irmao",
       "titulo": "o reindexar reconstrói só o .ndx, e a queda trava a tabela para sempre",
       "veredito": "PROVADA",
       "segundos": 1.47,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fts-reconstruir-sem-recriar",
       "titulo": "reconstruir o índice de texto sem recriar o arquivo não é idempotente",
       "veredito": "PROVADA",
       "segundos": 2.17,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fts-abrir-recusa-a-tabela",
       "titulo": "o .fts ilegível derruba a tabela inteira, em vez de se refazer",
       "veredito": "PROVADA",
       "segundos": 2.15,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fts-nasce-na-pista-de-leitura",
       "titulo": "a pista de leitura cria o .fts, e escrever sob a ficha compartilhada é o que ela existe para impedir",
       "veredito": "PROVADA",
       "segundos": 2.01,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fts-chave-truncada-nao-se-declara",
       "titulo": "a chave truncada não se declara truncada, e a busca acha a mais",
       "veredito": "PROVADA",
       "segundos": 1.82,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "operacao-sem-poder-declarado",
       "titulo": "operação catalogada sem linha de poder vira administrador em silêncio",
       "veredito": "PROVADA",
       "segundos": 33.42,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "sequencia-numero-cru-perde-precisao",
       "titulo": "id acima de 2⁵³ mandado como número cru é gravado trocado, calado",
       "veredito": "PROVADA",
       "segundos": 32.52,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "sequencia-grande-sai-numero-mentiroso",
       "titulo": "id acima de 2⁵³ já gravado sai do servidor como número f64 trocado",
       "veredito": "PROVADA",
       "segundos": 27.85,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "colisao-de-sequence-calada",
       "titulo": "dois masters na mesma faixa perdem uma linha sem contar a ninguém",
       "veredito": "PROVADA",
-      "segundos": 33.5,
-      "notas": []
+      "segundos": 29.23,
+      "notas": [],
+      "quando": "2026-09-17 04:59"
     },
     {
       "id": "contador-de-sequence-atras-do-dado",
       "titulo": "contador de Sequence atrás do dado repete número, e não havia reparo",
       "veredito": "PROVADA",
       "segundos": 1.34,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "regra-de-coluna-com-typo-carrega-calada",
       "titulo": "regra de direito por coluna que cita coluna inexistente carrega calada e não protege nada",
       "veredito": "PROVADA",
       "segundos": 33.5,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "juncao-direita-vazia-perde-colunas",
       "titulo": "LEFT JOIN com a direita vazia sai sem as colunas da direita, e a forma da linha muda",
       "veredito": "PROVADA",
       "segundos": 36.6,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "decimal-do-consultar-compara-como-texto",
       "titulo": "Decimal no consultar.expressao compara como texto, e 9,50 passa por um filtro de acima de 10",
       "veredito": "PROVADA",
       "segundos": 35.62,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "existe-fora-do-inventario-de-tabelas",
       "titulo": "existe[].de fora de tabelas_do_pedido: quem pergunta que tabelas o consultar alcanca nao ve a de dentro do EXISTS",
       "veredito": "PROVADA",
       "segundos": 32.01,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "wchar-recusa-no-driver-odbc",
       "titulo": "SQL_C_WCHAR volta a recusar no driver ODBC, que agora fala UTF-16 na borda",
       "veredito": "PROVADA",
       "segundos": 1.26,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "replica-insiste-na-credencial-recusada",
       "titulo": "a réplica com credencial recusada insistia a cada `reconectar_em` e bloqueava o próprio IP — derrubando o operador junto",
       "veredito": "PROVADA",
-      "segundos": 32.34,
-      "notas": []
+      "segundos": 28.45,
+      "notas": [],
+      "quando": "2026-09-17 05:02"
     },
     {
       "id": "upsert-zera-a-coluna-negada",
       "titulo": "o upsert (`inserir` com `se_existir: \"atualizar\"`) zerava a coluna que o usuário não altera — para quem não lê, para quem lê e não altera, pelo SQL `ON CONFLICT DO UPDATE` e em transação",
       "veredito": "PROVADA",
       "segundos": 38.38,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "presenca-da-coluna-negada-recusa-a-ficha",
       "titulo": "a presença da coluna que o usuário não altera recusava a operação inteira — e a ficha, que manda a linha inteira com a coluna como `null`, não incluía nem salvava nada",
       "veredito": "PROVADA",
       "segundos": 38.95,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "set-do-on-conflict-ignorado",
       "titulo": "o `SET` do `INSERT … ON CONFLICT DO UPDATE` / `ON DUPLICATE KEY UPDATE` (o campo `atualizar`) era ignorado calado, e o `VALUES` ia por cima da linha com NULL no que ele não trazia",
       "veredito": "PROVADA",
       "segundos": 38.64,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "filtro-do-indice-parcial-e-oraculo",
       "titulo": "o índice parcial cujo `onde` cita a coluna negada respondia sobre ela: varrer por ele devolvia exatamente quem tem `salario > 5000`",
       "veredito": "PROVADA",
       "segundos": 39.44,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "juncao-materializa-antes-do-teto",
       "titulo": "as junções `interno`/`esquerdo`/`direito`/`completo` materializavam a saída inteira antes de conferir o teto — 1000 × 1000 com a mesma chave custava +561 MiB para recusar contra um teto de 1000",
       "veredito": "PROVADA",
       "segundos": 40.2,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "select-da-coluna-negada-devolve-nulo",
       "titulo": "`SELECT salario FROM folha` por quem não lê `salario` devolvia `{\"salario\": null}` em toda linha, em vez de recusar",
       "veredito": "PROVADA",
       "segundos": 38.22,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "em-engole-o-campo-ausente",
       "titulo": "`consultar.em` com `campo` que o sub-pedido não devolve — inclusive a coluna negada — respondia zero linhas com `ok: true`",
       "veredito": "PROVADA",
       "segundos": 38.07,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "literal-negativo-nao-parseia",
       "titulo": "o literal negativo não parseava em `SET`/`VALUES` («esperava um valor e veio \"-\"») enquanto `WHERE a = -5` passava pela expressão",
       "veredito": "PROVADA",
       "segundos": 1.99,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "tabela-inexistente-vaza-o-caminho",
       "titulo": "a tabela que não existe respondia «nenhum volume de x.reg em /tmp/…» — o caminho absoluto do disco do servidor, a todo cliente que erra uma letra",
       "veredito": "PROVADA",
       "segundos": 2.18,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "permissao-sem-devolver-a-vaga",
       "titulo": "a permissão do semáforo morre sem devolver a vaga — o `fetch_sub` esquecido, com outro nome",
       "veredito": "PROVADA",
       "segundos": 6.65,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "permissao-de-dados-sem-raii",
       "titulo": "a vaga da porta de dados só volta no caminho feliz — um pânico no `atender` a leva junto",
       "veredito": "PROVADA",
       "segundos": 38.79,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "web-sem-teto",
       "titulo": "a porta web volta a nascer sem teto — uma thread por pedido, como até a 0.18",
       "veredito": "PROVADA",
       "segundos": 38.82,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "ficha-do-fio-pulada-no-panico",
       "titulo": "a ficha da thread na telemetria fica «viva» para sempre quando o corpo entra em pânico",
       "veredito": "PROVADA",
       "segundos": 34.86,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "disco-erro-de-es-sem-aviso",
       "titulo": "o erro de E/S respondido ao cliente não avisa ninguém",
       "veredito": "PROVADA",
       "segundos": 42.41,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "disco-sonda-cega-ao-erro",
       "titulo": "a sonda canário diz «passou» num diretório que o sistema operacional recusa",
       "veredito": "PROVADA",
       "segundos": 38.6,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "disco-silencio-furado",
       "titulo": "todo erro de E/S manda um aviso: cem mil linhas, cem mil e-mails",
       "veredito": "PROVADA",
       "segundos": 33.47,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "disco-config-nao-lida",
       "titulo": "`alertas.disco.checar_segundos` está no arquivo e ninguém o lê",
       "veredito": "PROVADA",
       "segundos": 33.53,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "recuperacao-deixa-a-marca-orfa",
       "titulo": "a recuperação completa (ou descarta) a marca `.tx` e a deixa no disco",
       "veredito": "PROVADA",
       "segundos": 33.09,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "recuperacao-nao-completa-o-commit",
       "titulo": "a recuperação conta e apaga a marca válida sem completar o commit",
       "veredito": "PROVADA",
       "segundos": 34.49,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "ndx-queda-com-cabecalho-limpo",
       "titulo": "a marca de sujo do `.ndx` fica só em RAM e a queda deixa o índice atrasado em silêncio",
       "veredito": "PROVADA",
       "segundos": 2.02,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "reserva-sobrevive-a-queda-da-ligacao",
       "titulo": "a saída da conexão não solta a reserva do BULKINSERT",
       "veredito": "PROVADA",
       "segundos": 35.4,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "bulkinsert-false-nao-drena-a-marca",
       "titulo": "o `bulkinsert(false)` sincroniza a tabela e deixa a marca `.tx` do COMMIT no disco",
       "veredito": "PROVADA",
       "segundos": 37.9,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fecho-sem-suja-nao-drena-a-marca",
       "titulo": "o fecho da janela volta antes de drenar as marcas quando não há tabela suja",
       "veredito": "PROVADA",
       "segundos": 37.97,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fsync-do-arquivo-limpo",
       "titulo": "`Volumes::sincronizar` leva ao disco todo descritor aberto, sem pular o limpo",
       "veredito": "PROVADA",
       "segundos": 1.56,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "fsync-so-dos-escritos",
       "titulo": "o fecho confia só no registro em RAM — e o registro nasceu vazio com o processo",
       "veredito": "PROVADA",
       "segundos": 2.73,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "relogio-ao-alcance-do-teste",
       "titulo": "o estado do gerador de v7 fica ao alcance de um teste, que o escreve para trás",
       "veredito": "PROVADA",
       "segundos": 2.6,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "upsert-gatilho-do-ramo",
       "titulo": "no upsert que atualiza, o BEFORE UPDATE vê a linha mesclada e o AFTER é o do ramo que ele virou",
       "veredito": "PROVADA",
       "segundos": 38.48,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     },
     {
       "id": "threads-do-so-pela-diferenca",
       "titulo": "a prova de que o SO viu a thread subida é a diferença entre duas leituras do total do processo",
       "veredito": "PROVADA",
       "segundos": 38.21,
-      "notas": []
+      "notas": [],
+      "quando": "2026-09-16 15:25"
+    },
+    {
+      "id": "cluster-devolve-a-credencial-na-tela",
+      "titulo": "o resumo do cluster na op `config` leva o token entre nós e o hash do replicador",
+      "veredito": "PROVADA",
+      "segundos": 30.88,
+      "notas": [],
+      "quando": "2026-09-17 05:03"
+    },
+    {
+      "id": "replica-lista-e-pedida-nao-imposta",
+      "titulo": "replicas_autorizadas vazia libera todos -- e so isso e' pedida, nao imposta",
+      "veredito": "PROVADA",
+      "segundos": 36.33,
+      "notas": [],
+      "quando": "2026-09-17 04:50"
+    },
+    {
+      "id": "posicao-nao-encolhe-em-silencio",
+      "titulo": "tabela que nao abre some da soma do diario sem marcar `incompleta`",
+      "veredito": "PROVADA",
+      "segundos": 34.8,
+      "notas": [],
+      "quando": "2026-09-17 04:52"
+    },
+    {
+      "id": "eleicao-prefere-completa",
+      "titulo": "`cluster::vencedor` volta a comparar so a posicao numerica, ignorando `incompleta`",
+      "veredito": "PROVADA",
+      "segundos": 29.32,
+      "notas": [],
+      "quando": "2026-09-17 04:53"
+    },
+    {
+      "id": "replica-nao-atende-escrita",
+      "titulo": "`aplicar` pela rede deixa de exigir um papel que receba replicacao",
+      "veredito": "PROVADA",
+      "segundos": 34.81,
+      "notas": [],
+      "quando": "2026-09-17 04:54"
+    },
+    {
+      "id": "spare-nao-atende-ninguem",
+      "titulo": "o papel Spare deixa de recusar toda operacao que nao esta em OPS_NO_SPARE",
+      "veredito": "PROVADA",
+      "segundos": 33.83,
+      "notas": [],
+      "quando": "2026-09-17 04:55"
+    },
+    {
+      "id": "read-replica-recusa-escrita",
+      "titulo": "`ReadReplica` deixa de recusar escrita e para de apontar o primario",
+      "veredito": "PROVADA",
+      "segundos": 33.88,
+      "notas": [],
+      "quando": "2026-09-17 04:56"
+    },
+    {
+      "id": "pulso-fora-da-lista-e-recusado",
+      "titulo": "`op_cluster_pulso` deixa de conferir o id contra a lista viva de nos",
+      "veredito": "PROVADA",
+      "segundos": 34.46,
+      "notas": [],
+      "quando": "2026-09-17 04:57"
     }
   ]
 }
