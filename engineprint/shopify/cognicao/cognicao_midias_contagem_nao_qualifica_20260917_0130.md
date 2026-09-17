@@ -66,3 +66,37 @@ entra numa vitrine, alem de `status: READY`:
 E o corolario, que e a lei do projeto por outro caminho: *numero que o pedido
 pediu nao e numero que a pagina precisa.* Aceite que sai do enunciado fecha
 tarefa; aceite que sai do palco fecha defeito.
+
+## Desfecho (17/09, 02:00) — o dono mandou trocar
+
+Reordenar tapou o pior; trocar resolveu. Medido no CDN depois, nao na lista:
+
+- **H2D** volta a 6 com as duas pequenas de fundo preto **fora**. Entraram
+  duas oficiais: a frontal com o AMS 2 Pro (2400) e a frente sem o AMS, com a
+  camara e o cabecote de dois bicos a vista (1600) — esta ultima e a unica que
+  mostra o diferencial do produto por dentro. Ordem: cinco claras seguidas e a
+  do laser (preta de proposito, 2400, o modulo laser) **por ultimo**, para a
+  transicao suave nao piscar no meio do carrossel.
+- **P1S** volta a 6 com a `OIP_1.jpg` (180 px, sem alt, miniatura de buscador)
+  fora e uma setima oficial no lugar, na 2a posicao.
+
+Duas candidatas foram **descartadas olhando**, e nenhuma das duas se pega por
+numero: a `12` era a mesma lateral de uma que ja estava no ar, sem o suporte de
+bobina, e a `09` era a propria capa. Dimensao e canto passavam nas duas.
+
+E uma terceira, a `P1S/00`, era a melhor foto do lote e trazia um selo
+**FREE SHIPPING** — promessa falsa numa loja brasileira. O fundo tem sombras
+suaves, entao pintar por cima deixaria remendo: resolvido por **corte**
+quadrado centrado no produto (1520x1520, selo a zero pixel verde). Corte e
+enquadramento; retoque seria inventar fundo.
+
+## O conferidor
+
+`imagens/confere-no-palco.py` — recebe arquivos ou URLs, desenha todos no palco
+`#F7F7F7` e reprova por dimensao (`< 2x` o CSS) e por canto fora do fundo.
+Provado nos dois sentidos: aprova as cinco que ficaram e reprova as tres que
+sairam, com o motivo de cada uma.
+
+O que ele **nao** pega esta escrito na saida dele: imagem que repete o angulo
+de uma irma passa em tudo. Essa so aparece olhando a folha — que e por isso que
+ele desenha a folha em vez de so imprimir a tabela.
