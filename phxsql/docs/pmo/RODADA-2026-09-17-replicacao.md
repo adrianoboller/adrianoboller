@@ -240,3 +240,43 @@ entre dispensa registrada e esquecimento):
   (zelador) — rodou as 07:16, liberou 1.264 MiB medidos. **SEC** — o 293 e
   achado dele e ja esta com o parecer escrito; ele volta para revisar a recusa
   depois de implementada, nao antes.
+
+### Correcao do dono, 07:2x — as cinco recomendacoes sairam sem a regua dos motores
+
+Ordem dele: *«Suas recomendacoes devem levar em conta o que o Mariadb e o
+PostgreSQL faz.»* E ele esta certo. Eu recomendei as cinco contra o nosso fonte
+e contra as nossas petreas, e nao passei nenhuma pela lei que esta casa tem
+justamente para isto: tres motores maduros convergindo e aceite automatico, e
+onde nao convergem decide a media ponderada (PostgreSQL 4, MariaDB 3, MySQL 2,
+SQLite 1).
+
+O alcance que eu errei: eu lia essa regua como uma peneira para **receita que
+vem de fora**, e ela vale tambem para **decisao nossa sobre o que o banco faz**
+— que e exatamente o que as cinco sao. Semantica de carimbo de tempo, faixa de
+sequencia, conflito de unicidade, cifra em repouso e criterio de eleicao sao
+todos «o que o banco faz».
+
+| frente | contrato | escalao | motivo do escalao | largada |
+|---|---|---|---|---|
+| J-REGUA | as cinco decisoes contra PostgreSQL, MariaDB, MySQL e SQLite, na fonte primaria; a conta da convergencia ou da media ponderada; e o veredito por decisao: confirma, muda, ou choca com petrea (e o choque APARECE) | forte | e a lei que decide se quatro frentes constroem a coisa certa | 07:2x |
+
+**Frentes seguradas enquanto a regua nao volta**, porque construir a guarda
+errada custa mais que esperar:
+
+- **B-RECUSAS**: 293 parado e a recusa da tabela do 292 parada. Segue so a
+  parte 2 do 292, parar o laco infinito, que esta certa sob qualquer das tres
+  saidas — nenhum motor maduro fica repetindo o mesmo lote para sempre, entao
+  isso e defeito nosso sob qualquer regua.
+- **C-PSCH**: segue, com uma secao a mais. A hipotese que o pesquisador esta
+  medindo e que os maduros **nao** dao carimbo unico por linha de proposito: o
+  `CURRENT_TIMESTAMP` do PostgreSQL e constante na transacao inteira, a ordem
+  mora no `xmin` e no LSN, e o MariaDB oferece versionamento por TRANSACTION
+  como alternativa ao por TIMESTAMP. Se for por empate, os maduros poem a ordem
+  num contador e deixam o relogio para leitura humana — e o desenho certo vira
+  duas coisas gravadas, nao uma. C desenha as duas com o preco em bytes.
+
+O que eu espero que a regua **confirme**: a 290, porque `auto_increment_offset`
+e `auto_increment_increment` do MySQL e do MariaDB sao variaveis de servidor e
+nao campo do esquema, que e a nossa decisao; e a 294, porque `seqno` do Galera
+e LSN do WAL sao escalares globais, nao vetores por tabela. Esperanca nao e
+medicao: fica escrito aqui para que o retorno do J possa me desmentir.
