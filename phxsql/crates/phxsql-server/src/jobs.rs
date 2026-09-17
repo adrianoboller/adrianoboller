@@ -179,7 +179,12 @@ pub struct Job {
     /// sem cadastro nenhum, que e o mesmo caso em que a rede tambem entra sem
     /// login.
     pub usuario: String,
-    /// O pedido do protocolo, sem `token`: `{"op":"...", ...}`.
+    /// O pedido do protocolo, sem credencial nenhuma: `{"op":"...", ...}`.
+    ///
+    /// Sem `token`, sem `senha`, sem `token_remoto` -- a lista e a de
+    /// `crate::segredos`, a mesma pela qual o profiler redige. Este campo vai
+    /// para o `jobs.json` e volta na ficha, e senha em arquivo por outro nome
+    /// continua senha em arquivo.
     pub pedido: Json,
 }
 
@@ -197,12 +202,21 @@ impl Job {
                 "job {nome:?}: o \"pedido\" precisa de um \"op\""
             )));
         }
-        // Token no pedido seria senha em arquivo por outro nome -- e o job nao
-        // precisa dele: ele nao passa pela porta da rede.
-        if pedido.campo("token").is_some() {
+        // Credencial no pedido seria senha em arquivo por outro nome: o
+        // cadastro vai para o `jobs.json` e volta inteiro na ficha. A guarda
+        // recusava UM nome (`token`) e deixava `senha`, `senha_hash`,
+        // `token_remoto` e `prova` passarem -- revisao SEC de 17/09/2026,
+        // achado A2. Agora e a lista da casa, em qualquer profundidade, e a
+        // recusa NOMEIA o campo: quem recebe o erro precisa saber o que tirar.
+        //
+        // Recusar, e nao redigir: o job EXECUTA o pedido, e um
+        // `usuario_alterar` com a senha tapada trocaria a senha por `***`.
+        if let Some(achado) = crate::segredos::achar_segredo(&pedido) {
             return Err(PhxError::Esquema(format!(
-                "job {nome:?}: o \"pedido\" nao leva \"token\". O job nao entra pela rede; \
-                 quem manda nele e o usuario configurado"
+                "job {nome:?}: o \"pedido\" leva {achado}, e credencial nao entra em job -- \
+                 o cadastro fica em arquivo e volta na ficha. O `token` nao e preciso (o job \
+                 nao entra pela rede; quem manda nele e o usuario configurado); para uma \
+                 ligacao, use `senha_env`/`token_remoto_env` com o nome da variavel de ambiente"
             )));
         }
         Ok(Job {
@@ -513,7 +527,10 @@ impl Registro {
                 std::fs::create_dir_all(pai)?;
             }
         }
-        std::fs::write(&self.caminho, j.escrever_identado())?;
+        // 0600 desde o primeiro byte, e troca atomica: o mesmo molde da chave
+        // do fio. O arquivo nao leva credencial (ver `Job::de_json`), mas leva
+        // QUAL operacao roda como QUEM -- e nasce fechado como os irmaos.
+        crate::config::gravar_privado(&self.caminho, j.escrever_identado().as_bytes())?;
         Ok(())
     }
 
@@ -657,6 +674,81 @@ mod testes {
                 .unwrap();
         let e = Job::de_json(&j).unwrap_err().to_string();
         assert!(e.contains("token"), "{e}");
+    }
+
+    /// **A guarda travava um nome, nao a lei.** `token` era recusado;
+    /// `senha`, `senha_hash`, `token_remoto` e `prova` iam para o `jobs.json`
+    /// em claro e voltavam na ficha (revisao SEC de 17/09/2026, achado A2).
+    /// Agora a regua e a lista da casa (`crate::segredos`), em qualquer
+    /// profundidade -- e a recusa nomeia o campo.
+    #[test]
+    fn credencial_no_pedido_e_recusada_em_qualquer_profundidade() {
+        for campo in ["senha", "senha_hash", "token_remoto", "prova", "nova_senha"] {
+            let j = Json::analisar(&format!(
+                "{{\"nome\":\"x\",\"pedido\":{{\"op\":\"usuario_alterar\",\"login\":\"a\",\"{campo}\":\"MARCA\"}}}}"
+            ))
+            .unwrap();
+            let e = Job::de_json(&j).unwrap_err().to_string();
+            assert!(
+                e.contains(campo),
+                "{campo}: a recusa nao nomeia o campo: {e}"
+            );
+            assert!(!e.contains("MARCA"), "{campo}: a recusa ecoa o valor: {e}");
+        }
+        // Dois niveis abaixo: o `lote` de um `usuario_criar` em massa.
+        let j = Json::analisar(
+            "{\"nome\":\"x\",\"pedido\":{\"op\":\"lote\",\"linhas\":[{\"nome\":\"ok\"},{\"senha\":\"MARCA\"}]}}",
+        )
+        .unwrap();
+        assert!(
+            Job::de_json(&j).is_err(),
+            "a senha dois niveis abaixo passou"
+        );
+        // E a senha DENTRO da frase SQL, que nao tem campo chamado `senha`.
+        let j = Json::analisar(
+            "{\"nome\":\"x\",\"pedido\":{\"op\":\"sql\",\"texto\":\"CREATE USER c PASSWORD 'MARCA'\"}}",
+        )
+        .unwrap();
+        let e = Job::de_json(&j).unwrap_err().to_string();
+        assert!(e.contains("SQL"), "{e}");
+        assert!(!e.contains("MARCA"), "{e}");
+        // O que NAO e credencial continua entrando -- senao a guarda teria
+        // fechado o job inteiro: o nome da variavel de ambiente e o caminho
+        // certo para uma ligacao agendada.
+        let j = Json::analisar(
+            "{\"nome\":\"x\",\"pedido\":{\"op\":\"dblink_salvar\",\"nome\":\"erp\",\"motor\":\"phxsql\",\"host\":\"h\",\"token_remoto_env\":\"ERP_TOKEN\"}}",
+        )
+        .unwrap();
+        Job::de_json(&j).unwrap();
+        let j = Json::analisar(
+            "{\"nome\":\"x\",\"pedido\":{\"op\":\"sql\",\"texto\":\"DROP USER c\"}}",
+        )
+        .unwrap();
+        Job::de_json(&j).unwrap();
+    }
+
+    /// O `jobs.json` nasce 0600, e nasce assim desde o primeiro byte -- a
+    /// mesma janela que `gravar_chave` fecha para a chave do fio, e que este
+    /// arquivo deixava aberta escrevendo com a permissao do `umask` (revisao
+    /// SEC de 17/09/2026, achado A4). A resposta e do sistema operacional,
+    /// nao de uma flag: e o modo que o `stat` devolve.
+    #[cfg(unix)]
+    #[test]
+    fn o_cadastro_de_jobs_nasce_0600() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let (_guarda, caminho) = tmp("permissao");
+        let mut r = Registro::abrir(&caminho).unwrap();
+        r.salvar(Job::de_json(&job_json("noturno", "")).unwrap())
+            .unwrap();
+        let modo = std::fs::metadata(&caminho).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            modo, 0o600,
+            "o jobs.json nasceu legivel por outros: {modo:o}"
+        );
+        assert!(
+            !caminho.with_extension("tmp").exists(),
+            "o temporario ficou para tras"
+        );
     }
 
     #[test]

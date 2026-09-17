@@ -785,9 +785,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `upsert-gatilho-do-ramo` | no upsert que atualiza, o BEFORE UPDATE vê a linha mesclada e o AFTER é o do ramo que ele virou | 5 | ✅ provada |
 | `threads-do-so-pela-diferenca` | a prova de que o SO viu a thread subida é a diferença entre duas leituras do total do processo | 1 | ✅ provada |
 
-**143 das 177 guardas do catálogo: 138 provadas, 1 quebrada, 4 redundantes** — 3374 s de mutação, medido em 2026-09-16 15:25.
+**143 das 180 guardas do catálogo: 138 provadas, 1 quebrada, 4 redundantes** — 3374 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 34 das 177 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 34 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 37 das 180 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 37 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `varredura-sem-o-elo` — a varredura barata do diretorio perde a tabela alcancada por elo
 - `linha-vazia-na-conferencia-de-filhas` — a linha descida para a conferencia de filhas vai vazia, e toda mae parece sem filha
@@ -823,6 +823,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `receita-odbc-devolve-a-senha` — a connection string mascarada do ODBC devolve a senha inteira
 - `cifra-do-fio-reserializa-a-privada` — o `para_json` da cifra do fio devolve a chave privada em vez de «(oculta)»
 - `especificacao-openapi-leva-o-token` — a especificação OpenAPI, servida sem portão, passa a carregar o token da porta
+- `token-remoto-fora-da-lista-de-segredos` — o `token_remoto` sai da lista de segredos: o token do OUTRO servidor vai em claro para o `perfil.txt` e para a op `profiler`
+- `job-recusa-um-nome-e-grava-os-outros` — a guarda do job volta a recusar só `token`: `senha`/`token_remoto` vão para o `jobs.json` e voltam na ficha
+- `config-json-escreve-aberto-e-herda` — o `config.json` volta a nascer na permissão do `umask` e a herdar o `0644` do original
 
 As notas que a rodada deixou:
 

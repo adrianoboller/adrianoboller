@@ -7610,9 +7610,10 @@ impl Servidor {
             .to_string();
         if self.config.rest.token.is_empty() {
             Some(apresentado)
-        } else if apresentado == self.config.rest.token {
+        } else if self.config.rest.token_confere(&apresentado) {
             // Passou pelo segredo da porta; o portao 1 continua conferindo o
-            // token do protocolo, que e o que ele sempre conferiu.
+            // token do protocolo, que e o que ele sempre conferiu. Em tempo
+            // constante, como o portao 1 -- aqui era `==`.
             Some(self.config.token.clone())
         } else {
             self.violacao_leve(ip, op, "token do REST invalido");

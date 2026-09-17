@@ -1809,13 +1809,15 @@ fn chave_de_hex(texto: &str, de_onde: &str) -> Result<[u8; 32]> {
     Ok(k)
 }
 
-/// Grava a estatica com permissao 0600 no Unix.
+/// Abre `caminho` para escrita, NOVO e com permissao 0600 desde o primeiro
+/// byte (no Unix; no Windows vale a ACL da pasta, como sempre valeu).
 ///
 /// A permissao e posta na CRIACAO, e nao depois: entre criar aberto e apertar
-/// ha uma janela em que qualquer um le a chave, e essa janela e a unica coisa
-/// que este arquivo existe para nao ter.
-fn gravar_chave(caminho: &Path, chave: &[u8; 32]) -> std::io::Result<()> {
-    use std::io::Write as _;
+/// ha uma janela em que qualquer um le o conteudo, e essa janela e a unica
+/// coisa que um arquivo de segredo existe para nao ter. `create_new` e parte
+/// da garantia: `mode` so vale para o arquivo que nasce aqui, e um que ja
+/// existisse entraria com a permissao que tinha.
+fn abrir_privado(caminho: &Path) -> std::io::Result<std::fs::File> {
     let mut opcoes = std::fs::OpenOptions::new();
     opcoes.write(true).create_new(true);
     #[cfg(unix)]
@@ -1823,9 +1825,48 @@ fn gravar_chave(caminho: &Path, chave: &[u8; 32]) -> std::io::Result<()> {
         use std::os::unix::fs::OpenOptionsExt as _;
         opcoes.mode(0o600);
     }
-    let mut arq = opcoes.open(caminho)?;
+    opcoes.open(caminho)
+}
+
+/// Grava a estatica com permissao 0600 no Unix -- ver [`abrir_privado`].
+fn gravar_chave(caminho: &Path, chave: &[u8; 32]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let mut arq = abrir_privado(caminho)?;
     writeln!(arq, "{}", phxsql_core::hash::para_hex(chave))?;
     arq.sync_all()
+}
+
+/// Grava `corpo` em `caminho` de forma atomica e 0600 desde o primeiro byte.
+///
+/// # Os tres irmaos que faziam o contrario
+///
+/// A licao do `create_new + mode(0o600)` e de 30/08/2026 (`d3b7d62`) e
+/// entrou para a chave do fio -- e nao voltou aos irmaos: `config.json` (o
+/// token e os hashes), `dblink.json` (senha e token do outro banco) e
+/// `jobs.json` escreviam com `std::fs::write`, na permissao do `umask`, e
+/// apertavam DEPOIS com `let _ =`. O `config.json` ainda herdava a permissao
+/// do original, entao um `0644` de instalacao ficava `0644` para sempre
+/// (revisao SEC de 17/09/2026, achado A4). Agora os tres passam por aqui.
+///
+/// O `.tmp` de uma gravacao interrompida pode ter ficado -- e ficado com a
+/// permissao daquele dia. `create_new` o recusaria, e reaproveita-lo herdaria
+/// a permissao velha, porque `mode` so vale na criacao. Entao ele sai antes;
+/// so a ausencia dele e engolida, porque ausencia e o caso normal.
+pub(crate) fn gravar_privado(caminho: &Path, corpo: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let temporario = caminho.with_extension("tmp");
+    match std::fs::remove_file(&temporario) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    let mut arq = abrir_privado(&temporario)?;
+    arq.write_all(corpo)?;
+    arq.sync_all()?;
+    drop(arq);
+    // Troca atomica: um corte de energia no meio deixa o arquivo antigo
+    // inteiro, e nao um pela metade -- que derrubaria o proximo arranque.
+    std::fs::rename(&temporario, caminho)
 }
 
 /// Um servidor que a interface pode alcancar.
@@ -2063,6 +2104,16 @@ pub struct Rest {
     pub swagger_ligado: bool,
     /// Endereco de escuta do explorador.
     pub swagger_bind: String,
+}
+
+impl Rest {
+    /// O `Bearer` da porta REST confere com o segredo dela? Em tempo
+    /// constante, como o token do protocolo -- o REST comparava com `==`
+    /// enquanto o portao 1 ja usava `token_confere` (achado lateral do papel
+    /// J, 17/09/2026: o conserto que nao voltou ao irmao).
+    pub fn token_confere(&self, oferecido: &str) -> bool {
+        phxsql_core::hash::iguais_em_tempo_constante(self.token.as_bytes(), oferecido.as_bytes())
+    }
 }
 
 /// `Debug` a mao: o token do REST e a chave da porta da rede, e substitui o do
@@ -3646,17 +3697,13 @@ impl Config {
 
     /// Comparacao de token em tempo constante, para nao vazar o segredo pelo
     /// tempo de resposta.
+    ///
+    /// Delega ao `hash.rs`, que e onde a lei mora: este metodo tinha o laco
+    /// escrito de novo aqui, e o irmao do REST (`Rest::token_confere`) nao
+    /// tinha laco nenhum -- comparava com `==`. Uma implementacao, dois
+    /// chamadores.
     pub fn token_confere(&self, oferecido: &str) -> bool {
-        let a = self.token.as_bytes();
-        let b = oferecido.as_bytes();
-        if a.len() != b.len() {
-            return false;
-        }
-        let mut diferenca = 0u8;
-        for (x, y) in a.iter().zip(b.iter()) {
-            diferenca |= x ^ y;
-        }
-        diferenca == 0
+        phxsql_core::hash::iguais_em_tempo_constante(self.token.as_bytes(), oferecido.as_bytes())
     }
 
     /// A configuracao como resposta de protocolo, SEM segredo nenhum dentro.
@@ -4266,8 +4313,8 @@ impl Config {
     /// O que muda com o pedido 221 e que ha uma porta PROPRIA para o cadastro
     /// -- com portao proprio, guardas proprias e a senha virando hash antes de
     /// tocar na arvore --, e ela usa o MESMO caminho de gravacao: mesma
-    /// validacao antes, mesma troca cirurgica no texto, mesmo temporario com
-    /// as permissoes do original, mesmo `rename`.
+    /// validacao antes, mesma troca cirurgica no texto, mesmo temporario
+    /// 0600 desde o primeiro byte, mesmo `rename`.
     ///
     /// Duas gravacoes de `config.json` com caminhos diferentes seriam dois
     /// jeitos de o arquivo ficar pela metade, e so um deles estaria provado.
@@ -4485,20 +4532,12 @@ fn gravar_a_arvore(
         }
     }
 
-    // O mesmo padrao do cadastro do DbLink: escreve inteiro num arquivo
-    // temporario e troca com rename. Um corte de energia no meio deixa o
-    // config.json antigo inteiro, e nao um pela metade -- que derrubaria o
-    // proximo arranque.
-    let temporario = caminho.with_extension("tmp");
-    std::fs::write(&temporario, corpo)
-        .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", temporario.display())))?;
-    // O arquivo carrega o token e os hashes: o temporario herda as
-    // permissoes do original em vez de nascer com as largas do umask.
-    if let Ok(meta) = std::fs::metadata(caminho) {
-        let _ = std::fs::set_permissions(&temporario, meta.permissions());
-    }
-    std::fs::rename(&temporario, caminho)
-        .map_err(|e| PhxError::Esquema(format!("nao troquei {}: {e}", caminho.display())))?;
+    // O arquivo carrega o token e os hashes: nasce 0600 desde o primeiro
+    // byte e entra por troca atomica -- o mesmo molde da chave do fio e do
+    // cadastro do DbLink, num lugar so. Ele NAO herda mais a permissao do
+    // original: um `0644` de instalacao virava `0644` para sempre.
+    gravar_privado(caminho, corpo.as_bytes())
+        .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", caminho.display())))?;
     Ok(novo)
 }
 
@@ -5579,6 +5618,22 @@ mod tests {
         assert!(!c.token_confere(""));
     }
 
+    /// O irmao do REST responde igual ao portao 1 -- e pelo mesmo laco.
+    /// (Tempo constante nao se prova por teste de unidade; prova-se por
+    /// construcao, e a construcao e uma so, no `hash.rs`.)
+    #[test]
+    fn o_bearer_do_rest_confere_como_o_token_do_protocolo() {
+        let r = Rest {
+            token: "abc123".into(),
+            ..Rest::default()
+        };
+        assert!(r.token_confere("abc123"));
+        assert!(!r.token_confere("abc124"));
+        assert!(!r.token_confere("abc"));
+        assert!(!r.token_confere("abc1234"));
+        assert!(!r.token_confere(""));
+    }
+
     /* -------------------------------------------------------------- cluster */
 
     /// Sem o bloco `cluster`, NADA muda -- e este e o teste que mais importa:
@@ -6574,6 +6629,60 @@ mod testes_gravacao {
 
     fn muda(campo: &str, valor: Json) -> Vec<(String, Json)> {
         vec![(campo.to_string(), valor)]
+    }
+
+    /// **O `config.json` regravado nasce 0600 -- e nao herda mais o 0644.**
+    ///
+    /// Antes, o temporario nascia com a permissao do `umask` e depois copiava
+    /// a do original: um arquivo de instalacao em 0644, com o token e os
+    /// hashes dentro, ficava 0644 para sempre (revisao SEC de 17/09/2026,
+    /// achado A4). A fixture e escrita com `std::fs::write` -- 0644 sob
+    /// `umask 022`, que e o caso da instalacao --, e a resposta vem do
+    /// sistema operacional: o modo que o `stat` devolve.
+    #[cfg(unix)]
+    #[test]
+    fn o_config_regravado_nasce_0600_sem_herdar_o_original() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let (_guarda, caminho) = arquivo("permissao");
+        std::fs::set_permissions(&caminho, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let antes = std::fs::metadata(&caminho).unwrap().permissions().mode() & 0o777;
+        assert_eq!(antes, 0o644, "a fixture nao reproduziu a instalacao aberta");
+
+        Config::gravar_campos(&caminho, &muda("max_linhas", Json::de_i64(50))).unwrap();
+
+        let depois = std::fs::metadata(&caminho).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            depois, 0o600,
+            "o config.json continuou legivel por outros: {depois:o}"
+        );
+        assert!(
+            !caminho.with_extension("tmp").exists(),
+            "o temporario ficou para tras"
+        );
+    }
+
+    /// O molde em si: caminho novo nasce 0600, e um `.tmp` deixado por uma
+    /// gravacao interrompida -- com a permissao daquele dia -- nao contamina
+    /// a de hoje, porque `mode` so vale na criacao e o `.tmp` velho sai antes.
+    #[cfg(unix)]
+    #[test]
+    fn gravar_privado_nasce_0600_mesmo_com_temporario_velho_aberto() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = DirTemp::novo("gravar-privado");
+        let caminho = dir.join("segredo.json");
+        let modo = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+
+        gravar_privado(&caminho, b"{\"a\":1}").unwrap();
+        assert_eq!(modo(&caminho), 0o600);
+        assert_eq!(std::fs::read_to_string(&caminho).unwrap(), "{\"a\":1}");
+
+        let tmp = caminho.with_extension("tmp");
+        std::fs::write(&tmp, "lixo de uma gravacao interrompida").unwrap();
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o644)).unwrap();
+        gravar_privado(&caminho, b"{\"a\":2}").unwrap();
+        assert_eq!(modo(&caminho), 0o600, "o .tmp velho contaminou a permissao");
+        assert_eq!(std::fs::read_to_string(&caminho).unwrap(), "{\"a\":2}");
+        assert!(!tmp.exists());
     }
 
     #[test]

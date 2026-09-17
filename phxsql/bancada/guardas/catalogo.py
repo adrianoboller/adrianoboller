@@ -7163,4 +7163,110 @@ pub fn limpar() {
             "config::tests::nenhuma_credencial_do_config_sai_pela_op_config",
         ],
     },
+    {
+        "id": "token-remoto-fora-da-lista-de-segredos",
+        "titulo": "o `token_remoto` sai da lista de segredos: o token do OUTRO servidor vai em claro para o `perfil.txt` e para a op `profiler`",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro: nem em arquivo, nem em log, "
+            "nem em resposta do protocolo». Revisao SEC de 17/09/2026, achado A1 "
+            "(docs/SEGURANCA.md §17.1): `token_remoto` nasceu em 03/09 com o nome escolhido "
+            "de proposito -- `token` e o portao 1 deste servidor -- e a lista, retocada em "
+            "05/09, nao o ganhou. O defeito reposto NAO e um `derive`: e o NOME fora da lista, "
+            "que e a forma pela qual a lista envelhece. Quatro testes caem, e a diferenca "
+            "entre eles e o que a entrada ensina: o do profiler ve o VALOR vazar; o do "
+            "`segredos.rs` ve o NOME faltar, cruzando a lista com os parametros do catalogo "
+            "-- e e esse que cai ANTES de alguem mandar o campo pelo fio."
+            "\n\nRAIO MEDIDO (17/09/2026): 4 dos 1.117 testes do `--lib` caem -- os quatro do `caem`."
+        ),
+        "arquivo": "crates/phxsql-server/src/segredos.rs",
+        "trecho": """    "token_remoto",
+    "chave",
+""",
+        "troca": """    // DEFEITO REPOSTO: o nome escolhido de proposito ficou fora da lista
+    // enquanto ela era retocada (05/09/2026).
+    "chave",
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes::o_token_do_outro_servidor_nunca_aparece",
+            "segredos::testes::todo_parametro_com_cara_de_segredo_esta_na_lista",
+            "jobs::testes::credencial_no_pedido_e_recusada_em_qualquer_profundidade",
+            "segredos::testes::o_achado_nomeia_o_campo_em_qualquer_profundidade",
+        ],
+        "seguem": [
+            "profiler::testes::a_senha_nunca_aparece",
+            "profiler::testes::a_prova_e_a_assinatura_tambem_saem",
+            "segredos::testes::a_lista_reconhece_os_seus_nomes_aparados_e_sem_caixa",
+            "jobs::testes::pedido_com_token_e_recusado",
+        ],
+    },
+    {
+        "id": "job-recusa-um-nome-e-grava-os-outros",
+        "titulo": "a guarda do job volta a recusar só `token`: `senha`/`token_remoto` vão para o `jobs.json` e voltam na ficha",
+        "porque": (
+            "mesma petrea, achado A2 da revisao SEC de 17/09/2026 (docs/SEGURANCA.md §17.2): "
+            "«guarda que repoe defeito trava o NOME onde o defeito foi reposto, nao a lei». "
+            "O `de_json` recusava `token` e deixava os outros passarem; agora recusa pela "
+            "lista da casa (`segredos::achar_segredo`), em qualquer profundidade, e nomeia o "
+            "campo. `pedido_com_token_e_recusado` SEGUE verde com o defeito -- e por isso ele "
+            "sozinho nunca acusou nada."
+            "\n\nRAIO MEDIDO (17/09/2026): 1 dos 1.117 testes do `--lib` cai."
+        ),
+        "arquivo": "crates/phxsql-server/src/jobs.rs",
+        "trecho": """        if let Some(achado) = crate::segredos::achar_segredo(&pedido) {
+            return Err(PhxError::Esquema(format!(
+                "job {nome:?}: o \\"pedido\\" leva {achado}, e credencial nao entra em job -- \\
+                 o cadastro fica em arquivo e volta na ficha. O `token` nao e preciso (o job \\
+                 nao entra pela rede; quem manda nele e o usuario configurado); para uma \\
+                 ligacao, use `senha_env`/`token_remoto_env` com o nome da variavel de ambiente"
+            )));
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO: a guarda trava UM nome, nao a lei.
+        if pedido.campo("token").is_some() {
+            return Err(PhxError::Esquema(format!(
+                "job {nome:?}: o \\"pedido\\" nao leva \\"token\\". O job nao entra pela rede; \\
+                 quem manda nele e o usuario configurado"
+            )));
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["jobs::testes::credencial_no_pedido_e_recusada_em_qualquer_profundidade"],
+        "seguem": ["jobs::testes::pedido_com_token_e_recusado", "jobs::testes::o_cadastro_de_jobs_nasce_0600"],
+    },
+    {
+        "id": "config-json-escreve-aberto-e-herda",
+        "titulo": "o `config.json` volta a nascer na permissão do `umask` e a herdar o `0644` do original",
+        "porque": (
+            "achado A4 da revisao SEC de 17/09/2026 (docs/SEGURANCA.md §17.3): «conserto entra "
+            "no caminho que o motivou, e o irmao fica». O `gravar_chave` fecha a janela desde "
+            "30/08 (`d3b7d62`) e os tres irmaos escreviam aberto e apertavam DEPOIS com "
+            "`let _ =`; o `config.json` ainda herdava a permissao do original. A prova e do "
+            "sistema operacional: o modo que o `stat` devolve, 644 com o defeito e 600 sem."
+            "\n\nRAIO MEDIDO (17/09/2026): 1 dos 1.117 testes do `--lib` cai."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """    gravar_privado(caminho, corpo.as_bytes())
+        .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", caminho.display())))?;
+    Ok(novo)
+""",
+        "troca": """    // DEFEITO REPOSTO: escreve na permissao do umask e aperta depois, herdando
+    // a do original -- o 0644 de instalacao fica 0644 para sempre.
+    let temporario = caminho.with_extension("tmp");
+    std::fs::write(&temporario, corpo)
+        .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", temporario.display())))?;
+    if let Ok(meta) = std::fs::metadata(caminho) {
+        let _ = std::fs::set_permissions(&temporario, meta.permissions());
+    }
+    std::fs::rename(&temporario, caminho)
+        .map_err(|e| PhxError::Esquema(format!("nao troquei {}: {e}", caminho.display())))?;
+    Ok(novo)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["config::testes_gravacao::o_config_regravado_nasce_0600_sem_herdar_o_original"],
+        "seguem": ["config::testes_gravacao::grava_o_pedido_e_preserva_o_resto", "config::testes_gravacao::gravar_privado_nasce_0600_mesmo_com_temporario_velho_aberto"],
+    },
 ]

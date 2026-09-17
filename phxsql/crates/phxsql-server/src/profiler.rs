@@ -123,36 +123,12 @@ use std::path::PathBuf;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 
-/// Campos cujo valor nunca e guardado nem escrito.
-///
-/// A lista e por NOME e nao por heuristica: adivinhar o que e sensivel pelo
-/// formato do valor erra nos dois sentidos, e errar para o lado de mostrar e
-/// irreversivel -- o texto ja saiu.
-const SEGREDOS: &[&str] = &[
-    "senha",
-    "senha_b64",
-    "senha_hash",
-    "nova_senha",
-    // A senha do BANCO, quando ela passar a entrar pelo login.
-    //
-    // Ela entra na lista ANTES do caminho que a usa, e nao depois, e o motivo
-    // e a assimetria que a distingue da senha da conta: a senha da CONTA pode
-    // ser provada sem viajar (o desafio-resposta manda uma `prova`, nunca a
-    // senha), mas a senha do BANCO nao pode -- o servidor precisa dela em
-    // claro para derivar a chave do PBKDF2. Ela viaja, e o unico lugar em que
-    // se pode tapar e este.
-    //
-    // Campo redigido que ninguem ainda manda nao custa nada; campo que se
-    // esquece de redigir no dia em que alguem passa a manda-lo custa o
-    // segredo, e custa em silencio -- o `perfil.txt` nao acusa nada.
-    "senha_banco",
-    "senha_banco_b64",
-    "prova",
-    "token",
-    "chave",
-    "chave_privada",
-    "assinatura",
-];
+// Os campos cujo valor nunca e guardado nem escrito moram em
+// `crate::segredos::SEGREDOS` -- um lugar so, porque o job recusa pela mesma
+// lista pela qual este arquivo redige. A lista viveu aqui ate 17/09/2026 e
+// envelheceu aqui: `token_remoto` ficou dois dias fora dela enquanto ela era
+// retocada, e o token do outro servidor foi para o `perfil.txt` em claro. A
+// regua que cruza a lista com o catalogo do protocolo esta ao lado dela.
 
 /// O que o arquivo grava no lugar do pedido de uma tabela declarada sigilosa.
 ///
@@ -964,7 +940,7 @@ fn colher_tabelas(j: &Json, database: &str, saida: &mut Vec<(String, String)>) {
 /// portao le duas palavras, e so um `CREATE`/`ALTER`/`DROP USER` paga o
 /// lexico. Todo o resto sai daqui como `None` e segue intacto.
 fn sql_sem_senha(chave: &str, valor: &Json) -> Option<String> {
-    if !matches!(chave.trim().to_ascii_lowercase().as_str(), "texto" | "sql") {
+    if !crate::segredos::e_campo_de_sql(chave) {
         return None;
     }
     let t = valor.texto()?;
@@ -977,13 +953,9 @@ fn limpar(j: &Json) -> Json {
             pares
                 .iter()
                 .map(|(k, v)| {
-                    // `k.trim()`: a chave `"senha "` -- com espaco DENTRO das
-                    // aspas -- nao e a chave que o servidor le, entao ela
-                    // nunca autentica ninguem; mas um cliente desastrado que a
-                    // mande poe uma senha de verdade no fio, e o profiler a
-                    // mostraria inteira. Comparar aparado nao perde nada e
-                    // fecha a porta.
-                    if SEGREDOS.iter().any(|s| k.trim().eq_ignore_ascii_case(s)) {
+                    // Por NOME, aparado e sem caixa -- o porque de cada
+                    // escolha esta em `crate::segredos`, ao lado da lista.
+                    if crate::segredos::e_nome_de_segredo(k) {
                         (k.clone(), Json::Texto("***".into()))
                     } else if let Some(sem) = sql_sem_senha(k, v) {
                         (k.clone(), Json::Texto(sem))
@@ -1005,7 +977,7 @@ mod testes {
     /// **A senha dentro da FRASE, e nao num campo.**
     ///
     /// `{"op":"sql","texto":"CREATE USER c PASSWORD 'x'"}` passava inteiro:
-    /// a lista de [`SEGREDOS`] e por nome de campo, e ali o nome do campo e
+    /// a lista de [`crate::segredos::SEGREDOS`] e por nome de campo, e ali o nome do campo e
     /// `texto`. Achado exercitando o motor vivo -- `bancada/usuarios/provar.py`,
     /// parte 8 --, e nao lendo o codigo.
     ///
@@ -1057,7 +1029,7 @@ mod testes {
             r#"{"op":"lote","linhas":[{"senha":"segredo1"},{"nome":"ok"}]}"#,
             r#"{ "op" : "login" , "senha" : "segredo1" }"#,
             // A senha do BANCO, que so pode viajar em claro -- ver o
-            // comentario da lista `SEGREDOS`. Ela entra na prova ANTES de
+            // comentario da lista `segredos::SEGREDOS`. Ela entra na prova ANTES de
             // existir o caminho que a manda, porque e o esquecimento que custa
             // caro, e ele nao acusa nada.
             r#"{"op":"login","usuario":"adm","senha_banco":"segredo1"}"#,
@@ -1071,6 +1043,54 @@ mod testes {
             );
             assert!(saida.contains("***"), "nao redigiu nada em {p}");
         }
+    }
+
+    /// **O token do OUTRO servidor -- o nome escolhido de proposito.**
+    ///
+    /// `token_remoto` nasceu em 03/09/2026 chamando-se assim porque `token`
+    /// ja e o portao 1 daqui. A lista de segredos foi retocada em 05/09 e nao
+    /// o ganhou: com o profiler ligado, `dblink_salvar` e `replicacao_testar`
+    /// escreviam o token de servico do outro PhxSql em claro no `perfil.txt`
+    /// e o devolviam pela op `profiler` (revisao SEC de 17/09, achado A1).
+    ///
+    /// Prova nos dois sentidos: passa com o nome na lista, e volta a falhar
+    /// se alguem o tirar -- e a regua em `segredos.rs` acusa a retirada
+    /// ANTES, nomeando o parametro do catalogo.
+    #[test]
+    fn o_token_do_outro_servidor_nunca_aparece() {
+        for p in [
+            r#"{"op":"dblink_salvar","nome":"erp","motor":"phxsql","host":"h","token_remoto":"MARCA-TOKEN-REMOTO"}"#,
+            r#"{"op":"replicacao_testar","host":"h","token_remoto":"MARCA-TOKEN-REMOTO"}"#,
+            r#"{"op":"job_salvar","job":{"nome":"x","pedido":{"op":"dblink_salvar","token_remoto":"MARCA-TOKEN-REMOTO"}}}"#,
+        ] {
+            let saida = redigir(p);
+            assert!(
+                !saida.contains("MARCA-TOKEN-REMOTO"),
+                "o token do outro servidor vazou em {p}\n  -> {saida}"
+            );
+            assert!(saida.contains("***"), "nao redigiu nada em {p}");
+            // O NOME da variavel de ambiente continua visivel: e o que diz de
+            // onde a credencial deveria ter vindo, e nao e segredo.
+        }
+        let s = redigir(r#"{"op":"dblink_salvar","nome":"erp","token_remoto_env":"ERP_TOKEN"}"#);
+        assert!(s.contains("ERP_TOKEN"), "{s}");
+    }
+
+    /// A `prova` e a `assinatura` -- os dois nomes da lista que a regua do
+    /// catalogo NAO alcanca, porque o lexico da guarda `debug-com-segredo.py`
+    /// nao os tem como prefixo. Tirar qualquer um da lista passaria calado
+    /// por la; passa a cair aqui. (`a_senha_nunca_aparece` manda `prova` mas
+    /// so afirma sobre a senha, entao ela nao cobria isto.)
+    #[test]
+    fn a_prova_e_a_assinatura_tambem_saem() {
+        let s = redigir(
+            r#"{"op":"login","usuario":"adm","prova":"MARCA-PROVA","assinatura":"MARCA-ASSINATURA","nonce_cliente":"n1"}"#,
+        );
+        assert!(!s.contains("MARCA-PROVA"), "{s}");
+        assert!(!s.contains("MARCA-ASSINATURA"), "{s}");
+        // O nonce e o desafio publico: continua visivel, e e o que diagnostica
+        // um cliente mandando o nonce errado.
+        assert!(s.contains("n1"), "{s}");
     }
 
     /// Pedido que nao e JSON nao vira texto: vira o tamanho dele.

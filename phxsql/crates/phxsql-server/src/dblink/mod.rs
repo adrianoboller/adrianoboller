@@ -578,27 +578,22 @@ impl Registro {
         self.gravar()
     }
 
-    /// Grava o arquivo inteiro, com permissao de dono so.
+    /// Grava o arquivo inteiro, com permissao de dono so -- desde o primeiro
+    /// byte, e por troca atomica.
     ///
-    /// O arquivo carrega senha de outro banco. Deixa-lo legivel por todo mundo
-    /// seria guardar a credencial atras de uma porta aberta.
+    /// O arquivo carrega senha e token de outro banco. Deixa-lo legivel por
+    /// todo mundo seria guardar a credencial atras de uma porta aberta -- e
+    /// era o que este metodo fazia por um instante: escrevia na permissao do
+    /// `umask` e apertava DEPOIS, engolindo a falha do aperto. O molde certo
+    /// ja existia para a chave do fio e nao tinha voltado para ca (revisao
+    /// SEC de 17/09/2026, achado A4). Agora e o mesmo escritor dos irmaos.
     fn gravar(&self) -> Result<()> {
         let j = Json::objeto(vec![(
             "dblink",
             Json::Lista(self.ligacoes.iter().map(Definicao::para_disco).collect()),
         )]);
-        let temporario = self.caminho.with_extension("tmp");
-        std::fs::write(&temporario, j.escrever_identado())
-            .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", temporario.display())))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&temporario, std::fs::Permissions::from_mode(0o600));
-        }
-        // Troca atomica: um corte de energia no meio deixa o arquivo antigo
-        // inteiro, e nao um cadastro pela metade.
-        std::fs::rename(&temporario, &self.caminho)
-            .map_err(|e| PhxError::Esquema(format!("nao troquei {}: {e}", self.caminho.display())))
+        crate::config::gravar_privado(&self.caminho, j.escrever_identado().as_bytes())
+            .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", self.caminho.display())))
     }
 }
 
@@ -936,6 +931,35 @@ mod testes {
     fn cadastro_vazio_quando_o_arquivo_nao_existe() {
         let r = Registro::abrir(Path::new("/nao/existe/dblink.json")).unwrap();
         assert!(r.ligacoes.is_empty());
+    }
+
+    /// O `dblink.json` nasce 0600 desde o primeiro byte, e a resposta e do
+    /// sistema operacional. Sem o conserto, o `.tmp` nascia 0644 sob
+    /// `umask 022` com a senha dentro, ate o `set_permissions`.
+    #[cfg(unix)]
+    #[test]
+    fn o_cadastro_nasce_0600() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = DirTemp::novo("dblink-permissao");
+        let caminho = dir.join("dblink.json");
+        let mut r = Registro::abrir(&caminho).unwrap();
+        r.salvar(
+            Definicao::de_json(
+                &Json::analisar(
+                    r#"{"nome":"erp","motor":"phxsql","host":"h","token_remoto":"MARCA"}"#,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let modo = std::fs::metadata(&caminho).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            modo, 0o600,
+            "o dblink.json nasceu legivel por outros: {modo:o}"
+        );
+        assert!(!caminho.with_extension("tmp").exists());
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

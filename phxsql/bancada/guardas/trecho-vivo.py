@@ -144,7 +144,7 @@ dia, nunca no desejado:
 
 # E a catraca que sobe, porque e piso e nao teto
 
-- `PISO_DAS_ENTRADAS = 177` -- nasceu em 16/09/2026 valendo 143, contado no
+- `PISO_DAS_ENTRADAS = 180` -- nasceu em 16/09/2026 valendo 143, contado no
   `catalogo.py` daquele dia (143 entradas, 143 ids distintos) mais as
   `APOSENTADAS` (hoje nenhuma). **SUBIU para 150 em 16/09/2026**, no mesmo
   passo em que a frente 245 (O2-O6) escreveu cinco guardas novas -- o teto de
@@ -258,7 +258,7 @@ TETO_TRECHO_MORTO = 0
 TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
-PISO_DAS_ENTRADAS = 177
+PISO_DAS_ENTRADAS = 180
 
 # ------------------------------------------------------------- APOSENTADAS
 #

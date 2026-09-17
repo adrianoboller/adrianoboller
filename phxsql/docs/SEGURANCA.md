@@ -3159,3 +3159,147 @@ um único `{:?}` despeja oito segredos de uma vez.
 E duas guardas do que **não** pode sumir: `o_debug_da_ligacao_mantem_o_nome_da_
 variavel_de_ambiente` e, dentro das outras, a afirmação de que o pino e o nome
 da origem continuam visíveis. Esconder tudo seria a outra metade do estrago.
+
+## 17. A lista por nome que envelhece, e a janela que não voltou ao irmão
+
+*17/09/2026.* A revisão SEC (`docs/propostas/revisao-sec-saidas-de-segredo.md`)
+perguntou quantos caminhos de saída existiam além do `Debug` da §16, e achou
+quatro que são **a mesma lei da §16 por outra porta**: dois de *lista por nome
+que envelhece* (A1, A2) e dois de *conserto que entrou no caminho que o motivou
+e não no irmão* (A3, A4). Esta seção fecha A1, A2 e A4 e um lateral do papel J
+do mesmo molde; A3 e A5 são decisões registradas com motivo vencido e vão para
+a mesa do dono, não para o diff.
+
+### 17.1 A1 — `token_remoto` passou dois dias fora da lista que foi retocada
+
+O profiler redige **analisando** (a pétrea está cumprida no método) e decide
+**por nome exato** contra uma lista. `token_remoto` nasceu no `dblink/mod.rs`
+em 03/09 (`948e153`) chamando-se assim **de propósito** — `token` é o portão 1
+deste servidor, e o portão o leria primeiro. A lista foi retocada em 05/09
+(`70c5382`) e não o ganhou. Com o profiler ligado, `dblink_salvar` e
+`replicacao_testar` escreviam o token de serviço do **outro** PhxSql em texto
+puro no `perfil.txt` e o devolviam pela op `profiler`: duas das três saídas da
+pétrea, para o segredo que abre a porta de dados do outro servidor sem usuário.
+
+O conserto tem duas metades, e a primeira sozinha seria o mesmo conserto que
+envelheceu em 05/09:
+
+1. **A linha, hoje:** `token_remoto` entra na lista.
+2. **A régua:** a lista saiu do `profiler.rs` e passou a morar em
+   `crates/phxsql-server/src/segredos.rs`, com o teste
+   `todo_parametro_com_cara_de_segredo_esta_na_lista`, que cruza os
+   parâmetros do `catalogo.rs` (o inventário das operações do protocolo, já
+   amarrado ao `despachar` por teste) com a lista, usando o léxico da guarda
+   `bancada/guardas/debug-com-segredo.py` **lido do próprio arquivo** — não
+   copiado, porque copiado seria o mesmo léxico em dois lugares. Parâmetro cujo
+   nome casa o léxico e não está em `SEGREDOS` reprova **nomeando a operação e
+   o parâmetro**. Medido: **133** nomes distintos de parâmetro no catálogo,
+   **8** casam o léxico — cinco estão na lista (`senha`, `senha_hash`,
+   `token`, `token_remoto`, `chave`) e três são falsos positivos declarados
+   com o motivo lido no fonte (`nonce_cliente` é o desafio público,
+   `chaves_estrangeiras` são nomes, `salto` casa `salt` por prefixo). Entrada
+   de isenção que não casa parâmetro nenhum **reprova**: chave morta é pior
+   que chave faltando.
+
+O que a régua **não** vê, dito: campo que o `despachar` lê e o catálogo não
+declara. Medido em 17/09: `senha_env` e `token_remoto_env` do `dblink_salvar`
+são lidos e não declarados (os dois são *nome* de variável, não valor), e o
+catálogo declara `token` para `replicacao_testar` enquanto o servidor lê
+`token_remoto` (`servidor.rs`, `op_replicacao_testar`) — o catálogo está
+errado ali, e a régua só enxerga o que o catálogo diz.
+
+### 17.2 A2 — o job recusava um nome, e gravava os outros
+
+`Job::de_json` recusava `token` no pedido — *«seria senha em arquivo por outro
+nome»* — e **só** `token`: `senha`, `senha_hash`, `token_remoto`, `prova` iam
+inteiros para o `jobs.json` (permissão do `umask`) e voltavam inteiros na
+ficha que a tela recebe. A guarda travou um nome, não a lei — a mesma forma da
+§16.
+
+Agora a recusa usa **a mesma lista** do profiler (`segredos::achar_segredo`),
+em **qualquer profundidade**, e inclui a senha **dentro da frase SQL**
+(`CREATE USER c PASSWORD 'x'` num campo `texto`), pelo mesmo analisador que o
+profiler já usava. E a recusa **nomeia o campo** sem ecoar o valor.
+
+Por que o job **recusa** e o profiler **redige**, sendo a lista uma só: o
+profiler mostra o pedido e pode tapar o valor sem perder nada; o job **executa**
+o pedido, e um `usuario_alterar` com a senha tapada trocaria a senha da pessoa
+por `***`. O que não pode ficar em arquivo não entra. O caminho certo para uma
+ligação agendada continua aberto — `senha_env`/`token_remoto_env` — e a
+mensagem o aponta.
+
+Uma consequência declarada: `Registro::abrir` passa pelo mesmo `de_json`,
+então um `jobs.json` escrito **antes** desta seção com credencial dentro faz o
+servidor recusar o arranque com a mensagem que nomeia o job e o campo — o
+mesmo que já acontecia com `token`. É uma edição de uma linha, e é o lado
+certo da moeda: carregar o arquivo e continuar servindo o segredo pela op
+`jobs` é o próprio vazamento.
+
+### 17.3 A4 — a janela que a casa nomeou, fechada nos três irmãos
+
+`gravar_chave` (a chave do fio, `d3b7d62`, 30/08) escreve o motivo: *«a
+permissão é posta na CRIAÇÃO, e não depois: entre criar aberto e apertar há
+uma janela em que qualquer um lê»*. E os irmãos faziam o contrário —
+`config.json` (token e hashes), `dblink.json` (senha e token do outro banco) e
+`jobs.json` escreviam com `std::fs::write` na permissão do `umask` e apertavam
+**depois**, com `let _ =`. O `config.json` ainda **herdava** a permissão do
+original: um `0644` de instalação ficava `0644` para sempre.
+
+O conserto é o molde extraído: `abrir_privado` (o `create_new + mode(0o600)`
+do `gravar_chave`) e `gravar_privado(caminho, bytes)` — temporário 0600 desde o
+primeiro byte, `sync_all`, `rename`. Os três irmãos passam por ele. Um `.tmp`
+deixado por gravação interrompida sai antes, porque `mode` só vale na criação
+e reaproveitá-lo herdaria a permissão daquele dia.
+
+**Prova contra o sistema operacional**, não por teste unitário. O `strace` do
+teste do `dblink.json`, com o defeito reposto e com o conserto:
+
+```
+# defeito reposto (escreve aberto, aperta depois)
+openat(..., "dblink.tmp", O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC, 0666) = 3
+chmod("dblink.tmp", 0600) = 0
+# conserto (nasce fechado)
+openat(..., "dblink.tmp", O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 3
+```
+
+E o `phxsqld` de verdade, com um `config.json` nascido `644` sob `umask 022` e
+um `usuario_criar` pelo soquete: `stat -c %a` dá **644** com o defeito reposto
+(herdou) e **600** com o conserto. O teste do `dblink.json` que confere só o
+modo **final** passa nos dois estados — o `set_permissions` de antes também
+chegava a 0600 no fim —, e por isso a prova da **janela** é o `strace`, não o
+teste.
+
+### 17.4 O lateral: o `Bearer` do REST comparava com `==`
+
+Achado do papel J, do mesmo molde: o portão 1 confere o token em tempo
+constante (`Config::token_confere`), e o irmão da porta REST comparava o
+`Bearer` com `==`. Agora `Rest::token_confere` existe, os dois delegam a
+`hash::iguais_em_tempo_constante` — **uma** implementação, onde a lei mora —, e
+o laço que o `Config` tinha escrito de novo saiu. Tempo constante não se prova
+por teste de unidade; prova-se por construção, e a construção é uma só.
+
+### 17.5 A prova, nos dois sentidos
+
+Cinco testes novos falham com os defeitos repostos e passam com os consertos:
+
+| teste | com o defeito reposto |
+|---|---|
+| `profiler::o_token_do_outro_servidor_nunca_aparece` | `MARCA-TOKEN-REMOTO` no anel |
+| `segredos::todo_parametro_com_cara_de_segredo_esta_na_lista` | nomeia `dblink_salvar.token_remoto` e `replicacao_testar.senha_hash` |
+| `jobs::credencial_no_pedido_e_recusada_em_qualquer_profundidade` | `senha` passa para o disco |
+| `config::o_config_regravado_nasce_0600_sem_herdar_o_original` | `644` |
+| `jobs::o_cadastro_de_jobs_nasce_0600` | `644` |
+
+E um sexto, do alcance da régua: `prova` e `assinatura` estão na lista e no
+catálogo, mas o léxico da guarda não os tem como prefixo — então tirar qualquer
+um dos dois da lista passaria **calado** pela régua do catálogo (medido:
+`prova` fora da lista, `todo_parametro_com_cara_de_segredo_esta_na_lista` em
+`ok`, e `a_senha_nunca_aparece` também, porque manda `prova` e só afirma sobre
+a senha). `profiler::a_prova_e_a_assinatura_tambem_saem` é o que cai nesse
+caso. A régua alcança o que o léxico alcança; o léxico é do papel F, e a
+sugestão fica registrada — `prova` e `assinatura` entrarem nele.
+
+E o que **não** pode sumir continua provado: o nome da variável de ambiente
+fica visível no profiler, o nonce do desafio continua visível, `DROP USER` e
+`token_remoto_env` continuam entrando num job, e o SQL de sempre continua
+inteiro no anel.
