@@ -10,6 +10,145 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — As pétreas ganham guarda: vetor, portões, senha — e o `Debug` que vazava
+
+Rodada da noite de 16/09 (`b6f55ee` … `f8b6c92`). Os números abaixo são os
+das mensagens de commit, que são medidos; onde um número do briefing saiu
+errado, está dito qual.
+
+### Corrigido
+
+- **Nove structs vazavam segredo no `Debug` derivado — e a guarda já existia**
+  (`74de67e`, pedido 270). A varredura de `crates/` achou **9 estruturas, 14
+  campos, 3 crates**: `Config`, `Origem`, `Cluster`, `Email`, `Rest`,
+  `Usuario` e `dblink::Definicao` no servidor, `usuario::Comando` no SQL,
+  `Receita` no ODBC. Um `{:?}` no `Config` despeja **oito** segredos; um
+  `dbg!` no `Registro` do DbLink despeja a credencial de todas as ligações.
+  O catálogo tinha `debug-da-cifra-mostra-a-senha` desde a frente G-CRIPTO —
+  a guarda travou a **estrutura**, não a **lei**. Conserto: `impl Debug` à
+  mão que **desestrutura sem `..`**, então campo novo para de compilar em vez
+  de entrar calado. Prova nos dois sentidos: `derive` de volta (241
+  inserções, 0 remoções) → as **6** provas novas caem nomeando o segredo;
+  conserto → passam, `clippy` zero avisos, **2.400** testes verdes. As três
+  linhas `.field("senha", &"(oculta)")` novas deixaram ambíguo o `trecho` da
+  guarda velha e `TETO_TRECHO_AMBIGUO` acusou — alongado em uma linha.
+  `docs/SEGURANCA.md` §16.
+- **A tabela publicada das guardas mentia o tamanho** (`1e3e7e1`, pedido
+  269). `docs/TESTES.md` dizia «143 guardas» sobre um catálogo que já tinha
+  160 (hoje **170**); agora diz **143 das 170** e **nomeia as 27** que a
+  corrida publicada nunca julgou, sob um cabeçalho que não é linha de êxito.
+  O `tabela-no-testes.py` recusa pela **cobertura**, não pelo tamanho —
+  medido contra o código de então, um `--json` de 9 encolhia a tabela de 143
+  para 9, escondia 151 e publicava «332 s de mutação» onde a bateria custa
+  3.374.
+- **O R19 estava escrito ao contrário** (`23b0cbd`, pedido 264). Dizia «a
+  contagem de dívida sobe sozinha»; `git log -S` devolve **um** commit
+  (`f64b822`) — as 19 marcas nasceram juntas e a série tem um ponto. O risco
+  medido é o inverso: a marca **sumir** de arquivos com **197 commits em 14
+  dias**, com a contagem melhorando quando ela some. `docs/RISCOS.md`.
+- **Quatro inventários digitados que envelheceram**: `docs/CATRACAS.md`
+  dizia «as duas do `trecho-vivo.py`» (eram cinco, são **seis**);
+  `docs/NUMEROS.md` publicava «77 guardas» de 03/09 citando
+  `docs/TESTES.md:720` — citar a **linha** deixou o número parado treze
+  dias, hoje aponta para as marcas —, e depois «143 das 169» (são 170); a
+  linha do 264 em `docs/PENDENCIAS.md` dizia «4 citam pedido do dono» e são
+  **5** — o #268 entrou pelo `config.rs` na mesma tarde.
+- **Três números de briefing, medidos e corrigidos por quem os cumpriu**:
+  «11 testes de vetor» são 11 **vetores** — o `phxsql-core` tem **28 funções
+  de teste contra vetor publicado, em 9 normas** (`b6f55ee`); «senha nunca em
+  texto puro: 0 entradas e 11 testes» eram **2 entradas e 40 provas**,
+  contadas pela asserção e não pelo nome (`1e3e7e1`); e o campo do DbLink é
+  `token`, não `token_remoto` (cognição do 270). Briefing de orquestrador
+  também é número citado.
+
+### Adicionado
+
+- **Nove guardas de criptografia e portão** (`b6f55ee`): cinco de norma
+  (`sha256-sem-somar-o-estado`, `sha256-com-o-tamanho-em-little-endian`,
+  `hmac-com-a-chave-longa-truncada`, `pbkdf2-com-o-contador-de-bloco-parado`,
+  `pbkdf2-sem-o-xor-acumulado`) e quatro de portão (`juntar-sem-portao`,
+  `unir-sem-portao`, `diferencas-sem-portao`, `derivado-sem-portao`) —
+  **9 provadas, 0 «não pegaram», 0 estragaram, 147,8 s** de mutação. A
+  criptografia tinha **0** entradas; as portas dos fundos foram de 2 para
+  **13 de 13** (5 por entrada própria, 8 pelo `derivado-sem-portao`, cujo
+  ponto único de conferência foi medido com sonda: **8 caíram**). A coluna
+  de quem **não** pega é a pétrea em tabela: auto-consistência, ida-e-volta e
+  propriedade sobrevivem a um motor de criptografia quebrado, porque as três
+  perguntam ao próprio motor. `docs/CATRACAS.md` §15.
+- **Nove guardas da pétrea da senha** (`1e3e7e1`):
+  `ficha-do-usuario-devolve-o-hash`, `senha-em-claro-no-cadastro`,
+  `senha-velha-fica-no-arquivo`, `cifra-reserializa-a-senha`,
+  `debug-da-cifra-mostra-a-senha`, `profiler-sem-a-senha-dentro-do-sql`,
+  `comando-invalido-vira-texto-cru`, `trilha-sem-o-nome-de-segredo`,
+  `trilha-so-olha-o-nome-da-coluna` — as nove provadas com a árvore limpa
+  verde nos quatro binários (1.103 / 253 / 187 / 5); cobertura **14 de 40**.
+  O raio de cada uma foi medido com sonda que lê o veredito de **todos** os
+  testes do binário: o `Debug` da cifra imprimindo a senha derruba 1 dos 5 de
+  um binário e **zero dos 1.103** do `--lib`. `docs/CATRACAS.md` §15.7.
+- **A quinta régua do catálogo, `TETO_NAO_JULGADA_ESCONDIDA`** (`1e3e7e1`,
+  pedido 269) — e ela **recusou a forma pedida, com número**: um teto sobre
+  «ids fora da última corrida» nasceria em 17 e subiu para **26 em duas
+  horas** sem defeito nenhum (a frente da senha escreveu nove guardas); os
+  únicos caminhos de volta ao verde seriam o provador inteiro (3.374 s) ou
+  subir o teto. O buraco virou inventário, sempre impresso; a dívida virou
+  catraca sobre as não julgadas que a página **nem nomeia** — nasceu em 26 e
+  desceu a **0** no mesmo passo, republicando a mesma corrida em 0,2 s. São
+  **seis réguas: cinco tetos e um piso**, com `PISO_DAS_ENTRADAS` em
+  **170**. Prova sem compilar: 8 e 16 casos de autoteste, mais oito mutações;
+  **um caso passava com o defeito reposto** — a mutação achou, não a leitura.
+  `docs/CATRACAS.md` §12.
+- **Entrada `debug-da-ligacao-mostra-a-senha`** (`74de67e`): o defeito
+  reposto não devolve o `derive` (não compilaria) — desfaz o conserto por
+  dentro, em duas trocas. Com ela, **2 structs com catraca de 9**.
+- **Parecer «uma catraca sobre `// DIVIDA:` protege ou estraga?»**
+  (`docs/propostas/catraca-da-divida.md`, `23b0cbd`): das **19** marcas,
+  **9 não se pagam por engenharia** — pétrea, recusa certa do motor, espera
+  por demanda, decisão do dono. Recomendação: **piso que sobe** sobre marcas
+  vivas mais baixas escritas, no molde do `PISO_DAS_ENTRADAS`. Duas
+  hipóteses mortas: **0 de 25** linhas lidas ao acaso (peneira larga: 455
+  linhas, 112 arquivos) eram dívida não marcada; peneira estreita, 27
+  candidatos e **1** legítimo.
+- **As duas páginas que leem o `git log` alcançam o commit que as carrega**
+  (`44d3271`): a corrida que roda antes do commit de integração nunca vê o
+  commit que a comitou; rodar depois e comitá-las sozinhas é o único ponto
+  fixo, e o atraso publicado é **um** commit, por escolha.
+- `docs/MODELOS.md` ganhou as três rodadas que o papel A não tinha
+  registrado, com os papéis dispensados nomeados (`e89aa93`), e o time
+  inteiro da rodada (`f8b6c92`).
+
+### Mudado
+
+- **Fecho da rodada** (`0a8b606`): **269 pedidos** (era 268), 8 planejados
+  (era 7); **201.319** linhas de Rust e **66.200** de documentação; terceira
+  linha da série histórica com `medido_em` de 22:52. A ordem que a noite
+  ensinou duas vezes: `medir.py --gravar`, os dezenove geradores,
+  `status-html.sh`, `extrair.py`, e o **portão por último** — os dois
+  últimos medem o que os anteriores escrevem.
+- `docs/PENDENCIAS.md`: 269 fechado; 270 nasce e fecha no mesmo commit;
+  **271** (o conferidor de `derive(Debug)`) entra parcial; 264 e 268 ganham a
+  nota da revisão. A contagem do rodapé sai do `pagina-dos-pedidos.py`.
+
+### Sabido
+
+- **27 das 170** entradas do catálogo estão sem veredito da corrida
+  publicada (16/09 15:25) — nomeadas na tabela do `TESTES.md`; fecham quando
+  o provador inteiro rodar (≈ 3.374 s de mutação).
+- **Não existe régua sobre `derive(Debug)` com segredo**: 2 structs com
+  catraca de 9, as outras sete só com prova — a décima nasce derivando.
+  Pedido 271, em construção.
+- O bloco `catracas:` do `docs/QA-PDCA.md` mostra quatro tetos e piso 160 até
+  o `docs/qa/medir.py --gravar` do fecho, que chama `cargo`.
+- Pedido 268 (migração `Criptografar`/`Descriptografar`): parecer do papel C
+  em curso.
+- Pétreas ainda sem guarda no catálogo (`docs/CATRACAS.md` §15): «bancada
+  compara trabalho igual», «merge marca quem mexeu», «interface só se prova
+  exercitando», «medidor com binário velho» — o catálogo só sabe repor
+  defeito em arquivo compilado e conferido por `cargo test`.
+- **Este changelog não tem entrada para as rodadas diurnas de 16/09** — 33
+  commits entre `c4a47c5` (08:22) e `4eaff53` (22:26): pedidos 245, 247,
+  252, 254, 256, 258–263 e 267, a sétima página e seus geradores, a auditoria
+  SEC. Lacuna nomeada, não preenchida nesta entrada.
+
 ## Não lançado — Colmeia × SQLite × padrão nas quatro operações (bancada)
 
 ### Adicionado

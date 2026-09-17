@@ -44,3 +44,5 @@ duas notas baixas, **D é recusa medida** (o número diz que o colunar custaria
 mais do que renderia), enquanto **E é promessa maior que a entrega** — a UI
 assistiva funciona, mas «ações automáticas» e as provas documentadas não
 estão no código.
+
+**17/09/2026 —** a rodada da noite de 16/09 não moveu nota nenhuma das dez, e isso fica dito em vez de ficar implícito pela data. O que ela moveu é transversal e não cabe numa das dez linhas: nove structs de configuração, usuários, DbLink, SQL e ODBC que escreviam segredo no `Debug` derivado (`docs/SEGURANCA.md` §16, pedido 270), a quinta régua do catálogo de guardas (`docs/CATRACAS.md` §12, pedido 269) e as nove guardas da pétrea da senha (§15.7). As notas de B (a `Origem` e o `Cluster` da replicação estavam entre as nove) e de G (o `Comando` de usuário do SQL também) não mudam por isso: o que vazava era a saída de depuração, não o comportamento que a nota avalia.
