@@ -2457,6 +2457,22 @@ impl Table {
     /// indice unico ja tem essa chave» nao. Deixar a sobreposicao ligada ali
     /// faria a conferencia contra o disco achar a linha pendente primeiro e
     /// responder com a frase pior.
+    ///
+    /// # O SERVIDOR NAO A CHAMA MAIS, e isso e decisao, nao abandono
+    ///
+    /// Desligar depois de abrir chegava tarde: quem monta a sobreposicao
+    /// percorre o conjunto de escrita inteiro da transacao, e isso acontecia
+    /// com a trava de dados na mao para ser apagado na linha seguinte --
+    /// medido em 17/09/2026, o piso do `empilhar` ia de 60 us/op com 100
+    /// pendentes a 625,62 us/op com 1.600. Hoje a dispensa mora na PORTA
+    /// (`Servidor::abrir_travada_sem_sobrepor`), que nao monta o que ninguem
+    /// vai ler, e a catraca
+    /// `servidor::testes_janela_e_cadeia::so_o_disco_vem_da_porta_e_nao_de_desligar_depois`
+    /// reprova quem voltar a chamar esta funcao de la.
+    ///
+    /// Ela fica porque continua sendo a unica forma de um `Table` JA aberto
+    /// voltar ao disco -- e porque e ela que define, em uma linha, o estado
+    /// que a porta entrega.
     pub fn ver_so_o_disco(&mut self) {
         self.sobreposta = None;
     }

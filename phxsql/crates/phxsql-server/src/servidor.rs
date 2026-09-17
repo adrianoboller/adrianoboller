@@ -10267,6 +10267,55 @@ impl Servidor {
     /// como um bloco so -- por isso ela entra por parametro, e nao e tomada
     /// aqui dentro.
     fn abrir_travada(&self, _dados: &Instancia, p: &Json, sessao: &Sessao) -> Result<Table> {
+        self.abrir_travada_com(_dados, p, sessao, true)
+    }
+
+    /// Abre a tabela travada enxergando SO O DISCO -- sem montar a
+    /// sobreposicao da transacao.
+    ///
+    /// # Por que e uma PORTA, e nao um `ver_so_o_disco()` logo depois
+    ///
+    /// Porque montar para jogar fora custa, e custa DENTRO da trava de dados:
+    /// `sobreposicao` percorre o conjunto de escrita inteiro da transacao e
+    /// monta um mapa a cada abertura -- O(pendentes) por operacao, O(n²) por
+    /// transacao. O caminho que EMPILHA abria a tabela pela porta de sempre e
+    /// chamava `ver_so_o_disco()` na linha seguinte: o mapa nascia e morria
+    /// sem ninguem consultar.
+    ///
+    /// Medido (`--example reparticao-do-gatilho`, sonda do `empilhar`, mesma
+    /// tabela e transacoes da maior para a menor): **60 us/op com 100
+    /// pendentes e 625,62 us/op com 1.600** -- o piso da secao crescendo com
+    /// a lista, sob a trava, para construir o que a linha de baixo apagava.
+    ///
+    /// # O motivo de o caminho do `empilhar` nao querer a sobreposicao
+    ///
+    /// Ele ja sabe o que esta pendente por conta propria, e com mensagem
+    /// melhor: `chave_ja_empilhada` diz «esta seria a linha 3 da lista», e a
+    /// conferencia contra o disco diria so «o indice unico ja tem essa
+    /// chave». Ligada ali, a sobreposicao faria a conferencia de disco achar
+    /// a linha pendente primeiro e responder com a frase que nao ajuda
+    /// ninguem. E dispensa registrada, e nao esquecimento -- e e ela que esta
+    /// porta carrega.
+    fn abrir_travada_sem_sobrepor(
+        &self,
+        _dados: &Instancia,
+        p: &Json,
+        sessao: &Sessao,
+    ) -> Result<Table> {
+        self.abrir_travada_com(_dados, p, sessao, false)
+    }
+
+    /// O corpo das duas portas. UMA implementacao, pelo mesmo motivo de o
+    /// portao de permissao ser um so: o usuario, a origem, o espelho e a
+    /// imagem no diario sao definidos aqui, e uma segunda copia seria a que
+    /// esquece um deles.
+    fn abrir_travada_com(
+        &self,
+        _dados: &Instancia,
+        p: &Json,
+        sessao: &Sessao,
+        sobrepor: bool,
+    ) -> Result<Table> {
         let database = p.texto_ou("database", "");
         let tabela = p.texto_ou("tabela", "");
         if database.is_empty() || tabela.is_empty() {
@@ -10295,8 +10344,15 @@ impl Servidor {
         // vinte operacoes, a que alguem esquecer mostra o disco enquanto as
         // outras mostram a transacao -- e quem olha a tela nao tem como saber
         // qual das duas esta certa.
-        if let Some(sob) = self.sobreposicao(database, tabela, sessao, t.esquema()) {
-            t.sobrepor(sob);
+        //
+        // O `sobrepor` FALSO nao e um esquecimento: e a dispensa do caminho
+        // que empilha, escrita em `abrir_travada_sem_sobrepor`. O portao vem
+        // ANTES do trabalho, e nao depois -- montar o mapa para a linha
+        // seguinte apaga-lo custava O(pendentes) sob a trava.
+        if sobrepor {
+            if let Some(sob) = self.sobreposicao(database, tabela, sessao, t.esquema()) {
+                t.sobrepor(sob);
+            }
         }
         Ok(t)
     }
@@ -13640,15 +13696,13 @@ impl Servidor {
         self.travar_para_empilhar(sessao, &chave, rowid_pedido)?;
 
         let trava = self.travar_dados()?;
-        let mut t = self.abrir_travada(&trava, p, sessao)?;
-        // DISPENSA REGISTRADA da sobreposicao, e nao esquecimento. Este e o
+        // DISPENSA REGISTRADA da sobreposicao, e ela e da PORTA: este e o
         // caminho que EMPILHA, e ele ja sabe o que esta pendente por conta
-        // propria -- e com mensagem melhor: `chave_ja_empilhada` diz «esta
-        // seria a linha 3 da lista», e a conferencia contra o disco diria so
-        // «o indice unico ja tem essa chave». Ligada aqui, a sobreposicao
-        // faria a conferencia de disco achar a linha pendente primeiro e
-        // responder com a frase que nao ajuda ninguem.
-        t.ver_so_o_disco();
+        // propria (`chave_ja_empilhada`, `nasceu_aqui`). O motivo inteiro
+        // esta no `abrir_travada_sem_sobrepor` -- e ele virou porta porque
+        // abrir pela de sempre e desligar depois montava o mapa da transacao
+        // sob a trava para apaga-lo na linha seguinte.
+        let mut t = self.abrir_travada_sem_sobrepor(&trava, p, sessao)?;
 
         // A particao alfanumerica fica de fora, e o motivo e o rowid.
         //
@@ -14141,8 +14195,10 @@ impl Servidor {
         let plano = {
             let trava = self.travar_dados()?;
             let ped = pedido_da_tabela(database, tabela);
-            let mut t = self.abrir_travada(&trava, &ped, sessao)?;
-            t.ver_so_o_disco();
+            // O IRMAO do `empilhar`: mesma dispensa, mesma porta. Ele chama as
+            // mesmas funcoes na mesma ordem, e um conserto que entrasse so la
+            // deixaria a fase 3 da cascata pagando o mapa que ninguem le.
+            let mut t = self.abrir_travada_sem_sobrepor(&trava, &ped, sessao)?;
             let plano = t.planejar_cascata_para_lista(&mae.linha_antiga, &mae.linha)?;
             drop(t);
             drop(trava);
@@ -35144,6 +35200,51 @@ mod testes_janela_e_cadeia {
         );
     }
 
+    /// A catraca da leitura SO DO DISCO: **ZERO** desligamentos depois de
+    /// abrir. Quem quer o disco puro usa a porta que nao monta o mapa.
+    ///
+    /// # O defeito que a motivou, e ele era so' de TEMPO
+    ///
+    /// O caminho que empilha abria a tabela pela porta de sempre -- que monta
+    /// a sobreposicao da transacao, percorrendo o conjunto de escrita inteiro
+    /// -- e a desligava na linha seguinte. O mapa nascia e morria sem ninguem
+    /// consultar, DENTRO da trava de dados, e o custo crescia com a lista
+    /// pendente: medido em 17/09/2026 pelo `--example reparticao-do-gatilho`,
+    /// o piso do `empilhar` ia de **60 us/op com 100 pendentes a 625,62 us/op
+    /// com 1.600** -- O(pendentes) por operacao, O(n²) por transacao. Com a
+    /// porta, a mesma sonda da **40,00 / 35,00 / 37,50 / 38,75 / 41,25 us**:
+    /// plana.
+    ///
+    /// # Por que a prova e ESTA, e nao um teste de comportamento
+    ///
+    /// Porque nao ha comportamento a provar: depois de `sobrepor` de um mapa
+    /// jogado fora e depois da porta que nao monta, o `Table` fica no MESMO
+    /// estado. O defeito era invisivel de fora, e e por isso que um teste de
+    /// resultado nunca o acharia -- quem o acha e o relogio, e quem impede a
+    /// volta dele e esta contagem. Reposto o defeito (abrir pela porta de
+    /// sempre e desligar depois), este teste falha nomeando o numero.
+    #[test]
+    fn so_o_disco_vem_da_porta_e_nao_de_desligar_depois() {
+        // A agulha e MONTADA pelo mesmo motivo do `so_um_lugar_toma_a_trava`:
+        // escrita como literal, ela apareceria no fonte varrido e o teste
+        // contaria a si mesmo.
+        let codigo = |l: &&str| !l.trim_start().starts_with("//");
+        let agulha = format!("{}()", "ver_so_o_disco");
+        let desligamentos = FONTE
+            .lines()
+            .filter(codigo)
+            .filter(|l| l.contains(&agulha))
+            .count();
+        assert_eq!(
+            desligamentos, 0,
+            "ha {desligamentos} chamadas de `{agulha}` em servidor.rs. Abrir \
+             pela porta de sempre e desligar depois monta o mapa da transacao \
+             com a trava de dados na mao para apaga-lo na linha seguinte, e o \
+             custo cresce com a lista pendente. Quem quer o disco puro abre \
+             por `abrir_travada_sem_sobrepor`, que carrega a dispensa escrita"
+        );
+    }
+
     /// A catraca do prazo: **todo corpo que roda com a trava de dados na mao
     /// leva prazo de parede.**
     ///
@@ -36070,6 +36171,142 @@ mod testes_transacoes {
 
         pede(&s, &ses, r#""op":"rollback""#).unwrap();
         assert_eq!(quantas(&s, &ses, "clientes"), 3);
+    }
+
+    /// O COMPORTAMENTO VELHO do caminho que empilha: ele decide contra o
+    /// **disco**, e a linha pendente recusa NOMEANDO a transacao.
+    ///
+    /// # Por que este teste entrou junto do conserto de 17/09/2026
+    ///
+    /// Porque o conserto mexe exatamente aqui. O `empilhar` abria a tabela
+    /// pela porta que monta a sobreposicao da transacao e a desligava na linha
+    /// seguinte; hoje abre pela porta que nao a monta
+    /// (`abrir_travada_sem_sobrepor`), porque montar para jogar fora custava
+    /// O(pendentes) com a trava de dados na mao. As duas formas deixam o
+    /// `Table` no mesmo estado -- e e justamente por isso que so' um teste do
+    /// comportamento VELHO diz que a dispensa continua de pe.
+    ///
+    /// As duas metades, e as duas importam:
+    ///
+    /// 1. a chave que ja esta EM DISCO vira `atualizar` -- o upsert enxerga o
+    ///    disco pelo handle sem sobreposicao;
+    /// 2. a chave que so' esta PENDENTE recusa com a frase da transacao, e nao
+    ///    com «o indice unico ja tem essa chave», que mandaria procurar no
+    ///    lugar errado.
+    #[test]
+    fn dentro_da_transacao_o_upsert_decide_contra_o_disco() {
+        let dir = dir_temp("upsert-disco");
+        let s = servidor(&dir);
+        let ses = sessao(31);
+        base(&s, &ses);
+        // Uma linha JA GRAVADA, fora de transacao: e o disco contra o qual o
+        // upsert vai decidir.
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+
+        pede(&s, &ses, r#""op":"begin","database":"loja""#).unwrap();
+
+        // (1) a chave do DISCO vira `atualizar`, e empilha como tal.
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes",
+               "linha":{"id":1,"nome":"Ana Maria"},"se_existir":"atualizar""#,
+        )
+        .unwrap();
+        assert_eq!(
+            r.campo("acao").and_then(Json::texto),
+            Some("atualizar"),
+            "o upsert tinha de enxergar a linha do disco: {}",
+            r.escrever()
+        );
+
+        // (2) uma chave que so' existe NA LISTA, empilhada agora.
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":9,"nome":"Bia"}"#,
+        )
+        .unwrap();
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes",
+               "linha":{"id":9,"nome":"Bia II"},"se_existir":"atualizar""#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            e.contains("nesta mesma transacao"),
+            "a recusa tinha de nomear a transacao, e veio: {e}"
+        );
+
+        pede(&s, &ses, r#""op":"rollback""#).unwrap();
+        // O rollback devolve o disco como estava: uma linha, com o nome velho.
+        assert_eq!(quantas(&s, &ses, "clientes"), 1);
+    }
+
+    /// A dispensa da sobreposicao no caminho que EMPILHA, provada pelo unico
+    /// lado em que ela aparece de fora: **o `empilhar` le o DISCO**.
+    ///
+    /// # O caso, e por que e ele
+    ///
+    /// Excluir de vez e, na mesma transacao, alterar a mesma linha. O
+    /// `empilhar` le `velha` do disco, acha a linha e empilha a alteracao; a
+    /// ordem da lista e que decide o resultado no commit, como o
+    /// `a_ultima_escrita_da_mesma_linha_e_a_que_manda` ja prova.
+    ///
+    /// Com a sobreposicao LIGADA aqui, o `t.ler(rowid)` enxergaria a exclusao
+    /// pendente, `velha` viria vazia e a alteracao seria recusada com «rowid 1
+    /// nao existe» -- um erro sobre uma linha que esta em disco. E o valor de
+    /// `linha_antiga` que a reaplicacao da recuperacao precisa: ele tem de ser
+    /// o de ANTES da transacao, e nao o de dentro dela.
+    ///
+    /// Este e o teste que **discrimina**. O
+    /// `dentro_da_transacao_o_upsert_decide_contra_o_disco`, ao lado, NAO
+    /// discrimina -- a recusa do `chave_ja_empilhada` vem antes do `buscar`, e
+    /// ele passa com a sobreposicao ligada ou desligada. Esta nota esta aqui
+    /// de proposito: teste que passa por engano e pior que teste que falta, e
+    /// o jeito de ele nao passar por engano e estar escrito o que ele prova.
+    #[test]
+    fn o_empilhar_le_o_disco_e_nao_a_lista_pendente() {
+        let dir = dir_temp("empilhar-disco");
+        let s = servidor(&dir);
+        let ses = sessao(33);
+        base(&s, &ses);
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+
+        pede(&s, &ses, r#""op":"begin","database":"loja""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"excluir","database":"loja","tabela":"clientes","rowid":1,"fisico":true"#,
+        )
+        .unwrap();
+        let r = pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+               "linha":{"id":1,"nome":"Ana Maria"}"#,
+        );
+        assert!(
+            r.is_ok(),
+            "o `empilhar` le o DISCO: a linha esta la, e a alteracao empilha. \
+             Veio: {:?}",
+            r.err().map(|e| e.to_string())
+        );
+
+        pede(&s, &ses, r#""op":"rollback""#).unwrap();
+        assert_eq!(quantas(&s, &ses, "clientes"), 1);
     }
 
     /// A ordem manda: `UPDATE` e depois `DELETE` da mesma linha termina em
