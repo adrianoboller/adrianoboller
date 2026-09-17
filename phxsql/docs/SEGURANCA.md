@@ -128,6 +128,7 @@ derrubou a sessão de quem estava operando.
 |---|---|---|
 | `contar_injecao_sql` | a recusa «sobrou X depois do fim do comando» — o `; DROP TABLE` empilhado | 07/09/2026: sem ele, **211.290 tentativas por minuto** com uma conexão nova a cada uma e `blacklist.json` vazio antes e depois |
 | `contar_linha_acima_do_teto` | a linha maior que os 128 MiB do fio | 07/09/2026: 134.218.794 bytes derrubavam a conexão em 0,41 s sem resposta, sem log e sem violação |
+| `contar_pulso_desconhecido` | o `cluster_pulso` com id que não é um nó deste cluster (nem outro nó, nem o próprio) — a mesma resposta para os dois casos, para fechar o oráculo de ids do achado A11 | 17/09/2026 (`eeb9925`): **ligado de fábrica bloquearia o próprio nó em escalonamento** — um nó novo manda cinco pulsos a cada antigo antes de `cluster_no_acrescentar` gravá-lo na lista, e cinco tentativas leves batem no `tentativas_ate_bloquear` padrão. O mesmo estrago do pedido 203, por outra porta |
 
 ### A réplica com credencial recusada, e por que o bloqueio NÃO mudou
 
@@ -158,6 +159,21 @@ Ligadas, as duas contam pela **mesma** política leve que já existe
 token inválido e da credencial errada. **Não há um N próprio para elas**, e a
 ausência é deliberada: um segundo contador com um segundo limite seria a
 segunda política que alguém esquece de atualizar.
+
+### A sonda de rede (`replicacao_testar`) parou de vazar o sistema operacional
+
+Achado A5 da revisão SEC de 17/09/2026 (pedido 282), fechado no mesmo dia
+(commit `49a3af7` deu o prazo de conexão; `eeb9925`, frente B2, fechou a
+classificação do erro). `replicacao_testar` recebia host/porta livres do
+pedido e devolvia o erro **cru** do sistema operacional — «Connection
+refused», «Connection timed out», o texto de um `EHOSTUNREACH` — o que fazia
+da operação um scanner de portas com três respostas distintas para quem tem
+`administrar`. Hoje o `ErrorKind` do erro de rede (que passou a sobreviver ao
+embrulho da chamada) vira uma de quatro chaves da fábrica —
+`erro.sonda_recusada`, `erro.sonda_prazo`, `erro.sonda_sem_rota`,
+`erro.sonda_caiu` — sem nenhum texto do sistema operacional dentro. E sondar
+um **host que não está em nenhuma origem configurada** e não responde passa a
+contar como tentativa leve, pela mesma política acima.
 
 #### O que conta como injeção, e por que não é um casador de texto
 

@@ -57,7 +57,17 @@ Todas as mensagens que o **servidor** devolve pelo protocolo, em duas camadas:
   `erro.grave_tentativa`, `erro.ip_bloqueado`, `erro.ip_nao_autorizado`,
   `erro.operacao_desconhecida`, e `erro.porta_cheia` — o corpo do 503 das
   portas HTTP quando todas as threads estão ocupadas e a fila esgotou (o
-  `Retry-After` vai no cabeçalho, que é protocolo e não se traduz).
+  `Retry-After` vai no cabeçalho, que é protocolo e não se traduz). Da rodada
+  de replicação de 17/09/2026: `erro.aplicar_fora_de_replica` (`49a3af7`, o
+  crivo do portão 2b-bis, que substituiu `erro.aplicar_somente_leitura` —
+  a chave velha saiu, e não há mais referência a ela) e, de `eeb9925`,
+  `erro.pulso_de_no_desconhecido` (a mesma resposta para «id fora da lista» e
+  «é este servidor», fechando o oráculo do achado A11),
+  `erro.escalonar_sem_propagar` (recusa de `"propagar":false` vindo de fora
+  do cluster, achado A4), e as quatro classes da sonda —
+  `erro.sonda_recusada`, `erro.sonda_prazo`, `erro.sonda_sem_rota`,
+  `erro.sonda_caiu` — que substituíram o texto cru do sistema operacional no
+  `replicacao_testar` (achado A5).
 
 Os marcadores `{assim}` são posicionais por nome — a tradução pode
 reordená-los. Célula vazia **não** é semeada com tradução inventada: cai para

@@ -151,6 +151,7 @@ guarda o **critério** da consulta:
 | `ler` | `rowid=42` |
 | `buscar` | `por_cpf=["012.345.678-90"]` |
 | `varrer` | `varrer indice=por_nome visao=ativas modo=cursor pular=0` |
+| `replicar` (desde 17/09/2026, pedido 285) | `replicar desde=N ate=M`, com `linhas` = eventos que saíram — a mesma forma da varredura, porque `replicar` também entrega todas as linhas de uma faixa de uma vez, com o valor dentro |
 
 «Quem viu o prontuário do fulano?» continua respondível — pela chave, quando a
 leitura foi por chave; e pelo filtro mais a contagem, quando foi varredura. O
@@ -159,6 +160,12 @@ uma varredura tocou **todas**, e é isso que o registro diz.
 
 Uma consulta que **não devolveu linha nenhuma não grava**: uma busca que não
 achou ninguém não expôs dado de ninguém.
+
+O `replicar` segue a mesma regra e foi medido separado (achado A8 da revisão
+SEC, 17/09/2026; commit `eeb9925`): **+154 bytes por lote** numa tabela com
+coluna marcada; tabela **sem** marca custa só o `bool` da própria conferência
+— o teste `…::replicar_sem_coluna_marcada_nao_grava_trilha` prova o
+comportamento velho ao lado do novo.
 
 ---
 

@@ -1171,3 +1171,36 @@ desta onda porque o trabalho e mecanico (grep no catalogo, leitura de
 `ultima-corrida.json`) apesar de exigir leitura para nomear a petrea — e H e
 medio pelo mesmo motivo: documentacao desta rodada e transcrever numero
 medido por quem mediu, com a fonte e a data ao lado, nao decidir arquitetura.
+
+## Onda 3 — «Continue fazendo os gaps» (ordem do dono, 17/09/2026 03:58 UTC)
+
+| papel | frente | escalao | por que | largada |
+|---|---|---|---|---|
+| B2 | nove gaps com conserto delimitado e sem formato, em ordem de valor: rownum no lote (291), A1 pleno pelo tunel (278), A8 trilha LGPD do `replicar` (285), A4 `propagar:false` (281), A6 `cluster_estado` partido (283), A5 resto (282), A9 (286), A10 (287), A11 (288) | forte | seguranca, concorrencia e integridade — cada item mede a premissa antes e volta como parecer se ela cair, no molde do contrato da onda 2 | 04:01 UTC |
+| G2 | estatico: reancorar a guarda `trava-atras-da-rede`; o provador passa a copiar o que os testes leem fora de `crates/`, com conferidor derivado do proprio codigo; `--so --json` mescla por id em vez de sobrescrever; sete petreas + `cluster.rs` entram no catalogo (pedidos 301/302) | medio | catalogo e ferramenta em Python, sem `cargo` — o provador so copia a arvore de trabalho, e B2 estava mutando `crates/` ao mesmo tempo | 04:02 UTC |
+
+**B2 fechou oito dos nove itens inteiros, e o nono voltou como parecer** —
+integrado em `eeb9925` (04:46 UTC, 41 min 43 s de frente, 116 ferramentas),
++1.385/−52 em nove arquivos, 20 testes novos, RED medido em cada um dos oito.
+Escalao **forte** pelo mesmo motivo da onda 2: os itens tocam o motor
+(`numerar_linha`/`consumir_rownum` no *store*), o portao do cluster
+(`cluster_no_remover`/`cluster_no_acrescentar`, `cluster_estado`), a trilha de
+LGPD e a classificacao de erro de rede — nenhum e varredura roteirizada, e
+cada um exige prova real nos dois sentidos contra servidor de pe. O item que
+voltou como parecer (A1 pleno, identidade do no pelo tunel) nao e falha de
+escalao: a premissa **morreu na leitura** do `fio.rs` (Noise NX so autentica o
+respondedor) antes de qualquer linha de conserto ser escrita — exatamente o
+que «medir a premissa antes de implementar» pede, mesmo quando o item e
+seguranca e o escalao e o mais forte da casa.
+
+**G2 fechou tudo o que o contrato pedia**, integrado em `6470943` (04:31 UTC,
+28 min 10 s de frente, 128 ferramentas, sem `cargo` — o proprio motivo do
+escalao medio e da largada em paralelo com B2). `trava-atras-da-rede`
+reancorada no laco do `puxar`; o `COPIAR` do provador ganhou os dois arquivos
+que testes leem por `CARGO_MANIFEST_DIR` (um deles, `mapa-das-threads.py`, era
+buraco latente que ninguem tinha achado); `--so --json` passou a mesclar por
+id; sete entradas novas no catalogo e `cluster.rs` saiu do zero,
+`PISO_DAS_ENTRADAS` 180→187. Medio porque o trabalho e sobre **ferramenta e
+catalogo em Python** — nenhuma linha de `crates/` mudou —, mas a decisao de
+quais sete petreas entram e qual teste cada uma reprova exige leitura, e por
+isso nao e leve.

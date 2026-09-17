@@ -486,6 +486,21 @@ pular registro sem avisar. Alterar a linha não renumera.
 O contador vive nos bytes 92..100 do cabeçalho do volume 1 e vai ao disco no
 `sincronizar`, como os outros.
 
+**O contador só anda depois da última guarda que pode recusar a linha —
+desde 17/09/2026 (pedido 291), sem mudar o formato.** Até então
+`numerar_linha` escrevia o número **e** avançava o contador de uma vez, antes
+da sequência, do `CHECK`, da unicidade e da coluna obrigatória; uma linha
+recusada por qualquer uma delas já tinha queimado um número, e a linha
+seguinte nascia com um buraco atrás dela — divergente entre o source (que viu
+a recusa) e uma réplica que só aplica os eventos que existem de fato. Hoje o
+número é **reservado** (a linha o carrega, para a chave poder indexá-lo) e só
+**consumido** — o contador avançando de verdade — depois de passar por todas
+as guardas, dentro da mesma chamada e sem que ninguém mais toque o `Reg` no
+meio. Nada no arquivo mudou: é o mesmo `proximo_rownum` nos mesmos bytes
+92..100, só o *instante* em que ele anda dentro do código é que mudou. O
+conserto não é retroativo — um buraco já gravado antes desta data continua no
+disco como estava.
+
 **Por que ela existe, se já há o `rowid`.** O `rowid` é a *posição física*.
 Enquanto o volume sai de divisão, posição e ordem de chegada são a mesma coisa
 e o rowid serve de cursor sozinho. Na **partição alfanumérica** não são: a

@@ -661,11 +661,20 @@ justo, o evento **aplicado** guarda o carimbo do *nascimento* da escrita
 sempre quem sincronizou por último.
 
 Com todas as letras: **essa regra exige relógios sincronizados entre os
-servidores (NTP)**. Sem isso, o lado com o relógio adiantado vence sempre —
-toda escrita dele parece «mais recente», e o trabalho do outro lado é
-desfeito em silêncio. Empate de carimbo desempata pela **origem numérica
-maior**: arbitrário, determinístico e igual dos dois lados, que é o que faz
-os dois convergirem (exatamente um aplica, o outro descarta).
+servidores (NTP) — e confia no par**. Sem NTP, o lado com o relógio adiantado
+vence sempre — toda escrita dele parece «mais recente», e o trabalho do outro
+lado é desfeito em silêncio. **Isso é a metade acidental.** A metade
+adversária, achada na revisão SEC de 17/09/2026 (A9, pedido 286): um par que
+**mente** o carimbo — não um relógio que deriva, um `carimbo_ms` forjado —
+fixava o `Toque` local num valor que nenhuma escrita local jamais alcançava, e
+passava a sobrescrever calado toda alteração deste lado, para sempre. Fechado
+no mesmo dia (commit `eeb9925`): carimbo mais que `FOLGA_DO_CARIMBO_MS`
+(**5 minutos**) no futuro entra com o **relógio local**, e a ocorrência é
+contada em `replicacao_estado.carimbos_do_futuro` — sem recusar o evento, que
+pararia o par por um campo que o desempate nem precisa levar a sério. Empate
+de carimbo desempata pela **origem numérica maior**: arbitrário,
+determinístico e igual dos dois lados, que é o que faz os dois convergirem
+(exatamente um aplica, o outro descarta).
 
 ### A identidade é a chave, nunca o rowid
 
@@ -1860,10 +1869,36 @@ inteiro: o teto de bytes agora limita a leitura, não só a resposta, e `max`
 ganhou padrão e teto de eventos. A3 (pedido 280) fechou inteiro: o crivo do
 portão 2b-bis vale independentemente do `somente_leitura`. A1 (pedido 278)
 fechou **parcialmente**: `cluster_pulso` entrou em `OPS_DE_REPLICACAO` e
-época/posição ganharam teto (`FOLGA_DE_EPOCA` = 1.000.000), mas a identidade
-do nó pela chave do fio — o que fecha o buraco por completo — continua na
-mesa do dono. Ver o texto de cada pedido em `docs/PENDENCIAS.md` para o antes
-e o depois.
+época/posição ganharam teto (`FOLGA_DE_EPOCA` = 1.000.000).
+
+**A4, A5, A6, A8, A9, A10 e A11 foram consertados na onda seguinte, em
+`eeb9925` (17/09/2026, frente B2), cada um com prova real nos dois
+sentidos.** A4 (281): `"propagar":false` só vale de dentro do cluster ou com
+credencial do cluster vinda de um nó da lista viva. A5 (282), o resto que
+`49a3af7` não tinha fechado: a sonda classifica pelo `ErrorKind` em quatro
+chaves da fábrica, sem texto do sistema operacional, e host fora da
+configuração que não responde conta violação leve. A6 (283): `cluster_estado`
+parte a resposta — `master`/`papel`/`época`/`escrita_liberada` para quem só
+lê, `nos[]` só para quem administra. A8 (285): `replicar` grava acesso na
+trilha `.lgpd`. A9 (286): carimbo do futuro além de 5 minutos entra com o
+relógio local, contado e não recusado. A10 (287) fechou **por prova, não por
+conserto**: a lista viva já injetava desde `a446c7a` (07/09), e faltava só o
+teste e o campo `tem_pino`. A11 (288): id desconhecido e id do próprio nó
+dão a mesma resposta, fechando o oráculo.
+
+**A1 pleno voltou como PARECER, não como conserto** (frente B2, mesmo
+commit): o cluster cifrado usa Noise **NX** — só o respondedor apresenta
+chave estática no aperto, e quem manda o pulso é o **iniciador**, anônimo por
+decisão já registrada em `docs/CIFRA-DO-FIO.md` §12. Amarrar a identidade do
+nó ao pulso exigiria prova por Diffie-Hellman das estáticas que já existem
+(`chave_do_fio` já é, de fato, um `known_hosts`) ou trocar o padrão do aperto
+para XX/IK — as duas são desenho de protocolo cifrado, e ficam com o dono.
+
+**Só A7 continua inteiramente aberto** (pedido 284 — `replicas_autorizadas`
+colapsa atrás de proxy/NAT), porque o conserto ali é de infraestrutura
+(trancar por credencial em vez de IP) e não entrou em nenhuma das duas ondas.
+Ver o texto de cada pedido em `docs/PENDENCIAS.md` para o antes e o depois de
+todos.
 
 **§Z — já documentado e ainda aberto no código.** Não é achado novo: está em
 `docs/SEGURANCA.md` §12.4 desde o pedido 194/item 16 de `docs/PENDENCIAS.md`
@@ -1911,6 +1946,12 @@ tocar `crates/`, sem disputar o `flock` com a bateria de F):
   a queima do contador se perde. Isso não diminui o achado (o caminho de
   importação/carga é exatamente onde a recusa é rotina); ver a §21.4 para a
   prova com controle por estágio, em vez de repetir aqui o alcance antigo.
+  **FECHADO pela via (a) em `eeb9925` (17/09/2026, frente B2)**: o consumo do
+  `rownum` passou a acontecer depois da última guarda que pode recusar a
+  linha, e não antes — a linha recusada nunca chega a ter número. Não é
+  retroativo (um buraco já gravado antes deste commit continua); a via (b)
+  — a réplica honrar o `rownum` da imagem — segue aberta e compatível, como
+  pedido próprio (309).
 - **Unicidade num índice secundário trava o par de servidores no
   bidirecional para sempre** — `[SP000020] chave duplicada`, o mesmo erro em
   `inserir_replicado` e `aplicar_evento` (§2.5; pedido 292).
@@ -1939,7 +1980,12 @@ data/hora de sistema por linha e sua resolução; `inicio`/`passo` da `Sequence`
 no mesmo bump de `PSCH`; quem honra o `rownum` numa réplica; o que fazer com
 único secundário no bidirecional; replicar coluna externa marcada — recusar no
 motor ou esperar o envelope da §11.5 (cruza com o §Z de SEC, §21.1); o
-critério de eleição do cluster.
+critério de eleição do cluster. **A terceira (rownum, pedido 291) recebeu
+metade de resposta em `eeb9925` (17/09/2026, frente B2)**: a via (a) — consumir
+o número só depois da última guarda que recusa — fechou e resolve toda escrita
+nova; a via (b) — a réplica honrar o `rownum` da imagem, para também os
+buracos históricos — segue como decisão do dono, agora com pedido próprio
+(309). As outras cinco continuam inteiras na mesa.
 
 **O item de maior retorno** (pedido 295): dar à réplica a mesma conferência
 de continuidade que o PITR já tem (`diario_vivo_continua`,

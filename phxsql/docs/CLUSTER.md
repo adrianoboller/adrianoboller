@@ -146,15 +146,27 @@ aviso): a origem passa a ser o master **corrente**, descoberto pelo pulso.
 
 ### 2.3 O endereço único — `cluster_estado` e `REDIRECIONA`
 
-O cliente valida com **qualquer** nó:
+O cliente valida com **qualquer** nó — e a resposta **se parte por direito**
+desde 17/09/2026 (achado A6 da revisão SEC, pedido 283; commit `eeb9925`,
+frente B2). `papel`, `epoca`, `escrita_liberada`, `degradado` e o bloco
+`master` (id, endereço) vêm para quem só tem `ler` — é o que qualquer cliente
+precisa para achar quem manda. A lista `nos[]` — endereço, posição e idade de
+pulso de **cada** nó do cluster — é infraestrutura pelo mesmo critério já
+aplicado ao `sistema` (`usuarios.rs` §2.6), e só vem com `administrar`; sem
+esse direito o campo fica **ausente** da resposta, nunca uma lista vazia:
 
 ```json
 {"op":"cluster_estado"}
+// quem so tem `ler`:
 {"ok":true,"resultado":{"papel":"replica","epoca":1,
   "master":{"id":"no2","endereco":"10.1.1.103:5000"},
-  "escrita_liberada":false,"degradado":[],
-  "nos":[{"id":"no1","papel":"replica","posicao":3801,"vivo":true,...},...]}}
+  "escrita_liberada":false,"degradado":[]}}
+// quem tem `administrar`, o mesmo resultado MAIS:
+  "nos":[{"id":"no1","papel":"replica","posicao":3801,"vivo":true,...},...]
 ```
+
+A tela de Cluster não mudou: ela já chama `config` antes de montar a tela, e
+`config` já exigia `administrar`.
 
 E escrita que chega numa réplica volta com nome `REDIRECIONA`, código
 **4003**, e a mensagem começando com o pedaço que o cliente recorta:
@@ -278,6 +290,22 @@ A recusa **continua**, e continuar é a decisão certa: aceitar um id
 desconhecido deixaria qualquer credencial de replicação inflar o denominador da
 maioria com nós fantasmas e travar toda promoção. O que mudou foi a **lista**.
 
+**A recusa deixou de distinguir «não está na lista» de «é ESTE servidor», de
+propósito (achado A11 da revisão SEC, pedido 288; commit `eeb9925`, frente B2,
+17/09/2026).** Até então eram duas frases diferentes, e isso fazia do pulso um
+**oráculo de ids**: quem tem a credencial de replicação (que é a mesma de
+`replicar`) conseguia enumerar os ids do cluster sem gastar tolerância nenhuma
+— exatamente a lista de que o pulso forjado do A1 precisa. Hoje as duas
+recusas voltam com a **mesma** mensagem
+(`erro.pulso_de_no_desconhecido`); o diagnóstico do id duplicado não se perde
+— vai para o log **deste processo**, que é de quem opera, nunca para o fio.
+A recusa só conta como tentativa leve com `seguranca.contar_pulso_desconhecido`
+**ligado**, e esse interruptor **nasce desligado** por decisão explícita:
+ligado de fábrica, os cinco pulsos que um nó novo manda durante um
+escalonamento a quente (antes de ser acrescentado à lista) bloqueariam o IP
+dele em cada nó antigo — o mesmo estrago que o pedido 203 já mediu e corrigiu
+por outra porta.
+
 ```json
 {"op":"cluster_no_acrescentar","id":"no4","endereco":"10.0.0.4","porta":5000}
 {"op":"cluster_no_remover","id":"no4"}
@@ -311,6 +339,23 @@ veredito.
 `cluster.usuario`, então **esse usuário precisa poder `administrar`**. Sem
 isso a ordem local vale e a propagação volta recusada, nomeando o nó — que é
 melhor que dar o poder de mexer na maioria a quem só tem credencial de réplica.
+
+**`"propagar": false` só vale como ordem INTERNA do próprio cluster, desde
+17/09/2026 (achado A4 da revisão SEC, pedido 281; commit `eeb9925`, frente
+B2).** Sem essa trava, um cliente comum podia mandar
+`{"op":"cluster_no_remover","id":"no2","propagar":false}` contra o master:
+`no1` calculava a maioria só sobre a própria lista (encolhida) e continuava
+gravando, enquanto `no2`/`no3` — que nunca souberam da remoção — elegiam um
+segundo master entre si. **Dois masters graváveis, permanentes, sem partição
+de rede nenhuma.** Hoje `propagar:false` só é aceito de dentro (pedido que
+chega com `ip` vazio, isto é, do próprio laço do cluster) ou autenticado como
+`cluster.usuario` **e** vindo de um nó que já está na lista viva — por IP
+canônico **ou** pelo nome de host que a lista traz (a lista aceita host, e a
+primeira versão da trava só olhava o IP: um nó configurado por nome escapava
+dela). Pedido de qualquer outro cliente é recusado pela fábrica,
+`erro.escalonar_sem_propagar` — o mesmo portão vale para
+`cluster_no_acrescentar` (que tem o espelho: inflar `total()` com nós
+fantasmas sem propagar derruba a maioria de todo mundo).
 
 **Duas recusas do `cluster_no_remover`, e as duas são decisão:** este nó não se
 remove (um servidor fora da própria lista não passa mais no `Cluster::validar` e

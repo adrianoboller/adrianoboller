@@ -822,3 +822,30 @@ cluster cifrado seria pulsado e replicado **sem** âncora enquanto os do arquivo
 têm pino: de novo a metade que engana. E o pino sobrevive à reescrita da lista:
 gravar `cluster.nos` a quente sem ele apagaria o pino de **todos** os nós de uma
 vez, deixando a cifra ligada e rebaixada a escuta passiva em silêncio.
+
+### O que o pino cifra, e o que ele NÃO prova — parecer sobre o A1 pleno (17/09/2026)
+
+A revisão SEC de 17/09/2026 (achado A1, pedido 278) pediu, como conserto
+pleno, amarrar a **identidade de quem manda o pulso** ao pino — para um pulso
+forjado não poder se passar por outro nó da lista. O pedido é razoável e
+esbarra numa decisão já tomada aqui: o aperto do cluster é **Noise NX**
+(§1), e no NX **só o respondedor apresenta chave estática** — quem inicia a
+conexão (e é o iniciador quem manda o pulso, `replica::ligar`) é **anônimo por
+desenho**, e essa foi a escolha registrada em «Por que a estática do cliente
+ficou de fora (XX e IK descartados)» (§1). A sessão que sai do aperto guarda a
+**transcrição**, não uma identidade do lado que chamou — não há, hoje, nada
+para comparar contra `chave_do_fio` do lado de quem pulsa.
+
+**O que fecharia o A1 por completo, e por que nenhum dos dois entrou nesta
+rodada**: (1) uma prova **dentro do próprio pulso**, por Diffie-Hellman contra
+as chaves estáticas que já existem — `chave_do_fio` de cada `NoCluster` já é,
+de fato, um `known_hosts`, então o material está todo aqui; falta o protocolo
+que o usa para autenticar o `id` declarado no corpo do pulso, não só cifrar o
+transporte. (2) trocar o padrão do aperto do cluster para **XX** ou **IK**,
+em que o iniciador também apresenta estática — o que reabriria a decisão da
+§1 e teria o mesmo custo que fez XX/IK serem descartados lá (mais uma
+ida-e-volta no aperto, ou uma chave pré-compartilhada por nó). As duas são
+desenho de protocolo cifrado, e ficam com o dono — o teto de época
+(`FOLGA_DE_EPOCA`, `docs/CLUSTER.md` §2.2) que entrou em `49a3af7` cobre o
+sintoma (envenenar `maior_epoca_vista` para sempre), não a causa (o pulso não
+prova quem o mandou).

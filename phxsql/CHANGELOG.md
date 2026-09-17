@@ -109,6 +109,53 @@ errado, está dito qual.
   derrubar as outras. Teste pelo soquete:
   `crates/phxsql-server/tests/continuidade-da-replica.rs`. Não entrou no
   bidirecional — decisão do dono.
+- **`numerar_linha` consumia o contador do `rownum` ANTES da sequência, do
+  `CHECK`, da unicidade e da coluna obrigatória — uma linha recusada queimava
+  número e deixava buraco atrás dela** (`eeb9925`, pedido 291). Passou a
+  **reservar** o número (a linha o carrega, para a chave poder indexá-lo) e
+  só **consumir** — o contador andando de fato — depois da última guarda que
+  pode recusar a linha; o irmão `atualizar_com_maes_opt` recebeu o mesmo
+  tratamento. Não é retroativo. Testes:
+  `paginacao::{linha_recusada_no_lote_nao_consome_rownum,
+  insercao_recusada_nao_consome_rownum, lote_sem_recusa_numera_como_antes}`.
+- **`replicar` numa tabela com coluna marcada não deixava rastro na trilha
+  `.lgpd`** (`eeb9925`, pedido 285). Passou a gravar um acesso por chamada,
+  critério `replicar desde=N ate=M`, `linhas` = eventos servidos; **+154
+  bytes por lote** medidos. Testes:
+  `testes_da_ficha_compartilhada::{replicar_numa_tabela_marcada_deixa_rastro_na_trilha,
+  replicar_sem_coluna_marcada_nao_grava_trilha}`.
+- **`"propagar": false` no escalonamento do cluster valia de qualquer
+  cliente, e permitia dois masters graváveis sem partição de rede** (`eeb9925`,
+  pedido 281). Passou a valer só como ordem interna (IP vazio) ou com a
+  credencial do cluster vinda de um nó da lista viva (por IP ou por nome de
+  host — irmão achado pela própria frente: a lista aceita host, e a trava só
+  olhava IP). Cliente comum é recusado pela fábrica,
+  `erro.escalonar_sem_propagar`.
+- **`cluster_estado` entregava endereço, época e posição de cada nó a quem só
+  tinha `ler`** (`eeb9925`, pedido 283). `master`/`papel`/`epoca`/
+  `escrita_liberada`/`degradado` continuam para `ler`; `nos[]` — a lista com
+  endereço e posição — passou a exigir `administrar`, saindo **ausente** da
+  resposta (nunca uma lista vazia) para quem não tem o direito.
+- **`replicacao_testar` vazava o texto cru do sistema operacional, e não
+  tinha prazo de conexão** (`49a3af7` deu o prazo; `eeb9925` fechou a
+  classificação, pedido 282). O erro de rede vira uma de quatro chaves da
+  fábrica (`erro.sonda_recusada/prazo/sem_rota/caiu`) sem texto do SO; host
+  fora da configuração que não responde conta violação leve.
+- **O carimbo do modo bidirecional vinha do outro lado sem teto — um par
+  hostil ganhava todo conflito para sempre** (`eeb9925`, pedido 286). Carimbo
+  além de `FOLGA_DO_CARIMBO_MS` (5 min) no futuro entra com o relógio local e
+  é contado em `replicacao_estado.carimbos_do_futuro`, sem recusar o evento.
+- **A op `config` publicava a lista de nós do arranque, não a viva** (pedido
+  287) — **fechado por PROVA, não por conserto**: a injeção da lista viva já
+  existia desde `a446c7a` (07/09/2026); faltavam o teste e o campo `tem_pino`
+  na lista viva, que `eeb9925` completou.
+- **`cluster_pulso` era oráculo de ids de nó** — «não está na lista» e «é
+  este servidor» respondiam frases diferentes, e nenhuma contava violação
+  leve (`eeb9925`, pedido 288). As duas passaram a responder a mesma
+  mensagem (`erro.pulso_de_no_desconhecido`); a contagem de violação leve
+  entra só com `seguranca.contar_pulso_desconhecido`, que **nasce
+  desligado** (ligado de fábrica bloquearia o próprio nó novo durante um
+  escalonamento a quente).
 
 ### Adicionado
 
@@ -188,6 +235,26 @@ errado, está dito qual.
   (parecer do DBA, §2.3). É o que faz a conferência de continuidade valer:
   comparar `posição-1` só funciona se os dois lados gravarem o mesmo
   carimbo/origem.
+- **Quem já automatiza `cluster_no_remover`/`cluster_no_acrescentar` com
+  `"propagar": false` de um script cliente passa a ser recusado** (`eeb9925`)
+  — o campo virou ordem interna do cluster; quem precisa dele de fora agora
+  precisa da credencial do cluster e de estar na lista viva. Quem nunca usou
+  o campo não muda nada.
+- **Quem lê `cluster_estado` com um usuário só de `ler` deixa de ver `nos[]`**
+  (`eeb9925`) — endereço, posição e idade de pulso de cada nó agora exigem
+  `administrar`. Ferramenta de monitoramento que dependia da lista com um
+  usuário de leitura precisa passar a usar um usuário administrador.
+- **O par bidirecional passa a tolerar um carimbo até 5 minutos no futuro
+  sem sobrescrever calado para sempre** (`eeb9925`, `FOLGA_DO_CARIMBO_MS`) —
+  quem já rodava com relógios fora de sincronia por mais que isso passa a ver
+  o evento contado em `replicacao_estado.carimbos_do_futuro`, o que não
+  existia antes.
+- **Uma carga com `parar_no_erro:false` que já convivia com buracos no
+  `rownum` deixa de gerá-los a partir de agora** (`eeb9925`) — quem tinha
+  ferramenta própria contando com o número de ordem *de antes* do conserto
+  para calcular quantas linhas foram recusadas precisa rever a conta: o
+  `rownum` volta a ser contíguo em toda escrita nova (buracos já gravados
+  antes do commit continuam no disco).
 
 ### Sabido
 
@@ -213,17 +280,26 @@ errado, está dito qual.
   UTC.** A revisão adversária (SEC), o parecer de DBA (C) e o inventário de
   QA (G) voltaram só de leitura, sem conserto; a bateria (F) voltou verde,
   dez bancadas de dez, com os três achados medidos de C confirmados pelo
-  soquete (§21.4). `docs/REPLICACAO.md` §21, `docs/PENDENCIAS.md` 278–308.
-- **SEC A1 (alta), parcial — o pulso do cluster ainda não amarra a identidade
-  do nó à chave do fio**: um nó da lista pode se declarar outro nó da lista.
-  A parte que envenenava `maior_epoca_vista` para sempre (época/posição sem
-  teto, e o pulso fora do portão das réplicas autorizadas) foi **corrigida**
-  em `49a3af7` — ver Corrigido. Pedido 278.
-- **C — `rownum` diverge entre source e réplica depois de uma inserção
-  recusada por chave duplicada**: 2 de 5 linhas com `rownum` diferente,
-  rowids iguais nas 5 (medido em binário isolado fora do repositório,
-  `docs/propostas/parecer-dba-replicacao-2026-09-17.md` §2.1, 17/09 02:39
-  UTC). Pedido 291.
+  soquete (§21.4). Duas ondas de conserto entraram no mesmo dia: `49a3af7`
+  fechou A2/A3 inteiros e A1 parcial; `eeb9925` fechou mais sete (A4, A5
+  resto, A6, A8, A9, A10, A11) e o `rownum` (291, via a) — sobrando só A1
+  pleno (parecer) e A7 abertos entre os onze achados de SEC. `docs/REPLICACAO.md`
+  §21, `docs/PENDENCIAS.md` 278–309.
+- **SEC A1, parcial — o pulso do cluster ainda não amarra a identidade do nó a
+  uma prova criptográfica.** Parecer de B2 (17/09/2026, `eeb9925`): não é
+  possível no aperto de mão atual — o cluster cifrado usa Noise **NX**, em
+  que só o respondedor apresenta chave estática; quem manda o pulso é o
+  **iniciador**, anônimo por decisão já registrada em `docs/CIFRA-DO-FIO.md`
+  §12. Fecharia com prova por Diffie-Hellman das estáticas que já existem
+  (`chave_do_fio` já é um `known_hosts`) ou trocando o aperto para XX/IK —
+  as duas são desenho de protocolo cifrado, decisão do dono. O que já foi
+  corrigido (época/posição sem teto, pulso fora do portão) está em
+  Corrigido. Pedido 278.
+- **C — a via (b) do `rownum`: a réplica ainda gera o número dela, em vez de
+  honrar o que vem na imagem.** A via (a) — consumir o número só depois da
+  última guarda que recusa — fechou em `eeb9925` (pedido 291, ver Corrigido)
+  e resolve toda escrita nova; um source com um buraco **já gravado antes**
+  desse commit continua com o buraco, e só a via (b) o alcançaria. Pedido 309.
 - **C — unicidade num índice secundário trava o par de servidores no
   bidirecional para sempre**: `[SP000020] chave duplicada` recusa o evento e
   o lote nunca avança (§2.5, idem). Pedido 292.
