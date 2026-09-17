@@ -176,3 +176,29 @@ Limite escrito no contrato de B: não mexer no teto de parede, não ajustar a
 catraca `alcancam-fsync` (23/22 é o pedido 252, mesa do dono) e não tocar
 formato. Se a preparação fora da trava abrir janela para o estado mudar entre
 preparar e executar, o item vira parecer — meia garantia é pior que nenhuma.
+
+## Onda 5 — a fila depois dos dois pedidos do dono (06:25 UTC)
+
+Integrado antes desta onda: **164** (`20d2c59`) e **190** (`6319396`), com os
+portões do integrador nos dois (fmt limpo, clippy 0, 2.450/0/4; conferidor de
+botões 321/182/22/**119**, catraca em 119; textos cravados 950 com catraca 950
+intacta). E as **catorze decisões do dono** dos parciais, gravadas nos pedidos
+(`f8b1040`, `df92381`, `1c4b94b`, `57b983f`): 179 e 194 fecharam como recusa
+medida; 197, 207, 229, 238, 239, 245, 249, 259, 263, 273, 278 e 303 com rumo
+escrito.
+
+| papel | frente | escalão | por que | largada |
+|---|---|---|---|---|
+| H4 | a documentação que ficou para trás nos dois pedidos: #164 (o «falta encurtar» morreu medido; «76 seções» e «sem teto de duração» caducaram), #190 (194 → 119 e a frase dos assistentes que morreu medida), CONCORRENCIA e CATRACAS (a régua conta ATRIBUIÇÃO), DESEMPENHO (o achado do `empilhar` e a hipótese morta), TESTES §13, CHANGELOG, MODELOS, e dois pedidos novos | médio | varredura verificável de commits que já existem; nenhum número de memória | 06:25 |
+| 303-F | o teste do `TETO_DA_RESPOSTA`, o lado que RECEBE — decisão do dono das 05:32. A QA disse que não há teste que caia, e guarda sem teste que caia não é guarda. Se o teto estiver no lugar errado, como o irmão estava, é parecer e não conserto | forte | prova real é o papel mais fácil de fingir que se cumpriu | 06:26 |
+
+Fila depois: **164-F** (medição em máquina parada + mapa remedido), **F2**
+(bancada: 308 datas nos `resultados.json`, 193, 306, 307), **onda 4 do
+Phoenix** (304 dataBar no XLSX, 305 construtor AND/OR), e o fecho — com o
+**provador INTEIRO** rodando, que é decisão do dono no 263.
+
+Na mesa do dono, esperando: a régua do mapa da trava em **25 com teto 22**
+sem nenhum `fsync` novo (dividir a porta mudou a atribuição), o `ler` dentro
+de transação pagando O(pendentes) sob a trava (38 µs com zero, **1.118,50 µs
+com 1.600**), e a versão que o `sondar_origem` não devolve e a tela mostra
+como buraco.
