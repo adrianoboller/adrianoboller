@@ -202,3 +202,41 @@ sem nenhum `fsync` novo (dividir a porta mudou a atribuição), o `ler` dentro
 de transação pagando O(pendentes) sob a trava (38 µs com zero, **1.118,50 µs
 com 1.600**), e a versão que o `sondar_origem` não devolve e a tela mostra
 como buraco.
+
+## Onda 6 — as cinco decisoes de formato sairam (17/09/2026 07:10 UTC)
+
+O dono decidiu 289, 290, 292, 293 e 294, as cinco que destravam o 229. Uma
+delas derrubou a proposta do proprio parecer: a 290 pedia `inicio` e `passo`
+no bloco de esquema, e `abrir_para_replicar` (`servidor.rs:2806-2814`) cria a
+tabela do MESMO bloco de esquema do source, byte a byte — os dois `u64`
+chegariam iguais nos dois nos e as faixas voltariam a colidir. Ficou: `passo`
+no `PSCH`, `inicio` na identidade do no. Medido na hora da decisao, antes de
+virar contrato.
+
+Os cinco pedidos ficam em estado **planejado** de proposito: a decisao saiu, o
+formato nao mudou. Marcar feito por causa de uma decisao seria a mentira que
+esta casa passa o tempo todo consertando.
+
+| frente | contrato | escalao | motivo do escalao | largada |
+|---|---|---|---|---|
+| C-PSCH | desenho do `PSCH` v10 byte a byte: 289 (nanos com avanco forcado), 290 (passo no esquema, inicio no no) e os itens de formato do 229, num bump so. Migracao, o que a replica honra, e o que C recusa se recusar | forte | formato em disco e a definicao de projeto e risco | 07:19 |
+| B-RECUSAS | 292 e 293: as duas recusas na declaracao, e o laco infinito que para de repetir o mesmo lote contando e gritando como o `colisao_de_criacao` ja faz | forte | muda o que o motor aceita replicar, e uma delas hoje grava dado errado calado | 07:19 |
+
+**Papeis convocados e dispensados nesta onda** (a clausula cobra a diferenca
+entre dispensa registrada e esquecimento):
+
+- **Convocados**: A (integrador, esta linha), C (formato em disco — e dele a
+  palavra), B (as duas recusas), F por dentro do contrato de B (prova real nos
+  dois sentidos, com o vermelho medido e dito).
+- **Dispensados, com motivo**: **E** (designer) — nenhuma das cinco decisoes
+  toca a tela nesta onda; a coluna de data/hora vai mexer na grade quando
+  existir, e ai ele entra, porque «coluna de sistema nova quebra quem filtra
+  pela primeira» ja foi pago tres vezes aqui. **G** (QA) — entra na onda
+  seguinte, para catalogar as guardas do 164 e do 303 e as que estas duas
+  frentes criarem; catalogar guarda de codigo que ainda nao existe seria
+  catalogo de promessa. **H** (documentacao) — entra no fecho, junto do resto.
+  **J** (pesquisador) — as cinco decisoes ja estavam medidas contra o nosso
+  gargalo nos pareceres; nao ha receita de fora nova para trazer. **D**
+  (zelador) — rodou as 07:16, liberou 1.264 MiB medidos. **SEC** — o 293 e
+  achado dele e ja esta com o parecer escrito; ele volta para revisar a recusa
+  depois de implementada, nao antes.
