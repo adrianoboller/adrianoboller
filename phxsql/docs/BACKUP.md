@@ -218,3 +218,27 @@ e o bundle de 34 MB também não. Saída: `split -b 29m` em partes numeradas, co
 `SHA256SUMS` das partes e do inteiro e um `MONTAR.sh` de uma linha. Limitação
 registrada envelhece — na próxima rodada, tente enviar o inteiro antes de
 partir.
+
+## O pacote custa 15,5 s, e adiá-lo era premissa e não custo — 17/09/2026
+
+O batimento desta casa reclamava do backup atrasado de hora em hora, e a
+resposta era sempre a mesma: *«refaz no fecho»*. O motivo que se dava era que o
+pacote competiria com as frentes que estão compilando.
+
+**Medido em 17/09/2026 08:13 UTC, com duas frentes de pé: 15,5 s de relógio,
+16,3 s de usuário.** Pacote de 34 MiB, 937 commits, provado nos três passos.
+
+E a causa da diferença está no próprio `backup.sh`: ele é `git bundle create`
+mais a restauração de prova e a comparação de árvore. **Não compila nada.** O
+custo é de E/S sobre os objetos do git, não de CPU de compilador — então ele
+nunca competiu com o `cargo` pelo recurso que o `cargo` disputa.
+
+O atraso chegou a **45 commits e 389 minutos** antes de alguém medir. É a mesma
+lei que já custou caro aqui, aplicada a um papel em vez de a um número:
+**diagnóstico plausível não é diagnóstico medido**, e o errado sobrevive melhor
+quando a consequência dele (o pacote sair no fecho) funcionava por outro motivo.
+
+**A regra passa a ser: o pacote sai quando o backup estiver atrasado, não
+quando a rodada fechar.** O que continua valendo é o resto: pacote gerado por
+script, nunca montado à mão, e provado nos três passos antes de contar como
+feito.
