@@ -235,7 +235,7 @@ não porque foi copiado.
 | `RETURNING id` | não | o protocolo devolve o `rowid`; a `Sequence` sai relendo |
 | `OWNED BY` (a sequência morre com a tabela) | de graça | o contador **é** da tabela; some com ela |
 | ver o próximo número sem consumir | sim | `sequencias` devolve `proxima` sem avançar |
-| geração automática de `Uuid` quando o campo vem nulo | **não** | medido: `coluna id e obrigatoria e recebeu NULL`; o cliente tem de mandar `"novo"` |
+| geração automática de `Uuid` quando o campo vem nulo | **sim, desde 17/09/2026** | só na **chave primária de coluna única** do tipo `Uuid` que não seja referência — §B.2.5. Antes disso era `coluna id e obrigatoria e recebeu NULL`, e esse erro **continua** valendo em toda coluna `Uuid` que não seja a identidade declarada |
 
 ---
 
@@ -380,21 +380,104 @@ administrador.
 **O que se recusa junto:** `NEXT VALUE FOR` dentro de expressão SQL — depende do
 interpretador que ainda não existe — e o `seq.nextval` do Oracle.
 
-### B.2.5 O `Uuid` que nasce sozinho — **um item pequeno que fecha a saída de emergência**
+### B.2.5 O `Uuid` que nasce sozinho — **FEITO em 17/09/2026**
 
-Medido: `Sequence` nula ganha número; `Uuid` nulo dá erro. A assimetria não tem
-motivo de formato — é só que ninguém a escreveu. Fechá-la custa uma linha na
-mesma função (`numerar`, table.rs:2307) e faz do `Uuid` v7 uma alternativa
-**usável** por quem tem dois masters: medido no bloco 24, estágio 4, **4
-inserções → 4 linhas dos dois lados**, contra 2 de 4 com a `Sequence`.
+Medido antes: `Sequence` nula ganhava número; `Uuid` nulo dava erro. A
+assimetria não tinha motivo de formato — é só que ninguém a escrevera. **Ela
+está fechada**, e o `PSCH` continua **v9**: nada no disco mudou.
 
-**A divergência, e a restrição:** o Cassandra **não tem** auto-increment, e isso
-é decisão, não falta: sem coordenação global não há como um nó saber qual é o
-próximo número sem perguntar aos outros. A restrição que nos separa dele é a
-regra primordial da integridade — aqui a chave estrangeira **é conferida na
-gravação**, então precisamos de identidade estável, e o `Uuid` v7 dá isso
-mantendo a ordenação temporal. **Convergimos com o Cassandra no meio de
-transporte e divergimos no fim: eles não conferem, nós conferimos.**
+**O que passou a valer.** Numa tabela cuja **chave primária é de coluna única e
+do tipo `Uuid`**, o valor nulo na inserção ganha um v7; o nulo na *alteração*
+mantém o que a linha já tinha, pela mesma razão que a `Sequence` não se
+renumera — trocar a identidade no meio da vida da linha é o pior estrago
+possível. Vale pelo protocolo também: coluna **ausente** no JSON vira nulo
+(`valores.rs::json_para_linha`) e sai do outro lado com id. As duas portas que
+já existiam continuam intactas: `"id":"novo"` e o id escrito à mão.
+
+**A premissa que morreu medida: NÃO custou «uma linha na mesma função».** A
+versão anterior deste parágrafo dizia isso, e a leitura do código mostrou por
+quê não: `Sequence` é **uma por tabela por construção do tipo**, e `Uuid` não é
+— a mesma tabela tem `id`, `empresa_id`, `empresa_a`, `empresa_b`
+(`crates/phxsql-store/examples/servermail-ciclo.rs`), e as três últimas são
+**referência**. Gerar um v7 numa coluna de referência inventaria um pai que não
+existe, e inventaria **depois** da conferência: `conferir_fks_com` roda antes de
+`numerar` e deixa o nulo passar — nulo satisfaz chave estrangeira, e é o SQL.
+Seria a pétrea «só existe filho se o pai existir primeiro» quebrada por um valor
+que o próprio motor inventou. **Medido com o defeito reposto:** sem a guarda da
+coluna de referência, a órfã entra e a tabela fica com 1 linha onde o teste
+exige 0 (`uuid_de_referencia_nao_nasce_sozinho`).
+
+**E esta casa já tinha pago por isso uma vez, na tela.** O `docs/PENDENCIAS.md`
+registra: *«a primeira versão do conserto preenchia toda coluna `Uuid`,
+inclusive a estrangeira, o que geraria um id sorteado apontando para nada. Quem
+viu isso foi a captura de tela.»* A interface aprendeu por captura; o motor
+aprendeu lendo o irmão antes de repetir.
+
+**As três condições, e o que cada uma compra** — em
+`Table::coluna_do_uuid_gerado` (`crates/phxsql-store/src/table.rs`):
+
+1. **é a chave primária de coluna única** — a identidade **declarada**. Marcar o
+   índice como primário é o pedido, e é isso que faz a guarda entrar *pedida* e
+   não imposta: tabela que não marcou primária continua exatamente como antes,
+   com o erro «coluna `id` é obrigatória e recebeu NULL».
+2. **a coluna é `Uuid`** — não há o que gerar nas outras.
+3. **não participa de nenhuma chave estrangeira declarada** — o caso da tabela
+   1-para-1, em que a primária da filha também aponta para a mãe.
+
+A condição «não aceita nulo» não aparece na lista porque já é lei do esquema:
+`Schema::new` recusa coluna de chave primária que aceite nulo. **É ela que torna
+esta mudança provadamente inofensiva**: hoje o nulo nessa coluna é erro duro, e
+não há cliente vivo contando com o que ela passou a fazer. O `Uuid` *nulável*
+continua guardando nulo — quem grava «não sei» continua podendo
+(`uuid_que_aceita_nulo_continua_nulo`).
+
+**A réplica não entra.** O portão é o primeiro teste da função e é o mesmo que o
+`DEFAULT` já usava (`aplicar_regras` confere `julga_integridade` pelo mesmo
+motivo): a réplica **copia o que veio**, e gerar ali daria dois ids para a mesma
+linha. Um nulo que chegue pela replicação continua caindo no erro de coluna
+obrigatória — divergência se anuncia, não se remenda. **Medido com o portão
+removido:** `inserir_replicado` grava a linha com identidade própria
+(`a_replica_nao_gera_identidade`).
+
+**A divergência dos três motores, e a restrição que a causou.** PostgreSQL,
+MySQL e MariaDB **convergem** noutra coisa: neles um `uuid` primário não se gera
+sozinho, gera-se por `DEFAULT gen_random_uuid()` / `DEFAULT (UUID())` —
+declaração por coluna. A restrição que nos separa é que a nossa linguagem de
+expressão (`phxsql_core::expressao`) só tem função **pura**, e ela serve também
+ao `WHERE`, ao `CHECK` e à coluna calculada: pôr em circulação uma função que
+devolve valor diferente a cada avaliação faria uma calculada se reescrever a
+cada `atualizar`. E esta casa já gera **por tipo** — é o que a `Sequence` faz.
+Então a simetria pedida aqui mora no `numerar`, e não numa função volátil. O
+choque está registrado em vez de silenciado, que é o que a lei dos três motores
+cobra.
+
+**O que este item NÃO resolve, e é preciso dizer.** A versão anterior deste
+parágrafo vendia o `Uuid` v7 como «a alternativa usável por quem tem dois
+masters», e o parecer do papel C de 17/09/2026
+(`docs/propostas/parecer-dba-vinte-caixas-um-servidor-2026-09-17.md`) recomenda
+o **contrário** para o cenário de 20 caixas e 1 servidor: folha de 17 B → 239
+chaves/página com `Sequence` contra 25 B → 162/página com `Uuid` — **+47,5%** no
+`.ndx`, 163,4 → 241,1 MiB só nas folhas a 10 milhões de linhas; e o `Uuid` v7
+**perde a localidade exatamente na reconexão do caixa atrasado**, que é o evento
+para o qual esse arranjo existe, enquanto a `Sequence` **com faixa** dá 20
+pontos de anexação (20 folhas quentes, 80 KiB) e ainda diz de que caixa a venda
+saiu por `numero mod passo`. A identidade recomendada para N pontas é
+`Sequence` com faixa, no `PSCH` v10 — item 6 da §B.4, mudança de formato e
+decisão do dono. **Este item fecha a assimetria e nada mais.**
+
+**Limitação herdada, não nova:** dentro de uma transação a identidade só nasce
+no `COMMIT`, como a `Sequence` — o *read-your-own-writes* mostra `null` até lá
+(§B.4, item 5). E a reaplicação da recuperação sobre um `inserir` que não chegou
+a gravar gera um v7 novo, pela mesma razão e sem ninguém ter visto o anterior.
+
+**A prova real, nos dois sentidos** — `crates/phxsql-store/tests/identificadores.rs`
+(8 testes) e `crates/phxsql-server/src/servidor.rs`, `mod testes_identidade_uuid`
+(4 testes). Quatro defeitos repostos, cada um com o vermelho medido: sem o ramo
+da identidade caem 3 testes do `store` e 2 do servidor com «coluna id e
+obrigatoria e recebeu NULL»; sem o portão da réplica cai
+`a_replica_nao_gera_identidade`; sem a guarda da coluna de referência cai
+`uuid_de_referencia_nao_nasce_sozinho`; e alargando a regra para **toda** coluna
+`Uuid` caem os dois testes do comportamento velho.
 
 ### B.2.6 O teto do protocolo: dizer a verdade, ou consertá-la
 
@@ -464,7 +547,7 @@ que já acontece.
 | ordem | item | custo | muda formato? | quebra cliente? |
 |---|---|---|---|---|
 | 1 | **pedido 223** — `WHERE id = 2` com `Sequence` | 1 linha (`valores.rs:707`) + par de testes | não | não |
-| 2 | **`Uuid` nasce sozinho** quando o valor chega nulo | 1 ramo no `numerar` | não | não |
+| 2 | **`Uuid` nasce sozinho** quando o valor chega nulo — **FEITO 17/09/2026** | 1 ramo no `numerar` + 3 condições em `coluna_do_uuid_gerado` + portão da réplica; 12 testes | não (`PSCH` v9) | não — hoje é erro duro |
 | 3 | **recusar valor acima de 2⁵³** com a mensagem que explica | 2 comparações | não | não — hoje ele já se corrompe |
 | 4 | **`verificar` reconta a `Sequence`** e `reparar` empurra o contador | dentro de uma varredura que já existe | não | não |
 | 5 | **numerar no `INSERT`, dentro da transação** | reserva na `Escrita` + devolução | não | não (hoje se lê `null`) |
@@ -487,9 +570,14 @@ falha na tabela mais comum que existe.
 
 A frente G2 atacou os **três defeitos medidos** da Parte A — os blocos 19, 23 e
 24 — sem tocar no formato `PSCH`. O «ideal» da Parte B (início/passo no esquema,
-`IDENTITY ALWAYS`, `Uuid` que nasce sozinho, sequência nomeada) **é mudança de
-formato e continua sendo o próximo passo**; a G2 não o implementou. Cada
-conserto entrou com prova real nos dois sentidos e uma guarda no catálogo.
+`IDENTITY ALWAYS`, sequência nomeada) **é mudança de formato e continua sendo o
+próximo passo**; a G2 não o implementou. Cada conserto entrou com prova real nos
+dois sentidos e uma guarda no catálogo.
+
+**Correção de 17/09/2026:** este parágrafo listava o **`Uuid` que nasce
+sozinho** entre os itens de mudança de formato, e ele não era — mediu-se e não
+é. Está **feito**, com o `PSCH` em v9 e sem um byte mexido no disco; a §B.2.5
+conta o que entrou, o que ficou de fora e por quê.
 
 ## C.1 O teto de 2⁵³ (defeito b) — recusado na entrada, honesto na saída
 
@@ -647,5 +735,8 @@ PHX_SONDA_PORTA=7830 PHX_SONDA_BIN=target/release/phxsqld \
   premissa que este documento mediu.
 - `docs/CASSANDRA.md` — por que eles não têm auto-increment, e onde isso nos
   serve.
+- `docs/propostas/parecer-dba-vinte-caixas-um-servidor-2026-09-17.md` — o
+  veredito do papel C sobre a identidade de N pontas: `Sequence` **com faixa**,
+  e não `Uuid` v7, com o custo do `.ndx` medido (§B.2.5).
 - `docs/dossie/figuras/autonumber-como-esta.svg` e `autonumber-ideal.svg` — as
   duas figuras, uma afirmação cada.

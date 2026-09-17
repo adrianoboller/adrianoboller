@@ -112,8 +112,14 @@ não: o contador voltou reaberto em 8, exatamente como estava.
   o **pedido 223**, aberto, `valores.rs:707`.
 - **`Uuid` que nasce sozinho** — a `Sequence` nula ganha número; o `Uuid` nulo dá
   «coluna id e obrigatoria e recebeu NULL». A assimetria não tem motivo de
-  formato, e fechá-la é o que torna o `Uuid` v7 uma alternativa usável para quem
-  tem dois masters.
+  formato.
+  **FEITO em 17/09/2026** (este documento é o retrato de 07/09, e a linha fica
+  para não falsear a data): fechada na **chave primária de coluna única** do
+  tipo `Uuid` que não seja referência, sem tocar no `PSCH` (v9), 12 testes —
+  `docs/AUTONUMBER.md` §B.2.5. A frase «é o que torna o `Uuid` v7 uma
+  alternativa usável para quem tem dois masters» **saiu daqui porque morreu
+  medida**: o parecer do papel C de 17/09 mede o `Uuid` como +47,5% no `.ndx` e
+  recomenda `Sequence` **com faixa** para N pontas.
 - **Reparo do contador** — o `verificar` reconta `marcadas` varrendo e **não**
   reconta a `Sequence`; um contador atrasado não tem caminho de conserto
   automático. E o cabeçalho adulterado à mão é pego pelo **CRC-32**, que trava

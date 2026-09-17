@@ -19,6 +19,7 @@ use phxsql_core::expressao;
 use phxsql_core::keyenc::{escrever_componente, largura_componente};
 use phxsql_core::schema::{AcaoRi, ForeignKey, Schema};
 use phxsql_core::types::ColumnType;
+use phxsql_core::uuid::Uuid;
 use phxsql_core::value::{escrever_inline, ler_inline, Ponteiro, Value};
 use phxsql_core::{RowId, EXT_BIN, EXT_MEMO, EXT_NDX, EXT_REG};
 
@@ -2595,10 +2596,13 @@ impl Table {
         })
     }
 
-    /// Resolve a coluna `Sequence`, se houver uma.
+    /// Resolve os valores que o MOTOR gera: a `Sequence` e a identidade
+    /// `Uuid`.
     ///
     /// Devolve `None` quando nao ha nada a mudar, para o caminho comum nao
     /// pagar uma copia da linha inteira.
+    ///
+    /// # A sequencia
     ///
     /// Duas regras, e a segunda e a que evita o estrago: valor nulo ganha o
     /// proximo numero do contador; valor escolhido a mao EMPURRA o contador
@@ -2609,35 +2613,141 @@ impl Table {
     /// Numa alteracao (`anterior` presente) o nulo nao gera numero novo: ele
     /// mantem o que a linha ja tinha. A sequencia identifica a linha, e
     /// renumerar no meio do caminho seria trocar a identidade dela.
+    ///
+    /// # A identidade `Uuid` (§B.2.5 do `docs/AUTONUMBER.md`)
+    ///
+    /// A mesma regra do nulo, na coluna que [`Table::coluna_do_uuid_gerado`]
+    /// escolhe: nulo na insercao ganha um v7, nulo na alteracao mantem o que a
+    /// linha ja tinha. Valor escolhido a mao passa intacto -- nao ha contador
+    /// para empurrar, que e a unica assimetria com a sequencia.
+    ///
+    /// # Por que as duas moram na MESMA funcao, e nao em duas
+    ///
+    /// Porque cada caminho de escrita chama esta funcao uma vez, e duas
+    /// funcoes seriam duas chamadas a esquecer -- a licao do portao de
+    /// permissao, que e UM so: espalhado, o que alguem esquecer vira o buraco
+    /// que ninguem acha por leitura. Quem acrescentar um `inserir` novo nao
+    /// tem como levar a sequencia e deixar a identidade para tras.
     fn numerar(
         &mut self,
         valores: &[Value],
         anterior: Option<&Linha>,
     ) -> Result<Option<Vec<Value>>> {
-        let Some(i) = self.esquema.coluna_sequencia() else {
+        // O portao vem ANTES do trabalho: tabela sem `Sequence` e sem
+        // identidade `Uuid` sai daqui sem copiar linha nenhuma.
+        let sequencia = self.esquema.coluna_sequencia();
+        let identidade = self.coluna_do_uuid_gerado();
+        if sequencia.is_none() && identidade.is_none() {
             return Ok(None);
-        };
-        match &valores[i] {
-            Value::Null => {
-                let mut novos = valores.to_vec();
-                novos[i] = match anterior {
-                    Some(linha) => linha[i].clone(),
-                    None => Value::UInt(self.reg.proxima_da_sequencia()),
-                };
-                Ok(Some(novos))
-            }
-            Value::UInt(n) => {
-                self.reg.anotar_sequencia(*n);
-                Ok(None)
-            }
-            Value::Int(n) if *n >= 0 => {
-                self.reg.anotar_sequencia(*n as u64);
-                Ok(None)
-            }
-            outro => Err(PhxError::Tipo(format!(
-                "coluna de sequencia espera numero inteiro, recebeu {outro:?}"
-            ))),
         }
+        let mut novos: Option<Vec<Value>> = None;
+        if let Some(i) = sequencia {
+            match &valores[i] {
+                Value::Null => {
+                    let v = match anterior {
+                        Some(linha) => linha[i].clone(),
+                        None => Value::UInt(self.reg.proxima_da_sequencia()),
+                    };
+                    novos.get_or_insert_with(|| valores.to_vec())[i] = v;
+                }
+                Value::UInt(n) => self.reg.anotar_sequencia(*n),
+                Value::Int(n) if *n >= 0 => self.reg.anotar_sequencia(*n as u64),
+                outro => {
+                    return Err(PhxError::Tipo(format!(
+                        "coluna de sequencia espera numero inteiro, recebeu {outro:?}"
+                    )))
+                }
+            }
+        }
+        if let Some(i) = identidade {
+            if valores[i].e_null() {
+                let v = match anterior {
+                    Some(linha) => linha[i].clone(),
+                    None => Value::Uuid(Uuid::v7()),
+                };
+                novos.get_or_insert_with(|| valores.to_vec())[i] = v;
+            }
+        }
+        Ok(novos)
+    }
+
+    /// A coluna `Uuid` que ESTE handle preenche sozinho quando o valor chega
+    /// nulo, ou `None` -- que e o caso da esmagadora maioria das tabelas.
+    ///
+    /// # Por que nao e «toda coluna `Uuid`», como e' «toda coluna `Sequence`»
+    ///
+    /// Porque `Sequence` e' uma por tabela por construcao do tipo, e `Uuid`
+    /// nao e': uma tabela tem `id`, `empresa_id`, `empresa_a`, `empresa_b` --
+    /// e as tres ultimas sao REFERENCIA. Gerar um v7 numa coluna de referencia
+    /// inventaria um pai que nao existe, e a orfa entraria SEM NINGUEM VER:
+    /// `conferir_fks_com` roda ANTES desta funcao e deixa o nulo passar (nulo
+    /// satisfaz chave estrangeira, e e o SQL). Seria a petrea «so existe filho
+    /// se o pai existir primeiro» quebrada por um valor que o proprio motor
+    /// inventou depois da conferencia.
+    ///
+    /// # As tres condicoes, e o que cada uma compra
+    ///
+    /// 1. **E' a chave primaria de coluna UNICA.** E' a identidade DECLARADA da
+    ///    linha -- marcar o indice como primario e' o pedido, e por isso esta
+    ///    guarda entra PEDIDA e nao imposta. Tabela que nao marcou primaria
+    ///    continua exatamente como antes.
+    /// 2. **A coluna e' do tipo `Uuid`.** Nao ha o que gerar nas outras.
+    /// 3. **Ela nao participa de nenhuma chave estrangeira declarada.** E' o
+    ///    caso da tabela 1-para-1, em que a primaria da filha tambem aponta
+    ///    para a mae; ali o valor vem da mae e inventa-lo seria o mesmo
+    ///    estrago do paragrafo acima. Vale para a chave com `verificar`
+    ///    desligado tambem: declarada e' declarada, e o motor nao conferir nao
+    ///    torna o valor inventado verdadeiro.
+    ///
+    /// A condicao «nao aceita nulo» nao aparece aqui porque ela ja e' lei do
+    /// esquema: `Schema::new` recusa coluna de chave primaria que aceite nulo.
+    /// E' ela que torna esta mudanca provadamente inofensiva para quem ja
+    /// existe -- hoje um nulo nessa coluna e' ERRO duro («coluna {} e
+    /// obrigatoria e recebeu NULL»), entao nao ha cliente vivo contando com o
+    /// que ela passa a fazer.
+    ///
+    /// # E por que a REPLICA nao entra
+    ///
+    /// **A replica copia o que veio.** Gerar um v7 aqui daria identidade
+    /// divergente entre o source e a replica para a mesma linha -- o pior
+    /// estrago possivel numa coluna que e' identidade. O portao e' o mesmo que
+    /// o DEFAULT ja usa (`aplicar_regras` confere `julga_integridade` pela
+    /// mesma razao), e e' o primeiro teste desta funcao: na replica ela nem
+    /// olha o esquema. Um nulo que chegue ali continua caindo no erro de
+    /// coluna obrigatoria, que e' o recado certo -- divergencia se anuncia,
+    /// nao se remenda.
+    ///
+    /// # A divergencia dos tres motores, e a restricao que a causou
+    ///
+    /// PostgreSQL, MySQL e MariaDB CONVERGEM noutra coisa: neles um `uuid`
+    /// primario nao se gera sozinho, gera-se por `DEFAULT gen_random_uuid()` /
+    /// `DEFAULT (UUID())` -- declaracao por coluna. A restricao que nos separa
+    /// e' que a nossa linguagem de expressao (`phxsql_core::expressao`) so tem
+    /// funcao PURA, e ela serve tambem ao `WHERE`, ao `CHECK` e a coluna
+    /// calculada: por em circulacao uma funcao que devolve valor diferente a
+    /// cada avaliacao poria uma calculada a se reescrever a cada `atualizar`.
+    /// E esta casa ja gera POR TIPO -- e' o que a `Sequence` faz --, entao a
+    /// simetria pedida pelo §B.2.5 mora aqui e nao numa funcao volatil.
+    fn coluna_do_uuid_gerado(&self) -> Option<usize> {
+        if !self.julga_integridade() {
+            return None;
+        }
+        let [unica] = self.esquema.chave_primaria()?.colunas.as_slice() else {
+            return None;
+        };
+        let i = unica.coluna;
+        if self.esquema.colunas().get(i)?.ty != ColumnType::Uuid {
+            return None;
+        }
+        if self
+            .esquema
+            .chaves_estrangeiras()
+            .iter()
+            .any(|fk| fk.colunas.contains(&i))
+        {
+            return None;
+        }
+        Some(i)
     }
 
     /// Proximo numero que a sequencia da tabela vai entregar. 0 = nunca usada.
