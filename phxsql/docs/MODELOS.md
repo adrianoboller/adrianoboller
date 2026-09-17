@@ -1060,3 +1060,39 @@ nao conserto: catraca sobre marca de divida pune quem marca honestamente, e o
 jeito mais barato de ficar verde vira **apagar a marca sem pagar a divida**.
 Recomendacao «nenhuma catraca, com o numero» e resultado valido — hipotese que
 morre medida impede a mesma ideia de voltar sem medicao.
+
+## O time inteiro — ordem do dono, 17/09/2026 00:24
+
+«Continue. Ative o time inteiro.» Nove frentes de uma vez, mais A e I (o
+integrador). A regra que decidiu cada frente: **domínio real, tirado do estado
+medido da noite** — nenhuma tarefa de figuração para dar papel a quem nao
+tinha. Papel sem frente real nesta rodada e dispensa registrada, nao papel
+convocado por cortesia.
+
+| papel | frente | escalao | por que | dispensa |
+|---|---|---|---|---|
+| B+G | o conferidor de `derive(Debug)` com segredo — a regua que trava a LEI, nao a struct | forte | desenho de catraca; o crivo tem uma parte que so se decide lendo, e a lista de falsos positivos e onde a regua mente se ficar escondida | — |
+| C | parecer do 268: a migracao da cifra e o cabecalho do `.reg` | forte | formato em disco e ordem de digitacao; e o papel que diz NAO quando uma proposta boa quebra garantia; so leitura | — |
+| D | o zelador apaga 1,4 GB por hora que o provador refaz — medir o custo antes de continuar | medio | a regra do zelador diz quando NAO apagar; nao diz quando apagar vale a pena — e um numero, com as maos de engenheiro para mudar o script se o numero mandar | — |
+| E | as quatro paginas que ganharam conteudo esta noite, exercitadas no navegador nos dois temas e duas larguras | medio | interface so se prova exercitando; o conteudo e novo (lista de 27 ids num blockquote, R19 reescrito, rosca com 269) e ninguem abriu | — |
+| F | as 26 provas da senha ainda sem guarda — uma por SAIDA, com o raio medido por sonda | forte | escolher o defeito plausivel e dizer quem NAO o pega e o trabalho todo; e a armadilha do trecho ambiguo foi paga ha uma hora | — |
+| H | a documentacao da rodada: 269 fechado, os dois pedidos novos, 268 anotado, CHANGELOG, STATUS, e os inventarios que envelheceram esta noite | medio | todo numero sai do gerador ou da mensagem de commit; e trabalho de varredura verificavel | — |
+| J | newtype `Segredo` vs nove `impl` a mao vs conferidor — a premissa que ninguem mediu antes de construir | forte | e a pergunta que muda o que a frente B+G entrega; le o fonte do `secrecy` e do `zeroize` como leitura, nunca como `Cargo.toml` | — |
+| SEC | revisao adversaria: o `Debug` fechou, e `Display`, erro, log, `para_json`, panico, rede? | forte | so leitura, mas cada achado exige prova de leitura e severidade contra as tres saidas da petrea | — |
+| tradutor | baixar a catraca dos 1.049 textos cravados — um arquivo zerado, o TETO descendo no mesmo commit | leve | mecanico e verificavel: o conferidor conta, a catraca so desce, e a prova e repor um texto e ver a catraca reprovar | — |
+| A | orquestrar, integrar, registrar — este arquivo | — | — | — |
+| I | o fecho: portoes, commit por caminho explicito, push conferido, os 20 geradores, `./backup.sh` provado restaurando | — | — | — |
+
+**Onde a integracao vai doer, dito antes de doer:** tres frentes tocam o
+`cargo` (B+G, F, tradutor) e serializam pelo `flock`; F e B+G tocam a mesma
+familia de arquivos (`bancada/guardas/`) e a fronteira e por ARQUIVO — F e dona
+do catalogo e do `CATRACAS.md`, B+G entrega o texto dela em relatorio; E
+regenera paginas que H tambem regenera por outro gerador, e as duas convergem
+no fecho. Tres frentes escrevem `docs/propostas/` (C, J, SEC), cada uma num
+arquivo so, e nenhuma escreve no `SEGURANCA.md` — o achado de SEC entra na
+integracao, nao por ela.
+
+**O que o time inteiro custa, para o dono saber:** nove agentes em paralelo
+sobre uma arvore com ~4 GiB livres e um compilador serializado. O zelador
+mediu o custo de apagar o cache do provador exatamente porque tres frentes vao
+pagar compilacao fria ao mesmo tempo.
