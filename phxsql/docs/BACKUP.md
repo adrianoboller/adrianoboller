@@ -180,3 +180,41 @@ que neste projeto são o entregável, porque *commit conta a decisão e o motivo
 Trocar a história por um retrato do último estado é perder exatamente o que o
 versionador existe para guardar. Se algum dia for a única saída, é decisão do
 dono, e não conserto de quem está no meio da rodada.
+
+## O pacote COMPLETO: a lei, a história e a árvore inteira — 17/09/2026
+
+O `backup.sh` guarda a **história** (o bundle da branch, provado restaurando).
+Ele não guarda três coisas, e `backup-completo.sh` nasceu por elas, a pedido do
+dono às 00:35 de 17/09 («bkp do CLAUDE.md + arquivos, diretórios e
+subdiretórios»):
+
+1. **A lei que mora fora do repositório.** `/root/.claude/CLAUDE.md` (6.134
+   bytes) é o único arquivo desta casa que não está em lugar nenhum além do
+   disco do contêiner — e o contêiner é efêmero. O pacote o leva em
+   `lei/CLAUDE-global.md`, ao lado de `lei/CLAUDE-projeto.md`, com `SHA256SUMS`.
+2. **O que o git não rastreia**: resultados de bancada, pacotes, capturas.
+3. **Diretório vazio**, que bundle nenhum carrega.
+
+**Medido na primeira corrida (00:38):** 296 MB, **3.090 arquivos e 155
+diretórios**, em 55 s — cada arquivo conferido por SHA-256 depois de EXTRAIR o
+pacote num diretório de prova, e os dois `CLAUDE.md` comparados byte a byte
+com os originais. Pacote que não confere é apagado, não entregue.
+
+**O que fica de fora, impresso a cada corrida sob um cabeçalho que não é linha
+de êxito:** `phxsql/target/` (11 GB, o `cargo` refaz), `.git/` (895 MB — a
+história vai no bundle, que ENTRA no pacote), `__pycache__` e
+`.claude/worktrees` (derivados), e **arquivo acima de 64 MiB** — em 17/09 eram
+três, `precos.{reg,ndx,log}`, **2,48 GB dos 2,9 GB** da árvore, dado de bancada
+que o próprio script da bancada gera. Cada um sai nomeado no `MANIFESTO.txt`
+com o tamanho; `./backup-completo.sh <destino> 0` desliga o teto.
+
+**A prova negativa, feita na hora:** um pacote bom cortado em 2 MiB no fim é
+recusado pelo `gzip -t` e pelo `tar -x` — a mesma lição que o `backup.sh`
+registra sobre o `git bundle verify`, que aceita bundle truncado.
+
+**A limitação do canal, registrada para remedir:** o envio de arquivo desta
+sessão para o dono aceita **30 MiB**. O pacote de 296 MB **não passa** inteiro,
+e o bundle de 34 MB também não. Saída: `split -b 29m` em partes numeradas, com
+`SHA256SUMS` das partes e do inteiro e um `MONTAR.sh` de uma linha. Limitação
+registrada envelhece — na próxima rodada, tente enviar o inteiro antes de
+partir.

@@ -19,3 +19,4 @@
 # refaz com `git bundle create` -- e refeito e identico, porque sai da mesma
 # historia.
 *.bundle
+phxsql-completo-*.tar.gz
