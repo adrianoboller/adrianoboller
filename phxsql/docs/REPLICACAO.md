@@ -262,8 +262,7 @@ que o dono declarou fechada.
 O portão **2b-bis** fecha isso pelo **papel**, e não pela lista de réplicas nem
 pela existência de origens: papel é a declaração de para que este servidor
 serve. `replica`, `read_replica`, `spare` e `multi` continuam aceitando
-`aplicar` trancados — byte a byte como antes; `source` e `isolado` passam a
-recusar, nomeando o próprio papel na frase.
+`aplicar` — byte a byte como antes; `source` e `isolado` recusam.
 
 *Medir a premissa do item vem antes de implementar o item.* Antes de decidir,
 esta casa mediu se a réplica legítima usa a op: um source e uma réplica de pé
@@ -273,6 +272,21 @@ réplica puxa e aplica **por dentro**, com `Table::aplicar_evento`, e nunca pelo
 protocolo. Quem chama `aplicar` pela rede é um empurrão de fora, e o único
 servidor que tem motivo para aceitá-lo trancado é o que existe para receber
 replicação.
+
+**O crivo passou a valer ABERTO ou trancado — desde 17/09/2026 (revisão SEC,
+A3; pedido 280; commit `49a3af7`).** Até então ele só rodava com
+`somente_leitura` ligado, porque nasceu do caso 4d-ii da bateria (um source
+**trancado**). Mas `aplicar` grava com `Table::aplicar_evento`, que desliga de
+propósito o julgamento de integridade — sem FK, sem CHECK, sem cascata, porque
+a garantia é da origem e conferir na réplica perdia dado nos três
+ordenamentos. Num source **aberto** — que é o source de produção, por
+definição — quem tinha `administrar` na tabela apagava pela rede o pai com
+filhos, contornando a regra primordial da integridade por uma operação que a
+declaração da tabela nunca viu. Medido antes de mexer: nenhum chamador
+legítimo empurra `aplicar` num source ou isolado (as bancadas de quórum
+empurram em réplicas e cluster). A mensagem trocou: a chave velha, que dizia
+«servidor em modo somente leitura», saiu; a nova (`erro.aplicar_fora_de_replica`)
+nomeia o papel do servidor, aberto ou trancado.
 
 ### O `aplicar_evento` ganhou um segundo dono: o PITR
 
@@ -416,6 +430,19 @@ não sabe responder». E o aviso **não olha o papel** de propósito — as trê
 operações respondem em qualquer papel, e condicionar o aviso a `source` calaria
 justamente o servidor que ninguém configurou para replicar e replica assim
 mesmo.
+
+**A lista de operações que este portão tranca cresceu para quatro em
+17/09/2026 (revisão SEC, A1; pedido 278; commit `49a3af7`).** `cluster_pulso`
+usa a mesma credencial de `replicar` e decide quem manda no cluster — época,
+posição e papel de cada nó saem dele —, e não estava em
+`OPS_DE_REPLICACAO` (`servidor.rs:320`): um pulso forjado passava pela lista
+sem ela olhar. Hoje `OPS_DE_REPLICACAO` é `["posicao", "replicar", "aplicar",
+"cluster_pulso"]`. **Consequência para quem opera um cluster com a lista
+preenchida**: ela precisa trazer **todos os outros nós**, não só os clientes
+externos — cada nó pulsa para cada outro, e um nó que falte na lista de outro
+tem o próprio pulso barrado, o que degrada o cluster sem um aviso próprio (o
+aviso de `replicacao_aberta` acima é sobre `posicao`/`replicar`/`aplicar`, não
+sobre o pulso). Ver `docs/CLUSTER.md` §2.2.
 
 Vale dizer o que a lista de IPs **não** resolve, e o contêiner tornou isso
 visível: num orquestrador o IP do vizinho muda a cada recriação. Lista por IP
@@ -734,6 +761,8 @@ igual que já está registrado — custa releitura, nunca dado.
 | ☐ | **Buscar o lote FORA da trava de dados.** Medido (§17): `varrer` esperou **30,7 s** numa réplica cortada em silêncio, e no bidirecional os dois lados se trancam por 30 s com a rede sã. É o item 2 da §3.2 do `PENDENCIAS.md` visto de dentro da replicação, e é a causa; a espera crescente e o `connect` com prazo tratam o sintoma |
 | ☐ | **O endereço do `REDIRECIONA` é o da origem configurada**, que é «por onde *eu* alcanço o primário» e nem sempre «por onde *você* alcança» (§17, achado 3). Um campo próprio para o endereço que se anuncia ao cliente resolveria |
 | ☐ | **`replicacao_estado` não conta nada durante um corte silencioso** — `ultima_rodada` fica com o carimbo de antes e `ultimo_erro` fica nulo, porque o laço está pendurado. Falta um «quando foi a última rodada BEM-SUCEDIDA» que envelheça sozinho, para o monitoramento distinguir «nada a replicar» de «cego» |
+| ☑️ | **A réplica confere a continuidade do diário do source, como o PITR já fazia** (pedido 295; commit `49a3af7`, 17/09/2026) — `alcancar_tabela` deixou de devolver `Ok(0)` em silêncio quando o source apagou e recriou a tabela; ela compara o evento `posição-1` do source contra o seu (`diario_local_continua`, irmã de `diario_vivo_continua`), sem ida e volta a mais no caminho quente. Rompida, grava a recusa em `replicacao_estado.origens.<origem>.recusas["banco/tabela"]` e a tabela sai da rodada sem derrubar as outras. **Não entrou no bidirecional** (`alcancar_tabela_bidi`) — decisão do dono, nomeada e não tomada |
+| ☑️ | **A réplica fiel grava o carimbo e a origem do source no próprio diário**, e não mais `agora_ms()`/`origem:0` (`servidor.rs:2831`, `forcar_proximo_evento`; commit `49a3af7`) — o mesmo que o PITR e o bidirecional já faziam (parecer do DBA, §2.3, 17/09/2026). É o que faz a conferência de continuidade acima valer: comparar `posição-1` só funciona se o carimbo/origem gravados aqui forem os mesmos que o source gravou lá |
 
 ### A posição é o diário da própria réplica
 
@@ -1357,7 +1386,18 @@ resposta não podia ser «o que o outro lado mandar».
   curto não perde nada, porque `ate` e `fim` saem do que foi realmente lido e a
   réplica só pergunta de novo. E o lote **nunca sai vazio** por causa do teto:
   o primeiro evento entra sempre, senão uma linha maior que o teto pararia a
-  replicação para sempre em vez de atrasá-la;
+  replicação para sempre em vez de atrasá-la. **Consertado em 17/09/2026
+  (revisão SEC, A2; pedidos 279 e 303; commit `49a3af7`)**: até então o teto
+  cortava a **resposta**, depois de o diário inteiro já ter sido lido com
+  imagens para a RAM sob a trava global — um `"max":0` (ou negativo) lia tudo.
+  Hoje `max` ausente, zero ou negativo vale o **padrão** (`LOTE_PADRAO_DE_REPLICACAO`
+  = 500), o maior valor pedido é limitado a `TETO_DE_EVENTOS_POR_LOTE` = **5.000**,
+  e o teto de bytes desceu para dentro de `Log::percorrer` (`log.rs:655`), que
+  decide pelo tamanho do cabeçalho de cada evento **antes** de alocar a
+  imagem — o teto agora limita a **leitura**, não só a resposta. Os irmãos que
+  liam o diário inteiro receberam o mesmo tratamento: `op_diario` deixou de
+  carregar tudo para descartar até sobrar a cauda, e `absorver_diario_local`
+  passou a andar em lotes;
 - **na réplica**, `TETO_DA_RESPOSTA` = **128 MiB** por linha lida — o dobro do
   que um par sadio produz, para que ele só sirva ao que existe: impedir que a
   réplica aloque sem limite por ordem de quem está do outro lado do fio.
@@ -1814,6 +1854,17 @@ correspondente em `docs/PENDENCIAS.md`:
 | A10 | **baixa-média** | a op `config` publica a lista de nós do arranque, não a viva: o denominador da maioria mente depois de um escalonamento a quente | 287 |
 | A11 | **baixa** | `cluster_pulso` é oráculo de ids de nó, com três respostas distintas e sem contar violação leve | 288 |
 
+**A1, A2 e A3 foram consertados em `49a3af7` (17/09/2026, frente B — ver
+§21.4), cada um com prova real nos dois sentidos.** A2 (pedido 279) fechou
+inteiro: o teto de bytes agora limita a leitura, não só a resposta, e `max`
+ganhou padrão e teto de eventos. A3 (pedido 280) fechou inteiro: o crivo do
+portão 2b-bis vale independentemente do `somente_leitura`. A1 (pedido 278)
+fechou **parcialmente**: `cluster_pulso` entrou em `OPS_DE_REPLICACAO` e
+época/posição ganharam teto (`FOLGA_DE_EPOCA` = 1.000.000), mas a identidade
+do nó pela chave do fio — o que fecha o buraco por completo — continua na
+mesa do dono. Ver o texto de cada pedido em `docs/PENDENCIAS.md` para o antes
+e o depois.
+
 **§Z — já documentado e ainda aberto no código.** Não é achado novo: está em
 `docs/SEGURANCA.md` §12.4 desde o pedido 194/item 16 de `docs/PENDENCIAS.md`
 §3.2, e a SEC o reconferiu porque cai na fronteira desta frente. `reg.rs:1827-1830`
@@ -1894,7 +1945,9 @@ critério de eleição do cluster.
 de continuidade que o PITR já tem (`diario_vivo_continua`,
 `servidor.rs:18640-18673`) — não é formato, não é consenso, não muda cliente
 nenhum, é a guarda que já foi escrita alcançando o caminho irmão, no mesmo
-padrão dos pedidos 172/173/176.
+padrão dos pedidos 172/173/176. **Consertado em `49a3af7` (17/09/2026, frente
+B — §21.4)**: a réplica confere e acusa; a ressalva do bidirecional (não
+entrou) ficou nomeada e é decisão do dono.
 
 **O NÃO do papel C** — cinco propostas boas, recusadas com o número, para não
 voltarem sem medição: devolver o contador do `rownum` na recusa (reintroduz
@@ -1940,7 +1993,13 @@ reiniciar.
 **`TETO_DO_LOTE_SERVIDO` e `TETO_DA_RESPOSTA`** (pedido 147) não têm prova
 nenhuma, nem unitária nem de bancada — cruza com o A2 de SEC (§21.1, pedido
 279): SEC mediu que o teto corta a resposta e não a leitura; G mediu que não
-há nenhum teste do corte por bytes (pedido 303).
+há nenhum teste do corte por bytes (pedido 303). **`TETO_DO_LOTE_SERVIDO`
+ganhou prova em `49a3af7` (17/09/2026)** —
+`log::tests::percorrer_com_limite_zero_nao_le_tudo` e
+`o_primeiro_evento_entra_sempre_e_o_teto_so_conta_imagem`, mais os testes de
+`servidor::testes_do_lote_de_replicacao` — e o próprio teto passou a limitar a
+leitura, como SEC pedia; o pedido 303 fica **◐**, porque `TETO_DA_RESPOSTA`
+continua sem prova.
 
 **Catracas de replicação/concorrência medidas nesta sessão** (17/09/2026
 02:34 UTC): `TETO_TRECHO_MORTO`, `TETO_TRECHO_AMBIGUO`, `TETO_TESTE_MORTO`,

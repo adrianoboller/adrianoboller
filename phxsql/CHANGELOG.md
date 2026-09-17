@@ -60,6 +60,55 @@ errado, está dito qual.
   contadas pela asserção e não pelo nome (`1e3e7e1`); e o campo do DbLink é
   `token`, não `token_remoto` (cognição do 270). Briefing de orquestrador
   também é número citado.
+- **`replica::ligar` caía em `TcpStream::connect` sem prazo** (`49a3af7`,
+  pedido 282, parcial). `Cliente::conectar` virou casca sobre
+  `conectar_com_prazo` (`PRAZO_DE_CONEXAO = 10 s`, `replica.rs:456`) —
+  alcança também o dblink para outro PhxSql e o console, achados pela própria
+  compilação. Prova contra o sistema operacional: fila de `accept` cheia no
+  loopback pendura o `connect` de forma determinística. Fica de fora:
+  classificar o erro sem o texto cru do SO e contar host solto como
+  violação leve.
+- **`replicar` com `"max":0` lia o diário inteiro com imagens sob a trava
+  global; o teto de 16 MiB cortava a resposta, não a leitura** (`49a3af7`,
+  pedidos 279 e 303-parcial). `max` ausente/zero/negativo passa a valer o
+  padrão (`LOTE_PADRAO_DE_REPLICACAO = 500`), acima de 5.000 vale o teto
+  (`TETO_DE_EVENTOS_POR_LOTE`), e o teto de bytes desceu para
+  `Log::percorrer` (`log.rs:655`), que decide pelo cabeçalho antes de
+  alocar — primeiro evento sempre entra. Testes:
+  `log::tests::percorrer_com_limite_zero_nao_le_tudo`,
+  `o_primeiro_evento_entra_sempre_e_o_teto_so_conta_imagem`,
+  `servidor::testes_do_lote_de_replicacao::{max_zero_ou_negativo_vale_o_padrao_e_o_absurdo_vale_o_teto,
+  replicar_com_max_zero_serve_o_lote_padrao_e_nao_o_diario_inteiro,
+  o_lote_servido_corta_por_bytes_e_o_primeiro_evento_entra_sempre,
+  diario_sem_rowid_devolve_a_cauda_com_o_total_do_diario_inteiro}`. Os
+  irmãos `op_diario` e `absorver_diario_local` deixaram de carregar o diário
+  inteiro.
+- **`cluster_pulso` não estava em `OPS_DE_REPLICACAO`, e época/posição do
+  pulso não tinham teto** (`49a3af7`, pedido 278, parcial). Entrou na lista
+  (`servidor.rs:320`), e `registrar` ignora pulso com época acima de
+  `maior_epoca_vista + FOLGA_DE_EPOCA` (`cluster.rs:161`, **1.000.000**) ou
+  posição fora do inteiro exato. Testes:
+  `cluster::testes::{um_pulso_de_epoca_absurda_nao_destrona,
+  pulso_dentro_da_folga_ainda_conta_e_espelha_a_epoca}`,
+  `servidor::testes_papel::o_pulso_do_cluster_passa_pela_lista_de_replicas`.
+  Fica de fora: a identidade do nó pela chave do fio (`known_hosts`).
+- **O crivo do portão 2b-bis só rodava com `somente_leitura`; num source
+  aberto, `aplicar` pela rede desligava FK/CHECK/cascata e matava o pai com
+  filhos** (`49a3af7`, pedido 280). O crivo passa a valer independentemente
+  do `somente_leitura`; mensagem nova na fábrica,
+  `erro.aplicar_fora_de_replica`. Medido antes de mexer: zero chamadores
+  legítimos em source/isolado. Testes:
+  `servidor::testes_papel::{aplicar_num_source_aberto_tambem_e_recusado,
+  aplicar_pela_rede_num_source_nao_mata_o_pai_com_filhos,
+  replica_destrancada_continua_aceitando_o_diario_do_source}`.
+- **`alcancar_tabela` devolvia `Ok(0)` em silêncio quando o source apagava e
+  recriava a tabela** (`49a3af7`, pedido 295). A réplica passa a conferir o
+  evento `posição-1` do source contra o seu (`diario_local_continua`, irmã
+  de `diario_vivo_continua` do PITR); rompida, grava a recusa em
+  `replicacao_estado.origens.*.recusas` e a tabela sai da rodada sem
+  derrubar as outras. Teste pelo soquete:
+  `crates/phxsql-server/tests/continuidade-da-replica.rs`. Não entrou no
+  bidirecional — decisão do dono.
 
 ### Adicionado
 
@@ -127,6 +176,18 @@ errado, está dito qual.
 - `docs/PENDENCIAS.md`: 269 fechado; 270 nasce e fecha no mesmo commit;
   **271** (o conferidor de `derive(Debug)`) entra parcial; 264 e 268 ganham a
   nota da revisão. A contagem do rodapé sai do `pagina-dos-pedidos.py`.
+- **Cluster com `replicas_autorizadas` preenchida agora precisa listar TODOS
+  os nós** (`49a3af7`): desde que `cluster_pulso` entrou em
+  `OPS_DE_REPLICACAO`, um nó que falte na lista de outro tem o próprio pulso
+  barrado — cada nó pulsa para cada outro. Medido: nenhuma bancada desta
+  casa preenche a lista, então o caso não foi exercitado antes deste
+  conserto. `docs/CLUSTER.md` §2.2.
+- **A réplica fiel passou a gravar o carimbo e a origem do source no próprio
+  diário**, e não mais `agora_ms()`/`origem:0` (`49a3af7`,
+  `servidor.rs:2831`) — o mesmo que o PITR e o bidirecional já faziam
+  (parecer do DBA, §2.3). É o que faz a conferência de continuidade valer:
+  comparar `posição-1` só funciona se os dois lados gravarem o mesmo
+  carimbo/origem.
 
 ### Sabido
 
@@ -153,16 +214,11 @@ errado, está dito qual.
   QA (G) voltaram só de leitura, sem conserto; a bateria (F) voltou verde,
   dez bancadas de dez, com os três achados medidos de C confirmados pelo
   soquete (§21.4). `docs/REPLICACAO.md` §21, `docs/PENDENCIAS.md` 278–308.
-- **SEC A1 (alta) — o pulso do cluster aceita identidade auto-declarada, e
-  uma época sem teto rebaixa o master e paralisa a eleição para sempre,
-  inclusive depois de reiniciar** (`docs/propostas/revisao-sec-replicacao-2026-09-17.md`,
-  17/09 02:41 UTC). Pedido 278.
-- **SEC A2 (alta) — `replicar` com `"max":0` lê o diário inteiro com imagens
-  sob a trava global de dados; o teto de 16 MiB corta a resposta, não a
-  leitura** (idem). Pedido 279.
-- **SEC A3 (média-alta) — `aplicar` pela rede desliga FK/CHECK/cascata num
-  source sem `somente_leitura`: mata o pai que tem filhos, contra a pétrea**
-  (idem). Pedido 280.
+- **SEC A1 (alta), parcial — o pulso do cluster ainda não amarra a identidade
+  do nó à chave do fio**: um nó da lista pode se declarar outro nó da lista.
+  A parte que envenenava `maior_epoca_vista` para sempre (época/posição sem
+  teto, e o pulso fora do portão das réplicas autorizadas) foi **corrigida**
+  em `49a3af7` — ver Corrigido. Pedido 278.
 - **C — `rownum` diverge entre source e réplica depois de uma inserção
   recusada por chave duplicada**: 2 de 5 linhas com `rownum` diferente,
   rowids iguais nas 5 (medido em binário isolado fora do repositório,

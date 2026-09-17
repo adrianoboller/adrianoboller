@@ -89,6 +89,25 @@ aviso): a origem passa a ser o master **corrente**, descoberto pelo pulso.
   outro. Um pulso velho, de antes do 211, não traz o campo `incompleta` e volta
   `false`: o significado de sempre — posição completa —, então um par que não
   sabe avisar conta como antes.
+- **O pulso agora passa pelo portão das réplicas autorizadas, e a época/posição
+  têm teto.** Achado da revisão SEC de 17/09/2026 (A1): `cluster_pulso` não
+  estava em `OPS_DE_REPLICACAO`, então um nó (ou quem tivesse a credencial do
+  cluster, que é a mesma de `replicar`) podia mandar uma época absurda e
+  envenenar `maior_epoca_vista` para sempre, destronando o master e travando
+  toda eleição futura, inclusive depois de reiniciar. Consertado em
+  `49a3af7` (17/09/2026, pedido 278 — **parcial**): `cluster_pulso` entrou em
+  `OPS_DE_REPLICACAO` (`servidor.rs:320`), e `registrar` ignora pulso com
+  época acima de `maior_epoca_vista + FOLGA_DE_EPOCA` (`cluster.rs:161`,
+  **1.000.000**) ou posição fora do inteiro exato de 53 bits. **Consequência
+  para quem preenche `replicas_autorizadas` num cluster**: a lista de cada nó
+  precisa trazer **todos os outros nós**, porque cada nó pulsa para cada
+  outro — uma lista incompleta bloqueia o pulso de quem faltou e o cluster
+  degrada sem aviso próprio. Medido: nenhuma bancada desta casa preenche a
+  lista, então o caso não foi exercitado pela bateria. **O que ficou de fora,
+  na mesa do dono**: amarrar o pulso à identidade do nó pela chave do fio
+  (`NoCluster.chave_do_fio`, como um `known_hosts`) — o teto de época impede o
+  estrago permanente, mas não impede um nó da lista de se declarar outro nó
+  da lista.
 - **Papel vivo e época.** O papel do `config.json` é só o inicial. O vivo
   mora em `base/cluster.estado.json` junto com a **época** — um contador que
   cresce a cada eleição. O arquivo ganha do config no arranque: um master

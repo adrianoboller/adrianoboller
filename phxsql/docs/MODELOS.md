@@ -1141,13 +1141,25 @@ disputar `flock`/soquetes com a bateria de tempo:
 | tradutor | nenhum texto de tela nesta rodada | — | — | dispensa registrada |
 
 **Onda 2** — depois da onda 1: G roda `provar-guardas.py --so` da familia da
-replicacao (compila, so depois de F soltar as portas e o flock); **B entra
-so se F/SEC/C acharem defeito com conserto delimitado** (forte, por ser
-motor/concorrencia) — nesta etapa nenhuma frente convocou B ainda, porque a
-bateria (F) nao devolveu; H (medio) escreve `REPLICACAO.md` §21, `STATUS.md`
-linha B, `PENDENCIAS.md` e `CHANGELOG.md` — todo numero sai de gerador ou dos
-relatorios das frentes, e e varredura verificavel; A/I integram, rodam os
-portoes e publicam as sete paginas.
+replicacao (compila, so depois de F soltar as portas e o flock); H (medio)
+escreve `REPLICACAO.md` §21, `STATUS.md` linha B, `PENDENCIAS.md` e
+`CHANGELOG.md` — todo numero sai de gerador ou dos relatorios das frentes, e e
+varredura verificavel; A/I integram, rodam os portoes e publicam as sete
+paginas.
+
+**B foi convocado nesta onda, largada 02:59 UTC** — SEC/C acharam defeito com
+conserto delimitado (o contrato de A5/A2/A1-parcial/A3/continuidade, escrito
+as 02:58 UTC), e a condicao do briefing («so entra se houver defeito
+delimitado») se cumpriu cinco vezes de uma vez. Escalao **forte**, pelo mesmo
+motivo que separa B dos papeis mecanicos desta rodada: os cinco itens tocam
+motor e concorrencia — o portao de permissao (2b-bis), o gate das replicas
+autorizadas, o teto de leitura do diario sob trava global, e a conferencia de
+continuidade entre dois diarios — e cada um exige prova real nos dois
+sentidos (o teste FALHA com o defeito reposto) contra servidor de pe, nao
+so leitura. Integrado em `49a3af7` (03:53 UTC, 49 min 12 s de frente, 124
+ferramentas), com os cinco itens inteiros e nenhum entregue pela metade —
+"meia funcionalidade que for pior que nada volta como parecer, nao como
+codigo" era a propria regra do contrato.
 
 **Por que forte em quatro papeis de uma vez**: e projeto e risco em quatro
 eixos diferentes — SEC audita seguranca de um protocolo de rede com
