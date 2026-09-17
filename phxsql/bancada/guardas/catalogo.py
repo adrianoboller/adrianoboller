@@ -1688,7 +1688,11 @@ GUARDAS = [
             "desceu para o `Canal` porque la ele vale para o caminho cifrado e "
             "para o claro. A assercao e sobre QUANTO foi lido: conferir so o "
             "veredito passava com o defeito reposto, porque a conferencia vem "
-            "depois da leitura -- e ai a memoria ja foi gasta."
+            "depois da leitura -- e ai a memoria ja foi gasta. ESTA entrada prova "
+            "a MAQUINA (o `take`) com o teto passado NA MAO (`ler_ate(leitor, "
+            "64)`); ela NUNCA tocou a CONSTANTE `TETO_DO_REGISTRO` que o "
+            "`Canal::ler` usa de verdade -- essa prova e das guardas "
+            "`teto-do-fio-sem-a-constante` e `-no-soquete` (pedido 303)."
         ),
         "arquivo": "crates/phxsql-core/src/fio.rs",
         "trecho": """        let lidos = {
@@ -1700,10 +1704,105 @@ GUARDAS = [
         let lidos = leitor.read_line(&mut linha)?;
 """,
         "pacote": "phxsql-core",
+        # NAO estenda o alvo desta entrada ao teste de soquete
+        # (`--test teto-da-resposta`). Medido em 17/09/2026 pelo papel G: com
+        # ESTE mesmo defeito reposto (o `take` fora), um dos dois testes de
+        # soquete fica VERDE -- a conferencia `lidos > teto` ainda acontece, so
+        # que DEPOIS de ler os 129 MiB inteiros, entao o veredito sai certo com
+        # a memoria ja gasta. E a propria licao escrita no `porque` acima, agora
+        # do outro lado: o teste de soquete afirma o VEREDITO
+        # (`matches!(erro, PhxError::LimiteExcedido(_))`), nao QUANTO foi lido.
+        # O outro cai, mas por PRAZO (15,73 s de execucao), e nao pela garantia
+        # que esta entrada nomeia -- vira NAO PEGOU falso nos dois sentidos.
+        # Alvo de soquete tem entrada propria, e com OUTRO defeito reposto: a
+        # `teto-do-fio-sem-a-constante-no-soquete`.
         "alvo": ["--lib"],
         "caem": [
             "fio::testes::o_teto_do_registro_para_a_leitura_e_nao_so_recusa_depois",
         ],
+    },
+    # 24c. O teto do fio: a CONSTANTE trocada por um teto quase infinito
+    # -----------------------------------------------------------------------
+    {
+        "id": "teto-do-fio-sem-a-constante",
+        "titulo": "o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito",
+        "porque": (
+            "pedido 303, commit be7e361 -- a entrada `fio-sem-teto-de-registro` "
+            "e o teste que ja existia desde 30/08 provavam a MAQUINA (o `take` "
+            "antes da leitura), passando o teto NA MAO; nenhum dos dois tocava a "
+            "CONSTANTE que o `Canal::ler` realmente usa. Medido em 17/09/2026: "
+            "trocando a chamada de producao por `ler_ate(leitor, u64::MAX - 1)` "
+            "-- o fio inteiro sem teto --, ZERO testes do repositorio acusavam "
+            "antes desta rodada. Prova de mecanismo nao e prova de configuracao."
+        ),
+        "arquivo": "crates/phxsql-core/src/fio.rs",
+        "trecho": """    pub fn ler<L: BufRead>(&mut self, leitor: &mut L) -> Result<Recebido> {
+        self.ler_ate(leitor, TETO_DO_REGISTRO)
+    }
+""",
+        "troca": """    pub fn ler<L: BufRead>(&mut self, leitor: &mut L) -> Result<Recebido> {
+        // DEFEITO REPOSTO: a chamada de producao troca a constante por um teto
+        // praticamente infinito -- o fio inteiro fica sem teto.
+        self.ler_ate(leitor, u64::MAX - 1)
+    }
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "fio::testes::a_leitura_padrao_para_no_teto_do_registro_e_nao_no_que_o_outro_lado_mandar",
+        ],
+        # O teste que passa o teto NA MAO continua VERDE: ele nunca chama
+        # `Canal::ler`, so o `ler_ate` direto. E ele que prova que o defeito e
+        # local a CONSTANTE, e nao um estrago no mecanismo do `take`.
+        "seguem": [
+            "fio::testes::o_teto_do_registro_para_a_leitura_e_nao_so_recusa_depois",
+        ],
+    },
+    # 24d. A mesma troca da constante, vista PELO SOQUETE
+    # -----------------------------------------------------------------------
+    {
+        "id": "teto-do-fio-sem-a-constante-no-soquete",
+        "titulo": "a mesma troca da constante por um teto quase infinito, vista pela rede",
+        "porque": (
+            "pedido 303, commit be7e361 -- irma da `teto-do-fio-sem-a-constante`, "
+            "pelo SOQUETE: o que atravessa a rede se prova contra a rede, que e a "
+            "licao do BULKINSERT. O `tests/teto-da-resposta.rs` exercita os dois "
+            "lados que RECEBEM pelo `Canal::ler` -- a replica (o `TETO_DA_RESPOSTA` "
+            "de `docs/REPLICACAO.md` §18) e o laco de conexao do servidor. Entra "
+            "SEPARADA da `fio-sem-teto-de-registro`, e com outro defeito reposto: "
+            "ver o aviso naquela entrada."
+        ),
+        "arquivo": "crates/phxsql-core/src/fio.rs",
+        "trecho": """    pub fn ler<L: BufRead>(&mut self, leitor: &mut L) -> Result<Recebido> {
+        self.ler_ate(leitor, TETO_DO_REGISTRO)
+    }
+""",
+        "troca": """    pub fn ler<L: BufRead>(&mut self, leitor: &mut L) -> Result<Recebido> {
+        // DEFEITO REPOSTO: a chamada de producao troca a constante por um teto
+        // praticamente infinito -- o fio inteiro fica sem teto.
+        self.ler_ate(leitor, u64::MAX - 1)
+    }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "teto-da-resposta"],
+        "caem": [
+            "a_resposta_acima_do_teto_e_recusada_por_limite_e_a_rodada_seguinte_abre_outra",
+            "o_pedido_acima_do_teto_recebe_a_recusa_e_entra_no_log_com_o_tamanho",
+        ],
+        "seguem": [
+            "a_resposta_grande_que_cabe_no_teto_atravessa_como_sempre",
+            "o_pedido_de_sempre_continua_sendo_atendido",
+        ],
+        # Medido em 17/09/2026: 0,55 s de execucao dos quatro testes com o
+        # defeito reposto (17,25 s reais, com a compilacao do zero), contra os
+        # 300 s do prazo padrao -- ja caberia sem prazo proprio. Ganha um mesmo
+        # assim, pelo motivo da `laco-preso-no-unico-secundario`: teste de
+        # soquete tem variancia que unitario nao tem, e os dois testes desta
+        # bateria carregam um PRAZO interno de 15 s por leitura ou escrita, entao
+        # uma maquina carregada pode bater nesse teto mais de uma vez antes de
+        # qualquer assercao rodar. 120 s da ~7x de folga sobre o medido sem
+        # esconder uma pendura de verdade.
+        "prazo": 120,
     },
     # 24b. A cifra do CLUSTER: o pulso da eleicao saindo em claro
     # -----------------------------------------------------------------------
@@ -7561,5 +7660,51 @@ pub fn limpar() {
         # maior que a soma com o arranque, senao o executor mata a rodada antes
         # de o teste conseguir reprovar -- a licao do `trava-atras-da-rede`.
         "prazo": 120,
+    },
+    # 189. O empilhar abria a porta de sempre so para desligar a sobreposicao
+    # -----------------------------------------------------------------------
+    {
+        "id": "so-o-disco-vem-da-porta-e-nao-de-desligar-depois",
+        "titulo": "o empilhar volta a abrir pela porta de sempre e desligar a sobreposicao na linha seguinte",
+        "porque": (
+            "pedido 164, commit 20d2c59 -- o caminho que EMPILHA abria a tabela "
+            "pela porta que monta a sobreposicao da transacao (percorrendo o "
+            "conjunto de escrita INTEIRO) e chamava `ver_so_o_disco()` na linha "
+            "seguinte, jogando o mapa fora sem ninguem consultar: O(pendentes) "
+            "por operacao, O(n^2) por transacao, DENTRO da trava de dados. "
+            "Medido sob a trava com 1.600 escritas pendentes (`--example "
+            "reparticao-do-gatilho`): 625,62 -> 40,62 us/op, 15,4x, curva plana "
+            "(a razao de MIL pendentes e 8,6x -- 335-341 para 39-40 --, e o "
+            "commit publicou essa por engano no lugar da de 1.600). O defeito e "
+            "so de TEMPO: as duas formas deixam o `Table` no MESMO estado, entao "
+            "so um contador de chamadas no fonte -- e nao um teste de resultado "
+            "-- consegue pega-lo."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        # A ancora leva os tres comentarios junto porque a chamada sozinha
+        # aparece DUAS vezes no arquivo (o irmao da cascata). Com o comentario,
+        # ocorre uma so -- conferido antes de gravar.
+        "trecho": """        // esta no `abrir_travada_sem_sobrepor` -- e ele virou porta porque
+        // abrir pela de sempre e desligar depois montava o mapa da transacao
+        // sob a trava para apaga-lo na linha seguinte.
+        let mut t = self.abrir_travada_sem_sobrepor(&trava, p, sessao)?;
+""",
+        "troca": """        // DEFEITO REPOSTO: o empilhar volta a abrir pela porta de sempre e a
+        // desligar a sobreposicao na linha seguinte -- o mapa da transacao
+        // nasce e morre sob a trava de dados, sem ninguem consultar.
+        let mut t = self.abrir_travada(&trava, p, sessao)?;
+        t.ver_so_o_disco();
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_janela_e_cadeia::so_o_disco_vem_da_porta_e_nao_de_desligar_depois",
+        ],
+        # O comportamento VELHO: o upsert continua decidindo contra o disco do
+        # mesmo jeito, porque a porta e a dispensa nao mudam o ESTADO da tabela,
+        # so o custo. Se ele cair, o defeito reposto foi longe demais.
+        "seguem": [
+            "servidor::testes_transacoes::dentro_da_transacao_o_upsert_decide_contra_o_disco",
+        ],
     },
 ]

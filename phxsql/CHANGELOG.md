@@ -164,7 +164,12 @@ errado, está dito qual.
   operação, O(n²) por transação, com a trava global na mão. Nasce a porta
   `abrir_travada_sem_sobrepor`, e o irmão (`empilhar_atualizar_com_cascata`,
   fase 3) entrou junto. Medido com 1.600 escritas pendentes: **625,62 →
-  40,62 µs/operação (8,6×)**, curva plana. Catraca estrutural nova: **zero**
+  40,62 µs/operação (15,4×)**, curva plana — e **8,6× é a razão de MIL
+  pendentes** (335–341 → 39–40), que este arquivo publicou por engano ao lado
+  do par de 1.600. Corrigido em 17/09/2026, junto com o irmão que ficou: a
+  correção de madrugada alcançou o `DESEMPENHO.md` e o `PENDENCIAS.md` e
+  **não** alcançou este arquivo, e foi daqui que a frente seguinte copiou o
+  número errado. Catraca estrutural nova: **zero**
   chamadas de `ver_so_o_disco()` no servidor. `docs/DESEMPENHO.md` §25,
   `docs/PENDENCIAS.md` #164.
 - **A tela vazia de DbLink nascia com os dois únicos botões mortos**
