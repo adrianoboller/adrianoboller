@@ -563,9 +563,9 @@ CABECA = """<meta charset="utf-8">
 CSS = """<style>
 :root{
   --papel:#fbf9f7; --papel-2:#f3efec; --papel-3:#e9e3de;
-  --tinta:#1a1210; --tinta-2:#4a3f3a; --tinta-3:#7a6d66;
+  --tinta:#1a1210; --tinta-2:#4a3f3a; --tinta-3:#6b5e57;
   --linha:#ded6d0; --acento:#c63c0a;
-  --feito:#2f7a3e; --parcial:#8a6a1f; --planejado:#7a6d66;
+  --feito:#2f7a3e; --parcial:#7d5f18; --planejado:#6b5e57;
   --aberto:#1f5c93; --entregue:#2f7a3e; --parado:#b5257f;
   --consultar:#1f5c93;
   --sombra:0 1px 2px rgba(26,18,16,.06),0 8px 24px rgba(26,18,16,.05);
@@ -620,7 +620,7 @@ h3{font-size:15px;font-weight:600;margin:26px 0 10px}
   font-size:12.5px;font-weight:600;letter-spacing:.02em;padding:7px 16px;border-radius:5px;
   cursor:pointer;line-height:1.2}
 .aba:hover{background:var(--consultar);color:var(--papel)}
-.aba[aria-selected="true"]{background:var(--papel-3);border-color:var(--acento);color:var(--acento);
+.aba[aria-selected="true"]{background:var(--papel);border-color:var(--acento);color:var(--acento);
   box-shadow:inset 0 -2px 0 var(--acento)}
 .aba.tema{border-color:var(--linha);color:var(--tinta-3);margin-left:auto}
 .aba.tema:hover{background:var(--papel-3);color:var(--tinta)}

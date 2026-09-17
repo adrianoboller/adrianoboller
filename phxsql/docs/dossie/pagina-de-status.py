@@ -192,14 +192,17 @@ def medir():
 CSS = """
 :root{
   --papel:#fbf9f7; --papel-2:#f3efec; --papel-3:#e9e3de;
-  --tinta:#1a1210; --tinta-2:#4a3f3a; --tinta-3:#7a6d66;
+  --tinta:#1a1210; --tinta-2:#4a3f3a; --tinta-3:#6b5e57;
   --linha:#ded6d0; --acento:#c63c0a;
   --construido:#2f7a3e; --parcial:#8a6a1f; --recusa:#5b6470; --promessa:#c63c0a;
   --ausente:#8a6a1f;
 }
+/* O fundo escuro e o #010418 da marca (marca/LEIA-ME.md, DESIGN.md §1.1). Era
+   #040814 -- um valor que nao esta em documento nenhum, e a marca manda
+   sobre paleta inventada. Medido: --tinta sobre ele da 15,65:1. */
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --papel:#040814; --papel-2:#0a1122; --papel-3:#131c31;
+    --papel:#010418; --papel-2:#0a1122; --papel-3:#131c31;
     --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#7c8598;
     --linha:#1e2940; --acento:#ff8a1c;
     --construido:#5cbf74; --parcial:#d5a83c; --recusa:#8e9ab0; --promessa:#ff8a1c;
@@ -207,7 +210,7 @@ CSS = """
   }
 }
 :root[data-theme="dark"]{
-  --papel:#040814; --papel-2:#0a1122; --papel-3:#131c31;
+  --papel:#010418; --papel-2:#0a1122; --papel-3:#131c31;
   --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#7c8598;
   --linha:#1e2940; --acento:#ff8a1c;
   --construido:#5cbf74; --parcial:#d5a83c; --recusa:#8e9ab0; --promessa:#ff8a1c;
@@ -254,8 +257,12 @@ h2 + .sub{color:var(--tinta-3);font-size:15px;margin:0 0 20px;max-width:66ch}
 .regua .promessa .b{background:transparent;border:2px solid var(--promessa)}
 .regua .n{font-family:"Exo 2",sans-serif;font-weight:700;font-size:16px;font-variant-numeric:tabular-nums;text-align:right}
 .legenda{display:flex;flex-wrap:wrap;gap:14px 22px;margin:16px 0 0;font-size:13px;color:var(--tinta-2)}
-.legenda span{display:inline-flex;align-items:center;gap:7px}
-.legenda i{display:inline-block;width:22px;height:10px;border-radius:2px}
+/* O item da legenda NAO e flex: com `inline-flex`, cada no de texto vira
+   item e o `gap` abre buracos em volta do <em>porque</em> -- e a 400px os
+   tres pedacos quebram como blocos separados. Visto na captura. */
+.legenda span{display:inline-block;line-height:1.4}
+.legenda i{display:inline-block;width:22px;height:10px;border-radius:2px;
+  vertical-align:middle;margin-right:7px}
 .legenda .construido i{background:var(--construido)}
 .legenda .parcial i{background:var(--parcial);opacity:.75}
 .legenda .recusa i{background:repeating-linear-gradient(135deg,var(--recusa) 0 3px,transparent 3px 6px)}

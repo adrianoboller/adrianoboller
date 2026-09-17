@@ -556,18 +556,21 @@ TEMPLATE = """<meta charset="utf-8">
 <style>
 :root{{
   --papel:#fbf9f7; --papel-2:#f3efec; --tinta:#1a1210; --tinta-2:#4a3f3a;
-  --tinta-3:#7a6d66; --linha:#ded6d0; --acento:#c63c0a;
+  --tinta-3:#6b5e57; --linha:#ded6d0; --acento:#c63c0a;
   --ok:#2f7a3e; --falta:#8a6a1f; --log:#b71414;
 }}
+/* O fundo escuro e o #010418 da marca (marca/LEIA-ME.md, DESIGN.md §1.1). Era
+   #040814 -- um valor que nao esta em documento nenhum, e a marca manda
+   sobre paleta inventada. Medido: --tinta sobre ele da 15,65:1. */
 @media (prefers-color-scheme:dark){{
   :root:not([data-theme="light"]){{
-    --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
+    --papel:#010418; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
     --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c;
     --ok:#5cbf74; --falta:#d5a83c; --log:#ff5f5f;
   }}
 }}
 :root[data-theme="dark"]{{
-  --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
+  --papel:#010418; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
   --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c;
   --ok:#5cbf74; --falta:#d5a83c; --log:#ff5f5f;
 }}

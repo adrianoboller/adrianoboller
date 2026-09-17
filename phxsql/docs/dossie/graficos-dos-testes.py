@@ -113,7 +113,13 @@ def barras(titulo, sub, series, unidade, casas=0, menor_e_melhor=False,
     maior = max(tetos) or 1
     alt_l, gap, topo = 30, 12, 10
     h = topo + len(series) * (alt_l + gap)
-    larg, esq, margem = 640, 168, 110
+    # A calha dos rotulos sai do rotulo MAIS LONGO, nao de um numero fixo:
+    # com 168 fixos, «1.000 insercoes em lote» e «1 linha com memo de 200 KB»
+    # saiam cortados a esquerda («.000 insercoes», «nha com memo») -- o
+    # `text-anchor="end"` escreve para tras e o que passa do 0 some, sem
+    # erro. Plex Mono a 12px avanca ~7,2 por caractere; 7,3 + 10 de folga.
+    larg, margem = 640, 110
+    esq = max(168, 10 + round(7.3 * max(len(r) for r, _ in series)))
 
     # Quem vence: o melhor valor cuja faixa nao cruza a de ninguem.
     campeao = None
@@ -164,6 +170,43 @@ def barras(titulo, sub, series, unidade, casas=0, menor_e_melhor=False,
             f'<text x="{fim + 9:.1f}" y="{y + 20}" class="val">'
             f'{num(val, casas)}</text>')
 
+    # A variante estreita: mesma escala (`maior`), mesmo campeao, mesmas
+    # faixas -- so muda ONDE o rotulo fica. Nada de calha a esquerda, entao a
+    # barra ganha a largura toda menos a margem do numero.
+    e_larg, e_margem, e_alt, e_rot, e_gap, e_topo = 360, 76, 22, 16, 14, 4
+    e_h = e_topo + len(series) * (e_rot + e_alt + e_gap)
+    estreito = []
+    for i, (rot, val) in enumerate(series):
+        y = e_topo + i * (e_rot + e_alt + e_gap)
+        yb = y + e_rot
+        cor = CORES[i % len(CORES)]
+        estreito.append(f'<text x="0" y="{y + 11}" class="rot">{esc(rot)}</text>')
+        if not isinstance(val, (int, float)):
+            estreito.append(f'<text x="0" y="{yb + 15}" class="vazio">não medido</text>')
+            continue
+        w = max(2, (val / maior) * (e_larg - e_margem))
+        marca = ' class="campeao"' if rot == campeao else ""
+        fim = w
+        estreito.append(
+            f'<rect x="0" y="{yb}" width="{w:.1f}" height="{e_alt}" rx="3" '
+            f'fill="{cor}"{marca}/>')
+        if faixas and faixas.get(rot):
+            lo, hi = faixas[rot]
+            x1 = (lo / maior) * (e_larg - e_margem)
+            x2 = (hi / maior) * (e_larg - e_margem)
+            fim = max(fim, x2)
+            ym = yb + e_alt / 2
+            estreito.append(
+                f'<line x1="{x1:.1f}" y1="{ym}" x2="{x2:.1f}" y2="{ym}" '
+                f'class="faixa"/>'
+                f'<line x1="{x1:.1f}" y1="{yb + 4}" x2="{x1:.1f}" y2="{yb + e_alt - 4}" '
+                f'class="faixa"/>'
+                f'<line x1="{x2:.1f}" y1="{yb + 4}" x2="{x2:.1f}" y2="{yb + e_alt - 4}" '
+                f'class="faixa"/>')
+        estreito.append(
+            f'<text x="{fim + 8:.1f}" y="{yb + 15}" class="val">'
+            f'{num(val, casas)}</text>')
+
     nota = ('<span class="dica">a barra é a mediana; o traço é min–max. '
             'Contorno = vencedor, e ele só aparece quando as faixas não se '
             'cruzam.</span>') if faixas else ""
@@ -171,8 +214,16 @@ def barras(titulo, sub, series, unidade, casas=0, menor_e_melhor=False,
         f'<figure class="g">'
         f'<figcaption><b>{esc(titulo)}</b> <span class="un">{esc(unidade)}</span>'
         f'<div class="sub">{sub}</div>{nota}</figcaption>'
-        f'<svg viewBox="0 0 {larg} {h}" role="img" '
+        # Duas figuras, uma visivel por vez (CSS, abaixo de 700px). A LARGA e a
+        # de sempre; a ESTREITA poe o rotulo EM CIMA da barra num viewBox de
+        # 360. Sem ela, a 400px o viewBox de 640 escalava a ~330 e o texto de
+        # 12px virava ~6px; num rolo com piso, os numeros ficavam atras da
+        # rolagem -- grafico sem numero le pior que tabela sem coluna. As duas
+        # foram vistas na captura; nenhuma aparece lendo o codigo.
+        f'<svg class="largo" viewBox="0 0 {larg} {h}" role="img" '
         f'aria-label="{esc(titulo)} em {esc(unidade)}">{"".join(corpo)}</svg>'
+        f'<svg class="estreito" viewBox="0 0 {e_larg} {e_h}" role="img" '
+        f'aria-label="{esc(titulo)} em {esc(unidade)}">{"".join(estreito)}</svg>'
         f'</figure>')
 
 
@@ -447,18 +498,21 @@ TEMPLATE = """<meta charset="utf-8">
 <style>
 :root{{
   --papel:#fbf9f7; --papel-2:#f3efec; --tinta:#1a1210; --tinta-2:#4a3f3a;
-  --tinta-3:#7a6d66; --linha:#ded6d0; --acento:#c63c0a; --falta:#8a6a1f;
+  --tinta-3:#6b5e57; --linha:#ded6d0; --acento:#c63c0a; --falta:#8a6a1f;
   --c1:#c63c0a; --c2:#4a6fa5; --c3:#5c7a52; --c4:#0e7a85;
 }}
+/* O fundo escuro e o #010418 da marca (marca/LEIA-ME.md, DESIGN.md §1.1). Era
+   #040814 -- um valor que nao esta em documento nenhum, e a marca manda
+   sobre paleta inventada. Medido: --tinta sobre ele da 15,65:1. */
 @media (prefers-color-scheme:dark){{
   :root:not([data-theme="light"]){{
-    --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
+    --papel:#010418; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
     --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c; --falta:#d5a83c;
     --c1:#ff8a1c; --c2:#6f9fe0; --c3:#7fb36e; --c4:#3fc8d4;
   }}
 }}
 :root[data-theme="dark"]{{
-  --papel:#040814; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
+  --papel:#010418; --papel-2:#0a1122; --tinta:#dde2eb; --tinta-2:#a8b0c0;
   --tinta-3:#7c8598; --linha:#1e2940; --acento:#ff8a1c; --falta:#d5a83c;
   --c1:#ff8a1c; --c2:#6f9fe0; --c3:#7fb36e; --c4:#3fc8d4;
 }}
@@ -489,6 +543,11 @@ figcaption .sub{{color:var(--tinta-2);font-size:13.5px;margin-top:5px;
 .dica{{display:block;color:var(--tinta-3);font-size:12px;margin-top:6px;
   font-style:italic}}
 svg{{width:100%;height:auto;display:block}}
+/* Abaixo de 700px a figura LARGA (viewBox 640) escalaria a menos de 0,95 e
+   o texto de 12px cairia abaixo de 11px; entra a ESTREITA, com o rotulo em
+   cima da barra. Uma so e visivel por vez. */
+svg.estreito{{display:none}}
+@media (max-width:700px){{svg.largo{{display:none}}svg.estreito{{display:block}}}}
 svg text{{font-family:"IBM Plex Mono",monospace;font-size:12px;fill:var(--tinta-2)}}
 svg text.rot{{fill:var(--tinta)}}
 svg text.val{{fill:var(--tinta);font-weight:500}}

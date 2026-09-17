@@ -426,7 +426,7 @@ code{font-size:.86em;background:var(--papel-2);padding:1px 4px;border-radius:3px
   border:1px solid var(--consultar);border-radius:5px;padding:6px 13px;cursor:pointer;
   line-height:1.2}
 .ferramentas button:hover,.ferramentas select:hover{background:var(--consultar);color:var(--papel)}
-.ferramentas button[aria-pressed="true"]{background:var(--papel-3);border-color:var(--acento);
+.ferramentas button[aria-pressed="true"]{background:var(--papel);border-color:var(--acento);
   color:var(--acento);box-shadow:inset 0 -2px 0 var(--acento)}
 .ferramentas .sep{flex:1}
 .ferramentas .r{font-family:"IBM Plex Mono",monospace;font-size:11px;
@@ -534,7 +534,13 @@ figure.g figcaption b{font-family:"Exo 2",sans-serif;font-size:14.5px}
 figure.g .un{color:var(--tinta-3);font-size:12px;margin-left:6px}
 figure.g figcaption .sub{color:var(--tinta-2);font-size:13px;margin-top:5px;max-width:70ch;line-height:1.45}
 figure.g .dica{display:block;color:var(--tinta-3);font-size:11.5px;margin-top:6px;font-style:italic}
+/* As duas variantes vem do `barras()` do graficos-dos-testes.py, que e quem
+   desenha: a LARGA (viewBox 640) e a ESTREITA (360, rotulo em cima da
+   barra). A 400px a larga escalava a ~330 e o texto de 12px virava ~6px --
+   visto na captura. Uma so e visivel por vez, e o corte e o mesmo de la. */
 figure.g svg{width:100%;height:auto;display:block}
+figure.g svg.estreito{display:none}
+@media (max-width:700px){figure.g svg.largo{display:none}figure.g svg.estreito{display:block}}
 figure.g svg text{font-family:"IBM Plex Mono",monospace;font-size:12px;fill:var(--tinta-2)}
 figure.g svg text.rot{fill:var(--tinta)}
 figure.g svg text.val{fill:var(--tinta);font-weight:500}
@@ -1476,6 +1482,14 @@ def montar(saida=PADRAO):
     if fig.exists():
         svg_motor = fig.read_text(encoding="utf-8")
         svg_motor = re.sub(r"^<\?xml[^>]*\?>\s*", "", svg_motor).strip()
+        # A versao SOLTA da figura traz um `<style>svg{...}</style>` proprio,
+        # pensado para arquivo isolado. Embutido, `<style>` de SVG inline e
+        # CSS da PAGINA INTEIRA: a regra `svg{background:#fbf9f7}` pintou de
+        # claro os quatro graficos de barras da secao 15 no tema escuro, com
+        # texto claro em cima (1,24:1, medido). Achado exercitando a pagina;
+        # lendo o codigo nao aparece. O seletor e' preso a ESTA figura antes
+        # de embutir -- a moldura clara do fluxograma continua deliberada.
+        svg_motor = svg_motor.replace("<style>svg{", "<style>.figura>svg{", 1)
 
     paginas, portao = paginas_geradas()
     dono_da_pagina = {}
