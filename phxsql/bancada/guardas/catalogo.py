@@ -129,71 +129,44 @@ TROCA_CURSOR = """        // DEFEITO REPOSTO (pedido 188): o cursor sem o `+1` d
             pos += 1;
         }"""
 
-DEFEITO_ALCANCAR_TABELA = """        // DEFEITO REPOSTO: a trava de dados tomada aqui e segurada ate o fim
-        // da funcao -- e no meio do laco mora `replica::puxar`, que e uma ida
-        // e volta de rede. Rede sa esconde; source mudo prende o servidor
-        // inteiro ate o prazo de leitura de 30 s estourar.
-        let trava = self.travar_dados()?;
-        let db = trava.garantir_database(database)?;
-        let mut tabela = match db.abrir_qualificada(&no.nome) {
-            Ok(t) => t,
-            Err(_) => match &no.esquema {
-                Some(e) => {
-                    let schema = no.nome.split_once('.').map(|(s, _)| s.to_string());
-                    db.criar_tabela(schema.as_deref(), e.clone())?
-                }
-                None => return Ok(0),
-            },
-        };
-        tabela.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
-        let mut posicao = tabela.eventos()?;
-        if posicao >= no.eventos {
-            return Ok(0);
-        }
-        let mut aplicados = 0u64;
+DEFEITO_ALCANCAR_TABELA = """        let mut aplicados = 0u64;
         while posicao < no.eventos {
-            let eventos = crate::replica::puxar(cliente, database, &no.nome, posicao)?;
+            // DEFEITO REPOSTO: a trava de dados e tomada ANTES da leitura de
+            // rede e segurada durante ela -- e no meio do laco mora
+            // `replica::puxar`, que e uma ida e volta de rede. Rede sa
+            // esconde; source mudo prende o servidor inteiro ate o prazo de
+            // leitura de 30 s estourar.
+            let presa_atras_da_rede = self.travar_dados()?;
+            let desde = posicao.saturating_sub(1);
+            let eventos = crate::replica::puxar(cliente, database, &no.nome, desde)?;
+            drop(presa_atras_da_rede);
             if eventos.is_empty() {
                 break;
             }
-            for e in &eventos {
-                tabela.aplicar_evento(e.operacao, e.rowid, &e.imagem)?;
-                aplicados += 1;
-            }
-            let nova = tabela.eventos()?;
-            if nova <= posicao {
-                break;
-            }
-            posicao = nova;
-        }
-        tabela.sincronizar()?;
-        Ok(aplicados)
 """
 
-HOJE_ALCANCAR_TABELA = """        let Some(mut posicao) = self.abrir_para_replicar(database, no)? else {
-            return Ok(0);
-        };
-        if posicao >= no.eventos {
-            return Ok(0);
-        }
-        let mut aplicados = 0u64;
+# REANCORADO em 17/09/2026 (onda 3, papel G): o commit `49a3af7` (papel B,
+# item 5, continuidade da replica pedida pelo papel C) reescreveu
+# `alcancar_tabela` -- ela ganhou a conferencia de continuidade
+# (`abrir_para_replicar` devolve so a posicao, e o `puxar` agora comeca em
+# `posicao - 1` para comparar o evento de conferencia). O ponto onde a trava
+# podia voltar a prender a leitura de rede continua sendo o mesmo: o `puxar`
+# dentro do laco. A entrada foi reancorada ali, e nao na funcao inteira --
+# o resto da funcao (a checagem de continuidade, o ramo `posicao >=
+# no.eventos`) nao toca o defeito que esta guarda prova.
+HOJE_ALCANCAR_TABELA = """        let mut aplicados = 0u64;
         while posicao < no.eventos {
             // FORA da trava. Se a conexao cair aqui, o lote se perde e nada
             // foi gravado: a posicao local nao andou, e a proxima rodada pede
             // exatamente os mesmos eventos. Nao ha meio-lote possivel porque
             // o lote inteiro chega antes de a trava ser pedida.
-            let eventos = crate::replica::puxar(cliente, database, &no.nome, posicao)?;
+            //
+            // A partir de `posicao - 1`: o primeiro evento e a conferencia.
+            let desde = posicao.saturating_sub(1);
+            let eventos = crate::replica::puxar(cliente, database, &no.nome, desde)?;
             if eventos.is_empty() {
                 break;
             }
-            let (n, nova) = self.aplicar_lote_da_replica(database, no, posicao, &eventos)?;
-            aplicados += n;
-            posicao = nova;
-        }
-        if aplicados > 0 {
-            self.sincronizar_replicada(database, &no.nome)?;
-        }
-        Ok(aplicados)
 """
 
 TRECHO_PERFIL_SEM_TEXTO = """            // O ARQUIVO nao leva o texto de tabela sigilosa -- ver o cabecalho
@@ -7268,5 +7241,285 @@ pub fn limpar() {
         "alvo": ["--lib"],
         "caem": ["config::testes_gravacao::o_config_regravado_nasce_0600_sem_herdar_o_original"],
         "seguem": ["config::testes_gravacao::grava_o_pedido_e_preserva_o_resto", "config::testes_gravacao::gravar_privado_nasce_0600_mesmo_com_temporario_velho_aberto"],
+    },
+    # -----------------------------------------------------------------------
+    # 181. «guarda nova entra pedida, nao imposta» -- replicas_autorizadas
+    # -----------------------------------------------------------------------
+    {
+        "id": "replica-lista-e-pedida-nao-imposta",
+        "titulo": "replicas_autorizadas vazia libera todos -- e so isso e' pedida, nao imposta",
+        "porque": (
+            "petrea sem guarda no catalogo, achada no inventario QA de 17/09/2026 "
+            "(onda 1) e fechada na onda 3: o portao 2a-bis (servidor.rs) confere o IP da "
+            "sessao contra `replicacao.replicas_autorizadas`, e a bancada de conteiner ja "
+            "media o estrago sem ele -- um vizinho de rede com o mesmo token e senha_hash "
+            "levando os 200 de 200 eventos do diario COM a lista preenchida. Sem esta guarda "
+            "no catalogo, ninguem reprova de novo a cada rodada se o portao continua ali."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if OPS_DE_REPLICACAO.contains(&op) && !sessao.ip.is_empty() {
+            let lista = &self.config.replicacao.replicas_autorizadas;
+            if !lista.is_empty() && !lista.iter().any(|p| p == &sessao.ip) {
+                self.violacao_leve(&sessao.ip, op, "ip fora de replicas_autorizadas");
+                return Err(PhxError::Autorizacao(
+                    self.msg("erro.replica_nao_autorizada", &[]),
+                ));
+            }
+        }""",
+        "troca": """        // DEFEITO REPOSTO: o portao 2a-bis nao confere mais `replicas_autorizadas`
+        // -- qualquer IP com token passa, pedida ou nao a lista.""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_papel::replica_de_fora_da_lista_nao_le_o_diario",
+        ],
+        # O teste que mais importa aqui: o comportamento VELHO. Todo config.json
+        # de hoje tem a lista vazia (ou nem tem o campo); se a ausencia da guarda
+        # mudasse esse comportamento a replicacao de todo mundo pararia --
+        # `sem_replicas_autorizadas_nada_muda` e `caminho_interno_sem_ip_nao_e_barrado_pela_lista`
+        # continuam verdes mesmo com o portao arrancado, porque nenhum dos dois
+        # exercita o ramo que a lista PREENCHIDA aperta -- e e' exatamente isso
+        # que prova que a guarda so aperta quem foi pedido. A terceira nem passa
+        # pelo `portoes_do_pedido`: mede so a superficie de configuracao.
+        "seguem": [
+            "servidor::testes_papel::sem_replicas_autorizadas_nada_muda",
+            "servidor::testes_papel::caminho_interno_sem_ip_nao_e_barrado_pela_lista",
+            "servidor::testes_papel::a_replicacao_aberta_se_anuncia_e_some_quando_a_lista_enche",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 182. a posicao do diario nao encolhe em silencio (pedido 211)
+    # -----------------------------------------------------------------------
+    {
+        "id": "posicao-nao-encolhe-em-silencio",
+        "titulo": "tabela que nao abre some da soma do diario sem marcar `incompleta`",
+        "porque": (
+            "petrea sem guarda no catalogo, achada no inventario QA de 17/09/2026: antes do "
+            "pedido 211, um no que nao conseguia abrir uma tabela se declarava mais atrasado "
+            "do que era e perdia uma eleicao que deveria vencer, EM SILENCIO -- a posicao "
+            "incompleta e sempre menor que a real, e sem a bandeira ninguem sabia por que. "
+            "`posicao_do_diario` passou a devolver `(total, incompleta)` em vez de so `u64`."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            let Ok(tabelas) = db.todas_as_tabelas() else {
+                incompleta = true;
+                continue;
+            };
+            for t in tabelas {
+                match db.abrir_qualificada(&t) {
+                    Ok(mut tab) => match tab.eventos() {
+                        Ok(n) => total += n,
+                        Err(_) => incompleta = true,
+                    },
+                    Err(_) => incompleta = true,
+                }
+            }""",
+        "troca": """            // DEFEITO REPOSTO: a tabela que nao abre so nao entra na soma --
+            // volta ao silencio de antes do pedido 211, sem marcar `incompleta`.
+            let Ok(tabelas) = db.todas_as_tabelas() else {
+                continue;
+            };
+            for t in tabelas {
+                if let Ok(mut tab) = db.abrir_qualificada(&t) {
+                    if let Ok(n) = tab.eventos() {
+                        total += n;
+                    }
+                }
+            }""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_posicao_do_diario::tabela_que_nao_abre_nao_pode_encolher_a_posicao_em_silencio",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 183. a eleicao prefere posicao COMPLETA (pedido 211)
+    # -----------------------------------------------------------------------
+    {
+        "id": "eleicao-prefere-completa",
+        "titulo": "`cluster::vencedor` volta a comparar so a posicao numerica, ignorando `incompleta`",
+        "porque": (
+            "petrea sem guarda no catalogo, achada no inventario QA de 17/09/2026: uma posicao "
+            "INCOMPLETA e sempre menor que a real (o no nao abriu uma tabela replicada), e "
+            "promover quem nao a abre poe no comando um master que nao a serve nem a replica. "
+            "Sem a preferencia por completa ANTES do numero, um no com mais diario mas "
+            "incompleto venceria um no com menos diario e completo."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """    vivos.iter().max_by(|a, b| {
+        // `!incompleta`: completa (true) ordena acima de incompleta (false).
+        (!a.incompleta)
+            .cmp(&(!b.incompleta))
+            .then(a.posicao.cmp(&b.posicao))
+            .then(a.prioridade.cmp(&b.prioridade))
+            // Invertido de proposito: no empate total, o id MENOR ganha.
+            .then_with(|| b.id.cmp(&a.id))
+    })""",
+        "troca": """    vivos.iter().max_by(|a, b| {
+        // DEFEITO REPOSTO: ignora `incompleta` e volta a comparar so a posicao.
+        a.posicao
+            .cmp(&b.posicao)
+            .then(a.prioridade.cmp(&b.prioridade))
+            .then_with(|| b.id.cmp(&a.id))
+    })""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "cluster::testes::eleicao_prefere_completa_a_incompleta",
+        ],
+        # Comportamento velho: quando ninguem esta incompleto a eleicao continua
+        # decidindo so pela maior posicao -- a preferencia nao pode inventar
+        # diferenca onde nao ha.
+        "seguem": [
+            "cluster::testes::com_maioria_vence_a_maior_posicao",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 184. «replica nao atende escrita» -- portao 2b-bis por PAPEL (REPLICACAO §6)
+    # -----------------------------------------------------------------------
+    {
+        "id": "replica-nao-atende-escrita",
+        "titulo": "`aplicar` pela rede deixa de exigir um papel que receba replicacao",
+        "porque": (
+            "petrea sem guarda no catalogo, achada no inventario QA de 17/09/2026 (pedido "
+            "214(c)): so replica/read_replica/spare/multi recebem `aplicar` pela rede -- "
+            "source e isolado, que sao o dado de producao, tem de recusar. `aplicar` fica "
+            "FORA de `OPS_ESCRITA` de proposito (grava direto por `Table::aplicar_evento`, "
+            "que desliga FK/CHECK/cascata -- a garantia e da origem), entao sem este portao "
+            "proprio nao ha NADA que recuse `aplicar` num source ou isolado."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if op == "aplicar" && self.cluster.is_none() {
+            let papel = self.papel_atual();
+            let recebe_replicacao = matches!(
+                papel,
+                Papel::Replica | Papel::ReadReplica | Papel::Spare | Papel::Multi
+            );
+            if !recebe_replicacao {
+                return Err(PhxError::Autorizacao(
+                    self.msg("erro.aplicar_fora_de_replica", &[("papel", papel.nome())]),
+                ));
+            }
+        }""",
+        "troca": """        // DEFEITO REPOSTO: `aplicar` pela rede deixou de exigir um papel que
+        // receba replicacao -- source e isolado voltam a aceita-lo.""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_papel::aplicar_num_source_trancado_por_administracao_e_recusado",
+            "servidor::testes_papel::aplicar_num_source_aberto_tambem_e_recusado",
+        ],
+        # Comportamento velho: os quatro papeis que existem para RECEBER
+        # replicacao continuam aceitando `aplicar`, trancados ou nao -- o crivo
+        # e sobre o PAPEL, nao sobre `somente_leitura` (isso e' o A3, ja fixado
+        # a parte em 17/09/2026 e coberto pelos proprios testes do papel B).
+        "seguem": [
+            "servidor::testes_papel::replica_trancada_continua_aceitando_o_diario_do_source",
+            "servidor::testes_papel::replica_destrancada_continua_aceitando_o_diario_do_source",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 185. `spare` nao atende ninguem (modo C, pedido 214)
+    # -----------------------------------------------------------------------
+    {
+        "id": "spare-nao-atende-ninguem",
+        "titulo": "o papel Spare deixa de recusar toda operacao que nao esta em OPS_NO_SPARE",
+        "porque": (
+            "petrea sem guarda no catalogo, achada no inventario QA de 17/09/2026 (modo C, "
+            "pedido 214): um spare de contingencia nao atende cliente NEM DE LEITURA ate ser "
+            "promovido -- servir leitura de um spare que ainda nao aplicou o ultimo lote "
+            "devolveria dado velho sem avisar. So administracao, monitoramento e a propria "
+            "replicacao (`OPS_NO_SPARE`) passam."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            Papel::Spare if !OPS_NO_SPARE.contains(&op) => {
+                return Err(PhxError::SpareEmEspera(format!(
+                    "este servidor e um spare de contingencia e nao atende \\
+                     cliente (nem leitura); o primario e {}. Para assumir o \\
+                     trabalho: {{\\"op\\":\\"spare_promover\\"}}",
+                    self.primario()
+                )));
+            }""",
+        "troca": """            // DEFEITO REPOSTO: o papel Spare deixou de recusar operacao nenhuma
+            // -- cai direto no `_ => {}` de baixo, como qualquer outro papel.""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_papel::spare_nao_atende_cliente_nem_de_leitura",
+        ],
+        # A promocao continua abrindo a escrita normalmente -- o defeito e so
+        # no ramo do papel Spare, e o teste de outro papel (ReadReplica) prova
+        # que a mutacao nao vazou para o resto do match.
+        "seguem": [
+            "servidor::testes_papel::spare_promover_vira_primario_e_abre_a_escrita",
+            "servidor::testes_papel::read_replica_recusa_escrita_apontando_o_primario_e_serve_leitura",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 186. read replica recusa escrita apontando o primario (modo D, pedido 214)
+    # -----------------------------------------------------------------------
+    {
+        "id": "read-replica-recusa-escrita",
+        "titulo": "`ReadReplica` deixa de recusar escrita e para de apontar o primario",
+        "porque": (
+            "petrea sem guarda no catalogo, achada no inventario QA de 17/09/2026 (modo D, "
+            "pedido 214): uma read replica serve leitura sem fim, e escrita nela tem de "
+            "devolver REDIRECIONA com o endereco do primario -- o mesmo evento que o "
+            "cluster usa para mandar o cliente para o no certo em vez de so recusar."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            Papel::ReadReplica if OPS_ESCRITA.contains(&op) => {
+                return Err(PhxError::Redireciona(format!(
+                    "REDIRECIONA {} -- este servidor e uma replica de leitura; \\
+                     escreva no primario",
+                    self.primario()
+                )));
+            }""",
+        "troca": """            // DEFEITO REPOSTO: ReadReplica deixou de recusar escrita -- cai
+            // direto no `_ => {}` de baixo, como qualquer papel que grava.""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_papel::read_replica_recusa_escrita_apontando_o_primario_e_serve_leitura",
+        ],
+        # O ramo do Spare, logo acima no mesmo match, continua intacto -- prova
+        # que a mutacao nao derrubou o match inteiro.
+        "seguem": [
+            "servidor::testes_papel::spare_nao_atende_cliente_nem_de_leitura",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 187. o pulso de id fora da lista e recusado (pedido 217)
+    # -----------------------------------------------------------------------
+    {
+        "id": "pulso-fora-da-lista-e-recusado",
+        "titulo": "`op_cluster_pulso` deixa de conferir o id contra a lista viva de nos",
+        "porque": (
+            "petrea sem guarda no catalogo, achada no inventario QA de 17/09/2026 (pedido "
+            "217): aceitar um id de no desconhecido no pulso inflaria o denominador da "
+            "maioria com nos fantasmas e travaria toda promocao -- e e' o mesmo teste que "
+            "prova a outra ponta, que um no ACRESCENTADO a quente (`cluster_no_acrescentar`) "
+            "passa a ser aceito no pulso seguinte SEM reiniciar nada."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if estado.no(&id).is_none() || id == estado.config.id {""",
+        # REANCORADO em 17/09/2026 (onda 3): a frente B2 fundiu, no MESMO dia,
+        # as duas recusas do pulso («fora da lista» e «e' este servidor») numa
+        # so condicao (revisao SEC, A11 -- duas frases distintas faziam do
+        # pulso um oraculo de ids). O defeito que esta guarda prova continua
+        # existindo -- so a linha da condicao mudou; a mutacao agora tira so a
+        # metade `estado.no(&id).is_none()`, preservando a conferencia de
+        # id-duplicado que a linha tambem carrega.
+        "troca": """        // DEFEITO REPOSTO: nao confere mais se o id esta na lista viva de
+        // nos -- so continua recusando quando o id e' o proprio.
+        if id == estado.config.id {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_config_gravar::no_acrescentado_a_quente_passa_a_ser_aceito_no_pulso",
+        ],
+        "seguem": [
+            "servidor::testes_config_gravar::origem_do_cluster_carrega_a_cifra_e_o_pino",
+        ],
     },
 ]

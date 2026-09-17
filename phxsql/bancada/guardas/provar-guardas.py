@@ -61,6 +61,7 @@ nada.
 import argparse
 import atexit
 import fcntl
+import json
 import os
 import re
 import shutil
@@ -115,10 +116,185 @@ PRAZO_PADRAO = 300
 # (aqui, a copia) depende de uma lista, a lista tem de sair do CODIGO. Enquanto
 # ela for digitada, o proximo `read_to_string` de um caminho fora de `crates/`
 # quebra isto de novo -- e quebra parecendo defeito de quem escreveu o teste.
-COPIAR = ["Cargo.toml", "Cargo.lock", "crates", "exemplos", "docs", "testes-web"]
+COPIAR = [
+    "Cargo.toml", "Cargo.lock", "crates", "exemplos", "docs", "testes-web",
+    # Os dois de baixo sao ARQUIVOS, nao pastas -- `bancada/` inteira sao
+    # 2,6 GiB (medido em 17/09/2026), o oposto da promessa de 5 MB aqui de
+    # cima. Achados pelo `verificar_copiar()` abaixo, e nao por leitura:
+    # `segredos.rs` e `catraca-do-mapa-das-threads.rs` leem estes dois por
+    # `CARGO_MANIFEST_DIR` + "../.." em tempo de EXECUCAO -- a mesma classe
+    # de falta que `docs/` e `testes-web/` ja tinham pago, so que desta vez
+    # ninguem tinha ainda sofrido por ela: a arvore limpa passava (nenhum dos
+    # dois testes roda por padrao em `--lib` sozinho... exceto que roda --
+    # `todo_parametro_com_cara_de_segredo_esta_na_lista` e' `--lib`), e so
+    # ficou visivel quando cinco entradas do catalogo (familia da
+    # replicacao) voltaram "sem veredito" da cópia de 17/09/2026 porque o
+    # segredo nao existia dentro dela.
+    "bancada/guardas/debug-com-segredo.py",
+    "bancada/concorrencia/mapa-das-threads.py",
+]
 
 CORES = {"ok": "\033[32m", "mal": "\033[31m", "fraco": "\033[90m",
          "aviso": "\033[33m", "fim": "\033[0m"}
+
+
+# ------------------------------------------------ o COPIAR nao envelhece
+#
+# `COPIAR` e' uma LISTA, e toda lista de que um gerador depende tem de sair
+# do codigo -- e' o corolario que este projeto ja pagou caro (o KiB da
+# interface, o inventario de idiomas, e aqui mesmo `docs/` e `testes-web/`,
+# que so entraram depois de a arvore limpa reprovar sem eles). Em
+# 17/09/2026 foi a vez de `bancada/guardas/debug-com-segredo.py`:
+# `segredos.rs` o le por `CARGO_MANIFEST_DIR` + "../.." em tempo de
+# EXECUCAO, `bancada/` nunca esteve em `COPIAR`, e cinco entradas do
+# catalogo (familia da replicacao, `phxsql-server --lib`) voltaram "sem
+# veredito" -- nao por defeito DELAS, por defeito do executor.
+#
+# Em vez de esperar a proxima falta doer, `verificar_copiar()` varre
+# `crates/*/src/**` e `crates/*/tests/**` -- o que o provador de FATO
+# compila; `examples/` e `build.rs` ficam fora de proposito, porque nenhum
+# alvo `--lib`/`--test` os alcanca -- atras de todo `CARGO_MANIFEST_DIR` que
+# sobe para fora do proprio crate, e confere que o caminho lido esta
+# coberto por `COPIAR`.
+#
+# Duas formas, as duas medidas nesta arvore:
+#
+#   * a cadeia INLINE -- `CARGO_MANIFEST_DIR` seguido, na MESMA expressao,
+#     de `.join("../../X")`: o alvo e' X, direto (`segredos.rs`, e o
+#     `error.rs` que ja motivou o `docs/` estar em COPIAR);
+#   * o HELPER -- uma `fn raiz*() -> PathBuf` cujo corpo sobe para fora do
+#     crate sem apontar lugar nenhum sozinho (`.parent()` encadeado, ou
+#     `.join("..").join("..")`, os dois idiomas que esta casa usa). Quem LE
+#     e' quem CHAMA esse helper com um `.join("X")` depois -- direto ou por
+#     uma variavel (`let raiz = raiz();`) --, em qualquer lugar do arquivo.
+ESCAPA_DO_CRATE = re.compile(r'\.parent\(\)|\.ancestors\(\)|\.join\(\s*"\.\.')
+
+
+def _corpo_da_chave(texto, abre):
+    """Do indice de um `{` ate o `}` que fecha -- casamento simples."""
+    nivel = 0
+    for i in range(abre, len(texto)):
+        if texto[i] == "{":
+            nivel += 1
+        elif texto[i] == "}":
+            nivel -= 1
+            if nivel == 0:
+                return texto[abre:i + 1]
+    return texto[abre:]
+
+
+def _helpers_de_raiz(texto):
+    """Nomes de `fn` (contendo `raiz`, a convencao desta casa) cujo corpo usa
+    `CARGO_MANIFEST_DIR` e sobe para fora do proprio crate."""
+    nomes = set()
+    for m in re.finditer(r"fn\s+(\w*raiz\w*)\s*\([^)]*\)\s*(?:->\s*[^{]+)?\{", texto):
+        corpo = _corpo_da_chave(texto, m.end() - 1)
+        if "CARGO_MANIFEST_DIR" in corpo and ESCAPA_DO_CRATE.search(corpo):
+            nomes.add(m.group(1))
+    return nomes
+
+
+def _leituras_fora_do_crate(texto):
+    """Os caminhos (relativos a raiz do repositorio) que este arquivo le fora
+    do proprio crate."""
+    achados = []
+    for m in re.finditer(
+        r'CARGO_MANIFEST_DIR"\)\s*\)?(?:\s*\.\s*join\(\s*"([^"]*)"\s*\))+', texto
+    ):
+        literais = re.findall(r'\.join\(\s*"([^"]*)"\s*\)', m.group(0))
+        partes, subidas = [], 0
+        for p in "/".join(literais).split("/"):
+            if p in ("", "."):
+                continue
+            if p == "..":
+                subidas += 1
+            else:
+                partes.append(p)
+        if subidas >= 2 and partes:
+            achados.append("/".join(partes))
+    for nome in _helpers_de_raiz(texto):
+        var = None
+        vm = re.search(r"let\s+(\w+)\s*=\s*%s\(\)\s*;" % re.escape(nome), texto)
+        if vm:
+            var = vm.group(1)
+        for receptor in [re.escape(nome) + r"\(\)"] + (
+            [re.escape(var)] if var else []
+        ):
+            for j in re.finditer(receptor + r'\s*\.\s*join\(\s*"([^"]*)"\s*\)', texto):
+                lit = j.group(1)
+                if lit and not lit.startswith(".") and " " not in lit:
+                    achados.append(lit)
+    return sorted(set(achados))
+
+
+def _fontes_em_escopo():
+    """`crates/*/src/**/*.rs` e `crates/*/tests/**/*.rs` -- o que o provador
+    de fato compila. `examples/` e `build.rs` ficam fora: nenhum `--lib` nem
+    `--test` os alcanca, e um `.join` deles nunca vira copia faltando."""
+    for dirpath, dirs, arquivos in os.walk(os.path.join(RAIZ, "crates")):
+        dirs[:] = [d for d in dirs if d not in ("target", ".git")]
+        partes = os.path.relpath(dirpath, RAIZ).split(os.sep)
+        if "src" not in partes and "tests" not in partes:
+            continue
+        for nome in sorted(arquivos):
+            if nome.endswith(".rs"):
+                yield os.path.join(dirpath, nome)
+
+
+def verificar_copiar(copiar=None):
+    """(arquivo, caminho) para cada leitura fora do crate que `copiar` (por
+    omissao, `COPIAR`) nao cobre. Vazio quando tudo esta coberto.
+
+    So texto puro: nao compila e nao roda nada, como o `trecho-vivo.py`."""
+    copiar = COPIAR if copiar is None else copiar
+    problemas = []
+    for caminho in _fontes_em_escopo():
+        with open(caminho, encoding="utf-8", errors="replace") as f:
+            texto = f.read()
+        if "CARGO_MANIFEST_DIR" not in texto:
+            continue
+        rel = os.path.relpath(caminho, RAIZ)
+        for alvo in _leituras_fora_do_crate(texto):
+            coberto = any(
+                alvo == item or alvo.startswith(item.rstrip("/") + "/")
+                for item in copiar
+            )
+            if not coberto:
+                problemas.append((rel, alvo))
+    return problemas
+
+
+def autoteste_copiar():
+    """Prova real contra a arvore de VERDADE (nao uma sintetica): SEM
+    `bancada/guardas/debug-com-segredo.py` em COPIAR o conferidor reprova
+    nomeando o teste e o caminho; COM ele -- a lista de hoje --, passa.
+
+    E' o mesmo defeito que tirou o veredito de cinco entradas em
+    17/09/2026: `todo_parametro_com_cara_de_segredo_esta_na_lista` le esse
+    arquivo em tempo de execucao, e a copia nao o levava."""
+    falhas = []
+
+    def conferir(nome, cond, detalhe=""):
+        print("   %s  %s%s" % ("ok  " if cond else "FALHOU", nome,
+                               "" if cond else "  -- " + detalhe))
+        if not cond:
+            falhas.append(nome)
+
+    sem = [c for c in COPIAR if c != "bancada/guardas/debug-com-segredo.py"]
+    achado_sem = verificar_copiar(sem)
+    conferir(
+        "sem o arquivo em COPIAR, o conferidor reprova nomeando os dois",
+        ("crates/phxsql-server/src/segredos.rs",
+         "bancada/guardas/debug-com-segredo.py") in achado_sem,
+        str(achado_sem),
+    )
+    achado_com = verificar_copiar(COPIAR)
+    conferir("com a lista de hoje, nao sobra nenhuma leitura sem cobertura",
+             achado_com == [], str(achado_com))
+    print("   %s" % ("todos passaram" if not falhas
+                     else "FALHOU: " + ", ".join(falhas)))
+    return 1 if falhas else 0
+
 
 
 def cor(nome, texto):
@@ -229,6 +405,11 @@ class Arvore:
         origem = os.path.join(RAIZ, item)
         destino = os.path.join(self.dir, item)
         if not os.path.isdir(origem):
+            # `item` pode ser um arquivo dentro de uma subpasta que a copia
+            # ainda nao tem (`bancada/guardas/x.py`) -- sem isto o
+            # `shutil.copy` de baixo reprova com "No such file or directory"
+            # na primeira vez que a copia e' nova.
+            os.makedirs(os.path.dirname(destino) or ".", exist_ok=True)
             self._copiar_se_mudou(origem, destino)
             return
         vistos = set()
@@ -393,6 +574,137 @@ def julgar(g, vereditos, desfecho):
     return "PROVADA", notas
 
 
+# --------------------------------------------------- o --json de um --so
+#
+# Achado em 17/09/2026: `--so uma-guarda --json ultima-corrida.json`
+# SOBRESCREVIA o arquivo -- uma corrida de 143 guardas virava uma corrida de
+# 1, e as outras 142 sumiam do retrato sem ter sido tocadas. E' o MESMO
+# defeito que o `medir.py` e o `bancada/replicacao/achados-do-dba.py` ja
+# pagaram (mescla por nome, campo `preservados_de_corrida_anterior`), e a
+# cura e' a mesma: sobrescrever e' o caminho barato, mesclar e' o honesto.
+#
+# A diferenca para o `achados-do-dba.py`: la os "estagios" sao tres nomes
+# fixos; aqui sao ate 180 ids, e cada um pode ter sido medido num DIA
+# diferente -- a mesma disciplina da pagina de testes ("cada numero traz a
+# data em que foi medido"). Por isso a mescla ganha `quando` POR ENTRADA, e
+# o `quando` do TOPO deixa de ser "agora" e passa a ser o mais ANTIGO entre
+# as entradas que sobrevivem no arquivo: e' a leitura que nao superestima o
+# que esta ali -- se uma entrada de 07/09 continua no arquivo, o topo nao
+# pode dizer que tudo e' de hoje.
+def _gravar_json(caminho, so_ligado, resultados):
+    """Grava o `--json` da corrida. Devolve (ids preservados, quando do
+    topo).
+
+    Com `--so` E um arquivo anterior: MESCLA por `id`, mantendo as entradas
+    que esta corrida nem tentou. Sem `--so`, ou sem arquivo anterior: grava
+    do zero, como sempre -- uma corrida completa e' o retrato inteiro, e
+    nao ha nada para preservar."""
+    agora = time.strftime("%Y-%m-%d %H:%M")
+    novas = {
+        g["id"]: {"id": g["id"], "titulo": g["titulo"], "veredito": v,
+                  "segundos": round(s, 2), "notas": n, "quando": agora}
+        for g, v, s, n in resultados
+    }
+    antigas = {}
+    if so_ligado and os.path.exists(caminho):
+        try:
+            with open(caminho, encoding="utf-8") as f:
+                anterior = json.load(f)
+        except (OSError, ValueError):
+            anterior = {}
+        quando_do_arquivo_antigo = anterior.get("quando")
+        for item in anterior.get("guardas", []) or []:
+            # Migracao: um arquivo de ANTES desta mudanca (como o
+            # `ultima-corrida.json` de 16/09) nao tem `quando` por entrada --
+            # so o do topo, que valia para a corrida inteira. Herdar dali e'
+            # a data real que se tem; inventar "agora" mentiria que a
+            # entrada preservada acabou de ser medida.
+            item = dict(item)
+            item.setdefault("quando", quando_do_arquivo_antigo or agora)
+            antigas.setdefault(item["id"], item)
+    mesclado = dict(antigas)
+    mesclado.update(novas)
+    # Ordem do catalogo primeiro (legibilidade); o que sobrar (uma entrada
+    # aposentada que ainda estava no arquivo anterior) vai atras, na ordem em
+    # que apareceu.
+    ordem_catalogo = [g["id"] for g in GUARDAS if g["id"] in mesclado]
+    resto = [i for i in mesclado if i not in set(ordem_catalogo)]
+    guardas_final = [mesclado[i] for i in ordem_catalogo + resto]
+    quandos = [g["quando"] for g in guardas_final if g.get("quando")]
+    topo = min(quandos) if quandos else agora
+    with open(caminho, "w", encoding="utf-8") as f:
+        json.dump({"quando": topo, "guardas": guardas_final}, f,
+                  ensure_ascii=False, indent=2)
+    preservadas = sorted(set(antigas) - set(novas))
+    return preservadas, topo
+
+
+def autoteste_mescla_json():
+    """Prova real dos dois sentidos, sem cargo e sem provador: uma corrida
+    `--so` mescla no arquivo existente sem apagar o resto; uma corrida
+    COMPLETA (sem `--so`) continua sobrescrevendo, porque nesse caso nao ha
+    nada para preservar -- e' o comportamento de SEMPRE, que nao pode
+    quebrar."""
+    import tempfile
+    falhas = []
+
+    def conferir(nome, cond, detalhe=""):
+        print("   %s  %s%s" % ("ok  " if cond else "FALHOU", nome,
+                               "" if cond else "  -- " + detalhe))
+        if not cond:
+            falhas.append(nome)
+
+    g_a = {"id": "guarda-a", "titulo": "A"}
+    g_b = {"id": "guarda-b", "titulo": "B"}
+    with tempfile.TemporaryDirectory() as tmp:
+        alvo = os.path.join(tmp, "corrida.json")
+        # 1. uma corrida COMPLETA (`--so` desligado) grava as duas.
+        _gravar_json(alvo, False, [(g_a, "PROVADA", 1.0, []),
+                                   (g_b, "PROVADA", 2.0, [])])
+        completa = json.load(open(alvo, encoding="utf-8"))
+        conferir("corrida completa grava as duas entradas",
+                 {g["id"] for g in completa["guardas"]} == {"guarda-a", "guarda-b"},
+                 str(completa))
+
+        # 2. um `--so guarda-a` NAO pode apagar a `guarda-b` que ja estava la.
+        preservadas, topo = _gravar_json(
+            alvo, True, [(g_a, "QUEBRADA", 0.5, ["mudou"])])
+        depois = json.load(open(alvo, encoding="utf-8"))
+        conferir("--so preserva a entrada que nao rodou",
+                 {g["id"] for g in depois["guardas"]} == {"guarda-a", "guarda-b"},
+                 str(depois))
+        conferir("a preservada mantem o veredito antigo",
+                 next(g for g in depois["guardas"]
+                      if g["id"] == "guarda-b")["veredito"] == "PROVADA")
+        conferir("a que rodou de novo leva o veredito novo",
+                 next(g for g in depois["guardas"]
+                      if g["id"] == "guarda-a")["veredito"] == "QUEBRADA")
+        conferir("o retorno nomeia quem foi preservado",
+                 preservadas == ["guarda-b"], str(preservadas))
+        conferir("o `quando` do topo e' o da entrada preservada (mais antigo)",
+                 depois["quando"] == completa["quando"],
+                 "%s != %s" % (depois["quando"], completa["quando"]))
+
+        # 3. uma corrida COMPLETA depois de uma parcial volta a sobrescrever
+        # por inteiro -- nao arrasta preservados de uma rodada que a corrida
+        # de hoje ja tentou de novo.
+        _gravar_json(alvo, False, [(g_a, "PROVADA", 1.0, [])])
+        final = json.load(open(alvo, encoding="utf-8"))
+        conferir("corrida completa seguinte volta a ser so o que ela mediu",
+                 [g["id"] for g in final["guardas"]] == ["guarda-a"],
+                 str(final))
+
+        # 4. `--so` SEM arquivo anterior nao tem o que mesclar -- grava normal.
+        alvo2 = os.path.join(tmp, "nunca-existiu.json")
+        _gravar_json(alvo2, True, [(g_a, "PROVADA", 1.0, [])])
+        conferir("--so sem arquivo anterior grava normalmente",
+                 os.path.exists(alvo2))
+
+    print("   %s" % ("todos passaram" if not falhas
+                     else "FALHOU: " + ", ".join(falhas)))
+    return 1 if falhas else 0
+
+
 # ------------------------------------------------------------------ saida
 def main():
     ap = argparse.ArgumentParser(add_help=True)
@@ -405,7 +717,31 @@ def main():
     ap.add_argument("--listar", action="store_true",
                     help="mostra o catalogo e sai")
     ap.add_argument("--json", default=None, help="grava o resultado neste arquivo")
+    ap.add_argument("--conferir-copiar", action="store_true",
+                    help="confere que crates/*/{src,tests} nao le nada fora de COPIAR")
+    ap.add_argument("--autoteste-copiar", action="store_true",
+                    help="prova real do --conferir-copiar, contra a arvore de verdade")
+    ap.add_argument("--autoteste-mescla-json", action="store_true",
+                    help="prova real da mescla do --json quando --so esta ligado")
     opc = ap.parse_args()
+
+    if opc.autoteste_copiar:
+        print("=== autoteste do --conferir-copiar (pedido G, onda 3, 17/09/2026) ===")
+        return autoteste_copiar()
+    if opc.autoteste_mescla_json:
+        print("=== autoteste da mescla do --json com --so (pedido G, onda 3, "
+              "17/09/2026) ===")
+        return autoteste_mescla_json()
+    if opc.conferir_copiar:
+        problemas = verificar_copiar()
+        if not problemas:
+            print("COPIAR cobre tudo que crates/*/{src,tests} le fora do proprio "
+                  "crate.")
+            return 0
+        print("COPIAR esta INCOMPLETA -- %d leitura(s) sem cobertura:" % len(problemas))
+        for arq, alvo in problemas:
+            print("  %s le %s, que COPIAR nao leva" % (arq, alvo))
+        return 1
 
     escolhidas = [g for g in GUARDAS
                   if not opc.so or any(p in g["id"] for p in opc.so)]
@@ -526,15 +862,12 @@ def main():
     print("=" * 72)
 
     if opc.json:
-        import json
-        with open(opc.json, "w", encoding="utf-8") as f:
-            json.dump({
-                "quando": time.strftime("%Y-%m-%d %H:%M"),
-                "guardas": [
-                    {"id": g["id"], "titulo": g["titulo"], "veredito": v,
-                     "segundos": round(s, 2), "notas": n}
-                    for g, v, s, n in resultados],
-            }, f, ensure_ascii=False, indent=2)
+        preservadas, topo = _gravar_json(opc.json, bool(opc.so), resultados)
+        if preservadas:
+            print("\n%d guarda(s) preservada(s) de corrida(s) anterior(es) em "
+                  "%s: %s" % (len(preservadas), opc.json, ", ".join(preservadas)))
+            print("quando (topo, a mais antiga que ainda esta no arquivo): %s"
+                  % topo)
 
     # Codigo de saida honesto: 1 quando alguma guarda nao ficou provada.
     return 0 if not ruins else 1

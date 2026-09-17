@@ -178,6 +178,16 @@ dia, nunca no desejado:
   cluster, a tela no sentido de ENTRADA (o token do REST), a string de
   conexao do ODBC, a privada do fio e a especificacao OpenAPI. Contado no
   dia: 177 entradas, 177 ids distintos, zero aposentadas.
+  **SUBIU para 187 em 17/09/2026** (onda 3 da rodada de replicacao, papel G):
+  sete guardas, uma por PETREA sem guarda nomeada no inventario QA da manha
+  (`docs/propostas/inventario-qa-replicacao-2026-09-17.md` SS2.2) --
+  `replicas_autorizadas` pedida-e-nao-imposta, a posicao do diario que nao
+  encolhe em silencio, a eleicao que prefere posicao completa, a replica que
+  nao atende escrita por PAPEL (independente do `somente_leitura`, que e' o
+  A3 fixado a parte), o spare que nao atende ninguem, a read replica que
+  recusa escrita apontando o primario, e o pulso que recusa id fora da lista
+  -- pedidos 211/214/217. `crates/phxsql-server/src/cluster.rs`, que tinha
+  ZERO entradas ate esta rodada, ganhou a primeira (`eleicao-prefere-completa`).
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -286,7 +296,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 180
+PISO_DAS_ENTRADAS = 187
 
 # ------------------------------------------------------------- APOSENTADAS
 #
