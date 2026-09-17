@@ -108,3 +108,35 @@ Prova real nos dois sentidos em todos: o teste FALHA com o defeito reposto.
 
 Fora de B (mesa do dono): A1 identidade (`known_hosts` pela chave do fio),
 A4, A6, A7, A8, A9, A10, A11, as seis decisões de formato de C, o 161.
+
+## Onda 3 — «Continue fazendo os gaps» (ordem do dono, 03:58 UTC)
+
+Os 13 `--so` de G rodados por A às 03:53–03:57 UTC, um por vez, cada um com
+o próprio JSON (fora do `ultima-corrida.json`, que é a corrida completa de
+16/09 e não pode ser sobrescrito por uma parcial): **7 PROVADA**
+(`replica-julga-fk` 1,59 s, `cascata-sem-imagem-no-diario` 1,66 s,
+`replica-refaz-a-cascata` 1,58 s, `bidirecional-julga-fk` 1,43 s,
+`bidirecional-julga-as-filhas` 1,46 s, `marca-de-replica-fica-acesa` 1,55 s,
+`pulso-do-cluster-em-claro` 19,56 s); **1 QUEBRADA** — `trava-atras-da-rede`,
+«o trecho não está mais em `servidor.rs`»: envelheceu com `49a3af7`, e o
+`trecho-vivo.py --catraca` reprova com `TETO_TRECHO_MORTO: 1 (teto 0)` às
+04:00 (encontro de frentes: B1 mexeu no lote e a âncora da guarda ficou para
+trás); **5 sem veredito por defeito do provador** (as `--lib`:
+`colisao-de-sequence-calada`, `replicacao-do-cluster-em-claro`,
+`posicao-sem-portao`, `replica-insiste-na-credencial-recusada`,
+`cluster-devolve-a-credencial-na-tela`) — a árvore LIMPA da cópia reprova em
+`segredos::testes::todo_parametro_com_cara_de_segredo_esta_na_lista`, que lê
+`bancada/guardas/debug-com-segredo.py` por `CARGO_MANIFEST_DIR/../..`, e a
+lista `COPIAR` do provador (`provar-guardas.py:118`) não copia `bancada/`.
+Medido por A nos logs; a suíte no repositório passa (2.427/0/4).
+
+| papel | frente | escalão | por que | largada |
+|---|---|---|---|---|
+| B2 | nove gaps com conserto delimitado e sem formato, em ordem de valor: rownum no lote (291), A1 pleno pelo túnel (278), A8 trilha LGPD do `replicar` (285), A4 `propagar:false` (281), A6 `cluster_estado` partido (283), A5 resto (282), A9 (286), A10 (287), A11 (288); cada um mede a premissa antes e volta como parecer se ela cair | forte | segurança, concorrência e integridade | 04:01 |
+| G2 (estático) | reancorar `trava-atras-da-rede`; provador copiar o que os testes leem fora de `crates/` com conferidor derivado do código; `--so --json` mesclar por id em vez de sobrescrever; sete pétreas + `cluster.rs` no catálogo (301/302); lista de `--so` para A | médio | catálogo e ferramenta em Python, sem cargo — o provador copia a árvore de trabalho e B2 está mutando `crates/` | 04:02 |
+| F2 | depois de B2: `quando` nos quatro `resultados.json` sem data (308), `modos.py`/`fresta.py` gravando arquivo e a página dos testes vendo as quatro medidas (193), a guarda de queda do `trava.py` (306), os dois blocos sem gerador (307), teste do `TETO_DA_RESPOSTA` (303), e a corrida das guardas | forte | bancada com servidores de pé mede tempo — não pode correr junto de B2 | fila |
+| E + B3 | onda 4: as duas ideias de J — `<dataBar>` no XLSX (304) e o construtor visual AND/OR (305), exercitados no navegador | forte/médio | tela só se prova exercitando | fila |
+| H | etapa 3 depois de B2/G2/F2: pedidos, REPLICACAO §21.5 conclusão, CHANGELOG, STATUS | médio | — | fila |
+
+Fora de qualquer onda (mesa do dono, formato): as seis decisões de C
+(289–294), o 161, e o que B2 devolver como parecer.
