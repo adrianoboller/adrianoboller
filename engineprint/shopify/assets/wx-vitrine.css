@@ -1,0 +1,147 @@
+/* wx-vitrine.css — consertos medidos da vitrine das colecoes.
+ *
+ * Carregado por snippets/stylesheets.liquid, no <head>. As secoes
+ * `wx-collection` e `wx-hero-banner` injetam o CSS delas no CORPO da
+ * pagina, ou seja DEPOIS deste arquivo — por isso cada regra daqui
+ * carrega `!important`: nao e forca bruta, e a unica coisa que vence
+ * uma folha que vem depois. As regras do tema que estas substituem
+ * nao usam !important, entao a disputa e limpa.
+ *
+ * O medidor que prova as duas correcoes, nos dois sentidos:
+ *     node engineprint/shopify/mock/mede-vitrine.mjs <pagina.html>
+ *     node .../mede-vitrine.mjs <pagina.html> --com-remendo wx-vitrine.css
+ */
+
+/* ════════════════════════════════════════════
+   VITRINE — o selo atravessando a borda da imagem
+   ────────────────────────────────────────────
+   MEDIDO em 17/09/2026, em todos os cartões e nas duas
+   larguras (390 e 1280): o selo ("5% no Pix" / "Esgotado")
+   passava 6px da borda DIREITA da imagem e 4px do TOPO, meio
+   em cima da foto e meio no branco do cartão.
+
+   A causa é de caixa, não de empilhamento. O selo é filho de
+   <product-card> e se posiciona a partir DELE:
+
+       .product-badges { position: absolute }
+       .product-badges--top-right { top: var(--badge-inset);
+                                    right: var(--badge-inset) }
+
+   mas a imagem NÃO ocupa o cartão inteiro — .product-card__info
+   tem `padding: 14px 16px 18px` (posto pela própria seção
+   wx-collection), e a galeria fica dentro desse padding.
+   Medido: cartão 166px, imagem 134px. Com recuo de 10px a
+   partir do cartão e 16px de padding, sobra 16-10 = 6px para
+   fora à direita, e 14-10 = 4px acima. Bate com o medido.
+
+   O tema já tinha resolvido isso para o botão "+" e nunca fez
+   o mesmo para o selo:
+
+       --quick-add-right: calc(var(--quick-add-offset)
+                               + var(--padding-inline-end))
+
+   Aqui o selo passa a somar o mesmo padding. Escopo em
+   .wx-collection de propósito: em outras telas o selo se
+   posiciona certo, e empurrá-lo lá o jogaria para dentro
+   demais.
+
+   ATENÇÃO: os três números abaixo são a MESMA lista que
+   `.product-card__info` usa em sections/wx-collection.liquid.
+   Mexeu lá, mexa aqui — ou rode o medidor, que reprova sozinho:
+       node engineprint/shopify/mock/mede-vitrine.mjs
+
+   CÓDIGO MORTO A REMOVER: o layout/theme.liquid ainda tem um
+   bloco que mirava a View Transition do clique, dizendo consertar
+   este mesmo defeito. Ele NUNCA teve efeito — medido:
+   `data-view-transition-to-main-product` não aparece em página
+   nenhuma desta loja e `data-product-transition` é "false", então
+   product-card.js sai de handleViewTransition na primeira linha e
+   aquela transição não roda. A regra ficou lá porque tirá-la pede
+   reenviar o layout inteiro; some no próximo commit que o tocar.
+════════════════════════════════════════════ */
+.wx-collection {
+  --wx-folga-topo: 14px;
+  --wx-folga-lado: 16px;
+  --wx-folga-base: 18px;
+}
+.wx-collection .product-badges--top-right {
+  top: calc(var(--badge-inset) + var(--wx-folga-topo)) !important;
+  right: calc(var(--badge-inset) + var(--wx-folga-lado)) !important;
+}
+.wx-collection .product-badges--top-left {
+  top: calc(var(--badge-inset) + var(--wx-folga-topo)) !important;
+  left: calc(var(--badge-inset) + var(--wx-folga-lado)) !important;
+}
+.wx-collection .product-badges--bottom-right {
+  bottom: calc(var(--badge-inset) + var(--wx-folga-base)) !important;
+  right: calc(var(--badge-inset) + var(--wx-folga-lado)) !important;
+}
+.wx-collection .product-badges--bottom-left {
+  bottom: calc(var(--badge-inset) + var(--wx-folga-base)) !important;
+  left: calc(var(--badge-inset) + var(--wx-folga-lado)) !important;
+}
+
+/* ════════════════════════════════════════════
+   BANNER DAS COLEÇÕES — a imagem cortada no celular
+   ────────────────────────────────────────────
+   São DOIS defeitos, e o primeiro é o que se vê.
+
+   1) A FOTO NÃO PREENCHE A MOLDURA. Medido no celular: a
+      moldura é 356x480 e a imagem ocupa 356x200 no TOPO — os
+      280px de baixo ficam brancos, com o título metade fora da
+      foto. É isso que parece "imagem cortada".
+
+      A seção pede à imagem que preencha:
+
+          .wx-hero__media img { width: 100%; height: 100% }
+
+      mas o <img> está dentro de um <picture>, e <picture> é
+      inline e sem altura. Altura em porcentagem contra pai de
+      altura automática resolve para `auto`, então o <img> cai
+      na proporção natural dele (356 / 1,78 = 200px) e o
+      `object-fit: cover` nunca chega a agir. Uma linha resolve:
+      dar altura ao <picture>.
+
+   2) SÓ DEPOIS o corte vira problema de verdade. Com a foto
+      preenchendo, a moldura de 390x480 é 0,81 — retrato —
+      contra imagens de 1200x675 (1,78) e 1356x840 (1,61):
+      `cover` jogaria fora mais da METADE da largura.
+
+      O conserto é a moldura, não a imagem — e a moldura tem de
+      ser a MENOR que o texto aceita, porque cada pixel de altura
+      a mais é largura de foto a menos.
+
+      Duas mudanças, e a segunda é que faz a conta fechar:
+
+      a) no celular a altura MÍNIMA cai de 480px para 62vw
+         (~242px), perto da proporção das imagens;
+
+      b) `.wx-hero__content` deixa de ser `absolute` e entra no
+         fluxo. Medido: o texto precisa de 320px e a caixa dava
+         244 — por isso o título transbordava. Sendo absoluto,
+         ele NÃO empurrava a caixa; no fluxo, a caixa passa a
+         ter exatamente a altura que aquele slide pede. Coleção
+         de título curto fica com banner mais baixo e foto mais
+         inteira, sozinha, sem constante nenhuma no meio.
+
+      A foto continua atrás e inteira: `.wx-hero__media` segue
+      `position: absolute; inset: 0`, então ela preenche a caixa
+      qualquer que seja a altura, e o texto segue POR CIMA dela.
+
+      Medido em 390px: 58% da foto fora antes, 37% depois — e o
+      que sobra é o preço de pôr foto deitada em tela em pé.
+
+   O foco (`image_focal`) já é lido — sai como
+   `style="object-position: ..."` no próprio <img>. Ele decide
+   QUAL pedaço sobrevive, não QUANTO sobra; por isso não
+   adiantava mexer nele.
+════════════════════════════════════════════ */
+.wx-hero__media picture {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+@media (max-width: 749px) {
+  .wx-hero { --wx-h: 62vw !important; }
+  .wx-hero__content { position: relative !important; }
+}
