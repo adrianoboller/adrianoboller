@@ -419,6 +419,30 @@ casador de texto não sabe a diferença entre fazer e falar sobre fazer* — é 
 mesma razão pela qual o conferidor genérico das mensagens de erro foi recusado
 com número nesta casa.
 
+### E em 18/09/2026 ele mordeu de novo, com ALCANCE maior
+
+A frase acima estava escrita, e eu a repeti letra por letra: contei os mesmos
+**2** e concluí os mesmos dois links. Lei escrita não impede o erro; ela só o
+nomeia depois.
+
+Mas a repetição trouxe um alcance que a lei não cobria. Ao publicar a
+**página dos pedidos**, o mesmo aviso apareceu — e ali não há comentário de
+fonte nenhum. O que o varredor casou foi o **texto do pedido 327**, que a
+página publica **como conteúdo** e que cita `createObjectURL` e
+`window.claude.downloads` ao explicar o problema.
+
+Ou seja: a regra vale para as duas metades, e a segunda é pior de achar.
+**Comentário sobre a armadilha casa com a busca pela armadilha — e conteúdo
+publicado sobre a armadilha também.** Uma página que documenta um defeito
+passa a ser sinalizada como tendo o defeito, e o aviso nunca vai parar de
+aparecer, porque a página existe justamente para falar dele.
+
+Medido nas cinco páginas em 18/09/2026: `window.print()` no dossiê e na página
+dos pedidos; `<a download>` de verdade, `createObjectURL` de verdade,
+`window.claude` de verdade — **zero em todas as cinco**. Nas páginas de
+testes, gráficos e status, zero ocorrências de qualquer um dos padrões, nem
+como prosa.
+
 ## Três armadilhas de estilo da página
 
 - **Nenhuma cor literal nos SVG.** Tudo sai dos tokens (`var(--reg)`,
