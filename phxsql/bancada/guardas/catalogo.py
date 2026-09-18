@@ -169,17 +169,37 @@ HOJE_ALCANCAR_TABELA = """        let mut aplicados = 0u64;
             }
 """
 
+# O ponto de reposicao ANDOU em 18/09/2026 (pedido 356): o `if self.sigiloso`
+# virou `self.sigilo.no_lugar_do_pedido()`, porque o arquivo passou a ter DOIS
+# motivos para calar -- a lista declarada e o `.reg` cifrado -- e um `bool` nao
+# diz qual dos dois. A entrada foi conferida com o provador no mesmo passo: o
+# defeito reposto continua sendo «a linha escreve `self.pedido`».
 TRECHO_PERFIL_SEM_TEXTO = """            // O ARQUIVO nao leva o texto de tabela sigilosa -- ver o cabecalho
             // do modulo. A coluna de bytes ao lado ja diz o tamanho, entao o
             // que se perde e o conteudo e nao a medida: continua dando para
             // achar o pedido gigante que derrubou o servidor.
-            if self.sigiloso {
-                SEM_TEXTO
-            } else {
-                self.pedido.as_str()
-            },"""
+            self.sigilo
+                .no_lugar_do_pedido()
+                .unwrap_or(self.pedido.as_str()),"""
 
 TROCA_PERFIL_SEM_TEXTO = """            self.pedido.as_str(),"""
+
+TRECHO_PERFIL_PELO_DISCO = """            RegNoDisco::Cifrado | RegNoDisco::Ilegivel => true,
+            RegNoDisco::EmClaro | RegNoDisco::SemVolume => false,"""
+# O defeito de origem em uma linha: o disco responde e ninguem age. E a forma
+# mais fiel do 356 -- a pergunta ao disco nem existia.
+TROCA_PERFIL_PELO_DISCO = """            RegNoDisco::Cifrado | RegNoDisco::Ilegivel => false,
+            RegNoDisco::EmClaro | RegNoDisco::SemVolume => false,"""
+
+TRECHO_PERFIL_ERRO_SEM_TEXTO = """                (false, true) => {
+                    format!("  <- <erro nao gravado, {} bytes>", self.erro.len())
+                }"""
+TROCA_PERFIL_ERRO_SEM_TEXTO = """                (false, true) => format!("  <- {}", self.erro),"""
+
+TRECHO_RAIZ_NO_LIGAR = """        prof.definir_raiz_dos_dados(&self.config.base);"""
+# Nao basta apagar a linha: `self.config.base` continua usado no resto do
+# arquivo, mas o `let _` mantem a troca visivel para quem audita o catalogo.
+TROCA_RAIZ_NO_LIGAR = """        let _ = &self.config.base;"""
 
 TRECHO_COLHER_DESCE = """                colher_tabelas(v, meu_banco, saida);"""
 
@@ -3887,6 +3907,93 @@ pub fn limpar() {
         "seguem": [
             "profiler::testes_tabela_sigilosa::sem_lista_o_arquivo_continua_com_o_texto",
             "profiler::testes::a_senha_nunca_aparece",
+        ],
+        "prazo": 300,
+    },
+    {
+        "id": "perfil-decide-so-pela-lista-e-nao-pelo-reg-cifrado",
+        "titulo": "o perfil.txt decide pela lista do config e a cifra acontece pela marca de coluna",
+        "porque": (
+            "e a petrea do portao unico em outra roupa, achada pela varredura "
+            "SEC de 18/09/2026 (pedido 356): o portao lia `cifra.tabelas` -- a "
+            "INTENCAO -- e quem cifra e a marca de coluna, gravada no cabecalho "
+            "do .reg na criacao. Como a lista nasce VAZIA em todo config.json, "
+            "o caso comum era o furo: cofre ligado, coluna marcada, ninguem "
+            "declarou nada, e o valor marcado ia em claro para o arquivo que "
+            "viaja com o disco. A §13.3 do SEGURANCA.md ja dizia «o disco "
+            "manda, a lista pede» desde 05/09 -- e o decisor nao seguia a "
+            "propria secao."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": TRECHO_PERFIL_PELO_DISCO,
+        "troca": TROCA_PERFIL_PELO_DISCO,
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes_reg_cifrado::reg_cifrado_sem_lista_nenhuma_cega_o_arquivo",
+            "profiler::testes_reg_cifrado::reg_ilegivel_nao_arrisca_o_texto",
+        ],
+        # Os dois primeiros sao o comportamento VELHO com o disco sendo
+        # consultado: sem eles, um conserto que cegasse TODA tabela passaria
+        # pela guarda como se tivesse protegido alguma coisa.
+        "seguem": [
+            "profiler::testes_reg_cifrado::reg_em_claro_continua_com_o_texto",
+            "profiler::testes_reg_cifrado::tabela_sem_volume_continua_com_o_texto",
+            "profiler::testes_tabela_sigilosa::sem_lista_o_arquivo_continua_com_o_texto",
+        ],
+        "prazo": 300,
+    },
+    {
+        "id": "perfil-grava-o-erro-que-cita-o-valor",
+        "titulo": "o perfil.txt tapa o pedido e grava o erro, que cita o valor da coluna marcada",
+        "porque": (
+            "achado procurando quem NAO tinha o campo novo, em 18/09/2026, e "
+            "ele estava na coluna ao lado da que acabara de ser tapada: o "
+            "texto do erro CITA o valor que chegou -- «123456 nao cabe em "
+            "inteiro de 16 bits» --, e ali o valor era de uma coluna marcada. "
+            "Pior, a §13.9 do SEGURANCA.md afirmava com veredito que o campo "
+            "`erro` nao carrega valor de linha: a conferencia tinha olhado "
+            "DUAS familias de mensagem (indice unico e FK, que citam nome) e "
+            "concluido sobre todas. Agora o erro de evento sigiloso vira o "
+            "TAMANHO -- analisando, nunca recortando."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": TRECHO_PERFIL_ERRO_SEM_TEXTO,
+        "troca": TROCA_PERFIL_ERRO_SEM_TEXTO,
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "profiler-da-tabela-cifrada"],
+        "caem": [
+            "o_erro_que_cita_o_valor_tambem_fica_fora_do_arquivo",
+        ],
+        # O outro teste do mesmo binario tem de seguir de pe: ele prova o
+        # PEDIDO tapado, e a troca aqui so mexe na coluna do erro.
+        "seguem": [
+            "tabela_cifrada_pela_marca_de_coluna_tambem_cega_o_arquivo",
+        ],
+        "prazo": 300,
+    },
+    {
+        "id": "profiler-ligado-sem-a-raiz-dos-dados",
+        "titulo": "o Profiler liga sem a raiz de dados e volta a decidir por um campo só",
+        "porque": (
+            "e o irmao exato do `definir_sigilosas` que ninguem chamasse: o "
+            "conserto do pedido 356 mora no profiler.rs e depende de haver "
+            "disco a quem perguntar. Sem esta linha no `profiler_ligar`, os "
+            "seis testes de `testes_reg_cifrado` continuam passando -- eles "
+            "mesmos definem a raiz -- e o perfil.txt de um servidor de verdade "
+            "volta a gravar em claro, calado."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": TRECHO_RAIZ_NO_LIGAR,
+        "troca": TROCA_RAIZ_NO_LIGAR,
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_profiler_desligado::a_raiz_dos_dados_chega_ao_profiler_no_ligar",
+        ],
+        "seguem": [
+            "servidor::testes_profiler_desligado::a_lista_de_tabelas_declaradas_chega_ao_profiler_no_ligar",
+            "profiler::testes_tabela_sigilosa::o_anel_ve_o_texto_e_o_arquivo_nao",
         ],
         "prazo": 300,
     },

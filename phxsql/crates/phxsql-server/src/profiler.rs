@@ -12,11 +12,28 @@
 //! pedido que derruba o servidor: ele aparece mesmo que a operacao nunca
 //! termine.
 //!
-//! # Tabela declarada sigilosa: o ANEL ve, o ARQUIVO nao
+//! # Tabela cifrada ou declarada sigilosa: o ANEL ve, o ARQUIVO nao
 //!
 //! Quando o pedido toca uma tabela nomeada em `cifra.tabelas`, o texto dele
 //! entra no anel como sempre -- e **nao** vai para o `perfil.txt`. No lugar
 //! dele o arquivo grava o tamanho em bytes, que ja era uma coluna da linha.
+//!
+//! E o mesmo vale para a tabela cujo `.reg` esta **cifrado**, que e o que a
+//! marca de coluna produz. Sao duas perguntas diferentes, e ate 18/09/2026 o
+//! arquivo so fazia a primeira: a lista `cifra.tabelas` e a INTENCAO do dono,
+//! e quem de fato cifra e `Schema::tem_dado_pessoal` na criacao da tabela
+//! (`reg.rs`). Como a lista nasce VAZIA em todo `config.json`, o caso comum --
+//! cofre ligado, coluna marcada, ninguem listou nada -- gravava o valor
+//! marcado em claro no `perfil.txt`, ao lado do `.reg` cifrado. Era o pedido
+//! 356, e a prova real dele esta em
+//! `tests/profiler-da-tabela-cifrada.rs`.
+//!
+//! A segunda pergunta e respondida pelo **disco**, e nao por uma segunda
+//! lista: a lista e a intencao, o disco e o estado -- a frase esta no
+//! `config.rs`, ao lado de `cifra.tabelas`. O custo e uma leitura de dez bytes
+//! do cabecalho do primeiro volume, e ela so acontece quando alguem pediu
+//! ARQUIVO: profiler que roda so no anel nao toca em disco nenhum, porque o
+//! campo decide a linha do arquivo e mais nada.
 //!
 //! A assimetria nao e descuido, e sai de uma frase que ja estava escrita no
 //! `store/src/cofre.rs`: *«Nao protege contra quem le o `config.json` desta
@@ -138,6 +155,17 @@ use phxsql_core::json::Json;
 /// procurar defeito onde ha decisao.
 const SEM_TEXTO: &str = "<tabela declarada em cifra.tabelas: pedido nao gravado>";
 
+/// O que o arquivo grava no lugar do pedido de uma tabela cujo `.reg` esta
+/// CIFRADO em disco.
+///
+/// Texto PROPRIO, e nao o mesmo de cima: quem ler o `perfil.txt` seis meses
+/// depois iria procurar a tabela em `cifra.tabelas` e nao a acharia -- porque
+/// ninguem a declarou, e nem precisa. Log que explica errado manda procurar
+/// defeito onde ha decisao, do mesmo modo que log que nao explica; e a razao
+/// de o texto ser por extenso desde o pedido 195, aplicada ao motivo e nao so
+/// ao fato.
+const SEM_TEXTO_CIFRADA: &str = "<tabela com .reg cifrado: pedido nao gravado>";
+
 /// Teto de um campo de identificacao na linha do arquivo.
 ///
 /// `op`, `database`, `tabela` e `usuario` vem do pedido, e nada no protocolo
@@ -216,6 +244,41 @@ impl Filtro {
     }
 }
 
+/// Por que o ARQUIVO nao levou o texto deste pedido.
+///
+/// Um `bool` nao bastava depois do pedido 356: sao dois motivos diferentes, e
+/// cada um manda quem le o arquivo olhar num lugar diferente -- a lista do
+/// `config.json` ou o cabecalho do `.reg`. Guardar so «sim» faria o arquivo
+/// dizer «declarada em cifra.tabelas» sobre tabela que ninguem declarou.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sigilo {
+    /// Nada esconde: o texto vai para o arquivo, como sempre.
+    Nao,
+    /// O dono declarou a tabela em `cifra.tabelas`.
+    Declarada,
+    /// O `.reg` da tabela esta cifrado -- quem respondeu foi o disco.
+    Cifrada,
+}
+
+impl Sigilo {
+    /// O texto que entra no lugar do pedido, ou `None` quando o pedido vai.
+    fn no_lugar_do_pedido(self) -> Option<&'static str> {
+        match self {
+            Sigilo::Nao => None,
+            Sigilo::Declarada => Some(SEM_TEXTO),
+            Sigilo::Cifrada => Some(SEM_TEXTO_CIFRADA),
+        }
+    }
+
+    /// Este evento esconde do ARQUIVO todo campo de texto livre?
+    ///
+    /// Sao dois campos, e nao um: o pedido e o erro. Quem sabia disso era
+    /// apenas o pedido, e o erro ia inteiro -- com o valor citado dentro.
+    fn esconde_o_texto(self) -> bool {
+        self.no_lugar_do_pedido().is_some()
+    }
+}
+
 /// Um pedido, do jeito que chegou -- menos o que nao pode ser mostrado.
 #[derive(Debug, Clone)]
 pub struct Evento {
@@ -230,13 +293,13 @@ pub struct Evento {
     pub bytes: usize,
     /// O pedido, com os campos sensiveis substituidos.
     pub pedido: String,
-    /// O pedido toca uma tabela declarada em `cifra.tabelas`?
+    /// O pedido toca tabela declarada em `cifra.tabelas` ou com `.reg` cifrado?
     ///
     /// Decidido em `chegou`, no MESMO percurso que redige o pedido, e nao na
     /// hora de escrever: quem decide na hora de escrever decide de novo em
     /// cada caminho de escrita que nascer depois, e o caminho que alguem
     /// esquecer e o que vaza. Aqui a resposta viaja com o evento.
-    pub sigiloso: bool,
+    pub sigilo: Sigilo,
     /// `None` enquanto a operacao esta em curso.
     pub duracao_ms: Option<u64>,
     pub ok: Option<bool>,
@@ -277,15 +340,29 @@ impl Evento {
             // do modulo. A coluna de bytes ao lado ja diz o tamanho, entao o
             // que se perde e o conteudo e nao a medida: continua dando para
             // achar o pedido gigante que derrubou o servidor.
-            if self.sigiloso {
-                SEM_TEXTO
-            } else {
-                self.pedido.as_str()
-            },
-            if self.erro.is_empty() {
-                String::new()
-            } else {
-                format!("  <- {}", self.erro)
+            self.sigilo
+                .no_lugar_do_pedido()
+                .unwrap_or(self.pedido.as_str()),
+            // O ERRO tambem nao vai, e isso foi MEDIDO em 18/09/2026, ao
+            // procurar quem na mesma linha nao tinha o campo novo: o texto do
+            // erro CITA o valor que o cliente mandou -- «123456 nao cabe em
+            // inteiro de 16 bits» --, e ali o valor era o de uma coluna
+            // marcada. O pedido saia tapado e o dado vazava na coluna ao lado,
+            // na mesma linha do mesmo arquivo.
+            //
+            // Vira o TAMANHO, e nao um recorte do texto: esta casa redige
+            // ANALISANDO, e texto de erro nao se analisa -- ele chega montado,
+            // em qualquer um dos seis idiomas, com o valor em qualquer posicao
+            // da frase. O que nao se analisa nao vira texto: vira o tamanho em
+            // bytes. E o ANEL continua com o erro inteiro, pela mesma razao
+            // que continua com o pedido -- a tela e do administrador, que tem
+            // o `config.json` e portanto a senha do cofre.
+            match (self.erro.is_empty(), self.sigilo.esconde_o_texto()) {
+                (true, _) => String::new(),
+                (false, false) => format!("  <- {}", self.erro),
+                (false, true) => {
+                    format!("  <- <erro nao gravado, {} bytes>", self.erro.len())
+                }
             }
         )
     }
@@ -335,6 +412,15 @@ pub struct Profiler {
     /// tomar trava nenhuma: o caminho quente ja paga uma trava (a do proprio
     /// Profiler) e pagar a segunda seria pagar duas por pedido.
     sigilosas: Vec<String>,
+    /// A raiz de dados (`config.base`), para perguntar ao DISCO se o `.reg` de
+    /// uma tabela esta cifrado. Vazia = nao ha a quem perguntar.
+    ///
+    /// Vazia e o estado de um Profiler que ninguem alimentou, e ai a pergunta
+    /// nao acontece -- e o que mantem todo teste de unidade deste arquivo, e
+    /// todo uso do Profiler fora do servidor, sem tocar em arquivo nenhum.
+    /// Quem liga a observacao pelo servidor recebe a raiz no mesmo lugar em
+    /// que recebe a lista, e ha teste travando esse fio (`servidor.rs`).
+    raiz_dos_dados: PathBuf,
     /// Rodizios que nao deram certo -- renomear ou reabrir falhou.
     ///
     /// Contado pelo mesmo motivo de `falhas_de_escrita`: um rodizio que falha
@@ -364,6 +450,7 @@ impl Default for Profiler {
             rodizios: 0,
             falhas_de_rodizio: 0,
             sigilosas: Vec::new(),
+            raiz_dos_dados: PathBuf::new(),
         }
     }
 }
@@ -449,6 +536,22 @@ impl Profiler {
             .map(|t| t.trim().to_ascii_lowercase())
             .filter(|t| !t.is_empty())
             .collect();
+    }
+
+    /// Recebe a raiz de dados, que e a quem o arquivo pergunta «este `.reg`
+    /// esta cifrado?».
+    ///
+    /// Entra pelo mesmo caminho e na mesma hora que a lista, e pela mesma
+    /// razao: um Profiler que ligasse sem a raiz voltaria a gravar em claro o
+    /// payload da tabela cifrada, e voltaria em silencio -- a diferenca nao
+    /// aparece na tela, so no arquivo que alguem le meses depois.
+    pub fn definir_raiz_dos_dados(&mut self, base: &std::path::Path) {
+        self.raiz_dos_dados = base.to_path_buf();
+    }
+
+    /// A raiz de dados que o Profiler conhece.
+    pub fn raiz_dos_dados(&self) -> &std::path::Path {
+        &self.raiz_dos_dados
     }
 
     /// Ajusta o rodizio. Vale para o arquivo corrente, e nao so no proximo
@@ -694,11 +797,7 @@ impl Profiler {
             tabela: de_uma_linha(tabela, TETO_DO_CAMPO),
             bytes: linha_crua.len(),
             pedido,
-            // BASTA UMA. Um pedido que junta uma tabela comum com uma
-            // sigilosa carrega o dado da sigilosa na resposta e o filtro dela
-            // no pedido -- e gravar o texto porque a OUTRA metade e comum
-            // seria vazar pela metade que ninguem declarou.
-            sigiloso: alvos.iter().any(|(db, t)| self.tabela_e_sigilosa(db, t)),
+            sigilo: self.sigilo_dos_alvos(&alvos),
             duracao_ms: None,
             ok: None,
             erro: String::new(),
@@ -709,6 +808,94 @@ impl Profiler {
         }
         self.anel.push_back(evento);
         Some(serial)
+    }
+
+    /// O texto deste pedido vai para o arquivo, e se nao vai, por que.
+    ///
+    /// # BASTA UMA
+    ///
+    /// Um pedido que junta uma tabela comum com uma sigilosa carrega o dado da
+    /// sigilosa na resposta e o filtro dela no pedido -- e gravar o texto
+    /// porque a OUTRA metade e comum seria vazar pela metade que ninguem
+    /// declarou.
+    ///
+    /// # A LISTA primeiro, o DISCO depois
+    ///
+    /// Porque a lista e uma comparacao em memoria e o disco e uma leitura de
+    /// arquivo. Na ordem inversa, todo pedido de tabela declarada pagaria uma
+    /// ida ao disco para saber o que a lista ja sabia.
+    ///
+    /// # E o portao vem ANTES do trabalho
+    ///
+    /// Sem `arquivo` pedido nao ha linha de arquivo, e o campo nao decide mais
+    /// nada -- o anel sempre levou o texto inteiro. Entao um Profiler que roda
+    /// so em memoria nao pergunta ao disco: e a licao que este mesmo arquivo
+    /// pagou com 7% da carga, quando o ponto de captura fazia o trabalho antes
+    /// de olhar o proprio interruptor.
+    fn sigilo_dos_alvos(&self, alvos: &[(String, String)]) -> Sigilo {
+        if alvos.iter().any(|(db, t)| self.tabela_e_sigilosa(db, t)) {
+            return Sigilo::Declarada;
+        }
+        if self.caminho.as_os_str().is_empty() || self.raiz_dos_dados.as_os_str().is_empty() {
+            return Sigilo::Nao;
+        }
+        // Repetido nao se pergunta duas vezes: uma arvore de `juntar` nomeia a
+        // mesma tabela em varios niveis, e cada pergunta e uma ida ao disco.
+        let mut ja_perguntei: Vec<&str> = Vec::new();
+        for (db, t) in alvos {
+            if t.is_empty() || ja_perguntei.contains(&t.as_str()) {
+                continue;
+            }
+            ja_perguntei.push(t);
+            if self.tabela_cifrada_no_disco(db, t) {
+                return Sigilo::Cifrada;
+            }
+        }
+        Sigilo::Nao
+    }
+
+    /// O `.reg` desta tabela esta cifrado, segundo o disco?
+    ///
+    /// # Por que o disco a cada pedido, e nao uma lista colhida no `ligar`
+    ///
+    /// Porque a lista envelheceria DENTRO da sessao, e envelheceria calada no
+    /// caso mais provavel de todos: perfilar uma carga que CRIA a tabela e
+    /// insere nela em seguida. No `ligar` a tabela nao existe, entao ela
+    /// entraria na lista como «nao cifrada» -- e o `inserir` seguinte gravaria
+    /// em claro exatamente o que o conserto existe para tirar do arquivo.
+    ///
+    /// E o preco esta MEDIDO, porque «barato» sem numero e opiniao:
+    /// **+2,17 us por pedido observado** que grava arquivo -- de 4,06 para
+    /// 6,23 us --, release, mediana de 5 rodadas intercaladas, 18/09/2026, em
+    /// `cargo run --release -p phxsql-server --example custo-da-pergunta-ao-disco`.
+    /// Sao +53% do custo do proprio Profiler nesse caminho, e quem paga e so
+    /// quem pediu arquivo: o anel nao pergunta. Um cache mudaria esse numero e
+    /// traria de volta a pergunta «quando o cache mente?» -- se um dia doer, o
+    /// medidor esta escrito e a decisao se toma com ele na mao.
+    ///
+    /// # As duas ausencias de resposta NAO decidem igual
+    ///
+    /// * **Sem volume** -- a tabela nao existe (ainda): o texto VAI para o
+    ///   arquivo. E o caso de todo `criar_tabela`, de toda visao e de todo
+    ///   nome errado, e esconder por ausencia cegaria o instrumento inteiro
+    ///   para ficar seguro contra um arquivo que nao existe.
+    /// * **Ilegivel** -- ha um `.reg` ali e o cabecalho nao se le: o texto NAO
+    ///   vai. Aqui existe uma tabela, e ela pode estar cifrada; e a unica das
+    ///   quatro respostas em que errar custa o payload em claro ao lado de um
+    ///   `.reg` cifrado, que e exatamente o defeito que este conserto fecha.
+    fn tabela_cifrada_no_disco(&self, database: &str, tabela: &str) -> bool {
+        use phxsql_store::catalogo::RegNoDisco;
+        if database.is_empty() {
+            return false;
+        }
+        match phxsql_store::catalogo::reg_cifrado(
+            &self.raiz_dos_dados,
+            database.trim(),
+            tabela.trim(),
+        ) {
+            RegNoDisco::Cifrado | RegNoDisco::Ilegivel => true,
+            RegNoDisco::EmClaro | RegNoDisco::SemVolume => false,
+        }
     }
 
     /// Esta tabela foi declarada em `cifra.tabelas`?
@@ -1669,7 +1856,13 @@ mod testes_tabela_sigilosa {
              regra que so devia valer para o arquivo -- {}",
             no_anel.pedido
         );
-        assert!(no_anel.sigiloso, "o evento nao se marcou sigiloso");
+        assert_eq!(
+            no_anel.sigilo,
+            Sigilo::Declarada,
+            "o evento nao se marcou sigiloso pela LISTA -- e e a lista que \
+             este teste exercita; `Cifrada` aqui seria o disco respondendo \
+             por engano"
+        );
 
         let texto = corpo(&arquivo);
         assert!(
@@ -1838,5 +2031,202 @@ mod testes_tabela_sigilosa {
         p.terminou(s, 1, false, "erro");
         let texto = corpo(&arquivo);
         assert!(texto.contains("<pedido invalido"), "{texto}");
+    }
+}
+
+/// A parte do pedido **356**: o que cega o arquivo tambem sai do DISCO, e nao
+/// so da lista do `config.json`.
+///
+/// Os arquivos daqui sao `.reg` fabricados -- magic e versao, que e tudo o que
+/// `reg::cifrado_no_volume` le. Criar tabela de verdade com o cofre ligado
+/// exigiria `cofre::definir`, que mexe num global do PROCESSO: os outros testes
+/// deste binario nasceriam com a cifra ligada no meio da corrida. A prova real
+/// com tabela, cofre, soquete e `inserir` mora em
+/// `tests/profiler-da-tabela-cifrada.rs`; aqui ficam os quatro estados do
+/// disco, que um servidor de verdade nao produz sob comando.
+#[cfg(test)]
+mod testes_reg_cifrado {
+    use super::*;
+
+    /// Liga um Profiler com arquivo E com raiz de dados, os dois dentro do
+    /// mesmo diretorio temporario. Devolve `(profiler, perfil.txt, base)`.
+    fn ligado_no_disco(nome: &str) -> (Profiler, PathBuf, PathBuf, DirTemp) {
+        let d = DirTemp::novo(&format!("prof-disco-{nome}"));
+        let arquivo = d.join("perfil.txt");
+        let base = d.join("dados");
+        std::fs::create_dir_all(&base).unwrap();
+        let mut p = Profiler::default();
+        p.definir_raiz_dos_dados(&base);
+        p.ligar(
+            Filtro::default(),
+            arquivo.to_str().unwrap(),
+            100,
+            1_700_000_000_000,
+        )
+        .unwrap();
+        (p, arquivo, base, d)
+    }
+
+    /// Um `.reg` com dez bytes de verdade e o resto zerado.
+    fn reg_falso(base: &std::path::Path, database: &str, tabela: &str, versao: u16) {
+        let dir = base.join(database);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A assinatura sai do proprio store, e nao digitada aqui: no dia em
+        // que o `.reg` mudar de magic, este teste acompanha em vez de passar
+        // a provar um arquivo que o motor nao reconhece mais.
+        let mut bytes = phxsql_store::reg::MAGIC_REG.to_vec();
+        bytes.extend_from_slice(&versao.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 118]);
+        std::fs::write(dir.join(format!("{tabela}.reg")), bytes).unwrap();
+    }
+
+    /// Roda um pedido pelo Profiler e devolve o que ficou no arquivo.
+    fn perfilar(p: &mut Profiler, arquivo: &std::path::Path, pedido: &str) -> String {
+        let s = p
+            .chegou(pedido, "inserir", "adm", "loja", "clientes", "1.1.1.1", 0)
+            .unwrap();
+        p.terminou(s, 1, true, "");
+        std::fs::read_to_string(arquivo).unwrap()
+    }
+
+    const PEDIDO: &str = r#"{"op":"inserir","database":"loja","tabela":"clientes","linha":{"cpf":"111.222.333-44"}}"#;
+
+    /// **O defeito do pedido 356, no unitario.** `.reg` cifrado, lista VAZIA:
+    /// o arquivo nao leva o texto, e diz por que nao levou.
+    #[test]
+    fn reg_cifrado_sem_lista_nenhuma_cega_o_arquivo() {
+        let (mut p, arquivo, base, _g) = ligado_no_disco("cifrado");
+        reg_falso(&base, "loja", "clientes", 5);
+        let texto = perfilar(&mut p, &arquivo, PEDIDO);
+        assert!(
+            !texto.contains("111.222.333-44"),
+            "o payload da tabela cifrada foi para o arquivo em claro, ao lado \
+             do .reg cifrado, e ninguem tinha declarado nada:\n{texto}"
+        );
+        assert!(
+            texto.contains(SEM_TEXTO_CIFRADA),
+            "o arquivo omitiu sem dizer POR QUE -- mandar procurar a tabela \
+             em cifra.tabelas, onde ela nao esta, e explicar errado:\n{texto}"
+        );
+        assert!(
+            !texto.contains(SEM_TEXTO),
+            "disse «declarada em cifra.tabelas» sobre tabela que ninguem \
+             declarou:\n{texto}"
+        );
+        // O anel continua com o texto: a tela e do administrador, que tem o
+        // config.json e portanto a senha do cofre.
+        assert!(p.eventos(1)[0].pedido.contains("111.222.333-44"));
+        assert_eq!(p.eventos(1)[0].sigilo, Sigilo::Cifrada);
+    }
+
+    /// **O comportamento VELHO, com o disco sendo consultado.** `.reg` em
+    /// claro e lista vazia: o texto continua no arquivo.
+    ///
+    /// E o irmao unitario do `sem_lista_o_arquivo_continua_com_o_texto`: aquele
+    /// prova o Profiler que nao tem raiz nenhuma, e este prova o que TEM raiz,
+    /// olha o disco e decide deixar passar. Sem o segundo, um conserto que
+    /// cegasse toda tabela passaria no primeiro.
+    #[test]
+    fn reg_em_claro_continua_com_o_texto() {
+        let (mut p, arquivo, base, _g) = ligado_no_disco("claro");
+        reg_falso(&base, "loja", "clientes", 4);
+        let texto = perfilar(&mut p, &arquivo, PEDIDO);
+        assert!(
+            texto.contains("111.222.333-44"),
+            "cegou a tabela que nao esta cifrada e ninguem declarou -- guarda \
+             nova entra PEDIDA, nao imposta:\n{texto}"
+        );
+    }
+
+    /// Tabela que NAO existe continua com o texto: e todo `criar_tabela`, toda
+    /// visao e todo nome errado. Esconder por ausencia cegaria o instrumento
+    /// inteiro para se proteger de um arquivo que nao esta la.
+    #[test]
+    fn tabela_sem_volume_continua_com_o_texto() {
+        let (mut p, arquivo, _base, _g) = ligado_no_disco("sem-volume");
+        let texto = perfilar(&mut p, &arquivo, PEDIDO);
+        assert!(texto.contains("111.222.333-44"), "{texto}");
+    }
+
+    /// `.reg` que existe e nao se le -- versao desconhecida -- NAO arrisca o
+    /// texto. E a unica das quatro respostas do disco em que errar custa
+    /// payload em claro ao lado de um `.reg` que talvez esteja cifrado.
+    #[test]
+    fn reg_ilegivel_nao_arrisca_o_texto() {
+        let (mut p, arquivo, base, _g) = ligado_no_disco("ilegivel");
+        reg_falso(&base, "loja", "clientes", 999);
+        let texto = perfilar(&mut p, &arquivo, PEDIDO);
+        assert!(
+            !texto.contains("111.222.333-44"),
+            "gravou em claro o pedido de uma tabela cujo cabecalho nao se \
+             le:\n{texto}"
+        );
+    }
+
+    /// **O portao vem ANTES do trabalho.** Sem arquivo pedido nao existe linha
+    /// de arquivo, e o campo nao decide mais nada -- o anel sempre levou o
+    /// texto inteiro. Entao o disco nao e consultado, e o evento sai `Nao`
+    /// mesmo com o `.reg` cifrado ao lado.
+    ///
+    /// Se algum dia o `sigilo` passar a decidir outra coisa (a tela, uma
+    /// exportacao), este teste falha -- e e ele que manda ler o porque antes
+    /// de mexer, em vez de descobrir com o payload no lugar errado.
+    #[test]
+    fn sem_arquivo_pedido_o_disco_nao_e_consultado() {
+        let d = DirTemp::novo("prof-disco-so-anel");
+        let base = d.join("dados");
+        std::fs::create_dir_all(&base).unwrap();
+        reg_falso(&base, "loja", "clientes", 5);
+        let mut p = Profiler::default();
+        p.definir_raiz_dos_dados(&base);
+        p.ligar(Filtro::default(), "", 100, 0).unwrap();
+        let s = p
+            .chegou(PEDIDO, "inserir", "adm", "loja", "clientes", "ip", 0)
+            .unwrap();
+        p.terminou(s, 1, true, "");
+        assert_eq!(
+            p.eventos(1)[0].sigilo,
+            Sigilo::Nao,
+            "perguntou ao disco para um profiler que nao grava arquivo: e o \
+             trabalho antes do portao, a conta que este arquivo ja pagou uma \
+             vez com 7% da carga"
+        );
+    }
+
+    /// **Nome do pedido nao vira caminho sem passar pela peneira.**
+    ///
+    /// O `database` e a `tabela` vem de FORA. Aqui existe um `.reg` cifrado
+    /// FORA da raiz de dados, e o pedido tenta alcanca-lo por `".."`: sem o
+    /// `validar_nome` do `catalogo`, o Profiler leria um arquivo de outro
+    /// diretorio -- e o sinal disso seria o texto desaparecendo do perfil por
+    /// causa de um arquivo que nao e deste banco.
+    #[test]
+    fn nome_com_dois_pontos_nao_escapa_da_raiz() {
+        let d = DirTemp::novo("prof-disco-fuga");
+        let base = d.join("dados");
+        std::fs::create_dir_all(&base).unwrap();
+        // O cifrado mora FORA da base, um nivel acima.
+        reg_falso(&d, "vizinho", "clientes", 5);
+        let arquivo = d.join("perfil.txt");
+        let mut p = Profiler::default();
+        p.definir_raiz_dos_dados(&base);
+        p.ligar(
+            Filtro::default(),
+            arquivo.to_str().unwrap(),
+            100,
+            1_700_000_000_000,
+        )
+        .unwrap();
+        let pedido = r#"{"op":"inserir","database":"..","tabela":"vizinho.clientes","linha":{"cpf":"111.222.333-44"}}"#;
+        let s = p
+            .chegou(pedido, "inserir", "adm", "..", "clientes", "ip", 0)
+            .unwrap();
+        p.terminou(s, 1, true, "");
+        let texto = std::fs::read_to_string(&arquivo).unwrap();
+        assert!(
+            texto.contains("111.222.333-44"),
+            "o nome do pedido virou caminho e alcancou um .reg fora da raiz de \
+             dados:\n{texto}"
+        );
     }
 }

@@ -2121,6 +2121,14 @@ A consequência prática, e ela vai escrita na tela: **declarar não cifra**. Um
 tabela nomeada na lista cujo `.reg` está em claro continua em claro até alguém
 rodar a migração — que é a parte que **não** foi entregue (§13.6).
 
+**E o decisor do Profiler não seguia esta seção — por treze dias.** Esta lei
+estava escrita aqui em 05/09/2026 e valia para a LEITURA do dado (que lê o
+cabeçalho do `.reg`); o Profiler, escrito na mesma rodada, decidiu esconder o
+texto pela **lista**. Resultado: a tabela cifrada que ninguém declarou — o caso
+comum, porque a lista nasce vazia — gravava em claro. Pedido 356, §13.13.
+**Lei escrita num documento não alcança o código que não a chama**, e é por isso
+que a §13.13 entra com prova real em vez de um segundo parágrafo aqui.
+
 ### 13.4 O formato da lista: `"banco.tabela"`, e por quê
 
 Palavra do dono: *«se tiver 2 bancos com nomes diferentes e tabelas com nomes
@@ -2255,11 +2263,24 @@ Varridos todos os `OpenOptions`, `File::create` e `fs::write` do
 | `jobs.rs` (histórico de corridas) | `job`, `op`, `usuario`, `ok`, `duracao_ms`, `detalhe` | **limpo** — o `detalhe` é resumo da resposta, e o comentário do campo já dizia *«nunca o corpo inteiro»* |
 | `transacao.rs` (a marca) | **grava a linha**, em binário, no arquivo da marca | **não é texto de pedido, e é transitório** — mas fica **nomeado** aqui: é o único lugar fora do `.reg` onde o conteúdo da linha toca o disco, e ele **não passa pelo cofre**. Vale uma medição própria |
 
-E uma conferência que valia a pena e deu **negativo**: o campo `erro` da linha do
-`perfil.txt` **não** carrega valor de linha. As mensagens citam **nome**, não
-conteúdo — `"indice unico {nome} ja tem essa chave"`, `"{fk}: nao existe
-{tabela}({colunas}) com esse valor"`. Nada a consertar ali, e o achado fica
-escrito para ninguém supor o contrário.
+E uma conferência que valia a pena e deu **negativo** — e o negativo estava
+**errado**, derrubado por medição em 18/09/2026 (§13.13). O que ela dizia:
+*«o campo `erro` da linha do `perfil.txt` não carrega valor de linha; as
+mensagens citam nome, não conteúdo — `"indice unico {nome} ja tem essa chave"`,
+`"{fk}: nao existe {tabela}({colunas}) com esse valor"`»*. As duas famílias
+olhadas estavam certas; **faltava uma terceira**, a da validação de faixa, que
+cita o valor que chegou:
+
+```text
+inserir  loja.clientes  ERRO 0ms  115B  <tabela com .reg cifrado: pedido nao
+gravado>  <- [SP000018] limite excedido: 123456 nao cabe em inteiro de 16 bits
+```
+
+O `123456` era o valor de uma coluna **marcada**, e ele foi para o arquivo com o
+pedido já tapado ao lado. **Conferência que varre duas famílias de mensagem e
+conclui sobre todas não é conferência — é amostra**, e uma amostra escrita como
+veredito é o que impede a próxima pessoa de olhar. O conserto e a prova nos dois
+sentidos estão na §13.13.
 
 ### 13.10 O que os testes provam, e a prova real nos dois sentidos
 
@@ -2550,6 +2571,164 @@ explicação não prova nada sobre o nome.** O login do teste virou `zoroastro`.
 as duas — continua **em aberto e é do dono**. Esta regra diz que ela é
 *diferente* da de administração; não diz *onde ela mora*. Os dois defeitos
 medidos na §13.11 seguem valendo integralmente.
+
+### 13.13 O decisor lia a INTENÇÃO e o dado obedecia ao DISCO (pedido 356)
+
+Achado pela varredura SEC de 18/09/2026, e é a pétrea do portão único em outra
+roupa: **o portão lia um campo e a cifra lia outro.**
+
+| quem decide | o que lê | onde |
+|---|---|---|
+| o `perfil.txt` (antes) | `config.cifra.tabelas` — a **intenção** | `profiler.rs`, `tabela_e_sigilosa` |
+| a cifra do dado | `Schema::tem_dado_pessoal` na criação, gravado no cabeçalho do `.reg` — o **estado** | `store/src/reg.rs` |
+
+Como `cifra.tabelas` **nasce vazia** em todo `config.json`, o caso comum era o
+furo: cofre ligado, coluna marcada, ninguém declarou nada — e o valor marcado ia
+**em claro** para o arquivo que viaja com o disco e entra no backup.
+
+#### O vermelho, medido antes do conserto
+
+```text
+2026-09-18 03:38:49,239 127.0.0.1  -  inserir  loja.clientes  ok 5ms  123B
+  {"token":"***","op":"inserir","database":"loja","tabela":"clientes",
+   "linha":{"id":1,"cpf":"111.222.333-44"}}
+```
+
+A premissa foi medida na mesma corrida, e não suposta: `{"op":"esquema"}`
+respondeu `"material":"cifrado"` para `loja.clientes` e `"em_claro"` para a
+tabela de controle. Sem isso o teste poderia passar num servidor onde nada
+cifrou.
+
+#### O conserto: quem responde é o disco, a cada pedido observado
+
+`Profiler::sigilo_dos_alvos` faz **duas** perguntas, nesta ordem:
+
+1. **a lista** — comparação em memória, custo zero;
+2. **o disco** — `catalogo::reg_cifrado` acha o primeiro volume e lê **dez
+   bytes** do cabeçalho (magic + versão; a versão 5 é o `.reg` cifrado).
+
+E três decisões que estão no código com o porquê:
+
+- **A lista primeiro.** Invertido, todo pedido de tabela declarada pagaria uma
+  ida ao disco para saber o que a lista já sabia.
+- **O portão vem antes do trabalho.** Sem `arquivo` pedido não há linha de
+  arquivo, e o campo não decide mais nada — então um Profiler que roda só no
+  anel (a tela) **não toca em disco**. É a lição que este mesmo arquivo pagou
+  com 7% da carga.
+- **A cada pedido, e não uma lista colhida no `ligar`.** Uma lista envelheceria
+  **dentro da sessão**, e no caso mais provável de todos: perfilar uma carga que
+  **cria** a tabela e insere nela em seguida. No `ligar` a tabela não existe,
+  entraria como «não cifrada», e o `inserir` seguinte gravaria em claro
+  exatamente o que o conserto existe para tirar do arquivo.
+
+#### O preço, medido — e não «barato»
+
+| configuração | µs por pedido observado |
+|---|---|
+| só a lista (antes do 356) | **4,06** |
+| a lista e o disco (agora) | **6,23** |
+| a pergunta ao disco | **+2,17 µs (+53%)** |
+
+Release, mediana de 5 rodadas **intercaladas**, 5.000 pedidos por rodada,
+18/09/2026. O medidor entra junto com o número e fica no repositório —
+`cargo run --release -p phxsql-server --example custo-da-pergunta-ao-disco` —
+porque a frase «isto é barato» sem medidor é uma opinião que a próxima pessoa
+herda. **Quem paga é só quem pediu arquivo**: o Profiler desligado custa zero
+por desenho e o ligado **só no anel** não pergunta ao disco, e esses dois são
+**teste**, não medição, porque ali o certo é zero e não um número pequeno.
+
+Um cache cortaria os 2,17 µs e traria de volta a pergunta que o desenho acima
+recusou — *quando o cache mente?*. Fica **recusado com o número** nesta rodada:
+se um dia doer, o medidor está escrito e a decisão se toma com ele na mão.
+
+As **quatro** respostas do disco (`RegNoDisco`) não decidem igual, e as duas
+ausências de resposta são diferentes de propósito:
+
+| resposta | o texto do pedido | por quê |
+|---|---|---|
+| `Cifrado` | **não vai** | é o defeito que a frente fecha |
+| `EmClaro` | vai | guarda nova entra pedida, não imposta |
+| `SemVolume` | vai | é todo `criar_tabela`, toda visão e todo nome errado — esconder por ausência cegaria o instrumento inteiro |
+| `Ilegivel` | **não vai** | há um `.reg` ali e ele pode estar cifrado; é a única resposta em que errar custa payload em claro |
+
+O arquivo diz **qual** das duas regras o calou —
+`<tabela com .reg cifrado: pedido nao gravado>` é texto próprio, e não o
+`<tabela declarada em cifra.tabelas: …>` de 05/09. Mandar quem lê o arquivo
+procurar a tabela numa lista onde ela não está é **log que explica errado**, e
+explicar errado é pior que não explicar.
+
+#### O caminho irmão: quem NÃO tinha o portão, na mesma linha
+
+A busca pelo irmão achou **um**, e ele estava na coluna ao lado: o campo `erro`.
+O `pedido` saía tapado e o **erro** ia inteiro, com o valor citado dentro (ver a
+correção da §13.9). Agora ele também vira o **tamanho** quando o evento é
+sigiloso — e vira o tamanho, e não um recorte do texto, porque esta casa
+**redige analisando, nunca recortando**: texto de erro chega montado, em
+qualquer um dos seis idiomas, com o valor em qualquer posição da frase. O que
+não se analisa não vira texto: vira o tamanho em bytes.
+
+O **anel** continua com o erro inteiro, pela mesma razão que continua com o
+pedido: a tela é do administrador, que tem o `config.json` e portanto a senha.
+
+E dois irmãos **procurados e contados**, que não eram irmãos:
+
+- **os dois pontos de captura** — o do soquete (`servidor.rs:9326`) e o da porta
+  web (`:8935`) — chamam o **mesmo** `Profiler::chegou`, e por isso o conserto
+  alcança os dois **por construção**. Foi o motivo de a decisão continuar dentro
+  do Profiler em vez de subir para o ponto de captura: lá seriam dois lugares, e
+  o que alguém esquecesse seria o que vaza;
+- **decisores de `cifra.tabelas`: um só.** As quatro leituras da lista no código
+  são duas que **alimentam** o Profiler (`servidor.rs`, no `ligar` e no gravar
+  config), e duas que **declaram/validam** o campo (`config.rs`). Nenhum outro
+  decisor lê a lista, então não há segundo lugar a consertar.
+
+#### O que ficou fora, nomeado e medido
+
+O pedido `{"op":"sql"}` nomeia a tabela **dentro da frase**, e não num campo
+JSON — então nem a lista nem a marca o alcançam:
+
+```text
+sql  loja  ok 4ms  113B  {"token":"***","op":"sql","database":"loja",
+  "texto":"INSERT INTO clientes (id, cpf) VALUES (7, '999.888.777-66')"}
+```
+
+Medido nos **dois** casos: com a tabela declarada em `cifra.tabelas` **e** com
+ela cifrada pela marca. **É furo de 05/09, não de agora** — a colheita de
+tabelas sempre foi por campo JSON. E ele **não** se conserta com um recorte do
+texto: ou o Profiler analisa o SQL no ponto de captura (custo por pedido
+observado, e o `phxsql-sql` já está ao lado), ou todo `sql` sai sem texto do
+arquivo — que cegaria o instrumento para o uso principal dele. As duas pontas
+trocam diagnóstico por sigilo, e a escolha é do dono — esta frente **nomeia o
+furo com a medição e não o conserta pela metade**. O registro dele na pendência
+é o que falta, e falta **de propósito**: um pedido novo nasce numerado por quem
+integra a rodada, e pedido inventado aqui viraria ponteiro que parece rastreável
+e não é.
+
+#### Os testes, e a prova real nos dois sentidos
+
+| teste | onde | com o defeito reposto |
+|---|---|---|
+| `tabela_cifrada_pela_marca_de_coluna_tambem_cega_o_arquivo` | `tests/profiler-da-tabela-cifrada.rs` | **cai** |
+| `o_erro_que_cita_o_valor_tambem_fica_fora_do_arquivo` | idem | **cai** |
+| `reg_cifrado_sem_lista_nenhuma_cega_o_arquivo` | `profiler.rs` | **cai** |
+| `reg_ilegivel_nao_arrisca_o_texto` | `profiler.rs` | **cai** |
+| `reg_em_claro_continua_com_o_texto` | `profiler.rs` | passa (é o comportamento velho) |
+| `tabela_sem_volume_continua_com_o_texto` | `profiler.rs` | passa (é o comportamento velho) |
+| `sem_arquivo_pedido_o_disco_nao_e_consultado` | `profiler.rs` | passa (é o portão) |
+| `nome_com_dois_pontos_nao_escapa_da_raiz` | `profiler.rs` | **cai** sem o `validar_nome` do catálogo |
+| `a_raiz_dos_dados_chega_ao_profiler_no_ligar` | `servidor.rs` | **cai** se ninguém alimentar o Profiler |
+
+Os dois testes de integração sobem **servidor de verdade** com a cifra ligada
+pelo `config.json` e mandam o pedido pelo **soquete**, porque o defeito **é o
+encontro** de duas metades — a configuração que alimenta o instrumento e o disco
+que cifra a tabela. Provar cada metade em separado era exatamente o que deixou o
+furo passar: os dez testes de 05/09 passavam, e o arquivo gravava em claro.
+
+E o teste que mais importa continua sendo o do comportamento **velho**:
+`sem_lista_o_arquivo_continua_com_o_texto` (05/09) **e** o seu irmão novo
+`reg_em_claro_continua_com_o_texto`, que é o mesmo caso com o disco sendo
+consultado. Sem o segundo, um conserto que cegasse **toda** tabela passaria no
+primeiro.
 
 ---
 

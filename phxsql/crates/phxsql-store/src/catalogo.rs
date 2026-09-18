@@ -1049,6 +1049,67 @@ impl Database {
     }
 }
 
+/// O que o DISCO responde sobre «o `.reg` desta tabela esta cifrado?».
+///
+/// Quatro estados, e nao um `bool` nem um `Option<bool>`, porque quem pergunta
+/// decide COISAS DIFERENTES em cada um -- e as duas ausencias de resposta nao
+/// se parecem: «nao ha arquivo nenhum com esse nome» e «ha um `.reg` ali e nao
+/// consegui ler o cabecalho dele». Empacotar as duas num `None` obrigaria quem
+/// chama a escolher o mesmo destino para as duas, e uma delas e a tabela que
+/// talvez esteja cifrada.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegNoDisco {
+    /// Nao ha volume de `.reg` com esse nome: a tabela nao existe (ainda), o
+    /// database nao existe, ou o nome nem e nome de tabela.
+    SemVolume,
+    /// Achei o volume, e o cabecalho dele diz CIFRADO.
+    Cifrado,
+    /// Achei o volume, e o cabecalho dele diz EM CLARO.
+    EmClaro,
+    /// Achei o volume e NAO consegui ler o cabecalho: truncado, corrompido, ou
+    /// de uma versao que este binario nao conhece.
+    Ilegivel,
+}
+
+/// O `.reg` desta tabela esta CIFRADO, segundo o DISCO -- sem abrir a tabela.
+///
+/// # Por que aqui, e nao em quem pergunta
+///
+/// Porque quem pergunta e o **Profiler** (pedido 356), e ele so tem os nomes
+/// que vieram no pedido -- ou seja, de FORA. Compor `base/database/tabela.reg`
+/// la em cima seria uma segunda copia da regra de caminho desta casa, e seria
+/// uma copia sem `validar_nome`: um `"tabela": "../../etc/passwd"` faria o
+/// servidor ir perguntar ao disco por um arquivo fora da base. A resolucao de
+/// caminho mora num lugar so, e e aqui.
+pub fn reg_cifrado(base: &Path, database: &str, qualificado: &str) -> RegNoDisco {
+    let Some(dir) = diretorio_da_tabela(base, database, qualificado) else {
+        return RegNoDisco::SemVolume;
+    };
+    let (_, nome) = separar_qualificado(qualificado);
+    let Some(volume) = crate::reg::primeiro_volume(&dir, &nome) else {
+        return RegNoDisco::SemVolume;
+    };
+    match crate::reg::cifrado_no_volume(&volume) {
+        Some(true) => RegNoDisco::Cifrado,
+        Some(false) => RegNoDisco::EmClaro,
+        None => RegNoDisco::Ilegivel,
+    }
+}
+
+/// O diretorio em que a tabela mora, com todo nome conferido antes de virar
+/// caminho. `None` para nome que nao passa no [`validar_nome`].
+fn diretorio_da_tabela(base: &Path, database: &str, qualificado: &str) -> Option<PathBuf> {
+    validar_nome("database", database).ok()?;
+    let (schema, nome) = separar_qualificado(qualificado);
+    validar_nome("tabela", &nome).ok()?;
+    let mut dir = base.join(database);
+    if let Some(s) = schema {
+        validar_nome("schema", &s).ok()?;
+        dir = dir.join(s);
+    }
+    Some(dir)
+}
+
 /// Quebra `schema.tabela` em `(Some(schema), tabela)`. Sem ponto, o schema e
 /// `None` e a tabela esta na raiz do database.
 pub fn separar_qualificado(qualificado: &str) -> (Option<String>, String) {

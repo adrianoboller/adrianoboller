@@ -5359,6 +5359,10 @@ impl Servidor {
             // protecao, e protecao que so vale no proximo `profiler_ligar`
             // deixa uma janela aberta justamente enquanto alguem observa.
             prof.definir_sigilosas(&novo.cifra.tabelas);
+            // A raiz vem junto da lista, sempre: sao as duas metades da MESMA
+            // decisao desde o pedido 356, e separa-las e o que faria uma
+            // sobreviver a outra numa refacao.
+            prof.definir_raiz_dos_dados(&novo.base);
         }
         // O rodizio de `acessos.log` e `diretivas.log` -- pedido 228, mesmo
         // motivo do Profiler acima: quem baixou o teto na tela quer o efeito
@@ -22405,6 +22409,12 @@ impl Servidor {
         // e o bastante para o `perfil.txt` receber em claro o payload que a
         // lista existe para manter fora dele.
         prof.definir_sigilosas(&self.config.cifra.tabelas);
+        // E a raiz de dados no mesmo lugar e pelo mesmo motivo (pedido 356):
+        // a lista e a INTENCAO do dono, e quem sabe se o `.reg` esta cifrado e
+        // o disco. Sem a raiz o Profiler volta a decidir por um campo so, e
+        // volta calado -- a tabela cifrada que ninguem declarou e o caso
+        // comum, porque `cifra.tabelas` nasce vazia.
+        prof.definir_raiz_dos_dados(&self.config.base);
         prof.ligar(filtro, &arquivo, teto, agora)?;
         // Dentro da trava, e DEPOIS de `ligar` ter dado certo: um espelho que
         // sobe antes faria o caminho quente pagar por um profiler que nao ligou.
@@ -29806,6 +29816,28 @@ mod testes_profiler_desligado {
         // saber, ali, quais tabelas nao vao ter o texto gravado.
         let lista = r.campo("tabelas_sem_texto").and_then(Json::lista).unwrap();
         assert_eq!(lista.len(), 2, "a resposta de ligar escondeu a lista");
+    }
+
+    /// **A raiz de dados tambem chega ao Profiler, e pelo mesmo motivo.**
+    ///
+    /// O conserto do pedido 356 mora no `profiler.rs` e depende de haver disco
+    /// a quem perguntar: sem a raiz, os seis testes de `testes_reg_cifrado`
+    /// continuam passando -- eles mesmos definem a raiz -- e o `perfil.txt` de
+    /// um servidor de verdade volta a gravar em claro o payload da tabela
+    /// cifrada. E o fio que este teste segura, irmao do de cima.
+    #[test]
+    fn a_raiz_dos_dados_chega_ao_profiler_no_ligar() {
+        let dir = dir_temp("raiz-no-ligar");
+        let s = servidor(&dir);
+        let sessao = Sessao::default();
+        s.executar("profiler_ligar", &pedido("{}"), &sessao)
+            .unwrap();
+        assert_eq!(
+            s.profiler.lock().unwrap().raiz_dos_dados(),
+            dir.as_ref() as &std::path::Path,
+            "o Profiler ligou sem a raiz de dados: o perfil.txt vai gravar em \
+             claro o pedido da tabela cifrada que ninguem declarou"
+        );
     }
 
     /// Nasce desligado, senao o caminho quente pagaria desde o arranque por uma

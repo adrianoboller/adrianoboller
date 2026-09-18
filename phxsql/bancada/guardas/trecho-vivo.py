@@ -188,6 +188,14 @@ dia, nunca no desejado:
   recusa escrita apontando o primario, e o pulso que recusa id fora da lista
   -- pedidos 211/214/217. `crates/phxsql-server/src/cluster.rs`, que tinha
   ZERO entradas ate esta rodada, ganhou a primeira (`eleicao-prefere-completa`).
+  **SUBIU para 197 em 18/09/2026**, e a linha registra as duas partes porque
+  elas nao sao da mesma frente: **sete** entradas ja estavam no catalogo desde
+  17/09 com a constante parada em 187 -- a serie ficaria com um buraco se esta
+  linha nao dissesse --, e **tres** sao da frente do pedido 356
+  (`perfil-decide-so-pela-lista-e-nao-pelo-reg-cifrado`,
+  `perfil-grava-o-erro-que-cita-o-valor` e
+  `profiler-ligado-sem-a-raiz-dos-dados`). Contado no dia: 197 entradas, 197
+  ids distintos, zero aposentadas.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -296,7 +304,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 187
+PISO_DAS_ENTRADAS = 197
 
 # ------------------------------------------------------------- APOSENTADAS
 #

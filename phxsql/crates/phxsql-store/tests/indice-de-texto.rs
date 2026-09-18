@@ -239,6 +239,77 @@ fn apagar_o_fts_e_reabrir_reconstroi_em_vez_de_achar_nada() {
     );
 }
 
+// ------------------------------------------- a coluna nova e o .fts orfao
+//
+// `ALTER TABLE ADD COLUMN` remonta o esquema, e a remontagem nao carregava a
+// lista dos indices de TEXTO: a declaracao sumia do `.reg`, o `.fts` do disco
+// virava orfao, e `procurar_texto` passava a RECUSAR por nome inexistente.
+// Nem a busca nem o `reconstruir_fts` diziam «o indice foi apagado»: um
+// recusava por nome, o outro devolvia `Ok(0)` -- e `Ok(0)` anuncia sucesso.
+
+/// A ponta a ponta: declara, grava, acrescenta coluna, REABRE e procura.
+///
+/// Reponha o defeito tirando o `.com_indices_de_texto(textos)?` de
+/// `Schema::com_coluna`: o `procurar_texto` daqui devolve
+/// `Err("a tabela docs nao tem indice de texto chamado porTitulo")` e o
+/// `reconstruir_fts` devolve `Ok(0)`.
+#[test]
+fn depois_da_coluna_nova_a_busca_por_texto_continua_achando() {
+    let (mut t, dir) = nova("coluna-nova");
+    let a = t.inserir(&linha(1, "pedido fenix", "corpo raro")).unwrap();
+    assert_eq!(
+        t.procurar_texto("porTitulo", "fenix").unwrap().rowids,
+        vec![a],
+        "o controle: sem achar ANTES, a prova de baixo nao prova nada"
+    );
+
+    t.acrescentar_coluna(Column::new("situacao", ColumnType::Str(12)), None)
+        .unwrap();
+    t.sincronizar().unwrap();
+    drop(t);
+
+    let mut t = Table::abrir(&dir, "docs").unwrap();
+    assert_eq!(
+        t.procurar_texto("porTitulo", "fenix")
+            .expect("a coluna nova apagou a declaracao do indice de texto")
+            .rowids,
+        vec![a]
+    );
+    assert_eq!(
+        t.procurar_texto("porCorpo", "raro").unwrap().rowids,
+        vec![a]
+    );
+
+    // A linha gravada DEPOIS da alteracao tambem entra no indice, e ela tem
+    // uma coluna a mais.
+    let b = t
+        .inserir(&[
+            Value::Int(2),
+            Value::Str("nota rara".into()),
+            Value::Memo("entrega urgente".into()),
+            Value::Null,
+        ])
+        .unwrap();
+    assert_eq!(
+        t.procurar_texto("porCorpo", "urgente").unwrap().rowids,
+        vec![b]
+    );
+
+    // E o `.fts` nao esta orfao: o `reconstruir_fts` VE o indice e refaz as
+    // duas linhas. Com o defeito no lugar ele devolvia `Ok(0)` -- pelo portao
+    // `self.fts.is_none()` --, que e o pior jeito de perder um indice:
+    // anunciando sucesso.
+    assert_eq!(
+        t.reconstruir_fts().unwrap(),
+        2,
+        "o `.fts` ficou orfao: o esquema nao declara indice de texto nenhum"
+    );
+    assert_eq!(
+        t.procurar_texto("porTitulo", "fenix").unwrap().rowids,
+        vec![a]
+    );
+}
+
 // ------------------------------------------------------- a queda e o irmao
 //
 // O `.fts` e um `.ndx` por dentro, e por isso ele herda a marca de «ficou

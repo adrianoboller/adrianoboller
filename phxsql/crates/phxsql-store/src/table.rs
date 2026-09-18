@@ -908,6 +908,14 @@ impl Table {
             .acrescentar_coluna(novo, posicao, &bytes, padrao.is_none())?;
         self.esquema = self.reg.esquema().clone();
         self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
+        // O IRMAO do `colunas_marcadas`: os dois sao cache do esquema, saem do
+        // mesmo tipo de leitor e nascem lado a lado no `criar` e no `abrir`.
+        // Hoje a posicao do indice de texto nao anda aqui, porque a coluna
+        // nova entra depois da ultima do usuario e a coluna indexada e sempre
+        // do usuario. Mas quem le esta funcao nao tem como saber disso: cache
+        // que nao acompanha o esquema vira indice apontando a coluna vizinha
+        // no dia em que aquela regra mudar, e sem erro nenhum no caminho.
+        self.indices_de_texto = textos_do_esquema(&self.esquema);
         // O `.pag` descreve a tabela para quem le o diretorio sem abrir o
         // `.reg`; desatualizado, ele viraria uma segunda verdade.
         self.gravar_pag()?;

@@ -26,7 +26,7 @@ use comum::DirTemp;
 
 use phxsql_core::paginacao::Paginacao;
 use phxsql_core::schema::{
-    Column, IndexColumn, IndexDef, Schema, COLUNA_ROWNUM, COLUNA_SOFTDELETED,
+    Column, IndexColumn, IndexDef, IndiceDeTexto, Schema, COLUNA_ROWNUM, COLUNA_SOFTDELETED,
 };
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
@@ -454,6 +454,81 @@ fn a_coluna_de_particao_continua_apontando_a_mesma_coluna() {
     // E as linhas continuam nos baldes delas.
     let mut t = Table::abrir(&d.0, "clientes").unwrap();
     assert_eq!(t.varrer_com(Visao::Todas).unwrap().len(), 10);
+}
+
+/// **O indice de TEXTO tambem guarda posicao -- e era o que a remontagem
+/// deixava para tras.**
+///
+/// `Schema::com_coluna` carregava indice comum, chave estrangeira e particao,
+/// e nao carregava a lista dos indices de texto: a primeira coluna
+/// acrescentada apagava a declaracao do disco, e o `.fts` ficava orfao sem um
+/// erro no caminho. E a petrea ao contrario -- o conserto do `desloca` entrou
+/// nos caminhos que existiam, e este nao existia.
+///
+/// Reponha o defeito tirando o `.com_indices_de_texto(textos)?` de
+/// `Schema::com_coluna`: o `len()` daqui cai em 0.
+#[test]
+fn o_indice_de_texto_sobrevive_a_coluna_nova() {
+    let d = DirTemp::novo("fts-sobrevive");
+    let esq = esquema()
+        .com_indices_de_texto(vec![
+            IndiceDeTexto::new("porNomeTexto", NOME),
+            IndiceDeTexto::new("porCidadeTexto", CIDADE).sem_dobrar(),
+        ])
+        .unwrap();
+    let mut t = Table::criar(&d.0, esq).unwrap();
+    for i in 1..=5 {
+        t.inserir(&cliente(i)).unwrap();
+    }
+    let antes = retrato(&mut t);
+
+    t.acrescentar_coluna(coluna_situacao(), None).unwrap();
+
+    // REABRE do disco: e o esquema gravado no `.reg` que manda, e e ele que
+    // decide se o `.fts` volta a existir na proxima abertura.
+    let mut t = Table::abrir(&d.0, "clientes").unwrap();
+
+    // **O bloco do `PSCH` agora CRESCE onde antes encolhia**, porque leva a
+    // lista de texto de volta -- e o `data_offset` sai do tamanho real do
+    // bloco serializado (`reg.rs`, `alinhar(cab_len + bytes.len())`). Se um
+    // dia ele passar a ser presumido, e aqui que o desalinhamento aparece:
+    // rowid e valores das linhas velhas, lidos depois da remontagem.
+    let depois = retrato(&mut t);
+    let posicao = 3; // depois de `cidade`, antes das duas de sistema
+    let esperado: Vec<(u64, Vec<Value>)> = antes
+        .iter()
+        .map(|(r, v)| {
+            let mut v = v.clone();
+            v.insert(posicao, Value::Null);
+            (*r, v)
+        })
+        .collect();
+    assert_eq!(
+        depois, esperado,
+        "o bloco de esquema maior deslocou rowid ou valor"
+    );
+
+    let textos = t.esquema().indices_de_texto();
+    assert_eq!(
+        textos.len(),
+        2,
+        "a coluna nova apagou os indices de texto do esquema gravado"
+    );
+    assert_eq!(textos[0].nome, "porNomeTexto");
+    assert_eq!(textos[1].nome, "porCidadeTexto");
+    // E cada um continua apontando a coluna DELE -- pelo nome, porque um
+    // numero certo por coincidencia nao prova remapeamento.
+    let nomes: Vec<&str> = t
+        .esquema()
+        .colunas()
+        .iter()
+        .map(|c| c.nome.as_str())
+        .collect();
+    assert_eq!(nomes[textos[0].coluna], "nome");
+    assert_eq!(nomes[textos[1].coluna], "cidade");
+    // A dobra e escolha escrita e atravessa a remontagem.
+    assert!(textos[0].dobrar);
+    assert!(!textos[1].dobrar);
 }
 
 // ---------------------------------------------------------------------------

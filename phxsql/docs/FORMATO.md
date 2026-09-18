@@ -210,9 +210,28 @@ digitação e todo o `.ndx` de uma vez.
 tabela comum é logo antes da `softdeleted` e do `rownum`. As colunas de
 sistema entraram no fim justamente para não deslocar as do usuário; a coluna
 que o usuário acrescenta agora é dele, e vai onde as dele estão. O preço é que
-a **posição** das colunas de sistema anda, e três coisas guardam posição e não
-nome — `IndexColumn.coluna`, `ForeignKey.colunas` e a coluna de referência da
-partição. As três são remapeadas em `Schema::com_coluna`, num lugar só.
+a **posição** das colunas de sistema anda, e **quatro** coisas guardam posição
+e não nome — `IndexColumn.coluna`, `ForeignKey.colunas`, a coluna de
+referência da partição e `IndiceDeTexto.coluna`. As quatro são remapeadas em
+`Schema::com_coluna`, num lugar só.
+
+A quarta esteve fora desta lista, e a falta dela não era um deslocamento: a
+lista dos índices de texto **não era carregada** na remontagem. Todo
+`ALTER TABLE ADD COLUMN` apagava a declaração do `PSCH`, o `.fts` do disco
+ficava órfão (medido: o arquivo fica, com os bytes dele, e passa a ser
+ignorado), `procurar_texto` passava a recusar por nome inexistente e o
+`reconstruir_fts` devolvia `Ok(0)` — anunciando sucesso. Provado nos dois
+sentidos por `o_indice_de_texto_sobrevive_a_coluna_nova` e
+`depois_da_coluna_nova_a_busca_por_texto_continua_achando`.
+
+**O formato não mudou**: o bloco do `PSCH` grava a lista desde a v8 (§2), e o
+que se perdia era o conteúdo *antes* de serializar. Mas **a tabela que já
+perdeu a declaração não se recupera sozinha**, e isto é o que falta: não há
+operação de redeclarar índice de texto numa tabela existente — o
+`criar_tabela` é o único caminho que os aceita, e o `.fts` órfão do disco
+continua ocupando espaço sem ninguém o consultar. O par disto para a chave
+estrangeira existe (`RegFile::redeclarar_chaves_estrangeiras`); para o índice
+de texto, não. Até haver, recuperar exige recriar a tabela.
 
 **O que a linha antiga recebe.** O valor padrão declarado, ou nulo. Coluna
 obrigatória **sem** padrão, numa tabela que já tem linha, é **recusada**: ou o

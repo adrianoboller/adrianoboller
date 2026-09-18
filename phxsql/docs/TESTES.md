@@ -42,16 +42,16 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Protocolo e portões (despachar) | 547 | 21,8 |
-| Motor de dados (arquivos, índice, diários) | 512 | 20,4 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 242 | 9,7 |
-| Camada SQL (léxico, sintaxe, tradução) | 217 | 8,7 |
-| Servidor (outros) | 187 | 7,5 |
+| Protocolo e portões (despachar) | 548 | 21,8 |
+| Motor de dados (arquivos, índice, diários) | 514 | 20,4 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 244 | 9,7 |
+| Camada SQL (léxico, sintaxe, tradução) | 217 | 8,6 |
+| Servidor (outros) | 189 | 7,5 |
 | Criptografia e codificação | 125 | 5,0 |
 | Configuração | 120 | 4,8 |
-| DbLink | 84 | 3,4 |
-| Telemetria e profiler | 67 | 2,7 |
-| ODBC | 59 | 2,4 |
+| DbLink | 84 | 3,3 |
+| Telemetria e profiler | 73 | 2,9 |
+| ODBC | 59 | 2,3 |
 | Gatilhos e procedimentos | 45 | 1,8 |
 | **Jobs** | **33** | **1,3** |
 | **Usuários e permissões** | **33** | **1,3** |
@@ -69,13 +69,13 @@ contando `#[test]` por arquivo e agrupando:
 | **Alertas e e-mail** | **8** | **0,3** |
 | **CLI** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,2** |
-| **total** | **2505** | |
+| **total** | **2518** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 5439 |
+| `phxsql-store/src/table.rs` | 5447 |
 | `phxsql-store/src/ndx.rs` | 1655 |
 | `phxsql-ffi/src/lib.rs` | 1453 |
 | `phxsql-server/src/main.rs` | 488 |
@@ -793,10 +793,15 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `read-replica-recusa-escrita` | `ReadReplica` deixa de recusar escrita e para de apontar o primario | 1 | ✅ provada |
 | `pulso-fora-da-lista-e-recusado` | `op_cluster_pulso` deixa de conferir o id contra a lista viva de nos | 1 | ✅ provada |
 
-**151 das 187 guardas do catálogo: 146 provadas, 1 quebrada, 4 redundantes** — 3621 s de mutação, medido em 2026-09-16 15:25.
+**151 das 197 guardas do catálogo: 146 provadas, 1 quebrada, 4 redundantes** — 3621 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 36 das 187 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 36 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 46 das 197 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 46 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
+- `teto-do-fio-sem-a-constante` — o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito
+- `teto-do-fio-sem-a-constante-no-soquete` — a mesma troca da constante por um teto quase infinito, vista pela rede
+- `perfil-decide-so-pela-lista-e-nao-pelo-reg-cifrado` — o perfil.txt decide pela lista do config e a cifra acontece pela marca de coluna
+- `perfil-grava-o-erro-que-cita-o-valor` — o perfil.txt tapa o pedido e grava o erro, que cita o valor da coluna marcada
+- `profiler-ligado-sem-a-raiz-dos-dados` — o Profiler liga sem a raiz de dados e volta a decidir por um campo só
 - `varredura-sem-o-elo` — a varredura barata do diretorio perde a tabela alcancada por elo
 - `linha-vazia-na-conferencia-de-filhas` — a linha descida para a conferencia de filhas vai vazia, e toda mae parece sem filha
 - `teto-de-64-bits-satura` — número cru fora da faixa do `Int8` é GRAVADO saturado, e `1e21`, `1e30` e `1e300` viram todos o mesmo número
@@ -833,6 +838,11 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `token-remoto-fora-da-lista-de-segredos` — o `token_remoto` sai da lista de segredos: o token do OUTRO servidor vai em claro para o `perfil.txt` e para a op `profiler`
 - `job-recusa-um-nome-e-grava-os-outros` — a guarda do job volta a recusar só `token`: `senha`/`token_remoto` vão para o `jobs.json` e voltam na ficha
 - `config-json-escreve-aberto-e-herda` — o `config.json` volta a nascer na permissão do `umask` e a herdar o `0644` do original
+- `laco-preso-no-unico-secundario` — chave duplicada num índice único secundário prende o laço do bidirecional para sempre
+- `par-parado-reapresentado-a-cada-rodada` — a tabela parada por conflito volta a ser puxada a cada rodada, e o grito se repete para sempre
+- `dado-pessoal-no-grito-do-conflito` — o grito do conflito de unicidade publica a coluna marcada como dado pessoal
+- `so-o-disco-vem-da-porta-e-nao-de-desligar-depois` — o empilhar volta a abrir pela porta de sempre e desligar a sobreposicao na linha seguinte
+- `slot-de-outro-reg` — o sal deixa de ser por arquivo: o slot cifrado de um `.reg` abre no outro
 
 As notas que a rodada deixou:
 

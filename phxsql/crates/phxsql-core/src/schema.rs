@@ -915,15 +915,24 @@ impl Schema {
     ///
     /// # O que ele remapeia, e por que num lugar so
     ///
-    /// Tres coisas guardam POSICAO de coluna, e nao nome: `IndexColumn.coluna`,
-    /// `ForeignKey.colunas` e a coluna de referencia da particao. Inserir uma
-    /// coluna no meio empurra todas as posicoes a partir dela, e quem ficar
-    /// para tras passa a apontar a vizinha -- indice sobre o campo errado,
-    /// particao pela coluna errada, e nenhum erro no caminho.
+    /// Quatro coisas guardam POSICAO de coluna, e nao nome:
+    /// `IndexColumn.coluna`, `ForeignKey.colunas`, a coluna de referencia da
+    /// particao e `IndiceDeTexto.coluna`. Inserir uma coluna no meio empurra
+    /// todas as posicoes a partir dela, e quem ficar para tras passa a apontar
+    /// a vizinha -- indice sobre o campo errado, particao pela coluna errada,
+    /// e nenhum erro no caminho.
+    ///
+    /// A quarta entrou depois das outras tres, e a falta dela nao era um
+    /// deslocamento: a lista nao era CARREGADA. Todo `ALTER TABLE ADD COLUMN`
+    /// apagava a declaracao do indice de texto, o `.fts` do disco ficava orfao
+    /// e a busca passava a recusar por nome inexistente. Carregar e deslocar
+    /// sao a mesma linha, e e por isso que ela mora aqui.
     ///
     /// Por isso o remapeamento mora aqui e nao em quem chama: a proxima coisa
-    /// que guardar posicao entra nesta funcao, e nao num quarto lugar que
-    /// alguem vai esquecer.
+    /// que guardar posicao entra nesta funcao, e nao num QUINTO lugar que
+    /// alguem vai esquecer. E entrar aqui e duas coisas, nao uma: ser
+    /// carregada e ser deslocada. A quarta provou que a primeira e a que se
+    /// esquece, porque a falta dela nao da erro -- da lista vazia.
     pub fn com_coluna(&self, coluna: Column, posicao: usize) -> Result<Schema> {
         if posicao > self.colunas.len() {
             return Err(PhxError::Esquema(format!(
@@ -993,8 +1002,27 @@ impl Schema {
             },
         };
 
+        // O indice de TEXTO tambem guarda posicao, e ele entra pelo MESMO
+        // caminho da particao -- carregado e deslocado, nas duas pontas da
+        // mesma linha. Nao carrega-lo apagava a declaracao a cada coluna nova;
+        // carrega-lo sem `desloca` trocaria o defeito por um mais silencioso,
+        // e o silencio depende do tipo da coluna vizinha: se ela for `Str` ou
+        // `Memo`, a conferencia de `com_indices_de_texto` nao tem do que
+        // reclamar e o indice passa a indexar outra coluna dizendo o nome da
+        // primeira. Medido em 18/09/2026 -- ver
+        // `o_indice_de_texto_anda_com_a_coluna_que_entrou_antes_dele`.
+        let textos: Vec<IndiceDeTexto> = self
+            .indices_de_texto
+            .iter()
+            .map(|it| IndiceDeTexto {
+                coluna: desloca(it.coluna),
+                ..it.clone()
+            })
+            .collect();
+
         let novo = Schema::do_disco(self.nome.clone(), colunas, indices)?
             .com_chaves_estrangeiras(fks)?
+            .com_indices_de_texto(textos)?
             .com_paginacao(paginacao)?;
         Ok(novo.com_motivo_obrigatorio(self.motivo_obrigatorio))
     }
@@ -2160,6 +2188,102 @@ mod testes_indice_de_texto {
         let volta = Schema::desserializar(&e.serializar()).unwrap();
         assert_eq!(volta, e);
         assert!(volta.indices_de_texto().is_empty());
+    }
+
+    /// **O IRMAO que ficou para tras no `ALTER TABLE ADD COLUMN`.**
+    ///
+    /// `Schema::com_coluna` remonta o esquema carregando o indice comum, a
+    /// chave estrangeira e a particao -- e nao carregava a lista dos indices
+    /// de TEXTO. Toda coluna acrescentada apagava a declaracao, e o `.fts` do
+    /// disco virava orfao sem um erro no caminho: `procurar_texto` passava a
+    /// recusar por "a tabela nao tem indice de texto chamado ...".
+    ///
+    /// Reponha o defeito tirando o `.com_indices_de_texto(textos)?` de
+    /// `Schema::com_coluna`: a primeira assercao daqui cai em 0.
+    #[test]
+    fn a_coluna_nova_nao_apaga_o_indice_de_texto() {
+        let e = com(vec![
+            IndiceDeTexto::new("porTitulo", 1),
+            IndiceDeTexto::new("porCorpo", 2).sem_dobrar(),
+        ])
+        .unwrap();
+        let novo = e
+            .com_coluna(
+                Column::new("situacao", ColumnType::Str(12)),
+                e.posicao_de_coluna_nova(),
+            )
+            .expect("acrescentar coluna");
+
+        assert_eq!(
+            novo.indices_de_texto().len(),
+            2,
+            "a coluna nova apagou os indices de texto do esquema"
+        );
+        assert_eq!(novo.indices_de_texto()[0].nome, "porTitulo");
+        assert_eq!(novo.indices_de_texto()[1].nome, "porCorpo");
+        // A dobra e escolha escrita, e ela tem de atravessar a remontagem.
+        assert!(novo.indices_de_texto()[0].dobrar);
+        assert!(
+            !novo.indices_de_texto()[1].dobrar,
+            "o `sem_dobrar` declarado sumiu na remontagem"
+        );
+        // E vai ao disco e volta com a lista inteira.
+        let volta = Schema::desserializar(&novo.serializar()).unwrap();
+        assert_eq!(volta, novo);
+    }
+
+    /// E carregar a lista SEM deslocar seria trocar um defeito por outro mais
+    /// silencioso: `IndiceDeTexto.coluna` e POSICAO, e uma coluna que entra
+    /// antes dela a empurra.
+    ///
+    /// **O silencio depende do TIPO da coluna vizinha, e esta era a metade que
+    /// eu tinha errado.** Com `uf` entrando na posicao 0, `porTitulo` ficaria
+    /// apontando `id Int8` e a propria `com_indices_de_texto` RECUSARIA -- alto
+    /// e claro. O caso perigoso e este: `uf` entra na posicao 1, `porTitulo`
+    /// fica apontando `uf Str(2)` e `porCorpo` fica apontando `titulo Str(80)`,
+    /// os dois passam na conferencia de tipo, e o indice diz indexar o titulo
+    /// enquanto indexa a sigla do estado. Por isso o teste confere o NOME da
+    /// coluna apontada, e nao so o numero: aqui nao ha erro para esperar.
+    ///
+    /// Reponha o defeito trocando `desloca(it.coluna)` por `it.coluna` em
+    /// `Schema::com_coluna`.
+    #[test]
+    fn o_indice_de_texto_anda_com_a_coluna_que_entrou_antes_dele() {
+        let e = com(vec![
+            IndiceDeTexto::new("porTitulo", 1),
+            IndiceDeTexto::new("porCorpo", 2),
+        ])
+        .unwrap();
+        // Posicao 1: a coluna entra ANTES das duas indexadas. E o caminho
+        // publico do `com_coluna`, que aceita qualquer posicao -- o motor
+        // hoje so usa `posicao_de_coluna_nova`, e la o deslocamento e nulo.
+        let novo = e
+            .com_coluna(Column::new("uf", ColumnType::Str(2)), 1)
+            .expect("acrescentar coluna na frente das indexadas");
+
+        let aponta = |i: usize| -> &str {
+            let c = novo.indices_de_texto()[i].coluna;
+            novo.colunas()[c].nome.as_str()
+        };
+        assert_eq!(
+            aponta(0),
+            "titulo",
+            "o indice de texto ficou para tras e passou a indexar outra coluna"
+        );
+        assert_eq!(
+            aponta(1),
+            "corpo",
+            "o indice de texto ficou para tras e passou a indexar outra coluna"
+        );
+        assert_eq!(novo.indices_de_texto()[0].coluna, 2);
+        assert_eq!(novo.indices_de_texto()[1].coluna, 3);
+        // E o controle do silencio: sem o `desloca` este esquema seria ACEITO.
+        // As duas colunas erradas sao `Str`, e a conferencia de tipo da
+        // `com_indices_de_texto` nao teria do que reclamar.
+        assert!(matches!(
+            novo.colunas()[1].ty,
+            ColumnType::Str(_) | ColumnType::Memo
+        ));
     }
 }
 

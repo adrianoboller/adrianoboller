@@ -2479,6 +2479,57 @@ fn escrever_volume_alargado(
     Ok(quantos)
 }
 
+/// O primeiro volume do `.reg` desta tabela, ou `None` se nao houver nenhum.
+///
+/// A versao publica e sem erro do [`achar_primeiro_volume`], para quem quer
+/// olhar o arquivo sem abrir a tabela. O motivo de existir esta em
+/// [`cifrado_no_volume`], logo abaixo.
+pub(crate) fn primeiro_volume(diretorio: &Path, nome: &str) -> Option<PathBuf> {
+    achar_primeiro_volume(diretorio, nome, EXT_REG).ok()
+}
+
+/// Este volume de `.reg` esta CIFRADO, segundo o proprio arquivo?
+///
+/// # Por que existe, e quem pergunta
+///
+/// Porque «esta cifrado?» tinha dois donos, e eles divergiam: a lista
+/// `cifra.tabelas` do `config.json` -- que e a INTENCAO do dono -- e a marca de
+/// coluna, que e o que de fato decide o material na criacao. O Profiler lia a
+/// primeira para decidir se gravava o texto do pedido no `perfil.txt`, e por
+/// isso a tabela cifrada que ninguem listou (o padrao, porque a lista nasce
+/// vazia) ia em claro para o arquivo que viaja com o disco -- pedido 356.
+///
+/// A resposta sai do DISCO porque o disco e o estado; a lista e a intencao.
+///
+/// # `None` nao e `false`, e a diferenca importa
+///
+/// `Some(false)` e «este arquivo diz que esta em claro». `None` e «nao deu para
+/// saber»: sumiu, esta truncado, nao e um `.reg`, ou traz uma versao que este
+/// binario nao conhece. Quem chama grava o texto do pedido quando a resposta e
+/// «em claro», entao trocar o «nao sei» por um `false` la em cima poria em
+/// claro, num arquivo de texto, o payload de uma tabela que talvez esteja
+/// cifrada. O `None` obriga quem chama a escolher com os olhos abertos.
+///
+/// # Dez bytes, e nao o cabecalho inteiro
+///
+/// Magic e versao -- e a versao e o unico campo que se le antes de decidir
+/// quantos bytes ler, por desenho (ver [`VERSAO_CIFRADO`]). Conferir o CRC do
+/// cabecalho custaria uma leitura de 192 bytes e um CRC por PEDIDO OBSERVADO,
+/// para responder a mesma pergunta: um cabecalho corrompido no byte da versao
+/// nao abre a tabela de jeito nenhum, e aqui ele cai no `None`.
+pub(crate) fn cifrado_no_volume(caminho: &Path) -> Option<bool> {
+    let mut cab = [0u8; 10];
+    File::open(caminho).ok()?.read_exact(&mut cab).ok()?;
+    if cab[0..8] != *MAGIC_REG {
+        return None;
+    }
+    match u16::from_le_bytes([cab[8], cab[9]]) {
+        VERSAO_CIFRADO => Some(true),
+        VERSAO => Some(false),
+        _ => None,
+    }
+}
+
 /// Acha o volume 1 de um conjunto sem saber, de antemao, se a tabela e
 /// paginada, qual a largura do sufixo, nem se o sufixo e numero ou letra.
 ///
