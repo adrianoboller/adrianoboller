@@ -5,7 +5,7 @@
  "eventos_pulados": 1,
  "linhas_no_restaurado": 2,
  "linhas_no_controle_sem_ate": 1,
- "medido_em": "2026-09-08 17:11",
+ "medido_em": "2026-09-18 11:30",
  "prova": "pelo SOQUETE: `ate` entre a alteracao da linha 1 e a inclusao da linha 3, com o MESMO backup restaurado sem `ate` como controle positivo na mesma corrida",
  "detalhe": [
   "a tabela nasce",

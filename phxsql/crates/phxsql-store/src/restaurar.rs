@@ -461,6 +461,28 @@ impl Preparada {
         &self.tabelas
     }
 
+    /// O palco: o database extraido, ainda FORA da raiz de dados.
+    ///
+    /// # Por que ele e visivel de fora
+    ///
+    /// Porque ha trabalho que precisa acontecer na copia **antes** de ela
+    /// entrar na raiz, e o PITR e o caso: reaplicar o diario depois do
+    /// `confirmar` abre uma janela em que outra sessao ve o database no
+    /// instante da copia, sem os eventos reaplicados -- e obriga o `fsync` da
+    /// reaplicacao a acontecer com a trava global na mao, porque a partir dali
+    /// a tabela tem segundo dono possivel.
+    ///
+    /// Aqui nao tem: o palco e um diretorio vizinho da raiz cujo nome so quem
+    /// preparou conhece. Quem escreve nele e dono unico por construcao, e nao
+    /// por convencao.
+    ///
+    /// Quem mexer aqui tem de **fechar** o que abriu antes de `confirmar`: a
+    /// troca e um `rename` do diretorio, e no Windows ele falha com arquivo
+    /// aberto dentro.
+    pub fn palco(&self) -> &Path {
+        &self.palco
+    }
+
     /// Extrai o database escolhido para um palco fora da raiz e confere tudo.
     ///
     /// Nao toca no destino. Backup que nao confere para AQUI, e o unico

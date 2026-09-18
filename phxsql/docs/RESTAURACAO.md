@@ -67,7 +67,8 @@ backup era do mês errado é sempre depois.
 1. lê o manifesto do backup (backup.json)          ── nada foi tocado
 2. extrai para um PALCO, fora da raiz de dados     ── nada foi tocado
 3. confere o SHA-256 de CADA arquivo               ── aqui recusa
-4. troca, com um rename                            ── com a trava na mão
+4. com `ate`, reaplica o diário NO PALCO (§ 7.9)   ── nada foi tocado
+5. troca, com um rename                            ── com a trava na mão
 ```
 
 A regra é o passo 3 acontecer **antes** de o destino ser tocado: *backup
@@ -428,11 +429,57 @@ resposta.
 | origem sumiu | o database de dentro do backup não existe mais neste servidor |
 
 **Por tabela, na resposta** — a continuidade só se confere com o diário da
-cópia na mão, ou seja, com a cópia já restaurada. Ela sai **nomeada** no
-`parou_em`, dizendo que aquela tabela ficou no instante da cópia. Devolver erro
-ali deixaria o pedido com um database criado e uma resposta de fracasso.
+cópia na mão, ou seja, com a cópia já extraída. Ela sai **nomeada** no
+`parou_em`, dizendo que aquela tabela ficou no instante da cópia. Ela não
+aborta porque não é fracasso da restauração: é uma tabela que ficou onde
+estava, e quem pediu precisa saber **qual**.
 
-### 7.9 A resposta
+### 7.9 A reaplicação acontece no PALCO, e o `fsync` fica fora da trava
+
+Decisão do dono, 18/09/2026, pedido 252. Até aqui a ordem era: `rename` do
+palco para dentro da raiz de dados e **só então** reaplicar o diário. Ela
+custava duas coisas:
+
+- **uma janela sem atomicidade.** Entre o `rename` e o fim da reaplicação,
+  qualquer sessão que abrisse o database novo via o banco no **instante da
+  cópia**, sem os eventos reaplicados — e sem nenhum jeito de saber se estava
+  vendo o fim ou o meio;
+- **`fsync` com a trava global na mão.** Depois do `rename` a tabela
+  restaurada tem segundo dono possível, então escrever nela sem a ficha seria
+  corrupção: a reaplicação inteira, incluindo uma dezena de `sync_all` por
+  tabela, ficava dentro da trava. Era a seção que levantou a catraca
+  `alcancam-fsync` do `bancada/concorrencia/mapa-da-trava.py` de 22 para 23 em
+  08/09/2026.
+
+Hoje a ordem é a inversa: **extrai, reaplica no palco, e só então `rename`.**
+O palco é um diretório vizinho da raiz cujo nome só o pedido conhece — dono
+único por construção, e não por convenção —, então a trava global entra apenas
+pelo lado **vivo** (abrir o database de origem e ler o diário dele, onde há
+escritor concorrente) e sai por `drop` explícito **antes** do `fsync`.
+
+O que a troca comprou, medido:
+
+| | antes | depois |
+|---|---|---|
+| seções que alcançam `fsync` com a trava na mão | 25 | **24** |
+| o database aparece na raiz com | o tamanho da cópia (570 B na prova) | o tamanho final (17.912 B) |
+| erro **duro** na reaplicação deixa | um database criado e uma resposta de fracasso | nada: o `Drop` da `Preparada` leva o palco junto |
+
+As três guardas: `o_fsync_da_restauracao_fica_fora_da_trava` e
+`o_pitr_reaplica_antes_de_o_database_entrar_na_raiz` (catracas do fonte, do
+mesmo naipe do `so_o_disco_vem_da_porta_e_nao_de_desligar_depois` — de fora não
+há comportamento a provar, o que muda é quanto a fila espera) e
+`o_restaurado_so_aparece_com_o_diario_ja_reaplicado`, que é de comportamento:
+um vigia em outra *thread* lê o primeiro tamanho do `.reg` restaurado e ele tem
+de ser o final. Com o defeito reposto ele pega em **10 de 10** corridas; com o
+conserto, 10 de 10 passam.
+
+O preço, escrito: as tabelas que **receberam evento** ficam abertas até o
+`fsync` do fim, e cada `Table` aberta carrega o cache de páginas do `.ndx`. É
+por isso que só elas ficam — segurar todas as restauradas pagaria RAM por
+tabela que nem foi tocada.
+
+### 7.10 A resposta
 
 ```json
 {"database": "Comercial_as_15h", "de": "Comercial", "…": "…",
@@ -455,7 +502,7 @@ aquela tabela não foi até o fim, com o motivo escrito.
 `ate` é **inclusivo**: quem pede «até as 15:00:00» quer o que aconteceu às
 15:00:00,000. O instante que a tela mostra é o instante que se digita de volta.
 
-### 7.10 A sequência que PROVA o PITR
+### 7.11 A sequência que PROVA o PITR
 
 Ela **já roda**, em `bancada/pitr/provar.py` — 22 conferências pelo soquete,
 zero falhas, com o resultado datado em `bancada/pitr/resultados.json`. E a

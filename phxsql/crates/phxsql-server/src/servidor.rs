@@ -19176,6 +19176,36 @@ impl Servidor {
         let inicio = Instant::now();
         let preparada = Preparada::preparar(&caminho, &self.config.base, &de)?;
 
+        // O PITR acontece NO PALCO, antes de o database entrar na raiz.
+        //
+        // A ordem era a inversa -- confirmar e so entao reaplicar --, e ela
+        // custava as duas coisas que esta troca compra:
+        //
+        //  * uma JANELA em que outra sessao enxerga o database restaurado no
+        //    instante da copia, sem os eventos reaplicados. Restaurar deixava
+        //    de ser atomico para quem le, e ninguem tinha como saber se o que
+        //    estava vendo era o fim ou o meio;
+        //  * o `fsync` da reaplicacao com a TRAVA GLOBAL na mao, porque depois
+        //    do `rename` a tabela restaurada tem segundo dono possivel e
+        //    escrever nela sem a ficha seria corrupcao. No palco nao ha segundo
+        //    dono: o `fsync` sai da trava sem abrir mao de nada.
+        //
+        // E um terceiro, de graca: erro DURO na reaplicacao (o disco que
+        // acabou, o `.log` ilegivel) nao deixa mais um database criado ao lado
+        // de uma resposta de fracasso -- o `Drop` da `Preparada` leva o palco
+        // junto. A recusa POR TABELA continua saindo em `parou_em`, como
+        // antes: ela nao e fracasso da restauracao.
+        let pitr = match ate_ms {
+            // O `copia_ms` volta do manifesto -- foi conferido la em cima.
+            Some(ate_ms) => Some(self.reaplicar_diario_ate(
+                &de,
+                preparada.palco(),
+                conteudo.quando_ms.unwrap_or_default(),
+                ate_ms,
+            )?),
+            None => None,
+        };
+
         // A troca entra na trava: e um `rename`, e o que ela impede e dois
         // pedidos criarem o mesmo database ao mesmo tempo.
         let r = {
@@ -19183,6 +19213,8 @@ impl Servidor {
             preparada.confirmar(&self.config.base, &destino, por_cima)?
         };
 
+        // O `ms` passa a contar a reaplicacao junto, e e o certo: ele responde
+        // «quanto demorou este pedido», e a reaplicacao e parte dele.
         let mut campos = vec![
             ("database", Json::texto_de(&r.database)),
             ("de", Json::texto_de(&r.de)),
@@ -19200,14 +19232,8 @@ impl Servidor {
             ("substituiu", Json::Bool(r.substituiu)),
             ("ms", Json::de_u64(inicio.elapsed().as_millis() as u64)),
         ];
-        if let Some(ate_ms) = ate_ms {
-            // A copia ja esta no lugar; agora ela alcanca o diario vivo. O
-            // `copia_ms` volta do manifesto -- foi conferido la em cima.
-            let copia_ms = conteudo.quando_ms.unwrap_or_default();
-            campos.push((
-                "pitr",
-                self.reaplicar_diario_ate(&de, &r.database, copia_ms, ate_ms)?,
-            ));
+        if let Some(pitr) = pitr {
+            campos.push(("pitr", pitr));
         }
         if let Some(onde) = &r.anterior_em {
             campos.push(("anterior_em", Json::texto_de(onde)));
@@ -19346,15 +19372,35 @@ impl Servidor {
     /// antes (ver `op_restaurar_backup`): `ate` ilegivel, backup sem carimbo,
     /// `ate` anterior a copia, modo por cima, interruptor da imagem desligado,
     /// database vivo que sumiu. Sobra a continuidade, que so se confere com o
-    /// diario da copia na mao -- ou seja, com a copia ja restaurada. Devolver
-    /// erro ali deixaria o pedido com um database CRIADO e uma resposta de
-    /// fracasso, que e o pior dos dois mundos. Entao ela sai **nomeada, por
-    /// tabela**, no `parou_em`: aquela tabela ficou no instante da copia, e a
-    /// resposta diz qual e por que.
+    /// diario da copia na mao -- ou seja, com a copia ja extraida. Ela sai
+    /// **nomeada, por tabela**, no `parou_em`: aquela tabela ficou no instante
+    /// da copia, e a resposta diz qual e por que. Nao e fracasso da
+    /// restauracao, e por isso nao aborta.
+    ///
+    /// # Onde isto escreve, e por que o `fsync` fica FORA da trava
+    ///
+    /// O destino e o **palco** -- o database ja extraido e conferido, ainda
+    /// fora da raiz de dados (ver [`Preparada::palco`]). Ele e uma raiz de
+    /// dados particular deste pedido: a ficha exclusiva dele e a variavel
+    /// local `raiz_do_palco`, e nao a trava global, porque nao ha segundo dono
+    /// possivel de um diretorio cujo nome so quem preparou conhece.
+    ///
+    /// A trava GLOBAL entra so pelo lado VIVO: abrir o database de origem e
+    /// ler o diario dele exige a ficha, porque ali ha escritor concorrente.
+    /// Ela sai por `drop` explicito **antes** do `fsync` -- que e o pedaco
+    /// caro, uns 10 `sync_all` por tabela. Reaplicar com a trava na mao e
+    /// necessario; sincroniza-la com a trava na mao nao era, e era o que fazia
+    /// esta secao aparecer na catraca `alcancam-fsync` do mapa da trava
+    /// (pedido 252, decisao do dono de 18/09/2026).
+    ///
+    /// O que fica aberto ate la sao as tabelas que RECEBERAM evento, e so
+    /// elas: cada `Table` aberta carrega o cache de paginas do `.ndx` (teto de
+    /// `recursos.cache_paginas`), entao segurar todas as restauradas pagaria
+    /// RAM por tabela que nem foi tocada.
     fn reaplicar_diario_ate(
         &self,
         de: &str,
-        destino: &str,
+        palco: &Path,
         copia_ms: i64,
         ate_ms: i64,
     ) -> Result<Json> {
@@ -19362,13 +19408,30 @@ impl Servidor {
         // com imagem nao cabe em RAM de uma vez. Mesmo teto do `replicar`.
         const LOTE: u64 = 500;
 
+        // O palco visto como raiz de dados: o pai dele e a base, e o nome do
+        // diretorio e o "database". `Raiz::nova` nao cria nada que ja nao
+        // exista -- o pai e o vizinho da raiz, onde o palco ja esta.
+        let (pai, nome_no_palco) = match (palco.parent(), palco.file_name()) {
+            (Some(p), Some(n)) => (p.to_path_buf(), n.to_string_lossy().into_owned()),
+            _ => {
+                return Err(PhxError::Esquema(format!(
+                    "o palco da restauracao ({}) nao tem pai e nome: sem eles \
+                     nao da para abrir a copia para reaplicar o diario",
+                    palco.display()
+                )))
+            }
+        };
+        let mut raiz_do_palco = Raiz::nova(&pai)?;
+        let db_destino = raiz_do_palco.exclusiva().abrir_database(&nome_no_palco)?;
+        // O catalogo de verdade, e nao a vitrine dos nomes de arquivo: depois
+        // de extraida quem responde "que tabelas ha aqui" e o diretorio.
+        let restauradas = db_destino.todas_as_tabelas()?;
+
         let trava = self.travar_dados()?;
         let db_vivo = trava.abrir_database(de)?;
-        let db_destino = trava.abrir_database(destino)?;
-        // O catalogo de verdade, e nao a vitrine dos nomes de arquivo: depois
-        // de restaurado quem responde "que tabelas ha aqui" e o diretorio.
-        let restauradas = db_destino.todas_as_tabelas()?;
         let vivas = db_vivo.todas_as_tabelas()?;
+        // O `fsync` de cada tabela reaplicada, guardado para depois da trava.
+        let mut a_sincronizar: Vec<Table> = Vec::new();
 
         let mut por_tabela = Vec::new();
         let mut sem_diario_vivo = Vec::new();
@@ -19430,7 +19493,7 @@ impl Servidor {
             }
 
             if reaplicados > 0 {
-                td.sincronizar()?;
+                a_sincronizar.push(td);
             }
             total += reaplicados;
             let mut campos = vec![
@@ -19455,6 +19518,20 @@ impl Servidor {
                 campos.push(("parou_em", Json::texto_de(motivo)));
             }
             por_tabela.push(Json::objeto(campos));
+        }
+
+        // A TRAVA SAI AQUI, e sai ANTES do `fsync`. Dali para baixo so se
+        // escreve no palco, que nao esta na raiz de dados e nao tem segundo
+        // dono possivel -- entao a ficha nao protege nada ali, e segura-la
+        // custaria ao servidor inteiro uma dezena de `sync_all` por tabela.
+        //
+        // Quem mexer aqui: o `drop` tem de continuar ACIMA do `sincronizar`.
+        // A catraca `alcancam-fsync` do `bancada/concorrencia/mapa-da-trava.py`
+        // conta esta secao pelo que ela alcanca com a trava na mao, e o teste
+        // `o_fsync_da_restauracao_fica_fora_da_trava` reprova a volta.
+        drop(trava);
+        for mut td in a_sincronizar {
+            td.sincronizar()?;
         }
 
         let novas: Vec<Json> = vivas
@@ -35029,6 +35106,88 @@ mod testes_pitr {
         assert_eq!(novas, vec!["nova"], "{}", pitr.escrever());
         assert!(!dir.0.join("dados/b_nova/nova.reg").exists());
     }
+
+    /// **Ninguem enxerga o banco meio restaurado.**
+    ///
+    /// # O que ele mede, e por que nao mede o veredito
+    ///
+    /// Nao a resposta do pedido -- ela e a mesma nos dois desenhos --, e sim o
+    /// que um TERCEIRO ve enquanto a restauracao acontece. Um vigia em outra
+    /// thread fica de olho no `.reg` da tabela restaurada e guarda o **primeiro
+    /// tamanho** que consegue ler; ele tem de ser o tamanho FINAL.
+    ///
+    /// Com a reaplicacao acontecendo depois do `confirmar` -- o desenho ate
+    /// 18/09/2026 --, o database entra na raiz no instante da COPIA e cresce
+    /// evento a evento com a trava na mao: o vigia le um arquivo pequeno e o
+    /// teste cai. Com ela no palco, o `rename` poe la um database que ja e o
+    /// resultado, e nao ha tamanho menor para ninguem ler.
+    ///
+    /// # Por que trezentas linhas, e nao tres
+    ///
+    /// Porque com tres a reaplicacao acaba antes de o vigia acordar, e ele
+    /// leria o tamanho final mesmo com o defeito de pe -- *teste que passa por
+    /// engano e pior que teste que falta*. Medido nesta maquina, com o defeito
+    /// reposto (reaplicar depois do `confirmar`, na raiz de dados): o vigia le
+    /// **570 bytes** onde o fim tem **17.912**, e pega o defeito em **10 de 10**
+    /// corridas. Com o conserto, 10 de 10 passam.
+    #[test]
+    fn o_restaurado_so_aparece_com_o_diario_ja_reaplicado() {
+        const LINHAS: i64 = 300;
+        let dir = DirTemp::novo("pitr-atomico");
+        let s = servidor(&dir.0, true);
+        criar_banco(&s);
+        inserir(&s, 1, "um");
+        passa_um_ms();
+        let zip = backup(&s, &dir.0);
+        for id in 2..=LINHAS {
+            inserir(&s, id, "x");
+        }
+
+        let alvo = dir.0.join("dados").join("b_atomico").join("c.reg");
+        let parar = Arc::new(AtomicBool::new(false));
+        let vigia = {
+            let alvo = alvo.clone();
+            let parar = Arc::clone(&parar);
+            std::thread::spawn(move || {
+                let comeco = Instant::now();
+                loop {
+                    if let Ok(m) = std::fs::metadata(&alvo) {
+                        return Some(m.len());
+                    }
+                    // O prazo existe para o caso de a restauracao FALHAR: sem
+                    // ele o vigia esperaria um arquivo que nunca vem, e o
+                    // `join` penduraria a suite inteira em vez de reprovar.
+                    if parar.load(Ordering::SeqCst) || comeco.elapsed() > Duration::from_secs(60) {
+                        return std::fs::metadata(&alvo).ok().map(|m| m.len());
+                    }
+                    std::thread::yield_now();
+                }
+            })
+        };
+
+        s.executar(
+            "restaurar_backup",
+            &ped(&format!(
+                r#"{{"origem":"{zip}","database":"b_atomico","ate":"2099-01-01T00:00:00Z"}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap();
+        parar.store(true, Ordering::SeqCst);
+
+        let primeiro = vigia
+            .join()
+            .expect("o vigia caiu")
+            .expect("o vigia nunca viu o .reg do database restaurado");
+        let depois = std::fs::metadata(&alvo).unwrap().len();
+        assert_eq!(
+            primeiro, depois,
+            "o database restaurado apareceu na raiz de dados com {primeiro} bytes \
+             e terminou com {depois}: houve uma janela em que outra sessao via o \
+             banco no instante da copia, sem o diario reaplicado"
+        );
+        assert_eq!(linhas(&s, "b_atomico").len(), LINHAS as usize);
+    }
 }
 
 #[cfg(test)]
@@ -36150,6 +36309,127 @@ mod testes_janela_e_cadeia {
             !corpo_depois[..fim].contains(".com_prazo("),
             "o AFTER roda SEM a trava: um prazo aqui nao protege ninguem e \
              corta uma auditoria honesta pela metade"
+        );
+    }
+
+    /// A catraca do `fsync` da RESTAURACAO: ele acontece **depois** de a ficha
+    /// sair da mao, e nunca antes.
+    ///
+    /// # O defeito que ela impede, e o numero dele
+    ///
+    /// A reaplicacao do diario do PITR (`reaplicar_diario_ate`) sincronizava
+    /// cada tabela reaplicada com a trava GLOBAL na mao -- uma dezena de
+    /// `sync_all` por tabela, o servidor inteiro parado atras de cada um. Foi
+    /// a secao que levantou a catraca `alcancam-fsync` do
+    /// `bancada/concorrencia/mapa-da-trava.py` de 22 para 23 em 08/09/2026, e
+    /// ela ficou vermelha ate a decisao do dono de 18/09 (pedido 252): tirar o
+    /// `fsync` de dentro da trava, sem subir teto e sem isentar secao.
+    ///
+    /// # Por que ESTATICA, e nao um teste de relogio
+    ///
+    /// Pelo mesmo motivo do `so_o_disco_vem_da_porta_e_nao_de_desligar_depois`:
+    /// de fora nao ha comportamento a provar. O dado restaurado e o mesmo nos
+    /// dois casos, e o que muda e quanto tempo a fila espera -- quem acha isso
+    /// e o relogio, e teste que depende da velocidade da maquina e teste que
+    /// um dia falha sozinho. Quem impede a volta e esta ORDEM.
+    ///
+    /// # E ela vale nos dois sentidos
+    ///
+    /// Apagar o `sincronizar` tambem reprova, e nao por simetria: restauracao
+    /// que nao sincroniza devolve um database que a proxima queda de energia
+    /// leva junto. A catraca exige que ele exista **e** que esteja embaixo.
+    #[test]
+    fn o_fsync_da_restauracao_fica_fora_da_trava() {
+        // As agulhas sao MONTADAS pelo mesmo motivo do `so_um_lugar_toma_a_trava`:
+        // escritas como literal, elas entrariam no proprio fonte varrido.
+        let corpo = FONTE
+            .split_once("fn reaplicar_diario_ate(")
+            .expect("o `reaplicar_diario_ate` sumiu")
+            .1;
+        let fim = corpo
+            .find("\n    }\n")
+            .expect("o corpo do reaplicar_diario_ate");
+        let linhas: Vec<&str> = corpo[..fim]
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect();
+        let solta = format!("{}(trava)", "drop");
+        let sincroniza = format!(".{}(", "sincronizar");
+        let onde_solta = linhas
+            .iter()
+            .position(|l| l.contains(&solta))
+            .unwrap_or_else(|| {
+                panic!(
+                    "o `reaplicar_diario_ate` nao solta mais a ficha por `{solta}`: \
+                     sem isso a reaplicacao inteira -- `fsync` incluido -- volta a \
+                     acontecer com a trava global na mao"
+                )
+            });
+        let sincronizacoes: Vec<usize> = linhas
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.contains(&sincroniza))
+            .map(|(i, _)| i)
+            .collect();
+        assert!(
+            !sincronizacoes.is_empty(),
+            "o `reaplicar_diario_ate` parou de sincronizar o que reaplicou: o \
+             database restaurado passa a depender do cache do nucleo, e a \
+             proxima queda de energia leva a reaplicacao junto"
+        );
+        for i in sincronizacoes {
+            assert!(
+                i > onde_solta,
+                "o `{sincroniza}` da linha {i} do corpo acontece ANTES do \
+                 `{solta}` (linha {onde_solta}): e `fsync` com a trava global \
+                 na mao, que e a secao que a catraca `alcancam-fsync` conta"
+            );
+        }
+    }
+
+    /// A catraca da ORDEM da restauracao: o PITR reaplica no **palco**, antes
+    /// de o database entrar na raiz de dados.
+    ///
+    /// # Ela e a metade que TORNA a de cima possivel
+    ///
+    /// Soltar a trava antes do `fsync` so e seguro porque, naquele ponto, o
+    /// que se escreve ainda nao esta na raiz: o palco e um diretorio vizinho
+    /// cujo nome so este pedido conhece, e nao ha segundo dono possivel. Com a
+    /// ordem invertida -- `confirmar` e so entao reaplicar --, a mesma linha
+    /// passaria a escrever numa tabela que qualquer sessao pode abrir, e o
+    /// `drop` da ficha viraria corrupcao em vez de melhoria.
+    ///
+    /// E ela compra duas garantias de lambuja: ninguem enxerga o database no
+    /// instante da copia esperando a reaplicacao, e erro DURO na reaplicacao
+    /// nao deixa um database criado ao lado de uma resposta de fracasso.
+    #[test]
+    fn o_pitr_reaplica_antes_de_o_database_entrar_na_raiz() {
+        let corpo = FONTE
+            .split_once("fn op_restaurar_backup(")
+            .expect("o `op_restaurar_backup` sumiu")
+            .1;
+        let fim = corpo
+            .find("\n    }\n")
+            .expect("o corpo do op_restaurar_backup");
+        let linhas: Vec<&str> = corpo[..fim]
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect();
+        let reaplica = format!("self.{}(", "reaplicar_diario_ate");
+        let troca = format!(".{}(", "confirmar");
+        let onde = |agulha: &str| {
+            linhas
+                .iter()
+                .position(|l| l.contains(agulha))
+                .unwrap_or_else(|| panic!("o `{agulha}` sumiu do `op_restaurar_backup`"))
+        };
+        assert!(
+            onde(&reaplica) < onde(&troca),
+            "a reaplicacao do diario voltou para DEPOIS do `{troca}`: dali em \
+             diante a tabela restaurada ja esta na raiz de dados e tem segundo \
+             dono possivel, entao o `fsync` dela volta a precisar da trava \
+             global -- e abre-se de novo a janela em que outra sessao ve o \
+             database no instante da copia, sem o diario reaplicado"
         );
     }
 
