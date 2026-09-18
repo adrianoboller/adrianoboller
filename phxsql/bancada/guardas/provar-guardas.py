@@ -39,10 +39,13 @@ O veredito de cada guarda:
 
 # Os tres cuidados que este executor tem, e por que
 
-**Nunca na arvore de verdade.** Ele copia `crates/`, `Cargo.toml` e `Cargo.lock`
-para um diretorio proprio (5 MB) e mexe so la. Mesmo assim, cada troca e
-desfeita num `finally` e ha uma rede de seguranca no `atexit`: um Ctrl-C no meio
-nao deixa defeito plantado em lugar nenhum.
+**Nunca na arvore de verdade.** Ele copia para um diretorio proprio o que
+`COPIAR` lista -- e a lista fica LA, e nao repetida aqui, porque esta linha ja
+prometeu «`crates/`, `Cargo.toml` e `Cargo.lock` (5 MB)» enquanto a lista
+crescia para oito itens e **36 MiB**, medidos em 18/09/2026 com
+`du -csh` dos itens de `COPIAR`. Mexe so la. Mesmo assim, cada troca e desfeita
+num `finally` e ha uma rede de seguranca no `atexit`: um Ctrl-C no meio nao
+deixa defeito plantado em lugar nenhum.
 
 **So os testes nomeados.** Rodar a bateria inteira a cada mutacao custaria
 horas. Cada entrada diz o pacote e o binario de teste; o executor roda aquele
@@ -86,8 +89,19 @@ PRAZO_PADRAO = 300
 # licao e a mesma: nao se cita, mede-se. Hoje: `du -sh target`.
 #
 # O diretorio novo compila uma vez e depois so incrementa; e por isso que o
-# `alvo/` da copia fica em caminho FIXO e vale muito menos (1,2 GB, porque so
-# tem o que estas guardas exercitam).
+# `alvo/` da copia fica em caminho FIXO. O que ele custa deixou de ser
+# estimativa em 18/09/2026: esta linha dizia «1,2 GB, porque so tem o que
+# estas guardas exercitam», e a corrida do fecho parou no meio com 2.519 MiB
+# medidos (`du -sh ~/.cache/phx-guardas`) depois de 20 guardas -- ~126 MiB por
+# guarda --, derrubando o disco de 3,5 GiB para 1.022 MiB livres, abaixo do
+# piso do zelador. Com 194 entradas no catalogo (`--listar` conta, 18/09/2026)
+# a corrida inteira NAO cabe: a premissa «cabe numa corrida so» morreu medida,
+# e o caminho e' rodar em LOTES por `--so` (pedido 263), conferindo o `du -sh`
+# a cada parada em vez de confiar num N fixo.
+#
+# E o numero acima e de UMA corrida PARADA no meio: o custo da corrida
+# completa continua sem medida, porque ela nunca terminou nesta maquina. Nao
+# se cita o que nao terminou -- diz-se o que se mediu, e ate onde foi.
 #
 # `exemplos/` esta aqui porque o `lib.rs` do servidor faz
 # `include_str!("../../../exemplos/Config_exemplo_01.json")` -- a copia so com
@@ -119,8 +133,8 @@ PRAZO_PADRAO = 300
 COPIAR = [
     "Cargo.toml", "Cargo.lock", "crates", "exemplos", "docs", "testes-web",
     # Os dois de baixo sao ARQUIVOS, nao pastas -- `bancada/` inteira sao
-    # 2,6 GiB (medido em 17/09/2026), o oposto da promessa de 5 MB aqui de
-    # cima. Achados pelo `verificar_copiar()` abaixo, e nao por leitura:
+    # 2,6 GiB (medido em 17/09/2026), o oposto dos 36 MiB que a copia inteira
+    # mede. Achados pelo `verificar_copiar()` abaixo, e nao por leitura:
     # `segredos.rs` e `catraca-do-mapa-das-threads.rs` leem estes dois por
     # `CARGO_MANIFEST_DIR` + "../.." em tempo de EXECUCAO -- a mesma classe
     # de falta que `docs/` e `testes-web/` ja tinham pago, so que desta vez
@@ -400,7 +414,12 @@ class Arvore:
 
         Copiar tudo com a data de agora consertaria, e faria o workspace
         inteiro recompilar a cada chamada. Comparar o conteudo antes custa uma
-        leitura de 5 MB e deixa a compilacao incremental de pe.
+        leitura de 36 MiB (a mesma medida do topo deste arquivo, 18/09/2026) e
+        deixa a compilacao incremental de pe.
+
+        O «5 MB» que estava escrito aqui era o IRMAO do numero do topo: o mesmo
+        numero velho, no mesmo arquivo, num caminho que ninguem releu ao
+        consertar o de cima. Conserto que nao visita o irmao conserta metade.
         """
         origem = os.path.join(RAIZ, item)
         destino = os.path.join(self.dir, item)
@@ -591,14 +610,108 @@ def julgar(g, vereditos, desfecho):
 # as entradas que sobrevivem no arquivo: e' a leitura que nao superestima o
 # que esta ali -- se uma entrada de 07/09 continua no arquivo, o topo nao
 # pode dizer que tudo e' de hoje.
+
+
+# ------------------------------------------- e a TRAVA do arquivo de saida
+#
+# Achado do papel G em 18/09/2026 (pedido 361), por leitura do fluxo: a mescla
+# de cima resolve o caso SEQUENCIAL e so ele. Dois lotes `--so` ao mesmo tempo
+# com `--arvore` DIFERENTES -- que e' o jeito plausivel de paralelizar sob
+# pressao de tempo, justamente porque arvores diferentes nao brigam pelo
+# `flock` da copia -- apontando para o MESMO `--json` se atropelam: o segundo
+# le o arquivo ANTES de o primeiro gravar e depois grava por cima, e o retrato
+# do primeiro some EM SILENCIO. Trava propria nao e' trava do vizinho: o
+# `Arvore.trancar()` protege a copia, e nunca protegeu a saida.
+#
+# Tres decisoes deste par de funcoes, e o motivo de cada uma:
+#
+#   * a trava cobre o READ-MODIFY-WRITE inteiro, e nao so o `write`. Trancar
+#     na hora de gravar nao conserta nada, porque a leitura velha ja
+#     aconteceu -- e e' a leitura velha que apaga o vizinho.
+#   * ela mora num arquivo AO LADO (`<json>.tranca`), pelo mesmo motivo que a
+#     tranca da copia mora fora dela: a trava tem de existir ANTES do alvo --
+#     o primeiro lote grava um `--json` que ainda nao existe -- e o alvo e'
+#     truncado a cada gravacao (`open(..., "w")`). Trava que anda junto com o
+#     dado desaparece com ele.
+#   * a espera e LIMITADA e a recusa DIZ QUEM TEM. `flock` nao e' reentrante e
+#     este script ja segura um do inicio ao fim da rodada (na copia); uma
+#     trava sem prazo por cima dessa deixaria uma rodada de uma hora parada
+#     sem ninguem saber em quem. O read-modify-write custa milissegundos,
+#     entao o prazo abaixo e' quatro ordens de grandeza de folga: o que passa
+#     disso nao e' vizinho gravando, e ai recusar nomeando o dono e' mais util
+#     que esperar -- e muito mais honesto que gravar por cima.
+PRAZO_DA_TRANCA_JSON = 10.0
+
+
+class SaidaOcupada(Exception):
+    """Outro processo tem a trava do `--json` e nao a soltou no prazo."""
+
+
+def _quem_tem_a_tranca(alvo):
+    """A nota que o dono deixou na tranca -- e' o que da NOME a recusa."""
+    try:
+        with open(alvo, encoding="utf-8", errors="replace") as f:
+            nota = f.read().strip()
+    except OSError:
+        nota = ""
+    return nota or "a tranca nao diz quem (nota vazia)"
+
+
+def _travar_saida(caminho, prazo=PRAZO_DA_TRANCA_JSON):
+    """Toma a trava do `--json`; levanta `SaidaOcupada` se nao conseguir.
+
+    A nota com o pid e a linha de comando e escrita DEPOIS de a trava ser
+    tomada: nota escrita antes e promessa de quem talvez nem consiga trancar,
+    e a recusa do vizinho apontaria um inocente."""
+    alvo = caminho + ".tranca"
+    os.makedirs(os.path.dirname(os.path.abspath(alvo)), exist_ok=True)
+    f = open(alvo, "a+", encoding="utf-8")  # `a+` cria sem apagar a nota
+    limite = time.time() + prazo
+    while True:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            if time.time() >= limite:
+                dono = _quem_tem_a_tranca(alvo)
+                f.close()
+                raise SaidaOcupada(
+                    "%s esta travado ha mais de %.1f s por %s -- este retrato "
+                    "NAO foi gravado, e nada foi sobrescrito"
+                    % (caminho, prazo, dono))
+            time.sleep(0.02)
+    f.seek(0)
+    f.truncate(0)
+    f.write("pid %d, desde %s, %s\n"
+            % (os.getpid(), time.strftime("%Y-%m-%d %H:%M:%S"),
+               " ".join(sys.argv)))
+    f.flush()
+    return f
+
+
+def _destravar_saida(tranca):
+    """O `close` sozinho ja soltaria; o `LOCK_UN` explicito e para quem le."""
+    fcntl.flock(tranca, fcntl.LOCK_UN)
+    tranca.close()
+
+
 def _gravar_json(caminho, so_ligado, resultados):
-    """Grava o `--json` da corrida. Devolve (ids preservados, quando do
-    topo).
+    """Grava o `--json` da corrida, sob a trava. Devolve (ids preservados,
+    quando do topo), e levanta `SaidaOcupada` quando outro processo a tem.
 
     Com `--so` E um arquivo anterior: MESCLA por `id`, mantendo as entradas
     que esta corrida nem tentou. Sem `--so`, ou sem arquivo anterior: grava
     do zero, como sempre -- uma corrida completa e' o retrato inteiro, e
     nao ha nada para preservar."""
+    tranca = _travar_saida(caminho)
+    try:
+        return _mesclar_e_gravar(caminho, so_ligado, resultados)
+    finally:
+        _destravar_saida(tranca)
+
+
+def _mesclar_e_gravar(caminho, so_ligado, resultados):
+    """O read-modify-write, JA sob a trava -- nao se chama de fora."""
     agora = time.strftime("%Y-%m-%d %H:%M")
     novas = {
         g["id"]: {"id": g["id"], "titulo": g["titulo"], "veredito": v,
@@ -622,6 +735,20 @@ def _gravar_json(caminho, so_ligado, resultados):
             item = dict(item)
             item.setdefault("quando", quando_do_arquivo_antigo or agora)
             antigas.setdefault(item["id"], item)
+    # A JANELA DO 361 MORA AQUI, entre ler o arquivo e regrava-lo -- e e' este
+    # o pedaco que a trava tem de cobrir. O atraso e' o que o autoteste liga
+    # para a corrida de dois processos reproduzir SEMPRE: sem forcar, ela
+    # reproduziu 8 vezes em 10 (medido em 18/09/2026); com 0,05 s de janela,
+    # 10 em 10. Prova que so as vezes falha com o defeito reposto nao prova.
+    #
+    # Desligado custa um `getenv`: 0,602 us medidos, contra 175-205 us da
+    # gravacao inteira, uma vez por corrida. E o portao estar no MEIO da
+    # funcao nao contraria a licao do Profiler -- la o portao vinha depois de
+    # dois `Json::analisar` que ele podia ter pulado; aqui nao ha trabalho
+    # nenhum atras dele, porque o interruptor E' a instrumentacao inteira.
+    atraso = float(os.environ.get("PHX_GUARDAS_ATRASO_DA_MESCLA") or 0)
+    if atraso > 0:
+        time.sleep(atraso)
     mesclado = dict(antigas)
     mesclado.update(novas)
     # Ordem do catalogo primeiro (legibilidade); o que sobrar (uma entrada
@@ -705,6 +832,228 @@ def autoteste_mescla_json():
     return 1 if falhas else 0
 
 
+# ------------------------ a prova da trava: PROCESSOS, nao chamadas
+#
+# Por que o `autoteste_mescla_json` de cima NAO prova isto: ele chama
+# `_gravar_json` em SEQUENCIA, dentro do mesmo processo, e o defeito do 361 e'
+# duas leituras VIVAS ao mesmo tempo -- estado que chamada sequencial nenhuma
+# produz. E' a licao do soquete desta casa: teste unitario nao prova queda de
+# conexao, soquete prova; corrida entre processos se prova com dois processos.
+#
+# O defeito reposto e' o mesmo truque que este arquivo aplica ao catalogo: uma
+# COPIA do proprio script com a linha do `flock` trocada por `pass`. Assim o
+# vermelho nao depende de um interruptor que desligue a protecao em producao
+# -- interruptor desses e' porta dos fundos, e ninguem precisa de uma para
+# provar que a trava funciona.
+TRECHO_DA_TRAVA = "            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)"
+TROCA_SEM_TRAVA = "            pass  # DEFEITO REPOSTO (361): sem trava"
+
+# O lote de mentira: importa o provador do caminho dado e grava UM retrato no
+# `--json`. Nao copia arvore e nao compila nada -- so o read-modify-write do
+# arquivo de saida, que e' o unico pedaco que este pedido mede. Uma guarda de
+# verdade custa ~126 MiB de disco; o retrato de tres lotes que esta prova
+# grava mede 554 bytes, medidos em 18/09/2026 -- e e' por isso que o
+# `--autoteste` pode rodar em maquina com o disco no piso, e a corrida nao.
+_LOTE = '''import importlib.util
+import sys
+import time
+
+script, alvo, ident, comecar = sys.argv[1:5]
+spec = importlib.util.spec_from_file_location("provador_em_prova", script)
+pg = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(pg)
+# Os dois lotes acordam no MESMO instante: sem isto, o tempo de subir o
+# interpretador decidiria quem le primeiro, e a corrida seria loteria.
+time.sleep(max(0.0, float(comecar) - time.time()))
+try:
+    pg._gravar_json(alvo, True,
+                    [({"id": ident, "titulo": ident}, "PROVADA", 1.0, [])])
+except pg.SaidaOcupada as e:
+    print("RECUSOU %s: %s" % (ident, e))
+    raise SystemExit(3)
+print("GRAVOU %s" % ident)
+'''
+
+
+def _repor_sem_trava(texto):
+    """A copia com o defeito reposto: a linha do `flock` da saida trocada por
+    um `pass`, e SO ela. Devolve (texto, quantas trocou).
+
+    Troca por LINHA INTEIRA, e nao por `str.replace` do trecho: o proprio
+    `TRECHO_DA_TRAVA` aqui de cima contem o texto que se procura, entao um
+    `replace` cego casaria duas vezes e mutaria a constante junto -- e' o
+    vigia que se acha, e esta casa ja o pagou cinco vezes. A linha de codigo
+    e' a unica que casa a linha INTEIRA; a da constante tem o `=` na frente."""
+    saiu, trocas = [], 0
+    for linha in texto.splitlines(keepends=True):
+        if linha.rstrip("\n") == TRECHO_DA_TRAVA:
+            saiu.append(TROCA_SEM_TRAVA + "\n")
+            trocas += 1
+        else:
+            saiu.append(linha)
+    return "".join(saiu), trocas
+
+
+def _semear(alvo, ident):
+    """Um retrato de lote ANTERIOR no arquivo: e' o que da a mescla algo para
+    preservar, e o que separa «sumiu na corrida» de «o arquivo nasceu hoje»."""
+    if os.path.exists(alvo):
+        os.remove(alvo)
+    _gravar_json(alvo, False,
+                 [({"id": ident, "titulo": ident}, "PROVADA", 1.0, [])])
+
+
+def _dois_lotes_ao_mesmo_tempo(lote, script, alvo, janela, ids):
+    """Dois PROCESSOS gravando no mesmo `--json`. Devolve (ids que ficaram no
+    arquivo, [(id, codigo de saida, saida)])."""
+    amb = dict(os.environ)
+    amb["PHX_GUARDAS_ATRASO_DA_MESCLA"] = "%.3f" % janela
+    # A folga do encontro: 1 s para os dois interpretadores subirem antes do
+    # instante marcado (importar este modulo com o catalogo mede 0,015 s).
+    comecar = time.time() + 1.0
+    filhos = [
+        (i, subprocess.Popen(
+            [sys.executable, lote, script, alvo, i, "%.3f" % comecar],
+            env=amb, text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT))
+        for i in ids
+    ]
+    saidas = []
+    for i, p in filhos:
+        texto = p.communicate(timeout=120)[0]
+        saidas.append((i, p.returncode, (texto or "").strip()))
+    with open(alvo, encoding="utf-8") as f:
+        return {g["id"] for g in json.load(f)["guardas"]}, saidas
+
+
+def autoteste_tranca_do_json():
+    """Prova real pelo SISTEMA OPERACIONAL, nos dois sentidos: dois lotes em
+    processos de verdade gravando no mesmo `--json`.
+
+      * com o defeito REPOSTO (copia sem `flock`): um retrato SOME, e a prova
+        diz qual -- o vermelho se mede aqui, nao se cita;
+      * com a trava (o codigo de hoje): os tres retratos sobrevivem, na MESMA
+        janela que derrubou um no vermelho;
+      * e a recusa tem NOME: com a trava presa por outro processo, um pedido
+        de prazo curto levanta `SaidaOcupada` dizendo o pid de quem a tem, em
+        vez de esperar para sempre ou gravar por cima.
+    """
+    import tempfile
+    falhas = []
+
+    def conferir(nome, cond, detalhe=""):
+        print("   %s  %s%s" % ("ok  " if cond else "FALHOU", nome,
+                               "" if cond else "  -- " + detalhe))
+        if not cond:
+            falhas.append(nome)
+
+    este = os.path.abspath(__file__)
+    texto = open(este, encoding="utf-8").read()
+    mutado, trocas = _repor_sem_trava(texto)
+    conferir("a linha do `flock` da saida existe uma vez so neste script",
+             trocas == 1,
+             "%d linha(s) casaram: o codigo mudou e esta prova envelheceu"
+             % trocas)
+    if falhas:
+        # Sem a linha nao ha defeito para repor, e um verde aqui nao valeria
+        # nada -- e' o mesmo QUEBRADA que o provador devolve ao catalogo.
+        print("   FALHOU: %s" % ", ".join(falhas))
+        return 1
+
+    with tempfile.TemporaryDirectory() as tmp:
+        lote = os.path.join(tmp, "lote.py")
+        with open(lote, "w", encoding="utf-8") as f:
+            f.write(_LOTE)
+        sem_trava = os.path.join(tmp, "provador-sem-trava.py")
+        with open(sem_trava, "w", encoding="utf-8") as f:
+            f.write(mutado)
+        # O `catalogo.py` vai junto porque a copia o importa do PROPRIO
+        # diretorio (`sys.path.insert(0, AQUI)`, no topo deste arquivo).
+        shutil.copy(os.path.join(AQUI, "catalogo.py"), tmp)
+
+        # 1. o VERMELHO. A janela cresce se a primeira nao reproduzir: corrida
+        # e' probabilistica, e «nao reproduziu» nunca e' «nao existe».
+        vermelho = os.path.join(tmp, "vermelho.json")
+        janela, sumidos, ids_ver, saidas_ver = None, set(), set(), []
+        for tentativa in (0.6, 1.5, 3.0):
+            janela = tentativa
+            _semear(vermelho, "lote-1")
+            ids_ver, saidas_ver = _dois_lotes_ao_mesmo_tempo(
+                lote, sem_trava, vermelho, janela, ("lote-2", "lote-3"))
+            sumidos = {"lote-2", "lote-3"} - ids_ver
+            if sumidos:
+                break
+        conferir("SEM a trava, um dos dois retratos SOME (o defeito do 361)",
+                 bool(sumidos),
+                 "os dois sobreviveram com janela de 0,6/1,5/3,0 s: %s"
+                 % sorted(ids_ver))
+        conferir("e os dois lotes terminam dizendo que gravaram (o silencio)",
+                 all(c == 0 for _, c, _ in saidas_ver), str(saidas_ver))
+        if sumidos:
+            print("      vermelho medido com janela de %.1f s: o arquivo ficou "
+                  "com %s, e %s sumiu em silencio"
+                  % (janela, sorted(ids_ver), sorted(sumidos)))
+
+        # 2. o VERDE, na MESMA janela: a trava serializa o read-modify-write e
+        # os tres retratos ficam.
+        verde = os.path.join(tmp, "verde.json")
+        _semear(verde, "lote-1")
+        ids_verde, saidas_verde = _dois_lotes_ao_mesmo_tempo(
+            lote, este, verde, janela, ("lote-2", "lote-3"))
+        conferir("COM a trava, na mesma janela, os tres retratos ficam",
+                 ids_verde == {"lote-1", "lote-2", "lote-3"},
+                 str(sorted(ids_verde)))
+        conferir("e nenhum lote precisou recusar (a espera cabe no prazo)",
+                 all(c == 0 for _, c, _ in saidas_verde), str(saidas_verde))
+
+        # 3. a RECUSA tem nome. Um lote segura a trava (janela larga) e o
+        # pedido de prazo curto tem de ser recusado dizendo o pid dele -- nem
+        # esperar para sempre, nem gravar por cima.
+        preso = os.path.join(tmp, "preso.json")
+        _semear(preso, "lote-1")
+        amb = dict(os.environ)
+        amb["PHX_GUARDAS_ATRASO_DA_MESCLA"] = "2.0"
+        dono = subprocess.Popen(
+            [sys.executable, lote, este, preso, "lote-2",
+             "%.3f" % time.time()], env=amb, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        try:
+            # Espera a NOTA aparecer, e nao um relogio: quando a trava e'
+            # tomada depende do escalonador, e conferir por tempo fixo seria a
+            # loteria que o instante marcado acima existe para evitar.
+            nota, ate = "", time.time() + 60
+            while time.time() < ate:
+                nota = _quem_tem_a_tranca(preso + ".tranca")
+                if ("pid %d" % dono.pid) in nota:
+                    break
+                time.sleep(0.02)
+            conferir("a tranca registra o pid de quem a tem",
+                     ("pid %d" % dono.pid) in nota, nota)
+            recusa = None
+            try:
+                _destravar_saida(_travar_saida(preso, prazo=0.2))
+            except SaidaOcupada as e:
+                recusa = str(e)
+            conferir("com a trava presa por outro, o pedido e RECUSADO",
+                     recusa is not None, "tomou a trava que o outro tinha")
+            conferir("e a recusa NOMEIA quem a tem",
+                     recusa is not None and ("pid %d" % dono.pid) in recusa,
+                     str(recusa))
+            if recusa:
+                print("      recusa medida: %s" % recusa)
+        finally:
+            dono.communicate(timeout=120)
+        conferir("o dono termina o retrato dele em paz", dono.returncode == 0)
+        with open(preso, encoding="utf-8") as f:
+            ids_presos = {g["id"] for g in json.load(f)["guardas"]}
+        conferir("e o arquivo fica com o semeado e o do dono, so",
+                 ids_presos == {"lote-1", "lote-2"}, str(sorted(ids_presos)))
+
+    print("   %s" % ("todos passaram" if not falhas
+                     else "FALHOU: " + ", ".join(falhas)))
+    return 1 if falhas else 0
+
+
 # ------------------------------------------------------------------ saida
 def main():
     ap = argparse.ArgumentParser(add_help=True)
@@ -723,8 +1072,34 @@ def main():
                     help="prova real do --conferir-copiar, contra a arvore de verdade")
     ap.add_argument("--autoteste-mescla-json", action="store_true",
                     help="prova real da mescla do --json quando --so esta ligado")
+    ap.add_argument("--autoteste-tranca-json", action="store_true",
+                    help="prova real da trava do --json: dois processos de verdade")
+    ap.add_argument("--autoteste", action="store_true",
+                    help="roda os tres autotestes deste script, um atras do outro")
     opc = ap.parse_args()
 
+    if opc.autoteste:
+        # Um portao para os tres. Autoteste que so se alcanca por bandeira
+        # propria e autoteste que ninguem roda: sao TRES bandeiras para quem
+        # caca um defeito, e UMA para a bateria. E os tres rodam sempre -- sair
+        # no primeiro vermelho esconderia os outros dois, que e' justamente o
+        # que a bateria precisa saber.
+        provas = (("o alcance do COPIAR", autoteste_copiar),
+                  ("a mescla do --json", autoteste_mescla_json),
+                  ("a trava do --json (361)", autoteste_tranca_do_json))
+        codigos = []
+        for titulo, prova in provas:
+            print("=== autoteste: %s ===" % titulo)
+            codigos.append(prova())
+            print()
+        maus = [t for (t, _), c in zip(provas, codigos) if c]
+        print("%d de %d autotestes passaram%s"
+              % (len(codigos) - len(maus), len(codigos),
+                 "" if not maus else " -- FALHOU: " + ", ".join(maus)))
+        return 1 if maus else 0
+    if opc.autoteste_tranca_json:
+        print("=== autoteste da trava do --json (pedido 361, 18/09/2026) ===")
+        return autoteste_tranca_do_json()
     if opc.autoteste_copiar:
         print("=== autoteste do --conferir-copiar (pedido G, onda 3, 17/09/2026) ===")
         return autoteste_copiar()
@@ -862,7 +1237,16 @@ def main():
     print("=" * 72)
 
     if opc.json:
-        preservadas, topo = _gravar_json(opc.json, bool(opc.so), resultados)
+        try:
+            preservadas, topo = _gravar_json(opc.json, bool(opc.so), resultados)
+        except SaidaOcupada as e:
+            # Recusar e' o certo E tem de doer: a corrida gastou minutos e o
+            # retrato dela nao entrou em lugar nenhum. Codigo de saida 2, como
+            # nas outras faltas de setup -- o veredito das guardas esta na tela
+            # acima, e o arquivo continua sendo o do vizinho, intacto.
+            print(cor("mal", "\nO --json NAO foi gravado: %s" % e))
+            print("rode os lotes um de cada vez, ou de um `--json` por lote.")
+            return 2
         if preservadas:
             print("\n%d guarda(s) preservada(s) de corrida(s) anterior(es) em "
                   "%s: %s" % (len(preservadas), opc.json, ", ".join(preservadas)))

@@ -205,10 +205,43 @@ E a lista `seguem`, que é a terceira metade que ninguém pede: os testes que t�
 de **continuar passando**. Sem ela, uma troca que quebrasse o arquivo inteiro
 pareceria uma guarda excelente.
 
+## Antes de mexer no provador: `--autoteste`
+
+```bash
+python3 bancada/guardas/provar-guardas.py --autoteste
+```
+
+Roda os **três** autotestes — o alcance do `COPIAR`, a mescla do `--json` e a
+trava do `--json` — em **6 s**, sem `cargo` e sem gastar disco. Os três rodam
+sempre, e não param no primeiro vermelho: parar esconderia os outros dois.
+
+O terceiro nasceu do pedido **361**, e a lição dele vale para quem for mexer
+aqui: **a mescla do `--json` provava o caso sequencial e não o concorrente.**
+Dois lotes em paralelo com `--arvore` diferentes (que não brigam pelo `flock`
+da cópia) escrevendo no mesmo `--json` faziam um retrato **sumir em silêncio** —
+os dois diziam «GRAVOU» e saíam com código 0. Medido em 18/09/2026: reproduz em
+**8 de 10** rodadas sem forçar nada, e em **10 de 10** com uma janela de 0,05 s
+entre a leitura e a regravação.
+
+Hoje há um `flock` num arquivo `<json>.tranca` **ao lado** do alvo — ao lado
+porque a trava tem de existir antes do alvo, e o alvo é truncado a cada
+gravação. Ela cobre o *read-modify-write* inteiro, não só a escrita: a leitura
+velha é o que apaga o vizinho. Se outro processo a tiver, o pedido é **recusado
+nomeando o dono** (pid, hora e linha de comando) em vez de esperar para sempre
+ou gravar por cima — e a recusa devolve **2**, porque a corrida gastou minutos e
+o retrato não entrou em lugar nenhum. Custo da trava, medido em três rodadas de
+300 gravações: `sem 183/162/205 µs` contra `com 172/191/173 µs` — as faixas se
+cruzam e o sinal troca, então **não há vencedor a declarar**.
+
 ## Os três cuidados, e o que cada um custou
 
-**Nunca na árvore de verdade.** O executor copia `crates/`, `exemplos/`,
-`Cargo.toml` e `Cargo.lock` (5 MB) para `~/.cache/phx-guardas` e mexe só lá.
+**Nunca na árvore de verdade.** O executor copia para `~/.cache/phx-guardas`
+o que a lista `COPIAR` do `provar-guardas.py` nomear — **a lista mora no
+código, e não aqui**, porque esta prosa já publicou «5 MB» durante meses
+quando o medido eram **36 MiB** (medido em 18/09/2026 com `du -c -s -B1`
+sobre os oito itens de hoje). Terceira cópia do mesmo número velho no
+mesmo dia: uma no `:42` do script, uma no `_sincronizar` e esta — e é por
+isso que a lista saiu do texto. E mexe **só lá**.
 Cada troca é desfeita num `finally`, e há uma rede no `atexit`: um Ctrl-C no
 meio não deixa defeito plantado em lugar nenhum.
 

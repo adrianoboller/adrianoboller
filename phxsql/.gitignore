@@ -55,3 +55,9 @@
 /bancada/telemetria/srv-custo/
 /bancada/tomada/.base-da-prova/
 /bancada/tomada/.phxsqld-desta-corrida
+
+# A tranca do `--json` do provador de guardas (pedido 361). Ela mora AO LADO
+# do alvo, e o alvo e versionado -- sem isto, cada corrida com
+# `--json bancada/guardas/ultima-corrida.json` deixaria um
+# `ultima-corrida.json.tranca` nao rastreado ao lado do retrato.
+*.tranca
