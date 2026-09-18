@@ -67,6 +67,72 @@ trio, rodada na receita real; o portao nao a reproduz, e isso esta dito.
 * **`dossie_da_pasta.py`** e **`embutir-fontes.py`** -- nao escrevem numero
   nenhum (um so acha o arquivo, o outro embute fontes para o PDF).
 
+## O pedido 360, e a varredura que ele exigiu
+
+O `bancada/comparativo/resultados.json` e fonte de TRES renderizadores, e este
+PLANO so cobria dois (`comparativo-no-dossie.py` e a pagina de status): o
+`bancada/comparativo/documento.py`, que escreve o `docs/COMPARATIVO.md`, podia
+divergir sem que nada acusasse -- o mesmo formato da lista usada como
+inventario, e o agravante e que este PLANO existe justamente para SER o
+inventario completo. A varredura por scripts que ESCREVEM derivado versionado
+(regex sobre `write_text`/`open(..., "w")` cruzado com o alvo) achou mais
+CINCO buracos do mesmo naipe, e cada um foi RODADO antes de entrar aqui --
+nao basta ler o docstring, tem de rodar e comparar byte a byte:
+
+* **`bancada/gestao/documento.py`** -> `docs/GESTAO.md` -- irmao gemeo do
+  `comparativo/documento.py`, mesma disciplina ("a prosa mora aqui, a medicao
+  mora no JSON"), mesma fonte-e-alvo versionados, zero relogio.
+* **`bancada/acid/gerar-secoes.py`** -> `docs/ACID.md` -- mesma familia do
+  `docs/tecnologias/extrair.py` (blocos `<!-- GERADO: chave -->` trocados a
+  partir de `resultado.json`).
+* **`bancada/utilizacao-padrao/gera-leia-me.py`** -> `LEIA-ME.md` da propria
+  pasta e a secao 18 de `docs/DESEMPENHO.md` -- mesma familia de blocos
+  GERADO, dois JSONs fixos como fonte.
+* **`bancada/comparacao/grafico.py`** -> `comparacao-tres-motores.svg`/`.html`
+  -- e a "receita real" que o `trio-de-motores.py` ja cita no proprio
+  comentario (a figura que ele embute), mas nada no PLANO conferia SE ela
+  estava fresca em relacao ao `um-milhao.json`; a guarda de mtime do trio nao
+  sobrevive a um `git checkout`, entao sem esta entrada o buraco ficava aberto
+  mesmo com o trio coberto. Por isso vem ANTES de `trio-de-motores.py` aqui.
+* **`docs/geradores/direito-por-coluna.py`** -> `docs/SEGURANCA.md` -- mesma
+  familia do `extrair.py`, le `direito_coluna.rs`. Rodar de verdade MUDOU o
+  arquivo (137 -> 140 operacoes, 5 -> 6 que leem, 19 -> 20 que recusam): o
+  documento publicado ja estava desatualizado no dia em que esta entrada
+  nasceu, exatamente a doenca que o portao existe para acusar. Quem for
+  fechar o portao inteiro precisa rodar
+  `python3 docs/geradores/direito-por-coluna.py` e commitar o `SEGURANCA.md`
+  antes -- senao esta linha nasce VERMELHA por um defeito real e anterior ao
+  pedido 360, nao por culpa desta entrada.
+
+Cinco ficaram de fora, por motivo NOMEADO em vez de esquecidos de novo:
+
+* **`docs/fronteiras/mapa-do-servidor.py --escrever`** -- rodei e ele FALHOU:
+  "a regiao 'arranque-e-identidade' ancora em 'novo', que nao existe mais no
+  arquivo". Nao e o documento que esta velho, e o PROPRIO mapeador que precisa
+  de conserto de codigo (reancorar a regiao) antes de poder entrar aqui --
+  fora do alcance de um portao que so confere.
+* **`bancada/graficos.py`** -- a pagina embute `maquina()`: `cpu`, `nproc`,
+  `free`, `mysqld --version` e duas `SHOW VARIABLES` via `subprocess`, tudo
+  perguntado ao vivo a cada corrida. Numa maquina sem MySQL(R) instalado (ou
+  com outra versao) o portao acusaria VERMELHO por diferenca de AMBIENTE, nao
+  de dado -- o mesmo risco que o modo `sem-carimbo` existe para evitar, e os
+  `_CARIMBOS` de hoje nao cobrem string livre de versao de pacote.
+* **`docs/pdf/gerar.py`** -- chama o Chromium de `/opt/pw-browsers` para
+  imprimir o PDF (`timeout=180`). E dependencia de AMBIENTE externa e pesada,
+  o mesmo motivo que ja tira o `olhar.mjs` do caminho automatico (`docs/pmo`):
+  caminho absoluto do Playwright, frouxo fora do repositorio.
+* **`bancada/durabilidade/gerar-matriz.py`** -> `matriz-gerada.md` -- e
+  determinista e roda limpo, mas o proprio `gerar-secoes.py` explica que este
+  arquivo e um INTERMEDIARIO que alguem COLA a mao em `docs/TRANSACOES.md`
+  (o padrao que a casa esta deixando para tras, por causa exatamente desse
+  passo manual). Conferir o intermediario sozinho nao fecha o buraco de
+  verdade, que e a colagem; fica como duvida em aberto, nao como recusa.
+* **`bancada/guardas/tabela-no-testes.py`** -> `docs/TESTES.md` -- a fonte nao
+  e um arquivo fixo versionado: e um `--json` que aponta para a saida de
+  `provar-guardas.py`, que chama `cargo test` uma vez por guarda do catalogo
+  (~3.374 s medidos, mutacao mais compilacao). Mesma familia dos dois
+  `nota-cargo` de cima, so que ainda sem essa marca escrita.
+
 Uso:
 
     python3 docs/dossie/portao-dos-geradores.py            # confere e reprova
@@ -132,16 +198,53 @@ PLANO = [
     ("docs/tecnologias/extrair.py", ["docs/TECNOLOGIAS.md"], "exato",
      "regrava os 16 blocos GERADO (pedido 156); CAPABILITIES.json e "
      "versionado e o script nao tem relogio -- funcao pura das fontes"),
+    # As tres entradas abaixo sao da mesma familia do extrair.py -- blocos
+    # `<!-- GERADO: chave -->` trocados dentro de um docs/*.md a partir de
+    # fonte versionada -- e entraram pela varredura do pedido 360, que achou
+    # o PLANO cobrindo so dois dos tres leitores do resultados.json do
+    # comparativo e foi conferir se havia mais buracos do mesmo formato.
+    ("bancada/acid/gerar-secoes.py", ["docs/ACID.md"], "exato",
+     "le bancada/acid/resultado.json; blocos GERADO, mesmo molde do extrair.py"),
+    ("bancada/utilizacao-padrao/gera-leia-me.py",
+     ["bancada/utilizacao-padrao/LEIA-ME.md", "docs/DESEMPENHO.md"], "exato",
+     "le resultado.json e resultado-alfabetica.json da propria pasta; blocos GERADO"),
+    ("docs/geradores/direito-por-coluna.py", ["docs/SEGURANCA.md"], "exato",
+     "le CLASSES de crates/phxsql-server/src/direito_coluna.rs; bloco GERADO"),
     ("capturas-no-dossie.py", [DOSSIE], "exato",
      "embute os PNG ja reduzidos de capturas/ como data URI; deterministico"),
     ("tetos-da-trava.py", [DOSSIE], "exato",
      "le as corridas CERTO de bancada/concorrencia/; deterministico"),
+    # O pedido 360: o resultados.json do comparativo alimenta TRES
+    # renderizadores (este documento.py, a linha de baixo e a pagina de 21
+    # secoes), e so os dois ultimos estavam cobertos. "exato" porque o unico
+    # datetime do fonte e `d["quando"]` -- a data da MEDICAO, lida do proprio
+    # JSON versionado, nao um relogio de parede -- conferido rodando duas
+    # vezes seguidas e comparando byte a byte (saida identica). Entra ANTES
+    # do comparativo-no-dossie.py porque os dois leem a mesma fonte e nao ha
+    # nenhum gerador no PLANO que leia o COMPARATIVO.md por sua vez.
+    ("bancada/comparativo/documento.py", ["docs/COMPARATIVO.md"], "exato",
+     "le bancada/comparativo/resultados.json; funcao pura da fonte versionada"),
+    # Irmao gemeo do de cima, achado na mesma varredura: mesma disciplina
+    # ("a prosa mora aqui, a medicao mora no JSON"), mesmo fonte-e-alvo
+    # versionados, zero relogio -- conferido do mesmo jeito.
+    ("bancada/gestao/documento.py", ["docs/GESTAO.md"], "exato",
+     "le bancada/gestao/resultados.json; funcao pura da fonte versionada"),
     ("comparativo-no-dossie.py",
      [DOSSIE, "docs/dossie/fig-fluxo-do-medidor.svg", "docs/dossie/fig-workflow-da-rodada.svg"], "exato",
      "le bancada/comparativo/ e cobertura-da-tela/; deterministico"),
     ("fluxo-do-motor.py",
      [DOSSIE, "docs/dossie/fig-fluxo-do-motor.svg", "docs/dossie/fig-workflow-do-motor.svg"], "exato",
      "le os portoes e passos do proprio fonte Rust; deterministico"),
+    # Achado na varredura do pedido 360: e a "receita real" que o proprio
+    # trio-de-motores.py cita no comentario dele (a figura que ele embute),
+    # mas nada aqui conferia se ELA estava fresca em relacao ao
+    # um-milhao.json -- a guarda de mtime do trio nao sobrevive a um
+    # `git checkout`. Sem esta entrada, o buraco ficava aberto por baixo do
+    # trio mesmo com o trio coberto. Vem ANTES dele por isso: o trio consome
+    # o SVG que este escreve.
+    ("bancada/comparacao/grafico.py",
+     ["bancada/comparacao/comparacao-tres-motores.svg", "bancada/comparacao/comparacao-tres-motores.html"],
+     "exato", "le bancada/comparacao/um-milhao.json; funcao pura da fonte versionada"),
     ("trio-de-motores.py", [DOSSIE], "exato-trio",
      "le bancada/comparacao/um-milhao.json; a guarda de mtime da figura e neutralizada"),
     ("perguntas-no-dossie.py", [DOSSIE], "sem-carimbo",
