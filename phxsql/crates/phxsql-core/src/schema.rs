@@ -683,6 +683,86 @@ fn erro_ledger_com_dado_pessoal(tabela: &str, coluna: &str) -> PhxError {
     ))
 }
 
+/// **Particao por POSICAO e dado pessoal nao convivem.** Pedido 358, aprovado
+/// pelo DBA em 18/09/2026.
+///
+/// O rowid desta casa nao e um contador opaco: quando a particao e por
+/// posicao, ele SAI do volume -- `reg.rs` atribui
+/// `rowid = (balde - 1) * registros_por_arquivo + slot` --, e a conta e
+/// inversivel. Dividir o rowid devolve o volume, e o volume e o primeiro
+/// caractere da coluna (uma classe entre 37, exata) ou o periodo dela. Isso
+/// viaja em toda resposta, no cursor `antes`/`depois` e no `.ndx`, e chega
+/// inteiro a quem tem a coluna NEGADA pelo direito por coluna -- e o mesmo
+/// oraculo que a conferencia de pergunta sobre coluna negada existe para
+/// fechar, entrando pela porta que ela nao olha.
+///
+/// # As duas saidas mais obvias estao RECUSADAS, com numero
+///
+/// **Esconder o rowid de quem tem a coluna negada** nao compra nada: a
+/// informacao volta inteira pelo `op_esquema`, que publica os registros por
+/// balde e o primeiro rowid de cada volume, e pela propria ordem de varredura,
+/// que e a ordem dos baldes escrita no `.pag`. E custaria o cursor
+/// `antes`/`depois`, que E o rowid.
+///
+/// **Trocar a conta do balde** e o nao mais duro: o rowid E o endereco, e uma
+/// conta nova relocalizaria cada linha e cada rowid ja gravado no `.ndx`, no
+/// `.log`, na `.trash`, no `.reason`, no `.lgpd` e no evento de replicacao JA
+/// ENVIADO -- os cinco ultimos append-only. Nao e migracao cara, e migracao
+/// impossivel.
+///
+/// Sobra recusar a combinacao na DECLARACAO, como o `ao_excluir` e como o
+/// ledger logo acima: a tabela nasce uma vez e grava um milhao de vezes.
+///
+/// # O alcance, escrito: isto NAO fecha tabela que ja existe
+///
+/// A guarda mora nos caminhos de DECLARAR, nunca no `do_disco` nem no
+/// `com_paginacao_do_disco`. Tabela gravada antes dela volta do disco inteira,
+/// abre, le e grava. E ela tambem nao mora dentro do `com_paginacao`:
+/// `Schema::acrescentar_coluna` o chama de novo, e recusar ali faria o
+/// `ADD COLUMN` falhar numa tabela que ja esta em producao. Guarda nova entra
+/// pedida, nao imposta.
+///
+/// Quem chama ja sabe que `coluna` e a coluna que o rowid revela; esta funcao
+/// decide o grau e as palavras. Ela recebe o grau como ALVO e nao como estado
+/// porque a porta da marcacao posterior pergunta ANTES de aplicar: ali a
+/// coluna ainda esta limpa, e uma guarda que olhasse o esquema de agora nao
+/// veria vazamento nenhum.
+fn erro_oraculo_do_rowid(
+    tabela: &str,
+    coluna: &str,
+    grau: DadoPessoal,
+    modo: ModoParticao,
+) -> Option<PhxError> {
+    if !grau.e_pessoal() {
+        return None;
+    }
+    let (particao, revela) = match modo {
+        // Aqui o rowid e a ordem de chegada, e ela nao sai de coluna nenhuma.
+        // O `match` e exaustivo de proposito: modo de particao novo tem de
+        // decidir o que o rowid dele entrega antes de compilar.
+        ModoParticao::PorQuantidade => return None,
+        ModoParticao::PorLetra { .. } => (
+            "alfanumerica".to_string(),
+            format!(
+                "o PRIMEIRO CARACTERE de {coluna} -- uma classe entre {}",
+                BALDES.len()
+            ),
+        ),
+        ModoParticao::PorPeriodo { periodo, .. } => (
+            format!("por periodo ({})", periodo.nome()),
+            format!("em que periodo {} a data de {coluna} caiu", periodo.nome()),
+        ),
+    };
+    Some(PhxError::Esquema(format!(
+        "a particao {particao} de {tabela} e pela coluna {coluna}, e {coluna} esta \
+         marcada como dado {}: o rowid de cada linha SAI do volume, entao dividir o \
+         rowid devolve o volume -- e o volume revela {revela}. Isso chega de graca em \
+         toda leitura, inclusive a quem tem {coluna} NEGADA pelo direito por coluna. \
+         Particione por outra coluna (ou por quantidade), ou nao marque {coluna}",
+        grau.nome()
+    )))
+}
+
 impl Schema {
     /// Esquema de uma tabela NOVA.
     ///
@@ -961,6 +1041,34 @@ impl Schema {
         self.colunas.iter().any(|c| c.dado_pessoal.e_pessoal())
     }
 
+    /// A particao `modo` revelaria pelo rowid uma coluna marcada?
+    ///
+    /// **A PORTA 1 do pedido 358: a criacao.** Ver [`erro_oraculo_do_rowid`]
+    /// para o porque da recusa e para as duas saidas que o DBA recusou com
+    /// numero.
+    ///
+    /// Recebe o modo por ARGUMENTO, e nao le `self.paginacao`, porque quem
+    /// pergunta e quem esta lendo o `CREATE TABLE`: ali o esquema ja tem as
+    /// colunas e ainda nao tem a paginacao. E e por isso que a recusa mora em
+    /// quem le o pedido e nao dentro do `com_paginacao` -- aquele metodo e
+    /// chamado de novo por [`Schema::acrescentar_coluna`], e recusar la faria
+    /// o `ADD COLUMN` falhar numa tabela que ja esta em producao.
+    pub fn conferir_oraculo_do_rowid(&self, modo: ModoParticao) -> Result<()> {
+        let Some(i) = modo.coluna_que_o_rowid_revela() else {
+            return Ok(());
+        };
+        // Coluna fora da lista nao e problema DESTA guarda: quem recusa a
+        // particao que aponta coluna inexistente e o `com_paginacao`, e a
+        // mensagem dele fala do que falta.
+        let Some(c) = self.colunas.get(i) else {
+            return Ok(());
+        };
+        match erro_oraculo_do_rowid(&self.nome, &c.nome, c.dado_pessoal, modo) {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+
     /// Troca o grau de uma coluna pelo NOME.
     ///
     /// Pelo nome e nao pelo indice porque quem classifica e gente olhando a
@@ -988,6 +1096,21 @@ impl Schema {
         let estreando = grau.e_pessoal() && !self.colunas[i].dado_pessoal.e_pessoal();
         if estreando && coluna_no_hash_do_ledger(coluna) && e_tabela_ledger(self) {
             return Err(erro_ledger_com_dado_pessoal(&self.nome, coluna));
+        }
+        // **A PORTA 2 do pedido 358**, e ela existe mesmo: medido em
+        // 18/09/2026, `RegFile::remarcar_dado_pessoal` so recusa quando a
+        // tabela nasceu cifrada, entao numa tabela nascida em claro bastava
+        // criar limpa e marcar a coluna do balde no pedido seguinte. Fechar so
+        // a criacao seria deixar a porta dos fundos escancarada.
+        //
+        // Olha a TRANSICAO como a do ledger: refinar o grau e desmarcar
+        // continuam podendo, porque nenhum dos dois expoe um caractere a mais
+        // do que ja estava exposto -- e desmarcar e o unico remedio de quem ja
+        // esta na combinacao.
+        if estreando && self.paginacao.modo.coluna_que_o_rowid_revela() == Some(i) {
+            if let Some(e) = erro_oraculo_do_rowid(&self.nome, coluna, grau, self.paginacao.modo) {
+                return Err(e);
+            }
         }
         self.colunas[i].dado_pessoal = grau;
         Ok(())
@@ -2939,5 +3062,96 @@ mod testes_ledger_com_dado_pessoal {
             DadoPessoal::Pessoal,
             "a marca gravada tinha de voltar como foi gravada"
         );
+    }
+}
+
+/// O oraculo do rowid (pedido 358) pelo lado do NUCLEO: o que a guarda alcanca
+/// e, sobretudo, o que ela nao pode alcancar.
+#[cfg(test)]
+mod testes_oraculo_do_rowid {
+    use super::*;
+    use crate::paginacao::Periodo;
+
+    /// Uma tabela com a combinacao, montada SEM passar pelo `com_paginacao` --
+    /// e por isso ela existe: e o retrato do que ja esta no disco.
+    fn com_a_combinacao(modo: ModoParticao) -> Schema {
+        let colunas = vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40))
+                .obrigatoria()
+                .com_dado_pessoal(DadoPessoal::Sensivel),
+            Column::new("nascimento", ColumnType::Date).obrigatoria(),
+        ];
+        // A paginacao sai do construtor de cada modo, e nao de um literal: a
+        // alfanumerica tem 37 volumes fixos, e um numero na mao aqui faria o
+        // teste falhar pelo motivo errado -- ja falhou, em 18/09/2026.
+        let pag = match modo {
+            ModoParticao::PorLetra { coluna } => Paginacao::por_letra(100, coluna).unwrap(),
+            _ => Paginacao::nova(100, 9).unwrap(),
+        };
+        Schema::do_disco("clientes", colunas, vec![])
+            .unwrap()
+            .com_paginacao_do_disco(Paginacao { modo, ..pag })
+    }
+
+    /// **A prova real do lugar da guarda.** Ela NAO pode morar dentro do
+    /// `com_paginacao`, porque `Schema::com_coluna` -- o `ALTER TABLE ADD
+    /// COLUMN` -- o chama de novo com as colunas que ja carregam a marca. Uma
+    /// guarda ali derrubaria o `ADD COLUMN` de uma tabela em producao.
+    ///
+    /// O esquema aqui e montado pelo caminho do DISCO de proposito: assim o
+    /// teste falha na linha do `com_coluna`, e nao no proprio preparo.
+    #[test]
+    fn a_tabela_que_ja_tem_a_combinacao_continua_ganhando_coluna() {
+        for modo in [
+            ModoParticao::PorLetra { coluna: 1 },
+            ModoParticao::PorPeriodo {
+                coluna: 2,
+                periodo: Periodo::Mensal,
+            },
+        ] {
+            let esq = com_a_combinacao(modo);
+            let novo = esq
+                .com_coluna(
+                    Column::new("cidade", ColumnType::Str(30)),
+                    esq.posicao_de_coluna_nova(),
+                )
+                .expect("ADD COLUMN nao pode morrer por causa de guarda nova");
+            assert!(novo.tem_dado_pessoal(), "a coluna nova apagou a marca");
+        }
+    }
+
+    /// E a volta do disco nao revalida: o esquema gravado abre como foi
+    /// gravado. Recusar a leitura nao apaga o oraculo que ja queimou -- so
+    /// tiraria do ar uma tabela que esta perfeita.
+    #[test]
+    fn a_combinacao_gravada_volta_do_disco_inteira() {
+        let esq = com_a_combinacao(ModoParticao::PorLetra { coluna: 1 });
+        let volta = Schema::desserializar(&esq.serializar()).expect("tinha de reabrir");
+        assert!(volta.paginacao().modo.por_letra());
+        assert_eq!(volta.colunas()[1].dado_pessoal, DadoPessoal::Sensivel);
+    }
+
+    /// O portao le a coluna que o ROWID revela, e nao a lista das marcadas: uma
+    /// tabela com dez colunas marcadas e a particao por uma decima primeira
+    /// continua nascendo.
+    #[test]
+    fn o_portao_olha_a_coluna_da_particao_e_nao_a_tabela() {
+        let esq = com_a_combinacao(ModoParticao::PorQuantidade);
+        // `nome` esta marcada, mas a particao e por `nascimento`, que nao esta.
+        esq.conferir_oraculo_do_rowid(ModoParticao::PorPeriodo {
+            coluna: 2,
+            periodo: Periodo::Anual,
+        })
+        .expect("a coluna da particao nao e a marcada");
+        // Pela `nome`, recusa -- e nomeia a coluna.
+        let erro = esq
+            .conferir_oraculo_do_rowid(ModoParticao::PorLetra { coluna: 1 })
+            .expect_err("a coluna do balde e a marcada")
+            .to_string();
+        assert!(erro.contains("nome") && erro.contains("rowid"), "{erro}");
+        // E por quantidade nunca recusa: o rowid e a ordem de chegada.
+        esq.conferir_oraculo_do_rowid(ModoParticao::PorQuantidade)
+            .expect("por quantidade nao revela coluna nenhuma");
     }
 }

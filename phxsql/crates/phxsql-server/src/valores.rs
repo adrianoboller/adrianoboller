@@ -744,6 +744,18 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
             }
         };
 
+        // O ORACULO DO ROWID (pedido 358): particao por POSICAO sobre coluna
+        // marcada como dado pessoal entrega o valor dela em toda leitura,
+        // porque o rowid sai do volume e o volume sai da coluna. A recusa e
+        // AQUI, onde o `CREATE TABLE` e lido, e nao dentro do `com_paginacao`:
+        // aquele metodo e chamado de novo por `Schema::acrescentar_coluna`, e
+        // recusar la faria o `ADD COLUMN` falhar em tabela ja em producao.
+        //
+        // E e UMA chamada para os dois caminhos que ha logo abaixo -- a
+        // alfanumerica, que retorna cedo, e a comum. Pondo-a antes da bifurcacao
+        // nao sobra o caminho IRMAO por onde a combinacao entraria calada.
+        esquema.conferir_oraculo_do_rowid(modo)?;
+
         // Na alfanumerica o numero de volumes NAO se escolhe: sao os 37
         // baldes, e o construtor cuida do sufixo. Deixar a tela mandar um teto
         // aqui so criaria um jeito de pedir uma tabela que o validador recusa.
@@ -1941,6 +1953,152 @@ mod testes_metadados {
                 "erro {erro:?} nao menciona {pedaco:?}"
             );
         }
+    }
+
+    /// **O oraculo do rowid, pedido 358.** Particao por POSICAO sobre coluna
+    /// marcada como dado pessoal entrega a coluna em toda leitura: o rowid sai
+    /// do volume, e o volume sai do valor dela. Na alfanumerica o balde E o
+    /// primeiro caractere -- `Avila` cai no 1, `silva` no 19, `9 de Julho` no
+    /// 36 --, e uma classe entre 37 chega de graca a quem tem a coluna NEGADA.
+    /// Na particao por periodo o volume E o mes e o ano.
+    ///
+    /// Prova real medida em 18/09/2026, antes da guarda: as DUAS portas
+    /// aceitavam. A criacao nascia sem um pio, e a marcacao POSTERIOR tambem
+    /// -- `RegFile::remarcar_dado_pessoal` so recusa quando a tabela nasceu
+    /// cifrada, entao em tabela nascida em claro bastava criar limpa e marcar
+    /// a coluna no pedido seguinte. Fechar so a criacao seria deixar a porta
+    /// dos fundos escancarada, que e a mesma licao do ledger.
+    #[test]
+    fn particao_por_posicao_sobre_coluna_marcada_e_recusada_na_criacao_e_na_marcacao() {
+        const POR_LETRA: &str = r#"{"tabela":"clientes",
+                "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                           {"nome":"nome","tipo":"Str(40)","obrigatoria":true
+                            MARCA}],
+                "registros_por_arquivo":1000,
+                "particao":"letra","particao_coluna":"nome"}"#;
+        const POR_PERIODO: &str = r#"{"tabela":"pacientes",
+                "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                           {"nome":"nascimento","tipo":"Date","obrigatoria":true
+                            MARCA}],
+                "registros_por_arquivo":1000,
+                "particao":"mensal","particao_coluna":"nascimento"}"#;
+
+        // PORTA 1 -- a criacao pelo protocolo.
+        for (pedido, coluna, grau) in [
+            (POR_LETRA, "nome", "sensivel"),
+            (POR_LETRA, "nome", "pessoal"),
+            (POR_PERIODO, "nascimento", "sensivel"),
+            (POR_PERIODO, "nascimento", "pessoal"),
+        ] {
+            let com_marca = pedido.replace("MARCA", &format!(r#","dado_pessoal":"{grau}""#));
+            let erro = esquema_de_json(&json(&com_marca))
+                .expect_err("a combinacao nao podia nascer")
+                .to_string();
+            // A recusa NOMEIA a coluna e diz por que: o rowid revela a posicao.
+            assert!(
+                erro.contains(coluna) && erro.contains("rowid"),
+                "a recusa tem de nomear a coluna e o rowid: {erro}"
+            );
+        }
+
+        // PORTA 2 -- a marcacao DEPOIS, na tabela que nasceu em claro.
+        for (pedido, coluna) in [(POR_LETRA, "nome"), (POR_PERIODO, "nascimento")] {
+            let limpo = pedido.replace("MARCA", "");
+            for grau in [DadoPessoal::Pessoal, DadoPessoal::Sensivel] {
+                let mut e = esquema_de_json(&json(&limpo)).expect("sem marca, nasce");
+                let erro = e
+                    .marcar_dado_pessoal(coluna, grau)
+                    .expect_err("marcar depois nao podia passar")
+                    .to_string();
+                assert!(
+                    erro.contains(coluna) && erro.contains("rowid"),
+                    "a recusa tem de nomear a coluna e o rowid: {erro}"
+                );
+                assert!(
+                    !e.tem_dado_pessoal(),
+                    "recusou e marcou assim mesmo: {:?}",
+                    e.colunas_pessoais()
+                );
+            }
+        }
+    }
+
+    /// O IRMAO que impede um portao que recusaria tudo. Um portao largo demais
+    /// e tao ruim quanto a porta aberta: ele tira de quem modela amanha uma
+    /// combinacao legitima, e ninguem descobre por leitura.
+    #[test]
+    fn o_portao_do_rowid_deixa_passar_o_legitimo() {
+        // Particao por posicao sobre coluna NAO marcada continua nascendo --
+        // com outra coluna marcada na mesma tabela, que e o caso comum.
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"clientes",
+                "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                           {"nome":"cidade","tipo":"Str(40)","obrigatoria":true},
+                           {"nome":"cpf","tipo":"Str(11)","dado_pessoal":"pessoal"}],
+                "registros_por_arquivo":1000,
+                "particao":"letra","particao_coluna":"cidade"}"#,
+        ))
+        .expect("a coluna da particao nao e a marcada");
+        assert!(e.paginacao().modo.por_letra());
+        assert!(e.tem_dado_pessoal());
+
+        // Coluna marcada em tabela SEM particao por posicao continua nascendo:
+        // por quantidade o rowid e a ordem de chegada, e nao sai de coluna
+        // nenhuma.
+        let e = esquema_de_json(&json(
+            r#"{"tabela":"clientes",
+                "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                           {"nome":"nome","tipo":"Str(40)","obrigatoria":true,
+                            "dado_pessoal":"sensivel"}],
+                "registros_por_arquivo":1000}"#,
+        ))
+        .expect("particao por quantidade nao revela coluna nenhuma");
+        assert!(e.tem_dado_pessoal());
+
+        // E marcar DEPOIS uma coluna que nao e a da particao continua podendo.
+        let mut e = esquema_de_json(&json(
+            r#"{"tabela":"clientes",
+                "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                           {"nome":"cidade","tipo":"Str(40)","obrigatoria":true},
+                           {"nome":"cpf","tipo":"Str(11)"}],
+                "registros_por_arquivo":1000,
+                "particao":"letra","particao_coluna":"cidade"}"#,
+        ))
+        .expect("devia nascer");
+        e.marcar_dado_pessoal("cpf", DadoPessoal::Pessoal)
+            .expect("o cpf nao e a coluna do balde");
+        assert!(e.tem_dado_pessoal());
+    }
+
+    /// **O COMPORTAMENTO VELHO, em memoria** -- o irmao em disco vive em
+    /// `phxsql-store/tests/alfanumerica.rs`. Um esquema que ja tem a
+    /// combinacao (nascido pela API Rust, ou lido de um `.reg` gravado antes
+    /// desta guarda) continua vivo: a guarda olha a TRANSICAO, e nao o estado.
+    /// Refinar o grau e DESMARCAR continuam podendo -- e desmarcar e o unico
+    /// remedio de quem ja esta nessa combinacao. Guarda que olhasse o estado
+    /// travaria justamente o conserto.
+    #[test]
+    fn quem_ja_esta_na_combinacao_continua_podendo_regraduar_e_desmarcar() {
+        let mut e = Schema::new(
+            "clientes",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("nome", ColumnType::Str(40))
+                    .obrigatoria()
+                    .com_dado_pessoal(DadoPessoal::Pessoal),
+            ],
+            vec![],
+        )
+        .unwrap()
+        .com_paginacao(Paginacao::por_letra(100, 1).unwrap())
+        .unwrap();
+        assert!(e.tem_dado_pessoal(), "nasceu com a combinacao");
+
+        e.marcar_dado_pessoal("nome", DadoPessoal::Sensivel)
+            .expect("refinar o grau nao expoe nada a mais");
+        e.marcar_dado_pessoal("nome", DadoPessoal::Nao)
+            .expect("desmarcar e o remedio, e nunca se recusa");
+        assert!(!e.tem_dado_pessoal());
     }
 }
 

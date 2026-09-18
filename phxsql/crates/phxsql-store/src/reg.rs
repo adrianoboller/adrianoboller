@@ -1606,6 +1606,20 @@ impl RegFile {
             )));
         }
 
+        // Esta conta e INVERSIVEL, e e o que o pedido 358 mediu: dividir o
+        // rowid devolve o balde, e o balde e o primeiro caractere da coluna de
+        // referencia -- uma classe entre 37, exata, por linha. O rowid viaja em
+        // toda resposta, no cursor `antes`/`depois` e no `.ndx`, entao isso
+        // chega inteiro a quem tem a coluna NEGADA pelo direito por coluna.
+        //
+        // Trocar a conta esta recusado com numero pelo DBA: o rowid E o
+        // endereco, e relocalizar atingiria cada rowid ja gravado no `.ndx`, no
+        // `.log`, na `.trash`, no `.reason`, no `.lgpd` e no evento de
+        // replicacao JA ENVIADO -- os cinco ultimos append-only. Quem paga o
+        // preco e a DECLARACAO: `Schema::conferir_oraculo_do_rowid` recusa
+        // particao por posicao sobre coluna marcada como dado pessoal. E o
+        // alcance e so' esse -- numa tabela gravada antes da recusa o oraculo
+        // continua aceso, porque a volta do disco nao revalida de proposito.
         let rowid = (balde as u64 - 1) * paginacao.registros_por_arquivo + usados + 1;
         let (volume, offset) = paginacao.localizar(rowid);
         debug_assert_eq!(volume, balde, "a conta do rowid nao bate com o balde");

@@ -285,6 +285,34 @@ impl ModoParticao {
         }
     }
 
+    /// A coluna cujo valor o ROWID revela, quando a particao e por POSICAO.
+    ///
+    /// # Por que ela nao e a `coluna()` com outro nome
+    ///
+    /// As duas respondem igual hoje, e respondem a perguntas diferentes:
+    /// `coluna()` diz qual coluna a particao LE para escolher o volume; esta
+    /// diz qual coluna o rowid DEVOLVE a quem so viu o rowid. A segunda existe
+    /// porque a conta e inversivel: `reg.rs` atribui
+    /// `rowid = (balde - 1) * registros_por_arquivo + slot`, entao dividir o
+    /// rowid devolve o balde -- e o balde e o primeiro caractere da coluna, ou
+    /// o periodo dela. Uma classe entre 37, exata, de graca, em toda leitura,
+    /// para quem tem a coluna NEGADA pelo direito por coluna.
+    ///
+    /// Quem usa esta resposta e a recusa do pedido 358, em
+    /// `Schema::conferir_oraculo_do_rowid`. O dia em que entrar um modo que le
+    /// uma coluna sem revelar a posicao dela -- ou que revela sem ler -- as
+    /// duas divergem, e e por isso que sao duas.
+    pub fn coluna_que_o_rowid_revela(&self) -> Option<usize> {
+        match self {
+            // Aqui o rowid e a ordem de chegada, e ela nao sai de coluna
+            // nenhuma: nao ha o que revelar.
+            ModoParticao::PorQuantidade => None,
+            ModoParticao::PorPeriodo { coluna, .. } | ModoParticao::PorLetra { coluna } => {
+                Some(*coluna as usize)
+            }
+        }
+    }
+
     /// A particao e alfanumerica?
     pub fn por_letra(&self) -> bool {
         matches!(self, ModoParticao::PorLetra { .. })

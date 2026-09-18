@@ -16,7 +16,7 @@ use comum::DirTemp;
 
 use phxsql_core::paginacao::{balde_de, Paginacao, BALDES, BALDE_OUTROS};
 use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
-use phxsql_core::types::ColumnType;
+use phxsql_core::types::{ColumnType, DadoPessoal};
 use phxsql_core::value::Value;
 use phxsql_store::table::{Salto, Table, Visao};
 
@@ -505,4 +505,86 @@ fn a_particao_por_letra_nao_bisseta_a_posicao() {
         Value::Str(s) => assert_eq!(s, "Mendes"),
         outro => panic!("{outro:?}"),
     }
+}
+
+/// **O COMPORTAMENTO VELHO, em disco — pedido 358.**
+///
+/// A partir de 18/09/2026 o `CREATE TABLE` recusa partição por POSIÇÃO sobre
+/// coluna marcada como dado pessoal: o rowid sai do balde, e o balde é o
+/// primeiro caractere — uma classe entre 37 de graça em toda leitura, para
+/// quem tem a coluna negada.
+///
+/// **A recusa alcança o que nascer daqui em diante, e mais nada.** Tabela já
+/// gravada com a combinação continua abrindo, lendo e gravando — e continua
+/// ganhando coluna, que é o motivo de a guarda NÃO morar dentro do
+/// `com_paginacao`: `Schema::acrescentar_coluna` o chama de novo, e recusar
+/// ali faria o `ADD COLUMN` falhar em banco de produção. Guarda nova entra
+/// pedida, não imposta.
+///
+/// **O alcance desta prova, dito:** com o defeito reposto (a guarda dentro do
+/// `com_paginacao`) ela fica vermelha no *preparo* — na montagem do esquema,
+/// logo abaixo —, e não na linha do `acrescentar_coluna`. Quem prova o caminho
+/// do `ADD COLUMN` sem morrer antes é o irmão no núcleo,
+/// `schema::testes_oraculo_do_rowid::a_tabela_que_ja_tem_a_combinacao_continua_ganhando_coluna`,
+/// que monta o esquema pelo caminho do disco justamente para isso.
+#[test]
+fn tabela_gravada_com_a_combinacao_continua_abrindo_lendo_e_gravando() {
+    let dir = DirTemp::novo("oraculo-velho");
+    // A combinação como ela já existe em disco: `nome` é a coluna do balde E
+    // está marcada. A marca entra pela coluna, e a paginação depois — que é
+    // exatamente a ordem que o `com_paginacao` não confere, de propósito.
+    let e = Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40))
+                .obrigatoria()
+                .com_dado_pessoal(DadoPessoal::Sensivel),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)])
+            .unico()
+            .primaria()],
+    )
+    .unwrap()
+    .com_paginacao(Paginacao::por_letra(100, 1).unwrap())
+    .unwrap();
+
+    let mut t = Table::criar(&dir.0, e).unwrap();
+    let silva = t.inserir(&linha(1, "Silva")).unwrap();
+    t.inserir(&linha(2, "Ávila")).unwrap();
+    t.sincronizar().unwrap();
+    drop(t);
+
+    // Abre de novo: a marca volta do disco, e a partição também.
+    let mut t = Table::abrir(&dir.0, "clientes").unwrap();
+    assert!(
+        t.esquema().tem_dado_pessoal(),
+        "a marca tinha de voltar do disco"
+    );
+    assert!(t.esquema().paginacao().modo.por_letra());
+    assert_eq!(
+        t.ler(silva).unwrap().unwrap()[NOME],
+        Value::Str("Silva".into())
+    );
+
+    // E GRAVA: a recusa é da declaração, nunca da gravação.
+    let zeus = t.inserir(&linha(3, "Zeus")).unwrap();
+    assert_eq!(zeus, (26 - 1) * 100 + 1, "Z é o balde 26");
+
+    // E ganha coluna. Este é o `ADD COLUMN` que uma guarda dentro do
+    // `com_paginacao` teria derrubado.
+    t.acrescentar_coluna(
+        Column::new("cidade", ColumnType::Str(30)),
+        Some(Value::Str("Blumenau".into())),
+    )
+    .expect("ADD COLUMN não pode morrer por causa de guarda nova");
+    assert!(
+        t.esquema().tem_dado_pessoal(),
+        "a coluna nova não pode apagar a marca"
+    );
+    assert_eq!(
+        t.ler(silva).unwrap().unwrap()[NOME],
+        Value::Str("Silva".into()),
+        "o rowid é o endereço, e ele não muda"
+    );
 }
