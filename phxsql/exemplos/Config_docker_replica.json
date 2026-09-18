@@ -3,7 +3,8 @@
   "base": "base",
   "bind": "0.0.0.0:5000",
   "token": "troque-este-token",
-  "web": { "ligado": true, "bind": "0.0.0.0:5001" },
+  "_web": "0.0.0.0 pelo mesmo motivo do bind de dados: em conteiner, 127.0.0.1 e o loopback DO CONTEINER e a porta publicada nao alcanca ninguem. O arranque vai AVISAR que esta porta atende de fora em HTTP claro, e o aviso e verdadeiro -- publique-a atras de um proxy reverso que termine TLS e, quando ele estiver la, escreva atras_de_proxy: true aqui para calar o aviso. Ver docs/SEGURANCA.md 7.1 e 7.2.",
+  "web": { "ligado": true, "bind": "0.0.0.0:5001", "atras_de_proxy": false },
   "_somente_leitura": "Nao e opcional na pratica: aplicacao escrevendo na replica quebra a numeracao dos rowids, e a proxima inclusao vinda do source para a replicacao inteira.",
   "somente_leitura": true,
   "replicacao": {

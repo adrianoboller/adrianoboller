@@ -329,6 +329,15 @@ sai da máquina de quem entra**. Fora de contexto seguro o navegador não
 oferece a cifra: a página cai em Base64 e diz isso na tela. Detalhes na
 seção 9 do [`MANUAL.txt`](MANUAL.txt).
 
+A porta web — e as duas do REST — **nascem presas a `127.0.0.1`**. HTTP é texto
+puro e o `phxsqld` não termina TLS (zero dependências externas é pétrea): a
+saída é um **proxy reverso** que termina TLS na frente dele, e proxy só protege
+se o motor não estiver aberto ao lado. Escrever um endereço que atende de fora
+continua podendo — é escolha de quem implanta — e o arranque **avisa** dizendo o
+que fazer; `"atras_de_proxy": true` na seção declara que o proxy já está lá e
+cala o aviso (e só isso: não liga nem cifra nada). Receita em
+[`docs/SEGURANCA.md`](docs/SEGURANCA.md) §7.1 e §7.2.
+
 Na biblioteca (este trecho e o `crates/phxsql-store/examples/basico.rs`,
 que compila e roda com `cargo run --example basico`):
 

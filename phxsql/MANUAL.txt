@@ -2094,7 +2094,8 @@ LIGAR
         "web": {
           "ligado": true,
           "bind": "127.0.0.1:5001",
-          "sessao_minutos": 60
+          "sessao_minutos": 60,
+          "atras_de_proxy": false
         }
 
     Depois: phxsqld --config config.json
@@ -2108,6 +2109,27 @@ LIGAR
     VEM DESLIGADA. Ligar abre uma porta a mais, e isso e decisao de quem
     administra. Quando ligada, escuta so no proprio computador ate voce
     mudar o bind.
+
+    O ENDERECO DE FABRICA E 127.0.0.1, E ISSO E UMA GUARDA
+
+    HTTP e texto puro: senha, token e dado viajam legiveis para quem estiver
+    no caminho. O PhxSql nao termina TLS -- a saida e um proxy reverso que
+    termina TLS na frente dele (docs/SEGURANCA.md 7.1), e proxy so protege
+    se o motor NAO estiver aberto ao lado dele: com a porta web na rede,
+    quem ataca liga direto e pula o TLS inteiro.
+
+    Por isso, quem escreve um bind que atende de fora ("0.0.0.0:5001" ou o
+    IP da placa) le no arranque um aviso dizendo isso e o que fazer. Ele NAO
+    impede o servidor de subir -- abrir a porta continua sendo escolha de
+    quem implanta.
+
+        "atras_de_proxy": true
+
+    cala esse aviso, e SO isso: nao liga nada, nao cifra nada e o servidor
+    nao tem como conferir se o proxy existe. E uma declaracao de quem
+    implanta, para o aviso nao ficar aparecendo para sempre numa instalacao
+    que ja faz a coisa certa -- aviso que sempre aparece e aviso que
+    ninguem le.
 
     A porta e outra, separada da 5000 de proposito: quem fala HTTP nao e quem
     fala JSON Lines, e separar deixa o firewall tratar cada uma do seu jeito.
@@ -2585,11 +2607,18 @@ LIGAR
           "tabelas": ["clientes", "pedidos"],
           "token": "",
           "swagger_ligado": true,
-          "swagger_bind": "127.0.0.1:7000"
+          "swagger_bind": "127.0.0.1:7000",
+          "atras_de_proxy": false
         }
 
     AS DUAS PORTAS VEM DESLIGADAS. Atualizar o binario nao abre porta nenhuma:
     quem nao tem a secao `rest` no arquivo continua exatamente como estava.
+
+    E AS DUAS NASCEM EM 127.0.0.1, pelo mesmo motivo da interface web: HTTP e
+    texto puro, e quem quiser TLS poe um proxy reverso na frente. Endereco que
+    atende de fora sobe assim mesmo e AVISA no arranque; "atras_de_proxy":
+    true cala o aviso e vale para as DUAS portas desta secao, porque as duas
+    sobem do mesmo bloco e do mesmo operador. Ver docs/SEGURANCA.md 7.1 e 7.2.
 
     Sao DUAS portas de proposito -- 6000 o servico, 7000 o visualizador da
     especificacao. Quem sobe numa placa quer o REST sem o visualizador, e ai a

@@ -656,6 +656,79 @@ inclusive — e por isso é decisão de quem implanta, não padrão herdado. Qua
 ligada, a recusa é uma linha JSON em claro com erro nomeado (e não um
 silêncio), e a conexão fecha em seguida.
 
+**Quem quer o contrário escreve.** `"cifra_fio": { "exigir": true }` no
+`config.json` é escolha escrita, e o par de testes trava os dois sentidos pelo
+soquete: `o_escape_escrito_deixa_o_cliente_em_claro_entrar` e
+`exigir_escrito_no_arquivo_recusa_o_texto_claro`, em
+`crates/phxsql-server/tests/cifra-do-fio.rs`. Os dois sobem de um `config.json`
+de verdade, e não de um `Config` montado à mão — teste que **escreve** o campo
+não prova o padrão dele, e essa armadilha já foi paga aqui uma vez.
+
+### 7.0 O alcance do `exigir`, medido — e por que o padrão ainda não virou
+
+Ordem do dono, 18/09/2026: *«A comunicação deve obrigatoriamente ser
+cifrada.»* Dois meios decididos por ele: o fio nativo passa a **exigir** de
+fábrica (quem precisar de transição escreve `"exigir": false`), e o navegador e
+o REST ganham TLS por **proxy reverso na frente** — o PhxSql continua zero
+dependências.
+
+O primeiro meio **não entrou nesta rodada**, e a razão está medida. Ele passaria
+a anunciar uma proteção que o servidor não presta:
+
+- **`exigir` é lido em UM lugar que decide alguma coisa:**
+  `crates/phxsql-server/src/servidor.rs:9270`, dentro do laço da porta de
+  dados. Os outros casamentos de `cifra_fio.exigir` no repositório são
+  comentário, espelho da resposta de estado e ajudante de teste.
+- **Medido em 18/09/2026, no mesmo servidor e no mesmo instante, com
+  `cifra_fio.exigir: true`:** a porta nativa recusa (`[SP000025] este servidor
+  exige a cifra do fio…`) e, ao lado dela, `POST /api {"op":"login"}` devolve
+  **200** com a sessão aberta e a senha em claro; `POST /api {"op":"ping"}` com
+  o **mesmo token que a porta nativa acabara de recusar** devolve **200**;
+  `POST /v1/login` (REST) devolve **200** com sessão; `POST /mcp initialize`
+  devolve **200** com o catálogo inteiro de ferramentas; `GET /` (explorador da
+  especificação) devolve **200** e 14.009 bytes; e `POST /api
+  {"op":"desafio"}` devolve **200** com o `sal` e as 210.000 iterações do KDF
+  de um usuário nomeado.
+- **E o campo mente junto:** `servidor.rs:5884-5887` publica
+  `encryption_exigida: true` dentro de `diretivas_da_conexao`, cuja própria
+  documentação diz «o que é verdade DESTA conexão» — e a conexão HTTP em claro
+  que faz a pergunta recebe `true`. É a mesma família do `recursos.cache_paginas`
+  que anunciava um cache inexistente, e é pior: aqui alguém liga o interruptor e
+  deixa a tela no ar confiando nele.
+- **Tamanho da virada na suíte, medido:** numa árvore verde (2.553 testes
+  passando, nenhum falhando), trocar só o padrão derruba **62** — **60**
+  porque conectam em claro na porta de dados, e **2** porque travam o padrão de
+  ontem de propósito (`config::tests::sem_a_secao_cifra_fio_nada_e_exigido` e
+  `cliente_sem_cifra_continua_como_antes`). Não é motivo para não fazer; é o
+  número que diz que a mudança é de implantação, e não de detalhe — e os 60
+  precisam, um a um, do escape escrito.
+
+**O que entrou nesta rodada, e é o que dava para entregar inteiro:** o escape
+escrito provado pelos dois lados (acima), o aviso de arranque que diz o alcance
+(abaixo), e a porta web presa ao laço local provada contra o sistema
+operacional (§7.1).
+
+**O aviso de arranque.** Quem liga `cifra_fio.exigir` com qualquer porta HTTP
+no ar lê no terminal, de `Config::ler`, que o interruptor vale **só** para a
+porta de dados e quais portas continuam em claro. Enquanto as portas HTTP não
+recusarem — o conserto mora no `servidor.rs` —, a saída honesta é o servidor
+dizer o alcance em voz alta em vez de deixar o operador supor.
+
+**E o `exigir` é *inbound-only*.** Ele decide sobre quem **conecta neste
+servidor**, e nada sobre o que **este servidor conecta**. As três saídas têm
+interruptor próprio, e os três nascem **desligados**:
+
+| saída | interruptor | padrão |
+|---|---|---|
+| réplica → origem | `replicacao.origens[].cifra` | `false` |
+| nó → nó do cluster | `cluster.cifra` | `false` |
+| interface web → outro servidor | `web.servidores[].cifra` | `false` |
+
+Medido em 18/09/2026: `crates/phxsql-server/src/replica.rs` **não menciona
+`cifra_fio` uma única vez**. Quem quiser a réplica cifrada liga o `cifra` da
+origem — e, sem `chave_do_fio` (o pino), ela protege de escuta passiva e nada
+mais, exatamente como diz a tabela da §7.
+
 ### O que ela NÃO é
 
 - **Não é TLS.** Não há certificado, cadeia, autoridade nem revogação. A
@@ -722,6 +795,16 @@ cliente  --TLS-->  proxy (termina o TLS)  --claro, 127.0.0.1-->  phxsqld
    aberto à rede *ao lado* do proxy, o atacante liga direto e **pula o TLS
    inteiro** — o proxy vira teatro. O proxy é o único que escuta a porta
    pública; o motor, nunca.
+
+   **Isto deixou de ser recomendação e virou guarda provada (18/09/2026).** As
+   três portas HTTP nascem no laço local — `web.bind`, `rest.bind` e
+   `rest.swagger_bind` —, e `crates/phxsql-server/tests/cifra-da-porta-web.rs`
+   prova contra o **sistema operacional**, não por leitura de campo: o servidor
+   sobe de um `config.json` que não declara `web.bind`, o `GET /saude` responde
+   em `127.0.0.1` e a mesma porta **não aceita conexão** pelo IP desta máquina
+   na rede. Numa máquina só com laço local a segunda metade aparece como **NÃO
+   MEDIDA**, com o motivo — teste que se declara verde sobre o que não rodou é
+   pior que teste que falta.
 2. **O salto proxy→`phxsqld` é claro, então tem de ser laço local** (mesma
    máquina, `127.0.0.1`) **ou dentro de um túnel** (WireGuard/IPSec, a outra
    saída da §6). Terminar TLS no proxy e cruzar a rede em claro até o motor
@@ -740,6 +823,46 @@ claro, e um aperto em JavaScript é teatro (§7, «O que ela NÃO é»).
 concerns diferentes — o proxy dá TLS ao cliente que o exige; o Noise protege a
 porta de dados para o cliente que fala o aperto. Ligar um não desliga o outro,
 e a cifra do fio (§7) e a cifra em repouso (§8) seguem intactas por baixo.
+
+### 7.2 `atras_de_proxy`: a declaração que cala o aviso — e o que ela não faz
+
+Abrir a porta HTTP para a rede continua **podendo**: é o desenho normal de quem
+termina TLS num proxy, e recusar derrubaria toda instalação que já faz a coisa
+certa. O que muda é que o endereço de fábrica é fechado e o endereço aberto
+**avisa no arranque**, com o texto dizendo o que fazer:
+
+```
+web.bind esta em 0.0.0.0:5001, que atende de FORA desta maquina, e HTTP e
+texto puro: senha, token e dado viajam legiveis para quem estiver no caminho.
+O PhxSql nao termina TLS (petrea das zero dependencias) -- ponha um proxy
+reverso terminando TLS na frente e devolva esta porta para 127.0.0.1. Se o
+proxy ja esta la, escreva "atras_de_proxy": true na secao web para calar este
+aviso. Receita em docs/SEGURANCA.md 7.1.
+```
+
+```json
+"web":  { "ligado": true, "bind": "0.0.0.0:5001", "atras_de_proxy": true },
+"rest": { "ligado": true, "bind": "0.0.0.0:6000", "atras_de_proxy": true }
+```
+
+Três coisas que o campo **não** é, e estão escritas porque configuração que
+promete mais do que entrega é o defeito que esta casa já pagou:
+
+- **Não liga nada.** O único efeito é calar o aviso. Nenhum byte do que o
+  servidor faz muda, e não há TLS dentro do `phxsqld` com ele ligado.
+- **Não é conferível.** O servidor não tem como saber se o proxy existe. É uma
+  **declaração** de quem implanta; quem escreve `true` sem proxy nenhum na
+  frente mente para si mesmo, não para o motor.
+- **Não vale para a porta de dados.** `bind` (a 5000) tem a cifra do fio (§7),
+  que é outra coisa e outro caminho. O campo mora em `web` e em `rest`, e o de
+  `rest` cobre as **duas** portas da seção (`bind` e `swagger_bind`), porque
+  sobem do mesmo bloco e do mesmo operador.
+
+E o aviso existe com esse botão de silêncio por um motivo medido no próprio
+projeto: aviso que aparece para sempre numa instalação correta é aviso que
+ninguém lê — e isso gasta a confiança do aviso verdadeiro. O teste do
+comportamento **velho** é o que mais importa aqui:
+`config_de_ontem_no_laco_local_nao_ganha_aviso_nenhum`.
 
 **O que fica na reserva:** TLS 1.3 escrito em casa e provado contra vetores
 (a saída (c) do pedido 239) — só se um cliente exigir TLS **nativo no

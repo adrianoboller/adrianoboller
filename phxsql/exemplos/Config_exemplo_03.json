@@ -139,7 +139,8 @@
     "_": "Centro de Controle pelo navegador. Ver Config_exemplo_01.json.",
     "ligado": false,
     "bind": "127.0.0.1:5001",
-    "sessao_minutos": 60
+    "sessao_minutos": 60,
+    "atras_de_proxy": false
   },
 
   "backup": {

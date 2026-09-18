@@ -49,6 +49,29 @@ pub fn endereco_de(bind: &str) -> Result<SocketAddr> {
         .ok_or_else(|| PhxError::Esquema(format!("bind sem endereco: {bind:?}")))
 }
 
+/// Esta porta atende ALGUEM DE FORA desta maquina?
+///
+/// Serve ao aviso do arranque das portas HTTP, e por isso responde a pergunta
+/// do operador -- "isto esta exposto?" --, nao a pergunta do `SocketAddr`.
+/// Sao tres respostas diferentes e so a primeira e obvia:
+///
+/// - `127.0.0.1` e `[::1]`: laco local, nao atende de fora. `false`.
+/// - `0.0.0.0` e `[::]`: o NAO especificado, que e justamente "toda placa
+///   desta maquina" -- o caso mais exposto de todos, e o que `is_loopback`
+///   sozinho deixaria passar como se fosse endereco qualquer.
+/// - endereco de placa (`10.0.0.7`, um IP publico): atende de fora. `true`.
+///
+/// Nome que nao resolve devolve `false` DE PROPOSITO: quem recusa o endereco
+/// invalido e o [`Config::validar`], com o erro que nomeia o campo. Um aviso
+/// aqui em cima dele seria um segundo texto sobre a mesma linha errada, e o
+/// primeiro que a pessoa lesse seria o menos util.
+fn escuta_fora_da_maquina(bind: &str) -> bool {
+    match endereco_de(bind) {
+        Ok(e) => !e.ip().is_loopback(),
+        Err(_) => false,
+    }
+}
+
 /// Resolve UM caminho do `config.json`: se for relativo, mora ao lado do
 /// PROPRIO `config_em` -- nunca do diretorio de trabalho de quem subiu o
 /// processo. Absoluto fica exatamente como esta.
@@ -1623,6 +1646,39 @@ impl Cifra {
 /// **Com `exigir` desligado, o tunel protege contra escuta PASSIVA e nada
 /// mais.** Esta frase esta aqui, no `docs/SEGURANCA.md` e na tela pelo mesmo
 /// motivo: e a que o leitor nao pode ter de adivinhar.
+///
+/// # O padrao que o dono mandou trocar, e o que trava a troca (18/09/2026)
+///
+/// Ordem do dono: *"a comunicacao deve obrigatoriamente ser cifrada"* -- e
+/// `exigir` passa a nascer `true`, com `"exigir": false` como escape ESCRITO,
+/// o mesmo padrao da chave que nasce conferida. A troca nao entrou nesta
+/// rodada por duas razoes medidas, e as duas moram fora deste arquivo:
+///
+/// 1. **O interruptor nao alcanca o que ele anuncia.** `exigir` decide em UM
+///    lugar -- `servidor.rs:9270`, o laco da porta de dados. Medido em
+///    18/09/2026 no mesmo servidor e no mesmo instante, com `exigir: true`: a
+///    porta nativa recusa e `POST /api {"op":"login"}` devolve 200 com a
+///    sessao aberta e a senha em claro; REST, MCP e o explorador da
+///    especificacao idem. E `servidor.rs:5884-5887` publica
+///    `encryption_exigida: true` para essa mesma conexao HTTP em claro, numa
+///    funcao cujo proprio comentario diz "o que e verdade DESTA conexao".
+///    Ligar o padrao hoje seria vender protecao que o servidor nao presta.
+/// 2. **Tamanho medido da virada:** numa arvore verde (2.553 testes passando,
+///    nenhum falhando), trocar so o padrao derruba 62 -- 60 por conectarem em
+///    claro na porta de dados e 2 por travarem o padrao de ontem de proposito.
+///    Cada um dos 60 precisa do escape escrito, e eles vivem em arquivos de
+///    outras frentes.
+///
+/// O que entrou junto e o que dava para entregar inteiro: o escape provado
+/// pelos dois lados (`tests/cifra-do-fio.rs`) e o aviso de arranque que diz o
+/// ALCANCE de `exigir` quando ha porta HTTP no ar
+/// ([`Config::avisar_o_que_viaja_em_claro`]). Detalhe e numero em
+/// `docs/SEGURANCA.md` §7.0.
+///
+/// E o alcance tem outra metade: `exigir` e *inbound-only*. O que este
+/// servidor CONECTA tem interruptor proprio -- `replicacao.origens[].cifra`,
+/// `cluster.cifra` e `web.servidores[].cifra` --, e os tres nascem
+/// desligados.
 #[derive(Clone)]
 pub struct CifraFio {
     /// O servidor ATENDE o aperto. `false` recusa -- e a unica maneira de um
@@ -1959,6 +2015,20 @@ pub struct Web {
     /// texto `"host:porta"` (em claro, como sempre foi) ou um objeto que
     /// tambem carrega o pino do tunel -- ver [`ServidorWeb`].
     pub servidores: Vec<ServidorWeb>,
+    /// Ha um proxy reverso terminando TLS na frente desta porta?
+    ///
+    /// Nao liga nada e nao muda byte nenhum do que o servidor faz: o unico
+    /// efeito e CALAR o aviso do arranque sobre porta HTTP exposta em claro
+    /// (`docs/SEGURANCA.md` §7.1). Existe porque a alternativa era o aviso
+    /// aparecer para sempre em toda instalacao que ja fez a coisa certa -- e
+    /// aviso que sempre aparece e aviso que ninguem le, o que gasta a
+    /// confianca do aviso verdadeiro.
+    ///
+    /// E por isso ele e uma DECLARACAO, e o texto do campo diz isso: o
+    /// servidor nao tem como conferir se o proxy existe. Quem escreve `true`
+    /// sem proxy nenhum na frente esta mentindo para si mesmo, e nao para o
+    /// motor.
+    pub atras_de_proxy: bool,
 }
 
 impl Default for Web {
@@ -1968,6 +2038,7 @@ impl Default for Web {
             bind: format!("127.0.0.1:{PORTA_WEB_PADRAO}"),
             sessao_minutos: 60,
             servidores: Vec::new(),
+            atras_de_proxy: false,
         }
     }
 }
@@ -1984,6 +2055,7 @@ impl Web {
                     .inteiro_ou("sessao_minutos", padrao.sessao_minutos as i64)
                     .max(1) as u64,
                 servidores: Web::servidores_de(w),
+                atras_de_proxy: w.booleano_ou("atras_de_proxy", padrao.atras_de_proxy),
             },
         }
     }
@@ -2104,6 +2176,14 @@ pub struct Rest {
     pub swagger_ligado: bool,
     /// Endereco de escuta do explorador.
     pub swagger_bind: String,
+    /// Ha um proxy reverso terminando TLS na frente das DUAS portas do REST?
+    ///
+    /// Mesmo campo, mesmo efeito e mesma ressalva do [`Web::atras_de_proxy`]:
+    /// so cala o aviso do arranque. Vale para `bind` e para `swagger_bind`
+    /// juntos porque as duas sobem do mesmo bloco e do mesmo operador -- um
+    /// terceiro interruptor so para o explorador da especificacao seria
+    /// configuracao que ninguem ajusta separada.
+    pub atras_de_proxy: bool,
 }
 
 impl Rest {
@@ -2132,6 +2212,7 @@ impl std::fmt::Debug for Rest {
             token: _,
             swagger_ligado,
             swagger_bind,
+            atras_de_proxy,
         } = self;
         f.debug_struct("Rest")
             .field("ligado", ligado)
@@ -2142,6 +2223,7 @@ impl std::fmt::Debug for Rest {
             .field("token", &"(oculto)")
             .field("swagger_ligado", swagger_ligado)
             .field("swagger_bind", swagger_bind)
+            .field("atras_de_proxy", atras_de_proxy)
             .finish()
     }
 }
@@ -2157,6 +2239,7 @@ impl Default for Rest {
             token: String::new(),
             swagger_ligado: false,
             swagger_bind: format!("127.0.0.1:{PORTA_SWAGGER_PADRAO}"),
+            atras_de_proxy: false,
         }
     }
 }
@@ -2183,6 +2266,7 @@ impl Rest {
                     .texto_ou("swagger_bind", &padrao.swagger_bind)
                     .trim()
                     .to_string(),
+                atras_de_proxy: r.booleano_ou("atras_de_proxy", padrao.atras_de_proxy),
             },
         }
     }
@@ -2205,6 +2289,7 @@ impl Rest {
             ("token_proprio", Json::Bool(!self.token.is_empty())),
             ("swagger_ligado", Json::Bool(self.swagger_ligado)),
             ("swagger_bind", Json::texto_de(&self.swagger_bind)),
+            ("atras_de_proxy", Json::Bool(self.atras_de_proxy)),
         ])
     }
 
@@ -3193,7 +3278,16 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 15] = [
             "diario_volume_mib",
         ],
     ),
-    ("web", &["ligado", "bind", "sessao_minutos", "servidores"]),
+    (
+        "web",
+        &[
+            "ligado",
+            "bind",
+            "sessao_minutos",
+            "servidores",
+            "atras_de_proxy",
+        ],
+    ),
     (
         "rest",
         &[
@@ -3205,6 +3299,7 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 15] = [
             "token",
             "swagger_ligado",
             "swagger_bind",
+            "atras_de_proxy",
         ],
     ),
     (
@@ -3563,7 +3658,92 @@ impl Config {
                     .to_string(),
             );
         }
+        c.avisar_o_que_viaja_em_claro();
         Ok(c)
+    }
+
+    /// Os avisos do arranque sobre o que sai desta maquina em texto puro.
+    ///
+    /// # Por que AVISO, e nunca recusa
+    ///
+    /// Porta HTTP aberta para a rede e configuracao legitima -- e o desenho
+    /// normal de quem termina TLS num proxy reverso (`docs/SEGURANCA.md`
+    /// §7.1). Recusar derrubaria toda instalacao que ja faz a coisa certa, e
+    /// guarda nova entra PEDIDA: o que muda de padrao e o endereco de fabrica
+    /// (`127.0.0.1`), nao o direito de escrever outro.
+    ///
+    /// # Por que as TRES portas HTTP, e nao so a web
+    ///
+    /// `web.bind`, `rest.bind` e `rest.swagger_bind` chamam as mesmas funcoes
+    /// na mesma ordem -- `endereco()` e `TcpListener::bind` no arranque --, e
+    /// carregam o mesmo dado em claro. Avisar so a primeira deixaria o irmao
+    /// para tras, que e o defeito que esta casa ja pagou tres vezes num dia.
+    ///
+    /// # E o segundo aviso, que e sobre ALCANCE
+    ///
+    /// `cifra_fio.exigir` recusa texto claro num lugar so: o laco da porta de
+    /// DADOS. Quem o liga com uma porta HTTP no ar fechou um fio e deixou o
+    /// outro aberto -- com o mesmo token e o mesmo login --, e hoje nada lhe
+    /// diz isso. E a mesma familia do campo de configuracao que promete mais
+    /// do que entrega, e a saida honesta enquanto as portas HTTP nao recusam
+    /// e o servidor dizer o alcance em voz alta.
+    fn avisar_o_que_viaja_em_claro(&mut self) {
+        let mut novos: Vec<String> = Vec::new();
+        let portas: [(&str, bool, &str, bool, &str); 3] = [
+            (
+                "web.bind",
+                self.web.ligado,
+                self.web.bind.as_str(),
+                self.web.atras_de_proxy,
+                "web",
+            ),
+            (
+                "rest.bind",
+                self.rest.ligado,
+                self.rest.bind.as_str(),
+                self.rest.atras_de_proxy,
+                "rest",
+            ),
+            (
+                "rest.swagger_bind",
+                self.rest.swagger_ligado,
+                self.rest.swagger_bind.as_str(),
+                self.rest.atras_de_proxy,
+                "rest",
+            ),
+        ];
+        let mut ligadas: Vec<&str> = Vec::new();
+        for (rotulo, ligada, bind, atras_de_proxy, secao) in portas {
+            if !ligada {
+                continue;
+            }
+            ligadas.push(rotulo);
+            if atras_de_proxy || !escuta_fora_da_maquina(bind) {
+                continue;
+            }
+            novos.push(format!(
+                "{rotulo} esta em {bind}, que atende de FORA desta \
+                 maquina, e HTTP e texto puro: senha, token e dado viajam \
+                 legiveis para quem estiver no caminho. O PhxSql nao termina \
+                 TLS (petrea das zero dependencias) -- ponha um proxy reverso \
+                 terminando TLS na frente e devolva esta porta para \
+                 127.0.0.1. Se o proxy ja esta la, escreva \"atras_de_proxy\": \
+                 true na secao {secao} para calar este aviso. Receita em \
+                 docs/SEGURANCA.md 7.1."
+            ));
+        }
+        if self.cifra_fio.exigir && !ligadas.is_empty() {
+            novos.push(format!(
+                "cifra_fio.exigir esta ligado, e ele vale SO para a porta \
+                 de dados (bind). Continuam atendendo em claro, com o mesmo \
+                 token e o mesmo login: {}. E ele tambem nao alcanca o que \
+                 este servidor CONECTA -- replicacao.origens[].cifra, \
+                 cluster.cifra e web.servidores[].cifra sao interruptores \
+                 proprios, e os tres nascem desligados.",
+                ligadas.join(", ")
+            ));
+        }
+        self.avisos.extend(novos);
     }
 
     fn validar(&self) -> Result<()> {
@@ -3865,6 +4045,7 @@ impl Config {
                     ("ligado", Json::Bool(self.web.ligado)),
                     ("bind", Json::texto_de(&self.web.bind)),
                     ("sessao_minutos", Json::de_u64(self.web.sessao_minutos)),
+                    ("atras_de_proxy", Json::Bool(self.web.atras_de_proxy)),
                     (
                         // So o endereco, como sempre foi -- a tela de
                         // Configuracoes junta esta lista num texto. O estado do
@@ -5945,6 +6126,206 @@ mod tests {
         let txt = r#"{"token":"x","bind":"127.0.0.1:5000","web":{"ligado":true,"bind":"127.0.0.1:5000"}}"#;
         let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
         assert!(c.validar().is_err());
+    }
+
+    /// **O padrao da porta web e o LACO LOCAL, e isso e uma guarda.**
+    ///
+    /// Ordem do dono, 18/09/2026: a comunicacao tem de ser cifrada, e para o
+    /// navegador a saida e o proxy reverso na frente (`docs/SEGURANCA.md`
+    /// §7.1). Proxy so protege se o motor NAO estiver aberto ao lado dele --
+    /// senao o atacante liga direto e pula o TLS inteiro.
+    ///
+    /// O teste confere as DUAS formas de nao declarar endereco, porque sao
+    /// caminhos diferentes no leitor: arquivo sem a secao `web` (cai no
+    /// `Web::default`) e arquivo COM a secao e sem o campo `bind` (cai no
+    /// `texto_ou`, que e outra linha). A segunda e a que envelheceria calada.
+    #[test]
+    fn a_porta_web_sem_endereco_declarado_nasce_no_laco_local() {
+        for txt in [
+            r#"{"token":"x"}"#,
+            r#"{"token":"x","web":{"ligado":true}}"#,
+            r#"{"token":"x","web":{"ligado":true,"sessao_minutos":15}}"#,
+        ] {
+            let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+            assert!(
+                c.web.endereco().unwrap().ip().is_loopback(),
+                "a porta web nasceu aberta a rede em {:?} ({txt})",
+                c.web.bind
+            );
+            assert!(
+                !escuta_fora_da_maquina(&c.web.bind),
+                "{txt}: {:?} atende de fora",
+                c.web.bind
+            );
+        }
+        // O irmao: as duas portas do REST nascem no mesmo lugar, pelo mesmo
+        // motivo. Elas ja nasciam -- o que faltava era alguem travar isso.
+        let c = Config::de_json(&Json::analisar(r#"{"token":"x"}"#).unwrap()).unwrap();
+        assert!(!escuta_fora_da_maquina(&c.rest.bind));
+        assert!(!escuta_fora_da_maquina(&c.rest.swagger_bind));
+    }
+
+    /// `0.0.0.0` e o caso que `is_loopback` sozinho deixaria passar: nao e
+    /// laco local e nao e endereco de placa -- e TODA placa, o mais exposto.
+    #[test]
+    fn o_nao_especificado_conta_como_porta_aberta_ao_mundo() {
+        assert!(escuta_fora_da_maquina("0.0.0.0:5001"));
+        assert!(escuta_fora_da_maquina("[::]:5001"));
+        assert!(escuta_fora_da_maquina("10.0.0.7:5001"));
+        assert!(!escuta_fora_da_maquina("127.0.0.1:5001"));
+        assert!(!escuta_fora_da_maquina("[::1]:5001"));
+        // Endereco que nao resolve nao vira aviso: quem o recusa e o
+        // `validar`, e dois textos sobre a mesma linha errada confundem.
+        assert!(!escuta_fora_da_maquina("isso nao e endereco"));
+    }
+
+    /// Abrir a porta web ao mundo continua PODENDO -- e passa a avisar.
+    ///
+    /// Recusar derrubaria toda instalacao que hoje termina TLS num proxy e
+    /// faz a coisa certa. O aviso diz o que fazer, e nao so o que esta ruim.
+    #[test]
+    fn porta_http_aberta_ao_mundo_avisa_no_arranque_e_sobe() {
+        let txt = r#"{"token":"x","web":{"ligado":true,"bind":"0.0.0.0:8080"}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        c.validar().unwrap();
+        let aviso = c
+            .avisos
+            .iter()
+            .find(|a| a.starts_with("web.bind"))
+            .unwrap_or_else(|| panic!("nenhum aviso sobre a porta aberta: {:?}", c.avisos));
+        // O aviso tem de DIZER O QUE FAZER. Aviso que so reclama vira ruido.
+        assert!(aviso.contains("proxy"), "{aviso}");
+        assert!(aviso.contains("TLS"), "{aviso}");
+        assert!(aviso.contains("127.0.0.1"), "{aviso}");
+        assert!(aviso.contains("atras_de_proxy"), "{aviso}");
+    }
+
+    /// O irmao: as duas portas do REST avisam pelo mesmo caminho.
+    ///
+    /// `rest.bind` e `rest.swagger_bind` chamam `endereco()` e
+    /// `TcpListener::bind` no arranque exatamente como a web -- irmao e quem
+    /// chama as mesmas funcoes na mesma ordem.
+    #[test]
+    fn as_portas_do_rest_avisam_pelo_mesmo_caminho() {
+        let txt = r#"{"token":"x","rest":{"ligado":true,"bind":"0.0.0.0:6000",
+            "swagger_ligado":true,"swagger_bind":"0.0.0.0:7000"}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(
+            c.avisos.iter().any(|a| a.starts_with("rest.bind")),
+            "{:?}",
+            c.avisos
+        );
+        assert!(
+            c.avisos.iter().any(|a| a.starts_with("rest.swagger_bind")),
+            "{:?}",
+            c.avisos
+        );
+    }
+
+    /// Declarar o proxy cala o aviso -- e essa e a razao de o campo existir.
+    ///
+    /// Aviso que aparece para sempre em instalacao correta e aviso que
+    /// ninguem le, e isso gasta a confianca do aviso verdadeiro.
+    #[test]
+    fn proxy_declarado_cala_o_aviso_da_porta_aberta() {
+        let txt = r#"{"token":"x","web":{"ligado":true,"bind":"0.0.0.0:8080",
+            "atras_de_proxy":true}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(c.web.atras_de_proxy);
+        assert!(
+            !c.avisos.iter().any(|a| a.starts_with("web.bind")),
+            "o proxy foi declarado e o aviso saiu assim mesmo: {:?}",
+            c.avisos
+        );
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+    }
+
+    /// **O comportamento velho, e e o teste que mais importa aqui.**
+    ///
+    /// Uma instalacao correta -- as tres portas HTTP onde elas sempre
+    /// estiveram, e sem exigir a cifra do fio -- nao ganha aviso nenhum.
+    /// Aviso falso e do mesmo naipe do campo que mente: gasta a confianca do
+    /// que e verdadeiro, e aviso que sempre aparece ninguem le.
+    ///
+    /// O `"exigir": false` esta escrito, e nao omitido, de proposito: este
+    /// teste e sobre o aviso das PORTAS, e escrever o campo o deixa dizendo a
+    /// mesma coisa no dia em que o padrao do `exigir` virar. Quem trava o
+    /// padrao e o `sem_a_secao_cifra_fio_nada_e_exigido`, e ele sozinho --
+    /// dois testes travando a mesma coisa viram dois lugares onde a lei pode
+    /// divergir de si mesma.
+    #[test]
+    fn config_de_ontem_no_laco_local_nao_ganha_aviso_nenhum() {
+        let txt = r#"{"token":"x","cifra_fio":{"exigir":false},
+            "web":{"ligado":true},
+            "rest":{"ligado":true,"swagger_ligado":true}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(c.avisos.is_empty(), "{:?}", c.avisos);
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+    }
+
+    /// Porta DESLIGADA nao avisa: ninguem escuta nela.
+    ///
+    /// O `web.bind` continua no arquivo (e continua valendo no dia em que
+    /// alguem ligar), mas avisar sobre porta fechada e o mesmo aviso falso.
+    #[test]
+    fn porta_desligada_com_endereco_aberto_nao_avisa() {
+        let txt = r#"{"token":"x","web":{"ligado":false,"bind":"0.0.0.0:8080"},
+            "rest":{"ligado":false,"bind":"0.0.0.0:6000"}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(c.avisos.is_empty(), "{:?}", c.avisos);
+    }
+
+    /// **O alcance do `cifra_fio.exigir`, dito em voz alta no arranque.**
+    ///
+    /// Medido em 18/09/2026 pelo inventario de seguranca: com
+    /// `cifra_fio.exigir: true`, a porta de dados recusa o texto claro e, no
+    /// MESMO servidor e no MESMO instante, `POST /api {"op":"login"}` devolve
+    /// 200 com a sessao aberta e a senha em claro. O `exigir` e lido num
+    /// lugar so que decide algo -- `servidor.rs:9270`, o laco da porta de
+    /// dados --, e nao toca em porta HTTP nenhuma.
+    ///
+    /// Enquanto as portas HTTP nao recusarem (o conserto mora no
+    /// `servidor.rs`), a saida honesta e o servidor DIZER o alcance. Campo
+    /// que promete protecao maior que a prestada e da familia do
+    /// `recursos.cache_paginas` que anunciava um cache inexistente -- e pior,
+    /// porque aqui alguem liga o interruptor e deixa a tela no ar confiando
+    /// nele.
+    #[test]
+    fn exigir_a_cifra_do_fio_com_porta_http_no_ar_avisa_o_alcance() {
+        let txt = r#"{"token":"x","cifra_fio":{"exigir":true},
+            "web":{"ligado":true},"rest":{"ligado":true}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        let aviso = c
+            .avisos
+            .iter()
+            .find(|a| a.starts_with("cifra_fio.exigir"))
+            .unwrap_or_else(|| panic!("o alcance ficou calado: {:?}", c.avisos));
+        // Nomeia as portas que continuam em claro -- lista generica nao
+        // ensina qual fechar.
+        assert!(aviso.contains("web.bind"), "{aviso}");
+        assert!(aviso.contains("rest.bind"), "{aviso}");
+        // E diz que o `exigir` tambem nao cobre o que o servidor CONECTA: a
+        // replica, o cluster e a web->remoto tem interruptor proprio, e os
+        // tres nascem desligados. Medido em 18/09/2026: `replica.rs` nao
+        // menciona `cifra_fio` uma unica vez.
+        assert!(aviso.contains("replicacao.origens[].cifra"), "{aviso}");
+        assert!(aviso.contains("cluster.cifra"), "{aviso}");
+        assert!(aviso.contains("web.servidores[].cifra"), "{aviso}");
+    }
+
+    /// Sem porta HTTP no ar, o `exigir` cobre o que ha -- e nao avisa nada.
+    ///
+    /// O outro sentido da prova: um aviso que sai sempre nao distingue o
+    /// servidor que tem o furo do servidor que nao tem.
+    #[test]
+    fn exigir_sem_porta_http_no_ar_nao_avisa_alcance_nenhum() {
+        let txt = r#"{"token":"x","cifra_fio":{"exigir":true}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(
+            !c.avisos.iter().any(|a| a.starts_with("cifra_fio.exigir")),
+            "{:?}",
+            c.avisos
+        );
     }
 
     #[test]

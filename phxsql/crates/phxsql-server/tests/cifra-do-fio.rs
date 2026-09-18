@@ -287,6 +287,72 @@ fn cliente_sem_cifra_continua_como_antes() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
+/// **O ESCAPE ESCRITO.** Com `"exigir": false` no `config.json`, o cliente em
+/// claro continua entrando -- e continua entrando no dia em que o padrao
+/// virar.
+///
+/// # Por que este teste existe ao lado do de cima, e nao no lugar dele
+///
+/// Os dois provam coisas diferentes, e so um deles sobrevive a troca do
+/// padrao. O `cliente_sem_cifra_continua_como_antes` prova a OMISSAO: arquivo
+/// sem a secao, cliente velho entra. Este prova a ESCOLHA ESCRITA: alguem
+/// digitou `false`, e o motor obedece. Hoje os dois passam; no dia em que
+/// `exigir` nascer `true` (ordem do dono, 18/09/2026), o primeiro muda de
+/// significado e este fica exatamente como esta -- e e por isso que ele entra
+/// ANTES da troca, e nao depois: guarda escrita depois do fato nao prova que o
+/// fato nao quebrou nada.
+///
+/// E o padrao e o mesmo da chave conferida: quem NAO quer a guarda escreve o
+/// `false`, em vez de ganha-la por esquecimento.
+#[test]
+fn o_escape_escrito_deixa_o_cliente_em_claro_entrar() {
+    let base = pasta("escape");
+    let porta = porta_livre();
+    let _s = subir_do_arquivo(&base, porta, r#","cifra_fio": { "exigir": false }"#);
+
+    let lido = Config::ler(base.join("config.json")).unwrap();
+    assert!(
+        !lido.cifra_fio.exigir,
+        "o `false` escrito no arquivo foi ignorado: o escape nao existe"
+    );
+    assert!(lido.estranhas.is_empty(), "{:?}", lido.estranhas);
+
+    let mut c = Conexao::abrir(porta);
+    let r = c.pedir(&format!(r#"{{"token":"{TOKEN}","op":"ping"}}"#));
+    assert!(
+        r.contains("\"ok\":true"),
+        "com o escape escrito, o cliente em claro foi recusado: {r}"
+    );
+    exercitar(&mut c, "escape");
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// O outro sentido do escape: `"exigir": true` escrito RECUSA o texto claro,
+/// e a recusa vem do arquivo -- nao de um campo que o teste escreveu na mao.
+///
+/// Irmao do `exigir_recusa_texto_claro_e_deixa_o_tunel_passar`, que monta o
+/// `Config` em memoria. A diferenca importa: o caminho do arquivo passa pelo
+/// `CifraFio::de_json`, e e ele que decide o que a omissao vale.
+#[test]
+fn exigir_escrito_no_arquivo_recusa_o_texto_claro() {
+    let base = pasta("escrito-true");
+    let porta = porta_livre();
+    let _s = subir_do_arquivo(&base, porta, r#","cifra_fio": { "exigir": true }"#);
+
+    let lido = Config::ler(base.join("config.json")).unwrap();
+    assert!(lido.cifra_fio.exigir);
+
+    let mut c = Conexao::abrir(porta);
+    c.mandar_cru(&format!(r#"{{"token":"{TOKEN}","op":"ping"}}"#));
+    let r = c.ler_cru();
+    assert!(r.contains("\"ok\":false"), "o ping em claro passou: {r}");
+    assert!(
+        r.contains("cifrar"),
+        "a recusa tem de dizer o que fazer: {r}"
+    );
+    let _ = std::fs::remove_dir_all(&base);
+}
+
 // ---------------------------------------------------------------------------
 // O tunel
 // ---------------------------------------------------------------------------
