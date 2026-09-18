@@ -101,7 +101,8 @@ class Servidor:
         (self.base / "dados").mkdir(parents=True)
         cfg = {
             "base": "dados",
-            "bind": f"127.0.0.1:{porta_dados}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "Premissa P-A: quantas das 64 vagas HTTP a INTERFACE consome em repouso?" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{porta_dados}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
             "timeout_s": 30,
             "web": {"ligado": True, "bind": f"127.0.0.1:{porta_web}"},

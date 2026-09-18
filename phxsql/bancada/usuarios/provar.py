@@ -181,7 +181,8 @@ def montar_config():
     print(f"  echo -n '<senha da ana>' | phxsqld --senha\n    -> {h[:44]}...{h[-8:]}")
     print("  o cadastro comeca com UMA pessoa; o resto nasce pelo protocolo.")
     return {
-        "bind": f"127.0.0.1:{PORTA}",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "O CADASTRO DE USUARIOS PELO PROTOCOLO, exercitado contra o motor vivo" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
         "base": BASE + "/dados",
         "token": "t",
         "log_acessos": BASE + "/acessos.log",

@@ -54,7 +54,8 @@ def subir():
     os.makedirs(BASE, exist_ok=True)
     config = {
         "base": "base",
-        "bind": f"127.0.0.1:{PORTA}",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Mede a carga de linhas pela rede: uma a uma contra 'inserir_lote'" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
         "token": TOKEN,
         "web": {"ligado": False},
         "usuarios": [

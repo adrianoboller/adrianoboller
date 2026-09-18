@@ -150,7 +150,8 @@ def escrever_config(h):
     with open(os.path.join(BASE, "servico", "config.json"), "w") as f:
         json.dump({
             "base": "base",
-            "bind": f"127.0.0.1:{PORTA_DADOS}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "A prova REAL do webservice REST, pelo soquete e com um cliente HTTP proprio" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{PORTA_DADOS}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
             "web": {"ligado": False},
             "rest": {
@@ -169,7 +170,8 @@ def escrever_config(h):
     with open(os.path.join(BASE, "mudo", "config.json"), "w") as f:
         json.dump({
             "base": "base",
-            "bind": f"127.0.0.1:{PORTA_MUDO}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "A prova REAL do webservice REST, pelo soquete e com um cliente HTTP proprio" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{PORTA_MUDO}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
             "web": {"ligado": False},
             "usuarios": [usuarios[0]],

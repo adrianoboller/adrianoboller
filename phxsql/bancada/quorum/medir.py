@@ -78,7 +78,8 @@ def permissoes():
 
 def config_master(h):
     return {
-        "bind": f"127.0.0.1:{PORTA_MASTER}", "base": "base", "token": TOKEN,
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Quanto CUSTA um quorum aqui, hoje, com o codigo que ja existe" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{PORTA_MASTER}", "cifra_fio": {"exigir": False}, "base": "base", "token": TOKEN,
         "replicacao": {"papel": "source", "id_servidor": "master",
                        # Sem a imagem da linha a replica recebe so o rowid, e
                        # nao tem o que aplicar. Foi assim que uma medicao
@@ -91,7 +92,8 @@ def config_master(h):
 
 def config_replica(h, n):
     return {
-        "bind": f"127.0.0.1:{PORTAS_REPLICA[n]}", "base": "base", "token": TOKEN,
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Quanto CUSTA um quorum aqui, hoje, com o codigo que ja existe" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{PORTAS_REPLICA[n]}", "cifra_fio": {"exigir": False}, "base": "base", "token": TOKEN,
         "somente_leitura": True,
         "replicacao": {
             "papel": "replica", "id_servidor": f"r{n}", "imagem_da_linha": True,

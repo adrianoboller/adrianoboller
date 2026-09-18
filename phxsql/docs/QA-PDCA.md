@@ -411,19 +411,19 @@ com o raciocínio de cada uma, está em `docs/CATRACAS.md`.
 | `TETO_VERMELHA_SEM_PEDIDO` (provas vermelhas sem pedido no PENDENCIAS.md) | `crates/phxsql-server/src/conferidor_vermelhas.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_FSYNC_POR_FECHO_V2` (fsync gastos por fecho de janela de durabilidade) | `crates/phxsql-store/src/conferidor_fsync.rs` | 8 | **8** | em cima, sem folga |
 | `codigo-do-dono` (secoes criticas que rodam codigo do dono do banco com a trava na mao) | `bancada/concorrencia/mapa-da-trava.py` | 5 | **5** | em cima, sem folga |
-| `alcancam-fsync` (secoes criticas que alcancam `fsync` com a trava na mao) | `bancada/concorrencia/mapa-da-trava.py` | 22 | **25** | **REPROVANDO** — 3 acima |
+| `alcancam-fsync-2` (secoes criticas que alcancam `fsync` com a trava na mao) | `bancada/concorrencia/mapa-da-trava.py` | 24 | **24** | em cima, sem folga |
 | `rede-ou-espera` (secoes criticas que esperam REDE com a trava global na mao) | `bancada/concorrencia/mapa-da-trava.py` | 0 | **0** | em cima, sem folga |
 | `spawn-sem-teto` (sitios de nascimento de thread sem teto no catalogo) | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | em cima, sem folga |
 | `catalogo-envelhecido` (entradas do catalogo de threads que nao casam com sitio nenhum) | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | em cima, sem folga |
-| `TETO_DEBUG_COM_SEGREDO` (campos de segredo que o `Debug` de uma struct de crates/*/src imprime, derivado ou a mao) | `bancada/guardas/debug-com-segredo.py` | 0 | **1** | **REPROVANDO** — 1 acima |
+| `TETO_DEBUG_COM_SEGREDO` (campos de segredo que o `Debug` de uma struct de crates/*/src imprime, derivado ou a mao) | `bancada/guardas/debug-com-segredo.py` | 0 | **2** | **REPROVANDO** — 2 acima |
 | `TETO_PKILL_SEM_PID` (invocacoes reais de `pkill` em bancada/**/*.py e *.sh) | `bancada/guardas/pkill-sem-pid.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TRECHO_MORTO` (entradas cujo trecho o codigo nao tem mais) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TRECHO_AMBIGUO` (entradas cujo trecho casa duas ou mais vezes no arquivo) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TESTE_MORTO` (testes nomeados que nao existem como `fn` em crates/**/*.rs) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TESTE_FORA_DO_BINARIO` (testes que existem, mas nao no binario que a entrada nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TESTE_SEM_MODULO` (testes de alvo --lib nomeados sem o caminho do modulo) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
-| `TETO_NAO_JULGADA_ESCONDIDA` (entradas que a ultima corrida nao julgou e que a pagina nao nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **7** | **REPROVANDO** — 7 acima |
-| `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 187 | **194** | **FROUXO** — 7 acima, suba-o |
+| `TETO_NAO_JULGADA_ESCONDIDA` (entradas que a ultima corrida nao julgou e que a pagina nao nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
+| `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 200 | **200** | em cima, sem folga |
 
 *23 catraca(s) medida(s) por conferidor. Refaz com `python3 docs/qa/medir.py`.*
 
@@ -435,6 +435,7 @@ uma constante que seja limite de funcionamento sai daqui escrevendo
 
 - `TETO` — `crates/phxsql-server/src/replica.rs:611`
 - `TETO_DO_REGISTRO` — `crates/phxsql-core/src/fio.rs:495`
+- `TETO_TXT_CRU_EM_HTML` — `crates/phxsql-server/src/conferidor_texto_cru.rs:142`
 <!-- catracas:fim -->
 
 > **Esta tabela NÃO se edita à mão — ela se gera.** Com

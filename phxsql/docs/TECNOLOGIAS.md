@@ -35,18 +35,18 @@ foi estimado no lugar de uma medição que faltou.
 | crate | arquivos .rs | codigo | teste | comentario | vazias | total |
 |---|---:|---:|---:|---:|---:|---:|
 | `phxsql-cli` | 1 | 815 | 104 | 113 | 78 | 1110 |
-| `phxsql-cmd` | 2 | 579 | 110 | 171 | 62 | 922 |
-| `phxsql-core` | 35 | 11270 | 4775 | 3614 | 1569 | 21228 |
+| `phxsql-cmd` | 2 | 618 | 110 | 207 | 65 | 1000 |
+| `phxsql-core` | 35 | 11327 | 4838 | 3728 | 1577 | 21470 |
 | `phxsql-ffi` | 7 | 1408 | 1014 | 703 | 235 | 3360 |
-| `phxsql-odbc` | 7 | 2469 | 1086 | 928 | 228 | 4711 |
-| `phxsql-server` | 58 | 45595 | 30231 | 22726 | 5181 | 103733 |
+| `phxsql-odbc` | 7 | 2662 | 1089 | 980 | 239 | 4970 |
+| `phxsql-server` | 58 | 45691 | 30400 | 22964 | 5198 | 104253 |
 | `phxsql-sql` | 10 | 6637 | 3381 | 1993 | 748 | 12759 |
-| `phxsql-store` | 24 | 13397 | 3704 | 5929 | 1561 | 24591 |
-| **total** | **144** | **82170** | **44405** | **36177** | **9662** | **172414** |
+| `phxsql-store` | 24 | 13487 | 3725 | 6039 | 1571 | 24822 |
+| **total** | **144** | **82645** | **44661** | **36727** | **9711** | **173744** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **44405/82170 = 0.54×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **44661/82645 = 0.54×**.
 
-Alem do `src/`: **79** programas de medicao em `examples/` (20008 linhas — bancada em Rust, nao produto nem teste) e **63** arquivos em `tests/` de integracao fora de `src/` (21633 linhas).
+Alem do `src/`: **79** programas de medicao em `examples/` (20117 linhas — bancada em Rust, nao produto nem teste) e **64** arquivos em `tests/` de integracao fora de `src/` (22689 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -108,9 +108,9 @@ mesmo motivo que o rodapé já errou uma vez.
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
 | JavaScript (prova ponta a ponta) | `testes-web/` | 54 | 11171 |
-| Python (bancada de medicao) | `bancada/` | 117 | 54342 |
-| Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2863 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 415 | 102391 |
+| Python (bancada de medicao) | `bancada/` | 117 | 54644 |
+| Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2880 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 419 | 103140 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 32 | 13584 |
 <!-- /GERADO -->
 
@@ -332,7 +332,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 
 **22** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **197** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 7962. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **199** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 8061. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -423,7 +423,7 @@ empacotar:
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2501** testes passaram, **0** falharam (medido em 2026-09-17 23:32:32, commit `f1ec78aa`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **2585** testes passaram, **0** falharam (medido em 2026-09-18 15:13:49, commit `a6b7a0fd`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
@@ -493,7 +493,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **374** pedidos numerados; **62** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **369** pedidos numerados; **60** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -557,8 +557,6 @@ proposta de voltar sem medição nova.
 | 347 | **SEC 339(a) BLOQUEIO — XSS no console pelo TEXTO DE TELA: 9 interpolacoes cruas em 2 sitios, e a lei diz «dois caminhos» quando existem quatro** |
 | 356 | **SEC ALTO — o Profiler decide por `cifra.tabelas` e a cifra acontece por `DadoPessoal`: dois campos, uma garantia** |
 | 357 | **SEC MEDIO-ALTO — a trilha `.lgpd` redige por NOME de coluna e por analise de hash, nunca pela marca `DadoPessoal`: a §11.7 escreveu a condicao no futuro do preterito, e ela chegou** |
-| 358 | **SEC MEDIO — o rowid E o balde, e o balde e o primeiro caractere: a particao por letra vaza pelo PROTOCOLO, para quem tem a coluna negada** |
-| 366 | **ORDEM DO DONO, 18/09/2026 -- a comunicacao deve OBRIGATORIAMENTE ser cifrada** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —

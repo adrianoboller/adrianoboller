@@ -93,6 +93,10 @@ def subir(dir_):
                             capture_output=True, text=True, cwd=dir_)
     cfg = json.loads(modelo.stdout)
     cfg["bind"] = f"127.0.0.1:{PORTA}"
+    # bancada de teste, NAO cliente do produto -- fala em claro para exercitar
+    # os exemplos do manual, sem o aperto de mao no meio (servidor exige a
+    # cifra por padrao desde o pedido 370)
+    cfg["cifra_fio"] = {"exigir": False}
     for k in ("usuarios", "root"):
         cfg.pop(k, None)
     (dir_ / "config.json").write_text(json.dumps(cfg, indent=2))

@@ -79,7 +79,8 @@ def hash_da_senha(senha):
 def config_de(base, nome, h, membros):
     c = {
         "base": "base",
-        "bind": f"127.0.0.1:{PORTAS[nome]}",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "O CANAL ABERTO do cluster: o que ele leva hoje, em que direcao, e a que custo" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{PORTAS[nome]}", "cifra_fio": {"exigir": False},
         "token": TOKEN,
         "replicacao": {"papel": "source" if nome == "no1" else "replica",
                        "id_servidor": nome, "imagem_da_linha": True},

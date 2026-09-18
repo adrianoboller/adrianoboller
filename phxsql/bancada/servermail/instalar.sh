@@ -38,13 +38,17 @@ echo "PASSO 1) instalar + configurar a base do server mail (porta $PORTA)"
 HASH_LINE="$(printf '%s' 'senha-do-servermail' | "$PHXSQLD" --senha 2>/dev/null)"
 echo "  senha_hash gerado (PBKDF2, sem texto puro): ${HASH_LINE:0:48}..."
 
-# monta o config final: bind na porta pedida, base local, token de teste
+# monta o config final: bind na porta pedida, base local, token de teste.
+# bancada de teste, NAO cliente do produto -- fala em claro para provar a
+# instalacao e a base do servermail, sem o aperto de mao no meio (servidor
+# exige a cifra por padrao desde o pedido 370)
 python3 - "$PORTA" <<'PY'
 import json, sys
 c = json.load(open("modelo.json"))
 c["bind"] = f"127.0.0.1:{sys.argv[1]}"
 c["base"] = "base"
 c["token"] = "token-de-teste-servermail"
+c["cifra_fio"] = {"exigir": False}
 json.dump(c, open("config.json", "w"), indent=2, ensure_ascii=False)
 print("  config.json escrito: bind 127.0.0.1:%s, base=base" % sys.argv[1])
 PY

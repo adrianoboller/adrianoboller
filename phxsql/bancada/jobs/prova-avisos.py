@@ -174,7 +174,8 @@ def escrever_config(pasta, com_email, porta_smtp, avisar_jobs=True):
         # ele ja existia antes desta funcionalidade -- sem a chave nova.
         del alertas["email"]["avisar_jobs"]
     config = {
-        "bind": f"127.0.0.1:{PORTA_DADOS}",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "A prova do aviso de jobs por e-mail, com SMTP falso e servidor proprio" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{PORTA_DADOS}", "cifra_fio": {"exigir": False},
         "base": str(pasta / "dados"),
         "token": TOKEN,
         "log_acessos": str(pasta / "acessos.log"),

@@ -75,7 +75,8 @@ def config(na_janela):
     """
     return {
         "base": "base",
-        "bind": "127.0.0.1:%d" % PORTA,
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "A PROVA da janela de durabilidade da exclusao: matar o servidor no meio dela" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": "127.0.0.1:%d" % PORTA, "cifra_fio": {"exigir": False},
         "token": TOKEN,
         "web": {"ligado": False},
         "recursos": {

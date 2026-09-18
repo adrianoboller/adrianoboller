@@ -83,7 +83,8 @@ class Servidor:
         self.porta = porta
         cfg = {
             "base": "dados",
-            "bind": f"127.0.0.1:{porta}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "Quanto tempo a trava global fica PRESA, e quanto disso e o 'fsync'?" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{porta}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
             "web": {"ligado": False},
             "root": {"id": 1, "nome": "root", "login": "root",

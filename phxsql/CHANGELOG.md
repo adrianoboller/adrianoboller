@@ -23,6 +23,50 @@ instante, a tela devolve `200 OK` para um login com senha em texto puro.
 
 ### Corrigido
 
+- **A comunicação passou a ser obrigatoriamente cifrada, e os clientes desta
+  casa aprenderam o aperto junto** (ordem do dono de 18/09; pedidos 366 e
+  370). `cifra_fio.exigir` nasce `true`, com `"exigir": false` como escape
+  escrito. As três portas HTTP recusam o texto claro pelo **mesmo** portão de
+  rede que já era delas — e o `atender_http`, que carregava uma cópia própria
+  do portão, passou a chamá-lo. Porta de família desconhecida falha
+  **fechado**. O escape das portas HTTP é `"atras_de_proxy": true`, que é o
+  meio escolhido pelo dono: TLS terminado no proxy reverso, motor sem
+  dependência nenhuma.
+  E o `phxsql-cmd` — o console — foi **consertado, não o teste dele**: oito de
+  nove provas ficaram vermelhas com a virada, e a resposta foi ensinar o
+  aperto ao produto, pelo mesmo `Cliente::cifrar` da réplica e do cluster.
+  Quatro testes mudaram de **significado**, com o nome novo escrito ao lado e
+  nenhum apagado.
+- **O campo `encryption_exigida` parou de anunciar proteção que o canal ao
+  lado não presta** (pedido 370). Passou a valer `exigir && entrada ==
+  Dados`: numa porta HTTP é `false`, porque quem cifra ali é o TLS do proxy, e
+  **proteção que o servidor não consegue conferir não se anuncia**. É a
+  família do `recursos.cache_paginas`.
+- **A receita do driver ODBC nasce cifrada** (pedido 373), com `CIFRA=0` como
+  escape escrito. O padrão mora no `impl Default` e **não** no analisador,
+  porque o `SQLConnect` com `host:porta/database` não passa pelo analisador —
+  padrão só ali deixaria esse irmão falando claro, calado. O interruptor
+  passou de dois para três estados: com o padrão ligado, «valor não
+  reconhecido → false» deixa de ser inofensivo e vira rebaixamento por dedo
+  errado. Provado contra o sistema operacional: `.so` por `dlopen`, soquete e
+  `phxsqld` reais, **89 conferências**, e um `"op":"cifrar"` no `acessos.log`
+  sem ninguém ter escrito `CIFRA=`.
+- **A trilha `.lgpd` de coluna externa parou de mentir sobre o valor antigo**
+  (pedido 367). A causa era um sentinela com dois significados: `Value::Null`
+  de «coluna vazia» e de «não carreguei» são o mesmo byte e fatos opostos, e a
+  trilha herdou o sentinela dos índices sem herdar o significado. Três
+  mentiras morreram: valor antigo em branco, apagar sem gerar registro, e
+  salvar sem tocar em nada gerando **4.000** registros onde eram 2.000.
+  Custo medido, 7 rodadas com faixa min–max: ler o bloco velho custa
+  **0,59 µs/KiB** contra os **0,99 µs/KiB** que o `atualizar` já pagava na
+  mesma coluna — no caso comum o conserto saiu **mais barato que o defeito**.
+- **A partição por posição sobre coluna marcada recusa nas duas portas**
+  (pedido 358). O rowid sai do volume, então dividi-lo devolve o volume — e o
+  volume revela o **primeiro caractere** da coluna: uma classe entre 37, de
+  graça, em toda leitura, inclusive a quem tem aquela coluna negada pelo
+  direito por coluna. A recusa entra na declaração, no `CREATE TABLE` e na
+  marcação posterior, num funil só.
+
 - **A marca `.tx` do COMMIT gravava a linha inteira em claro, em `0644`, fora
   da cifra** (pedido 354). Passa a ser selada **por operação** — não a marca
   inteira, condição do DBA: marca inteira selada vira tudo-ou-nada na
@@ -65,26 +109,40 @@ instante, a tela devolve `200 OK` para um login com senha em texto puro.
 
 ### Sabido
 
-- **`cifra_fio.exigir` é lido em UM lugar que decide alguma coisa**
-  (`servidor.rs:9270`), e o `estado` publica `encryption_exigida` como se ele
-  valesse para tudo — pior: dentro de `diretivas_da_conexao`, cuja própria doc
-  diz «o que é verdade DESTA conexão». **Enquanto isso não fechar, o `exigir`
-  não vira padrão de fábrica**: armá-lo transformaria um furo conhecido em
-  garantia anunciada. Virar aquela linha derruba **62** testes, medidos.
+- ~~**`cifra_fio.exigir` é lido em UM lugar que decide alguma coisa**, e por
+  isso não vira padrão de fábrica~~ — **fechado na mesma rodada** (pedido
+  370): as portas HTTP passaram a recusar pelo portão delas, o
+  `encryption_exigida` passou a dizer a verdade por canal, e só então o padrão
+  virou. A previsão dos «62 testes derrubados» era da ordem certa: caíram os
+  do servidor e mais **oito do console**, que não estavam na conta porque
+  `phxsql-cmd` não era suspeito de ninguém.
+- **Ligar o `exigir` não alcança a SAÍDA, e isso é decisão do dono** (a outra
+  metade do 366). `replicacao.origens[].cifra`, `cluster.cifra` e
+  `web.servidores[].cifra` nascem **desligados**: um source de fábrica recusa
+  uma réplica de fábrica, e a suíte fica verde do mesmo jeito, porque as
+  bancadas escrevem o escape dos dois lados. Por ora há só um **aviso de
+  arranque** nomeando cada saída em claro configurada. Virar também os três
+  tem custo próprio — réplica nova deixa de falar com source anterior ao
+  aperto — e por isso não entrou de carona.
+- **Os 63 scripts de `bancada/` que abrem soquete ainda não escrevem o
+  escape** e vão bater na recusa. Medido: dos 69 que montam config/token, 63
+  abrem soquete e só 4 mencionam `cifra_fio`. Enquanto não entrar, **corrida
+  de bancada perde número** — e página de desempenho sem bancada é painel
+  velho anunciando sucesso.
 - **Ligar o `exigir` quebra todo DbLink → PhxSql**, que não tem como pedir o
   túnel, e não há escape por ligação (pedido 371). E a frase «a `std` não traz
   TLS» que o `phx.rs` carrega **nasceu falsa**: o túnel é oito dias mais velho
   que ela.
-- **A trilha `.lgpd` de coluna externa marcada mente nos três sentidos**
-  (pedido 367): afirma que o valor velho era vazio, **não registra o
-  apagamento** — o evento que mais importa para a lei — e inventa alteração em
-  coluna que ninguém tocou.
+- ~~**A trilha `.lgpd` de coluna externa marcada mente nos três sentidos**~~ —
+  **fechado** (pedido 367), com o custo medido e um atalho recusado com
+  número.
 - **Não existe expurgo de `.lgpd`** (pedido 368): a trilha cresce para sempre,
   com a chave primária em texto em cada registro. O caminho existe sem mudar
   formato — expurgo por **volume** —, e falta só o prazo, que não é técnico.
-- **O `rowid` é o balde, e o balde é o primeiro caractere** (pedido 358):
-  quem tem a coluna negada lê o primeiro caractere dela linha a linha, pelo
-  protocolo. Medido: `silva` → rowid 18.000.001 → balde 19 → «S».
+- ~~**O `rowid` é o balde, e o balde é o primeiro caractere** (pedido 358)~~ —
+  **fechado na declaração**, nas duas portas do protocolo. Segue **aberto pela
+  API Rust e pelo FFI** (pedido 376), de propósito: é o que torna possível
+  escrever o teste do comportamento velho, e é decisão a tomar com o DBA.
 - **Os arquivos do `phxsql-store` continuam nascendo `0644`** — 12 abridores
   fora de teste, e o único `0o600` do crate aperta **depois** de criar. O
   `.reg` cifrado nasce aberto para a máquina.

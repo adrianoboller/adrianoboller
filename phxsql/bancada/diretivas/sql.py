@@ -181,7 +181,8 @@ CONFIG_A = """{
 def config_b(hash_op):
     return json.dumps(
         {
-            "bind": f"127.0.0.1:{PORTA_B}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "Bateria do 'SHOW ... SETTINGS' e do 'ALTER ... SET', contra o motor VIVO" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{PORTA_B}", "cifra_fio": {"exigir": False},
             "base": f"{BASE}/b/dados",
             "token": "t",
             "log_acessos": f"{BASE}/b/acessos.log",

@@ -64,7 +64,8 @@ def permissoes():
 def config_base(porta, h):
     return {
         "base": "base",
-        "bind": f"127.0.0.1:{porta}",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Prova os quatro modos de replicacao, por soquete, nas portas 5330-5339" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{porta}", "cifra_fio": {"exigir": False},
         "token": TOKEN,
         "web": {"ligado": False},
         "usuarios": [{"login": USUARIO, "nome": "Bancada", "id": 10,

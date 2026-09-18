@@ -23,7 +23,8 @@ def hash_da_senha(s):
 
 def config_padrao(porta, web=False):
     return {
-        "base": "base", "bind": "127.0.0.1:%d" % porta, "token": TOKEN,
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Sobe um phxsqld de verdade numa porta da faixa 6250-6299 e conversa por soquete" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "base": "base", "bind": "127.0.0.1:%d" % porta, "cifra_fio": {"exigir": False}, "token": TOKEN,
         "web": {"ligado": bool(web), "bind": "127.0.0.1:%d" % (porta + 1)},
         "usuarios": [
             {"login": "adm", "nome": "Adriano", "id": 10, "nivel": "admin",

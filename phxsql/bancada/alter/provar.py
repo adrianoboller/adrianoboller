@@ -74,7 +74,8 @@ def escrever_config(h):
     with open(os.path.join(BASE, "source", "config.json"), "w") as f:
         json.dump({
             "base": "base",
-            "bind": f"127.0.0.1:{PORTA_SOURCE}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "A prova REAL do 'acrescentar_coluna', pelo soquete e com replicacao" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{PORTA_SOURCE}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
             "web": {"ligado": False},
             "espelho": True,
@@ -86,7 +87,8 @@ def escrever_config(h):
     with open(os.path.join(BASE, "replica", "config.json"), "w") as f:
         json.dump({
             "base": "base",
-            "bind": f"127.0.0.1:{PORTA_REPLICA}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "A prova REAL do 'acrescentar_coluna', pelo soquete e com replicacao" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{PORTA_REPLICA}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
             "web": {"ligado": False},
             "somente_leitura": True,

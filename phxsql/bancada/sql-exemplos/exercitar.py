@@ -51,7 +51,8 @@ class Servidor:
         with open(cfg, "w") as f:
             json.dump(
                 {
-                    "bind": f"127.0.0.1:{PORTA}",
+                    # bancada de teste, NAO cliente do produto -- fala em claro para medir "Exercita, contra um phxsqld DE PE, os cinco pedidos do PDF das 26 perguntas q..." sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+                    "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
                     "base": BASE + "/dados",
                     "token": TOKEN,
                     "web": {"ligado": False},

@@ -101,7 +101,8 @@ def main():
     try:
         cfg = {
             "base": "base",
-            "bind": f"127.0.0.1:{PORTA}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "O PITR pelo SOQUETE: restaurar a um INSTANTE, com o controle na mesma corrida" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
             # SEM a imagem da linha nao ha PITR, e o servidor recusa nomeando
             # o interruptor. Ela vale para o que for gravado daqui em diante,

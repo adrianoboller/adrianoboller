@@ -102,7 +102,8 @@ class Servidor:
     def config():
         return {
             "base": "base",
-            "bind": f"127.0.0.1:{PORTA}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "A bateria de ponta a ponta dos SEIS itens, pelo SOQUETE" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
             "web": {"ligado": True, "bind": f"127.0.0.1:{PORTA_WEB}"},
             "recursos": {"cache_paginas": 2048},

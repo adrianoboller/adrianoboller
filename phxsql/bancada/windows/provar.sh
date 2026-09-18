@@ -52,10 +52,15 @@ H=$("$W" "$BIN" --senha <<< "segredo1" 2>/dev/null | grep -oE 'pbkdf2-sha256[^"]
 
 # `base` fica RELATIVO de proposito: o wine mapeia Z: na raiz do Linux, entao
 # caminho absoluto do Unix so funciona por acidente do drive corrente.
+#
+# bancada de teste, NAO cliente do produto -- fala em claro para provar que o
+# `.exe` RODA sob wine, sem o aperto de mao no meio (servidor exige a cifra
+# por padrao desde o pedido 370)
 python3 -c "
 import json
 c=json.load(open('config.json'))
 c['bind']='127.0.0.1:$PORTA'; c['base']='dados'
+c['cifra_fio']={'exigir': False}
 if isinstance(c.get('web'),dict): c['web']['ligado']=False
 c['usuarios'][0]['login']='adm'; c['usuarios'][0]['senha_hash']='''$H'''
 json.dump(c,open('config.json','w'),indent=1)

@@ -154,7 +154,8 @@ def bloco_cluster(nome, h):
 def config_de(nome, h, com_cluster=True, origens=None):
     c = {
         "base": "base",
-        "bind": f"127.0.0.1:{PORTAS[nome]}",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Prova o cluster com eleicao e promocao automatica (pedido 126)" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{PORTAS[nome]}", "cifra_fio": {"exigir": False},
         "token": TOKEN,
         "web": {"ligado": False},
         "replicacao": {"papel": "source" if nome == "no1" else "replica",

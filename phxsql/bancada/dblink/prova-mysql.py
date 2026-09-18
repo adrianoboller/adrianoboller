@@ -132,7 +132,8 @@ class Phxsqld:
         (self.base / "dados").mkdir(parents=True)
         cfg = {
             "base": "dados",
-            "bind": f"127.0.0.1:{PORTA}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "A prova do DbLink contra um MySQL(R) DE VERDADE" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
             "web": {"ligado": False},
             "root": {"id": 1, "nome": "root", "login": "root",

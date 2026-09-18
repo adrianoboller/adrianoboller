@@ -32,11 +32,15 @@ mkdir -p "$S/dados"; cd "$S" || exit 1
 # O PBKDF2 tambem sai do binario emulado: se a criptografia nao rodasse em ARM,
 # o hash nao fecharia com o login mais abaixo.
 H=$($Q "$BIN" --senha <<< "segredo1" | grep -oE 'pbkdf2-sha256[^"]+' | head -1)
+# bancada de teste, NAO cliente do produto -- fala em claro para provar que o
+# webservice REST RODA em ARM64, sem o aperto de mao no meio (servidor exige
+# a cifra por padrao desde o pedido 370)
 python3 - "$PORTA_DADOS" "$PORTA_REST" "$PORTA_SWAGGER" "$TOKEN" "$H" "$S" <<'PY'
 import json, sys
 dados, rest, swagger, token, h, s = sys.argv[1:7]
 json.dump({
   "bind": f"127.0.0.1:{dados}",
+  "cifra_fio": {"exigir": False},
   "base": f"{s}/dados",
   "token": token,
   "web": {"ligado": False},

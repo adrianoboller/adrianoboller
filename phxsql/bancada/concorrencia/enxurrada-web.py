@@ -89,7 +89,8 @@ class Servidor:
         (self.base / "dados").mkdir(parents=True)
         cfg = {
             "base": "dados",
-            "bind": f"127.0.0.1:{porta_dados}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "A enxurrada na porta web: N conexoes HTTP ao mesmo tempo contra o 'phxsqld'" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{porta_dados}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
             # Curto: um cliente que segura o cabecalho por SEGURAR s tem de
             # ser servido quando completa, e nao cortado pelo servidor antes.

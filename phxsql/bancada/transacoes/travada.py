@@ -87,7 +87,8 @@ def subir():
     with open(BASE + "/config.json", "w") as f:
         json.dump(
             {
-                "bind": f"127.0.0.1:{PORTA}",
+                # bancada de teste, NAO cliente do produto -- fala em claro para medir "Os TRES jeitos de cancelar uma transacao travada, pelo SOQUETE" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+                "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
                 "base": BASE + "/dados",
                 "token": TOKEN,
                 "web": {"ligado": False},

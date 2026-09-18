@@ -227,7 +227,8 @@ class Phxsqld:
         (self.base / "dados").mkdir(parents=True)
         cfg = {
             "base": "dados",
-            "bind": f"127.0.0.1:{PORTA}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "Bancada PhxSql x SQLite(R) -- a comparacao que decide o caso do celular" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
             # A web fica desligada: pagina servida e trabalho que o SQLite(R)
             # nao faz, e ela nem entra na pergunta.

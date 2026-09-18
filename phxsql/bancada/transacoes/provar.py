@@ -77,7 +77,8 @@ def escrever_config(h):
     with open(os.path.join(BASE, "config.json"), "w") as f:
         json.dump({
             "base": "base",
-            "bind": f"127.0.0.1:{PORTA}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "A prova REAL das transacoes, pelo SOQUETE" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
             "web": {"ligado": False},
             "recursos": {"transacao_prazo_min": 1,

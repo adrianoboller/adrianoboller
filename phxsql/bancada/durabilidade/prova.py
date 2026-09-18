@@ -76,7 +76,8 @@ RESULTADO = os.path.join(AQUI, "resultado.json")
 
 def config(regime, lote_ms=3_600_000, lote_op=1_000_000):
     return {
-        "base": "base", "bind": "127.0.0.1:%d" % PORTA, "token": TOKEN,
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "A matriz real de durabilidade -- SP000010, ponto de morte x regime" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "base": "base", "bind": "127.0.0.1:%d" % PORTA, "cifra_fio": {"exigir": False}, "token": TOKEN,
         # O padrao (1.000) truncava o "buscar" da cascata em silencio -- 1200
         # filhas voltavam como 1000 e a verificacao de consistencia acusava
         # "parcial" num caso que so estava CORTADO pela paginacao. Medido

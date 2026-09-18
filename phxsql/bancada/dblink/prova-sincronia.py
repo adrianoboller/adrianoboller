@@ -94,7 +94,8 @@ def sobe_o_phxsqld():
     (TRABALHO / "dados").mkdir(parents=True)
     (TRABALHO / "config.json").write_text(json.dumps({
         "base": "dados",
-        "bind": f"127.0.0.1:{PORTA}",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "A prova da sincronia de tabelas primas, contra um MySQL(R) de verdade" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
         "token": TOKEN,
         "web": {"ligado": False},
         "root": {"id": 1, "nome": "root", "login": "root",

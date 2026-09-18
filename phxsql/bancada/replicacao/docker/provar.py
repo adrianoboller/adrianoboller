@@ -118,7 +118,8 @@ def config(h, papel, id_servidor, origens=None, somente_leitura=False,
         rep["replicas_autorizadas"] = replicas_autorizadas
     c = {
         "base": "base",
-        "bind": bind,
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Os quatro modos de replicacao do PhxSql, provados em conteineres" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": bind, "cifra_fio": {"exigir": False},
         "token": TOKEN,
         "web": {"ligado": False},
         "replicacao": rep,

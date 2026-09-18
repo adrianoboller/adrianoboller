@@ -51,7 +51,8 @@ class Servidor:
         shutil.rmtree(self.base, ignore_errors=True)
         os.makedirs(self.base + "/dados")
         cfg = self.base + "/config.json"
-        c = {"bind": f"127.0.0.1:{self.porta}", "base": self.base + "/dados",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "O fluxo dos TRES numeros crescentes do PhxSql, contra o motor vivo" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        c = {"bind": f"127.0.0.1:{self.porta}", "cifra_fio": {"exigir": False}, "base": self.base + "/dados",
              "token": "t", "web": {"ligado": False}}
         c.update(self.extra)
         json.dump(c, open(cfg, "w"))

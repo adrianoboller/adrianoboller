@@ -93,7 +93,8 @@ class Servidor:
         # firewall, este arquivo some.
         open(self.dir + "/alvo.txt", "w").write("sobrevivi\n")
         cfg = {
-            "bind": f"127.0.0.1:{self.porta}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "Bateria de INJECAO DE SQL, log das tentativas e bloqueio automatico" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{self.porta}", "cifra_fio": {"exigir": False},
             "base": self.dir + "/dados",
             "token": "t",
             "web": {"ligado": False},

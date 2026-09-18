@@ -168,7 +168,8 @@ def montar_diretivas():
                 marca[:60])
     RESULTADO["algoritmo"] = hashes["ana"].split("$")[0] + "$" + hashes["ana"].split("$")[1]
     return {
-        "bind": f"127.0.0.1:{PORTA}",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "O SCRIPT DE DIRETIVAS de usuario, exercitado contra o motor vivo" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
         "base": BASE + "/dados",
         "token": "t",
         "log_acessos": BASE + "/acessos.log",

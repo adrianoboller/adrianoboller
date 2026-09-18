@@ -73,7 +73,8 @@ def preparar_base(n):
         subprocess.run(["rm", "-rf", str(BASE)], check=True)
     (BASE / "base" / "loja").mkdir(parents=True)
     with open(BASE / "config.json", "w") as f:
-        json.dump({"base": "base", "bind": f"127.0.0.1:{PORTA}", "token": TOKEN,
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Regime (c), pedido do dono em 17/09/2026: o BULKINSERT adia o '.ndx', SOLTA a..." sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        json.dump({"base": "base", "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False}, "token": TOKEN,
                    "web": {"ligado": False}}, f)
     r = subprocess.run([str(PREPARADOR), str(BASE / "base" / "loja"), str(n)],
                         capture_output=True, text=True)

@@ -102,7 +102,8 @@ EXTENSOES = ("reg", "ndx", "bin", "memo", "log", "trash", "reason", "lgpd")
 def config(regime, lote_ms, lote_op):
     return {
         "base": "base",
-        "bind": "127.0.0.1:%d" % PORTA,
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Prova ou derruba, contra o 'phxsqld' DE PE (nunca por teste unitario), o bura..." sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": "127.0.0.1:%d" % PORTA, "cifra_fio": {"exigir": False},
         "token": TOKEN,
         "web": {"ligado": False},
         "recursos": {

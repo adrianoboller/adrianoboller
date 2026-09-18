@@ -217,6 +217,10 @@ class Servidor:
         cfg["bind"] = f"127.0.0.1:{porta}"
         cfg["base"] = os.path.join(self.dir, "base")
         cfg["token"] = TOKEN
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir
+        # a credencial recusada e o bloqueio de IP, sem o aperto de mao no
+        # meio (servidor exige a cifra por padrao desde o pedido 370)
+        cfg["cifra_fio"] = {"exigir": False}
         # A interface so sobe onde a prova pela tela (`--tela`) precisa dela.
         cfg["web"] = ({"ligado": True, "bind": f"127.0.0.1:{web}", "sessao_minutos": 60}
                       if web else {"ligado": False})

@@ -163,7 +163,8 @@ class Servidor:
             )
         os.makedirs(self.dir + "/dados", exist_ok=True)
         cfg = {
-            "bind": f"127.0.0.1:{self.porta}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "Bateria dos COMANDOS PROIBIDOS: o servidor recusa, bloqueia o IP -- e avisa?" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{self.porta}", "cifra_fio": {"exigir": False},
             "base": self.dir + "/dados",
             "token": "t",
             "log_acessos": self.dir + "/acessos.log",

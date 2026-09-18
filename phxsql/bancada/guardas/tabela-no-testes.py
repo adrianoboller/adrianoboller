@@ -61,6 +61,7 @@ republicar a corrida de ontem depois de o catalogo crescer -- passa sem
 nenhuma: so faz a pagina nomear as entradas novas que aquela corrida nunca viu.
 """
 
+import importlib.util
 import json
 import pathlib
 import sys
@@ -90,6 +91,39 @@ MARCA = {
     "QUEBRADA": "⚠️ quebrada",
 }
 
+_APOSENTADAS_DO_TRECHO_VIVO = None
+
+
+def aposentadas_do_trecho_vivo():
+    """A lista `APOSENTADAS` do `trecho-vivo.py`, pelo proprio modulo.
+
+    Nunca copiada aqui: duas listas da mesma coisa divergem na primeira vez
+    que uma aprender algo (um id renomeado, um motivo reescrito) -- e a
+    divergencia seria dupla, porque a tabela publicaria uma guarda como viva
+    ou como aposentada errado e as duas fontes continuariam concordando
+    consigo mesmas. E a mesma lei do KiB da interface: quando um gerador
+    depende de uma lista, a lista tem de sair do codigo.
+
+    O `trecho-vivo.py` tem hifen no nome (nao da para `import trecho_vivo`) e
+    termina com um `if __name__ == "__main__": sys.exit(principal())` que
+    dispara a catraca do catalogo inteiro -- uma varredura de `crates/**/*.rs`
+    so para ler uma lista de tres campos. `exec_module` roda as DEFINICOES do
+    modulo (funcoes, constantes, a propria `APOSENTADAS`) sob um `__name__`
+    que NAO e `"__main__"`, entao aquele bloco final fica inerte: ele so
+    dispara quando o interpretador chama o arquivo como script, nunca quando
+    outro modulo o carrega assim. E a mesma tecnica que o proprio
+    `trecho-vivo.py` ja usa para carregar `catalogo.py` e este arquivo --
+    quem tentar `import` do jeito obvio vai bater no hifen primeiro."""
+    global _APOSENTADAS_DO_TRECHO_VIVO
+    if _APOSENTADAS_DO_TRECHO_VIVO is None:
+        caminho = AQUI / "trecho-vivo.py"
+        spec = importlib.util.spec_from_file_location(
+            "trecho_vivo_das_guardas", caminho)
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        _APOSENTADAS_DO_TRECHO_VIVO = {a["id"]: a for a in modulo.APOSENTADAS}
+    return _APOSENTADAS_DO_TRECHO_VIVO
+
 
 def nao_julgadas(guardas, dados):
     """Os ids do catalogo que esta rodada NAO julgou, na ordem do catalogo.
@@ -107,23 +141,38 @@ def nao_julgadas(guardas, dados):
     return [g["id"] for g in guardas if g.get("id") not in julgados]
 
 
-def tabela(dados, guardas=None):
+def tabela(dados, guardas=None, aposentadas=None):
     guardas = GUARDAS if guardas is None else guardas
+    aposentadas = (aposentadas_do_trecho_vivo() if aposentadas is None
+                   else aposentadas)
     por_id = {g["id"]: g for g in guardas}
     linhas = [
         "| guarda | o defeito reposto | testes que caem | veredito |",
         "|---|---|---:|---|",
     ]
     conta = {}
+    citadas = []
     for r in dados["guardas"]:
         g = por_id.get(r["id"], {})
-        conta[r["veredito"]] = conta.get(r["veredito"], 0) + 1
+        aposentada = aposentadas.get(r["id"])
+        if aposentada:
+            # A corrida julgou esta guarda ANTES dela sair do catalogo -- o
+            # veredito que ela trouxe (PROVADA, QUEBRADA...) descrevia um
+            # defeito que nao existe mais. Publica-lo como vivo mentiria: e
+            # a familia da "chave morta", e pior que a linha faltar, porque
+            # uma linha ausente ninguem confunde com garantia.
+            conta["APOSENTADA"] = conta.get("APOSENTADA", 0) + 1
+            citadas.append((r["id"], aposentada))
+            veredito_txt = "🪦 aposentada (%s)" % aposentada["data"]
+        else:
+            conta[r["veredito"]] = conta.get(r["veredito"], 0) + 1
+            veredito_txt = MARCA.get(r["veredito"], r["veredito"])
         quantos = len(g.get("caem", []))
         linhas.append(
             "%s%s` | %s | %s | %s |"
             % (PREFIXO_DA_LINHA, r["id"], r.get("titulo", g.get("titulo", "")),
                quantos if quantos else "—",
-               MARCA.get(r["veredito"], r["veredito"])))
+               veredito_txt))
     total = len(dados["guardas"])
     # O plural sai do numero, e nao de uma segunda tabela escrita a mao: uma
     # guarda «provada» e catorze «provada» e o tipo de erro que ninguem revisa.
@@ -131,7 +180,8 @@ def tabela(dados, guardas=None):
               "REDUNDANTE": ("redundante", "redundantes"),
               "NAO PEGOU": ("não pegou", "não pegaram"),
               "ESTRAGOU": ("estragou", "estragaram"),
-              "QUEBRADA": ("quebrada", "quebradas")}
+              "QUEBRADA": ("quebrada", "quebradas"),
+              "APOSENTADA": ("aposentada", "aposentadas")}
     resumo = ", ".join(
         "%d %s" % (n, plural.get(v, (v.lower(), v.lower()))[0 if n == 1 else 1])
         for v, n in sorted(conta.items()))
@@ -163,6 +213,15 @@ def tabela(dados, guardas=None):
         for ident in faltam:
             titulo = por_id_cat.get(ident, {}).get("titulo", "")
             linhas.append("- `%s` — %s" % (ident, titulo))
+    if citadas:
+        # A guarda saiu do catalogo, mas a corrida publicada e de ANTES da
+        # aposentadoria e ainda a cita -- a pagina nao pode calar isso, senao
+        # o motivo da aposentadoria (por que aquele veredito parou de valer)
+        # fica so no `trecho-vivo.py`, que quem le a tabela nao abre.
+        linhas += ["", "As guardas que esta corrida ainda cita, hoje "
+                   "aposentadas:", ""]
+        for ident, a in citadas:
+            linhas.append("- `%s` (%s) — %s" % (ident, a["data"], a["motivo"]))
     notas = [(r["id"], n) for r in dados["guardas"] for n in r["notas"]]
     if notas:
         linhas += ["", "As notas que a rodada deixou:", ""]
@@ -328,6 +387,31 @@ def autoteste():
                  codigo == 0 and "NÃO julgou" not in texto)
         conferir("e a linha de resumo volta a dizer «160 guardas»",
                  "**160 guardas:" in texto)
+
+        # 6. A GUARDA APOSENTADA (pedido `cifra-do-fio-imposta`, 18/09/2026):
+        #    a corrida julgou a guarda ANTES dela sair do catalogo, e o
+        #    veredito que ela trouxe (PROVADA) descrevia um defeito que nao
+        #    existe mais. Catalogo e corrida PROPRIOS deste caso, para nao
+        #    herdar o "faltam" dos casos 1-5 e nao depender da APOSENTADAS
+        #    de producao (que muda com o tempo).
+        cat6 = _catalogo_falso(3)
+        corrida6 = _falso(["g00", "g01", "aposentada-de-hoje"])
+        motivo6 = "o defeito que ela repunha virou o PRODUTO"
+        aposentadas6 = {"aposentada-de-hoje": {"data": "18/09/2026",
+                                                "motivo": motivo6}}
+        bloco6 = tabela(corrida6, cat6, aposentadas6)
+        linha6 = [l for l in bloco6.splitlines()
+                  if l.startswith("| `aposentada-de-hoje")][0]
+        conferir("a guarda aposentada NAO aparece como provada",
+                 "provada" not in linha6, linha6)
+        conferir("e aparece marcada como aposentada, com a data",
+                 "🪦 aposentada (18/09/2026)" in linha6, linha6)
+        conferir("e o motivo aparece publicado, na secao propria",
+                 motivo6 in bloco6)
+        resumo6 = [l for l in bloco6.splitlines() if l.startswith("**")][0]
+        conferir("o resumo conta 1 aposentada e 2 provadas -- nao 3 provadas",
+                 "2 provadas" in resumo6 and "1 aposentada" in resumo6,
+                 resumo6)
 
     print("   %s" % ("todos passaram" if not falhas
                      else "FALHOU: " + ", ".join(falhas)))

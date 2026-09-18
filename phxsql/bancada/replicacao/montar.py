@@ -64,7 +64,8 @@ def permissoes():
 def config_master(h):
     return {
         "base": "base",
-        "bind": f"127.0.0.1:{PORTA_MASTER}",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Monta e sobe quatro servidores PhxSql: Master, Slave01, Slave02, Slave03" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{PORTA_MASTER}", "cifra_fio": {"exigir": False},
         "token": TOKEN,
         "web": {"ligado": False},
         # Sem isto o diario grava QUE a linha mudou e nao grava PARA QUE,
@@ -84,7 +85,8 @@ def config_master(h):
 def config_slave(h, n, porta_origem, nome_origem):
     return {
         "base": "base",
-        "bind": f"127.0.0.1:{PORTA_MASTER + n}",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Monta e sobe quatro servidores PhxSql: Master, Slave01, Slave02, Slave03" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{PORTA_MASTER + n}", "cifra_fio": {"exigir": False},
         "token": TOKEN,
         "web": {"ligado": False},
         # Uma replica escrita pela aplicacao quebra a numeracao dos rowids, e a

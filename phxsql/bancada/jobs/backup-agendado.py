@@ -95,7 +95,8 @@ class Ligacao:
 
 def escrever_config(com_jobs):
     cfg = {
-        "bind": f"127.0.0.1:{PORTA}",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Backup AGENDADO, pelo SOQUETE: cadastra, espera o relogio rodar sozinho, conf..." sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
         "base": BASE + "/dados",
         "token": TOKEN,
         "web": {"ligado": False},

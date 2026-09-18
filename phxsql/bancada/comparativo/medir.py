@@ -530,7 +530,8 @@ def sonda_direito_coluna():
              "replicar": True, "verificar": True, "reindexar": True}
     token = "prova-coluna"
     cfg = {
-        "base": "base", "bind": f"127.0.0.1:{PORTA + 1}", "token": token,
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "O comparativo MEDIDO: o que o PhxSql ainda nao tem, contra quem tem" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "base": "base", "bind": f"127.0.0.1:{PORTA + 1}", "cifra_fio": {"exigir": False}, "token": token,
         "usuarios": [
             {"login": "bea", "nome": "Bea (controle, sem regra)", "id": 1,
              "senha_hash": _hash("senha-da-bea"), "bases": {"*": dict(regra)}},
@@ -612,7 +613,8 @@ def sonda_pitr():
     token = "prova-pitr"
     base = tempfile.mkdtemp(prefix="phx-cmp-pitr-")
     cfg = {
-        "base": "base", "bind": f"127.0.0.1:{PORTA + 2}", "token": token,
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "O comparativo MEDIDO: o que o PhxSql ainda nao tem, contra quem tem" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "base": "base", "bind": f"127.0.0.1:{PORTA + 2}", "cifra_fio": {"exigir": False}, "token": token,
         "replicacao": {"papel": "isolado", "imagem_da_linha": True},
         "backup": {"destino": os.path.join(base, "backup")},
     }

@@ -46,7 +46,8 @@ def config(porta, max_linhas=25_000):
     da caixa, e a janela de durabilidade padrao faz parte disso."""
     return {
         "base": "base",
-        "bind": "127.0.0.1:%d" % porta,
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "O que as duas bancadas de utilizacao padrao compartilham" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": "127.0.0.1:%d" % porta, "cifra_fio": {"exigir": False},
         "token": TOKEN,
         "max_linhas": max_linhas,
         "web": {"ligado": False},

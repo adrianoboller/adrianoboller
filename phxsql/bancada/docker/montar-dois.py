@@ -40,7 +40,8 @@ def hash_da_senha():
 
 def config(papel, hash_, origem=None):
     j = {
-        "bind": "0.0.0.0:5000", "base": "/dados/base", "token": TOKEN,
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Dois PhxSql em conteiner: bases diferentes, tabelas diferentes, e a comunicac..." sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": "0.0.0.0:5000", "cifra_fio": {"exigir": False}, "base": "/dados/base", "token": TOKEN,
         "max_linhas": 1000, "timeout_s": 30, "conexoes_max": 64,
         "web": {"ligado": True, "bind": "0.0.0.0:5001", "sessao_minutos": 60},
         "usuarios": [{"id": 1, "nome": "Adriano Boller", "login": "adm",

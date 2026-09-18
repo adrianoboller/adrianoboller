@@ -35,33 +35,33 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **2.501 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **2.585 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Protocolo e portões (despachar) | 551 | 21,6 |
-| Motor de dados (arquivos, índice, diários) | 517 | 20,2 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 252 | 9,9 |
-| Camada SQL (léxico, sintaxe, tradução) | 217 | 8,5 |
-| Servidor (outros) | 198 | 7,7 |
-| Configuração | 129 | 5,0 |
-| Criptografia e codificação | 127 | 5,0 |
-| DbLink | 84 | 3,3 |
-| Telemetria e profiler | 73 | 2,9 |
-| ODBC | 59 | 2,3 |
-| Gatilhos e procedimentos | 45 | 1,8 |
+| Protocolo e portões (despachar) | 554 | 21,4 |
+| Motor de dados (arquivos, índice, diários) | 525 | 20,3 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 255 | 9,9 |
+| Camada SQL (léxico, sintaxe, tradução) | 217 | 8,4 |
+| Servidor (outros) | 203 | 7,8 |
+| Configuração | 132 | 5,1 |
+| Criptografia e codificação | 128 | 4,9 |
+| DbLink | 84 | 3,2 |
+| Telemetria e profiler | 73 | 2,8 |
+| ODBC | 66 | 2,6 |
+| Gatilhos e procedimentos | 45 | 1,7 |
 | **Jobs** | **33** | **1,3** |
 | **Usuários e permissões** | **33** | **1,3** |
-| **Mensagens (i18n do servidor)** | **32** | **1,3** |
+| **Mensagens (i18n do servidor)** | **32** | **1,2** |
 | **Interface web (servidor HTTP)** | **29** | **1,1** |
 | **Replicação** | **24** | **0,9** |
 | **Transações** | **23** | **0,9** |
 | **Segurança de rede (blacklist, firewall)** | **21** | **0,8** |
 | **MCP** | **21** | **0,8** |
-| **Console de terminal (phxsqlcmd)** | **18** | **0,7** |
+| **Console de terminal (phxsqlcmd)** | **20** | **0,8** |
 | **Exportação** | **13** | **0,5** |
 | **Junções e união** | **13** | **0,5** |
 | **Pivot** | **12** | **0,5** |
@@ -69,13 +69,13 @@ contando `#[test]` por arquivo e agrupando:
 | **Alertas e e-mail** | **8** | **0,3** |
 | **CLI** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,2** |
-| **total** | **2555** | |
+| **total** | **2587** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 5447 |
+| `phxsql-store/src/table.rs` | 5582 |
 | `phxsql-store/src/ndx.rs` | 1655 |
 | `phxsql-ffi/src/lib.rs` | 1453 |
 | `phxsql-server/src/main.rs` | 488 |
@@ -84,7 +84,7 @@ Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 | `phxsql-server/src/dblink/conexao.rs` | 275 |
 | `phxsql-server/src/carga.rs` | 227 |
 | `phxsql-ffi/src/punho.rs` | 188 |
-| `phxsql-cmd/src/main.rs` | 171 |
+| `phxsql-cmd/src/main.rs` | 186 |
 | `phxsql-odbc/src/registro.rs` | 149 |
 | `phxsql-odbc/src/tipos.rs` | 132 |
 <!-- cobertura:fim -->
@@ -672,7 +672,8 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `ordem-pequena-aceita` | o segredo X25519 todo-zeros aceito como chave de sessão | 2 | ✅ provada |
 | `contador-do-fio-parado` | o contador de registros do fio parado — nonce repetido | 3 | ✅ provada |
 | `fio-cortado-vira-fim` | o fio cortado no meio devolvido como fim de conversa | 1 | ✅ provada |
-| `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | ✅ provada |
+| `cifra-do-fio-rebaixada` | a cifra do fio de volta a OPCIONAL por padrão | 1 | ✅ provada |
+| `portas-http-sem-o-portao-da-cifra` | as portas HTTP atendendo em claro com a cifra exigida | 2 | ✅ provada |
 | `transcricao-sem-o-cifrado` | o hash da transcrição sem o texto cifrado da mensagem 2 | 2 | ✅ provada |
 | `amarra-ao-canal-ignorada` | o login amarrado ao canal conferido SEM a transcricao | 1 | ✅ provada |
 | `amarra-exigida-ignorada` | o servidor exige a amarracao ao canal, mas o login nao a cobra | 1 | ✅ provada |
@@ -785,6 +786,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `upsert-gatilho-do-ramo` | no upsert que atualiza, o BEFORE UPDATE vê a linha mesclada e o AFTER é o do ramo que ele virou | 5 | ✅ provada |
 | `threads-do-so-pela-diferenca` | a prova de que o SO viu a thread subida é a diferença entre duas leituras do total do processo | 1 | ✅ provada |
 | `cluster-devolve-a-credencial-na-tela` | o resumo do cluster na op `config` leva o token entre nós e o hash do replicador | 2 | ✅ provada |
+| `cifra-do-odbc-volta-a-nascer-em-claro` | a receita do driver ODBC volta a nascer em claro, e o esquecimento vira o padrao | 5 | ✅ provada |
 | `replica-lista-e-pedida-nao-imposta` | replicas_autorizadas vazia libera todos -- e so isso e' pedida, nao imposta | 1 | ✅ provada |
 | `posicao-nao-encolhe-em-silencio` | tabela que nao abre some da soma do diario sem marcar `incompleta` | 1 | ✅ provada |
 | `eleicao-prefere-completa` | `cluster::vencedor` volta a comparar so a posicao numerica, ignorando `incompleta` | 1 | ✅ provada |
@@ -792,13 +794,12 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `spare-nao-atende-ninguem` | o papel Spare deixa de recusar toda operacao que nao esta em OPS_NO_SPARE | 1 | ✅ provada |
 | `read-replica-recusa-escrita` | `ReadReplica` deixa de recusar escrita e para de apontar o primario | 1 | ✅ provada |
 | `pulso-fora-da-lista-e-recusado` | `op_cluster_pulso` deixa de conferir o id contra a lista viva de nos | 1 | ✅ provada |
+| `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**151 das 199 guardas do catálogo: 146 provadas, 1 quebrada, 4 redundantes** — 3621 s de mutação, medido em 2026-09-16 15:25.
+**154 das 199 guardas do catálogo: 1 aposentada, 148 provadas, 1 quebrada, 4 redundantes** — 3631 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 49 das 199 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 49 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 46 das 199 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 46 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
-- `cifra-do-fio-rebaixada` — a cifra do fio de volta a OPCIONAL por padrão
-- `portas-http-sem-o-portao-da-cifra` — as portas HTTP atendendo em claro com a cifra exigida
 - `teto-do-fio-sem-a-constante` — o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito
 - `teto-do-fio-sem-a-constante-no-soquete` — a mesma troca da constante por um teto quase infinito, vista pela rede
 - `perfil-decide-so-pela-lista-e-nao-pelo-reg-cifrado` — o perfil.txt decide pela lista do config e a cifra acontece pela marca de coluna
@@ -834,7 +835,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `fio-cifrado-manda-o-claro-junto` — o fio cifrado manda a linha em claro junto do registro selado
 - `diario-das-diretivas-guarda-o-segredo-anterior` — o diário das diretivas grava o valor ANTERIOR do campo sigiloso em claro
 - `token-do-rest-entra-pela-tela` — o token da porta REST passa a se gravar pela tela de configuração
-- `cifra-do-odbc-volta-a-nascer-em-claro` — a receita do driver ODBC volta a nascer em claro, e o esquecimento vira o padrao
 - `receita-odbc-devolve-a-senha` — a connection string mascarada do ODBC devolve a senha inteira
 - `cifra-do-fio-reserializa-a-privada` — o `para_json` da cifra do fio devolve a chave privada em vez de «(oculta)»
 - `especificacao-openapi-leva-o-token` — a especificação OpenAPI, servida sem portão, passa a carregar o token da porta
@@ -846,6 +846,10 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `dado-pessoal-no-grito-do-conflito` — o grito do conflito de unicidade publica a coluna marcada como dado pessoal
 - `so-o-disco-vem-da-porta-e-nao-de-desligar-depois` — o empilhar volta a abrir pela porta de sempre e desligar a sobreposicao na linha seguinte
 - `slot-de-outro-reg` — o sal deixa de ser por arquivo: o slot cifrado de um `.reg` abre no outro
+
+As guardas que esta corrida ainda cita, hoje aposentadas:
+
+- `cifra-do-fio-imposta` (18/09/2026) — o defeito que ela repunha -- `cifra_fio.exigir: true` de fabrica -- virou o PRODUTO, por ordem do dono (*a comunicacao deve obrigatoriamente ser cifrada*, pedido 370). Guarda cujo defeito deixou de existir nao tem o que repor. Ela nao foi remendada para o numero fechar: nasceu no lugar dela a `cifra-do-fio-rebaixada`, que repoe o defeito CONTRARIO (a cifra voltar a ser opcional) e cuja prova e o mesmo teste, tambem trocado de lado (`o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo`). O que a petrea *guarda nova entra pedida* continua protegendo ficou com o escape escrito, e ele esta no `seguem` da nova.
 
 As notas que a rodada deixou:
 

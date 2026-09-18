@@ -105,7 +105,8 @@ class Servidor:
         }
         politica.update(self.seguranca)
         cfg = {
-            "bind": f"127.0.0.1:{self.porta}",
+            # bancada de teste, NAO cliente do produto -- fala em claro para medir "Bateria de ACESSO e SEGURANCA da porta TCP/IP do PhxSql" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+            "bind": f"127.0.0.1:{self.porta}", "cifra_fio": {"exigir": False},
             "base": self.dir + "/dados",
             "token": "t",
             "web": {"ligado": False},

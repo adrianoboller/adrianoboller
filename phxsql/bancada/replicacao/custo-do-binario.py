@@ -76,7 +76,8 @@ def uma_carga(binario, porta, base, n, com_strace):
     shutil.rmtree(base, ignore_errors=True)
     os.makedirs(base, exist_ok=True)
     h = hash_da_senha(binario, "segredo1")
-    cfg = {"base": "base", "bind": f"127.0.0.1:{porta}", "token": TOKEN,
+    # bancada de teste, NAO cliente do produto -- fala em claro para medir "Duas perguntas que a bateria de 17/09/2026 deixou abertas, medidas aqui" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+    cfg = {"base": "base", "bind": f"127.0.0.1:{porta}", "cifra_fio": {"exigir": False}, "token": TOKEN,
            "web": {"ligado": False},
            "replicacao": {"papel": "source", "imagem_da_linha": True,
                           "id_servidor": "master"},

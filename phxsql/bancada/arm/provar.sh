@@ -29,10 +29,14 @@ $Q "$BIN" --exemplo 1 > config.json
 # O PBKDF2 tambem sai do binario emulado: se a criptografia nao rodasse em ARM,
 # o hash nao fecharia com o login mais abaixo.
 H=$($Q "$BIN" --senha <<< "segredo1" | grep -oE 'pbkdf2-sha256[^"]+' | head -1)
+# bancada de teste, NAO cliente do produto -- fala em claro para provar que o
+# binario ARM64 RODA sob qemu, sem o aperto de mao no meio (servidor exige a
+# cifra por padrao desde o pedido 370)
 python3 -c "
 import json
 c=json.load(open('config.json'))
 c['bind']='127.0.0.1:$PORTA'; c['base']='$S/dados'
+c['cifra_fio']={'exigir': False}
 if isinstance(c.get('web'),dict): c['web']['ligado']=False
 c['usuarios'][0]['login']='adm'; c['usuarios'][0]['senha_hash']='''$H'''
 json.dump(c,open('config.json','w'),indent=1)

@@ -258,12 +258,20 @@
       "quando": "2026-09-16 15:25"
     },
     {
-      "id": "cifra-do-fio-imposta",
-      "titulo": "a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho",
+      "id": "cifra-do-fio-rebaixada",
+      "titulo": "a cifra do fio de volta a OPCIONAL por padrão",
       "veredito": "PROVADA",
-      "segundos": 7.94,
+      "segundos": 3.36,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-18 14:32"
+    },
+    {
+      "id": "portas-http-sem-o-portao-da-cifra",
+      "titulo": "as portas HTTP atendendo em claro com a cifra exigida",
+      "veredito": "PROVADA",
+      "segundos": 5.91,
+      "notas": [],
+      "quando": "2026-09-18 14:32"
     },
     {
       "id": "transcricao-sem-o-cifrado",
@@ -1168,6 +1176,14 @@
       "quando": "2026-09-17 05:03"
     },
     {
+      "id": "cifra-do-odbc-volta-a-nascer-em-claro",
+      "titulo": "a receita do driver ODBC volta a nascer em claro, e o esquecimento vira o padrao",
+      "veredito": "PROVADA",
+      "segundos": 1.35,
+      "notas": [],
+      "quando": "2026-09-18 14:32"
+    },
+    {
       "id": "replica-lista-e-pedida-nao-imposta",
       "titulo": "replicas_autorizadas vazia libera todos -- e so isso e' pedida, nao imposta",
       "veredito": "PROVADA",
@@ -1222,6 +1238,14 @@
       "segundos": 34.46,
       "notas": [],
       "quando": "2026-09-17 04:57"
+    },
+    {
+      "id": "cifra-do-fio-imposta",
+      "titulo": "a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho",
+      "veredito": "PROVADA",
+      "segundos": 7.94,
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     }
   ]
 }

@@ -65,7 +65,8 @@ def permissoes():
 
 
 def config(porta, h, replicacao):
-    return {"base": "base", "bind": f"127.0.0.1:{porta}", "token": TOKEN,
+    # bancada de teste, NAO cliente do produto -- fala em claro para medir "Os tres achados do papel C (DBA) de 17/09/2026, provados pelo SOQUETE" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+    return {"base": "base", "bind": f"127.0.0.1:{porta}", "cifra_fio": {"exigir": False}, "token": TOKEN,
             "web": {"ligado": False}, "replicacao": replicacao,
             "usuarios": [{"login": USUARIO, "nome": "Adriano", "id": 10,
                           "senha_hash": h, "bases": permissoes()}]}

@@ -44,7 +44,8 @@ def subir():
     subprocess.run(["rm", "-rf", BASE], check=False)
     os.makedirs(BASE, exist_ok=True)
     with open(os.path.join(BASE, "config.json"), "w") as f:
-        json.dump({"base": "base", "bind": f"127.0.0.1:{PORTA}",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Prova do BULKINSERT pelo soquete: exclusividade, queda e prazo" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        json.dump({"base": "base", "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
                    "token": TOKEN, "web": {"ligado": False},
                    "recursos": {"carga_prazo_min": 30}}, f, indent=2)
     log = open(os.path.join(BASE, "servidor.log"), "a")

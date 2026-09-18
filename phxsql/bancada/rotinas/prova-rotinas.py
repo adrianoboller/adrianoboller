@@ -70,7 +70,8 @@ class Servidor:
             shutil.rmtree(BASE, ignore_errors=True)
             os.makedirs(BASE, exist_ok=True)
             with open(os.path.join(BASE, "config.json"), "w") as f:
-                json.dump({"base": "base", "bind": f"127.0.0.1:{PORTA}",
+                # bancada de teste, NAO cliente do produto -- fala em claro para medir "A prova dos gatilhos e dos procedimentos, pelo SOQUETE" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+                json.dump({"base": "base", "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
                            "token": TOKEN,
                            "web": {"ligado": True,
                                    "bind": f"127.0.0.1:{PORTA_WEB}"}}, f, indent=2)

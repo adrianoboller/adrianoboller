@@ -118,7 +118,8 @@ def bloco_cluster(nome, h, membros):
 def config_de(nome, h, membros):
     c = {
         "base": "base",
-        "bind": f"127.0.0.1:{PORTAS[nome]}",
+        # bancada de teste, NAO cliente do produto -- fala em claro para medir "Escalonamento: acrescentar um no a um cluster que ja esta VIVO (pedido do don..." sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
+        "bind": f"127.0.0.1:{PORTAS[nome]}", "cifra_fio": {"exigir": False},
         "token": TOKEN,
         "web": {"ligado": False},
         "replicacao": {"papel": "source" if nome == "no1" else "replica",
