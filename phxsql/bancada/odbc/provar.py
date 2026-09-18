@@ -78,6 +78,15 @@ def main():
             "base": "base",
             "bind": "127.0.0.1:%d" % PORTA,
             "token": TOKEN,
+            # `exigir: false` ESCRITO, e o motivo nao e o driver: quem fala
+            # claro aqui e o `montar-dados.py`, um cliente Python de soquete
+            # cru que nao sabe o aperto de mao. Desde que o servidor passou a
+            # EXIGIR a cifra por padrao, a montagem parava no login e a prova
+            # de ABI nunca comecava. O driver continua CIFRANDO (pedido 373):
+            # com `ligada: true` no padrao, o SQLDriverConnect fecha o aperto
+            # e a ABI inteira e provada POR DENTRO do tunel. Quem prova o
+            # `exigir` e a recusa do claro e o `prova-cifra.py`, ao lado.
+            "cifra_fio": {"exigir": False},
             "web": {"ligado": False},
             "root": {"id": 1, "nome": "root", "login": USUARIO,
                      "senha_hash": hash_da_senha(SENHA)},

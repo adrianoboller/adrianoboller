@@ -8,7 +8,8 @@ EXIGE o tunel (`cifra_fio.exigir: true`).
 
 # Por que este arquivo existe, ao lado do prova-abi.py
 
-O `prova-abi.py` prova a ABI do driver contra um servidor em CLARO. O que
+O `prova-abi.py` prova a ABI do driver contra um servidor que NAO exige o
+tunel (e, desde o pedido 373, com o driver cifrando por padrao mesmo ali). O que
 faltava era a outra ponta do gap da secao 10 do `docs/CIFRA-DO-FIO.md`: o
 driver falando o APERTO de mao. Um servidor com `exigir: true` recusa todo
 pedido fora do tunel -- entao um driver que ignore a opcao de cifra PARA nele,
@@ -19,8 +20,10 @@ e e exatamente isso que esta prova mede, nos dois sentidos.
 * **com a cifra** (CIFRA=1;CHAVE_DO_FIO=<pino>): a conexao fecha o aperto,
   loga POR DENTRO do tunel e o SELECT responde -- contra um servidor que
   recusa claro;
-* **defeito reposto** (a mesma receita SEM a cifra): a conexao e recusada com
+* **defeito reposto** (a mesma receita com `CIFRA=0`): a conexao e recusada com
   erro nomeado. E o driver «velho», que fala claro, esbarrando no `exigir`.
+  Era «SEM a cifra» ate o pedido 373, quando a cifra virou o PADRAO da receita
+  e omitir a chave passou a CIFRAR -- hoje o claro so sai escrito.
 * **pino errado**: a cifra liga, mas a chave apresentada nao e a pinada, e o
   aperto cai no cliente -- a defesa contra quem esta no meio.
 
@@ -234,8 +237,12 @@ def main():
         cifrada = (f"Driver=PhxSql;Server=127.0.0.1;Port={PORTA};Token={TOKEN};"
                    f"UID={USUARIO};PWD={SENHA};Database=loja;"
                    f"CIFRA=1;CHAVE_DO_FIO={pino_hex}")
+        # `CIFRA=0` ESCRITO: desde o pedido 373 a cifra e o padrao da receita,
+        # entao omitir a chave nao produz mais um driver falando claro -- e o
+        # defeito reposto deste passo e justamente o claro esbarrando no
+        # `exigir`. Sem esta linha, o passo 2 passaria a medir outra coisa.
         clara = (f"Driver=PhxSql;Server=127.0.0.1;Port={PORTA};Token={TOKEN};"
-                 f"UID={USUARIO};PWD={SENHA};Database=loja")
+                 f"UID={USUARIO};PWD={SENHA};Database=loja;CIFRA=0")
         pino_errado = "aa" * 32
         torta = (f"Driver=PhxSql;Server=127.0.0.1;Port={PORTA};Token={TOKEN};"
                  f"UID={USUARIO};PWD={SENHA};Database=loja;"
@@ -248,7 +255,7 @@ def main():
             confere("SELECT COUNT(*) pelo tunel", contar_pelo_driver(d, dbc), "3")
             d.SQLDisconnect(dbc)
 
-        print("\n=== 2. DEFEITO REPOSTO: sem a cifra, o servidor recusa ===")
+        print("\n=== 2. DEFEITO REPOSTO: com CIFRA=0, o servidor recusa ===")
         r, dbc, estado, msg = conectar(d, clara)
         confere("SQLDriverConnect em claro cai", r, ERRO)
         # O «porque» tem de estar no diagnostico: o driver velho recebe algo que

@@ -310,8 +310,9 @@ do túnel, são dois vereditos diferentes.
   `docs/REPLICACAO.md` §13.
 * **O driver ODBC.** Ele é um cliente comum da porta de dados, e aprendeu o
   mesmo aperto — reusando o `fio` do core, como a réplica. A connection string
-  ganha `CIFRA=1` e `CHAVE_DO_FIO=<hex>` (o pino), e sem elas o driver fala
-  claro como sempre. Ver `docs/ODBC.md` §1.1 e a §10 aqui.
+  ganha `CIFRA` e `CHAVE_DO_FIO=<hex>` (o pino) — e **desde o pedido 373
+  (18/09/2026) a cifra é o PADRÃO da receita**: quem não escreve nada fala
+  cifrado, e `CIFRA=0` é o escape escrito. Ver `docs/ODBC.md` §1.1 e a §10 aqui.
 
 ### Não vale: a interface web
 
@@ -589,6 +590,14 @@ resposta de protocolo — o `/saude` diz por servidor apenas `cifra` e
   `conexao::testes::aperto_pelo_canal_fecha_e_fala_por_dentro` prova o aperto
   sem gerenciador de driver, e o defeito reposto (driver ignorando a cifra)
   derruba a prova. Ver `docs/ODBC.md` §1.1 e §7.
+
+  **E ela deixou de ser `opt-in` em 18/09/2026 (pedido 373), por decisão do
+  dono:** a receita **nasce** cifrada e `CIFRA=0` é o escape escrito — o mesmo
+  raciocínio do `exigir` que nasceu ligado do lado do servidor, *o esquecimento
+  não pode ser o padrão quando o assunto é senha no fio*. Quem a escreve contra
+  um servidor com `cifra_fio.ligada: false` recebe o motivo do servidor **mais
+  a saída** (`CIFRA=0`) no diagnóstico; com pino escrito, a saída não é
+  ensinada, porque ali a falha é a chave não conferir.
 
   **O limite:** o login do driver é a senha em claro *dentro* do túnel, não o
   desafio-resposta, então ele não amarra a credencial ao canal — um servidor

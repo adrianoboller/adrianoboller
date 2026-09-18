@@ -1902,6 +1902,17 @@ mod testes {
         (porta, recebe)
     }
 
+    /// A receita que fala com o `servidor_de_eco`, com o `CIFRA=0` ESCRITO.
+    ///
+    /// O eco fala claro, e desde o pedido 373 a receita nasce cifrada: sem o
+    /// escape estes testes passariam a medir o aperto de mao em vez do que
+    /// viaja no pedido, e cairiam com `08001`. Num ajudante so, e nao copiado
+    /// em cada teste, porque receita de teste espalhada e onde o proximo
+    /// interruptor de fio envelhece um lugar e esquece os outros.
+    fn receita_do_eco(porta: u16) -> String {
+        format!("Server=127.0.0.1;Port={porta};Database=b;CIFRA=0\0")
+    }
+
     /// O SQLSTATE do primeiro diagnostico do handle.
     unsafe fn estado_do_diag(h: SqlHandle) -> String {
         let mut estado = [0u8; 6];
@@ -1940,7 +1951,7 @@ mod testes {
             );
             let mut dbc: SqlHandle = std::ptr::null_mut();
             assert_eq!(SQLAllocHandle(SQL_HANDLE_DBC, env, &mut dbc), SQL_SUCCESS);
-            let receita = format!("Server=127.0.0.1;Port={porta};Database=b\0");
+            let receita = receita_do_eco(porta);
             assert_eq!(
                 SQLDriverConnect(
                     dbc,
@@ -2106,7 +2117,7 @@ mod testes {
             SQLAllocHandle(SQL_HANDLE_ENV, std::ptr::null_mut(), &mut env);
             let mut dbc: SqlHandle = std::ptr::null_mut();
             SQLAllocHandle(SQL_HANDLE_DBC, env, &mut dbc);
-            let receita = format!("Server=127.0.0.1;Port={porta};Database=b\0");
+            let receita = receita_do_eco(porta);
             assert_eq!(
                 SQLDriverConnect(
                     dbc,
@@ -2172,7 +2183,7 @@ mod testes {
             SQLAllocHandle(SQL_HANDLE_ENV, std::ptr::null_mut(), &mut env);
             let mut dbc: SqlHandle = std::ptr::null_mut();
             SQLAllocHandle(SQL_HANDLE_DBC, env, &mut dbc);
-            let receita = format!("Server=127.0.0.1;Port={porta};Database=b\0");
+            let receita = receita_do_eco(porta);
             assert_eq!(
                 SQLDriverConnect(
                     dbc,

@@ -36,11 +36,11 @@ impl Falha {
 /// O que a connection string diz. DSN-less, chaves sem distincao de caixa:
 /// `Driver=PhxSql;Server=h;Port=5000;Token=t;UID=u;PWD=s;Database=d`.
 ///
-/// A cifra do fio entra por duas chaves a mais, e so por opcao: `CIFRA=1`
-/// liga o aperto de mao estilo Noise (`docs/CIFRA-DO-FIO.md`), e
-/// `CHAVE_DO_FIO=<hex>` e o PINO -- a chave publica X25519 que se espera do
-/// servidor. Sem elas o driver fala em claro, exatamente como sempre falou.
-#[derive(Default, Clone)]
+/// A cifra do fio NASCE ligada (pedido 373): o driver faz o aperto de mao
+/// estilo Noise (`docs/CIFRA-DO-FIO.md`) sem ninguem escrever nada, e
+/// `CIFRA=0` e o escape ESCRITO para voltar ao claro. `CHAVE_DO_FIO=<hex>` e
+/// o PINO -- a chave publica X25519 que se espera do servidor.
+#[derive(Clone)]
 pub struct Receita {
     pub servidor: String,
     pub porta: u16,
@@ -48,14 +48,41 @@ pub struct Receita {
     pub usuario: String,
     pub senha: String,
     pub database: String,
-    /// Pedir o tunel. Sem pino e so contra escuta PASSIVA; contra quem esta no
-    /// meio, so vale com o `CHAVE_DO_FIO` (o pino) e o servidor exigindo.
+    /// Pedir o tunel -- e ele nasce PEDIDO. Sem pino e so contra escuta
+    /// PASSIVA; contra quem esta no meio, so vale com o `CHAVE_DO_FIO` (o
+    /// pino) e o servidor exigindo.
     pub cifra: bool,
     /// O pino em hexadecimal, ainda por conferir. Fica cru de proposito: pino
     /// torto e ERRO na hora de conectar, nao ausencia silenciosa de pino --
     /// deixar um pino invalido virar "sem pino" seria rebaixar a garantia sem
     /// ninguem pedir, a mesma armadilha que o `pino_torto_na_origem` guarda.
     pub chave_do_fio: String,
+}
+
+/// O padrao da receita, e ele NAO e o zero do tipo em `cifra`.
+///
+/// Decisao do dono, 18/09/2026 (pedido 373): *«`CIFRA=1` vira o padrao da
+/// receita do ODBC, com escape `CIFRA=0` escrito»*. O motivo e o mesmo da
+/// chave que nasce conferida -- o esquecimento nao pode ser o padrao quando
+/// o assunto e senha no fio, e a senha viaja no login deste driver.
+///
+/// Mora no `Default` e nao dentro do `analisar_receita` porque o `SQLConnect`
+/// com `host:porta/database` monta a `Receita` DAQUI, sem passar pelo
+/// analisador: padrao que morasse so no analisador deixaria esse irmao
+/// falando claro, calado.
+impl Default for Receita {
+    fn default() -> Receita {
+        Receita {
+            servidor: String::new(),
+            porta: 0,
+            token: String::new(),
+            usuario: String::new(),
+            senha: String::new(),
+            database: String::new(),
+            cifra: true,
+            chave_do_fio: String::new(),
+        }
+    }
 }
 
 /// `Debug` a mao: a receita e montada da linha de conexao do ODBC e carrega o
@@ -131,7 +158,16 @@ pub fn analisar_receita(texto: &str) -> Receita {
             "uid" | "user" | "usuario" => r.usuario = valor,
             "pwd" | "password" | "senha" => r.senha = valor,
             "database" | "db" => r.database = valor,
-            "cifra" | "encrypt" => r.cifra = verdadeiro(&valor),
+            // Valor que ninguem reconhece NAO desliga a cifra. Com o padrao
+            // ligado (pedido 373), um `CIFRA=zero` mal digitado viraria claro
+            // em silencio -- e rebaixamento por dedo errado e exatamente o que
+            // a virada veio acabar. Desligar continua exigindo escolha
+            // ESCRITA, e escrita de um jeito que o driver entenda.
+            "cifra" | "encrypt" => {
+                if let Some(pedido) = interruptor(&valor) {
+                    r.cifra = pedido;
+                }
+            }
             "chave_do_fio" | "chavedofio" | "pino" => r.chave_do_fio = valor,
             // "driver" e o que o gerenciador usou para nos achar; o resto e
             // ignorado de proposito -- recusar chave desconhecida quebraria
@@ -139,22 +175,27 @@ pub fn analisar_receita(texto: &str) -> Receita {
             _ => {}
         }
     }
-    // Pino dado sem CIFRA=1 ainda LIGA a cifra: quem escreve o pino quer o
-    // tunel conferido, e cair para claro por ter esquecido a outra chave seria
-    // um rebaixamento silencioso do que a pessoa pediu. A porta para desligar
-    // e nao escrever o pino.
+    // O pino vence o interruptor, e depois do pedido 373 e o `CIFRA=0` que ele
+    // vence: quem escreve o pino quer o tunel CONFERIDO, e desliga-lo por uma
+    // chave escrita ao lado seria rebaixar em silencio o que a pessoa pediu. A
+    // porta para desligar continua sendo nao escrever o pino.
     if !r.chave_do_fio.trim().is_empty() {
         r.cifra = true;
     }
     r
 }
 
-/// O que conta como "sim" numa chave booleana da connection string.
-fn verdadeiro(v: &str) -> bool {
-    matches!(
-        v.trim().to_ascii_lowercase().as_str(),
-        "1" | "true" | "sim" | "yes" | "on" | "ligada" | "ligado"
-    )
+/// O que uma chave booleana da connection string PEDE -- `None` quando o valor
+/// nao e nem sim nem nao.
+///
+/// Os tres estados existem por causa do padrao ligado: com dois, o "nao
+/// reconhecido" cairia no `false` e um dedo errado desligaria a cifra.
+fn interruptor(v: &str) -> Option<bool> {
+    match v.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "sim" | "yes" | "on" | "ligada" | "ligado" => Some(true),
+        "0" | "false" | "nao" | "no" | "off" | "desligada" | "desligado" => Some(false),
+        _ => None,
+    }
 }
 
 /// A connection string que o driver devolve no `SQLDriverConnect`.
@@ -177,13 +218,14 @@ pub fn receita_mascarada(r: &Receita) -> String {
     if !r.database.is_empty() {
         s.push_str(&format!(";Database={}", r.database));
     }
-    // O modo da cifra volta, mas o PINO nao: ele e chave publica e nao seria
-    // vazamento, mas a string de volta e para dizer o que esta ligado, nao
-    // para reconstruir a receita -- token e senha ja saem mascarados pelo
-    // mesmo motivo. Quem quiser reconectar guarda a receita inteira.
-    if r.cifra {
-        s.push_str(";CIFRA=1");
-    }
+    // O modo da cifra volta nos DOIS estados desde o pedido 373: com o padrao
+    // ligado, omitir o `0` faria a string de volta mentir -- relida, ligaria um
+    // tunel que esta conexao nao tem. O PINO nao volta: ele e chave publica e
+    // nao seria vazamento, mas a string de volta e para dizer o que esta
+    // ligado, nao para reconstruir a receita -- token e senha ja saem
+    // mascarados pelo mesmo motivo. Quem quiser reconectar guarda a receita
+    // inteira.
+    s.push_str(if r.cifra { ";CIFRA=1" } else { ";CIFRA=0" });
     s
 }
 
@@ -208,6 +250,37 @@ fn pino_da_receita(hex: &str) -> Result<Option<[u8; 32]>, Falha> {
     let mut k = [0u8; 32];
     k.copy_from_slice(&bytes);
     Ok(Some(k))
+}
+
+/// A falha do aperto com a SAIDA escrita dentro dela -- e so quando ela
+/// existe de verdade.
+///
+/// A cifra virou o padrao (pedido 373), entao a connection string que sempre
+/// funcionou em claro passa a falhar AQUI, contra um servidor com
+/// `cifra_fio.ligada: false`. O erro cru de soquete mandaria procurar rede;
+/// quem le o diagnostico precisa do interruptor, e e por isso que ele vem no
+/// texto em vez de ficar so na documentacao que ninguem abre no meio de um
+/// SQLDriverConnect.
+///
+/// Com PINO escrito a frase NAO entra, e isso e decisao e nao esquecimento:
+/// `CIFRA=0` nao desliga a cifra de quem escreveu o pino -- seria conselho
+/// falso --, e a falha com pino e justamente a chave apresentada nao conferir.
+/// Ensinar a baixar a guarda ali seria ensinar o rebaixamento que o pino
+/// existe para impedir.
+fn com_a_saida_escrita(f: Falha, r: &Receita) -> Falha {
+    if !r.chave_do_fio.trim().is_empty() {
+        return f;
+    }
+    Falha {
+        estado: f.estado,
+        mensagem: format!(
+            "{}; a cifra do fio e o PADRAO deste driver -- se este servidor \
+             nao a oferece, escreva CIFRA=0 na connection string para falar \
+             em claro",
+            f.mensagem
+        ),
+        nativo: f.nativo,
+    }
 }
 
 /// A ligacao viva com um phxsqld: os dois lados do soquete, o token que vai em
@@ -278,7 +351,7 @@ impl Canal {
         // existe para esconder, e depois do login ja seria tarde. E o mesmo
         // que a `replica::Cliente` faz.
         if r.cifra {
-            canal.cifrar(pino)?;
+            canal.cifrar(pino).map_err(|f| com_a_saida_escrita(f, r))?;
         }
 
         if !r.usuario.is_empty() {
@@ -504,13 +577,63 @@ mod testes {
         assert_eq!(r.chave_do_fio, hex);
     }
 
-    // Sem as chaves novas, a receita nasce em CLARO -- a regra petrea "guarda
-    // nova entra pedida, nao imposta", no ponto onde o pedido se le.
+    // Este teste se chamava `sem_as_chaves_a_receita_e_em_claro` e provava a
+    // garantia que o dono REVOGOU em 18/09/2026 (pedido 373). Ele nao sumiu:
+    // mudou de assunto e passou a provar o ESCAPE escrito, porque teste que
+    // some leva a garantia junto -- e a garantia que sobrou e a de que
+    // `CIFRA=0` continua valendo para quem precisa do claro.
     #[test]
-    fn sem_as_chaves_a_receita_e_em_claro() {
+    fn o_escape_escrito_e_o_cifra_zero() {
+        for receita in [
+            "Server=h;Port=1;UID=u;PWD=s;CIFRA=0",
+            "Server=h;Port=1;UID=u;PWD=s;Encrypt=0",
+            "Server=h;Port=1;CIFRA=false",
+            "Server=h;Port=1;CIFRA=nao",
+            "Server=h;Port=1;CIFRA=off",
+        ] {
+            let r = analisar_receita(receita);
+            assert!(!r.cifra, "«{receita}» tinha de falar claro");
+            assert!(r.chave_do_fio.is_empty());
+        }
+    }
+
+    // O irmao do de cima, e o que falha se o padrao voltar a ser claro: a
+    // receita de sempre -- a que ninguem atualizou -- nasce CIFRADA.
+    #[test]
+    fn sem_escrever_nada_a_receita_nasce_cifrada() {
         let r = analisar_receita("Server=h;Port=1;UID=u;PWD=s");
-        assert!(!r.cifra);
-        assert!(r.chave_do_fio.is_empty());
+        assert!(r.cifra, "a receita tem de nascer cifrada (pedido 373)");
+        assert!(r.chave_do_fio.is_empty(), "pino que ninguem escreveu");
+    }
+
+    // O `SQLConnect` com `host:porta/database` NAO passa pelo analisador: ele
+    // monta a `Receita` do `Default`. Padrao que morasse so no analisador
+    // deixaria esse irmao falando claro, calado.
+    #[test]
+    fn o_caminho_do_sqlconnect_tambem_nasce_cifrado() {
+        assert!(
+            Receita::default().cifra,
+            "o Default e o que o SQLConnect usa"
+        );
+    }
+
+    // Valor que ninguem reconhece nao rebaixa: `CIFRA=zero` e dedo errado, e
+    // nao escolha escrita. Com o padrao ligado, aceitar qualquer coisa como
+    // "nao" devolveria o rebaixamento silencioso pela porta do VALOR, depois
+    // de ele ter sido fechado na porta da CHAVE.
+    #[test]
+    fn valor_torto_na_cifra_nao_rebaixa_para_claro() {
+        for receita in [
+            "Server=h;Port=1;CIFRA=zero",
+            "Server=h;Port=1;CIFRA=talvez",
+            "Server=h;Port=1;CIFRA=",
+            "Server=h;Port=1;Encrypt=disabled",
+        ] {
+            assert!(
+                analisar_receita(receita).cifra,
+                "«{receita}» nao podia desligar a cifra"
+            );
+        }
     }
 
     // O pino escrito sem CIFRA=1 ainda liga a cifra: cair para claro por ter
@@ -520,6 +643,37 @@ mod testes {
         let hex = phxsql_core::hash::para_hex(&[0x22u8; 32]);
         let r = analisar_receita(&format!("Server=h;Port=1;CHAVE_DO_FIO={hex}"));
         assert!(r.cifra, "pino dado devia ligar a cifra");
+    }
+
+    // E o outro lado do mesmo: agora que existe `CIFRA=0`, o pino vence ELE.
+    // Quem escreve o pino quer o tunel conferido; a porta para desligar
+    // continua sendo nao escrever o pino.
+    #[test]
+    fn o_pino_vence_o_cifra_zero() {
+        let hex = phxsql_core::hash::para_hex(&[0x44u8; 32]);
+        let r = analisar_receita(&format!("Server=h;Port=1;CIFRA=0;CHAVE_DO_FIO={hex}"));
+        assert!(r.cifra, "pino escrito nao se desliga por CIFRA=0");
+    }
+
+    // A string de volta diz o modo nos DOIS estados, e a prova e a ida e
+    // volta: omitir o `CIFRA=0` a faria ligar, na releitura, um tunel que a
+    // conexao nao tinha -- mentira sobre o que esta ligado, gravada no arquivo
+    // de configuracao do aplicativo.
+    #[test]
+    fn a_mascarada_leva_o_modo_nos_dois_sentidos() {
+        for (receita, esperado) in [
+            ("Server=h;Port=1;UID=ana", true),
+            ("Server=h;Port=1;UID=ana;CIFRA=0", false),
+        ] {
+            let r = analisar_receita(receita);
+            assert_eq!(r.cifra, esperado, "«{receita}»");
+            let volta = receita_mascarada(&r);
+            assert_eq!(
+                analisar_receita(&volta).cifra,
+                esperado,
+                "a volta mudou o modo: {volta}"
+            );
+        }
     }
 
     // O modo volta na string mascarada, o PINO nunca -- nem o publico.
@@ -633,6 +787,100 @@ mod testes {
             ])
             .expect("o pedido pelo tunel devia responder");
         assert_eq!(resposta.texto_ou("eco", ""), "ola-pelo-tunel");
+    }
+
+    /// Sobe um servidor que RECUSA o aperto, como um phxsqld com
+    /// `cifra_fio.ligada: false` -- que e o que toda connection string velha
+    /// vai encontrar depois do pedido 373.
+    ///
+    /// Le uma linha, responde a recusa em claro (e o que o servidor de verdade
+    /// faz: a resposta do aperto nao viaja selada) e vai embora.
+    fn servidor_que_recusa_o_aperto() -> u16 {
+        let escuta = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let porta = escuta.local_addr().unwrap().port();
+        let (pronto, espere) = mpsc::channel();
+        std::thread::spawn(move || {
+            pronto.send(()).ok();
+            let Ok((soquete, _)) = escuta.accept() else {
+                return;
+            };
+            let _ = soquete.set_read_timeout(Some(Duration::from_secs(3)));
+            let mut escrita = soquete.try_clone().unwrap();
+            let mut leitor = BufReader::new(soquete);
+            let mut linha = String::new();
+            if leitor.read_line(&mut linha).unwrap_or(0) == 0 {
+                return;
+            }
+            let recusa = Json::objeto(vec![
+                ("ok", Json::Bool(false)),
+                ("op", Json::texto_de("cifrar")),
+                (
+                    "erro",
+                    Json::texto_de(
+                        "este servidor nao atende a cifra do fio \
+                         (cifra_fio.ligada esta em false)",
+                    ),
+                ),
+            ])
+            .escrever();
+            let _ = writeln!(escrita, "{recusa}");
+            let _ = escrita.flush();
+        });
+        espere.recv().ok();
+        porta
+    }
+
+    // A receita velha, contra o servidor que nao oferece o tunel: o
+    // diagnostico traz o motivo do servidor E a saida. Sem a saida escrita,
+    // quem migrar fica com um 08001 mandando procurar rede.
+    #[test]
+    fn o_aperto_recusado_ensina_a_saida() {
+        let porta = servidor_que_recusa_o_aperto();
+        let r = analisar_receita(&format!(
+            "Server=127.0.0.1;Port={porta};UID=ana;PWD=senha-que-nao-pode-vazar"
+        ));
+        assert!(r.cifra, "a receita velha agora pede o tunel");
+        let erro = match Canal::abrir(&r) {
+            Ok(_) => panic!("servidor que recusa o aperto nao podia conectar"),
+            Err(e) => e,
+        };
+        assert_eq!(erro.estado, "08001");
+        assert!(
+            erro.mensagem.contains("CIFRA=0"),
+            "o diagnostico tem de ensinar a saida: {}",
+            erro.mensagem
+        );
+        assert!(
+            erro.mensagem.contains("cifra_fio.ligada"),
+            "o motivo do servidor tem de vir junto, e nao ser trocado: {}",
+            erro.mensagem
+        );
+        assert!(
+            !erro.mensagem.contains("senha-que-nao-pode-vazar"),
+            "o diagnostico nao pode carregar a senha: {}",
+            erro.mensagem
+        );
+    }
+
+    // Com PINO a saida NAO se ensina, e este e o teste que trava a decisao:
+    // `CIFRA=0` nao desligaria a cifra de quem pinou (seria conselho falso), e
+    // a falha com pino e a chave nao conferir -- mandar baixar a guarda ali
+    // seria ensinar o rebaixamento que o pino existe para impedir.
+    #[test]
+    fn com_pino_o_diagnostico_nao_manda_baixar_a_guarda() {
+        let porta = servidor_que_recusa_o_aperto();
+        let hex = phxsql_core::hash::para_hex(&[0x55u8; 32]);
+        let r = analisar_receita(&format!("Server=127.0.0.1;Port={porta};CHAVE_DO_FIO={hex}"));
+        let erro = match Canal::abrir(&r) {
+            Ok(_) => panic!("servidor que recusa o aperto nao podia conectar"),
+            Err(e) => e,
+        };
+        assert_eq!(erro.estado, "08001");
+        assert!(
+            !erro.mensagem.contains("CIFRA=0"),
+            "com pino, a saida nao se ensina: {}",
+            erro.mensagem
+        );
     }
 
     // O defeito reposto do pino: apresentar a chave certa nao basta se o

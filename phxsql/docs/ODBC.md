@@ -30,17 +30,20 @@ Driver=PhxSql;Server=10.0.0.7;Port=5000;Token=o-token;UID=maria;PWD=a-senha;Data
 | `UID` | `User`, `Usuario` | login do usuario |
 | `PWD` | `Password`, `Senha` | senha (aceita `{chaves}` para `;` dentro) |
 | `Database` | `Db` | banco padrao dos comandos |
-| `CIFRA` | `Encrypt` | `1`/`true`/`sim` liga o aperto de mao (a cifra do fio) |
+| `CIFRA` | `Encrypt` | **nasce LIGADA** (pedido 373). `0`/`false`/`nao` desliga; valor que ninguem reconhece NAO desliga |
 | `CHAVE_DO_FIO` | `Pino` | o pino: a chave publica X25519 do servidor, em hexa |
 
-A cifra do fio tem uma secao propria (1.1); o resto do driver nao muda com ela.
+A cifra do fio tem uma secao propria (1.1), e desde o pedido 373 ela e o
+**padrao**: quem nao escreve nada fala cifrado. O resto do driver nao muda com ela.
 
 Duas decisoes que valem saber:
 
 * **A string que o `SQLDriverConnect` devolve sai com `PWD=***` e
   `Token=***`.** O aplicativo costuma guardar essa string em arquivo de
   configuracao proprio, e o driver nao decide onde ela vai parar. O preco: a
-  string devolvida nao serve para reconectar sozinha.
+  string devolvida nao serve para reconectar sozinha. Ela traz o MODO da cifra
+  nos dois estados (`CIFRA=1` ou `CIFRA=0`) — omitir o `0` a faria mentir:
+  relida, ligaria um tunel que aquela conexao nao tinha.
 * **So DSN-less.** Um DSN de arquivo (`odbc.ini`, chaves de registro) exige
   que o DRIVER leia a configuracao via `SQLGetPrivateProfileString`, que
   mora na biblioteca do instalador (`libodbcinst`) — uma dependencia
@@ -49,27 +52,50 @@ Duas decisoes que valem saber:
   na string. `SQLConnect` existe e aceita `host:porta/database` (ou uma
   connection string inteira) no lugar do nome do DSN.
 
-## 1.1. A cifra do fio (o aperto de mao)
+## 1.1. A cifra do fio (o aperto de mao) — LIGADA por padrao
 
 O desenho inteiro esta em `docs/CIFRA-DO-FIO.md`. O driver e um cliente comum
 da porta de dados, e por isso ele fala o mesmo aperto de mao estilo Noise que a
 `replica::Cliente` fala — reusando o `fio` do `phxsql-core`, sem uma segunda
 copia de cripto aqui.
 
-* **`CIFRA=1`** liga o tunel: antes de qualquer pedido, o driver manda
+**Decisao do dono, 18/09/2026 (pedido 373):** *«`CIFRA=1` vira o padrao da
+receita do ODBC, com escape `CIFRA=0` escrito»*. O raciocinio e o mesmo da
+chave que nasce conferida: **o esquecimento nao pode ser o padrao quando o
+assunto e senha no fio** — e e a senha que o login deste driver leva no corpo
+(secao 5). Ate esta virada a cifra era `opt-in` — existia desde 08/09/2026 e
+so acontecia quando alguem escrevia a chave —, e quem a esquecesse falava
+claro sem saber.
+
+* **Sem escrever nada, o driver CIFRA**: antes de qualquer pedido ele manda
   `{"op":"cifrar",...}`, fecha o aperto e, da linha seguinte em diante, fala
-  registros selados. O login e o token passam a viajar POR DENTRO do tunel.
+  registros selados. O login e o token viajam POR DENTRO do tunel.
+* **`CIFRA=0`** — e os irmaos `Encrypt=0`, `CIFRA=false`, `CIFRA=nao`,
+  `CIFRA=off` — e o escape ESCRITO: volta ao claro de antes.
+* **Valor que o driver nao reconhece nao desliga nada.** `CIFRA=zero` e dedo
+  errado, nao escolha escrita, e cair para claro por causa dele seria o
+  rebaixamento silencioso que a virada veio acabar. Fica ligada.
 * **`CHAVE_DO_FIO=<64 hexa>`** e o PINO — a chave publica que se ESPERA do
   servidor. Com pino, um servidor que apresente outra chave derruba a conexao
   (a defesa contra quem esta no meio). Sem pino, o tunel protege so da escuta
   PASSIVA. O pino sai do proprio servidor: `phxsqld --chave-do-fio` o imprime.
-* Escrever o pino **liga a cifra sozinho**: cair para claro por ter esquecido
-  `CIFRA=1` seria rebaixar em silencio o que a pessoa pediu. Para falar claro,
-  nao escreva o pino.
-* **Sem essas chaves, o driver fala CLARO, exatamente como sempre falou.** Um
-  servidor com `cifra_fio.exigir: true` recusa o claro com erro nomeado ("este
-  servidor exige a cifra do fio"), e a conexao falha no primeiro pedido — em vez
-  de um silencio.
+* **O pino vence o `CIFRA=0`.** Quem escreve o pino quer o tunel conferido, e
+  desliga-lo pelo interruptor seria rebaixar em silencio o que a pessoa pediu.
+  Para falar claro, nao escreva o pino.
+* **Quem quebra, quebra com a saida escrita.** Uma connection string velha
+  contra um servidor com `cifra_fio.ligada: false` falha agora no aperto, e o
+  diagnostico traz o motivo do servidor MAIS a saida: *«a cifra do fio e o
+  PADRAO deste driver — se este servidor nao a oferece, escreva CIFRA=0 na
+  connection string para falar em claro»*. Erro de soquete cru mandaria
+  procurar rede; o que a pessoa precisa e do interruptor.
+* **Com pino, essa frase NAO sai** — e e decisao, nao esquecimento: `CIFRA=0`
+  nao desligaria a cifra de quem pinou (seria conselho falso), e a falha com
+  pino e justamente a chave apresentada nao conferir. Mandar baixar a guarda
+  ali seria ensinar o rebaixamento que o pino existe para impedir.
+* **O `SQLConnect` com `host:porta/database` tambem nasce cifrado.** Ele monta
+  a receita do `Default`, e nao do analisador — padrao que morasse so no
+  analisador deixaria esse irmao falando claro, calado. Para falar claro por
+  ele, passe uma connection string inteira (com `CIFRA=0`) no lugar do nome.
 
 Dois limites, ditos sem enfeite:
 
@@ -77,10 +103,15 @@ Dois limites, ditos sem enfeite:
   X25519 de 64 hexa recusa a conexao, em vez de virar "sem pino" — deixar um
   pino invalido rebaixar a garantia e o oposto do que ele existe para fazer.
 * **O login do driver e a senha em claro DENTRO do tunel**, e nao o
-  desafio-resposta. Ele nao amarra a credencial ao canal (`amarrar_canal`),
-  entao um servidor com `cifra_fio.exigir_amarra: true` recusaria esse login.
-  `exigir` (a decisao desta rodada) o driver atende; `exigir_amarra` fica para
-  quando o driver aprender o desafio-resposta.
+  desafio-resposta (o pedido **275**, que continua aberto: `conexao.rs` manda
+  `("senha", ...)` — a forma (3) do `op_login` —, e nunca chama `desafio`/
+  `prova`). Ele nao amarra a credencial ao canal (`amarrar_canal`), entao um
+  servidor com `cifra_fio.exigir_amarra: true` recusaria esse login. `exigir` o
+  driver atende; `exigir_amarra` fica para quando o driver aprender o
+  desafio-resposta. **O padrao cifrado (373) entrou ANTES do 275 de proposito**
+  — decisao do dono: com o tunel ligado por omissao, a senha ja deixa de andar
+  a descoberto no fio, e o desafio-resposta continua sendo o conserto certo
+  para quem esta DENTRO do servidor.
 
 ## 2. O que o driver cobre — e o que ficou de fora, com o motivo
 
@@ -337,6 +368,10 @@ instalado). Teste imediato, sem DSN:
 isql -v -k "Driver=PhxSql;Server=127.0.0.1;Port=5000;Token=...;UID=...;PWD=...;Database=loja"
 ```
 
+Essa linha **cifra** (pedido 373, secao 1.1). Contra um servidor com
+`cifra_fio.ligada: false` ela falha no aperto — e o diagnostico diz para
+acrescentar `;CIFRA=0`.
+
 Provado nesta maquina com unixODBC 2.3.12: `Connected!`, grade com
 cabecalho, projecao e `COUNT(*)` — a transcricao esta na secao 7.
 
@@ -461,6 +496,15 @@ Resultado registrado (2026-08-29, Linux x86_64, unixODBC 2.3.12):
   `?` das aspas, o `SQLDescribeParam`, o `07009` da posicao fora da faixa e o
   `07002` da ligacao que falta). A NAO MEDIDA e a volta de `WHERE id = ?`,
   pelo motivo da secao 2.1.
+* **Recorrida em 2026-09-18, com a cifra ja no padrao (pedido 373): 89
+  conferencias, zero falhas e zero NAO MEDIDA.** Duas coisas mudaram desde o
+  registro acima, e nenhuma delas e o driver: a NAO MEDIDA de `WHERE id = ?`
+  fechou (a op `sql` passou a aceitar `parametros`), e a ABI inteira foi
+  provada **por dentro do tunel** — ninguem escreveu `CIFRA=` na receita, e o
+  `acessos.log` do servidor da prova registra **um** `"op":"cifrar"` antes do
+  login. O `provar.py` passou a escrever `cifra_fio.exigir: false` no config
+  DELE, e nao por causa do driver: quem fala claro ali e o `montar-dados.py`,
+  um cliente de soquete cru que nao sabe o aperto de mao.
 * **`isql` de verdade:** `Connected!`, grade com cabecalho e os tres
   valores de `limite` certos, projecao e contagem — via
   `isql -v -k "Driver=PhxSql;..."` com o driver registrado num
@@ -487,7 +531,8 @@ python3 bancada/odbc/prova-cifra.py
 
 * **com a cifra** (`CIFRA=1;CHAVE_DO_FIO=<pino>`): o `SQLDriverConnect` fecha o
   aperto, o login vai por dentro do tunel e o `SELECT COUNT(*)` responde `3`;
-* **defeito reposto** (a mesma receita SEM a cifra): a conexao e recusada, e o
+* **defeito reposto** (a mesma receita com **`CIFRA=0`** escrito — desde o
+  pedido 373 e o que faz o driver falar claro): a conexao e recusada, e o
   diagnostico nomeia o motivo ("este servidor exige a cifra do fio") — o driver
   velho, que fala claro, esbarrando no `exigir`;
 * **pino errado**: a cifra liga, mas a chave apresentada nao e a pinada, e o
