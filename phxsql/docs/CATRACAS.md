@@ -1677,6 +1677,70 @@ nunca «0, em cima, sem folga». Ver
 `docs/qa/medir.py`, que a achou sozinho pelo `catraca:nome=`. Não roda no
 `cargo test`.
 
+## 17. `TETO_TXT_CRU_EM_HTML` — o texto de tela chegando cru ao `innerHTML`
+
+**Nasceu em 1, e o 1 tem endereço.** Medida em 18/09/2026, no fecho do pedido
+**347**.
+
+| | |
+|---|---|
+| onde | `crates/phxsql-server/src/conferidor_texto_cru.rs` |
+| teto | **1** |
+| medido hoje | **1** |
+| folga | **0** |
+
+### O defeito que a motivou
+
+O texto de tela **não é constante do programa**: ele vem de
+`phxsys.mensagens`, que é tabela **comum** do motor. Não existe conceito de
+database de sistema — só `e_coluna_de_sistema`, que é de coluna —, então
+gravar ali pede `alterar` naquele database, e **não** `administrar`. Quem tem
+`alterar` executa script no navegador de quem abrir a tela, **inclusive de
+quem tem mais poder que ele**. Não é auto-XSS.
+
+A CSP não é mitigação e este é o ponto: `<script>` injetado por `innerHTML`
+não roda, mas `script-src 'unsafe-inline'` deixa um manipulador de evento
+rodar, e `connect-src 'self'` permite o `fetch` para o próprio servidor — a
+exfiltração é 100% conforme a CSP.
+
+**Antes → depois, medido no arquivo:** `${txt(` sem escape caiu de **9 para
+1**; os `${esc(txt(` subiram de **443 para 451**. O 443 é o número que mais
+diz: a casa **já escapava 443** e deixou 8 atrás. Não era prática ausente —
+era o irmão que ficou.
+
+### Por que 1 e não 0, com o motivo escrito
+
+O 1 é `ui/index.html:9726`, a interpolação de `tela.st_ms_ou_mais` dentro do
+`rot` do gráfico de distribuição. Ali o `txt()` entra cru num pedaço que é
+escapado **um nível acima**, no `esc(rot)` que vai para o SVG — conferido
+linha a linha. **Não é furo.**
+
+Zero foi **recusado com motivo**: exigiria escapar dentro do `rot` e tirar o
+`esc(rot)` de fora, criando uma string «já escapada» que o próximo a
+concatenar não saberia que é. Trocar um furo real por uma armadilha futura não
+é conserto.
+
+### O que ela NÃO cobre, e quem cobre
+
+Ela acha a forma `${txt(...)}` — oito dos nove sítios do 347. Ela **não** acha
+o nono: no `phx-grid.js` o que vazava era `cA.titulo`, um título que
+**viajou** — saiu de `txt()` noutro lugar, foi guardado num objeto de
+configuração e só depois virou HTML. Nenhuma varredura de texto liga as duas
+pontas, e fingir que liga seria pior que não ter guarda.
+
+Esse lado é segurado por `testes-web/prova-xss-do-texto-de-tela.mjs`, que
+carrega o arquivo real do componente num Chromium, repõe o defeito num clone e
+**exige que o veneno dispare nele** — declarando-se INVÁLIDA, e não verde, se
+não disparar.
+
+**Dizer o que a guarda não cobre é parte da guarda**, e foi a omissão disso
+que deixou o 347 nascer: o comentário do `index.html` já dizia que aquele
+texto é entrada de usuário, e a docstring de
+`nenhum_texto_da_fabrica_traz_etiqueta_crua` afirmava que «os dois caminhos
+escapam antes de escrever». Existiam **quatro**. E a guarda que existia varre
+a `FABRICA_TELA` — o que o programador escreveu —, enquanto o que vaza é o que
+o **banco** devolve.
+
 ## Os limites de funcionamento encontrados (não são catracas)
 
 Achados varrendo `TETO`, `MAX` e `LIMITE` em `crates/*/src/**/*.rs` e em

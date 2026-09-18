@@ -247,6 +247,20 @@ cargo run --example textos-fora-da-fabrica -p phxsql-server -- --isentos
    | frase com um número ou um nome no meio | `avisar(preencher(txt("tela.mt_alinhadas", "{n} regiões alinhadas…"), { n }))` |
    | tabela lida antes do login (`MENUS`, `FERRAMENTAS`, `CATALOGO`, `NIVEIS`, `MODELOS`, `RECEITAS`) | `{ rot:"Painel", txt:"tela.painel" }` — o par, **na mesma linha** |
 
+   **A linha do «HTML montado em JS» passou a ter cobrança, em 18/09/2026.**
+   Ela já estava escrita aqui e o `index.html` já tinha **443** usos certos —
+   e ainda assim **oito** `txt()` foram para o `innerHTML` sem escape, no
+   painel de rodízio do Profiler (pedido **347**). Receita certa que ninguém
+   cobra é receita que se segue na maioria dos casos, e a maioria não basta
+   quando o texto vem de `phxsys.mensagens`, que é tabela comum e se grava com
+   `alterar`.
+   Hoje a catraca `TETO_TXT_CRU_EM_HTML`
+   (`crates/phxsql-server/src/conferidor_texto_cru.rs`, em **1**, com o 1
+   nomeado) reprova quem acrescentar um `${txt(…)}` sem `esc`. Ela **não**
+   alcança o valor que viaja — um título guardado num objeto de configuração e
+   interpolado depois —, e isso está dito nela: esse lado é da prova de
+   navegador `testes-web/prova-xss-do-texto-de-tela.mjs`.
+
    O par existe porque `MENUS` e `FERRAMENTAS` são lidos no arranque, quando
    ainda não há texto traduzido nenhum: `txt(…)` ali devolveria português para
    sempre. Quem desenha chama `txt(f.txt, f.rot)` na hora de pintar.

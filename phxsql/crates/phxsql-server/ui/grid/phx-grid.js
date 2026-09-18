@@ -1357,7 +1357,7 @@
           var resumoA = [], ka;
           for (ka in gN.aggs) {
             var cA = porCampo[ka];
-            resumoA.push((cA.titulo || ka) + ": " + formata(cA, gN.aggs[ka], {}, 0));
+            resumoA.push(esc(cA.titulo || ka) + ": " + formata(cA, gN.aggs[ka], {}, 0));
           }
           html += '<tr class="phx-grupo" data-gpath="' + esc(gN.path) + '"><td class="phx-td phx-grupo-td" colspan="' + nCols + '" style="padding-left:' + (10 + gN.nivel * 22) + 'px">' +
             '<span class="phx-grupo-caret">' + (abertoG ? "\u25be" : "\u25b8") + "</span>" +

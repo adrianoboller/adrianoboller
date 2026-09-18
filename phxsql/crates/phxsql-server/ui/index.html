@@ -13622,19 +13622,19 @@ async function verProfiler() {
               ? ` · gravando em <code>${esc(d.arquivo)}</code> (${fmtBytes(d.gravados_bytes || 0)})`
               : " · só em memória"}
            ${d.arquivo && d.teto_do_arquivo_bytes
-              ? `<br>${txt("tela.pf_rodizio_a_cada", "rodízio a cada")}
+              ? `<br>${esc(txt("tela.pf_rodizio_a_cada", "rodízio a cada"))}
                  ${fmtBytes(d.teto_do_arquivo_bytes)},
-                 ${txt("tela.pf_rodizio_guardando", "guardando")}
+                 ${esc(txt("tela.pf_rodizio_guardando", "guardando"))}
                  ${fmt(d.arquivos_guardados || 0)} —
-                 ${txt("tela.pf_rodizio_teto", "no máximo")}
+                 ${esc(txt("tela.pf_rodizio_teto", "no máximo"))}
                  <b>${fmtBytes(d.teto_em_disco_bytes || 0)}</b>
-                 ${txt("tela.pf_rodizio_em_disco", "em disco")}
-                 ${giros ? `· ${txt("tela.pf_rodizio_ja_virou", "já virou")}
+                 ${esc(txt("tela.pf_rodizio_em_disco", "em disco"))}
+                 ${giros ? `· ${esc(txt("tela.pf_rodizio_ja_virou", "já virou"))}
                             <b>${fmt(giros)}</b>
-                            ${txt("tela.pf_rodizio_vezes", "vez(es) — o começo da sessão está nos arquivos com sufixo .1 e seguintes")}` : ""}`
-              : d.arquivo ? `<br>${txt("tela.pf_sem_rodizio", "sem rodízio: o arquivo cresce sem teto")}` : ""}
+                            ${esc(txt("tela.pf_rodizio_vezes", "vez(es) — o começo da sessão está nos arquivos com sufixo .1 e seguintes"))}` : ""}`
+              : d.arquivo ? `<br>${esc(txt("tela.pf_sem_rodizio", "sem rodízio: o arquivo cresce sem teto"))}` : ""}
            ${girosMal ? `<br><b>${fmt(girosMal)}</b>
-                         ${txt("tela.pf_rodizio_falhou", "rodízio(s) com falha — não deu para renomear ou reabrir o arquivo")}` : ""}
+                         ${esc(txt("tela.pf_rodizio_falhou", "rodízio(s) com falha — não deu para renomear ou reabrir o arquivo"))}` : ""}
            ${falhas ? `<br><b>${fmt(falhas)} linha(s) NÃO gravada(s)</b> — disco cheio,
                        cota, ou o caminho deixou de aceitar escrita. O anel continua;
                        o arquivo, não.` : ""}</div>`
