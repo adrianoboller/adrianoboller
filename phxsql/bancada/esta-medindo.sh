@@ -62,6 +62,8 @@
 
 set -u
 
+RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
+
 # -- a linhagem, medida UMA vez
 proprios=" "
 p=$$
@@ -90,13 +92,44 @@ for d in /proc/[0-9]*; do
 	rustc) motivo='compilacao (rustc)' ;;
 	esac
 	if [ -z "$motivo" ]; then
-		# so conta como "bancada em python" quem de fato EXECUTOU o
+		# so conta como frente em python quem de fato EXECUTOU o
 		# interprete -- um `bash -c` que so tem o caminho escrito dentro
 		# do proprio comando continua sendo `bash` aqui, nunca `python3`
+		#
+		# SEXTA vez que o crivo curto mente, medida em 18/09/2026: o
+		# crivo era `*bancada/*.py*`, e a corrente dos geradores mora em
+		# `docs/`. Com o `portao-dos-geradores.py` e o `extrair.py` VIVOS
+		# e escrevendo o dossie, este portao saia 1 e o `comunicacao.sh`
+		# imprimia «nada compilando nem rodando agora» -- que e a mesma
+		# mentira que o comentario dele chama de a pior possivel, porque
+		# e a que faz o proximo agente rodar por cima da escrita.
+		#
+		# E o conserto NAO e acrescentar `docs/` a lista: lista de N
+		# pastas e o lugar onde a pasta N+1 se esquece. O crivo e o
+		# script ser DESTE repositorio -- script de ninguem mora fora
+		# dele, e script nosso rodando e exatamente o que se quer saber.
+		#
+		# A resolucao passa pelo `/proc/<pid>/cwd` porque quem roda
+		# `python3 docs/dossie/gerador.py` da raiz escreve um caminho
+		# RELATIVO no `cmdline`: comparar o texto com a raiz absoluta nao
+		# casaria nada, e um crivo que nunca casa e pior que crivo nenhum.
 		case "$exe_nome" in
 		python3*|python)
-			case "$linha" in
-			*bancada/*.py*) motivo='bancada em python' ;;
+			alvo=$(printf '%s' "$linha" | tr ' ' '\n' \
+				| grep -m1 '\.py$' || true)
+			abs=''
+			if [ -n "$alvo" ]; then
+				case "$alvo" in
+				/*) abs=$alvo ;;
+				*)
+					base=$(readlink "$d/cwd" 2>/dev/null) \
+						&& abs="$base/$alvo"
+					;;
+				esac
+			fi
+			case "$abs" in
+			"$RAIZ"/bancada/*) motivo='bancada em python' ;;
+			"$RAIZ"/*) motivo='frente em python do repositorio' ;;
 			esac
 			;;
 		esac

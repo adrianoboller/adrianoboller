@@ -288,10 +288,10 @@ footer code{font-size:.9em}
 <div class="kpi"><b>210.437</b><span>linhas de Rust</span><span class="q">2026-09-17 23:32:32</span></div>
 <div class="kpi"><b>8</b><span>crates</span><span class="q">2026-09-17 23:32:32</span></div>
 <div class="kpi feito"><b>0</b><span>dependências externas</span><span class="q">2026-09-17 23:32:32</span></div>
-<div class="kpi"><b>352</b><span>pedidos do dono</span><span class="q">2026-09-18</span></div>
+<div class="kpi"><b>362</b><span>pedidos do dono</span><span class="q">2026-09-18</span></div>
 <div class="kpi feito"><b>272</b><span>pedidos feitos</span><span class="q">2026-09-18</span></div>
 <div class="kpi parcial"><b>14</b><span>pedidos parciais</span><span class="q">2026-09-18</span></div>
-<div class="kpi planejado"><b>66</b><span>pedidos planejados</span><span class="q">2026-09-18</span></div>
+<div class="kpi planejado"><b>76</b><span>pedidos planejados</span><span class="q">2026-09-18</span></div>
 <div class="kpi"><b>194</b><span>guardas no catálogo</span><span class="q">2026-09-18</span></div>
 <div class="kpi"><b>24</b><span>catracas no fonte</span><span class="q">2026-09-18</span></div>
 <div class="kpi"><b class="curto">18/18</b><span>bancadas com resultado</span><span class="q">2026-09-18</span></div>
@@ -549,29 +549,30 @@ própria.</figcaption>
 <h2 id="s7"><span class="n">07 ·</span>Os pedidos do dono</h2>
 <p class="sub">Um por linha do <code>docs/PENDENCIAS.md</code>, lido pelo mesmo <code>ler()</code> da página dos pedidos — duas contagens divergiriam na primeira mudança de legenda.</p>
 <div class="barras">
-<div class="barra-linha"><span class="l">Feito</span><span class="t"><i class="b-feito" style="width:77.27%"></i></span><span class="n">272 · 77,3%</span></div>
-<div class="barra-linha"><span class="l">Parcial</span><span class="t"><i class="b-parcial" style="width:3.98%"></i></span><span class="n">14 · 4,0%</span></div>
-<div class="barra-linha"><span class="l">Planejado</span><span class="t"><i class="b-planejado" style="width:18.75%"></i></span><span class="n">66 · 18,8%</span></div>
+<div class="barra-linha"><span class="l">Feito</span><span class="t"><i class="b-feito" style="width:75.14%"></i></span><span class="n">272 · 75,1%</span></div>
+<div class="barra-linha"><span class="l">Parcial</span><span class="t"><i class="b-parcial" style="width:3.87%"></i></span><span class="n">14 · 3,9%</span></div>
+<div class="barra-linha"><span class="l">Planejado</span><span class="t"><i class="b-planejado" style="width:20.99%"></i></span><span class="n">76 · 21,0%</span></div>
 </div>
 <div class="legenda"><span class="feito"><i></i>feito</span><span class="parcial"><i></i>parcial</span><span class="planejado"><i></i>planejado</span></div>
 <h3>Os dez pedidos abertos mais recentes</h3>
 <div class="rolo"><table><thead><tr><th class="num">#</th><th>estado</th><th>o que você pediu</th></tr></thead><tbody>
-<tr><td class="num">352</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Corrida no teste do par marcado: o parceiro de REPLICACAO cria o database antes do teste, e «flaky» nao e causa raiz</strong></td></tr>
-<tr><td class="num">351</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC/343 — <code>siscolunas</code> e <code>sistabelas</code> nao trazem <code>colunas_sem_leitura</code>, e a tela pinta campo que nunca chega</strong></td></tr>
-<tr><td class="num">350</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC/343 — <code>jobs</code> devolve o PEDIDO salvo inteiro, e ele pode carregar valor de coluna marcada. NOMEADO, nao consertado, porque pode ser DECISAO</strong></td></tr>
-<tr><td class="num">349</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC 339(a) PLAUSIVEL — a escotilha do <code>c.formato</code> da grade: o retorno entra cru, e o padrao escapa</strong></td></tr>
-<tr><td class="num">348</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC 339(a) — o <code>esc</code> do <code>explorador.js</code> nao escapa apostrofo: divergencia entre irmaos, sem furo hoje</strong></td></tr>
-<tr><td class="num">346</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC 339(b) — particao por letra sobre coluna marcada vaza o primeiro caractere pelo NOME DO ARQUIVO</strong></td></tr>
-<tr><td class="num">345</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC 339(b) — o <code>.fts</code> nasce <code>644</code> e o <code>.lgpd</code> nasce <code>600</code>: o <code>apertar_permissao</code> nao alcancou o irmao</strong></td></tr>
-<tr><td class="num">344</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC 339(b) — replicar coluna EXTERNA marcada esta quebrado mesmo com a mesma senha, e o erro manda procurar no lugar errado</strong></td></tr>
-<tr><td class="num">342</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC 339(b) — a imagem de replicacao leva a coluna INLINE marcada em claro, e a EXTERNA vai selada: as duas metades erram para lados opostos</strong></td></tr>
-<tr><td class="num">340</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC 339(b) BLOQUEIO — o <code>.fts</code> guarda o valor da coluna MARCADA em claro, para sempre, e o documento nao diz</strong></td></tr>
+<tr><td class="num">362</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>A catraca <code>alcancam-fsync</code> esta REPROVADA ha SEIS commits, e nenhum portao a roda: catraca que so um aviso de 15 min le nao e catraca, e notificacao</strong></td></tr>
+<tr><td class="num">361</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>QA — o <code>provar-guardas.py</code> nao TRANCA o <code>--json</code> de saida: a mesclagem prova o caso sequencial e nao o concorrente</strong></td></tr>
+<tr><td class="num">360</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>QA — o <code>bancada/comparativo/documento.py</code> esta FORA do <code>PLANO</code> do portao dos geradores: o terceiro renderizador da matriz pode envelhecer calado</strong></td></tr>
+<tr><td class="num">359</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC BAIXOS — o literal de SQL guardado em claro: visoes, rotinas e o <code>jobs.json</code></strong></td></tr>
+<tr><td class="num">358</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC MEDIO — o rowid E o balde, e o balde e o primeiro caractere: a particao por letra vaza pelo PROTOCOLO, para quem tem a coluna negada</strong></td></tr>
+<tr><td class="num">357</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC MEDIO-ALTO — a trilha <code>.lgpd</code> redige por NOME de coluna e por analise de hash, nunca pela marca <code>DadoPessoal</code>: a §11.7 escreveu a condicao no futuro do preterito, e ela chegou</strong></td></tr>
+<tr><td class="num">356</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC ALTO — o Profiler decide por <code>cifra.tabelas</code> e a cifra acontece por <code>DadoPessoal</code>: dois campos, uma garantia</strong></td></tr>
+<tr><td class="num">355</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC ALTO — o modo ledger grava um SHA-256 SEM SAL do conteudo em claro, na mesma linha, numa coluna que nao e marcada</strong></td></tr>
+<tr><td class="num">354</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>SEC BLOQUEIO — a marca <code>.tx</code> do COMMIT grava a linha INTEIRA em claro, a antiga tambem, fora da cifra e em 0644</strong></td></tr>
+<tr><td class="num">353</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong><code>acrescentar_coluna</code> PERDE os indices de texto do esquema: <code>com_coluna</code> nao carrega <code>indices_de_texto</code></strong></td></tr>
 </tbody></table></div>
 <p class="fonte"><b>De onde sai:</b> <code>docs/PENDENCIAS.md</code>, pelo <code>ler()</code> de <code>docs/dossie/pagina-dos-pedidos.py</code>. A lista inteira, com o estado de cada um, está em <code>docs/dossie/pedidos.html</code>. Pedido com estado fora da legenda <b>para</b> o leitor com o número da linha — o 150 passou meses invisível por causa disso.</p>
 
 <h2 id="s8"><span class="n">08 ·</span>O que está travado com você</h2>
 <p class="sub">Pedido aberto cujo texto casa um <b>léxico explícito</b> do gerador. A frase que casou aparece: quem lê julga o casamento em vez de acreditar nele.</p>
 <ul class="gates">
+<li><div class="cab"><span class="n">#355</span><span class="etiqueta e-parado">Planejado</span><span class="tt"><strong>SEC ALTO — o modo ledger grava um SHA-256 SEM SAL do conteudo em claro, na mesma linha, numa coluna que nao e marcada</strong></span></div><p class="tr">… 0.000 CPFs, exigir zero acertos com o conserto e exatamente um com o defeito reposto) e a decisao do dono entre recusar coluna marcada em tabela ledger na declaracao (como ao_excluir recusa) ou temperar o hash com o sal do arquivo -- q …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
 <li><div class="cab"><span class="n">#342</span><span class="etiqueta e-parado">Planejado</span><span class="tt"><strong>SEC 339(b) — a imagem de replicacao leva a coluna INLINE marcada em claro, e a EXTERNA vai selada: as duas metades erram para lados opostos</strong></span></div><p class="tr">…  imagem_da_linha_do_rowid e assert!(!contem(&amp;imagem, SEGREDO)) . Falha hoje. Duas saidas, decisao do dono: ou a imagem leva a faixa marcada selada -- e ai a replica precisa de chave compativel, que hoje ela nao tem (ver pedido 344) --, …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
 <li><div class="cab"><span class="n">#340</span><span class="etiqueta e-parado">Planejado</span><span class="tt"><strong>SEC 339(b) BLOQUEIO — o <code>.fts</code> guarda o valor da coluna MARCADA em claro, para sempre, e o documento nao diz</strong></span></div><p class="tr">… je e o que exige o valor ausente do .fts . Os dois entram. Tres saidas, nenhuma barata, e a escolha e do dono: (a) cifrar o termo mata a ordem da B+tree e o .fts deixa de achar prefixo; (b) guardar HMAC do termo mantem a busca por palavra  …</p><p class="fonte"><b>Casou:</b> «a escolha e do dono»</p></li>
 <li><div class="cab"><span class="n">#339</span><span class="etiqueta e-parado">Parcial</span><span class="tt"><strong>PARECER EXTERNO — achados de seguranca e de alcance: chave da API no <code>localStorage</code>, o valor cifrado em claro no <code>.ndx</code> e o destino dele nas OUTRAS representacoes</strong></span></div><p class="tr">… lar, retencao e expurgo alcancando historico e backup pedem validacao juridica , e isso e decisao do dono, nao medicao. E as duas sondas das frentes vivem FORA do repositorio ( scratchpad/sonda/ , com dependencia por caminho para phxsq …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
@@ -583,9 +584,8 @@ própria.</figcaption>
 <li><div class="cab"><span class="n">#294</span><span class="etiqueta e-parado">Planejado</span><span class="tt"><strong>DECISAO DO DONO (C, 6/6) — o criterio de eleicao do cluster: a posicao somada e um escalar de uma grandeza vetorial, e trocar por vetor de tabelas mexe no consenso</strong></span></div><p class="tr">DECISAO DO DONO (C, 6/6) — o criterio de eleicao do cluster: a posicao somada e um escalar de uma grandeza vetorial, e trocar por vetor de tabela …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
 <li><div class="cab"><span class="n">#293</span><span class="etiqueta e-parado">Planejado</span><span class="tt"><strong>DECISAO DO DONO (C, 5/6) — replicar tabela com coluna EXTERNA marcada: recusar no motor, ou esperar o envelope da §11.5 — a condicao para funcionar NUNCA se satisfaz</strong></span></div><p class="tr">DECISAO DO DONO (C, 5/6) — replicar tabela com coluna EXTERNA marcada: recusar no motor, ou esperar o envelope da §11.5 — a condicao para funcion …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
 <li><div class="cab"><span class="n">#290</span><span class="etiqueta e-parado">Planejado</span><span class="tt"><strong>DECISAO DO DONO (C, 2/6) — <code>inicio</code>/<code>passo</code> por no para a <code>Sequence</code>, no mesmo bump de <code>PSCH</code> da coluna de data/hora (pedido 289)</strong></span></div><p class="tr">DECISAO DO DONO (C, 2/6) — inicio / passo por no para a Sequence , no mesmo bump de PSCH da coluna de data/hora (pedido 289) — Parecer do papel C …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
-<li><div class="cab"><span class="n">#289</span><span class="etiqueta e-parado">Planejado</span><span class="tt"><strong>DECISAO DO DONO (C, 1/6) — coluna de data/hora de sistema por linha: a resolucao em milissegundos EMPATA, e a ordem do dono («impossivel o filho ter a mesma data do pai») nao se cumpre sem um desempate mais fino</strong></span></div><p class="tr">DECISAO DO DONO (C, 1/6) — coluna de data/hora de sistema por linha: a resolucao em milissegundos EMPATA, e a ordem do dono («impossivel o filho  …</p><p class="fonte"><b>Casou:</b> «decisao do dono»</p></li>
 </ul>
-<p class="fonte">São 27 no total; os doze de número mais alto aparecem acima.</p>
+<p class="fonte">São 28 no total; os doze de número mais alto aparecem acima.</p>
 <p class="fonte"><b>De onde sai:</b> o <code>achar_gates()</code> de <code>docs/pmo/pagina-do-status-do-projeto.py</code> — o mesmo léxico do painel PMO, importado e não copiado.</p>
 
 <!-- riscos:inicio -->
@@ -611,7 +611,7 @@ própria.</figcaption>
 <tr><td class="mono">R17</td><td>A <b>coluna de data/hora de sistema por linha</b> — o invariante «impossível o filho ter a mesma data do pai» — está <b>decidida e não implementada</b>. É mudança de formato, e mudança de formato entra cedo: depois vira migração<p class="fonte"><b>Fonte:</b> <code>CLAUDE.md</code> (invariantes acima do voto) · <code>docs/CORREIO-CAMPOS.md</code></p></td><td><span class="etiqueta e-plan">média</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">C</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R11</td><td>Na promoção de uma réplica <b>atrasada</b>, os números de sequência que o master emitiu e esta ponta nunca recebeu não estão no <code>.reg</code> daqui: o contador continua de um valor menor que o do master morto. Exige decisão de projeto (faixa por nó ou contador durável propagado)<p class="fonte"><b>Fonte:</b> <code>docs/AUTONUMBER.md</code> · <code>docs/PENDENCIAS.md</code> #229 · <code>crates/phxsql-store/src/table.rs::reconciliar_sequencia</code></p></td><td><span class="etiqueta e-tem">baixa</span></td><td><span class="etiqueta e-nao">alto</span></td><td class="mono">C</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R4</td><td>A folha de marca afirma <b>ACID compliant</b>, e o «I» entregue sem pedir é <code>READ COMMITTED</code>. Quem compra pela folha espera o que o motor não dá por padrão — e a folha não é a fonte da verdade<p class="fonte"><b>Fonte:</b> <code>marca/LEIA-ME.md</code> · <code>docs/ACID.md</code> §2.4/§4.4 · <code>CLAUDE.md</code></p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">dono</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
-<tr><td class="mono">R7</td><td>Há pedidos abertos <b>parados com gente</b>, não com engenharia: o léxico dos gates os acha no <code>PENDENCIAS.md</code>. Risco de cronograma que nenhuma frente resolve trabalhando mais<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code>, pelo léxico de <code>docs/pmo/pagina-do-status-do-projeto.py</code></p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">dono</td><td class="q">2026-09-16</td><td><b>27</b><br><span class="mtime">pedidos abertos parados com gente · 2026-09-18</span></td></tr>
+<tr><td class="mono">R7</td><td>Há pedidos abertos <b>parados com gente</b>, não com engenharia: o léxico dos gates os acha no <code>PENDENCIAS.md</code>. Risco de cronograma que nenhuma frente resolve trabalhando mais<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code>, pelo léxico de <code>docs/pmo/pagina-do-status-do-projeto.py</code></p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">dono</td><td class="q">2026-09-16</td><td><b>28</b><br><span class="mtime">pedidos abertos parados com gente · 2026-09-18</span></td></tr>
 <tr><td class="mono">R16</td><td>O PDCA dos gaps parou em <b>Plan + Check</b>: as recomendações estão medidas e a fase <b>Do</b> não ocorreu. Pesquisa medida que não vira trabalho envelhece igual a número digitado<p class="fonte"><b>Fonte:</b> <code>docs/PDCA-GAPS.md</code></p></td><td><span class="etiqueta e-nao">certa</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">A</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R13</td><td>O lixo que os <code>examples/</code> deixam em <code>/tmp</code> está <b>contado, não medido</b>, e o zelador <b>não roda por horário</b> (não há <code>cron</code> aqui). O ambiente já chegou a 560 MB livres sem ninguém saber por quê<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #209 · <code>CLAUDE.md</code> (papel D)</p></td><td><span class="etiqueta e-parcial">alta</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">D</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
 <tr><td class="mono">R15</td><td>Prova que <b>falha sob carga sem defeito nenhum</b> (<code>panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados</code> exige que os três pânicos aconteçam). Teste instável ensina a ignorar vermelho, que é o pior hábito que uma catraca pode criar<p class="fonte"><b>Fonte:</b> <code>docs/PENDENCIAS.md</code> #267</p></td><td><span class="etiqueta e-parcial">alta</span></td><td><span class="etiqueta e-parcial">médio</span></td><td class="mono">F</td><td class="q">2026-09-16</td><td><b>—</b></td></tr>
@@ -863,8 +863,8 @@ calado nem se ignora calado.</div>
 <p class="sub">Esta seção <b>nasceu</b> porque o gerador existe: a lista dos documentos contados sai do código, não de uma cópia aqui.</p>
 <div class="kpis">
 <div class="kpi"><b>96</b><span>documentos contados</span><span class="q">2026-09-18</span></div>
-<div class="kpi"><b>69.359</b><span>linhas de documentação</span><span class="q">2026-09-18</span></div>
-<div class="kpi"><b>240</b><span>arquivos de cognição</span><span class="q">2026-09-18</span></div>
+<div class="kpi"><b>69.381</b><span>linhas de documentação</span><span class="q">2026-09-18</span></div>
+<div class="kpi"><b>242</b><span>arquivos de cognição</span><span class="q">2026-09-18</span></div>
 <div class="kpi"><b>7</b><span>páginas geradas e publicadas</span><span class="q">2026-09-18</span></div>
 <div class="kpi"><b>22</b><span>geradores no portão</span><span class="q">2026-09-18</span></div>
 </div>
@@ -872,8 +872,8 @@ calado nem se ignora calado.</div>
 <div class="rolo"><table><thead><tr><th>página</th><th class="num">KiB</th><th>quem a escreve</th></tr></thead><tbody>
 <tr><td class="mono">docs/dossie/dossie-phxsql-0.18.html</td><td class="num">2.638</td><td class="mono">docs/dossie/numeros-da-bancada.py</td></tr>
 <tr><td class="mono">docs/dossie/graficos.html</td><td class="num">43</td><td class="mono">docs/dossie/graficos-dos-testes.py</td></tr>
-<tr><td class="mono">docs/dossie/pedidos.html</td><td class="num">1.052</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
-<tr><td class="mono">docs/pmo/status-do-projeto.html</td><td class="num">58</td><td class="mono">docs/pmo/pagina-do-status-do-projeto.py</td></tr>
+<tr><td class="mono">docs/dossie/pedidos.html</td><td class="num">1.104</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
+<tr><td class="mono">docs/pmo/status-do-projeto.html</td><td class="num">59</td><td class="mono">docs/pmo/pagina-do-status-do-projeto.py</td></tr>
 <tr><td class="mono">docs/status/status-do-projeto.html</td><td class="num"><span class="mtime">— (esta página)</span></td><td class="mono">docs/status/riscos.py</td></tr>
 <tr><td class="mono">docs/dossie/status.html</td><td class="num">29</td><td class="mono">docs/dossie/pagina-de-status.py</td></tr>
 <tr><td class="mono">docs/dossie/testes.html</td><td class="num">22</td><td class="mono">docs/dossie/pagina-dos-testes.py</td></tr>
@@ -884,7 +884,7 @@ calado nem se ignora calado.</div>
 <div class="barra-linha"><span class="l"><code>CHANGELOG.md</code></span><span class="t"><i class="b-cheia" style="width:100.00%"></i></span><span class="n">5.507</span></div>
 <div class="barra-linha"><span class="l"><code>DESEMPENHO.md</code></span><span class="t"><i class="b-cheia" style="width:70.04%"></i></span><span class="n">3.857</span></div>
 <div class="barra-linha"><span class="l"><code>MANUAL.txt</code></span><span class="t"><i class="b-cheia" style="width:69.17%"></i></span><span class="n">3.809</span></div>
-<div class="barra-linha"><span class="l"><code>SEGURANCA.md</code></span><span class="t"><i class="b-cheia" style="width:60.31%"></i></span><span class="n">3.321</span></div>
+<div class="barra-linha"><span class="l"><code>SEGURANCA.md</code></span><span class="t"><i class="b-cheia" style="width:60.52%"></i></span><span class="n">3.333</span></div>
 <div class="barra-linha"><span class="l"><code>CONCORRENCIA.md</code></span><span class="t"><i class="b-cheia" style="width:47.61%"></i></span><span class="n">2.622</span></div>
 <div class="barra-linha"><span class="l"><code>REPLICACAO.md</code></span><span class="t"><i class="b-cheia" style="width:44.29%"></i></span><span class="n">2.439</span></div>
 <div class="barra-linha"><span class="l"><code>FORMATO.md</code></span><span class="t"><i class="b-cheia" style="width:42.16%"></i></span><span class="n">2.322</span></div>
@@ -931,6 +931,7 @@ calado nem se ignora calado.</div>
 <h2 id="s23"><span class="n">23 ·</span>As últimas frentes</h2>
 <p class="sub">Do próprio <code>git log</code>, só leitura. O commit conta a decisão e o motivo, não a lista de arquivos.</p>
 <div class="rolo"><table><thead><tr><th>commit</th><th>quando</th><th>o que decidiu</th></tr></thead><tbody>
+<tr><td class="mono">91784cb</td><td class="q">2026-09-18 02:40</td><td>347: a guarda varria o que o programador escreve, e o que vaza e o que o banco devolve</td></tr>
 <tr><td class="mono">21914ea</td><td class="q">2026-09-18 01:32</td><td>263: o que faltava nao era tempo, era DISCO -- e a premissa morreu medida</td></tr>
 <tr><td class="mono">e49852e</td><td class="q">2026-09-18 00:39</td><td>O colchete protege o token, nao a linha: a quinta vez do vigia que se acha</td></tr>
 <tr><td class="mono">8a75cd0</td><td class="q">2026-09-18 00:13</td><td>343: o `motivos` devolve a chave primaria em texto, e o bloco onde ele morava era o errado</td></tr>
@@ -940,7 +941,6 @@ calado nem se ignora calado.</div>
 <tr><td class="mono">5488996</td><td class="q">2026-09-17 20:02</td><td>Fecha o ponto fixo da evidencia: a corrida se refaz de um commit que existe</td></tr>
 <tr><td class="mono">ec4ea12</td><td class="q">2026-09-17 19:40</td><td>A matriz do comparativo passa a dizer contra o que (335, metade 1)</td></tr>
 <tr><td class="mono">bb7e841</td><td class="q">2026-09-17 18:21</td><td>Um parecer de fora achou em doze paginas o que seis revisoes minhas nao acharam</td></tr>
-<tr><td class="mono">91340c3</td><td class="q">2026-09-17 17:09</td><td>Chat e robo no PhxMail: a licenca veio antes, e o long-poll que eu recomendei estava errado</td></tr>
 </tbody></table></div>
 <p class="fonte"><b>De onde sai:</b> <code>git log --no-merges -n 10</code> na raiz do repositório. Commit novo muda esta seção — e aí ela estava velha mesmo, que é o que o portão dos geradores existe para pegar.</p>
 
@@ -980,7 +980,7 @@ calado nem se ignora calado.</div>
 <div class="nota g"><b>As quatro que faltavam nasceram em 16/09/2026, e nenhuma nasceu pelo atalho.</b> Riscos e Dívida técnica (pedido 264) exigiram um <code>docs/RISCOS.md</code> tabelado e uma marca <code>// DIVIDA:</code> no fonte; Telemetria e logs (265) exigiu que a bancada passasse a gravar <code>resultados.json</code>, porque sem ele não havia a data em que o número foi medido; Antes × Depois (266) exigiu uma série versionada, porque o <code>CAPABILITIES.json</code> é sobrescrito e só guarda o agora. Nos quatro casos <b>a fonte veio antes do gerador</b> — é isso que a lei cobra, e é por isso que ela demora mais que digitar o número.</div>
 <div class="nota v"><b>Por que isto é a seção mais importante da página.</b> O exemplo trazia <b>677 números no texto visível, todos digitados à mão</b>. Adotá-lo como veio criaria 677 lugares onde um número envelhece calado — e esta casa já pagou isso quatro vezes: o selo da capa parado numa versão por quatro lançamentos, 198 pedidos onde eram 203, 428 testes onde eram 451, 780 KiB de interface onde eram 1.032. A quarta ensina o alcance da lei: <b>gerador certo chamado pela metade entrega número velho anunciando sucesso.</b></div>
 <footer>
-  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 18/09/2026 02:23 UTC,
+  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 18/09/2026 03:11 UTC,
   pelo comando <code>./status-html.sh</code>. <b>Nenhum número desta página foi
   digitado</b>: cada um sai de um gerador, e cada seção diz de qual. Onde o
   gerador não existe, a seção <b>não nasceu</b> — está nomeada na §25, com o

@@ -141,7 +141,12 @@ elif [ -z "$MEDINDO" ]; then
   echo "· nada compilando nem rodando agora"
 fi
 if [ -n "$MEDINDO" ]; then
-  echo "⏳ BANCADA MEDINDO — adie zelador, push e build ate ela acabar"
+  # O rotulo diz FRENTE e nao BANCADA desde 18/09/2026: o portao passou
+  # a enxergar tambem a corrente dos geradores, que escreve o dossie e
+  # nao mede nada. Cabecalho que nomeia uma coisa quando o motivo logo
+  # abaixo nomeia outra e a mesma contradicao de duas frases sobre o
+  # mesmo fato -- e o motivo vem do portao, medido, nao daqui.
+  echo "⏳ FRENTE VIVA — adie zelador, push e build ate ela acabar"
   printf '%s\n' "$MEDINDO" | head -3 \
     | awk -F'\t' '{if (length($3)>62) $3=substr($3,1,62)"…"; print "   · "$2"  "$3}'
 fi
@@ -328,6 +333,15 @@ echo "$AGORA_S" > "$PULSO"
 
 echo
 echo "— medido em $AGORA. O que este aviso NAO mede: se a suite de testes"
-echo "  esta verde (roda-la a cada 15 min competiria com o trabalho)."
+echo "  esta verde (roda-la a cada 15 min competiria com o trabalho);"
+# O limite abaixo se DIZ em vez de se consertar, e e' decisao: um subagente nao
+# e' processo desta maquina -- ele vive na sessao, e nao ha `/proc` onde
+# procura-lo. Um crivo que fosse adivinhar por arquivo de saida de tarefa
+# olharia para fora do repositorio e mentiria dos dois lados. Papel que nao
+# esta cumprindo aparece como nao cumprindo, e limite que nao se mede aparece
+# como nao medido: foi assim que a corrente do batimento arrebentou duas vezes
+# sem ninguem ver -- ela tambem nao e' processo.
+echo "  nem se ha SUBAGENTE ou corrente de batimento vivos (nao sao processos"
+echo "  desta maquina, e nao ha /proc onde procura-los)."
 
 git rev-parse HEAD > "$MARCA"

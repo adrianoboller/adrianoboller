@@ -1458,6 +1458,12 @@ Toda escolha aqui deixa algo em claro. Esconder isso seria pior que não cifrar.
 | o **tamanho** de um `Memo` marcado | o bloco tem o comprimento no cabeçalho |
 | o **`.ndx` inteiro**, o `.pag`, o catálogo | não entraram nesta rodada |
 | **o tráfego** | esta cifra é do arquivo em repouso. O fio tem a sua, e é outra coisa (§7) — e ela não é TLS |
+| **o `.fts` sobre a coluna marcada** | o índice de texto guarda o **termo inteiro**, e por um motivo pior que o do `.ndx`: ele quebra o texto em palavras e grava cada uma como chave de um `.ndx` próprio (`fts.rs:238`). Onde o `.ndx` vaza o valor da coluna, o `.fts` vaza o **vocabulário** dela. `fts.rs` tem zero menção a cofre ou cifra — pedido 340, e o nome dele nesta tabela é novo de 18/09/2026 |
+| **a marca `.tx` do `COMMIT`** | ela grava a linha inteira — a nova e a antiga —, com `Memo` e `Bin` embutidos, protegida só por CRC-32, e a antiga **vem do disco decifrada** (`transacao.rs:241`, `:765-767`, `:919`). É o único lugar do motor que tira o valor do selo e o devolve ao disco sem selo. Nasce `0644` e é durável (`sync_all`), e o `backup.rs:155` não filtra extensão, então um `.tx` no disco na hora da cópia entra no zip — pedido 354, **BLOQUEIO**, nomeado em 18/09/2026 |
+| o **hash do bloco** numa tabela modo ledger | `sha256` **sem sal** do conteúdo canônico, gravado na coluna `hash`, que não é marcada e por isso não é cifrada (`ledger.rs:199`, `:218`). Ao lado do valor selado fica um oráculo de confirmação exato e offline — pedido 355, nomeado em 18/09/2026 |
+| o **`perfil.txt`** de uma tabela cifrada pela MARCA e ausente de `cifra.tabelas` | o Profiler cega por `config.cifra.tabelas` (`profiler.rs:721`) e a cifra acontece por `DadoPessoal` (`reg.rs:275`): dois campos, uma garantia — pedido 356, nomeado em 18/09/2026 |
+| o `antes`/`depois` de coluna marcada no **`.lgpd`** | a trilha redige por NOME de coluna e por análise de hash (`trilha.rs:400`, `:358-370`), nunca pela marca. O corpo do `.lgpd` é cifrado pelo cofre no mesmo interruptor, e por isso isto é **concentração** e não vazamento em repouso — mas é exatamente a condição que a §11.7 escreveu no futuro do pretérito, e ela chegou: pedido 357 |
+| o **primeiro caractere** da coluna marcada, pelo `rowid` e pelo `esquema` | `rowid = (balde-1)*rpa + usados + 1` é conta pública (`reg.rs:1609`, `pag.rs:148`), e `op_esquema` devolve o histograma por letra a quem tem só `Ler`. Vale **inclusive para quem tem a coluna negada** — pedidos 346 e 358 |
 
 Isto está num teste, e não só aqui:
 `o_indice_sobre_a_coluna_marcada_continua_em_claro` **prova o vazamento** —
@@ -1467,7 +1473,13 @@ cifrado, o teste cai, e cair é o aviso para apagar esta linha da tabela acima.
 > **Um banco que diz «cifrado» e vaza a chave pelo índice está mentindo para o
 > usuário.** Uma tabela com coluna marcada e índice sobre ela protege o
 > `.reg` copiado, e **não** protege contra quem copiou o `.ndx` junto. Quem
-> precisa dos dois deve tirar o índice da coluna sensível.
+> precisa dos dois deve tirar o índice da coluna sensível. **E tirar a árvore não
+> basta:** o índice de TEXTO é outro arquivo e sobrevive à remoção do `.ndx`,
+> guardando o vocabulário inteiro da coluna (pedido 340) — quem seguir só a
+> primeira metade deste conselho continua vazando, convencido de que fechou.
+> A lista acima é usada como **inventário**, e em 18/09/2026 ela ganhou seis
+> linhas de uma vez: nenhuma representação nova, todas antigas e nenhuma
+> listada.
 
 ### 11.4 O modo FrogCript
 

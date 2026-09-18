@@ -109,8 +109,8 @@ mesmo motivo que o rodapé já errou uma vez.
 |---|---|---:|---:|
 | JavaScript (prova ponta a ponta) | `testes-web/` | 54 | 11171 |
 | Python (bancada de medicao) | `bancada/` | 117 | 53843 |
-| Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2816 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 408 | 101096 |
+| Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2863 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 410 | 101325 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 32 | 13481 |
 <!-- /GERADO -->
 
@@ -493,7 +493,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **352** pedidos numerados; **57** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **362** pedidos numerados; **57** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
