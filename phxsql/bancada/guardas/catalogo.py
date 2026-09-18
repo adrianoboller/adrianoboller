@@ -7192,6 +7192,55 @@ pub fn limpar() {
         ],
     },
     {
+        "id": "cifra-do-odbc-volta-a-nascer-em-claro",
+        "titulo": "a receita do driver ODBC volta a nascer em claro, e o esquecimento vira o padrao",
+        "porque": (
+            "decisao do dono, 18/09/2026 (pedido 373): «a comunicacao deve "
+            "obrigatoriamente ser cifrada». A receita do ODBC NASCE cifrada e "
+            "`CIFRA=0` e o escape escrito -- quem quer claro escreve, em vez "
+            "de esquecer. "
+            "O defeito e uma linha, e ele tem o disfarce mais convincente que "
+            "existe: `cifra: false` no `Default` parece a escolha conservadora "
+            "de quem nao quer quebrar cliente antigo. So que aqui o cliente "
+            "antigo nao quebra -- ele passa a falar claro CALADO, com a senha "
+            "no fio, e ninguem recebe erro nenhum. "
+            "O que esta entrada ensina, e foi medido em 18/09: o padrao mora "
+            "no `impl Default for Receita` e NAO no analisador da receita, "
+            "porque o `SQLConnect` com `host:porta/database` monta a receita "
+            "com `..Receita::default()` e nao passa pelo analisador. Guarda "
+            "posta no analisador deixaria o irmao falando claro, calado -- e "
+            "e a mesma lei que esta casa ja pagou tres vezes num dia: o "
+            "conserto entra no caminho que o motivou, e o caminho IRMAO fica."
+            "\n\nRAIO MEDIDO (18/09/2026): **5 dos 66** do "
+            "`phxsql-odbc --lib`."
+        ),
+        "arquivo": "crates/phxsql-odbc/src/conexao.rs",
+        "trecho": """            database: String::new(),
+            cifra: true,
+""",
+        "troca": """            database: String::new(),
+            // DEFEITO REPOSTO: o padrao volta a ser claro, «para nao quebrar
+            // quem ja tem receita escrita». Ninguem recebe erro: o cliente
+            // velho passa a falar claro calado, com a senha no fio.
+            cifra: false,
+""",
+        "pacote": "phxsql-odbc",
+        "alvo": ["--lib"],
+        "caem": [
+            "conexao::testes::sem_escrever_nada_a_receita_nasce_cifrada",
+            "conexao::testes::o_caminho_do_sqlconnect_tambem_nasce_cifrado",
+            "conexao::testes::valor_torto_na_cifra_nao_rebaixa_para_claro",
+            "conexao::testes::a_mascarada_leva_o_modo_nos_dois_sentidos",
+            "conexao::testes::o_aperto_recusado_ensina_a_saida",
+        ],
+        "seguem": [
+            # O escape escrito continua valendo: quem manda CIFRA=0 fala claro
+            # com o padrao ligado E com ele desligado. E' o teste do
+            # comportamento pedido, e ele nao distingue os dois mundos.
+            "conexao::testes::o_escape_escrito_e_o_cifra_zero",
+        ],
+    },
+    {
         "id": "receita-odbc-devolve-a-senha",
         "titulo": "a connection string mascarada do ODBC devolve a senha inteira",
         "porque": (
@@ -7211,7 +7260,7 @@ pub fn limpar() {
             "O que esta entrada ensina: e a unica desta petrea em "
             "`phxsql-odbc`, e nenhuma prova do servidor a alcanca -- o "
             "vazamento acontece num processo que o servidor nem ve."
-            "\n\nRAIO MEDIDO (17/09/2026): **1 dos 59** do `phxsql-odbc --lib`."
+            "\n\nRAIO MEDIDO (18/09/2026): **1 dos 66** do `phxsql-odbc --lib` -- eram 59 em 17/09, e o numero velho e o exemplo da propria lei: raio digitado envelhece calado quando a suite cresce."
         ),
         "arquivo": "crates/phxsql-odbc/src/conexao.rs",
         "trecho": """    if !r.senha.is_empty() {
