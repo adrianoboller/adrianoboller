@@ -1385,6 +1385,32 @@ impl Schema {
     /// data. Conferir aqui, e nao na gravacao: um esquema que so quebra na
     /// primeira insercao ja nasceu quebrado, e o erro apareceria longe de quem
     /// o causou.
+    ///
+    /// # O oraculo do rowid (pedido 358) NAO se confere aqui dentro, de proposito
+    ///
+    /// Decisao do dono, 18/09/2026: da terceira porta do pedido 358 -- API
+    /// Rust e FFI montando o esquema campo a campo, sem passar pelo
+    /// `esquema_de_json` que tem a chamada a `conferir_oraculo_do_rowid` -- o
+    /// FFI (`crates/phxsql-ffi/`) fica FECHADO e esta API Rust fica ABERTA.
+    ///
+    /// O FFI e' porta externa de verdade -- Android, iOS, IoT --, e por ela o
+    /// oraculo voltaria inteiro sem quem chama de fora ter como saber que
+    /// devia se proteger; medido em 18/09/2026, ele fecha por AUSENCIA de
+    /// superficie, e nao por guarda nova: nenhuma das `phx_esquema_*` aceita
+    /// grau de dado pessoal, e `phx_tabela_criar` nao recebe paginacao
+    /// nenhuma, entao a combinacao simplesmente nao tem por onde entrar pela
+    /// ABI de C hoje (ver o comentario em `phx_tabela_criar`, que aponta onde
+    /// ligar esta guarda no dia em que a ABI ganhar uma das duas metades).
+    ///
+    /// Esta API `com_paginacao`, por outro lado, e' o NOSSO proprio codigo --
+    /// quem chama e' sempre outro Rust desta casa --, e fica aberta de
+    /// proposito: e' o unico jeito de montar, num teste, a combinacao antiga
+    /// (`Schema::new(...).com_paginacao(...)` sem passar pela guarda) e provar
+    /// que uma tabela que JA existe com ela continua abrindo, lendo, gravando
+    /// e ganhando coluna -- o comportamento VELHO que "guarda nova entra
+    /// pedida, nao imposta" promete. Quem monta o `CREATE TABLE` de fora
+    /// (`valores::esquema_de_json`) e' quem chama `conferir_oraculo_do_rowid`
+    /// ANTES desta funcao; ela mesma nunca teve essa responsabilidade.
     pub fn com_paginacao(mut self, paginacao: Paginacao) -> Result<Schema> {
         if let ModoParticao::PorPeriodo { coluna, periodo } = paginacao.modo {
             let c = self.colunas.get(coluna as usize).ok_or_else(|| {

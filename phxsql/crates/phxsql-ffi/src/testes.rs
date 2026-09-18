@@ -1053,6 +1053,106 @@ fn tipo_desconhecido_recusa_na_hora() {
     }
 }
 
+// =============================================== o oraculo do rowid (358)
+
+/// A TERCEIRA porta do pedido 358, medida pela ABI e nao por dentro.
+///
+/// Esta ABI hoje nao tem sinalizador de dado pessoal em `phx_esquema_coluna`
+/// (so existe `PHX_COL_OBRIGATORIA`) nem paginacao nenhuma em
+/// `phx_tabela_criar` -- entao a combinacao que o pedido 358 proibe (particao
+/// por POSICAO sobre coluna marcada) nao tem por onde entrar aqui, e o teste
+/// que "monta a combinacao e exige recusa" nao existe porque nao ha como
+/// montar a combinacao.
+///
+/// O que este teste prova, em vez disso, e' a MEDICAO: uma tabela criada por
+/// esta ABI, com uma coluna candidata (`cpf`, o mesmo nome que os testes do
+/// oraculo em `phxsql-core::schema` usam) e linhas com primeiros caracteres
+/// bem diferentes, sempre cai num UNICO arquivo `.reg`. Particao por posicao
+/// teria produzido `nome_A.reg`, `nome_9.reg`, `nome_Outros.reg`... (ver
+/// `BALDES` em `paginacao.rs`) -- e e' assim, pelo sistema de arquivos e nao
+/// por um campo interno, que se enxerga que a paginacao nunca foi ligada.
+///
+/// Este teste e' uma SENTINELA de superficie, nao uma prova de que uma guarda
+/// funciona: no dia em que `phx_tabela_criar` ganhar paginacao (mesmo uma
+/// legitima, sobre coluna nao marcada), ele fica vermelho -- e e' esse
+/// vermelho que manda quem tocar ali ler o aviso em `phx_tabela_criar` e em
+/// `Schema::com_paginacao` sobre onde ligar `conferir_oraculo_do_rowid`.
+#[test]
+fn criar_pela_abi_nunca_particiona_por_posicao_e_a_coluna_pessoal_nasce_normal() {
+    unsafe {
+        let area = Area::nova("oraculo");
+        let caminho = area.txt();
+        let mut base: *mut Punho<BaseFFI> = std::ptr::null_mut();
+        let (p, t) = par(&caminho);
+        let (n, nt) = par("app");
+        assert_eq!(phx_base_abrir(p, t, n, nt, PHX_CRIAR, &mut base), PHX_OK);
+
+        let mut esq: *mut Punho<EsquemaFFI> = std::ptr::null_mut();
+        let (p, t) = par("clientesComCpf");
+        assert_eq!(phx_esquema_novo(p, t, &mut esq), PHX_OK);
+        let (p, t) = par("id");
+        assert_eq!(
+            phx_esquema_coluna(esq, p, t, PHX_COL_INT8, 0, 0, 0, PHX_COL_OBRIGATORIA),
+            PHX_OK
+        );
+        let (p, t) = par("cpf");
+        assert_eq!(
+            phx_esquema_coluna(esq, p, t, PHX_COL_STR, 11, 0, 0, PHX_COL_OBRIGATORIA),
+            PHX_OK
+        );
+        let (p, t) = par("porId");
+        assert_eq!(
+            phx_esquema_indice(esq, p, t, PHX_IDX_UNICO | PHX_IDX_PRIMARIA),
+            PHX_OK
+        );
+        assert_eq!(phx_esquema_indice_coluna(esq, 0, 0), PHX_OK);
+
+        let mut tab: *mut Punho<TabelaFFI> = std::ptr::null_mut();
+        let r = phx_tabela_criar(base, std::ptr::null(), 0, esq, &mut tab);
+        assert_eq!(r, PHX_OK, "criar tabela: {}", erro_agora());
+        assert_eq!(phx_esquema_liberar(esq), PHX_OK);
+
+        // Primeiros caracteres bem espalhados: se a particao por posicao
+        // estivesse ligada sobre "cpf", estas tres linhas cairiam em TRES
+        // volumes diferentes (baldes 1, 2 e 36 de `BALDES`).
+        for (id, cpf) in [
+            (1i64, "11111111111"),
+            (2, "22222222222"),
+            (3, "99999999999"),
+        ] {
+            let linha = [v_int(id), v_bytes(PHX_TEXTO, cpf.as_bytes())];
+            let mut rowid = 0u64;
+            assert_eq!(
+                phx_inserir(tab, linha.as_ptr(), linha.len(), &mut rowid),
+                PHX_OK,
+                "inserir: {}",
+                erro_agora()
+            );
+        }
+
+        assert_eq!(phx_sincronizar(tab), PHX_OK);
+        assert_eq!(phx_tabela_fechar(tab), PHX_OK);
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+
+        let dir = PathBuf::from(&caminho).join("app");
+        let mut volumes: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.starts_with("clientesComCpf") && n.ends_with(".reg"))
+            .collect();
+        volumes.sort();
+        assert_eq!(
+            volumes,
+            vec!["clientesComCpf.reg".to_string()],
+            "a tabela criada pela ABI tem mais de um volume: {volumes:?} -- \
+             isso so acontece com particao por posicao ligada, que e a metade \
+             que o oraculo do rowid (pedido 358) proibe sobre coluna marcada; \
+             ligue `conferir_oraculo_do_rowid` em phx_tabela_criar antes disto"
+        );
+    }
+}
+
 // ======================================================= o cabecalho de C
 
 /// Extrai os nomes das funcoes exportadas do proprio fonte.

@@ -624,6 +624,22 @@ pub unsafe extern "C" fn phx_tabela_criar(
             Ok(s) => s,
             Err(err) => return do_motor(&err),
         };
+        // O ORACULO DO ROWID (pedido 358), a TERCEIRA porta: medido em
+        // 18/09/2026, esta ABI fecha por AUSENCIA de superficie, e nao por
+        // guarda -- nenhuma `phx_esquema_coluna` tem sinalizador de dado
+        // pessoal (so existe `PHX_COL_OBRIGATORIA`) e esta funcao nao recebe
+        // paginacao nenhuma, entao `esquema.paginacao` e sempre a DESLIGADA
+        // (`ModoParticao::PorQuantidade`, que `coluna_que_o_rowid_revela`
+        // devolve `None`) -- a combinacao proibida nao tem por onde entrar.
+        //
+        // Isto e um AVISO para quem tocar aqui, nao uma guarda: no dia em que
+        // esta ABI ganhar dado pessoal por coluna OU paginacao/particao na
+        // criacao, a chamada que falta e' `esquema.conferir_oraculo_do_rowid
+        // (modo)?` -- ANTES de `.com_paginacao(modo)`, no mesmo lugar e na
+        // mesma ordem que `valores::esquema_de_json` usa no servidor. Aquele
+        // metodo NAO confere isto sozinho (ver o comentario dele em
+        // `schema.rs`), entao ligar paginacao aqui sem esta chamada seria
+        // reabrir exatamente a porta que o pedido 358 fechou nas outras duas.
         let logico = if schema.is_empty() {
             None
         } else {
