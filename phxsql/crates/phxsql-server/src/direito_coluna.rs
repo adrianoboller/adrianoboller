@@ -161,6 +161,15 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     // `antes` e `depois` de cada coluna marcada -- o valor, em texto.
     ("trilha", PorColuna::Recusa),
     ("trilha_lgpd", PorColuna::Recusa),
+    // O QUARTO IRMAO do passado, e o mais discreto dos quatro: a resposta nao
+    // traz a linha, traz `identidade` -- a chave primaria em TEXTO CLARO,
+    // montada por `Table::identidade_de_valores`. Com o `cpf` como chave
+    // primaria e marcado, um `motivos` devolvia o CPF de cada linha excluida
+    // com data, hora e autor ao lado. Ele estava classificado pelo que o
+    // pedido RECEBE; esta tabela responde por onde a RESPOSTA devolve dado de
+    // linha, e sao coisas diferentes (pedido 343).
+    ("motivos", PorColuna::Recusa),
+    ("reasons", PorColuna::Recusa),
     // A imagem da linha, quando o diario a grava.
     ("diario", PorColuna::Recusa),
     // O fluxo de eventos com a imagem: e o `diario` pela porta da replicacao.
@@ -188,11 +197,12 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("carga", PorColuna::Escreve),
     ("atualizar", PorColuna::Escreve),
     // `excluir` e `restaurar` mexem na LINHA inteira, e quem manda nisso e o
-    // direito de excluir da tabela. Nao ha coluna no pedido.
+    // direito de excluir da tabela. Nao ha coluna no pedido -- e a resposta
+    // dos dois e `rowid` mais um booleano, que e a metade que de fato sustenta
+    // o `Nenhum`. O `motivos` morava aqui por vizinhanca e RESPONDE a
+    // identidade da linha: ele mudou para o bloco da recusa (pedido 343).
     ("excluir", PorColuna::Nenhum),
     ("restaurar", PorColuna::Nenhum),
-    ("motivos", PorColuna::Nenhum),
-    ("reasons", PorColuna::Nenhum),
     ("marcar_lgpd", PorColuna::Nenhum),
     ("marcar_dado_pessoal", PorColuna::Nenhum),
     ("esvaziar_lixeira", PorColuna::Nenhum),
@@ -382,6 +392,10 @@ pub const SAIDAS: &[(&str, Saida)] = &[
     ("trash", Saida::Historico),
     ("trilha", Saida::Historico),
     ("trilha_lgpd", Saida::Historico),
+    // `ler`/`varrer` falam do agora e nao dizem por que uma linha saiu: nao
+    // ha caminho reto para pedir no lugar, ha o direito a coluna.
+    ("motivos", Saida::Historico),
+    ("reasons", Saida::Historico),
     ("diario", Saida::Historico),
     ("replicar", Saida::Historico),
     ("profiler", Saida::Historico),

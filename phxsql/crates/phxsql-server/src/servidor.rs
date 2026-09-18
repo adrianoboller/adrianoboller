@@ -28109,6 +28109,20 @@ mod testes_direito_por_coluna {
         )
     }
 
+    /// O cenario do pedido 343: a coluna marcada e a CHAVE PRIMARIA da tabela,
+    /// que e o caso tipico (`cpf`, `cnpj`) e nao o exotico.
+    fn a_chave_primaria_marcada() -> Cadastro {
+        cadastro(
+            r#"{"*":{"ler":true,"inserir":true,"alterar":true,"excluir":true,
+                 "criar":true,"reindexar":true,"diario":true,"verificar":true,
+                 "replicar":true,"administrar":true,
+                 "tabelas":{"pessoas":{"ler":true,"inserir":true,"alterar":true,
+                   "excluir":true,"criar":true,"diario":true,"administrar":true,
+                   "replicar":true,"verificar":true,"reindexar":true,
+                   "colunas":{"cpf":{"ler":false,"alterar":false}}}}}}"#,
+        )
+    }
+
     /// O `Config` de um servidor que mora em `dir`, com este cadastro.
     fn config_em(dir: &std::path::Path, cadastro: Cadastro) -> Config {
         Config {
@@ -29291,6 +29305,143 @@ mod testes_direito_por_coluna {
         )
         .expect("a tabela sem regra de coluna foi barrada");
         assert_eq!(ok.inteiro_ou("grupos", -1), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **O defeito do pedido 343.** A resposta do `motivos` traz `identidade`,
+    /// que e a chave primaria em TEXTO CLARO (`Table::identidade_de_valores`).
+    /// Com o `cpf` como chave primaria e marcado, quem nao le a coluna
+    /// recebia `"identidade":"cpf=01234567890"` para cada linha excluida, com
+    /// data, hora e autor ao lado.
+    ///
+    /// A classe era `Nenhum` com a justificativa do `excluir` ao lado --
+    /// «mexe na LINHA inteira, nao ha coluna no pedido» --, e ela e verdadeira
+    /// para o `excluir` e herdada por vizinhanca aqui: o `PorColuna` pergunta
+    /// por onde a RESPOSTA devolve dado de linha, nao o que o pedido recebe.
+    /// Os tres irmaos que devolvem passado -- `lixeira`, `trilha`, `diario` --
+    /// ja eram `Recusa`, cada um com o motivo escrito; o quarto caiu no bloco
+    /// do `Nenhum`.
+    ///
+    /// Reponha o defeito trocando a classe de `motivos` para
+    /// `PorColuna::Nenhum`: o `match` do meio passa a cair no `Ok` e o
+    /// `panic!` imprime o CPF.
+    #[test]
+    fn o_motivos_nao_entrega_a_chave_primaria_marcada() {
+        let dir = dir_temp("motivos-identidade");
+        // A tabela nasce e a linha morre por um servidor SEM regra nenhuma: o
+        // `.reason` e o dado que ja esta em disco quando a guarda entra, e a
+        // regra so vale do arranque seguinte -- com a tabela ja gravada, que
+        // e onde o cadastro confere se a coluna existe.
+        {
+            let (s, ses) = servidor(&dir, sem_regra_de_coluna());
+            let dono = Sessao::default();
+            s.executar(
+                "criar_tabela",
+                &pedido(
+                    r#"{"database":"b","tabela":"pessoas",
+                        "colunas":[{"nome":"cpf","tipo":"Str(11)","obrigatoria":true},
+                                   {"nome":"nome","tipo":"Str(20)"}],
+                        "indices":[{"nome":"porCpf","colunas":["cpf"],"unico":true,
+                                    "primario":true}]}"#,
+                ),
+                &dono,
+            )
+            .unwrap();
+            s.executar(
+                "inserir",
+                &pedido(
+                    r#"{"database":"b","tabela":"pessoas",
+                        "linha":{"cpf":"01234567890","nome":"ana"}}"#,
+                ),
+                &dono,
+            )
+            .unwrap();
+            s.executar(
+                "excluir",
+                &pedido(
+                    r#"{"database":"b","tabela":"pessoas","rowid":1,
+                        "motivo":"pedido do titular"}"#,
+                ),
+                &dono,
+            )
+            .unwrap();
+
+            // **O COMPORTAMENTO VELHO, na mesma corrida.** A MESMA Ana, com o
+            // MESMO cadastro sem o campo `"colunas"`, continua lendo os
+            // motivos com o CPF dentro. A guarda entra pedida: quem nao tem
+            // regra de coluna nenhuma nao muda de comportamento.
+            let velho = pede(
+                &s,
+                &ses,
+                r#""op":"motivos","database":"b","tabela":"pessoas""#,
+            )
+            .expect("quem nao tem regra de coluna parou de ler os motivos");
+            assert!(
+                velho.escrever().contains("cpf=01234567890"),
+                "o .reason nao guardou a identidade, e sem ela nao ha vazamento \
+                 a provar: {}",
+                velho.escrever()
+            );
+        }
+
+        // O segundo arranque, do MESMO diretorio, agora com o `cpf` marcado.
+        let com_regra = a_chave_primaria_marcada();
+        let s = Servidor::novo(config_em(&dir, com_regra.clone()))
+            .expect("recusou regra sobre coluna que existe");
+        let ses = Sessao {
+            usuario: com_regra.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+
+        match pede(
+            &s,
+            &ses,
+            r#""op":"motivos","database":"b","tabela":"pessoas""#,
+        ) {
+            Ok(j) => panic!(
+                "o motivos entregou a chave primaria marcada em texto claro: {}",
+                j.escrever()
+            ),
+            Err(e) => {
+                assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+                // **Contra o lastro.** Tabela negada e falta de `administrar`
+                // recusariam com OUTRO texto, e o teste passaria por engano.
+                // Estas duas frases so saem do ramo `PorColuna::Recusa`.
+                let t = e.to_string();
+                for pedaco in [
+                    "o direito por coluna nao e aplicado em motivos",
+                    "ha coluna negada em b.pessoas",
+                ] {
+                    assert!(
+                        t.contains(pedaco),
+                        "a recusa nao veio da classe Recusa do direito por coluna: {t}"
+                    );
+                }
+            }
+        }
+
+        // **O CONTROLE POSITIVO.** A MESMA sessao continua lendo os motivos da
+        // tabela que nao tem regra de coluna. Guarda que recusa tudo e pior
+        // que a guarda que faltava.
+        let ok = pede(
+            &s,
+            &ses,
+            r#""op":"motivos","database":"b","tabela":"clientes""#,
+        )
+        .expect("a tabela sem regra de coluna foi barrada");
+        assert_eq!(ok.inteiro_ou("total", -1), 0, "{}", ok.escrever());
+
+        // E o apelido recusa junto: `reasons` chega ao portao como `motivos`
+        // chega, e classificar so o canonico deixaria a porta dos fundos
+        // aberta com outro nome.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"reasons","database":"b","tabela":"pessoas""#,
+        )
+        .expect_err("o apelido entregou o que o nome canonico recusa");
+        assert!(e.to_string().contains("nao e aplicado em reasons"), "{e}");
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

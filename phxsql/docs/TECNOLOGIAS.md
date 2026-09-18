@@ -39,12 +39,12 @@ foi estimado no lugar de uma medição que faltou.
 | `phxsql-core` | 35 | 11173 | 4568 | 3473 | 1539 | 20753 |
 | `phxsql-ffi` | 7 | 1408 | 1014 | 703 | 235 | 3360 |
 | `phxsql-odbc` | 7 | 2469 | 1086 | 928 | 228 | 4711 |
-| `phxsql-server` | 57 | 45040 | 29675 | 22120 | 5102 | 101937 |
+| `phxsql-server` | 57 | 45042 | 29781 | 22169 | 5110 | 102102 |
 | `phxsql-sql` | 10 | 6637 | 3381 | 1993 | 748 | 12759 |
 | `phxsql-store` | 24 | 13361 | 3583 | 5781 | 1541 | 24266 |
-| **total** | **143** | **81482** | **43521** | **35282** | **9533** | **169818** |
+| **total** | **143** | **81484** | **43627** | **35331** | **9541** | **169983** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **43521/81482 = 0.53×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **43627/81484 = 0.54×**.
 
 Alem do `src/`: **78** programas de medicao em `examples/` (19877 linhas — bancada em Rust, nao produto nem teste) e **60** arquivos em `tests/` de integracao fora de `src/` (20462 linhas).
 <!-- /GERADO -->
@@ -110,7 +110,7 @@ mesmo motivo que o rodapé já errou uma vez.
 | JavaScript (prova ponta a ponta) | `testes-web/` | 53 | 11059 |
 | Python (bancada de medicao) | `bancada/` | 117 | 53843 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2816 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 406 | 100834 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 406 | 100838 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 32 | 13481 |
 <!-- /GERADO -->
 
@@ -422,7 +422,7 @@ empacotar:
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2499** testes passaram, **0** falharam (medido em 2026-09-17 15:10:53, commit `89302203`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **2501** testes passaram, **0** falharam (medido em 2026-09-17 23:32:32, commit `f1ec78aa`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
@@ -492,7 +492,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **349** pedidos numerados; **55** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **352** pedidos numerados; **56** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -551,6 +551,7 @@ proposta de voltar sem medição nova.
 | 316 | **A guarda que impede transplantar um slot cifrado de um `.reg` para outro existe POR CONSEQUENCIA, e ninguem a escreveu** |
 | 331 | **Chave COMPOSTA nao replica no modo bidirecional: a tabela e recusada inteira — e o proprio fonte pede este pedido por escrito** |
 | 335 | **PARECER EXTERNO — SEIS contradicoes no dossie publicado: o contrato nao tem UMA versao da verdade** |
+| 343 | **SEC 339(b) — `motivos` esta classificado `Nenhum` e devolve a CHAVE PRIMARIA em texto: o quarto irmao que caiu no bloco errado** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —
