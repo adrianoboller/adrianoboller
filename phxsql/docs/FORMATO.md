@@ -462,6 +462,24 @@ falta.
 A marca não desloca nada: `payload_len` e os *offsets* das colunas são os
 mesmos de uma tabela sem marca. É metadado, e não dado.
 
+**A marca não convive com o modo ledger — recusada na declaração** (decisão do
+dono, 18/09/2026, pedido 355). O `hash` de cada bloco é um SHA-256 **sem sal**
+do conteúdo em claro, e ele fica gravado numa coluna `Uuid256` que *não* é
+marcada e por isso *não* é cifrada: ela sobra em claro ao lado do dado selado, e
+quem tem a lista dos valores possíveis confirma qual está ali por tentativa —
+CPF são ~10^9 candidatos, data de nascimento ~36.500, salário em centavos menos
+ainda. Salgar não era saída: o leiaute do conteúdo canônico é público de
+propósito, porque é ele que deixa a cadeia verificável por quem não tem o motor,
+e sal público é sal nenhum contra quem enumera.
+
+**O byte no disco não muda, e é isso que faz a guarda não quebrar nada.** O que
+deixa de existir é a *declaração* — `Schema::new`, `Schema::marcar_dado_pessoal`
+e `Schema::com_coluna` recusam, nomeando a coluna. O `Schema::do_disco`, que é o
+caminho da leitura, não julga: cadeia gravada antes disso volta do `PSCH` com a
+marca como foi gravada, abre, lê e continua gravando bloco novo. Ali o oráculo
+já queimou, e tirar a tabela do ar não o apaga — só tiraria do ar uma tabela que
+está perfeita. Guarda nova entra pedida, não imposta.
+
 ### A coluna de sistema `softdeleted`
 
 Toda tabela criada a partir da v4 ganha, **no fim da lista**, uma coluna `Bool`

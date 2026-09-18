@@ -47,6 +47,24 @@
 //! e devolvido como [`Uuid256`], que existe justamente porque «um SHA-256 cabe
 //! exato» (FORMATO.md §13).
 //!
+//! # E por isso o modo ledger NAO aceita coluna marcada como dado pessoal
+//!
+//! Decisao do dono, 18/09/2026 (pedido 355). O leiaute acima e' publico de
+//! proposito -- e' o que deixa a cadeia verificavel por quem nao tem o motor --,
+//! e o hash e' SHA-256 **sem sal** do conteudo em CLARO. A coluna `hash` nao e'
+//! marcada, entao nao e' cifrada nem quando o resto da tabela e': ela fica em
+//! claro ao lado do dado. Quem tem a lista dos valores possiveis confirma qual
+//! esta ali por tentativa -- CPF sao ~10^9 candidatos, data de nascimento
+//! ~36.500, salario em centavos menos ainda. Salgar nao era saida: o sal teria
+//! de ser publico para o hash continuar reproduzivel de fora, e sal publico e'
+//! sal nenhum contra quem enumera.
+//!
+//! A recusa e' na DECLARACAO -- `Schema::new`, `Schema::marcar_dado_pessoal` e
+//! `Schema::com_coluna` --, e nao na gravacao. E ela NAO desfaz cadeia que ja
+//! existe: o esquema que volta do disco nao passa por guarda nenhuma, porque
+//! ali o oraculo ja queimou e recusar a abertura so' tiraria do ar uma tabela
+//! que esta perfeita.
+//!
 //! # Por que a altura entra no hash, e por que ela e' posta ANTES de gravar
 //!
 //! A altura e parte do conteudo do bloco -- adulterar a altura tem de mudar o
@@ -61,39 +79,37 @@
 use crate::table::Table;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::hash::sha256;
-use phxsql_core::schema::{e_coluna_de_sistema, Schema};
-use phxsql_core::types::ColumnType;
+use phxsql_core::schema::{coluna_no_hash_do_ledger, Schema};
 use phxsql_core::uuid::Uuid256;
 use phxsql_core::value::Value;
 use phxsql_core::RowId;
 
-/// Coluna que guarda o hash do bloco. Fica de fora do proprio hash.
-pub const COL_HASH: &str = "hash";
-/// Coluna que liga este bloco ao anterior: guarda o `hash` do bloco de baixo.
-pub const COL_ANTERIOR: &str = "anterior";
+// As quatro pecas da cadeia e o reconhecimento delas moram no `phxsql-core`,
+// e aqui ficam os nomes de sempre. Nao e' arrumacao: a guarda que recusa
+// ledger com coluna marcada como dado pessoal (pedido 355) age na DECLARACAO,
+// e declarar e' montar um `Schema` -- uma camada abaixo desta. Repetir os
+// nomes aqui criaria duas listas das mesmas quatro pecas, e a quinta entraria
+// so' numa delas.
+
 /// Coluna da altura do bloco (tipo `Sequence`).
-pub const COL_ALTURA: &str = "altura";
+pub use phxsql_core::schema::LEDGER_COL_ALTURA as COL_ALTURA;
+/// Coluna que liga este bloco ao anterior: guarda o `hash` do bloco de baixo.
+pub use phxsql_core::schema::LEDGER_COL_ANTERIOR as COL_ANTERIOR;
 /// Coluna da assinatura (E5, ainda nao implementada). Fica de fora do hash,
 /// porque uma assinatura assina o hash -- entao ela vem DEPOIS dele.
 /// DIVIDA: a coluna da assinatura existe no esquema e ninguem a preenche -- o ledger prova integridade, nao autoria
-pub const COL_ASSINATURA: &str = "assinatura";
+pub use phxsql_core::schema::LEDGER_COL_ASSINATURA as COL_ASSINATURA;
+/// Coluna que guarda o hash do bloco. Fica de fora do proprio hash.
+pub use phxsql_core::schema::LEDGER_COL_HASH as COL_HASH;
 /// Indice unico ascendente sobre `altura`: devolve os blocos na ordem da cadeia.
-pub const IDX_POR_ALTURA: &str = "porAltura";
+pub use phxsql_core::schema::LEDGER_IDX_POR_ALTURA as IDX_POR_ALTURA;
 /// Altura do bloco genese. A `Sequence` do motor comeca em 1, e a cadeia segue.
 pub const GENESE_ALTURA: u64 = 1;
 
 // ------------------------------------------------- reconhecer o modo ledger
 
-/// Este esquema e' de uma tabela em MODO LEDGER?
-///
-/// O modo ledger nao e' um `TipoDatabase` novo nem um sinalizador gravado: e'
-/// uma CONVENCAO de esquema. Uma tabela esta em modo ledger quando reune as
-/// quatro pecas que a cadeia exige -- as tres colunas com os tipos certos
-/// (`hash` e `anterior` Uuid256, `altura` Sequence) E o indice unico
-/// `porAltura`, que devolve os blocos na ordem da cadeia. Exigir os quatro
-/// JUNTOS e' o que separa uma tabela-cadeia de uma tabela comum que por acaso
-/// tem uma coluna chamada `altura`: sem o indice unico a verificacao nao teria
-/// como varrer em ordem, e sem os tipos certos o hash nao fecharia.
+/// Este esquema e' de uma tabela em MODO LEDGER? Ver
+/// [`phxsql_core::schema::e_tabela_ledger`], onde o predicado mora.
 ///
 /// # Por que este predicado existe: travar o `alterar_tabela`
 ///
@@ -105,21 +121,12 @@ pub const GENESE_ALTURA: u64 = 1;
 /// acrescentar coluna numa tabela em modo ledger (ver
 /// `Table::acrescentar_coluna`). A cadeia e' imutavel por desenho -- mexer no
 /// esquema dela e' mexer no passado.
-pub fn e_tabela_ledger(esquema: &Schema) -> bool {
-    let tem_coluna = |nome: &str, ty: ColumnType| {
-        esquema
-            .coluna_por_nome(nome)
-            .is_some_and(|i| esquema.colunas()[i].ty == ty)
-    };
-    let tem_indice_por_altura = esquema
-        .indices()
-        .iter()
-        .any(|idx| idx.nome == IDX_POR_ALTURA && idx.unico);
-    tem_coluna(COL_HASH, ColumnType::Uuid256)
-        && tem_coluna(COL_ANTERIOR, ColumnType::Uuid256)
-        && tem_coluna(COL_ALTURA, ColumnType::Sequence)
-        && tem_indice_por_altura
-}
+///
+/// O SEGUNDO uso entrou em 18/09/2026: recusar, na declaracao, a tabela em
+/// modo ledger com coluna marcada como dado pessoal -- o hash sem sal do
+/// conteudo em claro e' oraculo de confirmacao para CPF, data de nascimento e
+/// salario. Ver `phxsql_core::schema::Schema::new`.
+pub use phxsql_core::schema::e_tabela_ledger;
 
 // --------------------------------------------------------------- E1: o hash
 
@@ -202,7 +209,13 @@ fn conteudo_canonico(esquema: &Schema, linha: &[Value]) -> Vec<u8> {
         if i >= linha.len() {
             continue;
         }
-        if col.nome == COL_HASH || col.nome == COL_ASSINATURA || e_coluna_de_sistema(&col.nome) {
+        // Quem decide o que entra e' o `coluna_no_hash_do_ledger` do core, e
+        // nao uma lista repetida aqui: a guarda que recusa coluna marcada como
+        // dado pessoal pergunta A MESMA COISA para saber o que o hash cobriria.
+        // Duas listas divergiriam, e a divergencia seria calada nos dois
+        // sentidos -- guarda protegendo coluna que o hash nao toca, ou
+        // liberando coluna que ele cobre.
+        if !coluna_no_hash_do_ledger(&col.nome) {
             continue;
         }
         empacotar_valor(&linha[i], &mut out);
@@ -433,7 +446,7 @@ mod testes {
     use super::*;
     use crate::apoio_teste::DirTemp;
     use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
-    use phxsql_core::types::ColumnType;
+    use phxsql_core::types::{ColumnType, DadoPessoal};
     use phxsql_core::uuid::Uuid;
 
     fn esquema_blocos() -> Schema {
@@ -841,6 +854,176 @@ mod testes {
             antes, depois,
             "acrescentar coluna muda o conteudo canonico do bloco -- \
              e' o defeito que a guarda impede"
+        );
+    }
+
+    // ---- pedido 355: modo ledger e dado pessoal nao convivem
+
+    /// Uma cadeia com `cpf` marcado, como existiria no disco de quem gravou
+    /// ANTES da guarda de 18/09/2026: o esquema sai do `do_disco`, que e' o
+    /// caminho da LEITURA, com a marca posta na coluna -- que e' exatamente o
+    /// que o PSCH devolve. Pelo `Schema::new` ele nao nasceria mais.
+    fn esquema_legado_com_cpf_marcado() -> Schema {
+        let base = Schema::new(
+            "blocos",
+            vec![
+                Column::new("hash", ColumnType::Uuid256).obrigatoria(),
+                Column::new("anterior", ColumnType::Uuid256),
+                Column::new("altura", ColumnType::Sequence),
+                Column::new("cpf", ColumnType::Str(11)),
+            ],
+            vec![IndexDef::new("porAltura", vec![IndexColumn::asc(2)]).unico()],
+        )
+        .unwrap();
+        let mut colunas = base.colunas().to_vec();
+        let i = base.coluna_por_nome("cpf").unwrap();
+        colunas[i].dado_pessoal = DadoPessoal::Pessoal;
+        Schema::do_disco("blocos", colunas, base.indices().to_vec()).unwrap()
+    }
+
+    fn bloco_com_cpf(t: &mut Table, cpf: &str) {
+        let bruto = vec![
+            Value::Null, // hash
+            Value::Null, // anterior
+            Value::Null, // altura
+            Value::Str(cpf.to_string()),
+        ];
+        let pronto = preparar_bloco(t, bruto).unwrap();
+        t.inserir(&pronto).unwrap();
+        t.sincronizar().unwrap();
+    }
+
+    /// **O IRMAO pelo funil de baixo: `Table::marcar_dado_pessoal`.**
+    ///
+    /// E' por onde a operacao `marcar_lgpd` do protocolo passa, e ela desce por
+    /// `RegFile::remarcar_dado_pessoal` ate o `Schema::marcar_dado_pessoal`
+    /// onde a guarda mora. O teste existe para travar a CAMADA: no dia em que
+    /// o `remarcar` puser o grau na coluna direto, em vez de chamar o verbo do
+    /// esquema, a porta dos fundos reabre e nenhum teste do core acusa.
+    ///
+    /// E a recusa nao pode ter escrito meio esquema: a cadeia segue integra e
+    /// a tabela reabre sem marca nenhuma.
+    #[test]
+    fn marcar_lgpd_numa_cadeia_e_recusado_pelo_funil_inteiro() {
+        let d = DirTemp::novo("ledger-marcar-depois");
+        let mut t = Table::criar(&d, esquema_blocos()).unwrap();
+        cadeia(&mut t, 3);
+
+        let e = t
+            .marcar_dado_pessoal(&[("autor".to_string(), DadoPessoal::Pessoal)])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("autor") && e.contains("ledger"),
+            "a recusa tinha de nomear a coluna e o modo: {e}"
+        );
+        assert!(!t.tem_dado_pessoal(), "a recusa deixou a marca na memoria");
+        assert!(matches!(
+            verificar_cadeia(&mut t).unwrap(),
+            Verificacao::Integra { .. }
+        ));
+
+        drop(t);
+        let t = Table::abrir(&d, "blocos").unwrap();
+        assert!(!t.tem_dado_pessoal(), "a recusa gravou a marca no disco");
+    }
+
+    /// **O COMPORTAMENTO VELHO -- o teste que mais importa numa guarda nova.**
+    ///
+    /// A guarda recusa a combinacao na DECLARACAO e nao desfaz cadeia que ja
+    /// existe: ali o oraculo ja queimou, e tirar a tabela do ar nao o apaga.
+    /// Esta cadeia nasce pelo caminho do disco, com a coluna marcada, e tem de
+    /// continuar abrindo, lendo e GRAVANDO bloco novo. Se a guarda descesse ao
+    /// `do_disco` -- ou ao `Table::abrir` --, este teste quebraria no `abrir`.
+    #[test]
+    fn cadeia_marcada_gravada_antes_da_guarda_abre_le_e_grava() {
+        let d = DirTemp::novo("ledger-legado-marcado");
+        {
+            let mut t = Table::criar(&d, esquema_legado_com_cpf_marcado()).unwrap();
+            for i in 0..3 {
+                bloco_com_cpf(&mut t, &format!("{:011}", i));
+            }
+        }
+
+        // ABRE: o esquema volta do `.reg`, com a marca como foi gravada.
+        let mut t = Table::abrir(&d, "blocos").expect("a cadeia legada tinha de abrir");
+        assert!(
+            t.tem_dado_pessoal(),
+            "a marca gravada tinha de voltar do disco"
+        );
+        assert!(e_tabela_ledger(t.esquema()), "voltou sem ser cadeia");
+
+        // LE: a cadeia esta inteira e o dado volta.
+        assert_eq!(
+            verificar_cadeia(&mut t).unwrap(),
+            Verificacao::Integra {
+                blocos: 3,
+                altura_maxima: 3
+            }
+        );
+        let rid = t.varrer_indice(IDX_POR_ALTURA).unwrap()[0];
+        assert_eq!(
+            t.ler(rid).unwrap().unwrap()[3],
+            Value::Str("00000000000".into())
+        );
+
+        // GRAVA: a cadeia continua crescendo.
+        bloco_com_cpf(&mut t, "99999999999");
+        assert_eq!(
+            verificar_cadeia(&mut t).unwrap(),
+            Verificacao::Integra {
+                blocos: 4,
+                altura_maxima: 4
+            }
+        );
+    }
+
+    /// **O SENTIDO CONTRARIO: ligar o modo ledger numa tabela que JA tem
+    /// coluna marcada.** Ele nao tem caminho, e este teste guarda a fronteira
+    /// em que ele passaria a ter.
+    ///
+    /// A tabela abaixo esta a UMA peca de ser cadeia: tem `hash` e `anterior`
+    /// Uuid256, tem o indice unico `porAltura` -- e o `cpf` marcado. Falta so'
+    /// a `altura` `Sequence`, e ela nao entra: `acrescentar_coluna` recusa toda
+    /// coluna `Sequence` numa tabela com dado (o contador do `.reg` e' unico).
+    /// A outra peca, o indice, nao tem operacao de criar depois: indice se
+    /// declara ao criar a tabela. Se um dia qualquer uma das duas abrir, este
+    /// teste cai -- e e' ai que a guarda do sentido contrario tera de nascer.
+    #[test]
+    fn nao_ha_caminho_para_virar_ledger_depois() {
+        let esq = Schema::new(
+            "quase",
+            vec![
+                Column::new("hash", ColumnType::Uuid256).obrigatoria(),
+                Column::new("anterior", ColumnType::Uuid256),
+                Column::new("cpf", ColumnType::Str(11)).com_dado_pessoal(DadoPessoal::Pessoal),
+            ],
+            vec![IndexDef::new("porAltura", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .expect("sem a altura nao ha cadeia, entao a marca continua valendo");
+        assert!(!e_tabela_ledger(&esq), "esta tabela ainda nao e cadeia");
+
+        let d = DirTemp::novo("ledger-virar-depois");
+        let mut t = Table::criar(&d, esq).unwrap();
+        t.inserir(&[
+            Value::Uuid256(Uuid256::aleatorio()),
+            Value::Null,
+            Value::Str("12345678901".into()),
+        ])
+        .unwrap();
+
+        let e = t
+            .acrescentar_coluna(Column::new("altura", ColumnType::Sequence), None)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("Sequence"),
+            "a peca que falta entrou por outro motivo: {e}"
+        );
+        assert!(
+            !e_tabela_ledger(t.esquema()),
+            "a tabela virou cadeia com a coluna marcada -- a guarda do sentido \
+             contrario passou a ser necessaria"
         );
     }
 }

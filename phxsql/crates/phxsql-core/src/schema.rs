@@ -84,6 +84,64 @@ pub fn e_coluna_de_sistema(nome: &str) -> bool {
     nome == COLUNA_SOFTDELETED || nome == COLUNA_ROWNUM
 }
 
+// ------------------------------------- o modo ledger, reconhecido no esquema
+//
+// O modo ledger e' do `phxsql-store` (`ledger.rs`), que monta e verifica a
+// cadeia. O que mora AQUI e' so' o reconhecimento -- «este esquema e' de uma
+// tabela-cadeia?» --, e ele desceu para ca por necessidade: a guarda que
+// recusa ledger com dado pessoal age na DECLARACAO, e declarar e' montar um
+// `Schema`, uma camada abaixo do store. O `ledger.rs` REEXPORTA estes nomes em
+// vez de repeti-los: duas listas dos mesmos quatro nomes divergiriam no dia em
+// que a cadeia ganhasse uma quinta peca.
+
+/// Coluna que guarda o hash do bloco. Fica de fora do proprio hash.
+pub const LEDGER_COL_HASH: &str = "hash";
+/// Coluna que liga este bloco ao anterior: guarda o `hash` do bloco de baixo.
+pub const LEDGER_COL_ANTERIOR: &str = "anterior";
+/// Coluna da altura do bloco (tipo `Sequence`).
+pub const LEDGER_COL_ALTURA: &str = "altura";
+/// Coluna da assinatura. Fica de fora do hash, porque uma assinatura assina o
+/// hash -- entao ela vem DEPOIS dele.
+pub const LEDGER_COL_ASSINATURA: &str = "assinatura";
+/// Indice unico ascendente sobre `altura`: devolve os blocos na ordem da cadeia.
+pub const LEDGER_IDX_POR_ALTURA: &str = "porAltura";
+
+/// Este esquema e' de uma tabela em MODO LEDGER?
+///
+/// O modo ledger nao e' um `TipoDatabase` novo nem um sinalizador gravado: e'
+/// uma CONVENCAO de esquema. Uma tabela esta em modo ledger quando reune as
+/// quatro pecas que a cadeia exige -- as tres colunas com os tipos certos
+/// (`hash` e `anterior` Uuid256, `altura` Sequence) E o indice unico
+/// `porAltura`, que devolve os blocos na ordem da cadeia. Exigir os quatro
+/// JUNTOS e' o que separa uma tabela-cadeia de uma tabela comum que por acaso
+/// tem uma coluna chamada `altura`.
+pub fn e_tabela_ledger(esquema: &Schema) -> bool {
+    let tem_coluna = |nome: &str, ty: ColumnType| {
+        esquema
+            .coluna_por_nome(nome)
+            .is_some_and(|i| esquema.colunas()[i].ty == ty)
+    };
+    let tem_indice_por_altura = esquema
+        .indices()
+        .iter()
+        .any(|idx| idx.nome == LEDGER_IDX_POR_ALTURA && idx.unico);
+    tem_coluna(LEDGER_COL_HASH, ColumnType::Uuid256)
+        && tem_coluna(LEDGER_COL_ANTERIOR, ColumnType::Uuid256)
+        && tem_coluna(LEDGER_COL_ALTURA, ColumnType::Sequence)
+        && tem_indice_por_altura
+}
+
+/// O valor desta coluna entra no hash do bloco?
+///
+/// Uma fonte so' para os dois lados: `ledger::conteudo_canonico` pula estas
+/// mesmas colunas ao montar o que vai ao SHA-256, e a guarda de dado pessoal
+/// pergunta por aqui o que o hash cobriria. Duas listas divergiriam no dia em
+/// que uma coluna nova ficasse de fora do hash -- e a guarda passaria a
+/// proteger uma coluna que o hash nem toca, ou a liberar uma que ele cobre.
+pub fn coluna_no_hash_do_ledger(nome: &str) -> bool {
+    nome != LEDGER_COL_HASH && nome != LEDGER_COL_ASSINATURA && !e_coluna_de_sistema(nome)
+}
+
 /// O que fazer com as linhas filhas quando a linha pai muda ou some.
 ///
 /// Mesma semantica do `RELATION` do dicionario do Clarion(R) e do
@@ -570,6 +628,61 @@ fn conferir_ids_repetidos(nome: &str, colunas: &[Column]) -> Result<()> {
     Ok(())
 }
 
+/// A coluna marcada como dado pessoal que o hash do bloco cobriria, se houver.
+///
+/// `None` quando a tabela nao e' ledger ou quando nenhuma coluna marcada entra
+/// no hash -- marcar a propria `hash`, a `assinatura` ou uma coluna de sistema
+/// nao abre oraculo nenhum, porque o conteudo canonico nao as inclui.
+fn pessoal_coberta_pelo_hash(esquema: &Schema) -> Option<&str> {
+    if !e_tabela_ledger(esquema) {
+        return None;
+    }
+    esquema
+        .colunas
+        .iter()
+        .find(|c| c.dado_pessoal.e_pessoal() && coluna_no_hash_do_ledger(&c.nome))
+        .map(|c| c.nome.as_str())
+}
+
+/// **Modo ledger e dado pessoal nao convivem.** Decisao do dono, 18/09/2026.
+///
+/// O hash de cada bloco e' um SHA-256 **sem sal** do conteudo em claro, e ele
+/// fica gravado na coluna `hash`, que ninguem marca e por isso ninguem cifra.
+/// Quem tem a lista dos valores possiveis confirma qual esta ali por tentativa:
+/// CPF sao ~10^9 candidatos, data de nascimento ~36.500, salario em centavos
+/// menos ainda. Salgar nao era saida -- o leiaute do conteudo canonico esta
+/// documentado justamente para se reproduzir de fora, que e' o que torna a
+/// cadeia verificavel por quem nao tem o motor.
+///
+/// A recusa e' na DECLARACAO e nao na gravacao, como a do `ao_excluir`: uma
+/// tabela nasce uma vez e grava um milhao de vezes.
+///
+/// # O alcance, escrito: isto NAO desfaz cadeia que ja existe
+///
+/// A guarda mora nos caminhos de DECLARAR, nunca no `do_disco`. Uma cadeia
+/// gravada antes dela volta do disco inteira, abre, le e grava -- ali o
+/// oraculo ja queimou, e recusar a abertura nao o apaga: so' tiraria do ar uma
+/// tabela que esta perfeita. Guarda nova entra pedida, nao imposta.
+fn conferir_ledger_sem_dado_pessoal(esquema: &Schema) -> Result<()> {
+    match pessoal_coberta_pelo_hash(esquema) {
+        Some(coluna) => Err(erro_ledger_com_dado_pessoal(esquema.nome(), coluna)),
+        None => Ok(()),
+    }
+}
+
+/// A recusa da combinacao, num lugar so': os tres caminhos de declarar erram
+/// com o MESMO texto, e quem o le fica sabendo qual coluna e por que.
+fn erro_ledger_com_dado_pessoal(tabela: &str, coluna: &str) -> PhxError {
+    PhxError::Esquema(format!(
+        "a tabela {tabela} esta em modo ledger e a coluna {coluna} esta marcada como \
+         dado pessoal: o `{LEDGER_COL_HASH}` de cada bloco e um SHA-256 SEM SAL do \
+         conteudo em claro, e ele fica gravado numa coluna que nao e marcada e por \
+         isso nao e cifrada -- quem tem a lista dos valores possiveis (CPF, data de \
+         nascimento, salario em centavos) confirma por tentativa qual deles esta ali. \
+         Ou a tabela e ledger, ou a coluna e dado pessoal"
+    ))
+}
+
 impl Schema {
     /// Esquema de uma tabela NOVA.
     ///
@@ -613,7 +726,13 @@ impl Schema {
         }
         let nome = nome.into();
         conferir_ids_repetidos(&nome, &colunas)?;
-        Schema::do_disco(nome, colunas, indices)
+        let esquema = Schema::do_disco(nome, colunas, indices)?;
+        // Depois do `do_disco` e nao antes: a pergunta e' sobre o esquema
+        // MONTADO -- as quatro pecas da cadeia e as marcas juntas --, e montar
+        // e' o que o `do_disco` faz. Ali dentro a guarda nao pode entrar: o
+        // `do_disco` e' tambem o caminho de LER o que ja esta gravado.
+        conferir_ledger_sem_dado_pessoal(&esquema)?;
+        Ok(esquema)
     }
 
     /// Esquema montado EXATAMENTE com as colunas dadas, sem acrescentar nada.
@@ -846,17 +965,32 @@ impl Schema {
     ///
     /// Pelo nome e nao pelo indice porque quem classifica e gente olhando a
     /// ficha, e o indice de uma coluna nao aparece em tela nenhuma.
+    ///
+    /// # O IRMAO do `Schema::new`: marcar uma coluna DEPOIS
+    ///
+    /// Recusar so' no nascimento deixaria a porta dos fundos aberta -- bastava
+    /// criar a cadeia limpa e marcar a coluna no pedido seguinte. A guarda aqui
+    /// olha a TRANSICAO, e nao o estado: o que deixa de existir e' uma coluna
+    /// passar de nao-marcada a marcada numa tabela em modo ledger.
+    ///
+    /// Desmarcar continua podendo, sempre -- e' o unico remedio de uma cadeia
+    /// que nasceu com a marca antes desta guarda, e uma guarda que olhasse o
+    /// estado travaria justamente o conserto. Trocar o grau de uma coluna que
+    /// JA e' marcada tambem continua podendo: refinar `pessoal` para
+    /// `sensivel` nao expoe um valor a mais do que ja estava exposto.
     pub fn marcar_dado_pessoal(&mut self, coluna: &str, grau: DadoPessoal) -> Result<()> {
-        match self.colunas.iter_mut().find(|c| c.nome == coluna) {
-            Some(c) => {
-                c.dado_pessoal = grau;
-                Ok(())
-            }
-            None => Err(PhxError::NaoEncontrado(format!(
+        let Some(i) = self.colunas.iter().position(|c| c.nome == coluna) else {
+            return Err(PhxError::NaoEncontrado(format!(
                 "a tabela {} nao tem a coluna {coluna:?}",
                 self.nome
-            ))),
+            )));
+        };
+        let estreando = grau.e_pessoal() && !self.colunas[i].dado_pessoal.e_pessoal();
+        if estreando && coluna_no_hash_do_ledger(coluna) && e_tabela_ledger(self) {
+            return Err(erro_ledger_com_dado_pessoal(&self.nome, coluna));
         }
+        self.colunas[i].dado_pessoal = grau;
+        Ok(())
     }
 
     /// Exigir motivo escrito na exclusao. Escolhido ao criar a tabela.
@@ -1024,7 +1158,16 @@ impl Schema {
             .com_chaves_estrangeiras(fks)?
             .com_indices_de_texto(textos)?
             .com_paginacao(paginacao)?;
-        Ok(novo.com_motivo_obrigatorio(self.motivo_obrigatorio))
+        let novo = novo.com_motivo_obrigatorio(self.motivo_obrigatorio);
+        // O TERCEIRO caminho de declarar, e o unico que ve duas tabelas: a
+        // guarda do ledger confere o RESULTADO, e so' quando a origem ainda
+        // era legitima. Assim a coluna marcada nao entra numa cadeia, e uma
+        // tabela que ja estava na combinacao antes desta guarda continua
+        // ganhando coluna -- guarda nova entra pedida, nao imposta.
+        if pessoal_coberta_pelo_hash(self).is_none() {
+            conferir_ledger_sem_dado_pessoal(&novo)?;
+        }
+        Ok(novo)
     }
 
     /// Acrescenta as chaves estrangeiras da tabela.
@@ -2588,5 +2731,213 @@ mod testes_id_repetido_de_coluna {
         // E ele vai e volta pelo PSCH sem perder nada.
         let volta = Schema::desserializar(&esq.serializar()).expect("devia reler");
         assert_eq!(volta.colunas()[0].id, volta.colunas()[1].id);
+    }
+}
+
+/* **Modo ledger e dado pessoal nao convivem -- pedido 355, decisao do dono de
+18/09/2026.**
+
+O hash de cada bloco e um SHA-256 SEM SAL do conteudo em claro, gravado numa
+coluna (`hash`, `Uuid256`) que nao e marcada e por isso nao e cifrada: quem tem
+a lista dos valores possiveis confirma qual esta ali por tentativa. A recusa
+entra nos TRES caminhos de declarar -- a tabela nova, a coluna marcada depois e
+a coluna que chega -- e em nenhum do `do_disco`, que e o de LER: cadeia que ja
+existe continua abrindo, porque ali o oraculo ja queimou. */
+#[cfg(test)]
+mod testes_ledger_com_dado_pessoal {
+    use super::*;
+
+    /// As quatro pecas da cadeia, mais um `cpf` cujo grau quem chama escolhe.
+    fn colunas_da_cadeia(cpf: DadoPessoal) -> Vec<Column> {
+        vec![
+            Column::new("hash", ColumnType::Uuid256).obrigatoria(),
+            Column::new("anterior", ColumnType::Uuid256),
+            Column::new("altura", ColumnType::Sequence),
+            Column::new("cpf", ColumnType::Str(11)).com_dado_pessoal(cpf),
+        ]
+    }
+
+    fn indices_da_cadeia() -> Vec<IndexDef> {
+        vec![IndexDef::new("porAltura", vec![IndexColumn::asc(2)]).unico()]
+    }
+
+    fn cadeia(cpf: DadoPessoal) -> Result<Schema> {
+        Schema::new("blocos", colunas_da_cadeia(cpf), indices_da_cadeia())
+    }
+
+    /// (A) A combinacao NAO NASCE MAIS, e a recusa nomeia a coluna e diz por
+    /// que. Prova real: sem a chamada a `conferir_ledger_sem_dado_pessoal` no
+    /// `Schema::new`, este esquema monta sem queixa nenhuma -- ele e valido em
+    /// todo o resto -- e o `unwrap_err` entra em panico.
+    #[test]
+    fn ledger_com_coluna_marcada_nao_nasce() {
+        for grau in [DadoPessoal::Pessoal, DadoPessoal::Sensivel] {
+            let e = cadeia(grau).unwrap_err().to_string().to_lowercase();
+            assert!(e.contains("cpf"), "a recusa tinha de nomear a coluna: {e}");
+            assert!(e.contains("ledger"), "a recusa nao diz o modo: {e}");
+            assert!(
+                e.contains("hash") && e.contains("sal"),
+                "a recusa nao ensina o motivo (hash sem sal): {e}"
+            );
+        }
+    }
+
+    /// (B) O PAR do de cima, sem o qual ele passaria com um portao que recusa
+    /// tudo: as tres combinacoes legitimas continuam nascendo.
+    #[test]
+    fn o_portao_nao_recusa_o_que_e_legitimo() {
+        // Ledger SEM coluna marcada -- a cadeia de sempre.
+        let l = cadeia(DadoPessoal::Nao).expect("ledger sem marca tinha de nascer");
+        assert!(e_tabela_ledger(&l));
+
+        // Tabela COMUM com coluna marcada -- a LGPD de sempre.
+        let c = Schema::new(
+            "clientes",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("cpf", ColumnType::Str(11)).com_dado_pessoal(DadoPessoal::Pessoal),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .expect("tabela comum com dado pessoal tinha de nascer");
+        assert!(!e_tabela_ledger(&c) && c.tem_dado_pessoal());
+
+        // Quase-ledger: as tres colunas SEM o indice unico nao sao cadeia, e
+        // ali a marca continua valendo -- o hash nem existe.
+        let quase = Schema::new(
+            "quase",
+            colunas_da_cadeia(DadoPessoal::Pessoal),
+            vec![IndexDef::new("porHash", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .expect("sem o indice da altura nao ha cadeia, e nao ha oraculo");
+        assert!(!e_tabela_ledger(&quase));
+    }
+
+    /// A coluna que o hash NAO cobre continua podendo ser marcada: marcar a
+    /// propria `hash` nao abre oraculo nenhum. E o crivo que sai do mesmo
+    /// `coluna_no_hash_do_ledger` que monta o conteudo canonico.
+    #[test]
+    fn marca_em_coluna_fora_do_hash_continua_passando() {
+        let mut colunas = colunas_da_cadeia(DadoPessoal::Nao);
+        colunas[0].dado_pessoal = DadoPessoal::Pessoal; // a propria `hash`
+        Schema::new("blocos", colunas, indices_da_cadeia())
+            .expect("o hash nao cobre a si mesmo, entao nao ha o que confirmar");
+    }
+
+    /// (IRMAO) Recusar so no nascimento deixaria a porta dos fundos aberta:
+    /// criar a cadeia limpa e marcar a coluna no pedido seguinte. Prova real:
+    /// sem a guarda no `marcar_dado_pessoal`, a marca entra e o `unwrap_err`
+    /// entra em panico.
+    #[test]
+    fn marcar_a_coluna_depois_e_recusado() {
+        let mut l = cadeia(DadoPessoal::Nao).unwrap();
+        let e = l
+            .marcar_dado_pessoal("cpf", DadoPessoal::Pessoal)
+            .unwrap_err()
+            .to_string()
+            .to_lowercase();
+        assert!(e.contains("cpf") && e.contains("ledger"), "{e}");
+        assert!(
+            !l.tem_dado_pessoal(),
+            "a recusa nao podia ter deixado a marca"
+        );
+    }
+
+    /// O PAR do irmao: marcar continua valendo na tabela comum, e DESMARCAR
+    /// vale sempre -- inclusive na cadeia que nasceu marcada antes da guarda.
+    /// Desmarcar e o unico remedio dela, e uma guarda que olhasse o ESTADO em
+    /// vez da transicao travaria justamente o conserto.
+    #[test]
+    fn marcar_na_comum_e_desmarcar_na_cadeia_continuam_podendo() {
+        let mut c = Schema::new(
+            "clientes",
+            vec![Column::new("cpf", ColumnType::Str(11))],
+            vec![],
+        )
+        .unwrap();
+        c.marcar_dado_pessoal("cpf", DadoPessoal::Pessoal)
+            .expect("marcar numa tabela comum e a LGPD de sempre");
+        assert!(c.tem_dado_pessoal());
+
+        // Uma cadeia como as gravadas antes da guarda: vem pelo `do_disco`.
+        let mut legada = Schema::do_disco(
+            "blocos",
+            colunas_da_cadeia(DadoPessoal::Pessoal),
+            indices_da_cadeia(),
+        )
+        .expect("o caminho do disco nao julga a combinacao");
+        legada
+            .marcar_dado_pessoal("cpf", DadoPessoal::Sensivel)
+            .expect("trocar o grau de uma coluna ja marcada nao expoe mais nada");
+        legada
+            .marcar_dado_pessoal("cpf", DadoPessoal::Nao)
+            .expect("desmarcar e o remedio, e nunca se recusa");
+        assert!(!legada.tem_dado_pessoal());
+    }
+
+    /// (TERCEIRO CAMINHO) A coluna marcada que CHEGA a uma cadeia e recusada.
+    /// O `Table::acrescentar_coluna` ja recusa toda coluna em modo ledger --
+    /// esta guarda e do verbo de declarar, uma camada abaixo, e sobrevive a
+    /// quem um dia afrouxar aquela.
+    #[test]
+    fn coluna_marcada_que_chega_na_cadeia_e_recusada() {
+        let l = cadeia(DadoPessoal::Nao).unwrap();
+        let e = l
+            .com_coluna(
+                Column::new("salario", ColumnType::Int8).com_dado_pessoal(DadoPessoal::Sensivel),
+                l.posicao_de_coluna_nova(),
+            )
+            .unwrap_err()
+            .to_string()
+            .to_lowercase();
+        assert!(e.contains("salario") && e.contains("ledger"), "{e}");
+    }
+
+    /// O PAR: coluna SEM marca continua entrando na cadeia (quem a recusa e o
+    /// `Table::acrescentar_coluna`, pelo hash, e nao esta guarda), e coluna
+    /// marcada continua entrando na tabela comum.
+    #[test]
+    fn coluna_sem_marca_e_coluna_marcada_na_comum_continuam_entrando() {
+        let l = cadeia(DadoPessoal::Nao).unwrap();
+        l.com_coluna(
+            Column::new("autor", ColumnType::Str(40)),
+            l.posicao_de_coluna_nova(),
+        )
+        .expect("coluna sem marca nao e assunto desta guarda");
+
+        let c = Schema::new(
+            "clientes",
+            vec![Column::new("id", ColumnType::Int8).obrigatoria()],
+            vec![],
+        )
+        .unwrap();
+        c.com_coluna(
+            Column::new("cpf", ColumnType::Str(11)).com_dado_pessoal(DadoPessoal::Pessoal),
+            c.posicao_de_coluna_nova(),
+        )
+        .expect("marcar coluna em tabela comum e a LGPD de sempre");
+    }
+
+    /// **O COMPORTAMENTO VELHO, que e o que mais importa numa guarda nova.**
+    /// A cadeia que ja esta no disco com coluna marcada volta inteira: o
+    /// `do_disco` nao julga, e o PSCH devolve o byte do grau como foi gravado.
+    /// Se a guarda descesse ao caminho da leitura, esta tabela sairia do ar.
+    #[test]
+    fn cadeia_marcada_que_ja_esta_no_disco_continua_voltando() {
+        let esq = Schema::do_disco(
+            "blocos",
+            colunas_da_cadeia(DadoPessoal::Pessoal),
+            indices_da_cadeia(),
+        )
+        .expect("o caminho do disco nao julga a combinacao");
+
+        let volta = Schema::desserializar(&esq.serializar()).expect("a cadeia tinha de reabrir");
+        assert!(e_tabela_ledger(&volta), "voltou sem ser cadeia");
+        let i = volta.coluna_por_nome("cpf").unwrap();
+        assert_eq!(
+            volta.colunas()[i].dado_pessoal,
+            DadoPessoal::Pessoal,
+            "a marca gravada tinha de voltar como foi gravada"
+        );
     }
 }
