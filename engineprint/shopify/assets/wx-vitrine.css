@@ -135,13 +135,28 @@
    `style="object-position: ..."` no próprio <img>. Ele decide
    QUAL pedaço sobrevive, não QUANTO sobra; por isso não
    adiantava mexer nele.
+
+   ESCOPO — e isto é o que o dono corrigiu em 18/09/2026: a seção
+   `wx-hero-banner` é a MESMA da home. Sem escopo, estas regras
+   mudavam também o banner principal, que ninguém pediu para
+   mexer. Medido: a home tem 2 `.wx-hero` e carrega este arquivo.
+
+   O `<main>` carrega `data-template="{{ template }}"` — sai
+   "collection.impressoras", "collection.acessorios"… nas coleções
+   e "index" na home. Por isso o prefixo `collection`, e não uma
+   lista de coleções: coleção nova entra sozinha, e a home fica
+   fora por construção.
 ════════════════════════════════════════════ */
-.wx-hero__media picture {
+main[data-template^="collection"] .wx-hero__media picture {
   display: block;
   width: 100%;
   height: 100%;
 }
 @media (max-width: 749px) {
-  .wx-hero { --wx-h: 62vw !important; }
-  .wx-hero__content { position: relative !important; }
+  main[data-template^="collection"] .wx-hero {
+    --wx-h: 62vw !important;
+  }
+  main[data-template^="collection"] .wx-hero__content {
+    position: relative !important;
+  }
 }

@@ -105,3 +105,76 @@ nomeia o que foi MEDIDO, com o numero.
 passa da borda da imagem e banner que nao preenche a caixa. Provado nos dois
 sentidos: 4 reprovacoes sem o remendo, zero com ele, e rodado tambem contra a
 **previa publicada** (`/t/39`), nao so contra o repro local.
+
+---
+
+## Continuacao (18/09, 02:40): a regra sem escopo alcancou a home
+
+Fica neste arquivo, e nao num novo, porque e o **mesmo remendo** — o erro so
+apareceu depois que ele foi publicado.
+
+O dono publicou o tema e disse: *«Nao era para voce alterar o primeiro banner,
+o banner principal.»* Estava certo. Eu consertei "o banner das colecoes", mas o
+que escrevi foi:
+
+    .wx-hero { --wx-h: 62vw !important }
+    .wx-hero__content { position: relative !important }
+
+e `.wx-hero` nao e "o banner da colecao" — e a **secao** `wx-hero-banner`, que
+a home tambem usa. Medido depois: a home tem **2** `.wx-hero` e carrega o mesmo
+`wx-vitrine.css`. O banner principal foi de 358x484 para 358x246.
+
+### O que eu concluiu primeiro, e estava errado
+
+Que "escopo" ja estava resolvido porque o CSS nasceu de uma pagina de colecao.
+A pagina onde eu medi nao e a pagina onde a regra vale: o seletor e que decide,
+e ele nao sabe de onde veio.
+
+E reparei tarde que **as regras do selo eu escopei** (`.wx-collection ...`) e as
+do banner nao. A diferenca nao foi criterio: foi que o selo *precisava* do
+escopo para a conta do padding fechar, e o banner "funcionava" sem. **Escopo que
+so aparece quando a conta exige vira escopo que falta onde a conta nao exige.**
+
+### O conserto
+
+O `<main>` carrega `data-template="{{ template }}"` — "collection.impressoras",
+"collection.acessorios"… nas colecoes, "index" na home. Por isso:
+
+    main[data-template^="collection"] .wx-hero { ... }
+
+Prefixo, nao lista: colecao nova entra sozinha e a home fica fora por
+construcao.
+
+### A prova, e o controle que quase me enganou
+
+Comparei a home renderizada sem o CSS, com o CSS sem escopo e com o escopado:
+
+| | hero | imagem |
+|---|---|---|
+| sem o CSS (referencia) | 358x484 | 354x207 |
+| com o CSS SEM escopo   | 358x246 | 354x242 |
+| com o CSS ESCOPADO     | 358x484 | 354x207 |
+
+O diff de pixels acusou uma area de 60x57 diferente **tambem** na versao
+escopada. Quase relatei como efeito residual. O controle desmentiu: a
+**referencia comparada com ela mesma** difere na mesmissima area — e ruido de
+render, nao o CSS. *Diff sem controle de ruido acusa inocente.*
+
+### As leis
+
+**5. Regra de CSS alcanca toda pagina que usa aquela secao, nao a pagina onde
+ela foi medida.** Antes de publicar, pergunte quem mais usa o seletor — e
+escope pelo template, nao pela intencao.
+
+**6. Escopo se aplica por decisao, nao por necessidade aritmetica.** Se um
+grupo de regras precisou de escopo e o outro nao, o segundo esta sem escopo por
+acaso.
+
+**7. Diff de imagem pede controle de ruido.** Compare a referencia com ela
+mesma antes de atribuir qualquer diferenca a mudanca.
+
+### E o preco do ciclo
+
+Tema publicado nao aceita escrita pelo conector. Cada correcao vira
+duplicar -> escrever -> o dono publicar. Publicar cedo encurta o teste e
+alonga o conserto — vale saber antes de escolher.
