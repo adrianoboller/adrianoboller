@@ -2108,14 +2108,17 @@ continua sem prova.
 `TETO_TESTE_FORA_DO_BINARIO`, `TETO_TESTE_SEM_MODULO` e
 `TETO_NAO_JULGADA_ESCONDIDA` em **0**; `codigo-do-dono` em **5** (teto 5, sem
 folga); `rede-ou-espera` (a catraca de REPLICACAO §18) em **0**;
-`alcancam-fsync` em **23** (teto 22, **vermelha por decisão do dono já
-registrada**, pendência #252, não mexida por esta frente); `PISO_DAS_ENTRADAS`
+`alcancam-fsync` em **23** (teto 22, vermelha na data desta corrida; a
+pendência #252 fechou em 18/09/2026 — a metade que era código entrou por
+mérito e a catraca foi **aposentada**, substituída pela `alcancam-fsync-2`
+em 24); `PISO_DAS_ENTRADAS`
 em **180**, subindo dos 177 anteriores — o comportamento correto de um piso
 que só sobe.
 
 Fora de escopo de guarda, por decisão já registrada: transação com quórum
 (pesquisa/plano, papel J, `docs/propostas/quorum-de-escrita.md`, ainda não
-implementado) e `alcancam-fsync` (dívida já registrada, pendência #252).
+implementado) e `alcancam-fsync` (dívida registrada na pendência #252, que
+fechou em 18/09/2026 — ver acima).
 
 ### 21.4 F — a bateria de 17/09, número por número, contra servidores de pé
 

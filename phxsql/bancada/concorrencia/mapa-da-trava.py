@@ -667,10 +667,15 @@ def autoteste():
 #
 # A quarta coluna e o rotulo curto do inventario (`docs/qa/medir.py`, pelo
 # `--numeros`). Ela NAO e regua nem teto -- e o «o que esta catraca mede» que
-# a tabela gerada imprime ao lado do numero. Dito em voz alta porque uma das
-# tres esta VERMELHA por decisao do dono (#252, metade 1): o teto 22 da
-# `alcancam-fsync` e a funcao `medir_para_a_catraca` nao foram tocados em
-# 16/09/2026, so ganharam rotulo.
+# a tabela gerada imprime ao lado do numero.
+#
+# A `alcancam-fsync` (teto 22) foi APOSENTADA em 18/09/2026, por decisao do
+# dono, e a `alcancam-fsync-2` nasceu no numero medido daquele dia. Nao foi
+# afrouxamento: a metade que era codigo do pedido 252 entrou por merito
+# (`ae8a58b`, o PITR deixou de pagar `fsync` sob a trava, 25 -> 24), e os 2
+# que sobravam eram do corte da porta comum, nao de secao nova. A regra que
+# mandou aposentar em vez de subir o teto e a de cima, e ela vale mesmo
+# quando subir pareceria justo -- foi por isso que o dono foi consultado.
 CATRACAS = [
     (
         "codigo-do-dono",
@@ -682,11 +687,25 @@ CATRACAS = [
         "secoes criticas que rodam codigo do dono do banco com a trava na mao",
     ),
     (
-        "alcancam-fsync",
-        22,
+        # APOSENTA a `alcancam-fsync` (teto 22), por decisao do dono de
+        # 18/09/2026. O motivo e o que a lei acima descreve: a regua passou a
+        # medir diferente, e nao o codigo a piorar. O corte da porta comum
+        # (`PORTA_COMUM`) reclassificou `empilhar` e
+        # `empilhar_atualizar_com_cascata` de HERDADO para proprias -- a porta
+        # delas tem 2 chamadores e caiu abaixo do corte --, sem nenhuma das
+        # duas passar a alcancar `fsync`. Quem quiser a serie antiga: ela
+        # morreu aqui de proposito, e o preco esta escrito na lei acima.
+        #
+        # O numero NASCE no medido do dia da aposentadoria: 24, com o
+        # `reaplicar_diario_ate` ja fora da conta (pedido 252, commit
+        # `ae8a58b`). Daqui em diante so desce.
+        "alcancam-fsync-2",
+        24,
         "secoes alcancam `fsync` com a trava na mao. E o que um `RwLock` NAO "
         "conserta -- o escritor continua exclusivo --, e cada uma nova e "
-        "1,3 ms de trava presa (§7.1-bis) que a proxima conexao espera.",
+        "1,3 ms de trava presa (§7.1-bis) que a proxima conexao espera. "
+        "SUBSTITUI a `alcancam-fsync` (teto 22), aposentada em 18/09/2026 "
+        "porque a regua mudou, nao o codigo.",
         "secoes criticas que alcancam `fsync` com a trava na mao",
     ),
     (
@@ -714,7 +733,7 @@ def medir_para_a_catraca(secoes):
 
     return {
         "codigo-do-dono": sum(1 for s in secoes if "usuario" in certas(s)),
-        "alcancam-fsync": sum(1 for s in secoes if "durabilidade" in certas(s)),
+        "alcancam-fsync-2": sum(1 for s in secoes if "durabilidade" in certas(s)),
         "rede-ou-espera": sum(1 for s in secoes
                               if s["classe"] == "rede-ou-espera"),
     }
