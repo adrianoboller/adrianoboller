@@ -541,6 +541,12 @@ token, login, permissão — porque é o mesmo `despachar`. A interface não tem
 caminho privilegiado: quem não pode inserir recebe a mesma recusa, tenha
 clicado num botão ou aberto um soquete.
 
+E desde o pedido 370 há um portão **antes** dos quatro, que é do CANAL e não de
+quem pede: com `cifra_fio.exigir` ligado — hoje o padrão —, esta porta só
+atende se o proxy TLS estiver declarado (`"atras_de_proxy": true`). Ele mora em
+`Servidor::portao_de_rede_http`, que é o mesmo das três portas HTTP, e a §7.0
+conta por quê.
+
 E a lista de bloqueio é do **servidor**, não da porta: cinco tokens errados
 pelo navegador bloqueiam também a 5000, e `phxsqld --desbloquear` solta as
 duas. Todo pedido pela web entra no `acessos.log` com IP, data e hora.
@@ -644,27 +650,52 @@ exatamente como antes.
 | está no meio e modifica | manda no diálogo | **apaga o aperto e manda igual** | o aperto não fecha |
 | rouba a estática do servidor depois | — | não lê o passado (sigilo futuro) | idem |
 
-> **Com `cifra_fio.exigir` desligado — que é o padrão — a proteção vale contra
-> escuta PASSIVA e nada mais.** Cifra pedida é cifra que o atacante ativo apaga
-> do pedido: ele corta o `cifrar`, o cliente rebaixa para claro, e a proteção
-> vira zero. Contra atacante ativo só vale `exigir: true` **mais** o pino da
-> chave do servidor no cliente. Um sem o outro não fecha.
+> **Com `cifra_fio.exigir` desligado, a proteção vale contra escuta PASSIVA e
+> nada mais.** Cifra pedida é cifra que o atacante ativo apaga do pedido: ele
+> corta o `cifrar`, o cliente rebaixa para claro, e a proteção vira zero.
+> Contra atacante ativo só vale `exigir: true` **mais** o pino da chave do
+> servidor no cliente. Um sem o outro não fecha.
 
-E `exigir` nasce desligada porque a regra da casa é pétrea: guarda nova entra
-**pedida**. Ligá-la quebra todo cliente que não fala o aperto — o driver ODBC
-inclusive — e por isso é decisão de quem implanta, não padrão herdado. Quando
-ligada, a recusa é uma linha JSON em claro com erro nomeado (e não um
-silêncio), e a conexão fecha em seguida.
+**E `exigir` deixou de nascer desligada em 18/09/2026** (pedido 370), por ordem
+do dono: *«A comunicação deve obrigatoriamente ser cifrada.»* Ela nasce
+**ligada**, e `"cifra_fio": { "exigir": false }` é o **escape escrito** — o
+mesmo padrão do `"verificar": false` da chave que nasce conferida: escolha
+escrita em vez de omissão. Quando ligada, a recusa é uma linha JSON em claro
+com erro nomeado (e não um silêncio), e a conexão fecha em seguida.
 
-**Quem quer o contrário escreve.** `"cifra_fio": { "exigir": true }` no
-`config.json` é escolha escrita, e o par de testes trava os dois sentidos pelo
-soquete: `o_escape_escrito_deixa_o_cliente_em_claro_entrar` e
-`exigir_escrito_no_arquivo_recusa_o_texto_claro`, em
-`crates/phxsql-server/tests/cifra-do-fio.rs`. Os dois sobem de um `config.json`
-de verdade, e não de um `Config` montado à mão — teste que **escreve** o campo
-não prova o padrão dele, e essa armadilha já foi paga aqui uma vez.
+O que isso custa está dito sem enfeite, porque é uma mudança de **implantação**:
+**todo cliente que não fala o aperto para de entrar pela porta de dados**, até
+alguém escrever o escape. É o preço que a ordem do dono comprou de propósito, e
+é por isso que ele decidiu a troca em vez de ela ser herdada.
 
-### 7.0 O alcance do `exigir`, medido — e por que o padrão ainda não virou
+**E os clientes desta casa não podiam ser os quebrados**, porque aí o padrão
+novo seria meia funcionalidade: um servidor de fábrica que o próprio console do
+projeto não alcança. Os três foram medidos em 18/09/2026:
+
+| cliente | fala o aperto? | quando aprendeu |
+|---|---|---|
+| driver ODBC | **sim, por padrão** | pedido 373 (`CIFRA=1` de fábrica, `CIFRA=0` como escape) |
+| console `phxsqlcmd` | **sim, por padrão** | pedido 370, junto com esta virada — `--sem-cifra` é o escape |
+| réplica, cluster, DbLink | pelo interruptor próprio | `origens[].cifra`, `cluster.cifra` (ver *inbound-only*, abaixo) |
+| `phxsqlcli` | não precisa | ele mexe em arquivo, não abre soquete para a porta de dados |
+
+O console usa o **mesmo** `Cliente::cifrar` da réplica e do cluster — uma
+segunda implementação da cifra ali seria um segundo jeito de errar. O que ele
+ainda **não** tem é o **pino**: sem ele o túnel protege de escuta passiva e nada
+mais, exatamente como diz a tabela da §7, e isso está escrito no `--help` dele
+em vez de subentendido.
+
+**Os dois sentidos travados pelo soquete**, em
+`crates/phxsql-server/tests/cifra-do-fio.rs`:
+`o_escape_escrito_deixa_o_cliente_em_claro_entrar` (quem escreve `false`
+continua entrando em claro — e **este é o teste que não mudou de significado
+com a virada**, de propósito: é o que fica igual dos dois lados dela) e
+`exigir_escrito_no_arquivo_recusa_o_texto_claro`. Os dois sobem de um
+`config.json` de verdade, e não de um `Config` montado à mão — teste que
+**escreve** o campo não prova o padrão dele, e essa armadilha já foi paga aqui
+uma vez.
+
+### 7.0 A virada do padrão, e o que ela custou — medido
 
 Ordem do dono, 18/09/2026: *«A comunicação deve obrigatoriamente ser
 cifrada.»* Dois meios decididos por ele: o fio nativo passa a **exigir** de
@@ -672,47 +703,84 @@ fábrica (quem precisar de transição escreve `"exigir": false`), e o navegador
 o REST ganham TLS por **proxy reverso na frente** — o PhxSql continua zero
 dependências.
 
-O primeiro meio **não entrou nesta rodada**, e a razão está medida. Ele passaria
-a anunciar uma proteção que o servidor não presta:
+O primeiro meio **não entrou no mesmo dia**, e a razão está medida. Ele passaria
+a anunciar uma proteção que o servidor não prestava:
 
-- **`exigir` é lido em UM lugar que decide alguma coisa:**
-  `crates/phxsql-server/src/servidor.rs:9270`, dentro do laço da porta de
-  dados. Os outros casamentos de `cifra_fio.exigir` no repositório são
+- **`exigir` era lido em UM lugar que decidia alguma coisa:** o laço da porta de
+  dados. Os outros casamentos de `cifra_fio.exigir` no repositório eram
   comentário, espelho da resposta de estado e ajudante de teste.
 - **Medido em 18/09/2026, no mesmo servidor e no mesmo instante, com
-  `cifra_fio.exigir: true`:** a porta nativa recusa (`[SP000025] este servidor
-  exige a cifra do fio…`) e, ao lado dela, `POST /api {"op":"login"}` devolve
+  `cifra_fio.exigir: true`:** a porta nativa recusava (`[SP000025] este servidor
+  exige a cifra do fio…`) e, ao lado dela, `POST /api {"op":"login"}` devolvia
   **200** com a sessão aberta e a senha em claro; `POST /api {"op":"ping"}` com
-  o **mesmo token que a porta nativa acabara de recusar** devolve **200**;
-  `POST /v1/login` (REST) devolve **200** com sessão; `POST /mcp initialize`
-  devolve **200** com o catálogo inteiro de ferramentas; `GET /` (explorador da
-  especificação) devolve **200** e 14.009 bytes; e `POST /api
-  {"op":"desafio"}` devolve **200** com o `sal` e as 210.000 iterações do KDF
-  de um usuário nomeado.
-- **E o campo mente junto:** `servidor.rs:5884-5887` publica
-  `encryption_exigida: true` dentro de `diretivas_da_conexao`, cuja própria
-  documentação diz «o que é verdade DESTA conexão» — e a conexão HTTP em claro
-  que faz a pergunta recebe `true`. É a mesma família do `recursos.cache_paginas`
-  que anunciava um cache inexistente, e é pior: aqui alguém liga o interruptor e
+  o **mesmo token que a porta nativa acabara de recusar** devolvia **200**;
+  `POST /v1/login` (REST) devolvia **200** com sessão; `POST /mcp initialize`
+  devolvia **200** com o catálogo inteiro de ferramentas; `GET /` (explorador da
+  especificação) devolvia **200** e 14.009 bytes.
+- **E o campo mentia junto:** `diretivas_da_conexao` publicava
+  `encryption_exigida: true`, dentro de uma função cuja própria documentação diz
+  «o que é verdade DESTA conexão» — e a conexão HTTP em claro que fazia a
+  pergunta recebia `true`. É a mesma família do `recursos.cache_paginas` que
+  anunciava um cache inexistente, e é pior: aqui alguém liga o interruptor e
   deixa a tela no ar confiando nele.
-- **Tamanho da virada na suíte, medido:** numa árvore verde (2.553 testes
-  passando, nenhum falhando), trocar só o padrão derruba **62** — **60**
-  porque conectam em claro na porta de dados, e **2** porque travam o padrão de
-  ontem de propósito (`config::tests::sem_a_secao_cifra_fio_nada_e_exigido` e
-  `cliente_sem_cifra_continua_como_antes`). Não é motivo para não fazer; é o
-  número que diz que a mudança é de implantação, e não de detalhe — e os 60
-  precisam, um a um, do escape escrito.
 
-**O que entrou nesta rodada, e é o que dava para entregar inteiro:** o escape
-escrito provado pelos dois lados (acima), o aviso de arranque que diz o alcance
-(abaixo), e a porta web presa ao laço local provada contra o sistema
-operacional (§7.1).
+**Os três consertos entraram juntos (pedido 370), e a ordem entre eles é o
+conserto:**
 
-**O aviso de arranque.** Quem liga `cifra_fio.exigir` com qualquer porta HTTP
-no ar lê no terminal, de `Config::ler`, que o interruptor vale **só** para a
-porta de dados e quais portas continuam em claro. Enquanto as portas HTTP não
-recusarem — o conserto mora no `servidor.rs` —, a saída honesta é o servidor
-dizer o alcance em voz alta em vez de deixar o operador supor.
+1. **As portas HTTP recusam**, e num lugar só: `Servidor::portao_de_rede_http`,
+   que já era o portão de rede das três (web, REST e explorador) e por onde o
+   endpoint `/mcp` também entra, porque viaja na porta do REST. A recusa é 403
+   com **erro nomeado** — `erro.cifra_exigida_nesta_porta_http`, pela fábrica de
+   idiomas — e ela diz as **duas** saídas escritas, porque recusa sem saída vira
+   beco. Espalhar a conferência por rota seria a porta dos fundos que a lei da
+   casa manda procurar: *portão é UM só*.
+   A interface web tinha uma **cópia própria** do portão de rede, e ela sumiu no
+   mesmo passo — o irmão fica, e cópia é como ele se perde.
+2. **`encryption_exigida` passou a dizer a verdade da conexão que perguntou**,
+   e ao lado dele nasceu `encryption_neste_canal` (*esta* conexão está dentro do
+   túnel?). Numa porta HTTP os dois respondem `false`: quem cifra ali é o TLS do
+   proxy, que este servidor **não tem como conferir** — e proteção que não se
+   confere não se anuncia. `encryption` continua sendo a **capacidade** do
+   servidor, que é o que a bancada de diretivas pergunta.
+3. **Só então o padrão virou**, em uma linha (`CifraFio::default`).
+
+**O escape das portas HTTP é `"atras_de_proxy": true`** — a mesma declaração da
+§7.2, que deixou de calar só um aviso. Ela não é conferível, e é por isso que
+ela é um **escape escrito**, e não uma verificação: quem escreve `true` sem
+proxy nenhum na frente mente para si mesmo, não para o motor.
+
+**Tamanho da virada, medido** — e este número é a razão de ela não ser detalhe:
+
+| medida | número |
+|---|---|
+| testes derrubados **só** pela troca do padrão (medição da frente anterior, árvore verde de 2.553) | **62** — 60 conectavam em claro na porta de dados, 2 travavam o padrão de ontem |
+| baterias que ganharam o **escape escrito** nesta rodada | **14** arquivos de `phxsql-server` (13 em `tests/`, mais os três `config_base` de teste dentro do `servidor.rs`) |
+| baterias que **não** precisaram do escape porque o CLIENTE aprendeu | `phxsql-cmd` — 8 dos 9 testes caíam, e o conserto foi o console cifrar, não o teste afrouxar |
+| testes que **mudaram de significado** (o novo escrito ao lado) | **4** |
+| testes **novos** desta frente | **8** |
+| depois de tudo | `phxsql-server` **1.312**, `phxsql-cmd` **11**, `phxsql-cli` **7**, `phxsql-core` **371**, `phxsql-sql` **255** — 0 falhando |
+
+Os **4 que mudaram de significado** não foram apagados — teste que some leva a
+garantia junto:
+
+| antes | agora | o que mudou |
+|---|---|---|
+| `config::tests::sem_a_secao_cifra_fio_nada_e_exigido` | `…_a_cifra_ja_e_exigida` | sem a seção, a cifra **é** exigida |
+| `cliente_sem_cifra_continua_como_antes` | `o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo` | o cliente velho é recusado — **com o motivo**, e a prova mede o dano (o `ping` não foi atendido) |
+| `exigir_a_cifra_do_fio_com_porta_http_no_ar_avisa_o_alcance` | `…_com_porta_http_sem_proxy_avisa_que_ela_recusa` | o aviso mudou de assunto: era alcance, virou consequência |
+| `exigir_sem_porta_http_no_ar_nao_avisa_alcance_nenhum` | continua, e ganhou o irmão `exigir_com_o_proxy_declarado_nao_avisa_nada` | aviso que aparece numa instalação correta é aviso que ninguém lê |
+
+E o que **não** mudou de significado, de propósito, é o que mais importa:
+`o_escape_escrito_deixa_o_cliente_em_claro_entrar` não teve uma linha alterada.
+Ele foi escrito **antes** da virada prevendo este dia, com a previsão no próprio
+comentário, e é ele que fica igual dos dois lados dela.
+
+**O aviso de arranque mudou de assunto junto.** Ele dizia o *alcance* («o
+interruptor vale só para a porta de dados»); hoje diz a *consequência*: com a
+exigência ligada, uma porta HTTP **sem proxy declarado recusa todo pedido**, e
+o aviso nomeia as portas e as duas saídas. Quem declarou o proxy **não** recebe
+aviso nenhum — com `exigir` nascendo ligado, um aviso preso a «há porta HTTP no
+ar» sairia em toda instalação com tela, que é a instalação normal.
 
 **E o `exigir` é *inbound-only*.** Ele decide sobre quem **conecta neste
 servidor**, e nada sobre o que **este servidor conecta**. As três saídas têm
@@ -728,6 +796,53 @@ Medido em 18/09/2026: `crates/phxsql-server/src/replica.rs` **não menciona
 `cifra_fio` uma única vez**. Quem quiser a réplica cifrada liga o `cifra` da
 origem — e, sem `chave_do_fio` (o pino), ela protege de escuta passiva e nada
 mais, exatamente como diz a tabela da §7.
+
+**E daqui sai a consequência mais dura da virada, que não estava em teste
+nenhum:** com `exigir` nascendo ligado e os três interruptores de saída
+nascendo desligados, **um source de fábrica recusa uma réplica de fábrica**. Os
+dois padrões juntos param a replicação, e a suíte fica verde do mesmo jeito,
+porque as baterias de replicação escrevem o escape dos **dois** lados.
+
+O servidor não tem como saber a configuração do outro lado, então ele diz o que
+sabe: quando `exigir` está ligado e há saída **configurada** em claro, o
+arranque nomeia cada uma — com o `nome` e o `host:porta` do source — e avisa que
+um PhxSql de 18/09/2026 ou mais novo vai recusar. Ele não sai num servidor
+isolado nem numa saída já cifrada: `exigir_com_saida_em_claro_avisa_que_o_outro_lado_vai_recusar`
+e `saida_cifrada_e_servidor_isolado_nao_ganham_aviso_de_saida` travam os dois
+sentidos.
+
+**O que NÃO foi decidido aqui, e vai para a mesa:** virar também os três
+padrões de saída. A ordem do dono alcança as duas direções — «a *comunicação*
+deve ser cifrada» —, mas virar a saída tem custo próprio (uma réplica nova não
+fala mais com um source anterior ao aperto) e é uma **segunda** decisão de
+implantação, com os mesmos escapes escritos. Ela não entra de carona nesta: o
+pedido 370 é sobre quem **entra**.
+
+**A prova real, pelo soquete, nos dois sentidos** — em
+`crates/phxsql-server/tests/cifra-das-portas-http.rs`, com um servidor de
+`config.json` de verdade e as três portas HTTP no ar:
+
+| prova | o que ela mede |
+|---|---|
+| `com_a_cifra_exigida_as_portas_http_recusam_e_dizem_o_que_fazer` | `/api` ping, `/api` login com senha em claro, `/v1/login`, `POST /mcp` e o explorador — cada um com o **dano** medido (`!corpo.contains("sessao")`, sem `serverInfo`, sem `openapi`), e não só o 403 |
+| `com_o_escape_escrito_as_portas_http_continuam_como_antes` | o comportamento **velho**: com `"exigir": false`, os quatro voltam a 200 e o login abre sessão |
+| `o_proxy_declarado_deixa_as_portas_http_atenderem_com_a_cifra_exigida` | o escape escrito das portas HTTP |
+| `sem_a_secao_cifra_fio_a_porta_http_ja_nasce_recusando` | o **padrão**, lido de um arquivo que não declara o campo |
+| `a_diretiva_da_conexao_http_nao_anuncia_cifra_que_nao_ha` | o campo que mentia, pelo único caminho em que a pergunta ainda pode ser feita por HTTP: o proxy declarado |
+| `dentro_do_tunel_a_diretiva_confirma_a_cifra_desta_conexao` (em `cifra-do-fio.rs`) | o sentido contrário — sem ele, trocar o campo por um `false` seco passaria verde |
+
+E os dois do CONSOLE, em `crates/phxsql-cmd/tests/console.rs`:
+`o_console_atravessa_um_servidor_que_exige_a_cifra` (que lê o padrão do próprio
+`Config::default()` antes de afirmar o que prova — provar por consequência
+deixaria os nove testes do arquivo voltarem a passar no dia em que alguém
+escrevesse o escape no `subir` para «consertar» uma falha) e
+`com_o_servidor_sem_cifra_o_console_recusa_e_diz_a_saida` (o escape escrito, e a
+recusa que nomeia `--sem-cifra` em vez de rebaixar sozinha).
+
+Com o defeito reposto, o vermelho medido foi este, e nas duas metades: sem o
+portão, `{"ok":true,"op":"ping"}` e `"sessao":"43eb401a…"` numa porta HTTP com a
+de dados recusando ao lado; sem o conserto do campo,
+`"encryption_neste_canal":false,"encryption_exigida":true` na mesma resposta.
 
 ### O que ela NÃO é
 
@@ -790,15 +905,29 @@ cliente  --TLS-->  proxy (termina o TLS)  --claro, 127.0.0.1-->  phxsqld
 
 **As três regras que fazem o proxy proteger em vez de enganar:**
 
-1. **O `phxsqld` escuta SÓ em `127.0.0.1`.** É a regra que já vale para a porta
-   web (§6: «quando ligada escuta só em `127.0.0.1`»). Se o `phxsqld` ficar
-   aberto à rede *ao lado* do proxy, o atacante liga direto e **pula o TLS
-   inteiro** — o proxy vira teatro. O proxy é o único que escuta a porta
-   pública; o motor, nunca.
+1. **As três portas HTTP escutam SÓ em `127.0.0.1`.** São elas —
+   `web.bind`, `rest.bind` e `rest.swagger_bind` —, e **a porta de dados
+   (`bind`) fica de fora**: o padrão dela é `0.0.0.0:5000` e continua sendo. Se
+   uma porta HTTP ficar aberta à rede *ao lado* do proxy, o atacante liga direto
+   e **pula o TLS inteiro** — o proxy vira teatro. O proxy é o único que escuta
+   a porta pública; a porta HTTP do motor, nunca.
 
-   **Isto deixou de ser recomendação e virou guarda provada (18/09/2026).** As
-   três portas HTTP nascem no laço local — `web.bind`, `rest.bind` e
-   `rest.swagger_bind` —, e `crates/phxsql-server/tests/cifra-da-porta-web.rs`
+   **Por que a porta de dados não entra nesta regra** (decisão do dono,
+   18/09/2026, corrigindo este texto — que dizia «o `phxsqld` escuta só em
+   `127.0.0.1`» e contradizia o padrão de fábrica): ela é a porta que **réplica,
+   cluster e ODBC precisam alcançar de outra máquina**, e é a única que **tem**
+   cifra própria. Fechá-la no laço local quebraria toda réplica, todo cluster e
+   todo ODBC remoto — os dois `Config_docker` inclusive — para proteger o que já
+   está protegido. A regra do proxy vale para as portas que **não têm cifra
+   nenhuma**, e esse é o critério, não o nome da porta.
+
+   E desde o pedido 370 a frase ficou verdadeira dos dois lados: a porta de
+   dados **recusa** quem não pede o aperto (`cifra_fio.exigir` nasce ligado), e
+   as portas HTTP recusam quem não declarou o proxy. Antes disso a regra
+   *parecia* valer para todas porque só uma delas recusava alguma coisa.
+
+   **E a parte que virou guarda provada (18/09/2026):** as três portas HTTP
+   nascem no laço local, e `crates/phxsql-server/tests/cifra-da-porta-web.rs`
    prova contra o **sistema operacional**, não por leitura de campo: o servidor
    sobe de um `config.json` que não declara `web.bind`, o `GET /saude` responde
    em `127.0.0.1` e a mesma porta **não aceita conexão** pelo IP desta máquina
@@ -824,7 +953,7 @@ concerns diferentes — o proxy dá TLS ao cliente que o exige; o Noise protege 
 porta de dados para o cliente que fala o aperto. Ligar um não desliga o outro,
 e a cifra do fio (§7) e a cifra em repouso (§8) seguem intactas por baixo.
 
-### 7.2 `atras_de_proxy`: a declaração que cala o aviso — e o que ela não faz
+### 7.2 `atras_de_proxy`: a declaração que hoje ABRE a porta — e o que ela continua não fazendo
 
 Abrir a porta HTTP para a rede continua **podendo**: é o desenho normal de quem
 termina TLS num proxy, e recusar derrubaria toda instalação que já faz a coisa
@@ -845,18 +974,30 @@ aviso. Receita em docs/SEGURANCA.md 7.1.
 "rest": { "ligado": true, "bind": "0.0.0.0:6000", "atras_de_proxy": true }
 ```
 
-Três coisas que o campo **não** é, e estão escritas porque configuração que
-promete mais do que entrega é o defeito que esta casa já pagou:
+**O que o campo passou a fazer em 18/09/2026 (pedido 370):** com
+`cifra_fio.exigir` ligado — que hoje é o padrão —, as portas HTTP **recusam**
+todo pedido, e `"atras_de_proxy": true` é o **escape escrito** que as deixa
+atender. Até ontem ele só calava um aviso; hoje ele é a declaração que diz «o
+TLS existe, e está na frente». Esta seção dizia «não liga nada», e isso deixou
+de ser verdade — a linha está corrigida aqui em vez de continuar envelhecendo.
 
-- **Não liga nada.** O único efeito é calar o aviso. Nenhum byte do que o
-  servidor faz muda, e não há TLS dentro do `phxsqld` com ele ligado.
+Três coisas que o campo **continua não** sendo, e estão escritas porque
+configuração que promete mais do que entrega é o defeito que esta casa já pagou:
+
+- **Não liga TLS.** Nenhum byte do que o servidor fala muda: não há TLS dentro
+  do `phxsqld` com ele ligado, e o salto proxy→motor continua em claro (regra 2
+  da §7.1).
 - **Não é conferível.** O servidor não tem como saber se o proxy existe. É uma
   **declaração** de quem implanta; quem escreve `true` sem proxy nenhum na
-  frente mente para si mesmo, não para o motor.
+  frente mente para si mesmo, não para o motor. É por isso que ele é um escape
+  **escrito** — a mesma forma do `"exigir": false` e do `"verificar": false` da
+  chave conferida —, e é por isso que o `encryption_exigida` da §7.0 **não** o
+  usa para anunciar proteção: proteção que não se confere não se anuncia.
 - **Não vale para a porta de dados.** `bind` (a 5000) tem a cifra do fio (§7),
   que é outra coisa e outro caminho. O campo mora em `web` e em `rest`, e o de
   `rest` cobre as **duas** portas da seção (`bind` e `swagger_bind`), porque
-  sobem do mesmo bloco e do mesmo operador.
+  sobem do mesmo bloco e do mesmo operador — e uma família HTTP que ninguém
+  declarar aqui cai no lado seguro: sem proxy, recusada.
 
 E o aviso existe com esse botão de silêncio por um motivo medido no próprio
 projeto: aviso que aparece para sempre numa instalação correta é aviso que

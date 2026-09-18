@@ -50,6 +50,13 @@ fn subir(dir: &std::path::Path, porta: u16, cadastro: Cadastro) -> Arc<Servidor>
         jobs: dir.join("jobs.json"),
         token: TOKEN.into(),
         cadastro,
+        // O caminho existe para a CHAVE DO FIO nascer ao lado dele, e nao no
+        // diretorio de onde a bateria por acaso rodou. Sem esta linha, o
+        // primeiro aperto de mao do console (pedido 370) escreve
+        // `chave-do-fio.hex` dentro de `crates/phxsql-cmd/` -- material de
+        // chave solto no repositorio, medido em 18/09/2026 na primeira corrida
+        // depois de o console passar a cifrar.
+        caminho: Some(dir.join("config.json")),
         ..Default::default()
     };
     c.web.ligado = false;
@@ -405,4 +412,82 @@ fn o_comando_unico_devolve_o_codigo_de_saida_certo() {
 
     let (ok, texto) = rodar("varrer database=loja tabela=nao_existe");
     assert!(!ok, "linha com erro saiu com sucesso: {texto}");
+}
+
+// ---------------------------------------------------------------------------
+// A cifra do fio no console (pedido 370) -- os DOIS sentidos
+// ---------------------------------------------------------------------------
+
+/// **O console fala o aperto de mão com um servidor de FÁBRICA.**
+///
+/// Este arquivo inteiro já prova isto, porque o `subir` não escreve
+/// `cifra_fio` em lugar nenhum e o padrão do servidor é exigir. Mas provar por
+/// consequência é frágil: no dia em que alguém escrever o escape no `subir`
+/// para «consertar» uma falha, os nove testes voltam a passar e ninguém vê que
+/// o console parou de cifrar. Este diz o que está sendo provado.
+///
+/// Medido em 18/09/2026: com o padrão virado e **sem** o aperto no console,
+/// 8 dos 9 testes deste arquivo caíam com
+/// `[SP000025] … peca o aperto de mao com {"op":"cifrar"}`.
+#[test]
+fn o_console_atravessa_um_servidor_que_exige_a_cifra() {
+    // O padrão de verdade, lido do tipo -- e não um campo que este teste
+    // escreveu. É ele que o `subir` herda.
+    assert!(
+        Config::default().cifra_fio.exigir,
+        "o servidor deixou de exigir a cifra de fábrica: este teste passaria \
+         sem o console ter cifrado nada"
+    );
+    let dir = pasta("cifra");
+    let porta = porta_livre();
+    let _s = subir(&dir, porta, Cadastro::default());
+    let mut c = console(porta);
+    let r = c.executar_linha("bancos");
+    assert!(!r.texto().starts_with("erro"), "{}", r.texto());
+}
+
+/// **O ESCAPE ESCRITO do console, e a recusa que diz o que fazer.**
+///
+/// Um servidor com `cifra_fio.ligada: false` não atende o aperto. O console
+/// **não rebaixa sozinho** -- rebaixar seria entregar de graça ao atacante
+/// ativo o que ele teria de conseguir cortando o pedido --, e a recusa nomeia
+/// a saída. Com `--sem-cifra` (aqui, `ligar_em_claro`) a conversa acontece.
+#[test]
+fn com_o_servidor_sem_cifra_o_console_recusa_e_diz_a_saida() {
+    let dir = pasta("sem-cifra");
+    let porta = porta_livre();
+    let mut c = Config {
+        bind: format!("127.0.0.1:{porta}"),
+        base: dir.to_path_buf(),
+        log_acessos: dir.join("acessos.log"),
+        blacklist: dir.join("blacklist.json"),
+        dblink: dir.join("dblink.json"),
+        jobs: dir.join("jobs.json"),
+        token: TOKEN.into(),
+        ..Default::default()
+    };
+    c.web.ligado = false;
+    // O servidor que NAO tem cifra do fio -- e por isso tambem nao a exige.
+    c.cifra_fio.ligada = false;
+    c.cifra_fio.exigir = false;
+    let s = Servidor::novo(c).unwrap();
+    let copia = Arc::clone(&s);
+    std::thread::spawn(move || {
+        let _ = copia.escutar();
+    });
+    esperar(porta);
+
+    let Err(erro) = Console::ligar("127.0.0.1", porta, TOKEN, Duration::from_secs(5)) else {
+        panic!("o aperto nao podia fechar com a cifra desligada no servidor");
+    };
+    let texto = erro.to_string();
+    assert!(
+        texto.contains("--sem-cifra"),
+        "a recusa nao diz a saida: {texto}"
+    );
+
+    let mut c = Console::ligar_em_claro("127.0.0.1", porta, TOKEN, Duration::from_secs(5))
+        .expect("o escape escrito tinha de entrar");
+    let r = c.executar_linha("bancos");
+    assert!(!r.texto().starts_with("erro"), "{}", r.texto());
 }

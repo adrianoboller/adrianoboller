@@ -69,6 +69,12 @@ fn subir_com(
         telemetria: painel,
         ..Default::default()
     };
+    // O ESCAPE ESCRITO: desde 18/09/2026 a cifra do fio nasce exigida
+    // (pedido 370, ordem do dono), e esta bateria conecta em claro porque o
+    // que ela mede e o painel de telemetria. Sem esta
+    // linha a recusa lida aqui seria a da cifra, e a prova passaria a medir
+    // o portao errado.
+    c.cifra_fio.exigir = false;
     c.web.ligado = false;
     let s = Servidor::novo(c).unwrap();
     let copia = Arc::clone(&s);

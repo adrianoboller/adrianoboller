@@ -61,6 +61,12 @@ fn subir(base: &std::path::Path, dados: u16, rest: u16) -> Arc<Servidor> {
         token: TOKEN.into(),
         ..Default::default()
     };
+    // O ESCAPE ESCRITO: desde 18/09/2026 a cifra do fio nasce exigida
+    // (pedido 370, ordem do dono), e esta bateria conecta em claro porque o
+    // que ela mede e o MCP sobre HTTP, pela porta do REST. Sem esta
+    // linha a recusa lida aqui seria a da cifra, e a prova passaria a medir
+    // o portao errado.
+    c.cifra_fio.exigir = false;
     c.web.ligado = false;
     c.rest.ligado = true;
     c.rest.bind = format!("127.0.0.1:{rest}");

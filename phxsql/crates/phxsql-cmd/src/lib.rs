@@ -65,11 +65,74 @@ pub struct Console {
 }
 
 impl Console {
-    /// Abre a conexão. Não autentica -- quem autentica é [`Console::entrar`],
-    /// que é uma decisão de quem monta o console e não um efeito de conectar.
+    /// Abre a conexão **cifrada**. Não autentica -- quem autentica é
+    /// [`Console::entrar`], que é uma decisão de quem monta o console e não um
+    /// efeito de conectar.
+    ///
+    /// # Por que o aperto de mão acontece aqui, e por padrão (pedido 370)
+    ///
+    /// Ordem do dono, 18/09/2026: *«A comunicação deve obrigatoriamente ser
+    /// cifrada»*, e desde então `cifra_fio.exigir` nasce ligado no servidor.
+    /// Um console que não pedisse o aperto seria recusado por um servidor de
+    /// fábrica com `[SP000025] peca o aperto de mao` -- medido em 18/09/2026:
+    /// **8 dos 9 testes** de `phxsql-cmd` caíam assim.
+    ///
+    /// Quem faz o aperto é o **mesmo** `Cliente` da réplica e do cluster, pela
+    /// mesma função (`Cliente::cifrar`). Uma segunda implementação da cifra
+    /// aqui seria um segundo jeito de errar -- a mesma razão pela qual o
+    /// `entrar` não tem um desafio-resposta próprio.
+    ///
+    /// # O que ele protege, e o que NÃO
+    ///
+    /// Sem **pino** da chave do servidor, o túnel protege de escuta PASSIVA e
+    /// nada mais: quem está no meio apresenta a chave dele e não há com o que
+    /// comparar. O driver ODBC aceita o pino (`CHAVE_DO_FIO`, pedido 373); o
+    /// console ainda **não** -- e isso está escrito em vez de subentendido.
+    /// DIVIDA: o console não aceita o pino da chave do fio -- o túnel dele é TOFU, e protege só de escuta passiva
     pub fn ligar(host: &str, porta: u16, token: &str, espera: Duration) -> Result<Console> {
+        Console::abrir(host, porta, token, espera, true)
+    }
+
+    /// O **escape escrito**: abre em claro, como era antes do pedido 370.
+    ///
+    /// Existe pelo mesmo motivo do `"exigir": false` do servidor e do `CIFRA=0`
+    /// do driver: quem precisa falar com um servidor que **não** atende o
+    /// aperto (`cifra_fio.ligada: false`) tem de ter uma saída escrita, e não
+    /// um rebaixamento automático. Rebaixar sozinho seria entregar de graça ao
+    /// atacante ativo o que ele teria de conseguir cortando o pedido.
+    pub fn ligar_em_claro(
+        host: &str,
+        porta: u16,
+        token: &str,
+        espera: Duration,
+    ) -> Result<Console> {
+        Console::abrir(host, porta, token, espera, false)
+    }
+
+    fn abrir(
+        host: &str,
+        porta: u16,
+        token: &str,
+        espera: Duration,
+        cifrar: bool,
+    ) -> Result<Console> {
+        let mut cliente = Cliente::conectar(host, porta, token, espera)?;
+        if cifrar {
+            // A recusa do aperto tem UM motivo comum -- o servidor com
+            // `cifra_fio.ligada: false` --, e o erro tem de dizer a saída. O
+            // texto do `Cliente` fala em «source», que é vocabulário da
+            // réplica: aqui quem está do outro lado é o servidor a que a
+            // pessoa quis se conectar.
+            cliente.cifrar(None).map_err(|e| {
+                PhxError::Autorizacao(format!(
+                    "{host}:{porta} recusou o aperto de mao da cifra do fio ({e}). \
+                     Se este servidor tem \"cifra_fio\": {{\"ligada\": false}}, \
+                     chame com --sem-cifra para falar em claro"
+                ))
+            })?;
+        }
         Ok(Console {
-            cliente: Cliente::conectar(host, porta, token, espera)?,
+            cliente,
             database: String::new(),
             cru: false,
             destino: format!("{host}:{porta}"),

@@ -59,6 +59,15 @@ pub const IDIOMAS: [&str; 6] = [
 pub const DATABASE: &str = "phxsys";
 pub const TABELA: &str = "mensagens";
 
+/// Quantos bytes cabem numa celula de idioma da tabela `phxsys.mensagens`.
+///
+/// Mora AQUI, e nao no `criar_tabela`, porque e a fabrica quem tem de caber:
+/// medido em 18/09/2026, uma mensagem nova de 303 bytes derrubou o
+/// `mensagens_semear` com «nao cabe em Str(250)» -- longe do texto, e sem
+/// dizer qual. O numero sai de um lugar so, e `a_fabrica_e_bem_formada`
+/// reprova o texto grande onde ele foi escrito.
+pub const LARGURA_DO_TEXTO: usize = 250;
+
 /// De quanto em quanto tempo vale a pena conferir o `mtime` da tabela.
 ///
 /// Editou pela tela, o texto novo vale em ate este intervalo -- sem reiniciar.
@@ -360,6 +369,41 @@ pub const FABRICA: &[MensagemFabrica] = &[
              Handschlag mit {\"op\":\"cifrar\"} vor jeder anderen Anfrage an",
             "este servidor exige el cifrado del enlace: pida el saludo con \
              {\"op\":\"cifrar\"} antes de cualquier otra petición",
+        ],
+    },
+    // A terceira do mesmo interruptor, e ela fala com quem NAO pode fazer o
+    // aperto: o navegador. Ele fala TLS ou fala claro, entao a saida nao e
+    // "peca o aperto" -- e por isso a mensagem e outra, e nao um parametro da
+    // de cima. Ela tem de dizer as DUAS saidas escritas (o proxy declarado e o
+    // desligar), senao quem liga a exigencia perde a tela sem saber como
+    // recupera-la.
+    MensagemFabrica {
+        nome: "erro.cifra_exigida_nesta_porta_http",
+        textos: [
+            "este servidor exige comunicacao cifrada (cifra_fio.exigir) e esta \
+             porta HTTP e texto puro: ponha um proxy TLS na frente e escreva \
+             \"atras_de_proxy\": true na secao {secao}, ou \"exigir\": false em \
+             cifra_fio. Ver docs/SEGURANCA.md 7.1",
+            "ce serveur exige une communication chiffrée (cifra_fio.exigir) et \
+             ce port HTTP est en clair : placez un proxy TLS devant et écrivez \
+             \"atras_de_proxy\": true dans la section {secao}, ou \"exigir\": \
+             false dans cifra_fio. Voir docs/SEGURANCA.md 7.1",
+            "this server requires encrypted communication (cifra_fio.exigir) and \
+             this HTTP port is plain text: put a TLS proxy in front and write \
+             \"atras_de_proxy\": true in the {secao} section, or \"exigir\": \
+             false under cifra_fio. See docs/SEGURANCA.md 7.1",
+            "questo server richiede comunicazione cifrata (cifra_fio.exigir) e \
+             questa porta HTTP e in chiaro: metta un proxy TLS davanti e scriva \
+             \"atras_de_proxy\": true nella sezione {secao}, o \"exigir\": false \
+             in cifra_fio. Vedi docs/SEGURANCA.md 7.1",
+            "dieser Server verlangt verschlüsselte Kommunikation \
+             (cifra_fio.exigir), dieser HTTP-Port ist Klartext: TLS-Proxy \
+             davorstellen und \"atras_de_proxy\": true im Abschnitt {secao}, \
+             oder \"exigir\": false unter cifra_fio. Siehe docs/SEGURANCA.md 7.1",
+            "este servidor exige comunicación cifrada (cifra_fio.exigir) y este \
+             puerto HTTP es texto claro: ponga un proxy TLS delante y escriba \
+             \"atras_de_proxy\": true en la sección {secao}, o \"exigir\": false \
+             en cifra_fio. Ver docs/SEGURANCA.md 7.1",
         ],
     },
     // Amarracao da credencial ao canal (channel binding). O cliente pediu
@@ -1008,6 +1052,17 @@ mod tests {
             assert!(!m.textos[0].is_empty(), "{} sem portugues", m.nome);
             for t in &m.textos {
                 assert_eq!(t.trim(), *t, "{} tem texto com espaco nas pontas", m.nome);
+                // A celula da tabela e `Str(LARGURA_DO_TEXTO)`, e quem semeia
+                // e o `mensagens_semear`: sem esta linha, a mensagem grande
+                // demais so aparece la, num erro que nao diz qual foi.
+                assert!(
+                    t.len() <= LARGURA_DO_TEXTO,
+                    "{} tem texto de {} bytes e a celula da tabela e Str({}): \
+                     encurte, senao o mensagens_semear cai sem dizer qual foi",
+                    m.nome,
+                    t.len(),
+                    LARGURA_DO_TEXTO
+                );
             }
         }
     }

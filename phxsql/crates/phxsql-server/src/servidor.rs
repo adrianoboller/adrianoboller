@@ -340,6 +340,33 @@ enum Lote {
     Rompido(String),
 }
 
+/// Por onde esta sessao entrou.
+///
+/// Existe por causa de um campo que MENTIA: `encryption_exigida`, dentro de
+/// `diretivas_da_conexao`, cuja propria documentacao diz «o que e verdade
+/// DESTA conexao», publicava `cifra_fio.exigir` para qualquer um que
+/// perguntasse -- inclusive para a conexao HTTP em claro que fazia a pergunta.
+/// Campo que declara protecao maior que a prestada e a familia do
+/// `recursos.cache_paginas`, que anunciava cache sem haver cache.
+///
+/// Saber a porta de entrada e o que permite responder a verdade, e por isso
+/// mora na SESSAO e nao no pedido: e propriedade da CONEXAO, do mesmo jeito
+/// que o `ip` e a `transcricao_do_fio`.
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
+enum Entrada {
+    /// Nao ha fio nenhum: job agendado, rotina interna, replicacao aplicada,
+    /// ponte MCP pelo cano do processo. E o padrao porque e o unico que nao
+    /// promete nada -- quem tem fio diz qual.
+    #[default]
+    SemFio,
+    /// A porta de DADOS, a unica onde mora o aperto de mao do fio.
+    Dados,
+    /// Uma das portas HTTP -- web, REST, explorador. Nunca ha tunel aqui: o
+    /// navegador fala TLS ou fala claro, e o TLS e do proxy reverso
+    /// (`docs/SEGURANCA.md` §7.1), que este servidor nao tem como conferir.
+    Http,
+}
+
 /// Estado de uma conexao.
 ///
 /// A senha e conferida com PBKDF2, que custa da ordem de 100 ms de proposito.
@@ -385,6 +412,8 @@ struct Sessao {
     /// que fala HTTP e nao tem tunel). E o que o `login` amarra a credencial
     /// quando o cliente pede `amarrar_canal`. Ver `docs/CIFRA-DO-FIO.md` §10.
     transcricao_do_fio: Option<[u8; 32]>,
+    /// Por onde esta conexao entrou -- ver [`Entrada`].
+    entrada: Entrada,
 }
 
 impl Sessao {
@@ -2283,7 +2312,10 @@ impl Servidor {
                 Column::new("TextName", ColumnType::Str(80)).obrigatoria(),
             ];
             for idioma in crate::mensagens::IDIOMAS {
-                colunas.push(Column::new(idioma, ColumnType::Str(250)));
+                colunas.push(Column::new(
+                    idioma,
+                    ColumnType::Str(crate::mensagens::LARGURA_DO_TEXTO as u16),
+                ));
             }
             let indices = vec![
                 IndexDef::new("porId", vec![IndexColumn::asc(0)]).primaria(),
@@ -5881,10 +5913,40 @@ impl Servidor {
             ("ligacao", Json::de_u64(sessao.ligacao)),
             // A cifra do fio existe e se negocia no APERTO DE MAO, nao por
             // diretiva -- `docs/CIFRA-DO-FIO.md`. Aqui se diz o estado.
+            //
+            // Por onde esta conexao entrou. Sem isto, `encryption_exigida`
+            // seria um `false` que quem le nao sabe interpretar -- «e porque
+            // nao exigem, ou porque esta porta nao tem fio?». E e o campo que
+            // faz as tres portas do `Entrada` serem LIDAS, e nao so
+            // modeladas: variante que ninguem distingue e chave morta.
+            (
+                "via",
+                Json::texto_de(match sessao.entrada {
+                    Entrada::Dados => "dados",
+                    Entrada::Http => "http",
+                    Entrada::SemFio => "interna",
+                }),
+            ),
+            // `encryption` e a CAPACIDADE do servidor (ele atende o aperto), e
+            // continua sendo: e o que a bancada de diretivas pergunta.
             ("encryption", Json::Bool(self.config.cifra_fio.ligada)),
+            // Este e o que o pedido 370 consertou: a verdade DESTA conexao, e
+            // nao um campo do `config.json` publicado para quem quer que
+            // pergunte. Ate 18/09/2026 a conexao HTTP em claro perguntava e
+            // recebia `true`.
+            (
+                "encryption_neste_canal",
+                Json::Bool(sessao.transcricao_do_fio.is_some()),
+            ),
             (
                 "encryption_exigida",
-                Json::Bool(self.config.cifra_fio.exigir),
+                // «o texto claro seria recusado NESTA conexao?» -- e so a
+                // porta de dados pode responder sim. Numa porta HTTP com a
+                // exigencia ligada, quem esta do outro lado ou foi recusado
+                // (e nao esta aqui perguntando) ou declarou o proxy: e ai
+                // quem cifra e o TLS de fora, que este servidor NAO tem como
+                // conferir -- e protecao que nao se confere nao se anuncia.
+                Json::Bool(self.config.cifra_fio.exigir && sessao.entrada == Entrada::Dados),
             ),
             // A compressao existe, mas nao e um estado DESTA conexao: e
             // pedida por PEDIDO (`"aceita_compressao":true`), nunca por
@@ -7796,49 +7858,19 @@ impl Servidor {
     }
 
     /// Atende um pedido HTTP. Uma resposta por conexao -- `Connection: close`.
+    ///
+    /// O portao de rede e o MESMO das outras duas portas HTTP, e isso e
+    /// conserto: ate o pedido 370 a interface tinha uma copia propria dele --
+    /// lista negra e whitelist repetidas linha a linha --, e a exigencia de
+    /// cifra entrou no `portao_de_rede_http`. A copia era o irmao, e some para
+    /// nao divergir de novo: e a mesma historia do laco de aceitacao no
+    /// `subir_web`, que ja tinha sido paga aqui uma vez.
     fn atender_http(&self, mut fluxo: TcpStream, par: SocketAddr) {
         let ip = par.ip().to_string();
         let porta = par.port();
         let _ = fluxo.set_read_timeout(Some(Duration::from_secs(self.config.timeout_s)));
 
-        let agora = crate::agora_ms();
-        if let Some(b) = self.barrado(&ip, agora) {
-            self.anotar(&Acesso {
-                quando_ms: agora,
-                ip,
-                porta_origem: porta,
-                op: "web".into(),
-                usuario: String::new(),
-                autenticado: false,
-                ok: false,
-                duracao_ms: 0,
-                erro: Some(Self::motivo_de_bloqueio(&b)),
-                database: String::new(),
-                tabela: String::new(),
-                codigo: 0,
-            });
-            let _ = http::erro_json(&mut fluxo, 403, &self.recado_de_bloqueio(&b));
-            http::escoar(&fluxo);
-            return;
-        }
-        if !self.config.ip_permitido(&ip) {
-            self.violacao_leve(&ip, "web", "ip fora da lista de permitidos");
-            self.anotar(&Acesso {
-                quando_ms: agora,
-                ip,
-                porta_origem: porta,
-                op: "web".into(),
-                usuario: String::new(),
-                autenticado: false,
-                ok: false,
-                duracao_ms: 0,
-                erro: Some("ip fora da lista de permitidos".into()),
-                database: String::new(),
-                tabela: String::new(),
-                codigo: 0,
-            });
-            let _ = http::erro_json(&mut fluxo, 403, &self.msg("erro.ip_nao_autorizado", &[]));
-            http::escoar(&fluxo);
+        if !self.portao_de_rede_http(&mut fluxo, &ip, porta, "web") {
             return;
         }
 
@@ -8174,11 +8206,35 @@ impl Servidor {
 
     /// Os portoes de rede que valem antes de qualquer rota HTTP.
     ///
-    /// Lista negra e lista de IPs permitidos -- os mesmos do `atender_http` e
-    /// os mesmos da porta de dados. Devolve `false` quando ja respondeu a
-    /// recusa e nao ha mais nada a fazer com esta conexao.
+    /// A exigencia de cifra, a lista negra e a lista de IPs permitidos -- os
+    /// mesmos da porta de dados. Devolve `false` quando ja respondeu a recusa
+    /// e nao ha mais nada a fazer com esta conexao.
+    ///
+    /// # Por que a cifra e conferida AQUI, e num lugar so (pedido 370)
+    ///
+    /// `cifra_fio.exigir` decidia num lugar so -- o laco da porta de DADOS --
+    /// e era anunciado por todas. Medido em 18/09/2026 no mesmo servidor e no
+    /// mesmo instante: a porta nativa recusava e `POST /api {"op":"login"}`
+    /// devolvia 200 com a sessao aberta e a senha em claro, `/v1/login` idem,
+    /// `POST /mcp` devolvia o catalogo inteiro e o explorador servia 14.009
+    /// bytes. Interruptor de seguranca se mede pelo que RECUSA.
+    ///
+    /// Esta funcao ja era o portao de rede das tres portas HTTP, e o endpoint
+    /// `/mcp` entra por ela porque viaja na porta do REST -- entao a recusa
+    /// entra aqui, e em nenhum outro lugar. Espalha-la por rota seria a porta
+    /// dos fundos que a lei da casa manda procurar: *portao e UM so*, e a rota
+    /// que alguem esquecesse continuaria atendendo em claro.
+    ///
+    /// E ela entra ANTES da lista negra de proposito: quando a exigencia
+    /// morde, ela recusa todo pedido desta porta, entao decidir aqui poupa ate
+    /// a trava da lista -- o portao que decide se o trabalho acontece vem
+    /// antes do trabalho.
     fn portao_de_rede_http(&self, fluxo: &mut TcpStream, ip: &str, porta: u16, op: &str) -> bool {
         let agora = crate::agora_ms();
+        if self.config.cifra_fio.exigir && !self.proxy_desta_porta_http(op).0 {
+            self.recusar_http_em_claro(fluxo, ip, porta, op, agora);
+            return false;
+        }
         if let Some(b) = self.barrado(ip, agora) {
             self.anotar(&Acesso {
                 quando_ms: agora,
@@ -8222,6 +8278,71 @@ impl Servidor {
             return false;
         }
         true
+    }
+
+    /// Esta porta HTTP tem o proxy TLS declarado? E em que secao ele se
+    /// declara?
+    ///
+    /// O TLS do navegador e terminado por proxy reverso -- decisao do dono,
+    /// `docs/SEGURANCA.md` §7.1 --, e `"atras_de_proxy": true` e a DECLARACAO
+    /// de quem implanta. Ela nao e conferivel (o servidor nao tem como saber
+    /// se o proxy existe), e e por isso que ela e o escape ESCRITO da
+    /// exigencia nesta porta: a mesma forma do `"exigir": false` da porta de
+    /// dados e do `"verificar": false` da chave conferida -- escolha escrita
+    /// em vez de omissao.
+    ///
+    /// `rest` cobre as DUAS portas da secao (`bind` e `swagger_bind`), porque
+    /// sobem do mesmo bloco e do mesmo operador: e a mesma regra do aviso de
+    /// arranque, e uma segunda ideia de qual campo vale para o explorador
+    /// divergiria na primeira correcao feita numa so.
+    ///
+    /// Familia que ninguem declarou cai no lado SEGURO -- sem proxy, recusada.
+    /// No dia em que nascer uma quarta porta HTTP, ela e recusada ate alguem
+    /// escrever a secao dela aqui, em vez de nascer sendo a porta dos fundos.
+    fn proxy_desta_porta_http<'a>(&self, familia: &'a str) -> (bool, &'a str) {
+        match familia {
+            "web" => (self.config.web.atras_de_proxy, "web"),
+            "rest" | "swagger" => (self.config.rest.atras_de_proxy, "rest"),
+            _ => (false, familia),
+        }
+    }
+
+    /// A recusa de uma porta HTTP quando a comunicacao cifrada e exigida.
+    ///
+    /// Erro NOMEADO e com as duas saidas escritas, pelo mesmo motivo da recusa
+    /// da porta de dados: e a UNICA coisa que quem esta do outro lado recebe
+    /// deste servidor, e um "acesso negado" seco mandaria procurar a permissao
+    /// errada. Aqui o recado nao pode ser «peca o aperto de mao»: o navegador
+    /// fala TLS ou fala claro, e o aperto do fio nao e opcao para ele.
+    fn recusar_http_em_claro(
+        &self,
+        fluxo: &mut TcpStream,
+        ip: &str,
+        porta: u16,
+        familia: &str,
+        agora: i64,
+    ) {
+        let (_, secao) = self.proxy_desta_porta_http(familia);
+        let recado = self.msg("erro.cifra_exigida_nesta_porta_http", &[("secao", secao)]);
+        self.anotar(&Acesso {
+            quando_ms: agora,
+            ip: ip.to_string(),
+            porta_origem: porta,
+            op: familia.into(),
+            usuario: String::new(),
+            autenticado: false,
+            ok: false,
+            duracao_ms: 0,
+            erro: Some(recado.clone()),
+            database: String::new(),
+            tabela: String::new(),
+            codigo: 0,
+        });
+        // Escoa antes de fechar pelo mesmo motivo da recusa por lista negra:
+        // sem isto o RST engole a resposta, e quem foi recusado ve
+        // «Connection reset» em vez do que precisa fazer.
+        let _ = http::erro_json(fluxo, 403, &recado);
+        http::escoar(fluxo);
     }
 
     /// Atende um pedido da porta REST.
@@ -8768,6 +8889,12 @@ impl Servidor {
         let duracao = self.config.web.sessao_ms();
         let mut sessao = Sessao {
             ip: ip.to_string(),
+            // Os DOIS caminhos HTTP passam por aqui -- a interface web e o
+            // webservice REST --, e e por isso que a marca da entrada tambem
+            // mora num lugar so: uma copia em cada lado seria duas ideias do
+            // que e estar em claro, e a que alguem esquecesse voltaria a
+            // anunciar cifra onde nao ha.
+            entrada: Entrada::Http,
             ..Sessao::default()
         };
         let mut id_sessao = String::new();
@@ -9131,6 +9258,7 @@ impl Servidor {
         let mut sessao = Sessao {
             ligacao: id_ligacao,
             ip: ip.clone(),
+            entrada: Entrada::Dados,
             ..Sessao::default()
         };
         // Sai do registro por qualquer caminho -- inclusive os `return` do
@@ -24983,7 +25111,7 @@ mod testes_firewall_e_mensagens {
     }
 
     fn config_base(dir: &std::path::Path) -> Config {
-        Config {
+        let mut c = Config {
             base: dir.to_path_buf(),
             log_acessos: dir.join("acessos.log"),
             blacklist: dir.join("blacklist.json"),
@@ -24991,7 +25119,14 @@ mod testes_firewall_e_mensagens {
             jobs: dir.join("jobs.json"),
             token: "t".into(),
             ..Config::default()
-        }
+        };
+        // O ESCAPE ESCRITO, e ele esta aqui por assunto: desde 18/09/2026 a
+        // cifra do fio nasce exigida (pedido 370), e estes testes conectam em
+        // claro porque o que eles medem e OUTRA coisa. Sem esta linha, a
+        // recusa que eles leriam seria a da cifra, e a prova mediria o portao
+        // errado -- teste que passa (ou falha) por engano.
+        c.cifra_fio.exigir = false;
+        c
     }
 
     fn pedido(txt: &str) -> Json {
@@ -45745,7 +45880,7 @@ mod testes_das_threads {
     use std::io::Read;
 
     fn config_base(dir: &std::path::Path) -> Config {
-        Config {
+        let mut c = Config {
             base: dir.to_path_buf(),
             log_acessos: dir.join("acessos.log"),
             blacklist: dir.join("blacklist.json"),
@@ -45753,7 +45888,14 @@ mod testes_das_threads {
             jobs: dir.join("jobs.json"),
             token: "t".into(),
             ..Config::default()
-        }
+        };
+        // O ESCAPE ESCRITO, e ele esta aqui por assunto: desde 18/09/2026 a
+        // cifra do fio nasce exigida (pedido 370), e estes testes conectam em
+        // claro porque o que eles medem e OUTRA coisa. Sem esta linha, a
+        // recusa que eles leriam seria a da cifra, e a prova mediria o portao
+        // errado -- teste que passa (ou falha) por engano.
+        c.cifra_fio.exigir = false;
+        c
     }
 
     /// Sobe a porta de dados pelo laco DE PRODUCAO (`aceitar_ate_mandarem_parar`),
@@ -46185,7 +46327,7 @@ mod testes_da_saude_do_disco {
     use crate::usuarios::{Nivel, Permissoes};
 
     fn config_base(dir: &std::path::Path) -> Config {
-        Config {
+        let mut c = Config {
             base: dir.to_path_buf(),
             log_acessos: dir.join("acessos.log"),
             blacklist: dir.join("blacklist.json"),
@@ -46193,7 +46335,14 @@ mod testes_da_saude_do_disco {
             jobs: dir.join("jobs.json"),
             token: "t".into(),
             ..Config::default()
-        }
+        };
+        // O ESCAPE ESCRITO, e ele esta aqui por assunto: desde 18/09/2026 a
+        // cifra do fio nasce exigida (pedido 370), e estes testes conectam em
+        // claro porque o que eles medem e OUTRA coisa. Sem esta linha, a
+        // recusa que eles leriam seria a da cifra, e a prova mediria o portao
+        // errado -- teste que passa (ou falha) por engano.
+        c.cifra_fio.exigir = false;
+        c
     }
 
     /// Liga o rele falso e, se pedido, o SMS pelo gateway.

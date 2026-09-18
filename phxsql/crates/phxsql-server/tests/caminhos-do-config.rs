@@ -82,10 +82,16 @@ fn servidor_de_outro_diretorio_escreve_ao_lado_do_config() {
     std::fs::create_dir_all(&outro_dir).unwrap();
 
     let porta = porta_livre();
+    // O ESCAPE ESCRITO: desde 18/09/2026 a cifra do fio nasce exigida
+    // (pedido 370, ordem do dono), e este teste fala com a porta de dados em
+    // claro porque o que ele mede e ONDE os arquivos nascem. Sem esta linha a
+    // recusa lida aqui seria a da cifra, e a prova passaria a medir o portao
+    // errado.
     let config_json = format!(
         r#"{{
             "bind": "127.0.0.1:{porta}",
             "token": "t",
+            "cifra_fio": {{ "exigir": false }},
             "web": {{ "ligado": false }}
         }}"#
     );

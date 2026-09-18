@@ -221,6 +221,12 @@ fn o_esquema_diz_o_material_de_cada_tabela_com_a_cifra_ligada() {
     .unwrap();
     let mut c = Config::ler(&caminho).unwrap();
     assert!(cofre::ligado(), "o config.json nao ligou o cofre");
+    // O ESCAPE ESCRITO: desde 18/09/2026 a cifra do FIO nasce exigida (pedido
+    // 370, ordem do dono), e este teste fala com a porta de dados em claro
+    // porque o que ele mede e a cifra EM REPOUSO -- outra cifra, outro
+    // arquivo. Sem esta linha a recusa lida aqui seria a do fio, e a prova
+    // passaria a medir o portao errado.
+    c.cifra_fio.exigir = false;
     c.web.ligado = false;
     c.log_acessos = d.join("acessos.log");
     c.blacklist = d.join("blacklist.json");

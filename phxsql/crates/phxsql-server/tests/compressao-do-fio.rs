@@ -82,6 +82,12 @@ fn subir(base: &std::path::Path, porta: u16) -> Arc<Servidor> {
         max_linhas: (LINHAS as u64) * 2,
         ..Default::default()
     };
+    // O ESCAPE ESCRITO: desde 18/09/2026 a cifra do fio nasce exigida
+    // (pedido 370, ordem do dono), e esta bateria conecta em claro porque o
+    // que ela mede e a compressao do fio, que e outra camada. Sem esta
+    // linha a recusa lida aqui seria a da cifra, e a prova passaria a medir
+    // o portao errado.
+    c.cifra_fio.exigir = false;
     c.web.ligado = false;
     no_ar(Servidor::novo(c).unwrap(), porta)
 }

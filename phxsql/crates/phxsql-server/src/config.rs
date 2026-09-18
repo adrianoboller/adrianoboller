@@ -1724,7 +1724,18 @@ impl Default for CifraFio {
     fn default() -> Self {
         CifraFio {
             ligada: true,
-            exigir: false,
+            // Ordem do dono, 18/09/2026: *"a comunicacao deve obrigatoriamente
+            // ser cifrada"*. Nasce EXIGINDO, e `"exigir": false` e o escape
+            // ESCRITO -- o mesmo padrao do `"verificar": false` da chave que
+            // nasce conferida: escolha escrita em vez de omissao.
+            //
+            // A linha so pode estar assim porque o interruptor voltou a ser UM
+            // (pedido 370): as portas HTTP recusam pelo `portao_de_rede_http`,
+            // com `"atras_de_proxy": true` como o escape escrito DELAS, e o
+            // `encryption_exigida` parou de anunciar o que nao presta.
+            // Ligar isto antes teria transformado um furo conhecido em
+            // garantia anunciada.
+            exigir: true,
             exigir_amarra: false,
             chave_privada: String::new(),
             chave_privada_env: String::new(),
@@ -3679,14 +3690,23 @@ impl Config {
     /// carregam o mesmo dado em claro. Avisar so a primeira deixaria o irmao
     /// para tras, que e o defeito que esta casa ja pagou tres vezes num dia.
     ///
-    /// # E o segundo aviso, que e sobre ALCANCE
+    /// # E o segundo aviso, que mudou de assunto no pedido 370
     ///
-    /// `cifra_fio.exigir` recusa texto claro num lugar so: o laco da porta de
-    /// DADOS. Quem o liga com uma porta HTTP no ar fechou um fio e deixou o
-    /// outro aberto -- com o mesmo token e o mesmo login --, e hoje nada lhe
-    /// diz isso. E a mesma familia do campo de configuracao que promete mais
-    /// do que entrega, e a saida honesta enquanto as portas HTTP nao recusam
-    /// e o servidor dizer o alcance em voz alta.
+    /// Ate 18/09/2026 ele dizia o ALCANCE: `cifra_fio.exigir` recusava texto
+    /// claro num lugar so -- o laco da porta de DADOS --, e quem o ligava com
+    /// uma porta HTTP no ar fechava um fio e deixava o outro aberto, com o
+    /// mesmo token e o mesmo login. Isso acabou: as portas HTTP recusam
+    /// (`Servidor::portao_de_rede_http`).
+    ///
+    /// O aviso continua existindo porque a CONSEQUENCIA e dura e silenciosa:
+    /// com a exigencia ligada -- que agora e o padrao -- uma porta HTTP sem
+    /// proxy declarado nao atende mais nada, e quem so trocou o binario veria
+    /// a tela morrer sem saber por que. Ele nomeia as portas e as duas saidas
+    /// escritas.
+    ///
+    /// E ele NAO sai para quem declarou o proxy: aviso que aparece para sempre
+    /// numa instalacao correta e aviso que ninguem le, e isso gasta a
+    /// confianca do aviso verdadeiro.
     fn avisar_o_que_viaja_em_claro(&mut self) {
         let mut novos: Vec<String> = Vec::new();
         let portas: [(&str, bool, &str, bool, &str); 3] = [
@@ -3712,12 +3732,14 @@ impl Config {
                 "rest",
             ),
         ];
-        let mut ligadas: Vec<&str> = Vec::new();
+        let mut sem_proxy: Vec<&str> = Vec::new();
         for (rotulo, ligada, bind, atras_de_proxy, secao) in portas {
             if !ligada {
                 continue;
             }
-            ligadas.push(rotulo);
+            if !atras_de_proxy {
+                sem_proxy.push(rotulo);
+            }
             if atras_de_proxy || !escuta_fora_da_maquina(bind) {
                 continue;
             }
@@ -3732,18 +3754,68 @@ impl Config {
                  docs/SEGURANCA.md 7.1."
             ));
         }
-        if self.cifra_fio.exigir && !ligadas.is_empty() {
+        if self.cifra_fio.exigir && !sem_proxy.is_empty() {
             novos.push(format!(
-                "cifra_fio.exigir esta ligado, e ele vale SO para a porta \
-                 de dados (bind). Continuam atendendo em claro, com o mesmo \
-                 token e o mesmo login: {}. E ele tambem nao alcanca o que \
-                 este servidor CONECTA -- replicacao.origens[].cifra, \
-                 cluster.cifra e web.servidores[].cifra sao interruptores \
-                 proprios, e os tres nascem desligados.",
-                ligadas.join(", ")
+                "cifra_fio.exigir esta ligado, e por isso estas portas HTTP \
+                 RECUSAM todo pedido enquanto ninguem declarar o proxy: {}. \
+                 HTTP e texto puro e este servidor nao termina TLS (petrea das \
+                 zero dependencias) -- ponha um proxy reverso terminando TLS na \
+                 frente e escreva \"atras_de_proxy\": true na secao web ou rest, \
+                 ou escreva \"exigir\": false em cifra_fio para voltar ao claro. \
+                 Receita em docs/SEGURANCA.md 7.1.",
+                sem_proxy.join(", ")
+            ));
+        }
+        let saidas = self.saidas_em_claro();
+        if self.cifra_fio.exigir && !saidas.is_empty() {
+            novos.push(format!(
+                "cifra_fio.exigir e INBOUND-ONLY: ele decide sobre quem conecta \
+                 NESTE servidor e nada sobre o que este servidor CONECTA, e \
+                 estas saidas estao em claro: {}. Desde 18/09/2026 o PhxSql \
+                 exige a cifra de fabrica -- entao, se o outro lado for um \
+                 PhxSql desta versao, ele vai RECUSAR esta conexao com \
+                 \"peca o aperto de mao\" e a replicacao (ou o pulso do \
+                 cluster) para sem mais aviso. Ligue o interruptor de cada \
+                 saida, ou escreva \"exigir\": false la do outro lado.",
+                saidas.join(", ")
             ));
         }
         self.avisos.extend(novos);
+    }
+
+    /// As saidas deste servidor que viajam em CLARO, com o nome do interruptor
+    /// de cada uma.
+    ///
+    /// Existe por causa da virada de 18/09/2026 (pedido 370): com `exigir`
+    /// nascendo ligado, um source de fabrica RECUSA uma replica de fabrica --
+    /// os interruptores de saida nascem desligados, e os dois padroes juntos
+    /// param a replicacao. O servidor nao tem como saber a configuracao do
+    /// outro lado, entao o aviso diz o que ele SABE (esta saida vai em claro) e
+    /// o que isso implica hoje, em vez de calar.
+    ///
+    /// So o que esta CONFIGURADO entra: um servidor isolado, que e o caso
+    /// comum, nao ganha aviso nenhum -- aviso que aparece sempre ninguem le.
+    fn saidas_em_claro(&self) -> Vec<String> {
+        let mut fora = Vec::new();
+        for o in &self.replicacao.origens {
+            if !o.cifra {
+                fora.push(format!(
+                    "replicacao.origens[{:?}].cifra (source {}:{})",
+                    o.nome, o.host, o.porta
+                ));
+            }
+        }
+        if let Some(c) = &self.cluster {
+            if !c.nos.is_empty() && !c.cifra {
+                fora.push(format!("cluster.cifra ({} nos)", c.nos.len()));
+            }
+        }
+        for sv in &self.web.servidores {
+            if !sv.cifra {
+                fora.push(format!("web.servidores[{:?}].cifra", sv.endereco));
+            }
+        }
+        fora
     }
 
     fn validar(&self) -> Result<()> {
@@ -4751,26 +4823,41 @@ mod tests {
         assert!(!phxsql_store::cofre::ligado());
     }
 
-    /// **O comportamento velho.** Um `config.json` que nunca ouviu falar da
-    /// cifra do fio nao exige nada de ninguem.
+    /// **O padrao, e ele MUDOU DE SIGNIFICADO em 18/09/2026 (pedido 370).**
     ///
-    /// E o teste que mais importa nesta frente: guarda nova entra PEDIDA.
+    /// Ate ontem este teste se chamava `sem_a_secao_cifra_fio_nada_e_exigido` e
+    /// travava o contrario: sem a secao, nada era exigido, porque guarda nova
+    /// entra PEDIDA. Quem revogou isso foi o dono, em palavra propria -- *«A
+    /// comunicacao deve obrigatoriamente ser cifrada»* --, e o teste nao foi
+    /// apagado: **ele mudou de lado, e o lado novo esta escrito aqui.** Teste
+    /// que some leva a garantia junto, e a garantia continua sendo a mesma
+    /// pergunta: «o que acontece com quem so trocou o binario?»
+    ///
+    /// A resposta nova, dita sem enfeite: **o cliente que nao fala o aperto
+    /// para de entrar pela porta de dados, e a porta HTTP sem proxy declarado
+    /// para de atender**, ate alguem escrever `"exigir": false` ou
+    /// `"atras_de_proxy": true`. Isso e mudanca de implantacao, foi decidida, e
+    /// e o que a linha abaixo trava contra um retorno silencioso.
+    ///
+    /// O que NAO mudou, e por isso continua travado aqui: `exigir_amarra`
+    /// nasce desligada (guarda nova entra pedida continua valendo para ela) e
+    /// `ligada` nasce ligada, que nunca mudou nada para ninguem.
     #[test]
-    fn sem_a_secao_cifra_fio_nada_e_exigido() {
+    fn sem_a_secao_cifra_fio_a_cifra_ja_e_exigida() {
         let j = Json::analisar(r#"{"token":"t"}"#).unwrap();
         let c = Config::de_json(&j).unwrap();
         assert!(
-            !c.cifra_fio.exigir,
-            "sem a secao, o servidor passou a EXIGIR o tunel: todo cliente \
-             velho para de funcionar na atualizacao"
+            c.cifra_fio.exigir,
+            "sem a secao, o servidor NAO exige o tunel: a ordem do dono de \
+             18/09/2026 voltou atras sem ninguem ter pedido"
         );
         assert!(
             !c.cifra_fio.exigir_amarra,
             "sem a secao, o servidor passou a EXIGIR a amarracao do canal: \
              quem so pede o tunel para de entrar"
         );
-        // `ligada` NASCE ligada, e isso nao muda nada para ninguem: o aperto
-        // so acontece se o cliente pedir, e cliente velho nunca pede.
+        // `ligada` NASCE ligada, e isso nunca mudou nada para ninguem: o aperto
+        // so acontece se o cliente pedir.
         assert!(c.cifra_fio.ligada);
         assert!(c.estranhas.is_empty());
     }
@@ -6250,7 +6337,7 @@ mod tests {
     /// O `"exigir": false` esta escrito, e nao omitido, de proposito: este
     /// teste e sobre o aviso das PORTAS, e escrever o campo o deixa dizendo a
     /// mesma coisa no dia em que o padrao do `exigir` virar. Quem trava o
-    /// padrao e o `sem_a_secao_cifra_fio_nada_e_exigido`, e ele sozinho --
+    /// padrao e o `sem_a_secao_cifra_fio_a_cifra_ja_e_exigida`, e ele sozinho --
     /// dois testes travando a mesma coisa viram dois lugares onde a lei pode
     /// divergir de si mesma.
     #[test]
@@ -6275,23 +6362,21 @@ mod tests {
         assert!(c.avisos.is_empty(), "{:?}", c.avisos);
     }
 
-    /// **O alcance do `cifra_fio.exigir`, dito em voz alta no arranque.**
+    /// **O aviso do `cifra_fio.exigir`, e ele MUDOU DE ASSUNTO no pedido 370.**
     ///
-    /// Medido em 18/09/2026 pelo inventario de seguranca: com
-    /// `cifra_fio.exigir: true`, a porta de dados recusa o texto claro e, no
-    /// MESMO servidor e no MESMO instante, `POST /api {"op":"login"}` devolve
-    /// 200 com a sessao aberta e a senha em claro. O `exigir` e lido num
-    /// lugar so que decide algo -- `servidor.rs:9270`, o laco da porta de
-    /// dados --, e nao toca em porta HTTP nenhuma.
+    /// Ate 18/09/2026 este teste travava o ALCANCE: o `exigir` era lido num
+    /// lugar so que decidia algo -- o laco da porta de dados --, e no MESMO
+    /// servidor e no MESMO instante `POST /api {"op":"login"}` devolvia 200
+    /// com a sessao aberta e a senha em claro. Enquanto as portas HTTP nao
+    /// recusassem, a saida honesta era o servidor DIZER o alcance.
     ///
-    /// Enquanto as portas HTTP nao recusarem (o conserto mora no
-    /// `servidor.rs`), a saida honesta e o servidor DIZER o alcance. Campo
-    /// que promete protecao maior que a prestada e da familia do
-    /// `recursos.cache_paginas` que anunciava um cache inexistente -- e pior,
-    /// porque aqui alguem liga o interruptor e deixa a tela no ar confiando
-    /// nele.
+    /// **Elas passaram a recusar**, e o teste nao foi apagado: o assunto do
+    /// aviso virou a CONSEQUENCIA. Com a exigencia ligada -- que agora e o
+    /// padrao --, uma porta HTTP sem proxy declarado nao atende mais nada, e
+    /// quem so trocou o binario veria a tela morrer sem saber por que. O aviso
+    /// nomeia as portas e as duas saidas escritas.
     #[test]
-    fn exigir_a_cifra_do_fio_com_porta_http_no_ar_avisa_o_alcance() {
+    fn exigir_a_cifra_do_fio_com_porta_http_sem_proxy_avisa_que_ela_recusa() {
         let txt = r#"{"token":"x","cifra_fio":{"exigir":true},
             "web":{"ligado":true},"rest":{"ligado":true}}"#;
         let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
@@ -6300,17 +6385,90 @@ mod tests {
             .iter()
             .find(|a| a.starts_with("cifra_fio.exigir"))
             .unwrap_or_else(|| panic!("o alcance ficou calado: {:?}", c.avisos));
-        // Nomeia as portas que continuam em claro -- lista generica nao
-        // ensina qual fechar.
+        // Nomeia as portas que vao recusar -- lista generica nao ensina qual
+        // declarar.
         assert!(aviso.contains("web.bind"), "{aviso}");
         assert!(aviso.contains("rest.bind"), "{aviso}");
-        // E diz que o `exigir` tambem nao cobre o que o servidor CONECTA: a
-        // replica, o cluster e a web->remoto tem interruptor proprio, e os
-        // tres nascem desligados. Medido em 18/09/2026: `replica.rs` nao
-        // menciona `cifra_fio` uma unica vez.
-        assert!(aviso.contains("replicacao.origens[].cifra"), "{aviso}");
-        assert!(aviso.contains("cluster.cifra"), "{aviso}");
-        assert!(aviso.contains("web.servidores[].cifra"), "{aviso}");
+        // E diz as DUAS saidas escritas, senao o aviso vira um beco.
+        assert!(aviso.contains("atras_de_proxy"), "{aviso}");
+        assert!(aviso.contains("RECUSAM"), "{aviso}");
+        // O alcance INBOUND-ONLY saiu daqui de proposito: ele virou aviso
+        // proprio, que so sai quando ha saida CONFIGURADA em claro -- ver
+        // `exigir_com_saida_em_claro_avisa_que_o_outro_lado_vai_recusar`.
+        // Preso a este, ele apareceria em toda instalacao com tela, inclusive
+        // nas que nao conectam em lugar nenhum, e aviso que aparece sempre
+        // ninguem le.
+        assert!(
+            !aviso.contains("cluster.cifra"),
+            "o alcance inbound-only voltou a viajar no aviso das portas: \
+             {aviso}"
+        );
+    }
+
+    /// **O outro sentido: quem declarou o proxy nao ganha aviso nenhum.**
+    ///
+    /// Aviso que aparece para sempre numa instalacao correta e aviso que
+    /// ninguem le, e isso gasta a confianca do aviso verdadeiro. Com
+    /// `exigir` nascendo ligado, sem esta guarda o aviso sairia em TODA
+    /// instalacao com tela -- que e a instalacao normal.
+    #[test]
+    fn exigir_com_o_proxy_declarado_nao_avisa_nada() {
+        let txt = r#"{"token":"x","cifra_fio":{"exigir":true},
+            "web":{"ligado":true,"atras_de_proxy":true},
+            "rest":{"ligado":true,"swagger_ligado":true,"atras_de_proxy":true}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(c.avisos.is_empty(), "{:?}", c.avisos);
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+    }
+
+    /// **A virada mata a replicacao de fabrica, e o arranque tem de dizer.**
+    ///
+    /// Achado desta frente, 18/09/2026, e ele nao estava em teste nenhum: com
+    /// `exigir` nascendo ligado, um SOURCE de fabrica recusa uma REPLICA de
+    /// fabrica -- porque `replicacao.origens[].cifra` continua nascendo
+    /// desligado. Os dois padroes juntos param a replicacao, e a suite inteira
+    /// fica verde, porque as baterias de replicacao escrevem o escape dos dois
+    /// lados.
+    ///
+    /// O servidor nao tem como saber a configuracao do outro lado. Entao o
+    /// aviso diz o que ele SABE (esta saida vai em claro) e o que isso implica
+    /// hoje, nomeando o interruptor de cada uma.
+    #[test]
+    fn exigir_com_saida_em_claro_avisa_que_o_outro_lado_vai_recusar() {
+        let txt = r#"{"token":"x","cifra_fio":{"exigir":true},
+            "replicacao":{"papel":"replica","origens":[
+              {"nome":"matriz","host":"10.0.0.9","porta":5000}]}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        let aviso = c
+            .avisos
+            .iter()
+            .find(|a| a.contains("INBOUND-ONLY"))
+            .unwrap_or_else(|| panic!("a saida em claro ficou calada: {:?}", c.avisos));
+        // Nomeia a saida E o source: uma lista de interruptores nao diz qual
+        // conexao vai parar.
+        assert!(aviso.contains("replicacao.origens"), "{aviso}");
+        assert!(aviso.contains("matriz"), "{aviso}");
+        assert!(aviso.contains("10.0.0.9:5000"), "{aviso}");
+        assert!(aviso.contains("RECUSAR"), "{aviso}");
+    }
+
+    /// O outro sentido, e ele e o que faz o de cima significar alguma coisa:
+    /// com a saida CIFRADA nao ha aviso -- e num servidor isolado, que e o
+    /// caso comum, tambem nao. Aviso que aparece sempre ninguem le.
+    #[test]
+    fn saida_cifrada_e_servidor_isolado_nao_ganham_aviso_de_saida() {
+        let cifrada = r#"{"token":"x","cifra_fio":{"exigir":true},
+            "replicacao":{"papel":"replica","origens":[
+              {"nome":"matriz","host":"10.0.0.9","porta":5000,"cifra":true}]}}"#;
+        let c = Config::de_json(&Json::analisar(cifrada).unwrap()).unwrap();
+        assert!(
+            !c.avisos.iter().any(|a| a.contains("INBOUND-ONLY")),
+            "{:?}",
+            c.avisos
+        );
+        let isolado = r#"{"token":"x","cifra_fio":{"exigir":true}}"#;
+        let c = Config::de_json(&Json::analisar(isolado).unwrap()).unwrap();
+        assert!(c.avisos.is_empty(), "{:?}", c.avisos);
     }
 
     /// Sem porta HTTP no ar, o `exigir` cobre o que ha -- e nao avisa nada.

@@ -304,7 +304,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 197
+PISO_DAS_ENTRADAS = 200
 
 # ------------------------------------------------------------- APOSENTADAS
 #
@@ -324,7 +324,25 @@ PISO_DAS_ENTRADAS = 197
 # leitor consegue conferir, e e' por isso que o motivo e obrigatorio.
 #
 # Formato: {"id": …, "data": "DD/MM/AAAA", "motivo": …}
-APOSENTADAS = []
+APOSENTADAS = [
+    {
+        "id": "cifra-do-fio-imposta",
+        "data": "18/09/2026",
+        "motivo": (
+            "o defeito que ela repunha -- `cifra_fio.exigir: true` de fabrica "
+            "-- virou o PRODUTO, por ordem do dono (*a comunicacao deve "
+            "obrigatoriamente ser cifrada*, pedido 370). Guarda cujo defeito "
+            "deixou de existir nao tem o que repor. Ela nao foi remendada para "
+            "o numero fechar: nasceu no lugar dela a "
+            "`cifra-do-fio-rebaixada`, que repoe o defeito CONTRARIO (a cifra "
+            "voltar a ser opcional) e cuja prova e o mesmo teste, tambem "
+            "trocado de lado "
+            "(`o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo`). "
+            "O que a petrea *guarda nova entra pedida* continua protegendo "
+            "ficou com o escape escrito, e ele esta no `seguem` da nova."
+        ),
+    },
+]
 
 
 # ------------------------------------------- A QUINTA REGUA (pedido 269)

@@ -1524,33 +1524,83 @@ GUARDAS = [
     # 22. A cifra do fio: o `exigir` imposto em vez de pedido
     # -----------------------------------------------------------------------
     {
-        "id": "cifra-do-fio-imposta",
-        "titulo": "a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho",
+        "id": "cifra-do-fio-rebaixada",
+        "titulo": "a cifra do fio de volta a OPCIONAL por padrão",
         "porque": (
-            "regra petrea: guarda nova entra pedida, nao imposta. Protecao que "
-            "quebra todo cliente antigo nao e protecao, e estrago -- e o teste "
-            "que trava isso e o do comportamento VELHO, nao o do novo."
+            "ordem do dono, 18/09/2026: *a comunicacao deve obrigatoriamente "
+            "ser cifrada*. `cifra_fio.exigir` nasce `true`, e `\"exigir\": "
+            "false` e o escape ESCRITO -- o mesmo padrao do `\"verificar\": "
+            "false` da chave que nasce conferida."
+            "\n\nESTA GUARDA TROCOU DE LADO em 18/09/2026, e o historico fica "
+            "escrito porque ele ensina: ate o pedido 370 ela se chamava "
+            "`cifra-do-fio-imposta` e repunha o defeito CONTRARIO -- exigir a "
+            "cifra por padrao --, em nome da petrea *guarda nova entra pedida, "
+            "nao imposta*. Quem revogou a petrea para ESTE interruptor foi o "
+            "dono, e o teste que ela vigiava "
+            "(`cliente_sem_cifra_continua_como_antes`) mudou de lado junto, "
+            "virando `o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo`. "
+            "O que a petrea continua protegendo esta no escape escrito, e ele "
+            "tem guarda propria: o `o_escape_escrito_deixa_o_cliente_em_claro_entrar` "
+            "esta em `seguem`, e nao em `caem` -- ele e o que fica IGUAL dos "
+            "dois lados da virada."
         ),
         "arquivo": "crates/phxsql-server/src/config.rs",
-        "trecho": """        CifraFio {
-            ligada: true,
-            exigir: false,
+        "trecho": """            exigir: true,
+            exigir_amarra: false,
 """,
-        "troca": """        CifraFio {
-            ligada: true,
-            // DEFEITO REPOSTO: exigir o tunel por padrao. Parece o padrao
-            // seguro, e e o padrao que derruba toda instalacao existente no
-            // primeiro pedido depois da atualizacao.
-            exigir: true,
+        "troca": """            // DEFEITO REPOSTO: a cifra volta a ser opcional por padrao.
+            // Parece inofensivo -- ninguem perde acesso --, e e o padrao que
+            // deixa senha, token e dado viajarem em claro em toda instalacao
+            // que nao souber que precisa escrever o campo.
+            exigir: false,
+            exigir_amarra: false,
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "cifra-do-fio"],
         "caem": [
-            "cliente_sem_cifra_continua_como_antes",
+            "o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo",
         ],
         "seguem": [
+            "o_escape_escrito_deixa_o_cliente_em_claro_entrar",
             "com_o_aperto_o_mesmo_trabalho_acontece_cifrado",
             "exigir_recusa_texto_claro_e_deixa_o_tunel_passar",
+        ],
+    },
+    # 22-bis. As portas HTTP que ignoravam o interruptor da cifra
+    # -----------------------------------------------------------------------
+    {
+        "id": "portas-http-sem-o-portao-da-cifra",
+        "titulo": "as portas HTTP atendendo em claro com a cifra exigida",
+        "porque": (
+            "pedido 370, medido contra servidor de pe em 18/09/2026: com "
+            "`cifra_fio.exigir: true` a porta nativa recusava e, no MESMO "
+            "servidor e no MESMO instante, `POST /api {\"op\":\"login\"}` "
+            "devolvia 200 com a sessao aberta e a senha em claro; `/v1/login`, "
+            "`POST /mcp` e o explorador da especificacao idem. Interruptor de "
+            "seguranca se mede pelo que ele RECUSA, nunca pelo que publica."
+            "\n\nO portao e UM so -- `portao_de_rede_http` --, e por ele "
+            "entram as tres portas HTTP e o endpoint `/mcp`, que viaja na porta "
+            "do REST. Repor o defeito e apagar essa conferencia."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if self.config.cifra_fio.exigir && !self.proxy_desta_porta_http(op).0 {
+            self.recusar_http_em_claro(fluxo, ip, porta, op, agora);
+            return false;
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO: a porta HTTP volta a ignorar o interruptor da
+        // cifra. A porta de dados continua recusando ao lado, e e por isso
+        // que o furo passou um dia inteiro sem aparecer em teste nenhum.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "cifra-das-portas-http"],
+        "caem": [
+            "com_a_cifra_exigida_as_portas_http_recusam_e_dizem_o_que_fazer",
+            "sem_a_secao_cifra_fio_a_porta_http_ja_nasce_recusando",
+        ],
+        "seguem": [
+            "com_o_escape_escrito_as_portas_http_continuam_como_antes",
+            "o_proxy_declarado_deixa_as_portas_http_atenderem_com_a_cifra_exigida",
         ],
     },
     # 23. A cifra do fio: a transcricao que nao cobre o aperto inteiro

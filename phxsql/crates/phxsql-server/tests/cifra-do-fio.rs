@@ -237,36 +237,42 @@ fn exercitar(c: &mut Conexao, marca: &str) {
 // O teste que mais importa
 // ---------------------------------------------------------------------------
 
-/// **A regra petrea.** Um cliente que nunca ouviu falar do aperto de mao grava
-/// e le exatamente como hoje -- sem campo novo, sem linha nova, sem saber que
-/// existe cifra do fio.
+/// **O padrao, e este teste MUDOU DE LADO em 18/09/2026 (pedido 370).**
 ///
-/// Guarda nova entra PEDIDA. Se este teste cair, a frente inteira esta errada,
-/// por melhor que a criptografia esteja.
+/// Ate ontem ele se chamava `cliente_sem_cifra_continua_como_antes` e travava
+/// a regra da casa: guarda nova entra PEDIDA, entao um `config.json` sem a
+/// secao `cifra_fio` deixava o cliente velho gravar e ler como sempre. **Quem
+/// revogou isso foi o dono**, em palavra propria -- *«A comunicacao deve
+/// obrigatoriamente ser cifrada»* --, e o teste nao foi apagado: ele mudou de
+/// lado, e o lado novo esta escrito aqui. Teste que some leva a garantia
+/// junto, e a garantia continua sendo a MESMA pergunta: «o que acontece com
+/// quem so trocou o binario?»
 ///
-/// # Por que ele sobe de um `config.json` DE ONTEM, e nao de um `Config` montado
+/// A resposta nova, sem enfeite: **ele para de entrar, e o servidor lhe diz o
+/// que fazer.** A recusa e uma linha JSON em claro com erro nomeado, que um
+/// cliente velho sabe exibir -- e nao um silencio, que e a diferenca entre uma
+/// mudanca dura e uma mudanca cruel.
+///
+/// # Por que ele sobe de um `config.json` sem a secao, e nao de um `Config`
 ///
 /// Porque a primeira versao deste teste montava o `Config` na mao e escrevia
-/// `cifra_fio.exigir = false` -- e ai ele parava de provar o que existe para
-/// provar. O executor das guardas mediu: com o PADRAO trocado para
-/// `exigir: true`, este teste continuava VERDE, porque ele mesmo desfazia a
-/// troca. Teste que passa por engano e pior que teste que falta.
-///
-/// Agora ele le um arquivo SEM a secao `cifra_fio`, que e literalmente o
-/// `config.json` de quem atualizou o binario e nao mexeu em nada.
+/// `cifra_fio.exigir = false` -- e ai ele parava de provar o padrao. O
+/// executor das guardas mediu: com o padrao trocado, ele continuava VERDE,
+/// porque ele mesmo desfazia a troca. Teste que passa por engano e pior que
+/// teste que falta, e a razao vale igual agora que o padrao e o outro.
 #[test]
-fn cliente_sem_cifra_continua_como_antes() {
+fn o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo() {
     let base = pasta("velho");
     let porta = porta_livre();
     let _s = subir_do_arquivo(&base, porta, "");
 
-    // A prova de que o arquivo de ontem NAO liga a exigencia -- e a leitura do
-    // padrao de verdade, e nao de um campo que este teste escreveu.
+    // A leitura do padrao DE VERDADE, e nao de um campo que este teste
+    // escreveu: o arquivo nao fala de `cifra_fio` em lugar nenhum.
     let lido = Config::ler(base.join("config.json")).unwrap();
     assert!(
-        !lido.cifra_fio.exigir,
-        "um config.json sem a secao cifra_fio passou a EXIGIR o tunel: todo \
-         cliente velho para de funcionar na atualizacao"
+        lido.cifra_fio.exigir,
+        "um config.json sem a secao cifra_fio NAO exige o tunel: a ordem do \
+         dono de 18/09/2026 voltou atras sem ninguem ter pedido"
     );
     assert!(
         lido.estranhas.is_empty(),
@@ -275,9 +281,20 @@ fn cliente_sem_cifra_continua_como_antes() {
     );
 
     let mut c = Conexao::abrir(porta);
-    let r = c.pedir(&format!(r#"{{"token":"{TOKEN}","op":"ping"}}"#));
-    assert!(r.contains("\"ok\":true"), "ping: {r}");
-    exercitar(&mut c, "velho");
+    c.mandar_cru(&format!(r#"{{"token":"{TOKEN}","op":"ping"}}"#));
+    let r = c.ler_cru();
+    // O DANO, e nao so o veredito: o ping nao pode ter sido atendido.
+    assert!(
+        !r.contains("\"ok\":true"),
+        "o cliente velho foi atendido em claro: {r}"
+    );
+    // E a recusa tem de DIZER o que fazer -- um "acesso negado" seco mandaria
+    // procurar a permissao errada.
+    assert!(r.contains("cifrar"), "a recusa nao diz o que fazer: {r}");
+    assert!(
+        c.ler_cru().is_empty(),
+        "a conexao continuou aberta em claro"
+    );
 
     // E o servidor NAO escreveu a chave do fio: ninguem pediu o aperto.
     assert!(
@@ -301,6 +318,10 @@ fn cliente_sem_cifra_continua_como_antes() {
 /// significado e este fica exatamente como esta -- e e por isso que ele entra
 /// ANTES da troca, e nao depois: guarda escrita depois do fato nao prova que o
 /// fato nao quebrou nada.
+///
+/// **Aconteceu em 18/09/2026, e a previsao se cumpriu letra por letra:** o
+/// primeiro virou `o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo`
+/// e este nao mudou uma linha. Ele e o que fica IGUAL dos dois lados da virada.
 ///
 /// E o padrao e o mesmo da chave conferida: quem NAO quer a guarda escreve o
 /// `false`, em vez de ganha-la por esquecimento.
@@ -444,6 +465,43 @@ fn exigir_recusa_texto_claro_e_deixa_o_tunel_passar() {
     let mut c2 = Conexao::abrir(porta);
     c2.cifrar(None).expect("o aperto tinha de fechar");
     exercitar(&mut c2, "exigir");
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// **A diretiva da conexao de DADOS diz a verdade dela** -- a outra metade da
+/// prova do pedido 370.
+///
+/// `encryption_exigida` mora em `diretivas_da_conexao`, cuja documentacao diz
+/// «o que e verdade DESTA conexao», e ate 18/09/2026 ele publicava o campo do
+/// `config.json` para quem quer que perguntasse: a conexao HTTP em claro
+/// recebia `true` (a metade que `cifra-das-portas-http.rs` prova). Aqui se
+/// prova o sentido CONTRARIO, que e o que impede o conserto de virar um `false`
+/// constante: dentro do tunel, com a exigencia ligada, a resposta e `true` --
+/// e ela e verdade, porque o texto claro foi recusado nesta porta.
+///
+/// Sem esta metade, trocar o campo por `false` seco passaria verde.
+#[test]
+fn dentro_do_tunel_a_diretiva_confirma_a_cifra_desta_conexao() {
+    let base = pasta("diretiva-do-tunel");
+    let porta = porta_livre();
+    let _s = subir(&base, porta, true, true);
+
+    let mut c = Conexao::abrir(porta);
+    c.cifrar(None).expect("o aperto tinha de fechar");
+    let r = c.pedir(&format!(
+        r#"{{"token":"{TOKEN}","op":"diretivas","escopo":"conexao"}}"#
+    ));
+    let j = Json::analisar(&r).unwrap();
+    let d = j.campo("resultado").unwrap_or(&j);
+    assert_eq!(d.texto_ou("via", ""), "dados", "{r}");
+    assert!(
+        d.booleano_ou("encryption_exigida", false),
+        "a conexao de dados sob exigencia tinha de confirmar: {r}"
+    );
+    assert!(
+        d.booleano_ou("encryption_neste_canal", false),
+        "esta conexao ESTA dentro do tunel e a diretiva nao diz: {r}"
+    );
     let _ = std::fs::remove_dir_all(&base);
 }
 

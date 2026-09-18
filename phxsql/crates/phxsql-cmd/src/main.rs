@@ -17,6 +17,7 @@ phxsqlcmd -- console do PhxSql (fala o protocolo JSON com um servidor)
 USO:
   phxsqlcmd [--host 127.0.0.1] [--porta 5000] [--token <t>]
             [--usuario <login>] [--database <banco>] [--comando '<linha>']
+            [--sem-cifra]
 
 NA LINHA DO CONSOLE:
   bancos                              uma operacao sem argumento
@@ -36,6 +37,12 @@ SEM HISTORICO E SEM SETAS NESTA RODADA. A seta para cima escreve ^[[A na tela
 em vez de trazer o comando anterior, e ctrl+R nao procura nada. Um readline de
 verdade e um terminal em modo cru, e isso e uma crate -- e a regra do projeto e
 zero dependencias externas. A leitura de linha da std faz o resto.
+
+A CONEXAO NASCE CIFRADA. O console faz o aperto de mao do fio antes de
+qualquer pedido -- o servidor exige isso de fabrica desde 18/09/2026. Sem o
+PINO da chave do servidor (que o console ainda nao aceita), o tunel protege de
+escuta PASSIVA e nada mais. Para um servidor com \"cifra_fio\": {\"ligada\":
+false}, use --sem-cifra: e escolha escrita, e nao um rebaixamento automatico.
 
 A SENHA vem de PHXSQL_SENHA, ou e perguntada (e aparece na tela). Passar
 --senha funciona e e menos seguro: o argumento aparece no `ps` e fica no
@@ -95,7 +102,15 @@ fn main() -> ExitCode {
     let token = valor(&args, "--token").unwrap_or_default();
     let usuario = valor(&args, "--usuario").unwrap_or_default();
 
-    let mut console = match Console::ligar(&host, porta, &token, Duration::from_secs(30)) {
+    // A conexao nasce CIFRADA (pedido 370); `--sem-cifra` e o escape escrito,
+    // para o servidor que nao atende o aperto (`cifra_fio.ligada: false`).
+    let em_claro = args.iter().any(|a| a == "--sem-cifra");
+    let ligar = if em_claro {
+        Console::ligar_em_claro
+    } else {
+        Console::ligar
+    };
+    let mut console = match ligar(&host, porta, &token, Duration::from_secs(30)) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("nao conectei em {host}:{porta}: {e}");

@@ -149,14 +149,24 @@ Uma opção de configuração no **servidor**:
 }
 ```
 
-* **`exigir: false` (o padrão, e o padrão é o comportamento de hoje).** O
-  servidor aceita claro e aceita cifrado. Cliente velho grava e lê igual a
-  hoje, sem saber que existe aperto. É o teste que mais importa desta rodada:
-  `cliente_sem_cifra_continua_como_antes`.
-* **`exigir: true`.** O servidor recusa **qualquer** pedido que não venha
-  dentro do túnel. A recusa é uma linha JSON em claro, com erro nomeado, e a
-  conexão fecha em seguida — cliente velho recebe um erro que sabe exibir, em
-  vez de um silêncio.
+* **`exigir: true` — e ele é o PADRÃO desde 18/09/2026** (ordem do dono, pedido
+  370: *«A comunicação deve obrigatoriamente ser cifrada.»*). O servidor recusa
+  **qualquer** pedido que não venha dentro do túnel. A recusa é uma linha JSON
+  em claro, com erro nomeado, e a conexão fecha em seguida — cliente velho
+  recebe um erro que sabe exibir, em vez de um silêncio. Provado pelo soquete
+  em `o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo`, que sobe
+  de um `config.json` **sem** a seção (teste que escreve o campo não prova o
+  padrão dele) e mede o dano, não só o veredito.
+* **`exigir: false` — o ESCAPE ESCRITO.** O servidor aceita claro e aceita
+  cifrado, exatamente como antes. Quem precisa de transição escreve o campo, e
+  aí é escolha escrita em vez de omissão — o mesmo padrão do `"verificar":
+  false` da chave que nasce conferida. É o teste que **não mudou de significado
+  com a virada**: `o_escape_escrito_deixa_o_cliente_em_claro_entrar`.
+* **E as portas HTTP entraram no mesmo interruptor** (pedido 370): com
+  `exigir` ligado, `/api`, `/v1`, `/mcp` e o explorador da especificação
+  recusam, porque HTTP é texto puro. O escape delas é `"atras_de_proxy": true`
+  — o TLS é do proxy reverso, e a receita está em `docs/SEGURANCA.md` §7.0 e
+  §7.1.
 
 ### Concordo com a solução? Sim, e este é o argumento
 
@@ -689,7 +699,7 @@ resposta de protocolo — o `/saude` diz por servidor apenas `cifra` e
 | `fio::testes::quem_apresenta_estatica_alheia_nao_fecha` | a etiqueta final depende da PRIVADA |
 | `fio::testes::efemera_de_ordem_pequena_derruba_o_aperto` | o servidor também recusa |
 | `fio::testes::o_texto_claro_nao_aparece_no_fio` | o que um `tcpdump` veria |
-| `config::tests::sem_a_secao_cifra_fio_nada_e_exigido` | **a regra pétrea, no arquivo** |
+| `config::tests::sem_a_secao_cifra_fio_a_cifra_ja_e_exigida` | **o padrão, no arquivo** — sem a seção, a cifra É exigida (pedido 370) |
 | `config::tests::a_privada_do_fio_nunca_sai` | nem no `para_json`, nem no `Debug` |
 | `config::tests::a_estatica_do_fio_nasce_no_arquivo_e_nao_muda` | e nasce `0600` |
 | `config::tests::pino_torto_na_origem_e_erro_e_nao_ausencia` | pino errado nunca vira «sem pino» |
@@ -702,7 +712,9 @@ resposta de protocolo — o `/saude` diz por servidor apenas `cifra` e
 | `desafio::tests::prova_amarrada_a_um_canal_nao_serve_em_outro` | a amarração ao canal: mesma transcrição passa, outra cai (§10) |
 | `login_amarrado_ao_canal_confere_contra_a_transcricao_da_sessao` | a fiação no servidor: transcrição na sessão, recusa sem túnel, e o velho intacto |
 | `login_exige_amarra_quando_ha_tunel` | a EXIGÊNCIA (`exigir_amarra`): com túnel, quem não amarra é recusado; sem túnel não muda; desligado entra como sempre (§10) |
-| `cliente_sem_cifra_continua_como_antes` (soquete) | **a regra pétrea, pelo fio** |
+| `o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo` (soquete) | **o padrão, pelo fio** — e a recusa diz o que fazer |
+| `o_escape_escrito_deixa_o_cliente_em_claro_entrar` (soquete) | o ESCAPE escrito — o que ficou igual dos dois lados da virada |
+| `dentro_do_tunel_a_diretiva_confirma_a_cifra_desta_conexao` (soquete) | `encryption_exigida` diz a verdade DESTA conexão (pedido 370) |
 | `exigir_recusa_texto_claro_e_deixa_o_tunel_passar` (soquete) | §2 |
 | `registro_repetido_derruba_a_conexao` (soquete) | o laço age sobre a recusa, em vez de engolir |
 | `fio_cortado_vira_erro_e_despedida_nao` (soquete) | §4, contado no `acessos.log` |
@@ -720,11 +732,22 @@ O executor devolveu **NÃO PEGOU** em duas das cinco entradas, e as duas eram
 achados de verdade.
 
 **1. O teste da regra pétrea passava por engano.** Com o padrão trocado para
-`exigir: true` — que é o estrago que a entrada `cifra-do-fio-imposta` repõe —
+`exigir: true` — que é o estrago que a entrada `cifra-do-fio-imposta` repunha —
 o `cliente_sem_cifra_continua_como_antes` continuava **verde**. O motivo: ele
 montava o `Config` na mão e escrevia `cifra_fio.exigir = false`, desfazendo a
 troca antes de exercitar coisa nenhuma. Um teste que escreve o campo não pode
 provar o padrão dele.
+
+> **Os dois nomes acima não existem mais, e o que aconteceu com eles ensina**
+> (18/09/2026, pedido 370): o padrão virou de verdade, por ordem do dono. O
+> teste mudou de lado e virou
+> `o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo` — a mesma
+> pergunta («o que acontece com quem só trocou o binário?») com a resposta
+> nova. A guarda `cifra-do-fio-imposta` foi **aposentada** (a lista
+> `APOSENTADAS` do `trecho-vivo.py` diz a data e o motivo), porque o defeito
+> que ela repunha virou o produto; no lugar dela nasceu a
+> `cifra-do-fio-rebaixada`, que repõe o defeito **contrário**. Guarda cujo
+> defeito deixou de existir não se remenda para o número fechar.
 
 Consertado: ele agora sobe de um `config.json` **sem a seção `cifra_fio`** —
 literalmente o arquivo de quem atualizou o binário e não mexeu em nada — e

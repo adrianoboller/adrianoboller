@@ -52,10 +52,16 @@ fn subir(base: &std::path::Path, com_cadastro: bool) -> (Arc<Servidor>, u16) {
     } else {
         String::new()
     };
+    // O ESCAPE ESCRITO no arquivo: desde 18/09/2026 a cifra do fio nasce
+    // exigida (pedido 370, ordem do dono), e esta bateria conecta em claro
+    // porque o que ela mede e o portao de PERMISSAO dos jobs. Sem esta linha a
+    // recusa lida aqui seria a da cifra, e a prova passaria a medir o portao
+    // errado -- justamente numa bateria cujo assunto e um portao.
     let texto = format!(
         r#"{{ "bind": "127.0.0.1:{porta}", "base": {base:?}, "token": "{TOKEN}",
               "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
               "jobs": {jobs:?}, {usuarios}
+              "cifra_fio": {{ "exigir": false }},
               "web": {{ "ligado": false }} }}"#,
         base = base.display().to_string(),
         log = base.join("acessos.log").display().to_string(),

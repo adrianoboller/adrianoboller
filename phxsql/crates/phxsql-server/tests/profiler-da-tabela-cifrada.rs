@@ -111,6 +111,12 @@ fn servidor_com_cofre(d: &DirTemp) -> u16 {
         "a lista tem de estar VAZIA: com ela cheia o teste passaria pelo \
          caminho velho e nao provaria nada"
     );
+    // O ESCAPE ESCRITO: desde 18/09/2026 a cifra do FIO nasce exigida
+    // (pedido 370, ordem do dono), e esta bateria conecta em claro porque o
+    // que ela mede e a cifra EM REPOUSO -- outra cifra, outro arquivo. Sem
+    // esta linha a recusa lida aqui seria a do fio, e a prova passaria a
+    // medir o portao errado.
+    c.cifra_fio.exigir = false;
     c.web.ligado = false;
     c.log_acessos = d.join("acessos.log");
     c.blacklist = d.join("blacklist.json");

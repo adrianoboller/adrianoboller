@@ -672,7 +672,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `ordem-pequena-aceita` | o segredo X25519 todo-zeros aceito como chave de sessão | 2 | ✅ provada |
 | `contador-do-fio-parado` | o contador de registros do fio parado — nonce repetido | 3 | ✅ provada |
 | `fio-cortado-vira-fim` | o fio cortado no meio devolvido como fim de conversa | 1 | ✅ provada |
-| `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | 1 | ✅ provada |
+| `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | ✅ provada |
 | `transcricao-sem-o-cifrado` | o hash da transcrição sem o texto cifrado da mensagem 2 | 2 | ✅ provada |
 | `amarra-ao-canal-ignorada` | o login amarrado ao canal conferido SEM a transcricao | 1 | ✅ provada |
 | `amarra-exigida-ignorada` | o servidor exige a amarracao ao canal, mas o login nao a cobra | 1 | ✅ provada |
@@ -793,10 +793,12 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `read-replica-recusa-escrita` | `ReadReplica` deixa de recusar escrita e para de apontar o primario | 1 | ✅ provada |
 | `pulso-fora-da-lista-e-recusado` | `op_cluster_pulso` deixa de conferir o id contra a lista viva de nos | 1 | ✅ provada |
 
-**151 das 197 guardas do catálogo: 146 provadas, 1 quebrada, 4 redundantes** — 3621 s de mutação, medido em 2026-09-16 15:25.
+**151 das 199 guardas do catálogo: 146 provadas, 1 quebrada, 4 redundantes** — 3621 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 46 das 197 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 46 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 49 das 199 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 49 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
+- `cifra-do-fio-rebaixada` — a cifra do fio de volta a OPCIONAL por padrão
+- `portas-http-sem-o-portao-da-cifra` — as portas HTTP atendendo em claro com a cifra exigida
 - `teto-do-fio-sem-a-constante` — o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito
 - `teto-do-fio-sem-a-constante-no-soquete` — a mesma troca da constante por um teto quase infinito, vista pela rede
 - `perfil-decide-so-pela-lista-e-nao-pelo-reg-cifrado` — o perfil.txt decide pela lista do config e a cifra acontece pela marca de coluna
@@ -832,6 +834,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `fio-cifrado-manda-o-claro-junto` — o fio cifrado manda a linha em claro junto do registro selado
 - `diario-das-diretivas-guarda-o-segredo-anterior` — o diário das diretivas grava o valor ANTERIOR do campo sigiloso em claro
 - `token-do-rest-entra-pela-tela` — o token da porta REST passa a se gravar pela tela de configuração
+- `cifra-do-odbc-volta-a-nascer-em-claro` — a receita do driver ODBC volta a nascer em claro, e o esquecimento vira o padrao
 - `receita-odbc-devolve-a-senha` — a connection string mascarada do ODBC devolve a senha inteira
 - `cifra-do-fio-reserializa-a-privada` — o `para_json` da cifra do fio devolve a chave privada em vez de «(oculta)»
 - `especificacao-openapi-leva-o-token` — a especificação OpenAPI, servida sem portão, passa a carregar o token da porta
