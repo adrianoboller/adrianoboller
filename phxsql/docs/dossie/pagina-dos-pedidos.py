@@ -72,6 +72,36 @@ def ler():
                     f"({' '.join(ESTADOS)}). Pedido com estado desconhecido "
                     "SUMIA da pagina em silencio -- foi o que aconteceu com o "
                     "150. Declare o estado, ou acrescente o simbolo a legenda.")
+            if q:
+                # Estado da legenda, numero de pedido, e mesmo assim a linha
+                # nao casa: a forma esta torta. Sobrou em 18/09/2026, com o
+                # estado CERTO -- onze linhas sem o pipe de fechamento, cinco
+                # delas porque o fecho entrou como QUINTA coluna. O leitor
+                # contou 369 de 380 e imprimiu tres linhas de exito.
+                #
+                # A guarda do 150 so olhava o simbolo, entao esta familia
+                # passava por baixo dela: estado conhecido + forma torta era
+                # exatamente o buraco. Guarda que cobre o motivo e nao o
+                # EFEITO deixa a porta irma aberta.
+                # CONTAR PIPE NAO DIAGNOSTICA. Escrevi assim primeiro e a
+                # mensagem saiu mentindo «5 pipes onde precisam ser 5»: a
+                # linha com quinta coluna e SEM fecho tem cinco pipes, como a
+                # linha certa. O que separa as duas e' a CELULA depois do
+                # ultimo pipe -- vazia na certa, com texto na torta.
+                partes = l.rstrip("\n").replace("\\|", "\0").split("|")
+                if partes[-1].strip():
+                    causa = ("a linha nao fecha com `|` -- depois do ultimo "
+                             f"pipe ainda ha texto ({partes[-1].strip()[:40]!r})")
+                else:
+                    causa = (f"a linha tem {len(partes) - 2} colunas onde "
+                             "precisam ser 4")
+                raise SystemExit(
+                    f"PENDENCIAS.md:{numero_da_linha}: o pedido {q.group(2)} "
+                    f"esta marcado {q.group(1)!r} (estado da legenda) mas "
+                    f"{causa}. Pedido com a forma torta SUMIA da pagina em "
+                    "silencio, como o 150 sumia por simbolo desconhecido. "
+                    "Feche a linha com `|`, e ponha o fecho DENTRO da quarta "
+                    "coluna em vez de abrir uma quinta.")
         if m:
             # Pipe CRU dentro de uma celula. O regex de cima SOBREVIVE a ele --
             # o grupo 4 esta ancorado no fim da linha, entao engole o pipe a

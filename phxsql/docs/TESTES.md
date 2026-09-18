@@ -35,23 +35,23 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **2.585 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **2.592 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Protocolo e portões (despachar) | 554 | 21,4 |
-| Motor de dados (arquivos, índice, diários) | 525 | 20,3 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 255 | 9,9 |
+| Protocolo e portões (despachar) | 555 | 21,4 |
+| Motor de dados (arquivos, índice, diários) | 525 | 20,2 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 255 | 9,8 |
 | Camada SQL (léxico, sintaxe, tradução) | 217 | 8,4 |
-| Servidor (outros) | 203 | 7,8 |
-| Configuração | 132 | 5,1 |
+| Servidor (outros) | 204 | 7,9 |
+| Configuração | 137 | 5,3 |
 | Criptografia e codificação | 128 | 4,9 |
 | DbLink | 84 | 3,2 |
 | Telemetria e profiler | 73 | 2,8 |
-| ODBC | 66 | 2,6 |
+| ODBC | 66 | 2,5 |
 | Gatilhos e procedimentos | 45 | 1,7 |
 | **Jobs** | **33** | **1,3** |
 | **Usuários e permissões** | **33** | **1,3** |
@@ -69,7 +69,7 @@ contando `#[test]` por arquivo e agrupando:
 | **Alertas e e-mail** | **8** | **0,3** |
 | **CLI** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,2** |
-| **total** | **2587** | |
+| **total** | **2594** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
@@ -77,7 +77,7 @@ Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 |---|---:|
 | `phxsql-store/src/table.rs` | 5582 |
 | `phxsql-store/src/ndx.rs` | 1655 |
-| `phxsql-ffi/src/lib.rs` | 1453 |
+| `phxsql-ffi/src/lib.rs` | 1469 |
 | `phxsql-server/src/main.rs` | 488 |
 | `phxsql-ffi/src/valor.rs` | 290 |
 | `phxsql-store/src/integridade.rs` | 278 |

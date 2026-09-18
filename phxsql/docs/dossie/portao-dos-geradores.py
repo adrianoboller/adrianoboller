@@ -493,6 +493,22 @@ def main() -> int:
         elif estado == "nota":
             notas.append(script)
 
+    # A PROVA DA GUARDA, e nao so o resultado dela. O portao ja reprova um
+    # derivado velho; o que ele nao via e' a guarda que parou de guardar. Em
+    # 18/09/2026 o leitor do PENDENCIAS pulou onze pedidos em silencio e
+    # imprimiu linha de exito -- o portao passou verde, porque o derivado
+    # estava «em dia» com um leitor que contava menos.
+    prova = RAIZ / "docs" / "dossie" / "prova-do-leitor-de-pedidos.py"
+    r = subprocess.run([sys.executable, str(prova)],
+                       capture_output=True, text=True, cwd=str(RAIZ))
+    if r.returncode == 0:
+        print("[  ok ] prova-do-leitor-de-pedidos.py")
+    else:
+        print("[VELHO] prova-do-leitor-de-pedidos.py")
+        for linha in (r.stdout + r.stderr).strip().split("\n"):
+            print("    " + linha)
+        vermelhos.append("prova-do-leitor-de-pedidos.py")
+
     print()
     if notas:
         print(f"NOTA: {len(notas)} gerador(es) fora do portao (chamam cargo), "

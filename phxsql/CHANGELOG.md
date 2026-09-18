@@ -23,6 +23,34 @@ instante, a tela devolve `200 OK` para um login com senha em texto puro.
 
 ### Corrigido
 
+- **A terceira porta do pedido 358 não existia, e quem decidiu foi a medição**
+  (pedido 376, commit `0c94569`). O parecer dizia «fechar no FFI, manter a API
+  Rust aberta», e a decisão do dono foi essa. O conserto saiu com **zero linha
+  de lógica**: das cinco funções de partição do FFI, **nenhuma** alcançava a
+  marcação de coluna, então não havia porta que fechar. Entraram o comentário
+  que diz por que a API Rust fica aberta e uma sentinela de superfície que
+  confere pelo sistema de arquivos que há um `.reg` só. *Medir a premissa do
+  item vem antes de implementar o item — inclusive quando o item é nosso.*
+- **A saída também nasce cifrada, e o aviso mudou de interlocutor** (pedido
+  366, commit `ebbc363`). `replicacao.origens[].cifra`, `cluster.cifra` e
+  `web.servidores[].cifra` nascem `true`, por decisão do dono («virar as três
+  agora»). E a lição não é o padrão: é que **o aviso muda de interlocutor, não
+  só de texto**. Com o padrão desligado, o aviso falava com quem tinha ligado a
+  cifra pela metade; com ele ligado, saída em claro só existe **escrita**, e o
+  aviso passa a falar com quem registrou a decisão — por isso a leitura guarda
+  a procedência do campo, em vez de só o valor.
+- **O gerador dos pedidos contava 369 de 380, e imprimia três linhas de
+  êxito.** Onze linhas de pedido não casavam a forma — seis sem o pipe de
+  fechamento e cinco porque o próprio script de fecho escreveu o
+  «**FECHADO em…**» como quinta coluna — e o leitor as pulava em silêncio. A
+  guarda do pedido 150 já existia e não pegou nenhuma: ela cobre o **símbolo**
+  de estado, e nestas onze o símbolo estava certo. *Guarda se escreve contra o
+  efeito, não contra o motivo — o efeito é um só e os motivos são muitos.*
+  Entraram a guarda que para nomeando linha, pedido e a causa **medida**, uma
+  prova real com os **quatro** caminhos até o mesmo efeito, e o portão dos
+  geradores passou a rodar essa prova: ele já reprovava derivado velho, e ficou
+  verde o tempo todo porque o derivado estava em dia com um leitor que contava
+  menos.
 - **A comunicação passou a ser obrigatoriamente cifrada, e os clientes desta
   casa aprenderam o aperto junto** (ordem do dono de 18/09; pedidos 366 e
   370). `cifra_fio.exigir` nasce `true`, com `"exigir": false` como escape

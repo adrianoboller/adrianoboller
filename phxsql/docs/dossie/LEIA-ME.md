@@ -26,10 +26,11 @@ impossível de cumprir depois que o diretório temporário sumisse.
 
 São **catorze** os scripts de `docs/dossie/*.py` que escrevem número ou texto
 numa página publicada — o dossiê principal e as quatro páginas satélites
-(pedidos, testes, gráficos e status). Os outros dois arquivos da pasta,
-`dossie_da_pasta.py` (só acha o arquivo, por varredura) e `embutir-fontes.py`
-(embute fontes numa cópia offline para o PDF), não escrevem número nenhum e
-não entram na conta. A lista de comandos e a tabela «script → o que ele
+(pedidos, testes, gráficos e status). Os outros **três** arquivos `.py` da pasta,
+`dossie_da_pasta.py` (só acha o arquivo, por varredura), `embutir-fontes.py`
+(embute fontes numa cópia offline para o PDF) e `prova-do-leitor-de-pedidos.py`
+(a prova real do leitor do `PENDENCIAS.md`, abaixo), não escrevem número nenhum
+e não entram na conta. A lista de comandos e a tabela «script → o que ele
 escreve» estão em «O que conferir antes de publicar», abaixo.
 
 Fora desta pasta há mais geradores de página, e por isso **fora desta conta**:
@@ -120,6 +121,31 @@ falha, é VERMELHO, com o nome do gerador e do arquivo. O `numeros-do-projeto.py
 sai como NOTA (chama `cargo`, e o portão não martela o build); rode-o à mão. A
 lei da catraca, o defeito que a motivou e os três modos de comparação estão em
 `docs/CATRACAS.md` §9. Depois de consertar um, `--so <nome>` reconfere só ele.
+
+### E o portão prova a GUARDA, não só o resultado
+
+Rodar a prova do leitor do `PENDENCIAS.md` entrou no portão em 18/09/2026, e o
+motivo é o defeito que o obrigou:
+
+```bash
+python3 docs/dossie/prova-do-leitor-de-pedidos.py   # sai != 0 se a guarda parou de guardar
+```
+
+Naquele dia o `pagina-dos-pedidos.py` imprimiu **369 pedidos** quando o arquivo
+tinha **380** linhas de pedido — e imprimiu junto três linhas de êxito. Onze
+linhas não casavam a forma: seis sem o pipe de fechamento, e cinco porque o
+próprio texto de fecho («**FECHADO em…**») entrou como **quinta coluna**. O
+leitor as pulava em silêncio.
+
+A guarda do pedido 150 já existia e não pegou nenhuma: ela cobre o **símbolo**
+de estado, e nestas onze o símbolo estava certo. **Guarda se escreve contra o
+efeito, não contra o motivo** — o efeito é um só, «pedido que existe no arquivo
+e não existe na página», e há quatro caminhos até ele. A prova cataloga os
+quatro, cada um com o pedido que o pagou.
+
+E o portão passou o tempo todo **verde** enquanto isso acontecia, porque ele
+conferia se o derivado estava em dia — e estava, com um leitor que contava
+menos. Catraca que só olha o resultado não vê a guarda que parou de guardar.
 
 **Sem argumento nenhum**, e isso é conserto de 07/09/2026, não estilo. O nome
 do dossiê some da receita porque ele muda a cada refação, e quem o acha é o
