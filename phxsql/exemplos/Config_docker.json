@@ -4,7 +4,7 @@
   "_bind": "0.0.0.0 e obrigatorio em conteiner. Com 127.0.0.1 o servidor fica no loopback DO CONTEINER e NINGUEM de fora alcanca -- nem a replica, nem a porta publicada. E o pior tipo de erro: a replica fica em zero evento e nao ha erro em log nenhum. Medido em bancada/replicacao/docker/, estagio (0).",
   "bind": "0.0.0.0:5000",
   "token": "troque-este-token",
-  "_web": "0.0.0.0 pelo mesmo motivo do bind de dados: em conteiner, 127.0.0.1 e o loopback DO CONTEINER e a porta publicada nao alcanca ninguem. O arranque vai AVISAR que esta porta atende de fora em HTTP claro, e o aviso e verdadeiro -- publique-a atras de um proxy reverso que termine TLS e, quando ele estiver la, escreva atras_de_proxy: true aqui para calar o aviso. Ver docs/SEGURANCA.md 7.1 e 7.2.",
+  "_web": "0.0.0.0 pelo mesmo motivo do bind de dados: em conteiner, 127.0.0.1 e o loopback DO CONTEINER e a porta publicada nao alcanca ninguem. ATENCAO, mudou em 18/09/2026: com cifra_fio.exigir nascendo ligado (ordem do dono), esta porta NAO SO avisa -- ela RECUSA todo pedido enquanto ninguem declarar o proxy, e a tela nao abre. Publique-a atras de um proxy reverso que termine TLS e escreva atras_de_proxy: true aqui; sem proxy, ou desligue a tela (ligado: false) ou escreva a secao cifra_fio com exigir: false, que e o escape ESCRITO. Ver docs/SEGURANCA.md 7.0, 7.1 e 7.2.",
   "web": { "ligado": true, "bind": "0.0.0.0:5001", "atras_de_proxy": false },
   "espelho": true,
   "recursos": { "durabilidade": "por_lote", "lote_operacoes": 200, "lote_milissegundos": 200 },

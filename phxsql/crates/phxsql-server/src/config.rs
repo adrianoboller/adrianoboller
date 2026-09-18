@@ -166,6 +166,95 @@ impl Papel {
     }
 }
 
+// ---------------------------------------------------------------------------
+// A cifra das SAIDAS -- as conexoes que este servidor ABRE
+// ---------------------------------------------------------------------------
+
+/// O padrao dos tres interruptores de saida: `replicacao.origens[].cifra`,
+/// `cluster.cifra` e `web.servidores[].cifra`.
+///
+/// # Por que LIGADO, desde 18/09/2026
+///
+/// Ordem do dono: *"a comunicacao deve obrigatoriamente ser cifrada"*. O
+/// pedido 370 fechou a ENTRADA -- `cifra_fio.exigir` nasce `true` e as portas
+/// HTTP recusam o claro -- e mediu o que sobrou de fora: com a entrada
+/// exigindo e as saidas nascendo desligadas, **um source de fabrica recusa uma
+/// replica de fabrica**, e a suite fica verde do mesmo jeito, porque as
+/// bancadas escrevem o escape dos dois lados. A ordem alcanca as duas
+/// direcoes; esta constante e a segunda metade dela.
+///
+/// `"cifra": false` e o escape ESCRITO -- o mesmo molde do `"exigir": false` e
+/// do `CIFRA=0` do ODBC: quem quer claro escreve, em vez de esquecer.
+///
+/// # O custo, dito sem enfeite
+///
+/// Uma replica desta versao **deixa de falar** com um source anterior ao
+/// aperto de mao: aquele servidor nao atende o `cifrar`, e a conexao para.
+/// Quem precisa da transicao escreve o escape naquela saida. O custo foi
+/// aceito pelo dono junto com a ordem, e o arranque o diz enquanto ninguem
+/// escreveu decisao nenhuma (ver [`LeituraDasSaidas`]).
+///
+/// # Por que ele mora AQUI, e nao dentro de cada leitor
+///
+/// Num lugar so, citado pelo nome nos tres leitores -- e no IRMAO que mora
+/// fora deste arquivo: a sonda `replicacao_testar` (`servidor.rs`) monta uma
+/// `Origem` com o que veio no pedido e cai no MESMO `replica::ligar` do laco.
+/// Padrao que mora so no analisador do arquivo deixa esse irmao falando claro,
+/// calado -- foi o que o pedido 373 pagou no ODBC, onde o `SQLConnect` monta a
+/// receita sem passar pelo analisador.
+pub const CIFRA_DE_SAIDA_PADRAO: bool = true;
+
+/// O que a leitura dos interruptores de saida junta pelo caminho, e que o
+/// [`Config`] pronto nao teria mais como saber.
+///
+/// Uma saida com `cifra` ligada nao diz se ALGUEM a escolheu: tanto pode ser o
+/// `"cifra": true` escrito no arquivo quanto o padrao de fabrica. A diferenca
+/// e a unica coisa que separa um aviso util de um aviso perpetuo -- quem
+/// escreveu a decisao (qualquer uma das duas) nao precisa ouvi-la todo
+/// arranque; quem HERDOU a virada precisa, porque e a conexao dele que pode
+/// parar contra um servidor anterior ao aperto.
+#[derive(Default)]
+struct LeituraDasSaidas {
+    /// As saidas que ficaram com o padrao de fabrica, uma a uma.
+    de_fabrica: Vec<String>,
+    /// Avisos de `cifra` com valor que nao e `true` nem `false`.
+    tortos: Vec<String>,
+}
+
+impl LeituraDasSaidas {
+    /// O `cifra` de uma saida, distinguindo os TRES estados que o
+    /// `booleano_ou` funde em dois: ausente, escrito e TORTO.
+    ///
+    /// O torto e o que muda de natureza quando o padrao vira. Com o padrao
+    /// desligado, "valor que nao entendi vira `false`" era inofensivo; com ele
+    /// ligado seria um REBAIXAMENTO silencioso, que e a armadilha que o pedido
+    /// 373 pagou no ODBC. Aqui o torto cai no padrao (cifrado) e AVISA: o
+    /// servidor nao adivinha o que quem digitou `"sim"` queria, e tambem nao
+    /// desliga a cifra por causa de um engano de digitacao.
+    fn cifra(&mut self, o: &Json, rotulo: &str) -> bool {
+        match o.campo("cifra") {
+            None => self.sem_decisao_escrita(rotulo),
+            Some(Json::Bool(b)) => *b,
+            Some(_) => {
+                self.tortos.push(format!(
+                    "o campo \"cifra\" de {rotulo} nao e true nem false: li \
+                     como CIFRADO, que e o padrao desde 18/09/2026. Escreva \
+                     \"cifra\": true ou \"cifra\": false -- valor que o \
+                     servidor nao entende nunca desliga a cifra sozinho."
+                ));
+                CIFRA_DE_SAIDA_PADRAO
+            }
+        }
+    }
+
+    /// A saida que nasceu no padrao porque ninguem escreveu nada -- inclusive
+    /// a que nao tem ONDE escrever, que e o texto solto de `web.servidores`.
+    fn sem_decisao_escrita(&mut self, rotulo: &str) -> bool {
+        self.de_fabrica.push(rotulo.to_string());
+        CIFRA_DE_SAIDA_PADRAO
+    }
+}
+
 /// De onde a replica puxa os eventos.
 #[derive(Clone)]
 pub struct Origem {
@@ -195,9 +284,11 @@ pub struct Origem {
     pub hora: String,
     /// Puxar por dentro do tunel cifrado. Ver `docs/CIFRA-DO-FIO.md`.
     ///
-    /// `false` (o padrao) e como sempre foi: JSON em claro. Ligar exige que o
-    /// SOURCE atenda o aperto -- e um source de versao anterior nao atende,
-    /// entao ligar isto e uma decisao dos dois lados, nao de um.
+    /// Nasce LIGADO ([`CIFRA_DE_SAIDA_PADRAO`], 18/09/2026), e `"cifra": false`
+    /// e o escape ESCRITO. O que ele custa e o que sempre custou, so que agora
+    /// no sentido contrario: o SOURCE tem de atender o aperto, e um source de
+    /// versao anterior nao atende -- quem replica de um deles escreve o escape
+    /// nesta origem.
     pub cifra: bool,
     /// A chave publica que se ESPERA do source, em hexadecimal -- o pino.
     ///
@@ -473,13 +564,15 @@ pub struct Cluster {
     /// entre os nos -- reaproveitando o aperto de mao do fio, com pino por no
     /// (`nos[].chave_do_fio`).
     ///
-    /// `false` (o padrao) e como sempre foi: o cluster fala em claro. Ligar
-    /// vale para os DOIS caminhos de uma vez, de proposito -- cifrar so o
-    /// pulso ou so a replicacao deixaria metade do trafego protegida e a
-    /// outra nao, que e pior que nenhuma, porque parece protegido. Ligar exige
-    /// que TODO no atenda o aperto (`cifra_fio.ligada`, que ja nasce ligada),
-    /// entao e uma decisao do cluster inteiro, nao de um no. Guarda nova entra
-    /// PEDIDA: um cluster que ja rodava continua em claro ate alguem ligar.
+    /// Nasce LIGADO ([`CIFRA_DE_SAIDA_PADRAO`], 18/09/2026), e `"cifra": false`
+    /// e o escape ESCRITO -- um cluster que fala em claro passa a dizer isso no
+    /// arquivo. Vale para os DOIS caminhos de uma vez, de proposito: cifrar so
+    /// o pulso ou so a replicacao deixaria metade do trafego protegida e a
+    /// outra nao, que e pior que nenhuma, porque parece protegido.
+    ///
+    /// O que ele exige e do cluster INTEIRO: todo no tem de atender o aperto
+    /// (`cifra_fio.ligada`, que ja nasce ligada). Um cluster com um no de
+    /// versao anterior ao aperto escreve o escape ate atualizar o no.
     pub cifra: bool,
 }
 
@@ -524,7 +617,11 @@ impl std::fmt::Debug for Cluster {
 }
 
 impl Cluster {
-    fn de_json(j: &Json, id_servidor: &str) -> Result<Option<Cluster>> {
+    fn de_json(
+        j: &Json,
+        id_servidor: &str,
+        saidas: &mut LeituraDasSaidas,
+    ) -> Result<Option<Cluster>> {
         let Some(c) = j.campo("cluster") else {
             return Ok(None);
         };
@@ -551,6 +648,9 @@ impl Cluster {
             .campo("avisar_cada_min")
             .and_then(Json::numero)
             .unwrap_or(5.0);
+        // Lido ANTES do literal porque o rotulo conta os nos, e la dentro a
+        // lista ja foi movida para o campo.
+        let cifra = saidas.cifra(c, &format!("cluster ({} nos)", nos.len()));
         Ok(Some(Cluster {
             nos,
             id: c.texto_ou("id", id_servidor).trim().to_string(),
@@ -565,7 +665,7 @@ impl Cluster {
             token: c.texto_ou("token", "").to_string(),
             usuario: c.texto_ou("usuario", "").trim().to_string(),
             senha_hash: c.texto_ou("senha_hash", "").trim().to_string(),
-            cifra: c.booleano_ou("cifra", false),
+            cifra,
         }))
     }
 
@@ -1636,7 +1736,8 @@ impl Cifra {
 ///
 /// `ligada` nasce LIGADA e isso nao muda nada para ninguem: o aperto so
 /// acontece se o CLIENTE pedir, e cliente que nunca ouviu falar dele nunca
-/// pede. `exigir` nasce DESLIGADA, e e ela que carrega a decisao dificil.
+/// pede. `exigir` e que carrega a decisao dificil -- e desde 18/09/2026 ela
+/// nasce LIGADA tambem.
 ///
 /// Cifra pedida e cifra que o atacante ativo apaga do pedido: ele corta o
 /// `cifrar` do fio, o cliente rebaixa para claro, e a protecao vira zero.
@@ -1647,38 +1748,33 @@ impl Cifra {
 /// mais.** Esta frase esta aqui, no `docs/SEGURANCA.md` e na tela pelo mesmo
 /// motivo: e a que o leitor nao pode ter de adivinhar.
 ///
-/// # O padrao que o dono mandou trocar, e o que trava a troca (18/09/2026)
+/// # O padrao que o dono mandou trocar, e as duas metades da troca (18/09/2026)
 ///
-/// Ordem do dono: *"a comunicacao deve obrigatoriamente ser cifrada"* -- e
-/// `exigir` passa a nascer `true`, com `"exigir": false` como escape ESCRITO,
-/// o mesmo padrao da chave que nasce conferida. A troca nao entrou nesta
-/// rodada por duas razoes medidas, e as duas moram fora deste arquivo:
+/// Ordem do dono: *"a comunicacao deve obrigatoriamente ser cifrada"*. A
+/// ENTRADA virou primeiro: `exigir` nasce `true`, com `"exigir": false` como
+/// escape ESCRITO -- o mesmo padrao da chave que nasce conferida. Duas coisas
+/// tinham de cair antes, e cairam junto, porque separadas cada uma anunciaria
+/// uma protecao que a vizinha nao presta:
 ///
-/// 1. **O interruptor nao alcanca o que ele anuncia.** `exigir` decide em UM
-///    lugar -- `servidor.rs:9270`, o laco da porta de dados. Medido em
-///    18/09/2026 no mesmo servidor e no mesmo instante, com `exigir: true`: a
-///    porta nativa recusa e `POST /api {"op":"login"}` devolve 200 com a
-///    sessao aberta e a senha em claro; REST, MCP e o explorador da
-///    especificacao idem. E `servidor.rs:5884-5887` publica
-///    `encryption_exigida: true` para essa mesma conexao HTTP em claro, numa
-///    funcao cujo proprio comentario diz "o que e verdade DESTA conexao".
-///    Ligar o padrao hoje seria vender protecao que o servidor nao presta.
-/// 2. **Tamanho medido da virada:** numa arvore verde (2.553 testes passando,
-///    nenhum falhando), trocar so o padrao derruba 62 -- 60 por conectarem em
-///    claro na porta de dados e 2 por travarem o padrao de ontem de proposito.
-///    Cada um dos 60 precisa do escape escrito, e eles vivem em arquivos de
-///    outras frentes.
+/// 1. **O interruptor nao alcancava o que anunciava.** `exigir` decidia em UM
+///    lugar -- o laco da porta de dados --, e no mesmo servidor e no mesmo
+///    instante `POST /api {"op":"login"}` devolvia 200 com a sessao aberta e a
+///    senha em claro; REST, MCP e o explorador idem. Hoje as tres portas HTTP
+///    recusam pelo mesmo `portao_de_rede_http`, com `"atras_de_proxy": true`
+///    como o escape ESCRITO delas, e o `encryption_exigida` parou de anunciar
+///    o que o canal nao presta.
+/// 2. **Os clientes desta casa nao podiam ser os quebrados.** O console e o
+///    driver ODBC aprenderam o aperto (`--sem-cifra` e `CIFRA=0` sao os
+///    escapes), e as bancadas escreveram o escape onde medem em claro de
+///    proposito. Padrao novo que o proprio console do projeto nao alcanca e
+///    meia funcionalidade.
 ///
-/// O que entrou junto e o que dava para entregar inteiro: o escape provado
-/// pelos dois lados (`tests/cifra-do-fio.rs`) e o aviso de arranque que diz o
-/// ALCANCE de `exigir` quando ha porta HTTP no ar
-/// ([`Config::avisar_o_que_viaja_em_claro`]). Detalhe e numero em
-/// `docs/SEGURANCA.md` §7.0.
-///
-/// E o alcance tem outra metade: `exigir` e *inbound-only*. O que este
-/// servidor CONECTA tem interruptor proprio -- `replicacao.origens[].cifra`,
-/// `cluster.cifra` e `web.servidores[].cifra` --, e os tres nascem
-/// desligados.
+/// A outra metade e a SAIDA, e ela veio depois com a mesma forma: `exigir` e
+/// *inbound-only* -- decide sobre quem conecta NESTE servidor e nada sobre o
+/// que este servidor CONECTA. Os tres interruptores de saida
+/// (`replicacao.origens[].cifra`, `cluster.cifra`, `web.servidores[].cifra`)
+/// nascem LIGADOS pelo [`CIFRA_DE_SAIDA_PADRAO`], com `"cifra": false` como
+/// escape escrito de cada um. Numero e detalhe em `docs/SEGURANCA.md` 7.0.
 #[derive(Clone)]
 pub struct CifraFio {
     /// O servidor ATENDE o aperto. `false` recusa -- e a unica maneira de um
@@ -1956,10 +2052,14 @@ pub struct ServidorWeb {
     /// Falar por dentro do tunel cifrado com este destino. Ver
     /// `docs/CIFRA-DO-FIO.md`.
     ///
-    /// `false` (o padrao, e o UNICO valor do texto solto) e como sempre foi:
-    /// JSON em claro. Ligar exige que o destino ATENDA o aperto -- um servidor
-    /// de versao anterior nao atende, entao ligar isto e decisao dos dois
-    /// lados, nao de um.
+    /// Nasce LIGADO ([`CIFRA_DE_SAIDA_PADRAO`], 18/09/2026), **inclusive no
+    /// texto solto**: um destino escrito `"host:porta"` nao tem onde escrever
+    /// decisao nenhuma, e deixa-lo em claro faria a virada nao alcancar a forma
+    /// mais usada das duas -- quem quer claro escreve o objeto com
+    /// `"cifra": false`, que e o escape ESCRITO tambem aqui.
+    ///
+    /// O que ele exige continua sendo dos dois lados: o destino tem de ATENDER
+    /// o aperto, e um servidor de versao anterior nao atende.
     pub cifra: bool,
     /// A chave publica que se ESPERA do destino, em hexadecimal -- o pino.
     ///
@@ -1970,20 +2070,26 @@ pub struct ServidorWeb {
 }
 
 impl ServidorWeb {
-    fn de_texto(t: &str) -> ServidorWeb {
+    fn de_texto(t: &str, saidas: &mut LeituraDasSaidas) -> ServidorWeb {
+        let endereco = t.trim().to_string();
         ServidorWeb {
-            endereco: t.trim().to_string(),
-            cifra: false,
+            // O texto solto nao tem onde escrever a decisao, entao ele e
+            // sempre "de fabrica": entra no aviso do arranque ate alguem
+            // trocar este item pelo objeto, com `"cifra": true` (confirmando)
+            // ou `"cifra": false` (o escape).
+            cifra: saidas.sem_decisao_escrita(&format!("web.servidores[{endereco:?}]")),
+            endereco,
             chave_do_fio: String::new(),
         }
     }
 
-    fn de_objeto(o: &Json) -> ServidorWeb {
+    fn de_objeto(o: &Json, saidas: &mut LeituraDasSaidas) -> ServidorWeb {
         let host = o.texto_ou("host", "").trim().to_string();
         let porta = o.inteiro_ou("porta", PORTA_PADRAO as i64).clamp(1, 65_535) as u16;
+        let endereco = format!("{host}:{porta}");
         ServidorWeb {
-            endereco: format!("{host}:{porta}"),
-            cifra: o.booleano_ou("cifra", false),
+            cifra: saidas.cifra(o, &format!("web.servidores[{endereco:?}]")),
+            endereco,
             chave_do_fio: o.texto_ou("chave_do_fio", "").trim().to_string(),
         }
     }
@@ -2055,7 +2161,7 @@ impl Default for Web {
 }
 
 impl Web {
-    fn de_json(j: &Json) -> Web {
+    fn de_json(j: &Json, saidas: &mut LeituraDasSaidas) -> Web {
         let padrao = Web::default();
         match j.campo("web") {
             None => padrao,
@@ -2065,7 +2171,7 @@ impl Web {
                 sessao_minutos: w
                     .inteiro_ou("sessao_minutos", padrao.sessao_minutos as i64)
                     .max(1) as u64,
-                servidores: Web::servidores_de(w),
+                servidores: Web::servidores_de(w, saidas),
                 atras_de_proxy: w.booleano_ou("atras_de_proxy", padrao.atras_de_proxy),
             },
         }
@@ -2079,14 +2185,14 @@ impl Web {
     /// valendo byte a byte, e so quem precisa do tunel troca aquele item por
     /// objeto. O `textos` de antes descartava calado tudo o que nao fosse
     /// texto -- por isso ele nao servia mais.
-    fn servidores_de(w: &Json) -> Vec<ServidorWeb> {
+    fn servidores_de(w: &Json, saidas: &mut LeituraDasSaidas) -> Vec<ServidorWeb> {
         w.campo("servidores")
             .and_then(Json::lista)
             .map(|l| {
                 l.iter()
                     .map(|e| match e {
-                        Json::Texto(t) => ServidorWeb::de_texto(t),
-                        _ => ServidorWeb::de_objeto(e),
+                        Json::Texto(t) => ServidorWeb::de_texto(t, saidas),
+                        _ => ServidorWeb::de_objeto(e, saidas),
                     })
                     .collect()
             })
@@ -3516,6 +3622,11 @@ impl Config {
     pub fn de_json(j: &Json) -> Result<Config> {
         let padrao = Config::default();
         let mut avisos: Vec<String> = Vec::new();
+        // A leitura dos interruptores de SAIDA atravessa tres secoes do
+        // arquivo (`replicacao`, `cluster` e `web`), e o que ela junta e o que
+        // o `Config` pronto nao teria mais como saber: quem escreveu a decisao
+        // e quem herdou o padrao. Ver [`LeituraDasSaidas`].
+        let mut saidas = LeituraDasSaidas::default();
         let rep = match j.campo("replicacao") {
             None => Replicacao::default(),
             Some(r) => Replicacao {
@@ -3534,20 +3645,34 @@ impl Config {
                     .and_then(Json::lista)
                     .map(|l| {
                         l.iter()
-                            .map(|o| Origem {
-                                nome: o.texto_ou("nome", "origem").to_string(),
-                                host: o.texto_ou("host", "127.0.0.1").to_string(),
-                                porta: o.inteiro_ou("porta", PORTA_PADRAO as i64) as u16,
-                                token: o.texto_ou("token", "").to_string(),
-                                databases: o.textos("databases"),
-                                reconectar_em: o.inteiro_ou("reconectar_em", 10).max(1) as u64,
-                                usuario: o.texto_ou("usuario", "").trim().to_string(),
-                                senha_hash: o.texto_ou("senha_hash", "").trim().to_string(),
-                                senha: o.texto_ou("senha", "").to_string(),
-                                cada_minutos: o.inteiro_ou("cada_minutos", 0).max(0) as u64,
-                                hora: o.texto_ou("hora", "").trim().to_string(),
-                                cifra: o.booleano_ou("cifra", false),
-                                chave_do_fio: o.texto_ou("chave_do_fio", "").trim().to_string(),
+                            .map(|o| {
+                                let nome = o.texto_ou("nome", "origem").to_string();
+                                let host = o.texto_ou("host", "127.0.0.1").to_string();
+                                let porta = o.inteiro_ou("porta", PORTA_PADRAO as i64) as u16;
+                                // O rotulo nomeia a CONEXAO, e nao so o campo:
+                                // uma lista de interruptores nao diz qual
+                                // replicacao vai parar.
+                                let cifra = saidas.cifra(
+                                    o,
+                                    &format!(
+                                        "replicacao.origens[{nome:?}] (source {host}:{porta})"
+                                    ),
+                                );
+                                Origem {
+                                    nome,
+                                    host,
+                                    porta,
+                                    token: o.texto_ou("token", "").to_string(),
+                                    databases: o.textos("databases"),
+                                    reconectar_em: o.inteiro_ou("reconectar_em", 10).max(1) as u64,
+                                    usuario: o.texto_ou("usuario", "").trim().to_string(),
+                                    senha_hash: o.texto_ou("senha_hash", "").trim().to_string(),
+                                    senha: o.texto_ou("senha", "").to_string(),
+                                    cada_minutos: o.inteiro_ou("cada_minutos", 0).max(0) as u64,
+                                    hora: o.texto_ou("hora", "").trim().to_string(),
+                                    cifra,
+                                    chave_do_fio: o.texto_ou("chave_do_fio", "").trim().to_string(),
+                                }
                             })
                             .collect()
                     })
@@ -3561,7 +3686,7 @@ impl Config {
             },
         };
         let mut rep = rep;
-        let cluster = Cluster::de_json(j, &rep.id_servidor)?;
+        let cluster = Cluster::de_json(j, &rep.id_servidor, &mut saidas)?;
         if cluster.is_some() {
             // Num cluster, QUALQUER no pode ser promovido -- entao todo no
             // precisa da imagem no diario, e nao so o source. O padrao vira
@@ -3616,7 +3741,7 @@ impl Config {
                     .map(|seg| seg.texto_ou("blacklist", "blacklist.json"))
                     .unwrap_or("blacklist.json"),
             ),
-            web: Web::de_json(j),
+            web: Web::de_json(j, &mut saidas),
             rest: Rest::de_json(j),
             backup: Backup::de_json(j)?,
             alertas: Alertas::de_json(j)?,
@@ -3670,6 +3795,7 @@ impl Config {
             );
         }
         c.avisar_o_que_viaja_em_claro();
+        c.avisar_a_cifra_de_fabrica_das_saidas(saidas);
         Ok(c)
     }
 
@@ -3697,6 +3823,10 @@ impl Config {
     /// uma porta HTTP no ar fechava um fio e deixava o outro aberto, com o
     /// mesmo token e o mesmo login. Isso acabou: as portas HTTP recusam
     /// (`Servidor::portao_de_rede_http`).
+    ///
+    /// O terceiro aviso -- o das SAIDAS -- morava aqui e mudou de casa junto
+    /// com o assunto dele: ver [`Config::avisar_a_cifra_de_fabrica_das_saidas`].
+    /// Este aqui fala do que ENTRA; aquele, do que SAI.
     ///
     /// O aviso continua existindo porque a CONSEQUENCIA e dura e silenciosa:
     /// com a exigencia ligada -- que agora e o padrao -- uma porta HTTP sem
@@ -3766,56 +3896,55 @@ impl Config {
                 sem_proxy.join(", ")
             ));
         }
-        let saidas = self.saidas_em_claro();
-        if self.cifra_fio.exigir && !saidas.is_empty() {
-            novos.push(format!(
-                "cifra_fio.exigir e INBOUND-ONLY: ele decide sobre quem conecta \
-                 NESTE servidor e nada sobre o que este servidor CONECTA, e \
-                 estas saidas estao em claro: {}. Desde 18/09/2026 o PhxSql \
-                 exige a cifra de fabrica -- entao, se o outro lado for um \
-                 PhxSql desta versao, ele vai RECUSAR esta conexao com \
-                 \"peca o aperto de mao\" e a replicacao (ou o pulso do \
-                 cluster) para sem mais aviso. Ligue o interruptor de cada \
-                 saida, ou escreva \"exigir\": false la do outro lado.",
-                saidas.join(", ")
-            ));
-        }
         self.avisos.extend(novos);
     }
 
-    /// As saidas deste servidor que viajam em CLARO, com o nome do interruptor
-    /// de cada uma.
+    /// O aviso das SAIDAS -- e ele mudou de assunto com a virada do padrao.
     ///
-    /// Existe por causa da virada de 18/09/2026 (pedido 370): com `exigir`
-    /// nascendo ligado, um source de fabrica RECUSA uma replica de fabrica --
-    /// os interruptores de saida nascem desligados, e os dois padroes juntos
-    /// param a replicacao. O servidor nao tem como saber a configuracao do
-    /// outro lado, entao o aviso diz o que ele SABE (esta saida vai em claro) e
-    /// o que isso implica hoje, em vez de calar.
+    /// # O que ele dizia, e por que virou mentira pela metade
     ///
-    /// So o que esta CONFIGURADO entra: um servidor isolado, que e o caso
-    /// comum, nao ganha aviso nenhum -- aviso que aparece sempre ninguem le.
-    fn saidas_em_claro(&self) -> Vec<String> {
-        let mut fora = Vec::new();
-        for o in &self.replicacao.origens {
-            if !o.cifra {
-                fora.push(format!(
-                    "replicacao.origens[{:?}].cifra (source {}:{})",
-                    o.nome, o.host, o.porta
-                ));
-            }
+    /// Ate 18/09/2026 ele dizia: *"estas saidas estao em claro, e um PhxSql
+    /// desta versao do outro lado vai RECUSAR"*. Fazia sentido enquanto as
+    /// saidas nasciam desligadas -- o claro era o esquecimento, e o aviso
+    /// nomeava o esquecimento. Com [`CIFRA_DE_SAIDA_PADRAO`] ligado, saida em
+    /// claro so existe quando alguem ESCREVEU `"cifra": false`, e avisar quem
+    /// escreveu o escape e avisar contra a propria decisao dele, todo arranque.
+    ///
+    /// # O que ele diz agora, e para quem
+    ///
+    /// A consequencia que sobrou: a saida vai PEDIR o aperto, e um PhxSql
+    /// anterior a esta data nao o atende -- a conexao para. O servidor nao tem
+    /// como saber a versao do outro lado, entao ele fala com quem nao escreveu
+    /// decisao nenhuma, que e exatamente a populacao que a virada pegou de
+    /// surpresa.
+    ///
+    /// E cala para as DUAS decisoes escritas -- `true` (eu sei, o outro lado
+    /// fala) e `false` (o escape) --, porque o que se cobra aqui e a decisao
+    /// registrada, e nao um dos valores. Aviso que aparece para sempre numa
+    /// instalacao decidida e aviso que ninguem le, e isso gasta a confianca do
+    /// aviso verdadeiro.
+    ///
+    /// Servidor isolado nao ganha nada: sem saida configurada nao ha conexao
+    /// que possa parar.
+    fn avisar_a_cifra_de_fabrica_das_saidas(&mut self, saidas: LeituraDasSaidas) {
+        // O torto primeiro: ele e sobre UM campo que o servidor nao entendeu,
+        // e some assim que alguem o corrigir.
+        self.avisos.extend(saidas.tortos);
+        if saidas.de_fabrica.is_empty() {
+            return;
         }
-        if let Some(c) = &self.cluster {
-            if !c.nos.is_empty() && !c.cifra {
-                fora.push(format!("cluster.cifra ({} nos)", c.nos.len()));
-            }
-        }
-        for sv in &self.web.servidores {
-            if !sv.cifra {
-                fora.push(format!("web.servidores[{:?}].cifra", sv.endereco));
-            }
-        }
-        fora
+        self.avisos.push(format!(
+            "estas saidas vao PEDIR o aperto de mao da cifra do fio, e ninguem \
+             escreveu essa decisao no arquivo: {}. Desde 18/09/2026 o \
+             interruptor \"cifra\" de cada saida nasce LIGADO (ordem do dono: \
+             a comunicacao deve obrigatoriamente ser cifrada) -- entao um \
+             PhxSql anterior a essa data, do outro lado, NAO atende o aperto e \
+             a conexao para. Escreva \"cifra\": true para registrar que o \
+             outro lado fala o aperto, ou \"cifra\": false para voltar ao \
+             claro; qualquer uma das duas cala este aviso. Receita em \
+             docs/CIFRA-DO-FIO.md 8.",
+            saidas.de_fabrica.join(", ")
+        ));
     }
 
     fn validar(&self) -> Result<()> {
@@ -6020,18 +6149,41 @@ mod tests {
         assert!(!texto.contains("pbkdf2-sha256$210000"), "{texto}");
     }
 
-    /// A REGRA PETREA no arquivo: um cluster sem `cifra` nasce em claro, como
-    /// sempre foi. Guarda nova entra pedida -- um cluster que ja rodava nao
-    /// passa a exigir aperto de mao de um dia para o outro.
+    /// **O PADRAO no arquivo, e ele VIROU em 18/09/2026.**
+    ///
+    /// Este teste se chamava `cifra_do_cluster_nasce_desligada` e travava o
+    /// contrario: um cluster sem `cifra` nascia em claro. A ordem do dono
+    /// ("a comunicacao deve obrigatoriamente ser cifrada") alcanca a saida
+    /// tambem, e o nome mudou junto com o significado -- teste que muda de
+    /// veredito e fica com o nome antigo e um teste que mente para quem le a
+    /// lista.
+    ///
+    /// O que NAO mudou, e por isso continua travado aqui: o PINO nao nasce.
+    /// Cifra de fabrica protege da escuta passiva; pino e afirmacao sobre a
+    /// identidade do outro lado, e afirmacao dessas nao se herda de um padrao.
     #[test]
-    fn cifra_do_cluster_nasce_desligada() {
+    fn cifra_do_cluster_nasce_ligada() {
         let txt = cluster_minimo("");
         let c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
         let cl = c.cluster.unwrap();
-        assert!(!cl.cifra, "o cluster nasceu cifrando sem ninguem pedir");
+        assert!(cl.cifra, "o cluster de fabrica ficou falando em claro");
         assert!(
             cl.nos.iter().all(|n| n.chave_do_fio.is_empty()),
             "no do cluster nasceu com pino sem ninguem pedir"
+        );
+    }
+
+    /// **O COMPORTAMENTO VELHO, pelo escape ESCRITO.** Um cluster com um no de
+    /// versao anterior ao aperto escreve `"cifra": false` e continua em claro,
+    /// exatamente como antes da virada -- e e a unica maneira de isso
+    /// acontecer, que e o ponto do escape.
+    #[test]
+    fn o_escape_escrito_deixa_o_cluster_em_claro() {
+        let txt = cluster_minimo(r#""cifra":false,"#);
+        let c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        assert!(
+            !c.cluster.unwrap().cifra,
+            "o escape escrito nao foi obedecido"
         );
     }
 
@@ -6421,54 +6573,127 @@ mod tests {
         assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
     }
 
-    /// **A virada mata a replicacao de fabrica, e o arranque tem de dizer.**
+    /// **O aviso das SAIDAS, e ele mudou de assunto com a virada.**
     ///
-    /// Achado desta frente, 18/09/2026, e ele nao estava em teste nenhum: com
-    /// `exigir` nascendo ligado, um SOURCE de fabrica recusa uma REPLICA de
-    /// fabrica -- porque `replicacao.origens[].cifra` continua nascendo
-    /// desligado. Os dois padroes juntos param a replicacao, e a suite inteira
-    /// fica verde, porque as baterias de replicacao escrevem o escape dos dois
-    /// lados.
+    /// Ate 18/09/2026 este teste se chamava
+    /// `exigir_com_saida_em_claro_avisa_que_o_outro_lado_vai_recusar` e travava
+    /// o contrario: a saida em CLARO era o esquecimento, e o aviso nomeava o
+    /// esquecimento. Com o padrao de saida ligado, claro so existe escrito --
+    /// e avisar quem escreveu o escape e avisar contra a decisao dele, todo
+    /// arranque.
     ///
-    /// O servidor nao tem como saber a configuracao do outro lado. Entao o
-    /// aviso diz o que ele SABE (esta saida vai em claro) e o que isso implica
-    /// hoje, nomeando o interruptor de cada uma.
+    /// O que sobrou de consequencia e o que o aviso diz agora: esta saida vai
+    /// PEDIR o aperto, e um PhxSql anterior a essa data nao o atende. O
+    /// servidor nao sabe a versao do outro lado, entao fala com quem nao
+    /// escreveu decisao nenhuma -- que e quem a virada pegou de surpresa.
     #[test]
-    fn exigir_com_saida_em_claro_avisa_que_o_outro_lado_vai_recusar() {
-        let txt = r#"{"token":"x","cifra_fio":{"exigir":true},
-            "replicacao":{"papel":"replica","origens":[
+    fn saida_no_padrao_de_fabrica_avisa_que_vai_pedir_o_aperto() {
+        let txt = r#"{"token":"x","replicacao":{"papel":"replica","origens":[
               {"nome":"matriz","host":"10.0.0.9","porta":5000}]}}"#;
         let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
         let aviso = c
             .avisos
             .iter()
-            .find(|a| a.contains("INBOUND-ONLY"))
-            .unwrap_or_else(|| panic!("a saida em claro ficou calada: {:?}", c.avisos));
+            .find(|a| a.contains("PEDIR o aperto"))
+            .unwrap_or_else(|| panic!("a saida de fabrica ficou calada: {:?}", c.avisos));
         // Nomeia a saida E o source: uma lista de interruptores nao diz qual
         // conexao vai parar.
         assert!(aviso.contains("replicacao.origens"), "{aviso}");
         assert!(aviso.contains("matriz"), "{aviso}");
         assert!(aviso.contains("10.0.0.9:5000"), "{aviso}");
-        assert!(aviso.contains("RECUSAR"), "{aviso}");
+        // E diz as DUAS saidas escritas, senao o aviso vira um beco.
+        assert!(aviso.contains("\"cifra\": false"), "{aviso}");
+        assert!(aviso.contains("\"cifra\": true"), "{aviso}");
     }
 
-    /// O outro sentido, e ele e o que faz o de cima significar alguma coisa:
-    /// com a saida CIFRADA nao ha aviso -- e num servidor isolado, que e o
-    /// caso comum, tambem nao. Aviso que aparece sempre ninguem le.
+    /// **O outro sentido, e ele e o que faz o de cima significar alguma coisa:
+    /// as DUAS decisoes escritas calam o aviso.**
+    ///
+    /// `true` e `false` calam, porque o que se cobra e a decisao registrada e
+    /// nao um dos valores -- quem escreveu o escape para falar com um source
+    /// antigo nao pode ouvir todo arranque que devia ter feito outra coisa. E
+    /// um servidor isolado nao ganha nada: sem saida configurada nao ha
+    /// conexao que possa parar.
     #[test]
-    fn saida_cifrada_e_servidor_isolado_nao_ganham_aviso_de_saida() {
-        let cifrada = r#"{"token":"x","cifra_fio":{"exigir":true},
-            "replicacao":{"papel":"replica","origens":[
-              {"nome":"matriz","host":"10.0.0.9","porta":5000,"cifra":true}]}}"#;
-        let c = Config::de_json(&Json::analisar(cifrada).unwrap()).unwrap();
-        assert!(
-            !c.avisos.iter().any(|a| a.contains("INBOUND-ONLY")),
-            "{:?}",
-            c.avisos
-        );
+    fn as_duas_decisoes_escritas_calam_o_aviso_da_saida() {
+        for escrito in ["true", "false"] {
+            let txt = format!(
+                r#"{{"token":"x","replicacao":{{"papel":"replica","origens":[
+                  {{"nome":"matriz","host":"10.0.0.9","porta":5000,"cifra":{escrito}}}]}}}}"#
+            );
+            let c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+            assert!(
+                !c.avisos.iter().any(|a| a.contains("PEDIR o aperto")),
+                "\"cifra\": {escrito} nao calou o aviso: {:?}",
+                c.avisos
+            );
+        }
         let isolado = r#"{"token":"x","cifra_fio":{"exigir":true}}"#;
         let c = Config::de_json(&Json::analisar(isolado).unwrap()).unwrap();
         assert!(c.avisos.is_empty(), "{:?}", c.avisos);
+    }
+
+    /// **A origem nasce CIFRADA, e o escape escrito e o comportamento velho.**
+    ///
+    /// O par que trava a virada do 18/09/2026 do lado da replicacao. Sem o
+    /// primeiro, uma replica de fabrica continuaria falando claro com um
+    /// source que exige de fabrica -- os dois padroes juntos parando a
+    /// replicacao com a suite verde, que foi o achado do pedido 370.
+    #[test]
+    fn a_origem_nasce_cifrada_e_o_escape_escrito_a_deixa_em_claro() {
+        let sem_campo = r#"{"token":"x","replicacao":{"papel":"replica","origens":[
+              {"nome":"matriz","host":"10.0.0.9","porta":5000}]}}"#;
+        let c = Config::de_json(&Json::analisar(sem_campo).unwrap()).unwrap();
+        assert!(
+            c.replicacao.origens[0].cifra,
+            "a origem de fabrica ficou falando em claro"
+        );
+        // O pino nao vem de brinde: cifra de fabrica protege da escuta
+        // passiva, e o pino e afirmacao sobre a identidade do outro lado.
+        assert!(c.replicacao.origens[0].chave_do_fio.is_empty());
+
+        let escape = sem_campo.replace(r#""porta":5000}"#, r#""porta":5000,"cifra":false}"#);
+        let c = Config::de_json(&Json::analisar(&escape).unwrap()).unwrap();
+        assert!(
+            !c.replicacao.origens[0].cifra,
+            "o escape escrito nao foi obedecido"
+        );
+    }
+
+    /// **Valor TORTO nao rebaixa -- e esta armadilha so nasceu com a virada.**
+    ///
+    /// Com o padrao desligado, "valor que nao entendi vira `false`" era
+    /// inofensivo: dava no mesmo que a ausencia. Com o padrao ligado, o mesmo
+    /// caminho viraria um REBAIXAMENTO silencioso da cifra por causa de um
+    /// engano de digitacao -- a armadilha que o pedido 373 pagou no ODBC, onde
+    /// `CIFRA=sim` cairia em claro.
+    ///
+    /// Os TRES estados, no mesmo teste, porque e a distincao entre eles que e
+    /// a garantia: ausente (padrao, avisa), escrito (obedece, cala) e torto
+    /// (padrao, e avisa dizendo o que corrigir).
+    #[test]
+    fn valor_torto_no_cifra_de_saida_nao_rebaixa_e_avisa() {
+        let txt = r#"{"token":"x","replicacao":{"papel":"replica","origens":[
+              {"nome":"matriz","host":"10.0.0.9","porta":5000,"cifra":"sim"}]}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(
+            c.replicacao.origens[0].cifra,
+            "valor torto DESLIGOU a cifra: e o rebaixamento silencioso"
+        );
+        let aviso = c
+            .avisos
+            .iter()
+            .find(|a| a.contains("nao e true nem false"))
+            .unwrap_or_else(|| panic!("o valor torto passou calado: {:?}", c.avisos));
+        assert!(aviso.contains("matriz"), "{aviso}");
+        // E o torto NAO entra no aviso do padrao de fabrica: ele nao e
+        // omissao, e um campo escrito errado -- dizer as duas coisas da mesma
+        // saida no mesmo arranque e o comeco do aviso que ninguem le.
+        assert!(
+            !c.avisos.iter().any(|a| a.contains("PEDIR o aperto")),
+            "{:?}",
+            c.avisos
+        );
     }
 
     /// Sem porta HTTP no ar, o `exigir` cobre o que ha -- e nao avisa nada.
@@ -6569,21 +6794,48 @@ mod tests {
         assert!(!fechado.web.servidor_permitido("qualquer:5000"));
     }
 
-    /// COMPORTAMENTO VELHO: a lista de textos continua sendo texto solto, em
-    /// claro e sem pino. E o teste que impede a mudanca de formato de tirar de
-    /// alguem o que ja funcionava -- um `config.json` de antes desta rodada.
+    /// **O texto solto TAMBEM virou (18/09/2026)**, e este teste se chamava
+    /// `web_servidores_texto_solto_continua_em_claro`.
+    ///
+    /// Deixa-lo em claro seria a virada nao alcancar a forma mais escrita das
+    /// duas: quem lista `"host:porta"` nao esta escolhendo o claro, esta
+    /// escrevendo o endereco. O escape existe e e o objeto com
+    /// `"cifra": false` -- ver `o_escape_escrito_deixa_o_destino_da_tela_em_claro`.
+    ///
+    /// O PINO continua nao nascendo, pelo mesmo motivo do cluster: o texto
+    /// solto nao tem onde carregar um, e padrao nenhum afirma identidade.
     #[test]
-    fn web_servidores_texto_solto_continua_em_claro() {
+    fn web_servidores_texto_solto_passa_a_pedir_o_aperto() {
         let txt = r#"{"token":"x","web":{"servidores":["10.1.1.5:5000","curitiba:5000"]}}"#;
         let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
         assert_eq!(c.web.servidores.len(), 2);
         for s in &c.web.servidores {
-            assert!(!s.cifra, "texto solto nunca liga cifra");
+            assert!(
+                s.cifra,
+                "texto solto ficou falando em claro: {}",
+                s.endereco
+            );
             assert!(s.chave_do_fio.is_empty(), "texto solto nao tem pino");
             assert!(s.pino_do_fio().unwrap().is_none());
         }
         assert_eq!(c.web.servidores[0].endereco, "10.1.1.5:5000");
         c.validar().unwrap();
+    }
+
+    /// **O COMPORTAMENTO VELHO da tela, pelo escape ESCRITO.** Um destino que
+    /// e um PhxSql anterior ao aperto vira objeto com `"cifra": false`, e a
+    /// interface volta a falar claro com ele -- como antes da virada.
+    #[test]
+    fn o_escape_escrito_deixa_o_destino_da_tela_em_claro() {
+        let txt = r#"{"token":"x","web":{"servidores":[
+            {"host":"antigo","porta":5000,"cifra":false}
+        ]}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert_eq!(c.web.servidores[0].endereco, "antigo:5000");
+        assert!(
+            !c.web.servidores[0].cifra,
+            "o escape escrito nao foi obedecido"
+        );
     }
 
     /// FORMATO NOVO: o objeto `{host,porta,cifra,chave_do_fio}` carrega o pino,
@@ -6607,8 +6859,8 @@ mod tests {
         c.validar().unwrap();
     }
 
-    /// As DUAS formas na mesma lista -- o que faz a mudanca ser retrocompativel:
-    /// so o item que precisa do tunel vira objeto, o resto fica texto.
+    /// As DUAS formas na mesma lista -- so o item que precisa do PINO (ou do
+    /// escape) vira objeto, o resto fica texto.
     #[test]
     fn web_servidores_mistura_texto_e_objeto() {
         let txt = r#"{"token":"x","web":{"servidores":[
@@ -6617,10 +6869,27 @@ mod tests {
         ]}}"#;
         let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
         assert_eq!(c.web.servidores.len(), 2);
+        // O texto solto do meio da lista continua sendo aceito -- o que mudou
+        // com a virada de 18/09/2026 e o que ele significa: pede o aperto,
+        // como o objeto ao lado. Quem quer claro escreve o objeto com
+        // `"cifra": false`.
         assert_eq!(c.web.servidores[0].endereco, "claro:5000");
-        assert!(!c.web.servidores[0].cifra);
+        assert!(c.web.servidores[0].cifra);
         assert_eq!(c.web.servidores[1].endereco, "cifrado:6000");
         assert!(c.web.servidores[1].cifra);
+    }
+
+    /// O OBJETO sem o campo `cifra` nasce cifrado como o texto solto -- as
+    /// duas formas da mesma lista tem de dar o mesmo destino, senao a forma
+    /// escolhida para escrever o endereco decidiria a seguranca dele.
+    #[test]
+    fn web_servidor_em_objeto_sem_o_campo_cifra_nasce_cifrado() {
+        let txt = r#"{"token":"x","web":{"servidores":[{"host":"h","porta":5000}]}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(
+            c.web.servidores[0].cifra,
+            "o objeto sem o campo ficou falando em claro"
+        );
     }
 
     /// `cifra:true` SEM pino = tunel so passivo, e o pino vem `None` de

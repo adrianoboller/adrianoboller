@@ -469,7 +469,7 @@ gravou ontem.
 ```json
 "cifra_fio": {
   "ligada": true,
-  "exigir": false,
+  "exigir": true,
   "exigir_amarra": false,
   "chave_privada_env": "PHXSQL_CHAVE_DO_FIO",
   "chave_privada": "",
@@ -480,7 +480,7 @@ gravou ontem.
 | campo | padrão | o que faz |
 |---|---|---|
 | `ligada` | `true` | o servidor **atende** o `cifrar`. `false` recusa o aperto — e é a única maneira de um servidor dizer «aqui não tem». Não muda nada para quem não pede |
-| `exigir` | `false` | recusa qualquer pedido fora do túnel. Ver §2 |
+| `exigir` | `true` | recusa qualquer pedido fora do túnel — **e nasce ligado desde 18/09/2026** (pedido 370). `"exigir": false` é o escape escrito. Ver §2 |
 | `exigir_amarra` | `false` | havendo túnel, recusa o `login` que não amarra a credencial ao canal (`erro.amarra_exigida`). Sem túnel não se aplica — não há transcrição a que amarrar. Ver §10 |
 | `chave_privada_env` | vazio | nome da variável de ambiente com a privada em hexadecimal |
 | `chave_privada` | vazio | a privada em hexadecimal, no arquivo |
@@ -488,21 +488,23 @@ gravou ontem.
 
 `ligada: true` por padrão é seguro **porque o aperto só acontece se o cliente
 pedir**: um cliente que nunca ouviu falar disto nunca manda `cifrar`, e nada
-muda para ele. `exigir: false` por padrão é a regra pétrea da casa.
+muda para ele. `exigir: true` é a ordem do dono de 18/09/2026, e o que ela
+custa está na §13.
 
 E na origem da replicação:
 
 ```json
 "origens": [
   { "nome": "matriz", "host": "10.0.0.1", "porta": 5000,
-    "cifra": true,
+    "cifra": false,
     "chave_do_fio": "<64 dígitos hexadecimais>" }
 ]
 ```
 
-`cifra: false` (padrão) = como sempre foi. `cifra: true` sem `chave_do_fio` =
-túnel sem pino, ou seja, **passivo apenas** — e o arranque avisa exatamente
-isso, com estas palavras.
+`cifra: true` é o **padrão** desde 18/09/2026 (§13) — o exemplo traz o `false`
+escrito porque é ele que se escreve: o escape. `cifra` ligada sem
+`chave_do_fio` = túnel sem pino, ou seja, **passivo apenas** — e o arranque
+avisa exatamente isso, com estas palavras.
 
 E na interface web, para o `Remoto` (o multi-servidor). Aqui a mudança foi de
 **formato**: `web.servidores` era uma lista de textos `"host:porta"`, e não
@@ -521,9 +523,11 @@ o pino):
 }
 ```
 
-A regra é a mesma da origem, palavra por palavra: `cifra: false` (padrão, e o
-único valor do texto solto) = claro; `cifra: true` sem `chave_do_fio` = túnel
-sem pino, **passivo apenas**, e o arranque avisa. O pino **nunca** sai numa
+A regra é a mesma da origem, palavra por palavra — **inclusive o padrão**:
+desde 18/09/2026 o texto solto também pede o aperto (§13), e quem quer claro
+troca aquele item pelo objeto com `"cifra": false`. `cifra` ligada sem
+`chave_do_fio` = túnel sem pino, **passivo apenas**, e o arranque avisa. O
+pino **nunca** sai numa
 resposta de protocolo — o `/saude` diz por servidor apenas `cifra` e
 `tem_pino`, para a tela avisar sem carregar material de chave.
 
@@ -703,6 +707,13 @@ resposta de protocolo — o `/saude` diz por servidor apenas `cifra` e
 | `config::tests::a_privada_do_fio_nunca_sai` | nem no `para_json`, nem no `Debug` |
 | `config::tests::a_estatica_do_fio_nasce_no_arquivo_e_nao_muda` | e nasce `0600` |
 | `config::tests::pino_torto_na_origem_e_erro_e_nao_ausencia` | pino errado nunca vira «sem pino» |
+| `config::tests::a_origem_nasce_cifrada_e_o_escape_escrito_a_deixa_em_claro` | **o padrão da SAÍDA, no arquivo** (§13) — e o escape, no mesmo teste |
+| `config::tests::cifra_do_cluster_nasce_ligada` / `o_escape_escrito_deixa_o_cluster_em_claro` | o mesmo par, no cluster |
+| `config::tests::web_servidores_texto_solto_passa_a_pedir_o_aperto` / `o_escape_escrito_deixa_o_destino_da_tela_em_claro` | o mesmo par, na tela — **inclusive o texto solto** |
+| `config::tests::web_servidor_em_objeto_sem_o_campo_cifra_nasce_cifrado` | as duas formas da mesma lista dão o mesmo destino |
+| `config::tests::valor_torto_no_cifra_de_saida_nao_rebaixa_e_avisa` | os TRÊS estados: valor torto nunca desliga a cifra (§13) |
+| `config::tests::saida_no_padrao_de_fabrica_avisa_que_vai_pedir_o_aperto` / `as_duas_decisoes_escritas_calam_o_aviso_da_saida` | o aviso do arranque, nos dois sentidos |
+| `servidor::testes_config_gravar::a_sonda_de_replicacao_tem_o_mesmo_padrao_de_cifra_do_arquivo` | o IRMÃO fora do `config.rs` — compara os dois caminhos, não o valor |
 | `fio::testes::mensagem_2_mexida_nao_autentica` | a transcrição cobre tudo |
 | `fio::testes::registro_repetido_nao_abre` | contador |
 | `fio::testes::registro_fora_de_ordem_nao_abre` | contador |
@@ -813,13 +824,19 @@ de `no2`. Como a lista de nós é a mesma em todos, cada `config.json` acaba
 carregando o pino de todos, que é exatamente o `known_hosts` do cluster. A chave
 pública de um nó sai de `phxsqld --chave-do-fio` **naquele** nó.
 
-### Padrão DESLIGADO — a regra pétrea, no cluster
+### Padrão LIGADO desde 18/09/2026 — e por que ele mudou
 
-`cifra: false` por padrão porque **guarda nova entra pedida, não imposta**: um
-cluster que já rodava continua em claro na atualização, sem um pulso mudar de
-forma de um dia para o outro. Ligar exige que **todo** nó atenda o aperto (a
-`cifra_fio.ligada` já nasce ligada), então é uma decisão do cluster inteiro —
-como o `origem.cifra`, é uma decisão dos dois lados, não de um.
+Este bloco dizia o contrário: `cifra: false` por padrão, porque *guarda nova
+entra pedida, não imposta*. A ordem do dono de 18/09/2026 («a comunicação deve
+obrigatoriamente ser cifrada») alcança a **saída** também, e o padrão virou —
+`cluster.cifra` nasce `true`, com `"cifra": false` como escape escrito. O que
+a pétrea protege continua protegido, e é o dado que já está em disco; o que
+mudou é o que **nasce** daqui para a frente, que é exatamente o alcance dela.
+
+O que não mudou: ligar exige que **todo** nó atenda o aperto (a
+`cifra_fio.ligada` já nasce ligada), então continua sendo uma decisão do
+cluster inteiro. Um cluster com um nó anterior ao aperto escreve o escape até
+atualizar esse nó. Detalhe e número na §13.
 
 ### As duas metades, e a guarda de cada uma
 
@@ -881,3 +898,103 @@ desenho de protocolo cifrado, e ficam com o dono — o teto de época
 (`FOLGA_DE_EPOCA`, `docs/CLUSTER.md` §2.2) que entrou em `49a3af7` cobre o
 sintoma (envenenar `maior_epoca_vista` para sempre), não a causa (o pulso não
 prova quem o mandou).
+
+---
+
+## 13. A virada da SAÍDA (18/09/2026) — o outro lado da ordem
+
+A §2 e a §8 contam a virada da **entrada**: `cifra_fio.exigir` nasce `true`, as
+três portas HTTP recusam o claro, e `"exigir": false` é o escape escrito. Ela
+deixou de fora, medido e escrito no próprio pedido que a fez, o que este
+servidor **conecta**:
+
+> com `cifra_fio.exigir` nascendo `true` e `replicacao.origens[].cifra`,
+> `cluster.cifra` e `web.servidores[].cifra` nascendo **desligados**, um source
+> de fábrica **recusa uma réplica de fábrica** — e a suíte fica verde do mesmo
+> jeito, porque as bancadas escrevem o escape dos dois lados.
+
+A ordem do dono alcança as duas direções («a *comunicação* deve
+obrigatoriamente ser cifrada»), e os **três padrões viraram**:
+
+| saída | interruptor | padrão | escape escrito |
+|---|---|---|---|
+| réplica → source | `replicacao.origens[].cifra` | `true` | `"cifra": false` naquela origem |
+| nó → nó do cluster | `cluster.cifra` | `true` | `"cifra": false` no bloco `cluster` |
+| interface web → outro servidor | `web.servidores[].cifra` | `true` | o item vira objeto com `"cifra": false` |
+
+O padrão mora num lugar só — `CIFRA_DE_SAIDA_PADRAO`, em `config.rs` —, e os
+três leitores o citam pelo nome. **Mais o irmão que mora fora do arquivo**: a
+sonda `replicacao_testar` monta uma `Origem` com o que veio no pedido e cai no
+**mesmo** `replica::ligar` do laço. Padrão que morasse só no analisador do
+`config.json` deixaria essa sonda falando claro, calada — a armadilha que o
+pedido 373 pagou no ODBC, onde o `SQLConnect` monta a receita sem passar pelo
+analisador. Hoje o irmão tem prova própria, e ela compara os **dois caminhos**
+em vez do valor:
+`a_sonda_de_replicacao_tem_o_mesmo_padrao_de_cifra_do_arquivo`.
+
+### O que custa, dito sem enfeite
+
+**Uma réplica desta versão deixa de falar com um source anterior ao aperto de
+mão.** Aquele servidor não atende o `cifrar`, e a conexão para. O mesmo vale
+para um cluster com um nó atrasado e para a interface que alcança um PhxSql
+antigo. Quem precisa da transição **escreve o escape** naquela saída — e o
+custo foi aceito pelo dono junto com a ordem.
+
+### O texto solto de `web.servidores` virou junto — e por quê
+
+`"host:porta"` não tem onde escrever decisão nenhuma. Deixá-lo em claro faria a
+virada não alcançar a forma **mais escrita** das duas, e quem lista um endereço
+não está escolhendo o claro: está escrevendo o endereço. Ele nasce pedindo o
+aperto, e o escape é trocar aquele item pelo objeto com `"cifra": false`.
+
+### Os três estados do interruptor, e por que agora são três
+
+`booleano_ou` fundia **ausente** e **torto** no mesmo destino. Isso era
+inofensivo com o padrão desligado — «valor que não entendi vira `false`» dava no
+mesmo que a ausência. Com o padrão ligado, o mesmo caminho seria um
+**rebaixamento silencioso** da cifra por causa de um erro de digitação: é a
+armadilha que o pedido 373 pagou no ODBC, onde `CIFRA=sim` cairia em claro.
+
+Hoje o leitor distingue os três: **ausente** → padrão, e entra no aviso do
+arranque; **escrito** (`true` ou `false`) → obedece e cala; **torto** → padrão
+(cifrado) e um aviso que diz o que corrigir. Travado por
+`valor_torto_no_cifra_de_saida_nao_rebaixa_e_avisa`.
+
+### O aviso do arranque mudou de assunto — de novo
+
+Ele dizia «estas saídas estão em claro, e um PhxSql desta versão vai
+RECUSAR». Fazia sentido enquanto claro era o **esquecimento**. Com o padrão
+ligado, saída em claro só existe **escrita** — e avisar quem escreveu o escape
+é avisar contra a decisão dele, todo arranque, em toda instalação em transição.
+
+O que sobrou de consequência é o que ele diz agora: *estas saídas vão **pedir**
+o aperto, e um PhxSql anterior a 18/09/2026 não o atende*. Ele fala com quem
+**não escreveu decisão nenhuma**, que é exatamente a população que a virada
+pegou de surpresa, e **cala para as duas decisões escritas** — `true` («eu sei,
+o outro lado fala») e `false` (o escape) —, porque o que se cobra é a decisão
+registrada, não um dos valores. Servidor isolado não ouve nada: sem saída
+configurada não há conexão que possa parar.
+
+Os dois sentidos travados:
+`saida_no_padrao_de_fabrica_avisa_que_vai_pedir_o_aperto` e
+`as_duas_decisoes_escritas_calam_o_aviso_da_saida`.
+
+### O que a virada derrubou, medido
+
+Numa árvore verde (**2.585** passando, nenhum falhando), trocar os três padrões
+derruba **5** testes — e **1 dos 5 estava fora do arquivo do assunto**
+(`servidor.rs`, a outra metade da cifra do cluster). Os cinco:
+
+| teste | onde | o que ele dizia |
+|---|---|---|
+| `cifra_do_cluster_nasce_desligada` | `config.rs` | o padrão velho do cluster — virou `cifra_do_cluster_nasce_ligada` |
+| `exigir_com_saida_em_claro_avisa_que_o_outro_lado_vai_recusar` | `config.rs` | o aviso velho — virou `saida_no_padrao_de_fabrica_avisa_que_vai_pedir_o_aperto` |
+| `web_servidores_texto_solto_continua_em_claro` | `config.rs` | o texto solto em claro — virou `web_servidores_texto_solto_passa_a_pedir_o_aperto` |
+| `web_servidores_mistura_texto_e_objeto` | `config.rs` | as duas formas na mesma lista — continua, com o item de texto agora cifrado |
+| `origem_do_cluster_carrega_a_cifra_e_o_pino` | `servidor.rs` | a metade «cluster em claro» passou a ser escrita (`"cifra": false`) em vez de omitida |
+
+Nenhum teste foi apagado, e os que mudaram de veredito mudaram de **nome**
+junto, com o nome antigo escrito no comentário: teste que muda de significado e
+fica com o nome de ontem mente para quem lê a lista. E os que **não** mudaram
+de significado são os do escape escrito — eles ficam iguais dos dois lados da
+virada, que é o que faz a virada ter um lado de fora.

@@ -3,7 +3,7 @@
   "base": "base",
   "bind": "0.0.0.0:5000",
   "token": "troque-este-token",
-  "_web": "0.0.0.0 pelo mesmo motivo do bind de dados: em conteiner, 127.0.0.1 e o loopback DO CONTEINER e a porta publicada nao alcanca ninguem. O arranque vai AVISAR que esta porta atende de fora em HTTP claro, e o aviso e verdadeiro -- publique-a atras de um proxy reverso que termine TLS e, quando ele estiver la, escreva atras_de_proxy: true aqui para calar o aviso. Ver docs/SEGURANCA.md 7.1 e 7.2.",
+  "_web": "0.0.0.0 pelo mesmo motivo do bind de dados: em conteiner, 127.0.0.1 e o loopback DO CONTEINER e a porta publicada nao alcanca ninguem. ATENCAO, mudou em 18/09/2026: com cifra_fio.exigir nascendo ligado (ordem do dono), esta porta NAO SO avisa -- ela RECUSA todo pedido enquanto ninguem declarar o proxy, e a tela nao abre. Publique-a atras de um proxy reverso que termine TLS e escreva atras_de_proxy: true aqui; sem proxy, ou desligue a tela (ligado: false) ou escreva a secao cifra_fio com exigir: false, que e o escape ESCRITO. Ver docs/SEGURANCA.md 7.0, 7.1 e 7.2.",
   "web": { "ligado": true, "bind": "0.0.0.0:5001", "atras_de_proxy": false },
   "_somente_leitura": "Nao e opcional na pratica: aplicacao escrevendo na replica quebra a numeracao dos rowids, e a proxima inclusao vinda do source para a replicacao inteira.",
   "somente_leitura": true,
@@ -22,6 +22,7 @@
         "usuario": "adm",
         "_senha": "O HASH, nunca a senha em claro. Dele sai a chave do desafio-resposta.",
         "senha_hash": "pbkdf2-sha256$210000$44685ccef2b5d0b61ab667af8def37fc$a9c3be36c10541ea021a2175aa230682372f39a509677d8dd81b29e43d814b8c",
+        "_cifra": "Ausente = CIFRADO, desde 18/09/2026: o interruptor cifra de cada saida nasce ligado (ordem do dono, a comunicacao deve obrigatoriamente ser cifrada). E por isso que esta replica alcanca o source do Config_docker.json, que exige o aperto de fabrica. Duas coisas valem saber: o arranque vai AVISAR que ninguem escreveu a decisao -- escreva cifra: true para confirmar ou cifra: false para voltar ao claro (um source anterior ao aperto so entra com o false); e sem chave_do_fio o tunel protege da escuta PASSIVA e nao de quem esta no meio. O pino sai de `phxsqld --chave-do-fio` no master. Ver docs/CIFRA-DO-FIO.md 13.",
         "databases": [],
         "_reconectar_em": "O intervalo entre perguntas EM VAO. Ele e o teto do atraso normal: com 5, uma escrita leva ate 5 s para aparecer aqui. Rodada produtiva nao dorme.",
         "reconectar_em": 5

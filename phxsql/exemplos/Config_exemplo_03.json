@@ -205,7 +205,12 @@
           "HKDF + ChaCha20-Poly1305) antes do login, entao o token e a prova",
           "do desafio-resposta nao andam em claro. Ver docs/CIFRA-DO-FIO.md.",
           "",
-          "Ausente (o padrao) = como sempre foi, JSON em claro.",
+          "Ausente = CIFRADO, desde 18/09/2026 -- o padrao virou (secao 13).",
+          "Ausente tambem AVISA no arranque, porque ninguem escreveu decisao:",
+          "cifra: true confirma (e cala), cifra: false volta ao claro e e o",
+          "escape ESCRITO de quem replica de um source anterior ao aperto.",
+          "As origens saopaulo e bruxelas, abaixo, sao esse caso: nascem",
+          "cifradas e aparecem no aviso ate alguem registrar a decisao.",
           "",
           "chave_do_fio e o PINO: a chave publica que se ESPERA do source,",
           "impressa la por `phxsqld --chave-do-fio`. SEM ela o tunel protege",
@@ -214,7 +219,7 @@
           "",
           "Nao e TLS: nao ha certificado nem autoridade. A confianca e o pino."
         ],
-        "cifra": false,
+        "cifra": true,
         "chave_do_fio": ""
       },
       {

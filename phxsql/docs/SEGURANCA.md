@@ -676,7 +676,8 @@ projeto não alcança. Os três foram medidos em 18/09/2026:
 |---|---|---|
 | driver ODBC | **sim, por padrão** | pedido 373 (`CIFRA=1` de fábrica, `CIFRA=0` como escape) |
 | console `phxsqlcmd` | **sim, por padrão** | pedido 370, junto com esta virada — `--sem-cifra` é o escape |
-| réplica, cluster, DbLink | pelo interruptor próprio | `origens[].cifra`, `cluster.cifra` (ver *inbound-only*, abaixo) |
+| réplica, cluster, interface web | **sim, por padrão** | pedido 374, a virada da saída — `origens[].cifra`, `cluster.cifra` e `web.servidores[].cifra` nascem `true`, e `"cifra": false` é o escape (ver §7.0) |
+| **DbLink para outro PhxSql** | **não, e não tem interruptor** | `dblink/phx.rs` abre a conexão e nunca chama `cifrar`: é a quarta saída, e ela ficou de fora das três — medido em 18/09/2026 e escrito na §7.0 em vez de remendado |
 | `phxsqlcli` | não precisa | ele mexe em arquivo, não abre soquete para a porta de dados |
 
 O console usa o **mesmo** `Cliente::cifrar` da réplica e do cluster — uma
@@ -784,39 +785,68 @@ ar» sairia em toda instalação com tela, que é a instalação normal.
 
 **E o `exigir` é *inbound-only*.** Ele decide sobre quem **conecta neste
 servidor**, e nada sobre o que **este servidor conecta**. As três saídas têm
-interruptor próprio, e os três nascem **desligados**:
+interruptor próprio, e os três **nascem ligados desde 18/09/2026** — a segunda
+metade da mesma ordem, contada logo abaixo:
 
-| saída | interruptor | padrão |
-|---|---|---|
-| réplica → origem | `replicacao.origens[].cifra` | `false` |
-| nó → nó do cluster | `cluster.cifra` | `false` |
-| interface web → outro servidor | `web.servidores[].cifra` | `false` |
+| saída | interruptor | padrão | escape escrito |
+|---|---|---|---|
+| réplica → origem | `replicacao.origens[].cifra` | `true` | `"cifra": false` |
+| nó → nó do cluster | `cluster.cifra` | `true` | `"cifra": false` |
+| interface web → outro servidor | `web.servidores[].cifra` | `true` | o item vira objeto com `"cifra": false` |
 
 Medido em 18/09/2026: `crates/phxsql-server/src/replica.rs` **não menciona
-`cifra_fio` uma única vez**. Quem quiser a réplica cifrada liga o `cifra` da
-origem — e, sem `chave_do_fio` (o pino), ela protege de escuta passiva e nada
-mais, exatamente como diz a tabela da §7.
+`cifra_fio` uma única vez** — quem decide a cifra da réplica é o `cifra` da
+origem, e por isso a virada teve de acontecer lá e não aqui. Sem
+`chave_do_fio` (o pino), o túnel protege de escuta passiva e nada mais,
+exatamente como diz a tabela da §7: **o padrão dá o túnel, nunca o pino** —
+pino é afirmação sobre a identidade do outro lado, e afirmação dessas não se
+herda de um padrão.
 
-**E daqui sai a consequência mais dura da virada, que não estava em teste
+**E daqui saiu a consequência mais dura da virada, que não estava em teste
 nenhum:** com `exigir` nascendo ligado e os três interruptores de saída
-nascendo desligados, **um source de fábrica recusa uma réplica de fábrica**. Os
-dois padrões juntos param a replicação, e a suíte fica verde do mesmo jeito,
-porque as baterias de replicação escrevem o escape dos **dois** lados.
+nascendo desligados, **um source de fábrica recusava uma réplica de fábrica**.
+Os dois padrões juntos paravam a replicação, e a suíte ficava verde do mesmo
+jeito, porque as baterias de replicação escrevem o escape dos **dois** lados.
 
-O servidor não tem como saber a configuração do outro lado, então ele diz o que
-sabe: quando `exigir` está ligado e há saída **configurada** em claro, o
-arranque nomeia cada uma — com o `nome` e o `host:porta` do source — e avisa que
-um PhxSql de 18/09/2026 ou mais novo vai recusar. Ele não sai num servidor
-isolado nem numa saída já cifrada: `exigir_com_saida_em_claro_avisa_que_o_outro_lado_vai_recusar`
-e `saida_cifrada_e_servidor_isolado_nao_ganham_aviso_de_saida` travam os dois
-sentidos.
+**E a virada da saída foi decidida no mesmo dia:** o dono mandou virar os três
+padrões de saída, com o custo aceito — *uma réplica nova deixa de falar com um
+source anterior ao aperto, e quem precisar escreve o escape*.
 
-**O que NÃO foi decidido aqui, e vai para a mesa:** virar também os três
-padrões de saída. A ordem do dono alcança as duas direções — «a *comunicação*
-deve ser cifrada» —, mas virar a saída tem custo próprio (uma réplica nova não
-fala mais com um source anterior ao aperto) e é uma **segunda** decisão de
-implantação, com os mesmos escapes escritos. Ela não entra de carona nesta: o
-pedido 370 é sobre quem **entra**.
+A prova é **pelo soquete**, um master e uma réplica de verdade, nos dois
+sentidos (18/09/2026): com o padrão novo, o
+`acessos.log` do master registra **`"op":"cifrar"` 19×** e a linha atravessa;
+com o padrão velho reposto por escrito (`"cifra": false` na origem), o master
+responde `[SP000025] este servidor exige a cifra do fio: peça o aperto de mão`
+e **nada** atravessa. Teste unitário não prova aperto de mão — soquete prova.
+
+E o que a virada da saída custou está medido:
+
+* **5 testes caem** numa árvore de 2.585 verdes, e **1 dos 5 estava fora do
+  arquivo do assunto** (`servidor.rs`, a outra metade da cifra do cluster).
+  Nenhum foi apagado; os que mudaram de veredito mudaram de **nome** junto.
+* **O padrão mora num lugar só** (`CIFRA_DE_SAIDA_PADRAO`), e o **irmão** que
+  mora fora do `config.rs` é a sonda `replicacao_testar`: ela monta uma
+  `Origem` do pedido e cai no mesmo `replica::ligar`. Sondar em claro o que o
+  laço vai pedir cifrado devolveria «testei e funcionou» para uma configuração
+  que não sobe.
+* **O interruptor passou a ter três estados** — ausente, escrito e torto —,
+  porque «valor que não entendi vira `false`» deixou de ser inofensivo no dia
+  em que o padrão ligou: viraria rebaixamento silencioso por erro de digitação.
+* **O aviso de arranque mudou de assunto**: ele fala com quem **não escreveu
+  decisão nenhuma** e cala para as duas decisões escritas.
+
+Receita, tabela e os cinco testes: `docs/CIFRA-DO-FIO.md` §13.
+
+**A quarta saída, que ficou de fora e não foi remendada:** o **DbLink para
+outro PhxSql** (`dblink/phx.rs`) abre a conexão pelo mesmo `replica::Cliente` e
+**nunca chama `cifrar`** — não há interruptor para virar, e a `Definicao` do
+`dblink.json` não tem onde carregar um. Medido em 18/09/2026. A consequência é
+de hoje e não da virada da saída: contra um PhxSql desta versão (que exige de
+fábrica), **o DbLink já não entra**, e o único escape possível é `"exigir":
+false` do **outro** lado. Dar-lhe um interruptor é trabalho com formato
+(`dblink.json`) e pino próprio, e entra por pedido — meia cifra aqui seria pior
+que nenhuma, porque o painel passaria a dizer «cifrado» para uma ligação que
+não é.
 
 **A prova real, pelo soquete, nos dois sentidos** — em
 `crates/phxsql-server/tests/cifra-das-portas-http.rs`, com um servidor de

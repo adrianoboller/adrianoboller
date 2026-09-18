@@ -1527,6 +1527,21 @@ pub const OPERACOES: &[Operacao] = &[
                  nunca a senha em claro; nada disso volta na resposta",
             ),
             opc("database", "string", "olhar só este banco; sem ele, todos"),
+            opc(
+                "cifra",
+                "boolean",
+                "sondar por dentro do túnel cifrado. Ausente = **sim**, o mesmo \
+                 padrão de `replicacao.origens[].cifra` — a sonda tem de falar \
+                 o mesmo fio que o laço vai falar depois. `false` sonda em \
+                 claro, e é o que se escreve para um source anterior ao aperto \
+                 de mão",
+            ),
+            opc(
+                "chave_do_fio",
+                "string",
+                "o pino do source (a chave pública dele, 64 dígitos \
+                 hexadecimais). Sem ele o túnel protege só da escuta passiva",
+            ),
         ],
         exemplo: r#"{"op":"replicacao_testar","origem":"curitiba"}"#,
         ferramenta_mcp: false,

@@ -258,6 +258,13 @@ mod testes {
                 "o passo de uma sequencia; casa `salt` por prefixo e nao tem \
                  nada de sal",
             ),
+            (
+                "chave_do_fio",
+                "a chave PUBLICA do outro servidor -- o pino, no estilo \
+                 known_hosts. Esconde-la so atrapalharia o diagnostico de pino \
+                 torto, e e a mesma decisao ja escrita no `Debug` da `Origem`: \
+                 a privada nunca sai, e esta nunca foi segredo",
+            ),
         ];
 
         let mut fora = Vec::new();

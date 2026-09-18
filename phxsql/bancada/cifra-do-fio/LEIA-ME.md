@@ -78,3 +78,31 @@ na próxima.
 ## Código de saída
 
 `0` tudo passou; `1` alguma conferência reprovou (o relatório nomeia quais).
+
+---
+
+## A segunda prova: a virada da SAÍDA (`prova-da-saida.py`)
+
+```bash
+cargo build -p phxsql-server -p phxsql-cmd     # phxsqld e phxsqlcmd de depuração
+python3 bancada/cifra-do-fio/prova-da-saida.py
+```
+
+Sobe um **master e uma réplica de verdade** (portas **7220** e 7221, faixa
+própria) a partir de `config.json` de verdade, e mata só os PIDs que ela mesma
+criou. O que ela mede é o que teste unitário não alcança — o aperto de mão
+entre dois processos —, e mede nos **dois sentidos**:
+
+| rodada | o que está escrito | o que tem de acontecer |
+|---|---|---|
+| (A) padrão novo | a origem da réplica **não** escreve `cifra` | o túnel sobe, o `acessos.log` do master conta `"op":"cifrar"`, e a linha inserida no master aparece na réplica |
+| (B) defeito reposto | `"cifra": false` na origem — que era o **padrão velho** | o master (que exige de fábrica) recusa com `[SP000025] … peça o aperto de mão`, e **nada** atravessa |
+
+A rodada (B) é a que dá sentido à (A): ela repõe, por escrito, o par de padrões
+que o pedido 370 mediu como quebrado — *um source de fábrica recusando uma
+réplica de fábrica*. O cliente que escreve no master é o `phxsqlcmd`, que fala
+o aperto desde o pedido 370.
+
+Medido em 18/09/2026: (A) **19** apertos no `acessos.log` e a linha atravessa;
+(B) a réplica registra a recusa no próprio log e o `database` nem chega a
+existir nela. Desenho e tabela: [`docs/CIFRA-DO-FIO.md`](../../docs/CIFRA-DO-FIO.md) §13.

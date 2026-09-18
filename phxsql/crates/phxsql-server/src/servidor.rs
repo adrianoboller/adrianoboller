@@ -23077,34 +23077,7 @@ impl Servidor {
                         "informe \"origem\" (uma ja configurada) ou \"host\"".into(),
                     ));
                 }
-                crate::config::Origem {
-                    nome: p.texto_ou("nome", "teste").trim().to_string(),
-                    host,
-                    porta: p
-                        .inteiro_ou("porta", crate::config::PORTA_PADRAO as i64)
-                        .clamp(1, 65_535) as u16,
-                    // `token_remoto` primeiro, e `token` so como resto:
-                    // no `/api` da tela o campo `token` JA e o de quem pede
-                    // aqui, entao mandar o do outro servidor com o mesmo nome
-                    // faz um sobrescrever o outro dentro do mesmo objeto.
-                    token: {
-                        let remoto = p.texto_ou("token_remoto", "");
-                        if remoto.is_empty() {
-                            p.texto_ou("token", "").to_string()
-                        } else {
-                            remoto.to_string()
-                        }
-                    },
-                    databases: p.textos("databases"),
-                    reconectar_em: 10,
-                    usuario: p.texto_ou("usuario", "").trim().to_string(),
-                    senha_hash: p.texto_ou("senha_hash", "").trim().to_string(),
-                    senha: p.texto_ou("senha", "").to_string(),
-                    cada_minutos: 0,
-                    hora: String::new(),
-                    cifra: p.booleano_ou("cifra", false),
-                    chave_do_fio: p.texto_ou("chave_do_fio", "").trim().to_string(),
-                }
+                origem_da_sonda(p, host)
             }
         };
 
@@ -24422,6 +24395,48 @@ fn objeto_do_pedido(corpo: &str, resultado: &Result<Json>) -> Acesso {
         tabela: j.texto_ou("tabela", "").to_string(),
         codigo: resultado.as_ref().err().map(|e| e.codigo()).unwrap_or(0),
         ..Acesso::default()
+    }
+}
+
+/// A `Origem` de uma sonda `replicacao_testar` montada com o que veio no
+/// pedido -- o caminho de quem esta ligando um source NOVO, que ainda nao esta
+/// no `config.json`.
+///
+/// Fora do laco, e pura, pelo mesmo motivo da [`origem_do_master`]: o irmao do
+/// padrao de saida mora aqui. Esta origem cai no MESMO `replica::ligar` que o
+/// laco vai usar depois, entao sondar em claro o que a replicacao vai pedir
+/// cifrado devolveria "ligacao boa" para uma configuracao que nao sobe -- e o
+/// inverso, um "nao liga" para uma que sobe. O padrao e um so
+/// ([`crate::config::CIFRA_DE_SAIDA_PADRAO`]) porque padrao que mora em dois
+/// lugares diverge nos dois.
+fn origem_da_sonda(p: &Json, host: String) -> crate::config::Origem {
+    crate::config::Origem {
+        nome: p.texto_ou("nome", "teste").trim().to_string(),
+        host,
+        porta: p
+            .inteiro_ou("porta", crate::config::PORTA_PADRAO as i64)
+            .clamp(1, 65_535) as u16,
+        // `token_remoto` primeiro, e `token` so como resto: no `/api` da tela o
+        // campo `token` JA e o de quem pede aqui, entao mandar o do outro
+        // servidor com o mesmo nome faz um sobrescrever o outro dentro do
+        // mesmo objeto.
+        token: {
+            let remoto = p.texto_ou("token_remoto", "");
+            if remoto.is_empty() {
+                p.texto_ou("token", "").to_string()
+            } else {
+                remoto.to_string()
+            }
+        },
+        databases: p.textos("databases"),
+        reconectar_em: 10,
+        usuario: p.texto_ou("usuario", "").trim().to_string(),
+        senha_hash: p.texto_ou("senha_hash", "").trim().to_string(),
+        senha: p.texto_ou("senha", "").to_string(),
+        cada_minutos: 0,
+        hora: String::new(),
+        cifra: p.booleano_ou("cifra", crate::config::CIFRA_DE_SAIDA_PADRAO),
+        chave_do_fio: p.texto_ou("chave_do_fio", "").trim().to_string(),
     }
 }
 
@@ -34244,9 +34259,12 @@ mod testes_config_gravar {
         assert_eq!(o.host, "10.0.0.2");
         assert_eq!(o.porta, 5311);
 
-        // Cifra desligada: a replicacao do cluster continua em claro, como
-        // sempre foi -- e o par pedreo do teste de cima.
-        let claro = txt.replace(r#""cifra":true,"#, "");
+        // Cifra desligada pelo escape ESCRITO: a replicacao do cluster segue o
+        // interruptor para os DOIS lados, e nao so para ligar. Ate 18/09/2026
+        // este par tirava o campo do arquivo (o padrao era claro); com o padrao
+        // ligado, tirar o campo deixaria de provar coisa alguma -- as duas
+        // metades do teste dariam cifrado.
+        let claro = txt.replace(r#""cifra":true,"#, r#""cifra":false,"#);
         let cc = Config::de_json(&Json::analisar(&claro).unwrap())
             .unwrap()
             .cluster
@@ -34258,6 +34276,40 @@ mod testes_config_gravar {
             !o2.cifra,
             "a replicacao do cluster cifrou sem ninguem pedir"
         );
+    }
+
+    /// **O IRMAO do padrao de saida, e ele mora fora do `config.rs`.**
+    ///
+    /// A sonda `replicacao_testar` monta a `Origem` com o que veio no pedido e
+    /// cai no MESMO `replica::ligar` do laco. Padrao que divergisse aqui faria
+    /// a tela provar a ligacao em CLARO e a replicacao configurada logo depois
+    /// pedir o aperto: "testei e funcionou" para uma configuracao que nao
+    /// sobe. O teste compara os DOIS caminhos, e nao so o valor, porque o
+    /// defeito e a divergencia entre eles.
+    #[test]
+    fn a_sonda_de_replicacao_tem_o_mesmo_padrao_de_cifra_do_arquivo() {
+        let pedido = Json::analisar(r#"{"host":"10.0.0.9","porta":5000}"#).unwrap();
+        let o = origem_da_sonda(&pedido, "10.0.0.9".into());
+        assert!(
+            o.cifra,
+            "a sonda ia falar claro com um source que o laco vai pedir cifrado"
+        );
+        let do_arquivo = Config::de_json(
+            &Json::analisar(
+                r#"{"token":"x","replicacao":{"papel":"replica","origens":[
+                     {"nome":"matriz","host":"10.0.0.9","porta":5000}]}}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            o.cifra, do_arquivo.replicacao.origens[0].cifra,
+            "a sonda e o arquivo divergiram no padrao da cifra"
+        );
+        // O escape ESCRITO vale aqui tambem: quem sonda um source anterior ao
+        // aperto manda `"cifra": false` no proprio pedido.
+        let claro = Json::analisar(r#"{"host":"10.0.0.9","cifra":false}"#).unwrap();
+        assert!(!origem_da_sonda(&claro, "10.0.0.9".into()).cifra);
     }
 
     /// O no acrescentado a quente com pino guarda o pino no `config.json` -- e o

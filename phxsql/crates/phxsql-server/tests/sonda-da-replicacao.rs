@@ -48,6 +48,14 @@ fn subir_servidor(base: &std::path::Path, porta: u16, token: &str) -> Arc<Servid
     // linha a recusa lida aqui seria a da cifra, e a prova passaria a medir
     // o portao errado.
     c.cifra_fio.exigir = false;
+    // A estatica do fio mora DENTRO do dir do teste. Este `Config` nasce de
+    // um literal e nao de arquivo, entao `caminho` e `None` e o caminho
+    // relativo do padrao (`chave-do-fio.hex`) cairia no diretorio de onde a
+    // bateria rodou -- uma chave PRIVADA solta em `crates/phxsql-server/`, que
+    // um `git add .` distraido comitaria. Desde 18/09/2026 a sonda pede o
+    // aperto por padrao, entao este caminho passa a ser exercitado toda vez.
+    // Mesmo conserto que o `phxsql-cmd` levou no pedido 370, no caminho irmao.
+    c.cifra_fio.arquivo = base.join("chave-do-fio.hex");
     c.web.ligado = false;
     let s = Servidor::novo(c).unwrap();
     let copia = Arc::clone(&s);
