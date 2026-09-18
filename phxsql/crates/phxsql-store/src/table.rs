@@ -456,6 +456,41 @@ fn marcadas_do_esquema(esquema: &Schema) -> Vec<usize> {
         .collect()
 }
 
+/// O valor velho da coluna `i` como a TRILHA o enxerga.
+///
+/// Para coluna inline e o que veio do `decodificar`. Para coluna externa e o
+/// que a leitura do bloco entregou -- e `None` quando ela nao entregou nada,
+/// que e diferente de «estava vazio» e por isso nao pode virar `Value::Null`.
+///
+/// A lista de externos e curta por construcao (so as colunas MARCADAS que
+/// moram fora do `.reg`), entao a busca linear custa menos que o `HashMap`
+/// que a substituiria -- e nao aloca no caminho de escrita.
+fn velho_da_coluna<'a>(
+    i: usize,
+    antes: &'a [Value],
+    externos_antigos: &'a [(usize, Option<Value>)],
+) -> Option<&'a Value> {
+    match externos_antigos.iter().find(|(c, _)| *c == i) {
+        Some((_, v)) => v.as_ref(),
+        None => Some(&antes[i]),
+    }
+}
+
+/// Este par antes/depois conta uma mudanca para a trilha?
+///
+/// A diferenca para um `!=` cru e uma so, e ela existe por causa do caminho de
+/// gravacao: `montar_payload` aceita `Str` e `Memo` na mesma coluna `Memo`, e
+/// o que volta do `.memo` e sempre `Memo`. Comparar a VARIANTE acusaria
+/// mudanca onde o texto e identico -- e o falso positivo em coluna externa e
+/// exatamente o defeito que o pedido 367 veio matar, nao um a repor por outra
+/// porta.
+fn mudou_para_a_trilha(antes: &Value, depois: &Value) -> bool {
+    match (antes, depois) {
+        (Value::Str(a) | Value::Memo(a), Value::Str(b) | Value::Memo(b)) => a != b,
+        (a, b) => a != b,
+    }
+}
+
 /// As chaves estrangeiras que pediram conferencia.
 ///
 /// Declarar sempre foi aceito aqui e nunca foi imposto; conferir todas as
@@ -2843,35 +2878,60 @@ impl Table {
                 continue;
             }
             let ty = self.esquema.colunas()[i].ty;
-            let off = self.esquema.offset_coluna(i)?;
-            let fim = off + ty.largura();
-            let valor = match ty {
-                ColumnType::Bin => {
-                    if !carregar_externos {
-                        Value::Null
-                    } else {
-                        let p = Ponteiro::ler(&payload[off..fim])?;
-                        let bytes = self.bin.ler(&p)?;
-                        Value::Bin(self.reg.abrir_externo(i as u16, &bytes)?)
-                    }
+            let valor = if ty.externo() {
+                if carregar_externos {
+                    self.externo(payload, i)?
+                } else {
+                    Value::Null
                 }
-                ColumnType::Memo => {
-                    if !carregar_externos {
-                        Value::Null
-                    } else {
-                        let p = Ponteiro::ler(&payload[off..fim])?;
-                        let bytes = self.memo.ler(&p)?;
-                        let bytes = self.reg.abrir_externo(i as u16, &bytes)?;
-                        Value::Memo(String::from_utf8(bytes).map_err(|e| {
-                            PhxError::Corrompido(format!("memo nao e UTF-8 valido: {e}"))
-                        })?)
-                    }
-                }
-                _ => ler_inline(&ty, &payload[off..fim])?,
+            } else {
+                let off = self.esquema.offset_coluna(i)?;
+                ler_inline(&ty, &payload[off..off + ty.largura()])?
             };
             linha.push(valor);
         }
         Ok(linha)
+    }
+
+    /// O valor de UMA coluna externa (`Bin`/`Memo`), lido do bloco dela.
+    ///
+    /// # Por que e uma funcao, e nao dois blocos dentro do `decodificar`
+    ///
+    /// Porque agora ha DOIS chamadores: a leitura da linha e a trilha, que
+    /// precisa do valor velho de uma coluna marcada sem carregar a linha
+    /// inteira. Dois decodificadores de externo divergiriam calados -- e o
+    /// sintoma seria a trilha dizer que o laudo mudou porque o outro caminho
+    /// abriu o bloco de outro jeito.
+    ///
+    /// O bit de nulo e conferido aqui, e nao so no `decodificar` (que ja o
+    /// trata antes de chegar): quem pergunta pelo valor de uma coluna sozinha
+    /// tem de receber `Null` quando ela e nula, em vez de tentar ler um
+    /// ponteiro vazio.
+    fn externo(&mut self, payload: &[u8], i: usize) -> Result<Value> {
+        if payload[i / 8] & (1 << (i % 8)) != 0 {
+            return Ok(Value::Null);
+        }
+        let ty = self.esquema.colunas()[i].ty;
+        let off = self.esquema.offset_coluna(i)?;
+        let p = Ponteiro::ler(&payload[off..off + ty.largura()])?;
+        match ty {
+            ColumnType::Bin => {
+                let bytes = self.bin.ler(&p)?;
+                Ok(Value::Bin(self.reg.abrir_externo(i as u16, &bytes)?))
+            }
+            ColumnType::Memo => {
+                let bytes = self.memo.ler(&p)?;
+                let bytes = self.reg.abrir_externo(i as u16, &bytes)?;
+                Ok(Value::Memo(String::from_utf8(bytes).map_err(|e| {
+                    PhxError::Corrompido(format!("memo nao e UTF-8 valido: {e}"))
+                })?))
+            }
+            outro => Err(PhxError::Tipo(format!(
+                "a coluna {} de {} e {outro:?} e nao mora fora do .reg",
+                self.esquema.colunas()[i].nome,
+                self.nome
+            ))),
+        }
     }
 
     /// Ponteiros externos guardados num payload, para poder liberar depois.
@@ -3660,13 +3720,21 @@ impl Table {
         // precisa estar la para o texto antigo poder ser lido.
         self.desindexar_texto(rowid, &antigo)?;
         self.indexar_texto(rowid, &payload)?;
+        // O valor VELHO das colunas marcadas que moram fora do `.reg` se le
+        // aqui, e nao junto da trilha la embaixo: a linha seguinte solta o
+        // bloco, e depois dela a trilha so teria `Null` para comparar. Era o
+        // pedido 367 -- a trilha afirmava que o laudo estava vazio, e o `.memo`
+        // que sabia o contrario ja tinha sido liberado. O irmao
+        // `desindexar_texto` depende da MESMA janela, duas linhas acima.
+        let externos_antigos = self.marcados_externos_antigos(&antigo);
         self.liberar_externos(&ponteiros_antigos)?;
         self.anotar(Operacao::Alteracao, rowid, versao, &payload)?;
         // A trilha vem DEPOIS de a linha estar gravada: uma trilha que
         // registra uma alteracao que falhou depois seria pior que nenhuma.
         // O `valores_antigos` ja esta decodificado aqui em cima por causa dos
-        // indices, entao o par antes/depois nao custa leitura nova.
-        self.trilhar_alteracao(rowid, &valores_antigos, valores)?;
+        // indices, entao o par antes/depois das colunas INLINE nao custa
+        // leitura nova.
+        self.trilhar_alteracao(rowid, &valores_antigos, valores, &externos_antigos)?;
         // As filhas acompanham DEPOIS de a mae estar gravada, e o `is_empty()`
         // e o portao: alteracao sem cascata nao paga nem a chamada.
         if !cascata.is_empty() {
@@ -3679,25 +3747,47 @@ impl Table {
     ///
     /// # O portao vem antes do trabalho
     ///
-    /// As duas primeiras linhas decidem tudo, e nenhuma delas toca em disco,
-    /// texto ou arquivo. Numa tabela sem coluna marcada -- a maioria -- o
-    /// custo da trilha inteira e um `is_empty()`. E a licao do Profiler
-    /// escrita como codigo: o observador pergunta se esta ligado ANTES de
-    /// fazer qualquer coisa, e nao depois de ja ter montado o que vai jogar
-    /// fora.
-    fn trilhar_alteracao(&mut self, rowid: RowId, antes: &[Value], depois: &[Value]) -> Result<()> {
-        if self.colunas_marcadas.is_empty() || !trilha::alteracoes_ligadas() {
+    /// A primeira linha decide tudo, e ela nao toca em disco, texto ou
+    /// arquivo. Numa tabela sem coluna marcada -- a maioria -- o custo da
+    /// trilha inteira e um `is_empty()`. E a licao do Profiler escrita como
+    /// codigo: o observador pergunta se esta ligado ANTES de fazer qualquer
+    /// coisa, e nao depois de ja ter montado o que vai jogar fora.
+    ///
+    /// # `externos_antigos`, e por que ele nao sai de `antes`
+    ///
+    /// `antes` vem de `decodificar(payload, false)`, que devolve `Null` para
+    /// `Bin` e `Memo` -- e certo, porque quem o pediu foram os indices. A
+    /// trilha precisa de outra coisa: o valor que estava no `.memo`/`.bin`,
+    /// lido antes de o bloco ser liberado. E o que `externos_antigos` carrega,
+    /// por posicao de coluna, com `None` para «nao foi possivel ler».
+    fn trilhar_alteracao(
+        &mut self,
+        rowid: RowId,
+        antes: &[Value],
+        depois: &[Value],
+        externos_antigos: &[(usize, Option<Value>)],
+    ) -> Result<()> {
+        if !self.trilha_de_alteracao_ligada() {
             return Ok(());
         }
         // So as colunas marcadas que REALMENTE mudaram. Gravar as que ficaram
         // iguais encheria a trilha de linhas que nao provam nada e afogaria
         // as que provam -- salvar a ficha sem mexer em nada geraria seis
-        // registros dizendo que nada aconteceu.
-        let mudou: Vec<usize> = self
+        // registros dizendo que nada aconteceu. Desde o pedido 367 a garantia
+        // alcanca tambem a coluna EXTERNA, que era a que escapava dela.
+        let mudou: Vec<(usize, Option<&Value>)> = self
             .colunas_marcadas
             .iter()
             .copied()
-            .filter(|&i| i < antes.len() && i < depois.len() && antes[i] != depois[i])
+            .filter(|&i| i < antes.len() && i < depois.len())
+            .filter_map(|i| match velho_da_coluna(i, antes, externos_antigos) {
+                // Sem o valor velho nao ha como afirmar que NAO mudou. O
+                // registro sai, e sai com a marca de indisponivel: entre
+                // calar e dizer o que se sabe, a auditoria quer o segundo.
+                None => Some((i, None)),
+                Some(v) if mudou_para_a_trilha(v, &depois[i]) => Some((i, Some(v))),
+                Some(_) => None,
+            })
             .collect();
         if mudou.is_empty() {
             return Ok(());
@@ -3705,14 +3795,59 @@ impl Table {
         // A identidade se monta UMA vez para as N colunas: ela e da linha, e
         // nao da coluna. Sai dos valores NOVOS -- e a linha como ela ficou.
         let identidade = self.identidade_de_valores(depois);
-        for i in mudou {
+        for (i, velho) in mudou {
             let nome = self.esquema.colunas()[i].nome.clone();
-            let a = trilha::valor_para_trilha(&nome, &antes[i]);
+            let a = velho.map(|v| trilha::valor_para_trilha(&nome, v));
             let d = trilha::valor_para_trilha(&nome, &depois[i]);
             self.trilha
                 .registrar_alteracao(rowid, &nome, a, d, &identidade)?;
         }
         Ok(())
+    }
+
+    /// A trilha de ALTERACAO vai gravar alguma coisa nesta tabela?
+    ///
+    /// Mora aqui, e nao copiada nos dois chamadores, porque agora sao dois: a
+    /// leitura do valor externo velho (que acontece com o bloco ainda vivo) e
+    /// a gravacao do registro (que acontece depois de a linha estar no disco).
+    /// Portao copiado e portao que diverge -- e um portao que diverge de si
+    /// mesmo faz a leitura ser paga por quem nao vai gravar nada.
+    fn trilha_de_alteracao_ligada(&self) -> bool {
+        !self.colunas_marcadas.is_empty() && trilha::alteracoes_ligadas()
+    }
+
+    /// O valor VELHO das colunas marcadas que moram FORA do `.reg`.
+    ///
+    /// # O portao vem antes do trabalho, e sao dois
+    ///
+    /// Tabela sem coluna marcada, ou com a trilha desligada, sai na primeira
+    /// linha sem tocar em disco. Tabela marcada cujas colunas marcadas sao
+    /// todas inline sai com a lista vazia, tambem sem I/O. Quem paga leitura e
+    /// so quem tem `Bin`/`Memo` **marcado** -- e paga por coluna marcada,
+    /// nunca pela linha: um anexo de dois megabytes SEM marca nao entra aqui,
+    /// e e por isso que isto nao e um `decodificar(payload, true)`.
+    ///
+    /// # Por que o erro vira `None` em vez de subir
+    ///
+    /// Esta leitura acontece com a linha nova JA gravada. Derrubar o
+    /// `atualizar` porque o bloco velho nao abriu trocaria um registro de
+    /// auditoria imperfeito por uma gravacao perdida -- e a gravacao e o que o
+    /// usuario pediu. O `None` vira `trilha::FLAG_ANTES_INDISPONIVEL`, que e a
+    /// trilha dizendo o que sabe em vez de inventar um vazio.
+    fn marcados_externos_antigos(&mut self, payload: &[u8]) -> Vec<(usize, Option<Value>)> {
+        if !self.trilha_de_alteracao_ligada() {
+            return Vec::new();
+        }
+        let externas: Vec<usize> = self
+            .colunas_marcadas
+            .iter()
+            .copied()
+            .filter(|&i| self.esquema.colunas()[i].ty.externo())
+            .collect();
+        externas
+            .into_iter()
+            .map(|i| (i, self.externo(payload, i).ok()))
+            .collect()
     }
 
     /// Exclui de vez: guarda a linha inteira no `.trash`, **espera o disco

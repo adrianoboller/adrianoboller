@@ -129,7 +129,9 @@ viajando byte a byte — o mesmo que a FK já fazia.
 «Quem acessou» significa registrar leitura de coluna marcada. O desenho ingênuo
 — um registro por linha lida, ou pior, por célula — foi **medido e recusado**.
 
-`cargo run --release --example custo-da-trilha -- 5000`, numa varredura de 5.000
+`cargo run --release --example custo-da-trilha -- 5000
+# a secao 4 (coluna externa marcada) roda com no maximo 2.000 linhas por
+# rodada: o laudo de 64 KiB escreve 128 MB por rodada, e o zelador agradece`, numa varredura de 5.000
 linhas com 6 colunas marcadas:
 
 | desenho | tempo | registros | bytes de trilha |
@@ -211,6 +213,77 @@ contador. Não implementei porque seria mudar o `anexar` que os quatro diários
 compartilham em espírito, e porque **medir a premissa vem antes de implementar
 o item** — o item aqui é meu, e ele continua sendo palpite até alguém medir se
 os 5,8 µs são mesmo a segunda escrita.
+
+### A coluna **externa** marcada: o que ela custa, e o que custava mentir
+
+Pedido 367, medido em 18/09/2026. A trilha de uma coluna `Bin`/`Memo` marcada
+afirmava três coisas falsas, e as três saíam da mesma linha: o `atualizar`
+decodifica a linha velha com `carregar_externos = false` — porque quem pediu a
+decodificação foram os **índices**, que não indexam externo — e nesse modo
+`Bin` e `Memo` voltam `Value::Null`. O par antes/depois comparava esse `Null`
+com o valor do chamador:
+
+| o que acontecia | o que a trilha dizia |
+|---|---|
+| alterar um laudo | `antes=""` — **afirmava que o campo estava vazio**, e o valor velho já tinha ido embora com o `liberar_externos` |
+| **apagar** um laudo (`Memo` → `Null`) | **nada**: `Null != Null` é falso, e o filtro cortava o evento que a lei mais quer ver |
+| salvar a ficha **sem tocar** na foto | `antes="" depois="2048 bytes"` — um registro dizendo que a foto mudou |
+
+O conserto lê o valor velho do bloco **antes** de `liberar_externos` soltá-lo —
+a mesma janela de que o `desindexar_texto` já dependia, duas linhas acima. E
+lê só as colunas **marcadas** que moram fora do `.reg`: um anexo de dois
+megabytes sem marca não entra, e por isso isto não é um
+`decodificar(payload, true)`.
+
+O custo, medido com `--example custo-da-trilha` (7 rodadas de 2.000 linhas,
+mediana e faixa min–max; o **controle** é a mesma tabela e o mesmo trabalho de
+escrita com a marca do laudo desligada):
+
+| laudo | cenário | antes | depois | registros antes → depois |
+|---|---|---:|---:|---|
+| 2 KiB | controle (sem marca) | 13,85 (13,28–14,34) | 14,00 (11,82–14,56) | 2.000 → 2.000 |
+| 2 KiB | marcado, **intocado** | 17,94 (16,82–19,77) | 16,60 (13,99–18,45) | **4.000 → 2.000** |
+| 2 KiB | marcado, alterado | 17,67 (16,33–20,92) | 22,66 (18,31–23,88) | 4.000 → 4.000 |
+| 64 KiB | controle (sem marca) | 75,08 (71,59–83,58) | 77,14 (66,08–84,65) | 2.000 → 2.000 |
+| 64 KiB | marcado, **intocado** | 88,48 (83,53–93,97) | 128,47 (112,21–133,20) | **4.000 → 2.000** |
+| 64 KiB | marcado, alterado | 88,37 (76,02–102,06) | 139,15 (124,89–148,43) | 4.000 → 4.000 |
+
+Em microssegundos por linha, **sobre o controle**: com 2 KiB o caso intocado
+saiu de +4,09 para +2,60 (faixas cruzadas — é ruído, e a metade dos registros
+que sumiu eram os falsos); o caso alterado saiu de +3,82 para +8,66. Com
+64 KiB, +13,40 → +51,33 (intocado) e +13,29 → +62,01 (alterado), aí sim com as
+faixas **sem se cruzar**.
+
+**O número que põe isso em escala:** ler o bloco velho custa **0,59 µs/KiB**
+(37,93 µs a mais por 64 KiB), e o `atualizar` **já pagava 0,99 µs/KiB** só para
+regravar o bloco novo daquela mesma coluna (13,85 → 75,08 µs do controle, de
+2 para 64 KiB). A leitura que a trilha passou a fazer custa **60% do que a
+própria alteração já gastava naquela coluna** — e só em tabela que declarou
+`Bin`/`Memo` como dado pessoal, que é ato deliberado de quem cadastrou o campo.
+
+#### O atalho pelo ponteiro, avaliado e **recusado**
+
+O `Ponteiro` de 16 bytes do `.reg` carrega `tamanho` e `crc` do conteúdo.
+Comparar o ponteiro velho com o novo decidiria «mudou?» **sem I/O nenhum** —
+pouparia exatamente os 37,93 µs/linha medidos acima nos 64 KiB.
+
+Está recusado, e o motivo é do código e não do gosto: `Reg::selar_externo`
+sela o conteúdo com um **nonce sorteado a cada gravação** quando a coluna é
+externa **e marcada** (`reg.rs`, `externa_marcada`). Numa tabela cifrada, o
+mesmo laudo regravado sem uma letra de diferença produz bytes diferentes e
+CRC diferente — e o falso positivo voltaria justamente para as tabelas que
+mais se protegem. Um atalho que vale só com a cifra desligada seriam dois
+comportamentos com o mesmo nome.
+
+#### Quando o valor velho **não** pode ser lido
+
+A trilha só grava o que consegue afirmar. Se o bloco não abre (CRC estragado,
+volume perdido), o registro sai com o bit `FLAG_ANTES_INDISPONIVEL` e o texto
+`(indisponivel: o valor anterior nao pode ser lido)` — **não** com um `""`, que
+afirmaria que o campo estava em branco. A leitura acontece com a linha nova já
+gravada, então o erro **não derruba o `atualizar`**: trocar um registro de
+auditoria imperfeito por uma gravação perdida seria o pior negócio dos dois.
+Quem lê o arquivo decide pelo **bit**, nunca pela frase.
 
 ---
 
@@ -323,6 +396,17 @@ o `.lgpd` **não existe** em nenhum momento.
   chamada `observacao` e prova que ele não sai.
 - **A marca existia, era gravada, era devolvida — e nenhuma tela a mostrava.**
   Ver §3. É o achado de maior valor desta rodada, e não estava no pedido.
+- **A garantia de «não tocar não gera registro» existia e só cobria coluna
+  inline** (pedido 367). O comentário acima do `trilhar_alteracao` jurava que
+  salvar a ficha sem mexer em nada não geraria seis registros — e jurava certo
+  para as seis colunas `Str`, e errado para a sétima que mora no `.memo`.
+  Comentário que se declara resolvido é o motivo de ninguém olhar de novo.
+- **Um sentinela que significa duas coisas mente para o segundo chamador.**
+  `decodificar(payload, false)` devolve `Value::Null` para dizer «não
+  carreguei o externo», e `Value::Null` também é o valor legítimo de uma coluna
+  vazia. Para os índices, que foram quem pediu o modo, os dois casos dão no
+  mesmo. Para a auditoria, um é «estava em branco» e o outro é «não sei» — e a
+  trilha gravava o primeiro nos dois.
 
 ### Infrutíferos, e o que eles ensinaram
 

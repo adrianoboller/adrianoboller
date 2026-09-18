@@ -116,6 +116,28 @@ pub const IP_MAX: usize = 64;
 pub const FLAG_ANTES_REDIGIDO: u8 = 1;
 /// Bit 1 das flags: idem para `depois`.
 pub const FLAG_DEPOIS_REDIGIDO: u8 = 2;
+/// Bit 2 das flags: o valor de `antes` NAO pode ser lido, e o texto e a marca
+/// disso -- nao o valor, nem um vazio que passaria por «campo em branco».
+///
+/// # Por que existe, e por que nao ha irmao para `depois`
+///
+/// A trilha so pode gravar o que consegue afirmar. Um `Memo` marcado cujo
+/// bloco do `.memo` nao abre (CRC estragado, volume perdido) nao tem valor
+/// velho a gravar -- e gravar `""` ali afirmaria que o campo estava em branco,
+/// que e uma frase falsa sobre o dado. Registro de auditoria que afirma um
+/// fato falso e pior que registro ausente.
+///
+/// `depois` nao ganha o mesmo bit porque nao ha por onde: ele e o valor que o
+/// chamador tem na mao ao gravar a linha, nunca uma leitura de disco. Bit
+/// reservado que nada liga e bit que envelhece calado.
+pub const FLAG_ANTES_INDISPONIVEL: u8 = 4;
+
+/// O texto que acompanha [`FLAG_ANTES_INDISPONIVEL`].
+///
+/// O bit e que decide; este texto e para quem le o arquivo com o olho. Quem
+/// decide pela frase quebra calado no dia em que alguem melhorar a redacao --
+/// e por isso [`Evento::antes_indisponivel`] le o bit, nunca isto.
+pub const INDISPONIVEL: &str = "(indisponivel: o valor anterior nao pode ser lido)";
 
 /// O que aconteceu com o dado pessoal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -197,6 +219,11 @@ impl Evento {
     /// O valor de depois foi redigido por ser segredo?
     pub fn depois_redigido(&self) -> bool {
         self.flags & FLAG_DEPOIS_REDIGIDO != 0
+    }
+
+    /// O valor de antes nao pode ser lido? Ver [`FLAG_ANTES_INDISPONIVEL`].
+    pub fn antes_indisponivel(&self) -> bool {
+        self.flags & FLAG_ANTES_INDISPONIVEL != 0
     }
 
     /// Bytes de texto claro que este registro carrega.
@@ -581,19 +608,40 @@ impl TrilhaFile {
     /// `antes` e `depois` ja chegam prontos de [`valor_para_trilha`]: o
     /// julgamento sobre o que pode virar texto e daquela funcao, e nao deste
     /// arquivo, para que exista UM lugar so decidindo isso.
+    ///
+    /// # Por que `antes` e `Option` e `depois` nao
+    ///
+    /// `None` quer dizer **o valor velho nao pode ser lido**, e o registro sai
+    /// com [`FLAG_ANTES_INDISPONIVEL`] em vez de um `""` que afirmaria que o
+    /// campo estava em branco.
+    ///
+    /// A assimetria e a verdade do caminho, e nao descuido: `antes` pode vir
+    /// de um bloco do `.memo`/`.bin` que nao abre; `depois` e o valor que o
+    /// chamador tem na mao ao gravar a linha, e nao ha de onde faltar. Um
+    /// `Option` nos dois lados criaria um estado que ninguem sabe produzir --
+    /// e estado que ninguem produz e estado que ninguem prova.
     #[allow(clippy::too_many_arguments)]
     pub fn registrar_alteracao(
         &mut self,
         rowid: RowId,
         coluna: &str,
-        antes: (String, bool),
+        antes: Option<(String, bool)>,
         depois: (String, bool),
         identidade: &str,
     ) -> Result<Evento> {
         let mut flags = 0u8;
-        if antes.1 {
-            flags |= FLAG_ANTES_REDIGIDO;
-        }
+        let antes = match antes {
+            Some((texto, redigido)) => {
+                if redigido {
+                    flags |= FLAG_ANTES_REDIGIDO;
+                }
+                cortar(&texto, VALOR_MAX)
+            }
+            None => {
+                flags |= FLAG_ANTES_INDISPONIVEL;
+                INDISPONIVEL.to_string()
+            }
+        };
         if depois.1 {
             flags |= FLAG_DEPOIS_REDIGIDO;
         }
@@ -604,7 +652,7 @@ impl TrilhaFile {
             rowid,
             usuario: self.usuario,
             coluna: cortar(coluna, COLUNA_MAX),
-            antes: cortar(&antes.0, VALOR_MAX),
+            antes,
             depois: cortar(&depois.0, VALOR_MAX),
             identidade: cortar(identidade, IDENTIDADE_MAX),
             ip: cortar(&self.ip, IP_MAX),
@@ -817,13 +865,19 @@ mod testes {
         (s.to_string(), false)
     }
 
+    /// O mesmo, do lado do `antes`, que aceita a ausencia. Ver
+    /// [`TrilhaFile::registrar_alteracao`].
+    fn velho(s: &str) -> Option<(String, bool)> {
+        Some(claro(s))
+    }
+
     #[test]
     fn grava_e_le_de_volta() {
         let d = temp("ida-e-volta");
         let mut t = TrilhaFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
         t.usuario = 7;
         t.ip = "192.0.2.10".into();
-        t.registrar_alteracao(1, "email", claro("a@x.com"), claro("b@y.com"), "id=42")
+        t.registrar_alteracao(1, "email", velho("a@x.com"), claro("b@y.com"), "id=42")
             .unwrap();
         t.registrar_acesso(0, "nome,cpf", "cidade=Blumenau", 137)
             .unwrap();
@@ -853,7 +907,7 @@ mod testes {
         let valores = ["", "a", "um valor bem mais longo que os outros", "xy"];
         for (i, v) in valores.iter().enumerate() {
             t.ip = "x".repeat(i + 1);
-            t.registrar_alteracao(i as u64 + 1, "c", claro(v), claro("z"), "id=1")
+            t.registrar_alteracao(i as u64 + 1, "c", velho(v), claro("z"), "id=1")
                 .unwrap();
         }
         let lidos = t.ler(0, 0).unwrap();
@@ -918,7 +972,7 @@ mod testes {
         use std::os::unix::fs::PermissionsExt;
         let d = temp("permissao");
         let mut t = TrilhaFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
-        t.registrar_alteracao(1, "cpf", claro("a"), claro("b"), "id=1")
+        t.registrar_alteracao(1, "cpf", velho("a"), claro("b"), "id=1")
             .unwrap();
         let caminho = d.join("t.lgpd");
         let modo = std::fs::metadata(&caminho).unwrap().permissions().mode();
@@ -936,11 +990,39 @@ mod testes {
         let mut t = TrilhaFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
         // "ç" tem 2 bytes: o corte cai no meio dele se for cru.
         let longo = "ç".repeat(VALOR_MAX);
-        t.registrar_alteracao(1, "obs", claro(&longo), claro(""), "id=1")
+        t.registrar_alteracao(1, "obs", velho(&longo), claro(""), "id=1")
             .unwrap();
         let lidos = t.ler(0, 0).unwrap();
         assert!(lidos[0].antes.len() <= VALOR_MAX);
         assert!(longo.starts_with(&lidos[0].antes));
+    }
+
+    /// O `None` no `antes` atravessa o arquivo: grava a marca, liga o bit, e a
+    /// leitura devolve os dois. Sem o bit, quem le teria de decidir pela FRASE
+    /// -- e frase muda no dia em que alguem melhorar a redacao.
+    #[test]
+    fn antes_indisponivel_vai_e_volta_com_o_bit() {
+        let d = temp("indisponivel");
+        let mut t = TrilhaFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
+        t.registrar_alteracao(1, "laudo", None, claro("LAUDO_NOVO"), "id=1")
+            .unwrap();
+        let lidos = t.ler(0, 0).unwrap();
+        assert_eq!(lidos.len(), 1);
+        assert!(lidos[0].antes_indisponivel());
+        assert_eq!(lidos[0].antes, INDISPONIVEL);
+        assert_eq!(lidos[0].depois, "LAUDO_NOVO");
+        // E os dois bits vizinhos continuam apagados: um `flags |= 4` que
+        // acertasse o bit errado passaria despercebido sem esta linha.
+        assert!(!lidos[0].antes_redigido() && !lidos[0].depois_redigido());
+
+        // A prova pelo contrario, no mesmo arquivo: um `antes` presente e
+        // VAZIO (coluna que estava nula) nao liga o bit. Sem ela, o teste
+        // acima passaria ate numa implementacao que ligasse o bit sempre.
+        t.registrar_alteracao(2, "laudo", velho(""), claro("X"), "id=2")
+            .unwrap();
+        let lidos = t.ler(0, 0).unwrap();
+        assert!(!lidos[1].antes_indisponivel(), "nulo virou indisponivel");
+        assert_eq!(lidos[1].antes, "");
     }
 
     #[test]

@@ -1299,7 +1299,7 @@ Idêntico ao dos outros três diários, com a assinatura `PHXLGP\0\0`. A versão
 |---|---:|---|
 | `carimbo` | 8 | quando, em ms desde a época. É o "data e hora" do pedido |
 | `tipo` | 1 | `1` alteração, `2` acesso |
-| `flags` | 1 | bit 0: `antes` é marca de redação; bit 1: idem `depois` |
+| `flags` | 1 | bit 0: `antes` é marca de redação; bit 1: idem `depois`; bit 2: `antes` **não pôde ser lido** (ver abaixo) |
 | `antes_len` | 2 | bytes do valor anterior, **em claro** |
 | `rowid` | 8 | onde a linha está **neste** servidor |
 | `usuario` | 4 | quem. Zero = não informado (token de serviço) |
@@ -1394,6 +1394,24 @@ concentrado aqui.
 
 Cada valor é cortado em **1.024 bytes**, sem partir caractere UTF-8. A trilha é
 a prova de que o valor mudou, não uma segunda cópia da tabela.
+
+### `antes` indisponível: o bit 2, e por que ele não tem irmão
+
+Uma coluna `Bin`/`Memo` marcada guarda o valor fora do `.reg`, e o bloco pode
+não abrir (CRC estragado, volume perdido). A trilha **só grava o que consegue
+afirmar**: nesse caso o registro sai com o bit 2 das `flags` ligado e o texto
+`(indisponivel: o valor anterior nao pode ser lido)`. Gravar `""` ali
+afirmaria que o campo estava em branco — e registro de auditoria que afirma um
+fato falso é pior que registro ausente.
+
+**Isto não é formato novo e não pede migração:** o byte de `flags` já existia,
+o bit 2 já vinha zerado em todo registro gravado até aqui, e o layout não
+mudou. Arquivo antigo volta como sempre voltou; arquivo novo lido por código
+antigo mostra o texto e ignora o bit.
+
+E `depois` **não** ganha o bit correspondente, de propósito: ele é o valor que
+o chamador tem na mão ao gravar a linha, nunca uma leitura de disco. Bit
+reservado que nada liga é bit que envelhece calado.
 
 ### O arquivo mais perigoso da tabela
 

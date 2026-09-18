@@ -388,3 +388,280 @@ fn marcar_depois_liga_a_trilha_da_coluna() {
     let de_novo = Table::abrir(&d, "produtos").unwrap();
     assert_eq!(de_novo.colunas_marcadas(), vec!["telefone"]);
 }
+
+// ------------------------------------------------- coluna EXTERNA marcada
+//
+// Pedido 367. A trilha de coluna `Bin`/`Memo` marcada MENTIA nos tres
+// sentidos, e os tres saiam da MESMA linha: o `atualizar` decodifica a linha
+// velha com `carregar_externos = false` -- porque so precisa dela para os
+// indices --, e nesse modo `Bin` e `Memo` voltam `Value::Null`. O par
+// antes/depois da trilha comparava esse `Null` com o valor do chamador.
+//
+// Os tres testes abaixo sao a prova real, e os tres FALHAVAM antes do
+// conserto: o primeiro com `antes` vazio, o segundo com zero registros, o
+// terceiro com um registro que ninguem pediu.
+
+/// `prontuarios`: a coluna externa marcada e o caso que a lei mais protege --
+/// laudo medico (`Memo`) e biometria (`Bin`), os dois `sensivel`.
+fn esquema_com_externo(nome: &str) -> Schema {
+    Schema::new(
+        nome,
+        vec![
+            Column::new("id", ColumnType::Sequence).obrigatoria(),
+            Column::new("paciente", ColumnType::Str(60)).com_dado_pessoal(DadoPessoal::Pessoal),
+            Column::new("laudo", ColumnType::Memo).com_dado_pessoal(DadoPessoal::Sensivel),
+            Column::new("foto", ColumnType::Bin).com_dado_pessoal(DadoPessoal::Sensivel),
+        ],
+        vec![IndexDef::new("por_id", vec![IndexColumn::asc(0)])
+            .unico()
+            .primaria()],
+    )
+    .unwrap()
+}
+
+/// `(id, paciente, laudo, foto)` -- `laudo` e `foto` entram como o chamador
+/// mandar, inclusive `Value::Null` para apagar.
+fn ficha(paciente: &str, laudo: Value, foto: Value) -> Vec<Value> {
+    vec![Value::Null, Value::Str(paciente.into()), laudo, foto]
+}
+
+/// O unico registro daquela coluna. Falha dizendo QUANTOS achou, porque
+/// zero e um-a-mais sao defeitos diferentes: zero e a trilha calada, e dois e
+/// a trilha inventando.
+fn so_um<'a>(
+    ev: &'a [phxsql_store::trilha::Evento],
+    coluna: &str,
+) -> &'a phxsql_store::trilha::Evento {
+    let achados: Vec<_> = ev.iter().filter(|e| e.coluna == coluna).collect();
+    assert_eq!(
+        achados.len(),
+        1,
+        "esperava UM registro de {coluna}, achei {} (colunas: {:?})",
+        achados.len(),
+        ev.iter().map(|e| e.coluna.as_str()).collect::<Vec<_>>()
+    );
+    achados[0]
+}
+
+fn foto_de(n: usize, semente: u8) -> Value {
+    Value::Bin((0..n).map(|i| (i as u8).wrapping_add(semente)).collect())
+}
+
+/// Alterar um laudo grava o laudo VELHO em `antes`, e nao um vazio.
+///
+/// # O defeito reposto
+///
+/// Trocar a leitura dos externos velhos por `Value::Null` -- que era o que o
+/// `decodificar(&antigo, false)` entregava -- faz este teste falhar na linha
+/// do `antes`, com `""` no lugar do laudo. Registro de auditoria que afirma
+/// um fato falso e pior que registro ausente.
+#[test]
+fn a_trilha_de_memo_marcado_nao_mente_sobre_o_valor_antigo() {
+    let d = temp("memo-antigo");
+    let mut t = abrir(&d, esquema_com_externo("prontuarios"));
+    let foto = foto_de(2048, 0);
+    t.inserir(&ficha(
+        "Ana Prado",
+        Value::Memo("LAUDO_VELHO: benigno".into()),
+        foto.clone(),
+    ))
+    .unwrap();
+    t.atualizar(
+        1,
+        &ficha(
+            "Ana Prado",
+            Value::Memo("LAUDO_NOVO: carcinoma, CID C50".into()),
+            foto,
+        ),
+    )
+    .unwrap();
+
+    let ev = t.trilha(0, 0).unwrap();
+    let laudo = so_um(&ev, "laudo");
+    assert_eq!(
+        laudo.antes, "LAUDO_VELHO: benigno",
+        "a trilha mentiu sobre o valor antigo do laudo"
+    );
+    assert_eq!(laudo.depois, "LAUDO_NOVO: carcinoma, CID C50");
+    assert!(
+        !laudo.antes_indisponivel(),
+        "o laudo velho estava no .memo e era legivel"
+    );
+    assert!(!laudo.antes_redigido() && !laudo.depois_redigido());
+    assert_eq!(
+        ev.len(),
+        1,
+        "so o laudo mudou; a foto e o nome nao, e nao podem virar registro"
+    );
+}
+
+/// Apagar o laudo gera registro. E o evento que a lei mais quer ver, e era o
+/// unico que a trilha nao gravava: `Null != Null` e falso, e o filtro cortava.
+///
+/// # O defeito reposto
+///
+/// Voltar o `antes` do laudo para `Value::Null` iguala os dois lados e este
+/// teste falha com zero registros -- a supressao de dado sensivel invisivel.
+#[test]
+fn apagar_memo_marcado_gera_registro_de_trilha() {
+    let d = temp("memo-apagado");
+    let mut t = abrir(&d, esquema_com_externo("prontuarios"));
+    let foto = foto_de(2048, 0);
+    t.inserir(&ficha(
+        "Ana Prado",
+        Value::Memo("LAUDO_VELHO: benigno".into()),
+        foto.clone(),
+    ))
+    .unwrap();
+    t.atualizar(1, &ficha("Ana Prado", Value::Null, foto))
+        .unwrap();
+
+    let ev = t.trilha(0, 0).unwrap();
+    assert_eq!(
+        ev.iter().filter(|e| e.coluna == "laudo").count(),
+        1,
+        "apagar o laudo nao gerou registro nenhum: Null != Null e falso, e o \
+         filtro cortava o evento que a lei mais quer ver"
+    );
+    let laudo = so_um(&ev, "laudo");
+    assert_eq!(laudo.antes, "LAUDO_VELHO: benigno");
+    assert_eq!(
+        laudo.depois, "",
+        "nulo e ausencia de valor, e a trilha o mostra como tal"
+    );
+    assert_eq!(laudo.identidade, "id=1");
+    assert_eq!(
+        ev.len(),
+        1,
+        "a foto nao foi tocada e nao pode virar registro"
+    );
+}
+
+/// Salvar a ficha sem tocar na foto nao pode dizer que a foto mudou.
+///
+/// A garantia que o comentario do `trilhar_alteracao` ja prometia -- «salvar a
+/// ficha sem mexer em nada geraria seis registros dizendo que nada
+/// aconteceu» -- nao alcancava coluna externa.
+///
+/// # O defeito reposto
+///
+/// Voltar o `antes` da foto para `Value::Null` faz este teste falhar com um
+/// registro dizendo `antes="" depois="2048 bytes"`.
+#[test]
+fn salvar_sem_tocar_no_bin_marcado_nao_gera_trilha() {
+    let d = temp("bin-intocado");
+    let mut t = abrir(&d, esquema_com_externo("prontuarios"));
+    let laudo = Value::Memo("LAUDO: benigno".into());
+    let foto = foto_de(2048, 0);
+    t.inserir(&ficha("Ana Prado", laudo.clone(), foto.clone()))
+        .unwrap();
+    t.atualizar(1, &ficha("Ana Prado", laudo, foto)).unwrap();
+
+    assert_eq!(
+        t.total_da_trilha().unwrap(),
+        0,
+        "salvar sem tocar em nada gerou registro de trilha"
+    );
+    assert!(!t.tem_trilha(), "o .lgpd nasceu sem ter o que gravar");
+}
+
+/// E a prova pelo contrario do teste acima: trocar a foto por outra do MESMO
+/// tamanho gera registro. Sem ela, «nao gera registro» passaria ate num
+/// conserto que desligasse a trilha da coluna externa inteira.
+#[test]
+fn trocar_a_foto_por_outra_do_mesmo_tamanho_gera_registro() {
+    let d = temp("bin-trocado");
+    let mut t = abrir(&d, esquema_com_externo("prontuarios"));
+    let laudo = Value::Memo("LAUDO: benigno".into());
+    t.inserir(&ficha("Ana Prado", laudo.clone(), foto_de(2048, 0)))
+        .unwrap();
+    t.atualizar(1, &ficha("Ana Prado", laudo, foto_de(2048, 7)))
+        .unwrap();
+
+    let ev = t.trilha(0, 0).unwrap();
+    let foto = so_um(&ev, "foto");
+    // Biometria nao vira texto na trilha: vira tamanho. Ver `valor_para_trilha`.
+    assert_eq!(foto.antes, "2048 bytes");
+    assert_eq!(foto.depois, "2048 bytes");
+    assert_eq!(ev.len(), 1, "so a foto mudou");
+}
+
+/// O teste do comportamento VELHO: coluna INLINE marcada trilha exatamente
+/// como trilhava, na mesma tabela que agora tem coluna externa marcada.
+///
+/// Guarda nova entra pedida, nao imposta -- e o que nao se pediu e que a
+/// leitura do externo velho mudasse o par antes/depois de quem nunca saiu do
+/// `.reg`.
+#[test]
+fn coluna_inline_marcada_continua_trilhando_como_antes() {
+    let d = temp("inline-como-antes");
+    let mut t = abrir(&d, esquema_com_externo("prontuarios"));
+    let laudo = Value::Memo("LAUDO: benigno".into());
+    let foto = foto_de(2048, 0);
+    t.inserir(&ficha("Ana Prado", laudo.clone(), foto.clone()))
+        .unwrap();
+    t.atualizar(1, &ficha("Ana Prado Silva", laudo, foto))
+        .unwrap();
+
+    let ev = t.trilha(0, 0).unwrap();
+    let paciente = so_um(&ev, "paciente");
+    assert_eq!(paciente.antes, "Ana Prado");
+    assert_eq!(paciente.depois, "Ana Prado Silva");
+    assert_eq!(paciente.usuario, 7);
+    assert_eq!(paciente.ip, "192.0.2.10");
+    assert_eq!(ev.len(), 1, "so o nome mudou");
+}
+
+/// Quando o `.memo` velho NAO se le, a trilha diz isso -- e nao inventa um
+/// vazio que passaria por «o campo estava em branco».
+///
+/// O arquivo e adulterado de proposito com a tabela fechada; a leitura do
+/// bloco falha no CRC-32 (ver `blob.rs`), e o registro sai com a marca.
+#[test]
+fn memo_marcado_ilegivel_sai_como_indisponivel_e_nao_como_vazio() {
+    let d = temp("memo-ilegivel");
+    {
+        let mut t = abrir(&d, esquema_com_externo("prontuarios"));
+        t.inserir(&ficha(
+            "Ana Prado",
+            Value::Memo("LAUDO_VELHO: benigno".into()),
+            foto_de(64, 0),
+        ))
+        .unwrap();
+        t.sincronizar().unwrap();
+    }
+
+    // Vira o ultimo byte do arquivo: ele esta dentro do conteudo do unico
+    // bloco gravado, entao o CRC do bloco deixa de bater.
+    let caminho = d.join("prontuarios.memo");
+    let mut cru = std::fs::read(&caminho).unwrap();
+    let ultimo = cru.len() - 1;
+    cru[ultimo] ^= 0xFF;
+    std::fs::write(&caminho, &cru).unwrap();
+
+    let mut t = Table::abrir(&d, "prontuarios").unwrap();
+    t.definir_usuario(7);
+    t.definir_origem("192.0.2.10");
+    t.atualizar(
+        1,
+        &ficha(
+            "Ana Prado",
+            Value::Memo("LAUDO_NOVO: carcinoma".into()),
+            foto_de(64, 0),
+        ),
+    )
+    .unwrap();
+
+    let ev = t.trilha(0, 0).unwrap();
+    let laudo = so_um(&ev, "laudo");
+    assert!(
+        laudo.antes_indisponivel(),
+        "o valor velho era ilegivel e a trilha nao disse isso"
+    );
+    assert_ne!(
+        laudo.antes, "",
+        "vazio mentiria: diria que o campo estava em branco"
+    );
+    assert_eq!(laudo.depois, "LAUDO_NOVO: carcinoma");
+    assert_eq!(ev.len(), 1, "so o laudo mudou");
+}

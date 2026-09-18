@@ -19,6 +19,11 @@
 //! 3. **O acesso por OPERACAO contra o acesso por LINHA.** E a decisao de
 //!    desenho, e ela nao se decide por gosto: as duas sao medidas na mesma
 //!    varredura, e a razao entre elas e o argumento.
+//! 4. **Quanto custa a coluna EXTERNA marcada?** (pedido 367) A trilha de uma
+//!    coluna `Bin`/`Memo` marcada precisa do valor VELHO, e ele mora no
+//!    `.memo`/`.bin`: le-lo e I/O no caminho de escrita. O medidor mostra o
+//!    preco com a coluna externa marcada e sem marca, que e o controle -- e a
+//!    diferenca e o que a honestidade da trilha custa por alteracao.
 //!
 //! O que este medidor NAO faz e citar numero de outro dia. Todo numero que ele
 //! imprime saiu da rodada que o imprimiu.
@@ -232,4 +237,108 @@ fn main() {
         reg_linha * 6
     );
     let _ = std::fs::remove_dir_all(&dir);
+
+    secao_da_coluna_externa(n.min(2_000));
+}
+
+// ------------------------------------------------ 4) a coluna EXTERNA marcada
+
+/// `prontuarios`: id, paciente (`Str` marcada) e laudo (`Memo`), com a marca
+/// do laudo ligada ou desligada pelo argumento.
+///
+/// Duas colunas marcadas e o bastante: a pergunta aqui nao e quantas, e se a
+/// que mora FORA do `.reg` cobra leitura no caminho de escrita.
+fn esquema_externo(nome: &str, marcar_o_laudo: bool) -> Schema {
+    let laudo = Column::new("laudo", ColumnType::Memo);
+    let laudo = if marcar_o_laudo {
+        laudo.com_dado_pessoal(DadoPessoal::Sensivel)
+    } else {
+        laudo
+    };
+    Schema::new(
+        nome,
+        vec![
+            Column::new("id", ColumnType::Sequence).obrigatoria(),
+            Column::new("paciente", ColumnType::Str(60)).com_dado_pessoal(DadoPessoal::Pessoal),
+            laudo,
+        ],
+        vec![IndexDef::new("por_id", vec![IndexColumn::asc(0)])
+            .unico()
+            .primaria()],
+    )
+    .expect("esquema")
+}
+
+/// Uma rodada de `atualizar` com a coluna externa presente.
+///
+/// `tocar_o_laudo` decide o caso: falso e «salvar a ficha sem mexer no laudo»,
+/// que e o comum e o que gerava o falso positivo; verdadeiro e a alteracao do
+/// proprio laudo.
+fn rodada_externa(
+    rotulo: &str,
+    marcar_o_laudo: bool,
+    tocar_o_laudo: bool,
+    bytes_do_laudo: usize,
+    n: u64,
+) -> (f64, u64) {
+    let nome = "prontuarios";
+    let dir = temp(rotulo);
+    let mut t = Table::criar(&dir, esquema_externo(nome, marcar_o_laudo)).expect("criar");
+    t.definir_usuario(7);
+    t.definir_origem("192.0.2.10");
+
+    let laudo = |semente: u64| Value::Memo("L".repeat(bytes_do_laudo - 1) + &semente.to_string());
+    for i in 1..=n {
+        t.inserir(&[Value::Null, Value::Str(format!("Paciente {i}")), laudo(0)])
+            .expect("inserir");
+    }
+
+    let inicio = Instant::now();
+    for i in 1..=n {
+        t.atualizar(
+            i,
+            &[
+                Value::Null,
+                Value::Str(format!("Paciente {i} Silva")),
+                laudo(if tocar_o_laudo { i } else { 0 }),
+            ],
+        )
+        .expect("atualizar");
+    }
+    let alteracao = inicio.elapsed().as_secs_f64() * 1e6 / n as f64;
+    let registros = t.total_da_trilha().expect("total");
+    println!(
+        "  {rotulo:30} alteracao {alteracao:7.2} us/linha   trilha {registros:>7} registro(s)"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    (alteracao, registros)
+}
+
+fn secao_da_coluna_externa(n: u64) {
+    println!("\n4) A coluna EXTERNA marcada: quanto custa ler o valor velho (pedido 367)");
+    for bytes in [2_048usize, 65_536] {
+        println!("\n   laudo de {bytes} bytes:");
+        // O controle: a MESMA tabela, o MESMO trabalho de escrita, com a marca
+        // do laudo desligada. A diferenca entre as duas linhas e so a leitura
+        // do bloco velho -- nao ha outra coisa mudando.
+        let (sem, _) = rodada_externa("laudo SEM marca, intocado", false, false, bytes, n);
+        let (com, reg_intocado) = rodada_externa("laudo marcado, intocado", true, false, bytes, n);
+        let (com_tocado, reg_tocado) =
+            rodada_externa("laudo marcado, alterado", true, true, bytes, n);
+        println!(
+            "   -> marcar o laudo cobra {:+.2} us/linha ({:+.1}%) quando ele NAO e tocado",
+            com - sem,
+            (com / sem - 1.0) * 100.0
+        );
+        println!(
+            "   -> e {:+.2} us/linha ({:+.1}%) quando ele E alterado",
+            com_tocado - sem,
+            (com_tocado / sem - 1.0) * 100.0
+        );
+        println!(
+            "   -> registros: intocado {reg_intocado} (tem de ser {n}, so do paciente), \
+             alterado {reg_tocado} (tem de ser {})",
+            n * 2
+        );
+    }
 }
