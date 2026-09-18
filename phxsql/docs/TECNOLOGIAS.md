@@ -36,17 +36,17 @@ foi estimado no lugar de uma medição que faltou.
 |---|---:|---:|---:|---:|---:|---:|
 | `phxsql-cli` | 1 | 815 | 104 | 113 | 78 | 1110 |
 | `phxsql-cmd` | 2 | 579 | 110 | 171 | 62 | 922 |
-| `phxsql-core` | 35 | 11182 | 4627 | 3524 | 1544 | 20877 |
+| `phxsql-core` | 35 | 11270 | 4775 | 3614 | 1569 | 21228 |
 | `phxsql-ffi` | 7 | 1408 | 1014 | 703 | 235 | 3360 |
 | `phxsql-odbc` | 7 | 2469 | 1086 | 928 | 228 | 4711 |
-| `phxsql-server` | 58 | 45162 | 29985 | 22437 | 5143 | 102727 |
+| `phxsql-server` | 58 | 45595 | 30231 | 22726 | 5181 | 103733 |
 | `phxsql-sql` | 10 | 6637 | 3381 | 1993 | 748 | 12759 |
-| `phxsql-store` | 24 | 13409 | 3583 | 5848 | 1546 | 24386 |
-| **total** | **144** | **81661** | **43890** | **35717** | **9584** | **170852** |
+| `phxsql-store` | 24 | 13397 | 3704 | 5929 | 1561 | 24591 |
+| **total** | **144** | **82170** | **44405** | **36177** | **9662** | **172414** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **43890/81661 = 0.54×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **44405/82170 = 0.54×**.
 
-Alem do `src/`: **79** programas de medicao em `examples/` (20008 linhas — bancada em Rust, nao produto nem teste) e **61** arquivos em `tests/` de integracao fora de `src/` (20946 linhas).
+Alem do `src/`: **79** programas de medicao em `examples/` (20008 linhas — bancada em Rust, nao produto nem teste) e **63** arquivos em `tests/` de integracao fora de `src/` (21633 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -110,7 +110,7 @@ mesmo motivo que o rodapé já errou uma vez.
 | JavaScript (prova ponta a ponta) | `testes-web/` | 54 | 11171 |
 | Python (bancada de medicao) | `bancada/` | 117 | 54342 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2863 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 412 | 101762 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 415 | 102391 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 32 | 13584 |
 <!-- /GERADO -->
 
@@ -493,7 +493,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **365** pedidos numerados; **58** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **374** pedidos numerados; **62** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -531,6 +531,7 @@ proposta de voltar sem medição nova.
 | 246 | **Leitura repetível pela trava, pedida — a via (b) da Sombra** |
 | 249 | **Saúde do disco do banco: sonda canário, EROFS, erro de E/S imediato, aviso por e-mail e SMS** |
 | 251 | **P2P: a identidade sem domínio bate no AAD do selo por endereço — decisão do dono e do DBA antes de congelar o PSCH do correio** |
+| 252 | **A catraca `alcancam-fsync` do mapa da trava está em 23 com teto 22 desde 08/09 — a restauração PITR reaplica o diário com a trava na mão, e a catraca só rodava na bateria que ninguém rodou por oito dias** |
 | 253 | **Bancada «chutar a tomada»: SIGKILL dentro da transação aberta, no meio do BULKINSERT, do `inserir_lote`, do `reindexar` e da transação dentro da reserva — 0 desfechos inválidos em 408 quedas** |
 | 258 | **`Volumes::sincronizar` sincroniza todo descritor aberto sem pular os limpos: 8 `fsync` por inserir e 9 por excluir no regime por operação** |
 | 259 | **O excluir do padrão custa 24–28 µs mesmo sem fsync, contra 3,7–4,4 do inserir: 8 `write` e ~5 `openat` por exclusão** |
@@ -555,6 +556,9 @@ proposta de voltar sem medição nova.
 | 343 | **SEC 339(b) — `motivos` esta classificado `Nenhum` e devolve a CHAVE PRIMARIA em texto: o quarto irmao que caiu no bloco errado** |
 | 347 | **SEC 339(a) BLOQUEIO — XSS no console pelo TEXTO DE TELA: 9 interpolacoes cruas em 2 sitios, e a lei diz «dois caminhos» quando existem quatro** |
 | 356 | **SEC ALTO — o Profiler decide por `cifra.tabelas` e a cifra acontece por `DadoPessoal`: dois campos, uma garantia** |
+| 357 | **SEC MEDIO-ALTO — a trilha `.lgpd` redige por NOME de coluna e por analise de hash, nunca pela marca `DadoPessoal`: a §11.7 escreveu a condicao no futuro do preterito, e ela chegou** |
+| 358 | **SEC MEDIO — o rowid E o balde, e o balde e o primeiro caractere: a particao por letra vaza pelo PROTOCOLO, para quem tem a coluna negada** |
+| 366 | **ORDEM DO DONO, 18/09/2026 -- a comunicacao deve OBRIGATORIAMENTE ser cifrada** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —

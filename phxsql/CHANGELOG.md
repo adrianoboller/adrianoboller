@@ -10,6 +10,86 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado — A rodada dos gaps de segurança: quatro decisões do dono, quatro frentes, e um bloqueio que a medição achou
+
+Rodada de 18/09/2026, aberta pela ordem «fazer os gaps» e fechada com quatro
+frentes de código, dois pareceres e uma ordem nova do dono no meio dela — «a
+comunicação deve obrigatoriamente ser cifrada».
+
+O que a rodada mais ensinou não foi nenhum dos consertos: foi **o campo que
+anuncia proteção que o canal ao lado não presta**. Ligar `cifra_fio.exigir`
+recusa o texto claro na porta de dados, e no mesmo servidor, no mesmo
+instante, a tela devolve `200 OK` para um login com senha em texto puro.
+
+### Corrigido
+
+- **A marca `.tx` do COMMIT gravava a linha inteira em claro, em `0644`, fora
+  da cifra** (pedido 354). Passa a ser selada **por operação** — não a marca
+  inteira, condição do DBA: marca inteira selada vira tudo-ou-nada na
+  recuperação. Nasce `0600`, e o `ler_marca` ganha a **terceira resposta**:
+  cifrada e sem chave **PARA e não apaga**. Sem ela o selo trocaria
+  confidencialidade por durabilidade.
+- **A restauração PITR pagava `fsync` com a trava global na mão** (pedido
+  252). A reaplicação passou para o palco, antes de o database entrar na
+  raiz. A catraca `alcancam-fsync` caiu de **25 para 24**, por mérito — teto
+  não subiu e seção nenhuma foi isentada. E a garantia **melhorou**: o
+  primeiro tamanho do `.reg` restaurado que um terceiro consegue ler passou
+  de **570 B** para **17.912 B**, o final, em 10 de 10 corridas.
+- **O `Schema::com_coluna` perdia os índices de texto** (pedido 353), e o
+  irmão no `table.rs` junto.
+- **O Profiler decidia o sigilo pela lista declarada e não pelo disco**
+  (pedido 356). Custo medido: **+2,17 µs** por pedido observado que grava
+  arquivo.
+
+### Adicionado
+
+- **Modo ledger deixa de aceitar coluna marcada como dado pessoal** (pedido
+  355). O `hash` de cada bloco é um SHA-256 **sem sal** do conteúdo em claro,
+  numa coluna que não é marcada e por isso não é cifrada — oráculo de
+  confirmação para CPF (~10⁹ candidatos). A recusa entra na **declaração**, e
+  **não desfaz cadeia que já exista**: ali o oráculo já queimou.
+- **A porta web nasce em `127.0.0.1`** (pedido 366), abrir para fora é escolha
+  escrita, e quem já tem proxy declara `"atras_de_proxy": true`. O TLS do
+  navegador é terminado por proxy reverso — o motor continua **zero
+  dependências**, e com isso o choque «TLS na conexão» que o `CLAUDE.md`
+  registrava como vivo deixou de estar vivo.
+- **O arranque passa a dizer o alcance da cifra em voz alta**: o `exigir` vale
+  só para a porta de dados, as três portas HTTP continuam em claro com o mesmo
+  token e o mesmo login, e ele **também não alcança o que o servidor conecta**
+  — réplica, cluster e web→remoto têm interruptores próprios, os três nascendo
+  desligados.
+- **O portão dos geradores passou de 22 para 28 entradas** (pedido 360), e
+  achou quatro números errados no `SEGURANCA.md` de uma vez.
+- **A gravação do `--json` do provador de guardas ganhou trava** (pedido 361),
+  cobrindo o read-modify-write inteiro.
+
+### Sabido
+
+- **`cifra_fio.exigir` é lido em UM lugar que decide alguma coisa**
+  (`servidor.rs:9270`), e o `estado` publica `encryption_exigida` como se ele
+  valesse para tudo — pior: dentro de `diretivas_da_conexao`, cuja própria doc
+  diz «o que é verdade DESTA conexão». **Enquanto isso não fechar, o `exigir`
+  não vira padrão de fábrica**: armá-lo transformaria um furo conhecido em
+  garantia anunciada. Virar aquela linha derruba **62** testes, medidos.
+- **Ligar o `exigir` quebra todo DbLink → PhxSql**, que não tem como pedir o
+  túnel, e não há escape por ligação (pedido 371). E a frase «a `std` não traz
+  TLS» que o `phx.rs` carrega **nasceu falsa**: o túnel é oito dias mais velho
+  que ela.
+- **A trilha `.lgpd` de coluna externa marcada mente nos três sentidos**
+  (pedido 367): afirma que o valor velho era vazio, **não registra o
+  apagamento** — o evento que mais importa para a lei — e inventa alteração em
+  coluna que ninguém tocou.
+- **Não existe expurgo de `.lgpd`** (pedido 368): a trilha cresce para sempre,
+  com a chave primária em texto em cada registro. O caminho existe sem mudar
+  formato — expurgo por **volume** —, e falta só o prazo, que não é técnico.
+- **O `rowid` é o balde, e o balde é o primeiro caractere** (pedido 358):
+  quem tem a coluna negada lê o primeiro caractere dela linha a linha, pelo
+  protocolo. Medido: `silva` → rowid 18.000.001 → balde 19 → «S».
+- **Os arquivos do `phxsql-store` continuam nascendo `0644`** — 12 abridores
+  fora de teste, e o único `0o600` do crate aperta **depois** de criar. O
+  `.reg` cifrado nasce aberto para a máquina.
+
+
 ## Não lançado — A matriz do comparativo passa a dizer contra o quê (pedido 335, metade 1)
 
 Rodada de 17/09/2026. Um parecer técnico de fora achou em duas linhas o furo
