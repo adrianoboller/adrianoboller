@@ -2144,20 +2144,21 @@ tabelas ir para a janela de durabilidade em vez de acontecer por commit.
 
 ```text
 cabeçalho  [magic "PHXTX\0\0\0" 8][versao u32][id u64][carimbo i64]
-           [n_operacoes u32][crc32 u32]
+           [n_operacoes u32]{material de cifra 40, só na v4}[crc32 u32]
 
 operação   [tam_tabela u16][tabela bytes][op u8][rowid alvo u64]
-           [tam_payload u32][payload …][crc32 u32]
+           [tam_guardado u32][payload, selado na v4 …][crc32 u32]
 ```
 
 | campo | tamanho | o que é |
 |---|---|---|
 | `magic` | 8 | `PHXTX\0\0\0`, como todo arquivo do motor |
-| `versao` | 4 | 3 (a 2 e a 1 continuam sendo **lidas**, ver abaixo) |
+| `versao` | 4 | 4 com o cofre ligado, 3 sem ele (a 2 e a 1 continuam sendo **lidas**) |
 | `id` | 8 | o identificador da transação, o mesmo do nome do arquivo |
 | `carimbo` | 8 | ms desde a época, quando a marca foi escrita |
 | `n_operacoes` | 4 | quantas operações vêm a seguir |
-| `crc32` | 4 | do cabeçalho inteiro até aqui |
+| material de cifra | 40 | **só na v4**: flags, iterações, sal e prova da chave — o mesmo bloco do `.reg` e dos diários (`cofre::MATERIAL_LEN`) |
+| `crc32` | 4 | do cabeçalho inteiro até aqui — e **ele muda de lugar na v4**, porque o material entrou antes dele |
 
 E por operação:
 
@@ -2226,6 +2227,111 @@ v1/v2 nunca chega até ali, e o CRC continua cobrindo o payload inteiro de uma v
 O teste é `acidc_a_marca_v3_recupera_a_cascata_achatada`, e a prova é a mesma dos
 dois sentidos — a marca traz mãe e filha, e o segundo arranque não duplica.
 
+O byte continua onde está na **v4**, que não mexeu no payload: quem lê pergunta
+«a versão é 3 **ou mais**?», e não «a versão é 3?». Perguntar pela igualdade
+teria feito a cascata achatada virar cascata implícita no dia em que a versão
+subiu — a mãe reaplicada re-cascatearia por cima das filhas que já estavam na
+lista.
+
+### v4: o selo POR OPERAÇÃO, e o arquivo que nasce 0600
+
+A v4 (pedido 354, 18/09/2026) não mexe no payload: ela acrescenta o **material
+de cifra** no cabeçalho e sela o payload de **cada operação**. Entrou porque
+esta marca era o buraco no meio de um caminho cifrado — o `.reg` cifrado, o
+`.log` cifrado, e entre os dois um arquivo em claro com a linha inteira do
+`COMMIT` dentro. Pior: a `linha_antiga` do `atualizar` **sai decifrada do
+`.reg`** para entrar aqui, então a marca republicava em claro exatamente o
+valor que o `.reg` tinha guardado.
+
+**O selo é por operação, e não da marca inteira.** A unidade de dano continua
+sendo a operação, que é a mesma do CRC que já existia: selar o arquivo todo
+criaria uma segunda unidade de falha, maior do que a que o formato tem, e aí
+uma etiqueta que não fechasse custaria a transação inteira onde hoje custa o
+bloco daquela operação.
+
+O que vai selado e o que não vai:
+
+| pedaço | onde | por quê |
+|---|---|---|
+| `payload` (linha, motivo, linha antiga, byte da cascata) | **selado** | é o dado |
+| tabela, `op`, `rowid alvo`, `id`, `carimbo` | **em claro** | a recuperação precisa saber *onde* reaplicar antes de abrir *o que* reaplicar |
+
+Os campos em claro não ficam sem proteção: eles entram como **dado associado**
+da etiqueta. Até a v3 só o CRC os cobria, e CRC não é selo — quem edita o
+arquivo recalcula os quatro bytes e ninguém percebe. Como dado associado, um
+`rowid` trocado de 7 para 8 deixa de abrir, em vez de reaplicar a linha certa
+no slot errado.
+
+**O nonce de cada operação** é o `cofre::nonce_de_pedaco` com o índice da
+operação e o `id` da transação. Não há byte sorteado por operação porque as
+três coordenadas que separam tudo já existem: o índice separa duas operações
+da mesma marca, o `id` separa duas marcas do mesmo processo (`Transacoes::abrir`
+nunca o reemite), e o sal separa dois processos.
+
+**A chave é derivada uma vez por processo**, e não por marca. É a divergência
+que esta casa fez contra o desenho do `.reg`, e a restrição que a causou está
+medida: `Material::novo` sorteia um sal novo a cada chamada, sal novo é PBKDF2
+de verdade, e uma derivação com as 210.000 iterações do padrão custa
+**236,4 ms** nesta máquina em release. A marca inteira custa **0,32 ms**. Sal
+por marca cobraria 236 ms **por `COMMIT`** — 740× o custo da marca — e a marca
+é o ponto de compromisso da transação. Com a chave derivada, a marca cifrada
+custa **0,298 ms** contra os **0,317 ms** da mesma marca em claro: dentro do
+ruído. O que aparecia era o PBKDF2, nunca o selo.
+
+### O arquivo nasce 0600 — em toda versão, cifrada ou não
+
+A marca é criada com `create_new` + `mode(0o600)`, o mesmo padrão da chave do
+fio no `config.rs`. A permissão vai na **criação**, e não depois: entre criar
+aberta e apertar há uma janela em que qualquer conta da máquina lê a linha
+inteira, e essa janela é a única coisa que este arquivo existe para não ter.
+Vale para a v3 em claro também — 0600 não é parte do selo, é o piso.
+
+O `create_new` traz um segundo efeito, e ele é de durabilidade: uma marca já no
+disco com aquele `id` é um `COMMIT` esperando recuperação, e truncar por cima
+dela apagaria a intenção de uma transação que já aconteceu. A gravação
+**recusa**, nomeando o que há — o erro cru «File exists» mandaria procurar
+problema de disco.
+
+### A terceira resposta da leitura: «cifrada e sem chave»
+
+Até a v3 a leitura tinha duas respostas: confere, ou não confere — e «não
+confere» manda **apagar**. Com o selo nasce um caso que não é nenhum dos dois:
+a marca está inteira, o CRC fecha, e mesmo assim este servidor não consegue
+abri-la. Tratá-lo como «não confere» trocaria confidencialidade por
+durabilidade — a transação confirmada sumiria porque faltou uma senha no
+`config.json`, que é o oposto do que o selo foi posto para fazer.
+
+A resposta é **PARA, e NÃO apaga**, com o motivo nomeado. Ela cobre os dois
+casos que pedem a mesma coisa de quem opera: **não há chave nenhuma** no cofre,
+e **a chave que há não é a que gravou o arquivo**. O relatório do arranque
+ganha uma linha própria — `marcas PARADAS sem a chave … N (NAO foram
+apagadas)`, com o caminho de cada uma —, e ela é a única linha do relatório que
+descreve trabalho parado esperando gente, em vez de trabalho já resolvido.
+
+### Marca escrita ANTES continua legível — e sem cofre nem muda de versão
+
+Duas garantias separadas, e as duas com teste:
+
+1. **A marca só sobe para a v4 quando o cofre está ligado.** Com ele desligado
+   ela continua nascendo **v3, byte por byte como antes** — guarda nova entra
+   pedida, não imposta, e quem nunca pediu cifra continua com uma marca que um
+   servidor anterior sabe ler.
+2. **A v3, a v2 e a v1 continuam sendo lidas com o cofre ligado.** É o caso
+   real de quem liga a cifra num banco que já roda: a marca que estava no disco
+   é um `COMMIT` que já aconteceu. O leitor decide o tamanho do cabeçalho pela
+   **versão**, lida antes do CRC — na v4 o material entrou entre o contador e o
+   CRC, então é a versão que diz onde o CRC está.
+
+O que **não** volta: uma marca v4 lida por um servidor anterior ao pedido 354.
+Ele vê versão 4, não a reconhece e a descarta como «commit que nunca começou».
+Isso só alcança quem ligou a cifra e depois voltou o binário — e a marca em
+claro, que é a de todo mundo que não ligou, atravessa nas duas direções.
+
+Os testes são `crates/phxsql-server/tests/cifra-da-marca-de-transacao.rs` (o
+claro nos bytes crus, a terceira resposta, a senha errada e a marca de antes) e
+os três de `transacao.rs` (o 0600, a recusa de gravar por cima, e a v3 que não
+muda sem cofre).
+
 ### Por que a v2 e a v1 continuam sendo lidas
 
 Porque **marca é commit que já começou**. Uma marca deixada por um servidor
@@ -2258,11 +2364,14 @@ que a etiqueta virou outra coisa.
 
 ### O que a leitura faz com uma marca que não confere
 
-Devolve «não há marca». Um CRC quebrado, uma assinatura errada, uma versão
-desconhecida (nem 1 nem 2) ou um arquivo truncado são todos a **mesma**
-resposta: um commit
-que **nunca começou** — porque a marca é sincronizada inteira antes de qualquer
-escrita. Ela é apagada, e o disco continua como estava.
+Devolve «não confere». Um CRC quebrado, uma assinatura errada, uma versão
+desconhecida (nenhuma das quatro), um arquivo truncado ou uma etiqueta que não
+fecha **depois de a chave já se provar certa** são todos a **mesma** resposta:
+um commit que **nunca começou** — porque a marca é sincronizada inteira antes
+de qualquer escrita. Ela é apagada, e o disco continua como estava.
+
+O que **não** cai aqui é a marca cifrada que não abriu por falta da chave certa:
+essa é a terceira resposta, e ela **para sem apagar**.
 
 ---
 

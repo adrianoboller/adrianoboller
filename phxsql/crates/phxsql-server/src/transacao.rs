@@ -33,31 +33,41 @@ use crate::apoio_teste::DirTemp;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
+use phxsql_core::cifra::XNONCE_LEN;
 use phxsql_core::crc::crc32;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 use phxsql_core::uuid::{Uuid, Uuid256};
 use phxsql_core::value::Value;
 use phxsql_store::catalogo::Instancia;
+use phxsql_store::cofre::{self, Material};
 
 /// A assinatura do arquivo de marca. Oito bytes, como todo arquivo do motor.
 pub const MAGIC: &[u8; 8] = b"PHXTX\0\0\0";
 
-/// A versao do formato da marca. Ver `docs/FORMATO.md`.
+/// A versao mais nova do formato da marca. Ver `docs/FORMATO.md` §16.
 ///
-/// A **v2** acrescentou a linha ANTIGA do `atualizar`, para a reaplicacao
-/// poder replanejar a cascata do `ao_alterar` -- sem ela a filha fica para
-/// tras e o relatorio ainda diz que completou. A **v3** (ACID-C) muda a
-/// SEMANTICA da cascata: ela deixou de ser replanejada na reaplicacao e passou
-/// a viajar ACHATADA na propria lista -- a mae e cada filha sao uma operacao da
+/// A **v4** (pedido 354) acrescenta o material de cifra no cabecalho e sela o
+/// payload de **cada operacao**. Ela so e escrita quando o cofre esta ligado:
+/// com ele desligado a marca continua nascendo [`VERSAO_CASCATA_EM_CLARO`],
+/// byte por byte como antes, porque guarda nova entra pedida e nao imposta --
+/// e porque um servidor anterior continua sabendo ler a marca de quem nunca
+/// pediu cifra.
+///
+/// As tres anteriores **continuam sendo lidas**: marca deixada por um servidor
+/// anterior e commit que ja comecou, e descarta-la seria jogar fora uma
+/// transacao confirmada por causa de uma mudanca nossa.
+pub const VERSAO: u32 = 4;
+
+/// A v3 (ACID-C): cascata ACHATADA na lista, cabecalho **sem** material de
+/// cifra. E a versao que a marca tem quando o cofre esta desligado.
+///
+/// Ela muda a SEMANTICA da cascata: a mae e cada filha sao uma operacao da
 /// marca, e a operacao carrega o byte `cascata_na_lista` dizendo «aplique-me
-/// SEM cascatear, os elos ja estao aqui». A v1 e a v2 **continuam sendo
-/// lidas**: marca deixada por um servidor anterior e commit que ja comecou, e
-/// descarta-la seria jogar fora uma transacao confirmada por causa de uma
-/// mudanca nossa. A v2 volta com a cascata IMPLICITA (o `recascatear` da
-/// reaplicacao a refaz, como antes); a v1 volta sem linha antiga.
-pub const VERSAO: u32 = 3;
+/// SEM cascatear, os elos ja estao aqui».
+pub const VERSAO_CASCATA_EM_CLARO: u32 = 3;
 
 /// A v2: linha antiga presente, cascata IMPLICITA (replanejada na reaplicacao).
 /// Ainda aceita na leitura.
@@ -65,6 +75,26 @@ pub const VERSAO_LINHA_ANTIGA_SEM_CASCATA: u32 = 2;
 
 /// A primeira versao do formato, ainda aceita na leitura.
 pub const VERSAO_SEM_LINHA_ANTIGA: u32 = 1;
+
+/// Quanto o cabecalho ocupa ate o CRC, nas versoes 1 a 3: magic, versao, id,
+/// carimbo e o numero de operacoes.
+const CAB_ATE_CRC: usize = 8 + 4 + 8 + 8 + 4;
+
+/// Onde o material de cifra entra, na v4: logo depois do numero de operacoes.
+const MATERIAL_EM: usize = CAB_ATE_CRC;
+
+/// Quanto o cabecalho da v4 ocupa ate o CRC: o mesmo de antes, mais o material.
+const CAB_ATE_CRC_CIFRADA: usize = CAB_ATE_CRC + cofre::MATERIAL_LEN;
+
+/// A parte ESTAVEL do cabecalho que a prova da chave amarra: magic, versao e
+/// id.
+///
+/// O id entra de proposito, e ele e o mesmo do NOME do arquivo: assim a prova
+/// so fecha na marca que nasceu com aquele nome, e renomear
+/// `transacao_7.tx` para `transacao_8.tx` deixa de ser uma troca invisivel.
+/// Ficam de fora o carimbo e o contador, pela mesma regra do resto da casa --
+/// prova amarra o que identifica o arquivo, nao o que ele conta.
+const ROTULO: usize = 8 + 4 + 8;
 
 /// O prefixo do nome do arquivo de marca, dentro do diretorio do database.
 pub const PREFIXO: &str = "transacao_";
@@ -907,6 +937,135 @@ pub fn caminho_da_marca(diretorio: &Path, id: u64) -> PathBuf {
     diretorio.join(format!("{PREFIXO}{id}.{EXTENSAO}"))
 }
 
+/// O material de cifra das marcas deste processo, derivado UMA vez.
+///
+/// `None` quer dizer «ainda nao derivei», e nao «em claro»: quem decide se ha
+/// cifra e o cofre, conferido a cada marca por [`material_da_marca`].
+static MATERIAL: Mutex<Option<Material>> = Mutex::new(None);
+
+/// O material de cifra que esta marca usa.
+///
+/// # Por que UM por processo, e nao um por marca
+///
+/// Porque `Material::novo` sorteia um sal novo a cada chamada, e sal novo e
+/// PBKDF2 de verdade: o cache de chaves do cofre e por (sal, iteracoes) e
+/// nunca acertaria. **Medido nesta maquina, em release, com as 210.000
+/// iteracoes do padrao:** um sal novo custa **236,4 ms**, e a marca inteira
+/// custa **0,32 ms** em claro. Sal por marca cobraria isso a cada `COMMIT` --
+/// **740 vezes** o custo da marca -- e trocaria o desenho inteiro da transacao
+/// por confidencialidade. No `.reg` o sal por arquivo e de graca porque tabela
+/// nasce uma vez; marca nasce sempre.
+///
+/// Com a chave derivada, a marca cifrada custa **0,298 ms** contra os 0,317 ms
+/// da mesma marca em claro -- dentro do ruido das repeticoes. O selo em si nao
+/// aparece; o que aparecia era o PBKDF2.
+///
+/// # E o que a troca custa em seguranca, que e nada
+///
+/// O par (chave, nonce) e a unica coisa que nao pode repetir, e as duas pontas
+/// fecham sem sal por marca: o nonce de [`nonce_da_operacao`] carrega o **id
+/// da transacao**, que `Transacoes::abrir` faz crescer e nunca reemite dentro
+/// de um processo, e dois processos sorteiam sais diferentes -- logo chaves
+/// diferentes. O que o sal por arquivo compraria aqui ja esta comprado pelo
+/// contador que a transacao tem de qualquer jeito.
+///
+/// # A janela que sobra, nomeada
+///
+/// Trocar a senha do cofre com o processo DE PE nao troca este material, porque
+/// a chave ja esta derivada aqui dentro. A marca escrita depois disso abre com
+/// a senha velha, e o arranque seguinte -- com a senha nova -- cai na terceira
+/// resposta de [`ler_marca`]: **para e nao apaga**. E barulhento, que e o
+/// oposto de perder a transacao em silencio. Hoje `CifraConfig::aplicar` so e
+/// chamada no arranque, entao a janela nao se abre sozinha.
+fn material_da_marca() -> Result<Material> {
+    // O portao vem ANTES do trabalho: com o cofre desligado nao se toma trava
+    // nem se deriva nada, e a marca em claro custa exatamente o que custava.
+    if !cofre::ligado() {
+        return Ok(Material::EM_CLARO);
+    }
+    let mut guarda = MATERIAL
+        .lock()
+        .map_err(|_| PhxError::Esquema("a trava do material da marca ficou envenenada".into()))?;
+    if let Some(m) = *guarda {
+        return Ok(m);
+    }
+    let novo = Material::novo()?;
+    *guarda = Some(novo);
+    Ok(novo)
+}
+
+/// O nonce da operacao `i` da marca `id`.
+///
+/// # Por que o indice basta, e nao ha byte sorteado por operacao
+///
+/// Repetir o par (chave, nonce) e o unico jeito de quebrar isto sem quebrar a
+/// matematica, e aqui as tres coordenadas ja separam tudo o que existe: o
+/// **indice** separa duas operacoes da mesma marca, o **id** separa duas
+/// marcas do mesmo processo (ele nunca reemite), e o **sal** de
+/// [`material_da_marca`] separa dois processos. Guardar um tempero sorteado
+/// por operacao custaria oito bytes por linha para separar o que ja esta
+/// separado.
+fn nonce_da_operacao(id: u64, i: usize) -> [u8; XNONCE_LEN] {
+    // `quem` e `contador` sao do `.reg`, onde um pedaco se reescreve no lugar;
+    // aqui o slot nasce e morre com o arquivo, entao ficam em zero.
+    cofre::nonce_de_pedaco(i as u64, 0, 0, id)
+}
+
+/// O dado associado que amarra o pedaco selado ao lugar dele.
+///
+/// Tabela, acao e rowid continuam viajando **em claro** -- e preciso saber
+/// onde reaplicar antes de abrir o que se reaplica --, e ate aqui so o CRC os
+/// protegia. CRC nao e selo: quem edita o arquivo recalcula os quatro bytes e
+/// ninguem percebe. Como dado associado eles entram na etiqueta: um rowid
+/// trocado de 7 para 8 deixa de abrir, em vez de reaplicar a linha certa no
+/// slot errado.
+fn aad_da_operacao(id: u64, tabela: &[u8], tag: u8, rowid: u64) -> Vec<u8> {
+    let mut a = Vec::with_capacity(tabela.len() + 17);
+    a.extend_from_slice(&id.to_le_bytes());
+    a.extend_from_slice(tabela);
+    a.push(tag);
+    a.extend_from_slice(&rowid.to_le_bytes());
+    a
+}
+
+/// Cria a marca NOVA e fechada para o resto da maquina -- 0600 no Unix; no
+/// Windows vale a ACL da pasta, como sempre valeu.
+///
+/// A permissao vai na CRIACAO, e nao depois: entre criar aberta e apertar ha
+/// uma janela em que qualquer conta le a linha inteira, e essa janela e a
+/// unica coisa que este arquivo existe para nao ter. E o mesmo
+/// `create_new + mode(0o600)` do `config.rs`.
+///
+/// O `create_new` faz parte da garantia, e por dois motivos. O primeiro e o
+/// daquele arquivo: `mode` so vale para o que NASCE aqui, e um arquivo que ja
+/// existisse entraria com a permissao que tinha. O segundo e mais forte e e
+/// nosso: uma marca ja no disco com este id e um `COMMIT` esperando
+/// recuperacao, e truncar por cima dela apagaria a intencao de uma transacao
+/// que ja aconteceu.
+fn criar_privado(caminho: &Path, id: u64) -> Result<std::fs::File> {
+    let mut opcoes = std::fs::OpenOptions::new();
+    opcoes.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        opcoes.mode(0o600);
+    }
+    opcoes.open(caminho).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            // O erro cru aqui e "File exists", que manda procurar problema de
+            // disco. O que ha e outra coisa, e quem le precisa saber qual.
+            PhxError::Esquema(format!(
+                "ja existe a marca da transacao {id} em {}: ela e um COMMIT que \
+                 espera recuperacao, e grava-la por cima apagaria a intencao dele -- \
+                 suba o servidor para a recuperacao completa-la antes de tentar de novo",
+                caminho.display()
+            ))
+        } else {
+            PhxError::Io(e)
+        }
+    })
+}
+
 /// Grava a marca e **sincroniza**, antes de a passada tocar em qualquer
 /// arquivo de dado.
 ///
@@ -922,15 +1081,32 @@ pub fn gravar_marca(
     carimbo_ms: i64,
     ops: &[Escrita],
 ) -> Result<PathBuf> {
+    // O material e conferido AQUI, na criacao, e vale para a marca inteira.
+    // Com o cofre desligado ele e `EM_CLARO`, e ai a marca nasce v3 -- os
+    // mesmos bytes de antes, para quem nunca pediu cifra.
+    let material = material_da_marca()?;
+    let versao = if material.cifrado() {
+        VERSAO
+    } else {
+        VERSAO_CASCATA_EM_CLARO
+    };
+
     let mut b = Vec::with_capacity(4096);
     b.extend_from_slice(MAGIC);
-    b.extend_from_slice(&VERSAO.to_le_bytes());
+    b.extend_from_slice(&versao.to_le_bytes());
     b.extend_from_slice(&id.to_le_bytes());
     b.extend_from_slice(&carimbo_ms.to_le_bytes());
     b.extend_from_slice(&(ops.len() as u32).to_le_bytes());
+    if material.cifrado() {
+        // O rotulo sai copiado porque `gravar` precisa do buffer emprestado
+        // por inteiro -- sao os 20 bytes de magic, versao e id.
+        let rotulo = b[..ROTULO].to_vec();
+        b.resize(CAB_ATE_CRC_CIFRADA, 0);
+        material.gravar(&mut b, MATERIAL_EM, &rotulo);
+    }
     b.extend_from_slice(&crc32(&b).to_le_bytes());
 
-    for e in ops {
+    for (i, e) in ops.iter().enumerate() {
         let inicio = b.len();
         let nome = e.tabela.as_bytes();
         b.extend_from_slice(&(nome.len() as u16).to_le_bytes());
@@ -949,14 +1125,24 @@ pub fn gravar_marca(
         // motivo -- o leitor da v1/v2 nunca chega ate aqui, e o CRC continua
         // cobrindo o payload inteiro de uma vez.
         payload.push(u8::from(e.cascata_na_lista));
-        b.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-        b.extend_from_slice(&payload);
+        // O selo e POR OPERACAO, no MESMO bloco que o CRC ja cobria: a unidade
+        // de dano continua sendo a operacao, e nao o arquivo. Selar a marca
+        // inteira criaria uma segunda unidade de falha, maior do que a que o
+        // formato ja tem -- e ai uma etiqueta que nao fechasse custaria a
+        // transacao toda onde hoje custa o que o CRC daquele bloco custa.
+        let guardado = material.selar(
+            &nonce_da_operacao(id, i),
+            &aad_da_operacao(id, nome, e.acao.tag(), e.rowid),
+            &payload,
+        );
+        b.extend_from_slice(&(guardado.len() as u32).to_le_bytes());
+        b.extend_from_slice(&guardado);
         let crc = crc32(&b[inicio..]);
         b.extend_from_slice(&crc.to_le_bytes());
     }
 
     let caminho = caminho_da_marca(diretorio, id);
-    let mut f = std::fs::File::create(&caminho)?;
+    let mut f = criar_privado(&caminho, id)?;
     f.write_all(&b)?;
     // O `sync_all` e a peca, e nao um detalhe: sem ele a marca pode estar so
     // no cache do sistema quando a passada comecar, e a queda deixaria o dado
@@ -965,80 +1151,138 @@ pub fn gravar_marca(
     Ok(caminho)
 }
 
-/// Le a marca de volta.
+/// O que a leitura de uma marca pode responder. **Sao tres, e a terceira e a
+/// peca.**
 ///
-/// Devolve `Ok(None)` quando ela nao CONFERE -- CRC do cabecalho, CRC de
-/// alguma operacao, assinatura ou versao. Isso e resposta, e nao defeito: uma
-/// marca que nao confere e um commit que **nunca comecou**, porque ela e
-/// sincronizada inteira antes de qualquer escrita. A transacao se perde
-/// inteira, que e o resultado correto.
-pub fn ler_marca(caminho: &Path) -> Result<Option<Marca>> {
+/// Duas respostas bastavam enquanto a marca era sempre legivel: ou ela
+/// confere, ou nao confere. Com o selo do pedido 354 nasce um terceiro caso
+/// que **nao e nenhum dos dois** -- a marca esta inteira, o CRC fecha, e
+/// mesmo assim este servidor nao consegue abri-la. Trata-lo como «nao
+/// confere» apagaria uma transacao confirmada por falta de uma senha, que e
+/// trocar confidencialidade por durabilidade -- o oposto do que o selo foi
+/// por.
+#[derive(Debug)]
+pub enum Leitura {
+    /// A marca confere e abriu. Reaplique-a e depois apague-a.
+    Aberta(Marca),
+    /// CRC, assinatura, versao ou tamanho nao fecham: um commit que **nunca
+    /// comecou**, porque a marca e sincronizada inteira antes de qualquer
+    /// escrita. Pode apagar; o disco continua como estava.
+    NaoConfere,
+    /// Cifrada, e esta chave nao a abre. **PARA, e NAO apaga.**
+    ///
+    /// O texto diz qual dos casos e -- nao ha chave nenhuma no cofre, ou a
+    /// que ha nao e a que gravou o arquivo. Os dois pedem a mesma coisa de
+    /// quem opera (ponha a senha certa e suba de novo) e os dois proibem a
+    /// mesma coisa (apagar).
+    SemChave(String),
+}
+
+impl Leitura {
+    /// A marca, quando ela abriu. `None` nas outras duas respostas.
+    pub fn marca(self) -> Option<Marca> {
+        match self {
+            Leitura::Aberta(m) => Some(m),
+            _ => None,
+        }
+    }
+}
+
+/// Le a marca de volta. Ver [`Leitura`] para as tres respostas.
+pub fn ler_marca(caminho: &Path) -> Result<Leitura> {
     let b = std::fs::read(caminho)?;
-    if b.len() < 8 + 4 + 8 + 8 + 4 + 4 {
-        return Ok(None);
+    if b.len() < CAB_ATE_CRC + 4 || &b[..8] != MAGIC {
+        return Ok(Leitura::NaoConfere);
     }
-    if &b[..8] != MAGIC {
-        return Ok(None);
+    // A versao tem de ser lida ANTES do CRC do cabecalho, e nao depois: na v4
+    // o material de cifra entrou entre o contador e o CRC, entao e a versao
+    // que diz onde o CRC esta.
+    let versao = u32::from_le_bytes([b[8], b[9], b[10], b[11]]);
+    let ate_crc = match versao {
+        VERSAO => CAB_ATE_CRC_CIFRADA,
+        VERSAO_CASCATA_EM_CLARO | VERSAO_LINHA_ANTIGA_SEM_CASCATA | VERSAO_SEM_LINHA_ANTIGA => {
+            CAB_ATE_CRC
+        }
+        _ => return Ok(Leitura::NaoConfere),
+    };
+    if b.len() < ate_crc + 4 {
+        return Ok(Leitura::NaoConfere);
     }
-    let cabecalho = 8 + 4 + 8 + 8 + 4;
-    let crc_lido = u32::from_le_bytes([
-        b[cabecalho],
-        b[cabecalho + 1],
-        b[cabecalho + 2],
-        b[cabecalho + 3],
-    ]);
-    if crc32(&b[..cabecalho]) != crc_lido {
-        return Ok(None);
+    let crc_lido = u32::from_le_bytes([b[ate_crc], b[ate_crc + 1], b[ate_crc + 2], b[ate_crc + 3]]);
+    if crc32(&b[..ate_crc]) != crc_lido {
+        return Ok(Leitura::NaoConfere);
     }
-    let mut leitor = Leitor { b: &b, i: 8 };
-    let versao = leitor.u32()?;
-    if versao != VERSAO
-        && versao != VERSAO_LINHA_ANTIGA_SEM_CASCATA
-        && versao != VERSAO_SEM_LINHA_ANTIGA
-    {
-        return Ok(None);
-    }
+    let nome_do_arquivo = caminho.display().to_string();
+    let material = if versao == VERSAO {
+        match Material::ler(&b, MATERIAL_EM, &nome_do_arquivo, &b[..ROTULO]) {
+            Ok(m) => m,
+            // A terceira resposta. Qualquer recusa daqui vem de uma marca que
+            // se declarou CIFRADA -- sem a flag, `Material::ler` devolve
+            // `EM_CLARO` sem nem tocar no cofre --, e entao nao ha como saber
+            // se o que esta dentro presta. Os dois erros errados nao custam o
+            // mesmo: parar numa marca podre enche o relatorio; apagar uma
+            // marca boa apaga uma transacao confirmada.
+            Err(e) => return Ok(Leitura::SemChave(e.to_string())),
+        }
+    } else {
+        Material::EM_CLARO
+    };
+
+    let mut leitor = Leitor { b: &b, i: 12 };
     let id = leitor.u64()?;
     let carimbo_ms = i64::from_le_bytes(leitor.fixo::<8>()?);
     let n = leitor.u32()? as usize;
-    let _crc = leitor.u32()?;
+    // Pula o material (quando ha) e o CRC do cabecalho de uma vez so.
+    leitor.i = ate_crc + 4;
 
     let mut operacoes = Vec::with_capacity(n.min(65_536));
-    for _ in 0..n {
+    for i in 0..n {
         let inicio = leitor.i;
         let Ok(tam) = leitor.u16() else {
-            return Ok(None);
+            return Ok(Leitura::NaoConfere);
         };
         let Ok(nome) = ler_exato(&mut leitor, tam as usize) else {
-            return Ok(None);
+            return Ok(Leitura::NaoConfere);
         };
         let Ok(tag) = leitor.u8() else {
-            return Ok(None);
+            return Ok(Leitura::NaoConfere);
         };
         let Some(acao) = Acao::de_tag(tag) else {
-            return Ok(None);
+            return Ok(Leitura::NaoConfere);
         };
         let Ok(rowid) = leitor.u64() else {
-            return Ok(None);
+            return Ok(Leitura::NaoConfere);
         };
-        let Ok(payload) = leitor.bytes().map(<[u8]>::to_vec) else {
-            return Ok(None);
+        let Ok(guardado) = leitor.bytes().map(<[u8]>::to_vec) else {
+            return Ok(Leitura::NaoConfere);
         };
         let fim = leitor.i;
         let Ok(crc) = leitor.u32() else {
-            return Ok(None);
+            return Ok(Leitura::NaoConfere);
         };
         if crc32(&b[inicio..fim]) != crc {
-            return Ok(None);
+            return Ok(Leitura::NaoConfere);
         }
+        // Abre o selo desta operacao. A chave JA se provou certa no cabecalho,
+        // entao etiqueta que nao fecha aqui e dado alterado -- a mesma
+        // resposta do CRC quebrado, e nao a terceira.
+        let payload = match material.abrir(
+            &nonce_da_operacao(id, i),
+            &aad_da_operacao(id, &nome, tag, rowid),
+            &guardado,
+            &nome_do_arquivo,
+        ) {
+            Ok(p) => p,
+            Err(_) => return Ok(Leitura::NaoConfere),
+        };
         let Ok(tabela) = String::from_utf8(nome) else {
-            return Ok(None);
+            return Ok(Leitura::NaoConfere);
         };
         // O payload e a linha seguida do motivo -- um bloco so, para o CRC
         // cobrir os dois de uma vez.
         let (linha, consumido) = match decodificar_linha_em(&payload) {
             Ok(v) => v,
-            Err(_) => return Ok(None),
+            Err(_) => return Ok(Leitura::NaoConfere),
         };
         let mut m = Leitor {
             b: &payload,
@@ -1051,16 +1295,17 @@ pub fn ler_marca(caminho: &Path) -> Result<Option<Marca>> {
         let (linha_antiga, apos_antiga) = if versao >= VERSAO_LINHA_ANTIGA_SEM_CASCATA {
             match decodificar_linha_em(&payload[m.i..]) {
                 Ok((v, consumido)) => (v, m.i + consumido),
-                Err(_) => return Ok(None),
+                Err(_) => return Ok(Leitura::NaoConfere),
             }
         } else {
             (Vec::new(), m.i)
         };
-        // ACID-C (v3): o byte da cascata vem logo depois da linha antiga. Na
-        // v1/v2 ele nao existe -- a cascata e IMPLICITA (falso aqui, e o
+        // ACID-C: o byte da cascata vem logo depois da linha antiga, e existe
+        // da v3 em diante -- a v4 so acrescentou o selo, nao mexeu no payload.
+        // Na v1/v2 ele nao existe, e a cascata e IMPLICITA (falso aqui, e o
         // `recascatear` da reaplicacao a refaz).
-        let cascata_na_lista =
-            versao == VERSAO && payload.get(apos_antiga).is_some_and(|&byte| byte != 0);
+        let cascata_na_lista = versao >= VERSAO_CASCATA_EM_CLARO
+            && payload.get(apos_antiga).is_some_and(|&byte| byte != 0);
         operacoes.push(OperacaoDaMarca {
             tabela,
             acao,
@@ -1071,7 +1316,7 @@ pub fn ler_marca(caminho: &Path) -> Result<Option<Marca>> {
             cascata_na_lista,
         });
     }
-    Ok(Some(Marca {
+    Ok(Leitura::Aberta(Marca {
         id,
         carimbo_ms,
         operacoes,
@@ -1105,6 +1350,9 @@ pub struct Relatorio {
     /// Indices que a queda deixou para tras e que a recuperacao reconstruiu.
     pub indices_reconstruidos: usize,
     pub impossiveis: Vec<String>,
+    /// Marcas CIFRADAS que este servidor nao conseguiu abrir. **Ficaram no
+    /// disco**, e cada linha diz qual e por que -- ver [`Leitura::SemChave`].
+    pub paradas: Vec<String>,
     pub ms: u64,
 }
 
@@ -1144,6 +1392,18 @@ impl Relatorio {
             ));
             for i in &self.impossiveis {
                 s.push_str(&format!("     ! {i}\n"));
+            }
+        }
+        // Barulhento de proposito, e com o caminho de cada uma: e a unica
+        // linha deste relatorio que descreve trabalho PARADO esperando quem
+        // opera, e nao trabalho ja resolvido.
+        if !self.paradas.is_empty() {
+            s.push_str(&format!(
+                "\x20 marcas PARADAS sem a chave .... {}   (NAO foram apagadas)\n",
+                self.paradas.len()
+            ));
+            for p in &self.paradas {
+                s.push_str(&format!("     ! {p}\n"));
             }
         }
         s.push_str(&format!(
@@ -1195,9 +1455,18 @@ pub fn recuperar(dados: &Instancia) -> Relatorio {
         for caminho in marcas {
             r.achadas += 1;
             match ler_marca(&caminho) {
-                Ok(Some(marca)) => {
+                Ok(Leitura::Aberta(marca)) => {
                     completar(&db, &marca, &mut r);
                     r.completadas += 1;
+                }
+                // A terceira resposta: cifrada, e esta chave nao a abre.
+                // **Nao se apaga.** Apagar aqui trocaria confidencialidade por
+                // durabilidade -- uma transacao confirmada sumiria por falta de
+                // uma senha, e o selo existe para proteger o dado, nao para
+                // custar o dado.
+                Ok(Leitura::SemChave(motivo)) => {
+                    r.paradas.push(format!("{}: {motivo}", caminho.display()));
+                    continue;
                 }
                 // Marca que nao confere, ou que nem da para abrir: commit que
                 // nunca comecou.
@@ -1454,6 +1723,7 @@ mod testes {
         let caminho = gravar_marca(&d, 99, 1_700_000_000_000, &ops).unwrap();
         let m = ler_marca(&caminho)
             .unwrap()
+            .marca()
             .expect("a marca tem de conferir");
         assert_eq!(m.id, 99);
         assert_eq!(m.operacoes.len(), 2);
@@ -1486,7 +1756,7 @@ mod testes {
         b[meio] ^= 0xFF;
         std::fs::write(&caminho, &b).unwrap();
         assert!(
-            ler_marca(&caminho).unwrap().is_none(),
+            matches!(ler_marca(&caminho).unwrap(), Leitura::NaoConfere),
             "marca com CRC quebrado nao pode ser lida como boa"
         );
     }
@@ -1508,7 +1778,82 @@ mod testes {
         let caminho = gravar_marca(&d, 2, 0, &ops).unwrap();
         let b = std::fs::read(&caminho).unwrap();
         std::fs::write(&caminho, &b[..b.len() - 5]).unwrap();
-        assert!(ler_marca(&caminho).unwrap().is_none());
+        assert!(matches!(ler_marca(&caminho).unwrap(), Leitura::NaoConfere));
+    }
+
+    fn uma_escrita(cidade: &str) -> Vec<Escrita> {
+        vec![Escrita {
+            database: "loja".into(),
+            tabela: "clientes".into(),
+            acao: Acao::Inserir,
+            rowid: 1,
+            linha: vec![Value::Str(cidade.into())],
+            linha_antiga: Vec::new(),
+            motivo: String::new(),
+            cascata_na_lista: false,
+        }]
+    }
+
+    /// A marca nasce **fechada para o resto da maquina** -- pedido 354.
+    ///
+    /// Ela guarda a linha INTEIRA do `COMMIT`, e a `linha_antiga` do
+    /// `atualizar` sai decifrada do `.reg` para entrar aqui. Nascer 0644 punha
+    /// isso a disposicao de qualquer conta da maquina enquanto o commit
+    /// durasse -- e no dia de uma queda, para sempre.
+    ///
+    /// Prova real: trocar o [`criar_privado`] de volta por
+    /// `std::fs::File::create` faz o modo sair **100644** e este teste falhar.
+    #[cfg(unix)]
+    #[test]
+    fn a_marca_nasce_so_para_o_dono() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let d = dir("modo");
+        let caminho = gravar_marca(&d, 11, 0, &uma_escrita("Blumenau")).unwrap();
+        let modo = std::fs::metadata(&caminho).unwrap().permissions().mode();
+        assert_eq!(
+            modo & 0o777,
+            0o600,
+            "a marca nasceu {:o}, e ela carrega a linha inteira do commit",
+            modo & 0o777
+        );
+    }
+
+    /// Gravar duas vezes o mesmo id **recusa**, em vez de truncar por cima.
+    ///
+    /// Uma marca ja no disco com aquele id e um `COMMIT` esperando
+    /// recuperacao. O `create_new` que traz o 0600 e o mesmo que impede
+    /// apagar a intencao dela, e a recusa NOMEIA o que ha -- o erro cru
+    /// "File exists" mandaria procurar problema de disco.
+    #[test]
+    fn gravar_por_cima_de_marca_pendente_recusa_nomeando() {
+        let d = dir("ja-existe");
+        gravar_marca(&d, 12, 0, &uma_escrita("Blumenau")).unwrap();
+        let erro = gravar_marca(&d, 12, 0, &uma_escrita("Joinville")).unwrap_err();
+        let texto = erro.to_string();
+        assert!(
+            texto.contains("ja existe a marca da transacao 12") && texto.contains("COMMIT"),
+            "a recusa tem de dizer o que ha: {texto}"
+        );
+    }
+
+    /// Com o cofre DESLIGADO a marca continua nascendo na v3, byte por byte.
+    ///
+    /// E o teste do comportamento **velho**, que e o que mais importa numa
+    /// guarda nova: quem nunca pediu cifra nao paga formato novo, e um
+    /// servidor anterior continua sabendo ler a marca desta base.
+    #[test]
+    fn sem_cofre_a_marca_continua_na_versao_anterior() {
+        let d = dir("v3");
+        let caminho = gravar_marca(&d, 13, 0, &uma_escrita("Blumenau")).unwrap();
+        let b = std::fs::read(&caminho).unwrap();
+        assert_eq!(
+            u32::from_le_bytes([b[8], b[9], b[10], b[11]]),
+            VERSAO_CASCATA_EM_CLARO
+        );
+        // E o cabecalho continua com os 36 bytes de sempre: 32 de campos mais
+        // o CRC. Se o material tivesse entrado, seriam 76.
+        let primeira_op = u16::from_le_bytes([b[CAB_ATE_CRC + 4], b[CAB_ATE_CRC + 5]]);
+        assert_eq!(primeira_op as usize, "clientes".len());
     }
 
     #[test]

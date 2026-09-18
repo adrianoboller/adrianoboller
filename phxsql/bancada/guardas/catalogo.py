@@ -5165,14 +5165,14 @@ pub fn limpar() {
             "linhas."
         ),
         "arquivo": "crates/phxsql-server/src/transacao.rs",
-        "trecho": """                Ok(Some(marca)) => {
+        "trecho": """                Ok(Leitura::Aberta(marca)) => {
                     completar(&db, &marca, &mut r);
                     r.completadas += 1;
                 }
 """,
         "troca": """                // DEFEITO REPOSTO: a marca valida e contada e apagada, mas o
                 // commit que ela descreve nunca e completado.
-                Ok(Some(_marca)) => {
+                Ok(Leitura::Aberta(_marca)) => {
                     r.completadas += 1;
                 }
 """,
