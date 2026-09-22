@@ -123,6 +123,14 @@ ISENTOS = (
     ("*", "chave_do_fio",
      "o PINO: a chave PUBLICA esperada do outro lado, em hexadecimal -- "
      "ve-la e o que diagnostica pino torto (config.rs, odbc/conexao.rs)"),
+    ("ParadaDaTabela", "chave_da_posicao",
+     "chave de MAPA -- `origem|db/tab`, o indice de `posicoes_bidi` no "
+     "servidor. Guardada em vez de remontada para nao haver duas receitas "
+     "da mesma chave; ve-la e o que diagnostica par parado (bidirecional.rs)"),
+    ("Cru", "chave",
+     "chave de MENSAGEM da fabrica de idiomas -- o que o relatorio do "
+     "conferidor precisa imprimir para dizer QUAL texto esta cru. Esconde-la "
+     "deixaria o achado sem endereco (conferidor_texto_cru.rs)"),
 )
 
 
