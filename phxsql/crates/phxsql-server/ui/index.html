@@ -8622,54 +8622,46 @@ function verCreditos() {
   folha(txt("tela.tt_sobre","Sobre"), txt("tela.st_quem_fez_apoiou","quem fez, e sobre o que se apoiou"),
     `<div class="creditos">
        <img class="ave" src="${SIMBOLO_PHOENIX}" width="224" height="133"
-            alt="A fênix do projeto Phoenix">
+            alt="${esc(txt("tela.sb_alt_fenix","A fênix do projeto Phoenix"))}">
        <h3 class="nomao">Ph<span class="x">x</span>Sql</h3>
        <p class="assinatura">Built to store. Engineered to scale.</p>
 
        <div class="quem">
          <div class="pessoa">
-           <div class="papel">concepção e direção</div>
+           <div class="papel">${esc(txt("tela.sb_papel_concepcao","concepção e direção"))}</div>
            <div class="nome">Adriano Boller</div>
-           <div class="oque">O formato de cinco arquivos, a ordem de digitação
-           como garantia, as regras que não se quebram e cada decisão de
-           projeto. E as perguntas difíceis, que foram as que acharam os
-           defeitos.</div>
+           <div class="oque">${esc(txt("tela.sb_bio_adriano","O formato de cinco arquivos, a ordem de digitação como garantia, as regras que não se quebram e cada decisão de projeto. E as perguntas difíceis, que foram as que acharam os defeitos."))}</div>
          </div>
          <div class="pessoa">
-           <div class="papel">implementação</div>
+           <div class="papel">${esc(txt("tela.sb_papel_implementacao","implementação"))}</div>
            <div class="nome">Claude</div>
-           <div class="oque">O código Rust, a interface, a bancada de medição e
-           a documentação — escritos em par com o Adriano, decisão por decisão.</div>
+           <div class="oque">${esc(txt("tela.sb_bio_claude","O código Rust, a interface, a bancada de medição e a documentação — escritos em par com o Adriano, decisão por decisão."))}</div>
          </div>
        </div>
 
-       <h4>Sobre o que este motor se apoia</h4>
+       <h4>${esc(txt("tela.sb_titulo_apoio","Sobre o que este motor se apoia"))}</h4>
        <div class="rolo">
          <table>
-           <thead><tr><th>O quê</th><th>De onde vem</th></tr></thead>
+           <thead><tr><th>${esc(txt("tela.sb_col_oque","O quê"))}</th><th>${esc(txt("tela.sb_col_de_onde","De onde vem"))}</th></tr></thead>
            <tbody>
-             <tr><td>Modelo de arquivos separados por tabela</td><td>HFSQL(R), da PC SOFT</td></tr>
-             <tr><td>Ordem de digitação, tipo <code>Decimal</code>, NOCASE</td><td>Clarion(R) e TopSpeed(R)</td></tr>
-             <tr><td>CRC-32 (polinômio 0xEDB88320)</td><td>IEEE 802.3</td></tr>
-             <tr><td>SHA-256 e SHA-512</td><td>FIPS 180-4</td></tr>
-             <tr><td>HMAC</td><td>RFC 2104 · vetores da RFC 4231</td></tr>
+             <tr><td>${esc(txt("tela.sb_tec_modelo","Modelo de arquivos separados por tabela"))}</td><td>${esc(txt("tela.sb_ori_hfsql","HFSQL(R), da PC SOFT"))}</td></tr>
+             <tr><td>${marcado(txt("tela.sb_tec_ordem","Ordem de digitação, tipo `Decimal`, NOCASE"))}</td><td>${esc(txt("tela.sb_ori_clarion","Clarion(R) e TopSpeed(R)"))}</td></tr>
+             <tr><td>${esc(txt("tela.sb_tec_crc","CRC-32 (polinômio 0xEDB88320)"))}</td><td>IEEE 802.3</td></tr>
+             <tr><td>${esc(txt("tela.sb_tec_sha","SHA-256 e SHA-512"))}</td><td>FIPS 180-4</td></tr>
+             <tr><td>HMAC</td><td>${esc(txt("tela.sb_ori_hmac","RFC 2104 · vetores da RFC 4231"))}</td></tr>
              <tr><td>PBKDF2</td><td>RFC 8018</td></tr>
              <tr><td>Ed25519</td><td>RFC 8032</td></tr>
-             <tr><td>UUID v4 e v7</td><td>RFC 9562</td></tr>
-             <tr><td>DEFLATE e o formato ZIP</td><td>RFC 1951 · APPNOTE do ZIP</td></tr>
+             <tr><td>${esc(txt("tela.sb_tec_uuid","UUID v4 e v7"))}</td><td>RFC 9562</td></tr>
+             <tr><td>${esc(txt("tela.sb_tec_deflate","DEFLATE e o formato ZIP"))}</td><td>${esc(txt("tela.sb_ori_deflate","RFC 1951 · APPNOTE do ZIP"))}</td></tr>
              <tr><td>Base64</td><td>RFC 4648</td></tr>
-             <tr><td>Régua de comparação da bancada</td><td>MySQL(R) 8.0.46</td></tr>
+             <tr><td>${esc(txt("tela.sb_tec_regua","Régua de comparação da bancada"))}</td><td>MySQL(R) 8.0.46</td></tr>
            </tbody>
          </table>
        </div>
-       <p class="leg">Cada um deles é <strong>escrito aqui</strong>, sem
-       dependência externa, e conferido contra o vetor oficial do respectivo
-       padrão — não contra "parece certo".</p>
+       <p class="leg">${marcado(txt("tela.sb_cada_um_escrito","Cada um deles é **escrito aqui**, sem dependência externa, e conferido contra o vetor oficial do respectivo padrão — não contra \"parece certo\"."))}</p>
 
-       <h4>Marcas</h4>
-       <p class="leg">HFSQL, Clarion, TopSpeed, MySQL, Redis e Excel são marcas
-       dos seus respectivos donos, citadas aqui por referência técnica. O
-       PhxSql não é derivado de nenhum deles: o formato foi escrito do zero.</p>
+       <h4>${esc(txt("tela.sb_titulo_marcas","Marcas"))}</h4>
+       <p class="leg">${esc(txt("tela.sb_marcas_p","HFSQL, Clarion, TopSpeed, MySQL, Redis e Excel são marcas dos seus respectivos donos, citadas aqui por referência técnica. O PhxSql não é derivado de nenhum deles: o formato foi escrito do zero."))}</p>
      </div>`);
 }
 

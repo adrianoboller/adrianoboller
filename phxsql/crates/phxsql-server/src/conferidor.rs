@@ -389,6 +389,30 @@ pub const ISENTOS: &[(&str, &str)] = &[
         "(picture)",
         "termo tecnico do Clarion (mascara PICTURE), o mesmo em toda lingua",
     ),
+    // A tela "Sobre" (verCreditos()). Nome de pessoa e identificador de
+    // norma tecnica: nenhum dos dois muda de lingua para lingua, e uma
+    // chave da FABRICA_TELA com os seis idiomas iguais dispararia a guarda
+    // `nenhuma_chave_com_os_seis_idiomas_colados` -- o isento e o jeito
+    // certo de declarar "isto e igual de proposito", em vez de fingir uma
+    // traducao que nao existe.
+    ("Adriano Boller", "nome de pessoa"),
+    ("HMAC", "nome de algoritmo"),
+    (
+        "IEEE 802.3",
+        "nome de norma tecnica, o mesmo em toda lingua",
+    ),
+    (
+        "FIPS 180-4",
+        "nome de norma tecnica, o mesmo em toda lingua",
+    ),
+    ("RFC 8018", "identificador de RFC, o mesmo em toda lingua"),
+    ("RFC 8032", "identificador de RFC, o mesmo em toda lingua"),
+    ("RFC 9562", "identificador de RFC, o mesmo em toda lingua"),
+    ("RFC 4648", "identificador de RFC, o mesmo em toda lingua"),
+    (
+        "MySQL(R) 8.0.46",
+        "nome de produto e versao, o mesmo em toda lingua",
+    ),
 ];
 
 /// A varredura de um arquivo. `arquivo` so entra no achado, para dizer onde.
@@ -1325,7 +1349,20 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// `` `senha_hash` ``) para a frase ser UMA chave, e o nome do modo no meio
 /// da frase virou marcador `{modo}` em vez de interpolacao, porque pedaco de
 /// frase nao se traduz. Medido pelo conferidor antes (950) e depois (937).
-pub const TETO_ROTULOS_E_CRASE: usize = 937;
+///
+/// 22/09/2026, pedido 110 (revisao do agente tradutor): 937 -> **904**. A
+/// tela "Sobre" (`verCreditos()`) inteira, um widget fechado: os dois cartoes
+/// de credito, a tabela "sobre o que este motor se apoia" e os dois
+/// paragrafos finais. Foi tambem o lote que fechou a licao da "frase picada
+/// por marcacao" pela segunda vez nesta base -- "Ordem de digitacao, tipo
+/// `Decimal`, NOCASE" vivia partida em tres literais pelo `<code>`, e virou
+/// uma chave so com a marca de crase. Os identificadores de norma tecnica
+/// (RFC, IEEE, FIPS, a versao do MySQL) e o nome do Adriano entraram no
+/// `ISENTOS` em vez de na fabrica -- sao o mesmo texto em qualquer lingua, e
+/// uma chave com os seis idiomas iguais dispararia a guarda
+/// `nenhuma_chave_com_os_seis_idiomas_colados`. Medido pelo conferidor antes
+/// (937) e depois (904).
+pub const TETO_ROTULOS_E_CRASE: usize = 904;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;
