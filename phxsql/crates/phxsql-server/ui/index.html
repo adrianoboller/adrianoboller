@@ -1243,6 +1243,11 @@ tr.linha-excluida td{opacity:.55;text-decoration:line-through}
 /* A visao das marcadas herda o rosa da acao: a mesma cor do botao que marca. */
 .chip-visao button.marcadas.ativo{background:var(--acao-marcar);color:var(--fundo)}
 textarea.campo.mono{font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.5}
+/* O irmao do de cima para campo de UMA linha. Nasceu com o pino do fio, que
+   sao 64 digitos hexadecimais conferidos a olho contra o que o terminal do
+   outro servidor imprimiu: em fonte proporcional o `1` e o `l` se confundem, e
+   conferir chave e exatamente o que o pino existe para que se faca. */
+input.campo.mono{font-family:"IBM Plex Mono",monospace}
 label.cmp.largo{grid-column:1/-1}
 .paginar{display:inline-flex;gap:6px;margin-left:8px;align-items:center}
 /* A caixa de ir para a pagina: larga o bastante para cinco digitos, porque
@@ -1816,6 +1821,16 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
 /* O campo `largo` (memo, SQL, descricao) atravessa a grade inteira -- e uma
    caixa de TEXTO, entao o teto dela e o do texto e nao o do campo. */
 .ficha-edit label.largo,.form-dbl .cmp.largo{max-width:var(--medida)}
+/* E a chave em hexadecimal fica de fora do teto, pela MESMA razao do `<pre>`
+   la de cima: a medida de leitura existe para a linha de prosa nao ficar
+   longa demais para o olho voltar ao comeco da seguinte, e uma chave nao se
+   le -- se CONFERE, digito a digito, contra o que o terminal do outro
+   servidor imprimiu. Medido em 1280px: o pino do fio (64 digitos) cabia em
+   834px e o `--medida` o cortava em 453, escondendo justamente o COMECO do
+   valor, que e por onde a conferencia comeca. Apareceu na captura -- o
+   `largo` parecia resolver, e o teto que ele carrega junto nao aparece
+   lendo o HTML. */
+.form-dbl .cmp.largo.chave-hex{max-width:none}
 /* `.fichas` fica de FORA do teto de proposito: nao e uma grade de cartoes, e
    uma faixa emendada -- o `gap:1px` sobre um fundo `--linha` e o que desenha
    os fios entre as celulas. Estreitar a celula abriria o fundo no meio da
@@ -7685,9 +7700,13 @@ const GRUPOS_AJUSTE = [
   // campo editável e cinco só de leitura faria parecer que os cinco também se
   // gravam daqui.
   ["tela.cfg_cifra", ["cifra.tabelas"], () => rodapeDaCifra()],
+  // O rodapé diz POR ONDE o aviso sai, e fica neste grupo e não num canto do
+  // «só pelo arquivo»: quem liga o alerta aqui é quem precisa saber que o fio
+  // do relé vai em claro — a decisão e o aviso no mesmo lugar.
   ["Alerta de espaço em disco",
    ["alertas.ligado", "alertas.livre_minimo_percentual", "alertas.livre_minimo_mb",
-    "alertas.checar_minutos", "alertas.repetir_horas"]],
+    "alertas.checar_minutos", "alertas.repetir_horas"],
+   c => rodapeDoEmailDeAlerta(c)],
   // As quatro cores e os dois limiares do painel de bolhas, juntos: o limiar
   // é o que decide QUAL cor cada atividade recebe, e separá-los deixaria
   // metade da regra numa tela e metade noutra.
@@ -7817,6 +7836,46 @@ function rodapeDaCifra() {
       <p>${marcado(txt("tela.cfg_cifra_nota"))}</p>
       <p>${marcado(txt("tela.cfg_cifra_nota2"))}</p>
       <p>${marcado(txt("tela.cfg_cifra_nota3"))}</p>
+    </div>`;
+}
+
+/** O rodapé do grupo do alerta de disco: por onde o aviso SAI.
+ *
+ * Existe porque a honestidade já estava escrita — no `email.rs` e no
+ * `config.rs`, em comentário de fonte — e quem configura o e-mail não lê
+ * fonte. A tela é onde a pessoa decide, e era o único lugar que calava.
+ *
+ * O conserto que ela oferece NÃO é criptográfico, e isso é o ponto: não há
+ * TLS sem biblioteca, e zero dependências é pétrea. O que existe é o conserto
+ * de topologia — relé interno, ou proxy que termine o TLS —, e prometer
+ * qualquer outra coisa aqui seria vender proteção que não existe.
+ *
+ * O parágrafo do `AUTH LOGIN` só aparece com `usuario` preenchido, que é o
+ * interruptor que põe uma credencial no fio: dizer «sua senha viaja em
+ * base64» a quem não manda senha nenhuma é alarme, não informação. E o bloco
+ * inteiro some se um dia o servidor responder `tls: true` — o campo vem dele
+ * e não de uma cópia aqui, para a nota não sobreviver ao defeito que a
+ * motivou. */
+function rodapeDoEmailDeAlerta(c) {
+  const em = (c.alertas || {}).email || {};
+  if (em.tls === true) return "";
+  return `<div class="nota">
+      <p><strong>${marcado(txt("tela.cfg_em_titulo",
+        "**O aviso por e-mail sai em texto claro.**"))}</strong>
+      ${marcado(txt("tela.cfg_em_claro",
+        "Este servidor fala SMTP **sem TLS**: a `std` não traz TLS e acrescentar uma biblioteca "
+        + "romperia o zero dependências. Quem escuta o fio lê a mensagem — e o SMS do alerta sai "
+        + "pelo mesmo relé."))}</p>
+      ${em.usuario ? `<p>${marcado(txt("tela.cfg_em_auth",
+        "Com `alertas.email.usuario` preenchido, o `AUTH LOGIN` manda usuário e senha em "
+        + "**base64, que é codificação e não cifra**: qualquer um no caminho os lê."))}</p>` : ""}
+      <p>${marcado(txt("tela.cfg_em_conserto",
+        "O conserto realista é o mesmo da web: um relé interno que você controle (`postfix`, "
+        + "`exim`) na porta 25, que recebe em claro e cuida do TLS para fora — ou um proxy que "
+        + "termine o TLS ao lado."))}
+      ${marcado(txt("tela.cfg_em_ip",
+        "No relé próprio, **libere o IP deste servidor em vez de mandar senha**: credencial que "
+        + "não viaja não se escuta."))}</p>
     </div>`;
 }
 
@@ -8032,6 +8091,12 @@ async function verConfigServidor() {
        ["alertas.email.ligado", simNao(em.ligado), "sem TLS: serve para relé interno na porta 25"],
        ["alertas.email.servidor", em.servidor ? `${em.servidor}:${em.porta}` : "", ""],
        ["alertas.email.para", (em.para || []).join(", ") || "ninguém", ""],
+       // O `usuario` estava fora da tabela, e é justamente o campo que decide
+       // se uma credencial viaja: preenchido, o AUTH LOGIN manda os dois em
+       // base64. Campo ausente da tela é campo que ninguém pesa ao decidir.
+       ["alertas.email.usuario", em.usuario || "(vazio)",
+        txt("tela.cfg_em_usuario_diz",
+          "preenchido, o AUTH LOGIN manda usuário e senha em base64 — codificação, não cifra")],
        ["alertas.email.senha", em.senha, "nunca sai daqui, nem no log"],
        ["replicacao.papel", rep.papel, "isolado, source ou replica — virar o papel pela web "
          + "apontaria este servidor para outro dono"],
@@ -12722,6 +12787,15 @@ async function verReplicacao() {
         formato:v => esc((v || []).join(", ") || "todos") },
       { campo:"reconectar_em", titulo:txt("tela.col_a_cada","a cada"), tipo:"numero",
         formato:v => esc(String(v)) + "s" },
+      // O estado do fio por origem. Servidor que não responde `cifra` (um
+      // anterior a esta coluna, alcançado pelo multi-servidor) fica com o
+      // travessão em vez de uma afirmação inventada: não saber e estar em
+      // claro não são a mesma coisa.
+      { campo:"cifra", titulo:txt("tela.col_fio","fio"), ordenavel:false, filtravel:false,
+        formato:(v, o) => v === undefined ? "—"
+          : !v ? esc(txt("tela.rp_fio_claro","em claro"))
+          : o.tem_pino ? esc(txt("tela.rp_fio_pino","cifrado · com pino"))
+          : esc(txt("tela.rp_fio_sem_pino","cifrado · sem pino")) },
     ],
     dados: origens,
     pagina: { tamanho: 100, opcoes: [50, 100, 200] },
@@ -12793,6 +12867,13 @@ async function sondarOutro(rz, opcoes = {}) {
     if (rz.token_remoto) base.token_remoto = rz.token_remoto;
     if (rz.usuario) { base.usuario = rz.usuario; base.senha = rz.senha; }
     if (opcoes.databases) base.databases = opcoes.databases;
+    // A sonda tem de falar o MESMO fio que o laço vai falar depois — é a
+    // promessa que o passo 3 já fazia por escrito («o que falha aqui falharia
+    // replicando») e que ela não cumpria: sem estes dois campos a sonda caía
+    // no padrão do motor, e sondar sem pino o que a replicação vai pinar
+    // devolve «ligação boa» para uma configuração que não sobe.
+    base.cifra = rz.cifra !== false;
+    if (base.cifra && rz.pino) base.chave_do_fio = rz.pino;
   }
   const deQuem = "replicacao_testar";
   const bruto = await api("replicacao_testar", base);
@@ -12871,6 +12952,12 @@ async function assistenteReplicacao() {
     token_remoto: "", usuario: "", senha: "",
     sonda: null, todos: true, escolhidos: new Set(),
     agenda: "streaming", cada: 15, hora: "03:00", reconectar: 10,
+    // O fio. `cifra` nasce LIGADO porque é assim que a origem nasce no motor
+    // (CIFRA_DE_SAIDA_PADRAO, config.rs) — e o assistente escreve o campo no
+    // bloco de qualquer jeito, ligado ou desligado: o que cala o aviso de
+    // arranque não é o valor, é a DECISÃO estar escrita. `pino` é a chave
+    // pública esperada do outro servidor (chave_do_fio), e vazia é legítima.
+    cifra: true, pino: "",
   };
 
   const fundo = document.createElement("div");
@@ -12935,45 +13022,108 @@ async function assistenteReplicacao() {
   // ------------------------------------------------ passo 2: os servidores
   const passo2 = () => {
     if (!rz.nome) rz.nome = rz.modo.id === "multi_master" ? "parceiro" : "primario";
-    molde("Os dois servidores", 2, `
-      <div class="aviso"><b>Quem procura é quem recebe.</b> ${
+    molde(txt("tela.rz_p2_titulo", "Os dois servidores"), 2, `
+      <div class="aviso"><b>${marcado(txt("tela.rz_p2_quem", "**Quem procura é quem recebe.**"))}</b> ${
         rz.modo.id === "multi_master"
-          ? "Cada lado do multi-master puxa do outro: configure aqui a metade de cá, e rode o mesmo assistente do outro lado apontando para cá."
-          : `Este servidor vai puxar do outro (${esc(rz.modo.rot)}); o outro é o primário e não precisa alcançar este de volta — é o desenho do firewall.`
+          ? marcado(txt("tela.rz_p2_multi", "Cada lado do multi-master puxa do outro: configure aqui a metade de cá, e rode o mesmo assistente do outro lado apontando para cá."))
+          // O nome do modo entra por MARCADOR, e não por `+` no meio da
+          // frase: a ordem das palavras muda de idioma para idioma, e um
+          // pedaço de frase não se traduz.
+          : marcado(txt("tela.rz_p2_puxa", "Este servidor vai puxar do outro ({modo}); o outro é o primário e não precisa alcançar este de volta — é o desenho do firewall."), { modo: rz.modo.rot })
       }</div>
       <div class="form-dbl">
-        <label class="cmp"><span>Apelido da origem</span>
-          <input id="rzNome" class="campo" value="${esc(rz.nome)}" placeholder="primario, matriz…">
-          <span class="leg">é o nome dela no config e nos logs daqui</span></label>
-        <label class="cmp"><span>Endereço do outro servidor</span>
+        <label class="cmp"><span>${esc(txt("tela.rz_p2_apelido", "Apelido da origem"))}</span>
+          <input id="rzNome" class="campo" value="${esc(rz.nome)}"
+                 placeholder="${esc(txt("tela.rz_p2_apelido_ph", "primario, matriz…"))}">
+          <span class="leg">${esc(txt("tela.rz_p2_apelido_leg", "é o nome dela no config e nos logs daqui"))}</span></label>
+        <label class="cmp"><span>${esc(txt("tela.rz_p2_host", "Endereço do outro servidor"))}</span>
           <input id="rzHost" class="campo" value="${esc(rz.host)}"></label>
-        <label class="cmp"><span>Porta de dados dele</span>
+        <label class="cmp"><span>${esc(txt("tela.rz_p2_porta", "Porta de dados dele"))}</span>
           <input id="rzPorta" class="campo" type="number" value="${rz.porta}">
-          <span class="leg">a mesma do protocolo (5000 de fábrica); a replicação fala por ela</span></label>
-        <label class="cmp"><span>Token do outro servidor</span>
+          <span class="leg">${esc(txt("tela.rz_p2_porta_leg", "a mesma do protocolo (5000 de fábrica); a replicação fala por ela"))}</span></label>
+        <label class="cmp"><span>${esc(txt("tela.rz_p2_token", "Token do outro servidor"))}</span>
           <input id="rzTokenR" class="campo" type="password" value="${esc(rz.token_remoto)}">
-          <span class="leg">vale tudo lá — guarde-o como senha</span></label>
-        <label class="cmp"><span>Usuário lá (opcional)</span>
+          <span class="leg">${esc(txt("tela.rz_p2_token_leg", "vale tudo lá — guarde-o como senha"))}</span></label>
+        <label class="cmp"><span>${esc(txt("tela.rz_p2_usuario", "Usuário lá (opcional)"))}</span>
           <input id="rzUsu" class="campo" value="${esc(rz.usuario)}">
-          <span class="leg">com o direito <b>replicar</b>; entra pelo desafio-resposta</span></label>
-        <label class="cmp"><span>Senha desse usuário</span>
-          <input id="rzSen" class="campo" type="password">
-          <span class="leg">nunca viaja em claro; no config vira <code>senha_hash</code></span></label>
-      </div>`,
+          <span class="leg">${marcado(txt("tela.rz_p2_usuario_leg", "com o direito **replicar**; entra pelo desafio-resposta"))}</span></label>
+        <label class="cmp"><span>${esc(txt("tela.rz_p2_senha", "Senha desse usuário"))}</span>
+          <input id="rzSen" class="campo" type="password"
+                 placeholder="${rz.senha ? esc(txt("tela.rz_senha_guardada", "guardada — deixe em branco para manter")) : ""}">
+          <span class="leg">${marcado(txt("tela.rz_p2_senha_leg", "nunca viaja em claro; no config vira `senha_hash`"))}</span></label>
+      </div>
+      <h4 style="margin:18px 0 6px">${esc(txt("tela.rz_cifra_h", "O fio entre os dois servidores"))}</h4>
+      <div class="form-dbl">
+        <label class="cmp linha-chk"><input type="checkbox" id="rzCifra" ${rz.cifra ? "checked" : ""}>
+          <span><b>${esc(txt("tela.rz_cifra", "Puxar por dentro do túnel cifrado"))}</b>
+          <span class="leg">${esc(txt("tela.rz_cifra_leg",
+            "nasce ligado; desligar escreve \"cifra\": false na origem, e é o escape ESCRITO. "
+            + "O outro servidor tem de atender o aperto de mão — um source anterior a ele não atende."))}</span></span></label>
+        <label class="cmp largo chave-hex"><span>${esc(txt("tela.rz_pino", "Pino: a chave pública esperada do outro servidor"))}</span>
+          <input id="rzPino" class="campo mono" value="${esc(rz.pino)}" spellcheck="false">
+          <span class="leg">${esc(txt("tela.rz_pino_leg",
+            "64 dígitos hexadecimais, o chave_do_fio da origem. «phxsqld --chave-do-fio» no outro "
+            + "servidor imprime o dele. Deixe vazio se ainda não souber."))}</span></label>
+      </div>
+      <div class="aviso" id="rzFioDiz"></div>`,
       `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
-       <button class="botao incluir" id="rzIr2">Testar a conexão →</button>`);
+       <button class="botao incluir" id="rzIr2">${esc(txt("tela.rz_p2_ir", "Testar a conexão →"))}</button>`);
     $("#rzVolta").onclick = passo1;
+    // O que o fio COMPRA muda com os dois controles, e dizer isso só no passo
+    // seguinte seria tarde: quem desmarca a cifra tem de ver ali mesmo o que
+    // passa a viajar em claro, e quem deixa o pino vazio tem de ver que o
+    // túnel não alcança quem está no meio.
+    const dizerDoFio = () => {
+      const ligada = $("#rzCifra").checked;
+      const pino = $("#rzPino").value.trim();
+      $("#rzPino").disabled = !ligada;
+      // A recusa anterior fala de um valor que não existe mais. Deixá-la na
+      // tela punha dois vereditos contraditórios lado a lado — o vermelho
+      // «pino torto» debaixo do verde «túnel cifrado, com pino». Apareceu na
+      // captura, e não lendo o código.
+      $("#rzRecado").innerHTML = "";
+      $("#rzFioDiz").className = "aviso" + (ligada && pino ? " bom" : "");
+      $("#rzFioDiz").innerHTML = `<p>${
+        !ligada ? marcado(txt("tela.rz_claro",
+            "**Sem cifra, a conversa da replicação vai em claro** — token, credencial e as "
+            + "linhas. O \"cifra\": false fica escrito na origem: é decisão registrada, não esquecimento."))
+        : pino ? marcado(txt("tela.rz_res_cifra_pino", "fio: túnel cifrado, com pino"))
+        : marcado(txt("tela.rz_sem_pino",
+            "**Sem pino, o túnel protege da escuta passiva e não de quem está no meio**: o "
+            + "atacante apresenta a chave dele e não há com o que comparar. O arranque avisa exatamente isso."))}</p>`;
+    };
+    $("#rzCifra").onchange = dizerDoFio;
+    $("#rzPino").oninput = dizerDoFio;
+    dizerDoFio();
     $("#rzIr2").onclick = () => {
       rz.nome = $("#rzNome").value.trim();
       rz.host = $("#rzHost").value.trim();
       rz.porta = +$("#rzPorta").value || 5000;
       rz.token_remoto = $("#rzTokenR").value;
       rz.usuario = $("#rzUsu").value.trim();
-      rz.senha = $("#rzSen").value;
-      if (!rz.nome) return recado("dê um apelido à origem", true);
-      if (!rz.host) return recado("diga o endereço do outro servidor", true);
+      // A senha NÃO volta para o HTML (o campo nasce sem `value`, de
+      // propósito: credencial no DOM é credencial que sai num «salvar
+      // página»). A consequência era um defeito: quem voltava de «Corrigir a
+      // conexão» achava o campo vazio, e este `=` apagava a senha certa — a
+      // sonda seguinte falhava com «usuário ou senha inválidos» e mandava
+      // procurar defeito na credencial, que estava boa. Campo em branco agora
+      // quer dizer «mantenha», e o marcador d'água diz isso.
+      if ($("#rzSen").value) rz.senha = $("#rzSen").value;
+      rz.cifra = $("#rzCifra").checked;
+      // Espaço no meio de um hexadecimal colado do terminal é comum, e cair
+      // com «pino torto» por causa dele mandaria procurar defeito na chave.
+      rz.pino = $("#rzPino").value.replace(/\s+/g, "");
+      if (!rz.nome) return recado(txt("tela.rz_p2_falta_nome", "dê um apelido à origem"), true);
+      if (!rz.host) return recado(txt("tela.rz_p2_falta_host", "diga o endereço do outro servidor"), true);
       if (!rz.token_remoto && !rz.usuario)
-        return recado("a réplica precisa se apresentar: token do outro servidor, ou usuário com direito de replicar", true);
+        return recado(txt("tela.rz_p2_falta_cred",
+          "a réplica precisa se apresentar: token do outro servidor, ou usuário com direito de replicar"), true);
+      // O motor RECUSA pino torto na declaração (Config::validar), e recusar
+      // aqui custa um erro lido enquanto se digita, em vez de um servidor que
+      // não sobe depois de colar o bloco.
+      if (rz.pino && !/^[0-9a-fA-F]{64}$/.test(rz.pino))
+        return recado(txt("tela.rz_pino_torto",
+          "o pino são 64 dígitos hexadecimais — deixe vazio se ainda não souber o do outro servidor"), true);
       passo3();
     };
   };
@@ -12994,7 +13144,10 @@ async function assistenteReplicacao() {
          falha aqui falharia replicando. Confira endereço, porta e a
          credencial; e se o outro servidor limita IPs
          (<code>ips_permitidos</code>), o IP <b>deste</b> servidor precisa
-         estar lá.</p></div>`,
+         estar lá.</p>
+         ${rz.cifra ? `<p class="leg">${marcado(txt("tela.rz_sonda_cifra",
+           "Com o túnel ligado, a falha também pode ser o outro servidor não atender o aperto "
+           + "de mão: um source anterior a 18/09/2026 não atende, e \"cifra\": false é o escape escrito."))}</p>` : ""}</div>`,
         `<button class="botao secundario" id="rzVolta">← Corrigir a conexão</button>`);
       $("#rzVolta").onclick = passo2;
       return;
@@ -13154,6 +13307,15 @@ async function assistenteReplicacao() {
     if (rz.agenda === "minutos") o.cada_minutos = rz.cada;
     else if (rz.agenda === "hora_em_hora") o.cada_minutos = 60;
     else if (rz.agenda === "diaria") o.hora = rz.hora;
+    // O `cifra` entra SEMPRE, ligado ou desligado. Ele não muda o que o motor
+    // faz quando é `true` (a origem já nasce cifrada), muda quem ouve o aviso
+    // de arranque: o motor distingue «escrito» de «herdado», e só quem herdou
+    // a virada precisa ser avisado todo dia. Bloco sem o campo entrega ao
+    // operador um aviso perpétuo por uma decisão que ele tomou aqui.
+    o.cifra = rz.cifra;
+    // O pino só acompanha o túnel: `chave_do_fio` numa origem em claro seria
+    // um campo que não compra nada, e campo que não compra nada mente.
+    if (rz.cifra && rz.pino) o.chave_do_fio = rz.pino;
     return o;
   };
 
@@ -13167,7 +13329,10 @@ async function assistenteReplicacao() {
       <li>origem <code>${esc(rz.nome)}</code> = ${esc(rz.host)}:${rz.porta}
         (${rz.token_remoto ? "token" : ""}${rz.token_remoto && rz.usuario ? " + " : ""}${rz.usuario ? `usuário <code>${esc(rz.usuario)}</code>` : ""})</li>
       <li>bancos: ${rz.todos ? "<b>todos</b>" : [...rz.escolhidos].map(esc).join(", ")}</li>
-      <li>agenda: ${agenda} · reconferir a cada ${rz.reconectar} s</li></ul>`;
+      <li>agenda: ${agenda} · reconferir a cada ${rz.reconectar} s</li>
+      <li>${!rz.cifra ? marcado(txt("tela.rz_res_claro", "fio: **em claro**, por decisão escrita"))
+        : rz.pino ? marcado(txt("tela.rz_res_cifra_pino", "fio: túnel cifrado, com pino"))
+        : marcado(txt("tela.rz_res_cifra_sem", "fio: túnel cifrado, **sem pino** — só escuta passiva"))}</li></ul>`;
   };
 
   // ------------------------------------------- passo 6: aplicar e provar
@@ -13219,10 +13384,15 @@ async function assistenteReplicacao() {
     if (rz.modo.id === "multi_master") blocoAqui.imagem_da_linha = true;
     const blocoLa = rz.modo.id === "multi_master"
       ? { papel: rz.modo.papel, id_servidor: "o-outro-servidor",
+          // A volta é uma ORIGEM como a de cá, e por isso leva o `cifra`
+          // escrito pelo mesmo motivo — o irmão fica, não se conserta só o
+          // caminho que motivou. O pino NÃO vai junto: ali ele é a chave
+          // pública DESTE servidor, que a tela não tem como saber, e pino
+          // torto o outro arranque RECUSA. Vazio avisa; inventado não sobe.
           origens: [{ nome: "volta", host: "ENDERECO-DESTE-SERVIDOR",
             porta: +(String(cfg.bind || "5000").split(":").pop()) || 5000,
             token: "TOKEN-DESTE-SERVIDOR", databases: o.databases,
-            reconectar_em: o.reconectar_em }],
+            reconectar_em: o.reconectar_em, cifra: rz.cifra }],
           // As duas metades do bidirecional têm as MESMAS exigências: sem a
           // imagem no diário do outro lado, a volta não tem o que aplicar.
           imagem_da_linha: true }
@@ -13244,10 +13414,27 @@ async function assistenteReplicacao() {
           ? ", com <code>\"somente_leitura\": false</code> e um <code>id_servidor</code> DIFERENTE do outro lado"
           : ""}:</p>
       <pre class="dado">"replicacao": ${esc(JSON.stringify(blocoAqui, null, 2))}</pre>
+      <div class="nota"><p>${rz.cifra
+        // Duas notas, porque o campo compra coisas DIFERENTES nos dois casos:
+        // com `true` ele registra a decisão e cala o aviso de arranque; com
+        // `false` ele é o que faz a escolha valer — sem o campo, a origem
+        // nasceria cifrada e a tela teria mentido.
+        ? marcado(txt("tela.rz_bloco_cifra",
+          "O bloco traz o \"cifra\" ESCRITO. Sem ele a origem nasce cifrada do mesmo jeito, mas o "
+          + "arranque avisa todo dia que ninguém decidiu — o aviso é para quem herdou a virada."))
+        : marcado(txt("tela.rz_bloco_claro",
+          "O bloco traz o \"cifra\": false ESCRITO, e sem ele a origem nasceria CIFRADA — o padrão "
+          + "desde 18/09/2026. Aqui o campo não cala um aviso: é o que faz valer a escolha desta tela."))}</p>
+        ${rz.cifra && !rz.pino ? `<p>${marcado(txt("tela.rz_sem_pino",
+          "**Sem pino, o túnel protege da escuta passiva e não de quem está no meio**: o atacante "
+          + "apresenta a chave dele e não há com o que comparar. O arranque avisa exatamente isso."))}</p>` : ""}</div>
       <p class="leg">${rz.modo.id === "multi_master"
         ? "E no config do <b>outro</b> lado, a metade dele (troque endereço e token pelos deste servidor):"
         : "E no config do <b>outro</b> servidor, para ele dizer a verdade e limitar quem puxa:"}</p>
-      <pre class="dado">"replicacao": ${esc(JSON.stringify(blocoLa, null, 2))}</pre>`,
+      <pre class="dado">"replicacao": ${esc(JSON.stringify(blocoLa, null, 2))}</pre>
+      ${rz.modo.id === "multi_master" && rz.cifra ? `<p class="leg">${marcado(txt("tela.rz_volta_pino",
+        "Na volta, o pino é a chave **deste** servidor: rode «phxsqld --chave-do-fio» aqui e "
+        + "escreva o valor no chave_do_fio de lá. Pino torto o arranque RECUSA — vazio é melhor que inventado."))}</p>` : ""}`,
       `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
        <button class="botao consultar" id="rzConferir">Já apliquei e reiniciei — conferir</button>`);
     $("#rzVolta").onclick = passo6;
@@ -13259,6 +13446,19 @@ async function assistenteReplicacao() {
       const origem = (agora.origens || []).find(x =>
         x.nome === rz.nome || (x.host === rz.host && +x.porta === +rz.porta));
       const papelOk = agora.papel === (papelHoje ? "replica" : rz.modo.papel);
+      // O fio também se confere, e não por palpite: `cifra` e `tem_pino` vêm
+      // da resposta do servidor. Mandar colar um bloco cifrado e dar por
+      // pronto sem olhar seria o assistente confiando no próprio texto.
+      // Duas frases INTEIRAS, e não uma com a palavra trocada no meio: frase
+      // picada por interpolação é intraduzível por construção — em alemão o
+      // verbo vai para o fim, e nenhuma ordem de pedaços serve às seis.
+      if (papelOk && origem && origem.cifra !== undefined && origem.cifra !== rz.cifra) {
+        return recado(rz.cifra
+          ? txt("tela.rz_fio_difere_claro",
+              "a origem subiu EM CLARO, e aqui você escolheu o túnel cifrado — o bloco colado não é o que o assistente gerou")
+          : txt("tela.rz_fio_difere_cifra",
+              "a origem subiu CIFRADA, e aqui você escolheu em claro — o bloco colado não é o que o assistente gerou"), true);
+      }
       if (papelOk && origem) return passoPronto(origem);
       recado(`ainda não confere: papel está «${agora.papel}» e a origem ${
         origem ? "apareceu" : `«${rz.nome}» não apareceu`} — o servidor foi

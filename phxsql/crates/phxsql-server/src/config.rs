@@ -4164,6 +4164,19 @@ impl Config {
                                         ("porta", Json::de_u64(o.porta as u64)),
                                         ("usuario", Json::texto_de(&o.usuario)),
                                         ("reconectar_em", Json::de_u64(o.reconectar_em)),
+                                        // O estado do FIO, pela mesma forma
+                                        // que `web.servidores` e os nos do
+                                        // cluster ja publicam: `cifra` e o
+                                        // interruptor, `tem_pino` diz se ha
+                                        // ancora SEM carregar material de
+                                        // chave -- o pino nunca sai numa
+                                        // resposta de protocolo. Sem estes
+                                        // dois a tela mandava colar um bloco
+                                        // cifrado e nao tinha como CONFERIR
+                                        // que ele valeu, que e o passo que o
+                                        // proprio assistente oferece.
+                                        ("cifra", Json::Bool(o.cifra)),
+                                        ("tem_pino", Json::Bool(!o.chave_do_fio.is_empty())),
                                         (
                                             "databases",
                                             Json::Lista(

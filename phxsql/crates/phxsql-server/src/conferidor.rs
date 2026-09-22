@@ -1312,7 +1312,20 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// tela concatenava com portugues cravado por `+` -- forma que nenhuma via
 /// enxerga, e que agora esta declarada em `docs/MENSAGENS.md`. Medido pelo
 /// conferidor antes e depois, nunca contado a mao.
-pub const TETO_ROTULOS_E_CRASE: usize = 950;
+///
+/// 22/09/2026, pedidos 379 e 374: 950 -> **937**. Nao foi leva de traducao
+/// planejada -- foi consequencia de uma. O bloco novo do FIO no passo 2 do
+/// assistente de replicacao (`cifra` e `chave_do_fio`) nasceu inteiro pela
+/// fabrica, e ao lado dele os catorze rotulos e legendas do MESMO passo
+/// continuavam cravados: meia tela traduzida e pior que tela nenhuma
+/// traduzida, porque a frase muda de idioma no meio de um formulario. Entrou
+/// o passo 2 por inteiro -- titulo, os seis campos com as legendas, o botao e
+/// as tres recusas de validacao --, e com ele duas formas que a conta nao via
+/// de graca: o `<b>`/`<code>` dentro da legenda virou marca (`**replicar**`,
+/// `` `senha_hash` ``) para a frase ser UMA chave, e o nome do modo no meio
+/// da frase virou marcador `{modo}` em vez de interpolacao, porque pedaco de
+/// frase nao se traduz. Medido pelo conferidor antes (950) e depois (937).
+pub const TETO_ROTULOS_E_CRASE: usize = 937;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;
