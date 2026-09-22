@@ -882,7 +882,7 @@ feita numa só):
 | Catraca | Medidor | Teto | Medido em 16/09/2026 | Estado |
 |---|---|---:|---:|---|
 | `codigo-do-dono` | `bancada/concorrencia/mapa-da-trava.py` | 5 | **5** | sem folga |
-| `alcancam-fsync` | `bancada/concorrencia/mapa-da-trava.py` | 22 | **25** (23 em 16/09; remedida em 17/09/2026, pedido 164 — atribuição, nenhum `fsync` novo, ver §13-bis) | **VERMELHA** — #252 (1), parada com o dono |
+| `alcancam-fsync-2` | `bancada/concorrencia/mapa-da-trava.py` | 24 | **24** (medido em 22/09/2026 pelo próprio `--catraca`) | **VERDE** — a `alcancam-fsync` (teto 22) foi **APOSENTADA** em 18/09/2026 por decisão do dono, e esta nasceu no número medido daquele dia. Régua que passa a medir outra coisa **aposenta** a catraca antiga e faz nascer uma nova; não se sobe teto com motivo escrito ao lado. Esta tabela publicou a aposentada como viva e **VERMELHA** por quatro dias — número digitado à mão envelhecendo dentro do documento que existe para dizer quais catracas seguram. O `2e51ac6` dizia ter consertado isso e alcançou o `QA-PDCA.md`: era o **irmão** que faltava. |
 | `rede-ou-espera` | `bancada/concorrencia/mapa-da-trava.py` | 0 | **0** | sem folga |
 | `spawn-sem-teto` | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | sem folga |
 | `catalogo-envelhecido` | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | sem folga |
