@@ -47815,14 +47815,26 @@ mod testes_do_bit_indisponivel_na_trilha {
         std::fs::write(&memo, &cru).unwrap();
 
         // O `atualizar` de cada linha e o que gera os dois eventos. O da 1 le
-        // o bloco estragado (e nao derruba a gravacao: o usuario pediu para
-        // gravar); o da 2 le um NULO, que e um valor, e nao uma falha.
+        // o bloco estragado (e nao derruba a gravacao: dentro do `atualizar`
+        // da loja o erro do externo velho vira `None`, que e o bit); o da 2 le
+        // um NULO, que e um valor, e nao uma falha.
+        //
+        // O `"softdeleted"` NAO e enfeite, e tirar daqui mata este teste no
+        // PREPARO: sem a coluna de sistema no pedido, `op_atualizar` rele a
+        // linha inteira (`t.ler(rowid)?`, o bloco que preserva a marca) para
+        // nao ressuscitar linha excluida -- e essa leitura decodifica o
+        // `.memo`, com o erro subindo em vez de virar `None`. Medido em
+        // 22/09/2026: sem ele, o `atualizar` da linha 1 devolve
+        // `Corrompido("CRC do bloco em .../b/p.memo offset 64 nao confere")` e
+        // o teste morre antes de chegar ao campo sob prova. Quem manda a
+        // coluna de sistema -- a interface web manda -- passa por aqui.
         s.executar(
             "atualizar",
             &pedido(
                 r#"{"database":"b","tabela":"p","rowid":1,
                     "valores":{"id":1,"paciente":"Ana Prado",
-                               "laudo":"LAUDO_NOVO: carcinoma"}}"#,
+                               "laudo":"LAUDO_NOVO: carcinoma",
+                               "softdeleted":false}}"#,
             ),
             &dono,
         )
@@ -47832,7 +47844,8 @@ mod testes_do_bit_indisponivel_na_trilha {
             &pedido(
                 r#"{"database":"b","tabela":"p","rowid":2,
                     "valores":{"id":2,"paciente":"Bia Rocha",
-                               "laudo":"LAUDO_DA_BIA: normal"}}"#,
+                               "laudo":"LAUDO_DA_BIA: normal",
+                               "softdeleted":false}}"#,
             ),
             &dono,
         )
@@ -47885,8 +47898,7 @@ mod testes_do_bit_indisponivel_na_trilha {
         // `Json::Bool` ligado no campo errado passaria despercebido sem isto.
         for e in [ilegivel, vazio] {
             assert!(
-                !e.booleano_ou("antes_redigido", true)
-                    && !e.booleano_ou("depois_redigido", true),
+                !e.booleano_ou("antes_redigido", true) && !e.booleano_ou("depois_redigido", true),
                 "a redacao nao entra nesta historia: {}",
                 e.escrever()
             );
