@@ -39,14 +39,14 @@ foi estimado no lugar de uma medição que faltou.
 | `phxsql-core` | 35 | 11327 | 4838 | 3754 | 1577 | 21496 |
 | `phxsql-ffi` | 7 | 1408 | 1081 | 745 | 242 | 3476 |
 | `phxsql-odbc` | 7 | 2662 | 1089 | 980 | 239 | 4970 |
-| `phxsql-server` | 58 | 45738 | 30505 | 23142 | 5211 | 104596 |
+| `phxsql-server` | 58 | 45894 | 30975 | 23570 | 5264 | 105703 |
 | `phxsql-sql` | 10 | 6637 | 3381 | 1993 | 748 | 12759 |
 | `phxsql-store` | 24 | 13487 | 3725 | 6039 | 1571 | 24822 |
-| **total** | **144** | **82692** | **44833** | **36973** | **9731** | **174229** |
+| **total** | **144** | **82848** | **45303** | **37401** | **9784** | **175336** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **44833/82692 = 0.54×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **45303/82848 = 0.55×**.
 
-Alem do `src/`: **79** programas de medicao em `examples/` (20117 linhas — bancada em Rust, nao produto nem teste) e **64** arquivos em `tests/` de integracao fora de `src/` (22697 linhas).
+Alem do `src/`: **79** programas de medicao em `examples/` (20117 linhas — bancada em Rust, nao produto nem teste) e **65** arquivos em `tests/` de integracao fora de `src/` (22841 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -73,7 +73,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 15461 | 872.1 |
+| `ui/index.html` | 15661 | 886.4 |
 | `ui/grid/phx-grid.css` | 168 | 12.3 |
 | `ui/grid/phx-grid.js` | 1860 | 90.1 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
@@ -83,7 +83,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 | `ui/multitela.js` | 1588 | 69.0 |
 | `ui/claude.js` | 1357 | 67.2 |
 | `ui/grid/CHANGELOG-phx-grid.md` | 224 | 29.7 |
-| **total (10 arquivos)** | **23793** | **1287.3** |
+| **total (10 arquivos)** | **23993** | **1301.5** |
 
 Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
 - `crates/phxsql-server/ui/explorador.css`
@@ -107,10 +107,10 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 54 | 11171 |
-| Python (bancada de medicao) | `bancada/` | 118 | 54809 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 55 | 11741 |
+| Python (bancada de medicao) | `bancada/` | 119 | 55021 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2880 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 422 | 103598 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 426 | 104125 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 33 | 13750 |
 <!-- /GERADO -->
 
@@ -311,7 +311,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_DO_VALOR` | 48 | `crates/phxsql-server/src/bidirecional.rs` |
 | `TETO_COLADO` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_FRASE_REPETIDA` | 0 | `crates/phxsql-server/src/conferidor.rs` |
-| `TETO_ROTULOS_E_CRASE` | 950 | `crates/phxsql-server/src/conferidor.rs` |
+| `TETO_ROTULOS_E_CRASE` | 937 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_BOTAO_SEM_PROVA` | 119 | `crates/phxsql-server/src/conferidor_botoes.rs` |
 | `TETO_TABELA_NA_MAO` | 0 | `crates/phxsql-server/src/conferidor_grades.rs` |
 | `TETO_INVENTARIO_DESCASADO` | 0 | `crates/phxsql-server/src/conferidor_inventario.rs` |
@@ -423,7 +423,7 @@ empacotar:
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2592** testes passaram, **0** falharam (medido em 2026-09-18 18:40:47, commit `ebbc363e`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **2610** testes passaram, **0** falharam (medido em 2026-09-22 21:49:35, commit `002625e4`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
@@ -493,7 +493,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **380** pedidos numerados; **63** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **387** pedidos numerados; **66** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -559,6 +559,9 @@ proposta de voltar sem medição nova.
 | 357 | **SEC MEDIO-ALTO — a trilha `.lgpd` redige por NOME de coluna e por analise de hash, nunca pela marca `DadoPessoal`: a §11.7 escreveu a condicao no futuro do preterito, e ela chegou** |
 | 358 | **SEC MEDIO — o rowid E o balde, e o balde e o primeiro caractere: a particao por letra vaza pelo PROTOCOLO, para quem tem a coluna negada** |
 | 366 | **ORDEM DO DONO, 18/09/2026 -- a comunicacao deve OBRIGATORIAMENTE ser cifrada** |
+| 379 | **O assistente de replicacao da tela gera o bloco do `config.json` sem `cifra`** |
+| 381 | **Linha com `.memo` corrompido nao se consegue ALTERAR por cliente que omita a coluna de sistema -- nem para substituir o bloco ruim** |
+| 385 | **A guarda que falta: «cliente novo nasce pedindo o tunel» -- e a forma dela esta decidida, com a recusa medida ao lado** |
 | 367 | **PARECER DO DBA 18/09 -- a trilha `.lgpd` de coluna EXTERNA marcada MENTE, nos tres sentidos** |
 <!-- /GERADO -->
 

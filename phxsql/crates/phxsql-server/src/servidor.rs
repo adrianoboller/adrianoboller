@@ -21132,6 +21132,35 @@ impl Servidor {
             if p.campo("sincronias").is_none() {
                 d = d.com_as_sincronias_de(antiga);
             }
+            // A CIFRA tem a condicao dela, e nao a do pino: herda-se a DECISAO
+            // escrita (o `Option`), para que um salvar que nao fala de cifra
+            // nao vire «ninguem decidiu» -- e para que quem escreveu
+            // `"cifra": false` nao seja religado por uma troca de porta.
+            if p.campo("cifra").is_none() {
+                d = d.com_a_cifra_de(antiga);
+            }
+            // O PINO tem a condicao DELE, e e o lugar que faltava: a tela nunca
+            // recebe o pino de volta (`para_json` so da `tem_pino`, porque a
+            // lista de quem tem pino e mapa para atacante), entao sem esta
+            // linha TODO salvar pela tela apagaria o pino -- e a ligacao
+            // continuaria anunciando «cifrada», com o tunel sem ancora e o
+            // painel identico. Rebaixamento silencioso e o pior dos dois.
+            //
+            // Campo AUSENTE herda; campo presente e vazio APAGA, que e decisao
+            // escrita -- e e por isso que as duas condicoes nao se juntam com a
+            // de cima: uma so decidindo pelas duas apagaria o campo que ela nao
+            // olhou, que e o estrago que estas funcoes existem para impedir.
+            if p.campo("chave_do_fio").is_none() {
+                d = d.com_o_pino_de(antiga);
+            }
+            // A heranca monta uma definicao que NINGUEM declarou, e por isso a
+            // recusa por motor volta a ser feita aqui: trocar o motor de
+            // `phxsql` para `mysql` sem mandar `cifra` passaria pelo `de_json`
+            // (o pedido nao traz o campo) e herdaria uma cifra que aquele fio
+            // nao sabe fazer. Nao e portao espalhado -- e a MESMA conferencia,
+            // no unico outro ponto em que uma `Definicao` nasce sem passar
+            // inteira pelo `de_json`.
+            d.conferir_cifra_do_motor()?;
         }
         let ficha = d.para_json();
         r.salvar(d)?;
@@ -25852,6 +25881,193 @@ mod testes_firewall_e_mensagens {
         .unwrap();
         std::thread::sleep(crate::mensagens::INTERVALO_DE_CONFERENCIA + Duration::from_millis(200));
         assert_eq!(s.texto_do_erro(&e), e.to_string());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// O QUARTO lugar da cifra do DbLink: o salvar pela tela (pedido 378).
+///
+/// Os outros tres -- o campo, a recusa por motor e o `cifrar` antes do
+/// `autenticar` -- moram em `dblink::`. Este mora aqui porque e o encontro do
+/// cadastro com a tela, e e o unico em que a falta nao aparece como erro:
+/// aparece como uma ligacao que continua anunciando «cifrada» com o tunel sem
+/// ancora.
+#[cfg(test)]
+mod testes_dblink_cifra {
+    use super::*;
+    use crate::dblink::Definicao;
+
+    /// Um pino valido: 32 bytes em hexadecimal.
+    const PINO: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    fn servidor(dir: &std::path::Path) -> std::sync::Arc<Servidor> {
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        // O escape escrito da ENTRADA deste servidor: o que se mede aqui e o
+        // cadastro, nao o aperto de mao do soquete.
+        c.cifra_fio.exigir = false;
+        Servidor::novo(c).unwrap()
+    }
+
+    fn salvar(s: &Servidor, txt: &str) -> Result<Json> {
+        s.op_dblink_salvar(&Json::analisar(txt).unwrap())
+    }
+
+    fn ligacao(s: &Servidor, nome: &str) -> Definicao {
+        s.dblink.lock().unwrap().achar(nome).unwrap().clone()
+    }
+
+    /// Salvar pela tela NAO apaga o pino, e nao apaga o `"cifra": false`.
+    ///
+    /// A tela nunca recebe o pino de volta (`para_json` so da `tem_pino`),
+    /// entao ela nao tem como devolve-lo -- e sem a heranca todo salvar comum
+    /// o apagaria, deixando a ligacao com tunel sem ancora e o painel
+    /// identico. E o mesmo defeito que `com_o_token_de` e `com_as_sincronias_de`
+    /// ja consertaram, no campo que faltava.
+    #[test]
+    fn salvar_pela_tela_nao_apaga_o_pino_nem_a_decisao_da_cifra() {
+        let dir = DirTemp::novo("dblink-cifra-heranca");
+        let s = servidor(&dir);
+        salvar(
+            &s,
+            &format!(
+                r#"{{"op":"dblink_salvar","nome":"erp","motor":"phxsql","host":"10.0.0.7",
+                     "token_remoto":"TOK","chave_do_fio":"{PINO}"}}"#
+            ),
+        )
+        .unwrap();
+        assert_eq!(ligacao(&s, "erp").chave_do_fio, PINO);
+
+        // O salvar que a TELA manda: os campos do formulario, sem pino, sem
+        // token e sem cifra -- porque nenhum dos tres volta no `para_json`.
+        let r = salvar(
+            &s,
+            r#"{"op":"dblink_salvar","nome":"erp","motor":"phxsql","host":"10.0.0.9",
+                "database":"erp"}"#,
+        )
+        .unwrap();
+        let d = ligacao(&s, "erp");
+        assert_eq!(d.host, "10.0.0.9", "a edicao nao pegou");
+        assert_eq!(d.chave_do_fio, PINO, "o salvar pela tela APAGOU o pino");
+        assert_eq!(d.token(), "TOK", "o salvar pela tela apagou o token");
+        assert!(d.cifra());
+        // E a ficha devolvida diz a verdade, em vez de anunciar uma ancora que
+        // nao existe mais.
+        let ficha = r.campo("ligacao").unwrap().escrever();
+        assert!(ficha.contains("\"tem_pino\":true"), "{ficha}");
+        assert!(!ficha.contains(PINO), "o pino vazou na resposta: {ficha}");
+
+        // O disco tambem: e de la que o proximo arranque le.
+        let lido = crate::dblink::Registro::abrir(&dir.join("dblink.json")).unwrap();
+        assert_eq!(lido.achar("erp").unwrap().chave_do_fio, PINO);
+
+        // O outro campo, com a CONDICAO DELE: quem escreveu o escape nao pode
+        // ser religado por uma troca de porta.
+        salvar(
+            &s,
+            r#"{"op":"dblink_salvar","nome":"claro","motor":"phxsql","host":"h","cifra":false}"#,
+        )
+        .unwrap();
+        salvar(
+            &s,
+            r#"{"op":"dblink_salvar","nome":"claro","motor":"phxsql","host":"h2"}"#,
+        )
+        .unwrap();
+        let d = ligacao(&s, "claro");
+        assert_eq!(d.host, "h2");
+        assert!(
+            !d.cifra(),
+            "o salvar pela tela religou uma ligacao que alguem mandou ficar em claro"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Campo PRESENTE e vazio APAGA -- isso e decisao escrita, e nao omissao.
+    ///
+    /// Sem este lado, nao haveria como tirar um pino pela tela: a heranca
+    /// devolveria o antigo para sempre. As duas metades da regra precisam
+    /// existir juntas.
+    #[test]
+    fn pino_vazio_no_pedido_apaga_o_pino() {
+        let dir = DirTemp::novo("dblink-cifra-apaga");
+        let s = servidor(&dir);
+        salvar(
+            &s,
+            &format!(
+                r#"{{"op":"dblink_salvar","nome":"erp","motor":"phxsql","host":"h",
+                     "chave_do_fio":"{PINO}"}}"#
+            ),
+        )
+        .unwrap();
+        salvar(
+            &s,
+            r#"{"op":"dblink_salvar","nome":"erp","motor":"phxsql","host":"h","chave_do_fio":""}"#,
+        )
+        .unwrap();
+        let d = ligacao(&s, "erp");
+        assert_eq!(d.chave_do_fio, "", "o pino escrito vazio nao foi apagado");
+        // Sem pino a cifra volta ao padrao -- que continua LIGADO. Apagar a
+        // ancora nao e desligar o tunel.
+        assert!(d.cifra());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A recusa por motor alcanca a HERANCA, e nao so a declaracao.
+    ///
+    /// Trocar o motor de `phxsql` para `mysql` sem mandar `cifra` passa pelo
+    /// `de_json` (o pedido nao traz o campo) e herdaria um pino que aquele fio
+    /// nao sabe usar. E o caminho irmao da recusa, e ele chama as mesmas
+    /// funcoes na mesma ordem.
+    #[test]
+    fn trocar_o_motor_por_um_alheio_recusa_em_vez_de_herdar_o_pino() {
+        let dir = DirTemp::novo("dblink-cifra-motor");
+        let s = servidor(&dir);
+        salvar(
+            &s,
+            &format!(
+                r#"{{"op":"dblink_salvar","nome":"erp","motor":"phxsql","host":"h",
+                     "chave_do_fio":"{PINO}"}}"#
+            ),
+        )
+        .unwrap();
+        let e = salvar(
+            &s,
+            r#"{"op":"dblink_salvar","nome":"erp","motor":"mysql","host":"h"}"#,
+        )
+        .unwrap_err();
+        let t = e.to_string();
+        assert!(t.contains("mysql"), "a recusa nao nomeia o motor: {t}");
+        assert!(t.contains("chave_do_fio"), "{t}");
+        // E nada foi gravado: a ligacao continua a que era.
+        let d = ligacao(&s, "erp");
+        assert_eq!(d.motor.nome(), "phxsql");
+        assert_eq!(d.chave_do_fio, PINO);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A recusa tambem alcanca a DECLARACAO pela tela -- a porta unica.
+    ///
+    /// `op_dblink_salvar` chama o MESMO `Definicao::de_json` do arquivo, entao
+    /// a recusa nao precisou de portao proprio para valer nos dois.
+    #[test]
+    fn declarar_cifra_em_motor_alheio_pela_tela_recusa() {
+        let dir = DirTemp::novo("dblink-cifra-declaracao");
+        let s = servidor(&dir);
+        let e = salvar(
+            &s,
+            r#"{"op":"dblink_salvar","nome":"erp","motor":"postgres","host":"h","cifra":true}"#,
+        )
+        .unwrap_err();
+        let t = e.to_string();
+        assert!(t.contains("postgres"), "{t}");
+        assert!(s.dblink.lock().unwrap().achar("erp").is_err(), "gravou");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

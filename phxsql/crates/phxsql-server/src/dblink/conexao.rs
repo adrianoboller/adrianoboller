@@ -262,14 +262,11 @@ impl Definicao {
                 &self.database,
                 espera,
             )?)),
-            Motor::Phx => Conexao::Phx(Box::new(phx::Conexao::abrir(
-                &self.host,
-                self.porta,
-                self.token(),
-                &self.usuario,
-                self.senha(),
-                espera,
-            )?)),
+            // Este recebe a DEFINICAO inteira, e nao primitivas, porque o fio
+            // dele tem cifra e pino: campo do fio que atravessa a fronteira a
+            // mao e campo que alguem esquece de passar um dia, e o esquecimento
+            // compila e abre a conexao em claro.
+            Motor::Phx => Conexao::Phx(Box::new(phx::Conexao::abrir(self)?)),
         })
     }
 }

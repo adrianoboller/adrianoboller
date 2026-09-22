@@ -2233,6 +2233,22 @@ pub const OPERACOES: &[Operacao] = &[
                  e o portão o leria primeiro. Prefira `token_remoto_env`",
             ),
             opc("database", "string", "o banco padrão da ligação"),
+            opc(
+                "cifra",
+                "boolean",
+                "só para `phxsql`: falar por dentro do túnel cifrado. Vem \
+                 LIGADA de fábrica, e `false` é o escape escrito — nos outros \
+                 motores o campo é recusado, porque o aperto de mão é deste \
+                 protocolo e lá a cifra vem de fora (VPN ou túnel)",
+            ),
+            opc(
+                "chave_do_fio",
+                "string",
+                "só para `phxsql`: a chave pública que se espera do outro lado \
+                 (o pino), em hexadecimal de 32 bytes. Escrever o pino liga a \
+                 cifra — quem o escreveu quer o túnel conferido. A resposta \
+                 devolve `tem_pino`, nunca o pino",
+            ),
         ],
         exemplo: r#"{"op":"dblink_salvar","nome":"erp","motor":"mysql","host":"10.1.1.9","usuario":"leitor","senha_env":"ERP_SENHA","database":"producao"}"#,
         ferramenta_mcp: false,

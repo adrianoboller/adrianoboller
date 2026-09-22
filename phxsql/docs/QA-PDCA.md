@@ -405,7 +405,7 @@ com o raciocínio de cada uma, está em `docs/CATRACAS.md`.
 | `TETO_TABELA_NA_MAO` (tabelas montadas a mao em vez de PhxGrid) | `crates/phxsql-server/src/conferidor_grades.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_INVENTARIO_DESCASADO` (extensoes que faltam ou sobram entre o codigo e as tres copias) | `crates/phxsql-server/src/conferidor_inventario.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_TEMP_DIR_SOLTO` (chamadas a std::env::temp_dir() fora do catalogo) | `crates/phxsql-server/src/conferidor_temporarios.rs` | 0 | **0** | em cima, sem folga |
-| `TETO_ROTULOS_E_CRASE` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 950 | **950** | em cima, sem folga |
+| `TETO_ROTULOS_E_CRASE` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 937 | **937** | em cima, sem folga |
 | `TETO_COLADO` (chaves com os seis idiomas identicos) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_FRASE_REPETIDA` (frase longa repetida em tres ou mais idiomas) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_VERMELHA_SEM_PEDIDO` (provas vermelhas sem pedido no PENDENCIAS.md) | `crates/phxsql-server/src/conferidor_vermelhas.rs` | 0 | **0** | em cima, sem folga |
@@ -415,7 +415,7 @@ com o raciocínio de cada uma, está em `docs/CATRACAS.md`.
 | `rede-ou-espera` (secoes criticas que esperam REDE com a trava global na mao) | `bancada/concorrencia/mapa-da-trava.py` | 0 | **0** | em cima, sem folga |
 | `spawn-sem-teto` (sitios de nascimento de thread sem teto no catalogo) | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | em cima, sem folga |
 | `catalogo-envelhecido` (entradas do catalogo de threads que nao casam com sitio nenhum) | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | em cima, sem folga |
-| `TETO_DEBUG_COM_SEGREDO` (campos de segredo que o `Debug` de uma struct de crates/*/src imprime, derivado ou a mao) | `bancada/guardas/debug-com-segredo.py` | 0 | **2** | **REPROVANDO** — 2 acima |
+| `TETO_DEBUG_COM_SEGREDO` (campos de segredo que o `Debug` de uma struct de crates/*/src imprime, derivado ou a mao) | `bancada/guardas/debug-com-segredo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_PKILL_SEM_PID` (invocacoes reais de `pkill` em bancada/**/*.py e *.sh) | `bancada/guardas/pkill-sem-pid.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TRECHO_MORTO` (entradas cujo trecho o codigo nao tem mais) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TRECHO_AMBIGUO` (entradas cujo trecho casa duas ou mais vezes no arquivo) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |

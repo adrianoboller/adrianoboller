@@ -108,6 +108,22 @@ impl Motor {
     pub fn catalogo_em_sql(self) -> bool {
         !matches!(self, Motor::Phx)
     }
+
+    /// Este motor fala o NOSSO aperto de mao, e por isso sabe o tunel cifrado?
+    ///
+    /// So o PhxSql. O `{"op":"cifrar"}` e uma operacao deste protocolo
+    /// (`docs/CIFRA-DO-FIO.md`); contra um MySQL(R) ou um PostgreSQL(R) nao ha
+    /// com quem aperta-la, porque quem manda no fio la e o protocolo deles.
+    /// Acender o interruptor ali seria um campo de configuracao que nao faz
+    /// nada -- a armadilha do `recursos.cache_paginas`, que anunciava um cache
+    /// que nenhuma linha de codigo lia.
+    ///
+    /// E ela decide DUAS coisas, e nao uma: o padrao de fabrica desta ligacao
+    /// (ver [`Definicao::cifra`]) e a recusa na declaracao (ver
+    /// [`Definicao::conferir_cifra_do_motor`]).
+    pub fn cifra_o_fio(self) -> bool {
+        matches!(self, Motor::Phx)
+    }
 }
 
 /// Uma ligacao cadastrada.
@@ -151,6 +167,31 @@ pub struct Definicao {
     /// Tabelas ligadas por sincronia. Campo ausente no arquivo = nenhuma,
     /// entao todo `dblink.json` escrito antes continua abrindo igual.
     pub sincronias: Vec<sincronia::Sincronia>,
+    /// Falar com o outro lado por dentro do tunel cifrado -- em TRES estados,
+    /// e nao dois.
+    ///
+    /// `None` e «ninguem escreveu decisao nenhuma», e nao «claro»: o valor que
+    /// vale sai de [`Definicao::cifra`], que le o motor. `Some(_)` e decisao
+    /// ESCRITA, e e ela que o `para_disco` guarda e que o salvar pela tela
+    /// herda.
+    ///
+    /// PRIVADO, e nao `pub bool`, porque o zero do tipo e `false`: quem monta
+    /// por `..Definicao::default()` -- e ha dois sitios que montam -- pularia
+    /// o padrao em silencio, e aqui o padrao e a cifra LIGADA. E a armadilha
+    /// que o [`crate::config::CIFRA_DE_SAIDA_PADRAO`] nomeia e que o ODBC ja
+    /// pagou no pedido 373.
+    cifra: Option<bool>,
+    /// A chave publica que se ESPERA do outro PhxSql, em hexadecimal -- o pino.
+    ///
+    /// Vazia com a cifra ligada e tunel SEM pino: protege da escuta passiva e
+    /// nao protege de quem esta no meio, porque o atacante apresenta a chave
+    /// dele e nao ha com o que comparar. Mesmo contrato do
+    /// `replicacao.origens[].chave_do_fio`.
+    ///
+    /// `pub` e visivel no `Debug` porque e chave PUBLICA -- esconde-la so
+    /// atrapalharia o diagnostico de pino torto. O que ela NAO faz e sair no
+    /// `para_json`: ver o motivo la.
+    pub chave_do_fio: String,
 }
 
 /// `Debug` escrito a mao, pelo mesmo motivo do da [`crate::config::Cifra`]: o
@@ -188,6 +229,8 @@ impl std::fmt::Debug for Definicao {
             timeout_s,
             max_linhas,
             sincronias,
+            cifra,
+            chave_do_fio,
         } = self;
         f.debug_struct("Definicao")
             .field("nome", nome)
@@ -205,6 +248,18 @@ impl std::fmt::Debug for Definicao {
             .field("timeout_s", timeout_s)
             .field("max_linhas", max_linhas)
             .field("sincronias", sincronias)
+            // Os DOIS estados da cifra, de proposito: `cifra` diz se alguem
+            // escreveu a decisao (`None` = herdou o padrao do motor) e
+            // `cifra_efetiva` diz o que a conexao vai fazer. Imprimir so o
+            // segundo deixaria «herdou a virada» e «escreveu a decisao» com a
+            // mesma cara -- que e exatamente a diferenca que o `para_disco`
+            // existe para nao perder.
+            .field("cifra", cifra)
+            .field("cifra_efetiva", &self.cifra())
+            // Visivel: e chave PUBLICA, e esconde-la trocaria um vazamento
+            // que nao existe por um diagnostico cego de pino torto. Mesma
+            // escolha do `Debug` da `Origem`.
+            .field("chave_do_fio", chave_do_fio)
             .finish()
     }
 }
@@ -227,6 +282,12 @@ impl Default for Definicao {
             timeout_s: 10,
             max_linhas: 1_000,
             sincronias: Vec::new(),
+            // `None`, e nao `false`: o padrao desta ligacao depende do MOTOR,
+            // e o `Default` nao sabe qual sera. Quem monta por
+            // `..Definicao::default()` herda «ninguem decidiu», que e a
+            // verdade, em vez de herdar «claro», que seria rebaixamento.
+            cifra: None,
+            chave_do_fio: String::new(),
         }
     }
 }
@@ -249,7 +310,13 @@ impl Definicao {
         } else {
             std::env::var(&token_env).unwrap_or_default()
         };
-        Ok(Definicao {
+        // Valor que ninguem reconhece NAO desliga a cifra -- fica em `None`, e
+        // `None` vale o padrao do motor. E a regra do `interruptor()` do ODBC
+        // (pedido 373), pelo mesmo motivo: com o padrao ligado, um
+        // `"cifra": "zero"` mal digitado viraria claro em silencio, e
+        // rebaixamento por dedo errado e o que a virada de 18/09 veio acabar.
+        let cifra = j.campo("cifra").and_then(Json::booleano);
+        let d = Definicao {
             nome,
             motor,
             host: j.texto_ou("host", &padrao.host).trim().to_string(),
@@ -277,7 +344,18 @@ impl Definicao {
                     .map(sincronia::Sincronia::de_json)
                     .collect::<Result<Vec<_>>>()?,
             },
-        })
+            cifra,
+            chave_do_fio: j.texto_ou("chave_do_fio", "").trim().to_string(),
+        };
+        // A recusa acontece na DECLARACAO, e nao na conexao: uma ligacao nasce
+        // uma vez e conecta mil. Aqui ela alcanca o arquivo e a tela de uma
+        // vez so, porque `op_dblink_salvar` chama ESTE `de_json`.
+        d.conferir_cifra_do_motor()?;
+        // Pino torto vira erro AQUI tambem, e nao so na hora de conectar: um
+        // hexadecimal errado gravado no cadastro so apareceria na primeira
+        // conexao, e ate la a ligacao diria «cifrada com pino» na tela.
+        d.pino_do_fio()?;
+        Ok(d)
     }
 
     /// Como a definicao vai para o disco: com a senha, quando ela nao veio do
@@ -311,6 +389,23 @@ impl Definicao {
                 Json::Lista(self.sincronias.iter().map(|s| s.para_json()).collect()),
             ));
         }
+        // A cifra so vai para o disco quando DIVERGE do padrao, e o pino so
+        // quando existe; para o motor que nao fala o nosso aperto, nenhum dos
+        // dois -- campo gravado ali seria campo sem leitor.
+        //
+        // O motivo e medido e e deste arquivo: `Registro::gravar` reescreve
+        // TODAS as ligacoes a cada salvar. Gravar o padrao efetivo fossilizaria,
+        // numa edicao de OUTRA ligacao, uma decisao que ninguem tomou -- e
+        // mataria a diferenca entre «herdou a virada» e «escreveu a decisao»,
+        // que e a unica coisa que separa um aviso util de um aviso perpetuo.
+        if self.motor.cifra_o_fio() {
+            if self.cifra() != crate::config::CIFRA_DE_SAIDA_PADRAO {
+                campos.push(("cifra", Json::Bool(self.cifra())));
+            }
+            if !self.chave_do_fio.is_empty() {
+                campos.push(("chave_do_fio", Json::texto_de(&self.chave_do_fio)));
+            }
+        }
         Json::objeto(campos)
     }
 
@@ -330,6 +425,16 @@ impl Definicao {
             ("somente_leitura", Json::Bool(self.somente_leitura)),
             ("timeout_s", Json::de_u64(self.timeout_s)),
             ("max_linhas", Json::de_u64(self.max_linhas)),
+            // A cifra EFETIVA, e nao o que esta escrito: quem le a tela quer
+            // saber se esta conexao vai pelo tunel, e nao de onde a decisao
+            // veio.
+            ("cifra", Json::Bool(self.cifra())),
+            // So o FATO de haver pino, NUNCA o pino -- mesma regra do irmao do
+            // cluster (`config.rs`): uma lista de quem tem e quem nao tem pino
+            // e mapa para atacante, porque diz onde trocar a chave sai barato.
+            // E e por isso que a tela nao tem como devolver o pino no salvar,
+            // que e o que obriga a heranca em `op_dblink_salvar`.
+            ("tem_pino", Json::Bool(!self.chave_do_fio.is_empty())),
             ("senha_env", Json::texto_de(&self.senha_env)),
             ("token_remoto_env", Json::texto_de(&self.token_env)),
             (
@@ -361,6 +466,91 @@ impl Definicao {
 
     pub fn token(&self) -> &str {
         &self.token
+    }
+
+    /// A cifra que VALE para esta ligacao -- e o unico lugar que responde.
+    ///
+    /// Um metodo so, e nao um campo lido direto, porque a resposta depende do
+    /// MOTOR: um `bool` cru na struct daria a quem o lesse a impressao de que
+    /// a pergunta ja estava respondida, e cada leitor decidiria o resto por
+    /// conta propria. Tres regras, nesta ordem:
+    ///
+    /// 1. motor que nao fala o nosso aperto nao cifra -- nao ha com quem;
+    /// 2. **o pino vence o interruptor**, como no ODBC: quem escreveu o pino
+    ///    quer o tunel CONFERIDO, e um `"cifra": false` ao lado seria
+    ///    contradicao. A porta para falar claro continua sendo nao escrever
+    ///    pino nenhum;
+    /// 3. decisao escrita vale como escrita; sem decisao, vale o padrao de
+    ///    saida da casa ([`crate::config::CIFRA_DE_SAIDA_PADRAO`], ligado
+    ///    desde 18/09/2026).
+    pub fn cifra(&self) -> bool {
+        if !self.motor.cifra_o_fio() {
+            return false;
+        }
+        if !self.chave_do_fio.trim().is_empty() {
+            return true;
+        }
+        self.cifra.unwrap_or(crate::config::CIFRA_DE_SAIDA_PADRAO)
+    }
+
+    /// Alguem ESCREVEU a decisao da cifra nesta ligacao?
+    ///
+    /// Separado de [`Definicao::cifra`] porque as duas perguntas sao
+    /// diferentes: uma e «vai pelo tunel?» e a outra e «alguem escolheu?».
+    /// Quem herdou a virada precisa ser avisado; quem escolheu, nao.
+    pub fn cifra_escrita(&self) -> Option<bool> {
+        self.cifra
+    }
+
+    /// Recusa a cifra do fio no motor que nao fala o nosso aperto de mao.
+    ///
+    /// Molde do [`Definicao::exigir_catalogo_em_sql`], que e a recusa por
+    /// motor que ja existe aqui, e pelo mesmo motivo: o campo aceito e o campo
+    /// que nao faz nada -- a tela mostraria «cifrada» para uma ligacao que
+    /// fala protocolo alheio em claro, e isso e pior que o buraco conhecido.
+    ///
+    /// A recusa e na DECLARACAO, nao na conexao: uma ligacao nasce uma vez e
+    /// conecta mil vezes. Recusar cedo custa um erro lido enquanto se cadastra;
+    /// recusar tarde custa um painel mentindo ate o dia da primeira consulta.
+    ///
+    /// E a mensagem aponta o caminho que EXISTE para esse motor -- VPN ou
+    /// tunel de fora --, em vez de so dizer nao.
+    pub fn conferir_cifra_do_motor(&self) -> Result<()> {
+        if self.motor.cifra_o_fio() {
+            return Ok(());
+        }
+        let campo = if self.cifra == Some(true) {
+            "cifra"
+        } else if !self.chave_do_fio.trim().is_empty() {
+            "chave_do_fio"
+        } else {
+            return Ok(());
+        };
+        Err(PhxError::Esquema(format!(
+            "{campo} nao vale para o motor {}: a ligacao {:?} fala o protocolo \
+             do outro banco, e o aperto de mao cifrado do PhxSql e operacao \
+             DESTE protocolo -- so o motor phxsql o tem. Para esse fio, a cifra \
+             vem de FORA (VPN ou tunel); tire {campo} da ligacao",
+            self.motor.nome(),
+            self.nome
+        )))
+    }
+
+    /// O pino do outro PhxSql, ja em bytes -- ou o erro que diz o que corrigir.
+    ///
+    /// Mesma disciplina do `Origem::pino_do_fio`: `None` quer dizer «sem
+    /// pino», e nao «qualquer chave serve por engano». Hexadecimal torto vira
+    /// ERRO em vez de virar `None`, senao um pino escrito errado viraria
+    /// silenciosamente um tunel sem pino -- que e exatamente o estrago que o
+    /// pino existe para impedir.
+    pub fn pino_do_fio(&self) -> Result<Option<[u8; 32]>> {
+        if self.chave_do_fio.trim().is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(crate::config::chave_de_hex(
+            &self.chave_do_fio,
+            &format!("dblink[{}].chave_do_fio", self.nome),
+        )?))
     }
 
     /// Recusa a operacao que so sabe falar SQL contra o motor que nao fala.
@@ -419,6 +609,34 @@ impl Definicao {
     /// que o assistente montou.
     pub fn com_as_sincronias_de(mut self, outra: &Definicao) -> Definicao {
         self.sincronias = outra.sincronias.clone();
+        self
+    }
+
+    /// Esta definicao, com a DECISAO da cifra de outra.
+    ///
+    /// Herda o `Option`, e nao o valor efetivo: quem tinha escrito `false`
+    /// continua com `false` escrito, e quem nunca escreveu continua sem
+    /// escrever. Gravar o efetivo aqui fossilizaria a virada num salvar que
+    /// nao falava de cifra nenhuma.
+    ///
+    /// Separada do [`Definicao::com_o_pino_de`] pelo mesmo motivo que separa
+    /// `com_o_token_de` de `com_a_senha_de`: os dois campos chegam no pedido
+    /// de forma diferente, e uma condicao so decidindo pelos dois apagaria em
+    /// silencio o que ela nao olhou.
+    pub fn com_a_cifra_de(mut self, outra: &Definicao) -> Definicao {
+        self.cifra = outra.cifra;
+        self
+    }
+
+    /// Esta definicao, com o pino de outra.
+    ///
+    /// E a heranca que impede o rebaixamento SILENCIOSO do salvar pela tela: o
+    /// `para_json` so devolve `tem_pino` (o pino em si e mapa para atacante),
+    /// entao a tela nao tem como mandar o pino de volta. Sem isto, todo salvar
+    /// apagaria o pino e a ligacao continuaria anunciando «cifrada» -- tunel
+    /// sem ancora, painel identico.
+    pub fn com_o_pino_de(mut self, outra: &Definicao) -> Definicao {
+        self.chave_do_fio = outra.chave_do_fio.clone();
         self
     }
 
@@ -861,6 +1079,269 @@ mod testes {
         let texto = format!("{d:?}");
         assert!(texto.contains("SENHA_DA_LOJA"), "{texto}");
         assert!(texto.contains("TOKEN_DA_LOJA"), "{texto}");
+    }
+
+    // -----------------------------------------------------------------------
+    // A cifra do fio da ligacao (pedido 378)
+    // -----------------------------------------------------------------------
+
+    /// Um pino valido: 32 bytes em hexadecimal.
+    const PINO: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    fn lig(json: &str) -> Result<Definicao> {
+        Definicao::de_json(&Json::analisar(json).unwrap())
+    }
+
+    /// O PADRAO, e o alcance dele: ligacao `phxsql` sem campo nenhum pede o
+    /// tunel; ligacao de motor alheio, nao -- porque la nao ha com quem
+    /// apertar a mao.
+    ///
+    /// Sem isto, contra um PhxSql desta versao (que exige de fabrica) o DbLink
+    /// simplesmente nao entra, e o unico escape era desligar o `exigir` do
+    /// servidor de destino INTEIRO.
+    #[test]
+    fn a_ligacao_phxsql_nasce_pedindo_o_tunel() {
+        let d = lig(r#"{"nome":"erp","motor":"phxsql","host":"h"}"#).unwrap();
+        assert!(d.cifra(), "a ligacao phxsql nasceu em claro");
+        assert_eq!(d.cifra_escrita(), None, "ninguem escreveu, e diz que sim");
+
+        for alheio in ["mysql", "postgres"] {
+            let d = lig(&format!(r#"{{"nome":"erp","motor":"{alheio}"}}"#)).unwrap();
+            assert!(
+                !d.cifra(),
+                "{alheio} nasceu com cifra: o campo nao faz nada ali"
+            );
+        }
+        // Motor omitido e MySQL -- e por isso um padrao cego ao motor poria
+        // cifra em toda ligacao implicita.
+        assert!(!lig(r#"{"nome":"erp"}"#).unwrap().cifra());
+    }
+
+    /// `"cifra": false` continua abrindo em claro -- o escape ESCRITO, o mesmo
+    /// molde do `"exigir": false` e do `CIFRA=0` do ODBC.
+    #[test]
+    fn o_escape_da_cifra_e_escrito() {
+        let d = lig(r#"{"nome":"erp","motor":"phxsql","cifra":false}"#).unwrap();
+        assert!(!d.cifra(), "o escape escrito nao foi respeitado");
+        assert_eq!(d.cifra_escrita(), Some(false));
+        // E o escape sobrevive ao disco: e decisao, nao ruido.
+        let disco = d.para_disco().escrever();
+        assert!(disco.contains("\"cifra\":false"), "{disco}");
+    }
+
+    /// Valor que ninguem reconhece NAO desliga a cifra -- fica no padrao.
+    ///
+    /// Regra do `interruptor()` do ODBC: com o padrao ligado, um dedo errado
+    /// nao pode rebaixar. Desligar continua exigindo escolha escrita, e
+    /// escrita de um jeito que o motor entenda.
+    #[test]
+    fn valor_torto_na_cifra_nao_desliga_o_tunel() {
+        for torto in ["\"zero\"", "0", "null", "[]"] {
+            let d = lig(&format!(
+                r#"{{"nome":"erp","motor":"phxsql","cifra":{torto}}}"#
+            ))
+            .unwrap();
+            assert!(d.cifra(), "{torto} desligou a cifra");
+        }
+    }
+
+    /// A recusa na DECLARACAO, nomeando o motor -- e nao na conexao.
+    ///
+    /// Aceitar o campo ali seria um interruptor que nao faz nada: a tela diria
+    /// «cifrada» para uma ligacao que fala protocolo alheio em claro. Pior que
+    /// o buraco conhecido.
+    #[test]
+    fn a_cifra_e_o_pino_sao_recusados_no_motor_que_nao_fala_o_nosso_aperto() {
+        for alheio in ["mysql", "postgres"] {
+            for campo in [
+                r#""cifra":true"#.to_string(),
+                format!(r#""chave_do_fio":"{PINO}""#),
+            ] {
+                let e =
+                    lig(&format!(r#"{{"nome":"erp","motor":"{alheio}",{campo}}}"#)).unwrap_err();
+                let t = e.to_string();
+                assert!(t.contains(alheio), "a recusa nao nomeia o motor: {t}");
+                assert!(
+                    t.contains("VPN") || t.contains("tunel"),
+                    "a recusa nao aponta o caminho de fora: {t}"
+                );
+            }
+            // `cifra: false` continua valendo em qualquer motor: e a verdade
+            // sobre aquele fio, e recusa-la tiraria o direito de escrever o
+            // que ja acontece.
+            assert!(
+                lig(&format!(
+                    r#"{{"nome":"erp","motor":"{alheio}","cifra":false}}"#
+                ))
+                .is_ok(),
+                "{alheio} recusou o false, que e o que ele ja faz"
+            );
+        }
+        // E o motor que fala o nosso aperto aceita os dois.
+        assert!(lig(&format!(
+            r#"{{"nome":"erp","motor":"phxsql","cifra":true,"chave_do_fio":"{PINO}"}}"#
+        ))
+        .is_ok());
+    }
+
+    /// O pino vence o interruptor -- copiado do ODBC, e pelo mesmo motivo:
+    /// quem escreveu o pino quer o tunel CONFERIDO, e um `false` ao lado e
+    /// contradicao. A porta para falar claro e nao escrever pino.
+    #[test]
+    fn o_pino_vence_o_interruptor() {
+        let d = lig(&format!(
+            r#"{{"nome":"erp","motor":"phxsql","cifra":false,"chave_do_fio":"{PINO}"}}"#
+        ))
+        .unwrap();
+        assert!(d.cifra(), "o false desligou o tunel de quem pediu pino");
+        assert_eq!(d.pino_do_fio().unwrap(), Some([0xaau8; 32]));
+    }
+
+    /// Pino torto vira ERRO nomeando o caminho, nunca `None` em silencio.
+    ///
+    /// `None` seria «sem pino», e um pino escrito errado viraria um tunel sem
+    /// ancora -- exatamente o estrago que o pino existe para impedir.
+    #[test]
+    fn o_pino_torto_e_erro_nomeando_o_caminho() {
+        for (torto, marca) in [
+            ("zz", "hexadecimal"),
+            ("aabb", "bytes"),
+            (&"a".repeat(62), "bytes"),
+        ] {
+            let e = lig(&format!(
+                r#"{{"nome":"erp","motor":"phxsql","chave_do_fio":"{torto}"}}"#
+            ))
+            .unwrap_err();
+            let t = e.to_string();
+            assert!(t.contains("dblink[erp].chave_do_fio"), "{t}");
+            assert!(t.contains(marca), "{t}");
+        }
+        // Sem pino nao e erro -- e tunel sem ancora, que e outra coisa.
+        assert_eq!(
+            lig(r#"{"nome":"erp","motor":"phxsql"}"#)
+                .unwrap()
+                .pino_do_fio()
+                .unwrap(),
+            None
+        );
+    }
+
+    /// O `para_disco` grava a cifra SO quando ela diverge do padrao, e nunca
+    /// no motor alheio.
+    ///
+    /// `Registro::gravar` reescreve TODAS as ligacoes a cada salvar: gravar o
+    /// padrao efetivo fossilizaria, numa edicao de OUTRA ligacao, uma decisao
+    /// que ninguem tomou -- e mataria a diferenca entre «herdou a virada» e
+    /// «escreveu a decisao».
+    #[test]
+    fn o_disco_nao_fossiliza_o_padrao_da_cifra() {
+        // Padrao herdado: nada de `cifra` no arquivo, mesmo com o `true`
+        // escrito, porque `true` E o padrao.
+        for json in [
+            r#"{"nome":"erp","motor":"phxsql"}"#,
+            r#"{"nome":"erp","motor":"phxsql","cifra":true}"#,
+        ] {
+            let disco = lig(json).unwrap().para_disco().escrever();
+            assert!(
+                !disco.contains("\"cifra\""),
+                "o padrao foi fossilizado por {json}: {disco}"
+            );
+        }
+        // Motor alheio nao grava nenhum dos dois -- campo sem leitor.
+        let disco = lig(r#"{"nome":"erp","motor":"mysql","cifra":false}"#)
+            .unwrap()
+            .para_disco()
+            .escrever();
+        assert!(!disco.contains("cifra"), "{disco}");
+        assert!(!disco.contains("chave_do_fio"), "{disco}");
+        // O pino, esse, vai inteiro: e config, e sem ele o tunel perde a
+        // ancora no proximo arranque.
+        let disco = lig(&format!(
+            r#"{{"nome":"erp","motor":"phxsql","chave_do_fio":"{PINO}"}}"#
+        ))
+        .unwrap()
+        .para_disco()
+        .escrever();
+        assert!(disco.contains(PINO), "{disco}");
+    }
+
+    /// O `para_json` mostra a cifra EFETIVA e `tem_pino` -- e nunca o pino.
+    ///
+    /// A lista de quem tem e quem nao tem pino ja seria mapa para atacante; o
+    /// pino em si e config, nao resposta. Mesma regra do irmao do cluster.
+    #[test]
+    fn o_para_json_da_a_cifra_e_tem_pino_e_nunca_o_pino() {
+        let d = lig(&format!(
+            r#"{{"nome":"erp","motor":"phxsql","chave_do_fio":"{PINO}"}}"#
+        ))
+        .unwrap();
+        let t = d.para_json().escrever();
+        assert!(!t.contains(PINO), "o pino vazou no protocolo: {t}");
+        assert!(t.contains("\"tem_pino\":true"), "{t}");
+        assert!(t.contains("\"cifra\":true"), "{t}");
+
+        let t = lig(r#"{"nome":"erp","motor":"mysql"}"#)
+            .unwrap()
+            .para_json()
+            .escrever();
+        assert!(t.contains("\"tem_pino\":false"), "{t}");
+        assert!(t.contains("\"cifra\":false"), "{t}");
+    }
+
+    /// No `Debug` o pino APARECE, e os dois estados da cifra tambem.
+    ///
+    /// O `Debug` diagnostica, o protocolo publica: a chave e publica, e
+    /// esconde-la trocaria um vazamento que nao existe por um diagnostico cego
+    /// de pino torto. Mesma escolha do `Debug` da `Origem`.
+    #[test]
+    fn o_debug_da_ligacao_mostra_o_pino_e_a_decisao_da_cifra() {
+        let d = lig(&format!(
+            r#"{{"nome":"erp","motor":"phxsql","chave_do_fio":"{PINO}"}}"#
+        ))
+        .unwrap();
+        let t = format!("{d:?}");
+        assert!(t.contains(PINO), "o Debug escondeu a chave publica: {t}");
+        assert!(t.contains("cifra: None"), "{t}");
+        assert!(t.contains("cifra_efetiva: true"), "{t}");
+
+        let d = lig(r#"{"nome":"erp","motor":"phxsql","cifra":false}"#).unwrap();
+        let t = format!("{d:?}");
+        assert!(t.contains("cifra: Some(false)"), "{t}");
+        assert!(t.contains("cifra_efetiva: false"), "{t}");
+    }
+
+    /// A ida e a volta pelo arquivo: o escape e o pino sobrevivem, e o padrao
+    /// continua saindo do motor.
+    #[test]
+    fn a_cifra_e_o_pino_sobrevivem_ao_arquivo() {
+        let dir = DirTemp::novo("dblink-cifra");
+        let caminho = dir.join("dblink.json");
+        let mut r = Registro::abrir(&caminho).unwrap();
+        r.salvar(lig(r#"{"nome":"claro","motor":"phxsql","cifra":false}"#).unwrap())
+            .unwrap();
+        r.salvar(
+            lig(&format!(
+                r#"{{"nome":"pinado","motor":"phxsql","chave_do_fio":"{PINO}"}}"#
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        r.salvar(lig(r#"{"nome":"padrao","motor":"phxsql"}"#).unwrap())
+            .unwrap();
+
+        let lido = Registro::abrir(&caminho).unwrap();
+        assert!(!lido.achar("claro").unwrap().cifra());
+        assert_eq!(lido.achar("claro").unwrap().cifra_escrita(), Some(false));
+        assert!(lido.achar("pinado").unwrap().cifra());
+        assert_eq!(
+            lido.achar("pinado").unwrap().pino_do_fio().unwrap(),
+            Some([0xaau8; 32])
+        );
+        // O que herdou a virada continua herdando -- e nao virou decisao por
+        // ter passado pelo disco ao lado dos outros dois.
+        assert!(lido.achar("padrao").unwrap().cifra());
+        assert_eq!(lido.achar("padrao").unwrap().cifra_escrita(), None);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

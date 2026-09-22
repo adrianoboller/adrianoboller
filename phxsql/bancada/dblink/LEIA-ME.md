@@ -1,6 +1,6 @@
 # A bancada do DbLink
 
-Quatro provas, contra os três motores **de verdade** — não contra servidores de
+Cinco provas, contra os três motores **de verdade** — não contra servidores de
 protocolo, que respondem o que mandarem eles responder.
 
 | Arquivo | Contra o quê | O que prova |
@@ -9,12 +9,22 @@ protocolo, que respondem o que mandarem eles responder.
 | `prova-postgres.py` | PostgreSQL® 16.13 | o cliente e o dialeto: SCRAM, catálogo, tipos, chave, comentários e o dado — **23 conferências, cada uma contra o `psql`** |
 | `prova-mysql.py` | MySQL® 8.0.46 | o cliente e o dialeto do outro lado: identidade, catálogo, forma da resposta, acento, NULO, estimativa e paginação — **47 conferências, cada uma contra o `mysql`** |
 | `prova-phxsql.py` | **dois `phxsqld`** | o motor `phxsql`: os dois portões em série (token e login), catálogo pelo protocolo próprio, paginação, o SQL que roda lá, e o que ele **recusa** — **44 conferências, cada uma contra a mesma pergunta feita direto ao outro servidor** |
+| `prova-do-tunel.py` | **três `phxsqld`**, um deles **surdo** | o túnel cifrado da ligação `phxsql` (pedido 378): o padrão, o escape escrito, o pino, o que vai para o disco e a recusa por motor — **15 conferências** |
 
-A quarta é a única que **sobe os dois lados**: não há cliente oficial de outra
-gente para comparar, então o oráculo é o próprio `phx-b` na porta dele. Dois
-caminhos até o mesmo dado — pelo DbLink e direto — têm de dizer a mesma coisa,
-e é isso que ela confere. Ela não pede nada instalado; roda com o
-`target/release/phxsqld` e mata os dois pelo PID.
+As **duas últimas sobem os dois lados**: não há cliente oficial de outra gente
+para comparar quando o outro motor é o nosso. Na quarta, o oráculo é o próprio
+`phx-b` na porta dele — dois caminhos até o mesmo dado, pelo DbLink e direto,
+têm de dizer a mesma coisa.
+
+Na quinta o oráculo é outro, e é ele que a torna uma prova em vez de uma
+demonstração: um dos três servidores sobe **surdo** (`cifra_fio.ligada:
+false`), recusando o aperto de mão. Se a ligação estivesse indo em claro, ela
+conectaria nele **igual**, e o «ok» não mediria nada. É o servidor surdo que
+transforma «conectou» em medida — e é a mesma disciplina do teste que precisou
+de um `usuario` para que a ordem `cifrar` → `autenticar` fosse medível.
+
+Nenhuma das duas pede nada instalado: rodam com o `target/release/phxsqld` e
+matam os processos pelo PID.
 
 ## Por que contra o cliente oficial, e não contra o que o script espera
 

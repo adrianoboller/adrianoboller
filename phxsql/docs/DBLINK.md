@@ -48,10 +48,18 @@ deixa de escapar, e a mesma regra que protegia passa a não proteger. Nome de
 tabela, coluna ou base não precisa de aspa, crase, contrabarra nem quebra de
 linha, então nada disso passa. O que sobra ainda vai entre crases.
 
-## O limite honesto: não há TLS
+## O limite honesto: não há TLS — **para MySQL(R) e PostgreSQL(R)**
 
 A `std` não traz TLS e o projeto não aceita dependência externa. A conversa com
-o banco do outro lado é em **texto claro**.
+esses dois bancos é em **texto claro**.
+
+> **Não vale para o terceiro motor.** Contra outro PhxSql quem manda no fio é o
+> **nosso** protocolo, e ele tem o aperto de mão cifrado desde 30/08/2026
+> (`docs/CIFRA-DO-FIO.md`). Essa ligação vai **por dentro do túnel, e ligada de
+> fábrica** — ver *O fio do terceiro motor*, no fim. A frase «a `std` não traz
+> TLS» valia para os três por engano: ela é de 03/09 e o túnel é de 30/08, e
+> documentação que ensina a não procurar o recurso que existe é pior que
+> documentação que falta.
 
 - A **senha nunca viaja em texto**: o MySQL(R) a embaralha com um sal que muda
   a cada conexão.
@@ -124,6 +132,10 @@ variável de ambiente — que é o caminho recomendado, porque `config.json` e
 `dblink.json` costumam ir para o controle de versão e variável de ambiente
 não. Em nenhum dos dois casos a senha aparece na resposta do protocolo, na
 tela ou no log.
+
+**Só o motor `phxsql` tem os dois campos do fio** — `cifra` e `chave_do_fio`.
+Eles não aparecem no exemplo acima porque ele é de uma ligação MySQL(R), onde
+são **recusados**: ver *O fio do terceiro motor*.
 
 ## As operações
 
@@ -631,6 +643,106 @@ faria a condição de uma decidir pelas duas, e o campo esquecido seria apagado
 em silêncio — que é exatamente o estrago que essas funções existem para
 impedir.
 
+### O fio do terceiro motor: o túnel, e **ligado de fábrica**
+
+Dois campos, e os dois só valem para o motor `phxsql`:
+
+| Campo | O que faz |
+|---|---|
+| `cifra` | falar por dentro do túnel cifrado. **Ausente = ligado**, porque o padrão de saída da casa é `CIFRA_DE_SAIDA_PADRAO` (18/09/2026). `false` é o **escape escrito** |
+| `chave_do_fio` | o **pino**: a chave pública que se espera do outro lado, 32 bytes em hexadecimal. Vazio = túnel sem âncora |
+
+```json
+{
+  "nome": "filial",
+  "motor": "phxsql",
+  "host": "10.0.0.30",
+  "token_remoto_env": "PHXSQL_DBLINK_FILIAL_TOKEN",
+  "chave_do_fio": "3f0a…"
+}
+```
+
+**Por que ligado, e por que isso não é uma virada e sim um buraco tapado.** A
+ordem do dono de 18/09 fechou a entrada (`cifra_fio.exigir` nasce `true`), e a
+consequência já era de hoje, não do futuro: um PhxSql desta versão **recusa** o
+DbLink de outro PhxSql, e o único escape era desligar o `exigir` do servidor de
+destino **inteiro**. Não havia padrão a virar — **faltava o campo**.
+
+**O pino vence o interruptor.** `"cifra": false` ao lado de um `chave_do_fio`
+escrito é contradição, e quem escreveu o pino quer o túnel **conferido**. A
+porta para falar claro continua sendo não escrever pino nenhum. É a mesma regra
+do driver ODBC, e pelo mesmo motivo.
+
+**Nos outros dois motores os dois campos são RECUSADOS na declaração**,
+nomeando o motor e apontando o caminho que existe (VPN ou túnel de fora). O
+aperto de mão é operação **deste** protocolo: aceitar o campo ali seria um
+interruptor que não faz nada, e a tela diria «cifrada» para uma ligação que
+fala protocolo alheio em claro. A recusa vale para o arquivo e para a tela sem
+portão próprio, porque `dblink_salvar` chama o **mesmo** `Definicao::de_json`
+que lê o `dblink.json`.
+
+**A ordem: o túnel antes do login E antes do primeiro pedido.** Na replicação o
+motivo é a prova do desafio-resposta; aqui é mais forte, e está **medido** em
+`tests/dblink-phx-no-fio.rs`: com a cifra desligada, a **primeira linha do fio**
+carrega o `token_remoto` — o token de serviço do outro servidor, que é o portão
+1 dele. Cifrar depois do `login`, ou depois do `ping`, protegeria só o que
+sobrou. O teste lê a primeira linha que sai do soquete e confere as duas
+metades: de fábrica ela é o `{"op":"cifrar"}` e **não** contém o token; com
+`"cifra": false` ela contém.
+
+**O `dblink.json` só guarda o que DIVERGE do padrão.** Esse é o único dos quatro
+cadastros que o servidor **reescreve inteiro** a cada salvar. Gravar o padrão
+efetivo fossilizaria, numa edição de *outra* ligação, uma decisão que ninguém
+tomou — e mataria a diferença entre «herdou a virada» e «escreveu a decisão»,
+que é o que separa um aviso útil de um aviso perpétuo. Então `cifra` vai para o
+disco só quando é `false`, `chave_do_fio` só quando existe, e no motor alheio
+**nenhum dos dois**.
+
+**A ficha devolve `cifra` e `tem_pino`, nunca o pino.** A lista de quem tem e
+quem não tem pino já é mapa para atacante — diz onde trocar a chave sai barato
+—, e o pino em si é configuração, não resposta. No `Debug`, ao contrário, o
+`chave_do_fio` aparece inteiro: ele é chave **pública**, o `Debug` diagnostica e
+o protocolo publica, e escondê-lo trocaria um vazamento que não existe por um
+diagnóstico cego de pino torto.
+
+**E é isso que obriga a herança no salvar.** A tela não recebe o pino, então não
+teria como devolvê-lo: sem `com_o_pino_de`, **todo salvar pela tela apagaria o
+pino** e a ligação continuaria anunciando «cifrada» — túnel sem âncora, painel
+idêntico. Rebaixamento silencioso, que é o pior dos dois. Os dois campos herdam
+com a **condição de cada um** (`com_a_cifra_de` e `com_o_pino_de`), pelo mesmo
+motivo que separa `com_a_senha_de` de `com_o_token_de`. A regra: **ausente
+herda; presente e vazio apaga**, que é decisão escrita.
+
+**Pino torto é erro, nunca `None` em silêncio.** O erro nomeia
+`dblink[<nome>].chave_do_fio`, e acontece já na **declaração** — um hexadecimal
+errado gravado no cadastro só apareceria na primeira conexão, e até lá a tela
+diria «cifrada com pino».
+
+**Valor que ninguém reconhece não desliga a cifra.** `"cifra": "zero"` fica no
+padrão (ligado), e não em `false`. É a regra do `interruptor()` do ODBC: com o
+padrão ligado, rebaixamento por dedo errado é exatamente o que a virada veio
+acabar.
+
+**E a prova contra PhxSql de verdade:** `bancada/dblink/prova-do-tunel.py`, 15
+conferências. Ela sobe **três** servidores, e um deles é **surdo** —
+`cifra_fio.ligada: false`, recusando o aperto. É o surdo que a torna prova em
+vez de demonstração: se a ligação estivesse indo em claro, conectaria nele
+igual e o «ok» não mediria nada. O texto que o surdo devolve, medido:
+
+```
+o source recusou o aperto de mao: … este servidor nao atende a cifra do fio
+(cifra_fio.ligada esta em false); o tunel cifrado e o PADRAO das ligacoes
+phxsql -- se o outro servidor e anterior ao aperto de mao, escreva
+"cifra": false nesta ligacao para falar em claro
+```
+
+A primeira metade é o que o outro lado disse; a segunda é o que fazer **aqui**.
+Com **pino** escrito a segunda metade **não entra**, e isso é decisão e não
+esquecimento: `"cifra": false` não desliga a cifra de quem escreveu o pino, o
+conselho seria falso, e ensinar a baixar a guarda ali seria ensinar o
+rebaixamento que o pino existe para impedir. É a mesma regra do
+`com_a_saida_escrita` do driver ODBC.
+
 ### Os números do que ele lê
 
 `dblink_tabelas` publica `registros_estimados` porque é esse o nome que a tela
@@ -643,9 +755,6 @@ o leia como pegada em disco. Somar o que não se mediu seria número citado.
 
 ### O que ele NÃO faz — dito, e não omitido
 
-- **Sem TLS.** Igual aos outros dois, e pelo mesmo motivo (a `std` não traz).
-  A **senha nunca viaja** — o desafio-resposta cuida disso —, mas o dado
-  devolvido sim, e o **token vai no pedido**. Rede interna, VPN ou túnel.
 - **`dblink_ler` não ordena por coluna qualquer.** O `varrer` lê na ordem de
   digitação ou na de um índice nomeado; não há varredura que ordene. Aceitar
   `ordem` e devolver a ordem de digitação mostraria a grade com o cabeçalho

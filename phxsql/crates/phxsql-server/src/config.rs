@@ -170,8 +170,12 @@ impl Papel {
 // A cifra das SAIDAS -- as conexoes que este servidor ABRE
 // ---------------------------------------------------------------------------
 
-/// O padrao dos tres interruptores de saida: `replicacao.origens[].cifra`,
-/// `cluster.cifra` e `web.servidores[].cifra`.
+/// O padrao dos QUATRO interruptores de saida: `replicacao.origens[].cifra`,
+/// `cluster.cifra`, `web.servidores[].cifra` e `dblink[].cifra`.
+///
+/// O quarto entrou em 22/09/2026 (pedido 378), e esta lista ja envelheceu
+/// UMA vez por ser digitada: ela dizia tres enquanto o DbLink nascia. Quem
+/// acrescentar o quinto conta de novo aqui, nos dois lugares.
 ///
 /// # Por que LIGADO, desde 18/09/2026
 ///
@@ -196,7 +200,7 @@ impl Papel {
 ///
 /// # Por que ele mora AQUI, e nao dentro de cada leitor
 ///
-/// Num lugar so, citado pelo nome nos tres leitores -- e no IRMAO que mora
+/// Num lugar so, citado pelo nome nos quatro leitores -- e no IRMAO que mora
 /// fora deste arquivo: a sonda `replicacao_testar` (`servidor.rs`) monta uma
 /// `Origem` com o que veio no pedido e cai no MESMO `replica::ligar` do laco.
 /// Padrao que mora so no analisador do arquivo deixa esse irmao falando claro,
@@ -1954,7 +1958,7 @@ impl CifraFio {
 }
 
 /// Le 32 bytes em hexadecimal, dizendo de onde vieram quando estao errados.
-fn chave_de_hex(texto: &str, de_onde: &str) -> Result<[u8; 32]> {
+pub(crate) fn chave_de_hex(texto: &str, de_onde: &str) -> Result<[u8; 32]> {
     let limpo: String = texto.chars().filter(|c| !c.is_whitespace()).collect();
     let bytes = phxsql_core::hash::de_hex(&limpo).ok_or_else(|| {
         PhxError::Esquema(format!(

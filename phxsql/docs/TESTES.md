@@ -35,21 +35,21 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **2.592 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **2.610 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Protocolo e portões (despachar) | 555 | 21,4 |
-| Motor de dados (arquivos, índice, diários) | 525 | 20,2 |
+| Protocolo e portões (despachar) | 560 | 21,4 |
+| Motor de dados (arquivos, índice, diários) | 525 | 20,1 |
 | Núcleo (JSON, tipos, UUID, zip, paralelo) | 255 | 9,8 |
-| Camada SQL (léxico, sintaxe, tradução) | 217 | 8,4 |
-| Servidor (outros) | 204 | 7,9 |
-| Configuração | 137 | 5,3 |
+| Camada SQL (léxico, sintaxe, tradução) | 217 | 8,3 |
+| Servidor (outros) | 207 | 7,9 |
+| Configuração | 137 | 5,2 |
 | Criptografia e codificação | 128 | 4,9 |
-| DbLink | 84 | 3,2 |
+| DbLink | 94 | 3,6 |
 | Telemetria e profiler | 73 | 2,8 |
 | ODBC | 66 | 2,5 |
 | Gatilhos e procedimentos | 45 | 1,7 |
@@ -69,7 +69,7 @@ contando `#[test]` por arquivo e agrupando:
 | **Alertas e e-mail** | **8** | **0,3** |
 | **CLI** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,2** |
-| **total** | **2594** | |
+| **total** | **2612** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
@@ -81,7 +81,7 @@ Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 | `phxsql-server/src/main.rs` | 488 |
 | `phxsql-ffi/src/valor.rs` | 290 |
 | `phxsql-store/src/integridade.rs` | 278 |
-| `phxsql-server/src/dblink/conexao.rs` | 275 |
+| `phxsql-server/src/dblink/conexao.rs` | 272 |
 | `phxsql-server/src/carga.rs` | 227 |
 | `phxsql-ffi/src/punho.rs` | 188 |
 | `phxsql-cmd/src/main.rs` | 186 |

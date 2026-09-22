@@ -32,11 +32,24 @@
 //! Com `usuario` vazio a ligacao entra so pelo token, que e o modo do servidor
 //! sem cadastro. Com `usuario` preenchido ela faz o login por cima.
 //!
-//! # O limite honesto: o fio vai em claro
+//! # O fio: tunel cifrado, e LIGADO de fabrica
 //!
-//! Igual aos outros dois motores, e pelo mesmo motivo (a `std` nao traz TLS).
-//! A SENHA nunca viaja -- o desafio-resposta cuida disso --, mas o DADO
-//! devolvido sim, e o TOKEN vai no pedido. Rede interna, VPN ou tunel.
+//! Aqui o limite dos outros dois motores NAO vale, e a frase que dizia o
+//! contrario nasceu falsa: ela e de 03/09 e o tunel do PhxSql e de 30/08. O
+//! que falta a `std` e TLS, e TLS e protocolo de quem fala com banco ALHEIO --
+//! contra outro PhxSql quem manda no fio e o nosso protocolo, e ele tem o
+//! `{"op":"cifrar"}` desde entao (`docs/CIFRA-DO-FIO.md`). Documentacao que
+//! ensina a nao procurar o recurso que existe e pior que documentacao que
+//! falta.
+//!
+//! Entao esta ligacao vai por dentro do tunel por padrao
+//! ([`crate::config::CIFRA_DE_SAIDA_PADRAO`]), e `"cifra": false` e o escape
+//! ESCRITO. Com `chave_do_fio` ha pino, e o outro lado que apresentar outra
+//! chave derruba a conexao.
+//!
+//! **A ordem importa mais aqui do que na replicacao**: o tunel se abre ANTES
+//! do login E antes do primeiro pedido, porque o TOKEN de servico viaja no
+//! primeiro pedido que sair. Cifrar depois protegeria so o que sobrou.
 
 use std::time::Duration;
 
@@ -57,18 +70,31 @@ pub struct Conexao {
 }
 
 impl Conexao {
-    pub fn abrir(
-        host: &str,
-        porta: u16,
-        token: &str,
-        usuario: &str,
-        senha: &str,
-        espera: Duration,
-    ) -> Result<Conexao> {
-        let mut cliente = Cliente::conectar(host, porta, token, espera)?;
+    /// Abre a conexao a partir da DEFINICAO inteira, e nao de primitivas.
+    ///
+    /// Mudou de forma quando a cifra entrou (pedido 378), e a mudanca e a
+    /// decisao: com uma lista de primitivas, cada campo novo do fio teria de
+    /// atravessar a fronteira a mao, e o dia em que alguem esquecesse um
+    /// abriria uma conexao em claro que compila. `replica::ligar` recebe
+    /// `&Origem` pelo mesmo motivo.
+    pub fn abrir(d: &Definicao) -> Result<Conexao> {
+        let token = d.token();
+        let espera = Duration::from_secs(d.timeout_s);
+        let mut cliente = Cliente::conectar(&d.host, d.porta, token, espera)?;
+        // O TUNEL antes de tudo, e aqui o motivo e mais forte que na replica:
+        // o token de servico nao vai no `connect`, vai no PRIMEIRO pedido que
+        // sair deste cliente. Cifrar depois do login -- ou depois do `ping` --
+        // protegeria so o que sobrou, com o token ja em claro no fio.
+        if d.cifra() {
+            cliente
+                .cifrar(d.pino_do_fio()?)
+                .map_err(|e| ensinar_a_desligar_a_cifra(e, d))?;
+        }
         // O login vem DEPOIS do token porque e assim que o outro lado confere:
         // o portao do token e o primeiro, e um login com token errado responde
         // "token invalido" -- que mandaria procurar a senha no lugar errado.
+        let usuario = d.usuario.as_str();
+        let senha = d.senha();
         if !usuario.is_empty() {
             cliente
                 .autenticar(usuario, "", senha)
@@ -130,6 +156,29 @@ fn ensinar_onde_vai_o_token(e: PhxError, token: &str) -> PhxError {
          dblink_salvar ou no dblink.json. A tela ainda nao oferece esse campo."
             .into(),
     )
+}
+
+/// Diz que a cifra e o PADRAO desta ligacao quando o aperto de mao falha.
+///
+/// Irma da de cima, e da `com_a_saida_escrita` do ODBC (pedido 373). O erro
+/// cru do aperto manda procurar rede; quem le precisa do interruptor, porque a
+/// causa mais provavel e o outro lado ser anterior a 30/08 e nao atender
+/// `{"op":"cifrar"}`.
+///
+/// Com PINO escrito a frase NAO entra, e isso e decisao: `"cifra": false` nao
+/// desliga a cifra de quem escreveu o pino (ver [`Definicao::cifra`]), entao o
+/// conselho seria falso -- e com pino a falha provavel e outra, a chave
+/// apresentada nao conferir. Ensinar a baixar a guarda ali seria ensinar
+/// exatamente o rebaixamento que o pino existe para impedir.
+fn ensinar_a_desligar_a_cifra(e: PhxError, d: &Definicao) -> PhxError {
+    if !d.chave_do_fio.trim().is_empty() {
+        return e;
+    }
+    PhxError::Esquema(format!(
+        "{e}; o tunel cifrado e o PADRAO das ligacoes phxsql -- se o outro \
+         servidor e anterior ao aperto de mao, escreva \"cifra\": false nesta \
+         ligacao para falar em claro"
+    ))
 }
 
 /// O valor de um campo do protocolo, como a grade o mostra.

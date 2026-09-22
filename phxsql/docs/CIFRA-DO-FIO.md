@@ -914,16 +914,25 @@ servidor **conecta**:
 > jeito, porque as bancadas escrevem o escape dos dois lados.
 
 A ordem do dono alcança as duas direções («a *comunicação* deve
-obrigatoriamente ser cifrada»), e os **três padrões viraram**:
+obrigatoriamente ser cifrada»), e os **três padrões viraram** — mais o quarto,
+que em 18/09 não existia porque **faltava o campo** (pedido 378, 22/09/2026):
 
 | saída | interruptor | padrão | escape escrito |
 |---|---|---|---|
 | réplica → source | `replicacao.origens[].cifra` | `true` | `"cifra": false` naquela origem |
 | nó → nó do cluster | `cluster.cifra` | `true` | `"cifra": false` no bloco `cluster` |
 | interface web → outro servidor | `web.servidores[].cifra` | `true` | o item vira objeto com `"cifra": false` |
+| **DbLink → outro PhxSql** | `dblink[].cifra` | `true` **só no motor `phxsql`** | `"cifra": false` naquela ligação |
+
+A quarta é a única **polimórfica**, e é por isso que ela lê o motor antes do
+interruptor: no MySQL(R) e no PostgreSQL(R) o fio é protocolo alheio, o aperto
+de mão não existe lá, e `cifra` ou `chave_do_fio` ali são **recusados na
+declaração** — aceitar seria um interruptor que não faz nada. Os detalhes do
+desenho (os três estados do campo, o que vai para o disco e a herança no
+salvar) estão em `docs/DBLINK.md`.
 
 O padrão mora num lugar só — `CIFRA_DE_SAIDA_PADRAO`, em `config.rs` —, e os
-três leitores o citam pelo nome. **Mais o irmão que mora fora do arquivo**: a
+**quatro** leitores o citam pelo nome. **Mais o irmão que mora fora do arquivo**: a
 sonda `replicacao_testar` monta uma `Origem` com o que veio no pedido e cai no
 **mesmo** `replica::ligar` do laço. Padrão que morasse só no analisador do
 `config.json` deixaria essa sonda falando claro, calada — a armadilha que o

@@ -677,7 +677,7 @@ projeto não alcança. Os três foram medidos em 18/09/2026:
 | driver ODBC | **sim, por padrão** | pedido 373 (`CIFRA=1` de fábrica, `CIFRA=0` como escape) |
 | console `phxsqlcmd` | **sim, por padrão** | pedido 370, junto com esta virada — `--sem-cifra` é o escape |
 | réplica, cluster, interface web | **sim, por padrão** | pedido 374, a virada da saída — `origens[].cifra`, `cluster.cifra` e `web.servidores[].cifra` nascem `true`, e `"cifra": false` é o escape (ver §7.0) |
-| **DbLink para outro PhxSql** | **não, e não tem interruptor** | `dblink/phx.rs` abre a conexão e nunca chama `cifrar`: é a quarta saída, e ela ficou de fora das três — medido em 18/09/2026 e escrito na §7.0 em vez de remendado |
+| **DbLink para outro PhxSql** | **sim, por padrão** | pedido 378 (22/09/2026), a **quarta** saída: `dblink[].cifra` nasce ligada para o motor `phxsql`, `"cifra": false` é o escape e `chave_do_fio` é o pino. Nos outros dois motores os campos são **recusados na declaração** — lá o fio é protocolo alheio |
 | `phxsqlcli` | não precisa | ele mexe em arquivo, não abre soquete para a porta de dados |
 
 O console usa o **mesmo** `Cliente::cifrar` da réplica e do cluster — uma
@@ -837,16 +837,44 @@ E o que a virada da saída custou está medido:
 
 Receita, tabela e os cinco testes: `docs/CIFRA-DO-FIO.md` §13.
 
-**A quarta saída, que ficou de fora e não foi remendada:** o **DbLink para
-outro PhxSql** (`dblink/phx.rs`) abre a conexão pelo mesmo `replica::Cliente` e
-**nunca chama `cifrar`** — não há interruptor para virar, e a `Definicao` do
-`dblink.json` não tem onde carregar um. Medido em 18/09/2026. A consequência é
-de hoje e não da virada da saída: contra um PhxSql desta versão (que exige de
-fábrica), **o DbLink já não entra**, e o único escape possível é `"exigir":
-false` do **outro** lado. Dar-lhe um interruptor é trabalho com formato
-(`dblink.json`) e pino próprio, e entra por pedido — meia cifra aqui seria pior
-que nenhuma, porque o painel passaria a dizer «cifrado» para uma ligação que
-não é.
+**A quarta saída, que ficou de fora em 18/09 e entrou em 22/09** (pedido 378):
+o **DbLink para outro PhxSql** (`dblink/phx.rs`) abria a conexão pelo mesmo
+`replica::Cliente` e **nunca chamava `cifrar`** — não havia interruptor para
+virar, porque a `Definicao` do `dblink.json` não tinha onde carregar um. Não
+era um padrão a virar: **faltava o campo**. A consequência já era de hoje e não
+da virada: contra um PhxSql desta versão (que exige de fábrica) o DbLink **não
+entrava**, e o único escape era `"exigir": false` do **outro** lado inteiro.
+
+Hoje `dblink[].cifra` nasce ligada para o motor `phxsql`, `"cifra": false` é o
+escape escrito e `chave_do_fio` é o pino — e o pino **vence o interruptor**,
+como no ODBC. Quatro coisas que só esta saída precisou, e cada uma sai de uma
+propriedade que as três primeiras não têm:
+
+* **O valor vem do MOTOR**, porque esta é a única saída polimórfica: `cifra` ou
+  pino num motor MySQL(R)/PostgreSQL(R) é **erro na declaração**, nomeando o
+  motor e apontando o caminho que existe (VPN ou túnel de fora). Um padrão cego
+  ao motor ligaria a cifra em 5 das 13 ligações declaradas no repositório,
+  porque `Motor::de_texto("")` é `MySql`.
+* **O campo guarda três estados** (`Option<bool>`), e não um `bool` cru: o zero
+  do tipo é `false`, e os dois sítios que montam por `..Definicao::default()`
+  pulariam o padrão em silêncio.
+* **O disco só guarda o que diverge do padrão**, porque o `dblink.json` é o
+  único dos quatro cadastros que o servidor **reescreve inteiro** a cada salvar:
+  gravar o padrão efetivo fossilizaria, numa edição de *outra* ligação, uma
+  decisão que ninguém tomou.
+* **O salvar pela tela herda o pino e a decisão**, cada um com a sua condição.
+  Sem isso, todo salvar apagaria o pino — a ficha só devolve `tem_pino`, nunca
+  o pino — e a ligação continuaria anunciando «cifrada»: túnel sem âncora,
+  painel idêntico. Rebaixamento silencioso, que é pior que o buraco conhecido.
+
+A ordem é a de sempre, e aqui vale mais: **o `cifrar` vem antes do
+`autenticar`**, porque no DbLink o **token de serviço do outro servidor** viaja
+no primeiro pedido que sai. Medido pelo soquete em
+`crates/phxsql-server/tests/dblink-phx-no-fio.rs`, que lê a primeira linha do
+fio: de fábrica ela é o `{"op":"cifrar"}` e não contém o token; com `"cifra":
+false` ela é o `{"op":"desafio",…,"token":"…"}`. Com o defeito reposto (o
+`cifrar` movido para depois do `autenticar`), é essa segunda linha que sai
+**também no padrão**. Detalhe do desenho em `docs/DBLINK.md`.
 
 **A prova real, pelo soquete, nos dois sentidos** — em
 `crates/phxsql-server/tests/cifra-das-portas-http.rs`, com um servidor de
