@@ -19,7 +19,7 @@
 //! de iteracoes com que foi criada.
 
 use crate::error::{PhxError, Result};
-use crate::hash::{de_hex, iguais_em_tempo_constante, para_hex, pbkdf2_sha256, sha256};
+use crate::hash::{de_hex, iguais_em_tempo_constante, para_hex, pbkdf2_sha256};
 
 /// Iteracoes adotadas para senhas novas.
 ///
@@ -85,20 +85,84 @@ fn destrinchar(guardado: &str) -> Result<(u32, Vec<u8>, Vec<u8>)> {
     Ok((iteracoes, sal, hash))
 }
 
-/// Bytes aleatorios, para sal e para nonce.
+/// Bytes aleatorios da fonte do sistema operacional, para sal, nonce e CHAVE.
 ///
-/// Tenta `/dev/urandom`; onde ele nao existe, cai na mistura descrita em
-/// [`sal_novo`].
+/// # Falha fechado
+///
+/// Sem fonte de entropia do sistema, isto entra em panico -- nunca devolve
+/// bytes de uma mistura de relogio, PID e endereco, como fazia ate 23/09/2026.
+/// Aquela mistura servia a um sal (que so precisa ser unico), mas esta mesma
+/// funcao semeia o `cifra::sortear` e gera chave Ed25519, X25519, AC do
+/// phxvpn e token de sessao: chave adivinhavel e pior que servico parado
+/// (achado C2 da revisao de seguranca do phxvpn). No Windows, onde nao ha
+/// `/dev/urandom` e a mistura rodava SEMPRE, a fonte agora e o
+/// `BCryptGenRandom` do proprio sistema.
 pub fn bytes_aleatorios(quantos: usize) -> Vec<u8> {
-    let mut saida = Vec::with_capacity(quantos);
-    while saida.len() < quantos {
-        match sal_do_urandom() {
-            Some(b) => saida.extend_from_slice(&b),
-            None => saida.extend_from_slice(&sal_por_mistura()),
+    let mut saida = vec![0u8; quantos];
+    if let Err(e) = entropia_do_sistema(&mut saida) {
+        panic!("sem fonte de entropia do sistema ({e}): recuso gerar bytes previsiveis");
+    }
+    saida
+}
+
+/// Le do `/dev/urandom` por um descritor aberto UMA vez e guardado.
+///
+/// Abrir a cada chamada fazia o sorteio depender de haver descritor livre: com
+/// a tabela esgotada (uma avalanche de conexoes basta), o `open` falhava e o
+/// codigo antigo caia na mistura em silencio.
+#[cfg(unix)]
+fn entropia_do_sistema(saida: &mut [u8]) -> std::io::Result<()> {
+    use std::io::Read;
+    use std::sync::OnceLock;
+    static URANDOM: OnceLock<std::fs::File> = OnceLock::new();
+    let arquivo = match URANDOM.get() {
+        Some(f) => f,
+        None => {
+            let f = std::fs::File::open("/dev/urandom")?;
+            // Duas threads podem abrir juntas; fica o primeiro, o outro fecha.
+            let _ = URANDOM.set(f);
+            URANDOM.get().expect("acabou de ser posto")
+        }
+    };
+    // ATENCAO: /dev/urandom e INFINITO -- le exatamente o pedido.
+    (&*arquivo).read_exact(saida)
+}
+
+#[cfg(windows)]
+fn entropia_do_sistema(saida: &mut [u8]) -> std::io::Result<()> {
+    use std::ffi::c_void;
+    #[link(name = "bcrypt")]
+    extern "system" {
+        fn BCryptGenRandom(alg: *mut c_void, buf: *mut u8, tamanho: u32, bandeiras: u32) -> i32;
+    }
+    const BCRYPT_USE_SYSTEM_PREFERRED_RNG: u32 = 0x0000_0002;
+    for pedaco in saida.chunks_mut(u32::MAX as usize) {
+        // SAFETY: o ponteiro e o tamanho sao do proprio pedaco, valido e
+        // exclusivo durante a chamada; o algoritmo nulo e o que a bandeira
+        // BCRYPT_USE_SYSTEM_PREFERRED_RNG exige.
+        let st = unsafe {
+            BCryptGenRandom(
+                std::ptr::null_mut(),
+                pedaco.as_mut_ptr(),
+                pedaco.len() as u32,
+                BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+            )
+        };
+        if st != 0 {
+            return Err(std::io::Error::other(format!(
+                "BCryptGenRandom devolveu {st:#x}"
+            )));
         }
     }
-    saida.truncate(quantos);
-    saida
+    Ok(())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn entropia_do_sistema(_saida: &mut [u8]) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "plataforma sem fonte de entropia conhecida",
+    ))
 }
 
 /// O material derivado que esta guardado dentro de um hash de senha.
@@ -114,56 +178,10 @@ pub fn sal_e_iteracoes(guardado: &str) -> Result<(Vec<u8>, u32)> {
     destrinchar(guardado).map(|(it, sal, _)| (sal, it))
 }
 
-/// Sal novo de 16 bytes.
-///
-/// Tenta `/dev/urandom` primeiro. Onde ele nao existe (Windows), cai numa
-/// mistura de relogio em nanossegundos, PID, endereco de heap (que o ASLR
-/// muda a cada execucao) e um contador -- passada por SHA-256.
-///
-/// O que um sal exige e ser UNICO por senha, nao imprevisivel, e a mistura
-/// garante isso. Ainda assim, `/dev/urandom` e o caminho preferido e o que
-/// roda em Linux.
+/// Sal novo de 16 bytes, da mesma fonte que as chaves.
 fn sal_novo() -> [u8; SAL_LEN] {
-    // ATENCAO: /dev/urandom e um dispositivo INFINITO. Ler o "arquivo inteiro"
-    // nunca termina -- tem de ser exatamente SAL_LEN bytes.
-    if let Some(sal) = sal_do_urandom() {
-        return sal;
-    }
-    sal_por_mistura()
-}
-
-fn sal_do_urandom() -> Option<[u8; SAL_LEN]> {
-    use std::io::Read;
-    let mut arquivo = std::fs::File::open("/dev/urandom").ok()?;
     let mut sal = [0u8; SAL_LEN];
-    arquivo.read_exact(&mut sal).ok()?;
-    Some(sal)
-}
-
-fn sal_por_mistura() -> [u8; SAL_LEN] {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
-    static CONTADOR: AtomicU64 = AtomicU64::new(0);
-
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0);
-    let sequencia = CONTADOR.fetch_add(1, Ordering::SeqCst);
-    let pid = std::process::id() as u64;
-    // Endereco de uma alocacao: varia por execucao por causa do ASLR.
-    let caixa = Box::new(0u8);
-    let endereco = (&*caixa as *const u8) as u64;
-
-    let mut entrada = Vec::with_capacity(32);
-    entrada.extend_from_slice(&nanos.to_le_bytes());
-    entrada.extend_from_slice(&sequencia.to_le_bytes());
-    entrada.extend_from_slice(&pid.to_le_bytes());
-    entrada.extend_from_slice(&endereco.to_le_bytes());
-
-    let resumo = sha256(&entrada);
-    let mut sal = [0u8; SAL_LEN];
-    sal.copy_from_slice(&resumo[..SAL_LEN]);
+    sal.copy_from_slice(&bytes_aleatorios(SAL_LEN));
     sal
 }
 
@@ -247,10 +265,51 @@ mod tests {
     fn urandom_le_so_o_que_precisa_e_nao_trava() {
         // /dev/urandom e infinito: se a leitura nao for limitada, isto nunca
         // retorna. O teste existe para travar essa regressao.
-        if let Some(a) = sal_do_urandom() {
-            let b = sal_do_urandom().expect("segunda leitura tambem deve funcionar");
-            assert_ne!(a, b, "duas leituras do urandom nao podem coincidir");
+        assert_ne!(sal_novo(), sal_novo(), "duas leituras nao podem coincidir");
+    }
+
+    /// Prova do C2 contra o SISTEMA OPERACIONAL: um processo filho ESGOTA a
+    /// propria tabela de descritores (como uma avalanche de conexoes faria) e
+    /// so entao sorteia pela primeira vez. Tem de morrer em panico -- nunca
+    /// devolver bytes. Com a mistura antiga, o filho saia 0 com bytes
+    /// previsiveis. (`ulimit -n 3` direto nao serve: o carregador dinamico
+    /// precisa de descritor para o executavel sequer subir.)
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn sem_descritor_o_sorteio_falha_fechado() {
+        if std::env::var_os("PHX_FILHO_SEM_DESCRITOR").is_some() {
+            let mut presos = Vec::new();
+            while let Ok(f) = std::fs::File::open("/dev/null") {
+                presos.push(f);
+            }
+            let b = bytes_aleatorios(16);
+            println!("BYTES {}", crate::hash::para_hex(&b));
+            return;
         }
+        let exe = std::env::current_exe().unwrap();
+        let saida = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("ulimit -n 64 && exec \"$0\" --exact senha::tests::sem_descritor_o_sorteio_falha_fechado --test-threads=1 --nocapture")
+            .arg(exe)
+            .env("PHX_FILHO_SEM_DESCRITOR", "1")
+            .output()
+            .unwrap();
+        let texto = String::from_utf8_lossy(&saida.stdout);
+        assert!(
+            !texto.contains("BYTES "),
+            "o filho sem descritor devolveu bytes: {texto}"
+        );
+        assert!(
+            !saida.status.success(),
+            "o filho sem descritor tinha de falhar"
+        );
+        // E tem de falhar PELO sorteio -- nao porque o executor de testes nao
+        // conseguiu subir com tres descritores, o que passaria por engano.
+        let erro = String::from_utf8_lossy(&saida.stderr);
+        assert!(
+            erro.contains("sem fonte de entropia"),
+            "o filho falhou por outro motivo: {erro}"
+        );
     }
 
     #[test]
@@ -280,7 +339,7 @@ mod tests {
     fn sal_nunca_repete_em_sequencia() {
         let mut vistos = std::collections::HashSet::new();
         for _ in 0..200 {
-            assert!(vistos.insert(sal_por_mistura()), "sal repetiu na mistura");
+            assert!(vistos.insert(sal_novo()), "sal repetiu");
         }
     }
 }

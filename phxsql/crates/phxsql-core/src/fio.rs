@@ -71,7 +71,14 @@ pub const M2_LEN: usize = 96;
 /// como dado associado de cada selagem. E dai que sai a garantia do
 /// truncamento: a etiqueta da ultima mensagem so fecha se as duas mensagens
 /// inteiras chegaram byte a byte como sairam.
-struct Simetrico {
+///
+/// # Publico, e UM so
+///
+/// O aperto NX deste arquivo e o IKpsk2 do modo P2P do phxvpn usam ESTE
+/// estado. Uma segunda copia dele noutro crate seria a mesma decisao escrita
+/// duas vezes -- e a que alguem corrigisse de um lado so divergiria calada do
+/// outro. Os padroes (NX, IK) sao de quem os usa; o estado e da casa.
+pub struct Simetrico {
     ck: [u8; 32],
     h: [u8; 32],
     k: [u8; CHAVE_LEN],
@@ -81,18 +88,36 @@ struct Simetrico {
 
 impl Simetrico {
     fn novo() -> Simetrico {
+        Simetrico::iniciar(NOME, PROLOGO)
+    }
+
+    /// `InitializeSymmetric(nome)` seguido de `MixHash(prologo)`. Nome de ate
+    /// 32 bytes entra completado com zeros; mais longo, pelo SHA-256 -- a regra
+    /// do Noise (secao 5.2).
+    pub fn iniciar(nome: &[u8], prologo: &[u8]) -> Simetrico {
+        let mut h = [0u8; 32];
+        if nome.len() <= 32 {
+            h[..nome.len()].copy_from_slice(nome);
+        } else {
+            h = sha256(nome);
+        }
         let mut s = Simetrico {
-            ck: *NOME,
-            h: *NOME,
+            ck: h,
+            h,
             k: [0u8; CHAVE_LEN],
             tem_chave: false,
             n: 0,
         };
-        s.misturar_hash(PROLOGO);
+        s.misturar_hash(prologo);
         s
     }
 
-    fn misturar_hash(&mut self, dado: &[u8]) {
+    /// O hash da transcricao ate aqui (o `handshake_hash` depois do fim).
+    pub fn transcricao(&self) -> [u8; 32] {
+        self.h
+    }
+
+    pub fn misturar_hash(&mut self, dado: &[u8]) {
         let mut junto = Vec::with_capacity(32 + dado.len());
         junto.extend_from_slice(&self.h);
         junto.extend_from_slice(dado);
@@ -103,10 +128,22 @@ impl Simetrico {
     ///
     /// O contador volta a zero porque a CHAVE mudou -- e o par (chave, nonce)
     /// que precisa ser unico, nao o nonce sozinho.
-    fn misturar_chave(&mut self, material: &[u8]) {
+    pub fn misturar_chave(&mut self, material: &[u8]) {
         let (ck, k) = hkdf::duas(&self.ck, material);
         self.ck = ck;
         self.k = k;
+        self.tem_chave = true;
+        self.n = 0;
+    }
+
+    /// `MixKeyAndHash`: o que o token `psk` faz. Tres saidas do HKDF -- cadeia,
+    /// um pedaco que vai para o hash, e a chave nova.
+    pub fn misturar_chave_e_hash(&mut self, material: &[u8]) {
+        let mut tres = [0u8; 96];
+        hkdf::derivar(&self.ck, material, &[], &mut tres).expect("96 bytes cabem no HKDF");
+        self.ck.copy_from_slice(&tres[..32]);
+        self.misturar_hash(&tres[32..64]);
+        self.k.copy_from_slice(&tres[64..]);
         self.tem_chave = true;
         self.n = 0;
     }
@@ -115,7 +152,7 @@ impl Simetrico {
         nonce_do_contador(self.n)
     }
 
-    fn cifrar_e_hash(&mut self, claro: &[u8]) -> Vec<u8> {
+    pub fn cifrar_e_hash(&mut self, claro: &[u8]) -> Vec<u8> {
         if !self.tem_chave {
             // Sem chave ainda, "cifrar" e passar adiante -- e o que o Noise
             // manda fazer antes do primeiro DH.
@@ -129,7 +166,7 @@ impl Simetrico {
         cifrado
     }
 
-    fn decifrar_e_hash(&mut self, cifrado: &[u8]) -> Result<Vec<u8>> {
+    pub fn decifrar_e_hash(&mut self, cifrado: &[u8]) -> Result<Vec<u8>> {
         if !self.tem_chave {
             self.misturar_hash(cifrado);
             return Ok(cifrado.to_vec());
@@ -149,14 +186,15 @@ impl Simetrico {
         Ok(claro)
     }
 
-    /// `Split()`: as duas chaves de transporte, uma por direcao.
-    fn dividir(&self) -> ([u8; CHAVE_LEN], [u8; CHAVE_LEN]) {
+    /// `Split()`: as duas chaves de transporte, uma por direcao. A primeira e
+    /// sempre a de quem COMECOU o aperto.
+    pub fn dividir(&self) -> ([u8; CHAVE_LEN], [u8; CHAVE_LEN]) {
         hkdf::duas(&self.ck, &[])
     }
 }
 
 /// O nonce de 96 bits a partir do contador de 64, como o Noise define.
-fn nonce_do_contador(n: u64) -> [u8; NONCE_LEN] {
+pub fn nonce_do_contador(n: u64) -> [u8; NONCE_LEN] {
     let mut nonce = [0u8; NONCE_LEN];
     nonce[4..].copy_from_slice(&n.to_le_bytes());
     nonce

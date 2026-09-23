@@ -38,7 +38,11 @@ pub enum Json {
 impl Json {
     pub fn analisar(entrada: &str) -> Result<Json> {
         let bytes = entrada.as_bytes();
-        let mut p = Analisador { bytes, pos: 0 };
+        let mut p = Analisador {
+            bytes,
+            pos: 0,
+            profundidade: 0,
+        };
         p.pular_espaco();
         let v = p.valor()?;
         p.pular_espaco();
@@ -544,9 +548,30 @@ fn escrever_texto(saida: &mut String, s: &str) {
     saida.push('"');
 }
 
+/// Aninhamento maximo de objeto e lista.
+///
+/// # Por que existe
+///
+/// O analisador desce por recursao, e sem teto um corpo de 262.000 `[` --
+/// cabe em 256 KiB -- estourou a pilha de 2 MiB de uma thread e ABORTOU o
+/// processo inteiro (achado C1 da revisao de seguranca do phxvpn, 23/09/2026,
+/// provado por execucao). Abort nao e panico: nao se captura, nao roda `Drop`,
+/// e chega de quem ainda nem se autenticou.
+///
+/// # Por que 128
+///
+/// O MySQL para em 100 e o SQLite em 1.000; o PostgreSQL nao fixa numero e se
+/// guarda pela pilha. Aqui o teto sai da pilha MEDIDA
+/// (`--example pilha-do-json`, 23/09/2026): cada nivel gasta ~2.960 bytes no
+/// perfil de depuracao e ~282 no de release. 512 niveis pediriam 1,48 MiB de
+/// uma pilha de 2 MiB em depuracao -- folga curta demais para o resto da
+/// chamada. 128 pedem 375 KiB em depuracao e 39 KiB em release.
+pub const PROFUNDIDADE_MAX: usize = 128;
+
 struct Analisador<'a> {
     bytes: &'a [u8],
     pos: usize,
+    profundidade: usize,
 }
 
 impl Analisador<'_> {
@@ -586,8 +611,21 @@ impl Analisador<'_> {
 
     fn valor(&mut self) -> Result<Json> {
         match self.atual()? {
-            b'{' => self.objeto(),
-            b'[' => self.lista(),
+            b'{' | b'[' => {
+                if self.profundidade >= PROFUNDIDADE_MAX {
+                    return Err(
+                        self.erro(&format!("aninhamento acima de {PROFUNDIDADE_MAX} niveis"))
+                    );
+                }
+                self.profundidade += 1;
+                let v = if self.atual()? == b'{' {
+                    self.objeto()
+                } else {
+                    self.lista()
+                };
+                self.profundidade -= 1;
+                v
+            }
             b'"' => Ok(Json::Texto(self.texto()?)),
             b't' => {
                 self.literal("true")?;
@@ -811,6 +849,43 @@ mod tests {
             .unwrap()
             .inteiro_impreciso());
         assert!(!Json::Texto("9007199254740993".into()).inteiro_impreciso());
+    }
+
+    #[test]
+    fn aninhamento_absurdo_e_recusado_sem_derrubar_o_processo() {
+        // O corpo do achado C1: roda numa thread de 2 MiB, a pilha padrao de
+        // `thread::spawn`. Sem o teto, isto e abort do processo de teste.
+        let corpo = "[".repeat(262_000);
+        let r = std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(move || Json::analisar(&corpo).is_err())
+            .unwrap()
+            .join()
+            .unwrap();
+        assert!(r);
+    }
+
+    #[test]
+    fn aninhamento_no_teto_cabe_em_pilha_pequena() {
+        let no_teto = format!(
+            "{}{}",
+            "[".repeat(PROFUNDIDADE_MAX),
+            "]".repeat(PROFUNDIDADE_MAX)
+        );
+        let acima = format!("[{no_teto}]");
+        let (ok, recusou) = std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(move || {
+                (
+                    Json::analisar(&no_teto).is_ok(),
+                    Json::analisar(&acima).is_err(),
+                )
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        assert!(ok, "128 niveis tem de caber");
+        assert!(recusou, "129 niveis tem de ser recusados");
     }
 
     #[test]
