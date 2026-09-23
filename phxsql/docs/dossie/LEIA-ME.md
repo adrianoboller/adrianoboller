@@ -476,8 +476,18 @@ Exo 2, o `#010418` do tema escuro, o vermelhão do acento e a assinatura
 
 ### A folga é apertada, e o próximo degrau está medido
 
-O dossiê fechou em **459.395 bytes** contra o teto de 460.800: **1.405 bytes,
-0,30%**. Isso passa hoje e não passa para sempre — a cada rodada entra prosa.
+O dossiê fechou em **460.321 bytes** contra o teto de 460.800: **479 bytes,
+0,10%** — medido em 23/09/2026, depois do conserto do pedido 327, que custou
+**+848 bytes** (o aviso `#semCaixa`, a regra de CSS dele, o detector e os dois
+comentários corrigidos). O número sai de
+`wc -c docs/dossie/dossie-phxsql-*.html` contra `450 * 1024`, e não desta
+linha: quem mexer na página remede antes de citar.
+
+**E há +25 bytes já medidos e ainda não aplicados**: o selo datado do pedido
+326, que só entra quando o `numeros-do-projeto.py` rodar (ele chama `cargo`).
+Depois dele a folga cai para **454 bytes, 0,10%**.
+
+Isso passa hoje e não passa para sempre — a cada rodada entra prosa.
 O maior bloco restante está medido: a **§36, as perguntas do dono, com 42.525
 bytes**, e ela é uma cópia do mesmo material de `docs/pdf/respostas/*.md` que o
 PDF publica. Movê-la daria **30× mais folga** que a de hoje, e traria a marca de
@@ -610,6 +620,52 @@ imprimiu a versão dele.
   lista comprida mas nunca um estado quebrado — e um `matchMedia` o fecha só
   quando a janela é estreita demais para a coluna lateral.
 
+## O link compartilhado serve uma versão FIXADA — pedido 326, e o conserto é do dono
+
+**Quem disse foi o próprio serviço de artefatos**, ao ler o dossiê para
+republicá-lo (17/09/2026, e de novo em 23/09/2026): *«owned by you, **shared
+with anyone with the link (viewers see a pinned earlier version, not this live
+version)**»*. A página é republicada a cada rodada e o dono vê a versão nova;
+**quem abre o link vê a versão fixada no dia em que o compartilhamento
+nasceu**, com números velhos e a mesma cara de números novos.
+
+**Não é defeito do gerador nem do HTML**, e o portão não alcança isso: o
+estrago acontece *depois* do gerador, na camada de publicação, onde nenhuma
+catraca desta casa chega.
+
+**O alcance é DESTA página, e isso está medido.** Ao ler a página dos pedidos,
+o mesmo serviço respondeu *«owned by you, **private**»* — sem compartilhamento
+e sem fixação. Quem for conferir lê o cabeçalho de **cada** página antes de
+mexer, em vez de tratar o caso como geral.
+
+### O que o dono tem de fazer, e nós não podemos
+
+A configuração de compartilhamento é da página dele, no serviço; nem o gerador
+nem o publicador a alcançam. Na interface do artefato:
+
+1. Abrir <https://claude.ai/code/artifact/5c14044e-0dc5-4832-b015-224ab1e40033>.
+2. Abrir o menu **Share** da própria página.
+3. **Refazer o compartilhamento a partir da versão viva** — ou, se o menu
+   oferecer, trocar o modo de partilha para o que **acompanha a versão atual**
+   em vez de fixar uma.
+
+### Como conferir que funcionou — e é aqui que o selo datado entra
+
+Abrir o link **numa janela anônima** (ou deslogado, como um visitante) e ler o
+selo da capa. Desde o pedido 326 ele traz a data:
+
+> Dossiê técnico · versão 0.19.0 · **retrato de DD/MM/AAAA**
+
+Se a data for a da última corrida dos geradores, o link está servindo a versão
+viva. Se for anterior, continua fixado — e agora **o visitante também
+percebe**, que é a metade que cabia a nós.
+
+O selo sai de `numeros-do-projeto.py` (função `selo_da_capa`), como todo número
+visível. A data é a da **corrida do gerador**, e não a da publicação, de
+propósito: a página não tem como saber quando foi publicada, e carimbar a
+publicação seria um número que ninguém mede. É a mesma disciplina da página dos
+testes — cada número com a data em que foi medido.
+
 ## O aviso de «download morto» na publicação é FALSO POSITIVO
 
 Publicar o dossiê devolve um aviso dizendo que a página oferece um arquivo por
@@ -657,6 +713,23 @@ como prosa. **A oitava página foi medida em 23/09/2026**, no dia em que nasceu:
 `<script>` — **zero de cada**. Ela não tem JavaScript nenhum, e por isso também
 não tem o botão «baixar»: o PDF dela sai pelo `pdf-do-dossie.mjs`, de fora.
 
+**E remedido em 23/09/2026, nos 20 `.html` do `docs/`** — a varredura inteira,
+e não mais as cinco de então, porque o conjunto de páginas cresceu:
+`<a download>` de verdade, `href="data:"`, `blob:` de verdade,
+`URL.createObjectURL`, `downloads.save`, `saveAs`, `msSaveBlob` — **zero em
+todos os 20**. As ocorrências que o `grep` conta são:
+
+| arquivo | o que o `grep` acha | o que é |
+|---|---|---|
+| `dossie-phxsql-0.18.html` | 2 `<a download>`, 1 `blob:` | os **comentários** que explicam por que não há link |
+| `pedidos-311-350.html` | 6 `blob:`, 4 `downloads.save`, 4 `saveAs`, 2 `createObjectURL`, 4 `window.claude` | o **texto dos pedidos 326 e 327**, publicado como conteúdo |
+| `pedidos-001-190.html` | 8 vezes a palavra *download* | prosa dos pedidos 96, 138 e outros |
+| `pedidos-351-410.html` | 1 `window.claude`, 3 *download* | o **texto do pedido 380**, que conta esta mesma armadilha |
+
+Ou seja: **quatro** páginas casam o padrão e **nenhuma** oferece arquivo.
+Declarar a capacidade `downloads` em qualquer uma delas consertaria o lugar
+errado — não há nada para mediar.
+
 ## Três armadilhas de estilo da página
 
 - **Nenhuma cor literal nos SVG.** Tudo sai dos tokens (`var(--reg)`,
@@ -673,10 +746,57 @@ não tem o botão «baixar»: o PDF dela sai pelo `pdf-do-dossie.mjs`, de fora.
 
 O visualizador do artefato **bloqueia todo download que a própria página
 começa** — `<a download>` inclusive, com `data:` e `blob:`, e sem erro visível.
-A caixa de impressão é do navegador, então ela abre, e «Salvar como PDF» está lá
-em todos eles. A folha `@media print` é própria: fundo branco, índice e botão
-fora, figura, tabela e captura sem quebra no meio, galeria em duas colunas. E a
-página **diz** o que o botão faz, ao lado dele.
+Por isso o botão imprime em vez de baixar. A folha `@media print` é própria:
+fundo branco, índice e botão fora, figura, tabela e captura sem quebra no meio,
+galeria em duas colunas. E a página **diz** o que o botão faz, ao lado dele.
+
+### E «então a caixa de impressão abre» era diagnóstico plausível — medido em 23/09/2026, é FALSO quando falta `allow-modals`
+
+Esta seção dizia, desde 07/09/2026, *«a caixa de impressão é do navegador,
+então ela abre»*. Nunca foi medido, e o pedido 327 já apontava a lacuna com
+essas letras: *o aviso do serviço fala de entregar arquivo, e imprimir é outra
+coisa.*
+
+O visualizador hospeda a página num `iframe` com `sandbox`. **Um quadro sem a
+palavra `allow-modals` faz o Chromium IGNORAR o `window.print()`** — sem
+exceção, sem retorno diferente, apenas uma linha no console: *«Ignored call to
+'print()'. The document is sandboxed, and the 'allow-modals' keyword is not
+set.»* O botão parecia funcionar e não fazia nada.
+
+**A medição, nos três embrulhos** (`prova-do-botao-de-baixar.mjs`, 23/09/2026):
+
+| embrulho do `iframe` | `beforeprint` | `print()` voltou em | console acusou |
+|---|---|---|---|
+| sem `sandbox` | **1** | 1,1 ms | não |
+| `sandbox` SEM `allow-modals` | **0** | 0,5 ms | **sim** |
+| `sandbox` COM `allow-modals` | **1** | 1,1 ms | não |
+
+**O sinal é o `beforeprint`, e não um cronômetro.** Um cronômetro em volta do
+`print()` parece a ideia óbvia — chamada engolida volta na hora —, e a medição
+a mata: em modo sem cabeça ela volta na hora nos **três** casos, 0,5 a 1,1 ms.
+O evento separa os casos; o relógio não.
+
+**O conserto não adivinha o embrulho.** Não temos como medir daqui quais
+palavras de `sandbox` o visualizador concede, e chutar seria a doença que o
+próprio pedido 327 nomeia. Então o botão **pergunta ao navegador**: registra
+`beforeprint`, chama `print()`, e 250 ms depois revela o aviso `#semCaixa` se o
+evento não veio. Botão que faz menos do que o nome promete tem de dizer que fez
+menos — a mesma lei do `pagina-dos-pedidos.py`, aplicada a um botão.
+
+**A prova é real nos dois sentidos**, e é isso que a torna prova:
+
+```bash
+node docs/dossie/prova-do-botao-de-baixar.mjs            # acha o dossiê sozinho
+```
+
+Com o conserto: **VERDE**, saída 0. Com o defeito reposto (o dossiê de antes
+da mudança, sem `#semCaixa`): **VERMELHO**, saída 1, no caso do meio. Ela roda
+em segundos e não chama `cargo`.
+
+**O que ela NÃO responde:** se o visualizador concede `allow-modals` hoje. Se
+conceder, a caixa abre e o aviso nunca aparece — e o conserto não custa nada a
+ninguém. Se não conceder, o leitor passa a saber por que não aconteceu nada,
+em vez de clicar de novo.
 
 ## O PDF de um relatório: `pdf.mjs`
 

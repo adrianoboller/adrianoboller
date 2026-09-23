@@ -208,6 +208,7 @@ h1 .x{color:var(--acento)}
 .botao:hover{background:var(--acento);color:var(--papel)}
 .botao:focus-visible{outline:2px solid var(--acento);outline-offset:2px}
 .acoes .diz{font-size:13.5px;color:var(--tinta-3);max-width:52ch;line-height:1.45}
+.acoes .aviso{flex:1 0 100%;max-width:64ch;margin:2px 0 0;color:var(--acento)}
 
 /* ------------------------------------------------------------- secoes */
 section{padding-top:62px;scroll-margin-top:16px}
@@ -326,7 +327,8 @@ footer p{max-width:var(--medida)}
 /* ------------------------------------------------------------- impressao
    O caminho do «baixar»: o botao chama `window.print()`, e daqui em diante
    quem monta o arquivo e o navegador. Nada de <a download>, que o visualizador
-   do artefato bloqueia sem dizer nada. */
+   do artefato bloqueia sem dizer nada -- e a caixa TAMBEM cai quando o quadro
+   do visualizador nao concede `allow-modals`. O detector esta no fim. */
 @media print{
   :root{
     --papel:#fff;--papel-2:#fff;--papel-3:#fff;
@@ -431,6 +433,10 @@ footer p{max-width:var(--medida)}
     <span class="diz">Abre a caixa de impressão do navegador — escolha
     <strong>Salvar como PDF</strong> no destino. A folha de impressão é própria:
     fundo branco, índice fora, e figura, tabela e captura sem quebra no meio.</span>
+    <p class="diz aviso" id="semCaixa" hidden><strong>A caixa de impressão não
+    abriu.</strong> O visualizador hospeda esta página num quadro sem permissão
+    de abrir caixas, e o navegador ignorou o pedido em silêncio. Abra a página
+    fora do visualizador, em aba própria, e imprima de lá.</p>
   </div>
 
   <div class="painel">
@@ -6294,12 +6300,20 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   largo.addEventListener("change", ajustar);
 })();
 
-/* O «baixar» e a caixa de impressao do navegador, e nao um <a download>:
-   o visualizador do artefato bloqueia todo download que a propria pagina
-   comeca -- inclusive data: e blob: --, e o link ficaria inerte sem dizer
-   nada. A caixa de impressao e do navegador, entao ela abre; e o destino
-   «Salvar como PDF» esta la em todos eles. */
+/* O «baixar» imprime, e nao baixa: o visualizador bloqueia todo download que
+   a pagina comeca, data: e blob: inclusive. Mas «entao a caixa abre» era
+   diagnostico plausivel: num quadro sem `allow-modals` o Chromium IGNORA o
+   print() e so escreve no console. `beforeprint` e o sinal DIRETO de que ela
+   abriu -- medido nos tres embrulhos, 1/0/1. Sem ele, o botao DIZ que nao
+   imprimiu. Receita e numeros no LEIA-ME.md da pasta. */
 document.getElementById("btBaixar").addEventListener("click", function () {
+  var abriu = false;
+  function ouvir() { abriu = true; }
+  window.addEventListener("beforeprint", ouvir);
   window.print();
+  setTimeout(function () {
+    window.removeEventListener("beforeprint", ouvir);
+    document.getElementById("semCaixa").hidden = abriu;
+  }, 250);
 });
 </script>

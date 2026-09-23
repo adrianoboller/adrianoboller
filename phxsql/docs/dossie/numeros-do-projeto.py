@@ -211,6 +211,25 @@ def versao() -> str:
     return m.group(1)
 
 
+def selo_da_capa(versao_do_projeto: str, quando: str) -> str:
+    """O selo da capa: versao E o dia em que este gerador rodou.
+
+    A data entrou pelo pedido 326, e o defeito que ela trata nao e' do HTML:
+    o link compartilhado do dossie serve uma versao FIXADA, e quem o abre le
+    numeros velhos com a mesma cara de numeros novos. Refazer a partilha e'
+    acao do dono na interface do servico -- a pagina nao alcanca isso. O que a
+    pagina alcanca e' DIZER de quando ela e', para que o leitor compare com
+    hoje e saiba que esta olhando um retrato antigo.
+
+    E a data e' a da corrida DESTE gerador, nao a da publicacao: a pagina nao
+    tem como saber quando foi publicada, e carimbar a publicacao seria um
+    numero que ninguem mede. Esta e' a data em que os numeros da capa foram
+    medidos -- a mesma disciplina da pagina dos testes.
+    """
+    return (f'\n  <div class="selo">Dossiê técnico · versão '
+            f'{versao_do_projeto} · retrato de {quando}</div>\n  ')
+
+
 def testes_que_passam() -> int:
     """O que o `cargo test` REPORTA -- nao o que se conta com grep no fonte.
 
@@ -545,7 +564,7 @@ def main() -> None:
   e o que ainda falta em <code>docs/PENDENCIAS.md</code>.</p>
   """
 
-    selo = f'\n  <div class="selo">Dossiê técnico · versão {n["versao"]}</div>\n  '
+    selo = selo_da_capa(n["versao"], time.strftime("%d/%m/%Y"))
 
     painel_idiomas = f"""
     <div><div class="v">6</div><div class="r">idiomas na tabela</div></div>

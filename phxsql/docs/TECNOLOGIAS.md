@@ -36,17 +36,17 @@ foi estimado no lugar de uma medição que faltou.
 |---|---:|---:|---:|---:|---:|---:|
 | `phxsql-cli` | 1 | 815 | 104 | 113 | 78 | 1110 |
 | `phxsql-cmd` | 2 | 618 | 110 | 207 | 65 | 1000 |
-| `phxsql-core` | 35 | 11597 | 4973 | 3934 | 1593 | 22097 |
+| `phxsql-core` | 35 | 11611 | 4973 | 3934 | 1594 | 22112 |
 | `phxsql-ffi` | 7 | 1408 | 1081 | 745 | 242 | 3476 |
-| `phxsql-odbc` | 7 | 2662 | 1089 | 980 | 239 | 4970 |
-| `phxsql-server` | 59 | 47001 | 32927 | 25265 | 5501 | 110694 |
+| `phxsql-odbc` | 7 | 2908 | 1089 | 1063 | 254 | 5314 |
+| `phxsql-server` | 60 | 47688 | 33451 | 25681 | 5576 | 112396 |
 | `phxsql-sql` | 10 | 7210 | 3844 | 2587 | 822 | 14463 |
 | `phxsql-store` | 26 | 14216 | 3831 | 6633 | 1655 | 26335 |
-| **total** | **147** | **85527** | **47959** | **40464** | **10195** | **184145** |
+| **total** | **148** | **86474** | **48483** | **40963** | **10286** | **186206** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **47959/85527 = 0.56×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **48483/86474 = 0.56×**.
 
-Alem do `src/`: **81** programas de medicao em `examples/` (20636 linhas — bancada em Rust, nao produto nem teste) e **69** arquivos em `tests/` de integracao fora de `src/` (25341 linhas).
+Alem do `src/`: **81** programas de medicao em `examples/` (20636 linhas — bancada em Rust, nao produto nem teste) e **71** arquivos em `tests/` de integracao fora de `src/` (26031 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -73,7 +73,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 15653 | 887.1 |
+| `ui/index.html` | 15663 | 887.8 |
 | `ui/grid/phx-grid.css` | 168 | 12.3 |
 | `ui/grid/phx-grid.js` | 1860 | 90.1 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
@@ -81,9 +81,9 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 | `ui/telemetria.js` | 1820 | 89.2 |
 | `ui/multitela.css` | 156 | 8.6 |
 | `ui/multitela.js` | 1588 | 69.0 |
-| `ui/claude.js` | 1357 | 67.2 |
+| `ui/claude.js` | 1482 | 74.5 |
 | `ui/grid/CHANGELOG-phx-grid.md` | 224 | 29.7 |
-| **total (10 arquivos)** | **23985** | **1302.2** |
+| **total (10 arquivos)** | **24120** | **1310.2** |
 
 Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
 - `crates/phxsql-server/ui/explorador.css`
@@ -107,11 +107,11 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 55 | 11741 |
-| Python (bancada de medicao) | `bancada/` | 121 | 55368 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 55 | 11855 |
+| Python (bancada de medicao) | `bancada/` | 121 | 55467 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2894 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 442 | 108359 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 36 | 16014 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 447 | 109687 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 36 | 16038 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
 <!-- /GERADO -->
@@ -336,7 +336,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 
 **24** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **199** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 8061. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **201** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 8160. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -388,6 +388,23 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
   *mecanismo* do `conferidor.rs` — varre o fonte, conta, diz arquivo e linha
   — mas **não é um conferidor em Rust**: mora em `docs/status/riscos.py` e é
   função pura de `crates/**/*.rs`. O porquê está medido na §5.7.
+
+#### Interface só se prova exercitando — e o navegador é a bancada
+
+Três roteiros desta casa sobem um Chromium pelo `playwright` (caminho absoluto
+`/opt/node22/lib/node_modules/playwright/index.mjs`; não há `node_modules` no
+repositório) porque o defeito que eles caçam **não aparece lendo o código**:
+
+| roteiro | o que exercita | o que o código não mostrava |
+|---|---|---|
+| `docs/dossie/olhar.mjs` | captura a página inteira antes de publicar | o CSS global mordendo componente novo |
+| `docs/dossie/sonda-de-estouro.mjs` | mede se a página rola para o lado no telefone | três pixels de rolagem lateral, que a captura não mostra |
+| `docs/dossie/prova-do-botao-de-baixar.mjs` | o botão «baixar» em três embrulhos de `iframe` | `window.print()` ignorado em silêncio sem `allow-modals` |
+
+O terceiro entrou em 23/09/2026 e é **prova real nos dois sentidos**: VERDE
+(saída 0) com o conserto, VERMELHO (saída 1, no caso do meio) com o defeito
+reposto. Roda em segundos e **não chama `cargo`** — cabe em rodada com o disco
+apertado.
 
 ### 4.4 Como se compilou para outra arquitetura
 
@@ -497,7 +514,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **423** pedidos numerados; **68** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **430** pedidos numerados; **69** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -569,6 +586,7 @@ proposta de voltar sem medição nova.
 | 367 | **PARECER DO DBA 18/09 -- a trilha `.lgpd` de coluna EXTERNA marcada MENTE, nos tres sentidos** |
 | 403 | **O guarda da republicacao cobra a LEITURA INTEGRAL da pagina publicada, e acima de ~450 KiB isso nao cabe numa janela** |
 | 404 | **O `extrair.py` do TECNOLOGIAS conta a SI MESMO, entao a rodada em que o bloco gerado muda de tamanho exige duas passagens — e o portao acusa VERMELHO na primeira** |
+| 424 | **A recusa do ledger mora na DECLARACAO, e a replicacao nao declara: a combinacao proibida CRESCE por replica, para nos que nunca a tiveram** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —
@@ -594,8 +612,11 @@ cláusula pétrea do pesquisador exige:
   alguém precisar do relatório paginado com cabeçalho e rodapé — e não há
   esse pedido ainda.
 
-Os outros sete pedidos com RECUSADO no texto (não citados por extenso aqui,
-ver a fonte): #83 (qualificação `matriz.estoque`/`filial.estoque` em SQL),
+**A contagem dos recusados sai do bloco acima, e não desta prosa** — esta
+linha dizia «os outros **sete**» enquanto o bloco já media **69**, e ficou
+assim até a revisão de 23/09/2026: número digitado à mão envelhece calado,
+inclusive num documento que existe para dizer isso. Dos recusados, sete
+valem a citação por extenso (os demais estão na tabela acima): #83 (qualificação `matriz.estoque`/`filial.estoque` em SQL),
 #101 (cifrar/compactar `.log`/`.trash`/`.reason`), #114 (índice não único
 fora do caminho crítico — reaberto e resolvido de outra forma na §5.3
 abaixo), #148 (`ALTER TABLE ADD COLUMN` preservando `rowid`), #153 (VM
@@ -803,6 +824,42 @@ E a medição que traria a marca de volta está escrita, para não se refazer: a
 `docs/pdf/respostas/*.md` que o PDF publica. Movê-la daria **30× a folga de
 hoje** — sobra para o símbolo de 224 px na capa. É decisão do dono, e por isso
 está aqui como número e não como plano.
+
+### 5.9 A capacidade `downloads` do visualizador — RECUSADA, com zero medido em 20 páginas
+
+Ao publicar, o serviço de artefatos devolve um aviso dizendo que a página
+oferece um arquivo ao visitante e que *«the artifact viewer never grants pages
+download permission»*, com o remédio junto: declarar a capacidade `downloads` e
+salvar por `window.claude.downloads.save(...)`. A proposta é boa **para uma
+página que entrega arquivo**. Medido em 23/09/2026, nos **20** `.html` de
+`docs/`, nenhuma entrega:
+
+```bash
+for f in $(find docs -name '*.html'); do
+  echo "$f $(grep -c '<a[^>]*download\|href="data:\|URL.createObjectURL\|downloads.save\|msSaveBlob' "$f")"
+done
+```
+
+`<a download>` de verdade, `href="data:"`, `blob:` de verdade,
+`URL.createObjectURL`, `downloads.save`, `saveAs`, `msSaveBlob` — **zero em
+todos os 20**. As ocorrências que o varredor do serviço casa são de **quatro**
+páginas falando sobre a armadilha: o dossiê pelos dois comentários que explicam
+por que não há link, e `pedidos-311-350.html`, `pedidos-001-190.html` e
+`pedidos-351-410.html` pela **prosa dos próprios pedidos 326, 327 e 380**, que
+a página publica como conteúdo.
+
+**Por que a recusa importa, e não é só economia de uma linha:** declarar
+`downloads` muda o que o visitante vê numa página que o dono compartilha, para
+mediar uma entrega que não existe. Seria conserto no lugar errado — e calaria o
+aviso justamente onde ele algum dia poderia ser verdadeiro. *Um casador de
+texto não sabe a diferença entre fazer e falar sobre fazer.*
+
+**O defeito real estava em outro mecanismo**, e só apareceu medindo: o botão
+«baixar» chama `window.print()`, e um `iframe` com `sandbox` **sem
+`allow-modals`** faz o Chromium ignorar a chamada em silêncio — `beforeprint`
+disparou 1/0/1 nos três embrulhos. O conserto e a prova nos dois sentidos estão
+em `docs/dossie/prova-do-botao-de-baixar.mjs`; a medição, em
+`docs/dossie/LEIA-ME.md` e na cognição de 23/09/2026.
 
 ---
 
