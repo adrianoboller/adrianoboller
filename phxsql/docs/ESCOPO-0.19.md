@@ -20,7 +20,7 @@ O que a regua DEIXA DE FORA, de proposito: higiene de gerador, contagem de
 catraca, cosmetico de tela, pesquisa, e tudo o que so o time enxerga. Sao
 legitimos e continuam registrados -- so nao seguram a versao.
 
-## A lista: 14 pedidos
+## A lista: 13 pedidos (eram 14 -- o 355 saiu, ja estava fechado)
 
 ### A. Corrompe ou perde dado (5)
 
@@ -32,13 +32,13 @@ legitimos e continuam registrados -- so nao seguram a versao.
 | 255 | Tomada no meio de BULKINSERT ou de `reindexar` deixa a tabela **recusando** ate um `reindexar` manual. |
 | 381 | Linha com `.memo` corrompido **nao se consegue ALTERAR** por cliente que omita a coluna de sistema. |
 
-### B. Vaza segredo (4)
+### B. Vaza segredo (3, era 4)
 
 | pedido | o que |
 |---|---|
 | 372 | O `dblink.json` grava a senha do destino **em texto puro, por padrao**. Quebra petrea. |
 | 275 | O driver ODBC e o unico cliente que manda `senha` **em texto puro no login**. Quebra petrea. |
-| 355 | O modo ledger grava um **SHA-256 SEM SAL** do conteudo em claro, na mesma linha. |
+| ~~355~~ | **SAI DA LISTA em 23/09/2026: ja estava FECHADO** desde 18/09 (`a51f1a3`), por decisao do dono. Eu o pus aqui lendo a marca do `PENDENCIAS.md`, que estava velha -- o pedido estava fechado em codigo e aberto no papel. A marca foi virada; o erro foi meu e esta registrado no pedido 425. |
 | 339 | Chave da API no `localStorage`, e o resto dos achados de alcance do parecer externo. |
 
 ### C. Seguranca de rede (2)
