@@ -2,6 +2,8 @@
 //! linha de comando e para os testes de integracao usarem o MESMO codigo.
 
 pub mod cofre;
+pub mod comandos;
+pub mod console;
 pub mod http;
 pub mod noise;
 pub mod ovpn;

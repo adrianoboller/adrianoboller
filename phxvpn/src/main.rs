@@ -3,10 +3,9 @@
 //! Duas portas para o mesmo motor (`painel.rs`): a tela web servida pelo
 //! `phxvpn painel` e a linha de comando abaixo, que fala com o painel pela API.
 
-use phxsql_core::json::Json;
+use phxvpn::comandos::{self, Opcoes};
 use phxvpn::{http, painel, pg, supervisor};
-use std::io::{BufRead, Read, Write};
-use std::net::TcpStream;
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -42,6 +41,10 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
       Servidor intermediario do P2P. Mostra a chave publica para o --repasse.
       --permitir: arquivo com uma chave publica por linha (repasse fechado).
 
+  phxvpn cmd  (ou phxvpncmd) [/MODO:painel|p2p|ferramentas] [/PAINEL:http://..]
+             [/COMANDO:\"linha\"] [/ENTRADA:script.txt]
+      Console no estilo do prompt do MS-DOS, com tres modos. AJUDA dentro dele.
+
   phxvpn versao
 ";
 
@@ -53,6 +56,7 @@ fn main() {
         Some("entrar") => cmd_rede(&args[1..], false),
         Some("p2p") => cmd_p2p(&args[1..]),
         Some("repasse") => cmd_repasse(&args[1..]),
+        Some("cmd") => phxvpn::console::principal(&args[1..]),
         Some("versao") | Some("--version") => {
             println!("phxvpn {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -126,49 +130,24 @@ fn senha(var: &str, pergunta: &str) -> Result<String, String> {
 }
 
 fn cmd_rede(args: &[String], criar: bool) -> Result<(), String> {
-    let painel = opcao(args, "--painel").unwrap_or_else(|| "http://127.0.0.1:8470".into());
-    let login = opcao(args, "--usuario").ok_or("informe --usuario")?;
-    let rede = opcao(args, "--rede").ok_or("informe --rede")?;
+    let o = Opcoes::de_args(args, &["conectar"]);
+    let painel = o.um("painel").unwrap_or("http://127.0.0.1:8470");
+    let login = o.um("usuario").ok_or("informe --usuario")?;
+    let rede = o.um("rede").ok_or("informe --rede")?;
     let s_login = senha("PHXVPN_SENHA", "senha do usuario")?;
     let s_rede = senha("PHXVPN_SENHA_REDE", "senha da rede")?;
-
-    let r = chamar(
-        &painel,
-        "/api/login",
-        None,
-        &Json::objeto(vec![
-            ("usuario", Json::texto_de(&login)),
-            ("senha", Json::texto_de(s_login)),
-        ]),
+    let (token, _) = comandos::login(painel, login, &s_login)?;
+    let arquivo = comandos::perfil_de_rede(
+        painel,
+        &token,
+        criar,
+        rede,
+        &s_rede,
+        o.um("finalidade").unwrap_or(""),
+        o.um("saida"),
     )?;
-    let token = r.texto_ou("token", "").to_string();
-    let mut pedido = vec![
-        ("nome", Json::texto_de(&rede)),
-        ("senha", Json::texto_de(s_rede)),
-    ];
-    if criar {
-        pedido.push((
-            "finalidade",
-            Json::texto_de(opcao(args, "--finalidade").unwrap_or_default()),
-        ));
-    }
-    let rota = if criar {
-        "/api/redes"
-    } else {
-        "/api/redes/entrar"
-    };
-    let r = chamar(&painel, rota, Some(&token), &Json::objeto(pedido))?;
-    let arquivo =
-        opcao(args, "--saida").unwrap_or_else(|| r.texto_ou("arquivo", "phxvpn.ovpn").to_string());
-    std::fs::write(&arquivo, r.texto_ou("perfil", ""))
-        .map_err(|e| format!("gravar {arquivo}: {e}"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&arquivo, std::fs::Permissions::from_mode(0o600));
-    }
     println!("perfil gravado em {arquivo} (contem a sua chave privada: guarde-o como senha)");
-    if bandeira(args, "--conectar") {
+    if o.tem("conectar") {
         let bin = supervisor::achar_no_path("openvpn").ok_or("openvpn nao esta no PATH")?;
         let st = std::process::Command::new(bin)
             .arg("--config")
@@ -182,154 +161,42 @@ fn cmd_rede(args: &[String], criar: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// POST JSON ao painel, por HTTP/1.1 cru. So `http://` -- o painel nao fala TLS.
-fn chamar(base: &str, rota: &str, token: Option<&str>, corpo: &Json) -> Result<Json, String> {
-    let hostporta = base
-        .strip_prefix("http://")
-        .ok_or("o endereco do painel tem de comecar com http://")?
-        .trim_end_matches('/');
-    let mut fio = TcpStream::connect(hostporta).map_err(|e| format!("painel {hostporta}: {e}"))?;
-    let corpo = corpo.escrever();
-    let auth = token
-        .map(|t| format!("Authorization: Bearer {t}\r\n"))
-        .unwrap_or_default();
-    write!(
-        fio,
-        "POST {rota} HTTP/1.1\r\nHost: {hostporta}\r\nContent-Type: application/json\r\n{auth}\
-Content-Length: {}\r\nConnection: close\r\n\r\n{corpo}",
-        corpo.len()
-    )
-    .map_err(|e| e.to_string())?;
-    let mut resposta = String::new();
-    fio.take(4 * 1024 * 1024)
-        .read_to_string(&mut resposta)
-        .map_err(|e| e.to_string())?;
-    let (cab, corpo) = resposta
-        .split_once("\r\n\r\n")
-        .ok_or("resposta do painel cortada")?;
-    let status: u16 = cab
-        .split(' ')
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .ok_or("resposta do painel sem status")?;
-    let j = Json::analisar(corpo).map_err(|e| format!("resposta do painel: {e}"))?;
-    if status != 200 {
-        return Err(j.texto_ou("erro", "erro desconhecido").to_string());
-    }
-    Ok(j)
-}
-
-fn opcoes(args: &[String], nome: &str) -> Vec<String> {
-    args.windows(2)
-        .filter(|w| w[0] == nome)
-        .map(|w| w[1].clone())
-        .collect()
-}
-
-/// Le a identidade P2P do arquivo, ou cria uma nova (0600, criada ja com a
-/// permissao -- sem a janela de um `chmod` depois).
-fn identidade(caminho: &str) -> Result<[u8; 32], String> {
-    use phxsql_core::hash::{de_hex, para_hex};
-    if let Ok(t) = std::fs::read_to_string(caminho) {
-        return de_hex(t.trim())
-            .and_then(|b| <[u8; 32]>::try_from(b).ok())
-            .ok_or_else(|| format!("{caminho}: chave P2P torta"));
-    }
-    let k = phxsql_core::x25519::gerar_privada();
-    let mut o = std::fs::OpenOptions::new();
-    o.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        o.mode(0o600);
-    }
-    let mut f = o
-        .open(caminho)
-        .map_err(|e| format!("criar {caminho}: {e}"))?;
-    writeln!(f, "{}", para_hex(&k)).map_err(|e| e.to_string())?;
-    Ok(k)
-}
-
 fn cmd_p2p(args: &[String]) -> Result<(), String> {
-    use phxsql_core::hash::para_hex;
-    let arquivo = opcao(args, "--chave")
-        .or_else(|| opcao(args, "--arquivo"))
-        .unwrap_or_else(|| "p2p.chave".into());
+    let o = Opcoes::de_args(&args[args.len().min(1)..], &[]);
+    let arquivo = o.um("chave").or(o.um("arquivo")).unwrap_or("p2p.chave");
     match args.first().map(String::as_str) {
         Some("chave") => {
-            let k = identidade(&arquivo)?;
-            println!("{}", para_hex(&phxsql_core::x25519::chave_publica(&k)));
+            println!(
+                "{}",
+                comandos::chave_publica_hex(&comandos::identidade(arquivo)?)
+            );
             Ok(())
         }
-        Some("ligar") => p2p_ligar(args, &arquivo),
+        Some("ligar") => p2p_ligar(&o),
         _ => Err("use: phxvpn p2p chave | phxvpn p2p ligar ... (veja phxvpn ajuda)".into()),
     }
 }
 
 #[cfg(target_os = "linux")]
-fn p2p_ligar(args: &[String], arquivo: &str) -> Result<(), String> {
-    use phxsql_core::hash::para_hex;
-    use phxvpn::p2p;
-    let privada = identidade(arquivo)?;
-    let rede = opcao(args, "--rede").ok_or("informe --rede")?;
-    let (ip, prefixo) = opcao(args, "--ip")
-        .ok_or("informe --ip (ex.: 10.78.0.1/24)")?
-        .split_once('/')
-        .map(|(a, b)| (a.to_string(), b.to_string()))
-        .ok_or("--ip precisa do prefixo, ex.: 10.78.0.1/24")?;
-    let ip: std::net::Ipv4Addr = ip.parse().map_err(|_| "IP virtual invalido")?;
-    let prefixo: u8 = prefixo
-        .parse()
-        .ok()
-        .filter(|p| *p <= 32)
-        .ok_or("prefixo invalido")?;
-    let porta = opcao(args, "--porta").unwrap_or_else(|| "51820".into());
-    let pares = opcoes(args, "--par")
-        .iter()
-        .map(|t| p2p::ler_par(t))
-        .collect::<Result<Vec<_>, _>>()?;
-    if pares.is_empty() {
-        return Err("informe ao menos um --par".into());
-    }
+fn p2p_ligar(o: &Opcoes) -> Result<(), String> {
     let senha_rede = senha("PHXVPN_SENHA_REDE", "senha da rede")?;
     // A senha sai do ambiente assim que foi lida: nao fica em /proc/<pid>/environ.
     std::env::remove_var("PHXVPN_SENHA_REDE");
-    let psk = p2p::psk_da_rede(&rede, &senha_rede, p2p::ITERACOES_PSK);
-    let udp = std::net::UdpSocket::bind(format!("0.0.0.0:{porta}"))
-        .map_err(|e| format!("porta UDP {porta}: {e}"))?;
-    let interface = opcao(args, "--interface").unwrap_or_else(|| "phx0".into());
-    let tun = phxvpn::tun::Tun::abrir(&interface, ip, prefixo, p2p::MTU)?;
-    let modo = p2p::Modo::de_texto(&opcao(args, "--modo").unwrap_or_else(|| "direto".into()))?;
-    let repasse = match opcao(args, "--repasse") {
-        Some(t) => {
-            let (chave, end) = t
-                .split_once('@')
-                .ok_or("--repasse no formato CHAVE@HOST:PORTA")?;
-            let par = p2p::ler_par(&format!("{chave}@0.0.0.0@{end}"))?;
-            Some(p2p::RepasseCfg {
-                endereco: par.endereco.ok_or("--repasse sem endereco")?,
-                publica: par.publica,
-            })
-        }
-        None => None,
-    };
-    let no = Arc::new(p2p::No::novo(privada, psk, ip, udp, pares).com_repasse(modo, repasse)?);
-    eprintln!(
-        "phxvpn: P2P no ar -- {interface} {ip}/{prefixo}, UDP {porta}, modo {modo:?}, chave {}",
-        para_hex(&no.publica())
-    );
-    p2p::rodar(no, tun)
+    let (no, tun, resumo) = comandos::p2p_preparar(o, &senha_rede)?;
+    eprintln!("phxvpn: {resumo}");
+    phxvpn::p2p::rodar(no, tun)
 }
 
 #[cfg(not(target_os = "linux"))]
-fn p2p_ligar(_args: &[String], _arquivo: &str) -> Result<(), String> {
-    Err("o modo P2P ainda so roda no Linux (Windows: driver do OpenVPN, em pesquisa)".into())
+fn p2p_ligar(_o: &Opcoes) -> Result<(), String> {
+    Err("o modo P2P ainda so roda no Linux (Windows: TAP-Windows6, em escrita)".into())
 }
 
 fn cmd_repasse(args: &[String]) -> Result<(), String> {
     use phxsql_core::hash::{de_hex, para_hex};
     use phxvpn::repasse::Repasse;
-    let privada = identidade(&opcao(args, "--chave").unwrap_or_else(|| "repasse.chave".into()))?;
+    let privada =
+        comandos::identidade(&opcao(args, "--chave").unwrap_or_else(|| "repasse.chave".into()))?;
     let permitidas = match opcao(args, "--permitir") {
         Some(arq) => {
             let texto = std::fs::read_to_string(&arq).map_err(|e| format!("{arq}: {e}"))?;

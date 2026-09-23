@@ -28,7 +28,9 @@ use phxsql_core::senha::bytes_aleatorios;
 use phxsql_core::x25519;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
-use std::sync::{Arc, Mutex};
+#[cfg(target_os = "linux")]
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// MTU da placa: 1500 da rede menos IPv4 (20) + UDP (8) + cabecalho (16) +
@@ -537,6 +539,35 @@ impl No {
 
     pub fn ip(&self) -> Ipv4Addr {
         self.ip
+    }
+
+    /// Uma linha por par, para o console: IP, caminho, idade da sessao e o
+    /// comeco da chave publica.
+    pub fn situacao(&self) -> Vec<[String; 4]> {
+        let e = self.estado.lock().expect("estado");
+        e.pares
+            .iter()
+            .map(|p| {
+                let via = match p.via {
+                    Some(Via::Direta(a)) => format!("direto {a}"),
+                    Some(Via::Repasse) => "repasse".into(),
+                    None => "-".into(),
+                };
+                let sessao = match &p.atual {
+                    Some(s) if s.confirmada && !s.expirada() => {
+                        format!("{} s", s.idade().as_secs())
+                    }
+                    Some(_) => "abrindo".into(),
+                    None => "sem sessao".into(),
+                };
+                [
+                    p.ip.to_string(),
+                    via,
+                    sessao,
+                    phxsql_core::hash::para_hex(&p.publica[..6]),
+                ]
+            })
+            .collect()
     }
 }
 

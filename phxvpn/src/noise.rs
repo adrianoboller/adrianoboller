@@ -199,79 +199,79 @@ impl Chamada {
     }
 }
 
-#[cfg(test)]
-mod testes {
-    use super::*;
+/// Confere a composicao inteira contra o vetor oficial de interoperabilidade
+/// (cacophony, `vectors/cacophony.txt`, `Noise_IKpsk2_25519_ChaChaPoly_SHA256`):
+/// as duas mensagens do aperto, o hash da transcricao e a primeira mensagem de
+/// transporte tem de sair BYTE A BYTE iguais.
+///
+/// Publico de proposito: o `autoteste` do console roda isto na maquina do
+/// cliente -- o binario que ele tem prova que a cifra e a da norma.
+pub fn autoteste() -> R<()> {
     use phxsql_core::cifra::{abrir, selar};
     use phxsql_core::fio::nonce_do_contador;
     use phxsql_core::hash::{de_hex, para_hex};
+    let hx = |s: &str| de_hex(s).ok_or_else(|| "vetor com hex torto".to_string());
+    let h32 = |s: &str| -> R<[u8; 32]> { para32(&hx(s)?) };
+    let igual = |o_que: &str, veio: &[u8], esperado: &str| -> R<()> {
+        if para_hex(veio) == esperado {
+            Ok(())
+        } else {
+            Err(format!("vetor cacophony: {o_que} nao confere"))
+        }
+    };
+    let prologo = hx("4a6f686e2047616c74")?;
+    let psk = h32("54686973206973206d7920417573747269616e20706572737065637469766521")?;
+    let i_s = h32("e61ef9919cde45dd5f82166404bd08e38bceb5dfdfded0a34c8df7ed542214d1")?;
+    let i_e = h32("893e28b9dc6ca8d611ab664754b8ceb7bac5117349a4439a6b0569da977c464a")?;
+    let r_s = h32("4a3acbfdb163dec651dfa3194dece676d437029c62a408b4c5ea9114246e4893")?;
+    let r_e = h32("bbdb4cdbd309f1a1f2e1456967fe288cadd6f712d65dc7b7793d5e63da6b375b")?;
+    let r_pub = x25519::chave_publica(&r_s);
+    igual(
+        "chave publica",
+        &r_pub,
+        "31e0303fd6418d2f8c0e78b91f22e8caed0fbe48656dcf4767e4834f701b8f62",
+    )?;
+    let (ini, m1) = Iniciador::comecar_com(
+        &prologo,
+        i_s,
+        i_e,
+        &r_pub,
+        psk,
+        &hx("4c756477696720766f6e204d69736573")?,
+    )?;
+    igual("mensagem 1", &m1, "ca35def5ae56cec33dc2036731ab14896bc4c75dbb07a61f879f8e3afa4c79442ec9b09893d0f510791784c10cbc959f25b1766e0def6e301d14fbca1c7790ac829b8b3674f5f649a5f0e98479662cbfbf2b2c47cd4b09fcd266cd29d7cb675f1808849707847840f6d178ec4d3733aa")?;
+    let chamada = ler_chamada(&prologo, &r_s, &m1)?;
+    let (sr, m2) = chamada.responder_com(r_e, psk, &hx("4d757272617920526f746862617264")?)?;
+    igual("mensagem 2", &m2, "95ebc60d2b1fa672c1f46a8aa265ef51bfe38e7ccb39ec5be34069f1448088439a1b3cebf680b2c74217fcb5eba4ff58a9468cd90c4aca6194f57479b379a7")?;
+    let (si, _) = ini.terminar(&m2)?;
+    let hh = "8310f86394dc0dabb40beb8210031556db4403ab1202db7034c526232147a700";
+    igual("transcricao (iniciador)", &si.transcricao, hh)?;
+    igual("transcricao (respondedor)", &sr.transcricao, hh)?;
+    let (c, tag) = selar(
+        &si.envio,
+        &nonce_do_contador(0),
+        &[],
+        &hx("462e20412e20486179656b")?,
+    );
+    let mut m3 = c.clone();
+    m3.extend_from_slice(&tag);
+    igual(
+        "transporte",
+        &m3,
+        "a8fde7a0accec190cd306c5950d4fd8e04a205ec288aa747d8b347",
+    )?;
+    abrir(&sr.recepcao, &nonce_do_contador(0), &[], &c, &tag)
+        .map(|_| ())
+        .map_err(|_| "vetor cacophony: o respondedor nao abre o transporte".to_string())
+}
 
-    fn h32(s: &str) -> [u8; 32] {
-        de_hex(s).unwrap().try_into().unwrap()
-    }
+#[cfg(test)]
+mod testes {
+    use super::*;
 
-    /// Vetor oficial de interoperabilidade (cacophony, `vectors/cacophony.txt`,
-    /// protocolo `Noise_IKpsk2_25519_ChaChaPoly_SHA256`): as duas mensagens do
-    /// aperto, o hash da transcricao e as duas primeiras de transporte tem de
-    /// sair BYTE A BYTE iguais.
     #[test]
     fn ikpsk2_confere_contra_o_vetor_cacophony() {
-        let prologo = de_hex("4a6f686e2047616c74").unwrap();
-        let psk = h32("54686973206973206d7920417573747269616e20706572737065637469766521");
-        let i_s = h32("e61ef9919cde45dd5f82166404bd08e38bceb5dfdfded0a34c8df7ed542214d1");
-        let i_e = h32("893e28b9dc6ca8d611ab664754b8ceb7bac5117349a4439a6b0569da977c464a");
-        let r_s = h32("4a3acbfdb163dec651dfa3194dece676d437029c62a408b4c5ea9114246e4893");
-        let r_e = h32("bbdb4cdbd309f1a1f2e1456967fe288cadd6f712d65dc7b7793d5e63da6b375b");
-        let r_pub = x25519::chave_publica(&r_s);
-        assert_eq!(
-            para_hex(&r_pub),
-            "31e0303fd6418d2f8c0e78b91f22e8caed0fbe48656dcf4767e4834f701b8f62"
-        );
-
-        let (ini, m1) = Iniciador::comecar_com(
-            &prologo,
-            i_s,
-            i_e,
-            &r_pub,
-            psk,
-            &de_hex("4c756477696720766f6e204d69736573").unwrap(),
-        )
-        .unwrap();
-        assert_eq!(
-            para_hex(&m1),
-            "ca35def5ae56cec33dc2036731ab14896bc4c75dbb07a61f879f8e3afa4c79442ec9b09893d0f510791784c10cbc959f25b1766e0def6e301d14fbca1c7790ac829b8b3674f5f649a5f0e98479662cbfbf2b2c47cd4b09fcd266cd29d7cb675f1808849707847840f6d178ec4d3733aa"
-        );
-
-        let chamada = ler_chamada(&prologo, &r_s, &m1).unwrap();
-        assert_eq!(chamada.estatica_dele, x25519::chave_publica(&i_s));
-        assert_eq!(para_hex(&chamada.carga), "4c756477696720766f6e204d69736573");
-        let (sr, m2) = chamada
-            .responder_com(r_e, psk, &de_hex("4d757272617920526f746862617264").unwrap())
-            .unwrap();
-        assert_eq!(
-            para_hex(&m2),
-            "95ebc60d2b1fa672c1f46a8aa265ef51bfe38e7ccb39ec5be34069f1448088439a1b3cebf680b2c74217fcb5eba4ff58a9468cd90c4aca6194f57479b379a7"
-        );
-        let (si, carga) = ini.terminar(&m2).unwrap();
-        assert_eq!(para_hex(&carga), "4d757272617920526f746862617264");
-        let hh = "8310f86394dc0dabb40beb8210031556db4403ab1202db7034c526232147a700";
-        assert_eq!(para_hex(&si.transcricao), hh);
-        assert_eq!(para_hex(&sr.transcricao), hh);
-
-        // Transporte: mensagem 3 (iniciador -> respondedor), nonce 0, sem aad.
-        let (c, tag) = selar(
-            &si.envio,
-            &nonce_do_contador(0),
-            &[],
-            &de_hex("462e20412e20486179656b").unwrap(),
-        );
-        let mut m3 = c.clone();
-        m3.extend_from_slice(&tag);
-        assert_eq!(
-            para_hex(&m3),
-            "a8fde7a0accec190cd306c5950d4fd8e04a205ec288aa747d8b347"
-        );
-        assert!(abrir(&sr.recepcao, &nonce_do_contador(0), &[], &c, &tag).is_ok());
+        autoteste().unwrap();
     }
 
     #[test]

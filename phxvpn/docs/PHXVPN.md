@@ -24,6 +24,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: placa virtual TUN no Linux por FFI ao `ioctl` — sem `iproute2`
 - [x] P2P: `phxvpn p2p chave` e `phxvpn p2p ligar` — **ping entre dois computadores pelo túnel, provado**
 - [x] P2P: servidor intermediário (`phxvpn repasse`) e modos `direto` / `repasse` / `auto` — provado numa topologia de CGNAT
+- [x] Console `phxvpncmd` (ou `phxvpn cmd`), estilo prompt do MS-DOS: modos Painel, P2P e Ferramentas; lote por arquivo (`/entrada:`) e linha única (`/comando:`)
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 
 ### Falta
@@ -64,6 +65,45 @@ Na primeira medição do auto eu li o `icmp_seq=1` como «respondeu no primeiro
 segundo». Não tinha respondido: o ping imprime a sequência original da
 resposta que chega atrasada, e o nó guarda os pacotes na fila até o aperto
 fechar. Medido com `ping -D` e o relógio de quando o nó foi ligado, são 10,5 s.
+
+## Console `phxvpncmd`
+
+No molde do `vpncmd` do SoftEther: escolhe-se o modo e cada modo tem seus
+comandos, com parâmetros no jeito do DOS (`/nome:valor`, sem diferença de
+caixa).
+
+```text
+phxvpncmd                                      menu: 1 Painel, 2 P2P, 3 Ferramentas
+phxvpncmd /modo:painel /painel:http://host:8470
+phxvpncmd /modo:ferramentas /comando:"AUTOTESTE"      uma linha e sai
+phxvpncmd /modo:painel /entrada:rotina.txt            lote: o .bat do phxvpn
+```
+
+| Modo | Comandos |
+|---|---|
+| Painel | `CONECTAR`, `LOGIN`, `LOGOUT`, `ESTADO`, `REDES`, `MEMBROS`, `CRIARREDE`, `ENTRARREDE`, `SAIRREDE`, `USUARIOS`, `USUARIONOVO`, `SERVIDORES`, `SERVIDORNOVO`, `DESTRANCAR` |
+| P2P | `CHAVE`, `LIGAR` (túnel em segundo plano, volta ao prompt), `PARES` |
+| Ferramentas | `AUTOTESTE` (Noise contra vetor cacophony, SCRAM contra RFC 7677, cofre, certificado), `BANCADA`, `GERARCHAVE` |
+| Todos | `MODO`, `AJUDA`/`?`, `CLS`, `VERSAO`, `SAIR` |
+
+**Um motor só:** o console não tem regra própria. Cada comando chama
+`comandos.rs`, o mesmo código do `phxvpn` de linha de comando, e as duas
+portas diferem só em como leem as opções (`--nome valor` × `/nome:valor`).
+O lote **para no primeiro erro** com arquivo e linha (`rotina.txt:2: ...`),
+e o código de saída é 1: lote que segue depois de falha faz estrago.
+
+**Limites (os mesmos do `phxsqlcmd`):** sem histórico, sem setas, e a senha
+digitada aparece na tela. Esconder o eco pede o terminal em modo cru, que é
+uma crate. Para não digitar senha: `PHXVPN_SENHA`, `PHXVPN_SENHA_REDE`,
+`PHXVPN_SENHA_MESTRE`, `PHXVPN_SENHA_NOVA`.
+
+**Prova (24/09/2026):** rotina de implantação por lote contra o painel real
+com PostgreSQL (login, estado, usuário novo, rede nova com perfil em 0600,
+usuários, redes, membros, servidor novo), código de saída 0; lote com erro
+parou na linha 2 com código 1; `LIGAR` + `PARES` pelo console em topologia
+de CGNAT pelo repasse, com ping 3/3. `BANCADA` nesta máquina: cifra a 2.582
+Mbit/s num núcleo e aperto completo em 1,14 ms. Compila para Windows
+(`cargo check --target x86_64-pc-windows-gnu`, 0 aviso); não rodado lá.
 
 ## Comparativo
 

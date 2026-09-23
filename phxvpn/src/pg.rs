@@ -428,9 +428,33 @@ impl Scram {
     }
 }
 
+/// Confere o SCRAM contra o vetor da RFC 7677 secao 3 (para o `autoteste`).
+pub fn autoteste() -> R<()> {
+    let mut s = Scram {
+        nonce_cliente: "rOprNGfwEbeRWgbNEkqO".into(),
+        primeira_nua: "n=user,r=rOprNGfwEbeRWgbNEkqO".into(),
+        assinatura_servidor: None,
+    };
+    let fim = s.segunda_mensagem(
+        "pencil",
+        b"r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096",
+    )?;
+    if fim
+        != "c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ="
+    {
+        return Err("vetor RFC 7677: prova do cliente nao confere".into());
+    }
+    s.conferir_servidor(b"v=6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4=")
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn autoteste_do_scram_passa() {
+        autoteste().unwrap();
+    }
 
     /// Vetor da RFC 7677 secao 3 (usuario "user", senha "pencil"): a prova do
     /// cliente e a assinatura do servidor tem de sair identicas as da norma.

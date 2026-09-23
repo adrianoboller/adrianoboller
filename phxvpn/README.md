@@ -23,6 +23,15 @@ Quem entra numa rede pela linha de comando:
 phxvpn entrar --painel http://painel:8470 --usuario ana --rede Matriz --conectar
 ```
 
+Ou pelo console, no estilo do prompt do MS-DOS (modos Painel, P2P e
+Ferramentas; aceita arquivo de lote):
+
+```bash
+phxvpncmd /modo:painel /painel:http://painel:8470
+phxvpn Painel> LOGIN admin
+phxvpn Painel admin> CRIARREDE "Filial Sul" /FINALIDADE:ERP
+```
+
 A instalação pede: nome da empresa, finalidade, responsável, e-mail, telefone,
 usuário e senha admin, **senha mestre criptográfica**, nome/IP/DNS do servidor
 e, opcional, o certificado digital da empresa (PEM).
