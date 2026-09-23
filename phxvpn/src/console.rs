@@ -111,6 +111,12 @@ Modo Painel (gerir o servidor):
 const AJUDA_P2P: &str = "\
 Modo P2P (este computador):
   CHAVE [/ARQUIVO:p2p.chave]            cria/mostra a identidade P2P
+  CRIAR /REDE:x [/IP:10.78.0.1/24] [/MODO:auto] [/REPASSE:CHAVE@HOST:PORTA]
+                                        a rede nasce aqui (arquivo x.p2p)
+  CONVIDAR /REDE:x [/ENDERECO:meu_host:porta] [/VALIDADE:24h]
+                                        codigo do convite (senha: PHXVPN_SENHA_REDE)
+  ENTRAR <codigo>                       aceita um convite e grava a rede aqui
+  LIGAR /REDE:x                         com o arquivo da rede, basta o nome; sem ele:
   LIGAR /REDE:x /IP:10.78.0.1/24 /PAR:CHAVE@IP[@HOST:PORTA] [/PAR:...]
         [/MODO:direto|repasse|auto] [/REPASSE:CHAVE@HOST:PORTA]
         [/PORTA:51820] [/INTERFACE:phx0] [/CHAVE:p2p.chave]

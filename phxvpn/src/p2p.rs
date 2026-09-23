@@ -21,6 +21,7 @@
 //! as proximas pecas; hoje a lista de pares vem da linha de comando.
 
 use crate::noise;
+use crate::rede_p2p::{self, Rede};
 use crate::repasse;
 use crate::transporte::{self, Sessao};
 use phxsql_core::hash::pbkdf2_sha256;
@@ -117,6 +118,17 @@ impl Modo {
     }
 }
 
+/// Mensagem de controle dentro do tunel: comeca com 0x00, que nenhum pacote
+/// IP tem no primeiro byte (a versao ocupa os 4 bits de cima). `P` = a lista
+/// de pares que quem manda conhece.
+const CONTROLE: u8 = 0x00;
+const CONTROLE_PARES: u8 = b'P';
+/// A lista de pares se reenvia a cada tanto (e logo que a sessao abre).
+const REENVIAR_PARES: Duration = Duration::from_secs(30);
+/// Teto de pares aprendidos pela malha (lista de membro malicioso nao enche
+/// a memoria).
+const TETO_PARES: usize = 1024;
+
 /// Tentativas diretas sem resposta antes de o modo `auto` ir ao repasse.
 const TENTATIVAS_DIRETAS: u8 = 2;
 
@@ -141,6 +153,8 @@ struct Par {
     ultimo_envio: Instant,
     /// Desde quando mandamos dado sem ouvir nada autenticado do par.
     sem_resposta_desde: Option<Instant>,
+    /// Quando a lista de pares foi mandada a este par por ultimo.
+    ultimo_rol: Option<Instant>,
 }
 
 struct Estado {
@@ -158,6 +172,16 @@ pub struct No {
     modo: Modo,
     repasse: Option<RepasseCfg>,
     ultimo_registro: Mutex<Option<Instant>>,
+    /// O arquivo da rede (convites abertos, pares) e onde grava-lo. Sem ele
+    /// (pares so pela linha de comando), nao ha admissao nem persistencia.
+    rede: Mutex<Option<(Rede, String)>>,
+    /// Ficha do convite que este no apresenta ate ser admitido.
+    ficha_de_entrada: Mutex<Option<[u8; 16]>>,
+    /// Fichas que este no ja consumiu. Toda releitura do disco as filtra:
+    /// sem isso, o `persistir` relia o convite ainda no disco e RESSUSCITAVA
+    /// a ficha usada -- achado na prova com quatro nos, em que o segundo uso
+    /// so foi barrado por acaso (o IP ja estava ocupado).
+    fichas_usadas: Mutex<Vec<[u8; 16]>>,
 }
 
 fn indice_novo(indices: &HashMap<u32, usize>) -> u32 {
@@ -204,6 +228,7 @@ impl No {
                 ultimo_carimbo: [0; 12],
                 ultimo_envio: agora,
                 sem_resposta_desde: None,
+                ultimo_rol: None,
             })
             .collect();
         No {
@@ -218,7 +243,152 @@ impl No {
             modo: Modo::Direto,
             repasse: None,
             ultimo_registro: Mutex::new(None),
+            rede: Mutex::new(None),
+            ficha_de_entrada: Mutex::new(None),
+            fichas_usadas: Mutex::new(Vec::new()),
         }
+    }
+
+    /// Liga o no ao arquivo da rede: admite quem traz ficha de convite,
+    /// apresenta a propria ficha (se veio de um convite) e grava o que
+    /// aprender.
+    pub fn com_rede(self, rede: Rede, caminho: String) -> No {
+        *self.ficha_de_entrada.lock().expect("ficha") = rede.ficha_de_entrada;
+        *self.rede.lock().expect("rede") = Some((rede, caminho));
+        self
+    }
+
+    /// Regrava o arquivo da rede com os pares que o no conhece agora.
+    ///
+    /// Os CONVITES sao do disco, nao da memoria: `p2p convidar` roda em outro
+    /// processo com a rede ligada, e regravar a copia de memoria apagava o
+    /// convite recem-feito -- defeito achado na prova com quatro nos. Entao
+    /// rele o arquivo e troca so os pares e a ficha de entrada.
+    /// Os convites do disco, sem as fichas que este no ja consumiu.
+    fn convites_do_disco(&self, caminho: &str) -> Option<Vec<rede_p2p::ConviteAberto>> {
+        let usadas = self.fichas_usadas.lock().expect("fichas");
+        Rede::ler(caminho).ok().map(|d| {
+            d.convites
+                .into_iter()
+                .filter(|c| !usadas.contains(&c.ficha))
+                .collect()
+        })
+    }
+
+    fn persistir(&self, e: &Estado) {
+        let mut r = self.rede.lock().expect("rede");
+        if let Some((rede, caminho)) = r.as_mut() {
+            if let Some(c) = self.convites_do_disco(caminho) {
+                rede.convites = c;
+            }
+            rede.pares = e
+                .pares
+                .iter()
+                .map(|p| rede_p2p::Par {
+                    chave: p.publica,
+                    ip: p.ip,
+                    endereco: p.endereco.map(|a| a.to_string()),
+                })
+                .collect();
+            rede.ficha_de_entrada = *self.ficha_de_entrada.lock().expect("ficha");
+            if let Err(x) = rede.gravar(caminho) {
+                eprintln!("phxvpn: {x}");
+            }
+        }
+    }
+
+    fn par_novo(publica: [u8; 32], ip: Ipv4Addr, endereco: Option<SocketAddr>) -> Par {
+        Par {
+            publica,
+            ip,
+            endereco,
+            via: endereco.map(Via::Direta),
+            tentativas_diretas: 0,
+            atual: None,
+            anterior: None,
+            pendente: None,
+            fila: Vec::new(),
+            ultimo_carimbo: [0; 12],
+            ultimo_envio: Instant::now(),
+            sem_resposta_desde: None,
+            ultimo_rol: None,
+        }
+    }
+
+    /// A malha mudou (par novo admitido ou aprendido): a lista vai a todos no
+    /// proximo tique, em vez de esperar o reenvio de 30 s. Medido: sem isso,
+    /// o terceiro membro ficava ate 30 s sem ser reconhecido pelo segundo,
+    /// que recusava o aperto dele como chave desconhecida.
+    fn avisar_malha(e: &mut Estado) {
+        for p in &mut e.pares {
+            p.ultimo_rol = None;
+        }
+    }
+
+    /// A lista de pares que este no conhece, para mandar a um par.
+    fn rol_para(&self, e: &Estado, destino: usize) -> Vec<u8> {
+        let mut lista: Vec<rede_p2p::Par> = e
+            .pares
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != destino)
+            .map(|(_, p)| rede_p2p::Par {
+                chave: p.publica,
+                ip: p.ip,
+                endereco: p.endereco.map(|a| a.to_string()),
+            })
+            .collect();
+        // Este no tambem entra: quem so conhece o anfitriao pelo endereco do
+        // convite aprende o IP e a chave certos dele por aqui.
+        lista.push(rede_p2p::Par {
+            chave: self.publica(),
+            ip: self.ip,
+            endereco: None,
+        });
+        let mut m = vec![CONTROLE, CONTROLE_PARES];
+        m.extend_from_slice(rede_p2p::pares_json(&lista).escrever().as_bytes());
+        m
+    }
+
+    /// Recebeu a lista de um par autenticado: acrescenta quem nao conhecia.
+    /// Confianca transitiva: quem ja e membro apresenta outros -- e cada um
+    /// deles ainda precisa da senha da rede (PSK) para fechar aperto.
+    fn aprender_rol(&self, e: &mut Estado, corpo: &[u8]) -> bool {
+        let Ok(j) = std::str::from_utf8(corpo)
+            .map_err(|_| ())
+            .and_then(|t| phxsql_core::json::Json::analisar(t).map_err(|_| ()))
+        else {
+            return false;
+        };
+        let mut mudou = false;
+        for item in j.lista().unwrap_or_default() {
+            let Ok(p) = rede_p2p::par_de_json(item) else {
+                continue;
+            };
+            if p.chave == self.publica() || p.ip == self.ip {
+                continue;
+            }
+            let endereco = p.endereco.as_deref().and_then(|a| a.parse().ok());
+            match e.pares.iter_mut().find(|x| x.publica == p.chave) {
+                Some(x) => {
+                    if x.endereco.is_none() && endereco.is_some() {
+                        x.endereco = endereco;
+                        if x.via.is_none() {
+                            x.via = endereco.map(Via::Direta);
+                        }
+                        mudou = true;
+                    }
+                }
+                None => {
+                    // IP ja usado por outra chave: recusa, nao sobrescreve.
+                    if e.pares.len() < TETO_PARES && !e.pares.iter().any(|x| x.ip == p.ip) {
+                        e.pares.push(No::par_novo(p.chave, p.ip, endereco));
+                        mudou = true;
+                    }
+                }
+            }
+        }
+        mudou
     }
 
     /// Liga o servidor intermediario e escolhe o modo.
@@ -280,13 +450,13 @@ impl No {
         };
         let indice = indice_novo(&e.indices);
         let publica = e.pares[i].publica;
-        let Ok((ini, m1)) = noise::Iniciador::comecar(
-            noise::PROLOGO,
-            self.privada,
-            &publica,
-            self.psk,
-            &transporte::carimbo_agora(),
-        ) else {
+        let mut carga = transporte::carimbo_agora().to_vec();
+        if let Some(f) = *self.ficha_de_entrada.lock().expect("ficha") {
+            carga.extend_from_slice(&f);
+        }
+        let Ok((ini, m1)) =
+            noise::Iniciador::comecar(noise::PROLOGO, self.privada, &publica, self.psk, &carga)
+        else {
             return;
         };
         if let Some((velho, _, _)) = e.pares[i].pendente.take() {
@@ -367,19 +537,55 @@ impl No {
             return;
         };
         let mut e = self.estado.lock().expect("estado");
-        // Admissao: so quem esta na lista.
-        let Some(i) = e
+        // Admissao: quem esta na lista, ou quem traz a ficha de um convite
+        // em aberto (a ficha so sai de dentro do convite, que so abre com a
+        // senha da rede). A ficha morre ao ser usada.
+        let i = match e
             .pares
             .iter()
             .position(|p| p.publica == chamada.estatica_dele)
-        else {
-            return;
+        {
+            Some(i) => i,
+            None => {
+                let Ok(ficha) = <[u8; 16]>::try_from(chamada.carga.get(12..28).unwrap_or_default())
+                else {
+                    return;
+                };
+                let ip = {
+                    let mut r = self.rede.lock().expect("rede");
+                    let Some((rede, caminho)) = r.as_mut() else {
+                        return;
+                    };
+                    // O convite pode ter sido feito depois de o no ligar:
+                    // a ficha se confere contra o DISCO.
+                    if let Some(c) = self.convites_do_disco(caminho) {
+                        rede.convites = c;
+                    }
+                    let Some(ip) = rede.usar_ficha(&ficha) else {
+                        return;
+                    };
+                    self.fichas_usadas.lock().expect("fichas").push(ficha);
+                    ip
+                };
+                if e.pares.iter().any(|p| p.ip == ip) {
+                    return;
+                }
+                let endereco = match via {
+                    Via::Direta(a) => Some(a),
+                    Via::Repasse => None,
+                };
+                e.pares
+                    .push(No::par_novo(chamada.estatica_dele, ip, endereco));
+                No::avisar_malha(&mut e);
+                self.persistir(&e);
+                e.pares.len() - 1
+            }
         };
         if declarada.is_some_and(|k| k != chamada.estatica_dele) {
             return;
         }
         // Repeticao: um INICIO gravado e reenviado tem carimbo velho.
-        let Ok(carimbo) = <[u8; 12]>::try_from(chamada.carga.as_slice()) else {
+        let Ok(carimbo) = <[u8; 12]>::try_from(chamada.carga.get(..12).unwrap_or_default()) else {
             return;
         };
         if carimbo <= e.pares[i].ultimo_carimbo {
@@ -435,12 +641,24 @@ impl No {
         e.pares[i].sem_resposta_desde = None;
         // Esvazia a fila; sem nada na fila, um «manter vivo» confirma a
         // sessao do outro lado, que so fala depois de ouvir.
+        // Admitido: a ficha do convite ja cumpriu o papel.
+        let ficha_usada = self
+            .ficha_de_entrada
+            .lock()
+            .expect("ficha")
+            .take()
+            .is_some();
+        if ficha_usada {
+            self.persistir(&e);
+        }
         let fila = std::mem::take(&mut e.pares[i].fila);
+        let rol = self.rol_para(&e, i);
+        e.pares[i].ultimo_rol = Some(Instant::now());
         let s = e.pares[i].atual.as_mut().expect("acabou de entrar");
         let mut saidas: Vec<Vec<u8>> = fila.iter().filter_map(|p| s.selar(p).ok()).collect();
-        if saidas.is_empty() {
-            saidas.extend(s.selar(&[]).ok());
-        }
+        // A lista de pares vai logo: e ela que confirma a sessao do outro
+        // lado (no lugar do «manter vivo») e o apresenta ao resto da malha.
+        saidas.extend(s.selar(&rol).ok());
         e.pares[i].ultimo_envio = Instant::now();
         let chave = e.pares[i].publica;
         drop(e);
@@ -476,6 +694,25 @@ impl No {
             }
         }
         let (ip_do_par, chave) = (par.ip, par.publica);
+        // Sessao nova do lado de quem respondeu: manda a lista tambem.
+        if e.pares[i].ultimo_rol.is_none() {
+            let rol = self.rol_para(&e, i);
+            if let Some(s) = e.pares[i].atual.as_mut().filter(|s| s.confirmada) {
+                saidas.extend(s.selar(&rol).ok());
+                e.pares[i].ultimo_rol = Some(Instant::now());
+            }
+        }
+        if claro.first() == Some(&CONTROLE) {
+            if claro.get(1) == Some(&CONTROLE_PARES) && self.aprender_rol(&mut e, &claro[2..]) {
+                No::avisar_malha(&mut e);
+                self.persistir(&e);
+            }
+            drop(e);
+            for p in saidas {
+                self.mandar(via, &chave, &p);
+            }
+            return None;
+        }
         drop(e);
         for p in saidas {
             self.mandar(via, &chave, &p);
@@ -505,6 +742,20 @@ impl No {
             if precisa_aperto {
                 self.iniciar_aperto(&mut e, i);
                 continue;
+            }
+            if e.pares[i]
+                .ultimo_rol
+                .map_or(true, |t| t.elapsed() >= REENVIAR_PARES)
+            {
+                let rol = self.rol_para(&e, i);
+                let (via, chave) = (e.pares[i].via, e.pares[i].publica);
+                if let (Some(s), Some(v)) = (e.pares[i].atual.as_mut(), via) {
+                    if let Ok(p) = s.selar(&rol) {
+                        vivos.push((v, chave, p));
+                        e.pares[i].ultimo_rol = Some(Instant::now());
+                        e.pares[i].ultimo_envio = Instant::now();
+                    }
+                }
             }
             if e.pares[i].ultimo_envio.elapsed() >= MANTER_VIVO {
                 let (via, chave) = (e.pares[i].via, e.pares[i].publica);
@@ -658,6 +909,17 @@ mod testes {
         no.da_rede(&buf[..n], de)
     }
 
+    /// Bombeia ate sair um pacote IP na placa (a lista de pares e o manter
+    /// vivo passam pelo meio e nao saem na placa).
+    fn bombear_ate_ip(no: &No) -> Option<Vec<u8>> {
+        for _ in 0..8 {
+            if let Some(p) = bombear(no) {
+                return Some(p);
+            }
+        }
+        None
+    }
+
     #[test]
     fn pacote_atravessa_por_udp_real_e_volta() {
         let (a, b, _, _) = dois_nos("senha-1");
@@ -672,7 +934,7 @@ mod testes {
         );
         let volta = ip([10, 78, 0, 2], [10, 78, 0, 1], b"pong");
         b.da_placa(&volta);
-        assert_eq!(bombear(&a).unwrap(), volta);
+        assert_eq!(bombear_ate_ip(&a).unwrap(), volta);
     }
 
     #[test]
@@ -804,6 +1066,66 @@ mod testes {
         let u = UdpSocket::bind("127.0.0.1:0").unwrap();
         let n = No::novo([1; 32], [0; 32], "10.78.0.1".parse().unwrap(), u, vec![]);
         assert!(n.com_repasse(Modo::Auto, None).is_err());
+    }
+
+    /// Convite feito com o no LIGADO: a ficha e aceita uma vez, e regravar o
+    /// arquivo depois nao a ressuscita.
+    #[test]
+    fn ficha_de_convite_admite_uma_vez_e_nao_ressuscita() {
+        let dir = std::env::temp_dir().join(format!("phxvpn-ficha-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let caminho = dir.join("R.p2p").to_str().unwrap().to_string();
+        let _ = std::fs::remove_file(&caminho);
+        let (ka, kb) = (x25519::gerar_privada(), x25519::gerar_privada());
+        let psk = psk_da_rede("R", "s", 1_000);
+        let mut rede = Rede::nova("R", "10.78.0.1".parse().unwrap(), 24, 0);
+        rede.gravar(&caminho).unwrap();
+        let ua = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let ea = ua.local_addr().unwrap();
+        ua.set_read_timeout(Some(Duration::from_millis(300)))
+            .unwrap();
+        let a = No::novo(ka, psk, "10.78.0.1".parse().unwrap(), ua, vec![])
+            .com_rede(rede.clone(), caminho.clone());
+        // O convite nasce DEPOIS de o no ligar, por outro processo (o disco).
+        let codigo =
+            rede_p2p::convidar(&mut rede, &psk, x25519::chave_publica(&ka), None, 60).unwrap();
+        rede.gravar(&caminho).unwrap();
+        let c = rede_p2p::abrir_convite(&codigo, &psk).unwrap();
+        let ub = UdpSocket::bind("127.0.0.1:0").unwrap();
+        ub.set_read_timeout(Some(Duration::from_millis(300)))
+            .unwrap();
+        let mut rb = rede_p2p::rede_do_convidado(&c, 0);
+        rb.pares[0].endereco = Some(ea.to_string());
+        let b = No::novo(
+            kb,
+            psk,
+            c.ip_convidado,
+            ub,
+            vec![ParConfig {
+                publica: x25519::chave_publica(&ka),
+                ip: "10.78.0.1".parse().unwrap(),
+                endereco: Some(ea),
+            }],
+        )
+        .com_rede(rb, dir.join("B.p2p").to_str().unwrap().to_string());
+        b.tique(); // INICIO com a ficha
+        bombear(&a);
+        assert_eq!(
+            a.estado.lock().unwrap().pares.len(),
+            1,
+            "a ficha tinha de admitir"
+        );
+        assert!(
+            Rede::ler(&caminho).unwrap().convites.is_empty(),
+            "ficha usada ficou aberta"
+        );
+        // Qualquer regravacao depois (a malha muda o tempo todo) nao a traz de volta.
+        a.persistir(&a.estado.lock().unwrap());
+        assert!(
+            Rede::ler(&caminho).unwrap().convites.is_empty(),
+            "a ficha usada ressuscitou"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

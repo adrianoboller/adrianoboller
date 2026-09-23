@@ -3,7 +3,6 @@
 //! `--nome valor` numa, `/nome:valor` na outra. Depois disso, as duas chamam
 //! as mesmas funcoes daqui; uma regra corrigida de um lado so nao existe.
 
-#[cfg(target_os = "linux")]
 use crate::p2p;
 use phxsql_core::hash::{de_hex, para_hex};
 use phxsql_core::json::Json;
@@ -259,38 +258,198 @@ pub fn chave_publica_hex(privada: &[u8; 32]) -> String {
     para_hex(&phxsql_core::x25519::chave_publica(privada))
 }
 
-/// Monta o no P2P a partir das opcoes (as mesmas nas duas portas):
-/// `rede`, `ip` (com prefixo), `par` (repete), `porta`, `modo`, `repasse`,
-/// `chave`, `interface`. Devolve o no, a placa ja ligada e um resumo.
+/// O arquivo da rede: `/arquivo:` (ou `--arquivo`), ou `<rede>.p2p`.
+pub fn arquivo_da_rede(o: &Opcoes) -> R<String> {
+    match (
+        o.um("arquivo"),
+        o.um("rede").or(o.posicionais.first().map(String::as_str)),
+    ) {
+        (Some(a), _) => Ok(a.to_string()),
+        (None, Some(r)) => Ok(crate::rede_p2p::Rede::caminho(r)),
+        _ => Err("informe a rede".into()),
+    }
+}
+
+/// `p2p criar`: a rede nasce neste computador, sem pares ainda.
+pub fn p2p_criar(o: &Opcoes) -> R<String> {
+    use crate::rede_p2p::Rede;
+    let nome = o.um("rede").ok_or("informe a rede")?;
+    let (ip, prefixo) = o
+        .um("ip")
+        .unwrap_or("10.78.0.1/24")
+        .split_once('/')
+        .ok_or("o ip precisa do prefixo, ex.: 10.78.0.1/24")?;
+    let mut r = Rede::nova(
+        nome,
+        ip.parse().map_err(|_| "IP virtual invalido")?,
+        prefixo
+            .parse()
+            .ok()
+            .filter(|p: &u8| (8..=30).contains(p))
+            .ok_or("prefixo de 8 a 30")?,
+        o.um("porta")
+            .unwrap_or("51820")
+            .parse()
+            .map_err(|_| "porta invalida")?,
+    );
+    r.modo = o.um("modo").unwrap_or("direto").to_string();
+    p2p::Modo::de_texto(&r.modo)?;
+    r.repasse = o.um("repasse").map(str::to_string);
+    let caminho = arquivo_da_rede(o)?;
+    if std::path::Path::new(&caminho).exists() {
+        return Err(format!(
+            "{caminho} ja existe: a rede ja foi criada ou recebida aqui"
+        ));
+    }
+    identidade(o.um("chave").unwrap_or("p2p.chave"))?;
+    r.gravar(&caminho)?;
+    Ok(format!(
+        "rede {nome} criada em {caminho} -- {}/{}; convide com p2p convidar",
+        r.ip, r.prefixo
+    ))
+}
+
+/// `p2p convidar`: gera o codigo e deixa a ficha aberta no arquivo.
+pub fn p2p_convidar(o: &Opcoes, senha_rede: &str) -> R<String> {
+    use crate::rede_p2p::{convidar, Rede};
+    let caminho = arquivo_da_rede(o)?;
+    let mut r = Rede::ler(&caminho)?;
+    let privada = identidade(o.um("chave").unwrap_or("p2p.chave"))?;
+    let horas: u64 = o
+        .um("validade")
+        .unwrap_or("24")
+        .trim_end_matches('h')
+        .parse()
+        .map_err(|_| "validade em horas")?;
+    let psk = p2p::psk_da_rede(&r.nome, senha_rede, p2p::ITERACOES_PSK);
+    let codigo = convidar(
+        &mut r,
+        &psk,
+        phxsql_core::x25519::chave_publica(&privada),
+        o.um("endereco").map(str::to_string),
+        horas.clamp(1, 24 * 30) * 3600,
+    )?;
+    r.gravar(&caminho)?;
+    Ok(codigo)
+}
+
+/// `p2p entrar <codigo>`: abre o convite com a senha e grava a rede aqui.
+pub fn p2p_entrar(codigo: &str, senha_rede: &str, o: &Opcoes) -> R<String> {
+    use crate::rede_p2p::{abrir_convite, rede_do_convidado, rede_do_convite, Rede};
+    let nome = rede_do_convite(codigo)?;
+    let psk = p2p::psk_da_rede(&nome, senha_rede, p2p::ITERACOES_PSK);
+    let c = abrir_convite(codigo, &psk)?;
+    let caminho = o
+        .um("arquivo")
+        .map(str::to_string)
+        .unwrap_or_else(|| Rede::caminho(&nome));
+    if std::path::Path::new(&caminho).exists() {
+        return Err(format!(
+            "{caminho} ja existe: esta rede ja esta neste computador"
+        ));
+    }
+    identidade(o.um("chave").unwrap_or("p2p.chave"))?;
+    let r = rede_do_convidado(
+        &c,
+        o.um("porta")
+            .unwrap_or("51820")
+            .parse()
+            .map_err(|_| "porta invalida")?,
+    );
+    r.gravar(&caminho)?;
+    Ok(format!(
+        "convite aceito: rede {nome}, seu IP {}/{}, anfitriao {} -- ligue com p2p ligar /rede:{nome}",
+        r.ip, r.prefixo, c.anfitriao.ip
+    ))
+}
+
+/// Monta o no P2P. Com o arquivo da rede (`p2p criar` / `p2p entrar`), tudo
+/// sai dele; sem arquivo, das opcoes (`ip`, `par` repetido, `porta`, `modo`,
+/// `repasse`). Devolve o no, a placa ja ligada e um resumo.
 #[cfg(target_os = "linux")]
 pub fn p2p_preparar(
     o: &Opcoes,
     senha_rede: &str,
 ) -> R<(std::sync::Arc<p2p::No>, crate::tun::Tun, String)> {
+    let (no, ip, prefixo, porta, modo) = p2p_montar(o, senha_rede)?;
+    let interface = o.um("interface").unwrap_or("phx0");
+    let tun = crate::tun::Tun::abrir(interface, ip, prefixo, p2p::MTU)?;
+    let resumo = format!(
+        "P2P no ar -- {interface} {ip}/{prefixo}, UDP {porta}, modo {modo:?}, chave {}",
+        para_hex(&no.publica())
+    );
+    Ok((std::sync::Arc::new(no), tun, resumo))
+}
+
+type Montado = (p2p::No, std::net::Ipv4Addr, u8, u16, p2p::Modo);
+
+/// A parte do preparo que nao depende de placa (e roda em qualquer sistema).
+pub fn p2p_montar(o: &Opcoes, senha_rede: &str) -> R<Montado> {
+    use crate::rede_p2p::Rede;
     let privada = identidade(o.um("chave").unwrap_or("p2p.chave"))?;
-    let rede = o.um("rede").ok_or("informe a rede")?;
-    let (ip, prefixo) = o
-        .um("ip")
-        .ok_or("informe o ip (ex.: 10.78.0.1/24)")?
-        .split_once('/')
-        .ok_or("o ip precisa do prefixo, ex.: 10.78.0.1/24")?;
-    let ip: std::net::Ipv4Addr = ip.parse().map_err(|_| "IP virtual invalido")?;
-    let prefixo: u8 = prefixo
-        .parse()
+    let caminho = arquivo_da_rede(o)
         .ok()
-        .filter(|p| *p <= 32)
-        .ok_or("prefixo invalido")?;
-    let porta = o.um("porta").unwrap_or("51820");
-    let pares = o
-        .todos("par")
-        .iter()
-        .map(|t| p2p::ler_par(t))
-        .collect::<R<Vec<_>>>()?;
-    if pares.is_empty() {
-        return Err("informe ao menos um par (CHAVE@IP[@HOST:PORTA])".into());
-    }
-    let modo = p2p::Modo::de_texto(o.um("modo").unwrap_or("direto"))?;
-    let repasse = match o.um("repasse") {
+        .filter(|c| std::path::Path::new(c).exists());
+    let rede = caminho.as_deref().map(Rede::ler).transpose()?;
+    let (nome, ip, prefixo, porta, modo_t, repasse_t, pares) = match &rede {
+        Some(r) => (
+            r.nome.clone(),
+            r.ip,
+            r.prefixo,
+            o.um("porta")
+                .map(str::to_string)
+                .unwrap_or(r.porta.to_string()),
+            o.um("modo").unwrap_or(&r.modo).to_string(),
+            o.um("repasse").map(str::to_string).or(r.repasse.clone()),
+            r.pares
+                .iter()
+                .map(|p| {
+                    Ok(p2p::ParConfig {
+                        publica: p.chave,
+                        ip: p.ip,
+                        endereco: match &p.endereco {
+                            Some(e) => std::net::ToSocketAddrs::to_socket_addrs(e.as_str())
+                                .ok()
+                                .and_then(|mut i| i.next()),
+                            None => None,
+                        },
+                    })
+                })
+                .collect::<R<Vec<_>>>()?,
+        ),
+        None => {
+            let nome = o.um("rede").ok_or("informe a rede")?.to_string();
+            let (ip, prefixo) = o
+                .um("ip")
+                .ok_or("sem arquivo da rede: informe o ip (ex.: 10.78.0.1/24) ou use p2p criar / p2p entrar")?
+                .split_once('/')
+                .ok_or("o ip precisa do prefixo, ex.: 10.78.0.1/24")?;
+            let pares = o
+                .todos("par")
+                .iter()
+                .map(|t| p2p::ler_par(t))
+                .collect::<R<Vec<_>>>()?;
+            if pares.is_empty() {
+                return Err("informe ao menos um par (CHAVE@IP[@HOST:PORTA])".into());
+            }
+            (
+                nome,
+                ip.parse().map_err(|_| "IP virtual invalido")?,
+                prefixo
+                    .parse()
+                    .ok()
+                    .filter(|p: &u8| *p <= 32)
+                    .ok_or("prefixo invalido")?,
+                o.um("porta").unwrap_or("51820").to_string(),
+                o.um("modo").unwrap_or("direto").to_string(),
+                o.um("repasse").map(str::to_string),
+                pares,
+            )
+        }
+    };
+    let porta: u16 = porta.parse().map_err(|_| "porta invalida")?;
+    let modo = p2p::Modo::de_texto(&modo_t)?;
+    let repasse = match repasse_t {
         Some(t) => {
             let (chave, end) = t
                 .split_once('@')
@@ -303,17 +462,14 @@ pub fn p2p_preparar(
         }
         None => None,
     };
-    let psk = p2p::psk_da_rede(rede, senha_rede, p2p::ITERACOES_PSK);
+    let psk = p2p::psk_da_rede(&nome, senha_rede, p2p::ITERACOES_PSK);
     let udp = std::net::UdpSocket::bind(format!("0.0.0.0:{porta}"))
         .map_err(|e| format!("porta UDP {porta}: {e}"))?;
-    let interface = o.um("interface").unwrap_or("phx0");
-    let no = p2p::No::novo(privada, psk, ip, udp, pares).com_repasse(modo, repasse)?;
-    let tun = crate::tun::Tun::abrir(interface, ip, prefixo, p2p::MTU)?;
-    let resumo = format!(
-        "P2P no ar -- {interface} {ip}/{prefixo}, UDP {porta}, modo {modo:?}, chave {}",
-        para_hex(&no.publica())
-    );
-    Ok((std::sync::Arc::new(no), tun, resumo))
+    let mut no = p2p::No::novo(privada, psk, ip, udp, pares).com_repasse(modo, repasse)?;
+    if let (Some(r), Some(c)) = (rede, caminho) {
+        no = no.com_rede(r, c);
+    }
+    Ok((no, ip, prefixo, porta, modo))
 }
 
 #[cfg(test)]

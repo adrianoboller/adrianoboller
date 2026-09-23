@@ -24,6 +24,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: placa virtual TUN no Linux por FFI ao `ioctl` — sem `iproute2`
 - [x] P2P: `phxvpn p2p chave` e `phxvpn p2p ligar` — **ping entre dois computadores pelo túnel, provado**
 - [x] P2P: servidor intermediário (`phxvpn repasse`) e modos `direto` / `repasse` / `auto` — provado numa topologia de CGNAT
+- [x] P2P: `p2p criar` / `p2p convidar` / `p2p entrar` — convite cifrado com a senha da rede, ficha de uso único, malha que se aprende pela lista de pares dentro do túnel
 - [x] Console `phxvpncmd` (ou `phxvpn cmd`), estilo prompt do MS-DOS: modos Painel, P2P e Ferramentas; lote por arquivo (`/entrada:`) e linha única (`/comando:`)
 - [x] Segurança A1: revogação real — série no CN, reentrada revoga o perfil anterior, CRL Ed25519 no `crl-verify`, admin/dono remove membro
 - [x] Segurança A2/A3: tentativas limitadas (login, IP, usuário+rede); PBKDF2 fora da trava com semáforo; hash fictício contra enumeração
@@ -41,12 +42,12 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] Revogação por CRL (hoje: sair da rede apaga o `ccd/` e o `ccd-exclusive` barra)
 - [ ] Usar o certificado digital da empresa (A1/RSA) como AC — hoje ele é guardado só como identificação
 - [ ] Serviço do sistema (systemd / serviço do Windows) e pacote
-- [ ] P2P: rol de membros assinado (Ed25519 da rede) e PSK da senha da rede
+- [ ] P2P: rol de membros ASSINADO (hoje a lista viaja cifrada entre membros, com confiança transitiva)
 - [ ] P2P: descoberta — convite, broadcast na LAN e «farol» (membro alcançável que perfura NAT e faz relé)
 - [ ] Segurança M3 (resto): OpenVPN sem root (`user`/`group`) e `tls-crypt-v2` — pedem o binário `openvpn` para provar, ausente aqui
 - [ ] Segurança no Windows: ACL nos arquivos com chave (hoje herdam a do diretório; no Linux nascem 0600)
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
-- [ ] P2P: convite (`phxvpn p2p convidar`) e a tela
+- [ ] P2P: a tela web do modo P2P (hoje: linha de comando e console)
 - [ ] P2P no Windows: TAP-Windows6 em modo TUN (CreateFileW + DeviceIoControl, adaptador próprio pelo `tapctl.exe` do OpenVPN) — ~250–350 linhas, estimado
 - [ ] P2P: `mac1`/cookie contra inundação de INICIO (o WireGuard tem; aqui ainda não)
 
@@ -98,6 +99,44 @@ Na primeira medição do auto eu li o `icmp_seq=1` como «respondeu no primeiro
 segundo». Não tinha respondido: o ping imprime a sequência original da
 resposta que chega atrasada, e o nó guarda os pacotes na fila até o aperto
 fechar. Medido com `ping -D` e o relógio de quando o nó foi ligado, são 10,5 s.
+
+## Convite P2P (sem servidor)
+
+```text
+A:  phxvpn p2p criar --rede Matriz --ip 10.78.0.1/24
+A:  phxvpn p2p convidar --rede Matriz --endereco 203.0.113.5:51820   -> phxvpn1.TWF0cml6.… (417 caracteres)
+B:  phxvpn p2p entrar phxvpn1.TWF0cml6.…      (pede a senha da rede)
+A, B:  phxvpn p2p ligar --rede Matriz
+```
+
+O código é cifrado com uma chave tirada da senha da rede (XChaCha20-Poly1305,
+nome da rede como dado associado): sem a senha não abre, e um byte trocado
+derruba a etiqueta. Dentro vai quem convida, o IP reservado e uma **ficha de
+uso único**; o nó de quem convidou admite a chave desconhecida que apresentar
+a ficha, e a ficha morre. Depois, cada nó manda a lista de pares por dentro
+do túnel, e a malha se completa sozinha.
+
+**Prova (24/09/2026, quatro `ip netns` numa LAN virtual):** B e C entraram
+por convites de A; **B pinga C** sem nunca ter recebido o endereço de C
+(primeira resposta 5,6 s depois de ligar os três); senha errada: «senha da
+rede errada, ou convite adulterado»; convite gerado com A **já ligado** admite
+D; o mesmo código com outra chave (D2) é recusado; convites abertos depois do
+uso: 0. Os três arquivos `.p2p` nascem 0600.
+
+Três defeitos achados nessa prova, nenhum pelos testes que já existiam:
+1. A lista de pares só ia no reenvio de 30 s: o terceiro membro ficava até
+   30 s recusado pelo segundo. Agora quem aprende par novo avisa a malha no
+   próximo segundo.
+2. O nó ligado guardava a rede em memória e **não via convite feito depois**
+   — e, ao regravar, o apagava. Agora os convites são do disco.
+3. Consertado o 2, a regravação **ressuscitava a ficha já usada**; o segundo
+   uso só foi barrado por acaso (IP ocupado). Agora o nó lembra as fichas que
+   consumiu. RED: sem esse filtro, `ficha_de_convite_admite_uma_vez_e_nao_ressuscita`
+   reprova.
+
+Limites: a lista de pares não é assinada — um membro (que já tem a senha)
+pode apresentar outros; e `convidar` com a rede ligada não trava o arquivo
+contra gravação simultânea (janela de milissegundos).
 
 ## Console `phxvpncmd`
 

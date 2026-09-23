@@ -12,6 +12,7 @@ pub mod p2p;
 pub mod painel;
 pub mod pg;
 pub mod pki;
+pub mod rede_p2p;
 pub mod repasse;
 pub mod supervisor;
 pub mod transporte;

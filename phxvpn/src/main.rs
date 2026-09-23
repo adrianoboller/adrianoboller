@@ -31,6 +31,15 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
       Cria (se nao existir) a identidade P2P deste computador e mostra a chave
       publica, que os outros membros usam no --par.
 
+  phxvpn p2p criar --rede NOME [--ip 10.78.0.1/24] [--porta 51820] [--modo auto]
+                   [--repasse CHAVE@HOST:PORTA]
+      Cria a rede P2P neste computador (arquivo NOME.p2p, sem a senha).
+  phxvpn p2p convidar --rede NOME [--endereco MEU_HOST:PORTA] [--validade 24h]
+      Gera o codigo do convite, cifrado com a senha da rede, de uso unico.
+  phxvpn p2p entrar <codigo>
+      Aceita o convite (pede a senha da rede) e grava a rede aqui.
+      Depois: phxvpn p2p ligar --rede NOME.
+
   phxvpn p2p ligar --rede NOME --ip 10.78.0.1/24 [--porta 51820] [--chave p2p.chave]
                    [--interface phx0] --par CHAVE@IP[@HOST:PORTA] [--par ...]
                    [--modo direto|repasse|auto] [--repasse CHAVE@HOST:PORTA]
@@ -200,6 +209,24 @@ fn cmd_p2p(args: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("ligar") => p2p_ligar(&o),
+        Some("criar") => {
+            println!("{}", comandos::p2p_criar(&o)?);
+            Ok(())
+        }
+        Some("convidar") => {
+            let senha_rede = senha("PHXVPN_SENHA_REDE", "senha da rede")?;
+            println!("{}", comandos::p2p_convidar(&o, &senha_rede)?);
+            Ok(())
+        }
+        Some("entrar") => {
+            let codigo = o
+                .posicionais
+                .first()
+                .ok_or("phxvpn p2p entrar <codigo do convite>")?;
+            let senha_rede = senha("PHXVPN_SENHA_REDE", "senha da rede")?;
+            println!("{}", comandos::p2p_entrar(codigo, &senha_rede, &o)?);
+            Ok(())
+        }
         _ => Err("use: phxvpn p2p chave | phxvpn p2p ligar ... (veja phxvpn ajuda)".into()),
     }
 }
