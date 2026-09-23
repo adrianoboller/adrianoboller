@@ -62,13 +62,58 @@ fn caminho_do_exemplo() -> Option<std::path::PathBuf> {
 /// O crivo e' o mesmo que a lei descreve: fonte mais novo que o binario que o
 /// mede. Comparar com o binario DESTE teste nao serviria -- mexer so' neste
 /// arquivo o deixa mais novo que um exemplo que continua em dia.
+///
+/// O alcance e' `src/` inteiro (o exemplo linka o crate), **so' o `.rs` (ou
+/// `.../main.rs`) deste exemplo** -- nao `examples/` inteiro --, e os
+/// MODULOS COMPARTILHADOS de `examples/`. Exemplos compilam independentes um
+/// do outro: `examples/` largo reprovava esta catraca por edicao num exemplo
+/// ALHEIO (pedido 409), e ja levou uma frente a diagnosticar "e' ambiental"
+/// quando o defeito era o alcance da guarda.
+///
+/// O segundo defeito (achado na integracao do 409, mesmo dia): o alcance
+/// estreito perdeu `examples/apoio/`, que **nao e' exemplo nenhum** -- e'
+/// codigo que `custo-do-excluir.rs` e `fsync-por-operacao.rs` incluem por
+/// `#[path = "apoio/strace.rs"]`. A distincao vem da propria convencao do
+/// Cargo, nao de `"apoio"` escrito aqui (lista que envelheceria calada):
+///
+/// * arquivo solto em `examples/*.rs` -> exemplo independente -> so' o nosso;
+/// * sub-diretorio de `examples/` SEM `main.rs` -> nao e' exemplo, e'
+///   modulo compartilhado que qualquer exemplo pode incluir -> entra
+///   INTEIRO na pilha, para qualquer exemplo que esta funcao meca;
+/// * sub-diretorio COM `main.rs` -> exemplo em forma de pasta (convencao do
+///   Cargo para `examples/<nome>/main.rs`) -> so' entra se for o nosso.
 fn mais_novo_que_o_exemplo(exemplo: &std::path::Path) -> Vec<String> {
     let Ok(bin) = exemplo.metadata().and_then(|m| m.modified()) else {
         return Vec::new();
     };
     let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir_examples = raiz.join("examples");
+    let nome = exemplo.file_stem();
+    // O proprio exemplo: arquivo solto `examples/<nome>.rs` OU pasta
+    // `examples/<nome>/main.rs` -- so' um dos dois existe de cada vez.
+    let proprios = [
+        nome.map(|n| dir_examples.join(n).with_extension("rs")),
+        nome.map(|n| dir_examples.join(n).join("main.rs")),
+    ];
     let mut novos = Vec::new();
-    let mut pilha = vec![raiz.join("src"), raiz.join("examples")];
+    let mut pilha = vec![raiz.join("src")];
+    for p in proprios.into_iter().flatten() {
+        if p.metadata()
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| t > bin)
+        {
+            novos.push(p.display().to_string());
+        }
+    }
+    // Modulos compartilhados: sub-diretorio de `examples/` sem `main.rs`.
+    if let Ok(itens) = std::fs::read_dir(&dir_examples) {
+        for item in itens.flatten() {
+            let c = item.path();
+            if c.is_dir() && !c.join("main.rs").exists() {
+                pilha.push(c);
+            }
+        }
+    }
     while let Some(dir) = pilha.pop() {
         let Ok(itens) = std::fs::read_dir(&dir) else {
             continue;
