@@ -410,6 +410,35 @@ Ou seja: onde os três concordam e **nada nosso se opõe**, entra sem pergunta �
 e **uma pétrea se opõe**, a pétrea ganha e o choque vai para a mesa, nunca para
 o silêncio.
 
+**Perguntar ao dono é ÚLTIMO recurso, não o primeiro — decisão do dono,
+23/09/2026.** Palavra dele: *«o agente pesquisador e o agente que cuida das
+hipóteses são qualificados a buscar no help do PostgreSQL, MySQL, MariaDB,
+SQLite as informações e só em último caso ver comigo.»*
+
+As duas leis abaixo dizem **o que fazer com a resposta**; esta diz **quem vai
+buscá-la**. Antes de qualquer pergunta ao dono sobre comportamento de banco, o
+papel **J** e os subagentes de hipótese vão ao **help e ao fonte dos quatro** e
+voltam com a matriz. Só então se decide, e nesta ordem:
+
+1. **Os três maduros convergem e nada nosso se opõe** → entra **sem pergunta**.
+   Não se confirma convergência com o dono: confirmar é gastar a decisão dele
+   para ouvir o que a lei já disse.
+2. **Divergem e nenhuma pétrea alcança** → decide a **média ponderada**, e o
+   número vai escrito. Também não se pergunta.
+3. **Só então vai à mesa**, e só o que a pesquisa não resolve: choque com
+   pétrea nossa, troca de SLA, prazo, ou decisão de produto.
+
+E a regra tem o caso que a fundou, medido no mesmo dia: o pedido **340** (selar
+a página do `.fts`) chegou à mesa do dono com a frase «**entra por aceite
+automático**» escrita no próprio corpo — a convergência dos três já o resolvia,
+o integrador **leu isso, disse isso, e perguntou assim mesmo**. Pergunta que o
+próprio pedido responde não é prudência: é decisão do dono gasta à toa, e ela
+não volta.
+
+O limite, que continua valendo: **pesquisa não revoga pétrea**, e o que a
+pesquisa não alcança não se inventa — o que não se mede vai à mesa dizendo que
+não foi medido.
+
 **Quando os motores NÃO convergem, decide a média ponderada — decisão do dono,
 11/09/2026.** Peso **PostgreSQL 4, MariaDB 3, MySQL 2, SQLite 1**. É a régua
 para o que a convergência não resolve: onde eles divergem e nenhuma pétrea
