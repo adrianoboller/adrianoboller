@@ -80,11 +80,22 @@
 //!   (`exists_correlacao_nao_igualdade_recusa_nomeando`).
 //! - **janela**: so `ROW_NUMBER`. Qualquer outra funcao com `OVER` recusa
 //!   nomeando, e nao passa por engano.
+//! - **agregado**: so no `SELECT` SIMPLES, que vira `agrupar`. Agregado
+//!   `GROUP BY` e `HAVING` dentro da gramatica COMPOSTA (junção, subconsulta
+//!   no `FROM`, `WITH`, `IN (SELECT …)`) recusam nomeando e citam o pedido
+//!   394 -- a op `agrupar` recebe `tabela` e nunca um sub-pedido, e a op
+//!   `consultar` compoe sem agregar, entao nao ha para onde traduzir.
+//!   Ate 09/2026 isso nao recusava: lia `SUM` como NOME DE COLUNA e mandava
+//!   procurar um `FROM` que estava escrito na frase.
 //!
 //! **Nao existe, e recusa nomeando:** `WITH RECURSIVE` e a segunda CTE
 //! (`consulta.rs`), `EXISTS` NAO correlacionado, `WHERE` de FAIXA sem indice
 //! (`traduzir.rs`), `OFFSET` com `GROUP BY`/`DISTINCT`, e `INTERSECT`/`EXCEPT`
 //! -- que nao tem operacao embaixo.
+//!
+//! E o que NAO cabe onde a gramatica le nome de coluna: `ORDER BY SUM(v)`,
+//! `GROUP BY UPPER(c)` e `PARTITION BY MAX(x)` recusam nomeando a chamada, em
+//! vez de lerem a palavra da funcao como coluna.
 //!
 //! **Nao existe, e nao recusa -- escolhe calado:** o planejador de indice.
 //! Dois candidatos de igualdade? O primeiro DECLARADO vence. E o unico item

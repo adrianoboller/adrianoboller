@@ -297,6 +297,21 @@ subconsulta, CTE e junção — a §7 conta a gramática e o JSON de cada um. O 
   22/09/2026 por `bancada/gaps-sql/sondar.py postgresql` (`docs/pdf/respostas/B.md`).
 - **Janela além de `ROW_NUMBER`.** `RANK`, `DENSE_RANK`, `SUM() OVER (...)` e
   companhia recusam nomeando — só `ROW_NUMBER() OVER (...)` tem substrato.
+- **Agregado, `GROUP BY` e `HAVING` sobre COMPOSIÇÃO** (pedido 394).
+  `SELECT SUM(p.valor) … FROM pedidos p JOIN vendedores v ON …` — a consulta
+  que todo relatório escreve — recusa **nomeando** desde 23/09/2026, e o mesmo
+  vale para subconsulta no `FROM`, `WITH` e `IN (SELECT …)`. O motivo é de
+  contrato, não de gramática: a op `agrupar` recebe `tabela` e **nunca** um
+  sub-pedido, e a op `consultar` compõe sem agregar — não há para onde
+  traduzir, e **não há saída por fora**: `SELECT COUNT(*) FROM (SELECT * FROM
+  v) AS x` cai na mesma recusa. Até esta data não recusava: lia a palavra
+  `SUM` como **nome de coluna** e devolvia `esperava FROM, e veio "("`,
+  mandando procurar um `FROM` que estava escrito na frase. Dar substrato muda
+  o contrato de uma das duas ops — decisão do dono.
+- **Chamada de função onde a gramática lê NOME DE COLUNA.** `ORDER BY SUM(v)`,
+  `GROUP BY UPPER(c)` e `PARTITION BY MAX(x)` recusam nomeando a chamada
+  (pedido 394, mesmo defeito por outra porta). Para ordenar por agregado, dê
+  apelido na projeção (`SUM(v) AS s`) e ordene por ele — medido, isso traduz.
 - **Correlação que não é igualdade.** `IN (SELECT …)` correlacionado,
   subconsulta ESCALAR correlacionada, e um termo de `EXISTS` que cita coluna
   de fora sem ser `fora.col = dentro.col` (outro comparador, os dois lados de

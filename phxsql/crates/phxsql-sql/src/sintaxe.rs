@@ -99,7 +99,7 @@ pub enum FuncaoAgregada {
 }
 
 impl FuncaoAgregada {
-    fn de_nome_de_funcao(nome: &str) -> Option<FuncaoAgregada> {
+    pub(crate) fn de_nome_de_funcao(nome: &str) -> Option<FuncaoAgregada> {
         match nome {
             "COUNT" => Some(FuncaoAgregada::Contagem),
             "SUM" => Some(FuncaoAgregada::Soma),
@@ -640,6 +640,14 @@ pub fn analisar_comando_com(
     Ok(cmd)
 }
 
+/// A saida real de quem quis `ORDER BY SUM(v)`, medida: `ORDER BY s` com
+/// `SUM(v) AS s` na projecao TRADUZ hoje. Fica numa constante porque as duas
+/// portas do `ORDER BY` (a restrita, de uma coluna so, e a lista de
+/// `agrupar`/`consultar`) tem de dar a MESMA saida -- duas redacoes da mesma
+/// recusa e o comeco de uma divergir da outra.
+const ORDENE_PELO_APELIDO: &str =
+    "De um apelido ao agregado na projecao (SUM(x) AS a) e ordene por ele.";
+
 /// O cursor de simbolos e compartilhado com `rotina`, que analisa os corpos
 /// de gatilho e de procedimento: um leitor so, para as mensagens de erro (com
 /// a coluna) sairem iguais nas duas gramaticas.
@@ -1042,7 +1050,7 @@ impl Analisador {
 
         let agrupar_por = if self.aceitar_palavra("GROUP") {
             self.exigir_palavra("BY")?;
-            self.lista_de_colunas_do_group_by()?
+            self.lista_de_colunas_do_group_by("GROUP BY")?
         } else {
             Vec::new()
         };
@@ -1134,9 +1142,43 @@ impl Analisador {
         })
     }
 
+    /// Recusa `FUNCAO(` onde a gramatica espera NOME DE COLUNA.
+    ///
+    /// Existe porque `identificador()` NAO distingue nome de funcao de nome
+    /// de coluna -- os dois chegam como `Token::Palavra`. Sem este crivo a
+    /// palavra `SUM` de `ORDER BY SUM(v)` vira uma coluna FANTASMA chamada
+    /// "SUM": a lista fecha ali, o `(` sobra, e o erro sai longe do problema
+    /// falando de "sobrou" em vez de falar de agregado (pedido 394).
+    ///
+    /// Os tres lugares que leem lista de nome de coluna chamam este crivo --
+    /// `uma_ordenacao_restrita`, `lista_de_ordenacoes` e
+    /// `lista_de_colunas_do_group_by` (que serve ao `GROUP BY` e ao
+    /// `PARTITION BY`) --, porque os tres chamam o MESMO `identificador()` na
+    /// mesma posicao e herdariam a mesma coluna fantasma.
+    pub(crate) fn recusar_funcao_no_lugar_de_coluna(
+        &self,
+        clausula: &str,
+        saida: &str,
+    ) -> Result<()> {
+        let Some(f) = self.espiar().and_then(|s| s.token.palavra_chave()) else {
+            return Ok(());
+        };
+        if self.s.get(self.i + 1).map(|s| &s.token) != Some(&Token::AbreParen) {
+            return Ok(());
+        }
+        Err(lexico::erro(
+            self.posicao_atual(),
+            &format!(
+                "{clausula} nao aceita a chamada {f}(...): aqui a gramatica le NOME DE \
+                 COLUNA. {saida} Pedido 394"
+            ),
+        ))
+    }
+
     /// Uma ordenacao SO, do caminho antigo -- ela exige indice, e por isso
     /// uma segunda coluna recusa (nao ha indice composto escolhido aqui).
     fn uma_ordenacao_restrita(&mut self) -> Result<Ordenacao> {
+        self.recusar_funcao_no_lugar_de_coluna("ORDER BY", ORDENE_PELO_APELIDO)?;
         let coluna = self.identificador("nome de coluna")?;
         let desc = if self.aceitar_palavra("DESC") {
             true
@@ -1168,6 +1210,7 @@ impl Analisador {
     pub(crate) fn lista_de_ordenacoes(&mut self) -> Result<Vec<Ordenacao>> {
         let mut ordens = Vec::new();
         loop {
+            self.recusar_funcao_no_lugar_de_coluna("ORDER BY", ORDENE_PELO_APELIDO)?;
             let coluna = self.identificador("nome de coluna no ORDER BY")?;
             let coluna = if self.aceitar(&Token::Ponto) {
                 format!(
@@ -1191,10 +1234,14 @@ impl Analisador {
         Ok(ordens)
     }
 
-    pub(crate) fn lista_de_colunas_do_group_by(&mut self) -> Result<Vec<String>> {
+    pub(crate) fn lista_de_colunas_do_group_by(&mut self, clausula: &str) -> Result<Vec<String>> {
         let mut colunas = Vec::new();
         loop {
-            colunas.push(self.identificador("nome de coluna no GROUP BY")?);
+            self.recusar_funcao_no_lugar_de_coluna(
+                clausula,
+                "Agrupe pelas COLUNAS e deixe a chamada para a projecao.",
+            )?;
+            colunas.push(self.identificador(&format!("nome de coluna no {clausula}"))?);
             if !self.aceitar(&Token::Virgula) {
                 break;
             }
@@ -1545,6 +1592,83 @@ mod testes {
             Onde::Simples(c) => c,
             Onde::Expressao(e) => panic!("esperava Onde::Simples, veio expressao: {e}"),
         }
+    }
+
+    // ------------- pedido 394: chamada de funcao onde a gramatica le coluna
+
+    /// As TRES portas que leem nome de coluna e caem no MESMO
+    /// `identificador()`. Sao irmãs por chamada, nao por nome: sem o crivo,
+    /// as tres fecham a lista numa coluna fantasma e o erro sai como
+    /// `sobrou "(" depois do fim do comando` -- longe do problema.
+    ///
+    /// Com o defeito reposto (sem `recusar_funcao_no_lugar_de_coluna`) esta
+    /// prova FALHA nas tres, porque nenhuma mensagem cita a chamada.
+    #[test]
+    fn chamada_de_funcao_no_lugar_de_coluna_recusa_nomeando() {
+        let erro = |sql: &str| analisar_comando(sql).unwrap_err().to_string();
+        // ORDER BY restrito (o SELECT que nao agrupa).
+        let e = erro("SELECT * FROM t ORDER BY SUM(v)");
+        assert!(e.contains("ORDER BY nao aceita a chamada SUM(...)"), "{e}");
+        assert!(e.contains("Pedido 394"), "{e}");
+        // ORDER BY em lista (o SELECT agrupado e o composto).
+        let e = erro("SELECT cidade, SUM(v) AS s FROM t GROUP BY cidade ORDER BY SUM(v)");
+        assert!(e.contains("ORDER BY nao aceita a chamada SUM(...)"), "{e}");
+        // GROUP BY.
+        let e = erro("SELECT cidade FROM t GROUP BY UPPER(cidade)");
+        assert!(
+            e.contains("GROUP BY nao aceita a chamada UPPER(...)"),
+            "{e}"
+        );
+        // PARTITION BY -- a MESMA funcao do GROUP BY, e por isso a recusa
+        // tem de dizer PARTITION BY e nao GROUP BY: mandar quem escreveu
+        // `OVER (PARTITION BY ...)` procurar um GROUP BY que nao existe na
+        // frase e a mesma mentira que o pedido 394 veio consertar.
+        let e = erro(
+            "SELECT ROW_NUMBER() OVER (PARTITION BY MAX(x)) AS n, a.i FROM a JOIN b ON a.i = b.i",
+        );
+        assert!(
+            e.contains("PARTITION BY nao aceita a chamada MAX(...)"),
+            "{e}"
+        );
+        assert!(!e.contains("GROUP BY"), "{e}");
+    }
+
+    /// COMPORTAMENTO VELHO, byte a byte: o `agrupar` que ja saia continua
+    /// saindo igual -- inclusive a saida que a propria recusa RECOMENDA
+    /// (`SUM(v) AS s` + `ORDER BY s`), medida e nao citada.
+    #[test]
+    fn o_agrupar_que_ja_traduzia_continua_traduzindo_byte_a_byte() {
+        let ix = vec![crate::traduzir::IndiceInfo {
+            nome: "porId".into(),
+            colunas: vec![crate::traduzir::ColunaDoIndice {
+                nome: "id".into(),
+                desc: false,
+            }],
+            unico: true,
+            primario: true,
+        }];
+        let pedido = |sql: &str| {
+            crate::traduzir::traduzir(&analisar(sql).unwrap(), &ix, "loja")
+                .unwrap()
+                .pedido
+                .escrever()
+        };
+        assert_eq!(
+            pedido("SELECT cidade, SUM(v) AS s FROM t GROUP BY cidade ORDER BY s LIMIT 5"),
+            r#"{"op":"agrupar","database":"loja","tabela":"t","por":["cidade"],"agregados":[{"funcao":"soma","apelido":"s","coluna":"v"}],"onde":[],"expressao":"","tendo":"","ordem":[{"coluna":"s","desc":false}],"max":5}"#
+        );
+        assert_eq!(
+            pedido("SELECT cidade FROM t GROUP BY cidade HAVING COUNT(*) > 1"),
+            r#"{"op":"agrupar","database":"loja","tabela":"t","por":["cidade"],"agregados":[],"onde":[],"expressao":"","tendo":"COUNT ( * ) > 1","ordem":[]}"#
+        );
+    }
+
+    /// E o crivo olha o `(` SEGUINTE, nao a palavra: uma coluna entre aspas
+    /// chamada `sum` continua ordenando.
+    #[test]
+    fn coluna_com_nome_de_funcao_continua_ordenando() {
+        let s = analisar("SELECT * FROM t ORDER BY \"sum\"").unwrap();
+        assert_eq!(s.ordem.unwrap().coluna, "sum");
     }
 
     #[test]
