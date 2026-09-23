@@ -152,10 +152,14 @@ o elimina.
 
 ### O cache, em uma tela
 
-- **É de leitura.** Toda gravação atravessa para o arquivo na hora. Segurar
-  página suja daria mais e trocaria uma garantia por desempenho **sem avisar**:
-  hoje uma queda do *processo* não atrasa o `.ndx` em relação ao `.reg`, porque
-  o `write` já entregou a página ao núcleo. Só uma queda da *máquina* faz isso.
+- **Era de leitura; desde a 0.18.0 é write-back.** Segurar página suja em RAM
+  comprou mais (16,4 → 7,5 µs), e trocou a garantia que este parágrafo descrevia
+  quando era de leitura — hoje uma queda do *processo* **pode** atrasar o `.ndx` em
+  relação ao `.reg`, porque a página fica em RAM até o despejo, o `fechar` ou o
+  `sincronizar`, e não vai mais ao arquivo a cada chave. A troca só ficou
+  aceitável porque passou a se avisar: a marca de sujo (byte 52 do cabeçalho,
+  `FORMATO.md` §2, `ndx.rs:199-208`) detecta a queda na abertura e recusa
+  responder até `reindexar` reconstruir — 0,31 s por milhão de chaves.
 - **A página recém-gravada fica.** É o que mais rende numa carga: a folha que
   acabou de receber uma chave é quase sempre a que vai receber a próxima.
 - **Despejo por segunda chance (CLOCK).** Fila simples não serviria — a raiz, a

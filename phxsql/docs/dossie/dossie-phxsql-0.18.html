@@ -6096,12 +6096,19 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
   escreve nada, exatamente o trabalho que o cache serve de graça.</p>
 
   <div class="nota">
-    <span class="t">O cache é de leitura, e isso é escolha</span>
-    <p>Toda gravação atravessa para o arquivo na hora. Segurar página suja em RAM
-    daria mais e trocaria uma garantia por desempenho <strong>sem avisar</strong>:
-    hoje uma queda do <em>processo</em> não atrasa o <code>.ndx</code> em relação ao
-    <code>.reg</code>, porque o <code>write</code> já entregou a página ao núcleo. Só
-    uma queda da <em>máquina</em> faz isso.</p>
+    <span class="t">Era de leitura; desde a 0.18.0 é write-back, e isso é escolha
+    avisada</span>
+    <p>Segurar página suja em RAM comprou mais (16,4 → 7,5&#8201;µs por linha) e
+    trocou a garantia que o cache de leitura dava sozinho: hoje uma queda do
+    <em>processo</em> <strong>pode</strong> atrasar o <code>.ndx</code> em relação ao
+    <code>.reg</code>, porque a página fica em RAM até o despejo, o fechamento da
+    tabela ou o <code>sincronizar</code> — não vai mais ao arquivo a cada chave. A
+    troca só ficou aceitável porque passou a se <strong>avisar</strong>: a marca de
+    sujo (byte 52 do cabeçalho) vai ao arquivo antes da primeira página suja e só
+    sai depois de todas irem ao disco, então quem reabre um <code>.ndx</code>
+    atrasado acha a marca levantada e recusa responder até <code>reindexar</code>
+    reconstruir — 0,31&#8201;s por milhão de chaves. Detalhe completo em
+    <code>docs/FORMATO.md</code>, «A marca de sujo (byte 52)».</p>
     <p>O despejo é por <strong>segunda chance</strong>, e não fila simples: a raiz,
     a página mais visitada de todas, sairia junto com as outras assim que o teto
     enchesse. O teto — 2.048 páginas, 8&#8201;MiB por tabela aberta — saiu de uma

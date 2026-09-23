@@ -847,10 +847,17 @@ O RODIZIO DO ACESSOS.LOG E DO DIRETIVAS.LOG
     custa mais 8 MiB por tabela. A varredura inteira esta em
     docs/DESEMPENHO.md.
 
-    O cache e de LEITURA. Toda gravacao atravessa para o arquivo na hora --
-    segurar pagina suja em RAM daria mais e trocaria uma garantia por
-    velocidade sem avisar: hoje so uma queda da MAQUINA atrasa o .ndx em
-    relacao ao .reg, e nao uma queda do processo.
+    DESDE A 0.18.0 O CACHE E WRITE-BACK, NAO SO DE LEITURA. A pagina suja fica
+    em RAM ate o despejo, o fechamento da tabela ou o sincronizar -- nao vai
+    mais ao arquivo a cada chave. O preco e uma garantia: antes, uma queda do
+    PROCESSO nao atrasava o .ndx em relacao ao .reg, porque o write ja tinha
+    entregue a pagina ao nucleo; agora pode atrasar. O que torna isso seguro e
+    a MARCA DE SUJO no cabecalho (byte 52): ela vai ao arquivo ANTES da
+    primeira pagina suja e so sai depois de todas irem ao disco, entao quem
+    reabre um .ndx atrasado ACHA a marca levantada e recusa responder ate ser
+    reconstruido -- reindexar custa 0,31 s por milhao de chaves. Indice
+    atrasado se refaz; indice atrasado em silencio, nao. Detalhe completo em
+    docs/FORMATO.md, secao ".ndx", "A marca de sujo (byte 52)".
 
     VOLUME DO DIARIO. O "diario_volume_mib" diz onde o volume do .log, da
     .trash e do .reason corta. ZERO NAO MEXE, e esse e o padrao: vale o

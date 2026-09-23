@@ -1005,10 +1005,15 @@ tocadas por linha**, das quais 8,80 são releituras, e o CRC de uma página de
 total.
 
 Cada `.ndx` aberto guarda até 2.048 páginas (8 MiB), com despejo por segunda
-chance. A gravação **atravessa sempre** para o arquivo: segurar página suja em
-RAM daria mais e trocaria uma garantia por desempenho sem avisar — hoje só uma
-queda da máquina atrasa o `.ndx` em relação ao `.reg`, e não uma queda do
-processo.
+chance. **Este parágrafo descrevia a versão anterior à 0.18.0** — quando toda
+gravação ainda ia ao arquivo na hora — e sobreviveu à troca sem ser corrigido,
+contradizendo a §«A marca de sujo (byte 52)», logo acima. Desde a 0.18.0 a
+gravação **não atravessa mais** a cada chave: a página fica suja em RAM até o
+despejo, o `fechar` ou o `sincronizar` (`ndx.rs:199-208`, `936-965`). O que uma
+queda custa hoje — e o que a marca de sujo recupera no arranque — já está
+contado uma vez, na §«A marca de sujo», acima: não repetimos aqui para não
+deixar duas versões da mesma garantia divergirem de novo, que foi exatamente
+como este parágrafo envelheceu.
 
 Custo de uma inserção com dois índices: **44,4 → 18,5 µs**. Os números e a
 varredura que escolheu o teto estão em `docs/DESEMPENHO.md`.
