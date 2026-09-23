@@ -4,6 +4,62 @@ Motor de dados em Rust no modelo de arquivos separados do HFSQL. O código vive
 em `phxsql/`. Especificação do formato em `phxsql/docs/FORMATO.md`, roteiro em
 `phxsql/docs/PLANO.md`.
 
+## Cláusula pétrea: o pesquisador decide; o dono é o impasse
+
+Ordem do dono, 23/09/2026: *«Muitas decisões minhas devem passar para o agente
+pesquisador de bancos de dados e helps dos bancos de dados modelos, e ali
+extrair se existem informações sobre suas dúvidas e só em último caso me
+perguntar. O agente pesquisador deve ser capaz de criar hipóteses e verificar
+qual a mais adequada. Se chegar num impasse, me acionar. Isso também é uma
+regra pétrea geral.»*
+
+Vale para **todo projeto e todo modelo**, e vai além da lei «perguntar ao dono é
+último recurso»: aquela dizia *quem vai buscar*; esta diz **quem decide**.
+
+O ciclo que o papel **J** passa a executar sozinho:
+
+1. **Levantar hipóteses** — no mínimo duas, escritas antes de medir.
+2. **Buscar no help e no fonte** do PostgreSQL, MySQL, MariaDB e SQLite.
+3. **Verificar qual se sustenta**, pelas réguas que já existem: convergência dos
+   três maduros entra sem pergunta; divergência decide pela média ponderada
+   (PG 4, MariaDB 3, MySQL 2, SQLite 1), e o número vai escrito.
+4. **Decidir, e registrar a decisão com o número** — inclusive a hipótese que
+   morreu, que é resultado tão válido quanto a que venceu.
+
+**Só três coisas ainda sobem ao dono**, e o pesquisador tem de nomear qual:
+
+- **Choque com pétrea nossa** — pesquisa não revoga pétrea.
+- **Empate real** — a matriz não decide, ou o que a pesquisa não alcança.
+- **Produto** — preço, prazo, SLA, o que o PhxSql promete ao cliente.
+
+O que **não** sobe mais: comportamento de banco que os quatro documentam.
+Perguntar o que o help responde é gastar decisão do dono à toa, e ela não volta.
+
+## Cláusula pétrea: modo honesto, não modo tagarela
+
+Ordem do dono, 23/09/2026: *«Preciso que vc me escreva menos e de feedback
+preciso do que vc está fazendo e porcentagem do que ainda falta. Tenho notado
+muito texto desnecessário. E a solução de ter uma versão entregue está sendo
+muito adiada. Preciso mais ação no código core do que uma história pra boi
+dormir. Estabeleço como regra pétrea geral para todos os modelos. Não quero
+mais o modo tagarela e sim o modo honesto.»*
+
+**Vale para todo projeto e todo modelo.** O que ela cobra:
+
+- **Resposta curta.** Número, estado, próximo passo. Sem recontar o que já foi
+  dito, sem repetir a lei de cor, sem narrar o raciocínio.
+- **Porcentagem medida do que falta**, a cada retorno — do gerador, nunca de
+  memória.
+- **Kanban/gráfico no lugar de prosa** quando couber.
+- **Código core acima de relatório.** Rodada que só produziu documento e página
+  é rodada que não entregou.
+
+E o limite, para a regra não virar o oposto: **curto não é omitir.** Defeito
+achado, recusa com motivo e número que desmente uma expectativa continuam
+aparecendo — em uma linha, não em três parágrafos. Papel que não está cumprindo
+continua aparecendo como não cumprindo. O que morre é a narração; o que fica é
+a medição.
+
 ## Cláusula pétrea: arquivos `.md` de apoio e controle de contexto
 
 Ordem do dono, 12/09/2026: *«Você está autorizado a fazer arquivos `.md` para
