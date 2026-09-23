@@ -219,7 +219,16 @@ def escolher_faixas(itens_geral):
 # arquivo). Isso e dito, nao escondido: o script imprime os cortes a cada
 # corrida exatamente para que essa divergencia apareca.
 URLS_PUBLICADAS = {
-    # "pedidos-001-XXX.html": "https://claude.ai/code/artifact/...",
+    # Preenchido pelo integrador em 23/09/2026, DEPOIS de publicar as cinco.
+    # A chave e o NOME que o corte escolheu naquela corrida -- se um corte se
+    # deslocar, a chave velha para de bater e a navegacao cai no nome do
+    # arquivo, em vez de fingir que a URL antiga ainda serve para uma faixa
+    # que mudou de conteudo. Corte que se move e' o preco de caber no teto.
+    "pedidos-001-190.html": "https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz",
+    "pedidos-191-260.html": "https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC",
+    "pedidos-261-310.html": "https://claude.ai/artifact/R4iGBeRQt7ao6yffQkmGCp",
+    "pedidos-311-350.html": "https://claude.ai/artifact/S1oHX53g9q4oqHSn7Yv3vm",
+    "pedidos-351-mais.html": "https://claude.ai/artifact/6iLs2ho6wDKgEF6eja6Kpm",
 }
 
 
