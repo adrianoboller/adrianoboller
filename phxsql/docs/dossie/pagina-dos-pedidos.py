@@ -228,12 +228,16 @@ URLS_PUBLICADAS = {
     "pedidos-191-260.html": "https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC",
     "pedidos-261-310.html": "https://claude.ai/artifact/R4iGBeRQt7ao6yffQkmGCp",
     "pedidos-311-350.html": "https://claude.ai/artifact/S1oHX53g9q4oqHSn7Yv3vm",
-    # As faixas 351+ se PARTIRAM em 23/09/2026 com os onze pedidos do dia.
-    # A chave velha `pedidos-351-mais.html` saiu: a faixa dela deixou de
-    # existir, e manter a URL apontando para conteudo que mudou seria
-    # mentira. O artefato antigo continua no ar com o retrato de ontem.
-    "pedidos-351-410.html": "https://claude.ai/artifact/5BKdtkEBVo1kyR8CEyevKm",
-    "pedidos-411-mais.html": "https://claude.ai/artifact/9ogdsW7DBrM7WLheoRwm15",
+    # As faixas 351+ ja se deslocaram DUAS vezes em 23/09/2026, e e por isso
+    # que a chave e o NOME e nao o numero: de `351-mais` para `351-410` +
+    # `411-mais` pela manha, e de novo para `351-420` + `421-mais` a noite,
+    # quando os cinco pedidos fechados engordaram o texto. O gerador apaga a
+    # faixa orfa sozinho; o que NAO se faz sozinho e renomear a chave aqui --
+    # e enquanto ela nao e renomeada a navegacao cai no nome do arquivo, que
+    # e o certo, porque URL velha apontando para faixa de outro conteudo
+    # seria mentira. Renomeado depois de republicar, nunca antes.
+    "pedidos-351-420.html": "https://claude.ai/artifact/5BKdtkEBVo1kyR8CEyevKm",
+    "pedidos-421-mais.html": "https://claude.ai/artifact/9ogdsW7DBrM7WLheoRwm15",
 }
 
 
