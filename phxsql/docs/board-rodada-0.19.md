@@ -229,3 +229,55 @@ estrutura:
 contraexemplo da lei «guarda nova entra pedida»: aqui a guarda entrou no lugar
 certo — a função única —, e não em quarenta pontos de chamada onde o esquecido
 vira a porta dos fundos.
+
+## V2 voltou: o portão da versão presta, e o selo passa a ser o ÚLTIMO passo
+
+Conferência feita em 23/09/2026 04:47 (a frente V2 mediu; o integrador
+reconferiu cinco afirmações uma a uma, porque relatório de agente não vale
+pelo valor de face).
+
+| o que V2 afirmou | reconferido pelo integrador |
+|---|---|
+| o `Cargo.toml` voltou byte a byte do teste do vermelho | **sim** — `version = "0.19.0"` |
+| o portão roda verde, saída 0 | **sim** |
+| régua medida, não digitada (versão, commit da selagem, distância) | **sim**, e o teto 51 foi recalculado à parte, batendo com a tabela |
+| o CHANGELOG diz **890** commits, o real é 891 | **é 892** — o `b189098` do integrador empurrou mais um |
+| `CAPABILITIES.json` parado em `0.18.0` | **sim** |
+| tag Docker `phxsql:0.18.0` digitada à mão | **sim**, `bancada/docker/montar-dois.py:25` |
+
+**O 890 → 891 → 892 em quarenta minutos é o achado, não o erro.** A frase do
+próprio CHANGELOG — «quem selar por último confere de novo, porque a árvore é
+compartilhada e o número anda» — previu isso, e a prova veio sozinha **duas
+vezes**. Número medido numa árvore com quatro frentes vivas tem validade de
+minutos, e é por isso que ele se remede no instante do commit final.
+
+### A dependência que reordena a integração
+
+O `CHANGELOG.md` consolida só o que **já estava commitado** antes desta rodada.
+Ele não tem seção para 289, 290, 314, 324, 340, 342, 393 e 395 — os pedidos que
+P, S e U estão fechando **agora**. Não é defeito da V: não se descreve commit
+que ainda não existe. Mas a consequência é de ordem:
+
+> **O selo da 0.19.0 é o ÚLTIMO passo da rodada, não o primeiro.** Primeiro
+> entram P, S e U; depois se escreve a seção deles no CHANGELOG; só então se
+> remede a distância e se sela.
+
+### Os três que V2 nomeou para o `PENDENCIAS` (ela não escreveu lá, como a cerca mandava)
+
+1. **`CAPABILITIES.json` desatualizado** — regenerar com `numeros-do-projeto.py`
+   antes da selagem. Enquanto não rodar, `status.html`, `testes.html` e
+   `graficos.html` publicam **0.18.0**, porque os três leem daquele arquivo.
+2. **Tag Docker digitada** em `bancada/docker/montar-dois.py:25` e
+   `dblink-mariadb.py:76` — vão apontar para imagem velha depois do bump. O
+   irmão `bancada/replicacao/docker/provar.py:72` já resolve certo, com
+   `phxsql-bancada:local`, sem número nenhum.
+3. **Seção nova no CHANGELOG** para os pedidos desta rodada, e a distância
+   remedida no commit final.
+
+### Portões no instante em que V2 mediu
+
+- `clippy --workspace --all-targets`: **zero avisos, saída 0** — o aviso do
+  `table.rs:2552` sumiu (P o consertou ao vivo).
+- `fmt --check`: **1 divergência**, em `valores.rs` — na linha **1331**, não
+  1316: o arquivo está sendo editado enquanto se mede, e a coordenada anda
+  junto. É de P, e fica com P.
