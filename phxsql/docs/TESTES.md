@@ -42,11 +42,11 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Protocolo e portões (despachar) | 590 | 21,9 |
-| Motor de dados (arquivos, índice, diários) | 550 | 20,4 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 257 | 9,5 |
+| Protocolo e portões (despachar) | 593 | 21,9 |
+| Motor de dados (arquivos, índice, diários) | 550 | 20,3 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 261 | 9,7 |
 | Camada SQL (léxico, sintaxe, tradução) | 238 | 8,8 |
-| Servidor (outros) | 209 | 7,8 |
+| Servidor (outros) | 209 | 7,7 |
 | Configuração | 137 | 5,1 |
 | Criptografia e codificação | 128 | 4,7 |
 | DbLink | 94 | 3,5 |
@@ -69,7 +69,7 @@ contando `#[test]` por arquivo e agrupando:
 | **Alertas e e-mail** | **8** | **0,3** |
 | **CLI** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,2** |
-| **total** | **2696** | |
+| **total** | **2703** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 

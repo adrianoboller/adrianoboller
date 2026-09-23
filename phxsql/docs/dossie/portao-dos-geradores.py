@@ -188,11 +188,34 @@ def sem_carimbo(texto: str) -> str:
 # execucao por varredura (`achar_o_dossie`), porque o nome muda a cada refacao.
 DOSSIE = "@dossie"
 
+# Pedido 403 (23/09/2026): as paginas de pedidos por faixa nao tem mais nome
+# fixo nem quantidade fixa -- `pagina-dos-pedidos.py` corta pelo TAMANHO
+# medido a cada corrida, entao o CONJUNTO de arquivos `pedidos-*.html` pode
+# ganhar ou perder um membro de uma rodada para outra (um corte que se
+# desloca). Uma lista digitada de nomes envelheceria calada na primeira
+# rodada em que o tamanho dos pedidos deslocasse um corte -- e' o mesmo
+# defeito do pedido 404, por outro lado. Este marcador e' resolvido por
+# VARREDURA (`glob("pedidos-*.html")`), nos dois lados da corrida, e o
+# CONJUNTO em si (quem entrou, quem saiu) entra na comparacao -- nao so o
+# conteudo de cada arquivo.
+PEDIDOS_FAIXAS = "@pedidos-faixas"
+
 PLANO = [
     ("numeros-da-bancada.py", [DOSSIE, "docs/PENDENCIAS.md"], "exato",
      "le resultados.json das bancadas; funcao pura das fontes versionadas"),
-    ("pagina-dos-pedidos.py", [DOSSIE, "docs/dossie/pedidos.html", "docs/PENDENCIAS.md"], "exato",
-     "conta os tres estados do PENDENCIAS.md; deterministico"),
+    # Pedido 403 (23/09/2026): a pagina unica passou de 1,3 MB e o guarda da
+    # republicacao passou a exigir ler a versao publicada inteira -- ~580.000
+    # fichas so para republicar. Partida em paginas por faixa de numero de
+    # pedido, cortadas pelo TAMANHO medido (nao por numero redondo -- a
+    # primeira versao cortava em blocos fixos de 100 e a ultima faixa nasceu
+    # acima do teto de republicacao, medido pelo integrador). O NUMERO de
+    # paginas e os nomes delas NAO sao mais fixos -- por isso `PEDIDOS_FAIXAS`
+    # (varredura) no lugar de uma lista digitada. `docs/dossie/pedidos.html`
+    # (a pagina unica antiga) deixou de ser gerado e o proprio script apaga o
+    # arquivo se sobrar no disco.
+    ("pagina-dos-pedidos.py",
+     [DOSSIE, PEDIDOS_FAIXAS, "docs/PENDENCIAS.md"],
+     "exato", "conta os tres estados do PENDENCIAS.md; deterministico"),
     ("cobertura-por-area.py", [DOSSIE, "docs/TESTES.md"], "exato",
      "conta #[test] por area no fonte; deterministico"),
     ("docs/tecnologias/extrair.py", ["docs/TECNOLOGIAS.md"], "exato",
@@ -392,12 +415,27 @@ def conferir_um(script: str, alvos, modo: str, dossie: pathlib.Path):
             + ("".join(" " + a for a in args))
         ]
 
-    caminhos = [resolver(a, dossie) for a in alvos]
+    caminhos = [resolver(a, dossie) for a in alvos if a != PEDIDOS_FAIXAS]
     faltantes = [c for c in caminhos if not c.exists()]
     if faltantes:
         return "vermelho", [f"alvo nao existe: {c.relative_to(RAIZ)}" for c in faltantes]
 
     antes = {c: c.read_bytes() for c in caminhos}
+
+    # PEDIDOS_FAIXAS e' um CONJUNTO de arquivos, nao um caminho so -- achado
+    # por varredura dos dois lados da corrida (pedido 403: o corte e' pelo
+    # tamanho medido, entao o conjunto de arquivos pode mudar de uma rodada
+    # para outra). "alvo nao existe" aqui e' "nenhuma pagina de pedidos no
+    # disco" -- sinal de que ninguem rodou o gerador de verdade ainda.
+    usa_faixas = PEDIDOS_FAIXAS in alvos
+    antes_faixas = {}
+    if usa_faixas:
+        pasta_pedidos = RAIZ / "docs" / "dossie"
+        antes_faixas = {p: p.read_bytes()
+                        for p in sorted(pasta_pedidos.glob("pedidos-*.html"))}
+        if not antes_faixas:
+            return "vermelho", ["alvo nao existe: nenhum docs/dossie/pedidos-*.html "
+                                "no disco -- rode o gerador de verdade primeiro"]
 
     # O trio confere a frescura da figura por mtime, e mtime nao sobrevive a um
     # checkout. Pomos a figura como a mais nova para reproduzir a pre-condicao
@@ -407,14 +445,27 @@ def conferir_um(script: str, alvos, modo: str, dossie: pathlib.Path):
         os.utime(FIGURA_TRIO, (MEDICAO_TRIO.stat().st_atime,
                                MEDICAO_TRIO.stat().st_mtime + 1))
 
+    def restaurar():
+        for c, b in antes.items():
+            c.write_bytes(b)
+        if not usa_faixas:
+            return
+        pasta_pedidos = RAIZ / "docs" / "dossie"
+        depois_faixas = {p: p.read_bytes()
+                         for p in sorted(pasta_pedidos.glob("pedidos-*.html"))}
+        for p in depois_faixas:  # criado por esta corrida -- apaga
+            if p not in antes_faixas:
+                p.unlink()
+        for p, b in antes_faixas.items():  # apagado ou mudado -- reescreve
+            p.write_bytes(b)
+
     try:
         r = subprocess.run(
             [sys.executable, str(caminho_do_gerador(script))] + partir(script)[1],
             cwd=RAIZ, capture_output=True, text=True,
         )
     except Exception as e:  # noqa: BLE001 -- o portao nunca cai; ele reprova
-        for c, b in antes.items():
-            c.write_bytes(b)
+        restaurar()
         return "vermelho", [f"o gerador nao rodou: {e}"]
 
     motivos = []
@@ -444,9 +495,31 @@ def conferir_um(script: str, alvos, modo: str, dossie: pathlib.Path):
                     f"(fora o carimbo de data/hora):\n"
                     + primeiro_hunk(a_txt, d_txt, c.name))
 
+    if usa_faixas:
+        pasta_pedidos = RAIZ / "docs" / "dossie"
+        depois_faixas = {p: p.read_bytes()
+                         for p in sorted(pasta_pedidos.glob("pedidos-*.html"))}
+        criados = sorted(p.name for p in depois_faixas if p not in antes_faixas)
+        sumidos = sorted(p.name for p in antes_faixas if p not in depois_faixas)
+        if criados or sumidos:
+            det = []
+            if criados:
+                det.append(f"nasceriam: {', '.join(criados)}")
+            if sumidos:
+                det.append(f"sumiriam: {', '.join(sumidos)}")
+            motivos.append(
+                "VELHO: docs/dossie/pedidos-*.html -- o CONJUNTO de paginas "
+                "mudaria (o corte por tamanho se deslocou): " + "; ".join(det))
+        for p in sorted(set(antes_faixas) & set(depois_faixas)):
+            if depois_faixas[p] != antes_faixas[p]:
+                a_txt = antes_faixas[p].decode("utf-8", "replace")
+                d_txt = depois_faixas[p].decode("utf-8", "replace")
+                motivos.append(
+                    f"VELHO: {p.relative_to(RAIZ)} -- re-rodar muda o arquivo:\n"
+                    + primeiro_hunk(a_txt, d_txt, p.name))
+
     # Restaurar SEMPRE -- o portao confere, nao conserta.
-    for c, b in antes.items():
-        c.write_bytes(b)
+    restaurar()
 
     if motivos:
         return "vermelho", motivos

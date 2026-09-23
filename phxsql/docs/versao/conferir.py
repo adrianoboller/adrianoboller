@@ -66,7 +66,13 @@ DERIVADOS = [
      "`alvo.write_text(...)`, com o nome numa variavel"),
 ]
 
-IGNORAR = ("target/", ".git/", "docs/dossie/pedidos.html", "pacotes/")
+# "docs/dossie/pedidos-" cobre as quatro paginas do pedido 403 (prefixo, nao
+# nome exato): cada uma embute a PROSA inteira de todo pedido do
+# PENDENCIAS.md, entao qualquer versao antiga citada num pedido historico
+# ("Desde a 0.18.0...") apareceria como falso positivo. Ate 23/09/2026 era um
+# unico "docs/dossie/pedidos.html"; o prefixo sobrevive a proxima faixa nascer
+# sem precisar editar esta lista de novo.
+IGNORAR = ("target/", ".git/", "docs/dossie/pedidos-", "pacotes/")
 
 
 def versao_da_fonte():

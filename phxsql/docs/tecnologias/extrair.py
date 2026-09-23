@@ -524,8 +524,27 @@ def bloco_outras_linguagens() -> str:
     # com `cognicao/`, `dossie/`, `propostas/` e as outras dentro. Numero certo,
     # receita errada ao lado -- e receita que mente e' pior que numero que
     # falta, porque quem audita procura o erro no lugar errado.
-    a, l = contar_arquivos(["*.md"], RAIZ / "docs")
-    linhas_out.append(f"| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | {a} | {l} |")
+    #
+    # Pedido 404: `docs/TECNOLOGIAS.md` -- o ARQUIVO QUE ESTE PROPRIO SCRIPT
+    # GRAVA -- mora dentro de `docs/`, entao contar `docs/*.md` recursivo
+    # conta a propria saida. Cada gravacao muda o tamanho de algum bloco (por
+    # exemplo o de RECUSADO, que cresce a cada pedido novo), e a proxima
+    # passagem le esse tamanho novo -- tres corridas seguidas sem edicao
+    # nenhuma deram 106.750 -> 106.752 -> 106.753 linhas, nunca um numero
+    # fixo numa passagem so. E o mesmo defeito que a setima pagina de status
+    # ja resolveu para o proprio tamanho dela (§17): ela escreve "-- (esta
+    # pagina)" em vez de se medir, porque medir-se mudaria o numero que a
+    # medicao ia publicar. Aqui a cura e' excluir o arquivo da propria
+    # contagem -- ele sai da ENTRADA antes de virar SAIDA, entao uma
+    # passagem so basta.
+    a, l = contar_arquivos(
+        ["*.md"], RAIZ / "docs", excluir=["docs/TECNOLOGIAS.md"]
+    )
+    linhas_out.append(
+        "| Markdown (documentacao tecnica) | `docs/`, **recursivo** "
+        "(inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | "
+        f"{a} | {l} |"
+    )
 
     # Contava so `docs/dossie/`, e os geradores moram em CINCO pastas desde que
     # o PMO, a planilha, as tecnologias e a pagina de status nasceram. Medido:
@@ -538,6 +557,17 @@ def bloco_outras_linguagens() -> str:
     a, l = contar_arquivos(["*.c", "*.h"], RAIZ / "bancada" / "embutido")
     if a:
         linhas_out.append(f"| C (prova da ABI embutida) | `bancada/embutido/` | {a} | {l} |")
+
+    linhas_out.append("")
+    linhas_out.append(
+        "A linha «Markdown (documentacao tecnica)» acima **exclui o proprio "
+        "`docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, "
+        "e contar a saida como entrada faz cada gravacao mudar o numero que "
+        "a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem "
+        "edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, "
+        "nunca um ponto fixo). Mesmo molde da §17 da setima pagina de "
+        "status, que escreve «— (esta pagina)» em vez de medir a si mesma."
+    )
 
     return "\n".join(linhas_out)
 

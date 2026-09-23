@@ -1092,7 +1092,21 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
             Json::Numero(_) => Value::Date(j.inteiro().ok_or_else(|| erro("data"))? as i32),
             _ => return Err(erro("data")),
         },
-        ColumnType::Time => Value::Time(j.inteiro().ok_or_else(|| erro("hora"))? as i32),
+        // Hora escrita como TEXTO de relogio tambem serve, pedido 396: o
+        // `linha_para_json` SEMPRE devolve a `Time` como texto (`hora_iso`),
+        // e ate aqui so o inteiro em centesimos voltava -- o mesmo defeito
+        // que a `DateTime` tinha ao lado, com o mesmo alcance: desde o
+        // `rowtime` do PSCH v10 e por causa dele, alcanca so quem DECLARA
+        // coluna `Time`, mas ler uma linha, mexer noutro campo e mandar ela
+        // de volta ja nao fechava o ciclo para essas colunas. O texto passa
+        // pelo `centesimos_de_hora_iso`, irmao do `ms_de_instante_iso`: recusa
+        // fuso em vez de engoli-lo.
+        ColumnType::Time => match j {
+            Json::Texto(t) => Value::Time(
+                phxsql_core::datahora::centesimos_de_hora_iso(t).ok_or_else(|| erro("hora"))?,
+            ),
+            _ => Value::Time(j.inteiro().ok_or_else(|| erro("hora"))? as i32),
+        },
         // Instante escrito como TEXTO ISO tambem serve, exatamente como a
         // `Date` ao lado ja aceitava. O irmao estava para tras: o
         // `linha_para_json` SEMPRE devolve a `DateTime` como texto
@@ -1389,6 +1403,76 @@ mod tests {
                 .collect(),
         );
         assert_eq!(json_para_linha(&lista, &e).unwrap(), original);
+    }
+
+    /// **A hora fecha o ciclo pelo mesmo molde do teste ao lado**, pedido
+    /// 396 -- o irmao que faltava do `rowtime`. `Time` nao e coluna de
+    /// sistema (nao ha uma pronta em toda tabela como a `DateTime`), entao o
+    /// esquema aqui declara uma so para provar o ciclo.
+    #[test]
+    fn a_hora_lida_volta_a_ser_gravada_sem_traducao_nenhuma() {
+        let e = Schema::new(
+            "t",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("hora", ColumnType::Time),
+            ],
+            vec![],
+        )
+        .unwrap();
+        let original = vec![
+            Value::Int(7),
+            Value::Time(10 * 360_000 + 30 * 6_000 + 25), // 10:30:00,25
+            Value::Bool(false),
+            Value::UInt(3),
+            Value::UInt(41),
+            Value::DateTime(0),
+        ];
+        assert_eq!(original.len(), e.colunas().len());
+
+        // A ida: e a resposta que o cliente recebe, com a hora em texto.
+        let json = linha_para_json(&original, &e);
+        assert_eq!(
+            json.campo("hora").and_then(Json::texto),
+            Some("10:30:00,25"),
+            "a hora deixou de sair como texto: a prova mudou de assunto"
+        );
+
+        // A volta: a MESMA resposta, sem o cliente traduzir nada.
+        let de_volta = json_para_linha(&json, &e).expect("a linha lida nao volta");
+        assert_eq!(de_volta, original, "o ciclo nao fecha");
+
+        // E como LISTA tambem, que e a outra forma que o protocolo aceita.
+        let lista = Json::Lista(
+            e.colunas()
+                .iter()
+                .zip(original.iter())
+                .map(|(c, v)| valor_para_json(v, &c.ty))
+                .collect(),
+        );
+        assert_eq!(json_para_linha(&lista, &e).unwrap(), original);
+    }
+
+    /// **O comportamento VELHO continua identico** -- protecao que quebra
+    /// todo cliente antigo nao e protecao, e estrago. Todo cliente escrito
+    /// antes do pedido 396 manda a hora como INTEIRO em centesimos, e esse
+    /// caminho nao pode mudar de resultado.
+    #[test]
+    fn o_inteiro_em_centesimos_continua_identico() {
+        assert_eq!(
+            json_para_valor(&Json::de_i64(3_780_025), &ColumnType::Time).unwrap(),
+            Value::Time(3_780_025)
+        );
+    }
+
+    /// Fuso na hora e RECUSADO, nomeando o campo -- nunca engolido em
+    /// silencio. E o mesmo motivo do `ms_de_instante_iso`: aqui nao existe
+    /// fuso nenhum, e aceitar um deslocamento moveria o relogio sem ninguem
+    /// perceber.
+    #[test]
+    fn hora_com_fuso_recusa() {
+        let e = json_para_valor(&Json::texto_de("10:30:00+03:00"), &ColumnType::Time).unwrap_err();
+        assert!(format!("{e}").contains("hora"), "{e}");
     }
 
     #[test]

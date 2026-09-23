@@ -229,8 +229,10 @@ estiver conferindo só esta página.
 ### Esta página roda por ÚLTIMO, e o motivo é medido
 
 A §20 publica o **tamanho em KiB das outras páginas geradas**. Isso amarra esta
-página a todas elas: rodar o `pagina-dos-pedidos.py` depois desta muda o
-`pedidos.html` em 1 KiB, e o portão acusa esta aqui como VELHA — corretamente.
+página a todas elas: rodar o `pagina-dos-pedidos.py` depois desta muda um dos
+`pedidos-*.html` (pedido 403 partiu a antiga `pedidos.html` em faixas cortadas
+pelo tamanho medido — o número de páginas não é fixo) em alguns bytes, e o
+portão acusa esta aqui como VELHA — corretamente.
 A ordem que funciona é a do `docs/dossie/LEIA-ME.md` com o `status-html.sh`
 **no fim**, depois do `numerar-figuras.py`.
 

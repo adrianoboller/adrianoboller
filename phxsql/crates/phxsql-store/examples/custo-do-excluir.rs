@@ -69,7 +69,15 @@ const CIDADES: [&str; 8] = [
     "Criciuma",
 ];
 
-const IRMAS: usize = 30;
+/// Quantas irmas no diretorio. **Trinta continua sendo o padrao** para
+/// nenhuma medicao anterior mudar de regua (`DESEMPENHO.md` §24.6); quem quer
+/// outra escala manda `PHX_IRMAS`, e o modo `--escala` varre varias.
+fn irmas_no_diretorio() -> usize {
+    std::env::var("PHX_IRMAS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30)
+}
 
 fn colunas() -> Vec<Column> {
     vec![
@@ -132,11 +140,14 @@ fn montar(dir: &Path, indices: Vec<IndexDef>, n: i64) -> Table {
 /// integridade abre a cada exclusao para perguntar «alguem aponta para mim?».
 /// Os nomes nao levam `_` seguido de digito: isso e' sufixo de volume para o
 /// catalogo, e trinta irmas virariam uma.
-fn criar_irmas(dir: &Path) {
-    for i in 0..IRMAS {
+fn criar_irmas(dir: &Path, quantas: usize) {
+    for i in 0..quantas {
+        // TRES letras, e nao duas: com duas so cabiam 676 irmas, e a pergunta
+        // do dono (23/09/2026) vai a 5.000 tabelas no dicionario.
         let nome = format!(
-            "irma{}{}",
-            (b'a' + (i / 26) as u8) as char,
+            "irma{}{}{}",
+            (b'a' + (i / 676) as u8) as char,
+            (b'a' + ((i / 26) % 26) as u8) as char,
             (b'a' + (i % 26) as u8) as char
         );
         let esquema = Schema::new(
@@ -151,6 +162,9 @@ fn criar_irmas(dir: &Path) {
         let mut t = Table::criar(dir, esquema).unwrap();
         t.inserir(&[Value::Int(1), Value::Str("x".into())]).unwrap();
         t.sincronizar().unwrap();
+        if quantas >= 500 && (i + 1) % 500 == 0 {
+            eprintln!("    ... {} de {quantas} irmas criadas", i + 1);
+        }
     }
 }
 
@@ -186,7 +200,7 @@ fn medir(
     if irmas {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        criar_irmas(&dir);
+        criar_irmas(&dir, irmas_no_diretorio());
     }
     let mut t = if irmas {
         let mut t = Table::criar(&dir, esquema_com(indices)).unwrap();
@@ -219,13 +233,209 @@ fn isolado<F: FnMut(i64)>(rotulo: &str, m: i64, mut f: F) -> f64 {
 }
 
 /// O corpo tracado: abre a tabela semeada e exclui. Nada antes, nada depois.
-fn sonda(dir: &str, n: i64, m: i64) {
+fn sonda(dir: &str, n: i64, m: i64, inicio: i64) {
     phxsql_store::ndx::definir_cache_paginas(1_000_000);
     phxsql_store::lixeira::definir_na_janela(true);
     let mut t = Table::abrir(dir, "precos").expect("abrir a tabela semeada");
     for k in 0..m {
-        t.excluir(alvo(k, n)).unwrap();
+        t.excluir(alvo(k + inicio, n)).unwrap();
     }
+}
+
+/// Soma os arquivos do diretorio: quanto ocupa um dicionario de K tabelas.
+fn tamanho_do_diretorio(dir: &Path) -> (u64, u64) {
+    let mut arquivos = 0u64;
+    let mut bytes = 0u64;
+    if let Ok(it) = std::fs::read_dir(dir) {
+        for e in it.flatten() {
+            if let Ok(md) = e.metadata() {
+                if md.is_file() {
+                    arquivos += 1;
+                    bytes += md.len();
+                }
+            }
+        }
+    }
+    (arquivos, bytes)
+}
+
+/// Microssegundos por chamada, sem imprimir nada -- o irmao mudo do `isolado`.
+fn quanto<F: FnMut(i64)>(vezes: i64, mut f: F) -> f64 {
+    let inicio = Instant::now();
+    for k in 0..vezes {
+        f(k);
+    }
+    inicio.elapsed().as_secs_f64() * 1e6 / vezes.max(1) as f64
+}
+
+/// Chamadas de sistema POR EXCLUSAO no diretorio JA preparado, por diferenca
+/// entre duas sondas (2 e 7 exclusoes) que apagam linhas DIFERENTES.
+///
+/// Preparar o diretorio de novo, como a secao 4 faz, custaria criar 5.000
+/// tabelas mais duas vezes; aqui a abertura da tabela cancela na diferenca do
+/// mesmo jeito, e o `inicio` da sonda garante que a segunda corrida nao caia
+/// em linha ja apagada -- linha ja apagada sai barata e mentiria na conta.
+fn syscalls_por_exclusao(base: &Path, dir: &Path, n: i64) -> Option<BTreeMap<String, f64>> {
+    let eu = std::env::current_exe().ok()?;
+    let mut por_m = Vec::new();
+    // Fora das faixas que as corridas ja apagaram (ate `n/2 + ops`).
+    for (m, inicio) in [(2i64, n * 7 / 10), (7, n * 8 / 10)] {
+        let log = base.join(format!("strace-escala-{m}.log"));
+        let args = [
+            "--sonda".to_string(),
+            dir.display().to_string(),
+            n.to_string(),
+            m.to_string(),
+            inicio.to_string(),
+        ];
+        strace::tracar(&eu, &args, "openat,statx,newfstatat,getdents64", &log)?;
+        let mut contagem: BTreeMap<String, f64> = BTreeMap::new();
+        for (chamada, _) in strace::chamadas(&log) {
+            *contagem.entry(chamada).or_insert(0.0) += 1.0;
+        }
+        let _ = std::fs::remove_file(&log);
+        por_m.push(contagem);
+    }
+    let (pequena, grande) = (&por_m[0], &por_m[1]);
+    let mut saida = BTreeMap::new();
+    for (k, v) in grande {
+        let por_op = (v - pequena.get(k).copied().unwrap_or(0.0)) / 5.0;
+        if por_op >= 0.05 {
+            saida.insert(k.clone(), por_op);
+        }
+    }
+    Some(saida)
+}
+
+/// A pergunta do dono, 23/09/2026: **«2 tabelas no dicionario de dados ou
+/// 5.000 -- o uso continua o mesmo?»**
+///
+/// A resposta nao se extrapola da medicao de 30 irmas: 5.000 tabelas sao
+/// 40.000 arquivos num diretorio, e o `readdir`, a cache de dentry e o indice
+/// do sistema de arquivos podem mudar de comportamento no caminho. Entao cada
+/// ponto se mede, e o que se olha e o **custo POR IRMA** em cada um: plano
+/// quer dizer que a extrapolacao vale, crescente e a descoberta.
+///
+/// Em cada ponto medem-se as duas metades:
+///
+/// - o que DEPENDE do numero de tabelas: o `excluir` (a busca reversa da
+///   chave, `table.rs:1759`), a varredura isolada do diretorio
+///   (`catalogo::tabelas_em`) e o `atualizar` de coluna **indexada**, que
+///   passa pelo `planejar_ao_alterar` (`table.rs:2140`) -- a segunda
+///   varredura, que a pergunta original nao mencionava;
+/// - o que NAO deveria depender: `Table::abrir`, `inserir`, `ler`, `buscar` e
+///   o `atualizar` de coluna nao indexada. `RegFile::abrir` monta o caminho
+///   pelo nome e so' cai no `read_dir` quando o volume simples nao existe.
+fn escala(n: i64, repeticoes: i64, pontos: &[usize]) -> Result<(), Box<dyn std::error::Error>> {
+    phxsql_store::ndx::definir_cache_paginas(1_000_000);
+    phxsql_store::lixeira::definir_na_janela(true);
+    let base = std::env::temp_dir().join(format!("phx-escala-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base)?;
+    let inst = Instancia::nova(&base)?;
+    // Com `n` pequeno as faixas de alvo se sobrepoem (ver `faixa`, abaixo).
+    assert!(n >= 50_000, "o modo --escala pede n >= 50.000 linhas");
+    println!(
+        "escala: {n} linhas na tabela alvo, {repeticoes} corridas por ponto, pontos {pontos:?}"
+    );
+    println!(
+        "K conta a tabela alvo: K=2 e' `precos` + 1 irma. Sem fsync na lixeira (como a §24.6)."
+    );
+    for &k in pontos {
+        let db = inst.criar_database(&format!("esc{k}"))?;
+        let dir = db.diretorio(None)?;
+        let relogio = Instant::now();
+        // A tabela ANTES das irmas: `montar` apaga o diretorio inteiro.
+        drop(montar(&dir, dois_indices(), n));
+        criar_irmas(&dir, k.saturating_sub(1));
+        let (arquivos, bytes) = tamanho_do_diretorio(&dir);
+        println!(
+            "\nCORPUS tabelas={k} arquivos={arquivos} bytes={bytes} mib={:.1} preparo_s={:.1}",
+            bytes as f64 / 1_048_576.0,
+            relogio.elapsed().as_secs_f64()
+        );
+        // As operacoes caras encolhem com K para a corrida caber no dia; o
+        // numero relatado e POR OPERACAO, entao a comparacao continua valendo.
+        // As faixas de alvo de cada bloco saem PROPORCIONAIS a `n` porque
+        // `alvo` e' modulo `n`: com deslocamento fixo e `n` pequeno, o alvo do
+        // `atualizar` cai no mesmo rowid que o `excluir` da corrida anterior ja
+        // apagou -- e o medidor quebra na corrida 2, ou pior, mede o caminho
+        // barato da linha inexistente sem dizer.
+        let faixa = n / 10;
+        let caras = (1_000_000usize / k.max(1)).clamp(40, 1_000) as i64;
+        let varreduras = (200_000usize / k.max(1)).clamp(50, 2_000) as i64;
+        let leves = 2_000i64;
+        for c in 1..=repeticoes {
+            let abrir = quanto(leves, |_| {
+                std::hint::black_box(Table::abrir(&dir, "precos").unwrap());
+            });
+            let varredura = quanto(varreduras, |_| {
+                std::hint::black_box(db.tabelas(None).unwrap());
+            });
+            // O que o pulso do cluster faz a cada volta (`servidor.rs:3825`):
+            // abrir TODA tabela do database.
+            let relogio_cat = Instant::now();
+            let mut abertas = 0u64;
+            for nome in db.tabelas(None)? {
+                std::hint::black_box(Table::abrir(&dir, &nome).ok());
+                abertas += 1;
+            }
+            let catalogo_ms = relogio_cat.elapsed().as_secs_f64() * 1e3;
+            let mut t = Table::abrir(&dir, "precos")?;
+            let inserir = quanto(leves, |kk| {
+                t.inserir(&linha(n + c * 10_000 + kk)).unwrap();
+            });
+            let ler = quanto(leves, |kk| {
+                std::hint::black_box(t.ler(alvo(kk, n)).unwrap());
+            });
+            let buscar = quanto(leves, |kk| {
+                std::hint::black_box(
+                    t.buscar("porId", &[Value::Int(alvo(kk, n) as i64)])
+                        .unwrap(),
+                );
+            });
+            // Coluna NAO indexada: o `planejar_ao_alterar` sai na primeira
+            // linha, e este e o `atualizar` que nao paga varredura nenhuma.
+            let simples = quanto(caras, |kk| {
+                let r = alvo(kk + faixa, n);
+                let mut v = linha(r as i64);
+                v[1] = Value::Str(format!("Produto {c:08}"));
+                t.atualizar(r, &v).unwrap();
+            });
+            // Coluna INDEXADA, e o valor muda a cada corrida de proposito:
+            // cidade igual nao muda coluna indexada nenhuma e o medidor sairia
+            // medindo o caminho barato sem dizer.
+            let indexada = quanto(caras, |kk| {
+                let r = alvo(kk + 2 * faixa, n);
+                let mut v = linha(r as i64);
+                v[2] = Value::Str(CIDADES[(r as usize + c as usize) % CIDADES.len()].into());
+                t.atualizar(r, &v).unwrap();
+            });
+            // Cada corrida apaga uma faixa nova: linha ja apagada sai barata.
+            let desloc = 3 * faixa + (c - 1) * faixa;
+            let excluir = quanto(caras, |kk| {
+                t.excluir(alvo(kk + desloc, n)).unwrap();
+            });
+            t.sincronizar()?;
+            drop(t);
+            println!(
+                "LINHA tabelas={k} corrida={c} excluir={excluir:.2} varredura={varredura:.2} \
+abrir={abrir:.2} inserir={inserir:.2} ler={ler:.2} buscar={buscar:.2} \
+alterar_simples={simples:.2} alterar_indexada={indexada:.2} catalogo_ms={catalogo_ms:.1} \
+abertas={abertas} ops_caras={caras}"
+            );
+        }
+        match syscalls_por_exclusao(&base, &dir, n) {
+            Some(c) => {
+                let resumo: Vec<String> = c.iter().map(|(s, v)| format!("{s}={v:.2}")).collect();
+                println!("SYSCALL tabelas={k} {}", resumo.join(" "));
+            }
+            None => println!("SYSCALL tabelas={k} sem `strace` nesta maquina"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    let _ = std::fs::remove_dir_all(&base);
+    Ok(())
 }
 
 /// A que arquivo (ou diretorio) uma chamada se refere, no nome que a casa usa.
@@ -257,7 +467,7 @@ fn contar_syscalls(base: &Path, n: i64, irmas: bool) -> Option<BTreeMap<(String,
         // iguais.
         drop(montar(&dir, dois_indices(), n));
         if irmas {
-            criar_irmas(&dir);
+            criar_irmas(&dir, irmas_no_diretorio());
         }
         let log = base.join(format!("strace-{m}.log"));
         let args = [
@@ -311,8 +521,33 @@ fn imprimir_syscalls(rotulo: &str, contagem: &BTreeMap<(String, String), f64>) {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(i) = args.iter().position(|a| a == "--sonda") {
-        sonda(&args[i + 1], args[i + 2].parse()?, args[i + 3].parse()?);
+        // O `inicio` e opcional: sem ele nada muda para quem ja chamava com
+        // tres argumentos, e com ele duas sondas seguidas no MESMO diretorio
+        // apagam linhas diferentes -- que e o que a contagem por diferenca
+        // precisa quando preparar o diretorio de novo custa 5.000 tabelas.
+        let inicio = args.get(i + 4).and_then(|s| s.parse().ok()).unwrap_or(0);
+        sonda(
+            &args[i + 1],
+            args[i + 2].parse()?,
+            args[i + 3].parse()?,
+            inicio,
+        );
         return Ok(());
+    }
+    if let Some(i) = args.iter().position(|a| a == "--escala") {
+        let n: i64 = args
+            .get(i + 1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(200_000);
+        let repeticoes: i64 = args.get(i + 2).and_then(|s| s.parse().ok()).unwrap_or(3);
+        let pontos: Vec<usize> = match args.get(i + 3) {
+            Some(lista) => lista
+                .split(',')
+                .filter_map(|x| x.trim().parse().ok())
+                .collect(),
+            None => vec![1, 2, 30, 500, 5_000],
+        };
+        return escala(n, repeticoes, &pontos);
     }
     let n: i64 = args.first().and_then(|s| s.parse().ok()).unwrap_or(200_000);
     let m: i64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(20_000);
@@ -359,7 +594,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let sem_indice = medir("sem indice nenhum", &base, vec![], false, true, n, m);
     let com_irmas = medir(
-        &format!("com {IRMAS} irmas no diretorio"),
+        &format!("com {} irmas no diretorio", irmas_no_diretorio()),
         &base,
         dois_indices(),
         true,
@@ -491,7 +726,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "  busca reversa: varrer o diretorio ........ {varredura:>7.2} us  {:>5.1}%",
         pct(varredura)
     );
-    println!("     + abrir {IRMAS} irmas (RegFile::abrir cada) {irmas:>7.2} us  (so' com irmas; {:.1}x o excluir)", com_irmas / direto);
+    println!("     + abrir {} irmas (RegFile::abrir cada) {irmas:>7.2} us  (so' com irmas; {:.1}x o excluir)", irmas_no_diretorio(), com_irmas / direto);
     println!(
         "       uma irma: {abrir_irma:.2} us, e {desserializar:.2} deles ({:.0}%) sao Schema::desserializar",
         desserializar / abrir_irma.max(1e-9) * 100.0
@@ -547,7 +782,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => println!("  sem `strace` nesta maquina -- a contagem nao se substitui."),
     }
     if let Some(c) = contar_syscalls(&base, n, true) {
-        imprimir_syscalls(&format!("com {IRMAS} irmas no diretorio"), &c);
+        imprimir_syscalls(
+            &format!("com {} irmas no diretorio", irmas_no_diretorio()),
+            &c,
+        );
     }
 
     let _ = std::fs::remove_dir_all(&base);

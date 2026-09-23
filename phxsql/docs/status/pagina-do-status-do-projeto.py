@@ -315,14 +315,28 @@ def paginas_geradas():
     as outras sao alvos declarados nos PLANOS dos geradores. Contar arquivo
     solto de `docs/` traria fluxograma de correio e relatorio de conteiner
     junto -- por isso a lista sai dos ALVOS do portao dos geradores.
+
+    `PEDIDOS_FAIXAS` (pedido 403) nao e' um caminho -- e' um marcador que o
+    proprio portao resolve por varredura, porque o CONJUNTO de paginas de
+    pedidos muda de nome e de quantidade conforme o corte por tamanho se
+    desloca. Sem tratar o marcador aqui, ele cairia no `else` como um
+    caminho literal (`RAIZ / "@pedidos-faixas"`, que nao existe) e as
+    paginas de pedidos sumiriam desta lista em silencio -- exatamente o
+    "leitor que ninguem atualizou" que o pedido 403 pede para achar.
     """
     sys.path.insert(0, str(D))
     from dossie_da_pasta import achar_o_dossie  # noqa: PLC0415
     portao = importar(D / "portao-dos-geradores.py", "st_portao")
     dossie = achar_o_dossie()
+    faixas_pedidos = getattr(portao, "PEDIDOS_FAIXAS", None)
     vistas = []
     for _script, alvos, _modo, _porque in portao.PLANO:
         for a in alvos:
+            if faixas_pedidos is not None and a == faixas_pedidos:
+                for p in sorted((RAIZ / "docs" / "dossie").glob("pedidos-*.html")):
+                    if p not in vistas:
+                        vistas.append(p)
+                continue
             p = dossie if a == portao.DOSSIE else (RAIZ / a)
             if p.suffix == ".html" and p.exists() and p not in vistas:
                 vistas.append(p)
@@ -918,7 +932,10 @@ def secao_pedidos(ctx):
     linhas.append(fonte(
         '<code>docs/PENDENCIAS.md</code>, pelo <code>ler()</code> de '
         '<code>docs/dossie/pagina-dos-pedidos.py</code>. A lista inteira, com o '
-        'estado de cada um, está em <code>docs/dossie/pedidos.html</code>. '
+        'estado de cada um, está em <code>docs/dossie/pedidos-*.html</code> — '
+        'páginas por faixa de número, cortadas pelo <b>tamanho medido</b> a '
+        'cada corrida (pedido 403; a página antiga, única, tinha passado de '
+        '1,3 MB). O número de páginas não é fixo. '
         'Pedido com estado fora da legenda <b>para</b> o leitor com o número da '
         'linha — o 150 passou meses invisível por causa disso.'))
     return "\n".join(linhas)
@@ -1492,14 +1509,28 @@ def montar(saida=PADRAO):
         svg_motor = svg_motor.replace("<style>svg{", "<style>.figura>svg{", 1)
 
     paginas, portao = paginas_geradas()
+    faixas_pedidos = getattr(portao, "PEDIDOS_FAIXAS", None)
     dono_da_pagina = {}
+    dono_das_faixas_pedidos = None
     for script, alvos, _modo, _porque in portao.PLANO:
         for a in alvos:
+            # O marcador PEDIDOS_FAIXAS nao e' uma chave de pagina -- e' o
+            # dono de TODO o conjunto `pedidos-*.html` (pedido 403).
+            # Registrar como chave literal deixaria cada faixa cair no
+            # fallback do DOSSIE, atribuindo o script ERRADO.
+            if faixas_pedidos is not None and a == faixas_pedidos:
+                dono_das_faixas_pedidos = script
+                continue
             dono_da_pagina.setdefault(a, script)
     com_dono = []
+    pasta_pedidos = RAIZ / "docs" / "dossie"
     for p in paginas:
         rel = str(p.relative_to(RAIZ))
-        quem = dono_da_pagina.get(rel) or dono_da_pagina.get(portao.DOSSIE, "—")
+        if (dono_das_faixas_pedidos and p.parent == pasta_pedidos
+                and p.name.startswith("pedidos-")):
+            quem = dono_das_faixas_pedidos
+        else:
+            quem = dono_da_pagina.get(rel) or dono_da_pagina.get(portao.DOSSIE, "—")
         if "/" not in quem:
             quem = f"docs/dossie/{quem}"
         com_dono.append((p, quem))

@@ -700,10 +700,17 @@ pub fn valor_de_texto(t: &str, ty: &ColumnType) -> Result<Value> {
             Value::Decimal(texto_para_decimal(&numero_pt(t), *escala)?)
         }
         ColumnType::Date => Value::Date(data_de_texto(t)?),
-        // Hora chega em numero -- centesimos desde a meia-noite. Texto de
-        // relogio (`14:30`) nao entra ainda, e o erro diz o que se espera em
-        // vez de gravar zero.
-        ColumnType::Time => Value::Time(t.parse::<i32>().map_err(|_| erro("hora em centesimos"))?),
+        // Hora entra das DUAS formas, pedido 396: quem exporta esta mesma
+        // coluna escreve `hora_iso` (`exportar.rs`, `Value::para_texto` e o
+        // `valor_para_json` do protocolo), entao so o numero em centesimos de
+        // volta quer dizer que exportar e tornar a carregar nao fecha o
+        // ciclo -- a MESMA licao que o instante ja tinha pago ao lado. O
+        // numero continua valendo exatamente como antes.
+        ColumnType::Time => Value::Time(match t.parse::<i32>() {
+            Ok(centesimos) => centesimos,
+            Err(_) => crate::datahora::centesimos_de_hora_iso(t)
+                .ok_or_else(|| erro("hora em centesimos ou texto de relogio HH:MM:SS,cc"))?,
+        }),
         // O instante entra das DUAS formas, e o irmao e o motivo: quem
         // exporta esta mesma coluna escreve `instante_iso` (`exportar.rs` e
         // `Value::para_texto`), entao so o numero de volta quer dizer que
@@ -1084,6 +1091,47 @@ mod testes_texto_para_valor {
         );
         let e = valor_de_texto("ontem de tarde", &ColumnType::DateTime).unwrap_err();
         assert!(format!("{e}").contains("instante"), "{e}");
+    }
+
+    /// **A hora volta das DUAS formas, pedido 396 -- o irmao do instante.**
+    ///
+    /// Quem EXPORTA esta coluna escreve `hora_iso` (`Value::para_texto`, o
+    /// `exportar.rs` do servidor e o `valor_para_json` do protocolo). So o
+    /// numero em centesimos de volta quer dizer que exportar e tornar a
+    /// carregar nao fecha o ciclo -- a mesma falha que a `DateTime` tinha, e
+    /// nesta ainda vivia quando o pedido 396 comecou.
+    ///
+    /// # O defeito que ela repoe
+    ///
+    /// Deixe o ramo so com o `t.parse::<i32>()` e a segunda metade desta
+    /// prova para em «esperado hora em centesimos». O numero em centesimos
+    /// continua valendo -- e a PRIMEIRA metade, que nao pode mudar: e o
+    /// comportamento de todo cliente que ja grava assim hoje.
+    #[test]
+    fn hora_em_centesimos_e_em_texto_de_relogio() {
+        // O comportamento VELHO: o inteiro em centesimos continua identico.
+        assert_eq!(
+            valor_de_texto("3780025", &ColumnType::Time).unwrap(),
+            Value::Time(3_780_025)
+        );
+        // O texto que o exportador escreve (`hora_iso`) volta pelo
+        // carregador, com os centesimos intactos -- a precisao nao se perde
+        // calada na volta.
+        assert_eq!(
+            valor_de_texto(&crate::datahora::hora_iso(3_780_025), &ColumnType::Time).unwrap(),
+            Value::Time(3_780_025),
+            "o que o exportador escreve nao volta pelo carregador"
+        );
+        // Sem fracao, os centesimos ficam em zero -- nao em erro.
+        assert_eq!(
+            valor_de_texto("10:30:00", &ColumnType::Time).unwrap(),
+            Value::Time(10 * 360_000 + 30 * 6_000)
+        );
+        // Fuso e RECUSADO, nomeando o que faltou entender -- nunca engolido.
+        let e = valor_de_texto("10:30:00+03:00", &ColumnType::Time).unwrap_err();
+        assert!(format!("{e}").contains("hora"), "{e}");
+        let e = valor_de_texto("meio-dia", &ColumnType::Time).unwrap_err();
+        assert!(format!("{e}").contains("hora"), "{e}");
     }
 
     /// As colunas casam POR NOME. Uma coluna a mais no meio do arquivo gravaria

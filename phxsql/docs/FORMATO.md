@@ -2560,20 +2560,29 @@ existiam.
 
 ### Por que a linha vai em bytes, e não em JSON
 
-Porque **JSON perde aqui, e isso foi medido no próprio código**: o
-`valor_para_json` escreve `Time` e `DateTime` como texto ISO, e o
-`json_para_valor` não fechava a volta de nenhum dos dois. A recuperação que
+Porque **JSON perdia aqui, e isso foi medido no próprio código**: até o
+pedido 396, o `valor_para_json` escrevia `Time` e `DateTime` como texto ISO, e
+o `json_para_valor` não fechava a volta de nenhum dos dois. A recuperação que
 reconstrói a linha errada é pior do que uma que não reconstrói nada.
 
-**O `DateTime` fechou a volta no `PSCH` v10, e o `Time` não** — a
-assimetria encolheu de dois campos para um, e a razão da decisão continua de
-pé por causa do que sobrou. O `DateTime` teve de fechar porque a v10 dá a
-**toda** tabela uma coluna desse tipo (`rowtime`): sem a volta, ler uma linha
-e gravá-la de novo deixaria de funcionar em todo lugar, e não só em quem
-declarasse a coluna. O `Time` continua aceitando **só** centésimos, por
-decisão escrita no `carga.rs` (texto de relógio como `14:30` não entra
-ainda), e é por isso que a linha da marca segue em bytes: basta **um** campo
-que não volte para o JSON não servir.
+**Hoje os dois fecham — o `Time` fechou por último, no próprio pedido 396.**
+O `DateTime` fechou primeiro porque o `PSCH` v10 dá a **toda** tabela uma
+coluna desse tipo (`rowtime`): sem a volta, ler uma linha e gravá-la de novo
+deixaria de funcionar em todo lugar, e não só em quem declarasse a coluna. O
+`Time` fechou pelo mesmo par que o `DateTime` já usava — `hora_iso` na ida e
+`centesimos_de_hora_iso` na volta, o irmão do `ms_de_instante_iso`, com a
+mesma recusa de fuso e sem perder o centésimo — e o inteiro em centésimos de
+todo cliente antigo continua valendo idêntico. **O motivo técnico que
+MANTINHA a linha da marca em bytes não existe mais**: os catorze tipos de
+`Value` fecham a volta pelo JSON.
+
+Isso não migrou a linha da marca para JSON nesta rodada, e por decisão de
+escopo: trocar a codificação de um formato já versionado (v1/v2/v3) é
+**mudança de formato**, que pede a própria versão nova (v4), o leitor
+retrocompatível das três anteriores e a prova de que a recuperação continua
+lendo as marcas antigas como lê hoje — decisão do DBA, não consequência
+automática de um conserto de conversão de texto. Fica registrado como o
+próximo passo possível, não como resolvido.
 
 A codificação tem uma etiqueta por variante de `Value` — 0 nulo, 1 booleano, 2
 inteiro, 3 sem sinal, 4 real, 5 decimal, 6 data, 7 hora, 8 data-hora, 9 texto,

@@ -242,13 +242,20 @@ pub fn valor_de_json(j: &Json) -> (Value, ColumnType) {
 ///
 /// # O recuo, e por que ele e o certo
 ///
-/// `Time` e `DateTime` saem para o JSON como texto ISO (`valor_para_json`) e
-/// o conversor de entrada os espera como inteiro: a ida e volta nao fecha para
-/// esses dois, e fechar aqui seria um segundo conversor. Quando a conversao
-/// pelo tipo falha, o valor segue pelo FORMATO -- exatamente o que este modulo
-/// fazia antes de o modelo existir. Para hora e instante isso e o texto ISO,
-/// que e como o avaliador de expressoes ja os compara (`Valor::de_value`).
-/// Recusar aqui trocaria uma comparacao que funciona por um erro novo.
+/// Ate o pedido 396, `Time` e `DateTime` saiam para o JSON como texto ISO
+/// (`valor_para_json`) e o conversor de entrada so aceitava inteiro: a ida e
+/// volta nao fechava para esses dois, e o recuo era quem fazia a comparacao
+/// funcionar. Hoje `json_para_valor` aceita o MESMO texto ISO que
+/// `valor_para_json` escreve (`hora_iso`/`instante_iso`) para os dois, entao a
+/// conversao primaria basta e o recuo nem entra em jogo para um literal bem
+/// formado.
+///
+/// O recuo continua existindo, e continua certo, para o texto que NENHUM tipo
+/// entende -- um literal digitado errado (`WHERE hora = 'nunca'`) segue pelo
+/// FORMATO, exatamente o que este modulo fazia antes de o modelo existir, e
+/// vira `Str`. Recusar aqui trocaria uma comparacao que da falso (o texto
+/// digitado nao bate com nenhuma hora) por um erro que estoura a expressao
+/// inteira.
 pub fn valor_tipado(j: &Json, tipo: &ColumnType) -> (Value, ColumnType) {
     if j.e_nulo() {
         return (Value::Null, *tipo);
@@ -723,11 +730,18 @@ mod testes {
             valor_tipado(&Json::Nulo, &decimal2()),
             (Value::Null, decimal2())
         );
-        // A ida e volta que NAO fecha (hora ISO num `Time`) recua para o
-        // formato, em vez de recusar: e o texto que o avaliador ja comparava.
+        // Desde o pedido 396 a ida e volta FECHA para `Time`: o texto de
+        // relogio vira o inteiro em centesimos pela conversao primaria, e o
+        // recuo nem entra em jogo.
         assert_eq!(
             valor_tipado(&Json::texto_de("10:30:00"), &ColumnType::Time).0,
-            Value::Str("10:30:00".into())
+            Value::Time(10 * 360_000 + 30 * 6_000)
+        );
+        // O que NENHUM tipo entende (nem hora, nem inteiro) e quem ainda usa
+        // o recuo: vira o texto cru, que e o que o avaliador ja comparava.
+        assert_eq!(
+            valor_tipado(&Json::texto_de("nunca"), &ColumnType::Time).0,
+            Value::Str("nunca".into())
         );
     }
 

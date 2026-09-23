@@ -54,6 +54,76 @@ pub fn hora_iso(centesimos: i32) -> String {
     format!("{h:02}:{mi:02}:{s:02},{c:02}")
 }
 
+/// Le uma hora em texto e devolve os centesimos de segundo desde a
+/// meia-noite.
+///
+/// # Por que ela existe
+///
+/// E a volta do [`hora_iso`], pelo mesmo motivo do [`ms_de_instante_iso`]
+/// para o instante: `valor_para_json` (e o exportador de CSV) SEMPRE
+/// escrevem `Time` como texto de relogio -- nunca inteiro --, entao ler uma
+/// linha, mexer noutro campo e mandar ela de volta pede um leitor que
+/// entenda esse mesmo texto, e nao so o numero em centesimos.
+///
+/// Os tres motores maduros (PostgreSQL, MySQL, MariaDB, SQLite) convergem em
+/// `HH:MM:SS`. Isso sozinho TRUNCARIA os centesimos que esta casa grava --
+/// entao a forma aceita carrega a fracao por cima, com virgula (a nossa, a
+/// que o `hora_iso` grava) ou ponto (a de fora):
+///
+/// ```text
+/// 14:30:00,25   -- o que o `hora_iso` grava
+/// 14:30:00.25   -- o mesmo com ponto
+/// 14:30:00      -- sem fracao -- os centesimos ficam em zero
+/// 14:30         -- sem segundos -- minutos bastam, o resto fica em zero
+/// 14:30:00Z     -- o "Z" de UTC, que nao muda nada e por isso e aceito
+/// ```
+///
+/// Um deslocamento explicito (`+03:00`) e RECUSADO em vez de ignorado, pelo
+/// mesmo motivo do `ms_de_instante_iso`: aqui nao existe fuso nenhum, e
+/// engolir um deslocamento moveria o relogio sem ninguem perceber. `None` diz
+/// «nao entendi», e quem chama nomeia o campo.
+pub fn centesimos_de_hora_iso(texto: &str) -> Option<i32> {
+    let t = texto.trim();
+    // O "Z" e o unico sufixo de fuso aceito, porque e o unico que nao muda
+    // nada -- qualquer outro (`+03:00`, `-03:00`) sobra dentro do campo dos
+    // segundos e quebra o parse dele, mais abaixo.
+    let t = t
+        .strip_suffix('Z')
+        .or_else(|| t.strip_suffix('z'))
+        .unwrap_or(t);
+    let (hms, fracao) = match t.split_once([',', '.']) {
+        Some((h, f)) => (h, f),
+        None => (t, ""),
+    };
+    let mut partes = hms.split(':');
+    let h: i32 = partes.next()?.parse().ok()?;
+    let mi: i32 = partes.next().unwrap_or("0").parse().ok()?;
+    let sg: i32 = partes.next().unwrap_or("0").parse().ok()?;
+    if partes.next().is_some()
+        || !(0..24).contains(&h)
+        || !(0..60).contains(&mi)
+        || !(0..60).contains(&sg)
+    {
+        return None;
+    }
+    let mut centesimos = h * 360_000 + mi * 6_000 + sg * 100;
+    if !fracao.is_empty() {
+        if !fracao.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        // Dois digitos e o que um centesimo comporta -- o terceiro em diante
+        // e cortado, igual o `ms_de_instante_iso` corta o quarto do
+        // milissegundo.
+        let mut digitos = fracao.to_string();
+        digitos.truncate(2);
+        while digitos.len() < 2 {
+            digitos.push('0');
+        }
+        centesimos += digitos.parse::<i32>().ok()?;
+    }
+    Some(centesimos)
+}
+
 /// Formata um instante em milissegundos desde a epoca como
 /// `AAAA-MM-DD HH:MM:SS,mmm`.
 pub fn instante_iso(milissegundos: i64) -> String {
@@ -272,5 +342,86 @@ mod tests {
         let c = 13 * 360_000 + 45 * 6_000 + 30 * 100 + 25;
         assert_eq!(hora_partes(c), (13, 45, 30, 25));
         assert_eq!(hora_iso(c), "13:45:30,25");
+    }
+
+    /// A volta da hora fecha em toda a faixa do dia, segundo a segundo.
+    ///
+    /// Ida e volta com o proprio formatador nao prova que a gente le o que os
+    /// OUTROS escrevem -- por isso os casos de fora estao no teste seguinte
+    /// --, mas prova a unica coisa que este par tem de garantir sozinho: que
+    /// o texto que esta casa grava (`hora_iso`) volta como o mesmo numero,
+    /// para toda hora, minuto e segundo do dia -- e os quatro cantos do
+    /// centesimo (0, 1, 50, 99), para a fracao nao se perder calada.
+    #[test]
+    fn a_volta_da_hora_fecha_em_toda_a_faixa() {
+        for segundos in 0..86_400i32 {
+            for cc in [0, 1, 50, 99] {
+                let c = segundos * 100 + cc;
+                assert_eq!(
+                    centesimos_de_hora_iso(&hora_iso(c)),
+                    Some(c),
+                    "falhou em {c} ({})",
+                    hora_iso(c)
+                );
+            }
+        }
+    }
+
+    /// O que vem de FORA: sem fracao, com ponto em vez de virgula, sem
+    /// segundos, e o "Z" de quem copiou um horario ISO da tela.
+    #[test]
+    fn as_formas_de_fora_tambem_entram_na_hora() {
+        let quatorze_e_meia = 14 * 360_000 + 30 * 6_000; // 14:30:00
+        for t in [
+            "14:30:00",
+            "14:30:00Z",
+            "14:30:00z",
+            "  14:30:00  ",
+            "14:30",
+        ] {
+            assert_eq!(
+                centesimos_de_hora_iso(t),
+                Some(quatorze_e_meia),
+                "falhou em {t:?}"
+            );
+        }
+        assert_eq!(
+            centesimos_de_hora_iso("14:30:00,25"),
+            Some(quatorze_e_meia + 25)
+        );
+        assert_eq!(
+            centesimos_de_hora_iso("14:30:00.25"),
+            Some(quatorze_e_meia + 25)
+        );
+        // A fracao vale em CENTESIMOS: o terceiro digito em diante e
+        // CORTADO, nao arredondado -- o mesmo criterio do `ms_de_instante_iso`.
+        assert_eq!(
+            centesimos_de_hora_iso("14:30:00.7"),
+            Some(quatorze_e_meia + 70)
+        );
+        assert_eq!(
+            centesimos_de_hora_iso("14:30:00.2599"),
+            Some(quatorze_e_meia + 25)
+        );
+    }
+
+    /// O que ela RECUSA, e o caso que decide e o fuso: engolir um
+    /// deslocamento (`-03:00`) moveria o relogio sem ninguem perceber -- o
+    /// mesmo motivo do `ms_de_instante_iso`.
+    #[test]
+    fn o_que_nao_e_hora_nao_vira_numero() {
+        for t in [
+            "",
+            "agora",
+            "14:30:00+03:00",
+            "14:30:00-03:00",
+            "25:00:00",
+            "14:61:00",
+            "14:30:61",
+            "14:30:00,7a9",
+            "14:30:00:00",
+        ] {
+            assert_eq!(centesimos_de_hora_iso(t), None, "devia recusar {t:?}");
+        }
     }
 }

@@ -213,7 +213,7 @@ número digitado à mão: envelhece calado.*
 |---|---|
 | `numeros-do-projeto.py` | `<title>`, `selo:`, `projeto:` (o painel da capa), `rodape:` e `idiomas:` |
 | `numeros-da-bancada.py` | `bancada:`, `bancada:tabela:`, `bancada:diagnostico:` e `replicacao:` |
-| `pagina-dos-pedidos.py` | `pedidos:` no dossiê, a página `pedidos.html` inteira, e a contagem de volta no `PENDENCIAS.md` |
+| `pagina-dos-pedidos.py` | `pedidos:` no dossiê, as páginas `pedidos-*.html` por faixa (número e nomes saem do corte por tamanho, não são fixos — pedido 403), e a contagem de volta no `PENDENCIAS.md` |
 | `cobertura-por-area.py` | `cobertura:` no dossiê, e as tabelas do `docs/TESTES.md` |
 | `capturas-no-dossie.py` | `capturas:` — as vinte telas, como *data URI* |
 | `tetos-da-trava.py` | `tetos:` — os quatro tetos de concorrência (§35), lidos das corridas cruas em `bancada/concorrencia/corridas/` |
@@ -377,16 +377,71 @@ pesam praticamente o mesmo e um deles fica com o texto limpo. A largura é
 densidade; a do multitela vai a 2.000 porque ela é um panorama de quatro telas
 e a 1.200 o texto de dentro vira borrão.
 
-## A outra página: os pedidos
+## A outra página: os pedidos — partida por TAMANHO, desde o pedido 403 (23/09/2026)
 
-`pedidos.html` é a relação de tudo que o Adriano pediu, com o estado de cada
-item, publicada em:
+`pedidos.html` era a relação de tudo que o Adriano pediu, com o estado de cada
+item, publicada em **https://claude.ai/code/artifact/d6c8f13c-e4a2-444e-9f19-0e047e230352**.
+Essa página **parou de ser gerada** — o `pagina-dos-pedidos.py` já apaga o
+arquivo do disco sozinho se sobrar — porque ela cresceu até **1.304.729
+bytes** (781 linhas), e o guarda da republicação exige reler a versão
+publicada **inteira** antes de aceitar a nova: ~580.000 fichas, mais de uma
+janela de contexto inteira só para republicar. Decisão do dono, medida:
+**partir em páginas contíguas por número de pedido**.
 
-**https://claude.ai/code/artifact/d6c8f13c-e4a2-444e-9f19-0e047e230352**
+**A PRIMEIRA versão deste conserto cortava em blocos fixos de 100 pedidos**
+(1–100, 101–200, …), e o integrador (papel A) mediu que a última nascia com
+**562,5 KiB — já acima do teto de 450 KiB**, porque pedido recente pesa muito
+mais que pedido antigo (60 → 287 → 423 → 562 KiB nas quatro faixas fixas; o
+403 e o 404 estão entre os mais longos do arquivo). Corte por número redondo
+não é corte por tamanho — é o pedido 404 de novo, por outro lado: um número
+cravado no código («100») envelhece calado assim que a premissa que o
+justificava muda.
 
-Publique **passando essa URL**. Ela **não se edita** — sai do
-`pagina-dos-pedidos.py`, que lê o `docs/PENDENCIAS.md` e conta os três estados
-sozinho. A fonte da verdade é o `.md`; mexeu lá, rode isto.
+A cura, em `escolher_faixas()`: **os cortes saem do tamanho ACUMULADO,
+medido a cada corrida** (alvo de 300 KiB por página, bem abaixo do teto de
+republicação de 450 KiB), "redondo onde der" — o corte prefere cair num
+múltiplo de 10 quando isso não estoura o alvo, mas nunca ao custo de exceder
+o teto. **O número de páginas deixou de ser fixo**: nesta rodada (23/09/2026)
+deu cinco, não quatro.
+
+| faixa | arquivo | pedidos | KiB medidos | folga até 450 KiB |
+|---|---|---:|---:|---:|
+| 1–190 | `docs/dossie/pedidos-001-190.html` | 190 | 294,6 | 155,4 |
+| 191–260 | `docs/dossie/pedidos-191-260.html` | 70 | 264,2 | 185,8 |
+| 261–320 | `docs/dossie/pedidos-261-320.html` | 60 | 292,5 | 157,5 |
+| 321–350 | `docs/dossie/pedidos-321-350.html` | 30 | 227,4 | 222,6 |
+| 351 em diante | `docs/dossie/pedidos-351-mais.html` | 54 | 267,0 | 183,0 |
+
+A última faixa é **aberta** de propósito — nomeá-la com um teto fixo mentiria
+assim que a faixa seguinte nascesse (o maior pedido nesta rodada é o 404, e
+o corte de hoje já a fecha em 351+), então o nome nunca cita um número que a
+rodada seguinte furaria calado. Como ela é a única que **cresce** a cada
+rodada (as faixas de baixo fecham para sempre — pedido antigo não muda de
+número), o alvo de 300 KiB por corte é o que lhe dá folga: ela nasce a
+~183 KiB do teto de republicação, não a alguns KiB dele.
+
+**Os nomes dos arquivos PODEM MUDAR entre rodadas** — se o corpo dos pedidos
+crescer ou encolher o bastante para deslocar um corte, o script escreve
+arquivos novos e **apaga os órfãos** da rodada anterior sozinho (nunca deixa
+um `pedidos-XXX-YYY.html` velho apontando para uma faixa que não existe
+mais). O portão dos geradores confere isso pelo CONJUNTO de arquivos, não por
+uma lista de nomes fixa — `PEDIDOS_FAIXAS` em `portao-dos-geradores.py`, que
+varre `docs/dossie/pedidos-*.html` dos dois lados da corrida.
+
+**Cada página é um artefato NOVO na primeira vez que nasce** — sem URL
+anterior, sem guarda de leitura. Publique cada uma **sem** passar URL (ela
+nasce nova); depois de publicadas, preencha as URLs em
+`docs/dossie/pagina-dos-pedidos.py`, no dicionário `URLS_PUBLICADAS` — é o
+**único** lugar do script onde elas entram, pelo NOME exato que o script
+escolheu (impresso no stdout a cada corrida), e é o que liga a navegação
+entre as páginas por link de verdade em vez do nome do arquivo local. Se um
+corte se deslocar numa rodada futura, a chave antiga simplesmente para de
+bater — a navegação cai de volta no nome do arquivo até alguém atualizar a
+tabela; o script não finge que a URL antiga ainda serve.
+
+Nenhuma se edita — saem do `pagina-dos-pedidos.py`, que lê o
+`docs/PENDENCIAS.md` e conta os três estados sozinho. A fonte da verdade é o
+`.md`; mexeu lá, rode isto.
 
 ## A quinta página: o status dos dez recursos
 
