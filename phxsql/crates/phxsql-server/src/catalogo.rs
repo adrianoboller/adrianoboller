@@ -564,7 +564,8 @@ pub const OPERACOES: &[Operacao] = &[
         nome: "consultar",
         apelidos: &[],
         resumo: "Compõe operações: pega as linhas de um sub-pedido e aplica \
-                 `IN`, expressão, `ROW_NUMBER`, ordem, recorte e projeção.",
+                 `IN`, expressão, `GROUP BY`/`HAVING`, `ROW_NUMBER`, ordem, \
+                 recorte e projeção.",
         parametros: &[
             DB,
             obr(
@@ -620,10 +621,36 @@ pub const OPERACOES: &[Operacao] = &[
                  o filtro",
             ),
             opc(
+                "por",
+                "array",
+                "o `GROUP BY` sobre a linha JÁ COMPOSTA: nomes de coluna, \
+                 qualificados (`c.cidade`) depois de uma junção. Lista VAZIA \
+                 com `agregados` é o agregado global -- uma linha só. Depois \
+                 de agrupar, a linha tem apenas estas colunas e os apelidos \
+                 dos agregados. Ele resume o que a COMPOSIÇÃO produziu, e a \
+                 composição pára em `recursos.max_linhas`: para o `GROUP BY` \
+                 da tabela INTEIRA, de uma tabela só, use `agrupar`",
+            ),
+            opc(
+                "agregados",
+                "array",
+                "`{funcao, coluna, apelido}` -- `funcao` é `soma`, `media`, \
+                 `contagem`, `minimo`, `maximo` ou `distintos`; `coluna` é \
+                 obrigatória em todas menos `contagem`; sem `apelido` sai \
+                 `soma_total`. Com `por` e sem `agregados`, conta",
+            ),
+            opc(
+                "tendo",
+                "string",
+                "o `HAVING`: filtro sobre a linha JÁ AGREGADA. Só enxerga as \
+                 colunas de `por` e os apelidos dos agregados -- citar coluna \
+                 crua recusa nomeando o que há",
+            ),
+            opc(
                 "janela",
                 "array",
                 "`{funcao:\"row_number\", particao, ordem, apelido}`; nesta \
-                 rodada só `row_number`",
+                 rodada só `row_number`. Roda DEPOIS da agregação",
             ),
             opc("ordem", "array", "`{coluna, desc}` sobre a linha composta"),
             opc("pular", "integer", "quantas linhas saltar depois de ordenar"),

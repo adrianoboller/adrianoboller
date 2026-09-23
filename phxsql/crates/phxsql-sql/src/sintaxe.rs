@@ -144,6 +144,16 @@ enum ProjecaoBruta {
     Itens(Vec<ItemProjetado>),
 }
 
+/// A recusa de `SELECT *` com `GROUP BY`, nas DUAS gramaticas.
+///
+/// Um texto so porque e a mesma falta: a de uma tabela (`finalizar_projecao`)
+/// e a COMPOSTA (`consulta.rs`, pedido 394) recusam pelo mesmo motivo, e duas
+/// redacoes fariam a mesma consulta explicar-se de dois jeitos conforme
+/// houvesse junção.
+pub(crate) const SEM_ESTRELA_COM_GROUP_BY: &str =
+    "SELECT * nao combina com GROUP BY: cada coluna do resultado tem de ser uma das \
+     colunas do agrupamento ou um agregado, e `*` nao diz qual -- nomeie as colunas";
+
 /// Decide a forma final da projecao, agora que se sabe se ha `GROUP
 /// BY`/`HAVING`. Preserva os DOIS caminhos rapidos de sempre -- `Tudo` e
 /// `Contagem` -- quando nada os empurra para `Agregada`, para nao mudar o
@@ -156,12 +166,7 @@ fn finalizar_projecao(
     match bruta {
         ProjecaoBruta::Tudo => {
             if !agrupar_por.is_empty() || tem_having {
-                return Err(PhxError::Esquema(
-                    "SELECT * nao combina com GROUP BY: cada coluna do resultado tem de \
-                     ser uma das colunas do agrupamento ou um agregado, e `*` nao diz qual \
-                     -- nomeie as colunas"
-                        .into(),
-                ));
+                return Err(PhxError::Esquema(SEM_ESTRELA_COM_GROUP_BY.into()));
             }
             Ok(Projecao::Tudo)
         }
@@ -1050,7 +1055,8 @@ impl Analisador {
 
         let agrupar_por = if self.aceitar_palavra("GROUP") {
             self.exigir_palavra("BY")?;
-            self.lista_de_colunas_do_group_by("GROUP BY")?
+            // `false`: na gramatica de uma tabela o qualificador se descarta.
+            self.lista_de_colunas_do_group_by("GROUP BY", false)?
         } else {
             Vec::new()
         };
@@ -1234,14 +1240,19 @@ impl Analisador {
         Ok(ordens)
     }
 
-    pub(crate) fn lista_de_colunas_do_group_by(&mut self, clausula: &str) -> Result<Vec<String>> {
+    pub(crate) fn lista_de_colunas_do_group_by(
+        &mut self,
+        clausula: &str,
+        qualificada: bool,
+    ) -> Result<Vec<String>> {
         let mut colunas = Vec::new();
         loop {
             self.recusar_funcao_no_lugar_de_coluna(
                 clausula,
                 "Agrupe pelas COLUNAS e deixe a chamada para a projecao.",
             )?;
-            colunas.push(self.identificador(&format!("nome de coluna no {clausula}"))?);
+            colunas
+                .push(self.nome_de_coluna(qualificada, &format!("nome de coluna no {clausula}"))?);
             if !self.aceitar(&Token::Virgula) {
                 break;
             }
@@ -1274,7 +1285,13 @@ impl Analisador {
         if let Some(nome) = self.espiar().and_then(|s| s.token.palavra_chave()) {
             if let Some(funcao) = FuncaoAgregada::de_nome_de_funcao(&nome) {
                 if self.s.get(self.i + 1).map(|s| &s.token) == Some(&Token::AbreParen) {
-                    return self.chamada_de_agregado(funcao);
+                    // `false`: uma tabela so, o qualificador se descarta.
+                    let (funcao, coluna, apelido) = self.chamada_de_agregado(funcao, false)?;
+                    return Ok(ItemProjetado::Agregado {
+                        funcao,
+                        coluna,
+                        apelido,
+                    });
                 }
             }
         }
@@ -1297,13 +1314,25 @@ impl Analisador {
 
     /// Depois de espiar `FUNCAO (` sem consumir -- consome os dois e le o
     /// resto da chamada.
-    fn chamada_de_agregado(&mut self, funcao: FuncaoAgregada) -> Result<ItemProjetado> {
+    ///
+    /// UM leitor para a forma da chamada, e nao dois: a gramatica de uma
+    /// tabela e a COMPOSTA (`consulta.rs`, pedido 394) leem o mesmo `*`, o
+    /// mesmo `DISTINCT` e o mesmo `COUNT(coluna)`. Uma segunda copia
+    /// divergiria no dia em que a forma mudasse -- e divergiria calada,
+    /// porque as duas continuariam compilando. O que muda entre as duas e so
+    /// o nome da COLUNA (ver `nome_de_coluna`), e por isso ele e um
+    /// parametro.
+    pub(crate) fn chamada_de_agregado(
+        &mut self,
+        funcao: FuncaoAgregada,
+        qualificada: bool,
+    ) -> Result<(FuncaoAgregada, Option<String>, Option<String>)> {
         self.i += 2; // a palavra da funcao, e o `(`
         let (funcao, coluna) =
             if funcao == FuncaoAgregada::Contagem && self.aceitar(&Token::Asterisco) {
                 (FuncaoAgregada::Contagem, None)
             } else if funcao == FuncaoAgregada::Contagem && self.aceitar_palavra("DISTINCT") {
-                let c = self.identificador("coluna de COUNT(DISTINCT ...)")?;
+                let c = self.nome_de_coluna(qualificada, "coluna de COUNT(DISTINCT ...)")?;
                 (FuncaoAgregada::Distintos, Some(c))
             } else if funcao == FuncaoAgregada::Contagem {
                 // `COUNT(coluna)` -- conta so os NAO-NULOS da coluna, e nao
@@ -1312,10 +1341,10 @@ impl Analisador {
                 // distincao entre contar linha e contar nao-nulo mora no
                 // acumulador do lado do motor, que nao e desta crate --
                 // aqui so faltava a leitura SQL.
-                let c = self.identificador("coluna de COUNT(...)")?;
+                let c = self.nome_de_coluna(qualificada, "coluna de COUNT(...)")?;
                 (FuncaoAgregada::Contagem, Some(c))
             } else {
-                let c = self.identificador("coluna do agregado")?;
+                let c = self.nome_de_coluna(qualificada, "coluna do agregado")?;
                 (funcao, Some(c))
             };
         if !self.aceitar(&Token::FechaParen) {
@@ -1329,10 +1358,27 @@ impl Analisador {
         } else {
             None
         };
-        Ok(ItemProjetado::Agregado {
-            funcao,
-            coluna,
-            apelido,
+        Ok((funcao, coluna, apelido))
+    }
+
+    /// Um nome de coluna, com ou sem qualificador.
+    ///
+    /// Na gramatica de UMA tabela o qualificador se le e se DESCARTA -- e o
+    /// que o `item_de_projecao` ja fazia com a coluna simples, porque so ha
+    /// uma tabela e recusar `t.preco` obrigaria a reescrever consulta de
+    /// cliente que sempre qualifica. Na COMPOSTA ele FICA: depois de uma
+    /// junção `p.total` e `c.total` sao colunas diferentes, e descartar o
+    /// prefixo escolheria uma das duas calado.
+    pub(crate) fn nome_de_coluna(&mut self, qualificada: bool, rotulo: &str) -> Result<String> {
+        let nome = self.identificador(rotulo)?;
+        if !self.aceitar(&Token::Ponto) {
+            return Ok(nome);
+        }
+        let sufixo = self.identificador("nome de coluna depois do ponto")?;
+        Ok(if qualificada {
+            format!("{nome}.{sufixo}")
+        } else {
+            sufixo
         })
     }
 

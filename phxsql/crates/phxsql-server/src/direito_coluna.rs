@@ -807,6 +807,38 @@ mod testes {
         );
     }
 
+    /// **O agregado do `consultar` (pedido 394) NAO esconde tabela do portao
+    /// -- e isso e resultado, nao omissao.**
+    ///
+    /// `por`, `agregados` e `tendo` carregam nome de COLUNA e texto; a tabela
+    /// continua morando so nos sub-pedidos, e cada um paga o portao inteiro no
+    /// `executar_derivado`. A pergunta da petrea -- «esta operacao nomeia
+    /// tabela onde o portao nao olha?» -- continua respondida com nao.
+    ///
+    /// PROVA REAL: o pedido abaixo poe a palavra `folha` (uma tabela de
+    /// verdade noutros testes) nos tres campos novos. Pondo aqui um laco que
+    /// leia `agregados[].coluna` como tabela, a lista volta
+    /// `["folha", "pedidos", "clientes"]` e este teste cai.
+    #[test]
+    fn os_campos_do_agregado_nao_nomeiam_tabela() {
+        let c = Json::analisar(
+            r#"{"de":{"op":"varrer","tabela":"pedidos"},
+                "juntar":[{"de":{"op":"varrer","tabela":"clientes"},"apelido":"c"}],
+                "por":["folha"],
+                "agregados":[{"funcao":"soma","coluna":"folha","apelido":"folha"}],
+                "tendo":"folha > 1"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            tabelas_do_pedido("consultar", &c),
+            vec!["pedidos", "clientes"]
+        );
+        // E a classe nao muda: o `consultar` continua sem peneira propria,
+        // porque cada sub-pedido paga a dele -- e depois de uma junção a
+        // peneira nao saberia de que lado veio cada campo.
+        assert_eq!(classe("consultar"), PorColuna::Nenhum);
+    }
+
     #[test]
     fn a_peneira_tira_a_coluna_das_duas_formas_do_ler() {
         let negadas = vec!["salario".to_string()];

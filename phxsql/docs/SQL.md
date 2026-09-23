@@ -283,8 +283,32 @@ frase quando a palavra depois do `SHOW` é `SERVER`, `DATABASE`, `TABLE` ou
 
 Honestidade sobre o tamanho do trabalho. A rodada de 08–09/2026 (itens 1–9,
 `docs/propostas/comparativo-19.md`) fechou expressão no `WHERE`, `GROUP BY`,
-subconsulta, CTE e junção — a §7 conta a gramática e o JSON de cada um. O que
-**continua** sem substrato:
+subconsulta, CTE e junção — a §7 conta a gramática e o JSON de cada um.
+
+**Saiu desta lista em 23/09/2026: agregado, `GROUP BY` e `HAVING` sobre
+COMPOSIÇÃO** (pedido 394). `SELECT SUM(p.valor) … FROM pedidos p JOIN
+vendedores v ON … GROUP BY v.nome HAVING …` — a consulta que todo relatório
+escreve — **traduz e roda**, e o mesmo vale para subconsulta no `FROM`, `WITH`,
+`IN (SELECT …)` e `FROM visao`. A op `consultar` ganhou `por`, `agregados` e
+`tendo`; o parecer que decidiu a forma está em
+`docs/propostas/agregado-sobre-juncao-2026-09-23.md` (4 de 4 motores põem
+`FROM`+`JOIN`+`GROUP BY` no mesmo nó da requisição).
+
+Duas coisas que essa entrada **não** quer dizer, e valem antes de escrever a
+consulta:
+
+- **O `agrupar` não virou açúcar do `consultar`, e a diferença é numérica.** O
+  `agrupar` flui do disco e vê a tabela INTEIRA; o `consultar` resume o que a
+  composição materializou, e ela pára em `recursos.max_linhas` (nasce 1.000).
+  `SELECT COUNT(*) FROM t` (uma tabela, sem junção) continua indo pelo
+  `agrupar` e conta tudo. Agregar por composição sobre uma tabela grande conta
+  o que coube.
+- **O `HAVING` fala dos nomes que existem DEPOIS de agrupar** — as colunas do
+  `GROUP BY` e os apelidos. `HAVING COUNT(*) > 1` não é reescrito: dê apelido
+  (`COUNT(*) AS n`) e escreva `HAVING n > 1`. Citar coluna crua recusa
+  nomeando o que há — a mesma regra do `agrupar` de uma tabela.
+
+O que **continua** sem substrato:
 
 - **Planejador de índice.** Escolher *qual* índice usar quando há dois
   candidatos de igualdade continua sendo de quem chama — o primeiro declarado
@@ -297,17 +321,6 @@ subconsulta, CTE e junção — a §7 conta a gramática e o JSON de cada um. O 
   22/09/2026 por `bancada/gaps-sql/sondar.py postgresql` (`docs/pdf/respostas/B.md`).
 - **Janela além de `ROW_NUMBER`.** `RANK`, `DENSE_RANK`, `SUM() OVER (...)` e
   companhia recusam nomeando — só `ROW_NUMBER() OVER (...)` tem substrato.
-- **Agregado, `GROUP BY` e `HAVING` sobre COMPOSIÇÃO** (pedido 394).
-  `SELECT SUM(p.valor) … FROM pedidos p JOIN vendedores v ON …` — a consulta
-  que todo relatório escreve — recusa **nomeando** desde 23/09/2026, e o mesmo
-  vale para subconsulta no `FROM`, `WITH` e `IN (SELECT …)`. O motivo é de
-  contrato, não de gramática: a op `agrupar` recebe `tabela` e **nunca** um
-  sub-pedido, e a op `consultar` compõe sem agregar — não há para onde
-  traduzir, e **não há saída por fora**: `SELECT COUNT(*) FROM (SELECT * FROM
-  v) AS x` cai na mesma recusa. Até esta data não recusava: lia a palavra
-  `SUM` como **nome de coluna** e devolvia `esperava FROM, e veio "("`,
-  mandando procurar um `FROM` que estava escrito na frase. Dar substrato muda
-  o contrato de uma das duas ops — decisão do dono.
 - **Chamada de função onde a gramática lê NOME DE COLUNA.** `ORDER BY SUM(v)`,
   `GROUP BY UPPER(c)` e `PARTITION BY MAX(x)` recusam nomeando a chamada
   (pedido 394, mesmo defeito por outra porta). Para ordenar por agregado, dê
@@ -324,9 +337,6 @@ subconsulta, CTE e junção — a §7 conta a gramática e o JSON de cada um. O 
 - **`UNION`.** Não há — medido em 22/09/2026; há frente viva mexendo nisso
   nesta mesma rodada, então reconfira com `sondar.py postgresql` antes de
   citar esta linha.
-- **`COUNT(*)`/`GROUP BY` sobre visão.** `FROM v_c` vira `consultar` (filtra e
-  projeta); agregar sobre o resultado de uma visão ainda não compõe — quem
-  precisa disso escreve `SELECT COUNT(*) FROM (SELECT * FROM v_c) AS x`.
 - **Nível de isolamento — parcialmente resolvido em 16/09/2026.** A transação
   **existe** desde o pedido 162, e por padrão continua `READ COMMITTED`:
   medido em `docs/ACID.md`, sem pedir nada leitura não repetível, fantasma e
@@ -778,7 +788,8 @@ gerar o JSON — a tradução nunca decidiu isso sozinha.
 [WITH nome AS (SELECT ...)]
 SELECT ( * | coluna[.coluna] [AS apelido] {, ...} )
 FROM ( tabela [[AS] apelido] | nome_da_cte | (SELECT ...) AS apelido )
-[WHERE ...] [ORDER BY coluna[.coluna] [DESC] {, ...}] [LIMIT n [OFFSET m]]
+[WHERE ...] [GROUP BY coluna[.coluna] {, ...}] [HAVING expr]
+[ORDER BY coluna[.coluna] [DESC] {, ...}] [LIMIT n [OFFSET m]]
 ```
 
 Uma CTE só, não recursiva — duas ou `WITH RECURSIVE` recusam nomeando.
@@ -806,6 +817,47 @@ dela mesma) recusa nomeando, tanto no `IN` quanto na escalar do item 9.
 `(SELECT` em qualquer lugar do comando desvia para esta gramática — mesmo
 quando a forma ainda não existe, porque cair aqui dá recusa nomeada em vez de
 virar texto de expressão que o motor não lê.
+
+#### `GROUP BY` / `HAVING` / agregado sobre a composição (pedido 394)
+
+A projeção composta aceita `FUNCAO(coluna[.coluna])`, e as cláusulas viram
+três campos do `consultar`, avaliados **entre a `expressao` e a `janela`** —
+a ordem dos quatro motores maduros (`FROM`+`JOIN`+`WHERE`, depois agrupar,
+depois janela):
+
+```json
+{"por": ["c.cidade"],
+ "agregados": [{"funcao": "contagem", "apelido": "n"},
+               {"funcao": "soma", "apelido": "faturado", "coluna": "p.total"}],
+ "tendo": "n > 1"}
+```
+
+- **A coluna vem QUALIFICADA** (`p.total`), ao contrário da gramática de uma
+  tabela, que descarta o qualificador: depois de uma junção `p.total` e
+  `c.total` são colunas diferentes, e escolher uma calado seria responder
+  outra pergunta.
+- **O apelido vai SEMPRE explícito no pedido**, e sem `AS` ele é
+  `funcao_ultimosegmento` — `SUM(p.total)` vira `soma_total`, não
+  `soma_p.total`: ponto num nome é qualificação para quem resolve nome no
+  motor, e `total` viraria ambíguo entre a coluna e o agregado dela. Dois
+  agregados que colidam no mesmo apelido recusam nomeando.
+- **`por` vazio com `agregados` é o agregado GLOBAL** — `SELECT COUNT(*) FROM
+  a JOIN b`, uma linha só.
+- **Depois de agrupar a linha só tem as colunas de `por` e os apelidos.**
+  Coluna projetada fora do `GROUP BY` recusa **na tradução**, nomeando a
+  cláusula — a mesma regra da gramática de uma tabela, e a decisão que esta
+  casa já tomou por média ponderada (PG 4 + MySQL 2 = 6 contra MariaDB 3 +
+  SQLite 1 = 4).
+- **O `HAVING` não é reescrito**: ele fala dos nomes que existem DEPOIS de
+  agrupar. `HAVING COUNT(*) > 1` não resolve — dê apelido e escreva
+  `HAVING n > 1`. É o mesmo contrato do `agrupar` de uma tabela, e o motor
+  recusa nomeando o que ele pode ver.
+- **Sem junção, o apelido de fora entra no pedido** quando o `GROUP BY` ou a
+  coluna de um agregado o citam (`FROM clientes c … GROUP BY c.uf`) — é o
+  `consultar` que reconhece e descarta o `c.`, e sem o apelido ele recusaria
+  um nome qualificado que a linha não tem.
+
+O teto é o da composição, e isso é contrato: ver §3.
 
 #### `[NOT] EXISTS (SELECT … FROM t [AS x] WHERE c1 AND c2 …)` (pedido 236)
 
@@ -874,7 +926,10 @@ recusar cedo o que esta camada não vai entender no primeiro uso. Vira
 resolver `FROM v_c`: ele reanalisa e traduz o SQL da visão (com os índices da
 tabela QUE ELA USA) e passa o pedido pronto; esta função só aplica por cima o
 resto do `SELECT` de fora (`WHERE`/colunas/`ORDER BY`/`LIMIT`/`OFFSET`).
-`COUNT(*)`/`GROUP BY` sobre visão recusam nomeando — ver §3.
+`COUNT(*)`/`GROUP BY` sobre visão **passaram a traduzir** em 23/09/2026: ela
+emite os mesmos `por`/`agregados`/`tendo` da gramática composta, por outra
+porta e no mesmo pedido `consultar`. Antes recusava, e a recusa mandava
+«componha por fora» — saída que, medido, também não existia.
 
 **`SELECT * FROM v` pode recusar por causa do `ORDER BY` de dentro dela, e isso
 é contrato** (pedido 245, O6). A ordem do PhxSql sai do `.ndx` e **a direção
@@ -1079,7 +1134,8 @@ encontraram.
 
 | a tradução produz | a op que executa | onde ela mora |
 |---|---|---|
-| `GROUP BY` / agregados | `agrupar` | `crate::agrupar` (o acumulador é o do `pivot.rs`, e não uma cópia) |
+| `GROUP BY` / agregados, de UMA tabela | `agrupar` | `crate::agrupar` (o acumulador é o do `pivot.rs`, e não uma cópia) |
+| `GROUP BY` / agregados sobre COMPOSIÇÃO (junção, subconsulta, `WITH`, visão) | `consultar` com `por`/`agregados`/`tendo` | o MESMO `crate::agrupar`, sobre a linha já composta — um acumulador, duas portas |
 | `WITH`, subconsulta, `IN (SELECT …)`, `JOIN`, `ROW_NUMBER`, escalar | `consultar` | `crate::consultar` |
 | `CREATE VIEW` / `DROP VIEW` | `criar_visao` / `excluir_visao` | `crate::visoes` (`visoes.json` por banco) |
 | `INSERT … ON CONFLICT` | `inserir` com `se_existir` | `crate::upsert` (o mesmo do DbLink) |
@@ -1166,5 +1222,8 @@ segue é o que continua sem substrato depois dessa rodada, por decisão:
   portão.
 - **`EXISTS` não correlacionado** — sem par nenhum, é só «tem linha?» e ainda
   não tem substrato.
-- **`COUNT(*)` sobre visão** — recusa dizendo que não há substrato nesta
-  rodada; a contagem se faz com `agrupar` sobre a tabela de dentro.
+- ~~**`COUNT(*)` sobre visão**~~ — **resolvido em 23/09/2026** (pedido 394):
+  `SELECT COUNT(*) FROM v_c` e `SELECT uf, COUNT(*) FROM v_c GROUP BY uf`
+  traduzem e rodam. O teto é o da composição (`recursos.max_linhas`), e não o
+  da tabela — para contar uma tabela INTEIRA, sem visão, o caminho continua
+  sendo o `agrupar`.

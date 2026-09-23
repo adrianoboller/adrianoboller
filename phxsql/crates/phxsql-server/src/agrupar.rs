@@ -33,7 +33,6 @@
 use std::collections::HashMap;
 
 use phxsql_core::error::{PhxError, Result};
-use phxsql_core::schema::Schema;
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
 
@@ -81,14 +80,25 @@ pub struct Resultado {
 /// `por` vazio e UM grupo so, e nao nenhum: `SELECT COUNT(*) FROM t` tem de
 /// responder a contagem da tabela inteira, e nao uma lista vazia. Sobre tabela
 /// vazia, porem, o grupo unico nao nasce -- somar nada da resposta nenhuma.
+///
+/// # Por que `tipos` e nao `Schema`
+///
+/// O unico uso que havia do esquema aqui era o TIPO de cada coluna, para o
+/// `Decimal` fechar na escala certa. Pedir o `Schema` inteiro obrigaria quem
+/// agrega sobre linhas SEM arquivo -- a composicao do `consultar`, que so tem
+/// nome e tipo por coluna -- a fabricar um, e `Schema::new` acrescenta QUATRO
+/// colunas de sistema a quem nao as declara (`schema.rs`): a lista de tipos
+/// passaria a nomear coluna que a linha composta nao tem, e um esquema e tipo
+/// de FORMATO EM DISCO para um resultado que nao tem arquivo nenhum. Receber
+/// a lista de tipos e o que faz os dois caminhos somarem pelo mesmo
+/// acumulador sem um deles mentir sobre a forma da linha.
 pub fn agrupar(
     fatos: &mut dyn Iterador,
-    esquema: &Schema,
+    tipos: &[ColumnType],
     por: &[usize],
     agregados: &[Agregado],
     teto_grupos: u64,
 ) -> Result<Resultado> {
-    let colunas = esquema.colunas();
     // A ordem de chegada e guardada a parte porque o mapa nao a tem, e sem ela
     // dois pedidos iguais devolveriam os grupos em ordens diferentes conforme
     // o `HashMap` resolvesse as colisoes -- uma consulta que muda de ordem
@@ -165,9 +175,8 @@ pub fn agrupar(
             .iter()
             .zip(accs.iter())
             .map(|(a, acc)| {
-                let (decimal, escala) = crate::pivot::decimal_e_escala(
-                    a.coluna.and_then(|c| colunas.get(c)).map(|c| &c.ty),
-                );
+                let (decimal, escala) =
+                    crate::pivot::decimal_e_escala(a.coluna.and_then(|c| tipos.get(c)));
                 fechar_valor(acc, a.funcao, decimal, escala)
             })
             .collect();
@@ -179,13 +188,18 @@ pub fn agrupar(
 #[cfg(test)]
 mod testes {
     use super::*;
-    use phxsql_core::schema::Column;
+    use phxsql_core::schema::{Column, Schema};
 
     struct Lista(std::vec::IntoIter<Vec<Value>>);
     impl Iterador for Lista {
         fn proxima(&mut self) -> Result<Option<Vec<Value>>> {
             Ok(self.0.next())
         }
+    }
+
+    /// Os tipos como o caminho do disco os passa: a coluna na ordem da linha.
+    fn tipos(e: &Schema) -> Vec<ColumnType> {
+        e.colunas().iter().map(|c| c.ty).collect()
     }
 
     fn esquema() -> Schema {
@@ -236,7 +250,7 @@ mod testes {
                 apelido: "total".into(),
             },
         ];
-        let r = agrupar(&mut linhas(), &e, &[0], &ags, 1000).unwrap();
+        let r = agrupar(&mut linhas(), &tipos(&e), &[0], &ags, 1000).unwrap();
         assert_eq!(r.lidas, 4);
         assert_eq!(r.grupos.len(), 2);
         assert_eq!(r.grupos[0].chave[0], Value::Str("Blumenau".into()));
@@ -254,7 +268,7 @@ mod testes {
             coluna: None,
             apelido: "n".into(),
         }];
-        let r = agrupar(&mut linhas(), &esquema(), &[], &ags, 1000).unwrap();
+        let r = agrupar(&mut linhas(), &tipos(&esquema()), &[], &ags, 1000).unwrap();
         assert_eq!(r.grupos.len(), 1);
         assert_eq!(r.grupos[0].valores[0].0, Value::UInt(4));
         assert!(r.grupos[0].chave.is_empty());
@@ -273,7 +287,7 @@ mod testes {
             coluna: Some(1),
             apelido: "total".into(),
         }];
-        let r = agrupar(&mut so_nulo, &esquema(), &[0], &ags, 1000).unwrap();
+        let r = agrupar(&mut so_nulo, &tipos(&esquema()), &[0], &ags, 1000).unwrap();
         assert_eq!(r.grupos[0].valores[0].0, Value::Null);
     }
 
@@ -285,7 +299,7 @@ mod testes {
             coluna: None,
             apelido: "n".into(),
         }];
-        let e = agrupar(&mut linhas(), &esquema(), &[0], &ags, 1)
+        let e = agrupar(&mut linhas(), &tipos(&esquema()), &[0], &ags, 1)
             .expect_err("dois grupos com teto 1 tinham de recusar");
         assert!(e.to_string().contains('1'), "{e}");
         assert!(e.to_string().contains("max_linhas"), "{e}");
@@ -332,7 +346,7 @@ mod testes {
             coluna: None,
             apelido: "n".into(),
         }];
-        let r = agrupar(&mut l, &e, &[0, 1], &ags, 1000).unwrap();
+        let r = agrupar(&mut l, &tipos(&e), &[0, 1], &ags, 1000).unwrap();
         assert_eq!(r.grupos.len(), 3, "duas chaves diferentes viraram uma");
     }
 }

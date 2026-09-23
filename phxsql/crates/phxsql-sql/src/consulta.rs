@@ -65,13 +65,18 @@
 //!   - `Analisador::comando` recusa o `UNION` quando a sondagem manda o
 //!     comando para esta gramatica.
 //! - **agregado, `GROUP BY` e `HAVING`** (pedido 394) -- `SELECT SUM(x) …
-//!   FROM a JOIN b` e a consulta que todo relatorio escreve, e ela nao tem
-//!   substrato: a op `agrupar` do protocolo recebe `tabela`, nunca um
-//!   sub-pedido, e a op `consultar` compoe sem agregar. Os dois recusam
-//!   nomeando, em UM lugar cada: `item_de_projecao_composta` (o terceiro
-//!   braco, `FUNCAO(` sem `OVER`) e `consulta_apos_select` (a clausula, que
-//!   antes era ENGOLIDA para dentro do texto da `expressao`). Dar substrato
-//!   muda o CONTRATO de uma das duas ops -- decisao do dono.
+//!   FROM a JOIN b` e a consulta que todo relatorio escreve, e desde
+//!   23/09/2026 ela TEM substrato: o `consultar` ganhou `por`, `agregados` e
+//!   `tendo`, e a traducao os preenche em UM lugar cada --
+//!   `item_de_projecao_composta` (o agregado, `FUNCAO(` sem `OVER`) e
+//!   `consulta_apos_select` (as clausulas, que antes eram ENGOLIDAS para
+//!   dentro do texto da `expressao`). O que continua sem substrato e a
+//!   funcao ESCALAR na projecao composta, e ela recusa nomeando.
+//!
+//!   O `agrupar` NAO virou acucar disto: ele flui do disco e ve a tabela
+//!   inteira, enquanto a composicao resume o que materializou sob
+//!   `recursos.max_linhas`. Uma porta so trocaria um `COUNT(*)` de um milhao
+//!   por mil, calado.
 //!
 //! E o WHERE composto so reconhece subconsulta (IN, escalar ou EXISTS)
 //! quando ela e o conjunto INTEIRO de um `AND` de nivel superior -- uma
@@ -202,9 +207,60 @@ pub struct Consulta {
     /// `None` = `SELECT *` = todas as colunas (o pedido nao leva "colunas").
     pub colunas: Option<Vec<ColunaComposta>>,
     pub janela: Vec<Janela>,
+    /// `GROUP BY` da consulta composta (pedido 394) -- nomes de coluna,
+    /// qualificados quando ha junção. VAZIO com `agregados` cheio e o
+    /// agregado global (`SELECT COUNT(*) FROM a JOIN b`).
+    pub por: Vec<String>,
+    /// As chamadas de agregado da projecao. Cada uma tem apelido SEMPRE
+    /// preenchido, e e por ele que `colunas` a nomeia.
+    pub agregados: Vec<AgregadoComposto>,
+    /// `HAVING`, como TEXTO -- igual ao caminho de uma tabela. Ele fala dos
+    /// nomes que existem DEPOIS de agrupar, e o motor recusa nomeando quem
+    /// citar coluna crua.
+    pub tendo: Option<String>,
     pub ordem: Vec<Ordenacao>,
     pub pular: u64,
     pub max: Option<u64>,
+}
+
+/// Um agregado da projecao composta: `SUM(p.total) AS faturado`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AgregadoComposto {
+    pub funcao: FuncaoAgregada,
+    /// `None` so em `COUNT(*)`, que conta LINHA e nao valor.
+    pub coluna: Option<String>,
+    /// SEMPRE preenchido, e SEMPRE emitido no pedido. O protocolo tem um
+    /// apelido padrao proprio, e deixar o campo de fora faria a mesma
+    /// consulta depender de duas regras de nome -- a desta camada e a do
+    /// motor. Emitindo, ha UMA.
+    pub apelido: String,
+}
+
+/// O que `projecao_composta` devolve: as colunas (`None` = `SELECT *`), as
+/// janelas e os agregados.
+type ProjecaoComposta = (
+    Option<Vec<ColunaComposta>>,
+    Vec<Janela>,
+    Vec<AgregadoComposto>,
+);
+
+/// O que `item_de_projecao_composta` devolve: a coluna que a resposta mostra
+/// e, quando for o caso, a janela OU o agregado que a produz.
+type ItemComposto = (ColunaComposta, Option<Janela>, Option<AgregadoComposto>);
+
+/// O apelido de um agregado composto sem `AS`.
+///
+/// E o `apelido_padrao` de sempre sobre o ULTIMO segmento do nome: `p.total`
+/// vira `soma_total`, e nao `soma_p.total`. O ponto e o motivo -- quem
+/// resolve nome no motor le ponto como qualificacao, e um apelido com ponto
+/// faria `total` virar ambiguo entre a coluna e o agregado dela. Dois
+/// agregados sobre `p.total` e `c.total` colidem em `soma_total`, e a colisao
+/// RECUSA nomeando: resposta certa, em vez de nome torto.
+fn apelido_do_agregado(funcao: FuncaoAgregada, coluna: &Option<String>) -> String {
+    let sufixo = coluna
+        .as_deref()
+        .map(|c| c.rsplit_once('.').map_or(c, |(_, s)| s));
+    crate::traduzir::apelido_padrao(funcao, sufixo)
 }
 
 /// `coluna OP (SELECT …)` -- subconsulta escalar, NAO correlacionada, que
@@ -392,6 +448,50 @@ pub fn traduzir_consulta(
         Json::texto_de(c.onde.as_ref().map(Onde::texto).unwrap_or_default()),
     ));
 
+    // O agregado entra ENTRE a `expressao` e a `janela`, que e a ordem em que
+    // o motor os executa -- e a ordem dos quatro motores maduros: FROM+JOIN+
+    // WHERE, depois agrupar, depois janela. A chave `por` sai mesmo VAZIA
+    // quando ha agregado: `por: []` e o agregado GLOBAL (uma linha so), e
+    // omiti-la faria `SELECT COUNT(*) FROM a JOIN b` contar por engano nada.
+    if !c.por.is_empty() || !c.agregados.is_empty() {
+        pares.push((
+            "por".to_string(),
+            Json::Lista(c.por.iter().map(Json::texto_de).collect()),
+        ));
+        pares.push((
+            "agregados".to_string(),
+            Json::Lista(
+                c.agregados
+                    .iter()
+                    .map(|a| {
+                        let mut par = vec![
+                            (
+                                "funcao".to_string(),
+                                Json::texto_de(a.funcao.nome_no_protocolo()),
+                            ),
+                            ("apelido".to_string(), Json::texto_de(&a.apelido)),
+                        ];
+                        if let Some(col) = &a.coluna {
+                            par.push(("coluna".to_string(), Json::texto_de(col)));
+                        }
+                        Json::Objeto(par)
+                    })
+                    .collect(),
+            ),
+        ));
+        if let Some(t) = &c.tendo {
+            pares.push(("tendo".to_string(), Json::texto_de(t)));
+        }
+        notas.push(format!(
+            "GROUP BY sobre composicao: {} coluna(s) de agrupamento e {} agregado(s) -- \
+             o `consultar` resume o que a COMPOSICAO produziu, e ela para em \
+             `recursos.max_linhas`. Para agregar uma tabela INTEIRA, sem junção, o \
+             caminho e a op `agrupar`",
+            c.por.len(),
+            c.agregados.len()
+        ));
+    }
+
     if !c.janela.is_empty() {
         pares.push((
             "janela".to_string(),
@@ -511,18 +611,19 @@ pub fn traduzir_consulta(
 /// chamar (`de`, cada `em`...). Aqui o pedido de dentro ja chegou pronto --
 /// pedir para resolver de novo seria abrir o esquema da visao duas vezes.
 ///
-/// # O que esta rodada NAO cobre
+/// # `COUNT(*)`/`GROUP BY` sobre visao: passou a ter substrato
 ///
-/// `COUNT(*)`/`GROUP BY` sobre uma visao recusam nomeando -- o `consultar`
-/// nao agrupa, so filtra e projeta.
+/// Ate 23/09/2026 os dois recusavam aqui, e o texto da recusa mandava
+/// «componha por fora» -- uma saida que **nao existia**, medido: o
+/// `SELECT COUNT(*) FROM (SELECT * FROM v_c) AS x` caia na gramatica
+/// COMPOSTA e recusava pelo mesmo pedido 394. Com o `consultar` agregando,
+/// as duas saidas passaram a existir, e esta funcao emite os campos novos
+/// como `traduzir_consulta` os emite.
 ///
-/// **E a saida que esta linha recomendava nao existe**, medido em 23/09/2026:
-/// `SELECT COUNT(*) FROM (SELECT * FROM v_c) AS x` cai na gramatica COMPOSTA
-/// e recusa pelo pedido 394, porque subconsulta no `FROM` e agregado nao se
-/// encontram em lugar nenhum do protocolo. Nao ha, hoje, caminho SQL para
-/// agregar sobre composicao -- e escrever uma saida que nao roda e pior que
-/// nao escrever nenhuma.
-/// DIVIDA: `COUNT(*)` e `GROUP BY` sobre visao recusam -- o `consultar` nao agrupa, so filtra e projeta
+/// **Ela e o caminho IRMAO**: monta o MESMO pedido `consultar`, campo a
+/// campo, por outra porta (`FROM v_c` na gramatica de uma tabela). Deixar o
+/// agregado so na outra faria a mesma pergunta passar escrita de um jeito e
+/// recusar escrita de outro.
 pub fn planejar_sobre(selecao: &Selecao, plano_de_dentro: Json) -> Result<Plano> {
     let database = if !selecao.de.database.is_empty() {
         selecao.de.database.clone()
@@ -535,6 +636,11 @@ pub fn planejar_sobre(selecao: &Selecao, plano_de_dentro: Json) -> Result<Plano>
         ));
     }
 
+    // Os agregados, quando ha. A projecao ja passou pelo `finalizar_projecao`,
+    // que garante que toda coluna simples esta no `GROUP BY` -- entao aqui a
+    // lista de `colunas` e, na ordem escrita, coluna de grupo ou apelido de
+    // agregado.
+    let mut agregados: Vec<AgregadoComposto> = Vec::new();
     let colunas: Option<Vec<ColunaComposta>> = match &selecao.projecao {
         Projecao::Tudo => None,
         Projecao::Colunas(cs) => Some(
@@ -545,13 +651,48 @@ pub fn planejar_sobre(selecao: &Selecao, plano_de_dentro: Json) -> Result<Plano>
                 })
                 .collect(),
         ),
-        Projecao::Contagem | Projecao::Agregada(_) => {
-            return Err(PhxError::Esquema(
-                "COUNT(*)/GROUP BY sobre visao nao tem substrato nesta rodada -- componha \
-                 por fora, com outro SELECT sobre o resultado da visao"
-                    .into(),
-            ));
+        // `SELECT COUNT(*) FROM v_c` sozinho -- o caminho rapido da gramatica
+        // de uma tabela, que aqui vira o agregado global.
+        Projecao::Contagem => {
+            agregados.push(AgregadoComposto {
+                funcao: FuncaoAgregada::Contagem,
+                coluna: None,
+                apelido: "contagem".to_string(),
+            });
+            Some(vec![ColunaComposta {
+                coluna: "contagem".to_string(),
+                apelido: None,
+            }])
         }
+        Projecao::Agregada(itens) => Some(
+            itens
+                .iter()
+                .map(|i| match i {
+                    ItemProjetado::Coluna(c) => ColunaComposta {
+                        coluna: c.nome.clone(),
+                        apelido: c.apelido.clone(),
+                    },
+                    ItemProjetado::Agregado {
+                        funcao,
+                        coluna,
+                        apelido,
+                    } => {
+                        let apelido = apelido
+                            .clone()
+                            .unwrap_or_else(|| apelido_do_agregado(*funcao, coluna));
+                        agregados.push(AgregadoComposto {
+                            funcao: *funcao,
+                            coluna: coluna.clone(),
+                            apelido: apelido.clone(),
+                        });
+                        ColunaComposta {
+                            coluna: apelido,
+                            apelido: None,
+                        }
+                    }
+                })
+                .collect(),
+        ),
     };
 
     let mut pares = vec![
@@ -562,6 +703,38 @@ pub fn planejar_sobre(selecao: &Selecao, plano_de_dentro: Json) -> Result<Plano>
             Json::texto_de(selecao.onde.as_ref().map(Onde::texto).unwrap_or_default()),
         ),
     ];
+    // ENTRE a `expressao` e a projecao, como no `traduzir_consulta`: o motor
+    // agrega depois de filtrar, e a projecao vem por ultimo.
+    if !selecao.agrupar_por.is_empty() || !agregados.is_empty() {
+        pares.push((
+            "por".to_string(),
+            Json::Lista(selecao.agrupar_por.iter().map(Json::texto_de).collect()),
+        ));
+        pares.push((
+            "agregados".to_string(),
+            Json::Lista(
+                agregados
+                    .iter()
+                    .map(|a| {
+                        let mut par = vec![
+                            (
+                                "funcao".to_string(),
+                                Json::texto_de(a.funcao.nome_no_protocolo()),
+                            ),
+                            ("apelido".to_string(), Json::texto_de(&a.apelido)),
+                        ];
+                        if let Some(col) = &a.coluna {
+                            par.push(("coluna".to_string(), Json::texto_de(col)));
+                        }
+                        Json::Objeto(par)
+                    })
+                    .collect(),
+            ),
+        ));
+        if let Some(t) = &selecao.tendo {
+            pares.push(("tendo".to_string(), Json::texto_de(t)));
+        }
+    }
     if let Some(cols) = &colunas {
         pares.push((
             "colunas".to_string(),
@@ -684,13 +857,23 @@ pub(crate) fn recusa_se_correlacionada(sel: &Selecao) -> Result<()> {
 
 /// O apelido do `de` e CITADO de fora, sem junção? -- ou seja, alguem escreveu
 /// `apelido.coluna` referindo a tabela principal. So entao o `consultar` precisa
-/// do apelido no pedido (para reconhecer e descartar o prefixo). Tres lugares o
+/// do apelido no pedido (para reconhecer e descartar o prefixo). CINCO lugares o
 /// citam: o lado de FORA de um par de correlacao do `EXISTS` (`c.id = x.col`, e
 /// `esquerda` e sempre a coluna de fora), uma coluna qualificada na projecao
-/// (`SELECT c.nome`) e uma na ordem (`ORDER BY c.id`). O `IN`/escalar de fora
-/// citam pela coluna e pela expressao, mas essas duas ainda nao descartam o
+/// (`SELECT c.nome`), uma na ordem (`ORDER BY c.id`) e -- desde o pedido 394 --
+/// o `GROUP BY` (`por`) e a coluna de um agregado (`SUM(c.total)`). O `IN`/escalar
+/// de fora citam pela coluna e pela expressao, mas essas duas ainda nao descartam o
 /// prefixo no `consultar` sem junção -- ficam de fora ate ganharem, para o
 /// apelido nao entrar prometendo um descarte que nao acontece.
+///
+/// **Quando um campo novo passa a nomear coluna, e esta lista que se procura.**
+/// Sem os dois ultimos, `SELECT c.uf, COUNT(*) FROM clientes c GROUP BY c.uf`
+/// sairia sem `apelido` e o motor recusaria `c.uf` -- a mesma falta, no campo
+/// que acabou de nascer.
+///
+/// O `tendo` fica de FORA de proposito: ele fala dos nomes que existem DEPOIS
+/// de agrupar, e la a coluna ja perdeu o prefixo (`por: ["c.uf"]` vira a
+/// coluna `uf`). Poe-lo aqui prometeria um descarte que nao acontece.
 fn apelido_de_citado(c: &Consulta, alias: &str) -> bool {
     let cita = |nome: &str| {
         nome.split_once('.')
@@ -703,6 +886,10 @@ fn apelido_de_citado(c: &Consulta, alias: &str) -> bool {
             .as_ref()
             .is_some_and(|cols| cols.iter().any(|col| cita(&col.coluna)))
         || c.ordem.iter().any(|o| cita(&o.coluna))
+        || c.por.iter().any(|g| cita(g))
+        || c.agregados
+            .iter()
+            .any(|a| a.coluna.as_deref().is_some_and(cita))
 }
 
 /// O texto de um termo do WHERE de DENTRO de um `EXISTS`, com o qualificador
@@ -852,7 +1039,7 @@ impl Analisador {
         &mut self,
         cte: Option<(String, Selecao)>,
     ) -> Result<Consulta> {
-        let (colunas, janela) = self.projecao_composta()?;
+        let (colunas, janela, agregados) = self.projecao_composta()?;
         self.exigir_palavra("FROM")?;
         let (de, apelido_de) = self.fonte_do_from(&cte)?;
 
@@ -861,15 +1048,64 @@ impl Analisador {
         let (onde, em, escalar, existe) = self.onde_composta(extras_do_on)?;
 
         // `GROUP BY`/`HAVING` param a captura do `ON` e a do `WHERE`, e e
-        // AQUI que a falta vira recusa NOMEADA. Um lugar so, porque os dois
-        // caminhos que engoliam a clausula desaguam neste ponto: sem WHERE,
-        // quem parou foi o `ON`; com WHERE, foi o `onde_composta`.
-        for clausula in ["GROUP", "HAVING"] {
-            if self.espiar_palavra(clausula) {
+        // AQUI que eles sao lidos -- um lugar so, porque os dois caminhos que
+        // engoliam a clausula desaguam neste ponto: sem WHERE, quem parou foi
+        // o `ON`; com WHERE, foi o `onde_composta`.
+        let por = if self.aceitar_palavra("GROUP") {
+            self.exigir_palavra("BY")?;
+            // `true`: coluna qualificada, pelo mesmo motivo do agregado.
+            self.lista_de_colunas_do_group_by("GROUP BY", true)?
+        } else {
+            Vec::new()
+        };
+        let tendo = if self.aceitar_palavra("HAVING") {
+            let tokens = self.capturar_ate_clausula(&["ORDER", "LIMIT", "OFFSET"])?;
+            if tokens.is_empty() {
                 return Err(lexico::erro(
                     self.posicao_atual(),
-                    &recusa_de_agregacao_composta(clausula),
+                    "esperava uma condicao depois de HAVING",
                 ));
+            }
+            // TEXTO, como no caminho de uma tabela: o `tendo` do protocolo e
+            // uma expressao sobre os nomes que existem DEPOIS de agrupar, e
+            // quem cita coluna crua recebe do motor a recusa que LISTA o que
+            // ele pode ver. Reescrever aqui `COUNT(*)` para o apelido seria
+            // uma segunda regra de nome, divergente da do irmao.
+            Some(normalizar_tokens(&tokens))
+        } else {
+            None
+        };
+        // `SELECT *` com `GROUP BY` recusa pelo MESMO texto da gramatica de
+        // uma tabela: `*` nao diz qual coluna do grupo ele quer.
+        if colunas.is_none() && (!por.is_empty() || tendo.is_some()) {
+            return Err(lexico::erro(
+                self.posicao_atual(),
+                crate::sintaxe::SEM_ESTRELA_COM_GROUP_BY,
+            ));
+        }
+        // Coluna simples fora do `GROUP BY` recusa AQUI, nomeando a coluna e
+        // a clausula -- e nao la na frente, quando o motor nao achar o nome no
+        // modelo ja agrupado. E a mesma regra do caminho de uma tabela, e a
+        // decisao ja tomada por media ponderada nesta casa: o motor ERRA
+        // (PG 4 + MySQL 2 = 6 contra MariaDB 3 + SQLite 1 = 4).
+        if !agregados.is_empty() || !por.is_empty() {
+            let da_janela = |n: &str| janela.iter().any(|j| igual_sem_caso(&j.apelido, n));
+            let e_agregado = |n: &str| agregados.iter().any(|a| igual_sem_caso(&a.apelido, n));
+            for col in colunas.iter().flatten() {
+                if da_janela(&col.coluna) || e_agregado(&col.coluna) {
+                    continue;
+                }
+                if !por.iter().any(|g| igual_sem_caso(g, &col.coluna)) {
+                    return Err(lexico::erro(
+                        self.posicao_atual(),
+                        &format!(
+                            "a coluna {:?} aparece no SELECT mas nao esta no GROUP BY e \
+                             nao e agregado -- cada coluna do resultado tem de ser uma \
+                             das colunas do agrupamento ou uma chamada de agregado",
+                            col.coluna
+                        ),
+                    ));
+                }
             }
         }
 
@@ -901,6 +1137,9 @@ impl Analisador {
             onde,
             colunas,
             janela,
+            por,
+            agregados,
+            tendo,
             ordem,
             pular,
             max,
@@ -1015,35 +1254,39 @@ impl Analisador {
     /// (`ROW_NUMBER() OVER (...)`). `*` nao se mistura com janela -- exige
     /// a lista explicita, porque `SELECT *, ROW_NUMBER() ...` teria de
     /// nomear a posicao da coluna nova, e `*` nao nomeia nada.
-    fn projecao_composta(&mut self) -> Result<(Option<Vec<ColunaComposta>>, Vec<Janela>)> {
+    fn projecao_composta(&mut self) -> Result<ProjecaoComposta> {
         if self.aceitar(&Token::Asterisco) {
-            return Ok((None, Vec::new()));
+            return Ok((None, Vec::new(), Vec::new()));
         }
         let mut colunas = Vec::new();
         let mut janelas = Vec::new();
+        let mut agregados = Vec::new();
         loop {
-            let (col, jan) = self.item_de_projecao_composta()?;
+            let (col, jan, ag) = self.item_de_projecao_composta()?;
             colunas.push(col);
             if let Some(j) = jan {
                 janelas.push(j);
+            }
+            if let Some(a) = ag {
+                agregados.push(a);
             }
             if !self.aceitar(&Token::Virgula) {
                 break;
             }
         }
-        Ok((Some(colunas), janelas))
+        Ok((Some(colunas), janelas, agregados))
     }
 
     /// Um item da projecao composta: coluna simples, ou
     /// `ROW_NUMBER() OVER (...) [AS apelido]` -- que sempre devolve UMA
     /// coluna (o apelido da janela, para `colunas` mostrar na posicao em
     /// que a chamada apareceu) e, quando for janela, TAMBEM a `Janela`.
-    fn item_de_projecao_composta(&mut self) -> Result<(ColunaComposta, Option<Janela>)> {
+    fn item_de_projecao_composta(&mut self) -> Result<ItemComposto> {
         if let Some(nome) = self.espiar().and_then(|s| s.token.palavra_chave()) {
             if self.s.get(self.i + 1).map(|s| &s.token) == Some(&Token::AbreParen) {
                 if nome == "ROW_NUMBER" {
                     let (janela, coluna) = self.chamada_de_row_number()?;
-                    return Ok((coluna, Some(janela)));
+                    return Ok((coluna, Some(janela), None));
                 }
                 let pos_func = self.posicao_atual();
                 let fechamento = self.posicao_do_fecha_parenteses_apos(self.i + 1)?;
@@ -1062,13 +1305,30 @@ impl Analisador {
                         ),
                     ));
                 }
-                // O TERCEIRO braco, e o que faltava (pedido 394): `FUNCAO(`
-                // SEM `OVER` depois do fecha-parenteses. Sem ele o codigo
-                // caia no `identificador()` de baixo, que le a palavra `SUM`
-                // como NOME DE COLUNA -- o token e `Token::Palavra` --, fecha
-                // o item com a coluna FANTASMA "SUM", encerra a lista da
-                // projecao ali, e deixa o `(` para produzir "esperava FROM"
-                // longe do problema, sem falar nem de agregado nem de junção.
+                // O TERCEIRO braco: `FUNCAO(` SEM `OVER` depois do
+                // fecha-parenteses. Ate o pedido 394 ele so sabia RECUSAR --
+                // nao havia para onde mandar um agregado sobre composicao.
+                // Agora o agregado tem substrato (`consultar` ganhou `por`,
+                // `agregados` e `tendo`), e a recusa fica so para a funcao
+                // ESCALAR, que continua sem ter.
+                if let Some(funcao) = FuncaoAgregada::de_nome_de_funcao(&nome) {
+                    // `true`: aqui a coluna vem qualificada, porque depois de
+                    // uma junção `p.total` e `c.total` sao colunas diferentes.
+                    let (funcao, coluna, apelido) = self.chamada_de_agregado(funcao, true)?;
+                    let apelido = apelido.unwrap_or_else(|| apelido_do_agregado(funcao, &coluna));
+                    return Ok((
+                        ColunaComposta {
+                            coluna: apelido.clone(),
+                            apelido: None,
+                        },
+                        None,
+                        Some(AgregadoComposto {
+                            funcao,
+                            coluna,
+                            apelido,
+                        }),
+                    ));
+                }
                 return Err(lexico::erro(pos_func, &recusa_de_funcao_composta(&nome)));
             }
         }
@@ -1092,6 +1352,7 @@ impl Analisador {
                 apelido,
             },
             None,
+            None,
         ))
     }
 
@@ -1113,7 +1374,12 @@ impl Analisador {
         }
         let particao = if self.aceitar_palavra("PARTITION") {
             self.exigir_palavra("BY")?;
-            self.lista_de_colunas_do_group_by("PARTITION BY")?
+            // `true`: na gramatica COMPOSTA a coluna vem qualificada
+            // (`c.uf`), porque depois de uma junção o prefixo diz de que lado
+            // ela vem. Deixar o PARTITION BY sem o prefixo enquanto o GROUP BY
+            // o le seria a mesma consulta funcionando num campo e recusando no
+            // irmao, na MESMA frase.
+            self.lista_de_colunas_do_group_by("PARTITION BY", true)?
         } else {
             Vec::new()
         };
@@ -1272,53 +1538,23 @@ impl Analisador {
     }
 }
 
-/// A falta que o pedido 394 nomeia, numa frase so: o agregado sobre
-/// composicao nao tem para ONDE ir no protocolo. A op `agrupar` recebe
-/// `tabela` (nunca um sub-pedido) e a op `consultar` compoe sem agregar --
-/// entao nao ha meia traducao possivel, so recusa honesta. Dar substrato
-/// muda o CONTRATO de uma das duas ops, e isso e decisao do dono.
-const SEM_SUBSTRATO_PARA_AGREGAR: &str = "a op `agrupar` do protocolo agrupa UMA tabela, e a op \
-                                          `consultar` compoe sem agregar. Pedido 394";
-
-/// A recusa nomeada de `GROUP BY`/`HAVING` numa consulta COMPOSTA.
-///
-/// Antes disto a clausula era ENGOLIDA: `capturar_ate_clausula` nao parava
-/// nela, os tokens viravam texto dentro da `expressao` do WHERE
-/// (`"p.z = 1 GROUP BY v.nome"`), `analisar_comando` devolvia `Ok`, e so o
-/// avaliador de expressao do motor reclamava -- "sobrou GROUP depois do fim
-/// da expressao", noutra camada e sem falar de junção.
-fn recusa_de_agregacao_composta(clausula: &str) -> String {
-    let nome = if clausula == "GROUP" {
-        "GROUP BY"
-    } else {
-        clausula
-    };
-    format!(
-        "{nome} numa consulta COMPOSTA (junção, subconsulta no FROM, WITH ou \
-         IN (SELECT ...)) nao tem substrato: {SEM_SUBSTRATO_PARA_AGREGAR}"
-    )
-}
-
 /// A recusa nomeada de `FUNCAO(...)` sem `OVER` na projecao composta.
 ///
-/// Separa agregado de funcao escalar porque as duas faltas sao diferentes e
-/// quem le faz coisas diferentes com cada uma: o agregado existe nesta casa
-/// e so nao alcanca a composicao; a funcao escalar nunca existiu em projecao
-/// nenhuma desta camada. Uma mensagem so para as duas mandaria metade da
-/// gente procurar um pedido que nao fala do caso dela.
+/// Sobrou so a funcao ESCALAR. Ate o pedido 394 havia uma segunda redacao,
+/// para o agregado, e uma frase de contrato ao lado dizendo que dar
+/// substrato a ele «e decisao do dono» -- escrita ANTES da petrea de
+/// 23/09/2026, que passou a decisao de comportamento de banco ao papel J.
+/// O parecer de 23/09/2026 decidiu (4 de 4 motores poem FROM+JOIN+GROUP BY
+/// no mesmo no da requisicao), o `consultar` ganhou `por`/`agregados`/
+/// `tendo`, e a recusa do agregado morreu junto com a falta. **Recusa que
+/// deixou de ser verdade sai do codigo** -- mantida, ela mandaria quem lesse
+/// procurar um pedido que ja foi atendido.
 fn recusa_de_funcao_composta(nome: &str) -> String {
-    if FuncaoAgregada::de_nome_de_funcao(nome).is_some() {
-        format!(
-            "{nome}(...) -- agregado -- nao tem substrato numa consulta COMPOSTA \
-             (junção, subconsulta no FROM, WITH ou IN (SELECT ...)): \
-             {SEM_SUBSTRATO_PARA_AGREGAR}"
-        )
-    } else {
-        format!(
-            "{nome}(...) nao tem substrato na projecao de uma consulta COMPOSTA: aqui \
-             so cabem coluna, coluna qualificada (t.col) e ROW_NUMBER() OVER (...)"
-        )
-    }
+    format!(
+        "{nome}(...) nao tem substrato na projecao de uma consulta COMPOSTA: aqui \
+         so cabem coluna, coluna qualificada (t.col), agregado \
+         (SUM/COUNT/AVG/MIN/MAX) e ROW_NUMBER() OVER (...)"
+    )
 }
 
 /// Divide os tokens de uma clausula pelos `AND` de NIVEL SUPERIOR (fora de
@@ -1786,94 +2022,191 @@ mod testes {
 
     // ------------------------------------- pedido 394: agregado sobre junção
 
-    /// A consulta que todo relatorio escreve. Ela NAO passa -- mas a recusa
-    /// tem de falar de AGREGADO, e nao mandar procurar um `FROM` que esta la.
+    /// A consulta que todo relatorio escreve -- e que agora PASSA.
     ///
-    /// Com o defeito reposto (sem o terceiro braco de
-    /// `item_de_projecao_composta`) esta prova FALHA: a palavra `SUM` vira
-    /// uma coluna fantasma, a projecao fecha nela, e a mensagem medida e
-    /// `coluna 11: esperava FROM, e veio "("`.
+    /// Ate 23/09/2026 ela recusava nomeando, porque o agregado nao tinha para
+    /// onde ir no protocolo. O `consultar` ganhou `por`/`agregados`/`tendo` e
+    /// a traducao os preenche.
+    ///
+    /// **O defeito ANTIGO continua travado aqui, e e o que esta prova guarda
+    /// de verdade:** sem o braco de agregado em `item_de_projecao_composta`,
+    /// a palavra `SUM` vira uma coluna FANTASMA (o token e `Token::Palavra`),
+    /// a lista da projecao fecha nela, e o `(` produz `esperava FROM` longe
+    /// do problema. Por isso a prova confere a COLUNA, e nao so o `Ok`.
     #[test]
-    fn agregado_sobre_juncao_recusa_nomeando_o_agregado() {
-        for sql in [
+    fn agregado_sobre_juncao_vira_agregados_no_pedido() {
+        let c = consulta(
             "SELECT SUM(p.valor) AS valor, v.nome FROM pedidos p \
-             JOIN vendedores v ON v.id = p.vendedor_id",
-            "SELECT COUNT(*) FROM pedidos p JOIN vendedores v ON v.id = p.vendedor_id",
-            "SELECT COUNT(DISTINCT p.id) FROM pedidos p JOIN vendedores v ON v.id = p.id",
-            "SELECT AVG(x) FROM pedidos p LEFT JOIN vendedores v ON v.id = p.vendedor_id",
-        ] {
-            let e = recusa(sql);
-            assert!(e.contains("agregado"), "{sql} -> {e}");
-            assert!(e.contains("Pedido 394"), "{sql} -> {e}");
-            // O sintoma antigo, travado pelo nome: a mensagem nao pode mais
-            // mandar procurar o `FROM`, que esta escrito na propria frase.
-            assert!(!e.contains("esperava FROM"), "{sql} -> {e}");
-        }
+             JOIN vendedores v ON v.id = p.vendedor_id GROUP BY v.nome",
+        );
+        assert_eq!(c.agregados.len(), 1, "{:?}", c.agregados);
+        assert_eq!(c.agregados[0].funcao, FuncaoAgregada::Soma);
+        assert_eq!(c.agregados[0].coluna.as_deref(), Some("p.valor"));
+        assert_eq!(c.agregados[0].apelido, "valor");
+        assert_eq!(c.por, vec!["v.nome".to_string()]);
+        // A coluna FANTASMA do defeito antigo: a projecao mostra o APELIDO do
+        // agregado, nunca a palavra da funcao.
+        let cols: Vec<&str> = c
+            .colunas
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|x| x.coluna.as_str())
+            .collect();
+        assert_eq!(cols, vec!["valor", "v.nome"], "{cols:?}");
+
+        // `COUNT(*)` sem GROUP BY e o agregado GLOBAL, e o apelido padrao e o
+        // do contrato.
+        let c =
+            consulta("SELECT COUNT(*) FROM pedidos p JOIN vendedores v ON v.id = p.vendedor_id");
+        assert!(c.por.is_empty());
+        assert_eq!(c.agregados[0].apelido, "contagem");
+        assert!(c.agregados[0].coluna.is_none());
+
+        // `COUNT(DISTINCT c)` continua sendo a outra pergunta, e le a coluna
+        // QUALIFICADA -- depois de uma junção `p.id` e `v.id` sao diferentes.
+        let c =
+            consulta("SELECT COUNT(DISTINCT p.id) FROM pedidos p JOIN vendedores v ON v.id = p.id");
+        assert_eq!(c.agregados[0].funcao, FuncaoAgregada::Distintos);
+        assert_eq!(c.agregados[0].coluna.as_deref(), Some("p.id"));
+        // O apelido padrao NAO carrega o ponto: `distintos_id`, e nao
+        // `distintos_p.id` -- ponto num nome e qualificacao para quem resolve
+        // nome no motor, e `id` viraria ambiguo entre a coluna e o agregado.
+        assert_eq!(c.agregados[0].apelido, "distintos_id");
     }
 
     /// As outras tres portas da gramatica composta -- subconsulta no `FROM`,
     /// `WITH` e `IN (SELECT ...)`. Sao IRMÃS da junção: as tres chegam ao
     /// MESMO `item_de_projecao_composta` pelo MESMO
     /// `precisa_de_consulta_composta`, e as quatro davam a mesma mensagem
-    /// errada.
+    /// errada. Consertar uma e deixar as outras tres foi o defeito que a lei
+    /// da casa chama de «caminho irmao».
     #[test]
-    fn agregado_nas_outras_portas_da_composta_tambem_recusa_nomeando() {
+    fn o_agregado_nas_outras_portas_da_composta_tambem_passa() {
         for sql in [
             "SELECT SUM(x) FROM (SELECT * FROM t) AS s",
             "WITH c AS (SELECT * FROM t) SELECT SUM(x) FROM c",
             "SELECT SUM(x) FROM t WHERE id IN (SELECT id FROM u)",
         ] {
-            let e = recusa(sql);
-            assert!(e.contains("agregado"), "{sql} -> {e}");
-            assert!(e.contains("Pedido 394"), "{sql} -> {e}");
+            let c = consulta(sql);
+            assert_eq!(c.agregados.len(), 1, "{sql} -> {:?}", c.agregados);
+            assert_eq!(c.agregados[0].coluna.as_deref(), Some("x"), "{sql}");
+            assert_eq!(c.agregados[0].apelido, "soma_x", "{sql}");
         }
     }
 
-    /// Funcao que NAO e agregado ganha a outra redacao: mandar quem escreveu
-    /// `UPPER(nome)` atras do pedido do agregado seria mandar ler um texto
-    /// que nao fala do caso dele.
+    /// Funcao que NAO e agregado continua sem substrato -- e a recusa diz o
+    /// que cabe ali, agora com o agregado NA lista.
     #[test]
-    fn funcao_escalar_na_projecao_composta_recusa_com_a_outra_redacao() {
+    fn funcao_escalar_na_projecao_composta_continua_recusando() {
         let e = recusa("SELECT UPPER(v.nome) FROM p JOIN v ON v.id = p.vid");
         assert!(e.contains("UPPER(...)"), "{e}");
         assert!(e.contains("so cabem coluna"), "{e}");
-        assert!(!e.contains("agregado"), "{e}");
+        assert!(e.contains("SUM/COUNT"), "nao diz que o agregado cabe: {e}");
+        // A recusa nao manda mais ler um pedido que ja foi atendido.
+        assert!(!e.contains("Pedido 394"), "{e}");
     }
 
-    /// `GROUP BY`/`HAVING` numa composta eram ENGOLIDOS: viravam texto
-    /// dentro da `expressao` do WHERE e `analisar_comando` devolvia `Ok`.
-    /// Com o defeito reposto esta prova falha no `unwrap_err` do `recusa`,
-    /// porque a analise passava.
+    /// `GROUP BY`/`HAVING` numa composta viram `por` e `tendo` -- nas quatro
+    /// formas que antes os engoliam e na subconsulta do `FROM`.
     #[test]
-    fn group_by_e_having_na_composta_recusam_nomeando() {
+    fn group_by_e_having_na_composta_viram_por_e_tendo() {
         for sql in [
-            "SELECT v.nome FROM p JOIN v ON v.id = p.vid GROUP BY v.nome",
-            "SELECT v.nome FROM p JOIN v ON v.id = p.vid AND v.x = p.y GROUP BY v.nome",
-            "SELECT v.nome FROM p JOIN v ON v.id = p.vid WHERE p.z = 1 GROUP BY v.nome",
-            "SELECT v.nome FROM p CROSS JOIN v GROUP BY v.nome",
-            "SELECT v.nome FROM p JOIN v ON v.id = p.vid HAVING v.nome > 'a'",
-            "SELECT x FROM (SELECT * FROM t) AS s GROUP BY x",
+            "SELECT v.nome, COUNT(*) FROM p JOIN v ON v.id = p.vid GROUP BY v.nome",
+            "SELECT v.nome, COUNT(*) FROM p JOIN v ON v.id = p.vid AND v.x = p.y \
+             GROUP BY v.nome",
+            "SELECT v.nome, COUNT(*) FROM p JOIN v ON v.id = p.vid WHERE p.z = 1 \
+             GROUP BY v.nome",
+            "SELECT v.nome, COUNT(*) FROM p CROSS JOIN v GROUP BY v.nome",
         ] {
-            let e = recusa(sql);
-            assert!(
-                e.contains("GROUP BY") || e.contains("HAVING"),
-                "{sql} -> {e}"
-            );
-            assert!(e.contains("Pedido 394"), "{sql} -> {e}");
+            let c = consulta(sql);
+            assert_eq!(c.por, vec!["v.nome".to_string()], "{sql}");
+            assert_eq!(c.agregados.len(), 1, "{sql}");
         }
+        let c = consulta(
+            "SELECT v.nome, COUNT(*) AS n FROM p JOIN v ON v.id = p.vid \
+             GROUP BY v.nome HAVING n > 1",
+        );
+        assert_eq!(c.tendo.as_deref(), Some("n > 1"), "{:?}", c.tendo);
+        let c = consulta("SELECT x, COUNT(*) FROM (SELECT * FROM t) AS s GROUP BY x");
+        assert_eq!(c.por, vec!["x".to_string()]);
+    }
+
+    /// **A coluna que nao esta no `GROUP BY` recusa AQUI, nomeando.**
+    ///
+    /// Decisao ja tomada nesta casa por media ponderada -- o motor ERRA
+    /// (PG 4 + MySQL 2 = 6 contra MariaDB 3 + SQLite 1 = 4). E a recusa sai
+    /// desta camada, que sabe dizer «nao esta no GROUP BY»; o motor tambem
+    /// recusaria, mas dizendo so que a coluna nao esta no resultado.
+    #[test]
+    fn coluna_fora_do_group_by_recusa_nomeando_a_clausula() {
+        let e =
+            recusa("SELECT p.id, v.nome, COUNT(*) FROM p JOIN v ON v.id = p.vid GROUP BY v.nome");
+        assert!(e.contains("p.id"), "{e}");
+        assert!(e.contains("GROUP BY"), "{e}");
+        // E `SELECT *` com GROUP BY recusa pelo MESMO texto do caminho de uma
+        // tabela: `*` nao diz qual coluna do grupo ele quer.
+        let e = recusa("SELECT * FROM p JOIN v ON v.id = p.vid GROUP BY v.nome");
+        assert!(e.contains("SELECT * nao combina com GROUP BY"), "{e}");
     }
 
     /// O sintoma exato que a analise silenciosa produzia: a clausula inteira
-    /// viajava DENTRO do texto da `expressao`. Se um dia alguem tirar
-    /// `GROUP`/`HAVING` das `paradas`, e esta prova que acusa -- e ela acusa
-    /// o dado errado, nao so a mensagem.
+    /// viajava DENTRO do texto da `expressao` (`"p.z = 1 GROUP BY v.nome"`).
+    /// Se um dia alguem tirar `GROUP`/`HAVING` das `paradas` do
+    /// `capturar_ate_clausula`, e esta prova que acusa -- e ela acusa o DADO
+    /// errado, nao so a mensagem.
     #[test]
     fn a_expressao_da_composta_nunca_carrega_group_by_por_dentro() {
-        let e = recusa("SELECT v.nome FROM p JOIN v ON v.id = p.vid WHERE p.z = 1 GROUP BY v.nome");
-        assert!(!e.contains("p.z = 1 GROUP BY"), "{e}");
-        // E a forma que PASSA continua sem sujeira nenhuma no texto.
+        let c = consulta(
+            "SELECT v.nome, COUNT(*) AS n FROM p JOIN v ON v.id = p.vid WHERE p.z = 1 \
+             GROUP BY v.nome HAVING n > 1",
+        );
+        assert_eq!(c.onde.as_ref().map(Onde::texto).as_deref(), Some("p.z = 1"));
+        assert_eq!(c.por, vec!["v.nome".to_string()]);
+        assert_eq!(c.tendo.as_deref(), Some("n > 1"));
+        // E a forma que ja passava continua sem sujeira nenhuma no texto.
         let c = consulta("SELECT v.nome FROM p JOIN v ON v.id = p.vid WHERE p.z = 1");
         assert_eq!(c.onde.as_ref().map(Onde::texto).as_deref(), Some("p.z = 1"));
+        assert!(c.por.is_empty() && c.agregados.is_empty() && c.tendo.is_none());
+    }
+
+    /// **O pedido inteiro, serializado -- e a ordem dos campos e a ordem dos
+    /// passos:** `expressao`, depois `por`/`agregados`/`tendo`, depois
+    /// `janela`. E a ordem dos quatro motores maduros, e ve-la no JSON e o
+    /// que impede alguem de reordena-la achando que e estetica.
+    #[test]
+    fn o_agregado_sobre_juncao_sai_no_pedido_inteiro() {
+        let c = consulta(
+            "SELECT c.cidade, COUNT(*) AS n, SUM(p.total) AS faturado \
+             FROM pedidos p JOIN clientes c ON p.cliente_id = c.id \
+             WHERE c.uf = 'SC' GROUP BY c.cidade HAVING n > 1 \
+             ORDER BY faturado DESC LIMIT 100",
+        );
+        let plano = traduzir_consulta(&c, "loja", &mut resolver_simples).unwrap();
+        assert_eq!(
+            plano.pedido.escrever(),
+            r#"{"op":"consultar","database":"loja","de":{"op":"varrer","database":"loja","tabela":"pedidos"},"apelido":"p","juntar":[{"de":{"op":"varrer","database":"loja","tabela":"clientes"},"apelido":"c","tipo":"interno","em":[{"esquerda":"p.cliente_id","direita":"c.id"}]}],"expressao":"c.uf = 'SC'","por":["c.cidade"],"agregados":[{"funcao":"contagem","apelido":"n"},{"funcao":"soma","apelido":"faturado","coluna":"p.total"}],"tendo":"n > 1","colunas":["c.cidade","n","faturado"],"ordem":[{"coluna":"faturado","desc":true}],"max":100}"#
+        );
+    }
+
+    /// **Sem junção, o apelido de fora entra no pedido quando o `GROUP BY` ou
+    /// um agregado o CITAM.**
+    ///
+    /// `apelido_de_citado` olhava tres lugares; `por` e `agregados[].coluna`
+    /// sao o quarto e o quinto. Sem eles, `GROUP BY c.uf` sairia sem
+    /// `"apelido"` e o motor recusaria `c.uf`, que a linha sem junção nao
+    /// tem prefixada -- **quando um campo novo passa a nomear coluna, procure
+    /// quem lista os que nomeiam.**
+    #[test]
+    fn o_apelido_de_fora_entra_quando_o_group_by_o_cita() {
+        let c = consulta(
+            "SELECT c.uf, SUM(c.salario) AS folha FROM clientes c \
+             WHERE c.id IN (SELECT id FROM ativos) GROUP BY c.uf",
+        );
+        let plano = traduzir_consulta(&c, "loja", &mut resolver_simples).unwrap();
+        let p = plano.pedido.escrever();
+        assert!(p.contains(r#""apelido":"c""#), "{p}");
+        assert!(p.contains(r#""por":["c.uf"]"#), "{p}");
     }
 
     /// COMPORTAMENTO VELHO, byte a byte: a junção que ja traduzia sai com o
@@ -2597,13 +2930,42 @@ mod testes {
         assert_eq!(p.saida, Saida::Colunas(vec![("nome".into(), "n".into())]));
     }
 
+    /// **O caminho IRMAO do agregado composto: `COUNT(*)`/`GROUP BY` sobre
+    /// uma VISAO.**
+    ///
+    /// Ate 23/09/2026 recusava, e a recusa mandava «componha por fora» --
+    /// saida que nao existia. Hoje as duas existem, e as duas emitem os
+    /// mesmos tres campos. Deixar o agregado so na gramatica composta faria
+    /// a mesma pergunta passar escrita de um jeito e recusar de outro.
     #[test]
-    fn planejar_sobre_count_ou_group_by_recusa() {
+    fn planejar_sobre_visao_agrega_com_os_campos_novos() {
         let sel = crate::sintaxe::analisar("SELECT COUNT(*) FROM v_c").unwrap();
-        let e = planejar_sobre(&sel, plano_de_dentro())
-            .unwrap_err()
-            .to_string();
-        assert!(e.contains("GROUP BY"), "{e}");
+        let p = planejar_sobre(&sel, plano_de_dentro()).unwrap();
+        assert_eq!(
+            p.pedido.campo("agregados").unwrap(),
+            &Json::Lista(vec![Json::Objeto(vec![
+                ("funcao".to_string(), Json::texto_de("contagem")),
+                ("apelido".to_string(), Json::texto_de("contagem")),
+            ])])
+        );
+        assert_eq!(p.pedido.campo("por").unwrap(), &Json::Lista(Vec::new()));
+
+        let sel = crate::sintaxe::analisar(
+            "SELECT cidade, SUM(total) AS t FROM v_c GROUP BY cidade HAVING t > 1",
+        )
+        .unwrap();
+        let p = planejar_sobre(&sel, plano_de_dentro()).unwrap();
+        assert_eq!(
+            p.pedido.campo("por").unwrap(),
+            &Json::Lista(vec![Json::texto_de("cidade")])
+        );
+        assert_eq!(p.pedido.texto_ou("tendo", ""), "t > 1");
+        // A projecao mostra a coluna do grupo e o APELIDO do agregado, na
+        // ordem escrita -- e nunca a palavra da funcao.
+        assert_eq!(
+            p.pedido.campo("colunas").unwrap(),
+            &Json::Lista(vec![Json::texto_de("cidade"), Json::texto_de("t")])
+        );
     }
 
     #[test]
