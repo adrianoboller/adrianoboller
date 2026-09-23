@@ -280,7 +280,27 @@ fn chave_de(linha: &[Value], colunas: &[usize], esquema: &Schema) -> Option<Stri
 }
 
 /// Um valor na forma canônica de comparação.
-fn pedaco_de_chave(v: &Value, ty: &ColumnType) -> String {
+///
+/// # É a noção de «mesmo valor» desta casa, e ela é UMA
+///
+/// Quem pergunta «estes dois valores são o mesmo?» em caminho nenhum tem o
+/// direito de responder por conta própria, e o motivo é medido: o valor do
+/// `Decimal` guardado é o inteiro ESCALADO, então 7,25 na escala 2 e 0,0725 na
+/// escala 4 guardam o MESMO `i128` (725) e são dinheiros diferentes -- e 10,50
+/// na escala 2 e 10,5000 na escala 4 guardam `i128` diferentes e são o MESMO
+/// dinheiro. Comparar o valor guardado sem o tipo erra nos dois sentidos, e
+/// erra calado.
+///
+/// Por isso ela é `pub(crate)` e tem quatro clientes, todos passando o tipo do
+/// SEU lado: a chave da junção e a do `UNION` distinto aqui, a comparação de
+/// `crate::diferencas`, e o casamento da tabela de consulta do `pivotar`
+/// (`servidor.rs` monta o mapa, `pivot.rs` procura nele). Uma segunda noção
+/// faria duas operações do mesmo motor responderem coisas diferentes sobre as
+/// mesmas duas linhas.
+///
+/// O prefixo de tipo separa o número 1 do texto "1"; inteiro e decimal
+/// dividem o prefixo `n` de propósito, porque 12 e 12,00 são o mesmo número.
+pub(crate) fn pedaco_de_chave(v: &Value, ty: &ColumnType) -> String {
     match v {
         // Decimal precisa de forma canônica: 12.34 com escala 2 e 12.3400 com
         // escala 4 são o MESMO número e têm i128 diferente. Sem normalizar, as
@@ -312,7 +332,14 @@ fn pedaco_de_chave(v: &Value, ty: &ColumnType) -> String {
     }
 }
 
-fn sem_zeros_a_direita(t: &str) -> String {
+/// `"10.5000"` -> `"10.5"`: a forma em que dois decimais de escalas
+/// diferentes se comparam como o mesmo número.
+///
+/// `pub(crate)` porque a composição do `consultar` compara os seus decimais em
+/// TEXTO (eles viajam como `"10.50"` entre um sub-pedido e o de fora, para não
+/// passar por `f64`) e precisa exatamente desta forma -- não de uma segunda,
+/// que divergiria no primeiro caso-limite.
+pub(crate) fn sem_zeros_a_direita(t: &str) -> String {
     if !t.contains('.') {
         return t.to_string();
     }

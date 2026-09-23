@@ -67,6 +67,35 @@ diferente. A chave de comparação normaliza, senão as duas tabelas não casari
 por um zero à direita. Pela mesma razão o inteiro `12` casa com o decimal
 `12,00`.
 
+**Isto vale em TODO caminho que junta valores de duas origens, e passou a valer
+em 23/09/2026** (pedido 392). A régua não foi escolha desta casa: comparar
+`DECIMAL` é pelo **valor**, e os quatro motores convergem — 4 de 4, aceite
+automático. PostgreSQL: *«Numeric values are physically stored without any
+extra leading or trailing zeroes. Thus, the declared precision and scale of a
+column are maximums, not fixed allocations»*. MySQL e MariaDB: o `decimal_cmp`
+de `strings/decimal.c` corta os zeros à direita **dentro da própria comparação**
+antes de comparar dígito a dígito. SQLite: *«Numeric values are always compared
+numerically»*.
+
+O que cada caminho fazia antes, medido pelo protocolo em 23/09/2026 com
+`valor Decimal(12,2)` de um lado e `Decimal(12,4)` do outro:
+
+| caminho | antes | agora |
+|---|---|---|
+| `unir` (`tabelas` e `partes`) | `10,5000` saía **`1050,00`** e `10,50` saía **`0,1050`** | o tipo leva em conta todos os braços |
+| `juntar` (tabela) | já casava por valor | igual |
+| `diferencas`, a chave | a chave de `b` saía pela escala de `a`: `10,5000` publicado como **`1050,00`** | cada lado pela escala dele |
+| `diferencas`, a linha | `7,25` e `0,0725` (o mesmo `i128`, 725) contavam como **`iguais`** | `diferentes` |
+| `pivotar`, a tabela de consulta | `7,25` casava `0,0725`; `10,50` não casava `10,5000`; junção por `Date` **nunca** casava | casa por valor |
+| `consultar` (junção, `IN`, `EXISTS`) | **zero linhas** onde o SQL devolve uma | casa |
+
+**O que NÃO mudou, de propósito:** na composição do `consultar` um `Decimal`
+continua **não** casando com um inteiro — a canonização só acontece quando os
+dois lados são `Decimal`. É o contrato que o pedido 237 escreveu, e trocá-lo de
+carona seria mudar o que ninguém pediu. Os dois motores de junção divergem
+nesse ponto (o `juntar` de tabela casa `12` com `12,00`, a composição não), e a
+divergência está registrada em teste em vez de consertada de lado.
+
 ## Chave repetida multiplica
 
 Junção não é consulta: se a chave `7` aparece três vezes em B, cada linha de A

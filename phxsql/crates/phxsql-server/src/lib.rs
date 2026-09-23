@@ -39,6 +39,7 @@ pub mod mensagens;
 pub mod pg;
 pub mod pivot;
 pub mod profiler;
+pub mod pulso;
 pub mod replica;
 pub mod rest;
 pub mod rodizio;

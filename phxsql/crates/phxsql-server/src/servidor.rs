@@ -563,13 +563,25 @@ impl Remoto {
         writeln!(self.escrita, "{pedido}")?;
         self.escrita.flush()?;
 
-        let mut resposta = String::new();
-        if self.leitor.read_line(&mut resposta)? == 0 {
-            return Err(PhxError::Esquema(format!(
-                "{} fechou a conexao no aperto de mao",
-                self.destino
-            )));
-        }
+        // O TETO vale aqui tambem -- pedido 312, e este e o IRMAO exato do
+        // `replica::Cliente::cifrar`: mesma coreografia, mesma leitura antes
+        // de o tunel existir e antes de qualquer autenticacao. O canal ainda
+        // e `Claro`, entao quem le e o mesmo `Canal` de sempre, so com o teto
+        // do APERTO. Sem ele, quem escolhe quanta memoria esta interface
+        // reserva e o servidor do outro lado -- medido no irmao: 192 MiB numa
+        // linha so, em 294 ms.
+        let resposta = match self
+            .canal
+            .ler_ate(&mut self.leitor, phxsql_core::fio::TETO_DO_APERTO)?
+        {
+            Recebido::Linha(l) => l,
+            Recebido::Fim => {
+                return Err(PhxError::Esquema(format!(
+                    "{} fechou a conexao no aperto de mao",
+                    self.destino
+                )))
+            }
+        };
         let j = Json::analisar(&resposta)?;
         if !j.booleano_ou("ok", false) {
             return Err(PhxError::Autorizacao(format!(
@@ -3685,7 +3697,7 @@ impl Servidor {
             if estado.no(&no.id).as_ref() != Some(no) {
                 return Ok(());
             }
-            let r = cliente.pedir(vec![
+            let mut campos = vec![
                 ("op", Json::texto_de("cluster_pulso")),
                 ("id", Json::texto_de(&c.id)),
                 ("papel", Json::texto_de(estado.papel().nome())),
@@ -3693,9 +3705,34 @@ impl Servidor {
                 ("posicao", Json::de_u64(estado.posicao())),
                 ("incompleta", Json::de_bool(estado.posicao_incompleta())),
                 ("prioridade", Json::de_i64(c.prioridade)),
-            ])?;
+            ];
+            // A prova de identidade -- pedido 278. So sai quando ha material
+            // (a estatica deste no e o `chave_do_fio` do destino); sem pino do
+            // outro lado o pulso sai como sempre saiu, e o outro lado nao
+            // teria como conferir nada de qualquer forma.
+            let transcricao = cliente.transcricao();
+            if let Ok(estatica) = self.estatica_do_fio() {
+                if let Some(extras) =
+                    estado.campos_da_prova(&estatica, no, transcricao.as_ref().map(|t| &t[..]))
+                {
+                    campos.extend(extras);
+                }
+            }
+            let r = cliente.pedir(campos)?;
             if let Some((id, pulso)) = crate::cluster::PulsoDeNo::de_json(&r) {
-                estado.registrar(&id, pulso);
+                // O IRMAO da conferencia do `op_cluster_pulso`: a RESPOSTA
+                // tambem entra no mapa, e um `registrar` sem guarda deste lado
+                // deixaria a porta aberta por onde o pedido nao passa mais.
+                match estado.conferir_identidade(
+                    &id,
+                    &pulso,
+                    &r,
+                    transcricao.as_ref().map(|t| &t[..]),
+                    || self.estatica_do_fio(),
+                ) {
+                    Ok(()) => estado.registrar(&id, pulso),
+                    Err(e) => eprintln!("cluster: resposta do pulso de {id:?} recusada: {e}"),
+                }
             }
             std::thread::sleep(Duration::from_secs(c.pulso_s));
         }
@@ -4153,15 +4190,37 @@ impl Servidor {
                 self.msg("erro.pulso_de_no_desconhecido", &[("id", &id)]),
             ));
         }
+        // Quem MANDOU este pulso e mesmo o no que ele diz ser? Pedido 278.
+        // A conferencia vem antes do `registrar` porque e o `registrar` que
+        // move a epoca, renova "vi o master agora" e decide a eleicao.
+        estado.conferir_identidade(
+            &id,
+            &pulso,
+            p,
+            sessao.transcricao_do_fio.as_ref().map(|t| &t[..]),
+            || self.estatica_do_fio(),
+        )?;
         estado.registrar(&id, pulso);
-        Ok(Json::objeto(vec![
+        let mut resposta = vec![
             ("id", Json::texto_de(&estado.config.id)),
             ("papel", Json::texto_de(estado.papel().nome())),
             ("epoca", Json::de_u64(estado.epoca())),
             ("posicao", Json::de_u64(estado.posicao())),
             ("incompleta", Json::de_bool(estado.posicao_incompleta())),
             ("prioridade", Json::de_i64(estado.config.prioridade)),
-        ]))
+        ];
+        // A resposta tambem prova quem a manda, pelo mesmo motivo: ela entra
+        // no mapa do outro lado exatamente como o pedido entra neste.
+        if let (Ok(estatica), Some(no)) = (self.estatica_do_fio(), estado.no(&id)) {
+            if let Some(extras) = estado.campos_da_prova(
+                &estatica,
+                &no,
+                sessao.transcricao_do_fio.as_ref().map(|t| &t[..]),
+            ) {
+                resposta.extend(extras);
+            }
+        }
+        Ok(Json::objeto(resposta))
     }
 
     /// `cluster_no_acrescentar`: escalonar o cluster A QUENTE -- pedido 217.
@@ -12596,7 +12655,8 @@ impl Servidor {
                 pares.push((re, rd));
             }
             let nao = item.booleano_ou("nao", false);
-            linhas = cs::semijuntar(linhas, &dentro, &pares, nao);
+            let decimais = cs::pares_decimais(&pares, &modelo, &modelo_dentro);
+            linhas = cs::semijuntar(linhas, &dentro, &pares, &decimais, nao);
         }
 
         // ---------------------------------------------------------------- em
@@ -12636,18 +12696,41 @@ impl Servidor {
                 &campo_alvo,
                 &format!("o \"campo\" do \"em\"[{i}]"),
             )?;
-            let conjunto: std::collections::HashSet<String> = dentro
-                .iter()
-                .filter_map(|l| cs::campo(l, &campo_real).and_then(cs::chave_de_juncao))
-                .collect();
+            // O `IN` entre dois `Decimal` compara pelo VALOR, nao pela
+            // escala: `"10.50"` e `"10.5000"` sao o mesmo dinheiro e eram
+            // chaves diferentes -- medido em 23/09/2026, zero linhas onde os
+            // quatro motores devolvem uma. Ver `consultar::pares_decimais`.
+            let canonizar = {
+                let dentro_decimal = matches!(
+                    cs::tipo_no_modelo(&modelo_dentro, &campo_real),
+                    Some(ColumnType::Decimal { .. })
+                );
+                move |k: String, fora_decimal: bool| -> String {
+                    if dentro_decimal && fora_decimal {
+                        crate::juncao::sem_zeros_a_direita(&k)
+                    } else {
+                        k
+                    }
+                }
+            };
             // O lado de fora do `IN` tambem pode vir prefixado pelo apelido de
             // fora sem junção (`c.id IN (…)`); o prefixo se descarta, como no
             // `existe` (pedido 240).
             let coluna = tirar_prefixo_de_fora(&coluna, apelido_de_fora.as_deref());
             let real = resolver_ou_recusar(&modelo, &coluna, "o \"em\"")?;
+            let fora_decimal = matches!(
+                cs::tipo_no_modelo(&modelo, &real),
+                Some(ColumnType::Decimal { .. })
+            );
+            let conjunto: std::collections::HashSet<String> = dentro
+                .iter()
+                .filter_map(|l| cs::campo(l, &campo_real).and_then(cs::chave_de_juncao))
+                .map(|k| canonizar(k, fora_decimal))
+                .collect();
             linhas.retain(|l| {
                 cs::campo(l, &real)
                     .and_then(cs::chave_de_juncao)
+                    .map(|k| canonizar(k, fora_decimal))
                     .is_some_and(|k| conjunto.contains(&k))
             });
         }
@@ -13291,7 +13374,17 @@ impl Servidor {
             let lidas = rowids.len();
             for (rowid, _) in rowids.into_iter().take(TETO_JUNCAO) {
                 if let Some(linha) = alvo.ler(rowid)? {
-                    mapa.insert(crate::pivot::rotulo(&linha[chave], 0), linha);
+                    // A chave e a canonica do `juncao`, com o tipo da coluna
+                    // de LA -- e `pivot::valor_bruto` procura com o tipo da
+                    // coluna de CA. Ver o cabecalho dela para os dois
+                    // casamentos errados que as duas formas de antes davam.
+                    mapa.insert(
+                        crate::juncao::pedaco_de_chave(
+                            &linha[chave],
+                            &esq_alvo.colunas()[chave].ty,
+                        ),
+                        linha,
+                    );
                 }
             }
             if lidas > TETO_JUNCAO {
@@ -21512,20 +21605,51 @@ impl Servidor {
         };
         let la = ler(&mut ta, &na)?;
         let lb = ler(&mut tb, &nb)?;
-        let r = crate::diferencas::comparar(la, lb, &ea, max);
 
-        let chave_json = |c: &[Value]| -> Json {
+        // O tipo de cada coluna da CHAVE, de cada lado. Os dois indices tem o
+        // mesmo nome e as mesmas colunas, mas NAO obrigatoriamente o mesmo
+        // tipo: a operação confere os nomes das colunas, nunca os tipos.
+        let tipos_da_chave = |e: &Schema| -> Vec<phxsql_core::types::ColumnType> {
+            e.indices()
+                .iter()
+                .find(|x| x.nome.eq_ignore_ascii_case(&indice))
+                .map(|x| {
+                    x.colunas
+                        .iter()
+                        .filter_map(|ic| e.colunas().get(ic.coluna).map(|c| c.ty))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let (tipos_a, tipos_b) = (tipos_da_chave(&ea), tipos_da_chave(&eb));
+        let r = crate::diferencas::comparar(
+            crate::diferencas::LadoDaComparacao {
+                linhas: la,
+                esquema: &ea,
+                tipos_da_chave: tipos_a.clone(),
+            },
+            crate::diferencas::LadoDaComparacao {
+                linhas: lb,
+                esquema: &eb,
+                tipos_da_chave: tipos_b.clone(),
+            },
+            max,
+        );
+
+        // A chave sai pelo tipo do SEU lado.
+        //
+        // Ela saia sempre pelo de `a`, e isso e o pedido 392 dentro desta
+        // operação: a chave 10,5000 de uma `Decimal(12,4)` lida pela escala 2
+        // de `a` foi publicada como **1050,00** -- cem vezes, sem erro e sem
+        // aviso. Medido em 23/09/2026, `so_em_b: [["1050.00"]]`.
+        let chave_json = |c: &[Value], tipos: &[phxsql_core::types::ColumnType]| -> Json {
             Json::Lista(
                 c.iter()
                     .enumerate()
                     .map(|(i, v)| {
-                        let ty = ea
-                            .indices()
-                            .iter()
-                            .find(|x| x.nome.eq_ignore_ascii_case(&indice))
-                            .and_then(|x| x.colunas.get(i))
-                            .and_then(|ic| ea.colunas().get(ic.coluna))
-                            .map(|c| c.ty)
+                        let ty = tipos
+                            .get(i)
+                            .copied()
                             .unwrap_or(phxsql_core::types::ColumnType::Int8);
                         crate::valores::valor_para_json(v, &ty)
                     })
@@ -21540,11 +21664,11 @@ impl Servidor {
             ("iguais", Json::de_u64(r.iguais)),
             (
                 "so_em_a",
-                Json::Lista(r.so_em_a.iter().map(|c| chave_json(c)).collect()),
+                Json::Lista(r.so_em_a.iter().map(|c| chave_json(c, &tipos_a)).collect()),
             ),
             (
                 "so_em_b",
-                Json::Lista(r.so_em_b.iter().map(|c| chave_json(c)).collect()),
+                Json::Lista(r.so_em_b.iter().map(|c| chave_json(c, &tipos_b)).collect()),
             ),
             (
                 "diferentes",
@@ -21553,7 +21677,7 @@ impl Servidor {
                         .iter()
                         .map(|d| {
                             Json::objeto(vec![
-                                ("chave", chave_json(&d.chave)),
+                                ("chave", chave_json(&d.chave, &tipos_a)),
                                 (
                                     "colunas",
                                     Json::Lista(d.colunas.iter().map(Json::texto_de).collect()),
@@ -51272,5 +51396,518 @@ mod testes_agregado_na_composicao {
             pelo_agrupar.escrever()
         );
         let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// **O pedido 392: a escala de um `Decimal` nunca le o valor do outro.**
+///
+/// # O defeito, e por que ele e o pior que um banco pode ter
+///
+/// `Value::Decimal` guarda o inteiro ESCALADO -- 10,50 na escala 2 e `1050`,
+/// e 10,5000 na escala 4 e `105000`. Quem da sentido a ele e a escala do
+/// TIPO, e toda vez que um caminho junta valores de DUAS origens ele tem de
+/// ler cada um pelo tipo de onde ele veio. Onde isso falhou, o numero saiu
+/// **cem vezes** maior ou menor, sem erro, sem aviso e sem `truncado`: valor
+/// monetario errado com cara de certo.
+///
+/// # Os cinco caminhos, e o que cada um fazia (medido em 23/09/2026)
+///
+/// | caminho | antes | agora |
+/// |---|---|---|
+/// | `unir` (`tabelas` e `partes`) | `10,5000` saia `1050,00` | promove a maior escala |
+/// | `juntar` (op) | ja casava por valor | igual |
+/// | `diferencas` chave | chave de `b` lida pela escala de `a`: `1050,00` | cada lado pela sua |
+/// | `diferencas` linha | 7,25 e 0,0725 eram `iguais` | `diferentes` |
+/// | `pivotar` junção | 7,25 casava 0,0725; 10,50 nao casava 10,5000 | casa por valor |
+/// | `consultar` junção/`em` | zero linhas onde o SQL casa uma | casa |
+///
+/// # A regua, e ela nao foi escolha desta casa
+///
+/// Comparar `Decimal` e pelo VALOR, e os quatro motores convergem -- 4 de 4,
+/// aceite automatico: PostgreSQL («numeric values are physically stored
+/// without any extra leading or trailing zeroes»), MySQL e MariaDB (o
+/// `decimal_cmp` de `strings/decimal.c` corta os zeros a direita antes de
+/// comparar digito a digito) e SQLite («numeric values are always compared
+/// numerically»). Para o TIPO da união, 3 de 3 maduros levam em conta todos
+/// os bracos.
+#[cfg(test)]
+mod testes_escala_decimal {
+    use super::*;
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        s.executar(
+            "criar_database",
+            &pedido(r#"{"database":"b"}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        s
+    }
+
+    /// Pelo `despachar`: e por onde o pedido entra de verdade, e e ali que a
+    /// resposta vira JSON -- que e onde a escala errada aparecia.
+    fn pede(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        let mut ses = Sessao::default();
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    /// Uma tabela `id Int4` + `valor Decimal(12,escala)`, com indice na
+    /// `valor` para a comparação por CHAVE decimal ter por onde acontecer.
+    fn tabela(s: &Arc<Servidor>, nome: &str, escala: u8, chave_unica: bool) {
+        pede(
+            s,
+            &format!(
+                r#""op":"criar_tabela","database":"b","tabela":"{nome}",
+                   "colunas":[{{"nome":"id","tipo":"Int4","obrigatoria":true}},
+                              {{"nome":"valor","tipo":"Decimal(12,{escala})"}}],
+                   "indices":[{{"nome":"porId","colunas":["id"],"unico":true,"primario":true}},
+                              {{"nome":"porValor","colunas":["valor"],"unico":{chave_unica}}}]"#
+            ),
+        )
+        .unwrap_or_else(|e| panic!("criar {nome}: {e}"));
+    }
+
+    fn inserir(s: &Arc<Servidor>, nome: &str, id: i64, valor: &str) {
+        pede(
+            s,
+            &format!(
+                r#""op":"inserir","database":"b","tabela":"{nome}",
+                   "linha":{{"id":{id},"valor":"{valor}"}}"#
+            ),
+        )
+        .unwrap_or_else(|e| panic!("inserir em {nome}: {e}"));
+    }
+
+    /// Os valores de uma coluna, na ordem em que a resposta os traz.
+    fn coluna_da_uniao(r: &Json, quantas: usize) -> Vec<String> {
+        let linhas = r.campo("linhas").and_then(Json::lista).expect("sem linhas");
+        assert_eq!(linhas.len(), quantas, "{}", r.escrever());
+        linhas
+            .iter()
+            .map(|l| {
+                l.lista()
+                    .and_then(|v| v.get(1))
+                    .and_then(Json::texto)
+                    .unwrap_or_default()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    /// **O 392 pelo PROTOCOLO, nos dois sentidos e nos dois caminhos.**
+    ///
+    /// A unidade do `juncao::unir` ja trava o empilhamento; este trava a
+    /// CORRENTE inteira -- `op_unir` -> `juncao::unir` -> `valor_para_json`
+    /// --, que e onde o numero chegava ao cliente cem vezes maior.
+    ///
+    /// **Prova real:** tire o laco do `converter_para` do `juncao::unir` e a
+    /// primeira asserção volta a ver `1050.00`.
+    #[test]
+    fn a_uniao_nao_corrompe_o_decimal_do_outro_braco() {
+        let d = DirTemp::novo("escala-uniao");
+        let s = servidor(&d);
+        tabela(&s, "d2", 2, false);
+        tabela(&s, "d4", 4, false);
+        inserir(&s, "d2", 1, "10.50");
+        inserir(&s, "d4", 2, "10.5000");
+
+        // O MESMO dinheiro nos dois bracos, em escalas diferentes: sai na
+        // maior escala, e nenhum dos dois muda de valor.
+        let r = pede(
+            &s,
+            r#""op":"unir","database":"b","modo":"tudo","tabelas":["d2","d4"]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            coluna_da_uniao(&r, 2),
+            vec!["10.5000".to_string(), "10.5000".to_string()],
+            "{}",
+            r.escrever()
+        );
+
+        // E na ordem contraria o resultado e o mesmo: a escala do resultado
+        // nao pode depender de quem foi pedido primeiro.
+        let r = pede(
+            &s,
+            r#""op":"unir","database":"b","modo":"tudo","tabelas":["d4","d2"]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            coluna_da_uniao(&r, 2),
+            vec!["10.5000".to_string(), "10.5000".to_string()],
+            "{}",
+            r.escrever()
+        );
+
+        // O braco-PEDIDO (o caminho `partes`) passa pela mesma função e
+        // por isso pelo mesmo conserto -- mas e outro caminho de entrada, e
+        // caminho irmao se prova, nao se supoe.
+        let r = pede(
+            &s,
+            r#""op":"unir","database":"b","modo":"tudo",
+               "partes":[{"op":"varrer","tabela":"d2"},
+                         {"op":"varrer","tabela":"d4"}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            coluna_da_uniao(&r, 2),
+            vec!["10.5000".to_string(), "10.5000".to_string()],
+            "{}",
+            r.escrever()
+        );
+
+        // E o `UNION` distinto ve as duas como a MESMA linha, que e o
+        // corolario: valor igual, linha repetida.
+        let r = pede(
+            &s,
+            r#""op":"unir","database":"b","modo":"distinta",
+               "partes":[{"op":"agrupar","tabela":"d2","por":["valor"]},
+                         {"op":"agrupar","tabela":"d4","por":["valor"]}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            r.campo("repetidas").and_then(Json::numero),
+            Some(1.0),
+            "10,50 e 10,5000 nao contaram como a mesma linha: {}",
+            r.escrever()
+        );
+    }
+
+    /// **`diferencas` compara DINHEIRO, nao o inteiro guardado.**
+    ///
+    /// Os dois sentidos numa medição so, e eles sao opostos:
+    ///
+    /// - `id 1`: 10,50 (escala 2) e 10,5000 (escala 4) sao o MESMO dinheiro e
+    ///   saiam como `diferentes`;
+    /// - `id 2`: 7,25 (escala 2) e 0,0725 (escala 4) guardam o MESMO inteiro
+    ///   (725) e saiam como **`iguais`** -- a operação que existe para ser
+    ///   acreditada dizendo que duas linhas batem quando uma vale cem vezes a
+    ///   outra.
+    ///
+    /// **Prova real:** troque o `mesma_celula` do `diferencas::comparar` por
+    /// `linha.get(*i) != outra.get(*i)` e `iguais` volta a 1 com o par
+    /// errado.
+    #[test]
+    fn diferencas_compara_o_valor_e_nao_o_inteiro_escalado() {
+        let d = DirTemp::novo("escala-dif");
+        let s = servidor(&d);
+        tabela(&s, "a2", 2, true);
+        tabela(&s, "b4", 4, true);
+        inserir(&s, "a2", 1, "10.50");
+        inserir(&s, "b4", 1, "10.5000");
+        inserir(&s, "a2", 2, "7.25");
+        inserir(&s, "b4", 2, "0.0725");
+
+        let r = pede(
+            &s,
+            r#""op":"diferencas","database":"b","a":"a2","b":"b4","indice":"porId""#,
+        )
+        .unwrap();
+        let texto = r.escrever();
+        assert_eq!(
+            r.campo("iguais").and_then(Json::numero),
+            Some(1.0),
+            "o mesmo dinheiro em escalas diferentes nao contou como igual: {texto}"
+        );
+        let dif = r
+            .campo("diferentes")
+            .and_then(Json::lista)
+            .expect("sem diferentes");
+        assert_eq!(dif.len(), 1, "{texto}");
+        assert_eq!(
+            dif[0]
+                .campo("chave")
+                .and_then(Json::lista)
+                .and_then(|l| l.first())
+                .and_then(Json::numero),
+            Some(2.0),
+            "a linha diferente e a do id 2 (7,25 contra 0,0725): {texto}"
+        );
+    }
+
+    /// **E a CHAVE de cada lado sai pela escala DELE.**
+    ///
+    /// E o 392 literal dentro do `diferencas`: a chave 10,5000 de uma
+    /// `Decimal(12,4)` era publicada com a escala 2 da outra tabela e virava
+    /// `1050.00` -- cem vezes, na lista que diz o que falta de cada lado.
+    ///
+    /// **Prova real:** volte o `chave_json` a usar `tipos_a` nos dois lados e
+    /// a asserção do `so_em_b` ve `1050.00`.
+    #[test]
+    fn a_chave_de_cada_lado_sai_pela_escala_dele() {
+        let d = DirTemp::novo("escala-chave");
+        let s = servidor(&d);
+        tabela(&s, "a2", 2, true);
+        tabela(&s, "b4", 4, true);
+        // Uma linha so de cada lado, com dinheiros DIFERENTES: cada chave tem
+        // de sair como ela e.
+        inserir(&s, "a2", 1, "7.25");
+        inserir(&s, "b4", 1, "0.0725");
+
+        let r = pede(
+            &s,
+            r#""op":"diferencas","database":"b","a":"a2","b":"b4","indice":"porValor""#,
+        )
+        .unwrap();
+        let texto = r.escrever();
+        let so = |campo: &str| -> String {
+            r.campo(campo)
+                .and_then(Json::lista)
+                .and_then(|l| l.first())
+                .and_then(Json::lista)
+                .and_then(|l| l.first())
+                .and_then(Json::texto)
+                .unwrap_or_default()
+                .to_string()
+        };
+        assert_eq!(so("so_em_a"), "7.25", "{texto}");
+        assert_eq!(
+            so("so_em_b"),
+            "0.0725",
+            "a chave de b saiu pela escala de a: {texto}"
+        );
+    }
+
+    /// **O `pivotar` casa a tabela de consulta por VALOR**, e nos dois tipos
+    /// em que as duas chaves divergiam.
+    ///
+    /// O mapa era montado com `rotulo(v, 0)` e procurado com `rotulo_cru` --
+    /// duas formas de escrever a mesma chave. No `Decimal` as duas escreviam
+    /// o inteiro guardado (7,25 casava com 0,0725, 10,50 nao casava com
+    /// 10,5000); na `Date` elas nem coincidiam (`2026-09-23` de um lado, o
+    /// numero de dias do outro), e a junção por data NUNCA casava.
+    ///
+    /// **Prova real:** volte qualquer um dos dois lados a forma antiga e o
+    /// rotulo da linha vira `(vazio)`.
+    #[test]
+    fn o_pivot_casa_a_consulta_por_valor_e_nao_por_representacao() {
+        let d = DirTemp::novo("escala-pivot");
+        let s = servidor(&d);
+        tabela(&s, "f2", 2, false);
+        tabela(&s, "l4", 4, true);
+        inserir(&s, "f2", 1, "10.50");
+        inserir(&s, "f2", 2, "7.25");
+        inserir(&s, "l4", 1, "10.5000");
+        inserir(&s, "l4", 2, "0.0725");
+
+        let r = pede(
+            &s,
+            r#""op":"pivotar","database":"b","tabela":"f2","agregador":"soma","valor":"valor",
+               "linhas":[{"campo":"L.id"}],"colunas":[{"campo":"id"}],
+               "juntar":[{"tabela":"l4","coluna":"valor","chave":"valor","prefixo":"L"}]"#,
+        )
+        .unwrap();
+        let texto = r.escrever();
+        let rotulos: Vec<String> = r
+            .campo("rotulos_linha")
+            .and_then(Json::lista)
+            .expect("sem rotulos")
+            .iter()
+            .filter_map(Json::texto)
+            .map(str::to_string)
+            .collect();
+        // O fato de 10,50 casa com a linha de consulta de 10,5000 (id 1); o
+        // de 7,25 NAO casa com a de 0,0725 e fica sem rotulo.
+        assert!(
+            rotulos.contains(&"1".to_string()),
+            "10,50 nao casou com 10,5000: {texto}"
+        );
+        assert!(
+            !rotulos.contains(&"2".to_string()),
+            "7,25 casou com 0,0725 -- o mesmo inteiro guardado, dinheiro diferente: {texto}"
+        );
+
+        // E a junção por DATA, que nunca casava.
+        for t in ["fd", "ld"] {
+            pede(
+                &s,
+                &format!(
+                    r#""op":"criar_tabela","database":"b","tabela":"{t}",
+                       "colunas":[{{"nome":"id","tipo":"Int4","obrigatoria":true}},
+                                  {{"nome":"dia","tipo":"Date"}}],
+                       "indices":[{{"nome":"porId","colunas":["id"],"unico":true,
+                                    "primario":true}}]"#
+                ),
+            )
+            .unwrap();
+        }
+        pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"fd","linha":{"id":1,"dia":"2026-09-23"}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"ld","linha":{"id":7,"dia":"2026-09-23"}"#,
+        )
+        .unwrap();
+        let r = pede(
+            &s,
+            r#""op":"pivotar","database":"b","tabela":"fd","agregador":"contagem",
+               "linhas":[{"campo":"L.id"}],"colunas":[{"campo":"id"}],
+               "juntar":[{"tabela":"ld","coluna":"dia","chave":"dia","prefixo":"L"}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            r.campo("rotulos_linha")
+                .and_then(Json::lista)
+                .and_then(|l| l.first())
+                .and_then(Json::texto),
+            Some("7"),
+            "a junção por data nao casou: {}",
+            r.escrever()
+        );
+    }
+
+    /// **A junção e o `IN` da composição casam decimais de escalas
+    /// diferentes.**
+    ///
+    /// Na composição o `Decimal` viaja como TEXTO (`"10.50"`), para nao
+    /// passar por `f64` -- e o texto carrega a escala. `"10.50"` contra
+    /// `"10.5000"` sao chaves diferentes e o mesmo dinheiro: devolvia zero
+    /// linhas, que e o pior resultado possivel porque parece resposta.
+    ///
+    /// **Prova real:** devolva `vec![false; pares.len()]` no lugar do
+    /// `pares_decimais` e as duas metades voltam a zero linhas.
+    #[test]
+    fn a_composicao_casa_decimais_de_escalas_diferentes() {
+        let d = DirTemp::novo("escala-comp");
+        let s = servidor(&d);
+        tabela(&s, "d2", 2, false);
+        tabela(&s, "d4", 4, false);
+        inserir(&s, "d2", 1, "10.50");
+        inserir(&s, "d4", 2, "10.5000");
+
+        let r = pede(
+            &s,
+            r#""op":"consultar","database":"b","de":{"op":"varrer","tabela":"d2"},"apelido":"a",
+               "juntar":[{"tipo":"interno","de":{"op":"varrer","tabela":"d4"},"apelido":"c",
+                          "em":[{"esquerda":"a.valor","direita":"c.valor"}]}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            r.campo("devolvidas").and_then(Json::numero),
+            Some(1.0),
+            "a junção nao casou 10,50 com 10,5000: {}",
+            r.escrever()
+        );
+
+        let r = pede(
+            &s,
+            r#""op":"consultar","database":"b","de":{"op":"varrer","tabela":"d2"},
+               "em":[{"coluna":"valor","de":{"op":"varrer","tabela":"d4"},"campo":"valor"}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            r.campo("devolvidas").and_then(Json::numero),
+            Some(1.0),
+            "o IN nao casou 10,50 com 10,5000: {}",
+            r.escrever()
+        );
+
+        // E o `existe`, que casa pelo mesmo espalhamento.
+        let r = pede(
+            &s,
+            r#""op":"consultar","database":"b","de":{"op":"varrer","tabela":"d2"},"apelido":"a",
+               "existe":[{"de":{"op":"varrer","tabela":"d4"},"apelido":"c",
+                          "em":[{"esquerda":"a.valor","direita":"c.valor"}]}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            r.campo("devolvidas").and_then(Json::numero),
+            Some(1.0),
+            "o EXISTS nao casou 10,50 com 10,5000: {}",
+            r.escrever()
+        );
+    }
+
+    /// **O COMPORTAMENTO VELHO: `Decimal` continua nao casando com inteiro.**
+    ///
+    /// A canonização entra so quando os DOIS lados sao `Decimal`. O
+    /// cabecalho do `consultar` registra, desde o pedido 237, que `"10.00"`
+    /// nao casa com o inteiro `10` -- «sao colunas de tipos diferentes» --, e
+    /// o conserto da escala nao pode mudar isso de carona: seria trocar um
+    /// contrato documentado sem ninguem ter pedido, e quem monta a junção
+    /// erraria de outro jeito.
+    ///
+    /// Quem quiser o contrario tem o `juntar` de tabela (`juncao.rs`), que
+    /// casa por familia -- e essa divergencia entre os dois motores de
+    /// junção fica REGISTRADA aqui em vez de ser consertada de lado.
+    #[test]
+    fn decimal_continua_nao_casando_com_inteiro_na_composicao() {
+        let d = DirTemp::novo("escala-velho");
+        let s = servidor(&d);
+        tabela(&s, "d2", 2, false);
+        pede(
+            &s,
+            r#""op":"criar_tabela","database":"b","tabela":"i8",
+               "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                          {"nome":"valor","tipo":"Int8"}],
+               "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]"#,
+        )
+        .unwrap();
+        inserir(&s, "d2", 1, "10.00");
+        pede(
+            &s,
+            r#""op":"inserir","database":"b","tabela":"i8","linha":{"id":1,"valor":10}"#,
+        )
+        .unwrap();
+
+        let r = pede(
+            &s,
+            r#""op":"consultar","database":"b","de":{"op":"varrer","tabela":"d2"},"apelido":"a",
+               "juntar":[{"tipo":"interno","de":{"op":"varrer","tabela":"i8"},"apelido":"c",
+                          "em":[{"esquerda":"a.valor","direita":"c.valor"}]}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            r.campo("devolvidas").and_then(Json::numero),
+            Some(0.0),
+            "o conserto da escala mudou o contrato do Decimal contra inteiro: {}",
+            r.escrever()
+        );
+    }
+
+    /// **E nada passou a RECUSAR.** Guarda nova entra pedida, nao imposta --
+    /// e aqui nem guarda nova ha: o conserto corrige resposta, nunca recusa
+    /// pedido que antes respondia. As tres operações com tabelas de escalas
+    /// diferentes continuam respondendo `ok`.
+    #[test]
+    fn nenhuma_operacao_passou_a_recusar_por_escala_diferente() {
+        let d = DirTemp::novo("escala-velho2");
+        let s = servidor(&d);
+        tabela(&s, "d2", 2, true);
+        tabela(&s, "d4", 4, true);
+        inserir(&s, "d2", 1, "1.11");
+        inserir(&s, "d4", 1, "2.2222");
+        for pedido in [
+            r#""op":"unir","database":"b","modo":"tudo","tabelas":["d2","d4"]"#,
+            r#""op":"juntar","database":"b","a":{"tabela":"d2","chave":"valor","prefixo":"A"},
+               "b":{"tabela":"d4","chave":"valor","prefixo":"B"}"#,
+            r#""op":"diferencas","database":"b","a":"d2","b":"d4","indice":"porId""#,
+            r#""op":"pivotar","database":"b","tabela":"d2","agregador":"soma","valor":"valor",
+               "linhas":[{"campo":"L.id"}],"colunas":[{"campo":"id"}],
+               "juntar":[{"tabela":"d4","coluna":"valor","chave":"valor","prefixo":"L"}]"#,
+        ] {
+            pede(&s, pedido).unwrap_or_else(|e| panic!("passou a recusar: {e} -- em {pedido}"));
+        }
     }
 }

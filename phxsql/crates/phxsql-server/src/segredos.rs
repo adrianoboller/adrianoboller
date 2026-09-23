@@ -259,6 +259,15 @@ mod testes {
                  nada de sal",
             ),
             (
+                "nonce",
+                "o valor sorteado que o pulso do cluster carrega para nao \
+                 contar duas vezes (pedido 278). Nonce nao e credencial: ele \
+                 viaja em claro por DESENHO -- e a mesma peca que o \
+                 desafio-resposta manda pelo fio antes de qualquer prova --, e \
+                 esconde-lo do log tiraria justamente o que se compara para \
+                 saber se um pulso foi repetido",
+            ),
+            (
                 "chave_do_fio",
                 "a chave PUBLICA do outro servidor -- o pino, no estilo \
                  known_hosts. Esconde-la so atrapalharia o diagnostico de pino \

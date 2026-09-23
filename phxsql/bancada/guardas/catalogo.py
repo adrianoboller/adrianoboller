@@ -8058,4 +8058,103 @@ pub fn limpar() {
         # `--test-threads=1` (o PBKDF2 no piso e a trava do processo dominam).
         "prazo": 120,
     },
+    # 27. A identidade de quem manda o pulso do cluster -- pedido 278 (SEC A1)
+    # -----------------------------------------------------------------------
+    {
+        "id": "pulso-sem-prova-de-identidade",
+        "titulo": "o pulso do cluster aceitando identidade auto-declarada",
+        "porque": (
+            "a credencial da replicacao e UMA so para o cluster inteiro, entao "
+            "quem a tivesse -- um no legitimo inclusive -- se declarava OUTRO no "
+            "e mandava a epoca que quisesse. Medido pelo soquete antes do "
+            "conserto: uma linha com id:noB, papel:master, epoca:9 rebaixou o "
+            "master de verdade em 0,53 s e gravou {papel:replica,epoca:9} no "
+            "cluster.estado.json, que ganha do config.json no arranque. O teto "
+            "de epoca (FOLGA_DE_EPOCA) cobria o sintoma; a prova dentro do "
+            "pulso cobre a causa. Reposto o defeito, o forjado passa de novo, o "
+            "repetido conta duas vezes e o TOFU para de morder."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        estado.conferir_identidade(
+            &id,
+            &pulso,
+            p,
+            sessao.transcricao_do_fio.as_ref().map(|t| &t[..]),
+            || self.estatica_do_fio(),
+        )?;
+        estado.registrar(&id, pulso);
+""",
+        "troca": """        // DEFEITO REPOSTO: o pulso entra sem provar quem o mandou, e o `id`
+        // do corpo vale como identidade -- o A1 do pedido 278.
+        estado.registrar(&id, pulso);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "identidade-do-pulso"],
+        "caem": [
+            "um_pulso_forjado_nao_destrona_o_master",
+            "um_pulso_repetido_nao_conta_duas_vezes",
+            "depois_que_o_no_provou_o_pulso_sem_prova_e_recusado",
+        ],
+        # O que tem de CONTINUAR de pe: a guarda e pedida, entao o no de versao
+        # anterior nao pode passar a ser recusado por causa dela; e o caminho
+        # legitimo -- o par cifrado com a exigencia ligada -- so depende da
+        # prova, que continua sendo montada no `pulsar`.
+        "seguem": [
+            "sem_exigencia_o_no_de_versao_anterior_continua_pulsando",
+            "o_pulso_com_prova_valida_passa_e_conta",
+        ],
+        "prazo": 120,
+    },
+    # 28. O aperto de mao lendo sem teto -- pedido 312
+    # -----------------------------------------------------------------------
+    {
+        "id": "aperto-de-mao-sem-teto",
+        "titulo": "a leitura do aperto de mao fora do `Canal`, sem teto nenhum",
+        "porque": (
+            "o aperto acontece antes de o outro lado se identificar, e os dois "
+            "clientes desta casa liam a resposta com `read_line` cru: o "
+            "TETO_DO_REGISTRO mora no Canal, que so nascia DEPOIS do aperto. "
+            "Medido: um source falso que nunca manda o fim de linha fez a "
+            "replica guardar 192 MiB numa linha so, em 294 ms -- 1,5x o teto do "
+            "registro, que e a prova de que aquele teto nao alcancava ali. "
+            "Reposto o defeito, o erro que volta nem e limite: e o reset da "
+            "conexao depois de a memoria ja ter sido reservada."
+        ),
+        "arquivo": "crates/phxsql-server/src/replica.rs",
+        "trecho": """        let resposta = match self
+            .canal
+            .ler_ate(&mut self.leitor, phxsql_core::fio::TETO_DO_APERTO)?
+        {
+            Recebido::Linha(l) => l,
+            Recebido::Fim => {
+                return Err(PhxError::Io(std::io::Error::other(
+                    "o source fechou a conexao no aperto de mao",
+                )))
+            }
+        };
+""",
+        "troca": """        // DEFEITO REPOSTO: leitura crua, sem teto -- quem decide quanta
+        // memoria este lado reserva e o outro lado da conexao (pedido 312).
+        let mut resposta = String::new();
+        {
+            use std::io::BufRead as _;
+            if self.leitor.read_line(&mut resposta)? == 0 {
+                return Err(PhxError::Io(std::io::Error::other(
+                    "o source fechou a conexao no aperto de mao",
+                )));
+            }
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "replica::testes_do_teto_do_aperto::o_aperto_de_mao_recusa_a_linha_sem_fim",
+        ],
+        # O comportamento VELHO nao pode cair junto: uma resposta de aperto do
+        # tamanho de sempre continua sendo lida e analisada dos dois jeitos.
+        "seguem": [
+            "replica::testes_do_teto_do_aperto::resposta_curta_do_source_continua_passando",
+        ],
+        "prazo": 300,
+    },
 ]

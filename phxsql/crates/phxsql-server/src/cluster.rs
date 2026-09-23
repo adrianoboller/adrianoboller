@@ -208,6 +208,18 @@ pub struct EstadoCluster {
     ultimo_email_ms: AtomicI64,
     /// Aviso de promocao pendente -- sai UMA vez, e por isso e um `take`.
     promocao_a_avisar: Mutex<Option<String>>,
+    /// Os nonces ja vistos por no, para um pulso legitimo gravado nao contar
+    /// duas vezes -- pedido 278.
+    antirrepeticao: crate::pulso::Antirrepeticao,
+    /// Os ids que JA provaram identidade nesta vida do processo -- pedido 278.
+    ///
+    /// E o que faz a guarda se auto-elevar sem configuracao nenhuma: enquanto
+    /// um no nunca provou, ele e um no de versao anterior e o pulso dele passa
+    /// como sempre passou; depois da PRIMEIRA prova valida, a ausencia da
+    /// prova naquele id vira rebaixamento e e recusada. E o TOFU do
+    /// `known_hosts`, aplicado ao pulso -- e a mesma escolha ja registrada em
+    /// `docs/CIFRA-DO-FIO.md` §1 para o pino.
+    provaram: Mutex<std::collections::HashSet<String>>,
     caminho_estado: PathBuf,
     /// Quando este estado nasceu. O arbitro da UMA janela de graca a partir
     /// daqui: no arranque o primeiro tique roda antes do primeiro pulso, e
@@ -269,6 +281,8 @@ impl EstadoCluster {
             degradado: Mutex::new(Vec::new()),
             ultimo_email_ms: AtomicI64::new(0),
             promocao_a_avisar: Mutex::new(None),
+            antirrepeticao: crate::pulso::Antirrepeticao::default(),
+            provaram: Mutex::new(std::collections::HashSet::new()),
             caminho_estado,
             nascido_ms: agora,
         }
@@ -383,6 +397,142 @@ impl EstadoCluster {
         if let Ok(mut nos) = self.nos.lock() {
             nos.insert(id.to_string(), pulso);
         }
+    }
+
+    /* ------------------------------ a identidade de quem pulsa (pedido 278)
+
+    O pulso dizia quem era num campo do corpo, e nada mais. Quem alcancasse a
+    porta com a credencial do cluster -- que e UMA so para o cluster inteiro --
+    se declarava outro no e mandava a epoca que quisesse. O desenho da prova,
+    e por que ela mora DENTRO do pulso em vez de num segundo aperto de mao,
+    esta em `pulso.rs`. */
+
+    /// Os campos EXTRAS que provam que este no mandou este pulso -- ou
+    /// `None`, quando nao ha material para provar nada.
+    ///
+    /// # O portao vem ANTES do trabalho
+    ///
+    /// Sem `chave_do_fio` do destino nao ha Diffie-Hellman possivel, e a
+    /// primeira linha e essa pergunta: um cluster que nao configurou pino
+    /// nenhum nao paga nem o sorteio do nonce. E a licao do Profiler, que
+    /// fazia dois `Json::analisar` antes de olhar o proprio interruptor.
+    pub fn campos_da_prova(
+        &self,
+        estatica: &[u8; 32],
+        destino: &crate::config::NoCluster,
+        canal: Option<&[u8]>,
+    ) -> Option<Vec<(&'static str, Json)>> {
+        let publica = destino.pino_do_fio().ok().flatten()?;
+        let quando = crate::agora_ms();
+        let nonce = crate::pulso::nonce();
+        let campos = crate::pulso::Assinado {
+            de: &self.config.id,
+            para: &destino.id,
+            papel: self.papel().nome(),
+            epoca: self.epoca(),
+            posicao: self.posicao(),
+            incompleta: self.posicao_incompleta(),
+            prioridade: self.config.prioridade,
+            quando,
+            nonce: &nonce,
+        };
+        let prova = crate::pulso::assinar(estatica, &publica, &campos, canal).ok()?;
+        Some(vec![
+            ("para", Json::texto_de(&destino.id)),
+            ("quando", Json::de_i64(quando)),
+            ("nonce", Json::texto_de(&nonce)),
+            ("prova", Json::texto_de(prova)),
+        ])
+    }
+
+    /// Este no ja provou a identidade dele alguma vez desde que subimos?
+    pub fn ja_provou(&self, id: &str) -> bool {
+        self.provaram
+            .lock()
+            .map(|p| p.contains(id))
+            .unwrap_or(false)
+    }
+
+    fn marcar_provado(&self, id: &str) {
+        if let Ok(mut p) = self.provaram.lock() {
+            p.insert(id.to_string());
+        }
+    }
+
+    /// Confere que quem mandou este pulso e mesmo o no que ele diz ser.
+    ///
+    /// `estatica` e preguicosa de proposito: o caminho em que nao ha nada a
+    /// conferir -- pulso sem prova, de um par que nunca provou, com o
+    /// interruptor desligado -- nao le arquivo nenhum e nao faz conta nenhuma.
+    ///
+    /// `pulso` sao os valores JA analisados, e nao o texto do pedido: a prova
+    /// cobre exatamente o que vai ser REGISTRADO. Assinar o JSON cru amarraria
+    /// a prova ao jeito de o outro lado serializar, e assinar so o `id`
+    /// deixaria o forjador reusar uma prova legitima com a epoca dele.
+    pub fn conferir_identidade(
+        &self,
+        id: &str,
+        pulso: &PulsoDeNo,
+        pedido: &Json,
+        canal: Option<&[u8]>,
+        estatica: impl FnOnce() -> Result<[u8; 32]>,
+    ) -> Result<()> {
+        let prova = pedido.texto_ou("prova", "").trim();
+        if prova.is_empty() {
+            if self.config.exigir_prova_do_pulso {
+                return Err(PhxError::Autorizacao(format!(
+                    "o pulso de {id:?} veio sem prova de identidade e este \
+                     cluster exige prova (cluster.exigir_prova_do_pulso)"
+                )));
+            }
+            // O TOFU: quem ja provou uma vez nao volta a ser ouvido sem
+            // prova. Sem isto, bastaria OMITIR o campo para desligar a guarda
+            // -- que e o rebaixamento silencioso que a §2 do
+            // `docs/CIFRA-DO-FIO.md` recusa em outro lugar.
+            if self.ja_provou(id) {
+                return Err(PhxError::Autorizacao(format!(
+                    "o pulso de {id:?} veio SEM prova, e este no ja provou a \
+                     identidade dele antes: pulso sem prova de quem sabe \
+                     provar e rebaixamento, e nao compatibilidade"
+                )));
+            }
+            return Ok(());
+        }
+        let Some(no) = self.no(id) else {
+            // O chamador ja recusou o id fora da lista; esta e a rede de
+            // baixo, para o dia em que houver um segundo chamador.
+            return Err(PhxError::Autorizacao(format!(
+                "o pulso de {id:?} traz prova de um no que nao esta na lista"
+            )));
+        };
+        let Some(publica) = no.pino_do_fio()? else {
+            return Err(PhxError::Autorizacao(format!(
+                "o pulso de {id:?} traz prova, mas cluster.nos[{id}].chave_do_fio \
+                 esta vazio neste no: sem a chave publica dele nao ha como \
+                 conferir. Preencha o pino ou tire a prova do outro lado"
+            )));
+        };
+        let quando = pedido.inteiro_ou("quando", 0);
+        let nonce = pedido.texto_ou("nonce", "").trim();
+        let campos = crate::pulso::Assinado {
+            de: id,
+            para: &self.config.id,
+            papel: pulso.papel.nome(),
+            epoca: pulso.epoca,
+            posicao: pulso.posicao,
+            incompleta: pulso.incompleta,
+            prioridade: pulso.prioridade,
+            quando,
+            nonce,
+        };
+        // A ORDEM importa: o HMAC primeiro, o cache do nonce depois. Ao
+        // contrario, quem nao tem a chave encheria a fila de nonces deste no
+        // so mandando pulso torto.
+        crate::pulso::conferir(&estatica()?, &publica, &campos, canal, prova)?;
+        self.antirrepeticao
+            .aceitar(id, nonce, quando, crate::agora_ms())?;
+        self.marcar_provado(id);
+        Ok(())
     }
 
     /* ------------------------------------------------------ a lista VIVA

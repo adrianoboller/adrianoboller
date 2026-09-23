@@ -339,19 +339,57 @@ pub fn chave_de_juncao(j: &Json) -> Option<String> {
     })
 }
 
+/// Em quais pares os DOIS lados sao `Decimal` -- e so nesses a chave se
+/// canoniza.
+///
+/// # Por que os dois, e nao cada lado por si
+///
+/// Porque `Decimal` viaja como TEXTO (`"10.50"`), e o texto carrega a escala:
+/// `"10.50"` e `"10.5000"` sao o mesmo dinheiro e chaves diferentes. Medido em
+/// 23/09/2026, uma junção `d2.valor = d4.valor` entre `Decimal(12,2)` e
+/// `Decimal(12,4)` com o mesmo valor devolveu **zero linhas** -- e os quatro
+/// motores casam (PG: «numeric values are physically stored without any extra
+/// leading or trailing zeroes»; MySQL e MariaDB cortam os zeros a direita
+/// dentro do proprio `decimal_cmp`; SQLite: «numeric values are always
+/// compared numerically»). 4 de 4, aceite automatico.
+///
+/// **So quando os dois lados sao `Decimal`**, e isso e escolha: o cabecalho
+/// deste modulo registra que `"10.00"` NAO casa com o inteiro `10`, porque
+/// sao colunas de tipos diferentes. Canonizar um `Decimal` contra qualquer
+/// coisa faria os dois passarem a casar de carona, mudando um contrato
+/// documentado que nao e o defeito daqui.
+pub fn pares_decimais(
+    pares: &[(String, String)],
+    modelo_esq: &Modelo,
+    modelo_dir: &Modelo,
+) -> Vec<bool> {
+    let decimal =
+        |m: &Modelo, n: &str| matches!(tipo_no_modelo(m, n), Some(ColumnType::Decimal { .. }));
+    pares
+        .iter()
+        .map(|(e, d)| decimal(modelo_esq, e) && decimal(modelo_dir, d))
+        .collect()
+}
+
 /// A chave COMPOSTA de uma linha, pelos pares de uma junção.
 ///
 /// `lado` escolhe qual metade de cada par se le nesta linha. `None` quando
-/// qualquer coluna e nula, porque nulo nunca casa.
+/// qualquer coluna e nula, porque nulo nunca casa. `decimais` vem de
+/// [`pares_decimais`] e diz em que posições os zeros a direita saem.
 fn chave_composta(
     l: &Linha,
     pares: &[(String, String)],
     lado: fn(&(String, String)) -> &String,
+    decimais: &[bool],
 ) -> Option<String> {
     let mut k = String::new();
-    for par in pares {
+    for (i, par) in pares.iter().enumerate() {
         let v = campo(l, lado(par)).and_then(chave_de_juncao)?;
-        k.push_str(&v);
+        if decimais.get(i).copied().unwrap_or(false) {
+            k.push_str(&crate::juncao::sem_zeros_a_direita(&v));
+        } else {
+            k.push_str(&v);
+        }
         // Separador, pelo mesmo motivo do `agrupar`: sem ele `("ab","c")` e
         // `("a","bc")` casariam.
         k.push('\u{1}');
@@ -586,9 +624,13 @@ pub fn juntar(
         return Some(saida);
     }
 
+    // Os pares de `Decimal` contra `Decimal` se canonizam -- ver
+    // `pares_decimais`. Calculado UMA vez, e nao por linha: e a mesma conta
+    // para todas elas.
+    let decimais = pares_decimais(pares, modelo_esq, modelo_dir);
     let mut mapa: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
     for (i, d) in direita.iter().enumerate() {
-        if let Some(k) = chave_composta(d, pares, |p| &p.1) {
+        if let Some(k) = chave_composta(d, pares, |p| &p.1, &decimais) {
             mapa.entry(k).or_default().push(i);
         }
     }
@@ -603,7 +645,7 @@ pub fn juntar(
     // esquerda (interno com poucos pares) e nunca precisa passar do teto.
     let mut saida = Vec::with_capacity(esquerda.len().min(teto));
     for e in esquerda {
-        let casadas = chave_composta(&e, pares, |p| &p.0).and_then(|k| mapa.get(&k));
+        let casadas = chave_composta(&e, pares, |p| &p.0, &decimais).and_then(|k| mapa.get(&k));
         match casadas {
             Some(is) if !is.is_empty() => {
                 for &i in is {
@@ -665,16 +707,18 @@ pub fn semijuntar(
     esquerda: Vec<Linha>,
     direita: &[Linha],
     pares: &[(String, String)],
+    decimais: &[bool],
     nao: bool,
 ) -> Vec<Linha> {
     let conjunto: std::collections::HashSet<String> = direita
         .iter()
-        .filter_map(|d| chave_composta(d, pares, |p| &p.1))
+        .filter_map(|d| chave_composta(d, pares, |p| &p.1, decimais))
         .collect();
     esquerda
         .into_iter()
         .filter(|e| {
-            let tem = chave_composta(e, pares, |p| &p.0).is_some_and(|k| conjunto.contains(&k));
+            let tem =
+                chave_composta(e, pares, |p| &p.0, decimais).is_some_and(|k| conjunto.contains(&k));
             tem != nao
         })
         .collect()
@@ -890,6 +934,57 @@ mod testes {
     /// propria.
     const SEM_TETO: usize = usize::MAX;
 
+    /// **Dois `Decimal` de escalas diferentes casam pelo VALOR.**
+    ///
+    /// Na composicao o decimal viaja como TEXTO, e o texto carrega a escala:
+    /// `"10.50"` e `"10.5000"` sao o mesmo dinheiro e eram chaves diferentes
+    /// -- medido em 23/09/2026 pelo protocolo, zero linhas onde os quatro
+    /// motores devolvem uma.
+    ///
+    /// **Prova real:** devolva `vec![false; pares.len()]` no `pares_decimais`
+    /// e a primeira asserçao ve zero linhas.
+    ///
+    /// A segunda metade e o comportamento VELHO, e ela vale tanto quanto a
+    /// primeira: com um lado `Int8`, nada se canoniza e `"10.00"` continua
+    /// nao casando com `10`, como o cabecalho deste modulo promete desde o
+    /// pedido 237.
+    #[test]
+    fn decimais_de_escalas_diferentes_casam_e_o_inteiro_continua_de_fora() {
+        let dec = |escala: u8| ColumnType::Decimal {
+            precisao: 12,
+            escala,
+        };
+        let esq = vec![linha(&[("a.v", Json::texto_de("10.50"))])];
+        let me = modelo(&[("a.v", dec(2))]);
+        let dir = vec![linha(&[("c.v", Json::texto_de("10.5000"))])];
+        let md = modelo(&[("c.v", dec(4))]);
+        let pares = vec![("a.v".to_string(), "c.v".to_string())];
+        assert_eq!(pares_decimais(&pares, &me, &md), vec![true]);
+        let r = juntar(
+            esq.clone(),
+            &me,
+            &dir,
+            &md,
+            &pares,
+            TipoJuncao::Interno,
+            SEM_TETO,
+        )
+        .expect("o teto nao e o assunto");
+        assert_eq!(r.len(), 1, "10,50 nao casou com 10,5000: {r:?}");
+
+        // O lado de dentro agora e inteiro: nada se canoniza.
+        let dir = vec![linha(&[("c.v", Json::Numero(10.0))])];
+        let md = modelo(&[("c.v", ColumnType::Int8)]);
+        assert_eq!(pares_decimais(&pares, &me, &md), vec![false]);
+        let esq = vec![linha(&[("a.v", Json::texto_de("10.00"))])];
+        let r = juntar(esq, &me, &dir, &md, &pares, TipoJuncao::Interno, SEM_TETO)
+            .expect("o teto nao e o assunto");
+        assert!(
+            r.is_empty(),
+            "o conserto da escala fez o Decimal casar com inteiro de carona: {r:?}"
+        );
+    }
+
     /// Os cinco tipos, medidos em QUANTAS linhas e em que FORMA saem.
     ///
     /// Esquerda: 1 casa com ana, 2 aponta para 9 (nao existe), 3 tem chave
@@ -1068,10 +1163,10 @@ mod testes {
             ("c.id", Json::Numero(1.0)),
             ("c.nome", Json::texto_de("ana2")),
         ]));
-        let r = semijuntar(esq.clone(), &dir, &pares(), false);
+        let r = semijuntar(esq.clone(), &dir, &pares(), &[false], false);
         assert_eq!(r.len(), 1);
         assert_eq!(campo(&r[0], "p.id"), Some(&Json::Numero(1.0)));
-        let r = semijuntar(esq, &dir, &pares(), true);
+        let r = semijuntar(esq, &dir, &pares(), &[false], true);
         let ids: Vec<i64> = r
             .iter()
             .map(|l| {

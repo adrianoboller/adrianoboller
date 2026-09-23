@@ -521,20 +521,32 @@ pub(crate) fn fechar_acumulador(
 }
 
 /// De onde o valor de um campo vem: da linha, ou da tabela de consulta.
+///
+/// # A chave que procura no mapa e a MESMA que o montou
+///
+/// O mapa da tabela de consulta e montado em `op_pivotar` com
+/// `juncao::pedaco_de_chave` e o tipo da coluna de LA; aqui a chave sai do
+/// valor do fato com o tipo da coluna de CA. Duas formas diferentes de
+/// escrever a mesma chave nao dao erro -- dao celula vazia, que parece
+/// resposta.
+///
+/// Eram duas ate 23/09/2026 (`rotulo_cru` aqui, `rotulo(v, 0)` la), e as duas
+/// erravam: um fato `Decimal(12,2)` de 7,25 casava com uma linha de consulta
+/// `Decimal(12,4)` de 0,0725 (o mesmo inteiro escalado, 725) e NAO casava com
+/// 10,5000 contra 10,50 (o mesmo dinheiro); e junção por coluna `Date` nunca
+/// casava, porque um lado escrevia `2026-09-23` e o outro o numero de dias.
 fn valor_bruto(c: &Campo, linha: &[Value], esquema: &Schema, juncoes: &[Juncao]) -> Option<Value> {
     match c.juncao {
         None => linha.get(c.coluna).cloned(),
         Some(j) => {
             let ju = juncoes.get(j)?;
-            let chave = rotulo_cru(linha.get(ju.coluna_local)?);
+            let local = linha.get(ju.coluna_local)?;
+            let ty = esquema.colunas().get(ju.coluna_local).map(|x| x.ty)?;
+            let chave = crate::juncao::pedaco_de_chave(local, &ty);
             ju.mapa.get(&chave)?.get(c.coluna).cloned()
         }
     }
     .or(Some(Value::Null))
-    .map(|v| {
-        let _ = esquema;
-        v
-    })
 }
 
 fn valor_do_campo(c: &Campo, linha: &[Value], esquema: &Schema, juncoes: &[Juncao]) -> String {

@@ -28,7 +28,7 @@
 //! no cadastro de usuarios --, e dele sai a chave derivada sem nunca haver
 //! senha em claro em lugar nenhum.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufReader, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
@@ -149,12 +149,23 @@ impl Cliente {
         self.fluxo.write_all(b"\n")?;
         self.fluxo.flush()?;
 
-        let mut resposta = String::new();
-        if self.leitor.read_line(&mut resposta)? == 0 {
-            return Err(PhxError::Io(std::io::Error::other(
-                "o source fechou a conexao no aperto de mao",
-            )));
-        }
+        // O TETO vale aqui tambem -- pedido 312. Esta leitura acontece antes
+        // de existir tunel e antes de qualquer autenticacao, e durante muito
+        // tempo ela foi um `read_line` cru: medido, um source falso empurrou
+        // 192 MiB numa linha so, em 294 ms, e esta replica guardou tudo. O
+        // canal ainda e `Claro` neste ponto, entao quem le e o mesmo `Canal`
+        // de sempre -- so com o teto do APERTO, que e curto de proposito.
+        let resposta = match self
+            .canal
+            .ler_ate(&mut self.leitor, phxsql_core::fio::TETO_DO_APERTO)?
+        {
+            Recebido::Linha(l) => l,
+            Recebido::Fim => {
+                return Err(PhxError::Io(std::io::Error::other(
+                    "o source fechou a conexao no aperto de mao",
+                )))
+            }
+        };
         let j = Json::analisar(&resposta)?;
         if !j.booleano_ou("ok", false) {
             return Err(PhxError::Autorizacao(format!(
@@ -170,6 +181,15 @@ impl Cliente {
         let (transporte, apresentada) = iniciador.terminar(&m2)?;
         self.canal = Canal::Cifrado(Box::new(transporte));
         Ok(apresentada)
+    }
+
+    /// A transcricao do aperto, quando esta conexao passou pelo tunel.
+    ///
+    /// Quem a usa e a prova de identidade do pulso (pedido 278), pelo mesmo
+    /// motivo que o desafio-resposta ja a usa: uma prova gravada numa conexao
+    /// nao pode valer em outra.
+    pub fn transcricao(&self) -> Option<[u8; 32]> {
+        self.canal.transcricao()
     }
 
     /// Manda um pedido e devolve o `resultado`, ou o erro que o source disse.
@@ -856,5 +876,110 @@ mod testes_do_prazo_de_conexao {
         assert!(c.is_ok(), "{:?}", c.err());
         let (aceita, _) = ouvinte.accept().unwrap();
         drop(aceita);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pedido 312: o aperto de mao nao pode ler sem teto
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod testes_do_teto_do_aperto {
+    use super::*;
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Arc;
+
+    /// Quanto o source falso TENTA empurrar numa linha so, sem nunca mandar o
+    /// `\n`. Passa do [`phxsql_core::fio::TETO_DO_REGISTRO`] de proposito: e o
+    /// que mostra que o teto do registro nao alcancava esta leitura.
+    const DESPEJO: u64 = 192 * 1024 * 1024;
+
+    /// Um "source" que aceita a conexao e nunca termina de falar.
+    ///
+    /// Devolve a porta e o contador do que ele conseguiu EMPURRAR -- que nao
+    /// e o que o outro lado guardou: quando a replica para de ler, ainda cabem
+    /// alguns MiB nos buffers do nucleo antes de o `write_all` travar. Por
+    /// isso a medida que decide e o ERRO, e o contador so separa "parou" de
+    /// "engoliu tudo".
+    fn source_que_nunca_cala() -> (u16, Arc<AtomicU64>) {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let empurrados = Arc::new(AtomicU64::new(0));
+        let conta = Arc::clone(&empurrados);
+        std::thread::spawn(move || {
+            let Ok((mut fluxo, _)) = ouvinte.accept() else {
+                return;
+            };
+            let _ = fluxo.set_write_timeout(Some(Duration::from_secs(3)));
+            let lixo = vec![b'x'; 64 * 1024];
+            while conta.load(Ordering::SeqCst) < DESPEJO {
+                if fluxo.write_all(&lixo).is_err() {
+                    break;
+                }
+                conta.fetch_add(lixo.len() as u64, Ordering::SeqCst);
+            }
+        });
+        (porta, empurrados)
+    }
+
+    /// **Prova real do 312, nos dois sentidos.** Com o `read_line` cru reposto
+    /// no lugar do `ler_ate`, este teste passa a NAO ver erro nenhum e o
+    /// contador chega aos 192 MiB -- medido em 294 ms, antes do conserto.
+    ///
+    /// Quem decide quanta memoria esta replica reserva no aperto de mao tem de
+    /// ser este lado, e nao o outro -- que ali ainda nao provou ser ninguem.
+    #[test]
+    fn o_aperto_de_mao_recusa_a_linha_sem_fim() {
+        let (porta, empurrados) = source_que_nunca_cala();
+        let mut c = Cliente::conectar("127.0.0.1", porta, "t", Duration::from_secs(2)).unwrap();
+        let erro = c
+            .cifrar(None)
+            .expect_err("o aperto tinha de RECUSAR a linha sem fim");
+        assert!(
+            matches!(erro, PhxError::LimiteExcedido(_)),
+            "a recusa saiu como {erro:?}, e nao como limite excedido"
+        );
+        let engolido = empurrados.load(Ordering::SeqCst);
+        assert!(
+            engolido < DESPEJO,
+            "o source empurrou os {DESPEJO} bytes inteiros: nao ha teto nenhum"
+        );
+    }
+
+    /// O COMPORTAMENTO VELHO, que e o que mais importa numa guarda nova: um
+    /// source que responde o aperto como sempre respondeu continua passando
+    /// pelo mesmo caminho -- o teto so morde quem passa dele.
+    ///
+    /// Aqui o source responde uma linha legitima de RECUSA (nao ha estatica
+    /// para fechar o aperto num teste de unidade), e o que se prova e que a
+    /// linha foi LIDA e ANALISADA: o erro que volta e o do source, com o
+    /// motivo dele dentro, e nao um limite.
+    #[test]
+    fn resposta_curta_do_source_continua_passando() {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((mut fluxo, _)) = ouvinte.accept() else {
+                return;
+            };
+            let _ = fluxo
+                .write_all(br#"{"ok":false,"op":"cifrar","erro":"a cifra do fio esta desligada"}"#);
+            let _ = fluxo.write_all(b"\n");
+            let _ = fluxo.flush();
+            std::thread::sleep(Duration::from_millis(200));
+        });
+        let mut c = Cliente::conectar("127.0.0.1", porta, "t", Duration::from_secs(2)).unwrap();
+        let erro = c
+            .cifrar(None)
+            .expect_err("o source recusou: tinha de vir erro");
+        assert!(
+            matches!(erro, PhxError::Autorizacao(_)),
+            "a resposta curta nao foi lida como sempre foi: {erro:?}"
+        );
+        assert!(
+            erro.to_string().contains("desligada"),
+            "o motivo do source se perdeu: {erro}"
+        );
     }
 }

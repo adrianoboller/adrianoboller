@@ -108,6 +108,46 @@ aviso): a origem passa a ser o master **corrente**, descoberto pelo pulso.
   (`NoCluster.chave_do_fio`, como um `known_hosts`) — o teto de época impede o
   estrago permanente, mas não impede um nó da lista de se declarar outro nó
   da lista.
+- **E agora o pulso PROVA quem o manda — pedido 278, a parte que faltava.**
+  Medido pelo soquete antes do conserto: uma linha só,
+  `{"token":…,"op":"cluster_pulso","id":"noB","papel":"master","epoca":9}`,
+  derrubou o master de verdade em **0,53 s** e gravou
+  `{"papel":"replica","epoca":9}` no `cluster.estado.json` — o arquivo que
+  ganha do `config.json` no arranque. O conserto é o que o dono decidiu em
+  17/09/2026: **prova dentro do próprio pulso, com as chaves que já existem**
+  (o aperto continua NX, e o iniciador continua anônimo). Cada nó assina o
+  pulso com `HMAC-SHA256` sob a chave que sai do Diffie-Hellman entre a
+  **estática dele** e o `chave_do_fio` do **destinatário**; o destinatário
+  refaz a mesma conta com a privada dele e a pública do remetente — X25519 é
+  simétrico, então **não há nada a distribuir** e não há ida-e-volta a mais.
+  Os campos novos do pulso são `para`, `quando`, `nonce` e `prova`
+  (`crates/phxsql-server/src/pulso.rs`).
+  - **O que a prova cobre, e por quê:** `de`+`para` (a prova vale para UM par
+    — o pulso que A mandou a B não fecha em C), `quando`+`nonce` (frescor: sem
+    eles, gravar um pulso legítimo do master e tocá-lo de novo renovaria «vi o
+    master agora» para sempre), a **transcrição do túnel** quando há túnel (a
+    mesma amarração ao canal do desafio-resposta), e **todos os campos que
+    decidem** — papel, época, posição, incompleta e prioridade: assinar só o
+    `id` deixaria o forjador reusar uma prova legítima com a época dele.
+  - **Ela entra PEDIDA, não imposta.** A prova sai sozinha assim que os dois
+    lados têm `chave_do_fio`, e quem a recebe **sempre** a confere; o que muda
+    de comportamento é só o que se faz com o pulso que chega **sem prova
+    nenhuma**. Sem `cluster.exigir_prova_do_pulso` (padrão `false`), ele passa
+    como sempre passou — um nó de versão anterior não para de falar de um dia
+    para o outro. Quem não liga o interruptor não fica sem nada: o crivo
+    **se auto-eleva por par** (TOFU, como o `known_hosts`) — depois da
+    primeira prova válida daquele id, pulso sem prova daquele id é recusado,
+    senão bastaria **omitir** o campo para desligar a guarda.
+  - **O que ele ainda não alcança, dito aqui:** o TOFU e a fila de nonces
+    vivem na memória do processo, então um nó recém-reiniciado volta a aceitar
+    pulso sem prova de quem ainda não provou **nesta vida** — e é para fechar
+    essa janela que `exigir_prova_do_pulso` existe. E um cluster **sem
+    `chave_do_fio` preenchido** continua exatamente como era: sem chave
+    pública do par não há o que derivar nem o que conferir.
+  - **O caminho de migração é o mesmo da cifra:** sobem-se todos os nós com
+    esta versão e os pinos preenchidos, confere-se que eles se enxergam, e só
+    então se escreve `"exigir_prova_do_pulso": true` no bloco `cluster` de
+    cada um.
 - **Papel vivo e época.** O papel do `config.json` é só o inicial. O vivo
   mora em `base/cluster.estado.json` junto com a **época** — um contador que
   cresce a cada eleição. O arquivo ganha do config no arranque: um master

@@ -494,6 +494,21 @@ pub enum Canal {
 /// reserva e o outro lado da conexao.
 pub const TETO_DO_REGISTRO: u64 = 128 * 1024 * 1024;
 
+/// Teto de uma linha do APERTO DE MAO, em bytes -- pedido 312.
+///
+/// O aperto acontece ANTES de o outro lado se identificar, e e a unica troca
+/// em que um teto de 128 MiB nao diz nada: a mensagem 2 tem 96 bytes, e a
+/// linha inteira que a carrega nao passa de duzentos. Um teto do tamanho do
+/// registro ali deixaria quem ainda nao provou ser ninguem escolher quanta
+/// memoria este lado reserva -- que e a definicao do defeito que o teto
+/// existe para impedir.
+///
+/// 64 KiB, e nao 200 bytes: a resposta de ERRO do aperto carrega texto
+/// traduzido e os campos da classificacao, e um teto colado no caso feliz
+/// viraria recusa de uma mensagem legitima no dia em que alguem alongar uma
+/// frase. E ainda e 2.048x menor que [`TETO_DO_REGISTRO`].
+pub const TETO_DO_APERTO: u64 = 64 * 1024;
+
 impl Canal {
     pub fn cifrado(&self) -> bool {
         matches!(self, Canal::Cifrado(_))

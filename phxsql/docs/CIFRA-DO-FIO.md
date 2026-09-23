@@ -903,6 +903,46 @@ desenho de protocolo cifrado, e ficam com o dono — o teto de época
 sintoma (envenenar `maior_epoca_vista` para sempre), não a causa (o pulso não
 prova quem o mandou).
 
+**Decidido pelo dono em 17/09/2026, e ENTREGUE: o caminho (1).** A prova mora
+dentro do proprio pulso, e o aperto **nao mudou** -- continua NX, com o
+iniciador anonimo, e a decisao da §1 fica intacta. Cada no assina o pulso com
+`HMAC-SHA256` sob a chave derivada do Diffie-Hellman entre a estatica dele e o
+`chave_do_fio` do destinatario, e o destinatario refaz a conta do outro lado:
+X25519 e simetrico, entao o material ja esta todo aqui e nao ha chave nova a
+distribuir. A §2.2 do `docs/CLUSTER.md` conta o desenho inteiro; o codigo e
+`crates/phxsql-server/src/pulso.rs`.
+
+O que isto empresta desta secao, e vale dizer: **a transcricao do tunel entra
+na mensagem assinada** quando ha tunel -- a mesma amarracao ao canal da §10, e
+pelo mesmo motivo. Sem ela, um pulso gravado numa conexao valeria em outra. A
+prova de que os dois lados calculam a MESMA transcricao nao e de unidade: sao
+dois nos de pe, cifrados, com `exigir_prova_do_pulso` ligado nos dois
+(`tests/identidade-do-pulso.rs`, `dois_nos_cifrados_com_exigencia_ligada_continuam_se_enxergando`).
+Se as transcricoes divergissem, nenhuma prova fecharia e o cluster cifrado --
+que e o **padrao** desde 18/09 -- pararia inteiro.
+
+### O aperto de mao le com teto -- pedido 312
+
+O aperto acontece **antes** de o outro lado se identificar, e por muito tempo
+os dois clientes desta casa liam a resposta dele com `read_line` cru: a
+`replica::Cliente::cifrar` (a replica falando com o source, e o no pulsando o
+outro) e a `servidor::Remoto::cifrar` (a interface falando com outro PhxSql).
+O `TETO_DO_REGISTRO` de 128 MiB mora no `Canal`, e nenhuma das duas passava
+por ele ali -- o canal so nascia **depois** do aperto.
+
+**Medido**: um source falso que aceita a conexao e nunca manda o fim de linha
+fez a replica guardar **192 MiB numa linha so, em 294 ms** -- 1,5x o teto do
+registro, o que e a prova de que aquele teto nao alcancava esta leitura. Quem
+escolhia quanta memoria este lado reservava era o outro lado, que ali ainda
+nao provou ser ninguem.
+
+Hoje as duas leituras passam pelo mesmo `Canal` (ainda `Claro` naquele ponto),
+com um teto **proprio e curto**: `TETO_DO_APERTO`, **64 KiB**. Nao sao os 200
+bytes do caso feliz de proposito -- a resposta de **erro** do aperto carrega
+texto traduzido e os campos da classificacao, e um teto colado no caso feliz
+viraria recusa de mensagem legitima no dia em que alguem alongar uma frase.
+Ainda assim e **2.048x menor** que o teto do registro.
+
 ---
 
 ## 13. A virada da SAÍDA (18/09/2026) — o outro lado da ordem

@@ -578,6 +578,25 @@ pub struct Cluster {
     /// (`cifra_fio.ligada`, que ja nasce ligada). Um cluster com um no de
     /// versao anterior ao aperto escreve o escape ate atualizar o no.
     pub cifra: bool,
+    /// Recusar TODO pulso que nao prove a identidade de quem o manda --
+    /// pedido 278.
+    ///
+    /// # Pedida, nao imposta -- e o padrao e o do dia de ontem
+    ///
+    /// Nasce DESLIGADO de proposito. A prova do pulso (`pulso.rs`) sai
+    /// sozinha assim que os dois lados tem `chave_do_fio`, e quem a recebe a
+    /// confere sempre; o que este interruptor muda e o que acontece com o
+    /// pulso que chega SEM prova nenhuma. Com ele ligado de fabrica, todo no
+    /// de versao anterior pararia de ser ouvido de um dia para o outro --
+    /// «proteção que quebra todo cliente antigo nao e protecao, e estrago».
+    ///
+    /// Quem nao o liga nao fica sem nada: o crivo se auto-eleva por par
+    /// (`EstadoCluster::marcar_provado`), e um no que JA provou uma vez nao
+    /// volta a ser aceito sem prova nesta vida do processo. O que o
+    /// interruptor fecha e a janela do arranque, em que ninguem provou ainda
+    /// -- e o caminho e o mesmo da cifra: sobem-se todos os nos, e so entao
+    /// se liga.
+    pub exigir_prova_do_pulso: bool,
 }
 
 /// `Debug` a mao: as credenciais com que ESTE no fala com os outros. O token
@@ -601,6 +620,7 @@ impl std::fmt::Debug for Cluster {
             usuario,
             senha_hash: _,
             cifra,
+            exigir_prova_do_pulso,
         } = self;
         f.debug_struct("Cluster")
             .field("nos", nos)
@@ -616,6 +636,7 @@ impl std::fmt::Debug for Cluster {
             .field("usuario", usuario)
             .field("senha_hash", &"(oculto)")
             .field("cifra", cifra)
+            .field("exigir_prova_do_pulso", exigir_prova_do_pulso)
             .finish()
     }
 }
@@ -670,6 +691,7 @@ impl Cluster {
             usuario: c.texto_ou("usuario", "").trim().to_string(),
             senha_hash: c.texto_ou("senha_hash", "").trim().to_string(),
             cifra,
+            exigir_prova_do_pulso: c.booleano_ou("exigir_prova_do_pulso", false),
         }))
     }
 
@@ -776,6 +798,14 @@ impl Cluster {
             // protocolo nunca carrega o pino, e "cifra_do_no" por no diria
             // quem tem pino e quem nao, que e mapa para o atacante.
             ("cifra", Json::Bool(self.cifra)),
+            // Booleano informativo pelo mesmo motivo do `cifra`: dizer QUAL no
+            // ja provou identidade seria entregar, a quem pergunta, o mapa de
+            // quem ainda esta sem prova -- que e exatamente por onde o pulso
+            // forjado do pedido 278 entrava.
+            (
+                "exigir_prova_do_pulso",
+                Json::Bool(self.exigir_prova_do_pulso),
+            ),
             (
                 "nos",
                 Json::Lista(
