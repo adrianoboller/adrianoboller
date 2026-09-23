@@ -4220,3 +4220,152 @@ não tem limite de linhas. É o mesmo naipe, e **não** foi consertado aqui: nã
 irmão — não passa pelo `Canal`, não é o protocolo do fio, e o destino sai do
 `config.json` (escolha do operador, não de quem chega pela rede). Fica anotado
 como sítio conhecido em vez de sumir da varredura.
+
+## 20. O erro do pulso publicava o mapa de quais nós o 278 ainda não protege (pedido 435)
+
+Achado SEC A2 de 23/09/2026, no mesmo arquivo e no mesmo dia em que o conserto
+do 278 entrou.
+
+### 20.1 O bit que estava no texto, e o que ele valia
+
+`cluster_pulso` com uma `"prova"` qualquer devolvia **duas frases distintas**:
+
+| resposta | o que ela responde |
+|---|---|
+| «`cluster.nos[X].chave_do_fio` está vazio neste nó…» | X **não** tem pino aqui |
+| «a prova do pulso de X não fecha…» | X **tem** pino aqui |
+
+E «X não tem pino» é o mesmo que «X nunca consegue provar, logo X nunca entra
+no `provaram`, logo **um pulso sem prova dizendo-se X continua passando**»
+enquanto `exigir_prova_do_pulso` estiver no padrão. A mensagem de erro do
+conserto do 278 enumerava para quem tivesse a credencial de replicação — que é
+**uma só para o cluster inteiro**, premissa do próprio 278 — exatamente os nós
+onde o 278 **não** pega. Zero tentativas desperdiçadas.
+
+### 20.2 Por que o texto era o único canal — e por que isso decidiu o alcance
+
+O que separa este achado do A11 (17/09) é a medida, e ela decide o que entra no
+colapso e o que fica fora:
+
+- **«X tem pino aqui?» não está no veredito** — os dois casos recusam. O texto
+  era o único canal, e fechá-lo fecha o mapa inteiro. **Entrou.**
+- **«X está na lista?» já está no veredito** — na configuração de fábrica um
+  pulso **sem prova nenhuma** é aceito para quem está na lista e recusado para
+  quem não está. Colapsar essa frase compraria **zero bit** e custaria a recusa
+  em voz alta que faz a configuração torta aparecer no primeiro pulso, em vez de
+  numa eleição com eleitor fantasma. **Ficou fora, medido.**
+
+A régua que sai daí, e que vale para o próximo oráculo: **antes de colapsar uma
+frase, meça se o veredito já entrega o mesmo bit.** Se entrega, o colapso é
+zelo que cobra caro ao operador; se não entrega, é a guarda.
+
+### 20.3 A metade que quase escapou: o mapa mudou de campo, não sumiu
+
+Com a frase já colapsada e o teste verde, o campo `ms` da resposta — o tempo
+decorrido, que o servidor publica arredondado em milissegundos — separava os
+dois casos em **40 de 40 corridas**: `1` para o nó com pino, `0` para o nó sem.
+O caminho sem pino voltava **antes** do X25519 e do HMAC, e o servidor entregava
+a diferença medida, de graça, no mesmo JSON.
+
+Fechar só o texto teria comprado **zero**: duas letras no script do atacante
+(`r["ms"]` em vez de `r["erro"]`) e o mapa voltava inteiro, com a suíte verde
+dizendo que estava resolvido.
+
+O conserto é o **pino cego**: o caminho sem pino paga o mesmo trabalho antes de
+recusar, conferindo a prova contra o ponto-base do X25519 — de ordem plena, e
+por isso fora do crivo de ordem pequena do `segredo`.
+
+**E a prova FECHA contra ele — para qualquer membro do cluster.** A primeira
+versão deste conserto dizia o contrário («a prova não fecha contra ele»), e a
+revisão do integrador desmentiu com a conta: `x25519::segredo(minha, BASE)` é a
+**minha própria chave pública**, então a chave do HMAC vira
+`SHA256(ROTULO ‖ minha_pública)`. O `ROTULO` está no fonte, e a minha pública
+todo par do cluster tem — é o `chave_do_fio` que ele guarda para mim. Qualquer
+um com a credencial de replicação forja, sem privada nenhuma, a prova de um nó
+sem pino. É exatamente o atacante do 278.
+
+Daí o que cada peça compra, sem exagero:
+
+- **o `conferir` cego compra SÓ o relógio** — nenhuma identidade;
+- **a recusa incondicional do nó sem pino, logo depois do `conferir`, é a
+  garantia INTEIRA** — não um reforço. O 435 criou um caminho em que um HMAC
+  forjado passa no `conferir`; antes dele o nó sem pino voltava antes de
+  conferir;
+- ela **não pode subir** para antes do `conferir`, porque ali devolve o
+  relógio (o 40/40 de cima);
+- e **não pode ser apagada**, porque é a porta: apagada, a forja é aceita **e**
+  o nó fica marcado provado — o legítimo, que não sabe provar, passa a ser
+  recusado pelo TOFU no pulso seguinte.
+
+O teste que trava a linha é
+`cluster::testes::forja_contra_o_pino_cego_nao_entra_nem_marca_provado` (§20.4).
+Nenhum dos outros acusaria a remoção: o do texto do fio assina com a chave
+**errada**, e o `um_pulso_forjado_nao_destrona_o_master` também.
+
+Medido depois do conserto, nas mesmas 40 sondagens em pares: **1/40, 0/40 e
+0/40** separações, contra 40/40 antes.
+
+O aprendizado, e ele é geral: **quando se fecha um canal de resposta, mede-se o
+que mais viaja na mesma resposta.** O tempo é um campo como qualquer outro
+quando o servidor o escreve.
+
+### 20.4 A prova, nos dois sentidos
+
+`tests/identidade-do-pulso.rs::o_pulso_nao_diz_quais_nos_tem_pino`, por
+**soquete** — o achado é sobre o que chega ao fio, e o campo `ms` nem existe
+antes da montagem da resposta, então um teste de unidade sobre
+`conferir_identidade` não o veria.
+
+O nó sobe com a lista de sempre: `noB` **com** `chave_do_fio`, `noC` **sem**.
+Os dois recebem um pulso assinado por quem não é eles, e a resposta inteira —
+não só o campo `erro` — tem de ser a mesma, trocado o id.
+
+Com o defeito reposto (recusar o nó sem pino antes do `pulso::conferir`, que
+reabre os dois canais de uma vez), a comparação cai:
+
+```text
+assertion `left == right` failed: as duas recusas diferem, e a diferenca e o
+mapa de quais nos tem pino
+  left:  "…\"erro\":\"[SP000025] acesso negado: a prova nao fecha: quem mandou
+          nao tem a chave que corresponde ao chave_do_fio deste no\"…"
+  right: "…\"erro\":\"[SP000025] acesso negado: o pulso de \\\"{id}\\\" traz
+          prova, mas cluster.nos[{id}].chave_do_fio esta vazio neste no…\"…"
+```
+
+A guarda está no catálogo como `erro-do-pulso-mapeia-quem-nao-tem-pino`, e o
+`provar-guardas.py` a dá **PROVADA**: 1/1 caiu com o defeito reposto, e os dois
+`seguem` do 278 — `um_pulso_forjado_nao_destrona_o_master` e
+`o_pulso_com_prova_valida_passa_e_conta` — seguiram verdes, que é o que impede
+«recusar tudo» de passar como conserto.
+
+E a segunda prova, a da porta:
+`cluster::testes::forja_contra_o_pino_cego_nao_entra_nem_marca_provado`, de
+**unidade** — o dano é estado do processo (aceito, marcado provado), e não o que
+chega ao fio. A forja é montada **só com a pública** de quem confere, pela mesma
+derivação da produção (`pulso::chave_do_segredo`, separada do `chave_do_par`
+para isso), e um **canário** exige antes que ela feche no `pulso::conferir`
+contra o ponto-base — se um dia deixar de fechar, o teste cai ali dizendo por
+quê, em vez de seguir verde medindo uma forja que não forja. Com o bloco
+`if pino.is_none()` apagado:
+
+```text
+panicked at crates/phxsql-server/src/cluster.rs:1249:9:
+a prova FORJADA com a publica deste no entrou pelo no sem pino:
+aceito=true, marcado_provado=true
+```
+
+Guarda `pino-cego-sem-a-recusa-do-no-sem-pino`, **PROVADA** pelo
+`provar-guardas.py` (1/1 caiu; `pulso::testes::o_que_a_assina_b_confere` e
+`um_terceiro_no_nao_consegue_se_passar_por_a` seguiram verdes).
+
+### 20.5 O que ficou de fora, e por quê
+
+- **A frase «não está na lista»** — medida na §20.2: o bit já está no veredito.
+- **A antirrepetição** (janela de tempo e nonce repetido) — só se chega lá
+  **depois** de fechar o HMAC, isto é, tendo a chave. Não há oráculo a fechar
+  para quem já provou ser o nó, e «carimbo fora da janela» é justamente o que o
+  par legítimo precisa ler no cliente dele para acertar o relógio.
+- **O texto dos erros do `pulso.rs`** continua detalhado — ele virou
+  **diagnóstico local**, vai ao `eprintln!` deste processo e não ao fio. O
+  doc-comment do `conferir` carrega a obrigação escrita, para o dia em que
+  aparecer um segundo chamador.

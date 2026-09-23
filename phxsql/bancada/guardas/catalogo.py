@@ -8165,4 +8165,101 @@ pub fn limpar() {
         ],
         "prazo": 300,
     },
+    # 29. O erro do pulso publicando o mapa de quais nos nao tem pino -- 435
+    # -----------------------------------------------------------------------
+    {
+        "id": "erro-do-pulso-mapeia-quem-nao-tem-pino",
+        "titulo": "a recusa da prova do pulso dizendo quais nós ainda não têm pino",
+        "porque": (
+            "achado SEC A2 de 23/09/2026. A prova invalida devolvia DUAS "
+            "frases: «cluster.nos[X].chave_do_fio esta vazio neste no» quando X "
+            "nao tem pino, e «a prova de X nao fecha» quando tem. E «X nao tem "
+            "pino» e o mesmo que «X nunca entra no `provaram`, logo um pulso "
+            "SEM prova dizendo-se X continua passando»: a mensagem do conserto "
+            "do 278 enumerava para o atacante onde o 278 NAO pega. O bit nao "
+            "esta no veredito -- os dois casos recusam --, entao o texto era o "
+            "unico canal, e por isso a guarda compara os dois textos do FIO em "
+            "vez de conferir um veredito. Medido na mesma rodada: colapsar so a "
+            "frase comprava ZERO, porque o campo `ms` da resposta separava os "
+            "dois em 40 de 40 corridas (1 ms contra 0) -- o caminho sem pino "
+            "voltava antes do X25519. Com o pino cego, 0 a 1 de 40. Repor o "
+            "defeito e voltar a recusar ANTES do `pulso::conferir`, o que "
+            "reabre os dois canais de uma vez."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """        let publica = pino.unwrap_or(phxsql_core::x25519::BASE);
+""",
+        "troca": """        // DEFEITO REPOSTO (435): o no SEM pino volta antes do X25519 e do
+        // HMAC, com a frase que nomeia o `chave_do_fio` vazio. Volta o mapa
+        // pelo texto E pelo relogio, que e como o achado A2 o encontrou.
+        let Some(publica) = pino else {
+            return Err(PhxError::Autorizacao(format!(
+                "o pulso de {id:?} traz prova, mas cluster.nos[{id}].chave_do_fio \
+                 esta vazio neste no: sem a chave publica dele nao ha como \
+                 conferir. Preencha o pino ou tire a prova do outro lado"
+            )));
+        };
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "identidade-do-pulso"],
+        "caem": [
+            "o_pulso_nao_diz_quais_nos_tem_pino",
+        ],
+        # O 278 inteiro tem de seguir de pe: fechar o oraculo nao pode ter
+        # custado a recusa do pulso forjado nem a passagem do legitimo.
+        "seguem": [
+            "um_pulso_forjado_nao_destrona_o_master",
+            "o_pulso_com_prova_valida_passa_e_conta",
+        ],
+        "prazo": 120,
+    },
+    # 30. O pino cego do 435 sem a recusa incondicional -- a volta do 435
+    # -----------------------------------------------------------------------
+    {
+        "id": "pino-cego-sem-a-recusa-do-no-sem-pino",
+        "titulo": "a forja contra o pino cego entrando pelo nó sem pino",
+        "porque": (
+            "o pino cego do 435 (`x25519::BASE` no lugar do pino ausente) fecha "
+            "o canal do relogio -- `ms` 1 contra 0 em 40 de 40 -- e abre um "
+            "caminho que nao existia: `segredo(minha, BASE)` e a MINHA publica, "
+            "que todo par do cluster tem como `chave_do_fio`, entao a prova "
+            "conferida contra o ponto-base FECHA para qualquer membro, sem "
+            "privada nenhuma. Achado do integrador na revisao do 435, e o "
+            "comentario do conserto chamava a recusa de «dia impossivel». A "
+            "recusa incondicional do no sem pino, depois do `conferir`, e a "
+            "garantia INTEIRA; apagada, a forja e aceita E marca o no provado "
+            "(o legitimo, que nao sabe provar, passa a ser recusado pelo TOFU). "
+            "O teste do texto do fio NAO pega: o intruso dele assina com a "
+            "chave errada, e nao com a derivada do ponto-base."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """        if pino.is_none() {
+            return Err(self.recusa_da_prova(
+                id,
+                &format!(
+                    "cluster.nos[{id}].chave_do_fio esta vazio neste no: sem a \\
+                     chave publica dele nao ha como conferir. Preencha o pino \\
+                     ou tire a prova do outro lado"
+                ),
+            ));
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (435, volta): a recusa do no sem pino apagada --
+        // a forja contra o ponto-base passa no `conferir` e segue ate o
+        // `marcar_provado`.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "cluster::testes::forja_contra_o_pino_cego_nao_entra_nem_marca_provado",
+        ],
+        # A prova LEGITIMA e a do terceiro com a chave errada nao dependem da
+        # linha: seguem verdes, e mostram que o defeito e so a porta do no sem
+        # pino, e nao um estrago na conferencia inteira.
+        "seguem": [
+            "pulso::testes::o_que_a_assina_b_confere",
+            "pulso::testes::um_terceiro_no_nao_consegue_se_passar_por_a",
+        ],
+        "prazo": 300,
+    },
 ]

@@ -459,6 +459,36 @@ impl EstadoCluster {
         }
     }
 
+    /// A UNICA recusa que o fio ve quando a prova de um pulso nao e aceita --
+    /// pedido 435 (SEC A2 de 23/09/2026).
+    ///
+    /// Existe para que a frase seja **uma so**. Duas frases distintas --
+    /// «`cluster.nos[X].chave_do_fio` esta vazio neste no» e «a prova de X nao
+    /// fecha» -- respondiam, pelo fio, a pergunta «quais nos ainda NAO tem
+    /// pino aqui?». E «X nao tem pino» e o mesmo que «X nunca entra no
+    /// `provaram`, logo um pulso SEM prova dizendo-se X continua passando»
+    /// enquanto `exigir_prova_do_pulso` estiver no padrao: a mensagem de erro
+    /// do conserto do 278 enumerava para o atacante onde o 278 nao pega.
+    ///
+    /// Este bit **nao** existe no veredito -- os dois casos recusam --, entao
+    /// o texto era o unico canal, e fecha-lo fecha o mapa inteiro. E o mesmo
+    /// desenho que o A11 usou uma camada acima (`op_cluster_pulso`) e que o
+    /// `config.rs` usa ao recusar publicar `cifra_do_no` por no: o diagnostico
+    /// e de quem OPERA, e sai no log deste processo; o fio, que e de quem
+    /// pergunta, fica com «nao foi aceita» e nada mais.
+    ///
+    /// O `id` continua na frase de proposito: ele e a copia verbatim do campo
+    /// `"id"` que o proprio remetente mandou, e o texto agora e funcao so
+    /// dele -- zero bit sobre o estado deste no. Tirar custaria ao operador
+    /// legitimo saber de QUAL par e a recusa que o cliente dele mostrou.
+    fn recusa_da_prova(&self, id: &str, detalhe: &str) -> PhxError {
+        eprintln!("cluster: a prova do pulso de {id:?} nao foi aceita -- {detalhe}");
+        PhxError::Autorizacao(format!(
+            "a prova do pulso de {id:?} nao foi aceita por este no; o motivo \
+             esta no log deste processo"
+        ))
+    }
+
     /// Confere que quem mandou este pulso e mesmo o no que ele diz ser.
     ///
     /// `estatica` e preguicosa de proposito: o caminho em que nao ha nada a
@@ -501,17 +531,52 @@ impl EstadoCluster {
         let Some(no) = self.no(id) else {
             // O chamador ja recusou o id fora da lista; esta e a rede de
             // baixo, para o dia em que houver um segundo chamador.
+            //
+            // Ela fica FORA do colapso do 435, medido: o bit que ela entrega
+            // -- «X esta na lista?» -- ja esta no VEREDITO, e nao no texto.
+            // Na configuracao de fabrica (`exigir_prova_do_pulso` desligado)
+            // um pulso SEM prova nenhuma e aceito para quem esta na lista e
+            // recusado para quem nao esta: o atacante enumera a lista sem ler
+            // frase alguma. Colapsar o texto compraria zero bit e custaria a
+            // recusa em voz alta que o A11 escolheu de proposito -- e e ela
+            // que faz a configuracao torta aparecer no primeiro pulso, e nao
+            // numa eleicao com eleitor fantasma. O que o 435 fecha e outro
+            // bit, «X tem pino aqui?», que o veredito NAO carrega: os dois
+            // lados recusam, e o texto era o unico canal.
             return Err(PhxError::Autorizacao(format!(
                 "o pulso de {id:?} traz prova de um no que nao esta na lista"
             )));
         };
-        let Some(publica) = no.pino_do_fio()? else {
-            return Err(PhxError::Autorizacao(format!(
-                "o pulso de {id:?} traz prova, mas cluster.nos[{id}].chave_do_fio \
-                 esta vazio neste no: sem a chave publica dele nao ha como \
-                 conferir. Preencha o pino ou tire a prova do outro lado"
-            )));
-        };
+        // Daqui para baixo TODA falha sai pela mesma porta: quem conta o
+        // porque e `recusa_da_prova`, no log, e nunca o fio. O pino torto
+        // entra junto pelo mesmo motivo do pino ausente -- «`chave_do_fio` de
+        // X nao e hexadecimal» tambem e uma resposta sobre a configuracao de
+        // X, e so muda a palavra do mapa.
+        let pino = no
+            .pino_do_fio()
+            .map_err(|e| self.recusa_da_prova(id, &e.to_string()))?;
+        // **O pino CEGO, e por que a frase unica sozinha comprava ZERO.**
+        //
+        // Medido em 40 de 40 corridas: com a frase ja colapsada, o no COM pino
+        // respondia `"ms":1` e o no SEM pino `"ms":0` -- o mesmo mapa, no mesmo
+        // JSON, num campo ao lado. Voltar antes do X25519 e do HMAC era a
+        // diferenca, e o servidor a publicava arredondada em milissegundos.
+        // Fechar so o texto seria envolver em vez de substituir: duas letras no
+        // script do atacante e o mapa voltava inteiro.
+        //
+        // Entao o caminho sem pino paga o MESMO trabalho antes de recusar,
+        // contra o ponto-base do X25519 -- que e de ordem plena e por isso nao
+        // cai no crivo do `segredo`.
+        //
+        // **E a prova FECHA contra ele, para qualquer membro do cluster.**
+        // `x25519::segredo(minha, BASE)` e a MINHA chave publica, e a chave
+        // do HMAC vira `SHA256(ROTULO || minha_publica)` -- conta que todo
+        // par faz sem privada nenhuma, porque o `chave_do_fio` que ele guarda
+        // para mim e justamente essa publica. Ou seja: o `conferir` cego
+        // compra SO o relogio, e nada de identidade. A UNICA garantia do no
+        // sem pino e a recusa incondicional logo abaixo do `conferir`, e o
+        // teste `forja_contra_o_pino_cego_nao_entra_nem_marca_provado` a trava.
+        let publica = pino.unwrap_or(phxsql_core::x25519::BASE);
         let quando = pedido.inteiro_ou("quando", 0);
         let nonce = pedido.texto_ou("nonce", "").trim();
         let campos = crate::pulso::Assinado {
@@ -528,7 +593,42 @@ impl EstadoCluster {
         // A ORDEM importa: o HMAC primeiro, o cache do nonce depois. Ao
         // contrario, quem nao tem a chave encheria a fila de nonces deste no
         // so mandando pulso torto.
-        crate::pulso::conferir(&estatica()?, &publica, &campos, canal, prova)?;
+        //
+        // A estatica DESTE no entra na mesma porta: um erro dela distinguiria
+        // de novo os dois lados no dia em que a chave local faltasse. Ela
+        // continua preguicosa onde o doc-comment promete -- o pulso SEM prova
+        // volta bem acima e nao chega aqui.
+        let minha = estatica().map_err(|e| self.recusa_da_prova(id, &e.to_string()))?;
+        crate::pulso::conferir(&minha, &publica, &campos, canal, prova)
+            .map_err(|e| self.recusa_da_prova(id, &e.to_string()))?;
+        // **ESTA E A PORTA do no sem pino, e nao um reforco.** Com o pino
+        // cego, uma prova forjada por qualquer membro do cluster PASSA no
+        // `conferir` acima (ver o comentario do pino cego) -- entao, daqui
+        // para baixo, so esta linha separa o forjador do `marcar_provado` e da
+        // antirrepeticao. Apaga-la deixa quem tem a credencial entrar como o no
+        // sem pino E o marca provado: o no legitimo, que nao sabe provar, passa
+        // a ser recusado pelo TOFU. Teste que trava:
+        // `forja_contra_o_pino_cego_nao_entra_nem_marca_provado`.
+        //
+        // Ela nao sobe para antes do `conferir`, tambem: ali ela devolveria o
+        // relogio ao atacante -- `"ms":1` contra `"ms":0` em 40 de 40, o mesmo
+        // mapa que a frase unica fechou. O lugar dela e EXATAMENTE aqui: depois
+        // do trabalho, antes de qualquer efeito.
+        if pino.is_none() {
+            return Err(self.recusa_da_prova(
+                id,
+                &format!(
+                    "cluster.nos[{id}].chave_do_fio esta vazio neste no: sem a \
+                     chave publica dele nao ha como conferir. Preencha o pino \
+                     ou tire a prova do outro lado"
+                ),
+            ));
+        }
+        // A antirrepeticao fica FORA do colapso, e de proposito: so chega aqui
+        // quem ja fechou o HMAC, isto e, quem tem a chave. Nao ha oraculo a
+        // fechar para quem ja provou ser o no, e «carimbo fora da janela» e
+        // «nonce repetido» sao justamente o que o par legitimo precisa ler no
+        // cliente dele para acertar o relogio.
         self.antirrepeticao
             .aceitar(id, nonce, quando, crate::agora_ms())?;
         self.marcar_provado(id);
@@ -1085,6 +1185,80 @@ mod testes {
             e.mapa()["no3"].posicao,
             exato - 1,
             "o pulso com posicao impossivel nao substitui o bom"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **A recusa incondicional do no SEM pino e a porta, e nao enfeite --
+    /// pedido 435, a volta do integrador.**
+    ///
+    /// # O que este teste mede
+    ///
+    /// O pino cego (`x25519::BASE`) fecha o canal do relogio, e com ele abre
+    /// um caminho que nao existia: `segredo(minha, BASE)` e a MINHA publica,
+    /// que todo par do cluster tem, e a prova conferida contra ela FECHA para
+    /// qualquer membro. A forja aqui e montada so com essa publica -- nenhuma
+    /// privada do `no1` entra na conta, que e a posicao do atacante do 278.
+    ///
+    /// O canario vem antes: a forja TEM de fechar no `pulso::conferir` contra
+    /// o ponto-base. Se um dia deixar de fechar, este teste cai ali, dizendo
+    /// por que -- em vez de continuar verde medindo uma forja que nao forja.
+    ///
+    /// # O dano, e nao a resposta
+    ///
+    /// Com a linha `if pino.is_none()` apagada, o `conferir_identidade`
+    /// devolve `Ok` E o `no1` fica marcado provado: o forjador entrou como o
+    /// no sem pino, e o `no1` de verdade -- que nao sabe provar -- passa a ser
+    /// recusado pelo TOFU no pulso seguinte. As duas coisas sao medidas.
+    #[test]
+    fn forja_contra_o_pino_cego_nao_entra_nem_marca_provado() {
+        let dir = DirTemp::novo("cluster-pino-cego");
+        // `config_de_teste`: este e o `no2`, e o `no1` NAO tem `chave_do_fio`.
+        let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
+        assert!(e.no("no1").unwrap().pino_do_fio().unwrap().is_none());
+
+        let minha = [0x5au8; 32];
+        let minha_publica = phxsql_core::x25519::chave_publica(&minha);
+        let quando = crate::agora_ms();
+        let campos = crate::pulso::Assinado {
+            de: "no1",
+            para: "no2",
+            papel: "master",
+            epoca: 9,
+            posicao: 0,
+            incompleta: false,
+            prioridade: 0,
+            quando,
+            nonce: "forja-1",
+        };
+        // So a PUBLICA de quem confere -- o que o atacante tem.
+        let forjada = crate::pulso::forjar_contra_o_pino_cego(&minha_publica, &campos, None);
+
+        // O canario: a forja fecha contra o ponto-base. E por isso que a linha
+        // da recusa e a garantia inteira.
+        crate::pulso::conferir(&minha, &phxsql_core::x25519::BASE, &campos, None, &forjada).expect(
+            "a forja deixou de fechar contra o pino cego -- reveja o teste antes de confiar nele",
+        );
+
+        let pedido = Json::analisar(&format!(
+            r#"{{"id":"no1","papel":"master","epoca":9,"posicao":0,
+                "incompleta":false,"prioridade":0,"para":"no2",
+                "quando":{quando},"nonce":"forja-1","prova":"{forjada}"}}"#
+        ))
+        .unwrap();
+        let r = e.conferir_identidade(
+            "no1",
+            &pulso(PapelVivo::Master, 9, 0),
+            &pedido,
+            None,
+            || Ok(minha),
+        );
+        let aceito = r.is_ok();
+        let marcado = e.ja_provou("no1");
+        assert!(
+            !aceito && !marcado,
+            "a prova FORJADA com a publica deste no entrou pelo no sem pino: \
+             aceito={aceito}, marcado_provado={marcado}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -186,8 +186,16 @@ fn papel_e_epoca(porta: u16) -> (String, i64) {
 /// `assinante` e a privada de quem assina -- e e o parametro que separa o no
 /// legitimo do intruso: os dois montam o MESMO corpo, e so a chave difere.
 fn pulso_de_b(papel: &str, epoca: u64, assinante: Option<&str>, nonce: &str) -> String {
+    pulso_de("noB", papel, epoca, assinante, nonce)
+}
+
+/// O mesmo pulso, de QUALQUER par da lista -- o `pulso_de_b` e este com o id
+/// preso. Um motor so: dois montadores de pulso divergiriam no dia em que um
+/// campo entrasse na mensagem assinada, e a prova de um passaria a nao fechar
+/// pelo motivo errado.
+fn pulso_de(id: &str, papel: &str, epoca: u64, assinante: Option<&str>, nonce: &str) -> String {
     let mut campos = format!(
-        r#""op":"cluster_pulso","id":"noB","papel":"{papel}","epoca":{epoca},"posicao":0,"incompleta":false,"prioridade":0"#
+        r#""op":"cluster_pulso","id":"{id}","papel":"{papel}","epoca":{epoca},"posicao":0,"incompleta":false,"prioridade":0"#
     );
     if let Some(semente) = assinante {
         let quando = phxsql_server::agora_ms();
@@ -195,7 +203,7 @@ fn pulso_de_b(papel: &str, epoca: u64, assinante: Option<&str>, nonce: &str) -> 
             &privada(semente),
             &publica(PRIV_A),
             &Assinado {
-                de: "noB",
+                de: id,
                 para: "noA",
                 papel,
                 epoca,
@@ -592,4 +600,114 @@ fn ve_vivo_no_tunel(porta: u16, priv_do_no: &str, alvo: &str) -> bool {
                 .any(|n| n.texto_ou("id", "") == alvo && n.booleano_ou("vivo", false))
         })
         .unwrap_or(false)
+}
+
+/// A resposta sem o `ms`, que e RELOGIO e nao texto -- os dois se comparam
+/// separados, porque um cai por carga da maquina e o outro nunca.
+fn sem_o_relogio(j: &Json) -> String {
+    let texto = j.escrever();
+    let Some(inicio) = texto.find(r#","ms":"#) else {
+        return texto;
+    };
+    let resto = &texto[inicio + 6..];
+    let fim = resto
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(resto.len());
+    format!("{}{}", &texto[..inicio], &resto[fim..])
+}
+
+/// **Prova real do pedido 435 (SEC A2, 23/09/2026).** A recusa da prova do
+/// pulso nao diz QUAIS nos tem pino neste no -- nem pela frase, nem pelo
+/// relogio que vem ao lado dela.
+///
+/// # Por que soquete
+///
+/// O que o pedido acusa e o que chega AO FIO: o texto sai de `cluster.rs`,
+/// atravessa `texto_do_erro` e a montagem da resposta, e so ali vira o `erro`
+/// que o atacante le -- e so ali ganha o campo `ms`, que um teste de unidade
+/// sobre `conferir_identidade` nao veria existir.
+///
+/// # O desenho
+///
+/// O `noA` sobe com a lista de sempre: o `noB` COM `chave_do_fio` e o `noC`
+/// SEM. Os dois recebem um pulso com prova assinada por quem nao e eles. As
+/// duas respostas tem de ser a mesma, trocado o id -- que e o unico campo que
+/// o proprio remetente mandou.
+///
+/// # A metade que quase escapou, medida
+///
+/// Colapsar so a frase comprava ZERO: com o texto ja unico, `ms` saiu **1
+/// contra 0 em 40 de 40** corridas, porque o caminho sem pino voltava antes do
+/// X25519 e do HMAC. O mapa tinha mudado de campo, nao sumido. Por isso o
+/// `assert` do relogio esta aqui ao lado do da frase, e por isso o pino cego
+/// existe no `cluster.rs`.
+///
+/// # O defeito reposto
+///
+/// Duas formas, e a guarda cai nas duas: devolver as duas frases separadas, ou
+/// voltar a recusar o no sem pino ANTES do `pulso::conferir`.
+#[test]
+fn o_pulso_nao_diz_quais_nos_tem_pino() {
+    let base = DirTemp::novo("identidade-pulso-mapa-do-pino");
+    let porta = porta_livre();
+    // Fabrica: `exigir_prova_do_pulso` desligado. E a configuracao em que o
+    // mapa vale ouro, porque e nela que o no sem pino ainda passa sem prova.
+    let _a = subir_no_a(&base, porta, false, &para_hex(&publica(PRIV_B)));
+
+    let com_pino = falar(
+        porta,
+        &pulso_de("noB", "master", 9, Some(PRIV_INTRUSO), "m1"),
+    );
+    let sem_pino = falar(
+        porta,
+        &pulso_de("noC", "master", 9, Some(PRIV_INTRUSO), "m2"),
+    );
+    assert!(
+        !com_pino.booleano_ou("ok", true) && !sem_pino.booleano_ou("ok", true),
+        "alguma das duas passou -- a medida perde o sentido:\n  {}\n  {}",
+        com_pino.escrever(),
+        sem_pino.escrever()
+    );
+    // A resposta INTEIRA, e nao so o campo `erro`: um `codigo` ou um `nome`
+    // diferente seria o mesmo mapa por outro campo.
+    assert_eq!(
+        sem_o_relogio(&com_pino).replace("noB", "{id}"),
+        sem_o_relogio(&sem_pino).replace("noC", "{id}"),
+        "as duas recusas diferem, e a diferenca e o mapa de quais nos tem pino"
+    );
+
+    // O RELOGIO, que e o canal para onde o mapa se mudou quando a frase
+    // fechou. Nao se afirma igualdade de uma amostra -- isso cairia por carga
+    // da maquina. Afirma-se que a separacao SUMIU: com o defeito, 40/40
+    // separavam; um classificador que ainda acerte 34 das 40 nao e ruido.
+    let mut separadas = 0;
+    for i in 0..40 {
+        let b = falar(
+            porta,
+            &pulso_de("noB", "master", 9, Some(PRIV_INTRUSO), &format!("b{i}")),
+        );
+        let c = falar(
+            porta,
+            &pulso_de("noC", "master", 9, Some(PRIV_INTRUSO), &format!("c{i}")),
+        );
+        if b.inteiro_ou("ms", -1) != c.inteiro_ou("ms", -2) {
+            separadas += 1;
+        }
+    }
+    assert!(
+        separadas <= 34,
+        "o `ms` da resposta separa o no com pino do sem pino em {separadas} de \
+         40: a frase fechou e o relogio reabriu o mesmo mapa"
+    );
+
+    // O que o mapa VALIA: o `noC`, sem pino, continua sendo aceito sem prova
+    // nenhuma -- e exatamente onde o 278 nao pega. Enquanto isto for verdade,
+    // a frase unica nao e zelo, e a guarda.
+    let sem_prova = falar(porta, &pulso_de("noC", "replica", 0, None, "m3"));
+    assert!(
+        sem_prova.booleano_ou("ok", false),
+        "o no sem pino passou a recusar pulso sem prova: reveja o porque desta \
+         guarda antes de apaga-la\n  {}",
+        sem_prova.escrever()
+    );
 }

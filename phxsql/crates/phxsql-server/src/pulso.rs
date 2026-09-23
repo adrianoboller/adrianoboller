@@ -130,13 +130,41 @@ impl Assinado<'_> {
 /// que nao ha nada a distribuir -- o que A usa para assinar e o que B usa para
 /// conferir, e ninguem mais no cluster chega nele.
 fn chave_do_par(privada: &[u8; 32], publica_do_outro: &[u8; 32]) -> Result<[u8; 32]> {
-    let segredo = x25519::segredo(privada, publica_do_outro)?;
-    // O segredo cru do X25519 nunca vira chave de HMAC direto: passa pelo
-    // hash com rotulo, como o `MixKey` do aperto faz com o dele.
+    Ok(chave_do_segredo(&x25519::segredo(
+        privada,
+        publica_do_outro,
+    )?))
+}
+
+/// O segredo cru do X25519 nunca vira chave de HMAC direto: passa pelo hash
+/// com rotulo, como o `MixKey` do aperto faz com o dele.
+///
+/// Separada do `chave_do_par` so para a forja do teste do 435 passar pela
+/// MESMA derivacao da producao: uma segunda copia desta conta no teste
+/// divergiria no dia em que o rotulo mudasse, a forja deixaria de fechar, e o
+/// teste passaria pelo motivo errado.
+fn chave_do_segredo(segredo: &[u8; 32]) -> [u8; 32] {
     let mut m = Vec::with_capacity(ROTULO.len() + 32);
     m.extend_from_slice(ROTULO);
-    m.extend_from_slice(&segredo);
-    Ok(sha256(&m))
+    m.extend_from_slice(segredo);
+    sha256(&m)
+}
+
+/// **A forja que o pino cego do 435 admite**, montada so com dado PUBLICO.
+///
+/// `x25519::segredo(privada, BASE)` e a propria chave publica de quem confere,
+/// e essa publica todo par do cluster tem -- e o `chave_do_fio` que ele guarda.
+/// Entao a prova conferida contra o ponto-base FECHA para qualquer membro,
+/// sem privada nenhuma. Existe so em teste, e so para provar que a recusa
+/// incondicional do no sem pino, no `cluster.rs`, e a porta e nao enfeite.
+#[cfg(test)]
+pub(crate) fn forjar_contra_o_pino_cego(
+    publica_de_quem_confere: &[u8; 32],
+    campos: &Assinado<'_>,
+    canal: Option<&[u8]>,
+) -> String {
+    let k = chave_do_segredo(publica_de_quem_confere);
+    para_hex(&hmac_sha256(&k, &campos.mensagem(canal)))
 }
 
 /// A prova, em hexadecimal.
@@ -156,6 +184,14 @@ pub fn assinar(
 /// A comparacao e em tempo constante pelo mesmo motivo de sempre: uma
 /// comparacao que sai no primeiro byte diferente conta, pelo relogio, quantos
 /// bytes o palpite acertou.
+///
+/// **O texto destes erros e DIAGNOSTICO LOCAL e nao vai ao fio** -- pedido 435
+/// (SEC A2). Quem chama e `EstadoCluster::conferir_identidade`, que os manda
+/// para o log deste processo por `recusa_da_prova` e devolve ao remetente uma
+/// frase unica. O motivo esta la: «nao fecha» quer dizer «ha pino aqui», e
+/// «nao ha pino» quer dizer «este no ainda passa sem prova» -- distinguir os
+/// dois no fio desenha o mapa de onde atacar. Segundo chamador que aparecer
+/// tem a mesma obrigacao.
 pub fn conferir(
     privada: &[u8; 32],
     publica_do_remetente: &[u8; 32],
@@ -171,11 +207,13 @@ pub fn conferir(
     let k = chave_do_par(privada, publica_do_remetente)?;
     let esperada = hmac_sha256(&k, &campos.mensagem(canal));
     if !iguais_em_tempo_constante(&veio, &esperada) {
-        return Err(PhxError::Autorizacao(format!(
-            "a prova do pulso de {:?} nao fecha: quem mandou nao tem a chave \
-             que corresponde ao chave_do_fio deste no",
-            campos.de
-        )));
+        // Sem o `de`: quem chama ja nomeia o no na linha do log, e detalhe que
+        // nao repete o id e detalhe que vaza menos se um dia escapar ao fio.
+        return Err(PhxError::Autorizacao(
+            "a prova nao fecha: quem mandou nao tem a chave que corresponde ao \
+             chave_do_fio deste no"
+                .into(),
+        ));
     }
     Ok(())
 }
