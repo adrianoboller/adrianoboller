@@ -44,7 +44,7 @@ import { subir } from './servidor.mjs';
 import { subirFalsa } from './claude-falsa.mjs';
 import { entrar, api, Falha, verdade, igual, contem } from './apoio.mjs';
 import {
-  definirIA, lerIA, abrirConfigClaude, abrirQuery, testarChave, abrirPainelIA,
+  definirIA, lerIA, lerGavetas, abrirConfigClaude, abrirQuery, testarChave, abrirPainelIA,
   escolherReceita, definirDb, verEnvio, perguntarEEsperar, medirCrescimento, cenarioParaIA,
 } from './claude-apoio.mjs';
 import {
@@ -228,16 +228,63 @@ async function bateria1(navegador, servidor, falsa) {
     });
 
   await prova(1, 'config_remover_chave_desliga_tudo',
-    'Remover apaga a chave e desliga o interruptor; o botao de remover fica desabilitado.',
+    'Remover TIRA a chave das duas gavetas, devolve o endereco ao oficial, desliga o interruptor e desabilita o proprio botao.',
     async () => {
       await abrirConfigClaude(page);
       await page.click('#iaRemover');
       await page.waitForSelector('#aviso:not([hidden])', { timeout: 5000 });
       const cfg = await lerIA(page);
-      igual(cfg.chave, '', 'a chave deveria ter sido apagada');
+      // AUSENTE, e nao `""` -- mudou no pedido 339(a), de proposito: segredo
+      // vazio guardado e segredo que alguem acha que ainda esta la. A prova
+      // olha as DUAS gavetas em separado, porque o `lerIA` as emenda e a
+      // emenda esconderia justamente onde cada campo repousa.
+      verdade(!cfg.chave, 'a chave deveria ter sido apagada');
       igual(cfg.ligado, false, 'o interruptor deveria ter desligado junto');
+      const g = await lerGavetas(page);
+      verdade(!('chave' in g.aba), 'a chave nao deveria sobrar no sessionStorage');
+      verdade(!/sk-ant/.test(g.discoCru), 'a chave NUNCA deveria estar no localStorage');
+      verdade(!('endpoint' in g.aba),
+        'remover deveria devolver o endereco ao oficial: endereco plantado que sobrevive '
+        + 'a remocao e uma tubulacao pronta para a chave seguinte');
       const desabilitado = await page.$eval('#iaRemover', el => el.disabled);
       verdade(desabilitado, 'sem chave, o botao Remover deveria ficar desabilitado');
+    });
+
+  // A gaveta da chave e do ENDERECO e o `sessionStorage`, e o resto e
+  // preferencia no `localStorage`. Prova propria porque e o que o pedido
+  // 339(a) mudou, e porque as outras provas leem a configuracao ja emendada.
+  await prova(1, 'a_chave_repousa_na_ABA_e_nunca_no_disco',
+    'Chave e endereco no sessionStorage (morrem com a aba); modelo e interruptor no localStorage.',
+    async () => {
+      // A CHAVE ENTRA PELA TELA, e nao pelo `definirIA`.
+      //
+      // A primeira versao desta prova chamava `definirIA` e depois olhava as
+      // gavetas -- e PASSAVA com o defeito reposto, porque provava onde o
+      // AJUDANTE tinha escrito, nunca onde a tela escreve. O caminho que
+      // decide o repouso e o `gravar()` do modulo, e so o botao Salvar o
+      // chama. Teste que passa por engano e pior que teste que falta.
+      await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+      await abrirConfigClaude(page);
+      await page.fill('#iaChave', CHAVE_DE_TESTE);
+      await page.selectOption('#iaModelo', 'claude-haiku-4-5');
+      await page.check('#iaLigado');
+      await page.click('#iaSalvar');
+      await page.waitForSelector('#aviso:not([hidden])', { timeout: 5000 });
+      const g = await lerGavetas(page);
+      verdade(!/sk-ant/.test(g.discoCru),
+        `a chave apareceu no localStorage: ${g.discoCru}`);
+      verdade(!!g.aba.chave, 'a chave deveria estar no sessionStorage');
+      verdade(!('chave' in g.disco) && !('endpoint' in g.disco),
+        'nem chave nem endereco podem morar no localStorage');
+      igual(g.disco.ligado, true, 'o interruptor e preferencia: fica no localStorage');
+      igual(g.disco.modelo, 'claude-haiku-4-5', 'o modelo e preferencia: fica no localStorage');
+      // A TELA nunca mostra a chave inteira -- mascara do VALOR, nao de CSS.
+      const html = await page.$eval('#iaSalvar', el => el.closest('.tela, #painel, body').innerHTML);
+      verdade(!html.includes(CHAVE_DE_TESTE),
+        'a chave inteira apareceu no DOM da tela de Configuracoes');
+      // Devolve o estado que o resto da bateria 1 espera (a Anthropic falsa).
+      await definirIA(page, { chave: CHAVE_DE_TESTE, modelo: 'claude-haiku-4-5',
+                              ligado: true, endpoint: falsa.endpointMensagens });
     });
 
   // Recompoe o estado para o resto da bateria 1.

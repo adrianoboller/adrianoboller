@@ -43,7 +43,23 @@ async function medir(page, ondeEstou) {
     // dado nenhuma -- passando verde por nao ter o que reprovar. A outra
     // metade (o texto MISTO que sai todo em caixa alta) nunca dependeu desta
     // lista, e e ela que continuava pegando «Blumenau».
-    const dado = el => el.closest('td.dado, td.phx-td, .rot-dado, #grade td, .celula-dado, .dado');
+    // `code` e `pre` entraram em 23/09/2026, e com um defeito real atras:
+    // a tela de Integracao com a Claude publicava o endereco da API como
+    // `HTTPS://API.ANTHROPIC.COM/V1/MESSAGES`. O `<code>` estava dentro do
+    // `span:first-child` de um `.cmp`, que leva `text-transform:uppercase`
+    // por ser o ROTULO do campo -- e vence o `.leg{text-transform:none}` por
+    // um elemento de especificidade.
+    //
+    // Nenhuma das duas metades que ja existiam o pegava: o endereco nao esta
+    // numa celula de grade (a lista de seletores nao o alcancava) e a URL e
+    // toda minuscula na origem, entao a regra do texto MISTO tambem nao.
+    //
+    // A regra nova nao precisa de heuristica: `<code>` e `<pre>` existem para
+    // dizer «isto e exatamente o que esta escrito». Caixa alta por estilo
+    // sobre um deles e sempre mentira sobre o dado -- inclusive quando o dado
+    // e uma URL, e ai custa mais: dobrar a caixa apaga a diferenca que
+    // denunciaria um endereco sosia.
+    const dado = el => el.closest('td.dado, td.phx-td, .rot-dado, #grade td, .celula-dado, .dado, code, pre');
     const and = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     const jaVistos = new Set();
     for (let n = and.nextNode(); n; n = and.nextNode()) {
@@ -146,6 +162,19 @@ export const caso = {
       ['jobs', () => page.evaluate(() => telaJobs())],
       ['sequencias', () => page.evaluate(d => verSequencias(d), db)],
       ['systables', () => page.evaluate(d => verSysTables(d), db)],
+      // A tela que pagou a regra nova do `<code>`: o endereco da API saia em
+      // caixa alta. Entra com uma chave FALSA de propriedade -- material com o
+      // FORMATO, nunca o valor de uma chave real -- porque a tela desenha
+      // diferente com e sem chave, e a metade com chave e a que tem legenda,
+      // aviso e mascara para medir.
+      ['integracao com a Claude', async () => {
+        await page.evaluate(() => {
+          sessionStorage.setItem('phxsql.ia.chave', JSON.stringify(
+            { chave: 'sk-ant-api03-ZZZZ-bateria-css-global-nao-e-chave-real-AB12' }));
+          localStorage.setItem('phxsql.ia', JSON.stringify({ ligado: true, modelo: 'claude-opus-5' }));
+          PhxIA.telaConfig();
+        });
+      }],
     ];
 
     for (const [nome, abrir] of telas) {

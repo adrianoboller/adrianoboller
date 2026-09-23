@@ -50,5 +50,28 @@ export const caso = {
     const html = await page.content();
     verdade(!html.includes(CREDENCIAL.SENHA),
       'a senha digitada ficou no documento depois de entrar');
+
+    // ... E NEM NO `.value` VIVO DOS CAMPOS, que e onde ela estava.
+    //
+    // A linha de cima existe desde que este caso nasceu, e PASSAVA com o
+    // defeito no lugar: `page.content()` serializa o HTML, e o valor vivo de
+    // um `<input>` nao aparece na serializacao -- so o ATRIBUTO `value`
+    // aparece. Medido em 23/09/2026 (pedido 339): depois de entrar e passear
+    // por 113 telas, `#s.value` e `#t.value` ainda traziam a senha e o token
+    // do servidor em claro, pela sessao inteira, ao alcance de qualquer
+    // script. `type="password"` esconde os GLIFOS, nao o valor -- e um teste
+    // que passa por engano e pior que um teste que falta.
+    const sobrou = await page.evaluate(() => {
+      const o = [];
+      for (const el of document.querySelectorAll('input')) {
+        const v = String(el.value || '');
+        if (!v) continue;
+        if (el.type === 'password' || el.id === 't' || el.id === 'k')
+          o.push(`${el.id || el.name || el.className}[type=${el.type}] com ${v.length} caracteres`);
+      }
+      return o;
+    });
+    verdade(sobrou.length === 0,
+      `credencial viva em campo do formulario depois de entrar: ${sobrou.join(', ')}`);
   },
 };

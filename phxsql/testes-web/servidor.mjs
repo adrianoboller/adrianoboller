@@ -40,6 +40,16 @@ function config(base, hash, portaDados, portaWeb) {
     // vencer no meio de um caso longo e o erro sairia como «nao autenticado»,
     // que manda procurar defeito no lugar errado.
     web: { ligado: true, bind: `127.0.0.1:${portaWeb}`, sessao_minutos: 60 },
+    // A PORTA HTTP DESTA BATERIA E TEXTO PURO, E DE PROPOSITO.
+    //
+    // O pedido 370 fez `cifra_fio.exigir` nascer `true`, e desde entao toda
+    // porta HTTP sem proxy TLS responde 403 com uma explicacao em JSON --
+    // inclusive esta. A bateria inteira parava em `#btEntrar` nao visivel,
+    // sem uma linha dizendo por que: a pagina que o navegador recebia era o
+    // proprio 403. Nao ha proxy TLS aqui e nao pode haver (zero dependencias),
+    // entao o escape ESCRITO e o caminho certo -- o mesmo que o config.rs
+    // oferece. Tirar esta linha volta a matar a bateria inteira.
+    cifra_fio: { exigir: false },
     recursos: { durabilidade: 'sistema', cache_paginas: 512 },
     // A sonda de saude do disco a cada 2 s, e nao a cada 60: o caso
     // `saude-do-disco` espera o EVENTO da proxima passada, e um minuto por

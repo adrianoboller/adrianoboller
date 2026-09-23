@@ -1478,6 +1478,16 @@ thead th{
   font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;
   text-transform:uppercase;color:var(--texto-3);font-weight:500;white-space:nowrap;
 }
+/* O cabecalho de coluna vai em caixa alta porque e ROTULO. O que estiver
+   dentro de um `<code>` nao vai, porque `<code>` quer dizer «isto e
+   exatamente o que esta escrito» -- e ai a caixa alta vira mentira sobre o
+   dado, do mesmo naipe do «Blumenau» virando «BLUMENAU».
+
+   Achado MEDINDO, em 23/09/2026: o cabecalho «campo no config.json» da tela
+   de Configuracoes do servidor publicava `CONFIG.JSON`, e quem le nao sabe
+   se o arquivo se chama assim. E a mesma familia do `table.montar th em`
+   logo acima, que ja abria a excecao para o `<em>` do cabecalho. */
+thead th code,thead th pre{text-transform:none;letter-spacing:0}
 tbody tr:hover{background:var(--painel-2)}
 td.dado{font-family:"IBM Plex Mono",monospace;font-size:12.5px}
 td.num{text-align:right;font-variant-numeric:tabular-nums}
@@ -2628,6 +2638,25 @@ async function entrar() {
       if (est.servidor) pedido.servidor = est.servidor;
       est.usuario = await api("login", pedido);
     }
+    // A SENHA, O TOKEN E A CHAVE SAEM DO DOCUMENTO assim que a entrada dá
+    // certo (pedido 339, o irmão medido do repouso da chave da Claude).
+    //
+    // `type="password"` esconde os glifos, NAO o valor: medido no navegador,
+    // depois de entrar e de passear por 113 telas, `#s.value` e `#t.value`
+    // ainda traziam a senha e o token do servidor, em claro, no documento —
+    // pela sessão inteira, ao alcance de qualquer script. É a mesma ilusão do
+    // mascaramento por CSS, e vale para o ativo MAIOR: o token do servidor
+    // vale tudo, e a senha vale mais que a chave de API de terceiro que o
+    // pedido foi buscar.
+    //
+    // Depois deste ponto nada mais os lê: `entrar()` já copiou os três para
+    // variáveis locais na primeira linha, `est.token` guarda o que o
+    // protocolo precisa (em MEMÓRIA, que cai no refresh), e o formulário fica
+    // escondido até um `location.reload()`. Custo para quem usa: zero.
+    //
+    // E NÃO se limpa no `catch`: entrada recusada tem de deixar o que foi
+    // digitado, senão consertar uma letra vira redigitar tudo.
+    for (const campo of ["#s", "#t", "#k"]) $(campo).value = "";
     // Carimba a data DEPOIS de a entrada dar certo: uma tentativa recusada
     // nao e um uso, e a coluna diz «último uso», nao «última tentativa».
     marcarUsoDaConexao();

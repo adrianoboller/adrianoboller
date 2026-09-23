@@ -7,8 +7,17 @@
  * regra da casa é zero dependências externas. As três saídas eram: acrescentar
  * a crate, escrever TLS aqui dentro, ou não passar pelo servidor. A escolhida
  * foi a terceira, e ela é melhor do que um contorno: o servidor NUNCA vê a
- * chave, nunca faz a chamada e não precisa de TLS. A chave é de quem usa, mora
- * no `localStorage` do navegador dele, e cada pessoa paga a própria conta.
+ * chave, nunca faz a chamada e não precisa de TLS. A chave é de quem usa e
+ * cada pessoa paga a própria conta.
+ *
+ * ## Onde a chave REPOUSA, e por que mudou (pedido 339(a))
+ *
+ * Ela morava no `localStorage`. Hoje mora no `sessionStorage` — a razão, a
+ * conta do custo para quem usa e o que isto NÃO conserta estão inteiros no
+ * comentário da seção «configuração», mais abaixo. Em uma linha: o que muda
+ * não é o alcance de um XSS (igual nos dois), é que a chave deixa de
+ * sobreviver ao `Sair`, ao fechar o navegador e à troca de pessoa na
+ * máquina.
  *
  * O corolário é a regra que este arquivo inteiro respeita: **a chave não entra
  * em nenhum pedido ao PhxSql.** Ela só aparece no cabeçalho `x-api-key` do
@@ -111,35 +120,130 @@ window.PhxIA = (function () {
   const MAX_TOKENS = 4000;
 
   /* ------------------------------------------------------- configuração
-     Tudo no `localStorage`, que é do navegador de quem usa e nunca chega ao
-     servidor. Em janela privada o acesso pode ESTOURAR, e não só voltar
-     vazio — por isso todo toque é dentro de try/catch e a tela desenha certo
-     sem valor guardado. */
-  const GAVETA = "phxsql.ia";
+     DUAS gavetas, partidas pelo TEMPO DE VIDA e não pelo assunto — pedido
+     339(a).
 
-  function cfg() {
-    const padrao = { chave: "", modelo: MODELO_PADRAO, ligado: false,
-                     endpoint: ENDPOINT_OFICIAL };
+     O que é PREFERÊNCIA (modelo escolhido, interruptor) fica no
+     `localStorage`: é do navegador de quem usa, nunca chega ao servidor, e
+     durar para sempre é o que se quer dela.
+
+     O que é SEGREDO (a chave da API, e o endereço para onde ela vai) fica no
+     `sessionStorage`, que morre quando a aba fecha. O motivo NÃO é XSS — um
+     XSS na aba aberta lê as duas iguais, e o ativo maior (`est.token`) já
+     vive em memória. O motivo é o eixo que nada mais cobria: o
+     `localStorage` sobrevive ao `Sair`, ao fechar o navegador e à TROCA DE
+     PESSOA. Este console é declaradamente de máquina compartilhada — o
+     histórico de conexões diz «quem senta nesta máquina» —, e a chave da API
+     é de terceiro e paga por quem a digitou. Quem sentar depois não deve
+     achar a conta da Anthropic de outro ligada e pronta para gastar.
+
+     E o custo para quem usa é MEDIDO, não estimado: `sessionStorage`
+     SOBREVIVE ao F5 na mesma aba, e a janela destacada (`window.open` da
+     mesma origem) nasce com uma cópia dele. Ou seja, redigita-se uma vez por
+     aba — menos vezes do que o próprio login, que é de memória pura e cai a
+     cada recarga. A chave passa a durar MAIS que a sessão que a protege, em
+     vez de durar para sempre.
+
+     O endereço vai junto da chave, e não das preferências, porque é ele que
+     decide PARA ONDE o segredo sai: endereço plantado que sobrevive ao
+     fechar o navegador seria uma tubulação permanente para a chave seguinte.
+
+     Em janela privada o acesso pode ESTOURAR, e não só voltar vazio — por
+     isso todo toque é dentro de try/catch e a tela desenha certo sem valor
+     guardado. */
+  const GAVETA = "phxsql.ia";            // preferências, no localStorage
+  const COFRE  = "phxsql.ia.chave";      // segredo, no sessionStorage
+
+  const SEGREDOS = ["chave", "endpoint"];
+
+  /* O armazem chega como FUNCAO, e nao como referencia: em janela privada (e
+     com cookies bloqueados no Chrome) quem estoura e o proprio acesso a
+     `window.localStorage`, antes de qualquer `getItem`. Passar `localStorage`
+     como argumento avaliaria a propriedade FORA do try, e a tela inteira
+     deixaria de desenhar. */
+  const DISCO = () => localStorage;
+  const ABA = () => sessionStorage;
+
+  function lerGaveta(armazem, nome) {
     try {
-      const c = JSON.parse(localStorage.getItem(GAVETA) || "{}");
-      return Object.assign(padrao, c && typeof c === "object" ? c : {});
-    } catch { return padrao; }
+      const o = JSON.parse(armazem().getItem(nome) || "{}");
+      return o && typeof o === "object" && !Array.isArray(o) ? o : {};
+    } catch { return {}; }
   }
 
+  function gravarGaveta(armazem, nome, valor) {
+    try { armazem().setItem(nome, JSON.stringify(valor)); } catch { /* privada */ }
+  }
+
+  /** Tira do `localStorage` a chave que rodadas anteriores gravaram ali, e a
+   *  passa para o cofre da aba — UMA vez, na primeira leitura.
+   *
+   *  Sem isto, quem já tinha chave guardada a veria sumir sem explicação
+   *  («Ainda não há chave guardada») e a redigitaria com a antiga ainda no
+   *  disco. Com isto, a chave sai do disco no primeiro desenho da tela e
+   *  continua valendo nesta aba. Devolve `true` quando houve mudança, e é
+   *  esse `true` que a tela de Configurações usa para DIZER o que aconteceu —
+   *  conserto calado em cima de segredo é o que faz alguém achar que ainda
+   *  tem o que não tem. */
+  let migrou = false;
+  function migrarDoDisco() {
+    const velha = lerGaveta(DISCO, GAVETA);
+    const achados = SEGREDOS.filter(k => velha[k] && k in velha);
+    if (!achados.length) return false;
+    const cofre = lerGaveta(ABA, COFRE);
+    for (const k of achados) if (!cofre[k]) cofre[k] = velha[k];
+    for (const k of SEGREDOS) delete velha[k];
+    gravarGaveta(ABA, COFRE, cofre);
+    gravarGaveta(DISCO, GAVETA, velha);
+    migrou = true;
+    return true;
+  }
+  const houveMigracao = () => migrou;
+
+  function cfg() {
+    migrarDoDisco();
+    const padrao = { chave: "", modelo: MODELO_PADRAO, ligado: false,
+                     endpoint: ENDPOINT_OFICIAL };
+    return Object.assign(padrao, lerGaveta(DISCO, GAVETA), lerGaveta(ABA, COFRE));
+  }
+
+  /** Grava cada campo na gaveta que lhe cabe. O partidor é a lista `SEGREDOS`
+   *  e não um `if` por campo: campo novo entra numa das duas listas, e não
+   *  num terceiro lugar que ninguém lembra de conferir. */
   function gravar(mudanca) {
-    const c = Object.assign(cfg(), mudanca);
-    try { localStorage.setItem(GAVETA, JSON.stringify(c)); } catch { /* privada */ }
-    return c;
+    migrarDoDisco();
+    const pref = lerGaveta(DISCO, GAVETA);
+    const cofre = lerGaveta(ABA, COFRE);
+    for (const k of Object.keys(mudanca || {})) {
+      if (SEGREDOS.includes(k)) cofre[k] = mudanca[k];
+      else pref[k] = mudanca[k];
+    }
+    // Segredo vazio SAI do cofre em vez de ficar como `""`: chave morta
+    // guardada é chave que alguém acha que ainda está lá.
+    for (const k of SEGREDOS) if (!cofre[k]) delete cofre[k];
+    for (const k of SEGREDOS) delete pref[k];
+    gravarGaveta(DISCO, GAVETA, pref);
+    gravarGaveta(ABA, COFRE, cofre);
+    return cfg();
   }
 
   /** Ligada é ter chave E interruptor. Sem as duas, a tela de Query não muda
-   *  em nada — que é o comportamento VELHO, e é o que o teste trava. */
+   *  em nada — que é o comportamento VELHO, e é o que o teste trava.
+   *
+   *  Com a chave na aba, «ligado sem chave» deixou de ser só o estado de quem
+   *  nunca configurou: é também o de quem configurou ontem e abriu uma aba
+   *  nova. A Query continua sem desenhar nada (o comportamento velho não
+   *  muda), e quem explica é a tela de Configurações, que é onde se conserta. */
   function ligada() {
     const c = cfg();
     return !!(c.ligado && c.chave);
   }
 
-  /** Só os quatro últimos, como cartão de crédito. Nunca a chave inteira. */
+  /** Só os quatro últimos, como cartão de crédito. Nunca a chave inteira.
+   *
+   *  O mascaramento é do VALOR — `slice(-4)` —, e não um `type=password` nem
+   *  um filtro de CSS por cima: esses dois deixam a chave inteira no DOM, de
+   *  onde qualquer script a lê. O que não se quer mostrar não se desenha. */
   function fim(chave) {
     return chave ? "····" + chave.slice(-4) : "";
   }
@@ -684,14 +788,34 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
   function telaConfig() {
     const c = cfg();
     const temChave = !!c.chave;
+    /* CAIXA ALTA SOBRE DADO, e como ela entra aqui.
+     *
+     * `.form-dbl .cmp > span:first-child` carrega `text-transform:uppercase`
+     * — certo, é o rótulo de cada campo deste formulário — e vence o
+     * `.form-dbl .cmp .leg { text-transform:none }` por UM elemento de
+     * especificidade. A linha do endereço da API tinha rótulo e valor dentro
+     * do mesmo `<span class="leg">`, que é o primeiro filho: medido no
+     * navegador, o `textContent` era `https://api.anthropic.com/v1/messages`
+     * e o `innerText` saía `HTTPS://API.ANTHROPIC.COM/V1/MESSAGES`.
+     *
+     * É a mentira do «Blumenau» virando «BLUMENAU», e aqui ela custa mais que
+     * o normal: o endereço é justamente o que a pessoa tem de JULGAR antes de
+     * deixar a chave sair por ele, e dobrar a caixa de uma URL apaga a
+     * diferença que denunciaria um endereço sósia. Por isso o rótulo e o
+     * valor viraram dois spans: o primeiro estiliza, o segundo nunca.
+     *
+     * E a linha do endereco e `.cmp` seco, sem `.linha-chk`: aquela classe poe
+     * o campo em LINHA e existe para caixa de marcar (controle + texto ao
+     * lado). Aqui nao ha controle nenhum, e em linha o rotulo quebrava em duas
+     * enquanto a URL ficava espremida no que sobrava. */
     folha(txt("tela.ia_titulo", "Integração com a Claude"),
-      txt("tela.ia_subtitulo", "a chave é sua e fica neste navegador · o servidor PhxSql não participa"),
+      txt("tela.ia_subtitulo", "a chave é sua e fica nesta aba · o servidor PhxSql não participa"),
       `<div class="aviso">
          ${marcado(txt("tela.ia_leia",
            "**Leia antes de ligar.** Esta tela liga o Centro de Controle direto na API da Anthropic, **do seu navegador**. Em português claro:"))}
          <ul class="lista-limpa" style="margin-top:8px">
            <li>· ${marcado(txt("tela.ia_leia_chave",
-               "a chave fica guardada **neste navegador** (no `localStorage`), e não no servidor — quem usar o console de outra máquina precisa da própria chave;"))}</li>
+               "a chave fica **nesta aba** do navegador, e não no servidor nem no disco: ela some quando você fecha a aba, e sobrevive a recarregar a página. Quem sentar nesta máquina depois de você não a encontra;"))}</li>
            <li>· ${marcado(txt("tela.ia_leia_sobe",
                "as suas perguntas e o contexto que você mandar (o **esquema** do banco, e as linhas se você marcar) **vão para a Anthropic**, que é uma empresa de fora;"))}</li>
            <li>· ${marcado(txt("tela.ia_leia_servidor",
@@ -706,9 +830,11 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
            <input id="iaChave" type="password" autocomplete="off"
                   placeholder="${temChave ? E(txt("tela.ia_chave_guardada", "guardada — digite para trocar")) : "sk-ant-…"}">
            <span class="leg">${temChave
-             ? marcado(txt("tela.ia_chave_fim", "Há uma chave guardada, terminada em `{fim}`."),
+             ? marcado(txt("tela.ia_chave_fim", "Há uma chave nesta aba, terminada em `{fim}` — ela some ao fechar a aba e sobrevive a recarregar a página."),
                        { fim: fim(c.chave) })
-             : E(txt("tela.ia_sem_chave", "Ainda não há chave guardada neste navegador."))}</span></label>
+             : c.ligado
+               ? marcado(txt("tela.ia_sem_chave_na_aba", "A integração está **ligada**, mas a chave não está nesta aba. Cole-a de novo para os botões da Claude voltarem à tela de Query."))
+               : E(txt("tela.ia_sem_chave", "Ainda não há chave nesta aba."))}</span></label>
 
          <label class="cmp"><span>${E(txt("tela.ia_modelo", "Modelo"))}</span>
            <select id="iaModelo">${MODELOS.map(m =>
@@ -721,18 +847,28 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
            <input id="iaLigado" type="checkbox"${c.ligado ? " checked" : ""}>
            <span>${E(txt("tela.ia_ligada", "Ligada — mostrar os botões da Claude na tela de Query"))}</span></label>
 
-         <div class="cmp linha-chk">
-           <span class="leg">${E(txt("tela.ia_endereco", "Endereço da API:"))}
-             <code>${E(c.endpoint || ENDPOINT_OFICIAL)}</code>
+         <!-- rotulo e endereco em spans SEPARADOS, e cmp seco (sem linha-chk):
+              ver a nota acima do folha(). NADA DE CRASE NESTE COMENTARIO --
+              ele mora dentro de um template literal, e uma crase o fecha. -->
+         <div class="cmp">
+           <span>${E(txt("tela.ia_endereco", "Endereço da API"))}</span>
+           <span class="leg"><code>${E(c.endpoint || ENDPOINT_OFICIAL)}</code>
              ${oficial(c) ? `<span class="pino ok">${E(txt("tela.ia_oficial", "oficial"))}</span>`
                           : `<span class="pino mal">${E(txt("tela.ia_nao_oficial", "NÃO é o oficial"))}</span>`}</span></div>
        </div>
+
+       ${oficial(c) ? "" : `<div class="aviso mal" id="iaEnderecoPerigo">${marcado(
+         txt("tela.ia_endereco_perigo", "**O endereço da API não é o oficial.** A sua chave sai desta tela para `{onde}`, e não para a Anthropic. Se você não trocou isto de propósito, remova a chave agora e feche esta aba."),
+         { onde: c.endpoint || ENDPOINT_OFICIAL })}</div>`}
+
+       ${houveMigracao() ? `<div class="aviso" id="iaMigrada">${marcado(
+         txt("tela.ia_migrada", "A chave que estava guardada **no disco deste navegador** foi movida para esta aba, e apagada do disco. Ela continua valendo agora; vai sumir quando você fechar a aba."))}</div>` : ""}
 
        <div class="dbl-titulo" style="margin-top:16px">
          <button class="botao incluir" id="iaSalvar">${E(txt("tela.salvar", "Salvar"))}</button>
          <button class="botao consultar" id="iaTestar">${E(txt("tela.ia_testar", "Testar a chave"))}</button>
          <button class="botao excluir" id="iaRemover"
-                 ${temChave ? "" : "disabled"}>${E(txt("tela.ia_remover", "Remover a chave deste navegador"))}</button>
+                 ${temChave ? "" : "disabled"}>${E(txt("tela.ia_remover", "Remover a chave"))}</button>
          <span class="cresce"></span>
        </div>
        <div id="iaRecado"></div>
@@ -752,13 +888,13 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       const m = { modelo: $("#iaModelo").value, ligado: $("#iaLigado").checked };
       if (nova) m.chave = nova;
       gravar(m);
-      avisar(txt("tela.ia_salva", "integração com a Claude salva neste navegador"));
+      avisar(txt("tela.ia_salva", "integração com a Claude salva — a chave nesta aba, o resto neste navegador"));
       telaConfig();
     };
 
     $("#iaRemover").onclick = () => {
-      gravar({ chave: "", ligado: false });
-      avisar(txt("tela.ia_removida", "chave removida deste navegador"));
+      gravar({ chave: "", endpoint: "", ligado: false });
+      avisar(txt("tela.ia_removida", "chave removida desta aba e do disco deste navegador"));
       telaConfig();
     };
 

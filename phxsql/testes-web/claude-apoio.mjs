@@ -7,20 +7,48 @@
  * segundo caminho de login nem uma segunda `api()` aqui. */
 import { abrirPeloMenu } from './apoio.mjs';
 
-/** Le/escreve a MESMA gaveta que `claude.js` usa (`phxsql.ia`), pelo
- *  `localStorage` do navegador -- e' o unico lugar onde a chave mora, e nao
- *  ha campo na tela para editar o `endpoint` (so' um `<code>` que MOSTRA
+/** Le/escreve as MESMAS DUAS gavetas que `claude.js` usa, partidas pelo tempo
+ *  de vida desde o pedido 339(a):
+ *
+ *    - `phxsql.ia`       no `localStorage`   -- preferencia (modelo, ligado)
+ *    - `phxsql.ia.chave` no `sessionStorage` -- segredo (chave, endpoint)
+ *
+ *  O partidor e' a lista `SEGREDOS`, copia da do modulo -- e e' por isso que
+ *  `SEGREDOS_DA_TELA` aparece aqui em vez de um `if (k === 'chave')`: campo
+ *  novo entra numa das duas listas, nao num terceiro lugar.
+ *
+ *  Nao ha campo na tela para editar o `endpoint` (so' um `<code>` que MOSTRA
  *  ele). Escrever aqui e' o caminho que a propria tela usaria se tivesse um
  *  formulario para isso -- nunca um atalho por dentro do modulo. */
+export const SEGREDOS_DA_TELA = ['chave', 'endpoint'];
+
 export async function definirIA(page, parcial) {
-  await page.evaluate(p => {
-    const atual = JSON.parse(localStorage.getItem('phxsql.ia') || '{}');
-    localStorage.setItem('phxsql.ia', JSON.stringify(Object.assign(atual, p)));
-  }, parcial);
+  await page.evaluate(([p, segredos]) => {
+    const ler = (a, k) => { try { return JSON.parse(a.getItem(k) || '{}') || {}; } catch { return {}; } };
+    const pref = ler(localStorage, 'phxsql.ia');
+    const cofre = ler(sessionStorage, 'phxsql.ia.chave');
+    for (const k of Object.keys(p)) (segredos.includes(k) ? cofre : pref)[k] = p[k];
+    localStorage.setItem('phxsql.ia', JSON.stringify(pref));
+    sessionStorage.setItem('phxsql.ia.chave', JSON.stringify(cofre));
+  }, [parcial, SEGREDOS_DA_TELA]);
 }
 
+/** A configuracao INTEIRA, como a tela a ve -- as duas gavetas emendadas. */
 export async function lerIA(page) {
-  return page.evaluate(() => JSON.parse(localStorage.getItem('phxsql.ia') || '{}'));
+  return page.evaluate(() => {
+    const ler = (a, k) => { try { return JSON.parse(a.getItem(k) || '{}') || {}; } catch { return {}; } };
+    return Object.assign({}, ler(localStorage, 'phxsql.ia'), ler(sessionStorage, 'phxsql.ia.chave'));
+  });
+}
+
+/** Cada gaveta em separado. E' o que prova ONDE cada campo repousa -- a
+ *  emenda do `lerIA` esconderia exatamente o que o pedido 339(a) mudou. */
+export async function lerGavetas(page) {
+  return page.evaluate(() => {
+    const ler = (a, k) => { try { return JSON.parse(a.getItem(k) || '{}') || {}; } catch { return {}; } };
+    return { disco: ler(localStorage, 'phxsql.ia'), aba: ler(sessionStorage, 'phxsql.ia.chave'),
+             discoCru: localStorage.getItem('phxsql.ia') || '' };
+  });
 }
 
 export async function abrirConfigClaude(page) {
