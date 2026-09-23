@@ -1,0 +1,352 @@
+<meta charset="utf-8">
+<title>Pedidos 421 em diante do PhxSql (6/6)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --papel:#fbf9f7; --papel-2:#f3efec; --papel-3:#e9e3de;
+  --tinta:#1a1210; --tinta-2:#4a3f3a; --tinta-3:#7a6d66;
+  --linha:#ded6d0;
+  --acento:#c63c0a;
+  --feito:#2f7a3e; --parcial:#8a6a1f; --planejado:#7a6d66;
+  --sombra:0 1px 2px rgba(26,18,16,.06),0 8px 24px rgba(26,18,16,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --papel:#040814; --papel-2:#0a1122; --papel-3:#131c31;
+    --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#7c8598;
+    --linha:#1e2940;
+    --acento:#ff8a1c;
+    --feito:#5cbf74; --parcial:#d5a83c; --planejado:#7c8598;
+    --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --papel:#040814; --papel-2:#0a1122; --papel-3:#131c31;
+  --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#7c8598;
+  --linha:#1e2940;
+  --acento:#ff8a1c;
+  --feito:#5cbf74; --parcial:#d5a83c; --planejado:#7c8598;
+  --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--papel);color:var(--tinta);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+  font-size:16px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,.rotulo,.pino,.filtros button{font-family:"Exo 2","Helvetica Neue",Arial,sans-serif}
+code,.mono,.num{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+code{
+  font-size:.86em;background:var(--papel-2);
+  padding:1px 4px;border-radius:3px;color:var(--tinta-2);
+}
+.envelope{max-width:1080px;margin:0 auto;padding:0 20px 80px}
+
+header{padding:52px 0 28px;border-bottom:1px solid var(--linha)}
+.rotulo{
+  font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--acento);font-weight:600;margin-bottom:12px;
+}
+h1{
+  font-size:clamp(30px,5vw,46px);font-weight:700;line-height:1.08;
+  margin:0 0 14px;letter-spacing:-.015em;text-wrap:balance;
+}
+h1 .x{color:var(--acento)}
+.chamada{
+  max-width:64ch;color:var(--tinta-2);font-size:17px;margin:0 0 4px;
+}
+
+.faixas{
+  display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 0;
+}
+.faixas a{
+  font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:500;
+  text-decoration:none;color:var(--tinta-2);
+  border:1px solid var(--linha);border-radius:999px;
+  padding:6px 14px;
+}
+.faixas a:hover{border-color:var(--acento);color:var(--acento)}
+.faixas a.ativa{
+  border-color:var(--acento);color:var(--acento);background:var(--papel-2);
+  font-weight:600;
+}
+
+.placar{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:10px;margin:30px 0 0;
+}
+.placar .c{
+  border:1px solid var(--linha);border-radius:6px;padding:14px 16px;
+  background:var(--papel-2);
+}
+.placar .v{
+  font-family:"Exo 2",sans-serif;font-size:34px;font-weight:700;
+  line-height:1;font-variant-numeric:tabular-nums;
+}
+.placar .r{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--tinta-3);
+  margin-top:7px;
+}
+.placar .feito .v{color:var(--feito)}
+.placar .parcial .v{color:var(--parcial)}
+.placar .planejado .v{color:var(--planejado)}
+
+.faixa-info{
+  margin:16px 0 0;padding:12px 16px;border-left:3px solid var(--acento);
+  background:var(--papel-2);border-radius:0 5px 5px 0;
+  font-size:14.5px;color:var(--tinta-2);
+}
+.faixa-info .rotulo-inline{
+  font-family:"Exo 2",sans-serif;font-weight:600;color:var(--tinta);
+  font-size:12px;text-transform:uppercase;letter-spacing:.08em;
+  margin-right:8px;
+}
+.faixa-info strong{color:var(--tinta);font-variant-numeric:tabular-nums}
+.faixa-info .feito{color:var(--feito)}
+.faixa-info .parcial{color:var(--parcial)}
+.faixa-info .planejado{color:var(--planejado)}
+
+h2{
+  font-size:22px;font-weight:600;margin:52px 0 6px;letter-spacing:-.01em;
+  scroll-margin-top:74px;
+}
+h2 + .sub{color:var(--tinta-3);font-size:15px;margin:0 0 20px;max-width:64ch}
+
+.barra{
+  position:sticky;top:0;z-index:5;background:var(--papel);
+  border-bottom:1px solid var(--linha);
+  padding:12px 0;margin:0 0 4px;
+  display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+}
+.filtros{display:flex;flex-wrap:wrap;gap:6px}
+.filtros button{
+  font-size:12.5px;font-weight:500;cursor:pointer;
+  background:none;color:var(--tinta-2);
+  border:1px solid var(--linha);border-radius:999px;
+  padding:5px 13px;
+}
+.filtros button:hover{border-color:var(--acento);color:var(--acento)}
+.filtros button[aria-pressed="true"]{
+  border-color:var(--acento);color:var(--acento);
+  background:color-mix(in srgb,var(--acento) 9%,transparent);
+}
+.filtros button:focus-visible,input:focus-visible{
+  outline:2px solid var(--acento);outline-offset:2px;
+}
+input[type="search"]{
+  font-family:"Source Serif 4",Georgia,serif;font-size:14px;
+  background:var(--papel-2);color:var(--tinta);
+  border:1px solid var(--linha);border-radius:5px;
+  padding:6px 11px;min-width:190px;flex:1;max-width:280px;
+}
+.conta{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;
+  color:var(--tinta-3);margin-left:auto;white-space:nowrap;
+}
+
+.rolo{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;min-width:660px}
+/* Cabecalho NAO grudento: `.rolo` tem `overflow-x:auto`, e isso faz dele um
+   contexto de rolagem proprio -- o `position:sticky` do `thead` passava a se
+   medir por ele e caia POR CIMA da primeira linha. Quem gruda e a barra de
+   filtro, que e onde esta a contagem. */
+thead th{
+  font-family:"IBM Plex Mono",monospace;font-weight:500;
+  font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--tinta-3);text-align:left;
+  padding:12px 12px 8px;border-bottom:1px solid var(--linha);
+  background:var(--papel);
+}
+tbody td{
+  padding:14px 12px;border-bottom:1px solid var(--linha);
+  vertical-align:top;font-size:15px;
+}
+tbody tr:hover td{background:var(--papel-2)}
+td.n{
+  font-size:12px;color:var(--tinta-3);text-align:right;
+  font-variant-numeric:tabular-nums;width:44px;white-space:nowrap;
+}
+td.p{width:34%;color:var(--tinta)}
+td.e{color:var(--tinta-2);font-size:14.5px}
+th.st,td.st{width:104px}
+
+/* A forma tambem carrega o estado, e nao so a cor: cheio, meio, vazio. */
+.pino{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:11px;font-weight:600;letter-spacing:.03em;white-space:nowrap;
+}
+.pino::before{
+  content:"";width:9px;height:9px;border-radius:50%;
+  border:1.5px solid currentColor;flex:none;
+}
+.pino.feito{color:var(--feito)}
+.pino.feito::before{background:currentColor}
+.pino.parcial{color:var(--parcial)}
+.pino.parcial::before{background:linear-gradient(90deg,currentColor 50%,transparent 50%)}
+.pino.planejado{color:var(--planejado)}
+
+.vazio{padding:38px 12px;color:var(--tinta-3);text-align:center;font-style:italic}
+
+.nota{
+  border-left:3px solid var(--acento);background:var(--papel-2);
+  padding:14px 18px;border-radius:0 5px 5px 0;margin:26px 0;
+  font-size:15px;color:var(--tinta-2);max-width:66ch;
+}
+.nota .t{
+  display:block;font-family:"Exo 2",sans-serif;font-weight:600;
+  color:var(--tinta);font-size:14px;margin-bottom:5px;
+}
+footer{
+  margin-top:56px;padding-top:22px;border-top:1px solid var(--linha);
+  color:var(--tinta-3);font-size:13.5px;max-width:66ch;
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+<div class="envelope">
+<header>
+  <div class="rotulo">PhxSql · o dossiê do que foi pedido — página 6 de 6</div>
+  <h1>Pedidos 421 em diante<br>de 430 ao todo</h1>
+  <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
+  estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
+  assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
+  Controle de «pronto» para «só navega».</p>
+  <p class="chamada">Esta lista deixou de caber numa página só (pedido 403,
+  23/09/2026): a publicada tinha 1.304.729 bytes, e republicá-la exigia reler
+  a versão antiga inteira. Ela virou <strong>6 páginas</strong>,
+  cortadas pelo <strong>tamanho medido</strong> de cada faixa de número de
+  pedido (nunca por número redondo) — esta é a faixa
+  <strong>421 em diante</strong>.</p>
+
+  <nav class="faixas" aria-label="As 6 páginas de pedidos, por faixa"><a href="https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz">1–190</a><a href="https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC">191–260</a><a href="https://claude.ai/artifact/R4iGBeRQt7ao6yffQkmGCp">261–310</a><a href="https://claude.ai/artifact/S1oHX53g9q4oqHSn7Yv3vm">311–350</a><a href="pedidos-351-420.html">351–420</a><a href="pedidos-421-mais.html" class="ativa" aria-current="page">421 em diante</a></nav>
+
+  <div class="placar">
+    <div class="c"><div class="v">430</div><div class="r">pedidos, ao todo</div></div>
+    <div class="c feito"><div class="v">316</div><div class="r">feitos</div></div>
+    <div class="c parcial"><div class="v">14</div><div class="r">parciais</div></div>
+    <div class="c planejado"><div class="v">100</div><div class="r">planejados</div></div>
+  </div>
+
+  <div class="faixa-info">
+    <span class="rotulo-inline">Nesta página</span>
+    <strong>10</strong> pedidos (faixa 421 em diante) ·
+    <span class="feito">0 feitos</span> ·
+    <span class="parcial">1 parciais</span> ·
+    <span class="planejado">9 planejados</span>
+  </div>
+</header>
+
+<h2>O que está aberto, nesta faixa</h2>
+<p class="sub">Os 10 que não fecharam nesta faixa (1 pela metade e 9 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório.</p>
+<div class="rolo">
+  <table>
+    <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>onde está</th></tr></thead>
+    <tbody>
+      <tr data-e="planejado"><td class="n mono">421</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Suite verde nao quer dizer portoes verdes: as catracas em Python ficam FORA do <code>cargo test --workspace</code>, e foi assim que uma subiu empurrada</strong></td><td class="e">Medido pelo integrador em 23/09/2026, e pago no mesmo dia. Rodei os portoes da arvore junta antes de commitar -- <code>fmt</code> rc=0, <code>clippy --workspace --all-targets</code> com zero avisos, <strong>2.739 testes verdes e zero falhas</strong> -- e empurrei. O aviso do <code>comunicacao.sh</code> das 16:49 mostrou <code>alcancam-fsync-2 25 (teto 24)</code>: a catraca do <code>bancada/concorrencia/mapa-da-trava.py</code> estava REPROVADA no codigo que eu acabara de mandar. A causa nao e o codigo, e a fronteira: os conferidores em Rust (<code>conferidor.rs</code>, <code>conferidor_segredos.rs</code> e os outros) rodam dentro do <code>cargo test</code> e por isso o portao os alcanca; os guardas em Python -- o mapa da trava, o portao dos geradores, os medidores -- moram fora, e so rodam se alguem lembrar. <strong>Guarda fora do portao e script que so roda quando alguem lembra</strong> -- e a lei que a propria guarda do 402 cita, aplicada agora contra quem a citou. O conserto nao e «rodar mais coisas antes de commitar», que e memoria de novo: e UM portao que chame os dois lados e reprove como um so. Cuidado medido ao desenhar: o <code>numeros-do-projeto.py</code> e o <code>docs/qa/medir.py</code> chamam <code>cargo</code> e por isso ficam de fora da corrente, e o pedido 417 diz que o portao ainda precisa recusar rodar com processo vivo. Prova real: com a catraca reprovada, o portao unico tem de ficar VERMELHO mesmo com a suite inteira verde.</td></tr>
+      <tr data-e="parcial"><td class="n mono">422</td><td class="st"><span class="pino parcial">Parcial</span></td><td class="p"><strong><code>migrar_esquema</code> congela o SERVIDOR INTEIRO por 2,76 s a 2 milhoes de slots — 13,8 s a 10 milhoes, dobrando com espelho —, e o conserto obvio COMPILA, fica verde e PERDE ESCRITA CONFIRMADA</strong></td><td class="e">Parecer do papel C em 23/09/2026 (<code>docs/propostas/parecer-c-trava-da-migracao-2026-09-23.md</code>), levantado pela catraca <code>alcancam-fsync-2</code> que foi de 24 para 25 com o pedido 407. <strong>Medido, nao citado</strong>: o <code>custo-do-alter</code> da 0,691 a 1,034 us por linha, e <code>COLUNAS_DO_V10</code> tem 2 elementos, logo a migracao sao 2 passadas -- 2,76 s de trava GLOBAL presa a 2 M slots, ~13,8 s a 10 M, e dobra de novo com <code>recursos.espelho</code>. A unidade da catraca e 1,3 ms: esta seção e ~2.100x ela, e e <strong>a maior detentora das 88</strong>. <strong>A familia e de QUATRO, nao duas</strong>: <code>op_acrescentar_coluna</code> e <code>op_migrar_esquema</code> reescrevem o volume SEMPRE; <code>op_declarar_fk</code> e <code>op_excluir_fk</code> reescrevem CONDICIONALMENTE (<code>reg.rs:1234</code>, so se o bloco de esquema nao couber) -- e o mapeador e estatico, entao nao ve a condicional e nao as conta. O conserto alcanca as quatro, senao o irmao fica. <strong>Por que nao se solta a trava e pronto:</strong> a FASE A escreve um <code>*.novo</code> que e um RETRATO. Linha inserida no volume velho durante a FASE A nao esta nele, e a FASE B renomeia por cima -- escrita confirmada perdida, sem bilhete. Hoje isso e inobservavel porque a trava global segura todo mundo. <strong>Mover o <code>drop(dados)</code> compila, passa na suite, deixa a catraca em 24 e e perda de dado</strong>: e o mesmo erro de eixo do pedido 180, e a armadilha que o PITR ja documentou no 252. <strong>O conserto certo e o padrao do <code>ae8a58b</code></strong>: nao se move o <code>drop</code>, muda-se ONDE se escreve -- travar, marcar «em migracao», soltar, FASE A com o <code>fsync</code> fora da trava, retravar, revalidar o <code>slot_count</code>, FASE B. Conferido que isso nao engana o medidor: o <code>mapa-da-trava.py:455</code> trunca a secao num <code>drop</code> explicito, entao a trava genuinamente nao esta na mao. <strong>O que falta e o CONGELAMENTO, que nao existe</strong>: um registro consultado no ponto unico <code>abrir_travada_com</code> (<code>servidor.rs:10917</code>), recusando a escrita na tabela em migracao -- e recusando sem quebrar cliente antigo, porque guarda nova entra pedida. <strong>Os quatro motores convergem e nada nosso se opoe</strong> (PG 4 + MariaDB 3 + MySQL 2 = 9 contra SQLite 1, que diverge por arquitetura): um DDL que reescreve a tabela <strong>nao deve segurar o servidor</strong>. Entra por aceite automatico -- mas, como no precedente do TLS, <strong>o aceite e do comportamento e nao do meio</strong>, e o meio aqui nao existe ainda. Achado de passagem, inocuo hoje e defeito no dia do conserto: <code>op_migrar_esquema</code> nao consulta <code>sujas</code>. <strong>PARCIAL em 23/09/2026</strong> (<code>97dffc6</code>): a migracao saiu de baixo da trava global, e a catraca foi de 25 (teto 24, REPROVADA) para <strong>23 (teto 23)</strong> -- o teto desceu no mesmo commit. NAO se moveu o <code>drop</code>: entrou o congelamento mais a revalidacao do retrato, e o teste que reproduz a perda de dado de forma deterministica fica no repositorio para reprovar no dia em que alguem trocar um pelo outro. <strong>Parcial porque alcancou DUAS das cinco irmas</strong> -- <code>migrar_esquema</code> e <code>acrescentar_coluna</code>, as que reescrevem sempre. Ficaram <code>declarar_fk</code>, <code>excluir_fk</code> e a quinta que o parecer C nao tinha visto, <code>marcar_lgpd</code>: nelas o caro nao e a copia do arquivo, e a varredura <code>conferir_chave</code> lendo a tabela MAE, e tira-la da trava pede um segundo escopo de congelamento, desenho proprio. <strong>E a catraca esta VERDE com as tres ainda segurando a trava</strong>, porque o mapeador e estatico e nao ve caminho condicional -- catraca verde nao e definicao de pronto, e e por isso que este pedido nao fecha.</td></tr>
+      <tr data-e="planejado"><td class="n mono">423</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p">**O <code>docs/CATRACAS.md:885</code> traz «24 \</td><td class="e">24» digitado a mao e envelheceu na mesma hora em que o teto desceu para 23** | Nomeado pela frente do 422 em 23/09/2026, que o viu e nao o tocou -- e nao tocar foi o certo, porque o documento e retrato DATADO do papel G, nao derivado. O defeito nao e o numero errado: e um numero de catraca existir digitado em prosa, quando o <code>mapa-da-trava.py --numeros</code> ja o imprime. Conserto e gerador, nao edicao: quem editar hoje conserta este e deixa o proximo.</td></tr>
+      <tr data-e="planejado"><td class="n mono">424</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A recusa do ledger mora na DECLARACAO, e a replicacao nao declara: a combinacao proibida CRESCE por replica, para nos que nunca a tiveram</strong></td><td class="e">Achado pelo papel C em 23/09/2026 medindo o 355 (<code>docs/propostas/parecer-c-ledger-sem-sal-2026-09-23.md</code> §5.3). A guarda esta nos verbos de declarar (<code>schema.rs:959</code>, <code>:1329</code>, <code>:1528</code>), e por bom motivo: em <code>Table::criar</code> ela teria recusado semear replica de cadeia legitima. Mas a replica remonta o esquema por <code>Schema::desserializar</code> (<code>replica.rs:331</code>), que e caminho de LEITURA e nao julga -- e <code>valores.rs:620</code> confirma que a tabela nascida por replicacao vem do mesmo bloco de esquema do source, byte a byte. Consequencia: a populacao em combinacao proibida nao esta fechada, ela se espalha. E a frase «NAO desfaz cadeia que ja existe» (<code>ledger.rs:63</code>, <code>FORMATO.md:675</code>) esta INCOMPLETA -- o alcance real e «nao desfaz, E acompanha a replica», e documento que mente por omissao mente igual. O parecer NAO propoe guarda no caminho de leitura, porque ela quebraria a replica legitima: propoe que o censo rode em TODO NO, e o <code>--example</code> do censo ainda nao existe.</td></tr>
+      <tr data-e="planejado"><td class="n mono">425</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A marca do pedido envelhece nos DOIS sentidos, e eu montei a lista congelada da 0.19 lendo uma marca velha</strong></td><td class="e">Medido pelo integrador em 23/09/2026, duas vezes no mesmo dia e em direcoes opostas. De manha eu fechei 402, 405, 406 e 407 em codigo e deixei as quatro linhas marcadas como PLANEJADO -- defeito registrado no commit <code>97ddc71</code>. A noite, montando a lista que o dono congelou, eu LI a marca e acreditei nela: pus o 355 no escopo da 0.19 quando ele estava fechado desde 18/09 pelo commit <code>a51f1a3</code>, por decisao do proprio dono. O parecer C foi medir o defeito e achou o conserto ja no lugar. O prejuizo nao e o pedido a mais numa lista: e que a pagina publicada as 19:30 diz «Planejado» sobre trabalho feito ha cinco dias, e que uma frente inteira poderia ter sido gasta consertando o que ja estava consertado. O conserto nao e «lembrar de virar a marca» -- isso e memoria, e memoria e o que falha. E um conferidor que cruze o <code>PENDENCIAS.md</code> com o <code>git log</code>: pedido marcado ABERTO cujo numero aparece num assunto de commit e&#x27; suspeito e tem de aparecer como suspeito. Ele nao pode fechar sozinho (commit que CITA um pedido nem sempre o fecha), mas pode acusar -- e acusar e&#x27; o suficiente, porque o defeito aqui e&#x27; ninguem olhar.</td></tr>
+      <tr data-e="planejado"><td class="n mono">426</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>ALTO — o <code>COMMIT</code> que esbarra numa migracao sai PELA METADE, manda REPETIR, e a recuperacao do caminho de erro e CODIGO MORTO</strong></td><td class="e">Achado pela revisao SEC em 23/09/2026 (<code>docs/propostas/revisao-sec-rodada-2026-09-23.md</code>), e o terceiro item foi conferido pelo integrador linha a linha contra <code>82d62c4</code>. A cadeia nao precisa de malicia nenhuma: B da <code>BEGIN</code> (ainda sem trava, porque <code>travas</code> so nasce ao empilhar); A pede <code>migrar_esquema --confirmar</code> e o <strong>portao 5</strong> confere as travas de transacao FORA da trava global, nao acha nenhuma e deixa passar; B ganha a trava primeiro e empilha escrita em duas tabelas; A congela uma delas e solta a trava global para a FASE A, que dura 2,76 s a 2 M slots. Entao B da <code>COMMIT</code>: <strong>a marca vai ao disco e e sincronizada -- ponto de compromisso, a transacao esta confirmada</strong> --, a primeira tabela e gravada de verdade, a segunda abre, bate no congelamento e a passada aborta. Tres camadas: <strong>(a)</strong> atomicidade quebrada, uma tabela com a linha e a outra sem; <strong>(b)</strong> <code>EmMigracao.adianta_repetir()</code> e <code>true</code>, entao o cliente e mandado repetir uma transacao METADE aplicada e duplica o que ja gravou -- o carimbo <code>repetir</code> foi desenhado para recusa ANTES da escrita e aqui chega depois dela; <strong>(c)</strong> o braco <code>Err</code> chama <code>travar_dados()</code> com o <code>trava</code> do topo ainda vivo (o <code>drop(trava)</code> so existe no braco <code>Ok</code>), a guarda de reentrancia devolve <code>Err</code>, o <code>if let Ok(...)</code> engole, e <code>transacao::recuperar</code> NUNCA roda -- enquanto o comentario acima dela afirma que roda. A marca orfa so e completada no proximo arranque, quando a transacao que o cliente viu FALHAR aparece aplicada. <strong>(c) e anterior a esta rodada</strong>; o que o pedido 422 fez foi tornar o braco ALCANCAVEL por operacao normal -- antes a migracao segurava a trava global inteira e nenhum <code>COMMIT</code> se intercalava. A prova real tem de ser por soquete e asserir os dois lados: erro 4006 com <code>repetir: true</code>, uma tabela com a linha e a outra sem, um <code>*.tx</code> sobrando (prova de que (c) nao rodou), e a linha aparecendo na segunda tabela depois de reiniciar. Conferir o veredito do <code>COMMIT</code> nao basta -- esta casa ja pagou por prova que conferia depois do dano.</td></tr>
+      <tr data-e="planejado"><td class="n mono">427</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O retrato da FASE A nao ve volume que NASCE durante ela — e a hipotese «tamanho e mtime bastam?» MORREU MEDIDA no ext4, mas nao no Windows</strong></td><td class="e">Achado pela revisao SEC em 23/09/2026. <code>retratar</code> (<code>reg.rs:2680</code>) fotografa so os volumes existentes, entao um <code>tabela_002.reg</code> criado durante a FASE A nao esta no retrato nem em <code>trocas</code>, e <code>conferir_retrato</code> passa. A consequencia foi LIDA e nao executada: <code>conferir_volumes_uniformes</code> pega o conjunto misto na abertura seguinte e recusa com <code>Corrompido</code> -- e fail-stop, nao corrupcao calada -- mas o cinto que o modulo promete tem furo no caso mais destrutivo. <strong>O numero que vale mais que o achado:</strong> a duvida «tamanho e mtime bastam para revalidar?» foi MEDIDA, nao discutida -- 2.000 escritas em lugar com <code>pwrite</code> no ext4 desta casa, e <strong>0 de 2.000 (0,0%)</strong> passaram invisiveis; menor delta de <code>mtime</code> 9.234 ns. <strong>A hipotese morreu medida, e isso e resultado tao valido quanto ganho.</strong> O que NAO foi medido e o que sobra de risco: NTFS, FAT/exFAT (granularidade de 2 s), HFS+ e NFS (1 s) -- e este produto compila cruzado para Windows de proposito, entao o furo mora exatamente onde ninguem mediu.</td></tr>
+      <tr data-e="planejado"><td class="n mono">428</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Tres achados MEDIO do 422: a chave do congelamento nao normaliza CAIXA, o erro publica o caminho absoluto do servidor, e o inventario «o ponto por onde todos passam» ja nasceu curto</strong></td><td class="e">Revisao SEC, 23/09/2026. <strong>(1) Caixa:</strong> <code>validar_nome</code> recusa <code>/</code>, <code>\</code>, <code>:</code>, controle, <code>.</code> e <code>..</code> -- travessia esta fechada --, mas nao normaliza maiuscula. No Linux <code>clientes</code> e <code>Clientes</code> sao arquivos diferentes e nao ha furo; <strong>em NTFS e APFS sao o MESMO arquivo e DUAS chaves</strong>, entao <code>inserir</code> em <code>&quot;Clientes&quot;</code> grava no volume vivo durante a FASE A. Nao medido, por falta de Windows e macOS aqui. <strong>(2) Caminho absoluto:</strong> <code>reg.rs:2629</code> interpola <code>r.caminho.display()</code> dentro do erro de conflito, devolvido cru ao cliente -- quem administra UMA tabela aprende a raiz de dados do servidor. E a mesma classe que esta casa ja fechou uma vez, com o motivo escrito, no <code>catalogo.rs::tabela_que_nao_existe</code>. <strong>(3) A frase:</strong> o cabecalho do <code>congelamento.rs</code> diz «o ponto por onde todos passam, sem excecao» e ja nasceu curto -- <code>op_excluir_tabela</code> e <code>op_renomear_tabela</code> mexem nos arquivos SEM abrir a tabela, logo sem passar pelo congelamento (<code>op_restaurar_backup</code> e suspeito e nao foi conferido linha a linha). Hoje quem segura e o retrato, e o revisor conferiu que nao ha ressurreicao. <strong>O achado e a frase, nao o estrago de hoje</strong>: quem dividir o <code>servidor.rs</code> amanha vai ler aquele inventario e concluir que o congelamento cobre a escrita toda.</td></tr>
+      <tr data-e="planejado"><td class="n mono">429</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O inventario do pedido 420 ja nasceu curto: sao seis sitios a mais, e um deles entrou no MESMO dia em que a recontagem foi escrita</strong></td><td class="e">Revisao SEC, 23/09/2026. O pedido 420 recontou «10 de 141 operacoes conferem tabela em campo que o portao nao le». Medido agora: <code>migrar_esquema_varredura</code> (<code>servidor.rs:16508</code>) confere <code>pode_administrar_tabela</code> sobre alvo que nao e o campo <code>&quot;tabela&quot;</code> e <strong>nao esta na lista dos dez</strong> -- e entrou em <code>55ab903</code>, commit ANTERIOR ao <code>a671f2d</code> que fez a recontagem. Mais cinco do mesmo naipe em <code>:11470</code>, <code>:11585</code>, <code>:11662</code>, <code>:11747</code> e <code>:15968</code>. <strong>O codigo esta certo</strong> -- o <code>continue</code> vem antes dos contadores, entao a varredura nao vaza nem nome nem tamanho de tabela que o chamador nao administra. Curto e o inventario, que e exatamente o defeito que o 420 existe para nomear: lei que lista menos casos do que existem protege menos no dia em que alguem usar a lista como inventario. Duas recontagens a mao em um dia deram numeros diferentes; o conserto e um gerador, nao uma terceira contagem.</td></tr>
+      <tr data-e="planejado"><td class="n mono">430</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Ordem de atomicos no congelamento funciona pelo motivo ERRADO, e nenhum teste acusa</strong></td><td class="e">Revisao SEC, 23/09/2026. <code>congelar</code> faz o <code>insert</code> e <strong>so depois</strong> incrementa o contador, e <code>conferir</code> sai cedo quando o contador e zero <strong>sem tomar o mutex</strong>. Isso funciona hoje porque <code>congelar</code> acontece com a trava global na mao -- <strong>nao</strong> por causa da ordem dos atomicos. Quem congelar de outro ponto amanha herda a corrida, e nao ha teste que acuse. Nao medido: e leitura de fonte. Vale o comentario dizendo de onde vem a garantia, porque garantia que depende de um invariante externo e nao o diz e garantia que se perde na primeira mudanca.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="nota">
+  <span class="t">Por que «parcial» e não «feito»</span>
+  Meio caminho andado continua sendo meio caminho, e a lista diz <em>qual</em>
+  metade — porque é a metade que falta que decide se o pedido serve para alguma
+  coisa hoje. O estado sai da primeira coluna do
+  <code>docs/PENDENCIAS.md</code>, que é medido contra o código; esta página
+  não tem opinião própria sobre nenhum item.
+</div>
+
+<h2 id="todos">Os 10 desta faixa (421 em diante), na ordem em que você pediu</h2>
+<p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
+<em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la. As
+outras 5 faixas estão no menu acima.</p>
+
+<div class="barra">
+  <div class="filtros" role="group" aria-label="Filtrar por estado">
+    <button type="button" data-f="todos" aria-pressed="true">Todos</button>
+    <button type="button" data-f="feito" aria-pressed="false">Feitos</button>
+    <button type="button" data-f="parcial" aria-pressed="false">Parciais</button>
+    <button type="button" data-f="planejado" aria-pressed="false">Planejados</button>
+  </div>
+  <input type="search" id="busca" placeholder="procurar nesta faixa…" aria-label="Procurar nos pedidos desta faixa">
+  <span class="conta" id="conta"></span>
+</div>
+
+<div class="rolo">
+  <table id="tudo">
+    <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>o que existe hoje</th></tr></thead>
+    <tbody>
+      <tr data-e="planejado"><td class="n mono">421</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Suite verde nao quer dizer portoes verdes: as catracas em Python ficam FORA do <code>cargo test --workspace</code>, e foi assim que uma subiu empurrada</strong></td><td class="e">Medido pelo integrador em 23/09/2026, e pago no mesmo dia. Rodei os portoes da arvore junta antes de commitar -- <code>fmt</code> rc=0, <code>clippy --workspace --all-targets</code> com zero avisos, <strong>2.739 testes verdes e zero falhas</strong> -- e empurrei. O aviso do <code>comunicacao.sh</code> das 16:49 mostrou <code>alcancam-fsync-2 25 (teto 24)</code>: a catraca do <code>bancada/concorrencia/mapa-da-trava.py</code> estava REPROVADA no codigo que eu acabara de mandar. A causa nao e o codigo, e a fronteira: os conferidores em Rust (<code>conferidor.rs</code>, <code>conferidor_segredos.rs</code> e os outros) rodam dentro do <code>cargo test</code> e por isso o portao os alcanca; os guardas em Python -- o mapa da trava, o portao dos geradores, os medidores -- moram fora, e so rodam se alguem lembrar. <strong>Guarda fora do portao e script que so roda quando alguem lembra</strong> -- e a lei que a propria guarda do 402 cita, aplicada agora contra quem a citou. O conserto nao e «rodar mais coisas antes de commitar», que e memoria de novo: e UM portao que chame os dois lados e reprove como um so. Cuidado medido ao desenhar: o <code>numeros-do-projeto.py</code> e o <code>docs/qa/medir.py</code> chamam <code>cargo</code> e por isso ficam de fora da corrente, e o pedido 417 diz que o portao ainda precisa recusar rodar com processo vivo. Prova real: com a catraca reprovada, o portao unico tem de ficar VERMELHO mesmo com a suite inteira verde.</td></tr>
+      <tr data-e="parcial"><td class="n mono">422</td><td class="st"><span class="pino parcial">Parcial</span></td><td class="p"><strong><code>migrar_esquema</code> congela o SERVIDOR INTEIRO por 2,76 s a 2 milhoes de slots — 13,8 s a 10 milhoes, dobrando com espelho —, e o conserto obvio COMPILA, fica verde e PERDE ESCRITA CONFIRMADA</strong></td><td class="e">Parecer do papel C em 23/09/2026 (<code>docs/propostas/parecer-c-trava-da-migracao-2026-09-23.md</code>), levantado pela catraca <code>alcancam-fsync-2</code> que foi de 24 para 25 com o pedido 407. <strong>Medido, nao citado</strong>: o <code>custo-do-alter</code> da 0,691 a 1,034 us por linha, e <code>COLUNAS_DO_V10</code> tem 2 elementos, logo a migracao sao 2 passadas -- 2,76 s de trava GLOBAL presa a 2 M slots, ~13,8 s a 10 M, e dobra de novo com <code>recursos.espelho</code>. A unidade da catraca e 1,3 ms: esta seção e ~2.100x ela, e e <strong>a maior detentora das 88</strong>. <strong>A familia e de QUATRO, nao duas</strong>: <code>op_acrescentar_coluna</code> e <code>op_migrar_esquema</code> reescrevem o volume SEMPRE; <code>op_declarar_fk</code> e <code>op_excluir_fk</code> reescrevem CONDICIONALMENTE (<code>reg.rs:1234</code>, so se o bloco de esquema nao couber) -- e o mapeador e estatico, entao nao ve a condicional e nao as conta. O conserto alcanca as quatro, senao o irmao fica. <strong>Por que nao se solta a trava e pronto:</strong> a FASE A escreve um <code>*.novo</code> que e um RETRATO. Linha inserida no volume velho durante a FASE A nao esta nele, e a FASE B renomeia por cima -- escrita confirmada perdida, sem bilhete. Hoje isso e inobservavel porque a trava global segura todo mundo. <strong>Mover o <code>drop(dados)</code> compila, passa na suite, deixa a catraca em 24 e e perda de dado</strong>: e o mesmo erro de eixo do pedido 180, e a armadilha que o PITR ja documentou no 252. <strong>O conserto certo e o padrao do <code>ae8a58b</code></strong>: nao se move o <code>drop</code>, muda-se ONDE se escreve -- travar, marcar «em migracao», soltar, FASE A com o <code>fsync</code> fora da trava, retravar, revalidar o <code>slot_count</code>, FASE B. Conferido que isso nao engana o medidor: o <code>mapa-da-trava.py:455</code> trunca a secao num <code>drop</code> explicito, entao a trava genuinamente nao esta na mao. <strong>O que falta e o CONGELAMENTO, que nao existe</strong>: um registro consultado no ponto unico <code>abrir_travada_com</code> (<code>servidor.rs:10917</code>), recusando a escrita na tabela em migracao -- e recusando sem quebrar cliente antigo, porque guarda nova entra pedida. <strong>Os quatro motores convergem e nada nosso se opoe</strong> (PG 4 + MariaDB 3 + MySQL 2 = 9 contra SQLite 1, que diverge por arquitetura): um DDL que reescreve a tabela <strong>nao deve segurar o servidor</strong>. Entra por aceite automatico -- mas, como no precedente do TLS, <strong>o aceite e do comportamento e nao do meio</strong>, e o meio aqui nao existe ainda. Achado de passagem, inocuo hoje e defeito no dia do conserto: <code>op_migrar_esquema</code> nao consulta <code>sujas</code>. <strong>PARCIAL em 23/09/2026</strong> (<code>97dffc6</code>): a migracao saiu de baixo da trava global, e a catraca foi de 25 (teto 24, REPROVADA) para <strong>23 (teto 23)</strong> -- o teto desceu no mesmo commit. NAO se moveu o <code>drop</code>: entrou o congelamento mais a revalidacao do retrato, e o teste que reproduz a perda de dado de forma deterministica fica no repositorio para reprovar no dia em que alguem trocar um pelo outro. <strong>Parcial porque alcancou DUAS das cinco irmas</strong> -- <code>migrar_esquema</code> e <code>acrescentar_coluna</code>, as que reescrevem sempre. Ficaram <code>declarar_fk</code>, <code>excluir_fk</code> e a quinta que o parecer C nao tinha visto, <code>marcar_lgpd</code>: nelas o caro nao e a copia do arquivo, e a varredura <code>conferir_chave</code> lendo a tabela MAE, e tira-la da trava pede um segundo escopo de congelamento, desenho proprio. <strong>E a catraca esta VERDE com as tres ainda segurando a trava</strong>, porque o mapeador e estatico e nao ve caminho condicional -- catraca verde nao e definicao de pronto, e e por isso que este pedido nao fecha.</td></tr>
+      <tr data-e="planejado"><td class="n mono">423</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p">**O <code>docs/CATRACAS.md:885</code> traz «24 \</td><td class="e">24» digitado a mao e envelheceu na mesma hora em que o teto desceu para 23** | Nomeado pela frente do 422 em 23/09/2026, que o viu e nao o tocou -- e nao tocar foi o certo, porque o documento e retrato DATADO do papel G, nao derivado. O defeito nao e o numero errado: e um numero de catraca existir digitado em prosa, quando o <code>mapa-da-trava.py --numeros</code> ja o imprime. Conserto e gerador, nao edicao: quem editar hoje conserta este e deixa o proximo.</td></tr>
+      <tr data-e="planejado"><td class="n mono">424</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A recusa do ledger mora na DECLARACAO, e a replicacao nao declara: a combinacao proibida CRESCE por replica, para nos que nunca a tiveram</strong></td><td class="e">Achado pelo papel C em 23/09/2026 medindo o 355 (<code>docs/propostas/parecer-c-ledger-sem-sal-2026-09-23.md</code> §5.3). A guarda esta nos verbos de declarar (<code>schema.rs:959</code>, <code>:1329</code>, <code>:1528</code>), e por bom motivo: em <code>Table::criar</code> ela teria recusado semear replica de cadeia legitima. Mas a replica remonta o esquema por <code>Schema::desserializar</code> (<code>replica.rs:331</code>), que e caminho de LEITURA e nao julga -- e <code>valores.rs:620</code> confirma que a tabela nascida por replicacao vem do mesmo bloco de esquema do source, byte a byte. Consequencia: a populacao em combinacao proibida nao esta fechada, ela se espalha. E a frase «NAO desfaz cadeia que ja existe» (<code>ledger.rs:63</code>, <code>FORMATO.md:675</code>) esta INCOMPLETA -- o alcance real e «nao desfaz, E acompanha a replica», e documento que mente por omissao mente igual. O parecer NAO propoe guarda no caminho de leitura, porque ela quebraria a replica legitima: propoe que o censo rode em TODO NO, e o <code>--example</code> do censo ainda nao existe.</td></tr>
+      <tr data-e="planejado"><td class="n mono">425</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A marca do pedido envelhece nos DOIS sentidos, e eu montei a lista congelada da 0.19 lendo uma marca velha</strong></td><td class="e">Medido pelo integrador em 23/09/2026, duas vezes no mesmo dia e em direcoes opostas. De manha eu fechei 402, 405, 406 e 407 em codigo e deixei as quatro linhas marcadas como PLANEJADO -- defeito registrado no commit <code>97ddc71</code>. A noite, montando a lista que o dono congelou, eu LI a marca e acreditei nela: pus o 355 no escopo da 0.19 quando ele estava fechado desde 18/09 pelo commit <code>a51f1a3</code>, por decisao do proprio dono. O parecer C foi medir o defeito e achou o conserto ja no lugar. O prejuizo nao e o pedido a mais numa lista: e que a pagina publicada as 19:30 diz «Planejado» sobre trabalho feito ha cinco dias, e que uma frente inteira poderia ter sido gasta consertando o que ja estava consertado. O conserto nao e «lembrar de virar a marca» -- isso e memoria, e memoria e o que falha. E um conferidor que cruze o <code>PENDENCIAS.md</code> com o <code>git log</code>: pedido marcado ABERTO cujo numero aparece num assunto de commit e&#x27; suspeito e tem de aparecer como suspeito. Ele nao pode fechar sozinho (commit que CITA um pedido nem sempre o fecha), mas pode acusar -- e acusar e&#x27; o suficiente, porque o defeito aqui e&#x27; ninguem olhar.</td></tr>
+      <tr data-e="planejado"><td class="n mono">426</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>ALTO — o <code>COMMIT</code> que esbarra numa migracao sai PELA METADE, manda REPETIR, e a recuperacao do caminho de erro e CODIGO MORTO</strong></td><td class="e">Achado pela revisao SEC em 23/09/2026 (<code>docs/propostas/revisao-sec-rodada-2026-09-23.md</code>), e o terceiro item foi conferido pelo integrador linha a linha contra <code>82d62c4</code>. A cadeia nao precisa de malicia nenhuma: B da <code>BEGIN</code> (ainda sem trava, porque <code>travas</code> so nasce ao empilhar); A pede <code>migrar_esquema --confirmar</code> e o <strong>portao 5</strong> confere as travas de transacao FORA da trava global, nao acha nenhuma e deixa passar; B ganha a trava primeiro e empilha escrita em duas tabelas; A congela uma delas e solta a trava global para a FASE A, que dura 2,76 s a 2 M slots. Entao B da <code>COMMIT</code>: <strong>a marca vai ao disco e e sincronizada -- ponto de compromisso, a transacao esta confirmada</strong> --, a primeira tabela e gravada de verdade, a segunda abre, bate no congelamento e a passada aborta. Tres camadas: <strong>(a)</strong> atomicidade quebrada, uma tabela com a linha e a outra sem; <strong>(b)</strong> <code>EmMigracao.adianta_repetir()</code> e <code>true</code>, entao o cliente e mandado repetir uma transacao METADE aplicada e duplica o que ja gravou -- o carimbo <code>repetir</code> foi desenhado para recusa ANTES da escrita e aqui chega depois dela; <strong>(c)</strong> o braco <code>Err</code> chama <code>travar_dados()</code> com o <code>trava</code> do topo ainda vivo (o <code>drop(trava)</code> so existe no braco <code>Ok</code>), a guarda de reentrancia devolve <code>Err</code>, o <code>if let Ok(...)</code> engole, e <code>transacao::recuperar</code> NUNCA roda -- enquanto o comentario acima dela afirma que roda. A marca orfa so e completada no proximo arranque, quando a transacao que o cliente viu FALHAR aparece aplicada. <strong>(c) e anterior a esta rodada</strong>; o que o pedido 422 fez foi tornar o braco ALCANCAVEL por operacao normal -- antes a migracao segurava a trava global inteira e nenhum <code>COMMIT</code> se intercalava. A prova real tem de ser por soquete e asserir os dois lados: erro 4006 com <code>repetir: true</code>, uma tabela com a linha e a outra sem, um <code>*.tx</code> sobrando (prova de que (c) nao rodou), e a linha aparecendo na segunda tabela depois de reiniciar. Conferir o veredito do <code>COMMIT</code> nao basta -- esta casa ja pagou por prova que conferia depois do dano.</td></tr>
+      <tr data-e="planejado"><td class="n mono">427</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O retrato da FASE A nao ve volume que NASCE durante ela — e a hipotese «tamanho e mtime bastam?» MORREU MEDIDA no ext4, mas nao no Windows</strong></td><td class="e">Achado pela revisao SEC em 23/09/2026. <code>retratar</code> (<code>reg.rs:2680</code>) fotografa so os volumes existentes, entao um <code>tabela_002.reg</code> criado durante a FASE A nao esta no retrato nem em <code>trocas</code>, e <code>conferir_retrato</code> passa. A consequencia foi LIDA e nao executada: <code>conferir_volumes_uniformes</code> pega o conjunto misto na abertura seguinte e recusa com <code>Corrompido</code> -- e fail-stop, nao corrupcao calada -- mas o cinto que o modulo promete tem furo no caso mais destrutivo. <strong>O numero que vale mais que o achado:</strong> a duvida «tamanho e mtime bastam para revalidar?» foi MEDIDA, nao discutida -- 2.000 escritas em lugar com <code>pwrite</code> no ext4 desta casa, e <strong>0 de 2.000 (0,0%)</strong> passaram invisiveis; menor delta de <code>mtime</code> 9.234 ns. <strong>A hipotese morreu medida, e isso e resultado tao valido quanto ganho.</strong> O que NAO foi medido e o que sobra de risco: NTFS, FAT/exFAT (granularidade de 2 s), HFS+ e NFS (1 s) -- e este produto compila cruzado para Windows de proposito, entao o furo mora exatamente onde ninguem mediu.</td></tr>
+      <tr data-e="planejado"><td class="n mono">428</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Tres achados MEDIO do 422: a chave do congelamento nao normaliza CAIXA, o erro publica o caminho absoluto do servidor, e o inventario «o ponto por onde todos passam» ja nasceu curto</strong></td><td class="e">Revisao SEC, 23/09/2026. <strong>(1) Caixa:</strong> <code>validar_nome</code> recusa <code>/</code>, <code>\</code>, <code>:</code>, controle, <code>.</code> e <code>..</code> -- travessia esta fechada --, mas nao normaliza maiuscula. No Linux <code>clientes</code> e <code>Clientes</code> sao arquivos diferentes e nao ha furo; <strong>em NTFS e APFS sao o MESMO arquivo e DUAS chaves</strong>, entao <code>inserir</code> em <code>&quot;Clientes&quot;</code> grava no volume vivo durante a FASE A. Nao medido, por falta de Windows e macOS aqui. <strong>(2) Caminho absoluto:</strong> <code>reg.rs:2629</code> interpola <code>r.caminho.display()</code> dentro do erro de conflito, devolvido cru ao cliente -- quem administra UMA tabela aprende a raiz de dados do servidor. E a mesma classe que esta casa ja fechou uma vez, com o motivo escrito, no <code>catalogo.rs::tabela_que_nao_existe</code>. <strong>(3) A frase:</strong> o cabecalho do <code>congelamento.rs</code> diz «o ponto por onde todos passam, sem excecao» e ja nasceu curto -- <code>op_excluir_tabela</code> e <code>op_renomear_tabela</code> mexem nos arquivos SEM abrir a tabela, logo sem passar pelo congelamento (<code>op_restaurar_backup</code> e suspeito e nao foi conferido linha a linha). Hoje quem segura e o retrato, e o revisor conferiu que nao ha ressurreicao. <strong>O achado e a frase, nao o estrago de hoje</strong>: quem dividir o <code>servidor.rs</code> amanha vai ler aquele inventario e concluir que o congelamento cobre a escrita toda.</td></tr>
+      <tr data-e="planejado"><td class="n mono">429</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O inventario do pedido 420 ja nasceu curto: sao seis sitios a mais, e um deles entrou no MESMO dia em que a recontagem foi escrita</strong></td><td class="e">Revisao SEC, 23/09/2026. O pedido 420 recontou «10 de 141 operacoes conferem tabela em campo que o portao nao le». Medido agora: <code>migrar_esquema_varredura</code> (<code>servidor.rs:16508</code>) confere <code>pode_administrar_tabela</code> sobre alvo que nao e o campo <code>&quot;tabela&quot;</code> e <strong>nao esta na lista dos dez</strong> -- e entrou em <code>55ab903</code>, commit ANTERIOR ao <code>a671f2d</code> que fez a recontagem. Mais cinco do mesmo naipe em <code>:11470</code>, <code>:11585</code>, <code>:11662</code>, <code>:11747</code> e <code>:15968</code>. <strong>O codigo esta certo</strong> -- o <code>continue</code> vem antes dos contadores, entao a varredura nao vaza nem nome nem tamanho de tabela que o chamador nao administra. Curto e o inventario, que e exatamente o defeito que o 420 existe para nomear: lei que lista menos casos do que existem protege menos no dia em que alguem usar a lista como inventario. Duas recontagens a mao em um dia deram numeros diferentes; o conserto e um gerador, nao uma terceira contagem.</td></tr>
+      <tr data-e="planejado"><td class="n mono">430</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Ordem de atomicos no congelamento funciona pelo motivo ERRADO, e nenhum teste acusa</strong></td><td class="e">Revisao SEC, 23/09/2026. <code>congelar</code> faz o <code>insert</code> e <strong>so depois</strong> incrementa o contador, e <code>conferir</code> sai cedo quando o contador e zero <strong>sem tomar o mutex</strong>. Isso funciona hoje porque <code>congelar</code> acontece com a trava global na mao -- <strong>nao</strong> por causa da ordem dos atomicos. Quem congelar de outro ponto amanha herda a corrida, e nao ha teste que acuse. Nao medido: e leitura de fonte. Vale o comentario dizendo de onde vem a garantia, porque garantia que depende de um invariante externo e nao o diz e garantia que se perde na primeira mudanca.</td></tr>
+    </tbody>
+  </table>
+  <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>
+</div>
+
+<footer>
+  Gerado de <code>docs/PENDENCIAS.md</code> por
+  <code>docs/dossie/pagina-dos-pedidos.py</code> — a lista não se digita, pela
+  mesma razão que o selo do dossiê não se digita. Esta é a página
+  <strong>6 de 6</strong> (faixa 421 em diante); as outras estão no
+  menu do topo. O dossiê técnico, com o formato byte a byte e a bancada
+  medida, é uma página à parte.
+</footer>
+</div>
+
+<script>
+(function(){
+  const linhas = Array.from(document.querySelectorAll('#tudo tbody tr'));
+  const botoes = Array.from(document.querySelectorAll('.filtros button'));
+  const busca  = document.getElementById('busca');
+  const conta  = document.getElementById('conta');
+  const vazio  = document.getElementById('vazio');
+  let filtro = 'todos';
+
+  // Sem isto, quem digita «indice» nao acha «indice» com acento -- e em
+  // portugues isso e a busca falhando calada, nao uma sutileza.
+  const achatar = t => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  linhas.forEach(tr => tr.dataset.busca = achatar(tr.textContent));
+
+  function aplicar(){
+    const q = achatar(busca.value.trim());
+    let vistos = 0;
+    for (const tr of linhas) {
+      const okEstado = filtro === 'todos' || tr.dataset.e === filtro;
+      const okTexto  = !q || tr.dataset.busca.includes(q);
+      const mostra = okEstado && okTexto;
+      tr.hidden = !mostra;
+      if (mostra) vistos++;
+    }
+    conta.textContent = vistos + ' de ' + linhas.length;
+    vazio.hidden = vistos !== 0;
+  }
+
+  botoes.forEach(b => b.addEventListener('click', () => {
+    filtro = b.dataset.f;
+    botoes.forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+    aplicar();
+  }));
+  busca.addEventListener('input', aplicar);
+  aplicar();
+})();
+</script>

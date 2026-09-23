@@ -20,13 +20,23 @@ O que a regua DEIXA DE FORA, de proposito: higiene de gerador, contagem de
 catraca, cosmetico de tela, pesquisa, e tudo o que so o time enxerga. Sao
 legitimos e continuam registrados -- so nao seguram a versao.
 
-## A lista: 14 pedidos (eram 14; o 355 saiu porque ja estava fechado, e o 426 entrou pela excecao)
+## A lista: 14 pedidos -- **5 FECHADOS, 1 parado no dono, 8 abertos** (23/09/2026, 20:40 UTC)
+
+O 355 saiu porque ja estava fechado; o 426 entrou pela excecao. Fechado aqui
+quer dizer **em codigo, com portoes verdes e no `origin`** -- nao "pronto para
+revisar".
+
+| estado | pedidos |
+|---|---|
+| FECHADO | 392 `8f63d7a` · 278 `8f63d7a` · 312 `8f63d7a` · 275 `3add5a9` · 327 `af4a5a5` |
+| parado no DONO | 326 -- refazer o compartilhamento da pagina; nao e consertavel daqui |
+| ABERTO | 262 · 419 · 255 · 381 · 372 · 339 · 422 (tres irmas) · 426 |
 
 ### A. Corrompe ou perde dado (5)
 
 | pedido | o que |
 |---|---|
-| 392 | A escala do `Decimal` do PRIMEIRO braco corrompe o valor dos outros em **100x** no `unir`, **sem aviso**. Valor monetario errado com cara de certo. |
+| 392 | **FECHADO** `8f63d7a` A escala do `Decimal` do PRIMEIRO braco corrompe o valor dos outros em **100x** no `unir`, **sem aviso**. Valor monetario errado com cara de certo. |
 | 262 | Gatilho AFTER que grava pela mesma sessao dentro do COMMIT **nao chega a gravar**. Escrita que o cliente julga feita. |
 | 419 | Sub-pedido que parou EM `max_linhas` publica parcial **calado**: `COUNT(*)` de um milhao responde mil. |
 | 255 | Tomada no meio de BULKINSERT ou de `reindexar` deixa a tabela **recusando** ate um `reindexar` manual. |
@@ -37,7 +47,7 @@ legitimos e continuam registrados -- so nao seguram a versao.
 | pedido | o que |
 |---|---|
 | 372 | O `dblink.json` grava a senha do destino **em texto puro, por padrao**. Quebra petrea. |
-| 275 | O driver ODBC e o unico cliente que manda `senha` **em texto puro no login**. Quebra petrea. |
+| 275 | **FECHADO** `3add5a9` O driver ODBC e o unico cliente que manda `senha` **em texto puro no login**. Quebra petrea. |
 | ~~355~~ | **SAI DA LISTA em 23/09/2026: ja estava FECHADO** desde 18/09 (`a51f1a3`), por decisao do dono. Eu o pus aqui lendo a marca do `PENDENCIAS.md`, que estava velha -- o pedido estava fechado em codigo e aberto no papel. A marca foi virada; o erro foi meu e esta registrado no pedido 425. |
 | 339 | Chave da API no `localStorage`, e o resto dos achados de alcance do parecer externo. |
 
@@ -45,15 +55,15 @@ legitimos e continuam registrados -- so nao seguram a versao.
 
 | pedido | o que |
 |---|---|
-| 278 | O pulso do cluster **aceita identidade auto-declarada**, e uma epoca forjada rebaixa o lider. |
-| 312 | O aperto de mao le do soquete **FORA do `Canal`**, portanto sem teto nenhum. |
+| 278 | **FECHADO** `8f63d7a` O pulso do cluster **aceita identidade auto-declarada**, e uma epoca forjada rebaixa o lider. |
+| 312 | **FECHADO** `8f63d7a` O aperto de mao le do soquete **FORA do `Canal`**, portanto sem teto nenhum. |
 
 ### D. O dossie mente para quem abre o link (2)
 
 | pedido | o que |
 |---|---|
-| 326 | O dossie compartilhado mostra uma versao **FIXADA e antiga**: quem abre o link nao ve o que a rodada fez. |
-| 327 | O botao «baixar» do dossie **nao funciona** para quem ve a pagina. |
+| 326 | **PARADO NO DONO** -- nao e consertavel daqui: a fixacao esta no compartilhamento da pagina, no servico. Procedimento no `docs/dossie/LEIA-ME.md`. O dossie compartilhado mostra uma versao **FIXADA e antiga**: quem abre o link nao ve o que a rodada fez. |
+| 327 | **FECHADO** `af4a5a5` O botao «baixar» do dossie **nao funciona** para quem ve a pagina. |
 
 ### F. O que a revisao SEC achou no que entrou HOJE (1)
 
