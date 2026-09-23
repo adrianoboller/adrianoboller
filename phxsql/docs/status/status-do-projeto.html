@@ -866,7 +866,7 @@ calado nem se ignora calado.</div>
 <div class="kpis">
 <div class="kpi"><b>97</b><span>documentos contados</span><span class="q">2026-09-23</span></div>
 <div class="kpi"><b>71.813</b><span>linhas de documentação</span><span class="q">2026-09-23</span></div>
-<div class="kpi"><b>264</b><span>arquivos de cognição</span><span class="q">2026-09-23</span></div>
+<div class="kpi"><b>265</b><span>arquivos de cognição</span><span class="q">2026-09-23</span></div>
 <div class="kpi"><b>8</b><span>páginas geradas e publicadas</span><span class="q">2026-09-23</span></div>
 <div class="kpi"><b>28</b><span>geradores no portão</span><span class="q">2026-09-23</span></div>
 </div>
@@ -924,6 +924,7 @@ calado nem se ignora calado.</div>
 <h2 id="s23"><span class="n">23 ·</span>As últimas frentes</h2>
 <p class="sub">Do próprio <code>git log</code>, só leitura. O commit conta a decisão e o motivo, não a lista de arquivos.</p>
 <div class="rolo"><table><thead><tr><th>commit</th><th>quando</th><th>o que decidiu</th></tr></thead><tbody>
+<tr><td class="mono">7697f9b</td><td class="q">2026-09-23 07:26</td><td>O guarda da republicacao tem teto de tamanho, e o gerador do TECNOLOGIAS conta a si mesmo</td></tr>
 <tr><td class="mono">805fb34</td><td class="q">2026-09-23 05:58</td><td>0.19.0: PSCH v10, o .fts selado, o braco do unir e o portao que faltava para a versao subir</td></tr>
 <tr><td class="mono">35c03dd</td><td class="q">2026-09-23 05:05</td><td>cognicao: o pedido 289 trazia a decisao do dono E a revisao dela, e eu li a primeira</td></tr>
 <tr><td class="mono">c298b4d</td><td class="q">2026-09-23 04:37</td><td>board: o selo da 0.19.0 passa a ser o ULTIMO passo, e o 890 virou 892 em quarenta minutos</td></tr>
@@ -933,7 +934,6 @@ calado nem se ignora calado.</div>
 <tr><td class="mono">832a888</td><td class="q">2026-09-23 03:16</td><td>perguntar ao dono vira ULTIMO recurso, e o 340 e o caso que fundou a regra</td></tr>
 <tr><td class="mono">fe91d21</td><td class="q">2026-09-23 03:14</td><td>o board da 0.19, e o defeito que a pergunta do dono achou</td></tr>
 <tr><td class="mono">e1edcc3</td><td class="q">2026-09-23 01:16</td><td>os derivados da rodada, com o portao VERDE: 27 geradores ok, zero velhos</td></tr>
-<tr><td class="mono">c4c7ddf</td><td class="q">2026-09-23 00:33</td><td>a guarda do binario velho vira UM modulo, porque copia diverge de si mesma</td></tr>
 </tbody></table></div>
 <p class="fonte"><b>De onde sai:</b> <code>git log --no-merges -n 10</code> na raiz do repositório. Commit novo muda esta seção — e aí ela estava velha mesmo, que é o que o portão dos geradores existe para pegar.</p>
 
@@ -976,7 +976,7 @@ calado nem se ignora calado.</div>
 <div class="nota g"><b>As quatro que faltavam nasceram em 16/09/2026, e nenhuma nasceu pelo atalho.</b> Riscos e Dívida técnica (pedido 264) exigiram um <code>docs/RISCOS.md</code> tabelado e uma marca <code>// DIVIDA:</code> no fonte; Telemetria e logs (265) exigiu que a bancada passasse a gravar <code>resultados.json</code>, porque sem ele não havia a data em que o número foi medido; Antes × Depois (266) exigiu uma série versionada, porque o <code>CAPABILITIES.json</code> é sobrescrito e só guarda o agora. Nos quatro casos <b>a fonte veio antes do gerador</b> — é isso que a lei cobra, e é por isso que ela demora mais que digitar o número.</div>
 <div class="nota v"><b>Por que isto é a seção mais importante da página.</b> O exemplo trazia <b>677 números no texto visível, todos digitados à mão</b>. Adotá-lo como veio criaria 677 lugares onde um número envelhece calado — e esta casa já pagou isso quatro vezes: o selo da capa parado numa versão por quatro lançamentos, 198 pedidos onde eram 203, 428 testes onde eram 451, 780 KiB de interface onde eram 1.032. A quarta ensina o alcance da lei: <b>gerador certo chamado pela metade entrega número velho anunciando sucesso.</b></div>
 <footer>
-  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 23/09/2026 07:09 UTC,
+  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 23/09/2026 07:48 UTC,
   pelo comando <code>./status-html.sh</code>. <b>Nenhum número desta página foi
   digitado</b>: cada um sai de um gerador, e cada seção diz de qual. Onde o
   gerador não existe, a seção <b>não nasceu</b> — está nomeada na §25, com o
