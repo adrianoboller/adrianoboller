@@ -413,6 +413,15 @@ pub const ISENTOS: &[(&str, &str)] = &[
         "MySQL(R) 8.0.46",
         "nome de produto e versao, o mesmo em toda lingua",
     ),
+    // A tela de particoes (verParticoes()). Lista de sufixos de arquivo: nao
+    // ha nada a traduzir, e uma chave com os seis idiomas iguais dispararia
+    // `nenhuma_chave_com_os_seis_idiomas_colados`. O irmao com "e" no meio
+    // (".bin, .memo e .log", em outra tela) NAO e isento: ali ha uma
+    // conjuncao portuguesa, e conjuncao se traduz.
+    (
+        ".bin, .memo, .log",
+        "sufixos de arquivo, identificador -- o mesmo em toda lingua",
+    ),
 ];
 
 /// A varredura de um arquivo. `arquivo` so entra no achado, para dizer onde.
@@ -1362,7 +1371,40 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// uma chave com os seis idiomas iguais dispararia a guarda
 /// `nenhuma_chave_com_os_seis_idiomas_colados`. Medido pelo conferidor antes
 /// (937) e depois (904).
-pub const TETO_ROTULOS_E_CRASE: usize = 904;
+///
+/// 23/09/2026, pedido 110 (revisao do agente tradutor): 904 -> **880**. A tela
+/// `verParticoes()` inteira -- os dois ramos, o da tabela nao paginada e o da
+/// paginada, com os tres modos de corte (letra, periodo, quantidade). Meia
+/// tela era o estado dela: as fichas de cima ja vinham pela fabrica
+/// (`tela.pt_*`) e a nota de baixo estava cravada, entao quem trocava de
+/// idioma via o cabecalho em alemao e o paragrafo em portugues.
+///
+/// Esta leva mediu o que faltava e achou o numero que muda o trabalho: dos
+/// 904, **595 eram FRAGMENTO** de frase partida por marcacao inline (vivem em
+/// 219 frases) e so **309** se sustentam sozinhos. Fragmento nao vira chave --
+/// dar uma chave a cada pedaco entrega tela que parece traduzida e esta
+/// errada, porque em alemao o verbo vai para o fim. Aqui os 23 literais da
+/// nota viraram **16 chaves de frase inteira**, e o vigesimo quarto
+/// (".bin, .memo, .log") foi para os [`ISENTOS`], que e o lugar de "isto e
+/// igual de proposito".
+///
+/// E a leva achou a doenca DENTRO da fabrica: as chaves
+/// `tela.pt_paginacao_na_criacao_a`, `tela.pt_criacao` e `..._b` eram tres
+/// chaves de uma frase so, ja traduzidas nos seis idiomas, porque um `<em>`
+/// passava no meio. Sairam, e no lugar delas o `marcado()` da pagina ganhou a
+/// terceira marca (`*assim*` vira `<em>`).
+///
+/// A medida que autorizou a marca nova desmentiu a expectativa, e e por isso
+/// que ela esta escrita: das 1.869 chaves da fabrica, **tres ja escreviam
+/// `*assim*`** -- `tela.tx_sem_dois_bancos`, `tela.ctb_com_ela_excluir_sem_motivo`
+/// e agora as desta leva -- e o asterisco saia CRU na tela, porque nao havia
+/// regra que o lesse. A marca nova nao inventou nada: ela passou a atender
+/// quem ja a pedia. E **uma** chave traz asterisco sozinho de proposito --
+/// `tela.g_usuario_sem_base`, o curinga do SQL mostrado como texto --, e por
+/// isso a guarda da paridade so vale para quem passa pelo `marcado()`.
+///
+/// Medido pelo conferidor antes (904) e depois (880).
+pub const TETO_ROTULOS_E_CRASE: usize = 880;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

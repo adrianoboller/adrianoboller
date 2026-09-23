@@ -5505,7 +5505,9 @@ async function verParticoes(db, tab) {
     folha(preencher(txt("tela.tt_particoes_de","Partições de {tab}"), {tab}), preencher(txt("tela.st_tabela_nao_paginada","{db} · esta tabela não é paginada"), {db}),
       `<div class="nota">
          <p>${marcado(preencher(txt("tela.pt_arquivo_unico","**Arquivo único.** Tudo mora em `{arq}`, sem sufixo numérico."), {arq: esc(tab) + ".reg"}))}</p>
-         <p>${esc(txt("tela.pt_paginacao_na_criacao_a","A paginação é decidida na"))} <em>${esc(txt("tela.pt_criacao","criação"))}</em> ${esc(txt("tela.pt_paginacao_na_criacao_b","e não se muda depois: ela é o que transforma o rowid em endereço, e trocar o divisor mudaria o endereço de cada registro já gravado."))} ${esc(txt("tela.pt_paginacao_na_criacao_c","Para paginar esta tabela seria preciso criar outra já paginada e copiar as linhas — o que refaz os rowids e quebra a ordem de digitação."))}</p>
+         <p>${marcado(txt("tela.pt_paginacao_na_criacao","A paginação é decidida na *criação* e não se muda depois: ela é o que transforma o rowid em endereço."))}
+         ${marcado(txt("tela.pt_trocar_o_divisor","Trocar o divisor mudaria o endereço de cada registro já gravado."))}
+         ${marcado(txt("tela.pt_para_paginar_depois","Para paginar esta tabela seria preciso criar outra já paginada e copiar as linhas — o que refaz os rowids e quebra a ordem de digitação."))}</p>
        </div>
        <div class="acoes">
          <button class="botao secundario" id="btVoltarGer">${esc(preencher(txt("tela.bt_voltar_gestao","← Gestão de {tab}"), {tab: esc(tab)}))}</button>
@@ -5537,42 +5539,35 @@ async function verParticoes(db, tab) {
          <div class="r">${esc(txt("tela.pt_volume_dos_externos","volume dos externos"))}</div><div class="u">.bin, .memo, .log</div></div>
      </div>` +
     `<div id="gradeParticoes"></div>` +
+    // A NOTA INTEIRA PELA FABRICA (23/09/2026, pedido 110). Antes cada
+    // paragrafo daqui era de tres a cinco literais cravados, porque um
+    // `<strong>`, um `<code>` e um `<em>` passavam no meio da frase. Pedaco
+    // de frase NAO se traduz -- em alemao o verbo vai para o fim e nenhuma
+    // ordem de pedacos serve para as seis linguas --, entao cada frase
+    // inteira virou UMA chave e a marcacao voltou como marca (`**`, `` ` ``,
+    // `*`), remontada pelo `marcado()` depois da traducao. O `{coluna}` e o
+    // `{rpa}` sao DADO, e entram pelo marcador, escapados a parte.
     `<div class="nota">
        ${porLetra ? `
-       <p><strong>Um arquivo por letra inicial de
-       <code>${esc(pag.coluna)}</code>.</strong> A linha vai para o arquivo
-       dela, e o endereço continua saindo de uma conta:
-       <code>rowid = (balde − 1) × ${esc(String(pag.registros_por_arquivo))} + slot</code>.
-       O balde que nunca recebeu linha não ganha arquivo — os 37 estão previstos,
-       nem todos existem.</p>
-       <p><strong>O teto é por letra, e não da tabela.</strong> Num cadastro
-       brasileiro o <code>_S</code> enche muito antes do <code>_K</code>: quem
-       enche primeiro derruba a inserção daquela letra, com as outras 36 ainda
-       com espaço. É a conta a fazer ao dimensionar.</p>
-       <p><strong>A ordem de digitação está no <code>rownum</code>.</strong>
-       Aqui o rowid diz em que <em>arquivo</em> a linha está, e não quando ela
-       chegou — a leitura sai em ordem alfabética de balde. A ordem de chegada
-       é a coluna de sistema, e é por ela que a grade pagina.</p>
+       <p>${marcado(txt("tela.pt_letra_conta","**Um arquivo por letra inicial de \`{coluna}\`.** A linha vai para o arquivo dela, e o endereço continua saindo de uma conta: \`rowid = (balde − 1) × {rpa} + slot\`."),
+             {coluna: pag.coluna, rpa: String(pag.registros_por_arquivo)})}
+       ${marcado(txt("tela.pt_letra_balde_vazio","O balde que nunca recebeu linha não ganha arquivo — os 37 estão previstos, nem todos existem."))}</p>
+       <p>${marcado(txt("tela.pt_letra_teto","**O teto é por letra, e não da tabela.** Num cadastro brasileiro o \`_S\` enche muito antes do \`_K\`."))}
+       ${marcado(txt("tela.pt_letra_teto_conta","Quem enche primeiro derruba a inserção daquela letra, com as outras 36 ainda com espaço. É a conta a fazer ao dimensionar."))}</p>
+       <p>${marcado(txt("tela.pt_letra_rownum","**A ordem de digitação está no \`rownum\`.** Aqui o rowid diz em que *arquivo* a linha está, e não quando ela chegou — a leitura sai em ordem alfabética de balde."))}
+       ${marcado(txt("tela.pt_letra_ordem_chegada","A ordem de chegada é a coluna de sistema, e é por ela que a grade pagina."))}</p>
        ` : ""}
        ${porPeriodo ? `
-       <p><strong>Aqui as faixas não são conta.</strong> O volume corta quando o
-       período da coluna <code>${esc(pag.coluna)}</code> vira — ou quando enche,
-       o que vier primeiro. Cada volume grava no próprio cabeçalho o rowid em
-       que começou, e achar o volume de um rowid é uma busca binária nessa
-       tabela pequena, em vez de uma divisão.</p>
-       <p><strong>A linha atrasada não volta.</strong> Um lançamento de janeiro
-       digitado em março entra no volume de março: a ordem de digitação é
-       sagrada, e voltar seria escrever no meio de um arquivo já fechado. Por
-       isso o período de um volume é <em>o período em que ele abriu</em>.</p>`
+       <p>${marcado(txt("tela.pt_periodo_corta","**Aqui as faixas não são conta.** O volume corta quando o período da coluna \`{coluna}\` vira — ou quando enche, o que vier primeiro."),
+             {coluna: pag.coluna})}
+       ${marcado(txt("tela.pt_periodo_cabecalho","Cada volume grava no próprio cabeçalho o rowid em que começou, e achar o volume de um rowid é uma busca binária nessa tabela pequena, em vez de uma divisão."))}</p>
+       <p>${marcado(txt("tela.pt_periodo_atrasada","**A linha atrasada não volta.** Um lançamento de janeiro digitado em março entra no volume de março."))}
+       ${marcado(txt("tela.pt_periodo_abriu","A ordem de digitação é sagrada, e voltar seria escrever no meio de um arquivo já fechado. Por isso o período de um volume é *o período em que ele abriu*."))}</p>`
        : `
-       <p><strong>Estas faixas são conta, não busca.</strong>
-       <code>volume = (rowid−1) ÷ ${esc(String(pag.registros_por_arquivo))} + 1</code>,
-       e o resto da divisão é o slot dentro do volume. É por isso que paginar
-       não custa nada na leitura.</p>`}
-       <p>O <code>.ndx</code> <em>não</em> se parte: ele já guarda rowid global,
-       e nenhuma linha do código de índice sabe que volume existe.</p>
-       <p><strong>Não dá para editar isto depois.</strong> Mudar o divisor mudaria
-       o endereço de cada registro já gravado. Ele se escolhe na criação.</p>
+       <p>${marcado(txt("tela.pt_faixa_e_conta","**Estas faixas são conta, não busca.** \`volume = (rowid−1) ÷ {rpa} + 1\`, e o resto da divisão é o slot dentro do volume. É por isso que paginar não custa nada na leitura."),
+             {rpa: String(pag.registros_por_arquivo)})}</p>`}
+       <p>${marcado(txt("tela.pt_ndx_nao_se_parte","O \`.ndx\` *não* se parte: ele já guarda rowid global, e nenhuma linha do código de índice sabe que volume existe."))}</p>
+       <p>${marcado(txt("tela.pt_nao_edita_depois","**Não dá para editar isto depois.** Mudar o divisor mudaria o endereço de cada registro já gravado. Ele se escolhe na criação."))}</p>
      </div>
      <div class="acoes">
        <button class="botao secundario" id="btVoltarGer">${esc(preencher(txt("tela.bt_voltar_gestao","← Gestão de {tab}"), {tab: esc(tab)}))}</button>
@@ -6301,7 +6296,7 @@ async function pivotPasso1() {
     <h3 class="secao">${esc(txt("tela.pv_tabelas_de_consulta","Tabelas de consulta"))}
       <em>${esc(txt("tela.pv_opcional_cruzar","(opcional — para cruzar por um campo que mora em outra tabela)"))}</em></h3>
 
-    ${sugeridas.length ? `<p class="leg">${esc(preencher(txt("tela.pv_esquema_declara_fks","O esquema de `{tab}` declara {n} chave(s) estrangeira(s). Clique para usar:"), {tab: w.tabela, n: sugeridas.length}))}</p>
+    ${sugeridas.length ? `<p class="leg">${marcado(txt("tela.pv_esquema_declara_fks","O esquema de `{tab}` declara {n} chave(s) estrangeira(s). Clique para usar:"), {tab: w.tabela, n: sugeridas.length})}</p>
       <div class="acoes">${sugeridas.map((s, i) =>
         `<button class="botao secundario" data-sug="${i}">+ ${esc(s.tabela)}
           <span class="leg">${esc(txt("tela.pv_por","por"))} ${esc(s.coluna)}</span></button>`).join("")}</div>`
@@ -8060,7 +8055,7 @@ async function verConfigServidor() {
           "A replicação está aberta a quem tiver o token."))}</strong>
        ${esc(txt("tela.cfg_rep_aberta_como",
           "replicacao.replicas_autorizadas está vazia, e vazia libera todos. Liste os IPs das réplicas para fechar."))}
-       ${c.replicacao_aberta.com_imagem_da_linha ? esc(txt("tela.cfg_rep_aberta_imagem",
+       ${c.replicacao_aberta.com_imagem_da_linha ? marcado(txt("tela.cfg_rep_aberta_imagem",
           "E com replicacao.imagem_da_linha ligada, o `replicar` entrega a LINHA INTEIRA.")) : ""}
        ${(c.replicacao_aberta.ops || []).map(o => `<code>${esc(o)}</code>`).join(", ")}</p></div>` : ""}
 
@@ -15338,9 +15333,29 @@ function preencher(bruto, dados) {
  *  POR QUE MARCA E NÃO HTML DENTRO DA CÉLULA. O texto vem de
  *  `phxsys.mensagens`, que um administrador edita pela grade -- é entrada de
  *  usuário. Aceitar `<b>` cru na célula seria aceitar `<script>` junto. Então
- *  escapa-se TUDO primeiro e só depois duas marcas viram etiqueta: `**assim**`
- *  e a palavra entre crases. É o mesmo motivo do `textContent` do
+ *  escapa-se TUDO primeiro e só depois TRES marcas viram etiqueta: `**assim**`,
+ *  `*assim*` e a palavra entre crases. É o mesmo motivo do `textContent` do
  *  `aplicarIdioma`, pelo caminho que precisa de ênfase.
+ *
+ *  POR QUE A TERCEIRA MARCA ENTROU (23/09/2026, pedido 110). As duas antigas
+ *  alcançavam `<b>`/`<strong>` e `<code>`, e NÃO alcançavam `<em>` -- e era o
+ *  `<em>` que continuava picando frase: `tela.pt_paginacao_na_criacao_a` +
+ *  `tela.pt_criacao` + `..._b` eram TRES chaves de uma frase só porque um
+ *  `<em>criação</em>` passava no meio. Três chaves de uma frase é a doença que
+ *  este `marcado()` existe para curar, e ela estava DENTRO da fábrica.
+ *
+ *  A ordem das três importa e não é gosto: o `**` roda ANTES do `*`, senão
+ *  `**x**` vira `<em>` vazio em volta de `x`.
+ *
+ *  E a medida desmentiu o que eu esperava, então ela fica escrita: eu supus
+ *  que nenhuma chave usasse `*`, e das 1.869 da fábrica DUAS já escreviam
+ *  `*assim*` -- `tela.tx_sem_dois_bancos` («*two-phase commit*») e
+ *  `tela.ctb_com_ela_excluir_sem_motivo` («*antes*») --, as duas passando por
+ *  aqui e saindo com o asterisco CRU na tela, nos seis idiomas, desde que
+ *  entraram. A marca nova não inventou uma convenção: ela passou a atender a
+ *  que os tradutores já usavam. Uma terceira, `tela.g_usuario_sem_base`, traz
+ *  um asterisco SOZINHO de propósito (o curinga do SQL) e não passa por aqui
+ *  -- vai por `esc()`, e ali `*` é texto.
  *
  *  O dado entra por último e escapado à parte: assim um valor que contenha
  *  `**` nunca vira negrito. Rótulo se marca; dado, nunca. */
@@ -15348,6 +15363,7 @@ function marcado(bruto, dados) {
   return esc(bruto)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
     .replace(/\{(\w+)\}/g, (m, k) => (dados && k in dados) ? esc(dados[k]) : m);
 }
 

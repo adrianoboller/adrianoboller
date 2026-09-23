@@ -1810,10 +1810,35 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
 
     // ---------------------------------------------- leva 13: particoes
     texto!("tela.pt_arquivo_unico", "**Arquivo único.** Tudo mora em `{arq}`, sem sufixo numérico.", "**Fichier unique.** Tout réside dans `{arq}`, sans suffixe numérique.", "**Single file.** Everything lives in `{arq}`, with no numeric suffix.", "**File unico.** Tutto risiede in `{arq}`, senza suffisso numerico.", "**Einzelne Datei.** Alles liegt in `{arq}`, ohne numerisches Suffix.", "**Archivo único.** Todo vive en `{arq}`, sin sufijo numérico."),
-    texto!("tela.pt_paginacao_na_criacao_a", "A paginação é decidida na", "La pagination est décidée à la", "Pagination is decided at", "La paginazione è decisa alla", "Die Paginierung wird bei der", "La paginación se decide en la"),
-    texto!("tela.pt_criacao", "criação", "création", "creation", "creazione", "Erstellung", "creación"),
-    texto!("tela.pt_paginacao_na_criacao_b", "e não se muda depois: ela é o que transforma o rowid em endereço, e trocar o divisor mudaria o endereço de cada registro já gravado.", "et ne change plus ensuite : c'est elle qui transforme le rowid en adresse, et changer le diviseur changerait l'adresse de chaque enregistrement déjà écrit.", "and doesn't change afterward: it's what turns the rowid into an address, and changing the divisor would change the address of every record already written.", "e non cambia più dopo: è ciò che trasforma il rowid in indirizzo, e cambiare il divisore cambierebbe l'indirizzo di ogni record già scritto.", "und ändert sich danach nicht mehr: Sie ist es, die die rowid in eine Adresse verwandelt, und eine Änderung des Divisors würde die Adresse jedes bereits geschriebenen Datensatzes ändern.", "y no cambia después: es lo que convierte el rowid en dirección, y cambiar el divisor cambiaría la dirección de cada registro ya grabado."),
-    texto!("tela.pt_paginacao_na_criacao_c", "Para paginar esta tabela seria preciso criar outra já paginada e copiar as linhas — o que refaz os rowids e quebra a ordem de digitação.", "Pour paginer cette table, il faudrait en créer une autre déjà paginée et copier les lignes — ce qui refait les rowids et casse l'ordre de saisie.", "To paginate this table you'd need to create another one already paginated and copy the rows — which rebuilds the rowids and breaks the entry order.", "Per paginare questa tabella servirebbe crearne un'altra già paginata e copiare le righe — il che rifà i rowid e rompe l'ordine di digitazione.", "Um diese Tabelle zu paginieren, müsste man eine andere, bereits paginierte, erstellen und die Zeilen kopieren — was die rowids neu erstellt und die Eingabereihenfolge bricht.", "Para paginar esta tabla habría que crear otra ya paginada y copiar las filas — lo que rehace los rowids y rompe el orden de digitación."),
+    // A tela verParticoes() inteira (23/09/2026, pedido 110). A nota de
+    // baixo vivia cravada e picada: `<strong>`, `<code>` e `<em>` cortavam
+    // cada paragrafo em tres a cinco literais, e pedaco de frase nao se
+    // traduz. Aqui cada FRASE inteira e uma chave, e a marcacao volta como
+    // marca -- `**`, crase e `*` -- remontada pelo `marcado()` DEPOIS da
+    // traducao.
+    //
+    // As tres primeiras chaves substituem `pt_paginacao_na_criacao_a`,
+    // `pt_criacao` e `..._b`/`..._c`: eram TRES chaves de uma frase so,
+    // porque um `<em>criação</em>` passava no meio. A doenca da frase
+    // picada estava DENTRO da fabrica, ja traduzida nos seis idiomas -- em
+    // alemao aquilo saia como "Die Paginierung wird bei der" + "Erstellung"
+    // + "und andert sich...", que nao e frase alema nenhuma.
+    texto!("tela.pt_paginacao_na_criacao", "A paginação é decidida na *criação* e não se muda depois: ela é o que transforma o rowid em endereço.", "La pagination est décidée à la *création* et ne change plus ensuite : c'est elle qui transforme le rowid en adresse.", "Pagination is decided at *creation* and does not change afterward: it is what turns the rowid into an address.", "La paginazione è decisa alla *creazione* e non cambia più dopo: è ciò che trasforma il rowid in indirizzo.", "Die Paginierung wird bei der *Erstellung* entschieden und ändert sich danach nicht mehr: Sie verwandelt die rowid in eine Adresse.", "La paginación se decide en la *creación* y no cambia después: es lo que convierte el rowid en dirección."),
+    texto!("tela.pt_trocar_o_divisor", "Trocar o divisor mudaria o endereço de cada registro já gravado.", "Changer le diviseur changerait l'adresse de chaque enregistrement déjà écrit.", "Changing the divisor would change the address of every record already written.", "Cambiare il divisore cambierebbe l'indirizzo di ogni record già scritto.", "Eine Änderung des Divisors würde die Adresse jedes bereits geschriebenen Datensatzes ändern.", "Cambiar el divisor cambiaría la dirección de cada registro ya grabado."),
+    texto!("tela.pt_para_paginar_depois", "Para paginar esta tabela seria preciso criar outra já paginada e copiar as linhas — o que refaz os rowids e quebra a ordem de digitação.", "Pour paginer cette table, il faudrait en créer une autre déjà paginée et copier les lignes — ce qui refait les rowids et casse l'ordre de saisie.", "To paginate this table you'd need to create another one already paginated and copy the rows — which rebuilds the rowids and breaks the entry order.", "Per paginare questa tabella servirebbe crearne un'altra già paginata e copiare le righe — il che rifà i rowid e rompe l'ordine di digitazione.", "Um diese Tabelle zu paginieren, müsste man eine andere, bereits paginierte, erstellen und die Zeilen kopieren — was die rowids neu erstellt und die Eingabereihenfolge bricht.", "Para paginar esta tabla habría que crear otra ya paginada y copiar las filas — lo que rehace los rowids y rompe el orden de digitación."),
+    texto!("tela.pt_letra_conta", "**Um arquivo por letra inicial de `{coluna}`.** A linha vai para o arquivo dela, e o endereço continua saindo de uma conta: `rowid = (balde − 1) × {rpa} + slot`.", "**Un fichier par lettre initiale de `{coluna}`.** La ligne va dans son fichier, et l'adresse sort toujours d'un calcul : `rowid = (seau − 1) × {rpa} + slot`.", "**One file per initial letter of `{coluna}`.** The row goes to its own file, and the address still comes out of a calculation: `rowid = (bucket − 1) × {rpa} + slot`.", "**Un file per lettera iniziale di `{coluna}`.** La riga va nel suo file, e l'indirizzo esce sempre da un calcolo: `rowid = (secchio − 1) × {rpa} + slot`.", "**Eine Datei pro Anfangsbuchstabe von `{coluna}`.** Die Zeile geht in ihre Datei, und die Adresse ergibt sich weiter aus einer Rechnung: `rowid = (Eimer − 1) × {rpa} + slot`.", "**Un archivo por letra inicial de `{coluna}`.** La fila va a su archivo, y la dirección sigue saliendo de una cuenta: `rowid = (cubeta − 1) × {rpa} + slot`."),
+    texto!("tela.pt_letra_balde_vazio", "O balde que nunca recebeu linha não ganha arquivo — os 37 estão previstos, nem todos existem.", "Le seau qui n'a jamais reçu de ligne n'obtient pas de fichier — les 37 sont prévus, tous n'existent pas.", "A bucket that never received a row gets no file — the 37 are foreseen, not all of them exist.", "Il secchio che non ha mai ricevuto una riga non ottiene un file — i 37 sono previsti, non tutti esistono.", "Ein Eimer, der nie eine Zeile bekam, erhält keine Datei — die 37 sind vorgesehen, nicht alle existieren.", "La cubeta que nunca recibió fila no gana archivo — las 37 están previstas, no todas existen."),
+    texto!("tela.pt_letra_teto", "**O teto é por letra, e não da tabela.** Num cadastro brasileiro o `_S` enche muito antes do `_K`.", "**Le plafond est par lettre, et non de la table.** Dans un fichier brésilien, le `_S` se remplit bien avant le `_K`.", "**The ceiling is per letter, not per table.** In a Brazilian register `_S` fills up long before `_K`.", "**Il tetto è per lettera, non della tabella.** In un anagrafico brasiliano la `_S` si riempie molto prima della `_K`.", "**Die Obergrenze gilt pro Buchstabe, nicht für die Tabelle.** In einem brasilianischen Bestand füllt sich `_S` viel früher als `_K`.", "**El tope es por letra, y no de la tabla.** En un padrón brasileño la `_S` se llena mucho antes que la `_K`."),
+    texto!("tela.pt_letra_teto_conta", "Quem enche primeiro derruba a inserção daquela letra, com as outras 36 ainda com espaço. É a conta a fazer ao dimensionar.", "Celui qui se remplit en premier fait échouer l'insertion de cette lettre, les 36 autres ayant encore de la place. C'est le calcul à faire au dimensionnement.", "Whichever fills first brings down the insert for that letter, with the other 36 still having room. That is the calculation to do when sizing.", "Chi si riempie per primo fa cadere l'inserimento di quella lettera, con le altre 36 ancora con spazio. È il calcolo da fare nel dimensionare.", "Wer zuerst voll ist, bringt das Einfügen dieses Buchstabens zu Fall, während die anderen 36 noch Platz haben. Das ist die Rechnung bei der Dimensionierung.", "Quien se llena primero derriba la inserción de esa letra, con las otras 36 aún con espacio. Es la cuenta a hacer al dimensionar."),
+    texto!("tela.pt_letra_rownum", "**A ordem de digitação está no `rownum`.** Aqui o rowid diz em que *arquivo* a linha está, e não quando ela chegou — a leitura sai em ordem alfabética de balde.", "**L'ordre de saisie est dans le `rownum`.** Ici le rowid dit dans quel *fichier* la ligne se trouve, et non quand elle est arrivée — la lecture sort dans l'ordre alphabétique des seaux.", "**The entry order is in `rownum`.** Here the rowid says which *file* the row is in, not when it arrived — reading comes out in alphabetical bucket order.", "**L'ordine di digitazione è nel `rownum`.** Qui il rowid dice in quale *file* si trova la riga, e non quando è arrivata — la lettura esce in ordine alfabetico di secchio.", "**Die Eingabereihenfolge steht im `rownum`.** Hier sagt die rowid, in welcher *Datei* die Zeile liegt, nicht wann sie ankam — gelesen wird in alphabetischer Eimer-Reihenfolge.", "**El orden de digitación está en el `rownum`.** Aquí el rowid dice en qué *archivo* está la fila, y no cuándo llegó — la lectura sale en orden alfabético de cubeta."),
+    texto!("tela.pt_letra_ordem_chegada", "A ordem de chegada é a coluna de sistema, e é por ela que a grade pagina.", "L'ordre d'arrivée est la colonne système, et c'est par elle que la grille pagine.", "The arrival order is the system column, and it is what the grid paginates by.", "L'ordine di arrivo è la colonna di sistema, ed è per essa che la griglia pagina.", "Die Ankunftsreihenfolge ist die Systemspalte, und nach ihr paginiert das Raster.", "El orden de llegada es la columna de sistema, y es por ella que la grilla pagina."),
+    texto!("tela.pt_periodo_corta", "**Aqui as faixas não são conta.** O volume corta quando o período da coluna `{coluna}` vira — ou quando enche, o que vier primeiro.", "**Ici les plages ne sont pas un calcul.** Le volume coupe quand la période de la colonne `{coluna}` tourne — ou quand il se remplit, au premier des deux.", "**Here the ranges are not a calculation.** The volume cuts when the period of column `{coluna}` turns over — or when it fills up, whichever comes first.", "**Qui gli intervalli non sono un calcolo.** Il volume taglia quando il periodo della colonna `{coluna}` gira — o quando si riempie, quello che viene prima.", "**Hier sind die Bereiche keine Rechnung.** Das Volume schneidet, wenn der Zeitraum der Spalte `{coluna}` umspringt — oder wenn es voll wird, was zuerst kommt.", "**Aquí los rangos no son cuenta.** El volumen corta cuando el período de la columna `{coluna}` gira — o cuando se llena, lo que venga primero."),
+    texto!("tela.pt_periodo_cabecalho", "Cada volume grava no próprio cabeçalho o rowid em que começou, e achar o volume de um rowid é uma busca binária nessa tabela pequena, em vez de uma divisão.", "Chaque volume inscrit dans son propre en-tête le rowid où il a commencé, et trouver le volume d'un rowid est une recherche binaire dans cette petite table, au lieu d'une division.", "Each volume writes in its own header the rowid it started at, and finding the volume of a rowid is a binary search in that small table, instead of a division.", "Ogni volume scrive nella propria intestazione il rowid in cui è iniziato, e trovare il volume di un rowid è una ricerca binaria in quella tabella piccola, invece di una divisione.", "Jedes Volume schreibt im eigenen Kopf die rowid, bei der es begann, und das Volume einer rowid zu finden ist eine binäre Suche in dieser kleinen Tabelle statt einer Division.", "Cada volumen graba en su propia cabecera el rowid en que comenzó, y hallar el volumen de un rowid es una búsqueda binaria en esa tabla pequeña, en vez de una división."),
+    texto!("tela.pt_periodo_atrasada", "**A linha atrasada não volta.** Um lançamento de janeiro digitado em março entra no volume de março.", "**La ligne en retard ne revient pas.** Une écriture de janvier saisie en mars entre dans le volume de mars.", "**A late row does not go back.** A January entry typed in March goes into the March volume.", "**La riga in ritardo non torna indietro.** Una registrazione di gennaio digitata a marzo entra nel volume di marzo.", "**Die verspätete Zeile kehrt nicht zurück.** Eine Januar-Buchung, die im März eingegeben wird, landet im März-Volume.", "**La fila atrasada no vuelve.** Un asiento de enero digitado en marzo entra en el volumen de marzo."),
+    texto!("tela.pt_periodo_abriu", "A ordem de digitação é sagrada, e voltar seria escrever no meio de um arquivo já fechado. Por isso o período de um volume é *o período em que ele abriu*.", "L'ordre de saisie est sacré, et revenir en arrière serait écrire au milieu d'un fichier déjà fermé. C'est pourquoi la période d'un volume est *la période où il a ouvert*.", "The entry order is sacred, and going back would mean writing in the middle of a file already closed. That is why a volume's period is *the period in which it opened*.", "L'ordine di digitazione è sacro, e tornare indietro sarebbe scrivere in mezzo a un file già chiuso. Per questo il periodo di un volume è *il periodo in cui si è aperto*.", "Die Eingabereihenfolge ist heilig, und zurückzugehen hieße, mitten in eine schon geschlossene Datei zu schreiben. Darum ist der Zeitraum eines Volumes *der Zeitraum, in dem es öffnete*.", "El orden de digitación es sagrado, y volver sería escribir en medio de un archivo ya cerrado. Por eso el período de un volumen es *el período en que abrió*."),
+    texto!("tela.pt_faixa_e_conta", "**Estas faixas são conta, não busca.** `volume = (rowid−1) ÷ {rpa} + 1`, e o resto da divisão é o slot dentro do volume. É por isso que paginar não custa nada na leitura.", "**Ces plages sont un calcul, pas une recherche.** `volume = (rowid−1) ÷ {rpa} + 1`, et le reste de la division est le slot dans le volume. C'est pour cela que paginer ne coûte rien à la lecture.", "**These ranges are a calculation, not a search.** `volume = (rowid−1) ÷ {rpa} + 1`, and the remainder of the division is the slot inside the volume. That is why paginating costs nothing when reading.", "**Questi intervalli sono un calcolo, non una ricerca.** `volume = (rowid−1) ÷ {rpa} + 1`, e il resto della divisione è lo slot dentro il volume. È per questo che paginare non costa nulla in lettura.", "**Diese Bereiche sind eine Rechnung, keine Suche.** `volume = (rowid−1) ÷ {rpa} + 1`, und der Rest der Division ist der Slot im Volume. Darum kostet Paginieren beim Lesen nichts.", "**Estos rangos son cuenta, no búsqueda.** `volume = (rowid−1) ÷ {rpa} + 1`, y el resto de la división es el slot dentro del volumen. Por eso paginar no cuesta nada en la lectura."),
+    texto!("tela.pt_ndx_nao_se_parte", "O `.ndx` *não* se parte: ele já guarda rowid global, e nenhuma linha do código de índice sabe que volume existe.", "Le `.ndx` ne se découpe *pas* : il garde déjà un rowid global, et aucune ligne du code d'index ne sait qu'un volume existe.", "The `.ndx` does *not* get split: it already stores a global rowid, and no line of the index code knows that a volume exists.", "Il `.ndx` *non* si divide: conserva già un rowid globale, e nessuna riga del codice di indice sa che esiste un volume.", "Die `.ndx` wird *nicht* geteilt: sie speichert schon eine globale rowid, und keine Zeile des Index-Codes weiß, dass ein Volume existiert.", "El `.ndx` *no* se parte: ya guarda rowid global, y ninguna línea del código de índice sabe que existe un volumen."),
+    texto!("tela.pt_nao_edita_depois", "**Não dá para editar isto depois.** Mudar o divisor mudaria o endereço de cada registro já gravado. Ele se escolhe na criação.", "**On ne peut pas modifier ceci ensuite.** Changer le diviseur changerait l'adresse de chaque enregistrement déjà écrit. Il se choisit à la création.", "**This cannot be edited later.** Changing the divisor would change the address of every record already written. It is chosen at creation.", "**Questo non si può modificare dopo.** Cambiare il divisore cambierebbe l'indirizzo di ogni record già scritto. Si sceglie alla creazione.", "**Das lässt sich später nicht ändern.** Eine Änderung des Divisors würde die Adresse jedes bereits geschriebenen Datensatzes ändern. Er wird bei der Erstellung gewählt.", "**Esto no se puede editar después.** Cambiar el divisor cambiaría la dirección de cada registro ya grabado. Se elige en la creación."),
     texto!("tela.pt_baldes_com_linha", "{com} de {total} baldes com linha · pela primeira letra de {coluna}", "{com} sur {total} compartiments avec ligne · par la première lettre de {coluna}", "{com} of {total} buckets with rows · by the first letter of {coluna}", "{com} di {total} bucket con righe · per la prima lettera di {coluna}", "{com} von {total} Eimern mit Zeilen · nach dem ersten Buchstaben von {coluna}", "{com} de {total} baldes con fila · por la primera letra de {coluna}"),
     texto!("tela.pt_volumes_do_reg", "{n} volume(s) do .reg · {corte}", "{n} volume(s) du .reg · {corte}", "{n} volume(s) of the .reg · {corte}", "{n} volume/i del .reg · {corte}", "{n} Volume(s) der .reg · {corte}", "{n} volumen(es) del .reg · {corte}"),
     texto!("tela.pt_corta_periodo", "corta {modo}, pela coluna {coluna}", "coupe {modo}, par la colonne {coluna}", "cuts {modo}, by column {coluna}", "taglia {modo}, per la colonna {coluna}", "schneidet {modo}, nach Spalte {coluna}", "corta {modo}, por la columna {coluna}"),
@@ -2825,6 +2850,7 @@ mod testes {
     /// naquele idioma. Contar e barato; ler seis colunas a olho, nao.
     #[test]
     fn as_marcas_de_enfase_fecham() {
+        let com_enfase = chaves_passadas_pelo_marcado();
         for f in FABRICA_TELA {
             for (i, t) in f.textos.iter().enumerate() {
                 assert_eq!(
@@ -2841,8 +2867,103 @@ mod testes {
                     f.nome,
                     IDIOMAS[i]
                 );
+                // A marca do italico, que entrou em 23/09/2026 com o pedido
+                // 110. Conta-se DEPOIS de tirar os pares `**`, senao todo
+                // negrito seria lido como dois italicos, e SO para a chave
+                // que a tela passa pelo `marcado()`: `tela.g_usuario_sem_base`
+                // traz um asterisco sozinho de proposito -- e o curinga do
+                // SQL, mostrado como texto por `esc()`, e ali um `*` sem par
+                // e o certo. Onde ha `marcado()`, nao e: a expressao casa
+                // `*([^*]+)*`, entao um asterisco sem par engole o resto da
+                // frase dentro de um `<em>`.
+                //
+                // **Prova real, com o defeito reposto:** tire um dos dois
+                // asteriscos de `tela.pt_ndx_nao_se_parte` em qualquer
+                // idioma e este teste reprova nomeando a chave; devolva-o e
+                // ele passa.
+                if com_enfase.contains(f.nome) {
+                    assert_eq!(
+                        t.replace("**", "").matches('*').count() % 2,
+                        0,
+                        "{} em {}: asterisco de italico aberto e nao fechado: {t:?}",
+                        f.nome,
+                        IDIOMAS[i]
+                    );
+                }
             }
         }
+    }
+
+    /// O outro lado da enfase: texto de fabrica que TRAZ marca e que a tela
+    /// nunca passa pelo `marcado()`.
+    ///
+    /// A marca so vira etiqueta dentro do `marcado()`. Pela via do `esc()` --
+    /// que e a mais comum, e a certa para texto sem enfase -- ela sai CRUA na
+    /// tela: a pessoa le «O esquema de \`clientes\` declara 3 chaves», com as
+    /// crases. E o irmao exato da chave morta: o tradutor ve a marca na
+    /// tabela, acredita nela, e a tela nao muda.
+    ///
+    /// **Prova real, com o defeito reposto (medido em 23/09/2026):** eram
+    /// DUAS -- `tela.pv_esquema_declara_fks` e `tela.cfg_rep_aberta_imagem`,
+    /// as duas mostrando crase crua desde que entraram. Troque qualquer uma
+    /// das duas de volta para `esc(...)` e este teste reprova nomeando-a.
+    #[test]
+    fn toda_marca_da_fabrica_chega_ao_marcado() {
+        let com_enfase = chaves_passadas_pelo_marcado();
+        let mut cruas: Vec<&str> = Vec::new();
+        for f in FABRICA_TELA {
+            let tem_marca = f.textos.iter().any(|t| {
+                t.contains("**") || t.contains('`') || t.replace("**", "").matches('*').count() >= 2
+            });
+            if tem_marca && !com_enfase.contains(f.nome) {
+                cruas.push(f.nome);
+            }
+        }
+        assert!(
+            cruas.is_empty(),
+            "{} chave(s) com marca que a tela nunca passa pelo marcado() -- a \
+             marca sai crua na tela: {cruas:?}",
+            cruas.len()
+        );
+    }
+
+    /// As chaves que a interface entrega ao `marcado()`, e so elas.
+    ///
+    /// A leitura e por PARENTESE BALANCEADO, e nao por uma janela de tantos
+    /// caracteres: `marcado(txt(a), {x: txt(b)})` tem duas chaves dentro da
+    /// mesma chamada e a de fora, `esc(txt(c))`, comeca logo depois. Janela
+    /// fixa misturaria as duas e a guarda passaria a aprovar em silencio.
+    fn chaves_passadas_pelo_marcado() -> HashSet<String> {
+        let mut achadas = HashSet::new();
+        for (_, fonte) in crate::conferidor::FONTES {
+            let b = fonte.as_bytes();
+            let mut i = 0;
+            while let Some(p) = fonte[i..].find("marcado(") {
+                let ini = i + p + "marcado(".len();
+                let mut nivel = 1i32;
+                let mut j = ini;
+                while j < b.len() && nivel > 0 {
+                    match b[j] {
+                        b'(' => nivel += 1,
+                        b')' => nivel -= 1,
+                        _ => {}
+                    }
+                    j += 1;
+                }
+                for pedaco in fonte[ini..j].split(&format!("\"{PREFIXO_DA_TELA}")).skip(1) {
+                    if let Some(resto) = pedaco.split('"').next() {
+                        if resto
+                            .chars()
+                            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+                        {
+                            achadas.insert(format!("{PREFIXO_DA_TELA}{resto}"));
+                        }
+                    }
+                }
+                i = ini;
+            }
+        }
+        achadas
     }
 
     /// Marcador `{assim}` que existe numa lingua e some noutra vira buraco na

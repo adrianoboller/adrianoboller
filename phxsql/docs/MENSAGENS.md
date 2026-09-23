@@ -348,14 +348,39 @@ entrada de usuário. Aceitar `<b>` cru na célula é aceitar `<script>` junto, e
 seria desfazer a decisão que o `aplicarIdioma` já tinha tomado ao escrever por
 `textContent`.
 
-Então o `marcado()` **escapa tudo primeiro** e só depois transforma duas
+Então o `marcado()` **escapa tudo primeiro** e só depois transforma três
 marcas em etiqueta:
 
 | marca | vira | para quê |
 |---|---|---|
 | `**assim**` | `<b>assim</b>` | ênfase |
+| `*assim*` | `<em>assim</em>` | ênfase leve: a palavra que a frase contrasta |
 | `` `assim` `` | `<code>assim</code>` | nome de API, de arquivo, de comando |
 | `{nome}` | o dado, escapado à parte | número, nome de tela, nome de monitor |
+
+A ordem das três **não é gosto**: o `**` roda antes do `*`, senão todo negrito
+seria lido como dois itálicos.
+
+A terceira entrou em **23/09/2026** (pedido 110), e a medida que a autorizou
+desmentiu a expectativa — por isso ela fica escrita. A suposição era que
+nenhuma chave usasse `*`; das **1.869** da fábrica, **duas já escreviam
+`*assim*`** — `tela.tx_sem_dois_bancos` («*two-phase commit*») e
+`tela.ctb_com_ela_excluir_sem_motivo` («*antes*») —, as duas passando pelo
+`marcado()` e saindo com o **asterisco cru na tela**, nos seis idiomas, desde
+que entraram. A marca nova não inventou convenção: passou a atender a que os
+tradutores já usavam.
+
+Sem ela, o `<em>` continuava **picando frase** — e a doença estava *dentro* da
+fábrica: `tela.pt_paginacao_na_criacao_a` + `tela.pt_criacao` + `..._b` eram
+**três chaves de uma frase só**, já traduzidas nos seis idiomas, porque um
+`<em>criação</em>` passava no meio. Em alemão aquilo saía como
+«Die Paginierung wird bei der» + «Erstellung» + «und ändert sich…», que não é
+frase alemã nenhuma. As três viraram uma.
+
+E há um asterisco **sozinho de propósito**: `tela.g_usuario_sem_base` mostra o
+curinga do SQL como texto e vai por `esc()`, nunca pelo `marcado()`. Por isso a
+guarda da paridade do `*` só vale para quem passa pelo `marcado()` — a lista
+sai do código, pelos parênteses balanceados da chamada, nunca digitada.
 
 O dado entra **por último e escapado sozinho**: um valor que contenha `**`
 nunca vira negrito. É a regra de sempre por outro caminho — rótulo se marca,
@@ -380,8 +405,9 @@ dado nunca.
 | `idiomas::nenhum_texto_da_fabrica_traz_etiqueta_crua` | `<b>` gravado numa célula: ele apareceria escrito na tela, com sinal de menor e tudo |
 | `idiomas::as_marcas_de_enfase_fecham` | `**` ou crase aberta e não fechada — o erro mais provável de quem reescreve a frase inteira em alemão, e o mais silencioso, porque só aparece naquele idioma |
 | `idiomas::todo_idioma_tem_os_mesmos_marcadores_do_portugues` | `{n}` que existe no português e sumiu no italiano: o número não apareceria |
+| `idiomas::toda_marca_da_fabrica_chega_ao_marcado` | chave com marca que a tela passa por `esc()` e não pelo `marcado()`: a crase sai crua na tela, e o tradutor acredita na marca que não faz nada |
 
-Os três **falham com o defeito reposto** — trocar um `**qualquer navegador**`
+Os quatro **falham com o defeito reposto** — trocar um `**qualquer navegador**`
 de volta por `<b>qualquer navegador</b>`, apagar um asterisco, apagar um
 `{n}` — e cada um nomeia a chave e o idioma.
 
@@ -458,6 +484,7 @@ não é o defeito. A guarda começa a valer no terceiro.
 | `idiomas::nenhum_texto_da_fabrica_traz_etiqueta_crua` | `<b>` gravado na célula — a página escapa antes de escrever, e ele apareceria escrito |
 | `idiomas::as_marcas_de_enfase_fecham` | `**` ou crase aberta e não fechada num idioma só |
 | `idiomas::todo_idioma_tem_os_mesmos_marcadores_do_portugues` | `{n}` perdido numa tradução: o número não apareceria |
+| `idiomas::toda_marca_da_fabrica_chega_ao_marcado` | marca de fábrica que a tela nunca passa pelo `marcado()`: sai crua na tela |
 
 O `TETO_ROTULOS_E_CRASE` **só desce**. Traduziu um punhado: rode o exemplo,
 veja o número novo e baixe a catraca no mesmo commit — catraca frouxa não
@@ -469,7 +496,30 @@ segura nada.
 > aposenta o antigo e faz nascer um novo, no número medido do dia. O
 > precedente já estava em `conferidor_grades::TETO_TABELA_NA_MAO`.
 > `TETO_ROTULOS_E_CRASE` nasceu em 1.744; o mesmo commit que ensinou o crivo
-> também traduziu o lote coerente do Painel, baixando para **1.720**.
+> também traduziu o lote coerente do Painel, baixando para **1.720**. Em
+> 23/09/2026 está em **880**.
+
+#### O número que muda o trabalho: 2 de cada 3 são FRAGMENTO
+
+Medido em 23/09/2026 sobre os 904 de então, e é a medida que diz por onde
+continuar. Mediana de 18 bytes não é prosa — é **pedaço**:
+
+| classe | textos | vira quantas chaves |
+|---|---|---|
+| **(a)** texto que se sustenta sozinho | 309 | 309 |
+| **(b)** fragmento de frase partida por marcação inline | 595 | **219** (a frase, não o pedaço) |
+
+A conta é por **bloco**: acham-se os nós de texto que vivem dentro do mesmo
+elemento de bloco, e o bloco que tem mais de um nó — ou um `<code>`/`<b>`/`<em>`
+com texto dentro — é frase partida. Dar uma chave a cada pedaço entrega tela
+que **parece** traduzida e está errada, porque em alemão o verbo vai para o
+fim e nenhuma ordem de pedaços serve para as seis línguas.
+
+E a mesma medida achou o limite que só aparece depois de remontar: **3** dos
+904 fragmentos passavam de 250 B, mas **24 das 493 chaves futuras** passam,
+porque a frase inteira é maior que qualquer pedaço dela — e o alemão ainda
+cresce por cima disso. Quem for traduzir um bloco desses já parte a frase em
+frases inteiras antes de escrever, não depois de o teste reprovar.
 
 ### O que o conferidor enxerga, e o que não
 
