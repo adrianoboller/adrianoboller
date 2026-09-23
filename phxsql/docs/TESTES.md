@@ -35,41 +35,41 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **2.710 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **2.800 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Protocolo e portões (despachar) | 610 | 22,0 |
-| Motor de dados (arquivos, índice, diários) | 561 | 20,3 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 261 | 9,4 |
-| Camada SQL (léxico, sintaxe, tradução) | 251 | 9,1 |
-| Servidor (outros) | 223 | 8,1 |
-| Configuração | 146 | 5,3 |
+| Protocolo e portões (despachar) | 617 | 22,0 |
+| Motor de dados (arquivos, índice, diários) | 561 | 20,0 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 261 | 9,3 |
+| Camada SQL (léxico, sintaxe, tradução) | 251 | 9,0 |
+| Servidor (outros) | 244 | 8,7 |
+| Configuração | 146 | 5,2 |
 | Criptografia e codificação | 128 | 4,6 |
 | DbLink | 94 | 3,4 |
 | Telemetria e profiler | 73 | 2,6 |
-| ODBC | 66 | 2,4 |
+| ODBC | 71 | 2,5 |
 | Gatilhos e procedimentos | 45 | 1,6 |
 | **Jobs** | **33** | **1,2** |
 | **Usuários e permissões** | **33** | **1,2** |
-| **Mensagens (i18n do servidor)** | **32** | **1,2** |
+| **Mensagens (i18n do servidor)** | **32** | **1,1** |
 | **Interface web (servidor HTTP)** | **29** | **1,0** |
-| **Replicação** | **24** | **0,9** |
+| **Replicação** | **26** | **0,9** |
 | **Transações** | **23** | **0,8** |
-| **Segurança de rede (blacklist, firewall)** | **21** | **0,8** |
-| **MCP** | **21** | **0,8** |
+| **Segurança de rede (blacklist, firewall)** | **21** | **0,7** |
+| **MCP** | **21** | **0,7** |
 | **Console de terminal (phxsqlcmd)** | **20** | **0,7** |
 | **Junções e união** | **17** | **0,6** |
 | **Exportação** | **13** | **0,5** |
 | **Pivot** | **12** | **0,4** |
 | **Cluster** | **10** | **0,4** |
 | **Alertas e e-mail** | **8** | **0,3** |
-| **CLI** | **7** | **0,3** |
+| **CLI** | **7** | **0,2** |
 | **Monitor de máquina** | **6** | **0,2** |
-| **total** | **2767** | |
+| **total** | **2802** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 

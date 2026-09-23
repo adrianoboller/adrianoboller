@@ -73,7 +73,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 15663 | 887.8 |
+| `ui/index.html` | 15682 | 888.9 |
 | `ui/grid/phx-grid.css` | 168 | 12.3 |
 | `ui/grid/phx-grid.js` | 1860 | 90.1 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
@@ -81,9 +81,9 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 | `ui/telemetria.js` | 1820 | 89.2 |
 | `ui/multitela.css` | 156 | 8.6 |
 | `ui/multitela.js` | 1588 | 69.0 |
-| `ui/claude.js` | 1482 | 74.5 |
+| `ui/claude.js` | 1493 | 74.8 |
 | `ui/grid/CHANGELOG-phx-grid.md` | 224 | 29.7 |
-| **total (10 arquivos)** | **24120** | **1310.2** |
+| **total (10 arquivos)** | **24150** | **1311.6** |
 
 Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
 - `crates/phxsql-server/ui/explorador.css`
@@ -107,10 +107,10 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 55 | 11855 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 55 | 11878 |
 | Python (bancada de medicao) | `bancada/` | 121 | 55467 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2894 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 447 | 109687 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 450 | 109948 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 36 | 16038 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
@@ -444,7 +444,7 @@ empacotar:
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2710** testes passaram, **0** falharam (medido em 2026-09-23 14:52:52, commit `36a0a1ae`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **2800** testes passaram, **0** falharam (medido em 2026-09-23 20:48:05, commit `f3abf54f`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
@@ -514,7 +514,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **430** pedidos numerados; **69** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **433** pedidos numerados; **70** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -572,6 +572,7 @@ proposta de voltar sem medição nova.
 | 305 | **J — aproveitar a IDEIA do construtor visual de consulta com N filtros e AND/OR: a tela «Consulta» hoje e de UMA condicao so, e a op `sql` so e alcancavel de UM lugar na interface** |
 | 308 | **F (bateria) — quatro `resultados.json` de replicação/cluster não trazem campo de data, e a página de testes cai no `mtime` — que já mentiu uma vez nesta rodada** |
 | 316 | **A guarda que impede transplantar um slot cifrado de um `.reg` para outro existe POR CONSEQUENCIA, e ninguem a escreveu** |
+| 327 | **O botão «baixar» do dossiê não funciona para quem vê a página — e agora a causa está nomeada pelo próprio serviço, com o remédio** |
 | 331 | **Chave COMPOSTA nao replica no modo bidirecional: a tabela e recusada inteira — e o proprio fonte pede este pedido por escrito** |
 | 335 | **PARECER EXTERNO — SEIS contradicoes no dossie publicado: o contrato nao tem UMA versao da verdade** |
 | 343 | **SEC 339(b) — `motivos` esta classificado `Nenhum` e devolve a CHAVE PRIMARIA em texto: o quarto irmao que caiu no bloco errado** |
