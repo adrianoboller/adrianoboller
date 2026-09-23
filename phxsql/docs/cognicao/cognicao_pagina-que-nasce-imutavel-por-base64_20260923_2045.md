@@ -68,3 +68,40 @@ Registrado como pedido no `PENDENCIAS.md`. O conserto estrutural — tirar as
 capturas do corpo da página — é refação e é decisão do dono; a guarda que
 faltava (o `pagina-do-console.py` reprovar acima do teto) é barata e independe
 dessa decisão.
+
+---
+
+## Adendo de 23/09/2026, 22:15 — eu medi de novo, e a regra 4 muda de redação
+
+**O que eu escrevi acima está quase certo, e o «quase» importa.** Escrevi «ela
+não se atualiza mais». Medido pelos dois lados na mesma hora, o certo é: **ela
+só se atualiza pagando uma janela inteira de leitura, ou com a palavra do
+dono.**
+
+A prova veio de graça, porque publiquei doze páginas seguidas:
+
+| página | tamanho | republicou? |
+|---|---|---|
+| as ONZE (dossiê, 6 de pedidos, testes, status, PMO, status-21) | 24 KB a 460 KB | **sim, sem leitura nenhuma** |
+| `console-em-imagens.html` | 2.258.328 B | **RECUSADA** |
+
+A diferença **não é o tamanho**: é o **rastreio**. As onze já tinham sido
+publicadas por esta sessão e seguiam rastreadas; a oitava perdeu o rastreio na
+compactação, e aí o guarda gravou os 2.258.698 B em disco e passou a exigir
+que eu os LESSE antes de sobrescrever.
+
+Tentei escapar pelo lado certo: comparei os dois arquivos **no shell**, a
+custo zero de contexto. A única diferença de conteúdo eram os números da
+cobertura (610→617, 2.767→2.802); tudo o que a publicada tinha a mais era a
+casca que a plataforma injeta (`<!doctype>`, `<head>`, `<style>` padrão),
+porque o nosso arquivo é um fragmento. **Nada se perderia.** O guarda não
+aceita diff de shell, e `force` pede ordem explícita do dono — então a página
+ficou na versão anterior, publicando 2.767 testes.
+
+**A regra, corrigida:** o teto de republicação não é do tamanho da página — é
+do tamanho que você tem de **LER** para reescrevê-la. Base64 embutido entra
+nessa conta inteiro e não traz um byte de conteúdo que envelhece.
+
+E o corolário novo, que a primeira redação não tinha: **página cujo rastreio
+se perde entre sessões só volta a ser atualizável pagando a leitura inteira.**
+Numa sessão longa, com compactação, isso não é hipótese — é o caso normal.
