@@ -796,9 +796,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `pulso-fora-da-lista-e-recusado` | `op_cluster_pulso` deixa de conferir o id contra a lista viva de nos | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**154 das 199 guardas do catálogo: 1 aposentada, 148 provadas, 1 quebrada, 4 redundantes** — 3631 s de mutação, medido em 2026-09-16 15:25.
+**154 das 201 guardas do catálogo: 1 aposentada, 148 provadas, 1 quebrada, 4 redundantes** — 3631 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 46 das 199 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 46 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 48 das 201 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 48 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `teto-do-fio-sem-a-constante` — o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito
 - `teto-do-fio-sem-a-constante-no-soquete` — a mesma troca da constante por um teto quase infinito, vista pela rede
@@ -846,6 +846,8 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `dado-pessoal-no-grito-do-conflito` — o grito do conflito de unicidade publica a coluna marcada como dado pessoal
 - `so-o-disco-vem-da-porta-e-nao-de-desligar-depois` — o empilhar volta a abrir pela porta de sempre e desligar a sobreposicao na linha seguinte
 - `slot-de-outro-reg` — o sal deixa de ser por arquivo: o slot cifrado de um `.reg` abre no outro
+- `pulso-sem-prova-de-identidade` — o pulso do cluster aceitando identidade auto-declarada
+- `aperto-de-mao-sem-teto` — a leitura do aperto de mao fora do `Canal`, sem teto nenhum
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

@@ -2008,7 +2008,7 @@ GUARDAS = [
             "ele leria o slot errado."
         ),
         "arquivo": "crates/phxsql-store/src/reg.rs",
-        "trecho": """        for (v, _, caminho, espelho) in &primeiros {
+        "trecho": """        for (caminho, espelho) in &pendente.trocas {
             trocar_pelo_novo(caminho)?;
 """,
         "troca": """        // DEFEITO REPOSTO: o espelho nao acompanha a troca.
@@ -4186,10 +4186,10 @@ pub fn limpar() {
             "defeito virar invisivel."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """        let dobra: Vec<bool> = self.indices_de_texto.iter().map(|(_, d)| *d).collect();
-        self.fts = Some(FtsFile::recriar(
+        "trecho": """        self.fts = Some(FtsFile::recriar(
             caminho(&self.diretorio, &self.nome, EXT_FTS),
             dobra,
+            texto_sobre_coluna_marcada(&self.esquema),
         )?);
 """,
         "troca": """        // DEFEITO REPOSTO: varre por cima do indice que ja existe, em vez de
@@ -4219,6 +4219,14 @@ pub fn limpar() {
         "arquivo": "crates/phxsql-store/src/table.rs",
         "trecho": """            match FtsFile::abrir(&caminho_fts, dobra.clone()) {
                 Ok(f) => Some(f),
+                // **Falta de CHAVE nao cai na vala do "refaz".** A vala existe
+                // para `.fts` corrompido ou divergente, onde refazer do `.reg`
+                // devolve a verdade. Aqui ela devolveria um `.fts` NOVO e em
+                // claro, com os termos da coluna marcada de volta ao disco
+                // legiveis -- desfazendo calado a protecao do pedido 340 por
+                // causa de uma senha errada no `config.json`. Recusa
+                // nomeando, que e o que o `.reg` faz na mesma situacao.
+                Err(e) if matches!(e, PhxError::Autorizacao(_)) => return Err(e),
                 Err(_) if !escrever => {
                     return Ok(SemEscrever::PrecisaEscrever(
                         "o indice de texto .fts nao abre e seria refeito",
@@ -4226,7 +4234,7 @@ pub fn limpar() {
                 }
                 Err(_) => {
                     refazer = true;
-                    Some(FtsFile::recriar(&caminho_fts, dobra)?)
+                    Some(FtsFile::recriar(&caminho_fts, dobra, selar_o_fts)?)
                 }
             }
 """,
@@ -4258,7 +4266,7 @@ pub fn limpar() {
                     "o indice de texto .fts desta tabela ainda nao existe e seria criado",
                 ));
             }
-            Some(FtsFile::recriar(&caminho_fts, dobra)?)
+            Some(FtsFile::recriar(&caminho_fts, dobra, selar_o_fts)?)
 """,
         "troca": """        } else if refazer {
             // DEFEITO REPOSTO: o `.fts` volta a nascer sem olhar a ficha.
