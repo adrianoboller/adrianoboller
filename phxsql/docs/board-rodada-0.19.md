@@ -135,3 +135,97 @@ republicadas.
   não alcança.
 - As outras decisões travadas nele: 251, 255, 274, 293, 294, 300, 309, 325,
   333, 337, 368.
+
+## Conferência de integração: o que TEM de estar fechado no `PENDENCIAS.md`
+
+Escrito em 23/09/2026 04:25, com as quatro frentes ainda vivas, e por um motivo
+medido: a **S já escreveu** no `PENDENCIAS.md` (fechou 340 e 342, abriu o 395)
+quando a cerca mandava nomear no relatório. Se uma segunda frente reescrever o
+arquivo inteiro em vez de editar a linha, o trabalho da primeira some **sem
+conflito nenhum aparecer** — é o defeito que esta casa já pagou três vezes no
+encontro das frentes, e o merge escolhe o lado de quem não tinha a seção.
+
+Não interrompi as quatro para avisar: interromper quatro frentes no fim do
+trabalho custa mais que conferir depois, e **conferir depois é medição, não
+esperança.** A lista abaixo é a régua.
+
+| dono | pedido | estado esperado ao fim |
+|---|---|---|
+| **P** | 289 | ☑️ nanos com avanço forçado |
+| **P** | 290 | ☑️ passo no esquema, início na identidade do nó |
+| **P** | 314 | ☑️ fica em v9 **e o motor diz o motivo** |
+| **S** | 340 | ☑️ — **já escrito** |
+| **S** | 342 | ☑️ — **já escrito** |
+| **S** | 395 | ☐ nasce aberto (o `.ndx` pelo mecanismo do `.fts`) — **já escrito** |
+| **U** | 393 | ☑️ o braço do `unir` vira pedido |
+| **V** | versão | ☑️ portão da versão, 0.19.0 selada |
+| **A** (integrador) | 274 | ☑️ — entregue pelo **378** em 22/09, nunca fechado |
+| **A** | 293 | corrigir: traz **«DECIDIDO PELO DONO, 17/09 07:10»** e segue ☐ |
+| **A** | 294 | idem |
+
+**Como se confere, e não é por leitura:** `git diff -U0` no arquivo, extraindo
+só as linhas de pedido alteradas. Falta de uma linha esperada é frente
+clobberada, não esquecimento — e aí o conserto é repor a linha, não repetir a
+frente.
+
+Contagem ao abrir a conferência: **395 pedidos** no arquivo.
+
+## Achados do integrador com as frentes ainda vivas (23/09, 04:25–04:35)
+
+### O `frente-p` que o zelador recusava: 2,0 GB, e o motivo dele estava errado
+
+O zelador achava «cópia sem `git` fora do repositório, 2.052 MiB» e recusava
+apagar. Estava certo em recusar e **errado nos dois motivos**:
+
+- Não é «fora do repositório»: estava no **scratchpad da própria sessão**, que
+  o varredor dele não alcança — é por isso que ele conta «16 diretórios soltos,
+  0 MiB» enquanto o `/tmp` carrega 5,5 GB. **Defeito de medidor, não de disco.**
+- Não é «sem `git`»: é **worktree registrado** (`git worktree list`), em
+  `832a888`, HEAD solto. O `.git` de um worktree é **arquivo**, não diretório —
+  quem testa `-d .git` chama worktree de cópia solta.
+
+A prova antes de remover, na ordem que a lei do zelador manda:
+
+| prova | resultado |
+|---|---|
+| processo vivo com `cwd` lá dentro | **nenhum** (varredura de `/proc/*/cwd`) |
+| arquivos idênticos à árvore principal | **18 de 21**, byte a byte (`cmp`) |
+| os 3 que diferem | a **principal está à frente** — um é o conserto do `clippy` que a P2 aplicou às 04:25 |
+
+As 1.334 inserções ficaram guardadas como remendo em
+`scratchpad/frente-p-remendo/` (156 KB: `rastreados.patch` + os 3 novos +
+`base.txt`) **antes** da remoção, para a decisão ser reversível. Disco tinha
+caído a **3,6 GB** durante a medição e voltou a **5,6 GB**.
+
+### As três conferências do encontro das frentes
+
+Feitas na árvore viva, porque é ali que o defeito do encontro existe:
+
+| conferência | resultado |
+|---|---|
+| alguma catraca subiu? | **nenhuma tocada** — só prosa citando `TETO_JUNCAO` |
+| algum teste calado? | **nenhum** `#[ignore]`, nenhum `#[test]` comentado |
+| coluna de sistema nova quebra a tela? | **não** — e por estrutura, não por sorte |
+
+A terceira era a de risco real: a P não acrescentou **uma** coluna de sistema,
+acrescentou **duas** — `rowstamp` e `rowtime` —, e **nenhum arquivo de
+interface está entre os 42 sujos**. Foi exatamente assim que o `rownum` quebrou
+todo salvar e todo incluir pela tela.
+
+Desta vez a corrente segura, e o mérito é de quem transformou a lição em
+estrutura:
+
+- `phxsql_core::schema::e_coluna_de_sistema` é **uma função só**, e o comentário
+  dela registra que a mesma pergunta esteve repetida em **quatro** lugares (a
+  sincronia do DbLink, a chave única do bidirecional, o `completar` do `Table` e
+  a carga por texto) — os quatro passam por ali agora.
+- `servidor.rs:17248` monta a marca `"sistema"` do JSON **a partir dessa
+  função**, não de uma lista.
+- A tela filtra **genericamente** nas seis chamadas (`filter(c => c.sistema)`),
+  e a cicatriz está escrita no `index.html:5068`: *«era `find(c => c.sistema)`,
+  só o `softdeleted` saía e o `rownum` continuava na ficha»*.
+
+**A lição virou estrutura, e por isso duas colunas novas custaram zero.** É o
+contraexemplo da lei «guarda nova entra pedida»: aqui a guarda entrou no lugar
+certo — a função única —, e não em quarenta pontos de chamada onde o esquecido
+vira a porta dos fundos.
