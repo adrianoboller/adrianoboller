@@ -11,10 +11,14 @@ use std::sync::Arc;
 
 const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
 
-  phxvpn painel [--escutar 127.0.0.1:8470] [--pg \"host=.. port=.. user=.. password=.. dbname=..\"]
-                [--dados DIR] [--openvpn]
-      Sobe o painel (tela em http://<escuta>/). Conexao do PostgreSQL tambem por
-      PHXVPN_PG. Com PHXVPN_SENHA_MESTRE no ambiente o cofre ja abre destrancado.
+  phxvpn painel [--escutar 127.0.0.1:8470] [--dados DIR] [--openvpn]
+                [--nome painel.empresa.com.br:443 ...] [--aceito-sem-tls]
+      PostgreSQL por PHXVPN_PG=\"host=.. port=.. user=.. password=.. dbname=..\".
+      --nome: nome pelo qual o painel e chamado (proxy na frente); o painel
+      recusa Host desconhecido (DNS rebinding). Nao instalado, mostra no
+      terminal o CODIGO DE INSTALACAO que a tela pede.
+      Sobe o painel (tela em http://<escuta>/). Com PHXVPN_SENHA_MESTRE no
+      ambiente o cofre ja abre destrancado.
       --openvpn sobe um processo openvpn por rede.
 
   phxvpn criar-rede --painel http://host:8470 --usuario LOGIN --rede NOME [--finalidade TEXTO]
@@ -79,36 +83,59 @@ fn opcao(args: &[String], nome: &str) -> Option<String> {
         .cloned()
 }
 
-fn bandeira(args: &[String], nome: &str) -> bool {
-    args.iter().any(|a| a == nome)
-}
-
 fn cmd_painel(args: &[String]) -> Result<(), String> {
-    let escuta = opcao(args, "--escutar").unwrap_or_else(|| "127.0.0.1:8470".into());
-    let pg_texto = opcao(args, "--pg")
-        .or_else(|| std::env::var("PHXVPN_PG").ok())
-        .ok_or("informe o PostgreSQL por --pg ou PHXVPN_PG")?;
-    let dados = PathBuf::from(opcao(args, "--dados").unwrap_or_else(|| "phxvpn-dados".into()));
+    let o = Opcoes::de_args(args, &["openvpn", "aceito-sem-tls"]);
+    let escuta = o.um("escutar").unwrap_or("127.0.0.1:8470").to_string();
+    let local = escuta.starts_with("127.")
+        || escuta.starts_with("localhost")
+        || escuta.starts_with("[::1]");
+    // Fora do loopback so com a escolha escrita: senha e chave privada do
+    // membro passam em claro sem TLS (achado A4).
+    if !local && !o.tem("aceito-sem-tls") {
+        return Err(format!(
+            "o painel fala HTTP sem TLS; escutar em {escuta} exporia senha e chave privada. \
+             Ponha um proxy com TLS na frente e escute em 127.0.0.1, ou passe \
+             --aceito-sem-tls sabendo disso"
+        ));
+    }
+    let pg_texto = match o.um("pg") {
+        Some(t) => {
+            if t.contains("password=") {
+                eprintln!(
+                    "phxvpn: AVISO -- a senha do PostgreSQL no --pg aparece no `ps`; prefira PHXVPN_PG"
+                );
+            }
+            t.to_string()
+        }
+        None => std::env::var("PHXVPN_PG")
+            .map_err(|_| "informe o PostgreSQL por PHXVPN_PG (ou --pg)")?,
+    };
+    std::env::remove_var("PHXVPN_PG");
+    let dados = PathBuf::from(o.um("dados").unwrap_or("phxvpn-dados"));
     let cfg = pg::Config::de_texto(&pg_texto)?;
     let mut p = painel::Painel::abrir(&cfg, &dados)?;
     if let Ok(m) = std::env::var("PHXVPN_SENHA_MESTRE") {
+        // Lida, sai do ambiente: nao fica em /proc/<pid>/environ (M4).
+        std::env::remove_var("PHXVPN_SENHA_MESTRE");
         p.destrancar(&m)?;
         eprintln!("phxvpn: cofre destrancado pela PHXVPN_SENHA_MESTRE");
     }
-    let supervisor = if bandeira(args, "--openvpn") {
+    let supervisor = if o.tem("openvpn") {
         Some(supervisor::Supervisor::novo()?)
     } else {
         None
     };
-    let destrancado = p.destrancado();
-    let estado = Arc::new(http::Estado::novo(p, supervisor));
+    p.aquecer();
+    let (destrancado, instalado) = (p.destrancado(), p.instalado()?);
+    let nomes: Vec<String> = o.todos("nome").iter().map(|n| n.to_lowercase()).collect();
+    let estado = Arc::new(http::Estado::novo(p, supervisor).com_hosts(&escuta, &nomes));
     if destrancado {
         http::materializar_e_subir(&estado)?;
     }
-    if !escuta.starts_with("127.") && !escuta.starts_with("localhost") {
+    if !instalado {
         eprintln!(
-            "phxvpn: AVISO -- o painel fala HTTP sem TLS e esta escutando em {escuta}; \
-             ponha um proxy com TLS na frente ou use-o pela propria VPN"
+            "phxvpn: CODIGO DE INSTALACAO: {} (a tela de instalacao pede este codigo)",
+            estado.gerar_codigo_instalacao()
         );
     }
     eprintln!("phxvpn: painel em http://{escuta}/");

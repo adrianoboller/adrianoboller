@@ -57,8 +57,9 @@ ca {dir}/ca.crt\n\
 cert {dir}/servidor.crt\n\
 key {dir}/servidor.key\n\
 tls-crypt {dir}/tls-crypt.key\n\
+crl-verify {dir}/crl.pem\n\
 dh none\n\
-tls-version-min 1.2\n\
+tls-version-min 1.3\n\
 remote-cert-tls client\n\
 data-ciphers {CIFRAS}\n\
 status {dir}/status.log 10\n\
@@ -99,7 +100,7 @@ persist-key\n\
 persist-tun\n\
 remote-cert-tls server\n\
 verify-x509-name {srv} name\n\
-tls-version-min 1.2\n\
+tls-version-min 1.3\n\
 data-ciphers {CIFRAS}\n\
 verb 3\n\
 <ca>\n{ca}</ca>\n\
@@ -134,6 +135,8 @@ mod testes {
         assert!(c.contains("ccd-exclusive\n"));
         assert!(c.contains("client-to-client\n"));
         assert!(c.contains("remote-cert-tls client\n"));
+        assert!(c.contains("crl-verify /var/lib/phxvpn/redes/1/crl.pem\n"));
+        assert!(c.contains("tls-version-min 1.3\n"));
     }
 
     #[test]

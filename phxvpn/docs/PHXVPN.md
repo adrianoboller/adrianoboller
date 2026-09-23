@@ -25,6 +25,12 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: `phxvpn p2p chave` e `phxvpn p2p ligar` — **ping entre dois computadores pelo túnel, provado**
 - [x] P2P: servidor intermediário (`phxvpn repasse`) e modos `direto` / `repasse` / `auto` — provado numa topologia de CGNAT
 - [x] Console `phxvpncmd` (ou `phxvpn cmd`), estilo prompt do MS-DOS: modos Painel, P2P e Ferramentas; lote por arquivo (`/entrada:`) e linha única (`/comando:`)
+- [x] Segurança A1: revogação real — série no CN, reentrada revoga o perfil anterior, CRL Ed25519 no `crl-verify`, admin/dono remove membro
+- [x] Segurança A2/A3: tentativas limitadas (login, IP, usuário+rede); PBKDF2 fora da trava com semáforo; hash fictício contra enumeração
+- [x] Segurança A4 (mínimo): painel só escuta fora do loopback com `--aceito-sem-tls`; CLI/console recusam painel remoto sem `PHXVPN_ACEITO_SEM_TLS=1`
+- [x] Segurança A5: `Host` conferido (DNS rebinding), POST só com JSON (CSRF), código de instalação de uso único
+- [x] Segurança A6: cliente PG recusa senha em claro, exige o SCRAM provado antes do «autenticado», teto de iterações
+- [x] Segurança M1, M2, M4, M5, M6, M7: teto de conexões e prazo total por pedido; segredo nasce 0600 e diretório 0700; senhas saem do ambiente; login só `[a-z0-9._-]`; cota de 3 redes por usuário; conexão do PG refeita e trava envenenada não derruba
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 
 ### Falta
@@ -37,14 +43,40 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] Serviço do sistema (systemd / serviço do Windows) e pacote
 - [ ] P2P: rol de membros assinado (Ed25519 da rede) e PSK da senha da rede
 - [ ] P2P: descoberta — convite, broadcast na LAN e «farol» (membro alcançável que perfura NAT e faz relé)
+- [ ] Segurança M3 (resto): OpenVPN sem root (`user`/`group`) e `tls-crypt-v2` — pedem o binário `openvpn` para provar, ausente aqui
+- [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
 - [ ] P2P: convite (`phxvpn p2p convidar`) e a tela
 - [ ] P2P no Windows: TAP-Windows6 em modo TUN (CreateFileW + DeviceIoControl, adaptador próprio pelo `tapctl.exe` do OpenVPN) — ~250–350 linhas, estimado
 - [ ] P2P: `mac1`/cookie contra inundação de INICIO (o WireGuard tem; aqui ainda não)
-- [ ] Segurança A1: revogação real (série no CN, CRL Ed25519)
-- [ ] Segurança A2/A3: limite de tentativas de login e de senha de rede; PBKDF2 fora do mutex; hash fictício contra enumeração
-- [ ] Segurança A5: CSRF/DNS rebinding — exigir `Content-Type` JSON, conferir `Host`, código de instalação de uso único
-- [ ] Segurança A6: cliente PG recusa senha em claro e exige o `SASLFinal` conferido
-- [ ] Segurança M1–M7: teto de conexões e prazo por pedido, chave nascendo 0600, openvpn sem root e TLS 1.3, `--pg` fora do argumento, login só `[a-z0-9._-]`, cota de redes, reconexão do PG
+
+## Segurança: a revisão de 23/09/2026 e o que fechou
+
+Revisão adversária (papel SEC): 2 críticos, 6 altos, 7 médios, 7 baixos.
+Fechados com prova, medida contra o painel rodando (24/09/2026):
+
+| Achado | Ataque | Antes | Agora (medido) |
+|---|---|---|---|
+| C1 | 262.000 `[` num POST sem login | processo abortado | 400; JSON com teto de 128 níveis |
+| C2 | esgotar descritores antes de sortear chave | bytes previsíveis | pânico, nunca byte previsível |
+| A5 | site faz `fetch` `no-cors` para instalar | instalava | **415** |
+| A5 | DNS rebinding (`Host: atacante.com`) | atendia | **421** |
+| A5 | instalar sem o código do terminal | instalava | **403**; código vale uma vez |
+| A2 | força bruta no login | sem limite | **429** a partir da 6ª falha (login ou IP), dobrando até 15 min |
+| A2 | enumeração por tempo | 1 ms × 430 ms | existe 449–464 ms × não existe 440–447 ms |
+| A2 | 10 logins paralelos param o painel | todas as rotas esperavam | `/api/estado` em 2,5–7,6 ms |
+| A1 | notebook roubado; «sair» e «entrar» de novo | perfil velho voltava a valer | perfil velho **revoked** na CRL (OpenSSL) e sem `ccd/` |
+| A6 | servidor PG falso pede senha em claro / pula a prova | entregava / aceitava | recusado; teto de iterações do SCRAM |
+| M1 | slowloris (1 byte a cada 2 s) | thread presa por horas | **408** em 10 s de prazo total |
+
+Defeito achado na própria medição: o hash fictício era calculado na primeira
+tentativa de usuário inexistente, **dentro** da trava — o `/api/estado`
+esperou 441 ms atrás de 10 logins. Agora é calculado ao ligar o painel.
+
+RED: sem revogar na reentrada, o teste de ponta a ponta reprova («o ccd do
+perfil velho tinha de sumir»); sem o `mac` do REGISTRO, o repasse desvia
+tráfego. Limites que continuam: sessão já estabelecida com certificado
+revogado só cai na próxima renegociação do OpenVPN (padrão 1 h); o painel
+ainda é HTTP (A4 inteiro).
 
 ## Modos de uso
 

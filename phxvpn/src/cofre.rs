@@ -43,6 +43,11 @@ impl Cofre {
     /// iteracoes dele e prova a senha abrindo o selo.
     pub fn destrancar(senha_mestre: &str, selo_de_prova: &str) -> Result<Cofre, String> {
         let (iteracoes, sal, ..) = partes(selo_de_prova)?;
+        // As iteracoes vem do banco: quem altera a linha nao pode por o painel
+        // a derivar por horas no arranque.
+        if !(1_000..=10_000_000).contains(&iteracoes) {
+            return Err("selo com iteracoes fora da faixa (1.000 a 10.000.000)".into());
+        }
         let cofre = Cofre {
             chave: chave_de_senha(senha_mestre, &sal, iteracoes),
             sal,

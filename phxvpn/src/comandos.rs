@@ -123,6 +123,17 @@ pub fn pedir(
         .strip_prefix("http://")
         .ok_or("o endereco do painel tem de comecar com http://")?
         .trim_end_matches('/');
+    // Fora do loopback, senha, chave privada e tls-crypt passariam em claro
+    // (achado A4). So com a escolha escrita no ambiente.
+    let host = hostporta.rsplit_once(':').map_or(hostporta, |(h, _)| h);
+    let local = matches!(host, "127.0.0.1" | "localhost" | "[::1]") || host.starts_with("127.");
+    if !local && std::env::var("PHXVPN_ACEITO_SEM_TLS").as_deref() != Ok("1") {
+        return Err(format!(
+            "o painel {hostporta} nao e local e fala HTTP sem TLS: senha e perfil iriam em \
+             claro. Use por um tunel/proxy com TLS, ou defina PHXVPN_ACEITO_SEM_TLS=1 \
+             sabendo disso"
+        ));
+    }
     let mut fio = TcpStream::connect(hostporta).map_err(|e| format!("painel {hostporta}: {e}"))?;
     let corpo = corpo.map(Json::escrever).unwrap_or_default();
     let auth = token

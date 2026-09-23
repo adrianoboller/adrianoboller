@@ -36,6 +36,7 @@ const OID_KEY_USAGE: [u64; 4] = [2, 5, 29, 15];
 const OID_EXT_KEY_USAGE: [u64; 4] = [2, 5, 29, 37];
 const OID_SKI: [u64; 4] = [2, 5, 29, 14];
 const OID_AKI: [u64; 4] = [2, 5, 29, 35];
+const OID_CRL_NUMBER: [u64; 4] = [2, 5, 29, 20];
 const OID_SERVER_AUTH: [u64; 9] = [1, 3, 6, 1, 5, 5, 7, 3, 1];
 const OID_CLIENT_AUTH: [u64; 9] = [1, 3, 6, 1, 5, 5, 7, 3, 2];
 
@@ -52,6 +53,7 @@ pub struct Emitido {
     pub der: Vec<u8>,
     pub privada: [u8; 32],
     pub serie_hex: String,
+    pub cn: String,
 }
 
 /// Quem assina: o nome (O + CN) e a chave da AC.
@@ -121,15 +123,29 @@ pub fn emitir(
     anos: i64,
     ac: Option<&Ac>,
 ) -> Result<Emitido, String> {
+    emitir_com_cn(papel, organizacao, anos, ac, |_| cn.to_string())
+}
+
+/// Emite com o CN montado a partir da serie (em hex) -- para o CN ser unico
+/// por emissao, como o do membro (`login.rede.serie`).
+pub fn emitir_com_cn(
+    papel: Papel,
+    organizacao: &str,
+    anos: i64,
+    ac: Option<&Ac>,
+    cn: impl FnOnce(&str) -> String,
+) -> Result<Emitido, String> {
     let privada: [u8; 32] = bytes_aleatorios(32).try_into().expect("32 bytes");
+    let serie = serie_nova();
+    let cn = cn(&phxsql_core::hash::para_hex(&serie));
     emitir_com(
         papel,
         organizacao,
-        cn,
+        &cn,
         &Validade::de_agora_por_anos(anos),
         ac,
         privada,
-        serie_nova(),
+        serie,
     )
 }
 
@@ -206,7 +222,52 @@ fn emitir_com(
         der,
         privada,
         serie_hex: phxsql_core::hash::para_hex(&serie),
+        cn: cn.to_string(),
     })
+}
+
+/// Lista de revogacao (CRL v2, RFC 5280 secao 5) assinada pela AC.
+///
+/// E o que o `crl-verify` do OpenVPN le a cada conexao nova: certificado com
+/// serie na lista nao passa do aperto TLS, mesmo valido e dentro do prazo.
+/// Sem ela, sair da rede so apagava o `ccd/` -- e reentrar recriava o mesmo
+/// CN, reativando um perfil roubado (achado A1 da revisao de seguranca).
+///
+/// `numero` e o `cRLNumber`, que so cresce. `series` em bytes big-endian.
+pub fn crl(ac: &Ac, series: &[Vec<u8>], numero: u64, validade: &Validade) -> Vec<u8> {
+    let alg = asn1::sequencia(&[asn1::oid(&OID_ED25519)]);
+    let aki = sha1(&ed25519::chave_publica(ac.privada));
+    let mut partes = vec![
+        asn1::inteiro_u64(1), // v2
+        alg.clone(),
+        nome(ac.organizacao, ac.cn),
+        tempo(validade.nao_antes_ms),
+        tempo(validade.nao_depois_ms),
+    ];
+    // Lista vazia: o campo SOME (e OPCIONAL, e `SEQUENCE {}` vazio o OpenSSL
+    // recusa).
+    if !series.is_empty() {
+        partes.push(asn1::sequencia(
+            &series
+                .iter()
+                .map(|s| asn1::sequencia(&[asn1::inteiro(s), tempo(validade.nao_antes_ms)]))
+                .collect::<Vec<_>>(),
+        ));
+    }
+    partes.push(asn1::contexto_explicito(
+        0,
+        &[asn1::sequencia(&[
+            extensao(&OID_CRL_NUMBER, false, asn1::inteiro_u64(numero)),
+            extensao(
+                &OID_AKI,
+                false,
+                asn1::sequencia(&[id_chave_implicito(&aki)]),
+            ),
+        ])],
+    ));
+    let tbs = asn1::sequencia(&partes);
+    let assinatura = ed25519::assinar(ac.privada, &tbs);
+    asn1::sequencia(&[tbs, alg, asn1::bit_string(&assinatura, 0)])
 }
 
 /// PEM de 64 colunas, o que OpenSSL e OpenVPN esperam.
@@ -299,6 +360,65 @@ mod testes {
         let pub_folha = ed25519::chave_publica(&f.privada);
         assert!(ed25519::conferir(&pub_ac, tbs, &assinatura));
         assert!(!ed25519::conferir(&pub_folha, tbs, &assinatura));
+    }
+
+    /// Prova contra o OpenSSL: a CRL assinada pela AC derruba a verificacao
+    /// do certificado revogado e deixa passar o outro. Roda so onde houver o
+    /// binario `openssl`; sem ele, diz que nao rodou.
+    #[test]
+    fn crl_revoga_no_openssl() {
+        let Some(openssl) = crate::supervisor::achar_no_path("openssl") else {
+            eprintln!("NAO RODOU: sem openssl no PATH");
+            return;
+        };
+        let a = ac();
+        let emissora = Ac {
+            organizacao: "Empresa Teste",
+            cn: "phxvpn AC",
+            privada: &a.privada,
+        };
+        let f1 = emitir(Papel::Membro, "Empresa Teste", "ana.1", 1, Some(&emissora)).unwrap();
+        let f2 = emitir(Papel::Membro, "Empresa Teste", "bia.1", 1, Some(&emissora)).unwrap();
+        let serie = phxsql_core::hash::de_hex(&f1.serie_hex).unwrap();
+        let d = std::env::temp_dir().join(format!("phxvpn-crl-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let gravar = |n: &str, t: String| std::fs::write(d.join(n), t).unwrap();
+        gravar("ca.pem", cert_pem(&a.der));
+        gravar("f1.pem", cert_pem(&f1.der));
+        gravar("f2.pem", cert_pem(&f2.der));
+        let v = Validade::de_agora_por_anos(1);
+        gravar("crl.pem", pem("X509 CRL", &crl(&emissora, &[serie], 1, &v)));
+        gravar("vazia.pem", pem("X509 CRL", &crl(&emissora, &[], 2, &v)));
+        let verificar = |cert: &str, lista: &str| {
+            std::process::Command::new(&openssl)
+                .current_dir(&d)
+                .args([
+                    "verify",
+                    "-crl_check",
+                    "-CAfile",
+                    "ca.pem",
+                    "-CRLfile",
+                    lista,
+                    cert,
+                ])
+                .output()
+                .unwrap()
+        };
+        let r1 = verificar("f1.pem", "crl.pem");
+        assert!(!r1.status.success(), "o revogado passou");
+        assert!(
+            String::from_utf8_lossy(&r1.stdout).contains("revoked")
+                || String::from_utf8_lossy(&r1.stderr).contains("revoked")
+        );
+        assert!(
+            verificar("f2.pem", "crl.pem").status.success(),
+            "o nao revogado caiu"
+        );
+        assert!(
+            verificar("f1.pem", "vazia.pem").status.success(),
+            "CRL vazia derrubou alguem"
+        );
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

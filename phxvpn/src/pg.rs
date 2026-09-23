@@ -30,6 +30,11 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
+/// Teto das iteracoes do SCRAM que o servidor pode pedir. O padrao do
+/// PostgreSQL e 4.096; um servidor falso pedindo 2^31 poria o cliente a
+/// queimar CPU por horas (achado A6 da revisao de seguranca).
+const TETO_ITERACOES_SCRAM: u32 = 1_000_000;
+
 /// Teto de uma mensagem do servidor. Linha de cadastro nao chega perto; o teto
 /// existe para que um servidor torto nao faca o cliente alocar gigabytes.
 const TETO_MENSAGEM: usize = 64 * 1024 * 1024;
@@ -44,6 +49,10 @@ pub struct Config {
     pub usuario: String,
     pub senha: String,
     pub banco: String,
+    /// `auth=trust`: aceitar servidor que nao pede senha. So escrito: sem
+    /// isso, um servidor que responde «autenticado» sem SCRAM e recusado,
+    /// porque e exatamente o que um servidor falso no meio do caminho faria.
+    pub aceitar_trust: bool,
 }
 
 impl Config {
@@ -57,6 +66,7 @@ impl Config {
             usuario: "postgres".into(),
             senha: String::new(),
             banco: String::new(),
+            aceitar_trust: false,
         };
         for par in texto.split_whitespace() {
             let (k, v) = par
@@ -68,6 +78,7 @@ impl Config {
                 "user" => cfg.usuario = v.into(),
                 "password" => cfg.senha = v.into(),
                 "dbname" => cfg.banco = v.into(),
+                "auth" if v == "trust" => cfg.aceitar_trust = true,
                 outro => return Err(format!("parametro de conexao desconhecido: {outro}")),
             }
         }
@@ -97,6 +108,10 @@ impl Resposta {
 
 pub struct Pg {
     fio: TcpStream,
+    /// Erro de E/S no meio de uma resposta deixa o fio fora de passo: a
+    /// proxima leitura pegaria o resto da resposta ANTERIOR. Conexao marcada
+    /// nao e reaproveitada (achado M7) -- quem a tem reconecta.
+    quebrado: bool,
 }
 
 impl Pg {
@@ -109,7 +124,10 @@ impl Pg {
         })?;
         fio.set_read_timeout(Some(Duration::from_secs(30))).ok();
         fio.set_nodelay(true).ok();
-        let mut pg = Pg { fio };
+        let mut pg = Pg {
+            fio,
+            quebrado: false,
+        };
         pg.iniciar(cfg)?;
         Ok(pg)
     }
@@ -134,17 +152,26 @@ impl Pg {
         self.fio.write_all(&msg).map_err(|e| e.to_string())?;
 
         let mut scram: Option<Scram> = None;
+        let mut scram_conferido = false;
         loop {
             let (tipo, dados) = self.ler()?;
             match tipo {
                 b'R' => {
                     let codigo = i32::from_be_bytes(pedaco4(&dados, 0)?);
                     match codigo {
-                        0 => {}
+                        0 => {
+                            if !scram_conferido && !cfg.aceitar_trust {
+                                return Err("o PostgreSQL aceitou sem provar a senha (SCRAM): \
+                                     recusado. Configure scram-sha-256 no pg_hba, ou escreva \
+                                     auth=trust na conexao se isso e mesmo o que se quer"
+                                    .into());
+                            }
+                        }
                         3 => {
-                            let mut s = cfg.senha.as_bytes().to_vec();
-                            s.push(0);
-                            self.enviar(b'p', &s)?;
+                            // Senha em texto claro pelo fio: quem esta no meio a leva.
+                            return Err("o PostgreSQL pediu a senha em texto claro: recusado. \
+                                 Configure scram-sha-256 no pg_hba"
+                                .into());
                         }
                         10 => {
                             let mecanismos = String::from_utf8_lossy(&dados[4..]);
@@ -169,6 +196,7 @@ impl Pg {
                         12 => {
                             let s = scram.as_ref().ok_or("SASLFinal sem SASL iniciado")?;
                             s.conferir_servidor(&dados[4..])?;
+                            scram_conferido = true;
                         }
                         5 => {
                             return Err(
@@ -231,7 +259,10 @@ impl Pg {
         mensagem(&mut buf, b'D', b"P\0");
         mensagem(&mut buf, b'E', &[0, 0, 0, 0, 0]);
         mensagem(&mut buf, b'S', &[]);
-        self.fio.write_all(&buf).map_err(|e| e.to_string())?;
+        if let Err(e) = self.fio.write_all(&buf) {
+            self.quebrado = true;
+            return Err(format!("conexao com o PostgreSQL caiu: {e}"));
+        }
 
         let mut r = Resposta::default();
         let mut falha = None;
@@ -256,13 +287,33 @@ impl Pg {
         }
     }
 
+    pub fn quebrado(&self) -> bool {
+        self.quebrado
+    }
+
+    /// Para quem sabe que o fio ficou no meio de algo (panico com a trava).
+    pub fn marcar_quebrado(&mut self) {
+        self.quebrado = true;
+    }
+
     fn enviar(&mut self, tipo: u8, corpo: &[u8]) -> R<()> {
         let mut buf = Vec::with_capacity(corpo.len() + 5);
         mensagem(&mut buf, tipo, corpo);
-        self.fio.write_all(&buf).map_err(|e| e.to_string())
+        self.fio.write_all(&buf).map_err(|e| {
+            self.quebrado = true;
+            format!("conexao com o PostgreSQL caiu: {e}")
+        })
     }
 
     fn ler(&mut self) -> R<(u8, Vec<u8>)> {
+        let r = self.ler_cru();
+        if r.is_err() {
+            self.quebrado = true;
+        }
+        r
+    }
+
+    fn ler_cru(&mut self) -> R<(u8, Vec<u8>)> {
         let mut cab = [0u8; 5];
         self.fio
             .read_exact(&mut cab)
@@ -272,7 +323,9 @@ impl Pg {
             return Err(format!("mensagem do PostgreSQL com tamanho absurdo: {tam}"));
         }
         let mut dados = vec![0u8; tam as usize - 4];
-        self.fio.read_exact(&mut dados).map_err(|e| e.to_string())?;
+        self.fio
+            .read_exact(&mut dados)
+            .map_err(|e| format!("conexao com o PostgreSQL caiu: {e}"))?;
         Ok((cab[0], dados))
     }
 }
@@ -391,7 +444,7 @@ impl Scram {
         }
         // O nonce do servidor TEM de comecar pelo nosso: e o que amarra esta
         // resposta a este pedido e impede repetir uma troca gravada.
-        if !nonce.starts_with(&self.nonce_cliente) || iter == 0 {
+        if !nonce.starts_with(&self.nonce_cliente) || iter == 0 || iter > TETO_ITERACOES_SCRAM {
             return Err("resposta SCRAM do servidor nao confere com o pedido".into());
         }
         let sal = base64::decodificar(sal).map_err(|e| format!("sal SCRAM: {e}"))?;
@@ -487,6 +540,16 @@ p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ="
         assert!(s
             .segunda_mensagem("x", b"r=outro,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096")
             .is_err());
+    }
+
+    #[test]
+    fn iteracoes_absurdas_sao_recusadas() {
+        let mut s = Scram::novo();
+        let pedido = format!(
+            "r={}x,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=2147483647",
+            s.nonce_cliente
+        );
+        assert!(s.segunda_mensagem("x", pedido.as_bytes()).is_err());
     }
 
     #[test]

@@ -81,7 +81,19 @@ CREATE TABLE IF NOT EXISTS phx_membro (
     PRIMARY KEY (rede_id, usuario_id),
     UNIQUE (rede_id, host)
 );
+CREATE TABLE IF NOT EXISTS phx_revogado (
+    serie   text PRIMARY KEY,
+    rede_id int NOT NULL REFERENCES phx_rede ON DELETE RESTRICT,
+    motivo  text NOT NULL,
+    em      timestamptz NOT NULL DEFAULT now()
+);
+CREATE SEQUENCE IF NOT EXISTS phx_crl_numero;
 ";
+
+/// Redes que um usuario comum pode criar (o admin nao tem teto). Sem isso,
+/// qualquer usuario esgotava as 254 sub-redes, portas e processos openvpn
+/// (achado M6).
+pub const REDES_POR_USUARIO: i64 = 3;
 
 /// Porta da primeira rede; a rede de octeto N escuta em `PORTA_BASE + N`.
 pub const PORTA_BASE: u16 = 1194;
@@ -114,6 +126,14 @@ pub struct Usuario {
 
 pub struct Painel {
     pg: Pg,
+    cfg: Config,
+    /// Dentro de BEGIN..COMMIT a conexao NAO se refaz: reconectar no meio
+    /// continuaria a instalacao fora da transacao, pela metade.
+    em_transacao: bool,
+    /// Hash de uma senha que ninguem sabe, no custo corrente: conferido
+    /// quando o login (ou a rede) nao existe, para o tempo de resposta nao
+    /// dizer quem existe (achado A2).
+    ficticio: Option<(u32, String)>,
     cofre: Option<Cofre>,
     dados: PathBuf,
     /// Custo do PBKDF2 (senha mestre e senhas de login). Os testes baixam.
@@ -124,17 +144,58 @@ impl Painel {
     pub fn abrir(cfg: &Config, dados: &Path) -> R<Painel> {
         let mut pg = Pg::conectar(cfg)?;
         pg.lote(ESQUEMA)?;
+        criar_dir_privado(dados)?;
         Ok(Painel {
             pg,
+            cfg: cfg.clone(),
+            em_transacao: false,
+            ficticio: None,
             cofre: None,
             dados: dados.to_path_buf(),
             iteracoes: ITERACOES,
         })
     }
 
+    /// A conexao, refeita se a anterior quebrou no meio de uma resposta.
+    fn pg(&mut self) -> R<&mut Pg> {
+        if self.pg.quebrado() {
+            if self.em_transacao {
+                return Err("a conexao com o PostgreSQL caiu no meio da transacao".into());
+            }
+            self.pg = Pg::conectar(&self.cfg)?;
+        }
+        Ok(&mut self.pg)
+    }
+
+    /// Quem segurava a trava do painel entrou em panico: o fio pode ter
+    /// ficado no meio de uma resposta.
+    pub fn depois_de_panico(&mut self) {
+        self.pg.marcar_quebrado();
+        self.em_transacao = false;
+    }
+
+    /// Calcula ja o hash fictício (430 ms no custo de producao), antes de o
+    /// painel atender alguem. Calculado na primeira tentativa, a conta rodava
+    /// DENTRO da trava e parava o painel -- medido: /api/estado esperou
+    /// 441 ms atras de 10 logins de usuario inexistente.
+    pub fn aquecer(&mut self) {
+        let _ = self.hash_ficticio();
+    }
+
+    fn hash_ficticio(&mut self) -> String {
+        match &self.ficticio {
+            Some((it, h)) if *it == self.iteracoes => h.clone(),
+            _ => {
+                let h = senha::cifrar_com("\u{0}ninguem-tem-esta-senha", self.iteracoes);
+                self.ficticio = Some((self.iteracoes, h.clone()));
+                h
+            }
+        }
+    }
+
     pub fn instalado(&mut self) -> R<bool> {
         let r = self
-            .pg
+            .pg()?
             .executar("SELECT count(*) AS n FROM phx_empresa", &[])?;
         Ok(r.valor(0, "n") != Some("0"))
     }
@@ -164,9 +225,10 @@ impl Painel {
         let certificado =
             (!i.certificado_pem.trim().is_empty()).then_some(i.certificado_pem.as_str());
 
-        self.pg.lote("BEGIN")?;
+        self.pg()?.lote("BEGIN")?;
+        self.em_transacao = true;
         let resultado = (|| -> R<()> {
-            let r = self.pg.executar(
+            let r = self.pg()?.executar(
                 "INSERT INTO phx_empresa (nome, finalidade, responsavel, email, telefone, \
                  certificado_pem, prova_mestre, ac_cert_pem, ac_chave_selada) \
                  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id",
@@ -184,7 +246,7 @@ impl Painel {
             )?;
             let empresa = r.valor(0, "id").ok_or("empresa sem id")?.to_string();
             let hash = senha::cifrar_com(&i.admin_senha, self.iteracoes);
-            self.pg.executar(
+            self.pg()?.executar(
                 "INSERT INTO phx_usuario (empresa_id, login, email, senha_hash, admin) \
                  VALUES ($1::int, $2, $3, $4, true)",
                 &[
@@ -198,20 +260,22 @@ impl Painel {
             self.inserir_servidor(&empresa, &i.servidor_nome, &i.servidor_ip, &i.servidor_dns)?;
             Ok(())
         })();
-        match resultado {
+        let fim = match resultado {
             Ok(()) => self.pg.lote("COMMIT"),
             Err(e) => {
                 self.cofre = None;
                 let _ = self.pg.lote("ROLLBACK");
                 Err(e)
             }
-        }
+        };
+        self.em_transacao = false;
+        fim
     }
 
     /// Prova a senha mestre contra o selo de prova e guarda a chave em memoria.
     pub fn destrancar(&mut self, senha_mestre: &str) -> R<()> {
         let r = self
-            .pg
+            .pg()?
             .executar("SELECT prova_mestre FROM phx_empresa LIMIT 1", &[])?;
         let prova = r
             .valor(0, "prova_mestre")
@@ -220,19 +284,25 @@ impl Painel {
         Ok(())
     }
 
-    pub fn login(&mut self, login: &str, senha_clara: &str) -> R<Usuario> {
-        let r = self.pg.executar(
+    /// Primeira metade do login, a que precisa do banco: o usuario (se
+    /// existe) e o hash a conferir -- o fictício quando nao existe. A conta
+    /// cara (PBKDF2) fica FORA da trava do painel: com ela dentro, tres
+    /// tentativas por segundo paravam o painel inteiro (achado A2).
+    pub fn hash_do_login(&mut self, login: &str) -> R<(Option<Usuario>, String)> {
+        let r = self.pg()?.executar(
             "SELECT id, login, senha_hash, admin FROM phx_usuario WHERE login = $1 AND ativo",
             &[Some(login)],
         )?;
-        // Mesma resposta para usuario inexistente e senha errada: nao se
-        // confirma a um estranho quais logins existem.
-        let negado = || "usuario ou senha nao conferem".to_string();
-        let hash = r.valor(0, "senha_hash").ok_or_else(negado)?;
-        if !senha::conferir(senha_clara, hash) {
-            return Err(negado());
+        match r.valor(0, "senha_hash") {
+            Some(h) => Ok((Some(usuario_da_linha(&r, 0)?), h.to_string())),
+            None => Ok((None, self.hash_ficticio())),
         }
-        usuario_da_linha(&r, 0)
+    }
+
+    /// Login inteiro, numa chamada (testes e ferramentas de uma thread so).
+    pub fn login(&mut self, login: &str, senha_clara: &str) -> R<Usuario> {
+        let (u, hash) = self.hash_do_login(login)?;
+        conferir_login(u, &hash, senha_clara)
     }
 
     pub fn criar_usuario(
@@ -242,10 +312,10 @@ impl Painel {
         email: &str,
         admin: bool,
     ) -> R<()> {
-        validar_nome("login", login)?;
+        validar_login(login)?;
         validar_senha("senha", senha_clara, 8)?;
         let hash = senha::cifrar_com(senha_clara, self.iteracoes);
-        self.pg
+        self.pg()?
             .executar(
                 "INSERT INTO phx_usuario (empresa_id, login, email, senha_hash, admin) \
                  SELECT id, $1, $2, $3, $4::boolean FROM phx_empresa LIMIT 1",
@@ -261,7 +331,7 @@ impl Painel {
     }
 
     pub fn usuarios(&mut self) -> R<Json> {
-        let r = self.pg.executar(
+        let r = self.pg()?.executar(
             "SELECT id, login, email, admin, ativo FROM phx_usuario ORDER BY login",
             &[],
         )?;
@@ -269,7 +339,7 @@ impl Painel {
     }
 
     pub fn servidores(&mut self) -> R<Json> {
-        let r = self.pg.executar(
+        let r = self.pg()?.executar(
             "SELECT s.id, s.nome, s.ip, s.dns, (SELECT count(*) FROM phx_rede r WHERE r.servidor_id = s.id) AS redes \
              FROM phx_servidor s ORDER BY s.id",
             &[],
@@ -279,7 +349,7 @@ impl Painel {
 
     pub fn criar_servidor(&mut self, nome: &str, ip: &str, dns: &str) -> R<()> {
         let r = self
-            .pg
+            .pg()?
             .executar("SELECT id FROM phx_empresa LIMIT 1", &[])?;
         let empresa = r
             .valor(0, "id")
@@ -300,7 +370,7 @@ impl Painel {
         };
         let e = pki::emitir(Papel::Servidor, &org, nome, 5, Some(&emissora))?;
         let selada = self.cofre()?.selar(&e.privada, &format!("servidor:{nome}"));
-        self.pg
+        self.pg()?
             .executar(
                 "INSERT INTO phx_servidor (empresa_id, nome, ip, dns, cert_pem, chave_selada) \
                  VALUES ($1::int, $2, $3, $4, $5, $6)",
@@ -320,7 +390,7 @@ impl Painel {
     /// Nome da organizacao e a chave privada da AC, aberta do cofre.
     fn ac(&mut self) -> R<(String, [u8; 32])> {
         let r = self
-            .pg
+            .pg()?
             .executar("SELECT nome, ac_chave_selada FROM phx_empresa LIMIT 1", &[])?;
         let org = r
             .valor(0, "nome")
@@ -344,8 +414,26 @@ impl Painel {
         validar_nome("nome da rede", nome)?;
         validar_senha("senha da rede", senha_rede, 6)?;
         let cofre = self.cofre()?.clone();
+        if !dono.admin {
+            let r = self.pg()?.executar(
+                "SELECT count(*) AS n FROM phx_rede WHERE dono_id = $1::int",
+                &[Some(&dono.id.to_string())],
+            )?;
+            let n: i64 = r.valor(0, "n").and_then(|v| v.parse().ok()).unwrap_or(0);
+            if n >= REDES_POR_USUARIO {
+                return Err(format!(
+                    "cada usuario cria ate {REDES_POR_USUARIO} redes; peca ao administrador"
+                ));
+            }
+        }
         let srv = match servidor_id {
-            Some(id) => id.to_string(),
+            Some(id) => {
+                let r = self.pg()?.executar(
+                    "SELECT id FROM phx_servidor WHERE id = $1::int",
+                    &[Some(&id.to_string())],
+                )?;
+                r.valor(0, "id").ok_or("servidor inexistente")?.to_string()
+            }
             None => {
                 let r = self
                     .pg
@@ -355,7 +443,7 @@ impl Painel {
                     .to_string()
             }
         };
-        let livre = self.pg.executar(
+        let livre = self.pg()?.executar(
             "SELECT g AS octeto FROM generate_series(1, 254) g \
              WHERE g NOT IN (SELECT octeto FROM phx_rede) ORDER BY g LIMIT 1",
             &[],
@@ -370,7 +458,7 @@ impl Painel {
         let tc = pki::chave_tls_crypt();
         // O aad amarra o selo ao NOME da rede: nome e unico e nao muda.
         let tc_selada = cofre.selar(tc.as_bytes(), &format!("rede:{nome}"));
-        self.pg
+        self.pg()?
             .executar(
                 "INSERT INTO phx_rede (servidor_id, dono_id, nome, finalidade, senha_hash, octeto, porta, tls_crypt_selada) \
                  VALUES ($1::int, $2::int, $3, $4, $5, $6::smallint, $7::int, $8)",
@@ -386,23 +474,41 @@ impl Painel {
                 ],
             )
             .map_err(|e| traduzir_unico(e, "ja existe rede com esse nome"))?;
-        self.entrar_na_rede(dono, nome, senha_rede)
+        self.entrar_ja_conferido(dono, nome)
     }
 
-    /// Entra (ou reentra) na rede: confere a senha dela, reserva o IP fixo,
-    /// emite certificado novo e devolve o perfil `.ovpn`.
+    /// Primeira metade do «entrar»: o hash da senha da rede (o fictício se a
+    /// rede nao existe), para conferir FORA da trava.
+    pub fn hash_da_rede(&mut self, nome: &str) -> R<String> {
+        let r = self.pg()?.executar(
+            "SELECT senha_hash FROM phx_rede WHERE nome = $1",
+            &[Some(nome)],
+        )?;
+        match r.valor(0, "senha_hash") {
+            Some(h) => Ok(h.to_string()),
+            None => Ok(self.hash_ficticio()),
+        }
+    }
+
+    /// Entrar inteiro, numa chamada (testes e ferramentas de uma thread so).
     pub fn entrar_na_rede(&mut self, usuario: &Usuario, nome: &str, senha_rede: &str) -> R<String> {
+        let hash = self.hash_da_rede(nome)?;
+        conferir_rede(&hash, senha_rede)?;
+        self.entrar_ja_conferido(usuario, nome)
+    }
+
+    /// Entra (ou reentra) na rede, com a senha dela JA conferida: reserva o
+    /// IP fixo, emite certificado novo, revoga o anterior e devolve o perfil.
+    pub fn entrar_ja_conferido(&mut self, usuario: &Usuario, nome: &str) -> R<String> {
         let cofre = self.cofre()?.clone();
-        let r = self.pg.executar(
-            "SELECT r.id, r.nome, r.senha_hash, r.octeto, r.porta, r.tls_crypt_selada, \
+        let r = self.pg()?.executar(
+            "SELECT r.id, r.nome, r.octeto, r.porta, r.tls_crypt_selada, \
                     s.nome AS srv_nome, s.ip, s.dns \
              FROM phx_rede r JOIN phx_servidor s ON s.id = r.servidor_id WHERE r.nome = $1",
             &[Some(nome)],
         )?;
-        let negado = || "rede ou senha da rede nao conferem".to_string();
-        let hash = r.valor(0, "senha_hash").ok_or_else(negado)?;
-        if !senha::conferir(senha_rede, hash) {
-            return Err(negado());
+        if r.linhas.is_empty() {
+            return Err("rede ou senha da rede nao conferem".into());
         }
         let campo = |c: &str| r.valor(0, c).unwrap_or_default().to_string();
         let rede_id = campo("id");
@@ -414,29 +520,40 @@ impl Painel {
         .map_err(|_| "chave tls-crypt torta")?;
 
         let (org, ac_privada) = self.ac()?;
-        let cn = format!("{}.{}", usuario.login, rede_id);
         let emissora = Ac {
             organizacao: &org,
             cn: &cn_ac(&org),
             privada: &ac_privada,
         };
-        let e = pki::emitir(Papel::Membro, &org, &cn, 2, Some(&emissora))?;
+        // A serie entra no CN: cada emissao tem um `ccd/` proprio, e reentrar
+        // NAO recria o arquivo do perfil anterior (achado A1).
+        let e = pki::emitir_com_cn(Papel::Membro, &org, 2, Some(&emissora), |serie| {
+            format!("{}.{}.{}", usuario.login, rede_id, &serie[..8])
+        })?;
+        let cn = e.cn.clone();
 
-        // Reentrada mantem o IP; entrada nova pega o menor livre.
-        let ja = self.pg.executar(
-            "SELECT host FROM phx_membro WHERE rede_id = $1::int AND usuario_id = $2::int",
+        // Reentrada mantem o IP e REVOGA o certificado anterior; entrada nova
+        // pega o menor IP livre.
+        let ja = self.pg()?.executar(
+            "SELECT host, cn, cert_serie FROM phx_membro WHERE rede_id = $1::int AND usuario_id = $2::int",
             &[Some(&rede_id), Some(&usuario.id.to_string())],
         )?;
         let host: u8 = match ja.valor(0, "host") {
             Some(h) => {
-                self.pg.executar(
-                    "UPDATE phx_membro SET cert_serie = $3 WHERE rede_id = $1::int AND usuario_id = $2::int",
-                    &[Some(&rede_id), Some(&usuario.id.to_string()), Some(&e.serie_hex)],
+                let h: u8 = h.parse().map_err(|_| "host invalido")?;
+                let (cn_velho, serie_velha) = (
+                    ja.valor(0, "cn").unwrap_or_default().to_string(),
+                    ja.valor(0, "cert_serie").unwrap_or_default().to_string(),
+                );
+                self.revogar(&rede_id, &serie_velha, &cn_velho, "reemitido")?;
+                self.pg()?.executar(
+                    "UPDATE phx_membro SET cert_serie = $3, cn = $4 WHERE rede_id = $1::int AND usuario_id = $2::int",
+                    &[Some(&rede_id), Some(&usuario.id.to_string()), Some(&e.serie_hex), Some(&cn)],
                 )?;
-                h.parse().map_err(|_| "host invalido")?
+                h
             }
             None => {
-                let livre = self.pg.executar(
+                let livre = self.pg()?.executar(
                     "SELECT g AS host FROM generate_series(2, 254) g \
                      WHERE g NOT IN (SELECT host FROM phx_membro WHERE rede_id = $1::int) ORDER BY g LIMIT 1",
                     &[Some(&rede_id)],
@@ -445,7 +562,7 @@ impl Painel {
                     .valor(0, "host")
                     .ok_or("a rede esta cheia (253 membros)")?
                     .to_string();
-                self.pg.executar(
+                self.pg()?.executar(
                     "INSERT INTO phx_membro (rede_id, usuario_id, host, cn, cert_serie) \
                      VALUES ($1::int, $2::int, $3::smallint, $4, $5)",
                     &[
@@ -469,11 +586,11 @@ impl Painel {
             octeto,
         };
         self.materializar_rede(&rede_id)?;
-        fs::write(
-            self.dir_rede(&rede_id).join("ccd").join(&cn),
-            ovpn::ccd_membro(octeto, host),
-        )
-        .map_err(|e| format!("gravar ccd: {e}"))?;
+        gravar(
+            &self.dir_rede(&rede_id).join("ccd").join(&cn),
+            ovpn::ccd_membro(octeto, host).as_bytes(),
+            false,
+        )?;
         Ok(ovpn::perfil_membro(&ovpn::Perfil {
             rede: &rede,
             servidor: &ovpn::Servidor {
@@ -490,22 +607,71 @@ impl Painel {
     /// Sai da rede: apaga o vinculo e o arquivo `ccd/`, e com `ccd-exclusive`
     /// o OpenVPN deixa de aceitar o certificado nesta rede.
     pub fn sair_da_rede(&mut self, usuario: &Usuario, rede_id: i64) -> R<()> {
-        let r = self.pg.executar(
-            "DELETE FROM phx_membro WHERE rede_id = $1::int AND usuario_id = $2::int RETURNING cn",
-            &[Some(&rede_id.to_string()), Some(&usuario.id.to_string())],
+        self.tirar_membro(rede_id, usuario.id, "saiu").map_err(|e| {
+            if e.is_empty() {
+                "voce nao e membro desta rede".into()
+            } else {
+                e
+            }
+        })
+    }
+
+    /// O administrador, ou o dono da rede, tira alguem dela: o certificado
+    /// entra na CRL e o `ccd/` some.
+    pub fn remover_membro(&mut self, ator: &Usuario, rede_id: i64, login: &str) -> R<()> {
+        let r = self.pg()?.executar(
+            "SELECT r.dono_id, u.id AS alvo FROM phx_rede r \
+             JOIN phx_membro m ON m.rede_id = r.id JOIN phx_usuario u ON u.id = m.usuario_id \
+             WHERE r.id = $1::int AND u.login = $2",
+            &[Some(&rede_id.to_string()), Some(login)],
         )?;
-        let cn = r
-            .valor(0, "cn")
-            .ok_or("voce nao e membro desta rede")?
-            .to_string();
-        let _ = fs::remove_file(self.dir_rede(&rede_id.to_string()).join("ccd").join(cn));
+        let dono: i64 = r
+            .valor(0, "dono_id")
+            .and_then(|v| v.parse().ok())
+            .ok_or("esse login nao e membro desta rede")?;
+        if !ator.admin && ator.id != dono {
+            return Err("so o administrador ou o dono da rede remove membro".into());
+        }
+        let alvo: i64 = r
+            .valor(0, "alvo")
+            .and_then(|v| v.parse().ok())
+            .ok_or("alvo sem id")?;
+        self.tirar_membro(rede_id, alvo, "removido")
+    }
+
+    fn tirar_membro(&mut self, rede_id: i64, usuario_id: i64, motivo: &str) -> R<()> {
+        let id = rede_id.to_string();
+        let r = self.pg()?.executar(
+            "DELETE FROM phx_membro WHERE rede_id = $1::int AND usuario_id = $2::int RETURNING cn, cert_serie",
+            &[Some(&id), Some(&usuario_id.to_string())],
+        )?;
+        let (Some(cn), Some(serie)) = (r.valor(0, "cn"), r.valor(0, "cert_serie")) else {
+            return Err(String::new());
+        };
+        let (cn, serie) = (cn.to_string(), serie.to_string());
+        self.revogar(&id, &serie, &cn, motivo)?;
+        self.materializar_rede(&id).map(|_| ())
+    }
+
+    /// Poe a serie na lista de revogados e apaga o `ccd/` daquele CN. A CRL
+    /// em disco se reescreve no proximo `materializar_rede`.
+    fn revogar(&mut self, rede_id: &str, serie: &str, cn: &str, motivo: &str) -> R<()> {
+        if serie.is_empty() {
+            return Ok(());
+        }
+        self.pg()?.executar(
+            "INSERT INTO phx_revogado (serie, rede_id, motivo) VALUES ($1, $2::int, $3) \
+             ON CONFLICT (serie) DO NOTHING",
+            &[Some(serie), Some(rede_id), Some(motivo)],
+        )?;
+        let _ = fs::remove_file(self.dir_rede(rede_id).join("ccd").join(cn));
         Ok(())
     }
 
     /// Redes visiveis ao usuario: as dele (membro) com o IP, e as demais so com
     /// nome e contagem -- o admin ve todas; o usuario comum ve as que integra.
     pub fn redes(&mut self, u: &Usuario) -> R<Json> {
-        let r = self.pg.executar(
+        let r = self.pg()?.executar(
             "SELECT r.id, r.nome, r.finalidade, r.porta, r.octeto, s.nome AS servidor, d.login AS dono, \
                     (SELECT count(*) FROM phx_membro m WHERE m.rede_id = r.id) AS membros, \
                     (SELECT m.host FROM phx_membro m WHERE m.rede_id = r.id AND m.usuario_id = $1::int) AS meu_host \
@@ -545,14 +711,14 @@ impl Painel {
     /// `status.log` do OpenVPN daquela rede, quando existe).
     pub fn membros(&mut self, u: &Usuario, rede_id: i64) -> R<Json> {
         let id = rede_id.to_string();
-        let pode = self.pg.executar(
+        let pode = self.pg()?.executar(
             "SELECT 1 FROM phx_membro WHERE rede_id = $1::int AND usuario_id = $2::int",
             &[Some(&id), Some(&u.id.to_string())],
         )?;
         if !u.admin && pode.linhas.is_empty() {
             return Err("so membro da rede ve os outros membros".into());
         }
-        let r = self.pg.executar(
+        let r = self.pg()?.executar(
             "SELECT u.login, m.host, m.cn, r.octeto, m.entrou_em::text AS entrou_em \
              FROM phx_membro m JOIN phx_usuario u ON u.id = m.usuario_id JOIN phx_rede r ON r.id = m.rede_id \
              WHERE m.rede_id = $1::int ORDER BY m.host",
@@ -575,7 +741,7 @@ impl Painel {
     }
 
     pub fn empresa(&mut self) -> R<Json> {
-        let r = self.pg.executar(
+        let r = self.pg()?.executar(
             "SELECT nome, finalidade, responsavel, email, telefone, \
                     (certificado_pem IS NOT NULL) AS tem_certificado FROM phx_empresa LIMIT 1",
             &[],
@@ -589,9 +755,39 @@ impl Painel {
 
     fn ac_pem(&mut self) -> R<String> {
         let r = self
-            .pg
+            .pg()?
             .executar("SELECT ac_cert_pem FROM phx_empresa LIMIT 1", &[])?;
         Ok(r.valor(0, "ac_cert_pem").ok_or("AC ausente")?.to_string())
+    }
+
+    /// A CRL com TODAS as series revogadas (a AC e uma so para todas as
+    /// redes), assinada agora, com o `cRLNumber` seguinte.
+    fn crl_pem(&mut self) -> R<String> {
+        let r = self
+            .pg()?
+            .executar("SELECT serie FROM phx_revogado ORDER BY em", &[])?;
+        let series: Vec<Vec<u8>> = (0..r.linhas.len())
+            .filter_map(|i| r.valor(i, "serie").and_then(phxsql_core::hash::de_hex))
+            .collect();
+        let n = self
+            .pg()?
+            .executar("SELECT nextval('phx_crl_numero') AS n", &[])?;
+        let numero: u64 = n.valor(0, "n").and_then(|v| v.parse().ok()).unwrap_or(1);
+        let (org, privada) = self.ac()?;
+        let ac = Ac {
+            organizacao: &org,
+            cn: &cn_ac(&org),
+            privada: &privada,
+        };
+        // Cinco anos: a CRL se reescreve a cada mudanca e a cada arranque; o
+        // prazo longo so evita que um painel parado derrube a VPN inteira.
+        let der = pki::crl(
+            &ac,
+            &series,
+            numero,
+            &phxsql_core::x509::Validade::de_agora_por_anos(5),
+        );
+        Ok(pki::pem("X509 CRL", &der))
     }
 
     fn dir_rede(&self, id: &str) -> PathBuf {
@@ -603,7 +799,7 @@ impl Painel {
     /// disco e o preco do OpenVPN ler sem perguntar senha; por isso 0600.
     pub fn materializar_rede(&mut self, rede_id: &str) -> R<PathBuf> {
         let cofre = self.cofre()?.clone();
-        let r = self.pg.executar(
+        let r = self.pg()?.executar(
             "SELECT r.nome, r.porta, r.octeto, r.tls_crypt_selada, s.nome AS srv, s.cert_pem, s.chave_selada \
              FROM phx_rede r JOIN phx_servidor s ON s.id = r.servidor_id WHERE r.id = $1::int",
             &[Some(rede_id)],
@@ -614,7 +810,7 @@ impl Painel {
             return Err(format!("rede {rede_id} nao existe"));
         }
         let dir = self.dir_rede(rede_id);
-        fs::create_dir_all(dir.join("ccd")).map_err(|e| format!("criar {}: {e}", dir.display()))?;
+        criar_dir_privado(&dir.join("ccd"))?;
         let chave: [u8; 32] = cofre
             .abrir_com(&v("chave_selada"), &format!("servidor:{}", v("srv")))?
             .try_into()
@@ -629,6 +825,8 @@ impl Painel {
             &dir.display().to_string(),
         );
         let ac_pem = self.ac_pem()?;
+        let crl = self.crl_pem()?;
+        gravar(&dir.join("crl.pem"), crl.as_bytes(), false)?;
         gravar(&dir.join("servidor.conf"), conf.as_bytes(), false)?;
         gravar(&dir.join("ca.crt"), ac_pem.as_bytes(), false)?;
         gravar(&dir.join("servidor.crt"), v("cert_pem").as_bytes(), false)?;
@@ -644,7 +842,7 @@ impl Painel {
     /// Materializa todas as redes (arranque do painel) e devolve os diretorios.
     pub fn materializar_todas(&mut self) -> R<Vec<(String, PathBuf)>> {
         let r = self
-            .pg
+            .pg()?
             .executar("SELECT id, nome FROM phx_rede ORDER BY id", &[])?;
         let mut saida = Vec::new();
         for i in 0..r.linhas.len() {
@@ -653,7 +851,7 @@ impl Painel {
             saida.push((nome, self.materializar_rede(&id)?));
         }
         // O ccd de cada membro sai do banco: e ele que decide quem conecta.
-        let m = self.pg.executar(
+        let m = self.pg()?.executar(
             "SELECT m.rede_id, m.cn, m.host, r.octeto FROM phx_membro m JOIN phx_rede r ON r.id = m.rede_id",
             &[],
         )?;
@@ -668,17 +866,60 @@ impl Painel {
     }
 }
 
+/// Grava; segredo nasce 0600 JA na criacao -- sem a janela de um `chmod`
+/// depois, em que a chave ficava legivel por todos (achado M2). Arquivo que
+/// ja existia com outra permissao e apertado tambem.
 fn gravar(caminho: &Path, dados: &[u8], secreto: bool) -> R<()> {
-    fs::write(caminho, dados).map_err(|e| format!("gravar {}: {e}", caminho.display()))?;
+    use std::io::Write;
+    let mut o = fs::OpenOptions::new();
+    o.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    if secreto {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+    }
+    let mut f = o
+        .open(caminho)
+        .map_err(|e| format!("gravar {}: {e}", caminho.display()))?;
     #[cfg(unix)]
     if secreto {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(caminho, fs::Permissions::from_mode(0o600))
+        f.set_permissions(fs::Permissions::from_mode(0o600))
             .map_err(|e| format!("permissao de {}: {e}", caminho.display()))?;
     }
-    #[cfg(not(unix))]
-    let _ = secreto;
-    Ok(())
+    f.write_all(dados)
+        .map_err(|e| format!("gravar {}: {e}", caminho.display()))
+}
+
+/// Diretorio 0700: so o dono do painel entra (os de rede guardam chave).
+fn criar_dir_privado(dir: &Path) -> R<()> {
+    let mut b = fs::DirBuilder::new();
+    b.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        b.mode(0o700);
+    }
+    b.create(dir)
+        .map_err(|e| format!("criar {}: {e}", dir.display()))
+}
+
+/// Segunda metade do login: a conta cara, fora da trava. Usuario ausente e
+/// senha errada dao a MESMA frase e o MESMO custo.
+pub fn conferir_login(u: Option<Usuario>, hash: &str, senha_clara: &str) -> R<Usuario> {
+    let bate = senha::conferir(senha_clara, hash);
+    match u {
+        Some(u) if bate => Ok(u),
+        _ => Err("usuario ou senha nao conferem".into()),
+    }
+}
+
+pub fn conferir_rede(hash: &str, senha_rede: &str) -> R<()> {
+    if senha::conferir(senha_rede, hash) {
+        Ok(())
+    } else {
+        Err("rede ou senha da rede nao conferem".into())
+    }
 }
 
 fn cn_ac(org: &str) -> String {
@@ -762,6 +1003,21 @@ fn validar_nome(campo: &str, v: &str) -> R<()> {
     }
 }
 
+/// Login vai no CN do certificado e no nome do arquivo `ccd/`: so
+/// `[a-z0-9._-]`. Unicode e espaco o OpenVPN remapeia no CN antes de achar o
+/// `ccd/`, e dois logins diferentes poderiam cair no mesmo arquivo (M5).
+fn validar_login(v: &str) -> R<()> {
+    let ok = (2..=32).contains(&v.len())
+        && v.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
+        && !v.starts_with('.');
+    if ok {
+        Ok(())
+    } else {
+        Err("login: de 2 a 32 caracteres, so a-z, 0-9, ponto, _ e -".into())
+    }
+}
+
 fn validar_senha(campo: &str, v: &str, minimo: usize) -> R<()> {
     if v.chars().count() < minimo {
         return Err(format!("{campo}: no minimo {minimo} caracteres"));
@@ -806,7 +1062,7 @@ pub fn validar_instalacao(i: &Instalacao) -> R<()> {
     if !i.email.contains('@') {
         return Err("e-mail invalido".into());
     }
-    validar_nome("usuario admin", &i.admin_usuario)?;
+    validar_login(&i.admin_usuario)?;
     validar_senha("senha admin", &i.admin_senha, 8)?;
     validar_senha("senha mestre", &i.senha_mestre, 12)?;
     if i.senha_mestre == i.admin_senha {
@@ -894,9 +1150,11 @@ mod testes {
     #[test]
     fn nome_com_barra_nao_vira_caminho() {
         // O nome da rede nao vai para caminho de arquivo (o diretorio e o id),
-        // mas o login vai no CN: barra e aspas ficam fora.
-        assert!(validar_nome("login", "../x").is_err());
-        assert!(validar_nome("login", "joao.silva").is_ok());
+        // mas o login vai no CN: barra, acento, espaco e maiuscula ficam fora.
+        for ruim in ["../x", "joão", "ana maria", "Ana", ".oculto", "x"] {
+            assert!(validar_login(ruim).is_err(), "{ruim}");
+        }
+        assert!(validar_login("joao.silva").is_ok());
     }
 
     #[test]

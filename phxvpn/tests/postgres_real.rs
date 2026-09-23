@@ -95,12 +95,25 @@ fn ciclo_completo_instalar_criar_entrar_reiniciar() {
     p.criar_usuario("ana", "senha-ana-1", "", false).unwrap();
     let ana = p.login("ana", "senha-ana-1").unwrap();
     assert!(p.entrar_na_rede(&ana, "Matriz", "errada").is_err());
-    p.entrar_na_rede(&ana, "Matriz", "rede-123").unwrap();
-    // Reentrar mantem o IP (.3) e troca o certificado.
-    p.entrar_na_rede(&ana, "Matriz", "rede-123").unwrap();
+    let perfil_velho = p.entrar_na_rede(&ana, "Matriz", "rede-123").unwrap();
+    // Reentrar mantem o IP (.3), troca o certificado e REVOGA o anterior:
+    // o perfil do notebook roubado nao volta a valer (achado A1).
+    let perfil_novo = p.entrar_na_rede(&ana, "Matriz", "rede-123").unwrap();
     let membros = p.membros(&ana, 1).unwrap().escrever();
     assert!(membros.contains("10.77.1.3"), "{membros}");
-    assert!(dados.join("redes/1/ccd/ana.1").is_file());
+    let ccd_da_ana = || -> Vec<String> {
+        std::fs::read_dir(dados.join("redes/1/ccd"))
+            .unwrap()
+            .filter_map(|e| e.ok()?.file_name().into_string().ok())
+            .filter(|n| n.starts_with("ana.1."))
+            .collect()
+    };
+    assert_eq!(
+        ccd_da_ana().len(),
+        1,
+        "o ccd do perfil velho tinha de sumir"
+    );
+    conferir_na_crl(&dados, &perfil_velho, &perfil_novo);
 
     // Painel reaberto nasce trancado; senha mestre errada nao destranca.
     drop(p);
@@ -111,6 +124,46 @@ fn ciclo_completo_instalar_criar_entrar_reiniciar() {
     p.entrar_na_rede(&ana, "Matriz", "rede-123").unwrap();
 
     p.sair_da_rede(&ana, 1).unwrap();
-    assert!(!dados.join("redes/1/ccd/ana.1").exists());
+    assert!(ccd_da_ana().is_empty());
     let _ = std::fs::remove_dir_all(&dados);
+}
+
+/// Com o `openssl` do sistema: o certificado do perfil velho esta revogado na
+/// CRL que o painel gravou para o OpenVPN; o do perfil novo passa.
+fn conferir_na_crl(dados: &std::path::Path, velho: &str, novo: &str) {
+    let Some(openssl) = phxvpn::supervisor::achar_no_path("openssl") else {
+        eprintln!("NAO RODOU a prova da CRL: sem openssl no PATH");
+        return;
+    };
+    let cert = |perfil: &str| {
+        let a = perfil.find("<cert>\n").unwrap() + 7;
+        let b = perfil.find("</cert>").unwrap();
+        perfil[a..b].to_string()
+    };
+    let d = dados.join("redes/1");
+    std::fs::write(d.join("velho.pem"), cert(velho)).unwrap();
+    std::fs::write(d.join("novo.pem"), cert(novo)).unwrap();
+    let verificar = |c: &str| {
+        std::process::Command::new(&openssl)
+            .current_dir(&d)
+            .args([
+                "verify",
+                "-crl_check",
+                "-CAfile",
+                "ca.crt",
+                "-CRLfile",
+                "crl.pem",
+                c,
+            ])
+            .output()
+            .unwrap()
+    };
+    let v = verificar("velho.pem");
+    let texto =
+        String::from_utf8_lossy(&v.stderr).to_string() + &String::from_utf8_lossy(&v.stdout);
+    assert!(
+        !v.status.success() && texto.contains("revoked"),
+        "perfil velho nao revogado: {texto}"
+    );
+    assert!(verificar("novo.pem").status.success(), "perfil novo caiu");
 }

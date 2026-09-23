@@ -4,6 +4,7 @@
 pub mod cofre;
 pub mod comandos;
 pub mod console;
+pub mod guarda;
 pub mod http;
 pub mod noise;
 pub mod ovpn;
