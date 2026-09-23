@@ -42,21 +42,21 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Protocolo e portões (despachar) | 598 | 22,1 |
-| Motor de dados (arquivos, índice, diários) | 550 | 20,3 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 261 | 9,6 |
-| Camada SQL (léxico, sintaxe, tradução) | 238 | 8,8 |
-| Servidor (outros) | 209 | 7,7 |
-| Configuração | 141 | 5,2 |
-| Criptografia e codificação | 128 | 4,7 |
-| DbLink | 94 | 3,5 |
-| Telemetria e profiler | 73 | 2,7 |
+| Protocolo e portões (despachar) | 610 | 22,0 |
+| Motor de dados (arquivos, índice, diários) | 561 | 20,3 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 261 | 9,4 |
+| Camada SQL (léxico, sintaxe, tradução) | 251 | 9,1 |
+| Servidor (outros) | 223 | 8,1 |
+| Configuração | 146 | 5,3 |
+| Criptografia e codificação | 128 | 4,6 |
+| DbLink | 94 | 3,4 |
+| Telemetria e profiler | 73 | 2,6 |
 | ODBC | 66 | 2,4 |
-| Gatilhos e procedimentos | 45 | 1,7 |
+| Gatilhos e procedimentos | 45 | 1,6 |
 | **Jobs** | **33** | **1,2** |
 | **Usuários e permissões** | **33** | **1,2** |
 | **Mensagens (i18n do servidor)** | **32** | **1,2** |
-| **Interface web (servidor HTTP)** | **29** | **1,1** |
+| **Interface web (servidor HTTP)** | **29** | **1,0** |
 | **Replicação** | **24** | **0,9** |
 | **Transações** | **23** | **0,8** |
 | **Segurança de rede (blacklist, firewall)** | **21** | **0,8** |
@@ -69,13 +69,13 @@ contando `#[test]` por arquivo e agrupando:
 | **Alertas e e-mail** | **8** | **0,3** |
 | **CLI** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,2** |
-| **total** | **2712** | |
+| **total** | **2767** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
 | arquivo | linhas |
 |---|---:|
-| `phxsql-store/src/table.rs` | 5818 |
+| `phxsql-store/src/table.rs` | 6099 |
 | `phxsql-store/src/ndx.rs` | 1895 |
 | `phxsql-ffi/src/lib.rs` | 1469 |
 | `phxsql-server/src/main.rs` | 488 |

@@ -39,7 +39,7 @@ import sys
 # O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
 # num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from dossie_da_pasta import achar_o_dossie  # noqa: E402
+from dossie_da_pasta import pagina_do_console  # noqa: E402
 
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
 CRATES = RAIZ / "crates"
@@ -173,7 +173,7 @@ DOSSIE_FECHA = "<!-- cobertura:fim -->"
 
 
 def tabela_html(por_area):
-    """A mesma contagem, em HTML, para a secao «Estado e roteiro» do dossie.
+    """A mesma contagem, em HTML, para a OITAVA pagina (era a «Estado e roteiro»).
 
     A secao ja foi oitenta linhas digitadas a mao, com o numero de testes de
     cada peca ao lado -- e envelhecia a cada rodada. Uma contagem, dois
@@ -217,7 +217,9 @@ def main():
     # Sem argumento este laco nao rodava, e o dossie ficava para tras CALADO --
     # o mesmo defeito que o `pagina-dos-pedidos.py` pagou com cinco pedidos de
     # atraso no painel. Chamada nua tem de alcancar o dossie da pasta.
-    alvos = [a for a in sys.argv[1:] if a.endswith(".html")] or [achar_o_dossie()]
+    # Pedido 411 (23/09/2026): a tabela saiu do dossie -- ele passou do teto de
+    # republicacao -- e foi para a OITAVA pagina, `console-em-imagens.html`.
+    alvos = [a for a in sys.argv[1:] if a.endswith(".html")] or [pagina_do_console()]
     for a in alvos:
         gravar_no_dossie(a, por_area)
     txt = ALVO.read_text(encoding="utf-8")

@@ -32,7 +32,7 @@ import sys
 # O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
 # num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from dossie_da_pasta import achar_o_dossie  # noqa: E402
+from dossie_da_pasta import pagina_do_console  # noqa: E402
 
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
 # A regra de quem venceu a fase vem do dono do desenho, nao de uma copia:
@@ -57,10 +57,12 @@ FASES = [
 
 
 def _alvo():
+    # Pedido 411 (23/09/2026): a secao da bancada saiu do dossie e virou a
+    # OITAVA pagina. O bloco do trio foi junto -- ele mora dentro dela.
     for a in sys.argv[1:]:
         if a.endswith(".html"):
             return pathlib.Path(a).resolve()
-    return achar_o_dossie()
+    return pagina_do_console()
 
 
 def mil(x):
@@ -236,7 +238,8 @@ def main():
     html = dossie.read_text(encoding="utf-8")
     i, j = html.find(ABRE), html.find(FECHA)
     if i < 0 or j < 0:
-        sys.exit("as marcas trio:inicio/trio:fim nao estao no dossie")
+        sys.exit(f"as marcas trio:inicio/trio:fim nao estao em {dossie.name}"
+                 " -- a pagina sai do `pagina-do-console.py`, que as cria")
     html = html[:i] + ABRE + CSS + bloco(d) + FECHA + html[j + len(FECHA):]
     dossie.write_text(html, encoding="utf-8")
 

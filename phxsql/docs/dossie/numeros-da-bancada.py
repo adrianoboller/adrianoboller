@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Escreve a figura e a tabela da secao 17 do dossie a partir da medicao.
+"""Escreve a figura e a tabela da bancada a partir da medicao.
 
 Existe por um motivo especifico: os numeros do dossie ja sairam errados duas
 vezes por serem DIGITADOS. Numero digitado envelhece calado -- a capa passou
@@ -12,7 +12,11 @@ sai e o que foi medido.
 
     python3 docs/dossie/numeros-da-bancada.py
 
-Nao mexe em mais nada do dossie.
+Ele escreve em DOIS arquivos desde 23/09/2026 (pedido 411): os tres blocos da
+bancada na OITAVA pagina (`docs/dossie/console-em-imagens.html`), para onde a
+secao mudou quando o dossie passou do teto de republicacao, e o painel da
+REPLICACAO no dossie, onde a secao 10 continua. Nao mexe em mais nada dos
+dois.
 """
 
 import json
@@ -23,7 +27,7 @@ import sys
 # O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
 # num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from dossie_da_pasta import achar_o_dossie  # noqa: E402
+from dossie_da_pasta import achar_o_dossie, pagina_do_console  # noqa: E402
 
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
 MEDICAO = RAIZ / "bancada" / "resultados.json"
@@ -44,6 +48,13 @@ def _alvo():
 
 
 DOSSIE = _alvo()
+# Pedido 411 (23/09/2026): este gerador passou a escrever em DOIS arquivos.
+# A secao da bancada saiu do dossie -- ele estava em 2.703.573 bytes e o teto
+# de republicacao e ~450 KiB -- e foi para a OITAVA pagina; o painel da
+# REPLICACAO ficou no dossie, porque ele mora na secao 10, que nao se mudou.
+# Escrever nos dois e' o certo: a medicao e a mesma, e duas contagens da mesma
+# coisa e o jeito classico de a vitrine e o produto discordarem.
+CONSOLE = pagina_do_console()
 PENDENCIAS = RAIZ / "docs" / "PENDENCIAS.md"
 
 ABRE = "<!-- bancada:inicio (gerado por docs/dossie/numeros-da-bancada.py) -->"
@@ -433,34 +444,39 @@ def main():
         + "\n"
     )
 
-    html = DOSSIE.read_text()
+    # 1) a bancada, na OITAVA pagina (pedido 411)
+    html = CONSOLE.read_text()
     i, j = html.find(ABRE), html.find(FECHA)
     if i < 0 or j < 0:
-        sys.exit("as marcas bancada:inicio/bancada:fim nao estao no dossie")
+        sys.exit(f"as marcas bancada:inicio/bancada:fim nao estao em "
+                 f"{CONSOLE.name} -- a pagina sai do `pagina-do-console.py`")
     html = html[:i] + bloco + html[j + len(FECHA) + 1:]
 
     ABRE_T = "<!-- bancada:tabela:inicio -->"
     FECHA_T = "<!-- bancada:tabela:fim -->"
     i, j = html.find(ABRE_T), html.find(FECHA_T)
     if i < 0 or j < 0:
-        sys.exit("as marcas bancada:tabela nao estao no dossie")
+        sys.exit(f"as marcas bancada:tabela nao estao em {CONSOLE.name}")
     html = html[:i] + ABRE_T + "\n" + tabela(por) + "\n" + FECHA_T + html[j + len(FECHA_T):]
 
     ABRE_D = "<!-- bancada:diagnostico:inicio -->"
     FECHA_D = "<!-- bancada:diagnostico:fim -->"
     i, j = html.find(ABRE_D), html.find(FECHA_D)
     if i < 0 or j < 0:
-        sys.exit("as marcas bancada:diagnostico nao estao no dossie")
+        sys.exit(f"as marcas bancada:diagnostico nao estao em {CONSOLE.name}")
     html = html[:i] + ABRE_D + "\n" + diagnostico(por) + "\n" + FECHA_D + html[j + len(FECHA_D):]
 
+    CONSOLE.write_text(html)
+
+    # 2) o painel da replicacao, que continua na secao 10 do DOSSIE
+    doss = DOSSIE.read_text()
     ABRE_R = "<!-- replicacao:inicio (gerado por docs/dossie/numeros-da-bancada.py) -->"
     FECHA_R = "<!-- replicacao:fim -->"
-    i, j = html.find(ABRE_R), html.find(FECHA_R)
+    i, j = doss.find(ABRE_R), doss.find(FECHA_R)
     if i < 0 or j < 0:
         sys.exit("as marcas replicacao:inicio/fim nao estao no dossie")
-    html = html[:i] + ABRE_R + painel_da_replicacao() + FECHA_R + html[j + len(FECHA_R):]
-
-    DOSSIE.write_text(html)
+    doss = doss[:i] + ABRE_R + painel_da_replicacao() + FECHA_R + doss[j + len(FECHA_R):]
+    DOSSIE.write_text(doss)
 
     # O PENDENCIAS.md repete o diagnostico da insercao. Numero repetido em dois
     # lugares e numero que um dia diverge: gerado tambem.
@@ -473,7 +489,8 @@ def main():
         PENDENCIAS.write_text(md)
         print(f"  e o resumo do {PENDENCIAS.name}")
 
-    print(f"secao 17 refeita a partir de {MEDICAO.name}")
+    print(f"bancada refeita em {CONSOLE.name} e replicacao no "
+          f"{DOSSIE.name}, a partir de {MEDICAO.name}")
     print(f"  inserir: PhxSql {taxa_p:,.0f}/s  MySQL(R) {taxa_m:,.0f}/s"
           .replace(",", "."))
     for fase, rotulo, _ in FASES:

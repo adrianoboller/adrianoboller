@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """O PORTAO DOS GERADORES -- a catraca que amarra os geradores ao publicar.
 
-O buraco que ele fecha: a pasta tem CATORZE geradores que escrevem TODO numero
-visivel do dossie e das cinco paginas satelites, e a rodada pode ESQUECER de
+O buraco que ele fecha: a pasta tem QUINZE geradores que escrevem TODO numero
+visivel do dossie e das paginas satelites, e a rodada pode ESQUECER de
 roda-los. Quando isso acontece, o painel publicado fica com o numero de ontem
 «anunciando sucesso pelo silencio» -- ninguem digitou errado, e mesmo assim a
 vitrine mente. Ate agora nao havia um portao unico que reprovasse esse estado.
@@ -141,7 +141,7 @@ Uso:
 
 Sai != 0 se algum gerador conferido esta VELHO ou FALHOU. O `--so` confere so
 os geradores cujo nome contem o texto dado -- para re-conferir UM depois de o
-consertar, sem esperar os catorze.
+consertar, sem esperar os quinze.
 """
 
 import difflib
@@ -154,7 +154,9 @@ import pathlib
 AQUI = pathlib.Path(__file__).resolve().parent
 RAIZ = AQUI.parent.parent  # docs/dossie -> docs -> phxsql
 sys.path.insert(0, str(AQUI))
-from dossie_da_pasta import achar_o_dossie  # noqa: E402
+from dossie_da_pasta import (  # noqa: E402
+    NOME_DA_PAGINA_DO_CONSOLE, achar_o_dossie,
+)
 
 # --- Os carimbos de procedencia que o modo `sem-carimbo` apaga -------------
 #
@@ -188,6 +190,15 @@ def sem_carimbo(texto: str) -> str:
 # execucao por varredura (`achar_o_dossie`), porque o nome muda a cada refacao.
 DOSSIE = "@dossie"
 
+# A OITAVA pagina (pedido 411, 23/09/2026). Ao contrario do dossie, o nome dela
+# NAO muda a cada refacao -- entao ela entra no PLANO como caminho de verdade,
+# e nao como marcador. O caminho e MONTADO a partir do dono unico do nome
+# (`dossie_da_pasta`), e nao digitado aqui: quem le este PLANO de fora (a §17
+# da setima pagina varre os `alvos` para listar o que esta casa publica) vai
+# achar um caminho que existe, em vez de um marcador que ele nao sabe resolver
+# e que sumiria da lista em silencio.
+CONSOLE = "docs/dossie/" + NOME_DA_PAGINA_DO_CONSOLE
+
 # Pedido 403 (23/09/2026): as paginas de pedidos por faixa nao tem mais nome
 # fixo nem quantidade fixa -- `pagina-dos-pedidos.py` corta pelo TAMANHO
 # medido a cada corrida, entao o CONJUNTO de arquivos `pedidos-*.html` pode
@@ -201,7 +212,17 @@ DOSSIE = "@dossie"
 PEDIDOS_FAIXAS = "@pedidos-faixas"
 
 PLANO = [
-    ("numeros-da-bancada.py", [DOSSIE, "docs/PENDENCIAS.md"], "exato",
+    # Pedido 411 (23/09/2026): a casca da OITAVA pagina. Vem PRIMEIRO porque
+    # os seis geradores abaixo escrevem DENTRO dela -- numa arvore onde ela
+    # ainda nao existisse, rodar qualquer um deles primeiro pararia com "a
+    # pagina do console nao existe". Ele tambem regrava os tres ponteiros que
+    # ficaram no dossie (o link para ca), e por isso o dossie e alvo dele.
+    ("pagina-do-console.py", [CONSOLE, DOSSIE], "exato",
+     "monta a casca da oitava pagina e PRESERVA os blocos dos outros "
+     "geradores; le as TELAS do capturas-no-dossie.py e os PNG de capturas/"),
+    # O alvo deixou de ser so o dossie: os tres blocos da bancada foram para a
+    # oitava pagina e o painel da replicacao ficou na secao 10 do dossie.
+    ("numeros-da-bancada.py", [CONSOLE, DOSSIE, "docs/PENDENCIAS.md"], "exato",
      "le resultados.json das bancadas; funcao pura das fontes versionadas"),
     # Pedido 403 (23/09/2026): a pagina unica passou de 1,3 MB e o guarda da
     # republicacao passou a exigir ler a versao publicada inteira -- ~580.000
@@ -216,7 +237,7 @@ PLANO = [
     ("pagina-dos-pedidos.py",
      [DOSSIE, PEDIDOS_FAIXAS, "docs/PENDENCIAS.md"],
      "exato", "conta os tres estados do PENDENCIAS.md; deterministico"),
-    ("cobertura-por-area.py", [DOSSIE, "docs/TESTES.md"], "exato",
+    ("cobertura-por-area.py", [CONSOLE, "docs/TESTES.md"], "exato",
      "conta #[test] por area no fonte; deterministico"),
     ("docs/tecnologias/extrair.py", ["docs/TECNOLOGIAS.md"], "exato",
      "regrava os 16 blocos GERADO (pedido 156); CAPABILITIES.json e "
@@ -233,9 +254,9 @@ PLANO = [
      "le resultado.json e resultado-alfabetica.json da propria pasta; blocos GERADO"),
     ("docs/geradores/direito-por-coluna.py", ["docs/SEGURANCA.md"], "exato",
      "le CLASSES de crates/phxsql-server/src/direito_coluna.rs; bloco GERADO"),
-    ("capturas-no-dossie.py", [DOSSIE], "exato",
+    ("capturas-no-dossie.py", [CONSOLE], "exato",
      "embute os PNG ja reduzidos de capturas/ como data URI; deterministico"),
-    ("tetos-da-trava.py", [DOSSIE], "exato",
+    ("tetos-da-trava.py", [CONSOLE], "exato",
      "le as corridas CERTO de bancada/concorrencia/; deterministico"),
     # O pedido 360: o resultados.json do comparativo alimenta TRES
     # renderizadores (este documento.py, a linha de baixo e a pagina de 21
@@ -268,12 +289,13 @@ PLANO = [
     ("bancada/comparacao/grafico.py",
      ["bancada/comparacao/comparacao-tres-motores.svg", "bancada/comparacao/comparacao-tres-motores.html"],
      "exato", "le bancada/comparacao/um-milhao.json; funcao pura da fonte versionada"),
-    ("trio-de-motores.py", [DOSSIE], "exato-trio",
+    ("trio-de-motores.py", [CONSOLE], "exato-trio",
      "le bancada/comparacao/um-milhao.json; a guarda de mtime da figura e neutralizada"),
     ("perguntas-no-dossie.py", [DOSSIE], "sem-carimbo",
      "le docs/pdf/respostas/; rodape carrega relogio de parede e commit curto"),
-    ("numerar-figuras.py", [DOSSIE], "exato",
-     "renumera as legendas Figura N na ordem do documento; roda por ULTIMO"),
+    ("numerar-figuras.py", [DOSSIE, CONSOLE], "exato",
+     "renumera as legendas Figura N na ordem de CADA documento -- sao duas "
+     "paginas desde o pedido 411, e chamada nua alcanca as duas; roda por ULTIMO"),
     ("pagina-de-status.py", ["docs/dossie/status.html"], "sem-carimbo",
      "le STATUS.md + CAPABILITIES.json; painel traz mtime, hoje e relogio"),
     ("pagina-dos-testes.py", ["docs/dossie/testes.html"], "sem-carimbo",

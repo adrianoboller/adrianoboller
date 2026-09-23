@@ -36,17 +36,17 @@ foi estimado no lugar de uma medição que faltou.
 |---|---:|---:|---:|---:|---:|---:|
 | `phxsql-cli` | 1 | 815 | 104 | 113 | 78 | 1110 |
 | `phxsql-cmd` | 2 | 618 | 110 | 207 | 65 | 1000 |
-| `phxsql-core` | 35 | 11589 | 4969 | 3921 | 1593 | 22072 |
+| `phxsql-core` | 35 | 11597 | 4973 | 3934 | 1593 | 22097 |
 | `phxsql-ffi` | 7 | 1408 | 1081 | 745 | 242 | 3476 |
 | `phxsql-odbc` | 7 | 2662 | 1089 | 980 | 239 | 4970 |
-| `phxsql-server` | 59 | 46757 | 32415 | 24957 | 5442 | 109571 |
-| `phxsql-sql` | 10 | 7023 | 3764 | 2457 | 811 | 14055 |
-| `phxsql-store` | 25 | 14041 | 3777 | 6398 | 1627 | 25843 |
-| **total** | **146** | **84913** | **47309** | **39778** | **10097** | **182097** |
+| `phxsql-server` | 59 | 47001 | 32927 | 25265 | 5501 | 110694 |
+| `phxsql-sql` | 10 | 7210 | 3844 | 2587 | 822 | 14463 |
+| `phxsql-store` | 26 | 14216 | 3831 | 6633 | 1655 | 26335 |
+| **total** | **147** | **85527** | **47959** | **40464** | **10195** | **184145** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **47309/84913 = 0.56×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **47959/85527 = 0.56×**.
 
-Alem do `src/`: **81** programas de medicao em `examples/` (20636 linhas — bancada em Rust, nao produto nem teste) e **69** arquivos em `tests/` de integracao fora de `src/` (24867 linhas).
+Alem do `src/`: **81** programas de medicao em `examples/` (20636 linhas — bancada em Rust, nao produto nem teste) e **69** arquivos em `tests/` de integracao fora de `src/` (25341 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -108,10 +108,10 @@ mesmo motivo que o rodapé já errou uma vez.
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
 | JavaScript (prova ponta a ponta) | `testes-web/` | 55 | 11741 |
-| Python (bancada de medicao) | `bancada/` | 121 | 55353 |
+| Python (bancada de medicao) | `bancada/` | 121 | 55368 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2894 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 439 | 107626 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 34 | 14420 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 442 | 108359 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 36 | 16014 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
 <!-- /GERADO -->
@@ -497,7 +497,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **420** pedidos numerados; **68** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **423** pedidos numerados; **68** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -777,6 +777,32 @@ O que se perde, dito em vez de escondido: uma marca `// DIVIDA:` malformada só
 `cargo test` de quem escreveu a linha. Quem quiser o segundo crivo tem de
 aceitar a primeira recusa acima — ou pagar as duas implementações, que é a
 receita duplicada que esta casa recusa em toda parte.
+
+### 5.8 A marca embutida na capa do dossiê — duas saídas medidas e recusadas, e a terceira com ressalva
+
+Pedido 411, 23/09/2026. Ao partir o dossiê para ele caber no teto de
+republicação (**460.800 bytes**), os **75.394 bytes** do símbolo da marca em
+base64 na capa viraram a diferença entre caber e não caber. A marca manda sobre
+qualquer decisão de layout, então nada foi apagado antes de medir as saídas:
+
+| saída avaliada | número medido | veredito |
+|---|---:|---|
+| (a) o **mesmo símbolo em resolução menor** na capa | o dossiê residual fica a **1.405 B** do teto. O 440×262 recomprimido a 64 cores dá **48.580 B** em base64; reduzido a 224×133 com 64 cores, **15.576 B**; o menor derivado oficial (`phxsql-icone-32.png`, 40×34 px), **1.990 B** | **recusada** — nenhuma cabe, e a única que chega perto é um símbolo de 40 px numa placa desenhada para 440: a marca mostrada mal é pior que a marca ausente |
+| (b) o símbolo como **arquivo de apoio** ao lado da página | não chega a ser questão de orçamento: a política de conteúdo do visualizador de artefato **bloqueia imagem de qualquer outra origem** — é o fato já medido nesta casa que obriga as vinte capturas a serem *data URI* (`docs/dossie/LEIA-ME.md`) | **recusada antes da conta** — a imagem não carregaria, e sem erro visível |
+| (c) tirar da capa | — | **escolhida, com ressalva** |
+
+A ressalva é o que mantém a regra de pé: **a marca mudou de casa, como as
+seções.** O símbolo vive inteiro, em 440 px, no cabeçalho de
+`docs/dossie/console-em-imagens.html`, onde é **3,3%** do arquivo. A capa do
+dossiê continua falando pela marca no que não custa bytes — Exo 2, o `#010418`
+do tema escuro, o vermelhão do acento e a assinatura *Built to store.
+Engineered to scale.*
+
+E a medição que traria a marca de volta está escrita, para não se refazer: a
+**§36 do dossiê pesa 42.525 bytes** e é uma cópia do mesmo material de
+`docs/pdf/respostas/*.md` que o PDF publica. Movê-la daria **30× a folga de
+hoje** — sobra para o símbolo de 224 px na capa. É decisão do dono, e por isso
+está aqui como número e não como plano.
 
 ---
 

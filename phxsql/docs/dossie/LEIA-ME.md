@@ -17,20 +17,32 @@ impossível de cumprir depois que o diretório temporário sumisse.
 
 1. Edite o `dossie-phxsql-*.html` da pasta — **só existe um**, e é essa regra
    que faz os geradores o acharem sozinhos.
-2. **Rode os geradores** (abaixo — são catorze, contados script por script em
-   09/09/2026). Nenhum número visível se digita.
+2. **Rode os geradores** (abaixo — são **quinze**, contados do `PLANO` do
+   `portao-dos-geradores.py` em 23/09/2026, não script por script: a lista que
+   o portão já mantém é a lista, e uma segunda contagem à mão é a que diverge).
+   Nenhum número visível se digita.
 3. Publique **passando a URL acima**, para cair na mesma página em vez de criar
    uma nova.
 
-## Os catorze geradores, e o que cada um regrava
+## Os quinze geradores, e o que cada um regrava
 
-São **catorze** os scripts de `docs/dossie/*.py` que escrevem número ou texto
-numa página publicada — o dossiê principal e as quatro páginas satélites
-(pedidos, testes, gráficos e status). Os outros **três** arquivos `.py` da pasta,
-`dossie_da_pasta.py` (só acha o arquivo, por varredura), `embutir-fontes.py`
-(embute fontes numa cópia offline para o PDF) e `prova-do-leitor-de-pedidos.py`
-(a prova real do leitor do `PENDENCIAS.md`, abaixo), não escrevem número nenhum
-e não entram na conta. A lista de comandos e a tabela «script → o que ele
+São **quinze** os scripts de `docs/dossie/*.py` que escrevem número ou texto
+numa página publicada — o dossiê principal e as satélites (pedidos, testes,
+gráficos, status e, desde 23/09/2026, **o console em imagens**). Os outros
+**quatro** arquivos `.py` da pasta, `dossie_da_pasta.py` (só acha o arquivo, por
+varredura), `embutir-fontes.py` (embute fontes numa cópia offline para o PDF),
+`portao-dos-geradores.py` (a catraca) e `prova-do-leitor-de-pedidos.py` (a prova
+real do leitor do `PENDENCIAS.md`, abaixo), não escrevem número nenhum e não
+entram na conta. Quinze mais quatro são os dezenove `.py` da pasta — e o quinze
+sai do `PLANO`, por `python3 docs/dossie/portao-dos-geradores.py --lista`.
+
+A subpasta `migracoes/` **não entra na conta**, e é de propósito: ela guarda os
+scripts de mudança de uma vez só — hoje o `411-secoes-para-a-oitava-pagina.py`,
+que diz linha a linha o que saiu do dossiê e quantos bytes cada corte valeu.
+Eles não escrevem número visível (escreveram uma vez, e acabou) e **param se
+rodados de novo**, porque migração que roda duas vezes é migração que ninguém
+sabe se já rodou. Estão versionados porque script que resolveu algo não pode
+morrer com a sessão. A lista de comandos e a tabela «script → o que ele
 escreve» estão em «O que conferir antes de publicar», abaixo.
 
 Fora desta pasta há mais geradores de página, e por isso **fora desta conta**:
@@ -83,6 +95,7 @@ sumiu é a mesma doença do conferidor que diz «limpo» sem ter conferido.
 **Os números do painel e do rodapé não se digitam mais.** Saem de
 
 ```bash
+python3 docs/dossie/pagina-do-console.py     # PRIMEIRO -- a casca da oitava página
 python3 docs/dossie/numeros-do-projeto.py
 python3 docs/dossie/numeros-da-bancada.py
 python3 docs/dossie/pagina-dos-pedidos.py
@@ -93,8 +106,14 @@ python3 docs/dossie/comparativo-no-dossie.py
 python3 docs/dossie/fluxo-do-motor.py
 python3 docs/dossie/trio-de-motores.py
 python3 docs/dossie/perguntas-no-dossie.py   # a seção 36, das respostas em docs/pdf/respostas/
-python3 docs/dossie/numerar-figuras.py       # POR ÚLTIMO
+python3 docs/dossie/numerar-figuras.py       # POR ÚLTIMO -- alcança as DUAS páginas
 ```
+
+**O `pagina-do-console.py` vem primeiro, e isso não é estilo.** Cinco dos
+geradores abaixo escrevem *dentro* da oitava página, entre marcas que só
+existem porque ele as pôs lá. Numa árvore onde ela ainda não existisse,
+qualquer um deles pararia com «a página do console não existe» — que é o certo,
+e é por isso que ele abre a fila em vez de fechá-la.
 
 **Confira o código de saída de cada um.** O `numeros-do-projeto.py` chama o
 `cargo`, e numa árvore compartilhada ele pode sair diferente de zero porque
@@ -212,16 +231,17 @@ número digitado à mão: envelhece calado.*
 | script | blocos que ele escreve |
 |---|---|
 | `numeros-do-projeto.py` | `<title>`, `selo:`, `projeto:` (o painel da capa), `rodape:` e `idiomas:` |
-| `numeros-da-bancada.py` | `bancada:`, `bancada:tabela:`, `bancada:diagnostico:` e `replicacao:` |
+| `pagina-do-console.py` | a **oitava página** inteira (casca, estilo e prosa) — e **preserva** os blocos dos outros cinco; regrava também os três ponteiros `console:a1/a2/a3` do dossiê, que são o link de volta |
+| `numeros-da-bancada.py` | `bancada:`, `bancada:tabela:` e `bancada:diagnostico:` **na oitava página**, e `replicacao:` no dossiê (a §10 não se mudou) |
 | `pagina-dos-pedidos.py` | `pedidos:` no dossiê, as páginas `pedidos-*.html` por faixa (número e nomes saem do corte por tamanho, não são fixos — pedido 403), e a contagem de volta no `PENDENCIAS.md` |
-| `cobertura-por-area.py` | `cobertura:` no dossiê, e as tabelas do `docs/TESTES.md` |
-| `capturas-no-dossie.py` | `capturas:` — as vinte telas, como *data URI* |
-| `tetos-da-trava.py` | `tetos:` — os quatro tetos de concorrência (§35), lidos das corridas cruas em `bancada/concorrencia/corridas/` |
+| `cobertura-por-area.py` | `cobertura:` **na oitava página**, e as tabelas do `docs/TESTES.md` |
+| `capturas-no-dossie.py` | `capturas:` **na oitava página** — as vinte telas, como *data URI* |
+| `tetos-da-trava.py` | `tetos:` **na oitava página** — os quatro tetos de concorrência, lidos das corridas cruas em `bancada/concorrencia/corridas/` |
 | `comparativo-no-dossie.py` | `comparativo:` — a tabela do que ainda falta aqui (§33) e as as duas figuras do medidor, lidas de `bancada/comparativo/` e `bancada/cobertura-da-tela/`; grava também os dois `.svg` avulsos |
-| `trio-de-motores.py` | `trio:` — os três motores a um milhão de linhas (§ da bancada), do `bancada/comparacao/um-milhao.json`. **Não redesenha**: o SVG é do `bancada/comparacao/grafico.py`, e ele PARA se o desenho for mais velho que a medição. Ficou **fora desta receita** até 07/09/2026, e quem a seguia nunca o rodava |
+| `trio-de-motores.py` | `trio:` **na oitava página** — os três motores a um milhão de linhas, do `bancada/comparacao/um-milhao.json`. **Não redesenha**: o SVG é do `bancada/comparacao/grafico.py`, e ele PARA se o desenho for mais velho que a medição. Ficou **fora desta receita** até 07/09/2026, e quem a seguia nunca o rodava |
 | `fluxo-do-motor.py` | `fluxo-motor:` (§9) e `workflow-motor:` (§31) — o caminho de um pedido e o ciclo de operação; as **listas saem do código** e ele PARA quando divergem |
 | `perguntas-no-dossie.py` | `perguntas:` — a seção 36, a resposta curta de cada uma das 26 perguntas do dono, lida de `docs/pdf/respostas/*.md` (o MESMO material do PDF, para as duas cópias não divergirem). Reaproveita o conversor de Markdown do `docs/pdf/gerar.py` — um conversor, não dois |
-| `numerar-figuras.py` | renumera **todas** as legendas `Figura N` na ordem do documento. Roda **por último** |
+| `numerar-figuras.py` | renumera **todas** as legendas `Figura N` na ordem de **cada** documento — são dois desde 23/09/2026, e chamada nua alcança os dois. Roda **por último** |
 
 `--so-medir` mostra sem gravar; `--sem-testes` no primeiro pula o `cargo test`,
 que demora. Use só quando o que mudou não foi código.
@@ -314,11 +334,21 @@ cópia — a rede do contêiner engole `fonts.googleapis.com`, e sem isso o PDF
 nasce em fonte de *fallback* **sem erro nenhum**. O segundo imprime pela folha
 `@media print` que a própria página traz; ele não inventa estilo.
 
+**O PDF do dossiê não tem mais a galeria, e isso é consequência, não defeito.**
+Desde 23/09/2026 as capturas e a marca da capa saíram dele: o mesmo comando
+apontado para `console-em-imagens.html` é que produz o PDF com as vinte telas.
+
+    python3 docs/dossie/embutir-fontes.py docs/dossie/console-em-imagens.html /tmp/c.html
+    node    docs/dossie/pdf-do-dossie.mjs /tmp/c.html console.pdf
+
 **A armadilha que custou a primeira corrida:** as 20 capturas são
 `loading="lazy"` e o `page.pdf()` **não rola a página**. O PDF saiu com **uma**
 imagem em 67 páginas — a marca da capa, a única sem `lazy` — com o texto todo,
 as 67 páginas, e nenhum aviso. Hoje o script troca `lazy` por `eager`, espera
-cada `<img>` e **conta**: 21 de 21, ou reprova.
+cada `<img>` e **conta**, e a conta é da própria página: no dossiê hoje dá
+0 de 0 e na página do console, 21 de 21. **Atenção ao 0 de 0**: a guarda compara
+`prontas` com `pedidas`, então uma página que perdeu as imagens passa por ela —
+quem imprime o console olha o número impresso, não só o código de saída.
 
 **E a que ensina sobre medir:** `document.fonts.check()` responde `true` para o
 *fallback* — ele diz «consigo desenhar isto», não «a fonte chegou». Nem
@@ -336,7 +366,8 @@ capturas saem certos; a tipografia dos títulos e do corpo não é a da marca.
 Elas moram em `capturas/`, já reduzidas, e entram no HTML como *data URI* —
 dentro, e não ao lado: a página publicada é um arquivo só, e a política de
 conteúdo do visualizador bloqueia imagem de qualquer outra origem. Ao lado, ela
-ficaria com vinte quadros quebrados e nenhum erro visível.
+ficaria com vinte quadros quebrados e nenhum erro visível. **Desde 23/09/2026 o
+destino é a oitava página**, `console-em-imagens.html`, e não mais o dossiê.
 
 Para refazê-las:
 
@@ -366,9 +397,10 @@ movimento para os gráficos terem o que mostrar, e derruba **pelo PID** — nunc
 `pkill -f`, que mataria o servidor do vizinho.
 
 O peso não se digita aqui: o `capturas-no-dossie.py` **imprime** os três
-números ao gravar — KiB de PNG, KiB em base64 e o tamanho final do dossiê. Na
-ordem de grandeza, ~1,5 MB de PNG viram ~2 MB embutidos e o dossiê fecha perto
-de 2,5 MB.
+números ao gravar — KiB de PNG, KiB em base64 e o tamanho final da página.
+Medido em 23/09/2026: **1.534 KiB de PNG → 2.046 KiB em base64**, e a oitava
+página fecha em **2.257.390 bytes**. É esse número, e não uma impressão, que
+tirou a galeria do dossiê.
 
 PNG quantizado (160 cores), e não JPEG: a captura é quase toda texto e linha
 fina, e o JPEG põe halo em volta de cada letra — medido nas vinte, os dois
@@ -376,6 +408,89 @@ pesam praticamente o mesmo e um deles fica com o texto limpo. A largura é
 1.200 px, o dobro da que a página usa, para servir a uma tela de duas vezes a
 densidade; a do multitela vai a 2.000 porque ela é um panorama de quatro telas
 e a 1.200 o texto de dentro vira borrão.
+
+## A OITAVA página: o console em imagens — pedido 411 (23/09/2026)
+
+`console-em-imagens.html` é onde a **seção 18** do dossiê (as vinte capturas),
+a **seção 32** (a bancada de dez milhões de linhas e os três motores a um
+milhão) e os **dois painéis medidos da seção 35** (os quatro tetos da trava e
+os testes por área) passaram a viver.
+
+**Ela nasce SEM URL, e isso é o certo** — é um artefato novo, nunca publicado.
+Enquanto a chave estiver vazia em `URLS_PUBLICADAS`, no topo do
+`pagina-do-console.py`, a navegação e os três ponteiros do dossiê caem no
+**nome do arquivo**, em vez de fingir que alguma URL antiga serve. Publique-a
+**sem** passar URL; depois preencha a chave `console-em-imagens.html` ali —
+é o **único** lugar do script onde ela entra, e é o mesmo ponto que acerta os
+três `<a>` de volta dentro do dossiê, de uma vez.
+
+### O número que a fez nascer
+
+| o que | bytes | % do dossiê |
+|---|---:|---:|
+| dossiê antes | 2.703.573 | 100% |
+| §18, o console em imagens | 2.106.613 | 77,9% |
+| as 21 imagens `data:` do documento | 2.171.386 | 80,3% |
+| **dossiê depois** | **459.395** | **17,0%** |
+
+O teto é o mesmo do pedido 403: **~450 KiB de página publicada é uma janela de
+contexto inteira só para republicar**, porque o guarda exige reler a versão
+publicada antes de aceitar a nova. As **21 imagens** do documento somavam
+**4,71× o teto**, e só a galeria — as vinte capturas, sem a marca da capa —
+dava **4,55×**. Não havia prosa a cortar que resolvesse, porque *o peso é a
+galeria*. A rota de
+reduzir as capturas morreu medida antes desta: rendia **2,4%** onde precisava
+render **83,0%**, erro de **35×**.
+
+### O que saiu, e para onde — nada sumiu
+
+| o que saiu do dossiê | foi para |
+|---|---|
+| as 20 capturas, com as legendas e os dois temas | oitava página, §1 |
+| a bancada inteira: figura, tabela, 13 subseções, diagnóstico, os três motores | oitava página, §2 |
+| os quatro tetos da trava e os testes por área, e o roteiro em três lugares | oitava página, §3 |
+| o símbolo da marca da capa (440 px, 75.394 B em base64) | oitava página, cabeçalho |
+| o CSS da galeria e o da placa da marca | `pagina-do-console.py` |
+| a prosa digitada da §35 que dizia «as quatro parciais» com o painel gerado mostrando quatorze | **apagada** — era o número digitado contradizendo o gerador ao lado |
+
+No dossiê, as §18, §32 e §35 continuam existindo: viraram **ponteiros**, com o
+link de volta gerado. O painel dos **pedidos** ficou na §35, porque ele é o
+resumo de capa do estado do projeto.
+
+### A marca saiu da capa, e não por preferência
+
+**A marca manda** — por isso ela não foi apagada sem medida. As três saídas,
+na ordem em que a regra manda avaliá-las:
+
+| saída | número medido | veredito |
+|---|---:|---|
+| (a) o mesmo símbolo em resolução menor | o dossiê residual já está a **1.396 B** do teto; o menor derivado oficial (`phxsql-icone-32.png`, 40×34) custa **1.990 B** em base64, e o 224×133 recomprimido a 64 cores custa **15.576 B** | **não cabe** — e um símbolo de 40 px numa placa de 440 seria a marca mostrada mal |
+| (b) o símbolo como arquivo de apoio, ao lado da página | não é o orçamento que decide: a política de conteúdo do visualizador **bloqueia imagem de qualquer outra origem** (já medido nesta casa, é o motivo de as capturas serem *data URI*) | **morre antes da conta** — a imagem não carregaria, e sem erro visível |
+| (c) tirar da capa | — | **escolhida**, com a ressalva abaixo |
+
+E a ressalva é o que salva a regra: **ela mudou de casa, como as seções.** O
+símbolo vive inteiro, em 440 px, no cabeçalho da oitava página, onde é 3,3% do
+arquivo. A capa do dossiê continua falando pela marca no que não custa bytes —
+Exo 2, o `#010418` do tema escuro, o vermelhão do acento e a assinatura
+*Built to store. Engineered to scale.*
+
+### A folga é apertada, e o próximo degrau está medido
+
+O dossiê fechou em **459.395 bytes** contra o teto de 460.800: **1.405 bytes,
+0,30%**. Isso passa hoje e não passa para sempre — a cada rodada entra prosa.
+O maior bloco restante está medido: a **§36, as perguntas do dono, com 42.525
+bytes**, e ela é uma cópia do mesmo material de `docs/pdf/respostas/*.md` que o
+PDF publica. Movê-la daria **30× mais folga** que a de hoje, e traria a marca de
+volta à capa com sobra. É decisão do dono, não do gerador.
+
+### E a oitava página é maior que o teto, de propósito
+
+Ela fechou em **2.257.390 bytes** — **4,90× o teto de republicação**. Isso é
+conhecido e aceito: ela publica barato **na primeira vez**, e o preço aparece na
+**segunda**, quando o guarda exigir reler a versão publicada. Quem for
+republicá-la vai precisar decidir entre parti-la por tamanho (como as páginas de
+pedidos) ou reduzir as capturas. **Não descubra isso na hora** — está escrito
+aqui porque o número já foi medido.
 
 ## A outra página: os pedidos — partida por TAMANHO, desde o pedido 403 (23/09/2026)
 
@@ -406,11 +521,19 @@ deu cinco, não quatro.
 
 | faixa | arquivo | pedidos | KiB medidos | folga até 450 KiB |
 |---|---|---:|---:|---:|
-| 1–190 | `docs/dossie/pedidos-001-190.html` | 190 | 294,6 | 155,4 |
-| 191–260 | `docs/dossie/pedidos-191-260.html` | 70 | 264,2 | 185,8 |
-| 261–320 | `docs/dossie/pedidos-261-320.html` | 60 | 292,5 | 157,5 |
-| 321–350 | `docs/dossie/pedidos-321-350.html` | 30 | 227,4 | 222,6 |
-| 351 em diante | `docs/dossie/pedidos-351-mais.html` | 54 | 267,0 | 183,0 |
+| 1–190 | `docs/dossie/pedidos-001-190.html` | 190 | 294,8 | 155,2 |
+| 191–260 | `docs/dossie/pedidos-191-260.html` | 70 | 264,4 | 185,6 |
+| 261–310 | `docs/dossie/pedidos-261-310.html` | 50 | 266,1 | 183,9 |
+| 311–350 | `docs/dossie/pedidos-311-350.html` | 40 | 265,9 | 184,1 |
+| 351–410 | `docs/dossie/pedidos-351-410.html` | 60 | 278,6 | 171,4 |
+| 411 em diante | `docs/dossie/pedidos-411-mais.html` | 12 | 54,5 | 395,5 |
+
+Medido em 23/09/2026, com **422 pedidos**. Foram **cinco** páginas na corrida
+da manhã e são **seis** agora: os pedidos 414–422 deslocaram um corte, a
+`pedidos-351-mais.html` deixou de ser gerada (o script a apagou sozinho) e
+nasceram `pedidos-351-410.html` e `pedidos-411-mais.html` — **as duas sem URL**,
+como manda a regra. As quatro de cima mantiveram o nome, então a URL delas
+continua valendo.
 
 A última faixa é **aberta** de propósito — nomeá-la com um teto fixo mentiria
 assim que a faixa seguinte nascesse (o maior pedido nesta rodada é o 404, e
@@ -443,7 +566,7 @@ Nenhuma se edita — saem do `pagina-dos-pedidos.py`, que lê o
 `docs/PENDENCIAS.md` e conta os três estados sozinho. A fonte da verdade é o
 `.md`; mexeu lá, rode isto.
 
-## A quinta página: o status dos dez recursos
+## A página do status dos dez recursos
 
 `status.html` é a tabela A–J que o Adriano pediu em 08/09/2026 — nota de 0 a
 10, o que existe e o que falta em cada recurso —, publicada em:
@@ -529,7 +652,10 @@ Medido nas cinco páginas em 18/09/2026: `window.print()` no dossiê e na págin
 dos pedidos; `<a download>` de verdade, `createObjectURL` de verdade,
 `window.claude` de verdade — **zero em todas as cinco**. Nas páginas de
 testes, gráficos e status, zero ocorrências de qualquer um dos padrões, nem
-como prosa.
+como prosa. **A oitava página foi medida em 23/09/2026**, no dia em que nasceu:
+`<a download>`, `createObjectURL`, `msSaveBlob`, `window.claude` e
+`<script>` — **zero de cada**. Ela não tem JavaScript nenhum, e por isso também
+não tem o botão «baixar»: o PDF dela sai pelo `pdf-do-dossie.mjs`, de fora.
 
 ## Três armadilhas de estilo da página
 

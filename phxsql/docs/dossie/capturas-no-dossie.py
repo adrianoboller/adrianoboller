@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Poe as capturas do console dentro do dossie, como data URI.
+"""Poe as capturas do console na pagina do console, como data URI.
 
 Existe pela mesma lei dos outros geradores desta pasta: o que e visivel ou sai
 de um gerador, ou esta errado e ninguem percebeu ainda. Captura de tela
@@ -8,7 +8,13 @@ tres versoes atras sem ninguem notar.
 
     node   docs/dossie/capturar-dossie.mjs . /tmp/brutas    fotografa
     python3 docs/dossie/capturas-no-dossie.py --preparar /tmp/brutas
-    python3 docs/dossie/capturas-no-dossie.py [dossie.html]  embute
+    python3 docs/dossie/capturas-no-dossie.py [pagina.html]  embute
+
+O ALVO mudou em 23/09/2026 (pedido 411): sem argumento, ele escreve na OITAVA
+pagina, `docs/dossie/console-em-imagens.html`, e nao mais no dossie. As vinte
+capturas pesavam 2.106.613 bytes la dentro -- 77,9% do arquivo, e sozinhas
+4,71x o teto de republicacao de ~450 KiB, que e o mesmo teto que ja tinha
+partido a pagina dos pedidos em cinco.
 
 De onde vem cada imagem:
 
@@ -18,7 +24,10 @@ De onde vem cada imagem:
 
 DENTRO do HTML, e nao ao lado: a pagina publicada e um arquivo so, e a politica
 de conteudo do visualizador bloqueia imagem de qualquer outra origem. Ao lado
-ela ficaria com dezenove quadros quebrados e nenhum erro visivel.
+ela ficaria com dezenove quadros quebrados e nenhum erro visivel. E o mesmo
+fato que matou, medido, a ideia de deixar a marca da capa como arquivo de
+apoio em vez de embutida: nao e o orcamento da pagina que decide, e que a
+imagem nao carregaria.
 
 O peso e o motivo de as imagens serem reduzidas e quantizadas antes de entrar
 (ver `preparar()`): a pagina inteira nao pode ficar impossivel de abrir.
@@ -28,10 +37,12 @@ import base64
 import pathlib
 import sys
 
-# O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
-# num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
+# Desde 23/09/2026 (pedido 411) o destino NAO e mais o dossie: as vinte
+# capturas pesavam 2.106.613 bytes dentro dele -- 77,9% do arquivo, e sozinhas
+# 4,71x o teto de republicacao de ~450 KiB. A secao virou a OITAVA pagina, e o
+# caminho dela sai do `dossie_da_pasta`, num dono so.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from dossie_da_pasta import achar_o_dossie  # noqa: E402
+from dossie_da_pasta import pagina_do_console  # noqa: E402
 
 RAIZ = pathlib.Path(__file__).resolve().parents[2]
 CAPTURAS = RAIZ / "docs" / "dossie" / "capturas"
@@ -43,7 +54,7 @@ def _alvo():
     for a in sys.argv[1:]:
         if a.endswith(".html"):
             return pathlib.Path(a).resolve()
-    return achar_o_dossie()
+    return pagina_do_console()
 
 
 # A ordem e a do caminho que o dono pediu: do login ate a replicacao. O
@@ -171,13 +182,14 @@ def main() -> None:
     html = alvo.read_text(encoding="utf-8")
     i, j = html.find(ABRE), html.find(FECHA)
     if i < 0 or j < 0:
-        sys.exit(f"{alvo.name} nao tem as marcas capturas:inicio/fim")
+        sys.exit(f"{alvo.name} nao tem as marcas capturas:inicio/fim -- a "
+                 "pagina sai do `pagina-do-console.py`, que as cria")
     html = html[:i] + ABRE + "\n" + bloco + "\n" + FECHA + html[j + len(FECHA):]
     alvo.write_text(html, encoding="utf-8")
 
     print(f"{len(TELAS) * len(TEMAS)} capturas embutidas em {alvo.name}")
     print(f"  {bytes_ // 1024} KiB de PNG  ->  {int(bytes_ * 4 / 3) // 1024} KiB em base64")
-    print(f"  dossie: {alvo.stat().st_size // 1024} KiB")
+    print(f"  {alvo.name}: {alvo.stat().st_size // 1024} KiB")
 
 
 if __name__ == "__main__":

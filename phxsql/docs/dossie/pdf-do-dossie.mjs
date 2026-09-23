@@ -1,6 +1,12 @@
 /* O dossie em PDF, pela folha `@media print` que a PROPRIA pagina traz.
  *
  *   node docs/dossie/pdf-do-dossie.mjs docs/dossie/dossie-phxsql-0.18.html [saida.pdf]
+ *   node docs/dossie/pdf-do-dossie.mjs docs/dossie/console-em-imagens.html  [saida.pdf]
+ *
+ * Duas paginas desde 23/09/2026 (pedido 411): as vinte capturas e a marca da
+ * capa sairam do dossie e foram para a OITAVA pagina. O dossie imprime hoje com
+ * ZERO imagem, e quem quiser o PDF da galeria aponta este mesmo comando para
+ * `console-em-imagens.html`.
  *
  * # Por que ele existe, e o que ele NAO faz
  *
@@ -16,7 +22,10 @@
  *    A primeira corrida saiu com **uma** imagem em 67 paginas -- a marca da
  *    capa, a unica sem `lazy`. E nao havia erro nenhum: o PDF tinha as 67
  *    paginas, o texto todo, e faltavam as vinte fotos. Hoje o script troca
- *    `lazy` por `eager`, ESPERA cada `<img>` e **conta**: 21 de 21, ou reprova.
+ *    `lazy` por `eager`, ESPERA cada `<img>` e **conta**: no console, 21 de 21,
+ *    ou reprova. E o limite da guarda, escrito para nao ser descoberto tarde:
+ *    ela compara `prontas` com `pedidas`, entao uma pagina SEM imagem nenhuma
+ *    passa com 0 de 0 -- o numero impresso e que diz o que aconteceu.
  *
  * 2. **`document.fonts.check()` responde `true` para o fallback.** Ele diz
  *    «consigo desenhar isto», nao «a fonte chegou». Quem quer saber se chegou

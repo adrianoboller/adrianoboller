@@ -310,7 +310,14 @@ def workflow(n_cap, n_ops, n_tela):
     # coluna 4 -- as saidas
     for y, nome, sub in [(52, "docs/COMPARATIVO.md", "não se edita"),
                          (116, "dossiê §33", "artefato 5c14044e"),
-                         (180, "pedidos.html", "artefato d6c8f13c"),
+                         # O nome e o artefato DIGITADOS aqui envelheceram
+                         # calados: a pagina unica `pedidos.html` deixou de
+                         # ser gerada no pedido 403 (partida por tamanho) e o
+                         # artefato d6c8f13c morreu com ela. Hoje o rotulo diz
+                         # o PADRAO, que sobrevive ao corte se deslocar -- o
+                         # numero de faixas muda a cada rodada, entao cita-lo
+                         # seria o mesmo erro por outro lado.
+                         (180, "pedidos-*.html", "uma por faixa"),
                          (244, "testes.html", "artefato 0c069766")]:
         p.append(caixa(C4, y, W4, 44, nome, sub))
     for y in (74, 138, 202, 266):

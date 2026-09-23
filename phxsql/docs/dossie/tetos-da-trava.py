@@ -31,7 +31,7 @@ import pathlib
 # O nome do dossie muda a cada refacao: quem o acha e a varredura da pasta,
 # num dono so. Padrao digitado aqui envelhece calado na proxima refacao.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from dossie_da_pasta import achar_o_dossie  # noqa: E402
+from dossie_da_pasta import pagina_do_console  # noqa: E402
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.dirname(os.path.dirname(AQUI))
@@ -152,7 +152,9 @@ def bloco():
 def main():
     # Era o unico da pasta que exigia argumento. Fazer diferente dos oito irmaos
     # e a armadilha: quem repete a receita nua deixa este bloco para tras.
-    alvo = sys.argv[1] if len(sys.argv) > 1 else achar_o_dossie()
+    # Pedido 411 (23/09/2026): o alvo nu deixou de ser o dossie -- os quatro
+    # tetos foram para a OITAVA pagina junto com a bancada.
+    alvo = sys.argv[1] if len(sys.argv) > 1 else pagina_do_console()
     s = open(alvo, encoding="utf-8").read()
     i, j = s.find(ABRE), s.find(FECHA)
     if i < 0 or j < 0:

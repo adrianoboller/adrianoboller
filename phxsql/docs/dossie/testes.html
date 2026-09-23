@@ -93,7 +93,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
     <div class="c"><div class="v">2.710</div><div class="r">testes</div></div>
     <div class="c"><div class="v">199</div><div class="r">guardas</div></div>
     <div class="c"><div class="v">33</div><div class="r">casos de tela</div></div>
-    <div class="c"><div class="v">24</div><div class="r">catracas</div></div>
+    <div class="c"><div class="v">26</div><div class="r">catracas</div></div>
     <div class="c"><div class="v">0</div><div class="r">dependências</div></div>
   </div>
 </header>
@@ -139,6 +139,7 @@ uma lista digitada aqui.</p>
       <tr><td class="mono">TETO_DA_FILA</td><td class="n mono">32</td><td class="mono peq">crates/phxsql-server/src/saude_do_disco.rs</td></tr>
       <tr><td class="mono">TETO_DE_COLUNAS</td><td class="n mono">12</td><td class="mono peq">crates/phxsql-server/src/bidirecional.rs</td></tr>
       <tr><td class="mono">TETO_DE_EVENTOS_POR_LOTE</td><td class="n mono">5.000</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
+      <tr><td class="mono">TETO_DE_LEITURA</td><td class="n mono">4.096</td><td class="mono peq">crates/phxsql-server/src/conferidor_segredos.rs</td></tr>
       <tr><td class="mono">TETO_DO_CABECALHO</td><td class="n mono">400</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
       <tr><td class="mono">TETO_DO_CAMPO</td><td class="n mono">120</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
       <tr><td class="mono">TETO_DO_ERRO</td><td class="n mono">500</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
@@ -151,6 +152,7 @@ uma lista digitada aqui.</p>
       <tr><td class="mono">TETO_JUNCAO</td><td class="n mono">500.000</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
       <tr><td class="mono">TETO_PIVOT</td><td class="n mono">5.000.000</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
       <tr><td class="mono">TETO_ROTULOS_E_CRASE</td><td class="n mono">904</td><td class="mono peq">crates/phxsql-server/src/conferidor.rs</td></tr>
+      <tr><td class="mono">TETO_SEGREDO_SOLTO</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor_segredos.rs</td></tr>
       <tr><td class="mono">TETO_TABELA_NA_MAO</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor_grades.rs</td></tr>
       <tr><td class="mono">TETO_TEMP_DIR_SOLTO</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor_temporarios.rs</td></tr>
       <tr><td class="mono">TETO_TXT_CRU_EM_HTML</td><td class="n mono">1</td><td class="mono peq">crates/phxsql-server/src/conferidor_texto_cru.rs</td></tr>
@@ -230,7 +232,7 @@ diz onde não confiar.</p>
 </div>
 
 <footer>
-  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 23/09/2026 15:03. Nenhum
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 23/09/2026 16:26. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
   do catálogo de guardas, dos <code>resultados.json</code> das bancadas, dos
   arquivos de <code>testes-web/</code> e das constantes do próprio fonte. O
