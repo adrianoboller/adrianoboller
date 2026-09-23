@@ -20,6 +20,9 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Supervisor opcional que sobe um `openvpn` por rede (`--openvpn`)
 - [x] P2P: aperto `Noise_IKpsk2_25519_ChaChaPoly_SHA256` conferido byte a byte contra o vetor oficial (cacophony), no MESMO motor Noise do PhxSql
 - [x] Segurança C1: JSON com teto de aninhamento (128) — o corpo de 262.000 `[` não derruba mais o processo
+- [x] P2P: transporte UDP (contador explícito, janela de 2.048 contra repetição, refazer aos 120 s, morrer aos 180 s / 2^60, par surdo refaz aos 15 s)
+- [x] P2P: placa virtual TUN no Linux por FFI ao `ioctl` — sem `iproute2`
+- [x] P2P: `phxvpn p2p chave` e `phxvpn p2p ligar` — **ping entre dois computadores pelo túnel, provado**
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 
 ### Falta
@@ -30,11 +33,12 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] Revogação por CRL (hoje: sair da rede apaga o `ccd/` e o `ccd-exclusive` barra)
 - [ ] Usar o certificado digital da empresa (A1/RSA) como AC — hoje ele é guardado só como identificação
 - [ ] Serviço do sistema (systemd / serviço do Windows) e pacote
-- [ ] P2P: transporte UDP (contador explícito, janela contra repetição RFC 6479, troca de chave 120 s / 180 s / 2^60)
-- [ ] P2P: placa virtual TUN no Linux por FFI (protótipo da pesquisa já leu pacote do TUN, como root)
 - [ ] P2P: rol de membros assinado (Ed25519 da rede) e PSK da senha da rede
 - [ ] P2P: descoberta — convite, broadcast na LAN e «farol» (membro alcançável que perfura NAT e faz relé)
-- [ ] P2P: comandos `phxvpn p2p criar / entrar / convidar` e a tela
+- [ ] P2P: convite (`phxvpn p2p convidar`) e a tela
+- [ ] P2P no Windows: TAP-Windows6 em modo TUN (CreateFileW + DeviceIoControl, adaptador próprio pelo `tapctl.exe` do OpenVPN) — ~250–350 linhas, estimado
+- [ ] P2P: repasse por servidor nosso para CGNAT dos dois lados (decisão do dono), cifrado de ponta a ponta
+- [ ] P2P: `mac1`/cookie contra inundação de INICIO (o WireGuard tem; aqui ainda não)
 - [ ] Segurança A1: revogação real (série no CN, CRL Ed25519)
 - [ ] Segurança A2/A3: limite de tentativas de login e de senha de rede; PBKDF2 fora do mutex; hash fictício contra enumeração
 - [ ] Segurança A5: CSRF/DNS rebinding — exigir `Content-Type` JSON, conferir `Host`, código de instalação de uso único
@@ -69,9 +73,32 @@ atrás de CGNAT/NAT simétrico, sem membro alcançável, não conectam sem um
 terceiro que repasse** — é por isso que Tailscale (DERP), ZeroTier (roots) e
 Nebula (lighthouse) têm um.
 
-**Na mesa do dono:** (1) Windows — placa virtual exige driver assinado; o
-Wintun é DLL de fora (choque com a pétrea); (2) produto — o que prometer para
-CGNAT dos dois lados.
+**Decidido pelo dono (23/09/2026):** (1) Windows usa o driver que o OpenVPN já
+instala; (2) CGNAT dos dois lados passa por repasse num servidor nosso, que
+só carrega pacote cifrado de ponta a ponta.
+
+**Windows (papel J, depois da decisão):** vence o **TAP-Windows6 em modo TUN**
+— o único driver presente no instalador do OpenVPN 2.6 e no 2.7, em toda
+arquitetura. O Wintun morreu (saiu do OpenVPN 2.7, não existe em arm64 e,
+na 0.8.1, só abre para SYSTEM); o ovpn-dco-win também (é acoplado ao
+protocolo do OpenVPN). Consequência de produto: exigir OpenVPN 2.6+ com o TAP
+marcado (vem por padrão) e criar o adaptador do phxvpn uma vez, com
+elevação, pelo `tapctl.exe` do próprio OpenVPN — o TAP é exclusivo, não se
+divide com o openvpn. Nada disso foi rodado num Windows ainda.
+
+### Prova P2P de ponta a ponta (23/09/2026)
+
+Dois espaços de rede Linux isolados (`ip netns`), ligados por um cabo
+virtual que faz o papel da internet; um `phxvpn p2p ligar` em cada um.
+
+| Prova | Resultado |
+|---|---|
+| `ping` pelo túnel | 4/4, 0,68 ms médio; B não sabia o endereço de A e o aprendeu pelo aperto |
+| O que passa no cabo (`tcpdump`) | 6 pacotes UDP, **0** ocorrências do texto enviado; dentro da placa de B, 2 de 2 |
+| Vazão TCP pelo túnel | **660 Mbit/s** (247,6 MB em 3 s, release, uma corrida, dois núcleos virtuais) |
+| Senha da rede errada | 3/3 pacotes perdidos |
+| B reinicia (perde as chaves) | A se recupera sozinho em ~15,5 s — **defeito achado aqui**: antes esperaria 120 s |
+| RED das guardas | sem conferir a origem, o par forja IP de outro; sem o carimbo, INICIO gravado abre sessão |
 
 ## Decisões, com a hipótese que morreu
 

@@ -5,7 +5,11 @@ pub mod cofre;
 pub mod http;
 pub mod noise;
 pub mod ovpn;
+pub mod p2p;
 pub mod painel;
 pub mod pg;
 pub mod pki;
 pub mod supervisor;
+pub mod transporte;
+#[cfg(target_os = "linux")]
+pub mod tun;

@@ -24,6 +24,15 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
       nunca por argumento, que aparece na lista de processos.
       --conectar chama o openvpn com o perfil baixado.
 
+  phxvpn p2p chave [--arquivo p2p.chave]
+      Cria (se nao existir) a identidade P2P deste computador e mostra a chave
+      publica, que os outros membros usam no --par.
+
+  phxvpn p2p ligar --rede NOME --ip 10.78.0.1/24 [--porta 51820] [--chave p2p.chave]
+                   [--interface phx0] --par CHAVE@IP[@HOST:PORTA] [--par ...]
+      Modo P2P, sem servidor: liga a placa virtual e fala direto com os pares
+      (Linux, como root). Senha da rede por PHXVPN_SENHA_REDE ou no terminal.
+
   phxvpn versao
 ";
 
@@ -33,6 +42,7 @@ fn main() {
         Some("painel") => cmd_painel(&args[1..]),
         Some("criar-rede") => cmd_rede(&args[1..], true),
         Some("entrar") => cmd_rede(&args[1..], false),
+        Some("p2p") => cmd_p2p(&args[1..]),
         Some("versao") | Some("--version") => {
             println!("phxvpn {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -197,4 +207,97 @@ Content-Length: {}\r\nConnection: close\r\n\r\n{corpo}",
         return Err(j.texto_ou("erro", "erro desconhecido").to_string());
     }
     Ok(j)
+}
+
+fn opcoes(args: &[String], nome: &str) -> Vec<String> {
+    args.windows(2)
+        .filter(|w| w[0] == nome)
+        .map(|w| w[1].clone())
+        .collect()
+}
+
+/// Le a identidade P2P do arquivo, ou cria uma nova (0600, criada ja com a
+/// permissao -- sem a janela de um `chmod` depois).
+fn identidade(caminho: &str) -> Result<[u8; 32], String> {
+    use phxsql_core::hash::{de_hex, para_hex};
+    if let Ok(t) = std::fs::read_to_string(caminho) {
+        return de_hex(t.trim())
+            .and_then(|b| <[u8; 32]>::try_from(b).ok())
+            .ok_or_else(|| format!("{caminho}: chave P2P torta"));
+    }
+    let k = phxsql_core::x25519::gerar_privada();
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+    }
+    let mut f = o
+        .open(caminho)
+        .map_err(|e| format!("criar {caminho}: {e}"))?;
+    writeln!(f, "{}", para_hex(&k)).map_err(|e| e.to_string())?;
+    Ok(k)
+}
+
+fn cmd_p2p(args: &[String]) -> Result<(), String> {
+    use phxsql_core::hash::para_hex;
+    let arquivo = opcao(args, "--chave")
+        .or_else(|| opcao(args, "--arquivo"))
+        .unwrap_or_else(|| "p2p.chave".into());
+    match args.first().map(String::as_str) {
+        Some("chave") => {
+            let k = identidade(&arquivo)?;
+            println!("{}", para_hex(&phxsql_core::x25519::chave_publica(&k)));
+            Ok(())
+        }
+        Some("ligar") => p2p_ligar(args, &arquivo),
+        _ => Err("use: phxvpn p2p chave | phxvpn p2p ligar ... (veja phxvpn ajuda)".into()),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn p2p_ligar(args: &[String], arquivo: &str) -> Result<(), String> {
+    use phxsql_core::hash::para_hex;
+    use phxvpn::p2p;
+    let privada = identidade(arquivo)?;
+    let rede = opcao(args, "--rede").ok_or("informe --rede")?;
+    let (ip, prefixo) = opcao(args, "--ip")
+        .ok_or("informe --ip (ex.: 10.78.0.1/24)")?
+        .split_once('/')
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .ok_or("--ip precisa do prefixo, ex.: 10.78.0.1/24")?;
+    let ip: std::net::Ipv4Addr = ip.parse().map_err(|_| "IP virtual invalido")?;
+    let prefixo: u8 = prefixo
+        .parse()
+        .ok()
+        .filter(|p| *p <= 32)
+        .ok_or("prefixo invalido")?;
+    let porta = opcao(args, "--porta").unwrap_or_else(|| "51820".into());
+    let pares = opcoes(args, "--par")
+        .iter()
+        .map(|t| p2p::ler_par(t))
+        .collect::<Result<Vec<_>, _>>()?;
+    if pares.is_empty() {
+        return Err("informe ao menos um --par".into());
+    }
+    let senha_rede = senha("PHXVPN_SENHA_REDE", "senha da rede")?;
+    // A senha sai do ambiente assim que foi lida: nao fica em /proc/<pid>/environ.
+    std::env::remove_var("PHXVPN_SENHA_REDE");
+    let psk = p2p::psk_da_rede(&rede, &senha_rede, p2p::ITERACOES_PSK);
+    let udp = std::net::UdpSocket::bind(format!("0.0.0.0:{porta}"))
+        .map_err(|e| format!("porta UDP {porta}: {e}"))?;
+    let interface = opcao(args, "--interface").unwrap_or_else(|| "phx0".into());
+    let tun = phxvpn::tun::Tun::abrir(&interface, ip, prefixo, p2p::MTU)?;
+    let no = Arc::new(p2p::No::novo(privada, psk, ip, udp, pares));
+    eprintln!(
+        "phxvpn: P2P no ar -- {interface} {ip}/{prefixo}, UDP {porta}, chave {}",
+        para_hex(&no.publica())
+    );
+    p2p::rodar(no, tun)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn p2p_ligar(_args: &[String], _arquivo: &str) -> Result<(), String> {
+    Err("o modo P2P ainda so roda no Linux (Windows: driver do OpenVPN, em pesquisa)".into())
 }
