@@ -110,7 +110,7 @@ mesmo motivo que o rodapé já errou uma vez.
 | JavaScript (prova ponta a ponta) | `testes-web/` | 55 | 11741 |
 | Python (bancada de medicao) | `bancada/` | 121 | 55353 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2894 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 435 | 106750 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 435 | 106755 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 34 | 13970 |
 <!-- /GERADO -->
 
@@ -493,7 +493,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **401** pedidos numerados; **66** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **404** pedidos numerados; **68** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -563,6 +563,8 @@ proposta de voltar sem medição nova.
 | 381 | **Linha com `.memo` corrompido nao se consegue ALTERAR por cliente que omita a coluna de sistema -- nem para substituir o bloco ruim** |
 | 385 | **A guarda que falta: «cliente novo nasce pedindo o tunel» -- e a forma dela esta decidida, com a recusa medida ao lado** |
 | 367 | **PARECER DO DBA 18/09 -- a trilha `.lgpd` de coluna EXTERNA marcada MENTE, nos tres sentidos** |
+| 403 | **O guarda da republicacao cobra a LEITURA INTEGRAL da pagina publicada, e acima de ~450 KiB isso nao cabe numa janela** |
+| 404 | **O `extrair.py` do TECNOLOGIAS conta a SI MESMO, entao a rodada em que o bloco gerado muda de tamanho exige duas passagens — e o portao acusa VERMELHO na primeira** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —
