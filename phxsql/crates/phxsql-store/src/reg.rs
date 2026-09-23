@@ -1307,6 +1307,36 @@ impl RegFile {
         padrao: &[u8],
         nulo: bool,
     ) -> Result<u64> {
+        let pendente = self.alargar_fase_a(novo, posicao, padrao, nulo)?;
+        self.alargar_fase_b(pendente)
+    }
+
+    /// A FASE A sozinha: escreve os `*.novo` e **nao troca nada**.
+    ///
+    /// # Por que ela e uma porta propria
+    ///
+    /// Porque ela e a parte CARA -- 0,691 a 1,034 us por slot, medidos em
+    /// 23/09/2026 -- e e a unica que nao precisa da trava global de dados na
+    /// mao. O arquivo vivo continua sendo o velho e inteiro enquanto ela
+    /// corre; quem chama pode soltar a trava aqui, deixar o servidor atender
+    /// o resto do mundo, e retomar para a FASE B, que e so `rename`.
+    ///
+    /// **O que quem solta a trava tem de por no lugar**: o congelamento da
+    /// tabela (`crate::congelamento`). O `*.novo` e um RETRATO -- uma linha
+    /// gravada no volume velho depois deste ponto nao esta nele, e a FASE B
+    /// renomeia por cima. Soltar a trava sem congelar compila, passa na suite
+    /// e perde escrita confirmada.
+    ///
+    /// O cinto de seguranca vem junto: a [`TrocaPendente`] carrega o retrato
+    /// do que estava no disco, e [`TrocaPendente::conferir_retrato`] recusa a
+    /// FASE B se alguem escreveu no meio.
+    pub fn alargar_fase_a(
+        &mut self,
+        novo: Schema,
+        posicao: usize,
+        padrao: &[u8],
+        nulo: bool,
+    ) -> Result<TrocaPendente> {
         let velho = self.esquema.clone();
         let n_velho = velho.colunas().len();
         if novo.colunas().len() != n_velho + 1 || posicao > n_velho {
@@ -1437,6 +1467,11 @@ impl RegFile {
         self.slot_size = slot_novo;
         self.data_offset = destino;
 
+        // O RETRATO, tirado antes de a primeira leitura acontecer: e contra
+        // ele que a FASE B confere que ninguem escreveu no volume vivo
+        // enquanto o `*.novo` era montado. Ver `conferir_retrato`.
+        let retrato = retratar(&primeiros);
+
         // FASE A -- escrever. Nenhum `rename` acontece aqui: cada volume vira
         // um `*.novo` completo e sincronizado ao lado do seu. Enquanto esta
         // fase corre, a tabela no disco continua sendo a VELHA, inteira. Uma
@@ -1477,23 +1512,37 @@ impl RegFile {
             }
         }
 
-        // FASE B -- trocar. So `rename`, sem I/O de dado: a janela em que a
-        // tabela pode ficar misturada e de n renomeacoes, e nao da reescrita
-        // inteira. **O volume 1 e o ponto de compromisso**, e por isso ele vem
-        // primeiro: dele para a frente a alteracao esta decidida, e o `abrir`
-        // TERMINA o que ficou faltando em vez de recusar (ver
-        // `terminar_troca_interrompida`).
-        for (v, _, caminho, espelho) in &primeiros {
+        Ok(TrocaPendente {
+            slots,
+            trocas: primeiros
+                .into_iter()
+                .map(|(_, _, caminho, espelho)| (caminho, espelho))
+                .collect(),
+            retrato,
+        })
+    }
+
+    /// A FASE B sozinha: **so `rename`**, sem E/S de dado.
+    ///
+    /// A janela em que a tabela pode ficar misturada e de n renomeacoes, e nao
+    /// da reescrita inteira. **O volume 1 e o ponto de compromisso**, e por
+    /// isso ele vem primeiro: dele para a frente a alteracao esta decidida, e
+    /// o `abrir` TERMINA o que ficou faltando em vez de recusar (ver
+    /// `terminar_troca_interrompida`).
+    ///
+    /// Quem soltou a trava entre as duas fases tem de tomar a trava de novo
+    /// **antes** desta e conferir o retrato ([`TrocaPendente::conferir_retrato`]).
+    pub fn alargar_fase_b(&mut self, pendente: TrocaPendente) -> Result<u64> {
+        for (caminho, espelho) in &pendente.trocas {
             trocar_pelo_novo(caminho)?;
             if let Some(espelho) = espelho {
                 if espelho.exists() {
                     trocar_pelo_novo(espelho)?;
                 }
             }
-            let _ = v;
         }
         self.volumes.fechar_todos();
-        Ok(slots)
+        Ok(pendente.slots)
     }
 
     /// O primeiro rowid que mora num volume.
@@ -2517,13 +2566,135 @@ fn geometria_do_volume(caminho: &Path) -> Option<(usize, u64, u32)> {
     Some((c.u32(16) as usize, c.u64(44), c.u32(56)))
 }
 
-/// Troca um volume pelo `*.novo` escrito ao lado dele. So `rename`.
-fn trocar_pelo_novo(caminho: &Path) -> Result<()> {
+/// O que um arquivo de volume era no instante em que a FASE A comecou a
+/// copia-lo.
+///
+/// Tamanho e `mtime`, e nao conteudo: reler o arquivo inteiro para comparar
+/// custaria uma terceira passada sobre a tabela, que e exatamente o que esta
+/// frente existe para nao pagar. Os dois juntos pegam insercao (o arquivo
+/// cresce), atualizacao e exclusao (o `mtime` anda) -- e o instante do
+/// retrato e um ponto QUIETO por construcao: quem o tira tem a trava global
+/// na mao e nao ha escritor em voo, porque nesta casa so se abre tabela
+/// gravavel com a ficha exclusiva.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RetratoDoVolume {
+    caminho: PathBuf,
+    bytes: u64,
+    modificado: Option<std::time::SystemTime>,
+}
+
+/// O palco da reescrita: os `*.novo` prontos e sincronizados, esperando o
+/// `rename` da FASE B.
+///
+/// Ele existe para que a parte CARA da reescrita (a FASE A) aconteca fora da
+/// trava global e a parte BARATA (a FASE B) aconteca dentro dela. E o mesmo
+/// desenho do PITR no pedido 252: nao se move o `drop` da trava, muda-se ONDE
+/// se escreve.
+pub struct TrocaPendente {
+    slots: u64,
+    /// `(volume, espelho)` na ordem da troca. O volume 1 vem primeiro.
+    trocas: Vec<(PathBuf, Option<PathBuf>)>,
+    retrato: Vec<RetratoDoVolume>,
+}
+
+impl TrocaPendente {
+    /// Quantos slots a FASE A passou.
+    pub fn slots(&self) -> u64 {
+        self.slots
+    }
+
+    /// Alguem escreveu no volume vivo desde o retrato?
+    ///
+    /// # Por que isto existe, se o congelamento ja impede
+    ///
+    /// Porque as duas guardas respondem a perguntas diferentes, e so as duas
+    /// juntas fecham o caso. O congelamento **previne** -- ele recusa a
+    /// abertura gravavel da tabela em reescrita, no ponto unico. Esta
+    /// conferencia **garante**: se um caminho novo aparecer amanha e escapar
+    /// do congelamento, a FASE B recusa em vez de renomear por cima de
+    /// escrita confirmada.
+    ///
+    /// A diferenca entre as duas e a diferenca entre «nao deve acontecer» e
+    /// «se acontecer, aparece». Perda de dado em silencio e o pior resultado
+    /// possivel desta operacao; recusa com nome e o segundo pior, e e barato.
+    pub fn conferir_retrato(&self) -> Result<()> {
+        for r in &self.retrato {
+            let agora = retratar_um(&r.caminho);
+            if agora != *r {
+                return Err(PhxError::Conflito(format!(
+                    "{} mudou enquanto a reescrita montava o arquivo novo \
+                     ({} bytes antes, {} agora): a troca foi ABORTADA e a tabela \
+                     continua inteira e como estava. Nada foi perdido -- rode a \
+                     operacao de novo quando ninguem estiver gravando nela",
+                    r.caminho.display(),
+                    r.bytes,
+                    agora.bytes
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Joga fora os `*.novo`, quando a FASE B nao vai acontecer.
+    ///
+    /// Apagar e seguro justamente porque a FASE B nao comecou: o volume 1
+    /// ainda e o velho, e por isso o `abrir` ja trata estes arquivos como
+    /// lixo (ver `terminar_troca_interrompida`). Deixa-los la nao corromperia
+    /// nada -- a proxima reescrita os sobrescreve --, mas ocupariam o dobro
+    /// do tamanho da tabela em disco ate la.
+    ///
+    /// Devolve quantos foram apagados.
+    pub fn descartar(self) -> usize {
+        let mut apagados = 0;
+        for (caminho, espelho) in &self.trocas {
+            for alvo in [Some(caminho), espelho.as_ref()].into_iter().flatten() {
+                if std::fs::remove_file(caminho_do_novo(alvo)).is_ok() {
+                    apagados += 1;
+                }
+            }
+        }
+        apagados
+    }
+}
+
+/// O caminho do `*.novo` de um volume. UM lugar que o monta -- o
+/// `trocar_pelo_novo` e o `descartar` tem de nomear o mesmo arquivo, e duas
+/// copias do `format!` divergem no dia em que o sufixo mudar.
+fn caminho_do_novo(caminho: &Path) -> PathBuf {
     let nome = caminho
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    let tmp = caminho.with_file_name(format!("{nome}.{SUFIXO_NOVO}"));
+    caminho.with_file_name(format!("{nome}.{SUFIXO_NOVO}"))
+}
+
+fn retratar_um(caminho: &Path) -> RetratoDoVolume {
+    let md = std::fs::metadata(caminho).ok();
+    RetratoDoVolume {
+        caminho: caminho.to_path_buf(),
+        bytes: md.as_ref().map(|m| m.len()).unwrap_or(0),
+        modificado: md.and_then(|m| m.modified().ok()),
+    }
+}
+
+fn retratar(primeiros: &[(u32, RowId, PathBuf, Option<PathBuf>)]) -> Vec<RetratoDoVolume> {
+    let mut saida = Vec::new();
+    for (_, _, caminho, espelho) in primeiros {
+        saida.push(retratar_um(caminho));
+        // O espelho so entra se JA existir: um criado entre as duas fases nao
+        // tem `*.novo` ao lado, e o `trocar_pelo_novo` o deixa em paz.
+        if let Some(e) = espelho {
+            if e.exists() {
+                saida.push(retratar_um(e));
+            }
+        }
+    }
+    saida
+}
+
+/// Troca um volume pelo `*.novo` escrito ao lado dele. So `rename`.
+fn trocar_pelo_novo(caminho: &Path) -> Result<()> {
+    let tmp = caminho_do_novo(caminho);
     if tmp.exists() {
         std::fs::rename(&tmp, caminho)?;
     }

@@ -901,3 +901,157 @@ fn o_crivo_do_check_nao_pega_quem_depende_da_linha_velha() {
     v.acrescentar_coluna(c, Some(Value::Str("nao".into())))
         .unwrap();
 }
+
+// ---------------------------------------------------------------------------
+// 6. as duas fases, e o cinto de seguranca entre elas  -- pedido 421
+// ---------------------------------------------------------------------------
+
+/// **O defeito, reposto e DETERMINISTICO**: sem revalidar o retrato, a FASE B
+/// renomeia por cima de escrita confirmada.
+///
+/// Este teste nao prova um conserto -- ele prova que ha o que conferir. A
+/// sequencia e' exatamente a do conserto ingenuo (soltar a trava na FASE A e
+/// trocar na FASE B sem olhar nada), e o resultado esta escrito no `assert`:
+/// a linha que o vizinho gravou SOME.
+///
+/// Sem ele, o teste de baixo poderia continuar passando no dia em que a FASE B
+/// deixasse de perder a linha por outro motivo -- e ninguem saberia que a
+/// revalidacao virou cerimonia.
+#[test]
+fn sem_revalidar_o_retrato_a_fase_b_perde_a_linha_do_vizinho() {
+    let d = DirTemp::novo("fase-b-perde");
+    let mut t = Table::criar(&d.0, esquema()).unwrap();
+    for i in 1..=50 {
+        t.inserir(&cliente(i)).unwrap();
+    }
+    t.sincronizar().unwrap();
+
+    // FASE A: o `*.novo` e' um RETRATO das 50 linhas.
+    let pendente = t
+        .acrescentar_coluna_fase_a(coluna_situacao(), None)
+        .unwrap();
+
+    // O VIZINHO que escapou do congelamento, e ele grava no volume VIVO.
+    {
+        let mut outro = Table::abrir(&d.0, "clientes").unwrap();
+        let rowid = outro.inserir(&cliente(51)).unwrap();
+        assert_eq!(rowid, 51);
+        outro.sincronizar().unwrap();
+    }
+
+    // FASE B sem conferir nada -- o conserto ingenuo.
+    t.acrescentar_coluna_fase_b(pendente).unwrap();
+
+    let depois = Table::abrir(&d.0, "clientes").unwrap();
+    assert_eq!(
+        depois.slots(),
+        50,
+        "o defeito nao se reproduziu: a linha 51 sobreviveu a troca, e entao \
+         a revalidacao da prova de baixo deixou de ter o que conferir"
+    );
+}
+
+/// **O cinto**: com a revalidacao, a FASE B ABORTA e a tabela fica inteira.
+///
+/// # O defeito que ela repoe
+///
+/// Tire o `conferir_retrato` de `op_migrar_esquema` e de
+/// `op_acrescentar_coluna` -- ou faca `TrocaPendente::conferir_retrato`
+/// devolver `Ok(())` sempre -- e a linha 51 some, exatamente como no teste de
+/// cima. A diferenca entre os dois e' UMA chamada.
+#[test]
+fn a_fase_b_aborta_quando_o_volume_mudou_no_meio() {
+    let d = DirTemp::novo("fase-b-aborta");
+    let mut t = Table::criar(&d.0, esquema()).unwrap();
+    for i in 1..=50 {
+        t.inserir(&cliente(i)).unwrap();
+    }
+    t.sincronizar().unwrap();
+
+    let pendente = t
+        .acrescentar_coluna_fase_a(coluna_situacao(), None)
+        .unwrap();
+    {
+        let mut outro = Table::abrir(&d.0, "clientes").unwrap();
+        outro.inserir(&cliente(51)).unwrap();
+        outro.sincronizar().unwrap();
+    }
+
+    let e = pendente
+        .conferir_retrato()
+        .expect_err("o retrato nao acusou a escrita do vizinho");
+    let texto = e.to_string();
+    assert!(
+        texto.contains("ABORTADA") && texto.contains("clientes"),
+        "a recusa nao diz o que houve nem em qual arquivo: {texto}"
+    );
+    // E o palco sai do disco: `*.novo` orfao ocuparia o tamanho da tabela.
+    assert!(
+        pendente.descartar() > 0,
+        "o descarte nao apagou nenhum `*.novo`"
+    );
+
+    // A tabela continua INTEIRA e como estava -- com a linha do vizinho e sem
+    // a coluna nova.
+    let mut depois = Table::abrir(&d.0, "clientes").unwrap();
+    assert_eq!(depois.slots(), 51, "a linha do vizinho sumiu");
+    assert!(
+        depois.esquema().coluna_por_nome("situacao").is_none(),
+        "a coluna entrou mesmo com a troca abortada"
+    );
+    assert_eq!(
+        depois.varrer_com(Visao::Todas).unwrap().len(),
+        51,
+        "a tabela nao le mais as 51 linhas"
+    );
+}
+
+/// As duas fases somadas dao **exatamente** o que a porta de sempre dava.
+///
+/// E' o teste do caminho VELHO da divisao: `acrescentar_coluna` continua
+/// sendo fase A mais fase B, e nenhum chamador de fora sente a mudanca.
+///
+/// O `rowstamp` e o `rowtime` ficam de fora da comparacao, e nao por
+/// conveniencia: os dois saem de contadores do PROCESSO (`no::proximo_carimbo`
+/// e o relogio), entao duas tabelas criadas na mesma corrida nunca os teriam
+/// iguais. Compara-los mediria a ordem em que o teste rodou.
+#[test]
+fn as_duas_fases_dao_o_mesmo_que_a_porta_de_sempre() {
+    fn sem_carimbo(r: Vec<(u64, Vec<Value>)>) -> Vec<(u64, Vec<Value>)> {
+        r.into_iter()
+            .map(|(id, mut v)| {
+                v.truncate(v.len() - 2);
+                (id, v)
+            })
+            .collect()
+    }
+    let inteira = {
+        let d = DirTemp::novo("fases-inteira");
+        let mut t = Table::criar(&d.0, esquema()).unwrap();
+        for i in 1..=30 {
+            t.inserir(&cliente(i)).unwrap();
+        }
+        t.excluir_suave(7, "teste").unwrap();
+        t.acrescentar_coluna(coluna_situacao(), Some(Value::Str("ativo".into())))
+            .unwrap();
+        sem_carimbo(retrato(&mut t))
+    };
+    let partida = {
+        let d = DirTemp::novo("fases-partida");
+        let mut t = Table::criar(&d.0, esquema()).unwrap();
+        for i in 1..=30 {
+            t.inserir(&cliente(i)).unwrap();
+        }
+        t.excluir_suave(7, "teste").unwrap();
+        let p = t
+            .acrescentar_coluna_fase_a(coluna_situacao(), Some(Value::Str("ativo".into())))
+            .unwrap();
+        p.conferir_retrato().unwrap();
+        t.acrescentar_coluna_fase_b(p).unwrap();
+        sem_carimbo(retrato(&mut t))
+    };
+    assert_eq!(
+        inteira, partida,
+        "a divisao em duas fases mudou o resultado"
+    );
+}

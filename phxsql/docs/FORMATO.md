@@ -318,6 +318,41 @@ esquema.**
 Numa tabela de um volume só não há conjunto misturado possível: ou o `rename`
 aconteceu, ou não.
 
+#### A fase A roda com a trava global SOLTA — e o que segura o dado no lugar dela
+
+Desde 23/09/2026 (pedido 421) a fase A acontece **fora** da trava global de
+dados: ela é a parte cara — 0,691 a 1,034 µs por slot medidos nesta máquina,
+**2,76 s** a 2 milhões de slots e **~13,8 s** a 10 milhões, e a migração para
+o v10 paga isso **duas vezes** —, e prender o servidor inteiro por esse tempo
+não é servidor lento, é servidor parado. Só a fase B, que é `rename` e nada
+mais, retoma a trava.
+
+**Nada no formato mudou**, e é justamente por isso que isto está escrito aqui:
+quem lê a fase A acima pode concluir que o `*.novo` está seguro *porque a
+trava está na mão*. Estava, e não está mais. O `*.novo` é um **retrato**: uma
+linha gravada no volume velho depois que ele começou a ser montado **não está
+nele**, e a fase B renomearia por cima — escrita confirmada, perdida, sem
+bilhete. Duas coisas substituem a trava, e as duas respondem a perguntas
+diferentes:
+
+- **o congelamento da tabela** (`phxsql_store::congelamento`), consultado em
+  `Table::abrir_com` com `escrever = true` — o ponto único por onde toda
+  tabela gravável nasce, inclusive a cascata do `ao_alterar`, a conferência de
+  integridade, a replicação e o `dblink`. Ele **previne**: quem tentar abrir
+  para gravar ouve `4006 EM_MIGRACAO`, com `repetir: true`;
+- **a revalidação do retrato** (`TrocaPendente::conferir_retrato`), com a trava
+  de volta na mão e antes de qualquer `rename` — tamanho e `mtime` de cada
+  volume contra o que eles eram quando a fase A começou. Ela **garante**: se
+  um caminho novo escapar do congelamento, a troca é **abortada**, os `*.novo`
+  são apagados e a tabela fica exatamente como estava. Perda em silêncio é o
+  pior resultado possível desta operação; recusa com nome é o segundo pior, e
+  é barata.
+
+O retrato é tirado com a trava na mão, e isso é o que o torna exato: nesta
+casa só se abre tabela gravável com a ficha exclusiva (`Raiz::exclusiva`, que
+exige `&mut Raiz`), então com a trava na mão não há escritor em voo — não há
+janela de granularidade de `mtime` para perder.
+
 **O que ela não faz:** não troca tipo nem largura de coluna que já existe, não
 tira coluna, não cria índice sobre a coluna nova, e não replica a si mesma —
 `acrescentar_coluna` é uma operação local, e uma réplica só volta a aplicar

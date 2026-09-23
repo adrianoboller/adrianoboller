@@ -16242,7 +16242,41 @@ impl Servidor {
         };
 
         let inicio = std::time::Instant::now();
-        let slots = t.acrescentar_coluna(coluna.clone(), padrao)?;
+        // O CONGELAMENTO entra com a trava na mao, e e isso que faz o retrato
+        // da FASE A ser tirado num ponto QUIETO: so se abre tabela gravavel
+        // com a ficha exclusiva, entao com a trava na mao nao ha escritor em
+        // voo nesta tabela. Dela em diante, quem tentar gravar ouve a recusa
+        // nomeada em vez de entrar num arquivo que vai ser renomeado por cima.
+        let congelada = phxsql_store::congelamento::congelar(
+            t.diretorio(),
+            t.nome(),
+            format!("acrescentando a coluna {}", coluna.nome),
+        )?;
+        // A trava global SAI aqui. O que ela protegia -- o volume vivo contra
+        // escrita concorrente durante a FASE A -- passou para o congelamento,
+        // que custa um `load` atomico a quem nao esta migrando nada.
+        drop(dados);
+
+        // FASE A, FORA da trava: e a parte cara (0,69-1,03 us por slot,
+        // medido em 23/09/2026), e o servidor atende todo o resto enquanto
+        // ela corre.
+        let pendente = t.acrescentar_coluna_fase_a(coluna.clone(), padrao)?;
+
+        let dados = self.travar_dados()?;
+        // A REVALIDACAO, e ela nao e cerimonia: se um caminho novo escapar do
+        // congelamento amanha, a troca ABORTA em vez de renomear por cima de
+        // escrita confirmada. Ver `TrocaPendente::conferir_retrato`.
+        if let Err(e) = pendente.conferir_retrato() {
+            pendente.descartar();
+            return Err(e);
+        }
+        let slots = t.acrescentar_coluna_fase_b(pendente)?;
+        // Depois da FASE B, como sempre foi: acrescentar coluna nao muda o
+        // numero de registros, mas ler o contador antes da troca seria uma
+        // segunda verdade esperando divergir.
+        let registros = t.registros();
+        drop(dados);
+        drop(congelada);
         let ms = inicio.elapsed().as_secs_f64() * 1e3;
 
         // O que a linha VELHA nao ganhou, dito na resposta (pedido 245, O2).
@@ -16254,7 +16288,6 @@ impl Servidor {
         // novo, e com a `calculada` que nasceu nula nela, e decisao de
         // garantia de dado e esta com o dono (245, O2).
         let mut avisos: Vec<String> = Vec::new();
-        let registros = t.registros();
         if registros > 0 && (coluna.check.is_some() || coluna.calculada.is_some()) {
             if let Some(check) = &coluna.check {
                 avisos.push(format!(
@@ -16407,7 +16440,44 @@ impl Servidor {
         }
 
         let inicio = std::time::Instant::now();
-        let slots = t.migrar_para_psch_v10()?;
+        // O CONGELAMENTO entra com a trava na mao -- ver o comentario gemeo em
+        // `op_acrescentar_coluna`, e o cabecalho de
+        // `phxsql_store::congelamento` para o porque de ele morar no armazem
+        // e nao aqui.
+        //
+        // O registro `sujas` NAO precisa ser descarregado antes: o proprio
+        // congelamento resolve o achado do papel C (§7 do parecer). O fecho da
+        // janela de escrita (`descarregar_sujas_com`) reabre cada tabela suja
+        // para sincronizar, e a reabertura desta passa a ser RECUSADA -- entao
+        // ela fica na lista, as marcas pendentes ficam penduradas, e a proxima
+        // passada as alcanca depois da troca. E o lado seguro que aquela
+        // funcao ja escolhia para a tabela que nao abre.
+        let congelada = phxsql_store::congelamento::congelar(
+            t.diretorio(),
+            t.nome(),
+            format!("migracao para o PSCH v10 ({passadas} passada(s))"),
+        )?;
+        drop(dados);
+
+        // Uma passada por coluna que falta: a FASE A de cada uma corre FORA da
+        // trava, e so a FASE B (os `rename`) a retoma. Entre duas passadas o
+        // disco esta num estado valido -- com a primeira coluna e sem a
+        // segunda --, que e o que o `plano_do_psch_v10` da volta seguinte
+        // reconhece sozinho.
+        let mut slots = 0u64;
+        loop {
+            let Some(pendente) = t.migrar_v10_fase_a()? else {
+                break;
+            };
+            let dados = self.travar_dados()?;
+            if let Err(e) = pendente.conferir_retrato() {
+                pendente.descartar();
+                return Err(e);
+            }
+            slots = t.migrar_v10_fase_b(pendente)?;
+            drop(dados);
+        }
+        drop(congelada);
         let ms = inicio.elapsed().as_secs_f64() * 1e3;
         pares.push(("migrado", Json::de_bool(true)));
         pares.push(("slots_reescritos", Json::de_u64(slots)));

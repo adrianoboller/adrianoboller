@@ -21,6 +21,7 @@ pub mod blob;
 pub mod catalogo;
 pub mod cofre;
 pub mod conferidor_fsync;
+pub mod congelamento;
 pub mod diario;
 pub mod fts;
 pub mod integridade;

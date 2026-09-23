@@ -283,6 +283,17 @@ pub const FABRICA: &[MensagemFabrica] = &[
         ],
     },
     MensagemFabrica {
+        nome: "erro.em_migracao",
+        textos: [
+            "tabela em reescrita: {detalhe}",
+            "table en cours de réécriture : {detalhe}",
+            "table being rewritten: {detalhe}",
+            "tabella in riscrittura: {detalhe}",
+            "Tabelle wird neu geschrieben: {detalhe}",
+            "tabla en reescritura: {detalhe}",
+        ],
+    },
+    MensagemFabrica {
         nome: "erro.transacao_abortada",
         textos: [
             "transacao abortada: {detalhe}",
@@ -772,6 +783,7 @@ pub fn decompor(e: &PhxError) -> (&'static str, String) {
         PhxError::Autorizacao(m) => ("erro.acesso_negado", m.clone()),
         PhxError::EmCarga(m) => ("erro.em_carga", m.clone()),
         PhxError::EmTransacao(m) => ("erro.em_transacao", m.clone()),
+        PhxError::EmMigracao(m) => ("erro.em_migracao", m.clone()),
         PhxError::TransacaoAbortada(m) => ("erro.transacao_abortada", m.clone()),
         PhxError::LimiteExcedido(m) => ("erro.limite_excedido", m.clone()),
         PhxError::Cancelado(m) => ("erro.cancelado", m.clone()),

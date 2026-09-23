@@ -56,6 +56,18 @@ pub enum PhxError {
     /// --, e por isso os dois tem `repetir: true`; o que muda e a quem
     /// perguntar quando a espera passar do razoavel.
     EmTransacao(String),
+    /// A tabela esta sendo REESCRITA inteira -- acrescentar coluna, migrar
+    /// de formato de esquema. O primo do `EmCarga` e do `EmTransacao`, e
+    /// separado dos dois pelo mesmo motivo que os separa entre si: quem
+    /// esbarra precisa saber O QUE segura a tabela para saber a quem
+    /// perguntar se a espera passar do razoavel. Carga termina sozinha,
+    /// transacao termina no `COMMIT` de alguem, reescrita termina sozinha
+    /// mas pode demorar minutos numa tabela grande.
+    ///
+    /// **A tabela continua LEGIVEL**: o arquivo vivo e o velho e esta
+    /// inteiro enquanto a reescrita corre. So a gravacao espera, e por isso
+    /// `adianta_repetir` e verdadeiro.
+    EmMigracao(String),
     /// Credencial invalida ou poder insuficiente.
     Autorizacao(String),
     /// Valor excede o limite fisico do formato.
@@ -149,6 +161,7 @@ impl PhxError {
             PhxError::Redireciona(_) => 4003,
             PhxError::SpareEmEspera(_) => 4004,
             PhxError::EmTransacao(_) => 4005,
+            PhxError::EmMigracao(_) => 4006,
             PhxError::Io(_) => 5001,
             PhxError::Cancelado(_) => 6001,
             PhxError::TransacaoAbortada(_) => 6002,
@@ -176,6 +189,7 @@ impl PhxError {
             PhxError::Redireciona(_) => "REDIRECIONA",
             PhxError::SpareEmEspera(_) => "SPARE_EM_ESPERA",
             PhxError::EmTransacao(_) => "EM_TRANSACAO",
+            PhxError::EmMigracao(_) => "EM_MIGRACAO",
             PhxError::Io(_) => "ERRO_DE_ES",
             PhxError::Cancelado(_) => "CANCELADO",
             PhxError::TransacaoAbortada(_) => "TRANSACAO_ABORTADA",
@@ -260,6 +274,9 @@ impl PhxError {
             // Spare e promocao sao eleicao: consenso e split-brain.
             PhxError::SpareEmEspera(_) => "SP000029",
             PhxError::EmTransacao(_) => "SP000006",
+            // Reescrever o arquivo de dados inteiro e governanca de
+            // recurso, como a reserva de carga: a mesma sprint do `EmCarga`.
+            PhxError::EmMigracao(_) => "SP000012",
             PhxError::TransacaoAbortada(_) => "SP000006",
             PhxError::Io(_) => "SP000010",
             // Cancelamento e literalmente o titulo da SP000012.
@@ -279,7 +296,10 @@ impl PhxError {
     pub fn adianta_repetir(&self) -> bool {
         matches!(
             self,
-            PhxError::Io(_) | PhxError::EmCarga(_) | PhxError::EmTransacao(_)
+            PhxError::Io(_)
+                | PhxError::EmCarga(_)
+                | PhxError::EmTransacao(_)
+                | PhxError::EmMigracao(_)
         )
     }
 }
@@ -320,6 +340,7 @@ impl PhxError {
             PhxError::Autorizacao(m) => format!("acesso negado: {m}"),
             PhxError::EmCarga(m) => format!("tabela em carga: {m}"),
             PhxError::EmTransacao(m) => format!("tabela em transacao: {m}"),
+            PhxError::EmMigracao(m) => format!("tabela em reescrita: {m}"),
             PhxError::LimiteExcedido(m) => format!("limite excedido: {m}"),
             // Sem prefixo de recusa: a mensagem ja comeca com
             // `REDIRECIONA host:porta`, que e o endereco para onde ir.
@@ -406,6 +427,7 @@ mod testes_codigo {
             },
             PhxError::EmCarga(String::new()),
             PhxError::EmTransacao(String::new()),
+            PhxError::EmMigracao(String::new()),
             PhxError::TransacaoAbortada(String::new()),
             PhxError::Autorizacao(String::new()),
             PhxError::Redireciona(String::new()),
@@ -434,6 +456,7 @@ mod testes_codigo {
             PhxError::Sinal { .. } => "Sinal",
             PhxError::EmCarga(_) => "EmCarga",
             PhxError::EmTransacao(_) => "EmTransacao",
+            PhxError::EmMigracao(_) => "EmMigracao",
             PhxError::Autorizacao(_) => "Autorizacao",
             PhxError::LimiteExcedido(_) => "LimiteExcedido",
             PhxError::SpareEmEspera(_) => "SpareEmEspera",
@@ -459,7 +482,9 @@ mod testes_codigo {
         );
         // O numero e a catraca desta lista: variante nova obriga a mexer aqui
         // e a olhar os testes que varrem `todas()`.
-        assert_eq!(quantas, 19, "entrou ou saiu variante: {nomes:?}");
+        // 19 -> 20 em 23/09/2026: a `EmMigracao` (4006), a tabela que esta
+        // sendo reescrita inteira. Pedido 421.
+        assert_eq!(quantas, 20, "entrou ou saiu variante: {nomes:?}");
     }
 
     /// **A sprint citada tem de EXISTIR no roteiro.**

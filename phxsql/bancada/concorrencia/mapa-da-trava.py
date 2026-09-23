@@ -699,8 +699,23 @@ CATRACAS = [
         # O numero NASCE no medido do dia da aposentadoria: 24, com o
         # `reaplicar_diario_ate` ja fora da conta (pedido 252, commit
         # `ae8a58b`). Daqui em diante so desce.
+        #
+        # 24 -> 23 em 23/09/2026 (pedido 421). A `op_migrar_esquema` tinha
+        # subido para 25 com o pedido 407, e as DUAS irmas que reescrevem o
+        # volume SEMPRE sairam juntas: `op_migrar_esquema` e
+        # `op_acrescentar_coluna` passaram a fazer a FASE A -- a reescrita
+        # inteira, com o `fsync` -- fora da trava global, no padrao do
+        # `ae8a58b`. Nao e truque de medidor: o que segura o dado no lugar da
+        # trava e o congelamento da tabela (`phxsql_store::congelamento`), mais
+        # a revalidacao do retrato antes da FASE B.
+        #
+        # As duas irmas CONDICIONAIS (`op_declarar_fk`, `op_excluir_fk`) ficam
+        # nas 23, e ficam por medida: o caminho barato delas grava o cabecalho
+        # de cada volume no lugar e sincroniza -- e isso PRECISA da trava,
+        # porque o cabecalho carrega o `slot_count`. Tirar a copia cara da
+        # trava nao as tiraria daqui.
         "alcancam-fsync-2",
-        24,
+        23,
         "secoes alcancam `fsync` com a trava na mao. E o que um `RwLock` NAO "
         "conserta -- o escritor continua exclusivo --, e cada uma nova e "
         "1,3 ms de trava presa (§7.1-bis) que a proxima conexao espera. "

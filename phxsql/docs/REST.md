@@ -313,7 +313,7 @@ Derivados da faixa do código de erro do PhxSql, e não de uma lista por variant
 | `DUPLICADO`, `CONFLITO` | 3002/3004 | 409 |
 | `REDIRECIONA` (escreveu na réplica) | 4003 | **421** |
 | `CANCELADO` | 6001 | 499 |
-| `EM_CARGA`, `SPARE_EM_ESPERA` | 4002/4004 | 503 |
+| `EM_CARGA`, `EM_MIGRACAO`, `SPARE_EM_ESPERA` | 4002/4006/4004 | 503 |
 | resto | 1000/5000 | 500 |
 
 401 e 403 querem dizer coisas diferentes e o cliente trata cada uma de um jeito:

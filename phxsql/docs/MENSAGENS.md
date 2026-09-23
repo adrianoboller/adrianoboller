@@ -48,8 +48,12 @@ Idioma desconhecido no config não derruba o servidor: vira AVISO no arranque
 
 Todas as mensagens que o **servidor** devolve pelo protocolo, em duas camadas:
 
-- as **molduras** dos doze erros (`erro.corrompido` … `erro.erro_de_es`) — o
-  prefixo do `Display`, com `{detalhe}` no lugar da parte variável;
+- as **molduras** dos **vinte** erros (`erro.corrompido` … `erro.erro_de_es`)
+  — o prefixo do `Display`, com `{detalhe}` no lugar da parte variável. Vinte
+  é o número de braços do `chave_do_erro` (`mensagens.rs`), que é exaustivo
+  sobre o `PhxError`: variante nova não compila sem entrar ali. Dizia «doze»
+  desde antes de a família crescer — número digitado numa prosa envelhece
+  calado, e o último a chegar foi a `erro.em_migracao` (4006, 23/09/2026);
 - os **textos dos portões**, criados por inteiro pelo servidor:
   `erro.token_invalido`, `erro.credencial_invalida`, `erro.faca_login`,
   `erro.sem_direito`, `erro.somente_leitura`, `erro.comando_proibido`,

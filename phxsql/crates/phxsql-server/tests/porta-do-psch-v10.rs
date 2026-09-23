@@ -52,6 +52,18 @@ fn porta_livre() -> u16 {
 /// Sobe o servidor. `com_cadastro` falso e' o servidor sem usuario nenhum --
 /// o caso VELHO, que uma regra nova nao pode mudar.
 fn subir(base: &Path, com_cadastro: bool) -> (Arc<Servidor>, u16) {
+    subir_com(base, com_cadastro, "por_lote")
+}
+
+/// O mesmo, escolhendo a durabilidade.
+///
+/// Existe por causa da prova da trava: com `por_lote` cada `inserir` do
+/// escritor custa ~200 ms de `fsync`, e ele conseguia TRES tentativas na
+/// janela inteira -- a prova media a latencia do disco, nao a guarda. O que
+/// se troca aqui e' quando o byte vai ao prato; ele vai ao sistema
+/// operacional em toda gravacao de qualquer modo, que e' o que o retrato do
+/// volume enxerga.
+fn subir_com(base: &Path, com_cadastro: bool, durabilidade: &str) -> (Arc<Servidor>, u16) {
     let porta = porta_livre();
     // Uma iteracao so: a senha real nao interessa aqui, e 210.000 por login
     // fariam a bateria levar segundos por nada.
@@ -82,6 +94,7 @@ fn subir(base: &Path, com_cadastro: bool) -> (Arc<Servidor>, u16) {
               "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
               {usuarios}
               "cifra_fio": {{ "exigir": false }},
+              "recursos": {{ "durabilidade": "{durabilidade}" }},
               "web": {{ "ligado": false }} }}"#,
         base = base.display().to_string(),
         log = base.join("acessos.log").display().to_string(),
@@ -475,4 +488,311 @@ fn a_v9_que_ninguem_migrou_continua_v9_e_continua_gravando() {
         !colunas.iter().any(|n| n == COLUNA_ROWSTAMP),
         "alguem migrou a tabela sem pedido: {colunas:?}"
     );
+}
+
+/// **A prova que o conserto INGENUO nao passa** -- pedido 421.
+///
+/// # O defeito que ela repoe, e por que ele nao e' obvio
+///
+/// A `migrar_esquema` segurava a trava GLOBAL de dados pela reescrita inteira:
+/// 2,76 s a 2 milhoes de slots, ~13,8 s a 10 milhoes (medido pelo papel C em
+/// 23/09/2026). Nao e' servidor lento -- e' servidor parado, e a catraca
+/// `alcancam-fsync-2` a acusava como a maior detentora das 88 secoes.
+///
+/// O conserto obvio -- mover o `drop(dados)` para antes da FASE A --
+/// **compila, passa nos 2.755 testes e deixa a catraca em 24**. E perde dado:
+/// a FASE A escreve um `*.novo` que e' um RETRATO, e a linha inserida no
+/// volume velho depois dele some no `rename` da FASE B. *Escrita confirmada,
+/// perdida, sem bilhete.*
+///
+/// # O que esta prova trava, e como ela FALHA com o defeito reposto
+///
+/// Um escritor martela `inserir` na tabela enquanto ela migra, e o teste cobra
+/// as duas metades do invariante:
+///
+/// 1. **toda linha ACEITA esta la depois da troca** -- e' a perda de dado, e
+///    ela e' o que o `drop` solto causa;
+/// 2. **houve pelo menos uma RECUSA nomeada** -- e' a janela ter sido mesmo
+///    exercitada. Troque o congelamento por um `drop` e a contagem de recusas
+///    vai a zero, e esta linha reprova dizendo isso, mesmo que o teste ganhe
+///    a corrida contra a perda de dado naquela rodada.
+///
+/// A segunda e' a que guarda a decisao depois que esta frente sair: sem ela, a
+/// prova dependeria de timing para acusar.
+#[test]
+fn escrita_confirmada_durante_a_migracao_sobrevive_a_troca() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    // Grande o bastante para a FASE A durar MUITAS idas e voltas de soquete
+    // -- senao o escritor nao chega dentro da janela e a prova mediria o nada.
+    // Medido nesta maquina, em `debug`: com 4.000 linhas o escritor conseguia
+    // TRES tentativas e nenhuma caia na janela.
+    const LINHAS: i64 = 100_000;
+
+    let base = DirTemp::novo("v10-trava");
+    let (_s, porta) = subir_com(&base, false, "sistema");
+    let mut c = Ligacao::nova(porta);
+    ok(c.pedir(r#""op":"criar_database","database":"loja""#));
+    criar_v9(&base, "loja", "grande", LINHAS);
+
+    let aceitas: Arc<Mutex<Vec<i64>>> = Arc::new(Mutex::new(Vec::new()));
+    let recusas = Arc::new(AtomicUsize::new(0));
+    let outros = Arc::new(Mutex::new(Vec::<String>::new()));
+    let acabou = Arc::new(AtomicBool::new(false));
+    // A BARREIRA, e ela nao e' zelo: sem ela o escritor ainda estava abrindo o
+    // soquete quando a migracao terminou -- tres tentativas, nenhuma na
+    // janela, e a prova passou a medir a latencia de `connect`.
+    let pronto = Arc::new(AtomicBool::new(false));
+    // O OBSERVADOR do registro. Ele nao faz E/S nenhuma, entao amostra a
+    // janela milhares de vezes -- e e' por isso que ele, e nao a contagem de
+    // recusas, e' a parte DETERMINISTICA desta prova.
+    let viu_congelada = Arc::new(AtomicBool::new(false));
+
+    let olheiro = {
+        let viu = Arc::clone(&viu_congelada);
+        let acabou = Arc::clone(&acabou);
+        std::thread::spawn(move || {
+            while !acabou.load(Ordering::SeqCst) {
+                if phxsql_store::congelamento::quantas() > 0 {
+                    viu.store(true, Ordering::SeqCst);
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        })
+    };
+
+    let escritor = {
+        let aceitas = Arc::clone(&aceitas);
+        let recusas = Arc::clone(&recusas);
+        let outros = Arc::clone(&outros);
+        let acabou = Arc::clone(&acabou);
+        let pronto = Arc::clone(&pronto);
+        std::thread::spawn(move || {
+            let mut c = Ligacao::nova(porta);
+            let mut id = 1_000_000i64;
+            pronto.store(true, Ordering::SeqCst);
+            while !acabou.load(Ordering::SeqCst) {
+                id += 1;
+                let r = c.pedir(&format!(
+                    r#""op":"inserir","database":"loja","tabela":"grande",
+                       "linha":{{"id":{id},"nome":"intruso"}}"#
+                ));
+                if r.booleano_ou("ok", false) {
+                    aceitas.lock().unwrap().push(id);
+                } else if r.texto_ou("nome", "") == "EM_MIGRACAO" {
+                    recusas.fetch_add(1, Ordering::SeqCst);
+                } else {
+                    outros.lock().unwrap().push(r.escrever());
+                }
+            }
+        })
+    };
+
+    let ate = Instant::now() + Duration::from_secs(10);
+    while !pronto.load(Ordering::SeqCst) && Instant::now() < ate {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        pronto.load(Ordering::SeqCst),
+        "o escritor nao chegou a conectar"
+    );
+
+    let v = ok(c.pedir(
+        r#""op":"migrar_esquema","database":"loja","tabela":"grande","confirmar":"grande""#,
+    ));
+    assert!(v.booleano_ou("migrado", false), "{}", v.escrever());
+    acabou.store(true, Ordering::SeqCst);
+    escritor.join().unwrap();
+    olheiro.join().unwrap();
+
+    let aceitas = aceitas.lock().unwrap().clone();
+    let recusas = recusas.load(Ordering::SeqCst);
+    let outros = outros.lock().unwrap().clone();
+
+    // Erro que nao e' nem aceite nem a recusa nomeada e' defeito: a guarda tem
+    // de recusar DIZENDO o que houve, nunca vazar erro cru.
+    assert!(
+        outros.is_empty(),
+        "o escritor recebeu {} recusa(s) que nao sao EM_MIGRACAO: {:?}",
+        outros.len(),
+        &outros[..outros.len().min(3)]
+    );
+
+    // (1) TODA linha aceita continua la. E' o invariante que o `drop` solto
+    //     quebra.
+    for id in &aceitas {
+        let r = c.pedir(&format!(
+            r#""op":"buscar","database":"loja","tabela":"grande","indice":"porId","chave":[{id}]"#
+        ));
+        let v = ok(r);
+        let achou = v
+            .campo("linhas")
+            .and_then(Json::lista)
+            .map(|l| !l.is_empty())
+            .unwrap_or(false);
+        assert!(
+            achou,
+            "a linha {id} foi CONFIRMADA durante a migracao e sumiu na troca \
+             ({} aceitas, {recusas} recusadas): {}",
+            aceitas.len(),
+            v.escrever()
+        );
+    }
+
+    // (2) A migracao CONGELOU a tabela -- e este e' o braco deterministico:
+    //     tire o `congelar` de `op_migrar_esquema` (o conserto ingenuo, so o
+    //     `drop`) e esta linha reprova em toda maquina, porque o observador
+    //     amostra a janela inteira sem tocar em disco.
+    assert!(
+        viu_congelada.load(Ordering::SeqCst),
+        "a migracao correu SEM congelar a tabela: a FASE A rodou com a trava \
+         solta e nada no lugar dela"
+    );
+
+    // (3) E a recusa chegou ao CLIENTE, pela rede, com nome proprio. Medido
+    //     nesta maquina com 100.000 linhas: 5 recusas para 3 aceites.
+    assert!(
+        recusas > 0,
+        "nenhuma gravacao foi recusada durante a migracao: a tabela ficou \
+         congelada e mesmo assim o escritor entrou ({} aceitas)",
+        aceitas.len()
+    );
+
+    // E a tabela chegou ao v10 com as linhas que tinha MAIS as aceitas.
+    let colunas = colunas_do_esquema(&mut c, "loja", "grande");
+    assert!(
+        colunas.iter().any(|n| n == COLUNA_ROWSTAMP) && colunas.iter().any(|n| n == COLUNA_ROWTIME),
+        "a tabela nao chegou ao v10: {colunas:?}"
+    );
+}
+
+/// **O comportamento VELHO**: sem migracao nenhuma em curso, gravar, ler e
+/// alterar acontecem exatamente como antes.
+///
+/// E' o teste que mais importa numa guarda nova -- *guarda nova entra PEDIDA,
+/// nao imposta*. Faca o `congelamento::conferir` recusar por qualquer motivo
+/// que nao seja a tabela estar na lista (um `Err` incondicional, um portao que
+/// le o registro errado) e esta prova reprova na primeira linha, enquanto a
+/// prova de cima continuaria passando.
+#[test]
+fn sem_migracao_em_curso_nada_muda() {
+    let base = DirTemp::novo("v10-velho");
+    let (_s, porta) = subir(&base, false);
+    let mut c = Ligacao::nova(porta);
+    ok(c.pedir(r#""op":"criar_database","database":"loja""#));
+    criar_v9(&base, "loja", "velha", 3);
+
+    // Pela TABELA e nao pelo contador global: o registro e do processo, e a
+    // prova vizinha congela a dela na mesma corrida.
+    phxsql_store::congelamento::conferir(&base.join("loja"), "velha")
+        .expect("a tabela nasceu congelada sem ninguem migrar nada");
+
+    ok(c.pedir(
+        r#""op":"inserir","database":"loja","tabela":"velha","linha":{"id":4,"nome":"nova"}"#,
+    ));
+    let v = ok(c.pedir(r#""op":"ler","database":"loja","tabela":"velha","rowid":4"#));
+    assert_eq!(v.texto_ou("nome", ""), "nova", "{}", v.escrever());
+    ok(c.pedir(
+        r#""op":"atualizar","database":"loja","tabela":"velha","rowid":4,
+           "linha":{"id":4,"nome":"mexida"}"#,
+    ));
+    ok(c.pedir(r#""op":"excluir","database":"loja","tabela":"velha","rowid":4"#));
+
+    // E depois de uma migracao COMPLETA o registro volta a ficar vazio: uma
+    // tabela que fica congelada para sempre e' um servidor que para de gravar
+    // nela sem ninguem entender por que.
+    ok(c.pedir(r#""op":"migrar_esquema","database":"loja","tabela":"velha","confirmar":"velha""#));
+    phxsql_store::congelamento::conferir(&base.join("loja"), "velha")
+        .expect("a migracao terminou e a tabela ficou congelada");
+    ok(c.pedir(
+        r#""op":"inserir","database":"loja","tabela":"velha","linha":{"id":5,"nome":"depois"}"#,
+    ));
+}
+
+/// **A recusa, DETERMINISTICA**: congelada, a tabela recusa com nome proprio
+/// -- e as VIZINHAS continuam atendendo.
+///
+/// # Por que este teste existe ao lado do de cima
+///
+/// O de cima prova que a migracao usa o congelamento, e a janela dele e'
+/// medida em milissegundos. Este prova o que o congelamento FAZ, sem corrida
+/// nenhuma: ele congela a tabela na mao e bate na porta.
+///
+/// # O defeito que ele repoe
+///
+/// Mova a conferencia de `Table::abrir_com` para
+/// `Servidor::abrir_travada_com`, que e' onde o parecer a tinha proposto: o
+/// `inserir` continua sendo recusado e esta prova continua passando. Tire-a
+/// dos dois lugares e a primeira linha reprova. E o motivo de ela estar no
+/// armazem esta no cabecalho de `phxsql_store::congelamento`: no servidor ela
+/// nao alcanca a cascata, a integridade nem a replicacao, e os tres gravam.
+#[test]
+fn tabela_congelada_recusa_com_nome_e_a_vizinha_continua() {
+    let base = DirTemp::novo("v10-congelada");
+    let (_s, porta) = subir(&base, false);
+    let mut c = Ligacao::nova(porta);
+    ok(c.pedir(r#""op":"criar_database","database":"loja""#));
+    criar_v9(&base, "loja", "velha", 3);
+
+    // Uma leitura ANTES: a primeira abertura de uma tabela recem-criada pode
+    // pedir a ficha exclusiva (criar o `.fts`, curar o `.log`), e a prova
+    // mediria isso em vez do congelamento.
+    let v = ok(c.pedir(r#""op":"ler","database":"loja","tabela":"velha","rowid":1"#));
+    assert_eq!(v.texto_ou("nome", ""), "linha 1", "{}", v.escrever());
+
+    let posse = phxsql_store::congelamento::congelar(
+        &base.join("loja"),
+        "velha",
+        "prova da recusa nomeada",
+    )
+    .unwrap();
+
+    // GRAVAR recusa, e a recusa se nomeia: codigo proprio, e o corpo diz o
+    // que fazer em vez de vazar erro cru.
+    let r = c.pedir(
+        r#""op":"inserir","database":"loja","tabela":"velha","linha":{"id":9,"nome":"barrada"}"#,
+    );
+    assert!(
+        !r.booleano_ou("ok", true),
+        "a gravacao passou: {}",
+        r.escrever()
+    );
+    assert_eq!(r.texto_ou("nome", ""), "EM_MIGRACAO", "{}", r.escrever());
+    assert_eq!(r.inteiro_ou("codigo", 0), 4006, "{}", r.escrever());
+    assert!(
+        r.booleano_ou("repetir", false),
+        "a reescrita termina sozinha: quem esbarrou tem de saber que adianta \
+         repetir -- {}",
+        r.escrever()
+    );
+    let e = erro(&r);
+    assert!(e.contains("velha"), "a recusa nao nomeia a tabela: {e}");
+    assert!(
+        e.contains("prova da recusa nomeada"),
+        "a recusa nao diz QUEM segura a tabela: {e}"
+    );
+
+    // E o `ler` da MESMA tabela tambem e recusado, e isto esta aqui escrito
+    // como medida e nao como desejo: `op_ler` abre pela ficha EXCLUSIVA
+    // (pode gravar a trilha de acesso), entao ele passa pelo mesmo portao.
+    //
+    // Nao e capacidade perdida -- hoje essa leitura ESPERA a migracao inteira
+    // com a trava global presa, 2,76 s a 2 milhoes de slots. O que muda e a
+    // forma: espera longa vira recusa com nome e `repetir: true`. O alcance
+    // esta medido no cabecalho de `phxsql_store::congelamento`, e separar
+    // intencao de leitura da de escrita na abertura e frente propria.
+    let r = c.pedir(r#""op":"ler","database":"loja","tabela":"velha","rowid":1"#);
+    assert_eq!(r.texto_ou("nome", ""), "EM_MIGRACAO", "{}", r.escrever());
+
+    // E a VIZINHA nao sente nada: congelar uma tabela nao congela a base.
+    criar_v9(&base, "loja", "outra", 1);
+    ok(c.pedir(
+        r#""op":"inserir","database":"loja","tabela":"outra","linha":{"id":2,"nome":"passa"}"#,
+    ));
+
+    drop(posse);
+    ok(c.pedir(
+        r#""op":"inserir","database":"loja","tabela":"velha","linha":{"id":9,"nome":"agora_vai"}"#,
+    ));
 }

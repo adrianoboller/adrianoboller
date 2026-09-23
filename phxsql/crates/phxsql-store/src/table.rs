@@ -906,6 +906,22 @@ impl Table {
         coluna: phxsql_core::schema::Column,
         padrao: Option<Value>,
     ) -> Result<u64> {
+        let pendente = self.acrescentar_coluna_fase_a(coluna, padrao)?;
+        self.acrescentar_coluna_fase_b(pendente)
+    }
+
+    /// As recusas e a FASE A de [`Table::acrescentar_coluna`] -- a parte CARA,
+    /// que nao precisa da trava global de dados.
+    ///
+    /// Quem solta a trava aqui **tem de congelar a tabela antes**
+    /// (`crate::congelamento`): o `*.novo` e um retrato, e escrita confirmada
+    /// que entre depois dele some no `rename` da FASE B. Ver
+    /// [`crate::reg::RegFile::alargar_fase_a`].
+    pub fn acrescentar_coluna_fase_a(
+        &mut self,
+        coluna: phxsql_core::schema::Column,
+        padrao: Option<Value>,
+    ) -> Result<crate::reg::TrocaPendente> {
         // Tabela em modo ledger NAO aceita coluna nova, e a recusa e' absoluta
         // -- nem nula, nem com padrao, nem em tabela vazia. O hash de cada bloco
         // cobre o conteudo canonico NA ORDEM do esquema; uma coluna a mais muda
@@ -1017,9 +1033,21 @@ impl Table {
             }
         }
 
-        let slots = self
-            .reg
-            .acrescentar_coluna(novo, posicao, &bytes, padrao.is_none())?;
+        self.reg
+            .alargar_fase_a(novo, posicao, &bytes, padrao.is_none())
+    }
+
+    /// A FASE B de [`Table::acrescentar_coluna`]: so os `rename`, mais os
+    /// caches que descrevem o esquema novo.
+    ///
+    /// Os caches vem AQUI e nao na fase A de proposito: enquanto a troca nao
+    /// aconteceu, o disco ainda e o velho, e uma tabela que se descreve com o
+    /// esquema novo sobre bytes velhos e pior que uma que nao se descreve.
+    pub fn acrescentar_coluna_fase_b(
+        &mut self,
+        pendente: crate::reg::TrocaPendente,
+    ) -> Result<u64> {
+        let slots = self.reg.alargar_fase_b(pendente)?;
         self.esquema = self.reg.esquema().clone();
         self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
         // O IRMAO do `colunas_marcadas`: os dois sao cache do esquema, saem do
@@ -1075,45 +1103,79 @@ impl Table {
     /// recusa de passar cada slot de uma cadeia assinada por uma reescrita de
     /// arquivo. Uma ledger VAZIA passa: nao ha historia sobre a qual mentir.
     pub fn migrar_para_psch_v10(&mut self) -> Result<u64> {
+        let mut slots = 0;
+        // Uma passada por coluna que falta, e a lista de faltantes se recalcula
+        // a cada volta -- e o que torna a migracao retomavel depois de uma
+        // queda entre as duas passadas.
+        while let Some(pendente) = self.migrar_v10_fase_a()? {
+            slots = self.migrar_v10_fase_b(pendente)?;
+        }
+        Ok(slots)
+    }
+
+    /// A FASE A da PROXIMA passada da migracao v10, ou `None` quando nao falta
+    /// nenhuma coluna.
+    ///
+    /// # Por que uma passada de cada vez, e nao a migracao inteira
+    ///
+    /// Porque a passada 2 le os slots que a passada 1 alargou: as duas fases
+    /// da primeira tem de terminar antes de a segunda comecar. Quem chama de
+    /// fora da trava toma a trava para cada FASE B e a solta de novo -- e
+    /// entre uma passada e outra a tabela esta num estado de disco VALIDO (com
+    /// a primeira coluna e sem a segunda), que e exatamente o que o
+    /// `plano_do_psch_v10` sabe reconhecer.
+    ///
+    /// **A tabela precisa estar congelada** enquanto isto corre fora da trava
+    /// -- ver [`crate::congelamento`].
+    pub fn migrar_v10_fase_a(&mut self) -> Result<Option<crate::reg::TrocaPendente>> {
         // O plano e as recusas saem daqui, e nao de uma lista repetida logo
         // abaixo: quem pergunta o custo antes de confirmar chama a MESMA
         // funcao, entao o numero anunciado e o numero pago.
         if !self.plano_do_psch_v10()?.pendente() {
-            return Ok(0);
+            return Ok(None);
         }
-        let faltam = self.colunas_do_v10_que_faltam();
+        let Some((nome, ty)) = self.colunas_do_v10_que_faltam().into_iter().next() else {
+            return Ok(None);
+        };
+        // Modelo de linha unico: as mesmas colunas que `Schema::new`
+        // acrescenta a uma tabela nova. Montar aqui uma segunda descricao
+        // da coluna faria a tabela migrada diferir da nascida.
+        let modelo = phxsql_core::schema::Schema::new(
+            "modelo",
+            vec![phxsql_core::schema::Column::new("x", ColumnType::Int4)],
+            vec![],
+        )?;
+        let i = modelo.coluna_por_nome(nome).ok_or_else(|| {
+            PhxError::Esquema(format!("o esquema modelo nao traz a coluna {nome}"))
+        })?;
+        let coluna = modelo.colunas()[i].clone();
+        debug_assert_eq!(coluna.ty, ty);
+        // No FIM da lista, e nao em `posicao_de_coluna_nova`: aquela poe a
+        // coluna do USUARIO antes das de sistema, e uma coluna de sistema
+        // ali no meio quebraria o `colunas_de_sistema_no_fim`, que conta do
+        // fim para tras e para na primeira coluna do usuario.
+        let posicao = self.esquema.colunas().len();
+        let novo = self.esquema.com_coluna(coluna, posicao)?;
+        // Zeros, e nao um carimbo inventado: zero quer dizer «esta linha
+        // nasceu antes de a coluna existir», que e a verdade sobre ela.
+        // Carimbo retroativo passaria no CRC e ninguem mais o distinguiria
+        // de um medido.
+        let bytes = vec![0u8; ty.largura()];
+        self.reg
+            .alargar_fase_a(novo, posicao, &bytes, false)
+            .map(Some)
+    }
 
-        let mut slots = 0;
-        for (nome, ty) in faltam {
-            // Modelo de linha unico: as mesmas colunas que `Schema::new`
-            // acrescenta a uma tabela nova. Montar aqui uma segunda descricao
-            // da coluna faria a tabela migrada diferir da nascida.
-            let modelo = phxsql_core::schema::Schema::new(
-                "modelo",
-                vec![phxsql_core::schema::Column::new("x", ColumnType::Int4)],
-                vec![],
-            )?;
-            let i = modelo.coluna_por_nome(nome).ok_or_else(|| {
-                PhxError::Esquema(format!("o esquema modelo nao traz a coluna {nome}"))
-            })?;
-            let coluna = modelo.colunas()[i].clone();
-            debug_assert_eq!(coluna.ty, ty);
-            // No FIM da lista, e nao em `posicao_de_coluna_nova`: aquela poe a
-            // coluna do USUARIO antes das de sistema, e uma coluna de sistema
-            // ali no meio quebraria o `colunas_de_sistema_no_fim`, que conta do
-            // fim para tras e para na primeira coluna do usuario.
-            let posicao = self.esquema.colunas().len();
-            let novo = self.esquema.com_coluna(coluna, posicao)?;
-            // Zeros, e nao um carimbo inventado: zero quer dizer «esta linha
-            // nasceu antes de a coluna existir», que e a verdade sobre ela.
-            // Carimbo retroativo passaria no CRC e ninguem mais o distinguiria
-            // de um medido.
-            let bytes = vec![0u8; ty.largura()];
-            slots = self.reg.acrescentar_coluna(novo, posicao, &bytes, false)?;
-            self.esquema = self.reg.esquema().clone();
-            self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
-            self.indices_de_texto = textos_do_esquema(&self.esquema);
-        }
+    /// A FASE B de uma passada da migracao v10: os `rename`, os caches e o
+    /// `.pag`.
+    pub fn migrar_v10_fase_b(&mut self, pendente: crate::reg::TrocaPendente) -> Result<u64> {
+        let slots = self.reg.alargar_fase_b(pendente)?;
+        self.esquema = self.reg.esquema().clone();
+        self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
+        self.indices_de_texto = textos_do_esquema(&self.esquema);
+        // O `.pag` descreve a tabela para quem le o diretorio sem abrir o
+        // `.reg`; por passada, e nao so no fim, porque entre uma passada e a
+        // seguinte a trava sai da mao e o diretorio pode ser lido.
         self.gravar_pag()?;
         Ok(slots)
     }
@@ -1201,6 +1263,20 @@ impl Table {
 
     fn abrir_com(diretorio: impl AsRef<Path>, nome: &str, escrever: bool) -> Result<SemEscrever> {
         let diretorio = resolver(diretorio.as_ref());
+        // O PONTO UNICO do congelamento, e e aqui porque e aqui que TODA
+        // tabela gravavel nasce: o pedido do cliente
+        // (`Database::abrir_qualificada`), a cascata do `ao_alterar`
+        // (`Table::abrir` na irma), a conferencia da chave
+        // (`integridade.rs`), a replicacao, o `dblink` e o fecho da janela de
+        // escrita. Um portao no servidor cobriria so o primeiro -- ver o
+        // cabecalho de `crate::congelamento`.
+        //
+        // So no lado que ESCREVE -- a ficha COMPARTILHADA passa direto, e por
+        // ela o `op_varrer` continua servindo a grade da tabela em reescrita.
+        // O que ela nao alcanca esta medido no cabecalho do modulo.
+        if escrever {
+            crate::congelamento::conferir(&diretorio, nome)?;
+        }
         let reg = if escrever {
             Some(RegFile::abrir(&diretorio, nome)?)
         } else {
