@@ -3,6 +3,7 @@
 
 pub mod cofre;
 pub mod http;
+pub mod noise;
 pub mod ovpn;
 pub mod painel;
 pub mod pg;

@@ -18,6 +18,9 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Tela web (instalar, login, redes com membros e IP, administração de usuários e servidores)
 - [x] Linha de comando `phxvpn entrar` / `criar-rede`, senha só por ambiente ou terminal
 - [x] Supervisor opcional que sobe um `openvpn` por rede (`--openvpn`)
+- [x] P2P: aperto `Noise_IKpsk2_25519_ChaChaPoly_SHA256` conferido byte a byte contra o vetor oficial (cacophony), no MESMO motor Noise do PhxSql
+- [x] Segurança C1: JSON com teto de aninhamento (128) — o corpo de 262.000 `[` não derruba mais o processo
+- [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 
 ### Falta
 
@@ -27,6 +30,48 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] Revogação por CRL (hoje: sair da rede apaga o `ccd/` e o `ccd-exclusive` barra)
 - [ ] Usar o certificado digital da empresa (A1/RSA) como AC — hoje ele é guardado só como identificação
 - [ ] Serviço do sistema (systemd / serviço do Windows) e pacote
+- [ ] P2P: transporte UDP (contador explícito, janela contra repetição RFC 6479, troca de chave 120 s / 180 s / 2^60)
+- [ ] P2P: placa virtual TUN no Linux por FFI (protótipo da pesquisa já leu pacote do TUN, como root)
+- [ ] P2P: rol de membros assinado (Ed25519 da rede) e PSK da senha da rede
+- [ ] P2P: descoberta — convite, broadcast na LAN e «farol» (membro alcançável que perfura NAT e faz relé)
+- [ ] P2P: comandos `phxvpn p2p criar / entrar / convidar` e a tela
+- [ ] Segurança A1: revogação real (série no CN, CRL Ed25519)
+- [ ] Segurança A2/A3: limite de tentativas de login e de senha de rede; PBKDF2 fora do mutex; hash fictício contra enumeração
+- [ ] Segurança A5: CSRF/DNS rebinding — exigir `Content-Type` JSON, conferir `Host`, código de instalação de uso único
+- [ ] Segurança A6: cliente PG recusa senha em claro e exige o `SASLFinal` conferido
+- [ ] Segurança M1–M7: teto de conexões e prazo por pedido, chave nascendo 0600, openvpn sem root e TLS 1.3, `--pg` fora do argumento, login só `[a-z0-9._-]`, cota de redes, reconexão do PG
+
+## Modo P2P (decisão do papel J, 23/09/2026)
+
+Vence o **plano de dados próprio no estilo WireGuard**: UDP + Noise IKpsk2 +
+TUN por FFI. Morreram, com o motivo:
+
+- **OpenVPN ponto a ponto** — um processo e uma interface por PAR: 253 membros
+  dão 31.878 túneis, sem a /24 única que imita a LAN, sem descoberta e sem
+  perfuração de NAT.
+- **WireGuard do sistema** — o kernel é dono da porta UDP, então a perfuração
+  de NAT teria de sair de outra porta e não serve.
+- **DHT pública** — depende de nós de terceiros e vaza quem é membro de quê.
+
+Medido pela pesquisa: a cifra do núcleo faz 2.525–2.661 Mbit/s num núcleo
+(pacote de 1.420 B, só a cifra); X25519 custa 86,4 µs, e o aperto, cerca de
+0,35 ms (conta feita sobre o número medido).
+
+Onde diverge do WireGuard, e por qual restrição nossa: SHA-256 no lugar do
+BLAKE2s (só primitiva já conferida no núcleo); admissão por rol assinado (não
+há servidor para distribuir a lista); PSK tirada da senha da rede (o produto
+é «rede com senha»); farol é um membro, não um servidor nosso.
+
+**Limite físico, com fonte (RFC 5128 §3.3.1 e §5.1; RFC 8445 §2):** sem
+servidor nenhum, o P2P conecta na mesma LAN, com um membro alcançável (IP
+público, IPv6 ou UPnP/PCP) ou com NATs benignos dos dois lados. **Dois lados
+atrás de CGNAT/NAT simétrico, sem membro alcançável, não conectam sem um
+terceiro que repasse** — é por isso que Tailscale (DERP), ZeroTier (roots) e
+Nebula (lighthouse) têm um.
+
+**Na mesa do dono:** (1) Windows — placa virtual exige driver assinado; o
+Wintun é DLL de fora (choque com a pétrea); (2) produto — o que prometer para
+CGNAT dos dois lados.
 
 ## Decisões, com a hipótese que morreu
 
