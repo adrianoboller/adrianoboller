@@ -21,6 +21,7 @@
 //! as proximas pecas; hoje a lista de pares vem da linha de comando.
 
 use crate::noise;
+use crate::repasse;
 use crate::transporte::{self, Sessao};
 use phxsql_core::hash::pbkdf2_sha256;
 use phxsql_core::senha::bytes_aleatorios;
@@ -87,10 +88,49 @@ pub fn ler_par(texto: &str) -> Result<ParConfig, String> {
     })
 }
 
+/// Por onde o pacote chega ao par.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Via {
+    Direta(SocketAddr),
+    Repasse,
+}
+
+/// Como o no procura os pares: so direto, so pelo servidor intermediario, ou
+/// direto primeiro e o intermediario quando o direto nao responde.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Modo {
+    Direto,
+    Repasse,
+    Auto,
+}
+
+impl Modo {
+    pub fn de_texto(t: &str) -> Result<Modo, String> {
+        match t {
+            "direto" => Ok(Modo::Direto),
+            "repasse" => Ok(Modo::Repasse),
+            "auto" => Ok(Modo::Auto),
+            _ => Err(format!("modo desconhecido: {t} (direto, repasse ou auto)")),
+        }
+    }
+}
+
+/// Tentativas diretas sem resposta antes de o modo `auto` ir ao repasse.
+const TENTATIVAS_DIRETAS: u8 = 2;
+
+pub struct RepasseCfg {
+    pub endereco: SocketAddr,
+    pub publica: [u8; 32],
+}
+
 struct Par {
     publica: [u8; 32],
     ip: Ipv4Addr,
+    /// Endereco direto conhecido (configurado ou aprendido).
     endereco: Option<SocketAddr>,
+    /// Caminho que funcionou por ultimo -- e por ele que se responde.
+    via: Option<Via>,
+    tentativas_diretas: u8,
     atual: Option<Sessao>,
     anterior: Option<Sessao>,
     pendente: Option<(u32, noise::Iniciador, Instant)>,
@@ -113,12 +153,9 @@ pub struct No {
     ip: Ipv4Addr,
     estado: Mutex<Estado>,
     udp: UdpSocket,
-}
-
-/// O que o laco faz com um pacote da placa: sai cifrado para quem.
-pub struct Saida {
-    pub destino: SocketAddr,
-    pub pacote: Vec<u8>,
+    modo: Modo,
+    repasse: Option<RepasseCfg>,
+    ultimo_registro: Mutex<Option<Instant>>,
 }
 
 fn indice_novo(indices: &HashMap<u32, usize>) -> u32 {
@@ -156,6 +193,8 @@ impl No {
                 publica: p.publica,
                 ip: p.ip,
                 endereco: p.endereco,
+                via: p.endereco.map(Via::Direta),
+                tentativas_diretas: 0,
                 atual: None,
                 anterior: None,
                 pendente: None,
@@ -174,7 +213,20 @@ impl No {
                 indices: HashMap::new(),
             }),
             udp,
+            modo: Modo::Direto,
+            repasse: None,
+            ultimo_registro: Mutex::new(None),
         }
+    }
+
+    /// Liga o servidor intermediario e escolhe o modo.
+    pub fn com_repasse(mut self, modo: Modo, repasse: Option<RepasseCfg>) -> Result<No, String> {
+        if modo != Modo::Direto && repasse.is_none() {
+            return Err("os modos repasse e auto precisam de --repasse CHAVE@HOST:PORTA".into());
+        }
+        self.modo = modo;
+        self.repasse = repasse;
+        Ok(self)
     }
 
     pub fn publica(&self) -> [u8; 32] {
@@ -185,16 +237,45 @@ impl No {
         let _ = self.udp.send_to(pacote, destino);
     }
 
+    /// Manda pelo caminho `via`; pelo repasse, embrulhado para a chave do par.
+    fn mandar(&self, via: Via, chave_dele: &[u8; 32], pacote: &[u8]) {
+        match via {
+            Via::Direta(a) => self.enviar(a, pacote),
+            Via::Repasse => {
+                if let Some(r) = &self.repasse {
+                    self.enviar(r.endereco, &repasse::embrulhar_para(chave_dele, pacote));
+                }
+            }
+        }
+    }
+
+    /// Pacote autenticado chegou por `via`: e por ali que se responde.
+    fn aprender(par: &mut Par, via: Via) {
+        par.via = Some(via);
+        if let Via::Direta(a) = via {
+            par.endereco = Some(a);
+            par.tentativas_diretas = 0;
+        }
+    }
+
     /// Comeca (ou refaz) o aperto com o par `i`, se ha endereco para ele.
     fn iniciar_aperto(&self, e: &mut Estado, i: usize) {
-        let Some(destino) = e.pares[i].endereco else {
-            return;
-        };
         if let Some((_, _, quando)) = &e.pares[i].pendente {
             if quando.elapsed() < REPETIR_APERTO {
                 return;
             }
         }
+        let par = &mut e.pares[i];
+        let via = match (self.modo, par.endereco) {
+            (Modo::Direto, Some(a)) => Via::Direta(a),
+            (Modo::Direto, None) => return,
+            (Modo::Repasse, _) => Via::Repasse,
+            (Modo::Auto, Some(a)) if par.tentativas_diretas < TENTATIVAS_DIRETAS => {
+                par.tentativas_diretas += 1;
+                Via::Direta(a)
+            }
+            (Modo::Auto, _) => Via::Repasse,
+        };
         let indice = indice_novo(&e.indices);
         let publica = e.pares[i].publica;
         let Ok((ini, m1)) = noise::Iniciador::comecar(
@@ -211,7 +292,7 @@ impl No {
         }
         e.indices.insert(indice, i);
         e.pares[i].pendente = Some((indice, ini, Instant::now()));
-        self.enviar(destino, &transporte::embrulhar_inicio(indice, &m1));
+        self.mandar(via, &publica, &transporte::embrulhar_inicio(indice, &m1));
     }
 
     /// Um pacote que o sistema mandou para a placa: cifra para o par dono do
@@ -229,14 +310,14 @@ impl No {
             .as_ref()
             .is_some_and(|s| s.confirmada && !s.expirada() && !s.pede_novo_aperto());
         if pronta {
-            let destino = e.pares[i].endereco;
+            let (via, chave) = (e.pares[i].via, e.pares[i].publica);
             let s = e.pares[i].atual.as_mut().expect("conferido");
-            if let (Ok(p), Some(d)) = (s.selar(pacote), destino) {
+            if let (Ok(p), Some(v)) = (s.selar(pacote), via) {
                 let par = &mut e.pares[i];
                 par.ultimo_envio = Instant::now();
                 par.sem_resposta_desde.get_or_insert_with(Instant::now);
                 drop(e);
-                self.enviar(d, &p);
+                self.mandar(v, &chave, &p);
                 return;
             }
         }
@@ -249,21 +330,34 @@ impl No {
     /// Um datagrama que chegou pela rede. Devolve o pacote IP a entregar na
     /// placa, se houver.
     pub fn da_rede(&self, dado: &[u8], de: SocketAddr) -> Option<Vec<u8>> {
+        // Do repasse so se aceita `DE`, e so do endereco do repasse.
+        if let Some(r) = &self.repasse {
+            if de == r.endereco {
+                let (origem, dentro) = repasse::desembrulhar_de(dado)?;
+                return self.despachar(dentro, Via::Repasse, Some(origem));
+            }
+        }
+        self.despachar(dado, Via::Direta(de), None)
+    }
+
+    /// `declarada`: a chave de origem que o repasse diz; tem de bater com a
+    /// que o Noise autenticou, senao o pacote morre.
+    fn despachar(&self, dado: &[u8], via: Via, declarada: Option<[u8; 32]>) -> Option<Vec<u8>> {
         match *dado.first()? {
             transporte::TIPO_INICIO => {
-                self.receber_inicio(dado, de);
+                self.receber_inicio(dado, via, declarada);
                 None
             }
             transporte::TIPO_RESPOSTA => {
-                self.receber_resposta(dado, de);
+                self.receber_resposta(dado, via, declarada);
                 None
             }
-            transporte::TIPO_DADOS => self.receber_dados(dado, de),
+            transporte::TIPO_DADOS => self.receber_dados(dado, via, declarada),
             _ => None,
         }
     }
 
-    fn receber_inicio(&self, dado: &[u8], de: SocketAddr) {
+    fn receber_inicio(&self, dado: &[u8], via: Via, declarada: Option<[u8; 32]>) {
         let Some((remetente, m1)) = transporte::desembrulhar_inicio(dado) else {
             return;
         };
@@ -279,6 +373,9 @@ impl No {
         else {
             return;
         };
+        if declarada.is_some_and(|k| k != chamada.estatica_dele) {
+            return;
+        }
         // Repeticao: um INICIO gravado e reenviado tem carimbo velho.
         let Ok(carimbo) = <[u8; 12]>::try_from(chamada.carga.as_slice()) else {
             return;
@@ -294,9 +391,14 @@ impl No {
         e.indices.insert(indice, i);
         let nova = Sessao::nova(chaves, indice, remetente, false);
         self.trocar_sessao(&mut e, i, nova);
-        e.pares[i].endereco = Some(de);
+        No::aprender(&mut e.pares[i], via);
+        let chave = e.pares[i].publica;
         drop(e);
-        self.enviar(de, &transporte::embrulhar_resposta(indice, remetente, &m2));
+        self.mandar(
+            via,
+            &chave,
+            &transporte::embrulhar_resposta(indice, remetente, &m2),
+        );
     }
 
     fn trocar_sessao(&self, e: &mut Estado, i: usize, nova: Sessao) {
@@ -307,7 +409,7 @@ impl No {
         e.pares[i].atual = Some(nova);
     }
 
-    fn receber_resposta(&self, dado: &[u8], de: SocketAddr) {
+    fn receber_resposta(&self, dado: &[u8], via: Via, declarada: Option<[u8; 32]>) {
         let Some((remetente, receptor, m2)) = transporte::desembrulhar_resposta(dado) else {
             return;
         };
@@ -316,7 +418,7 @@ impl No {
             return;
         };
         let bate = matches!(&e.pares[i].pendente, Some((idx, _, _)) if *idx == receptor);
-        if !bate {
+        if !bate || declarada.is_some_and(|k| k != e.pares[i].publica) {
             return;
         }
         let (_, ini, _) = e.pares[i].pendente.take().expect("conferido");
@@ -327,7 +429,7 @@ impl No {
         };
         let nova = Sessao::nova(chaves, receptor, remetente, true);
         self.trocar_sessao(&mut e, i, nova);
-        e.pares[i].endereco = Some(de);
+        No::aprender(&mut e.pares[i], via);
         e.pares[i].sem_resposta_desde = None;
         // Esvazia a fila; sem nada na fila, um «manter vivo» confirma a
         // sessao do outro lado, que so fala depois de ouvir.
@@ -338,17 +440,21 @@ impl No {
             saidas.extend(s.selar(&[]).ok());
         }
         e.pares[i].ultimo_envio = Instant::now();
+        let chave = e.pares[i].publica;
         drop(e);
         for p in saidas {
-            self.enviar(de, &p);
+            self.mandar(via, &chave, &p);
         }
     }
 
-    fn receber_dados(&self, dado: &[u8], de: SocketAddr) -> Option<Vec<u8>> {
+    fn receber_dados(&self, dado: &[u8], via: Via, declarada: Option<[u8; 32]>) -> Option<Vec<u8>> {
         let receptor = transporte::receptor_de_dados(dado)?;
         let mut e = self.estado.lock().expect("estado");
         let i = *e.indices.get(&receptor)?;
         let par = &mut e.pares[i];
+        if declarada.is_some_and(|k| k != par.publica) {
+            return None;
+        }
         let sessao = [par.atual.as_mut(), par.anterior.as_mut()]
             .into_iter()
             .flatten()
@@ -356,7 +462,7 @@ impl No {
         let claro = sessao.abrir(dado).ok()?;
         // Pacote autenticado: o par pode ter mudado de endereco (NAT, rede
         // movel). Segue-se o ultimo endereco que PROVOU ter a chave.
-        par.endereco = Some(de);
+        No::aprender(par, via);
         par.sem_resposta_desde = None;
         // Quem respondeu acaba de ser confirmado: solta a fila.
         let mut saidas = Vec::new();
@@ -367,10 +473,10 @@ impl No {
                 }
             }
         }
-        let ip_do_par = par.ip;
+        let (ip_do_par, chave) = (par.ip, par.publica);
         drop(e);
         for p in saidas {
-            self.enviar(de, &p);
+            self.mandar(via, &chave, &p);
         }
         if claro.is_empty() {
             return None; // manter vivo
@@ -382,6 +488,7 @@ impl No {
     /// Chamado a cada segundo: manter vivo, refazer aperto vencido, repetir
     /// aperto sem resposta e comecar com quem tem endereco e nao tem sessao.
     pub fn tique(&self) {
+        self.registrar_no_repasse();
         let mut e = self.estado.lock().expect("estado");
         let mut vivos = Vec::new();
         for i in 0..e.pares.len() {
@@ -398,18 +505,33 @@ impl No {
                 continue;
             }
             if e.pares[i].ultimo_envio.elapsed() >= MANTER_VIVO {
-                let destino = e.pares[i].endereco;
-                if let (Some(s), Some(d)) = (e.pares[i].atual.as_mut(), destino) {
+                let (via, chave) = (e.pares[i].via, e.pares[i].publica);
+                if let (Some(s), Some(v)) = (e.pares[i].atual.as_mut(), via) {
                     if let Ok(p) = s.selar(&[]) {
-                        vivos.push((d, p));
+                        vivos.push((v, chave, p));
                         e.pares[i].ultimo_envio = Instant::now();
                     }
                 }
             }
         }
         drop(e);
-        for (d, p) in vivos {
-            self.enviar(d, &p);
+        for (v, k, p) in vivos {
+            self.mandar(v, &k, &p);
+        }
+    }
+
+    /// Renova o registro no repasse (e, com isso, o furo no NAT ate ele).
+    fn registrar_no_repasse(&self) {
+        let Some(r) = &self.repasse else {
+            return;
+        };
+        let mut ultimo = self.ultimo_registro.lock().expect("registro");
+        if ultimo.is_some_and(|t| t.elapsed() < repasse::RENOVAR_REGISTRO) {
+            return;
+        }
+        if let Ok(p) = repasse::registro(&self.privada, &r.publica, transporte::carimbo_agora()) {
+            self.enviar(r.endereco, &p);
+            *ultimo = Some(Instant::now());
         }
     }
 
@@ -570,6 +692,87 @@ mod testes {
             tipos.contains(&transporte::TIPO_INICIO),
             "tipos vistos: {tipos:?}"
         );
+    }
+
+    /// Os dois sem endereco um do outro (como atras de CGNAT): so o repasse
+    /// liga. E o repasse so ve pacote cifrado.
+    #[test]
+    fn pelo_repasse_o_pacote_atravessa_cifrado() {
+        let r_priv = x25519::gerar_privada();
+        let mut rep = repasse::Repasse::novo(r_priv, None);
+        let ur = UdpSocket::bind("127.0.0.1:0").unwrap();
+        ur.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        let er = ur.local_addr().unwrap();
+        let (ka, kb) = (x25519::gerar_privada(), x25519::gerar_privada());
+        let novo = |k: [u8; 32], meu: &str, dele: [u8; 32], ip_dele: &str| {
+            let u = UdpSocket::bind("127.0.0.1:0").unwrap();
+            u.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+            No::novo(
+                k,
+                psk_da_rede("R", "s", 1_000),
+                meu.parse().unwrap(),
+                u,
+                vec![ParConfig {
+                    publica: dele,
+                    ip: ip_dele.parse().unwrap(),
+                    endereco: None,
+                }],
+            )
+            .com_repasse(
+                Modo::Repasse,
+                Some(RepasseCfg {
+                    endereco: er,
+                    publica: x25519::chave_publica(&r_priv),
+                }),
+            )
+            .unwrap()
+        };
+        let a = novo(ka, "10.78.0.1", x25519::chave_publica(&kb), "10.78.0.2");
+        let b = novo(kb, "10.78.0.2", x25519::chave_publica(&ka), "10.78.0.1");
+        // O repasse gira num laco proprio; guarda o que viu passar.
+        let visto = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let v2 = Arc::clone(&visto);
+        std::thread::spawn(move || {
+            let mut buf = vec![0u8; 4096];
+            while let Ok((n, de)) = ur.recv_from(&mut buf) {
+                v2.lock().unwrap().extend_from_slice(&buf[..n]);
+                if let Some((alvo, p)) = rep.tratar(&buf[..n], de) {
+                    let _ = ur.send_to(&p, alvo);
+                }
+            }
+        });
+        a.tique();
+        b.tique();
+        std::thread::sleep(Duration::from_millis(100));
+        let ida = ip([10, 78, 0, 1], [10, 78, 0, 2], b"SEGREDO-DO-PING");
+        a.da_placa(&ida);
+        // Os dois ja iniciaram aperto no tique (cruzado): bombeia os dois
+        // lados ate o pacote sair na placa de B.
+        for u in [&a.udp, &b.udp] {
+            u.set_read_timeout(Some(Duration::from_millis(100)))
+                .unwrap();
+        }
+        let mut chegou = false;
+        for _ in 0..40 {
+            bombear(&a);
+            if bombear(&b).as_deref() == Some(&ida[..]) {
+                chegou = true;
+                break;
+            }
+        }
+        assert!(chegou, "o pacote nao atravessou pelo repasse");
+        let visto = visto.lock().unwrap();
+        assert!(
+            !visto.windows(15).any(|w| w == b"SEGREDO-DO-PING"),
+            "o repasse viu texto claro"
+        );
+    }
+
+    #[test]
+    fn modo_repasse_sem_repasse_e_recusado() {
+        let u = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let n = No::novo([1; 32], [0; 32], "10.78.0.1".parse().unwrap(), u, vec![]);
+        assert!(n.com_repasse(Modo::Auto, None).is_err());
     }
 
     #[test]

@@ -23,6 +23,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: transporte UDP (contador explícito, janela de 2.048 contra repetição, refazer aos 120 s, morrer aos 180 s / 2^60, par surdo refaz aos 15 s)
 - [x] P2P: placa virtual TUN no Linux por FFI ao `ioctl` — sem `iproute2`
 - [x] P2P: `phxvpn p2p chave` e `phxvpn p2p ligar` — **ping entre dois computadores pelo túnel, provado**
+- [x] P2P: servidor intermediário (`phxvpn repasse`) e modos `direto` / `repasse` / `auto` — provado numa topologia de CGNAT
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 
 ### Falta
@@ -37,13 +38,56 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] P2P: descoberta — convite, broadcast na LAN e «farol» (membro alcançável que perfura NAT e faz relé)
 - [ ] P2P: convite (`phxvpn p2p convidar`) e a tela
 - [ ] P2P no Windows: TAP-Windows6 em modo TUN (CreateFileW + DeviceIoControl, adaptador próprio pelo `tapctl.exe` do OpenVPN) — ~250–350 linhas, estimado
-- [ ] P2P: repasse por servidor nosso para CGNAT dos dois lados (decisão do dono), cifrado de ponta a ponta
 - [ ] P2P: `mac1`/cookie contra inundação de INICIO (o WireGuard tem; aqui ainda não)
 - [ ] Segurança A1: revogação real (série no CN, CRL Ed25519)
 - [ ] Segurança A2/A3: limite de tentativas de login e de senha de rede; PBKDF2 fora do mutex; hash fictício contra enumeração
 - [ ] Segurança A5: CSRF/DNS rebinding — exigir `Content-Type` JSON, conferir `Host`, código de instalação de uso único
 - [ ] Segurança A6: cliente PG recusa senha em claro e exige o `SASLFinal` conferido
 - [ ] Segurança M1–M7: teto de conexões e prazo por pedido, chave nascendo 0600, openvpn sem root e TLS 1.3, `--pg` fora do argumento, login só `[a-z0-9._-]`, cota de redes, reconexão do PG
+
+## Modos de uso
+
+| Modo | Comando | Quando |
+|---|---|---|
+| **Servidor** | `phxvpn painel` + OpenVPN | Empresa com servidor próprio; cadastro no PostgreSQL; tudo passa pelo servidor |
+| **P2P direto** | `phxvpn p2p ligar --modo direto` | Sem servidor nenhum: LAN, IP público, IPv6 ou NAT benigno |
+| **P2P repasse** | `--modo repasse --repasse CHAVE@HOST:PORTA` | CGNAT dos dois lados: passa pelo nosso servidor intermediário, que só carrega pacote cifrado |
+| **P2P auto** | `--modo auto --repasse …` | Tenta direto; sem resposta em 2 tentativas (~10 s), vai pelo intermediário |
+
+Prova (24/09/2026, três `ip netns`; A e B só alcançam o intermediário, sem
+rota entre si): direto 0/4 (esperado); repasse 4/4, 0,64 ms, 0 ocorrência do
+texto enviado no fio do intermediário; auto 30/30, primeira resposta 10,5 s
+depois de ligar. RED: sem conferir o `mac` do REGISTRO, um terceiro desvia o
+tráfego de outro nó.
+
+Na primeira medição do auto eu li o `icmp_seq=1` como «respondeu no primeiro
+segundo». Não tinha respondido: o ping imprime a sequência original da
+resposta que chega atrasada, e o nó guarda os pacotes na fila até o aperto
+fechar. Medido com `ping -D` e o relógio de quando o nó foi ligado, são 10,5 s.
+
+## Comparativo
+
+Legenda: **medido** = provado aqui; *citado* = documentação do fabricante,
+não verificado por nós.
+
+| | **phxvpn** | Radmin VPN | OpenVPN |
+|---|---|---|---|
+| Código | Nosso, `MIT OR Apache-2.0`, zero crate | Fechado (Famatech) | Aberto, GPLv2 |
+| Topologia | Servidor **ou** P2P (direto / repasse / auto) | P2P com servidores do fabricante (*citado*) | Servidor central (hub) |
+| Servidor próprio | Sim: painel + PostgreSQL, e o intermediário é nosso | Não: coordenação e relé são do fabricante (*citado*) | Sim |
+| Sem servidor nenhum | Sim, no modo direto (LAN, IP público, IPv6) — **medido** | Não (*citado*) | Não (ponto a ponto só 1 par por processo) |
+| CGNAT dos dois lados | Pelo nosso intermediário, cifrado de ponta a ponta — **medido** | Relé do fabricante (*citado*) | Pelo servidor |
+| «Criar rede» / «entrar na rede» | Sim, nome + senha (painel); P2P por chave + senha | Sim, nome + senha | Não: arquivo de configuração por cliente |
+| Cifra | Noise IKpsk2 X25519 + ChaCha20-Poly1305, **conferido contra vetor oficial**; modo servidor TLS 1.3 Ed25519 | AES-256 (*citado*) | TLS (OpenSSL) + AES-GCM/ChaCha |
+| Senha da rede no protocolo | Vira PSK: sem ela o aperto não fecha — **medido** | Controle de acesso no servidor (*citado*) | Não tem |
+| Cadastro | PostgreSQL (empresa, servidores, usuários, redes) | Nuvem do fabricante | Arquivos |
+| Linux | Sim | Não (*citado*: só Windows) | Sim |
+| Windows | Modo servidor: sim (OpenVPN). P2P: **ainda não** (TAP-Windows6, em escrita) | Sim | Sim |
+| Vazão | 660 Mbit/s TCP pelo túnel P2P, uma corrida, contêiner — **medido** | Não medido por nós | Não medido por nós |
+| O que ainda falta aqui | Painel com 6 achados altos de segurança; sem HTTPS no painel; sem cliente de mesa | — | — |
+
+Números do Radmin e do OpenVPN não foram medidos aqui. A comparação justa de
+vazão pede os três na mesma máquina e com o mesmo trabalho (regra da bancada).
 
 ## Modo P2P (decisão do papel J, 23/09/2026)
 

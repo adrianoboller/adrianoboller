@@ -30,8 +30,17 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
 
   phxvpn p2p ligar --rede NOME --ip 10.78.0.1/24 [--porta 51820] [--chave p2p.chave]
                    [--interface phx0] --par CHAVE@IP[@HOST:PORTA] [--par ...]
-      Modo P2P, sem servidor: liga a placa virtual e fala direto com os pares
-      (Linux, como root). Senha da rede por PHXVPN_SENHA_REDE ou no terminal.
+                   [--modo direto|repasse|auto] [--repasse CHAVE@HOST:PORTA]
+      Modo P2P: liga a placa virtual e fala com os pares (Linux, como root).
+      direto  -- so caminho direto, sem servidor nenhum (padrao);
+      repasse -- tudo pelo servidor intermediario (CGNAT dos dois lados);
+      auto    -- tenta direto e, sem resposta, vai pelo intermediario.
+      O intermediario so carrega pacote cifrado de ponta a ponta.
+      Senha da rede por PHXVPN_SENHA_REDE ou no terminal.
+
+  phxvpn repasse [--porta 51821] [--chave repasse.chave] [--permitir ARQUIVO]
+      Servidor intermediario do P2P. Mostra a chave publica para o --repasse.
+      --permitir: arquivo com uma chave publica por linha (repasse fechado).
 
   phxvpn versao
 ";
@@ -43,6 +52,7 @@ fn main() {
         Some("criar-rede") => cmd_rede(&args[1..], true),
         Some("entrar") => cmd_rede(&args[1..], false),
         Some("p2p") => cmd_p2p(&args[1..]),
+        Some("repasse") => cmd_repasse(&args[1..]),
         Some("versao") | Some("--version") => {
             println!("phxvpn {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -289,9 +299,23 @@ fn p2p_ligar(args: &[String], arquivo: &str) -> Result<(), String> {
         .map_err(|e| format!("porta UDP {porta}: {e}"))?;
     let interface = opcao(args, "--interface").unwrap_or_else(|| "phx0".into());
     let tun = phxvpn::tun::Tun::abrir(&interface, ip, prefixo, p2p::MTU)?;
-    let no = Arc::new(p2p::No::novo(privada, psk, ip, udp, pares));
+    let modo = p2p::Modo::de_texto(&opcao(args, "--modo").unwrap_or_else(|| "direto".into()))?;
+    let repasse = match opcao(args, "--repasse") {
+        Some(t) => {
+            let (chave, end) = t
+                .split_once('@')
+                .ok_or("--repasse no formato CHAVE@HOST:PORTA")?;
+            let par = p2p::ler_par(&format!("{chave}@0.0.0.0@{end}"))?;
+            Some(p2p::RepasseCfg {
+                endereco: par.endereco.ok_or("--repasse sem endereco")?,
+                publica: par.publica,
+            })
+        }
+        None => None,
+    };
+    let no = Arc::new(p2p::No::novo(privada, psk, ip, udp, pares).com_repasse(modo, repasse)?);
     eprintln!(
-        "phxvpn: P2P no ar -- {interface} {ip}/{prefixo}, UDP {porta}, chave {}",
+        "phxvpn: P2P no ar -- {interface} {ip}/{prefixo}, UDP {porta}, modo {modo:?}, chave {}",
         para_hex(&no.publica())
     );
     p2p::rodar(no, tun)
@@ -300,4 +324,43 @@ fn p2p_ligar(args: &[String], arquivo: &str) -> Result<(), String> {
 #[cfg(not(target_os = "linux"))]
 fn p2p_ligar(_args: &[String], _arquivo: &str) -> Result<(), String> {
     Err("o modo P2P ainda so roda no Linux (Windows: driver do OpenVPN, em pesquisa)".into())
+}
+
+fn cmd_repasse(args: &[String]) -> Result<(), String> {
+    use phxsql_core::hash::{de_hex, para_hex};
+    use phxvpn::repasse::Repasse;
+    let privada = identidade(&opcao(args, "--chave").unwrap_or_else(|| "repasse.chave".into()))?;
+    let permitidas = match opcao(args, "--permitir") {
+        Some(arq) => {
+            let texto = std::fs::read_to_string(&arq).map_err(|e| format!("{arq}: {e}"))?;
+            let mut l = std::collections::HashSet::new();
+            for (n, linha) in texto.lines().enumerate() {
+                let linha = linha.trim();
+                if linha.is_empty() || linha.starts_with('#') {
+                    continue;
+                }
+                let k = de_hex(linha)
+                    .and_then(|b| <[u8; 32]>::try_from(b).ok())
+                    .ok_or_else(|| format!("{arq}:{}: chave invalida", n + 1))?;
+                l.insert(k);
+            }
+            Some(l)
+        }
+        None => None,
+    };
+    let porta = opcao(args, "--porta").unwrap_or_else(|| "51821".into());
+    let udp = std::net::UdpSocket::bind(format!("0.0.0.0:{porta}"))
+        .map_err(|e| format!("porta UDP {porta}: {e}"))?;
+    let mut r = Repasse::novo(privada, permitidas);
+    eprintln!(
+        "phxvpn: repasse no ar -- UDP {porta}, chave {}",
+        para_hex(&r.publica())
+    );
+    let mut buf = vec![0u8; 65_535];
+    loop {
+        let (n, de) = udp.recv_from(&mut buf).map_err(|e| e.to_string())?;
+        if let Some((alvo, p)) = r.tratar(&buf[..n], de) {
+            let _ = udp.send_to(&p, alvo);
+        }
+    }
 }
