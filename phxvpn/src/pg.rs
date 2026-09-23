@@ -121,7 +121,7 @@ impl Pg {
             ("user", cfg.usuario.as_str()),
             ("database", cfg.banco.as_str()),
             ("client_encoding", "UTF8"),
-            ("application_name", "phoenix-vpn"),
+            ("application_name", "phxvpn"),
         ] {
             corpo.extend_from_slice(k.as_bytes());
             corpo.push(0);

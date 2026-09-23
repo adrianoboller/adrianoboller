@@ -267,7 +267,7 @@ mod testes {
     use super::*;
 
     fn ac() -> Emitido {
-        emitir(Papel::Ac, "Empresa Teste", "Phoenix VPN AC", 10, None).unwrap()
+        emitir(Papel::Ac, "Empresa Teste", "phxvpn AC", 10, None).unwrap()
     }
 
     /// A folha e assinada pela AC: a publica da AC confere a assinatura sobre a
@@ -278,7 +278,7 @@ mod testes {
         let a = ac();
         let emissora = Ac {
             organizacao: "Empresa Teste",
-            cn: "Phoenix VPN AC",
+            cn: "phxvpn AC",
             privada: &a.privada,
         };
         let f = emitir(

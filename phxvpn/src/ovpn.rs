@@ -41,7 +41,7 @@ const CIFRAS: &str = "AES-256-GCM:CHACHA20-POLY1305";
 
 pub fn conf_servidor(rede: &Rede, dir: &str) -> String {
     format!(
-        "# Phoenix VPN -- rede «{nome}» (gerado; nao edite, o painel reescreve)\n\
+        "# phxvpn -- rede «{nome}» (gerado; nao edite, o painel reescreve)\n\
 port {porta}\n\
 proto udp\n\
 dev tun\n\
@@ -88,7 +88,7 @@ pub struct Perfil<'a> {
 
 pub fn perfil_membro(p: &Perfil) -> String {
     format!(
-        "# Phoenix VPN -- rede «{rede}» em {srv}\n\
+        "# phxvpn -- rede «{rede}» em {srv}\n\
 client\n\
 dev tun\n\
 proto udp\n\

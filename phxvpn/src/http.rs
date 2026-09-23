@@ -12,7 +12,7 @@
 //! O painel fala HTTP sem TLS (a petrea de zero dependencia ainda nao tem TLS
 //! escrito aqui). Por isso o padrao e escutar em 127.0.0.1: para expor, ponha
 //! um proxy com TLS na frente ou use o painel pela propria VPN. Ver
-//! `docs/PHOENIX-VPN.md`, secao «Limites».
+//! `docs/PHXVPN.md`, secao «Limites».
 
 use crate::painel::{Instalacao, Painel, Usuario};
 use crate::supervisor::Supervisor;
@@ -358,7 +358,7 @@ fn perfil_json(rede: &str, perfil: String) -> Saida {
         })
         .collect();
     Ok(Json::objeto(vec![
-        ("arquivo", Json::texto_de(format!("phoenix-{arquivo}.ovpn"))),
+        ("arquivo", Json::texto_de(format!("phxvpn-{arquivo}.ovpn"))),
         ("perfil", Json::texto_de(perfil)),
     ]))
 }

@@ -1,6 +1,6 @@
 [package]
-name = "phoenix-vpn"
-description = "Phoenix VPN: redes virtuais no estilo Radmin sobre OpenVPN, com cadastro em PostgreSQL"
+name = "phxvpn"
+description = "phxvpn: redes virtuais no estilo Radmin sobre OpenVPN, com cadastro em PostgreSQL"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
@@ -15,5 +15,5 @@ path = "src/main.rs"
 [dependencies]
 phxsql-core = { path = "../phxsql/crates/phxsql-core" }
 
-# Workspace proprio: o phoenix-vpn nao e membro do workspace do PhxSql.
+# Workspace proprio: o phxvpn nao e membro do workspace do PhxSql.
 [workspace]

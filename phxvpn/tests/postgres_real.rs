@@ -5,8 +5,8 @@
 //! `host=127.0.0.1 port=55432 user=postgres password=... dbname=postgres`.
 //! Sem a variavel o teste diz que NAO rodou -- nunca passa calado.
 
-use phoenix_vpn::painel::{Instalacao, Painel};
-use phoenix_vpn::pg::{Config, Pg};
+use phxvpn::painel::{Instalacao, Painel};
+use phxvpn::pg::{Config, Pg};
 
 fn config() -> Option<Config> {
     let texto = std::env::var("PHXVPN_PG_TESTE").ok()?;

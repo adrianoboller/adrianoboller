@@ -101,7 +101,7 @@ pub struct Instalacao {
     pub servidor_ip: String,
     pub servidor_dns: String,
     /// Certificado digital da empresa (PEM), opcional. Guardado como
-    /// identificacao; a VPN usa a AC propria -- ver `docs/PHOENIX-VPN.md`.
+    /// identificacao; a VPN usa a AC propria -- ver `docs/PHXVPN.md`.
     pub certificado_pem: String,
 }
 
@@ -154,7 +154,7 @@ impl Painel {
     pub fn instalar(&mut self, i: &Instalacao) -> R<()> {
         validar_instalacao(i)?;
         if self.instalado()? {
-            return Err("o Phoenix VPN ja esta instalado".into());
+            return Err("o phxvpn ja esta instalado".into());
         }
         let cofre = Cofre::novo(&i.senha_mestre, self.iteracoes);
         let ac = pki::emitir(Papel::Ac, &i.empresa, &cn_ac(&i.empresa), 10, None)?;
@@ -215,7 +215,7 @@ impl Painel {
             .executar("SELECT prova_mestre FROM phx_empresa LIMIT 1", &[])?;
         let prova = r
             .valor(0, "prova_mestre")
-            .ok_or("o Phoenix VPN ainda nao foi instalado")?;
+            .ok_or("o phxvpn ainda nao foi instalado")?;
         self.cofre = Some(Cofre::destrancar(senha_mestre, prova)?);
         Ok(())
     }
@@ -283,7 +283,7 @@ impl Painel {
             .executar("SELECT id FROM phx_empresa LIMIT 1", &[])?;
         let empresa = r
             .valor(0, "id")
-            .ok_or("o Phoenix VPN ainda nao foi instalado")?
+            .ok_or("o phxvpn ainda nao foi instalado")?
             .to_string();
         self.inserir_servidor(&empresa, nome, ip, dns)
     }
@@ -324,7 +324,7 @@ impl Painel {
             .executar("SELECT nome, ac_chave_selada FROM phx_empresa LIMIT 1", &[])?;
         let org = r
             .valor(0, "nome")
-            .ok_or("o Phoenix VPN ainda nao foi instalado")?
+            .ok_or("o phxvpn ainda nao foi instalado")?
             .to_string();
         let selada = r.valor(0, "ac_chave_selada").ok_or("AC ausente")?;
         let privada = self.cofre()?.abrir_com(selada, "ac")?;
@@ -682,7 +682,7 @@ fn gravar(caminho: &Path, dados: &[u8], secreto: bool) -> R<()> {
 }
 
 fn cn_ac(org: &str) -> String {
-    format!("Phoenix VPN AC - {org}")
+    format!("phxvpn AC - {org}")
 }
 
 /// CNs conectados agora, lidos do `status.log` versao 2 do OpenVPN

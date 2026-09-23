@@ -1,4 +1,4 @@
-# Phoenix VPN
+# phxvpn
 
 Redes virtuais no estilo **Radmin VPN** — *criar rede* e *entrar na rede* com
 nome e senha — sobre **OpenVPN**, com o cadastro de empresa, servidores,
@@ -27,4 +27,4 @@ A instalação pede: nome da empresa, finalidade, responsável, e-mail, telefone
 usuário e senha admin, **senha mestre criptográfica**, nome/IP/DNS do servidor
 e, opcional, o certificado digital da empresa (PEM).
 
-Desenho, provas, limites e o que falta: [`docs/PHOENIX-VPN.md`](docs/PHOENIX-VPN.md).
+Desenho, provas, limites e o que falta: [`docs/PHXVPN.md`](docs/PHXVPN.md).

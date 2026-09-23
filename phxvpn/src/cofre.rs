@@ -82,7 +82,7 @@ impl Cofre {
 }
 
 /// O `aad` do selo de prova da senha mestre.
-pub const AAD_PROVA: &str = "phoenix-vpn:prova";
+pub const AAD_PROVA: &str = "phxvpn:prova";
 
 type Partes = (u32, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>);
 

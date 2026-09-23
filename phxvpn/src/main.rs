@@ -1,16 +1,16 @@
-//! Phoenix VPN -- redes virtuais no estilo Radmin, sobre OpenVPN.
+//! phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN.
 //!
 //! Duas portas para o mesmo motor (`painel.rs`): a tela web servida pelo
 //! `phxvpn painel` e a linha de comando abaixo, que fala com o painel pela API.
 
-use phoenix_vpn::{http, painel, pg, supervisor};
 use phxsql_core::json::Json;
+use phxvpn::{http, painel, pg, supervisor};
 use std::io::{BufRead, Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-const AJUDA: &str = "Phoenix VPN -- redes virtuais no estilo Radmin, sobre OpenVPN
+const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
 
   phxvpn painel [--escutar 127.0.0.1:8470] [--pg \"host=.. port=.. user=.. password=.. dbname=..\"]
                 [--dados DIR] [--openvpn]
@@ -139,7 +139,7 @@ fn cmd_rede(args: &[String], criar: bool) -> Result<(), String> {
     };
     let r = chamar(&painel, rota, Some(&token), &Json::objeto(pedido))?;
     let arquivo =
-        opcao(args, "--saida").unwrap_or_else(|| r.texto_ou("arquivo", "phoenix.ovpn").to_string());
+        opcao(args, "--saida").unwrap_or_else(|| r.texto_ou("arquivo", "phxvpn.ovpn").to_string());
     std::fs::write(&arquivo, r.texto_ou("perfil", ""))
         .map_err(|e| format!("gravar {arquivo}: {e}"))?;
     #[cfg(unix)]

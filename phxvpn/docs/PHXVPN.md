@@ -1,6 +1,6 @@
-# Phoenix VPN — desenho, provas e o que falta
+# phxvpn — desenho, provas e o que falta
 
-Rodada de 23/09/2026. Código em `phoenix-vpn/src/`, testes em `src/*` e
+Rodada de 23/09/2026. Código em `phxvpn/src/`, testes em `src/*` e
 `tests/postgres_real.rs`.
 
 ## Estado
@@ -64,7 +64,7 @@ perfil e some; baixar de novo emite par novo e mantém o IP.
 | **RED:** a mesma verificação com a EKU removida do código | membro **passa** como servidor → a guarda é a EKU, provada nos dois sentidos |
 | `s_server`/`s_client` com certificado mútuo | TLSv1.3, `Peer signature type: Ed25519`, `Verify return code: 0` |
 | Reinício do painel | cofre trancado; senha mestre errada recusada; certa destranca e reescreve `ccd/` |
-| Tela no Chromium (1280 e 390 px) | instalar → login → criar rede → download `phoenix-Matriz.ovpn`; 0 erro de console; sem rolagem lateral |
+| Tela no Chromium (1280 e 390 px) | instalar → login → criar rede → download `phxvpn-Matriz.ovpn`; 0 erro de console; sem rolagem lateral |
 | `clippy --all-targets` | 0 aviso |
 
 Rodar o teste real: `PHXVPN_PG_TESTE="host=… port=… user=… password=… dbname=postgres" cargo test`.

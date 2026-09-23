@@ -3,12 +3,12 @@
 version = 3
 
 [[package]]
-name = "phoenix-vpn"
+name = "phxsql-core"
+version = "0.19.0"
+
+[[package]]
+name = "phxvpn"
 version = "0.1.0"
 dependencies = [
  "phxsql-core",
 ]
-
-[[package]]
-name = "phxsql-core"
-version = "0.19.0"
