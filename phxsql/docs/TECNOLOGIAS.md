@@ -39,14 +39,14 @@ foi estimado no lugar de uma medição que faltou.
 | `phxsql-core` | 35 | 11589 | 4969 | 3921 | 1593 | 22072 |
 | `phxsql-ffi` | 7 | 1408 | 1081 | 745 | 242 | 3476 |
 | `phxsql-odbc` | 7 | 2662 | 1089 | 980 | 239 | 4970 |
-| `phxsql-server` | 58 | 46277 | 31967 | 24401 | 5369 | 108014 |
+| `phxsql-server` | 58 | 46372 | 32189 | 24591 | 5392 | 108544 |
 | `phxsql-sql` | 10 | 6958 | 3626 | 2329 | 792 | 13705 |
 | `phxsql-store` | 25 | 13951 | 3777 | 6296 | 1614 | 25638 |
-| **total** | **145** | **84278** | **46723** | **38992** | **9992** | **179985** |
+| **total** | **145** | **84373** | **46945** | **39182** | **10015** | **180515** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **46723/84278 = 0.55×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **46945/84373 = 0.56×**.
 
-Alem do `src/`: **80** programas de medicao em `examples/` (20566 linhas — bancada em Rust, nao produto nem teste) e **68** arquivos em `tests/` de integracao fora de `src/` (24137 linhas).
+Alem do `src/`: **80** programas de medicao em `examples/` (20566 linhas — bancada em Rust, nao produto nem teste) e **68** arquivos em `tests/` de integracao fora de `src/` (24182 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -110,7 +110,7 @@ mesmo motivo que o rodapé já errou uma vez.
 | JavaScript (prova ponta a ponta) | `testes-web/` | 55 | 11741 |
 | Python (bancada de medicao) | `bancada/` | 121 | 55353 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2894 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 436 | 106396 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 436 | 106457 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 34 | 14420 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
@@ -425,7 +425,7 @@ empacotar:
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2694** testes passaram, **0** falharam (medido em 2026-09-23 05:28:54, commit `35c03dd7`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **2710** testes passaram, **0** falharam (medido em 2026-09-23 14:52:52, commit `36a0a1ae`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
@@ -495,7 +495,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **410** pedidos numerados; **68** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **412** pedidos numerados; **68** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|

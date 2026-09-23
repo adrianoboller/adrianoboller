@@ -223,7 +223,7 @@ nenhum. A árvore e o catálogo passam a listar só o que dá para abrir.
 ## Estado atual
 
 <!-- readme:testes:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-O motor de armazenamento está completo e testado: **2.694 testes** no projeto inteiro, com **140 operações** no protocolo e **0 dependências externas** (só a `std`) — o que faz o projeto compilar offline.
+O motor de armazenamento está completo e testado: **2.710 testes** no projeto inteiro, com **140 operações** no protocolo e **0 dependências externas** (só a `std`) — o que faz o projeto compilar offline.
 <!-- readme:testes:fim -->
 
 | Peça | Situação |

@@ -494,6 +494,56 @@ Bruxelas  10.3.1.7:5000   ─┘
 Cada origem tem token, lista de databases e intervalo de reconexão próprios —
 ver `exemplos/Config_exemplo_03.json`.
 
+### 8.1 Duas origens não entregam o mesmo nome de database
+
+**A regra:** num servidor multi-source, cada nome de database tem **uma** origem
+dona. Duas origens entregando `vendas` escreveriam no **mesmo** `vendas` daqui,
+e a réplica fiel aplica **por rowid**: no segundo evento da segunda origem os
+rowids divergem. A inclusão ainda para com *fail-stop*; a **alteração** não tem
+conferência nenhuma e sobrescreve calada a linha da outra origem. Era o arranjo
+que se destruía sozinho no meio do expediente, e passou a morrer na declaração
+(pedido 406, parecer do papel C de 23/09/2026 §6).
+
+**Onde a recusa acontece, e por quê são dois lugares:**
+
+| caso | quem decide | o que acontece |
+|---|---|---|
+| duas listas **declaradas** se cruzam | `Config::validar()` | o servidor **não sobe**, nomeando as duas origens e o database |
+| uma lista declarada contra uma **vazia** | a descoberta | aquele database é recusado **para a origem de lista vazia**; os outros dela andam |
+| duas listas **vazias** | a descoberta | aquele database fica com a primeira que o anunciar; a outra o perde e os outros dela andam |
+
+Lista vazia quer dizer «todos os databases daquela origem», e quais são eles
+**só a origem sabe**. Por isso os dois últimos casos são *indecidíveis* no
+arranque: recusá-los ali seria palpite — e o palpite tiraria do ar o próprio
+`Config_exemplo_03.json`, que traz `curitiba ["Z"]`, `saopaulo` (vazia) e
+`bruxelas ["W"]` e é arranjo legítimo.
+
+**Lista declarada ganha de lista vazia**, e ganha *antes* de qualquer laço subir:
+as declaradas reivindicam seus nomes na ordem do `config.json`. Sem isso o
+vencedor seria a thread que chegasse primeiro, e poderia ser outra a cada
+arranque — o database local receberia linhas de um source hoje e de outro
+amanhã, que é exatamente a divergência de rowid que a guarda existe para
+impedir. Entre uma escolha escrita e um curinga, ganha a escolha.
+
+**A recusa é daquele database, nunca da rodada.** Uma origem repetida não pode
+derrubar as dezenove certas: o nome repetido sai da lista, o resto continua, e o
+motivo aparece uma vez no log e fica em `replicacao_estado` → `origens` →
+`recusas`, nomeando a origem dona e o database.
+
+**Onde a guarda NÃO liga, e é de propósito:** com o bloco `cluster`, com um
+papel que não puxa, e com **uma origem só** (o par 1↔1, que não cruza com
+ninguém). O cluster é o caso que exige cuidado: ali quem puxa é um laço só, do
+master **corrente**, e o nome da origem muda a cada eleição (`cluster:<id>`) —
+um dono guardado por nome recusaria ao master novo o database do master velho,
+e seria a promoção inteira parando.
+
+**A consequência de modelagem**, que é o motivo de a guarda existir: no arranjo
+**espelho** — 20 caixas com 20 nomes de database, `caixa01`…`caixa20`, um
+central em `somente_leitura` puxando dos 20 — cada `.reg` do central tem
+**exatamente um escritor**, os rowids batem por construção e a ordem de digitação
+de cada caixa é preservada byte a byte. No arranjo **consolidado**, os 20 no
+mesmo nome, ela se perde. A guarda é o que separa os dois na hora de subir.
+
 **Failover.** Promover uma réplica a Source tem agora um degrau de operação:
 a op **`spare_promover`** (seção 10) para o laço de réplica, abre a escrita e
 vira o papel para `source` **no processo vivo** — o `config.json` continua

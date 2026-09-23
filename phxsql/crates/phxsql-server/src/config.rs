@@ -3951,6 +3951,47 @@ impl Config {
         ));
     }
 
+    /// Duas origens declarando o MESMO database nao sobem.
+    ///
+    /// # Por que a recusa e aqui, no arranque
+    ///
+    /// As duas origens escreveriam no MESMO `.reg` daqui, e a replica fiel
+    /// aplica por ROWID: no segundo evento da segunda origem os rowids
+    /// divergem. A inclusao ainda fail-stopa (`table.rs`, a conferencia do
+    /// rowid), mas a ALTERACAO nao tem conferencia nenhuma -- ela sobrescreve
+    /// calada a linha da outra origem. Arranjo que se destroi sozinho tem de
+    /// morrer no arranque, nomeando as duas origens e o database, e nao no
+    /// meio do expediente. Parecer do papel C de 23/09/2026, secao 6.
+    ///
+    /// # Por que SO o cruzamento de listas declaradas
+    ///
+    /// Lista vazia quer dizer «todos os databases daquela origem», e quais
+    /// sao eles so a origem sabe -- aqui seria palpite. Duas vazias, ou uma
+    /// vazia contra uma declarada, sao **indecidiveis neste ponto**: quem
+    /// sabe e a descoberta, e e la que a recusa acontece, por database e sem
+    /// derrubar os outros. Recusar por palpite tambem tiraria do ar o
+    /// `Config_exemplo_03.json`, que traz curitiba `["Z"]`, saopaulo (vazia) e
+    /// bruxelas `["W"]` e e arranjo legitimo -- e um par 1<->1 tem uma origem
+    /// so, que nao cruza com ninguem. Guarda nova entra pedida, nao imposta.
+    fn recusar_database_em_duas_origens(&self) -> Result<()> {
+        for (i, a) in self.replicacao.origens.iter().enumerate() {
+            for b in self.replicacao.origens.iter().skip(i + 1) {
+                let Some(db) = a.databases.iter().find(|d| b.databases.contains(d)) else {
+                    continue;
+                };
+                return Err(PhxError::Esquema(format!(
+                    "as origens {:?} e {:?} declaram o mesmo database {db:?} em \
+                     replicacao.origens[].databases: as duas escreveriam no \
+                     mesmo {db} deste servidor, os rowids divergem e a \
+                     replicacao para. Cada origem tem de entregar um nome de \
+                     database so dela -- ver docs/REPLICACAO.md",
+                    a.nome, b.nome
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn validar(&self) -> Result<()> {
         if self.token.trim().is_empty() {
             return Err(PhxError::Esquema(
@@ -4053,6 +4094,7 @@ impl Config {
                 )));
             }
         }
+        self.recusar_database_em_duas_origens()?;
         if let Some(c) = &self.cluster {
             c.validar(&self.replicacao)?;
         }
@@ -5671,6 +5713,104 @@ mod tests {
         assert_eq!(c.replicacao.origens[0].databases, vec!["Z"]);
         assert_eq!(c.replicacao.origens[1].porta, 5000);
         assert_eq!(c.replicacao.origens[1].reconectar_em, 10);
+        // Uma origem com lista e outra SEM, e o `validar()` aprova -- e
+        // continua aprovando depois da guarda de sobreposicao (pedido 406).
+        // Lista vazia quer dizer «todos os databases daquela origem», e o que
+        // saopaulo tem so saopaulo sabe: recusar aqui seria palpite, e o
+        // palpite tiraria do ar o proprio `Config_exemplo_03.json`. A recusa
+        // deste caso acontece na DESCOBERTA, por database e sem derrubar os
+        // outros -- `Servidor::so_os_databases_desta_origem`.
+        c.validar().unwrap();
+    }
+
+    /// Duas origens declarando o MESMO database nao sobem, e a recusa nomeia
+    /// as DUAS origens e o database -- pedido 406, parecer do papel C de
+    /// 23/09/2026 secao 6. Antes desta guarda as duas subiam e escreviam no
+    /// mesmo `.reg` daqui: a inclusao fail-stopava no meio do expediente e a
+    /// alteracao sobrescrevia calada.
+    #[test]
+    fn duas_origens_com_o_mesmo_database_nao_sobem() {
+        let txt = r#"{
+          "token":"x",
+          "replicacao":{
+            "papel":"replica",
+            "origens":[
+              {"nome":"caixa01","host":"10.1.1.1","porta":5000,"token":"t1",
+               "databases":["vendas","precos"]},
+              {"nome":"caixa02","host":"10.1.1.2","porta":5000,"token":"t2",
+               "databases":["estoque","vendas"]}
+            ]
+          }
+        }"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        let e = c.validar().unwrap_err().to_string();
+        assert!(
+            e.contains("caixa01"),
+            "a recusa nao nomeou a 1a origem: {e}"
+        );
+        assert!(
+            e.contains("caixa02"),
+            "a recusa nao nomeou a 2a origem: {e}"
+        );
+        assert!(e.contains("vendas"), "a recusa nao nomeou o database: {e}");
+        // E nomeia o REPETIDO, nao um qualquer das listas.
+        assert!(
+            !e.contains("precos") && !e.contains("estoque"),
+            "a recusa nomeou database que nao se repete: {e}"
+        );
+    }
+
+    /// O teste do comportamento VELHO, que e o que mais importa numa guarda
+    /// nova: vinte caixas com vinte nomes de database -- o arranjo ESPELHO,
+    /// que e justamente o que esta guarda existe para tornar seguro -- sobem
+    /// como sempre subiram. Guarda nova entra pedida, nao imposta.
+    #[test]
+    fn vinte_origens_com_nomes_distintos_continuam_subindo() {
+        let origens: Vec<String> = (1..=20)
+            .map(|i| {
+                format!(
+                    r#"{{"nome":"caixa{i:02}","host":"10.1.1.{i}","porta":5000,
+                        "token":"t{i}","databases":["caixa{i:02}"]}}"#
+                )
+            })
+            .collect();
+        let txt = format!(
+            r#"{{"token":"x","somente_leitura":true,
+                 "replicacao":{{"papel":"replica","origens":[{}]}}}}"#,
+            origens.join(",")
+        );
+        let c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        assert_eq!(c.replicacao.origens.len(), 20);
+        c.validar().unwrap();
+    }
+
+    /// O par 1<->1 nao tem com quem cruzar, e e a configuracao mais comum que
+    /// existe: ela tem de subir byte a byte.
+    #[test]
+    fn o_par_1_para_1_nao_e_tocado_pela_guarda() {
+        let txt = r#"{"token":"x","somente_leitura":true,
+          "replicacao":{"papel":"replica","origens":[
+            {"nome":"master","host":"10.0.0.7","porta":5000,"token":"t"}]}}"#;
+        Config::de_json(&Json::analisar(txt).unwrap())
+            .unwrap()
+            .validar()
+            .unwrap();
+    }
+
+    /// O exemplo que acompanha o produto tem TRES origens, duas com lista e
+    /// uma sem (curitiba `["Z"]`, saopaulo vazia, bruxelas `["W"]`). Ele e o
+    /// arranjo legitimo que uma recusa por palpite mataria -- e por isso ele
+    /// esta aqui, e nao so no teste de campo estranho.
+    #[test]
+    fn o_exemplo_da_replica_continua_valido() {
+        let j = Json::analisar(crate::CONFIG_EXEMPLO_03).unwrap();
+        let c = Config::de_json(&j).unwrap();
+        assert!(c.replicacao.origens.len() >= 3, "o exemplo mudou de forma");
+        assert!(
+            c.replicacao.origens.iter().any(|o| o.databases.is_empty()),
+            "o exemplo deixou de ter origem com lista vazia: a guarda do 406 \
+             perdeu a prova de que nao recusa por palpite"
+        );
         c.validar().unwrap();
     }
 

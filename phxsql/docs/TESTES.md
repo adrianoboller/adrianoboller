@@ -35,19 +35,19 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **2.694 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **2.710 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Protocolo e portões (despachar) | 593 | 21,9 |
+| Protocolo e portões (despachar) | 598 | 22,1 |
 | Motor de dados (arquivos, índice, diários) | 550 | 20,3 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 261 | 9,7 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 261 | 9,6 |
 | Camada SQL (léxico, sintaxe, tradução) | 238 | 8,8 |
 | Servidor (outros) | 209 | 7,7 |
-| Configuração | 137 | 5,1 |
+| Configuração | 141 | 5,2 |
 | Criptografia e codificação | 128 | 4,7 |
 | DbLink | 94 | 3,5 |
 | Telemetria e profiler | 73 | 2,7 |
@@ -58,7 +58,7 @@ contando `#[test]` por arquivo e agrupando:
 | **Mensagens (i18n do servidor)** | **32** | **1,2** |
 | **Interface web (servidor HTTP)** | **29** | **1,1** |
 | **Replicação** | **24** | **0,9** |
-| **Transações** | **23** | **0,9** |
+| **Transações** | **23** | **0,8** |
 | **Segurança de rede (blacklist, firewall)** | **21** | **0,8** |
 | **MCP** | **21** | **0,8** |
 | **Console de terminal (phxsqlcmd)** | **20** | **0,7** |
@@ -69,7 +69,7 @@ contando `#[test]` por arquivo e agrupando:
 | **Alertas e e-mail** | **8** | **0,3** |
 | **CLI** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,2** |
-| **total** | **2703** | |
+| **total** | **2712** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 

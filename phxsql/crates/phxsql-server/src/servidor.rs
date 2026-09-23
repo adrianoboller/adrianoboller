@@ -332,6 +332,26 @@ struct LoteBidi {
     parou_em: Option<(u64, bidirecional::Conflito)>,
 }
 
+/// De que origem vem UM nome de database, e quem ja ouviu que nao vem dele.
+///
+/// O dono e sempre a PRIMEIRA origem a reivindicar o nome -- as declaradas em
+/// `replicacao.origens[].databases` reivindicam no arranque, na ordem do
+/// arquivo, e as de lista vazia so quando a descoberta diz o que a origem tem.
+/// Dai a regra: **lista declarada ganha de lista vazia**, porque quem escreveu
+/// o nome disse o que queria e quem deixou vazio disse «o que vier», e entre
+/// uma escolha e um curinga ganha a escolha.
+///
+/// `avisadas` existe para o recado sair UMA vez e nao a cada rodada: a recusa
+/// e estavel (uma vez refem de outra origem, sempre), entao repeti-la a cada
+/// laco so afogaria o log de quem tem dezenove bases certas.
+#[derive(Default)]
+struct DonoDoDatabase {
+    /// O nome da origem que ficou com este database.
+    origem: String,
+    /// As origens que ja receberam a recusa deste database.
+    avisadas: std::collections::BTreeSet<String>,
+}
+
 /// O que a fase 3 de um alcance de tabela devolveu.
 enum Lote {
     /// Aplicou `n` eventos e a posicao local ficou em `nova`.
@@ -1045,6 +1065,25 @@ pub struct Servidor {
     /// O que cada laco de replica conta, por nome de origem, para a operacao
     /// `replicacao_estado` -- posicao, ultimo erro, recusas.
     estado_replicacao: Mutex<HashMap<String, EstadoOrigem>>,
+    /// De que origem vem cada nome de database. Ver [`DonoDoDatabase`].
+    ///
+    /// Vazio e intocado em todo servidor que puxa de uma origem so, que e o
+    /// caso comum: quem o enche e [`Servidor::subir_replicacao`], e so com
+    /// mais de uma origem em paralelo.
+    dono_do_database: Mutex<HashMap<String, DonoDoDatabase>>,
+    /// Ha mais de uma origem puxando em PARALELO? **O portao que decide vem
+    /// antes do trabalho.**
+    ///
+    /// Sem esta bandeira, toda rodada de todo par 1<->1 pagaria um `lock` e
+    /// uma varredura por um mapa que naquele servidor nunca tem nada -- a
+    /// mesma licao que o Profiler desligado cobrou a 7% da carga. Ela nasce
+    /// falsa e so vira verdadeira onde o paralelismo existe: uma thread por
+    /// origem, duas ou mais. Com `cluster`, `subir_replicacao` volta antes e
+    /// a bandeira FICA falsa de proposito -- ali quem puxa e um laco so, do
+    /// master corrente, e o nome da origem MUDA a cada eleicao
+    /// (`cluster:<id>`); um dono guardado por nome recusaria ao master novo o
+    /// database do master velho, que e a promocao inteira parando.
+    ha_varias_origens: AtomicBool,
     /// O ultimo toque por chave, por "database/tabela", para o conflito do
     /// bidirecional. Reconstruido do proprio diario; perder custa varredura.
     toques_bidi: Mutex<HashMap<String, MapaDeToques>>,
@@ -1249,6 +1288,8 @@ impl Servidor {
             proibidos_por_base: Mutex::new(proibidos_por_base),
             diario: crate::diretivas::Diario::ao_lado_de(&log_diretivas),
             estado_replicacao: Mutex::new(HashMap::new()),
+            dono_do_database: Mutex::new(HashMap::new()),
+            ha_varias_origens: AtomicBool::new(false),
             toques_bidi: Mutex::new(HashMap::new()),
             posicoes_bidi: Mutex::new(posicoes_bidi),
             janela: Janela::nova(&config.recursos),
@@ -2485,6 +2526,7 @@ impl Servidor {
     /// Uma por origem e nao uma so: multi-source e varias conexoes
     /// independentes, e uma origem lenta ou caida nao pode segurar as outras.
     fn subir_replicacao(self: &Arc<Self>) {
+        self.ligar_guarda_de_databases();
         if self.cluster.is_some() {
             // Com cluster, quem puxa e o laco do proprio cluster, do master
             // CORRENTE -- uma lista fixa de origens apontaria para o master
@@ -2856,11 +2898,16 @@ impl Servidor {
         mut cliente: crate::replica::Cliente,
         origem: &crate::config::Origem,
     ) -> Result<u64> {
-        let databases = if origem.databases.is_empty() {
+        // O que a origem ANUNCIA -- a lista declarada, ou o que a descoberta
+        // trouxe --, menos os nomes que ja sao de outra origem. E aqui que o
+        // servidor sabe, pela primeira vez e com certeza, que duas origens vao
+        // entregar o mesmo database; ver `so_os_databases_desta_origem`.
+        let anunciados = if origem.databases.is_empty() {
             cliente.databases()?
         } else {
             origem.databases.clone()
         };
+        let databases = self.so_os_databases_desta_origem(&origem.nome, anunciados);
 
         let mut aplicados = 0u64;
         for database in databases {
@@ -3151,6 +3198,132 @@ impl Servidor {
         self.anotar_estado(origem, |e| {
             e.recusas.insert(chave.to_string(), motivo);
         });
+    }
+
+    /// Liga (ou nao) a guarda dos nomes de database entre origens.
+    ///
+    /// **O portao que decide vem antes do trabalho**, e a decisao mora num
+    /// lugar so por isso: as tres condicoes sao a MESMA pergunta -- «este
+    /// servidor vai ter duas threads puxando em paralelo?» --, e espalha-las
+    /// pelo `subir_replicacao` deixaria a condicao que alguem esquecesse
+    /// virando guarda ligada onde ela morde o caso certo.
+    ///
+    /// Desligada, [`Servidor::so_os_databases_desta_origem`] custa uma leitura
+    /// atomica e devolve a lista inteira -- nem mapa, nem mutex.
+    ///
+    /// - **`cluster`**: ali quem puxa e um laco so, do master CORRENTE, e o
+    ///   nome da origem muda a cada eleicao (`cluster:<id>`). Um dono guardado
+    ///   por nome recusaria ao master novo o database do master velho, que e a
+    ///   promocao inteira parando.
+    /// - **papel que nao puxa**: nao ha laco nenhum.
+    /// - **uma origem so**: e o par 1<->1, e ele nao cruza com ninguem.
+    fn ligar_guarda_de_databases(&self) {
+        if self.cluster.is_some()
+            || !self.config.replicacao.papel.puxa_de_origem()
+            || self.config.replicacao.origens.len() < 2
+        {
+            return;
+        }
+        self.ha_varias_origens.store(true, Ordering::Relaxed);
+        self.reivindicar_databases_declarados();
+    }
+
+    /// Reivindica para esta origem os databases que ela declarou no arquivo.
+    ///
+    /// Roda UMA vez, antes de qualquer thread subir, na ordem em que as
+    /// origens estao no `config.json`. E o que torna o vencedor previsivel:
+    /// sem isto, entre uma origem que declarou `["vendas"]` e outra de lista
+    /// vazia cujo source tambem tem `vendas`, ganharia a thread que chegasse
+    /// primeiro -- e a cada arranque poderia ser outra. O database local
+    /// receberia linhas de um source num dia e de outro no dia seguinte, que e
+    /// exatamente a divergencia de rowid que esta guarda existe para impedir.
+    fn reivindicar_databases_declarados(&self) {
+        let Ok(mut donos) = self.dono_do_database.lock() else {
+            return;
+        };
+        for origem in &self.config.replicacao.origens {
+            for db in &origem.databases {
+                donos.entry(db.clone()).or_insert_with(|| DonoDoDatabase {
+                    origem: origem.nome.clone(),
+                    avisadas: Default::default(),
+                });
+            }
+        }
+    }
+
+    /// Dos databases que esta origem anuncia, os que ela pode mesmo replicar.
+    ///
+    /// # Por que filtrar em vez de recusar a rodada
+    ///
+    /// Duas origens entregando o mesmo nome de database escrevem no mesmo
+    /// `.reg` daqui, e a replica fiel aplica por ROWID: os rowids divergem, a
+    /// inclusao fail-stopa e a alteracao sobrescreve CALADA. Mas o remedio nao
+    /// pode ser derrubar a rodada -- um nome repetido nao tira do ar as
+    /// dezenove bases certas da mesma origem. Entao a recusa e daquele
+    /// database, nominal, e o resto anda.
+    ///
+    /// # Por que ele custa zero em quem nao tem duas origens
+    ///
+    /// A bandeira vem ANTES do `lock`: num par 1<->1 (e num cluster) isto e
+    /// uma leitura atomica e a lista volta inteira, sem mapa e sem mutex.
+    ///
+    /// # O que ele NAO cobre, dito em vez de escondido
+    ///
+    /// A identidade da origem aqui e o NOME, que e a mesma identidade que
+    /// `replicacao_estado`, `replicacao_pular` e `replicacao_ligar` usam. Duas
+    /// origens com o mesmo nome no `config.json` ja se confundem nessas tres
+    /// desde antes desta guarda, e tambem se confundem aqui: a segunda se ve
+    /// como dona. Fechar isso e recusar nome de origem repetido, que e outro
+    /// pedido -- nao um remendo aqui.
+    fn so_os_databases_desta_origem(&self, origem: &str, anunciados: Vec<String>) -> Vec<String> {
+        if !self.ha_varias_origens.load(Ordering::Relaxed) {
+            return anunciados;
+        }
+        // O que recusar sai com a trava na mao; o recado sai DEPOIS de solta,
+        // para nunca haver dois mutexes de replicacao empilhados.
+        let mut recusados: Vec<(String, String)> = Vec::new();
+        let meus = match self.dono_do_database.lock() {
+            Ok(mut donos) => anunciados
+                .into_iter()
+                .filter(|db| {
+                    let dono = donos.entry(db.clone()).or_insert_with(|| DonoDoDatabase {
+                        origem: origem.to_string(),
+                        avisadas: Default::default(),
+                    });
+                    if dono.origem == origem {
+                        return true;
+                    }
+                    if dono.avisadas.insert(origem.to_string()) {
+                        recusados.push((db.clone(), dono.origem.clone()));
+                    }
+                    false
+                })
+                .collect(),
+            // Envenenado so por panico de fora: sob esta trava so ha `clone`
+            // e `entry`, que nao entram em panico. O braco existe porque
+            // `lock` devolve `Result`, e ele segue SEM filtrar -- a mesma
+            // escolha do `esta_parada` logo acima, e pela mesma razao: derrubar
+            // a replicacao inteira por um panico alheio tem alcance maior do
+            // que o arranjo errado que esta guarda recusa, e esse arranjo o
+            // `validar()` ja recusou no arranque quando deu para decidir.
+            Err(_) => return anunciados,
+        };
+        for (db, dono) in recusados {
+            let motivo = format!(
+                "o database {db:?} ja e replicado da origem {dono:?}. Duas \
+                 origens escrevendo no mesmo {db} deste servidor fazem os \
+                 rowids divergirem: a inclusao para com fail-stop e a \
+                 alteracao sobrescreve calada. As outras bases desta origem \
+                 continuam. Use em cada origem um nome de database so dela, \
+                 ou escreva replicacao.origens[].databases dizendo qual origem \
+                 traz qual -- ver docs/REPLICACAO.md"
+            );
+            eprintln!("replicacao [{origem}]: {motivo}");
+            self.anotar_estado(origem, |e| {
+                e.recusas.insert(db, motivo);
+            });
+        }
+        meus
     }
 
     /// Leva ao disco o que o alcance aplicou. Uma vez por alcance, com a trava.
@@ -4435,11 +4608,17 @@ impl Servidor {
     ) -> Result<u64> {
         let meu_id = self.config.replicacao.id_servidor.trim().to_string();
         let meu_hash = bidirecional::hash_id(&meu_id);
-        let databases = if origem.databases.is_empty() {
+        // O mesmo filtro da replica fiel, e pela mesma razao: o bidirecional
+        // casa linha por CHAVE, mas duas origens no mesmo database ainda
+        // disputam a mesma tabela daqui -- e a posicao consumida e por
+        // "origem|database/tabela", entao cada uma acharia que a outra nunca
+        // escreveu.
+        let anunciados = if origem.databases.is_empty() {
             cliente.databases()?
         } else {
             origem.databases.clone()
         };
+        let databases = self.so_os_databases_desta_origem(&origem.nome, anunciados);
 
         let mut aplicados = 0u64;
         for database in databases {
@@ -23488,6 +23667,15 @@ impl Servidor {
     /// ter UM lugar de classificacao -- ver [`Servidor::op_replicacao_testar`].
     fn sondar_origem(&self, origem: &crate::config::Origem, p: &Json) -> Result<Json> {
         let mut cliente = crate::replica::ligar(origem)?;
+        // O IRMAO da descoberta do laco -- as mesmas cinco linhas --, e aqui
+        // `so_os_databases_desta_origem` NAO entra, de proposito. Duas razoes,
+        // e as duas sao decisao: a sonda RELATA, nao aplica evento nenhum, e
+        // uma sonda que esconde o database em disputa mente justamente para
+        // quem esta diagnosticando a disputa; e ela roda com a origem que veio
+        // no PEDIDO, que pode nem estar no `config.json` -- reivindicar um
+        // nome aqui entregaria a um host solto o database de uma origem de
+        // verdade, e a guarda passaria a criar o estrago que existe para
+        // impedir.
         let databases = if origem.databases.is_empty() {
             cliente.databases()?
         } else {
@@ -27088,6 +27276,208 @@ mod testes_papel {
                 "{op:?} esta em OPS_NO_SPARE e nao existe no catalogo"
             );
         }
+    }
+}
+
+/// A guarda do pedido 406: duas origens nao entregam o mesmo nome de database.
+///
+/// O nivel ESTATICO (listas declaradas que se cruzam) mora no
+/// `Config::validar()` e tem prova la. Aqui esta o DINAMICO -- o que so a
+/// descoberta sabe: lista vazia quer dizer «todos os databases daquela
+/// origem», e quais sao eles so a origem diz, ja conectada.
+#[cfg(test)]
+mod testes_database_de_duas_origens {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("dbs-406-{rotulo}"))
+    }
+
+    /// Um servidor com as origens descritas, sem subir thread nenhuma: o que
+    /// se prova aqui e o FILTRO, e ele nao precisa de rede.
+    fn servidor(d: &std::path::Path, origens: &str, cluster: &str) -> Arc<Servidor> {
+        let txt = format!(
+            r#"{{"token":"t","somente_leitura":true,
+                 "replicacao":{{"papel":"replica","id_servidor":"central",
+                   "origens":[{origens}]}}{cluster}}}"#
+        );
+        let mut c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+        c.base = d.to_path_buf();
+        c.log_acessos = d.join("acessos.log");
+        c.blacklist = d.join("blacklist.json");
+        c.dblink = d.join("dblink.json");
+        c.jobs = d.join("jobs.json");
+        Servidor::novo(c).unwrap()
+    }
+
+    fn origem(nome: &str, databases: &str) -> String {
+        format!(
+            r#"{{"nome":"{nome}","host":"10.9.9.9","porta":5000,"token":"t",
+                 "databases":[{databases}]}}"#
+        )
+    }
+
+    /// As recusas anotadas para uma origem, como `replicacao_estado` as mostra.
+    fn recusas(s: &Servidor, origem: &str) -> BTreeMap<String, String> {
+        s.estado_replicacao
+            .lock()
+            .unwrap()
+            .get(origem)
+            .map(|e| e.recusas.clone())
+            .unwrap_or_default()
+    }
+
+    /// Duas origens de lista VAZIA anunciando `loja`: a segunda perde SO o
+    /// `loja`, e as dezenove certas dela andam. Uma origem repetida nao pode
+    /// derrubar o resto -- e por isso a recusa e um filtro, e nao um `Err` da
+    /// rodada.
+    #[test]
+    fn a_segunda_origem_perde_so_o_database_repetido() {
+        let d = dir("repetido");
+        let s = servidor(
+            &d,
+            &format!("{},{}", origem("alfa", ""), origem("beta", "")),
+            "",
+        );
+        s.ligar_guarda_de_databases();
+
+        let de_alfa = s.so_os_databases_desta_origem("alfa", vec!["loja".into(), "caixa01".into()]);
+        assert_eq!(de_alfa, vec!["loja".to_string(), "caixa01".to_string()]);
+
+        let de_beta = s.so_os_databases_desta_origem(
+            "beta",
+            vec!["loja".into(), "caixa02".into(), "caixa03".into()],
+        );
+        assert_eq!(
+            de_beta,
+            vec!["caixa02".to_string(), "caixa03".to_string()],
+            "o repetido tinha de sair E o resto tinha de ficar"
+        );
+
+        // A recusa NOMEIA as duas origens e o database -- nada de erro cru.
+        let r = recusas(&s, "beta");
+        let motivo = r.get("loja").expect("sem a recusa do loja em beta");
+        assert!(motivo.contains("loja"), "{motivo}");
+        assert!(
+            motivo.contains("alfa"),
+            "a recusa nao nomeou a dona: {motivo}"
+        );
+        assert_eq!(r.len(), 1, "recusou mais do que o repetido: {r:?}");
+        // E a origem que ficou com o nome nao recebe recusa nenhuma.
+        assert!(recusas(&s, "alfa").is_empty());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Lista declarada ganha de lista vazia, e ganha ANTES de qualquer thread
+    /// subir. Sem esta regra o vencedor seria a thread que chegasse primeiro e
+    /// mudaria a cada arranque -- o database local receberia linhas de um
+    /// source hoje e de outro amanha, que e a divergencia de rowid que a
+    /// guarda existe para impedir. Aqui `curitiba` nem roda: quem pede e so
+    /// `saopaulo`, e `Z` ja e de `curitiba`.
+    #[test]
+    fn a_lista_declarada_ganha_da_lista_vazia() {
+        let d = dir("declarada");
+        let s = servidor(
+            &d,
+            &format!("{},{}", origem("curitiba", "\"Z\""), origem("saopaulo", "")),
+            "",
+        );
+        s.ligar_guarda_de_databases();
+
+        let de_sp = s.so_os_databases_desta_origem("saopaulo", vec!["Z".into(), "W".into()]);
+        assert_eq!(de_sp, vec!["W".to_string()]);
+        let motivo = recusas(&s, "saopaulo")
+            .get("Z")
+            .cloned()
+            .expect("sem a recusa do Z");
+        assert!(motivo.contains("curitiba"), "{motivo}");
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// O recado sai UMA vez, e nao a cada rodada: a recusa e estavel, e
+    /// repeti-la afogaria o log de quem tem dezenove bases certas.
+    #[test]
+    fn o_recado_da_recusa_nao_se_repete_a_cada_rodada() {
+        let d = dir("uma-vez");
+        let s = servidor(
+            &d,
+            &format!("{},{}", origem("alfa", ""), origem("beta", "")),
+            "",
+        );
+        s.ligar_guarda_de_databases();
+        s.so_os_databases_desta_origem("alfa", vec!["loja".into()]);
+        for _ in 0..5 {
+            let r = s.so_os_databases_desta_origem("beta", vec!["loja".into(), "b".into()]);
+            assert_eq!(r, vec!["b".to_string()], "o filtro mudou entre rodadas");
+        }
+        // Cinco rodadas, uma recusa anotada -- e UM avisado, que e o
+        // mecanismo: quem ja ouviu nao ouve de novo.
+        assert_eq!(recusas(&s, "beta").len(), 1);
+        let donos = s.dono_do_database.lock().unwrap();
+        let dono = donos.get("loja").expect("ninguem ficou com o loja");
+        assert_eq!(dono.origem, "alfa");
+        assert_eq!(
+            dono.avisadas.iter().cloned().collect::<Vec<_>>(),
+            vec!["beta".to_string()],
+            "o recado nao passou pelo registro de quem ja ouviu: ele sairia \
+             de novo a cada rodada"
+        );
+        drop(donos);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// **O teste do comportamento VELHO.** Com uma origem so -- o par 1<->1,
+    /// que e a configuracao mais comum que existe -- a guarda nem liga: o
+    /// mapa fica VAZIO (nenhum `lock`, nenhuma reivindicacao) e a lista volta
+    /// inteira. Guarda nova entra pedida, nao imposta, e instrumentacao
+    /// desligada custa zero.
+    #[test]
+    fn com_uma_origem_so_a_guarda_nem_liga() {
+        let d = dir("par");
+        let s = servidor(&d, &origem("master", "\"loja\""), "");
+        s.ligar_guarda_de_databases();
+        assert!(!s.ha_varias_origens.load(Ordering::Relaxed));
+        assert!(
+            s.dono_do_database.lock().unwrap().is_empty(),
+            "a guarda reivindicou num servidor de uma origem so"
+        );
+        let tudo = s.so_os_databases_desta_origem("master", vec!["loja".into(), "x".into()]);
+        assert_eq!(tudo, vec!["loja".to_string(), "x".to_string()]);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Com `cluster` a guarda NAO liga, e nao e detalhe: ali quem puxa e um
+    /// laco so, do master CORRENTE, e o nome da origem muda a cada eleicao
+    /// (`cluster:<id>`). Um dono guardado por nome recusaria ao master novo o
+    /// database do master velho -- a promocao inteira parando por causa de
+    /// uma guarda que nao era para ela.
+    #[test]
+    fn com_cluster_a_guarda_nao_liga() {
+        let d = dir("cluster");
+        let cluster = r#","cluster":{"id":"no1","janela_inatividade_s":30,
+              "nos":[{"id":"no1","endereco":"127.0.0.1","porta":5399},
+                     {"id":"no2","endereco":"127.0.0.1","porta":5398}]}"#;
+        let s = servidor(
+            &d,
+            &format!(
+                "{},{}",
+                origem("um", "\"loja\""),
+                origem("dois", "\"loja\"")
+            ),
+            cluster,
+        );
+        s.ligar_guarda_de_databases();
+        assert!(!s.ha_varias_origens.load(Ordering::Relaxed));
+        // Dois "masters" seguidos com nomes diferentes ficam os dois com o
+        // `loja`: e o que a promocao precisa.
+        for quem in ["cluster:no1", "cluster:no2"] {
+            assert_eq!(
+                s.so_os_databases_desta_origem(quem, vec!["loja".into()]),
+                vec!["loja".to_string()]
+            );
+        }
+        std::fs::remove_dir_all(&d).unwrap();
     }
 }
 
