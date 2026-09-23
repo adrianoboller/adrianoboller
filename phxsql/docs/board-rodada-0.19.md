@@ -33,7 +33,7 @@ Medido na hora, e a primeira metade é **defeito, não estado**:
 | 314 | ledger com cadeia **fica em v9**, e o motor **diz** o motivo | 23/09 |
 | 342 | **exigir a cifra do fio** quando a tabela tem coluna marcada | 23/09 |
 | 340 | saída **(d)**: selar a página do `.fts` — entra por aceite automático | 23/09 |
-| 289 | nanos com **avanço forçado**, 8 bytes, `u64` | 17/09 07:10 |
+| 289 | **DUAS colunas, 16 bytes** — contador (`rowstamp`) + relógio (`rowtime`) | 17/09 07:5x |
 | 290 | **passo** no esquema, **início** na identidade do nó | 17/09 07:10 |
 | 355 | recusar na **declaração**: ledger + coluna marcada não nasce | 18/09 |
 
