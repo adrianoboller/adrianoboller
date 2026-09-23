@@ -1,0 +1,19 @@
+[package]
+name = "phoenix-vpn"
+description = "Phoenix VPN: redes virtuais no estilo Radmin sobre OpenVPN, com cadastro em PostgreSQL"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "phxvpn"
+path = "src/main.rs"
+
+# Unica dependencia: o nucleo da casa (SHA-256, HMAC, PBKDF2, Ed25519, ASN.1,
+# XChaCha20-Poly1305, JSON). Nenhuma crate de fora -- a mesma petrea do PhxSql.
+[dependencies]
+phxsql-core = { path = "../phxsql/crates/phxsql-core" }
+
+# Workspace proprio: o phoenix-vpn nao e membro do workspace do PhxSql.
+[workspace]

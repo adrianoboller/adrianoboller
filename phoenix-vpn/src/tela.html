@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phoenix VPN</title>
+<style>
+:root{--fundo:#010418;--painel:#0a1122;--linha:#1c2742;--texto:#DDE2EB;--fraco:#8a93a8;
+--acento:#FF4D10;--ambar:#FFC43D;--verde:#3ecf8e;--amarelo:#f5c542;--vermelho:#ff5a5a;--azul:#5aa9ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--fundo);color:var(--texto);font:15px/1.45 "Exo 2",system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--linha);flex-wrap:wrap}
+header h1{font-size:18px;margin:0;letter-spacing:.5px}
+header h1 b{color:var(--acento)}
+header .sub{color:var(--fraco);font-size:13px}
+header .dir{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+main{max-width:980px;margin:0 auto;padding:16px}
+.cartao{background:var(--painel);border:1px solid var(--linha);border-radius:10px;padding:16px;margin-bottom:16px}
+.cartao h2{margin:0 0 12px;font-size:16px}
+fieldset{border:1px solid var(--linha);border-radius:8px;margin:0 0 12px;padding:10px 12px}
+legend{color:var(--ambar);font-size:13px;padding:0 6px}
+.grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.campo{display:flex;flex-direction:column;gap:4px}
+.campo span{font-size:12px;color:var(--fraco)}
+.campo input,.campo textarea{width:100%;background:#050a1c;color:var(--texto);border:1px solid var(--linha);border-radius:6px;padding:8px;font:inherit}
+.campo textarea{min-height:70px;font-family:ui-monospace,monospace;font-size:12px}
+.campo input:focus,.campo textarea:focus{outline:2px solid var(--acento);outline-offset:-1px}
+button{font:inherit;cursor:pointer;background:transparent;border:1px solid var(--azul);color:var(--azul);border-radius:6px;padding:7px 12px}
+button:hover{background:var(--azul);color:var(--fundo)}
+button.inclui{border-color:var(--verde);color:var(--verde)}button.inclui:hover{background:var(--verde);color:var(--fundo)}
+button.altera{border-color:var(--amarelo);color:var(--amarelo)}button.altera:hover{background:var(--amarelo);color:var(--fundo)}
+button.exclui{border-color:var(--vermelho);color:var(--vermelho)}button.exclui:hover{background:var(--vermelho);color:var(--fundo)}
+.msg{min-height:20px;margin:8px 0 0;font-size:13px}
+.msg.erro{color:var(--vermelho)}.msg.ok{color:var(--verde)}
+.rede{border:1px solid var(--linha);border-radius:8px;margin-bottom:10px;overflow:hidden}
+.rede>.topo{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#0d1630;flex-wrap:wrap}
+.rede .nome{font-weight:600}
+.rede .info{color:var(--fraco);font-size:12px}
+.rede .acoes{margin-left:auto;display:flex;gap:6px}
+.membro{display:flex;align-items:center;gap:10px;padding:6px 12px 6px 28px;border-top:1px solid var(--linha);font-size:14px}
+.membro .ip{margin-left:auto;font-family:ui-monospace,monospace;color:var(--ambar)}
+.ponto{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--fraco)}
+.ponto.on{background:var(--verde);border-color:var(--verde)}
+.vazio{color:var(--fraco);padding:12px}
+.selo{font-size:12px;border:1px solid var(--linha);border-radius:12px;padding:2px 8px;color:var(--fraco)}
+.selo.alerta{border-color:var(--amarelo);color:var(--amarelo)}
+dialog{background:var(--painel);color:var(--texto);border:1px solid var(--linha);border-radius:10px;max-width:460px;width:calc(100% - 32px)}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+.linha-botoes{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{text-align:left;padding:6px;border-bottom:1px solid var(--linha)}
+th{color:var(--fraco);font-weight:500;font-size:12px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <h1><b>Phoenix</b> VPN</h1>
+  <span class="sub" id="empresa-nome"></span>
+  <div class="dir" id="barra" hidden>
+    <span class="selo alerta" id="selo-cofre" hidden>cofre trancado</span>
+    <span class="selo" id="quem"></span>
+    <button class="inclui" id="b-criar">Criar rede</button>
+    <button id="b-entrar">Entrar na rede</button>
+    <button id="b-atualizar">Atualizar</button>
+    <button id="b-admin" hidden>Administração</button>
+    <button class="exclui" id="b-logout">Sair</button>
+  </div>
+</header>
+<main>
+
+<section class="cartao" id="tela-instalar" hidden>
+  <h2>Instalação</h2>
+  <form id="f-instalar">
+    <fieldset><legend>Empresa</legend><div class="grade">
+      <label class="campo"><span>Nome da empresa *</span><input name="empresa" required></label>
+      <label class="campo"><span>Finalidade</span><input name="finalidade"></label>
+      <label class="campo"><span>Responsável *</span><input name="responsavel" required></label>
+      <label class="campo"><span>E-mail *</span><input name="email" type="email" required></label>
+      <label class="campo"><span>Telefone</span><input name="telefone" type="tel"></label>
+    </div></fieldset>
+    <fieldset><legend>Administrador</legend><div class="grade">
+      <label class="campo"><span>Usuário admin *</span><input name="admin_usuario" required autocomplete="username"></label>
+      <label class="campo"><span>Senha admin * (mín. 8)</span><input name="admin_senha" type="password" required minlength="8" autocomplete="new-password"></label>
+      <label class="campo"><span>Senha mestre criptográfica * (mín. 12)</span><input name="senha_mestre" type="password" required minlength="12" autocomplete="new-password"></label>
+    </div></fieldset>
+    <fieldset><legend>Servidor</legend><div class="grade">
+      <label class="campo"><span>Nome do servidor *</span><input name="servidor_nome" required></label>
+      <label class="campo"><span>IP do servidor *</span><input name="servidor_ip" required></label>
+      <label class="campo"><span>DNS do servidor</span><input name="servidor_dns" placeholder="vpn.empresa.com.br"></label>
+    </div></fieldset>
+    <fieldset><legend>Certificado digital (opcional, PEM)</legend>
+      <label class="campo"><span>Cole o certificado da empresa — a VPN usa a autoridade própria gerada na instalação</span>
+      <textarea name="certificado_pem" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
+    </fieldset>
+    <p class="msg">A senha mestre cifra as chaves da VPN no banco e <b>não é gravada em lugar nenhum</b>. Sem ela o painel não emite acesso.</p>
+    <div class="linha-botoes"><button class="inclui" type="submit">Instalar</button></div>
+    <p class="msg" id="m-instalar"></p>
+  </form>
+</section>
+
+<section class="cartao" id="tela-login" hidden>
+  <h2>Entrar no painel</h2>
+  <form id="f-login"><div class="grade">
+    <label class="campo"><span>Usuário</span><input name="usuario" required autocomplete="username"></label>
+    <label class="campo"><span>Senha</span><input name="senha" type="password" required autocomplete="current-password"></label>
+  </div>
+  <div class="linha-botoes"><button type="submit">Entrar</button></div>
+  <p class="msg" id="m-login"></p></form>
+</section>
+
+<section id="tela-redes" hidden>
+  <div class="cartao" id="cartao-cofre" hidden>
+    <h2>Cofre trancado</h2>
+    <form id="f-cofre"><label class="campo"><span>Senha mestre</span><input name="senha_mestre" type="password" required></label>
+    <div class="linha-botoes"><button class="altera" type="submit">Destrancar</button></div>
+    <p class="msg" id="m-cofre"></p></form>
+  </div>
+  <div class="cartao"><h2>Minhas redes</h2><div id="lista-redes"></div><p class="msg" id="m-redes"></p></div>
+</section>
+
+<section class="cartao" id="tela-admin" hidden>
+  <h2>Usuários</h2>
+  <table><thead><tr><th>Login</th><th>E-mail</th><th>Admin</th></tr></thead><tbody id="t-usuarios"></tbody></table>
+  <form id="f-usuario"><div class="grade" style="margin-top:10px">
+    <label class="campo"><span>Login</span><input name="login" required></label>
+    <label class="campo"><span>Senha (mín. 8)</span><input name="senha" type="password" required minlength="8"></label>
+    <label class="campo"><span>E-mail</span><input name="email" type="email"></label>
+  </div><div class="linha-botoes"><button class="inclui" type="submit">Incluir usuário</button></div>
+  <p class="msg" id="m-usuario"></p></form>
+  <h2 style="margin-top:18px">Servidores</h2>
+  <table><thead><tr><th>Nome</th><th>IP</th><th>DNS</th><th>Redes</th></tr></thead><tbody id="t-servidores"></tbody></table>
+  <form id="f-servidor"><div class="grade" style="margin-top:10px">
+    <label class="campo"><span>Nome</span><input name="nome" required></label>
+    <label class="campo"><span>IP</span><input name="ip" required></label>
+    <label class="campo"><span>DNS</span><input name="dns"></label>
+  </div><div class="linha-botoes"><button class="inclui" type="submit">Incluir servidor</button></div>
+  <p class="msg" id="m-servidor"></p></form>
+  <div class="linha-botoes"><button id="b-voltar">Voltar às redes</button></div>
+</section>
+</main>
+
+<dialog id="d-rede">
+  <form id="f-rede" method="dialog">
+    <h2 id="d-titulo" style="margin-top:0">Criar rede</h2>
+    <label class="campo"><span>Nome da rede</span><input name="nome" required></label>
+    <label class="campo" style="margin-top:8px"><span>Senha da rede (mín. 6)</span><input name="senha" type="password" required minlength="6"></label>
+    <label class="campo" style="margin-top:8px" id="c-finalidade"><span>Finalidade</span><input name="finalidade"></label>
+    <p class="msg" id="m-rede"></p>
+    <div class="linha-botoes"><button type="button" id="d-cancelar">Cancelar</button><button class="inclui" type="submit" id="d-ok">Criar</button></div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let sessao = null;
+try { sessao = JSON.parse(sessionStorage.getItem("phxvpn") || "null"); } catch (_) {}
+
+async function api(metodo, rota, corpo) {
+  const cab = { "Content-Type": "application/json" };
+  if (sessao) cab.Authorization = "Bearer " + sessao.token;
+  const r = await fetch(rota, { method: metodo, headers: cab, body: corpo ? JSON.stringify(corpo) : undefined });
+  const j = await r.json().catch(() => ({ erro: "resposta ilegível do painel" }));
+  if (r.status === 401 && sessao && rota !== "/api/login") { sair(); }
+  if (!r.ok) throw new Error(j.erro || ("erro " + r.status));
+  return j;
+}
+function msg(id, texto, ok) { const m = $(id); m.textContent = texto || ""; m.className = "msg " + (ok ? "ok" : "erro"); }
+function dados(form) { return Object.fromEntries(new FormData(form).entries()); }
+function mostrar(tela) { for (const t of ["tela-instalar","tela-login","tela-redes","tela-admin"]) $(t).hidden = t !== tela; $("barra").hidden = !sessao; }
+function baixar(nome, texto) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([texto], { type: "application/x-openvpn-profile" }));
+  a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+}
+function sair() { if (sessao) api("POST", "/api/sair").catch(() => {}); sessao = null; try { sessionStorage.removeItem("phxvpn"); } catch (_) {} iniciar(); }
+
+async function iniciar() {
+  let e;
+  try { e = await api("GET", "/api/estado"); } catch (x) { document.body.textContent = "Painel indisponível: " + x.message; return; }
+  $("empresa-nome").textContent = e.empresa ? e.empresa.nome : "";
+  if (!e.instalado) return mostrar("tela-instalar");
+  if (!sessao) return mostrar("tela-login");
+  $("quem").textContent = sessao.login + (sessao.admin ? " · admin" : "");
+  $("b-admin").hidden = !sessao.admin;
+  $("selo-cofre").hidden = e.destrancado;
+  $("cartao-cofre").hidden = e.destrancado || !sessao.admin;
+  mostrar("tela-redes");
+  carregarRedes();
+}
+
+async function carregarRedes() {
+  const caixa = $("lista-redes"); caixa.textContent = "";
+  let redes;
+  try { redes = await api("GET", "/api/redes"); } catch (x) { return msg("m-redes", x.message); }
+  if (!redes.length) { const v = document.createElement("div"); v.className = "vazio"; v.textContent = "Nenhuma rede ainda. Crie uma ou entre numa existente."; caixa.appendChild(v); return; }
+  for (const r of redes) {
+    const bloco = document.createElement("div"); bloco.className = "rede";
+    const topo = document.createElement("div"); topo.className = "topo";
+    const nome = document.createElement("span"); nome.className = "nome"; nome.textContent = r.nome;
+    const info = document.createElement("span"); info.className = "info";
+    info.textContent = `${r.subrede} · porta ${r.porta} · ${r.membros} membro(s) · servidor ${r.servidor}` + (r.meu_ip ? ` · meu IP ${r.meu_ip}` : "") + (r.finalidade ? ` · ${r.finalidade}` : "");
+    const acoes = document.createElement("span"); acoes.className = "acoes";
+    if (r.meu_ip) {
+      const b = document.createElement("button"); b.className = "exclui"; b.textContent = "Sair da rede";
+      b.onclick = async () => { if (!confirm(`Sair da rede «${r.nome}»?`)) return; try { await api("POST", "/api/redes/sair", { rede_id: r.id }); carregarRedes(); } catch (x) { msg("m-redes", x.message); } };
+      acoes.appendChild(b);
+    }
+    topo.append(nome, info, acoes); bloco.appendChild(topo);
+    try {
+      const membros = await api("POST", "/api/redes/membros", { rede_id: r.id });
+      for (const m of membros) {
+        const l = document.createElement("div"); l.className = "membro";
+        const p = document.createElement("span"); p.className = "ponto" + (m.online ? " on" : ""); p.title = m.online ? "conectado" : "desconectado";
+        const n = document.createElement("span"); n.textContent = m.login;
+        const ip = document.createElement("span"); ip.className = "ip"; ip.textContent = m.ip;
+        l.append(p, n, ip); bloco.appendChild(l);
+      }
+    } catch (_) {}
+    caixa.appendChild(bloco);
+  }
+}
+
+let modo = "criar";
+function abrirDialogo(m) {
+  modo = m; $("f-rede").reset(); msg("m-rede", "");
+  $("d-titulo").textContent = m === "criar" ? "Criar rede" : "Entrar na rede";
+  $("d-ok").textContent = m === "criar" ? "Criar" : "Entrar";
+  $("d-ok").className = m === "criar" ? "inclui" : "";
+  $("c-finalidade").hidden = m !== "criar";
+  $("d-rede").showModal();
+}
+$("b-criar").onclick = () => abrirDialogo("criar");
+$("b-entrar").onclick = () => abrirDialogo("entrar");
+$("d-cancelar").onclick = () => $("d-rede").close();
+$("f-rede").onsubmit = async (ev) => {
+  ev.preventDefault();
+  try {
+    const r = await api("POST", modo === "criar" ? "/api/redes" : "/api/redes/entrar", dados(ev.target));
+    baixar(r.arquivo, r.perfil); $("d-rede").close(); carregarRedes();
+  } catch (x) { msg("m-rede", x.message); }
+};
+$("b-atualizar").onclick = iniciar;
+$("b-logout").onclick = sair;
+$("b-voltar").onclick = iniciar;
+$("b-admin").onclick = async () => { mostrar("tela-admin"); carregarAdmin(); };
+
+async function carregarAdmin() {
+  const tu = $("t-usuarios"), ts = $("t-servidores"); tu.textContent = ""; ts.textContent = "";
+  const linha = (corpo, valores) => { const tr = document.createElement("tr"); for (const v of valores) { const td = document.createElement("td"); td.textContent = v; tr.appendChild(td); } corpo.appendChild(tr); };
+  try { for (const u of await api("GET", "/api/usuarios")) linha(tu, [u.login, u.email, u.admin ? "sim" : "não"]); } catch (x) { msg("m-usuario", x.message); }
+  try { for (const s of await api("GET", "/api/servidores")) linha(ts, [s.nome, s.ip, s.dns, String(s.redes)]); } catch (x) { msg("m-servidor", x.message); }
+}
+$("f-usuario").onsubmit = async (ev) => { ev.preventDefault(); try { await api("POST", "/api/usuarios", dados(ev.target)); ev.target.reset(); msg("m-usuario", "usuário incluído", true); carregarAdmin(); } catch (x) { msg("m-usuario", x.message); } };
+$("f-servidor").onsubmit = async (ev) => { ev.preventDefault(); try { await api("POST", "/api/servidores", dados(ev.target)); ev.target.reset(); msg("m-servidor", "servidor incluído", true); carregarAdmin(); } catch (x) { msg("m-servidor", x.message); } };
+$("f-cofre").onsubmit = async (ev) => { ev.preventDefault(); try { await api("POST", "/api/destrancar", dados(ev.target)); iniciar(); } catch (x) { msg("m-cofre", x.message); } };
+$("f-login").onsubmit = async (ev) => {
+  ev.preventDefault();
+  try { sessao = await api("POST", "/api/login", dados(ev.target)); try { sessionStorage.setItem("phxvpn", JSON.stringify(sessao)); } catch (_) {} iniciar(); }
+  catch (x) { msg("m-login", x.message); }
+};
+$("f-instalar").onsubmit = async (ev) => {
+  ev.preventDefault(); msg("m-instalar", "instalando… (gera a autoridade certificadora e deriva a chave mestre)", true);
+  try { await api("POST", "/api/instalar", dados(ev.target)); msg("m-instalar", "instalado", true); iniciar(); }
+  catch (x) { msg("m-instalar", x.message); }
+};
+iniciar();
+</script>
+</body>
+</html>
