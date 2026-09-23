@@ -44,6 +44,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] P2P: rol de membros assinado (Ed25519 da rede) e PSK da senha da rede
 - [ ] P2P: descoberta — convite, broadcast na LAN e «farol» (membro alcançável que perfura NAT e faz relé)
 - [ ] Segurança M3 (resto): OpenVPN sem root (`user`/`group`) e `tls-crypt-v2` — pedem o binário `openvpn` para provar, ausente aqui
+- [ ] Segurança no Windows: ACL nos arquivos com chave (hoje herdam a do diretório; no Linux nascem 0600)
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
 - [ ] P2P: convite (`phxvpn p2p convidar`) e a tela
 - [ ] P2P no Windows: TAP-Windows6 em modo TUN (CreateFileW + DeviceIoControl, adaptador próprio pelo `tapctl.exe` do OpenVPN) — ~250–350 linhas, estimado

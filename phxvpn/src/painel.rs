@@ -887,6 +887,10 @@ fn gravar(caminho: &Path, dados: &[u8], secreto: bool) -> R<()> {
         f.set_permissions(fs::Permissions::from_mode(0o600))
             .map_err(|e| format!("permissao de {}: {e}", caminho.display()))?;
     }
+    // No Windows a permissao nao se restringe aqui: falta escrever a ACL
+    // (pendencia no PHXVPN.md). O arquivo herda a do diretorio.
+    #[cfg(not(unix))]
+    let _ = secreto;
     f.write_all(dados)
         .map_err(|e| format!("gravar {}: {e}", caminho.display()))
 }
