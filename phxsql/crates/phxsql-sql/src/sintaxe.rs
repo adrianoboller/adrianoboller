@@ -220,6 +220,109 @@ fn finalizar_projecao(
     }
 }
 
+/// O que uma parte de `UNION` pode ser, e a recusa NOMEADA do resto.
+///
+/// `Err` traz a mensagem crua; quem chama poe a posicao do texto.
+///
+/// # O que existe hoje, e por que a lista e tao curta
+///
+/// A op `unir` recebe uma lista de NOMES de tabela: ela abre cada tabela
+/// INTEIRA (`Servidor::materializar`), confere que os esquemas empilham
+/// (`juncao::conferir_uniao`) e empilha. Nao ha `onde`, nao ha projecao, nao
+/// ha ordem -- entao `SELECT * FROM a UNION SELECT * FROM b` traduz 1:1, e
+/// qualquer coisa alem disso nao tem para onde ir.
+///
+/// **Isto nao vai ficar assim, e por isso a recusa aponta onde a conta esta.**
+/// O braco do `UNION` e um SELECT nos quatro motores -- nenhum deles tem
+/// sequer sintaxe para unir dois nomes de tabela --, e o pedido 393 mede o que
+/// custa: filtrar dentro do braco contra unir inteiras e filtrar fora. Quem
+/// muda a forma de uma op do protocolo e o dono, nao esta camada.
+fn conferir_braco_da_uniao(s: &Selecao, i: usize) -> Result<()> {
+    let ordinal = i + 1;
+    if s.ordem.is_some() || !s.ordem_lista.is_empty() || s.limite.is_some() || s.salto > 0 {
+        return Err(PhxError::Esquema(format!(
+            "ORDER BY/LIMIT/OFFSET num UNION nao tem substrato (parte {ordinal}): a op \
+             `unir` nao tem campo de ordem, e o `max` dela e o teto de memoria do \
+             servidor, nao um LIMIT -- usa-lo como limite faria a resposta dizer \
+             `truncado` por um corte que quem perguntou pediu"
+        )));
+    }
+    if !matches!(s.projecao, Projecao::Tudo) || s.onde.is_some() || !s.agrupar_por.is_empty() {
+        return Err(PhxError::Esquema(format!(
+            "UNION entre SELECTs com filtro ou projecao nao tem substrato (parte \
+             {ordinal}): a op `unir` recebe TABELAS inteiras, e o pedido 393 mede o \
+             que custa mudar isso. O que passa hoje e `SELECT * FROM a UNION [ALL] \
+             SELECT * FROM b`"
+        )));
+    }
+    Ok(())
+}
+
+/// Os nomes pelos quais o `ORDER BY` de um `DISTINCT` pode chamar uma coluna
+/// projetada: o nome DELA e o apelido do `AS`, quando ha um.
+///
+/// Os dois valem porque os dois querem dizer a mesma coluna, e recusar um
+/// deles seria inventar uma regra que nenhum dos quatro motores tem. Quem
+/// traduz o apelido de volta para a coluna e `traduzir::plano_agrupar` -- o
+/// `agrupar` conhece a COLUNA, nao o apelido.
+fn nomes_aceitos_na_ordem(p: &Projecao) -> Vec<String> {
+    match p {
+        Projecao::Colunas(cs) => cs
+            .iter()
+            .flat_map(|c| {
+                let mut v = vec![c.nome.clone()];
+                if let Some(a) = &c.apelido {
+                    v.push(a.clone());
+                }
+                v
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// O que um `SELECT DISTINCT` pode ser, e a recusa NOMEADA do que nao pode.
+///
+/// `Err` traz a mensagem crua; quem chama poe a posicao do texto.
+///
+/// # Por que `SELECT DISTINCT *` recusa, com o numero
+///
+/// O tradutor nao ve esquema nenhum -- ele recebe os INDICES da tabela, nao
+/// as colunas --, entao nao tem como montar a lista de agrupamento que o `*`
+/// significa. E mesmo que visse: medido, `SELECT * FROM clientes` devolve
+/// `rowid, id, nome, cidade, softdeleted, rownum`, e `rowid`/`rownum` sao
+/// unicos por linha. Agrupar por tudo o que o `*` mostra nunca tiraria uma
+/// linha -- medido, 3 linhas viram 3 grupos --, e ainda pagaria a tabela de
+/// grupos inteira em memoria. Entregar isso seria lento e calado; recusar
+/// custa uma frase e o nome das colunas.
+fn conferir_distinto(p: &Projecao, agrupar_por: &[String], tem_having: bool) -> Result<()> {
+    if !agrupar_por.is_empty() || tem_having {
+        return Err(PhxError::Esquema(
+            "DISTINCT com GROUP BY/HAVING nao tem substrato: os dois viram a MESMA \
+             operacao `agrupar`, e empilhar um no outro pediria um segundo \
+             agrupamento sobre o resultado do primeiro. Um GROUP BY ja devolve \
+             uma linha por grupo -- tire o DISTINCT"
+                .into(),
+        ));
+    }
+    match p {
+        Projecao::Colunas(_) => Ok(()),
+        Projecao::Tudo => Err(PhxError::Esquema(
+            "SELECT DISTINCT * nao tem substrato: o `*` desta casa carrega as colunas \
+             de sistema (`rowid`, `softdeleted`, `rownum`), e o `rownum` e unico por \
+             linha -- agrupar por tudo o que o `*` mostra nao tiraria repetida \
+             nenhuma, so pagaria a tabela de grupos. Nomeie as colunas"
+                .into(),
+        )),
+        Projecao::Contagem | Projecao::Agregada(_) => Err(PhxError::Esquema(
+            "DISTINCT com funcao agregada nao tem substrato: o agregado ja vira \
+             `agrupar`, e o DISTINCT por cima pediria um segundo agrupamento. \
+             COUNT(DISTINCT coluna) -- que e outra pergunta -- existe e passa"
+                .into(),
+        )),
+    }
+}
+
 /// Para onde o `FROM` aponta, ja separado nas tres partes que o motor usa.
 ///
 /// O enderecamento com `schema` ja funciona hoje em toda operacao do
@@ -288,6 +391,16 @@ pub struct Ordenacao {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Selecao {
+    /// `SELECT DISTINCT` -- so o SELECT SIMPLES de nivel superior o liga
+    /// (`Analisador::comando`). Ele vira `agrupar` com as colunas projetadas
+    /// em `por`, porque agrupar por N colunas E eliminar o repetido delas.
+    ///
+    /// Quem constroi uma `Selecao` a mao (subconsulta do `FROM`, corpo de
+    /// CTE, lado de um `EXISTS`) a deixa em `false`, e `Analisador::selecao`
+    /// -- a porta por onde TODAS essas passam -- recusa a palavra nomeando.
+    /// A capacidade se liga num lugar so, e por isso nao ha um segundo lugar
+    /// onde esquece-la vire resposta errada calada.
+    pub distinto: bool,
     pub projecao: Projecao,
     pub de: Alvo,
     pub onde: Option<Onde>,
@@ -307,6 +420,24 @@ pub struct Selecao {
     pub salto: u64,
 }
 
+/// `SELECT … UNION [ALL] SELECT …` -- duas ou mais partes empilhadas.
+///
+/// # Por que as partes sao `Selecao` e nao `Alvo`
+///
+/// Porque e a `Selecao` que sabe dizer o que a parte pediu ALEM da tabela --
+/// e e disso que sai a recusa NOMEADA. A op `unir` de hoje recebe uma lista
+/// de NOMES de tabela (`servidor.rs::op_unir`): ela abre cada tabela inteira,
+/// confere os esquemas e empilha. Nao ha `onde`, nao ha projecao, nao ha
+/// ordem. Guardar so o `Alvo` jogaria fora o `WHERE` que alguem escreveu, e a
+/// recusa nao teria como dizer o que foi ignorado.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Uniao {
+    pub partes: Vec<Selecao>,
+    /// `true` e `UNION ALL`. E UM para a lista inteira porque o `modo` do
+    /// pedido `unir` e um so -- misturar as duas formas recusa nomeando.
+    pub tudo: bool,
+}
+
 /// O que a op `sql` recebe como instrucao de DADO: uma consulta, ou um dos
 /// tres verbos de escrita por chave (`dml.rs`). Transacao, diretiva, rotina
 /// e usuario nao passam por aqui -- sao comandos de sessao ou de catalogo, e
@@ -314,6 +445,9 @@ pub struct Selecao {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Comando {
     Selecao(Selecao),
+    /// `SELECT … UNION [ALL] SELECT …`. Vira a op `unir`, que o protocolo ja
+    /// tem -- ela e a porta dos sete cartoes de Venn da tela.
+    Uniao(Uniao),
     /// `WITH`, subconsulta no `FROM`, `IN (SELECT …)`, junção ou janela --
     /// qualquer `SELECT` que precisa de COMPOSICAO. Vira a op `consultar`
     /// (`crate::consulta`), nunca `buscar`/`varrer`/`agrupar` sozinhos.
@@ -340,7 +474,7 @@ impl Comando {
     /// O verbo, para as mensagens.
     pub fn verbo(&self) -> &'static str {
         match self {
-            Comando::Selecao(_) | Comando::Consulta(_) => "SELECT",
+            Comando::Selecao(_) | Comando::Consulta(_) | Comando::Uniao(_) => "SELECT",
             Comando::Insercao(_) => "INSERT",
             Comando::Atualizacao(_) => "UPDATE",
             Comando::Exclusao(_) => "DELETE",
@@ -367,6 +501,11 @@ impl Comando {
         match self {
             Comando::Selecao(s) => &s.de,
             Comando::Consulta(c) => &c.de.de,
+            // A PRIMEIRA parte, como os nomes de coluna do resultado. Quem
+            // precisa das outras e `traduzir_uniao`, que le a lista inteira
+            // -- e e por isso que a permissao da uniao nao pode sair daqui:
+            // ver `op_unir`, que confere tabela por tabela.
+            Comando::Uniao(u) => &u.partes[0].de,
             Comando::Insercao(i) => &i.em,
             Comando::Atualizacao(a) => &a.em,
             Comando::Exclusao(e) => &e.de,
@@ -543,6 +682,13 @@ impl Analisador {
         bate
     }
 
+    /// A proxima palavra e esta, SEM consumir.
+    pub(crate) fn espiar_palavra(&self, palavra: &str) -> bool {
+        self.espiar()
+            .and_then(|s| s.token.palavra_chave())
+            .is_some_and(|p| p == palavra)
+    }
+
     pub(crate) fn exigir_palavra(&mut self, palavra: &str) -> Result<()> {
         if self.aceitar_palavra(palavra) {
             return Ok(());
@@ -614,11 +760,52 @@ impl Analisador {
             "SELECT" => {
                 self.i += 1;
                 if self.precisa_de_consulta_composta() {
+                    // A sondagem olha os tokens sem consumir, entao um
+                    // DISTINCT na frente nao a atrapalha -- mas se ela disse
+                    // que a consulta e COMPOSTA, o DISTINCT nao tem onde
+                    // acontecer, e a recusa nomeia isso aqui em vez de virar
+                    // um "esperava coluna" no meio da projecao composta.
+                    if self.espiar_palavra("DISTINCT") {
+                        return Err(lexico::erro(
+                            self.posicao_atual(),
+                            "DISTINCT com junção, subconsulta, CTE ou janela nao tem \
+                             substrato: essas formas viram a op `consultar`, que compoe \
+                             mas nao elimina repetido. Num SELECT de UMA tabela o \
+                             DISTINCT passa",
+                        ));
+                    }
+                    // Idem para o UNION: se o comando vai pela gramatica
+                    // composta, a uniao nao tem onde acontecer. Sem esta
+                    // recusa, o comando seguiria e morreria la na frente com
+                    // "sobrou UNION depois do fim do comando" -- verdade que
+                    // nao ensina nada.
+                    if self.ha_union_no_nivel_externo() {
+                        return Err(lexico::erro(
+                            self.posicao_atual(),
+                            "UNION com junção, subconsulta, CTE ou janela nao tem \
+                             substrato: a op `unir` empilha TABELAS inteiras, e essas \
+                             formas viram a op `consultar`, que nao empilha. A uniao \
+                             que passa hoje e `SELECT * FROM a UNION [ALL] SELECT * \
+                             FROM b`",
+                        ));
+                    }
                     Ok(Comando::Consulta(Box::new(
                         self.consulta_apos_select(None)?,
                     )))
                 } else {
-                    Ok(Comando::Selecao(self.selecao()?))
+                    // O UNICO lugar que liga o `distinto`. Ver `Selecao`.
+                    let primeira = if self.aceitar_palavra("DISTINCT") {
+                        self.selecao_com(true)?
+                    } else {
+                        self.selecao()?
+                    };
+                    // O `UNION` sobra do `selecao` porque nao e clausula dela
+                    // -- e a junta entre dois SELECT inteiros.
+                    if self.espiar_palavra("UNION") {
+                        self.uniao_apos(primeira)
+                    } else {
+                        Ok(Comando::Selecao(primeira))
+                    }
                 }
             }
             // WITH x AS (SELECT ...) SELECT ... -- so uma CTE, nao
@@ -743,14 +930,94 @@ impl Analisador {
         Ok(Comando::ExcluirVisao { nome })
     }
 
+    /// Ha um `UNION` fora de parenteses daqui ate o fim do comando?
+    ///
+    /// Sem consumir nada, como `precisa_de_consulta_composta` -- e pela mesma
+    /// razao: a decisao de qual gramatica usar e tomada antes de ler.
+    pub(crate) fn ha_union_no_nivel_externo(&self) -> bool {
+        let mut profundidade = 0i32;
+        for s in &self.s[self.i..] {
+            match &s.token {
+                Token::AbreParen => profundidade += 1,
+                Token::FechaParen => profundidade -= 1,
+                Token::PontoEVirgula if profundidade == 0 => break,
+                _ if profundidade == 0 => {
+                    if s.token.palavra_chave().as_deref() == Some("UNION") {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Depois da primeira parte, com o cursor no `UNION`.
+    fn uniao_apos(&mut self, primeira: Selecao) -> Result<Comando> {
+        let mut partes = vec![primeira];
+        let mut tudo: Option<bool> = None;
+        while self.aceitar_palavra("UNION") {
+            let pos = self.posicao_atual();
+            let este = self.aceitar_palavra("ALL");
+            match tudo {
+                None => tudo = Some(este),
+                Some(anterior) if anterior != este => {
+                    // O pedido `unir` tem UM `modo` para a lista inteira.
+                    // Aceitar a mistura obrigaria a escolher um dos dois
+                    // calado, e o que se perderia e justamente a linha
+                    // repetida -- o resultado errado com cara de certo.
+                    return Err(lexico::erro(
+                        pos,
+                        "misturar UNION e UNION ALL no mesmo comando nao tem substrato: \
+                         a op `unir` tem UM modo para a lista toda. Escreva os dois \
+                         comandos separados, ou use o mesmo modo nas duas juntas",
+                    ));
+                }
+                _ => {}
+            }
+            self.exigir_palavra("SELECT")?;
+            if self.espiar_palavra("DISTINCT") {
+                return Err(lexico::erro(
+                    self.posicao_atual(),
+                    "DISTINCT dentro de um UNION nao tem substrato: o `unir` empilha \
+                     tabelas inteiras, e o proprio UNION (sem ALL) ja elimina repetido",
+                ));
+            }
+            partes.push(self.selecao()?);
+        }
+        // Sem posicao no texto, como `finalizar_projecao` e `conferir_distinto`:
+        // o defeito nao esta num TOKEN, esta na forma da parte inteira.
+        for (i, p) in partes.iter().enumerate() {
+            conferir_braco_da_uniao(p, i)?;
+        }
+        Ok(Comando::Uniao(Uniao {
+            partes,
+            tudo: tudo.unwrap_or(false),
+        }))
+    }
+
+    /// Um `SELECT` simples que NAO pode ser `DISTINCT`.
+    ///
+    /// Esta e a porta por onde passam TODAS as selecoes de dentro de uma
+    /// consulta composta -- corpo de CTE, subconsulta do `FROM`, lado de um
+    /// `IN`/escalar/`EXISTS`. Nenhuma delas tem por onde eliminar repetido: o
+    /// `traduzir_consulta` usa o PEDIDO de cada pedaco e descarta a `saida`
+    /// dele, entao a coluna de contagem que o `agrupar` injeta vazaria para o
+    /// resultado de fora. O nivel superior chama `selecao_com(true)` direto.
     pub(crate) fn selecao(&mut self) -> Result<Selecao> {
-        if self.aceitar_palavra("DISTINCT") {
+        if self.espiar_palavra("DISTINCT") {
             return Err(lexico::erro(
                 self.posicao_atual(),
-                "DISTINCT nao tem substrato: nenhuma operacao do protocolo elimina \
-                 repetido numa varredura",
+                "DISTINCT so existe no SELECT SIMPLES de nivel superior, onde vira \
+                 `agrupar` pelas colunas projetadas. Aqui dentro (CTE, subconsulta do \
+                 FROM, IN/EXISTS/escalar, junção ou janela) ele ainda nao tem \
+                 substrato: o `consultar` compoe, mas nao elimina repetido",
             ));
         }
+        self.selecao_com(false)
+    }
+
+    fn selecao_com(&mut self, distinto: bool) -> Result<Selecao> {
         let bruta = self.projecao()?;
         self.exigir_palavra("FROM")?;
         let de = self.alvo()?;
@@ -781,7 +1048,7 @@ impl Analisador {
         };
 
         let tendo = if self.aceitar_palavra("HAVING") {
-            let tokens = self.capturar_ate_clausula(&["ORDER", "LIMIT", "OFFSET"])?;
+            let tokens = self.capturar_ate_clausula(&["ORDER", "LIMIT", "OFFSET", "UNION"])?;
             if tokens.is_empty() {
                 return Err(lexico::erro(
                     self.posicao_atual(),
@@ -794,16 +1061,50 @@ impl Analisador {
         };
 
         let projecao = finalizar_projecao(bruta, &agrupar_por, tendo.is_some())?;
+        if distinto {
+            // Sem posicao no texto, como `finalizar_projecao`: o defeito nao
+            // esta num TOKEN, esta na forma inteira do SELECT.
+            conferir_distinto(&projecao, &agrupar_por, tendo.is_some())?;
+        }
         let e_agrupada = matches!(projecao, Projecao::Agregada(_));
 
         let mut ordem = None;
         let mut ordem_lista = Vec::new();
         if self.aceitar_palavra("ORDER") {
             self.exigir_palavra("BY")?;
-            if e_agrupada {
+            // O `DISTINCT` cai no MESMO `agrupar` da projecao agregada, e o
+            // resultado dele ja esta em memoria: ordenar por varias colunas
+            // ali nao pede indice nenhum, ao contrario da varredura.
+            if e_agrupada || distinto {
                 ordem_lista = self.lista_de_ordenacoes()?;
             } else {
                 ordem = Some(self.uma_ordenacao_restrita()?);
+            }
+        }
+        if distinto {
+            // A regra dos quatro motores: num `SELECT DISTINCT`, o `ORDER BY`
+            // so alcanca coluna que esta na lista projetada. Ordenar por uma
+            // coluna de FORA dela nao tem resposta unica -- o grupo tem varios
+            // valores dela --, e os quatro recusam. Recusar aqui nomeia a
+            // coluna e a lista; deixar passar cairia na recusa generica do
+            // `agrupar`, que fala de `"por"` e de apelido de agregado, um
+            // vocabulario que quem escreveu SQL nao tem como reconhecer.
+            let rotulos = nomes_aceitos_na_ordem(&projecao);
+            for o in &ordem_lista {
+                if !rotulos
+                    .iter()
+                    .any(|r| crate::traduzir::igual_sem_caso(r, &o.coluna))
+                {
+                    return Err(lexico::erro(
+                        self.posicao_atual(),
+                        &format!(
+                            "o ORDER BY de um SELECT DISTINCT so alcanca coluna da \
+                             lista projetada, e {:?} nao esta la. A lista e: {}",
+                            o.coluna,
+                            rotulos.join(", ")
+                        ),
+                    ));
+                }
             }
         }
 
@@ -820,6 +1121,7 @@ impl Analisador {
         }
 
         Ok(Selecao {
+            distinto,
             projecao,
             de,
             onde,
@@ -1105,8 +1407,12 @@ impl Analisador {
     /// decidido -- ele nunca ve a tentativa que falhou.
     pub(crate) fn onde_da_selecao(&mut self) -> Result<Onde> {
         let pos = self.posicao_atual();
+        // `UNION` entra nas paradas junto das clausulas: sem ele,
+        // `WHERE x = 1 UNION SELECT ...` engoliria o segundo SELECT inteiro
+        // para dentro da expressao, e a recusa falaria de uma expressao que o
+        // motor nao le em vez de falar do UNION que alguem escreveu.
         let tokens =
-            self.capturar_ate_clausula(&["GROUP", "HAVING", "ORDER", "LIMIT", "OFFSET"])?;
+            self.capturar_ate_clausula(&["GROUP", "HAVING", "ORDER", "LIMIT", "OFFSET", "UNION"])?;
         if tokens.is_empty() {
             return Err(lexico::erro(pos, "esperava uma condicao depois de WHERE"));
         }
@@ -1376,15 +1682,31 @@ mod testes {
     // (agora de PASSAR) esta em
     // `count_de_coluna_sem_distinct_vira_agregado_de_contagem`. INSERT,
     // UPDATE e DELETE sairam daqui no dia em que passaram a existir: as
-    // recusas DELES moram em `dml.rs`, uma por falta. So sobrou DISTINCT --
-    // um `for` de um elemento so seria a mesma coisa por um caminho mais
-    // longo.
+    // recusas DELES moram em `dml.rs`, uma por falta.
+    //
+    // DISTINCT saiu no dia em que ganhou substrato, e o teste virou o PAR
+    // dele: ele PASSA no SELECT simples e continua recusando onde nao ha por
+    // onde. A lista ficou vazia -- e uma lista vazia se escreve como lista
+    // vazia, porque uma que enumera menos casos do que existem e o defeito
+    // que esta casa mais paga. A prova do que continua faltando mora onde a
+    // falta mora: `consulta.rs` (WITH RECURSIVE, correlacao que nao e
+    // igualdade, EXISTS nao correlacionado) e `traduzir.rs` (WHERE de faixa
+    // sem indice, OFFSET com agrupamento).
     #[test]
-    fn o_que_falta_recusa_pelo_nome() {
-        let e = analisar("SELECT DISTINCT a FROM t")
-            .unwrap_err()
-            .to_string();
-        assert!(e.contains("DISTINCT"), "{e}");
+    fn o_distinct_passa_no_select_simples_e_recusa_onde_nao_ha_por_onde() {
+        // PASSA, e vira `agrupar` -- ver `traduzir::testes`.
+        let s = analisar("SELECT DISTINCT a FROM t").unwrap();
+        assert!(s.distinto);
+
+        // E continua recusando, NOMEANDO, nas tres formas sem substrato.
+        for sql in [
+            "SELECT DISTINCT * FROM t",
+            "SELECT DISTINCT COUNT(*) FROM t",
+            "SELECT DISTINCT a FROM t GROUP BY a",
+        ] {
+            let e = analisar(sql).unwrap_err().to_string();
+            assert!(e.contains("substrato"), "{sql} -> {e}");
+        }
     }
 
     // ------------------------------------------- item 2: WHERE-expressao

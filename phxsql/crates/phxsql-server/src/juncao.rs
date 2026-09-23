@@ -616,9 +616,93 @@ pub fn conferir_uniao(esquemas: &[&Schema]) -> Result<()> {
     Ok(())
 }
 
+/// O tipo do resultado de uma coluna da união, levando em conta os DOIS lados.
+///
+/// # Por que não basta o tipo da primeira parte
+///
+/// Porque o tipo não é rótulo: para `Decimal` ele é a ESCALA, e a escala é o
+/// que dá sentido ao inteiro guardado. Um cabeçalho de escala 2 lendo um valor
+/// de escala 4 devolve o número cem vezes maior -- medido, 10,5000 saindo como
+/// 1050,00 e 10,50 saindo como 0,1050, sem erro e sem aviso.
+///
+/// Os três motores maduros levam em conta todos os braços (PG converte ao
+/// candidato comum; MySQL e MariaDB dizem, com essas palavras, que o tipo «leva
+/// em conta os valores de todos os blocos»): 3 de 3, aceite automático, e nada
+/// nosso se opõe.
+///
+/// `conferir_uniao` já garantiu que as duas são da mesma FAMÍLIA -- isto aqui
+/// só escolhe, dentro dela, quem cabe nos dois.
+fn mais_largo(a: ColumnType, b: ColumnType) -> ColumnType {
+    use ColumnType::*;
+    match (a, b) {
+        // O par que corrompe: a maior escala cabe na menor, nunca o contrário.
+        (
+            Decimal {
+                precisao: pa,
+                escala: ea,
+            },
+            Decimal {
+                precisao: pb,
+                escala: eb,
+            },
+        ) => Decimal {
+            precisao: pa.max(pb),
+            escala: ea.max(eb),
+        },
+        // Inteiro contra decimal: o decimal manda, e o inteiro vira ele. É o
+        // mesmo que o PostgreSQL faz -- o candidato é o que recebe os dois sem
+        // perder dígito.
+        (d @ Decimal { .. }, _) | (_, d @ Decimal { .. }) => d,
+        // Texto de larguras diferentes: a maior. Não corrompe valor nenhum (o
+        // texto sai como texto), mas um cabeçalho que promete 10 onde chegam 20
+        // mente sobre a coluna para quem cria tabela a partir dela.
+        (Str(x), Str(y)) => Str(x.max(y)),
+        (Memo, Str(_)) | (Str(_), Memo) => Memo,
+        // O resto: o da primeira parte, como os nomes. Dentro de uma mesma
+        // família, os inteiros e os reais saem como número no JSON, e trocar
+        // `Int4` por `Int8` não muda um dígito do que quem pergunta lê.
+        _ => a,
+    }
+}
+
+/// Põe o valor na forma que o TIPO do cabeçalho diz.
+///
+/// Hoje só o `Decimal` precisa disto, e por um motivo de formato: ele é o único
+/// cujo valor guardado depende do TIPO para ser lido (o inteiro escalado). Os
+/// outros se leem sozinhos, e por isso esta função não os toca.
+///
+/// `de` é o tipo da parte de onde o valor veio -- sem ele não há como saber por
+/// quanto multiplicar. `None` quando a linha é mais curta que o esquema (coluna
+/// nova), e aí não há valor para converter.
+fn converter_para(v: &mut Value, de: Option<ColumnType>, alvo: ColumnType) {
+    let ColumnType::Decimal { escala: para, .. } = alvo else {
+        return;
+    };
+    match (&*v, de) {
+        // O par que corrompia: 10,50 em escala 2 (`1050`) vira 10,5000 em
+        // escala 4 (`105000`). `mais_largo` garante `origem <= para`, e o
+        // caminho contrário não se faz calado -- perderia dígito.
+        (Value::Decimal(n), Some(ColumnType::Decimal { escala: origem, .. })) => {
+            if origem < para {
+                *v = Value::Decimal(*n * potencia_de_dez(para - origem));
+            }
+        }
+        // Inteiro que vai para uma coluna decimal: 10 na escala 2 é `1000`.
+        (Value::Int(n), _) => *v = Value::Decimal(i128::from(*n) * potencia_de_dez(para)),
+        (Value::UInt(n), _) => *v = Value::Decimal(i128::from(*n) * potencia_de_dez(para)),
+        _ => {}
+    }
+}
+
+/// A potência de dez que a escala pede, com teto no que cabe num `i128`.
+fn potencia_de_dez(escala: u8) -> i128 {
+    10i128.pow(u32::from(escala.min(38)))
+}
+
 /// Empilha as partes.
 ///
-/// Os nomes de coluna saem da PRIMEIRA parte, como no SQL.
+/// Os NOMES de coluna saem da PRIMEIRA parte, como no SQL; o TIPO leva em
+/// conta todas -- ver [`mais_largo`].
 pub fn unir(
     partes: &mut [(&mut dyn Iterador, &Schema)],
     modo: Uniao,
@@ -628,18 +712,50 @@ pub fn unir(
     conferir_uniao(&esquemas)?;
     let primeiro = esquemas[0];
 
-    // Os nomes saem da primeira parte, como no SQL. As outras contribuem
-    // linhas, não cabeçalho.
-    let colunas: Vec<ColunaSaida> = primeiro
+    // Os NOMES saem da primeira parte, como no SQL. O TIPO, não: ele leva em
+    // conta TODAS as partes -- ver `mais_largo`.
+    let mut colunas: Vec<ColunaSaida> = primeiro
         .colunas()
         .iter()
-        .map(|c| ColunaSaida {
-            nome: c.nome.clone(),
-            ty: c.ty,
-            lado: "uniao",
-            chave: false,
+        .enumerate()
+        .map(|(i, c)| {
+            let mut ty = c.ty;
+            for e in esquemas.iter().skip(1) {
+                if let Some(outra) = e.colunas().get(i) {
+                    ty = mais_largo(ty, outra.ty);
+                }
+            }
+            ColunaSaida {
+                nome: c.nome.clone(),
+                ty,
+                lado: "uniao",
+                chave: false,
+            }
         })
         .collect();
+
+    // As de sistema saem AQUI, antes de qualquer linha ser lida, e não no fim.
+    //
+    // Elas saíam depois -- o cabeçalho e a linha eram cortados só na volta --,
+    // e por isso entravam na CHAVE do `Distinta`. O `rownum` é único por linha
+    // dentro da tabela, então duas linhas visivelmente iguais em tabelas
+    // diferentes quase nunca compartilham o dele: o `UNION` devolvia o mesmo
+    // que o `UNION ALL`, calado, e ainda anunciava `repetidas: 0`. Medido em
+    // duas tabelas de três e duas linhas com uma linha visível em comum:
+    // cinco linhas e `repetidas: 0` onde o SQL manda quatro e uma.
+    //
+    // A chave tem de falar das colunas que quem pergunta VÊ, e é isso que
+    // cortar antes garante -- um lugar, não dois. As de sistema estão no FIM
+    // por lei do formato (`schema.rs`), então sair de trás para a frente basta.
+    //
+    // E cortar o CABEÇALHO em vez de cada linha conserta um segundo estrago do
+    // corte de antes: ele fazia `linha.pop()` uma vez por coluna de sistema,
+    // sem olhar o tamanho da linha. Linha curta perdia coluna de DADO --
+    // medido com a fixa reposta, uma linha de dois valores voltou vazia.
+    while colunas.last().is_some_and(|c| e_coluna_de_sistema(&c.nome)) {
+        colunas.pop();
+    }
+    let visiveis = colunas.len();
 
     let mut linhas: Vec<Vec<Value>> = Vec::new();
     let mut vistas: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -649,15 +765,39 @@ pub fn unir(
 
     for (fonte, esquema) in partes.iter_mut() {
         let mut desta = 0u64;
-        while let Some(linha) = fonte.proxima()? {
+        while let Some(mut linha) = fonte.proxima()? {
             desta += 1;
+            // `resize` e não `truncate`: linha gravada antes de uma coluna nova
+            // nasce curta, e coluna que a linha não tem é NULA -- a mesma noção
+            // do `agrupar`. Com `truncate`, a linha curta daria uma chave mais
+            // curta que a da linha cheia de mesmo conteúdo, e as duas não
+            // contariam como repetidas.
+            linha.resize(visiveis, Value::Null);
+            // A linha vira a do CABEÇALHO antes de qualquer outra coisa.
+            //
+            // `Value::Decimal` guarda o inteiro ESCALADO -- 10,50 é `1050` na
+            // escala 2 e `105000` na escala 4 --, e quem dá sentido a ele é a
+            // escala do TIPO. Sem esta conversão, o `105000` da segunda parte
+            // era lido pela escala 2 do cabeçalho da primeira e virava
+            // **1050,00**: cem vezes maior, sem erro, sem aviso e sem
+            // `truncado`. É o passo 6 do PostgreSQL, que os três maduros têm e
+            // nós não tínhamos -- o passo 4 (recusar famílias diferentes) já
+            // era nosso, em `conferir_uniao`.
+            for (i, (v, c)) in linha.iter_mut().zip(colunas.iter()).enumerate() {
+                converter_para(v, esquema.colunas().get(i).map(|x| x.ty), c.ty);
+            }
             if modo == Uniao::Distinta {
-                // A linha inteira vira chave, com o mesmo canonizador da
-                // junção: assim 12,00 e 12 contam como repetida, que é o que o
-                // SQL faz ao comparar valores e não bytes.
+                // A linha VISÍVEL inteira vira chave, com o mesmo canonizador
+                // da junção: assim 12,00 e 12 contam como repetida, que é o que
+                // o SQL faz ao comparar valores e não bytes.
+                //
+                // O tipo sai do CABEÇALHO, e não do esquema da parte, porque a
+                // linha acima acabou de virar a do cabeçalho: ler a chave por
+                // outro tipo que não o do valor é o mesmo defeito da saída,
+                // dentro do mapa.
                 let k: String = linha
                     .iter()
-                    .zip(esquema.colunas())
+                    .zip(colunas.iter())
                     .map(|(v, c)| {
                         if v.e_null() {
                             "\u{1}∅".to_string()
@@ -683,26 +823,13 @@ pub fn unir(
         }
     }
 
-    let mut r = ResultadoUniao {
+    Ok(ResultadoUniao {
         colunas,
         linhas,
         por_parte,
         repetidas,
         truncado,
-    };
-    // Mesma razao da juncao. As de sistema estao no FIM, entao sair de tras
-    // para a frente basta.
-    while r
-        .colunas
-        .last()
-        .is_some_and(|c| e_coluna_de_sistema(&c.nome))
-    {
-        r.colunas.pop();
-        for linha in &mut r.linhas {
-            linha.pop();
-        }
-    }
-    Ok(r)
+    })
 }
 
 #[cfg(test)]
@@ -1120,6 +1247,69 @@ mod testes {
         assert_eq!(r.repetidas, 0);
     }
 
+    /// **O `rownum` não pode entrar na chave do `UNION`.**
+    ///
+    /// Ele é único por linha dentro da tabela, e sai do resultado -- então
+    /// deixá-lo na chave fazia o `Distinta` devolver o mesmo que o `Tudo`,
+    /// anunciando `repetidas: 0`, com duas linhas idênticas na resposta.
+    ///
+    /// O defeito não aparecia aqui porque os outros testes deste módulo
+    /// montam linhas CURTAS (dois valores num esquema de quatro), e o `zip`
+    /// da chave parava antes das colunas de sistema. Quem monta linha cheia é
+    /// o `Table::ler` do servidor, e só ele: teste que passa por engano é pior
+    /// que teste que falta, e este é o par dele pelo lado curto.
+    #[test]
+    fn o_rownum_nao_entra_na_chave_do_union() {
+        let e = esquema_uniao("x");
+        // A MESMA linha visível (1, "papel"), em posições diferentes das duas
+        // tabelas: `rownum` 1 de um lado e 2 do outro.
+        let mut a = lista(vec![vec![
+            Value::Int(1),
+            txt("papel"),
+            Value::Bool(false),
+            Value::UInt(1),
+        ]]);
+        let mut b = lista(vec![vec![
+            Value::Int(1),
+            txt("papel"),
+            Value::Bool(false),
+            Value::UInt(2),
+        ]]);
+        let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &e), (&mut b, &e)];
+        let r = unir(&mut partes, Uniao::Distinta, 100).unwrap();
+        assert_eq!(r.linhas.len(), 1, "linhas: {:?}", r.linhas);
+        assert_eq!(r.repetidas, 1);
+        assert_eq!(r.colunas.len(), 2);
+    }
+
+    /// A linha CURTA -- gravada antes de uma coluna nova nascer -- e a linha
+    /// CHEIA de mesmo conteúdo são a mesma linha. É a razão de a chave usar
+    /// `resize` para o tamanho visível em vez de parar no fim da linha.
+    #[test]
+    fn linha_curta_e_linha_cheia_de_mesmo_conteudo_sao_repetidas() {
+        let e = esq(
+            "x",
+            vec![
+                Column::new("codigo", ColumnType::Int4),
+                Column::new("nome", ColumnType::Str(20)),
+                Column::new("obs", ColumnType::Str(20)),
+            ],
+        );
+        // A curta não tem `obs`; a cheia tem `obs` NULO. É o mesmo dado.
+        let mut a = lista(vec![vec![Value::Int(1), txt("papel")]]);
+        let mut b = lista(vec![vec![
+            Value::Int(1),
+            txt("papel"),
+            Value::Null,
+            Value::Bool(false),
+            Value::UInt(7),
+        ]]);
+        let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &e), (&mut b, &e)];
+        let r = unir(&mut partes, Uniao::Distinta, 100).unwrap();
+        assert_eq!(r.linhas.len(), 1, "linhas: {:?}", r.linhas);
+        assert_eq!(r.repetidas, 1);
+    }
+
     /// Duas linhas nulas na mesma posição são a MESMA linha para o `UNION` --
     /// diferente da junção, onde nulo nunca casa. As duas regras são do SQL, e
     /// são mesmo diferentes.
@@ -1131,6 +1321,102 @@ mod testes {
         let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &e), (&mut b, &e)];
         let r = unir(&mut partes, Uniao::Distinta, 100).unwrap();
         assert_eq!(r.linhas.len(), 1);
+        assert_eq!(r.repetidas, 1);
+    }
+
+    /// **O cabeçalho da primeira parte não pode reinterpretar o valor da
+    /// segunda.** `Value::Decimal` guarda o inteiro ESCALADO, e quem dá
+    /// sentido a ele é a escala do tipo -- que na união saía sempre da
+    /// primeira parte. Dinheiro de escala 4 lido por um cabeçalho de escala 2
+    /// vira cem vezes maior, sem erro e sem aviso.
+    ///
+    /// `conferir_uniao` deixa passar com razão: as duas são família `numero`,
+    /// e isso é o passo 4 do PostgreSQL. O que faltava era o passo 6 -- os
+    /// três maduros levam em conta TODOS os braços, e é aceite automático.
+    #[test]
+    fn a_uniao_de_decimais_de_escalas_diferentes_nao_corrompe_o_valor() {
+        let d2 = esq(
+            "d2",
+            vec![Column::new(
+                "valor",
+                ColumnType::Decimal {
+                    precisao: 12,
+                    escala: 2,
+                },
+            )],
+        );
+        let d4 = esq(
+            "d4",
+            vec![Column::new(
+                "valor",
+                ColumnType::Decimal {
+                    precisao: 12,
+                    escala: 4,
+                },
+            )],
+        );
+        // 10,50 em escala 2 e 10,5000 em escala 4 -- o MESMO dinheiro.
+        let mut a = lista(vec![vec![Value::Decimal(1050)]]);
+        let mut b = lista(vec![vec![Value::Decimal(105_000)]]);
+        let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &d2), (&mut b, &d4)];
+        let r = unir(&mut partes, Uniao::Tudo, 100).unwrap();
+        // O cabeçalho sai na MAIOR escala, e os dois valores sao lidos por ela.
+        assert_eq!(
+            r.colunas[0].ty,
+            ColumnType::Decimal {
+                precisao: 12,
+                escala: 4
+            },
+            "{:?}",
+            r.colunas[0].ty
+        );
+        assert_eq!(
+            r.linhas[0][0],
+            Value::Decimal(105_000),
+            "10,50 virou outro numero"
+        );
+        assert_eq!(r.linhas[1][0], Value::Decimal(105_000));
+
+        // E na ordem contraria o resultado e o MESMO -- a escala do resultado
+        // nao pode depender de quem foi escrito primeiro.
+        let mut a = lista(vec![vec![Value::Decimal(105_000)]]);
+        let mut b = lista(vec![vec![Value::Decimal(1050)]]);
+        let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &d4), (&mut b, &d2)];
+        let r = unir(&mut partes, Uniao::Tudo, 100).unwrap();
+        assert_eq!(r.linhas[0][0], Value::Decimal(105_000));
+        assert_eq!(r.linhas[1][0], Value::Decimal(105_000));
+    }
+
+    /// E o corolário: o `UNION` distinto tem de ver 10,50 e 10,5000 como a
+    /// MESMA linha. A chave já convergia (ela usava a escala de cada parte);
+    /// o que faltava era a saída convergir com ela.
+    #[test]
+    fn dez_e_meio_em_duas_escalas_e_uma_linha_so() {
+        let d2 = esq(
+            "d2",
+            vec![Column::new(
+                "valor",
+                ColumnType::Decimal {
+                    precisao: 12,
+                    escala: 2,
+                },
+            )],
+        );
+        let d4 = esq(
+            "d4",
+            vec![Column::new(
+                "valor",
+                ColumnType::Decimal {
+                    precisao: 12,
+                    escala: 4,
+                },
+            )],
+        );
+        let mut a = lista(vec![vec![Value::Decimal(1050)]]);
+        let mut b = lista(vec![vec![Value::Decimal(105_000)]]);
+        let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &d2), (&mut b, &d4)];
+        let r = unir(&mut partes, Uniao::Distinta, 100).unwrap();
+        assert_eq!(r.linhas.len(), 1, "{:?}", r.linhas);
         assert_eq!(r.repetidas, 1);
     }
 

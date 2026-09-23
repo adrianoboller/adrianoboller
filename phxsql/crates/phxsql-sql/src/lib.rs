@@ -9,7 +9,8 @@
 //! ODBC/OLE DB, o DBeaver e o protocolo de fio do PostgreSQL(R).
 //!
 //! ```text
-//! SELECT ( * | coluna [AS apelido] {, ...} | FUNCAO(coluna) [AS apelido] {, ...}
+//! SELECT [DISTINCT] ( * | coluna [AS apelido] {, ...}
+//!          | FUNCAO(coluna) [AS apelido] {, ...}
 //!          | ROW_NUMBER() OVER ([PARTITION BY ...] [ORDER BY ...]) [AS apelido] )
 //! FROM   ( [database.][schema.]tabela [[AS] apelido]
 //!          | nome_da_cte | (SELECT ...) AS apelido )
@@ -21,6 +22,8 @@
 //!
 //! [WITH nome AS (SELECT ...)] SELECT ...   -- uma CTE, nao recursiva
 //!
+//! SELECT * FROM a UNION [ALL] SELECT * FROM b {UNION [ALL] ...}
+//!
 //! INSERT INTO tabela (coluna {, coluna}) VALUES (literal {, literal})
 //!   [ON CONFLICT [(coluna)] DO NOTHING | DO UPDATE SET coluna = literal {, ...}]
 //!   [ON DUPLICATE KEY UPDATE coluna = literal {, ...}]
@@ -31,26 +34,67 @@
 //! DROP VIEW nome
 //! ```
 //!
-//! FUNCAO ∈ `COUNT(*) | COUNT(DISTINCT coluna) | SUM | AVG | MIN | MAX`. Os
+//! FUNCAO ∈ `COUNT(*) | COUNT(DISTINCT coluna) | SUM | AVG | MIN | MAX` --
+//! e `COUNT(DISTINCT coluna)` e OUTRA pergunta que o `SELECT DISTINCT`, por
+//! outro caminho: aquele conta valores distintos DENTRO de um grupo, este
+//! devolve as linhas distintas. Os
 //! tres verbos de escrita moram em [`dml`]: uma linha por `INSERT`, e
 //! `UPDATE`/`DELETE` so por chave UNICA -- em tres passos, porque o
 //! `atualizar` do protocolo grava a linha inteira. `WITH`/subconsulta no
 //! `FROM`/`IN (SELECT ...)`/junção/janela moram em [`consulta`] e viram a op
 //! `consultar`, traduzida por [`consulta::traduzir_consulta`] com um
 //! RESOLVEDOR (ela toca varias tabelas, e cada uma pode ter indices
-//! diferentes -- so o servidor conhece).
+//! diferentes -- so o servidor conhece). `SELECT DISTINCT` vira a op
+//! `agrupar` -- agrupar por N colunas E eliminar o repetido delas -- e
+//! `UNION`/`UNION ALL` vira a op `unir`, por [`traduzir::traduzir_uniao`].
 //!
 //! # O que ele NAO faz, e por que isso esta escrito
 //!
-//! Nao ha planejador de indice (dois candidatos de igualdade? o primeiro
-//! declarado vence). Nao ha `RIGHT`/`FULL`/`CROSS JOIN`, correlação,
-//! `EXISTS`, `WITH RECURSIVE`, `UNION`, nem janela alem de `ROW_NUMBER`. Nada
-//! disso e economia de esforco: `docs/SQL.md` §3 mede o tamanho de cada um.
+//! **Este paragrafo e um INVENTARIO, e por isso separa tres coisas que nao
+//! sao a mesma**: o que nao existe, o que existe SO numa forma, e o que
+//! recusa nomeando. A versao anterior dizia «nao ha `RIGHT`/`FULL`/`CROSS
+//! JOIN`, correlação, `EXISTS`, `WITH RECURSIVE`, `UNION`» -- e tres dos
+//! cinco ja existiam, um deles com catorze testes neste mesmo crate. Lista
+//! que enumera menos casos do que existem nao protege menos hoje: protege
+//! menos no dia em que alguem a usar como inventario, que foi o que aconteceu
+//! com a lista das operacoes que escondem tabela do portao de permissao.
 //!
-//! Por isso **o que falta recusa dizendo o que falta**, com o nome da
-//! clausula. Aceitar a sintaxe e devolver a resposta errada calado seria o
-//! pior dos dois mundos -- e e o que aconteceria se `WHERE cidade = 'X'` sem
-//! indice virasse uma varredura com o filtro esquecido no caminho.
+//! **Existe, e e 1:1 com o protocolo:** `INNER`/`LEFT`/`RIGHT`/`FULL`/`CROSS
+//! JOIN` (pedido 236), `EXISTS`/`NOT EXISTS` correlacionado POR IGUALDADE
+//! (pedido 240), `SELECT DISTINCT` de colunas nomeadas, `UNION`/`UNION ALL`
+//! entre tabelas INTEIRAS, uma CTE nao recursiva, subconsulta no `FROM`,
+//! `IN (SELECT ...)`, subconsulta escalar e `ROW_NUMBER() OVER (...)`.
+//!
+//! **Existe SO nesta forma** -- e o resto da forma recusa nomeando:
+//!
+//! - **`UNION`**: os dois lados sao `SELECT * FROM tabela`, sem `WHERE`, sem
+//!   projecao, sem ordem e sem limite. A op `unir` recebe uma lista de NOMES
+//!   de tabela e abre cada uma inteira; um braco com filtro nao tem para onde
+//!   ir. O pedido 393 mede o que custa mudar esse contrato.
+//! - **`DISTINCT`**: so no `SELECT` SIMPLES de nivel superior, e so com as
+//!   colunas nomeadas. `DISTINCT *` recusa porque o `*` desta casa carrega
+//!   `rowid`/`softdeleted`/`rownum`, e o `rownum` e unico por linha --
+//!   agrupar por tudo o que o `*` mostra nao tiraria repetida nenhuma.
+//! - **correlação**: a de `EXISTS` POR IGUALDADE roda. A de `IN`/escalar nao,
+//!   e a que nao e igualdade recusa nomeando
+//!   (`exists_correlacao_nao_igualdade_recusa_nomeando`).
+//! - **janela**: so `ROW_NUMBER`. Qualquer outra funcao com `OVER` recusa
+//!   nomeando, e nao passa por engano.
+//!
+//! **Nao existe, e recusa nomeando:** `WITH RECURSIVE` e a segunda CTE
+//! (`consulta.rs`), `EXISTS` NAO correlacionado, `WHERE` de FAIXA sem indice
+//! (`traduzir.rs`), `OFFSET` com `GROUP BY`/`DISTINCT`, e `INTERSECT`/`EXCEPT`
+//! -- que nao tem operacao embaixo.
+//!
+//! **Nao existe, e nao recusa -- escolhe calado:** o planejador de indice.
+//! Dois candidatos de igualdade? O primeiro DECLARADO vence. E o unico item
+//! desta secao que nao vira mensagem, e esta aqui para nao virar surpresa.
+//!
+//! Nada disso e economia de esforco: `docs/SQL.md` §3 mede o tamanho de cada
+//! um. E **o que falta recusa dizendo o que falta**, com o nome da clausula:
+//! aceitar a sintaxe e devolver a resposta errada calado seria o pior dos
+//! dois mundos -- e e o que aconteceria se `WHERE cidade > 'X'` sem indice
+//! virasse uma varredura com o filtro esquecido no caminho.
 //!
 //! # Como se usa
 //!
@@ -94,11 +138,11 @@ pub use lexico::{Comparador, Simbolo, Token};
 pub use sintaxe::{
     analisar, analisar_comando, analisar_comando_com, comando_empilhado, Alvo, ColunaPedida,
     Comando, Condicao, FuncaoAgregada, ItemProjetado, Literal, Onde, Ordenacao, Projecao, Selecao,
-    RESERVADAS_DO_MOTOR,
+    Uniao, RESERVADAS_DO_MOTOR,
 };
 pub use traduzir::{
-    traduzir, traduzir_criar_visao, traduzir_excluir_visao, ColunaDoIndice, IndiceInfo, Plano,
-    Saida,
+    traduzir, traduzir_criar_visao, traduzir_excluir_visao, traduzir_uniao, ColunaDoIndice,
+    IndiceInfo, Plano, Saida,
 };
 
 /// Le e traduz de uma vez, para quem so quer o pedido.

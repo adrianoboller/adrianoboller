@@ -49,12 +49,27 @@
 //! - **`EXISTS` NAO correlacionado** -- "tem linha?" sem nenhum par
 //!   `fora.col = dentro.col` ainda nao tem substrato.
 //! - Uma CTE so, nao recursiva.
+//! - **`DISTINCT` e `UNION` dentro da gramatica composta** -- os dois
+//!   ganharam substrato no `SELECT` SIMPLES (`sintaxe.rs`/`traduzir.rs`), e
+//!   NAO aqui. O `DISTINCT` vira `agrupar` e o `UNION` vira `unir`; o
+//!   `consultar` compoe, mas nao elimina repetido e nao empilha. Os dois
+//!   recusam nomeando, cada um no seu lugar:
+//!   - `Analisador::selecao` -- a porta por onde passam TODAS as selecoes
+//!     de dentro daqui (corpo de CTE, subconsulta do `FROM`, lado de um
+//!     `IN`/escalar/`EXISTS`) -- recusa a palavra `DISTINCT`. A capacidade
+//!     se liga num lugar SO, `Analisador::comando`, e e por isso que nao ha
+//!     um segundo lugar onde esquece-la vire resposta errada calada: se
+//!     passasse, a coluna de contagem que o `agrupar` injeta vazaria para o
+//!     resultado de fora, porque `traduzir_consulta` usa o PEDIDO de cada
+//!     pedaco e descarta a `saida` dele.
+//!   - `Analisador::comando` recusa o `UNION` quando a sondagem manda o
+//!     comando para esta gramatica.
 //!
 //! E o WHERE composto so reconhece subconsulta (IN, escalar ou EXISTS)
 //! quando ela e o conjunto INTEIRO de um `AND` de nivel superior -- uma
 //! subconsulta dentro de `OR` ou de uma expressao maior nao e detectada, e
 //! cai na recusa de "forma nao suportada" em vez de virar texto errado.
-//! DIVIDA: correlacao que nao e igualdade, `EXISTS` nao correlacionado e CTE recursiva continuam sem substrato -- a traducao recusa nomeando
+//! DIVIDA: correlacao que nao e igualdade, `EXISTS` nao correlacionado, CTE recursiva, e `DISTINCT`/`UNION` dentro da composicao continuam sem substrato -- a traducao recusa nomeando
 
 use crate::lexico::{self, normalizar_tokens, Simbolo, Token};
 use crate::sintaxe::{
@@ -1160,6 +1175,7 @@ impl Analisador {
         }
         let apelido = alvo.apelido.clone().or_else(|| Some(alvo.tabela.clone()));
         let sel = Selecao {
+            distinto: false,
             projecao: Projecao::Tudo,
             de: alvo,
             onde: None,
@@ -1569,6 +1585,7 @@ fn tentar_existe(conj: &[Simbolo]) -> Result<Option<Existe>> {
     };
 
     let dentro = Selecao {
+        distinto: false,
         projecao: Projecao::Tudo,
         de: alvo,
         onde: onde_de_dentro,

@@ -16304,6 +16304,19 @@ impl Servidor {
                 let bruto = self.executar_derivado(&plano.op, &plano.pedido, sessao)?;
                 return Ok(resposta_do_sql(&texto, &plano, bruto));
             }
+            // `SELECT ... UNION [ALL] SELECT ...` vira a op `unir`, e ela sai
+            // pelo `executar_derivado` como qualquer outra. **Nao ha
+            // conferencia de permissao AQUI de proposito**: o `op_unir` ja
+            // confere tabela por tabela, porque o campo `"tabela"` que o
+            // portao geral le nao existe num pedido de uniao. Repetir a
+            // conferencia neste ponto criaria a duplicata que um dia alguem
+            // limpa -- e o que ficaria aberto seria a porta dos fundos.
+            phxsql_sql::Comando::Uniao(u) => {
+                let base = p.texto_ou("database", "").trim().to_string();
+                let plano = phxsql_sql::traduzir_uniao(&u, &base)?;
+                let bruto = self.executar_derivado(&plano.op, &plano.pedido, sessao)?;
+                return Ok(resposta_do_sql(&texto, &plano, bruto));
+            }
             // `CREATE VIEW` e `DROP VIEW`: o tradutor produz o pedido, e o
             // pedido volta pelo portao de sempre -- com `criar`/`excluir` na
             // base, que e o poder que as duas exigem.
@@ -16432,7 +16445,7 @@ impl Servidor {
                 let indices = self.indices_para_o_sql(&e.de, &corrente, sessao)?;
                 phxsql_sql::traduzir_exclusao(e, &indices, &corrente)?
             }
-            Comando::Selecao(_) | Comando::Consulta(_) => {
+            Comando::Selecao(_) | Comando::Consulta(_) | Comando::Uniao(_) => {
                 return Err(PhxError::Esquema(
                     "consulta nao entra pelo caminho de escrita".into(),
                 ))
@@ -23840,6 +23853,26 @@ fn resposta_do_sql(texto: &str, plano: &phxsql_sql::Plano, bruto: Json) -> Json 
                 ),
             ));
         }
+        // O `unir` responde `linhas` em LISTA posicional e `colunas` em
+        // `[{nome,tipo,lado,chave}]` -- as duas formas diferentes das de todo
+        // outro SELECT. Quem escreveu SQL nao pode receber um envelope
+        // diferente por causa da OPERACAO que atendeu: e a mesma lei que fez o
+        // SELECT sobre visao sair pela porta do SELECT de sempre.
+        //
+        // Os rotulos saem da RESPOSTA, e nao do plano: os nomes de uma uniao
+        // sao os da PRIMEIRA parte, e quem os conhece e o motor que abriu o
+        // esquema dela. O tradutor nao ve esquema nenhum.
+        phxsql_sql::Saida::Posicional => {
+            pares.push((
+                "colunas".to_string(),
+                Json::Lista(
+                    nomes_do_cabecalho(&bruto)
+                        .into_iter()
+                        .map(Json::texto_de)
+                        .collect(),
+                ),
+            ));
+        }
     }
 
     // **A PROJECAO NAO ACONTECE DUAS VEZES**, e este `if` saiu do encontro das
@@ -23854,8 +23887,44 @@ fn resposta_do_sql(texto: &str, plano: &phxsql_sql::Plano, bruto: Json) -> Json 
     // O cabecalho (`colunas`) continua saindo daqui, porque ele e o contrato
     // da RESPOSTA e nao depende de quem projetou.
     let ja_projetou = plano.op == "consultar";
+    let posicional = matches!(plano.saida, phxsql_sql::Saida::Posicional);
+    let rotulos = if posicional {
+        nomes_do_cabecalho(&bruto)
+    } else {
+        Vec::new()
+    };
     if let Json::Objeto(campos) = bruto {
         for (k, v) in campos {
+            if posicional {
+                // O cabecalho ja saiu acima, na forma do `sql`.
+                if k == "colunas" {
+                    continue;
+                }
+                // O `unir` responde um campo `"sql"` proprio -- o rotulo
+                // "UNION"/"UNION ALL", que a tela dos cartoes de Venn mostra
+                // ao lado do desenho. O envelope do `sql` ja tem um `"sql"`,
+                // e ele e o TEXTO do comando: copiar o de dentro poria a mesma
+                // chave duas vezes no objeto, com sentidos diferentes, e quem
+                // le veria uma sem saber qual. E a mesma razao do `colunas`
+                // logo acima. O `modo` continua vindo, e ele diz o mesmo.
+                if k == "sql" {
+                    continue;
+                }
+                if k == "linhas" {
+                    if let Json::Lista(linhas) = &v {
+                        pares.push((
+                            k,
+                            Json::Lista(
+                                linhas
+                                    .iter()
+                                    .map(|l| nomear_posicional(l, &rotulos))
+                                    .collect(),
+                            ),
+                        ));
+                        continue;
+                    }
+                }
+            }
             // O `consultar` responde o SEU `colunas` -- o modelo tipado,
             // `[{nome, tipo}]` -- e o `sql` ja tem o dele, a lista de rotulos.
             // Copiar o de dentro poria a mesma chave duas vezes no objeto,
@@ -23927,6 +23996,53 @@ fn recusar_projecao_sobre_coluna_negada(
         }
     }
     Ok(())
+}
+
+/// Os nomes do cabecalho de uma resposta posicional (`unir`), na ordem.
+///
+/// A coluna sem nome vira `coluna_N` em vez de sumir: uma chave ausente faria
+/// a linha ter forma diferente das vizinhas, e quem le por posicao quebraria.
+fn nomes_do_cabecalho(bruto: &Json) -> Vec<String> {
+    bruto
+        .campo("colunas")
+        .and_then(Json::lista)
+        .map(|cs| {
+            cs.iter()
+                .enumerate()
+                .map(
+                    |(i, c)| match c.texto().or_else(|| c.campo("nome").and_then(Json::texto)) {
+                        Some(n) if !n.trim().is_empty() => n.to_string(),
+                        _ => format!("coluna_{}", i + 1),
+                    },
+                )
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// A linha POSICIONAL do `unir` vira o objeto que todo SELECT devolve.
+///
+/// Valor sem nome no cabecalho nao some: vira `coluna_N` pelo mesmo motivo do
+/// `projetar` -- resposta de forma variavel e pior que resposta feia.
+fn nomear_posicional(linha: &Json, rotulos: &[String]) -> Json {
+    let Json::Lista(valores) = linha else {
+        // Ja e objeto? Entao a resposta nao era posicional, e devolve-la
+        // embrulhada de novo inventaria uma coluna. Passa como esta.
+        return linha.clone();
+    };
+    Json::Objeto(
+        valores
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let nome = rotulos
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| format!("coluna_{}", i + 1));
+                (nome, v.clone())
+            })
+            .collect(),
+    )
 }
 
 /// Fica com as colunas pedidas, nesta ordem, com estes rotulos.
@@ -29496,6 +29612,13 @@ mod testes_direito_por_coluna {
             "SELECT salario FROM folha",
             "SELECT nome, salario FROM folha",
             "SELECT salario AS s FROM folha",
+            // O DISTINCT entra NESTA lista, e nao num teste proprio: ele vai
+            // parar noutra operacao (`agrupar` em vez de `varrer`), mas usa o
+            // MESMO campo do plano -- a `Saida::Colunas` que
+            // `recusar_projecao_sobre_coluna_negada` le. Irmao e quem chama
+            // as mesmas funcoes na mesma ordem.
+            "SELECT DISTINCT salario FROM folha",
+            "SELECT DISTINCT nome, salario FROM folha",
         ] {
             let e = pede(
                 &s,
@@ -31095,6 +31218,349 @@ mod testes_sql {
             e.to_string().contains("varrer") && e.to_string().contains("proibida"),
             "{e}"
         );
+    }
+
+    // ------------------------------------------------------- SELECT DISTINCT
+    //
+    // A traducao e provada em `phxsql-sql`; o que se prova AQUI e a costura
+    // -- e ela tem um defeito proprio possivel, que nenhum teste de traducao
+    // acusaria: o `agrupar` EXIGE um agregado, entao a resposta crua sempre
+    // traz uma coluna de contagem. Se a projecao do `resposta_do_sql` nao a
+    // jogar fora, `SELECT DISTINCT cidade` devolve `{cidade, contagem}` --
+    // uma coluna que ninguem pediu, com cara de dado.
+
+    #[test]
+    fn distinct_devolve_cada_valor_uma_vez_e_sem_a_contagem() {
+        let guarda = dir_temp("distinct");
+        let s = servidor(&guarda);
+        // Blumenau aparece em DUAS linhas (Adriano e Joao).
+        let r = sql(&s, "SELECT DISTINCT cidade FROM clientes").unwrap();
+        assert_eq!(r.texto_ou("op", ""), "agrupar");
+        let ls = linhas(&r);
+        assert_eq!(ls.len(), 2, "{}", r.escrever());
+        let mut cidades: Vec<String> = ls
+            .iter()
+            .map(|l| l.texto_ou("cidade", "").to_string())
+            .collect();
+        cidades.sort();
+        assert_eq!(cidades, vec!["Blumenau", "Joinville"]);
+        // A contagem que o `agrupar` carrega NAO chega a quem perguntou.
+        for l in &ls {
+            assert_eq!(l.chaves(), vec!["cidade"], "{}", l.escrever());
+        }
+        // E o cabecalho diz a mesma coisa que as linhas.
+        assert_eq!(
+            r.campo("colunas")
+                .and_then(Json::lista)
+                .unwrap()
+                .iter()
+                .map(|c| c.texto().unwrap_or("").to_string())
+                .collect::<Vec<_>>(),
+            vec!["cidade"]
+        );
+    }
+
+    /// Com DUAS colunas a chave e a TUPLA -- `(Blumenau, Adriano)` e
+    /// `(Blumenau, Joao)` sao linhas distintas, e as tres do cadastro saem
+    /// inteiras. Sem o `por` plural, sairiam duas.
+    #[test]
+    fn distinct_de_duas_colunas_usa_a_tupla_como_chave() {
+        let guarda = dir_temp("distinct-tupla");
+        let s = servidor(&guarda);
+        let r = sql(&s, "SELECT DISTINCT cidade, nome FROM clientes").unwrap();
+        assert_eq!(linhas(&r).len(), 3, "{}", r.escrever());
+        assert_eq!(linhas(&r)[0].chaves(), vec!["cidade", "nome"]);
+    }
+
+    /// NULO e um valor, e dois NULOS sao a MESMA linha -- o que os quatro
+    /// motores fazem. Aqui isso nao e escolha desta camada: sai do
+    /// `phxsql_store::memoria::chave`, que da a `Value::Null` uma chave
+    /// propria e igual a si mesma.
+    #[test]
+    fn no_distinct_dois_nulos_sao_um_valor_so() {
+        let guarda = dir_temp("distinct-nulo");
+        let s = servidor(&guarda);
+        let dono = Sessao::default();
+        for id in [10, 11] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"clientes","linha":{{"id":{id},"nome":"X"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        let r = sql(&s, "SELECT DISTINCT cidade FROM clientes").unwrap();
+        // Blumenau, Joinville e UM nulo -- nao dois.
+        assert_eq!(linhas(&r).len(), 3, "{}", r.escrever());
+        let nulas = linhas(&r)
+            .iter()
+            .filter(|l| matches!(l.campo("cidade"), Some(Json::Nulo)))
+            .count();
+        assert_eq!(nulas, 1, "{}", r.escrever());
+    }
+
+    /// `ORDER BY` e `LIMIT` chegam ao `agrupar` e valem sobre o resultado JA
+    /// sem repetidas -- que e a ordem que o SQL manda.
+    #[test]
+    fn distinct_respeita_a_ordem_e_o_limite() {
+        let guarda = dir_temp("distinct-ordem");
+        let s = servidor(&guarda);
+        let r = sql(
+            &s,
+            "SELECT DISTINCT cidade FROM clientes ORDER BY cidade DESC",
+        )
+        .unwrap();
+        assert_eq!(linhas(&r)[0].texto_ou("cidade", ""), "Joinville");
+        let r = sql(
+            &s,
+            "SELECT DISTINCT cidade FROM clientes ORDER BY cidade LIMIT 1",
+        )
+        .unwrap();
+        assert_eq!(linhas(&r).len(), 1);
+        assert_eq!(linhas(&r)[0].texto_ou("cidade", ""), "Blumenau");
+    }
+
+    /// **O DISTINCT herda o TETO do `agrupar`, e a recusa DIZ isso.**
+    ///
+    /// Os grupos ficam TODOS em memoria ao mesmo tempo -- e o grupo de um
+    /// DISTINCT e uma linha do resultado. Uma coluna de alta cardinalidade
+    /// para no teto, e a recusa nomeia `recursos.max_linhas` e o que fazer,
+    /// em vez de o servidor encher a memoria calado.
+    #[test]
+    fn o_distinct_herda_o_teto_do_agrupar_e_a_recusa_o_nomeia() {
+        let guarda = dir_temp("distinct-teto");
+        let c = Config {
+            base: guarda.to_path_buf(),
+            log_acessos: guarda.join("acessos.log"),
+            blacklist: guarda.join("blacklist.json"),
+            dblink: guarda.join("dblink.json"),
+            token: "t".into(),
+            // Dois grupos cabem; o terceiro nao.
+            max_linhas: 2,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"clientes",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"cidade","tipo":"Str(20)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        for (id, cidade) in [(1, "A"), (2, "B"), (3, "C")] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"clientes",
+                         "linha":{{"id":{id},"cidade":"{cidade}"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        let e = sql(&s, "SELECT DISTINCT cidade FROM clientes")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("recursos.max_linhas"), "{e}");
+        assert!(e.contains("memoria"), "{e}");
+    }
+
+    /// **O `ORDER BY` de um DISTINCT aceita a COLUNA e o APELIDO**, porque os
+    /// dois querem dizer a mesma coluna -- e os dois chegam ao `agrupar` como
+    /// o nome que ele conhece, que e o da coluna. O apelido so existe na
+    /// projecao de SAIDA, que acontece depois: mandar `praca` no `"ordem"`
+    /// faria o motor recusar falando de `"por"` e de apelido de agregado,
+    /// vocabulario que quem escreveu SQL nao tem como reconhecer.
+    #[test]
+    fn a_ordem_do_distinct_aceita_a_coluna_e_o_apelido() {
+        let guarda = dir_temp("distinct-apelido");
+        let s = servidor(&guarda);
+        for texto in [
+            "SELECT DISTINCT cidade AS praca FROM clientes ORDER BY praca DESC",
+            "SELECT DISTINCT cidade AS praca FROM clientes ORDER BY cidade DESC",
+        ] {
+            let r = sql(&s, texto).unwrap_or_else(|e| panic!("{texto}: {e}"));
+            assert_eq!(linhas(&r).len(), 2, "{texto}: {}", r.escrever());
+            // O rotulo de SAIDA e o apelido...
+            assert_eq!(linhas(&r)[0].chaves(), vec!["praca"], "{texto}");
+            // ...e a ordem foi mesmo aplicada.
+            assert_eq!(linhas(&r)[0].texto_ou("praca", ""), "Joinville", "{texto}");
+        }
+    }
+
+    /// O `WHERE` peneira ANTES de eliminar repetido, como em todo SQL.
+    #[test]
+    fn o_where_do_distinct_peneira_antes_de_eliminar_repetido() {
+        let guarda = dir_temp("distinct-where");
+        let s = servidor(&guarda);
+        let r = sql(
+            &s,
+            "SELECT DISTINCT cidade FROM clientes WHERE nome = 'Joao'",
+        )
+        .unwrap();
+        assert_eq!(linhas(&r).len(), 1);
+        assert_eq!(linhas(&r)[0].texto_ou("cidade", ""), "Blumenau");
+    }
+
+    // --------------------------------------------------- UNION e UNION ALL
+    //
+    // A op `unir` ja existia. O que se prova AQUI e a costura -- e ela tem um
+    // defeito proprio que nenhum teste de traducao acusaria: o `unir`
+    // responde `linhas` em LISTA posicional e `colunas` em `[{nome,tipo,…}]`,
+    // e nenhum outro SELECT responde assim. Quem pergunta em SQL nao pode
+    // receber um envelope diferente por causa da operacao que atendeu.
+
+    /// Uma segunda tabela de mesmo esquema, com uma linha repetida da
+    /// primeira -- e na SEGUNDA posicao, para que os `rownum` NAO casem. Foi
+    /// exatamente o `rownum` casando por acaso que escondeu o defeito do
+    /// `UNION` por tanto tempo: unir duas tabelas identicas desduplica
+    /// perfeitamente, e o caso obvio passa por coincidencia.
+    fn segunda_tabela(s: &Arc<Servidor>) {
+        let dono = Sessao::default();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"clientes2",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"},
+                               {"nome":"cidade","tipo":"Str(20)"}],
+                    "indices":[{"nome":"porId2","colunas":["id"],"unico":true,
+                                "primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        for (id, nome, cidade) in [(9, "Nova", "Itajai"), (1, "Adriano", "Blumenau")] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"clientes2",
+                         "linha":{{"id":{id},"nome":"{nome}","cidade":"{cidade}"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+    }
+
+    /// **`UNION` tira a repetida e `UNION ALL` nao** -- e a linha repetida
+    /// esta em posicoes diferentes das duas tabelas, entao o `rownum` dela
+    /// nao casa. Com a chave lendo as colunas de sistema, os dois comandos
+    /// devolviam a MESMA coisa.
+    #[test]
+    fn union_tira_a_repetida_e_union_all_nao_pela_op_sql() {
+        let guarda = dir_temp("union");
+        let s = servidor(&guarda);
+        segunda_tabela(&s);
+
+        let r = sql(&s, "SELECT * FROM clientes UNION SELECT * FROM clientes2").unwrap();
+        assert_eq!(r.texto_ou("op", ""), "unir");
+        assert_eq!(linhas(&r).len(), 4, "{}", r.escrever());
+        assert_eq!(r.inteiro_ou("repetidas", -1), 1, "{}", r.escrever());
+
+        let r = sql(
+            &s,
+            "SELECT * FROM clientes UNION ALL SELECT * FROM clientes2",
+        )
+        .unwrap();
+        assert_eq!(linhas(&r).len(), 5, "{}", r.escrever());
+        assert_eq!(r.inteiro_ou("repetidas", -1), 0);
+    }
+
+    /// **A resposta sai no envelope de todo SELECT.** O `unir` devolve lista
+    /// de listas e um cabecalho `[{nome,tipo,lado,chave}]`; quem escreveu SQL
+    /// recebe objetos nomeados e `colunas` como lista de rotulos -- o mesmo
+    /// contrato de `SELECT * FROM t`. E as colunas de sistema nao aparecem,
+    /// porque o proprio `unir` as tira.
+    #[test]
+    fn a_uniao_responde_no_envelope_de_todo_select() {
+        let guarda = dir_temp("union-envelope");
+        let s = servidor(&guarda);
+        segunda_tabela(&s);
+        let r = sql(
+            &s,
+            "SELECT * FROM clientes UNION ALL SELECT * FROM clientes2",
+        )
+        .unwrap();
+        assert_eq!(
+            r.campo("colunas")
+                .and_then(Json::lista)
+                .unwrap()
+                .iter()
+                .map(|c| c.texto().unwrap_or("").to_string())
+                .collect::<Vec<_>>(),
+            vec!["id", "nome", "cidade"],
+            "{}",
+            r.escrever()
+        );
+        let primeira = &linhas(&r)[0];
+        assert_eq!(primeira.chaves(), vec!["id", "nome", "cidade"]);
+        assert_eq!(primeira.texto_ou("nome", ""), "Adriano");
+        assert_eq!(primeira.inteiro_ou("id", -1), 1);
+        // E o campo `sql` aparece UMA vez, com o TEXTO do comando -- o
+        // rotulo "UNION ALL" que o `unir` responde no campo de mesmo nome
+        // nao vem junto. Duas chaves iguais num objeto JSON fazem quem le
+        // ver uma sem saber qual.
+        assert_eq!(
+            r.chaves().iter().filter(|k| **k == "sql").count(),
+            1,
+            "{}",
+            r.escrever()
+        );
+        assert_eq!(
+            r.texto_ou("sql", ""),
+            "SELECT * FROM clientes UNION ALL SELECT * FROM clientes2"
+        );
+        assert_eq!(r.texto_ou("modo", ""), "tudo");
+    }
+
+    /// O que NAO tem substrato recusa NOMEANDO o que existe -- e a frase diz
+    /// a forma que passa, em vez de um "sintaxe invalida".
+    #[test]
+    fn a_uniao_sem_substrato_recusa_nomeando_pela_op_sql() {
+        let guarda = dir_temp("union-recusa");
+        let s = servidor(&guarda);
+        segunda_tabela(&s);
+        let e = sql(
+            &s,
+            "SELECT nome FROM clientes UNION SELECT nome FROM clientes2",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("TABELAS inteiras"), "{e}");
+        assert!(e.contains("SELECT * FROM a UNION"), "{e}");
+    }
+
+    /// Esquemas que nao empilham recusam com a CONTA das colunas dos dois
+    /// lados -- quem le sabe qual e a diferenca sem abrir o esquema.
+    #[test]
+    fn a_uniao_de_esquemas_que_nao_empilham_recusa_com_a_conta() {
+        let guarda = dir_temp("union-esquema");
+        let s = servidor(&guarda);
+        let dono = Sessao::default();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"curta",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+                    "indices":[{"nome":"porIdC","colunas":["id"],"unico":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        let e = sql(&s, "SELECT * FROM clientes UNION SELECT * FROM curta")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("coluna(s)"), "{e}");
     }
 }
 
@@ -41354,6 +41820,55 @@ mod testes_consultar_juncao {
         .expect_err("o escalar leu a tabela negada");
         assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
         assert!(format!("{e}").contains("folha"), "{e}");
+
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **A UNIAO nao e a porta dos fundos para o lado B.**
+    ///
+    /// Ela mora ao lado do teste do `consultar` porque e a MESMA lei: o campo
+    /// `"tabela"` que o portao geral le nao existe num pedido de uniao, entao
+    /// o `op_unir` confere tabela por tabela -- e a traducao do `UNION` nao
+    /// acrescenta conferencia nenhuma, ela desemboca naquele pedido.
+    ///
+    /// O que prova e o lado B NEGADO: o lado A passa sozinho, entao um portao
+    /// que so olhasse a primeira tabela nao acusaria nada.
+    #[test]
+    fn a_uniao_pela_op_sql_nao_e_a_porta_dos_fundos_para_o_lado_b() {
+        let d = dir("porta-uniao");
+        let (s, ses) = servidor(&d, so_le_o_que_nao_e_folha());
+
+        // Controle: a uniao de duas tabelas permitidas passa.
+        let ok = pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"b",
+               "texto":"SELECT * FROM clientes UNION ALL SELECT * FROM clientes""#,
+        )
+        .expect("a tabela permitida tinha de passar");
+        assert_eq!(ok.texto_ou("op", ""), "unir", "{ok:?}");
+
+        // A folha como lado B -- o lado que o portao geral nao enxerga.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"b",
+               "texto":"SELECT * FROM clientes UNION SELECT * FROM folha""#,
+        )
+        .expect_err("a uniao leu a tabela negada pelo lado B");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
+        assert!(format!("{e}").contains("folha"), "{e}");
+
+        // E como lado A tambem, que e o caso que o portao geral pegaria --
+        // aqui ele NAO pega, porque nao ha campo `"tabela"` no pedido.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"sql","database":"b",
+               "texto":"SELECT * FROM folha UNION SELECT * FROM clientes""#,
+        )
+        .expect_err("a uniao leu a tabela negada pelo lado A");
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "{e}");
 
         let _ = std::fs::remove_dir_all(&d);
     }

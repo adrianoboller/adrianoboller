@@ -28,7 +28,7 @@
 //! DIVIDA: `SELECT` cuja pergunta nenhum indice responde inteira recusa em vez de varrer -- falta o indice, ou o planejador que escolha entre os que ha
 
 use crate::sintaxe::{
-    Alvo, Condicao, FuncaoAgregada, ItemProjetado, Onde, Ordenacao, Projecao, Selecao,
+    Alvo, Condicao, FuncaoAgregada, ItemProjetado, Onde, Ordenacao, Projecao, Selecao, Uniao,
 };
 use phxsql_core::json::Json;
 use phxsql_core::{PhxError, Result};
@@ -85,6 +85,16 @@ pub enum Saida {
     Colunas(Vec<(String, String)>),
     /// So o numero de registros, que sai do cabecalho da tabela.
     Contagem,
+    /// A resposta vem POSICIONAL: `linhas` e uma lista de LISTAS e `colunas`
+    /// e `[{nome, tipo, …}]`. E o formato da op `unir`, e ele nao e o de
+    /// nenhum outro SELECT -- quem pergunta em SQL nao pode receber um
+    /// envelope diferente por causa da operacao que atendeu, entao quem le
+    /// esta saida vira cada lista em objeto pelo nome do cabecalho.
+    ///
+    /// Os nomes vem da PRIMEIRA parte, que e a regra do SQL nos quatro
+    /// motores -- e por isso eles sao lidos da RESPOSTA, e nao montados aqui:
+    /// o tradutor nao ve esquema nenhum.
+    Posicional,
 }
 
 /// O pedido pronto, mais o que quem chamou ainda tem de fazer com a resposta.
@@ -138,7 +148,12 @@ pub fn traduzir(s: &Selecao, indices: &[IndiceInfo], database_corrente: &str) ->
     // cada linha (o `registros` do cabecalho nao sabe nada do filtro).
     let count_com_expressao =
         matches!(s.projecao, Projecao::Contagem) && matches!(s.onde, Some(Onde::Expressao(_)));
-    if matches!(s.projecao, Projecao::Agregada(_)) || count_com_expressao {
+    // `SELECT DISTINCT a, b` e `agrupar por [a, b]`: agrupar por N colunas E
+    // eliminar o repetido delas -- a mesma chave, a mesma varredura, o mesmo
+    // teto. A mensagem que recusava o DISTINCT aqui dizia uma verdade sobre a
+    // VARREDURA («nenhuma varredura elimina repetido») e tirava dela uma
+    // conclusao errada sobre o PROTOCOLO.
+    if matches!(s.projecao, Projecao::Agregada(_)) || count_com_expressao || s.distinto {
         return plano_agrupar(s, &database, notas);
     }
 
@@ -171,6 +186,50 @@ fn saida_de(p: &Projecao) -> Saida {
     }
 }
 
+/// O nome que o `agrupar` conhece, para uma coluna do `ORDER BY`.
+///
+/// Num `SELECT DISTINCT cidade AS praca ... ORDER BY praca`, o `agrupar`
+/// agrupa por `cidade` e nomeia o grupo por `cidade` -- o apelido so existe na
+/// projecao de SAIDA, que acontece depois. Mandar `praca` no `"ordem"` faria o
+/// motor recusar falando de `"por"` e de apelido de agregado, um vocabulario
+/// que quem escreveu SQL nao tem como reconhecer.
+///
+/// Fora do DISTINCT nada muda: ali os nomes do `ORDER BY` ja sao os que o
+/// `agrupar` devolve (coluna de `por` ou apelido de agregado).
+fn coluna_da_ordem<'a>(s: &'a Selecao, pedida: &'a str) -> &'a str {
+    if !s.distinto {
+        return pedida;
+    }
+    let Projecao::Colunas(cs) = &s.projecao else {
+        return pedida;
+    };
+    cs.iter()
+        .find(|c| {
+            c.apelido
+                .as_deref()
+                .is_some_and(|a| igual_sem_caso(a, pedida))
+        })
+        .map(|c| c.nome.as_str())
+        .unwrap_or(pedida)
+}
+
+/// O apelido do agregado que o `SELECT DISTINCT` carrega, escolhido para nao
+/// colidir com nenhuma coluna projetada.
+///
+/// O `agrupar` recusa o apelido de agregado que tenha o mesmo nome de uma
+/// coluna de agrupamento -- com razao, porque as duas viram chave do MESMO
+/// objeto JSON e uma sumiria. Um apelido fixo faria `SELECT DISTINCT
+/// contagem FROM t` -- uma consulta legitima sobre uma coluna chamada
+/// `contagem` -- cair nessa recusa, falando de um agregado que quem escreveu
+/// nunca pediu.
+fn apelido_sem_colisao(colunas: &[String]) -> String {
+    let mut nome = "contagem".to_string();
+    while colunas.iter().any(|c| igual_sem_caso(c, &nome)) {
+        nome.push('_');
+    }
+    nome
+}
+
 /// O apelido PADRAO de um agregado sem `AS`: `contagem` sozinho, os outros
 /// com `_coluna` na cauda (`soma_preco`) -- os dois exemplos que o proprio
 /// contrato mostra.
@@ -179,6 +238,87 @@ pub(crate) fn apelido_padrao(funcao: FuncaoAgregada, coluna: Option<&str>) -> St
         Some(c) => format!("{}_{}", funcao.nome_no_protocolo(), c.to_lowercase()),
         None => funcao.nome_no_protocolo().to_string(),
     }
+}
+
+/// `SELECT … UNION [ALL] SELECT …` vira a op `unir`.
+///
+/// # O portao de permissao, e por que nao se acrescenta um aqui
+///
+/// O `unir` **ja** confere tabela por tabela, e o comentario dele diz o
+/// motivo: o campo `"tabela"` que o portao geral le nao existe num pedido de
+/// uniao. E o terceiro caso da lei das sete operacoes que escondem tabela do
+/// portao (`juntar`, `unir`, `pivotar`), e esta traducao nao cria um quarto --
+/// ela desemboca exatamente naquele pedido. Conferir de novo aqui seria a
+/// duplicata que um dia alguem limpa achando que e sobra.
+pub fn traduzir_uniao(u: &Uniao, database_corrente: &str) -> Result<Plano> {
+    let mut nomes = Vec::with_capacity(u.partes.len());
+    let mut database = String::new();
+    for p in &u.partes {
+        let db = match p.de.database.trim() {
+            "" => database_corrente.trim().to_string(),
+            outro => outro.to_string(),
+        };
+        if db.is_empty() {
+            return Err(PhxError::Esquema(
+                "nao sei em qual database: escreva FROM banco.tabela ou escolha o banco \
+                 antes do UNION"
+                    .into(),
+            ));
+        }
+        if database.is_empty() {
+            database = db;
+        } else if !igual_sem_caso(&database, &db) {
+            // O pedido `unir` tem UM `database`. Traduzir mesmo assim poria o
+            // banco da primeira parte no lugar do da segunda, e o `unir`
+            // abriria a tabela ERRADA se houvesse uma de mesmo nome nos dois
+            // -- ou recusaria falando de uma tabela que existe.
+            return Err(PhxError::Esquema(format!(
+                "UNION entre bancos diferentes ({database:?} e {db:?}) nao tem \
+                 substrato: a op `unir` abre as tabelas de UM banco so"
+            )));
+        }
+        nomes.push(Json::texto_de(p.de.nome_no_protocolo()));
+    }
+    if nomes.len() < 2 {
+        return Err(PhxError::Esquema(
+            "a união precisa de ao menos duas partes".into(),
+        ));
+    }
+
+    // `distinta`/`tudo` sao os nomes canonicos de `juncao::Uniao::nome()`.
+    let modo = if u.tudo { "tudo" } else { "distinta" };
+    let pedido = pedido_com_op(
+        "unir",
+        vec![
+            ("database".to_string(), Json::texto_de(&database)),
+            ("tabelas".to_string(), Json::Lista(nomes)),
+            ("modo".to_string(), Json::texto_de(modo)),
+        ],
+    );
+
+    let notas = vec![
+        format!(
+            "{} vira `unir` com {} tabela(s): as colunas empilham por POSICAO, nunca por \
+             nome -- duas tabelas com as mesmas colunas em ordem diferente trocariam os \
+             valores calado, e por isso o motor confere quantidade e familia posicao a \
+             posicao antes de empilhar",
+            if u.tudo { "UNION ALL" } else { "UNION" },
+            u.partes.len()
+        ),
+        "os NOMES das colunas saem da PRIMEIRA parte, como nos quatro motores; o TIPO \
+         leva em conta todas -- duas escalas de decimal saem na maior"
+            .into(),
+        "cada tabela entra INTEIRA na memoria, e cada uma passa pelo portao de leitura \
+         DELA: unir nao e a porta dos fundos para ler a tabela negada"
+            .into(),
+    ];
+
+    Ok(Plano {
+        op: "unir".into(),
+        pedido,
+        saida: Saida::Posicional,
+        notas,
+    })
 }
 
 /// `CREATE VIEW nome AS SELECT ...` (item 6) vira `criar_visao`. O `sql`
@@ -238,13 +378,62 @@ pub fn traduzir_excluir_visao(nome: &str, database_corrente: &str) -> Result<Pla
 /// arvore.
 fn plano_agrupar(s: &Selecao, database: &str, mut notas: Vec<String>) -> Result<Plano> {
     let mut pares = base_do_pedido(&s.de, database);
+    // O `DISTINCT` agrupa pelas colunas PROJETADAS; o `GROUP BY` pelas que
+    // ele nomeia. A sintaxe ja garantiu que os dois nao chegam juntos.
+    let colunas_distintas: Vec<String> = match (&s.distinto, &s.projecao) {
+        (true, Projecao::Colunas(cs)) => cs.iter().map(|c| c.nome.clone()).collect(),
+        _ => Vec::new(),
+    };
+    let por: &[String] = if s.distinto {
+        &colunas_distintas
+    } else {
+        &s.agrupar_por
+    };
     pares.push((
         "por".to_string(),
-        Json::Lista(s.agrupar_por.iter().map(Json::texto_de).collect()),
+        Json::Lista(por.iter().map(Json::texto_de).collect()),
     ));
 
-    let (agregados, saida) = match &s.projecao {
-        Projecao::Agregada(itens) => {
+    // O DISTINCT sai ANTES do `match` da projecao porque a projecao dele e
+    // `Colunas`, que naquele `match` nao existe -- e cair no `unreachable!`
+    // seria trocar uma recusa nomeada por um estouro.
+    let distinto = if s.distinto {
+        // O `agrupar` EXIGE um agregado: sem `agregados` ele injeta um
+        // `contagem` sozinho (`servidor.rs::op_agrupar`). Mandar o agregado
+        // explicito e o que deixa escolher o APELIDO dele -- e o apelido
+        // importa, porque o `agrupar` recusa o que colide com uma coluna de
+        // agrupamento: `SELECT DISTINCT contagem FROM t` seria recusado pelo
+        // motor, com uma mensagem sobre apelido que quem escreveu SQL nao tem
+        // como entender. O apelido nao sai daqui na resposta de jeito nenhum:
+        // a `Saida::Colunas` abaixo lista so as colunas pedidas, e a projecao
+        // do `resposta_do_sql` joga fora o que nao esta nela.
+        let apelido = apelido_sem_colisao(&colunas_distintas);
+        let agregado = Json::Objeto(vec![
+            ("funcao".to_string(), Json::texto_de("contagem")),
+            ("apelido".to_string(), Json::texto_de(&apelido)),
+        ]);
+        let colunas_saida: Vec<(String, String)> = match &s.projecao {
+            Projecao::Colunas(cs) => cs
+                .iter()
+                .map(|c| (c.nome.clone(), c.rotulo().to_string()))
+                .collect(),
+            _ => unreachable!("a sintaxe so deixa DISTINCT com projecao de colunas"),
+        };
+        notas.push(format!(
+            "SELECT DISTINCT vira `agrupar` por {} coluna(s) -- agrupar por elas E \
+             eliminar o repetido delas. A contagem de cada grupo e calculada e \
+             descartada na projecao: o `agrupar` exige um agregado. NULO conta como \
+             um valor, e dois NULOS sao a MESMA linha, como nos quatro motores",
+            colunas_distintas.len()
+        ));
+        Some((vec![agregado], Saida::Colunas(colunas_saida)))
+    } else {
+        None
+    };
+
+    let (agregados, saida) = match (distinto, &s.projecao) {
+        (Some(pronto), _) => pronto,
+        (None, Projecao::Agregada(itens)) => {
             let mut agregados = Vec::with_capacity(itens.len());
             let mut colunas_saida = Vec::with_capacity(itens.len());
             for item in itens {
@@ -280,7 +469,7 @@ fn plano_agrupar(s: &Selecao, database: &str, mut notas: Vec<String>) -> Result<
         // O COUNT(*) que caiu aqui por causa do WHERE em forma de expressao
         // -- ver `count_com_expressao` em `traduzir`. Sai como um agregado
         // `contagem` solto, com o mesmo apelido padrao de sempre.
-        Projecao::Contagem => {
+        (None, Projecao::Contagem) => {
             let apelido = apelido_padrao(FuncaoAgregada::Contagem, None);
             let agregado = Json::Objeto(vec![
                 ("funcao".to_string(), Json::texto_de("contagem")),
@@ -297,7 +486,9 @@ fn plano_agrupar(s: &Selecao, database: &str, mut notas: Vec<String>) -> Result<
                 Saida::Colunas(vec![(apelido.clone(), apelido)]),
             )
         }
-        _ => unreachable!("so Agregada e Contagem (com WHERE-expressao) chegam em plano_agrupar"),
+        _ => unreachable!(
+            "so DISTINCT, Agregada e Contagem (com WHERE-expressao) chegam em plano_agrupar"
+        ),
     };
     pares.push(("agregados".to_string(), Json::Lista(agregados)));
 
@@ -335,7 +526,10 @@ fn plano_agrupar(s: &Selecao, database: &str, mut notas: Vec<String>) -> Result<
                 .iter()
                 .map(|o| {
                     Json::Objeto(vec![
-                        ("coluna".to_string(), Json::texto_de(&o.coluna)),
+                        (
+                            "coluna".to_string(),
+                            Json::texto_de(coluna_da_ordem(s, &o.coluna)),
+                        ),
                         ("desc".to_string(), Json::Bool(o.desc)),
                     ])
                 })
@@ -347,18 +541,35 @@ fn plano_agrupar(s: &Selecao, database: &str, mut notas: Vec<String>) -> Result<
         pares.push(("max".to_string(), Json::de_u64(l)));
     }
     if s.salto > 0 {
-        return Err(PhxError::Esquema(
-            "OFFSET com GROUP BY nao tem substrato nesta rodada: o contrato de `agrupar` \
-             nao tem campo `pular` -- pagine com HAVING ou um LIMIT maior, por enquanto"
-                .into(),
-        ));
+        // O DISTINCT herda a recusa porque herda a OPERACAO: e o mesmo
+        // `agrupar`, e ele nao tem campo `pular`. A frase nomeia a clausula
+        // que quem escreveu usou, e nao a que o tradutor escolheu.
+        let clausula = if s.distinto { "DISTINCT" } else { "GROUP BY" };
+        return Err(PhxError::Esquema(format!(
+            "OFFSET com {clausula} nao tem substrato nesta rodada: o contrato de \
+             `agrupar` nao tem campo `pular` -- pagine com um LIMIT maior, por enquanto"
+        )));
     }
 
-    notas.push(format!(
-        "GROUP BY vira `agrupar`: {} coluna(s) de agrupamento -- sem indice nenhum, porque \
-         agregar precisa varrer os grupos inteiros",
-        s.agrupar_por.len()
-    ));
+    if !s.distinto {
+        notas.push(format!(
+            "GROUP BY vira `agrupar`: {} coluna(s) de agrupamento -- sem indice nenhum, porque \
+             agregar precisa varrer os grupos inteiros",
+            s.agrupar_por.len()
+        ));
+    }
+    // O teto e o do `agrupar`, e o DISTINCT o herda inteiro: os grupos ficam
+    // TODOS em memoria ao mesmo tempo, e o motor recusa acima de
+    // `recursos.max_linhas` nomeando o teto. Quem pede DISTINCT de uma coluna
+    // de alta cardinalidade paga isso, e a recusa diz o que fazer.
+    if s.distinto {
+        notas.push(
+            "o teto e o do `agrupar`: os grupos ficam TODOS em memoria ao mesmo tempo, e \
+             acima de `recursos.max_linhas` o motor recusa nomeando o teto -- um DISTINCT \
+             de coluna com muitos valores distintos para ali"
+                .into(),
+        );
+    }
 
     Ok(Plano {
         op: "agrupar".into(),
@@ -1017,5 +1228,357 @@ mod testes {
         assert_eq!(p.op, "excluir_visao");
         assert_eq!(p.pedido.texto_ou("nome", ""), "v_c");
         assert_eq!(p.pedido.texto_ou("database", ""), "loja");
+    }
+
+    // ------------------------------------------------------- SELECT DISTINCT
+    //
+    // O que estes testes travam, e o defeito de cada um:
+    //
+    // 1. a traducao existe -- a recusa anterior dizia uma verdade sobre a
+    //    VARREDURA e tirava dela uma conclusao errada sobre o PROTOCOLO;
+    // 2. a lista de `por` tem TODAS as colunas projetadas, na ordem -- com
+    //    uma so, `DISTINCT a, b` devolveria a primeira linha de cada `a`;
+    // 3. a coluna de contagem que o `agrupar` exige NAO sai na resposta;
+    // 4. o apelido dela nao colide com uma coluna chamada `contagem`;
+    // 5. `*`, agregado e `GROUP BY` recusam NOMEANDO o que existe.
+
+    fn selecao_distinta(sql: &str) -> crate::sintaxe::Selecao {
+        analisar(sql).unwrap()
+    }
+
+    #[test]
+    fn distinct_de_uma_coluna_vira_agrupar_por_ela() {
+        let p = plano("SELECT DISTINCT cidade FROM Clientes");
+        assert_eq!(p.op, "agrupar");
+        assert_eq!(
+            p.pedido.textos("por"),
+            vec!["cidade".to_string()],
+            "{}",
+            p.pedido.escrever()
+        );
+        // A saida tem a coluna pedida e SO ela: a contagem que o `agrupar`
+        // devolve junto e descartada aqui, na projecao do cliente.
+        assert_eq!(
+            p.saida,
+            Saida::Colunas(vec![("cidade".into(), "cidade".into())])
+        );
+    }
+
+    /// `nomes_por` e plural no motor, e e por isso que `DISTINCT a, b`
+    /// funciona: a chave do grupo e a TUPLA. Com uma coluna so, a resposta
+    /// traria a primeira `b` de cada `a` -- um valor que nao e nem chave nem
+    /// agregado, que e exatamente o que o `GROUP BY` desta casa recusa.
+    #[test]
+    fn distinct_de_varias_colunas_agrupa_pela_tupla_na_ordem_escrita() {
+        let p = plano("SELECT DISTINCT cidade, nome FROM Clientes");
+        assert_eq!(
+            p.pedido.textos("por"),
+            vec!["cidade".to_string(), "nome".to_string()]
+        );
+        assert_eq!(
+            p.saida,
+            Saida::Colunas(vec![
+                ("cidade".into(), "cidade".into()),
+                ("nome".into(), "nome".into())
+            ])
+        );
+    }
+
+    /// O `AS` vale: o agrupamento e pela COLUNA, o rotulo e o apelido.
+    #[test]
+    fn distinct_com_apelido_agrupa_pela_coluna_e_rotula_pelo_apelido() {
+        let p = plano("SELECT DISTINCT cidade AS praca FROM Clientes");
+        assert_eq!(p.pedido.textos("por"), vec!["cidade".to_string()]);
+        assert_eq!(
+            p.saida,
+            Saida::Colunas(vec![("cidade".into(), "praca".into())])
+        );
+    }
+
+    /// O `agrupar` EXIGE um agregado -- sem ele o motor injeta um `contagem`.
+    /// O tradutor manda o dele para poder escolher o apelido, e o apelido
+    /// desvia de uma coluna de mesmo nome: sem isso, `SELECT DISTINCT
+    /// contagem FROM t` -- consulta legitima -- morreria no motor com uma
+    /// mensagem sobre um agregado que ninguem pediu.
+    #[test]
+    fn o_agregado_que_o_distinct_carrega_nao_colide_com_uma_coluna_contagem() {
+        let p = plano("SELECT DISTINCT contagem FROM Clientes");
+        let ags = p.pedido.campo("agregados").and_then(Json::lista).unwrap();
+        assert_eq!(ags.len(), 1);
+        assert_eq!(ags[0].texto_ou("funcao", ""), "contagem");
+        assert_eq!(ags[0].texto_ou("apelido", ""), "contagem_");
+        // E a saida continua sendo so a coluna pedida.
+        assert_eq!(
+            p.saida,
+            Saida::Colunas(vec![("contagem".into(), "contagem".into())])
+        );
+    }
+
+    #[test]
+    fn distinct_com_where_e_limit_viaja_com_os_dois() {
+        let p = plano("SELECT DISTINCT cidade FROM Clientes WHERE id = 7 LIMIT 5");
+        assert_eq!(p.op, "agrupar");
+        assert_eq!(p.pedido.inteiro_ou("max", -1), 5);
+        let onde = p.pedido.campo("onde").and_then(Json::lista).unwrap();
+        assert_eq!(onde.len(), 1);
+        assert_eq!(onde[0].texto_ou("coluna", ""), "id");
+    }
+
+    /// O `ORDER BY` do DISTINCT usa a lista (`ordem_lista`), e nao a forma de
+    /// uma coluna so do caminho de indice: o `agrupar` ordena um resultado ja
+    /// em memoria, entao a segunda coluna nao pede indice composto nenhum.
+    #[test]
+    fn distinct_ordena_por_varias_colunas_sem_pedir_indice() {
+        let s = selecao_distinta(
+            "SELECT DISTINCT cidade, nome FROM Clientes ORDER BY nome, cidade DESC",
+        );
+        assert!(s.ordem.is_none());
+        assert_eq!(s.ordem_lista.len(), 2);
+        let p = plano("SELECT DISTINCT cidade, nome FROM Clientes ORDER BY nome, cidade DESC");
+        let ordem = p.pedido.campo("ordem").and_then(Json::lista).unwrap();
+        assert_eq!(ordem.len(), 2);
+        assert_eq!(ordem[0].texto_ou("coluna", ""), "nome");
+        assert!(ordem[1].booleano_ou("desc", false));
+    }
+
+    /// A regra dos quatro motores: o `ORDER BY` de um DISTINCT so alcanca
+    /// coluna da lista projetada. A recusa nomeia a coluna E a lista.
+    #[test]
+    fn distinct_que_ordena_por_coluna_de_fora_da_lista_recusa_nomeando() {
+        let e = analisar("SELECT DISTINCT cidade FROM Clientes ORDER BY nome")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("\"nome\""), "{e}");
+        assert!(e.contains("cidade"), "{e}");
+    }
+
+    /// O DISTINCT herda a recusa do OFFSET porque herda a OPERACAO -- e a
+    /// frase nomeia a clausula que quem escreveu usou.
+    #[test]
+    fn distinct_com_offset_recusa_nomeando_o_distinct() {
+        let e = recusa("SELECT DISTINCT cidade FROM Clientes LIMIT 5 OFFSET 10");
+        assert!(e.contains("OFFSET com DISTINCT"), "{e}");
+        assert!(e.contains("pular"), "{e}");
+    }
+
+    /// `SELECT DISTINCT *` recusa NOMEANDO, e o motivo e medido: o `*` desta
+    /// casa carrega `rowid`/`softdeleted`/`rownum`, e o `rownum` e unico por
+    /// linha -- agrupar por tudo o que o `*` mostra nao tiraria repetida
+    /// nenhuma e ainda pagaria a tabela de grupos.
+    #[test]
+    fn distinct_estrela_recusa_nomeando_as_colunas_de_sistema() {
+        let e = analisar("SELECT DISTINCT * FROM Clientes")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("rownum"), "{e}");
+        assert!(e.contains("Nomeie as colunas"), "{e}");
+    }
+
+    #[test]
+    fn distinct_com_agregado_e_com_group_by_recusam_nomeando() {
+        let e = analisar("SELECT DISTINCT COUNT(*) FROM Clientes")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("funcao agregada"), "{e}");
+        assert!(e.contains("COUNT(DISTINCT coluna)"), "{e}");
+
+        let e = analisar("SELECT DISTINCT cidade FROM Clientes GROUP BY cidade")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("GROUP BY/HAVING"), "{e}");
+    }
+
+    /// `COUNT(DISTINCT coluna)` e OUTRA pergunta e OUTRO caminho -- ele ja
+    /// existia, e nada nesta rodada o tocou.
+    #[test]
+    fn count_distinct_de_coluna_continua_pelo_caminho_de_sempre() {
+        let p = plano("SELECT COUNT(DISTINCT cidade) FROM Clientes");
+        assert_eq!(p.op, "agrupar");
+        let ags = p.pedido.campo("agregados").and_then(Json::lista).unwrap();
+        assert_eq!(ags[0].texto_ou("funcao", ""), "distintos");
+        assert_eq!(ags[0].texto_ou("coluna", ""), "cidade");
+        // E o SELECT sem DISTINCT continua indo para a varredura.
+        assert_eq!(plano("SELECT cidade FROM Clientes").op, "varrer");
+    }
+
+    /// O `distinto` se liga num lugar SO -- `Analisador::comando`. Toda
+    /// `Selecao` de dentro de uma consulta composta passa por
+    /// `Analisador::selecao`, que recusa a palavra nomeando: sem isso, a
+    /// coluna de contagem do `agrupar` vazaria para o resultado de fora,
+    /// porque `traduzir_consulta` usa o PEDIDO de cada pedaco e descarta a
+    /// `saida` dele.
+    #[test]
+    fn distinct_dentro_de_consulta_composta_recusa_nomeando() {
+        for sql in [
+            "SELECT x.cidade FROM (SELECT DISTINCT cidade FROM Clientes) x",
+            "WITH c AS (SELECT DISTINCT cidade FROM Clientes) SELECT cidade FROM c",
+            "SELECT DISTINCT c.nome FROM Clientes c JOIN Pedidos p ON c.id = p.cid",
+        ] {
+            let e = crate::analisar_comando(sql).unwrap_err().to_string();
+            assert!(
+                e.contains("DISTINCT") && e.contains("substrato"),
+                "{sql} -> {e}"
+            );
+        }
+    }
+
+    // --------------------------------------------------- UNION e UNION ALL
+    //
+    // A op `unir` ja existia -- ela e a porta dos sete cartoes de Venn da
+    // tela. O que faltava era alguem escrever `UNION` e chegar la.
+    //
+    // O que estes testes travam:
+    //
+    // 1. as duas formas viram o `modo` certo (`distinta` e `tudo`), com os
+    //    nomes EXATOS que `juncao::Uniao::de_texto` aceita;
+    // 2. a lista de tabelas sai na ORDEM escrita -- a uniao empilha por
+    //    posicao e o cabecalho sai da primeira, entao trocar a ordem troca a
+    //    resposta;
+    // 3. o que NAO tem substrato recusa nomeando o que existe, e nao cai num
+    //    "sintaxe invalida".
+
+    fn uniao(sql: &str) -> Plano {
+        match crate::analisar_comando(sql).unwrap() {
+            crate::Comando::Uniao(u) => traduzir_uniao(&u, "Comercial").unwrap(),
+            outro => panic!("{sql} nao virou uniao: {outro:?}"),
+        }
+    }
+
+    fn recusa_uniao(sql: &str) -> String {
+        match crate::analisar_comando(sql) {
+            Err(e) => e.to_string(),
+            Ok(crate::Comando::Uniao(u)) => traduzir_uniao(&u, "Comercial")
+                .expect_err("tinha de recusar")
+                .to_string(),
+            Ok(outro) => panic!("{sql} nao recusou e nao virou uniao: {outro:?}"),
+        }
+    }
+
+    #[test]
+    fn union_vira_unir_distinta_e_union_all_vira_tudo() {
+        let p = uniao("SELECT * FROM a UNION SELECT * FROM b");
+        assert_eq!(p.op, "unir");
+        assert_eq!(p.pedido.texto_ou("modo", ""), "distinta");
+        assert_eq!(p.pedido.texto_ou("database", ""), "Comercial");
+        assert_eq!(
+            p.pedido.textos("tabelas"),
+            vec!["a".to_string(), "b".to_string()]
+        );
+        assert_eq!(p.saida, Saida::Posicional);
+
+        let p = uniao("SELECT * FROM a UNION ALL SELECT * FROM b");
+        assert_eq!(p.pedido.texto_ou("modo", ""), "tudo");
+    }
+
+    /// Tres partes, e a ORDEM e a escrita: o cabecalho sai da primeira, e a
+    /// uniao empilha por posicao.
+    #[test]
+    fn a_uniao_de_tres_mantem_a_ordem_escrita() {
+        let p = uniao("SELECT * FROM c UNION ALL SELECT * FROM a UNION ALL SELECT * FROM b");
+        assert_eq!(
+            p.pedido.textos("tabelas"),
+            vec!["c".to_string(), "a".to_string(), "b".to_string()]
+        );
+    }
+
+    /// O `FROM banco.tabela` manda, e o esquema viaja junto -- `unir` abre
+    /// `matriz.estoque` do mesmo jeito que `varrer` abre.
+    #[test]
+    fn a_uniao_le_o_banco_do_from_e_o_esquema_da_tabela() {
+        let p = uniao("SELECT * FROM loja.matriz.estoque UNION SELECT * FROM loja.filial.estoque");
+        assert_eq!(p.pedido.texto_ou("database", ""), "loja");
+        assert_eq!(
+            p.pedido.textos("tabelas"),
+            vec!["matriz.estoque".to_string(), "filial.estoque".to_string()]
+        );
+    }
+
+    /// O pedido `unir` tem UM `database`. Duas bases recusam NOMEANDO as
+    /// duas, em vez de a segunda ser aberta na base da primeira -- que
+    /// abriria a tabela errada se houvesse uma de mesmo nome nas duas.
+    ///
+    /// O nome de TRES partes e que diz o banco (`banco.esquema.tabela`); o de
+    /// duas e `esquema.tabela` dentro do banco corrente, e por isso
+    /// `um.a UNION dois.b` passa -- sao dois ESQUEMAS do mesmo banco.
+    #[test]
+    fn uniao_entre_bancos_diferentes_recusa_nomeando_os_dois() {
+        let e = recusa_uniao("SELECT * FROM um.x.a UNION SELECT * FROM dois.y.b");
+        assert!(e.contains("\"um\"") && e.contains("\"dois\""), "{e}");
+        // E dois ESQUEMAS do mesmo banco continuam passando.
+        let p = uniao("SELECT * FROM um.a UNION SELECT * FROM dois.b");
+        assert_eq!(p.pedido.texto_ou("database", ""), "Comercial");
+        assert_eq!(
+            p.pedido.textos("tabelas"),
+            vec!["um.a".to_string(), "dois.b".to_string()]
+        );
+    }
+
+    /// **A recusa central desta rodada.** A op `unir` recebe TABELAS
+    /// inteiras: nao ha `onde`, nao ha projecao, nao ha ordem. Tudo o que
+    /// passar disso recusa dizendo o que existe -- e apontando onde a conta
+    /// de mudar isso esta medida.
+    #[test]
+    fn uniao_com_filtro_ou_projecao_recusa_nomeando_o_que_existe() {
+        for sql in [
+            "SELECT nome FROM a UNION SELECT nome FROM b",
+            "SELECT * FROM a WHERE id = 1 UNION SELECT * FROM b",
+            "SELECT * FROM a UNION SELECT * FROM b WHERE id = 1",
+            "SELECT * FROM a UNION SELECT cidade FROM b",
+        ] {
+            let e = recusa_uniao(sql);
+            assert!(e.contains("TABELAS inteiras"), "{sql} -> {e}");
+            assert!(e.contains("SELECT * FROM a UNION"), "{sql} -> {e}");
+        }
+    }
+
+    /// O `unir` nao tem campo de ordem, e o `max` dele e o teto de memoria do
+    /// servidor -- usa-lo como LIMIT faria a resposta dizer `truncado` por um
+    /// corte que quem perguntou pediu. A recusa diz as duas coisas.
+    #[test]
+    fn uniao_com_ordem_ou_limite_recusa_nomeando_o_teto() {
+        for sql in [
+            "SELECT * FROM a UNION SELECT * FROM b ORDER BY nome",
+            "SELECT * FROM a UNION SELECT * FROM b LIMIT 10",
+            "SELECT * FROM a UNION SELECT * FROM b OFFSET 3",
+        ] {
+            let e = recusa_uniao(sql);
+            assert!(e.contains("teto de memoria"), "{sql} -> {e}");
+        }
+    }
+
+    /// O `modo` e UM para a lista toda. Misturar as duas formas escolheria
+    /// uma calado, e o que se perderia e justamente a linha repetida.
+    #[test]
+    fn misturar_union_e_union_all_recusa_nomeando() {
+        let e = recusa_uniao("SELECT * FROM a UNION SELECT * FROM b UNION ALL SELECT * FROM c");
+        assert!(e.contains("UM modo"), "{e}");
+    }
+
+    /// O `WHERE` para no `UNION`, e nao o engole. Sem isto, a recusa falaria
+    /// de uma expressao ilegivel em vez de falar do UNION que alguem escreveu.
+    #[test]
+    fn o_where_para_no_union_em_vez_de_engolir_o_segundo_select() {
+        let e = recusa_uniao("SELECT * FROM a WHERE id = 1 UNION SELECT * FROM b");
+        assert!(e.contains("TABELAS inteiras"), "{e}");
+        // E o SELECT sem UNION continua lendo o WHERE inteiro.
+        let s = analisar("SELECT * FROM t WHERE a = 1 AND b = 2").unwrap();
+        assert!(matches!(&s.onde, Some(Onde::Expressao(e)) if e.contains("AND")));
+    }
+
+    /// `UNION` com junção, subconsulta, CTE ou janela recusa NOMEANDO, e nao
+    /// morre com "sobrou UNION depois do fim do comando" -- verdade que nao
+    /// ensina nada.
+    #[test]
+    fn uniao_com_forma_composta_recusa_nomeando() {
+        for sql in [
+            "SELECT * FROM a JOIN b ON a.id = b.id UNION SELECT * FROM c",
+            "SELECT * FROM (SELECT * FROM a) x UNION SELECT * FROM c",
+        ] {
+            let e = crate::analisar_comando(sql).unwrap_err().to_string();
+            assert!(
+                e.contains("UNION") && e.contains("substrato"),
+                "{sql} -> {e}"
+            );
+        }
     }
 }
