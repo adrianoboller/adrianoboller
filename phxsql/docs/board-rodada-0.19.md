@@ -55,6 +55,56 @@ esquecimento): **E** designer — nenhuma frente toca tela; **J** pesquisador �
 as quatro já vêm medidas; **D** zelador — roda de hora em hora e está
 silencioso.
 
+## A triagem do papel J, e o placar que justifica a lei nova
+
+Feita em 23/09/2026 contra o **help e o fonte** de PostgreSQL, MariaDB, MySQL e
+SQLite. Documento: `docs/propostas/triagem-das-decisoes-do-dono-2026-09-23.md`.
+
+| classe | quantos | quais |
+|---|---:|---|
+| **A** — convergência, entra sem pergunta | **4** | 251, 255, 300, 309 |
+| **B** — voto ponderado | 1 meia | «reparar sozinho» do 255 (**6 × 4**) |
+| **C** — é do dono | **4** | 325, 333, 337, 368 |
+| **fora da fila** | **3** | 274, 293, 294 |
+
+**A fila do dono caiu de 11 para 4 na primeira aplicação da lei.**
+
+E os três «fora da fila» são o defeito do **340** outras três vezes: o **274**
+já está entregue (o **378** o fechou em 22/09 e diz isso no corpo — conferido
+no fonte: a frase «a `std` não traz TLS» não existe mais), e o **293** e o
+**294** trazem **«DECIDIDO PELO DONO, 17/09/2026 07:10 UTC»** por extenso.
+Estavam parados esperando o dono decidir o que ele já tinha decidido.
+
+**O mais grave dos A é o 300**, e é divergência nossa com a restrição nomeada:
+a posição da réplica é **contagem local** (`servidor.rs:3807-3825`) quando nos
+três maduros ela é a coordenada da **ORIGEM** (LSN, `gtid_slave_pos`,
+`gtid_executed`). Eles têm diário único; nós temos `.log` por tabela, modelo
+HFSQL — então a receita entra como «a posição é a do evento que veio, por
+tabela».
+
+**Brinde medido:** das 10 referências `arquivo:linha` citadas nos onze pedidos,
+**7 estavam deslocadas** — conteúdo certo, coordenada movida. J **não** propôs
+gerador, e fez bem: seria catraca sem defeito medido que a motive.
+
+## Decisões do dono de 23/09, segunda leva
+
+| # | decisão |
+|---|---|
+| **333a** | o chat do PhxMail é **ponta-a-ponta** — servidor não busca no texto, robô não lê |
+| **333b** | **escrever TLS aqui**, como foi o SHA-256. Nada de crate |
+| **337** | **trocar a razão escrita** da pétrea de zero dependências: de «compila offline» para **instalação simples**. A pétrea fica intacta |
+| **368** | o expurgo do `.lgpd` **nasce desligado** (padrão do MariaDB); existe e quem quiser liga |
+
+**325 continua sem resposta** — abrir ou não a frente das N pontas (cada caixa
+como `source`, central como `replica` multi-origem). Não foi perguntada porque
+não há capacidade nesta onda.
+
+**O 333b é o maior pedaço de criptografia que esta casa já encarou**, e entra
+pelo método que deu o SHA-256: norma lida, entendida, reescrita, provada contra
+vetor oficial. **Não começa por código** — começa por J medindo o escopo
+(X.509, ASN.1, validação de cadeia) contra o nosso gargalo. «Cripto de
+transporte malfeita é pior que nenhuma» é a frase que governa a frente.
+
 ## Onda 2, e o motivo de não ser paralela
 
 **324** (adiar o `.ndx` sob a reserva) mexe na reserva dentro do `servidor.rs`;

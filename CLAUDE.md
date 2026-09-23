@@ -239,8 +239,16 @@ sem prova. Ver `docs/ACID.md` §2.4/§3.3/§4.4 e `docs/PENDENCIAS.md` #189 e
 
 ## Regras que não se quebram
 
-**Zero dependências externas.** Só a `std`. Foi o que fez a compilação cruzada
-para Windows funcionar de primeira e o que permite `cargo build --offline`.
+**Zero dependências externas.** Só a `std`. A razão é **instalação simples** —
+um binário que não arrasta árvore de dependência nenhuma, compila cruzado para
+Windows de primeira e aceita `cargo build --offline`; essas três são
+*consequências* da razão, não a razão.
+
+*A razão foi corrigida em 23/09/2026, por decisão do dono, e a correção é do
+papel J:* a lei dizia que a pétrea existia porque «permite `cargo build
+--offline`». Medido, isso é efeito e não causa — e razão errada numa lei certa
+é a porta pela qual alguém derruba a lei amanhã refutando a razão. A pétrea
+segue **intacta**; só o porquê escrito nela mudou.
 JSON, CRC-32, SHA-256, HMAC e PBKDF2 são escritos aqui. Se algo parecer exigir
 uma crate, primeiro pergunte — não acrescente.
 
