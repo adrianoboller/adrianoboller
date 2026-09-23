@@ -4116,3 +4116,107 @@ deixa arquivo nenhum, e os 6 testes do conferidor passam.
 O material usado nas provas é **64 letras `a`** — o **formato** de uma chave,
 nunca uma chave. Teste que gera material de verdade para provar uma guarda de
 segredo é o próprio defeito.
+
+## 19. O teto antes da identidade: o sintoma era a falta, a doença era a duplicação (pedido 434)
+
+### 19.1 O diagnóstico que mudou de nível
+
+O pedido nasceu escrito como «a entrada anônima não tem teto». Medido, isso é
+o sintoma. A causa é outra: **a entrada anônima não vinha do motor, e por isso
+não tinha teto.** O `Canal` (`crates/phxsql-core/src/fio.rs`) existe desde a
+cifra do fio justamente para o laço de conexão ser **um só**, e ele já aplica o
+teto por `take` antes de a linha existir. Quem ficou fora dele ficou sem nada.
+
+Consequência prática: o conserto **não** é pendurar um segundo teto ao lado do
+primeiro. Uma constante `MAX_LINHA` nova na porta web teria fechado o buraco de
+hoje e criado o próximo — duas decisões do mesmo assunto, em dois arquivos, para
+divergirem depois.
+
+### 19.2 Os cinco sítios, e o que cada um virou
+
+| sítio | antes | depois |
+|---|---|---|
+| `http.rs`, linha de pedido | `read_line` cru, **sem teto nenhum** | `Canal::Claro::ler_ate(…, MAX_CABECALHO)` |
+| `http.rs`, cada linha de cabeçalho | `MAX_CABECALHO` conferido **depois** de a linha estar na memória | o mesmo `ler_ate`, o teto **antes** |
+| `servidor.rs`, porta 5000 | `Canal::ler` → `TETO_DO_REGISTRO` (128 MiB) **antes do login** | `ler_ate` com o teto que a sessão manda |
+| `phxsql-odbc/conexao.rs::cifrar` | `read_line` cru no aperto de mão | `ler_ate(…, TETO_DO_APERTO)` |
+| os outros três `read_line` do ODBC | — | **recusados, medidos**: estão dentro de `#[cfg(test)]` (o módulo começa na linha 596), são os servidores de mentira, isto é, o **outro lado** do fio |
+
+A prova de que a porta web era defeito e não desenho está no próprio arquivo:
+quinze linhas abaixo, `tamanho > MAX_CORPO` é conferido **ANTES** de
+`vec![0u8; tamanho]`. Quem escreveu a porta sabia a diferença e deixou a linha
+de fora.
+
+### 19.3 Por que nenhum cliente legítimo cruza os tetos escolhidos
+
+**Porta web — 16 KiB, e é o `MAX_CABECALHO` que já estava lá.** Nenhum valor
+novo entrou, e o conjunto do que é **aceito não mudou em nada**: toda linha de
+um pedido aceito já cabia nos 16 KiB, porque o acumulado inteiro tinha de
+caber, e uma linha de pedido maior que isso já morria na primeira volta do laço
+quando o `lidos` somava a linha em branco do fim. O que mudou foi só **quando**
+a recusa acontece. Um teto de 8 KiB (o do Apache e o do nginx) teria sido uma
+recusa **nova**, e foi recusado por isso.
+
+**Porta 5000 — 64 KiB, e é o `TETO_DO_APERTO` que já existia.** Anônimo, num
+servidor com cadastro, só há seis operações legais — `ping`, `login`,
+`desafio`, `quem_sou`, `sair` e `catalogo`, as que `Atividade::da_operacao`
+devolve `None`; toda outra cai no «faça login». A maior delas, um `login` com
+token e prova, não chega a mil bytes: **64× de folga**.
+
+### 19.4 Os dois escapes, e por que cada um existe
+
+`Servidor::teto_da_linha` devolve o teto do registro em dois casos, e os dois
+são «guarda nova entra **pedida**, não imposta»:
+
+- **sessão identificada** — quem provou quem é tem direito ao lote de 128 MiB;
+- **servidor sem cadastro** — ali não há credencial a esperar, e apertar
+  quebraria o `inserir` em lote de todo cliente que nunca criou usuário. O
+  escape não vale quando a cifra é exigida e o túnel ainda não existe: nesse
+  caso a única linha que o servidor aceitaria é o próprio aperto.
+
+A condição «ainda anônima» virou **uma função só**, `Servidor::ainda_anonima`,
+usada pelo portão do login **e** pelo teto. Duas cópias divergiriam no dia em
+que uma ganhasse um caso novo, e a que ficasse para trás seria a porta dos
+fundos: sessão tratada como anônima por um lado e como identificada pelo outro.
+
+### 19.5 A mensagem que anunciava zero e dava ordem que não cabia
+
+Achado B2 da revisão de segurança de 23/09/2026. A recusa do `Canal` fazia
+`teto / (1024 * 1024)` cravado, então no teto do aperto ela imprimia **«mais de
+0 MiB»** — um número que é sempre zero não se compara com nada. E emendava
+«baixe o tamanho do lote de quem serve ou parta a tabela» **dentro de um aperto
+de mão**, onde não há lote nem tabela.
+
+Hoje a medida escolhe a unidade pelo tamanho (`128 MiB`, `64 KiB`, `200 bytes`)
+e o conselho só aparece onde pode ser cumprido — no teto do registro. O **teto
+em bytes** continua dentro da mensagem, porque é por ele que quem opera compara
+com o que mediu.
+
+### 19.6 A prova, nos dois sentidos
+
+Quatro reposições, todas medidas, e em todas as quatro **o comportamento velho
+seguiu verde** — que é o teste que mais importa numa guarda nova:
+
+| defeito reposto | o que cai |
+|---|---|
+| `teto_da_linha` sempre `TETO_DO_REGISTRO` | `a_linha_grande_antes_do_login_e_recusada_pelo_teto_do_anonimo` **falha**: a linha anônima de 1 MiB volta `{"ok":true,…}`. Os outros 3 do arquivo seguem |
+| `read_line` cru nas duas linhas do `http.rs` | `a_linha_de_pedido_sem_fim_…` e `a_linha_de_cabecalho_sem_fim_…` **falham** por prazo: 262.144 bytes escritos e **3,15 s** sem o servidor largar nada. Os 2 do comportamento velho seguem |
+| `read_line` cru no `cifrar` do ODBC | `a_resposta_do_aperto_acima_do_teto_e_recusada_pelo_limite` **falha** pelo motivo **errado**: «a resposta do aperto de mão não é JSON», com os 128 KiB já na memória. Os 3 irmãos seguem |
+| a conta `teto / (1024*1024)` e o conselho fixo | `a_recusa_nunca_anuncia_zero_e_nao_da_ordem_que_nao_cabe` **falha** imprimindo «mais de 0 MiB … parta a tabela» |
+
+**Por que a prova do HTTP é «o servidor larga a conexão», e não «quantos bytes
+coube escrever».** Porque o buffer de recepção autotune até **32 MiB** nesta
+máquina (`/proc/sys/net/ipv4/tcp_rmem`), e um cliente escreve dezenas de MiB
+antes de qualquer bloqueio: contar bytes mediria o kernel, não o servidor. O
+que separa os dois estados é o **tempo**: com o teto, o servidor desiste ao
+passar de 16 KiB; sem ele, fica preso no `read_line` até o prazo dele vencer —
+daí o `timeout_s: 60` da bateria contra os 3 s do cliente, 20× de separação.
+
+### 19.7 O que ficou de fora, e por quê
+
+`email.rs:164` (`Sessao::esperar`, o cliente SMTP dos alertas) lê a resposta do
+servidor de e-mail com `read_line` **cru**, e o laço de múltiplas linhas também
+não tem limite de linhas. É o mesmo naipe, e **não** foi consertado aqui: não é
+irmão — não passa pelo `Canal`, não é o protocolo do fio, e o destino sai do
+`config.json` (escolha do operador, não de quem chega pela rede). Fica anotado
+como sítio conhecido em vez de sumir da varredura.

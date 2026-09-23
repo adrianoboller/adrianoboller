@@ -5,7 +5,7 @@
 use phxsql_core::base64;
 use phxsql_core::fio::{Canal as FioCanal, Iniciador, Recebido};
 use phxsql_core::json::Json;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufReader, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
@@ -469,17 +469,30 @@ impl Canal {
             .and_then(|_| self.fluxo.flush())
             .map_err(|e| Falha::nova("08001", format!("mandando o aperto de mao: {e}")))?;
 
-        let mut resposta = String::new();
-        let lidos = self
-            .leitor
-            .read_line(&mut resposta)
-            .map_err(|e| Falha::nova("08001", format!("lendo o aperto de mao: {e}")))?;
-        if lidos == 0 {
-            return Err(Falha::nova(
-                "08001",
-                "o servidor fechou a conexao durante o aperto de mao",
-            ));
-        }
+        // O TETO vale aqui tambem -- pedido 312, fechado no ODBC pelo 434.
+        //
+        // Este e o TERCEIRO irmao do `cifrar`: o `replica::Cliente::cifrar` e o
+        // `servidor::Cliente::cifrar` ganharam o teto no pedido 312, e este
+        // ficou com o `read_line` cru. Irmao e quem chama as mesmas funcoes na
+        // mesma ordem, e os tres chamam: manda a mensagem 1 em claro, le a
+        // resposta ANTES de o tunel existir e ANTES de qualquer autenticacao.
+        // Sem teto, quem escolhe quanta memoria o driver reserva e o servidor
+        // do outro lado -- que, no aperto, e justamente quem ainda nao provou
+        // ser quem diz. Medido no irmao da replica: 192 MiB numa linha so, em
+        // 294 ms.
+        let resposta = match self
+            .fio
+            .ler_ate(&mut self.leitor, phxsql_core::fio::TETO_DO_APERTO)
+            .map_err(|e| Falha::nova("08001", format!("lendo o aperto de mao: {e}")))?
+        {
+            Recebido::Linha(l) => l,
+            Recebido::Fim => {
+                return Err(Falha::nova(
+                    "08001",
+                    "o servidor fechou a conexao durante o aperto de mao",
+                ))
+            }
+        };
         let j = Json::analisar(&resposta)
             .map_err(|_| Falha::nova("08001", "a resposta do aperto de mao nao e JSON"))?;
         if !j.booleano_ou("ok", false) {
@@ -583,6 +596,10 @@ impl Canal {
 #[cfg(test)]
 mod testes {
     use super::*;
+    // So os servidores de MENTIRA deste modulo leem linha crua: eles sao o
+    // outro lado do fio, e o teto protege quem RECEBE. O driver de producao
+    // le pelo `fio::Canal`, e por isso o `BufRead` saiu de cima.
+    use std::io::BufRead as _;
 
     #[test]
     fn receita_completa() {
@@ -867,6 +884,85 @@ mod testes {
             ])
             .expect("o pedido pelo tunel devia responder");
         assert_eq!(resposta.texto_ou("eco", ""), "ola-pelo-tunel");
+    }
+
+    /// Sobe um servidor que responde o aperto com uma linha ACIMA DO TETO.
+    ///
+    /// Le o `cifrar` e despeja 128 KiB numa linha so -- o dobro do
+    /// `TETO_DO_APERTO`. Nao e JSON de proposito: com o teto no lugar ninguem
+    /// chega a analisa-la, e com o defeito reposto a reprovacao sai nomeando o
+    /// erro que veio no lugar («nao e JSON») em vez de sair por prazo.
+    fn servidor_que_estoura_o_aperto() -> u16 {
+        let escuta = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let porta = escuta.local_addr().unwrap().port();
+        let (pronto, espere) = mpsc::channel();
+        std::thread::spawn(move || {
+            pronto.send(()).ok();
+            let Ok((soquete, _)) = escuta.accept() else {
+                return;
+            };
+            let _ = soquete.set_read_timeout(Some(Duration::from_secs(3)));
+            let _ = soquete.set_write_timeout(Some(Duration::from_secs(3)));
+            let mut escrita = soquete.try_clone().unwrap();
+            let mut leitor = BufReader::new(soquete);
+            let mut linha = String::new();
+            if leitor.read_line(&mut linha).unwrap_or(0) == 0 {
+                return;
+            }
+            let gorda = "A".repeat(2 * phxsql_core::fio::TETO_DO_APERTO as usize);
+            // O cano quebra quando o driver recusa e vai embora, e quebrar e o
+            // esperado: por isso nada aqui usa `unwrap`.
+            let _ = escrita.write_all(gorda.as_bytes());
+            let _ = escrita.write_all(b"\n");
+            let _ = escrita.flush();
+        });
+        espere.recv().ok();
+        porta
+    }
+
+    /// **A resposta do aperto acima do teto e recusada pelo LIMITE.**
+    ///
+    /// # O defeito que este teste trava
+    ///
+    /// Pedido 434. Este `cifrar` era o TERCEIRO irmao dos dois que o pedido
+    /// 312 consertou (`replica::Cliente::cifrar` e `servidor::Cliente::cifrar`)
+    /// e ficou com o `read_line` cru: quem escolhia quanta memoria o driver
+    /// reserva era o servidor do outro lado, antes de o tunel existir e antes
+    /// de qualquer credencial. Medido no irmao da replica: 192 MiB numa linha
+    /// so, em 294 ms.
+    ///
+    /// Com o defeito reposto a recusa ainda acontece, mas por OUTRO motivo --
+    /// «a resposta do aperto de mao nao e JSON», depois de os 128 KiB ja
+    /// estarem na memoria. Por isso a assercao e sobre o MOTIVO, e nao sobre
+    /// haver falha: falha havia nos dois estados.
+    #[test]
+    fn a_resposta_do_aperto_acima_do_teto_e_recusada_pelo_limite() {
+        let porta = servidor_que_estoura_o_aperto();
+        let r = Receita {
+            servidor: "127.0.0.1".into(),
+            porta,
+            cifra: true,
+            ..Receita::default()
+        };
+        let f = match Canal::abrir(&r) {
+            Err(f) => f,
+            Ok(_) => panic!("o aperto gordo devia ser recusado, e o driver ABRIU"),
+        };
+        assert_eq!(f.estado, "08001", "{}", f.mensagem);
+        assert!(
+            f.mensagem.contains("limite excedido"),
+            "a recusa devia ser do TETO, e veio: {}",
+            f.mensagem
+        );
+        assert!(
+            f.mensagem
+                .contains(&phxsql_core::fio::TETO_DO_APERTO.to_string()),
+            "a recusa nao traz o teto em bytes: {}",
+            f.mensagem
+        );
+        // E a medida legivel, que antes de hoje dizia «0 MiB» num teto de
+        // 64 KiB -- achado B2 da revisao de seguranca de 23/09/2026.
+        assert!(f.mensagem.contains("64 KiB"), "{}", f.mensagem);
     }
 
     /// Sobe um servidor que RECUSA o aperto, como um phxsqld com

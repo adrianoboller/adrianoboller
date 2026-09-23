@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::expressao::Expressao;
-use phxsql_core::fio::{Canal, Recebido, TETO_DO_REGISTRO};
+use phxsql_core::fio::{Canal, Recebido, TETO_DO_APERTO, TETO_DO_REGISTRO};
 use phxsql_core::json::Json;
 use phxsql_core::semaforo::{Permissao, Semaforo};
 use phxsql_store::catalogo::{Aberta, Instancia, Raiz};
@@ -9540,7 +9540,15 @@ impl Servidor {
         let mut canal = Canal::Claro;
         let mut linha;
         loop {
-            linha = match canal.ler(&mut leitor) {
+            // QUANTO ESTE LADO RESERVA ANTES DE SABER QUEM FALA -- pedido 434.
+            //
+            // O teto vem do MOTOR, e a pergunta que ele responde muda com a
+            // sessao: enquanto ninguem provou quem e, reservar 128 MiB e
+            // deixar quem ainda nao e ninguem escolher a memoria deste lado.
+            // O `ler_ate` e o mesmo `ler` de sempre com o teto dito em voz
+            // alta -- nao ha leitura nova aqui, so a decisao de quanto.
+            let teto = self.teto_da_linha(&sessao, canal.cifrado());
+            linha = match canal.ler_ate(&mut leitor, teto) {
                 Ok(Recebido::Linha(l)) => l,
                 // Fim limpo: EOF em claro, ou a despedida dentro do tunel.
                 Ok(Recebido::Fim) => return,
@@ -9560,6 +9568,14 @@ impl Servidor {
                         // nao leu. Responder primeiro e fechar em cima seria
                         // "responder" no codigo e continuar invisivel no fio --
                         // que e o defeito que este conserto existe para matar.
+                        // A DRENAGEM continua indo ate o teto do REGISTRO,
+                        // mesmo quando o teto da leitura foi o pequeno: ela
+                        // nao guarda nada (le e descarta com buffer fixo), e
+                        // e ela que faz a recusa CHEGAR. Encurta-la junto
+                        // devolveria o RST que engole a resposta -- o defeito
+                        // do pedido 216, de volta pela porta de quem ainda nao
+                        // se identificou, que e justamente quem mais precisa
+                        // ouvir o motivo.
                         let sobrou = descartar_ate_a_quebra(&mut leitor, TETO_DO_REGISTRO);
                         let resposta = self.resposta_erro("fio", &e, 0);
                         let _ = canal.escrever(&mut saida, &resposta.escrever());
@@ -9579,8 +9595,8 @@ impl Servidor {
                             // depois -- e o texto diz isso, porque o que o
                             // outro lado ainda tinha na mao ninguem mediu.
                             erro: Some(format!(
-                                "{e}; lidos {} bytes desta linha (teto {TETO_DO_REGISTRO})",
-                                TETO_DO_REGISTRO + 1 + sobrou
+                                "{e}; lidos {} bytes desta linha (teto {teto})",
+                                teto + 1 + sobrou
                             )),
                             database: String::new(),
                             tabela: String::new(),
@@ -9979,6 +9995,74 @@ impl Servidor {
         let _ = saida.flush();
     }
 
+    /// Esta sessao ainda nao provou quem e, num servidor que EXIGE prova.
+    ///
+    /// UMA funcao para os dois lugares que fazem a mesma pergunta -- o portao
+    /// do login, no `despachar`, e o teto da linha, no laco da conexao. Duas
+    /// copias da mesma condicao divergiriam no dia em que uma das duas
+    /// ganhasse um caso novo, e a que ficasse para tras seria a porta dos
+    /// fundos: uma sessao tratada como anonima por um lado e como identificada
+    /// pelo outro.
+    ///
+    /// O `cadastro().vazio()` nao e detalhe: servidor sem usuario nenhum nao
+    /// tem credencial a esperar, e quem chega nele ja pode tudo. Chamar de
+    /// anonima uma sessao ali seria tratar o cliente legitimo como suspeito.
+    fn ainda_anonima(&self, sessao: &Sessao) -> bool {
+        // O barato primeiro: sessao com usuario nem toca a trava do cadastro.
+        sessao.usuario.is_none() && !self.cadastro().vazio()
+    }
+
+    /// Quanto este lado reserva numa linha da porta de dados -- pedido 434.
+    ///
+    /// # A pergunta e «quanto eu reservo antes de saber quem e?»
+    ///
+    /// E antes do login a resposta nao pode ser 128 MiB. Com
+    /// `conexoes_max` nascendo em 64, sessenta e quatro soquetes mandando
+    /// bytes sem `\n` reservam 8 GiB antes de qualquer credencial existir --
+    /// e nenhum deles precisou de senha para isso.
+    ///
+    /// # Por que o teto pequeno e o do APERTO, e nao um valor novo
+    ///
+    /// Porque e a mesma pergunta, ja respondida: o `TETO_DO_APERTO` existe
+    /// desde o pedido 312 para a linha lida antes de o outro lado se
+    /// identificar. Uma constante nova ao lado dela seria a mesma decisao
+    /// escrita duas vezes, e um dia as duas divergiriam.
+    ///
+    /// # Por que 64 KiB nao recusa nenhum cliente legitimo
+    ///
+    /// Porque anonimo, com cadastro, so ha seis operacoes legais --
+    /// `ping`, `login`, `desafio`, `quem_sou`, `sair` e `catalogo`
+    /// (`Atividade::da_operacao` devolve `None` para elas; toda outra cai no
+    /// «faca login») -- e a maior delas, um `login` com token e prova, nao
+    /// chega a mil bytes. Sessenta e quatro vezes de folga.
+    ///
+    /// # Os dois escapes, e por que cada um existe
+    ///
+    /// * **sessao identificada**: teto do registro, como sempre foi. Quem
+    ///   provou quem e tem direito ao lote de 128 MiB.
+    /// * **servidor sem cadastro**: teto do registro tambem. Ali nao ha
+    ///   credencial a esperar, e apertar quebraria o `inserir` em lote de todo
+    ///   cliente que nunca criou usuario -- proteger o dado de ninguem ao
+    ///   preco de derrubar quem ja trabalha e o estrago do pedido 203, nao uma
+    ///   protecao.
+    ///
+    /// E o escape do cadastro vazio NAO vale quando a cifra e exigida e o
+    /// tunel ainda nao existe: ali a unica linha que o servidor aceitaria e o
+    /// proprio aperto de mao, e toda outra cai no `recusar_texto_claro` --
+    /// reservar 128 MiB para recusar em seguida seria reservar por nada.
+    fn teto_da_linha(&self, sessao: &Sessao, cifrado: bool) -> u64 {
+        if sessao.usuario.is_some() {
+            return TETO_DO_REGISTRO;
+        }
+        if self.config.cifra_fio.exigir && !cifrado {
+            return TETO_DO_APERTO;
+        }
+        if self.ainda_anonima(sessao) {
+            return TETO_DO_APERTO;
+        }
+        TETO_DO_REGISTRO
+    }
+
     /// Le o pedido e o leva pelos portoes, nesta ordem: politica (o que ninguem
     /// pode), token (a rede), login (a identidade) e permissao (o poder).
     fn despachar(
@@ -10120,10 +10204,7 @@ impl Servidor {
         // cliente ja sabe tratar -- e nao com um reset de soquete, que a
         // aplicacao do outro lado leria como falha de rede.
         self.refrescar_a_sessao(sessao);
-        if !self.cadastro().vazio()
-            && sessao.usuario.is_none()
-            && Atividade::da_operacao(&op).is_some()
-        {
+        if self.ainda_anonima(sessao) && Atividade::da_operacao(&op).is_some() {
             return (
                 op,
                 true,

@@ -32,9 +32,10 @@
 //! simples de nao ter travessia de diretorio -- nao tendo diretorio.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufReader, Read, Write};
 use std::net::TcpStream;
 
+use phxsql_core::fio::{Canal, Recebido};
 use phxsql_core::json::Json;
 
 /// A interface, embutida no binario em tempo de compilacao.
@@ -145,13 +146,35 @@ impl Pedido {
 
 /// Le um pedido HTTP. Devolve `None` quando a conexao fecha ou o pedido e
 /// grande demais.
+///
+/// # Por que a leitura vem do `Canal`, e por que o teto e o que ja existia
+///
+/// Pedido 434. As duas leituras daqui eram `read_line` CRU: a linha de pedido
+/// sem teto nenhum, e cada linha de cabecalho conferida contra o
+/// [`MAX_CABECALHO`] **depois** de ja estar na memoria -- o acumulado limitado,
+/// a linha nunca. Quem escreveu esta porta sabia a diferenca: quinze linhas
+/// abaixo, o `tamanho > MAX_CORPO` e conferido ANTES do `vec![0u8; tamanho]`.
+///
+/// O conserto nao e um segundo teto pendurado ao lado do primeiro -- e vir do
+/// mesmo motor. [`Canal::Claro`] e o fio em claro, que e exatamente o que esta
+/// porta e, e o `ler_ate` dele aplica o teto por `take` antes de a linha
+/// existir. O mesmo `take` que protege a porta 5000 passa a proteger a web.
+///
+/// E o teto e o [`MAX_CABECALHO`] que ja estava aqui, e nao um valor novo:
+/// **nenhum pedido que era aceito antes deixa de ser**. Toda linha de um
+/// pedido aceito ja cabia nos 16 KiB, porque o acumulado inteiro tinha de
+/// caber; e uma linha de pedido maior que isso ja morria na primeira volta do
+/// laco abaixo, quando o `lidos` dela somava a linha em branco do fim. O que
+/// muda e so QUANDO a recusa acontece -- antes de reservar a memoria, em vez
+/// de depois.
 pub fn ler_pedido(fluxo: &TcpStream) -> Option<Pedido> {
     let mut leitor = BufReader::new(fluxo);
+    let mut canal = Canal::Claro;
 
-    let mut linha = String::new();
-    if leitor.read_line(&mut linha).ok()? == 0 {
-        return None;
-    }
+    let linha = match canal.ler_ate(&mut leitor, MAX_CABECALHO as u64) {
+        Ok(Recebido::Linha(l)) => l,
+        _ => return None,
+    };
     let mut partes = linha.split_whitespace();
     let metodo = partes.next()?.to_string();
     let caminho = partes.next()?.to_string();
@@ -159,10 +182,10 @@ pub fn ler_pedido(fluxo: &TcpStream) -> Option<Pedido> {
     let mut cabecalhos = HashMap::new();
     let mut lidos = linha.len();
     loop {
-        let mut l = String::new();
-        if leitor.read_line(&mut l).ok()? == 0 {
-            return None;
-        }
+        let l = match canal.ler_ate(&mut leitor, MAX_CABECALHO as u64) {
+            Ok(Recebido::Linha(l)) => l,
+            _ => return None,
+        };
         lidos += l.len();
         if lidos > MAX_CABECALHO {
             return None;

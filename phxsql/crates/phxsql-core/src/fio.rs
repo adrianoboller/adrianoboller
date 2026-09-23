@@ -494,20 +494,64 @@ pub enum Canal {
 /// reserva e o outro lado da conexao.
 pub const TETO_DO_REGISTRO: u64 = 128 * 1024 * 1024;
 
-/// Teto de uma linha do APERTO DE MAO, em bytes -- pedido 312.
+/// Teto de uma linha lida ANTES de o outro lado se identificar -- pedido 312,
+/// alargado pelo 434.
 ///
-/// O aperto acontece ANTES de o outro lado se identificar, e e a unica troca
-/// em que um teto de 128 MiB nao diz nada: a mensagem 2 tem 96 bytes, e a
-/// linha inteira que a carrega nao passa de duzentos. Um teto do tamanho do
-/// registro ali deixaria quem ainda nao provou ser ninguem escolher quanta
-/// memoria este lado reserva -- que e a definicao do defeito que o teto
-/// existe para impedir.
+/// O nome nasceu do aperto de mao porque o aperto foi o primeiro caso achado.
+/// A JUSTIFICATIVA, porem, nunca foi do aperto: e de qualquer linha lida antes
+/// de existir credencial. Um teto de 128 MiB ali deixaria quem ainda nao
+/// provou ser ninguem escolher quanta memoria este lado reserva -- que e a
+/// definicao do defeito que o teto existe para impedir.
+///
+/// Quem o usa hoje, e todos pelo mesmo motivo:
+///
+/// * o aperto de mao dos tres clientes desta casa (`replica::Cliente::cifrar`,
+///   `servidor::Cliente::cifrar` e o `cifrar` do driver ODBC): a mensagem 2 tem
+///   96 bytes, e a linha inteira que a carrega nao passa de duzentos;
+/// * a linha da porta de dados ENQUANTO a sessao e anonima (pedido 434): as
+///   unicas operacoes legitimas ali sao `ping`, `login`, `desafio`, `quem_sou`,
+///   `sair` e `catalogo`, e a maior delas nao chega a mil bytes.
 ///
 /// 64 KiB, e nao 200 bytes: a resposta de ERRO do aperto carrega texto
 /// traduzido e os campos da classificacao, e um teto colado no caso feliz
 /// viraria recusa de uma mensagem legitima no dia em que alguem alongar uma
 /// frase. E ainda e 2.048x menor que [`TETO_DO_REGISTRO`].
 pub const TETO_DO_APERTO: u64 = 64 * 1024;
+
+/// O tamanho na maior unidade em que ele ainda e um numero util.
+///
+/// A conta era `teto / (1024 * 1024)` cravada, e a mesma mensagem serve dois
+/// tetos com onze dobras de diferenca: no teto do aperto ela imprimia «mais de
+/// 0 MiB», que nao ajuda ninguem a comparar nada com o que mediu (achado B2 da
+/// revisao de seguranca de 23/09/2026).
+fn medida(bytes: u64) -> String {
+    const MIB: u64 = 1024 * 1024;
+    const KIB: u64 = 1024;
+    if bytes >= MIB {
+        format!("{} MiB", bytes / MIB)
+    } else if bytes >= KIB {
+        format!("{} KiB", bytes / KIB)
+    } else {
+        format!("{bytes} bytes")
+    }
+}
+
+/// O conselho que acompanha a recusa -- e so quando ele pode ser cumprido.
+///
+/// «baixe o tamanho do lote de quem serve ou parta a tabela» e uma ORDEM, e
+/// ordem so serve a quem tem como cumpri-la. Ela nasceu do teto do REGISTRO,
+/// onde e verdade: quem passou de 128 MiB numa linha estava servindo um lote.
+/// Debaixo de um teto pequeno nao ha lote nem tabela -- a linha legitima ali
+/// tem centenas de bytes --, e a ordem mandaria procurar o defeito num lugar
+/// onde ele nao esta. Sem conselho, a recusa continua dizendo tudo o que se
+/// pode conferir: o que veio, o teto, e que este lado nao o guarda.
+fn conselho_do_teto(teto: u64) -> &'static str {
+    if teto >= TETO_DO_REGISTRO {
+        "; baixe o tamanho do lote de quem serve ou parta a tabela"
+    } else {
+        ""
+    }
+}
 
 impl Canal {
     pub fn cifrado(&self) -> bool {
@@ -556,14 +600,14 @@ impl Canal {
             limitado.read_line(&mut linha)?
         };
         if lidos as u64 > teto {
-            // O TETO EM BYTES entra na mensagem ao lado dos MiB, e nao e
-            // preciosismo: quem le o `acessos.log` precisa comparar com o que
-            // mediu, e "mais de 128 MiB" nao se compara com 134.217.729.
+            // O TETO EM BYTES entra na mensagem ao lado da medida legivel, e
+            // nao e preciosismo: quem le o `acessos.log` precisa comparar com o
+            // que mediu, e "mais de 128 MiB" nao se compara com 134.217.729.
             return Err(PhxError::LimiteExcedido(format!(
-                "o outro lado mandou mais de {} MiB num registro so ({teto} bytes \
-                 de teto), e este lado nao guarda isso na memoria; baixe o \
-                 tamanho do lote de quem serve ou parta a tabela",
-                teto / (1024 * 1024)
+                "o outro lado mandou mais de {} numa linha so ({teto} bytes de \
+                 teto), e este lado nao guarda isso na memoria{}",
+                medida(teto),
+                conselho_do_teto(teto)
             )));
         }
         match self {
@@ -937,6 +981,46 @@ mod testes {
             claro.ler_ate(&mut magra.as_bytes(), teto).unwrap(),
             Recebido::Linha(magra.to_string())
         );
+    }
+
+    /// A recusa diz um TAMANHO, e nunca «0 MiB» -- achado B2 da revisao de
+    /// seguranca de 23/09/2026.
+    ///
+    /// A conta era `teto / (1024 * 1024)` cravada. Debaixo do teto do aperto
+    /// (64 KiB) ela imprimia zero, e um numero que e sempre zero nao se
+    /// compara com nada -- e o mesmo estrago do numero digitado a mao, so que
+    /// dentro de uma mensagem de erro.
+    #[test]
+    fn a_recusa_nunca_anuncia_zero_e_nao_da_ordem_que_nao_cabe() {
+        let gorda = format!("{}\n", "x".repeat(200_000));
+
+        let erro = Canal::Claro
+            .ler_ate(&mut gorda.as_bytes(), TETO_DO_APERTO)
+            .expect_err("acima do teto do aperto");
+        let texto = erro.to_string();
+        assert!(texto.contains("64 KiB"), "{texto}");
+        assert!(!texto.contains("0 MiB"), "{texto}");
+        // O TETO EM BYTES continua dentro, porque e por ele que quem opera
+        // compara com o que mediu.
+        assert!(texto.contains(&TETO_DO_APERTO.to_string()), "{texto}");
+        // E a ORDEM que nao cabe fica de fora: antes de o outro lado se
+        // identificar nao ha lote para baixar nem tabela para partir.
+        assert!(!texto.contains("parta a tabela"), "{texto}");
+
+        // No teto do REGISTRO o conselho e verdade, e continua vindo -- tirar
+        // o conselho de onde ele cabe seria trocar um defeito por outro.
+        // Conferido na funcao, e nao pelo canal: provar o outro lado pelo
+        // `ler_ate` custaria mandar 128 MiB por uma bateria de unidade.
+        assert!(conselho_do_teto(TETO_DO_REGISTRO).contains("parta a tabela"));
+        assert!(conselho_do_teto(TETO_DO_APERTO).is_empty());
+    }
+
+    /// A medida acompanha o tamanho em vez de ficar presa numa unidade.
+    #[test]
+    fn a_medida_escolhe_a_unidade_pelo_tamanho() {
+        assert_eq!(medida(TETO_DO_REGISTRO), "128 MiB");
+        assert_eq!(medida(TETO_DO_APERTO), "64 KiB");
+        assert_eq!(medida(200), "200 bytes");
     }
 
     /// Uma fonte que FABRICA bytes e CONTA o que entregou.
