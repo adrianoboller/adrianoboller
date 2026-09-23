@@ -39,12 +39,12 @@ foi estimado no lugar de uma medição que faltou.
 | `phxsql-core` | 35 | 11327 | 4838 | 3754 | 1577 | 21496 |
 | `phxsql-ffi` | 7 | 1408 | 1081 | 745 | 242 | 3476 |
 | `phxsql-odbc` | 7 | 2662 | 1089 | 980 | 239 | 4970 |
-| `phxsql-server` | 58 | 45894 | 30975 | 23570 | 5264 | 105703 |
-| `phxsql-sql` | 10 | 6637 | 3381 | 1993 | 748 | 12759 |
+| `phxsql-server` | 58 | 46060 | 31390 | 23829 | 5297 | 106576 |
+| `phxsql-sql` | 10 | 6958 | 3626 | 2329 | 792 | 13705 |
 | `phxsql-store` | 24 | 13487 | 3725 | 6039 | 1571 | 24822 |
-| **total** | **144** | **82848** | **45303** | **37401** | **9784** | **175336** |
+| **total** | **144** | **83335** | **45963** | **37996** | **9861** | **177155** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **45303/82848 = 0.55×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **45963/83335 = 0.55×**.
 
 Alem do `src/`: **79** programas de medicao em `examples/` (20117 linhas — bancada em Rust, nao produto nem teste) e **65** arquivos em `tests/` de integracao fora de `src/` (22841 linhas).
 <!-- /GERADO -->
@@ -73,7 +73,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 15661 | 886.4 |
+| `ui/index.html` | 15653 | 887.1 |
 | `ui/grid/phx-grid.css` | 168 | 12.3 |
 | `ui/grid/phx-grid.js` | 1860 | 90.1 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
@@ -83,7 +83,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 | `ui/multitela.js` | 1588 | 69.0 |
 | `ui/claude.js` | 1357 | 67.2 |
 | `ui/grid/CHANGELOG-phx-grid.md` | 224 | 29.7 |
-| **total (10 arquivos)** | **23993** | **1301.5** |
+| **total (10 arquivos)** | **23985** | **1302.2** |
 
 Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
 - `crates/phxsql-server/ui/explorador.css`
@@ -108,9 +108,9 @@ mesmo motivo que o rodapé já errou uma vez.
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
 | JavaScript (prova ponta a ponta) | `testes-web/` | 55 | 11741 |
-| Python (bancada de medicao) | `bancada/` | 119 | 55021 |
+| Python (bancada de medicao) | `bancada/` | 120 | 55101 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2880 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 426 | 104125 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 429 | 105100 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 33 | 13750 |
 <!-- /GERADO -->
 
@@ -287,7 +287,7 @@ com o motivo escrito**, que é o que a cláusula realmente cobra.
 ### 4.2 Como se mediu
 
 <!-- GERADO: bloco_bancadas() -->
-`bancada/` tem **54** frentes de medicao (acid, alfanumerica, alter, arm, bateria, carga, cifra, cifra-do-fio, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, tomada, transacoes, usuarios, utilizacao-padrao, vagas-da-tela, vetorial, windows), das quais **40** documentam a propria metodologia em `LEIA-ME.md`.
+`bancada/` tem **55** frentes de medicao (__pycache__, acid, alfanumerica, alter, arm, bateria, carga, cifra, cifra-do-fio, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, tomada, transacoes, usuarios, utilizacao-padrao, vagas-da-tela, vetorial, windows), das quais **40** documentam a propria metodologia em `LEIA-ME.md`.
 <!-- /GERADO -->
 
 A carga do lado do motor é
@@ -311,7 +311,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_DO_VALOR` | 48 | `crates/phxsql-server/src/bidirecional.rs` |
 | `TETO_COLADO` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_FRASE_REPETIDA` | 0 | `crates/phxsql-server/src/conferidor.rs` |
-| `TETO_ROTULOS_E_CRASE` | 937 | `crates/phxsql-server/src/conferidor.rs` |
+| `TETO_ROTULOS_E_CRASE` | 904 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_BOTAO_SEM_PROVA` | 119 | `crates/phxsql-server/src/conferidor_botoes.rs` |
 | `TETO_TABELA_NA_MAO` | 0 | `crates/phxsql-server/src/conferidor_grades.rs` |
 | `TETO_INVENTARIO_DESCASADO` | 0 | `crates/phxsql-server/src/conferidor_inventario.rs` |
@@ -493,7 +493,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **387** pedidos numerados; **66** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **394** pedidos numerados; **66** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|

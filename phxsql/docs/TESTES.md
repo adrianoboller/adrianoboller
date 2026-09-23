@@ -42,19 +42,19 @@ contando `#[test]` por arquivo e agrupando:
 <!-- cobertura:inicio -->
 | área | testes | % |
 |---|---:|---:|
-| Protocolo e portões (despachar) | 560 | 21,4 |
-| Motor de dados (arquivos, índice, diários) | 525 | 20,1 |
-| Núcleo (JSON, tipos, UUID, zip, paralelo) | 255 | 9,8 |
-| Camada SQL (léxico, sintaxe, tradução) | 217 | 8,3 |
-| Servidor (outros) | 207 | 7,9 |
+| Protocolo e portões (despachar) | 572 | 21,6 |
+| Motor de dados (arquivos, índice, diários) | 525 | 19,8 |
+| Núcleo (JSON, tipos, UUID, zip, paralelo) | 255 | 9,6 |
+| Camada SQL (léxico, sintaxe, tradução) | 238 | 9,0 |
+| Servidor (outros) | 207 | 7,8 |
 | Configuração | 137 | 5,2 |
-| Criptografia e codificação | 128 | 4,9 |
-| DbLink | 94 | 3,6 |
+| Criptografia e codificação | 128 | 4,8 |
+| DbLink | 94 | 3,5 |
 | Telemetria e profiler | 73 | 2,8 |
 | ODBC | 66 | 2,5 |
 | Gatilhos e procedimentos | 45 | 1,7 |
-| **Jobs** | **33** | **1,3** |
-| **Usuários e permissões** | **33** | **1,3** |
+| **Jobs** | **33** | **1,2** |
+| **Usuários e permissões** | **33** | **1,2** |
 | **Mensagens (i18n do servidor)** | **32** | **1,2** |
 | **Interface web (servidor HTTP)** | **29** | **1,1** |
 | **Replicação** | **24** | **0,9** |
@@ -62,14 +62,14 @@ contando `#[test]` por arquivo e agrupando:
 | **Segurança de rede (blacklist, firewall)** | **21** | **0,8** |
 | **MCP** | **21** | **0,8** |
 | **Console de terminal (phxsqlcmd)** | **20** | **0,8** |
+| **Junções e união** | **17** | **0,6** |
 | **Exportação** | **13** | **0,5** |
-| **Junções e união** | **13** | **0,5** |
 | **Pivot** | **12** | **0,5** |
 | **Cluster** | **10** | **0,4** |
 | **Alertas e e-mail** | **8** | **0,3** |
 | **CLI** | **7** | **0,3** |
 | **Monitor de máquina** | **6** | **0,2** |
-| **total** | **2612** | |
+| **total** | **2649** | |
 
 Arquivos de `src` com mais de 120 linhas e **zero** `#[test]`:
 
