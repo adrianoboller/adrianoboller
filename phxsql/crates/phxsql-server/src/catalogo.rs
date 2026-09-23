@@ -748,10 +748,20 @@ pub const OPERACOES: &[Operacao] = &[
     Operacao {
         nome: "unir",
         apelidos: &["union"],
-        resumo: "Empilha as linhas de duas ou mais tabelas do mesmo banco.",
+        resumo: "Empilha as linhas de duas ou mais partes do mesmo banco.",
         parametros: &[
             DB,
-            obr("tabelas", "array", "os nomes das tabelas, em ordem"),
+            // Nenhum dos dois e obrigatorio SOZINHO, e mandar os dois recusa:
+            // sao duas formas de dizer a mesma coisa, e o motor nao escolhe
+            // por quem pediu. `tabelas` nao sai -- guarda nova entra pedida.
+            opc("tabelas", "array", "os nomes das tabelas, em ordem"),
+            opc(
+                "partes",
+                "array",
+                "um PEDIDO por braço (`varrer`, `buscar`, `agrupar` ou \
+                 `consultar`), em ordem -- assim o braço filtra e usa índice \
+                 em vez de a união abrir a tabela inteira",
+            ),
             opc(
                 "modo",
                 "string",

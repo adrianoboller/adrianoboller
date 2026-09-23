@@ -509,6 +509,25 @@ def main() -> int:
             print("    " + linha)
         vermelhos.append("prova-do-leitor-de-pedidos.py")
 
+    # O PORTAO DA VERSAO, pelo mesmo motivo do de cima: nao e um gerador de
+    # derivado (nao escreve HTML nenhum), e o buraco que ele fecha e do mesmo
+    # NAIPE -- uma catraca que existia so pela metade. `version = "0.18.0"`
+    # ficou selada por 887 commits sem que nada acusasse, porque nenhum
+    # portao desta corrente olhava para a distancia entre a selagem e o HEAD.
+    # Entra aqui, e nao so no `empacotar.sh`, para pegar o envelhecimento
+    # ANTES de alguem tentar empacotar -- na mesma rodada que ja confere o
+    # resto do que se publica.
+    portao_versao = RAIZ / "docs" / "versao" / "portao-da-versao.py"
+    r = subprocess.run([sys.executable, str(portao_versao)],
+                       capture_output=True, text=True, cwd=str(RAIZ))
+    if r.returncode == 0:
+        print("[  ok ] portao-da-versao.py")
+    else:
+        print("[VELHO] portao-da-versao.py")
+        for linha in (r.stdout + r.stderr).strip().split("\n"):
+            print("    " + linha)
+        vermelhos.append("portao-da-versao.py")
+
     print()
     if notas:
         print(f"NOTA: {len(notas)} gerador(es) fora do portao (chamam cargo), "

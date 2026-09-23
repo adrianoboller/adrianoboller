@@ -898,7 +898,12 @@ mod tests {
             Value::UInt(6),
         ];
         let rowid = t.inserir(&nova).unwrap();
-        m.anotar_insercao(rowid, &nova);
+        // Anota a linha como FICOU GRAVADA, e nao a que foi ao `inserir`: o
+        // motor preenche as colunas de sistema (a ordem de chegada e o
+        // carimbo de criacao), e anotar a de entrada poria em memoria um valor
+        // que o disco nao tem. E exatamente o que o nome deste teste cobra.
+        let gravada = t.ler(rowid).unwrap().unwrap();
+        m.anotar_insercao(rowid, &gravada);
         assert_eq!(m.vivos(), 6);
 
         let c = Consulta {
@@ -921,7 +926,8 @@ mod tests {
             Value::UInt(6),
         ];
         t.atualizar(rowid, &trocada).unwrap();
-        m.anotar_alteracao(rowid, &trocada);
+        let ficou = t.ler(rowid).unwrap().unwrap();
+        m.anotar_alteracao(rowid, &ficou);
         assert_eq!(m.selecionar(&c).unwrap().achadas, 3, "saiu do balde Cafe");
 
         // Excluir vira buraco, e o rowid nao volta.

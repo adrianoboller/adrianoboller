@@ -11954,6 +11954,16 @@ impl Servidor {
     /// nomeia coluna que a linha nao tem, e nunca deixa de nomear uma que ela
     /// tem; sobre resultado vazio, ele e a unica forma que existe.
     ///
+    /// # Quem chama, e por que a lista de ops nao muda por isso
+    ///
+    /// Eram cinco lugares, todos dentro do `consultar` (`de`, `juntar[].de`,
+    /// `escalar[].de`, `em[].de` e `existe[].de`). Desde o pedido 393 ha um
+    /// SEXTO, fora do `consultar`: cada braco de `unir` com `"partes"`. Nada
+    /// aqui muda por causa dele -- e esse o ganho de reusar o contrato em vez
+    /// de inventar um segundo. Por isso as recusas daqui falam da
+    /// «composicao», e nao do `consultar`: quem le a mensagem pode nao ter
+    /// escrito um `consultar`.
+    ///
     /// # A lista de ops e curta de proposito
     ///
     /// So o que DEVOLVE `linhas`. Uma op de escrita aqui dentro faria um
@@ -11973,7 +11983,7 @@ impl Servidor {
         let op = sub.texto_ou("op", "varrer").trim().to_string();
         if !OPS_QUE_DEVOLVEM_LINHAS.contains(&op.as_str()) {
             return Err(PhxError::Esquema(format!(
-                "o {rotulo} pede a operacao {op:?}, e o consultar so compoe o que \
+                "o {rotulo} pede a operacao {op:?}, e a composicao so aceita o que \
                  devolve linhas: {}",
                 OPS_QUE_DEVOLVEM_LINHAS.join(", ")
             )));
@@ -11998,7 +12008,7 @@ impl Servidor {
         if lista.len() as u64 > teto {
             return Err(PhxError::LimiteExcedido(format!(
                 "o {rotulo} trouxe {} linhas, acima do teto de {teto} de \
-                 `recursos.max_linhas`: o consultar guarda cada sub-pedido \
+                 `recursos.max_linhas`: a composicao guarda cada sub-pedido \
                  INTEIRO em memoria. Filtre dentro do sub-pedido",
                 lista.len()
             )));
@@ -20988,12 +20998,96 @@ impl Servidor {
         ]))
     }
 
-    /// `UNION` e `UNION ALL` entre duas ou mais tabelas.
+    /// `UNION` e `UNION ALL` entre duas ou mais partes.
+    ///
+    /// # Dois caminhos, e o velho NAO sai
+    ///
+    /// `"tabelas": ["a","b"]` -- nomes de tabela, cada uma entrando INTEIRA.
+    /// E o que existe desde sempre e continua valendo igual: guarda nova entra
+    /// PEDIDA, e ha clientes de `tabelas` no repositorio (a tela, o tradutor
+    /// de SQL, o catalogo e duas bancadas).
+    ///
+    /// `"partes": [{pedido}, {pedido}]` -- cada braco e um PEDIDO que devolve
+    /// linhas (`varrer`, `buscar`, `agrupar`, `group_by`, `consultar`), o
+    /// MESMO contrato que o `consultar` ja compoe em cinco lugares. Nao e
+    /// gramatica nova: e a sexta porta da que existe.
+    ///
+    /// Por que o braco deixou de ser um nome: `SELECT nome FROM a WHERE
+    /// uf='SC' UNION SELECT nome FROM b` nao tinha substrato nenhum, e o que
+    /// isso custa esta REMEDIDO contra o braco de verdade em 23/09/2026 pela
+    /// `bancada/uniao/medir.py` (tres corridas de sete repeticoes, 2x20.000
+    /// linhas, `uf='SC'` a 1%, 400 linhas na resposta, carga da maquina
+    /// 0,98): unir inteiras e filtrar fora materializa 40.000 linhas e custa
+    /// 171,4 ms (160,6-185,6); filtrar DENTRO de cada braco materializa 400 e
+    /// custa 2,7 ms (2,5-3,4). **64,2x, com as faixas sem se cruzarem**
+    /// (62,5x · 64,2x · 67,6x nas tres corridas). O ganho e do
+    /// INDICE que o braco pode usar e que unir-inteiras estruturalmente nao
+    /// pode; ele e funcao da seletividade, e a 100% seria ~1x -- o numero nao
+    /// e «o unir e 64x lento», e «o unir obrigava a pagar a tabela inteira
+    /// quando se quer 1% dela».
+    ///
+    /// **O 118,7x que o pedido 393 anunciava NAO se reproduziu, e o motivo e
+    /// da casa:** naquela medicao o lado filtrado eram dois `buscar` SOLTOS,
+    /// porque o braco ainda nao existia para ser medido. O braco de verdade
+    /// paga a maquina da uniao por cima da busca -- empilhar, canonizar a
+    /// chave do `distinta`, trazer a linha JSON de volta para `Value` por
+    /// nome, o guarda de profundidade. «Bancada compara trabalho igual, nao
+    /// so pergunta igual» cobrando o proprio pedido: o numero velho comparava
+    /// uma SIMULACAO com a operacao.
+    ///
+    /// E o teto muda de alvo junto: o `TETO_JUNCAO` do caminho `tabelas` se
+    /// aplica a TABELA, entao unir duas de 2 milhoes de linhas e impossivel
+    /// mesmo para pegar dez delas; no caminho `partes` o teto que vale e o
+    /// `recursos.max_linhas` de cada braco, sobre o RECORTE.
+    ///
+    /// # O choque que NAO fica calado: a trava unica morre no caminho novo
+    ///
+    /// O caminho `tabelas` toma a trava EXCLUSIVA e a segura por toda a
+    /// materializacao. Remedido pela mesma bancada numa JANELA FIXA de 1,5 s
+    /// de pressao continua -- senao «pior espera baixa» quer dizer so «a
+    /// carga acabou antes» --, com um `varrer(max=1)` numa conexao vizinha:
+    /// p95 de 0,39 ms sozinho (0,38-0,40), **115,33 ms sob uniao por
+    /// `tabelas`** (114,54-117,99) e **0,85 ms sob uniao por `partes`**
+    /// (0,82-0,86). Sao **135,7x**, com as faixas sem se cruzarem -- e o
+    /// caminho novo aguentou 567 a 603 unioes na mesma janela em que o velho
+    /// coube 11. O caminho `partes` NAO toma
+    /// trava nenhuma, e isso nao e
+    /// preferencia: `travar_dados` erra na reentrancia pela `COM_A_TRAVA`,
+    /// entao uma uniao que segurasse a trava e chamasse `linhas_do_sub_pedido`
+    /// receberia `trava_reentrante()` no primeiro braco. **E o codigo que
+    /// obriga.** Cada braco toma e solta a sua, por dentro do
+    /// `executar_derivado`, como o `consultar` ja faz.
+    ///
+    /// **O que isso CUSTA, escrito e nao implicito:** os bracos deixam de vir
+    /// do mesmo instantaneo -- um escritor pode entrar entre o braco A e o
+    /// braco B, e a uniao pode empilhar dois retratos de instantes diferentes.
+    /// Tres coisas atenuam, e nenhuma decide sozinha: (a) o `consultar` ja e
+    /// assim nas juncoes, desde sempre; (b) o isolamento entregue por padrao e
+    /// READ COMMITTED, onde isso e legitimo; (c) quem pede
+    /// `leitura_repetivel` segura a compartilhada em cada tabela ate o fim da
+    /// transacao e fica coberto. Palavra do papel C (DBA), registrada tambem
+    /// em `docs/JUNCOES.md` -- quem quiser os bracos do mesmo instantaneo
+    /// abre transacao com leitura repetivel, e quem nao abrir sabe o que tem.
     fn op_unir(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let modo = Uniao::de_texto(p.texto_ou("modo", "distinta"))?;
         let max = self.limite_pivot(p);
         let comeco = Instant::now();
         let base = p.texto_ou("database", "");
+
+        // Os dois campos dizem coisas diferentes sobre o mesmo braco. Escolher
+        // um calado faria o outro virar enfeite -- e campo que parece pedido e
+        // o motor ignora e a mesma familia da configuracao que ninguem le.
+        if p.campo("partes").is_some() {
+            if p.campo("tabelas").is_some() {
+                return Err(PhxError::Esquema(
+                    "a uniao recebeu \"partes\" e \"tabelas\" no mesmo pedido: \
+                     \"partes\" sao pedidos e \"tabelas\" sao nomes de tabela, e o \
+                     motor nao escolhe por voce. Mande um dos dois"
+                        .into(),
+                ));
+            }
+            return self.unir_por_pedidos(p, base, modo, max, comeco, sessao);
+        }
 
         let nomes: Vec<String> = p
             .campo("tabelas")
@@ -21048,13 +21142,19 @@ impl Servidor {
             .iter()
             .map(|(l, _)| LinhasEmMemoria(l.clone().into_iter()))
             .collect();
-        let esquemas: Vec<&Schema> = materias.iter().map(|(_, e)| e).collect();
-        crate::juncao::conferir_uniao(&esquemas)?;
+        // O cabecalho sai do esquema AQUI, e a uniao ja nao fala de `Schema`:
+        // desde que o braco pode ser um pedido, a parte tem cabecalho sem ter
+        // arquivo -- ver `juncao::Cabecalho`. Quem confere que as partes
+        // empilham e o proprio `unir`, num lugar so.
+        let cabecalhos: Vec<Vec<(String, ColumnType)>> = materias
+            .iter()
+            .map(|(_, e)| crate::juncao::cabecalho_do_esquema(e))
+            .collect();
 
-        let mut partes: Vec<(&mut dyn crate::pivot::Iterador, &Schema)> = fontes
+        let mut partes: Vec<(&mut dyn crate::pivot::Iterador, &crate::juncao::Cabecalho)> = fontes
             .iter_mut()
-            .zip(esquemas.iter())
-            .map(|(f, e)| (f as &mut dyn crate::pivot::Iterador, *e))
+            .zip(cabecalhos.iter())
+            .map(|(f, c)| (f as &mut dyn crate::pivot::Iterador, c.as_slice()))
             .collect();
         let r = crate::juncao::unir(&mut partes, modo, max)?;
 
@@ -21091,6 +21191,175 @@ impl Servidor {
             ("truncado", Json::Bool(r.truncado)),
             ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
         ]))
+    }
+
+    /// A uniao cujos bracos sao PEDIDOS -- o caminho `"partes"`.
+    ///
+    /// Sem trava global, de proposito e por obrigacao: ver o cabecalho do
+    /// `op_unir` para o choque e para o que ele custa.
+    fn unir_por_pedidos(
+        &self,
+        p: &Json,
+        base: &str,
+        modo: Uniao,
+        max: u64,
+        comeco: Instant,
+        sessao: &Sessao,
+    ) -> Result<Json> {
+        // O MESMO teto de aninhamento do `consultar`, e pelo mesmo motivo: os
+        // bracos descem a pilha de verdade, e pilha estourada nao e recusa --
+        // e a thread caindo, que numa conexao vira resposta nenhuma.
+        let _fundo = Profundidade::descer()?;
+        let lista = p.campo("partes").and_then(Json::lista).ok_or_else(|| {
+            PhxError::Esquema(
+                "\"partes\" precisa ser uma lista de pedidos, um por braco da uniao".into(),
+            )
+        })?;
+        if lista.len() < 2 {
+            return Err(PhxError::Esquema(format!(
+                "a uniao precisa de ao menos dois bracos em \"partes\", e veio {}",
+                lista.len()
+            )));
+        }
+
+        let mut bracos = Vec::with_capacity(lista.len());
+        for (i, sub) in lista.iter().enumerate() {
+            bracos.push(self.braco_da_uniao(sub, base, i + 1, sessao)?);
+        }
+
+        // As linhas SAEM do braco em vez de serem clonadas: elas ja estao em
+        // memoria uma vez, e uma uniao de 500.000 linhas nao paga a segunda
+        // copia so para atravessar duas linhas de codigo.
+        let mut fontes: Vec<LinhasEmMemoria> = bracos
+            .iter_mut()
+            .map(|b| LinhasEmMemoria(std::mem::take(&mut b.linhas).into_iter()))
+            .collect();
+        let mut partes: Vec<(&mut dyn crate::pivot::Iterador, &crate::juncao::Cabecalho)> = fontes
+            .iter_mut()
+            .zip(bracos.iter())
+            .map(|(f, b)| (f as &mut dyn crate::pivot::Iterador, b.cabecalho.as_slice()))
+            .collect();
+        let r = crate::juncao::unir(&mut partes, modo, max)?;
+
+        // O campo `tabelas` continua na resposta e continua querendo dizer «o
+        // que esta uniao leu» -- so que agora ele e DERIVADO dos bracos, e nao
+        // o eco do que se pediu. Quem monta `partes` ja tem a lista dele; quem
+        // le a resposta quer saber onde o dado foi buscar.
+        let mut tabelas: Vec<String> = Vec::new();
+        for b in &bracos {
+            for t in &b.tabelas {
+                if !tabelas.iter().any(|x| x == t) {
+                    tabelas.push(t.clone());
+                }
+            }
+        }
+
+        Ok(Json::objeto(vec![
+            ("modo", Json::texto_de(modo.nome())),
+            ("sql", Json::texto_de(modo.sql())),
+            (
+                "tabelas",
+                Json::Lista(tabelas.iter().map(Json::texto_de).collect()),
+            ),
+            ("colunas", colunas_da_juncao(&r.colunas)),
+            (
+                "linhas",
+                Json::Lista(
+                    r.linhas
+                        .iter()
+                        .map(|l| {
+                            Json::Lista(
+                                l.iter()
+                                    .zip(r.colunas.iter())
+                                    .map(|(v, c)| crate::valores::valor_para_json(v, &c.ty))
+                                    .collect(),
+                            )
+                        })
+                        .collect(),
+                ),
+            ),
+            ("quantas", Json::de_u64(r.linhas.len() as u64)),
+            (
+                "por_parte",
+                Json::Lista(r.por_parte.iter().map(|n| Json::de_u64(*n)).collect()),
+            ),
+            ("repetidas", Json::de_u64(r.repetidas)),
+            ("truncado", Json::Bool(r.truncado)),
+            ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
+        ]))
+    }
+
+    /// Um braco da uniao que chegou como pedido, ja materializado.
+    ///
+    /// Passa pelo `linhas_do_sub_pedido`, que e o mesmo lugar por onde o
+    /// `consultar` compoe o `de`, o `juntar[].de`, o `escalar[].de`, o
+    /// `em[].de` e o `existe[].de`. A uniao e o SEXTO uso, e por isso o portao
+    /// de permissao continua sendo UM: quem nao le a folha tambem nao a le
+    /// como braco de uma uniao, e a recusa vem do `executar_derivado`, nao de
+    /// uma conferencia propria que alguem tenha de lembrar de atualizar.
+    ///
+    /// # Por que as colunas do MOTOR saem aqui, antes de qualquer linha
+    ///
+    /// `varrer` e `buscar` poem o `rowid` na FRENTE de cada linha, e o
+    /// esquema poe as de sistema no fim. Nenhuma das duas e dado que alguem
+    /// pediu para empilhar -- e deixa-las passar nao seria ruido, seria
+    /// defeito: o `rowid` e UNICO por linha, e a chave do `distinta` e a linha
+    /// visivel inteira. Duas linhas iguais em tabelas diferentes nunca
+    /// compartilham o `rowid`, entao o `UNION` devolveria o mesmo que o
+    /// `UNION ALL` anunciando `repetidas: 0`. Foi exatamente isso que o
+    /// `rownum` fez ate 22/09/2026 (cinco linhas e `repetidas: 0` onde o SQL
+    /// manda quatro e uma), e o braco-pedido traria o defeito de volta pela
+    /// porta nova. O caminho `tabelas` tambem nao as empilha -- os dois
+    /// caminhos do `unir` respondem a mesma forma.
+    ///
+    /// # Por NOME, e nao por posicao
+    ///
+    /// A linha do sub-pedido e um objeto JSON. Ler por posicao seria mais
+    /// barato e faria os valores DESLIZAREM de coluna, calados, na primeira
+    /// linha que nao trouxesse um campo -- o estrago que o `docs/JUNCOES.md`
+    /// ja nomeia para o empilhamento por nome, aqui ao contrario. O que falta
+    /// na linha vira NULO, que e a mesma nocao do `agrupar`.
+    fn braco_da_uniao(
+        &self,
+        sub: &Json,
+        base: &str,
+        ordinal: usize,
+        sessao: &Sessao,
+    ) -> Result<BracoDaUniao> {
+        let rotulo = format!("braco {ordinal} da uniao");
+        let (linhas, modelo) = self.linhas_do_sub_pedido(sub, base, &rotulo, sessao)?;
+
+        let cabecalho: Vec<(String, ColumnType)> = modelo
+            .into_iter()
+            .filter(|(n, _)| !coluna_do_motor(n))
+            .collect();
+        if cabecalho.is_empty() {
+            return Err(PhxError::Esquema(format!(
+                "o {rotulo} nao trouxe coluna nenhuma para empilhar: uma uniao \
+                 empilha posicao a posicao, e sem cabecalho nao ha posicao"
+            )));
+        }
+
+        let valores: Vec<Vec<Value>> = linhas
+            .iter()
+            .map(|l| {
+                cabecalho
+                    .iter()
+                    .map(|(nome, ty)| {
+                        crate::consultar::campo(l, nome)
+                            .map(|j| crate::consultar::valor_tipado(j, ty).0)
+                            .unwrap_or(Value::Null)
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let op = sub.texto_ou("op", "varrer").trim().to_string();
+        Ok(BracoDaUniao {
+            linhas: valores,
+            cabecalho,
+            tabelas: crate::direito_coluna::tabelas_do_pedido(&op, sub),
+        })
     }
 
     // ------------------------------------------------------------- o DbLink
@@ -22917,11 +23186,67 @@ impl Servidor {
     /// A imagem vai em hexadecimal porque o transporte e JSON e JSON nao tem
     /// bytes. Dobra o tamanho -- e a alternativa seria acrescentar um formato
     /// binario ao protocolo, que e uma decisao maior do que esta.
+    /// O fio desta sessao vai cifrado?
+    ///
+    /// # Por que a resposta depende da porta de entrada
+    ///
+    /// Porque cada porta tem uma cifra diferente, e duas delas nem sao deste
+    /// servidor:
+    ///
+    /// - **dados**: e a unica onde mora o aperto de mao da §7. `None` na
+    ///   transcricao quer dizer conexao em claro, e e o padrao.
+    /// - **HTTP**: nunca ha tunel aqui -- o navegador fala TLS ou fala claro,
+    ///   e o TLS e do proxy reverso. A unica garantia conferivel e
+    ///   INDIRETA e vale so com `cifra_fio.exigir` ligado: com ela, o
+    ///   `portao_de_rede_http` **ja recusou** tudo que nao veio por porta com
+    ///   `atras_de_proxy` declarado, entao chegar ate aqui e a prova de que a
+    ///   declaracao existe. Com `exigir` desligado nao ha prova nenhuma, e
+    ///   supor o proxy seria a familia do `recursos.cache_paginas`: campo que
+    ///   anuncia protecao maior que a prestada.
+    /// - **sem fio**: job agendado, rotina interna, ponte MCP pelo cano do
+    ///   processo. Nao ha fio por onde vazar, e responder "em claro" faria a
+    ///   rotina interna recusar a si mesma.
+    fn fio_cifrado(&self, sessao: &Sessao) -> bool {
+        match sessao.entrada {
+            Entrada::Dados => sessao.transcricao_do_fio.is_some(),
+            Entrada::Http => self.config.cifra_fio.exigir,
+            Entrada::SemFio => true,
+        }
+    }
+
     fn op_replicar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let desde = p.inteiro_ou("desde", 0).max(0) as u64;
         let max = lote_de_replicacao(p);
         let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
+
+        // **A cifra do fio e EXIGIDA para tabela com coluna marcada** (pedido
+        // 342, decisao do dono). O que este portao conserta e uma assimetria,
+        // e nao uma falta: a coluna EXTERNA marcada ja viajava selada nesta
+        // mesma imagem -- deliberadamente, com o comentario em
+        // `conteudo_externo` dizendo por que --, e a INLINE marcada viajava em
+        // claro ao lado dela, pelo mesmo cano e no mesmo evento. As duas
+        // metades nunca foram desenhadas juntas.
+        //
+        // A outra saida -- a imagem levar a faixa marcada SELADA -- esta
+        // bloqueada com numero: a replica nao tem chave compativel, porque o
+        // sal e por arquivo (pedido 344, medido com a MESMA senha nos dois
+        // lados). Entao o que fecha o furo e o CANAL, e nao a imagem.
+        //
+        // **E esta guarda e IMPOSTA, nao pedida -- e isso e escolha.** A lei
+        // da casa manda guarda nova nascer pedida, e o motivo dela e nao
+        // quebrar cliente que ja funciona. Aqui quebrar e o ponto: quem
+        // replica coluna marcada em claro hoje esta vazando dado pessoal no
+        // fio, e um interruptor para continuar vazando seria a permissao
+        // escrita de vazar. O ALCANCE e o que segura a lei: tabela sem coluna
+        // marcada nao e tocada por linha nenhuma deste portao, e continua
+        // replicando exatamente como antes.
+        if t.tem_dado_pessoal() && !self.fio_cifrado(sessao) {
+            return Err(PhxError::Autorizacao(self.msg(
+                "erro.replicar_marcada_exige_cifra",
+                &[("tabela", p.texto_ou("tabela", ""))],
+            )));
+        }
         let total = t.eventos()?;
 
         // A dica de onde a leitura anterior desta tabela parou. Sem ela, o
@@ -24911,6 +25236,33 @@ fn resolver_campo(
 }
 
 /// Percorre linhas que ja estao na memoria.
+/// Um braco da uniao que chegou como PEDIDO, ja materializado.
+///
+/// Mora fora do `impl` e nao numa tupla de tres listas porque tupla de tres
+/// listas e o tipo que ninguem le duas vezes igual.
+struct BracoDaUniao {
+    /// As linhas na ordem do cabecalho, ja em `Value`.
+    linhas: Vec<Vec<Value>>,
+    /// Nome e tipo de cada coluna, na ordem da linha -- sem as do motor.
+    cabecalho: Vec<(String, ColumnType)>,
+    /// As tabelas que o braco nomeia, para a resposta dizer o que leu.
+    tabelas: Vec<String>,
+}
+
+/// Esta coluna e do MOTOR, e por isso nao entra numa uniao?
+///
+/// O `rowid` e a alca da linha e vem na frente de todo `varrer`/`buscar`; as
+/// de sistema vem do formato e ficam no fim. A lista das de sistema sai do
+/// `phxsql-core` em vez de ser copiada aqui: coluna de sistema nova entra la e
+/// some daqui junto -- lista repetida e onde a quinta seria esquecida.
+fn coluna_do_motor(nome: &str) -> bool {
+    let n = nome.to_ascii_lowercase();
+    // `rowid` nao e coluna do esquema (nao tem constante no `schema.rs`): ele
+    // e o numero do slot, que a resposta do `varrer` poe ao lado da linha --
+    // entao ele NAO sai pela lista do `phxsql-core` e precisa do nome aqui.
+    n == "rowid" || phxsql_core::schema::e_coluna_de_sistema(&n)
+}
+
 struct LinhasEmMemoria(std::vec::IntoIter<Vec<Value>>);
 
 impl crate::pivot::Iterador for LinhasEmMemoria {
@@ -28396,6 +28748,96 @@ mod testes_direito_por_tabela {
         .unwrap_err();
         assert_eq!(e.nome(), "ACESSO_NEGADO");
         assert!(e.to_string().contains("b.folha"), "veio {e}");
+    }
+
+    /// **E o braco-PEDIDO da uniao tambem nao e** (pedido 393). Aqui a
+    /// recusa NAO vem da conferencia propria do `unir`: vem do
+    /// `executar_derivado`, que e o irmao do `despachar` -- cada braco paga o
+    /// portao da tabela DELE, como qualquer `varrer` que chegasse pela rede.
+    ///
+    /// **O teste existe porque a forma do braco mudou**, e mudanca de forma e
+    /// exatamente quando uma porta dos fundos nasce: o campo `"tabelas"` que
+    /// a conferencia propria le nao existe num pedido com `"partes"`, e sem
+    /// o `executar_derivado` no meio a folha sairia inteira.
+    ///
+    /// # Qual das tres asserções DISCRIMINA, e por que as outras duas nao
+    ///
+    /// Medido em 23/09/2026 com o defeito reposto (`self.executar` no lugar do
+    /// `self.executar_derivado`, dentro do `linhas_do_sub_pedido`): as duas
+    /// primeiras **passaram mesmo assim**, e passaram DEPOIS do dano. O braco
+    /// `varrer` le a folha inteira sem portao nenhum, e so entao o
+    /// `linhas_do_sub_pedido` pede o `modelo_da_tabela`, que chama
+    /// `executar_derivado("esquema")` -- e e AI que a recusa aparece. A linha
+    /// ja foi lida; o que para e a resposta. O braco `consultar` recusa pelo
+    /// mesmo acidente, um nivel mais fundo.
+    ///
+    /// O terceiro caso existe por isso: `agrupar` nao passa pelo
+    /// `modelo_da_tabela` (o modelo dele sai do proprio cabecalho `colunas`),
+    /// entao ele **nao tem recusa tardia nenhuma** -- com o defeito, a folha
+    /// resumida sai. **Ele e a unica das tres que cai quando a guarda cai**, e
+    /// isso fica escrito aqui em vez de escondido: teste que passa por engano
+    /// e pior que teste que falta, e as duas primeiras passam por engano
+    /// quando o assunto e ESTE defeito.
+    ///
+    /// **Prova real, com o defeito reposto:** troque o
+    /// `self.executar_derivado(...)` do `linhas_do_sub_pedido` por
+    /// `self.executar(...)` e o caso do `agrupar` devolve a folha.
+    #[test]
+    fn o_braco_pedido_da_uniao_tambem_nao_e_a_porta_dos_fundos() {
+        let dir = dir_temp("unir-partes");
+        let (s, ses) = servidor(
+            &dir,
+            cadastro(r#"{"*":{"ler":true,"tabelas":{"folha":{}}}}"#),
+        );
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"unir","database":"b",
+               "partes":[{"op":"varrer","tabela":"clientes"},
+                         {"op":"varrer","tabela":"folha"}]"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "veio {e}");
+        assert!(e.to_string().contains("b.folha"), "veio {e}");
+
+        // E o braco ESCONDIDO mais fundo -- dentro do `de` de um `consultar`
+        // -- recusa igual: a varredura desce porque o portao desce junto.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"unir","database":"b",
+               "partes":[{"op":"varrer","tabela":"clientes"},
+                         {"op":"consultar","de":{"op":"varrer","tabela":"folha"}}]"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "veio {e}");
+        assert!(e.to_string().contains("b.folha"), "veio {e}");
+
+        // E o braco que NAO pede modelo de tabela -- `agrupar` monta o
+        // modelo do proprio cabecalho `colunas` --, que e o unico dos tres
+        // sem recusa tardia para o encobrir. Ver a nota do cabecalho.
+        let e = pede(
+            &s,
+            &ses,
+            r#""op":"unir","database":"b","modo":"tudo",
+               "partes":[{"op":"agrupar","tabela":"clientes","por":["nome"]},
+                         {"op":"agrupar","tabela":"folha","por":["nome"]}]"#,
+        )
+        .unwrap_err();
+        assert_eq!(e.nome(), "ACESSO_NEGADO", "veio {e}");
+        assert!(e.to_string().contains("b.folha"), "veio {e}");
+
+        // E o que ele PODE ler continua passando: uniao de clientes com
+        // clientes responde, para a recusa acima ser sobre a folha e nao
+        // sobre a forma nova.
+        pede(
+            &s,
+            &ses,
+            r#""op":"unir","database":"b","modo":"tudo",
+               "partes":[{"op":"varrer","tabela":"clientes"},
+                         {"op":"varrer","tabela":"clientes"}]"#,
+        )
+        .unwrap();
     }
 
     /// O pivot tem DOIS lugares com tabela, e o portao geral so ve um: a
@@ -47655,6 +48097,176 @@ mod testes_do_lote_de_replicacao {
     }
 }
 
+/// A cifra do fio EXIGIDA para replicar tabela com coluna marcada (pedido
+/// 342, decisao do dono de 23/09/2026).
+///
+/// # O que estes testes provam, e o que NAO provam
+///
+/// Provam o PORTAO: quem chega em claro nao leva a imagem de uma tabela com
+/// coluna marcada, e quem chega pelo tunel leva. **Nao** provam que a imagem
+/// deixou de carregar o valor -- ela carrega, e isso esta escrito e tem teste
+/// proprio no store (`imagem_de_coluna_inline_marcada_vai_em_claro`). O que
+/// muda e o CANAL, porque selar a imagem esta bloqueado com numero: a replica
+/// nao tem chave compativel (pedido 344, sal por arquivo).
+#[cfg(test)]
+mod testes_da_cifra_exigida_na_replicacao {
+    use super::*;
+
+    /// Um source com a imagem no diario. `exigir` diz se `cifra_fio.exigir`
+    /// esta ligado -- e so ele muda o veredito da porta HTTP.
+    fn source(dir: &std::path::Path, exigir: bool) -> Arc<Servidor> {
+        let txt = r#"{"token":"t","replicacao":{"papel":"source","id_servidor":"src-01",
+                        "imagem_da_linha":true}}"#;
+        let mut c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        c.base = dir.to_path_buf();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        c.cifra_fio.exigir = exigir;
+        Servidor::novo(c).unwrap()
+    }
+
+    /// A tabela do caso: `nome` MARCADA quando `marcada`, e nao marcada
+    /// quando nao -- tudo o mais igual. E a unica diferenca entre os dois
+    /// lados da prova.
+    fn tabela(dir: &std::path::Path, marcada: bool) -> Table {
+        std::fs::create_dir_all(dir.join("loja")).unwrap();
+        let mut nome = Column::new("nome", ColumnType::Str(40)).obrigatoria();
+        if marcada {
+            nome = nome.com_dado_pessoal(phxsql_core::types::DadoPessoal::Pessoal);
+        }
+        let esquema = Schema::new(
+            "clientes",
+            vec![Column::new("id", ColumnType::Int8).obrigatoria(), nome],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)])
+                .unico()
+                .primaria()],
+        )
+        .unwrap();
+        Table::criar(dir.join("loja"), esquema)
+            .unwrap()
+            .com_imagem_no_diario(true)
+    }
+
+    fn encher(dir: &std::path::Path, marcada: bool) {
+        let mut t = tabela(dir, marcada);
+        for i in 1..=5 {
+            t.inserir(&[Value::Int(i), Value::Str(format!("fulano {i}"))])
+                .unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+
+    /// Uma conexao pela porta de DADOS, com ou sem o tunel da §7.
+    fn pela_porta_de_dados(com_tunel: bool) -> Sessao {
+        Sessao {
+            entrada: Entrada::Dados,
+            transcricao_do_fio: com_tunel.then_some([7u8; 32]),
+            ..Sessao::default()
+        }
+    }
+
+    fn replicar(s: &Arc<Servidor>, sessao: &Sessao) -> Result<Json> {
+        let p = Json::analisar(r#"{"database":"loja","tabela":"clientes","desde":0}"#).unwrap();
+        s.op_replicar(&p, sessao)
+    }
+
+    fn quantos(r: &Json) -> usize {
+        r.campo("eventos").and_then(Json::lista).unwrap().len()
+    }
+
+    /// **A prova do pedido 342.** Em claro, a tabela marcada NAO viaja.
+    ///
+    /// # O vermelho
+    ///
+    /// Medido em 23/09/2026 com o portao removido: `replicou 5 eventos em
+    /// claro` -- os cinco com `fulano 1..5` dentro da imagem, pela conexao em
+    /// texto puro.
+    ///
+    /// A assimetria que o pedido nomeia tem guarda propria no store
+    /// (`tests/imagem-de-replicacao-com-coluna-marcada.rs`), e la ela e
+    /// afirmada por VEREDITO e nao por tamanho: o total da imagem anda com a
+    /// largura do esquema, e o numero que este comentario citava -- 146 B --
+    /// ja nao reproduzia seis dias depois de escrito.
+    #[test]
+    fn tabela_com_coluna_marcada_nao_replica_em_claro() {
+        let dir = DirTemp::novo("replicar-marcada-claro");
+        encher(&dir, true);
+        let s = source(&dir, false);
+        let e = match replicar(&s, &pela_porta_de_dados(false)) {
+            Err(e) => e.to_string(),
+            Ok(r) => panic!("replicou {} eventos em claro", quantos(&r)),
+        };
+        // A recusa tem de NOMEAR a tabela e as duas saidas. Recusa seca
+        // mandaria o operador procurar permissao, que e o lugar errado.
+        assert!(e.contains("clientes"), "{e}");
+        assert!(e.contains("cifrar") || e.contains("cifra"), "{e}");
+    }
+
+    /// E pelo tunel ela viaja -- que e a metade sem a qual o portao seria so
+    /// uma parede.
+    #[test]
+    fn com_o_tunel_a_tabela_marcada_replica() {
+        let dir = DirTemp::novo("replicar-marcada-tunel");
+        encher(&dir, true);
+        let s = source(&dir, false);
+        let r = replicar(&s, &pela_porta_de_dados(true)).unwrap();
+        assert_eq!(quantos(&r), 5);
+    }
+
+    /// **O comportamento VELHO, onde ele ainda vale.** Tabela SEM coluna
+    /// marcada continua replicando em claro, exatamente como antes.
+    ///
+    /// E o teste que mais importa numa guarda imposta: o alcance dela. Sem
+    /// isto, um portao de seguranca certo derrubaria todo laco de replicacao
+    /// que existe hoje -- e proteccao que quebra todo cliente antigo nao e
+    /// protecao, e estrago.
+    #[test]
+    fn sem_coluna_marcada_replicar_em_claro_continua() {
+        let dir = DirTemp::novo("replicar-sem-marca-claro");
+        encher(&dir, false);
+        let s = source(&dir, false);
+        let r = replicar(&s, &pela_porta_de_dados(false)).unwrap();
+        assert_eq!(quantos(&r), 5, "quem nao declarou dado pessoal nao muda");
+    }
+
+    /// A porta HTTP nunca tem tunel: o veredito dela sai de `cifra_fio.exigir`
+    /// -- e a inferencia esta escrita em `fio_cifrado`, com o portao de rede
+    /// HTTP como prova indireta do proxy declarado.
+    #[test]
+    fn pela_porta_http_o_veredito_sai_do_exigir() {
+        let dir = DirTemp::novo("replicar-marcada-http");
+        encher(&dir, true);
+        let http = Sessao {
+            entrada: Entrada::Http,
+            ..Sessao::default()
+        };
+        assert!(
+            replicar(&source(&dir, false), &http).is_err(),
+            "sem `exigir`, a porta HTTP nao prova proxy nenhum"
+        );
+        assert_eq!(
+            quantos(&replicar(&source(&dir, true), &http).unwrap()),
+            5,
+            "com `exigir`, chegar ate aqui ja e a prova do `atras_de_proxy`"
+        );
+    }
+
+    /// A rotina INTERNA nao tem fio, e por isso nao e recusada.
+    ///
+    /// Sem esta linha o portao recusaria a si mesmo: job agendado,
+    /// reconciliacao e ponte MCP entram por `Entrada::SemFio`, e nenhum deles
+    /// tem soquete por onde vazar.
+    #[test]
+    fn sem_fio_nao_ha_o_que_cifrar() {
+        let dir = DirTemp::novo("replicar-marcada-semfio");
+        encher(&dir, true);
+        let s = source(&dir, false);
+        assert_eq!(quantos(&replicar(&s, &Sessao::default()).unwrap()), 5);
+    }
+}
+
 /// A sonda `replicacao_testar` e a falha de REDE -- revisao SEC de 17/09/2026,
 /// A5 (pedido 282). O caminho feliz pelo soquete esta em
 /// `tests/sonda-da-replicacao.rs`; aqui e o que a sonda diz quando NAO chega.
@@ -48634,5 +49246,354 @@ mod testes_do_bit_indisponivel_na_trilha {
                 e.escrever()
             );
         }
+    }
+}
+
+/// **O braço da união é um PEDIDO, e não um nome de tabela** (pedido 393).
+///
+/// O que estes testes travam, em ordem de importância:
+///
+/// 1. o braço FILTRA dentro de si, e só o recorte empilha -- é o substrato
+///    que `SELECT nome FROM a WHERE uf='SC' UNION SELECT nome FROM b` não
+///    tinha, e é de onde saem os 64,2x remedidos no pedido 393;
+/// 2. **quem manda `tabelas` continua recebendo o mesmo**, byte a byte: é o
+///    teste do comportamento VELHO, que vale mais que o do novo;
+/// 3. o `distinta` continua desduplicando -- as colunas do motor (`rowid`, as
+///    de sistema) NÃO entram na chave, senão o `UNION` devolveria o mesmo que
+///    o `UNION ALL` anunciando `repetidas: 0`;
+/// 4. a trava global não é tomada no caminho novo, e por isso ele funciona:
+///    `travar_dados` erra na reentrância, e um braço sob a trava receberia
+///    `trava_reentrante()`.
+#[cfg(test)]
+mod testes_uniao_por_pedido {
+    use super::*;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("un-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// `g1` e `g2`, mesma forma, com um índice por `uf` para o braço `buscar`
+    /// ter o que usar -- é o índice que compra o número do pedido 393.
+    fn servidor(d: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        for tab in ["g1", "g2"] {
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{tab}","colunas":[
+                        {{"nome":"id","tipo":"Int4","obrigatoria":true}},
+                        {{"nome":"nome","tipo":"Str(20)"}},
+                        {{"nome":"uf","tipo":"Str(2)"}}],
+                     "indices":[{{"nome":"porId","colunas":["id"],"unico":true,
+                                  "primario":true}},
+                                {{"nome":"porUf","colunas":["uf"]}}]}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        let grava = |tab: &str, linhas: &[(i64, &str, &str)]| {
+            for (id, nome, uf) in linhas {
+                s.executar(
+                    "inserir",
+                    &pedido(&format!(
+                        r#"{{"database":"b","tabela":"{tab}","linha":
+                            {{"id":{id},"nome":"{nome}","uf":"{uf}"}}}}"#
+                    )),
+                    &Sessao::default(),
+                )
+                .unwrap();
+            }
+        };
+        grava(
+            "g1",
+            &[(1, "ana", "SC"), (2, "bia", "SP"), (3, "caio", "RJ")],
+        );
+        grava("g2", &[(4, "duda", "SC"), (5, "elo", "SP")]);
+        s
+    }
+
+    fn unir(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        s.executar(
+            "unir",
+            &pedido(&format!(r#"{{"database":"b",{corpo}}}"#)),
+            &Sessao::default(),
+        )
+    }
+
+    fn nomes(r: &Json) -> Vec<String> {
+        r.campo("linhas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|l| {
+                l.lista()
+                    .and_then(|v| v.get(1))
+                    .and_then(Json::texto)
+                    .unwrap_or("?")
+                    .to_string()
+            })
+            .collect()
+    }
+
+    fn colunas(r: &Json) -> Vec<String> {
+        r.campo("colunas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|c| c.texto_ou("nome", "").to_string())
+            .collect()
+    }
+
+    /// **O ACHADO: o braço filtra, e só o recorte empilha.**
+    ///
+    /// As duas tabelas têm 5 linhas ao todo e 2 são de SC. Pelo caminho
+    /// `tabelas` não há onde filtrar: a união devolve as 5 e quem perguntou
+    /// filtra fora. Pelo caminho `partes`, cada braço traz o que é dele -- e o
+    /// segundo braço traz pelo ÍNDICE, que é o que compra os 64,2x do pedido
+    /// 393 num volume de verdade.
+    ///
+    /// **Prova real, com o defeito reposto:** troque o `partes` por
+    /// `"tabelas":["g1","g2"]` e a resposta vira 5 linhas -- as três de fora
+    /// de SC voltam.
+    #[test]
+    fn o_braco_pedido_filtra_dentro_e_so_o_recorte_empilha() {
+        let d = dir("filtra");
+        let s = servidor(&d);
+
+        let r = unir(
+            &s,
+            r#""modo":"tudo","partes":[
+                 {"op":"varrer","tabela":"g1",
+                  "onde":[{"coluna":"uf","op":"=","valor":"SC"}]},
+                 {"op":"buscar","tabela":"g2","indice":"porUf","chave":["SC"]}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("quantas", -1), 2, "{}", r.escrever());
+        assert_eq!(nomes(&r), vec!["ana", "duda"], "{}", r.escrever());
+
+        // E a resposta continua dizendo QUAIS tabelas leu -- agora derivado
+        // dos braços, porque o pedido não traz mais uma lista de nomes.
+        assert_eq!(
+            r.campo("tabelas")
+                .and_then(Json::lista)
+                .unwrap()
+                .iter()
+                .map(|t| t.texto().unwrap_or("").to_string())
+                .collect::<Vec<_>>(),
+            vec!["g1", "g2"],
+            "{}",
+            r.escrever()
+        );
+
+        // O mesmo pedido pelo caminho velho traz as cinco: é a diferença que
+        // o número do pedido 393 mede.
+        let velho = unir(&s, r#""modo":"tudo","tabelas":["g1","g2"]"#).unwrap();
+        assert_eq!(velho.inteiro_ou("quantas", -1), 5, "{}", velho.escrever());
+    }
+
+    /// **O comportamento VELHO, que é o teste que mais importa numa guarda
+    /// nova.** Quem manda `tabelas` recebe o que sempre recebeu: as colunas
+    /// visíveis (sem as do motor), as cinco linhas e a contagem por parte.
+    #[test]
+    fn quem_manda_tabelas_continua_recebendo_o_mesmo() {
+        let d = dir("velho");
+        let s = servidor(&d);
+        let r = unir(&s, r#""modo":"tudo","tabelas":["g1","g2"]"#).unwrap();
+
+        assert_eq!(colunas(&r), vec!["id", "nome", "uf"], "{}", r.escrever());
+        assert_eq!(r.inteiro_ou("quantas", -1), 5);
+        assert_eq!(r.texto_ou("sql", ""), "UNION ALL");
+        assert_eq!(
+            r.campo("por_parte")
+                .and_then(Json::lista)
+                .unwrap()
+                .iter()
+                .map(|n| n.inteiro().unwrap_or(-1))
+                .collect::<Vec<_>>(),
+            vec![3, 2],
+            "{}",
+            r.escrever()
+        );
+        // O eco da lista pedida continua igual.
+        assert_eq!(
+            r.campo("tabelas")
+                .and_then(Json::lista)
+                .unwrap()
+                .iter()
+                .map(|t| t.texto().unwrap_or("").to_string())
+                .collect::<Vec<_>>(),
+            vec!["g1", "g2"]
+        );
+    }
+
+    /// **O `distinta` do braço-pedido enxerga a linha repetida.**
+    ///
+    /// O `varrer` põe o `rowid` na frente de cada linha e o esquema põe as de
+    /// sistema no fim. Todas são únicas por linha: se entrassem na chave, duas
+    /// linhas visivelmente iguais em tabelas diferentes nunca contariam como
+    /// repetidas -- o `UNION` devolveria o mesmo que o `UNION ALL` anunciando
+    /// `repetidas: 0`. É o defeito que o `rownum` causou até 22/09/2026, e o
+    /// braço-pedido é a porta nova por onde ele voltaria.
+    ///
+    /// **Prova real, com o defeito reposto:** tire o `rowid` do
+    /// `coluna_do_motor` e este teste devolve 4 linhas e `repetidas: 0`.
+    #[test]
+    fn o_distinta_do_braco_pedido_ve_a_linha_repetida() {
+        let d = dir("distinta");
+        let s = servidor(&d);
+        // A mesma linha visível nas duas tabelas, com rowid diferente: em g1
+        // ela é a quarta linha, em g2 a terceira.
+        for tab in ["g1", "g2"] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{tab}","linha":
+                        {{"id":99,"nome":"igual","uf":"MG"}}}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        }
+        let r = unir(
+            &s,
+            r#""modo":"distinta","partes":[
+                 {"op":"varrer","tabela":"g1",
+                  "onde":[{"coluna":"uf","op":"=","valor":"MG"}]},
+                 {"op":"varrer","tabela":"g2",
+                  "onde":[{"coluna":"uf","op":"=","valor":"MG"}]}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("quantas", -1), 1, "{}", r.escrever());
+        assert_eq!(r.inteiro_ou("repetidas", -1), 1, "{}", r.escrever());
+        // E o cabeçalho é o das colunas que quem pergunta VÊ.
+        assert_eq!(colunas(&r), vec!["id", "nome", "uf"], "{}", r.escrever());
+    }
+
+    /// A trava global NÃO é tomada no caminho novo -- e não é preferência: um
+    /// braço chamado sob a trava receberia `trava_reentrante()` da
+    /// `COM_A_TRAVA`. E ela também não fica presa: a operação seguinte, que a
+    /// toma, entra.
+    ///
+    /// **Prova real, com o defeito reposto:** ponha
+    /// `let _t = self.travar_dados()?;` no topo do `unir_por_pedidos` e este
+    /// teste falha com «trava reentrante».
+    #[test]
+    fn o_caminho_novo_nao_segura_a_trava_global() {
+        let d = dir("trava");
+        let s = servidor(&d);
+        let r = unir(
+            &s,
+            r#""modo":"tudo","partes":[{"op":"varrer","tabela":"g1"},
+                                       {"op":"varrer","tabela":"g2"}]"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("quantas", -1), 5, "{}", r.escrever());
+        // A trava foi solta: quem a toma depois entra.
+        s.executar(
+            "varrer",
+            &pedido(r#"{"database":"b","tabela":"g1","max":1}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+    }
+
+    /// Os dois campos no mesmo pedido recusam NOMEANDO os dois, em vez de o
+    /// motor escolher calado -- campo que parece pedido e o motor ignora é a
+    /// família da configuração que ninguém lê.
+    #[test]
+    fn partes_e_tabelas_no_mesmo_pedido_recusa_nomeando() {
+        let d = dir("ambos");
+        let s = servidor(&d);
+        let e = unir(
+            &s,
+            r#""tabelas":["g1","g2"],"partes":[{"op":"varrer","tabela":"g1"},
+                                               {"op":"varrer","tabela":"g2"}]"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("partes") && e.contains("tabelas"), "{e}");
+    }
+
+    /// Um braço só não é união, e a recusa diz quantos vieram.
+    #[test]
+    fn um_braco_so_nao_e_uniao() {
+        let d = dir("um");
+        let s = servidor(&d);
+        let e = unir(&s, r#""partes":[{"op":"varrer","tabela":"g1"}]"#)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("dois bracos"), "{e}");
+    }
+
+    /// **Operação que não devolve linhas nasce RECUSADA no braço**, pelo mesmo
+    /// portão do `consultar`: a lista é curta de propósito, e uma op de
+    /// escrita aqui dentro faria uma união gravar.
+    #[test]
+    fn braco_que_nao_devolve_linhas_recusa_nomeando_o_que_serve() {
+        let d = dir("escrita");
+        let s = servidor(&d);
+        let e = unir(
+            &s,
+            r#""partes":[{"op":"inserir","tabela":"g1","linha":{"id":9}},
+                         {"op":"varrer","tabela":"g2"}]"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("braco 1 da uniao"), "{e}");
+        assert!(e.contains("varrer") && e.contains("buscar"), "{e}");
+    }
+
+    /// Braços de larguras diferentes recusam com a CONTA das colunas -- a
+    /// mesma conferência do caminho velho, agora sobre a projeção do braço.
+    #[test]
+    fn bracos_de_larguras_diferentes_recusam_com_a_conta() {
+        let d = dir("largura");
+        let s = servidor(&d);
+        let e = unir(
+            &s,
+            r#""partes":[
+                 {"op":"consultar","de":{"op":"varrer","tabela":"g1"},
+                  "colunas":[{"coluna":"nome"}]},
+                 {"op":"varrer","tabela":"g2"}]"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("coluna(s)"), "{e}");
+    }
+
+    /// O braço `consultar` com projeção empilha com o `varrer` de mesma
+    /// largura -- e é por aqui que o `SELECT` com colunas escolhidas vai
+    /// chegar quando o tradutor for escrito.
+    #[test]
+    fn o_braco_consultar_com_projecao_empilha() {
+        let d = dir("projecao");
+        let s = servidor(&d);
+        let r = unir(
+            &s,
+            r#""modo":"tudo","partes":[
+                 {"op":"consultar","de":{"op":"varrer","tabela":"g1"},
+                  "colunas":[{"coluna":"nome"}],"expressao":"uf = 'SC'"},
+                 {"op":"consultar","de":{"op":"varrer","tabela":"g2"},
+                  "colunas":[{"coluna":"nome"}],"expressao":"uf = 'SC'"}]"#,
+        )
+        .unwrap();
+        assert_eq!(colunas(&r), vec!["nome"], "{}", r.escrever());
+        assert_eq!(r.inteiro_ou("quantas", -1), 2, "{}", r.escrever());
     }
 }

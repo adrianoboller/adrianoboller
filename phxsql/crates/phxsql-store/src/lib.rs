@@ -31,6 +31,7 @@ pub mod log;
 pub mod memoria;
 pub mod motivo;
 pub mod ndx;
+pub mod no;
 pub mod pag;
 pub mod reg;
 pub mod restaurar;

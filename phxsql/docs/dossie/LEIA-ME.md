@@ -147,6 +147,39 @@ E o portão passou o tempo todo **verde** enquanto isso acontecia, porque ele
 conferia se o derivado estava em dia — e estava, com um leitor que contava
 menos. Catraca que só olha o resultado não vê a guarda que parou de guardar.
 
+### E o portão prova a IDADE do número da versão, não só o dos derivados
+
+`docs/versao/portao-da-versao.py` entrou em 23/09/2026, e o defeito que o
+motivou não era teórico nem pequeno: `version = "0.18.0"` no `Cargo.toml` foi
+selado em 29/08/2026 e a árvore andou **887 commits** por cima sem que nada
+acusasse. O `empacotar.sh` já tinha `confere_versoes()`, mas ele só confere
+que `Cargo.toml`/`Cargo.lock`/`MANUAL.txt`/`CHANGELOG.md` **concordam** entre
+si — quatro cópias do mesmo número velho passam por ele de braços abertos,
+porque concordar não é o mesmo que **descrever** o que existe. É o padrão
+«gerador certo chamado pela metade», um nível acima do de sempre: o gerador do
+selo da capa estava certo, e a fonte dele — a linha do `Cargo.toml` — envelhecia
+calada.
+
+```bash
+python3 docs/versao/portao-da-versao.py   # sai != 0 se a versao selada envelheceu
+```
+
+A régua é a distância, em commits, entre o commit que selou a versão atual —
+achado por `git log -S 'version = "X.Y.Z"' -- Cargo.toml`, nunca digitado — e
+o HEAD, contra um teto medido em 23/09/2026: o **maior intervalo** entre duas
+selagens em toda a história do projeto antes desta rodada (**51**,
+`c4af6d0..baff46e`). 887 é 17,4× esse máximo. É uma catraca, e catraca só
+desce: subir este teto por estilo não é permitido, quem quiser um teto maior
+aposenta esta constante e nasce outra, nomeada e medida no dia. Tempo de
+parede e linhas alteradas foram pesados e descartados — o próprio docstring do
+script diz por quê, com o mesmo formato do `TETO_TABELA_NA_MAO` do QA.
+
+Ele roda **aqui** (não só no `empacotar.sh`) para pegar o envelhecimento antes
+de alguém tentar empacotar, na mesma rodada que já confere o resto do que se
+publica; e roda também dentro de `confere_versoes()`, guardado pelo mesmo
+`command -v python3` do `docs/versao/conferir.py`, para que o próprio
+empacotador se recuse quando o número não descreve mais a árvore.
+
 **Sem argumento nenhum**, e isso é conserto de 07/09/2026, não estilo. O nome
 do dossiê some da receita porque ele muda a cada refação, e quem o acha é o
 `dossie_da_pasta.py` — **um dono só**, varrendo `dossie-phxsql-*.html` na

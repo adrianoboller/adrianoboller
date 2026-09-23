@@ -102,15 +102,109 @@ No `UNION`, duas linhas todas nulas contam como repetidas — diferente da
 junção, onde nulo nunca casa. As duas regras são do SQL, e são mesmo
 diferentes: a junção compara *chaves*, a união compara *linhas*.
 
+### O braço pode ser um PEDIDO, e não só um nome de tabela
+
+```json
+{"op":"unir", "database":"loja", "modo":"distinta",
+ "partes":[{"op":"buscar",   "tabela":"g1", "indice":"porUf", "chave":["SC"]},
+           {"op":"consultar","de":{"op":"varrer","tabela":"g2"},
+                             "expressao":"uf = 'SC'",
+                             "colunas":[{"coluna":"nome"}]}]}
+```
+
+Cada item de `"partes"` é um pedido que devolve linhas — `varrer`, `buscar`,
+`agrupar`, `group_by` ou `consultar` —, o **mesmo** contrato que o `consultar`
+já compõe no `de`, no `juntar[].de`, no `escalar[].de`, no `em[].de` e no
+`existe[].de`. A união é o sexto uso dele, e não uma gramática nova.
+
+**Por que o braço deixou de ser um nome.** `SELECT nome FROM a WHERE uf='SC'
+UNION SELECT nome FROM b` não tinha onde acontecer: a união abria as tabelas
+INTEIRAS. **Remedido contra o braço de verdade** em 23/09/2026 pela
+`bancada/uniao/medir.py` — três corridas de sete repetições, 2×20.000 linhas,
+`uf='SC'` a 1%, 400 linhas na resposta, carga da máquina 0,98: unir inteiras e
+filtrar fora materializa 40.000 e custa **171,4 ms** (160,6–185,6); filtrar
+dentro de cada braço materializa 400 e custa **2,7 ms** (2,5–3,4) —
+**64,2×**, com as faixas sem se cruzarem (62,5× · 64,2× · 67,6× nas três
+corridas). O ganho é do **índice** que o braço pode usar e que unir-inteiras
+estruturalmente não pode; ele é função da seletividade, e a 100% seria ~1×.
+Os números saem do `bancada/uniao/resultados.json`, com a data dentro do
+arquivo — nenhum deles se digita aqui de memória.
+
+**E o 118,7× que o pedido 393 anunciava não se reproduziu — o motivo é lei da
+casa.** Naquela medição o lado filtrado eram dois `buscar` **soltos**, porque o
+braço ainda não existia para ser medido. O braço de verdade paga a máquina da
+união por cima da busca: empilhar, canonizar a chave do `distinta`, trazer a
+linha JSON de volta para `Value` por nome, o guarda de profundidade. É
+*«bancada compara trabalho igual, não só pergunta igual»* cobrando o próprio
+pedido — o número velho comparava uma **simulação** com a operação. Fica
+registrado com o número, para não voltar sem medição.
+
+**`"tabelas"` não sai, e continua querendo dizer o mesmo.** Guarda nova entra
+pedida, não imposta. Mandar os dois campos no mesmo pedido **recusa**: são duas
+formas de dizer a mesma coisa, e o motor não escolhe por quem pediu.
+
+**As colunas do motor não empilham.** O `rowid` que o `varrer` põe na frente da
+linha e as colunas de sistema que o esquema põe no fim ficam de fora dos dois
+caminhos. Não é arrumação: elas são **únicas por linha**, e a chave do
+`distinta` é a linha visível inteira — com elas dentro, o `UNION` devolveria o
+mesmo que o `UNION ALL` anunciando `repetidas: 0`.
+
+**O teto muda de alvo.** No caminho `tabelas` o `TETO_JUNCAO` (500.000) se
+aplica à TABELA, então unir duas de dois milhões é impossível mesmo para pegar
+dez linhas. No caminho `partes` o teto que vale é o `recursos.max_linhas` de
+cada braço, e ele se aplica ao **recorte**.
+
+**O que os braços-pedido CUSTAM, e é decisão do papel C (DBA).** O caminho
+`tabelas` toma a trava global **exclusiva** e a segura por toda a
+materialização. Remedido pela mesma bancada numa **janela fixa de 1,5 s** de
+pressão contínua — sem janela fixa, «pior espera baixa» quer dizer só «a carga
+acabou antes», e o caminho novo acaba antes —, com um `varrer(max=1)` numa
+conexão vizinha:
+
+| o leitor inocente | p95 | faixa | uniões na janela |
+|---|---|---|---|
+| sozinho | 0,39 ms | 0,38–0,40 | — |
+| sob `unir` por `tabelas` | **115,33 ms** | 114,54–117,99 | 11 |
+| sob `unir` por `partes` | **0,85 ms** | 0,82–0,86 | 567–603 |
+
+São **135,7×** no p95, com as faixas sem se cruzarem — e o caminho novo aguentou
+**~54× mais uniões** na mesma janela. O caminho `partes` **não toma trava
+nenhuma**, e isso não é preferência: `travar_dados`
+recusa a reentrância, então uma união que segurasse a trava e chamasse um
+sub-pedido receberia «trava reentrante» no primeiro braço. **É o código que
+obriga.** O preço é que os braços deixam de ser lidos do **mesmo instantâneo**:
+um escritor pode entrar entre o braço A e o braço B. Três coisas atenuam e
+nenhuma decide sozinha — o `consultar` já é assim nas junções desde sempre, o
+isolamento entregue por padrão é `READ COMMITTED` (onde isso é legítimo), e
+quem abre transação com **leitura repetível** segura a compartilhada em cada
+tabela até o fim e fica coberto. Quem precisa dos braços do mesmo instantâneo
+pede leitura repetível; quem não pedir sabe o que tem.
+
+**A ordem dentro do braço escolhe quais linhas ele traz, não arruma a saída** —
+é o que os três motores maduros dizem por extenso, e aqui o `max` do braço
+continua sendo teto de leitura com `truncado`, não um `LIMIT`.
+
 ## As operações
 
 | Operação | O que faz |
 |---|---|
 | `juntar` (`join`) | as sete figuras, entre duas tabelas do mesmo banco |
-| `unir` (`union`) | empilha duas ou mais tabelas do mesmo banco |
+| `unir` (`union`) | empilha duas ou mais partes do mesmo banco — tabelas (`tabelas`) ou pedidos (`partes`) |
 
 As duas exigem `ler` no banco, e conferem de novo antes de abrir a segunda
-tabela.
+tabela. No `unir` com `"partes"` quem confere é o portão de sempre, uma vez por
+braço, por dentro do `executar_derivado` — a conferência própria do `unir`
+continua valendo para o caminho `tabelas`, **e não é duplicação**: o campo que
+ela lê não existe num pedido com braços.
+
+E uma armadilha medida em 23/09/2026, que fica escrita porque ela decide qual
+teste vale: com o portão do braço **removido de propósito**, um braço `varrer`
+ainda era recusado — mas **depois de ler a tabela negada**, porque o modelo da
+linha é pedido logo em seguida por um `esquema` que ainda passava pelo portão.
+Uma prova que confere só o veredito passaria com o defeito reposto. O braço
+`agrupar` não tem essa recusa tardia (o modelo dele sai do próprio cabeçalho),
+e por isso é ele que discrimina — com o defeito, a folha resumida sai. *Prova
+real é medir quanto foi lido, não se recusou.*
 
 ```json
 {"op":"juntar", "database":"loja", "tipo":"esquerda",
@@ -129,7 +223,11 @@ mesmo prefixo é erro.
 - **Condição de junção que não seja igualdade.** `ON a.x > b.y` não existe: o
   *hash join* casa por igualdade, e desigualdade pede outro algoritmo.
 - **`WHERE` sobre o resultado.** A tela filtra depois, na grade; o servidor
-  ainda não.
+  ainda não. Dentro de cada braço da união, sim — é o `"partes"`.
+- **`UNION` com filtro ou projeção pelo SQL.** O contrato do braço existe desde
+  o pedido 393; o tradutor do `phxsql-sql` ainda traduz só
+  `SELECT * FROM a UNION [ALL] SELECT * FROM b`, sobre `tabelas`, e recusa o
+  resto nomeando. Reescrevê-lo sobre `partes` é a frente seguinte.
 - **`INTERSECT` e `EXCEPT`.** `so_esquerda` já é o `EXCEPT` por chave, e
   `interna` é o `INTERSECT` por chave — mas sobre a *linha inteira*, como o SQL
   faz, ainda não existem.

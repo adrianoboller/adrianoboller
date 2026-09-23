@@ -156,11 +156,16 @@ pub fn colisao_de_criacao(operacao: Operacao, origem_ev: u16, local: Option<&Toq
 /// enquanto -- mesma regra da sincronia do DbLink, ate alguem precisar dela
 /// com o pedido na mesa.
 pub fn chave_unica(esquema: &Schema) -> Option<(String, usize)> {
+    // O `e_coluna_de_sistema`, e nao dois literais crus: um indice unico
+    // sobre uma coluna de sistema nova viraria a IDENTIDADE replicavel da
+    // tabela, e o casamento entre servidores passaria a ser por um carimbo que
+    // e local de cada no. Silencioso, e so aparecendo como linha duplicada.
     let serve = |i: &phxsql_core::schema::IndexDef| {
-        i.unico && i.colunas.len() == 1 && {
-            let nome = &esquema.colunas()[i.colunas[0].coluna].nome;
-            nome != "softdeleted" && nome != "rownum"
-        }
+        i.unico
+            && i.colunas.len() == 1
+            && !phxsql_core::schema::e_coluna_de_sistema(
+                &esquema.colunas()[i.colunas[0].coluna].nome,
+            )
     };
     esquema
         .indices()
@@ -331,8 +336,8 @@ impl Aplicacao {
 /// `Bin`/`Memo`, que nao se leem sem carregar o bloco externo, e para o valor
 /// que passa do teto -- «o que nao se analisa vira o tamanho em bytes».
 ///
-/// Coluna de sistema (`softdeleted`, `rownum`) fica de fora: ela e local dos
-/// dois lados e nunca explica um conflito de chave.
+/// Coluna de sistema fica de fora: ela e local dos dois lados e nunca explica
+/// um conflito de chave.
 pub fn linha_redigida(esquema: &Schema, valores: &[phxsql_core::value::Value]) -> String {
     /// Quantas colunas cabem antes do resumo. Uma tabela de quarenta colunas
     /// daria uma linha de log ilegivel; as primeiras bastam para reconhecer.

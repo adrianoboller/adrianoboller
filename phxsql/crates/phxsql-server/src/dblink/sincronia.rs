@@ -241,16 +241,21 @@ pub fn esquema_local_de(nome: &str, colunas: &[Coluna]) -> Result<(Schema, Strin
 }
 
 /// As posicoes das colunas de NEGOCIO do esquema local -- tudo menos as de
-/// sistema (`softdeleted`, `rownum`), que o motor preenche sozinho.
+/// sistema, que o motor preenche sozinho.
 ///
 /// A sincronia so fala destas: e o que deixa `inserir`/`atualizar` receberem a
 /// linha sem as colunas do motor, como qualquer cliente.
+///
+/// Pergunta ao `e_coluna_de_sistema`, e nao a dois literais crus: com a lista
+/// a mao, uma coluna de sistema nova virava coluna de NEGOCIO aqui -- e a
+/// conferencia logo abaixo, que recusa quando falta uma coluna de negocio do
+/// outro lado, pararia a sincronia de toda tabela migrada.
 pub fn posicoes_de_negocio(esquema: &Schema) -> Vec<usize> {
     esquema
         .colunas()
         .iter()
         .enumerate()
-        .filter(|(_, c)| c.nome != "softdeleted" && c.nome != "rownum")
+        .filter(|(_, c)| !phxsql_core::schema::e_coluna_de_sistema(&c.nome))
         .map(|(i, _)| i)
         .collect()
 }

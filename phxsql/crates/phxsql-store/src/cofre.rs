@@ -393,6 +393,47 @@ impl Material {
         self.chave.is_some()
     }
 
+    /// O mesmo material, selando em AEAD mesmo que a configuracao peca
+    /// FrogCript.
+    ///
+    /// # Nao e preferencia, e o TAMANHO do lugar
+    ///
+    /// Existe para quem tem formato de tamanho FIXO e nao pode crescer: a
+    /// pagina do `.ndx`/`.fts` tem 4096 bytes e nao ha para onde transbordar.
+    /// O pacote FrogCript e [`Material::acrescimo`] = 167 bytes MAIOR que o
+    /// claro, entao ele nao cabe dentro da propria pagina que cifraria --
+    /// enquanto o AEAD e cifra de fluxo e cabe no lugar, cobrando so a
+    /// etiqueta.
+    ///
+    /// A flag de modo que [`Material::gravar`] escreve sai daqui, entao o
+    /// arquivo nasce dizendo AEAD e reabre em AEAD: a configuracao trocada
+    /// depois nao vira "etiqueta nao confere".
+    pub fn em_aead(mut self) -> Material {
+        self.modo = Modo::Aead;
+        self
+    }
+
+    /// Quantos bytes a cifra ACRESCENTA a uma mensagem, seja qual for o
+    /// tamanho dela.
+    ///
+    /// No modo AEAD sao os 16 da etiqueta. No FrogCript sao 167 -- quatro
+    /// nonces, quatro etiquetas, as duas pontas de direcao, o comprimento e o
+    /// separador.
+    ///
+    /// Existe porque quem tem lugar de tamanho fixo precisa do ACRESCIMO
+    /// antes de saber quanto do lugar sobra para o claro, e `ocupa` so
+    /// responde depois de ja saber o tamanho do claro -- a conta da pagina
+    /// seria circular.
+    pub fn acrescimo(&self) -> usize {
+        if !self.cifrado() {
+            return 0;
+        }
+        match self.modo {
+            Modo::Aead => TAG_LEN,
+            Modo::FrogCript => frogcript::ACRESCIMO + 4 * XNONCE_LEN,
+        }
+    }
+
     /// Quanto um pedaco de `n` bytes ocupa no disco depois de cifrado.
     ///
     /// No modo AEAD sao 16 bytes de etiqueta. No FrogCript sao 167 -- quatro
@@ -403,10 +444,7 @@ impl Material {
         if n == 0 || !self.cifrado() {
             return n;
         }
-        match self.modo {
-            Modo::Aead => n + TAG_LEN,
-            Modo::FrogCript => n + frogcript::ACRESCIMO + 4 * XNONCE_LEN,
-        }
+        n + self.acrescimo()
     }
 
     /// Grava flag, iteracoes, sal e prova em `buf`, a partir de `base`.

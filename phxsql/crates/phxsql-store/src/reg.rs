@@ -213,6 +213,21 @@ pub struct RegFile {
     /// esquecer de mexer nele: `recontar_marcadas` refaz a conta varrendo, e e
     /// o que o reparo chama.
     marcadas: u64,
+    /// Maior carimbo de criacao (`rowstamp`) que esta tabela ja gravou.
+    ///
+    /// Mora nos bytes 116..124 do cabecalho do volume 1, o ultimo `u64` livre
+    /// da versao 4. E ela NAO sobe a versao do `.reg`, ao contrario do que o
+    /// `proximo_rownum` e o `marcadas` exigiram, e a diferenca e precisa: la,
+    /// zero num arquivo que ja tem linhas significaria uma coisa FALSA (que a
+    /// numeracao comeca do zero por cima do que existe). Aqui zero quer dizer
+    /// «esta tabela ainda nao carimbou nada», e num `.reg` anterior a v10 do
+    /// esquema isso e VERDADE, porque a coluna nao existia. Ausencia benigna
+    /// nao sobe versao.
+    ///
+    /// Sem ela, um no que reiniciasse comecaria a carimbar do 1 e emitiria
+    /// carimbo menor que o de linha que ja esta gravada -- a garantia morreria
+    /// calada, no caso que ela existe para cobrir.
+    ultimo_carimbo: u64,
     /// Leituras salvas pelo espelho nesta sessao.
     recuperados: u64,
     /// Onde cada volume comeca, quando a particao e por periodo.
@@ -302,6 +317,7 @@ impl RegFile {
             proxima_sequencia: 0,
             proximo_rownum: 1,
             marcadas: 0,
+            ultimo_carimbo: 0,
             baldes: Vec::new(),
             recuperados: 0,
             fronteiras: Vec::new(),
@@ -418,6 +434,9 @@ impl RegFile {
         // rownum sairia 1 por cima do que existe. O contador comeca em 1.
         let proximo_rownum = c.u64(92).max(1);
         let marcadas = c.u64(108);
+        // A marca d'agua do carimbo. Zero num `.reg` anterior ao `PSCH` v10 e
+        // a verdade: a coluna nao existia, entao a tabela nunca carimbou.
+        let ultimo_carimbo = c.u64(116);
         let data_offset = c.u64(44);
         let schema_len = c.u32(52) as usize;
         let schema_crc = c.u32(56);
@@ -475,6 +494,30 @@ impl RegFile {
             )));
         }
 
+        // A faixa da `Sequence` (PSCH v10) se confere AQUI, e custa ZERO byte
+        // a mais: o valor ja esta gravado. A faixa e uma classe de resto, e
+        // `proxima_sequencia` e o representante dela --
+        // `proxima_sequencia = inicio (mod passo)` sempre que ela ja foi
+        // usada. Entao nao ha um segundo lugar onde a verdade possa divergir
+        // de si mesma.
+        //
+        // `proxima_sequencia == 0` e «nunca usada» e PULA a conferencia. E o
+        // que faz a tabela nascida por replicacao funcionar: ela herda o
+        // `passo` do bloco do source e adota a faixa DESTE no na primeira
+        // escrita.
+        let passo = esquema.passo_da_sequencia();
+        let inicio = crate::no::inicio_da_sequencia();
+        if passo > 1 && proxima_sequencia != 0 && proxima_sequencia % passo != inicio % passo {
+            return Err(PhxError::Esquema(format!(
+                "{nome_arq} numera a sequencia na faixa {} de {passo}, e este \
+                 servidor esta declarado na faixa {}: continuar repetiria \
+                 numero ja gravado. Ajuste o inicio da faixa deste no para {}",
+                proxima_sequencia % passo,
+                inicio % passo,
+                proxima_sequencia % passo
+            )));
+        }
+
         // Guarda-se o bloco COMO ESTA NO DISCO, e nao o resultado de
         // reserializar o esquema que acabou de ser lido.
         //
@@ -508,10 +551,14 @@ impl RegFile {
             proxima_sequencia,
             proximo_rownum,
             marcadas,
+            ultimo_carimbo,
             baldes: Vec::new(),
             recuperados: 0,
             fronteiras: Vec::new(),
         };
+        // O contador do processo volta do DADO, e nao do relogio: sem isto um
+        // no que reinicie emitiria carimbo menor que o de linha ja gravada.
+        crate::no::empurrar_carimbo(r.ultimo_carimbo);
         Ok(r)
     }
 
@@ -745,10 +792,21 @@ impl RegFile {
     /// declara um indice `unico` sobre ela, e ai o proprio indice recusa a
     /// repeticao.
     pub fn proxima_da_sequencia(&mut self) -> u64 {
-        self.proxima_sequencia = self.proxima_sequencia.max(1);
-        let v = self.proxima_sequencia;
-        self.proxima_sequencia += 1;
+        let v = self.na_faixa(self.proxima_sequencia.max(1));
+        self.proxima_sequencia = v + 1;
         v
+    }
+
+    /// O primeiro numero `>= piso` que cai na faixa DESTE no.
+    ///
+    /// Com `passo = 1` -- o padrao, e o que toda tabela anterior ao `PSCH`
+    /// v10 tem -- devolve o proprio piso, e a numeracao continua 1, 2, 3...
+    fn na_faixa(&self, piso: u64) -> u64 {
+        crate::no::na_faixa(
+            piso,
+            crate::no::inicio_da_sequencia(),
+            self.esquema.passo_da_sequencia(),
+        )
     }
 
     /// Toma o proximo `rownum` e avanca o contador.
@@ -811,7 +869,12 @@ impl RegFile {
     /// numerar devolveria 1, 2, 3... por cima do que ja existe.
     pub fn anotar_sequencia(&mut self, usado: u64) {
         if usado >= self.proxima_sequencia {
-            self.proxima_sequencia = usado + 1;
+            // Arredonda para a PROPRIA faixa, e nao `usado + 1`: com faixa,
+            // `usado + 1` e o proximo numero do OUTRO no. O defeito medido em
+            // `docs/AUTONUMBER.md` («alfa ajustada para 1, beta para
+            // 1.000.000; depois da primeira ida e volta o contador de alfa
+            // estava em 1.000.002») e exatamente este.
+            self.proxima_sequencia = self.na_faixa(usado + 1);
         }
     }
 
@@ -832,8 +895,39 @@ impl RegFile {
     /// indice unico sobre a coluna vai recusar, o que e o comportamento certo,
     /// mas o erro aparece longe de quem causou.
     pub fn ajustar_sequencia(&mut self, proxima: u64) -> Result<()> {
+        // A UNICA porta dos fundos do contador, e por isso a faixa se confere
+        // aqui na hora, e nao na abertura seguinte: recusar depois
+        // transformaria uma ordem de manutencao numa tabela que nao abre mais.
+        let passo = self.esquema.passo_da_sequencia();
+        let inicio = crate::no::inicio_da_sequencia();
+        if passo > 1 && proxima != 0 && proxima % passo != inicio % passo {
+            return Err(PhxError::Esquema(format!(
+                "{proxima} nao cai na faixa deste servidor ({} de {passo}): \
+                 o proximo numero da faixa a partir dai e {}",
+                inicio % passo,
+                crate::no::na_faixa(proxima, inicio, passo)
+            )));
+        }
         self.proxima_sequencia = proxima;
         self.gravar_contadores(1)
+    }
+
+    /// Maior carimbo de criacao ja gravado nesta tabela. 0 = nenhum.
+    pub fn ultimo_carimbo(&self) -> u64 {
+        self.ultimo_carimbo
+    }
+
+    /// Empurra a marca d'agua do carimbo. Nunca a faz recuar.
+    ///
+    /// Nao grava sozinha: o cabecalho vai ao disco no mesmo `gravar_contadores`
+    /// da insercao que emitiu o carimbo. Uma queda entre os dois volta a marca
+    /// atras, e o efeito e o mesmo do contador da sequencia -- carimbo que
+    /// repete, nunca carimbo que se perde -- porque a linha que o usava tambem
+    /// nao chegou ao disco.
+    pub fn anotar_carimbo(&mut self, carimbo: u64) {
+        if carimbo > self.ultimo_carimbo {
+            self.ultimo_carimbo = carimbo;
+        }
     }
 
     /// So os 128 bytes do cabecalho do volume 1, com os contadores.
@@ -899,6 +993,7 @@ impl RegFile {
             por_u64(&mut buf, 36, self.proxima_sequencia);
             por_u64(&mut buf, 92, self.proximo_rownum);
             por_u64(&mut buf, 108, self.marcadas);
+            por_u64(&mut buf, 116, self.ultimo_carimbo);
         }
         por_u64(&mut buf, 44, self.data_offset);
         por_u32(&mut buf, 52, self.esquema_bytes.len() as u32);

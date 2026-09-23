@@ -617,6 +617,23 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
     let esquema = Schema::new(nome, colunas, indices)?
         .com_motivo_obrigatorio(j.booleano_ou("motivo_obrigatorio", false));
 
+    // A FAIXA da `Sequence` (`PSCH` v10): este cluster entrega um numero a
+    // cada `passo`, e qual dos restos cabe a este servidor sai da identidade
+    // do no, nunca do esquema -- uma tabela nascida por replicacao e criada do
+    // MESMO bloco de esquema do source, byte a byte.
+    //
+    // Ausente e 1, que e o que toda tabela ja criada tem: cliente escrito
+    // antes desta versao continua criando tabela exatamente igual.
+    let esquema = match j.campo("passo_da_sequencia").and_then(Json::inteiro) {
+        None => esquema,
+        Some(p) if p <= 0 => {
+            return Err(PhxError::Esquema(format!(
+                "\"passo_da_sequencia\" tem de ser 1 ou mais; recebi {p}"
+            )))
+        }
+        Some(p) => esquema.com_passo_da_sequencia(p as u64)?,
+    };
+
     // As chaves estrangeiras.
     //
     // O formato as suporta e o `esquema` as reporta desde sempre -- mas
@@ -1076,7 +1093,22 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
             _ => return Err(erro("data")),
         },
         ColumnType::Time => Value::Time(j.inteiro().ok_or_else(|| erro("hora"))? as i32),
-        ColumnType::DateTime => Value::DateTime(j.inteiro().ok_or_else(|| erro("data e hora"))?),
+        // Instante escrito como TEXTO ISO tambem serve, exatamente como a
+        // `Date` ao lado ja aceitava. O irmao estava para tras: o
+        // `linha_para_json` SEMPRE devolve a `DateTime` como texto
+        // (`instante_iso`), e so o inteiro voltava -- entao ler uma linha,
+        // mexer num campo e mandar a linha de volta ja nao fechava o ciclo.
+        // Ate a v10 isso so alcancava quem declarasse coluna `DateTime`;
+        // com o `rowtime` alcanca TODA tabela e TODA linha, e o
+        // read-modify-write de todo cliente que existe hoje pararia de
+        // gravar. O texto passa pelo `ms_de_instante_iso`, que e o mesmo
+        // leitor do PITR e recusa fuso em vez de engoli-lo.
+        ColumnType::DateTime => match j {
+            Json::Texto(t) => Value::DateTime(
+                phxsql_core::datahora::ms_de_instante_iso(t).ok_or_else(|| erro("data e hora"))?,
+            ),
+            _ => Value::DateTime(j.inteiro().ok_or_else(|| erro("data e hora"))?),
+        },
         ColumnType::Str(_) => Value::Str(j.texto().ok_or_else(|| erro("texto"))?.to_string()),
         ColumnType::Memo => Value::Memo(j.texto().ok_or_else(|| erro("texto"))?.to_string()),
         ColumnType::Bin => match j {
@@ -1138,27 +1170,49 @@ pub fn linha_para_json(linha: &[Value], esquema: &Schema) -> Json {
 /// esquema). Colunas ausentes no objeto entram como NULL.
 pub fn json_para_linha(j: &Json, esquema: &Schema) -> Result<Vec<Value>> {
     let colunas = esquema.colunas();
-    // A coluna de sistema pode ficar de fora do que chega pela rede: quem
-    // manda a linha declarou as colunas dele e nao tem por que saber dela.
-    // Falta ela na lista -> entra `false` no fim; falta no objeto -> idem.
-    // Sem isso, `inserir` recusaria toda linha de todo cliente que existe
-    // hoje, porque a coluna e obrigatoria e o ausente vira nulo.
-    let sistema = esquema.coluna_softdeleted();
+    // As colunas de sistema podem ficar de fora do que chega pela rede: quem
+    // manda a linha declarou as colunas dele e nao tem por que saber delas.
+    // Falta na lista -> entra o valor de partida da coluna; falta no objeto
+    // -> idem. Sem isso, `inserir` recusaria toda linha de todo cliente que
+    // existe hoje, porque a coluna de sistema e obrigatoria e o ausente vira
+    // nulo.
+    //
+    // # A conta e sobre QUANTAS de sistema ha no fim, e nao sobre a primeira
+    //
+    // Antes daqui estava `itens.len() == posicao_da_softdeleted`: uma lista
+    // com as colunas do usuario passava, e a lista COMPLETA passava, e nada
+    // entre as duas. Com duas colunas de sistema isso bastava, porque nao
+    // havia nada entre as duas. Com QUATRO, um cliente escrito para a versao
+    // anterior -- que manda usuario + `softdeleted` + `rownum` -- caia em «a
+    // lista tem 8 valores, a tabela tem 10 colunas», e parava de gravar de um
+    // dia para o outro. Guarda nova nao pode quebrar cliente antigo, e o
+    // `conferir_aridade` do store ja aceitava essa faixa: aqui era o portao
+    // de fora que estava mais estreito que o de dentro.
+    let de_sistema_no_fim = colunas
+        .iter()
+        .rev()
+        .take_while(|c| phxsql_core::schema::e_coluna_de_sistema(&c.nome))
+        .count();
+    let minimo = colunas.len() - de_sistema_no_fim;
     let padrao_de = |i: usize| -> Value {
-        if Some(i) == sistema {
-            Value::Bool(false)
-        } else {
-            Value::Null
-        }
+        // O valor de partida sai da lista unica do `schema.rs`, e nao de um
+        // `if` sobre a primeira coluna de sistema: o `Value::Null` que sobrava
+        // para as outras e nulo numa coluna declarada obrigatoria.
+        phxsql_core::schema::valor_inicial_da_coluna_de_sistema(&colunas[i].nome)
+            .unwrap_or(Value::Null)
     };
     match j {
         Json::Lista(itens) => {
-            let curta = sistema.is_some_and(|i| itens.len() == i);
-            if itens.len() != colunas.len() && !curta {
+            if itens.len() < minimo || itens.len() > colunas.len() {
                 return Err(PhxError::Tipo(format!(
-                    "a lista tem {} valores, a tabela tem {} colunas",
+                    "a lista tem {} valores, a tabela tem {} colunas{}",
                     itens.len(),
-                    colunas.len()
+                    colunas.len(),
+                    if minimo < colunas.len() {
+                        format!(" (ou {minimo}, sem as colunas do motor)")
+                    } else {
+                        String::new()
+                    }
                 )));
             }
             colunas
@@ -1222,6 +1276,120 @@ pub fn json_para_chave(j: &Json, esquema: &Schema, indice: usize) -> Result<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn esquema_de_duas_colunas() -> Schema {
+        Schema::new(
+            "t",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("nome", ColumnType::Str(20)),
+            ],
+            vec![],
+        )
+        .unwrap()
+    }
+
+    /// **A guarda do comportamento VELHO.** Toda aridade entre «so as colunas
+    /// do usuario» e «a tabela inteira» e aceita, uma a uma.
+    ///
+    /// # O defeito que ela repoe
+    ///
+    /// O portao anterior era `itens.len() == posicao_da_softdeleted`: so a
+    /// lista do usuario e a lista completa passavam. Com duas colunas de
+    /// sistema isso bastava; com quatro, o cliente escrito para a versao
+    /// anterior -- que manda usuario + `softdeleted` + `rownum` -- recebia «a
+    /// lista tem 4 valores, a tabela tem 6 colunas» e parava de gravar de um
+    /// dia para o outro. Proteção que quebra cliente antigo e estrago.
+    #[test]
+    fn a_lista_curta_de_qualquer_cliente_antigo_continua_sendo_aceita() {
+        let e = esquema_de_duas_colunas();
+        let n = e.colunas().len();
+        assert_eq!(n, 6, "duas do usuario mais as quatro de sistema");
+
+        let todos = vec![
+            Json::de_i64(1),
+            Json::texto_de("x"),
+            Json::Bool(false),
+            Json::de_u64(7),
+            Json::de_u64(9),
+            Json::texto_de("2026-09-17T00:00:00Z"),
+        ];
+        for quantas in 2..=n {
+            let linha = json_para_linha(&Json::Lista(todos[..quantas].to_vec()), &e)
+                .unwrap_or_else(|erro| panic!("lista com {quantas} valores recusada: {erro}"));
+            assert_eq!(linha.len(), n, "com {quantas} valores");
+        }
+        // Menos que as do usuario continua sendo erro, e mais tambem.
+        assert!(json_para_linha(&Json::Lista(todos[..1].to_vec()), &e).is_err());
+        let mut demais = todos.clone();
+        demais.push(Json::de_i64(0));
+        assert!(json_para_linha(&Json::Lista(demais), &e).is_err());
+    }
+
+    /// O objeto que nao traz coluna de sistema nenhuma recebe o valor de
+    /// PARTIDA de cada uma -- e nao `Null` numa coluna declarada obrigatoria.
+    #[test]
+    fn o_objeto_sem_as_colunas_de_sistema_recebe_o_valor_de_partida() {
+        let e = esquema_de_duas_colunas();
+        let linha =
+            json_para_linha(&Json::analisar(r#"{"id":1,"nome":"x"}"#).unwrap(), &e).unwrap();
+        assert_eq!(linha[2], Value::Bool(false), "softdeleted");
+        assert_eq!(linha[3], Value::UInt(0), "rownum");
+        assert_eq!(linha[4], Value::UInt(0), "rowstamp");
+        assert_eq!(linha[5], Value::DateTime(0), "rowtime");
+    }
+
+    /// **A LINHA LIDA VOLTA A SER GRAVADA -- o read-modify-write de todo
+    /// cliente que existe hoje.**
+    ///
+    /// # O defeito que ela repoe
+    ///
+    /// Deixe o `ColumnType::DateTime` do `json_para_valor` so com o
+    /// `j.inteiro()` e esta prova para em «esperado data e hora, recebido
+    /// Texto». O `linha_para_json` SEMPRE escreveu a `DateTime` como texto
+    /// ISO, e so o inteiro voltava -- um irmao que ficou para tras enquanto a
+    /// `Date` ao lado ja aceitava as duas formas.
+    ///
+    /// Ate o `PSCH` v9 isso alcancava so quem declarasse coluna `DateTime`;
+    /// com o `rowtime` do v10 alcanca TODA tabela e TODA linha, e ler uma
+    /// ficha, mudar um campo e salvar deixaria de funcionar em todo lugar.
+    /// Guarda nova que quebra cliente antigo e estrago, e a coluna que o
+    /// motor acrescenta sozinho nao pode ser a que trava o ciclo.
+    #[test]
+    fn a_linha_lida_volta_a_ser_gravada_sem_traducao_nenhuma() {
+        let e = esquema_de_duas_colunas();
+        let original = vec![
+            Value::Int(7),
+            Value::Str("x".into()),
+            Value::Bool(false),
+            Value::UInt(3),
+            Value::UInt(41),
+            Value::DateTime(1_758_067_200_749),
+        ];
+        assert_eq!(original.len(), e.colunas().len());
+
+        // A ida: e a resposta que o cliente recebe, com o `rowtime` em texto.
+        let json = linha_para_json(&original, &e);
+        assert_eq!(
+            json.campo("rowtime").and_then(Json::texto),
+            Some("2025-09-17 00:00:00,749"),
+            "o rowtime deixou de sair como texto: a prova mudou de assunto"
+        );
+
+        // A volta: a MESMA resposta, sem o cliente traduzir nada.
+        let de_volta = json_para_linha(&json, &e).expect("a linha lida nao volta");
+        assert_eq!(de_volta, original, "o ciclo nao fecha");
+
+        // E como LISTA tambem, que e a outra forma que o protocolo aceita.
+        let lista = Json::Lista(
+            e.colunas()
+                .iter()
+                .zip(original.iter())
+                .map(|(c, v)| valor_para_json(v, &c.ty))
+                .collect(),
+        );
+        assert_eq!(json_para_linha(&lista, &e).unwrap(), original);
+    }
 
     #[test]
     fn decimal_vai_e_volta_sem_perder_centavo() {
@@ -1587,10 +1755,21 @@ mod testes_esquema {
         .unwrap();
 
         assert_eq!(e.nome(), "pedidos");
-        // Tres declaradas mais as DUAS de sistema, que entram sozinhas no fim.
-        assert_eq!(e.colunas().len(), 5);
+        // Tres declaradas mais as QUATRO de sistema, que entram sozinhas no
+        // fim. A conta subiu de 5 para 7 no `PSCH` v10 (pedido 289): a
+        // posicao de cada uma se le do esquema e nao se digita, mas a
+        // QUANTIDADE se afirma aqui de proposito -- e ela que denuncia uma
+        // coluna de sistema entrando calada.
+        assert_eq!(e.colunas().len(), 7);
         assert_eq!(e.coluna_softdeleted(), Some(3));
         assert_eq!(e.coluna_rownum(), Some(4));
+        assert_eq!(e.coluna_rowstamp(), Some(5));
+        assert_eq!(e.coluna_rowtime(), Some(6));
+        // E as tres do usuario continuam onde estavam: coluna de sistema
+        // entra no FIM, e o indice por nome nao se mexe por causa dela.
+        assert_eq!(e.coluna_por_nome("id"), Some(0));
+        assert_eq!(e.coluna_por_nome("cidade"), Some(1));
+        assert_eq!(e.coluna_por_nome("total"), Some(2));
         assert!(!e.colunas()[0].nullable, "obrigatoria virou nullable");
         assert!(e.colunas()[1].nullable);
 

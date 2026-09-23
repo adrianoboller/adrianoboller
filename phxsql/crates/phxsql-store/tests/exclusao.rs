@@ -88,11 +88,22 @@ fn inserir_sem_a_coluna_de_sistema() {
     ];
     let rowid = t.inserir(&curta).unwrap();
     let linha = t.ler(rowid).unwrap().unwrap();
-    // As DUAS colunas de sistema entraram sozinhas: a marca falsa e o numero
-    // de ordem, que o motor preencheu.
-    assert_eq!(linha.len(), 6);
+    // As QUATRO colunas de sistema entraram sozinhas: a marca falsa, o numero
+    // de ordem, o carimbo de criacao e o relogio -- todas preenchidas pelo
+    // motor. A linha chegou com quatro valores e saiu com oito.
+    assert_eq!(linha.len(), 8);
     assert_eq!(linha[4], Value::Bool(false));
     assert_eq!(linha[5], Value::UInt(1));
+    assert!(
+        matches!(linha[6], Value::UInt(n) if n > 0),
+        "o carimbo de criacao nao foi emitido: {:?}",
+        linha[6]
+    );
+    assert!(
+        matches!(linha[7], Value::DateTime(ms) if ms > 0),
+        "o relogio de criacao nao foi carimbado: {:?}",
+        linha[7]
+    );
     assert!(!t.esta_excluida(&linha));
 }
 

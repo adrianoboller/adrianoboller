@@ -122,6 +122,20 @@ confere_versoes() {
     echo "   PULADO: sem python3, o conferidor de versao nao rodou"
   fi
 
+  # O setimo lugar: tudo acima confere que os quatro CONCORDAM entre si, e
+  # concordar nao e o mesmo que DESCREVER o que existe -- quatro copias do
+  # mesmo numero velho passam pelas checagens de cima de bracos abertos. O
+  # `docs/versao/portao-da-versao.py` mede a DISTANCIA (em commits) entre a
+  # selagem atual e o HEAD, contra o maior intervalo ja visto entre duas
+  # selagens (medido, nao digitado). Achado em 23/09/2026: 0.18.0 tinha 887
+  # commits por cima sem ninguem notar, porque nenhum portao olhava para isso.
+  if command -v python3 >/dev/null 2>&1; then
+    python3 docs/versao/portao-da-versao.py ||
+      { echo "   o portao da versao reprovou -- ela envelheceu"; erro=1; }
+  else
+    echo "   PULADO: sem python3, o portao da versao nao rodou"
+  fi
+
   [ $erro -eq 0 ] || { echo; echo "as versoes nao batem -- nada foi empacotado."; exit 4; }
 }
 

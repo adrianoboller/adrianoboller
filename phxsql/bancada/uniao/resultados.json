@@ -1,0 +1,64 @@
+{
+ "medido_em": "2026-09-23 05:06",
+ "carga_da_maquina": "0.98",
+ "binario_de": "2026-09-23 04:44",
+ "linhas_por_tabela": 20000,
+ "seletividade_pct": 1,
+ "linhas_na_resposta": 400,
+ "linhas_materializadas_por_tabelas": 40000,
+ "linhas_materializadas_por_partes": 400,
+ "tabelas_e_filtro_fora_ms": 171.4,
+ "tabelas_e_filtro_fora_faixa": [
+  160.6,
+  185.6
+ ],
+ "partes_filtro_dentro_ms": 2.7,
+ "partes_filtro_dentro_faixa": [
+  2.5,
+  3.4
+ ],
+ "razao": 64.2,
+ "razao_por_corrida": [
+  62.5,
+  64.2,
+  67.6
+ ],
+ "faixas_se_cruzam": false,
+ "mesma_resposta": true,
+ "leitor_sozinho_p95_ms": 0.39,
+ "leitor_sozinho_p95_faixa": [
+  0.38,
+  0.4
+ ],
+ "leitor_sozinho_max_ms": 1.06,
+ "unioes_na_janela_sozinho": [
+  0,
+  0,
+  0
+ ],
+ "leitor_tabelas_p95_ms": 115.33,
+ "leitor_tabelas_p95_faixa": [
+  114.54,
+  117.99
+ ],
+ "leitor_tabelas_max_ms": 124.53,
+ "unioes_na_janela_tabelas": [
+  11,
+  11,
+  11
+ ],
+ "leitor_partes_p95_ms": 0.85,
+ "leitor_partes_p95_faixa": [
+  0.82,
+  0.86
+ ],
+ "leitor_partes_max_ms": 1.52,
+ "unioes_na_janela_partes": [
+  603,
+  592,
+  567
+ ],
+ "leitor_faixas_se_cruzam": false,
+ "leitor_razao_p95": 135.7,
+ "prova": "pelo SOQUETE, com a MESMA resposta conferida antes de comparar tempo, e o leitor vizinho medido em janela fixa de 1.5 s de pressao continua"
+}

@@ -700,14 +700,21 @@ pub fn valor_de_texto(t: &str, ty: &ColumnType) -> Result<Value> {
             Value::Decimal(texto_para_decimal(&numero_pt(t), *escala)?)
         }
         ColumnType::Date => Value::Date(data_de_texto(t)?),
-        // Hora e instante chegam em numero -- centesimos desde a meia-noite e
-        // milissegundos desde a epoca. Texto de relogio (`14:30`) nao entra
-        // ainda, e o erro diz o que se espera em vez de gravar zero.
+        // Hora chega em numero -- centesimos desde a meia-noite. Texto de
+        // relogio (`14:30`) nao entra ainda, e o erro diz o que se espera em
+        // vez de gravar zero.
         ColumnType::Time => Value::Time(t.parse::<i32>().map_err(|_| erro("hora em centesimos"))?),
-        ColumnType::DateTime => Value::DateTime(
-            t.parse::<i64>()
-                .map_err(|_| erro("instante em milissegundos"))?,
-        ),
+        // O instante entra das DUAS formas, e o irmao e o motivo: quem
+        // exporta esta mesma coluna escreve `instante_iso` (`exportar.rs` e
+        // `Value::para_texto`), entao so o numero de volta quer dizer que
+        // exportar e tornar a carregar nao fecha o ciclo. Ate a v10 isso
+        // alcancava so quem declarasse `DateTime`; com o `rowtime` alcanca
+        // toda tabela. O numero continua valendo exatamente como antes.
+        ColumnType::DateTime => Value::DateTime(match t.parse::<i64>() {
+            Ok(ms) => ms,
+            Err(_) => crate::datahora::ms_de_instante_iso(t)
+                .ok_or_else(|| erro("instante em milissegundos ou data e hora ISO"))?,
+        }),
         ColumnType::Uuid if t.eq_ignore_ascii_case("novo") || t.eq_ignore_ascii_case("v7") => {
             Value::Uuid(Uuid::v7())
         }
@@ -750,9 +757,14 @@ pub fn linha_de_texto(carga: &Carga, i: usize, esquema: &Schema) -> Result<Vec<V
         .map(
             |col| match carga.colunas.iter().position(|c| *c == col.nome) {
                 Some(j) => valor_de_texto(linha.get(j).map(String::as_str).unwrap_or(""), &col.ty),
-                None if col.nome == crate::schema::COLUNA_SOFTDELETED => Ok(Value::Bool(false)),
-                None if col.nome == crate::schema::COLUNA_ROWNUM => Ok(Value::UInt(0)),
-                None => Ok(Value::Null),
+                // A lista das colunas de sistema e o valor de partida de
+                // cada uma moram juntos, no `schema.rs`. O par cravado que
+                // estava aqui caia em `Value::Null` para qualquer coluna de
+                // sistema que ele nao conhecesse -- e a coluna de sistema e
+                // OBRIGATORIA, entao a carga por texto passaria a recusar
+                // toda linha no dia em que nascesse a terceira.
+                None => Ok(crate::schema::valor_inicial_da_coluna_de_sistema(&col.nome)
+                    .unwrap_or(Value::Null)),
             },
         )
         .collect()
@@ -1040,6 +1052,38 @@ mod testes_texto_para_valor {
         ));
         let e = valor_de_texto("28/08/2026", &ColumnType::Date).unwrap_err();
         assert!(format!("{e}").contains("AAAA-MM-DD"), "{e}");
+    }
+
+    /// **O instante volta das DUAS formas -- e o irmao e quem manda.**
+    ///
+    /// Quem EXPORTA esta coluna escreve `instante_iso` (`Value::para_texto` e
+    /// o `exportar.rs` do servidor). So o numero de volta quer dizer que
+    /// exportar e tornar a carregar nao fecha o ciclo -- e desde o `PSCH` v10
+    /// toda tabela tem uma coluna `DateTime` (`rowtime`), entao o ciclo que
+    /// nao fechava era o de todas.
+    ///
+    /// # O defeito que ela repoe
+    ///
+    /// Deixe o ramo so com o `t.parse::<i64>()` e a segunda metade desta
+    /// prova para em «esperado instante em milissegundos». O numero continua
+    /// valendo, que e a primeira metade e a que nao pode mudar.
+    #[test]
+    fn instante_em_numero_e_em_iso() {
+        assert_eq!(
+            valor_de_texto("1758067200749", &ColumnType::DateTime).unwrap(),
+            Value::DateTime(1_758_067_200_749)
+        );
+        assert_eq!(
+            valor_de_texto(
+                &crate::datahora::instante_iso(1_758_067_200_749),
+                &ColumnType::DateTime
+            )
+            .unwrap(),
+            Value::DateTime(1_758_067_200_749),
+            "o que o exportador escreve nao volta pelo carregador"
+        );
+        let e = valor_de_texto("ontem de tarde", &ColumnType::DateTime).unwrap_err();
+        assert!(format!("{e}").contains("instante"), "{e}");
     }
 
     /// As colunas casam POR NOME. Uma coluna a mais no meio do arquivo gravaria

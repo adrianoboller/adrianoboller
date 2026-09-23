@@ -36,17 +36,17 @@ foi estimado no lugar de uma medição que faltou.
 |---|---:|---:|---:|---:|---:|---:|
 | `phxsql-cli` | 1 | 815 | 104 | 113 | 78 | 1110 |
 | `phxsql-cmd` | 2 | 618 | 110 | 207 | 65 | 1000 |
-| `phxsql-core` | 35 | 11327 | 4838 | 3754 | 1577 | 21496 |
+| `phxsql-core` | 35 | 11550 | 4886 | 3849 | 1588 | 21873 |
 | `phxsql-ffi` | 7 | 1408 | 1081 | 745 | 242 | 3476 |
 | `phxsql-odbc` | 7 | 2662 | 1089 | 980 | 239 | 4970 |
-| `phxsql-server` | 58 | 46060 | 31390 | 23829 | 5297 | 106576 |
+| `phxsql-server` | 58 | 46272 | 31914 | 24367 | 5363 | 107916 |
 | `phxsql-sql` | 10 | 6958 | 3626 | 2329 | 792 | 13705 |
-| `phxsql-store` | 24 | 13487 | 3725 | 6039 | 1571 | 24822 |
-| **total** | **144** | **83335** | **45963** | **37996** | **9861** | **177155** |
+| `phxsql-store` | 25 | 13951 | 3777 | 6296 | 1614 | 25638 |
+| **total** | **145** | **84234** | **46587** | **38886** | **9981** | **179688** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **45963/83335 = 0.55×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **46587/84234 = 0.55×**.
 
-Alem do `src/`: **79** programas de medicao em `examples/` (20117 linhas — bancada em Rust, nao produto nem teste) e **65** arquivos em `tests/` de integracao fora de `src/` (22841 linhas).
+Alem do `src/`: **80** programas de medicao em `examples/` (20328 linhas — bancada em Rust, nao produto nem teste) e **68** arquivos em `tests/` de integracao fora de `src/` (24137 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -108,10 +108,10 @@ mesmo motivo que o rodapé já errou uma vez.
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
 | JavaScript (prova ponta a ponta) | `testes-web/` | 55 | 11741 |
-| Python (bancada de medicao) | `bancada/` | 120 | 55101 |
-| Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2880 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 429 | 105100 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 33 | 13750 |
+| Python (bancada de medicao) | `bancada/` | 121 | 55353 |
+| Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2894 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 435 | 106750 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 34 | 13970 |
 <!-- /GERADO -->
 
 Não incluído acima porque já está na tabela 1.1: os `.rs` de `examples/` e
@@ -287,7 +287,7 @@ com o motivo escrito**, que é o que a cláusula realmente cobra.
 ### 4.2 Como se mediu
 
 <!-- GERADO: bloco_bancadas() -->
-`bancada/` tem **55** frentes de medicao (__pycache__, acid, alfanumerica, alter, arm, bateria, carga, cifra, cifra-do-fio, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, tomada, transacoes, usuarios, utilizacao-padrao, vagas-da-tela, vetorial, windows), das quais **40** documentam a propria metodologia em `LEIA-ME.md`.
+`bancada/` tem **56** frentes de medicao (__pycache__, acid, alfanumerica, alter, arm, bateria, carga, cifra, cifra-do-fio, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, tomada, transacoes, uniao, usuarios, utilizacao-padrao, vagas-da-tela, vetorial, windows), das quais **41** documentam a propria metodologia em `LEIA-ME.md`.
 <!-- /GERADO -->
 
 A carga do lado do motor é
@@ -423,7 +423,7 @@ empacotar:
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2610** testes passaram, **0** falharam (medido em 2026-09-22 21:49:35, commit `002625e4`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **2694** testes passaram, **0** falharam (medido em 2026-09-23 05:28:54, commit `35c03dd7`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
@@ -493,7 +493,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **394** pedidos numerados; **66** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **401** pedidos numerados; **66** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -543,8 +543,8 @@ proposta de voltar sem medição nova.
 | 282 | **SEC A5 (media) — `replicacao_testar` e sonda de rede interna sem prazo de conexao, e amplifica ocupando vagas de `conexoes_max`** |
 | 291 | **DECISAO DO DONO (C, 3/6) — quem honra o `rownum` numa replica: ela gera o dela ou aplica o da imagem?** |
 | 292 | **DECISAO DO DONO (C, 4/6) — unicidade num indice secundario trava o par de servidores no bidirecional para sempre: recusar a tabela, casar por N chaves, ou quarentena** |
-| 293 | **DECISAO DO DONO (C, 5/6) — replicar tabela com coluna EXTERNA marcada: recusar no motor, ou esperar o envelope da §11.5 — a condicao para funcionar NUNCA se satisfaz** |
-| 294 | **DECISAO DO DONO (C, 6/6) — o criterio de eleicao do cluster: a posicao somada e um escalar de uma grandeza vetorial, e trocar por vetor de tabelas mexe no consenso** |
+| 293 | **DECIDIDO PELO DONO 17/09 07:10 (recusar no motor agora) — ESPERA ENGENHARIA.** DECISAO DO DONO (C, 5/6) — replicar tabela com coluna EXTERNA marcada: recusar no motor, ou esperar o envelope da §11.5 — a condicao para funcionar NUNCA se satisfaz** |
+| 294 | **DECIDIDO PELO DONO 17/09 07:10 (manter a soma, medir por tabela AO LADO) — ESPERA ENGENHARIA.** DECISAO DO DONO (C, 6/6) — o criterio de eleicao do cluster: a posicao somada e um escalar de uma grandeza vetorial, e trocar por vetor de tabelas mexe no consenso** |
 | 299 | **Garantia que nao vale, nao coberta acima (C) — atomicidade de commit NAO atravessa o fio: um commit com cascata chega como N eventos soltos em diarios independentes, e RECUSADO consertar sem o dono** |
 | 300 | **Garantia que nao vale, nao coberta acima (C) — a posicao somada do cluster conta tabela que nao e replicada (comentario diverge do codigo) e uma escrita local na replica pula um evento do source em silencio; e o invariante «so existe filho se o pai existir primeiro» tambem nao vale em nenhum instante intermediario na replica, sem contador de orfas** |
 | 301 | **QA (G) — sete petreas da replicacao/cluster tem teste real e provado no fonte, e NENHUMA esta no catalogo `bancada/guardas/catalogo.py`: nao sao reprovadas a cada rodada** |

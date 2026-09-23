@@ -34,6 +34,12 @@ pub struct Diferenca {
     pub chave: Vec<Value>,
     /// So as colunas que mudaram, pelo nome -- e nao a linha inteira. Quem
     /// compara duas tabelas de trinta colunas quer saber QUAL mudou.
+    ///
+    /// **Coluna de SISTEMA nunca aparece aqui**, e o motivo esta no cabecalho
+    /// do modulo: a comparacao e pela CHAVE justamente porque as duas tabelas
+    /// podem ter as mesmas linhas com rowids diferentes. `rownum`, `rowstamp`
+    /// e `rowtime` sao dessa familia -- dizem onde e quando a linha entrou
+    /// NAQUELA tabela, nunca o que ela guarda.
     pub colunas: Vec<String>,
     pub a: Vec<Value>,
     pub b: Vec<Value>,
@@ -96,6 +102,23 @@ pub fn comparar(
                     .colunas()
                     .iter()
                     .enumerate()
+                    // A coluna de SISTEMA fica de fora da comparacao, e isto
+                    // e o cabecalho do modulo aplicado ate o fim: «comparar
+                    // linha a linha pela ORDEM nao serve -- as duas tabelas
+                    // podem ter as mesmas linhas com rowids diferentes, e ai
+                    // tudo apareceria como diferente».
+                    //
+                    // Ate o `PSCH` v9 a regra estava escrita e nao aplicada, e
+                    // passava despercebida por coincidencia: `softdeleted` e
+                    // false nos dois lados (o `varrer` so traz ativa) e o
+                    // `rownum` empatava quando as duas tabelas tinham recebido
+                    // os mesmos inserts na mesma ordem. O v10 acabou com a
+                    // coincidencia -- o `rowstamp` e um contador do NO, entao
+                    // `hoje` fica com 1,2,3 e `ontem` com 4,5,6 --, e a
+                    // operacao passou a responder «iguais: 0» sobre duas
+                    // tabelas com o mesmo dado. Resposta errada numa operacao
+                    // que existe para ser acreditada.
+                    .filter(|(_, c)| !phxsql_core::schema::e_coluna_de_sistema(&c.nome))
                     .filter(|(i, _)| {
                         // `get` e nao indice: linha gravada antes de uma
                         // coluna nova nasce curta, e curta contra longa e
@@ -209,6 +232,59 @@ mod testes {
         assert_eq!(r.iguais, 2);
         assert!(r.so_em_a.is_empty() && r.so_em_b.is_empty() && r.diferentes.is_empty());
         assert!(!r.truncado);
+    }
+
+    /// **A CAUDA DE SISTEMA NAO E DIFERENCA -- e o controle vem junto.**
+    ///
+    /// # O defeito que ela repoe
+    ///
+    /// Tire o `filter` do `e_coluna_de_sistema` do `comparar` e este teste
+    /// volta a dizer `iguais: 0` com tres colunas em `diferentes[0].colunas`:
+    /// `rownum`, `rowstamp` e `rowtime`. Foi o que o `PSCH` v10 fez a
+    /// operacao inteira -- duas tabelas com o MESMO dado respondendo que nada
+    /// batia --, e ate o v9 passava despercebido porque o `rownum` empatava
+    /// quando as duas tabelas tinham recebido os mesmos inserts na mesma
+    /// ordem. O `rowstamp` e um contador do NO: a segunda tabela carregada
+    /// nunca repete os numeros da primeira.
+    ///
+    /// O controle e a segunda metade e nao e enfeite: um `comparar` que
+    /// simplesmente parasse de reportar qualquer coluna passaria na primeira
+    /// asserçao. A `nome` tem de continuar aparecendo.
+    #[test]
+    fn a_cauda_de_sistema_nao_e_diferenca_e_a_coluna_do_usuario_continua_sendo() {
+        let e = esquema();
+        // A linha completa, com a cauda de sistema que o esquema tiver: os
+        // valores da cauda saem DIFERENTES dos dois lados de proposito.
+        let linha = |nome: &str, semente: u64| -> (Vec<Value>, Vec<Value>) {
+            let mut l = vec![Value::Int(1), Value::Str(nome.into())];
+            for c in &e.colunas()[2..] {
+                assert!(
+                    phxsql_core::schema::e_coluna_de_sistema(&c.nome),
+                    "a coluna {} nao e de sistema",
+                    c.nome
+                );
+                l.push(match c.ty {
+                    ColumnType::DateTime => Value::DateTime(semente as i64 * 1_000),
+                    ColumnType::UInt8 => Value::UInt(semente),
+                    _ => Value::Bool(false),
+                });
+            }
+            (vec![Value::Int(1)], l)
+        };
+
+        let r = comparar(vec![linha("ana", 1)], vec![linha("ana", 77)], &e, 0);
+        assert_eq!(r.iguais, 1, "a cauda de sistema virou diferenca");
+        assert!(
+            r.diferentes.is_empty(),
+            "diferentes: {:?}",
+            r.diferentes.iter().map(|d| &d.colunas).collect::<Vec<_>>()
+        );
+
+        // O CONTROLE: a coluna do usuario continua sendo diferenca, e sozinha.
+        let r = comparar(vec![linha("ana", 1)], vec![linha("BIA", 77)], &e, 0);
+        assert_eq!(r.iguais, 0);
+        assert_eq!(r.diferentes.len(), 1);
+        assert_eq!(r.diferentes[0].colunas, vec!["nome".to_string()]);
     }
 
     /// A ordem de `so_em_b` e estavel: ela sai de um `HashMap`, e resposta que

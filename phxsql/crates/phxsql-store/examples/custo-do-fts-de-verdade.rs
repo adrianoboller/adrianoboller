@@ -125,7 +125,7 @@ fn main() {
     // B -- a tabela e o `.fts` juntos, linha a linha.
     let dir_b = format!("{base}/phx-ftsv-b");
     let mut tb = preparar(&dir_b);
-    let mut fb = FtsFile::criar(format!("{dir_b}/docs.{EXT_FTS}"), vec![true]).unwrap();
+    let mut fb = FtsFile::criar(format!("{dir_b}/docs.{EXT_FTS}"), vec![true], false).unwrap();
     let inicio = Instant::now();
     let mut chaves_b = 0usize;
     for i in 0..linhas {
@@ -141,7 +141,7 @@ fn main() {
     // C -- o mesmo, com as chaves guardadas e despejadas a cada `lote`.
     let dir_c = format!("{base}/phx-ftsv-c");
     let mut tc = preparar(&dir_c);
-    let mut fc = FtsFile::criar(format!("{dir_c}/docs.{EXT_FTS}"), vec![true]).unwrap();
+    let mut fc = FtsFile::criar(format!("{dir_c}/docs.{EXT_FTS}"), vec![true], false).unwrap();
     let inicio = Instant::now();
     let mut pendentes: Vec<(u64, String)> = Vec::with_capacity(lote as usize);
     for i in 0..linhas {

@@ -61,3 +61,19 @@
 # `--json bancada/guardas/ultima-corrida.json` deixaria um
 # `ultima-corrida.json.tranca` nao rastreado ao lado do retrato.
 *.tranca
+
+# Chave privada do fio, gerada por corrida de teste e NUNCA versionada.
+#
+# Reincidencia medida em 23/09/2026: um `chave-do-fio.hex` de 65 bytes (0600)
+# nasceu em `crates/phxsql-server/` durante a rodada das quatro frentes e
+# apareceu entre os 57 arquivos do commit de integracao -- nao ignorado, e
+# portanto a um `git add` de virar segredo publicado. O pedido 196 ja se
+# chamava «a chave privada volta a nascer solta, agora em phxsql-server»:
+# consertar o lugar onde ela nasce nao impede a proxima, porque o defeito
+# e que NADA a impedia de ser versionada.
+#
+# A guarda e estrutural de proposito: petrea «senha nunca em texto puro, nem
+# em arquivo» nao pode depender de o integrador reparar na lista do commit.
+chave-do-fio.hex
+*.chave
+*.key

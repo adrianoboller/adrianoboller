@@ -128,7 +128,13 @@ impl FtsFile {
     ///
     /// A lista vem do esquema da tabela, na ordem dos indices de texto
     /// declarados. Falha se o arquivo ja existir, como o resto da familia.
-    pub fn criar(caminho: impl AsRef<Path>, dobra: Vec<bool>) -> Result<FtsFile> {
+    ///
+    /// `selar` liga a selagem da PAGINA -- ver [`NdxFile::criar_selado`] e o
+    /// pedido 340. Quem decide e a TABELA, que e quem sabe se a coluna
+    /// indexada por texto esta marcada como dado pessoal; o `.fts` e derivado
+    /// e nunca e a fonte dessa resposta. Com o cofre desligado, `true` aqui
+    /// nao cifra nada: a cifra e do processo.
+    pub fn criar(caminho: impl AsRef<Path>, dobra: Vec<bool>, selar: bool) -> Result<FtsFile> {
         let caminho = caminho.as_ref();
         if caminho.exists() {
             return Err(PhxError::Esquema(format!(
@@ -136,8 +142,17 @@ impl FtsFile {
                 caminho.display()
             )));
         }
-        let ndx = NdxFile::criar(caminho, &esquema_do_indice(dobra.len()))?;
+        let ndx = FtsFile::arvore(caminho, dobra.len(), selar)?;
         Ok(FtsFile::com(ndx, dobra))
+    }
+
+    fn arvore(caminho: &Path, quantos: usize, selar: bool) -> Result<NdxFile> {
+        let esquema = esquema_do_indice(quantos);
+        if selar {
+            NdxFile::criar_selado(caminho, &esquema)
+        } else {
+            NdxFile::criar(caminho, &esquema)
+        }
     }
 
     /// Recria o arquivo do zero, apagando o que estivesse la.
@@ -152,8 +167,14 @@ impl FtsFile {
     /// Sem isto, reconstruir duas vezes nao era idempotente -- a segunda
     /// passada batia em `chave completa ja existe no indice`, e era o
     /// `reindexar` que ia bater nela.
-    pub fn recriar(caminho: impl AsRef<Path>, dobra: Vec<bool>) -> Result<FtsFile> {
-        let ndx = NdxFile::criar(caminho, &esquema_do_indice(dobra.len()))?;
+    ///
+    /// E e por AQUI que um `.fts` que nasceu em claro passa a ser selado: a
+    /// cifra ligada depois nao cifra o que ja existe (`SEGURANCA.md` §11.6),
+    /// e o `.fts` e o unico da familia que tem conserto barato -- `reindexar`
+    /// o refaz do `.reg`, e o novo nasce selado. Reconstruir sozinho na
+    /// abertura seria impor varredura de tabela inteira a quem nao pediu.
+    pub fn recriar(caminho: impl AsRef<Path>, dobra: Vec<bool>, selar: bool) -> Result<FtsFile> {
+        let ndx = FtsFile::arvore(caminho.as_ref(), dobra.len(), selar)?;
         Ok(FtsFile::com(ndx, dobra))
     }
 
@@ -179,6 +200,22 @@ impl FtsFile {
             largura,
             dobra,
         }
+    }
+
+    /// Este `.fts` grava a pagina SELADA? Serve a prova e ao diagnostico.
+    pub fn selado(&self) -> bool {
+        self.ndx.selado()
+    }
+
+    /// Quantos termos cabem numa folha. E a conta do custo do selo, e ela sai
+    /// do `.ndx` -- a largura da chave tem um dono so.
+    pub fn capacidade_de_folha(&self, idx: usize) -> usize {
+        self.ndx.capacidade_de_folha(idx)
+    }
+
+    /// Quantas paginas o arquivo tem. Serve ao medidor do custo em disco.
+    pub fn paginas(&self) -> u64 {
+        self.ndx.paginas()
     }
 
     /// Quantos indices de texto este arquivo carrega.
@@ -318,7 +355,7 @@ mod testes {
         let dir = DirTemp::novo(&format!("fts-{nome}"));
         let c = dir.join(format!("t.{EXT_FTS}"));
         let n = dobra.len();
-        let f = FtsFile::criar(&c, dobra).unwrap();
+        let f = FtsFile::criar(&c, dobra, false).unwrap();
         assert_eq!(f.quantos(), n);
         (f, c, dir)
     }
@@ -463,6 +500,6 @@ mod testes {
     fn criar_por_cima_recusa_em_vez_de_apagar() {
         let (f, caminho, _guarda) = novo("porcima");
         drop(f);
-        assert!(FtsFile::criar(&caminho, vec![true]).is_err());
+        assert!(FtsFile::criar(&caminho, vec![true], false).is_err());
     }
 }

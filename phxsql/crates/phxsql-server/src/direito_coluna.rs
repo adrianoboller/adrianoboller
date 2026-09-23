@@ -441,7 +441,8 @@ pub fn classe(op: &str) -> PorColuna {
 ///
 /// E a mesma varredura que a petrea manda fazer quando o portao passa a olhar
 /// um campo novo: **procure quem NAO tem esse campo**. `juntar` guarda as duas
-/// em `a.tabela` e `b.tabela`; `unir` guarda numa lista; `pivotar` poe a de
+/// em `a.tabela` e `b.tabela`; `unir` guarda numa lista de nomes -- ou, com
+/// `"partes"`, dentro de um PEDIDO por braco; `pivotar` poe a de
 /// fatos no campo de sempre e as de consulta dentro de um `juntar` aninhado; e
 /// as tres copias de tabela nomeiam o `destino`, que e onde a coluna negada
 /// iria parar sem regra nenhuma.
@@ -478,6 +479,22 @@ pub fn tabelas_do_pedido(op: &str, p: &Json) -> Vec<String> {
                 match x.texto() {
                     Some(t) => junte(t),
                     None => junte(x.texto_ou("tabela", "")),
+                }
+            }
+            // O braco que e PEDIDO (pedido 393) esconde a tabela um nivel
+            // mais fundo -- e pode ser um `consultar`, que a esconde em mais
+            // um. A varredura desce pelo mesmo motivo que desce no
+            // `consultar`: lista que para no primeiro nivel e o inventario
+            // que deixa de valer no dia em que alguem o usar como inventario.
+            //
+            // Isto NAO e o portao: cada braco paga o dele no
+            // `executar_derivado`. E a resposta a pergunta «que tabelas este
+            // pedido alcanca?», e ela ficaria vazia -- dizendo «nao da para
+            // saber qual» sobre um pedido que nomeia as duas.
+            for x in p.campo("partes").and_then(Json::lista).unwrap_or(&[]) {
+                let op = x.texto_ou("op", "varrer").trim().to_string();
+                for t in tabelas_do_pedido(&op, x) {
+                    junte(&t);
                 }
             }
         }
@@ -741,6 +758,26 @@ mod testes {
             tabelas_do_pedido("duplicar_tabela", &c),
             vec!["folha", "copia"]
         );
+    }
+
+    /// **O braco-PEDIDO do `unir` tambem aparece, e a varredura desce nele.**
+    ///
+    /// Desde o pedido 393 o braco pode ser um `varrer`, um `buscar` ou um
+    /// `consultar` -- e o `consultar` esconde a tabela em mais um nivel. Uma
+    /// lista que parasse no campo `tabelas` responderia VAZIO sobre um pedido
+    /// que nomeia duas tabelas, e lista vazia aqui quer dizer «nao da para
+    /// saber qual», que e outra coisa.
+    ///
+    /// **Prova real, com o defeito reposto:** tire o laco do `"partes"` de
+    /// `tabelas_do_pedido` e este teste devolve `[]`.
+    #[test]
+    fn o_braco_pedido_da_uniao_aparece() {
+        let u = Json::analisar(
+            r#"{"partes":[{"op":"buscar","tabela":"clientes","indice":"porUf"},
+                          {"op":"consultar","de":{"op":"varrer","tabela":"folha"}}]}"#,
+        )
+        .unwrap();
+        assert_eq!(tabelas_do_pedido("unir", &u), vec!["clientes", "folha"]);
     }
 
     /// **Os cinco caminhos do `consultar` aparecem, e a varredura DESCE.**

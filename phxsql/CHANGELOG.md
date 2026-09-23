@@ -10,7 +10,127 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
-## Não lançado — A rodada dos gaps de segurança: quatro decisões do dono, quatro frentes, e um bloqueio que a medição achou
+## 0.19.0 — centenas de commits depois: transações, cifra do fio, cluster, e o portão que devia ter acusado antes
+
+Rodada de 29/08/2026 a 23/09/2026 — 894 commits sobre a 0.18.0 (medido em
+`baff46e..HEAD` no commit que sela a versão; o número **andou três vezes
+enquanto esta rodada fechava** — 890 ao escrever, 891 na conferência da frente
+V, 892 na do integrador —, porque a árvore é compartilhada. Em árvore com
+frente viva, número medido tem validade de minutos, e este é o do selo), em 34 frentes
+tituladas abaixo (cada `###` era um "Não lançado" próprio, escrito na hora por
+quem fechou a rodada; a consolidação abaixo só muda o nível do título, não o
+texto). Esta é a versão que devia ter sido selada muito antes: o
+`docs/versao/portao-da-versao.py`, novo nesta rodada, existe exatamente para
+que o próximo intervalo assim grande **acuse**, em vez de ficar 894 commits
+calado.
+
+Os títulos das frentes já contam a rodada em uma linha cada: as
+**transações** (`BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`, com o terreno e o
+desenho escritos antes do código), o **ACID-C** (a cascata do `ao_alterar`
+entrando no conjunto de escrita), a **leitura repetível pela trava, pedida**,
+a **cifra do fio** por aperto de mão estilo Noise, os **quatro modos de
+replicação em contêiner**, o **PhxSql embutido** como biblioteca de ABI de C,
+o **webservice REST** com o terreno das transações, o **DbLink** provado
+contra um PostgreSQL® de verdade, os **três motores no mesmo trabalho a um
+milhão de linhas**, a **auditoria externa, medida**, os **pacotes de download
+que se conferem**, a **restauração de backup**, a **área de trabalho
+multitela**, e a rodada dos **gaps de segurança** que abriu com a ordem do
+dono «a comunicação deve ser obrigatoriamente cifrada». O `CHANGELOG` de cada
+uma foi escrito por quem fez, na hora — nenhum número abaixo saiu de memória
+nesta consolidação.
+
+**Achado nesta consolidação, não corrigido aqui**: em **quatro pontos** do
+trecho abaixo, títulos ficaram **adjacentes sem corpo entre si** — um deles
+com três títulos em fila (`### o .txt do Profiler…`, `### a cifra do fio…`,
+`### ALTER TABLE ADD COLUMN…`, só o último com corpo). É a marca de frentes
+paralelas que escreveram cada uma a sua seção «Não lançado» no mesmo lugar do
+arquivo (uma delas o diz com todas as letras: *«Escrito em paralelo com as
+outras seções ‘Não lançado’ abaixo: na integração todas viram uma só»*), e cujo
+merge preservou os dois corpos mas embaralhou qual título fica em cima de qual
+texto. Nada foi perdido — o conteúdo de cada frente está todo presente, e
+buscável pelo trecho — mas a costura entre título e corpo, nesses quatro
+pontos, não é confiável. Fica registrado para uma revisão dedicada; desfazer um
+merge de 25 dias atrás não é do escopo desta rodada (o portão da versão).
+
+### O fecho da rodada: `PSCH` v10, o `.fts` selado, o braço do `unir` e o portão da versão
+
+Oito pedidos fechados em 23/09/2026 por quatro frentes paralelas, integradas
+num único commit. Cada um traz a prova real **nos dois sentidos** — o teste
+falha com o defeito reposto e passa com o conserto —, e os vermelhos estão
+medidos, não citados.
+
+**`PSCH` v10: o carimbo por linha e a faixa da `Sequence` (289, 290, 314).**
+Duas colunas de sistema novas, não uma: `rowstamp`, contador puro do nó, e
+`rowtime`, relógio comum. São **duas** porque relógio não ordena e contador não
+data — e a prova está no número: carimbar pelo relógio empatou **964 de 1.000**
+linhas no mesmo milissegundo, com o pai empatando com a filha já na primeira
+rodada. A pétrea «impossível o filho ter a mesma data do pai» passa a ser
+provável no dado, não só no diário. A `Sequence` ganha `passo` no esquema e
+`início` na identidade do nó, e só o `passo` viaja — a conferência da faixa
+acontece na abertura do `.reg`, a custo zero de byte. Tabela em modo ledger com
+cadeia **recusa** a migração nomeando o motivo, em vez de reescrever história
+assinada; a nascida no v10 funciona, com o carimbo fora do hash do bloco.
+`docs/FORMATO.md` atualizado no mesmo passo, com o porquê de o cabeçalho do
+`.reg` **não** ter subido de versão: ausência benigna não sobe versão.
+
+**O defeito maior que o pedido que o revelou: a `DateTime` nunca fechou a
+volta.** `linha_para_json` sempre escreveu texto ISO e `json_para_valor`
+aceitava só inteiro — a `Date`, na linha imediatamente acima, já aceitava as
+duas formas desde sempre. Até a v9 isso alcançava apenas quem **declarasse**
+coluna `DateTime`; com o `rowtime`, toda tabela tem uma, e ler uma ficha, mudar
+um campo e salvar deixaria de funcionar **em todo lugar, para todo cliente que
+existe**. É a pétrea «proteção que quebra todo cliente antigo não é proteção, é
+estrago», e a coluna que o motor acrescenta sozinho seria justamente a que
+trava o ciclo. Consertados os dois lados — o JSON e a carga por texto, que
+tinha a mesma assimetria pelo outro par de funções. O `Time` continua só em
+centésimos, por decisão escrita, e fica registrado como o buraco que é
+(pedido 396).
+
+**O `.fts` de coluna marcada passa a ser selado (340).** O índice de texto
+guardava o valor da coluna marcada como dado pessoal **em claro, para sempre**,
+e o documento não dizia. Medido com o defeito reposto: **40 ocorrências** do
+termo em claro dentro do `.fts` contra **zero** no `.reg`, que já era cifrado —
+controle positivo no mesmo comando. Com o selo, zero. O custo está publicado,
+não escondido: **0,862%** de capacidade de folha, **+0,032%** em disco,
+**1,19×–1,49%** na escrita (faixa de quatro corridas) e **2,58×** na busca, que
+é o número que o enunciado original não trazia — cada falta de página paga um
+ChaCha20 de 4 KiB.
+
+**Tabela com coluna marcada não replica em claro (342).** A imagem da linha
+levava a coluna *inline* marcada em claro enquanto a *externa* ia selada: as
+duas metades erravam para lados opostos. O portão do `op_replicar` exige o
+túnel quando a tabela tem coluna marcada, e o **alcance** está travado por
+teste — tabela sem marca replica em claro exatamente como sempre. A premissa
+foi conferida em vez de acreditada: `replicacao.origens[].cifra` **nasce
+ligada**, então na prática a guarda só morde quem escreveu o escape
+`"cifra": false` à mão, que é escolha registrada e não esquecimento.
+
+**O braço do `unir` vira pedido, não nome de tabela (393).** Passar um pedido
+como braço deixa o filtro descer **para dentro** de cada parte, e a trava única
+deixa de ser necessária. Medido: **64,2×** menos tempo (171,4 ms contra 2,7 ms,
+faixas sem se cruzarem) e **135,7×** menos espera para o leitor vizinho no p95
+(115,33 ms contra 0,85 ms), com ~54× mais uniões na mesma janela de 1,5 s. E
+uma correção que vale mais que o ganho: o **118,7× publicado antes não se
+reproduziu**, porque media **dois `buscar` soltos** somados fora do motor — uma
+funcionalidade que ainda não existia. A conclusão sobrevive; o tamanho, não.
+
+**A guarda de permissão do braço passava com o defeito reposto.** Refeita a
+prova real, ela não caiu: a recusa vinha de `erro.sem_direito`, mas **depois do
+dano** — o braço lia a folha negada e só então um derivado acessório recusava.
+`agrupar` não passa por esse acessório, e é o caso que discrimina. Teste que
+passa por engano é pior que teste que falta, e este passou três meses assim.
+
+**O portão da versão (novo).** `docs/versao/portao-da-versao.py` mede a
+distância entre a versão da árvore e o commit que a selou, contra o maior
+intervalo histórico já registrado (**51** commits, recalculado dos 20
+intervalos). Entra na corrente em dois lugares — `empacotar.sh` e
+`portao-dos-geradores.py` — e declara o próprio alcance com `--alcance`. Existe
+porque esta versão ficou **892 commits** sem subir, com quatro cópias do mesmo
+número velho passando na trava que só conferia se elas concordavam entre si,
+nunca se ainda descreviam o que existe.
+
+
+### Não lançado — A rodada dos gaps de segurança: quatro decisões do dono, quatro frentes, e um bloqueio que a medição achou
 
 Rodada de 18/09/2026, aberta pela ordem «fazer os gaps» e fechada com quatro
 frentes de código, dois pareceres e uma ordem nova do dono no meio dela — «a
@@ -21,7 +141,7 @@ anuncia proteção que o canal ao lado não presta**. Ligar `cifra_fio.exigir`
 recusa o texto claro na porta de dados, e no mesmo servidor, no mesmo
 instante, a tela devolve `200 OK` para um login com senha em texto puro.
 
-### Corrigido
+#### Corrigido
 
 - **A terceira porta do pedido 358 não existia, e quem decidiu foi a medição**
   (pedido 376, commit `0c94569`). O parecer dizia «fechar no FFI, manter a API
@@ -113,7 +233,7 @@ instante, a tela devolve `200 OK` para um login com senha em texto puro.
   (pedido 356). Custo medido: **+2,17 µs** por pedido observado que grava
   arquivo.
 
-### Adicionado
+#### Adicionado
 
 - **Modo ledger deixa de aceitar coluna marcada como dado pessoal** (pedido
   355). O `hash` de cada bloco é um SHA-256 **sem sal** do conteúdo em claro,
@@ -135,7 +255,7 @@ instante, a tela devolve `200 OK` para um login com senha em texto puro.
 - **A gravação do `--json` do provador de guardas ganhou trava** (pedido 361),
   cobrindo o read-modify-write inteiro.
 
-### Sabido
+#### Sabido
 
 - ~~**`cifra_fio.exigir` é lido em UM lugar que decide alguma coisa**, e por
   isso não vira padrão de fábrica~~ — **fechado na mesma rodada** (pedido
@@ -176,7 +296,7 @@ instante, a tela devolve `200 OK` para um login com senha em texto puro.
   `.reg` cifrado nasce aberto para a máquina.
 
 
-## Não lançado — A matriz do comparativo passa a dizer contra o quê (pedido 335, metade 1)
+### Não lançado — A matriz do comparativo passa a dizer contra o quê (pedido 335, metade 1)
 
 Rodada de 17/09/2026. Um parecer técnico de fora achou em duas linhas o furo
 que seis revisões desta casa não acharam: **a matriz do comparativo publicava
@@ -184,7 +304,7 @@ o veredito e não publicava contra o quê**. Sem ambiente ninguém refaz a
 corrida; sem a saída crua ninguém confere a célula; sem caso negativo, `tem`
 não distingue «o motor entendeu» de «o motor ignorou o que não entendeu».
 
-### Adicionado
+#### Adicionado
 
 - **Os seis campos de evidência no `resultados.json`, nenhum digitado.** O
   `bancada/comparativo/medir.py` grava agora `ambiente.commit` e `branch`;
@@ -220,7 +340,7 @@ não distingue «o motor entendeu» de «o motor ignorou o que não entendeu».
   fez menos** quando a corrida é antiga e não tem `ambiente`, em vez de omitir
   o bloco em silêncio.
 
-### Corrigido
+#### Corrigido
 
 - **A premissa do gêmeo por resolução morreu medida, e o achado FICA.** Eu
   supus que ela valesse em todo motor. O SQLite(R) **aceitou** `CREATE VIEW
@@ -260,7 +380,7 @@ não distingue «o motor entendeu» de «o motor ignorou o que não entendeu».
   `main`, 350 linhas longe da causa. O dicionário novo passou a se chamar
   `cruas`, com o motivo escrito no lugar.
 
-### Sabido
+#### Sabido
 
 - **A catraca continua de fora, e é metade 2 do pedido 335**: nada reprova
   ainda a publicação quando a prosa do dossiê contradiz estas células. A
@@ -277,13 +397,13 @@ não distingue «o motor entendeu» de «o motor ignorou o que não entendeu».
 
 ---
 
-## Não lançado — As pétreas ganham guarda: vetor, portões, senha — e o `Debug` que vazava
+### Não lançado — As pétreas ganham guarda: vetor, portões, senha — e o `Debug` que vazava
 
 Rodada da noite de 16/09 (`b6f55ee` … `f8b6c92`). Os números abaixo são os
 das mensagens de commit, que são medidos; onde um número do briefing saiu
 errado, está dito qual.
 
-### Corrigido
+#### Corrigido
 
 - **Nove structs vazavam segredo no `Debug` derivado — e a guarda já existia**
   (`74de67e`, pedido 270). A varredura de `crates/` achou **9 estruturas, 14
@@ -474,7 +594,7 @@ errado, está dito qual.
   `arquivos`/`bytes`/`divergencias`) e mostravam travessão onde havia
   número medido.
 
-### Adicionado
+#### Adicionado
 
 - **Nove guardas de criptografia e portão** (`b6f55ee`): cinco de norma
   (`sha256-sem-somar-o-estado`, `sha256-com-o-tamanho-em-little-endian`,
@@ -529,7 +649,7 @@ errado, está dito qual.
   registrado, com os papéis dispensados nomeados (`e89aa93`), e o time
   inteiro da rodada (`f8b6c92`).
 
-### Mudado
+#### Mudado
 
 - **Fecho da rodada** (`0a8b606`): **269 pedidos** (era 268), 8 planejados
   (era 7); **201.319** linhas de Rust e **66.200** de documentação; terceira
@@ -573,7 +693,7 @@ errado, está dito qual.
   `rownum` volta a ser contíguo em toda escrita nova (buracos já gravados
   antes do commit continuam no disco).
 
-### Sabido
+#### Sabido
 
 - **27 das 170** entradas do catálogo estão sem veredito da corrida
   publicada (16/09 15:25) — nomeadas na tabela do `TESTES.md`; fecham quando
@@ -649,9 +769,9 @@ errado, está dito qual.
   quatro em quatro (`cartaoNovaTabelaER`, `desenharNovaTabela`, `editarJob`,
   `telemetria.js`) que já são exercitáveis nesta máquina.
 
-## Não lançado — Colmeia × SQLite × padrão nas quatro operações (bancada)
+### Não lançado — Colmeia × SQLite × padrão nas quatro operações (bancada)
 
-### Adicionado
+#### Adicionado
 
 - **`bancada/colmeia/medir-crud.py`** e o modo `crud` do exemplo
   `custo-da-colmeia`: ler, inserir, atualizar e excluir de ponto nos três
@@ -664,7 +784,7 @@ errado, está dito qual.
   padrão a 100.000**, porque a cópia de caminho cobra o fanout da raiz (391
   grupos, 5.144 bytes por inserção). `docs/propostas/colmeia.md` §1.1.
 
-### Sabido
+#### Sabido
 
 - O padrão paga 8 a 9 `fsync` por operação no regime por operação, porque
   `Volumes::sincronizar` sincroniza todo descritor aberto sem pular os
@@ -676,9 +796,9 @@ errado, está dito qual.
   bancada, e duas bancadas que se esperam por ele travam uma à outra
   (pendência #260).
 
-## Não lançado — Chutar a tomada: a bancada da queda na transação e no BULKINSERT
+### Não lançado — Chutar a tomada: a bancada da queda na transação e no BULKINSERT
 
-### Adicionado
+#### Adicionado
 
 - **`bancada/tomada/`**: SIGKILL num `phxsqld` próprio em varreduras de atraso
   — transação aberta com SAVEPOINT e sem COMMIT, BULKINSERT linha a linha,
@@ -688,7 +808,7 @@ errado, está dito qual.
   quedas, 22 conferências, 0 desfechos inválidos** (16/09/2026). Quatro
   guardas novas no catálogo, provadas vermelhas com o defeito reposto.
 
-### Sabido
+#### Sabido
 
 - `bulkinsert(false)` não drena a marca `.tx` de um COMMIT feito dentro da
   tabela reservada: a marca sobrevive ao «ok» e o arranque seguinte relata uma
@@ -705,9 +825,9 @@ errado, está dito qual.
 - `bancada/carga/bulkinsert.py` faz `pkill -x phxsqld` ao subir, contra a
   regra de matar só o próprio PID (pendência #256).
 
-## Não lançado — Saúde do disco do banco (pedido 249)
+### Não lançado — Saúde do disco do banco (pedido 249)
 
-### Adicionado
+#### Adicionado
 
 - **Sonda canário no disco do banco** (`saude_do_disco.rs`): a cada
   `alertas.disco.checar_segundos` (60 s) escreve, sincroniza, lê e apaga um
@@ -726,7 +846,7 @@ errado, está dito qual.
   de idiomas, caso de navegador `29-saude-do-disco.mjs` nos dois temas.
 - Quatro guardas no catálogo, provadas vermelhas com o defeito reposto.
 
-### Sabido
+#### Sabido
 
 - O meio do SMS quando a operadora não oferece gateway por e-mail é decisão do
   dono: programa externo sem shell (ponto de segurança) ou HTTPS (crate, que a
@@ -736,9 +856,9 @@ errado, está dito qual.
   frente mandando e-mail com a trava na mão (0 → 1) antes do hand-back — o
   desenho foi refeito e a catraca voltou a 0. Catraca que roda sozinha pega.
 
-## Não lançado — Semáforo e teto das threads (pedido 248)
+### Não lançado — Semáforo e teto das threads (pedido 248)
 
-### Corrigido
+#### Corrigido
 
 - **Vaga que não voltava depois de um pânico.** A porta de dados contava
   conexões com `fetch_add`/`fetch_sub`; um pânico no corpo da thread pulava o
@@ -751,7 +871,7 @@ errado, está dito qual.
   funções na mesma ordem. A ficha passou a morrer no `Drop` (`FichaViva`).
   Guarda `ficha-do-fio-pulada-no-panico`.
 
-### Adicionado
+#### Adicionado
 
 - **`Semaforo` da casa** (`phxsql-core/src/semaforo.rs`): `Mutex<usize>` +
   `Condvar`, zero crate — a `std` não tem semáforo. `tentar`, `adquirir`,
@@ -774,7 +894,7 @@ errado, está dito qual.
 - `erro.porta_cheia` nos seis idiomas; `MANUAL.txt` e `Config_exemplo_01.json`
   com os dois campos; `docs/CONCORRENCIA.md` §17.
 
-### Mudado
+#### Mudado
 
 - A porta de dados recusa na hora acima do teto, como `max_connections` no
   PostgreSQL, MySQL e MariaDB — e o comportamento abaixo do teto é o de antes
@@ -782,7 +902,7 @@ errado, está dito qual.
 - `subir_web` deixou de ter laço próprio: chama o `aceitar_http` — era o irmão
   com cópia.
 
-### Sabido
+#### Sabido
 
 - O fecho da janela **já tinha teto** (`FIOS_DO_FECHO = 16`); o quadro da
   rodada leu «sem teto» porque o `grep` acha o spawn e não o teto. Medido com
@@ -793,9 +913,9 @@ errado, está dito qual.
   pool na porta de dados (a trava global entrega concorrência 1 — medir
   primeiro) nem série histórica de `em_uso` (só o instante).
 
-## Não lançado — Leitura repetível pela trava, pedida
+### Não lançado — Leitura repetível pela trava, pedida
 
-### Adicionado
+#### Adicionado
 
 - **Leitura repetível, sem MVCC.** O gap «isolamento acima de READ COMMITTED»
   (pendência #239) foi reaberto pelo dono e resolvido pela via (b) já nomeada
@@ -829,7 +949,7 @@ errado, está dito qual.
   `crates/phxsql-sql/src/transacao.rs::isolation_level_na_abertura` e
   `set_isolation_level_nomeia_o_nivel_real`.
 
-### Mudado
+#### Mudado
 
 - **`READ UNCOMMITTED` deixou de ser recusa muda.** É aceito e vale `READ
   COMMITTED` — como o PostgreSQL(R), o motor nunca lê sujo.
@@ -839,7 +959,7 @@ errado, está dito qual.
 - **Textos de tela novos pela fábrica de idiomas:** `tela.tx_isolamento_a` e
   `tela.tx_isolamento_b`.
 
-### Sabido
+#### Sabido
 
 - **Não há detector de impasse.** Duas transações repetíveis que leram a
   mesma tabela e tentam escrever recebem `LOCK TIMEOUT` nos dois sentidos — o
@@ -862,9 +982,9 @@ errado, está dito qual.
 
 ---
 
-## Não lançado — SQL: `UPDATE`/`DELETE` por faixa
+### Não lançado — SQL: `UPDATE`/`DELETE` por faixa
 
-### Adicionado
+#### Adicionado
 
 - **`UPDATE`/`DELETE` deixaram de exigir chave única** (item 1 do roteiro «SQL
   para nota 9»). O `= ` sobre um índice único de uma coluna continua no caminho
@@ -884,7 +1004,7 @@ errado, está dito qual.
   `afetadas` cai para 1 e as duas falham. No tradutor, o `= ` sem chave única e a
   desigualdade viram `AtualizarPorFaixa`/`ExcluirPorFaixa` com o filtro certo.
 
-### Mudado
+#### Mudado
 
 - **A recusa não sumiu — mudou de motivo.** Antes o `UPDATE`/`DELETE` de faixa
   ou de coluna sem chave única era recusado por não haver índice único; agora a
@@ -895,7 +1015,7 @@ errado, está dito qual.
   afirmavam a recusa antiga foram **reescritos** para provar o novo caminho — a
   proteção que guardavam continua, no teto.
 
-### Sabido
+#### Sabido
 
 - **Fora de transação, o `UPDATE`/`DELETE` por faixa não é atômico** (cada linha
   é um `atualizar`/`excluir` avulso). Dentro de `BEGIN`/`COMMIT` cada uma empilha
@@ -904,9 +1024,9 @@ errado, está dito qual.
 
 ---
 
-## Não lançado — Ledger: `ALTER TABLE ADD COLUMN` travado em tabela-cadeia
+### Não lançado — Ledger: `ALTER TABLE ADD COLUMN` travado em tabela-cadeia
 
-### Corrigido
+#### Corrigido
 
 - **O motor RECUSA acrescentar coluna numa tabela em modo ledger.** O hash de
   cada bloco cobre o conteúdo canônico na ordem do esquema; acrescentar coluna a
@@ -927,9 +1047,9 @@ errado, está dito qual.
 
 ---
 
-## Não lançado — ACID-C: a cascata do `ao_alterar` entra na transação
+### Não lançado — ACID-C: a cascata do `ao_alterar` entra na transação
 
-### Corrigido
+#### Corrigido
 
 - **A cascata do `ao_alterar` entra no conjunto de escrita da transação
   (ACID-C).** Antes, dentro de uma transação, alterar a chave de um pai
@@ -941,7 +1061,7 @@ errado, está dito qual.
   desfaz. Continua a fundação do P0 (a conferência de FK dentro da transação
   enxerga o pai empilhado). Provas `acidc_*`, prova real nos dois sentidos.
 
-### Mudado
+#### Mudado
 
 - **Marca `.tx` v3.** Cada operação carrega, no fim do payload, um byte
   `cascata_na_lista`: `1` aplica sem re-cascatear (a corrente já é a lista), `0`
@@ -952,7 +1072,7 @@ errado, está dito qual.
   travadas); em `SCOPE MODE STRICT`, uma filha não declarada é recusada nomeando
   a tabela. Custo zero para quem não cascateia.
 
-### Sabido
+#### Sabido
 
 - Fora de transação, a cascata segue acontecendo dentro do `atualizar` e não é
   atômica por desenho. E uma filha inserida por outra conexão sob a chave velha,
@@ -961,9 +1081,9 @@ errado, está dito qual.
 
 ---
 
-## Não lançado — a revisão do motor: segurança e integridade do que a rodada trouxe
+### Não lançado — a revisão do motor: segurança e integridade do que a rodada trouxe
 
-### Corrigido
+#### Corrigido
 
 - **Direito por coluna, upsert e a ficha (A1 + o achado crítico da tela):**
   uma coluna que o usuário não pode ALTERAR passa a ser **mantida no valor
@@ -1006,16 +1126,16 @@ errado, está dito qual.
   expressão. Catracas intactas: `TETO_BOTAO_SEM_PROVA` em 194,
   `TETO_ROTULOS_E_CRASE` em 1.049.
 
-### Sabido
+#### Sabido
 
 - Ficam nomeados os pedidos 240-245: EXISTS correlacionado por apelido de fora,
   visão que perde a projeção sob `SELECT *`, CHECK julgado só no commit da
   transação, índice por expressão com operador, `CREATE VIEW` com JOIN, e as
   seis observações menores.
 
-## Não lançado — as dezoito do comparativo, junções, subconsultas e os limites nomeados
+### Não lançado — as dezoito do comparativo, junções, subconsultas e os limites nomeados
 
-### Corrigido
+#### Corrigido
 
 - **`LEFT JOIN` com a direita vazia perdia as colunas da direita** (pedido
   237): os nomes saíam da primeira linha da direita, e com a direita vazia a
@@ -1042,7 +1162,7 @@ errado, está dito qual.
   manual, e os dois números da cobertura da tela que viviam à mão no dossiê e
   agora saem do gerador.
 
-### Adicionado
+#### Adicionado
 
 - **Junções `direito`, `completo` e `cruzado`** no `consultar`
   (`RIGHT`/`FULL`/`CROSS JOIN` no SQL, 1:1), com o teto do produto conferido
@@ -1096,7 +1216,7 @@ errado, está dito qual.
   VIVA — exercitam o servidor pelo soquete e medem o EFEITO, com o
   controle na mesma corrida.
 
-### Sabido
+#### Sabido
 
 - Correlação que não seja igualdade, `IN (SELECT …)` correlacionado, escalar
   correlacionada e `EXISTS` sem par recusam nomeando: rodar a subconsulta por
@@ -1108,7 +1228,7 @@ errado, está dito qual.
 - A média de inteiro no `agrupar` sai como `Real8`, não como o tipo da
   coluna — medido no acumulador, não no contrato.
 
-## Não lançado — a auditoria externa, medida; e os números que ninguém digita mais
+### Não lançado — a auditoria externa, medida; e os números que ninguém digita mais
 
 Uma auditoria técnica externa da 0.18.0 chegou com 844 linhas. **Medida antes
 de virar plano**, que é a regra da casa para receita de fora — e ela se
@@ -1116,7 +1236,7 @@ sustentou em quase tudo: **nove das dez** contradições de documentação que
 aponta são verdadeiras. A falsa é a que diz que `docs/SQL.md` ainda alega
 ausência de transação: ele as documenta extensamente.
 
-### Corrigido
+#### Corrigido
 
 - **O §19 dizia «política de commit por origem», e estava errado — escrito por
   mim uma hora antes.** `replicacao.origens` é a lista da **réplica**: de onde
@@ -1155,7 +1275,7 @@ ausência de transação: ele as documenta extensamente.
   honesta com rótulo incompleto engana melhor que palpite, porque vem com
   autoridade.*
 
-### Adicionado
+#### Adicionado
 
 - **`INSERT`, `UPDATE` e `DELETE` por chave pela camada SQL — o passo 2 do
   roteiro do `docs/SQL.md`, e o CRUD fechado.** A tabela da §1 mapeava
@@ -1212,7 +1332,7 @@ ausência de transação: ele as documenta extensamente.
   metade» não é acidente do caminho de escrita — é comprado pela marca, e o
   preço dela fica invisível enquanto ela está lá.* `docs/ACID.md` §2.3.1.
 
-### Mudado
+#### Mudado
 
 - **Os botões da barra de ferramentas, ≥10% mais estreitos** — pedido do dono.
   Medido **antes** de tocar no CSS: 23 botões, 1.476,52 px somados, média 64,2.
@@ -1301,7 +1421,7 @@ ausência de transação: ele as documenta extensamente.
   em **um dia**. Hoje sai de `bancada/cobertura-da-tela/medir.py`, com as duas
   listas tiradas do código: **123 operações**, **105 alcançadas**, **18 fora**.
 
-### Adicionado no mesmo passo
+#### Adicionado no mesmo passo
 
 - **`docs/COMPARATIVO.md`** — o que ainda falta aqui, contra quem tem.
   **18 de 19 capacidades** faltam ou estão pela metade no PhxSql; **13** foram
@@ -1355,7 +1475,7 @@ ausência de transação: ele as documenta extensamente.
   a tabela comparativa na §33 — a seção do «o que este motor não faz» deixa de
   ser prosa inteira, que é onde ausência envelhece.
 
-### Corrigido
+#### Corrigido
 
 - **O `varrer` ganha `WHERE`.** A grade filtrava o que já estava nela: pedia
   `varrer max=2500`, recebia 2.500 linhas e jogava fora 2.475 no navegador. A
@@ -1499,7 +1619,7 @@ ausência de transação: ele as documenta extensamente.
   dizer quem era. Perguntar a versão é a primeira linha de todo roteiro de
   operação, e não pode exigir ambiente montado.
 
-### Adicionado
+#### Adicionado
 
 - **Leitor deixa de esperar leitor no `varrer`.** A trava de dados passou de
   `Mutex` a `RwLock`, e a leitura de grade — a única operação movida, por
@@ -1547,7 +1667,7 @@ ausência de transação: ele as documenta extensamente.
 - Guarda `version_responde_sem_config_e_sem_servidor`, que roda o binário num
   diretório **sem** `config.json` — que é exatamente onde o defeito aparecia.
 
-### Sabido
+#### Sabido
 
 - **O que a auditoria aponta e não é novidade:** a chave estrangeira é
   declarativa e não aplicada. Já estava escrito no pedido 127 — «um teste trava
@@ -1564,9 +1684,9 @@ ausência de transação: ele as documenta extensamente.
 
 ---
 
-## Não lançado — o DbLink provado contra um PostgreSQL® de verdade
+### Não lançado — o DbLink provado contra um PostgreSQL® de verdade
 
-### Corrigido
+#### Corrigido
 
 - **`dblink_tabelas`, `dblink_estrutura` e `dblink_ler` estavam quebrados
   contra PostgreSQL®** — e dois deles **em silêncio**. Uma causa só, no
@@ -1591,7 +1711,7 @@ ausência de transação: ele as documenta extensamente.
   do `write`. As asserções sobre a resposta continuam idênticas: ela já está no
   soquete.
 
-### Adicionado
+#### Adicionado
 
 - **`bancada/dblink/prova-postgres.py`** — as cinco operações contra um
   PostgreSQL® **16.13 real**, com **19 conferências, cada uma contra o
@@ -1608,12 +1728,12 @@ ausência de transação: ele as documenta extensamente.
   e, ao lado, **`no_mysql_nada_muda`** — o teste do comportamento *velho*, que é
   o que mais importa numa mudança destas.
 
-### Mudado
+#### Mudado
 
 - O `docs/DBLINK.md` perdeu a seção «o que ainda falta provar» e ganhou a
   tabela do que `database` quer dizer **por motor**.
 
-### Sabido
+#### Sabido
 
 - **A premissa que mantinha o pedido 86 parcial havia rodadas caducou**: o
   documento dizia «não há PostgreSQL® instalado nesta máquina», e há. *A lista
@@ -1626,13 +1746,13 @@ ausência de transação: ele as documenta extensamente.
 
 ---
 
-## Não lançado — os três motores no mesmo trabalho, a um milhão de linhas
+### Não lançado — os três motores no mesmo trabalho, a um milhão de linhas
 
 A terceira bancada de comparação. Ela existe porque somar as duas que já havia
 daria **três colunas e nenhuma comparação**: medidas de dias diferentes
 carregam o ambiente junto, e parte da diferença deixa de ser do motor.
 
-### Corrigido
+#### Corrigido
 
 - **A regra 1 da bancada estava sendo violada, e nenhum tempo denunciava.** A
   `bancada/medir.py` grava `'2024-10-04'` em **toda** linha, enquanto o
@@ -1672,7 +1792,7 @@ carregam o ambiente junto, e parte da diferença deixa de ser do motor.
   seção errada e o leitor acredita. As duas últimas viraram **4.13** e **4.14**,
   e as quatro citações que as queriam foram atrás.
 
-### Adicionado
+#### Adicionado
 
 - **`bancada/comparacao/`** — PhxSql × MySQL(R) 8.0.46 × SQLite(R), três
   rodadas, tabela de 1.000.000 de linhas, 20.000 operações nas fases pontuais,
@@ -1713,12 +1833,12 @@ carregam o ambiente junto, e parte da diferença deixa de ser do motor.
   que aparece na página custaria quinze minutos de bancada — e o atalho seria
   editar o JSON à mão, que é como número gerado vira número digitado.
 
-### Mudado
+#### Mudado
 
 - `docs/DESEMPENHO.md` ganhou a **§13**, e a seção da bancada no dossiê passou a
   se chamar «dez milhões de linhas, **e os três motores a um milhão**».
 
-### Sabido
+#### Sabido
 
 - **Onde perdemos, dito no mesmo tamanho de letra:** a inserção para o
   SQLite(R) por **3,88×**, a exclusão por **1,83×**, e o disco — **253,6 MiB**
@@ -1741,14 +1861,14 @@ carregam o ambiente junto, e parte da diferença deixa de ser do motor.
 
 ---
 
-## Não lançado — o PhxSql embutido: o motor como biblioteca, com ABI de C
-## Não lançado — as transações
+### Não lançado — o PhxSql embutido: o motor como biblioteca, com ABI de C
+### Não lançado — as transações
 
 O pedido é *transações*. A rodada anterior entregou o **pré-requisito** e o
 **desenho escrito antes do código**; esta entregou o código, e ele obedece o
 desenho — com uma seção reescrita, e o motivo dito.
 
-### Adicionado
+#### Adicionado
 
 - **`BEGIN` / `COMMIT` / `ROLLBACK` / `SAVEPOINT`**, pelo protocolo e pelo SQL.
   Três sinônimos de abertura (`BEGIN`, `BEGIN TRANSACTION`,
@@ -1807,7 +1927,7 @@ desenho — com uma seção reescrita, e o motivo dito.
   `transacao_lock_timeout_ms` e `transacao_statement_ms`** no `config.json`, no
   MANUAL e na tela — e **os quatro são lidos**.
 
-### Mudado
+#### Mudado
 
 - **A §4.2 do `docs/TRANSACOES.md` foi reescrita, e a decisão anterior ficou
   registrada.** O desenho escolhia **reserva de tabela sem espera**, e o
@@ -1839,7 +1959,7 @@ desenho — com uma seção reescrita, e o motivo dito.
   `500ms` — número colado em identificador. Ele erra antes de o de transação
   ser consultado, e um `LOCK TIMEOUT 500ms` nunca chegaria lá.
 
-### Corrigido
+#### Corrigido
 
 - **Uma escrita comum podia anexar no slot que a transação já tinha
   prometido**, e o estrago não era o erro visível no `COMMIT`: era a
@@ -1887,7 +2007,7 @@ desenho — com uma seção reescrita, e o motivo dito.
   mesma**. Perguntar e guardar viraram duas coisas separadas: a chave só entra
   depois de a escrita estar empilhada de verdade.
 
-### Medido
+#### Medido
 
 - **O *group commit*: 2,63×, e o passo seguinte morre.** Receita de fora se
   mede contra o nosso gargalo antes de virar plano, e o critério de morte
@@ -1919,7 +2039,7 @@ desenho — com uma seção reescrita, e o motivo dito.
   certo sempre, e é a subida dessa razão — não o relógio — que diz quando
   trocar.
 
-### Sabido
+#### Sabido
 
 - ***ACID compliant* continua falso, e mudou de motivo.** O **A** e o **I**
   passaram a existir; o **D** já existia. O que segura a frase é o **C**: a
@@ -1948,7 +2068,7 @@ desenho — com uma seção reescrita, e o motivo dito.
 
 ---
 
-## Não lançado — o terreno das transações, e o desenho delas
+### Não lançado — o terreno das transações, e o desenho delas
 
 O pedido era *«um mini servidor para rodar no Android e no iOS off-line e se
 conectar por TCP/IP com o servidor»*. O **objetivo** está certo e é o alvo
@@ -1963,7 +2083,7 @@ banco embutido**; o `phxsql-server` é um envelope de rede em volta dele. Esta
 rodada não reescreveu motor — **expôs o que existe** por uma ABI de C.
 `phxsql-server` não foi tocado.
 
-### Corrigido
+#### Corrigido
 
 - **«Não há essa linha» voltava de duas formas diferentes conforme o motivo.**
   Achado pelo programa em C na **primeira rodada dele**, não lendo o código:
@@ -1992,7 +2112,7 @@ rodada não reescreveu motor — **expôs o que existe** por uma ABI de C.
   rodam em paralelo e o `limpar()` de qualquer um esvaziava a vaga bem a
   tempo. Trocado por uma ordem estrita entre duas threads.
 
-### Adicionado
+#### Adicionado
 
 - **`crates/phxsql-ffi`** — `cdylib` (o `.so` que o Android carrega) **e**
   `staticlib` (o `.a` que a Apple exige, porque ela não aceita biblioteca
@@ -2034,7 +2154,7 @@ rodada não reescreveu motor — **expôs o que existe** por uma ABI de C.
   PROVADAS. A `ffi-panico-atravessa` é a segunda de toda a lista que espera
   **aborto** em vez de falha: o tamanho do estrago é a prova.
 
-### Sabido
+#### Sabido
 
 - **A camada JNI (Android) e a Swift/ObjC (iOS) não existem** — só o desenho,
   em `docs/EMBUTIDO.md` §10. O NDK não está nesta máquina (o alvo
@@ -2051,15 +2171,15 @@ rodada não reescreveu motor — **expôs o que existe** por uma ABI de C.
 
 ---
 
-## Não lançado — o terreno das transações, e o desenho delas
-## Não lançado — o webservice REST, e o terreno das transações
+### Não lançado — o terreno das transações, e o desenho delas
+### Não lançado — o webservice REST, e o terreno das transações
 
 Duas frentes. O **webservice REST com OpenAPI** (pedido 149) entrou inteiro,
 com a especificação saindo da tabela de despacho em vez da mão. E o pedido de
 *transações* recebeu o **pré-requisito** e o **desenho escrito antes do
 código** — e não meia transação, que é o que a pressa produziria.
 
-### Corrigido
+#### Corrigido
 
 - **A trava de dados tinha 13 tomadas fora do ponto único, e o comentário do
   `travar_dados()` afirmava ser «o único lugar que a toma».** Era mentira
@@ -2095,7 +2215,7 @@ código** — e não meia transação, que é o que a pressa produziria.
   está no catálogo marcada REDUNDANTE, com o motivo escrito e o passo do
   soquete que a cobre. `docs/REST.md` §9.
 
-### Adicionado
+#### Adicionado
 
 - **O webservice REST com OpenAPI, e o visualizador da especificação** —
   pedido 149, `docs/REST.md`. `POST /v1/<operação>` para as **113 operações**
@@ -2217,7 +2337,7 @@ código** — e não meia transação, que é o que a pressa produziria.
   de reentrância está no caminho de **toda** leitura e **toda** escrita, então
   medi-la não era opcional.
 
-### Mudado
+#### Mudado
 
 - **O teste `duas_tabelas_na_mesma_janela_nao_travam_o_servidor` ganhou a
   asserção da consequência.** Ele provava o defeito pelo *travamento*, e a
@@ -2228,7 +2348,7 @@ código** — e não meia transação, que é o que a pressa produziria.
   travamento por um erro engolido enfraquece todo teste cujo único sintoma era
   o travamento** — quem a acrescenta tem de olhar a consequência no lugar.
 
-### Sabido
+#### Sabido
 
 - **Continua não havendo `BEGIN`, `COMMIT` nem `ROLLBACK`**, e a tela
   *Ferramentas → Gestão de transações* continua dizendo isso. Ela **não foi
@@ -2254,7 +2374,7 @@ código** — e não meia transação, que é o que a pressa produziria.
   nossa: o iOS proíbe app escutando porta para outros apps, e o Android mata
   processo em segundo plano. Lá o caminho é o `phxsql-ffi`, de outra frente.
 
-### Medido
+#### Medido
 
 | | |
 |---|---:|
@@ -2262,14 +2382,14 @@ código** — e não meia transação, que é o que a pressa produziria.
 | `lock` + `unlock` sem disputa | 15,45 ns |
 | a operação mais barata do servidor (`ler`) | 41,31 µs |
 | a guarda, como fração dela | **< 0,01 %** |
-## Não lançado — o `.txt` do Profiler para de crescer
-## Não lançado — a cifra do fio, por aperto de mão estilo Noise
-## Não lançado — `ALTER TABLE ADD COLUMN`, com o rowid intacto
+### Não lançado — o `.txt` do Profiler para de crescer
+### Não lançado — a cifra do fio, por aperto de mão estilo Noise
+### Não lançado — `ALTER TABLE ADD COLUMN`, com o rowid intacto
 
 Escrito em paralelo com as outras seções «Não lançado» abaixo: na integração
 todas viram uma só, e o número da versão sai de lá.
 
-### Corrigido
+#### Corrigido
 
 - **O cabeçalho do arquivo do Profiler aceitava linha forjada — e o furo era
   antigo.** Ele interpola a descrição do filtro, e o filtro vem do pedido: um
@@ -2287,7 +2407,7 @@ todas viram uma só, e o número da versão sai de lá.
   gravado. As duas situações passaram a ser distinguidas, e a segunda conta a
   linha perdida.
 
-### Adicionado
+#### Adicionado
 
 - **Rodízio do `.txt` do Profiler, por tamanho.** Ele media **345 bytes por
   pedido** e não parava nunca — **1,2 GB por hora** a mil pedidos/s, num
@@ -2331,7 +2451,7 @@ todas viram uma só, e o número da versão sai de lá.
   rodízio, o cabeçalho aceitando linha forjada, e a linha sumindo sem ser
   contada.
 
-### Sabido
+#### Sabido
 
 - O rodízio **apaga** o arquivo mais velho, e isso é uma escolha declarada. A
   regra da casa manda pensar duas vezes antes de ligar guarda nova por padrão;
@@ -2343,7 +2463,7 @@ todas viram uma só, e o número da versão sai de lá.
 
 ---
 
-## Não lançado — o `fsync` da exclusão, e quem escolhe pagá-lo
+### Não lançado — o `fsync` da exclusão, e quem escolhe pagá-lo
 
 Escrito em paralelo com as outras seções «Não lançado» abaixo: na integração
 todas viram uma só, e o número da versão sai de lá.
@@ -2352,7 +2472,7 @@ todas viram uma só, e o número da versão sai de lá.
 estava **medido** em vez de julgado. Ele entrou **pedido, e não imposto**, e o
 número foi refeito antes de uma linha de código.
 
-### Adicionado
+#### Adicionado
 
 - **`recursos.exclusao_na_janela`: a exclusão física passa a respeitar a
   janela de durabilidade — quando o dono pede.** O `fsync` que
@@ -2397,7 +2517,7 @@ número foi refeito antes de uma linha de código.
   a janela virando padrão, o campo sem leitor, e o `.reg` fechando antes do
   `.trash`.
 
-### Corrigido
+#### Corrigido
 
 - **`Table::sincronizar` fechava o `.reg` antes do `.trash`.** Enquanto o
   `fsync` da lixeira acontecia por exclusão, a ordem era indiferente — o
@@ -2416,7 +2536,7 @@ número foi refeito antes de uma linha de código.
   Agora o caminho sai de onde o arquivo está, com `PHX_CARGA` para quem
   precisar apontar noutro lugar.
 
-### Sabido
+#### Sabido
 
 - **A premissa 2 do Sprint 1 estava errada, e a conferência a derrubou.** Ela
   afirmava que uma queda dentro da janela só produz dois estados: a linha só no
@@ -2437,7 +2557,7 @@ número foi refeito antes de uma linha de código.
   linha em risco é uma que **alguém mandou apagar**, com o motivo já gravado
   no `.reason`. Nenhuma linha não excluída corre risco em caso nenhum. O caso
   a caso está em `docs/DESEMPENHO.md` §4.12 e no `MANUAL.txt`.
-## Não lançado — a trava de dados saiu de trás da rede
+### Não lançado — a trava de dados saiu de trás da rede
 
 Escrito em paralelo com as outras seções «Não lançado» abaixo: na integração
 todas viram uma só, e o número da versão sai de lá.
@@ -2446,7 +2566,7 @@ todas viram uma só, e o número da versão sai de lá.
 global de dados na **primeira linha** de `alcancar_tabela` e a segurava
 atravessando `replica::puxar`, que é uma ida e volta de rede.
 
-### Corrigido
+#### Corrigido
 
 - **A trava de dados ficava presa atrás de uma leitura de rede.** Com um corte
   silencioso — pacote que some, e não porta que recusa —, a leitura ficava
@@ -2478,7 +2598,7 @@ atravessando `replica::puxar`, que é uma ida e volta de rede.
   mesmo jeito que campo de configuração que ninguém lê. As tomadas fora do
   ponto único caíram de 13 para 12.
 
-### Adicionado
+#### Adicionado
 
 - **`bancada/replicacao/trava.py`** — quatro estágios, ~1,5 min, portas
   7050-7055, sem Docker. É a versão de loopback dos estágios `a3-congelamento`
@@ -2509,7 +2629,7 @@ atravessando `replica::puxar`, que é uma ida e volta de rede.
   o diagnóstico pronto. O catálogo passou de 18 para 19 guardas — 17 provadas,
   2 redundantes, zero «não pegou», 182 s de mutação.
 
-### Mudado
+#### Mudado
 
 - `alcancar_tabela` e `alcancar_tabela_bidi` estão partidas em **três fases**:
   abrir e ler a posição com a trava, ler o lote do soquete **sem** ela, reabrir
@@ -2518,7 +2638,7 @@ atravessando `replica::puxar`, que é uma ida e volta de rede.
   3, e o lote é descartado quando ela andou — descartar custa uma ida e volta,
   aplicar torto custaria o dado.
 
-### Sabido
+#### Sabido
 
 - **A bancada de contêiner não foi refeita**, porque o daemon do Docker desta
   máquina estava fora do ar. Os `resultados.json` de
@@ -2536,7 +2656,7 @@ atravessando `replica::puxar`, que é uma ida e volta de rede.
   do corte por bytes, então quadruplicar o lote quadruplica o pior caso de
   memória de quem serve, na direção contrária do teto que este mesmo trabalho
   acabou de declarar.
-## Não lançado — a frase que não se traduz picada
+### Não lançado — a frase que não se traduz picada
 
 Escrito em paralelo com as outras seções «Não lançado»: na integração todas
 viram uma só, e o número da versão sai de lá.
@@ -2547,7 +2667,7 @@ conferidor — 69 textos cravados que nunca contaram. Esta rodada traduz os 69.
 E ao traduzi-los apareceu uma lição de desenho que vale para todo o resto da
 interface.
 
-### Adicionado
+#### Adicionado
 
 - **O `ui/multitela.js` inteiro passa pela fábrica de idiomas**: 68 rótulos
   viraram **70 chaves** `tela.mt_*` nos seis idiomas — as dicas da tira de
@@ -2588,7 +2708,7 @@ interface.
   sem o gancho `est.repintar` a tela não troca de idioma, e sem a conversão de
   marcas a página mostra `**Multitela.**` com os asteriscos à mostra.
 
-### Mudado
+#### Mudado
 
 - **A catraca desce de 2.068 para 1.999**, medida e não digitada. O número é o
   mesmo de duas rodadas atrás por coincidência — e agora ele quer dizer o que
@@ -2608,7 +2728,7 @@ interface.
   o tradutor traduziria duas vezes a mesma palavra. A entrada `tabela` fica
   **sem** `txt`: o rótulo dela é o nome da tabela, que é dado.
 
-### Sabido
+#### Sabido
 
 - **A aba de segundo plano guarda o idioma em que foi pintada.** Achado
   exercitando, e deixado de fora de propósito: o `est.repintar` é o gancho da
@@ -2624,7 +2744,7 @@ ChaCha20-Poly1305, o SHA-256, o HMAC e o desafio-resposta já existiam e já
 estavam conferidos contra vetor oficial. O desenho inteiro está em
 [`docs/CIFRA-DO-FIO.md`](docs/CIFRA-DO-FIO.md).
 
-### Adicionado
+#### Adicionado
 
 - **X25519 (RFC 7748)**, tempo constante e sem tabela, reaproveitando a
   aritmética de corpo do `ed25519.rs` — as duas curvas vivem no mesmo corpo
@@ -2652,7 +2772,7 @@ estavam conferidos contra vetor oficial. O desenho inteiro está em
   Python puro — X25519, ChaCha20-Poly1305, HKDF e o aperto —, para os dois
   lados fecharem deixar de ser «o mesmo código concordando consigo mesmo».
 
-### Mudado
+#### Mudado
 
 - `docs/SEGURANCA.md` §7 era «Sem TLS», escrito como ausência. Virou decisão,
   com o limite escrito: **com `cifra_fio.exigir` desligado — o padrão — a
@@ -2662,7 +2782,7 @@ estavam conferidos contra vetor oficial. O desenho inteiro está em
   `docs/PENDENCIAS.md` deixaram de dizer «falta TLS» e passaram a dizer o que
   existe e o que continua faltando.
 
-### Sabido — e é limite declarado, não esquecimento
+#### Sabido — e é limite declarado, não esquecimento
 
 - **Não é TLS, e o navegador não fala isto.** A interface web **não** ganha o
   túnel: um aperto em JavaScript seria teatro, porque o próprio script chega
@@ -2677,7 +2797,7 @@ estavam conferidos contra vetor oficial. O desenho inteiro está em
 - **A credencial ainda não é amarrada ao canal.** O hash da transcrição existe
   e está exposto; ninguém o consome.
 
-### O que a prova real achou, e não a leitura
+#### O que a prova real achou, e não a leitura
 
 O executor das guardas (`bancada/guardas/provar-guardas.py`) devolveu **NÃO
 PEGOU** em duas das cinco entradas novas, e as duas eram achados de verdade:
@@ -2699,7 +2819,7 @@ O sprint 25, que era o que faltava ao pedido 127. Até aqui **não dava para
 acrescentar coluna a uma tabela que já tem dado** — e é disso que qualquer
 sistema em produção precisa no segundo mês.
 
-### Adicionado
+#### Adicionado
 
 - **`acrescentar_coluna`**: uma coluna nova numa tabela com dado, **com o
   rowid de cada linha preservado**. O `.reg` é reescrito slot a slot, na mesma
@@ -2742,7 +2862,7 @@ sistema em produção precisa no segundo mês.
   Os textos nasceram na fábrica de idiomas, e os três parágrafos que saíram
   **baixaram a catraca de 1.999 para 1.996**.
 
-### Mudado
+#### Mudado
 
 - **A coluna nova entra depois da última coluna do usuário**, e não no fim da
   lista: as de sistema (`softdeleted`, `rownum`) entraram no fim para não
@@ -2761,7 +2881,7 @@ sistema em produção precisa no segundo mês.
   escrita de estrutura do motor e a que não tem desfazer barato — o mesmo
   poder do `excluir_tabela` e do `marcar_lgpd` ao lado dela.
 
-### Corrigido
+#### Corrigido
 
 - **A caixa de marcar do cartão novo nascia com 834px de largura**, esticada
   pelo `input{width:100%}` da folha global. Achada no primeiro minuto em que o
@@ -2770,7 +2890,7 @@ sistema em produção precisa no segundo mês.
   lição do «Blumenau» virando «BLUMENAU», que o `text-transform:none` do
   rótulo fecha do outro lado.
 
-### Sabido
+#### Sabido
 
 - **Dois testes desta frente passavam por acaso.** Os que provam o
   remapeamento de posição foram escritos primeiro contra uma tabela comum, e
@@ -2797,8 +2917,8 @@ sistema em produção precisa no segundo mês.
 
 ---
 
-## Não lançado — os pacotes de download que se conferem
-## Não lançado — a bateria única e o catálogo de defeitos repostos
+### Não lançado — os pacotes de download que se conferem
+### Não lançado — a bateria única e o catálogo de defeitos repostos
 
 Escrito em paralelo com as outras seções «Não lançado» abaixo: na integração
 todas viram uma só, e o número da versão sai de lá.
@@ -2807,7 +2927,7 @@ todas viram uma só, e o número da versão sai de lá.
 checkout limpo.** Rodá-lo achou três defeitos que ler o código não acharia — o
 mesmo padrão do vídeo de demonstração, por outro caminho.
 
-### Corrigido
+#### Corrigido
 
 - **`./empacotar.sh` morria num checkout limpo, e só ali.** O `monta()`
   compila com `--target`, que grava em `target/<alvo>/release`; o config de
@@ -2825,7 +2945,7 @@ mesmo padrão do vídeo de demonstração, por outro caminho.
   faixa 6750–6799, e lendo a primeira linha da saída. Configuração que não é
   lida mente — e mente melhor quando promete justamente o padrão.
 
-### Adicionado
+#### Adicionado
 
 - **`MANIFESTO.sha256` em cada um dos três zips**, com o SHA-256 de todos os
   arquivos do pacote, e `pacotes/SHA256SUMS` com o hash dos próprios zips, que
@@ -2872,7 +2992,7 @@ mesmo padrão do vídeo de demonstração, por outro caminho.
 - **`docs/EMPACOTAMENTO.md`**: o que cada zip leva, o que ele deliberadamente
   não leva, e como quem baixou confere.
 
-### Medido
+#### Medido
 
 - **Zero dependências externas continua verdade depois desta rodada.**
   `cargo metadata --offline` dá **7 pacotes no grafo, os 7 deste repositório,
@@ -2897,7 +3017,7 @@ mesmo padrão do vídeo de demonstração, por outro caminho.
   `api-ms-win-core-synch-l1-2-0`. Nenhuma do mingw, então não há runtime para
   acompanhar o pacote. A `phxsql_odbc.dll` exporta os 21 símbolos ODBC.
 
-### Sabido
+#### Sabido
 
 - **Não há arquivo de licença no repositório**, e `Cargo.toml` e `README.md`
   dizem `MIT OR Apache-2.0`. Escolher e colar o texto é decisão do dono; o
@@ -2912,7 +3032,7 @@ mesmo padrão do vídeo de demonstração, por outro caminho.
   Windows é conferido pela forma (PE32+ x86-64), pelas DLLs que importa — só
   as do sistema, nenhuma do mingw para acompanhar — e pelos 21 símbolos ODBC
   que a `phxsql_odbc.dll` exporta. Dizer mais que isso seria inventar.
-## Não lançado — o dossiê refeito contra o código
+### Não lançado — o dossiê refeito contra o código
 
 O pedido foi curto: *«o dossiê está desatualizado, falta o `.bkp`, não é
 responsivo, precisa de download, e quero capturas do login até replicação,
@@ -2921,7 +3041,7 @@ código** — que é o único jeito de achar o que envelheceu — devolveu seis
 afirmações erradas, e duas delas estavam **dentro do produto**, não só no
 documento.
 
-### Corrigido
+#### Corrigido
 
 - **O painel da replicação dizia 28.914 linhas/s e 4.357 eventos/s** enquanto a
   seção da bancada, **no mesmo documento**, mostrava 34.048 e 17.450. Número
@@ -2962,7 +3082,7 @@ documento.
   *feature*»** ficaram no dossiê depois de a `phxsql-sql` existir — e ela não
   foi por ali justamente porque uma crate furaria o zero dependências.
 
-### Adicionado
+#### Adicionado
 
 - **Doze seções novas**, cada uma conferida contra o código ou contra um número
   medido: o dado pessoal (a marca, a trilha `.lgpd` e a cifra da coluna), a
@@ -2987,7 +3107,7 @@ documento.
   `pagina-dos-pedidos.py` e do `cobertura-por-area.py` —, mais quatro blocos
   gerados nos que já existiam. **Nenhum número visível do dossiê se digita.**
 
-### Mudado
+#### Mudado
 
 - **Responsivo, e medido** nas seis larguras (390, 820, 1180, 1920, 3440 e
   5120), nos dois temas: **zero rolagem lateral** em todas, texto corrido
@@ -3004,7 +3124,7 @@ documento.
 - **O dossiê 0.15 saiu do repositório.** Só existe um por vez, para que ninguém
   atualize o errado.
 
-### Sabido
+#### Sabido
 
 - **A seção do fluxo de gravação ainda não desenha o `.lgpd`.** A legenda diz
   que ele nunca é escrito numa inserção — que é a informação que importa —, mas
@@ -3025,7 +3145,7 @@ defeito reposto* — era cumprida à mão, uma vez, por quem escrevia o teste, e
 depois se perdia: ninguém conseguia dizer, hoje, quais das 1.229 asserções
 ainda pegariam o defeito que as motivou.
 
-### Adicionado
+#### Adicionado
 
 - **`python3 phxsql/provar.py`** — um comando roda as **dezesseis** partes.
   Ele não refaz bateria nenhuma: chama, cronometra, guarda o log de cada uma e
@@ -3053,7 +3173,7 @@ ainda pegariam o defeito que as motivou.
   `docs/TESTES.md` sai de um gerador, como as duas de cobertura. Número visível
   que não sai de gerador está errado e ninguém percebeu ainda.
 
-### Corrigido
+#### Corrigido
 
 - **Dois conferidores da telemetria saíam com código 0 imprimindo «FALHAS» na
   tela.** `conferir-desenho.mjs` e `conferir-interacao.mjs` mediam certo e
@@ -3082,7 +3202,7 @@ ainda pegariam o defeito que as motivou.
   réplica de hoje continuar entendendo um source antigo. **Uma prova que não
   está em nenhum portão não é uma prova — é um arquivo.**
 
-### Sabido
+#### Sabido
 
 - **A tela mente sobre si mesma quando o Painel demora.** `abrirAdmin` faz
   `p.innerHTML = await vPainel()` e escreve sem perguntar se aquela ainda é a
@@ -3100,7 +3220,7 @@ ainda pegariam o defeito que as motivou.
   fora de propósito: um número mais lento não é uma reprovação, é um número, e
   bateria que fica vermelha por causa da carga da máquina ensina a ignorar
   vermelho.
-## Não lançado — os quatro modos de replicação em contêiner
+### Não lançado — os quatro modos de replicação em contêiner
 
 O pedido era testar os quatro modos em Docker. O que ele valeu não foi
 repetir o teste dentro de um contêiner: foi que **rede própria, endereço de
@@ -3108,7 +3228,7 @@ verdade e firewall de verdade acham defeito que loopback esconde**. A bancada
 está em `bancada/replicacao/docker/` — cinco `compose`, imagem `scratch` de
 6,42 MB, um comando só. `docs/REPLICACAO.md` §17.
 
-### Corrigido
+#### Corrigido
 
 - **`replicas_autorizadas` não era lido por ninguém.** O campo estava no
   `config.json`, na §7 do `REPLICACAO.md` e na tela de configuração desde que
@@ -3125,7 +3245,7 @@ está em `bancada/replicacao/docker/` — cinco `compose`, imagem `scratch` de
   não são barrados. Três testes, e o que mais importa é o do comportamento
   velho: `sem_replicas_autorizadas_nada_muda`.
 
-### Adicionado
+#### Adicionado
 
 - **`bancada/replicacao/docker/`**, com um `compose` por modo (A
   source→réplica, B multi-master, C spare, D read replica) e um quinto só para
@@ -3143,7 +3263,7 @@ está em `bancada/replicacao/docker/` — cinco `compose`, imagem `scratch` de
   o modelo do master não tinha bloco `replicacao`, então subia isolado, e a
   réplica que ele acompanha não teria o que aplicar.
 
-### Sabido
+#### Sabido
 
 - **O abraço mortal do bidirecional.** `alcancar_tabela_bidi` toma a trava de
   dados **deste** servidor e, de dentro dela, pede `replicar` ao outro; do
@@ -3172,7 +3292,7 @@ está em `bancada/replicacao/docker/` — cinco `compose`, imagem `scratch` de
 
 ---
 
-## Não lançado — a área de trabalho multitela
+### Não lançado — a área de trabalho multitela
 
 Escrito em paralelo com a restauração de backup, abaixo: na integração as duas
 seções «Não lançado» viram uma só, e o número da versão sai de lá.
@@ -3184,7 +3304,7 @@ trocar de tela. O pedido veio no molde do WINDEV(R), e o dono fechou a questão
 por escrito: *«é um site, então tem que esticar o navegador para todas as telas
 e dentro da página 1 ou índex distribuir as janelas dentro da mesma page»*.
 
-### Adicionado
+#### Adicionado
 
 - **Abas dinâmicas**, com estado **por aba**. `est` passou a ter duas metades
   declaradas: o que é do servidor (sessão, usuário, bancos) continua único, e o
@@ -3214,7 +3334,7 @@ e dentro da página 1 ou índex distribuir as janelas dentro da mesma page»*.
 - Dois casos novos na bateria de frontend (**24 execuções**), e
   `testes-web/medir-regiao.mjs`, que mede de quanto uma região precisa.
 
-### Mudado
+#### Mudado
 
 - Os ids `#painel`, `#titulo`, `#subtitulo` e `#abas` passaram a morar **só na
   tela com foco**; as outras se vestem por classe. Foi o que permitiu quatro
@@ -3226,7 +3346,7 @@ e dentro da página 1 ou índex distribuir as janelas dentro da mesma page»*.
   **aba nova**. O clique simples continua trocando o conteúdo da aba de agora,
   que é o que sempre fez.
 
-### Sabido
+#### Sabido
 
 - **Arrastar uma janela do sistema de volta para a barra de abas não existe** —
   em navegador nenhum. Não há evento quando uma janela passa por cima de outra.
@@ -3247,7 +3367,7 @@ e dentro da página 1 ou índex distribuir as janelas dentro da mesma page»*.
 
 ---
 
-## Não lançado — a restauração de backup
+### Não lançado — a restauração de backup
 
 O número da versão fica para a integração: escrevê-lo aqui antes de o
 `Cargo.toml` mudar seria criar um número que ninguém mediu.
@@ -3256,7 +3376,7 @@ O número da versão fica para a integração: escrevê-lo aqui antes de o
 promessa apagada desde que a tela de backup nasceu, e o pedido chegou com essas
 palavras. Agora ele restaura.
 
-### Adicionado
+#### Adicionado
 
 - **`restaurar_backup`**, com dois modos. `novo` (o padrão) grava o backup com
   **outro nome**: não destrói nada, não precisa parar serviço nenhum e não
@@ -3286,7 +3406,7 @@ palavras. Agora ele restaura.
 - `docs/RESTAURACAO.md`: o desenho, as três saídas possíveis, a que foi
   escolhida e **o que a restauração não garante**.
 
-### Mudado
+#### Mudado
 
 - **O manifesto do backup diz de que ele é cópia** — `escopo` (`raiz` ou
   `database`) e `database`. Os caminhos quase sempre bastariam para deduzir, e
@@ -3295,7 +3415,7 @@ palavras. Agora ele restaura.
   Manifesto antigo continua valendo — cai na dedução, e a resposta diz que
   deduziu em vez de afirmar.
 
-### Corrigido
+#### Corrigido
 
 - **O portão de permissão não enxergava o database que vem DENTRO do backup.**
   Ele confere o campo `"database"` do pedido, que na restauração é o destino;
@@ -3314,7 +3434,7 @@ palavras. Agora ele restaura.
   `COMERCIAL`. É «Blumenau» virando «BLUMENAU» por outro caminho, e também só
   apareceu abrindo a página.
 
-### Sabido
+#### Sabido
 
 - O manifesto prova que o backup **não apodreceu**, não que ninguém o
   reescreveu de propósito: quem alterar um arquivo *e* recalcular o SHA dentro
@@ -3324,7 +3444,7 @@ palavras. Agora ele restaura.
   já era assim antes. O que mudou é que agora **falha alto**: o leitor confere
   a assinatura e o nome do cabeçalho local contra o diretório central, em vez
   de restaurar lixo em silêncio.
-## Não lançado
+### Não lançado
 
 A rodada da **bateria de testes** — backend, frontend e avaliação de design.
 O que ela mostra em uma linha: **1.106 testes verdes não provam uma tela**.
@@ -3332,7 +3452,7 @@ Os seis defeitos de interface abaixo aconteceram sem uma única exceção não
 capturada, e o portão de permissão tinha três operações a mais que leem a base
 inteira sem o campo que ele confere. `docs/TESTES.md` e `testes-web/LEIA-ME.md`.
 
-### Corrigido
+#### Corrigido
 
 - **A tela de Dado pessoal (LGPD) nunca auditou nada.** Ela procurava um campo
   booleano `pessoal` por coluna, e o servidor nunca mandou esse campo — o
@@ -3394,7 +3514,7 @@ inteira sem o campo que ele confere. `docs/TESTES.md` e `testes-web/LEIA-ME.md`.
   o token `--tinta-botao`. E o número mostra por que se mede: a conta de cabeça
   dava 2,65:1.
 
-### Adicionado
+#### Adicionado
 
 - **`testes-web/`, a bateria de frontend que roda sozinha.** Onze casos, dois
   temas, 22 execuções em ~2min20. Sobe um `phxsqld` próprio nas portas
@@ -3418,7 +3538,7 @@ inteira sem o campo que ele confere. `docs/TESTES.md` e `testes-web/LEIA-ME.md`.
   cobertura do `docs/TESTES.md` a partir do código. Tabela de cobertura
   digitada mente no dia seguinte ao primeiro teste novo.
 
-### Sabido
+#### Sabido
 
 - **`replica.rs` continua sem nenhum `#[test]`** — 352 linhas, o laço que faz a
   réplica alcançar o master, e a prova é o `bancada/replicacao/`, que precisa

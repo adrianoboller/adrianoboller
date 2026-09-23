@@ -434,6 +434,27 @@ fn textos_do_esquema(esquema: &Schema) -> Vec<(usize, bool)> {
         .collect()
 }
 
+/// Algum indice de TEXTO desta tabela cai sobre coluna marcada?
+///
+/// E a unica pergunta que decide se o `.fts` nasce selado (pedido 340). Ela
+/// nao e `tem_dado_pessoal`, e a diferenca importa nos dois sentidos: uma
+/// tabela com `cpf` marcado e `descricao` indexada por texto nao guarda
+/// segredo nenhum no `.fts`, e selar ali cobraria uma entrada por folha para
+/// proteger nada; e uma tabela cuja UNICA coluna marcada e justamente a
+/// indexada por texto tem de selar, mesmo que nada mais nela seja marcado.
+///
+/// O que vaza sem isto esta medido no pedido 340: `strings -n 10 clientes.fts`
+/// devolvendo o valor inteiro da coluna `Str` marcada, com o `.memo` ao lado
+/// devolvendo nada.
+fn texto_sobre_coluna_marcada(esquema: &Schema) -> bool {
+    esquema.indices_de_texto().iter().any(|it| {
+        esquema
+            .colunas()
+            .get(it.coluna)
+            .is_some_and(|c| c.dado_pessoal.e_pessoal())
+    })
+}
+
 /// As posicoes das colunas marcadas como dado pessoal, de qualquer grau.
 ///
 /// **Os dois graus, e nao so o sensivel.** A caixa de LGPD da tela marca
@@ -627,6 +648,7 @@ impl Table {
             Some(FtsFile::criar(
                 caminho(&diretorio, &nome, EXT_FTS),
                 indices_de_texto.iter().map(|(_, d)| *d).collect(),
+                texto_sobre_coluna_marcada(&esquema),
             )?)
         };
         let mut t = Table {
@@ -957,6 +979,106 @@ impl Table {
         Ok(slots)
     }
 
+    /// Leva uma tabela anterior ao `PSCH` v10 ao v10: acrescenta as colunas de
+    /// carimbo no FIM e regrava o bloco de esquema.
+    ///
+    /// Devolve quantas linhas foram reescritas. Idempotente: chamada numa
+    /// tabela que ja esta no v10 nao toca disco e devolve 0.
+    ///
+    /// # Por que reescreve o arquivo inteiro, se o bloco novo nao cresce muito
+    ///
+    /// Porque o bloco novo nao cabe onde o velho esta. O `data_offset` -- onde
+    /// comeca o primeiro slot -- foi calculado quando a tabela nasceu, como
+    /// `alinhar(cab_len + len(bloco), 64)`, e nao se mexe. Medido na tabela de
+    /// exemplo, a folga ate o primeiro slot e de 50 bytes contra um bloco que
+    /// cresce ~145; no pior caso a folga e ZERO. E duas larguras de slot nao
+    /// existem neste formato: `slot_size` e um campo so, e e dele que sai
+    /// `offset = data_offset + (slot - 1) * slot_size`.
+    ///
+    /// # Por que passa DUAS vezes, uma por coluna
+    ///
+    /// Porque reaproveita a maquinaria provada do `RegFile::acrescentar_coluna`
+    /// -- a conta de offsets que fecha antes de escrever byte, o `*.novo`, o
+    /// `rename` e a retomada de queda -- em vez de uma segunda implementacao
+    /// de reescrita de slot ao lado dela. Duas implementacoes do mesmo
+    /// rearranjo de payload divergem, e a divergencia e um campo deslocado que
+    /// passa no CRC. O custo e uma passada a mais num evento que acontece uma
+    /// vez por tabela; a medicao da casa da 0,553 us/linha por passada.
+    ///
+    /// E ela e retomavel de proposito: uma queda entre as duas passadas deixa
+    /// a tabela com a primeira coluna e sem a segunda, e a chamada seguinte
+    /// acrescenta so a que falta.
+    ///
+    /// # O que ela RECUSA, e o motivo vai escrito na recusa
+    ///
+    /// Tabela em modo ledger que ja tem bloco. Decisao do dono (pedido 314):
+    /// **nao se reescreve historia assinada**. Nao e limitacao tecnica do
+    /// hash -- ele exclui coluna de sistema (`coluna_no_hash_do_ledger`), e
+    /// por isso uma ledger NASCIDA no v10 funciona normalmente --, e sim a
+    /// recusa de passar cada slot de uma cadeia assinada por uma reescrita de
+    /// arquivo. Uma ledger VAZIA passa: nao ha historia sobre a qual mentir.
+    pub fn migrar_para_psch_v10(&mut self) -> Result<u64> {
+        use phxsql_core::schema::{COLUNA_ROWSTAMP, COLUNA_ROWTIME};
+        let faltam: Vec<(&str, ColumnType)> = [
+            (COLUNA_ROWSTAMP, ColumnType::UInt8),
+            (COLUNA_ROWTIME, ColumnType::DateTime),
+        ]
+        .into_iter()
+        .filter(|(nome, _)| self.esquema.coluna_por_nome(nome).is_none())
+        .collect();
+        if faltam.is_empty() {
+            return Ok(0);
+        }
+        if crate::ledger::e_tabela_ledger(&self.esquema) && self.reg.slots() > 0 {
+            return Err(PhxError::Esquema(format!(
+                "a tabela {} esta em modo ledger e ja tem {} bloco(s) na cadeia: \
+                 ela fica no formato de esquema anterior, de proposito. \
+                 Acrescentar as colunas de carimbo reescreveria cada slot de uma \
+                 historia assinada, e historia assinada nao se reescreve -- o hash \
+                 da cadeia continuaria batendo, porque ele exclui coluna de sistema, \
+                 mas a prova deixaria de ser sobre os bytes que foram assinados. \
+                 Uma tabela-cadeia NOVA ja nasce com o carimbo; esta continua \
+                 verificavel exatamente como esta",
+                self.esquema.nome(),
+                self.reg.slots()
+            )));
+        }
+
+        let mut slots = 0;
+        for (nome, ty) in faltam {
+            // Modelo de linha unico: as mesmas colunas que `Schema::new`
+            // acrescenta a uma tabela nova. Montar aqui uma segunda descricao
+            // da coluna faria a tabela migrada diferir da nascida.
+            let modelo = phxsql_core::schema::Schema::new(
+                "modelo",
+                vec![phxsql_core::schema::Column::new("x", ColumnType::Int4)],
+                vec![],
+            )?;
+            let i = modelo.coluna_por_nome(nome).ok_or_else(|| {
+                PhxError::Esquema(format!("o esquema modelo nao traz a coluna {nome}"))
+            })?;
+            let coluna = modelo.colunas()[i].clone();
+            debug_assert_eq!(coluna.ty, ty);
+            // No FIM da lista, e nao em `posicao_de_coluna_nova`: aquela poe a
+            // coluna do USUARIO antes das de sistema, e uma coluna de sistema
+            // ali no meio quebraria o `colunas_de_sistema_no_fim`, que conta do
+            // fim para tras e para na primeira coluna do usuario.
+            let posicao = self.esquema.colunas().len();
+            let novo = self.esquema.com_coluna(coluna, posicao)?;
+            // Zeros, e nao um carimbo inventado: zero quer dizer «esta linha
+            // nasceu antes de a coluna existir», que e a verdade sobre ela.
+            // Carimbo retroativo passaria no CRC e ninguem mais o distinguiria
+            // de um medido.
+            let bytes = vec![0u8; ty.largura()];
+            slots = self.reg.acrescentar_coluna(novo, posicao, &bytes, false)?;
+            self.esquema = self.reg.esquema().clone();
+            self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
+            self.indices_de_texto = textos_do_esquema(&self.esquema);
+        }
+        self.gravar_pag()?;
+        Ok(slots)
+    }
+
     pub fn abrir(diretorio: impl AsRef<Path>, nome: &str) -> Result<Table> {
         // Com a ficha EXCLUSIVA nenhum componente recusa por precisar
         // escrever: e este o caminho que cria o que falta e termina o que
@@ -1072,6 +1194,7 @@ impl Table {
         // coisa que a pista de leitura existe para impedir. Entao, sem a ficha,
         // recusa com o motivo -- que e o que os outros quatro componentes que
         // escrevem na abertura ja faziam, e o que este esqueceu de fazer.
+        let selar_o_fts = texto_sobre_coluna_marcada(&esquema);
         let mut refazer = !dobra.is_empty() && !caminho_fts.exists();
         let fts = if dobra.is_empty() {
             None
@@ -1081,10 +1204,18 @@ impl Table {
                     "o indice de texto .fts desta tabela ainda nao existe e seria criado",
                 ));
             }
-            Some(FtsFile::recriar(&caminho_fts, dobra)?)
+            Some(FtsFile::recriar(&caminho_fts, dobra, selar_o_fts)?)
         } else {
             match FtsFile::abrir(&caminho_fts, dobra.clone()) {
                 Ok(f) => Some(f),
+                // **Falta de CHAVE nao cai na vala do "refaz".** A vala existe
+                // para `.fts` corrompido ou divergente, onde refazer do `.reg`
+                // devolve a verdade. Aqui ela devolveria um `.fts` NOVO e em
+                // claro, com os termos da coluna marcada de volta ao disco
+                // legiveis -- desfazendo calado a protecao do pedido 340 por
+                // causa de uma senha errada no `config.json`. Recusa
+                // nomeando, que e o que o `.reg` faz na mesma situacao.
+                Err(e) if matches!(e, PhxError::Autorizacao(_)) => return Err(e),
                 Err(_) if !escrever => {
                     return Ok(SemEscrever::PrecisaEscrever(
                         "o indice de texto .fts nao abre e seria refeito",
@@ -1092,7 +1223,7 @@ impl Table {
                 }
                 Err(_) => {
                     refazer = true;
-                    Some(FtsFile::recriar(&caminho_fts, dobra)?)
+                    Some(FtsFile::recriar(&caminho_fts, dobra, selar_o_fts)?)
                 }
             }
         };
@@ -1195,6 +1326,35 @@ impl Table {
     /// aponta o que existe no `.reg`, e quem filtra por `visao` e quem
     /// consulta -- exatamente como o `.ndx` faz. Se o indice ja escondesse a
     /// linha marcada, restaura-la a deixaria fora dele para sempre.
+    /// O `.fts` desta tabela grava a pagina SELADA? (pedido 340)
+    ///
+    /// `false` tambem quando nao ha indice de texto nenhum -- nao ha arquivo
+    /// para selar, e mentir "selado" ali seria pior que a verdade.
+    pub fn fts_selado(&self) -> bool {
+        self.fts.as_ref().is_some_and(|f| f.selado())
+    }
+
+    /// Quantos termos o indice de texto `idx` guarda. Serve ao medidor.
+    pub fn fts_qtd_chaves(&self, idx: usize) -> u64 {
+        self.fts.as_ref().map(|f| f.qtd_chaves(idx)).unwrap_or(0)
+    }
+
+    /// Quantos termos cabem numa folha do indice de texto `idx`.
+    ///
+    /// E o custo de FORMATO do selo (pedido 340), e ele sai do arquivo --
+    /// nenhum medidor refaz esta conta a mao.
+    pub fn fts_capacidade_de_folha(&self, idx: usize) -> usize {
+        self.fts
+            .as_ref()
+            .map(|f| f.capacidade_de_folha(idx))
+            .unwrap_or(0)
+    }
+
+    /// Quantas paginas o `.fts` tem. Serve ao medidor do custo em disco.
+    pub fn fts_paginas(&self) -> u64 {
+        self.fts.as_ref().map(|f| f.paginas()).unwrap_or(0)
+    }
+
     pub fn reconstruir_fts(&mut self) -> Result<u64> {
         if self.fts.is_none() {
             return Ok(0);
@@ -1204,9 +1364,14 @@ impl Table {
         // «chave completa ja existe no indice» --, e a marca de «ficou para
         // tras numa queda» nunca desce, porque so a recriacao a tira.
         let dobra: Vec<bool> = self.indices_de_texto.iter().map(|(_, d)| *d).collect();
+        // E aqui que um `.fts` nascido em claro vira selado: o `reindexar`
+        // passa por este caminho, e com o cofre ligado o arquivo novo nasce
+        // com a pagina fechada. E a saida escrita para quem ligou a cifra
+        // depois de a tabela existir (pedido 340, `SEGURANCA.md` §11.3).
         self.fts = Some(FtsFile::recriar(
             caminho(&self.diretorio, &self.nome, EXT_FTS),
             dobra,
+            texto_sobre_coluna_marcada(&self.esquema),
         )?);
 
         let mut feitas = 0u64;
@@ -2378,19 +2543,16 @@ impl Table {
         let mut novos = valores.to_vec();
         for i in valores.len()..n {
             let c = &self.esquema.colunas()[i];
-            if c.nome != phxsql_core::schema::COLUNA_SOFTDELETED
-                && c.nome != phxsql_core::schema::COLUNA_ROWNUM
-            {
-                // A linha esta curta por outro motivo que nao as colunas de
-                // sistema. Deixa a aridade reclamar, com a mensagem dela.
-                return None;
-            }
+            // O par de nomes crus saiu daqui, e o ramo de queda com ele: um
+            // `None => Value::Bool(false)` engolia qualquer coluna de sistema
+            // nova num tipo que nao e o dela. Hoje a lista e o valor moram
+            // juntos, no `schema.rs`, e o `None` aqui quer dizer so uma coisa:
+            // a linha esta curta por OUTRO motivo. Deixa a aridade reclamar,
+            // com a mensagem dela.
+            let inicial = phxsql_core::schema::valor_inicial_da_coluna_de_sistema(&c.nome)?;
             novos.push(match anterior {
                 Some(linha) => linha[i].clone(),
-                // Zero e o "ainda nao numerado": `numerar_linha` troca por um
-                // numero de verdade antes de a linha ir para o disco.
-                None if c.nome == phxsql_core::schema::COLUNA_ROWNUM => Value::UInt(0),
-                None => Value::Bool(false),
+                None => inicial,
             });
         }
         Some(novos)
@@ -2453,9 +2615,73 @@ impl Table {
         }
     }
 
+    /// Carimba a linha com a ordem de criacao e o relogio de parede (v10).
+    ///
+    /// # Emite no INSERIR e nunca no ATUALIZAR, e isso e decisao
+    ///
+    /// O carimbo diz quando a linha NASCEU. Se uma alteracao o renovasse, um
+    /// pai alterado hoje ficaria com carimbo maior que o das filhas dele, e a
+    /// pergunta que a coluna existe para responder -- «o pai veio antes?» --
+    /// passaria a responder ERRADO sobre dado que esta certo no disco.
+    ///
+    /// # E a linha velha, a que nasceu antes da coluna, FICA em zero
+    ///
+    /// Aqui o desenho diverge do irmao `numerar_linha`, que preenche o
+    /// `rownum` de uma linha antiga na primeira alteracao. Preencher o carimbo
+    /// seria afirmar que a linha nasceu hoje, e ela nao nasceu: zero quer
+    /// dizer «anterior ao carimbo», que e a verdade sobre ela. Numero
+    /// inventado passa no CRC e ninguem mais o distingue de um medido.
+    ///
+    /// # Na replica, HONRA o que veio
+    ///
+    /// O carimbo viaja na imagem. Gerar um local faria o retrato SHA-256 de
+    /// source e replica divergir -- e a doenca do `rownum` do pedido 291 vista
+    /// antes de acontecer. E empurra o contador do processo para pelo menos o
+    /// que chegou: sem isso, um evento remoto com carimbo alto entra e a
+    /// proxima escrita LOCAL sairia atras de uma linha que ja esta la. E o
+    /// mesmo remedio do `anotar_sequencia`.
+    fn carimbar_linha(&mut self, valores: &mut [Value], anterior: Option<&Linha>) {
+        let Some(i) = self.esquema.coluna_rowstamp() else {
+            return;
+        };
+        let t = self.esquema.coluna_rowtime();
+        if let Some(linha) = anterior {
+            // Alteracao: mantem o que a linha ja tinha, inclusive o zero.
+            valores[i] = linha[i].clone();
+            if let Some(t) = t {
+                valores[t] = linha[t].clone();
+            }
+            return;
+        }
+        if self.como_replica {
+            if let Value::UInt(n) = valores[i] {
+                if n > 0 {
+                    crate::no::empurrar_carimbo(n);
+                    self.reg.anotar_carimbo(n);
+                    return;
+                }
+            }
+            // Veio sem carimbo: o source e anterior ao v10. Carimbar aqui
+            // divergiria do retrato dele, entao a linha fica em zero -- o
+            // mesmo «anterior ao carimbo» da linha migrada.
+            return;
+        }
+        let carimbo = crate::no::proximo_carimbo();
+        valores[i] = Value::UInt(carimbo);
+        self.reg.anotar_carimbo(carimbo);
+        if let Some(t) = t {
+            valores[t] = Value::DateTime(crate::util::agora_ms());
+        }
+    }
+
     /// Proximo `rownum` que a tabela vai entregar.
     pub fn rownum_atual(&self) -> u64 {
         self.reg.rownum_atual()
+    }
+
+    /// Maior carimbo de criacao ja gravado nesta tabela. 0 = nenhum.
+    pub fn ultimo_carimbo(&self) -> u64 {
+        self.reg.ultimo_carimbo()
     }
 
     /// O `rownum` desta linha, lido direto do payload -- sem decodificar nada.
@@ -3301,6 +3527,12 @@ impl Table {
             None => valores.to_vec(),
         };
         let rownum_reservado = self.numerar_linha(&mut completos, None);
+        // O IRMAO do `numerar_linha`, e entra na mesma ordem nos dois
+        // caminhos: o carimbo tem de estar na linha ANTES das chaves, senao
+        // um indice sobre ele guardaria a chave do zero. Nao ha reserva aqui
+        // -- ao contrario do `rownum`, buraco no carimbo nao e divergencia:
+        // a replica honra o que veio e nunca gera o dela.
+        self.carimbar_linha(&mut completos, None);
         let valores = &completos[..];
 
         // A sequencia entra ANTES das chaves: se a coluna estiver num indice,
@@ -3609,6 +3841,10 @@ impl Table {
         // de a coluna existir); o consumo vem depois das guardas, como no
         // `inserir` -- irmao que chama as mesmas funcoes na mesma ordem.
         let rownum_reservado = self.numerar_linha(&mut completos, Some(&valores_antigos));
+        // O irmao, na mesma ordem do `inserir`. Numa alteracao ele so MANTEM
+        // o que a linha ja tinha: o carimbo diz quando a linha nasceu, e quem
+        // manda a coluna escrita nao pode virar essa resposta por aqui.
+        self.carimbar_linha(&mut completos, Some(&valores_antigos));
         let valores = &completos[..];
 
         // Nulo na coluna de sequencia guarda o numero que a linha ja tinha.

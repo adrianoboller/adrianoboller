@@ -570,45 +570,62 @@ pub struct ResultadoUniao {
     pub truncado: bool,
 }
 
+/// O cabeçalho de uma parte da união: o nome e o tipo de cada coluna, na
+/// ordem em que a linha os traz.
+///
+/// # Por que não é um `Schema`
+///
+/// Porque a parte deixou de ser sempre uma TABELA. Desde o pedido 393 o braço
+/// da união pode ser um PEDIDO (`varrer`, `buscar`, `agrupar`, `consultar`),
+/// e o que ele devolve tem cabeçalho sem ter arquivo: não tem índice, não tem
+/// id de coluna, e o tipo de uma coluna que nenhum modelo nomeou é `Str(0)`,
+/// que o `Schema::do_disco` RECUSA -- com razão, porque numa tabela ele não
+/// quer dizer nada. Montar um esquema de mentira para empilhar duas listas
+/// faria a união recusar, por uma regra de DISCO, uma pergunta que não toca
+/// disco nenhum -- e recusaria também a coluna repetida e a lista vazia, que
+/// aqui são legítimas. É o mesmo par (nome, tipo) que `consultar::Modelo`
+/// carrega, e por isso a composição e a união passam a falar o mesmo.
+pub type Cabecalho = [(String, ColumnType)];
+
+/// O cabeçalho de uma parte que É uma tabela -- o caminho `tabelas` do `unir`.
+pub fn cabecalho_do_esquema(e: &Schema) -> Vec<(String, ColumnType)> {
+    e.colunas().iter().map(|c| (c.nome.clone(), c.ty)).collect()
+}
+
 /// Confere que as partes de uma união empilham.
 ///
 /// O SQL exige mesma quantidade de colunas e tipos compatíveis, posição a
 /// posição -- **o nome não importa**, a posição sim. Empilhar por nome
 /// pareceria mais amigável e seria uma armadilha: duas tabelas com as mesmas
 /// colunas em ordem diferente empilhariam trocando os valores de coluna, calado.
-pub fn conferir_uniao(esquemas: &[&Schema]) -> Result<()> {
-    let Some(primeiro) = esquemas.first() else {
+pub fn conferir_uniao(partes: &[&Cabecalho]) -> Result<()> {
+    let Some(primeiro) = partes.first() else {
         return Err(PhxError::Esquema(
             "a união precisa de ao menos uma parte".into(),
         ));
     };
-    let n = primeiro.colunas().len();
-    for (i, e) in esquemas.iter().enumerate().skip(1) {
-        if e.colunas().len() != n {
+    let n = primeiro.len();
+    for (i, e) in partes.iter().enumerate().skip(1) {
+        if e.len() != n {
             return Err(PhxError::Esquema(format!(
                 "a parte {} tem {} coluna(s) e a primeira tem {}: uma união empilha \
                  posição a posição, então a quantidade tem de bater",
                 i + 1,
-                e.colunas().len(),
+                e.len(),
                 n
             )));
         }
-        for (c, (ca, cb)) in primeiro
-            .colunas()
-            .iter()
-            .zip(e.colunas().iter())
-            .enumerate()
-        {
-            if familia(&ca.ty) != familia(&cb.ty) {
+        for (c, ((na, ta), (nb, tb))) in primeiro.iter().zip(e.iter()).enumerate() {
+            if familia(ta) != familia(tb) {
                 return Err(PhxError::Esquema(format!(
                     "na coluna {} a parte 1 traz {} ({}) e a parte {} traz {} ({}): \
                      famílias diferentes não empilham",
                     c + 1,
-                    ca.nome,
-                    familia(&ca.ty),
+                    na,
+                    familia(ta),
                     i + 1,
-                    cb.nome,
-                    familia(&cb.ty),
+                    nb,
+                    familia(tb),
                 )));
             }
         }
@@ -704,29 +721,28 @@ fn potencia_de_dez(escala: u8) -> i128 {
 /// Os NOMES de coluna saem da PRIMEIRA parte, como no SQL; o TIPO leva em
 /// conta todas -- ver [`mais_largo`].
 pub fn unir(
-    partes: &mut [(&mut dyn Iterador, &Schema)],
+    partes: &mut [(&mut dyn Iterador, &Cabecalho)],
     modo: Uniao,
     max: u64,
 ) -> Result<ResultadoUniao> {
-    let esquemas: Vec<&Schema> = partes.iter().map(|(_, e)| *e).collect();
-    conferir_uniao(&esquemas)?;
-    let primeiro = esquemas[0];
+    let cabecalhos: Vec<&Cabecalho> = partes.iter().map(|(_, c)| *c).collect();
+    conferir_uniao(&cabecalhos)?;
+    let primeiro = cabecalhos[0];
 
     // Os NOMES saem da primeira parte, como no SQL. O TIPO, não: ele leva em
     // conta TODAS as partes -- ver `mais_largo`.
     let mut colunas: Vec<ColunaSaida> = primeiro
-        .colunas()
         .iter()
         .enumerate()
-        .map(|(i, c)| {
-            let mut ty = c.ty;
-            for e in esquemas.iter().skip(1) {
-                if let Some(outra) = e.colunas().get(i) {
-                    ty = mais_largo(ty, outra.ty);
+        .map(|(i, (nome, tipo))| {
+            let mut ty = *tipo;
+            for c in cabecalhos.iter().skip(1) {
+                if let Some((_, outra)) = c.get(i) {
+                    ty = mais_largo(ty, *outra);
                 }
             }
             ColunaSaida {
-                nome: c.nome.clone(),
+                nome: nome.clone(),
                 ty,
                 lado: "uniao",
                 chave: false,
@@ -763,7 +779,7 @@ pub fn unir(
     let mut repetidas = 0u64;
     let mut truncado = false;
 
-    for (fonte, esquema) in partes.iter_mut() {
+    for (fonte, cabecalho) in partes.iter_mut() {
         let mut desta = 0u64;
         while let Some(mut linha) = fonte.proxima()? {
             desta += 1;
@@ -784,7 +800,7 @@ pub fn unir(
             // nós não tínhamos -- o passo 4 (recusar famílias diferentes) já
             // era nosso, em `conferir_uniao`.
             for (i, (v, c)) in linha.iter_mut().zip(colunas.iter()).enumerate() {
-                converter_para(v, esquema.colunas().get(i).map(|x| x.ty), c.ty);
+                converter_para(v, cabecalho.get(i).map(|(_, t)| *t), c.ty);
             }
             if modo == Uniao::Distinta {
                 // A linha VISÍVEL inteira vira chave, com o mesmo canonizador
@@ -855,6 +871,42 @@ mod testes {
         Value::Str(s.to_string())
     }
 
+    /// A linha do usuario mais a CAUDA de sistema que este esquema tiver.
+    ///
+    /// # Por que sai do esquema, e nao de uma lista escrita a mao
+    ///
+    /// Porque a lista a mao era uma CONTAGEM de colunas de sistema, e o
+    /// `PSCH` v10 mudou a contagem. Com dois valores a menos, a linha deixou
+    /// de bater com o cabecalho -- e o `tirar_a_coluna_de_sistema` nao corta
+    /// linha que nao bate, de proposito, porque cortar por posicao o que nao
+    /// bate e tirar a coluna errada calado. O cabecalho encolhia, a linha
+    /// nao, e `valores()` passou a ler o `rownum` do lado A onde lia o valor
+    /// do pedido: `["UInt(1)", "UInt(1)", "UInt(2)", "UInt(3)"]` no lugar de
+    /// `["100", "200", "300", "—"]`. A quinta coluna de sistema nao quebra
+    /// mais este cenario.
+    ///
+    /// O `rownum` entra com valor proprio por linha porque ele e o que
+    /// denuncia um corte errado: se a cauda voltar ao resultado, ela volta
+    /// visivel.
+    fn com_sistema(e: &Schema, usuario: Vec<Value>, rownum: u64) -> Vec<Value> {
+        let mut linha = usuario;
+        for c in &e.colunas()[linha.len()..] {
+            assert!(
+                e_coluna_de_sistema(&c.nome),
+                "a coluna {} nao e de sistema: o cenario esta curto por outro motivo",
+                c.nome
+            );
+            let v = phxsql_core::schema::valor_inicial_da_coluna_de_sistema(&c.nome)
+                .expect("coluna de sistema sem valor de partida");
+            linha.push(if c.nome == phxsql_core::schema::COLUNA_ROWNUM {
+                Value::UInt(rownum)
+            } else {
+                v
+            });
+        }
+        linha
+    }
+
     /// A = clientes (id, nome); B = pedidos (cliente_id, valor).
     ///
     /// Cliente 3 não tem pedido; o pedido do cliente 9 não tem cliente. É o
@@ -871,27 +923,13 @@ mod testes {
             ),
             chave: vec![0],
         };
-        // O `false` e o número no fim são as colunas de sistema, que
-        // `Schema::new` acrescenta: a linha tem de bater com o esquema.
+        // A cauda de sistema sai do ESQUEMA (ver `com_sistema`): a linha tem
+        // de bater com o cabecalho, e quantas colunas de sistema ha e coisa
+        // que muda de versao para versao do formato.
         let la = vec![
-            vec![
-                Value::Int(1),
-                txt("Adriano"),
-                Value::Bool(false),
-                Value::UInt(1),
-            ],
-            vec![
-                Value::Int(2),
-                txt("Maria"),
-                Value::Bool(false),
-                Value::UInt(2),
-            ],
-            vec![
-                Value::Int(3),
-                txt("João"),
-                Value::Bool(false),
-                Value::UInt(3),
-            ],
+            com_sistema(&a.esquema, vec![Value::Int(1), txt("Adriano")], 1),
+            com_sistema(&a.esquema, vec![Value::Int(2), txt("Maria")], 2),
+            com_sistema(&a.esquema, vec![Value::Int(3), txt("João")], 3),
         ];
         let b = Lado {
             prefixo: "p".into(),
@@ -905,30 +943,10 @@ mod testes {
             chave: vec![0],
         };
         let lb = vec![
-            vec![
-                Value::Int(1),
-                Value::Int(100),
-                Value::Bool(false),
-                Value::UInt(1),
-            ],
-            vec![
-                Value::Int(1),
-                Value::Int(200),
-                Value::Bool(false),
-                Value::UInt(2),
-            ],
-            vec![
-                Value::Int(2),
-                Value::Int(300),
-                Value::Bool(false),
-                Value::UInt(3),
-            ],
-            vec![
-                Value::Int(9),
-                Value::Int(400),
-                Value::Bool(false),
-                Value::UInt(4),
-            ],
+            com_sistema(&b.esquema, vec![Value::Int(1), Value::Int(100)], 1),
+            com_sistema(&b.esquema, vec![Value::Int(1), Value::Int(200)], 2),
+            com_sistema(&b.esquema, vec![Value::Int(2), Value::Int(300)], 3),
+            com_sistema(&b.esquema, vec![Value::Int(9), Value::Int(400)], 4),
         ];
         (a, la, b, lb)
     }
@@ -1232,7 +1250,8 @@ mod testes {
         };
 
         let (mut a, mut b) = (lista(p1()), lista(p2()));
-        let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &e1), (&mut b, &e2)];
+        let (ca, cb) = (cabecalho_do_esquema(&e1), cabecalho_do_esquema(&e2));
+        let mut partes: Vec<(&mut dyn Iterador, &Cabecalho)> = vec![(&mut a, &ca), (&mut b, &cb)];
         let r = unir(&mut partes, Uniao::Distinta, 100).unwrap();
         assert_eq!(r.linhas.len(), 3);
         assert_eq!(r.repetidas, 1);
@@ -1241,7 +1260,8 @@ mod testes {
         assert_eq!(r.colunas[0].nome, "codigo");
 
         let (mut a, mut b) = (lista(p1()), lista(p2()));
-        let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &e1), (&mut b, &e2)];
+        let (ca, cb) = (cabecalho_do_esquema(&e1), cabecalho_do_esquema(&e2));
+        let mut partes: Vec<(&mut dyn Iterador, &Cabecalho)> = vec![(&mut a, &ca), (&mut b, &cb)];
         let r = unir(&mut partes, Uniao::Tudo, 100).unwrap();
         assert_eq!(r.linhas.len(), 4);
         assert_eq!(r.repetidas, 0);
@@ -1275,7 +1295,8 @@ mod testes {
             Value::Bool(false),
             Value::UInt(2),
         ]]);
-        let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &e), (&mut b, &e)];
+        let (ca, cb) = (cabecalho_do_esquema(&e), cabecalho_do_esquema(&e));
+        let mut partes: Vec<(&mut dyn Iterador, &Cabecalho)> = vec![(&mut a, &ca), (&mut b, &cb)];
         let r = unir(&mut partes, Uniao::Distinta, 100).unwrap();
         assert_eq!(r.linhas.len(), 1, "linhas: {:?}", r.linhas);
         assert_eq!(r.repetidas, 1);
@@ -1304,7 +1325,8 @@ mod testes {
             Value::Bool(false),
             Value::UInt(7),
         ]]);
-        let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &e), (&mut b, &e)];
+        let (ca, cb) = (cabecalho_do_esquema(&e), cabecalho_do_esquema(&e));
+        let mut partes: Vec<(&mut dyn Iterador, &Cabecalho)> = vec![(&mut a, &ca), (&mut b, &cb)];
         let r = unir(&mut partes, Uniao::Distinta, 100).unwrap();
         assert_eq!(r.linhas.len(), 1, "linhas: {:?}", r.linhas);
         assert_eq!(r.repetidas, 1);
@@ -1318,7 +1340,8 @@ mod testes {
         let e = esquema_uniao("x");
         let mut a = lista(vec![vec![Value::Null, Value::Null]]);
         let mut b = lista(vec![vec![Value::Null, Value::Null]]);
-        let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &e), (&mut b, &e)];
+        let (ca, cb) = (cabecalho_do_esquema(&e), cabecalho_do_esquema(&e));
+        let mut partes: Vec<(&mut dyn Iterador, &Cabecalho)> = vec![(&mut a, &ca), (&mut b, &cb)];
         let r = unir(&mut partes, Uniao::Distinta, 100).unwrap();
         assert_eq!(r.linhas.len(), 1);
         assert_eq!(r.repetidas, 1);
@@ -1358,7 +1381,8 @@ mod testes {
         // 10,50 em escala 2 e 10,5000 em escala 4 -- o MESMO dinheiro.
         let mut a = lista(vec![vec![Value::Decimal(1050)]]);
         let mut b = lista(vec![vec![Value::Decimal(105_000)]]);
-        let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &d2), (&mut b, &d4)];
+        let (ca, cb) = (cabecalho_do_esquema(&d2), cabecalho_do_esquema(&d4));
+        let mut partes: Vec<(&mut dyn Iterador, &Cabecalho)> = vec![(&mut a, &ca), (&mut b, &cb)];
         let r = unir(&mut partes, Uniao::Tudo, 100).unwrap();
         // O cabeçalho sai na MAIOR escala, e os dois valores sao lidos por ela.
         assert_eq!(
@@ -1381,7 +1405,8 @@ mod testes {
         // nao pode depender de quem foi escrito primeiro.
         let mut a = lista(vec![vec![Value::Decimal(105_000)]]);
         let mut b = lista(vec![vec![Value::Decimal(1050)]]);
-        let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &d4), (&mut b, &d2)];
+        let (ca, cb) = (cabecalho_do_esquema(&d4), cabecalho_do_esquema(&d2));
+        let mut partes: Vec<(&mut dyn Iterador, &Cabecalho)> = vec![(&mut a, &ca), (&mut b, &cb)];
         let r = unir(&mut partes, Uniao::Tudo, 100).unwrap();
         assert_eq!(r.linhas[0][0], Value::Decimal(105_000));
         assert_eq!(r.linhas[1][0], Value::Decimal(105_000));
@@ -1414,7 +1439,8 @@ mod testes {
         );
         let mut a = lista(vec![vec![Value::Decimal(1050)]]);
         let mut b = lista(vec![vec![Value::Decimal(105_000)]]);
-        let mut partes: Vec<(&mut dyn Iterador, &Schema)> = vec![(&mut a, &d2), (&mut b, &d4)];
+        let (ca, cb) = (cabecalho_do_esquema(&d2), cabecalho_do_esquema(&d4));
+        let mut partes: Vec<(&mut dyn Iterador, &Cabecalho)> = vec![(&mut a, &ca), (&mut b, &cb)];
         let r = unir(&mut partes, Uniao::Distinta, 100).unwrap();
         assert_eq!(r.linhas.len(), 1, "{:?}", r.linhas);
         assert_eq!(r.repetidas, 1);
@@ -1424,7 +1450,7 @@ mod testes {
     fn parte_com_outra_quantidade_de_colunas_nao_empilha() {
         let e1 = esquema_uniao("a");
         let e2 = esq("b", vec![Column::new("codigo", ColumnType::Int4)]);
-        assert!(conferir_uniao(&[&e1, &e2]).is_err());
+        assert!(conferir_uniao(&[&cabecalho_do_esquema(&e1), &cabecalho_do_esquema(&e2)]).is_err());
     }
 
     /// Empilhar é por POSIÇÃO, não por nome: a conferência olha o tipo da
@@ -1439,7 +1465,9 @@ mod testes {
                 Column::new("codigo", ColumnType::Int4),
             ],
         );
-        let erro = conferir_uniao(&[&e1, &trocado]).unwrap_err().to_string();
+        let erro = conferir_uniao(&[&cabecalho_do_esquema(&e1), &cabecalho_do_esquema(&trocado)])
+            .unwrap_err()
+            .to_string();
         assert!(erro.contains("famílias diferentes"), "{erro}");
     }
 }

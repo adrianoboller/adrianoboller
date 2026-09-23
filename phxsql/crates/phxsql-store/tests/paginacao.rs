@@ -65,9 +65,11 @@ fn toda_tabela_nova_tem_rownum() {
     assert_eq!(e.colunas()[i].nome, COLUNA_ROWNUM);
     assert_eq!(e.colunas()[i].ty, ColumnType::UInt8);
     assert!(!e.colunas()[i].nullable);
-    // No fim, e depois da softdeleted.
-    assert_eq!(i, e.colunas().len() - 1);
+    // Depois da softdeleted, e antes das duas do carimbo (PSCH v10).
+    assert_eq!(i, e.colunas().len() - 3);
     assert_eq!(e.coluna_softdeleted(), Some(i - 1));
+    assert_eq!(e.coluna_rowstamp(), Some(i + 1));
+    assert_eq!(e.coluna_rowtime(), Some(i + 2));
 }
 
 #[test]
@@ -545,7 +547,7 @@ fn a_conferencia_reconta_as_marcadas() {
     assert_eq!(t.recontar_marcadas().unwrap(), 5);
 }
 
-/// A linha CURTA — só as colunas declaradas, sem nenhuma das duas de sistema —
+/// A linha CURTA — só as colunas declaradas, sem nenhuma das de sistema —
 /// tem de ser aceita na inclusão **e** na alteração.
 ///
 /// É o caso de toda tela e de todo cliente: quem monta a linha conhece as
@@ -558,9 +560,12 @@ fn linha_sem_as_duas_colunas_de_sistema_e_aceita() {
     let dir = DirTemp::novo("linha-curta");
     let mut t = Table::criar(&dir.0, esquema()).unwrap();
     let n = t.esquema().colunas().len();
-    assert_eq!(n, 4, "duas declaradas + softdeleted + rownum");
+    assert_eq!(
+        n, 6,
+        "duas declaradas + softdeleted + rownum + rowstamp + rowtime"
+    );
 
-    // Inclusão com 2 valores numa tabela de 4 colunas.
+    // Inclusão com 2 valores numa tabela de 6 colunas.
     let rowid = t.inserir(&linha(1)).unwrap();
     assert_eq!(rowid, 1);
 
@@ -579,9 +584,31 @@ fn linha_sem_as_duas_colunas_de_sistema_e_aceita() {
         Value::Str("x".into()),
         Value::Bool(false),
         Value::UInt(9),
+        Value::UInt(9),
+        Value::DateTime(0),
         Value::Int(0),
     ];
     assert!(t.inserir(&sobrando).is_err());
+
+    // E a faixa INTEIRA entre o mínimo e o total é aceita, uma a uma: o
+    // cliente escrito para o formato anterior manda as duas primeiras colunas
+    // de sistema e nenhuma das duas novas, e tem de continuar gravando.
+    for quantas in 0..=4usize {
+        let mut linha = vec![Value::Int(10 + quantas as i64), Value::Str("x".into())];
+        for extra in [
+            Value::Bool(false),
+            Value::UInt(0),
+            Value::UInt(0),
+            Value::DateTime(0),
+        ]
+        .into_iter()
+        .take(quantas)
+        {
+            linha.push(extra);
+        }
+        t.inserir(&linha)
+            .unwrap_or_else(|e| panic!("linha com {} valores recusada: {e}", linha.len()));
+    }
 }
 
 /// A pagina por INDICE que PARA devolve o mesmo que a que lia tudo.

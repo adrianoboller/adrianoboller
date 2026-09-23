@@ -52,11 +52,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 
+use phxsql_core::cifra;
 use phxsql_core::crc::{crc32, crc32_with};
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::schema::Schema;
 use phxsql_core::RowId;
 
+use crate::cofre;
 use crate::util::{
     agora, conferir_magic, escrever_em, ler_exato, por_i64, por_u16, por_u32, por_u64, Campos,
 };
@@ -65,6 +67,25 @@ pub const MAGIC_NDX: &[u8; 8] = b"PHXNDX\0\0";
 const CAB_LEN: usize = 128;
 const PAG_CAB: usize = 32;
 const VERSAO: u16 = 1;
+/// Versao do arquivo cuja PAGINA vai selada -- ver [`NdxFile::criar_selado`].
+///
+/// # Por que uma versao NOVA, e nao uma flag na 1
+///
+/// Pela mesma razao do `.reg` (`VERSAO_CIFRADO`): a pagina muda de tamanho
+/// util, e um leitor da versao 1 que abrisse este arquivo leria a etiqueta
+/// como entrada da folha e responderia busca com lixo. A versao faz ele
+/// RECUSAR, que e a unica resposta honesta.
+const VERSAO_SELADA: u16 = 2;
+/// Onde o material de cifra mora no cabecalho, nos bytes que ja eram
+/// reservados (53..124). O cabecalho **nao cresce**.
+const MATERIAL_EM: usize = 56;
+/// Bytes sorteados a cada gravacao de pagina, guardados nela.
+///
+/// Sao o que segura o par (chave, nonce) diferente quando a MESMA pagina e
+/// reescrita: o endereco da pagina sozinho se repetiria em toda gravacao, e
+/// nonce repetido com a mesma chave e a unica falha que quebra a cifra de
+/// fluxo sem quebrar a matematica dela. E a mesma conta do slot do `.reg`.
+const TEMPERO_LEN: usize = 8;
 pub const PAGINA_PADRAO: usize = 4096;
 
 #[allow(dead_code)]
@@ -301,6 +322,13 @@ pub struct NdxFile {
     arquivo: File,
     caminho: PathBuf,
     page_size: usize,
+    /// O material de cifra deste arquivo: sal, iteracoes e a chave derivada.
+    ///
+    /// [`cofre::Material::EM_CLARO`] em todo `.ndx` -- a arvore da TABELA
+    /// continua em claro por decisao registrada (`SEGURANCA.md` §11.3).
+    /// Cifrado so no `.fts` de tabela com coluna marcada indexada por texto,
+    /// e so quando o cofre esta ligado: ver [`NdxFile::criar_selado`].
+    material: cofre::Material,
     qtd_paginas: u64,
     pagina_livre: u64,
     indices: Vec<DescritorIndice>,
@@ -372,12 +400,44 @@ fn pag_set_dir(p: &mut [u8], v: u64) {
 }
 
 /// CRC da pagina, calculado sobre tudo menos os proprios 4 bytes do CRC.
-fn pag_crc(p: &[u8]) -> u32 {
-    crc32_with(crc32(&p[..28]), &p[32..])
+///
+/// `corpo` e onde a area util termina: `page_size` num arquivo em claro, e
+/// `page_size - rabo` num arquivo selado -- o tempero e a etiqueta ficam de
+/// FORA porque o CRC cobre o claro, e eles so existem depois de cifrar. Em
+/// claro `corpo == page_size` e a conta e byte a byte a mesma de sempre.
+fn pag_crc(p: &[u8], corpo: usize) -> u32 {
+    crc32_with(crc32(&p[..28]), &p[32..corpo])
 }
-fn pag_selar(p: &mut [u8]) {
-    let c = pag_crc(p);
+fn pag_selar(p: &mut [u8], corpo: usize) {
+    let c = pag_crc(p, corpo);
     por_u32(p, 28, c);
+}
+
+/// O dado associado da pagina selada: o numero dela e o cabecalho de 32 bytes.
+///
+/// O cabecalho entra inteiro porque e ele que fica EM CLARO no disco -- tipo,
+/// quantidade, vizinhas, filho da direita e o CRC do claro. Sem ele na
+/// etiqueta, trocar `qtd` de uma pagina nao seria detectado pela cifra, so
+/// pelo CRC; com ele, as duas conferencias amarram a mesma pagina. O numero
+/// impede trocar a pagina 7 pela 9 inteiras, que teriam cabecalhos plausiveis.
+fn aad_da_pagina(n: u64, cabecalho: &[u8]) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(8 + cabecalho.len());
+    aad.extend_from_slice(&n.to_le_bytes());
+    aad.extend_from_slice(cabecalho);
+    aad
+}
+
+/// A parte ESTAVEL do cabecalho que a prova do material amarra.
+///
+/// Fica de fora o que muda a cada gravacao -- contadores, raiz, marca de sujo
+/// --, pelo mesmo motivo do `.reg`: uma prova que mudasse com os contadores
+/// teria de ser refeita e reconferida toda vez sem proteger nada a mais.
+fn rotulo_da_prova(versao: u16, page_size: usize) -> Vec<u8> {
+    let mut r = Vec::with_capacity(MAGIC_NDX.len() + 6);
+    r.extend_from_slice(MAGIC_NDX);
+    r.extend_from_slice(&versao.to_le_bytes());
+    r.extend_from_slice(&(page_size as u32).to_le_bytes());
+    r
 }
 
 /// Quanto de cada folha a construcao em lote enche, em porcento.
@@ -474,10 +534,49 @@ impl NdxFile {
         Self::criar_com_pagina(caminho, esquema, PAGINA_PADRAO)
     }
 
+    /// Cria o arquivo com a PAGINA selada, quando o cofre esta ligado.
+    ///
+    /// # Cifrar o ARMAZENAMENTO, e nao a chave dentro do indice
+    ///
+    /// A chave continua em claro DENTRO da pagina -- e e por isso que a ordem
+    /// da B+tree sobrevive e nenhuma capacidade de busca se perde. O que some
+    /// do disco e a pagina inteira: quem copia o arquivo nao ve termo nenhum.
+    /// E o desenho do PostgreSQL, do MariaDB e do MySQL para proteger indice,
+    /// e entrou por aceite automatico dos tres maduros -- nenhuma pétrea
+    /// nossa se opoe, e o modelo de ameaca e o que `cofre.rs` ja declara:
+    /// disco levado, backup vazado, copia numa maquina que nao e esta.
+    ///
+    /// # Por que so o `.fts` chama
+    ///
+    /// Porque o pedido 340 e do `.fts`, e o `.ndx` da tabela e outra decisao,
+    /// registrada e em vigor (`SEGURANCA.md` §11.3). O mecanismo aqui serve
+    /// aos dois; ligar o `.ndx` muda o formato de TODA tabela indexada e paga
+    /// a cifra no laco quente do `inserir` -- e isso se decide medido e com o
+    /// DBA, nao de passagem.
+    ///
+    /// Cofre desligado devolve um arquivo em claro, versao 1, igual ao de
+    /// antes: a cifra e do PROCESSO e nao deste caminho.
+    pub fn criar_selado(caminho: impl AsRef<Path>, esquema: &Schema) -> Result<NdxFile> {
+        // `em_aead`: a pagina tem tamanho FIXO e o pacote FrogCript e 167
+        // bytes maior que o claro -- ele nao cabe dentro da pagina que
+        // cifraria. A restricao e de formato, e esta escrita em `Material`.
+        let material = cofre::Material::novo()?.em_aead();
+        Self::criar_com(caminho, esquema, PAGINA_PADRAO, material)
+    }
+
     pub fn criar_com_pagina(
         caminho: impl AsRef<Path>,
         esquema: &Schema,
         page_size: usize,
+    ) -> Result<NdxFile> {
+        Self::criar_com(caminho, esquema, page_size, cofre::Material::EM_CLARO)
+    }
+
+    fn criar_com(
+        caminho: impl AsRef<Path>,
+        esquema: &Schema,
+        page_size: usize,
+        material: cofre::Material,
     ) -> Result<NdxFile> {
         if !page_size.is_power_of_two() || page_size < 512 {
             return Err(PhxError::Esquema(format!(
@@ -496,6 +595,7 @@ impl NdxFile {
             arquivo,
             caminho,
             page_size,
+            material,
             qtd_paginas: 1, // pagina 0 = cabecalho + diretorio
             pagina_livre: 0,
             indices: Vec::new(),
@@ -537,11 +637,11 @@ impl NdxFile {
 
         let c = Campos(&cab);
         let versao = c.u16(8);
-        if versao != VERSAO {
+        if versao != VERSAO && versao != VERSAO_SELADA {
             return Err(PhxError::VersaoNaoSuportada {
                 arquivo: nome,
                 encontrada: versao,
-                suportada: VERSAO,
+                suportada: VERSAO_SELADA,
             });
         }
         if crc32(&cab[..124]) != c.u32(124) {
@@ -560,6 +660,29 @@ impl NdxFile {
         // ali, e zero e "limpo" -- que e a verdade para quem so escrevia
         // atraves. Nao ha migracao a fazer.
         let sujo = cab[52] != 0;
+
+        // A chave sai daqui, e a prova dentro do material recusa a senha
+        // errada AGORA -- e nao na primeira descida da arvore, que num indice
+        // recem-criado seria nunca. Versao 1 nao chega a perguntar pelo
+        // cofre: e o caminho de todo arquivo escrito antes desta versao.
+        let material = if versao == VERSAO_SELADA {
+            cofre::Material::ler(
+                &cab,
+                MATERIAL_EM,
+                &nome,
+                &rotulo_da_prova(versao, page_size),
+            )?
+        } else {
+            cofre::Material::EM_CLARO
+        };
+        if versao == VERSAO_SELADA && !material.cifrado() {
+            // A versao promete pagina selada e a flag do material diz que
+            // nao ha cifra. Seguir leria etiqueta como entrada de folha e
+            // responderia busca com lixo -- calado, que e o pior de tudo.
+            return Err(PhxError::Corrompido(format!(
+                "{nome} declara pagina selada e nao traz material de cifra no cabecalho"
+            )));
+        }
 
         let mut dir = vec![0u8; dir_len];
         ler_exato(&mut arquivo, CAB_LEN as u64, &mut dir)?;
@@ -608,6 +731,7 @@ impl NdxFile {
             arquivo,
             caminho,
             page_size,
+            material,
             qtd_paginas,
             pagina_livre,
             indices,
@@ -619,9 +743,46 @@ impl NdxFile {
         })
     }
 
+    /// Bytes que a selagem cobra no fim de cada pagina: o tempero e a
+    /// etiqueta. Zero num arquivo em claro, e ai nada muda de lugar.
+    fn rabo(&self) -> usize {
+        if self.material.cifrado() {
+            TEMPERO_LEN + self.material.acrescimo()
+        } else {
+            0
+        }
+    }
+
+    /// Onde a area util da pagina termina.
+    ///
+    /// E o unico numero que precisa saber da cifra: capacidade de folha,
+    /// capacidade de no interno e CRC saem daqui. Em claro ele e o
+    /// `page_size` inteiro, e todas as contas voltam a ser as de sempre.
+    fn corpo(&self) -> usize {
+        self.page_size - self.rabo()
+    }
+
+    /// Este arquivo grava a pagina selada?
+    pub fn selado(&self) -> bool {
+        self.material.cifrado()
+    }
+
+    /// Quantas entradas cabem numa FOLHA deste indice.
+    ///
+    /// Sai daqui, e nao de uma conta refeita no medidor: o custo do selo e um
+    /// numero publicado, e receita de numero copiada envelhece calada. Quem
+    /// quiser o custo divide a capacidade selada pela em claro -- as duas
+    /// saem desta mesma funcao.
+    pub fn capacidade_de_folha(&self, idx: usize) -> usize {
+        match self.indices.get(idx) {
+            Some(d) => (self.corpo() - PAG_CAB) / d.ck_len(),
+            None => 0,
+        }
+    }
+
     fn validar_capacidade(&self, ck_len: usize, nome: &str) -> Result<()> {
-        let cap_folha = (self.page_size - PAG_CAB) / ck_len;
-        let cap_interno = (self.page_size - PAG_CAB) / (ck_len + 8);
+        let cap_folha = (self.corpo() - PAG_CAB) / ck_len;
+        let cap_interno = (self.corpo() - PAG_CAB) / (ck_len + 8);
         if cap_folha < MIN_ENTRADAS || cap_interno < MIN_ENTRADAS {
             return Err(PhxError::Esquema(format!(
                 "indice {nome}: chave de {ck_len} bytes e grande demais para paginas de {} bytes \
@@ -655,9 +816,14 @@ impl NdxFile {
                 self.page_size
             )));
         }
+        let versao = if self.material.cifrado() {
+            VERSAO_SELADA
+        } else {
+            VERSAO
+        };
         let mut buf = vec![0u8; self.page_size];
         buf[0..8].copy_from_slice(MAGIC_NDX);
-        buf[8..10].copy_from_slice(&VERSAO.to_le_bytes());
+        buf[8..10].copy_from_slice(&versao.to_le_bytes());
         buf[10..12].copy_from_slice(&(CAB_LEN as u16).to_le_bytes());
         por_u32(&mut buf, 12, self.page_size as u32);
         por_u32(&mut buf, 16, self.indices.len() as u32);
@@ -670,6 +836,14 @@ impl NdxFile {
         // dizer "limpo" -- entao um `.ndx` escrito antes desta versao continua
         // sendo lido com o significado certo, sem migracao.
         buf[52] = u8::from(self.sujo);
+        // 56..96: o material de cifra, nos bytes que ja eram reservados. Em
+        // claro isto nao escreve nada, e o cabecalho fica byte a byte o que
+        // sempre foi.
+        self.material.gravar(
+            &mut buf,
+            MATERIAL_EM,
+            &rotulo_da_prova(versao, self.page_size),
+        );
         let crc = crc32(&buf[..124]);
         por_u32(&mut buf, 124, crc);
         buf[CAB_LEN..CAB_LEN + dir.len()].copy_from_slice(&dir);
@@ -690,10 +864,15 @@ impl NdxFile {
         }
         let mut p = vec![0u8; self.page_size];
         ler_exato(&mut self.arquivo, n * self.page_size as u64, &mut p)?;
+        // A cifra vem ANTES do CRC porque o CRC e do claro: ele existe para
+        // achar bit trocado no disco, e trocar a ordem faria ele conferir
+        // texto cifrado contra um numero que nunca cobriu texto cifrado.
+        self.abrir_pagina(n, &mut p)?;
+        let corpo = self.corpo();
         // O CRC e conferido na LEITURA DO ARQUIVO, e nao na do cache: a pagina
         // que esta em RAM ja passou por aqui, e conferir de novo pagaria o
         // mesmo CRC que este cache existe para nao pagar.
-        if pag_crc(&p) != Campos(&p).u32(28) {
+        if pag_crc(&p, corpo) != Campos(&p).u32(28) {
             return Err(PhxError::Corrompido(format!(
                 "CRC invalido na pagina {n} de {}",
                 self.caminho.display()
@@ -701,6 +880,42 @@ impl NdxFile {
         }
         self.guardar_no_cache(n, &p, false)?;
         Ok(p)
+    }
+
+    /// Decifra a pagina lida do disco, no lugar. Em claro, nao faz nada.
+    ///
+    /// ```text
+    /// [0..32]           cabecalho da pagina, EM CLARO
+    /// [32..corpo]       entradas, cifradas
+    /// [corpo..+8]       tempero sorteado NESTA gravacao
+    /// [corpo+8..fim]    etiqueta Poly1305
+    /// ```
+    ///
+    /// O cabecalho fica em claro de proposito, e nao e descuido: ele nao
+    /// guarda termo nenhum -- tipo, quantidade, vizinhas, filho da direita e
+    /// o CRC do claro --, e e por ele que a lista de paginas livres se
+    /// percorre sem chave e que `reparar` sabe o que tem na mao. O que o
+    /// adversario do `cofre.rs` quer esta nas ENTRADAS, e elas somem.
+    fn abrir_pagina(&self, n: u64, p: &mut [u8]) -> Result<()> {
+        if !self.material.cifrado() {
+            return Ok(());
+        }
+        let corpo = self.corpo();
+        let tempero = Campos(p).u64(corpo);
+        let nonce = cofre::nonce_de_pedaco(n, 0, 0, tempero);
+        let aad = aad_da_pagina(n, &p[..PAG_CAB]);
+        let mut guardado = p[PAG_CAB..corpo].to_vec();
+        guardado.extend_from_slice(&p[corpo + TEMPERO_LEN..]);
+        let claro =
+            self.material
+                .abrir(&nonce, &aad, &guardado, &self.caminho.display().to_string())?;
+        p[PAG_CAB..corpo].copy_from_slice(&claro);
+        // O rabo volta a zero em RAM para a pagina em memoria ser identica a
+        // que `nova_pagina` produz: tempero e etiqueta sao do DISCO, e cada
+        // gravacao sorteia os proprios. Deixa-los ali faria duas paginas de
+        // mesmo conteudo divergirem em RAM sem motivo.
+        p[corpo..].fill(0);
+        Ok(())
     }
 
     /// Poe a pagina no cache e grava a que for despejada SUJA.
@@ -751,8 +966,29 @@ impl NdxFile {
 
     /// Sela e escreve de verdade. So o despejo e o `sincronizar` chamam.
     fn escrever_pagina(&mut self, n: u64, p: &mut [u8]) -> Result<()> {
-        pag_selar(p);
-        escrever_em(&mut self.arquivo, n * self.page_size as u64, p)?;
+        let corpo = self.corpo();
+        pag_selar(p, corpo);
+        if self.material.cifrado() {
+            // Um buffer novo, e nao cifrar `p` no lugar: `p` volta ao cache
+            // como pagina EM CLARO. Cifrar no lugar poria texto cifrado no
+            // cache, e a proxima leitura serviria isso como entrada de folha.
+            let mut disco = p.to_vec();
+            // Oito bytes sorteados NESTA gravacao. Sem eles, reescrever a
+            // mesma pagina repetiria o par (chave, nonce) -- e num cifrador
+            // de fluxo isso entrega o XOR dos dois conteudos a quem tem as
+            // duas copias do arquivo. E a mesma conta do slot do `.reg`.
+            let tempero = cifra::sortear_u64();
+            por_u64(&mut disco, corpo, tempero);
+            let nonce = cofre::nonce_de_pedaco(n, 0, 0, tempero);
+            let aad = aad_da_pagina(n, &disco[..PAG_CAB]);
+            let selado = self.material.selar(&nonce, &aad, &disco[PAG_CAB..corpo]);
+            let claro_len = corpo - PAG_CAB;
+            disco[PAG_CAB..corpo].copy_from_slice(&selado[..claro_len]);
+            disco[corpo + TEMPERO_LEN..].copy_from_slice(&selado[claro_len..]);
+            escrever_em(&mut self.arquivo, n * self.page_size as u64, &disco)?;
+        } else {
+            escrever_em(&mut self.arquivo, n * self.page_size as u64, p)?;
+        }
         self.gravacoes += 1;
         Ok(())
     }
@@ -792,6 +1028,10 @@ impl NdxFile {
             let n = self.pagina_livre;
             let mut p = vec![0u8; self.page_size];
             ler_exato(&mut self.arquivo, n * self.page_size as u64, &mut p)?;
+            // Le o cabecalho CRU, sem decifrar, e continua certo num arquivo
+            // selado: a lista de livres mora no byte 4 do cabecalho da
+            // pagina, que fica em claro. Andar nela nao precisa de chave, que
+            // e metade da razao de o cabecalho nao ser cifrado.
             self.pagina_livre = pag_prox(&p);
             // A pagina volta da lista de livres para ser reescrita do zero: o
             // que o cache tem dela e o conteudo de antes de ela ser liberada.
@@ -1020,7 +1260,7 @@ impl NdxFile {
                 "chave completa ja existe no indice".into(),
             ));
         }
-        let cap = (self.page_size - PAG_CAB) / ck_len;
+        let cap = (self.corpo() - PAG_CAB) / ck_len;
 
         if qtd < cap {
             let inicio = PAG_CAB + pos * ck_len;
@@ -1083,7 +1323,7 @@ impl NdxFile {
     ) -> Result<Option<(Vec<u8>, u64)>> {
         let qtd = pag_qtd(p);
         let ent = ck_len + 8;
-        let cap = (self.page_size - PAG_CAB) / ent;
+        let cap = (self.corpo() - PAG_CAB) / ent;
 
         if qtd < cap {
             if pos < qtd {
@@ -1257,7 +1497,7 @@ impl NdxFile {
         }
 
         // ------------------------------------------------------------ folhas
-        let cap_folha = (self.page_size - PAG_CAB) / ck_len;
+        let cap_folha = (self.corpo() - PAG_CAB) / ck_len;
         let por_folha = (cap_folha * enchimento / 100).max(1);
         // Reparte em partes IGUAIS em vez de encher ate o teto e deixar o resto
         // na ultima: com 101 chaves e teto 100 sairiam 100 e 1, e a folha de uma
@@ -1299,7 +1539,7 @@ impl NdxFile {
 
         // ---------------------------------------------------- niveis de cima
         let ent = ck_len + 8;
-        let cap_interno = (self.page_size - PAG_CAB) / ent;
+        let cap_interno = (self.corpo() - PAG_CAB) / ent;
         let max_filhos = cap_interno + 1;
 
         while filhos.len() > 1 {

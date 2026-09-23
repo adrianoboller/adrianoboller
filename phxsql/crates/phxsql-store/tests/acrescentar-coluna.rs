@@ -26,7 +26,8 @@ use comum::DirTemp;
 
 use phxsql_core::paginacao::Paginacao;
 use phxsql_core::schema::{
-    Column, IndexColumn, IndexDef, IndiceDeTexto, Schema, COLUNA_ROWNUM, COLUNA_SOFTDELETED,
+    Column, IndexColumn, IndexDef, IndiceDeTexto, Schema, COLUNA_ROWNUM, COLUNA_ROWSTAMP,
+    COLUNA_ROWTIME, COLUNA_SOFTDELETED,
 };
 use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
@@ -245,7 +246,9 @@ fn a_coluna_nova_entra_antes_das_de_sistema() {
             "cidade",
             "situacao",
             COLUNA_SOFTDELETED,
-            COLUNA_ROWNUM
+            COLUNA_ROWNUM,
+            COLUNA_ROWSTAMP,
+            COLUNA_ROWTIME
         ]
     );
     assert_eq!(
@@ -304,7 +307,9 @@ fn com_softdeleted_no_meio_a_coluna_do_usuario_nao_se_move() {
             "nome",
             "cidade",
             "situacao",
-            COLUNA_ROWNUM
+            COLUNA_ROWNUM,
+            COLUNA_ROWSTAMP,
+            COLUNA_ROWTIME
         ]
     );
     let idx = &t.esquema().indices()[0];
@@ -565,7 +570,7 @@ fn obrigatoria_sem_padrao_com_linha_e_recusada() {
     assert!(e.contains("obrigatoria"), "{e}");
     assert!(e.contains("inventar dado"), "{e}");
     // E a tabela nao foi tocada.
-    assert_eq!(t.esquema().colunas().len(), 5);
+    assert_eq!(t.esquema().colunas().len(), 7);
     assert_eq!(
         t.ler(1).unwrap().unwrap()[NOME],
         Value::Str("cliente 0001".into())
@@ -855,7 +860,7 @@ fn padrao_que_viola_o_proprio_check_recusa_antes_de_tocar_no_reg() {
     assert!(e.contains("CHECK"), "{e}");
     assert!(e.contains("atualizar"), "{e}");
     // E a tabela NAO foi tocada: a recusa e antes do `.reg`.
-    assert_eq!(t.esquema().colunas().len(), 5);
+    assert_eq!(t.esquema().colunas().len(), 7);
     assert_eq!(
         t.ler(1).unwrap().unwrap()[NOME],
         Value::Str("cliente 0001".into())

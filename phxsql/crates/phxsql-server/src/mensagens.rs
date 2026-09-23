@@ -406,6 +406,45 @@ pub const FABRICA: &[MensagemFabrica] = &[
              en cifra_fio. Ver docs/SEGURANCA.md 7.1",
         ],
     },
+    // A quarta do mesmo interruptor, e a unica que morde por TABELA e nao por
+    // conexao: replicar tabela com coluna marcada exige o tunel da §7 (pedido
+    // 342). Ela tem de dizer as duas saidas escritas -- ligar a cifra na
+    // origem da replica, ou desmarcar a coluna --, porque quem a recebe e um
+    // laco de replicacao que ja funcionava ontem.
+    //
+    // Os seis textos cabem na celula `Str(250)` com folga de 17 bytes no pior
+    // deles (o alemao). A folga e deliberada: quem melhorar a redacao de uma
+    // traducao nao pode descobrir o teto pelo `mensagens_semear` caindo sem
+    // dizer qual linha estourou -- foi assim que esta mensagem nasceu, com
+    // 285 bytes no frances e 286 no alemao.
+    MensagemFabrica {
+        nome: "erro.replicar_marcada_exige_cifra",
+        textos: [
+            "a tabela {tabela} tem coluna marcada como dado pessoal e a imagem da \
+             linha vai em claro aqui: peca {\"op\":\"cifrar\"} antes de replicar, ou \
+             ponha \"cifra\": true na origem desta replica. Ver docs/SEGURANCA.md 11.8",
+            "la table {tabela} a une colonne marquée donnée personnelle et l'image \
+             de la ligne va en clair : demandez {\"op\":\"cifrar\"} avant de \
+             répliquer, ou mettez \"cifra\": true sur la source de cette réplique. \
+             Voir docs/SEGURANCA.md 11.8",
+            "table {tabela} has a column marked as personal data and the row image \
+             goes in the clear here: ask for {\"op\":\"cifrar\"} before replicating, \
+             or set \"cifra\": true on this replica's source. See \
+             docs/SEGURANCA.md 11.8",
+            "la tabella {tabela} ha una colonna marcata come dato personale e \
+             l'immagine della riga va in chiaro qui: chieda {\"op\":\"cifrar\"} prima \
+             di replicare, o metta \"cifra\": true sulla sorgente di questa replica. \
+             Vedi docs/SEGURANCA.md 11.8",
+            "die Tabelle {tabela} hat eine personenbezogen markierte Spalte und das \
+             Zeilenabbild geht im Klartext: fordern Sie {\"op\":\"cifrar\"} vor der \
+             Replikation an, oder setzen Sie \"cifra\": true an der Replikquelle. \
+             Siehe docs/SEGURANCA.md 11.8",
+            "la tabla {tabela} tiene una columna marcada como dato personal y la \
+             imagen de la fila va en claro aquí: pida {\"op\":\"cifrar\"} antes de \
+             replicar, o ponga \"cifra\": true en el origen de esta réplica. Ver \
+             docs/SEGURANCA.md 11.8",
+        ],
+    },
     // Amarracao da credencial ao canal (channel binding). O cliente pediu
     // `amarrar_canal` mas a conexao esta em claro -- nao ha tunel a que amarrar.
     // A saida honesta e mandar abrir o aperto antes do login, e nao aceitar uma

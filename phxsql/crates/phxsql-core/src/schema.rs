@@ -48,7 +48,35 @@ const MAGIC_ESQUEMA: &[u8; 4] = b"PSCH";
 /// sem atualizar o `.fts`, que e corrupcao silenciosa do indice. Com a versao
 /// nova ele RECUSA o arquivo (a leitura confere a faixa), e recusa alta e
 /// melhor que aceite errado.
-const VERSAO_ESQUEMA: u16 = 9;
+///
+/// # v10: as duas colunas de carimbo, e o `passo` da sequencia
+///
+/// Duas coisas entram juntas, num bump so, porque duas mudancas de formato em
+/// sequencia sao dois eventos de migracao onde cabe um.
+///
+/// A primeira NAO carrega byte de bloco: [`COLUNA_ROWSTAMP`] e
+/// [`COLUNA_ROWTIME`] sao colunas como as outras e entram na lista de colunas,
+/// igual ao que a v5 fez com o `rownum`. **O bump existe para RECUSAR o
+/// binario velho**: o `e_coluna_de_sistema` da v9 so conhece dois nomes, entao
+/// um motor v9 leria `rowstamp` como coluna comum do usuario -- ela apareceria
+/// na grade e no formulario, e alguem poderia digitar por cima do carimbo. A
+/// versao nos bytes 4..6 e a unica coisa que se le antes de decidir o que o
+/// resto significa.
+///
+/// A segunda carrega bytes: o `passo` da coluna `Sequence`, numa lista propria
+/// no FIM, com contagem a frente. O `inicio` da faixa **nao** vem aqui de
+/// proposito -- ele sai da identidade do NO (ver `no::inicio_da_sequencia` no
+/// `phxsql-store`), porque uma tabela nascida por replicacao e criada do MESMO
+/// bloco de esquema do source, byte a byte: um `inicio` gravado aqui chegaria
+/// igual nos dois nos e as faixas voltariam a colidir, que e exatamente o
+/// defeito que a faixa existe para consertar. O `passo` pode viajar porque e
+/// comum aos nos **por definicao**: ele e o denominador da faixa, e a faixa so
+/// e disjunta se os dois usarem o mesmo.
+///
+/// Truncado no bloco da v10 e ERRO, no molde da v9 e nao no da v6/v8: um
+/// `passo` que sumisse calado viraria faixa 1 e faria dois nos numerarem a
+/// mesma faixa outra vez.
+const VERSAO_ESQUEMA: u16 = 10;
 const VERSAO_ESQUEMA_MINIMA: u16 = 2;
 
 /// Nome da coluna de sistema que marca a linha como excluida sem excluir.
@@ -74,14 +102,95 @@ pub const COLUNA_SOFTDELETED: &str = "softdeleted";
 /// nao se perde na particao alfanumerica -- ela muda de campo.
 pub const COLUNA_ROWNUM: &str = "rownum";
 
+/// Contador de ordem de criacao da linha, por NO. Nunca empata, nunca recua.
+///
+/// # Por que um contador, e nao o relogio
+///
+/// A ordem do dono de 11/09/2026 e «impossivel o filho ter a mesma data do
+/// pai», e resolucao de relogio nao a cumpre: medido nesta casa, **12 eventos
+/// caem num unico milissegundo**. Nanossegundos tambem nao bastariam sozinhos
+/// -- dois `clock_gettime` seguidos podem devolver o mesmo valor, e um salto
+/// de NTP para tras faz o relogio recuar, que e o caso que a garantia existe
+/// para cobrir.
+///
+/// Entao a ordem mora num contador puro do processo, que so anda para a
+/// frente, e o relogio de parede fica em [`COLUNA_ROWTIME`], para leitura
+/// humana. E o que os tres motores maduros fazem por baixo (`xmin` no
+/// PostgreSQL, `DB_TRX_ID` no InnoDB, `BIGINT UNSIGNED` na alternativa do
+/// MariaDB ao `TIMESTAMP(6)`): a ordem sai de um contador, nunca do relogio.
+///
+/// # Por que NAO e um `u64` de nanos no mesmo campo
+///
+/// Medido com o `Json` desta casa: um carimbo em nanos tem magnitude 198,7x
+/// acima de 2^53, a grade do `f64` naquela faixa e de **256 ns**, e duas
+/// linhas gravadas a 1 ns de distancia sairiam IDENTICAS no fio. O avanco
+/// forcado sobreviveria no disco e morreria no soquete. Um contador que
+/// comeca em 1 so cruza 2^53 depois de 9x10^15 escritas -- 285 anos a um
+/// milhao por segundo.
+///
+/// # O alcance da garantia
+///
+/// **Por NO.** Entre dois masters em modo bidirecional os carimbos vem de dois
+/// contadores independentes e podem se intercalar. Nao se reivindica ordem
+/// global entre nos, porque ela nao esta provada.
+pub const COLUNA_ROWSTAMP: &str = "rowstamp";
+
+/// Relogio de parede de quando a linha foi criada, em milissegundos.
+///
+/// Pode EMPATAR entre duas linhas, e isso nao e defeito: e o que os tres
+/// motores maduros garantem de proposito dentro da mesma unidade de trabalho
+/// (o PostgreSQL chama de *feature* por escrito). Quem precisa de ordem le o
+/// [`COLUNA_ROWSTAMP`]; quem precisa saber que horas eram le esta.
+///
+/// Separar as duas e o que mantem as duas honestas: um campo unico que
+/// ordenasse E dissesse a hora teria de mentir sobre a hora depois de um salto
+/// de NTP para tras, reportando futuro ate o relogio alcancar o carimbo.
+pub const COLUNA_ROWTIME: &str = "rowtime";
+
 /// Este nome e de uma coluna do motor?
 ///
 /// Existe para os lugares que precisam ESCONDER as colunas de sistema --
 /// a grade, o formulario, a juncao -- nao terem cada um a sua lista. Coluna
 /// de sistema nova entra aqui e some dos tres de uma vez; a lista repetida em
 /// tres lugares e onde a quarta seria esquecida.
+///
+/// E ela estava repetida em QUATRO quando o carimbo entrou: a sincronia do
+/// DbLink, a chave unica do bidirecional, o `completar` do `Table` e a carga
+/// por texto perguntavam a mesma coisa a mao, com os literais crus. Os quatro
+/// passam por aqui agora.
 pub fn e_coluna_de_sistema(nome: &str) -> bool {
-    nome == COLUNA_SOFTDELETED || nome == COLUNA_ROWNUM
+    nome == COLUNA_SOFTDELETED
+        || nome == COLUNA_ROWNUM
+        || nome == COLUNA_ROWSTAMP
+        || nome == COLUNA_ROWTIME
+}
+
+/// O valor com que uma coluna de sistema entra numa linha que chegou sem ela.
+///
+/// `None` quando o nome nao e de coluna de sistema -- e quem chama usa isso
+/// para saber que a linha esta curta por OUTRO motivo, e deixar a aridade
+/// reclamar com a mensagem dela.
+///
+/// # Por que mora aqui, ao lado da lista
+///
+/// Porque os dois lugares que a usavam tinham um ramo de queda que MENTIA: o
+/// `completar` do `Table` caia em `Value::Bool(false)` e a carga por texto em
+/// `Value::Null`, os dois para qualquer nome que nao fosse um dos dois
+/// conhecidos. Uma coluna de sistema nova entrava calada no ramo errado --
+/// carimbo `false` numa coluna `UInt8` --, e o erro so aparecia como campo
+/// trocado. Com o valor ao lado do nome, quem acrescentar a quinta coluna de
+/// sistema acrescenta o valor dela no mesmo lugar ou nao compila a intencao.
+///
+/// Os zeros NAO sao valor final: o motor os troca antes de a linha ir ao
+/// disco (`numerar_linha` e `carimbar_linha`). Zero e o «ainda nao».
+pub fn valor_inicial_da_coluna_de_sistema(nome: &str) -> Option<crate::value::Value> {
+    use crate::value::Value;
+    match nome {
+        COLUNA_SOFTDELETED => Some(Value::Bool(false)),
+        COLUNA_ROWNUM | COLUNA_ROWSTAMP => Some(Value::UInt(0)),
+        COLUNA_ROWTIME => Some(Value::DateTime(0)),
+        _ => None,
+    }
 }
 
 // ------------------------------------- o modo ledger, reconhecido no esquema
@@ -599,6 +708,12 @@ pub struct Schema {
     payload_len: usize,
     /// Exigir motivo escrito para marcar uma linha como excluida.
     motivo_obrigatorio: bool,
+    /// Denominador da faixa da coluna `Sequence` (v10). 1 = sem faixa.
+    ///
+    /// Mora no esquema, e nao na configuracao do no, porque um `.reg`
+    /// restaurado noutro servidor precisa continuar sabendo de que faixa e.
+    /// O `inicio` NAO mora aqui -- ver a nota em [`VERSAO_ESQUEMA`].
+    passo_da_sequencia: u64,
 }
 
 /// Duas colunas da mesma tabela com o MESMO id, recusado na declaracao.
@@ -804,6 +919,36 @@ impl Schema {
                     ),
             );
         }
+        // v10, e nesta ordem: o carimbo DEPOIS do `rownum`, e o relogio depois
+        // do carimbo. Coluna de sistema nova entra sempre no fim -- a casa ja
+        // pagou tres vezes o preco de quem filtra pela primeira.
+        //
+        // O rotulo vai no `caption`, que e para isso: o NOME da coluna e
+        // estrutura e nao se traduz; o rotulo se traduz.
+        if !colunas.iter().any(|c| c.nome == COLUNA_ROWSTAMP) {
+            colunas.push(
+                Column::new(COLUNA_ROWSTAMP, ColumnType::UInt8)
+                    .obrigatoria()
+                    .com_caption("Ordem de criacao")
+                    .com_descricao(
+                        "Contador de criacao deste servidor. Nunca empata e \
+                         nunca recua: e por ele que se prova que o pai veio \
+                         antes do filho. O motor preenche.",
+                    ),
+            );
+        }
+        if !colunas.iter().any(|c| c.nome == COLUNA_ROWTIME) {
+            colunas.push(
+                Column::new(COLUNA_ROWTIME, ColumnType::DateTime)
+                    .obrigatoria()
+                    .com_caption("Criada em")
+                    .com_descricao(
+                        "Relogio de parede de quando a linha foi criada. \
+                         Pode empatar entre duas linhas; para ordem use \
+                         a coluna de ordem de criacao.",
+                    ),
+            );
+        }
         let nome = nome.into();
         conferir_ids_repetidos(&nome, &colunas)?;
         let esquema = Schema::do_disco(nome, colunas, indices)?;
@@ -984,6 +1129,42 @@ impl Schema {
             }
         }
 
+        // v10, no mesmo molde das duas de cima: quem recria a tabela a mao
+        // pode declarar as colunas do motor, mas nao com outro tipo. Um
+        // `rowstamp` Str seria uma coluna comum com nome reservado, e o motor
+        // passaria a carimbar ordem num campo que o usuario le como texto.
+        if let Some(c) = colunas.iter().find(|c| c.nome == COLUNA_ROWSTAMP) {
+            if c.ty != ColumnType::UInt8 {
+                return Err(PhxError::Esquema(format!(
+                    "a coluna {COLUNA_ROWSTAMP} e do motor e tem de ser UInt8; \
+                     esta declarada como {:?}",
+                    c.ty
+                )));
+            }
+            if c.nullable {
+                return Err(PhxError::Esquema(format!(
+                    "a coluna {COLUNA_ROWSTAMP} nao pode aceitar nulo: \
+                     nulo nao se compara com nulo, e e a comparacao que prova \
+                     que o pai veio antes do filho"
+                )));
+            }
+        }
+        if let Some(c) = colunas.iter().find(|c| c.nome == COLUNA_ROWTIME) {
+            if c.ty != ColumnType::DateTime {
+                return Err(PhxError::Esquema(format!(
+                    "a coluna {COLUNA_ROWTIME} e do motor e tem de ser DateTime; \
+                     esta declarada como {:?}",
+                    c.ty
+                )));
+            }
+            if c.nullable {
+                return Err(PhxError::Esquema(format!(
+                    "a coluna {COLUNA_ROWTIME} nao pode aceitar nulo: \
+                     linha sem hora de criacao nao se ordena por data"
+                )));
+            }
+        }
+
         let bitmap_len = colunas.len().div_ceil(8);
         let mut offsets = Vec::with_capacity(colunas.len());
         let mut pos = bitmap_len;
@@ -1003,6 +1184,10 @@ impl Schema {
             bitmap_len,
             payload_len: pos,
             motivo_obrigatorio: false,
+            // Ausente = 1, o mesmo padrao do byte `verificar` da v7: tabela
+            // gravada antes da v10 nao tem faixa, e faixa 1 e exatamente o
+            // que ela sempre teve.
+            passo_da_sequencia: 1,
         })
     }
 
@@ -1021,6 +1206,53 @@ impl Schema {
     /// `None` numa tabela gravada antes da v5 do esquema.
     pub fn coluna_rownum(&self) -> Option<usize> {
         self.colunas.iter().position(|c| c.nome == COLUNA_ROWNUM)
+    }
+
+    /// Posicao da coluna de sistema `rowstamp`.
+    ///
+    /// `None` numa tabela gravada antes da v10 do esquema -- e quem pede a
+    /// garantia da ordem recebe essa explicacao, em vez de ler lixo.
+    pub fn coluna_rowstamp(&self) -> Option<usize> {
+        self.colunas.iter().position(|c| c.nome == COLUNA_ROWSTAMP)
+    }
+
+    /// Posicao da coluna de sistema `rowtime`.
+    ///
+    /// `None` numa tabela gravada antes da v10 do esquema.
+    pub fn coluna_rowtime(&self) -> Option<usize> {
+        self.colunas.iter().position(|c| c.nome == COLUNA_ROWTIME)
+    }
+
+    /// Denominador da faixa da `Sequence`. 1 = sem faixa (o padrao).
+    pub fn passo_da_sequencia(&self) -> u64 {
+        self.passo_da_sequencia
+    }
+
+    /// Declara a faixa da `Sequence`: este no entrega um numero a cada `passo`.
+    ///
+    /// # Por que recusa aqui, e nao na gravacao
+    ///
+    /// A mesma decisao do `ao_excluir`: uma tabela nasce uma vez e grava um
+    /// milhao de vezes. Passo declarado numa tabela sem `Sequence` e um
+    /// esquema que nunca faria nada -- e campo aceito e ignorado e pior que
+    /// campo recusado, porque o recusado ninguem acha que funcionou.
+    pub fn com_passo_da_sequencia(mut self, passo: u64) -> Result<Schema> {
+        if passo == 0 {
+            return Err(PhxError::Esquema(
+                "o passo da sequencia nao pode ser 0: a faixa seria vazia e \
+                 nenhum numero caberia nela"
+                    .into(),
+            ));
+        }
+        if passo > 1 && self.coluna_sequencia().is_none() {
+            return Err(PhxError::Esquema(format!(
+                "a tabela {} nao tem coluna Sequence, entao nao ha faixa para \
+                 dividir entre os nos",
+                self.nome
+            )));
+        }
+        self.passo_da_sequencia = passo;
+        Ok(self)
     }
 
     /// As colunas marcadas como dado pessoal, com a posicao e o grau.
@@ -1282,6 +1514,12 @@ impl Schema {
             .com_indices_de_texto(textos)?
             .com_paginacao(paginacao)?;
         let novo = novo.com_motivo_obrigatorio(self.motivo_obrigatorio);
+        // A faixa entra pelo MESMO caminho do indice de texto, e pelo mesmo
+        // motivo medido em 18/09/2026: `do_disco` monta um esquema novo e o
+        // que nao se carrega aqui volta ao padrao. Uma faixa que virasse 1 ao
+        // acrescentar uma coluna poria os dois nos a numerar a mesma faixa
+        // outra vez -- calado, e so aparecendo na proxima colisao.
+        let novo = novo.com_passo_da_sequencia(self.passo_da_sequencia)?;
         // O TERCEIRO caminho de declarar, e o unico que ve duas tabelas: a
         // guarda do ledger confere o RESULTADO, e so' quando a origem ainda
         // era legitima. Assim a coluna marcada nao entra numa cadeia, e uma
@@ -1713,6 +1951,25 @@ impl Schema {
                 escrever_texto(&mut out, e.as_ref().map_or("", Expressao::texto));
             }
         }
+        // v10: a faixa da `Sequence`, numa lista PROPRIA com contagem.
+        //
+        // Lista com contagem, e nao um `u64` solto, mesmo so havendo uma
+        // `Sequence` por tabela hoje: lista com contagem detecta truncamento,
+        // campo solto nao. E lista no FIM, nao campo dentro do laco de
+        // colunas: campo no meio do laco obriga cada versao antiga a um desvio
+        // dentro da desserializacao, que e onde nasce o campo deslocado que
+        // ainda passa no CRC (o erro que a primeira v8 cometeu).
+        //
+        // So o `passo`. O `inicio` nao vem aqui -- ver a nota em
+        // `VERSAO_ESQUEMA`.
+        match self.coluna_sequencia() {
+            Some(i) => {
+                out.extend_from_slice(&1u16.to_le_bytes());
+                out.extend_from_slice(&(i as u16).to_le_bytes());
+                out.extend_from_slice(&self.passo_da_sequencia.to_le_bytes());
+            }
+            None => out.extend_from_slice(&0u16.to_le_bytes()),
+        }
         out
     }
 
@@ -1902,6 +2159,26 @@ impl Schema {
             }
         }
 
+        // v10: a faixa da `Sequence`. Truncado aqui e ERRO, e nao «fica sem»
+        // como na v6 e na v8: um `passo` que sumisse calado viraria faixa 1, e
+        // dois nos voltariam a numerar a mesma faixa -- a colisao que a faixa
+        // existe para impedir, agora produzida pelo conserto e em silencio.
+        let mut passo = 1u64;
+        if versao >= 10 {
+            let truncado =
+                || PhxError::Esquema("bloco da faixa da sequencia (v10) truncado".into());
+            let n = leitor.u16().map_err(|_| truncado())?;
+            for _ in 0..n {
+                let _coluna = leitor.u16().map_err(|_| truncado())?;
+                passo = leitor.u64().map_err(|_| truncado())?;
+                if passo == 0 {
+                    return Err(PhxError::Esquema(
+                        "o bloco da faixa (v10) traz passo 0, que e faixa vazia".into(),
+                    ));
+                }
+            }
+        }
+
         // `do_disco`, e nao `new`: a lista de colunas gravada e a verdade
         // inteira. Ver a nota em `VERSAO_ESQUEMA`.
         Schema::do_disco(nome, colunas, indices)?
@@ -1909,6 +2186,15 @@ impl Schema {
             .com_chaves_estrangeiras(fks)
             .map(|e| e.com_paginacao_do_disco(paginacao))
             .map(|e| e.com_motivo_obrigatorio(motivo_obrigatorio))
+            // Direto no campo, e nao pelo `com_passo_da_sequencia`: o
+            // construtor e o caminho de DECLARAR e recusa passo em tabela sem
+            // `Sequence`; aqui e o caminho de LER o que ja esta gravado, e
+            // recusar abrir por causa de um byte que so existe quando ha
+            // `Sequence` seria a guarda nova batendo no dado antigo.
+            .map(|mut e| {
+                e.passo_da_sequencia = passo;
+                e
+            })
     }
 }
 
@@ -2090,27 +2376,67 @@ mod tests {
     #[test]
     fn layout_do_payload() {
         let s = esquema_clientes();
-        // 6 declaradas + softdeleted + rownum = 8, e o bitmap ainda cabe em 1.
-        assert_eq!(s.colunas().len(), 8);
-        assert_eq!(s.bitmap_len(), 1);
-        assert_eq!(s.offset_coluna(0).unwrap(), 1);
-        assert_eq!(s.offset_coluna(1).unwrap(), 9);
-        assert_eq!(s.offset_coluna(2).unwrap(), 69);
-        // 1 + 8 + 60 + 14 + 16 + 16 + 16 + 1 do softdeleted + 8 do rownum
-        assert_eq!(s.payload_len(), 140);
+        // 6 declaradas + softdeleted + rownum + rowstamp + rowtime = 10, e com
+        // 10 o bitmap ja precisa de 2 bytes (`div_ceil(8)`).
+        assert_eq!(s.colunas().len(), 10);
+        assert_eq!(s.bitmap_len(), 2);
+        assert_eq!(s.offset_coluna(0).unwrap(), 2);
+        assert_eq!(s.offset_coluna(1).unwrap(), 10);
+        assert_eq!(s.offset_coluna(2).unwrap(), 70);
+        // 2 de bitmap + 8 + 60 + 14 + 16 + 16 + 16 + 1 do softdeleted
+        // + 8 do rownum + 8 do rowstamp + 8 do rowtime
+        assert_eq!(s.payload_len(), 157);
     }
 
-    /// A ordem das duas colunas de sistema e parte do formato: `rownum` entra
-    /// DEPOIS de `softdeleted`, e nao antes. Trocar a ordem deslocaria o
-    /// offset da softdeleted em toda tabela ja gravada na v4.
+    /// A NONA coluna empurra o bitmap de 1 para 2 bytes, e com ele todos os
+    /// offsets.
+    ///
+    /// Nao e defeito e nao quebra tabela nenhuma -- o `bitmap_len` sai da
+    /// lista de colunas GRAVADA, entao um arquivo antigo continua lido com o
+    /// bitmap dele --, mas quem escrever migracao precisa saber: a coluna de 8
+    /// bytes faz o payload crescer 9 quando ela e a nona, e 8 quando nao e.
+    #[test]
+    fn a_nona_coluna_empurra_o_bitmap() {
+        let oito = Schema::do_disco(
+            "t",
+            (0..8)
+                .map(|i| Column::new(format!("c{i}"), ColumnType::Int1))
+                .collect(),
+            vec![],
+        )
+        .unwrap();
+        let nove = Schema::do_disco(
+            "t",
+            (0..9)
+                .map(|i| Column::new(format!("c{i}"), ColumnType::Int1))
+                .collect(),
+            vec![],
+        )
+        .unwrap();
+        assert_eq!(oito.bitmap_len(), 1);
+        assert_eq!(nove.bitmap_len(), 2);
+        assert_eq!(
+            nove.payload_len() - oito.payload_len(),
+            2,
+            "1 de dado + 1 de bitmap"
+        );
+    }
+
+    /// A ordem das colunas de sistema e parte do formato: cada uma entra
+    /// DEPOIS da anterior, nunca antes. Trocar a ordem deslocaria o offset de
+    /// todas as seguintes em toda tabela ja gravada.
     #[test]
     fn as_colunas_de_sistema_saem_nesta_ordem() {
         let s = esquema_clientes();
         let n = s.colunas().len();
-        assert_eq!(s.coluna_softdeleted(), Some(n - 2));
-        assert_eq!(s.coluna_rownum(), Some(n - 1));
-        assert_eq!(s.colunas()[n - 1].ty, ColumnType::UInt8);
-        assert!(!s.colunas()[n - 1].nullable);
+        assert_eq!(s.coluna_softdeleted(), Some(n - 4));
+        assert_eq!(s.coluna_rownum(), Some(n - 3));
+        assert_eq!(s.coluna_rowstamp(), Some(n - 2));
+        assert_eq!(s.coluna_rowtime(), Some(n - 1));
+        assert_eq!(s.colunas()[n - 3].ty, ColumnType::UInt8);
+        assert_eq!(s.colunas()[n - 2].ty, ColumnType::UInt8);
+        assert_eq!(s.colunas()[n - 1].ty, ColumnType::DateTime);
+        assert!(s.colunas()[n - 4..].iter().all(|c| !c.nullable));
     }
 
     #[test]
@@ -2122,7 +2448,14 @@ mod tests {
     }
 
     /// A coluna de sistema entra por ultimo, e so por ultimo: as colunas do
-    /// usuario nao podem mudar de offset por causa dela.
+    /// usuario nao podem mudar de ORDEM nem de posicao dentro do payload por
+    /// causa dela.
+    ///
+    /// A comparacao desconta o bitmap de proposito, e isso e medido e nao
+    /// estilo: com dez colunas o bitmap passa a ocupar 2 bytes, entao todo
+    /// offset absoluto anda 1. O que nao pode andar e a posicao RELATIVA de
+    /// cada coluna do usuario -- e ela nao anda, que e o que faz um arquivo
+    /// gravado com seis colunas continuar sendo lido com os offsets dele.
     #[test]
     fn softdeleted_entra_no_fim_e_nao_desloca_ninguem() {
         let com = esquema_clientes();
@@ -2134,15 +2467,15 @@ mod tests {
         .unwrap();
 
         let i = com.coluna_softdeleted().unwrap();
-        assert_eq!(i, com.colunas().len() - 2, "a softdeleted saiu do lugar");
+        assert_eq!(i, com.colunas().len() - 4, "a softdeleted saiu do lugar");
         assert_eq!(com.colunas()[i].ty, ColumnType::Bool);
         assert!(!com.colunas()[i].nullable);
         assert!(sem.coluna_softdeleted().is_none());
 
         for j in 0..sem.colunas().len() {
             assert_eq!(
-                com.offset_coluna(j).unwrap(),
-                sem.offset_coluna(j).unwrap(),
+                com.offset_coluna(j).unwrap() - com.bitmap_len(),
+                sem.offset_coluna(j).unwrap() - sem.bitmap_len(),
                 "a coluna {j} mudou de lugar"
             );
         }

@@ -244,7 +244,15 @@ fn terreno_com(
         senha: String::new(),
         cada_minutos: 0,
         hora: String::new(),
-        cifra: false,
+        // O TUNEL segue a MARCA, e nao o gosto do teste: desde o pedido 342 o
+        // `op_replicar` recusa servir a imagem de tabela com coluna marcada
+        // por conexao em claro. O cenario marcado desta bateria mede o GRITO
+        // do conflito, nao o portao da cifra -- entao ele sobe pelo unico
+        // caminho que a lei nova deixa de pe, e o cenario sem marca continua
+        // em claro exatamente como sempre subiu. As duas linhas juntas sao o
+        // ALCANCE do 342 visto pelo soquete: marcada exige, sem marca nao
+        // muda.
+        cifra: marcado,
         chave_do_fio: String::new(),
     }];
     let a = subir(c, porta_a);

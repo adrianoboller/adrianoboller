@@ -1780,7 +1780,7 @@ Toda escolha aqui deixa algo em claro. Esconder isso seria pior que não cifrar.
 | o **tamanho** de um `Memo` marcado | o bloco tem o comprimento no cabeçalho |
 | o **`.ndx` inteiro**, o `.pag`, o catálogo | não entraram nesta rodada |
 | **o tráfego** | esta cifra é do arquivo em repouso. O fio tem a sua, e é outra coisa (§7) — e ela não é TLS |
-| **o `.fts` sobre a coluna marcada** | o índice de texto guarda o **termo inteiro**, e por um motivo pior que o do `.ndx`: ele quebra o texto em palavras e grava cada uma como chave de um `.ndx` próprio (`fts.rs:238`). Onde o `.ndx` vaza o valor da coluna, o `.fts` vaza o **vocabulário** dela. `fts.rs` tem zero menção a cofre ou cifra — pedido 340, e o nome dele nesta tabela é novo de 18/09/2026 |
+| ~~o `.fts` sobre a coluna marcada~~ **FECHADO em 23/09/2026 (pedido 340)** | Estava aqui porque o índice de texto guardava o **termo inteiro**: ele quebra o texto em palavras e grava cada uma como chave de um `.ndx` próprio, e onde o `.ndx` vaza o valor da coluna o `.fts` vazava o **vocabulário** dela. Hoje a **página** do `.fts` vai selada — ver §11.12 —, e o que sobra em claro ali é só o cabeçalho de 32 bytes da página, que não guarda termo nenhum |
 | **a marca `.tx` do `COMMIT`** | **FECHADO em 22/09/2026 — esta linha estava velha nas DUAS afirmações dela, e conferi as duas no fonte.** (1) «Nasce `0644`»: hoje `transacao::criar_privado` usa `create_new` + `mode(0o600)`, e há teste que falha se voltar a `File::create`. (2) «É o único lugar do motor que tira o valor do selo e o devolve ao disco sem selo»: a marca ganhou uma **v4** que carrega o material de cifra no cabeçalho e **sela o payload de cada operação** quando o cofre está ligado — o `transacao.rs` tinha **zero** menção a cofre/cifra/selar quando o pedido 354 nasceu e tem **30** hoje. A v3 continua sendo o que se escreve com o cofre desligado, e aí o `.tx` está em claro como todo o resto — o que não é vazamento **deste** arquivo. Pedido 354, **fechado**; o rótulo BLOQUEIO sai daqui. |
 | o **hash do bloco** numa tabela modo ledger | `sha256` **sem sal** do conteúdo canônico, gravado na coluna `hash`, que não é marcada e por isso não é cifrada (`ledger.rs:199`, `:218`). Ao lado do valor selado fica um oráculo de confirmação exato e offline — pedido 355, nomeado em 18/09/2026 |
 | o **`perfil.txt`** de uma tabela cifrada pela MARCA e ausente de `cifra.tabelas` | o Profiler cega por `config.cifra.tabelas` (`profiler.rs:721`) e a cifra acontece por `DadoPessoal` (`reg.rs:275`): dois campos, uma garantia — pedido 356, nomeado em 18/09/2026 |
@@ -1795,13 +1795,29 @@ cifrado, o teste cai, e cair é o aviso para apagar esta linha da tabela acima.
 > **Um banco que diz «cifrado» e vaza a chave pelo índice está mentindo para o
 > usuário.** Uma tabela com coluna marcada e índice sobre ela protege o
 > `.reg` copiado, e **não** protege contra quem copiou o `.ndx` junto. Quem
-> precisa dos dois deve tirar o índice da coluna sensível. **E tirar a árvore não
-> basta:** o índice de TEXTO é outro arquivo e sobrevive à remoção do `.ndx`,
-> guardando o vocabulário inteiro da coluna (pedido 340) — quem seguir só a
-> primeira metade deste conselho continua vazando, convencido de que fechou.
+> precisa dos dois deve tirar o índice da coluna sensível.
 > A lista acima é usada como **inventário**, e em 18/09/2026 ela ganhou seis
 > linhas de uma vez: nenhuma representação nova, todas antigas e nenhuma
 > listada.
+
+E o conselho acima **mudou de tamanho em 23/09/2026**, o que vale mais que a
+linha que saiu da tabela. Ele dizia «tirar a árvore não basta: o índice de
+TEXTO é outro arquivo e sobrevive à remoção do `.ndx`». Isso era verdade
+enquanto o `.fts` era um `.ndx` em claro. Hoje **o `.fts` se sela sozinho** —
+quem declarou a coluna como dado pessoal não precisa tirar índice de texto
+nenhum, e continua com a busca por palavra inteira. **Quem ainda tem de
+escolher é só o dono do `.ndx`**, e por um motivo que não mudou: ali a chave
+é comparada, e cifrar a chave destrói a ordem.
+
+A diferença entre os dois casos é o que a saída (d) do pedido 340 comprou, e
+ela cabe numa frase: **cifrar o ARMAZENAMENTO não é cifrar a chave.** A
+página do `.fts` some inteira do disco, e dentro dela a chave continua em
+claro e continua comparável — é assim que o PostgreSQL, o MariaDB e o MySQL
+protegem índice, e foi por isso que entrou por aceite automático dos três
+maduros. O `.ndx` poderia usar o mesmo mecanismo (ele é o mesmo código,
+`NdxFile::criar_selado`), e **não usa**: é mudança de formato de toda tabela
+indexada e paga a cifra no laço quente do `inserir`. Isso se decide medido e
+com o DBA, não de passagem — está em `docs/PENDENCIAS.md`.
 
 ### 11.4 O modo FrogCript
 
@@ -2063,10 +2079,78 @@ tiver a **mesma chave** — e a chave sai da senha **mais o sal do arquivo**, qu
 É o mesmo limite que o envelope da §10.5 resolveria: com a chave da tabela
 sorteada e envelopada, ela pode ser entregue à réplica sem entregar a senha
 mestra. Enquanto o envelope não existe, a recomendação é **não replicar tabela
-com coluna externa marcada**. O tráfego da replicação hoje pode ir dentro da
-cifra do fio (§7), com `"cifra": true` na origem — o que reduz o problema dessa
-mesma frase, e não o elimina: a réplica continua recebendo o valor decifrado,
-porque quem o decifra é o source.
+com coluna externa marcada**.
+
+#### A assimetria, e o que ela custou (pedido 342, fechado em 23/09/2026)
+
+O parágrafo acima descrevia **metade** do que acontece, e a metade que faltava
+errava para o lado contrário. Dito com precisão, e medido em 23/09/2026 com o
+cofre ligado:
+
+```
+rowid=1  imagem=192 B  |  nome EM CLARO na imagem: SIM  |  memo em claro: nao
+         payload=90 B     externos=98 B
+```
+
+**O total não é a guarda; os dois vereditos são** — e isto é uma correção
+paga aqui. A primeira redação desta seção citava **146 B**, medido seis dias
+antes, e o número **não reproduz mais**: a largura do payload sobe a cada
+coluna de sistema nova (são sete hoje, 89 bytes mais 1 de mapa de nulos) e o
+pedaço dos externos sobe com o acréscimo da cifra do `.memo`. É a lei da casa
+cobrada no próprio documento que a escreve: *número digitado à mão envelhece
+calado.* Por isso o teste que trava esta seção
+(`tests/imagem-de-replicacao-com-coluna-marcada.rs`) afirma **inline presente
+e externo ausente**, nunca um tamanho.
+
+- a coluna **externa** marcada (`Memo`/`Bin`) viaja **selada** — e isso foi
+  deliberado: o comentário em `Table::conteudo_externo` diz que decifrar ali
+  poria o texto claro dentro da imagem do diário e dentro da lixeira;
+- a coluna **inline** marcada viaja **em claro**, pelo mesmo cano e no mesmo
+  evento, porque `inserir` entrega o payload já decifrado a quem monta a
+  imagem.
+
+**Nenhuma das duas está certa, e elas erram para lados opostos**: externa
+selada mantém a confidencialidade e **quebra a replicação** (a réplica não tem
+chave compatível — o sal é por arquivo, pedido 344); inline em claro faz a
+replicação funcionar e **quebra a confidencialidade**. É a forma exata de
+172/173/176 — *o conserto entrou no caminho que o motivou e o irmão ficou*, e
+o cuidado estava escrito e alcançava metade da linha.
+
+#### A decisão: a cifra do fio passa a ser EXIGIDA
+
+Decisão do dono. Das duas saídas, a de selar a faixa marcada dentro da imagem
+está **bloqueada com número** (pedido 344: a réplica recusa com «ou o dado foi
+alterado, ou a chave não é a que gravou» mesmo com a mesma senha nos dois
+lados). Então **o que fecha o furo é o CANAL, e não a imagem**:
+
+> **`replicar` recusa uma tabela com coluna marcada quando o fio desta conexão
+> não está cifrado.** Pela porta de dados, «cifrado» é o aperto de mão da §7
+> ter acontecido nesta conexão. Pelas portas HTTP não há túnel nenhum, e o
+> veredito sai de `cifra_fio.exigir`: com ela ligada, o `portao_de_rede_http`
+> já recusou tudo que não veio por porta com `atras_de_proxy` declarado, então
+> chegar até o `replicar` **é** a prova da declaração. Sem fio (job agendado,
+> rotina interna, ponte MCP) não há por onde vazar.
+
+**Esta guarda é IMPOSTA, e não pedida — e a exceção é consciente.** A lei da
+casa manda guarda nova nascer pedida, para não quebrar cliente que já
+funciona. Aqui quebrar é o ponto: quem replica coluna marcada em claro hoje
+está pondo dado pessoal no fio, e um interruptor para continuar seria a
+permissão escrita de vazar. **O que segura a lei é o ALCANCE**: o portão olha
+`Table::tem_dado_pessoal`, e tabela sem coluna marcada não é tocada por linha
+nenhuma dele — continua replicando exatamente como antes. É isso que
+`sem_coluna_marcada_replicar_em_claro_continua` trava.
+
+Quem replica hoje **já passa**: `replicacao.origens[].cifra` nasce ligada
+desde 18/09/2026, e `replica::ligar_com_prazo` faz o aperto antes do login.
+Quem escreveu `"cifra": false` no arquivo tem de tirar essa linha — ou
+desmarcar a coluna, que é a outra saída e está na mensagem de recusa.
+
+E a imagem **continua** carregando o valor inline em claro: isso não foi
+consertado, foi **cercado**. A prova está travada nos dois sentidos em
+`crates/phxsql-store/tests/imagem-de-replicacao-com-coluna-marcada.rs`, que
+exige o inline presente e o externo ausente — se um dia a imagem passar a
+levar a faixa selada, aquele teste cai, e cair é o aviso para reescrever esta
+seção e reabrir o 344.
 
 ### 11.9 O que os testes provam, e a prova real
 
@@ -2183,6 +2267,105 @@ plausível não é diagnóstico medido, **e o errado sobrevive melhor quando o
 conserto funcionou por outro motivo**. O AAD foi escrito, o embaralhamento
 parou de funcionar, e todo mundo — eu inclusive, até rodar — atribuiu a parada à
 peça recém-escrita.
+
+### 11.12 A página do `.fts` selada — cifrar o armazenamento, não a chave
+
+Entrou em 23/09/2026 (pedido 340). O que a fechou não foi uma ideia nova: foi
+**a convergência dos três maduros**. PostgreSQL, MariaDB e MySQL protegem
+índice exatamente assim — cifram a página, não a chave —, nenhuma pétrea
+nossa se opõe, e o modelo de ameaça que isso cobre é o mesmo que o `cofre.rs`
+já declara: *disco levado, backup vazado, cópia numa máquina que não é esta*.
+Entrou por **aceite automático**.
+
+#### O que se cifra, e o que fica em claro de propósito
+
+```text
+pagina do .fts, versao 2 (pagina 1 em diante):
+
+  [0..32]            cabecalho da pagina, EM CLARO
+  [32..corpo]        entradas (termo + rowid), CIFRADAS
+  [corpo..corpo+8]   tempero sorteado NESTA gravacao
+  [corpo+8..fim]     etiqueta Poly1305
+```
+
+O cabeçalho de 32 bytes fica em claro e isso **não** é descuido. Ele guarda
+tipo, quantidade, página anterior e seguinte, filho da direita e o CRC-32 do
+claro — nenhum termo. E é por ele que a lista de páginas livres se percorre
+**sem chave**, que é metade da razão de ele não ser cifrado. O que o
+adversário quer está nas entradas, e elas somem.
+
+O **tempero** são 8 bytes sorteados a cada gravação da página, e ele existe
+pela mesma razão do tempero do slot do `.reg`: o endereço da página sozinho se
+repetiria em toda regravação, e nonce repetido com a mesma chave é a única
+falha que quebra uma cifra de fluxo sem quebrar a matemática dela. Quem tivesse
+duas cópias do arquivo teria o XOR dos dois conteúdos.
+
+A ordem também é decisão: **a cifra vem antes do CRC na leitura**, porque o
+CRC é do claro. Trocar a ordem faria ele conferir texto cifrado contra um
+número que nunca cobriu texto cifrado.
+
+E a página vai selada em **AEAD** mesmo quando `cifra.modo` pede FrogCript —
+por uma restrição de formato, não de gosto: a página tem tamanho fixo e o
+pacote FrogCript é 167 bytes **maior** que o claro, então ele não caberia
+dentro da própria página que cifraria. O arquivo nasce dizendo AEAD no byte de
+modo, e reabre em AEAD.
+
+#### O alcance, dito antes de alguém descobrir
+
+- **Só o `.fts`, e só quando algum índice de TEXTO cai sobre coluna marcada.**
+  Não é `tem_dado_pessoal`: tabela com `cpf` marcado e `descricao` indexada por
+  texto não guarda segredo no `.fts`, e selar ali cobraria capacidade para
+  proteger nada.
+- **O `.ndx` continua em claro** — §11.3, decisão em vigor. O mecanismo é o
+  mesmo (`NdxFile::criar_selado`) e serviria aos dois; ligá-lo muda o formato
+  de toda tabela indexada e paga a cifra no laço quente do `inserir`.
+- **Ligar a cifra depois não sela o que já existe**, como em §11.6. A
+  diferença é que o `.fts` é **derivado**: `reindexar` o refaz do `.reg` e o
+  novo nasce selado. Refazê-lo sozinho na abertura seria impor uma varredura
+  de tabela inteira a quem não pediu.
+- **Tabela sem coluna marcada não muda de nada**: versão 1, mesmo cabeçalho,
+  mesma capacidade, byte a byte o de antes.
+- **Falta de chave NÃO cai na vala do «refaz».** A abertura da tabela refaz um
+  `.fts` que não abre, e isso é certo para arquivo corrompido. Com a selagem,
+  uma senha errada no `config.json` passaria por aquela mesma vala e entregaria
+  um `.fts` novo **em claro**, desfazendo a proteção calado. Hoje recusa
+  nomeando.
+
+#### O custo, medido — e a parte cara não é a que se esperava
+
+`cargo run --release --example custo-do-selo-do-fts -p phxsql-store`, 20.000
+linhas e 180.000 termos, a mesma carga nos dois lados, **quatro corridas** (a
+quarta em 23/09/2026):
+
+| o que | em claro | selado | custo |
+|---|---:|---:|---|
+| entradas por folha | 116 | 115 | **0,862%** (determinístico) |
+| páginas do arquivo | 3.152 | 3.153 | **+0,032%** em disco |
+| µs por termo indexado | 1,67–1,81 | 2,16–2,60 | **1,19×–1,49×** |
+| µs por busca de palavra | 2,07–2,26 | 5,42–5,72 | **2,40×–2,76×** |
+
+As duas primeiras linhas são de **formato** e saem iguais em toda corrida; as
+duas de tempo são de **máquina** e por isso vão em faixa, nunca em número
+único. A quarta corrida abriu a faixa da escrita para baixo — 1,19× onde três
+corridas diziam 1,23× no piso —, e a faixa foi **alargada** em vez de a
+corrida ser descartada: faixa que só aceita o que confirma o que já estava
+escrito não é medição.
+
+Os 0,862% são exatamente o que a pesquisa previu, e a conta fecha: a chave do
+`.fts` tem 35 bytes (27 + rowid), `(4096−32)/35 = 116` e `(4096−32−24)/35 =
+115` — uma entrada de 116.
+
+**A surpresa é a busca, e ela vai publicada em vez de escondida: 2,40×–2,76×.**
+Cada falta de página passou a pagar um ChaCha20 de 4 KiB, e neste regime a
+árvore tem 3.153 páginas contra um cache de 2.048 — as faltas são o caso
+comum. Em números absolutos são 2,1 µs → 5,6 µs por palavra procurada, ao lado
+dos ~900× que o `.fts` compra sobre a varredura. A escrita quase não sente
+(1,23×–1,49× sobre 1,7 µs por termo), porque o *write-back* já fazia uma
+gravação servir centenas de chaves.
+
+O número sai de gerador, não de memória: a capacidade de folha vem do próprio
+arquivo (`NdxFile::capacidade_de_folha`), e não de uma conta refeita no
+medidor.
 
 ---
 

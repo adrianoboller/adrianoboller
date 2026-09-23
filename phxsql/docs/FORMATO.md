@@ -103,8 +103,21 @@ offset(rowid) = data_offset + (rowid - 1) * slot_size
 | 92 | 8 | `proximo_rownum` — próximo valor da coluna de sistema `rownum` (só o volume 1) |
 | 100 | 8 | `slots_no_balde` — slots já usados **neste** volume (só na partição alfanumérica) |
 | 108 | 8 | `marcadas` — linhas vivas marcadas como excluídas (só o volume 1) |
-| 116 | 8 | reservado |
+| 116 | 8 | `ultimo_carimbo` — maior `rowstamp` já gravado nesta tabela (só o volume 1; 0 = nunca carimbou) |
 | 124 | 4 | CRC-32 dos bytes 0..124 — **só na versão 4** |
+
+**O `ultimo_carimbo` (116..124) NÃO subiu a versão do `.reg`, e a diferença
+para o `proximo_rownum` e o `marcadas` — que subiram — é precisa.** Lá, um
+zero lido de um arquivo antigo significaria uma coisa **falsa**: que a
+numeração recomeça do zero por cima do que já existe. Aqui zero quer dizer
+«esta tabela ainda não carimbou nada», e num `.reg` anterior ao `PSCH` v10
+isso é **verdade**, porque a coluna não existia. **Ausência benigna não sobe
+versão.**
+
+Ele existe porque o contador do `rowstamp` é do **processo**: sem a marca
+d'água lida na abertura, um nó que reiniciasse começaria a carimbar do 1 e
+emitiria carimbo **menor** que o de linha já gravada — a garantia morrendo
+calada, no caso que ela existe para cobrir.
 
 Na **versão 5** o cabeçalho tem 192 bytes: tudo acima fica exatamente onde
 está, o **material de cifra** entra em 128..168 e o CRC-32 vai para 188,
@@ -311,7 +324,7 @@ tira coluna, não cria índice sobre a coluna nova, e não replica a si mesma �
 eventos depois de receber a mesma alteração. Enquanto os dois lados diferem, a
 réplica **para** em vez de aceitar um payload de outra largura.
 
-### O bloco de esquema (`PSCH`, versão 9)
+### O bloco de esquema (`PSCH`, versão 10)
 
 O bloco começa com `PSCH` e a versão. A **3** acrescentou os metadados de
 coluna, o marcador de chave primária e o modo de partição. A **4** acrescentou
@@ -322,9 +335,11 @@ acrescentou a **marca de dado pessoal** de cada coluna, num bloco no fim. A
 acrescentou a **lista dos índices de texto**, num bloco no fim. A **9**
 acrescentou as **expressões de esquema** — `padrao`, `check` e `calculada` por
 coluna, e o filtro `onde` e a expressão por coluna de cada índice —, num bloco
-no fim. A leitura ainda aceita a 2: tabela gravada antes abre normalmente,
-ganha um `id` v7 sorteado na hora, a lista de textos vazia e nenhuma regra.
-**Escrever, só na 9.**
+no fim. A **10** acrescentou as **duas colunas de carimbo de criação** e o
+**`passo` da faixa da `Sequence`** — as colunas na lista de colunas, o passo
+num bloco no fim. A leitura ainda aceita a 2: tabela gravada antes abre
+normalmente, ganha um `id` v7 sorteado na hora, a lista de textos vazia e
+nenhuma regra. **Escrever, só na 10.**
 
 O bloco é uma contagem `u16` e, por índice de texto:
 
@@ -423,6 +438,135 @@ Os índices parcial e por expressão **não mudam o `.ndx`**: a árvore continua
 uma por índice, com a mesma largura de chave (a expressão devolve o tipo da
 coluna), e a diferença está só em **quem entra** e em **qual valor vira a
 chave**. Um `reindexar` reconstrói respeitando o filtro.
+
+### O carimbo de criação e a faixa da `Sequence`, v10
+
+Duas mudanças entram num **bump só**, porque duas mudanças de formato em
+sequência são dois eventos de migração onde cabe um. A primeira não carrega
+byte de bloco; a segunda sim.
+
+#### As duas colunas de carimbo — e por que são duas
+
+Entram na **lista de colunas**, no fim e nesta ordem, exatamente como a v4 fez
+com `softdeleted` e a v5 com `rownum`:
+
+| coluna | tipo | tam | o que é |
+|---|---|---:|---|
+| `rowstamp` | `UInt8` | 8 | **ordem** de criação neste nó. Nunca empata, nunca recua |
+| `rowtime` | `DateTime` | 8 | **relógio de parede** de quando a linha foi criada. Pode empatar |
+
+As duas são **obrigatórias** e o motor as preenche; declará-las à mão com
+outro tipo, ou aceitando nulo, é **recusado na criação**.
+
+**Duas colunas e não uma, e a decisão é do dono (17/09/2026).** A ordem
+«impossível o filho ter a mesma data do pai» não se cumpre com relógio:
+medidos aqui, **964 de 1.000 `insert` caem no mesmo milissegundo** — a prova
+está em `crates/phxsql-store/tests/carimbo-e-faixa.rs`, que imprime o número e
+falha se o relógio não empatar nenhuma vez. E os três motores maduros
+**empatam de propósito** dentro da mesma unidade de trabalho; o PostgreSQL
+chama isso de *feature* por escrito. Então a ordem mora num contador puro e o
+relógio fica ao lado, para leitura humana.
+
+**Um `u64` de nanossegundos no mesmo campo foi avaliado e recusado, com o
+número**: um carimbo em nanos tem magnitude 198,7× acima de 2^53, a grade do
+`f64` naquela faixa é de **256 ns**, e duas linhas gravadas a 1 ns de
+distância sairiam **idênticas no fio**. O avanço forçado sobreviveria no disco
+e morreria no soquete. Um contador que começa em 1 só cruza 2^53 depois de
+285 anos a um milhão de escritas por segundo.
+
+**O alcance da garantia é POR NÓ.** Entre dois masters em bidirecional os
+carimbos vêm de dois contadores independentes e podem se intercalar. Ordem
+global entre nós **não se reivindica**, porque não está provada.
+
+Três consequências que valem saber antes de migrar:
+
+- **O `rowstamp` é emitido no `inserir` e nunca no `atualizar`.** Ele diz
+  quando a linha **nasceu**; renová-lo numa alteração faria um pai alterado
+  hoje ficar com carimbo maior que o das filhas dele.
+- **Na réplica, o carimbo que veio é HONRADO** — a réplica nunca gera o dela,
+  senão o retrato SHA-256 de origem e réplica diverge, que é a doença do
+  `rownum` do pedido 291. E o contador local é **empurrado** para pelo menos
+  o que chegou.
+- **A linha migrada fica em ZERO**, e zero quer dizer «esta linha nasceu antes
+  de a coluna existir». Carimbo retroativo passaria no CRC e ninguém mais o
+  distinguiria de um medido.
+
+**A nona coluna empurra o bitmap de 1 para 2 bytes**, e com ele todo offset
+absoluto. Não quebra tabela nenhuma — o `bitmap_len` sai da lista de colunas
+**gravada**, então um arquivo antigo continua lido com o bitmap dele —, mas
+quem escrever migração precisa saber: a coluna de 8 bytes faz o payload
+crescer **9** quando ela é a nona, e 8 quando não é.
+
+#### O `passo` da faixa — lista própria, no fim
+
+No **fim** do bloco, depois das expressões da v9, vem uma contagem `u16` e,
+por entrada:
+
+| Campo | Tam | O que é |
+|---|---:|---|
+| `coluna` | 2 | a posição da coluna `Sequence` |
+| `passo` | 8 | o denominador da faixa. **1 = sem faixa**, que é o que toda tabela já gravada tem |
+
+Tabela sem coluna `Sequence` grava a contagem **0** e mais nada.
+
+**Só o `passo` vai ao disco; o `início` NÃO — e isso é uma correção do dono
+(17/09/2026) ao parecer que propunha os dois.** Ela saiu de uma medição feita
+na hora: `abrir_para_replicar` cria a tabela que ainda não existe aqui **do
+mesmo bloco de esquema do source, byte a byte**, de propósito, para o payload
+da imagem cair no lugar certo. Dois `u64` gravados no `PSCH` chegariam
+**iguais** nos dois nós e as faixas voltariam a colidir — a proposta não
+resolveria o defeito que existe para resolver. O `início` sai da **identidade
+do nó** (`phxsql-store/src/no.rs`); o `passo` pode viajar porque é comum aos
+nós **por definição**: ele é o denominador, e a faixa só é disjunta se os dois
+usarem o mesmo.
+
+**E a faixa se confere na abertura do `.reg`, a custo zero de byte**: a faixa é
+uma classe de resto, e `proxima_sequencia` já é o representante dela. Um nó que
+subir numa faixa diferente da que a tabela vinha numerando recebe **recusa**
+nomeando as duas, em vez de reusar número calado. `proxima_sequencia == 0` é
+«nunca usada» e pula a conferência — é o que faz a tabela nascida por
+replicação adotar a faixa **deste** nó na primeira escrita.
+
+**Lista com contagem, e não um `u64` solto**, mesmo só havendo uma `Sequence`
+por tabela hoje: lista com contagem detecta truncamento, campo solto não.
+
+**Bloco da v10 truncado é ERRO**, no molde da v9 e não no da v6/v8: um `passo`
+que sumisse calado viraria faixa 1 e faria dois nós numerarem a mesma faixa
+outra vez — a colisão que a faixa existe para impedir, agora produzida pelo
+conserto e em silêncio.
+
+#### Por que a versão subiu, se as colunas não carregam byte de bloco
+
+**Para RECUSAR o binário velho.** O `e_coluna_de_sistema` da v9 conhece só dois
+nomes, então um motor v9 leria `rowstamp` como coluna comum do usuário — ela
+apareceria na grade e no formulário, e alguém poderia digitar por cima do
+carimbo. A versão nos bytes 4..6 é a única coisa que se lê antes de decidir o
+que o resto significa. É o mesmo raciocínio da v8: recusa alta é melhor que
+aceite errado.
+
+#### A tabela em modo ledger fica na v9, de propósito
+
+Decisão do dono (pedido 314). `migrar_para_psch_v10` **recusa** a tabela em
+modo ledger que já tem bloco na cadeia, e a recusa **diz o motivo**: não se
+reescreve história assinada. Não é limitação do hash — ele exclui coluna de
+sistema (`coluna_no_hash_do_ledger`), e é por isso que uma ledger **nascida**
+na v10 funciona normalmente e verifica —, é a recusa de passar cada slot de
+uma cadeia assinada por uma reescrita de arquivo. Uma ledger **vazia** passa:
+não há história sobre a qual mentir.
+
+#### A migração reescreve o `.reg` inteiro, e passa duas vezes
+
+O bloco novo **não cabe onde o velho está**: o `data_offset` foi calculado
+quando a tabela nasceu e não se mexe, e duas larguras de slot não existem
+neste formato. Então `migrar_para_psch_v10` usa a maquinaria já provada do
+`RegFile::acrescentar_coluna`, **uma passada por coluna** — reaproveitar a
+conta de offsets que fecha antes de escrever byte, o `*.novo`, o `rename` e a
+retomada de queda vale mais que uma segunda implementação de rearranjo de
+payload ao lado da primeira. Duas implementações divergem, e a divergência é
+um campo deslocado que passa no CRC. É **retomável** de propósito: uma queda
+entre as duas passadas deixa a tabela com a primeira coluna e sem a segunda, e
+a chamada seguinte acrescenta só a que falta. E é **idempotente**: numa tabela
+que já está na v10 não toca disco e devolve 0.
 
 ### A marca de dado pessoal (LGPD / GDPR), v6
 
@@ -736,7 +880,7 @@ de índices; as demais são nós da B+tree.
 | Off | Tam | Campo |
 |----:|----:|---|
 | 0 | 8 | assinatura `PHXNDX\0\0` |
-| 8 | 2 | versão do formato (1) |
+| 8 | 2 | versão do formato (**1** em claro, **2** com a página selada) |
 | 10 | 2 | tamanho do cabeçalho (128) |
 | 12 | 4 | `page_size` |
 | 16 | 4 | quantidade de índices |
@@ -746,8 +890,57 @@ de índices; as demais são nós da B+tree.
 | 40 | 4 | CRC-32 do diretório |
 | 44 | 8 | alterado em |
 | 52 | 1 | **marca de sujo** (0 = fechado limpo) |
-| 53 | 71 | reservado |
+| 53 | 3 | reservado |
+| 56 | 40 | **material de cifra** (`cofre::Material`), só na versão 2 |
+| 96 | 28 | reservado |
 | 124 | 4 | CRC-32 dos bytes 0..124 |
+
+#### A versão 2 — a página selada (pedido 340, 23/09/2026)
+
+**O cabeçalho não cresceu.** Os 40 bytes do material de cifra couberam nos
+que já eram reservados (53..124), e por isso não há duas geometrias de
+cabeçalho a manter — ao contrário do `.reg`, que precisou de 128 → 192.
+
+O que muda é a **página**, e é por isso que a versão é nova e não uma flag: a
+área útil encolhe, e um leitor da versão 1 leria a etiqueta como entrada de
+folha e responderia busca com lixo. A versão faz ele **recusar**.
+
+```text
+pagina da versao 2 (pagina 1 em diante):
+
+  [0..32]            cabecalho da pagina, EM CLARO
+  [32..corpo]        entradas, cifradas (ChaCha20-Poly1305, nonce de 192 bits)
+  [corpo..corpo+8]   tempero sorteado NESTA gravacao
+  [corpo+8..fim]     etiqueta Poly1305 (16 bytes)
+
+  corpo = page_size - 24
+```
+
+- **O cabeçalho da página fica em claro de propósito.** Ele não guarda chave
+  nenhuma — tipo, quantidade, vizinhas, filho da direita e o CRC-32 do claro —
+  e é por ele que a lista de páginas livres se percorre **sem chave**.
+- **O nonce** é `nonce_de_pedaco(número da página, 0, 0, tempero)`. Os 8 bytes
+  sorteados a cada gravação são o que impede o par (chave, nonce) de repetir
+  quando a **mesma** página é reescrita — a única falha que quebra uma cifra
+  de fluxo sem quebrar a matemática dela. É a mesma conta do slot do `.reg`.
+- **O dado associado** é o número da página mais os 32 bytes do cabeçalho
+  dela, que carrega o CRC do claro: as duas conferências amarram a mesma
+  página, e trocar a página 7 pela 9 inteiras não passa.
+- **O CRC é do claro**, e por isso a leitura **decifra antes de conferir**.
+- **O modo é sempre AEAD**, mesmo com `cifra.modo` pedindo FrogCript: o pacote
+  FrogCript é 167 bytes maior que o claro e não caberia dentro da página que
+  cifraria.
+
+**Quem nasce assim:** só o `.fts`, e só quando algum índice de texto cai sobre
+coluna marcada como dado pessoal, com o cofre ligado. O `.ndx` da tabela
+continua na versão 1 — decisão registrada em `SEGURANCA.md` §11.3. **Não há
+migração:** arquivo da versão 1 continua abrindo e continua em claro, e só o
+`reindexar` faz nascer um selado.
+
+**Custo medido** (`--example custo-do-selo-do-fts`, 20.000 linhas / 180.000
+termos): **0,862%** da capacidade de folha (116 → 115 entradas), **+0,032%**
+em disco, **1,23×–1,49×** por termo indexado e **2,40×–2,76×** por busca de
+palavra. A tabela inteira está em `SEGURANCA.md` §11.12.
 
 #### A marca de sujo (byte 52), e por que ela existe
 
@@ -2369,9 +2562,18 @@ existiam.
 
 Porque **JSON perde aqui, e isso foi medido no próprio código**: o
 `valor_para_json` escreve `Time` e `DateTime` como texto ISO, e o
-`json_para_valor` desses dois só aceita número. A volta não fecha, e uma
-recuperação que reconstrói a linha errada é pior do que uma que não reconstrói
-nada.
+`json_para_valor` não fechava a volta de nenhum dos dois. A recuperação que
+reconstrói a linha errada é pior do que uma que não reconstrói nada.
+
+**O `DateTime` fechou a volta no `PSCH` v10, e o `Time` não** — a
+assimetria encolheu de dois campos para um, e a razão da decisão continua de
+pé por causa do que sobrou. O `DateTime` teve de fechar porque a v10 dá a
+**toda** tabela uma coluna desse tipo (`rowtime`): sem a volta, ler uma linha
+e gravá-la de novo deixaria de funcionar em todo lugar, e não só em quem
+declarasse a coluna. O `Time` continua aceitando **só** centésimos, por
+decisão escrita no `carga.rs` (texto de relógio como `14:30` não entra
+ainda), e é por isso que a linha da marca segue em bytes: basta **um** campo
+que não volte para o JSON não servir.
 
 A codificação tem uma etiqueta por variante de `Value` — 0 nulo, 1 booleano, 2
 inteiro, 3 sem sinal, 4 real, 5 decimal, 6 data, 7 hora, 8 data-hora, 9 texto,
@@ -2402,13 +2604,21 @@ Figura 8 do dossiê), e nenhum sai do código. Fica registrado como o buraco que
 é: a lista certa é a de `arquivos_da_tabela` no `catalogo.rs`.
 
 O formato está inteiro em `docs/FTS.md` §3, e o essencial cabe em quatro
-linhas: é um **`.ndx` por dentro** (mesma assinatura `PHXNDX\0\0`, mesma
-versão, mesmo CRC de página), com uma chave por termo dobrado; tabela sem índice
-de texto declarado **não ganha o arquivo**; a declaração vive no `PSCH` como
-mais um tipo de índice (coluna + interruptor `dobrar`, padrão ligado); e ele é
+linhas: é um **`.ndx` por dentro** (mesma assinatura `PHXNDX\0\0`, mesmo CRC
+de página), com uma chave por termo dobrado; tabela sem índice de texto
+declarado **não ganha o arquivo**; a declaração vive no `PSCH` como mais um
+tipo de índice (coluna + interruptor `dobrar`, padrão ligado); e ele é
 **derivado** — se reconstrói do `.reg` inteiro, como o `reindexar` faz com o
 `.ndx`, e por isso fica **fora do desfazer** de uma inserção que falha no
 meio (§2.1 do `FTS.md`).
+
+**A versão é onde ele deixou de ser igual ao `.ndx`, em 23/09/2026.** Quando
+algum índice de texto cai sobre coluna marcada como dado pessoal e o cofre
+está ligado, o `.fts` nasce na **versão 2** e grava a **página selada** — o
+formato está na §2, e o porquê em `SEGURANCA.md` §11.12. O `.ndx` da tabela
+continua na versão 1. É o primeiro lugar em que os dois divergem, e a
+diferença é de política e não de mecanismo: o código é o mesmo
+`NdxFile::criar_selado`.
 
 ## 18. `diretivas.log` — o diário administrativo
 
@@ -2478,9 +2688,13 @@ Documentado aqui para não haver surpresa:
   o executor entram por cima, e já existem em parte: a op `sql` traduz um
   `SELECT` simples (`docs/SQL.md`) e os corpos de gatilho e de procedimento
   (`docs/TRIGGERS.md`). O que falta é o planejador e a expressão em `WHERE`.
-- **A cifra cobre três arquivos, não os sete.** `.log`, `.trash` e `.reason`
-  têm a versão 3; o `.reg`, o `.ndx`, o `.bin` e o `.memo` continuam em claro.
-  Cifrar o `.reg` é outro problema — ele é de acesso aleatório por slot, e não
-  *append-only*, então o nonce não pode sair do offset.
+- **A cifra cobre três arquivos, não os sete.** Esta linha é de quando a cifra
+  nasceu, e ela **envelheceu em três passos**: `.log`, `.trash` e `.reason`
+  vieram primeiro (versão 3); depois vieram o `.reg` (versão 5), o `.bin` e o
+  `.memo` pela coluna marcada, e a marca `.tx` do `COMMIT` (versão 4); e em
+  23/09/2026 veio o `.fts` (versão 2, página selada). **O que continua em
+  claro é o `.ndx`**, por decisão registrada em `SEGURANCA.md` §11.3 — ali a
+  chave é comparada, e cifrar a chave destrói a ordem da B+tree. O `.pag` e o
+  catálogo também, e nunca entraram em rodada nenhuma.
 - **Ligar a cifra não cifra o que já existe.** Vale do volume seguinte em
   diante. Não há comando de recifragem.
