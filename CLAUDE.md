@@ -410,6 +410,35 @@ existe é ordem legítima de modelagem, e a gravação passa a recusar. A recusa
 volume de clientes.reg em /tmp/…», que mandava procurar arquivo em vez de
 criar tabela.
 
+**Função e comando não se duplicam: vêm do mesmo motor.** Ordem do dono,
+23/09/2026: *«Funções e comandos não podem ser repetidas ou duplicadas, devem
+vir do mesmo motor.»*
+
+Não é estilo nem economia de linhas — é a regra que impede a decisão de
+divergir de si mesma. O motivo já estava escrito **dentro** de um motor desta
+casa, no `phxsql-core/src/fio.rs`, antes de virar lei geral: *«Existe para que
+o laço de conexão seja UM só. Espalhar `if cifrado` por cada `read_line` e cada
+`writeln!` do servidor seria repetir a decisão em dezenas de lugares, e a que
+alguém esquecesse mandaria texto claro por um fio que o cliente acha cifrado.»*
+
+E o custo de não cumpri-la está medido, no mesmo dia em que a lei nasceu:
+**cinco leituras de linha de soquete vivem fora do `Canal`** — uma no
+`http.rs:152` e quatro no `odbc/conexao.rs` (:475, :812, :891, :1035). A do
+`http.rs` virou o pedido **434**, um alto de memória pré-credencial. O teto
+ausente era o sintoma; a duplicação era a doença, e por isso o 434 se conserta
+**vindo do motor**, não pondo um segundo teto ao lado do primeiro.
+
+**O limite, e ele é o de sempre nesta casa: a lei vale para quem responde a
+mesma PERGUNTA, não para quem tem nome parecido.** Três operações —
+`juntar`, `unir` e `pivotar` — pagam conferência de tabela **própria** porque
+escondem a tabela do campo que o portão único lê, e o `CLAUDE.md` já avisa que
+numa divisão do `servidor.rs` essa conferência *parece* duplicação: limpá-la
+reabre a porta dos fundos e **nenhum teste do portão acusa**. Elas não são
+cópia do portão; são a resposta de uma pergunta que o portão não faz. Quem for
+aplicar esta lei começa perguntando **qual decisão está escrita duas vezes** —
+e se a resposta for «nenhuma, são decisões diferentes com forma parecida»,
+unificar é que seria o defeito.
+
 **A ordem de digitação é sagrada.** O `.reg` nunca reaproveita slot excluído.
 Qualquer proposta que quebre isso precisa ser discutida antes.
 
