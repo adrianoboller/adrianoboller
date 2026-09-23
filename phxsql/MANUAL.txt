@@ -601,12 +601,13 @@ SERVIDOR MCP (Model Context Protocol)
     AS FERRAMENTAS saem do catalogo (op "catalogo"), e o nome de cada uma e
     "phx_" mais a op. Detalhes em docs/MCP.md.
 
-SQL: SELECT, E INSERT/UPDATE/DELETE POR CHAVE, TRADUZIDOS
+SQL: SELECT (SIMPLES E COMPOSTO), E INSERT/UPDATE/DELETE, TRADUZIDOS
 
     {"token":"segredo","op":"sql","database":"loja",
      "texto":"SELECT nome AS quem FROM clientes WHERE id = 42"}
 
-    A gramatica inteira cabe em cinco linhas:
+    A FORMA SIMPLES -- a unica com caminho direto por indice (buscar/varrer),
+    sem compor nada -- cabe em cinco linhas:
 
         SELECT ( * | COUNT(*) | coluna [AS apelido] {, ...} )
         FROM   [banco.] [schema.] tabela [[AS] apelido]
@@ -614,50 +615,80 @@ SQL: SELECT, E INSERT/UPDATE/DELETE POR CHAVE, TRADUZIDOS
         [ORDER BY coluna [ASC|DESC]]
         [LIMIT n [OFFSET m]]
 
-    E os tres verbos de escrita, por chave:
+    O RESTO DO SELECT TAMBEM TRADUZ, por composicao (vira "agrupar" ou
+    "consultar", documentados mais abaixo neste manual): expressao no
+    WHERE/HAVING/ON (AND, OR, aritmetica, funcao, IN de lista, BETWEEN, LIKE,
+    IS [NOT] NULL); GROUP BY com COUNT(*), COUNT(coluna), COUNT(DISTINCT),
+    SUM, AVG, MIN, MAX e HAVING; WITH de UMA cte (nao recursiva); subconsulta
+    no FROM; IN (SELECT ...); subconsulta ESCALAR nao correlacionada; [NOT]
+    EXISTS correlacionado POR IGUALDADE; ROW_NUMBER() OVER (PARTITION BY ..
+    ORDER BY ..); as cinco formas de JOIN (INNER, LEFT, RIGHT, FULL, CROSS);
+    e INSERT .. ON CONFLICT / ON DUPLICATE KEY UPDATE. A gramatica de cada
+    item, com o JSON que produz, esta em docs/SQL.md -- ela muda mais rapido
+    do que este manual, entao e ali que fica o inventario item a item.
+
+    E os tres verbos de escrita:
 
         INSERT INTO [banco.] [schema.] tabela (coluna, ...)
                     VALUES (literal, ...)
         UPDATE      [banco.] [schema.] tabela SET coluna = literal, ...
-                    WHERE coluna = literal
-        DELETE FROM [banco.] [schema.] tabela WHERE coluna = literal
+                    WHERE coluna OP literal
+        DELETE FROM [banco.] [schema.] tabela WHERE coluna OP literal
 
-    A resposta de um SELECT e a da operacao traduzida ("varrer" ou "buscar"),
-    com tres campos a mais na frente: o "sql" que voce mandou, o "op" que ele
-    virou e as "notas" do tradutor. COUNT(*) devolve "contagem". O campo "sql" e
-    aceito no lugar de "texto", que e o nome que um driver escreveria.
+    OP e um de = <> < <= > >=. O "=" sobre indice UNICO de uma coluna vai pelo
+    caminho rapido por chave (tres passos, abaixo); qualquer outro OP, ou "="
+    sobre coluna sem indice unico, vai por FAIXA: colhe todos os rowid que
+    casam (o mesmo filtro do varrer) e aplica um por um -- ate o teto de
+    coleta, que recusa nomeando o limite em vez de gravar so o comeco com
+    cara de ter gravado tudo.
+
+    A resposta de um SELECT e a da operacao traduzida ("varrer", "buscar",
+    "agrupar" ou "consultar", conforme o caso), com tres campos a mais na
+    frente: o "sql" que voce mandou, o "op" que ele virou e as "notas" do
+    tradutor. COUNT(*) devolve "contagem". O campo "sql" e aceito no lugar de
+    "texto", que e o nome que um driver escreveria.
 
     PARA ESCREVER, a resposta traz "afetadas" (0 quando a chave nao existe, e
     isso nao e erro), mais o que a operacao devolveu: "rowid" e "registros" no
     inserir; "rowid" e a "versao" nova no atualizar; "rowid", "modo",
     "reversivel" e "na_lixeira" no excluir. Uma linha por INSERT -- VALUES com
     varias recusa, porque viraria inserir_lote, que nao entra numa transacao
-    aberta. UPDATE e DELETE so por chave UNICA, e sao TRES operacoes por
+    aberta. Pelo caminho de CHAVE, UPDATE e DELETE sao TRES operacoes por
     dentro: buscar acha o rowid, ler traz a linha inteira e a versao, e
     atualizar grava a linha MESCLADA (o atualizar do protocolo grava a linha
-    inteira -- mandar so o SET zeraria as outras colunas). A versao lida vai
-    junto: quem gravar a linha entre os passos faz o motor recusar. O DELETE e
-    o suave, reversivel por "restaurar"; para apagar de vez ha a operacao
-    excluir com "fisico". Sem WHERE, por faixa, ou sobre coluna sem indice
-    unico, recusa dizendo o que faltou. Escrever pelo SQL pede o mesmo direito
-    da operacao que vira: inserir, alterar ou excluir.
+    inteira -- mandar so o SET zeraria as outras colunas). Pelo caminho de
+    FAIXA e a mesma mescla, uma linha de cada vez. A versao lida vai junto:
+    quem gravar a linha entre os passos faz o motor recusar. O DELETE e o
+    suave, reversivel por "restaurar"; para apagar de vez ha a operacao
+    excluir com "fisico". Sem WHERE, ou com mais de uma condicao (AND),
+    recusa dizendo o que faltou. Escrever pelo SQL pede o mesmo direito da
+    operacao que vira: inserir, alterar ou excluir.
 
-    O QUE NAO TEM SUBSTRATO RECUSA DIZENDO O QUE FALTA. Nao ha expressao, nao
-    ha JOIN e nao ha subconsulta -- e um WHERE sobre coluna SEM indice recusa
-    em vez de virar uma varredura pela metade. O "varrer" FILTRA (campo
-    "onde"), mas dentro da pagina que ele EXAMINA, e a resposta dele diz
-    "examinadas" ao lado de "devolvidas" para quem chama saber sobre o que a
-    conta foi feita. Um SELECT nao tem onde dizer isso: traduzido, ele
+    O QUE AINDA NAO TEM SUBSTRATO RECUSA DIZENDO O NOME DA CLAUSULA, e nao
+    vira execucao pela metade com cara de sucesso. No SELECT SIMPLES, um
+    WHERE sobre coluna SEM indice ainda recusa em vez de virar varredura sem
+    filtro -- o "varrer" FILTRA (campo "onde"), mas dentro da pagina que ele
+    EXAMINA, e a resposta dele diz "examinadas" ao lado de "devolvidas" para
+    quem chama saber sobre o que a conta foi feita; um SELECT sem indice
     responderia sobre a primeira pagina com a cara de ter respondido sobre a
-    tabela. A recusa diz quais colunas TEM indice. Erro de sintaxe aponta a
-    coluna do texto: «SQL, coluna 10: ...».
+    tabela inteira. No resto da linguagem: WITH RECURSIVE e mais de uma CTE
+    recusam; UNION nao existe; correlacao que NAO e igualdade (IN e
+    subconsulta ESCALAR correlacionadas, EXISTS por desigualdade ou dentro de
+    um OR) recusa; EXISTS sem correlacao nenhuma ("tem linha?") recusa;
+    janela alem de ROW_NUMBER recusa; COUNT(*)/GROUP BY sobre visao recusa; e
+    nao ha planejador de indice -- havendo dois candidatos de igualdade, o
+    primeiro declarado vence. A lista completa e datada, com o motivo de cada
+    ausencia, esta na secao 3 de docs/SQL.md. Erro de sintaxe aponta a coluna
+    do texto: «SQL, coluna 10: ...».
 
     O PORTAO E O MESMO. A op sql nao abre tabela nenhuma: ela pede o "esquema"
-    da tabela do FROM (que ja exige ler naquela tabela) e depois executa o
-    varrer ou o buscar traduzido -- os dois pelo mesmo portao de um pedido que
-    chega pela rede. SELECT numa tabela negada para com o mesmo erro de um
-    varrer nela. Servidor que proibe "varrer" pela politica tambem nao pode ser
-    varrido escrevendo SELECT.
+    de cada tabela citada (o que ja exige ler nela) e depois executa a
+    operacao traduzida -- pelo mesmo portao de um pedido que chega pela rede,
+    em cada um dos ate cinco caminhos que uma consulta composta pode ter (a
+    tabela principal, cada JOIN, cada escalar, cada IN, cada EXISTS). SELECT
+    numa tabela negada para com o mesmo erro de um varrer nela. Servidor que
+    proibe "varrer" pela politica tambem nao pode ser varrido escrevendo
+    SELECT.
 
     QUEM PODE. A op pede "ler". Quem so tem direito por TABELA, e nenhum na
     base, para no portao de fora: ele le o campo "database" do envelope e nao

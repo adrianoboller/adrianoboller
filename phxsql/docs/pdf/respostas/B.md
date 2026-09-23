@@ -1,60 +1,79 @@
 # B) lista de comandos SQL que são do postgresql excenciais que não tem no Phxsql
 
 ## Resposta curta
-Mandei **49 comandos do PostgreSQL(R) ao motor vivo: 48 recusados, 1 aceito**. Classifiquei
-os recusados por critério escrito: **17 faltam e importam** para um cadastro comum — e
-treze deles são a mesma raiz, *o `WHERE` que filtra e o avaliador de expressão* — e **8
-faltam e não importam aqui**, com o motivo. Contra isso, **26 equivalências provadas pelo
-protocolo nesta mesma corrida** (`INSERT`, `UPDATE`, `DELETE`, `CREATE TABLE`, `JOIN`,
-`UNION`, `information_schema`…): as listas se cruzam, porque um comando pode faltar na
-linguagem e existir no motor. Um gap não tem caminho nenhum: **não existe `CREATE INDEX`
-depois de a tabela nascer**, e isso é decisão registrada.
+Mandei **49 comandos do PostgreSQL(R) ao motor vivo: 19 aceitos, 30 recusados** —
+o inverso do que esta resposta dizia: até esta rodada ela media **1 aceito**, de
+uma corrida de 07/09/2026 que ficou parada enquanto 429 commits mudavam o motor
+por baixo dela. `INSERT`, `UPDATE`, `DELETE`, `JOIN`, `GROUP BY`, subconsulta,
+`WITH`, `ROW_NUMBER() OVER`, `CREATE VIEW` e o upsert (`ON CONFLICT`) — que a
+resposta antiga listava como recusados por falta de "avaliador de expressão e
+planejador" — hoje são **ACEITO**, medidos nesta mesma corrida. Dos **30** que
+ainda recusam: **15 faltam e importam** (DDL que um driver/DBeaver usa, três
+formas de expressão que só funcionam no `WHERE` e ainda não na projeção, `HAVING`
+com função de agregação, `DISTINCT`/`UNION` — ambos com frente aberta nesta
+rodada, ver nota — e o parâmetro posicional `$1`) e **15 faltam e não importam
+aqui**, com o motivo. **40 equivalências pelo protocolo** provadas nesta mesma
+corrida. `CREATE INDEX` continua sem caminho nenhum, decisão registrada.
 
 ## Exemplo exercitado
 
-Corrida de **2026-09-07 16:49 UTC**, commit **a56a165**, `phxsqld` de pé na porta 6110.
-**Fonte da lista:** o índice oficial de comandos,
-https://www.postgresql.org/docs/17/sql-commands.html, lido nesta rodada.
+Corrida de **2026-09-22 23:43 UTC**, commit **f180e24**, `phxsqld` de pé na
+porta 6119. **Fonte da lista:** o índice oficial de comandos,
+https://www.postgresql.org/docs/17/sql-commands.html.
 
-**As três listas abaixo se cruzam, e é de propósito.** Um `INSERT` recusado está ao
-mesmo tempo em (a) — falta na linguagem — e em (c) — existe no motor com outro nome.
-Somar as três não dá o total de recusas, e uma soma que fechasse esconderia
-justamente o que interessa: quantos gaps têm saída hoje.
+**Esta resposta substitui INTEIRA a de 07/09/2026 (commit a56a165), e não a
+completa** — é a mesma lei do `docs/pdf/LEIA-ME.md`: *doc antigo é ponto de
+partida, nunca fonte da resposta*. Entre as duas corridas, a rodada de
+composição SQL (pedidos 236, 244, 245, entre 08 e 16/09/2026) fechou `JOIN`
+(cinco formas), `GROUP BY`/agregados, `WITH` de uma CTE, subconsulta no `FROM`,
+`IN (SELECT …)`, `[NOT] EXISTS` correlacionado por igualdade, escalar não
+correlacionada, `ROW_NUMBER() OVER`, `CREATE`/`DROP VIEW` e o upsert; e a rodada
+de 08/09/2026 fechou `INSERT`/`UPDATE`/`DELETE` por chave e por faixa. Nenhuma
+dessas dez formas existia na corrida anterior — a resposta de então dizia,
+para as três de escrita, a mesma frase colada nas três: *"INSERT/UPDATE/DELETE
+ainda nao existe nesta camada -- so SELECT"*.
 
-### (a) Falta, e IMPORTA para um cadastro comum — 17
+**Aviso sobre DISTINCT e UNION.** Há frente viva mexendo nos dois nesta mesma
+rodada em que esta resposta foi escrita. O que segue é o que a corrida acima
+mediu **neste instante**: `DISTINCT` recusa com *"nao tem substrato: nenhuma
+operacao do protocolo elimina repetido numa varredura"*, e `SELECT ... UNION
+SELECT ...` recusa com *"sobrou UNION depois do fim do comando"* (a `op unir`
+do protocolo, que une TABELAS INTEIRAS nomeadas, é outra coisa — ver `docs/SQL.md`
+§1, nota). Se a frente viva fechar um dos dois antes da próxima corrida, é
+`python3 bancada/gaps-sql/sondar.py postgresql` que dirá — não esta prosa.
 
-O critério é escrito: *o que uma tela de cadastro (incluir, alterar, listar,
-procurar, apagar) e o driver que a serve usam todo dia.* Não entra o que só
-aparece em relatório de BI.
+**As três listas abaixo se cruzam, e é de propósito.** Um comando recusado como
+texto SQL pode ao mesmo tempo ter equivalente pelo protocolo — somar as três
+não dá o total de recusas, e uma soma que fechasse esconderia justamente o que
+interessa: quantos gaps têm saída hoje.
+
+### (a) Falta, e IMPORTA para um cadastro comum ou para o driver — 15
+
+O critério: *o que uma tela de cadastro (incluir, alterar, listar, procurar,
+apagar) ou o driver/DBeaver que a serve usam todo dia.* DDL entra aqui porque é
+exatamente o que o editor de esquema do DBeaver manda — não o que o cadastro em
+si executa em produção.
 
 | # | comando | a recusa REAL do motor, colada |
 |--:|---|---|
-| 1 | `INSERT INTO clientes (nome) VALUES ('Zeca')` | `SQL, coluna 1: INSERT ainda nao existe nesta camada -- so SELECT. A operacao equivalente ja funciona pelo protocolo` |
-| 2 | `UPDATE clientes SET cidade = 'Itajai' WHERE id = 1` | `SQL, coluna 1: UPDATE ainda nao existe nesta camada -- so SELECT. …` |
-| 3 | `DELETE FROM clientes WHERE id = 1` | `SQL, coluna 1: DELETE ainda nao existe nesta camada -- so SELECT. …` |
-| 4 | `… WHERE id = 1 AND cidade = 'Blumenau'` | `SQL, coluna 41: o WHERE aceita UMA comparacao. Duas exigiriam interseccao de rowids, e nao ha planejador que decida por qual indice comecar` |
-| 5 | `… WHERE id = 1 OR id = 2` | a mesma recusa da linha 4 |
-| 6 | `… WHERE id IN (1, 2)` | `SQL, coluna 33: IN e uma lista de buscas; o motor faz cada uma, mas quem junta os resultados ainda nao existe` |
-| 7 | `… WHERE id BETWEEN 1 AND 2` | `SQL, coluna 33: BETWEEN e faixa de indice, e a faixa ainda nao esta exposta no protocolo` |
-| 8 | `… WHERE nome LIKE 'A%'` | `SQL, coluna 35: LIKE precisaria varrer comparando texto linha a linha; o varrer sabe fazer isso (\`onde\` com \`contem\`), mas so dentro da pagina que examina …` |
-| 9 | `… WHERE cidade IS NULL` | `SQL, coluna 37: IS NULL nao tem filtro embaixo: nulo se ve lendo a linha` |
-| 10 | `… WHERE cidade = 'Blumenau'` (coluna sem índice) | `WHERE cidade = ... exige um indice de uma coluna sobre cidade. Nao existe. O \`varrer\` filtra, mas dentro da pagina que ele EXAMINA …` |
-| 11 | `SELECT cidade, COUNT(*) … GROUP BY cidade` | `SQL, coluna 21: esperava FROM, e veio "("` — e o `GROUP BY` sozinho: `GROUP BY geral nao existe embaixo. A tabulacao cruzada e a operacao pivotar, que e um caso e nao o geral` |
-| 12 | `SELECT SUM(saldo) FROM clientes` | `SQL, coluna 8: SUM() nao tem quem calcule embaixo. So COUNT(*) passa, porque a contagem sai do cabecalho da tabela em O(1)` |
-| 13 | `SELECT DISTINCT cidade FROM clientes` | `SQL, coluna 17: DISTINCT nao tem substrato: nenhuma operacao do protocolo elimina repetido numa varredura` |
-| 14 | `SELECT saldo * 1.1 FROM clientes` | `SQL, coluna 14: esperava FROM, e veio "*"` |
-| 15 | `SELECT upper(nome) FROM clientes` | `SQL, coluna 13: esperava FROM, e veio "("` |
-| 16 | `SELECT 1` (o *ping* de todo driver) | `SQL, coluna 8: esperava nome de coluna, e veio "1"` |
-| 17 | `SELECT * FROM clientes WHERE id = $1` (parâmetro) | `SQL, coluna 35: caractere '$' nao faz parte da linguagem` |
+| 1 | `SELECT * FROM clientes WHERE cidade = 'Blumenau'` (sem índice) | `WHERE cidade = ... exige um indice de uma coluna sobre cidade. Nao existe. O varrer filtra, mas dentro da pagina que ele EXAMINA -- e um SELECT que respondesse sobre a primeira pagina teria a cara de ter respondido sobre a tabela. Ha indice de coluna unica sobre: id, nome` |
+| 2 | `SELECT cidade FROM clientes GROUP BY cidade HAVING COUNT(*) > 1` | `expressao "COUNT ( * ) > 1": funcao COUNT nao existe (as que existem: UPPER, LOWER, TRIM, LENGTH/CHAR_LENGTH, ROUND, ABS, COALESCE/IFNULL e CONCAT)` — o `HAVING` enxerga os APELIDOS do `agrupar` (`contagem`, `total`…), não a chamada de função de novo |
+| 3 | `SELECT DISTINCT cidade FROM clientes` *(frente viva)* | `SQL, coluna 17: DISTINCT nao tem substrato: nenhuma operacao do protocolo elimina repetido numa varredura` |
+| 4 | `SELECT nome FROM clientes UNION SELECT nome FROM clientes` *(frente viva)* | `SQL, coluna 27: sobrou "UNION" depois do fim do comando; um comando por vez` |
+| 5 | `SELECT CASE WHEN id = 1 THEN 'um' ELSE 'outro' END FROM clientes` | `SQL, coluna 13: esperava FROM, e veio "WHEN"` — o parser lê `CASE` como nome de coluna e desiste no `WHEN` |
+| 6 | `SELECT saldo * 1.1 FROM clientes` (expressão na projeção) | `SQL, coluna 14: esperava FROM, e veio "*"` — a expressão do item 2 da §7 só vale no `WHERE`/`HAVING`/`ON`, não na lista de colunas |
+| 7 | `SELECT upper(nome) FROM clientes` (função escalar na projeção) | `SQL, coluna 13: esperava FROM, e veio "("` — mesma raiz da linha 6 |
+| 8 | `SELECT * FROM clientes WHERE id = $1` (parâmetro posicional) | `SQL, coluna 35: caractere '$' nao faz parte da linguagem` — o `?` desta casa já resolve o mesmo papel (`docs/SQL.md` §7.1), mas o driver de fio do PostgreSQL(R) manda `$1`/`$2` |
+| 9 | `SELECT 1` (o *ping* de todo driver) | `SQL, coluna 8: esperava nome de coluna, e veio "1"` |
+| 10 | `SELECT * FROM clientes WHERE id = 1 FOR UPDATE` | `expressao "id = 1 FOR UPDATE": sobrou FOR depois do fim da expressao` — a trava pessimista não existe; a otimista por `versao` existe (ver (c)) |
+| 11 | `CREATE TABLE fornecedores (id integer, nome text)` | `SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela operacao criar_tabela do protocolo` |
+| 12 | `DROP TABLE clientes` | `SQL, coluna 6: DROP TABLE e a operacao excluir_tabela do protocolo, que exige repetir o nome no campo "confirmar"` |
+| 13 | `ALTER TABLE clientes ADD COLUMN uf char(2)` | `SQL, coluna 1: esperava SET depois do escopo tabela, veio "ADD"` — o `ALTER TABLE` desta camada só fala com as diretivas (`docs/SQL.md` §2c), não com o esquema |
+| 14 | `CREATE INDEX porCidade ON clientes (cidade)` | `SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. …` — **gap sem caminho nenhum**, ver abaixo |
+| 15 | `DROP INDEX porNome` | `SQL, coluna 6: DROP nesta camada e de TRIGGER ou PROCEDURE` — não há op `excluir_indice` nenhuma; consequência de o índice só se declarar na criação da tabela |
 
-**As linhas 4 a 15 são uma coisa só, e isso é medição e não opinião:** todas
-esperam o mesmo par — *o `WHERE` que filtra de verdade* e *o avaliador de
-expressão*. É o item 10 da lista de `docs/SPRINTS.md`, e ele já nomeia cinco
-dependentes. A linha 16 e a 17 são de outra natureza: são o que um **driver**
-manda antes de qualquer consulta do usuário.
-
-E um gap que não é de linguagem, é de motor: **`CREATE INDEX` não tem
-equivalente nenhum.**
+E um gap que não é de linguagem, é de motor — **`CREATE INDEX` não tem
+equivalente nenhum**, hoje como em 07/09/2026:
 
 ```
 [RECUSADO] CREATE INDEX porCidade ON clientes (cidade)
@@ -62,134 +81,152 @@ equivalente nenhum.**
                  Tabela se cria pela operacao criar_tabela do protocolo
 ```
 
-Não há op `criar_indice` no catálogo das 123 operações. O índice se declara na
-criação da tabela (`criar_tabela`, campo `indices`) e ponto — é decisão
-registrada em `docs/PARECER-175-INDICE-NA-DECLARACAO.md`, não esquecimento. Mas
-ela custa isto: **quem descobre no mês três que precisa procurar por `cidade`
-tem de recriar a tabela**, e a linha 10 desta tabela é exatamente esse dia.
+Não há op `criar_indice` no catálogo. O índice se declara na criação da tabela
+(`criar_tabela`, campo `indices`) — decisão registrada em
+`docs/PARECER-175-INDICE-NA-DECLARACAO.md`, não esquecimento. O preço: quem
+descobre no mês três que precisa de índice em `cidade` tem de recriar a tabela,
+e a linha 1 desta lista é exatamente esse dia.
 
-### (b) Falta, e NÃO importa aqui — 8, com o motivo
+### (b) Falta, e NÃO importa aqui — 15, com o motivo
 
 | comando | por que não é essencial neste motor |
 |---|---|
-| `CREATE VIEW` / `MATERIALIZED VIEW` | uma view é um `SELECT` guardado, e o `SELECT` desta camada ainda não faz o que uma view útil pediria (junção, expressão, agregado). Guardar hoje seria guardar a limitação com outro nome |
-| `WITH` (CTE) e `WITH RECURSIVE` | `WITH nao e um comando desta camada`. É construção de relatório, não de tela de cadastro — e senta em cima do `GROUP BY` que não existe |
-| *window functions* (`ROW_NUMBER() OVER …`) | idem: é o que uma ferramenta de BI gera sozinha. Está na lista como item 24, **dependente** do item 10 |
-| subconsulta (`WHERE id IN (SELECT …)`) | o aplicativo de cadastro resolve com duas chamadas, e a forma de uma chamada só depende do mesmo planejador |
-| `VACUUM`, `ANALYZE`, `CLUSTER` | compactar renumeraria rowid, e **rowid é endereço** — a ordem de digitação é pétrea. `VACUUM` aqui não é «ainda não», é «não» |
-| `COPY`, `PREPARE`, `LISTEN/NOTIFY`, `DO` | `COPY nao e um comando desta camada` etc. Carga e exportação já existem por operação própria; o resto é do dialeto, não do cadastro |
-| `CREATE EXTENSION`, FDW, *tablespace*, *publication*, *operator class*, *collation*, *domain*, *cast*, *aggregate*, *rule*, *event trigger* | são a metade do índice do PostgreSQL(R) que existe porque ele é extensível. O PhxSql é um motor de arquivos separados no modelo HFSQL: não há a que estender |
-| `COMMENT ON` | `COMMENT nao e um comando desta camada`. O comentário de coluna existe aqui como `caption`/`descricao` no esquema — é campo, não comando |
+| `TRUNCATE TABLE clientes` | `TRUNCATE nao e um comando desta camada`. Esvaziar uma tabela de produção sem WHERE não é operação de cadastro; existe `excluir_tabela` + `criar_tabela` para quem precisa mesmo |
+| `GRANT SELECT ON clientes TO leitor` | `GRANT nao e um comando desta camada`. O direito por usuário e **por tabela** já existe na configuração (`{"op":"usuarios"}`) — ver (c) |
+| `REVOKE SELECT ON clientes FROM leitor` | idem, espelho do de cima |
+| `CREATE ROLE leitor` | `CREATE nesta camada cria TRIGGER ou PROCEDURE`. Não há papel (role); o direito é por usuário e por tabela, e cobre o caso de uso comum |
+| `EXPLAIN SELECT * FROM clientes` | `EXPLAIN nao e um comando desta camada`. O campo `notas` que toda resposta do `sql` traz já diz o índice escolhido e que não há planejador — é o mesmo conteúdo, sem comando novo |
+| `INSERT INTO clientes (nome) VALUES ('Zeca') RETURNING id` | `sobrou "RETURNING" depois do fim do comando`. A resposta de um `INSERT` traduzido **já** devolve `rowid` no envelope — `RETURNING id` seria sintaxe para algo que o protocolo já entrega sem pedir |
+| `SET TRANSACTION ISOLATION LEVEL SERIALIZABLE` | recusa nomeando a alternativa: o nível se pede na ABERTURA (`BEGIN ISOLATION LEVEL REPEATABLE READ`), não por `SET` solto — o tradutor não guarda estado de sessão para um `SET` valer no próximo comando |
+| `COPY clientes FROM '/tmp/x.csv' CSV` | `COPY nao e um comando desta camada`. Carga em massa já existe por operação (`importar_conferir` + `inserir_lote` + `BULKINSERT`) — ver (c); ler arquivo do disco do servidor a pedido do cliente é superfície de ataque que este motor não quer |
+| `COMMENT ON TABLE clientes IS 'cadastro'` | `COMMENT nao e um comando desta camada`. O comentário de coluna já existe como `caption`/`descricao` no esquema — é campo, não comando |
+| `CREATE SEQUENCE s1` | `CREATE nesta camada cria TRIGGER ou PROCEDURE`. Sequência existe **por tabela**, automática (`{"op":"sequencias"}`) — objeto de sequência autônomo é o item 15 de `docs/SPRINTS.md` |
+| `ANALYZE clientes` | `ANALYZE nao e um comando desta camada`. As `notas` da resposta já dizem o índice escolhido — não há estatística separada para atualizar |
+| `VACUUM clientes` | `VACUUM nao e um comando desta camada`, e não haverá enquanto `rowid` for endereço: compactar renumeraria slot, e a ordem de digitação é pétrea |
+| `PREPARE p1 AS SELECT * FROM clientes` | `PREPARE nao e um comando desta camada`. O `?` já resolve o parâmetro sem *round-trip* de preparo; um *statement* nomeado de servidor não muda o resultado, só a forma de pedir |
+| `SET search_path TO public` | `SET nao e um comando desta camada`. O schema já se escolhe pelo endereço de três partes no `FROM` (`docs/SQL.md`, "Endereço de três partes") |
+| `SHOW server_version` | `SHOW nesta camada lista TRIGGERS ou PROCEDURES; tabelas e colunas saem por sistabelas/siscolunas`. A versão do servidor sai pelo catálogo (`{"op":"catalogo"}`), não por uma variável de sessão |
 
-`CREATE ROLE` fica aqui **com ressalva**: o direito por usuário e **por tabela**
-já existe (pedido 124), e o papel é conveniência de administração. Ele é o item
-14 da lista de sprints, não um buraco no dia a dia.
+### (c) Existe, com outro nome ou outra forma — 40 equivalências provadas nesta corrida
 
-### (c) Existe, com outro nome ou outra forma — 26
-
-Estas rodaram de verdade nesta corrida, pelo protocolo, e a resposta está no
-`resultados.json` da bancada. **Sem esta tabela a lista de cima mentiria por
-omissão:** «o PhxSql não tem `INSERT`» é verdade sobre a *linguagem* e falso
-sobre o *motor*.
+Rodaram de verdade nesta corrida, pelo protocolo. **Sem esta tabela a lista de
+cima mentiria por omissão:** «o PhxSql não tem `INSERT`» é falso desde sempre
+sobre o *motor* — e agora é falso também sobre a *linguagem*, para as dez
+formas que a rodada de composição fechou.
 
 | SQL do PostgreSQL(R) | o que faz a mesma coisa aqui | prova desta corrida |
 |---|---|---|
-| `INSERT` | `{"op":"inserir"}` | `{'rowid': 4, 'registros': 4}` |
-| `INSERT` de muitas | `{"op":"inserir_lote"}` | `{'database': 'loja', 'tabela': 'clientes', 'formato': 'lista', 'recebidas': 2, 'gravadas': 2, 'recusadas': 0, …` |
-| `UPDATE … WHERE pk` | `{"op":"atualizar","rowid":…}` | `{'rowid': 1, 'versao': 2}` |
-| `DELETE` | `{"op":"excluir"}` | `{'rowid': 2, 'excluido': True, 'modo': 'suave', 'na_lixeira': False, 'reversivel': True}` |
+| `SELECT * FROM t` | `{"op":"varrer"}` | `{'registros': 4, 'visiveis': 3, 'devolvidas': 2, 'examinadas': 2, …}` |
+| `SELECT … WHERE chave = ?` | `{"op":"buscar"}` | `{'encontrados': 1, 'linhas': [{'rowid': 1, 'id': 1, 'descricao': 'cafe', …}]}` |
+| `SELECT … WHERE col = ?` sem índice | `varrer` com `onde` | `{'registros': 4, 'devolvidas': 1, 'examinadas': 3, …}` |
+| `… WHERE col LIKE '%x%'` | `varrer` com `onde`/`contem` | `{'registros': 4, 'devolvidas': 0, 'examinadas': 3, …}` |
+| `INSERT` | `{"op":"inserir"}` | `{'rowid': 5, 'registros': 5}` |
+| `INSERT` de muitas | `{"op":"inserir_lote"}` | `{'recebidas': 2, 'gravadas': 2, 'recusadas': 0, …}` |
+| `UPDATE … WHERE pk` | `{"op":"atualizar"}` | `{'rowid': 1, 'versao': 6}` |
+| `DELETE` | `{"op":"excluir"}` | `{'rowid': 2, 'excluido': True, 'modo': 'suave', 'reversivel': True}` |
 | — (não há em SQL padrão) | `{"op":"restaurar"}` desfaz o excluir suave | `{'rowid': 2, 'restaurado': True}` |
-| `SELECT * FROM t` | `{"op":"varrer"}` | `{'registros': 3, 'visiveis': 3, 'marcadas': 0, 'devolvidas': 2, 'examinadas': 2, 'modo': 'posicao', …` |
-| `SELECT … WHERE chave = ?` | `{"op":"buscar","indice":…,"chave":[…]}` | `{'encontrados': 1, 'linhas': [{'rowid': 1, 'id': 1, 'descricao': 'cafe', 'softdeleted': False, 'rownum': 1}]}` |
-| `SELECT … WHERE col = ?` **sem índice** | `varrer` com `onde` | `{'registros': 3, 'visiveis': 3, 'marcadas': 0, 'devolvidas': 2, 'examinadas': 3, 'modo': 'posicao', …` — filtra, dentro do que examina |
-| `… WHERE col LIKE '%x%'` | `varrer` com `onde` / `contem` | `{'registros': 3, 'visiveis': 3, 'marcadas': 0, 'devolvidas': 1, 'examinadas': 3, 'modo': 'posicao', …` |
-| `… WHERE a = ? AND b = ?` | `varrer` com **duas** condições em `onde` | `{'registros': 3, 'visiveis': 3, 'marcadas': 0, 'devolvidas': 1, 'examinadas': 3, 'modo': 'posicao', …` — **o AND existe embaixo**, e é o `SELECT` que não o alcança |
-| `CREATE TABLE` | `{"op":"criar_tabela"}` | `{'database': 'loja', 'schema': None, 'tabela': 'fornecedores', 'colunas': 4, 'indices': 1, 'paginada': False}` |
-| `ALTER TABLE ADD COLUMN` | `{"op":"acrescentar_coluna"}` | `{'database': 'loja', 'tabela': 'fornecedores', 'coluna': 'uf', 'posicao': 2, 'colunas': 5, 'slots_reescritos': 0, …` |
-| `ALTER TABLE RENAME` | `{"op":"renomear_tabela"}` | `{'database': 'loja', 'origem': 'fornecedores', 'destino': 'fornecedores2', 'arquivos': 8}` |
-| `DROP TABLE` | `{"op":"excluir_tabela","confirmar":…}` | lista os 8 arquivos apagados |
+| `CREATE TABLE` | `{"op":"criar_tabela"}` | `{'tabela': 'fornecedores', 'colunas': 4, 'indices': 1, …}` |
+| `ALTER TABLE RENAME` | `{"op":"renomear_tabela"}` | `{'origem': 'fornecedores', 'destino': 'fornecedores2', 'arquivos': 8}` |
+| `DROP TABLE` | `{"op":"excluir_tabela"}` | lista os 8 arquivos apagados |
 | `\l` / `SHOW DATABASES` | `{"op":"bancos"}` | `['loja']` |
-| `\dt` | `{"op":"tabelas"}` | `{'database': 'loja', 'schemas': [], 'tabelas': ['chamados', 'clientes', 'itens']}` |
-| `\d tabela` | `{"op":"esquema"}` | o esquema inteiro, com os 8 arquivos da tabela |
-| `information_schema.tables` | `{"op":"sistabelas"}` | `{'database': 'loja', 'total': 3, 'tabelas': [{'tabela': 'chamados', 'schema': '', 'registros': 1, 'slots': 1, …` |
-| `information_schema.columns` | `{"op":"siscolunas"}` | `{'database': 'loja', 'total': 6, 'colunas': [{'tabela': 'clientes', 'posicao': 1, …` |
-| `JOIN` | `{"op":"juntar"}` | `{'tipo': 'interna', 'sql': 'INNER JOIN', 'a': 'clientes', 'b': 'itens', …` — sete formas |
-| `UNION` / `UNION ALL` | `{"op":"unir","modo":"distinta"\|"tudo"}` | `{'modo': 'distinta', 'sql': 'UNION', 'tabelas': ['clientes', 'clientes'], …` |
-| `GROUP BY` cruzado | `{"op":"pivotar"}` | `{'database': 'loja', 'tabela': 'clientes', 'agregador': 'soma', 'campos_linha': ['cidade'], 'campos_coluna': [], 'valor': 'saldo', …` |
-| `BEGIN` / `COMMIT` / `ROLLBACK` / `SAVEPOINT` | **passam pelo SQL**, e também são op própria | `BEGIN` → `{'transaction_id': 1788799736955, 'transaction_state': 'ACTIVE', 'transaction_start_time': '2026-09-07 16:48:56,998', 'transaction_isolation': 'escrita serializavel por tabela, leitura confirmada e nao bloqueante, …` |
-| `SELECT … FOR UPDATE` | a janela de conflito por `versao` do `atualizar` — trava otimista em vez de pessimista | `{'rowid': 1, 'versao': 2}` |
-| `GRANT` / `REVOKE` | `{"op":"usuarios"}` + o direito por base e **por tabela** na configuração | `[]` (servidor sem cadastro nesta corrida) |
-| `EXPLAIN` | o campo `notas` que toda resposta do `sql` traz | `['indice porNome escolhido pelo WHERE -- e nao ha planejador: se houvesse dois candidatos, o primeiro declarado venceria']` |
+| `\dt` / `SHOW TABLES` | `{"op":"tabelas"}` | `{'tabelas': ['chamados', 'clientes', 'itens']}` |
+| `\d tabela` / `DESCRIBE` | `{"op":"esquema"}` | o esquema inteiro, com os 8 arquivos da tabela |
+| `information_schema.tables` | `{"op":"sistabelas"}` | `{'total': 3, 'tabelas': [{'tabela': 'chamados', …}]}` |
+| `information_schema.columns` | `{"op":"siscolunas"}` | `{'total': 6, 'colunas': [{'tabela': 'clientes', …}]}` |
+| `JOIN` | `{"op":"juntar"}` (a versão avulsa, sete formas) — e agora **também** pelo SQL, via `consultar` | `{'tipo': 'interna', 'sql': 'INNER JOIN', 'a': 'clientes', 'b': 'itens', …}` |
+| `UNION ALL` | `{"op":"unir","modo":"tudo"}` | `{'modo': 'tudo', 'sql': 'UNION ALL', 'tabelas': ['clientes', 'clientes'], …}` |
+| `UNION` | `{"op":"unir","modo":"distinta"}` | `{'modo': 'distinta', 'sql': 'UNION', 'tabelas': ['clientes', 'clientes'], …}` |
+| `GROUP BY` cruzado | `{"op":"pivotar"}` | `{'agregador': 'soma', 'campos_linha': ['cidade'], 'rotulos_linha': [...], …}` |
+| `MATCH … AGAINST` (FTS) | `{"op":"procurar_texto"}` | `{'encontrados': 1, 'linhas': [{'corpo': 'a fenix renasce das cinzas', …}]}` |
+| `CREATE SEQUENCE` / `nextval` | `{"op":"sequencias"}` | `{'sequencias': [{'tabela': 'clientes', 'coluna': 'id', 'proxima': 8, …}]}` |
+| `ALTER SEQUENCE RESTART` | `{"op":"ajustar_sequencia"}` | `{'antes': 8, 'proxima': 5000, …}` |
+| `COPY TO` / `SELECT INTO OUTFILE` | `{"op":"exportar"}` | `{'formato': 'csv', 'linhas': 1, 'bytes': 50, …}` |
+| `LOAD DATA INFILE` (conferência) | `{"op":"importar_conferir"}` | `{'linhas_lidas': 1, 'desconhecidas': [], 'faltando': [], …}` |
+| `CHECK TABLE` | `{"op":"verificar"}` | `{'registros': 7, 'slots': 7, 'indices': {'porId': 7, 'porNome': 7}, …}` |
+| `OPTIMIZE` / `REINDEX` | `{"op":"reindexar"}` | `{'porId': 7, 'porNome': 7}` |
+| `CHECKSUM TABLE` | `{"op":"checksum"}` | `{'checksum': '1e1a28f552b21afb', 'linhas': 1, …}` |
+| `SHOW PROCESSLIST` | `{"op":"sessoes"}` | `{'quantas': 1, 'executando': 1, …}` |
+| `SHOW GRANTS` / `pg_roles` | `{"op":"usuarios"}` | `{'ok': True, 'resultado': [], …}` (servidor sem cadastro nesta corrida) |
+| catálogo de `pivotar` (o que ele documenta) | `{"op":"catalogo","pedida":"pivotar"}` | `{'operacao': {'nome': 'pivotar', 'resumo': 'Tabulação cruzada: soma, conta ou tira a média…', 'permissao': 'ler', …}}` |
+| `LOCK TABLES … WRITE` (carga, ligar) | `{"op":"bulkinsert","ligado":true}` | `{'reservada': True, 'expira_em_s': 1800, 'prazo_min': 30}` |
+| `UNLOCK TABLES` (carga, desligar) | `{"op":"bulkinsert","ligado":false}` | `{'liberada': True, 'durou_ms': 0, 'sincronizada': True}` |
+| `BEGIN` | **passa pelo SQL desde 08/09/2026**, e também é op própria | `{'transaction_id': …, 'transaction_state': 'ACTIVE', …}` |
+| `SAVEPOINT sp1` | idem | `{'savepoint': 'sp1', 'linhas': 0, …}` |
+| `ROLLBACK TO SAVEPOINT sp1` | idem | `{'savepoint': 'sp1', 'descartadas': 0, 'linhas': 0, …}` |
+| `COMMIT` | idem | `{'transaction_state': 'COMMITTED', 'gravadas': 0, …}` |
+| `AS OF` / histórico da linha | `{"op":"diario"}` | `{'total': 14, 'eventos': [{'operacao': 'inclusao', 'rowid': 6, …}]}` |
+| — (não há em SQL padrão) | `{"op":"lixeira"}` | conteúdo da lixeira suave da tabela |
 
-### E três coisas que a sonda topou sem procurar
+E duas leituras a mais que esta mesma corrida sustenta, sem serem candidatos
+próprios da fase de equivalências — por isso ficam fora da conta de 40 acima:
 
-**1. `WHERE id = 2` recusa quando a chave é `Sequence`, e passa quando é `Int8`.**
-Esta é a forma mais comum de tabela de cadastro que existe.
+| SQL do PostgreSQL(R) | o que faz a mesma coisa aqui | prova desta corrida |
+|---|---|---|
+| `SELECT … FOR UPDATE` | a janela de conflito por `versao` do `atualizar` — trava otimista, não pessimista | `{'rowid': 1, 'versao': 6}`, do `UPDATE … WHERE pk` acima |
+| `EXPLAIN` | o campo `notas` que toda resposta do `sql` traz | `['indice porId escolhido pelo WHERE -- e nao ha planejador: …']`, da linha `WHERE sobre chave Sequence` do controle |
+
+**`ALTER TABLE ADD COLUMN` → `{"op":"acrescentar_coluna"}` não pôde ser
+reprovado nesta corrida por um motivo da SONDA, não do motor**: o candidato
+fixo do script pede um `DEFAULT` que usa a coluna `"SC"`, que a tabela de teste
+desta rodada não tem (`o padrao de uf usa a coluna "SC", que a tabela nao
+tem`). A operação em si continua provada em `crates/phxsql-server/src/servidor.rs`
+(testes de `acrescentar_coluna`) e nas corridas anteriores — é a fixture de
+`bancada/gaps-sql/sondar.py` que precisa de ajuste, registrado aqui para não
+morrer com a sessão.
+
+### E o que a sonda topou sem procurar
 
 ```
-[ERRO] SELECT * FROM clientes WHERE id = 2      (id é Sequence)
-       [SP000018] tipo invalido: esperado numero da sequencia, recebido Texto("2")
-[OK  ] SELECT * FROM itens    WHERE id = 1      (id é Int8)
-       {'sql': 'SELECT * FROM itens WHERE id = 1', 'op': 'buscar', …
+[OK  ] o WHERE sobre chave Sequence recusa (o irmao Int8 passa)
+[OK  ] o mesmo WHERE sobre chave Int8 passa — o controle do de cima
+[ERRO] FROM schema.tabela inexistente vaza erro cru do SO, com repetir:true
+[ERRO] FROM tabela inexistente (sem schema) recusa direito, com repetir:false
+[OK  ] o varrer faz AND de duas condicoes — o substrato existe
+[OK  ] e o SELECT recusa a MESMA pergunta (WHERE cidade = .. AND nome = ..)
+[OK  ] o .fts dobra acento: fênix acha fenix
+[OK  ] e nao faz prefixo: fen nao acha fenix
 ```
 
-O motivo é conhecido e está escrito em `docs/SQL.md` §5: o tradutor guarda todo
-literal numérico como **texto**, de propósito, e o motor foi **alargado** para
-aceitar inteiro escrito como texto. **O alargamento alcançou `Int`, e não
-alcançou `Sequence`** — que é o irmão, e é o tipo da chave primária de quase
-toda tabela nascida pela tela. É o padrão que o `CLAUDE.md` já nomeia:
-*conserto entra no caminho que o motivou, e o caminho IRMÃO fica.*
+Os dois primeiros e os dois últimos são os mesmos achados desde 07/09/2026 —
+`WHERE id = 2` ainda recusa quando `id` é `Sequence` e passa quando é `Int8`
+(o alargamento do `docs/SQL.md` §5 cobriu `Int`, e não o irmão `Sequence`), e o
+`.fts` continua dobrando acento e não fazendo prefixo, como `docs/FTS.md`
+promete. **O que É novo:** o `varrer` sempre soube fazer `AND` de duas
+condições em `onde` (op crua); hoje o `SELECT` traduzido faz a MESMA pergunta
+por expressão — as linhas 55-72 do controle acima (`WHERE AND`/`OR`/`IN`/
+`BETWEEN`/`LIKE`/`IS NULL`, todas ACEITO) são a prova de que a lacuna que
+motivava este achado, em 07/09/2026, fechou.
 
-**2. `FROM schema.tabela` inexistente vaza o erro cru do sistema — e manda
-repetir.**
-
-```
-[ERRO] SELECT * FROM filial.clientes
-       [SP000010] erro de E/S: No such file or directory (os error 2)   … "repetir": true
-[ERRO] SELECT * FROM naoexiste
-       [SP000018] nao encontrado: nenhum volume de naoexiste.reg em …   … "repetir": false
-```
-
-Os dois erros são «a tabela não existe». O de baixo diz isso e diz que **não
-adianta repetir**; o de cima manda o driver **tentar de novo** para sempre, e
-não nomeia nada. E o caminho de cima é o que um driver ODBC/DBeaver percorre
-primeiro, porque é ele que pergunta por `information_schema.tables`.
-
-**3. O catálogo documenta valores que o motor recusa.**
+E o que valia como achado #3 em 07/09/2026 — *"o catálogo documenta valores
+que o motor recusa"* (`{"op":"unir","modo":"distinto"}` e
+`{"op":"pivotar","agregador":"somar"}`) — **continua valendo, sem mudança**:
 
 ```
-[ERRO] {"op":"unir", …, "modo":"distinto"}     (o valor que o catálogo descreve)
-       união desconhecida: "distinto" (use distinta ou tudo)
-[ERRO] {"op":"pivotar","chave":"cidade","valor":"saldo","agregador":"somar"}
-       (o EXEMPLO do próprio catálogo)
+[ERRO] {"op":"unir", …, "modo":"distinto"}     (o valor que o catalogo descreve)
+       uniao desconhecida: "distinto" (use distinta ou tudo)
+[ERRO] {"op":"pivotar", …, "agregador":"somar"}     (o EXEMPLO do proprio catalogo)
        agregador desconhecido: "somar" (use soma, media, contagem, minimo, maximo ou distintos)
 ```
 
-O `pivotar` é o pior dos dois: o catálogo documenta os parâmetros `chave` e
-`coluna`, e o motor quer `linhas` e `colunas`. **O exemplo colável do catálogo
-não roda.** É a família do «configuração que não é lida mente», do outro lado:
-aqui é documentação que descreve um motor que não existe.
-
 ## O que NÃO existe, e é dispensa registrada
 
-- **Não há executor de expressão nem planejador de consulta**, e é isso, e não
-  uma lista de verbos, que explica 13 das 17 faltas que importam. Enquanto não
-  houver, `AND`, `IN`, `LIKE`, `BETWEEN`, `IS NULL`, `DISTINCT`, `GROUP BY`,
-  `SUM`, `CASE` e `upper()` recusam **dizendo o nome da cláusula**, que é a
-  decisão certa: aceitar a sintaxe e responder sobre a primeira página seria a
-  resposta errada calada.
+- **Não há planejador de consulta** (qual índice usar com dois candidatos, ou
+  como decidir por `WHERE` sobre coluna sem índice) — isso explica as linhas 1
+  e 8-10 da tabela (a), e é decisão dita em `docs/SQL.md` §3, não esquecimento.
+- **Não há expressão nem função escalar na PROJEÇÃO do `SELECT`** — só no
+  `WHERE`/`HAVING`/`ON` (item 2 da §7 de `docs/SQL.md`). `CASE`, `saldo * 1.1`
+  e `upper(nome)` na lista de colunas recusam pelo mesmo motivo.
 - **Não há `CREATE INDEX` fora da criação da tabela** — decisão registrada, não
   falta.
-- **Não há `VACUUM`/`CLUSTER`/compactação**, e não haverá enquanto rowid for
+- **Não há `VACUUM`/`CLUSTER`/compactação**, e não haverá enquanto `rowid` for
   endereço.
 - **Não medi o protocolo de fio do PostgreSQL(R) nesta rodada.** Ele existe
-  (`crates/phxsql-server/src/pg/`, escrito à mão com SCRAM-SHA-256), e toda esta
+  (`crates/phxsql-server/src/pg/`, escrito à mão com SCRAM-SHA-256); esta
   resposta é sobre o texto SQL que chega pela op `sql`, não sobre o que passa
-  pelo fio. Quem quiser a lista pelo lado do fio precisa de outra sonda.
+  pelo fio.
 - **Não classifiquei o índice inteiro do PostgreSQL(R).** Ele lista ~180
-  comandos; mandei 49 ao motor. Os que não mandei estão na categoria (b) por
-  família (extensões, FDW, tablespaces, publications), e isso está dito em vez de
-  escondido.
+  comandos; mandei 49 ao motor, os mesmos de sempre mais os que a rodada de
+  composição tornou dignos de reteste.
 
 ## Como se refaz
 
@@ -198,7 +235,12 @@ python3 bancada/gaps-sql/sondar.py postgresql   # só este motor
 python3 bancada/gaps-sql/sondar.py              # os cinco, e as equivalências
 ```
 
-A sonda sobe um `phxsqld` na porta 6110, cria a base, roda o **controle
-positivo** (nove comandos que têm de passar; se um falhar ela para, porque zero
-sem controle não vale nada), manda cada candidato e derruba o servidor no fim.
-Grava `bancada/gaps-sql/resultados.json`.
+A sonda sobe um `phxsqld` na porta 6110 (ou `PHX_GAPS_PORTA`), cria a base,
+roda o **controle positivo** (nove comandos que têm de passar; se um falhar ela
+para, porque zero sem controle não vale nada), manda cada candidato e derruba o
+servidor no fim. Grava `bancada/gaps-sql/resultados.json`. **Cuidado com
+concorrência**: esta corrida saiu na porta 6119, e não na 6110 padrão, porque
+outra frente ocupava a porta ao rodar em paralelo — e o `resultados.json`
+compartilhado pode ser sobrescrito por outra corrida simultânea; quando isso
+importar, redirecione a saída do script para um arquivo próprio antes de
+confiar no JSON.

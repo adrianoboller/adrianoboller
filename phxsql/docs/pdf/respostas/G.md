@@ -1,7 +1,10 @@
 # G) exemplo de create database, table, column e ER
 
 > Corrida em 2026-09-07T16:25:26Z UTC · commit `a56a165` · `target/release/phxsqld`
-> · reproduzido por `python3 bancada/sql-exemplos/exercitar.py`
+> · reproduzido por `python3 bancada/sql-exemplos/exercitar.py` — reconferido
+> em 2026-09-23 (commit `b7490f1`): `criar_database`/`criar_tabela`/
+> `acrescentar_coluna`/`declarar_fk` e a regra primordial batem igual; nada
+> nesta resposta envelheceu.
 
 ## Resposta curta
 

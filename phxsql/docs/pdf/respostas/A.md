@@ -1,25 +1,26 @@
 # A) lista de comandos SQL funcionais no phxsql
 
-> Corrida em 2026-09-07T16:25:26Z UTC · commit `a56a165` · `target/release/phxsqld`
+> Corrida em 2026-09-23T00:00:17Z UTC · commit `b7490f1` · `target/release/phxsqld`
 > · reproduzido por `python3 bancada/sql-exemplos/exercitar.py`
 
 ## Resposta curta
 
 O phxsql tem **um tradutor SQL** (`crates/phxsql-sql/`), ligado ao motor pela
-operação `{"op":"sql","database":"...","texto":"..."}`. Ele cobre `SELECT`
-simples (projeção com apelido, `COUNT(*)`, `WHERE` de **igualdade** numa
-coluna **indexada**, `ORDER BY` **ascendente** numa coluna indexada, `LIMIT`/
-`OFFSET`), o vocabulário de transação (`BEGIN`/`START TRANSACTION`/`COMMIT`/
-`ROLLBACK`/`SAVEPOINT` e a forma longa com `SCOPE`/`TIMEOUT`/`LOCK MODE`) e o
-vocabulário de rotina (`CREATE`/`DROP`/`SHOW TRIGGER(S)`, `CREATE`/`DROP`/
-`SHOW PROCEDURE(S)`, `CALL`). **`INSERT`, `UPDATE`, `DELETE`, `CREATE TABLE`,
-`CREATE DATABASE` e `ALTER TABLE` não existem nesta camada** — são operações
-nativas do protocolo (`inserir`, `atualizar`, `excluir`, `criar_tabela`,
-`criar_database`, `acrescentar_coluna`), e o SQL text as recusa **nomeando o
-motivo**, não com "sintaxe inválida". Nesta rodada, **56 comandos mandados,
-28 `ok`, 28 `erro`** — cada `erro` é um comando que `docs/SQL.md` ou
-`docs/TRIGGERS.md` já documentam como recusado, exceto os dois achados da
-seção final.
+operação `{"op":"sql","database":"...","texto":"..."}`. **Esta resposta
+substitui inteira a de 07/09/2026 (commit a56a165)** — a lei do
+`docs/pdf/LEIA-ME.md`: *doc antigo é ponto de partida, nunca fonte da
+resposta*. Naquela corrida, `AND`/`LIKE`/`IN`/`BETWEEN`/`IS NULL`/`GROUP BY`/
+`SUM`/`INSERT`/`UPDATE`/`DELETE` recusavam; hoje **todos passam**. **Nesta
+rodada, 56 comandos mandados, 38 `ok`, 18 `erro`** (script `exercitar.py`
+computa e imprime o resumo — não é conta de mão). O que ainda recusa: `CREATE
+TABLE`/`CREATE DATABASE`/`ALTER TABLE` por SQL (são operações nativas do
+protocolo), `DISTINCT`, `ORDER BY DESC`, `WHERE`/`ORDER BY` em coluna sem
+índice, e **um comparador sozinho que não seja `=`** (`<>`, `<`, `<=`, `>` ou
+`>=` como única condição do `WHERE`) — o índice só desce por igualdade, e uma
+condição só não vira "expressão" (que resolveria a faixa por varredura). Os
+**dois achados** da rodada anterior (mensagem de `CREATE DATABASE` idêntica à
+de `CREATE TABLE`, e erro de E/S cru na tabela de três partes) estão **os dois
+corrigidos** — ver seção própria.
 
 ## Exemplo exercitado
 
@@ -27,7 +28,7 @@ Tabela usada em toda a bateria: `loja.clientes` (`id Int8` obrigatória e
 primária, `nome Str(40)`, `cidade Str(40)`; índice único `porId` só em `id`),
 com 5 linhas gravadas antes de começar.
 
-### SELECT — aceito
+### SELECT — aceito (15, oito herdados + sete que mudaram de estado)
 
 ```
 [OK  ] SELECT * simples
@@ -61,68 +62,127 @@ com 5 linhas gravadas antes de começar.
 [OK  ] LIMIT + OFFSET
        SQL: SELECT * FROM clientes LIMIT 2 OFFSET 1
        -> {..."devolvidas":2,"examinadas":2,"modo":"posicao","salto":"bisseccao",...}
+
+[OK  ] AND                                                    -- MUDOU (era ERRO em 07/09)
+       SQL: SELECT * FROM clientes WHERE id = 1 AND nome = 'Ana'
+       -> {"op":"sql","notas":["varredura com expressao: nao ha indice para esta forma",...],...}
+
+[OK  ] LIKE                                                   -- MUDOU
+       SQL: SELECT * FROM clientes WHERE nome LIKE 'A%'
+       -> {"op":"sql","notas":["varredura com expressao: nao ha indice para esta forma",...],...}
+
+[OK  ] IN                                                     -- MUDOU
+       SQL: SELECT * FROM clientes WHERE id IN (1, 2)
+       -> {"op":"sql","notas":["varredura com expressao: nao ha indice para esta forma",...],...}
+
+[OK  ] BETWEEN                                                -- MUDOU
+       SQL: SELECT * FROM clientes WHERE id BETWEEN 1 AND 3
+       -> {"op":"sql","notas":["varredura com expressao: nao ha indice para esta forma",...],...}
+
+[OK  ] IS NULL                                                -- MUDOU
+       SQL: SELECT * FROM clientes WHERE cidade IS NULL
+       -> {"op":"sql","notas":["varredura com expressao: nao ha indice para esta forma",...],...}
+
+[OK  ] GROUP BY                                               -- MUDOU
+       SQL: SELECT nome, COUNT(*) FROM clientes GROUP BY nome
+       -> {"op":"sql","notas":["GROUP BY vira `agrupar`: 1 coluna(s) de agrupamento -- sem indice nenhum..."],"colunas":[{"nome":"nome","tipo":"Str(40)"},{"nome":"contagem","tipo":"UInt8"}],...}
+
+[OK  ] SUM (agregado que nao e COUNT)                         -- MUDOU
+       SQL: SELECT SUM(id) FROM clientes
+       -> {"op":"sql","notas":["GROUP BY vira `agrupar`: 0 coluna(s) de agrupamento..."],"colunas":[{"nome":"soma_id","tipo":"Real8"}],"grupos":1,...}
 ```
 
-### SELECT — recusado por falta de substrato (documentado em `docs/SQL.md`)
+As sete linhas marcadas `-- MUDOU` fecharam entre 08 e 09/2026 (item 2 da §7
+de `docs/SQL.md`: expressão no `WHERE`, e item 3: `GROUP BY`/agregados). Nenhuma
+delas existia quando a resposta anterior desta pergunta foi escrita.
+
+### SELECT — ainda recusado (11 comandos testados, em 7 formas — os cinco comparadores de faixa colam a mesma recusa e viram um bloco só)
 
 ```
-[ERRO] WHERE <>
-       -> [SP000018] esquema invalido: WHERE id <> ... nao tem substrato: o indice
-          desce ate uma chave IGUAL, e a faixa ainda nao esta exposta no protocolo.
-          So `=` passa por aqui
-[ERRO] WHERE < / <= / > / >=   -- mesma recusa, mesmo motivo
+[ERRO] FROM banco.tabela (3 partes: so 2 aqui)                -- comportamento CORRETO, nao gap
+       SQL: SELECT * FROM loja.clientes
+       -> [SP000018] nao encontrado: a tabela loja.clientes nao existe em loja
+
+[ERRO] WHERE <>  / <  / <=  / >  / >=   (comparador sozinho, sem AND)
+       SQL: SELECT * FROM clientes WHERE id <> 1   (e os quatro irmãos)
+       -> WHERE id <> ... nao tem substrato: o indice desce ate uma chave IGUAL,
+          e a faixa ainda nao esta exposta no protocolo. So `=` passa por aqui
+
 [ERRO] ORDER BY desc
+       SQL: SELECT * FROM clientes ORDER BY id DESC
        -> ORDER BY id DESC nao tem substrato: o indice porId guarda essa coluna
-          em ASC, e a direcao esta gravada no .ndx -- nao ha quem inverta a lista
+          em ASC, e a direcao esta gravada no .ndx -- nao ha quem inverta a
+          lista depois. Quem precisa das duas direcoes declara dois indices na
+          criacao da tabela, um deles com a marca `desc`
+
 [ERRO] WHERE em coluna SEM indice (cidade)
        -> WHERE cidade = ... exige um indice de uma coluna sobre cidade. Nao
-          existe. [...] Ha indice de coluna unica sobre: id
+          existe. Ha indice de coluna unica sobre: id
+
 [ERRO] ORDER BY em coluna SEM indice (cidade)
-       -> ORDER BY cidade exige um indice de uma coluna sobre cidade. Nao existe,
-          e nao ha ordenador
-[ERRO] DISTINCT
+       -> ORDER BY cidade exige um indice de uma coluna sobre cidade. Nao
+          existe, e nao ha ordenador
+
+[ERRO] DISTINCT  (frente viva nesta mesma rodada — reconferir antes de citar)
        -> DISTINCT nao tem substrato: nenhuma operacao do protocolo elimina
           repetido numa varredura
-[ERRO] AND
-       -> o WHERE aceita UMA comparacao. Duas exigiriam interseccao de rowids,
-          e nao ha planejador que decida por qual indice comecar
-[ERRO] LIKE
-       -> LIKE precisaria varrer comparando texto linha a linha [...] mas so
-          dentro da pagina que examina
-[ERRO] IN
-       -> IN e uma lista de buscas; o motor faz cada uma, mas quem junta os
-          resultados ainda nao existe
-[ERRO] BETWEEN
-       -> BETWEEN e faixa de indice, e a faixa ainda nao esta exposta no protocolo
-[ERRO] IS NULL
-       -> IS NULL nao tem filtro embaixo: nulo se ve lendo a linha
-[ERRO] JOIN
-       -> junção ainda nao passa por aqui. O motor ja junta -- e a operacao
-          juntar, com sete formas -- mas a traducao do JOIN e outra rodada
-[ERRO] SUM(id)
-       -> SUM() nao tem quem calcule embaixo. So COUNT(*) passa, porque a
-          contagem sai do cabecalho da tabela em O(1)
+
+[ERRO] JOIN — mas é a FIXTURE, não o motor
+       SQL: SELECT * FROM clientes JOIN pedidos ON clientes.id = pedidos.cliente_id
+       -> nao encontrado: a tabela pedidos nao existe em loja
 ```
 
-### Verbos de escrita e DDL — recusados nomeando a operação nativa
+**O `WHERE`/`ORDER BY` sem índice e o comparador sozinho continuam exatamente
+como em 07/09/2026** — nenhuma das duas coisas foi tocada pela rodada de
+composição, e a razão é a mesma: não há planejador de índice (`docs/SQL.md`
+§3). **O `JOIN` desta bateria não prova nada, num sentido ou noutro**: o
+roteiro de `exercitar.py` nunca criou a tabela `pedidos`, então o `SELECT …
+JOIN pedidos …` recusa por "tabela não existe", não por falta de tradutor — é
+falha da fixture do script, registrada aqui para não morrer com a sessão (a
+resposta B, seção (c), já prova `JOIN` ACEITO com duas tabelas reais).
+
+### Verbos de escrita e DDL
 
 ```
-[ERRO] INSERT INTO clientes (id, nome) VALUES (9, 'Zeca')
-       -> INSERT ainda nao existe nesta camada -- so SELECT. A operacao
-          equivalente ja funciona pelo protocolo
-[ERRO] UPDATE clientes SET nome = 'X' WHERE id = 1   -- mesma recusa, verbo UPDATE
-[ERRO] DELETE FROM clientes WHERE id = 1             -- mesma recusa, verbo DELETE
-[ERRO] CREATE TABLE x (id INT)
-       -> CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela
-          operacao criar_tabela do protocolo
-[ERRO] CREATE DATABASE outra          -- MESMA mensagem do CREATE TABLE (achado, ver abaixo)
-[ERRO] ALTER TABLE clientes ADD COLUMN x INT
-       -> SQL, coluna 1: ALTER nao e um comando desta camada
+[OK  ] INSERT via SQL                                         -- MUDOU (era ERRO)
+       SQL: INSERT INTO clientes (id, nome) VALUES (9, 'Zeca')
+       -> {"op":"sql","notas":["INSERT vira `inserir`..."],"afetadas":1,"rowid":6,"registros":6,"ok":true}
+
+[OK  ] UPDATE via SQL                                         -- MUDOU
+       SQL: UPDATE clientes SET nome = 'X' WHERE id = 1
+       -> {"op":"sql","notas":["UPDATE por chave e TRES passos..."],...}
+
+[OK  ] DELETE via SQL                                         -- MUDOU
+       SQL: DELETE FROM clientes WHERE id = 1
+       -> {"op":"sql","notas":["DELETE por chave: ...E o excluir SUAVE..."],...}
+
+[ERRO] CREATE TABLE via SQL
+       SQL: CREATE TABLE x (id INT)
+       -> SQL, coluna 8: CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela
+          se cria pela operacao criar_tabela do protocolo
+
+[ERRO] CREATE DATABASE via SQL                                -- MENSAGEM CORRIGIDA (era a de CREATE TABLE)
+       SQL: CREATE DATABASE outra
+       -> SQL, coluna 8: CREATE DATABASE nao existe nesta camada — nao ha DDL
+          de database no SQL em texto. Use a operacao criar_database do
+          protocolo
+
+[ERRO] ALTER TABLE via SQL
+       SQL: ALTER TABLE clientes ADD COLUMN x INT
+       -> SQL, coluna 1: esperava SET depois do escopo tabela, veio "ADD"
+
 [ERRO] BULKINSERT(true)
+       SQL: BULKINSERT(true)
        -> BULKINSERT e comando de SESSAO, e nao de instrucao: ele reserva a
           tabela para carga e a reserva morre com a conexao. Hoje se pede pela
           porta de dados, com a operacao bulkinsert
 ```
+
+**`INSERT`/`UPDATE`/`DELETE` por chave fecharam em 08/09/2026** (`dml.rs`),
+item 2 do roteiro de `docs/SQL.md` §4. `CREATE TABLE`/`ALTER TABLE`/
+`BULKINSERT(true)` continuam sendo operações nativas do protocolo, sem forma
+de texto — decisão, não esquecimento (`docs/SQL.md` §4 item 3 para o
+`BULKINSERT`).
 
 ### Transação — aceita, com a conexão fechando o que abre
 
@@ -147,8 +207,14 @@ com 5 linhas gravadas antes de começar.
 [ERRO] COMMIT AND CHAIN
        -> SQL, coluna 1: sobrou "AND" depois do comando de commit
 [ERRO] SET TRANSACTION ISOLATION LEVEL SERIALIZABLE
-       -> SQL, coluna 1: SET nao e um comando desta camada
+       -> SQL, coluna 1: SET TRANSACTION ISOLATION LEVEL SERIALIZABLE nao
+          existe aqui: ... O nivel se pede na ABERTURA: BEGIN ISOLATION LEVEL
+          REPEATABLE READ ..., e READ COMMITTED e o padrao. SERIALIZABLE nao
+          existe: o motor nao promete o nome que nao provou
 ```
+
+Nada mudou nesta seção desde 07/09/2026 — todas as três recusas aqui são
+**corretas por desenho** (§2b de `docs/SQL.md`), não gaps.
 
 ### Gatilho e procedimento — a mesma op `sql`
 
@@ -165,49 +231,54 @@ com 5 linhas gravadas antes de começar.
 [OK  ] DROP PROCEDURE dobro
 ```
 
-**Resumo desta corrida: 56 comandos, 28 `ok`, 28 `erro`.**
+Nada mudou nesta seção desde 07/09/2026.
 
-### Dois achados desta bateria (doc diverge do motor)
+**Resumo desta corrida: 56 comandos, 38 `ok`, 18 `erro`** (impresso pelo
+próprio `exercitar.py`, não contado à mão).
 
-1. **`CREATE DATABASE outra` recebe a mensagem de `CREATE TABLE`.** A recusa
-   diz *"CREATE nesta camada cria TRIGGER ou PROCEDURE. Tabela se cria pela
-   operação `criar_tabela` do protocolo"* — o texto nomeia só a tabela, nunca
-   o database, embora a recusa também valha para `CREATE DATABASE`. Quem lê
-   essa frase depois de digitar `CREATE DATABASE` não encontra o próprio
-   comando nela.
-2. **`SELECT * FROM loja.clientes` (pensado como "banco.tabela") vaza um erro
-   de E/S cru.** `docs/SQL.md` §"Endereço de três partes" diz que a forma de
-   **duas** partes é `schema.tabela`, não `banco.tabela` — e é isso que
-   aconteceu: o motor procurou a tabela `clientes` dentro do **schema**
-   `loja` (que não existe) e devolveu `[SP000010] erro de E/S: No such file
-   or directory (os error 2)`, em vez de uma recusa nomeando "schema não
-   encontrado". É o padrão que o `CLAUDE.md` já cobra em outro caminho
-   (`nenhum volume de clientes.reg em /tmp/…`): erro de sistema operacional
-   vazando cru para quem só tinha a intenção de trocar de banco pelo `FROM`.
+### Os dois achados da rodada anterior — os DOIS corrigidos
+
+1. ~~`CREATE DATABASE outra` recebe a mensagem de `CREATE TABLE`~~ —
+   **CORRIGIDO**. A recusa hoje nomeia o próprio comando: *"CREATE DATABASE
+   nao existe nesta camada — nao ha DDL de database no SQL em texto. Use a
+   operacao criar_database do protocolo"*.
+2. ~~`SELECT * FROM loja.clientes` vaza um erro de E/S cru~~ — **CORRIGIDO**.
+   A recusa hoje é *"nao encontrado: a tabela loja.clientes nao existe em
+   loja"* — nomeada, sem caminho de disco, sem `[SP000010] erro de E/S`. É a
+   mesma correção que `docs/SQL.md` §5 já registrava para o nome de tabela
+   simples, agora medida também para o endereço de três partes.
+
+### Um achado novo desta corrida: a fixture do `JOIN`, não o motor
+
+O candidato de `JOIN` em `item_a` nunca criou a tabela `pedidos`, então a
+recusa que ele produz (`nao encontrado: a tabela pedidos nao existe em loja`)
+não prova nem desprova o tradutor de `JOIN`. Isso já era assim em 07/09/2026 e
+não foi notado porque, naquela data, `JOIN` recusava por um motivo de
+linguagem genuíno (`junção ainda nao passa por aqui`) que escondia o problema
+da fixture — hoje que a linguagem aceita `JOIN`, a fixture furada aparece.
+Prova de que `JOIN` funciona está na resposta B, seção (c).
 
 ## O que NÃO existe, e é dispensa registrada
 
-- **`INSERT`/`UPDATE`/`DELETE` por SQL não existem** — decisão documentada em
-  `docs/SQL.md` §4: passo 2 do roteiro, ainda não feito. A operação
-  equivalente já existe pelo protocolo (`inserir`/`atualizar`/`excluir`).
-- **`CREATE TABLE`, `CREATE DATABASE`, `ALTER TABLE`, `FOREIGN KEY` por SQL
-  não existem** — são operações nativas (`criar_tabela`, `criar_database`,
-  `acrescentar_coluna`, `declarar_fk`), exercitadas no item G. A recusa do
-  `CREATE` já nomeia o caminho certo; a do `ALTER` só diz "não é um comando
-  desta camada" (sem apontar `acrescentar_coluna`) — recusa correta, mensagem
-  mais pobre que a do `CREATE`.
-- **Expressão em `WHERE` (`preco * 1.1 > 100`), planejador de dois índices,
-  `GROUP BY` geral, subconsulta e CTE** — `docs/SQL.md` §3 já diz que não há
-  substrato, e a sonda confirma: `AND`, `LIKE`, `IN`, `BETWEEN`, faixas
-  (`<`/`<=`/`>`/`>=`/`<>`) e `JOIN` recusam nomeando a própria cláusula.
-- **Nível de isolamento acima de `READ COMMITTED`** — `SET TRANSACTION
-  ISOLATION LEVEL SERIALIZABLE` não é reconhecido nem pelo detector de
-  transação nem pelo de rotina, e cai no catch-all genérico "SET não é um
-  comando desta camada". `docs/SQL.md` §3 pede que essa recusa diga o nível
-  real suportado — hoje ela não diz nada sobre isolamento, é o mesmo texto
-  genérico de qualquer verbo desconhecido. Dispensa **não** registrada no
-  doc: é o achado 2 lido de outro ângulo, e fica anotado aqui para quem for
-  fechar o pedido.
+- **`CREATE TABLE`, `CREATE DATABASE`, `ALTER TABLE`, `BULKINSERT(true)` por
+  SQL não existem** — são operações nativas (`criar_tabela`, `criar_database`,
+  `acrescentar_coluna`, `bulkinsert`), decisão documentada em `docs/SQL.md`.
+- **Planejador de índice** — `WHERE`/`ORDER BY` em coluna sem índice, e um
+  comparador de faixa (`<>`/`<`/`<=`/`>`/`>=`) **sozinho** (sem `AND`) ainda
+  recusam. A composição de 08-09/2026 abriu a expressão para `AND`/`OR`/`IN`/
+  `BETWEEN`/`LIKE`/`IS NULL`, mas uma única comparação continua classificada
+  como forma "Simples" (`docs/SQL.md` §7 item 2), que só sabe `=`.
+- **`DISTINCT`** — sem substrato nesta corrida; há frente viva mexendo nisso
+  na mesma rodada em que esta resposta foi escrita. Reconfira com
+  `bancada/gaps-sql/sondar.py postgresql` antes de citar esta linha depois de
+  hoje.
+- **Nível de isolamento acima de `READ COMMITTED` por `SET`** — `SET
+  TRANSACTION ISOLATION LEVEL SERIALIZABLE` continua recusando; o caminho que
+  funciona é `BEGIN ISOLATION LEVEL REPEATABLE READ` na abertura (`docs/SQL.md`
+  §2b), fechado em 16/09/2026.
+- **A fixture de `exercitar.py` não cria uma segunda tabela para `JOIN`** —
+  falta do script, não do motor; registrado acima para a próxima rodada
+  consertar antes de reusar este exemplo.
 
 ## Como se refaz
 
@@ -215,6 +286,7 @@ com 5 linhas gravadas antes de começar.
 python3 bancada/sql-exemplos/exercitar.py
 ```
 
-Sobe um `phxsqld` próprio na porta 6100, roda as cinco seções (A, E, F, G, H)
-e imprime a saída crua de cada comando. A tabela `clientes` e os 56 comandos
-desta seção nascem nas primeiras linhas da função `item_a`.
+Sobe um `phxsqld` próprio na porta 6100 (ou `PHX_F1_PORTA`), roda as cinco
+seções (A, E, F, G, H) e imprime a saída crua de cada comando, e o próprio
+resumo de acertos/erros da seção A. A tabela `clientes` e os 56 comandos desta
+seção nascem nas primeiras linhas da função `item_a`.

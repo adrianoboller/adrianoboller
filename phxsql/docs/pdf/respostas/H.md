@@ -1,7 +1,13 @@
 # H) exemplo de uso systables e syscolumns
 
 > Corrida em 2026-09-07T16:25:26Z UTC · commit `a56a165` · `target/release/phxsqld`
-> · reproduzido por `python3 bancada/sql-exemplos/exercitar.py`
+> · reproduzido por `python3 bancada/sql-exemplos/exercitar.py` — reconferido
+> em 2026-09-23 (commit `b7490f1`): `systables`/`syscolumns`/`catalogo`
+> comportam-se igual. **Um número mudou, e é natural, não defeito:** o
+> catálogo tinha 123 operações em 07/09/2026 e tem **140** hoje — o protocolo
+> cresceu nas rodadas entre as duas corridas. O `{"total":123,...}` colado
+> abaixo é o registro daquele dia; para o número de hoje, rode
+> `{"op":"catalogo"}` de novo.
 
 ## Resposta curta
 

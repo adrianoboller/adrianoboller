@@ -1,7 +1,9 @@
 # E) exemplo de stored procedure em phxsql
 
 > Corrida em 2026-09-07T16:25:26Z UTC · commit `a56a165` · `target/release/phxsqld`
-> · reproduzido por `python3 bancada/sql-exemplos/exercitar.py`
+> · reproduzido por `python3 bancada/sql-exemplos/exercitar.py` — reconferido
+> em 2026-09-23 (commit `b7490f1`): o exemplo exercitado bate igual; a única
+> mudança é a linha sobre transação no corpo, corrigida abaixo.
 
 ## Resposta curta
 
@@ -101,8 +103,16 @@ DROP PROCEDURE resumo_clientes -> {"procedimento":"resumo_clientes","excluido":t
 - **`DEFINER`** — a procedure roda com o poder de quem **chama**, nunca de
   quem a criou.
 - **Variável de sessão (`@x`)** — não há; usa-se `DECLARE`.
-- **Transação dentro do corpo** — não há `BEGIN`/`COMMIT` de dado (só o
-  `BEGIN … END` de bloco): não há transação no PhxSql para o corpo abrir.
+- **Transação dentro do corpo — a frase estava errada, a recusa não.** Havia
+  transação no PhxSql desde o pedido 162 (`docs/TRANSACOES.md`), já antes desta
+  resposta ter sido escrita — dizer "não há transação no PhxSql" era falso.
+  O `BEGIN`/`COMMIT` de dado recusa dentro de um corpo por outro motivo,
+  medido em 22/09/2026: transação é comando de **sessão**, e pertence à
+  **conexão**, não a um pedido só — e o corpo de rotina roda dentro de UM
+  pedido. A recusa nomeia isso: *"transacao e comando de SESSAO e nao cabe num
+  corpo de rotina: ela pertence a CONEXAO, e o corpo roda dentro de UM pedido.
+  Abra a transacao pela conexao e chame a rotina de dentro dela"*. Quem quer as
+  duas coisas abre a transação pela conexão e chama a procedure de dentro dela.
 
 ## Como se refaz
 

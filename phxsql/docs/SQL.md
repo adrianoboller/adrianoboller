@@ -1,15 +1,27 @@
 # A camada SQL: o que ela precisa saber
 
-**O passo 1 existe agora**, em `crates/phxsql-sql/`: analisador léxico,
+**O passo 1 nasceu**, em `crates/phxsql-sql/`, como analisador léxico,
 analisador sintático de um `SELECT` simples e o tradutor dele para as operações
-do protocolo. Não há executor e não há planejador — e a seção 4 continua sendo
-o roteiro do que falta.
+do protocolo — mas cresceu bem além disso, e esta introdução ficou parada
+enquanto o resto do documento andava. Hoje o crate também analisa `SELECT`
+**composto** (`JOIN`, subconsulta, CTE, `[NOT] EXISTS`, janela), `GROUP BY`
+com agregados, `INSERT`/`UPDATE`/`DELETE` por chave e por faixa, `CREATE`/`DROP
+VIEW`, `BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT` e as diretivas `SHOW`/`ALTER
+SETTINGS` — cada um com a gramática e o JSON na §7 e na §2. E **há executor**:
+a op `sql` (§5) liga a tradução ao motor pelo mesmo portão de qualquer pedido
+que chega pela rede. O que **continua** faltando é o planejador de índice e o
+resto que a §3 lista, medido e datado — a lista não se repete aqui, porque
+lista duplicada é lista que envelhece sem ninguém notar (foi assim que o
+rodapé do dossiê publicou 780 KiB de uma lista que devia sair do código).
 
 Este documento é o desenho de antes de escrever, e existe porque **três
 pendências esperam a mesma coisa**: o driver ODBC/OLE DB (#7), o DBeaver (#122)
 e o protocolo de fio do PostgreSQL(R). Uma camada, três destravadas.
 
 ## O que o crate já faz
+
+A forma mais simples que ele aceita — a única com caminho direto para
+`buscar`/`varrer` por índice, sem compor nada — é esta:
 
 ```
 SELECT ( * | COUNT(*) | coluna [AS apelido] {, ...} )
@@ -18,6 +30,10 @@ FROM   [database.] [schema.] tabela [[AS] apelido]
 [ORDER BY coluna [ASC|DESC]]
 [LIMIT n [OFFSET m]]
 ```
+
+O que passa disso — expressão no `WHERE`/`HAVING`/`ON`, `GROUP BY`, as cinco
+formas de `JOIN`, CTE, subconsulta, `[NOT] EXISTS`, `ROW_NUMBER() OVER`,
+upsert — está na §7, item a item, com a gramática e o JSON que cada um produz.
 
 ```bash
 cargo run -p phxsql-sql --example traduzir -- "SELECT * FROM matriz.estoque"
@@ -31,23 +47,22 @@ devolve a linha inteira) e as **notas** — o que o tradutor decidiu e por quê.
 O `FROM matriz.estoque` fecha o lado SQL do pedido #83: o endereçamento já
 funcionava em toda operação, e faltava alguém escrever isso e chegar lá.
 
-**O que não tem substrato recusa dizendo o nome da cláusula.** Um `WHERE cidade
-= 'X'` sem índice em `cidade` **não** vira uma varredura com o filtro esquecido
-no caminho: o `varrer` não filtra, e aceitar calado devolveria a tabela inteira
-como se fosse a resposta. O mesmo para `ORDER BY` sem índice, `AND`, `LIKE`,
-`IN`, `BETWEEN`, `IS NULL`, `DISTINCT`, `GROUP BY`, `JOIN`, os agregados que
-não são `COUNT(*)`, e `BEGIN`/`COMMIT`/`ROLLBACK`.
-
-**O que ainda NÃO está ligado:** o servidor não tem operação `sql`. O crate
-traduz texto em pedido; ligar isso ao despachar e à tela de consulta é a
-próxima rodada, e é pequena — mas não está feita, e dizer o contrário seria
-inventar.
+**O que não tem substrato recusa dizendo o nome da cláusula**, e não vira uma
+execução pela metade com cara de sucesso — para o `SELECT` simples da tabela
+acima isso ainda vale para `ORDER BY` sem índice: o `varrer` não ordena nada
+que o `.ndx` já não ordene, e aceitar calado devolveria a tabela inteira com a
+ordem errada em vez da resposta. A lista datada e medida do que ainda recusa
+**no restante da linguagem** — correlação que não é igualdade, janela além de
+`ROW_NUMBER`, `WITH RECURSIVE`, mais de uma CTE, planejador de índice — está na
+§3; duplicá-la aqui é o mesmo erro que o KiB digitado do rodapé do dossiê já
+pagou.
 
 ---
 
-Ele também existe por um motivo mais imediato: o `BULKINSERT` entrou no
-protocolo, e o motor SQL vai ter de conhecê-lo **como comando, e não como
-nome de tabela**. Escrever isso agora é mais barato do que descobrir depois.
+O `BULKINSERT` entrou no protocolo como palavra reservada do parser (§2) — o
+motor SQL já o conhece **como comando, e não como nome de tabela**. A forma de
+comando (`BULKINSERT(true);` escrito como texto SQL, e não pela porta de
+dados) segue em aberto: é o item 3 da §4.
 
 ---
 
@@ -76,6 +91,17 @@ está medida:
 
 **O trabalho é de tradução, não de motor.** É por isso que ele cabe: o parser
 vira chamadas ao que já existe e já tem teste.
+
+**Esta tabela é o inventário de ANTES de escrever — não o mapa do que o
+tradutor produz hoje**, e duas linhas dela já divergiram do que a §7/§8
+descrevem: `GROUP BY` vira `agrupar` (não `pivotar` — a tabulação cruzada
+continua sem forma no SQL), e `JOIN` vira `consultar` com um `juntar` aninhado
+(não o `juntar` avulso da linha acima, que segue sendo só do protocolo e da
+tela, com sete formas contra as cinco que o `consultar` tem). E **`UNION` não
+tem tradutor**: a op `unir` é a união de tabelas **inteiras**, nomeadas, do
+protocolo e da tela — nunca confundir com `SELECT … UNION SELECT …`, que a §3
+lista como sem substrato. Quando um item desta lista virar tradutor de
+verdade, a linha que manda é a da §8.
 
 ---
 
@@ -263,6 +289,12 @@ subconsulta, CTE e junção — a §7 conta a gramática e o JSON de cada um. O 
 - **Planejador de índice.** Escolher *qual* índice usar quando há dois
   candidatos de igualdade continua sendo de quem chama — o primeiro declarado
   vence, e o plano diz isso na nota.
+- **Expressão e função escalar na PROJEÇÃO do `SELECT`.** O item 2 da §7 só
+  abriu expressão no `WHERE`/`HAVING`/`ON`. `SELECT saldo * 1.1 FROM t`,
+  `SELECT upper(nome) FROM t` e `SELECT CASE WHEN … END FROM t` recusam com
+  `esperava FROM, e veio "*"/"("/"WHEN"` — o parser lê a projeção como lista de
+  nomes de coluna, e para no primeiro símbolo que não é um. Medido em
+  22/09/2026 por `bancada/gaps-sql/sondar.py postgresql` (`docs/pdf/respostas/B.md`).
 - **Janela além de `ROW_NUMBER`.** `RANK`, `DENSE_RANK`, `SUM() OVER (...)` e
   companhia recusam nomeando — só `ROW_NUMBER() OVER (...)` tem substrato.
 - **Correlação que não é igualdade.** `IN (SELECT …)` correlacionado,
@@ -274,7 +306,9 @@ subconsulta, CTE e junção — a §7 conta a gramática e o JSON de cada um. O 
   `fora.col = dentro.col`, o `EXISTS` é só "tem linha?" e ainda não tem
   substrato (pedido 236, §4 conta a forma que TEM).
 - **`WITH RECURSIVE` e mais de uma CTE.** Só uma CTE, não recursiva.
-- **`UNION`.** Não há.
+- **`UNION`.** Não há — medido em 22/09/2026; há frente viva mexendo nisso
+  nesta mesma rodada, então reconfira com `sondar.py postgresql` antes de
+  citar esta linha.
 - **`COUNT(*)`/`GROUP BY` sobre visão.** `FROM v_c` vira `consultar` (filtra e
   projeta); agregar sobre o resultado de uma visão ainda não compõe — quem
   precisa disso escreve `SELECT COUNT(*) FROM (SELECT * FROM v_c) AS x`.
