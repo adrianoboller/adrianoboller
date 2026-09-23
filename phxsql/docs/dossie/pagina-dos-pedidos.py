@@ -228,7 +228,12 @@ URLS_PUBLICADAS = {
     "pedidos-191-260.html": "https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC",
     "pedidos-261-310.html": "https://claude.ai/artifact/R4iGBeRQt7ao6yffQkmGCp",
     "pedidos-311-350.html": "https://claude.ai/artifact/S1oHX53g9q4oqHSn7Yv3vm",
-    "pedidos-351-mais.html": "https://claude.ai/artifact/6iLs2ho6wDKgEF6eja6Kpm",
+    # As faixas 351+ se PARTIRAM em 23/09/2026 com os onze pedidos do dia.
+    # A chave velha `pedidos-351-mais.html` saiu: a faixa dela deixou de
+    # existir, e manter a URL apontando para conteudo que mudou seria
+    # mentira. O artefato antigo continua no ar com o retrato de ontem.
+    "pedidos-351-410.html": "https://claude.ai/artifact/5BKdtkEBVo1kyR8CEyevKm",
+    "pedidos-411-mais.html": "https://claude.ai/artifact/9ogdsW7DBrM7WLheoRwm15",
 }
 
 

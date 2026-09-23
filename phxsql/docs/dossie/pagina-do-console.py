@@ -77,7 +77,7 @@ from dossie_da_pasta import achar_o_dossie, pagina_do_console  # noqa: E402
 # cai no NOME DO ARQUIVO (que funciona abrindo localmente) em vez de fingir
 # que alguma URL antiga serve. Depois de publicar, o integrador preenche aqui.
 URLS_PUBLICADAS = {
-    "console-em-imagens.html": "",
+    "console-em-imagens.html": "https://claude.ai/artifact/5H6D2xpGjcJdw3nV58SCz6",
     "dossie": "https://claude.ai/code/artifact/5c14044e-0dc5-4832-b015-224ab1e40033",
     "testes.html": "https://claude.ai/code/artifact/0c069766-7ff0-437e-b18b-8278f8b96038",
     "graficos.html": "https://claude.ai/code/artifact/b34a216b-a685-4173-8950-9584c911ba07",
