@@ -613,10 +613,14 @@ resposta de protocolo — o `/saude` diz por servidor apenas `cifra` e
   a saída** (`CIFRA=0`) no diagnóstico; com pino escrito, a saída não é
   ensinada, porque ali a falha é a chave não conferir.
 
-  **O limite:** o login do driver é a senha em claro *dentro* do túnel, não o
-  desafio-resposta, então ele não amarra a credencial ao canal — um servidor
-  com `exigir_amarra: true` o recusaria. `exigir` ele atende; `exigir_amarra`
-  fica para quando o driver aprender o desafio-resposta.
+  **O limite caducou em 23/09/2026 (pedido 275).** Era este: *o login do driver
+  é a senha em claro dentro do túnel, então ele não amarra a credencial ao
+  canal — um servidor com `exigir_amarra: true` o recusaria.* Hoje o driver faz
+  o desafio-resposta pelo mesmo `phxsql_core::desafio` da `replica::Cliente`, e
+  manda `amarrar_canal: true` **quando há túnel** — em claro (`CIFRA=0`) não há
+  transcrição a que amarrar, e a mensagem provada continua byte a byte a de
+  sempre. Servidor com `exigir_amarra: true` passa a aceitar o ODBC. Ver
+  `docs/ODBC.md` §5.1.
 * **O `Remoto` (multi-servidor da interface) liga o túnel — FEITO, com a
   mudança de formato que faltava.** O diagnóstico estava certo: `web.servidores`
   era uma **lista de textos** `"host:porta"`, e sem lugar para o pino ligar a

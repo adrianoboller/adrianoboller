@@ -102,16 +102,13 @@ Dois limites, ditos sem enfeite:
 * **Pino torto e ERRO, nao "siga sem pino".** Um `CHAVE_DO_FIO` que nao seja uma
   X25519 de 64 hexa recusa a conexao, em vez de virar "sem pino" — deixar um
   pino invalido rebaixar a garantia e o oposto do que ele existe para fazer.
-* **O login do driver e a senha em claro DENTRO do tunel**, e nao o
-  desafio-resposta (o pedido **275**, que continua aberto: `conexao.rs` manda
-  `("senha", ...)` — a forma (3) do `op_login` —, e nunca chama `desafio`/
-  `prova`). Ele nao amarra a credencial ao canal (`amarrar_canal`), entao um
-  servidor com `cifra_fio.exigir_amarra: true` recusaria esse login. `exigir` o
-  driver atende; `exigir_amarra` fica para quando o driver aprender o
-  desafio-resposta. **O padrao cifrado (373) entrou ANTES do 275 de proposito**
-  — decisao do dono: com o tunel ligado por omissao, a senha ja deixa de andar
-  a descoberto no fio, e o desafio-resposta continua sendo o conserto certo
-  para quem esta DENTRO do servidor.
+* **O login do driver e desafio-resposta desde o pedido 275** — ele deixou de
+  ser o limite desta secao. Ate 23/09/2026 o `conexao.rs` mandava
+  `("senha", ...)`, a forma (3) do `op_login`, e o tunel tirava a senha do FIO
+  sem tirar a senha da MAQUINA: o que chegava ao servidor continuava sendo a
+  senha. **O padrao cifrado (373) entrou ANTES do 275 de proposito** — decisao
+  do dono —, e os dois sao eixos diferentes: o 373 e o canal, o 275 e a forma
+  do login. Ver a secao 5.
 
 ## 2. O que o driver cobre — e o que ficou de fora, com o motivo
 
@@ -436,11 +433,62 @@ quiser uma coluna de sistema pede por nome.
 
 ## 5. Senha e token nao vazam — por construcao e por teste
 
-O login leva a senha no corpo do pedido; por isso **nenhum caminho de erro
-do transporte ecoa o pedido** — a mensagem de falha menciona so a operacao.
-A connection string devolvida mascara `PWD` e `Token`. Ha teste unitario
-para a mascara (`mascarada_nao_vaza_segredo`) e conferencia na prova de ABI
-(a mensagem de diagnostico de um erro de verdade e vasculhada pela senha).
+### 5.1. A senha nao sai desta maquina (pedido 275)
+
+O `PWD` da connection string **nao viaja**. O driver faz o desafio-resposta
+que a `replica::Cliente` e o console (`phxsql-cmd`) ja faziam, pelo mesmo
+`phxsql_core::desafio`: pede `{"op":"desafio"}`, recebe sal, iteracoes e
+nonce, calcula `pbkdf2` + `hmac` aqui, e manda `prova` + `nonce_cliente`. A
+conta e a do core, e nao uma segunda escrita aqui — duas contas que nao podem
+divergir nao se escrevem duas vezes.
+
+**O que o servidor via antes, e o que ve hoje** (medido pelo soquete, com um
+phxsqld de mentira que grava o que lhe chega; a cadeia abaixo tem o formato de
+uma senha e nao e o valor de ninguem):
+
+```
+antes  {"token":"","op":"login","usuario":"ana","senha":"PWD-QUE-NAO-PODE-ATRAVESSAR-O-FIO"}
+hoje   {"token":"","op":"desafio","usuario":"ana"}
+       {"token":"","op":"login","usuario":"ana","prova":"1ca3ad5a...","nonce_cliente":"66b16262...","amarrar_canal":true}
+```
+
+Tres consequencias, ditas:
+
+* **`amarrar_canal` so sai quando HA tunel.** Em claro (`CIFRA=0`) nao ha
+  transcricao a que amarrar, e a mensagem provada e byte a byte a de sempre —
+  a mesma decisao do lado do servidor. Com o tunel (o padrao), a prova nasce
+  presa a transcricao do aperto: e o que derruba quem terminou o tunel do
+  cliente e reencaminha a prova. Um servidor com `cifra_fio.exigir_amarra:
+  true`, que **recusava** o ODBC antes disto, passa a aceita-lo.
+* **Nao quebra aplicativo nenhum.** O `SQLConnect`/`SQLDriverConnect`
+  continuam recebendo `UID`/`PWD` e devolvendo `SQL_SUCCESS`; senha errada
+  continua saindo com SQLSTATE `28000`, que e por onde o gerenciador de driver
+  decide pedir a credencial de novo. A garantia nova e do driver para dentro.
+* **Nao quebra servidor nenhum, e isso foi medido.** A operacao `desafio` e do
+  commit `0dfcf15` (27/08/2026); o `cifrar` e do `d3b7d62` (30/08); este driver
+  nasceu no `69f6d1e` (29/08). Nao existe phxsqld velho o bastante para ter um
+  cliente ODBC e nao saber responder ao desafio — entao **nao ha escape
+  escrito**, e nao have-lo e decisao: um `SENHA_EM_CLARO=1` seria a alavanca de
+  rebaixamento que a forma nova existe para tirar.
+
+**O que continua fora**, sem enfeite: o driver nao faz o **segundo fator**
+(`assinatura` Ed25519). Usuario com `chave_publica` no `config.json` nao entra
+por ODBC, e o servidor o diz — *«este usuario exige chave»*. E o `Token` da
+connection string continua indo no corpo de cada pedido, protegido pelo tunel
+e nao pela forma: e o token de servico, nao a credencial da pessoa.
+
+### 5.2. O que nunca entra num diagnostico
+
+O login **nao leva mais a senha no corpo**, mas a `Receita` a carrega em
+memoria para calcular a prova; por isso **nenhum caminho de erro do transporte
+ecoa o pedido** — a mensagem de falha menciona so a operacao —, o `Debug` da
+receita mostra `(oculta)`, e o erro do sal torto tem texto FIXO, sem
+interpolar o que o servidor mandou. A connection string devolvida mascara
+`PWD` e `Token`. Ha teste unitario para a mascara
+(`mascarada_nao_vaza_segredo`), para o `Debug`
+(`o_debug_da_receita_nunca_mostra_o_token_nem_a_senha`) e conferencia na prova
+de ABI (a mensagem de diagnostico de um erro de verdade e vasculhada pela
+senha).
 
 ## 6. OLE DB: a decisao de NAO escrever um provider nativo
 

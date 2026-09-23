@@ -11,9 +11,12 @@ use std::time::Duration;
 
 /// Erro interno do driver, ja com o SQLSTATE que vai para o diagnostico.
 ///
-/// A mensagem NUNCA carrega o pedido enviado: o login leva a senha no corpo,
-/// e um erro que ecoasse o corpo a poria no diagnostico -- que aplicativo
-/// cliente escreve em log sem perguntar.
+/// A mensagem NUNCA carrega o pedido enviado, e a regra sobreviveu ao motivo
+/// que a fez nascer: ate o pedido 275 o login levava a senha no corpo. Hoje
+/// nao leva -- leva a prova --, mas o token de servico continua em toda linha
+/// e o corpo de um `inserir` e o dado do cliente. Um erro que ecoasse o corpo
+/// poria os dois no diagnostico, que e o que aplicativo cliente escreve em log
+/// sem perguntar.
 #[derive(Debug)]
 pub struct Falha {
     pub estado: &'static str,
@@ -64,7 +67,10 @@ pub struct Receita {
 /// Decisao do dono, 18/09/2026 (pedido 373): *«`CIFRA=1` vira o padrao da
 /// receita do ODBC, com escape `CIFRA=0` escrito»*. O motivo e o mesmo da
 /// chave que nasce conferida -- o esquecimento nao pode ser o padrao quando
-/// o assunto e senha no fio, e a senha viaja no login deste driver.
+/// o assunto e credencial no fio. A senha em si deixou de viajar no pedido
+/// 275 (ver `autenticar`), e o tunel NAO ficou sobrando: o `Token` de servico
+/// vai em cada linha, e o dado de todo `inserir` e `sql` tambem. Os dois
+/// pedidos sao eixos diferentes -- o 373 e o canal, o 275 e a forma do login.
 ///
 /// Mora no `Default` e nao dentro do `analisar_receita` porque o `SQLConnect`
 /// com `host:porta/database` monta a `Receita` DAQUI, sem passar pelo
@@ -355,19 +361,93 @@ impl Canal {
         }
 
         if !r.usuario.is_empty() {
-            canal
-                .pedir(vec![
-                    ("op", Json::texto_de("login")),
-                    ("usuario", Json::texto_de(&r.usuario)),
-                    ("senha", Json::texto_de(&r.senha)),
-                ])
-                .map_err(|f| Falha {
-                    estado: "28000",
-                    mensagem: f.mensagem,
-                    nativo: f.nativo,
-                })?;
+            canal.autenticar(r).map_err(|f| Falha {
+                // 28000 e o que o gerenciador de driver le para pedir a
+                // credencial de novo. Trocar a FORMA do login nao pode trocar
+                // o codigo com que o aplicativo ja decide isso.
+                estado: "28000",
+                mensagem: f.mensagem,
+                nativo: f.nativo,
+            })?;
         }
         Ok(canal)
+    }
+
+    /// Desafio-resposta: a senha nao sai desta maquina (pedido 275).
+    ///
+    /// Ate aqui o driver mandava a forma (3) do `op_login` -- literalmente
+    /// `("senha", ...)` --, e era o UNICO cliente desta casa que o fazia: a
+    /// replica (`replica.rs`) e o console (`phxsql-cmd`) ja provavam pelo
+    /// desafio. A cifra do fio, que nasce ligada (pedido 373), tirava a senha
+    /// do FIO; nao tirava a senha da MAQUINA, e o que chegava ao servidor
+    /// continuava sendo a senha -- que e a petrea «senha nunca em texto puro,
+    /// nem em resposta do protocolo».
+    ///
+    /// A conta inteira e a do core, a MESMA que o servidor refaz do hash que
+    /// guarda. Escrever uma segunda aqui seria escrever um segundo jeito de
+    /// errar, e as duas nao podem divergir.
+    ///
+    /// **O que isto NAO impoe.** O aplicativo continua entregando UID/PWD
+    /// pelo `SQLConnect`/`SQLDriverConnect` e nao muda uma linha: a garantia
+    /// nova e do driver para dentro. E do lado do servidor a operacao
+    /// `desafio` e TRES DIAS mais velha que o `cifrar` (commits `0dfcf15`, de
+    /// 27/08/2026, e `d3b7d62`, de 30/08), e mais velha que este proprio
+    /// driver (`69f6d1e`, 29/08) -- nao existe phxsqld que um ODBC consiga
+    /// alcancar e que nao saiba responder ao desafio.
+    fn autenticar(&mut self, r: &Receita) -> Result<(), Falha> {
+        let d = self.pedir(vec![
+            ("op", Json::texto_de("desafio")),
+            ("usuario", Json::texto_de(&r.usuario)),
+        ])?;
+        let nonce = d.texto_ou("nonce", "").to_string();
+        let sal = d.texto_ou("sal", "").to_string();
+        let iteracoes = d.inteiro_ou("iteracoes", 0).max(0) as u32;
+        // Desafio incompleto e ERRO com nome, e nao uma prova calculada com
+        // zero iteracoes: essa viraria "credencial invalida" no servidor e
+        // mandaria a pessoa conferir a senha, que e mandar procurar no lugar
+        // errado.
+        if nonce.is_empty() || sal.is_empty() || iteracoes == 0 {
+            return Err(Falha::nova(
+                "08001",
+                "o servidor respondeu ao desafio sem sal, nonce ou iteracoes",
+            ));
+        }
+
+        // A amarracao ao canal, quando ha tunel: a prova nasce presa a
+        // transcricao do aperto e o servidor a confere contra a DELE, o que
+        // derruba quem terminou o tunel do cliente e reencaminha. Em claro
+        // (`None`) a mensagem e byte a byte a de sempre -- pedida, nao
+        // imposta. Mesmo caminho da `replica::Cliente`; ver
+        // `docs/CIFRA-DO-FIO.md` §10.
+        let transcricao = self.fio.transcricao();
+        let canal_ref = transcricao.as_ref().map(|t| &t[..]);
+
+        let nonce_cliente = phxsql_core::desafio::nonce();
+        let prova = phxsql_core::desafio::prova_de_senha(
+            &r.senha,
+            &sal,
+            iteracoes,
+            &nonce,
+            &nonce_cliente,
+            &r.usuario,
+            canal_ref,
+        )
+        // Mensagem FIXA: o erro de dentro nasce do sal que o servidor mandou,
+        // mas este e o caminho por onde a senha passa, e diagnostico de ODBC
+        // vira log de aplicativo. Aqui nao se interpola nada.
+        .map_err(|_| Falha::nova("08001", "o sal do desafio nao e hexadecimal"))?;
+
+        let mut campos = vec![
+            ("op", Json::texto_de("login")),
+            ("usuario", Json::texto_de(&r.usuario)),
+            ("prova", Json::texto_de(prova)),
+            ("nonce_cliente", Json::texto_de(nonce_cliente)),
+        ];
+        if canal_ref.is_some() {
+            campos.push(("amarrar_canal", Json::Bool(true)));
+        }
+        self.pedir(campos)?;
+        Ok(())
     }
 
     /// Faz o aperto de mao e passa a falar por dentro do tunel.
@@ -909,6 +989,270 @@ mod testes {
         assert!(
             !erro.mensagem.contains(&hex_outro),
             "o diagnostico nao pode carregar material de chave: {}",
+            erro.mensagem
+        );
+    }
+
+    // --- A prova real do LOGIN: a senha nao atravessa o fio (pedido 275) ---
+
+    /// Iteracoes de PBKDF2 do servidor de mentira.
+    ///
+    /// Baixas de proposito: o que este teste prova e a FORMA do login, e
+    /// 210.000 iteracoes so acrescentariam segundos sem acrescentar garantia.
+    const ITERACOES_DE_TESTE: u32 = 64;
+
+    /// Um phxsqld de mentira que GRAVA tudo o que o driver lhe mandou.
+    ///
+    /// Fala o aperto quando `cifra`, responde `desafio` com o sal e as
+    /// iteracoes de um hash de verdade, e confere a prova com o MESMO
+    /// `conferir_prova` do servidor -- nao com uma conta reescrita aqui, que
+    /// e como um teste passa por engano.
+    ///
+    /// Devolve as linhas que VIU, ja abertas quando ha tunel: e nelas que o
+    /// teste procura a senha, porque o que o pedido 275 cobra nao e so o que
+    /// passou pelo fio -- e o que CHEGOU ao servidor. Dentro do tunel a senha
+    /// sai do fio e continua sendo a senha.
+    fn servidor_de_login(cifra: bool, senha_certa: &str) -> (u16, mpsc::Receiver<Vec<String>>) {
+        let guardado = phxsql_core::senha::cifrar_com(senha_certa, ITERACOES_DE_TESTE);
+        let estatica = phxsql_core::x25519::gerar_privada();
+        let escuta = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let porta = escuta.local_addr().unwrap().port();
+        let (manda, recebe) = mpsc::channel();
+        let (pronto, espere) = mpsc::channel();
+        std::thread::spawn(move || {
+            pronto.send(()).ok();
+            let Ok((soquete, _)) = escuta.accept() else {
+                return;
+            };
+            let _ = soquete.set_read_timeout(Some(Duration::from_secs(5)));
+            let mut escrita = soquete.try_clone().unwrap();
+            let mut leitor = BufReader::new(soquete);
+            let mut fio = FioCanal::Claro;
+            let mut transcricao: Option<[u8; 32]> = None;
+
+            if cifra {
+                let mut linha = String::new();
+                if leitor.read_line(&mut linha).unwrap_or(0) == 0 {
+                    return;
+                }
+                let pedido = Json::analisar(&linha).unwrap();
+                let m1 = base64::decodificar(pedido.texto_ou("e", "")).unwrap();
+                let (transporte, m2) = phxsql_core::fio::responder(&estatica, &m1).unwrap();
+                let resposta = Json::objeto(vec![
+                    ("ok", Json::Bool(true)),
+                    ("op", Json::texto_de("cifrar")),
+                    (
+                        "resultado",
+                        Json::objeto(vec![("m2", Json::texto_de(base64::codificar(&m2)))]),
+                    ),
+                ])
+                .escrever();
+                writeln!(escrita, "{resposta}").unwrap();
+                escrita.flush().unwrap();
+                transcricao = Some(transporte.transcricao());
+                fio = FioCanal::Cifrado(Box::new(transporte));
+            }
+
+            let mut vistas: Vec<String> = Vec::new();
+            let mut nonce_servidor = String::new();
+            while let Ok(Recebido::Linha(l)) = fio.ler(&mut leitor) {
+                vistas.push(l.clone());
+                let p = Json::analisar(&l).unwrap();
+                let op = p.texto_ou("op", "").to_string();
+                let resposta = match op.as_str() {
+                    "desafio" => {
+                        let (sal, it) = phxsql_core::senha::sal_e_iteracoes(&guardado).unwrap();
+                        nonce_servidor = phxsql_core::desafio::nonce();
+                        Json::objeto(vec![
+                            ("ok", Json::Bool(true)),
+                            ("op", Json::texto_de("desafio")),
+                            (
+                                "resultado",
+                                Json::objeto(vec![
+                                    ("sal", Json::texto_de(phxsql_core::hash::para_hex(&sal))),
+                                    ("iteracoes", Json::de_u64(u64::from(it))),
+                                    ("nonce", Json::texto_de(&nonce_servidor)),
+                                ]),
+                            ),
+                        ])
+                    }
+                    "login" => {
+                        let dk = phxsql_core::senha::derivado_do_hash(&guardado).unwrap();
+                        // A amarracao so entra quando o CLIENTE pede, que e o
+                        // que o servidor de verdade faz: sem o campo, a
+                        // mensagem e byte a byte a de sempre.
+                        let amarra = if p.booleano_ou("amarrar_canal", false) {
+                            transcricao.as_ref().map(|t| &t[..])
+                        } else {
+                            None
+                        };
+                        let boa = phxsql_core::desafio::conferir_prova(
+                            &dk,
+                            &nonce_servidor,
+                            p.texto_ou("nonce_cliente", ""),
+                            p.texto_ou("usuario", ""),
+                            amarra,
+                            p.texto_ou("prova", ""),
+                        );
+                        if boa {
+                            Json::objeto(vec![
+                                ("ok", Json::Bool(true)),
+                                ("op", Json::texto_de("login")),
+                                (
+                                    "resultado",
+                                    Json::objeto(vec![("login", Json::texto_de("ana"))]),
+                                ),
+                            ])
+                        } else {
+                            Json::objeto(vec![
+                                ("ok", Json::Bool(false)),
+                                ("op", Json::texto_de("login")),
+                                ("erro", Json::texto_de("credencial invalida")),
+                            ])
+                        }
+                    }
+                    _ => Json::objeto(vec![
+                        ("ok", Json::Bool(true)),
+                        ("op", Json::texto_de(&op)),
+                        ("resultado", Json::Nulo),
+                    ]),
+                };
+                let _ = fio.escrever(&mut escrita, &resposta.escrever());
+                if op == "login" {
+                    break;
+                }
+            }
+            manda.send(vistas).ok();
+        });
+        espere.recv().ok();
+        (porta, recebe)
+    }
+
+    /// A senha do teste. Tem o FORMATO de uma senha e nao e o valor de
+    /// ninguem: o que o teste procura no fio e esta cadeia literal.
+    const SENHA_DO_TESTE: &str = "PWD-QUE-NAO-PODE-ATRAVESSAR-O-FIO";
+
+    // O defeito do pedido 275, medido nos DOIS modos do driver: em claro a
+    // senha ia no fio, e dentro do tunel ela saia do fio mas chegava inteira
+    // ao servidor. Nenhum dos dois pode acontecer.
+    #[test]
+    fn a_senha_nunca_chega_ao_servidor() {
+        for cifra in [false, true] {
+            let (porta, viu) = servidor_de_login(cifra, SENHA_DO_TESTE);
+            let liga = if cifra { 1 } else { 0 };
+            let r = analisar_receita(&format!(
+                "Server=127.0.0.1;Port={porta};UID=ana;PWD={SENHA_DO_TESTE};CIFRA={liga}"
+            ));
+            let aberto = Canal::abrir(&r).is_ok();
+            let vistas = viu
+                .recv_timeout(Duration::from_secs(10))
+                .expect("o servidor de mentira devia devolver o que viu");
+            let tudo = vistas.join("\n");
+            assert!(
+                !tudo.contains(SENHA_DO_TESTE),
+                "cifra={cifra}: a senha chegou ao servidor: {tudo}"
+            );
+            let login = vistas
+                .iter()
+                .find(|l| l.contains("\"login\""))
+                .unwrap_or_else(|| panic!("cifra={cifra}: nenhum login foi mandado: {tudo}"));
+            assert!(
+                login.contains("\"prova\"") && login.contains("\"nonce_cliente\""),
+                "cifra={cifra}: o login tem de ser desafio-resposta: {login}"
+            );
+            assert!(
+                aberto,
+                "cifra={cifra}: a prova tinha de conferir no servidor: {tudo}"
+            );
+        }
+    }
+
+    // O IRMAO da replica (`replica.rs`): dentro do tunel a prova nasce presa a
+    // transcricao do aperto, e o servidor a confere contra a DELE. O servidor
+    // de mentira so confere com a amarracao quando o campo vem, entao este
+    // teste so passa se o driver o mandar -- e a conexao cifrada e o padrao.
+    #[test]
+    fn dentro_do_tunel_a_prova_se_amarra_ao_canal() {
+        let (porta, viu) = servidor_de_login(true, SENHA_DO_TESTE);
+        let r = analisar_receita(&format!(
+            "Server=127.0.0.1;Port={porta};UID=ana;PWD={SENHA_DO_TESTE}"
+        ));
+        assert!(r.cifra, "a receita de hoje nasce cifrada (pedido 373)");
+        Canal::abrir(&r).expect("o login amarrado ao canal devia fechar");
+        let vistas = viu
+            .recv_timeout(Duration::from_secs(10))
+            .expect("o que viu");
+        let login = vistas
+            .iter()
+            .find(|l| l.contains("\"login\""))
+            .expect("nenhum login");
+        assert!(
+            login.contains("\"amarrar_canal\":true"),
+            "a prova tem de se amarrar ao tunel: {login}"
+        );
+    }
+
+    // O COMPORTAMENTO VELHO, e e o teste que mais importa: a connection string
+    // que sempre funcionou continua funcionando, com o mesmo UID/PWD e sem
+    // uma chave nova. O aplicativo que carrega este `.so` nao muda uma linha
+    // -- a garantia nova e do driver para dentro.
+    #[test]
+    fn a_connection_string_de_sempre_continua_conectando() {
+        for receita in [
+            "Server=127.0.0.1;Port={p};UID=ana;PWD={s}",
+            "Server=127.0.0.1;Port={p};UID=ana;PWD={s};CIFRA=0",
+            "Driver=PhxSql;Server=127.0.0.1;Port={p};uid=ana;pwd={s};Database=loja",
+        ] {
+            let cifra = !receita.contains("CIFRA=0");
+            let (porta, _viu) = servidor_de_login(cifra, SENHA_DO_TESTE);
+            let texto = receita
+                .replace("{p}", &porta.to_string())
+                .replace("{s}", SENHA_DO_TESTE);
+            let r = analisar_receita(&texto);
+            assert!(
+                Canal::abrir(&r).is_ok(),
+                "«{texto}» tinha de continuar conectando"
+            );
+        }
+    }
+
+    // O outro lado do comportamento velho: sem UID nao ha login NENHUM -- nem
+    // desafio. Uma conexao so de token nao pode passar a pedir desafio para um
+    // usuario vazio, que e como uma guarda nova vira erro para quem nao a
+    // pediu.
+    #[test]
+    fn sem_usuario_nao_sai_desafio_nem_login() {
+        let (porta, viu) = servidor_de_login(false, SENHA_DO_TESTE);
+        let r = analisar_receita(&format!("Server=127.0.0.1;Port={porta};Token=t;CIFRA=0"));
+        let mut canal = Canal::abrir(&r).expect("conexao so de token devia abrir");
+        // Um pedido qualquer, so para o servidor de mentira sair do laco.
+        let _ = canal.pedir(vec![("op", Json::texto_de("login"))]);
+        let vistas = viu
+            .recv_timeout(Duration::from_secs(10))
+            .expect("o que viu");
+        assert!(
+            !vistas.iter().any(|l| l.contains("\"desafio\"")),
+            "sem UID nao podia sair desafio: {vistas:?}"
+        );
+    }
+
+    // Senha errada continua sendo recusada, e com o SQLSTATE que o aplicativo
+    // ja trata (28000). Trocar a forma do login nao pode trocar o codigo com
+    // que o gerenciador de driver decide pedir a credencial de novo.
+    #[test]
+    fn senha_errada_continua_28000() {
+        let (porta, _viu) = servidor_de_login(false, SENHA_DO_TESTE);
+        let r = analisar_receita(&format!(
+            "Server=127.0.0.1;Port={porta};UID=ana;PWD=PWD-ERRADA;CIFRA=0"
+        ));
+        let erro = match Canal::abrir(&r) {
+            Ok(_) => panic!("senha errada nao podia conectar"),
+            Err(e) => e,
+        };
+        assert_eq!(erro.estado, "28000", "mensagem: {}", erro.mensagem);
+        assert!(
+            !erro.mensagem.contains("PWD-ERRADA"),
+            "o diagnostico nao pode carregar a senha: {}",
             erro.mensagem
         );
     }
