@@ -309,6 +309,13 @@ impl Atividade {
             // Nao basta poder criar tabela: isto exige administrar, como o
             // `marcar_lgpd` e o `excluir_tabela` ao lado.
             "acrescentar_coluna" => Atividade::Administrar,
+            // Levar a tabela ao PSCH v10 e o `acrescentar_coluna` duas vezes,
+            // entao nao pode pedir menos que ele. E o campo que o portao le e
+            // o `tabela` de sempre -- com uma excecao que a propria operacao
+            // paga: sem `tabela`, ela VARRE a base para dizer quais faltam, e
+            // ali o portao geral so conferiu a BASE. A varredura confere
+            // tabela a tabela por dentro, como o `dados_pessoais` ao lado.
+            "migrar_esquema" => Atividade::Administrar,
             // Apagar uma tabela apaga os cinco arquivos de uma vez, e nao ha
             // desfazer. Nao basta poder excluir LINHA para poder excluir a
             // TABELA: isto exige administrar.

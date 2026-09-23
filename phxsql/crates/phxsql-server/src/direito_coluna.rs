@@ -227,6 +227,11 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("declarar_fk", PorColuna::Nenhum),
     ("excluir_fk", PorColuna::Nenhum),
     ("acrescentar_coluna", PorColuna::Nenhum),
+    // `Nenhum` e nao `Estrutura`, e a diferenca importa: ela nao devolve nem
+    // recebe dado de linha, e as unicas colunas que ela NOMEIA sao as de
+    // sistema do carimbo (`rowstamp`/`rowtime`), que nao sao de ninguem. Se um
+    // dia ela passar a listar coluna do usuario, muda de classe.
+    ("migrar_esquema", PorColuna::Nenhum),
     ("excluir_tabela", PorColuna::Nenhum),
     ("reindexar", PorColuna::Nenhum),
     ("verificar", PorColuna::Nenhum),

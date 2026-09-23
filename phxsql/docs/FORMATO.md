@@ -568,6 +568,27 @@ entre as duas passadas deixa a tabela com a primeira coluna e sem a segunda, e
 a chamada seguinte acrescenta só a que falta. E é **idempotente**: numa tabela
 que já está na v10 não toca disco e devolve 0.
 
+#### A porta dela é a op `migrar_esquema`, e ela nunca acontece sozinha
+
+Pedido 407. Até 23/09/2026 a migração existia e **não tinha porta**: os únicos
+chamadores do repositório eram testes, e uma tabela v9 não tinha como chegar à
+v10 sem escrever Rust contra a biblioteca. Hoje a porta é a operação
+`migrar_esquema` (`administrar`, e por isso na lista de escrita).
+
+Ela tem **dois tempos, e o primeiro não escreve byte**: sem `"confirmar"` a
+resposta é o custo — `colunas_faltando`, `passadas`, `slots` e
+`slots_a_reescrever` (= slots × passadas) —, e só com o nome da tabela repetido
+em `"confirmar"` a migração acontece. O motivo é que reescrever o `.reg` inteiro
+uma vez por coluna é **janela de parada**, e parada se marca: quem manda migrar
+tem de ver quantos slots vai pagar antes de pagar. Sem o campo `"tabela"`, a
+operação **varre a base** e diz quais faltam — sem isso a porta existiria e
+ninguém saberia em que bater.
+
+O custo anunciado sai da **mesma** lista que a migração executa
+(`Table::plano_do_psch_v10`, que o `migrar_para_psch_v10` consome), e a recusa
+da tabela-cadeia acontece **no plano**: marcar uma parada para uma migração que
+vai ser recusada é o defeito que isso impede.
+
 ### A marca de dado pessoal (LGPD / GDPR), v6
 
 No **fim** do bloco, depois do byte de motivo obrigatório, vem **um byte por

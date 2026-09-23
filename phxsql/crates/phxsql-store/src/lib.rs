@@ -53,6 +53,6 @@ pub use motivo::{Motivo, MotivoFile, EXT_REASON, MAGIC_MOTIVO};
 pub use ndx::{DescritorIndice, NdxFile, MAGIC_NDX, PAGINA_PADRAO};
 pub use pag::EXT_PAG;
 pub use reg::{RegFile, MAGIC_REG};
-pub use table::{Linha, Lote, Relatorio, Salto, SemEscrever, Table, Visao};
+pub use table::{Linha, Lote, PlanoV10, Relatorio, Salto, SemEscrever, Table, Visao};
 pub use trilha::{TrilhaFile, EXT_LGPD, MAGIC_TRILHA};
 pub use volume::Volumes;

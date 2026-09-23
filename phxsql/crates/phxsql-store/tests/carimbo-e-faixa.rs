@@ -643,3 +643,85 @@ fn a_tabela_anterior_ao_v10_migra_e_a_linha_velha_fica_em_zero() {
     // Idempotente: rodar de novo nao toca no disco.
     assert_eq!(t.migrar_para_psch_v10().unwrap(), 0);
 }
+
+// -------------------------------------- 407: o custo anunciado e o custo pago
+
+/// **O plano anuncia o que a migracao executa** -- pedido 407.
+///
+/// A porta do protocolo (`migrar_esquema`) mostra o custo ANTES de confirmar,
+/// e esse numero sai daqui. Se a lista do plano e a lista da migracao fossem
+/// duas, elas divergiriam, e a porta anunciaria uma parada e cobraria outra.
+///
+/// # O defeito que ela repoe
+///
+/// Monte no plano uma segunda lista de colunas (por exemplo, devolver sempre
+/// as duas em vez de filtrar pelo esquema): `passadas` passa a dizer 2 onde a
+/// migracao faz 1, e `slots_a_reescrever` dobra.
+#[test]
+fn o_plano_anuncia_o_que_a_migracao_executa() {
+    let d = DirTemp::novo("plano-v10");
+    let mut t = Table::criar(&d.0, esquema_antes_do_v10()).unwrap();
+    for i in 1..=6i64 {
+        t.inserir(&[Value::Int(i), Value::Str(format!("linha {i}"))])
+            .unwrap();
+    }
+    t.sincronizar().unwrap();
+
+    let p = t.plano_do_psch_v10().unwrap();
+    assert!(p.pendente());
+    assert_eq!(p.colunas(), [COLUNA_ROWSTAMP, COLUNA_ROWTIME]);
+    assert_eq!(p.passadas(), 2);
+    assert_eq!(p.registros(), 6);
+    // O que se paga e SLOT, e nao registro: o `.reg` nunca reaproveita slot
+    // excluido, entao a reescrita passa por todos eles.
+    assert_eq!(p.slots(), 6);
+
+    assert_eq!(t.migrar_para_psch_v10().unwrap(), p.slots());
+
+    // E depois nao ha mais o que anunciar.
+    let p = t.plano_do_psch_v10().unwrap();
+    assert!(!p.pendente());
+    assert_eq!(p.passadas(), 0);
+}
+
+/// **A recusa da tabela-cadeia acontece no PLANO**, e nao so na execucao.
+///
+/// # O defeito que ela repoe
+///
+/// Deixe a conferencia do ledger so dentro do `migrar_para_psch_v10`: a porta
+/// do protocolo responderia o custo da migracao, o administrador marcaria a
+/// janela de parada, e a recusa chegaria na hora de executar -- com a parada
+/// ja marcada e o motivo so entao lido.
+#[test]
+fn a_ledger_com_cadeia_recusa_ja_no_plano() {
+    let d = DirTemp::novo("plano-ledger");
+    let mut esq = esquema_blocos();
+    esq = Schema::do_disco(
+        esq.nome().to_string(),
+        esq.colunas()
+            .iter()
+            .filter(|c| c.nome != COLUNA_ROWSTAMP && c.nome != COLUNA_ROWTIME)
+            .cloned()
+            .collect(),
+        esq.indices().to_vec(),
+    )
+    .unwrap();
+    let mut t = Table::criar(&d.0, esq).unwrap();
+    for i in 0..2 {
+        let bruto = vec![
+            Value::Uuid(Uuid::v7()),
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            Value::Str(format!("mineirador-{i}")),
+        ];
+        let pronto = preparar_bloco(&mut t, bruto).unwrap();
+        t.inserir(&pronto).unwrap();
+    }
+    t.sincronizar().unwrap();
+
+    let e = t.plano_do_psch_v10().unwrap_err().to_string();
+    assert!(e.contains("historia assinada"), "veio {e}");
+    // E a mesma frase dos dois lados, porque e' a mesma linha de codigo.
+    assert_eq!(e, t.migrar_para_psch_v10().unwrap_err().to_string());
+}

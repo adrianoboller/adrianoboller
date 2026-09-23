@@ -379,3 +379,118 @@ fn a_marca_atravessa_a_troca_de_volume() {
         assert_eq!(a.0, b.0, "evento {i} diferente ao trocar de volume");
     }
 }
+
+/// O irmão que faltava do teste acima: a réplica que divergiu para também na
+/// ALTERAÇÃO, e não só na inclusão (pedido 405).
+///
+/// Medido em 23/09/2026, antes do conserto: a alteração da origem B devolvia
+/// `Ok(1)` e a linha da caixa A virava a da caixa B — sem um erro.
+#[test]
+fn alteracao_de_outra_origem_para_em_vez_de_gravar_por_cima() {
+    // Duas ORIGENS, cada uma com o próprio `.reg`: os rowids das duas começam
+    // em 1, e é por isso que elas colidem sem ninguém errar nada.
+    let da = DirTemp::novo("rep-2o-a");
+    let db = DirTemp::novo("rep-2o-b");
+    let dr = DirTemp::novo("rep-2o-r");
+    let mut a = Table::criar(&da.0, esquema())
+        .unwrap()
+        .com_imagem_no_diario(true);
+    let mut b = Table::criar(&db.0, esquema())
+        .unwrap()
+        .com_imagem_no_diario(true);
+    let mut r = Table::criar(&dr.0, esquema()).unwrap();
+
+    a.inserir(&linha(1)).unwrap();
+    replicar(&mut a, &mut r, 0);
+
+    // A origem B escreve a linha DELA e depois a altera. Só a ALTERAÇÃO chega
+    // à réplica: a inclusão de B estouraria na conferência de rowid que já
+    // existia — e é justamente por isso que só este caminho sobrou calado.
+    b.inserir(&linha(500)).unwrap();
+    b.atualizar(1, &{
+        let mut l = linha(500);
+        l[1] = Value::Str("Cliente de OUTRA ORIGEM".into());
+        l
+    })
+    .unwrap();
+    let eventos = b.diario_com_imagem(0, 0).unwrap();
+    let (e, imagem) = &eventos[1];
+    assert_eq!(e.operacao, Operacao::Alteracao, "o segundo evento de B");
+
+    let erro = r.aplicar_evento(e.operacao, e.rowid, imagem).unwrap_err();
+    let texto = erro.to_string();
+    assert!(texto.contains("divergiu"), "mensagem sem o motivo: {texto}");
+    assert!(
+        texto.contains("clientes"),
+        "a mensagem não nomeia a tabela: {texto}"
+    );
+    assert!(
+        texto.contains("rowid 1"),
+        "a mensagem não nomeia o rowid: {texto}"
+    );
+    assert!(
+        texto.contains("carimbo"),
+        "a mensagem não diz o que não bateu: {texto}"
+    );
+
+    // E o que mais importa: não gravou. A linha da origem A está inteira.
+    let l = r.ler(1).unwrap().unwrap();
+    assert_eq!(
+        l[1],
+        Value::Str("Cliente 0001".into()),
+        "a linha da origem A foi escrita por cima"
+    );
+}
+
+/// O teste do comportamento VELHO, que é o que mais importa numa guarda nova:
+/// a réplica 1↔1 de sempre continua aplicando byte a byte.
+///
+/// Ele carrega de propósito os três casos que reprovariam uma conferência
+/// feita pela coisa errada: uma inserção **recusada** no meio (o buraco de
+/// numeração do pedido 291), alterações que **mudam a chave** (a imagem é o
+/// DEPOIS, então conferir pela chave recusaria isto) e uma alteração depois
+/// de uma exclusão suave.
+#[test]
+fn replicacao_fiel_continua_aplicando_byte_a_byte() {
+    let ds = DirTemp::novo("rep-fiel-s");
+    let dr = DirTemp::novo("rep-fiel-r");
+    let (mut s, mut r) = par(&ds, &dr);
+
+    for i in 1..=20 {
+        s.inserir(&linha(i)).unwrap();
+    }
+    // Recusada pela unicidade: não gera evento, e o `rownum` não pode pular.
+    assert!(s.inserir(&linha(7)).is_err(), "a chave repetida passou");
+
+    for i in 1..=20 {
+        s.atualizar(i as u64, &{
+            // A CHAVE muda: o id 4 vira 104. Conferir identidade pela chave
+            // recusaria esta alteração, que é perfeitamente legítima.
+            let mut l = linha(i);
+            l[0] = Value::Int(i + 100);
+            l[1] = Value::Str(format!("Cliente {i:04} v2"));
+            l
+        })
+        .unwrap();
+    }
+    s.excluir_suave(3, "sumiu").unwrap();
+    s.atualizar(5, &{
+        let mut l = linha(105);
+        l[1] = Value::Str("Cliente 0005 v3".into());
+        l
+    })
+    .unwrap();
+
+    let eventos = s.diario_com_imagem(0, 0).unwrap();
+    assert_eq!(eventos.len(), 42, "a conta dos eventos da prova mudou");
+    for (e, imagem) in &eventos {
+        r.aplicar_evento(e.operacao, e.rowid, imagem)
+            .unwrap_or_else(|erro| panic!("a guarda nova recusou replicação fiel: {erro}"));
+    }
+
+    let ls = s.varrer_com(Visao::Todas).unwrap();
+    let lr = r.varrer_com(Visao::Todas).unwrap();
+    assert_eq!(ls, lr, "a réplica deixou de reproduzir o source");
+    assert_eq!(r.registros(), s.registros(), "contagem de registros");
+    assert_eq!(r.marcadas(), s.marcadas(), "contagem de marcadas");
+}

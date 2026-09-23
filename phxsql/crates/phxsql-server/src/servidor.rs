@@ -116,6 +116,13 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // Acrescentar coluna reescreve o `.reg` inteiro. E a maior escrita de
     // estrutura que existe aqui.
     "acrescentar_coluna",
+    // Levar a tabela ao PSCH v10 reescreve o `.reg` inteiro UMA VEZ POR
+    // COLUNA que falta -- e a mesma familia do `acrescentar_coluna`, porque e
+    // ele que faz o trabalho. A VISTA PREVIA (sem `confirmar`) vem junto de
+    // proposito, e nao por descuido: ela responde o custo da parada DESTE
+    // servidor, e num somente-leitura a parada nunca acontece aqui. Numero de
+    // parada que ninguem vai pagar e resposta do servidor errado.
+    "migrar_esquema",
     "excluir_tabela",
     // As duas que gravam o `visoes.json` do database. Catalogo, mas catalogo
     // gravado em disco -- e num servidor somente-leitura ninguem cria visao.
@@ -3217,11 +3224,14 @@ impl Servidor {
     ///   promocao inteira parando.
     /// - **papel que nao puxa**: nao ha laco nenhum.
     /// - **uma origem so**: e o par 1<->1, e ele nao cruza com ninguem.
+    ///
+    /// E a pergunta esta escrita UMA vez, em `Config::puxa_de_varias_origens`,
+    /// porque o nivel ESTATICO da mesma guarda (o `Config::validar`) tem de
+    /// desligar no mesmo caso: duas copias da condicao viraram, no primeiro
+    /// corte do 406, um nivel ligado onde o outro estava desligado -- o no de
+    /// cluster com origens sobrando deixou de subir.
     fn ligar_guarda_de_databases(&self) {
-        if self.cluster.is_some()
-            || !self.config.replicacao.papel.puxa_de_origem()
-            || self.config.replicacao.origens.len() < 2
-        {
+        if !self.config.puxa_de_varias_origens() {
             return;
         }
         self.ha_varias_origens.store(true, Ordering::Relaxed);
@@ -3267,14 +3277,16 @@ impl Servidor {
     /// A bandeira vem ANTES do `lock`: num par 1<->1 (e num cluster) isto e
     /// uma leitura atomica e a lista volta inteira, sem mapa e sem mutex.
     ///
-    /// # O que ele NAO cobre, dito em vez de escondido
+    /// # De onde vem a identidade, e quem a garante
     ///
     /// A identidade da origem aqui e o NOME, que e a mesma identidade que
     /// `replicacao_estado`, `replicacao_pular` e `replicacao_ligar` usam. Duas
-    /// origens com o mesmo nome no `config.json` ja se confundem nessas tres
-    /// desde antes desta guarda, e tambem se confundem aqui: a segunda se ve
-    /// como dona. Fechar isso e recusar nome de origem repetido, que e outro
-    /// pedido -- nao um remendo aqui.
+    /// origens com o mesmo nome se confundiriam nas quatro -- aqui a segunda
+    /// se veria como dona (`dono.origem == origem`) e a guarda inteira
+    /// passaria batido, sem malicia nenhuma: `"nome"` e opcional e o padrao e
+    /// `"origem"`, entao bastava omitir o campo duas vezes. Quem garante a
+    /// identidade e o `Config::recusar_nome_de_origem_repetido`, na
+    /// DECLARACAO: um remendo aqui nao consertaria as outras tres.
     fn so_os_databases_desta_origem(&self, origem: &str, anunciados: Vec<String>) -> Vec<String> {
         if !self.ha_varias_origens.load(Ordering::Relaxed) {
             return anunciados;
@@ -10742,6 +10754,7 @@ impl Servidor {
             "criar_schema" => self.op_criar_schema(p),
             "criar_tabela" => self.op_criar_tabela(p),
             "acrescentar_coluna" => self.op_acrescentar_coluna(p, sessao),
+            "migrar_esquema" => self.op_migrar_esquema(p, sessao),
             "declarar_fk" => self.op_declarar_fk(p, sessao),
             "excluir_fk" => self.op_excluir_fk(p, sessao),
             "excluir_tabela" => self.op_excluir_tabela(p),
@@ -16180,6 +16193,210 @@ impl Servidor {
             ));
         }
         Ok(Json::objeto(pares))
+    }
+
+    /// A **porta** do `PSCH` v10: leva ao formato atual uma tabela nascida
+    /// antes dele, e diz o preco ANTES de cobrar.
+    ///
+    /// # Por que uma operacao do protocolo, e nao um passo de arranque
+    ///
+    /// Porque migrar reescreve o `.reg` INTEIRO uma vez por coluna que falta,
+    /// e isso e uma janela de parada -- coisa que se marca. Um passo de
+    /// arranque so teria duas formas, e as duas sao piores: migrar sozinho
+    /// (o servidor que sobe de madrugada e volta horas depois sem ninguem ter
+    /// pedido) ou imprimir um aviso no meio do log, que ninguem le. Migrar e
+    /// administracao, e administracao tem hora e tem dono.
+    ///
+    /// # Tres caminhos, e os dois primeiros nao tocam em disco
+    ///
+    /// - **sem `tabela`**: varre a base e diz QUAIS faltam e quanto cada uma
+    ///   custa. Sem isso a porta existiria e ninguem saberia em que bater.
+    /// - **com `tabela`, sem `confirmar`**: a vista previa desta tabela.
+    /// - **com `confirmar` igual ao nome da tabela**: migra. O nome repetido e
+    ///   o mesmo pedagio do `excluir_tabela`, e pelo mesmo motivo -- o que vai
+    ///   acontecer nao tem desfazer barato.
+    ///
+    /// # O portao, e o campo que ele le
+    ///
+    /// `Atividade::Administrar` pelo portao geral, sobre o campo `tabela`. A
+    /// VARREDURA e uma das que escondem tabela dele -- ela nao tem o campo --,
+    /// entao ela paga conferencia propria tabela a tabela, como o
+    /// `dados_pessoais` e o `sequencias` ao lado. Sem ela, quem so administra
+    /// uma tabela leria o nome e o tamanho de todas as outras.
+    fn op_migrar_esquema(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let database = p.texto_ou("database", "").to_string();
+        let tabela = p.texto_ou("tabela", "").trim().to_string();
+        if tabela.is_empty() {
+            return self.migrar_esquema_varredura(&database, sessao);
+        }
+
+        let confirmar = p.texto_ou("confirmar", "").trim().to_string();
+        let dados = self.travar_dados()?;
+        let mut t = self.abrir_travada(&dados, p, sessao)?;
+        // O plano vem ANTES de qualquer decisao: e ele que recusa a
+        // tabela-cadeia, e recusar depois de confirmar seria mandar o
+        // administrador marcar uma parada que nunca ia acontecer.
+        let plano = t.plano_do_psch_v10()?;
+        let faltando: Vec<Json> = plano.colunas().iter().map(|c| Json::texto_de(*c)).collect();
+        let passadas = plano.passadas() as u64;
+        // O que se paga e slot, e nao registro: o `.reg` nunca reaproveita
+        // slot excluido, entao a reescrita passa por todos eles -- e passa uma
+        // vez por coluna que falta.
+        let a_reescrever = plano.slots() * passadas;
+        let mut pares = vec![
+            ("database", Json::texto_de(&database)),
+            ("tabela", Json::texto_de(&tabela)),
+            ("precisa", Json::de_bool(plano.pendente())),
+            ("colunas_faltando", Json::Lista(faltando)),
+            ("passadas", Json::de_u64(passadas)),
+            ("registros", Json::de_u64(plano.registros())),
+            ("slots", Json::de_u64(plano.slots())),
+            ("slots_a_reescrever", Json::de_u64(a_reescrever)),
+        ];
+
+        if !plano.pendente() {
+            // Idempotente pela porta, como e' por dentro: quem chama de novo
+            // recebe «nao ha o que fazer», e nao um erro que um script tenta
+            // tratar para sempre.
+            pares.push(("migrado", Json::de_bool(false)));
+            pares.push((
+                "nota",
+                Json::texto_de(format!(
+                    "a tabela {tabela} ja esta no formato de esquema atual"
+                )),
+            ));
+            return Ok(Json::objeto(pares));
+        }
+
+        if confirmar.is_empty() {
+            // A VISTA PREVIA, e ela e o motivo de a operacao existir em dois
+            // tempos: o numero de linhas que vao ser reescritas tem de passar
+            // pelos olhos de quem marca a parada antes de a parada comecar.
+            pares.push(("migrado", Json::de_bool(false)));
+            pares.push((
+                "aviso",
+                Json::texto_de(format!(
+                    "migrar reescreve o arquivo de dados de {tabela} INTEIRO \
+                     {passadas} vez(es) -- {a_reescrever} slot(s) ao todo -- e a \
+                     tabela fica travada durante a reescrita. Nada foi feito \
+                     agora: isto e o custo, nao a migracao"
+                )),
+            ));
+            pares.push((
+                "para_migrar",
+                Json::texto_de(format!(
+                    "{{\"op\":\"migrar_esquema\",\"database\":\"{database}\",\
+                     \"tabela\":\"{tabela}\",\"confirmar\":\"{tabela}\"}}"
+                )),
+            ));
+            return Ok(Json::objeto(pares));
+        }
+        if confirmar != tabela {
+            return Err(PhxError::Esquema(format!(
+                "para migrar, repita o nome da tabela no campo \"confirmar\": \
+                 esperado {tabela:?}"
+            )));
+        }
+
+        let inicio = std::time::Instant::now();
+        let slots = t.migrar_para_psch_v10()?;
+        let ms = inicio.elapsed().as_secs_f64() * 1e3;
+        pares.push(("migrado", Json::de_bool(true)));
+        pares.push(("slots_reescritos", Json::de_u64(slots)));
+        pares.push(("ms", Json::Numero(ms)));
+        // As linhas que ja existiam ficam com ZERO nas colunas novas, e quem
+        // migrou precisa poder dizer isso na tela: zero quer dizer «nasceu
+        // antes de a coluna existir», e nao «nasceu na epoca zero».
+        pares.push((
+            "nota",
+            Json::texto_de(format!(
+                "as {} linha(s) que ja existiam ficaram com ZERO nas colunas \
+                 novas -- zero quer dizer «esta linha nasceu antes de a coluna \
+                 existir». So as linhas gravadas daqui em diante nascem \
+                 carimbadas",
+                plano.registros()
+            )),
+        ));
+        Ok(Json::objeto(pares))
+    }
+
+    /// A varredura da base: quais tabelas ainda nao estao no v10, e quanto
+    /// custa cada uma. **Nao migra nada.**
+    ///
+    /// Uma tabela que nao abre, ou que RECUSA a migracao (a tabela-cadeia com
+    /// historia assinada), entra na lista dizendo isso -- e nao derruba o
+    /// relatorio inteiro. Levantamento que para no primeiro caso estranho nao
+    /// levanta nada, e e o mesmo desenho do `dados_pessoais`.
+    fn migrar_esquema_varredura(&self, database: &str, sessao: &Sessao) -> Result<Json> {
+        let dados = self.travar_dados()?;
+        let db = dados.abrir_database(database)?;
+        let mut linhas = Vec::new();
+        let mut pendentes = 0u64;
+        let mut no_formato_atual = 0u64;
+        let mut total_a_reescrever = 0u64;
+
+        for nome in db.todas_as_tabelas()? {
+            // A conferencia PROPRIA: este pedido nao tem campo `tabela`, entao
+            // o portao geral so conferiu a base.
+            if !self.pode_administrar_tabela(sessao, database, &nome) {
+                continue;
+            }
+            let Ok(t) = db.abrir_qualificada(&nome) else {
+                linhas.push(Json::objeto(vec![
+                    ("tabela", Json::texto_de(&nome)),
+                    ("conferida", Json::de_bool(false)),
+                ]));
+                continue;
+            };
+            match t.plano_do_psch_v10() {
+                Err(e) => linhas.push(Json::objeto(vec![
+                    ("tabela", Json::texto_de(&nome)),
+                    ("precisa", Json::de_bool(true)),
+                    ("recusa", Json::texto_de(e.to_string())),
+                ])),
+                Ok(plano) if !plano.pendente() => {
+                    no_formato_atual += 1;
+                }
+                Ok(plano) => {
+                    pendentes += 1;
+                    let a_reescrever = plano.slots() * plano.passadas() as u64;
+                    total_a_reescrever += a_reescrever;
+                    linhas.push(Json::objeto(vec![
+                        ("tabela", Json::texto_de(&nome)),
+                        ("precisa", Json::de_bool(true)),
+                        (
+                            "colunas_faltando",
+                            Json::Lista(
+                                plano.colunas().iter().map(|c| Json::texto_de(*c)).collect(),
+                            ),
+                        ),
+                        ("passadas", Json::de_u64(plano.passadas() as u64)),
+                        ("registros", Json::de_u64(plano.registros())),
+                        ("slots", Json::de_u64(plano.slots())),
+                        ("slots_a_reescrever", Json::de_u64(a_reescrever)),
+                    ]));
+                }
+            }
+        }
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(database)),
+            ("pendentes", Json::de_u64(pendentes)),
+            ("no_formato_atual", Json::de_u64(no_formato_atual)),
+            ("slots_a_reescrever", Json::de_u64(total_a_reescrever)),
+            ("tabelas", Json::Lista(linhas)),
+        ]))
+    }
+
+    /// Quem esta na sessao pode ADMINISTRAR esta tabela desta base?
+    ///
+    /// O irmao do `pode_ver_tabela`, com a atividade que a migracao pede. Sem
+    /// sessao -- servidor sem cadastro -- e sim, pelo mesmo motivo dele: o
+    /// portao de usuario nao existe naquele modo.
+    fn pode_administrar_tabela(&self, sessao: &Sessao, database: &str, tabela: &str) -> bool {
+        match &sessao.usuario {
+            None => true,
+            Some(u) => u.pode_em(database, tabela, Atividade::Administrar),
+        }
     }
 
     /// Desfaz a declaracao de uma chave estrangeira, pelo nome.
@@ -27294,9 +27511,14 @@ mod testes_database_de_duas_origens {
         DirTemp::novo(&format!("dbs-406-{rotulo}"))
     }
 
-    /// Um servidor com as origens descritas, sem subir thread nenhuma: o que
-    /// se prova aqui e o FILTRO, e ele nao precisa de rede.
-    fn servidor(d: &std::path::Path, origens: &str, cluster: &str) -> Arc<Servidor> {
+    /// A configuracao das origens descritas, ANTES de virar servidor.
+    ///
+    /// Ela sai separada porque o `Config::validar()` nao roda em
+    /// `Config::de_json` -- so em `Config::ler` e no `gravar_a_arvore` da
+    /// tela. Um teste que pula o `validar()` prova metade da guarda e
+    /// carimba a outra metade sem olhar: foi assim que a recusa estatica
+    /// passou a derrubar o no de cluster sem nenhum teste acusar.
+    fn config(d: &std::path::Path, origens: &str, cluster: &str) -> Config {
         let txt = format!(
             r#"{{"token":"t","somente_leitura":true,
                  "replicacao":{{"papel":"replica","id_servidor":"central",
@@ -27308,6 +27530,20 @@ mod testes_database_de_duas_origens {
         c.blacklist = d.join("blacklist.json");
         c.dblink = d.join("dblink.json");
         c.jobs = d.join("jobs.json");
+        c
+    }
+
+    /// Um servidor com as origens descritas, sem subir thread nenhuma: o que
+    /// se prova aqui e o FILTRO, e ele nao precisa de rede.
+    ///
+    /// O `validar()` roda aqui dentro para que nenhum teste deste modulo
+    /// exercite um arranjo que o servidor de verdade recusaria no arranque:
+    /// filtro provado sobre configuracao que nao sobe e prova de caminho que
+    /// ninguem percorre.
+    fn servidor(d: &std::path::Path, origens: &str, cluster: &str) -> Arc<Servidor> {
+        let c = config(d, origens, cluster);
+        c.validar()
+            .unwrap_or_else(|e| panic!("o arranjo do teste nao sobe: {e}"));
         Servidor::novo(c).unwrap()
     }
 
@@ -27328,16 +27564,26 @@ mod testes_database_de_duas_origens {
             .unwrap_or_default()
     }
 
-    /// Duas origens de lista VAZIA anunciando `loja`: a segunda perde SO o
-    /// `loja`, e as dezenove certas dela andam. Uma origem repetida nao pode
-    /// derrubar o resto -- e por isso a recusa e um filtro, e nao um `Err` da
-    /// rodada.
+    /// A origem de lista VAZIA anuncia o `loja` que e da declarada: ela perde
+    /// SO o `loja`, e as dezenove certas dela andam. Uma origem repetida nao
+    /// pode derrubar o resto -- e por isso a recusa e um filtro, e nao um
+    /// `Err` da rodada.
+    ///
+    /// O arranjo e UMA declarada contra UMA vazia de proposito: desde o
+    /// conserto do ALTO-3 duas listas vazias nao sobem
+    /// (`Config::recusar_duas_origens_sem_databases`), e um teste que
+    /// exercita um arranjo que nao sobe mais prova um caminho que ninguem
+    /// percorre.
     #[test]
     fn a_segunda_origem_perde_so_o_database_repetido() {
         let d = dir("repetido");
         let s = servidor(
             &d,
-            &format!("{},{}", origem("alfa", ""), origem("beta", "")),
+            &format!(
+                "{},{}",
+                origem("alfa", "\"loja\",\"caixa01\""),
+                origem("beta", "")
+            ),
             "",
         );
         s.ligar_guarda_de_databases();
@@ -27402,7 +27648,7 @@ mod testes_database_de_duas_origens {
         let d = dir("uma-vez");
         let s = servidor(
             &d,
-            &format!("{},{}", origem("alfa", ""), origem("beta", "")),
+            &format!("{},{}", origem("alfa", "\"loja\""), origem("beta", "")),
             "",
         );
         s.ligar_guarda_de_databases();
@@ -27458,15 +27704,20 @@ mod testes_database_de_duas_origens {
         let cluster = r#","cluster":{"id":"no1","janela_inatividade_s":30,
               "nos":[{"id":"no1","endereco":"127.0.0.1","porta":5399},
                      {"id":"no2","endereco":"127.0.0.1","porta":5398}]}"#;
-        let s = servidor(
-            &d,
-            &format!(
-                "{},{}",
-                origem("um", "\"loja\""),
-                origem("dois", "\"loja\"")
-            ),
-            cluster,
+        let origens = format!(
+            "{},{}",
+            origem("um", "\"loja\""),
+            origem("dois", "\"loja\"")
         );
+        // O nivel ESTATICO tem de se desligar pelo mesmo crivo: sem esta
+        // linha o teste carimbava a metade dinamica e nao via que o
+        // `validar()` passara a recusar o mesmo arquivo -- um no com origens
+        // sobrando de antes deixava de subir, e a tela de configuracao
+        // deixava de gravar o proprio config que estava no disco.
+        let c = config(&d, &origens, cluster);
+        c.validar()
+            .unwrap_or_else(|e| panic!("o no de cluster deixou de subir: {e}"));
+        let s = Servidor::novo(c).unwrap();
         s.ligar_guarda_de_databases();
         assert!(!s.ha_varias_origens.load(Ordering::Relaxed));
         // Dois "masters" seguidos com nomes diferentes ficam os dois com o

@@ -54,6 +54,63 @@ pub enum SemEscrever {
     PrecisaEscrever(&'static str),
 }
 
+/// O que a migracao para o `PSCH` v10 ainda tem de fazer nesta tabela, e o
+/// que isso vai custar -- sem tocar em disco.
+///
+/// # Por que existe, em vez de quem chama olhar o esquema
+///
+/// Porque a migracao reescreve o `.reg` inteiro UMA VEZ POR COLUNA que falta,
+/// e quem manda migrar tem de ver o custo antes de pagar a parada. Quem
+/// olhasse o esquema por fora montaria uma SEGUNDA descricao de quais colunas
+/// o v10 exige -- e duas listas divergem. Esta sai da mesma lista que a
+/// migracao executa, entao o numero anunciado e o numero pago.
+///
+/// E ela carrega as recusas: uma tabela-cadeia com historia assinada recusa
+/// aqui, ANTES de alguem confirmar, e nao no meio da reescrita.
+#[derive(Debug, Clone)]
+pub struct PlanoV10 {
+    colunas: Vec<&'static str>,
+    slots: u64,
+    registros: u64,
+}
+
+impl PlanoV10 {
+    /// As colunas de sistema que faltam, na ordem em que serao acrescentadas.
+    pub fn colunas(&self) -> &[&'static str] {
+        &self.colunas
+    }
+
+    /// Quantas passadas pelo `.reg` inteiro: uma por coluna que falta.
+    pub fn passadas(&self) -> usize {
+        self.colunas.len()
+    }
+
+    /// Quantos slots cada passada reescreve. E o numero que interessa a quem
+    /// vai pagar a parada -- e nao `registros`: o `.reg` nunca reaproveita
+    /// slot excluido, entao a reescrita passa por todos eles.
+    pub fn slots(&self) -> u64 {
+        self.slots
+    }
+
+    /// Quantas linhas VIVAS a tabela tem. Nao e o custo; e a escala.
+    pub fn registros(&self) -> u64 {
+        self.registros
+    }
+
+    /// Ha o que migrar? `false` quer dizer que a tabela ja esta no v10.
+    pub fn pendente(&self) -> bool {
+        !self.colunas.is_empty()
+    }
+}
+
+/// As colunas que o `PSCH` v10 acrescentou, com o tipo que se espera de cada
+/// uma. O tipo fica aqui so para o `debug_assert` da migracao: quem mudar o
+/// modelo de linha sem mudar esta lista descobre no teste, e nao no disco.
+const COLUNAS_DO_V10: [(&str, ColumnType); 2] = [
+    (phxsql_core::schema::COLUNA_ROWSTAMP, ColumnType::UInt8),
+    (phxsql_core::schema::COLUNA_ROWTIME, ColumnType::DateTime),
+];
+
 /// Um passo do braco do `ao_alterar`: uma tabela filha, as linhas dela que
 /// apontam para a linha mae que mudou, e o que gravar nelas.
 ///
@@ -1018,31 +1075,13 @@ impl Table {
     /// recusa de passar cada slot de uma cadeia assinada por uma reescrita de
     /// arquivo. Uma ledger VAZIA passa: nao ha historia sobre a qual mentir.
     pub fn migrar_para_psch_v10(&mut self) -> Result<u64> {
-        use phxsql_core::schema::{COLUNA_ROWSTAMP, COLUNA_ROWTIME};
-        let faltam: Vec<(&str, ColumnType)> = [
-            (COLUNA_ROWSTAMP, ColumnType::UInt8),
-            (COLUNA_ROWTIME, ColumnType::DateTime),
-        ]
-        .into_iter()
-        .filter(|(nome, _)| self.esquema.coluna_por_nome(nome).is_none())
-        .collect();
-        if faltam.is_empty() {
+        // O plano e as recusas saem daqui, e nao de uma lista repetida logo
+        // abaixo: quem pergunta o custo antes de confirmar chama a MESMA
+        // funcao, entao o numero anunciado e o numero pago.
+        if !self.plano_do_psch_v10()?.pendente() {
             return Ok(0);
         }
-        if crate::ledger::e_tabela_ledger(&self.esquema) && self.reg.slots() > 0 {
-            return Err(PhxError::Esquema(format!(
-                "a tabela {} esta em modo ledger e ja tem {} bloco(s) na cadeia: \
-                 ela fica no formato de esquema anterior, de proposito. \
-                 Acrescentar as colunas de carimbo reescreveria cada slot de uma \
-                 historia assinada, e historia assinada nao se reescreve -- o hash \
-                 da cadeia continuaria batendo, porque ele exclui coluna de sistema, \
-                 mas a prova deixaria de ser sobre os bytes que foram assinados. \
-                 Uma tabela-cadeia NOVA ja nasce com o carimbo; esta continua \
-                 verificavel exatamente como esta",
-                self.esquema.nome(),
-                self.reg.slots()
-            )));
-        }
+        let faltam = self.colunas_do_v10_que_faltam();
 
         let mut slots = 0;
         for (nome, ty) in faltam {
@@ -1077,6 +1116,57 @@ impl Table {
         }
         self.gravar_pag()?;
         Ok(slots)
+    }
+
+    /// As colunas do v10 que esta tabela ainda nao tem, na ordem da lista.
+    ///
+    /// Vazia quer dizer «ja esta no v10». E a UNICA descricao de quais sao --
+    /// o plano anuncia a partir dela e a migracao executa a partir dela.
+    fn colunas_do_v10_que_faltam(&self) -> Vec<(&'static str, ColumnType)> {
+        COLUNAS_DO_V10
+            .iter()
+            .filter(|(nome, _)| self.esquema.coluna_por_nome(nome).is_none())
+            .copied()
+            .collect()
+    }
+
+    /// O que a migracao para o v10 vai fazer e custar nesta tabela, sem tocar
+    /// em disco -- e as recusas dela, ANTES de alguem confirmar.
+    ///
+    /// # Por que a recusa mora aqui, e nao so na migracao
+    ///
+    /// Porque uma porta que aceita planejar o que vai recusar executar manda
+    /// o administrador marcar uma janela de parada para uma migracao que
+    /// nunca vai acontecer. A recusa da tabela-cadeia (pedido 314) e a mesma
+    /// frase nos dois caminhos porque e a mesma linha de codigo.
+    pub fn plano_do_psch_v10(&self) -> Result<PlanoV10> {
+        let colunas: Vec<&'static str> = self
+            .colunas_do_v10_que_faltam()
+            .into_iter()
+            .map(|(nome, _)| nome)
+            .collect();
+        if !colunas.is_empty()
+            && crate::ledger::e_tabela_ledger(&self.esquema)
+            && self.reg.slots() > 0
+        {
+            return Err(PhxError::Esquema(format!(
+                "a tabela {} esta em modo ledger e ja tem {} bloco(s) na cadeia: \
+                 ela fica no formato de esquema anterior, de proposito. \
+                 Acrescentar as colunas de carimbo reescreveria cada slot de uma \
+                 historia assinada, e historia assinada nao se reescreve -- o hash \
+                 da cadeia continuaria batendo, porque ele exclui coluna de sistema, \
+                 mas a prova deixaria de ser sobre os bytes que foram assinados. \
+                 Uma tabela-cadeia NOVA ja nasce com o carimbo; esta continua \
+                 verificavel exatamente como esta",
+                self.esquema.nome(),
+                self.reg.slots()
+            )));
+        }
+        Ok(PlanoV10 {
+            colunas,
+            slots: self.reg.slots(),
+            registros: self.reg.registros(),
+        })
     }
 
     pub fn abrir(diretorio: impl AsRef<Path>, nome: &str) -> Result<Table> {
@@ -2697,6 +2787,25 @@ impl Table {
         ))
     }
 
+    /// O carimbo de criacao desta linha, lido direto do payload -- sem
+    /// decodificar nada. Irmao do [`Table::rownum_do_payload`], e na mesma
+    /// ordem: offset fixo, oito bytes. Quem chama ja resolveu a coluna.
+    ///
+    /// O `get` aqui diverge do irmao de proposito: este le no caminho da
+    /// REPLICACAO, onde o payload pode ter vindo de um source de outro
+    /// esquema, e a diferenca entre recusar e derrubar o processo importa.
+    fn rowstamp_do_payload(&self, payload: &[u8], coluna: usize) -> Result<u64> {
+        let off = self.esquema.offset_coluna(coluna)?;
+        let curto = || PhxError::Corrompido("payload curto demais para o rowstamp".into());
+        Ok(u64::from_le_bytes(
+            payload
+                .get(off..off + 8)
+                .ok_or_else(curto)?
+                .try_into()
+                .map_err(|_| curto())?,
+        ))
+    }
+
     /// A linha esta marcada como excluida?
     ///
     /// Falso numa tabela sem a coluna de sistema -- ali nenhuma linha esta
@@ -3820,6 +3929,28 @@ impl Table {
         maes: Option<&mut dyn MaesEmProgresso>,
         cascatear: bool,
     ) -> Result<()> {
+        self.atualizar_com_maes_opt_conferindo(rowid, valores, maes, cascatear, false)
+    }
+
+    /// O `atualizar` com o carimbo que o chamador exige encontrar na linha.
+    ///
+    /// `conferir_identidade` so vem ligado pela replicacao -- ver
+    /// [`Table::conferir_identidade_da_alteracao`], que explica o que se
+    /// compara e por que. A conferencia acontece AQUI DENTRO, e nao antes da
+    /// chamada, porque ela precisa do payload antigo: feita de fora custaria
+    /// uma segunda leitura do mesmo slot, medida em **+14,7%** no laco da
+    /// replicacao (21,49 -> 24,65 us/evento, faixas que nao se cruzam,
+    /// `debug`). Aqui o payload ja esta na mao, e o A/B intercalado de cinco
+    /// pares com o interruptor nao mede diferenca nenhuma: sem 22,18-23,14 e
+    /// com 22,09-24,60 us/evento, faixas que se cruzam.
+    fn atualizar_com_maes_opt_conferindo(
+        &mut self,
+        rowid: RowId,
+        valores: &[Value],
+        maes: Option<&mut dyn MaesEmProgresso>,
+        cascatear: bool,
+        conferir_identidade: bool,
+    ) -> Result<()> {
         self.conferir_aridade(valores)?;
         if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
             self.conferir_fks_com(valores, maes)?;
@@ -3828,6 +3959,12 @@ impl Table {
             .reg
             .ler(rowid)?
             .ok_or_else(|| PhxError::NaoEncontrado(format!("registro {rowid} esta excluido")))?;
+
+        // Antes de qualquer escrita, e antes mesmo de decodificar: se o rowid
+        // guarda outra linha, nada do que vem abaixo deve acontecer.
+        if conferir_identidade {
+            self.conferir_identidade_da_alteracao(rowid, valores, &antigo)?;
+        }
 
         let valores_antigos = self.decodificar(&antigo, false)?;
 
@@ -4581,11 +4718,79 @@ impl Table {
                     }
                     Ok(meu)
                 } else {
-                    self.atualizar(rowid, &valores)?;
+                    // A conferencia desce para dentro do `atualizar` porque e
+                    // la que o payload de ca ja esta lido. Ver
+                    // `conferir_identidade_da_alteracao`.
+                    self.atualizar_com_maes_opt_conferindo(rowid, &valores, None, true, true)?;
                     Ok(rowid)
                 }
             }
         }
+    }
+
+    /// A linha que mora neste `rowid` e a MESMA que o source alterou?
+    ///
+    /// # Por que a inclusao nao precisava disto e a alteracao precisa
+    ///
+    /// A inclusao GERA o rowid aqui e o compara com o do evento -- conferencia
+    /// forte e de graca, porque o `.reg` nunca reaproveita slot. A alteracao
+    /// nao gera nada: ela grava no rowid que o evento mandou. Com duas origens
+    /// escrevendo no mesmo `database`, a primeira INCLUSAO da segunda estoura
+    /// na conferencia de cima -- mas uma ALTERACAO dela cai num rowid que ja e
+    /// de outra linha e grava por cima, calada. Medido em 23/09/2026: a linha
+    /// da caixa A virou a da caixa B com `Ok`, sem um erro.
+    ///
+    /// # Por que o CARIMBO, e nao a chave nem o `rownum`
+    ///
+    /// O carimbo de criacao e a unica coluna que cumpre as tres condicoes:
+    /// viaja na imagem, a replica o HONRA na inclusao (ver
+    /// [`Table::carimbar_linha`]) e nenhuma alteracao o renova -- nos dois
+    /// lados. Entao, numa replica fiel, o da imagem e o de ca sao o mesmo
+    /// numero por construcao: medido em 42 eventos de uma replicacao 1<->1
+    /// com insercao recusada, alteracao e exclusao suave no meio, zero
+    /// divergencias.
+    ///
+    /// A chave nao serve: a imagem e o DEPOIS, e uma alteracao que muda a
+    /// chave faria a conferencia recusar replicacao legitima. O `rownum`
+    /// tambem nao: ele se preenche LOCALMENTE na primeira alteracao de uma
+    /// linha que nasceu antes da coluna (ver [`Table::numerar_linha`]), e ai
+    /// os dois lados divergem sem ninguem ter errado.
+    ///
+    /// # O alcance, que e menor que o nome promete
+    ///
+    /// O carimbo e um contador do PROCESSO e nao um identificador de no (ver
+    /// `no.rs`): dois servidores podem emitir o mesmo numero. Isto PEGA
+    /// divergencia, nao PROVA acordo -- exatamente como a conferencia de rowid
+    /// da inclusao. E quando qualquer um dos lados traz zero («nasceu antes da
+    /// coluna») nao ha identidade para comparar: a conferencia sai de cena em
+    /// vez de recusar a replicacao de uma tabela migrada.
+    fn conferir_identidade_da_alteracao(
+        &self,
+        rowid: RowId,
+        da_imagem: &[Value],
+        payload_daqui: &[u8],
+    ) -> Result<()> {
+        // Tabela anterior ao v10 nao tem a coluna: nao ha identidade, e a
+        // conferencia sai de cena em vez de recusar o que sempre funcionou.
+        let Some(i) = self.esquema.coluna_rowstamp() else {
+            return Ok(());
+        };
+        let Some(Value::UInt(do_source)) = da_imagem.get(i) else {
+            return Ok(());
+        };
+        let daqui = self.rowstamp_do_payload(payload_daqui, i)?;
+        // Zero e «nasceu antes da coluna», dos dois lados: sem identidade nao
+        // ha o que comparar, e recusar pararia replicacao de tabela migrada.
+        let do_source = *do_source;
+        if do_source == 0 || daqui == 0 || daqui == do_source {
+            return Ok(());
+        }
+        Err(PhxError::Corrompido(format!(
+            "replica divergiu em {}: a alteracao do rowid {rowid} traz a linha de carimbo de \
+             criacao {do_source} e aqui o rowid {rowid} guarda a de carimbo {daqui}. Sao duas \
+             linhas diferentes -- a replicacao para aqui em vez de gravar uma por cima da outra",
+            self.nome
+        )))
     }
 
     /// Decodifica um payload usando o conteudo externo da imagem no lugar do

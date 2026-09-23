@@ -3951,6 +3951,119 @@ impl Config {
         ));
     }
 
+    /// Este servidor vai MESMO puxar de `replicacao.origens`?
+    ///
+    /// Com o bloco `cluster` a lista e IGNORADA -- quem puxa e um laco so, do
+    /// master CORRENTE, descoberto pelo pulso --, e um papel que nao puxa nao
+    /// sobe laco nenhum. As duas condicoes ja estavam escritas a mao na regra
+    /// que exige a lista, logo abaixo; agora moram num lugar so.
+    pub(crate) fn puxa_das_origens(&self) -> bool {
+        self.cluster.is_none() && self.replicacao.papel.puxa_de_origem()
+    }
+
+    /// ...e com DUAS ou mais threads puxando em paralelo?
+    ///
+    /// E a pergunta unica que liga a guarda de sobreposicao de database
+    /// (pedido 406) nos DOIS niveis -- o estatico
+    /// ([`Config::recusar_origens_ambiguas`], aqui) e o dinamico
+    /// (`Servidor::ligar_guarda_de_databases`). Ela mora aqui, e nao numa
+    /// copia de cada lado, porque a copia que envelhecesse seria um nivel
+    /// ligado onde o outro esta desligado: foi exatamente o que aconteceu no
+    /// primeiro corte do 406 -- o dinamico se desligava com `cluster` e o
+    /// estatico nao, e um no de cluster com origens sobrando de antes deixava
+    /// de subir. Pior: `validar()` tambem roda no `gravar_a_arvore`, entao a
+    /// tela de configuracao recusava gravar o MESMO arquivo que estava no
+    /// disco, e o operador perdia as duas saidas no mesmo upgrade.
+    pub(crate) fn puxa_de_varias_origens(&self) -> bool {
+        self.puxa_das_origens() && self.replicacao.origens.len() >= 2
+    }
+
+    /// As tres recusas do nivel ESTATICO da guarda de sobreposicao de
+    /// database (pedido 406): o que da para saber lendo o `config.json`,
+    /// antes de qualquer conexao.
+    ///
+    /// O portao que decide vem ANTES do trabalho e e UM so -- as tres recusam
+    /// arranjos que so existem quando ha duas threads puxando em paralelo, e
+    /// espalhar a condicao por tres funcoes deixaria a que alguem esquecesse
+    /// mordendo onde a guarda nao e para morder.
+    fn recusar_origens_ambiguas(&self) -> Result<()> {
+        if !self.puxa_de_varias_origens() {
+            return Ok(());
+        }
+        // O nome primeiro: com ele repetido as outras duas mensagens nomeiam
+        // duas origens que o operador nao consegue distinguir no arquivo.
+        self.recusar_nome_de_origem_repetido()?;
+        self.recusar_duas_origens_sem_databases()?;
+        self.recusar_database_em_duas_origens()
+    }
+
+    /// Duas origens com o MESMO nome nao sobem.
+    ///
+    /// O nome e a identidade da conexao em `replicacao_estado`,
+    /// `replicacao_pular`, `replicacao_ligar` e na guarda de database, e nas
+    /// quatro a segunda se faz passar pela primeira. Na guarda e pior que
+    /// confusao: `dono.origem == origem` da verdadeiro para as duas, e a
+    /// guarda inteira se desliga justamente no arranjo que ela existe para
+    /// pegar. E nao precisa de malicia nenhuma -- `"nome"` e opcional e o
+    /// padrao e `"origem"` (ver `Config::de_json`), entao basta OMITIR um
+    /// campo opcional duas vezes.
+    ///
+    /// A recusa nomeia posicao e `host:porta` de cada uma, e nao so o nome:
+    /// o nome e justamente o que nao as distingue.
+    fn recusar_nome_de_origem_repetido(&self) -> Result<()> {
+        for (i, a) in self.replicacao.origens.iter().enumerate() {
+            for (j, b) in self.replicacao.origens.iter().enumerate().skip(i + 1) {
+                if a.nome != b.nome {
+                    continue;
+                }
+                return Err(PhxError::Esquema(format!(
+                    "replicacao.origens[{i}] ({}:{}) e [{j}] ({}:{}) tem o mesmo \
+                     nome {:?}: o nome identifica a conexao no estado, no pular, \
+                     no ligar e na guarda de database, e com ele repetido a \
+                     segunda origem se faz passar pela primeira -- as duas se \
+                     veem donas do mesmo database e a guarda nao morde. O campo \
+                     \"nome\" e obrigatorio quando ha mais de uma origem -- ver \
+                     docs/REPLICACAO.md",
+                    a.host, a.porta, b.host, b.porta, a.nome
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Duas origens SEM `databases` nao sobem: o arranjo e indecidivel.
+    ///
+    /// Lista vazia quer dizer «todos os databases desta origem», e quais sao
+    /// eles so a origem sabe. Com UMA vazia a descoberta decide sem sortear --
+    /// as declaradas reivindicam seus nomes antes de qualquer laco subir, e
+    /// entre uma escolha escrita e um curinga ganha a escolha. Com DUAS, nao
+    /// ha escolha escrita nenhuma: o dono de um nome que as duas entreguem
+    /// seria a thread que conectasse primeiro, e isso muda a cada arranque por
+    /// latencia de rede. Antes da guarda as duas escreviam juntas e o
+    /// fail-stop chegava cedo; sortear o vencedor trocaria uma falha cedo por
+    /// uma falha intermitente, que e mais dificil de diagnosticar, nao mais
+    /// facil. Por isso se recusa o arranjo em vez de sortear o vencedor.
+    fn recusar_duas_origens_sem_databases(&self) -> Result<()> {
+        let sem: Vec<&Origem> = self
+            .replicacao
+            .origens
+            .iter()
+            .filter(|o| o.databases.is_empty())
+            .collect();
+        if sem.len() < 2 {
+            return Ok(());
+        }
+        Err(PhxError::Esquema(format!(
+            "as origens {:?} e {:?} estao sem \"databases\" em \
+             replicacao.origens: lista vazia quer dizer «todos os databases \
+             desta origem», e com duas assim o dono de um nome que as duas \
+             entreguem seria a thread que conectasse primeiro -- outro a cada \
+             arranque. Declare \"databases\" em todas menos uma (no maximo UMA \
+             origem pode ficar sem lista) -- ver docs/REPLICACAO.md",
+            sem[0].nome, sem[1].nome
+        )))
+    }
+
     /// Duas origens declarando o MESMO database nao sobem.
     ///
     /// # Por que a recusa e aqui, no arranque
@@ -3966,10 +4079,13 @@ impl Config {
     /// # Por que SO o cruzamento de listas declaradas
     ///
     /// Lista vazia quer dizer «todos os databases daquela origem», e quais
-    /// sao eles so a origem sabe -- aqui seria palpite. Duas vazias, ou uma
-    /// vazia contra uma declarada, sao **indecidiveis neste ponto**: quem
-    /// sabe e a descoberta, e e la que a recusa acontece, por database e sem
-    /// derrubar os outros. Recusar por palpite tambem tiraria do ar o
+    /// sao eles so a origem sabe -- aqui seria palpite. Uma vazia contra uma
+    /// declarada e **indecidivel neste ponto**: quem sabe e a descoberta, e e
+    /// la que a recusa acontece, por database e sem derrubar os outros. (Duas
+    /// vazias tambem sao indecidiveis, e por isso nao sao caso deste metodo:
+    /// o arranjo inteiro morre em `recusar_duas_origens_sem_databases`, que a
+    /// descoberta nao tinha como decidir sem sortear.) Recusar por palpite
+    /// tambem tiraria do ar o
     /// `Config_exemplo_03.json`, que traz curitiba `["Z"]`, saopaulo (vazia) e
     /// bruxelas `["W"]` e e arranjo legitimo -- e um par 1<->1 tem uma origem
     /// so, que nao cruza com ninguem. Guarda nova entra pedida, nao imposta.
@@ -3992,7 +4108,11 @@ impl Config {
         Ok(())
     }
 
-    fn validar(&self) -> Result<()> {
+    // `pub(crate)` para que o teste do cluster em `servidor.rs` possa chama-lo:
+    // a guarda de database tem dois niveis em dois arquivos, e um teste que so
+    // alcanca metade dela foi exatamente o que deixou passar a regressao do
+    // primeiro corte do pedido 406.
+    pub(crate) fn validar(&self) -> Result<()> {
         if self.token.trim().is_empty() {
             return Err(PhxError::Esquema(
                 "config.json sem token: preencha o campo \"token\" antes de subir o servidor"
@@ -4051,10 +4171,7 @@ impl Config {
         // `replica`, como era antes de os papeis novos existirem --, MENOS
         // quando ha cluster, porque ai a origem e o master CORRENTE descoberto
         // pelo pulso, e uma lista fixa apontaria para o master de ontem.
-        if self.cluster.is_none()
-            && self.replicacao.papel.puxa_de_origem()
-            && self.replicacao.origens.is_empty()
-        {
+        if self.puxa_das_origens() && self.replicacao.origens.is_empty() {
             return Err(PhxError::Esquema(format!(
                 "papel {} exige ao menos uma origem em replicacao.origens",
                 self.replicacao.papel.nome()
@@ -4094,7 +4211,7 @@ impl Config {
                 )));
             }
         }
-        self.recusar_database_em_duas_origens()?;
+        self.recusar_origens_ambiguas()?;
         if let Some(c) = &self.cluster {
             c.validar(&self.replicacao)?;
         }
@@ -5758,6 +5875,149 @@ mod tests {
             !e.contains("precos") && !e.contains("estoque"),
             "a recusa nomeou database que nao se repete: {e}"
         );
+    }
+
+    /// A medida de «quantos arquivos do produto a guarda quebraria», feita
+    /// pelo `validar()` e nao por leitura: os QUATRO `config.json` que o
+    /// repositorio entrega sobem. Guarda nova entra pedida, nao imposta, e o
+    /// jeito de saber se ela foi imposta e este -- o exemplo 03 e o do
+    /// docker trazem origem de lista vazia, que e justamente o que as
+    /// recusas novas poderiam ter matado por palpite.
+    ///
+    /// O do docker entra por `include_str!` como os outros tres: lista de
+    /// arquivos digitada no teste envelhece calada quando alguem acrescenta
+    /// um exemplo, e o compilador nao reclama de arquivo que ninguem citou.
+    #[test]
+    fn os_config_de_exemplo_do_repositorio_continuam_subindo() {
+        const DOCKER: &str = include_str!("../../../exemplos/Config_docker_replica.json");
+        for (nome, texto) in [
+            ("Config_exemplo_01.json", crate::CONFIG_EXEMPLO_01),
+            ("Config_exemplo_02.json", crate::CONFIG_EXEMPLO_02),
+            ("Config_exemplo_03.json", crate::CONFIG_EXEMPLO_03),
+            ("Config_docker_replica.json", DOCKER),
+        ] {
+            let c = Config::de_json(&Json::analisar(texto).unwrap()).unwrap();
+            c.validar()
+                .unwrap_or_else(|e| panic!("{nome} deixou de subir: {e}"));
+        }
+    }
+
+    /// **ALTO-1 da revisao adversaria do 406.** O campo `"nome"` e opcional e
+    /// o padrao e `"origem"`: duas origens que so OMITEM o campo viram as duas
+    /// `"origem"`, e ai a guarda dinamica compara `dono.origem == origem`,
+    /// acha verdadeiro para as duas e as deixa passar -- a guarda inteira
+    /// desligada por um campo que ninguem preencheu. Nao precisa de malicia:
+    /// basta omitir um campo opcional duas vezes.
+    ///
+    /// **Prova real:** tire a chamada a `recusar_nome_de_origem_repetido` do
+    /// `recusar_origens_ambiguas` e este teste reprova no `unwrap_err`.
+    #[test]
+    fn duas_origens_sem_nome_nao_sobem() {
+        let txt = r#"{"token":"x","somente_leitura":true,
+          "replicacao":{"papel":"replica","origens":[
+            {"host":"10.1.1.1","porta":5000,"token":"t1","databases":["vendas"]},
+            {"host":"10.1.1.2","porta":5000,"token":"t2","databases":["estoque"]}]}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        // O padrao que cria o buraco, conferido aqui para que ninguem precise
+        // acreditar: as duas nascem com o MESMO nome.
+        assert_eq!(c.replicacao.origens[0].nome, "origem");
+        assert_eq!(c.replicacao.origens[1].nome, "origem");
+        let e = c.validar().unwrap_err().to_string();
+        // Os databases sao DISJUNTOS: quem recusa aqui e o nome, nao a
+        // sobreposicao -- se fosse a sobreposicao o teste provaria outra coisa.
+        assert!(
+            e.contains("10.1.1.1:5000") && e.contains("10.1.1.2:5000"),
+            "a recusa tem de nomear as duas origens, e o nome nao as distingue: {e}"
+        );
+        assert!(
+            e.contains("\"nome\""),
+            "a recusa nao disse qual campo falta: {e}"
+        );
+    }
+
+    /// **ALTO-3 da revisao adversaria do 406.** Duas origens de lista vazia
+    /// sao indecidiveis: lista vazia quer dizer «todos os databases desta
+    /// origem», entao o dono de um nome que as duas entreguem seria a thread
+    /// que conectasse primeiro -- outro a cada arranque, por latencia de rede.
+    /// Antes da guarda as duas escreviam juntas e o fail-stop chegava cedo;
+    /// sortear o vencedor teria trocado uma falha cedo por uma falha
+    /// intermitente, que e pior de diagnosticar. Entao o arranjo se recusa.
+    ///
+    /// **Prova real:** tire a chamada a `recusar_duas_origens_sem_databases`
+    /// e este teste reprova no `unwrap_err`.
+    #[test]
+    fn duas_origens_sem_databases_nao_sobem() {
+        let txt = r#"{"token":"x","somente_leitura":true,
+          "replicacao":{"papel":"replica","origens":[
+            {"nome":"alfa","host":"10.1.1.1","porta":5000,"token":"t1"},
+            {"nome":"beta","host":"10.1.1.2","porta":5000,"token":"t2"}]}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        let e = c.validar().unwrap_err().to_string();
+        assert!(
+            e.contains("alfa") && e.contains("beta"),
+            "a recusa nao nomeou as duas origens: {e}"
+        );
+        assert!(
+            e.contains("databases"),
+            "a recusa nao disse o que resolve -- declarar as listas: {e}"
+        );
+    }
+
+    /// **ALTO-2 da revisao adversaria do 406, no nivel do `Config`.** Com o
+    /// bloco `cluster` a lista `replicacao.origens` e IGNORADA (o servidor
+    /// avisa e puxa do master corrente), entao NENHUMA das tres recusas pode
+    /// ligar: um no que tinha origens sobrando de antes deixaria de subir por
+    /// causa de uma lista que ninguem le. O irmao deste teste, do lado do
+    /// servidor, e `com_cluster_a_guarda_nao_liga`.
+    ///
+    /// **Prova real:** tire o portao (`if !self.puxa_de_varias_origens()`) do
+    /// `recusar_origens_ambiguas` e este teste reprova nos tres arranjos.
+    #[test]
+    fn com_cluster_nenhuma_das_tres_recusas_liga() {
+        let cluster = r#","cluster":{"id":"no1","janela_inatividade_s":30,
+              "nos":[{"id":"no1","endereco":"127.0.0.1","porta":5399},
+                     {"id":"no2","endereco":"127.0.0.1","porta":5398}]}"#;
+        for (caso, origens) in [
+            (
+                "mesmo database declarado",
+                r#"{"nome":"a","host":"10.1.1.1","porta":5000,"token":"t","databases":["loja"]},
+                   {"nome":"b","host":"10.1.1.2","porta":5000,"token":"t","databases":["loja"]}"#,
+            ),
+            (
+                "nomes homonimos",
+                r#"{"host":"10.1.1.1","porta":5000,"token":"t","databases":["loja"]},
+                   {"host":"10.1.1.2","porta":5000,"token":"t","databases":["caixa"]}"#,
+            ),
+            (
+                "duas listas vazias",
+                r#"{"nome":"a","host":"10.1.1.1","porta":5000,"token":"t"},
+                   {"nome":"b","host":"10.1.1.2","porta":5000,"token":"t"}"#,
+            ),
+        ] {
+            let txt = format!(
+                r#"{{"token":"x","somente_leitura":true,
+                     "replicacao":{{"papel":"replica","id_servidor":"no1",
+                       "origens":[{origens}]}}{cluster}}}"#
+            );
+            let c = Config::de_json(&Json::analisar(&txt).unwrap()).unwrap();
+            c.validar()
+                .unwrap_or_else(|e| panic!("o no de cluster deixou de subir ({caso}): {e}"));
+        }
+    }
+
+    /// E o mesmo portao pelo outro lado: sem cluster, um papel que NAO puxa
+    /// (source, isolado) tambem nao sobe laco nenhum, e a lista de origens
+    /// sobrando nao pode derrubar o servidor.
+    #[test]
+    fn papel_que_nao_puxa_nao_e_tocado_pelas_recusas() {
+        let txt = r#"{"token":"x",
+          "replicacao":{"papel":"source","origens":[
+            {"nome":"a","host":"10.1.1.1","porta":5000,"token":"t","databases":["loja"]},
+            {"nome":"a","host":"10.1.1.2","porta":5000,"token":"t","databases":["loja"]}]}}"#;
+        Config::de_json(&Json::analisar(txt).unwrap())
+            .unwrap()
+            .validar()
+            .unwrap();
     }
 
     /// O teste do comportamento VELHO, que e o que mais importa numa guarda

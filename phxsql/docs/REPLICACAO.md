@@ -195,6 +195,50 @@ confere se o rowid que ela gerou bate com o do evento. Se não bater, ela
 divergiu, e a replicação **para na hora** em vez de propagar a divergência —
 o mesmo comportamento do SQL thread do MySQL(R) parando num erro.
 
+### 5.1 E a alteração confere o CARIMBO, porque não gera rowid nenhum
+
+A conferência de cima só cabe na inclusão: é ela que **gera** um rowid aqui
+para comparar com o de lá. A alteração não gera nada — grava no rowid que o
+evento mandou —, e até 23/09/2026 gravava **calada** (pedido 405). Medido no
+dia: a alteração de uma segunda origem devolvia `Ok(1)` e a linha de um caixa
+virava a de outro, sem um erro.
+
+Hoje ela compara o **carimbo de criação** (`rowstamp`, PSCH v10) que a imagem
+traz com o da linha que mora naquele rowid. Se forem dois números diferentes,
+são duas linhas diferentes, e a replicação para com a mesma família de
+mensagem da inclusão — nomeando a tabela, o rowid, o carimbo que veio e o que
+está aqui.
+
+**Por que o carimbo, e não a chave nem o `rownum`.** O carimbo é a única
+coluna que cumpre as três condições: viaja na imagem, a réplica a **honra** na
+inclusão, e nenhuma alteração a renova dos dois lados. A chave não serve
+porque a imagem é o **depois**: uma alteração que muda a chave é legítima e
+seria recusada. O `rownum` também não, porque ele se preenche *localmente* na
+primeira alteração de uma linha nascida antes da coluna — e aí os dois lados
+divergem sem ninguém ter errado.
+
+**O alcance, que é menor do que o nome promete.** O carimbo é um contador do
+**processo**, não um identificador de nó: dois servidores podem emitir o mesmo
+número. Isto **pega** divergência, não **prova** acordo — exatamente como a
+conferência de rowid da inclusão. E quando qualquer um dos lados traz zero
+(«nasceu antes da coluna»), não há identidade para comparar e a conferência
+sai de cena, em vez de recusar a replicação de uma tabela migrada. É por isso
+que a guarda da declaração (pedido 406, §8.1) continua sendo o que sustenta o
+arranjo: esta aqui é a rede embaixo, não a porta.
+
+**O que ela NÃO alcança, e está medido:** a **exclusão** replicada. O evento
+de exclusão não leva imagem — o rowid basta —, então não há carimbo para
+comparar, e uma exclusão de outra origem continua apagando a linha errada em
+silêncio. Sem mudar o formato do evento, esse caminho não tem conferência
+possível.
+
+**Custo:** zero mensurável. A conferência acontece **dentro** do `atualizar`,
+onde o payload antigo já está lido; feita de fora custaria uma segunda leitura
+do mesmo slot, medida em **+14,7%** no laço (21,49 → 24,65 µs/evento, faixas
+que não se cruzam). Do jeito que ficou, o A/B intercalado de cinco pares com o
+interruptor dá 22,18–23,14 µs sem e 22,09–24,60 µs com — faixas que se cruzam,
+e por isso não se declara diferença. Tudo em `debug`.
+
 É também o motivo de o `Config_exemplo_03.json` vir com:
 
 ```json
@@ -499,24 +543,48 @@ ver `exemplos/Config_exemplo_03.json`.
 **A regra:** num servidor multi-source, cada nome de database tem **uma** origem
 dona. Duas origens entregando `vendas` escreveriam no **mesmo** `vendas` daqui,
 e a réplica fiel aplica **por rowid**: no segundo evento da segunda origem os
-rowids divergem. A inclusão ainda para com *fail-stop*; a **alteração** não tem
-conferência nenhuma e sobrescreve calada a linha da outra origem. Era o arranjo
-que se destruía sozinho no meio do expediente, e passou a morrer na declaração
-(pedido 406, parecer do papel C de 23/09/2026 §6).
+rowids divergem. A inclusão para com *fail-stop*; a **alteração** parou de
+sobrescrever calada em 23/09/2026 — ela confere o carimbo de criação (§5.1,
+pedido 405) —, e a **exclusão** continua sem conferência possível, porque o
+evento dela não leva imagem. Era o arranjo que se destruía sozinho no meio do
+expediente, e passou a morrer na declaração (pedido 406, parecer do papel C de
+23/09/2026 §6). A guarda da declaração é a porta; a do carimbo é a rede
+embaixo dela.
 
 **Onde a recusa acontece, e por quê são dois lugares:**
 
 | caso | quem decide | o que acontece |
 |---|---|---|
+| duas origens com o **mesmo nome** | `Config::validar()` | o servidor **não sobe**, nomeando posição e `host:porta` das duas |
 | duas listas **declaradas** se cruzam | `Config::validar()` | o servidor **não sobe**, nomeando as duas origens e o database |
+| duas listas **vazias** | `Config::validar()` | o servidor **não sobe**: o arranjo é indecidível, e no máximo **uma** origem pode ficar sem lista |
 | uma lista declarada contra uma **vazia** | a descoberta | aquele database é recusado **para a origem de lista vazia**; os outros dela andam |
-| duas listas **vazias** | a descoberta | aquele database fica com a primeira que o anunciar; a outra o perde e os outros dela andam |
 
 Lista vazia quer dizer «todos os databases daquela origem», e quais são eles
-**só a origem sabe**. Por isso os dois últimos casos são *indecidíveis* no
-arranque: recusá-los ali seria palpite — e o palpite tiraria do ar o próprio
+**só a origem sabe**. Por isso o último caso é *indecidível* no arranque:
+recusá-lo ali seria palpite — e o palpite tiraria do ar o próprio
 `Config_exemplo_03.json`, que traz `curitiba ["Z"]`, `saopaulo` (vazia) e
-`bruxelas ["W"]` e é arranjo legítimo.
+`bruxelas ["W"]` e é arranjo legítimo. Medido pelo próprio `validar()`
+(`os_config_de_exemplo_do_repositorio_continuam_subindo`): os **quatro**
+`config.json` que o repositório entrega continuam subindo — **zero** quebrados
+pelas três recusas.
+
+**Duas listas vazias são indecidíveis, e isso é motivo para recusar, não para
+sortear.** O dono de um nome que as duas entreguem seria a thread que
+conectasse primeiro — outro a cada arranque, por latência de rede. Deixar a
+descoberta escolher trocaria uma falha *cedo* (as duas escrevendo, fail-stop na
+inclusão) por uma falha **intermitente**, que é mais difícil de diagnosticar, e
+não mais fácil. A recusa nomeia as duas origens e diz o que resolve: declarar
+`databases` em todas menos uma.
+
+**Nome de origem repetido desliga a guarda inteira, e não precisa de malícia.**
+O campo `"nome"` é opcional e o padrão é `"origem"`: duas origens que apenas
+**omitem** o campo nascem as duas `"origem"`, e aí a descoberta compara
+`dono.origem == origem`, acha verdadeiro para as duas e deixa as duas passarem.
+O nome é a mesma identidade de `replicacao_estado`, `replicacao_pular` e
+`replicacao_ligar` — nas quatro a segunda se faz passar pela primeira. Por isso
+`"nome"` passou a ser **obrigatório quando há mais de uma origem**, e a recusa
+nomeia posição e `host:porta`, que é o que o nome repetido não distingue.
 
 **Lista declarada ganha de lista vazia**, e ganha *antes* de qualquer laço subir:
 as declaradas reivindicam seus nomes na ordem do `config.json`. Sem isso o
@@ -536,6 +604,18 @@ ninguém). O cluster é o caso que exige cuidado: ali quem puxa é um laço só,
 master **corrente**, e o nome da origem muda a cada eleição (`cluster:<id>`) —
 um dono guardado por nome recusaria ao master novo o database do master velho,
 e seria a promoção inteira parando.
+
+**E os dois níveis desligam pelo MESMO crivo**, que mora num lugar só:
+`Config::puxa_de_varias_origens()`. O primeiro corte desta guarda tinha a
+condição escrita duas vezes — o nível dinâmico desligava com `cluster` e o
+estático **não** —, e o efeito era uma regressão: um nó com bloco `cluster` e
+`replicacao.origens` sobrando de antes (a lista que o próprio servidor avisa
+que **ignora**) deixava de subir. Pior, `validar()` também roda no
+`gravar_a_arvore`: a tela de configuração passava a recusar gravar o mesmo
+arquivo que estava no disco, e o operador perdia as duas saídas no mesmo
+upgrade. Duas cópias de uma condição é um nível ligado onde o outro está
+desligado, e o teste que parecia cobrir o caso (`com_cluster_a_guarda_nao_liga`)
+não cobria: ele montava o config e **nunca chamava** `validar()`. Hoje chama.
 
 **A consequência de modelagem**, que é o motivo de a guarda existir: no arranjo
 **espelho** — 20 caixas com 20 nomes de database, `caixa01`…`caixa20`, um

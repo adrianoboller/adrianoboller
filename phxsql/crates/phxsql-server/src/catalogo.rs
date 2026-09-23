@@ -1270,6 +1270,38 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "migrar_esquema",
+        apelidos: &[],
+        resumo: "A porta do formato de esquema atual: leva ao PSCH v10 uma \
+                 tabela nascida antes dele (a que não tem as colunas de \
+                 carimbo). **Diz o preço antes de cobrar** -- sem \
+                 \"confirmar\" ela não migra nada, só responde quantos slots \
+                 vai reescrever. Sem \"tabela\", varre a base e diz quais \
+                 faltam. Migrar reescreve o `.reg` INTEIRO uma vez por coluna \
+                 que falta, e a tabela fica travada durante a reescrita: é \
+                 janela de parada, e por isso nunca acontece sozinha.",
+        parametros: &[
+            DB,
+            opc(
+                "tabela",
+                "string",
+                "a tabela a migrar. Sem ela, a resposta é o levantamento da base \
+                 inteira -- quais tabelas faltam e quanto custa cada uma -- e \
+                 nada é migrado",
+            ),
+            opc(
+                "confirmar",
+                "string",
+                "o nome da tabela repetido. SEM ele a operação só responde o \
+                 custo (`slots_a_reescrever` = slots × passadas) e nada é \
+                 escrito; COM ele a migração acontece. Tabela já no formato \
+                 atual responde `precisa: false` e não toca em disco",
+            ),
+        ],
+        exemplo: r#"{"op":"migrar_esquema","database":"loja","tabela":"clientes"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "excluir_tabela",
         apelidos: &[],
         resumo: "Apaga os arquivos de uma tabela. Não há desfazer, e por isso \
