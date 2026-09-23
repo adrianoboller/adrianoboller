@@ -72,6 +72,16 @@ fn config_base(base: &std::path::Path, porta: u16, id: &str) -> Config {
     // linha a recusa lida aqui seria a da cifra, e a prova passaria a medir
     // o portao errado.
     c.cifra_fio.exigir = false;
+    // A ESTATICA MORA DENTRO DO DIR DO TESTE, e nao no cwd. `exigir = false`
+    // acima nao basta: o cenario `marcado` sobe a origem com `cifra: true`
+    // (pedido 342), o parceiro RESPONDE o aperto, e `estatica_do_fio` cria o
+    // arquivo. Como este `Config` nasce em memoria, `caminho` e `None`, e o
+    // padrao relativo `chave-do-fio.hex` cai no diretorio de onde o binario
+    // de teste rodou -- que no `cargo test` e a raiz do crate. Foi assim que
+    // um `crates/phxsql-server/chave-do-fio.hex` de 65 bytes sobreviveu a
+    // corrida e apareceu na lista de um commit (pedido 402). Dentro do
+    // `DirTemp`, a chave morre com o teste.
+    c.cifra_fio.arquivo = base.join("chave-do-fio.hex");
     c.web.ligado = false;
     c.replicacao.papel = Papel::Multi;
     c.replicacao.id_servidor = id.into();

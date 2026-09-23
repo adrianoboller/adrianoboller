@@ -4015,3 +4015,104 @@ E o que **não** pode sumir continua provado: o nome da variável de ambiente
 fica visível no profiler, o nonce do desafio continua visível, `DROP USER` e
 `token_remoto_env` continuam entrando num job, e o SQL de sempre continua
 inteiro no anel.
+
+## 18. A chave que nasce solta, e a guarda que a REPROVA (pedido 402)
+
+Medido em 23/09/2026. Um `crates/phxsql-server/chave-do-fio.hex` de **65 bytes**
+(0600 — 64 dígitos hexadecimais mais o fim de linha, uma privada de 256 bits)
+nasceu às 04:28 numa corrida de teste e **apareceu entre os 57 arquivos de um
+commit de integração**. Não estava no `.gitignore`, nenhum processo o usava, e
+ele estava a **um `git add -A` de virar segredo publicado** num repositório
+remoto — de onde não se tira mais.
+
+O pedido **196** desta casa já se chamava *«a chave privada volta a nascer
+solta»*. Então o que este item acrescenta não é a lei, é o **alcance**:
+consertar **onde ela nasce** não impede a próxima, porque o defeito não era o
+lugar — era **nada impedir de ser versionada**.
+
+### 18.1 Por que ela nascia em `crates/phxsql-server/`
+
+O padrão de `CifraFio::arquivo` é **relativo** (`chave-do-fio.hex`), e
+`caminho_da_chave` o resolve **ao lado do `config.json`** — *quando ele tem
+caminho*. Em produção sempre tem: o `main.rs` põe `--config` ou o padrão
+`config.json` em `config.caminho`. Num **`Config` montado em memória**, que é
+como todo teste sobe um servidor, `caminho` é `None` e o relativo cai no
+diretório de onde o processo subiu — que no `cargo test` é a **raiz do crate**.
+
+Quem a criava era `tests/laco-do-unico-secundario.rs`. O `c.cifra_fio.exigir =
+false` que ele já tinha **não basta**, e é isso que o faz irmão dos outros e
+não gêmeo: o cenário `marcado` sobe a origem com `cifra: true` (pedido 342), o
+parceiro **responde o aperto**, e `estatica_do_fio` cria o arquivo. Medido
+binário a binário: dos **18** alvos de teste do `phxsql-server` que falam de
+fio, aperto, réplica ou MCP, **um** deixava a chave para trás. Os outros já
+diziam onde ela mora — `servidor.rs::testes_remoto_cifrado` e
+`tests/sonda-da-replicacao.rs` por `cifra_fio.arquivo`, `tests/cifra-do-fio.rs`
+e `tests/compressao-do-fio.rs` por `caminho`, e `phxsql-cmd/tests/console.rs`
+por `caminho` desde 18/09/2026, quando o console passou a cifrar e pagou o
+mesmo defeito em `crates/phxsql-cmd/`.
+
+O conserto é uma linha (`c.cifra_fio.arquivo = base.join("chave-do-fio.hex")`)
+com o porquê escrito acima dela: dentro do `DirTemp`, **a chave morre com o
+teste**.
+
+### 18.2 Por que `.gitignore` não é guarda
+
+O `.gitignore` ganhou `chave-do-fio.hex`, `*.chave` e `*.key` no mesmo passo do
+diagnóstico, e isso protege do `git add -A`. Ele **não** protege de um `git add
+-f` distraído, e sobretudo **não diz nada** enquanto o arquivo existe — ignorar
+é calar, e calar foi exatamente o que deixou a chave viver o dia inteiro no
+disco.
+
+`crates/phxsql-server/src/conferidor_segredos.rs` faz o contrário: **reprova**
+enquanto o arquivo estiver lá, ignorado ou não. Ele roda no `cargo test
+--workspace`, no molde dos outros sete `conferidor_*` do crate, e a razão é que
+esse é o **portão que antecede o commit** — guarda fora do caminho do portão é
+script que só roda quando alguém lembra.
+
+O crivo tem três braços, e o segundo é o que o `.gitignore` nunca teria:
+
+| braço | o que casa |
+|---|---|
+| `Nome` | `chave-do-fio.hex`, `id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519`, e as extensões `.chave .key .pem .p12 .pfx .jks .keystore` |
+| `TudoHex` | arquivo **inteiro** hexadecimal, ≥ 64 dígitos (256 bits) — pega a chave **renomeada**, que é o furo de qualquer lista de nomes |
+| `Pem` | cabeçalho PEM de chave privada |
+
+Ele **nunca imprime, copia ou guarda um byte** do arquivo: o relatório carrega
+**caminho, tamanho e o motivo do crivo**, e o teste
+`o_relatorio_nao_vaza_um_unico_byte` cai se alguém puser conteúdo no `Solto`.
+Guarda de segredo que mostra o segredo no erro é o vazamento com outro nome.
+
+**Falso positivo medido: 0.** A varredura anda a raiz do repositório
+(`/home/user/adrianoboller`, achada subindo até o `.git`), pulando `.git` e
+`target` pelo nome — **7.305 arquivos** olhados em 23/09/2026, **zero**
+casando o crivo. Custo da varredura, cronometrado três vezes no binário de
+depuração: **0,47–0,57 s**. `ISENTOS` está vazio: a porta existe, e ninguém
+precisou dela ainda.
+
+Dois limites escritos, porque guarda sem eles mente:
+
+- **Ela não alcança quem tem chave no lugar certo.** Não lê `config.json`, não
+  olha diretório de servidor instalado, não roda no `phxsqld` — só a árvore do
+  repositório, e só no `cargo test`.
+- **A chave que nascer DURANTE a corrida só é vista na corrida seguinte**, que
+  é o que a ordem dos binários de teste permite. Basta para o defeito que
+  motivou o pedido — o arquivo fica no disco até alguém apagá-lo, e o commit
+  veio horas depois —, mas não faz dela um detetor instantâneo.
+
+### 18.3 A prova, nos dois sentidos
+
+Quatro reposições, todas medidas:
+
+| defeito reposto | o que cai |
+|---|---|
+| tirar `c.cifra_fio.arquivo` de `laco-do-unico-secundario.rs` | a corrida deixa `crates/phxsql-server/chave-do-fio.hex`, **65 bytes, modo 600** — e os 4 testes do arquivo passam, que é por que ninguém via |
+| a chave real acima, com o conferidor no lugar | `nenhum_segredo_solto_na_arvore` **FALHA**: «1 arquivo(s) … de 7.306 varridos», nomeando caminho e tamanho |
+| um `docs/anotacao-da-frente.txt` de 64 dígitos hexadecimais (nome que o `.gitignore` deixa passar — `git check-ignore` não o casa) | `nenhum_segredo_solto_na_arvore` **FALHA** por `TudoHex` |
+| a mesma chave solta num `DirTemp`, dentro do próprio teste | `a_varredura_acusa_a_chave_solta_e_cala_quando_ela_sai`, que mede os dois sentidos sem escrever nada dentro do repositório |
+
+E o verde: com a linha de volta, a corrida de `laco-do-unico-secundario` não
+deixa arquivo nenhum, e os 6 testes do conferidor passam.
+
+O material usado nas provas é **64 letras `a`** — o **formato** de uma chave,
+nunca uma chave. Teste que gera material de verdade para provar uma guarda de
+segredo é o próprio defeito.

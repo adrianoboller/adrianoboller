@@ -17,6 +17,7 @@ pub mod conferidor_botoes;
 pub mod conferidor_dependencias;
 pub mod conferidor_grades;
 pub mod conferidor_inventario;
+pub mod conferidor_segredos;
 pub mod conferidor_temporarios;
 pub mod conferidor_texto_cru;
 pub mod conferidor_vermelhas;
