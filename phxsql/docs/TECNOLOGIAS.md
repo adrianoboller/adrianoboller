@@ -39,14 +39,14 @@ foi estimado no lugar de uma medição que faltou.
 | `phxsql-core` | 35 | 11589 | 4969 | 3921 | 1593 | 22072 |
 | `phxsql-ffi` | 7 | 1408 | 1081 | 745 | 242 | 3476 |
 | `phxsql-odbc` | 7 | 2662 | 1089 | 980 | 239 | 4970 |
-| `phxsql-server` | 58 | 46372 | 32189 | 24591 | 5392 | 108544 |
-| `phxsql-sql` | 10 | 6958 | 3626 | 2329 | 792 | 13705 |
-| `phxsql-store` | 25 | 13951 | 3777 | 6296 | 1614 | 25638 |
-| **total** | **145** | **84373** | **46945** | **39182** | **10015** | **180515** |
+| `phxsql-server` | 59 | 46757 | 32415 | 24957 | 5442 | 109571 |
+| `phxsql-sql` | 10 | 7023 | 3764 | 2457 | 811 | 14055 |
+| `phxsql-store` | 25 | 14041 | 3777 | 6398 | 1627 | 25843 |
+| **total** | **146** | **84913** | **47309** | **39778** | **10097** | **182097** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **46945/84373 = 0.56×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **47309/84913 = 0.56×**.
 
-Alem do `src/`: **80** programas de medicao em `examples/` (20566 linhas — bancada em Rust, nao produto nem teste) e **68** arquivos em `tests/` de integracao fora de `src/` (24182 linhas).
+Alem do `src/`: **81** programas de medicao em `examples/` (20636 linhas — bancada em Rust, nao produto nem teste) e **69** arquivos em `tests/` de integracao fora de `src/` (24867 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -110,7 +110,7 @@ mesmo motivo que o rodapé já errou uma vez.
 | JavaScript (prova ponta a ponta) | `testes-web/` | 55 | 11741 |
 | Python (bancada de medicao) | `bancada/` | 121 | 55353 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2894 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 436 | 106457 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 439 | 107626 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 34 | 14420 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
@@ -305,7 +305,7 @@ leitura de 20.000 (5× a favor do PhxSql sem o motor ter feito nada por isso).
 ### 4.3 Como se provou
 
 <!-- GERADO: bloco_conferidores() + bloco_catracas() + bloco_guardas() -->
-Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes.rs`, `conferidor_dependencias.rs`, `conferidor_grades.rs`, `conferidor_inventario.rs`, `conferidor_temporarios.rs`, `conferidor_texto_cru.rs`, `conferidor_vermelhas.rs`. Executaveis de prova em `crates/phxsql-server/examples/`: `botoes-sem-prova.rs`, `grades-fora-do-padrao.rs`, `prova-dblink.rs`, `prova-exportar.rs`, `textos-fora-da-fabrica.rs`.
+Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes.rs`, `conferidor_dependencias.rs`, `conferidor_grades.rs`, `conferidor_inventario.rs`, `conferidor_segredos.rs`, `conferidor_temporarios.rs`, `conferidor_texto_cru.rs`, `conferidor_vermelhas.rs`. Executaveis de prova em `crates/phxsql-server/examples/`: `botoes-sem-prova.rs`, `grades-fora-do-padrao.rs`, `prova-dblink.rs`, `prova-exportar.rs`, `textos-fora-da-fabrica.rs`.
 
 | constante | valor | arquivo |
 |---|---:|---|
@@ -317,6 +317,8 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_BOTAO_SEM_PROVA` | 119 | `crates/phxsql-server/src/conferidor_botoes.rs` |
 | `TETO_TABELA_NA_MAO` | 0 | `crates/phxsql-server/src/conferidor_grades.rs` |
 | `TETO_INVENTARIO_DESCASADO` | 0 | `crates/phxsql-server/src/conferidor_inventario.rs` |
+| `TETO_DE_LEITURA` | 4096 | `crates/phxsql-server/src/conferidor_segredos.rs` |
+| `TETO_SEGREDO_SOLTO` | 0 | `crates/phxsql-server/src/conferidor_segredos.rs` |
 | `TETO_TEMP_DIR_SOLTO` | 0 | `crates/phxsql-server/src/conferidor_temporarios.rs` |
 | `TETO_TXT_CRU_EM_HTML` | 1 | `crates/phxsql-server/src/conferidor_texto_cru.rs` |
 | `TETO_VERMELHA_SEM_PEDIDO` | 0 | `crates/phxsql-server/src/conferidor_vermelhas.rs` |
@@ -332,7 +334,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_COLETA_ROWIDS` | 1_000_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_ANINHAMENTO` | 8 | `crates/phxsql-server/src/servidor.rs` |
 
-**22** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
+**24** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
 `bancada/guardas/catalogo.py` cataloga **199** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 8061. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
@@ -495,7 +497,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **412** pedidos numerados; **68** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **420** pedidos numerados; **68** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
