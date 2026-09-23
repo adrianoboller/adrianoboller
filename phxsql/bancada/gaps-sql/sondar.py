@@ -34,10 +34,18 @@ import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
+
+# O guarda de frescor mora em `bancada/frescor.py` e NAO e copiado aqui:
+# copia diverge de si mesma, e foi assim que a `sondar.py` ficou sem ele
+# enquanto a `prova-do-tunel.py` ja o tinha.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import frescor  # noqa: E402
 
 PORTA = int(os.environ.get("PHX_GAPS_PORTA", "6110"))
 BASE = f"/tmp/phx-f2-{os.getpid()}"
 BINARIO = "target/release/phxsqld"
+RAIZ_DO_REPO = Path(__file__).resolve().parents[2]
 BANCO = "loja"
 
 
@@ -45,11 +53,11 @@ class Servidor:
     """Sobe um `phxsqld` de verdade e o derruba no fim, aconteca o que acontecer."""
 
     def __enter__(self):
-        if not os.path.exists(BINARIO):
-            raise SystemExit(
-                f"{BINARIO} nao existe. Rode antes:\n"
-                "  flock /tmp/phx-cargo.lock cargo build --release -p phxsql-server"
-            )
+        # Existir nao basta: o numero desta sonda vai para pagina, e
+        # binario velho mede o passado com cara de fresco. `fatal=True`
+        # porque aqui nao ha "leia com ressalva" -- ou mede o agora, ou
+        # nao mede.
+        frescor.conferir(BINARIO, RAIZ_DO_REPO, fatal=True)
         shutil.rmtree(BASE, ignore_errors=True)
         os.makedirs(BASE + "/dados", exist_ok=True)
         cfg = BASE + "/config.json"

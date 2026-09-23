@@ -1,5 +1,5 @@
 {
- "porta": 6119,
+ "porta": 6110,
  "controle": [
   {
    "sql": "SELECT * FROM clientes",
@@ -109,7 +109,7 @@
    "rotulo": "CREATE VIEW",
    "sql": "CREATE VIEW vw AS SELECT * FROM clientes",
    "aceito": true,
-   "mensagem": "{'sql': 'CREATE VIEW vw AS SELECT * FROM clientes', 'op': 'criar_visao', 'notas': ['CREATE VIEW vira `criar_visao`: a visao guarda TEXTO e e reanalisada a cada uso -- se a tabela dela sumir, quem descobre e quem tenta USAR a visao, nomeando a tabela, nao quem a criou'], 'database': 'loja', 'visao': {'nome': 'vw', 'sql': 'SELECT * FROM clientes', 'criado_em': '2026-09-22 23:43:41,119', 'criado_por…"
+   "mensagem": "{'sql': 'CREATE VIEW vw AS SELECT * FROM clientes', 'op': 'criar_visao', 'notas': ['CREATE VIEW vira `criar_visao`: a visao guarda TEXTO e e reanalisada a cada uso -- se a tabela dela sumir, quem descobre e quem tenta USAR a visao, nomeando a tabela, nao quem a criou'], 'database': 'loja', 'visao': {'nome': 'vw', 'sql': 'SELECT * FROM clientes', 'criado_em': '2026-09-23 00:32:53,014', 'criado_por…"
   },
   {
    "motor": "postgresql",
@@ -213,8 +213,8 @@
    "motor": "postgresql",
    "rotulo": "DISTINCT",
    "sql": "SELECT DISTINCT cidade FROM clientes",
-   "aceito": false,
-   "mensagem": "[SP000018] esquema invalido: SQL, coluna 17: DISTINCT nao tem substrato: nenhuma operacao do protocolo elimina repetido numa varredura"
+   "aceito": true,
+   "mensagem": "{'sql': 'SELECT DISTINCT cidade FROM clientes', 'op': 'agrupar', 'notas': ['SELECT DISTINCT vira `agrupar` por 1 coluna(s) -- agrupar por elas E eliminar o repetido delas. A contagem de cada grupo e calculada e descartada na projecao: o `agrupar` exige um agregado. NULO conta como um valor, e dois NULOS sao a MESMA linha, como nos quatro motores', 'o teto e o do `agrupar`: os grupos ficam TODOS e…"
   },
   {
    "motor": "postgresql",
@@ -235,7 +235,7 @@
    "rotulo": "UNION",
    "sql": "SELECT nome FROM clientes UNION SELECT nome FROM clientes",
    "aceito": false,
-   "mensagem": "[SP000018] esquema invalido: SQL, coluna 27: sobrou \"UNION\" depois do fim do comando; um comando por vez"
+   "mensagem": "[SP000018] esquema invalido: UNION entre SELECTs com filtro ou projecao nao tem substrato (parte 1): a op `unir` recebe TABELAS inteiras, e o pedido 393 mede o que custa mudar isso. O que passa hoje e `SELECT * FROM a UNION [ALL] SELECT * FROM b`"
   },
   {
    "motor": "postgresql",
@@ -1195,7 +1195,7 @@
    "sql": "DESCRIBE / PRAGMA table_info",
    "op": "esquema",
    "ok": true,
-   "resposta": "{'tabela': 'clientes', 'arquivos': ['.reg', '.ndx', '.bin', '.memo', '.log', '.trash', '.reason', '.pag'], 'registros': 7, 'slots': 7, 'material': 'em_claro', 'motivo_obrigatorio': False, 'colunas': [{'id': '01a0cb80-f419-70e0-a8a6-eca88dd08a57', 'nome': 'id', 'caption': '', 'rotulo': 'id', 'descricao': '', 'mascara': '', 'dado_pessoal': 'nao', 'tipo': 'Sequence', 'tamanho': 8, 'nullable': False,…"
+   "resposta": "{'tabela': 'clientes', 'arquivos': ['.reg', '.ndx', '.bin', '.memo', '.log', '.trash', '.reason', '.pag'], 'registros': 7, 'slots': 7, 'material': 'em_claro', 'motivo_obrigatorio': False, 'colunas': [{'id': '01a0cbad-ff0a-74e2-abb2-e5555e6bcde3', 'nome': 'id', 'caption': '', 'rotulo': 'id', 'descricao': '', 'mascara': '', 'dado_pessoal': 'nao', 'tipo': 'Sequence', 'tamanho': 8, 'nullable': False,…"
   },
   {
    "sql": "information_schema.tables",
@@ -1207,7 +1207,7 @@
    "sql": "information_schema.columns",
    "op": "siscolunas",
    "ok": true,
-   "resposta": "{'database': 'loja', 'total': 6, 'colunas': [{'tabela': 'clientes', 'posicao': 1, 'id': '01a0cb80-f419-70e0-a8a6-eca88dd08a57', 'nome': 'id', 'caption': '', 'descricao': '', 'mascara': '', 'dado_pessoal': 'nao', 'tipo': 'Sequence', 'tamanho': 8, 'obrigatoria': True, 'primaria': True, 'estrangeira': False, 'composta': False, 'nos_indices': ['porId']}, {'tabela': 'clientes', 'posicao': 2, 'id': '01…"
+   "resposta": "{'database': 'loja', 'total': 6, 'colunas': [{'tabela': 'clientes', 'posicao': 1, 'id': '01a0cbad-ff0a-74e2-abb2-e5555e6bcde3', 'nome': 'id', 'caption': '', 'descricao': '', 'mascara': '', 'dado_pessoal': 'nao', 'tipo': 'Sequence', 'tamanho': 8, 'obrigatoria': True, 'primaria': True, 'estrangeira': False, 'composta': False, 'nos_indices': ['porId']}, {'tabela': 'clientes', 'posicao': 2, 'id': '01…"
   },
   {
    "sql": "JOIN",
@@ -1273,7 +1273,7 @@
    "sql": "COPY TO / SELECT INTO OUTFILE",
    "op": "exportar",
    "ok": true,
-   "resposta": "{'formato': 'csv', 'arquivo': 'itens_2026-09-22-23-43-41-171.csv', 'mime': 'text/csv; charset=utf-8', 'bytes': 50, 'linhas': 1, 'truncado': False, 'binario': False, 'ms': 0, 'conteudo': '\\ufeffid;descricao;softdeleted;rownum\\r\\n1;cafe;nao;1\\r\\n'}"
+   "resposta": "{'formato': 'csv', 'arquivo': 'itens_2026-09-23-00-32-53-058.csv', 'mime': 'text/csv; charset=utf-8', 'bytes': 50, 'linhas': 1, 'truncado': False, 'binario': False, 'ms': 0, 'conteudo': '\\ufeffid;descricao;softdeleted;rownum\\r\\n1;cafe;nao;1\\r\\n'}"
   },
   {
    "sql": "LOAD DATA INFILE (conferencia)",
@@ -1303,7 +1303,7 @@
    "sql": "SHOW PROCESSLIST",
    "op": "sessoes",
    "ok": true,
-   "resposta": "{'quantas': 1, 'executando': 1, 'mais_longa_ms': 0, 'sessoes': [{'id': 1, 'ip': '127.0.0.1', 'porta': 55706, 'usuario': None, 'desde': '2026-09-22 23:43:41,080', 'aberta_s': 0, 'estado': 'executando', 'op': 'sessoes', 'ha_ms': 0, 'objeto': None, 'pedidos': 194, 'encerrando': False, 'origem': 'dados'}], 'web': [], 'sessoes_web': 0}"
+   "resposta": "{'quantas': 1, 'executando': 1, 'mais_longa_ms': 0, 'sessoes': [{'id': 2, 'ip': '127.0.0.1', 'porta': 35714, 'usuario': None, 'desde': '2026-09-23 00:32:53,001', 'aberta_s': 0, 'estado': 'executando', 'op': 'sessoes', 'ha_ms': 0, 'objeto': None, 'pedidos': 194, 'encerrando': False, 'origem': 'dados'}], 'web': [], 'sessoes_web': 0}"
   },
   {
    "sql": "SHOW GRANTS / pg_roles",
@@ -1327,31 +1327,31 @@
    "sql": "BEGIN com escopo declarado",
    "op": "begin",
    "ok": true,
-   "resposta": "{'transaction_id': 1790120620982, 'transaction_state': 'ACTIVE', 'transaction_start_time': '2026-09-22 23:43:41,179', 'transaction_isolation': 'escrita serializavel por tabela, leitura confirmada e nao bloqueante, sem leitura repetivel', 'leitura_repetivel': False, 'idade_ms': 0, 'expira_em_s': 5, 'linhas': 0, 'database': 'loja', 'tabelas': [], 'tabelas_declaradas': ['loja/clientes'], 'tabelas_ef…"
+   "resposta": "{'transaction_id': 1790123572903, 'transaction_state': 'ACTIVE', 'transaction_start_time': '2026-09-23 00:32:53,066', 'transaction_isolation': 'escrita serializavel por tabela, leitura confirmada e nao bloqueante, sem leitura repetivel', 'leitura_repetivel': False, 'idade_ms': 0, 'expira_em_s': 5, 'linhas': 0, 'database': 'loja', 'tabelas': [], 'tabelas_declaradas': ['loja/clientes'], 'tabelas_ef…"
   },
   {
    "sql": "SAVEPOINT",
    "op": "savepoint",
    "ok": true,
-   "resposta": "{'savepoint': 'sp1', 'linhas': 0, 'transaction_id': 1790120620982}"
+   "resposta": "{'savepoint': 'sp1', 'linhas': 0, 'transaction_id': 1790123572903}"
   },
   {
    "sql": "ROLLBACK TO SAVEPOINT",
    "op": "rollback_para",
    "ok": true,
-   "resposta": "{'savepoint': 'sp1', 'descartadas': 0, 'linhas': 0, 'transaction_id': 1790120620982, 'transaction_state': 'ACTIVE'}"
+   "resposta": "{'savepoint': 'sp1', 'descartadas': 0, 'linhas': 0, 'transaction_id': 1790123572903, 'transaction_state': 'ACTIVE'}"
   },
   {
    "sql": "COMMIT",
    "op": "commit",
    "ok": true,
-   "resposta": "{'transaction_id': 1790120620982, 'transaction_state': 'COMMITTED', 'gravadas': 0, 'ms': 0}"
+   "resposta": "{'transaction_id': 1790123572903, 'transaction_state': 'COMMITTED', 'gravadas': 0, 'ms': 0}"
   },
   {
    "sql": "AS OF / historico da linha",
    "op": "diario",
    "ok": true,
-   "resposta": "{'total': 14, 'eventos': [{'quando': '2026-09-22 23:43:41,159', 'carimbo_ms': 1790120621159, 'operacao': 'inclusao', 'rowid': 6, 'versao': 1, 'usuario': 0}, {'quando': '2026-09-22 23:43:41,159', 'carimbo_ms': 1790120621159, 'operacao': 'inclusao', 'rowid': 7, 'versao': 1, 'usuario': 0}, {'quando': '2026-09-22 23:43:41,160', 'carimbo_ms': 1790120621160, 'operacao': 'alteracao', 'rowid': 1, 'versao…"
+   "resposta": "{'total': 14, 'eventos': [{'quando': '2026-09-23 00:32:53,048', 'carimbo_ms': 1790123573048, 'operacao': 'inclusao', 'rowid': 6, 'versao': 1, 'usuario': 0}, {'quando': '2026-09-23 00:32:53,048', 'carimbo_ms': 1790123573048, 'operacao': 'inclusao', 'rowid': 7, 'versao': 1, 'usuario': 0}, {'quando': '2026-09-23 00:32:53,050', 'carimbo_ms': 1790123573050, 'operacao': 'alteracao', 'rowid': 1, 'versao…"
   },
   {
    "sql": "lixeira (nao ha equivalente em SQL)",
@@ -1365,13 +1365,13 @@
    "o_que": "config: os interruptores de durabilidade e o bloco de papeis",
    "op": "config",
    "ok": true,
-   "resposta": "{'bind': '127.0.0.1:6119', 'base': '/tmp/phx-f2-5733/dados', 'base_absoluta': '/tmp/phx-f2-5733/dados', 'token': '(oculto)', 'max_linhas': 1000, 'timeout_s': 30, 'log_acessos': '/tmp/phx-f2-5733/acessos.log', 'ips_permitidos': [], 'conexoes_max': 64, 'recursos': {'durabilidade': 'por_lote', 'exclusao_na_janela': False, 'lote_operacoes': 200, 'lote_milissegundos': 200, 'cache_paginas': 2048, 'diario_volume_mib': 0, 'carga_prazo_min': 30, 'transacao_prazo_min': 5, 'transacao_max_linhas': 100000, 'transacao_lock_timeout_ms': 500, 'transacao_statement_ms': 0, 'memoria_max_mb': 0, 'threads': 0, 'cpu_percentual': 100, 'nucleos_efetivos': 4, 'conexoes_max': 64, 'conexoes_web_max': 64, 'fila_web_ms': 2000, 'usuarios_max': 0}, 'somente_leitura': False, 'espelho': False, 'replicacao': {'papel': 'isolado', 'envio': '', 'retorno': '', 'id_servidor': '', 'imagem_da_linha': False, 'replicas_autorizad…"
+   "resposta": "{'bind': '127.0.0.1:6110', 'base': '/tmp/phx-f2-9666/dados', 'base_absoluta': '/tmp/phx-f2-9666/dados', 'token': '(oculto)', 'max_linhas': 1000, 'timeout_s': 30, 'log_acessos': '/tmp/phx-f2-9666/acessos.log', 'ips_permitidos': [], 'conexoes_max': 64, 'recursos': {'durabilidade': 'por_lote', 'exclusao_na_janela': False, 'lote_operacoes': 200, 'lote_milissegundos': 200, 'cache_paginas': 2048, 'diario_volume_mib': 0, 'carga_prazo_min': 30, 'transacao_prazo_min': 5, 'transacao_max_linhas': 100000, 'transacao_lock_timeout_ms': 500, 'transacao_statement_ms': 0, 'memoria_max_mb': 0, 'threads': 0, 'cpu_percentual': 100, 'nucleos_efetivos': 4, 'conexoes_max': 64, 'conexoes_web_max': 64, 'fila_web_ms': 2000, 'usuarios_max': 0}, 'somente_leitura': False, 'espelho': False, 'replicacao': {'papel': 'isolado', 'envio': '', 'retorno': '', 'id_servidor': '', 'imagem_da_linha': False, 'replicas_autorizad…"
   },
   {
    "o_que": "jobs: ha campo que desligue o job na replica?",
    "op": "jobs",
    "ok": true,
-   "resposta": "{'arquivo': '/tmp/phx-f2-5733/jobs.json', 'log': '/tmp/phx-f2-5733/jobs.log', 'relogio_no_ar': False, 'aviso_email': {'ligado': False, 'email_ligado': False, 'avisar_jobs': False, 'para': [], 'repetir_horas': 6}, 'jobs': [], 'historico': []}"
+   "resposta": "{'arquivo': '/tmp/phx-f2-9666/jobs.json', 'log': '/tmp/phx-f2-9666/jobs.log', 'relogio_no_ar': False, 'aviso_email': {'ligado': False, 'email_ligado': False, 'avisar_jobs': False, 'para': [], 'repetir_horas': 6}, 'jobs': [], 'historico': []}"
   },
   {
    "o_que": "replicacao_estado: o source guarda a posicao de cada replica?",

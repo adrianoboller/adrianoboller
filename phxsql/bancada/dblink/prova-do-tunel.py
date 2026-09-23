@@ -28,6 +28,10 @@ nunca `pkill`, que derrubaria o servidor de outra frente na mesma maquina.
 import json
 import os
 import shutil
+from pathlib import Path as _P
+import sys as _sys
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1]))
+import frescor  # noqa: E402
 import socket
 import subprocess
 import sys
@@ -109,39 +113,8 @@ def afirma(rotulo, cond, visto):
         falhas.append(rotulo)
 
 
-def idade_do_binario():
-    """Diz a IDADE do `phxsqld` contra o fonte, antes de medir qualquer coisa.
-
-    Esta bancada nao compila -- por decisao, para nao competir com quem
-    esta compilando na mesma maquina. O preco disso e que ela pode medir o
-    PASSADO: em 23/09/2026 o papel F rodou-a com um `target/release/phxsqld`
-    de uma compilacao anterior e leu TRES `ERRO` como defeito do motor,
-    quando eram do binario velho. O script nao tinha como dizer a diferenca.
-
-    Ele continua nao compilando. O que muda e que agora ele DIZ a idade, e
-    quem le julga -- em vez de acreditar. E' a mesma lei que fez a bancada de
-    carga perder uma rodada inteira de ganhos por chamar um `examples/` que
-    `cargo build --release` nao recompila.
-    """
-    if not PHXSQLD.exists():
-        print(f"!! {PHXSQLD} nao existe -- rode `cargo build --release` antes")
-        sys.exit(1)
-    bin_mt = PHXSQLD.stat().st_mtime
-    fontes = [f for f in (RAIZ / "crates").rglob("*.rs")
-              if "/target/" not in str(f)]
-    mais_novo = max(fontes, key=lambda f: f.stat().st_mtime)
-    atraso = mais_novo.stat().st_mtime - bin_mt
-    quando = time.strftime("%d/%m/%Y %H:%M", time.localtime(bin_mt))
-    print(f"== binario: {quando} ({len(fontes)} fontes conferidos)")
-    if atraso > 0:
-        print(f"!! ATENCAO: {mais_novo.relative_to(RAIZ)} e mais novo que o "
-              f"binario em {int(atraso)}s -- esta corrida mede o PASSADO.")
-        print("   Rode `cargo build --release` e repita, ou leia cada ERRO "
-              "abaixo sabendo que ele pode ser do binario e nao do motor.")
-
-
 def principal():
-    idade_do_binario()
+    frescor.conferir(PHXSQLD, RAIZ)
     surdo = Phxsqld("surdo", 17591, "tok-surdo", "senha-surda-123",
                     {"exigir": False, "ligada": False})
     ouvinte = Phxsqld("ouvinte", 17592, "tok-ouve", "senha-ouve-123",
