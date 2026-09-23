@@ -20,7 +20,7 @@ O que a regua DEIXA DE FORA, de proposito: higiene de gerador, contagem de
 catraca, cosmetico de tela, pesquisa, e tudo o que so o time enxerga. Sao
 legitimos e continuam registrados -- so nao seguram a versao.
 
-## A lista: 13 pedidos (eram 14 -- o 355 saiu, ja estava fechado)
+## A lista: 14 pedidos (eram 14; o 355 saiu porque ja estava fechado, e o 426 entrou pela excecao)
 
 ### A. Corrompe ou perde dado (5)
 
@@ -54,6 +54,16 @@ legitimos e continuam registrados -- so nao seguram a versao.
 |---|---|
 | 326 | O dossie compartilhado mostra uma versao **FIXADA e antiga**: quem abre o link nao ve o que a rodada fez. |
 | 327 | O botao «baixar» do dossie **nao funciona** para quem ve a pagina. |
+
+### F. O que a revisao SEC achou no que entrou HOJE (1)
+
+Entrou pela excecao estreita que o dono escreveu: **desfaz o que acabou de
+entrar**. O pedido 422 tirou a migracao de baixo da trava global as 19:13, e
+a revisao adversaria mediu o preco as 20:00.
+
+| pedido | o que |
+|---|---|
+| 426 | **ALTO de integridade.** O `COMMIT` que esbarra numa migracao sai PELA METADE -- uma tabela com a linha, a outra sem --, manda o cliente REPETIR uma transacao ja metade aplicada, e a recuperacao do caminho de erro e codigo MORTO porque a trava do topo ainda esta viva. O item (c) e ANTERIOR a esta rodada; o 422 so o tornou alcancavel por operacao normal. |
 
 ### E. Terminar o que ficou pela metade (1)
 
