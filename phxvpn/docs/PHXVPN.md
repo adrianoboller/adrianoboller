@@ -62,6 +62,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: **farol** — um membro alcançável, marcado no rol assinado pelo dono e com o consentimento dele, faz o papel do repasse (registro, apresentação 10/11, relé cifrado) sem nenhum `phxvpn repasse`; provado em `netns` com NAT simétrico (20/20 pelo relé, 0 byte em claro no `tcpdump` do farol, membro fora do rol 0/5, sem o farol 0/20) e com dois faróis (o que carrega cai; volta pelo outro em 15,2 s) — ver «P2P: farol»
 - [x] Seis recursos foram para a tela (24/09/2026, o gancho de «um motor só»): painel web com **trocar a própria senha** (`/api/senha`, exige a senha atual e o código do autenticador de quem tem), **desativar/reativar usuário** (`/api/usuarios/ativo`, botão vermelho/verde) e **remover membro de rede** (`/api/redes/remover`); programa de mesa com **marcar/desmarcar farol** (`/api/farol`, mesmo motor de `phxvpn p2p farol` — o dono autoriza no rol com endereço, o próprio membro só consente localmente) e **selo discreto de farol** na linha do membro (o campo já existia em `situacao()`); e a **marca nova** — `/logo-128.png`/`/logo-32.png`, PNGs reduzidos (26 KiB e 2,3 KiB) do `marca/png/fenix-vpn-2000.png` de 4,4 MB, nunca o original embutido, servidos por rota própria no painel e na mesa (`web.rs`), com o SVG mantido para os outros usos. Nenhuma confirmação de exclusão usa `confirm()` do navegador — todas são diálogo dentro da página. Provado exercitando (Chromium, painel com PostgreSQL real; mesa com uma rede semeada pelo `cargo run --example semear_farol`, o mesmo atalho do teste de `mesa.rs`), capturas em `docs/previa/27` a `30` (390 e 1280 px, 0 erro de console)
 - [x] P2P: **difusão** — broadcast (`x.x.x.255`, `255.255.255.255`) e multicast (`224/4`) da placa vão cifrados a todos os pares com sessão, com teto por nó de origem (200 pacotes/s, 256 KiB/s, MTU) na saída E na entrada; só replica o que tem origem no próprio IP (sem laço); desliga por rede (`--sem-difusao`). Provado em três `netns`: 20/20 de cada destino nos dois receptores, SSDP acha os dois, desligada 0, rajada de 1000 → 200 — ver «P2P: difusão»
+- [x] Modo servidor: **redes alcançáveis** — LAN da empresa atrás do servidor (`push "route"`, NAT ou rota de volta, tabela `ip phxvpn` própria com guarda do isolamento) e filial atrás de um membro (`iroute`); só o admin inclui — provado com o `openvpn` 2.6.19 em netns, nft e iptables (`provas/rotas/`) — ver «Modo servidor: redes alcançáveis»
 
 ### Falta
 
@@ -70,6 +71,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] P2P farol: fio TCP/proxy até o farol (hoje só UDP — o farol não abre porta TCP), endereço por nome (hoje IP literal, porque vai assinado), `--farol` no console (hoje `phxvpncmd` não tem o comando; a janela de mesa marca/tira desde 24/09/2026, ver acima), e troca de farol mais rápida que os 15 s do par surdo
 - [ ] P2P: delegar o rol a administradores (hoje só quem criou a rede inclui e remove; com ele fora do ar, ninguém entra nem sai — ver «Rol assinado»)
 - [ ] P2P: perfuração atrás de NAT Linux **sem** filtro na wan (a primeira sonda aceita vira dona da porta; ver a seção da perfuração) e de NAT simétrico — hoje ficam no repasse
+- [ ] Isolamento entre redes do modo servidor num host que **já encaminha** (Docker, roteador) e sem rota do phxvpn: a tabela de guarda só existe com rota; medido que, com `ip_forward=1` e sem ela, a rede B alcança a rede A (3/3). Pô-la sempre é regra nova imposta a toda instalação — decisão à mesa
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
 - [ ] P2P difusão: nó **Windows não ORIGINA** broadcast/multicast — o TAP-Windows6 em modo TUN não entrega esses quadros ao programa (`txpath.c`); originar pede o TAP em modo Ethernet. Receber deve funcionar, **não provado** numa máquina real. E multicast IPv6 fica classificado mas não replica enquanto o túnel P2P não leva IPv6
 - [ ] P2P no Windows: **prova numa máquina real** com OpenVPN (driver TAP e `netsh` — o roteiro `prova-windows.ps1` está pronto)
@@ -527,6 +529,89 @@ truncando o próprio arquivo, e um `openvpn` que o lesse pela metade ficaria
 sem CRL. Agora o painel grava num temporário e renomeia; no Windows, que não
 renomeia por cima de arquivo aberto, tenta de novo por até 1 s e, se não
 der, dá erro. O teste falha com a gravação antiga (RED).
+
+## Modo servidor: redes alcançáveis — LAN da empresa e filial (24/09/2026)
+
+Itens 4 e 9 de `docs/propostas/lacunas-openvpn-fonte-2026-09-24.md`. Código
+em `src/rotas.rs`; ganchos em `painel.rs` (conf, `ccd/`, recusa ao tirar
+membro) e `http.rs` (três rotas). Por rede, o **administrador** inclui:
+
+| Onde fica a rede | O que o painel escreve | Volta |
+|---|---|---|
+| Atrás do servidor, **NAT** (padrão) | `push "route <lan>"` + `ip_forward` + tabela `ip phxvpn` (`masquerade`) | a LAN vê o IP do servidor; nada a configurar nela |
+| Atrás do servidor, **rota de volta** | o mesmo, sem `masquerade` | o roteador da empresa leva `10.77.N.0/24` ao servidor; a LAN vê o IP do membro |
+| Atrás de um **membro** (filial) | `iroute` + `push-remove "route <lan>"` no `ccd/` dele, `route` + `push "route"` no conf | pelo túnel; o roteador da filial encaminha (é dele) |
+
+**API** (JSON, sessão): `POST /api/redes/rotas` `{rede_id}` lista;
+`/api/redes/rotas/incluir` `{rede_id, cidr, volta: "nat"|"rota" | membro:
+login, codigo}`; `/api/redes/rotas/remover` `{rede_id, cidr}`. Tela: cartão
+da rede, «Redes alcançáveis pela VPN», verde inclui, vermelho remove.
+
+**Decisões, com a hipótese que morreu:**
+- **«Admin ou dono inclui»: morreu.** Qualquer usuário é dono de até 3 redes
+  (`REDES_POR_USUARIO`); rota com NAT para a LAN é acesso à LAN inteira da
+  empresa. Incluir é **só do admin** (e pede o código de quem tem
+  autenticador); **remover** é do admin ou do dono — estreitar pode.
+- **Firewall: nftables primeiro, iptables se não houver** (`PHXVPN_FIREWALL=
+  nft|iptables` força; a prova usa para exercitar os dois). Tabela própria
+  `ip phxvpn` recriada inteira numa transação (`add`+`delete`+definição), ou
+  cadeias `PHXVPN-ENC`/`PHXVPN-NAT` por `iptables-restore --noflush` com um
+  salto só em `FORWARD`/`POSTROUTING`. Regra alheia não se toca; um `policy
+  drop` de outra tabela no forward (Docker, firewalld) é **avisado** na
+  resposta, porque ele vence o nosso `accept`.
+- **Só `NAT` não bastava** — ver a cognição
+  `cognicao_ip-forward-abre-o-isolamento-entre-redes-vpn_20260924_1100.md`:
+  com `ip_forward=1`, a rede B alcança a rede A (3/3). A tabela leva uma
+  cadeia `encaminhar` que aceita só (origens da rede N ↔ LAN da rede N) e
+  descarta o resto de `10.77.0.0/16` e das filiais. Regras entram antes do
+  `ip_forward`; a última rota que sai apaga a tabela e devolve o
+  `ip_forward` ao valor de antes (`dados/rotas-ip_forward-antes`).
+- **Validação:** `a.b.c.d/p` estrito (sem zero à esquerda, sem bit de host —
+  `192.168.10.5/24` responde «a rede é 192.168.10.0/24»); `0.0.0.0/0` recusado
+  com o motivo (túnel total é outro item, com proteção de DNS); só faixa
+  privada (10/8, 172.16/12, 192.168/16, 100.64/10); nada sobre
+  `10.77.0.0/16`; na mesma rede nada se sobrepõe; filial não sobrepõe nada de
+  outra rede (o kernel teria duas rotas); a mesma LAN atrás do servidor por
+  duas redes, pode.
+- **Pai com filho não morre:** membro com filial atrás não sai nem é removido
+  enquanto a rota existir (`phx_rota` → `phx_membro`, `ON DELETE RESTRICT`, e
+  a recusa diz o que fazer em vez do erro cru da FK).
+- **Os dois caminhos que escrevem o `ccd/`** (entrar e `acertar_ccd`) passam
+  pelo mesmo `ccd_completo`: reentrar não apaga o `iroute` (teste com RED).
+- Sem `--openvpn`, o painel só grava `dados/rotas.nft` e a tela diz que o
+  firewall não foi aplicado.
+
+**Prova** (`sudo provas/rotas/rodar.sh`, `MOTOR=nft|iptables`; `openvpn`
+2.6.19 real, painel + PostgreSQL em netns; `resultados.json`, n=1 por motor):
+
+| Caso | nft | iptables |
+|---|---|---|
+| Membro → 192.168.10.5 sem rota (e com rota manual no membro) | 0/3 (0/3) | 0/3 (0/3) |
+| Com a rota, NAT: ping; TCP (IP visto pelo host) | 3/3; 192.168.10.1 | 3/3; 192.168.10.1 |
+| Rota de volta: TCP sem a rota no roteador; com | falhou; 10.77.1.3 | falhou; 10.77.1.3 |
+| Isolamento: rede Outra → Matriz, com a guarda; **RED** sem ela | 0/3; **3/3** | 0/3; **3/3** |
+| Filial sem `iroute`: 192.168.20.5 → 192.168.10.5 | 0/3 | 0/3 |
+| Com a filial: FH→H, H→FH, membro→FH (ping) | 3/3, 3/3, 3/3 | 3/3, 3/3, 3/3 |
+| A filial recebe rota da própria LAN pelo túnel (`push-remove`) | 0 | 0 |
+| Regras nossas: antes → NAT → NAT+filial → removidas | 0 → 6 → 6 → 0 | 0 → 6 → 11 → 0 |
+| `ip_forward`: antes → com rota → removidas | 0 → 1 → 0 | 0 → 1 → 0 |
+| Tabela `ip phxvpn` depois de remover | ausente | — |
+
+O `iptables-nft` deixa 4 handles (tabelas `filter`/`nat` vazias que ele criou,
+0 regras no `iptables-save`): o motor iptables compara regras, o nft handles.
+Recusas pela API: `0.0.0.0/0`, `10.77.0.0/16`, `192.168.10.5/24`,
+`8.8.8.0/24`, `192.168.20.128/25` (sobre a filial), usuário não admin, e tirar
+a filial com a rota gravada. Tela exercitada no Chromium
+(`provas/rotas/tela.sh`): admin inclui/recusa/remove, membro vê sem botões,
+endereço sem caixa alta, rolagem lateral 0 em 390 px.
+
+RED das guardas (cada uma tirada do fonte, o teste dela reprova): 11/11 —
+`resultados.json` → `red_das_guardas`.
+
+**Não medido:** os membros recebem as rotas ao **reconectar** (a prova
+reconecta à mão; com o `kill` de hoje o supervisor deixa o cliente 61 s no
+`ping-restart` — é o item 5 das lacunas, de outra frente). Host que já tem
+`policy drop` no forward: só o aviso foi testado (unidade), não o tráfego.
 
 ## P2P: `mac1` e cookie contra inundação (24/09/2026)
 

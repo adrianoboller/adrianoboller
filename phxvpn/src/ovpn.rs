@@ -9,6 +9,12 @@
 //! interfaces diferentes. `client-to-client` dentro da rede e o que faz ela
 //! parecer uma LAN: os membros se enxergam direto.
 //!
+//! Limite medido (`provas/rotas`): isso so vale com o host SEM encaminhar.
+//! Com `ip_forward=1` o kernel roteia de `tun0` para `tun1` (3/3 pings da
+//! rede B na rede A). Quem acende o encaminhamento para a LAN da empresa
+//! (`rotas.rs`) acende junto a tabela de guarda; host que ja encaminhava por
+//! outro motivo (Docker, roteador) e sem rota do phxvpn continua sem ela.
+//!
 //! # Por que `ccd-exclusive`
 //!
 //! Com ele, so conecta quem tem arquivo em `ccd/` -- e o painel escreve um por

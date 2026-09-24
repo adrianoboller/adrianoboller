@@ -167,6 +167,7 @@ impl Painel {
         pg.lote(ESQUEMA)?;
         pg.lote(crate::mfa::ESQUEMA)?;
         pg.lote(crate::credencial::ESQUEMA)?;
+        pg.lote(crate::rotas::ESQUEMA)?;
         criar_dir_privado(dados)?;
         Ok(Painel {
             pg,
@@ -686,9 +687,13 @@ impl Painel {
         };
         let mfa = self.mfa_da_rede(&rede_id, usuario)?;
         self.materializar_rede(&rede_id)?;
+        let filiais = self
+            .filiais_por_membro()?
+            .remove(&(rede_id.parse().unwrap_or(0), usuario.id))
+            .unwrap_or_default();
         gravar(
             &self.dir_rede(&rede_id).join("ccd").join(&cn),
-            ovpn::ccd_membro(octeto, host).as_bytes(),
+            ccd_completo(octeto, host, &filiais).as_bytes(),
             false,
         )?;
         let perfil = ovpn::perfil_membro(&ovpn::Perfil {
@@ -746,6 +751,7 @@ impl Painel {
     }
 
     fn tirar_membro(&mut self, rede_id: i64, usuario_id: i64, motivo: &str) -> R<()> {
+        self.recusar_se_tem_filial(rede_id, usuario_id)?;
         let id = rede_id.to_string();
         let r = self.pg()?.executar(
             "DELETE FROM phx_membro WHERE rede_id = $1::int AND usuario_id = $2::int RETURNING cn, cert_serie",
@@ -951,6 +957,7 @@ impl Painel {
             &dir.display().to_string(),
         );
         conf.push_str(&crate::credencial::conf(&self.dados, rede_id));
+        conf.push_str(&self.conf_das_rotas(rede_id)?);
         if self.rede_exige_mfa(rede_id)? {
             self.mfa_pode_subir(rede_id)?;
             conf.push_str(&crate::verificar::conf_servidor_mfa(&self.dados, rede_id));
@@ -1009,7 +1016,7 @@ impl Painel {
     pub(crate) fn acertar_ccd(&mut self, usuario_id: Option<i64>) -> R<()> {
         let id = usuario_id.map(|i| i.to_string());
         let m = self.pg()?.executar(
-            "SELECT m.rede_id, m.cn, m.host, r.octeto, u.ativo FROM phx_membro m \
+            "SELECT m.rede_id, m.usuario_id, m.cn, m.host, r.octeto, u.ativo FROM phx_membro m \
              JOIN phx_rede r ON r.id = m.rede_id JOIN phx_usuario u ON u.id = m.usuario_id \
              WHERE $1::int IS NULL OR m.usuario_id = $1::int ORDER BY m.rede_id",
             &[id.as_deref()],
@@ -1017,6 +1024,7 @@ impl Painel {
         // Todas as redes, mesmo com falha no meio: parar na primeira deixava
         // o desativado entrando nas redes seguintes. As falhas voltam juntas.
         let mut falhas = Vec::new();
+        let filiais = self.filiais_por_membro()?;
         for i in 0..m.linhas.len() {
             let v = |c: &str| m.valor(i, c).unwrap_or_default().to_string();
             let caminho = self.dir_rede(&v("rede_id")).join("ccd").join(v("cn"));
@@ -1031,7 +1039,12 @@ impl Painel {
             }
             let octeto: u8 = v("octeto").parse().unwrap_or(0);
             let host: u8 = v("host").parse().unwrap_or(0);
-            if let Err(e) = gravar(&caminho, ovpn::ccd_membro(octeto, host).as_bytes(), false) {
+            let chave = (
+                v("rede_id").parse().unwrap_or(0),
+                v("usuario_id").parse().unwrap_or(0),
+            );
+            let fl = filiais.get(&chave).map(Vec::as_slice).unwrap_or_default();
+            if let Err(e) = gravar(&caminho, ccd_completo(octeto, host, fl).as_bytes(), false) {
                 falhas.push(e);
             }
         }
@@ -1043,6 +1056,13 @@ impl Painel {
     }
 }
 
+/// O `ccd/` inteiro de um membro: o IP fixo e, se ele tem filial atras, o
+/// `iroute`. Os dois caminhos que escrevem o arquivo (entrar e
+/// `acertar_ccd`) passam por aqui.
+fn ccd_completo(octeto: u8, host: u8, filiais: &[crate::rotas::Cidr]) -> String {
+    ovpn::ccd_membro(octeto, host) + &crate::rotas::ccd_membro(filiais)
+}
+
 /// Grava; segredo nasce 0600 JA na criacao -- sem a janela de um `chmod`
 /// depois, em que a chave ficava legivel por todos (achado M2). Arquivo que
 /// ja existia com outra permissao e apertado tambem.
@@ -1050,7 +1070,7 @@ impl Painel {
 /// `crl.pem` a cada conexao, por exemplo) ve o arquivo velho inteiro ou o
 /// novo inteiro, nunca o meio. Um `crl.pem` lido pela metade deixa o
 /// servidor sem CRL -- e o revogado entra.
-fn gravar(caminho: &Path, dados: &[u8], secreto: bool) -> R<()> {
+pub(crate) fn gravar(caminho: &Path, dados: &[u8], secreto: bool) -> R<()> {
     use std::io::Write;
     let tmp = caminho.with_extension("gravando");
     let _ = fs::remove_file(&tmp);

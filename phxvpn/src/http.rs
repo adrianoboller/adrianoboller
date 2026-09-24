@@ -541,6 +541,42 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             let id = rede_id(&corpo)?;
             e.painel().membros(&u, id).map_err(|m| (403, m))
         }
+        ("POST", "/api/redes/rotas") => {
+            let u = usuario(p, e)?;
+            let id = rede_id(&corpo)?;
+            e.painel().rotas(&u, id).map_err(|m| (403, m))
+        }
+        ("POST", "/api/redes/rotas/incluir") | ("POST", "/api/redes/rotas/remover") => {
+            let u = usuario(p, e)?;
+            let id = rede_id(&corpo)?;
+            let cidr = t("cidr");
+            let incluir = caminho.ends_with("incluir");
+            if incluir {
+                // Abrir a LAN da empresa e a mudanca mais larga do painel:
+                // sessao roubada nao a faz sem o codigo de quem o tem.
+                exigir_admin(&u)?;
+                let tem_mfa = e.painel().mfa_ativo(u.id).map_err(ruim)?;
+                if tem_mfa {
+                    let conta = crate::guarda::chave_conta(crate::guarda::Canal::Painel, &u.login);
+                    let reserva = e
+                        .tentativas
+                        .reservar(&[&conta, &chave_ip])
+                        .map_err(bloqueado)?;
+                    e.painel()
+                        .mfa_conferir(u.id, &t("codigo"))
+                        .map_err(|m| (403, m))?;
+                    reserva.acertou(&[&conta]);
+                }
+            }
+            let (nome, dir) = if incluir {
+                e.painel()
+                    .rota_incluir(&u, id, &cidr, &t("volta"), &t("membro"))
+            } else {
+                e.painel().rota_remover(&u, id, &cidr)
+            }
+            .map_err(ruim)?;
+            crate::rotas::depois_de_mudar(e, incluir, id, &cidr, &nome, &dir).map_err(ruim)
+        }
         ("GET", "/api/usuarios") => {
             exigir_admin(&usuario(p, e)?)?;
             e.painel().usuarios().map_err(ruim)
@@ -633,6 +669,11 @@ pub fn materializar_e_subir(e: &Estado) -> Result<(), String> {
         for (nome, dir) in redes {
             s.garantir(&nome, &dir)?;
         }
+    }
+    // O firewall das rotas volta com o painel (o kernel nao guarda a tabela
+    // entre reinicios). Falhar aqui nao derruba as redes: fica dito no log.
+    if let Err(m) = crate::rotas::aplicar_no_host(e) {
+        eprintln!("phxvpn: AVISO rotas: {m}");
     }
     Ok(())
 }

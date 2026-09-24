@@ -110,9 +110,64 @@ async function carregarRedes() {
         }
         bloco.appendChild(l);
       }
+      await blocoRotas(bloco, r, membros);
     } catch (_) {}
     caixa.appendChild(bloco);
   }
+}
+
+// Redes alcancaveis pela VPN: a LAN atras do servidor e a filial atras de um
+// membro. Incluir e so do admin (abre a LAN da empresa); remover, admin ou dono.
+const ONDE = { nat: "atrás do servidor · NAT", rota: "atrás do servidor · rota de volta no roteador", filial: "atrás de" };
+async function blocoRotas(bloco, r, membros) {
+  let rotas;
+  try { rotas = await api("POST", "/api/redes/rotas", { rede_id: r.id }); } catch (_) { return; }
+  const pode = sessao.admin || r.dono === sessao.login;
+  if (!rotas.length && !sessao.admin) return;
+  const caixa = document.createElement("div"); caixa.className = "rotas";
+  const t = document.createElement("div"); t.className = "titulo"; t.textContent = "Redes alcançáveis pela VPN"; caixa.appendChild(t);
+  const aviso = document.createElement("p"); aviso.className = "msg"; aviso.id = "m-rota-" + r.id;
+  for (const x of rotas) {
+    const l = document.createElement("div"); l.className = "rota";
+    const c = document.createElement("span"); c.className = "cidr"; c.textContent = x.cidr;
+    const o = document.createElement("span"); o.className = "onde"; o.textContent = x.volta === "filial" ? `${ONDE.filial} ${x.membro}` : ONDE[x.volta];
+    l.append(c, o);
+    if (pode) {
+      const b = document.createElement("button"); b.className = "exclui"; b.textContent = "Remover";
+      b.onclick = async () => {
+        if (!await confirmar("Remover rota", `Remover ${x.cidr} da rede «${r.nome}»? O OpenVPN da rede reinicia e os membros reconectam.`, "Remover")) return;
+        try { await api("POST", "/api/redes/rotas/remover", { rede_id: r.id, cidr: x.cidr }); carregarRedes(); } catch (e) { msg("m-redes", e.message); }
+      };
+      l.appendChild(b);
+    }
+    caixa.appendChild(l);
+  }
+  if (sessao.admin) {
+    const f = document.createElement("form"); f.className = "nova-rota";
+    const cidr = document.createElement("input"); cidr.placeholder = "192.168.10.0/24"; cidr.required = true; cidr.setAttribute("aria-label", "Rede (CIDR)");
+    const onde = document.createElement("select"); onde.setAttribute("aria-label", "Onde fica a rede");
+    const opcao = (v, texto) => { const op = document.createElement("option"); op.value = v; op.textContent = texto; onde.appendChild(op); };
+    opcao("nat", ONDE.nat); opcao("rota", ONDE.rota);
+    for (const m of membros) opcao("m:" + m.login, `${ONDE.filial} ${m.login}`);
+    const b = document.createElement("button"); b.className = "inclui"; b.type = "submit"; b.textContent = "Incluir rota";
+    f.append(cidr, onde, b);
+    f.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const v = onde.value, corpo = { rede_id: r.id, cidr: cidr.value.trim() };
+      if (v.startsWith("m:")) corpo.membro = v.slice(2); else corpo.volta = v;
+      if (sessao.mfa) { corpo.codigo = prompt("Código do autenticador") || ""; if (!corpo.codigo) return; }
+      try {
+        const x = await api("POST", "/api/redes/rotas/incluir", corpo);
+        const fw = x.firewall || {};
+        let texto = `${corpo.cidr} incluída` + (x.openvpn_reiniciado ? "; os membros recebem a rota ao reconectar" : "");
+        if (corpo.volta === "rota") texto += `; no roteador da LAN: rota ${r.subrede} via o IP deste servidor`;
+        if (fw.aviso) texto += ` — atenção: ${fw.aviso}`;
+        await carregarRedes(); msg("m-redes", texto, !fw.aviso);
+      } catch (e) { msg(aviso.id, e.message); }
+    };
+    caixa.append(f, aviso);
+  }
+  bloco.appendChild(caixa);
 }
 
 let modo = "criar";

@@ -50,6 +50,18 @@ button.exclui{border-color:var(--vermelho);color:var(--vermelho)}button.exclui:h
 .ponto{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--fraco)}
 .ponto.on{background:var(--verde);border-color:var(--verde)}
 .vazio{color:var(--fraco);padding:12px}
+/* Redes alcancaveis: a rede (dado) em mono e sem caixa alta -- e o endereco
+   gravado, nao um rotulo. */
+.rotas{border-top:1px solid var(--linha);padding:8px 12px 10px 16px;font-size:14px}
+.rotas .titulo{font-size:12px;color:var(--fraco);margin-bottom:4px}
+.rota{display:flex;align-items:center;gap:10px;padding:3px 0;flex-wrap:wrap}
+.rota .cidr{font-family:ui-monospace,monospace;color:var(--ambar)}
+.rota .onde{color:var(--fraco);font-size:12px}
+.rota button{margin-left:auto;padding:3px 10px;font-size:12px}
+.nova-rota{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.nova-rota input,.nova-rota select{background:#050a1c;color:var(--texto);border:1px solid var(--linha);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px;min-width:0}
+.nova-rota input{flex:1 1 150px;font-family:ui-monospace,monospace}
+.nova-rota select{flex:1 1 180px}
 .selo{font-size:12px;border:1px solid var(--linha);border-radius:12px;padding:2px 8px;color:var(--fraco)}
 .selo.alerta{border-color:var(--amarelo);color:var(--amarelo)}
 dialog{background:var(--painel);color:var(--texto);border:1px solid var(--linha);border-radius:10px;max-width:460px;width:calc(100% - 32px)}

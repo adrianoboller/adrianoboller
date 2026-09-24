@@ -1,0 +1,269 @@
+{
+  "prova": "phxvpn: redes alcancaveis (itens 4 e 9), openvpn 2.6.19 em netns",
+  "openvpn": "2.6.19",
+  "nft": {
+    "data": "2026-09-24T11:21:28+00:00",
+    "regras_antes": {
+      "nossas": 0,
+      "handles_no_ruleset": 0,
+      "regras_iptables_save": 0,
+      "ip_forward": 0
+    },
+    "regras_com_nat": {
+      "nossas": 6,
+      "handles_no_ruleset": 9,
+      "regras_iptables_save": 0,
+      "ip_forward": 1
+    },
+    "regras_com_filial": {
+      "nossas": 6,
+      "handles_no_ruleset": 9,
+      "regras_iptables_save": 0,
+      "ip_forward": 1
+    },
+    "regras_depois_de_remover": {
+      "nossas": 0,
+      "handles_no_ruleset": 0,
+      "regras_iptables_save": 0,
+      "ip_forward": 0
+    },
+    "tabela_phxvpn_depois": 0,
+    "item4": {
+      "sem_rota_ping": "0/3",
+      "sem_rota_com_rota_manual_no_membro": "0/3",
+      "resposta_incluir": {
+        "ok": true,
+        "firewall": {
+          "aplicado": true,
+          "motor": "nft",
+          "regras": 6,
+          "aviso": null
+        },
+        "openvpn_reiniciado": true
+      },
+      "rota_empurrada_ao_membro": 1,
+      "nat_ping": "3/3",
+      "nat_tcp_h_viu": "192.168.10.1",
+      "isolamento_outra_rede_com_guarda": "0/3",
+      "isolamento_RED_sem_guarda": "3/3",
+      "rota_de_volta_sem_rota_no_roteador": "falhou",
+      "rota_de_volta_com_rota_no_roteador_h_viu": "10.77.1.3",
+      "depois_de_remover_ping": "0/3"
+    },
+    "item9": {
+      "sem_iroute_fh_h_ping": "0/3",
+      "resposta_incluir": {
+        "ok": true,
+        "firewall": {
+          "aplicado": true,
+          "motor": "nft",
+          "regras": 6,
+          "aviso": null
+        },
+        "openvpn_reiniciado": true
+      },
+      "fh_h_ping": "3/3",
+      "fh_h_tcp_h_viu": "192.168.10.1",
+      "h_fh_ping": "3/3",
+      "h_fh_tcp_fh_viu": "192.168.10.5",
+      "a_fh_ping": "3/3",
+      "a_fh_tcp_fh_viu": "10.77.1.3",
+      "filial_recebe_rota_da_propria_lan": 0,
+      "ana_recebe_rota_da_filial": 1,
+      "kernel_do_servidor_tem_rota_da_filial": 1,
+      "tirar_membro_com_filial": {
+        "erro": "este membro tem rede atras dele (192.168.20.0/24): o administrador remove a rota antes"
+      }
+    },
+    "recusas_pela_api": {
+      "0.0.0.0/0": {
+        "erro": "0.0.0.0/0 e tunel total (toda a internet pela VPN): e outro recurso, e so entra com a protecao de vazamento de DNS -- aqui nao"
+      },
+      "10.77.0.0/16": {
+        "erro": "10.77.0.0/16 sobrepoe 10.77.0.0/16, o espaco das proprias redes da VPN"
+      },
+      "192.168.10.5/24": {
+        "erro": "«192.168.10.5/24» tem bits de host ligados: a rede e 192.168.10.0/24 (o IP de uma maquina nao e a rede)"
+      },
+      "8.8.8.0/24": {
+        "erro": "8.8.8.0/24 nao e faixa privada (10/8, 172.16/12, 192.168/16, 100.64/10): faixa publica pelo tunel faria do servidor a saida de internet dela"
+      },
+      "192.168.20.128/25": {
+        "erro": "192.168.20.128/25 sobrepoe 192.168.20.0/24 (atras de «filial»), ja nesta rede"
+      },
+      "nao_admin": {
+        "erro": "so o administrador faz isso"
+      }
+    },
+    "conf_do_servidor": [
+      "push \"route 192.168.10.0 255.255.255.0\"",
+      "route 192.168.20.0 255.255.255.0",
+      "push \"route 192.168.20.0 255.255.255.0\""
+    ],
+    "ccd_da_filial": [
+      "ifconfig-push 10.77.1.4 255.255.255.0",
+      "iroute 192.168.20.0 255.255.255.0",
+      "push-remove \"route 192.168.20.0 255.255.255.0\""
+    ],
+    "passou": true
+  },
+  "iptables": {
+    "data": "2026-09-24T11:23:03+00:00",
+    "regras_antes": {
+      "nossas": 0,
+      "handles_no_ruleset": 0,
+      "regras_iptables_save": 0,
+      "ip_forward": 0
+    },
+    "regras_com_nat": {
+      "nossas": 6,
+      "handles_no_ruleset": 14,
+      "regras_iptables_save": 8,
+      "ip_forward": 1
+    },
+    "regras_com_filial": {
+      "nossas": 11,
+      "handles_no_ruleset": 19,
+      "regras_iptables_save": 13,
+      "ip_forward": 1
+    },
+    "regras_depois_de_remover": {
+      "nossas": 0,
+      "handles_no_ruleset": 4,
+      "regras_iptables_save": 0,
+      "ip_forward": 0
+    },
+    "tabela_phxvpn_depois": 0,
+    "item4": {
+      "sem_rota_ping": "0/3",
+      "sem_rota_com_rota_manual_no_membro": "0/3",
+      "resposta_incluir": {
+        "ok": true,
+        "firewall": {
+          "aplicado": true,
+          "motor": "iptables",
+          "regras": 6,
+          "aviso": null
+        },
+        "openvpn_reiniciado": true
+      },
+      "rota_empurrada_ao_membro": 1,
+      "nat_ping": "3/3",
+      "nat_tcp_h_viu": "192.168.10.1",
+      "isolamento_outra_rede_com_guarda": "0/3",
+      "isolamento_RED_sem_guarda": "3/3",
+      "rota_de_volta_sem_rota_no_roteador": "falhou",
+      "rota_de_volta_com_rota_no_roteador_h_viu": "10.77.1.3",
+      "depois_de_remover_ping": "0/3"
+    },
+    "item9": {
+      "sem_iroute_fh_h_ping": "0/3",
+      "resposta_incluir": {
+        "ok": true,
+        "firewall": {
+          "aplicado": true,
+          "motor": "iptables",
+          "regras": 11,
+          "aviso": null
+        },
+        "openvpn_reiniciado": true
+      },
+      "fh_h_ping": "3/3",
+      "fh_h_tcp_h_viu": "192.168.10.1",
+      "h_fh_ping": "3/3",
+      "h_fh_tcp_fh_viu": "192.168.10.5",
+      "a_fh_ping": "3/3",
+      "a_fh_tcp_fh_viu": "10.77.1.3",
+      "filial_recebe_rota_da_propria_lan": 0,
+      "ana_recebe_rota_da_filial": 1,
+      "kernel_do_servidor_tem_rota_da_filial": 1,
+      "tirar_membro_com_filial": {
+        "erro": "este membro tem rede atras dele (192.168.20.0/24): o administrador remove a rota antes"
+      }
+    },
+    "recusas_pela_api": {
+      "0.0.0.0/0": {
+        "erro": "0.0.0.0/0 e tunel total (toda a internet pela VPN): e outro recurso, e so entra com a protecao de vazamento de DNS -- aqui nao"
+      },
+      "10.77.0.0/16": {
+        "erro": "10.77.0.0/16 sobrepoe 10.77.0.0/16, o espaco das proprias redes da VPN"
+      },
+      "192.168.10.5/24": {
+        "erro": "«192.168.10.5/24» tem bits de host ligados: a rede e 192.168.10.0/24 (o IP de uma maquina nao e a rede)"
+      },
+      "8.8.8.0/24": {
+        "erro": "8.8.8.0/24 nao e faixa privada (10/8, 172.16/12, 192.168/16, 100.64/10): faixa publica pelo tunel faria do servidor a saida de internet dela"
+      },
+      "192.168.20.128/25": {
+        "erro": "192.168.20.128/25 sobrepoe 192.168.20.0/24 (atras de «filial»), ja nesta rede"
+      },
+      "nao_admin": {
+        "erro": "so o administrador faz isso"
+      }
+    },
+    "conf_do_servidor": [
+      "push \"route 192.168.10.0 255.255.255.0\"",
+      "route 192.168.20.0 255.255.255.0",
+      "push \"route 192.168.20.0 255.255.255.0\""
+    ],
+    "ccd_da_filial": [
+      "ifconfig-push 10.77.1.4 255.255.255.0",
+      "iroute 192.168.20.0 255.255.255.0",
+      "push-remove \"route 192.168.20.0 255.255.255.0\""
+    ],
+    "passou": true
+  },
+  "red_das_guardas": {
+    "data": "2026-09-24",
+    "como": "cada guarda tirada do fonte, cargo test do teste dela, fonte restaurado",
+    "resultado": {
+      "guarda 0/0": "reprova (RED ok)",
+      "guarda faixa privada": "reprova (RED ok)",
+      "guarda espaco da VPN": "reprova (RED ok)",
+      "guarda bit de host": "reprova (RED ok)",
+      "guarda zero a esquerda": "reprova (RED ok)",
+      "guarda sobreposicao na mesma rede": "reprova (RED ok)",
+      "guarda filial entre redes": "reprova (RED ok)",
+      "guarda do isolamento (drop)": "reprova (RED ok)",
+      "so admin inclui": "reprova (RED ok)",
+      "iroute no caminho do entrar": "reprova (RED ok)",
+      "filho segura o pai (membro com filial)": "reprova (RED ok)"
+    }
+  },
+  "tela": {
+    "data": "2026-09-24T11:18:43Z",
+    "admin_ve_o_formulario": true,
+    "opcoes": [
+      "atrás do servidor · NAT",
+      "atrás do servidor · rota de volta no roteador",
+      "atrás de admin",
+      "atrás de ana"
+    ],
+    "recusa_bit_de_host": "«192.168.10.5/24» tem bits de host ligados: a rede e 192.168.10.0/24 (o IP de uma maquina nao e a rede)",
+    "depois_de_incluir_nat": [
+      "192.168.10.0/24 | atrás do servidor · NAT"
+    ],
+    "aviso_sem_openvpn": "192.168.10.0/24 incluída — atenção: painel sem --openvpn: o firewall nao foi aplicado; aplique /tmp/phxvpn-tela-rotas2/dados/rotas.nft (nft -f) e ligue o ip_forward",
+    "depois_de_incluir_filial": [
+      "192.168.10.0/24 | atrás do servidor · NAT",
+      "192.168.20.0/24 | atrás de ana"
+    ],
+    "caixa_do_endereco": "none",
+    "fonte_do_endereco": "ui-monospace, monospace",
+    "cor_do_incluir": "rgb(62, 207, 142)",
+    "cor_do_remover": "rgb(255, 90, 90)",
+    "rolagem_lateral_390": 0,
+    "membro_ve": [
+      "192.168.10.0/24 | atrás do servidor · NAT",
+      "192.168.20.0/24 | atrás de ana"
+    ],
+    "membro_ve_formulario": false,
+    "membro_ve_remover": 0,
+    "dialogo_de_remover": "Remover 192.168.10.0/24 da rede «Matriz»? O OpenVPN da rede reinicia e os membros reconectam.",
+    "depois_de_remover": [
+      "192.168.20.0/24 | atrás de ana"
+    ],
+    "erros_de_pagina": [],
+    "passou": true
+  }
+}

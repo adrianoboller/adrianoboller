@@ -2,7 +2,7 @@
 
 # Reusar — sucessos comprovados
 
-291 cognições: **8 frutíferas**, **4 infrutíferas**, **279 pendentes** (sem evidência validada — não entram aqui).
+292 cognições: **9 frutíferas**, **4 infrutíferas**, **279 pendentes** (sem evidência validada — não entram aqui).
 
 Só entra o que tem evidência que o `classificar.py` conferiu. Antes de desenhar, procure aqui o que já se provou.
 
@@ -25,6 +25,13 @@ Prova de troca de caminho roda **com tráfego no ar durante a troca**. Troca fei
 Numa malha com um membro alcançável, conte a lista de pares como perfurador: controle negativo de NAT se faz com NAT **simétrico**, não com cone — com cone, o direto nasce da sincronia dos INICIOs, com ou sem mediador.
 
 - Evidência: `phxvpn/provas/farol/resultados.json`; `phxvpn/provas/farol/rodar.sh`
+- Validado em: 24/09/2026
+
+## [Ligar o `ip_forward` para a LAN da empresa abre a rede A para a rede B](cognicao_ip-forward-abre-o-isolamento-entre-redes-vpn_20260924_1100.md)
+
+Quem acende o encaminhamento do host acende JUNTO uma guarda que só deixa passar o par (origem da rede N, LAN da rede N) e descarta o resto do espaço da VPN — antes de escrever o `1` no `ip_forward`, e apagando os dois juntos.
+
+- Evidência: `phxvpn/provas/rotas/resultados.json`; `phxvpn/src/rotas.rs`; `phxvpn/provas/rotas/rodar.sh`
 - Validado em: 24/09/2026
 
 ## [A gerência do OpenVPN: `kill CN` não avisa o cliente; `client-kill` avisa](cognicao_gerencia-openvpn-kill-nao-avisa-o-cliente_20260924_0910.md)

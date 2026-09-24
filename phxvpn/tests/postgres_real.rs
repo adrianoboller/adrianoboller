@@ -807,3 +807,106 @@ fn revogacao_revisao_sec() {
     drop(e);
     let _ = std::fs::remove_dir_all(&dados);
 }
+
+/// Redes alcancaveis (itens 4 e 9) contra o banco de verdade: quem pode, o
+/// que vai para o conf e para o `ccd/` -- pelos DOIS caminhos que escrevem o
+/// `ccd/` (entrar e `acertar_ccd`) --, o conflito entre redes e a regra
+/// primordial (membro com filial atras nao sai sem a rota sair antes).
+#[test]
+fn rotas_conf_ccd_permissao_e_integridade() {
+    let Some(base) = config() else {
+        eprintln!("NAO RODOU: defina PHXVPN_PG_TESTE");
+        return;
+    };
+    let cfg = banco_novo(&base, "phxvpn_teste_rotas");
+    let dados = std::env::temp_dir().join(format!("phxvpn-teste-rotas-{}", std::process::id()));
+    let mut p = Painel::abrir(&cfg, &dados).unwrap();
+    p.iteracoes = 1_000;
+    p.instalar(&Instalacao {
+        empresa: "Empresa Teste".into(),
+        responsavel: "Fulano".into(),
+        email: "f@e.com".into(),
+        admin_usuario: "admin".into(),
+        admin_senha: "senha-admin".into(),
+        senha_mestre: "senha-mestre-longa".into(),
+        servidor_nome: "vpn1".into(),
+        servidor_ip: "203.0.113.10".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    let admin = p.login("admin", "senha-admin").unwrap();
+    p.criar_rede(&admin, "Matriz", "rede-123", "", None)
+        .unwrap();
+    p.criar_usuario("ana", "senha-ana-1", "", false).unwrap();
+    let ana = p.login("ana", "senha-ana-1").unwrap();
+    // Ana e DONA da rede Dela: nem assim inclui rota (abriria a LAN).
+    p.criar_rede(&ana, "Dela", "rede-456", "", None).unwrap();
+    p.criar_usuario("filial", "senha-filial-1", "", false)
+        .unwrap();
+    let filial = p.login("filial", "senha-filial-1").unwrap();
+    p.entrar_na_rede(&filial, "Matriz", "rede-123").unwrap();
+    let e = p
+        .rota_incluir(&ana, 2, "192.168.50.0/24", "nat", "")
+        .unwrap_err();
+    assert!(e.contains("administrador"), "{e}");
+
+    p.rota_incluir(&admin, 1, "192.168.10.0/24", "nat", "")
+        .unwrap();
+    p.rota_incluir(&admin, 1, "192.168.20.0/24", "", "filial")
+        .unwrap();
+    let conf = std::fs::read_to_string(dados.join("redes/1/servidor.conf")).unwrap();
+    assert!(
+        conf.contains("push \"route 192.168.10.0 255.255.255.0\"\n"),
+        "{conf}"
+    );
+    assert!(
+        conf.contains(
+            "route 192.168.20.0 255.255.255.0\npush \"route 192.168.20.0 255.255.255.0\"\n"
+        ),
+        "{conf}"
+    );
+    let ccd_da_filial = || -> String {
+        let n = std::fs::read_dir(dados.join("redes/1/ccd"))
+            .unwrap()
+            .filter_map(|e| e.ok()?.file_name().into_string().ok())
+            .find(|n| n.starts_with("filial.1."))
+            .expect("ccd da filial");
+        std::fs::read_to_string(dados.join("redes/1/ccd").join(n)).unwrap()
+    };
+    assert!(ccd_da_filial().contains("iroute 192.168.20.0 255.255.255.0\n"));
+    // Reentrar reescreve o ccd pelo OUTRO caminho: o iroute nao pode sumir.
+    p.entrar_na_rede(&filial, "Matriz", "rede-123").unwrap();
+    assert!(
+        ccd_da_filial().contains("push-remove \"route 192.168.20.0 255.255.255.0\"\n"),
+        "reentrar apagou o iroute"
+    );
+    // A mesma filial de outra rede: o kernel do servidor teria duas rotas.
+    p.criar_usuario("beto", "senha-beto-1", "", false).unwrap();
+    let beto = p.login("beto", "senha-beto-1").unwrap();
+    p.entrar_na_rede(&beto, "Dela", "rede-456").unwrap();
+    let e = p
+        .rota_incluir(&admin, 2, "192.168.20.0/25", "", "beto")
+        .unwrap_err();
+    assert!(e.contains("duas rotas"), "{e}");
+    // A mesma LAN atras do servidor por outra rede: pode.
+    p.rota_incluir(&admin, 2, "192.168.10.0/24", "rota", "")
+        .unwrap();
+    assert_eq!(p.rotas_todas().unwrap().len(), 3);
+
+    // Pai com filho nao morre: a filial nao sai com a rota dela gravada.
+    let e = p.sair_da_rede(&filial, 1).unwrap_err();
+    assert!(e.contains("rede atras dele"), "{e}");
+    let e = p.remover_membro(&admin, 1, "filial").unwrap_err();
+    assert!(e.contains("rede atras dele"), "{e}");
+    // O dono remove (estreitar pode); quem nao e nada, nao.
+    let e = p.rota_remover(&beto, 1, "192.168.20.0/24").unwrap_err();
+    assert!(e.contains("dono"), "{e}");
+    p.rota_remover(&admin, 1, "192.168.20.0/24").unwrap();
+    assert!(!ccd_da_filial().contains("iroute"));
+    p.rota_remover(&ana, 2, "192.168.10.0/24").unwrap();
+    p.sair_da_rede(&filial, 1).unwrap();
+    p.rota_remover(&admin, 1, "192.168.10.0/24").unwrap();
+    let conf = std::fs::read_to_string(dados.join("redes/1/servidor.conf")).unwrap();
+    assert!(!conf.contains("route"), "{conf}");
+    let _ = std::fs::remove_dir_all(&dados);
+}

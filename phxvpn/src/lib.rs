@@ -29,6 +29,7 @@ pub mod rede_p2p;
 pub mod repasse;
 pub mod repasse_tcp;
 pub mod rol;
+pub mod rotas;
 pub mod servico;
 #[cfg(windows)]
 pub mod servico_windows;
