@@ -1293,6 +1293,8 @@ QA, com julgamento de pergunta, e a redação do H.
 | 506+507 — nome com letra e com ponto | medio | recusa na declaracao por uma funcao que ja existe |
 | SEC 497, terceira volta — portao da senha pelo lexico | forte | seguranca adversaria: evasao do portao e irmaos que gravam texto cru |
 | 514 — FK conferida na linha FINAL (depois do DEFAULT e da calculada) | forte | regra primordial da integridade, e o irmao em cada caminho que confere FK |
+| DBA 509+512 e DBA 514 — revisoes | forte | durabilidade contra o SO e integridade referencial: e o papel que diz nao |
+| 520+521 — relogio do login e PBKDF2 de senha longa | forte | criptografia conferida contra vetor, e oraculo de tempo |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma
