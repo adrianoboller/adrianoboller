@@ -39,3 +39,9 @@ Pelo número da prova (`provas/tcp/resultados.json`, `primeiro_ping_s`), não
 por teste unitário: nenhum teste reprova se o contador sumir — os pacotes
 ainda passam, só 5 s depois. É um buraco consciente; a bancada de TCP é o
 guarda, e só se roda à mão (root, netns).
+
+## Estado
+
+- **Estado:** FRUTÍFERO
+- **Evidência:** `phxvpn/provas/tcp/resultados.json`, `commit:8b35d60`
+- **Validado em:** 24/09/2026

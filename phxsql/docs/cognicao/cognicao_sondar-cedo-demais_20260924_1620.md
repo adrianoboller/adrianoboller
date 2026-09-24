@@ -50,3 +50,11 @@ prova um serviço.
   cognição de 23/09, repetida. Ela existe só como documento, e nada impede o
   comando. O buraco é esse: a lição está escrita, mas não está guardada por
   nenhum mecanismo.
+
+## Estado
+
+- **Estado:** INFRUTÍFERO
+- **Evidência:** `commit:3adbdb9`
+- **Causa:** sondas com prazo fixo escolhido de cabeça (6 s, 4 s) mediram antes de o serviço subir e inventaram defeito; sob o Wine, o serviço ainda morre quando o último processo de usuário sai.
+- **Prevenção:** esperar por condição, com teto generoso, e imprimir em quanto tempo valeu; sob o Wine, manter um processo de usuário vivo durante a prova.
+- **Validado em:** 24/09/2026

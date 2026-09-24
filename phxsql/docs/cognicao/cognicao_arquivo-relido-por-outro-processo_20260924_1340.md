@@ -43,3 +43,9 @@ prazo curto e, não conseguindo, dá erro — nunca volta a escrever por cima.
 - **O buraco:** o `gravar_secreto` do `comandos.rs` (arquivos da rede P2P) já
   grava por temporário, mas o `usb.rs` escreve no sysfs diretamente, e ali
   não há alternativa: o sysfs não aceita renomear.
+
+## Estado
+
+- **Estado:** FRUTÍFERO
+- **Evidência:** `teste:gravar_troca_o_arquivo_inteiro_sem_meio`, `phxvpn/prova-openvpn.sh`
+- **Validado em:** 24/09/2026

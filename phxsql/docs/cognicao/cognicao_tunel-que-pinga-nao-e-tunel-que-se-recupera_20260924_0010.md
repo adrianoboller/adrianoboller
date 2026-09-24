@@ -32,3 +32,9 @@ caminho feliz com os dois nascendo juntos não exercita a perda de estado.
 relógio à mão (subtrai `SURDO_APOS`). O reinício de verdade só se provou no
 roteiro com `ip netns`, que **não é teste automatizado**: precisa de root e
 de `iproute2`. Esse buraco está anotado.
+
+## Estado
+
+- **Estado:** FRUTÍFERO
+- **Evidência:** `teste:par_surdo_dispara_aperto_novo`
+- **Validado em:** 24/09/2026

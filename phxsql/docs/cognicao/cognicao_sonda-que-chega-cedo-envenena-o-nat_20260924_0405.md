@@ -60,3 +60,11 @@ inteiro — baixar para uma sonda derrubaria o dado que outra thread mandasse
 no mesmo instante — e o número de saltos até o NAT do outro não se conhece.
 Anotado em `phxvpn/docs/PHXVPN.md` como limite; o túnel continua pelo repasse,
 nunca pior que antes.
+
+## Estado
+
+- **Estado:** INFRUTÍFERO
+- **Evidência:** `phxvpn/provas/perfuracao/resultados.json`, `commit:d0b2685`
+- **Causa:** NAT Linux sem filtro de entrada aceita a primeira sonda do outro lado; o conntrack ocupa a tupla de volta e o NAT troca a porta, virando simétrico para aquele destino.
+- **Prevenção:** provar a perfuração com e sem o `DROP` de `NEW` na wan e ler o conntrack; nesse caso o túnel fica no repasse (TTL curto por sonda segue pendente).
+- **Validado em:** 24/09/2026

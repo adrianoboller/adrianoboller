@@ -50,3 +50,9 @@ ponha a que dá permissão antes da que usa a permissão.
 - A ordem rol→lista está em `No::rol_para`, com o número no comentário; o
   teste unitário não a trava (ele bombeia até convergir) — quem a mede é a
   prova (a), `a_bc_ms` no `resultados.json`.
+
+## Estado
+
+- **Estado:** FRUTÍFERO
+- **Evidência:** `phxvpn/provas/rol-descoberta/resultados.json`, `commit:aba3610`
+- **Validado em:** 24/09/2026

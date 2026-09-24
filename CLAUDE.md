@@ -283,6 +283,15 @@ existe, mas só cobre `ui/`» —, e é isso que o arquivo registra. Terceira c�
 da mesma lei não acrescenta lei: acrescenta lugar onde a lei pode divergir de
 si mesma.
 
+**Estado de cada aprendizado — decisão do dono, 24/09/2026:** *«Um
+aprendizado PENDENTE não pode virar FRUTÍFERO automaticamente: precisa de
+evidência validada. Falhas observadas entram como INFRUTÍFERO com
+causa/prevenção para alimentar avoid, enquanto sucessos comprovados alimentam
+reuse.»* Sem a seção `## Estado`, a cognição é PENDENTE. O
+`phxsql/docs/cognicao/classificar.py` confere a evidência (arquivo, teste,
+commit) e gera `REUSAR.md` e `EVITAR.md` — consulte os dois antes de desenhar.
+Formato em `phxsql/docs/cognicao/LEIA-ME.md`.
+
 E a divisão com este arquivo: o `CLAUDE.md` é a **lei**, curta e sem discussão;
 a cognição é o **processo** — como se descobriu, o que se errou antes, e o
 número. Lei sem processo vira dogma que ninguém sabe defender; processo sem lei

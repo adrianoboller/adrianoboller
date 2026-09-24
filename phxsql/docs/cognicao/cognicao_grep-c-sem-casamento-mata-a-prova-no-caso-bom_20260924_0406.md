@@ -32,3 +32,11 @@ resultado BOM leva `|| true` dentro do cano.** Prova que morre sem dizer onde
 Consertado no `rodar.sh` (linha do `VAZOU`). Não há conferidor que ache o
 mesmo padrão nos outros roteiros da pasta `phxvpn/`; o `prova-openvpn.sh` usa
 `grep -q` dentro de `||`, que não tem o problema.
+
+## Estado
+
+- **Estado:** INFRUTÍFERO
+- **Evidência:** `phxvpn/provas/mfa/rodar.sh`, `commit:0e5352c`
+- **Causa:** `grep -c` sem casamento sai com 1; sob `set -e` e `pipefail` isso mata o roteiro justo no caso bom, sem dizer onde.
+- **Prevenção:** todo `grep` cujo «não achei» é o resultado bom leva `|| true` dentro do cano.
+- **Validado em:** 24/09/2026

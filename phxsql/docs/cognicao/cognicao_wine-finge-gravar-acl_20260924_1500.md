@@ -48,3 +48,11 @@ estrita para o sistema de verdade — escrita, não esquecida.
   regra, a do usuário, protegida).
 - **O buraco:** até alguém rodar esse roteiro num Windows real, a forma
   exata da ACL no Windows é afirmação, não medida.
+
+## Estado
+
+- **Estado:** INFRUTÍFERO
+- **Evidência:** `commit:ed57c81`, `phxvpn/prova-windows.ps1` (o teste da ACL só roda no Windows)
+- **Causa:** `SetNamedSecurityInfoW` sob o Wine lê a ACL e nunca a grava, devolvendo sucesso.
+- **Prevenção:** usar `SetFileSecurityW` e provar pelo efeito, lendo de volta; a prova estrita fica no `prova-windows.ps1` (passo 3b), para Windows real.
+- **Validado em:** 24/09/2026
