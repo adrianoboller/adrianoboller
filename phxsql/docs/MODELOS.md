@@ -1282,6 +1282,7 @@ QA, com julgamento de pergunta, e a redação do H.
 | SEC — modelo de ameaca do 495 | forte | leitura adversaria das portas de injecao; achou o erro cru no `acessos.log` (497) |
 | J — hipoteses do 495, e C — catalogo de catastrofes do 496 | forte | desenho de seguranca e previsao de falha de dado: arquitetura e risco |
 | 497 — erro cru no `acessos.log` | forte | redacao de dado pessoal: petrea do texto cru e busca dos irmaos |
+| 501 — o `;` do comando empilhado | medio | conserto delimitado numa funcao pura; o integrador devolveu uma vez (a primeira versao abria evasao) e validou o vermelho dos dois lados antes de promover a cognicao |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

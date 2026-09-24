@@ -4,7 +4,12 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 2 hoje, de 311 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 3 hoje, de 311 cognicoes no total.
+
+## Corpo de falso positivo tirado de uma fonte só mede essa fonte
+
+- Evidencia: `crates/phxsql-sql/src/sintaxe.rs::comando_empilhado_nao_acusa_o_legitimo`; `crates/phxsql-sql/src/sintaxe.rs::comando_empilhado_acha_o_segundo_comando`; `bancada/seguranca/495/prova_215.py`. Validada pelo integrador, que não é o autor do conserto, em 24/09/2026, na árvore exata. Com o defeito ORIGINAL reposto, o teste do legítimo cai (`nao devia acusar`, `sintaxe.rs:2079`). Com a 1a versão do conserto, o do ataque cai (`devia acusar`, `sintaxe.rs:2035`). Com o conserto final, os dois passam (2/2).
+- Arquivo: [cognicao_corpo-de-falso-positivo-de-uma-fonte-so-mede-essa-fonte_20260924_1340.md](cognicao_corpo-de-falso-positivo-de-uma-fonte-so-mede-essa-fonte_20260924_1340.md)
 
 ## Prova diferencial contra o `HEAD` expira no proprio commit
 

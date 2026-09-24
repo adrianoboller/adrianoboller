@@ -569,7 +569,11 @@ const CLAUSULAS: [&str; 26] = [
 /// * `-- comentario` depois do comando, que o lexico ja descarta.
 ///
 /// Ou seja: so responde `true` quando ha simbolo DEPOIS de um
-/// ponto-e-virgula -- que e um segundo comando, e nada mais e.
+/// ponto-e-virgula -- que e um segundo comando, e nada mais e. O `;` pode
+/// estar em QUALQUER lugar da sobra (nao so logo depois do comando aceito):
+/// uma clausula de outro dialeto que esta gramatica nao aceita -- `LIMIT
+/// 0, 2`, `RETURNING` -- pode vir ANTES do `;` de um ataque de verdade, e
+/// olhar so o proximo simbolo deixaria esse `;` passar batido.
 pub fn comando_empilhado(entrada: &str) -> bool {
     let Ok(simbolos) = lexico::analisar(entrada) else {
         return false;
@@ -587,8 +591,26 @@ pub fn comando_empilhado(entrada: &str) -> bool {
     if p.comando(entrada).is_err() {
         return false;
     }
-    while p.aceitar(&Token::PontoEVirgula) {}
-    p.espiar().is_some()
+    // O defeito do 215 (pedido 501): faltava perguntar se a sobra tinha `;`.
+    // A 1a correcao (`houve_ponto_e_virgula` so na posicao IMEDIATA) trocou
+    // um furo por outro, achado pelo integrador: uma sobra que nao COMECA
+    // com `;` -- `LIMIT 0, 2; DROP TABLE t`, `RETURNING x; DROP TABLE t` --
+    // escondia um `;` de verdade um pouco mais a frente, e a versao anterior
+    // parava no primeiro simbolo sem `;` e devolvia falso. A pergunta certa
+    // e sobre a sobra INTEIRA (`p.s[p.i..]`), nao so o proximo simbolo:
+    // existe um `;` em QUALQUER lugar dela, e sobra simbolo que NAO e `;`
+    // depois desse `;`? Os textos dentro de literal e de comentario ja nao
+    // chegam aqui como `Token::PontoEVirgula` -- isso e o lexico quem
+    // garante, antes deste ponto.
+    let Some(pos) = p.s[p.i..]
+        .iter()
+        .position(|s| s.token == Token::PontoEVirgula)
+    else {
+        return false;
+    };
+    p.s[p.i + pos + 1..]
+        .iter()
+        .any(|s| s.token != Token::PontoEVirgula)
 }
 
 /// Le um comando inteiro. Um por vez -- lote de comandos e outra rodada.
@@ -2005,6 +2027,16 @@ mod testes {
             "SELECT * FROM clientes; DELETE FROM clientes",
             "SELECT * FROM clientes ;;; DROP TABLE clientes",
             "SELECT * FROM clientes WHERE nome = 'x'; EXEC xp_cmdshell('dir')",
+            // O furo que a 1a rodada do 501 abriu (achado do integrador): o
+            // `;` empilhado pode vir DEPOIS de uma sobra que nao e `;` -- a
+            // mesma clausula de outro dialeto que o F0 aprendeu a perdoar
+            // (LIMIT com virgula, RETURNING) tambem esconde um `;` de verdade
+            // um pouco mais a frente. So olhar o simbolo IMEDIATAMENTE depois
+            // do comando aceito nao basta; tem que varrer a sobra inteira.
+            "SELECT * FROM t LIMIT 0, 2; DROP TABLE t",
+            "INSERT INTO t (a) VALUES (1) RETURNING x; DROP TABLE t",
+            // `;` no meio de uma sobra mais longa, nao logo no comeco dela.
+            "SELECT * FROM clientes LIMIT 0, 2, 3, 4; DROP TABLE clientes",
         ] {
             assert!(comando_empilhado(sql), "devia acusar: {sql}");
         }
@@ -2036,6 +2068,20 @@ mod testes {
             "SHOW PROCEDURES",
             // Ponto-e-virgula sozinho no fim nao e um segundo comando.
             "SELECT * FROM clientes;;",
+            // Pedido 501 (fatia F0 do 495): os 3 textos que o 215 bloqueava.
+            // Nenhum tem `;` -- a sobra e clausula que esta gramatica nao
+            // aceita, nao e segundo comando. `LIMIT 0, 2` e o dois-argumentos
+            // do MySQL; `RETURNING` e `EXCEPT` nao estao na gramatica do
+            // arquivo (ver o comentario do topo) -- e SOBRA SEM `;` nao e
+            // empilhamento.
+            "SELECT * FROM clientes LIMIT 0, 2",
+            "INSERT INTO clientes (nome) VALUES ('Zeca') RETURNING id",
+            "SELECT nome FROM clientes EXCEPT SELECT nome FROM clientes",
+            // O `;` dentro do literal fecha a aspa antes -- e um simbolo
+            // Texto so, nunca um separador. Sem isso a leitura chegaria a
+            // pensar que ha `;` fora de literal so por o CARACTERE aparecer
+            // no texto bruto.
+            "SELECT 'a;b'",
         ] {
             assert!(!comando_empilhado(sql), "nao devia acusar: {sql}");
         }
