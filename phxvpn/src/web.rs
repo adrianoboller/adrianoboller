@@ -27,11 +27,20 @@ const PRAZO_PEDIDO: Duration = Duration::from_secs(10);
 /// O simbolo da marca, o mesmo arquivo que a folha de marca usa -- um
 /// desenho so, sem copia.
 pub const SIMBOLO: &str = include_str!("../marca/simbolo.svg");
+/// O logo novo, ja REDUZIDO (gerado com ffmpeg a partir do
+/// `marca/png/fenix-vpn-2000.png` de 4 MB -- nunca o original embutido):
+/// 128 px para o cabecalho, 32 px para o favicon.
+pub const LOGO_128: &[u8] = include_bytes!("../marca/png/fenix-vpn-128.png");
+pub const LOGO_32: &[u8] = include_bytes!("../marca/png/fenix-vpn-32.png");
 
 pub struct Resposta {
     pub status: u16,
     pub tipo: &'static str,
     pub corpo: String,
+    /// So as respostas BINARIAS usam isto (hoje, o logo em PNG): `corpo`
+    /// e uma `String`, que so guarda UTF-8 valido, e um PNG nao e texto.
+    /// Presente, ele manda no fio no lugar de `corpo`.
+    pub binario: Option<&'static [u8]>,
 }
 
 impl Resposta {
@@ -40,6 +49,7 @@ impl Resposta {
             status,
             tipo: "application/json; charset=utf-8",
             corpo,
+            binario: None,
         }
     }
 
@@ -48,6 +58,7 @@ impl Resposta {
             status: 200,
             tipo: "text/html; charset=utf-8",
             corpo: corpo.to_string(),
+            binario: None,
         }
     }
 
@@ -57,6 +68,7 @@ impl Resposta {
             status: 200,
             tipo: "image/svg+xml",
             corpo: corpo.to_string(),
+            binario: None,
         }
     }
 
@@ -65,6 +77,17 @@ impl Resposta {
             status: 200,
             tipo: "text/javascript; charset=utf-8",
             corpo: corpo.to_string(),
+            binario: None,
+        }
+    }
+
+    /// O logo (`marca/png/fenix-vpn-*.png`), embutido no binario.
+    pub fn png(bytes: &'static [u8]) -> Resposta {
+        Resposta {
+            status: 200,
+            tipo: "image/png",
+            corpo: String::new(),
+            binario: Some(bytes),
         }
     }
 
@@ -150,7 +173,8 @@ fn atender(
             }
         }
     };
-    responder(&mut fio, r.status, r.tipo, &r.corpo)
+    let bytes = r.binario.unwrap_or(r.corpo.as_bytes());
+    responder(&mut fio, r.status, r.tipo, bytes)
 }
 
 pub struct Pedido {
@@ -254,7 +278,7 @@ fn ler_pedido(fio: &TcpStream) -> Result<Pedido, (u16, String)> {
     })
 }
 
-fn responder(fio: &mut TcpStream, status: u16, tipo: &str, corpo: &str) -> std::io::Result<()> {
+fn responder(fio: &mut TcpStream, status: u16, tipo: &str, corpo: &[u8]) -> std::io::Result<()> {
     let frase = match status {
         200 => "OK",
         400 => "Bad Request",
@@ -276,7 +300,8 @@ fn responder(fio: &mut TcpStream, status: u16, tipo: &str, corpo: &str) -> std::
 Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\n\
 Referrer-Policy: no-referrer\r\n\
 Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'\r\n\
-Connection: close\r\n\r\n{corpo}",
+Connection: close\r\n\r\n",
         corpo.len()
-    )
+    )?;
+    fio.write_all(corpo)
 }

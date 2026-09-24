@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>phxvpn</title>
-<link rel="icon" href="/simbolo.svg" type="image/svg+xml">
+<link rel="icon" href="/logo-32.png" type="image/png">
 <style>
 :root{--fundo:#010418;--painel:#0a1122;--linha:#1c2742;--texto:#DDE2EB;--fraco:#8a93a8;
 --acento:#FF4D10;--ambar:#FFC43D;--verde:#3ecf8e;--amarelo:#f5c542;--vermelho:#ff5a5a;--azul:#5aa9ff}
@@ -45,7 +45,7 @@ button.exclui{border-color:var(--vermelho);color:var(--vermelho)}button.exclui:h
 .rede .nome{font-weight:600}
 .rede .info{color:var(--fraco);font-size:12px}
 .rede .acoes{margin-left:auto;display:flex;gap:6px}
-.membro{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:10px;padding:6px 12px 6px 16px;border-top:1px solid var(--linha);font-size:14px}
+.membro{display:grid;grid-template-columns:10px minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:6px 12px 6px 16px;border-top:1px solid var(--linha);font-size:14px}
 .membro .ip{font-family:ui-monospace,monospace;color:var(--ambar)}
 .ponto{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--fraco)}
 .ponto.on{background:var(--verde);border-color:var(--verde)}
@@ -63,7 +63,7 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
 </head>
 <body>
 <header>
-  <h1><img src="/simbolo.svg" alt="" width="30" height="30"><span><b>phx</b>vpn</span></h1>
+  <h1><img src="/logo-128.png" alt="" width="30" height="30"><span><b>phx</b>vpn</span></h1>
   <span class="sub" id="empresa-nome"></span>
   <div class="dir" id="barra" hidden>
     <span class="selo alerta" id="selo-cofre" hidden>cofre trancado</span>
@@ -72,6 +72,7 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
     <button id="b-entrar">Entrar na rede</button>
     <button id="b-atualizar">Atualizar</button>
     <button id="b-mfa">Autenticador</button>
+    <button id="b-senha">Trocar senha</button>
     <button id="b-admin" hidden>Administração</button>
     <button class="exclui" id="b-logout">Sair</button>
   </div>
@@ -149,9 +150,22 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
   <div class="linha-botoes"><button id="b-mfa-voltar">Voltar às redes</button></div>
 </section>
 
+<section class="cartao" id="tela-senha" hidden>
+  <h2>Trocar senha</h2>
+  <form id="f-senha"><div class="grade">
+    <label class="campo"><span>Senha atual</span><input name="senha_atual" type="password" required autocomplete="current-password"></label>
+    <label class="campo"><span>Código do autenticador (se cadastrado)</span><input name="codigo" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"></label>
+    <label class="campo"><span>Nova senha (mín. 8)</span><input name="senha_nova" type="password" required minlength="8" autocomplete="new-password"></label>
+  </div>
+  <p class="msg">Ao trocar, as suas outras sessões abertas caem — só esta continua.</p>
+  <div class="linha-botoes"><button class="altera" type="submit">Trocar senha</button></div>
+  <p class="msg" id="m-senha"></p></form>
+  <div class="linha-botoes"><button id="b-senha-voltar">Voltar às redes</button></div>
+</section>
+
 <section class="cartao" id="tela-admin" hidden>
   <h2>Usuários</h2>
-  <div class="rolagem"><table><thead><tr><th>Login</th><th>E-mail</th><th>Admin</th><th>Autenticador</th></tr></thead><tbody id="t-usuarios"></tbody></table></div>
+  <div class="rolagem"><table><thead><tr><th>Login</th><th>E-mail</th><th>Admin</th><th>Autenticador</th><th>Ativo</th></tr></thead><tbody id="t-usuarios"></tbody></table></div>
   <form id="f-usuario"><div class="grade" style="margin-top:10px">
     <label class="campo"><span>Login</span><input name="login" required></label>
     <label class="campo"><span>Senha (mín. 8)</span><input name="senha" type="password" required minlength="8"></label>
@@ -185,6 +199,15 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
     <label class="campo" id="c-proxy" style="margin-top:8px"><span>Proxy HTTP no perfil (opcional, HOST:PORTA)</span><input name="http_proxy" placeholder="proxy.empresa:3128" autocomplete="off"></label>
     <p class="msg" id="m-rede"></p>
     <div class="linha-botoes"><button type="button" id="d-cancelar">Cancelar</button><button class="inclui" type="submit" id="d-ok">Criar</button></div>
+  </form>
+</dialog>
+
+<dialog id="d-confirmar">
+  <form id="f-confirmar" method="dialog">
+    <h2 id="dc-titulo" style="margin-top:0">Confirmar</h2>
+    <p id="dc-texto"></p>
+    <p class="msg" id="m-confirmar"></p>
+    <div class="linha-botoes"><button type="button" id="dc-cancelar">Cancelar</button><button type="submit" id="dc-ok" class="exclui">Confirmar</button></div>
   </form>
 </dialog>
 

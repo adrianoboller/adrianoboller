@@ -128,6 +128,12 @@ pub fn atender(pedido: &Pedido, estado: &Estado) -> Resposta {
     if pedido.metodo == "GET" && caminho == "/simbolo.svg" {
         return Resposta::svg(crate::web::SIMBOLO);
     }
+    if pedido.metodo == "GET" && caminho == "/logo-128.png" {
+        return Resposta::png(crate::web::LOGO_128);
+    }
+    if pedido.metodo == "GET" && caminho == "/logo-32.png" {
+        return Resposta::png(crate::web::LOGO_32);
+    }
     let r = match rotear(pedido, estado) {
         Ok(j) => Resposta::json(200, j.escrever()),
         Err((s, m)) => Resposta::json(s, erro_json(&m)),

@@ -14,7 +14,26 @@ async function api(metodo, rota, corpo) {
 }
 function msg(id, texto, ok) { const m = $(id); m.textContent = texto || ""; m.className = "msg " + (ok ? "ok" : "erro"); }
 function dados(form) { return Object.fromEntries(new FormData(form).entries()); }
-function mostrar(tela) { for (const t of ["tela-instalar","tela-login","tela-redes","tela-admin","tela-mfa"]) $(t).hidden = t !== tela; $("barra").hidden = !sessao; }
+function mostrar(tela) { for (const t of ["tela-instalar","tela-login","tela-redes","tela-admin","tela-mfa","tela-senha"]) $(t).hidden = t !== tela; $("barra").hidden = !sessao; }
+
+// Confirmacao DENTRO da pagina -- nada de confirm() do navegador (acao
+// vermelha precisa de um passo a mais, nao de um dialogo do sistema que o
+// usuario aprende a clicar sem ler).
+function confirmar(titulo, texto, rotuloOk) {
+  return new Promise((resolve) => {
+    $("dc-titulo").textContent = titulo;
+    $("dc-texto").textContent = texto;
+    $("dc-ok").textContent = rotuloOk || "Confirmar";
+    msg("m-confirmar", "");
+    const d = $("d-confirmar");
+    const limpar = () => { d.removeEventListener("close", aoFechar); $("f-confirmar").onsubmit = null; $("dc-cancelar").onclick = null; };
+    const aoFechar = () => { limpar(); resolve(d.returnValue === "confirmar"); };
+    $("f-confirmar").onsubmit = (ev) => { ev.preventDefault(); d.close("confirmar"); };
+    $("dc-cancelar").onclick = () => d.close("cancelar");
+    d.addEventListener("close", aoFechar);
+    d.showModal();
+  });
+}
 function baixar(nome, texto) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([texto], { type: "application/x-openvpn-profile" }));
@@ -63,10 +82,16 @@ async function carregarRedes() {
     }
     if (r.meu_ip) {
       const b = document.createElement("button"); b.className = "exclui"; b.textContent = "Sair da rede";
-      b.onclick = async () => { if (!confirm(`Sair da rede «${r.nome}»?`)) return; try { await api("POST", "/api/redes/sair", { rede_id: r.id }); carregarRedes(); } catch (x) { msg("m-redes", x.message); } };
+      b.onclick = async () => {
+        if (!await confirmar("Sair da rede", `Sair da rede «${r.nome}»?`, "Sair")) return;
+        try { await api("POST", "/api/redes/sair", { rede_id: r.id }); carregarRedes(); } catch (x) { msg("m-redes", x.message); }
+      };
       acoes.appendChild(b);
     }
     topo.append(nome, info, acoes); bloco.appendChild(topo);
+    // So admin ou o DONO da rede remove membro -- o mesmo direito que ja
+    // vale para exigir/dispensar autenticador (`sessao.admin || r.dono === sessao.login`).
+    const podeRemover = sessao.admin || r.dono === sessao.login;
     try {
       const membros = await api("POST", "/api/redes/membros", { rede_id: r.id });
       for (const m of membros) {
@@ -74,7 +99,16 @@ async function carregarRedes() {
         const p = document.createElement("span"); p.className = "ponto" + (m.online ? " on" : ""); p.title = m.online ? "conectado" : "desconectado";
         const n = document.createElement("span"); n.textContent = m.login;
         const ip = document.createElement("span"); ip.className = "ip"; ip.textContent = m.ip;
-        l.append(p, n, ip); bloco.appendChild(l);
+        l.append(p, n, ip);
+        if (podeRemover && m.login !== r.dono) {
+          const br = document.createElement("button"); br.className = "exclui"; br.textContent = "Remover";
+          br.onclick = async () => {
+            if (!await confirmar("Remover membro", `Remover «${m.login}» da rede «${r.nome}»? O acesso dele é revogado na hora.`, "Remover")) return;
+            try { await api("POST", "/api/redes/remover", { rede_id: r.id, login: m.login }); msg("m-redes", `${m.login} removido`, true); carregarRedes(); } catch (x) { msg("m-redes", x.message); }
+          };
+          l.appendChild(br);
+        }
+        bloco.appendChild(l);
       }
     } catch (_) {}
     caixa.appendChild(bloco);
@@ -118,6 +152,16 @@ $("b-voltar").onclick = iniciar;
 $("b-admin").onclick = async () => { mostrar("tela-admin"); carregarAdmin(); };
 $("b-mfa").onclick = () => { mostrar("tela-mfa"); carregarMfa(); };
 $("b-mfa-voltar").onclick = iniciar;
+$("b-senha").onclick = () => { $("f-senha").reset(); msg("m-senha", ""); mostrar("tela-senha"); };
+$("b-senha-voltar").onclick = iniciar;
+$("f-senha").onsubmit = async (ev) => {
+  ev.preventDefault();
+  try {
+    await api("POST", "/api/senha", dados(ev.target));
+    ev.target.reset();
+    msg("m-senha", "senha trocada -- as outras sessões caíram", true);
+  } catch (x) { msg("m-senha", x.message); }
+};
 let mfaAtivo = false;
 async function carregarMfa() {
   $("mfa-novo").hidden = true; $("mfa-qr").replaceChildren(); $("mfa-segredo").textContent = ""; $("f-mfa").reset(); msg("m-mfa", "");
@@ -155,12 +199,29 @@ async function carregarAdmin() {
   const linha = (corpo, valores) => { const tr = document.createElement("tr"); for (const v of valores) { const td = document.createElement("td"); td.textContent = v; tr.appendChild(td); } corpo.appendChild(tr); };
   try {
     for (const u of await api("GET", "/api/usuarios")) {
-      linha(tu, [u.login, u.email, u.admin ? "sim" : "não", u.mfa ? "cadastrado" : "—"]);
+      linha(tu, [u.login, u.email, u.admin ? "sim" : "não", u.mfa ? "cadastrado" : "—", u.ativo ? "ativo" : "desativado"]);
       if (u.mfa) {
         const b = document.createElement("button"); b.className = "exclui"; b.textContent = "Zerar";
-        b.onclick = async () => { if (!confirm(`Zerar o autenticador de «${u.login}»? Ele cadastra de novo no próximo login.`)) return; try { await api("POST", "/api/usuarios/mfa-zerar", { login: u.login }); carregarAdmin(); } catch (x) { msg("m-usuario", x.message); } };
-        tu.lastChild.lastChild.append(" ", b);
+        b.onclick = async () => {
+          if (!await confirmar("Zerar autenticador", `Zerar o autenticador de «${u.login}»? Ele cadastra de novo no próximo login.`, "Zerar")) return;
+          try { await api("POST", "/api/usuarios/mfa-zerar", { login: u.login }); carregarAdmin(); } catch (x) { msg("m-usuario", x.message); }
+        };
+        tu.lastChild.children[3].append(" ", b);
       }
+      // Desativar e vermelho (exclui o acesso, sem apagar a conta); reativar
+      // e verde (inclui de volta) -- a cor de sempre da casa.
+      const ba = document.createElement("button");
+      ba.className = u.ativo ? "exclui" : "inclui";
+      ba.textContent = u.ativo ? "Desativar" : "Reativar";
+      ba.onclick = async () => {
+        const acao = u.ativo ? "Desativar" : "Reativar";
+        const frase = u.ativo
+          ? `Desativar «${u.login}»? As sessões dele caem na hora e ele deixa de conseguir entrar.`
+          : `Reativar «${u.login}»? Ele volta a conseguir entrar no painel e nas redes.`;
+        if (!await confirmar(`${acao} usuário`, frase, acao)) return;
+        try { await api("POST", "/api/usuarios/ativo", { login: u.login, ativo: !u.ativo }); carregarAdmin(); } catch (x) { msg("m-usuario", x.message); }
+      };
+      tu.lastChild.children[4].append(" ", ba);
     }
   } catch (x) { msg("m-usuario", x.message); }
   try { for (const s of await api("GET", "/api/servidores")) linha(ts, [s.nome, s.ip, s.dns, String(s.redes)]); } catch (x) { msg("m-servidor", x.message); }

@@ -105,17 +105,18 @@ struct Balde {
 }
 
 impl Balde {
-    fn novo(por_s: f64, cap: f64) -> Balde {
+    fn novo(por_s: f64, cap: f64, agora: Instant) -> Balde {
         Balde {
             fichas: cap,
             cap,
             por_s,
-            visto: Instant::now(),
+            visto: agora,
         }
     }
 
-    fn tirar(&mut self, n: f64) -> bool {
-        let agora = Instant::now();
+    /// O relogio vem de fora: o teste congela o tempo e a conta deixa de
+    /// depender de quanto a CPU demorou entre dois pacotes.
+    fn tirar(&mut self, n: f64, agora: Instant) -> bool {
         let dt = agora.duration_since(self.visto).as_secs_f64();
         self.visto = agora;
         self.fichas = (self.fichas + dt * self.por_s).min(self.cap);
@@ -153,6 +154,11 @@ struct Servidor {
     registros_por_ip: HashMap<String, Balde>,
     contas: Contas,
     relatado: (Instant, Contas),
+    /// So os testes trocam o relogio: parte de um instante fixo e anda 1 ns
+    /// por pacote -- a ordem de chegada se preserva (o despejo do mais
+    /// antigo depende dela) e o balde nao se reabastece pela lentidao da
+    /// CPU. Em producao e sempre `None`.
+    relogio_de_teste: Option<(Instant, u64)>,
 }
 
 impl Servidor {
@@ -162,18 +168,34 @@ impl Servidor {
             repasse: Repasse::novo(privada, Some(permitidas)),
             // Rajada de 1/4 s: absorve o arranque de uma janela TCP sem
             // deixar um par sozinho segurar o farol.
-            banda_total: Balde::novo(bytes_por_s, (bytes_por_s / 4.0).max(65_536.0)),
+            banda_total: Balde::novo(
+                bytes_por_s,
+                (bytes_por_s / 4.0).max(65_536.0),
+                Instant::now(),
+            ),
             banda_por_origem: HashMap::new(),
             bytes_por_s,
             registros_por_chave: HashMap::new(),
             registros_por_ip: HashMap::new(),
             contas: Contas::default(),
             relatado: (Instant::now(), Contas::default()),
+            relogio_de_teste: None,
+        }
+    }
+
+    fn agora(&mut self) -> Instant {
+        match &mut self.relogio_de_teste {
+            Some((base, n)) => {
+                *n += 1;
+                *base + Duration::from_nanos(*n)
+            }
+            None => Instant::now(),
         }
     }
 
     /// Um pacote de repasse que chegou ao soquete do farol.
     fn tratar(&mut self, dado: &[u8], de: SocketAddr) -> Option<(SocketAddr, Vec<u8>)> {
+        let agora = self.agora();
         let tipo = *dado.first()?;
         if tipo == repasse::TIPO_REGISTRO {
             // Fora do rol morre aqui, sem gastar balde de ninguem.
@@ -202,16 +224,16 @@ impl Servidor {
             let ip_ok = self
                 .registros_por_ip
                 .entry(ip)
-                .or_insert_with(|| Balde::novo(por_s, por_s))
-                .tirar(1.0);
+                .or_insert_with(|| Balde::novo(por_s, por_s, agora))
+                .tirar(1.0, agora);
             let chave_ok = ip_ok
                 && self
                     .registros_por_chave
                     .entry(chave)
                     .or_insert_with(|| {
-                        Balde::novo(REGISTROS_POR_CHAVE_POR_S as f64, RAJADA_POR_CHAVE)
+                        Balde::novo(REGISTROS_POR_CHAVE_POR_S as f64, RAJADA_POR_CHAVE, agora)
                     })
-                    .tirar(1.0);
+                    .tirar(1.0, agora);
             if !chave_ok {
                 self.contas.cortados += 1;
                 return None;
@@ -238,9 +260,9 @@ impl Servidor {
             let origem_ok = self
                 .banda_por_origem
                 .entry(de)
-                .or_insert_with(|| Balde::novo(meia, (meia / 4.0).max(65_536.0)))
-                .tirar(n);
-            if !origem_ok || !self.banda_total.tirar(n) {
+                .or_insert_with(|| Balde::novo(meia, (meia / 4.0).max(65_536.0), agora))
+                .tirar(n, agora);
+            if !origem_ok || !self.banda_total.tirar(n, agora) {
                 self.contas.cortados += 1;
                 return None;
             }
@@ -1050,6 +1072,12 @@ mod testes {
             .map(|k| x25519::chave_publica(k))
             .collect();
         let mut s = Servidor::novo(ka, ps, 100);
+        // Relogio de teste: com o de verdade, os ~5.000 pacotes levam mais de
+        // 1 s numa CPU disputada, o balde de X se reabastece e o teste
+        // reprova sem defeito nenhum (medido: 3 de 3 com tres compilacoes em
+        // paralelo). Parado de todo tambem nao serve: todos empatam no
+        // «visto» e o despejo do mais antigo vira sorteio (2 de 3).
+        s.relogio_de_teste = Some((Instant::now(), 0));
         let ip_n = |i: u32| -> SocketAddr {
             format!("10.{}.{}.{}:1", (i >> 16) & 255, (i >> 8) & 255, i & 255)
                 .parse()

@@ -38,7 +38,12 @@ function desenhar(redes) {
   if (chave === desenhoAnterior) {
     for (const r of redes) for (const m of r.membros) {
       const c = document.querySelector(`.caminho[data-k="${CSS.escape(r.rede + "|" + m.ip)}"]`);
-      if (c) c.textContent = m.caminho === "-" ? m.sessao : `${m.caminho} · ${m.sessao}`;
+      if (!c) continue;
+      // So o texto do caminho muda a cada segundo; o selo de farol (se
+      // houver) e um FILHO da mesma area e nao pode sumir a cada troca.
+      const selo = c.querySelector(".selo-farol");
+      c.textContent = m.caminho === "-" ? m.sessao : `${m.caminho} · ${m.sessao}`;
+      if (selo) c.appendChild(selo);
     }
     return;
   }
@@ -99,8 +104,15 @@ function desenharTudo(redes) {
         const p = el("span", "ponto" + (m.online ? " on" : "")); p.title = m.online ? "conectado" : "sem sessão";
         const ip = el("span", "ip", m.ip); ip.title = "clique para copiar"; ip.onclick = () => copiar(m.ip, "IP " + m.ip);
         const chave = el("span", "chave", m.chave);
-        const cam = el("span", "caminho", m.caminho === "-" ? m.sessao : `${m.caminho} · ${m.sessao}`);
+        const cam = el("span", "caminho");
         cam.dataset.k = r.rede + "|" + m.ip;
+        cam.append(document.createTextNode(m.caminho === "-" ? m.sessao : `${m.caminho} · ${m.sessao}`));
+        // Selo discreto: so aparece quando o rol marca este membro como
+        // farol (campo de `situacao()`/`p2p.rs`, exposto pela API da mesa).
+        // Fica DENTRO da area "cam" -- a grade so tem lugar para uma coluna
+        // extra na linha de baixo (licao do pedido 139: largura extra vira
+        // mais cartao, nunca linha mais comprida).
+        if (m.farol) cam.append(el("span", "selo-farol", "farol"));
         linha.append(p, ip, chave, cam);
         const grupo = el("span", "botoes");
         if (r.ligada && m.online) {
@@ -116,6 +128,22 @@ function desenharTudo(redes) {
         if (r.sou_dono && !m.eu) {
           const br = el("button", "exclui", "Remover"); br.onclick = () => abrirRemover(r.rede, m.ip);
           grupo.append(br);
+        }
+        // O dono AUTORIZA qualquer membro (precisa do endereco alcancavel);
+        // o proprio membro so CONSENTE em si mesmo -- as duas metades do
+        // mesmo comando `p2p farol` (`comandos.rs`).
+        if (r.sou_dono) {
+          const bf = el("button", "altera", m.farol ? "Tirar farol" : "Marcar farol");
+          bf.onclick = () => abrirFarol(r.rede, m.ip, m.farol);
+          grupo.append(bf);
+        } else if (m.eu) {
+          const bf = el("button", "", m.farol ? "Não servir mais" : "Aceitar servir de farol");
+          bf.title = "so vale depois que o dono marcar este computador no rol";
+          bf.onclick = async () => {
+            try { aviso((await api("POST", "/api/farol", { rede: r.rede, ip: m.ip, tirar: !!m.farol })).ok, true); } catch (e) { aviso(e.message); }
+            atualizar();
+          };
+          grupo.append(bf);
         }
         if (grupo.childNodes.length) linha.append(grupo);
         bloco.appendChild(linha);
@@ -245,6 +273,22 @@ function abrirRemover(rede, ip) {
   $("d-remover").querySelector("[data-ip]").textContent = ip;
   f.onsubmit = (ev) => { ev.preventDefault();
     enviar(f, "/api/remover", { rede, ip }, (r) => { $("d-remover").close(); aviso(r.ok, true); atualizar(); }); };
+}
+
+// So o DONO chega aqui (o botao so aparece para ele). Tirar o farol nao
+// pede endereco; marcar pede o endereco PUBLICO que os outros alcancam --
+// o mesmo aviso do `phxvpn p2p farol` sobre nos antigos aparece na msg de
+// erro que o motor devolve, sem reescreve-lo aqui.
+function abrirFarol(rede, ip, jaFarol) {
+  const f = dialogo("d-farol");
+  $("d-farol").querySelector("[data-rede]").textContent = rede;
+  $("d-farol").querySelector("[data-ip]").textContent = ip;
+  const campoEndereco = f.querySelector("[name=endereco]").closest(".campo");
+  campoEndereco.hidden = jaFarol;
+  f.querySelector("button[type=submit]").textContent = jaFarol ? "Tirar farol" : "Marcar farol";
+  f.onsubmit = (ev) => { ev.preventDefault();
+    const endereco = jaFarol ? "" : f.querySelector("[name=endereco]").value;
+    enviar(f, "/api/farol", { rede, ip, endereco, tirar: jaFarol }, (r) => { $("d-farol").close(); aviso(r.ok, true); atualizar(); }); };
 }
 
 // USB: o dialogo so desenha; quem decide e o motor (usb.rs), pela /api/usb.

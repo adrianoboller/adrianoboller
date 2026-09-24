@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>phxvpn</title>
-<link rel="icon" href="/simbolo.svg" type="image/svg+xml">
+<link rel="icon" href="/logo-32.png" type="image/png">
 <style>
 :root{--fundo:#010418;--painel:#0a1122;--painel2:#0d1630;--linha:#1c2742;--texto:#DDE2EB;--fraco:#8a93a8;
 --acento:#FF4D10;--ambar:#FFC43D;--verde:#3ecf8e;--vermelho:#ff5a5a;--azul:#5aa9ff;
@@ -56,6 +56,9 @@ main{overflow:auto;padding:0 var(--gutter) var(--gutter);display:grid;grid-templ
 .membro .ip{grid-area:ip;font-family:ui-monospace,monospace;color:var(--ambar);cursor:pointer}
 .membro .chave{grid-area:chave;color:var(--fraco);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .membro .caminho{grid-area:cam;color:var(--fraco);font-size:12px}
+/* Selo discreto: contorno, nunca fundo cheio (cor da acao da casa) -- so
+   informa, nao e um botao. */
+.selo-farol{display:inline-block;margin-left:6px;padding:0 6px;border:1px solid var(--ambar);border-radius:8px;color:var(--ambar);font-size:10px;line-height:1.5;vertical-align:middle}
 .membro .botoes{grid-area:botoes;display:flex;gap:6px}
 .membro .botoes button{padding:1px 8px;font-size:12px}
 @container (min-width:520px){
@@ -106,7 +109,7 @@ dialog h3{margin:12px 0 4px;font-size:13px;color:var(--fraco);font-weight:600}
 </head>
 <body>
 <header>
-  <h1><img src="/simbolo.svg" alt="" width="30" height="30"><span><b>phx</b>vpn</span></h1>
+  <h1><img src="/logo-128.png" alt="" width="30" height="30"><span><b>phx</b>vpn</span></h1>
   <span id="minha-chave" title="Sua chave pública (clique para copiar)">…</span>
   <button id="b-config" title="Configuração" style="padding:3px 9px">Configuração</button>
 </header>
@@ -176,6 +179,14 @@ dialog h3{margin:12px 0 4px;font-size:13px;color:var(--fraco);font-weight:600}
   <p>Remover <b data-ip></b> da rede <span data-rede></span>? O tunel dele cai com todos assim que a malha receber o rol novo.</p>
   <p class="msg"></p>
   <div class="linha-botoes"><button type="button" data-fechar>Cancelar</button><button class="exclui">Remover</button></div>
+</form></dialog>
+
+<dialog id="d-farol"><form method="dialog" id="f-farol">
+  <h2>Farol — <span data-ip></span></h2>
+  <p style="color:var(--fraco);font-size:12px;margin:0 0 6px">Rede <b data-rede></b>. Um farol alcancavel serve de retransmissor cifrado para quem esta atras de NAT restritivo, sem precisar de <code>phxvpn repasse</code>. Nos com phxvpn anterior ao farol param de receber o rol.</p>
+  <label class="campo"><span>Endereço público (IP:PORTA que os outros alcançam)</span><input name="endereco" placeholder="203.0.113.5:51820"></label>
+  <p class="msg"></p>
+  <div class="linha-botoes"><button type="button" data-fechar>Cancelar</button><button type="submit" class="altera">Marcar farol</button></div>
 </form></dialog>
 
 <dialog id="d-chat"><form method="dialog" id="f-chat">

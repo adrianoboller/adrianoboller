@@ -219,12 +219,22 @@ impl Mesa {
                         .find(|m| m.ip == ip)
                         .map(|m| m.chave == minha_publica)
                 };
+                // O farol mora no rol (assinado pelo dono), nao no arquivo
+                // de cada um -- o mesmo motor de `p2p farol` (`farol.rs`).
+                let farol_no_rol = |ip: std::net::Ipv4Addr| -> bool {
+                    r.rol
+                        .as_ref()
+                        .and_then(|rol| rol.membros.iter().find(|m| m.ip == ip))
+                        .is_some_and(|m| m.farol.is_some())
+                };
                 let membros: Vec<Json> = match ligada {
                     Some(l) => {
                         l.no.situacao()
                             .into_iter()
                             .map(|[ip, caminho, sessao, chave]| {
-                                let eu = ip.parse().ok().and_then(membro_no_rol).unwrap_or(false);
+                                let ip4 = ip.parse().ok();
+                                let eu = ip4.and_then(membro_no_rol).unwrap_or(false);
+                                let farol = ip4.is_some_and(farol_no_rol);
                                 Json::objeto(vec![
                                     ("ip", Json::texto_de(ip)),
                                     ("caminho", Json::texto_de(caminho)),
@@ -232,6 +242,7 @@ impl Mesa {
                                     ("online", Json::de_bool(sessao.ends_with(" s"))),
                                     ("chave", Json::texto_de(chave)),
                                     ("eu", Json::de_bool(eu)),
+                                    ("farol", Json::de_bool(farol)),
                                 ])
                             })
                             .collect()
@@ -248,6 +259,7 @@ impl Mesa {
                                 ("online", Json::de_bool(false)),
                                 ("chave", Json::texto_de(para_hex(&p.chave[..6]))),
                                 ("eu", Json::de_bool(eu)),
+                                ("farol", Json::de_bool(farol_no_rol(p.ip))),
                             ])
                         })
                         .collect(),
@@ -337,6 +349,27 @@ impl Mesa {
             ("chave", self.chave()),
             ("ip", ip.into()),
         ]))
+    }
+
+    /// Marca (ou tira) o farol de um membro. Mesmo motor de `phxvpn p2p
+    /// farol` (`comandos::p2p_farol`): a recusa de quem nao e dono nem o
+    /// proprio membro vem de LA -- a tela so decide quando MOSTRA o botao
+    /// (dono, em qualquer linha; qualquer um, na propria linha, sem
+    /// endereco -- so o consentimento local).
+    pub fn farol(&self, rede: &str, ip: &str, endereco: &str, tirar: bool) -> R<String> {
+        let mut palavras = vec![
+            format!("/rede:{rede}"),
+            format!("/arquivo:{}", self.arquivo_da_rede(rede)),
+            format!("/chave:{}", self.chave()),
+            format!("/ip:{ip}"),
+        ];
+        if !endereco.is_empty() {
+            palavras.push(format!("/endereco:{endereco}"));
+        }
+        if tirar {
+            palavras.push("/tirar".to_string());
+        }
+        comandos::p2p_farol(&Opcoes::de_dos(&palavras))
     }
 
     pub fn convidar(&self, rede: &str, senha: &str, endereco: &str, validade: &str) -> R<String> {
@@ -592,6 +625,8 @@ impl Mesa {
             ("GET", "/") => return Resposta::html(TELA),
             ("GET", "/mesa.js") => return Resposta::js(TELA_JS),
             ("GET", "/simbolo.svg") => return Resposta::svg(web::SIMBOLO),
+            ("GET", "/logo-128.png") => return Resposta::png(web::LOGO_128),
+            ("GET", "/logo-32.png") => return Resposta::png(web::LOGO_32),
             _ => {}
         }
         let ficha_ok = p
@@ -648,6 +683,12 @@ impl Mesa {
                 corpo.booleano_ou("lembrar", false),
             )),
             ("POST", "/api/remover") => texto(self.remover(&t("rede"), &t("ip"))),
+            ("POST", "/api/farol") => texto(self.farol(
+                &t("rede"),
+                &t("ip"),
+                &t("endereco"),
+                corpo.booleano_ou("tirar", false),
+            )),
             ("POST", "/api/ping") => texto(self.pingar(&t("rede"), &t("ip"))),
             ("POST", "/api/chat") => texto(self.conversar(&t("rede"), &t("ip"), &t("texto"))),
             ("POST", "/api/mensagens") => {
@@ -974,6 +1015,159 @@ mod testes {
         );
         let rf = Rede::ler(&arquivo_a).unwrap();
         assert_eq!(rf.rol.unwrap().membros.len(), 1, "so o dono deveria sobrar");
+
+        let _ = std::fs::remove_dir_all(pa);
+        let _ = std::fs::remove_dir_all(pb);
+    }
+
+    /// `Farol` pela API: mesmo motor de `phxvpn p2p farol`
+    /// (`comandos::p2p_farol`), as duas metades -- o dono autoriza no rol
+    /// (precisa de endereco), o proprio membro so consente localmente (nao
+    /// precisa). Nenhuma das duas regras vive na rota: a rota so decide o
+    /// que MOSTRA (achado ao escrever `remover`, mesmo padrao aqui).
+    #[test]
+    fn farol_pela_api_dono_autoriza_membro_consente() {
+        use crate::rede_p2p::Rede;
+        let (pa, pb) = (pasta("far-a"), pasta("far-b"));
+        let a = Mesa::nova(pa.clone()).unwrap();
+        let b = Mesa::nova(pb.clone()).unwrap();
+        let (fa, fb) = (a.ficha().to_string(), b.ficha().to_string());
+        let r = a.tratar(&pedido(
+            "POST",
+            "/api/criar",
+            Some(&fa),
+            r#"{"rede":"Farol","ip":"10.78.20.1/24"}"#,
+        ));
+        assert_eq!(r.status, 200, "{}", r.corpo);
+        let conv = a.tratar(&pedido(
+            "POST",
+            "/api/convidar",
+            Some(&fa),
+            r#"{"rede":"Farol","senha":"s-farol-1"}"#,
+        ));
+        assert_eq!(conv.status, 200, "{}", conv.corpo);
+        let codigo = Json::analisar(&conv.corpo)
+            .unwrap()
+            .texto_ou("ok", "")
+            .to_string();
+        let entrar = b.tratar(&pedido(
+            "POST",
+            "/api/entrar",
+            Some(&fb),
+            &format!(r#"{{"codigo":"{codigo}","senha":"s-farol-1"}}"#),
+        ));
+        assert_eq!(entrar.status, 200, "{}", entrar.corpo);
+        let ip_b = "10.78.20.2";
+
+        // O rol de A nasce so com A (`Rol::primeiro`); B entra pela malha
+        // AO VIVO, que estes testes nao montam (o mesmo caminho do teste de
+        // `remover`: admite-se B no rol A MAO). O convite so trouxe o dono;
+        // o ROL em si chega depois -- aqui, copiado para o arquivo de B,
+        // simulando o que a malha teria ensinado.
+        let arquivo_a0 = a.arquivo_da_rede("Farol");
+        let mut ra0 = Rede::ler(&arquivo_a0).unwrap();
+        let privada_a = comandos::identidade(&a.chave()).unwrap();
+        let chave_b =
+            phxsql_core::x25519::chave_publica(&comandos::identidade(&b.chave()).unwrap());
+        let rol_com_b = ra0
+            .rol
+            .as_ref()
+            .unwrap()
+            .com(
+                crate::rol::Membro {
+                    chave: chave_b,
+                    ip: ip_b.parse().unwrap(),
+                    nome: None,
+                    farol: None,
+                },
+                &privada_a,
+            )
+            .unwrap();
+        ra0.rol = Some(rol_com_b.clone());
+        ra0.gravar(&arquivo_a0).unwrap();
+        let mut rb0 = Rede::ler(&b.arquivo_da_rede("Farol")).unwrap();
+        rb0.rol = Some(rol_com_b);
+        rb0.gravar(&b.arquivo_da_rede("Farol")).unwrap();
+
+        // RED: B nao e dono -- marcar o farol de outro (aqui, ninguem mais
+        // alem de si mesmo, entao o alvo e A) e recusado com o motivo do
+        // motor. Sem a guarda em `p2p_farol`, isto passaria.
+        let recusado = b.tratar(&pedido(
+            "POST",
+            "/api/farol",
+            Some(&fb),
+            r#"{"rede":"Farol","ip":"10.78.20.1","endereco":"203.0.113.5:51820"}"#,
+        ));
+        assert_eq!(recusado.status, 400, "{}", recusado.corpo);
+        assert!(recusado.corpo.contains("so o dono"), "{}", recusado.corpo);
+
+        // B consente EM SI MESMO -- nao precisa de endereco (so grava a
+        // flag local; quem manda no rol continua sendo o dono).
+        let consente = b.tratar(&pedido(
+            "POST",
+            "/api/farol",
+            Some(&fb),
+            &format!(r#"{{"rede":"Farol","ip":"{ip_b}"}}"#),
+        ));
+        assert_eq!(consente.status, 200, "{}", consente.corpo);
+        let rb = Rede::ler(&b.arquivo_da_rede("Farol")).unwrap();
+        assert!(rb.farol, "o arquivo de B deveria marcar o consentimento");
+
+        // A (dono) autoriza B no rol -- precisa do endereco alcancavel.
+        let autoriza = a.tratar(&pedido(
+            "POST",
+            "/api/farol",
+            Some(&fa),
+            &format!(r#"{{"rede":"Farol","ip":"{ip_b}","endereco":"203.0.113.9:51820"}}"#),
+        ));
+        assert_eq!(autoriza.status, 200, "{}", autoriza.corpo);
+        let ra_autorizado = Rede::ler(&arquivo_a0).unwrap();
+        assert!(
+            ra_autorizado
+                .rol
+                .as_ref()
+                .unwrap()
+                .membro(&chave_b)
+                .unwrap()
+                .farol
+                .is_some(),
+            "o rol de A deveria trazer o farol de B"
+        );
+        // O mesmo dado, visto pela API que a janela consome: `redes()` so
+        // devolve os membros de `r.pares` quando a rede esta desligada, e
+        // aqui B nunca chegou a `pares` (nao ha no P2P de verdade neste
+        // teste) -- por isso o par entra a mao, so para exercitar o selo.
+        let mut ra_com_par = Rede::ler(&arquivo_a0).unwrap();
+        ra_com_par.pares.push(crate::rede_p2p::Par {
+            chave: chave_b,
+            ip: ip_b.parse().unwrap(),
+            endereco: None,
+        });
+        ra_com_par.gravar(&arquivo_a0).unwrap();
+        let redes_a = a.redes().unwrap().escrever();
+        assert!(
+            redes_a.contains(&format!("\"ip\":\"{ip_b}\"")) && redes_a.contains("\"farol\":true"),
+            "{redes_a}"
+        );
+
+        // A tira o farol -- o rol volta sem o endereco daquele membro.
+        let tira = a.tratar(&pedido(
+            "POST",
+            "/api/farol",
+            Some(&fa),
+            &format!(r#"{{"rede":"Farol","ip":"{ip_b}","tirar":true}}"#),
+        ));
+        assert_eq!(tira.status, 200, "{}", tira.corpo);
+        let ra = Rede::ler(&a.arquivo_da_rede("Farol")).unwrap();
+        let membro_b = ra
+            .rol
+            .as_ref()
+            .unwrap()
+            .membro(&phxsql_core::x25519::chave_publica(
+                &comandos::identidade(&b.chave()).unwrap(),
+            ))
+            .unwrap();
+        assert!(membro_b.farol.is_none(), "o farol deveria ter sido tirado");
 
         let _ = std::fs::remove_dir_all(pa);
         let _ = std::fs::remove_dir_all(pb);
