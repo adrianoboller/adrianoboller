@@ -19,6 +19,7 @@
 //! escrito aqui). Por isso escuta em 127.0.0.1, e so escuta fora disso com
 //! `--aceito-sem-tls` escrito (A4, versao minima).
 
+use crate::credencial::{Recusa, Sessoes};
 use crate::guarda::{frase_de_bloqueio, Limitador};
 use crate::painel::{conferir_login, conferir_rede, Instalacao, Painel, Usuario};
 use crate::supervisor::Supervisor;
@@ -27,10 +28,9 @@ use phxsql_core::hash::{iguais_em_tempo_constante, para_hex};
 use phxsql_core::json::Json;
 use phxsql_core::semaforo::Semaforo;
 use phxsql_core::senha::bytes_aleatorios;
-use std::collections::HashMap;
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const VIDA_SESSAO: Duration = Duration::from_secs(8 * 3600);
 /// Conexoes atendidas ao mesmo tempo.
@@ -44,7 +44,10 @@ const TELA_JS: &str = include_str!("tela.js");
 
 pub struct Estado {
     painel: Mutex<Painel>,
-    sessoes: Mutex<HashMap<String, (Usuario, Instant)>>,
+    /// Sessoes do painel (token do navegador) e da VPN (`session_id` do
+    /// `auth-gen-token`): as duas pelo mesmo motor (`credencial.rs`).
+    pub(crate) sessoes: Sessoes,
+    pub(crate) vpn: Sessoes,
     pub supervisor: Option<Supervisor>,
     pub(crate) tentativas: Limitador,
     pub(crate) conferencias: Semaforo,
@@ -58,7 +61,8 @@ impl Estado {
     pub fn novo(painel: Painel, supervisor: Option<Supervisor>) -> Estado {
         Estado {
             painel: Mutex::new(painel),
-            sessoes: Mutex::new(HashMap::new()),
+            sessoes: Sessoes::nova(VIDA_SESSAO),
+            vpn: Sessoes::nova(Duration::from_secs(u64::from(crate::verificar::VIDA_TOKEN))),
             supervisor,
             tentativas: Limitador::default(),
             conferencias: Semaforo::novo(CONFERENCIAS),
@@ -95,10 +99,6 @@ impl Estado {
             p
         })
     }
-
-    fn sessoes(&self) -> MutexGuard<'_, HashMap<String, (Usuario, Instant)>> {
-        self.sessoes.lock().unwrap_or_else(|e| e.into_inner())
-    }
 }
 
 pub fn servir(escuta: &str, estado: Arc<Estado>) -> Result<(), String> {
@@ -107,7 +107,9 @@ pub fn servir(escuta: &str, estado: Arc<Estado>) -> Result<(), String> {
     web::servir(ouvinte, hosts, TETO_CONEXOES, move |p| atender(p, &estado))
 }
 
-fn atender(pedido: &Pedido, estado: &Estado) -> Resposta {
+/// Uma requisicao inteira (publica para os testes contra o PostgreSQL real
+/// exercitarem as rotas sem soquete).
+pub fn atender(pedido: &Pedido, estado: &Estado) -> Resposta {
     let caminho = pedido.caminho.split('?').next().unwrap_or_default();
     if pedido.metodo == "GET" && (caminho == "/" || caminho == "/index.html") {
         return Resposta::html(TELA);
@@ -160,13 +162,15 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
 
     match (p.metodo.as_str(), caminho) {
         ("GET", "/api/estado") => {
+            // Antes da trava do painel: conferir a sessao tambem a toma.
+            let com_login = usuario(p, e).is_ok();
             let mut painel = e.painel();
             let instalado = painel.instalado().map_err(ruim)?;
             // Sem login, so o nome: responsavel, e-mail e telefone sao dado
             // pessoal e nao se entregam a quem apenas alcanca a porta.
             let empresa = if instalado {
                 let completa = painel.empresa().map_err(ruim)?;
-                if usuario(p, e).is_ok() {
+                if com_login {
                     completa
                 } else {
                     Json::objeto(vec![(
@@ -275,9 +279,7 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
                 Err(_) => return Err((401, FRASE_LOGIN.into())),
             };
             let token = para_hex(&bytes_aleatorios(32));
-            let mut s = e.sessoes();
-            s.retain(|_, (_, quando)| quando.elapsed() < VIDA_SESSAO);
-            s.insert(token.clone(), (u.clone(), Instant::now()));
+            e.sessoes.abrir(token.clone(), &u);
             Ok(Json::objeto(vec![
                 ("token", Json::texto_de(token)),
                 ("login", Json::texto_de(u.login)),
@@ -287,7 +289,7 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
         }
         ("POST", "/api/sair") => {
             if let Some(tk) = &p.token {
-                e.sessoes().remove(tk);
+                e.sessoes.fechar(tk);
             }
             ok()
         }
@@ -325,12 +327,76 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             };
             r.map_err(ruim)?;
             reserva.acertou(&[&conta]);
+            // A propria mudanca: esta sessao fica, as outras dele caem.
+            e.credencial_mudou(u.id, p.token.as_deref());
             ok()
         }
         ("POST", "/api/usuarios/mfa-zerar") => {
             let u = usuario(p, e)?;
             exigir_admin(&u)?;
-            e.painel().mfa_zerar(&u, &t("login")).map_err(ruim)?;
+            let alvo = e.painel().mfa_zerar(&u, &t("login")).map_err(ruim)?;
+            e.credencial_mudou(alvo, None);
+            ok()
+        }
+        ("POST", "/api/usuarios/ativo") => {
+            let u = usuario(p, e)?;
+            exigir_admin(&u)?;
+            let ativo = corpo
+                .campo("ativo")
+                .and_then(Json::booleano)
+                .ok_or((400, "ativo: true ou false".to_string()))?;
+            let alvo = e
+                .painel()
+                .usuario_definir_ativo(&u, &t("login"), ativo)
+                .map_err(ruim)?;
+            e.credencial_mudou(alvo, None);
+            ok()
+        }
+        ("POST", "/api/senha") => {
+            let u = usuario(p, e)?;
+            let nova = t("senha_nova");
+            crate::painel::validar_senha("senha_nova", &nova, 8).map_err(|m| (400, m))?;
+            // A senha atual (e o codigo, de quem tem autenticador): sessao
+            // roubada nao troca a senha do dono. Conta como tentativa.
+            let conta = crate::guarda::chave_conta(crate::guarda::Canal::Painel, &u.login);
+            let reserva = e
+                .tentativas
+                .reservar(&[&conta, &chave_ip])
+                .map_err(bloqueado)?;
+            let (atual, hash) = match e.painel().hash_do_login(&u.login) {
+                Ok(x) => x,
+                Err(m) => {
+                    reserva.devolver();
+                    return Err(ruim(m));
+                }
+            };
+            let conferido = {
+                let _vez = e.conferencias.adquirir();
+                conferir_login(atual, &hash, &t("senha_atual"))
+            }
+            .and_then(|a| {
+                let mut painel = e.painel();
+                match painel.mfa_ativo(a.id) {
+                    Ok(false) => Ok(a),
+                    Ok(true) => painel.mfa_conferir(a.id, &t("codigo")).map(|_| a),
+                    Err(x) => Err(x),
+                }
+            });
+            match conferido {
+                Ok(_) => reserva.acertou(&[&conta]),
+                Err(m) if m.starts_with("PostgreSQL ") => {
+                    reserva.devolver();
+                    return Err(ruim(m));
+                }
+                Err(_) => return Err((401, FRASE_LOGIN.into())),
+            }
+            let iteracoes = e.painel().iteracoes;
+            let novo = {
+                let _vez = e.conferencias.adquirir();
+                phxsql_core::senha::cifrar_com(&nova, iteracoes)
+            };
+            e.painel().gravar_senha(u.id, &novo).map_err(ruim)?;
+            e.credencial_mudou(u.id, p.token.as_deref());
             ok()
         }
         ("POST", "/api/redes/mfa") => {
@@ -500,12 +566,20 @@ fn perfil_json(rede: &str, perfil: String) -> Saida {
     ]))
 }
 
+/// Quem pede, conferido a CADA pedido pelo motor das sessoes: usuario
+/// desativado, ou com senha, autenticador ou `admin` mudados depois do
+/// login, nao passa -- e o `admin` que vale e o do banco agora, nao o do
+/// login.
 fn usuario(p: &Pedido, e: &Estado) -> Result<Usuario, (u16, String)> {
     let tk = p.token.as_ref().ok_or((401, "faca login".to_string()))?;
-    let s = e.sessoes();
-    match s.get(tk) {
-        Some((u, quando)) if quando.elapsed() < VIDA_SESSAO => Ok(u.clone()),
-        _ => Err((401, "sessao expirada: faca login de novo".into())),
+    match e.sessoes.conferir(tk, |id| e.painel().usuario_vigente(id)) {
+        Ok(u) => Ok(u),
+        Err(Recusa::CredencialMudou) => Err((
+            401,
+            "a conta mudou (senha, autenticador ou acesso): faca login de novo".into(),
+        )),
+        Err(Recusa::Banco(m)) => Err(ruim(m)),
+        Err(_) => Err((401, "sessao expirada: faca login de novo".into())),
     }
 }
 

@@ -11,8 +11,14 @@ Uso (dentro do netns do cliente):
   cliente.py PERFIL LOG USUARIO SENHA CODIGO [IP_PARA_PINGAR]
   cliente.py --codigo SEGREDO_BASE32 DESLOCAMENTO_S   (so imprime o codigo)
 Saida: uma linha JSON {"resultado": "conectou"|"recusado"|"prazo", ...}.
+
+MANTER=S no ambiente: depois de conectar, imprime {"evento": "conectou"} e
+fica S segundos de pe, anotando QUANDO a conexao cai (`caiu_em`, relogio da
+maquina), se o servidor recusou a reconexao e se ela voltou. Nao responde de
+novo o pedido de senha: o codigo ja foi usado, e quem reconecta e o token.
+PORTA_GERENCIA muda a porta da gerencia local (7505).
 """
-import base64, hashlib, hmac, json, socket, struct, subprocess, sys, time
+import base64, hashlib, hmac, json, os, socket, struct, subprocess, sys, time
 
 
 def totp(segredo_b32, instante):
@@ -30,7 +36,9 @@ def main():
         return
     perfil, log, usuario, senha, codigo = sys.argv[1:6]
     pingar = sys.argv[6] if len(sys.argv) > 6 else None
-    porta = 7505
+    porta = int(os.environ.get("PORTA_GERENCIA", "7505"))
+    manter = float(os.environ.get("MANTER", "0"))
+    conectado_em = None
     ovpn = subprocess.Popen(
         ["openvpn", "--config", perfil, "--log", log, "--auth-retry", "none",
          "--management", "127.0.0.1", str(porta), "--management-query-passwords",
@@ -54,14 +62,24 @@ def main():
         buf = b""
         scrv1 = "SCRV1:%s:%s" % (base64.b64encode(senha.encode()).decode(),
                                  base64.b64encode(codigo.encode()).decode())
-        while time.time() - inicio < 40:
+        while True:
+            agora = time.time()
+            if conectado_em is None and agora - inicio >= 40:
+                break
+            if conectado_em is not None and agora - conectado_em >= manter:
+                break
             if ovpn.poll() is not None:
-                saida["resultado"] = "recusado"
+                if conectado_em is None:
+                    saida["resultado"] = "recusado"
+                else:
+                    saida.setdefault("caiu_em", agora)
+                    saida["processo_saiu"] = True
                 break
             try:
                 pedaco = g.recv(4096)
                 if not pedaco:
-                    saida["resultado"] = "recusado"
+                    if conectado_em is None:
+                        saida["resultado"] = "recusado"
                     break
                 buf += pedaco
             except socket.timeout:
@@ -69,6 +87,25 @@ def main():
             while b"\n" in buf:
                 linha, buf = buf.split(b"\n", 1)
                 l = linha.decode("utf-8", "replace").strip()
+                if conectado_em is not None:
+                    # Depois de conectado: so observa.
+                    if l.startswith(">STATE:") and "caiu_em" not in saida:
+                        partes = l.split(",")
+                        if len(partes) > 2 and partes[1] in ("RECONNECTING", "EXITING"):
+                            saida["caiu_em"] = time.time()
+                            saida["motivo"] = partes[2]
+                    elif l.startswith(">HOLD:"):
+                        # O --management-hold segura a reconexao: solta, para
+                        # o cliente tentar de novo com o token de verdade.
+                        g.sendall(b"hold release\n")
+                        saida["tentou_reconectar"] = True
+                    elif ",CONNECTED,SUCCESS" in l:
+                        saida["voltou"] = True
+                    elif l.startswith(">PASSWORD:Need 'Auth'"):
+                        saida["pediu_senha_de_novo"] = True
+                    elif "Verification Failed" in l or "AUTH_FAILED" in l:
+                        saida["reconexao_recusada"] = True
+                    continue
                 if l.startswith(">PASSWORD:Need 'Auth'"):
                     # O perfil trouxe o static-challenge: o texto vem aqui.
                     if "SC:" in l:
@@ -80,7 +117,10 @@ def main():
                 elif ",CONNECTED,SUCCESS" in l:
                     saida["resultado"] = "conectou"
                     saida["segundos"] = round(time.time() - inicio, 2)
-            if saida["resultado"] != "prazo":
+                    if manter:
+                        conectado_em = time.time()
+                        print(json.dumps({"evento": "conectou", "t": conectado_em}), flush=True)
+            if saida["resultado"] != "prazo" and conectado_em is None:
                 break
         if saida["resultado"] == "conectou" and pingar:
             p = subprocess.run(["ping", "-c", "3", "-W", "2", pingar],

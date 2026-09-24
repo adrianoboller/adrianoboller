@@ -88,6 +88,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 | UDP 1195+ | OpenVPN (modo servidor) | certificado da AC + CRL + `ccd-exclusive` + `tls-crypt`; rede com MFA: + usuário, senha e código |
 | TCP 443 (rede criada com `protocolo: tcp`) | OpenVPN (modo servidor) | o mesmo; `tls-crypt-v2` barra antes do TLS também em TCP |
 | soquete `dados/verificar.sock` | `phxvpn painel` (Unix) | arquivo 0660 do grupo `phxvpn-ovpn` + `SO_PEERCRED` (root, o painel, `phxvpn-ovpn`); 32 perguntas de uma vez, 2 s para o pedido chegar; tentativa reservada antes do PBKDF2 |
+| soquete `dados/gerencia/<rede>.sock` | OpenVPN (gerência, Unix) | pasta 0700 do dono do painel + `management-client-user` (o usuário do painel): o OpenVPN cria o soquete com `umask(0)`, aberto a todos por padrão |
 
 ### Contas do servidor intermediário
 
@@ -1178,8 +1179,11 @@ autenticador continua caindo para `nobody`. O painel exige que o usuário digita
 o login do CN do certificado (`login.rede.série`) e a rede seja a do conf: o
 certificado da ana com a senha e o código do bruno não entra. A conferência é
 **adiada** (`auth_control_file`, código 2): o PBKDF2 não roda dentro do laço
-do `openvpn`. `auth-gen-token 43200`: a renegociação de hora em hora usa o
-token, e em 12 h pede código novo.
+do `openvpn`. `auth-gen-token 43200 external-auth`: a renegociação de hora em
+hora usa o token, e em 12 h pede código novo — mas o token **não** revoga
+sozinho: com `external-auth` o verificador é chamado também com token válido
+(`session_state=Authenticated`) e a sessão passa pelo motor de credencial
+(ver «Mudança no usuário derruba as sessões», abaixo).
 
 **O segredo.** Vai ao banco selado (XChaCha20-Poly1305, id do usuário no dado
 associado) com a chave de `dados/mfa.chave` (0600) — **não** a senha mestre:
@@ -1225,7 +1229,7 @@ binário release; `provas/mfa/resultados.json`).** Código calculado pelo
 | Caso | Resultado |
 |---|---|
 | senha errada + código válido | recusado (e o código continuou valendo) |
-| senha + código certos | **conectou em 1,15 s**; ping 3/3 pelo túnel |
+| senha + código certos | **conectou em 1,26 s**; ping 3/3 pelo túnel |
 | o mesmo código de novo | recusado |
 | código errado | recusado |
 | sem código (perfil respondido sem o desafio) | recusado |
@@ -1235,10 +1239,10 @@ binário release; `provas/mfa/resultados.json`).** Código calculado pelo
 | pergunta como `phxvpn-ovpn` (senha errada) | atendido, recusado |
 | **RED:** verificador trocado por `/bin/true` — senha errada; código errado | **conectou** / **conectou** (0,14 s): a prova reprova sem a conferência |
 
-Conferências adiadas no servidor: 5/5; `openvpn` como `phxvpn-ovpn`; senha, senha
+Conferências adiadas no servidor: 10/10 (5 destes casos + 5 da revogação); `openvpn` como `phxvpn-ovpn`; senha, senha
 errada ou segredo nos logs do painel e do OpenVPN: **0**. O desafio chegou ao
 cliente como `SC:1,Código do autenticador` (o perfil foi lido pelo próprio
-`openvpn`). Sem a conferência a conexão leva 0,14 s; com ela, 1,15 s — o
+`openvpn`). Sem a conferência a conexão leva 0,14 s; com ela, 1,26 s — o
 PBKDF2 e a volta pelo soquete.
 
 **Tela** (`provas/mfa/tela.sh`, Chromium): QR desenhado (220 px), chave de 32
@@ -1267,13 +1271,100 @@ de uma rota.
 
 **Limites.** **A conta é separada por canal** (M3, decisão do dono em 24/09/2026: travar só o painel): quem erra 6 vezes a senha do admin pelo painel tranca o **painel** por até 15 min, e a VPN de quem tem o certificado continua conectando; erro na VPN tranca só a VPN. O preço aceito: o orçamento de adivinhação dobra (painel + VPN), e na VPN ele ainda exige o certificado do membro. Travado por `falha_no_painel_nao_tranca_a_vpn` (reprova com a conta única). Continua valendo: um atacante com a porta do painel tranca o **painel** do admin de propósito, repetindo a cada bloqueio. `cn` e `ip` chegam no pedido ao soquete, preenchidos pelo
 `openvpn`: um `openvpn` tomado pode mentir neles — mas ele já é quem decide
-quem entra no túnel. O token do `auth-gen-token` vale **12 h** sem código novo
-(achado 6), e tirar a exigência ou zerar o autenticador **não derruba** a
-sessão VPN nem a do painel já abertas (achado 12): valem até o token ou a
-sessão (8 h) vencerem. O QR foi lido de volta só pelo leitor do núcleo (não há leitor de
-terceiros neste contêiner); o `auth-gen-token` na renegociação de 1 h não foi
-medido; o verificador no Windows recusa tudo (sem soquete local lá); perder o
-`mfa.chave` desliga todo autenticador (vai no backup da pasta de dados).
+quem entra no túnel. **Achados 6 e 12: fechados em 24/09/2026** — mudança
+no usuário derruba as sessões do painel na hora e a conexão VPN em **≤ 0,06 s**
+(seção seguinte). O que continua: o `UPDATE` feito à mão no banco derruba a
+sessão do painel no pedido seguinte e o token da VPN na renegociação seguinte
+(até 1 h), mas **não** a conexão na hora — só rota do painel chama a gerência;
+no Windows não há gerência por soquete Unix, e lá a conexão cai só na
+renegociação. O QR foi lido de volta só pelo leitor do núcleo (não há leitor de
+terceiros neste contêiner); a renegociação de 1 h em si não foi medida (a
+reconexão pelo token foi); o verificador no Windows recusa tudo (sem soquete
+local lá); perder o `mfa.chave` desliga todo autenticador (vai no backup da
+pasta de dados).
+
+### Mudança no usuário derruba as sessões (limites 6 e 12, 24/09/2026)
+
+**O motor é um só** (`src/credencial.rs`). `phx_usuario.credencial` é um
+contador que um **gatilho do PostgreSQL** sobe quando muda senha, `ativo`,
+autenticador (`totp_selado`), `admin` ou `login` — e não quando muda
+`totp_ultimo` (todo código aceito o grava) nem `totp_pendente`. Toda sessão
+guarda o contador com que nasceu, e a conferência de **toda** sessão — a do
+painel (token do navegador, a cada pedido) e a da VPN (`session_id` do
+`auth-gen-token`, a cada renegociação) — passa por `Sessoes::conferir`, que
+pergunta ao banco «ativo, e com o mesmo contador?». No gatilho e não em cada
+rota: rota que muda usuário é lista que cresce, e o `UPDATE` pelo `psql` não
+passa por rota nenhuma. Consequência a mais: o `admin` que vale num pedido é o
+do banco **agora**, não o do login.
+
+**A conexão cai na hora.** Depois de mudar, a rota chama
+`Estado::credencial_mudou`, que pede ao `openvpn` de cada rede do usuário,
+pela gerência (`management dados/gerencia/<rede>.sock unix`), o
+`client-kill` de cada conexão do CN (o CID sai do `status 2`). **`client-kill`
+e não `kill`**: no 2.6.19 o `kill CN` fecha a instância no servidor sem avisar
+o cliente (`multi_signal_instance`), que só percebe no `ping-restart` (60 s
+aqui); o `client-kill` manda `RESTART` pelo canal de controle (`send_restart`).
+O cliente reconecta com o token — e o token cai no motor: recusado
+(`AUTH_FAILED`, «auth-failure (auth-token)»), e o cliente pede usuário, senha
+e código de novo. Medido com o `kill CN` no lugar: o servidor fechou a
+instância («client-instance exiting») e **o cliente não percebeu em 20 s**
+nas duas mudanças — sem `RESTART` ele só cai no `ping-restart`. Desativar também apaga o `ccd/` do usuário: sem isso, a rede
+que só pede certificado o aceitava de volta na reconexão (`ccd-exclusive`
+barra CN sem arquivo); reativar o devolve.
+
+**Por que o token continua de 12 h** (hipóteses escritas antes de medir):
+(a) encurtar a vida do token; (b) `auth-gen-token` com renovação curta;
+(c) `external-auth` + derrubar pela gerência. (a) e (b) **morreram pelo
+manual**: a vida e a renovação só dizem quando o *token* vence, e a conta
+mudada não vence token nenhum — encurtar faria o membro digitar código mais
+vezes sem revogar nada mais cedo, e a renovação curta só empurra token novo
+sem chamar verificador. (c) revoga no evento, não no relógio.
+
+**A sessão de quem fez a mudança fica** (decisão do pesquisador, pela
+evidência; não subiu ao dono): quem troca a **própria** senha ou liga/desliga
+o **próprio** autenticador continua na sessão em que fez isso; as outras
+dele caem. Mudança do admin em **outro** usuário derruba todas as do alvo.
+Fontes, lidas no texto: OWASP ASVS 4.0.3 §3.3.3 («terminate all **other**
+active sessions after a successful password change»); Django
+`update_session_auth_hash` (mantém a atual, as outras caem pelo hash);
+GitLab `destroy_all_but_current_user_session!` ao **ligar** o 2FA
+(`Profiles::TwoFactorAuthsController#create`, lido no fonte). Contra: o
+GitLab, na troca de **senha**, desloga até a atual («Please sign in again»,
+`UserSettings::PasswordsController`). Placar: 3 fontes mantêm a atual, 1 não
+(e essa 1 mantém ao ligar o 2FA). Os motores de banco não serviram de régua:
+neles a senha e a conta travada se conferem ao **conectar**, e a conexão
+aberta não cai — é semântica de conexão de banco, não de sessão web (isto é
+leitura de memória da documentação deles, **não conferida nesta rodada**).
+
+**Rotas novas** (a tela ainda não as chama — frente da interface):
+`POST /api/usuarios/ativo {login, ativo}` (admin; não desativa a si mesmo) e
+`POST /api/senha {senha_atual, senha_nova, codigo}` (a própria; exige a senha
+atual e, com autenticador, o código; conta como tentativa).
+
+**Prova (24/09/2026, `provas/mfa/rodar.sh`, `openvpn` 2.6.19, binário
+release; `provas/mfa/resultados.json` → `revogacao`).** Membro conectado com
+o código; o admin muda o usuário; o cliente anota quando o estado sai de
+`CONNECTED`:
+
+| Caso | Queda (N) | Reconexão pelo token |
+|---|---|---|
+| admin zera o autenticador do caio | **0,06 s** (`server-pushed-connection-reset`) | recusada (`auth-failure (auth-token)`); pede senha e código |
+| admin desativa a dani | **0,05 s** | recusada |
+| **RED:** gerência fora do lugar, admin desativa o edu | **não caiu em 15 s** | — |
+
+Log do painel: 2 conexões derrubadas, 2 reconexões pelo token recusadas
+(«token recusado: a conta mudou»). O RED mostra que a queda vem do painel e
+não de outra coisa.
+
+**Testes.** `credencial::testes` (o motor sem banco: a de quem mudou fica, a
+outra cai, fechada não volta, banco fora não derruba, `renovar` não adota a de
+outro; o `status 2` e o `client-kill` contra uma gerência de mentira) e
+`tests/postgres_real.rs::sessoes_caem_quando_a_credencial_muda` (PG 16 real,
+pelas rotas: cadastro próprio, zerar, desativar/reativar com o `ccd`, trocar
+senha, token da VPN `Initial`→`Authenticated`→recusado, e o `UPDATE` pelo
+banco). **RED:** `Sessoes::conferir` ignorando o contador reprova
+`sessao_cai_quando_a_credencial_muda` («unwrap_err on Ok») e o teste real na
+primeira asserção («a outra sessao da ana sobreviveu ao cadastro»).
 
 ## Rede que só deixa TCP/443, ou só o proxy (24/09/2026)
 

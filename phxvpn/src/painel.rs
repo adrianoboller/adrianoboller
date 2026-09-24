@@ -136,6 +136,9 @@ pub struct Usuario {
     pub id: i64,
     pub login: String,
     pub admin: bool,
+    /// O contador de `credencial.rs` quando o usuario foi lido: a sessao
+    /// aberta com ele morre quando o do banco muda.
+    pub credencial: i64,
 }
 
 pub struct Painel {
@@ -159,6 +162,7 @@ impl Painel {
         let mut pg = Pg::conectar(cfg)?;
         pg.lote(ESQUEMA)?;
         pg.lote(crate::mfa::ESQUEMA)?;
+        pg.lote(crate::credencial::ESQUEMA)?;
         criar_dir_privado(dados)?;
         Ok(Painel {
             pg,
@@ -309,7 +313,7 @@ impl Painel {
     /// tentativas por segundo paravam o painel inteiro (achado A2).
     pub fn hash_do_login(&mut self, login: &str) -> R<(Option<Usuario>, String)> {
         let r = self.pg()?.executar(
-            "SELECT id, login, senha_hash, admin FROM phx_usuario WHERE login = $1 AND ativo",
+            "SELECT id, login, senha_hash, admin, credencial FROM phx_usuario WHERE login = $1 AND ativo",
             &[Some(login)],
         )?;
         match r.valor(0, "senha_hash") {
@@ -940,6 +944,8 @@ impl Painel {
             },
             &dir.display().to_string(),
         );
+        criar_dir_privado(&self.dados.join("gerencia"))?;
+        conf.push_str(&crate::credencial::conf(&self.dados, rede_id));
         if self.rede_exige_mfa(rede_id)? {
             self.mfa_pode_subir(rede_id)?;
             conf.push_str(&crate::verificar::conf_servidor_mfa(&self.dados, rede_id));
@@ -987,19 +993,38 @@ impl Painel {
                 Err(e) => return Err(e),
             }
         }
-        // O ccd de cada membro sai do banco: e ele que decide quem conecta.
+        self.acertar_ccd(None)?;
+        Ok(saida)
+    }
+
+    /// O `ccd/` de cada membro sai do banco: e ele que decide quem conecta
+    /// (`ccd-exclusive`). Existe so para usuario ATIVO -- sem isso, desativar
+    /// alguem nao o barrava na rede que so pede o certificado. `None`: todos
+    /// (arranque); `Some(id)`: os vinculos daquele usuario (mudou o `ativo`).
+    pub(crate) fn acertar_ccd(&mut self, usuario_id: Option<i64>) -> R<()> {
+        let id = usuario_id.map(|i| i.to_string());
         let m = self.pg()?.executar(
-            "SELECT m.rede_id, m.cn, m.host, r.octeto FROM phx_membro m JOIN phx_rede r ON r.id = m.rede_id",
-            &[],
+            "SELECT m.rede_id, m.cn, m.host, r.octeto, u.ativo FROM phx_membro m \
+             JOIN phx_rede r ON r.id = m.rede_id JOIN phx_usuario u ON u.id = m.usuario_id \
+             WHERE $1::int IS NULL OR m.usuario_id = $1::int",
+            &[id.as_deref()],
         )?;
         for i in 0..m.linhas.len() {
             let v = |c: &str| m.valor(i, c).unwrap_or_default().to_string();
             let caminho = self.dir_rede(&v("rede_id")).join("ccd").join(v("cn"));
+            if v("ativo") != "t" {
+                match fs::remove_file(&caminho) {
+                    Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                        return Err(format!("apagar {}: {e}", caminho.display()))
+                    }
+                    _ => continue,
+                }
+            }
             let octeto: u8 = v("octeto").parse().unwrap_or(0);
             let host: u8 = v("host").parse().unwrap_or(0);
             gravar(&caminho, ovpn::ccd_membro(octeto, host).as_bytes(), false)?;
         }
-        Ok(saida)
+        Ok(())
     }
 }
 
@@ -1106,7 +1131,7 @@ fn conectados(status: &Path) -> Vec<String> {
         .collect()
 }
 
-fn usuario_da_linha(r: &Resposta, i: usize) -> R<Usuario> {
+pub(crate) fn usuario_da_linha(r: &Resposta, i: usize) -> R<Usuario> {
     Ok(Usuario {
         id: r
             .valor(i, "id")
@@ -1114,6 +1139,10 @@ fn usuario_da_linha(r: &Resposta, i: usize) -> R<Usuario> {
             .ok_or("usuario sem id")?,
         login: r.valor(i, "login").unwrap_or_default().to_string(),
         admin: r.valor(i, "admin") == Some("t"),
+        credencial: r
+            .valor(i, "credencial")
+            .and_then(|v| v.parse().ok())
+            .ok_or("usuario sem credencial")?,
     })
 }
 
@@ -1186,7 +1215,7 @@ fn validar_login(v: &str) -> R<()> {
     }
 }
 
-fn validar_senha(campo: &str, v: &str, minimo: usize) -> R<()> {
+pub(crate) fn validar_senha(campo: &str, v: &str, minimo: usize) -> R<()> {
     if v.chars().count() < minimo {
         return Err(format!("{campo}: no minimo {minimo} caracteres"));
     }

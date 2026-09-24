@@ -109,6 +109,56 @@ ERRADO=$( [ "$VALIDO" = "000000" ] && echo 111111 || echo 000000 )
 R_ERRADO=$(tentar codigo-errado "senha-da-ana-longa" "$ERRADO")
 R_SEM=$(tentar sem-codigo "senha-da-ana-longa" "")
 
+# --- Revogacao (limites 6 e 12): conectado com o codigo, o admin muda o
+# usuario -> o painel manda `client-kill` pela gerencia, a conexao cai em N s,
+# e a reconexao pelo token e recusada (external-auth + credencial mudada).
+# RED: com o soquete da gerencia fora do lugar, a mesma mudanca NAO derruba
+# ninguem em 15 s -- a queda de cima vinha do painel, nao de outra coisa.
+membro_com_mfa() { # LOGIN SENHA -> segredo; cadastra o autenticador e entra na rede
+  api POST /api/usuarios "$TK_ADMIN" "{\"login\":\"$1\",\"senha\":\"$2\"}" >/dev/null
+  local tk seg
+  tk=$(api POST /api/login "" "{\"usuario\":\"$1\",\"senha\":\"$2\"}" | campo token)
+  seg=$(api POST /api/mfa/iniciar "$tk" '{}' | campo segredo)
+  api POST /api/mfa/confirmar "$tk" "{\"codigo\":\"$(python3 "$AQUI/cliente.py" --codigo "$seg" 0)\"}" >/dev/null
+  api POST /api/redes/entrar "$tk" '{"nome":"Matriz","senha":"senha-da-rede"}' | campo perfil > "$T/$1.ovpn"
+  echo "$seg"
+}
+derrubada() { # ROTULO LOGIN SENHA SEGREDO ROTA CORPO SEGUNDOS -> JSON com n_segundos
+  local saida="$T/manter-$1.json" pid t0
+  : > "$saida"
+  C env MANTER="$7" python3 "$AQUI/cliente.py" "$T/$2.ovpn" "$T/c-$1.log" "$2" "$3" \
+    "$(python3 "$AQUI/cliente.py" --codigo "$4" 30)" > "$saida" &
+  pid=$!
+  for _ in $(seq 150); do grep -q '"evento": "conectou"' "$saida" && break; sleep 0.1; done
+  sleep 3
+  t0=$(date +%s.%N)
+  api POST "$5" "$TK_ADMIN" "$6" >/dev/null
+  wait "$pid" || true
+  python3 - "$saida" "$t0" <<'PY'
+import json, sys
+linhas = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+r = linhas[-1]; t0 = float(sys.argv[2])
+r["conectou_antes"] = any(l.get("evento") == "conectou" for l in linhas)
+r["n_segundos"] = round(r["caiu_em"] - t0, 2) if "caiu_em" in r else None
+r.pop("caiu_em", None)
+print(json.dumps(r, ensure_ascii=False))
+PY
+}
+SEG_CAIO=$(membro_com_mfa caio senha-do-caio-longa)
+SEG_DANI=$(membro_com_mfa dani senha-da-dani-longa)
+SEG_EDU=$(membro_com_mfa edu senha-do-edu-longa)
+GER="$T/dados/gerencia/$REDE_ID.sock"
+RV_ZERAR=$(derrubada zerar caio senha-do-caio-longa "$SEG_CAIO" /api/usuarios/mfa-zerar '{"login":"caio"}' 20)
+echo "== admin zera o autenticador do caio conectado: $RV_ZERAR"
+RV_DESATIVAR=$(derrubada desativar dani senha-da-dani-longa "$SEG_DANI" /api/usuarios/ativo '{"login":"dani","ativo":false}' 20)
+echo "== admin desativa a dani conectada: $RV_DESATIVAR"
+mv "$GER" "$GER.fora"
+RV_RED=$(derrubada red-sem-gerencia edu senha-do-edu-longa "$SEG_EDU" /api/usuarios/ativo '{"login":"edu","ativo":false}' 15)
+mv "$GER.fora" "$GER"
+echo "== RED, gerencia fora do lugar, admin desativa o edu: $RV_RED"
+TOKEN_RECUSADO=$(grep -c "token recusado: a conta mudou" "$T/painel.log" || true)
+DERRUBADAS=$(grep -c "derrubada (credencial mudou)" "$T/painel.log" || true)
+
 LOGSRV="$T/dados/redes/$REDE_ID/openvpn.log"
 ADIADO=$(grep -c "deferred" "$LOGSRV" || true)
 PROPRIO=$(grep -c "UID set to phxvpn-ovpn" "$LOGSRV" || true)
@@ -197,6 +247,12 @@ N429=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('429',0))"
 RED_OK=0
 [ "$(res "$RED_SENHA")" = conectou ] && [ "$(res "$RED_CODIGO")" = conectou ] && RED_OK=1
 [ $RED_OK = 1 ] || { echo "FALHOU: o RED nao conectou -- a recusa nao vinha da conferencia"; OK=0; }
+caiu() { python3 -c "import json,sys; r=json.loads(sys.argv[1]); print(int(r['conectou_antes'] and r['n_segundos'] is not None and r['n_segundos'] <= 10 and not r.get('voltou')))" "$1"; }
+[ "$(caiu "$RV_ZERAR")" = 1 ] || { echo "FALHOU: zerar o autenticador nao derrubou o caio em 10 s"; OK=0; }
+[ "$(caiu "$RV_DESATIVAR")" = 1 ] || { echo "FALHOU: desativar nao derrubou a dani em 10 s"; OK=0; }
+python3 -c "import json,sys; r=json.loads(sys.argv[1]); sys.exit(0 if r['conectou_antes'] and r['n_segundos'] is None else 1)" "$RV_RED" \
+  || { echo "FALHOU: o RED caiu sem a gerencia -- a queda nao vinha do painel"; OK=0; }
+[ "$TOKEN_RECUSADO" -ge 2 ] || { echo "FALHOU: a reconexao pelo token nao foi recusada ($TOKEN_RECUSADO)"; OK=0; }
 
 python3 - "$AQUI/resultados.json" <<PY
 import json, sys, datetime
@@ -216,6 +272,13 @@ json.dump({
   "adverso_64_logins_simultaneos_codigo_errado": r('''$CONCORRENTES'''),
   "adverso_soquete": {"nobody": "$SOCK_NOBODY", "nobody_com_grupo": r('''$SOCK_NOBODY_GRUPO'''),
                       "recusas_por_peercred_no_log": $RECUSA_PEERCRED, "phxvpn_ovpn": r('''$SOCK_OVPN''')},
+  "revogacao": {
+    "zerar_autenticador_conectado": r('''$RV_ZERAR'''),
+    "desativar_usuario_conectado": r('''$RV_DESATIVAR'''),
+    "red_sem_gerencia_desativar": r('''$RV_RED'''),
+    "reconexoes_pelo_token_recusadas_no_log": $TOKEN_RECUSADO,
+    "conexoes_derrubadas_no_log": $DERRUBADAS,
+  },
   "red_conferencia_trocada_por_bin_true": {
     "senha_errada": r('''$RED_SENHA'''),
     "codigo_errado": r('''$RED_CODIGO'''),

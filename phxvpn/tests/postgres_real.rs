@@ -295,3 +295,205 @@ fn autenticador_cadastro_reuso_e_rede_que_exige() {
     );
     let _ = std::fs::remove_dir_all(&dados);
 }
+
+/// Limites 6 e 12 da revisao do MFA: mudar senha, autenticador ou `ativo`
+/// derruba as sessoes abertas -- do painel e do token da VPN -- pelo mesmo
+/// motor (`credencial.rs`). A sessao de quem mudou a PROPRIA fica.
+///
+/// RED: com `Sessoes::conferir` ignorando o contador, A2 continua 200 depois
+/// do cadastro da ana, e o token da VPN renova depois de zerar.
+#[test]
+fn sessoes_caem_quando_a_credencial_muda() {
+    use phxsql_core::base64::codificar as b64;
+    use phxsql_core::json::Json;
+    use phxvpn::http::{atender, Estado};
+    use phxvpn::totp;
+    use phxvpn::web::Pedido;
+    let Some(base) = config() else {
+        eprintln!("NAO RODOU: defina PHXVPN_PG_TESTE");
+        return;
+    };
+    let cfg = banco_novo(&base, "phxvpn_teste_credencial");
+    let dados = std::env::temp_dir().join(format!("phxvpn-teste-cred-{}", std::process::id()));
+    let mut p = Painel::abrir(&cfg, &dados).unwrap();
+    p.iteracoes = 1_000;
+    p.instalar(&Instalacao {
+        empresa: "Empresa Teste".into(),
+        responsavel: "Fulano".into(),
+        email: "f@e.com".into(),
+        admin_usuario: "admin".into(),
+        admin_senha: "senha-admin".into(),
+        senha_mestre: "senha-mestre-longa".into(),
+        servidor_nome: "vpn1".into(),
+        servidor_ip: "203.0.113.10".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    let admin = p.login("admin", "senha-admin").unwrap();
+    p.criar_rede(&admin, "Matriz", "rede-123", "", None)
+        .unwrap();
+    p.criar_usuario("ana", "senha-ana-1", "", false).unwrap();
+    p.criar_usuario("bia", "senha-bia-1", "", false).unwrap();
+    let e = Estado::novo(p, None);
+
+    let pedir = |metodo: &str, caminho: &str, tk: Option<&str>, corpo: &str| -> (u16, Json) {
+        let r = atender(
+            &Pedido {
+                metodo: metodo.into(),
+                caminho: caminho.into(),
+                token: tk.map(str::to_string),
+                host: None,
+                tipo: Some("application/json".into()),
+                ip: "192.0.2.7".parse().unwrap(),
+                corpo: corpo.into(),
+            },
+            &e,
+        );
+        (r.status, Json::analisar(&r.corpo).unwrap())
+    };
+    let entrar = |login: &str, senha: &str| -> String {
+        let (s, j) = pedir(
+            "POST",
+            "/api/login",
+            None,
+            &format!(r#"{{"usuario":"{login}","senha":"{senha}"}}"#),
+        );
+        assert_eq!(s, 200, "login {login}: {}", j.escrever());
+        j.texto_ou("token", "").to_string()
+    };
+    let vale = |tk: &str| pedir("GET", "/api/mfa", Some(tk), "").0;
+
+    let ta = entrar("admin", "senha-admin");
+    let a1 = entrar("ana", "senha-ana-1");
+    let a2 = entrar("ana", "senha-ana-1");
+
+    // A ana liga o PROPRIO autenticador por A1: A1 fica, A2 cai.
+    let (s, j) = pedir("POST", "/api/mfa/iniciar", Some(&a1), "{}");
+    assert_eq!(s, 200);
+    let segredo = totp::de_base32(j.texto_ou("segredo", "")).unwrap();
+    let agora = totp::agora();
+    let cod = |t: u64| totp::formatar(totp::totp(&segredo, t, 6), 6);
+    let (s, _) = pedir(
+        "POST",
+        "/api/mfa/confirmar",
+        Some(&a1),
+        &format!(r#"{{"codigo":"{}"}}"#, cod(agora)),
+    );
+    assert_eq!(s, 200);
+    assert_eq!(vale(&a1), 200, "a sessao de quem mudou tinha de ficar");
+    assert_eq!(
+        vale(&a2),
+        401,
+        "a outra sessao da ana sobreviveu ao cadastro"
+    );
+
+    // Ana entra na rede; a VPN confere senha + codigo (Initial) e depois
+    // renova pelo token (Authenticated).
+    let (s, _) = pedir(
+        "POST",
+        "/api/redes/entrar",
+        Some(&a1),
+        r#"{"nome":"Matriz","senha":"rede-123"}"#,
+    );
+    assert_eq!(s, 200);
+    let mut pg = Pg::conectar(&cfg).unwrap();
+    let cn = pg
+        .executar(
+            "SELECT cn FROM phx_membro WHERE rede_id = 1 AND cn LIKE 'ana.%'",
+            &[],
+        )
+        .unwrap()
+        .valor(0, "cn")
+        .unwrap()
+        .to_string();
+    let ccd = dados.join("redes/1/ccd").join(&cn);
+    assert!(ccd.exists());
+    let vpn = |senha: &str, codigo: &str, estado: &str, sid: &str| {
+        let scrv1 = format!("SCRV1:{}:{}", b64(senha.as_bytes()), b64(codigo.as_bytes()));
+        let j = phxvpn::verificar::pedido("1", &cn, "ana", &scrv1, "192.0.2.8", (estado, sid));
+        phxvpn::verificar::conferir(&e, &j)
+    };
+    vpn("senha-ana-1", &cod(agora + 30), "Initial", "S1").unwrap();
+    vpn("", "", "Authenticated", "S1").unwrap();
+    assert!(
+        vpn("", "", "Authenticated", "S2").is_err(),
+        "sessao que o painel nao abriu"
+    );
+    assert!(vpn("", "", "Expired", "S1").is_err());
+
+    // O admin zera o autenticador da ana: A1 cai, e o token da VPN nao renova.
+    let (s, _) = pedir(
+        "POST",
+        "/api/usuarios/mfa-zerar",
+        Some(&ta),
+        r#"{"login":"ana"}"#,
+    );
+    assert_eq!(s, 200);
+    assert_eq!(vale(&a1), 401, "sessao da ana sobreviveu ao zerar");
+    let m = vpn("", "", "Authenticated", "S1").unwrap_err();
+    assert!(m.contains("a conta mudou"), "{m}");
+    assert_eq!(vale(&ta), 200, "a sessao do admin nao e da ana");
+
+    // Desativar: a sessao cai, o login e recusado e o ccd some (a rede que
+    // so pede certificado tambem barra). Reativar devolve o ccd.
+    let a3 = entrar("ana", "senha-ana-1");
+    let ativo = |login: &str, v: bool| {
+        pedir(
+            "POST",
+            "/api/usuarios/ativo",
+            Some(&ta),
+            &format!(r#"{{"login":"{login}","ativo":{v}}}"#),
+        )
+        .0
+    };
+    assert_eq!(ativo("ana", false), 200);
+    assert_eq!(vale(&a3), 401, "sessao do desativado sobreviveu");
+    assert!(!ccd.exists(), "o ccd do desativado continuou la");
+    let (s, _) = pedir(
+        "POST",
+        "/api/login",
+        None,
+        r#"{"usuario":"ana","senha":"senha-ana-1"}"#,
+    );
+    assert_eq!(s, 401);
+    assert_eq!(ativo("ana", true), 200);
+    assert!(ccd.exists());
+    entrar("ana", "senha-ana-1");
+    assert_eq!(ativo("admin", false), 400, "o admin desativou a si mesmo");
+
+    // Trocar a propria senha: exige a atual; B1 fica, B2 cai.
+    let b1 = entrar("bia", "senha-bia-1");
+    let b2 = entrar("bia", "senha-bia-1");
+    let trocar = |tk: &str, atual: &str| {
+        pedir(
+            "POST",
+            "/api/senha",
+            Some(tk),
+            &format!(r#"{{"senha_atual":"{atual}","senha_nova":"senha-bia-2"}}"#),
+        )
+        .0
+    };
+    assert_eq!(trocar(&b1, "errada-errada"), 401);
+    assert_eq!(vale(&b2), 200, "senha atual errada nao muda nada");
+    assert_eq!(trocar(&b1, "senha-bia-1"), 200);
+    assert_eq!(vale(&b1), 200);
+    assert_eq!(vale(&b2), 401, "a outra sessao da bia sobreviveu a troca");
+
+    // Pelo banco, sem rota nenhuma: o gatilho tambem derruba. E o que nao
+    // autentica (o passo do ultimo codigo) nao derruba.
+    let b3 = entrar("bia", "senha-bia-2");
+    pg.executar(
+        "UPDATE phx_usuario SET totp_ultimo = totp_ultimo + 1 WHERE login = 'bia'",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(vale(&b3), 200, "totp_ultimo nao e credencial");
+    pg.executar(
+        "UPDATE phx_usuario SET admin = true WHERE login = 'bia'",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(vale(&b3), 401, "UPDATE pelo psql nao derrubou");
+    drop(e);
+    let _ = std::fs::remove_dir_all(&dados);
+}

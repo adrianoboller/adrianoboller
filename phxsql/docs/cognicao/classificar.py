@@ -73,7 +73,11 @@ def fontes_rs():
     global _fontes_rs
     if _fontes_rs is None:
         _fontes_rs = [
-            p for p in RAIZ.rglob("*.rs") if not any(f in str(p) for f in FORA)
+            # O filtro olha o caminho RELATIVO a raiz: rodado de dentro de uma
+            # copia em .claude/worktrees/, o absoluto casaria sempre e nenhum
+            # teste seria achado.
+            p for p in RAIZ.rglob("*.rs")
+            if not any(f in "/" + str(p.relative_to(RAIZ)) for f in FORA)
         ]
     return _fontes_rs
 

@@ -244,7 +244,8 @@ impl Painel {
     /// OUTRO. O proprio desliga pelo `mfa_desativar`, com codigo: zerar a si
     /// mesmo sem codigo deixava a sessao roubada tirar o segundo fator do
     /// admin e, em seguida, desligar a exigencia da rede (M1 da re-revisao).
-    pub fn mfa_zerar(&mut self, ator: &Usuario, login: &str) -> R<()> {
+    /// Devolve o id do alvo: as sessoes dele caem (`credencial_mudou`).
+    pub fn mfa_zerar(&mut self, ator: &Usuario, login: &str) -> R<i64> {
         if !ator.admin {
             return Err("só o administrador zera o autenticador de outro usuário".into());
         }
@@ -262,7 +263,8 @@ impl Painel {
             .valor(0, "id")
             .and_then(|v| v.parse().ok())
             .ok_or("usuário inexistente")?;
-        self.mfa_zerar_id(id)
+        self.mfa_zerar_id(id)?;
+        Ok(id)
     }
 
     fn mfa_zerar_id(&mut self, id: i64) -> R<()> {

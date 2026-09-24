@@ -2,7 +2,7 @@
 
 # Reusar — sucessos comprovados
 
-287 cognições: **4 frutíferas**, **4 infrutíferas**, **279 pendentes** (sem evidência validada — não entram aqui).
+288 cognições: **5 frutíferas**, **4 infrutíferas**, **279 pendentes** (sem evidência validada — não entram aqui).
 
 Só entra o que tem evidência que o `classificar.py` conferiu. Antes de desenhar, procure aqui o que já se provou.
 
@@ -11,6 +11,13 @@ Só entra o que tem evidência que o `classificar.py` conferiu. Antes de desenha
 Protocolo com estado se prova também **reiniciando um dos lados no meio**. O caminho feliz com os dois nascendo juntos não exercita a perda de estado.
 
 - Evidência: teste `par_surdo_dispara_aperto_novo` (phxvpn/src/p2p.rs)
+- Validado em: 24/09/2026
+
+## [A gerência do OpenVPN: `kill CN` não avisa o cliente; `client-kill` avisa](cognicao_gerencia-openvpn-kill-nao-avisa-o-cliente_20260924_0910.md)
+
+Para derrubar um cliente do OpenVPN pela gerência, use `client-kill` com o CID do `status 2`, nunca `kill CN` — e prove a queda **no cliente**, não pela resposta `SUCCESS` do servidor.
+
+- Evidência: `phxvpn/provas/mfa/resultados.json`; `phxvpn/src/credencial.rs`; `phxvpn/tests/postgres_real.rs`
 - Validado em: 24/09/2026
 
 ## [Trocar o fio não reenvia o que já saiu pelo fio velho](cognicao_fio-novo-nao-refaz-o-aperto-pendente_20260924_0412.md)

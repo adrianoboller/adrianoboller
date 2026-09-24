@@ -8,6 +8,7 @@ pub mod bandeja;
 pub mod cofre;
 pub mod comandos;
 pub mod console;
+pub mod credencial;
 pub mod descoberta;
 #[cfg(windows)]
 pub mod dpapi;

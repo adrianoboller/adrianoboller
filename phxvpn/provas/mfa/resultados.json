@@ -1,6 +1,6 @@
 {
   "prova": "phxvpn: usuario + senha + TOTP na conexao OpenVPN (auth-user-pass-verify via-file + static-challenge)",
-  "data": "2026-09-24T04:48:23+00:00",
+  "data": "2026-09-24T09:14:13+00:00",
   "openvpn": "2.6.19",
   "phxvpn_compilado_em": "release",
   "casos": {
@@ -11,9 +11,9 @@
     "codigo_certo": {
       "resultado": "conectou",
       "desafio": "1,Código do autenticador",
-      "segundos": 1.28,
+      "segundos": 1.26,
       "ping": [
-        "3 packets transmitted, 3 received, 0% packet loss, time 2005ms"
+        "3 packets transmitted, 3 received, 0% packet loss, time 2035ms"
       ]
     },
     "mesmo_codigo_de_novo": {
@@ -43,13 +43,46 @@
       "ok": false
     }
   },
+  "revogacao": {
+    "zerar_autenticador_conectado": {
+      "resultado": "conectou",
+      "desafio": "1,Código do autenticador",
+      "segundos": 1.15,
+      "motivo": "server-pushed-connection-reset",
+      "tentou_reconectar": true,
+      "reconexao_recusada": true,
+      "pediu_senha_de_novo": true,
+      "conectou_antes": true,
+      "n_segundos": 0.06
+    },
+    "desativar_usuario_conectado": {
+      "resultado": "conectou",
+      "desafio": "1,Código do autenticador",
+      "segundos": 1.18,
+      "motivo": "server-pushed-connection-reset",
+      "tentou_reconectar": true,
+      "reconexao_recusada": true,
+      "pediu_senha_de_novo": true,
+      "conectou_antes": true,
+      "n_segundos": 0.05
+    },
+    "red_sem_gerencia_desativar": {
+      "resultado": "conectou",
+      "desafio": "1,Código do autenticador",
+      "segundos": 1.13,
+      "conectou_antes": true,
+      "n_segundos": null
+    },
+    "reconexoes_pelo_token_recusadas_no_log": 2,
+    "conexoes_derrubadas_no_log": 2
+  },
   "red_conferencia_trocada_por_bin_true": {
     "senha_errada": {
       "resultado": "conectou",
       "desafio": "1,Código do autenticador",
-      "segundos": 0.14,
+      "segundos": 0.15,
       "ping": [
-        "3 packets transmitted, 3 received, 0% packet loss, time 2041ms"
+        "3 packets transmitted, 3 received, 0% packet loss, time 2038ms"
       ]
     },
     "codigo_errado": {
@@ -62,9 +95,9 @@
     }
   },
   "servidor": {
-    "autenticacoes_adiadas": 5,
+    "autenticacoes_adiadas": 10,
     "uid_phxvpn_ovpn": true,
-    "recusas_no_log_do_painel": 4,
+    "recusas_no_log_do_painel": 6,
     "senha_ou_segredo_em_log": 0
   },
   "passou": true

@@ -60,6 +60,12 @@ pub fn perfil_pede_codigo(perfil: &str) -> bool {
 /// Prazo de validade do token que o servidor entrega depois da conferencia:
 /// a renegociacao de hora em hora usa o token em vez de pedir outro codigo.
 /// Passado o prazo, codigo novo.
+///
+/// O prazo NAO e o que segura a revogacao, e por isso nao encolheu: com
+/// `external-auth` o `openvpn` chama o verificador tambem com token valido
+/// (`session_state=Authenticated`), e o painel recusa a sessao cuja
+/// credencial mudou (`credencial.rs`). Encurtar o token so faria o membro
+/// digitar codigo mais vezes sem revogar nada mais cedo.
 pub const VIDA_TOKEN: u32 = 12 * 3600;
 
 /// Maior pedido aceito no soquete (usuario e senha sao curtos).
@@ -78,7 +84,7 @@ pub fn conf_servidor_mfa(dados: &Path, rede_id: &str) -> String {
         "# usuario, senha e codigo do autenticador (phxvpn ovpn-mfa-verificar)\n\
 script-security 2\n\
 auth-user-pass-verify \"{exe} ovpn-mfa-verificar {sock} {rede_id}\" via-file\n\
-auth-gen-token {VIDA_TOKEN}\n",
+auth-gen-token {VIDA_TOKEN} external-auth\n",
         sock = socket(dados).display(),
     )
 }
@@ -93,7 +99,16 @@ pub fn cn_login_rede(cn: &str) -> Option<(&str, &str)> {
 }
 
 /// O pedido que o verificador leva ao painel.
-pub fn pedido(rede: &str, cn: &str, usuario: &str, senha_crua: &str, ip: &str) -> Json {
+/// `sessao` e o par `session_state`/`session_id` que o `openvpn` poe no
+/// ambiente com `auth-gen-token ... external-auth`.
+pub fn pedido(
+    rede: &str,
+    cn: &str,
+    usuario: &str,
+    senha_crua: &str,
+    ip: &str,
+    sessao: (&str, &str),
+) -> Json {
     let (senha, codigo) = totp::scrv1(senha_crua);
     Json::objeto(vec![
         ("rede", Json::texto_de(rede)),
@@ -102,6 +117,8 @@ pub fn pedido(rede: &str, cn: &str, usuario: &str, senha_crua: &str, ip: &str) -
         ("senha", Json::texto_de(senha)),
         ("codigo", Json::texto_de(codigo)),
         ("ip", Json::texto_de(ip)),
+        ("sessao_estado", Json::texto_de(sessao.0)),
+        ("sessao_id", Json::texto_de(sessao.1)),
     ])
 }
 
@@ -126,7 +143,15 @@ pub fn principal(args: &[String]) -> i32 {
     let ip = Some(var("untrusted_ip"))
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| var("untrusted_ip6"));
-    let p = pedido(rede, &var("common_name"), usuario, senha, &ip).escrever();
+    let p = pedido(
+        rede,
+        &var("common_name"),
+        usuario,
+        senha,
+        &ip,
+        (&var("session_state"), &var("session_id")),
+    )
+    .escrever();
     let controle = var("auth_control_file");
     if !controle.is_empty() {
         if let Ok(eu) = std::env::current_exe() {
@@ -213,6 +238,40 @@ pub fn conferir(e: &Estado, j: &Json) -> Result<String, String> {
     let t = |c: &str| j.texto_ou(c, "").to_string();
     let (usuario, cn, rede) = (t("usuario"), t("cn"), t("rede"));
     let (login, rede_cn) = cn_login_rede(&cn).ok_or("CN fora do formato do phxvpn")?;
+    let sessao_id = t("sessao_id");
+    // Renegociacao com token valido (o `openvpn` conferiu o HMAC e o prazo):
+    // sem senha nem codigo, mas pelo motor das sessoes -- usuario desativado
+    // ou com credencial mudada desde o codigo nao renova. Sem tentativa
+    // contada: nao ha o que adivinhar num token que o `openvpn` ja conferiu.
+    if t("sessao_estado") == "Authenticated" {
+        if login != usuario || rede_cn != rede || sessao_id.is_empty() {
+            return Err("token de outro usuário, de outra rede ou sem sessão".into());
+        }
+        let u = e
+            .vpn
+            .conferir(&sessao_id, |id| e.painel().usuario_vigente(id))
+            .map_err(|r| match r {
+                crate::credencial::Recusa::Banco(m) => m,
+                crate::credencial::Recusa::CredencialMudou => {
+                    "token recusado: a conta mudou desde o código (senha, autenticador ou ativo)"
+                        .to_string()
+                }
+                _ => "token sem sessão conhecida no painel: código novo".to_string(),
+            })?;
+        if u.login != login {
+            return Err("token de outro usuário".into());
+        }
+        return Ok(u.login);
+    }
+    // Vencido, invalido ou os casos do OpenVPN 3 com usuario vazio: a
+    // «senha» e o token, e o manual manda recusar. Recusa sem gastar
+    // PBKDF2 nem tentativa: o cliente pede codigo novo.
+    if !matches!(t("sessao_estado").as_str(), "" | "Initial") {
+        return Err(format!(
+            "token {}: código novo",
+            para_log(&t("sessao_estado"))
+        ));
+    }
     // Conta e IP so deste canal: erro no painel nao tranca a VPN de quem tem
     // o certificado (decisao do dono, 24/09/2026), nem o contrario.
     let conta = crate::guarda::chave_conta(crate::guarda::Canal::Vpn, login);
@@ -243,6 +302,11 @@ pub fn conferir(e: &Estado, j: &Json) -> Result<String, String> {
     }?;
     e.painel().mfa_conferir(u.id, &t("codigo"))?;
     reserva.acertou(&[&conta]);
+    // A sessao do token nasce presa a credencial lida ANTES da conferencia:
+    // mudanca no meio deixa a sessao ja velha, e a renegociacao a recusa.
+    if !sessao_id.is_empty() {
+        e.vpn.abrir(sessao_id, &u);
+    }
     Ok(u.login)
 }
 
@@ -454,7 +518,7 @@ mod testes {
         let c = conf_servidor_mfa(Path::new("/var/lib/phxvpn"), "7");
         assert!(c.contains("script-security 2\n"));
         assert!(c.contains("ovpn-mfa-verificar /var/lib/phxvpn/verificar.sock 7\" via-file\n"));
-        assert!(c.contains("auth-gen-token 43200\n"));
+        assert!(c.contains("auth-gen-token 43200 external-auth\n"));
         assert!(PERFIL_MFA.contains("auth-user-pass\n"));
         assert!(PERFIL_MFA.contains("static-challenge \"Código do autenticador\" 1\n"));
     }
@@ -468,7 +532,9 @@ mod testes {
             "ana",
             &format!("SCRV1:{}:{}", b(b"s3nha"), b(b"123456")),
             "192.0.2.1",
+            ("Initial", "abc"),
         );
+        assert_eq!(p.texto_ou("sessao_estado", ""), "Initial");
         assert_eq!(p.texto_ou("senha", ""), "s3nha");
         assert_eq!(p.texto_ou("codigo", ""), "123456");
     }
