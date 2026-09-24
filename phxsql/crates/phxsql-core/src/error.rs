@@ -462,6 +462,27 @@ pub fn citar(valor: &str) -> String {
     }
 }
 
+/// Como um literal de TEXTO do pedido aparece fora do motor: numa mensagem de
+/// erro, no Profiler, no `acessos.log` -- pedido 497.
+///
+/// # Por que nao o [`citar`]
+///
+/// Sao perguntas diferentes. O `citar` responde pelo valor que E o
+/// diagnostico: `"2024-13-45"` nao e data, e mostrar o que se digitou e o que
+/// ajuda. O literal de um erro de SINTAXE nunca e o diagnostico -- o que diz
+/// onde esta o engano e a posicao e o tipo do simbolo, e o conteudo dele e o
+/// dado que o cliente escreveu (um CPF no `WHERE`, uma senha num `CREATE
+/// USER` torto). E a mensagem nao fica onde nasce: volta ao cliente, vai ao
+/// `acessos.log`, ao Profiler e ao historico dos jobs, e la ela ja chega
+/// montada -- texto de erro nao se analisa, e o que nao se analisa nao vira
+/// texto. So quem monta a mensagem sabe o que e literal, entao a redacao so
+/// pode acontecer AQUI, na origem, analisando.
+///
+/// E o mesmo `'***'` que a redacao da senha no SQL ja escrevia
+/// (`phxsql_sql::usuario::sem_a_senha`): uma resposta so para «como um literal
+/// sai daqui», e as duas nao tem como divergir.
+pub const LITERAL_REDIGIDO: &str = "'***'";
+
 #[cfg(test)]
 mod testes_codigo {
     use super::*;

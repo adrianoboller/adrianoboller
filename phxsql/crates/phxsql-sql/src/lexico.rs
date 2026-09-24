@@ -8,6 +8,7 @@
 //! num lugar onde ninguem procuraria depois. O lexico so confere o FORMATO;
 //! quem sabe o tipo da coluna e o motor.
 
+use phxsql_core::error::LITERAL_REDIGIDO;
 use phxsql_core::json::Json;
 use phxsql_core::{PhxError, Result};
 
@@ -89,12 +90,32 @@ impl Token {
         }
     }
 
-    /// Como este simbolo apareceu no texto, para caber numa mensagem de erro.
+    /// Como este simbolo aparece numa mensagem de ERRO.
+    ///
+    /// O literal de texto sai como [`LITERAL_REDIGIDO`], e nunca com o
+    /// conteudo (pedido 497). Um erro de sintaxe que citava o simbolo
+    /// ofensor citava o dado junto -- `e veio "'123.456.789-00'"` --, e a
+    /// mensagem vai ao `acessos.log` e ao Profiler, onde ja chega montada e
+    /// nao se analisa mais. Quem erra acha o lugar pela coluna, que a moldura
+    /// do [`erro`] ja da; o conteudo do literal nunca foi o diagnostico.
+    ///
+    /// O identificador entre aspas DUPLAS tambem sai sem o conteudo
+    /// (`"***"`): no MySQL(R) e no MariaDB `"..."` e texto, e quem escreve
+    /// `VALUES (2, "123.456.789-00")` do jeito deles manda o CPF para ca --
+    /// parecer SEC do 497, P2. No lugar onde se espera um NOME, o nome que
+    /// nao existe continua citado por quem o recusa: ali ele e o
+    /// diagnostico, e nao passa por aqui.
+    ///
+    /// O `normalizar` usa esta funcao para o que NAO e literal nem
+    /// identificador citado -- os dois tem ramo proprio la. Por isso nada
+    /// que so vale para mensagem (redacao, teto) pode tocar os outros ramos
+    /// daqui: viraria dado errado na expressao que vai ao motor.
     pub fn descrever(&self) -> String {
         match self {
+            Token::Palavra { citado: true, .. } => "\"***\"".into(),
             Token::Palavra { texto, .. } => texto.clone(),
             Token::Numero(n) => n.clone(),
-            Token::Texto(t) => format!("'{t}'"),
+            Token::Texto(_) => LITERAL_REDIGIDO.to_string(),
             Token::Comparador(c) => c.simbolo().to_string(),
             Token::Virgula => ",".into(),
             Token::Ponto => ".".into(),

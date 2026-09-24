@@ -967,14 +967,30 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**325 das 328 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**325 das 344 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 4 das 328 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 4 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 20 das 344 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 20 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
 - `cascata-sobre-calculada-na-declaracao` — a chave sobre coluna calculada é declarada em cascata, e a filha fica órfã quando a mãe troca de chave
 - `cascata-confere-a-filha-crua` — a cascata confere a filha crua, e a mãe fica gravada quando a linha final da filha recusa
+- `literal-no-erro-do-sql` — o erro de sintaxe do SQL cita o literal do pedido («e veio '123.456.789-00'»)
+- `literal-no-erro-da-expressao` — o erro da expressão cita o literal do pedido na janela, no «sobrou» e no «esperava»
+- `texto-sem-fechar-no-acessos-log` — o `texto sem fechar` da expressão cita o pedido inteiro, e o `acessos.log` grava o dado em claro
+- `senha-sobra-no-erro-do-cadastro` — a recusa do `CREATE USER` cita o que sobrou — e numa senha de aspas não dobradas o que sobra é um pedaço dela
+- `senha-fora-de-aspas-simples-no-perfil` — o `sem_a_senha` tapa só o literal de aspas simples: `PASSWORD "x"`, `PASSWORD x` e `PASSWORD 123` saem em claro no `perfil.txt`
+- `aspas-duplas-no-erro-de-sintaxe` — `VALUES (2, "123.456.789-00")`, o texto do jeito do MySQL, volta citado no erro e vai ao `acessos.log`
+- `duracao-citada-sem-teto` — a recusa da duração cita o texto recebido inteiro: `BEGIN TRANSACTION TIMEOUT '<1 MiB>'` soma um megabyte ao `acessos.log`
+- `portao-da-senha-por-espaco` — o portão da redação da senha lê palavras separadas por espaço: `/* odbc */ CREATE USER`, `ALTER ROLE … PASSWORD` e `SET PASSWORD FOR` levam a senha em claro ao `perfil.txt` e ao `jobs.json`
+- `senha-depois-de-identified` — a redação só olha `PASSWORD`: `IDENTIFIED BY "x"`, a forma do MySQL e do MariaDB, sai em claro no perfil
+- `parametros-irmaos-da-senha` — o Profiler tapa o `?` do `ALTER USER c PASSWORD ?` e grava o `parametros` irmão com a senha em claro
+- `portao-da-senha-pelos-simbolos` — o portão da redação lê símbolos e o perfil e o job guardam bytes: a linha comentada, o `/*!…*/` e o literal que carrega a senha passam em claro
+- `palavra-que-contem-a-senha` — `MASTER_PASSWORD=x` e `SOURCE_PASSWORD="x"`: só a palavra exata abre a redação, e a senha sai em claro no perfil
+- `eco-do-sql-com-a-senha` — o roteiro com a senha numa linha comentada roda, e a resposta da op `sql` ecoa o texto inteiro no campo `sql`
+- `jobs-json-antigo-derruba-o-arranque` — a guarda de credencial roda tambem ao LER o `jobs.json`, e o job legitimo salvo antes dela derruba o arranque
+- `job-recusado-roda-mesmo-assim` — o job que voltou do disco com credencial sobe e RODA -- pela agenda, pela tela, ou religado
+- `ficha-do-job-devolve-a-senha-do-disco` — o job aceito no arranque com a senha no pedido a devolve na ficha da op `jobs`
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

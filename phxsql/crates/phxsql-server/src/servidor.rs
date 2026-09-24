@@ -8041,6 +8041,13 @@ impl Servidor {
     }
 
     fn executar_job(&self, job: &crate::jobs::Job, op: &str) -> Result<Json> {
+        // O job que voltou do `jobs.json` com credencial no pedido sobe com o
+        // servidor e para AQUI -- a porta por onde passam a agenda e a tela
+        // (pedido 497, R1 do parecer SEC). O porque de ser recusa ao rodar, e
+        // nao desligar, esta em `Job::do_disco`.
+        if let Some(e) = job.recusa_de_credencial() {
+            return Err(e);
+        }
         // A politica antes de saber sob qual usuario o job roda: um comando
         // proibido e proibido para todo mundo, e recusar por ele da a mensagem
         // certa a um job cujo dono tambem esta errado.
@@ -18554,7 +18561,7 @@ impl Servidor {
             }
             let bruto = self.executar(&c.op, &pedido, sessao)?;
             return Ok(Json::objeto(vec![
-                ("sql", Json::texto_de(&texto)),
+                ("sql", sql_de_volta(&texto)),
                 ("op", Json::texto_de(&c.op)),
                 ("resultado", bruto),
             ]));
@@ -18573,7 +18580,7 @@ impl Servidor {
             }
             let bruto = self.executar(&c.op, &pedido, sessao)?;
             return Ok(Json::objeto(vec![
-                ("sql", Json::texto_de(&texto)),
+                ("sql", sql_de_volta(&texto)),
                 ("op", Json::texto_de(&c.op)),
                 ("resultado", bruto),
             ]));
@@ -22046,11 +22053,15 @@ impl Servidor {
         phxsql_core::datahora::ms_de_instante_iso(&texto)
             .map(Some)
             .ok_or_else(|| {
+                // O valor pelo `citar`: curto e o diagnostico, longo vira o
+                // tamanho -- sem teto, um megabyte ia inteiro ao `acessos.log`
+                // (parecer SEC do 497, P1; a familia do 453).
                 PhxError::Esquema(format!(
-                    "\"{campo}\": {texto:?} nao e um instante. Escreva \
+                    "\"{campo}\": {} nao e um instante. Escreva \
                      2026-09-08T15:00:00Z (tudo em UTC -- fuso escrito na mao e \
                      recusado em vez de ignorado), ou mande os milissegundos em \
-                     \"{campo_ms}\""
+                     \"{campo_ms}\"",
+                    phxsql_core::error::citar(&texto)
                 ))
             })
     }
@@ -22862,8 +22873,11 @@ impl Servidor {
             if texto.chars().any(|c| !c.is_ascii_digit()) {
                 let mut s = self.sessoes.lock().map_err(|_| trava_envenenada())?;
                 if !s.encerrar_por_prefixo(texto) {
+                    // Pelo `citar`, como o instante e a duracao: o id vem do
+                    // fio e nao tinha teto (parecer SEC do 497, P1).
                     return Err(PhxError::NaoEncontrado(format!(
-                        "nao ha sessao web {texto:?}; a lista esta em `sessoes`"
+                        "nao ha sessao web {}; a lista esta em `sessoes`",
+                        phxsql_core::error::citar(texto)
                     )));
                 }
                 return Ok(Json::objeto(vec![
@@ -26721,6 +26735,18 @@ fn pedido_de_excluir(database: &str, tabela: &str, rowid: u64, versao: u64) -> J
     ])
 }
 
+/// O texto SQL como volta no campo `sql` da resposta da op `sql`.
+///
+/// Redigido quando menciona senha -- pedido 497, terceira volta. O roteiro
+/// com a senha numa linha comentada RODA (o lexico descarta o comentario), e
+/// a resposta ecoava o texto inteiro: senha em resposta do protocolo. A
+/// decisao e a mesma do Profiler, e vem do mesmo motor.
+fn sql_de_volta(texto: &str) -> Json {
+    Json::texto_de(
+        phxsql_sql::usuario::sem_a_senha_se_mencionada(texto).unwrap_or_else(|| texto.to_string()),
+    )
+}
+
 /// A resposta de um comando de escrita pela op `sql`: o texto, a operacao que
 /// gravou, as notas do tradutor e quantas linhas foram afetadas -- mais o
 /// que a operacao devolveu e vale repetir (rowid, versao nova, modo), e os
@@ -26734,7 +26760,7 @@ fn resposta_do_dml(
     repetir: &[&str],
 ) -> Json {
     let mut pares = vec![
-        ("sql".to_string(), Json::texto_de(texto)),
+        ("sql".to_string(), sql_de_volta(texto)),
         ("op".to_string(), Json::texto_de(op)),
         (
             "notas".to_string(),
@@ -26797,7 +26823,7 @@ fn indices_do_esquema(esquema: &Json) -> Vec<phxsql_sql::IndiceInfo> {
 /// recebeu a de digitacao culpa o motor.
 fn resposta_do_sql(texto: &str, plano: &phxsql_sql::Plano, bruto: Json) -> Json {
     let mut pares = vec![
-        ("sql".to_string(), Json::texto_de(texto)),
+        ("sql".to_string(), sql_de_volta(texto)),
         ("op".to_string(), Json::texto_de(&plano.op)),
         (
             "notas".to_string(),
@@ -27285,10 +27311,14 @@ fn duracao_ms(p: &Json, campo: &str, padrao: i64) -> Result<i64> {
             "{campo} precisa ser um numero de milissegundos ou um texto como \"5s\""
         )));
     };
+    // O valor pelo `citar` -- parecer SEC do 497, P1. O `TIMEOUT '...'` do
+    // SQL chega aqui como texto do pedido montado, e sem teto um megabyte
+    // entre aspas somava +1.048.897 B ao `acessos.log` por pedido.
     duracao_de_texto(texto).ok_or_else(|| {
         PhxError::Esquema(format!(
-            "{campo}: nao entendi a duracao {texto:?}. \
-             Aceito 500ms, 5s, 2m ou o numero de milissegundos"
+            "{campo}: nao entendi a duracao {}. \
+             Aceito 500ms, 5s, 2m ou o numero de milissegundos",
+            phxsql_core::error::citar(texto)
         ))
     })
 }
@@ -58039,5 +58069,44 @@ mod testes_do_panico_sob_a_trava {
         let porta = porta_de_dados_de_verdade(&s);
         std::fs::write(dir.join("porta"), porta.to_string()).unwrap();
         std::thread::sleep(Duration::from_secs(60));
+    }
+}
+
+/// Pedido 497, P1 do parecer SEC: o valor do pedido citado sem teto.
+#[cfg(test)]
+mod testes_do_valor_citado_com_teto {
+    use super::*;
+
+    /// O instante do PITR e a duracao do prazo recusavam citando o texto
+    /// recebido pelo `{:?}`, sem teto -- um megabyte ia inteiro ao
+    /// `acessos.log`. O curto continua citado (e o diagnostico, pedido 453);
+    /// o longo vira o tamanho. O instante fica aqui, e nao no soquete, porque
+    /// o `restaurar_backup` so o le depois de achar um backup de verdade.
+    #[test]
+    fn o_instante_e_a_duracao_citam_pelo_teto() {
+        let longo = format!("SEGREDO123{}", "x".repeat(1 << 20));
+        let p = Json::objeto(vec![
+            ("ate", Json::texto_de(&longo)),
+            ("timeout", Json::texto_de(&longo)),
+        ]);
+        let e = Servidor::instante_pedido(&p, "ate", "ate_ms")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.len() < 400 && !e.contains("SEGREDO123"),
+            "instante: {e:.200}"
+        );
+        assert!(e.contains("nao e um instante"), "{e:.200}");
+        let e = duracao_ms(&p, "timeout", 0).unwrap_err().to_string();
+        assert!(
+            e.len() < 400 && !e.contains("SEGREDO123"),
+            "duracao: {e:.200}"
+        );
+        // O curto: continua dizendo o que veio.
+        let p = Json::objeto(vec![("ate", Json::texto_de("ontem"))]);
+        let e = Servidor::instante_pedido(&p, "ate", "ate_ms")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("\"ontem\""), "{e}");
     }
 }

@@ -192,10 +192,47 @@ pub struct Job {
     /// para o `jobs.json` e volta na ficha, e senha em arquivo por outro nome
     /// continua senha em arquivo.
     pub pedido: Json,
+    /// O segredo que a guarda achou no pedido que VOLTOU do `jobs.json` --
+    /// a frase que nomeia o campo, nunca o valor. `None` no job de sempre.
+    ///
+    /// Existe porque a guarda muda e o arquivo nao: o pedido 497 passou a
+    /// perguntar pelas LETRAS `PASSWORD`, e o job legitimo `SELECT login,
+    /// password_hash FROM contas`, salvo antes, derrubava o arranque inteiro
+    /// (parecer SEC da quarta volta, R1). O job assim fica no cadastro e
+    /// RECUSA ao rodar -- ver [`Job::recusa_de_credencial`]. Nao vai para o
+    /// disco: sai de novo da guarda a cada leitura.
+    pub recusa: Option<String>,
 }
 
 impl Job {
+    /// O job que CHEGA -- pelo `job_salvar`. Credencial no pedido recusa, e a
+    /// recusa nomeia o campo.
+    ///
+    /// O que volta do disco no arranque passa por [`Job::do_disco`], que nao
+    /// recusa: a mesma guarda, com outra consequencia.
     pub fn de_json(j: &Json) -> Result<Job> {
+        let job = Job::do_disco(j)?;
+        match job.recusa_de_credencial() {
+            Some(e) => Err(e),
+            None => Ok(job),
+        }
+    }
+
+    /// O job que VOLTA do `jobs.json`. O arquivo torto continua recusando o
+    /// arranque; o pedido que casa a guarda de credencial nao.
+    ///
+    /// # Por que o job fica RECUSADO AO RODAR, e nao desligado
+    ///
+    /// «Guarda nova entra pedida, nao imposta»: o arquivo e do dono, e o
+    /// servidor nao reescreve a decisao dele. Desligar em memoria vazaria
+    /// para o disco no proximo `gravar` de OUTRO job, calado; e nao seguraria
+    /// nada -- o `job_ligar` vira a chave sem passar por aqui, e o `job_rodar`
+    /// da tela roda job desligado. A porta por onde TODA corrida passa e o
+    /// `executar_job`, e e la que a recusa mora: pela agenda e pela tela, com
+    /// o motivo no historico, no `acessos.log` e no aviso por e-mail -- o
+    /// lugar para onde quem cuida do job ja olha. E o arranque diz o nome dele
+    /// ([`Registro::avisos`]).
+    pub fn do_disco(j: &Json) -> Result<Job> {
         let nome = j.texto_ou("nome", "").trim().to_string();
         validar_nome(&nome)?;
         let pedido = j
@@ -217,14 +254,9 @@ impl Job {
         //
         // Recusar, e nao redigir: o job EXECUTA o pedido, e um
         // `usuario_alterar` com a senha tapada trocaria a senha por `***`.
-        if let Some(achado) = crate::segredos::achar_segredo(&pedido) {
-            return Err(PhxError::Esquema(format!(
-                "job {nome:?}: o \"pedido\" leva {achado}, e credencial nao entra em job -- \
-                 o cadastro fica em arquivo e volta na ficha. O `token` nao e preciso (o job \
-                 nao entra pela rede; quem manda nele e o usuario configurado); para uma \
-                 ligacao, use `senha_env`/`token_remoto_env` com o nome da variavel de ambiente"
-            )));
-        }
+        // Aqui so se ANOTA: quem recusa e o `de_json` (ao salvar) e o
+        // `executar_job` (ao rodar), pela mesma `recusa_de_credencial`.
+        let recusa = crate::segredos::achar_segredo(&pedido);
         Ok(Job {
             nome,
             descricao: j.texto_ou("descricao", "").trim().to_string(),
@@ -232,7 +264,21 @@ impl Job {
             agenda: Agenda::de_json(j)?,
             usuario: j.texto_ou("usuario", "").trim().to_string(),
             pedido,
+            recusa,
         })
+    }
+
+    /// A recusa por credencial no pedido, se houver -- UM texto para as duas
+    /// portas que recusam (salvar e rodar), para as duas nunca divergirem.
+    pub fn recusa_de_credencial(&self) -> Option<PhxError> {
+        let achado = self.recusa.as_deref()?;
+        Some(PhxError::Esquema(format!(
+            "job {:?}: o \"pedido\" leva {achado}, e credencial nao entra em job -- \
+             o cadastro fica em arquivo e volta na ficha. O `token` nao e preciso (o job \
+             nao entra pela rede; quem manda nele e o usuario configurado); para uma \
+             ligacao, use `senha_env`/`token_remoto_env` com o nome da variavel de ambiente",
+            self.nome
+        )))
     }
 
     pub fn op(&self) -> &str {
@@ -257,10 +303,22 @@ impl Job {
 
     /// A ficha que a tela recebe. Acrescenta o que e derivado, para a tela nao
     /// ter de recalcular a agenda a partir de dois campos.
+    ///
+    /// O `pedido` sai pela redacao do Profiler, a MESMA arvore. No job que o
+    /// `job_salvar` aceitou ela nao muda nada -- a guarda e a redacao fazem a
+    /// mesma pergunta. No que voltou do disco com credencial ela tapa o
+    /// valor: aceitar esse arquivo no arranque nao pode virar devolver a
+    /// senha dele na resposta da tela. E o recado diz o campo, nao o valor.
     pub fn ficha(&self) -> Json {
         let mut p = self.pares();
+        if let Some((_, pedido)) = p.iter_mut().find(|(k, _)| k == "pedido") {
+            *pedido = crate::profiler::limpar(pedido);
+        }
         p.push(("agenda".to_string(), Json::texto_de(self.agenda.rotulo())));
         p.push(("op".to_string(), Json::texto_de(self.op())));
+        if let Some(achado) = &self.recusa {
+            p.push(("recusado".to_string(), Json::texto_de(achado)));
+        }
         Json::Objeto(p)
     }
 }
@@ -451,11 +509,37 @@ impl Registro {
                 ))
             })?;
         for item in lista {
-            r.jobs.push(Job::de_json(item)?);
+            // `do_disco`, e nao `de_json`: a guarda de credencial nao derruba
+            // o arranque -- ver `Job::do_disco`.
+            r.jobs.push(Job::do_disco(item)?);
         }
         r.conferir_repetidos()?;
         r.semear_corridas();
         Ok(r)
+    }
+
+    /// Os avisos do arranque: um por job que voltou do disco com credencial
+    /// no pedido, pela MESMA lista dos outros avisos (a que o `main` imprime)
+    /// -- o molde do `dblink::Registro::avisos`, que tranca a ligacao e deixa
+    /// o resto subir.
+    ///
+    /// Nomeia o job e o CAMPO, que e o que diz onde mexer; nunca o pedido.
+    pub fn avisos(&self) -> Vec<String> {
+        self.jobs
+            .iter()
+            .filter_map(|j| {
+                j.recusa.as_ref().map(|achado| {
+                    format!(
+                        "job {:?} ({}): o \"pedido\" leva {achado}, e credencial nao entra \
+                         em job. O job fica no cadastro e RECUSA ao rodar, pela agenda e \
+                         pela tela, ate ser regravado sem ela; o resto do servidor sobe \
+                         normalmente.",
+                        j.nome,
+                        self.caminho.display()
+                    )
+                })
+            })
+            .collect()
     }
 
     /// Recupera da cauda do log a ultima corrida de cada job.
@@ -738,6 +822,61 @@ mod testes {
         )
         .unwrap();
         Job::de_json(&j).unwrap();
+    }
+
+    /// **O comportamento VELHO: o `jobs.json` de antes da guarda abre.**
+    /// Pedido 497, R1 do parecer SEC da quarta volta: a guarda pelas letras
+    /// `PASSWORD` rodava tambem na LEITURA do cadastro, e o job legitimo
+    /// `SELECT login, password_hash FROM contas`, salvo antes dela, derrubava
+    /// o arranque inteiro (rc=1). Agora ele abre, fica anotado, e o arquivo
+    /// volta ao disco como o dono o escreveu -- ligado e com o pedido inteiro.
+    /// A guarda continua valendo onde o job CHEGA (`de_json`, o `job_salvar`).
+    #[test]
+    fn o_jobs_json_de_antes_da_guarda_abre() {
+        let (_guarda, caminho) = tmp("antes-da-guarda");
+        std::fs::write(
+            &caminho,
+            "{\"jobs\":[{\"nome\":\"contas_hash\",\"ligado\":true,\"cada_minutos\":60,\
+               \"pedido\":{\"op\":\"sql\",\"texto\":\"SELECT login, password_hash FROM contas\"}},\
+             {\"nome\":\"troca\",\"pedido\":{\"op\":\"usuario_alterar\",\"login\":\"a\",\
+               \"senha\":\"MARCA\"}}]}",
+        )
+        .unwrap();
+        let mut r = match Registro::abrir(&caminho) {
+            Ok(r) => r,
+            Err(e) => panic!("o jobs.json de antes da guarda nao abriu: {e}"),
+        };
+        let hash = r.achar("contas_hash").unwrap().clone();
+        assert!(
+            hash.recusa.is_some(),
+            "o job casa a guarda e nao ficou anotado"
+        );
+        assert!(hash.ligado, "abrir desligou o job do dono");
+        // A mesma guarda, onde o job CHEGA: salvar continua recusando.
+        let item = Json::analisar(
+            "{\"nome\":\"contas_hash\",\"pedido\":{\"op\":\"sql\",\
+              \"texto\":\"SELECT login, password_hash FROM contas\"}}",
+        )
+        .unwrap();
+        assert!(
+            Job::de_json(&item).is_err(),
+            "o job_salvar passou a aceitar"
+        );
+        // A ficha nao devolve o valor que o arquivo guarda, e diz o campo.
+        let ficha = r.achar("troca").unwrap().ficha().escrever();
+        assert!(
+            !ficha.contains("MARCA"),
+            "a ficha devolve a senha do disco: {ficha}"
+        );
+        assert!(ficha.contains("\"recusado\""), "{ficha}");
+        // Gravar OUTRO job reescreve o arquivo inteiro: o do dono volta como
+        // estava, e nao desligado nem redigido por um caminho lateral.
+        r.salvar(Job::de_json(&job_json("pulso", "")).unwrap())
+            .unwrap();
+        let texto = std::fs::read_to_string(&caminho).unwrap();
+        assert!(texto.contains("password_hash FROM contas"), "{texto}");
+        let relido = Registro::abrir(&caminho).unwrap();
+        assert!(relido.achar("contas_hash").unwrap().ligado, "{texto}");
     }
 
     /// O `jobs.json` nasce 0600, e nasce assim desde o primeiro byte -- a

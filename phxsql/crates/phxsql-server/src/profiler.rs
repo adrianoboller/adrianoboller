@@ -1124,35 +1124,62 @@ fn colher_tabelas(j: &Json, database: &str, saida: &mut Vec<(String, String)>) {
 /// # Por que nao se tapa o `texto` inteiro
 ///
 /// Porque ai o Profiler ficaria cego para todo SQL, que e o uso principal
-/// dele. Entao a redacao e por ANALISE, e so quando ha o que redigir: o
-/// portao le duas palavras, e so um `CREATE`/`ALTER`/`DROP USER` paga o
-/// lexico. Todo o resto sai daqui como `None` e segue intacto.
+/// dele. Entao a redacao e por ANALISE, e so quando ha o que redigir.
+///
+/// # O portao pergunta pelas LETRAS da senha, e a redacao analisa
+///
+/// Pedido 497. O portao foi «as duas primeiras palavras sao `CREATE USER`?»
+/// (segunda volta: o comentario do ODBC o enganava) e depois «ha o simbolo
+/// `PASSWORD`?» (terceira: o arquivo guarda os BYTES, e o simbolo nao ve a
+/// linha comentada, o `MASTER_PASSWORD` nem o literal que carrega a senha).
+/// Agora sao as letras `PASSWORD`/`IDENTIFIED` em qualquer lugar do texto, e
+/// quando elas aparecem a saida e o `sem_a_senha`: comentario some, literal
+/// vira `'***'`. O texto ASCII sem as letras sai sem pagar o lexico.
 fn sql_sem_senha(chave: &str, valor: &Json) -> Option<String> {
     if !crate::segredos::e_campo_de_sql(chave) {
         return None;
     }
     let t = valor.texto()?;
-    phxsql_sql::usuario::e_de_cadastro(t).then(|| phxsql_sql::usuario::sem_a_senha(t))
+    phxsql_sql::usuario::sem_a_senha_se_mencionada(t)
 }
 
-fn limpar(j: &Json) -> Json {
+/// A arvore com todo segredo tapado. `pub(crate)` porque a ficha do job
+/// (`jobs::Job::ficha`) devolve um pedido guardado, e redigi-lo por outra
+/// regua seria a mesma decisao escrita duas vezes.
+pub(crate) fn limpar(j: &Json) -> Json {
     match j {
-        Json::Objeto(pares) => Json::Objeto(
-            pares
-                .iter()
-                .map(|(k, v)| {
-                    // Por NOME, aparado e sem caixa -- o porque de cada
-                    // escolha esta em `crate::segredos`, ao lado da lista.
-                    if crate::segredos::e_nome_de_segredo(k) {
-                        (k.clone(), Json::Texto("***".into()))
-                    } else if let Some(sem) = sql_sem_senha(k, v) {
-                        (k.clone(), Json::Texto(sem))
-                    } else {
-                        (k.clone(), limpar(v))
-                    }
-                })
-                .collect(),
-        ),
+        Json::Objeto(pares) => {
+            let redigidos: Vec<Option<String>> =
+                pares.iter().map(|(k, v)| sql_sem_senha(k, v)).collect();
+            // O SQL redigido leva junto os `parametros` IRMAOS, a lista
+            // inteira -- pedido 497, B3 da terceira volta do parecer SEC.
+            // `ALTER USER c PASSWORD ?` com `"parametros":["x"]` e o que o
+            // ODBC manda pelo `SQLBindParameter` (o jeito certo de fugir da
+            // injecao), e o `?` tapado no texto nao tapava o valor ao lado.
+            // A lista inteira, e nao o parametro da posicao da senha: contar
+            // os `?` ate a senha seria recortar o que o tradutor so decide
+            // depois.
+            let tapa_parametros = redigidos.iter().any(Option::is_some);
+            Json::Objeto(
+                pares
+                    .iter()
+                    .zip(redigidos)
+                    .map(|((k, v), sem)| {
+                        // Por NOME, aparado e sem caixa -- o porque de cada
+                        // escolha esta em `crate::segredos`, ao lado da lista.
+                        if crate::segredos::e_nome_de_segredo(k) {
+                            (k.clone(), Json::Texto("***".into()))
+                        } else if let Some(sem) = sem {
+                            (k.clone(), Json::Texto(sem))
+                        } else if tapa_parametros && k.trim().eq_ignore_ascii_case("parametros") {
+                            (k.clone(), Json::Texto("***".into()))
+                        } else {
+                            (k.clone(), limpar(v))
+                        }
+                    })
+                    .collect(),
+            )
+        }
         Json::Lista(itens) => Json::Lista(itens.iter().map(limpar).collect()),
         outro => outro.clone(),
     }
@@ -1203,6 +1230,25 @@ mod testes {
         let r = redigir(linha);
         assert!(r.contains("Blumenau"), "{r}");
         assert!(r.contains("SELECT nome FROM clientes"), "{r}");
+    }
+
+    /// **Pedido 497, B3: o valor do `?` ao lado do SQL que leva senha.** O
+    /// ODBC manda `ALTER USER c PASSWORD ?` com `"parametros":["x"]`, e o
+    /// texto sai tapado enquanto o irmao saia inteiro no anel e no arquivo.
+    /// E o comportamento de sempre: SQL sem senha mantem os parametros
+    /// visiveis, que e o que o Profiler existe para mostrar.
+    #[test]
+    fn o_sql_redigido_leva_junto_os_parametros_irmaos() {
+        for linha in [
+            r#"{"op":"sql","texto":"ALTER USER c PASSWORD ?","parametros":["SEGREDO123"]}"#,
+            r#"{"op":"job_salvar","pedido":{"op":"sql","sql":"CREATE USER c PASSWORD ?","parametros":["SEGREDO123"]}}"#,
+        ] {
+            let r = redigir(linha);
+            assert!(!r.contains("SEGREDO123"), "o parametro vazou: {r}");
+            assert!(r.contains(r#""parametros":"***""#), "{r}");
+        }
+        let r = redigir(r#"{"op":"sql","texto":"SELECT n FROM t WHERE id = ?","parametros":[42]}"#);
+        assert!(r.contains(r#""parametros":[42]"#), "{r}");
     }
 
     /// A regra do projeto, aplicada ao lugar onde ela seria mais facil de

@@ -41,7 +41,7 @@
 //! nesta rodada, e recusa pelo nome.
 
 use crate::carga::{decimal_para_texto, texto_para_decimal, valor_de_texto};
-use crate::error::{citar, PhxError, Result};
+use crate::error::{citar, PhxError, Result, LITERAL_REDIGIDO};
 use crate::types::ColumnType;
 use crate::value::Value;
 
@@ -121,8 +121,11 @@ impl Valor {
             Valor::Nulo => Ok(None),
             Valor::Bool(b) => Ok(Some(*b)),
             Valor::Num(n) => Ok(Some(n.como_f64() != 0.0)),
-            Valor::Texto(t) => Err(PhxError::Tipo(format!(
-                "a expressao devolveu texto ({t:?}) onde se esperava verdadeiro ou falso"
+            // O conteudo nao entra: pode ser o literal do pedido ou o valor
+            // de uma linha, e o diagnostico e o TIPO -- pedido 497.
+            Valor::Texto(_) => Err(PhxError::Tipo(format!(
+                "a expressao devolveu o texto {LITERAL_REDIGIDO} onde se esperava \
+                 verdadeiro ou falso"
             ))),
         }
     }
@@ -151,7 +154,10 @@ impl Valor {
             Valor::Nulo => "NULL".into(),
             Valor::Bool(b) => format!("o booleano {b}"),
             Valor::Num(n) => format!("o numero {}", n.texto()),
-            Valor::Texto(t) => format!("o texto {t:?}"),
+            // Quem recusa aqui recusa pelo TIPO, e o texto pode ser o valor
+            // de uma linha gravada (`nome + 1`): o conteudo nunca foi o
+            // diagnostico, e a mensagem vai ao `acessos.log` -- pedido 497.
+            Valor::Texto(_) => format!("o texto {LITERAL_REDIGIDO}"),
         }
     }
 
@@ -279,14 +285,15 @@ impl Eq for Expressao {}
 
 impl Expressao {
     pub fn analisar(texto: &str) -> Result<Expressao> {
-        let tokens = lexer(texto)?;
+        let (tokens, colunas_dos_simbolos) = lexer(texto)?;
         if tokens.is_empty() {
             return Err(PhxError::Esquema("expressao vazia".into()));
         }
         let mut p = Parser {
             tokens,
             i: 0,
-            texto,
+            colunas: colunas_dos_simbolos,
+            fim: texto.chars().count() + 1,
         };
         let raiz = p.ou()?;
         if p.i < p.tokens.len() {
@@ -307,6 +314,25 @@ impl Expressao {
     /// O texto como veio, aparado -- e o que o esquema grava.
     pub fn texto(&self) -> &str {
         &self.texto
+    }
+
+    /// A expressao do jeito que ela pode aparecer numa mensagem de erro:
+    /// remontada dos simbolos, com o literal redigido, e com o teto do
+    /// `citar` -- pedido 497.
+    ///
+    /// Existe para quem ENVOLVE o erro dizendo de qual expressao se trata: o
+    /// [`texto`](Self::texto) e o que o esquema grava, e mandado para a
+    /// mensagem levava junto todo literal do pedido. Relexar custa, e so se
+    /// paga no caminho do erro.
+    pub fn para_mensagem(&self) -> String {
+        let simbolos = match lexer(&self.texto) {
+            Ok((simbolos, _)) => simbolos,
+            // Nao acontece -- o texto ja passou por este lexico ao nascer --,
+            // e se um dia acontecer, sai o tamanho, e nao o texto.
+            Err(_) => return format!("<{} bytes>", self.texto.len()),
+        };
+        let partes: Vec<String> = simbolos.iter().map(Token::mostrar).collect();
+        citar(&partes.join(" "))
     }
 
     /// As colunas referidas, sem repetir, na ordem em que aparecem. E com
@@ -392,10 +418,12 @@ enum Token {
 }
 
 impl Token {
+    /// Como o simbolo aparece numa mensagem de erro. O literal de texto sai
+    /// como [`LITERAL_REDIGIDO`] -- o motivo esta na propria constante.
     fn mostrar(&self) -> String {
         match self {
             Token::Numero(n) => n.texto(),
-            Token::Texto(t) => format!("'{t}'"),
+            Token::Texto(_) => LITERAL_REDIGIDO.to_string(),
             Token::Palavra(p) => p.clone(),
             Token::Op(o) => o.to_string(),
             Token::Abre => "(".into(),
@@ -405,16 +433,28 @@ impl Token {
     }
 }
 
-fn lexer(texto: &str) -> Result<Vec<Token>> {
+/// Os simbolos e, ao lado, a COLUNA (1-based, em caracteres) onde cada um
+/// comeca.
+///
+/// A coluna existe para o erro dizer ONDE sem repetir o texto -- pedido 497.
+/// A mensagem antiga citava a expressao inteira, e com ela todo literal que
+/// estivesse dentro; a coluna aponta o lugar para quem tem o texto na mao, que
+/// e quem o escreveu.
+fn lexer(texto: &str) -> Result<(Vec<Token>, Vec<usize>)> {
     let c: Vec<char> = texto.chars().collect();
     let mut i = 0;
     let mut saida = Vec::new();
+    let mut colunas = Vec::new();
     while i < c.len() {
         let ch = c[i];
         if ch.is_whitespace() {
             i += 1;
             continue;
         }
+        // Todo ramo daqui para baixo produz UM simbolo ou recusa: a coluna
+        // entra uma vez, antes, e as duas listas andam juntas.
+        let coluna = i + 1;
+        colunas.push(coluna);
         if ch.is_ascii_digit() || (ch == '.' && c.get(i + 1).is_some_and(|d| d.is_ascii_digit())) {
             let ini = i;
             while i < c.len() && (c[i].is_ascii_digit() || c[i] == '.') {
@@ -431,7 +471,7 @@ fn lexer(texto: &str) -> Result<Vec<Token>> {
                 match c.get(i) {
                     None => {
                         return Err(PhxError::Esquema(format!(
-                            "texto sem fechar na expressao: {texto:?}"
+                            "expressao, coluna {coluna}: texto sem fechar"
                         )))
                     }
                     Some('\'') if c.get(i + 1) == Some(&'\'') => {
@@ -506,15 +546,16 @@ fn lexer(texto: &str) -> Result<Vec<Token>> {
             '(' => saida.push(Token::Abre),
             ')' => saida.push(Token::Fecha),
             ',' => saida.push(Token::Virgula),
+            // O caractere fica: ele E o diagnostico, e um so nao carrega dado.
             outro => {
                 return Err(PhxError::Esquema(format!(
-                    "caractere {outro:?} nao tem lugar numa expressao ({texto:?})"
+                    "expressao, coluna {coluna}: caractere {outro:?} nao tem lugar numa expressao"
                 )))
             }
         }
         i += 1;
     }
-    Ok(saida)
+    Ok((saida, colunas))
 }
 
 fn numero_de_texto(s: &str) -> Result<Numero> {
@@ -538,15 +579,45 @@ fn numero_de_texto(s: &str) -> Result<Numero> {
 
 // ------------------------------------------------------------------ sintaxe
 
-struct Parser<'t> {
+struct Parser {
     tokens: Vec<Token>,
     i: usize,
-    texto: &'t str,
+    /// A coluna de cada simbolo, lado a lado com `tokens`.
+    colunas: Vec<usize>,
+    /// A coluna logo depois do ultimo caractere: e onde esta o erro de quem
+    /// «terminou onde faltava um valor».
+    fim: usize,
 }
 
-impl Parser<'_> {
+/// Quantos simbolos antes e depois do culpado a janela do erro mostra.
+///
+/// Pedido 462: o erro citava a expressao INTEIRA, e expressao legitima passa
+/// de qualquer teto que se escolha para um valor. Dois de cada lado bastam
+/// para reconhecer o trecho -- e a janela e remontada dos SIMBOLOS, com o
+/// literal redigido, nunca recortada do texto (pedido 497).
+const JANELA_DO_ERRO: usize = 2;
+
+impl Parser {
+    /// O erro no simbolo corrente.
     fn erro(&self, msg: &str) -> PhxError {
-        PhxError::Esquema(format!("expressao {:?}: {msg}", self.texto.trim()))
+        self.erro_no(self.i, msg)
+    }
+
+    /// O erro no simbolo `k`: a coluna e uma janela curta em volta dele.
+    ///
+    /// Nunca o texto da expressao. A janela sai dos simbolos pelo
+    /// `Token::mostrar`, que redige o literal, e passa pelo `citar`, que
+    /// troca por tamanho a janela que ainda assim ficasse longa (um nome de
+    /// coluna de um megabyte e um simbolo so).
+    fn erro_no(&self, k: usize, msg: &str) -> PhxError {
+        let coluna = self.colunas.get(k).copied().unwrap_or(self.fim);
+        let ate = (k + JANELA_DO_ERRO).min(self.tokens.len());
+        let de = k.saturating_sub(JANELA_DO_ERRO).min(ate);
+        let janela: Vec<String> = self.tokens[de..ate].iter().map(Token::mostrar).collect();
+        PhxError::Esquema(format!(
+            "expressao, coluna {coluna}, perto de {}: {msg}",
+            citar(&janela.join(" "))
+        ))
     }
 
     fn espiar(&self) -> Option<&Token> {
@@ -752,10 +823,12 @@ impl Parser<'_> {
                     Expr::Lit(Valor::Bool(false))
                 } else if self.espiar() == Some(&Token::Abre) {
                     self.i += 1;
+                    // O cursor ja passou do nome e do `(`: o culpado e o nome.
                     let f = Funcao::de_nome(&p).ok_or_else(|| {
-                        self.erro(&format!(
-                            "funcao {p} nao existe (as que existem: {FUNCOES})"
-                        ))
+                        self.erro_no(
+                            self.i - 2,
+                            &format!("funcao {p} nao existe (as que existem: {FUNCOES})"),
+                        )
                     })?;
                     let mut args = Vec::new();
                     if self.espiar() != Some(&Token::Fecha) {
@@ -772,16 +845,19 @@ impl Parser<'_> {
                     .iter()
                     .any(|k| p.eq_ignore_ascii_case(k))
                 {
-                    return Err(self.erro(&format!("{p} apareceu onde faltava um valor")));
+                    return Err(
+                        self.erro_no(self.i - 1, &format!("{p} apareceu onde faltava um valor"))
+                    );
                 } else {
                     Expr::Coluna(p)
                 }
             }
+            // O `primario` ja avancou o cursor: o culpado e o anterior.
             outro => {
-                return Err(self.erro(&format!(
-                    "{} apareceu onde faltava um valor",
-                    outro.mostrar()
-                )))
+                return Err(self.erro_no(
+                    self.i - 1,
+                    &format!("{} apareceu onde faltava um valor", outro.mostrar()),
+                ))
             }
         })
     }
@@ -1460,10 +1536,81 @@ mod testes {
             ("1.2.3", "numero invalido"),
             ("(a", "esperava )"),
             ("AND a", "AND apareceu onde faltava um valor"),
+            // Pedido 497: o ONDE agora e a coluna, e nao o texto repetido.
+            ("a # 1", "coluna 3"),
+            ("nome = 'aberto", "coluna 8: texto sem fechar"),
+            ("a +", "coluna 4, perto de \"a +\""),
+            ("a = 1 AND AND b", "coluna 11, perto de \"1 AND AND b\""),
+            ("x(1)", "coluna 1, perto de \"x (\": funcao x nao existe"),
         ] {
             let e = Expressao::analisar(t).unwrap_err().to_string();
             assert!(e.contains(trecho), "{t:?} -> {e}");
         }
+    }
+
+    /// **Pedido 497: o literal do pedido nao volta no erro -- em nenhum dos
+    /// caminhos do motor.** A mensagem nao fica onde nasce: volta ao cliente,
+    /// vai ao `acessos.log`, ao Profiler e ao historico dos jobs, e la ja
+    /// chega montada. Com o defeito, o `texto sem fechar` e todo erro de
+    /// sintaxe citavam a expressao INTEIRA, e os de tipo citavam o valor.
+    ///
+    /// O vermelho nomeia o caminho que vazou, e nao so o primeiro.
+    #[test]
+    fn o_literal_do_pedido_nao_volta_no_erro() {
+        const MARCA: &str = "SEGREDO123";
+        let n = [("n", ColumnType::Int8, Value::Int(1))];
+        let mut vazou = Vec::new();
+        for (caminho, texto) in [
+            ("texto sem fechar", "n = 'SEGREDO123"),
+            ("erro de sintaxe", "n = 'SEGREDO123' AND AND n"),
+            ("sobrou depois do fim", "n = 1 'SEGREDO123'"),
+            ("esperava", "n IN (1 'SEGREDO123'"),
+            ("caractere fora", "n = 'SEGREDO123' # 1"),
+        ] {
+            let e = Expressao::analisar(texto).unwrap_err().to_string();
+            if e.contains(MARCA) {
+                vazou.push(format!("{caminho}: {e}"));
+            }
+        }
+        for (caminho, texto) in [
+            ("conta com texto", "n + 'SEGREDO123' > 0"),
+            ("comparacao de tipos", "n = 'SEGREDO123'"),
+            ("LIKE", "n LIKE 'SEGREDO123'"),
+            ("booleano", "'SEGREDO123'"),
+        ] {
+            let e = Expressao::analisar(texto)
+                .unwrap()
+                .avaliar_bool(&linha(&n))
+                .unwrap_err()
+                .to_string();
+            if e.contains(MARCA) {
+                vazou.push(format!("{caminho}: {e}"));
+            }
+        }
+        let e = coagir(&Valor::Texto(MARCA.into()), &ColumnType::Int8)
+            .unwrap_err()
+            .to_string();
+        if e.contains(MARCA) {
+            vazou.push(format!("coagir: {e}"));
+        }
+        assert!(
+            vazou.is_empty(),
+            "o literal do pedido voltou no erro:\n  {}",
+            vazou.join("\n  ")
+        );
+    }
+
+    /// Quem ENVOLVE o erro dizendo de qual expressao se trata usa a forma
+    /// redigida, e a longa vira tamanho -- pedido 497.
+    #[test]
+    fn a_expressao_para_mensagem_redige_o_literal_e_tem_teto() {
+        let e = Expressao::analisar("codigo > 9 OR nome = 'SEGREDO123'").unwrap();
+        let m = e.para_mensagem();
+        assert!(!m.contains("SEGREDO123"), "{m}");
+        assert!(m.contains("codigo > 9 OR nome = '***'"), "{m}");
+        let longa = format!("{} = 1", "c".repeat(200));
+        let m = Expressao::analisar(&longa).unwrap().para_mensagem();
+        assert!(m.starts_with('<') && m.ends_with(" bytes>"), "{m}");
     }
 
     /// **Pedido 453, o irmao da expressao: o literal numerico torto nao volta

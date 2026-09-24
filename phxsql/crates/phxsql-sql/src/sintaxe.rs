@@ -1621,6 +1621,19 @@ impl Analisador {
                     ))
                 }
             },
+            // Aspas DUPLAS no lugar de valor: e o texto do MySQL(R), e o que
+            // veio ali e dado -- o `descrever` o tapa, e a recusa ensina a
+            // forma daqui (parecer SEC do 497, P2).
+            Token::Palavra { citado: true, .. } => {
+                return Err(lexico::erro(
+                    pos,
+                    &format!(
+                        "esperava um valor e veio um nome entre aspas duplas ({}); \
+                         texto vai entre aspas simples -- 'assim'",
+                        s.token.descrever()
+                    ),
+                ))
+            }
             outro => {
                 return Err(lexico::erro(
                     pos,

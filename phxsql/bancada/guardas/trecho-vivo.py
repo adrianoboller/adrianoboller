@@ -253,6 +253,27 @@ dia, nunca no desejado:
   pelo motor e pelo servidor, a cascata sobre calculada recusada na
   declaracao e a cascata que conferia a filha crua. Contado pelo `--catraca`
   na arvore combinada.
+  **SUBIU para 345 em 24/09/2026** (pedido 497, integrado sobre o 514):
+  dezesseis guardas do texto de erro e da senha no log -- as da redacao na
+  origem, do portao pelas letras, dos `parametros` irmaos, do eco da op `sql`
+  e do `jobs.json` antigo que volta a subir. A frente contou 313 a partir de
+  286; a conta do encontro e do integrador, pelo `--catraca`: 344 vivas + 1
+  aposentada.
+  **SUBIU para 300 em 24/09/2026** (pedido 497, o literal do pedido no texto
+  do erro que o `acessos.log` grava): tres guardas novas, uma por motor que
+  monta a mensagem -- o `descrever` do SQL, o `mostrar` da expressao -- e a
+  do soquete, com a linha que o SEC citou reposta como era. Contado no dia:
+  299 entradas vivas + 1 aposentada.
+  **SUBIU para 304 em 24/09/2026**, na volta do 497 depois do BLOQUEIO do
+  parecer SEC: quatro guardas novas, uma por achado -- o pedaco de senha que
+  sobra citado (B1), a senha fora de aspas simples no perfil (B2), o nome entre
+  aspas duplas no erro (P2) e a duracao sem teto (P1) --, e a
+  `comando-invalido-vira-texto-cru` re-apontada para o `redigir`, sem mudar a
+  conta. Contado no dia: 303 entradas vivas + 1 aposentada.
+  **SUBIU para 306 em 24/09/2026**, na segunda volta do parecer SEC do 497:
+  duas guardas -- o portao da redacao da senha lido por espaco e a senha
+  depois de `IDENTIFIED BY`. Contado no dia: 305 entradas vivas + 1
+  aposentada.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -361,7 +382,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 329
+PISO_DAS_ENTRADAS = 345
 
 # ------------------------------------------------------------- APOSENTADAS
 #

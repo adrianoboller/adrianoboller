@@ -2766,7 +2766,7 @@ Varridos todos os `OpenOptions`, `File::create` e `fs::write` do
 
 | candidato | o que grava | veredito |
 |---|---|---|
-| `acesso.rs` (`acessos.log`) | campos estruturados: `op`, `usuario`, `ip`, `ms`, `database`, `tabela`, `erro` | **limpo** — nenhum campo livre do corpo |
+| `acesso.rs` (`acessos.log`) | campos estruturados: `op`, `usuario`, `ip`, `ms`, `database`, `tabela`, `erro` | **limpo** — nenhum campo livre do corpo. **Errado no `erro`**: ele é texto livre e citava o literal do pedido; ver §25 (pedido 497) |
 | `jobs.rs` (histórico de corridas) | `job`, `op`, `usuario`, `ok`, `duracao_ms`, `detalhe` | **limpo** — o `detalhe` é resumo da resposta, e o comentário do campo já dizia *«nunca o corpo inteiro»* |
 | `transacao.rs` (a marca) | **grava a linha**, em binário, no arquivo da marca | **não é texto de pedido, e é transitório** — mas fica **nomeado** aqui: é o único lugar fora do `.reg` onde o conteúdo da linha toca o disco, e ele **não passa pelo cofre**. Vale uma medição própria |
 
@@ -5270,3 +5270,196 @@ As vizinhas, reprovadas contra o código novo e todas PROVADAS:
   mensagem: o processo cai e ninguém o sobe. O `MANUAL.txt` traz o `sc
   failure` do Windows, **não medido**.
 - **No cluster**, a H5 vira failover. Não medido.
+
+## 25. O texto do erro no `acessos.log` levava o literal do pedido (pedido 497)
+
+Achado do SEC no modelo de ameaça do 495 (B1). O `acessos.log` nunca gravou o
+corpo do pedido, mas grava o campo `erro` — o `e.to_string()` da recusa, pelas
+**oito** chamadas ao `anotar` que convertem um `PhxError` (porta de dados duas
+vezes, web, REST, MCP, jobs, aperto do fio, recusa do texto claro). E havia
+recusa que interpolava o pedido: `texto sem fechar na expressao: "nome =
+'123.456.789-00"`, todo erro de sintaxe da expressão (que citava a expressão
+**inteira**), todo erro de sintaxe do SQL cujo símbolo ofensor era um literal
+(`e veio "'…'"`), e os erros de tipo da expressão (`recebeu o texto "…"`), que
+citam até o valor de uma linha gravada.
+
+### O que o acesso grava do erro, e por quê
+
+**O texto inteiro da recusa, como o cliente o recebe — e a redação acontece
+antes, na origem.** Texto de erro não se analisa: ele chega ao `anotar` montado,
+em qualquer um dos seis idiomas, com o valor em qualquer posição da frase (a
+mesma constatação do Profiler, §13.13). Só quem monta a mensagem sabe o que é
+literal, então é lá que ele sai:
+
+- **o literal de texto** sai como `'***'` (`phxsql_core::error::LITERAL_REDIGIDO`)
+  — no `Token::descrever` do SQL e no `Token::mostrar` da expressão;
+- **o nome entre aspas duplas** também sai redigido no `descrever` (`"***"`):
+  no MySQL e no MariaDB `"…"` é texto, e `VALUES (2, "123.456.789-00")` mandava
+  o CPF ao log. No lugar de valor, a recusa ensina: texto vai entre aspas
+  simples;
+- **a expressão** deixa de ser citada: o erro diz a **coluna** e uma janela de
+  dois símbolos de cada lado, remontada dos símbolos (literal redigido). O teto
+  do `citar` vale para a **janela**, e não para a mensagem: a frase ainda cita o
+  símbolo culpado inteiro (`sobrou …`, `e veio …`), e um nome de um megabyte
+  continua indo inteiro — é o **462**;
+- **o valor no erro de tipo** sai como `o texto '***'`: o diagnóstico é o tipo;
+- a recusa que **envolve** a expressão (`consultar::enriquecer`) cita
+  `Expressao::para_mensagem`, e não o texto.
+
+**O cadastro de usuário é outra pergunta: «onde está a senha».** O
+`usuario::sem_a_senha` não delega ao `descrever`. A senha é **tudo** o que vem
+depois de `PASSWORD` ou de `IDENTIFIED` (a forma do MySQL e do MariaDB), de
+qualquer tipo (`"x"`, `x`, `12345678`, os pedaços de `'ab'x'cd'`), e sai como
+**um** `'***'`. O `segredos::achar_segredo`, que impede o job de gravar senha
+no `jobs.json`, faz a mesma pergunta do portão da redação (abaixo). E a recusa
+do cadastro não cita símbolo
+nenhum, só a coluna (`fim` e `exigir_nome`, como o `exigir_senha` já fazia):
+ali todo símbolo pode ser a senha ou um pedaço dela.
+
+**O portão da redação são as LETRAS da senha, e a redação analisa.** Ele
+mudou duas vezes, e as duas por medição da SEC:
+
+- **Segunda volta.** O portão era «as duas primeiras palavras são `CREATE
+  USER`?», lido por `split_whitespace`. `/* odbc */ CREATE USER …`, `-- x` +
+  `CREATE USER …` e `CREATE/**/USER …` levavam a senha em claro ao
+  `perfil.txt` e ao `jobs.json`, e a op `jobs` a devolvia. `ALTER ROLE c
+  PASSWORD 'x'` (PostgreSQL) e `SET PASSWORD FOR c = 'x'` (MySQL e MariaDB) nem
+  passavam por ele. O tradutor do cadastro passou a reconhecer o comando pelos
+  símbolos, e o cadastro comentado do ODBC agora é cadastro.
+- **Terceira volta.** O portão passou a perguntar pelo **símbolo** `PASSWORD`,
+  e isso só vale para o que o léxico lê. O Profiler e o job guardam os
+  **bytes**. Por isso vazavam: a linha comentada de um roteiro (`SELECT …; --
+  ALTER USER c PASSWORD '…'`), o comentário executável do MySQL
+  (`/*!80000 IDENTIFIED BY '…' */`), a palavra que **contém** a senha
+  (`MASTER_PASSWORD`, `SOURCE_PASSWORD`), o literal que a carrega
+  (`CONNECTION '… password=…'`) e o `"PASSWORD"` citado.
+
+Agora o portão (`usuario::menciona_senha`) é: as letras `PASSWORD` ou
+`IDENTIFIED` aparecem em qualquer lugar do texto, com a maiúscula feita
+**antes** da procura (`ſ` vira `S`, e `PAſſWORD` é a palavra-chave). Quando
+dizem sim, o Profiler mostra o `sem_a_senha`: o comentário some, todo literal
+vira `'***'`, e a palavra que contém as letras abre a redação como a própria.
+Nesse caso o job recusa. É uma pergunta só, numa função só.
+
+**O `?` do ODBC.** `ALTER USER c PASSWORD ?` com `"parametros":["x"]` é o que o
+`SQLBindParameter` manda. O texto saía tapado e o irmão saía inteiro, no
+arquivo e no anel. Agora o SQL redigido leva junto os `parametros` irmãos, e
+a lista **inteira** vira `"***"`. Contar os `?` até a senha seria recortar.
+
+**O eco na resposta.** O roteiro com a senha numa linha comentada **roda**,
+porque o léxico descarta o comentário, e o campo `sql` da resposta ecoava o
+texto inteiro. Agora o eco passa pelo mesmo motor
+(`usuario::sem_a_senha_se_mencionada`). Isso foi achado ao provar a terceira
+volta pelo soquete.
+
+O preço, escrito no teste: `password_hash`, uma coluna `password` ou um
+comentário com a palavra também dizem sim. O Profiler tapa os literais daquele
+SQL, e o job que o levasse é recusado.
+
+**O `jobs.json` que já existe sobe.** A guarda rodava também ao **ler** o
+cadastro, e na quarta volta a SEC mediu que um job legítimo salvo antes dela
+(`SELECT login, password_hash FROM contas`) derrubava o arranque inteiro
+(rc=1). Agora só o `job_salvar` recusa. O job que volta do disco e casa a
+guarda é anotado (`Job::do_disco`), e o arranque avisa pelo nome e pelo campo,
+sem o pedido, na mesma lista dos avisos do `dblink`. O job **recusa ao rodar**
+no `executar_job`, a porta da agenda e da tela, e não fica desligado.
+Desligar mudaria a decisão do dono, e isso iria para o disco no próximo
+`gravar` de outro job. Também não seguraria nada: o `job_ligar` vira a chave
+sem reler o pedido, e o `job_rodar` roda job desligado. A ficha passa o pedido
+pela redação do Profiler (`profiler::limpar`), porque aceitar o arquivo não
+pode virar devolver a senha dele na tela.
+
+Com isso, a resposta, o `acessos.log`, o Profiler e o histórico dos jobs recebem
+a mensagem já sem o literal, **nos caminhos provados abaixo**. Continuam
+passando o valor curto que é o diagnóstico e o tamanho do símbolo culpado (ver
+«O que fica»).
+
+**Hipóteses que morreram.** (1) *Redigir no `anotar`*: exigiria recortar a
+frase — o que a pétrea proíbe —, e deixaria a resposta e o Profiler com o
+literal. (2) *Tirar da frase as cadeias do pedido*: a expressão que o SQL manda
+ao motor é **normalizada** (`O'Brien` vira `'O''Brien'`), e a cadeia procurada
+não é a que está na frase — lista negra que perde o que foi transformado.
+(3) *O `sem_a_senha` redigindo pelo `descrever`*, como «uma decisão só»: foi a
+primeira volta, e a SEC a bloqueou com o `perfil.txt` medido. As duas funções
+respondem perguntas diferentes, e unificá-las deixava sair toda senha que não
+fosse literal de aspas simples.
+
+**O choque com a convergência, à mesa e não calado.** PostgreSQL, MySQL,
+MariaDB e SQLite ecoam o símbolo perto do erro, literal inclusive (`at or near
+"…"`, `near '…'`). Aqui o literal sai redigido e o resto continua: palavra,
+número e pontuação aparecem, e a coluna aponta o lugar para quem tem o texto na
+mão. A pétrea do texto cru ganha, pelo motivo acima — a frase vai a cinco
+lugares, e só a origem a analisa.
+
+### O que fica, e por quê
+
+- **O valor que É o diagnóstico** — `valor "2024-13-45" não é data`,
+  `nao entendi a duracao "5 segundos"` — continua citado pelo `citar` (pedido
+  453). Curto sai inteiro, longo vira tamanho; o dado pessoal curto que cai ali
+  é o **464**. Ganharam o teto, que faltava: os dois erros de conversão das
+  rotinas e o do `SQLSTATE`, a **duração** (`TIMEOUT '…'` e `LOCK TIMEOUT` do
+  SQL chegam lá pelo pedido montado; 1 MiB somava +1.048.897 B ao log), o
+  **instante** do PITR e o **id da sessão web** do `encerrar_sessao`.
+- **O símbolo culpado sem teto** na frase da expressão e do SQL — o **462**.
+- **O literal numérico** aparece. O motivo é próprio, e não o do
+  `sem_a_senha` (que tapa número depois de `PASSWORD`): CPF, cartão e telefone
+  se gravam como texto por causa do zero à esquerda, e o número solto num erro
+  de sintaxe raramente é dado.
+
+### A prova, nos dois sentidos
+
+`tests/erro-no-acessos-log.rs`, pelo soquete e pelas duas portas que anotam
+(dados e web), com o Profiler ligado: trinta e dois caminhos com
+`SEGREDO123`, e cada caso prova que passou pelo caminho que diz passar (ou,
+no roteiro com a linha comentada, que rodou). Onde a senha viaja, o
+`perfil.txt` também tem de sair limpo **e** mostrar a forma redigida. Os casos do teto (duração e sessão) põem
+a marca num valor de 60 bytes, acima dele, porque ali o curto é citado de
+propósito. O `BEGIN` só entra pela porta de dados, porque a web recusa a
+transação antes de ler o prazo. Com os defeitos repostos:
+
+- os oito caminhos da primeira volta: **24 vazamentos** (seis caminhos × duas
+  portas × resposta e log);
+- B1, B2, P1 e P2 repostos juntos: **26 vazamentos**, cada um no seu lugar. B1
+  vaza na resposta, no log e no perfil; B2 só no perfil; P1 e P2 na resposta e
+  no log;
+- segunda volta, o portão por espaço e a redação só depois de `PASSWORD`
+  repostos juntos: **16 vazamentos** no `perfil.txt` (oito textos × duas
+  portas). Os oito casos exigem que a linha do perfil **mostre** a redação
+  (`'***'` ou `<comando invalido>`): perfil sem marca e sem redação não prova
+  nada. A guarda do job (`a_senha_em_qualquer_forma_trava_o_job`) cai com o
+  portão velho;
+- terceira volta, com o `parametros` sem tapa, o portão pelos símbolos, só a
+  palavra exata abrindo a redação e o eco cru repostos juntos: **20
+  vazamentos**. São oito casos × duas portas no `perfil.txt` (B3 e B4), mais
+  as duas linhas comentadas × duas portas **na resposta**. No comentário, a
+  prova de que a redação rodou é o texto sem ele (`"SELECT n FROM t;"`);
+- quarta volta (R1), com a recusa reposta no arranque: caem os três testes
+  do comportamento velho (`o_jobs_json_de_antes_da_guarda_sobe_e_o_job_recusa_ao_rodar`,
+  `o_jobs_json_de_antes_da_guarda_abre` e
+  `o_job_com_credencial_no_disco_avisa_pelo_nome`), com o mesmo erro que a SEC
+  mediu. Pelo binário, com o `jobs.json` do parecer mais um job com `"senha"`,
+  o servidor sobe, avisa os dois pelo nome, recusa os dois ao rodar, e a marca
+  aparece **0** vezes na saída, nas respostas e no `acessos.log`.
+
+O instante do PITR se prova por unitário
+(`o_instante_e_a_duracao_citam_pelo_teto`): o `restaurar_backup` só o lê
+depois de achar um backup de verdade. Guardas no catálogo, provadas à mão:
+
+| guarda | defeito reposto | o que cai |
+|---|---|---|
+| `literal-no-erro-do-sql` | `descrever` cita o literal | 1 de 1 (7 caminhos nomeados) |
+| `literal-no-erro-da-expressao` | `mostrar` cita o literal | 2 de 2 |
+| `texto-sem-fechar-no-acessos-log` | a linha que o SEC citou, como era | 1 de 1 (4 vazamentos) |
+| `senha-sobra-no-erro-do-cadastro` | o `fim` cita o que sobrou | 1 de 1 |
+| `senha-fora-de-aspas-simples-no-perfil` | o `sem_a_senha` só tapa literal | 1 de 1 |
+| `aspas-duplas-no-erro-de-sintaxe` | o `descrever` cita o nome entre aspas duplas | 1 de 1 |
+| `duracao-citada-sem-teto` | a duração pelo `{:?}` | 1 de 1 |
+| `portao-da-senha-por-espaco` | o portão da redação por `split_whitespace` | 1 de 1 |
+| `senha-depois-de-identified` | só o `PASSWORD` abre a redação | 1 de 1 |
+| `parametros-irmaos-da-senha` | o `parametros` irmão sai inteiro | 1 de 1 |
+| `portao-da-senha-pelos-simbolos` | o portão pelos símbolos, e não pelas letras | 1 de 1 |
+| `palavra-que-contem-a-senha` | só a palavra exata abre a redação | 1 de 1 |
+| `eco-do-sql-com-a-senha` | o eco cru do `sql` na resposta | 1 de 1 |
+| `jobs-json-antigo-derruba-o-arranque` | a recusa no arranque (`de_json` na leitura) | 1 de 1 |
+| `job-recusado-roda-mesmo-assim` | sem a recusa no `executar_job` | 1 de 1 |
+| `ficha-do-job-devolve-a-senha-do-disco` | a ficha sem a redação do Profiler | 1 de 1 |

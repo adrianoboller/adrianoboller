@@ -118,12 +118,15 @@ pub fn achar_segredo(j: &Json) -> Option<String> {
                 }
                 if e_campo_de_sql(k) {
                     if let Some(t) = v.texto() {
-                        // `'***'` so aparece quando havia um literal de texto
-                        // para tapar: `DROP USER c` e de cadastro e nao leva
-                        // senha nenhuma.
-                        if phxsql_sql::usuario::e_de_cadastro(t)
-                            && phxsql_sql::usuario::sem_a_senha(t).contains("'***'")
-                        {
+                        // A MESMA pergunta do portao da redacao do Profiler
+                        // -- pedido 497, terceira volta: as LETRAS
+                        // `PASSWORD`/`IDENTIFIED` em qualquer lugar do texto.
+                        // O job guarda os BYTES no `jobs.json`, e o portao
+                        // pelos simbolos deixava passar o que o lexico
+                        // descarta (a linha comentada, o `/*!...*/`), o que
+                        // contem a palavra (`MASTER_PASSWORD`) e o literal
+                        // que a carrega. `DROP USER c` nao leva senha.
+                        if phxsql_sql::usuario::menciona_senha(t) {
                             return Some(format!("a senha dentro do SQL do campo {:?}", k.trim()));
                         }
                     }
@@ -369,5 +372,47 @@ mod testes {
             None,
             "o nome da variavel de ambiente nao e segredo"
         );
+    }
+
+    /// **Pedido 497, B2: a senha que a redacao antiga nao tapava tambem nao
+    /// entra no `jobs.json`.** A guarda perguntava se a redacao tinha saido
+    /// com `'***'` -- e `PASSWORD "x"` (aspas duplas, o costume do MySQL(R)),
+    /// `PASSWORD x` e o texto sem fechar passavam, e o job gravava a senha em
+    /// claro.
+    #[test]
+    fn a_senha_em_qualquer_forma_trava_o_job() {
+        let j = |s: &str| Json::analisar(s).unwrap();
+        for texto in [
+            r#"CREATE USER c PASSWORD \"SEGREDO123\""#,
+            "CREATE USER c PASSWORD SEGREDO123",
+            "ALTER USER c PASSWORD 12345678",
+            "CREATE USER c PASSWORD 'SEGREDO123",
+            // Segunda volta do parecer SEC: o portao lido por espaco, a
+            // forma do MySQL(R) e as que este tradutor nem executa.
+            "/* odbc */ CREATE USER c PASSWORD 'SEGREDO123'",
+            r"-- x\nCREATE USER c PASSWORD 'SEGREDO123'",
+            "CREATE/**/USER c PASSWORD 'SEGREDO123'",
+            r#"CREATE USER c IDENTIFIED BY \"SEGREDO123\""#,
+            "CREATE USER c IDENTIFIED BY SEGREDO123",
+            r#"ALTER USER c IDENTIFIED BY \"SEGREDO123\""#,
+            "ALTER ROLE c PASSWORD 'SEGREDO123'",
+            "SET PASSWORD FOR c = 'SEGREDO123'",
+            // Terceira volta: o portao sao as LETRAS, porque o job guarda
+            // os bytes.
+            "SELECT n FROM t; -- ALTER USER c PASSWORD 'SEGREDO123'",
+            "SELECT n FROM t; /* ALTER USER c PASSWORD 'SEGREDO123' */",
+            "CREATE USER c /*!80000 IDENTIFIED BY 'SEGREDO123' */",
+            "CHANGE MASTER TO MASTER_PASSWORD='SEGREDO123'",
+            r#"CHANGE REPLICATION SOURCE TO SOURCE_PASSWORD=\"SEGREDO123\""#,
+            "CREATE SUBSCRIPTION s CONNECTION 'host=h password=SEGREDO123' PUBLICATION p",
+            r#"CREATE USER c \"PASSWORD\" 'SEGREDO123'"#,
+        ] {
+            let pedido = format!(r#"{{"op":"sql","texto":"{texto}"}}"#);
+            assert_eq!(
+                achar_segredo(&j(&pedido)).as_deref(),
+                Some("a senha dentro do SQL do campo \"texto\""),
+                "{pedido}"
+            );
+        }
     }
 }

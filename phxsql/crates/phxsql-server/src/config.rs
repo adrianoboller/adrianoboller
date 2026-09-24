@@ -4501,6 +4501,7 @@ impl Config {
         c.cifra_do_dblink
             .resolver(c.caminho.as_deref(), &c.base, &c.dblink);
         c.avisar_o_cadastro_do_dblink();
+        c.avisar_o_cadastro_de_jobs();
         c.validar()?;
         // A chave do cofre entra AQUI, e nao la no servidor, por uma razao
         // pratica: `ler` e o unico caminho por onde um `config.json` vira
@@ -4722,6 +4723,18 @@ impl Config {
         if let Ok(cadastro) =
             crate::dblink::Registro::abrir_com(&self.dblink, &self.cifra_do_dblink)
         {
+            self.avisos.extend(cadastro.avisos());
+        }
+    }
+
+    /// O irmao do de cima para o `jobs.json` (pedido 497, R1 do parecer SEC):
+    /// o job que voltou do disco com credencial no pedido nao derruba o
+    /// arranque, e o nome dele sai aqui -- pela mesma lista, perguntando ao
+    /// cadastro ([`crate::jobs::Registro::avisos`], onde a regra mora).
+    /// Arquivo torto e silencio aqui pelo mesmo motivo do `dblink`: quem o
+    /// recusa e o `Servidor::novo`, com a mensagem dele.
+    fn avisar_o_cadastro_de_jobs(&mut self) {
+        if let Ok(cadastro) = crate::jobs::Registro::abrir(&self.jobs) {
             self.avisos.extend(cadastro.avisos());
         }
     }
@@ -6835,6 +6848,52 @@ mod tests {
             "{aviso}"
         );
         assert!(!aviso.contains("SEGREDO-372-AVISO"), "{aviso}");
+    }
+
+    /// **Pedido 497, R1 do parecer SEC: o `jobs.json` de antes da guarda
+    /// avisa pela lista de sempre, e nao derruba a leitura.** O aviso diz o
+    /// NOME do job e o campo -- nunca o pedido, nem a frase SQL, nem o valor.
+    #[test]
+    fn o_job_com_credencial_no_disco_avisa_pelo_nome() {
+        let d = DirTemp::novo("config-497-job-no-disco");
+        let config = d.join("config.json");
+        std::fs::write(&config, r#"{"token":"t"}"#).unwrap();
+        std::fs::write(
+            d.join("jobs.json"),
+            r#"{"jobs":[
+                {"nome":"contas_hash","ligado":true,"cada_minutos":60,
+                 "pedido":{"op":"sql","texto":"SELECT login, password_hash FROM contas"}},
+                {"nome":"troca","pedido":{"op":"usuario_alterar","login":"a","senha":"SEGREDO-497-R1"}},
+                {"nome":"pulso","pedido":{"op":"ping"}}]}"#,
+        )
+        .unwrap();
+        let c = match Config::ler(&config) {
+            Ok(c) => c,
+            Err(e) => panic!("o jobs.json de antes da guarda derrubou a leitura: {e}"),
+        };
+        let dos_jobs: Vec<&String> = c
+            .avisos
+            .iter()
+            .filter(|a| a.contains("credencial nao entra em job"))
+            .collect();
+        assert_eq!(
+            dos_jobs.len(),
+            2,
+            "um aviso por job recusado: {:?}",
+            c.avisos
+        );
+        assert!(dos_jobs[0].contains("\"contas_hash\""), "{}", dos_jobs[0]);
+        assert!(dos_jobs[1].contains("\"troca\""), "{}", dos_jobs[1]);
+        for a in &dos_jobs {
+            for conteudo in ["SEGREDO-497-R1", "password_hash", "SELECT", "FROM contas"] {
+                assert!(!a.contains(conteudo), "o aviso leva {conteudo:?}: {a}");
+            }
+        }
+        assert!(
+            !c.avisos.iter().any(|a| a.contains("\"pulso\"")),
+            "o job de sempre nao avisa nada: {:?}",
+            c.avisos
+        );
     }
 
     /// (M1 da SEC) O link seguido de `..` NAO contorna a recusa: o caminho vai

@@ -7035,14 +7035,14 @@ pub fn limpar() {
             "\n\nRAIO MEDIDO (16/09/2026): **1 dos 1.103**."
         ),
         "arquivo": "crates/phxsql-server/src/profiler.rs",
-        "trecho": """                    } else if let Some(sem) = sql_sem_senha(k, v) {
-                        (k.clone(), Json::Texto(sem))
-                    } else {
+        # Re-apontada no pedido 497 (B3): o `limpar` passou a redigir o SQL
+        # antes, para tapar tambem os `parametros` irmaos.
+        "trecho": """                        } else if let Some(sem) = sem {
+                            (k.clone(), Json::Texto(sem))
 """,
-        "troca": """                    // DEFEITO REPOSTO: o ramo do SQL sai. A lista `SEGREDOS`
-                    // continua inteira e todo pedido com campo `senha` sai
-                    // tapado -- so a senha que mora DENTRO da frase passa.
-                    } else {
+        "troca": """                        // DEFEITO REPOSTO: o ramo do SQL sai. A lista `SEGREDOS`
+                        // continua inteira e todo pedido com campo `senha` sai
+                        // tapado -- so a senha que mora DENTRO da frase passa.
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -7082,17 +7082,15 @@ pub fn limpar() {
             "\n\nRAIO MEDIDO (16/09/2026): **1 dos 253** do `phxsql-sql --lib`."
         ),
         "arquivo": "crates/phxsql-sql/src/usuario.rs",
-        "trecho": """    let Ok(simbolos) = lexico::analisar(texto) else {
-        return format!("<comando invalido, {} bytes>", texto.trim().len());
-    };
+        # Re-apontada no pedido 497: a analise mudou para `redigir`, e o
+        # ramo do que nao se analisa e o `None` do `sem_a_senha`.
+        "trecho": """        None => format!("<comando invalido, {} bytes>", texto.trim().len()),
 """,
-        "troca": """    let Ok(simbolos) = lexico::analisar(texto) else {
-        // DEFEITO REPOSTO: o comando que o lexico recusou volta inteiro,
+        "troca": """        // DEFEITO REPOSTO: o comando que o lexico recusou volta inteiro,
         // «para o operador conseguir ver o erro de digitacao no log». O
         // comando que ele mais precisa ver e o que tem a aspas da senha
         // faltando -- e ai a senha vai junto.
-        return texto.trim().to_string();
-    };
+        None => texto.trim().to_string(),
 """,
         "pacote": "phxsql-sql",
         "alvo": ["--lib"],
@@ -7723,22 +7721,10 @@ pub fn limpar() {
             "\n\nRAIO MEDIDO (17/09/2026): 1 dos 1.117 testes do `--lib` cai."
         ),
         "arquivo": "crates/phxsql-server/src/jobs.rs",
-        "trecho": """        if let Some(achado) = crate::segredos::achar_segredo(&pedido) {
-            return Err(PhxError::Esquema(format!(
-                "job {nome:?}: o \\"pedido\\" leva {achado}, e credencial nao entra em job -- \\
-                 o cadastro fica em arquivo e volta na ficha. O `token` nao e preciso (o job \\
-                 nao entra pela rede; quem manda nele e o usuario configurado); para uma \\
-                 ligacao, use `senha_env`/`token_remoto_env` com o nome da variavel de ambiente"
-            )));
-        }
+        "trecho": """        let recusa = crate::segredos::achar_segredo(&pedido);
 """,
         "troca": """        // DEFEITO REPOSTO: a guarda trava UM nome, nao a lei.
-        if pedido.campo("token").is_some() {
-            return Err(PhxError::Esquema(format!(
-                "job {nome:?}: o \\"pedido\\" nao leva \\"token\\". O job nao entra pela rede; \\
-                 quem manda nele e o usuario configurado"
-            )));
-        }
+        let recusa = pedido.campo("token").map(|_| "o campo \\"token\\"".to_string());
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -12672,6 +12658,443 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
         "seguem": [
             "a_cascata_sobre_coluna_comum_com_regra_continua_levando_a_filha",
             "a_tabela_velha_com_o_par_continua_abrindo_e_gravando",
+        ],
+    },
+    # Pedido 497 (24/09/2026): o texto do erro ia ao `acessos.log` com o
+    # literal do pedido dentro. Tres guardas, uma por motor que monta a
+    # mensagem, e a do soquete, que prova o que chega ao ARQUIVO.
+    # 497.1 O simbolo ofensor do SQL citado com o conteudo
+    {
+        "id": "literal-no-erro-do-sql",
+        "titulo": "o erro de sintaxe do SQL cita o literal do pedido («e veio '123.456.789-00'»)",
+        "porque": (
+            "pedido 497: `Token::descrever` citava o literal ofensor com o "
+            "conteudo, e a mensagem vai ao `acessos.log` e ao Profiler, onde "
+            "texto de erro ja nao se analisa. O `sem_a_senha` NAO passa por "
+            "aqui (a pergunta dele e «onde esta a senha», B2 do parecer SEC), "
+            "e o `seguem` afirma isso."
+        ),
+        "arquivo": "crates/phxsql-sql/src/lexico.rs",
+        "trecho": """            Token::Texto(_) => LITERAL_REDIGIDO.to_string(),
+""",
+        "troca": """            // DEFEITO REPOSTO (497): o literal do pedido citado no erro.
+            Token::Texto(t) => format!("'{t}'"),
+""",
+        "pacote": "phxsql-sql",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::o_literal_do_pedido_nao_volta_no_erro_de_sintaxe",
+        ],
+        "seguem": [
+            "usuario::testes::senha_sem_aspas_e_recusada_sem_ecoar_o_que_veio",
+            "usuario::testes::a_senha_sai_do_texto_do_comando",
+        ],
+    },
+    # 497.2 O simbolo da expressao citado com o conteudo
+    {
+        "id": "literal-no-erro-da-expressao",
+        "titulo": "o erro da expressão cita o literal do pedido na janela, no «sobrou» e no «esperava»",
+        "porque": (
+            "pedido 497: o erro da expressao citava o texto INTEIRO -- e o "
+            "`onde` do `varrer` e o `WHERE` que o tradutor manda como "
+            "expressao carregam o dado. Agora cita a coluna e uma janela "
+            "remontada dos simbolos, com o literal redigido pelo "
+            "`Token::mostrar`; repor o conteudo ali devolve o dado a janela."
+        ),
+        "arquivo": "crates/phxsql-core/src/expressao.rs",
+        "trecho": """            Token::Texto(_) => LITERAL_REDIGIDO.to_string(),
+""",
+        "troca": """            // DEFEITO REPOSTO (497): o literal do pedido citado no erro.
+            Token::Texto(t) => format!("'{t}'"),
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "expressao::testes::o_literal_do_pedido_nao_volta_no_erro",
+            "expressao::testes::a_expressao_para_mensagem_redige_o_literal_e_tem_teto",
+        ],
+        "seguem": [
+            "expressao::testes::erros_de_sintaxe_dizem_onde",
+        ],
+    },
+    # 497.3 O `texto sem fechar` que citava a expressao inteira -- pelo soquete
+    {
+        "id": "texto-sem-fechar-no-acessos-log",
+        "titulo": "o `texto sem fechar` da expressão cita o pedido inteiro, e o `acessos.log` grava o dado em claro",
+        "porque": (
+            "pedido 497, o caminho que o SEC nomeou (B1 do parecer do 495): "
+            "`texto sem fechar na expressao: {texto:?}` ia inteiro ao campo "
+            "`erro` do `acessos.log`, pelas duas portas que anotam. O teste e "
+            "pelo soquete porque o que se afirma e o que chega ao ARQUIVO."
+        ),
+        "arquivo": "crates/phxsql-core/src/expressao.rs",
+        "trecho": """                            "expressao, coluna {coluna}: texto sem fechar"
+""",
+        "troca": """                            // DEFEITO REPOSTO (497): a expressao inteira no erro.
+                            "texto sem fechar na expressao: {texto:?}"
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "erro-no-acessos-log"],
+        "caem": [
+            "o_literal_do_pedido_nao_chega_ao_acessos_log",
+        ],
+        "seguem": [],
+    },
+    # 497.4 (B1 do parecer SEC) O pedaco de senha que SOBRA citado no erro
+    {
+        "id": "senha-sobra-no-erro-do-cadastro",
+        "titulo": "a recusa do `CREATE USER` cita o que sobrou — e numa senha de aspas não dobradas o que sobra é um pedaço dela",
+        "porque": (
+            "parecer SEC do 497, B1: `CREATE USER c PASSWORD 'ab'SEGREDO'cd'` "
+            "recusava com `sobrou \"SEGREDO\" depois do comando`, e a frase ia "
+            "a resposta, ao `acessos.log` e ao perfil. O `exigir_senha` ja nao "
+            "repetia o que veio; o `fim` era o irmao que ficou de fora."
+        ),
+        "arquivo": "crates/phxsql-sql/src/usuario.rs",
+        "trecho": """                &format!(
+                    "{op}: sobrou um simbolo depois do comando -- se era a senha, \\
+                     aspas simples dentro dela vao dobradas ('')"
+                ),
+""",
+        "troca": """                // DEFEITO REPOSTO (497, B1): a sobra citada.
+                &format!("{op}: sobrou {:?} depois do comando", x.token.descrever()),
+""",
+        "pacote": "phxsql-sql",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::o_literal_do_pedido_nao_volta_no_erro_de_sintaxe",
+        ],
+        "seguem": [
+            "usuario::testes::a_senha_em_qualquer_forma_sai_do_texto_do_comando",
+        ],
+    },
+    # 497.5 (B2) A senha que nao e literal de aspas simples, no Profiler e no job
+    {
+        "id": "senha-fora-de-aspas-simples-no-perfil",
+        "titulo": "o `sem_a_senha` tapa só o literal de aspas simples: `PASSWORD \"x\"`, `PASSWORD x` e `PASSWORD 123` saem em claro no `perfil.txt`",
+        "porque": (
+            "parecer SEC do 497, B2, medido no perfil: "
+            "`\"texto\":\"CREATE USER c PASSWORD SEGREDO123\"`. E como a guarda "
+            "do job perguntava se a redacao saiu com `'***'`, o `jobs.json` "
+            "gravava a mesma senha. A pergunta certa e «onde esta a senha»: "
+            "tudo o que vem depois de `PASSWORD`, de qualquer tipo."
+        ),
+        "arquivo": "crates/phxsql-sql/src/usuario.rs",
+        "trecho": """        if depois_do_password && !fim {
+""",
+        "troca": """        // DEFEITO REPOSTO (497, B2): so o literal depois do PASSWORD.
+        if depois_do_password && !fim && matches!(s.token, Token::Texto(_)) {
+""",
+        "pacote": "phxsql-sql",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuario::testes::a_senha_em_qualquer_forma_sai_do_texto_do_comando",
+        ],
+        "seguem": [
+            "usuario::testes::a_senha_sai_do_texto_do_comando",
+        ],
+    },
+    # 497.6 (P2) O nome entre aspas duplas citado no erro de sintaxe
+    {
+        "id": "aspas-duplas-no-erro-de-sintaxe",
+        "titulo": "`VALUES (2, \"123.456.789-00\")`, o texto do jeito do MySQL, volta citado no erro e vai ao `acessos.log`",
+        "porque": (
+            "parecer SEC do 497, P2: o `descrever` citava o identificador entre "
+            "aspas duplas com o conteudo -- `esperava um valor e veio "
+            "\"SEGREDO123\"` --, e no MySQL(R) e no MariaDB aspas duplas sao "
+            "texto. No lugar de nome (coluna que nao existe) o nome continua "
+            "citado por quem recusa: ali ele e o diagnostico."
+        ),
+        "arquivo": "crates/phxsql-sql/src/lexico.rs",
+        "trecho": """            Token::Palavra { citado: true, .. } => "\\"***\\"".into(),
+""",
+        "troca": """            // DEFEITO REPOSTO (497, P2): o nome citado com o conteudo.
+            Token::Palavra { citado: true, texto } => texto.clone(),
+""",
+        "pacote": "phxsql-sql",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::o_literal_do_pedido_nao_volta_no_erro_de_sintaxe",
+        ],
+        "seguem": [
+            "usuario::testes::a_senha_em_qualquer_forma_sai_do_texto_do_comando",
+        ],
+    },
+    # 497.7 (P1) A duracao do pedido citada sem teto
+    {
+        "id": "duracao-citada-sem-teto",
+        "titulo": "a recusa da duração cita o texto recebido inteiro: `BEGIN TRANSACTION TIMEOUT '<1 MiB>'` soma um megabyte ao `acessos.log`",
+        "porque": (
+            "parecer SEC do 497, P1, medido: +1.048.897 B de log por pedido. O "
+            "`TIMEOUT '...'` do SQL vira campo do pedido montado e chega ao "
+            "`duracao_ms`, que citava pelo `{:?}`. O conserto e o `citar` do "
+            "453: o curto e o diagnostico, o longo vira tamanho."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """             Aceito 500ms, 5s, 2m ou o numero de milissegundos",
+            phxsql_core::error::citar(texto)
+""",
+        "troca": """             Aceito 500ms, 5s, 2m ou o numero de milissegundos",
+            // DEFEITO REPOSTO (497, P1): o valor sem teto.
+            format!("{texto:?}")
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_valor_citado_com_teto::o_instante_e_a_duracao_citam_pelo_teto",
+        ],
+        "seguem": [
+            "consultar::testes::a_recusa_que_ensina_nao_cita_o_literal_do_pedido",
+        ],
+    },
+    # 497.8 (segunda volta do parecer SEC) O portao da redacao por espaco
+    {
+        "id": "portao-da-senha-por-espaco",
+        "titulo": "o portão da redação da senha lê palavras separadas por espaço: `/* odbc */ CREATE USER`, `ALTER ROLE … PASSWORD` e `SET PASSWORD FOR` levam a senha em claro ao `perfil.txt` e ao `jobs.json`",
+        "porque": (
+            "segunda volta do parecer SEC do 497, medida: o portao do Profiler "
+            "e da guarda do job era «as duas primeiras palavras sao CREATE "
+            "USER?», por `split_whitespace` -- o comentario do ODBC o enganava, "
+            "e a senha viaja tambem em comando que o tradutor nem executa. A "
+            "op `jobs` devolvia o job com a senha na resposta. O portao certo "
+            "pergunta pelos SIMBOLOS: ha `PASSWORD` ou `IDENTIFIED`?"
+        ),
+        "arquivo": "crates/phxsql-sql/src/usuario.rs",
+        # Re-apontada na terceira volta: o `menciona_senha` passou a ler as
+        # letras, e o defeito da segunda volta entra no comeco dele.
+        "trecho": """pub fn menciona_senha(texto: &str) -> bool {
+    if texto.is_ascii() {
+""",
+        "troca": """pub fn menciona_senha(texto: &str) -> bool {
+    // DEFEITO REPOSTO (497, 2a volta): o portao por espaco.
+    let mut p = texto.split_whitespace();
+    if 1 == 1 {
+        return matches!(
+            p.next().map(|w| w.to_ascii_uppercase()).as_deref(),
+            Some("CREATE" | "ALTER" | "DROP")
+        ) && p
+            .next()
+            .is_some_and(|w| w.trim_end_matches(';').eq_ignore_ascii_case("USER"));
+    }
+    if texto.is_ascii() {
+""",
+        "pacote": "phxsql-sql",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuario::testes::o_portao_e_a_redacao_pelos_simbolos",
+        ],
+        "seguem": [
+            "usuario::testes::a_senha_sai_do_texto_do_comando",
+        ],
+    },
+    # 497.9 (segunda volta) A senha depois de `IDENTIFIED BY`
+    {
+        "id": "senha-depois-de-identified",
+        "titulo": "a redação só olha `PASSWORD`: `IDENTIFIED BY \"x\"`, a forma do MySQL e do MariaDB, sai em claro no perfil",
+        "porque": (
+            "segunda volta do parecer SEC do 497, medida: `CREATE USER c "
+            "IDENTIFIED BY \"SEGREDO123\"`, `IDENTIFIED BY SEGREDO123` e o "
+            "`ALTER` equivalente iam ao `perfil.txt` e ao `jobs.json` em claro."
+        ),
+        "arquivo": "crates/phxsql-sql/src/usuario.rs",
+        # Re-apontada na terceira volta: as letras viraram uma constante so,
+        # do portao e da redacao.
+        "trecho": """const LETRAS_DA_SENHA: [&str; 2] = ["PASSWORD", "IDENTIFIED"];
+""",
+        "troca": """// DEFEITO REPOSTO (497, 2a volta): so o PASSWORD abre a redacao.
+const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
+""",
+        "pacote": "phxsql-sql",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuario::testes::o_portao_e_a_redacao_pelos_simbolos",
+        ],
+        "seguem": [
+            "usuario::testes::a_senha_em_qualquer_forma_sai_do_texto_do_comando",
+        ],
+    },
+    # 497.10 (terceira volta, B3) O valor do `?` ao lado do SQL com senha
+    {
+        "id": "parametros-irmaos-da-senha",
+        "titulo": "o Profiler tapa o `?` do `ALTER USER c PASSWORD ?` e grava o `parametros` irmão com a senha em claro",
+        "porque": (
+            "terceira volta do parecer SEC do 497, B3, medida pelas duas "
+            "portas e pela op `profiler`: e o caminho do ODBC com "
+            "`SQLBindParameter`, o jeito certo de fugir da injecao. O SQL "
+            "redigido leva junto os `parametros` irmaos, a lista inteira."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """            let tapa_parametros = redigidos.iter().any(Option::is_some);
+""",
+        "troca": """            // DEFEITO REPOSTO (497, B3): o parametro irmao sai inteiro.
+            let tapa_parametros = redigidos.is_empty();
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes::o_sql_redigido_leva_junto_os_parametros_irmaos",
+        ],
+        "seguem": [
+            "profiler::testes::a_senha_dentro_do_texto_sql_tambem_sai",
+        ],
+    },
+    # 497.11 (terceira volta, B4) O portao pelos simbolos, quando o arquivo
+    # guarda os bytes
+    {
+        "id": "portao-da-senha-pelos-simbolos",
+        "titulo": "o portão da redação lê símbolos e o perfil e o job guardam bytes: a linha comentada, o `/*!…*/` e o literal que carrega a senha passam em claro",
+        "porque": (
+            "terceira volta do parecer SEC do 497, B4, medida: 12 de 46 jobs "
+            "gravaram a senha, e a op `jobs` a devolvia. O portao que lia os "
+            "simbolos dizia «nao» para o que o lexico descarta ou nao liga a "
+            "`PASSWORD`. O portao certo sao as LETRAS, com a maiuscula antes."
+        ),
+        "arquivo": "crates/phxsql-sql/src/usuario.rs",
+        "trecho": """pub fn menciona_senha(texto: &str) -> bool {
+    if texto.is_ascii() {
+""",
+        "troca": """pub fn menciona_senha(texto: &str) -> bool {
+    // DEFEITO REPOSTO (497, 3a volta): o portao pelos simbolos.
+    if let Ok(simbolos) = lexico::analisar(texto) {
+        return simbolos.iter().any(|s| {
+            s.token
+                .palavra_chave()
+                .is_some_and(|p| LETRAS_DA_SENHA.contains(&p.as_str()))
+        });
+    }
+    if texto.is_ascii() {
+""",
+        "pacote": "phxsql-sql",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuario::testes::o_portao_sao_as_letras_e_a_redacao_tapa_o_que_elas_abrem",
+        ],
+        "seguem": [
+            "usuario::testes::o_portao_e_a_redacao_pelos_simbolos",
+        ],
+    },
+    # 497.12 (terceira volta, B4) A palavra que CONTEM a senha
+    {
+        "id": "palavra-que-contem-a-senha",
+        "titulo": "`MASTER_PASSWORD=x` e `SOURCE_PASSWORD=\"x\"`: só a palavra exata abre a redação, e a senha sai em claro no perfil",
+        "porque": (
+            "terceira volta do parecer SEC do 497, B4: a palavra que CONTEM "
+            "`PASSWORD` nao e `PASSWORD`, e o valor depois dela -- sem aspas ou "
+            "entre aspas duplas, que no MySQL(R) sao texto -- passava inteiro."
+        ),
+        "arquivo": "crates/phxsql-sql/src/usuario.rs",
+        "trecho": """            } => (texto.clone(), tem_letras_da_senha(texto)),
+""",
+        "troca": """                // DEFEITO REPOSTO (497, 3a volta): so a palavra exata abre.
+            } => (
+                texto.clone(),
+                LETRAS_DA_SENHA.contains(&texto.to_uppercase().as_str()),
+            ),
+""",
+        "pacote": "phxsql-sql",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuario::testes::o_portao_sao_as_letras_e_a_redacao_tapa_o_que_elas_abrem",
+        ],
+        "seguem": [
+            "usuario::testes::o_portao_e_a_redacao_pelos_simbolos",
+        ],
+    },
+    # 497.13 (terceira volta) O eco do SQL na resposta da op `sql`
+    {
+        "id": "eco-do-sql-com-a-senha",
+        "titulo": "o roteiro com a senha numa linha comentada roda, e a resposta da op `sql` ecoa o texto inteiro no campo `sql`",
+        "porque": (
+            "achado ao provar o B4 pelo soquete: o lexico descarta o "
+            "comentario, o `SELECT` roda, e o campo `sql` da resposta devolvia "
+            "o texto como veio -- senha em resposta do protocolo. O eco passa "
+            "pelo mesmo motor do Profiler (`sem_a_senha_se_mencionada`)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        phxsql_sql::usuario::sem_a_senha_se_mencionada(texto).unwrap_or_else(|| texto.to_string()),
+""",
+        "troca": """        // DEFEITO REPOSTO (497, 3a volta): o eco cru.
+        texto.to_string(),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "erro-no-acessos-log"],
+        "caem": [
+            "o_literal_do_pedido_nao_chega_ao_acessos_log",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "jobs-json-antigo-derruba-o-arranque",
+        "titulo": "a guarda de credencial roda tambem ao LER o `jobs.json`, e o job legitimo salvo antes dela derruba o arranque",
+        "porque": (
+            "pedido 497, R1 do parecer SEC da quarta volta: com a guarda pelas "
+            "letras `PASSWORD`, o job `SELECT login, password_hash FROM contas`, "
+            "salvo antes dela, fazia o servidor sair com rc=1 -- guarda nova "
+            "imposta a quem nao a pediu. A leitura passa pelo `Job::do_disco`, "
+            "que anota em vez de recusar."
+        ),
+        "arquivo": "crates/phxsql-server/src/jobs.rs",
+        "trecho": """            r.jobs.push(Job::do_disco(item)?);
+""",
+        "troca": """            // DEFEITO REPOSTO (497, R1): a recusa no arranque.
+            r.jobs.push(Job::de_json(item)?);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "jobs"],
+        "caem": [
+            "o_jobs_json_de_antes_da_guarda_sobe_e_o_job_recusa_ao_rodar",
+        ],
+        "seguem": [
+            "sem_cadastro_nada_muda",
+        ],
+    },
+    {
+        "id": "job-recusado-roda-mesmo-assim",
+        "titulo": "o job que voltou do disco com credencial sobe e RODA -- pela agenda, pela tela, ou religado",
+        "porque": (
+            "pedido 497, R1: aceitar o `jobs.json` antigo no arranque so vale "
+            "se a recusa mora na porta de rodar (`executar_job`), por onde "
+            "passam a agenda e a tela. Desligar nao seguraria: o `job_ligar` "
+            "vira a chave sem reler o pedido."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if let Some(e) = job.recusa_de_credencial() {
+            return Err(e);
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (497, R1): o job recusado roda.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "jobs"],
+        "caem": [
+            "o_jobs_json_de_antes_da_guarda_sobe_e_o_job_recusa_ao_rodar",
+        ],
+        "seguem": [
+            "sem_cadastro_nada_muda",
+        ],
+    },
+    {
+        "id": "ficha-do-job-devolve-a-senha-do-disco",
+        "titulo": "o job aceito no arranque com a senha no pedido a devolve na ficha da op `jobs`",
+        "porque": (
+            "pedido 497, R1: antes, o `jobs.json` com credencial nao subia; "
+            "aceitar o arquivo nao pode virar devolver a senha dele na "
+            "resposta da tela. A ficha passa o pedido pela redacao do "
+            "Profiler (`profiler::limpar`), a mesma arvore."
+        ),
+        "arquivo": "crates/phxsql-server/src/jobs.rs",
+        "trecho": """            *pedido = crate::profiler::limpar(pedido);
+""",
+        "troca": """            // DEFEITO REPOSTO (497, R1): a ficha devolve o pedido cru.
+            let _ = pedido;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "jobs"],
+        "caem": [
+            "o_jobs_json_de_antes_da_guarda_sobe_e_o_job_recusa_ao_rodar",
+        ],
+        "seguem": [
+            "sem_cadastro_nada_muda",
         ],
     },
 ]

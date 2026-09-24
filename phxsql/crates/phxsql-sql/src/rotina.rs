@@ -38,6 +38,7 @@ use std::time::{Duration, Instant};
 
 use crate::lexico::{self, Comparador, Token};
 use crate::sintaxe::Analisador;
+use phxsql_core::error::citar;
 use phxsql_core::json::Json;
 use phxsql_core::{PhxError, Result};
 
@@ -366,8 +367,9 @@ impl Valor {
     fn como_numero(&self, papel: &str) -> Result<Numero> {
         match self {
             Valor::Numero(n) => Ok(*n),
-            Valor::Texto(t) => Numero::de_texto(t)
-                .ok_or_else(|| PhxError::Tipo(format!("{papel}: o texto {t:?} nao e um numero"))),
+            Valor::Texto(t) => Numero::de_texto(t).ok_or_else(|| {
+                PhxError::Tipo(format!("{papel}: o texto {} nao e um numero", citar(t)))
+            }),
             Valor::Bool(_) => Err(PhxError::Tipo(format!(
                 "{papel}: booleano nao entra em conta; compare com TRUE/FALSE"
             ))),
@@ -433,7 +435,8 @@ impl Tipo {
                     "false" | "0" => Valor::Bool(false),
                     outro => {
                         return Err(PhxError::Tipo(format!(
-                            "{outro:?} nao e booleano (use TRUE/FALSE)"
+                            "{} nao e booleano (use TRUE/FALSE)",
+                            citar(outro)
                         )))
                     }
                 },
@@ -1515,7 +1518,8 @@ impl CorpoParser<'_> {
             return Err(lexico::erro(
                 pos_estado,
                 &format!(
-                    "SQLSTATE tem 5 caracteres, e {estado:?} tem {}",
+                    "SQLSTATE tem 5 caracteres, e {} tem {}",
+                    citar(&estado),
                     estado.len()
                 ),
             ));

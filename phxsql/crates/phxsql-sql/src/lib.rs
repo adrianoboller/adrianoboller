@@ -192,4 +192,117 @@ mod testes {
         assert_eq!(RESERVADAS_DO_MOTOR, ["BULKINSERT"]);
         assert!(analisar("SELECT rownum, softdeleted FROM t").is_ok());
     }
+
+    /// **Pedido 497: o literal do pedido nao volta no erro de sintaxe, por
+    /// nenhuma das portas do tradutor.** O simbolo ofensor e citado pelo
+    /// `Token::descrever`, e com o defeito ele citava o conteudo: `e veio
+    /// "'SEGREDO123'"`. A mensagem vai ao `acessos.log` e ao Profiler, e la
+    /// ja chega montada -- so aqui, na origem, se sabe o que e literal.
+    ///
+    /// E o comportamento que nao pode mudar junto: o erro continua dizendo
+    /// ONDE (a coluna) e O QUE veio (um literal de texto).
+    #[test]
+    fn o_literal_do_pedido_nao_volta_no_erro_de_sintaxe() {
+        const MARCA: &str = "SEGREDO123";
+        let mut vazou = Vec::new();
+        let mut sem_lugar = Vec::new();
+        // O quarto campo e O QUE o erro tem de dizer que veio: o literal
+        // redigido, o nome entre aspas duplas redigido -- ou nada, no
+        // cadastro, onde todo simbolo pode ser a senha (B1 do parecer SEC).
+        let literal = Some("'***'");
+        // So o comeco: umas frases citam pelo `{:?}`, que escapa a aspa final.
+        let citado = Some("\"***");
+        let casos: [(&str, &str, phxsql_core::Result<()>, Option<&str>); 11] = [
+            // Nao `WHERE n = 1 'x'`: esse o tradutor aceita e manda ao motor
+            // como expressao, e quem recusa e o `phxsql-core` -- provado la e
+            // pelo soquete.
+            (
+                "SELECT, sobrou",
+                "SELECT n FROM t ORDER BY n 'SEGREDO123'",
+                analisar_comando("SELECT n FROM t ORDER BY n 'SEGREDO123'").map(|_| ()),
+                literal,
+            ),
+            (
+                "INSERT, esperava",
+                "INSERT INTO t (n) VALUES 'SEGREDO123'",
+                analisar_comando("INSERT INTO t (n) VALUES 'SEGREDO123'").map(|_| ()),
+                literal,
+            ),
+            (
+                "P2, valor entre aspas duplas",
+                "INSERT INTO t (n, nome) VALUES (2, \"SEGREDO123\")",
+                analisar_comando("INSERT INTO t (n, nome) VALUES (2, \"SEGREDO123\")").map(|_| ()),
+                citado,
+            ),
+            (
+                "P2, aspas duplas onde vinha palavra",
+                "INSERT INTO t (n) VALUES \"SEGREDO123\"",
+                analisar_comando("INSERT INTO t (n) VALUES \"SEGREDO123\"").map(|_| ()),
+                citado,
+            ),
+            (
+                "CREATE USER, o login",
+                "CREATE USER 'SEGREDO123' PASSWORD 'x'",
+                usuario::comando("CREATE USER 'SEGREDO123' PASSWORD 'x'").map(|_| ()),
+                None,
+            ),
+            (
+                "DROP USER, sobrou",
+                "DROP USER c 'SEGREDO123'",
+                usuario::comando("DROP USER c 'SEGREDO123'").map(|_| ()),
+                None,
+            ),
+            (
+                "B1, pedaco de senha que sobra",
+                "CREATE USER c PASSWORD 'ab'SEGREDO123'cd'",
+                usuario::comando("CREATE USER c PASSWORD 'ab'SEGREDO123'cd'").map(|_| ()),
+                None,
+            ),
+            (
+                "SET TRANSACTION, o nivel",
+                "SET TRANSACTION ISOLATION LEVEL 'SEGREDO123'",
+                transacao::comando("SET TRANSACTION ISOLATION LEVEL 'SEGREDO123'").map(|_| ()),
+                literal,
+            ),
+            (
+                "COMMIT, sobrou",
+                "COMMIT 'SEGREDO123'",
+                transacao::comando("COMMIT 'SEGREDO123'").map(|_| ()),
+                literal,
+            ),
+            (
+                "SHOW, o escopo",
+                "SHOW SERVER 'SEGREDO123'",
+                diretiva::comando("SHOW SERVER 'SEGREDO123'").map(|_| ()),
+                literal,
+            ),
+            (
+                "SHOW, nome entre aspas duplas no escopo",
+                "SHOW SERVER \"SEGREDO123\"",
+                diretiva::comando("SHOW SERVER \"SEGREDO123\"").map(|_| ()),
+                citado,
+            ),
+        ];
+        for (caminho, sql, r, veio) in casos {
+            let e = r
+                .expect_err(&format!("{caminho}: {sql:?} devia recusar"))
+                .to_string();
+            if e.contains(MARCA) {
+                vazou.push(format!("{caminho}: {e}"));
+            }
+            if !e.contains("SQL, coluna ") || veio.is_some_and(|v| !e.contains(v)) {
+                sem_lugar.push(format!("{caminho}: {e}"));
+            }
+        }
+        assert!(
+            vazou.is_empty(),
+            "o literal do pedido voltou no erro de sintaxe:\n  {}",
+            vazou.join("\n  ")
+        );
+        assert!(
+            sem_lugar.is_empty(),
+            "o erro deixou de dizer onde e o que veio:\n  {}",
+            sem_lugar.join("\n  ")
+        );
+    }
 }

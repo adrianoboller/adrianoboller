@@ -303,11 +303,13 @@ fn enriquecer(erro: PhxError, e: &Expressao) -> PhxError {
     if !matches!(erro, PhxError::Tipo(_)) {
         return erro;
     }
+    // `para_mensagem`, e nao o `texto()`: o texto levava todo literal do
+    // pedido para o `acessos.log` -- pedido 497.
     PhxError::Tipo(format!(
-        "a expressao {:?} do consultar converte cada coluna pelo TIPO que o \
+        "a expressao {} do consultar converte cada coluna pelo TIPO que o \
          sub-pedido declarou, e uma coluna de texto continua texto mesmo quando \
          guarda digitos -- compare-a com texto ('10'). O erro foi: {erro}",
-        e.texto()
+        e.para_mensagem()
     ))
 }
 
@@ -835,6 +837,23 @@ mod testes {
         let e = Expressao::analisar("codigo = '10'").unwrap();
         let lig = ligar(&m, e.colunas()).unwrap();
         assert_eq!(avaliar_sobre(&l, &e, &lig).unwrap(), Some(true));
+    }
+
+    /// Pedido 497, o irmao do lado do servidor: a recusa que ENSINA dizia de
+    /// qual expressao se tratava citando o texto inteiro, e o texto levava o
+    /// literal do pedido ao `acessos.log`. A expressao continua reconhecivel,
+    /// com o literal redigido.
+    #[test]
+    fn a_recusa_que_ensina_nao_cita_o_literal_do_pedido() {
+        let l = linha(&[("codigo", Json::texto_de("10"))]);
+        let m = modelo(&[("codigo", ColumnType::Str(10))]);
+        let e = Expressao::analisar("codigo > 9 OR codigo = 'SEGREDO123'").unwrap();
+        let lig = ligar(&m, e.colunas()).unwrap();
+        let t = avaliar_sobre(&l, &e, &lig)
+            .expect_err("texto contra numero tinha de recusar")
+            .to_string();
+        assert!(!t.contains("SEGREDO123"), "o literal voltou: {t}");
+        assert!(t.contains("codigo > 9 OR codigo = '***'"), "{t}");
     }
 
     /// `NULL` nunca casa numa junção nem num `IN` -- os dois lados.

@@ -467,3 +467,67 @@ fn nome_de_job_hostil_nao_entra() {
         assert!(!r.booleano_ou("ok", true), "{nome:?}: {}", r.escrever());
     }
 }
+
+/// **O comportamento VELHO: o `jobs.json` de antes da guarda SOBE.** Pedido
+/// 497, R1 do parecer SEC da quarta volta. A guarda de credencial pelas
+/// letras `PASSWORD` rodava tambem ao LER o cadastro no arranque, e o job
+/// legitimo `SELECT login, password_hash FROM contas`, salvo antes dela,
+/// fazia o servidor inteiro sair com rc=1 -- a guarda nova imposta a quem nao
+/// a pediu, e cobrando o servidor todo.
+///
+/// Agora o servidor sobe; o job que casa a guarda fica no cadastro e RECUSA
+/// ao rodar -- pela tela e depois de religado, que sao as duas portas que
+/// desligar nao fecharia --; os outros jobs do mesmo arquivo rodam; e a
+/// ficha nao devolve o valor que o arquivo guarda.
+#[test]
+fn o_jobs_json_de_antes_da_guarda_sobe_e_o_job_recusa_ao_rodar() {
+    let base = pasta("antes-da-guarda");
+    std::fs::write(
+        base.join("jobs.json"),
+        r#"{"jobs":[
+            {"nome":"contas_hash","ligado":true,"cada_minutos":60,
+             "pedido":{"op":"sql","texto":"SELECT login, password_hash FROM contas"}},
+            {"nome":"troca","pedido":{"op":"usuario_alterar","login":"a","senha":"SEGREDO-497-R1"}},
+            {"nome":"pulso","pedido":{"op":"ping"}}]}"#,
+    )
+    .unwrap();
+    // O ponto do item: sem o conserto, `Servidor::novo` recusa aqui.
+    let (_s, porta) = subir(&base, false);
+    let mut c = Ligacao::nova(porta);
+
+    for nome in ["contas_hash", "troca"] {
+        let r = c.pedir(&format!(r#""op":"job_rodar","nome":"{nome}""#));
+        let d = res(&r);
+        assert!(!d.booleano_ou("ok", true), "{nome} rodou: {}", r.escrever());
+        assert!(
+            d.texto_ou("detalhe", "")
+                .contains("credencial nao entra em job"),
+            "{nome}: {}",
+            r.escrever()
+        );
+    }
+    // Religar nao lava o job: a recusa mora na porta de rodar.
+    let r = c.pedir(r#""op":"job_ligar","nome":"troca","ligado":true"#);
+    assert!(r.booleano_ou("ok", false), "{}", erro(&r));
+    let r = c.pedir(r#""op":"job_rodar","nome":"troca""#);
+    assert!(!res(&r).booleano_ou("ok", true), "{}", r.escrever());
+    // O vizinho do mesmo arquivo roda como sempre.
+    let r = c.pedir(r#""op":"job_rodar","nome":"pulso""#);
+    assert!(res(&r).booleano_ou("ok", false), "{}", r.escrever());
+
+    let r = c.pedir(r#""op":"jobs""#);
+    let texto = r.escrever();
+    assert!(
+        !texto.contains("SEGREDO-497-R1"),
+        "a ficha devolve a senha do disco: {texto}"
+    );
+    let lista = res(&r).campo("jobs").and_then(Json::lista).unwrap();
+    let recusados: Vec<&str> = lista
+        .iter()
+        .filter(|j| j.campo("recusado").is_some())
+        .map(|j| j.texto_ou("nome", ""))
+        .collect();
+    assert_eq!(recusados, ["contas_hash", "troca"], "{texto}");
+    let log = std::fs::read_to_string(base.join("acessos.log")).unwrap_or_default();
+    assert!(!log.contains("SEGREDO-497-R1"), "{log}");
+}
