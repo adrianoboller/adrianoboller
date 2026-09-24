@@ -76,3 +76,25 @@ passa pelo proxy da sessão. Os binários vêm compilados de fora, com o mesmo
 alvo e o mesmo `strip`. Então isto prova a imagem e o comportamento; **não**
 prova o `--offline` do construtor, que é a linha que pegaria uma dependência
 externa entrando sem ninguém notar.
+
+## O MariaDB de referência, em contêiner (24/09/2026)
+
+    ./bancada/docker/motor-mariadb.sh sobe      # 127.0.0.1:3307
+    ./bancada/docker/motor-mariadb.sh estado
+    ./bancada/docker/motor-mariadb.sh derruba
+
+É o quarto motor da régua ponderada (PostgreSQL 4, MariaDB 3, MySQL 2,
+SQLite 1), e o único que não rodava aqui. Duas coisas foram medidas antes:
+
+- **Nunca pelo `apt`.** `apt-get install mariadb-server` **remove** o
+  `mysql-server` deste contêiner: um motor de referência sairia para o
+  outro entrar.
+- **A imagem vem do espelho oficial no Amazon ECR, e não do Docker Hub.** Em
+  24/09/2026 o Hub respondeu `429 Too Many Requests` ao pull anônimo por
+  este proxy. `public.ecr.aws/docker/library/mariadb:11` entregou a mesma
+  imagem: MariaDB 11.8.9, que respondeu `SELECT VERSION()` 8 s depois de
+  subir.
+
+O Docker foi habilitado com autorização do dono em 24/09/2026. O `dockerd`
+não sobe sozinho quando o contêiner reinicia, e por isso o roteiro o sobe
+quando ele está parado.
