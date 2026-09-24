@@ -36,6 +36,9 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
       Cria a rede P2P neste computador (arquivo NOME.p2p, sem a senha).
   phxvpn p2p convidar --rede NOME [--endereco MEU_HOST:PORTA] [--validade 24h]
       Gera o codigo do convite, cifrado com a senha da rede, de uso unico.
+  phxvpn p2p placa [--interface phxvpn]
+      Windows: cria o adaptador TAP do phxvpn pelo tapctl.exe do OpenVPN
+      (uma vez, como administrador; exige OpenVPN 2.6+ com TAP-Windows6).
   phxvpn p2p entrar <codigo>
       Aceita o convite (pede a senha da rede) e grava a rede aqui.
       Depois: phxvpn p2p ligar --rede NOME.
@@ -209,6 +212,7 @@ fn cmd_p2p(args: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some("ligar") => p2p_ligar(&o),
+        Some("placa") => p2p_placa(&o),
         Some("criar") => {
             println!("{}", comandos::p2p_criar(&o)?);
             Ok(())
@@ -231,7 +235,7 @@ fn cmd_p2p(args: &[String]) -> Result<(), String> {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn p2p_ligar(o: &Opcoes) -> Result<(), String> {
     let senha_rede = senha("PHXVPN_SENHA_REDE", "senha da rede")?;
     // A senha sai do ambiente assim que foi lida: nao fica em /proc/<pid>/environ.
@@ -241,7 +245,7 @@ fn p2p_ligar(o: &Opcoes) -> Result<(), String> {
     phxvpn::p2p::rodar(no, tun)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 fn p2p_ligar(_o: &Opcoes) -> Result<(), String> {
     Err("o modo P2P ainda so roda no Linux (Windows: TAP-Windows6, em escrita)".into())
 }
@@ -283,5 +287,25 @@ fn cmd_repasse(args: &[String]) -> Result<(), String> {
         if let Some((alvo, p)) = r.tratar(&buf[..n], de) {
             let _ = udp.send_to(&p, alvo);
         }
+    }
+}
+
+/// `p2p placa`: no Windows, cria o adaptador TAP do phxvpn pelo `tapctl.exe`
+/// do OpenVPN (uma vez, como administrador). No Linux nao ha o que criar: a
+/// placa nasce no `ligar`.
+fn p2p_placa(o: &Opcoes) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        println!(
+            "{}",
+            phxvpn::tun::criar_placa(o.um("interface").unwrap_or("phxvpn"))?
+        );
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = o;
+        println!("no Linux a placa nasce sozinha no p2p ligar; nada a criar");
+        Ok(())
     }
 }

@@ -366,13 +366,15 @@ pub fn p2p_entrar(codigo: &str, senha_rede: &str, o: &Opcoes) -> R<String> {
 /// Monta o no P2P. Com o arquivo da rede (`p2p criar` / `p2p entrar`), tudo
 /// sai dele; sem arquivo, das opcoes (`ip`, `par` repetido, `porta`, `modo`,
 /// `repasse`). Devolve o no, a placa ja ligada e um resumo.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 pub fn p2p_preparar(
     o: &Opcoes,
     senha_rede: &str,
 ) -> R<(std::sync::Arc<p2p::No>, crate::tun::Tun, String)> {
     let (no, ip, prefixo, porta, modo) = p2p_montar(o, senha_rede)?;
-    let interface = o.um("interface").unwrap_or("phx0");
+    // No Windows e o nome do adaptador TAP criado pelo `p2p placa`.
+    let padrao = if cfg!(windows) { "phxvpn" } else { "phx0" };
+    let interface = o.um("interface").unwrap_or(padrao);
     let tun = crate::tun::Tun::abrir(interface, ip, prefixo, p2p::MTU)?;
     let resumo = format!(
         "P2P no ar -- {interface} {ip}/{prefixo}, UDP {porta}, modo {modo:?}, chave {}",

@@ -74,7 +74,7 @@ pub struct Console<'a> {
     painel: String,
     token: Option<String>,
     login: Option<String>,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     no: Option<std::sync::Arc<crate::p2p::No>>,
     /// Pergunta uma senha: (rotulo, variavel de ambiente) -> texto. Trocavel
     /// nos testes.
@@ -210,7 +210,7 @@ impl<'a> Console<'a> {
             painel: "http://127.0.0.1:8470".into(),
             token: None,
             login: None,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             no: None,
             perguntar,
         }
@@ -491,7 +491,7 @@ impl<'a> Console<'a> {
                     ]],
                 ))
             }
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             "ligar" => {
                 if self.no.is_some() {
                     return Err(
@@ -509,7 +509,7 @@ impl<'a> Console<'a> {
                 self.no = Some(no);
                 Ok(format!("{resumo}\n"))
             }
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             "pares" => {
                 let no = self
                     .no
@@ -522,7 +522,7 @@ impl<'a> Console<'a> {
                     &linhas,
                 ))
             }
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(not(any(target_os = "linux", windows)))]
             "ligar" | "pares" => Err("o P2P ainda so roda no Linux".into()),
             outro => Err(format!(
                 "comando desconhecido no modo P2P: {outro} (AJUDA lista)"

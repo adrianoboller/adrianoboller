@@ -25,6 +25,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: `phxvpn p2p chave` e `phxvpn p2p ligar` — **ping entre dois computadores pelo túnel, provado**
 - [x] P2P: servidor intermediário (`phxvpn repasse`) e modos `direto` / `repasse` / `auto` — provado numa topologia de CGNAT
 - [x] P2P: `p2p criar` / `p2p convidar` / `p2p entrar` — convite cifrado com a senha da rede, ficha de uso único, malha que se aprende pela lista de pares dentro do túnel
+- [x] P2P no Windows: placa TAP-Windows6 em modo TUN só com APIs do sistema; `p2p placa` cria o adaptador pelo `tapctl.exe` do OpenVPN
 - [x] Console `phxvpncmd` (ou `phxvpn cmd`), estilo prompt do MS-DOS: modos Painel, P2P e Ferramentas; lote por arquivo (`/entrada:`) e linha única (`/comando:`)
 - [x] Segurança A1: revogação real — série no CN, reentrada revoga o perfil anterior, CRL Ed25519 no `crl-verify`, admin/dono remove membro
 - [x] Segurança A2/A3: tentativas limitadas (login, IP, usuário+rede); PBKDF2 fora da trava com semáforo; hash fictício contra enumeração
@@ -48,7 +49,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] Segurança no Windows: ACL nos arquivos com chave (hoje herdam a do diretório; no Linux nascem 0600)
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
 - [ ] P2P: a tela web do modo P2P (hoje: linha de comando e console)
-- [ ] P2P no Windows: TAP-Windows6 em modo TUN (CreateFileW + DeviceIoControl, adaptador próprio pelo `tapctl.exe` do OpenVPN) — ~250–350 linhas, estimado
+- [ ] P2P no Windows: **prova numa máquina real** com OpenVPN (driver TAP e `netsh` — o roteiro `prova-windows.ps1` está pronto)
 - [ ] P2P: `mac1`/cookie contra inundação de INICIO (o WireGuard tem; aqui ainda não)
 
 ## Segurança: a revisão de 23/09/2026 e o que fechou
@@ -137,6 +138,30 @@ Três defeitos achados nessa prova, nenhum pelos testes que já existiam:
 Limites: a lista de pares não é assinada — um membro (que já tem a senha)
 pode apresentar outros; e `convidar` com a rede ligada não trava o arquivo
 contra gravação simultânea (janela de milissegundos).
+
+## P2P no Windows
+
+`src/tun_windows.rs`: o adaptador sai do registro (`ComponentId=tap0901`), abre
+`\\.\Global\{GUID}.tap` com `FILE_FLAG_OVERLAPPED`, `CONFIG_TUN` (0x220028) e
+`SET_MEDIA_STATUS` (0x220018) por `DeviceIoControl`, endereço e MTU pelo
+`netsh`. Uma vez, como administrador: `phxvpn p2p placa` (usa o `tapctl.exe`
+que o OpenVPN instalou). As partes puras (códigos de IOCTL, `CONFIG_TUN`,
+UTF-16) moram em `src/tap.rs` para se testarem em qualquer sistema.
+
+**O que está provado (24/09/2026):**
+
+| Prova | Resultado |
+|---|---|
+| Link real para `x86_64-pc-windows-gnu` (MinGW) | `phxvpn.exe` 2,47 MB, `phxvpncmd.exe` 2,42 MB |
+| DLLs importadas | só do Windows: ADVAPI32, KERNEL32, bcrypt, bcryptprimitives, WS2_32, USERENV, msvcrt, ntdll, api-ms-win-core-synch — **nenhuma nossa** |
+| `phxvpncmd.exe … AUTOTESTE` sob Wine | 4/4 OK (vetores oficiais) |
+| Suíte do phxvpn compilada para Windows, sob Wine | **56/56** (inclui P2P por UDP real, repasse e convite) |
+| Suíte do `phxsql-core` compilada para Windows, sob Wine | **379/379** — o `BCryptGenRandom` do conserto C2 roda de verdade |
+| `p2p placa` sem OpenVPN | erro dito: «tapctl.exe nao encontrado: instale o OpenVPN 2.6+…» |
+
+**O que NÃO está provado:** o driver TAP, o `netsh` e o túnel num Windows
+real — o Wine não tem o driver. O `prova-windows.ps1` faz essa prova em cinco
+passos (autoteste, placa, convite, ligar, ping), como administrador.
 
 ## Console `phxvpncmd`
 

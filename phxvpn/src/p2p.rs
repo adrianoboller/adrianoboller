@@ -29,7 +29,7 @@ use phxsql_core::senha::bytes_aleatorios;
 use phxsql_core::x25519;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -824,7 +824,7 @@ impl No {
 
 /// Liga o no a uma placa TUN e roda para sempre (tres threads: placa, rede e
 /// relogio).
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 pub fn rodar(no: Arc<No>, tun: crate::tun::Tun) -> Result<(), String> {
     let tun = Arc::new(tun);
     {

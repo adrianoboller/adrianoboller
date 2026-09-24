@@ -15,6 +15,10 @@ pub mod pki;
 pub mod rede_p2p;
 pub mod repasse;
 pub mod supervisor;
+pub mod tap;
 pub mod transporte;
 #[cfg(target_os = "linux")]
+pub mod tun;
+#[cfg(windows)]
+#[path = "tun_windows.rs"]
 pub mod tun;
