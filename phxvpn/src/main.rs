@@ -42,6 +42,8 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
       Cria a rede P2P neste computador (arquivo NOME.p2p, sem a senha), com
       rol de membros assinado por este computador. [--apelido NOME]
       [--sem-descoberta]: nao anunciar nem procurar membros na LAN.
+      [--sem-difusao]: nao levar broadcast/multicast (jogos de LAN, mDNS,
+      SSDP) aos outros membros nem aceita-los deles.
   phxvpn p2p convidar --rede NOME [--endereco MEU_HOST:PORTA] [--validade 24h]
       Gera o codigo do convite, cifrado com a senha da rede, de uso unico.
       Numa rede criada com rol assinado, so quem a criou convida.
@@ -390,7 +392,14 @@ fn cmd_cliente_rodar(args: &[String]) -> Result<(), String> {
 fn cmd_p2p(args: &[String]) -> Result<(), String> {
     let o = Opcoes::de_args(
         &args[args.len().min(1)..],
-        &["sem-perfuracao", "sem-descoberta", "tcp", "farol", "tirar"],
+        &[
+            "sem-perfuracao",
+            "sem-descoberta",
+            "sem-difusao",
+            "tcp",
+            "farol",
+            "tirar",
+        ],
     );
     let arquivo = o.um("chave").or(o.um("arquivo")).unwrap_or("p2p.chave");
     match args.first().map(String::as_str) {

@@ -61,6 +61,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Três recursos que só existiam por CLI/API foram para a tela (24/09/2026): programa de mesa com **Remover membro** (só o DONO vê o botão), campo de **proxy HTTP** ao ligar rede P2P, e painel web com escolha de **protocolo UDP/TCP** ao criar rede e **proxy HTTP** ao baixar o perfil — ver a seção dedicada abaixo
 - [x] P2P: **farol** — um membro alcançável, marcado no rol assinado pelo dono e com o consentimento dele, faz o papel do repasse (registro, apresentação 10/11, relé cifrado) sem nenhum `phxvpn repasse`; provado em `netns` com NAT simétrico (20/20 pelo relé, 0 byte em claro no `tcpdump` do farol, membro fora do rol 0/5, sem o farol 0/20) e com dois faróis (o que carrega cai; volta pelo outro em 15,2 s) — ver «P2P: farol»
 - [x] Seis recursos foram para a tela (24/09/2026, o gancho de «um motor só»): painel web com **trocar a própria senha** (`/api/senha`, exige a senha atual e o código do autenticador de quem tem), **desativar/reativar usuário** (`/api/usuarios/ativo`, botão vermelho/verde) e **remover membro de rede** (`/api/redes/remover`); programa de mesa com **marcar/desmarcar farol** (`/api/farol`, mesmo motor de `phxvpn p2p farol` — o dono autoriza no rol com endereço, o próprio membro só consente localmente) e **selo discreto de farol** na linha do membro (o campo já existia em `situacao()`); e a **marca nova** — `/logo-128.png`/`/logo-32.png`, PNGs reduzidos (26 KiB e 2,3 KiB) do `marca/png/fenix-vpn-2000.png` de 4,4 MB, nunca o original embutido, servidos por rota própria no painel e na mesa (`web.rs`), com o SVG mantido para os outros usos. Nenhuma confirmação de exclusão usa `confirm()` do navegador — todas são diálogo dentro da página. Provado exercitando (Chromium, painel com PostgreSQL real; mesa com uma rede semeada pelo `cargo run --example semear_farol`, o mesmo atalho do teste de `mesa.rs`), capturas em `docs/previa/27` a `30` (390 e 1280 px, 0 erro de console)
+- [x] P2P: **difusão** — broadcast (`x.x.x.255`, `255.255.255.255`) e multicast (`224/4`) da placa vão cifrados a todos os pares com sessão, com teto por nó de origem (200 pacotes/s, 256 KiB/s, MTU) na saída E na entrada; só replica o que tem origem no próprio IP (sem laço); desliga por rede (`--sem-difusao`). Provado em três `netns`: 20/20 de cada destino nos dois receptores, SSDP acha os dois, desligada 0, rajada de 1000 → 200 — ver «P2P: difusão»
 
 ### Falta
 
@@ -70,6 +71,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] P2P: delegar o rol a administradores (hoje só quem criou a rede inclui e remove; com ele fora do ar, ninguém entra nem sai — ver «Rol assinado»)
 - [ ] P2P: perfuração atrás de NAT Linux **sem** filtro na wan (a primeira sonda aceita vira dona da porta; ver a seção da perfuração) e de NAT simétrico — hoje ficam no repasse
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
+- [ ] P2P difusão: nó **Windows não ORIGINA** broadcast/multicast — o TAP-Windows6 em modo TUN não entrega esses quadros ao programa (`txpath.c`); originar pede o TAP em modo Ethernet. Receber deve funcionar, **não provado** numa máquina real. E multicast IPv6 fica classificado mas não replica enquanto o túnel P2P não leva IPv6
 - [ ] P2P no Windows: **prova numa máquina real** com OpenVPN (driver TAP e `netsh` — o roteiro `prova-windows.ps1` está pronto)
 - [ ] USB: **prova com dispositivo real** (este contêiner não tem USB nem os módulos `usbip-host`/`vhci-hcd`)
 - [ ] macOS, Android e iOS (OpenVPN e WireGuard têm; achado da validação de 24/09)
@@ -1814,6 +1816,97 @@ disco sem conferir na partida
   o farol entrega o `DE` ao destino como se viesse daquele membro (o Noise do
   destino o descarta, mas o datagrama sai). É um para um, sem amplificação, e
   só de quem já está no rol — o repasse externo tem o mesmo limite.
+
+## P2P: difusão — broadcast e multicast aos pares (24/09/2026)
+
+Código em `src/difusao.rs` (filho de `p2p`, como o farol); dois ganchos de
+uma linha no `p2p.rs` (`da_placa` e o fim do `receber_dados`), o campo
+`"difusao"` no `.p2p` (arquivo sem ele: ligada) e `--sem-difusao` em
+`p2p criar`/`entrar`/`ligar`. Prova: `provas/broadcast/` (`rodar.sh`,
+`udp.py`, `resultados.json`).
+
+Antes, o nó descartava todo pacote da placa que não ia ao IP de um par:
+**0/15** broadcasts e multicasts chegavam (M2 da pesquisa de lacunas). É o
+nicho do Radmin — jogo de LAN, SSDP, mDNS, NetBIOS.
+
+**O que replica.** IPv4 da própria placa, com origem no próprio IP virtual,
+para `255.255.255.255`, para o broadcast da sub-rede da VPN (do prefixo) ou
+para `224.0.0.0/4`. Cada cópia vai cifrada na sessão de cada par, como o
+unicast. Par sem sessão pronta não ganha aperto por um anúncio (o tique já
+abre sessão com quem tem endereço), e a cópia não marca «esperando resposta»
+— senão o par calado pareceria surdo e refaria o aperto a cada 15 s.
+
+**Decisões, com a hipótese que morreu:**
+
+- **Laço.** H1: tabela de «já vi» (hash do pacote, com prazo) — morreu: teto,
+  prazo e erro nas bordas. H2, que venceu: **só replica origem = o próprio
+  IP**. O que chega de um par entra na placa com a origem DELE; se o sistema o
+  devolvesse à placa (não devolve — broadcast não se roteia), a classificação
+  o barraria. Medido: rx das três placas **0/0/0** numa janela quieta de 5 s depois dos envios;
+  no envio, B recebeu exatamente 80 (os 4×20 de A) e C 100 (80 de A + 20 de B).
+- **Escopo de enlace atravessa.** `224.0.0.0/24` (mDNS, LLMNR) e o
+  `255.255.255.255` são de enlace, e a VPN **é** o enlace para as aplicações:
+  o ZeroTier emula um switch e leva tudo (`node/Switch.cpp`, ramo
+  `to.isMulticast()`), o Radmin existe para isso. Descartá-los (H1) mataria o
+  mDNS, que é metade do motivo. O que morre: **IGMP** (não há roteador
+  multicast na malha; relatório de grupo a N pares é só banda) e `ff01::/16`
+  (escopo de interface, RFC 4291 §2.7).
+- **Tetos contra amplificação.** O ZeroTier limita o **número de
+  destinatários** (`multicastLimit`; 0 desliga o multicast) e desliga o
+  broadcast por rede (`enableBroadcast`). Aqui a malha inteira já é o
+  conjunto de destinatários, então o que cresce sem teto é a **taxa**: balde
+  de fichas de **200 pacotes/s e 256 KiB/s por nó de origem** (rajada de até
+  1 s) e tamanho até o MTU. Vale na **saída** (poupa o uplink: cada pacote
+  vira N) e na **entrada, por par** (membro com binário alterado que ignore o
+  próprio teto é cortado por quem recebe). Aviso no log no máximo 1 por minuto.
+- **Desligar por rede.** Desligada, não sai **nem entra** — a escolha de um
+  lado vale mesmo com o outro ligado.
+- **Tailscale não repassa** broadcast/multicast (referência da pauta, **não
+  conferida no fonte** nesta rodada).
+
+**Windows.** O TAP-Windows6 em modo TUN só enfileira ao programa o quadro
+IPv4 cujo cabeçalho Ethernet é o do par ponto-a-ponto (`src/txpath.c`,
+«Only accept directed packets, not broadcasts»): um nó Windows **recebe** a
+difusão dos outros (a escrita vira quadro dirigido ao adaptador), mas **não
+origina**. Originar pede o TAP em modo Ethernet — outra frente. Nada disto
+rodou num Windows. O Radmin cria a rede `26.0.0.0/8` num adaptador próprio
+de camada 2; nada a copiar, só a referência de por que ele consegue.
+
+**Prova em três `netns`** (2026-09-24 11:02, kernel 6.18.44-fc-v37, n=1 por
+cenário). A manda 20 datagramas UDP a cada destino; B e C ouvem (receptor
+Python, membro dos grupos na placa):
+
+| destino | B (ligada) | C (ligada) | A desligada (B · C) | B desligada (B · C) |
+|---|---|---|---|---|
+| `10.78.0.255` | 20/20 | 20/20 | 0/20 · 0/20 | 0/20 · 20/20 |
+| `255.255.255.255` | 20/20 | 20/20 | 0/20 · 0/20 | 0/20 · 20/20 |
+| `239.255.255.250` | 20/20 | 20/20 | 0/20 · 0/20 | 0/20 · 20/20 |
+| `224.0.0.251` | 20/20 | 20/20 | 0/20 · 0/20 | 0/20 · 20/20 |
+
+- De B a `255.255.255.255`, ligada: A 20/20, C 20/20 — qualquer nó origina.
+- **Rajada** de 1000 sem pausa (A → `10.78.0.255`): 64 B em 0.0016 s → B **200**, C **200**
+  (teto de pacotes); 1300 B em 0.0069 s → B **199**, C **199** (teto de bytes: 262.144 / 1.328 ≈ 197, mais o que o
+  balde reenche enquanto o nó cifra). `RcvbufErrors` do UDP nos receptores:
+  0 e 0.
+- **SSDP no formato real** (M-SEARCH em `239.255.255.250:1900`, resposta
+  unicast): A achou 10.78.0.2, 10.78.0.3. Não há avahi no contêiner; o
+  respondedor é o `udp.py`.
+- O unicast continua depois de tudo, nos três cenários.
+
+Uma corrida anterior, sem o contador de `RcvbufErrors` ainda no roteiro, deu
+C = 92 na rajada de 1300 B (B = 197). Não se repetiu nas duas corridas com o
+contador (0 erros). Suspeita, **não medida**: o soquete UDP do nó
+(`rmem_default` 212.992 B ≈ 92 datagramas de ~1,4 KB de *truesize*) — vale
+para rajada unicast também, e o conserto seria `SO_RCVBUF` maior no soquete
+do nó.
+
+Testes (`cargo test difusao`, 13): classificação (destinos, prefixo, origem
+alheia, IGMP, tamanho, IPv6), balde (pacotes, bytes, relógio que volta), e
+três nós por UDP real (chega aos dois e não faz laço; desligada não sai nem
+entra; rajada da placa; entrada por par). **Cada uma das 11 guardas foi
+retirada uma a uma e ao menos um teste falhou** (origem, IGMP, tamanho,
+escopo, teto de pacotes, de bytes, relógio, desligada na entrada, teto de
+saída, teto de entrada, a própria replicação).
 
 ## Limites que valem saber antes de usar
 

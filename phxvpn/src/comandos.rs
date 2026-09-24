@@ -335,6 +335,7 @@ pub fn p2p_criar(o: &Opcoes) -> R<String> {
     let privada = identidade(o.um("chave").unwrap_or("p2p.chave"))?;
     r.apelido = apelido(o)?;
     r.descoberta = !o.tem("sem-descoberta");
+    r.difusao = !o.tem("sem-difusao");
     // Rede nova nasce com rol assinado: quem cria e o dono, e o primeiro
     // membro do rol e ele mesmo.
     r.dono = Some(crate::rol::publica_do_dono(&privada, nome));
@@ -405,6 +406,7 @@ pub fn p2p_entrar(codigo: &str, senha_rede: &str, o: &Opcoes) -> R<String> {
     );
     r.apelido = apelido(o)?;
     r.descoberta = !o.tem("sem-descoberta");
+    r.difusao = !o.tem("sem-difusao");
     r.gravar(&caminho)?;
     Ok(format!(
         "convite aceito: rede {nome}, seu IP {}/{}, anfitriao {} -- ligue com p2p ligar /rede:{nome}",
@@ -839,6 +841,7 @@ pub fn p2p_montar(
         .map_err(|e| format!("porta UDP {porta}: {e}"))?;
     let tem_repasse = repasse.is_some();
     let descoberta = !o.tem("sem-descoberta") && rede.as_ref().map_or(true, |r| r.descoberta);
+    let difusao = !o.tem("sem-difusao") && rede.as_ref().map_or(true, |r| r.difusao);
     // Rede de rol assinado pode ter farol no rol (ou vir a ter): o `auto` e
     // o `repasse` sem `--repasse` valem nela -- o intermediario e o farol.
     // O convidado ainda nao tem o rol na primeira vez que liga, entao a
@@ -860,6 +863,7 @@ pub fn p2p_montar(
         no.com_repasse(modo, repasse)?
     }
     .com_descoberta(descoberta)
+    .com_difusao(difusao, prefixo)
     .com_farol(servir, mbit);
     if o.tem("sem-perfuracao") {
         no = no.sem_perfuracao();

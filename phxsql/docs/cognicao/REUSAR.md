@@ -2,7 +2,7 @@
 
 # Reusar — sucessos comprovados
 
-290 cognições: **7 frutíferas**, **4 infrutíferas**, **279 pendentes** (sem evidência validada — não entram aqui).
+291 cognições: **8 frutíferas**, **4 infrutíferas**, **279 pendentes** (sem evidência validada — não entram aqui).
 
 Só entra o que tem evidência que o `classificar.py` conferiu. Antes de desenhar, procure aqui o que já se provou.
 
@@ -39,6 +39,13 @@ Para derrubar um cliente do OpenVPN pela gerência, use `client-kill` com o CID 
 Quando o caminho muda, refaça **tudo** o que está pendente no caminho velho, não só o que o próprio caminho controla: estado de aperto, fila e temporizador de reenvio moram fora do fio e não sabem que ele trocou.
 
 - Evidência: `phxvpn/provas/tcp/resultados.json`; commit `8b35d60`
+- Validado em: 24/09/2026
+
+## [Cognição: difusão numa placa TUN — o Linux entrega, o TAP-Windows6 não origina](cognicao_difusao-na-placa-tun-linux-e-windows_20260924_1040.md)
+
+Antes de mudar a placa para «consertar» a entrega, escreva o pacote no descritor e conte o que chega ao soquete — o kernel sabe mais do que o `IFF_*` sugere. E no Windows, o modo TUN do TAP é unicast para quem ORIGINA: difusão originada no Windows pede o TAP em modo Ethernet.
+
+- Evidência: `phxvpn/provas/broadcast/resultados.json`; `phxvpn/src/difusao.rs`; `phxvpn/provas/broadcast/rodar.sh`
 - Validado em: 24/09/2026
 
 ## [Broadcast na LAN: o limitado não sai sem rota, e o `ifa_broadaddr` mente sem `brd`](cognicao_broadcast-na-lan-sem-rota-e-sem-brd_20260924_0415.md)

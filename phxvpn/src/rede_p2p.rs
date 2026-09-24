@@ -88,6 +88,9 @@ pub struct Rede {
     pub rol: Option<Rol>,
     /// Anuncio na LAN (ver `descoberta.rs`). Arquivo sem o campo: ligada.
     pub descoberta: bool,
+    /// Broadcast e multicast da placa replicados aos pares (ver
+    /// `p2p/difusao.rs`). Arquivo sem o campo: ligada.
+    pub difusao: bool,
     /// Nome deste computador no rol (opcional).
     pub apelido: Option<String>,
     /// Este computador ACEITA servir de farol (ver `p2p/farol.rs`). So vale
@@ -181,6 +184,7 @@ impl Rede {
             dono: None,
             rol: None,
             descoberta: true,
+            difusao: true,
             apelido: None,
             farol: false,
         }
@@ -272,6 +276,7 @@ impl Rede {
                     .unwrap_or(Json::Nulo),
             ),
             ("descoberta", Json::de_bool(self.descoberta)),
+            ("difusao", Json::de_bool(self.difusao)),
             ("farol", Json::de_bool(self.farol)),
             (
                 "apelido",
@@ -354,6 +359,7 @@ impl Rede {
                 None => None,
             },
             descoberta: j.booleano_ou("descoberta", true),
+            difusao: j.booleano_ou("difusao", true),
             apelido: j.campo("apelido").and_then(Json::texto).map(str::to_string),
             farol: j.booleano_ou("farol", false),
         })
@@ -569,6 +575,7 @@ pub fn rede_do_convidado(c: &Convite, porta: u16) -> Rede {
         dono: c.dono,
         rol: None,
         descoberta: true,
+        difusao: true,
         apelido: None,
         farol: false,
     }

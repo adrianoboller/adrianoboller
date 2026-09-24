@@ -17,12 +17,15 @@
 //!
 //! # Onde mora o resto
 //!
-//! O farol (membro alcancavel que faz rele) mora em `farol.rs`. A perfuracao
+//! O farol (membro alcancavel que faz rele) mora em `farol.rs`; broadcast e
+//! multicast da placa, em `difusao.rs`. A perfuracao
 //! de NAT mediada pelo repasse mora em `perfuracao.rs`; o rol assinado em `rol.rs` e a
 //! descoberta na LAN em `descoberta.rs` -- aqui ficam so os ganchos
 //! (`receber_rol`, `aplicar_rol`, `sincronizar_rol`, `receber_anuncio`,
 //! `anunciar`).
 
+#[path = "difusao.rs"]
+pub mod difusao;
 #[path = "farol.rs"]
 pub mod farol;
 #[path = "p2p_rol.rs"]
@@ -281,6 +284,8 @@ pub struct No {
     descoberta: Mutex<Option<descoberta::Descoberta>>,
     /// O papel de farol: o que este no serve e os farois que ele usa.
     farois: Mutex<farol::Farois>,
+    /// Broadcast e multicast da placa aos pares (ver `difusao.rs`).
+    difusao: difusao::Difusao,
 }
 
 fn indice_novo(indices: &HashMap<u32, usize>) -> u32 {
@@ -371,6 +376,7 @@ impl No {
             rol_lido: Mutex::new(None),
             descoberta: Mutex::new(None),
             farois: Mutex::new(farol::Farois::default()),
+            difusao: difusao::Difusao::desligada(ip),
         }
     }
 
@@ -717,6 +723,9 @@ impl No {
     /// Um pacote que o sistema mandou para a placa: cifra para o par dono do
     /// destino, ou enfileira e comeca o aperto.
     pub fn da_placa(&self, pacote: &[u8]) {
+        if self.difusao_da_placa(pacote) {
+            return;
+        }
         let Some(dst) = destino_ipv4(pacote) else {
             return;
         };
@@ -1159,7 +1168,9 @@ impl No {
             return None; // manter vivo
         }
         // Roteamento pela chave: a origem de dentro tem de ser o IP do par.
-        (origem_ipv4(&claro) == Some(ip_do_par)).then_some(claro)
+        // Broadcast e multicast dele passam ainda pelo teto da difusao.
+        (origem_ipv4(&claro) == Some(ip_do_par) && self.difusao_do_par(&claro, ip_do_par))
+            .then_some(claro)
     }
 
     /// Chamado a cada segundo: manter vivo, refazer aperto vencido, repetir

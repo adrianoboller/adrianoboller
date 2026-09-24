@@ -51,6 +51,8 @@ prova "Serviço do Windows: instalar, RUNNING, escutar, remover" "SCM do Wine" \
   bash -c 'E="Z:\\home\\user\\adrianoboller\\phxvpn\\target\\x86_64-pc-windows-gnu\\debug\\phxvpn.exe"; (env WINEDEBUG=-all timeout 60 /usr/lib/wine/wine64 cmd.exe /c "ping -n 50 127.0.0.1 >nul" &); sleep 2; env WINEDEBUG=-all /usr/lib/wine/wine64 "$E" servico instalar repasse --porta 51898 >/dev/null; for i in $(seq 20); do sleep 1; ss -lun | grep -q 51898 && break; done; ss -lun | grep -q 51898; ok=$?; env WINEDEBUG=-all /usr/lib/wine/wine64 "$E" servico remover phxvpn-repasse >/dev/null; exit $ok'
 prova "Pacotes .deb/.msi/.zip; .deb instala, roda e remove" "empacotar.sh + dpkg" \
   bash -c './empacotar.sh /tmp/phx-val-pac >/dev/null && dpkg -i /tmp/phx-val-pac/phxvpn_*_amd64.deb >/dev/null && phxvpn versao && dpkg -r phxvpn >/dev/null'
+prova "P2P difusão: broadcast/multicast a dois pares, desligada 0, rajada no teto, sem laço" "provas/broadcast/rodar.sh" \
+  bash -c 'provas/broadcast/rodar.sh >/dev/null 2>&1; python3 -c "import json;c={x[\"cenario\"]:x for x in json.load(open(\"provas/broadcast/resultados.json\"))[\"cenarios\"]};l=c[\"ligada\"];assert all(v==dict(b=20,c=20) for v in l[\"de_a_por_destino_20_cada\"].values()),l;assert set(l[\"rx_placa_janela_quieta_5s\"].values())=={0};assert l[\"rajada_64B\"][\"b\"]<=205 and len(l[\"ssdp\"][\"respostas\"])==2;assert all(v[\"b\"]==0 for v in c[\"desligada-b\"][\"de_a_por_destino_20_cada\"].values())"'
 prova "Bancada comparativa (phxvpn x WireGuard x OpenVPN)" "bancada/comparativo/medir.sh" \
   bash -c 'bancada/comparativo/medir.sh 3 >/dev/null 2>&1; python3 -c "import json;j=json.load(open(\"bancada/comparativo/resultados.json\"));assert all(min(r[\"mbits\"])>0 for r in j[\"resultados\"])"'
 

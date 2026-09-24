@@ -110,7 +110,7 @@ defeito) · d **11** · dono **1** — **61** linhas.
 
 | # | Item | Por quê | Prior. | Esf. |
 |---|---|---|---|---|
-| 1 | **Broadcast e multicast no P2P** (repassar `x.x.x.255`, `255.255.255.255` e `224/4` a todos os pares da rede, com teto por segundo contra amplificação e a conferência de origem mantida) | É o coração do nicho Radmin (jogo e descoberta de LAN); **M2: 0/15** | alta | M |
+| 1 | **FEITO (24/09, `src/difusao.rs`, ver PHXVPN.md «P2P: difusão»)** — **Broadcast e multicast no P2P** (repassar `x.x.x.255`, `255.255.255.255` e `224/4` a todos os pares da rede, com teto por segundo contra amplificação e a conferência de origem mantida) | É o coração do nicho Radmin (jogo e descoberta de LAN); **M2: 0/15** | alta | M |
 | 2 | **IPv6 por fora no P2P e no repasse** — abrir `[::]` (dual-stack) ou dois soquetes — **ou** tirar «IPv6» do `PHXVPN.md:150` | A documentação promete o que o soquete não faz (**M5**) | alta | P |
 | 3 | **`explicit-exit-notify 1` no perfil** | Lista de membros mente por ~2 min: **128,8 → 9,2 s** (M3) | alta | P |
 | 4 | **LAN da empresa atrás do servidor**: `push "route <lan>"` por rede, escolhido no painel, + encaminhamento/NAT no host | É o uso nº 1 de VPN de pequena empresa (ERP, impressora, pasta da matriz) | alta | M |
