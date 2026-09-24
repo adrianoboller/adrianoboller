@@ -142,6 +142,27 @@ fn estrutura(onde: &str) -> Erro {
 /// tao perigoso quanto `../x`, e um conferidor que so olhasse `/` deixaria
 /// passar exatamente o caminho que o Windows segue. A barra final de pasta
 /// sai; `.` e componente vazio ficam, porque nao sobem de nivel.
+///
+/// # O que o Windows desvia, e por que tambem e recusado (pedido 471)
+///
+/// A web e o PhxZipCmd extraem no Windows, e la dois tipos de nome nao vao
+/// parar onde a lista diz:
+///
+/// * **Nome de dispositivo** -- `CON`, `PRN`, `AUX`, `NUL`, `COM0`-`COM9`,
+///   `LPT0`-`LPT9` (e os sobrescritos `¹²³`), `CONIN$`, `CONOUT$`, com ou sem
+///   extensao, em qualquer componente e sem diferenca de caixa: `nul.txt`
+///   grava no dispositivo nulo (o dado some) e `COM1.json` escreve na porta
+///   serial -- FORA do destino, que e o que esta funcao existe para impedir.
+/// * **Ponto ou espaco no fim de um componente** -- o Windows os tira ao
+///   gravar, e `config.json.` vira `config.json`: sobrescreve outra entrada
+///   passando por baixo da conferencia de nome repetido.
+///
+/// Recusar e nao renomear, e o motivo e o mesmo do zip-slip: renomear
+/// (`_CON`, como o 7-Zip faz no Windows) muda o dado sem que quem lista veja,
+/// e a conferencia que cada extrator teria de lembrar e a que um esquece. O
+/// custo, medido e aceito: uma arvore de Linux com `aux.c` nao abre -- o
+/// mesmo arquivo nao pode ser extraido fiel no Windows, e o PhxZip promete o
+/// mesmo arquivo em toda plataforma.
 pub fn conferir_nome(bruto: &str) -> Result<String, Erro> {
     let perigoso = || Erro::NomePerigoso(String::from(bruto));
     if bruto.contains('\0') {
@@ -161,10 +182,58 @@ pub fn conferir_nome(bruto: &str) -> Result<String, Erro> {
     if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
         return Err(perigoso());
     }
+    if nome.split('/').any(desviado_pelo_windows) {
+        return Err(perigoso());
+    }
     if nome.split('/').any(|componente| componente == "..") {
         return Err(perigoso());
     }
     Ok(nome)
+}
+
+/// Um componente que o Windows grava em outro lugar ou com outro nome.
+fn desviado_pelo_windows(componente: &str) -> bool {
+    // `..` termina em ponto, mas e decisao da conferencia do zip-slip, logo
+    // abaixo -- uma recusa por motivo, para cada motivo ter a propria prova.
+    if componente.is_empty() || componente == "." || componente == ".." {
+        return false;
+    }
+    if componente.ends_with('.') || componente.ends_with(' ') {
+        return true;
+    }
+    // O Windows compara so o que vem antes do primeiro ponto, sem os espacos
+    // do fim: `NUL .txt` e `nul.tar.gz` tambem sao o dispositivo.
+    let base = componente
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(' ');
+    let mut maiusculo = String::with_capacity(base.len());
+    for c in base.chars() {
+        maiusculo.push(c.to_ascii_uppercase());
+    }
+    match maiusculo.as_str() {
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$" => true,
+        m => {
+            let mut letras = m.chars();
+            let prefixo: String = letras.by_ref().take(3).collect();
+            let resto: String = letras.collect();
+            (prefixo == "COM" || prefixo == "LPT")
+                && matches!(
+                    resto.as_str(),
+                    "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
+        }
+    }
+}
+
+/// A chave com que dois nomes colidem no disco de quem extrai: sem diferenca
+/// de caixa, porque no Windows e no macOS `Config.json` e `config.json` sao o
+/// MESMO arquivo -- e extrair o segundo sobrescreve o primeiro calado. Uma
+/// funcao so, usada pelo leitor e pelo escritor, para os dois nunca
+/// divergirem sobre o que e repetido.
+pub(crate) fn chave_de_colisao(nome: &str) -> String {
+    nome.chars().flat_map(char::to_lowercase).collect()
 }
 
 // ------------------------------------------------------ leitura de bytes
@@ -173,11 +242,26 @@ pub fn conferir_nome(bruto: &str) -> Result<String, Erro> {
 pub(crate) struct Cursor<'a> {
     d: &'a [u8],
     p: usize,
+    /// O teto de toda contagem lida por este cursor (`Limites::entradas`).
+    teto: usize,
 }
 
 impl<'a> Cursor<'a> {
     pub fn novo(d: &'a [u8]) -> Cursor<'a> {
-        Cursor { d, p: 0 }
+        Cursor {
+            d,
+            p: 0,
+            teto: usize::MAX,
+        }
+    }
+
+    /// O cursor do cabecalho, com o teto das contagens.
+    fn com_teto(d: &'a [u8], teto: u64) -> Cursor<'a> {
+        Cursor {
+            d,
+            p: 0,
+            teto: usize::try_from(teto).unwrap_or(usize::MAX),
+        }
     }
 
     fn resta(&self) -> usize {
@@ -234,12 +318,25 @@ impl<'a> Cursor<'a> {
         Ok(valor)
     }
 
-    /// Uma contagem: cada item ocupa pelo menos um byte do cabecalho, entao
-    /// contagem maior do que o que resta e mentira -- e recusar aqui impede de
-    /// reservar memoria por ela.
+    /// Uma contagem, conferida contra DOIS tetos antes de qualquer alocacao
+    /// dimensionada por ela.
+    ///
+    /// O primeiro e o de quem abre (`Limites::entradas`): e ele que faz a
+    /// memoria ser proporcional ao teto. So o segundo -- cada item ocupa pelo
+    /// menos um byte, entao contagem maior do que o que resta e mentira -- nao
+    /// bastava: com o cabecalho COMPRIMIDO, poucos KB de arquivo viram um
+    /// cabecalho do tamanho do teto, e os vetores dimensionados pela contagem
+    /// custavam ~25 bytes por byte dele (parecer SEC, pedido 471).
     fn contagem(&mut self, oque: &'static str) -> Result<usize, Erro> {
-        let n = self.numero()?;
-        let n = para_usize(n, oque)?;
+        let bruto = self.numero()?;
+        if bruto > self.teto as u64 {
+            return Err(Erro::GrandeDemais {
+                oque,
+                declarado: bruto,
+                teto: self.teto as u64,
+            });
+        }
+        let n = para_usize(bruto, oque)?;
         if n > self.resta() {
             return Err(Erro::Estrutura(format!(
                 "{oque} maior do que o cabecalho comporta"
@@ -498,8 +595,19 @@ fn ler_fluxos(c: &mut Cursor) -> Result<Fluxos, Erro> {
         loop {
             t = c.numero()?;
             if t == id::QUANTOS_SUBFLUXOS {
+                // Cada contagem sozinha cabe no teto; a SOMA delas tambem tem
+                // de caber, porque e a soma que dimensiona os vetores abaixo.
+                let mut total = 0usize;
                 for q in quantos.iter_mut() {
                     *q = c.contagem("quantidade de subfluxos")?;
+                    total = total.saturating_add(*q);
+                    if total > c.teto {
+                        return Err(Erro::GrandeDemais {
+                            oque: "quantidade de subfluxos",
+                            declarado: total as u64,
+                            teto: c.teto as u64,
+                        });
+                    }
                 }
                 continue;
             }
@@ -697,7 +805,7 @@ fn decodificar(
                 if buf.len() % BLOCO != 0 || alvo > buf.len() {
                     return Err(estrutura("fluxo do 7zAES com tamanho que nao fecha bloco"));
                 }
-                let k = ctx.chaves.obter(senha16, &p.sal, p.ciclos);
+                let k = ctx.chaves.obter(senha16, &p.sal, p.ciclos)?;
                 aes::cbc_decifrar(&Aes256::nova(&k), &p.iv, &mut buf)
                     .ok_or_else(|| estrutura("fluxo do 7zAES com tamanho que nao fecha bloco"))?;
                 buf.truncate(alvo);
@@ -763,10 +871,19 @@ pub struct Limites {
     /// O maior bloco descompactado -- num arquivo solido, a soma das entradas
     /// dele, porque extrair uma exige decodificar o bloco inteiro.
     pub bloco: u64,
-    /// O maior cabecalho descompactado.
+    /// O maior cabecalho -- o descompactado E o gravado em claro.
     pub cabecalho: u64,
-    /// O maior `NumCyclesPower` aceito no 7zAES: e a bomba de CPU.
+    /// O maior `NumCyclesPower` aceito no 7zAES: e a bomba de CPU, e vem do
+    /// ARQUIVO. Recusado antes de derivar.
     pub ciclos: u8,
+    /// Quantas chaves distintas uma abertura pode derivar. O 7-Zip grava sal
+    /// vazio em todo bloco, e um arquivo dele custa UMA; um sal diferente por
+    /// bloco furaria o cache e cobraria `2^ciclos` por bloco.
+    pub derivacoes: u32,
+    /// A maior contagem que o cabecalho pode declarar -- entradas, blocos,
+    /// fluxos, subfluxos. E o que faz a memoria de abrir ser proporcional a
+    /// um teto de quem chama, e nao ao que o arquivo inventa.
+    pub entradas: u64,
     /// A maior tabela de probabilidades do LZMA, em bytes. E o unico lugar
     /// onde o FLUXO escolhe quanto o decodificador aloca: o byte lc/lp/pb do
     /// LZMA puro vai de 16 KiB (o 0x5D que o 7-Zip grava) a 6 MiB (lc=8,
@@ -775,14 +892,45 @@ pub struct Limites {
     pub modelo: u64,
 }
 
+/// O PADRAO e o de arquivo que veio de qualquer um -- upload na web, anexo,
+/// o que o PhxZipCmd recebe --, e isso e decisao (pedido 471): quem esquece de
+/// escolher cai no lado seguro. Abrir com mais folga e um ato escrito,
+/// [`Limites::confiavel`].
+///
+/// * `ciclos: 19` -- o que o 7-Zip grava (`7zAes.cpp:236`) e o que o escritor
+///   do PhxZip grava por padrao. O 7-Zip LE ate 24, mas 24 custa 32 vezes 19
+///   (medido: ~1,3 s por derivacao de 2^19 em debug, logo ~42 s para 2^24), e
+///   isso gasto ja no `abrir` de um cabecalho cifrado, antes de qualquer
+///   extracao.
+/// * `derivacoes: 2` -- uma para o 7-Zip; a segunda e folga para quem cifra o
+///   cabecalho com um sal e o conteudo com outro.
+/// * `entradas: 65.536` e `cabecalho: 8 MiB` -- andam juntos: um cabecalho com
+///   65.536 entradas de nome medio ocupa uns 6,5 MB.
 impl Default for Limites {
     fn default() -> Limites {
         Limites {
             entrada: 256 << 20,
             bloco: 256 << 20,
-            cabecalho: 16 << 20,
-            ciclos: chave::CICLOS_MAXIMO,
+            cabecalho: 8 << 20,
+            ciclos: chave::CICLOS_PADRAO,
+            derivacoes: 2,
+            entradas: 1 << 16,
             modelo: 8 << 20,
+        }
+    }
+}
+
+impl Limites {
+    /// Para arquivo de fonte CONFIAVEL -- o que o proprio sistema gravou, ou o
+    /// que o operador trouxe de proposito --, nunca para o que chega de fora:
+    /// aceita tudo o que o 7-Zip le (ciclos ate 24) e a escala de um backup.
+    pub fn confiavel() -> Limites {
+        Limites {
+            cabecalho: 128 << 20,
+            ciclos: chave::CICLOS_MAXIMO,
+            derivacoes: 16,
+            entradas: 1 << 20,
+            ..Limites::default()
         }
     }
 }
@@ -804,6 +952,9 @@ pub struct Entrada {
     /// `FILETIME` do Windows: intervalos de 100 ns desde 1601-01-01 UTC. Ver
     /// [`crate::filetime_para_unix`].
     pub modificado: Option<u64>,
+    /// Os atributos do Windows, e nos bits altos, as vezes, o modo Unix --
+    /// inclusive o de link simbolico. Informacao, NAO ordem: o extrator nao
+    /// pode honra-los como link nem como permissao (ver o topo da crate).
     pub atributos: Option<u32>,
     /// O conteudo passa pelo 7zAES.
     pub cifrada: bool,
@@ -856,11 +1007,21 @@ impl<'a> Arquivo<'a> {
             blocos: Vec::new(),
             entradas: Vec::new(),
             cabecalho_cifrado: false,
-            chaves: Chaves::default(),
+            chaves: Chaves::com_teto(limites.derivacoes),
         };
         if tam == 0 {
             // Arquivo vazio: e o que o 7-Zip grava sem entrada nenhuma.
             return Ok(arq);
+        }
+        // O cabecalho gravado em claro tambem obedece ao teto: e ele que se
+        // analisa, e a promessa «todo tamanho lido e conferido contra os
+        // Limites» valia so para o descompactado (parecer SEC, pedido 471).
+        if tam > limites.cabecalho {
+            return Err(Erro::GrandeDemais {
+                oque: "cabecalho",
+                declarado: tam,
+                teto: limites.cabecalho,
+            });
         }
         let inicio_cab = INICIO
             .checked_add(para_usize(desloc, "posicao do cabecalho")?)
@@ -875,7 +1036,7 @@ impl<'a> Arquivo<'a> {
                 "o CRC do cabecalho nao bate",
             )));
         }
-        let mut c = Cursor::novo(cab);
+        let mut c = Cursor::com_teto(cab, limites.entradas);
         let decodificado;
         match c.numero()? {
             id::CABECALHO => {}
@@ -896,7 +1057,7 @@ impl<'a> Arquivo<'a> {
                 conferir_crc(&dec, &dec.dados, crc, "o cabecalho")?;
                 arq.cabecalho_cifrado = dec.cifrado;
                 decodificado = dec.dados;
-                c = Cursor::novo(&decodificado);
+                c = Cursor::com_teto(&decodificado, limites.entradas);
                 if c.numero()? != id::CABECALHO {
                     return Err(depois_da_cifra(
                         arq.cabecalho_cifrado,
@@ -1084,8 +1245,17 @@ impl<'a> Arquivo<'a> {
         // O nome e conferido por ultimo, e para TODAS: um arquivo com uma
         // entrada perigosa nao abre, em vez de abrir e confiar que cada chamador
         // lembre de pular a entrada ruim.
+        //
+        // E o nome REPETIDO tambem, como o escritor ja recusa: o extrator
+        // gravaria a segunda entrada por cima da primeira, calado. A colisao
+        // e sem diferenca de caixa (`chave_de_colisao`), porque e assim que o
+        // disco de quem extrai no Windows e no macOS a ve.
+        let mut vistos = alloc::collections::BTreeSet::new();
         for e in entradas.iter_mut() {
             e.nome = conferir_nome(&e.nome)?;
+            if !vistos.insert(chave_de_colisao(&e.nome)) {
+                return Err(Erro::NomeRepetido(e.nome.clone()));
+            }
         }
         self.entradas = entradas;
         Ok(())
@@ -1236,12 +1406,60 @@ mod testes {
         }
     }
 
+    /// O que o Windows desvia: dispositivo em qualquer componente e caixa,
+    /// com ou sem extensao, e ponto ou espaco no fim de um componente.
+    #[test]
+    fn nome_que_o_windows_desvia_e_recusado() {
+        for ruim in [
+            "CON",
+            "nul.txt",
+            "Nul.tar.gz",
+            "NUL .txt",
+            "a/aux/b.txt",
+            "prn",
+            "com1.json",
+            "LPT9",
+            "COM\u{b9}.txt",
+            "conin$",
+            "CONOUT$.log",
+            "config.json.",
+            "config.json ",
+            "pasta./a.txt",
+        ] {
+            assert!(
+                matches!(conferir_nome(ruim), Err(Erro::NomePerigoso(_))),
+                "{ruim:?} passou"
+            );
+        }
+    }
+
+    #[test]
+    fn colisao_e_sem_diferenca_de_caixa() {
+        assert_eq!(
+            chave_de_colisao("Raiz/Config.JSON"),
+            chave_de_colisao("raiz/config.json")
+        );
+        assert_eq!(chave_de_colisao("AÇÃO.txt"), chave_de_colisao("ação.txt"));
+        assert_ne!(chave_de_colisao("a.txt"), chave_de_colisao("b.txt"));
+    }
+
     #[test]
     fn nome_bom_passa_e_sai_com_barra_normal() {
         assert_eq!(conferir_nome("config.json").unwrap(), "config.json");
         assert_eq!(conferir_nome("a\\b\\c.txt").unwrap(), "a/b/c.txt");
         assert_eq!(conferir_nome("pasta/").unwrap(), "pasta");
-        assert_eq!(conferir_nome("./a/..b/c..").unwrap(), "./a/..b/c..");
+        assert_eq!(conferir_nome("./a/..b/c..d").unwrap(), "./a/..b/c..d");
+        // Parecido com dispositivo, mas nao e: o Windows so compara a base.
+        for bom in [
+            "console.txt",
+            "com10.txt",
+            "nulo.json",
+            "lpt.txt",
+            "a/aux1/b",
+            "comx",
+        ] {
+            assert_eq!(conferir_nome(bom).unwrap(), bom, "{bom:?} foi recusado");
+        }
         assert_eq!(
             conferir_nome("nome com : no meio").unwrap(),
             "nome com : no meio"

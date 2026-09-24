@@ -1539,49 +1539,49 @@
       "id": "phxzip-bomba-do-lzma2",
       "titulo": "o pedaço de LZMA2 que anuncia 2 MiB é decodificado inteiro antes de se saber que não cabe no teto",
       "veredito": "PROVADA",
-      "segundos": 1.24,
+      "segundos": 1.23,
       "notas": [],
-      "quando": "2026-09-24 03:27"
+      "quando": "2026-09-24 04:09"
     },
     {
       "id": "phxzip-distancia-antes-da-janela",
       "titulo": "a distância de um casamento LZMA lida do arquivo sem conferir contra o que já saiu",
       "veredito": "PROVADA",
-      "segundos": 1.16,
+      "segundos": 1.18,
       "notas": [],
-      "quando": "2026-09-24 03:27"
+      "quando": "2026-09-24 04:09"
     },
     {
       "id": "phxzip-zip-slip",
       "titulo": "entrada com `..` no nome extraída fora da pasta de destino (zip-slip)",
       "veredito": "PROVADA",
-      "segundos": 9.28,
+      "segundos": 12.36,
       "notas": [],
-      "quando": "2026-09-24 03:27"
+      "quando": "2026-09-24 04:09"
     },
     {
       "id": "phxzip-crc-do-cifrado",
       "titulo": "byte trocado no dado cifrado relatado como «senha errada» porque o CRC do cifrado não foi conferido",
       "veredito": "PROVADA",
-      "segundos": 9.65,
+      "segundos": 14.68,
       "notas": [],
-      "quando": "2026-09-24 03:27"
+      "quando": "2026-09-24 04:09"
     },
     {
       "id": "phxzip-crc-do-conteudo",
       "titulo": "senha errada devolvendo lixo como se fosse o arquivo, porque o CRC do conteúdo não foi conferido",
       "veredito": "PROVADA",
-      "segundos": 8.25,
+      "segundos": 14.96,
       "notas": [],
-      "quando": "2026-09-24 03:27"
+      "quando": "2026-09-24 04:09"
     },
     {
       "id": "phxzip-teto-do-declarado",
       "titulo": "conteúdo acima do teto de quem chama é descompactado inteiro em vez de recusado pelo tamanho declarado",
       "veredito": "PROVADA",
-      "segundos": 8.93,
+      "segundos": 14.72,
       "notas": [],
-      "quando": "2026-09-24 03:27"
+      "quando": "2026-09-24 04:09"
     },
     {
       "id": "drop-grava-o-ndx-rasgado",
@@ -1766,6 +1766,46 @@
       "segundos": 48.07,
       "notas": [],
       "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "phxzip-ciclos-do-arquivo",
+      "titulo": "o 7zAES de um arquivo hostil pede 2^24 rodadas e o padrão deriva inteiro já no abrir",
+      "veredito": "PROVADA",
+      "segundos": 57.59,
+      "notas": [],
+      "quando": "2026-09-24 04:09"
+    },
+    {
+      "id": "phxzip-derivacoes-por-abertura",
+      "titulo": "um sal diferente em cada bloco fura o cache e cobra uma derivação inteira por bloco",
+      "veredito": "PROVADA",
+      "segundos": 1.32,
+      "notas": [],
+      "quando": "2026-09-24 04:09"
+    },
+    {
+      "id": "phxzip-contagem-sem-teto",
+      "titulo": "a contagem de entradas do cabeçalho comprimido dimensiona vetores pelo que o arquivo declara",
+      "veredito": "PROVADA",
+      "segundos": 0.95,
+      "notas": [],
+      "quando": "2026-09-24 04:09"
+    },
+    {
+      "id": "phxzip-cabecalho-plano-sem-teto",
+      "titulo": "o cabeçalho gravado em claro é analisado inteiro mesmo acima de `Limites::cabecalho`",
+      "veredito": "PROVADA",
+      "segundos": 0.99,
+      "notas": [],
+      "quando": "2026-09-24 04:09"
+    },
+    {
+      "id": "phxzip-nome-repetido-na-leitura",
+      "titulo": "duas entradas com o mesmo nome: o extrator grava a segunda por cima da primeira, calado",
+      "veredito": "PROVADA",
+      "segundos": 9.57,
+      "notas": [],
+      "quando": "2026-09-24 04:09"
     }
   ]
 }

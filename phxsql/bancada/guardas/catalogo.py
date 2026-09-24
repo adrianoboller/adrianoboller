@@ -10547,4 +10547,154 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "config::tests::a_chave_mestra_ausente_avisa_pela_lista_de_sempre",
         ],
     },
+    {
+        "id": "phxzip-ciclos-do-arquivo",
+        "titulo": "o 7zAES de um arquivo hostil pede 2^24 rodadas e o padrão deriva inteiro já no abrir",
+        "porque": (
+            "parecer SEC de 24/09/2026 (ALTO, bloqueava a etapa 2 na web): o "
+            "`NumCyclesPower` vem do ARQUIVO e o `Limites::default()` aceitava "
+            "ate 24. Um cabecalho cifrado basta para a derivacao rodar no "
+            "`abrir`, antes de qualquer extracao. Medido com o teto antigo: "
+            "48,6 s para recusar (e a resposta nem era a recusa, era "
+            "`SenhaErrada`); com o conserto, 28 microssegundos."
+        ),
+        "arquivo": "crates/phxzip/src/leitor.rs",
+        "trecho": """            ciclos: chave::CICLOS_PADRAO,
+            derivacoes: 2,
+""",
+        "troca": """            // DEFEITO REPOSTO (471): o padrao aceita o que o 7-Zip le.
+            ciclos: chave::CICLOS_MAXIMO,
+            derivacoes: 2,
+""",
+        "pacote": "phxzip",
+        "alvo": ["--test", "phz"],
+        "caem": [
+            "ciclos_do_arquivo_acima_do_padrao_recusam_sem_derivar",
+        ],
+        "seguem": [
+            "le_o_lzma2_com_cabecalho_cifrado_do_7zip",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "phxzip-derivacoes-por-abertura",
+        "titulo": "um sal diferente em cada bloco fura o cache e cobra uma derivação inteira por bloco",
+        "porque": (
+            "o amplificador do mesmo achado ALTO: o cache so poupa quem repete "
+            "sal e ciclos, e o arquivo escolhe os dois. O 7-Zip grava sal "
+            "vazio e custa UMA derivacao por arquivo; o teto fica no unico "
+            "lugar onde uma derivacao acontece. Medido sem ele: 8 derivacoes "
+            "com teto de 2."
+        ),
+        "arquivo": "crates/phxzip/src/chave.rs",
+        "trecho": """        if self.itens.len() as u64 >= self.teto as u64 {
+            return Err(Erro::GrandeDemais {
+                oque: "derivacoes de chave",
+                declarado: self.itens.len() as u64 + 1,
+                teto: self.teto as u64,
+            });
+        }
+        let k = derivar(senha16, sal, ciclos);
+""",
+        "troca": """        // DEFEITO REPOSTO (471): toda derivacao pedida roda.
+        let k = derivar(senha16, sal, ciclos);
+""",
+        "pacote": "phxzip",
+        "alvo": ["--lib"],
+        "caem": [
+            "chave::testes::sal_diferente_por_bloco_nao_multiplica_a_derivacao",
+        ],
+        "seguem": [
+            "chave::testes::derivacao_confere_com_a_conta_feita_fora",
+        ],
+    },
+    {
+        "id": "phxzip-contagem-sem-teto",
+        "titulo": "a contagem de entradas do cabeçalho comprimido dimensiona vetores pelo que o arquivo declara",
+        "porque": (
+            "parecer SEC (MEDIO): a contagem so era conferida contra os bytes "
+            "que restavam do cabecalho, e com o cabecalho COMPRIMIDO poucos KB "
+            "viram o cabecalho do tamanho do teto. Medido por um alocador que "
+            "conta: um arquivo de 171 bytes alocou 29.259.867 bytes de pico "
+            "(146x o cabecalho de 200.000); com o teto das contagens, 275.168."
+        ),
+        "arquivo": "crates/phxzip/src/leitor.rs",
+        "trecho": """        let bruto = self.numero()?;
+        if bruto > self.teto as u64 {
+            return Err(Erro::GrandeDemais {
+                oque,
+                declarado: bruto,
+                teto: self.teto as u64,
+            });
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (471): so os bytes que restam limitam a contagem.
+        let bruto = self.numero()?;
+""",
+        "pacote": "phxzip",
+        "alvo": ["--test", "alocacao"],
+        "caem": [
+            "contagem_do_cabecalho_comprimido_nao_aloca_pelo_que_declara",
+        ],
+        "seguem": [
+            "cabecalho_plano_acima_do_teto_nao_e_analisado",
+        ],
+    },
+    {
+        "id": "phxzip-cabecalho-plano-sem-teto",
+        "titulo": "o cabeçalho gravado em claro é analisado inteiro mesmo acima de `Limites::cabecalho`",
+        "porque": (
+            "parecer SEC (MEDIO, raiz secundaria): so o cabecalho "
+            "descompactado obedecia ao teto; o tamanho do cabecalho em claro "
+            "so era conferido contra o tamanho do arquivo. Medido: um cabecalho "
+            "em claro de 159.037 bytes, com teto de 16 KiB, alocou 1.450.238 "
+            "bytes de pico; com o conserto, zero."
+        ),
+        "arquivo": "crates/phxzip/src/leitor.rs",
+        "trecho": """        if tam > limites.cabecalho {
+            return Err(Erro::GrandeDemais {
+                oque: "cabecalho",
+                declarado: tam,
+                teto: limites.cabecalho,
+            });
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (471): o cabecalho em claro nao olha o teto.
+""",
+        "pacote": "phxzip",
+        "alvo": ["--test", "alocacao"],
+        "caem": [
+            "cabecalho_plano_acima_do_teto_nao_e_analisado",
+        ],
+        "seguem": [
+            "contagem_do_cabecalho_comprimido_nao_aloca_pelo_que_declara",
+        ],
+    },
+    {
+        "id": "phxzip-nome-repetido-na-leitura",
+        "titulo": "duas entradas com o mesmo nome: o extrator grava a segunda por cima da primeira, calado",
+        "porque": (
+            "parecer SEC (BAIXO): o escritor recusava nome repetido e o leitor "
+            "nao. Pelo disco, com a conferencia tirada: `a.txt` sobrescrito, "
+            "ficou \"SEGUNDA\" no lugar de \"primeira\". A colisao e sem "
+            "diferenca de caixa; a variante `A.txt` so sobrescreve em disco que "
+            "ignora caixa, e isso foi medido sob o `wine`, fora desta guarda."
+        ),
+        "arquivo": "crates/phxzip/src/leitor.rs",
+        "trecho": """            if !vistos.insert(chave_de_colisao(&e.nome)) {
+                return Err(Erro::NomeRepetido(e.nome.clone()));
+            }
+""",
+        "troca": """            // DEFEITO REPOSTO (471): o repetido passa.
+            let _ = vistos.insert(chave_de_colisao(&e.nome));
+""",
+        "pacote": "phxzip",
+        "alvo": ["--test", "phz"],
+        "caem": [
+            "nome_repetido_nao_sobrescreve_no_destino",
+        ],
+        "seguem": [
+            "lista_e_extrai_a_arvore_que_o_7zip_gravou",
+        ],
+    },
 ]

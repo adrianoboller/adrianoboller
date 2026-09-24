@@ -12,6 +12,29 @@
 //! `encryption_exigida` (pedido 366). A senha NAO mora aqui: e parametro, e a
 //! etapa 2 do pedido decide onde ela fica.
 //!
+//! # Com a senha constante, o `.phz` nao da sigilo NEM integridade
+//!
+//! Dito pelo parecer SEC de 24/09/2026 (pedido 471), e vale para todo leitor
+//! deste modulo:
+//!
+//! * **Sigilo zero.** O escritor grava sal vazio (como o 7-Zip), entao a chave
+//!   AES e funcao pura da senha -- a MESMA em todo servidor, e derivavel por
+//!   qualquer um que leia o repositorio.
+//! * **Integridade zero.** O que confere o conteudo e o CRC-32, que nao e
+//!   criptografico, e o AES-CBC do 7z nao autentica. Quem consegue ESCREVER o
+//!   `.phz` (no disco, num backup, num canal de sincronia) forja uma
+//!   configuracao com todos os CRCs certos, e [`desempacotar`] a aceita. A
+//!   autenticidade da configuracao tem de vir de FORA -- permissao do arquivo,
+//!   assinatura destacada --, nunca do `.phz`.
+//! * **Sem oraculo, por construcao.** Como nao ha segredo, separar «senha
+//!   errada» de «corrompido» nao revela nada que ja nao seja publico; e o CBC
+//!   do 7z nao tem preenchimento PKCS (completa com zero e guarda o tamanho no
+//!   cabecalho), entao nao ha oraculo de preenchimento.
+//! * **Sem zeroizacao.** A crate e `no_std` sem crate de fora: a chave fica no
+//!   cache de chaves e a senha em UTF-16 dentro do `Arquivo` ate eles serem
+//!   soltos, sem sobrescrita. Irrelevante com senha publica; quem reusar este
+//!   AES ou esta derivacao para segredo de verdade tem de rever isto antes.
+//!
 //! # Por que 7z, e por que por dentro
 //!
 //! O dono escolheu o formato do 7-Zip e escreve-lo dentro do PhxSql: o

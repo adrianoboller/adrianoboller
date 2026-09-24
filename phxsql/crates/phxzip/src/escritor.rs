@@ -29,7 +29,9 @@ use phxsql_core::crc::crc32;
 use crate::aes::{self, Aes256, BLOCO};
 use crate::chave::{self, CICLOS_MAXIMO, CICLOS_PADRAO, ID_7ZAES};
 use crate::erro::Erro;
-use crate::leitor::{conferir_nome, id, ASSINATURA, ATRIBUTO_PASTA, ID_COPIA, ID_LZMA2};
+use crate::leitor::{
+    chave_de_colisao, conferir_nome, id, ASSINATURA, ATRIBUTO_PASTA, ID_COPIA, ID_LZMA2,
+};
 use crate::lzma_compressor;
 
 /// Atributo «arquivo» do Windows, o `A` que o 7-Zip mostra.
@@ -80,6 +82,9 @@ struct Item {
 pub struct Escritor {
     opcoes: Opcoes,
     itens: Vec<Item>,
+    /// As chaves de colisao ja usadas: conjunto, e nao varredura da lista,
+    /// porque a varredura custava n^2 comparacoes para n entradas.
+    nomes: alloc::collections::BTreeSet<String>,
 }
 
 /// O `UINT64` do 7z: tantos bits altos ligados no primeiro byte quantos bytes
@@ -219,6 +224,7 @@ impl Escritor {
         Ok(Escritor {
             opcoes,
             itens: Vec::new(),
+            nomes: alloc::collections::BTreeSet::new(),
         })
     }
 
@@ -232,7 +238,7 @@ impl Escritor {
         // A mesma conferencia do leitor: o escritor nao grava o que o leitor
         // recusaria abrir.
         let nome = conferir_nome(nome)?;
-        if self.itens.iter().any(|i| i.nome == nome) {
+        if !self.nomes.insert(chave_de_colisao(&nome)) {
             return Err(Erro::NomeRepetido(nome));
         }
         self.itens.push(Item {

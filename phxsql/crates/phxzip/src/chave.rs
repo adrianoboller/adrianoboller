@@ -157,23 +157,54 @@ pub(crate) fn derivar(senha16: &[u8], sal: &[u8], ciclos: u8) -> [u8; CHAVE] {
 /// Guarda de chaves ja derivadas no mesmo arquivo: o cabecalho e cada bloco
 /// trazem as proprias propriedades, e quase sempre com o mesmo sal e os mesmos
 /// ciclos -- derivar de novo custaria outra vez as 2^19 rodadas.
-#[derive(Default)]
+///
+/// # E o teto de derivacoes, e por que ele mora aqui
+///
+/// O cache so poupa quem REPETE sal e ciclos. Um arquivo hostil com um sal
+/// diferente em cada bloco fura o cache e cobra uma derivacao inteira por
+/// bloco -- o amplificador que o parecer SEC de 24/09/2026 apontou (pedido
+/// 471). Este e o unico lugar onde uma derivacao acontece, entao e aqui que
+/// ela se conta: a derivacao que passaria do teto e recusada ANTES de rodar.
+/// O 7-Zip grava sal vazio em todo bloco, e um arquivo inteiro dele custa UMA.
 pub(crate) struct Chaves {
     itens: Vec<(u8, Vec<u8>, [u8; CHAVE])>,
+    teto: u32,
 }
 
 impl Chaves {
-    pub fn obter(&mut self, senha16: &[u8], sal: &[u8], ciclos: u8) -> [u8; CHAVE] {
+    /// Um cache que deriva no maximo `teto` chaves distintas.
+    pub fn com_teto(teto: u32) -> Chaves {
+        Chaves {
+            itens: Vec::new(),
+            teto,
+        }
+    }
+
+    pub fn obter(&mut self, senha16: &[u8], sal: &[u8], ciclos: u8) -> Result<[u8; CHAVE], Erro> {
         if let Some((_, _, k)) = self
             .itens
             .iter()
             .find(|(c, s, _)| *c == ciclos && s.as_slice() == sal)
         {
-            return *k;
+            return Ok(*k);
+        }
+        if self.itens.len() as u64 >= self.teto as u64 {
+            return Err(Erro::GrandeDemais {
+                oque: "derivacoes de chave",
+                declarado: self.itens.len() as u64 + 1,
+                teto: self.teto as u64,
+            });
         }
         let k = derivar(senha16, sal, ciclos);
         self.itens.push((ciclos, sal.to_vec(), k));
-        k
+        Ok(k)
+    }
+
+    /// Quantas derivacoes ja rodaram -- o trabalho de CPU feito, para o teste
+    /// medir o dano e nao so o nome do erro.
+    #[cfg(test)]
+    pub fn derivadas(&self) -> usize {
+        self.itens.len()
     }
 }
 
@@ -271,6 +302,34 @@ mod testes {
         assert_eq!(compressoes(19, 32, 0), (40u64 * 524_288 + 9).div_ceil(64));
         assert_eq!(compressoes(19, 32, 0), 327_681);
         assert_eq!(compressoes(SEM_HASH, 32, 0), 0);
+    }
+
+    /// O amplificador do parecer SEC: sal diferente por bloco fura o cache.
+    /// Com teto 2, a terceira derivacao e recusada SEM rodar -- e o vermelho,
+    /// com a conferencia tirada, conta quantas rodaram.
+    #[test]
+    fn sal_diferente_por_bloco_nao_multiplica_a_derivacao() {
+        let senha = senha_utf16("senha-inventada");
+        let mut ch = Chaves::com_teto(2);
+        let mut recusadas = 0;
+        for sal in 0..8u8 {
+            match ch.obter(&senha, &[sal], 4) {
+                Ok(_) => {}
+                Err(Erro::GrandeDemais {
+                    oque: "derivacoes de chave",
+                    ..
+                }) => recusadas += 1,
+                Err(e) => panic!("veio {e:?}"),
+            }
+        }
+        assert!(
+            ch.derivadas() <= 2,
+            "{} derivacoes rodaram com teto de 2 -- cada uma custa 2^ciclos SHA-256",
+            ch.derivadas()
+        );
+        assert_eq!(recusadas, 6);
+        // O que ja foi derivado continua servindo, sem contar de novo.
+        assert!(ch.obter(&senha, &[0], 4).is_ok());
     }
 
     #[test]

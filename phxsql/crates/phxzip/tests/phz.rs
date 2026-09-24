@@ -217,11 +217,16 @@ fn lista_e_extrai_a_arvore_cifrada_que_o_7zip_gravou() {
 /// dois CRCs do cabecalho -- o que um atacante faria.
 fn com_nome(nome: &str) -> Vec<u8> {
     let mut d = fixture!("base-zip-slip.7z").to_vec();
-    let de: Vec<u8> = "XXfora.txt"
-        .encode_utf16()
-        .flat_map(|u| u.to_le_bytes())
-        .collect();
-    let para: Vec<u8> = nome.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    trocar_nome(&mut d, "XXfora.txt", nome);
+    d
+}
+
+/// Troca um nome gravado em UTF-16 no cabecalho em claro por outro de mesmo
+/// tamanho, e refaz os CRCs -- o arquivo hostil que o escritor se recusaria a
+/// gravar.
+fn trocar_nome(d: &mut [u8], de: &str, para: &str) {
+    let de: Vec<u8> = de.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    let para: Vec<u8> = para.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
     assert_eq!(
         de.len(),
         para.len(),
@@ -232,8 +237,7 @@ fn com_nome(nome: &str) -> Vec<u8> {
         .position(|w| w == de.as_slice())
         .unwrap();
     d[onde..onde + de.len()].copy_from_slice(&para);
-    refazer_crcs(&mut d);
-    d
+    refazer_crcs(d);
 }
 
 /// Refaz o CRC do cabecalho e o do cabecalho de inicio.
@@ -249,19 +253,28 @@ fn refazer_crcs(d: &mut [u8]) {
 /// O extrator que a web e o terminal vao ser: grava cada entrada em
 /// `destino/nome`. Ele NAO confere o nome -- confia no motor, que e exatamente
 /// o contrato: a conferencia mora num lugar so.
-fn extrair_para(destino: &Path, arquivo: &[u8]) -> Result<(), Erro> {
+///
+/// Erro do sistema de arquivos nao derruba o teste aqui: ele e anotado, e o
+/// teste que confere o destino o mostra -- no Windows, gravar em `nul.txt` da
+/// «Invalid handle», e isso e o DANO medido, nao um acidente do teste.
+fn extrair_para(destino: &Path, arquivo: &[u8]) -> Result<Vec<String>, Erro> {
     let mut a = Arquivo::abrir(arquivo, None, Limites::default())?;
+    let mut falhas = Vec::new();
     a.percorrer(|e, dados| {
         let caminho = destino.join(&e.nome);
-        if e.pasta {
-            std::fs::create_dir_all(&caminho).unwrap();
+        let r = if e.pasta {
+            std::fs::create_dir_all(&caminho)
         } else {
-            if let Some(pai) = caminho.parent() {
-                std::fs::create_dir_all(pai).unwrap();
-            }
-            std::fs::write(&caminho, dados).unwrap();
+            caminho
+                .parent()
+                .map_or(Ok(()), std::fs::create_dir_all)
+                .and_then(|_| std::fs::write(&caminho, dados))
+        };
+        if let Err(erro) = r {
+            falhas.push(format!("{}: {erro}", e.nome));
         }
-    })
+    })?;
+    Ok(falhas)
 }
 
 /// A pasta do teste, com `destino/` dentro. O guarda apaga tudo no `Drop` --
@@ -294,6 +307,130 @@ fn nome_que_sobe_de_pasta_nao_escreve_fora_do_destino() {
             "{nome:?}: veio {r:?}"
         );
     }
+}
+
+/// Um arquivo em claro, sem compressao, com duas entradas -- a base dos
+/// arquivos hostis de nome abaixo.
+fn duas_entradas(primeira: (&str, &[u8]), segunda: (&str, &[u8])) -> Vec<u8> {
+    let mut e = Escritor::novo(Opcoes {
+        metodo: Metodo::Copia,
+        senha: None,
+        ciclos: CICLOS_DE_TESTE,
+        cifrar_cabecalho: false,
+    })
+    .unwrap();
+    e.arquivo(primeira.0, primeira.1, None).unwrap();
+    e.arquivo(segunda.0, segunda.1, None).unwrap();
+    e.terminar()
+}
+
+/// Nome repetido, pelo disco: o extrator grava cada entrada no destino, e a
+/// segunda com o mesmo nome SOBRESCREVE a primeira, calado. O vermelho
+/// (conferencia tirada) mede o dado perdido. A variante com outra caixa so
+/// sobrescreve num disco que ignora caixa -- e por isso roda tambem sob o
+/// `wine`.
+#[test]
+fn nome_repetido_nao_sobrescreve_no_destino() {
+    for (i, repetido) in ["a.txt", "A.txt"].into_iter().enumerate() {
+        let mut arq = duas_entradas(("a.txt", b"primeira"), ("b.txt", b"SEGUNDA"));
+        trocar_nome(&mut arq, "b.txt", repetido);
+        let base = pasta_de_teste(&format!("repetido{i}"));
+        let r = extrair_para(&base.join("destino"), &arq);
+        let primeira = std::fs::read(base.join("destino").join("a.txt")).ok();
+        assert!(
+            primeira.is_none() || primeira.as_deref() == Some(b"primeira".as_slice()),
+            "{repetido:?}: a.txt foi sobrescrito -- ficou {:?} no lugar de \"primeira\"",
+            String::from_utf8_lossy(primeira.as_deref().unwrap_or_default())
+        );
+        assert!(
+            matches!(r, Err(Erro::NomeRepetido(_))),
+            "{repetido:?}: veio {r:?}"
+        );
+    }
+}
+
+/// Nome que o Windows desvia -- dispositivo (`nul.txt`) ou ponto no fim
+/// (`a.txt.` vira `a.txt`) --, pelo disco: o extrator tem de achar no destino
+/// o que a lista diz. No Linux o vermelho so mostra a recusa faltando; o DANO
+/// (o dado que foi para o dispositivo nulo, a entrada sobrescrita) so aparece
+/// rodando sob o `wine`, que resolve os nomes como o Windows.
+#[test]
+fn nome_que_o_windows_desvia_nao_perde_dado_no_destino() {
+    // O escritor recusa os dois nomes; o atacante grava um inocente de mesmo
+    // tamanho e troca depois.
+    for (i, (desviado, inocente)) in [("nul.txt", "abc.txt"), ("a.txt.", "b.txtx")]
+        .into_iter()
+        .enumerate()
+    {
+        let mut arq = duas_entradas(("a.txt", b"primeira"), (inocente, b"SEGUNDA"));
+        trocar_nome(&mut arq, inocente, desviado);
+        let base = pasta_de_teste(&format!("windows{i}"));
+        let destino = base.join("destino");
+        let r = extrair_para(&destino, &arq);
+        if let Ok(falhas) = &r {
+            // Sem a recusa: cada entrada tem de estar no destino com o dado.
+            let mut a = Arquivo::abrir(&arq, None, Limites::default()).unwrap();
+            for (e, dado) in a.extrair_todas().unwrap() {
+                let no_disco = std::fs::read(destino.join(&e.nome)).ok();
+                assert_eq!(
+                    no_disco.as_deref(),
+                    Some(dado.as_slice()),
+                    "{:?}: o dado nao esta no destino onde a lista diz (falhas ao gravar: {falhas:?})",
+                    e.nome
+                );
+            }
+        }
+        assert!(
+            matches!(r, Err(Erro::NomePerigoso(_))),
+            "{desviado:?}: veio {r:?}"
+        );
+    }
+}
+
+/// O `NumCyclesPower` vem do ARQUIVO. Um cabecalho cifrado que pede 2^24
+/// rodadas tem de ser recusado sob o padrao ANTES de derivar -- o teste mede o
+/// TEMPO, porque e o tempo que o atacante compra: com o teto antigo (24), a
+/// derivacao roda inteira ja no `abrir` (~42 s em debug).
+#[test]
+fn ciclos_do_arquivo_acima_do_padrao_recusam_sem_derivar() {
+    let mut e = Escritor::novo(Opcoes {
+        metodo: Metodo::Copia,
+        senha: Some(SENHA.into()),
+        ciclos: CICLOS_DE_TESTE,
+        cifrar_cabecalho: true,
+    })
+    .unwrap();
+    e.arquivo("config.json", CONFIG, None).unwrap();
+    let mut arq = e.terminar();
+    // As propriedades do 7zAES do cabecalho estao no registro em claro:
+    // coder `24 06F10701`, 18 bytes, e o byte dos ciclos (0x40 | ciclos).
+    let off = 32 + u64::from_le_bytes(arq[12..20].try_into().unwrap()) as usize;
+    let marca = [0x24, 0x06, 0xf1, 0x07, 0x01, 0x12, 0x40 | CICLOS_DE_TESTE];
+    let onde = off
+        + arq[off..]
+            .windows(marca.len())
+            .position(|w| w == marca)
+            .expect("o coder do cabecalho nao esta onde devia");
+    arq[onde + 6] = 0x40 | 24;
+    refazer_crcs(&mut arq);
+
+    let t0 = std::time::Instant::now();
+    let r = desempacotar(&arq, SENHA);
+    let gasto = t0.elapsed();
+    println!("recusou em {gasto:?}");
+    assert!(
+        gasto < std::time::Duration::from_millis(500),
+        "levou {gasto:?} para recusar um cabecalho que pede 2^24 rodadas (veio {r:?})"
+    );
+    assert_eq!(
+        r,
+        Err(Erro::CiclosDemais {
+            pedidos: 24,
+            teto: 19
+        })
+    );
+    // O que o 7-Zip grava (19) continua abrindo pelo padrao.
+    assert!(desempacotar(fixture!("lzma2-cabecalho-cifrado.phz"), SENHA).is_ok());
 }
 
 // ------------------------------------------------------- PhxZip -> PhxZip

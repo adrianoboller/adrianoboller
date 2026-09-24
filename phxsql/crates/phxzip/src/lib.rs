@@ -41,6 +41,31 @@
 //! O mesmo `.phz` sai com os MESMOS bytes em toda plataforma que roda (o IV e
 //! sintetico e todo inteiro e little-endian): o teste
 //! `o_arquivo_gravado_e_o_mesmo_em_toda_plataforma` confere o SHA-256.
+//!
+//! ## Para quem abre arquivo que veio de fora, e para quem extrai
+//!
+//! O que o motor garante (pedido 471, parecer SEC de 24/09/2026):
+//!
+//! * [`Limites::default`] e o de entrada NAO confiavel -- ciclos do 7zAES ate
+//!   19, duas derivacoes por abertura, 65.536 entradas, cabecalho de 8 MiB --,
+//!   e tudo o que o arquivo declara e conferido contra ele antes de derivar ou
+//!   de alocar. [`Limites::confiavel`] e o ato escrito de abrir com a folga do
+//!   7-Zip.
+//! * Todo nome passa por [`conferir_nome`] -- nada de caminho absoluto, `..`,
+//!   letra de unidade, NUL, dispositivo do Windows ou ponto/espaco no fim -- e
+//!   nome repetido (sem diferenca de caixa) recusa o arquivo inteiro.
+//!
+//! O que o motor NAO faz, e o extrator nao pode fazer por ele:
+//!
+//! * **`Entrada::atributos` e informacao, nao ordem.** O 7z pode carregar nos
+//!   bits altos o modo Unix, inclusive o de LINK SIMBOLICO. O motor so entrega
+//!   bytes e nunca cria link; o extrator nao pode honrar esses bits como link
+//!   nem como permissao -- um link extraido e seguido depois e o zip-slip por
+//!   outra porta.
+//! * **Sem zeroizacao** de chave e senha na memoria (ver `phz.rs`).
+//! * **Colisao entre pasta e arquivo** (`a` arquivo e `a/b`) e **normalizacao
+//!   Unicode** (o macOS compoe `ç` diferente) nao sao conferidas: dao erro ao
+//!   gravar, nao sobrescrita calada, e ficam com o extrator.
 
 #![no_std]
 
