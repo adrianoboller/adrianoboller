@@ -1136,7 +1136,7 @@ impl No {
     /// aperto sem resposta e comecar com quem tem endereco e nao tem sessao.
     pub fn tique(&self) {
         if let Some(f) = &self.fio {
-            f.vigiar();
+            f.vigiar(&self.udp);
         }
         self.registrar_no_repasse();
         self.anunciar();

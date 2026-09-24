@@ -2,7 +2,7 @@
 
 # Reusar — sucessos comprovados
 
-288 cognições: **5 frutíferas**, **4 infrutíferas**, **279 pendentes** (sem evidência validada — não entram aqui).
+289 cognições: **6 frutíferas**, **4 infrutíferas**, **279 pendentes** (sem evidência validada — não entram aqui).
 
 Só entra o que tem evidência que o `classificar.py` conferiu. Antes de desenhar, procure aqui o que já se provou.
 
@@ -11,6 +11,13 @@ Só entra o que tem evidência que o `classificar.py` conferiu. Antes de desenha
 Protocolo com estado se prova também **reiniciando um dos lados no meio**. O caminho feliz com os dois nascendo juntos não exercita a perda de estado.
 
 - Evidência: teste `par_surdo_dispara_aperto_novo` (phxvpn/src/p2p.rs)
+- Validado em: 24/09/2026
+
+## [Prova de troca de fio sem tráfego não vê a corrida do primeiro quadro](cognicao_troca-de-fio-sem-trafego-nao-ve-o-primeiro-quadro_20260924_0905.md)
+
+Prova de troca de caminho roda **com tráfego no ar durante a troca**. Troca feita com o túnel parado só prova a ordem que o próprio nó escolhe; a ordem que a rede impõe (quem chega primeiro na conexão nova) só aparece quando outra thread tem pacote para mandar no mesmo instante.
+
+- Evidência: `phxvpn/provas/tcp/resultados.json`; teste `conexao_nova_comeca_pelo_registro_mesmo_com_trafego` (phxvpn/src/fio.rs)
 - Validado em: 24/09/2026
 
 ## [A gerência do OpenVPN: `kill CN` não avisa o cliente; `client-kill` avisa](cognicao_gerencia-openvpn-kill-nao-avisa-o-cliente_20260924_0910.md)

@@ -13,7 +13,19 @@
 //! PARA     [8,0,0,0] chave_destino:32 | pacote do par (INICIO/RESPOSTA/DADOS)
 //! DE       [9,0,0,0] chave_origem:32  | pacote do par
 //! CONFIRMA [12,0,0,0] carimbo:12 mac:32   (resposta a um REGISTRO valido)
+//! SONDA    [13,0,0,0] chave_do_no:32 carimbo:12 mac:32   (so por UDP)
+//! ECO      [14,0,0,0] carimbo:12 mac:32   (resposta a uma SONDA valida)
 //! ```
+//!
+//! # Por que a SONDA nao e um REGISTRO
+//!
+//! O no que caiu para TCP precisa saber se o UDP voltou (`fio.rs`). Um
+//! REGISTRO por UDP responderia -- mas MUDA a ponta do no na tabela, e o
+//! repasse passaria a mandar o trafego dele por um UDP que talvez so tenha
+//! deixado passar um datagrama. A SONDA so pergunta: o repasse responde com
+//! um ECO e nao mexe em nada. Custa um HMAC (o segredo ficou guardado no
+//! registro), so vale para no ja registrado, e o carimbo crescente impede
+//! que uma SONDA gravada vire refletor (80 bytes entram, 48 saem, uma vez).
 //!
 //! # Por que o repasse confirma o REGISTRO
 //!
@@ -70,6 +82,10 @@ pub const TIPO_DE: u8 = 9;
 /// 12, e nao 10/11: esses sao APRESENTAR/APRESENTACAO da perfuracao.
 pub const TIPO_CONFIRMA: u8 = 12;
 pub const CONFIRMA_LEN: usize = 4 + 12 + 32;
+pub const TIPO_SONDA: u8 = 13;
+pub const TIPO_ECO: u8 = 14;
+pub const SONDA_LEN: usize = 4 + 32 + 12 + 32;
+pub const ECO_LEN: usize = 4 + 12 + 32;
 
 pub const REGISTRO_LEN: usize = 4 + 32 + 12 + 32;
 /// O no renova o registro nesse ritmo -- tambem mantem aberto o furo do NAT.
@@ -180,6 +196,42 @@ fn mac_confirma(segredo: &[u8; 32], chave: &[u8; 32], carimbo: &[u8; 12]) -> [u8
     hmac_sha256(segredo, &m)
 }
 
+fn mac_de(rotulo: &[u8], segredo: &[u8; 32], chave: &[u8; 32], carimbo: &[u8; 12]) -> [u8; 32] {
+    let mut m = rotulo.to_vec();
+    m.extend_from_slice(chave);
+    m.extend_from_slice(carimbo);
+    hmac_sha256(segredo, &m)
+}
+
+/// A SONDA que o no no TCP manda por UDP. `segredo` = `DH(no, repasse)`.
+pub fn sonda(segredo: &[u8; 32], chave_no: &[u8; 32], carimbo: &[u8; 12]) -> Vec<u8> {
+    let mut p = vec![TIPO_SONDA, 0, 0, 0];
+    p.extend_from_slice(chave_no);
+    p.extend_from_slice(carimbo);
+    p.extend_from_slice(&mac_de(b"phxvpn-repasse-sonda", segredo, chave_no, carimbo));
+    p
+}
+
+fn eco(segredo: &[u8; 32], chave: &[u8; 32], carimbo: &[u8; 12]) -> Vec<u8> {
+    let mut p = vec![TIPO_ECO, 0, 0, 0];
+    p.extend_from_slice(carimbo);
+    p.extend_from_slice(&mac_de(b"phxvpn-repasse-eco", segredo, chave, carimbo));
+    p
+}
+
+/// Do lado do no: o ECO veio do repasse? Devolve o carimbo da SONDA.
+pub fn conferir_eco(segredo: &[u8; 32], chave_no: &[u8; 32], p: &[u8]) -> Option<[u8; 12]> {
+    if p.len() != ECO_LEN || p[..4] != [TIPO_ECO, 0, 0, 0] {
+        return None;
+    }
+    let carimbo: [u8; 12] = p[4..16].try_into().ok()?;
+    iguais_em_tempo_constante(
+        &mac_de(b"phxvpn-repasse-eco", segredo, chave_no, &carimbo),
+        &p[16..],
+    )
+    .then_some(carimbo)
+}
+
 fn confirmacao(segredo: &[u8; 32], chave: &[u8; 32], carimbo: &[u8; 12]) -> Vec<u8> {
     let mut p = vec![TIPO_CONFIRMA, 0, 0, 0];
     p.extend_from_slice(carimbo);
@@ -257,6 +309,8 @@ struct Registro {
     visto: Instant,
     /// `DH(no, repasse)`, ja pago no registro: prova o APRESENTAR por HMAC.
     segredo: [u8; 32],
+    /// Maior carimbo de SONDA respondido (reenvio gravado nao reflete).
+    sonda: [u8; 12],
 }
 
 pub struct Repasse {
@@ -334,6 +388,30 @@ impl Repasse {
                 saida.extend_from_slice(&origem);
                 saida.extend_from_slice(&dado[36..]);
                 Some((alvo, saida))
+            }
+            TIPO_SONDA => {
+                // So pergunta pelo UDP: e ele que o no quer saber se passa.
+                let Ponta::Udp(_) = de else {
+                    return None;
+                };
+                if dado.len() != SONDA_LEN || dado[..4] != [TIPO_SONDA, 0, 0, 0] {
+                    return None;
+                }
+                let chave: [u8; 32] = dado[4..36].try_into().ok()?;
+                let carimbo: [u8; 12] = dado[36..48].try_into().ok()?;
+                let segredo = self.vivo(&chave)?.segredo;
+                if !iguais_em_tempo_constante(
+                    &mac_de(b"phxvpn-repasse-sonda", &segredo, &chave, &carimbo),
+                    &dado[48..80],
+                ) {
+                    return None;
+                }
+                let r = self.nos.get_mut(&chave)?;
+                if carimbo <= r.sonda {
+                    return None;
+                }
+                r.sonda = carimbo;
+                Some((de, eco(&segredo, &chave, &carimbo)))
             }
             perfuracao::TIPO_APRESENTAR => {
                 // Mesma atribuicao do PARA: a origem sai do endereco que
@@ -431,6 +509,7 @@ impl Repasse {
                 carimbo,
                 visto: Instant::now(),
                 segredo,
+                sonda: [0; 12],
             },
         );
         Some(confirmacao(&segredo, &chave, &carimbo))
@@ -657,5 +736,42 @@ mod testes {
         assert!(r
             .tratar(&embrulhar_para(&x25519::chave_publica(&b), b"x"), end(1))
             .is_none());
+    }
+
+    /// A SONDA responde sem mexer na tabela: o no registrado por TCP
+    /// continua recebendo por TCP. So no registrado, so por UDP, so com mac
+    /// certo e so uma vez por carimbo.
+    #[test]
+    fn sonda_responde_eco_sem_mudar_a_ponta_do_no() {
+        let mut r = Repasse::novo(x25519::gerar_privada(), None);
+        let (a, b) = (x25519::gerar_privada(), x25519::gerar_privada());
+        let pa = x25519::chave_publica(&a);
+        let seg = x25519::segredo(&a, &r.publica()).unwrap();
+        let s1 = sonda(&seg, &pa, &carimbo(5));
+        assert!(
+            r.tratar(&s1, end(9)).is_none(),
+            "no sem registro ganhou eco"
+        );
+        let tcp = Ponta::Tcp(end(1));
+        r.tratar_de(&registro(&a, &r.publica(), carimbo(1), None).unwrap(), tcp)
+            .unwrap();
+        r.tratar(
+            &registro(&b, &r.publica(), carimbo(1), None).unwrap(),
+            end(2),
+        );
+        assert!(r.tratar_de(&s1, tcp).is_none(), "sonda por TCP respondida");
+        let (alvo, e) = r.tratar(&s1, end(9)).expect("sem eco");
+        assert_eq!(alvo, end(9));
+        assert_eq!(conferir_eco(&seg, &pa, &e), Some(carimbo(5)));
+        assert!(conferir_confirmacao(&seg, &pa, &e).is_none());
+        assert!(r.tratar(&s1, end(9)).is_none(), "sonda reenviada refletiu");
+        let mut torta = sonda(&seg, &pa, &carimbo(6));
+        torta[50] ^= 1;
+        assert!(r.tratar(&torta, end(9)).is_none(), "mac torto respondido");
+        // A ponta de A continua a do TCP: o trafego de B vai para la.
+        let (alvo, _) = r
+            .tratar_de(&embrulhar_para(&pa, b"oi"), Ponta::Udp(end(2)))
+            .unwrap();
+        assert_eq!(alvo, tcp, "a sonda mudou a ponta do no");
     }
 }

@@ -11,13 +11,21 @@
 #   4 so o proxy alcanca o repasse; --tcp direto -> NAO passa (controle)
 #   5 so o proxy alcanca; --proxy com usuario e senha -> passa
 #   6 so o proxy alcanca; --proxy sem credencial -> NAO passa (407)
+# Volta ao UDP (auto): UDP bloqueado -> TCP; desbloqueia -> mede em quantos
+#   segundos volta ao UDP (contadores iptables no repasse) e quantos pings
+#   (a cada 0,2 s) se perdem na troca; rebloqueia -> cai de novo ao TCP, e a
+#   proxima sonda tem de vir com o recuo DOBRADO (queda logo apos voltar).
 # Vazao (iperf3 5 s pelo tunel, N corridas; UDP liberado no caso UDP):
 #   repasse por UDP x repasse por TCP x repasse por TCP via proxy.
 #
 # Uso (root): ./rodar.sh [corridas=5]  -> resultados.json ao lado
+#             ./rodar.sh volta         -> so a volta; troca a chave "volta"
+#                                         do resultados.json que ja existe
 set -u
 AQUI=$(cd "$(dirname "$0")" && pwd); R=$(cd "$AQUI/../.." && pwd)
-PHX=${PHXVPN_BIN:-$R/target/release/phxvpn}; N=${1:-5}
+PHX=${PHXVPN_BIN:-$R/target/release/phxvpn}
+SO_VOLTA=0; [ "${1:-}" = volta ] && { SO_VOLTA=1; shift; }
+N=${1:-5}
 T=$(mktemp -d /tmp/phx-tcp.XXXX)
 SENHA_PROXY=senha-do-proxy-prova-7431
 ns() { ip netns exec "$@"; }
@@ -83,6 +91,73 @@ primeiro_ping() { local prazo=$1 t0; t0=$(date +%s.%N)
     sleep 0.2
   done; echo -1; }
 
+# Bytes que A mandou ao repasse, por protocolo (regras so de contagem).
+# No TOPO (-I): contam o que A mandou, inclusive o que o DROP engole depois.
+contar() { ns ftrp iptables -I INPUT 1 -s 10.0.9.2 -p udp --dport 51821
+           ns ftrp iptables -I INPUT 1 -s 10.0.9.2 -p tcp --dport 443; }
+bytes_de_a() { # udp|tcp
+  # iptables-nft escreve o protocolo como numero (17, 6); o legado, por nome.
+  local d=51821 n=17; [ "$1" = tcp ] && { d=443; n=6; }
+  ns ftrp iptables -L INPUT -v -x -n | awk -v p="$1" -v n="$n" -v d="dpt:$d" \
+    '($3==p || $3==n) && $0 ~ /10\.0\.9\.2/ && $0 ~ d {print $2; exit}'; }
+# Segundos ate a linha aparecer N vezes no registro (-1 = nao no prazo).
+esperar_linha() { # ARQUIVO TEXTO VEZES PRAZO
+  local t0; t0=$(date +%s.%N)
+  for _ in $(seq $(($4 * 5))); do
+    [ "$(grep -c "$2" "$1")" -ge "$3" ] && {
+      python3 -c "print(round($(date +%s.%N)-$t0,1))"; return; }
+    sleep 0.2
+  done; echo -1; }
+
+VOLTA=null
+volta() {
+  regras udp; contar; ligar_nos volta; sleep 0.5
+  local t_tcp; t_tcp=$(primeiro_ping 25)
+  echo "== volta: UDP bloqueado, primeiro ping pelo TCP em ${t_tcp}s"
+  # Ping continuo (0,2 s) pela troca inteira; -D carimba cada resposta.
+  # Direto, sem a funcao `ns`: o $! tem de ser o proprio ping (a funcao em
+  # segundo plano e um subshell, e o kill parava nele); -w e o teto se o
+  # kill se perder.
+  ip netns exec ftpa ping -D -i 0.2 -W 1 -w 600 10.78.0.2 > $T/volta-ping.log 2>&1 &
+  local pp=$!; local p0; p0=$(date +%s.%N)
+  sleep 3
+  # Desbloqueia: A e B tem de voltar ao UDP sozinhos.
+  local td; td=$(date +%s.%N); regras livre; contar
+  local na nb; na=$(esperar_linha $T/volta-a.log "de volta ao UDP" 1 400)
+  nb=$(esperar_linha $T/volta-b.log "de volta ao UDP" 1 400)
+  local tv; tv=$(date +%s.%N)
+  sleep 1; ns ftrp iptables -Z INPUT; sleep 5
+  local u1 c1; u1=$(bytes_de_a udp); c1=$(bytes_de_a tcp)
+  echo "== volta: A voltou ao UDP em ${na}s, B em +${nb}s; 5 s depois, A->repasse udp ${u1} B, tcp ${c1} B"
+  # Rebloqueia: cai de novo, e o recuo seguinte dobra.
+  local tr; tr=$(date +%s.%N); regras udp; contar
+  local q; q=$(esperar_linha $T/volta-a.log "tentando TCP" 2 90)
+  local tq; tq=$(date +%s.%N)
+  sleep 6; ns ftrp iptables -Z INPUT; sleep 5
+  local u2 c2; u2=$(bytes_de_a udp); c2=$(bytes_de_a tcp)
+  local recuo; recuo=$(grep -o "proxima sonda do UDP em [0-9]* s" $T/volta-a.log | awk '{print $6}' | paste -sd, -)
+  echo "== volta: rebloqueado, A caiu ao TCP em ${q}s; 5 s depois udp ${u2} B, tcp ${c2} B; recuos ${recuo} s"
+  sleep 2; kill -INT $pp; wait $pp 2>/dev/null
+  local pings
+  pings=$(python3 - "$T/volta-ping.log" "$p0" "$td" "$tv" "$tr" "$tq" <<'PY'
+import re, sys, json
+log, p0, td, tv, tr, tq = sys.argv[1], *map(float, sys.argv[2:])
+ok = {int(m.group(2)): float(m.group(1)) for m in
+      re.finditer(r"\[(\d+\.\d+)\].*icmp_seq=(\d+)", open(log).read())}
+ult = max(ok) if ok else 0
+# Sem resposta, o instante do envio sai da sequencia (0,2 s cada).
+perdidos = [s for s in range(1, ult + 1) if s not in ok]
+def perdas(a, b):
+    return sum(1 for s in perdidos if a <= p0 + 0.2 * (s - 1) <= b)
+print(json.dumps({"troca": perdas(td, tv + 5), "rebloqueio": perdas(tr, tq + 5),
+                  "enviados": ult, "perdidos": len(perdidos)}))
+PY
+)
+  echo "== volta: pings $pings"
+  VOLTA="{\"primeiro_ping_tcp_s\":$t_tcp,\"volta_udp_s\":{\"a\":$na,\"b_depois_de_a\":$nb},\"bytes_5s_depois_da_volta\":{\"udp\":${u1:-0},\"tcp\":${c1:-0}},\"queda_de_novo_s\":$q,\"bytes_5s_depois_da_queda\":{\"udp\":${u2:-0},\"tcp\":${c2:-0}},\"recuos_s\":[${recuo}],\"pings\":$pings}"
+  parar_nos
+}
+
 # caso ROTULO REGRAS PRAZO OPCOES...
 CASOS=()
 caso() {
@@ -106,6 +181,17 @@ ns ftpx python3 $AQUI/proxy.py 3128 "prova:$SENHA_PROXY" $T/proxy.log &
 ns ftpx python3 $AQUI/proxy.py 3129 "" $T/proxy-aberto.log &
 sleep 0.5
 
+if [ $SO_VOLTA = 1 ]; then
+  volta
+  python3 - "$AQUI/resultados.json" "$VOLTA" "$(date -u +%FT%TZ)" <<'PY'
+import json, sys
+j = json.load(open(sys.argv[1]))
+j["volta"] = json.loads(sys.argv[2]); j["volta"]["data"] = sys.argv[3]
+open(sys.argv[1], "w").write(json.dumps(j) + "\n")
+PY
+  exit 0
+fi
+
 caso auto          udp   25
 caso so-udp        udp   25 --fio udp
 caso tcp           udp   15 --tcp
@@ -119,6 +205,8 @@ VAZOU=$(cat $T/*.log | grep -c "$SENHA_PROXY\|$(printf 'prova:%s' $SENHA_PROXY |
 echo "== senha do proxy nos registros do phxvpn e do proxy: $VAZOU ocorrencia(s)"
 CONNECTS=$(grep -c "CONNECT 10.0.9.1:443 200" $T/proxy.log)
 C407=$(grep -c " 407" $T/proxy.log)
+
+volta
 
 # --- Vazao: o mesmo iperf3 pelo tunel, fio por fio.
 VAZAO=()
@@ -140,9 +228,9 @@ vazao udp        livre --fio udp
 vazao tcp        udp   --tcp
 vazao tcp-proxy  proxy --proxy 10.0.9.4:3129
 
-printf '{"data":"%s","corridas":%s,"maquina":"%s","casos":[%s],"senha_do_proxy_nos_registros":%s,"connects_200":%s,"respostas_407":%s,"vazao":[%s]}\n' \
+printf '{"data":"%s","corridas":%s,"maquina":"%s","casos":[%s],"senha_do_proxy_nos_registros":%s,"connects_200":%s,"respostas_407":%s,"volta":%s,"vazao":[%s]}\n' \
   "$(date -u +%FT%TZ)" $N "$(nproc) nucleos, $(uname -r)" "$(IFS=,; echo "${CASOS[*]}")" \
-  "$VAZOU" "$CONNECTS" "$C407" "$(IFS=,; echo "${VAZAO[*]}")" > $AQUI/resultados.json
+  "$VAZOU" "$CONNECTS" "$C407" "$VOLTA" "$(IFS=,; echo "${VAZAO[*]}")" > $AQUI/resultados.json
 python3 - "$AQUI/resultados.json" <<'PY'
 import json, sys, statistics as st
 j = json.load(open(sys.argv[1]))

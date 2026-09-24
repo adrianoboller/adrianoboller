@@ -56,6 +56,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: descoberta na LAN — anúncio broadcast cifrado com chave da PSK, sem nome de rede nem chave em claro; dois membros sem endereço nem repasse se acham em 459 ms (release, `netns`)
 - [x] P2P: perfuração de NAT mediada pelo repasse (modo `auto`) — com dois NATs, o ping migra ao caminho direto em ~2 s e o repasse carrega **0** datagrama de dados; NAT simétrico ou sondas bloqueadas seguem pelo repasse
 - [x] P2P: fio TCP até o repasse (`--tcp`, quadro de 2 bytes como o OpenVPN) e por proxy HTTP `CONNECT` (`--proxy`); o `auto` cai de UDP para TCP sem confirmação em 10 s — provado com UDP bloqueado por iptables e com só o proxy alcançando o repasse
+- [x] P2P: o `auto` **volta** do TCP ao UDP quando o UDP volta (sonda autenticada, 3 ecos seguidos, recuo 30 s → 5 min, recuo dobrado se cair logo depois de voltar) — provado em netns com ping contínuo pela troca
 - [x] Modo servidor OpenVPN em TCP: rede com `proto tcp-server` (porta 443 escolhida pelo administrador) e perfil com `proto tcp-client` e `http-proxy` opcional — provado com o `openvpn` 2.6.19 real, UDP bloqueado e só o proxy alcançando o servidor
 - [x] Três recursos que só existiam por CLI/API foram para a tela (24/09/2026): programa de mesa com **Remover membro** (só o DONO vê o botão), campo de **proxy HTTP** ao ligar rede P2P, e painel web com escolha de **protocolo UDP/TCP** ao criar rede e **proxy HTTP** ao baixar o perfil — ver a seção dedicada abaixo
 
@@ -1418,17 +1419,45 @@ nó:       phxvpn p2p ligar ... --modo repasse --repasse CHAVE@HOST:51821
   voltou ao UDP), o tique refaz na hora o aperto pendente — sem isso ele
   esperava o reenvio de 5 s (medido: primeiro ping 15,0 s no `auto` e 5,3 s
   pelo proxy; depois, 11,0 s e 1,1 s).
+- **Volta ao UDP (`auto`).** Antes, o nó que caía para TCP ficava no TCP até
+  a conexão cair. Agora, no TCP, ele manda uma **SONDA** por UDP ao repasse
+  (tipo 13; o repasse responde **ECO**, tipo 14, com HMAC do mesmo
+  `DH(nó, repasse)`): a primeira **30 s** depois de cair, e cada sonda sem eco
+  em 2 s **dobra** o recuo, até **5 min**. Só volta depois de **3 ecos
+  seguidos** (uma sonda perdida zera a contagem) — um datagrama que passa no
+  meio de uma perda não é «o UDP voltou». E se cair de novo até 5 min depois
+  de voltar, a espera seguinte **dobra** em vez de recomeçar: rede que oscila
+  não faz o nó oscilar junto. Na volta: REGISTRO na hora pelo UDP, o aperto
+  pendente se refaz (a `geracao` do fio sobe) e a conexão TCP ainda é lida
+  por 2 s — o que o repasse pôs nela antes de ver o REGISTRO não se perde — e
+  então fecha. A decisão toda mora no `FioRepasse`; o `p2p.rs` só passa o
+  soquete UDP ao `vigiar`.
+- **Por que a SONDA não é um REGISTRO:** um REGISTRO por UDP também seria
+  confirmado — mas **muda a ponta** do nó na tabela do repasse, que passaria a
+  mandar o tráfego por um UDP que talvez só tenha deixado passar um datagrama.
+  A SONDA só pergunta: não mexe na tabela, só vale para nó já registrado
+  (custa um HMAC, o segredo ficou guardado — nenhum DH), só por UDP, e o
+  carimbo crescente impede que uma SONDA gravada vire refletor (80 bytes
+  entram, 48 saem, uma vez). Repasse antigo ignora o tipo 13: o nó fica no
+  TCP, que é o comportamento de antes.
+- **Primeiro quadro da conexão nova é o REGISTRO.** O repasse derruba a
+  conexão TCP que começa com dado; com tráfego no túnel, o dado da placa
+  chegava antes do REGISTRO do tique e o nó reconectava em laço (4 resets
+  seguidos na primeira corrida da prova da volta — a queda antiga era provada
+  sem ping no ar e nunca viu). Até o REGISTRO sair pela conexão, o dado se
+  perde, como no TCP ainda sem conexão.
 
-**Prova (`provas/tcp/rodar.sh`, 24/09/2026, quatro netns, UDP bloqueado por
-iptables no repasse; A e B sem caminho direto; `resultados.json`):**
+**Prova (`provas/tcp/rodar.sh`, corrida de 24/09/2026 09:23 UTC, quatro
+netns, UDP bloqueado por iptables no repasse; A e B sem caminho direto;
+`resultados.json`):**
 
 | Caso | Primeiro ping | Ping |
 |---|---|---|
-| `auto` (padrão), UDP bloqueado | 11,0 s | 5/5 |
+| `auto` (padrão), UDP bloqueado | 10,9 s | 5/5 |
 | `--fio udp`, UDP bloqueado | — | **0/5** (o outro sentido) |
-| `--tcp`, UDP bloqueado | 1,0 s | 5/5 |
+| `--tcp`, UDP bloqueado | 4,9 s | 5/5 |
 | só o proxy alcança; `--tcp` direto | — | **0/5** (controle: a regra vale) |
-| só o proxy alcança; `--proxy` com usuário e senha | 1,1 s | 5/5 |
+| só o proxy alcança; `--proxy` com usuário e senha | 0,9 s | 5/5 |
 | só o proxy alcança; `--proxy` sem credencial | — | **0/5** (407 dito no registro) |
 
 Senha do proxy nos registros do phxvpn e do proxy: **0 ocorrência** (texto e
@@ -1438,20 +1467,55 @@ reprovam; com o teto anônimo trocado pelo de 64 KiB,
 `anonima_que_nao_registra_e_fechada` reprova (o repasse esperou 5 s pelo resto
 do quadro em vez de fechar no cabeçalho).
 
+O `--tcp` deu 4,9 s nesta corrida e 1,0 s na anterior (a vazão por TCP, na
+mesma corrida anterior, 5,5 s; nesta, 0,4 s): é a corrida entre A e B se
+registrarem — o INICIO que chega ao repasse antes do REGISTRO do par se perde
+e espera o reenvio de 5 s. Não é da volta ao UDP (o `--tcp` não sonda).
+
+**Volta ao UDP** (`rodar.sh`, caso `volta`; `./rodar.sh volta` roda só ele):
+UDP bloqueado → `auto` no TCP; ping contínuo a cada 0,2 s; desbloqueia;
+rebloqueia. Contadores: regras de contagem no topo do `INPUT` do repasse, só
+o que sai de A.
+
+| Fase | Medido |
+|---|---|
+| UDP bloqueado: primeiro ping pelo TCP | 10,9 s |
+| desbloqueia → A de volta ao UDP | **30,0 s** (pelo desenho: 1ª sonda 30 s após a queda, mais 2 a 1 s); B no mesmo segundo |
+| 5 s depois da volta, A → repasse | UDP **4.500 B**, TCP **104 B** (o fechamento da conexão, na carência) |
+| pings perdidos na troca (desbloqueio até 5 s depois da volta) | **0** |
+| rebloqueia → A cai de novo ao TCP | 24,1 s |
+| 5 s depois da queda, A → repasse | UDP **0 B**, TCP **6.450 B** |
+| pings perdidos no rebloqueio | **113** de 374 (~22,6 s) |
+| recuo anunciado nas duas quedas | 30 s, depois **60 s** (caiu logo depois de voltar: dobrou) |
+
+Os 113 pings do rebloqueio são o **tempo de detecção** do UDP mudo, que já
+existia: o REGISTRO se renova a cada 20 s e a reserva é de 10 s, então a queda
+leva até ~30 s — a volta não mudou isso. Encurtar (por exemplo, vigiar a
+chegada de dado do repasse, não só a confirmação do REGISTRO) é a próxima
+hipótese, não medida. RED (unitários): sem a troca de volta,
+`auto_volta_ao_udp_quando_o_repasse_responde_as_sondas` reprova; com K = 1,
+`volta_so_depois_de_k_ecos_seguidos`, `sonda_sem_eco_zera_a_contagem_e_dobra_o_recuo`
+e o de ponta a ponta reprovam; sem dobrar na queda instável,
+`cair_logo_depois_de_voltar_dobra_o_recuo` reprova; sem o guarda do primeiro
+quadro, `conexao_nova_comeca_pelo_registro_mesmo_com_trafego` reprova; e
+`sonda_responde_eco_sem_mudar_a_ponta_do_no` trava a SONDA fora da tabela.
+
 **Vazão pelo túnel** (mesmo `iperf3` TCP de 5 s, 5 corridas, repasse no meio
 nos três; mín – mediana – máx):
 
 | Fio até o repasse | Mbit/s | Ping |
 |---|---|---|
-| UDP | 412 – **448** – 451 | 0,735 ms |
-| TCP | 368 – **430** – 441 | 0,646 ms |
-| TCP via proxy (Python) | 275 – **378** – 395 | 1,233 ms |
+| UDP | 328 – **484** – 538 | 0,482 ms |
+| TCP | 439 – **498** – 653 | 0,584 ms |
+| TCP via proxy (Python) | 521 – **579** – 592 | 0,732 ms |
 
-Pela regra das faixas: **UDP × TCP é empate** (as faixas se cruzam); o proxy
-fica abaixo do UDP (faixas separadas) — e o proxy é o `proxy.py` da prova, um
-laço Python de 64 KiB por leitura, não um Squid. Nas duas corridas anteriores
-do mesmo dia as medianas foram 412/320 e 388/410 (UDP/TCP): o ruído desta
-máquina entre corridas é maior que a diferença entre os fios. TCP dentro de
+Pela regra das faixas: **os três empatam** (as faixas se cruzam duas a duas) —
+nesta corrida o proxy teve a maior mediana, e na corrida anterior do mesmo dia
+ficou abaixo do UDP com faixas separadas (275–378–395 contra 412–448–451). O
+proxy é o `proxy.py` da prova, um laço Python de 64 KiB por leitura, não um
+Squid. Nas corridas do mesmo dia as medianas UDP/TCP foram 412/320, 388/410,
+448/430 e 484/498: o ruído desta máquina entre corridas é maior que a
+diferença entre os fios. TCP dentro de
 TCP (o `iperf3` pelo túnel) não derreteu numa rede sem perda; com perda, o
 atraso de retransmissão das duas camadas se soma — o limite que o OpenVPN
 documenta para `proto tcp`.
