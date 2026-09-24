@@ -4,6 +4,9 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 0 hoje, de 304 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 1 hoje, de 305 cognicoes no total.
 
-Nenhuma cognicao esta marcada FRUTIFERO ainda. A petrea de 24/09/2026 exige evidencia validada para promover, e a promocao e' sempre do dono -- nao deste script.
+## Prova diferencial contra o `HEAD` expira no proprio commit
+
+- Evidencia: `42e1bf3`
+- Arquivo: [cognicao_prova-contra-o-head-expira-no-proprio-commit_20260924_0955.md](cognicao_prova-contra-o-head-expira-no-proprio-commit_20260924_0955.md)
