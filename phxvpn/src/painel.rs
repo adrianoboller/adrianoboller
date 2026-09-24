@@ -941,6 +941,7 @@ impl Painel {
             &dir.display().to_string(),
         );
         if self.rede_exige_mfa(rede_id)? {
+            self.mfa_pode_subir(rede_id)?;
             conf.push_str(&crate::verificar::conf_servidor_mfa(&self.dados, rede_id));
         }
         let ac_pem = self.ac_pem()?;
@@ -976,7 +977,15 @@ impl Painel {
         for i in 0..r.linhas.len() {
             let id = r.valor(i, "id").unwrap_or_default().to_string();
             let nome = r.valor(i, "nome").unwrap_or_default().to_string();
-            saida.push((nome, self.materializar_rede(&id)?));
+            // Rede com autenticador sem o usuario proprio fica FORA (dito no
+            // log); as outras sobem. Qualquer outro erro para o arranque.
+            match self.materializar_rede(&id) {
+                Ok(dir) => saida.push((nome, dir)),
+                Err(e) if e.starts_with(crate::mfa::SEM_USUARIO_PROPRIO) => {
+                    eprintln!("phxvpn: rede «{nome}» nao sobe: {e}");
+                }
+                Err(e) => return Err(e),
+            }
         }
         // O ccd de cada membro sai do banco: e ele que decide quem conecta.
         let m = self.pg()?.executar(

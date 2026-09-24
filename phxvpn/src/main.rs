@@ -302,7 +302,9 @@ fn cmd_painel(args: &[String]) -> Result<(), String> {
     // nao para o painel: o `servir` avisa que caiu para nobody.
     #[cfg(unix)]
     {
-        let _ = phxvpn::ovpn::garantir_usuario_dedicado();
+        if let Err(e) = phxvpn::ovpn::garantir_usuario_dedicado() {
+            eprintln!("phxvpn: AVISO {e}");
+        }
         phxvpn::verificar::servir(estado.clone())?;
     }
     if destrancado {

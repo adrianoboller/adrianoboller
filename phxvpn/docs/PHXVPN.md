@@ -1168,9 +1168,12 @@ conecta: usuário, senha e código  →  SCRV1:base64(senha):base64(código)
 duas portas: o arquivo (0660, grupo `phxvpn-ovpn`: quem não é do grupo nem
 conecta) e o `SO_PEERCRED` (root, o próprio painel e o uid `phxvpn-ovpn`).
 **Não** o `nobody`: aceito, todo daemon sem dono da máquina virava oráculo de
-senha e código (ALTO 2 da revisão). Sem conseguir criar o usuário próprio, o
-`openvpn` cai para `nobody`, e o painel avisa no arranque que o soquete passou
-a aceitar `nobody`. O painel exige que o usuário digitado seja
+senha e código (ALTO 2 da revisão). Sem o usuário próprio o sistema **falha
+fechado** (M2 da re-revisão): o soquete fica 0660 do dono do painel e não
+aceita `nobody`; rede que exige o autenticador **não sobe** — ligar a
+exigência dá erro dizendo o `useradd` que falta, e no arranque essa rede fica
+de fora (as outras sobem, e o log diz qual e por quê). Só rede **sem**
+autenticador continua caindo para `nobody`. O painel exige que o usuário digitado seja
 o login do CN do certificado (`login.rede.série`) e a rede seja a do conf: o
 certificado da ana com a senha e o código do bruno não entra. A conferência é
 **adiada** (`auth_control_file`, código 2): o PBKDF2 não roda dentro do laço
@@ -1195,14 +1198,22 @@ devolve). Antes, o limitador conferia antes e contava só depois dos ~430 ms, e
 (`conta:<login>` no login do painel, na VPN, no cadastro e na exigência da
 rede): o orçamento de uma pessoa não se multiplica por porta. O IP é **por
 canal** (`ip-painel:`, `ip-vpn:`): erro na VPN não tranca o painel do mesmo IP.
-O IP do cliente IPv6 vem de `untrusted_ip6`.
+O IP do cliente IPv6 vem de `untrusted_ip6`, e IPv6 conta por **/64** (quem
+tem um /64 troca de endereço a cada tentativa sem custo) — no painel, no
+verificador e no repasse, que montam a chave pela mesma função
+(`guarda::chave_de_ip`). Erro de banco ao buscar a senha da rede também conta
+como tentativa.
 
 **Mudar a exigência da rede** pede o código de quem muda, se ele tem
-autenticador; e a flag só fica gravada se o `servidor.conf` foi reescrito e o
+autenticador — e o admin **não zera o próprio** autenticador (só o de outro
+usuário; o dele se desativa com o código), senão uma sessão roubada zerava a
+si mesma e desligava a exigência sem código (M1 da re-revisão); e a flag só fica gravada se o `servidor.conf` foi reescrito e o
 OpenVPN reiniciou — senão volta ao que era. **`mfa.chave` ausente** com
 segredo no banco não se recria: o log diz a causa (restaurar do backup), e
 nenhum código confere até lá. O usuário digitado vai ao log só escapado e
-cortado em 32.
+cortado em 32. O `mfa.chave` nasce por temporário de nome único (pid,
+contador, sorteio) e `hard_link`; quem perde a corrida — e quem ganha — devolve
+a chave lida do disco.
 
 **Prova (24/09/2026, `provas/mfa/rodar.sh`, `openvpn` 2.6.19 em dois netns,
 binário release; `provas/mfa/resultados.json`).** Código calculado pelo
@@ -1243,9 +1254,21 @@ reserva deixa passar **64 de 64** em `reserva_segura_tentativas_simultaneas`
 (esperado 6); aceitar `nobody` reprova
 `nobody_nao_pergunta_quando_ha_usuario_proprio`; sem pedir o código a quem
 muda a exigência, ou recriando o `mfa.chave` em silêncio, reprova
-`autenticador_cadastro_reuso_e_rede_que_exige`.
+`autenticador_cadastro_reuso_e_rede_que_exige`; o admin conseguindo zerar a
+si mesmo reprova o mesmo teste («zerou a si mesmo»); a queda do verificador
+para `nobody` reprova `sem_usuario_proprio_nobody_nao_pergunta`; o temporário
+de nome fixo reprova `corrida_de_nascer_devolve_a_chave_do_disco`; IPv6 pelo
+endereço inteiro reprova `ipv6_conta_por_64`. O B6 (erro de banco contando
+como tentativa) não tem teste próprio: exigiria derrubar o PostgreSQL no meio
+de uma rota.
 
-**Limites.** `cn` e `ip` chegam no pedido ao soquete, preenchidos pelo
+**Limites.** **A conta é uma só em todos os canais, e isso tranca o admin
+também** (M3, decisão de produto do dono, não mudada): quem erra 6 vezes a
+senha do admin — pelo painel, pela VPN ou pelo cadastro — bloqueia a conta
+`admin` por até 15 min, e nesse intervalo o admin legítimo não entra no painel
+nem conecta na VPN. Cenário: um atacante com a porta do painel tranca o admin
+de propósito, repetindo a cada bloqueio. O IP por canal só alivia quando o
+admin vem de outro endereço; a conta continua trancada. `cn` e `ip` chegam no pedido ao soquete, preenchidos pelo
 `openvpn`: um `openvpn` tomado pode mentir neles — mas ele já é quem decide
 quem entra no túnel. O token do `auth-gen-token` vale **12 h** sem código novo
 (achado 6), e tirar a exigência ou zerar o autenticador **não derruba** a

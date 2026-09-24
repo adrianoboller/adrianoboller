@@ -168,6 +168,23 @@ fn devolver(contas: &mut HashMap<String, Conta>, chave: &str) {
     }
 }
 
+/// A chave de IP no limitador, com o prefixo do canal. IPv6 conta por /64:
+/// quem tem um /64 (o normal de qualquer assinante) troca de endereco a cada
+/// tentativa sem custo, e cada endereco seria uma conta nova.
+pub fn chave_de_ip(canal: &str, ip: &str) -> String {
+    match ip.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V6(v6)) if v6.to_ipv4_mapped().is_none() => {
+            let s = v6.segments();
+            format!("{canal}:{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
+        }
+        Ok(std::net::IpAddr::V6(v6)) => {
+            format!("{canal}:{}", v6.to_ipv4_mapped().expect("mapeado"))
+        }
+        Ok(v4) => format!("{canal}:{v4}"),
+        Err(_) => format!("{canal}:{ip}"),
+    }
+}
+
 /// A frase que vai para quem foi bloqueado: o tempo, e nada sobre o motivo.
 pub fn frase_de_bloqueio(falta: Duration) -> String {
     format!(
@@ -241,6 +258,21 @@ mod testes {
         assert_eq!(
             passaram.load(std::sync::atomic::Ordering::SeqCst),
             LIVRES + 1
+        );
+    }
+
+    /// B5: o mesmo /64 e UMA chave; /64 diferentes, chaves diferentes.
+    /// RED: com o endereco inteiro, cada troca de sufixo zerava a conta.
+    #[test]
+    fn ipv6_conta_por_64() {
+        let a = chave_de_ip("ip-painel", "2001:db8:1:2::1");
+        assert_eq!(a, chave_de_ip("ip-painel", "2001:db8:1:2:ffff:1:2:3"));
+        assert_eq!(a, "ip-painel:2001:db8:1:2::/64");
+        assert_ne!(a, chave_de_ip("ip-painel", "2001:db8:1:3::1"));
+        assert_eq!(chave_de_ip("ip-vpn", "192.0.2.7"), "ip-vpn:192.0.2.7");
+        assert_eq!(
+            chave_de_ip("ip-vpn", "::ffff:192.0.2.7"),
+            "ip-vpn:192.0.2.7"
         );
     }
 

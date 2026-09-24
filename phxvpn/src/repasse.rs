@@ -379,7 +379,7 @@ impl Repasse {
             let Ok(usuario) = std::str::from_utf8(&resto[..n as usize]) else {
                 return None;
             };
-            let chave_ip = format!("ip:{}", de.ip());
+            let chave_ip = crate::guarda::chave_de_ip("ip", &de.ip().to_string());
             let chave_u = format!("usuario:{usuario}");
             if self
                 .tentativas

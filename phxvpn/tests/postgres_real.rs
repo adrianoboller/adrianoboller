@@ -275,6 +275,13 @@ fn autenticador_cadastro_reuso_e_rede_que_exige() {
         .unwrap();
     assert!(p.rede_exige_mfa("1").unwrap());
 
+    // M1 da re-revisao: o admin nao zera o PROPRIO autenticador sem codigo
+    // -- e, portanto, continua sem conseguir desligar a exigencia sem ele.
+    assert!(p.mfa_zerar(&admin, "admin").is_err(), "zerou a si mesmo");
+    assert!(p.mfa_ativo(admin.id).unwrap());
+    assert!(p.rede_definir_mfa(&admin, 1, false, "").is_err());
+    assert!(p.rede_exige_mfa("1").unwrap());
+
     // MEDIO 4: sem o mfa.chave e com segredo no banco, nada nasce em
     // silencio -- nem no conferir, nem num cadastro novo.
     std::fs::remove_file(dados.join("mfa.chave")).unwrap();

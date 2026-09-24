@@ -72,8 +72,15 @@ fn chave(dados: &Path, pode_nascer: bool) -> R<Cofre> {
 fn nascer(caminho: &Path) -> R<Vec<u8>> {
     use std::io::Write;
     let nova = phxsql_core::senha::bytes_aleatorios(32);
-    let tmp = caminho.with_extension("nascendo");
-    let _ = std::fs::remove_file(&tmp);
+    // Nome unico por tentativa (pid, contador, sorteio): com um nome fixo, o
+    // T2 apagava o temporario do T1 no meio da escrita (B4).
+    static CONTADOR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tmp = caminho.with_extension(format!(
+        "nascendo-{}-{}-{}",
+        std::process::id(),
+        CONTADOR.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+        phxsql_core::hash::para_hex(&phxsql_core::senha::bytes_aleatorios(4))
+    ));
     let mut o = std::fs::OpenOptions::new();
     o.write(true).create_new(true);
     #[cfg(unix)]
@@ -91,12 +98,29 @@ fn nascer(caminho: &Path) -> R<Vec<u8>> {
     let r = std::fs::hard_link(&tmp, caminho);
     let _ = std::fs::remove_file(&tmp);
     match r {
-        Ok(()) => Ok(nova),
+        // Mesmo quem venceu devolve o que esta NO DISCO: e isso que o
+        // proximo processo vai ler.
+        Ok(()) => std::fs::read(caminho).map_err(|e| format!("ler {}: {e}", caminho.display())),
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             std::fs::read(caminho).map_err(|e| format!("ler {}: {e}", caminho.display()))
         }
         Err(e) => Err(format!("criar {}: {e}", caminho.display())),
     }
+}
+
+/// Prefixo do erro de rede com MFA sem o usuario proprio (o arranque pula
+/// a rede em vez de parar o painel inteiro).
+pub const SEM_USUARIO_PROPRIO: &str = "rede que exige o autenticador nao sobe sem o usuario";
+
+pub fn exigir_usuario_proprio(passwd: &str) -> R<()> {
+    if crate::ovpn::uid_gid_em(passwd, crate::ovpn::USUARIO_OVPN).is_some() {
+        return Ok(());
+    }
+    Err(format!(
+        "{SEM_USUARIO_PROPRIO} {u}: crie-o como root (useradd --system --user-group {u}, \
+         ou phxvpn servico instalar painel) e ligue o painel de novo",
+        u = crate::ovpn::USUARIO_OVPN
+    ))
 }
 
 fn aad(usuario_id: i64, pendente: bool) -> String {
@@ -216,10 +240,19 @@ impl Painel {
         self.mfa_zerar_id(u.id)
     }
 
-    /// O administrador zera o autenticador de quem perdeu o telefone.
+    /// O administrador zera o autenticador de quem perdeu o telefone -- de
+    /// OUTRO. O proprio desliga pelo `mfa_desativar`, com codigo: zerar a si
+    /// mesmo sem codigo deixava a sessao roubada tirar o segundo fator do
+    /// admin e, em seguida, desligar a exigencia da rede (M1 da re-revisao).
     pub fn mfa_zerar(&mut self, ator: &Usuario, login: &str) -> R<()> {
         if !ator.admin {
             return Err("só o administrador zera o autenticador de outro usuário".into());
+        }
+        if login == ator.login {
+            return Err(
+                "o próprio autenticador se desativa em «Autenticador», com o código; zerar é só para outro usuário"
+                    .into(),
+            );
         }
         let r = self.pg()?.executar(
             "SELECT id FROM phx_usuario WHERE login = $1",
@@ -262,6 +295,17 @@ impl Painel {
             );
         }
         Ok(true)
+    }
+
+    /// Rede que exige o autenticador so sobe com o usuario proprio do
+    /// OpenVPN: sem ele o verificador rodaria como `nobody`, e o soquete nao
+    /// aceita `nobody` (M2: falha FECHADO, com o motivo).
+    pub(crate) fn mfa_pode_subir(&mut self, rede_id: &str) -> R<()> {
+        if cfg!(unix) && self.rede_exige_mfa(rede_id)? {
+            let passwd = std::fs::read_to_string("/etc/passwd").unwrap_or_default();
+            exigir_usuario_proprio(&passwd)?;
+        }
+        Ok(())
     }
 
     /// O dono da rede ou o administrador liga/desliga a exigencia. Os
@@ -318,6 +362,44 @@ impl Painel {
                 let _ = self.materializar_rede(&id);
                 Err(e)
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    /// B4: dezesseis `iniciar` ao mesmo tempo -- todos saem com a chave que
+    /// ficou NO DISCO. RED: com o temporario de nome fixo, um fio apagava o
+    /// do outro, e o vencedor devolvia a sua chave enquanto o disco tinha a
+    /// do vizinho.
+    #[test]
+    fn corrida_de_nascer_devolve_a_chave_do_disco() {
+        for rodada in 0..20 {
+            let d = std::env::temp_dir()
+                .join(format!("phxvpn-mfa-nascer-{}-{rodada}", std::process::id()));
+            std::fs::create_dir_all(&d).unwrap();
+            let c = d.join(ARQUIVO_CHAVE);
+            let barreira = std::sync::Arc::new(std::sync::Barrier::new(16));
+            let fios: Vec<_> = (0..16)
+                .map(|_| {
+                    let (c, b) = (c.clone(), barreira.clone());
+                    std::thread::spawn(move || {
+                        b.wait();
+                        nascer(&c).unwrap()
+                    })
+                })
+                .collect();
+            let chaves: Vec<Vec<u8>> = fios.into_iter().map(|f| f.join().unwrap()).collect();
+            let disco = std::fs::read(&c).unwrap();
+            assert!(
+                chaves.iter().all(|k| *k == disco),
+                "devolveu chave que nao e a do disco"
+            );
+            let sobras = std::fs::read_dir(&d).unwrap().count();
+            let _ = std::fs::remove_dir_all(&d);
+            assert_eq!(sobras, 1, "temporario esquecido");
         }
     }
 }

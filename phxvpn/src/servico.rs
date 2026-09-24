@@ -509,7 +509,7 @@ pub fn instalar(plano: &Plano, iniciar: bool) -> R<String> {
     // do openvpn nasce aqui, na instalacao.
     if plano.unidade.starts_with("phxvpn-painel") {
         if let Err(e) = crate::ovpn::garantir_usuario_dedicado() {
-            eprintln!("phxvpn: AVISO {e}; o openvpn vai rodar como nobody");
+            eprintln!("phxvpn: AVISO {e}; redes que exigem o autenticador NAO vao subir");
         }
     }
     rodar("systemctl", &["daemon-reload"], None)?;

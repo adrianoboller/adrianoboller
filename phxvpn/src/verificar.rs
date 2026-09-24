@@ -216,7 +216,7 @@ pub fn conferir(e: &Estado, j: &Json) -> Result<String, String> {
     // A conta e a MESMA do painel (orcamento unico); o IP e so deste canal,
     // para erro na VPN nao trancar o login do painel pelo mesmo IP.
     let conta = crate::http::chave_conta(login);
-    let chave_ip = format!("ip-vpn:{}", t("ip"));
+    let chave_ip = crate::guarda::chave_de_ip("ip-vpn", &t("ip"));
     let reserva = e
         .tentativas
         .reservar(&[&conta, &chave_ip])
@@ -266,6 +266,12 @@ pub fn para_log(t: &str) -> String {
     }
 }
 
+/// O uid que o verificador usa: SO o do usuario proprio. Sem ele, `None` --
+/// nunca a queda para `nobody` que o `sem_root` faz para rede sem MFA (M2).
+pub fn uid_do_verificador(passwd: &str) -> Option<u32> {
+    crate::ovpn::uid_gid_em(passwd, crate::ovpn::USUARIO_OVPN).map(|(u, _)| u)
+}
+
 /// Quem pode perguntar: root, o proprio painel e o usuario do OpenVPN. NAO
 /// o `nobody` quando existe o usuario proprio (ALTO 2 da revisao: com
 /// `nobody` aceito, todo daemon sem dono da maquina era oraculo).
@@ -301,9 +307,8 @@ fn quem_pergunta_pode(s: &std::os::unix::net::UnixStream) -> bool {
     }
     // SAFETY: sem argumentos, nao falha.
     let eu = unsafe { geteuid() };
-    let do_openvpn = crate::ovpn::usuario_do_openvpn()
-        .and_then(|(u, _)| crate::ovpn::uid_gid(&u))
-        .map(|(uid, _)| uid);
+    let do_openvpn =
+        uid_do_verificador(&std::fs::read_to_string("/etc/passwd").unwrap_or_default());
     uid_aceito(c.uid, eu, do_openvpn)
 }
 
@@ -341,22 +346,21 @@ pub fn servir(e: std::sync::Arc<Estado>) -> Result<PathBuf, String> {
     let _ = std::fs::remove_file(&caminho);
     let ouvinte =
         UnixListener::bind(&caminho).map_err(|x| format!("soquete {}: {x}", caminho.display()))?;
-    // Duas portas: o arquivo (0660, grupo do usuario do OpenVPN -- quem nao
-    // e do grupo nem conecta) e o `SO_PEERCRED` (so o uid dele, root e o
-    // painel). Sem o usuario proprio, o grupo e o do `nobody`, e o aviso diz.
-    let grupo = crate::ovpn::usuario_do_openvpn().map(|(_, g)| g);
-    let gid = grupo.as_deref().and_then(gid_do_grupo);
+    // Duas portas: o arquivo (0660, grupo `phxvpn-ovpn` -- quem nao e do
+    // grupo nem conecta) e o `SO_PEERCRED` (so o uid dele, root e o painel).
+    // Sem o usuario proprio o soquete fica do dono do painel, 0660: fechado.
+    let gid = gid_do_grupo(crate::ovpn::USUARIO_OVPN);
     if let Some(gid) = gid {
         std::os::unix::fs::chown(&caminho, None, Some(gid))
             .map_err(|x| format!("dono de {}: {x}", caminho.display()))?;
     }
     std::fs::set_permissions(&caminho, std::fs::Permissions::from_mode(0o660))
         .map_err(|x| format!("permissao de {}: {x}", caminho.display()))?;
-    if crate::ovpn::usuario_do_openvpn().is_some_and(|(u, _)| u != crate::ovpn::USUARIO_OVPN) {
+    if gid.is_none() {
         eprintln!(
-            "phxvpn: AVISO sem o usuario {}: o openvpn roda como nobody, e o soquete do \
-             verificador aceita qualquer processo nobody (crie-o: phxvpn servico instalar painel)",
-            crate::ovpn::USUARIO_OVPN
+            "phxvpn: AVISO sem o usuario {u}: redes que exigem o autenticador NAO sobem \
+             (crie-o como root: useradd --system --user-group {u}, ou phxvpn servico instalar painel)",
+            u = crate::ovpn::USUARIO_OVPN
         );
     }
     let em_curso = std::sync::Arc::new(AtomicUsize::new(0));
@@ -471,6 +475,21 @@ mod testes {
         assert!(!uid_aceito(nobody, painel, Some(ovpn)), "nobody passou");
         assert!(!uid_aceito(1000, painel, Some(ovpn)));
         assert!(!uid_aceito(1000, painel, None));
+    }
+
+    /// M2: sem o usuario proprio, o verificador nao tem uid -- e `nobody`
+    /// nao pergunta. RED: a regra anterior caia para o uid do `nobody`.
+    #[test]
+    fn sem_usuario_proprio_nobody_nao_pergunta() {
+        let so_nobody = "root:x:0:0::/root:/bin/sh\nnobody:x:65534:65534::/:/sbin/nologin\n";
+        assert_eq!(uid_do_verificador(so_nobody), None);
+        assert!(!uid_aceito(65534, 0, uid_do_verificador(so_nobody)));
+        let com = format!("{so_nobody}phxvpn-ovpn:x:996:995::/:/sbin/nologin\n");
+        assert_eq!(uid_do_verificador(&com), Some(996));
+        assert!(crate::mfa::exigir_usuario_proprio(so_nobody)
+            .unwrap_err()
+            .contains("useradd"));
+        assert!(crate::mfa::exigir_usuario_proprio(&com).is_ok());
     }
 
     #[test]

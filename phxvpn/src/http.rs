@@ -156,7 +156,7 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
     let t = |c: &str| corpo.texto_ou(c, "").to_string();
     let caminho = p.caminho.split('?').next().unwrap_or_default();
     // Prefixo por canal: erro na VPN (soquete) nao tranca o IP no painel.
-    let chave_ip = format!("ip-painel:{}", p.ip);
+    let chave_ip = crate::guarda::chave_de_ip("ip-painel", &p.ip.to_string());
 
     match (p.metodo.as_str(), caminho) {
         ("GET", "/api/estado") => {
@@ -407,13 +407,8 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
                 .tentativas
                 .reservar(&[&chave_rede, &chave_ip])
                 .map_err(bloqueado)?;
-            let hash = match e.painel().hash_da_rede(&nome) {
-                Ok(h) => h,
-                Err(m) => {
-                    reserva.devolver();
-                    return Err(ruim(m));
-                }
-            };
+            // Erro aqui tambem conta: a reserva cai com a falha dentro.
+            let hash = e.painel().hash_da_rede(&nome).map_err(ruim)?;
             let conferido = {
                 let _vez = e.conferencias.adquirir();
                 conferir_rede(&hash, &t("senha"))

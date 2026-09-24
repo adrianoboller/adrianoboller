@@ -278,18 +278,21 @@ pub fn garantir_usuario_dedicado() -> Result<(), String> {
 
 /// (uid, gid primario) de um usuario, lidos do `/etc/passwd`.
 pub fn uid_gid(nome: &str) -> Option<(u32, u32)> {
-    std::fs::read_to_string("/etc/passwd")
-        .ok()?
-        .lines()
-        .find_map(|l| {
-            let p: Vec<&str> = l.split(':').collect();
-            (p.len() > 3 && p[0] == nome).then(|| Some((p[2].parse().ok()?, p[3].parse().ok()?)))?
-        })
+    uid_gid_em(&std::fs::read_to_string("/etc/passwd").ok()?, nome)
+}
+
+/// O mesmo, num texto no formato do `/etc/passwd` (os testes passam o seu).
+pub fn uid_gid_em(passwd: &str, nome: &str) -> Option<(u32, u32)> {
+    passwd.lines().find_map(|l| {
+        let p: Vec<&str> = l.split(':').collect();
+        (p.len() > 3 && p[0] == nome).then(|| Some((p[2].parse().ok()?, p[3].parse().ok()?)))?
+    })
 }
 
 /// (usuario, grupo) para o `user`/`group` do conf: o proprio, se existe; se
-/// nao, `nobody` (e o verificador passa a aceitar `nobody` -- o painel avisa
-/// no arranque). O grupo do `nobody` muda entre distribuicoes (`nogroup` no
+/// nao, `nobody` -- so para rede SEM autenticador: o verificador nunca aceita
+/// `nobody`, e rede que exige o autenticador nao sobe sem o usuario proprio
+/// (`mfa::exigir_usuario_proprio`). O grupo do `nobody` muda entre distribuicoes (`nogroup` no
 /// Debian, `nobody` no Fedora).
 pub fn usuario_do_openvpn() -> Option<(String, String)> {
     if cfg!(windows) {

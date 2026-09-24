@@ -1,6 +1,6 @@
 {
   "prova": "phxvpn: usuario + senha + TOTP na conexao OpenVPN (auth-user-pass-verify via-file + static-challenge)",
-  "data": "2026-09-24T04:37:31+00:00",
+  "data": "2026-09-24T04:48:23+00:00",
   "openvpn": "2.6.19",
   "phxvpn_compilado_em": "release",
   "casos": {
@@ -11,9 +11,9 @@
     "codigo_certo": {
       "resultado": "conectou",
       "desafio": "1,Código do autenticador",
-      "segundos": 1.15,
+      "segundos": 1.28,
       "ping": [
-        "3 packets transmitted, 3 received, 0% packet loss, time 2031ms"
+        "3 packets transmitted, 3 received, 0% packet loss, time 2005ms"
       ]
     },
     "mesmo_codigo_de_novo": {
@@ -49,15 +49,15 @@
       "desafio": "1,Código do autenticador",
       "segundos": 0.14,
       "ping": [
-        "3 packets transmitted, 3 received, 0% packet loss, time 2026ms"
+        "3 packets transmitted, 3 received, 0% packet loss, time 2041ms"
       ]
     },
     "codigo_errado": {
       "resultado": "conectou",
       "desafio": "1,Código do autenticador",
-      "segundos": 0.14,
+      "segundos": 0.15,
       "ping": [
-        "3 packets transmitted, 3 received, 0% packet loss, time 2026ms"
+        "3 packets transmitted, 3 received, 0% packet loss, time 2054ms"
       ]
     }
   },
