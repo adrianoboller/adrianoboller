@@ -541,6 +541,7 @@ impl<'a> Console<'a> {
                 ))
             }
             "usb" => comandos::usb(o),
+            "remover" => Ok(format!("{}\n", comandos::p2p_remover(o)?)),
             #[cfg(not(any(target_os = "linux", windows)))]
             "ligar" | "pares" => Err("o P2P ainda so roda no Linux".into()),
             outro => Err(format!(

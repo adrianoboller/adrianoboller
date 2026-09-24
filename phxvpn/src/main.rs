@@ -34,15 +34,21 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
 
   phxvpn p2p criar --rede NOME [--ip 10.78.0.1/24] [--porta 51820] [--modo auto]
                    [--repasse CHAVE@HOST:PORTA]
-      Cria a rede P2P neste computador (arquivo NOME.p2p, sem a senha).
+      Cria a rede P2P neste computador (arquivo NOME.p2p, sem a senha), com
+      rol de membros assinado por este computador. [--apelido NOME]
+      [--sem-descoberta]: nao anunciar nem procurar membros na LAN.
   phxvpn p2p convidar --rede NOME [--endereco MEU_HOST:PORTA] [--validade 24h]
       Gera o codigo do convite, cifrado com a senha da rede, de uso unico.
+      Numa rede criada com rol assinado, so quem a criou convida.
   phxvpn p2p placa [--interface phxvpn]
       Windows: cria o adaptador TAP do phxvpn pelo tapctl.exe do OpenVPN
       (uma vez, como administrador; exige OpenVPN 2.6+ com TAP-Windows6).
-  phxvpn p2p entrar <codigo>
+  phxvpn p2p entrar <codigo> [--apelido NOME]
       Aceita o convite (pede a senha da rede) e grava a rede aqui.
       Depois: phxvpn p2p ligar --rede NOME.
+  phxvpn p2p remover --rede NOME --ip IP_VIRTUAL
+      So quem criou a rede: assina um rol de membros novo, sem esse membro.
+      Com a rede ligada, os outros o recebem pela malha e param de aceita-lo.
 
   phxvpn p2p ligar --rede NOME --ip 10.78.0.1/24 [--porta 51820] [--chave p2p.chave]
                    [--interface phx0] --par CHAVE@IP[@HOST:PORTA] [--par ...]
@@ -360,7 +366,10 @@ fn cmd_cliente_rodar(args: &[String]) -> Result<(), String> {
 }
 
 fn cmd_p2p(args: &[String]) -> Result<(), String> {
-    let o = Opcoes::de_args(&args[args.len().min(1)..], &["sem-perfuracao"]);
+    let o = Opcoes::de_args(
+        &args[args.len().min(1)..],
+        &["sem-perfuracao", "sem-descoberta"],
+    );
     let arquivo = o.um("chave").or(o.um("arquivo")).unwrap_or("p2p.chave");
     match args.first().map(String::as_str) {
         Some("chave") => {
@@ -379,6 +388,10 @@ fn cmd_p2p(args: &[String]) -> Result<(), String> {
         Some("convidar") => {
             let senha_rede = senha("PHXVPN_SENHA_REDE", "senha da rede")?;
             println!("{}", comandos::p2p_convidar(&o, &senha_rede)?);
+            Ok(())
+        }
+        Some("remover") => {
+            println!("{}", comandos::p2p_remover(&o)?);
             Ok(())
         }
         Some("entrar") => {

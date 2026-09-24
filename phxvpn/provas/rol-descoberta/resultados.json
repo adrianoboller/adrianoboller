@@ -1,0 +1,30 @@
+{
+  "data": "2026-09-24T04:29:43",
+  "roteiro": "provas/rol-descoberta/rodar.sh",
+  "medidas": {
+    "b_anuncios": "2",
+    "a_bc_ms": "11",
+    "a_ac_ms": "12",
+    "a_depois_ba": "10",
+    "b_desligada_ms": "-1",
+    "a_depois_ab": "11",
+    "b_ligada_ms": "459",
+    "a_religado_cb": "-1",
+    "a_religado_ca": "-1",
+    "a_remover": "10.78.0.3 removido da rede Matriz -- rol versao 1790224127, 2 membros",
+    "a_depois_cb": "-1",
+    "a_depois_ca": "-1",
+    "a_ab_ms": "1475",
+    "b_nome_em_claro": "0"
+  },
+  "veredito": {
+    "a_antes_os_tres_se_pingam": true,
+    "a_removido_perde_A_e_B": true,
+    "a_A_e_B_continuam": true,
+    "a_removido_religado_continua_fora": true,
+    "b_ligada_se_acham": true,
+    "b_desligada_nao": true,
+    "b_nome_da_rede_fora_do_fio": true
+  },
+  "tudo_ok": true
+}

@@ -1,0 +1,98 @@
+{
+  "casos": [
+    {
+      "arquivo": "src/rol.rs",
+      "conferencia_removida": "if !r.conferir(dono, rede) {",
+      "testes": [
+        "rol::testes::rol_adulterado_e_recusado",
+        "rol::testes::assinatura_de_outra_chave_e_recusada"
+      ],
+      "acusaram": [
+        "rol::testes::rol_adulterado_e_recusado",
+        "rol::testes::assinatura_de_outra_chave_e_recusada"
+      ],
+      "red": true
+    },
+    {
+      "arquivo": "src/rol.rs",
+      "conferencia_removida": "if r.versao <= versao_atual {",
+      "testes": [
+        "rol::testes::rol_velho_e_recusado",
+        "p2p::ganchos_do_rol::testes::rol_sem_o_membro_derruba_o_tunel_com_ele"
+      ],
+      "acusaram": [
+        "rol::testes::rol_velho_e_recusado",
+        "p2p::ganchos_do_rol::testes::rol_sem_o_membro_derruba_o_tunel_com_ele"
+      ],
+      "red": true
+    },
+    {
+      "arquivo": "src/p2p.rs",
+      "conferencia_removida": "if self.fora_do_rol(&chamada.estatica_dele) {",
+      "testes": [
+        "p2p::ganchos_do_rol::testes::par_fora_do_rol_nao_fecha_aperto"
+      ],
+      "acusaram": [
+        "p2p::ganchos_do_rol::testes::par_fora_do_rol_nao_fecha_aperto"
+      ],
+      "red": true
+    },
+    {
+      "arquivo": "src/p2p.rs",
+      "conferencia_removida": "None if assinada => {}",
+      "testes": [
+        "p2p::ganchos_do_rol::testes::lista_de_pares_nao_injeta_par_em_rede_assinada"
+      ],
+      "acusaram": [
+        "p2p::ganchos_do_rol::testes::lista_de_pares_nao_injeta_par_em_rede_assinada"
+      ],
+      "red": true
+    },
+    {
+      "arquivo": "src/p2p_rol.rs",
+      "conferencia_removida": "reter_pares(e, |p| rol.membro(&p.publica).is_some());",
+      "testes": [
+        "p2p::ganchos_do_rol::testes::rol_sem_o_membro_derruba_o_tunel_com_ele"
+      ],
+      "acusaram": [
+        "p2p::ganchos_do_rol::testes::rol_sem_o_membro_derruba_o_tunel_com_ele"
+      ],
+      "red": true
+    },
+    {
+      "arquivo": "src/descoberta.rs",
+      "conferencia_removida": "if self.vistos.get(&publica).is_some_and(|&v| carimbo <= v) {",
+      "testes": [
+        "descoberta::testes::anuncio_repetido_e_recusado"
+      ],
+      "acusaram": [
+        "descoberta::testes::anuncio_repetido_e_recusado"
+      ],
+      "red": true
+    },
+    {
+      "arquivo": "src/descoberta.rs",
+      "conferencia_removida": "if agora_ms().abs_diff(carimbo) > JANELA_S * 1000 {",
+      "testes": [
+        "descoberta::testes::anuncio_fora_da_janela_e_recusado"
+      ],
+      "acusaram": [
+        "descoberta::testes::anuncio_fora_da_janela_e_recusado"
+      ],
+      "red": true
+    },
+    {
+      "arquivo": "src/descoberta.rs",
+      "conferencia_removida": "if !self.ligada {\n            return None;\n        }\n        if dado.len()",
+      "testes": [
+        "descoberta::testes::desligada_nao_abre_nada_e_teto_vem_antes_do_selo"
+      ],
+      "acusaram": [
+        "descoberta::testes::desligada_nao_abre_nada_e_teto_vem_antes_do_selo"
+      ],
+      "red": true
+    }
+  ],
+  "restaurado_passam": 9,
+  "restaurado_total": 9
+}

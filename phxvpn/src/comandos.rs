@@ -312,7 +312,21 @@ pub fn p2p_criar(o: &Opcoes) -> R<String> {
             "{caminho} ja existe: a rede ja foi criada ou recebida aqui"
         ));
     }
-    identidade(o.um("chave").unwrap_or("p2p.chave"))?;
+    let privada = identidade(o.um("chave").unwrap_or("p2p.chave"))?;
+    r.apelido = apelido(o)?;
+    r.descoberta = !o.tem("sem-descoberta");
+    // Rede nova nasce com rol assinado: quem cria e o dono, e o primeiro
+    // membro do rol e ele mesmo.
+    r.dono = Some(crate::rol::publica_do_dono(&privada, nome));
+    r.rol = Some(crate::rol::Rol::primeiro(
+        nome,
+        crate::rol::Membro {
+            chave: phxsql_core::x25519::chave_publica(&privada),
+            ip: r.ip,
+            nome: r.apelido.clone(),
+        },
+        &privada,
+    )?);
     r.gravar(&caminho)?;
     Ok(format!(
         "rede {nome} criada em {caminho} -- {}/{}; convide com p2p convidar",
@@ -326,6 +340,7 @@ pub fn p2p_convidar(o: &Opcoes, senha_rede: &str) -> R<String> {
     let caminho = arquivo_da_rede(o)?;
     let mut r = Rede::ler(&caminho)?;
     let privada = identidade(o.um("chave").unwrap_or("p2p.chave"))?;
+    so_o_dono(&r, &privada, "convida")?;
     let horas: u64 = o
         .um("validade")
         .unwrap_or("24")
@@ -360,17 +375,82 @@ pub fn p2p_entrar(codigo: &str, senha_rede: &str, o: &Opcoes) -> R<String> {
         ));
     }
     identidade(o.um("chave").unwrap_or("p2p.chave"))?;
-    let r = rede_do_convidado(
+    let mut r = rede_do_convidado(
         &c,
         o.um("porta")
             .unwrap_or("51820")
             .parse()
             .map_err(|_| "porta invalida")?,
     );
+    r.apelido = apelido(o)?;
+    r.descoberta = !o.tem("sem-descoberta");
     r.gravar(&caminho)?;
     Ok(format!(
         "convite aceito: rede {nome}, seu IP {}/{}, anfitriao {} -- ligue com p2p ligar /rede:{nome}",
         r.ip, r.prefixo, c.anfitriao.ip
+    ))
+}
+
+/// `--apelido`: o nome deste computador no rol (opcional, ate 32 bytes).
+fn apelido(o: &Opcoes) -> R<Option<String>> {
+    match o.um("apelido") {
+        Some(a) if a.len() > crate::rol::TETO_NOME => {
+            Err(format!("apelido acima de {} bytes", crate::rol::TETO_NOME))
+        }
+        Some(a) if !a.is_empty() => Ok(Some(a.to_string())),
+        _ => Ok(None),
+    }
+}
+
+/// Em rede de rol assinado, so o dono (quem criou) muda quem e membro.
+fn so_o_dono(r: &crate::rede_p2p::Rede, privada: &[u8; 32], acao: &str) -> R<()> {
+    match r.dono {
+        Some(d) if crate::rol::publica_do_dono(privada, &r.nome) != d => Err(format!(
+            "nesta rede so quem a criou {acao}: o rol de membros e assinado pela chave dele"
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// `p2p remover --rede NOME --ip IP` (ou a chave publica): rol novo sem o
+/// membro, gravado no arquivo da rede. Com a rede ligada, o no o le do disco
+/// em ate 2 s e o espalha pela malha; quem o recebe derruba o removido.
+pub fn p2p_remover(o: &Opcoes) -> R<String> {
+    use crate::rede_p2p::Rede;
+    let caminho = arquivo_da_rede(o)?;
+    let mut r = Rede::ler(&caminho)?;
+    let privada = identidade(o.um("chave").unwrap_or("p2p.chave"))?;
+    if r.dono.is_none() {
+        return Err(
+            "rede sem rol assinado (criada antes dele): nao ha como remover membro -- \
+             crie a rede de novo para ter o rol"
+                .into(),
+        );
+    }
+    so_o_dono(&r, &privada, "remove membro")?;
+    let rol = r.rol.clone().ok_or("rede sem rol no arquivo")?;
+    let alvo = o.um("ip").or(o.posicionais.first().map(String::as_str));
+    let membro = rol
+        .membros
+        .iter()
+        .find(|m| {
+            alvo.is_some_and(|a| m.ip.to_string() == a || para_hex(&m.chave) == a.to_lowercase())
+        })
+        .ok_or("informe --ip IP_VIRTUAL (ou a chave publica) de um membro do rol")?
+        .clone();
+    if membro.chave == phxsql_core::x25519::chave_publica(&privada) {
+        return Err("o dono nao sai da propria rede".into());
+    }
+    let novo = rol.sem(&membro.chave, &privada)?;
+    r.pares.retain(|p| p.chave != membro.chave);
+    let versao = novo.versao;
+    r.rol = Some(novo);
+    r.gravar(&caminho)?;
+    Ok(format!(
+        "{} removido da rede {} -- rol versao {versao}, {} membros",
+        membro.ip,
+        r.nome,
+        r.rol.as_ref().map_or(0, |x| x.membros.len())
     ))
 }
 
@@ -547,7 +627,10 @@ pub fn p2p_montar(
     };
     let udp = std::net::UdpSocket::bind(format!("0.0.0.0:{porta}"))
         .map_err(|e| format!("porta UDP {porta}: {e}"))?;
-    let mut no = p2p::No::novo(privada, psk, ip, udp, pares).com_repasse(modo, repasse)?;
+    let descoberta = !o.tem("sem-descoberta") && rede.as_ref().map_or(true, |r| r.descoberta);
+    let mut no = p2p::No::novo(privada, psk, ip, udp, pares)
+        .com_repasse(modo, repasse)?
+        .com_descoberta(descoberta);
     if o.tem("sem-perfuracao") {
         no = no.sem_perfuracao();
     }

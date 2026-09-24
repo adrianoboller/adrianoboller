@@ -28,6 +28,7 @@
 //! senha -- sem servidor para guardar a lista.
 
 use crate::comandos::gravar_secreto;
+use crate::rol::Rol;
 use phxsql_core::base64;
 use phxsql_core::cifra::{xabrir, xselar};
 use phxsql_core::hash::{de_hex, para_hex};
@@ -73,6 +74,15 @@ pub struct Rede {
     pub ficha_de_entrada: Option<[u8; 16]>,
     /// Dispositivos USB (busid) que ESTE computador oferece nesta rede.
     pub usb: Vec<String>,
+    /// Publica Ed25519 de quem criou a rede (ver `rol.rs`). `None` = rede de
+    /// antes do rol assinado: a malha continua com confianca transitiva.
+    pub dono: Option<[u8; 32]>,
+    /// O rol mais novo que este no aceitou (ou, no dono, assinou).
+    pub rol: Option<Rol>,
+    /// Anuncio na LAN (ver `descoberta.rs`). Arquivo sem o campo: ligada.
+    pub descoberta: bool,
+    /// Nome deste computador no rol (opcional).
+    pub apelido: Option<String>,
 }
 
 pub fn agora() -> u64 {
@@ -153,6 +163,10 @@ impl Rede {
             convites: Vec::new(),
             ficha_de_entrada: None,
             usb: Vec::new(),
+            dono: None,
+            rol: None,
+            descoberta: true,
+            apelido: None,
         }
     }
 
@@ -219,6 +233,27 @@ impl Rede {
                 "usb",
                 Json::Lista(self.usb.iter().map(Json::texto_de).collect()),
             ),
+            (
+                "dono",
+                self.dono
+                    .map(|d| Json::texto_de(para_hex(&d)))
+                    .unwrap_or(Json::Nulo),
+            ),
+            (
+                "rol",
+                self.rol
+                    .as_ref()
+                    .map(|r| Json::texto_de(para_hex(&r.para_bytes())))
+                    .unwrap_or(Json::Nulo),
+            ),
+            ("descoberta", Json::de_bool(self.descoberta)),
+            (
+                "apelido",
+                self.apelido
+                    .clone()
+                    .map(Json::texto_de)
+                    .unwrap_or(Json::Nulo),
+            ),
         ])
     }
 
@@ -271,6 +306,22 @@ impl Rede {
                 .filter_map(|u| u.texto().map(str::to_string))
                 .filter(|u| crate::usb::validar_busid(u).is_ok())
                 .collect(),
+            dono: match j.campo("dono").and_then(Json::texto) {
+                Some(d) => Some(chave32(d)?),
+                None => None,
+            },
+            // O rol do disco se relê sem conferir a assinatura aqui: quem o
+            // usa (`p2p.rs`, `sincronizar_rol`) confere antes de adotar.
+            rol: match j.campo("rol").and_then(Json::texto) {
+                Some(h) => Some(
+                    de_hex(h)
+                        .and_then(|b| Rol::de_bytes(&b))
+                        .ok_or("rol torto no arquivo da rede")?,
+                ),
+                None => None,
+            },
+            descoberta: j.booleano_ou("descoberta", true),
+            apelido: j.campo("apelido").and_then(Json::texto).map(str::to_string),
         })
     }
 
@@ -338,6 +389,8 @@ pub struct Convite {
     pub ip_convidado: Ipv4Addr,
     pub expira: u64,
     pub ficha: [u8; 16],
+    /// Publica Ed25519 do dono; `None` em rede sem rol assinado.
+    pub dono: Option<[u8; 32]>,
 }
 
 /// Monta o codigo do convite e ja registra a ficha como aberta na rede.
@@ -378,6 +431,12 @@ pub fn convidar(
         ("ip", Json::texto_de(ip_convidado.to_string())),
         ("expira", Json::de_i64(expira as i64)),
         ("ficha", Json::texto_de(para_hex(&ficha))),
+        (
+            "dono",
+            rede.dono
+                .map(|d| Json::texto_de(para_hex(&d)))
+                .unwrap_or(Json::Nulo),
+        ),
     ])
     .escrever();
     let nonce: [u8; 24] = bytes_aleatorios(24).try_into().expect("24");
@@ -434,6 +493,10 @@ pub fn abrir_convite(codigo: &str, psk: &[u8; 32]) -> R<Convite> {
         ip_convidado: ip(j.texto_ou("ip", ""))?,
         expira: j.inteiro_ou("expira", 0) as u64,
         ficha: ficha16(j.texto_ou("ficha", ""))?,
+        dono: match j.campo("dono").and_then(Json::texto) {
+            Some(d) => Some(chave32(d)?),
+            None => None,
+        },
     };
     if c.expira <= agora() {
         return Err("convite vencido: peca outro".into());
@@ -455,6 +518,12 @@ pub fn rede_do_convidado(c: &Convite, porta: u16) -> Rede {
         convites: Vec::new(),
         ficha_de_entrada: Some(c.ficha),
         usb: Vec::new(),
+        // O convidado passa a so aceitar rol assinado por esta chave; ate o
+        // primeiro chegar, so conhece o anfitriao do convite.
+        dono: c.dono,
+        rol: None,
+        descoberta: true,
+        apelido: None,
     }
 }
 

@@ -8,6 +8,7 @@ pub mod bandeja;
 pub mod cofre;
 pub mod comandos;
 pub mod console;
+pub mod descoberta;
 #[cfg(windows)]
 pub mod dpapi;
 pub mod guarda;
@@ -24,6 +25,7 @@ pub mod pg;
 pub mod pki;
 pub mod rede_p2p;
 pub mod repasse;
+pub mod rol;
 pub mod servico;
 #[cfg(windows)]
 pub mod servico_windows;

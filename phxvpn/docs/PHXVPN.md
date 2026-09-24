@@ -52,14 +52,16 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Auto-atualização: `phxvpn atualizar [--manifesto URL] [--verificar]` — manifesto JSON assinado Ed25519 (chave publica embutida, `CHAVE_PUBLICA_PADRAO`), SHA-256 do binário conferido, downgrade recusado, troca atômica (Linux: `rename` no mesmo binário em uso; Windows: renomeia o `.exe` em uso para `.old` e escreve o novo, limpo no próximo arranque). `phxvpn atualizar-assinar` e `atualizar-gerar-chave` para quem publica; `publicar-atualizacao.sh` monta os binários pelo `cargo build --release` (mesmo caminho do `empacotar.sh`) e assina. Checagem periódica opcional (`PHXVPN_ATUALIZAR_MANIFESTO` no ambiente) no `painel` e na `mesa` — só avisa, nunca aplica sozinha
 - [x] Serviço "cliente" (`phxvpn servico instalar cliente --perfil rede.ovpn`): o modo cliente do OpenVPN (entrar na rede de OUTRO servidor) agora sobe com a máquina, antes do login — o gap de "connect before logon" do OpenVPN Connect. Reaproveita a MESMA função que `phxvpn entrar --conectar` já usava (`rodar_openvpn_cliente`), não uma segunda cópia
 - [x] MFA (TOTP, RFC 6238) no login do painel e na conexão OpenVPN: usuário + senha + código por `auth-user-pass-verify` (adiado) e `static-challenge`, exigido por rede — **provado com o `openvpn` 2.6.19** (`provas/mfa/`)
+- [x] P2P: rol de membros ASSINADO (Ed25519 do dono, versão monotônica, anti-rollback) — `p2p remover` derruba o túnel do removido com todos, provado em três `netns`; rede criada antes continua com a confiança transitiva
+- [x] P2P: descoberta na LAN — anúncio broadcast cifrado com chave da PSK, sem nome de rede nem chave em claro; dois membros sem endereço nem repasse se acham em 459 ms (release, `netns`)
 - [x] P2P: perfuração de NAT mediada pelo repasse (modo `auto`) — com dois NATs, o ping migra ao caminho direto em ~2 s e o repasse carrega **0** datagrama de dados; NAT simétrico ou sondas bloqueadas seguem pelo repasse
 
 ### Falta
 
 - [ ] Programa de mesa: ver o ícone da bandeja num Windows real (no Wine ele é registrado, mas não aparece na área de trabalho virtual) e bandeja no Linux (pede D-Bus)
 - [ ] Usar o certificado digital da empresa (A1/RSA) como AC — hoje ele é guardado só como identificação
-- [ ] P2P: rol de membros ASSINADO (hoje a lista viaja cifrada entre membros, com confiança transitiva)
-- [ ] P2P: descoberta na LAN (broadcast) e «farol» (membro alcançável que faz relé) — o convite e a perfuração mediada pelo repasse já entraram
+- [ ] P2P: «farol» (membro alcançável que faz relé) — o convite, a perfuração mediada pelo repasse e a descoberta na LAN já entraram
+- [ ] P2P: delegar o rol a administradores (hoje só quem criou a rede inclui e remove; com ele fora do ar, ninguém entra nem sai — ver «Rol assinado»)
 - [ ] P2P: perfuração atrás de NAT Linux **sem** filtro na wan (a primeira sonda aceita vira dona da porta; ver a seção da perfuração) e de NAT simétrico — hoje ficam no repasse
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
 - [ ] P2P no Windows: **prova numa máquina real** com OpenVPN (driver TAP e `netsh` — o roteiro `prova-windows.ps1` está pronto)
@@ -186,9 +188,135 @@ Três defeitos achados nessa prova, nenhum pelos testes que já existiam:
    consumiu. RED: sem esse filtro, `ficha_de_convite_admite_uma_vez_e_nao_ressuscita`
    reprova.
 
-Limites: a lista de pares não é assinada — um membro (que já tem a senha)
-pode apresentar outros; e `convidar` com a rede ligada não trava o arquivo
-contra gravação simultânea (janela de milissegundos).
+Limites: `convidar` com a rede ligada não trava o arquivo contra gravação
+simultânea (janela de milissegundos). A lista de pares deixou de ser a porta
+de entrada numa rede nova — ver «Rol assinado» abaixo; numa rede criada antes
+dele, um membro (que já tem a senha) ainda pode apresentar outros.
+
+## P2P: rol assinado e descoberta na LAN (24/09/2026)
+
+Código: `src/rol.rs` (formato e conferência), `src/descoberta.rs` (anúncio),
+`src/p2p_rol.rs` (os ganchos no nó, filho de `p2p` como a perfuração). Prova:
+`provas/rol-descoberta/` (`rodar.sh` em `netns`, `red.py`, `resultados.json`,
+`red.json`).
+
+### Rol assinado
+
+**O problema.** A senha da rede (PSK) era ao mesmo tempo a condição de fechar
+aperto e a de ser membro: quem tinha a senha apresentava quem quisesse pela
+lista de pares, e **remover não existia** — o removido voltava pelo primeiro
+membro que ainda o conhecesse.
+
+**O desenho.**
+- Quem cria a rede é o **dono**. A chave Ed25519 dele **não é um segredo novo
+  em disco**: sai por HKDF da identidade X25519 (`p2p.chave`) e do nome da
+  rede. Mesmo arquivo, mesma proteção (0600 / DACL / DPAPI); a X25519 nunca
+  assina e a Ed25519 nunca faz DH.
+- O **rol** é `versão + (chave X25519, IP virtual, apelido opcional)` de cada
+  membro, assinado pelo dono. O IP entra amarrado à chave: o roteamento pela
+  chave depende disso.
+- A versão é `max(anterior + 1, agora em segundos)`. O relógio só ajuda (rede
+  recriada com o mesmo nome e a mesma identidade nasce acima da antiga); o
+  `+ 1` é que garante subir.
+- **Aceitar**: assinatura do dono **desta** rede (o nome entra na conta),
+  **antes** de olhar a versão — senão um rol forjado de versão alta passaria à
+  frente. Versão igual ou menor que a aceita: recusado (**anti-rollback**), e
+  quem mandou o velho recebe o nosso no próximo tique.
+- **Admitir aperto**: em rede assinada, estar na lista não basta — a chave tem
+  de estar no rol aceito. A lista de pares passa a só **ensinar endereço** de
+  quem já está no rol; não apresenta ninguém.
+- **Entrar**: o convite leva a pública do dono. `convidar` só roda no dono. A
+  ficha chega no INICIO do convidado (com o apelido); o nó do dono o admite,
+  assina o rol novo com ele dentro e o espalha — o rol vai **antes** da lista
+  de pares em cada envio (na ordem contrária o endereço do membro novo só
+  chegava no reenvio de 30 s: medido, B→C em **30,2 s**; depois, **11 ms**).
+- **Sair**: `p2p remover --rede R --ip 10.78.0.3` (só no dono) grava o rol
+  novo no arquivo; o nó ligado o relê em até 2 s, tira o membro da malha (as
+  sessões com ele morrem junto) e o manda a todos. Quem recebe faz o mesmo.
+
+**Formato** (binário, porque o que se assina tem de ter uma forma só):
+
+```text
+"phxvpn-rol-v1" | u16 len(rede) | rede | u64 versao | u16 n |
+  n x ( X25519 32 | IPv4 4 | u8 len(nome) | nome ) | Ed25519 64
+```
+
+A mesma sequência vai no túnel (controle `0x00 'R'`) e no arquivo da rede.
+
+**Mudança de formato, entrando cedo:**
+- `<rede>.p2p` ganhou `dono` (hex), `rol` (hex da sequência acima),
+  `descoberta` (padrão `true`) e `apelido`. Arquivo sem `dono` = rede de
+  antes: tudo como era (teste `rede_sem_dono_aprende_par_pela_lista_como_antes`).
+- O convite ganhou `dono`: **417 → 519 caracteres**, medido no mesmo comando.
+- O INICIO com ficha pode levar o apelido (até 32 bytes) depois da ficha:
+  até 196 bytes.
+
+**Decidido aqui, com a hipótese que morreu.** Delegar o rol a administradores
+assinados pelo dono foi avaliado e **recusado nesta rodada**: com dois
+assinantes, dois rois de versão N+1 nascem ao mesmo tempo, e a malha passaria
+a precisar de desempate e de fusão — o problema de replicação inteiro para
+redes de dezenas de membros. Com um só, a versão é uma sequência e «mais novo»
+não tem ambiguidade.
+
+**Limites que valem saber:**
+- **Dono fora do ar:** ninguém entra nem sai. A malha continua funcionando com
+  o último rol; perder a identidade do dono congela o rol — a saída é criar a
+  rede de novo.
+- **Removido é esquecido pela malha, não pelo disco dele:** a remoção chega a
+  cada membro pela malha. Um membro que estava fora do ar ainda aceita o
+  removido até falar com qualquer membro atualizado (o rol velho dele é
+  substituído no primeiro aperto com alguém que tenha o novo).
+- **Tamanho:** rol de ~35 membros com apelido já passa de um datagrama de
+  1.420 bytes e depende de fragmentação IP — o mesmo que a lista de pares já
+  fazia.
+
+### Descoberta na LAN
+
+- **Anúncio** a cada 5 s, **200 bytes fixos**, no mesmo soquete do túnel e
+  para a porta da rede: `XChaCha20-Poly1305(HKDF(PSK, "anuncio"),
+  carimbo em ms | chave X25519 | zeros)`. Quem não tem a senha vê bytes
+  sorteados de tamanho fixo; medido no fio da prova: **0** ocorrências do nome
+  da rede. A etiqueta Poly1305 autentica cabeçalho e conteúdo — um HMAC ao
+  lado conferiria a mesma coisa duas vezes.
+- **Resposta** é o INICIO do Noise que o nó já mandaria, no endereço de onde o
+  anúncio veio — só para par **conhecido** (e no rol, em rede assinada) e
+  **sem sessão viva**.
+- **Contra amplificador:** a resposta (≤ 196 bytes) nunca passa do pedido
+  (200; teste `resposta_nunca_maior_que_o_pedido`); anúncio sem a senha não
+  provoca nada; teto de 50 anúncios abertos por segundo e de 4 por IP de origem,
+  **antes** de abrir o selo; o INICIO já tem teto próprio (um a cada 5 s por
+  par).
+- **Contra repetição:** carimbo dentro de ±300 s e estritamente crescente por
+  chave — anúncio gravado e reenviado de outro IP não muda o endereço de
+  ninguém.
+- **Desligada custa zero:** `--sem-descoberta` (em `criar`, `entrar` ou
+  `ligar`) ou `"descoberta": false` no arquivo; o interruptor é a primeira
+  linha que o anúncio encontra (RED: sem ele, o selo se abre).
+- **Para onde vai:** o broadcast dirigido de cada interface (Linux,
+  `getifaddrs`, calculado como `endereço | !máscara`) e o `255.255.255.255`.
+  Dois defeitos medidos na prova: o limitado **sozinho** dá «Network is
+  unreachable» numa LAN sem rota padrão (a LAN que esta descoberta existe
+  para cobrir); e o `ifa_broadaddr` de uma interface configurada sem `brd`
+  vem com o **próprio endereço** — o anúncio ia para `.4` em vez de `.255`.
+- **Limite:** acha quem usa a **mesma porta UDP** (padrão 51820); relógios
+  com mais de 5 min de diferença não se acham pela LAN (o carimbo é recusado).
+
+### Provas
+
+| Prova (`netns`, release) | Resultado |
+|---|---|
+| (a) A (dono), B, C por convite; antes | A→B 1.475 ms (subida), A→C 12 ms, B→C 11 ms |
+| (a) `p2p remover --ip 10.78.0.3` | C→A e C→B: sem resposta; A→B 11 ms, B→A 10 ms |
+| (a) C religado (sessão do zero) | C→A e C→B: sem resposta |
+| (b) D, E na mesma bridge, convite **sem** endereço, sem repasse | E→D em **459 ms** |
+| (b) o mesmo com `--sem-descoberta` | sem resposta em 20 s |
+| (b) o fio (`tcpdump` na bridge) | 2 anúncios de 200 B; nome da rede em claro: **0** |
+
+**RED** (`red.py` tira uma conferência por vez; 8 de 8 acusadas, e 9 de 9
+testes passam com o fonte de volta): assinatura do rol, versão do rol, rol na
+admissão do aperto, lista que injeta par, remoção da malha, carimbo repetido
+do anúncio, janela do carimbo e o interruptor da descoberta. Sem cada uma, o
+teste que a guarda reprova.
 
 ## P2P no Windows
 

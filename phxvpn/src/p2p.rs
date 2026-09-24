@@ -17,16 +17,23 @@
 //!
 //! # O que ainda NAO esta aqui
 //!
-//! Rol assinado e descoberta na LAN (broadcast, farol) sao as proximas
-//! pecas. A perfuracao de NAT mediada pelo repasse mora em `perfuracao.rs`.
+//! O farol (membro alcancavel que faz rele). A perfuracao de NAT mediada
+//! pelo repasse mora em `perfuracao.rs`; o rol assinado em `rol.rs` e a
+//! descoberta na LAN em `descoberta.rs` -- aqui ficam so os ganchos
+//! (`receber_rol`, `aplicar_rol`, `sincronizar_rol`, `receber_anuncio`,
+//! `anunciar`).
 
+#[path = "p2p_rol.rs"]
+mod ganchos_do_rol;
 #[path = "perfuracao.rs"]
 pub mod perfuracao;
+use ganchos_do_rol::rol_do_disco_se_mais_novo;
 
 use crate::noise;
 use crate::rede_p2p::{self, Rede};
 use crate::repasse;
 use crate::transporte::{self, Sessao};
+use crate::{descoberta, rol};
 use phxsql_core::hash::pbkdf2_sha256;
 use phxsql_core::senha::bytes_aleatorios;
 use phxsql_core::x25519;
@@ -132,6 +139,11 @@ const CONTROLE_ECO: u8 = b'E';
 const CONTROLE_ECO_VOLTA: u8 = b'e';
 /// Chat: texto UTF-8 entre membros, dentro do tunel cifrado.
 const CONTROLE_CHAT: u8 = b'C';
+/// O rol assinado (`rol.rs`), em binario: vai junto da lista de pares.
+const CONTROLE_ROL: u8 = b'R';
+/// De quanto em quanto o no rele o rol do disco: `p2p remover` roda em outro
+/// processo e grava ali o rol novo, como `p2p convidar` grava a ficha.
+const RELER_ROL: Duration = Duration::from_secs(2);
 /// Teto de uma mensagem de chat e da caixa de entrada (membro falante nao
 /// enche a memoria).
 pub const TETO_CHAT: usize = 1000;
@@ -250,6 +262,12 @@ pub struct No {
     /// Quantos INICIOs chegaram ao X25519. Os testes o leem para provar que
     /// o lixo morre ANTES.
     apertos_tentados: std::sync::atomic::AtomicU64,
+    minha_publica: [u8; 32],
+    /// Versao do rol que ja esta refletida em `estado.pares` (0 = nenhuma).
+    rol_aplicado: std::sync::atomic::AtomicU64,
+    rol_lido: Mutex<Option<Instant>>,
+    /// `None` = descoberta desligada (e o anuncio morre no primeiro byte).
+    descoberta: Mutex<Option<descoberta::Descoberta>>,
 }
 
 fn indice_novo(indices: &HashMap<u32, usize>) -> u32 {
@@ -332,7 +350,22 @@ impl No {
                 por_origem: HashMap::new(),
             }),
             apertos_tentados: std::sync::atomic::AtomicU64::new(0),
+            minha_publica: x25519::chave_publica(&privada),
+            rol_aplicado: std::sync::atomic::AtomicU64::new(0),
+            rol_lido: Mutex::new(None),
+            descoberta: Mutex::new(None),
         }
+    }
+
+    /// Liga (ou nao) o anuncio na LAN. O soquete precisa de `SO_BROADCAST`
+    /// para mandar ao endereco de broadcast.
+    pub fn com_descoberta(self, ligada: bool) -> No {
+        if ligada {
+            let _ = self.udp.set_broadcast(true);
+            *self.descoberta.lock().expect("descoberta") =
+                Some(descoberta::Descoberta::nova(&self.psk, true));
+        }
+        self
     }
 
     /// Liga o no ao arquivo da rede: admite quem traz ficha de convite,
@@ -366,6 +399,11 @@ impl No {
         if let Some((rede, caminho)) = r.as_mut() {
             if let Some(c) = self.convites_do_disco(caminho) {
                 rede.convites = c;
+            }
+            // O rol do disco pode ser mais novo (`p2p remover` acabou de
+            // grava-lo): regravar o da memoria o desfaria.
+            if let Some(d) = rol_do_disco_se_mais_novo(rede, caminho) {
+                rede.rol = Some(d);
             }
             rede.pares = e
                 .pares
@@ -414,8 +452,19 @@ impl No {
         }
     }
 
-    /// A lista de pares que este no conhece, para mandar a um par.
-    fn rol_para(&self, e: &Estado, destino: usize) -> Vec<u8> {
+    /// A lista de pares que este no conhece, para mandar a um par -- e, em
+    /// rede de rol assinado, o rol logo atras (mensagem propria).
+    fn rol_para(&self, e: &Estado, destino: usize) -> Vec<Vec<u8>> {
+        // O rol vai ANTES da lista: em rede assinada a lista so ensina
+        // endereco de quem ja esta no rol, e o rol novo e que o poe la. Na
+        // ordem contraria, o endereco de um membro novo so chegava no reenvio
+        // de 30 s -- medido na prova com tres netns (B->C em 30,2 s).
+        let mut v: Vec<Vec<u8>> = self.mensagem_do_rol().into_iter().collect();
+        v.push(self.lista_para(e, destino));
+        v
+    }
+
+    fn lista_para(&self, e: &Estado, destino: usize) -> Vec<u8> {
         let mut lista: Vec<rede_p2p::Par> = e
             .pares
             .iter()
@@ -442,7 +491,11 @@ impl No {
     /// Recebeu a lista de um par autenticado: acrescenta quem nao conhecia.
     /// Confianca transitiva: quem ja e membro apresenta outros -- e cada um
     /// deles ainda precisa da senha da rede (PSK) para fechar aperto.
+    ///
+    /// Em rede de rol assinado, a lista so ENSINA ENDERECO de quem ja esta no
+    /// rol: membro nenhum apresenta membro -- so a assinatura do dono.
     fn aprender_rol(&self, e: &mut Estado, corpo: &[u8]) -> bool {
+        let assinada = self.assinada();
         let Ok(j) = std::str::from_utf8(corpo)
             .map_err(|_| ())
             .and_then(|t| phxsql_core::json::Json::analisar(t).map_err(|_| ()))
@@ -468,6 +521,7 @@ impl No {
                         mudou = true;
                     }
                 }
+                None if assinada => {}
                 None => {
                     // IP ja usado por outra chave: recusa, nao sobrescreve.
                     if e.pares.len() < TETO_PARES && !e.pares.iter().any(|x| x.ip == p.ip) {
@@ -568,8 +622,16 @@ impl No {
         let indice = indice_novo(&e.indices);
         let publica = e.pares[i].publica;
         let mut carga = transporte::carimbo_agora().to_vec();
-        if let Some(f) = *self.ficha_de_entrada.lock().expect("ficha") {
+        let ficha = *self.ficha_de_entrada.lock().expect("ficha");
+        if let Some(f) = ficha {
             carga.extend_from_slice(&f);
+            // O apelido vai com a ficha: e o dono que o escreve no rol.
+            if let Some((r, _)) = self.rede.lock().expect("rede").as_ref() {
+                let a = r.apelido.as_deref().unwrap_or("");
+                if a.len() <= rol::TETO_NOME {
+                    carga.extend_from_slice(a.as_bytes());
+                }
+            }
         }
         let Ok((ini, m1)) =
             noise::Iniciador::comecar(noise::PROLOGO, self.privada, &publica, self.psk, &carga)
@@ -659,6 +721,12 @@ impl No {
                 self.receber_cookie(dado);
                 None
             }
+            descoberta::TIPO_ANUNCIO => {
+                if let Via::Direta(de) = via {
+                    self.receber_anuncio(dado, de);
+                }
+                None
+            }
             _ => None,
         }
     }
@@ -724,10 +792,38 @@ impl No {
                     if let Some(c) = self.convites_do_disco(caminho) {
                         rede.convites = c;
                     }
+                    // Em rede de rol assinado so o dono admite: e ele quem
+                    // assina o rol novo com o convidado dentro.
+                    let dono = rede.dono;
+                    if dono.is_some_and(|d| rol::publica_do_dono(&self.privada, &rede.nome) != d) {
+                        return;
+                    }
                     let Some(ip) = rede.usar_ficha(&ficha) else {
                         return;
                     };
                     self.fichas_usadas.lock().expect("fichas").push(ficha);
+                    if dono.is_some() {
+                        let nome = chamada
+                            .carga
+                            .get(28..)
+                            .and_then(|b| std::str::from_utf8(b).ok())
+                            .filter(|n| !n.is_empty() && n.len() <= rol::TETO_NOME)
+                            .map(str::to_string);
+                        let novo = rede.rol.as_ref().map(|r| {
+                            r.com(
+                                rol::Membro {
+                                    chave: chamada.estatica_dele,
+                                    ip,
+                                    nome,
+                                },
+                                &self.privada,
+                            )
+                        });
+                        match novo {
+                            Some(Ok(r)) => rede.rol = Some(r),
+                            _ => return,
+                        }
+                    }
                     ip
                 };
                 if e.pares.iter().any(|p| p.ip == ip) {
@@ -741,9 +837,22 @@ impl No {
                     .push(No::par_novo(chamada.estatica_dele, ip, endereco));
                 No::avisar_malha(&mut e);
                 self.persistir(&e);
-                e.pares.len() - 1
+                self.aplicar_rol(&mut e);
+                match e
+                    .pares
+                    .iter()
+                    .position(|p| p.publica == chamada.estatica_dele)
+                {
+                    Some(i) => i,
+                    None => return,
+                }
             }
         };
+        // Em rede de rol assinado, estar na lista nao basta: tem de estar no
+        // rol mais novo que este no aceitou.
+        if self.fora_do_rol(&chamada.estatica_dele) {
+            return;
+        }
         if declarada.is_some_and(|k| k != chamada.estatica_dele) {
             return;
         }
@@ -883,7 +992,7 @@ impl No {
         let mut saidas: Vec<Vec<u8>> = fila.iter().filter_map(|p| s.selar(p).ok()).collect();
         // A lista de pares vai logo: e ela que confirma a sessao do outro
         // lado (no lugar do «manter vivo») e o apresenta ao resto da malha.
-        saidas.extend(s.selar(&rol).ok());
+        saidas.extend(rol.iter().filter_map(|m| s.selar(m).ok()));
         e.pares[i].ultimo_envio = Instant::now();
         let chave = e.pares[i].publica;
         drop(e);
@@ -923,7 +1032,7 @@ impl No {
         if e.pares[i].ultimo_rol.is_none() {
             let rol = self.rol_para(&e, i);
             if let Some(s) = e.pares[i].atual.as_mut().filter(|s| s.confirmada) {
-                saidas.extend(s.selar(&rol).ok());
+                saidas.extend(rol.iter().filter_map(|m| s.selar(m).ok()));
                 e.pares[i].ultimo_rol = Some(Instant::now());
             }
         }
@@ -935,6 +1044,7 @@ impl No {
                         self.persistir(&e);
                     }
                 }
+                Some(&CONTROLE_ROL) => self.receber_rol(&mut e, &claro[2..], i),
                 Some(&CONTROLE_ECO) if claro.len() == 10 => {
                     let mut volta = vec![CONTROLE, CONTROLE_ECO_VOLTA];
                     volta.extend_from_slice(&claro[2..10]);
@@ -976,7 +1086,9 @@ impl No {
     /// aperto sem resposta e comecar com quem tem endereco e nao tem sessao.
     pub fn tique(&self) {
         self.registrar_no_repasse();
+        self.anunciar();
         let mut e = self.estado.lock().expect("estado");
+        self.sincronizar_rol(&mut e);
         let furos = self.perfurar(&mut e);
         let mut vivos = Vec::new();
         for i in 0..e.pares.len() {
@@ -998,12 +1110,15 @@ impl No {
             {
                 let rol = self.rol_para(&e, i);
                 let (via, chave) = (e.pares[i].via, e.pares[i].publica);
-                if let (Some(s), Some(v)) = (e.pares[i].atual.as_mut(), via) {
-                    if let Ok(p) = s.selar(&rol) {
-                        vivos.push((v, chave, p));
-                        e.pares[i].ultimo_rol = Some(Instant::now());
-                        e.pares[i].ultimo_envio = Instant::now();
+                let par = &mut e.pares[i];
+                if let (Some(s), Some(v)) = (par.atual.as_mut(), via) {
+                    let selados: Vec<Vec<u8>> =
+                        rol.iter().filter_map(|m| s.selar(m).ok()).collect();
+                    if !selados.is_empty() {
+                        par.ultimo_rol = Some(Instant::now());
+                        par.ultimo_envio = Instant::now();
                     }
+                    vivos.extend(selados.into_iter().map(|p| (v, chave, p)));
                 }
             }
             if e.pares[i].ultimo_envio.elapsed() >= MANTER_VIVO {
