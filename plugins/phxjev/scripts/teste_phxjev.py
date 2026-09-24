@@ -273,6 +273,34 @@ class Autocalibracao(unittest.TestCase):
         self.assertIn("REBAIXE", j.cmd_historico("claude", self.reg))
 
 
+class Limitrofe(unittest.TestCase):
+    def setUp(self):
+        self.reg = os.path.join(tempfile.mkdtemp(), "r.jsonl")
+
+    def sev(self, p):
+        return {"id": "a", "perguntas": {"real": noul(0.9), "severidade": {"tipo": "score", "p": p, "evid": "x"}}}
+
+    def test_severidade_dos_dois_lados_do_limiar_da_o_mesmo_veredito(self):
+        # as duas leituras medidas do mesmo item: 2,13 e 1,80 -- antes uma bloqueava e a outra nao
+        a = rodar([self.sev({"0": 0.0, "1": 0.02, "2": 0.83, "3": 0.15})], self.reg)   # 2,13
+        b = rodar([self.sev({"0": 0.0, "1": 0.2, "2": 0.8, "3": 0.0})], self.reg)      # 1,80
+        for out in (a, b):
+            self.assertIn("bloqueia?", out)
+            self.assertIn("limitrofe", out)
+
+    def test_severidade_longe_do_limiar_nao_escala(self):
+        out = rodar([self.sev({"0": 0.0, "1": 0.0, "2": 0.1, "3": 0.9})], self.reg)   # 2,90
+        self.assertNotIn("limitrofe", out)
+        self.assertRegex(out, r"bloqueia(?!\?)")
+
+    def test_defeito_ativo_limitrofe_fica_na_conta(self):
+        for p in (0.15, 0.12):   # conf 0,39 e 0,47: antes ☐ e ⏸
+            it = [{"id": "a", "perguntas": {"real": noul(0.9), "defeito_ativo": noul(p)}}]
+            out = rodar(it, self.reg)
+            self.assertIn("MANTER ☐", out)
+            self.assertIn("defeito_ativo: limitrofe", out)
+
+
 class Chave(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()

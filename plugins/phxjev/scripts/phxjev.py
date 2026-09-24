@@ -54,6 +54,12 @@ LIMIAR_FERE_PETREA = 0.30
 LIMIAR_CONF = 0.40
 LIMIAR_MARGEM = 0.15
 LIMIAR_SEVERIDADE = 2.0
+# Faixa limitrofe: medido julgando os mesmos 14 itens duas vezes, a
+# severidade cruzou o 2,0 nos dois sentidos (2,13->1,80; 1,95->2,10) e a
+# conf do defeito_ativo cruzou o 0,40 (0,39->0,47), trocando o veredito com
+# ruido de 0,05. Dentro da faixa o veredito nao troca calado: escala.
+FAIXA_SEVERIDADE = 0.25
+FAIXA_CONF = 0.10  # a oscilacao medida foi de 0,08
 
 
 class Invalido(Exception):
@@ -145,8 +151,11 @@ def decidir(perguntas):
 
     if "defeito_ativo" in perguntas:
         q = g("defeito_ativo")
-        if q["valor"] >= LIMIAR_DEFEITO_ATIVO or q["conf"] < LIMIAR_CONF:
+        if q["valor"] >= LIMIAR_DEFEITO_ATIVO or q["conf"] < LIMIAR_CONF + FAIXA_CONF:
+            # «Na duvida fica na conta»: a faixa pende para o ☐, nunca para o ⏸.
             partes.insert(0, "MANTER ☐")
+            if q["valor"] < LIMIAR_DEFEITO_ATIVO and q["conf"] >= LIMIAR_CONF - FAIXA_CONF:
+                escalar.append(f"defeito_ativo: limitrofe (conf {q['conf']:.2f})")
         else:
             partes.insert(0, "MANTER ⏸")
     if "severidade" in perguntas:
@@ -157,8 +166,11 @@ def decidir(perguntas):
         incerta = q["conf"] < LIMIAR_CONF
         if incerta:
             escalar.append(f"severidade: incerta (conf {q['conf']:.2f})")
-        if q["valor"] >= LIMIAR_SEVERIDADE:
-            partes.append("bloqueia?" if incerta else "bloqueia")
+        limitrofe = abs(q["valor"] - LIMIAR_SEVERIDADE) < FAIXA_SEVERIDADE
+        if limitrofe and not incerta:
+            escalar.append(f"severidade: limitrofe ({q['valor']:.2f} perto de {LIMIAR_SEVERIDADE})")
+        if q["valor"] >= LIMIAR_SEVERIDADE - (FAIXA_SEVERIDADE if limitrofe else 0):
+            partes.append("bloqueia?" if (incerta or limitrofe) else "bloqueia")
     for nome, q in perguntas.items():
         if q["tipo"] == "noul" and nome not in ("real", "alcancavel", "ja_tratado") \
                 and not nome.startswith("fere_petrea") and nome != "defeito_ativo":

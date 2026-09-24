@@ -63,6 +63,11 @@ leitura. Mudou la, muda aqui no mesmo commit.
 | qualquer `choice` | `conf < 0,40` ou top1 − top2 `< 0,15` | **empate** — medir mais; se nada mede, sobe ao dono |
 | `severidade` (0–3) | `≥ 2,0` | **bloqueia a entrega** |
 | `severidade` | `conf < 0,40` | **escalar: severidade incerta**; se `≥ 2,0`, «bloqueia?» |
+| `severidade` | a menos de 0,25 do 2,0 | **escalar: limitrofe**, «bloqueia?» dos dois lados |
+| `defeito_ativo` | `p < 0,50` e `conf` entre 0,30 e 0,50 | **☐ e escalar: limitrofe** (a faixa pende para a conta) |
+
+As duas faixas sairam de medida: os mesmos 14 itens julgados duas vezes
+trocaram veredito com ruido de 0,05 a 0,08 bem em cima dos limiares.
 
 Juiz que ajusta o limiar para caber no veredito que queria nao julgou —
 escolheu. Por isso quem aplica e o codigo.
