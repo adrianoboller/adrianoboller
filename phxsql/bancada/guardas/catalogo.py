@@ -10046,4 +10046,505 @@ pub fn limpar() {
             "sem_panico_a_marca_desce_ao_fechar_como_antes",
         ],
     },
+    {
+        "id": "dblink-cifra-selo-ignorado",
+        "titulo": "com a chave mestra disponível, o `dblink.json` recebe a senha e o token em claro",
+        "porque": (
+            "petrea «senha nunca em texto puro, nem em arquivo», e o pedido 372 "
+            "decidido pelo dono: cifra com chave mestra externa. O defeito e o "
+            "mais barato de cometer -- o `para_disco` recebe o selo e escreve o "
+            "campo de sempre --, e o arquivo continua com cara de cifrado "
+            "(`formato: 2`, `cifra_do_cadastro`), o que o torna o pior dos dois: "
+            "anuncia protecao e guarda o claro. O teste mede o disco DEPOIS DE "
+            "CADA gravacao: na primeira versao, o vermelho saiu na SEGUNDA "
+            "gravacao, pela guarda vizinha do rebaixamento, e escondia o claro "
+            "que a primeira ja tinha deixado."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+        "trecho": """            match selo {
+                Some(m) => campos.push((
+""",
+        "troca": """            // DEFEITO REPOSTO (372): ha selo, e o disco o ignora.
+            match None::<&Material> {
+                Some(m) => campos.push((
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::testes::com_a_chave_o_disco_nao_guarda_a_senha_nem_o_token_em_claro",
+        ],
+        "seguem": [
+            # Sem chave o selo nao existe, e o comportamento velho nao muda.
+            "dblink::testes::o_cadastro_de_hoje_sem_chave_abre_e_regrava_igual",
+            "dblink::testes::grava_le_e_nao_perde_a_senha",
+        ],
+    },
+    {
+        "id": "dblink-cifra-envelope-sem-nome",
+        "titulo": "o envelope da ligação A colado na linha da ligação B abre, e a B apresenta a senha de outro banco",
+        "porque": (
+            "parecer do DBA §1.2: «o envelope tem de amarrar o NOME da ligacao "
+            "no AAD. Sem isso, mover o envelope da ligacao A para a linha da "
+            "ligacao B dentro do mesmo arquivo e edicao de texto -- e o arquivo "
+            "e editavel a mao por desenho». A cifra continua funcionando nos "
+            "dois sentidos com o defeito de pe (sela e abre com o mesmo dado "
+            "associado), e por isso nenhum teste de ida e volta o acha: so o "
+            "que MOVE o envelope."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+        "trecho": """    aad.extend_from_slice(nome.to_ascii_lowercase().as_bytes());
+""",
+        "troca": """    // DEFEITO REPOSTO (372): o nome da ligacao fora do dado associado.
+    let _ = nome;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::testes::o_envelope_movido_de_uma_ligacao_para_outra_nao_abre",
+        ],
+        "seguem": [
+            "dblink::testes::com_a_chave_o_disco_nao_guarda_a_senha_nem_o_token_em_claro",
+            "dblink::testes::a_primeira_gravacao_com_chave_migra_e_diz_quantas",
+        ],
+    },
+    {
+        "id": "dblink-cifra-sem-prova",
+        "titulo": "a chave mestra errada abre o cadastro, e a ligação salva em seguida sai selada com ela",
+        "porque": (
+            "parecer do DBA §1.2: o `cofre::Material` traz a prova que «recusa a "
+            "senha errada NA ABERTURA, e nao na primeira ligacao». O dano de "
+            "tira-la nao e a mensagem: e o cadastro com DUAS chaves -- a "
+            "ligacao salva com a chave errada fica trancada para sempre quando "
+            "a certa volta. O defeito mora no `cofre.rs`, que e o motor que o "
+            "DbLink reusa em vez de escrever uma segunda prova; por isso a "
+            "guarda do DbLink prova a conferencia do cofre tambem."
+        ),
+        "arquivo": "crates/phxsql-store/src/cofre.rs",
+        "trecho": """        let esperada = prova_do_material(&chave, rotulo, &buf[base..base + 24]);
+        if !iguais_em_tempo_constante(&esperada, &buf[base + 24..base + 24 + TAG_LEN]) {
+""",
+        "troca": """        let esperada = prova_do_material(&chave, rotulo, &buf[base..base + 24]);
+        // DEFEITO REPOSTO (372): a prova calculada e nunca conferida.
+        if false && !iguais_em_tempo_constante(&esperada, &buf[base + 24..base + 24 + TAG_LEN]) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::testes::a_chave_errada_e_recusada_pela_prova_e_nao_sela_nada_com_ela",
+        ],
+        "seguem": [
+            "dblink::testes::com_a_chave_o_disco_nao_guarda_a_senha_nem_o_token_em_claro",
+            "dblink::testes::o_envelope_movido_de_uma_ligacao_para_outra_nao_abre",
+        ],
+    },
+    {
+        "id": "dblink-cifra-chave-ausente-derruba",
+        "titulo": "sem a chave mestra, o cadastro recusa abrir e o servidor inteiro não sobe",
+        "porque": (
+            "parecer do DBA §1.4: «`Servidor::novo` abre o cadastro com `?` ... "
+            "esquecer a variavel deixa de ser `o DbLink nao funciona` e vira `o "
+            "motor de dados nao sobe`. NAO. A ligacao que nao abre nasce "
+            "TRANCADA». O defeito e o conserto ingenuo -- a falta da chave e um "
+            "erro, e erro se devolve --, e ele cabe em tres linhas."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+        "trecho": """            r.cifra.abrir_material(escrito, caminho);
+""",
+        "troca": """            r.cifra.abrir_material(escrito, caminho);
+            // DEFEITO REPOSTO (372): a chave que falta vira erro da abertura.
+            if let Some(m) = &r.cifra.trancado {
+                return Err(PhxError::Autorizacao(m.clone()));
+            }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::testes::sem_a_chave_o_cadastro_cifrado_abre_trancado_e_o_envelope_volta_igual",
+            "servidor::testes_dblink_cifra::a_chave_mestra_ausente_nao_derruba_o_servidor_e_tranca_so_a_cifrada",
+            "config::tests::a_chave_mestra_ausente_avisa_pela_lista_de_sempre",
+        ],
+        "seguem": [
+            "dblink::testes::o_cadastro_de_hoje_sem_chave_abre_e_regrava_igual",
+            "dblink::testes::com_a_chave_o_disco_nao_guarda_a_senha_nem_o_token_em_claro",
+        ],
+    },
+    {
+        "id": "dblink-cifra-formato-2-sem-chave",
+        "titulo": "o `dblink.json` de hoje, sem chave declarada, ganha `formato: 2` ao ser regravado",
+        "porque": (
+            "parecer do DBA §1.3: «sem `formato` e sem `senha_cifrada`, o leitor "
+            "cai no caminho de hoje e NADA muda ... compatibilidade para tras e "
+            "de graca aqui, e por isso nao se negocia». E a guarda do "
+            "COMPORTAMENTO VELHO, a que mais importa numa guarda nova: um "
+            "arquivo carimbado sem pedido passa a exigir este binario, e um "
+            "binario anterior le a senha vazia dali em diante."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+        # Reancorada na segunda rodada do 372 (24/09/2026): a chave da lista
+        # virou constante (`LISTA_DO_FORMATO_1`), porque o formato 2 passou a
+        # guardar a lista noutra. O defeito reposto e o mesmo.
+        "trecho": """            None => Json::objeto(vec![(LISTA_DO_FORMATO_1, Json::Lista(ligacoes))]),
+""",
+        "troca": """            // DEFEITO REPOSTO (372): o formato 2 carimbado em quem nao pediu.
+            None => Json::objeto(vec![
+                ("formato", Json::de_u64(FORMATO_DO_CADASTRO as u64)),
+                (LISTA_DO_FORMATO_1, Json::Lista(ligacoes)),
+            ]),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::testes::o_cadastro_de_hoje_sem_chave_abre_e_regrava_igual",
+        ],
+        "seguem": [
+            # Com chave, o formato 2 e o certo, e nada muda. (O
+            # `grava_le_e_nao_perde_a_senha` saiu daqui na segunda rodada: sem
+            # chave, o arquivo carimbado agora tambem nao REABRE -- o formato 2
+            # guarda a lista noutra chave --, entao ele cai junto.)
+            "dblink::testes::com_a_chave_o_disco_nao_guarda_a_senha_nem_o_token_em_claro",
+            "dblink::testes::o_envelope_movido_de_uma_ligacao_para_outra_nao_abre",
+        ],
+    },
+    {
+        "id": "dblink-cifra-chave-dentro-da-pasta",
+        "titulo": "a chave mestra num arquivo dentro da pasta do banco é aceita, e viaja na mesma cópia que o cadastro",
+        "porque": (
+            "parecer do DBA §1.5, o NAO do parecer: «NAO a cifrar o `dblink.json` "
+            "com chave que mora no mesmo diretorio. Isso nao protege contra "
+            "ninguem e ANUNCIA protecao -- a familia do `encryption_exigida` e "
+            "do `recursos.cache_paginas`». A recusa e pelo caminho REAL: o "
+            "teste passa tambem a grafia com `..` que volta para dentro."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            if chave.starts_with(&real) {
+""",
+        "troca": """            // DEFEITO REPOSTO (372): a chave dentro da pasta passa.
+            if false && chave.starts_with(&real) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::tests::a_chave_mestra_dentro_da_pasta_do_banco_e_recusada_com_o_motivo",
+        ],
+        "seguem": [
+            "config::tests::a_chave_mestra_no_config_json_ou_em_duas_fontes_e_recusada",
+            "config::tests::a_chave_mestra_ausente_avisa_pela_lista_de_sempre",
+        ],
+    },
+    {
+        "id": "dblink-cifra-rebaixa-calado",
+        "titulo": "sem a chave, a credencial nova vai em texto puro para dentro do cadastro cifrado",
+        "porque": (
+            "petrea «senha nunca em texto puro», no caminho que a chave AUSENTE "
+            "abre: o cadastro cifrado continua aceitando gravacao (a trancada "
+            "tem de voltar igual ao disco), e o atalho e deixar a credencial "
+            "nova ir como sempre foi. O arquivo que o dono pediu cifrado seria "
+            "rebaixado calado -- e nenhum aviso de texto puro o denunciaria "
+            "antes do proximo arranque."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+        "trecho": """            if let Some(porque) = porque {
+""",
+        "troca": """            // DEFEITO REPOSTO (372): sem selo, grava em claro assim mesmo.
+            if let Some(porque) = porque.filter(|_| false) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::testes::sem_a_chave_o_cadastro_cifrado_abre_trancado_e_o_envelope_volta_igual",
+            "servidor::testes_dblink_cifra::a_chave_mestra_ausente_nao_derruba_o_servidor_e_tranca_so_a_cifrada",
+            "dblink::testes::a_chave_errada_e_recusada_pela_prova_e_nao_sela_nada_com_ela",
+        ],
+        "seguem": [
+            "dblink::testes::com_a_chave_o_disco_nao_guarda_a_senha_nem_o_token_em_claro",
+            "dblink::testes::a_primeira_gravacao_com_chave_migra_e_diz_quantas",
+        ],
+    },
+    {
+        "id": "dblink-cifra-perde-envelope-trancado",
+        "titulo": "salvar outra ligação sem a chave apaga o envelope da trancada, e a credencial some para sempre",
+        "porque": (
+            "`Registro::gravar` reescreve TODAS as ligacoes a cada salvar "
+            "(parecer do DBA §1.3), e sem a chave o envelope da trancada nao "
+            "tem como ser selado de novo: ou volta igual, ou se perde. O "
+            "caminho IRMAO e o salvar pela tela da propria trancada, que herda "
+            "a credencial pelo `com_a_senha_de` -- o teste do servidor cobre os "
+            "dois."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+        "trecho": """            if let Some(envelope) = segredo.envelope_trancado() {
+                campos.push((campo_cifrado, Json::texto_de(envelope)));
+                continue;
+            }
+""",
+        "troca": """            // DEFEITO REPOSTO (372): o envelope que nao abriu nao volta ao disco.
+            if segredo.envelope_trancado().is_some() {
+                continue;
+            }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::testes::sem_a_chave_o_cadastro_cifrado_abre_trancado_e_o_envelope_volta_igual",
+            "servidor::testes_dblink_cifra::a_chave_mestra_ausente_nao_derruba_o_servidor_e_tranca_so_a_cifrada",
+        ],
+        "seguem": [
+            "dblink::testes::com_a_chave_o_disco_nao_guarda_a_senha_nem_o_token_em_claro",
+            "dblink::testes::o_envelope_movido_de_uma_ligacao_para_outra_nao_abre",
+        ],
+    },
+    {
+        "id": "dblink-cifra-lista-na-chave-legada",
+        "titulo": "o formato 2 deixa a lista em `\"dblink\"`, e o binário anterior a lê e apaga os envelopes na primeira gravação",
+        "porque": (
+            "revisao SEC do 372, M3, e parecer do DBA do formato 2, pedido 1: o "
+            "binario anterior le `dblink`, ignora `senha_cifrada` e "
+            "`cifra_do_cadastro` e, na primeira gravacao, reescreve as ligacoes "
+            "sem os envelopes -- a credencial cifrada some de vez, calada. Com a "
+            "lista noutra chave, ele RECUSA SUBIR: falha fechada. O teste mede o "
+            "DANO simulando o `para_disco` anterior (os campos que ele conhece) "
+            "sobre o que o leitor anterior acha, e conta os envelopes que sobram."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+        "trecho": """const LISTA_DO_FORMATO_2: &str = "ligacoes";
+""",
+        "troca": """// DEFEITO REPOSTO (372): a lista do formato 2 onde o binario anterior a acha.
+const LISTA_DO_FORMATO_2: &str = "dblink";
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::testes::o_formato_2_nao_entrega_a_lista_ao_leitor_legado",
+        ],
+        "seguem": [
+            "dblink::testes::com_a_chave_o_disco_nao_guarda_a_senha_nem_o_token_em_claro",
+            "dblink::testes::a_primeira_gravacao_com_chave_migra_e_diz_quantas",
+        ],
+    },
+    {
+        "id": "dblink-cifra-link-seguido-de-ponto-ponto",
+        "titulo": "a chave mestra em `fora/link/../chave.hex` passa pela conferência e o kernel a abre dentro da pasta do banco",
+        "porque": (
+            "revisao SEC do 372, M1, provada contra o sistema operacional: o "
+            "`..` depois de um link sobe a partir do DESTINO do link. Resolvido "
+            "pelo texto antes do `canonicalize`, `fora/link/..` vira `fora`, a "
+            "conferencia aceita, e o kernel abre a chave de dentro da pasta que "
+            "vai na copia -- a recusa que a doc promete («pelo caminho REAL») "
+            "nao acontecia. O teste monta o link de verdade e confere antes que "
+            "o kernel abre a de dentro."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """    let partes: Vec<Component> = absoluto.components().collect();
+""",
+        "troca": """    // DEFEITO REPOSTO (372): o `..` resolvido pelo texto antes do sistema.
+    let mut pelo_texto = PathBuf::new();
+    for c in absoluto.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                pelo_texto.pop();
+            }
+            outra => pelo_texto.push(outra.as_os_str()),
+        }
+    }
+    let partes: Vec<Component> = pelo_texto.components().collect();
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::tests::a_chave_por_link_seguido_de_ponto_ponto_e_recusada",
+        ],
+        "seguem": [
+            "config::tests::a_chave_mestra_dentro_da_pasta_do_banco_e_recusada_com_o_motivo",
+            "config::tests::a_chave_nao_se_le_de_um_caminho_que_mudou_depois_da_conferencia",
+        ],
+    },
+    {
+        "id": "dblink-cifra-le-caminho-diferente-do-conferido",
+        "titulo": "o diretório da chave trocado por um link depois do arranque leva a leitura para dentro da pasta do banco",
+        "porque": (
+            "revisao SEC do 372, M1, segunda metade: «ler O MESMO caminho que "
+            "foi conferido». Guardar o caminho real nao basta se a leitura o "
+            "segue sem refazer: um diretorio trocado por link depois da "
+            "conferencia leva o `read` para dentro da pasta do banco pelo "
+            "caminho que ja tinha passado. A leitura refaz o caminho real e so "
+            "le se ele ainda resolve para si mesmo."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """                    let agora = caminho_real(conferido);
+                    if agora != *conferido {
+""",
+        "troca": """                    // DEFEITO REPOSTO (372): le o conferido sem refazer o caminho real.
+                    let agora = conferido.clone();
+                    if agora != *conferido {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::tests::a_chave_nao_se_le_de_um_caminho_que_mudou_depois_da_conferencia",
+        ],
+        "seguem": [
+            "config::tests::a_chave_mestra_dentro_da_pasta_do_banco_e_recusada_com_o_motivo",
+            "config::tests::a_chave_por_link_seguido_de_ponto_ponto_e_recusada",
+        ],
+    },
+    {
+        "id": "dblink-cifra-chave-pronta-sem-subchave",
+        "titulo": "dois cadastros com a mesma chave pronta cifram com a mesma chave e repetem o par (chave, nonce) da prova",
+        "porque": (
+            "revisao SEC do 372, M2: com `chave_mestra_*` a K cifrava direto, e "
+            "o sal nao separava chave nenhuma. Varios nos montando o mesmo "
+            "segredo (o exemplo do MANUAL) ou um cadastro recriado davam duas "
+            "etiquetas Poly1305 sob o mesmo (r, s) na prova de nonce zero -- a "
+            "RFC 8439 §2.5 proibe --, e quem juntasse dois backups forjaria "
+            "provas. A subchave e `HMAC-SHA256(K, rotulo || sal)`, com o HMAC "
+            "da casa conferido contra a RFC 4231."
+        ),
+        "arquivo": "crates/phxsql-store/src/cofre.rs",
+        "trecho": """            ChaveDeFora::Pronta(k) => {
+                let mut rotulo_e_sal = ROTULO_DA_CHAVE_PRONTA.to_vec();
+""",
+        "troca": """            // DEFEITO REPOSTO (372): a chave pronta cifra direto, sem o sal.
+            ChaveDeFora::Pronta(k) if true => return Ok(Chave(**k)),
+            ChaveDeFora::Pronta(k) => {
+                let mut rotulo_e_sal = ROTULO_DA_CHAVE_PRONTA.to_vec();
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "cofre::testes::duas_chaves_prontas_iguais_nao_repetem_o_fluxo_entre_cadastros",
+        ],
+        "seguem": [
+            "cofre::testes::a_chave_de_fora_vai_as_partes_e_volta",
+            "cofre::testes::a_chave_de_fora_errada_e_recusada_pela_prova",
+        ],
+    },
+    {
+        "id": "dblink-cifra-envelope-entrega-o-tamanho",
+        "titulo": "o envelope cifrado tem o tamanho exato da credencial, e o arquivo entrega quanto mede cada senha",
+        "porque": (
+            "revisao SEC do 372, B1, e a regra da propria casa: «o tamanho ja e "
+            "informacao» (e por isso nenhum rotulo mascara com asteriscos do "
+            "tamanho certo). O claro vai com o comprimento na frente e zeros "
+            "ate o degrau de 128 bytes, e toda senha humana e um token de ate "
+            "126 bytes caem no mesmo degrau. Com o degrau de 1 byte, o cifrado "
+            "volta a medir a credencial."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+        "trecho": """const DEGRAU_DO_ENVELOPE: usize = 128;
+""",
+        "troca": """// DEFEITO REPOSTO (372): degrau de 1 byte -- o cifrado do tamanho do claro.
+const DEGRAU_DO_ENVELOPE: usize = 1;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::testes::o_envelope_nao_entrega_o_tamanho_da_credencial",
+        ],
+        "seguem": [
+            "dblink::testes::com_a_chave_o_disco_nao_guarda_a_senha_nem_o_token_em_claro",
+            "dblink::testes::o_envelope_movido_de_uma_ligacao_para_outra_nao_abre",
+        ],
+    },
+    {
+        "id": "dblink-cifra-iteracoes-sem-teto",
+        "titulo": "o `dblink.json` escolhe as iterações do PBKDF2, e `u32::MAX` segura o arranque por ~99 minutos",
+        "porque": (
+            "revisao SEC do 372, B2: as iteracoes vem do ARQUIVO, e quem escreve "
+            "nele escolhia quanto o arranque pagava -- 4,29e9 / 210.000 x 290,3 "
+            "ms, cerca de 99 minutos antes de a porta abrir (conta a partir do "
+            "custo medido). O teto e 10 x o padrao (~2,9 s), conferido na "
+            "leitura do material e ANTES de qualquer derivacao: por isso o teste "
+            "prova sem chave nenhuma, e o vermelho da o custo pela conta, e nao "
+            "rodando."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+        "trecho": """pub const ITERACOES_MAXIMAS_DO_CADASTRO: u32 = 10 * phxsql_store::cofre::ITERACOES_PADRAO;
+""",
+        "troca": """// DEFEITO REPOSTO (372): o teto e o do tipo, e o arquivo escolhe o custo.
+pub const ITERACOES_MAXIMAS_DO_CADASTRO: u32 = u32::MAX;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::testes::o_teto_de_iteracoes_do_arquivo_nao_deixa_o_arranque_refem",
+        ],
+        "seguem": [
+            "dblink::testes::o_piso_de_iteracoes_do_cadastro_e_o_padrao_da_casa",
+            "dblink::testes::com_a_chave_o_disco_nao_guarda_a_senha_nem_o_token_em_claro",
+        ],
+    },
+    {
+        "id": "dblink-cifra-piso-do-cofre",
+        "titulo": "o cadastro aceita 10.000 iterações, e cada tentativa contra a prova sai 21 vezes mais barata que o padrão",
+        "porque": (
+            "revisao SEC do 372, B2: a prova do material e um oraculo offline "
+            "para quem tem o `dblink.json` -- diz se a senha candidata e a certa "
+            "sem conectar em lugar nenhum. O piso do cofre (10.000) existe para "
+            "nao quebrar diario ja gravado; o formato 2 e novo e nao tem legado, "
+            "entao o piso deste cadastro e o PADRAO (210.000), no arquivo e na "
+            "declaracao, sem interruptor para descer."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+        "trecho": """pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_PADRAO;
+""",
+        "troca": """// DEFEITO REPOSTO (372): o piso do cofre, 21 vezes abaixo do padrao.
+pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MINIMAS;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::testes::o_piso_de_iteracoes_do_cadastro_e_o_padrao_da_casa",
+        ],
+        "seguem": [
+            "dblink::testes::o_teto_de_iteracoes_do_arquivo_nao_deixa_o_arranque_refem",
+            "dblink::testes::a_senha_mestra_do_ambiente_sela_e_abre",
+        ],
+    },
+    {
+        "id": "dblink-cifra-declaracao-torta-some",
+        "titulo": "`cifra_do_dblink` escrita torta vira «não declarada», e o cadastro fica em claro sem recusa nenhuma",
+        "porque": (
+            "revisao SEC do 372, B3: `\"cifra_do_dblink\": \"s3nh4\"` ou "
+            "`{\"chave_mestra_arquivo\": 123}` eram lidos pelo `texto_ou`, que "
+            "devolve o padrao para o tipo errado -- a declaracao sumia calada, e "
+            "quem a escreveu achava que tinha cifrado. Toda declaracao desta "
+            "casa escrita torta recusa o arranque; esta tambem, e sem repetir o "
+            "valor torto, que pode ser a propria chave."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """        if !matches!(o, Json::Objeto(_)) {
+            c.recusas.push(
+                "cifra_do_dblink tem de ser um objeto -- {\\"chave_mestra_arquivo\\": \\
+                 \\"/caminho\\"}, ou uma das outras tres fontes --, e o que esta \\
+                 escrito nao e (o valor nao se repete aqui: ele pode ser a chave)"
+                    .to_string(),
+            );
+            return c;
+        }
+        for (campo, _) in FONTES_DA_CHAVE_MESTRA {
+            if o.campo(campo).is_some_and(|v| v.texto().is_none()) {
+                c.recusas.push(format!(
+                    "cifra_do_dblink.{campo} tem de ser texto (o nome da variavel \\
+                     ou o caminho do arquivo)"
+                ));
+            }
+        }
+        if o.campo("iteracoes").is_some_and(|v| v.inteiro().is_none()) {
+            c.recusas
+                .push("cifra_do_dblink.iteracoes tem de ser um numero inteiro".to_string());
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (372): a declaracao torta nao e conferida.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::tests::cifra_do_dblink_escrita_torta_recusa_e_nao_vira_nao_declarada",
+        ],
+        "seguem": [
+            "config::tests::a_chave_mestra_no_config_json_ou_em_duas_fontes_e_recusada",
+            "config::tests::a_chave_mestra_ausente_avisa_pela_lista_de_sempre",
+        ],
+    },
 ]

@@ -1638,6 +1638,134 @@
       "segundos": 1.58,
       "notas": [],
       "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-selo-ignorado",
+      "titulo": "com a chave mestra disponível, o `dblink.json` recebe a senha e o token em claro",
+      "veredito": "PROVADA",
+      "segundos": 37.7,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-envelope-sem-nome",
+      "titulo": "o envelope da ligação A colado na linha da ligação B abre, e a B apresenta a senha de outro banco",
+      "veredito": "PROVADA",
+      "segundos": 45.01,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-sem-prova",
+      "titulo": "a chave mestra errada abre o cadastro, e a ligação salva em seguida sai selada com ela",
+      "veredito": "PROVADA",
+      "segundos": 56.11,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-chave-ausente-derruba",
+      "titulo": "sem a chave mestra, o cadastro recusa abrir e o servidor inteiro não sobe",
+      "veredito": "PROVADA",
+      "segundos": 42.15,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-formato-2-sem-chave",
+      "titulo": "o `dblink.json` de hoje, sem chave declarada, ganha `formato: 2` ao ser regravado",
+      "veredito": "PROVADA",
+      "segundos": 35.47,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-chave-dentro-da-pasta",
+      "titulo": "a chave mestra num arquivo dentro da pasta do banco é aceita, e viaja na mesma cópia que o cadastro",
+      "veredito": "PROVADA",
+      "segundos": 41.01,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-rebaixa-calado",
+      "titulo": "sem a chave, a credencial nova vai em texto puro para dentro do cadastro cifrado",
+      "veredito": "PROVADA",
+      "segundos": 54.53,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-perde-envelope-trancado",
+      "titulo": "salvar outra ligação sem a chave apaga o envelope da trancada, e a credencial some para sempre",
+      "veredito": "PROVADA",
+      "segundos": 73.82,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-lista-na-chave-legada",
+      "titulo": "o formato 2 deixa a lista em `\"dblink\"`, e o binário anterior a lê e apaga os envelopes na primeira gravação",
+      "veredito": "PROVADA",
+      "segundos": 62.12,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-link-seguido-de-ponto-ponto",
+      "titulo": "a chave mestra em `fora/link/../chave.hex` passa pela conferência e o kernel a abre dentro da pasta do banco",
+      "veredito": "PROVADA",
+      "segundos": 77.12,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-le-caminho-diferente-do-conferido",
+      "titulo": "o diretório da chave trocado por um link depois do arranque leva a leitura para dentro da pasta do banco",
+      "veredito": "PROVADA",
+      "segundos": 45.6,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-chave-pronta-sem-subchave",
+      "titulo": "dois cadastros com a mesma chave pronta cifram com a mesma chave e repetem o par (chave, nonce) da prova",
+      "veredito": "PROVADA",
+      "segundos": 2.75,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-envelope-entrega-o-tamanho",
+      "titulo": "o envelope cifrado tem o tamanho exato da credencial, e o arquivo entrega quanto mede cada senha",
+      "veredito": "PROVADA",
+      "segundos": 49.65,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-iteracoes-sem-teto",
+      "titulo": "o `dblink.json` escolhe as iterações do PBKDF2, e `u32::MAX` segura o arranque por ~99 minutos",
+      "veredito": "PROVADA",
+      "segundos": 37.66,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-piso-do-cofre",
+      "titulo": "o cadastro aceita 10.000 iterações, e cada tentativa contra a prova sai 21 vezes mais barata que o padrão",
+      "veredito": "PROVADA",
+      "segundos": 36.03,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "dblink-cifra-declaracao-torta-some",
+      "titulo": "`cifra_do_dblink` escrita torta vira «não declarada», e o cadastro fica em claro sem recusa nenhuma",
+      "veredito": "PROVADA",
+      "segundos": 48.07,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
     }
   ]
 }

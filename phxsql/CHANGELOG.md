@@ -10,6 +10,92 @@ Os números são **medidos**, nunca estimados.
 
 ---
 
+## Não lançado
+
+### 372 — o `dblink.json` guarda a senha e o token CIFRADOS, com chave mestra externa
+
+Decisão do dono, 24/09/2026 (cifra com chave mestra externa), no desenho que o
+DBA fixou em `docs/propostas/parecer-dba-372-e-255.md` §1.2–§1.5, com as
+correções das revisões SEC e DBA feitas antes do lançamento — mudança de
+formato ainda é barata antes de haver cadastro formato 2 em uso
+(`docs/propostas/parecer-sec-372-2026-09-24.md`,
+`docs/propostas/parecer-dba-372-formato2-2026-09-24.md`).
+
+**Adicionado**
+
+- **Formato 2 do `dblink.json`** (`docs/FORMATO.md` §19): `"formato": 2`,
+  `"cifra_do_cadastro"` (sal, iterações, modo `aead`, prova — um material só
+  para o arquivo), a lista em **`"ligacoes"`** (e não em `"dblink"`: ver
+  *Sabido*) e, por ligação, `senha_cifrada` / `token_remoto_cifrado`,
+  mutuamente exclusivos com o claro e com o `_env`. O dado associado de cada
+  envelope amarra o **nome** da ligação e o **campo**: colar o envelope da
+  ligação A na B não abre. O claro vai completado até múltiplos de 128 bytes,
+  com o comprimento por dentro: o cifrado não entrega o tamanho da credencial.
+- **`cifra_do_dblink` no `config.json`**, com uma fonte só:
+  `senha_mestra_env`, `senha_mestra_arquivo`, `chave_mestra_env` ou
+  `chave_mestra_arquivo` (a senha passa por PBKDF2, 290,3 ms por arranque; a
+  chave pronta passa por um HMAC-SHA256 com o sal, que dá a cada cadastro a sua
+  chave de trabalho). O cripto é o do cofre — `cofre::Material` ganhou
+  `ChaveDeFora`, `novo_de_fora`, `partes` e `de_partes`, e a conferência da
+  prova é o MESMO `ler` do cabeçalho binário. Iterações de 210.000 (o padrão,
+  que é o piso deste cadastro) a 2.100.000 (o teto, também para o que vem do
+  arquivo).
+- As respostas de `dblink_salvar`, `dblink_excluir` e `dblink_ligar` trazem
+  `cadastro` (`cifrado`, `ligacoes_cifradas_agora`); o `dblink` traz
+  `cifra_do_cadastro`; a ficha da ligação traz `cifra_trancada`.
+
+**Mudado**
+
+- **O servidor recusa subir** com `cifra_do_dblink` escrita torta (não objeto,
+  ou fonte que não é texto — nunca vira «não declarada»), com a chave mestra
+  escrita no próprio `config.json`, com duas fontes ao mesmo tempo, com
+  iterações fora da faixa, ou com o arquivo de chave dentro da pasta do
+  `config.json`, do `dblink.json` ou dos dados — pelo caminho que o **sistema**
+  resolve, links e `..` inclusive, e lido depois do MESMO caminho conferido.
+  Chave que viaja na mesma cópia protege contra ninguém.
+- **Chave ausente ou errada não derruba nada**: a ligação cifrada nasce
+  trancada, com o motivo, e o aviso sai pela lista de sempre do arranque. A
+  gravação devolve o envelope da trancada igual e **recusa** gravar credencial
+  nova em claro num cadastro cifrado.
+- **A primeira gravação com a chave disponível migra** o cadastro para o
+  formato 2 — nunca a abertura —, e diz quantas ligações saíram do texto puro
+  (resposta e erro padrão). Sem chave declarada, o arquivo sai byte a byte o de
+  sempre.
+- Um `dblink.json` de formato **maior que 2** é recusado na abertura
+  (`VERSAO_NAO_SUPORTADA`), em vez de lido adivinhando e regravado por cima —
+  e, como o cadastro abre no arranque, **o servidor não sobe**.
+
+**Sabido**
+
+- **Downgrade deixa de ser suportado no instante da primeira migração, e o
+  binário anterior RECUSA SUBIR.** Ele procura a lista em `"dblink"`, não a
+  acha no formato 2 e para com «esperava uma lista de ligacoes, ou um objeto
+  com "dblink"». A lista saiu de `"dblink"` para isso: no lugar de sempre, ele
+  a leria com a senha **vazia** e, na **primeira gravação dele, apagaria os
+  envelopes de todas as ligações** — sem volta e calado.
+- **O que o envelope não amarra**: host, porta, motor, usuário e pino. Quem
+  escreve no `dblink.json` aponta a ligação para um ouvinte seu e recebe a
+  credencial na próxima conexão — fora do modelo declarado (a cifra protege a
+  cópia), mas dito.
+- **Limites da conferência do caminho**: um *bind mount* ou um link físico que
+  ponham a chave dentro da pasta do banco passam por ela, porque ela compara
+  caminhos. E **uma chave mestra por servidor**: compartilhada, cada servidor
+  abre um envelope transplantado do cadastro de outro.
+- **Chave perdida**: o que foi cifrado com ela não volta. O cadastro volta a
+  funcionar apagando do arquivo `cifra_do_cadastro` e todo
+  `senha_cifrada`/`token_remoto_cifrado`, e redigitando as credenciais pela
+  tela (`docs/FORMATO.md` §19).
+- **A migração não apaga o claro das cópias**: todo backup do `dblink.json`
+  tirado antes continua com a credencial em texto puro, e os blocos do arquivo
+  velho não são sobrescritos. Troque a credencial no banco de destino.
+- **Trocar a chave mestra não tem comando**: com a chave nova, as ligações
+  cifradas ficam trancadas até a velha voltar (ou até o procedimento da chave
+  perdida).
+- Editar o arquivo à mão perde o caminho para a credencial cifrada; o caminho
+  é a tela (ou o `dblink_salvar`), que já recebe `senha` e `token_remoto`.
+
+---
+
 ## 0.19.0 — centenas de commits depois: transações, cifra do fio, cluster, e o portão que devia ter acusado antes
 
 Rodada de 29/08/2026 a 23/09/2026 — 894 commits sobre a 0.18.0 (medido em

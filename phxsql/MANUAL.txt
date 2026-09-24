@@ -3801,6 +3801,74 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     Pela tela: Configuracoes > Mensagens do servidor, na mesma grade de
     phxsys.mensagens do item anterior. Detalhes em docs/MENSAGENS.md.
 
+15.8 A credencial do DbLink, cifrada no disco  (pedido 372)
+
+    O dblink.json guarda a senha e o token dos bancos de fora. Com uma CHAVE
+    MESTRA declarada, eles vao ao arquivo SELADOS (senha_cifrada,
+    token_remoto_cifrado), e nao em texto puro. A chave vem de FORA do que
+    a copia do banco leva -- uma variavel de ambiente, ou um arquivo fora da
+    pasta do config.json, do dblink.json e dos dados. No config.json, UMA
+    destas quatro:
+
+        "cifra_do_dblink": { "senha_mestra_env":     "PHXSQL_DBLINK_SENHA" }
+        "cifra_do_dblink": { "senha_mestra_arquivo": "/run/secrets/dblink" }
+        "cifra_do_dblink": { "chave_mestra_env":     "PHXSQL_DBLINK_CHAVE" }
+        "cifra_do_dblink": { "chave_mestra_arquivo": "/run/secrets/dblink.hex" }
+
+    senha_mestra = uma senha (PBKDF2, ~290 ms por arranque); chave_mestra =
+    32 bytes em 64 caracteres hexadecimais (um HMAC, custo desprezivel).
+    "iteracoes", opcional, vai de 210000 (o padrao, e o piso) a 2100000.
+
+    O servidor RECUSA SUBIR, dizendo por que, com: "cifra_do_dblink" escrita
+    torta (nao objeto, ou campo que nao e texto); a chave escrita no proprio
+    config.json ("senha_mestra"/"chave_mestra"); duas fontes ao mesmo tempo;
+    iteracoes fora da faixa; um arquivo de chave DENTRO da pasta do banco,
+    pelo caminho que o sistema resolve (links e ".." inclusive) -- ali a
+    cifra protegeria contra ninguem.
+
+    LIMITES dessa conferencia: ela compara CAMINHOS -- um bind mount ou um
+    link fisico que ponham a chave dentro da pasta passam por ela. E use UMA
+    chave mestra por servidor: compartilhada, cada servidor que a tem abre
+    um envelope copiado do cadastro de outro.
+
+    A cifra protege a COPIA do arquivo, e nao o arquivo contra quem escreve
+    nele: quem escreve no dblink.json troca o host de uma ligacao para um
+    ouvinte dele e recebe a credencial na proxima conexao.
+
+    Chave AUSENTE (variavel nao exportada, arquivo nao montado) ou ERRADA nao
+    derruba nada: o servidor sobe, a ligacao cifrada fica TRANCADA (recusa
+    conectar dizendo o que falta), as outras seguem, e o aviso sai no
+    arranque. Nada se perde: com a chave de volta, ela abre.
+
+    Chave PERDIDA: o que foi cifrado com ela nao volta. Para o cadastro
+    voltar a funcionar, apague do dblink.json o "cifra_do_cadastro" e todo
+    "senha_cifrada"/"token_remoto_cifrado" (o resto fica), suba, e redigite
+    as credenciais pela tela -- a primeira gravacao sela com a chave nova.
+
+    A MIGRACAO acontece na primeira gravacao do cadastro depois de declarar a
+    chave (salve qualquer ligacao pela tela): as credenciais em claro saem
+    seladas, e a resposta diz quantas (cadastro.ligacoes_cifradas_agora).
+
+    ATENCAO, duas coisas que a migracao NAO faz:
+
+      - Nao apaga o texto puro das COPIAS: todo backup do dblink.json tirado
+        antes continua com a senha em claro. TROQUE a credencial no outro
+        banco.
+      - Nao deixa voltar a versao: DOWNGRADE DEIXA DE SER SUPORTADO no
+        instante da primeira migracao. O cadastro cifrado guarda a lista em
+        "ligacoes", e um binario anterior a este nao a acha e RECUSA SUBIR
+        ("esperava uma lista de ligacoes, ou um objeto com "dblink""). A
+        lista mudou de lugar de proposito: no lugar de sempre, o binario
+        anterior leria a senha como vazia e, na primeira gravacao dele,
+        APAGARIA os envelopes de todas as ligacoes, sem volta. Este binario,
+        por sua vez, diante de um dblink.json de formato mais novo que o
+        dele, tambem nao sobe -- em vez de le-lo adivinhando e regrava-lo.
+
+    Trocar a chave mestra ainda nao tem comando: com a chave nova, as
+    ligacoes cifradas ficam trancadas ate a velha voltar.
+
+    Detalhes em docs/DBLINK.md; o formato em docs/FORMATO.md secao 19.
+
 
 16. REPLICACAO
 --------------------------------------------------------------------------------

@@ -1278,7 +1278,11 @@ impl Servidor {
         // sem girar, como sempre.
         log.definir_rodizio(config.acessos.teto_do_arquivo(), config.acessos.arquivos);
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
-        let dblink = crate::dblink::Registro::abrir(&config.dblink)?;
+        // Com a chave mestra do cadastro (pedido 372). A chave que falta, ou
+        // a errada, NAO recusa aqui: tranca so as ligacoes cifradas, e o aviso
+        // ja saiu pela lista do `Config::ler`. O `?` continua valendo para o
+        // arquivo torto e para o formato mais novo que este binario.
+        let dblink = crate::dblink::Registro::abrir_com(&config.dblink, &config.cifra_do_dblink)?;
         let jobs = crate::jobs::Registro::abrir(&config.jobs)?;
         let cluster = config.cluster.clone().map(|c| {
             Arc::new(crate::cluster::EstadoCluster::novo(
@@ -22792,6 +22796,8 @@ impl Servidor {
         let r = self.dblink.lock().map_err(|_| trava_envenenada())?;
         Ok(Json::objeto(vec![
             ("arquivo", Json::texto_de(r.caminho.display().to_string())),
+            // Se o cadastro e cifrado e de onde a chave vem -- nunca a chave.
+            ("cifra_do_cadastro", r.estado_da_cifra()),
             (
                 "ligacoes",
                 Json::Lista(r.ligacoes.iter().map(Definicao::para_json).collect()),
@@ -22868,20 +22874,24 @@ impl Servidor {
             d.conferir_cifra_do_motor()?;
         }
         let ficha = d.para_json();
-        r.salvar(d)?;
+        let gravacao = r.salvar(d)?;
         Ok(Json::objeto(vec![
             ("gravado", Json::Bool(true)),
             ("ligacao", ficha),
+            // A migracao para o cadastro cifrado e DITA na resposta, alem do
+            // log: quantas ligacoes sairam do texto puro nesta gravacao.
+            ("cadastro", gravacao.para_json()),
         ]))
     }
 
     fn op_dblink_excluir(&self, p: &Json) -> Result<Json> {
         let nome = p.texto_ou("nome", "").to_string();
         let mut r = self.dblink.lock().map_err(|_| trava_envenenada())?;
-        r.excluir(&nome)?;
+        let gravacao = r.excluir(&nome)?;
         Ok(Json::objeto(vec![
             ("excluido", Json::texto_de(nome)),
             ("restam", Json::de_u64(r.ligacoes.len() as u64)),
+            ("cadastro", gravacao.para_json()),
         ]))
     }
 
@@ -23047,8 +23057,11 @@ impl Servidor {
         c.encerrar();
         drop(dados);
         let mut r = self.dblink.lock().map_err(|_| trava_envenenada())?;
-        r.salvar(d)?;
-        Ok(Json::objeto(vec![("ligadas", Json::Lista(ligadas))]))
+        let gravacao = r.salvar(d)?;
+        Ok(Json::objeto(vec![
+            ("ligadas", Json::Lista(ligadas)),
+            ("cadastro", gravacao.para_json()),
+        ]))
     }
 
     /// `dblink_sincronizar`: uma rodada de convergencia das tabelas ligadas.
@@ -28183,6 +28196,211 @@ mod testes_dblink_cifra {
         assert!(t.contains("postgres"), "{t}");
         assert!(s.dblink.lock().unwrap().achar("erp").is_err(), "gravou");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// (d) Pedido 372: a chave mestra AUSENTE nao derruba o servidor.
+    ///
+    /// O cadastro foi cifrado com uma chave num arquivo de fora; o servidor
+    /// sobe declarando a chave numa variavel que ninguem exportou. Ele SOBE,
+    /// a ligacao cifrada fica trancada com o motivo (que nomeia a variavel), e
+    /// a vizinha sem credencial chega a REDE -- a recusa dela, se houver, e do
+    /// outro lado, e nao da chave.
+    ///
+    /// Com o defeito reposto (a tranca virando erro da abertura), o
+    /// `Servidor::novo` recusa: o motor de dados inteiro fora do ar por causa
+    /// de uma ligacao do DbLink -- e o vermelho diz isso com o erro.
+    #[test]
+    fn a_chave_mestra_ausente_nao_derruba_o_servidor_e_tranca_so_a_cifrada() {
+        const CHAVE: &str = "a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0";
+        const VAR: &str = "PHXSQL_TESTE_372_SERVIDOR_CHAVE_QUE_NINGUEM_EXPORTA";
+        const SENHA: &str = "SENHA-372-DO-SERVIDOR-QUE-NAO-PODE-SAIR";
+        let dir = DirTemp::novo("dblink-372-servidor");
+        let fora = DirTemp::novo("dblink-372-servidor-chave");
+        std::fs::write(fora.join("k.hex"), CHAVE).unwrap();
+        let com_chave = Config::de_json(
+            &Json::analisar(&format!(
+                r#"{{"cifra_do_dblink":{{"chave_mestra_arquivo":{:?}}}}}"#,
+                fora.join("k.hex").display().to_string()
+            ))
+            .unwrap(),
+        )
+        .unwrap()
+        .cifra_do_dblink;
+        let mut r =
+            crate::dblink::Registro::abrir_com(&dir.join("dblink.json"), &com_chave).unwrap();
+        for json in [
+            format!(r#"{{"nome":"loja","host":"127.0.0.1","porta":1,"senha":"{SENHA}"}}"#),
+            r#"{"nome":"publica","host":"127.0.0.1","porta":1,"usuario":"leitor"}"#.to_string(),
+        ] {
+            r.salvar(Definicao::de_json(&Json::analisar(&json).unwrap()).unwrap())
+                .unwrap();
+        }
+        drop(r);
+
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.cifra_fio.exigir = false;
+        c.cifra_do_dblink = Config::de_json(
+            &Json::analisar(&format!(
+                r#"{{"cifra_do_dblink":{{"chave_mestra_env":"{VAR}"}}}}"#
+            ))
+            .unwrap(),
+        )
+        .unwrap()
+        .cifra_do_dblink;
+        let s = match Servidor::novo(c) {
+            Ok(s) => s,
+            Err(e) => panic!(
+                "sem a chave mestra o SERVIDOR NAO SUBIU -- o motor de dados \
+                 inteiro fora do ar por causa de uma ligacao do DbLink: {e}"
+            ),
+        };
+
+        // A lista diz o estado, e nunca o valor.
+        let lista = s.op_dblink().unwrap();
+        let texto = lista.escrever();
+        assert!(!texto.contains(SENHA), "a senha vazou na lista");
+        assert!(!texto.contains(CHAVE), "a chave vazou na lista");
+        let cifra = lista.campo("cifra_do_cadastro").unwrap();
+        assert_eq!(cifra.campo("cifrado").and_then(Json::booleano), Some(true));
+        assert_eq!(cifra.texto_ou("chave", ""), "indisponivel");
+        assert!(cifra.texto_ou("trancado", "").contains(VAR), "{texto}");
+
+        // A cifrada recusa ANTES da rede, dizendo qual variavel falta.
+        let erro = match s.ligar(&Json::analisar(r#"{"dblink":"loja"}"#).unwrap()) {
+            Ok(_) => panic!("a ligacao cifrada conectou sem chave"),
+            Err(e) => e.to_string(),
+        };
+        assert!(erro.contains(VAR), "{erro}");
+        // A vizinha vai a rede: a porta 1 recusa, e o erro e DELA, nao da chave.
+        let erro = match s.ligar(&Json::analisar(r#"{"dblink":"publica"}"#).unwrap()) {
+            Ok(_) => panic!("havia alguem na porta 1"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            !erro.contains(VAR),
+            "a chave trancou a ligacao que nao e cifrada: {erro}"
+        );
+        assert!(!erro.contains("CIFRADO"), "{erro}");
+
+        // Salvar pela tela a ligacao trancada, sem mandar a senha (a tela nunca
+        // a recebe), preserva o envelope: a heranca carrega a tranca inteira.
+        let antes = std::fs::read_to_string(dir.join("dblink.json")).unwrap();
+        let envelope = Json::analisar(&antes)
+            .unwrap()
+            .campo("ligacoes")
+            .and_then(Json::lista)
+            .unwrap()[0]
+            .texto_ou("senha_cifrada", "")
+            .to_string();
+        assert!(!envelope.is_empty());
+        let r = s
+            .op_dblink_salvar(
+                &Json::analisar(
+                    r#"{"op":"dblink_salvar","nome":"loja","host":"127.0.0.1","porta":2}"#,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            r.campo("cadastro")
+                .and_then(|c| c.campo("cifrado"))
+                .and_then(Json::booleano),
+            Some(true)
+        );
+        let depois = std::fs::read_to_string(dir.join("dblink.json")).unwrap();
+        assert!(
+            depois.contains(&envelope),
+            "salvar pela tela perdeu o envelope da trancada"
+        );
+        assert!(!depois.contains(SENHA));
+        // E credencial nova em claro num cadastro cifrado sem chave: recusada
+        // -- conferida no DISCO primeiro, que e onde o dano mora.
+        let salvou = s.op_dblink_salvar(
+            &Json::analisar(r#"{"op":"dblink_salvar","nome":"nova","senha":"em-claro-372-srv"}"#)
+                .unwrap(),
+        );
+        let disco = std::fs::read_to_string(dir.join("dblink.json")).unwrap();
+        assert!(
+            !disco.contains("em-claro-372-srv"),
+            "sem a chave, o servidor gravou a credencial nova em TEXTO PURO no \
+             cadastro cifrado"
+        );
+        match salvou {
+            Ok(_) => panic!("gravou credencial em claro num cadastro cifrado"),
+            Err(e) => assert!(e.to_string().contains(VAR), "{e}"),
+        }
+        assert!(s.dblink.lock().unwrap().achar("nova").is_err());
+    }
+
+    /// A migracao e DITA na resposta do `dblink_salvar`: quantas ligacoes
+    /// sairam do texto puro. O cadastro de hoje, e a chave declarada.
+    #[test]
+    fn a_migracao_e_dita_na_resposta_do_salvar() {
+        let dir = DirTemp::novo("dblink-372-servidor-migra");
+        let fora = DirTemp::novo("dblink-372-servidor-migra-chave");
+        std::fs::write(
+            fora.join("k.hex"),
+            "a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("dblink.json"),
+            r#"{"dblink":[{"nome":"loja","senha":"CLARO-372-MIGRA"},{"nome":"erp","senha":"CLARO-372-ERP"}]}"#,
+        )
+        .unwrap();
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.cifra_fio.exigir = false;
+        c.cifra_do_dblink = Config::de_json(
+            &Json::analisar(&format!(
+                r#"{{"cifra_do_dblink":{{"chave_mestra_arquivo":{:?}}}}}"#,
+                fora.join("k.hex").display().to_string()
+            ))
+            .unwrap(),
+        )
+        .unwrap()
+        .cifra_do_dblink;
+        let s = Servidor::novo(c).unwrap();
+        // Subir NAO reescreve: a migracao e da primeira gravacao.
+        assert!(std::fs::read_to_string(dir.join("dblink.json"))
+            .unwrap()
+            .contains("CLARO-372-MIGRA"));
+        let r = s
+            .op_dblink_salvar(
+                &Json::analisar(r#"{"op":"dblink_salvar","nome":"loja","host":"10.0.0.9"}"#)
+                    .unwrap(),
+            )
+            .unwrap();
+        let cadastro = r.campo("cadastro").unwrap();
+        assert_eq!(
+            cadastro
+                .campo("ligacoes_cifradas_agora")
+                .and_then(Json::inteiro),
+            Some(2),
+            "{}",
+            cadastro.escrever()
+        );
+        let disco = std::fs::read_to_string(dir.join("dblink.json")).unwrap();
+        assert!(!disco.contains("CLARO-372"), "o claro ficou no disco");
+        // A senha herdada pela tela continua a mesma, agora selada.
+        assert!(
+            s.dblink.lock().unwrap().achar("loja").unwrap().senha().ok() == Some("CLARO-372-MIGRA")
+        );
     }
 }
 

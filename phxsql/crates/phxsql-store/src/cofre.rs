@@ -294,6 +294,106 @@ pub fn derivar(sal: &[u8; SAL_LEN], iteracoes: u32, arquivo: &str) -> Result<Cha
 }
 
 // ---------------------------------------------------------------------------
+// A chave que vem de FORA do cofre global
+// ---------------------------------------------------------------------------
+
+/// A chave de um material que NAO e a do cofre global (pedido 372).
+///
+/// # Por que existe, e por que aqui
+///
+/// O cofre e UMA senha por processo -- a dos diarios e das colunas marcadas --,
+/// e [`Material::novo`]/[`Material::ler`] a buscam no global. O cadastro do
+/// DbLink precisa do MESMO material (sal, iteracoes, a prova que recusa a chave
+/// errada na abertura, selar e abrir com AAD) com OUTRA chave: a mestra do
+/// `dblink.json`, que vem de fora do conjunto copiado. Amarrar as duas faria
+/// ligar a cifra dos diarios trocar a chave das credenciais -- ciclos de vida
+/// diferentes, a mesma armadilha que o parecer do DBA recusou na estatica do
+/// fio. E escrever um segundo sal-com-prova ao lado deste seria a mesma decisao
+/// escrita duas vezes, que a petrea «vem do mesmo motor» proibe: aqui muda so
+/// DE ONDE a chave vem.
+///
+/// Sem `Debug` de proposito: as duas variantes carregam segredo.
+pub enum ChaveDeFora<'a> {
+    /// Uma senha: a chave sai do PBKDF2 com o sal e as iteracoes do material.
+    Senha(&'a str),
+    /// Os 32 bytes ja derivados, sem PBKDF2 nenhum. Eles NAO cifram direto:
+    /// a chave de trabalho de cada material e `HMAC-SHA256(K, rotulo || sal)`
+    /// -- ver [`ROTULO_DA_CHAVE_PRONTA`].
+    Pronta(&'a [u8; CHAVE_LEN]),
+}
+
+/// O rotulo da subchave da chave pronta: `HMAC-SHA256(K, rotulo || sal)` e a
+/// chave de trabalho de UM material.
+///
+/// # Por que a subchave, se a chave ja vem pronta
+///
+/// Porque sem ela o sal nao separava chave nenhuma: todo material feito com a
+/// mesma `chave_mestra_*` cifrava com a MESMA K. E o caso comum, e nao o raro
+/// -- varios nos montando o mesmo `/run/secrets/...`, um cadastro recriado. A
+/// prova e XChaCha20-Poly1305 de nonce zero: dois cadastros com a mesma K
+/// davam duas etiquetas sob o mesmo par (r, s) do Poly1305, que a RFC 8439
+/// §2.5 proibe reusar -- quem juntasse dois backups forjaria provas (revisao
+/// SEC do 372, M2). O HMAC e o da casa, conferido contra a RFC 4231, e custa
+/// dois SHA-256: a chave pronta continua sem custo de derivacao que se meça.
+const ROTULO_DA_CHAVE_PRONTA: &[u8] = b"phxsql/cofre/chave-pronta\0";
+
+/// A chave de fora ja derivada, por (sal, iteracoes, resumo da senha).
+type DeFora = HashMap<([u8; SAL_LEN], u32, [u8; 32]), Chave>;
+
+/// As chaves de FORA ja derivadas.
+///
+/// O mesmo motivo do [`DERIVADAS`], e aqui ele aparece no arranque: o
+/// `config.json` abre o cadastro do DbLink para os avisos, e o servidor o abre
+/// de novo para servir -- sem cache, a mesma senha pagaria o PBKDF2 duas vezes
+/// (2 x 290,3 ms). A entrada vai pelo RESUMO da senha, e nao pela senha:
+/// guarda-la num mapa global seria um segundo lugar de onde ela vaza. O resumo
+/// nao piora o que o processo expoe -- quem le a memoria dele ja tem a senha.
+static DE_FORA: Mutex<Option<DeFora>> = Mutex::new(None);
+
+impl ChaveDeFora<'_> {
+    fn chave(&self, sal: &[u8; SAL_LEN], iteracoes: u32) -> Result<Chave> {
+        let senha = match self {
+            ChaveDeFora::Pronta(k) => {
+                let mut rotulo_e_sal = ROTULO_DA_CHAVE_PRONTA.to_vec();
+                rotulo_e_sal.extend_from_slice(sal);
+                return Ok(Chave(phxsql_core::hash::hmac_sha256(
+                    k.as_slice(),
+                    &rotulo_e_sal,
+                )));
+            }
+            ChaveDeFora::Senha(s) => *s,
+        };
+        // A mesma recusa do `definir`: senha vazia deriva uma chave fixa a
+        // partir do sal, que esta em claro -- e nao cifrar com um nome que diz
+        // o contrario.
+        if senha.is_empty() {
+            return Err(PhxError::Esquema(
+                "senha vazia nao deriva chave: qualquer um refaria a chave a \
+                 partir do sal, que fica em claro"
+                    .into(),
+            ));
+        }
+        let quem = (*sal, iteracoes, phxsql_core::hash::sha256(senha.as_bytes()));
+        if let Some(c) = DE_FORA
+            .lock()
+            .map_err(|_| envenenada())?
+            .as_ref()
+            .and_then(|m| m.get(&quem).copied())
+        {
+            return Ok(c);
+        }
+        DERIVACOES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let chave = Chave(cifra::chave_de_senha(senha, sal, iteracoes));
+        DE_FORA
+            .lock()
+            .map_err(|_| envenenada())?
+            .get_or_insert_with(HashMap::new)
+            .insert(quem, chave);
+        Ok(chave)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // O material de cifra, comum a TODO arquivo cifrado
 // ---------------------------------------------------------------------------
 
@@ -360,6 +460,73 @@ impl Material {
             modo,
             ajuste,
         })
+    }
+
+    /// O material de um cadastro NOVO, cifrado com uma chave de FORA do cofre.
+    ///
+    /// Sempre AEAD, e nao o modo da configuracao do cofre: o FrogCript nao
+    /// amarra AAD, e quem usa este material depende do AAD para que o envelope
+    /// de um dono nao abra no lugar de outro.
+    pub fn novo_de_fora(chave: &ChaveDeFora, iteracoes: u32) -> Result<Material> {
+        if iteracoes < ITERACOES_MINIMAS {
+            return Err(PhxError::Esquema(format!(
+                "{iteracoes} iteracoes de PBKDF2 e baixo demais (minimo {ITERACOES_MINIMAS})"
+            )));
+        }
+        let mut sal = [0u8; SAL_LEN];
+        sal.copy_from_slice(&phxsql_core::senha::bytes_aleatorios(SAL_LEN));
+        let chave = chave.chave(&sal, iteracoes)?;
+        Ok(Material {
+            sal,
+            iteracoes,
+            chave: Some(chave),
+            modo: Modo::Aead,
+            ajuste: frogcript::Ajuste::PADRAO,
+        })
+    }
+
+    /// O sal, as iteracoes e a prova -- para quem guarda o material FORA de um
+    /// cabecalho binario (o `dblink.json`, em texto).
+    ///
+    /// Sai pelo MESMO [`Material::gravar`] do cabecalho, e nao por uma conta
+    /// propria: a prova de um material guardado em JSON e a de um guardado em
+    /// cabecalho tem de ser a mesma funcao, senao um dia divergem caladas.
+    /// `None` no material em claro, que nao tem prova.
+    pub fn partes(&self, rotulo: &[u8]) -> Option<([u8; SAL_LEN], u32, [u8; TAG_LEN])> {
+        if !self.cifrado() {
+            return None;
+        }
+        let mut buf = [0u8; MATERIAL_LEN];
+        self.gravar(&mut buf, 0, rotulo);
+        let mut sal = [0u8; SAL_LEN];
+        sal.copy_from_slice(&buf[8..8 + SAL_LEN]);
+        let mut prova = [0u8; TAG_LEN];
+        prova.copy_from_slice(&buf[24..24 + TAG_LEN]);
+        Some((sal, self.iteracoes, prova))
+    }
+
+    /// Remonta o material das partes, conferindo a PROVA com a chave de fora.
+    ///
+    /// Passa pelo MESMO [`Material::ler`] do cabecalho -- as partes voltam ao
+    /// leiaute de 40 bytes e a conferencia e a de sempre. `de_quem` nomeia a
+    /// chave na recusa («a chave mestra do DbLink»): a mensagem do cabecalho
+    /// fala da senha de `"cifra"`, e dita aqui mandaria procurar a senha do
+    /// cofre, que nao tem nada com isto.
+    pub fn de_partes(
+        sal: &[u8; SAL_LEN],
+        iteracoes: u32,
+        prova: &[u8; TAG_LEN],
+        rotulo: &[u8],
+        nome: &str,
+        chave: &ChaveDeFora,
+        de_quem: &str,
+    ) -> Result<Material> {
+        let mut buf = [0u8; MATERIAL_LEN];
+        buf[0] = FLAG_CIFRADO;
+        por_u32(&mut buf, 4, iteracoes);
+        buf[8..8 + SAL_LEN].copy_from_slice(sal);
+        buf[24..24 + TAG_LEN].copy_from_slice(prova);
+        Material::ler_por(&buf, 0, nome, rotulo, |s, it| chave.chave(s, it), de_quem)
     }
 
     /// O modo com que este arquivo foi selado.
@@ -473,6 +640,29 @@ impl Material {
     /// cofre: e o caminho de todo arquivo escrito antes desta versao, e ele
     /// nao pode nem perguntar se ha chave.
     pub fn ler(buf: &[u8], base: usize, nome: &str, rotulo: &[u8]) -> Result<Material> {
+        Material::ler_por(
+            buf,
+            base,
+            nome,
+            rotulo,
+            |sal, iteracoes| derivar(sal, iteracoes, nome),
+            "a senha de \"cifra\"",
+        )
+    }
+
+    /// O [`Material::ler`], com a chave vinda de onde o chamador disser.
+    ///
+    /// Um corpo so para o cofre global e para a chave de fora: a conferencia do
+    /// piso de iteracoes e da prova e a MESMA decisao, e escrita duas vezes
+    /// uma das copias acabaria aceitando o que a outra recusa.
+    fn ler_por(
+        buf: &[u8],
+        base: usize,
+        nome: &str,
+        rotulo: &[u8],
+        chave_de: impl FnOnce(&[u8; SAL_LEN], u32) -> Result<Chave>,
+        de_quem: &str,
+    ) -> Result<Material> {
         if buf.len() < base + MATERIAL_LEN || buf[base] & FLAG_CIFRADO == 0 {
             return Ok(Material::EM_CLARO);
         }
@@ -484,12 +674,12 @@ impl Material {
         }
         let mut sal = [0u8; SAL_LEN];
         sal.copy_from_slice(&buf[base + 8..base + 8 + SAL_LEN]);
-        let chave = derivar(&sal, iteracoes, nome)?;
+        let chave = chave_de(&sal, iteracoes)?;
 
         let esperada = prova_do_material(&chave, rotulo, &buf[base..base + 24]);
         if !iguais_em_tempo_constante(&esperada, &buf[base + 24..base + 24 + TAG_LEN]) {
             return Err(PhxError::Autorizacao(format!(
-                "{nome}: a senha de \"cifra\" nao e a que gravou este arquivo"
+                "{nome}: {de_quem} nao e a que gravou este arquivo"
             )));
         }
         let (_, ajuste) = modo_vigente();
@@ -938,7 +1128,7 @@ pub fn gravar_cabecalho_no_volume(
 mod testes {
     use super::*;
 
-    /// O unico teste que cabe AQUI: ele nao toca no cofre global.
+    /// Os testes que cabem AQUI sao os que nao tocam no cofre global.
     ///
     /// Todo o resto -- ligar a cifra, gravar um cabecalho da versao 3, provar
     /// que a chave errada e recusada -- vive em `tests/cifra-dos-diarios.rs`,
@@ -965,5 +1155,132 @@ mod testes {
         // E o caso que a queda cria: o MESMO offset outra vez. So o tempero
         // muda -- e e ele que segura o nonce diferente.
         assert_ne!(nonce_de([1, 2, 3, 4], 4096), nonce_de([9, 9, 9, 9], 4096));
+    }
+
+    // -----------------------------------------------------------------------
+    // A chave de FORA (pedido 372). Estes cabem aqui pelo mesmo motivo do de
+    // cima: nenhum deles liga o cofre global.
+    // -----------------------------------------------------------------------
+
+    const ROTULO: &[u8] = b"teste/372";
+
+    /// O material de fora vai as partes e volta, e o que um sela o outro abre
+    /// -- so com o MESMO dado associado.
+    #[test]
+    fn a_chave_de_fora_vai_as_partes_e_volta() {
+        let k = [7u8; CHAVE_LEN];
+        let m = Material::novo_de_fora(&ChaveDeFora::Pronta(&k), ITERACOES_MINIMAS).unwrap();
+        let (sal, it, prova) = m.partes(ROTULO).unwrap();
+        assert_eq!(it, ITERACOES_MINIMAS);
+        let n = [3u8; XNONCE_LEN];
+        let selado = m.selar(&n, b"loja\0senha", b"segredo");
+        assert_ne!(&selado[..7], b"segredo", "selou em claro");
+
+        let volta = Material::de_partes(
+            &sal,
+            it,
+            &prova,
+            ROTULO,
+            "dblink.json",
+            &ChaveDeFora::Pronta(&k),
+            "a chave mestra",
+        )
+        .unwrap();
+        assert_eq!(
+            volta.abrir(&n, b"loja\0senha", &selado, "x").unwrap(),
+            b"segredo"
+        );
+        assert!(
+            volta.abrir(&n, b"erp\0senha", &selado, "x").is_err(),
+            "o envelope abriu com o dado associado de OUTRO dono"
+        );
+    }
+
+    /// A chave errada e recusada na ABERTURA, pela prova -- e a recusa nomeia a
+    /// chave de quem chamou, e nao a senha de `"cifra"` do cofre.
+    #[test]
+    fn a_chave_de_fora_errada_e_recusada_pela_prova() {
+        let certa = [1u8; CHAVE_LEN];
+        let errada = [2u8; CHAVE_LEN];
+        let m = Material::novo_de_fora(&ChaveDeFora::Pronta(&certa), ITERACOES_MINIMAS).unwrap();
+        let (sal, it, prova) = m.partes(ROTULO).unwrap();
+        let e = match Material::de_partes(
+            &sal,
+            it,
+            &prova,
+            ROTULO,
+            "/srv/dblink.json",
+            &ChaveDeFora::Pronta(&errada),
+            "a chave mestra do DbLink",
+        ) {
+            Ok(_) => panic!("a chave ERRADA abriu o material: a prova nao conferiu nada"),
+            Err(e) => e.to_string(),
+        };
+        assert!(e.contains("a chave mestra do DbLink"), "{e}");
+        assert!(
+            !e.contains("\"cifra\""),
+            "mandou procurar a senha do cofre: {e}"
+        );
+        // O rotulo tambem e amarrado: a prova de um arquivo nao serve a outro.
+        assert!(Material::de_partes(
+            &sal,
+            it,
+            &prova,
+            b"outro",
+            "x",
+            &ChaveDeFora::Pronta(&certa),
+            "a chave"
+        )
+        .is_err());
+    }
+
+    /// A senha de fora deriva pelo PBKDF2 do material; a vazia e o piso baixo
+    /// sao recusados, como no cofre.
+    #[test]
+    fn a_senha_de_fora_deriva_e_a_vazia_e_recusada() {
+        let m = Material::novo_de_fora(&ChaveDeFora::Senha("mestra"), ITERACOES_MINIMAS).unwrap();
+        let (sal, it, prova) = m.partes(ROTULO).unwrap();
+        let abre = |s: &str| {
+            Material::de_partes(&sal, it, &prova, ROTULO, "x", &ChaveDeFora::Senha(s), "a").is_ok()
+        };
+        assert!(abre("mestra"));
+        assert!(!abre("mestre"), "a senha errada abriu");
+        assert!(Material::novo_de_fora(&ChaveDeFora::Senha(""), ITERACOES_MINIMAS).is_err());
+        assert!(
+            Material::novo_de_fora(&ChaveDeFora::Senha("mestra"), ITERACOES_MINIMAS - 1).is_err()
+        );
+        // Material em claro nao tem partes: nao ha prova a guardar.
+        assert!(Material::EM_CLARO.partes(ROTULO).is_none());
+    }
+
+    /// Dois materiais com a MESMA chave pronta nao repetem o fluxo de cifra:
+    /// o sal de cada um entra na subchave (revisao SEC do 372, M2).
+    ///
+    /// Com o defeito reposto (a chave pronta cifrando direto), o mesmo
+    /// (nonce, dado associado, claro) sai IGUAL nos dois cadastros -- o par
+    /// (chave, nonce) repetido, que tambem repete a chave de uso unico do
+    /// Poly1305 na prova de nonce zero. O vermelho conta os bytes iguais.
+    #[test]
+    fn duas_chaves_prontas_iguais_nao_repetem_o_fluxo_entre_cadastros() {
+        let k = [9u8; CHAVE_LEN];
+        let a = Material::novo_de_fora(&ChaveDeFora::Pronta(&k), ITERACOES_MINIMAS).unwrap();
+        let b = Material::novo_de_fora(&ChaveDeFora::Pronta(&k), ITERACOES_MINIMAS).unwrap();
+        let n = [5u8; XNONCE_LEN];
+        let claro = b"a mesma credencial nos dois cadastros";
+        let (ca, cb) = (a.selar(&n, b"x", claro), b.selar(&n, b"x", claro));
+        let iguais = ca.iter().zip(&cb).filter(|(x, y)| x == y).count();
+        assert!(
+            ca != cb,
+            "dois cadastros com a mesma chave pronta cifraram IGUAL: {iguais} de {} \
+             bytes -- o sal nao separou chave nenhuma",
+            ca.len()
+        );
+        // E o sal e o da subchave: o mesmo material, remontado pelas partes,
+        // continua abrindo o que selou.
+        let (sal, it, prova) = a.partes(ROTULO).unwrap();
+        let volta =
+            Material::de_partes(&sal, it, &prova, ROTULO, "x", &ChaveDeFora::Pronta(&k), "a")
+                .unwrap();
+        assert_eq!(volta.abrir(&n, b"x", &ca, "x").unwrap(), claro);
     }
 }

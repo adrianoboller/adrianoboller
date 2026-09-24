@@ -1297,6 +1297,21 @@ enum OrigemDoSegredo {
     /// A mensagem inteira, montada na leitura: e so ali que se sabe quem
     /// declarou a variavel.
     Ausente(String),
+    /// Veio SELADO do arquivo e abriu com a chave mestra (pedido 372, o
+    /// `dblink.json` cifrado): o valor esta aqui, e o disco nunca o ve em
+    /// claro. Nao e `Arquivo` porque o aviso do texto puro fala com o
+    /// `Arquivo`, e ele mentiria sobre um segredo que o disco guarda cifrado.
+    Selado,
+    /// Veio selado e NAO abriu -- sem chave, chave errada, envelope movido.
+    ///
+    /// `envelope` e o texto do arquivo, opaco: e ELE que volta ao disco na
+    /// proxima gravacao. Sem a chave nao ha como selar de novo, e escrever
+    /// outra coisa no lugar perderia a credencial de uma ligacao que so
+    /// estava esperando a chave voltar.
+    Trancado {
+        motivo: String,
+        envelope: String,
+    },
 }
 
 /// `Debug` a mao, e pelo mesmo rotulo da tela: o derivado imprimiria o valor.
@@ -1359,11 +1374,67 @@ impl Segredo {
         (segredo, var)
     }
 
-    /// O valor, para APRESENTAR -- ou o erro que nomeia a variavel que faltou.
+    /// Um segredo que veio SELADO do arquivo e abriu (pedido 372).
+    ///
+    /// O dono que abre o envelope e quem constroi: este tipo nao sabe de sal,
+    /// de nonce nem de AAD -- continua sabendo so de ONDE o valor veio.
+    pub fn aberto_do_envelope(valor: String) -> Segredo {
+        Segredo {
+            valor,
+            origem: OrigemDoSegredo::Selado,
+        }
+    }
+
+    /// Um segredo que veio selado e NAO abriu. Ver [`OrigemDoSegredo::Trancado`].
+    pub fn trancado(motivo: String, envelope: String) -> Segredo {
+        Segredo {
+            valor: String::new(),
+            origem: OrigemDoSegredo::Trancado { motivo, envelope },
+        }
+    }
+
+    /// O valor, para APRESENTAR -- ou o erro que nomeia a variavel que faltou,
+    /// ou a chave que nao abriu o envelope.
     pub fn valor(&self) -> Result<&str> {
         match &self.origem {
-            OrigemDoSegredo::Ausente(motivo) => Err(PhxError::Esquema(motivo.clone())),
+            OrigemDoSegredo::Ausente(motivo) | OrigemDoSegredo::Trancado { motivo, .. } => {
+                Err(PhxError::Esquema(motivo.clone()))
+            }
             _ => Ok(&self.valor),
+        }
+    }
+
+    /// Por que o envelope nao abriu -- `None` quando nao ha envelope trancado.
+    pub fn trancado_por(&self) -> Option<&str> {
+        match &self.origem {
+            OrigemDoSegredo::Trancado { motivo, .. } => Some(motivo),
+            _ => None,
+        }
+    }
+
+    /// O envelope como estava no arquivo, para voltar IGUAL ao disco.
+    pub fn envelope_trancado(&self) -> Option<&str> {
+        match &self.origem {
+            OrigemDoSegredo::Trancado { envelope, .. } => Some(envelope),
+            _ => None,
+        }
+    }
+
+    /// O segredo veio de um envelope aberto, e por isso nao pode voltar ao
+    /// disco em claro.
+    pub fn veio_selado(&self) -> bool {
+        matches!(self.origem, OrigemDoSegredo::Selado)
+    }
+
+    /// A gravacao acabou de selar este segredo: ele deixa de estar escrito em
+    /// claro. Devolve se mudou -- e a conta de «quantas sairam do texto puro»
+    /// que a migracao DIZ, em vez de calar.
+    pub fn passou_a_selado(&mut self) -> bool {
+        if self.escrito_no_arquivo() {
+            self.origem = OrigemDoSegredo::Selado;
+            true
+        } else {
+            false
         }
     }
 
@@ -1396,8 +1467,10 @@ impl Segredo {
     pub fn rotulo<'a>(&self, vazio: &'a str, oculto: &'a str, do_ambiente: &'a str) -> &'a str {
         match self.origem {
             OrigemDoSegredo::Ausente(_) => "(variavel ausente)",
+            // O quinto estado, e o mesmo para todo dono, pela razao do de cima.
+            OrigemDoSegredo::Trancado { .. } => "(cifra trancada)",
             _ if self.valor.is_empty() => vazio,
-            OrigemDoSegredo::Arquivo => oculto,
+            OrigemDoSegredo::Arquivo | OrigemDoSegredo::Selado => oculto,
             OrigemDoSegredo::Ambiente => do_ambiente,
         }
     }
@@ -2148,21 +2221,462 @@ impl CifraFio {
 
 /// Le 32 bytes em hexadecimal, dizendo de onde vieram quando estao errados.
 pub(crate) fn chave_de_hex(texto: &str, de_onde: &str) -> Result<[u8; 32]> {
+    bytes32_de_hex(
+        texto,
+        &format!("a chave do fio em {de_onde}"),
+        "e a X25519 tem 32",
+    )
+    .map_err(PhxError::Esquema)
+}
+
+/// 32 bytes em hexadecimal -- a UNICA leitura, para as duas chaves da casa que
+/// chegam assim (a do fio e a mestra do DbLink). Devolve o motivo em texto, e
+/// nao o erro pronto: a mestra do DbLink que nao se le nao e erro de quem
+/// chamou, e fica guardada como motivo da tranca.
+///
+/// O motivo NUNCA carrega o texto lido -- so de onde veio e o tamanho.
+fn bytes32_de_hex(texto: &str, quem: &str, precisa: &str) -> std::result::Result<[u8; 32], String> {
     let limpo: String = texto.chars().filter(|c| !c.is_whitespace()).collect();
-    let bytes = phxsql_core::hash::de_hex(&limpo).ok_or_else(|| {
-        PhxError::Esquema(format!(
-            "a chave do fio em {de_onde} nao e hexadecimal valido"
-        ))
-    })?;
+    let bytes = phxsql_core::hash::de_hex(&limpo)
+        .ok_or_else(|| format!("{quem} nao e hexadecimal valido"))?;
     if bytes.len() != 32 {
-        return Err(PhxError::Esquema(format!(
-            "a chave do fio em {de_onde} tem {} bytes, e a X25519 tem 32",
-            bytes.len()
-        )));
+        return Err(format!("{quem} tem {} bytes, {precisa}", bytes.len()));
     }
     let mut k = [0u8; 32];
     k.copy_from_slice(&bytes);
     Ok(k)
+}
+
+// ---------------------------------------------------------------------------
+// A chave mestra do DbLink (pedido 372)
+// ---------------------------------------------------------------------------
+
+/// Os quatro campos que declaram a chave mestra, e o que cada um entrega.
+///
+/// O TIPO mora no NOME do campo, e nao no formato do texto: adivinhar «64
+/// caracteres hexadecimais e chave pronta» faria a senha que por acaso e
+/// hexadecimal virar outra chave, calada -- e o cadastro cifrado com ela nao
+/// abriria mais com a senha que o dono acha que usou.
+const FONTES_DA_CHAVE_MESTRA: [(&str, bool); 4] = [
+    // (campo, e senha -- `false` e a chave de 32 bytes ja derivada)
+    ("senha_mestra_env", true),
+    ("senha_mestra_arquivo", true),
+    ("chave_mestra_env", false),
+    ("chave_mestra_arquivo", false),
+];
+
+/// A chave mestra que cifra as credenciais do `dblink.json` -- decisao do
+/// dono, 24/09/2026: cifra com chave mestra EXTERNA.
+///
+/// # De onde a chave vem, e de onde ela NAO pode vir
+///
+/// De FORA do conjunto que a copia carrega: uma variavel de ambiente, ou um
+/// arquivo num caminho fora da pasta do `config.json`, da do `dblink.json` e
+/// da dos dados. O modelo de ameaca e o do cofre (`cofre.rs`): o que se
+/// protege e o arquivo COPIADO -- disco levado, backup vazado. Chave que viaja
+/// na mesma copia protege contra ninguem e ANUNCIA protecao; o parecer do DBA
+/// a recusou (`docs/propostas/parecer-dba-372-e-255.md` §1.5), e a recusa
+/// acontece aqui, na DECLARACAO, e nao na primeira gravacao -- pela regra da
+/// casa: recusar cedo custa um erro lido ao configurar, recusar tarde custa um
+/// cadastro cifrado com a chave debaixo do capacho.
+///
+/// # Senha ou chave pronta
+///
+/// `senha_mestra_*` traz uma SENHA, que passa pelo PBKDF2 do material do
+/// cadastro (290,3 ms medidos, uma vez por arranque). `chave_mestra_*` traz os
+/// 32 bytes JA derivados, em hexadecimal: um HMAC com o sal (a subchave do
+/// cadastro, ver `cofre::ChaveDeFora::Pronta`), e nenhum PBKDF2.
+///
+/// # Ausente nao derruba nada
+///
+/// A falta da variavel ou do arquivo e lida AQUI e guardada como motivo, pelo
+/// mesmo contrato do [`Segredo`]: quem a sente e o cadastro, que tranca as
+/// ligacoes cifradas e segue. O DbLink e acessorio; o motor nao e.
+#[derive(Clone, Default)]
+pub struct CifraDoDblink {
+    /// O campo declarado, pelo nome -- vazio quando nenhum foi.
+    pub campo: &'static str,
+    /// O segredo de `*_env`, lido pelo [`Segredo::ler`] -- o unico leitor de
+    /// segredo da casa. Vazio nas fontes de arquivo.
+    segredo: Segredo,
+    /// O nome da variavel de `*_env`.
+    pub variavel: String,
+    /// O arquivo de `*_arquivo`, resolvido ao lado do `config.json`.
+    pub arquivo: PathBuf,
+    /// Iteracoes do PBKDF2 do material NOVO. O que ja existe guarda as dele.
+    pub iteracoes: u32,
+    /// A declaracao torta, com o motivo: recusada pelo `Config::validar` e
+    /// devolvida como indisponivel a quem pedir a chave mesmo assim.
+    recusas: Vec<String>,
+    /// O caminho REAL do arquivo da chave, como o `resolver` o conferiu -- e
+    /// o unico que o [`CifraDoDblink::chave`] le. `None` num `Config` montado
+    /// sem `ler`, que nao tem pastas contra as quais conferir.
+    conferido: Option<PathBuf>,
+}
+
+/// `Debug` a mao pela regra da casa -- o [`Segredo`] ja se redige sozinho, mas
+/// desestruturar sem `..` faz o campo novo parar de compilar aqui.
+impl std::fmt::Debug for CifraDoDblink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let CifraDoDblink {
+            campo,
+            segredo,
+            variavel,
+            arquivo,
+            iteracoes,
+            recusas,
+            conferido,
+        } = self;
+        f.debug_struct("CifraDoDblink")
+            .field("campo", campo)
+            .field("segredo", segredo)
+            .field("variavel", variavel)
+            .field("arquivo", arquivo)
+            .field("iteracoes", iteracoes)
+            .field("recusas", recusas)
+            .field("conferido", conferido)
+            .finish()
+    }
+}
+
+/// A chave mestra do DbLink ja resolvida -- ou por que nao ha.
+#[derive(Clone, Default)]
+pub enum ChaveMestra {
+    /// Ninguem declarou: o cadastro continua sendo o de sempre.
+    #[default]
+    NaoDeclarada,
+    Senha(String),
+    Pronta([u8; 32]),
+    /// Declarada e indisponivel, com o motivo que nomeia o que falta.
+    Indisponivel(String),
+}
+
+/// `Debug` a mao: as duas variantes do meio SAO a chave.
+impl std::fmt::Debug for ChaveMestra {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChaveMestra::NaoDeclarada => f.write_str("NaoDeclarada"),
+            ChaveMestra::Senha(_) => f.write_str("Senha(oculta)"),
+            ChaveMestra::Pronta(_) => f.write_str("Pronta(oculta)"),
+            ChaveMestra::Indisponivel(m) => f.debug_tuple("Indisponivel").field(m).finish(),
+        }
+    }
+}
+
+impl ChaveMestra {
+    /// A chave no formato que o material do cofre entende, quando ha chave.
+    pub fn de_fora(&self) -> Option<phxsql_store::cofre::ChaveDeFora<'_>> {
+        match self {
+            ChaveMestra::Senha(s) => Some(phxsql_store::cofre::ChaveDeFora::Senha(s)),
+            ChaveMestra::Pronta(k) => Some(phxsql_store::cofre::ChaveDeFora::Pronta(k)),
+            _ => None,
+        }
+    }
+}
+
+impl CifraDoDblink {
+    fn de_json(j: &Json) -> CifraDoDblink {
+        let mut c = CifraDoDblink {
+            iteracoes: phxsql_store::cofre::ITERACOES_PADRAO,
+            ..CifraDoDblink::default()
+        };
+        let Some(o) = j.campo("cifra_do_dblink") else {
+            return c;
+        };
+        // Escrita torta RECUSA, como toda declaracao desta casa, e nao vira
+        // «nao declarada»: quem escreveu `"cifra_do_dblink": "s3nh4"` acha que
+        // cifrou, e o cadastro continuaria em claro (revisao SEC do 372, B3).
+        // O valor torto nunca entra na mensagem -- ele pode ser a propria chave.
+        if !matches!(o, Json::Objeto(_)) {
+            c.recusas.push(
+                "cifra_do_dblink tem de ser um objeto -- {\"chave_mestra_arquivo\": \
+                 \"/caminho\"}, ou uma das outras tres fontes --, e o que esta \
+                 escrito nao e (o valor nao se repete aqui: ele pode ser a chave)"
+                    .to_string(),
+            );
+            return c;
+        }
+        for (campo, _) in FONTES_DA_CHAVE_MESTRA {
+            if o.campo(campo).is_some_and(|v| v.texto().is_none()) {
+                c.recusas.push(format!(
+                    "cifra_do_dblink.{campo} tem de ser texto (o nome da variavel \
+                     ou o caminho do arquivo)"
+                ));
+            }
+        }
+        if o.campo("iteracoes").is_some_and(|v| v.inteiro().is_none()) {
+            c.recusas
+                .push("cifra_do_dblink.iteracoes tem de ser um numero inteiro".to_string());
+        }
+        // O valor escrito no proprio `config.json` e a chave debaixo do
+        // capacho: o `config.json` viaja na MESMA copia que o `dblink.json`.
+        // O `Segredo::ler` o aceitaria, porque para os outros donos o arquivo
+        // e um lugar legitimo -- aqui nao e, e a recusa vem antes dele.
+        for escrito in ["senha_mestra", "chave_mestra"] {
+            if o.campo(escrito).is_some() {
+                c.recusas.push(format!(
+                    "cifra_do_dblink.{escrito} escreve a chave mestra DENTRO do \
+                     config.json, que viaja na mesma copia que o dblink.json: \
+                     cifrar assim protege contra ninguem. Use {escrito}_env (uma \
+                     variavel de ambiente) ou {escrito}_arquivo (um arquivo FORA \
+                     da pasta do banco)"
+                ));
+            }
+        }
+        let declarados: Vec<(&'static str, bool)> = FONTES_DA_CHAVE_MESTRA
+            .into_iter()
+            .filter(|(campo, _)| !o.texto_ou(campo, "").trim().is_empty())
+            .collect();
+        if declarados.len() > 1 {
+            let nomes: Vec<&str> = declarados.iter().map(|(n, _)| *n).collect();
+            c.recusas.push(format!(
+                "cifra_do_dblink declara {}: declare UMA fonte so -- com duas, o \
+                 servidor teria de escolher calado qual chave vale",
+                nomes.join(" e ")
+            ));
+        }
+        if let Some((campo, _)) = declarados.first() {
+            c.campo = campo;
+            if let Some(base) = campo.strip_suffix("_env") {
+                let (segredo, variavel) = Segredo::ler(o, base, "cifra_do_dblink");
+                c.segredo = segredo;
+                c.variavel = variavel;
+            } else {
+                c.arquivo = PathBuf::from(o.texto_ou(campo, "").trim());
+            }
+        }
+        // A MESMA faixa que a abertura do cadastro confere no arquivo: a
+        // declaracao nao pode pedir o que a leitura recusaria. O porque do piso
+        // e do teto esta nas duas constantes.
+        let (piso, teto) = (
+            crate::dblink::ITERACOES_MINIMAS_DO_CADASTRO,
+            crate::dblink::ITERACOES_MAXIMAS_DO_CADASTRO,
+        );
+        let iteracoes = o.inteiro_ou("iteracoes", phxsql_store::cofre::ITERACOES_PADRAO as i64);
+        if !(piso as i64..=teto as i64).contains(&iteracoes) {
+            c.recusas.push(format!(
+                "cifra_do_dblink.iteracoes {iteracoes} fora da faixa ({piso} a {teto})"
+            ));
+        } else {
+            c.iteracoes = iteracoes as u32;
+        }
+        c
+    }
+
+    /// A chave foi declarada? (Declarada nao quer dizer disponivel.)
+    pub fn declarada(&self) -> bool {
+        !self.campo.is_empty()
+    }
+
+    /// E senha (PBKDF2) ou chave pronta?
+    fn e_senha(&self) -> bool {
+        FONTES_DA_CHAVE_MESTRA
+            .iter()
+            .any(|(campo, senha)| *campo == self.campo && *senha)
+    }
+
+    /// Onde a chave foi declarada, para as mensagens: o campo e o que ele
+    /// aponta -- nunca o valor.
+    pub fn declarada_em(&self) -> String {
+        if self.campo.is_empty() {
+            return String::new();
+        }
+        if self.variavel.is_empty() {
+            format!(
+                "cifra_do_dblink.{} = {}",
+                self.campo,
+                self.arquivo.display()
+            )
+        } else {
+            format!("cifra_do_dblink.{} = {}", self.campo, self.variavel)
+        }
+    }
+
+    /// Resolve o arquivo ao lado do `config.json` e recusa o que cai DENTRO do
+    /// conjunto copiado -- a pasta do `config.json`, a do `dblink.json` e a dos
+    /// dados.
+    ///
+    /// Pelo caminho REAL, e nao pelo texto: `../banco/chave` e um link
+    /// simbolico para dentro da pasta sao o mesmo capacho com outra grafia.
+    /// O arquivo pode ainda nao existir (e ai ele esta so ausente, e nao
+    /// recusado): resolve-se o ancestral mais longo que existe.
+    fn resolver(&mut self, config_em: Option<&Path>, base: &Path, dblink: &Path) {
+        if self.arquivo.as_os_str().is_empty() {
+            return;
+        }
+        self.arquivo = resolver_caminho_do_config(&self.arquivo, config_em);
+        let chave = caminho_real(&self.arquivo);
+        self.conferido = Some(chave.clone());
+        let pastas = [
+            ("a do config.json", config_em.and_then(Path::parent)),
+            ("a do dblink.json", dblink.parent()),
+            ("a dos dados (\"base\")", Some(base)),
+        ];
+        for (qual, pasta) in pastas {
+            let Some(pasta) = pasta else { continue };
+            let pasta = if pasta.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                pasta
+            };
+            let real = caminho_real(pasta);
+            if chave.starts_with(&real) {
+                self.recusas.push(format!(
+                    "cifra_do_dblink.{} aponta para {} (que o sistema resolve para \
+                     {}), DENTRO da pasta que vai na copia do banco ({qual}, {}): o \
+                     dblink.json cifrado e a chave que o abre viajariam juntos, e a \
+                     cifra protegeria contra ninguem. Ponha a chave num caminho fora \
+                     dessa pasta (um segredo montado, um diretorio proprio) ou use \
+                     {}_env",
+                    self.campo,
+                    self.arquivo.display(),
+                    chave.display(),
+                    real.display(),
+                    self.campo.trim_end_matches("_arquivo"),
+                ));
+                return;
+            }
+        }
+    }
+
+    /// A declaracao esta de pe? Recusa no ARRANQUE, com o motivo inteiro.
+    pub fn validar(&self) -> Result<()> {
+        if self.recusas.is_empty() {
+            return Ok(());
+        }
+        Err(PhxError::Esquema(self.recusas.join("; ")))
+    }
+
+    /// A chave, lida AGORA -- ou por que nao ha.
+    ///
+    /// O arquivo e lido aqui, e nao na leitura do `config.json`: e o cadastro
+    /// que precisa dela, e ele a pede uma vez por abertura.
+    pub fn chave(&self) -> ChaveMestra {
+        if !self.recusas.is_empty() {
+            return ChaveMestra::Indisponivel(self.recusas.join("; "));
+        }
+        if self.campo.is_empty() {
+            return ChaveMestra::NaoDeclarada;
+        }
+        let texto = if self.variavel.is_empty() {
+            // Le O MESMO caminho que o `resolver` conferiu, e so se ele ainda
+            // resolve para si mesmo: um diretorio trocado por um link DEPOIS
+            // da conferencia levaria a leitura para dentro da pasta do banco
+            // pelo caminho que ja tinha passado (revisao SEC do 372, M1).
+            let alvo = match &self.conferido {
+                Some(conferido) => {
+                    let agora = caminho_real(conferido);
+                    if agora != *conferido {
+                        return ChaveMestra::Indisponivel(format!(
+                            "cifra_do_dblink.{} foi conferido em {} e agora resolve \
+                             para {}: o caminho mudou depois da conferencia (um \
+                             diretorio trocado por link?), e a chave nao se le de \
+                             onde nao foi conferida. Reinicie para conferir de novo",
+                            self.campo,
+                            conferido.display(),
+                            agora.display()
+                        ));
+                    }
+                    agora
+                }
+                None => caminho_real(&self.arquivo),
+            };
+            match std::fs::read_to_string(&alvo) {
+                // Um `echo senha > arquivo` poe o fim de linha, e ele nao e
+                // parte da senha. So ele sai: espaco no comeco ou no meio e
+                // decisao de quem escreveu.
+                Ok(t) => t.trim_end_matches(['\n', '\r']).to_string(),
+                Err(e) => {
+                    return ChaveMestra::Indisponivel(format!(
+                        "cifra_do_dblink.{} aponta para {}, e esse arquivo nao abre \
+                         neste processo ({e}). A chave NAO virou vazia: monte o \
+                         arquivo e reinicie",
+                        self.campo,
+                        self.arquivo.display()
+                    ))
+                }
+            }
+        } else {
+            if let Some(falta) = self.segredo.falta() {
+                return ChaveMestra::Indisponivel(falta.to_string());
+            }
+            match self.segredo.valor() {
+                Ok(v) => v.to_string(),
+                Err(e) => return ChaveMestra::Indisponivel(e.corpo()),
+            }
+        };
+        if texto.is_empty() {
+            return ChaveMestra::Indisponivel(format!(
+                "{} esta VAZIA -- chave vazia nao cifra nada, e fingir que cifra \
+                 e pior que nao cifrar",
+                self.declarada_em()
+            ));
+        }
+        if self.e_senha() {
+            return ChaveMestra::Senha(texto);
+        }
+        match bytes32_de_hex(
+            &texto,
+            &format!("a chave mestra de {}", self.declarada_em()),
+            "e a chave mestra tem 32 (64 caracteres hexadecimais)",
+        ) {
+            Ok(k) => ChaveMestra::Pronta(k),
+            Err(motivo) => ChaveMestra::Indisponivel(motivo),
+        }
+    }
+
+    /// Para a tela e o protocolo: de onde a chave vem, NUNCA a chave.
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("campo", Json::texto_de(self.campo)),
+            ("variavel", Json::texto_de(&self.variavel)),
+            (
+                "arquivo",
+                Json::texto_de(self.arquivo.display().to_string()),
+            ),
+            ("iteracoes", Json::de_u64(self.iteracoes as u64)),
+        ])
+    }
+}
+
+/// O caminho como o sistema operacional o ve: absoluto, com links simbolicos e
+/// `..` resolvidos PELO SISTEMA, na ordem em que o kernel os resolve.
+///
+/// # O sistema primeiro, o texto so no fim
+///
+/// O `..` depois de um link sobe a partir do DESTINO do link, e nao do nome
+/// dele: `fora/link/../chave.hex`, com `fora/link -> banco/sub`, e
+/// `banco/chave.hex`. Resolver o `..` pelo texto antes de perguntar ao sistema
+/// dava `fora/chave.hex`, passava pela conferencia, e o kernel abria a chave de
+/// dentro da pasta do banco (revisao SEC do 372, M1, provada contra o sistema).
+/// Entao o caminho INTEIRO vai ao `canonicalize` primeiro; se ele ainda nao
+/// existe, vai o prefixo mais longo que existe, e so o sufixo que falta --
+/// onde nao ha link nenhum a seguir -- e resolvido pelo texto.
+fn caminho_real(p: &Path) -> PathBuf {
+    use std::path::Component;
+    let absoluto = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(p)
+    };
+    let partes: Vec<Component> = absoluto.components().collect();
+    for corte in (0..=partes.len()).rev() {
+        let prefixo: PathBuf = partes[..corte].iter().collect();
+        let Ok(mut real) = std::fs::canonicalize(&prefixo) else {
+            continue;
+        };
+        for parte in &partes[corte..] {
+            match parte {
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    real.pop();
+                }
+                outra => real.push(outra.as_os_str()),
+            }
+        }
+        return real;
+    }
+    absoluto
 }
 
 /// Abre `caminho` para escrita, NOVO e com permissao 0600 desde o primeiro
@@ -3386,6 +3900,9 @@ pub struct Config {
     /// pela tela, e reescrever o `config.json` inteiro a cada ligacao nova
     /// arriscaria os comentarios e o resto da configuracao a cada gravacao.
     pub dblink: PathBuf,
+    /// A chave mestra que cifra as credenciais do `dblink.json` (pedido 372).
+    /// Ver [`CifraDoDblink`].
+    pub cifra_do_dblink: CifraDoDblink,
     /// Arquivo com os jobs de execucao.
     ///
     /// Separado pelo mesmo motivo do DbLink: o cadastro muda pela tela. E as
@@ -3462,6 +3979,7 @@ impl std::fmt::Debug for Config {
             backup,
             alertas,
             dblink,
+            cifra_do_dblink,
             jobs,
             cifra,
             cifra_fio,
@@ -3497,6 +4015,7 @@ impl std::fmt::Debug for Config {
             .field("backup", backup)
             .field("alertas", alertas)
             .field("dblink", dblink)
+            .field("cifra_do_dblink", cifra_do_dblink)
             .field("jobs", jobs)
             .field("cifra", cifra)
             .field("cifra_fio", cifra_fio)
@@ -3522,7 +4041,7 @@ impl std::fmt::Debug for Config {
 // no primeiro nivel -- quem a escrevesse no arquivo levava um "campo que este
 // servidor nao conhece" sobre um campo que ele le e obedece. Aviso falso gasta
 // a confianca do aviso verdadeiro.
-const CAMPOS_CONHECIDOS: [&str; 30] = [
+const CAMPOS_CONHECIDOS: [&str; 31] = [
     "bind",
     "base",
     "token",
@@ -3544,6 +4063,7 @@ const CAMPOS_CONHECIDOS: [&str; 30] = [
     "backup",
     "alertas",
     "dblink",
+    "cifra_do_dblink",
     "jobs",
     "cifra",
     "cifra_fio",
@@ -3564,7 +4084,7 @@ const CAMPOS_CONHECIDOS: [&str; 30] = [
 /// as duas primeiras estao ganhando campos novos por outras frentes nesta
 /// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
 /// as duas ultimas tem chaves livres (bases, tabelas).
-const SECOES_CONHECIDAS: [(&str, &[&str]); 15] = [
+const SECOES_CONHECIDAS: [(&str, &[&str]); 16] = [
     (
         "recursos",
         &[
@@ -3692,6 +4212,22 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 15] = [
             "arquivo",
         ],
     ),
+    // `senha_mestra` e `chave_mestra` ESTAO na lista, e nao por serem
+    // aceitos: sao RECUSADOS pelo `validar`, com o motivo. Deixa-los de fora
+    // somaria um «campo desconhecido» a recusa, e o aviso errado mandaria
+    // procurar erro de digitacao onde ha uma decisao recusada.
+    (
+        "cifra_do_dblink",
+        &[
+            "senha_mestra_env",
+            "senha_mestra_arquivo",
+            "chave_mestra_env",
+            "chave_mestra_arquivo",
+            "iteracoes",
+            "senha_mestra",
+            "chave_mestra",
+        ],
+    ),
     ("lgpd", &["alteracoes", "acessos"]),
     (
         "telemetria",
@@ -3756,6 +4292,10 @@ impl Default for Config {
             backup: Backup::default(),
             alertas: Alertas::default(),
             dblink: PathBuf::from("dblink.json"),
+            cifra_do_dblink: CifraDoDblink {
+                iteracoes: phxsql_store::cofre::ITERACOES_PADRAO,
+                ..CifraDoDblink::default()
+            },
             jobs: PathBuf::from("jobs.json"),
             cifra: Cifra::default(),
             cifra_fio: CifraFio::default(),
@@ -3799,6 +4339,11 @@ impl Config {
         c.dblink = resolver_caminho_do_config(&c.dblink, c.caminho.as_deref());
         c.jobs = resolver_caminho_do_config(&c.jobs, c.caminho.as_deref());
         c.backup.destino = resolver_caminho_do_config(&c.backup.destino, c.caminho.as_deref());
+        // DEPOIS dos caminhos, porque a recusa da chave mestra compara com
+        // eles: a pasta dos dados e a do `dblink.json` so estao certas daqui
+        // para baixo.
+        c.cifra_do_dblink
+            .resolver(c.caminho.as_deref(), &c.base, &c.dblink);
         c.avisar_o_cadastro_do_dblink();
         c.validar()?;
         // A chave do cofre entra AQUI, e nao la no servidor, por uma razao
@@ -3940,6 +4485,7 @@ impl Config {
             backup: Backup::de_json(j)?,
             alertas: Alertas::de_json(j)?,
             dblink: PathBuf::from(j.texto_ou("dblink", "dblink.json")),
+            cifra_do_dblink: CifraDoDblink::de_json(j),
             jobs: PathBuf::from(j.texto_ou("jobs", "jobs.json")),
             cifra: Cifra::de_json(j),
             cifra_fio: CifraFio::de_json(j),
@@ -4017,7 +4563,9 @@ impl Config {
     /// recusas do mesmo arquivo, com textos diferentes, mandariam procurar em
     /// dois lugares.
     fn avisar_o_cadastro_do_dblink(&mut self) {
-        if let Ok(cadastro) = crate::dblink::Registro::abrir(&self.dblink) {
+        if let Ok(cadastro) =
+            crate::dblink::Registro::abrir_com(&self.dblink, &self.cifra_do_dblink)
+        {
             self.avisos.extend(cadastro.avisos());
         }
     }
@@ -4483,6 +5031,10 @@ impl Config {
         // ordem natural de quem esta configurando -- merece o erro na hora em
         // que escreveu, e nao meses depois.
         self.cifra.validar()?;
+        // A chave mestra do DbLink escrita no lugar errado recusa o arranque:
+        // e DECLARACAO torta, e nao chave ausente. A ausente so tranca as
+        // ligacoes cifradas; esta anunciaria uma protecao que nao existe.
+        self.cifra_do_dblink.validar()?;
         Ok(())
     }
 
@@ -4743,6 +5295,7 @@ impl Config {
             ),
             ("alertas", self.alertas.para_json()),
             ("dblink", Json::texto_de(self.dblink.display().to_string())),
+            ("cifra_do_dblink", self.cifra_do_dblink.para_json()),
             ("jobs", Json::texto_de(self.jobs.display().to_string())),
             ("cifra", self.cifra.para_json()),
             ("cifra_fio", self.cifra_fio.para_json()),
@@ -5951,6 +6504,311 @@ mod tests {
         assert!(!texto.contains(privada), "{texto}");
         assert!(texto.contains("(do ambiente)"), "{texto}");
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // -----------------------------------------------------------------------
+    // Pedido 372: a chave mestra do DbLink vem de FORA do conjunto copiado
+    // -----------------------------------------------------------------------
+
+    const CHAVE_372: &str = "a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0";
+
+    /// (f) A chave mestra DENTRO da pasta que vai na copia do banco e recusada
+    /// no arranque, com o motivo -- a do `config.json`, a dos dados e a do
+    /// `dblink.json`, pelo caminho REAL (o `..` nao a esconde). Fora delas,
+    /// sobe.
+    ///
+    /// O dano que a recusa impede e o que o vermelho mede: a copia da pasta
+    /// levaria o cadastro cifrado E a chave que o abre -- a cifra protegeria
+    /// contra ninguem, anunciando que protege.
+    #[test]
+    fn a_chave_mestra_dentro_da_pasta_do_banco_e_recusada_com_o_motivo() {
+        let d = DirTemp::novo("config-372-chave-dentro");
+        let fora = DirTemp::novo("config-372-chave-fora");
+        let dados = DirTemp::novo("config-372-dados");
+        let config = d.join("config.json");
+        std::fs::write(d.join("chave.hex"), CHAVE_372).unwrap();
+        std::fs::write(dados.join("chave.hex"), CHAVE_372).unwrap();
+        std::fs::write(fora.join("chave.hex"), CHAVE_372).unwrap();
+        let nome_de_d = d.file_name().unwrap().to_string_lossy().to_string();
+        let casos = [
+            // relativo: resolve ao lado do config.json
+            ("chave.hex".to_string(), "a do config.json"),
+            // a grafia com `..` que volta para dentro
+            (
+                fora.join("..")
+                    .join(&nome_de_d)
+                    .join("chave.hex")
+                    .display()
+                    .to_string(),
+                "a do config.json",
+            ),
+            (dados.join("chave.hex").display().to_string(), "a dos dados"),
+        ];
+        for (caminho, qual) in casos {
+            std::fs::write(
+                &config,
+                format!(
+                    r#"{{"token":"t","base":{:?},
+                         "cifra_do_dblink":{{"chave_mestra_arquivo":{caminho:?}}}}}"#,
+                    dados.display().to_string()
+                ),
+            )
+            .unwrap();
+            let e = match Config::ler(&config) {
+                Ok(c) => {
+                    let na_copia = [d.join("chave.hex"), dados.join("chave.hex")]
+                        .iter()
+                        .filter(|p| p.exists())
+                        .count();
+                    panic!(
+                        "a chave mestra em {caminho} foi ACEITA: a copia de {} leva o \
+                         cadastro cifrado e {na_copia} arquivo(s) de chave que o abrem \
+                         (campo {:?})",
+                        d.display(),
+                        c.cifra_do_dblink.campo
+                    )
+                }
+                Err(e) => e.to_string(),
+            };
+            assert!(e.contains("DENTRO"), "{e}");
+            assert!(
+                e.contains(qual),
+                "o motivo nao nomeia a pasta ({qual}): {e}"
+            );
+            assert!(!e.contains(CHAVE_372), "o erro imprimiu a chave: {e}");
+        }
+
+        // Fora das tres pastas, sobe -- e a chave fica disponivel.
+        std::fs::write(
+            &config,
+            format!(
+                r#"{{"token":"t","base":{:?},"cifra_do_dblink":{{"chave_mestra_arquivo":{:?}}}}}"#,
+                dados.display().to_string(),
+                fora.join("chave.hex").display().to_string()
+            ),
+        )
+        .unwrap();
+        let c = match Config::ler(&config) {
+            Ok(c) => c,
+            Err(e) => panic!("a chave FORA da pasta foi recusada: {e}"),
+        };
+        assert!(matches!(c.cifra_do_dblink.chave(), ChaveMestra::Pronta(_)));
+        // O `Debug` do config nao carrega a chave.
+        assert!(!format!("{c:?}").contains(CHAVE_372));
+    }
+
+    /// A chave escrita no PROPRIO `config.json`, e duas fontes ao mesmo tempo,
+    /// sao recusadas na declaracao -- nomeando o campo.
+    #[test]
+    fn a_chave_mestra_no_config_json_ou_em_duas_fontes_e_recusada() {
+        for (json, espera) in [
+            (
+                r#"{"token":"t","cifra_do_dblink":{"senha_mestra":"abc"}}"#,
+                "cifra_do_dblink.senha_mestra",
+            ),
+            (
+                r#"{"token":"t","cifra_do_dblink":{"chave_mestra":"00"}}"#,
+                "cifra_do_dblink.chave_mestra",
+            ),
+            (
+                r#"{"token":"t","cifra_do_dblink":{"senha_mestra_env":"A","chave_mestra_env":"B"}}"#,
+                "UMA fonte",
+            ),
+            (
+                r#"{"token":"t","cifra_do_dblink":{"senha_mestra_env":"A","iteracoes":5}}"#,
+                "iteracoes",
+            ),
+        ] {
+            let c = Config::de_json(&Json::analisar(json).unwrap()).unwrap();
+            let e = c.validar().map(|_| ()).unwrap_err().to_string();
+            assert!(e.contains(espera), "{json}: {e}");
+            assert!(!e.contains("abc"), "o erro imprimiu o valor: {e}");
+            // Nem o «campo desconhecido» junto: a recusa ja diz o motivo.
+            assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+        }
+        // O comportamento VELHO: sem a secao, nada muda -- nem aviso, nem
+        // recusa, nem chave.
+        let c = Config::de_json(&Json::analisar(r#"{"token":"t"}"#).unwrap()).unwrap();
+        c.validar().unwrap();
+        assert!(matches!(
+            c.cifra_do_dblink.chave(),
+            ChaveMestra::NaoDeclarada
+        ));
+    }
+
+    /// (d, pelo `Config::ler`) A chave declarada e AUSENTE nao derruba nada: o
+    /// `ler` sobe, e o aviso sai pela lista de sempre nomeando a variavel e as
+    /// ligacoes trancadas -- nunca o valor.
+    #[test]
+    fn a_chave_mestra_ausente_avisa_pela_lista_de_sempre() {
+        let d = DirTemp::novo("config-372-chave-ausente");
+        let fora = DirTemp::novo("config-372-chave-ausente-fora");
+        let config = d.join("config.json");
+        // Cifra o cadastro com a chave num arquivo de fora...
+        std::fs::write(fora.join("k.hex"), CHAVE_372).unwrap();
+        std::fs::write(
+            &config,
+            format!(
+                r#"{{"token":"t","cifra_do_dblink":{{"chave_mestra_arquivo":{:?}}}}}"#,
+                fora.join("k.hex").display().to_string()
+            ),
+        )
+        .unwrap();
+        let c = Config::ler(&config).unwrap();
+        let mut r = crate::dblink::Registro::abrir_com(&c.dblink, &c.cifra_do_dblink).unwrap();
+        r.salvar(
+            crate::dblink::Definicao::de_json(
+                &Json::analisar(r#"{"nome":"loja","senha":"SEGREDO-372-AVISO"}"#).unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        // ...e sobe com a variavel que ninguem exporta.
+        const VAR: &str = "PHXSQL_TESTE_372_CONFIG_CHAVE_QUE_NINGUEM_EXPORTA";
+        std::fs::write(
+            &config,
+            format!(r#"{{"token":"t","cifra_do_dblink":{{"chave_mestra_env":"{VAR}"}}}}"#),
+        )
+        .unwrap();
+        let c = match Config::ler(&config) {
+            Ok(c) => c,
+            Err(e) => panic!("a chave AUSENTE derrubou a leitura do config: {e}"),
+        };
+        let aviso = c
+            .avisos
+            .iter()
+            .find(|a| a.contains(VAR))
+            .unwrap_or_else(|| panic!("a chave ausente subiu calada: {:?}", c.avisos));
+        assert!(
+            aviso.contains("TRANCADAS") && aviso.contains("\"loja\""),
+            "{aviso}"
+        );
+        assert!(!aviso.contains("SEGREDO-372-AVISO"), "{aviso}");
+    }
+
+    /// (M1 da SEC) O link seguido de `..` NAO contorna a recusa: o caminho vai
+    /// ao sistema operacional antes de o texto resolver o `..`.
+    ///
+    /// `fora/link -> <pasta do banco>/sub`, e a chave em
+    /// `fora/link/../chave.hex`: pelo texto e `fora/chave.hex`, e o kernel abre
+    /// `<pasta do banco>/chave.hex`. O teste prova as duas coisas contra o
+    /// sistema, e com o defeito reposto (o `..` resolvido pelo texto primeiro)
+    /// o vermelho diz que a chave de DENTRO foi aceita e lida.
+    #[cfg(unix)]
+    #[test]
+    fn a_chave_por_link_seguido_de_ponto_ponto_e_recusada() {
+        let banco = DirTemp::novo("config-372-m1-banco");
+        let fora = DirTemp::novo("config-372-m1-fora");
+        std::fs::create_dir_all(banco.join("sub")).unwrap();
+        std::fs::write(banco.join("chave.hex"), CHAVE_372).unwrap();
+        std::os::unix::fs::symlink(banco.join("sub"), fora.join("link")).unwrap();
+        let pelo_link = format!("{}/link/../chave.hex", fora.display());
+        // O que o kernel faz com esse caminho: abre a de DENTRO.
+        assert_eq!(std::fs::read_to_string(&pelo_link).unwrap(), CHAVE_372);
+        let config = banco.join("config.json");
+        std::fs::write(
+            &config,
+            format!(
+                r#"{{"token":"t","cifra_do_dblink":{{"chave_mestra_arquivo":{pelo_link:?}}}}}"#
+            ),
+        )
+        .unwrap();
+        let e = match Config::ler(&config) {
+            Ok(c) => panic!(
+                "a chave em {pelo_link} foi ACEITA: a conferencia viu {:?}, e o kernel \
+                 abre esse caminho DENTRO da pasta do banco ({}) -- a chave viaja na \
+                 copia junto com o cadastro (a leitura devolveu a chave: {})",
+                c.cifra_do_dblink.conferido,
+                banco.display(),
+                matches!(c.cifra_do_dblink.chave(), ChaveMestra::Pronta(_))
+            ),
+            Err(e) => e.to_string(),
+        };
+        assert!(e.contains("DENTRO"), "{e}");
+        assert!(!e.contains(CHAVE_372), "o erro imprimiu a chave: {e}");
+    }
+
+    /// (M1 da SEC) A chave se le do MESMO caminho que foi conferido: o
+    /// diretorio trocado por um link para dentro da pasta do banco DEPOIS da
+    /// conferencia nao leva a leitura para la.
+    ///
+    /// Com o defeito reposto (ler sem refazer o caminho real), a chave de
+    /// dentro volta como se fosse a de fora -- e o vermelho diz isso.
+    #[cfg(unix)]
+    #[test]
+    fn a_chave_nao_se_le_de_um_caminho_que_mudou_depois_da_conferencia() {
+        const DE_DENTRO: &str = "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1";
+        let banco = DirTemp::novo("config-372-m1b-banco");
+        let fora = DirTemp::novo("config-372-m1b-fora");
+        std::fs::create_dir_all(fora.join("sub")).unwrap();
+        std::fs::write(fora.join("sub").join("k.hex"), CHAVE_372).unwrap();
+        std::fs::write(banco.join("k.hex"), DE_DENTRO).unwrap();
+        let config = banco.join("config.json");
+        std::fs::write(
+            &config,
+            format!(
+                r#"{{"token":"t","cifra_do_dblink":{{"chave_mestra_arquivo":{:?}}}}}"#,
+                fora.join("sub").join("k.hex").display().to_string()
+            ),
+        )
+        .unwrap();
+        let c = match Config::ler(&config) {
+            Ok(c) => c,
+            Err(e) => panic!("a chave FORA da pasta foi recusada: {e}"),
+        };
+        assert!(matches!(c.cifra_do_dblink.chave(), ChaveMestra::Pronta(_)));
+        // Depois da conferencia, o diretorio vira um link para dentro do banco.
+        std::fs::rename(fora.join("sub"), fora.join("sub-velho")).unwrap();
+        std::os::unix::fs::symlink(&banco.0, fora.join("sub")).unwrap();
+        match c.cifra_do_dblink.chave() {
+            ChaveMestra::Pronta(k) if k == [0xb1; 32] => panic!(
+                "a chave foi lida de DENTRO da pasta do banco ({}), pelo caminho que \
+                 tinha passado na conferencia",
+                banco.display()
+            ),
+            ChaveMestra::Indisponivel(m) => assert!(m.contains("mudou"), "{m}"),
+            outra => panic!("esperava a recusa do caminho que mudou: {outra:?}"),
+        }
+    }
+
+    /// (B3 da SEC) `cifra_do_dblink` escrita torta RECUSA, como toda declaracao
+    /// da casa -- e nunca vira «nao declarada», que deixaria o cadastro em
+    /// claro com o dono achando que cifrou.
+    ///
+    /// Com o defeito reposto (sem a conferencia de tipo), o vermelho diz que a
+    /// declaracao sumiu calada.
+    #[test]
+    fn cifra_do_dblink_escrita_torta_recusa_e_nao_vira_nao_declarada() {
+        for (json, espera) in [
+            (r#"{"token":"t","cifra_do_dblink":"s3nh4"}"#, "objeto"),
+            (
+                r#"{"token":"t","cifra_do_dblink":{"chave_mestra_arquivo":123}}"#,
+                "texto",
+            ),
+            (
+                r#"{"token":"t","cifra_do_dblink":{"senha_mestra_env":["X"]}}"#,
+                "texto",
+            ),
+            (
+                r#"{"token":"t","cifra_do_dblink":{"senha_mestra_env":"X","iteracoes":"muitas"}}"#,
+                "inteiro",
+            ),
+        ] {
+            let c = Config::de_json(&Json::analisar(json).unwrap()).unwrap();
+            if matches!(c.cifra_do_dblink.chave(), ChaveMestra::NaoDeclarada) {
+                panic!(
+                    "{json}: a declaracao torta virou «nao declarada» -- quem a \
+                     escreveu acha que cifrou, e o cadastro continua em claro sem \
+                     recusa nenhuma"
+                );
+            }
+            let e = match c.validar() {
+                Ok(()) => panic!("{json}: a declaracao torta subiu"),
+                Err(e) => e.to_string(),
+            };
+            assert!(e.contains(espera), "{json}: {e}");
+            assert!(!e.contains("s3nh4"), "o erro repetiu o valor torto: {e}");
+        }
     }
 
     /// O aviso do DbLink chega pela lista de sempre -- a do `Config::ler`, que

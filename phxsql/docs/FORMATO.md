@@ -2739,7 +2739,210 @@ consertar o servidor.
 O porquê de ser arquivo e não tabela do `phxsys` está em
 [`DIRETIVAS.md`](DIRETIVAS.md) §5.
 
-## 19. O que este formato ainda não faz
+## 19. `dblink.json` — o cadastro do DbLink, e a credencial cifrada (formato 2)
+
+Texto JSON ao lado do `config.json` (campo `dblink`), gravado **inteiro** a
+cada `dblink_salvar`/`dblink_excluir`/`dblink_ligar`, por troca atômica e com
+permissão `0600` desde o primeiro byte (`config::gravar_privado`). Não é
+arquivo do motor de dados — não tem assinatura binária nem CRC —, mas carrega
+a senha e o token de **outro** banco, e por isso tem formato versionado desde
+o pedido 372 (24/09/2026, decisão do dono: cifra com chave mestra externa;
+desenho fixado pelo DBA em `docs/propostas/parecer-dba-372-e-255.md` §1.2–§1.5,
+revisto por SEC e DBA antes do commit:
+`docs/propostas/parecer-sec-372-2026-09-24.md` e
+`docs/propostas/parecer-dba-372-formato2-2026-09-24.md`).
+
+**A decisão mora no campo presente.** Não há migração forçada: um arquivo
+escrito antes lê-se como sempre se leu.
+
+### Formato 1 — o de sempre (sem o campo `formato`)
+
+```json
+{"dblink": [
+  {"nome": "matriz", "motor": "mysql", "host": "10.0.0.20", "porta": 3306,
+   "usuario": "leitor", "database": "erp", "descricao": "", "somente_leitura": true,
+   "timeout_s": 10, "max_linhas": 1000, "senha": "…em claro…"}
+]}
+```
+
+A credencial vai em `senha` / `token_remoto` (em claro) ou em `senha_env` /
+`token_remoto_env` (o **nome** de uma variável de ambiente). Uma lista crua no
+lugar do objeto também é aceita. `"formato": 1` escrito é o mesmo formato.
+**Sem chave mestra declarada, a gravação continua produzindo exatamente isto**
+— nenhum campo a mais —, e há teste que trava esse comportamento
+(`o_cadastro_de_hoje_sem_chave_abre_e_regrava_igual`).
+
+### Formato 2 — a credencial selada com a chave mestra
+
+```json
+{
+  "formato": 2,
+  "cifra_do_cadastro": {"sal": "<32 hex>", "iteracoes": 210000, "modo": "aead", "prova": "<32 hex>"},
+  "ligacoes": [
+    {"nome": "matriz", "motor": "mysql", "…": "…", "senha_cifrada": "<hex>"},
+    {"nome": "filial", "motor": "phxsql", "…": "…", "senha": "", "token_remoto_cifrado": "<hex>"}
+  ]
+}
+```
+
+| campo | onde | o que é |
+|---|---|---|
+| `formato` | arquivo | `2`. Maior que 2 é arquivo de um binário mais novo: a abertura **recusa** com `VERSAO_NAO_SUPORTADA` (1003) — e, como o servidor abre o cadastro no arranque, **o servidor não sobe**. Ler adivinhando e regravar por cima apagaria o que este binário não entende |
+| `cifra_do_cadastro.sal` | arquivo | 16 bytes em hexadecimal, sorteados **uma vez** por cadastro |
+| `cifra_do_cadastro.iteracoes` | arquivo | do PBKDF2-HMAC-SHA256: de **210.000** (o padrão da casa) a **2.100.000**; fora disso, o arquivo é recusado **antes** de qualquer derivação |
+| `cifra_do_cadastro.modo` | arquivo | sempre `"aead"` — outro valor é recusado como arquivo corrompido |
+| `cifra_do_cadastro.prova` | arquivo | 16 bytes em hexadecimal: recusa a chave errada **na abertura**, e não na primeira conexão |
+| `ligacoes` | arquivo | a lista — **não** mais em `"dblink"`: ver *O binário anterior*, abaixo. `"dblink"` ao lado dela é recusado, e `cifra_do_cadastro` num arquivo sem `"formato": 2` também |
+| `senha_cifrada` | ligação | o envelope da senha — **mutuamente exclusivo** com `senha` e com `senha_env` |
+| `token_remoto_cifrado` | ligação | o envelope do token — mutuamente exclusivo com `token_remoto` e `token_remoto_env` |
+
+**Material único, e não um por ligação**, por número: uma derivação de
+210.000 iterações custa **290,3 ms** medidos (`SEGURANCA.md`), e o cadastro é
+lido inteiro a cada arranque e reescrito inteiro a cada salvar — dez ligações
+com sal próprio custariam 2,9 s nos dois. Com material único é uma derivação
+por arranque (e a segunda abertura do mesmo arranque — o aviso do `config` e o
+servidor — acha a chave no cache do cofre); com a chave entregue já derivada,
+é um HMAC.
+
+**O piso e o teto das iterações.** O piso é o **padrão** da casa, e não o piso
+do cofre (10.000): a prova é um oráculo offline para quem tem o `dblink.json`
+— diz se uma senha candidata é a certa sem conectar em lugar nenhum —, e o
+formato é novo, sem legado a preservar; aceitar 10.000 seria aceitar tentativas
+21 vezes mais baratas. O campo `iteracoes` da declaração só sobe a partir daí
+(os testes pagam o padrão como todo mundo). O teto existe porque as iterações
+vêm do **arquivo**, e quem escreve nele escolhia o custo do arranque:
+`u32::MAX` seriam ~99 min de PBKDF2 (4,29e9 / 210.000 × 290,3 ms, conta a partir
+do custo medido); com o teto de 10 × o padrão, o pior são ~2,9 s.
+
+**O material é o do cofre** (`cofre::Material`, o mesmo bloco dos diários e do
+`.reg`), só guardado em texto: a prova é a etiqueta Poly1305 de uma mensagem
+vazia, com nonce zero e dado associado = rótulo `phxsql/dblink.json/formato-2`
+seguido dos 24 primeiros bytes do leiaute de 40 (`flags`=1, três zeros,
+`iteracoes` u32 LE, `sal`). As partes saem e voltam por `Material::partes` e
+`Material::de_partes` — o mesmo `ler` do cabeçalho binário, para as duas provas
+nunca divergirem.
+
+**A chave de trabalho** do material: com senha mestra, `PBKDF2(senha, sal,
+iteracoes)`; com chave pronta K, `HMAC-SHA256(K, "phxsql/cofre/chave-pronta\0"
+‖ sal)` — o HMAC da casa, conferido contra a RFC 4231. Sem essa subchave o sal
+não separava chave nenhuma: dois cadastros com a mesma K (vários nós montando o
+mesmo segredo, um cadastro recriado) cifravam com a MESMA chave, e a prova de
+nonce zero repetia a chave de uso único do Poly1305, que a RFC 8439 §2.5 proíbe
+— quem juntasse dois backups forjaria provas.
+
+**O envelope**, em hexadecimal: `nonce (24) ‖ cifrado (n) ‖ etiqueta (16)`,
+XChaCha20-Poly1305 (`cofre::Material::selar`). O claro selado é
+`comprimento (u16 LE) ‖ credencial ‖ zeros`, completado até o próximo múltiplo
+de **128 bytes**: sem o degrau, o cifrado tinha o tamanho exato da credencial,
+e «o tamanho já é informação» é regra desta casa. 128 porque toda senha humana
+e um token de até 126 bytes caem no **mesmo** degrau — o cifrado não separa
+senha curta de longa, nem senha de token —, a um preço fixo de 336 caracteres
+hexadecimais por credencial, num arquivo lido uma vez por arranque. O
+**dado associado** é `"phxsql/dblink\0" ‖ minúsculas(nome) ‖ "\0" ‖ campo`,
+com `campo` = `senha` ou `token_remoto`:
+
+- **o nome** impede mover o envelope da ligação A para a linha da B — sem ele,
+  a B abriria e apresentaria ao banco dela a senha de outro banco;
+- **o campo** impede trocar a senha e o token da mesma ligação;
+- **minúsculas** porque o apelido é único sem distinguir caixa: trocar `ERP`
+  por `erp` pela tela não tranca a ligação.
+
+**O que o dado associado NÃO amarra: host, porta, motor, usuário e pino.** Quem
+**escreve** no arquivo troca o `host` de uma ligação para um ouvinte seu, e a
+próxima conexão apresenta a ele a credencial — sem abrir envelope nenhum. Isso
+está fora do modelo declarado (a cifra protege a **cópia** do arquivo, não o
+arquivo contra quem já escreve nele: esse já tem o disco), mas fica dito para
+ninguém ler a cifra como proteção contra ele.
+
+O **nonce é sorteado** a cada gravação (o arquivo é reescrito inteiro; não há
+contador que sobreviva a isso sem um segundo estado), e credencial **vazia não
+se sela** — um envelope de nada não teria nem etiqueta: a `senha` vazia continua
+`"senha": ""`, e o token vazio não aparece, como no formato 1.
+
+### A chave — de fora do conjunto copiado
+
+Não mora neste arquivo nem no `config.json`: vem de **uma** fonte declarada na
+seção `cifra_do_dblink` do `config.json` — `senha_mestra_env` /
+`senha_mestra_arquivo` (senha, PBKDF2 com o sal e as iterações do material) ou
+`chave_mestra_env` / `chave_mestra_arquivo` (32 bytes já derivados, em 64
+caracteres hexadecimais). O tipo mora no **nome** do campo, nunca no formato
+do texto. Recusado **no arranque**, com o motivo: a seção escrita torta (não
+objeto, ou fonte que não é texto, ou `iteracoes` que não é inteiro — nunca vira
+«não declarada»), a chave escrita no próprio `config.json`
+(`senha_mestra`/`chave_mestra`), duas fontes ao mesmo tempo, iterações fora de
+210.000–2.100.000, e arquivo cujo caminho **real** cai dentro da pasta do
+`config.json`, da do `dblink.json` ou da dos dados — chave que viaja na mesma
+cópia protege contra ninguém e anuncia proteção.
+
+**O caminho real é o do sistema operacional**: o caminho inteiro vai ao
+`canonicalize` antes de qualquer `..` ser resolvido pelo texto — `fora/link/..`
+com `fora/link -> banco/sub` é `banco`, e não `fora` —, e a leitura da chave
+acontece **no mesmo caminho que foi conferido**, refeito no instante da
+leitura: se ele passou a resolver para outro lugar (um diretório trocado por
+link depois da conferência), a chave fica indisponível em vez de ser lida de lá.
+
+**Os limites dessa conferência, ditos:** ela compara **caminhos**, e não
+arquivos — um *bind mount* ou um **link físico** que ponham a chave dentro da
+pasta do banco passam por ela. E **uma chave mestra por servidor**: uma chave
+compartilhada faz de cada servidor que a tem um lugar onde se abre um envelope
+transplantado do cadastro de outro.
+
+### Quando a chave falta, ou é a errada
+
+A abertura **não recusa**: o material fica fechado, cada credencial cifrada
+vira um segredo **trancado** (o rótulo `(cifra trancada)`, o motivo em
+`cifra_trancada` e no aviso do arranque), e só as operações daquela ligação
+recusam. A gravação **devolve o envelope ao disco igual**, byte a byte — sem a
+chave não há como selar de novo, e perdê-lo seria perder a credencial — e
+**recusa** gravar credencial nova em claro num cadastro cifrado (ou com a
+chave declarada e indisponível): seria rebaixar o que o dono pediu cifrado.
+Envelope que não abre com a chave que abriu o resto do cadastro tranca só a
+ligação dele, com o motivo «movido, nome editado ou texto alterado».
+
+**Com a chave PERDIDA**, as credenciais cifradas com ela não voltam — nenhuma
+edição as recupera, e é esse o ponto da cifra. O cadastro volta a funcionar
+com **uma** edição do arquivo: apagar `cifra_do_cadastro` e todo
+`senha_cifrada`/`token_remoto_cifrado` (o resto — `formato`, `ligacoes`, host,
+usuário — pode ficar). O servidor sobe com as ligações sem credencial, elas se
+redigitam pela tela, e a primeira gravação sela de novo com a chave declarada
+agora (sem chave nenhuma, o cadastro volta ao formato 1). Há teste que prova o
+procedimento (`a_chave_perdida_se_resolve_apagando_o_material_e_os_envelopes`).
+
+### A migração 1 → 2
+
+Acontece na **primeira gravação** com a chave disponível — pedida por quem
+declarou a chave, e nunca na abertura (abrir não reescreve o arquivo). Ela
+sela toda credencial em claro, e é **dita**: a resposta de
+`dblink_salvar`/`dblink_excluir`/`dblink_ligar` traz
+`cadastro.ligacoes_cifradas_agora`, e o erro padrão do servidor imprime quantas
+e quais. O que ela **não** faz: apagar o claro das cópias e backups já tirados,
+nem dos blocos livres do disco (a troca atômica desliga os blocos velhos, não
+os sobrescreve) — **a credencial no destino deve ser trocada**.
+
+### O binário anterior, depois da migração
+
+**Ele recusa subir.** Um binário anterior a este procura a lista em `"dblink"`
+e, no formato 2, não a acha: a abertura do cadastro falha com «esperava uma
+lista de ligacoes, ou um objeto com "dblink"», e como ele abre o cadastro no
+arranque, **o servidor dele não sobe**. Nada é apagado; voltar a subir pede
+este binário de novo. É por isso que a lista mudou de chave: com ela em
+`"dblink"`, o binário anterior leria a lista, ignoraria `senha_cifrada` e
+`cifra_do_cadastro`, apresentaria senha **vazia** ao outro banco e, na
+**primeira gravação dele, apagaria os envelopes de todas as ligações** — um
+estrago sem volta, calado. Falha fechada no lugar de destruição silenciosa: o
+mesmo preço que este binário já cobra do formato maior que o dele. **Downgrade
+deixa de ser suportado** no instante da primeira migração; está no
+`CHANGELOG.md` e no `MANUAL.txt`.
+
+**O que este formato ainda não faz: trocar a chave mestra.** Não há comando de
+recifragem, e o material só nasce num cadastro que não tem nenhum — trocar a
+chave (ou trocar a senha por uma chave pronta, que também é trocar de chave)
+com o material de pé deixa as ligações cifradas trancadas e faz a gravação de
+credencial nova recusar, dizendo por quê. Nada se perde (a chave velha de volta
+abre tudo); sem a velha, o caminho é o da chave perdida, acima. É pendência, e
+não comportamento escondido.
+
+## 20. O que este formato ainda não faz
 
 Documentado aqui para não haver surpresa:
 

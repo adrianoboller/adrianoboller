@@ -125,17 +125,99 @@ O arquivo é gravado com permissão só do dono (`0600`) e trocado de forma
 atômica — um corte de energia no meio deixa o arquivo antigo inteiro, e não um
 cadastro pela metade.
 
-**A senha fica nele em texto**, porque precisa ser apresentada ao outro banco:
-não dá para guardar só o hash, como se faz com a senha de usuário do PhxSql.
-Quem preferir não tê-la em arquivo usa `senha_env` e deixa o valor numa
-variável de ambiente — que é o caminho recomendado, porque `config.json` e
-`dblink.json` costumam ir para o controle de versão e variável de ambiente
-não. Em nenhum dos dois casos a senha aparece na resposta do protocolo, na
-tela ou no log.
+**A senha precisa ser apresentada ao outro banco**, então não dá para guardar
+só o hash, como se faz com a senha de usuário do PhxSql. Há dois jeitos de ela
+não ficar em texto puro no arquivo, e o segundo é o que o dono escolheu
+(pedido 372, 24/09/2026):
+
+1. `senha_env` / `token_remoto_env` — o arquivo guarda o **nome** de uma
+   variável de ambiente, e o valor mora nela;
+2. **a chave mestra** — o arquivo guarda a credencial **selada**
+   (`senha_cifrada`, `token_remoto_cifrado`), e a chave que a abre vem de fora
+   do conjunto copiado. Ver *A credencial cifrada* logo abaixo.
+
+Sem nenhum dos dois a credencial fica em claro, e o arranque **avisa**,
+nomeando a ligação e o campo, até alguém decidir.
+
+Em nenhum dos casos a senha aparece na resposta do protocolo, na tela, no
+`Debug` ou no log.
 
 **Só o motor `phxsql` tem os dois campos do fio** — `cifra` e `chave_do_fio`.
 Eles não aparecem no exemplo acima porque ele é de uma ligação MySQL(R), onde
 são **recusados**: ver *O fio do terceiro motor*.
+
+### A credencial cifrada, com chave mestra externa (pedido 372)
+
+No `config.json`, **uma** das quatro fontes:
+
+```json
+"cifra_do_dblink": { "chave_mestra_arquivo": "/run/secrets/phxsql-dblink.hex" }
+```
+
+| campo | traz | custo por arranque |
+|---|---|---|
+| `senha_mestra_env` | o nome da variável com uma **senha** | um PBKDF2 (290,3 ms com 210.000 iterações) |
+| `senha_mestra_arquivo` | um arquivo com a **senha** (o fim de linha sai) | idem |
+| `chave_mestra_env` | o nome da variável com **32 bytes** em 64 caracteres hexadecimais | um HMAC (a subchave do cadastro) |
+| `chave_mestra_arquivo` | um arquivo com os 32 bytes em hexadecimal | idem |
+| `iteracoes` | opcional, do PBKDF2 do cadastro **novo**: de 210.000 (o padrão, que é também o piso) a 2.100.000 | — |
+
+**Recusado no arranque, com o motivo** — porque é declaração torta, e não chave
+ausente: a seção escrita torta (não objeto, fonte que não é texto,
+`iteracoes` que não é inteiro — nunca vira «não declarada»), a chave escrita no
+próprio `config.json` (`senha_mestra`, `chave_mestra`), duas fontes ao mesmo
+tempo, iterações fora da faixa, e o arquivo cujo caminho **real** — o do
+sistema operacional, com links e `..` resolvidos por ele — cai dentro da pasta
+do `config.json`, da do `dblink.json` ou da dos dados. A cifra protege a
+**cópia** — disco levado, backup vazado —, e a chave que viaja na mesma cópia
+protege contra ninguém e anuncia proteção (parecer do DBA,
+`docs/propostas/parecer-dba-372-e-255.md` §1.5). A chave é lida do **mesmo**
+caminho que foi conferido; se ele passou a resolver para outro lugar depois do
+arranque, ela fica indisponível.
+
+**Os limites, ditos:**
+
+- a conferência compara **caminhos**: um *bind mount* ou um **link físico** que
+  ponham a chave dentro da pasta do banco passam por ela;
+- **uma chave mestra por servidor**: compartilhada, ela faz de cada servidor um
+  lugar onde se abre um envelope transplantado do cadastro de outro;
+- a cifra protege a cópia, e **não** o arquivo contra quem escreve nele: o
+  envelope amarra o nome da ligação e o campo, mas **não** host, porta, motor,
+  usuário nem pino — quem escreve no `dblink.json` aponta a ligação para um
+  ouvinte seu e recebe a credencial na próxima conexão.
+
+**A chave ausente não derruba nada.** A variável que não existe, o arquivo que
+não abre, a chave errada (a prova do cadastro a recusa na abertura): o servidor
+sobe, a ligação cifrada fica **trancada** — recusa conectar dizendo o que
+falta, rótulo `(cifra trancada)` e motivo em `cifra_trancada` na ficha —, as
+outras ligações seguem, e o aviso sai no arranque. A gravação devolve o
+envelope da trancada ao disco **igual**, e recusa gravar credencial nova em
+claro no cadastro cifrado.
+
+**Com a chave perdida**, o que foi cifrado com ela não volta. O cadastro volta
+a funcionar apagando do `dblink.json` o `cifra_do_cadastro` e todo
+`senha_cifrada`/`token_remoto_cifrado` (o resto fica): o servidor sobe com as
+ligações sem credencial, elas se redigitam pela tela, e a primeira gravação
+sela com a chave declarada agora.
+
+**A migração é pedida e dita.** Declarar a chave não reescreve nada na
+abertura; a **primeira gravação** (salvar qualquer ligação) sela as
+credenciais em claro, e a resposta traz `cadastro.ligacoes_cifradas_agora`. O
+texto puro sai do arquivo, mas **não** das cópias já tiradas: troque a
+credencial no outro banco.
+
+**Depois da primeira migração, não volte a versão.** O cadastro cifrado guarda
+a lista em `"ligacoes"`, e não em `"dblink"`: um binário anterior a este não a
+acha e **recusa subir** («esperava uma lista de ligacoes, ou um objeto com
+"dblink"»). A lista mudou de chave para isso — no lugar de sempre, o binário
+anterior a leria com a senha vazia e, na primeira gravação dele, **apagaria os
+envelopes de todas as ligações**. E este binário, diante de um `dblink.json` de
+formato maior que 2, também recusa: **o servidor não sobe** até voltar o
+binário que o escreveu.
+
+O `dblink` responde, além das ligações, `cifra_do_cadastro`: se o arquivo é
+cifrado, de onde a chave vem e por que não abriu — nunca a chave. O formato
+está em `docs/FORMATO.md` §19.
 
 ## As operações
 
