@@ -68,3 +68,15 @@ Isto é o caso nomeado pela pétrea local: **empate real, a matriz não decide**
 (PhxSql `CLAUDE.md`, cláusula do papel J). Não decidi o comportamento do
 PhxSql aqui — só entrego o medido. Quem pesa contra as pétreas (ordem de
 digitação sagrada, regra primordial 1-para-muitos) é o integrador/dono.
+
+## Decisão do dono — 24/09/2026
+
+**Aceitar.** Perguntado como empate real (5×5), com as duas opções e o preço
+de cada uma na mesa: o PhxSql apaga a linha cuja FK aponta só para ela mesma,
+como o PostgreSQL e o SQLite. O motivo que pesou é o texto da pétrea — «nunca
+pode matar o registro pai se tem filhos **em outra tabela(s)**» — e o fato de
+nenhuma órfã ficar. A alternativa tinha um preço concreto: a raiz com
+`chefe_id = id` numa coluna que não aceita nulo ficaria presa para sempre.
+
+O que não muda, e os quatro motores concordam: com **filha de verdade**, na
+mesma tabela ou em outra, o `excluir` continua recusando (10×0).
